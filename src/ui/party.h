@@ -25,7 +25,7 @@ public:
 private:
     void row(int i, void* out) const;        // fill one demo Row ; void* keeps Row out of the header
     void demo_row(int i, void* out) const;   // forced demo row (tier-offset names), //aio demo
-    int  build_rows(void* rows) const;       // fill rows[] (self from memory + packet members, or demo) -> count
+    int  build_rows(void* rows, const GameState& gs) const;   // fill rows[] from the per-frame snapshot (or demo) -> count
     float box_w_base() const;                // box width (base px) : AUTO-fit to the columns + name size
 
     // per-member animation state, persisted across frames (lerped bars + dot pop). Keyed by id.

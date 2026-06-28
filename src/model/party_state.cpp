@@ -4,6 +4,7 @@
 #include "model/spells_gen.h"
 #include "windower_debug.h"
 #include <windows.h>
+#include <cstring>
 
 namespace aio {
 
@@ -158,6 +159,32 @@ void PartyState::load() {
 // member[0] -> base = that - 4 (self-validated against the player id).
 // Member fields used: +0x0A name(18) +0x1C serverid +0x28 hp +0x2C mp +0x30 tp +0x34 hp%
 // +0x35 mp% +0x36 zone(u16) +0x3C flags +0x71 main-job +0x72 main-lvl +0x73 sub-job.
+// Read ONE member block (0x7C bytes) in a SINGLE SEH-guarded copy, then parse every field from
+// the local buffer (no further guarded reads -> one SEH frame instead of ~25 per member). The
+// SINGLE source of truth for the member-array offsets, shared by the party and alliance loops.
+// Returns false on an unmapped block or an empty slot (id == 0).
+static bool read_member(u32 mb, PMember& pm) {
+    unsigned char b[0x7C];
+    __try { memcpy(b, (const void*)mb, sizeof(b)); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    const u32 id = *(const u32*)(b + 0x1C);
+    if (!id) return false;                                  // empty slot
+    pm = PMember();
+    pm.id = id;
+    int k = 0; for (; k < 18 && b[0x0A + k]; ++k) pm.name[k] = (char)b[0x0A + k];
+    pm.name[k] = 0;
+    pm.hp = (int)*(const u32*)(b + 0x28); pm.mp = (int)*(const u32*)(b + 0x2C); pm.tp = (int)*(const u32*)(b + 0x30);
+    const u32 pk = *(const u32*)(b + 0x34);
+    pm.hpp = (int)(pk & 0xFF); pm.mpp = (int)((pk >> 8) & 0xFF); pm.zone = (int)((pk >> 16) & 0xFFFF);
+    pm.flags = *(const u32*)(b + 0x3C);
+    pm.maxHp = pm.hpp > 0 ? pm.hp * 100 / pm.hpp : pm.hp;   // derive max -> 0x0DF can refresh %
+    pm.maxMp = pm.mpp > 0 ? pm.mp * 100 / pm.mpp : pm.mp;
+    const u32 jw = *(const u32*)(b + 0x70);                 // jobs: main job @+0x71, sub job @+0x73
+    pm.mjob = (jw >> 8) & 0xFF; pm.sjob = (jw >> 24) & 0xFF;
+    if (pm.mjob == 0) { int mj = 0, sj = 0; if (trust_job(pm.name, mj, sj)) { pm.mjob = mj; pm.sjob = sj; } }   // trusts: name DB fallback
+    return true;
+}
+
 void PartyState::load_from_memory() {
     u32 lc = (u32)GetModuleHandleA("LuaCore.dll");
     if (!lc) return;
@@ -180,24 +207,8 @@ void PartyState::load_from_memory() {
     if (safe_read(pp, &ai) && valid_ptr(ai)) { u32 c = 0; if (safe_read(ai + 0x13, &c)) { wantN = (int)(c & 0xFF); if (wantN < 1) wantN = 1; if (wantN > 6) wantN = 6; } }
 
     int n = 0;
-    for (int i = 0; i < wantN; ++i) {                      // only the first `wantN` ACTIVE slots
-        u32 mb = base + i * 0x7C, id = 0;
-        if (!safe_read(mb + 0x1C, &id) || !id) continue;   // empty slot
-        PMember& pm = m[n]; pm = PMember();
-        pm.id = id;
-        for (int k = 0; k < 18; ++k) { u32 ch = 0; if (!safe_read(mb + 0x0A + k, &ch)) break; char c = (char)(ch & 0xFF); if (!c) break; pm.name[k] = c; }
-        u32 hp = 0, mp = 0, tp = 0, pk = 0, fl = 0;
-        safe_read(mb + 0x28, &hp); safe_read(mb + 0x2C, &mp); safe_read(mb + 0x30, &tp);
-        safe_read(mb + 0x34, &pk); safe_read(mb + 0x3C, &fl);
-        pm.hp = (int)hp; pm.mp = (int)mp; pm.tp = (int)tp;
-        pm.hpp = (int)(pk & 0xFF); pm.mpp = (int)((pk >> 8) & 0xFF); pm.zone = (int)((pk >> 16) & 0xFFFF);
-        pm.flags = fl;
-        pm.maxHp = pm.hpp > 0 ? pm.hp * 100 / pm.hpp : pm.hp;   // derive max -> 0x0DF can refresh %
-        pm.maxMp = pm.mpp > 0 ? pm.mp * 100 / pm.mpp : pm.mp;
-        u32 jw = 0; safe_read(mb + 0x70, &jw); pm.mjob = (jw >> 8) & 0xFF; pm.sjob = (jw >> 24) & 0xFF;   // jobs: main@+0x71, sub@+0x73 (reversed 2026-06-28)
-        if (pm.mjob == 0) { int mj = 0, sj = 0; if (trust_job(pm.name, mj, sj)) { pm.mjob = mj; pm.sjob = sj; } }   // trusts: name DB fallback
-        ++n;
-    }
+    for (int i = 0; i < wantN; ++i)                        // only the first `wantN` ACTIVE slots
+        if (read_member(base + i * 0x7C, m[n])) ++n;
     count = n;                                             // n reflects the live roster (trust in/out)
 
     // --- Alliance parties 2 & 3 : member-array slots 6..11 and 12..17. Live counts at
@@ -214,24 +225,8 @@ void PartyState::load_from_memory() {
         if (valid_ptr(ai)) { u32 c = 0; if (safe_read(ai + 0x14 + ap, &c)) cnt = (int)(c & 0xFF); }
         if (cnt < 1) cnt = 6; if (cnt > 6) cnt = 6;           // gate already proved the party exists -> default to a full scan
         int an = 0;
-        for (int i = 0; i < cnt; ++i) {
-            u32 mb = base + (6 + ap * 6 + i) * 0x7C, id = 0;
-            if (!safe_read(mb + 0x1C, &id) || !id) continue;          // empty slot
-            PMember& pm = alli_[ap * 6 + an]; pm = PMember();
-            pm.id = id;
-            for (int k = 0; k < 18; ++k) { u32 ch = 0; if (!safe_read(mb + 0x0A + k, &ch)) break; char c = (char)(ch & 0xFF); if (!c) break; pm.name[k] = c; }
-            u32 hp = 0, mp = 0, tp = 0, pk = 0, fl = 0;
-            safe_read(mb + 0x28, &hp); safe_read(mb + 0x2C, &mp); safe_read(mb + 0x30, &tp);
-            safe_read(mb + 0x34, &pk); safe_read(mb + 0x3C, &fl);
-            pm.hp = (int)hp; pm.mp = (int)mp; pm.tp = (int)tp;
-            pm.hpp = (int)(pk & 0xFF); pm.mpp = (int)((pk >> 8) & 0xFF); pm.zone = (int)((pk >> 16) & 0xFFFF);
-            pm.flags = fl;
-            pm.maxHp = pm.hpp > 0 ? pm.hp * 100 / pm.hpp : pm.hp;
-            pm.maxMp = pm.mpp > 0 ? pm.mp * 100 / pm.mpp : pm.mp;
-            u32 jw = 0; safe_read(mb + 0x70, &jw); pm.mjob = (jw >> 8) & 0xFF; pm.sjob = (jw >> 24) & 0xFF;   // jobs: main@+0x71, sub@+0x73
-            if (pm.mjob == 0) { int mj = 0, sj = 0; if (trust_job(pm.name, mj, sj)) { pm.mjob = mj; pm.sjob = sj; } }   // trusts: name DB fallback
-            ++an;
-        }
+        for (int i = 0; i < cnt; ++i)
+            if (read_member(base + (6 + ap * 6 + i) * 0x7C, alli_[ap * 6 + an])) ++an;
         alliN_[ap] = an;
     }
 }

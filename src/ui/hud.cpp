@@ -3,6 +3,7 @@
 #include "ui/factory.h"
 #include "model/layout.h"
 #include "model/game_mem.h"
+#include "model/gamestate.h"
 #include "model/party_state.h"
 #include "windower_debug.h"
 #include <windows.h>
@@ -122,13 +123,14 @@ void Hud::render(u32 dev) {
     fonts_.get(0, 0);          // register the default slot so ensure_all builds it this frame
     fonts_.ensure_all(dev);
 
-    // poll live player vitals straight from game memory (real HP/MP/TP, instant).
-    float hp, mp, tp;
-    if (read_player_vitals(hp, mp, tp)) { state_.hp = hp; state_.mp = mp; state_.tp = tp; }
+    // ONE poll of live game memory for the WHOLE frame -> the shared snapshot every widget
+    // draws from (player vitals/jobs, target, leaders, action menu). Read each pointer-chain
+    // once here, never in a widget's draw(). See gamestate.h.
+    poll_game_state(state_);
 
-    // refresh the party roster + vitals from the live member array EVERY frame, so a
-    // freshly-summoned trust appears at once and HP/MP/TP never go stale (packets only
-    // top up jobs). Mirrors XivParty polling get_party() each tick.
+    // the party ROSTER (party + alliance, member-array slots 0..17) is the one big table ->
+    // also refreshed once per frame, into the party() singleton. Mirrors XivParty's per-tick
+    // get_party(); a freshly-summoned trust / new alliance member appears at once.
     party().load_from_memory();
 
     for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->ensure(dev);
@@ -138,6 +140,7 @@ void Hud::render(u32 dev) {
     f.fonts = &fonts_;
     f.font  = fonts_.get(0, 0);   // the default atlas (global face/weight) for non-party widgets
     f.t     = (float)(GetTickCount() % 1000000) / 1000.0f;
+    f.game  = &state_;            // the per-frame snapshot widgets read from
 
     // ONE state block around ALL our drawing: save the game's render state, set ours,
     // restore afterwards (else we corrupt the game's own rendering). Retained widgets

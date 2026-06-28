@@ -6,6 +6,7 @@
 #include "io/json.h"
 #include "model/party_state.h"
 #include "model/game_mem.h"
+#include "model/gamestate.h"
 #include "model/spells_gen.h"
 #include "model/abilities_gen.h"
 #include "model/weapon_skills_gen.h"
@@ -261,10 +262,14 @@ static void fill_self(Row& r, const PlayerInfo& me) {
 
 // build the displayed rows : live = local player (memory, always present + accurate) + the
 // OTHER members from packets (the game never sends you your own party packet) ; else demo.
-int Party::build_rows(void* outRows) const {
+int Party::build_rows(void* outRows, const GameState& gs) const {
     Row* rows = (Row*)outRows;
     int n = 0;
     const int demo = party_demo_level();
+    // leaders / target come from the shared snapshot (0 = role/selection absent ; a real member
+    // id is never 0, so comparing against a 0 field can't false-positive -> no extra "have" guard).
+    auto isAlead = [&](unsigned id) { return id && id == gs.allianceLeader; };
+    auto isPlead = [&](unsigned id) { return id && (id == gs.partyLead1 || id == gs.partyLead2 || id == gs.partyLead3); };
 
     // Alliance boxes (tier > 0). A demo command forces the baked roster (level 2 = +alliance1,
     // level 3 = +alliance2) ; otherwise LIVE from the member array (slots 6..17, via load_from_memory).
@@ -277,56 +282,41 @@ int Party::build_rows(void* outRows) const {
         int cnt = party().alliance_count(tier_);
         if (cnt <= 0) return 0;                                              // no such alliance party -> box hidden
         if (cnt > 6) cnt = 6;
-        PartyLeaders ld; bool haveLd = read_party_leaders(ld);
         for (int i = 0; i < cnt; ++i) {
             const PMember& pm = party().alliance_member(tier_, i);
             fill_member(rows[i], pm);
-            if (haveLd) { rows[i].alead = (pm.id == ld.alliance);
-                          rows[i].plead = (pm.id == ld.p1 || pm.id == ld.p2 || pm.id == ld.p3); }
-        }
-        TargetInfo tg;                                                       // alliance members are targetable too
-        if (read_target(tg)) {
-            for (int i = 0; i < cnt; ++i) {
-                if (tg.id  && rows[i].id == tg.id)  rows[i].sel    = true;
-                if (tg.sid && rows[i].id == tg.sid) rows[i].subsel = true;
-            }
+            rows[i].alead = isAlead(pm.id); rows[i].plead = isPlead(pm.id);
+            if (gs.targetId    && pm.id == gs.targetId)    rows[i].sel    = true;   // alliance members are targetable too
+            if (gs.subTargetId && pm.id == gs.subTargetId) rows[i].subsel = true;
         }
         return cnt;
     }
     // Main party box : a demo command forces the baked roster; else live / cached fallback.
     if (demo >= 1) { for (int i = 0; i < 6; ++i) demo_row(i, &rows[i]); return 6; }
 
-    // 'me' must outlive this function: fill_self() stores r.name = me.name, and the
-    // returned rows are rendered by the CALLER (draw). A stack local would dangle ->
-    // garbage self-name. static = stable storage (render is single-threaded).
-    static PlayerInfo me; bool haveMe = read_player(me);
-    PartyLeaders ld; bool haveLd = read_party_leaders(ld);                    // leaders by server-id (documented)
-    if (haveMe) {                                                             // in game : self ALWAYS first
-        fill_self(rows[n], me);                                              // row 0 = self (memory : instant + accurate)
+    // self comes from the snapshot: gs.me lives in the HUD's GameState -> it outlives this call,
+    // so fill_self can safely store r.name = gs.me.name (the rows are rendered by the caller).
+    const PlayerInfo& me = gs.me;
+    if (gs.inGame) {                                                          // in game : self ALWAYS first
+        fill_self(rows[n], me);                                              // row 0 = self (snapshot : instant + accurate)
         static unsigned short selfBuffs[32];                                 // stable storage : rows are rendered by the caller
-        rows[n].nbuff = read_player_buffs(selfBuffs, 32);                    // self buffs from memory (player+0x1C, reversed)
+        rows[n].nbuff = read_player_buffs(selfBuffs, 32);                    // self buffs (party-specific read, player+0x1C)
         rows[n].buffs = selfBuffs;
         int sidx = party().find(me.id);
         if (sidx >= 0) rows[n].qm = party().m[sidx].quarter_master();        // QM still from member flag (tentative)
-        if (haveLd) { rows[n].alead = (me.id == ld.alliance);
-                      rows[n].plead = (me.id == ld.p1 || me.id == ld.p2 || me.id == ld.p3); }
+        rows[n].alead = isAlead(me.id); rows[n].plead = isPlead(me.id);
         ++n;
         for (int i = 0; i < party().count && n < 6; ++i) {                   // then the OTHER members
             if (party().m[i].id == me.id) continue;                         // (self already shown on top)
             unsigned mid = party().m[i].id;
             fill_member(rows[n], party().m[i]);
-            if (haveLd) { rows[n].alead = (mid == ld.alliance);
-                          rows[n].plead = (mid == ld.p1 || mid == ld.p2 || mid == ld.p3); }
+            rows[n].alead = isAlead(mid); rows[n].plead = isPlead(mid);
             ++n;
         }
-        // selection cursor : highlight the row whose server-id == current <t> / <st>
-        // (mirrors XivParty's get_mob_by_target('t').id == member.mob.id).
-        TargetInfo tg;
-        if (read_target(tg)) {
-            for (int i = 0; i < n; ++i) {
-                if (tg.id  && rows[i].id == tg.id)  rows[i].sel    = true;
-                if (tg.sid && rows[i].id == tg.sid) rows[i].subsel = true;
-            }
+        // selection cursor : highlight the row whose server-id == current <t> / <st> (snapshot).
+        for (int i = 0; i < n; ++i) {
+            if (gs.targetId    && rows[i].id == gs.targetId)    rows[i].sel    = true;
+            if (gs.subTargetId && rows[i].id == gs.subTargetId) rows[i].subsel = true;
         }
     } else {                                                                 // not in game -> demo
         n = count_ > 6 ? 6 : count_;
@@ -419,7 +409,8 @@ void Party::draw(const Frame& f) {
     ensure(dev);                                  // lazily create the bullet dot texture
 
     Row rows[6];
-    const int n = build_rows(rows);
+    static const GameState NOGAME;                // fallback if drawn without a snapshot (demo still works)
+    const int n = build_rows(rows, f.game ? *f.game : NOGAME);
     if (n <= 0) return;                           // nothing to show (e.g. an alliance box outside demo)
 
     const float S = scale_ * BOOST;
@@ -781,8 +772,7 @@ void Party::draw(const Frame& f) {
         // the open flag (FFXiMain+0x629FEC) is noisy (toggles frame-to-frame). Filter with a
         // confidence counter : needs several positive frames to show (kills closed-menu spikes),
         // and lingers a few frames (kills the open-menu flicker).
-        int mtype = 0; unsigned mid = 0;
-        if (read_action_menu(mtype, mid)) { menuType_ = mtype; menuSpell_ = mid; menuHold_ += 2; if (menuHold_ > 10) menuHold_ = 10; }
+        if (f.game && f.game->menuType) { menuType_ = f.game->menuType; menuSpell_ = f.game->menuAction; menuHold_ += 2; if (menuHold_ > 10) menuHold_ = 10; }   // from the snapshot
         else { menuHold_ -= 1; if (menuHold_ < 0) menuHold_ = 0; }
         // right-hand info next to the name : MP cost for spells, the recast "Next" for job abilities
         // (when on cooldown), the player's CURRENT TP for weapon skills.
@@ -799,7 +789,7 @@ void Party::draw(const Frame& f) {
                 sprintf(infobuf, "Next %u:%02u", rs / 60, rs % 60); info = infobuf;
                 infoCol = rs ? 0xFFFFB454 : 0xFF8FA0B8; } }                                                      // amber while on recast, dim grey-blue when ready
             else if (menuType_ == 3) { const WSRow* ws = ws_info(menuSpell_); if (ws) { nm = ws->en;             // Weapon Skill : show live TP
-                PlayerInfo pi; if (read_player(pi)) { sprintf(infobuf, "TP %d", pi.tp); info = infobuf; infoCol = (pi.tp >= 1000) ? 0xFF7CFF8A : 0xFFB0B0B0; } } }  // green when usable (>=1000)
+                if (f.game) { int tp = f.game->me.tp; sprintf(infobuf, "TP %d", tp); info = infobuf; infoCol = (tp >= 1000) ? 0xFF7CFF8A : 0xFFB0B0B0; } } }  // green when usable (>=1000)
         }
         if (nm && fName->ready()) {
             const float fs = nameSz_ * S;

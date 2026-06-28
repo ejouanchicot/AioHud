@@ -1,5 +1,6 @@
 // game_mem.cpp -- see game_mem.h.
 #include "model/game_mem.h"
+#include "model/gamestate.h"
 #include "windower_debug.h"
 #include <windows.h>
 
@@ -209,6 +210,30 @@ unsigned spell_recast_sec(unsigned recast_id) {
     v &= 0xFFFF;                                               // little-endian : this entry, ignore the next
     if (v == 0 || v > 60u * 7200u) return 0;                   // ready, or garbage (>2h)
     return (v + 59) / 60;                                     // ceil to whole seconds (the "Next")
+}
+
+// Per-frame snapshot : read each pointer-chain ONCE so widgets never touch memory in draw().
+// See gamestate.h. read_player gates "in game" (vitals populate before names after a zone).
+void poll_game_state(GameState& gs) {
+    PlayerInfo me;
+    if (!read_player(me)) { gs.inGame = false; return; }     // not ready (zoning) -> keep last-good
+    gs.inGame = true;
+    gs.me = me;
+    gs.hp = me.hpp / 100.0f;
+    gs.mp = me.mpp / 100.0f;
+    gs.tp = me.tp / 3000.0f; if (gs.tp > 1.0f) gs.tp = 1.0f; if (gs.tp < 0.0f) gs.tp = 0.0f;
+
+    TargetInfo tg;
+    if (read_target(tg)) { gs.targetId = tg.id; gs.subTargetId = tg.sid; }
+    else                 { gs.targetId = gs.subTargetId = 0; }
+
+    PartyLeaders ld;
+    if (read_party_leaders(ld)) { gs.allianceLeader = ld.alliance; gs.partyLead1 = ld.p1; gs.partyLead2 = ld.p2; gs.partyLead3 = ld.p3; }
+    else                        { gs.allianceLeader = gs.partyLead1 = gs.partyLead2 = gs.partyLead3 = 0; }
+
+    int mt = 0; unsigned ma = 0;
+    if (read_action_menu(mt, ma)) { gs.menuType = mt; gs.menuAction = ma; }
+    else                          { gs.menuType = 0; gs.menuAction = 0; }
 }
 
 } // namespace aio

@@ -562,6 +562,15 @@ pointer). It follows the `<st>` cursor too, so it CANNOT tell main from sub, and
    `<stpc>` cursor: the dword that flips `0↔1` on open/cancel is the flag (`+0x78`).
 These probe commands live in `plugin/aiohud.cpp` (kept for re-locating after a client patch).
 
+> **TODO — the party-DISTRIBUTION cursor is NOT in `target_t`.** When you open
+> *Menu → Party → Distribution → Quartermaster/Lottery*, the game spawns a party-member
+> picker cursor. Probed with `//aio sub` while it was active (2026-06-28): `target_t`
+> `Targets[0]`/`Targets[1]` stayed `0x04000000` ("nothing") the whole time — so this cursor
+> is a **menu** cursor (its highlighted index lives in the menu structure, not the world
+> target). Reversing it needs **≥2 party members** so the cursor can move between them and the
+> index field can be diffed; parked until a live party is available. Goal: surface it as a
+> selection frame on the hovered member, like `<st>`.
+
 ### 9f. Party cast bar — the `0x028` action packet  (WORKING, 2026-06-27)
 
 Shows the spell a party member is casting (name + progress), driven by the **inbound `0x028`

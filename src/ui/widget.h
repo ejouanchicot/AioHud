@@ -13,7 +13,7 @@
 #include "gfx/d3d.h"   // brings windower.h (u32, valid_ptr)
 
 namespace aio { namespace json { struct Value; } }   // fwd (configure receives raw config JSON)
-namespace aio { class Font; class FontManager; }       // fwd (shared text atlas + cache)
+namespace aio { class Font; class FontManager; struct GameState; }   // fwd (text atlas + the per-frame snapshot)
 
 namespace aio {
 
@@ -25,6 +25,7 @@ struct Frame {
     Font* font = nullptr;    // the DEFAULT glyph atlas (global face) -- most widgets use this
     FontManager* fonts = nullptr;   // atlas cache (per-text face/weight) -- the party box uses this
     float t    = 0.0f;       // seconds (wrapping) for animation
+    const GameState* game = nullptr;   // per-frame snapshot of live game data (poll_game_state) -> read, never poll memory in draw()
 };
 
 class Widget {
