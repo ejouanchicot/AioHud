@@ -31,14 +31,22 @@ struct PMember {
 // sized for a full alliance so any visible member's cast survives the per-frame roster refresh.
 struct CastSlot { unsigned id = 0; unsigned spell = 0; unsigned startMs = 0; unsigned durMs = 0; };
 
+// Member buffs from the party-buffs packet 0x076 (which never carries the local player -> self
+// buffs come from memory). Keyed by server id, sized for a full alliance, refreshed each 0x076.
+// Transient (NOT part of the cached roster). ids are FFXI status ids (uint16) ; n = count.
+struct BuffSet { unsigned id = 0; int n = 0; unsigned short ids[32] = {}; };
+
 struct PartyState {
     PMember m[6];
     int count = 0;
     CastSlot casts_[18];
+    BuffSet  buffs_[18];
 
     void on_dd(const unsigned char* p);   // 0x0DD : member update (name/jobs/HP/MP/TP/%) -> also caches
     void on_df(const unsigned char* p);   // 0x0DF : vitals update (HP/MP/TP, refresh %)
     void on_action(const unsigned char* p); // 0x028 : begin/finish casting -> drives the cast bar
+    void on_076(const unsigned char* p);  // 0x076 : party-member status icons (buffs) -> buffs_[]
+    const BuffSet* buffs_for(unsigned id) const;   // a member's buffs (null if none cached)
     int  find(unsigned id) const;
     // current cast for member `id` : returns the spell name (or 0 if not casting / expired) and
     // fills `pctOut` with the 0..1 cast progress. Used by the party UI's cast line/bar.

@@ -24,7 +24,7 @@ export const member = (m, i, cfg) => {
   const tp = clamp(num(cfg[`p${i}_tp`], m.tp), 0, 3000);
   const nb = ally ? 0 : clamp(num(cfg[`p${i}_buffs`], m.buffs), 0, 32);
   const dead = hp <= 0;                                    // 0 HP -> KO
-  const hpLow = (!dead && hp < 25) ? 'low' : '';
+  const hpLow = (!dead && hp <= 25) ? 'low' : '';         // HP <= 25% (vivant) -> alarme rouge
   const tpReady = tp >= 1000 ? 'ready' : '';
   // puces de role a GAUCHE du badge (3 flags XivParty) : party leader (or), alliance leader (magenta),
   // quarter master (cyan). Colonne toujours rendue (largeur reservee) -> badges alignes meme sans puce.

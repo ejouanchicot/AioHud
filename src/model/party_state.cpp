@@ -262,4 +262,37 @@ const char* PartyState::cast_label(unsigned id, float& pctOut, float& alphaOut) 
     return sp ? sp->en : "Casting";
 }
 
+// 0x076 "party buffs" : 5 member slots of 48 bytes, payload at +4 (same base as 0x0DD). Per slot k:
+//   id   = u32 @ k*48 + 4   (0 = empty slot ; the LOCAL player is never present here)
+//   buff i (0..31) : low = p[k*48+20+i] ; hi2 = (p[k*48+12 + i/4] >> 2*(i&3)) & 3 ; buff = low + 256*hi2
+//   255 = empty buff. (Credit: Kenshi/PartyBuffs + Byrth/GearSwap, via XivParty.)
+void PartyState::on_076(const unsigned char* p) {
+    for (int k = 0; k < 5; ++k) {
+        const int base = k * 48;
+        unsigned mid = rd32(p, base + 4);
+        if (!mid) continue;
+        int slot = -1, free = -1;                              // reuse same-id / first free / overwrite slot 0
+        for (int s = 0; s < 18; ++s) {
+            if (buffs_[s].id == mid) { slot = s; break; }
+            if (!buffs_[s].id && free < 0) free = s;
+        }
+        if (slot < 0) slot = (free >= 0) ? free : 0;
+        BuffSet& bs = buffs_[slot];
+        bs.id = mid; bs.n = 0;
+        for (int i = 0; i < 32; ++i) {
+            unsigned low = p[base + 20 + i];
+            unsigned hi2 = (p[base + 12 + (i >> 2)] >> (2 * (i & 3))) & 3;
+            unsigned buff = low + 256u * hi2;
+            if (buff == 255) continue;                         // empty buff
+            bs.ids[bs.n++] = (unsigned short)buff;
+        }
+    }
+}
+
+const BuffSet* PartyState::buffs_for(unsigned id) const {
+    if (!id) return 0;
+    for (int s = 0; s < 18; ++s) if (buffs_[s].id == id) return &buffs_[s];
+    return 0;
+}
+
 } // namespace aio

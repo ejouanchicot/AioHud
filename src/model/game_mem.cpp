@@ -53,6 +53,25 @@ bool read_player(PlayerInfo& o) {
     return true;
 }
 
+// Player buffs, reversed from LuaCore get_player (FUN_10072040). The same player struct
+// pl = *(g + 0x3C) holds a 32-entry uint16 status-icon array at pl+0x1C (loop runs the ushorts
+// in [pl+0x1C, pl+0x5C) ); 0xFF marks an EMPTY slot. We compact the non-empty ids in slot order.
+int read_player_buffs(unsigned short* out, int maxN) {
+    if (!out || maxN <= 0) return 0;
+    u32 pl = player_struct();
+    if (!pl) return 0;
+    u32 mhp = 0; safe_read(pl + 0x60, &mhp);
+    if (mhp == 0 || mhp > 0x100000) return 0;           // struct not ready yet
+    int n = 0;
+    for (int i = 0; i < 32 && n < maxN; ++i) {
+        u32 v = 0; if (!safe_read(pl + 0x1C + i * 2, &v)) break;
+        v &= 0xFFFF;
+        if (v == 0xFF) continue;                        // empty slot (game's sentinel)
+        out[n++] = (unsigned short)v;
+    }
+    return n;
+}
+
 // allianceinfo_t : g=*(LuaCore+0x1C8400) ; pp=*(g+0x248) (=&member[0]+4) ; allianceinfo = *(pp).
 // Fields (verified in-game 2026-06-26): +0x00 alliance leader id, +0x04/+0x08/+0x0C party
 // 1/2/3 leader ids. A member is that role iff its serverid matches.

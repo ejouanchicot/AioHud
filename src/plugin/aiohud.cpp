@@ -296,6 +296,7 @@ void aio_plugin_packet_in(u32 a, u32 b, u32 c, u32 d)
     }
     else if (id == 0xDF) aio::party().on_df((const unsigned char*)b);
     else if (id == 0x028) aio::party().on_action((const unsigned char*)b);   // cast bar
+    else if (id == 0x076) aio::party().on_076((const unsigned char*)b);      // party-member buffs
 
     // optional RE logging (armed by //aio pkt). Dump the SOURCE `a` too -> lead to the
     // in-memory party structure (for instant read on load).

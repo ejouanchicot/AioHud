@@ -52,7 +52,18 @@ static const Member DEMO[18] = {
 };
 
 // one display row, resolved from live data OR demo.
-struct Row { const char* name; const char* job; const char* sub; unsigned role; int hpVal, mpVal, tp, hpp, mpp; bool plead, alead, qm; bool offzone; int zone; const char* cast; float castPct; float castAlpha; unsigned id; bool sel; bool subsel; };
+struct Row { const char* name; const char* job; const char* sub; unsigned role; int hpVal, mpVal, tp, hpp, mpp; bool plead, alead, qm; bool offzone; int zone; const char* cast; float castPct; float castAlpha; unsigned id; bool sel; bool subsel;
+             const unsigned short* buffs = nullptr; int nbuff = 0; };   // status icons (left of the row) ; null/0 = none (uint16 ids: > 255 exist)
+
+// ---- buff icons : a single status-icon atlas (assets/buff_atlas.raw, built by
+// scripts/gen_buff_atlas.ps1 from XivParty's icon set). Fixed 32-col grid, 32px cells.
+// A status id maps to cell (id%COLS, id/COLS) -> see gen_buff_atlas.ps1 for the layout.
+static const char* BUFF_ATLAS_PATH = "D:\\Windower Tetsouo\\plugins\\_aiohud_re\\assets\\buff_atlas.raw";
+static const int BATLAS_W = 1024, BATLAS_H = 640, BCELL = 32, BCOLS = 32;
+static const int BATLAS_ROWS = BATLAS_H / BCELL;        // 20 -> highest mappable id = BCOLS*BATLAS_ROWS - 1 (639)
+// demo buff set (mirrors design/src/panels/partyCore.js BUFF_POOL) -> something to render in //aio demo.
+static const unsigned short BUFF_POOL[] = { 40, 41, 43, 33, 251, 134, 13, 4, 5, 3, 30, 31, 32, 36, 37, 44, 45, 46, 39, 42, 0, 1, 2, 6, 7, 8, 9, 10, 11, 12, 14, 15 };
+static const int BUFF_POOL_N = (int)(sizeof(BUFF_POOL) / sizeof(BUFF_POOL[0]));
 static const u32 C_OFF = 0xFF6E7689;   // out-of-zone member (greyed)
 
 // ---- colours ----
@@ -141,7 +152,9 @@ static void vgrad(u32 dev, float x, float y, float w, float h, u32 top, u32 bot)
 }
 // one HP/MP/TP gauge. `pct` is the (already-lerped) fill % ; `t` drives a subtle liquid
 // shimmer ; `pulse` (0..1) brightens + adds an outer glow (used for TP >= 1000 = WS ready).
-static void draw_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse) {
+// `danger` (0..1) : critical HP -> the bar BLINKS in alarm-red, same glow+pulse principle
+// as the TP WS-ready pulse but tinted red (red halo breathing + red flash over the liquid).
+static void draw_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger = 0.0f) {
     if (pct < 0) pct = 0; if (pct > 100) pct = 100;
     if (pulse > 0.0f) {                                  // WS-ready glow breathing around the bar
         float ph = 0.5f + 0.5f * sinf(t * 7.5f);         // 0..1
@@ -149,6 +162,13 @@ static void draw_gauge(u32 dev, float gx, float gy, float gw, float gh, float pc
         grad_quad(dev, gx - 3, gy - 3, gw + 6, gh + 6, g1, g1, g1, g1);
         u32 g2 = (col & 0x00FFFFFF) | ((u32)((0.60f + 0.40f * ph) * pulse * 255) << 24);   // tight bright halo
         grad_quad(dev, gx - 1, gy - 2, gw + 2, gh + 4, g2, g2, g2, g2);
+    }
+    if (danger > 0.0f) {                                 // CRITICAL HP : red alarm halo breathing around the bar
+        float dh = 0.5f + 0.5f * sinf(t * 7.5f);         // 0..1 (same rhythm as the WS pulse)
+        u32 d1 = 0x00FF2A2A | ((u32)((0.35f + 0.50f * dh) * danger * 255) << 24);   // soft red halo
+        grad_quad(dev, gx - 3, gy - 3, gw + 6, gh + 6, d1, d1, d1, d1);
+        u32 d2 = 0x00FF2A2A | ((u32)((0.60f + 0.40f * dh) * danger * 255) << 24);   // tight bright red halo
+        grad_quad(dev, gx - 1, gy - 2, gw + 2, gh + 4, d2, d2, d2, d2);
     }
     grad_quad(dev, gx, gy, gw, gh, 0xFF2A3354, 0xFF2A3354, 0xFF2A3354, 0xFF2A3354);   // thin frame
     vgrad(dev, gx + 1, gy + 1, gw - 2, gh - 2, 0xFF0A0E1C, 0xFF161D33);               // recessed bg
@@ -159,6 +179,11 @@ static void draw_gauge(u32 dev, float gx, float gy, float gw, float gh, float pc
         vgrad(dev, gx + 1, gy + 1,              fw, fh * 0.52f, lt(c, 0.16f), c);     // liquid top
         vgrad(dev, gx + 1, gy + 1 + fh * 0.52f, fw, fh * 0.48f, c, scl(c, 0.70f));    // liquid bottom
         vgrad(dev, gx + 1, gy + 1,              fw, fh * 0.42f, 0x66FFFFFF, 0x00FFFFFF); // top gloss highlight
+        if (danger > 0.0f) {                                     // red wash OVER the liquid -> the fill visibly blinks red
+            float dl = 0.5f + 0.5f * sinf(t * 7.5f);             // 0..1, in sync with the halo
+            u32 dw = 0x00FF1E1E | ((u32)(dl * danger * 0.55f * 255) << 24);
+            grad_quad(dev, gx + 1, gy + 1, fw, fh, dw, dw, dw, dw);
+        }
     }
 }
 
@@ -188,6 +213,7 @@ void Party::configure(const json::Value& cfg) {
         sprintf(key, "p%d_hp", i); dhp_[i] = (int)cfg[key].as_num(dhp_[i]);
         sprintf(key, "p%d_mp", i); dmp_[i] = (int)cfg[key].as_num(dmp_[i]);
         sprintf(key, "p%d_tp", i); dtp_[i] = (int)cfg[key].as_num(dtp_[i]);
+        sprintf(key, "p%d_buffs", i); dbuff_[i] = (int)cfg[key].as_num(dbuff_[i]);
     }
     // live-tunable style : per-text size / stroke / bold / font (everything else auto) -----
     nameSz_      = (float)cfg["nameSz"].as_num(nameSz_);
@@ -222,6 +248,8 @@ static void fill_member(Row& r, const PMember& pm) {
     r.offzone = (pm.maxHp == 0);                       // no vitals at all -> member is out of our zone
     r.zone = pm.zone;
     r.id = pm.id; r.sel = false; r.subsel = false;
+    const BuffSet* bs = party().buffs_for(pm.id);      // status icons from packet 0x076 (null until first seen)
+    if (bs) { r.buffs = bs->ids; r.nbuff = bs->n; }
 }
 static void fill_self(Row& r, const PlayerInfo& me) {
     r.name = me.name; r.job = job_abbr(me.mjob); r.sub = job_abbr(me.sjob); r.role = job_role_color(me.mjob);
@@ -255,6 +283,9 @@ int Party::build_rows(void* outRows) const {
     PartyLeaders ld; bool haveLd = read_party_leaders(ld);                    // leaders by server-id (documented)
     if (haveMe) {                                                             // in game : self ALWAYS first
         fill_self(rows[n], me);                                              // row 0 = self (memory : instant + accurate)
+        static unsigned short selfBuffs[32];                                 // stable storage : rows are rendered by the caller
+        rows[n].nbuff = read_player_buffs(selfBuffs, 32);                    // self buffs from memory (player+0x1C, reversed)
+        rows[n].buffs = selfBuffs;
         int sidx = party().find(me.id);
         if (sidx >= 0) rows[n].qm = party().m[sidx].quarter_master();        // QM still from member flag (tentative)
         if (haveLd) { rows[n].alead = (me.id == ld.alliance);
@@ -320,6 +351,8 @@ void Party::demo_row(int i, void* out) const {
     r.qm    = (tier_ == 0 && i == 1);
     r.cast = dm.cast; r.castAlpha = dm.cast ? 1.0f : 0.0f;
     r.sel = (tier_ == 0 && i == 0);                // only the main box shows the self cursor
+    int nb = dbuff_[i]; if (nb < 0) nb = 0; if (nb > BUFF_POOL_N) nb = BUFF_POOL_N;
+    r.buffs = BUFF_POOL; r.nbuff = (tier_ == 0) ? nb : 0;   // alliance members have no buffs (game doesn't send them)
 }
 
 static const float BOOST = 1.25f;   // party-wide size boost over the global UI scale (internal)
@@ -345,9 +378,10 @@ void Party::ensure(u32 dev) {
     if (!valid_ptr(dev)) return;
     if (!dot_tex_) dot_tex_ = make_dot(dev);
     if (!icon_tex_ && !icon_tried_) { icon_tex_ = load_raw_texture(dev, ICON_PATH, 128, 128); icon_tried_ = true; }
+    if (!buff_tex_ && !buff_tried_) { buff_tex_ = load_raw_texture(dev, BUFF_ATLAS_PATH, BATLAS_W, BATLAS_H); buff_tried_ = true; }
 }
-void Party::on_device_lost() { dot_tex_ = 0; icon_tex_ = 0; icon_tried_ = false; }   // forget (dead device), reload next ensure
-void Party::dispose() { release_texture(dot_tex_); dot_tex_ = 0; release_texture(icon_tex_); icon_tex_ = 0; icon_tried_ = false; }
+void Party::on_device_lost() { dot_tex_ = 0; icon_tex_ = 0; icon_tried_ = false; buff_tex_ = 0; buff_tried_ = false; }   // forget (dead device), reload next ensure
+void Party::dispose() { release_texture(dot_tex_); dot_tex_ = 0; release_texture(icon_tex_); icon_tex_ = 0; icon_tried_ = false; release_texture(buff_tex_); buff_tex_ = 0; buff_tried_ = false; }
 
 // find the persisted animation slot for a member (or claim a free/stale one).
 Party::RowAnim* Party::anim_for(unsigned id) {
@@ -499,13 +533,57 @@ void Party::draw(const Frame& f) {
         const RowAnim* a = ra[i];
         const float hpp = a ? a->hpp : (float)r.hpp, mpp = a ? a->mpp : (float)r.mpp, tpp = a ? a->tpp : 0.0f;
         const float wsReady = (r.tp >= 1000) ? 1.0f : 0.0f;   // TP >= 1000 -> pulse (WS ready)
+        const float hpDanger = (r.hpp > 0 && r.hpp <= 25) ? 1.0f : 0.0f;   // HP <= 25% (alive) -> red danger blink
         const u32   gcol[3] = { hp_color(hpp), C_MP, tp_color(r.tp) };
         const float gpct[3] = { hpp, mpp, tpp };
         const float gpls[3] = { 0.0f, 0.0f, wsReady };
+        const float gdng[3] = { hpDanger, 0.0f, 0.0f };
         for (int gi = 0; gi < 3; ++gi) {                 // bars are NOT affected by the selection zoom (geometry or brightness)
             const float gx = gx0 + gi * (gw + ggap);
-            draw_gauge(dev, gx, gy, gw, gh, gpct[gi], gcol[gi], t, gpls[gi]);
+            draw_gauge(dev, gx, gy, gw, gh, gpct[gi], gcol[gi], t, gpls[gi], gdng[gi]);
         }
+    }
+
+    // ---------- buffs : status icons to the LEFT of each party row (main box only -- the game
+    //            never sends alliance-member buffs). Drawn right-to-left, the first icon hugging
+    //            the box edge, mirroring design/src/panels/party.css (.pm-buffs, row-reverse). ----------
+    if (buff_tex_ && tier_ == 0) {
+        dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
+        dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
+        dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+        dSetTex(dev, 0, buff_tex_);
+        dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+        dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+        dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
+        dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+        const float bs   = snap(rowh * 0.44f);              // smaller icons so TWO rows fit within one party row
+        const float bgap = snap(1.0f * S);                  // gap between columns
+        const float vgap = snap(1.0f * S);                  // gap between the two rows
+        const float bmar = snap(rowh * 1.18f);              // start the strip just LEFT of the cursor (which spans ~rowh*1.30 left of the box)
+        const float au = (float)BCELL / (float)BATLAS_W;    // one cell, in UV space
+        const float av = (float)BCELL / (float)BATLAS_H;
+        const float blockH = 2.0f * bs + vgap;              // height of the stacked 2-row buff block
+        for (int i = 0; i < n; ++i) {
+            const Row& r = rows[i];
+            if (r.offzone || !r.buffs || r.nbuff <= 0) continue;
+            const float ry   = oy + pad + i * rowpit;
+            const float yTop = snap(ry + (rowh - blockH) * 0.5f);   // 2-row block centred in the party row
+            const float yBot = yTop + bs + vgap;
+            const float xr   = px - bmar;                   // right edge of the strip (just left of the cursor)
+            for (int j = 0; j < r.nbuff; ++j) {
+                const int   col = j / 2, sub = j & 1;       // 2 icons per column (top then bottom) ; columns grow LEFT
+                const float x = snap(xr - (float)(col + 1) * bs - (float)col * bgap);
+                if (x < 1.0f) break;                        // ran off the left of the screen -> stop
+                const int id  = r.buffs[j];
+                if (id < 0 || id >= BCOLS * BATLAS_ROWS) continue;   // id outside the atlas -> skip (no garbage cell)
+                const float y = (sub == 0) ? yTop : yBot;
+                const float u0 = (float)(id % BCOLS) * au;
+                const float v0 = (float)(id / BCOLS) * av;
+                tquad(dev, x, y, bs, bs, u0, u0 + au, v0, v0 + av, 0xFFFFFFFF, 0xFFFFFFFF);
+            }
+        }
+        dSetTex(dev, 0, 0);
     }
 
     // ---------- leader / QM markers : round dots, animated pop-in/out (scale + fade) ----------

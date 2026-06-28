@@ -49,6 +49,8 @@ private:
     u32 dot_tex_ = 0;                         // shared white AA disc, tinted per marker
     u32 icon_tex_ = 0;                        // selection-cursor icon (hand pointing right), loaded from assets
     bool icon_tried_ = false;                 // attempted to load icon_tex_ (don't retry the file every frame)
+    u32 buff_tex_ = 0;                        // status-icon atlas (buffs drawn to the left of each party row)
+    bool buff_tried_ = false;                 // attempted to load buff_tex_ (don't retry the file every frame)
 
     static const int MAXM = 6;
     int count_ = 6;
@@ -56,6 +58,7 @@ private:
     int dhp_[MAXM] = { 100, 70, 18, 45, 0, 95 };            // % (0..100)  (overridable by config)
     int dmp_[MAXM] = {  42, 73,  0, 60, 0, 40 };            // %
     int dtp_[MAXM] = { 3000, 1000, 2000, 300, 0, 600 };     // 0..3000
+    int dbuff_[MAXM] = { 4, 6, 3, 8, 2, 5 };                // demo buff COUNT per member (overridable by config p%d_buffs)
 
     // --- live-tunable style : 3 independent text elements (name / bars / badge), each with
     //     its own size, outline, weight (bold) and font face. Everything else (box width,

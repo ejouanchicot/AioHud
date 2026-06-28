@@ -67,6 +67,8 @@ dump / find / pkt / menu) — kept because the live-alliance roster is still TOD
 
 ## Status / next
 - Done: party + alliance boxes (same gabarit, stacked with a themed separator),
-  liquid bars, action-menu info box with live spell/JA recast, leader/QM markers.
+  liquid bars, action-menu info box with live spell/JA recast, leader/QM markers,
+  HP≤25% red danger blink (party + alliance), and **buff icons** left of each party
+  row (self from memory, others from packet `0x076` — see docs/REFERENCE.md §9h).
 - TODO: a real live alliance roster source (the model is still capped at the main
   party of 6); per-WS TP thresholds.

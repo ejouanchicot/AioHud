@@ -114,9 +114,11 @@
 .gb-hp { --gc: #9bdc8c; }
 .gb-mp { --gc: #4f9dff; }
 .gb-tp { --gc: #e35ad6; }
-/* HP critique (< 25 %) : pulse rouge (border qui vibre + halo) */
+/* HP critique (<= 25 %) : alarme rouge -> bordure qui vibre + halo + flash rouge sur le liquide */
 .gb-hp.low { animation: gblow .9s ease-in-out infinite; }
 @keyframes gblow { 0%, 100% { border-color: rgba(252, 129, 130, .7); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .6); } 50% { border-color: rgba(252, 129, 130, 1); box-shadow: 0 0 7px rgba(252, 129, 130, .85), inset 0 1px 2px rgba(0, 0, 0, .6); } }
+.gb-hp.low > i::before { content: ''; position: absolute; inset: 0; border-radius: inherit; background: #ff1e1e; animation: gblowwash .9s ease-in-out infinite; } /* wash rouge clignotant SUR le remplissage, en phase avec le halo */
+@keyframes gblowwash { 0%, 100% { opacity: 0; } 50% { opacity: .55; } }
 /* TP >= 1000 : peut WS -> pulse magenta */
 .gb-tp.ready { --gc: #ff7ae8; animation: gbready 1.1s ease-in-out infinite; }
 @keyframes gbready { 0%, 100% { border-color: rgba(227, 90, 214, .65); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .6); } 50% { border-color: rgba(227, 90, 214, 1); box-shadow: 0 0 8px rgba(227, 90, 214, .85), inset 0 1px 2px rgba(0, 0, 0, .6); } }

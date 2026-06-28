@@ -21,6 +21,11 @@ struct PlayerInfo {
 };
 bool read_player(PlayerInfo& out);
 
+// the player's own buffs (status icons). Reversed from LuaCore get_player (FUN_10072040):
+// 32 x uint16 at player+0x1C, 0xFF = empty slot. Writes the non-empty ids (compacted, slot
+// order) to `out` and returns the count. `out` must hold at least 32 entries.
+int read_player_buffs(unsigned short* out, int maxN);
+
 // leadership = server-id match against the alliance-info struct (Ashita allianceinfo_t),
 // NOT per-member flag bits. alliance = overall alliance leader ; p1/p2/p3 = the leaders of
 // party 1 (yours) / alliance parties 2 / 3. id 0 = role absent.
