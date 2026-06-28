@@ -562,14 +562,16 @@ pointer). It follows the `<st>` cursor too, so it CANNOT tell main from sub, and
    `<stpc>` cursor: the dword that flips `0↔1` on open/cancel is the flag (`+0x78`).
 These probe commands live in `plugin/aiohud.cpp` (kept for re-locating after a client patch).
 
-> **TODO — the party-DISTRIBUTION cursor is NOT in `target_t`.** When you open
-> *Menu → Party → Distribution → Quartermaster/Lottery*, the game spawns a party-member
-> picker cursor. Probed with `//aio sub` while it was active (2026-06-28): `target_t`
-> `Targets[0]`/`Targets[1]` stayed `0x04000000` ("nothing") the whole time — so this cursor
-> is a **menu** cursor (its highlighted index lives in the menu structure, not the world
-> target). Reversing it needs **≥2 party members** so the cursor can move between them and the
-> index field can be diffed; parked until a live party is available. Goal: surface it as a
-> selection frame on the hovered member, like `<st>`.
+> **TODO — the party-DISTRIBUTION cursor (`//aio pcur` probe).** When you open
+> *Menu → Party → Distribution → Quartermaster/Lottery*, the game spawns a party-member picker.
+> Probed solo (2026-06-28), it sets **no world target at all**: `target_t` Targets[0/1] AND the
+> LuaCore target struct `*(g+0x30)+0x04` both stay `0x04000000` ("nothing"); no party server-id
+> appears anywhere. So the hovered member is a **bare INDEX** in the menu/cursor state, not an id.
+> `*(g+0x30)+0x74` only blinks `0↔1` (cursor flash). **This CANNOT be reversed solo:** the lone
+> member is index `0`, an all-zero byte indistinguishable from uninitialised memory. It needs
+> **≥2 party members** — hover index 1+ and the field holding a non-zero index lights up at once
+> (one clean cycle). Probe + dump live in `plugin/aiohud.cpp` (`g_pcur_probe`). Goal: surface it
+> as a selection frame on the hovered member, like `<st>`.
 
 ### 9f. Party cast bar — the `0x028` action packet  (WORKING, 2026-06-27)
 

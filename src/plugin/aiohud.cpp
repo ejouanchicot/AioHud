@@ -248,6 +248,14 @@ void aio_plugin_render() {}   // slot 5 : unused (we draw on slot 6, like FFXIDB
 static int g_sub_probe = 0;
 static int g_sub_tick  = 0;
 
+// RE: party-DISTRIBUTION cursor finder (quartermaster/lottery). That cursor is NOT in target_t
+// (probed: stays 0x04000000), so it's a MENU cursor. While enabled, watch the live menu struct
+// (*(FFXiMain+0x5EED6C)) and log, on each change, the menu name + any offset whose dword equals a
+// party-member id (= the highlighted member). Solo is enough: open the picker -> it lands on YOU,
+// so your id appears where it wasn't before. Toggle with //aio pcur.
+static int g_pcur_probe = 0;
+static int g_pcur_tick  = 0;
+
 void aio_plugin_render6()
 {
     g_hud.render(g_host.service_raw(2));   // host vtbl[2] = D3D8 device
@@ -269,6 +277,27 @@ void aio_plugin_render6()
                     for (int i=0;i<aio::party().count;++i){ if(aio::party().m[i].id==t0)n0=aio::party().m[i].name; if(aio::party().m[i].id==t1)n1=aio::party().m[i].name; }
                     debug::log("ST: T0=%08X'%s' T1=%08X'%s' | +50=%08X +54=%08X +58=%08X +78=%08X",
                                t0, n0, t1, n1, f50, f54, f58, f78);
+                }
+            }
+        }
+    }
+
+    if (g_pcur_probe) {                                   // FIND the party-distribution cursor in the TARGET-SYSTEM struct
+        static u32 prevkey = 0;
+        u32 lc = (u32)GetModuleHandleA("LuaCore.dll");
+        if (lc && (++g_pcur_tick % 6 == 0)) {
+            u32 g = 0; safe_read(lc + 0x1C8400, &g);                 // data root
+            u32 ts = 0; if (valid_ptr(g)) safe_read(g + 0x30, &ts);  // target-system struct (get_player reads +0x04 id, +0x74 index)
+            if (valid_ptr(ts)) {
+                u32 id04 = 0, idx74 = 0; safe_read(ts + 0x04, &id04); safe_read(ts + 0x74, &idx74);
+                u32 hitOff = 0xFFFFFFFF, hitId = 0;                  // any dword in [0,0x80) that equals a party id
+                for (int o = 0; o < 0x80 && !hitId; o += 4) { u32 v = 0; safe_read(ts + o, &v); for (int i = 0; i < aio::party().count; ++i) if (v && v == aio::party().m[i].id) { hitOff = o; hitId = v; break; } }
+                u32 key = id04 ^ (idx74 * 131u) ^ (hitOff << 3) ^ hitId;
+                if (key != prevkey) {
+                    prevkey = key;
+                    const char* who = "?"; for (int i = 0; i < aio::party().count; ++i) if (aio::party().m[i].id == hitId) who = aio::party().m[i].name;
+                    debug::log("PCUR ts=%08X +0x04(id)=%08X +0x74(idx)=%08X | party-id +0x%X=%08X '%s'", ts, id04, idx74, hitOff, hitId, who);
+                    debug::hexdump("  ts", ts, 0x80);
                 }
             }
         }
@@ -500,6 +529,17 @@ void aio_plugin_command(const char* cmd)
             g_host.console().print(">>> st-timeline ON : cure via <stpc> & confirm. Check aiohud_debug.log <<<");
         } else {
             g_host.console().print(">>> sub-probe OFF <<<");
+        }
+        return;
+    }
+    if (strstr(buf, "pcur")) {                            // toggle the party-distribution cursor probe (menu-struct watcher)
+        g_pcur_probe = !g_pcur_probe; g_pcur_tick = 0;
+        if (g_pcur_probe) {
+            debug::log("PCUR: ON. DO: Menu -> Party -> Distribution -> Quartermaster (the picker lands on YOU).");
+            debug::log("  -> watch for a 'party-id in struct: +0xNN = <your id>' line that appears when the cursor opens.");
+            g_host.console().print(">>> pcur ON : open Party>Distribution>Quartermaster, then check aiohud_debug.log <<<");
+        } else {
+            g_host.console().print(">>> pcur OFF <<<");
         }
         return;
     }
