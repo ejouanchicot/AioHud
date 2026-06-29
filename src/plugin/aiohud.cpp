@@ -448,10 +448,21 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
         debug::log("KEY sc=0x%X vk=0x%X fr=0x%X nc=%d ch=%d", dik, vk, (unsigned)(UINT_PTR)frHkl, nc, (nc != 0) ? (int)wbuf[0] : 0); } }
 
     if (!g_hud.config().wants_keys()) return 0u;            // not typing -> never block the game
+    // Insert toggles the Windower console -> NEVER swallow it, even while typing (extended DIK 0xD2, or the
+    // numpad-0 scan 0x52 when NumLock is off so it produced no character).
+    if (dik == 0xD2 || (dik == 0x52 && nc == 0)) return 0u;
     if (pressed) {                                          // feed on every press (taps once, holds auto-repeat)
         if      (dik == 0x0E) g_hud.config().feed_backspace();   // DIK_BACK
         else if (dik == 0x1C) g_hud.config().feed_enter();       // DIK_RETURN -> commit
         else if (dik == 0x01) g_hud.config().blur();             // DIK_ESCAPE -> leave the field
+        // cursor / editing keys. Windower may give us the extended DIK (0xCB ...) OR the US-positional
+        // scan that collides with the numpad (0x4B ...) -> accept the latter only when it produced NO
+        // character (numlock off = navigation ; numlock on types a digit and falls through to feed_char).
+        else if (dik == 0xCB || (dik == 0x4B && nc == 0)) g_hud.config().cursor_left();    // Left
+        else if (dik == 0xCD || (dik == 0x4D && nc == 0)) g_hud.config().cursor_right();   // Right
+        else if (dik == 0xC7 || (dik == 0x47 && nc == 0)) g_hud.config().cursor_home();    // Home
+        else if (dik == 0xCF || (dik == 0x4F && nc == 0)) g_hud.config().cursor_end();     // End
+        else if (dik == 0xD3 || (dik == 0x53 && nc == 0)) g_hud.config().feed_delete();    // Delete
         else if (nc != 0) {   // nc 1 = char ; nc -1 = dead key (^ ¨ ...) -> feed its spacing form ; nc 2 = combined
             unsigned w = (unsigned)wbuf[0];
             if (w >= 32 && w < 256 && w != 127) g_hud.config().feed_char((char)w);

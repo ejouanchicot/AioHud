@@ -779,11 +779,11 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         { char lbl[48]; if (charName) _snprintf(lbl, sizeof(lbl), "Save for %s", charName); else strcpy(lbl, "Save for character");
           if (push_btn(dev, fo, mo, click, 710, cx0, ry0, cw0, qbH, lbl, 0) && charName) {
               profile_save(charName); strncpy(activeProf_, charName, 31); activeProf_[31] = 0;
-              nameBuf_[0] = 0; nameLen_ = 0; nameFocus_ = false; profDirty_ = true; } }
+              nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; profDirty_ = true; } }
         ry0 += qbH + snap(10.0f);
         if (push_btn(dev, fo, mo, click, 711, cx0, ry0, cw0, qbH, "Save as Default", 0)) {
             profile_save("Default"); strcpy(activeProf_, "Default");
-            nameBuf_[0] = 0; nameLen_ = 0; nameFocus_ = false; profDirty_ = true; }
+            nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; profDirty_ = true; }
         ry0 += qbH + snap(18.0f);
         fo->begin(dev); fo->draw_lc(dev, cx0, ry0, "A profile snapshots every setting. Quick-save", snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         fo->draw_lc(dev, cx0, ry0 + snap(16.0f), "binds one to this character or the default.", snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
@@ -804,7 +804,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         py += snap(16.0f);
         const float fH = snap(42.0f), btnW = snap(148.0f), fGap = snap(12.0f), fW = pW - btnW - fGap;
         const bool fldHov = inrect(mo, pX, py, fW, fH);
-        if (click) nameFocus_ = fldHov;
+        if (click) { const bool was = nameFocus_; nameFocus_ = fldHov; if (fldHov && !was) nameCur_ = nameLen_; }
         const float ft = ease(700, nameFocus_ ? 1.0f : 0.0f);
         halo(dev, pX, py, fW, fH, C_ACCENT, ft * 0.6f);
         rpanel(dev, pX, py, fW, fH, snap(8.0f), 0xE6080C14, 0xE605080F, lerpc(C_CTL_BR, C_ACCENT, ft), snap(1.5f));
@@ -812,7 +812,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         fo->begin(dev);
         if (nameLen_ > 0) fo->draw_lc(dev, txX, txY, nameBuf_, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
         else              fo->draw_lc(dev, txX, txY, "Type a profile name...", snap(14.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        if (nameFocus_ && sinf(f.t * 5.0f) > 0.0f) { const float cxx = txX + (nameLen_ > 0 ? fo->measure(nameBuf_, snap(15.0f)) : 0.0f) + snap(2.0f);
+        if (nameFocus_ && sinf(f.t * 5.0f) > 0.0f) {              // blinking caret AT the cursor index
+            int cn = nameCur_ < 0 ? 0 : (nameCur_ > nameLen_ ? nameLen_ : nameCur_);
+            char pre[32]; memcpy(pre, nameBuf_, cn); pre[cn] = 0;
+            const float cxx = txX + (cn > 0 ? fo->measure(pre, snap(15.0f)) : 0.0f) + snap(1.0f);
             flat(dev, cxx, py + snap(11.0f), snap(2.0f), fH - snap(22.0f), C_ACCENTHI); }
         const bool canSave = nameLen_ > 0, exists = canSave && profile_exists(nameBuf_);
         const char* lbl = exists ? "Overwrite" : "Create";   // always non-destructive : never auto-renames the active one
@@ -820,7 +823,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         if (doSave) {
             profile_save(nameBuf_);
             strncpy(activeProf_, nameBuf_, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0;
-            nameBuf_[0] = 0; nameLen_ = 0; nameFocus_ = false;   // clear the field -> ready for the NEXT new profile
+            nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false;   // clear the field -> ready for the NEXT new profile
             profDirty_ = true;
         }
 
@@ -861,10 +864,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             if (push_btn(dev, fo, mo, click, 760 + i * 2, lX, bY, lbw, bH, "Load", 0)) {
                 profile_load(nm);
                 strncpy(activeProf_, nm, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0;
-                nameBuf_[0] = 0; nameLen_ = 0; nameFocus_ = false;   // keep the create field free for a NEW profile
+                nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false;   // keep the create field free for a NEW profile
             }
             if (push_btn(dev, fo, mo, click, 761 + i * 2, dX, bY, dbw, bH, "Delete", 1)) {
-                if (active) { activeProf_[0] = 0; nameBuf_[0] = 0; nameLen_ = 0; }
+                if (active) { activeProf_[0] = 0; nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; }
                 profile_delete(nm); profDirty_ = true;
             }
         }

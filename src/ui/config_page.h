@@ -29,13 +29,29 @@ public:
     }
 
     // ---- keyboard (fed by the plugin's slot-14 hook ; only while a text field is focused) ----
+    // A full single-line text field : insertion CURSOR (nameCur_) with left/right/home/end, insert +
+    // backspace + forward-delete AT the cursor -- the same behaviour as any OS text input.
     bool wants_keys() const { return open_ && nameFocus_; }   // -> the hook consumes keys (name field is on the Config tab)
     void feed_char(char c)  {
         if (nameLen_ >= (int)sizeof(nameBuf_) - 1) return;
         if ((unsigned char)c < 32) return;   // control chars only -- / \ : etc. are allowed (the file name %-encodes them)
-        nameBuf_[nameLen_++] = c; nameBuf_[nameLen_] = 0;
+        for (int i = nameLen_; i > nameCur_; --i) nameBuf_[i] = nameBuf_[i - 1];   // make room at the cursor
+        nameBuf_[nameCur_++] = c; nameBuf_[++nameLen_] = 0;
     }
-    void feed_backspace()   { if (nameLen_ > 0) nameBuf_[--nameLen_] = 0; }
+    void feed_backspace()   {                                  // delete the char BEFORE the cursor
+        if (nameCur_ <= 0) return;
+        for (int i = nameCur_ - 1; i < nameLen_; ++i) nameBuf_[i] = nameBuf_[i + 1];
+        --nameLen_; --nameCur_;
+    }
+    void feed_delete()      {                                  // delete the char AT the cursor (forward)
+        if (nameCur_ >= nameLen_) return;
+        for (int i = nameCur_; i < nameLen_; ++i) nameBuf_[i] = nameBuf_[i + 1];
+        --nameLen_;
+    }
+    void cursor_left()      { if (nameCur_ > 0) --nameCur_; }
+    void cursor_right()     { if (nameCur_ < nameLen_) ++nameCur_; }
+    void cursor_home()      { nameCur_ = 0; }
+    void cursor_end()       { nameCur_ = nameLen_; }
     void feed_enter()       { kbCommit_ = true; }   // consumed in draw() -> save the typed profile
     void blur()             { nameFocus_ = false; }
 
@@ -51,6 +67,7 @@ private:
     // ---- Profile tab state ----
     char  nameBuf_[32] = { 0 };   // profile name being typed
     int   nameLen_     = 0;
+    int   nameCur_     = 0;       // insertion cursor index within nameBuf_ (0 .. nameLen_)
     bool  nameFocus_   = false;   // the name field has keyboard focus (the slot-14 hook feeds it)
     bool  kbCommit_    = false;   // Enter was pressed -> save on the next draw
     bool  profDirty_   = true;    // rescan the profile folder on the next Profile-tab draw
