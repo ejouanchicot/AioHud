@@ -35,6 +35,17 @@ void save_ui_config();         // call after a change (stepper / edit-mode exit 
 void reset_ui_config();        // restore ALL defaults (theme/font/boxes) + save  (general Default)
 void reset_boxes();            // restore only box positions + sizes + save  (edit-mode Default)
 
+// ---- profiles : snapshot the WHOLE UiConfig under a name (files aiohud_profiles\<name>.txt, same
+// key=value format as the live config). Saving more modules later just means more keys in UiConfig --
+// profiles serialize all of it, no per-module work here. ----
+int         profile_count();
+const char* profile_name(int idx);                 // 0-based ; "" if out of range
+void        profile_refresh();                     // rescan the folder (Profile tab open / after save/delete)
+bool        profile_save(const char* name);        // write the CURRENT config under <name> (create or overwrite)
+bool        profile_load(const char* name);        // load <name> into the live config (+ persist as current)
+bool        profile_delete(const char* name);
+bool        profile_exists(const char* name);
+
 // selectable font faces for the Font control (index 0 = "Default" = keep the layout font).
 int         ui_font_count();
 const char* ui_font_label(int idx);   // display label

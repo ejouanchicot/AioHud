@@ -16,4 +16,5 @@
 # Bulky external reference addon (kept locally for feature comparison only)
 /research/reference/Bars/
 aio_config.txt
+aiohud_profiles/
 pol_*.png

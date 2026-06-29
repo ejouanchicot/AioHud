@@ -263,6 +263,8 @@ static int g_pcur_tick  = 0;
 // device, so it reads this to tell whether the GAME is the OS foreground window).
 static u32 g_gameHwnd = 0;
 
+static int g_key_probe = 0;   // //aio keyprobe -> log slot-14 keyboard events
+
 void aio_plugin_render6()
 {
     u32 dev = g_host.service_raw(2);   // host vtbl[2] = D3D8 device
@@ -408,6 +410,55 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 x, u32 y, u32 delta, u32 blocke
     return blocked;                       // bare hover : pass through (a move is a no-op in FFXI)
 }
 
+// slot 14 : KEYBOARD (key, down, blocked). `key` is a DirectInput scan code (DIK_*). We translate it
+// through the OS keyboard LAYOUT (ToAsciiEx) so AZERTY / accents / Shift / AltGr / every symbol come
+// out right -- NOT a hard-coded QWERTY table. While a config text field is focused we feed the char
+// and CONSUME the key (return 1) so the game never sees it ; otherwise the key passes straight through.
+unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
+    // RE'd from a live capture : a = DirectInput scan code ; b distinguishes press vs release --
+    // a PRESS carries a large value (a pointer, b > 0xFFFF), a RELEASE a small one (0 / modifier
+    // bits). (My earlier "b != 0 = pressed" was wrong : a release WITH a modifier held is small but
+    // non-zero -> it looked pressed -> keys stuck.) c is junk.
+    const int  dik     = (int)key & 0xFF;
+    const bool pressed = (b > 0xFFFF);
+    // Windower hands us a US-positional scan code (it built it from the VK via the US layout), NOT the
+    // hardware scan code -> mapping it back through the user's layout double-shifts it (AZERTY 'a' came
+    // in as US scan 0x1E, which French maps to 'q' = the QWERTY symptom). So : (1) undo with the US
+    // layout to recover the real VK, (2) translate that VK to a char with the USER's (game) layout.
+    static HKL usHkl = LoadKeyboardLayoutA("00000409", 0x80 /*KLF_NOTELLSHELL : load US, don't activate*/);
+    DWORD tid = g_gameHwnd ? GetWindowThreadProcessId((HWND)g_gameHwnd, NULL) : 0;
+    HKL   frHkl = GetKeyboardLayout(tid);                   // the user's real layout (e.g. French 040C)
+    static BYTE ks[256] = { 0 };
+    const UINT vk = MapVirtualKeyExA((UINT)dik, 1 /*MAPVK_VSC_TO_VK*/, usHkl);   // US scan -> real VK
+    if (vk) ks[vk & 0xFF] = pressed ? 0x80 : 0x00;          // keep Shift/Ctrl/Alt/AltGr current
+
+    int nc = 0; WCHAR wbuf[8] = { 0 };
+    // Pass the ORIGINAL scan code (a valid US scan) -- recomputing the user-layout scan returns 0 for
+    // many OEM/punctuation VKs, which made ToUnicode fail -> the missing , ; : ! ? . / etc.
+    if (pressed && vk) {
+        // AltGr = Ctrl+Alt. Windower may forward only Alt -> force Ctrl while Alt is held so ToUnicode
+        // emits the AltGr glyphs (@ # { [ | ...). Temporary, restored right after.
+        const BYTE savedCtrl = ks[VK_CONTROL];
+        if (ks[VK_MENU] & 0x80) ks[VK_CONTROL] = 0x80;
+        nc = ToUnicodeEx(vk, (UINT)dik, ks, wbuf, 8, 0x4, frHkl);   // 0x4 = don't mutate kernel state
+        ks[VK_CONTROL] = savedCtrl;
+    }
+    if (g_key_probe && pressed) { static int n = 0; if (n < 400) { ++n;
+        debug::log("KEY sc=0x%X vk=0x%X fr=0x%X nc=%d ch=%d", dik, vk, (unsigned)(UINT_PTR)frHkl, nc, (nc != 0) ? (int)wbuf[0] : 0); } }
+
+    if (!g_hud.config().wants_keys()) return 0u;            // not typing -> never block the game
+    if (pressed) {                                          // feed on every press (taps once, holds auto-repeat)
+        if      (dik == 0x0E) g_hud.config().feed_backspace();   // DIK_BACK
+        else if (dik == 0x1C) g_hud.config().feed_enter();       // DIK_RETURN -> commit
+        else if (dik == 0x01) g_hud.config().blur();             // DIK_ESCAPE -> leave the field
+        else if (nc != 0) {   // nc 1 = char ; nc -1 = dead key (^ ¨ ...) -> feed its spacing form ; nc 2 = combined
+            unsigned w = (unsigned)wbuf[0];
+            if (w >= 32 && w < 256 && w != 127) g_hud.config().feed_char((char)w);
+        }
+    }
+    return 1u;   // consume EVERY key while typing -> the game stays quiet
+}
+
 void aio_plugin_unload()
 {
     g_hud.dispose();
@@ -437,6 +488,40 @@ void aio_plugin_command(const char* cmd)
                            level == 2 ? "party + alliance1" : "party + 2 alliances";
         char msg[112]; sprintf(msg, ">>> demo: %s (party x%d) <<<", what, aio::party_demo_count());
         g_host.console().print(msg);
+        return;
+    }
+
+    // //aio profile save|load|delete <name> | profile list -> named snapshots of the whole config.
+    // (A clean CLI path that mirrors the Profile config page -- no keyboard focus needed.)
+    if (strstr(buf, "profile")) {
+        const char* a = strstr(buf, "profile") + 7; while (*a == ' ' || *a == '\t') ++a;
+        if (strncmp(a, "list", 4) == 0) {
+            aio::profile_refresh();
+            const int n = aio::profile_count();
+            char msg[256];
+            if (n == 0) { g_host.console().print(">>> profiles: (none) <<<"); return; }
+            int off = sprintf(msg, ">>> profiles (%d): ", n);
+            for (int k = 0; k < n && off < 230; ++k) off += sprintf(msg + off, "%s%s", k ? ", " : "", aio::profile_name(k));
+            sprintf(msg + off, " <<<"); g_host.console().print(msg);
+            return;
+        }
+        int op = 0; const char* verb = 0;
+        if      (strncmp(a, "save", 4)   == 0) { op = 1; verb = a + 4; }
+        else if (strncmp(a, "load", 4)   == 0) { op = 2; verb = a + 4; }
+        else if (strncmp(a, "delete", 6) == 0) { op = 3; verb = a + 6; }
+        else if (strncmp(a, "del", 3)    == 0) { op = 3; verb = a + 3; }
+        if (op) {
+            while (*verb == ' ' || *verb == '\t') ++verb;
+            const char* name = cmd + (verb - buf);                       // same offset in the ORIGINAL -> case preserved
+            char nm[64]; int j = 0; while (name[j] && j < 63) { nm[j] = name[j]; ++j; } nm[j] = 0;
+            while (j > 0 && (nm[j-1] == ' ' || nm[j-1] == '\t' || nm[j-1] == '\r' || nm[j-1] == '\n')) nm[--j] = 0;
+            if (j == 0) { g_host.console().print(">>> profile: a name is required <<<"); return; }
+            bool ok = (op == 1) ? aio::profile_save(nm) : (op == 2) ? aio::profile_load(nm) : aio::profile_delete(nm);
+            char msg[128]; sprintf(msg, ">>> profile %s '%s' : %s <<<", op == 1 ? "save" : op == 2 ? "load" : "delete", nm, ok ? "OK" : "FAILED");
+            g_host.console().print(msg);
+            return;
+        }
+        g_host.console().print(">>> usage: //aio profile save|load|delete <name>  |  profile list <<<");
         return;
     }
 
@@ -518,6 +603,12 @@ void aio_plugin_command(const char* cmd)
         g_mouse_probe = !g_mouse_probe;
         if (g_mouse_probe) debug::log("MOUSE-PROBE ON. Move to TOP-LEFT, then BOTTOM-RIGHT, then LEFT-CLICK & RIGHT-CLICK.");
         g_host.console().print(g_mouse_probe ? ">>> mouse-probe ON -> aiohud_debug.log <<<" : ">>> mouse-probe OFF <<<");
+        return;
+    }
+    if (strstr(buf, "keyprobe")) {                        // toggle the keyboard-slot probe (decode key/down/blocked)
+        g_key_probe = !g_key_probe;
+        if (g_key_probe) debug::log("KEY-PROBE ON. Press A, then 1, then SHIFT, then ENTER, then BACKSPACE.");
+        g_host.console().print(g_key_probe ? ">>> key-probe ON -> aiohud_debug.log <<<" : ">>> key-probe OFF <<<");
         return;
     }
 

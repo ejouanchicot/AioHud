@@ -1,15 +1,20 @@
 // ui_config.cpp -- see ui_config.h.
 #include "model/ui_config.h"
 #include <cstdio>
+#include <cstring>
+#include <windows.h>
 
 namespace aio {
 
 UiConfig& ui_config() { static UiConfig c; return c; }
 
-static const char* CONFIG_PATH = "D:\\Windower Tetsouo\\plugins\\_aiohud_re\\aio_config.txt";
+static const char* CONFIG_PATH  = "D:\\Windower Tetsouo\\plugins\\_aiohud_re\\aio_config.txt";
+static const char* PROFILE_DIR  = "D:\\Windower Tetsouo\\plugins\\_aiohud_re\\aiohud_profiles";
 
-void save_ui_config() {
-    FILE* f = fopen(CONFIG_PATH, "w"); if (!f) return;
+// ---- core (de)serialization : the live config <-> a key=value file at `path`. The named-profile
+// API and the single live-config file both go through these, so they always share one format. ----
+static void save_config_to(const char* path) {
+    FILE* f = fopen(path, "w"); if (!f) return;
     UiConfig& c = ui_config();
     fprintf(f, "skinTheme=%d\n", c.skinTheme);
     fprintf(f, "fontFace=%d\n", c.fontFace);
@@ -21,8 +26,8 @@ void save_ui_config() {
     fclose(f);
 }
 
-void load_ui_config() {
-    FILE* f = fopen(CONFIG_PATH, "r"); if (!f) return;
+static bool load_config_from(const char* path) {
+    FILE* f = fopen(path, "r"); if (!f) return false;
     UiConfig& c = ui_config();
     char line[160];
     while (fgets(line, sizeof(line), f)) {
@@ -39,6 +44,97 @@ void load_ui_config() {
         }
     }
     fclose(f);
+    return true;
+}
+
+void save_ui_config() { save_config_to(CONFIG_PATH); }
+void load_ui_config() { load_config_from(CONFIG_PATH); }
+
+// ---- profiles ----
+// The display NAME and the FILE name are decoupled : the user can type any printable character
+// (incl. / \ : etc.), and we %-encode the filename-illegal ones into the file name (reversible, no
+// collisions). So "Tetsouo/Default" lives in "Tetsouo%2FDefault.txt" and shows back as typed.
+static char g_profNames[64][48];   // DISPLAY names (decoded)
+static int  g_profCount = 0;
+
+static int hexval(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return -1;
+}
+// display name -> file base name (no extension). %-encode the chars Windows forbids in a file name.
+static void name_to_file(const char* name, char* out, int cap) {
+    int o = 0;
+    for (int i = 0; name[i] && o < cap - 4; ++i) {
+        unsigned char ch = (unsigned char)name[i];
+        bool bad = ch < 32 || ch == '<' || ch == '>' || ch == ':' || ch == '"' || ch == '/' ||
+                   ch == '\\' || ch == '|' || ch == '?' || ch == '*' || ch == '%';
+        if (bad) { o += sprintf(out + o, "%%%02X", ch); }
+        else out[o++] = (char)ch;
+    }
+    out[o] = 0;
+}
+// file base name -> display name (%XX -> byte).
+static void file_to_name(const char* file, char* out, int cap) {
+    int o = 0;
+    for (int i = 0; file[i] && o < cap - 1; ++i) {
+        if (file[i] == '%' && file[i + 1] && file[i + 2]) {
+            int hi = hexval(file[i + 1]), lo = hexval(file[i + 2]);
+            if (hi >= 0 && lo >= 0) { out[o++] = (char)(hi * 16 + lo); i += 2; continue; }
+        }
+        out[o++] = file[i];
+    }
+    out[o] = 0;
+}
+
+static void profile_path(const char* name, char* out, int cap) {
+    char fb[160]; name_to_file(name, fb, sizeof(fb));
+    _snprintf(out, cap, "%s\\%s.txt", PROFILE_DIR, fb); out[cap - 1] = 0;
+}
+void profile_refresh() {
+    g_profCount = 0;
+    char pat[300]; _snprintf(pat, sizeof(pat), "%s\\*.txt", PROFILE_DIR); pat[sizeof(pat) - 1] = 0;
+    WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        char base[160]; int n = (int)strlen(fd.cFileName);
+        if (n > 4 && _stricmp(fd.cFileName + n - 4, ".txt") == 0) n -= 4;   // strip extension
+        if (n <= 0) continue; if (n > 159) n = 159;
+        memcpy(base, fd.cFileName, n); base[n] = 0;
+        if (g_profCount < 64) { file_to_name(base, g_profNames[g_profCount], 48); ++g_profCount; }
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+}
+int         profile_count()       { return g_profCount; }
+const char* profile_name(int i)   { return (i >= 0 && i < g_profCount) ? g_profNames[i] : ""; }
+bool        profile_exists(const char* name) {
+    if (!name || !name[0]) return false;
+    char p[300]; profile_path(name, p, sizeof(p));
+    return GetFileAttributesA(p) != INVALID_FILE_ATTRIBUTES;
+}
+bool profile_save(const char* name) {
+    if (!name || !name[0]) return false;
+    CreateDirectoryA(PROFILE_DIR, NULL);
+    char p[300]; profile_path(name, p, sizeof(p));
+    save_config_to(p);
+    profile_refresh();
+    return true;
+}
+bool profile_load(const char* name) {
+    if (!name || !name[0]) return false;
+    char p[300]; profile_path(name, p, sizeof(p));
+    if (!load_config_from(p)) return false;
+    save_ui_config();   // adopt as the live config too
+    return true;
+}
+bool profile_delete(const char* name) {
+    if (!name || !name[0]) return false;
+    char p[300]; profile_path(name, p, sizeof(p));
+    bool ok = DeleteFileA(p) != 0;
+    profile_refresh();
+    return ok;
 }
 
 void reset_boxes() {   // edit-mode Default : positions + sizes only
