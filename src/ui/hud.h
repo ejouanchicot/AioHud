@@ -68,7 +68,7 @@ private:
     std::string          layout_path_;             // path of the last applied layout (for hot-reload)
     float screenW_ = 2560.0f, screenH_ = 1400.0f;  // real game resolution (read from the device each frame)
     float ui_scale_ = 1.0f;                         // real screen / authored viewport width
-    float lastPartyScale_ = 1.0f;                   // re-anchor widgets when the config "Font Size" changes
+    float lastScale_[3] = { 1.0f, 1.0f, 1.0f };     // re-anchor widgets when any box scale changes
     u32   last_dev_ = 0;
 };
 

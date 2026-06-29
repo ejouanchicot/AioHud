@@ -121,6 +121,32 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     const MouseState* mo = f.mouse;
     const bool click = mo && mo->clicked;
 
+    // --- EDIT LAYOUT mode : hide the page (the game + the real boxes show through) and draw only a
+    //     floating toolbar. The party/alliance boxes handle their own drag/resize (see party.cpp). ---
+    if (ui_config().editLayout) {
+        g_fade = 1.0f;
+        const float bw = snap(600.0f), bh = snap(46.0f), bx = snap((sw - bw) * 0.5f), by = snap(22.0f);
+        vg(dev, bx, by, bw, bh, 0xF0202B3C, 0xF0141C28);
+        outline(dev, bx, by, bw, bh, C_BORDERHI);
+        fo->begin(dev);
+        fo->draw_lc(dev, bx + snap(16.0f), by + bh * 0.5f, "EDIT LAYOUT  \xC2\xB7  drag = move,  wheel = resize", snap(14.0f), C_TEXT, C_STROKE, 1.0f);
+        const float bh2 = snap(30.0f), dby = by + (bh - bh2) * 0.5f;
+        const float db = snap(80.0f), dbx = bx + bw - db - snap(10.0f);         // Done (far right)
+        const float rb = snap(96.0f), rbx = dbx - rb - snap(8.0f);              // Default (left of Done)
+        const bool rh = inrect(mo, rbx, dby, rb, bh2);
+        vg(dev, rbx, dby, rb, bh2, rh ? 0xFFB85050 : 0xFF3A2A2E, rh ? 0xFF8A3A3A : 0xFF281D20);
+        outline(dev, rbx, dby, rb, bh2, C_BORDERHI);
+        fo->begin(dev); fo->draw_c(dev, rbx + rb * 0.5f, dby + bh2 * 0.5f, "Default", snap(13.0f), C_TEXT, C_STROKE, 1.0f);
+        if (rh && click) reset_boxes();                                        // reset positions + sizes only
+        const bool dh = inrect(mo, dbx, dby, db, bh2);
+        vg(dev, dbx, dby, db, bh2, dh ? 0xFF3A82E0 : 0xFF2A3548, dh ? 0xFF2A61B6 : 0xFF1D2738);
+        outline(dev, dbx, dby, db, bh2, C_BORDERHI);
+        fo->begin(dev); fo->draw_c(dev, dbx + db * 0.5f, dby + bh2 * 0.5f, "Done", snap(14.0f), C_TEXT, C_STROKE, 1.0f);
+        if (dh && click) { ui_config().editLayout = false; save_ui_config(); } // persist position/size on exit
+        if (mo) cursor(dev, mo->x, mo->y);
+        return;
+    }
+
     // --- frame clock -> open fade + a tiny scale-in ---
     float dt = (lastT_ < 0.0f) ? 0.016f : (f.t - lastT_);
     if (dt < 0.0f || dt > 0.25f) dt = 0.016f;
@@ -223,18 +249,46 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
 
         float ry = coY + snap(48.0f);
         // Box Theme -> window skin
-        if (int d = row_selector(dev, fo, mo, click, coX, ry, coW, "Box Theme", window_theme_name(ui_config().skinTheme)))
-            ui_config().skinTheme = wrap(ui_config().skinTheme + d, window_theme_count());
+        if (int d = row_selector(dev, fo, mo, click, coX, ry, coW, "Box Theme", window_theme_name(ui_config().skinTheme))) {
+            ui_config().skinTheme = wrap(ui_config().skinTheme + d, window_theme_count()); save_ui_config(); }
         ry += snap(52.0f);
         // Font -> party/alliance text face
-        if (int d = row_selector(dev, fo, mo, click, coX, ry, coW, "Font", ui_font_label(ui_config().fontFace)))
-            ui_config().fontFace = wrap(ui_config().fontFace + d, ui_font_count());
+        if (int d = row_selector(dev, fo, mo, click, coX, ry, coW, "Font", ui_font_label(ui_config().fontFace))) {
+            ui_config().fontFace = wrap(ui_config().fontFace + d, ui_font_count()); save_ui_config(); }
         ry += snap(52.0f);
         // Font Size -> party/alliance scale
-        char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().partyScale * 100.0f + 0.5f));
+        char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[0].scale * 100.0f + 0.5f));
         if (int d = row_selector(dev, fo, mo, click, coX, ry, coW, "Font Size", szbuf)) {
-            float v = ui_config().partyScale + (float)d * 0.05f;
-            ui_config().partyScale = v < 0.50f ? 0.50f : (v > 2.00f ? 2.00f : v);
+            float v = ui_config().box[0].scale + (float)d * 0.05f;
+            v = v < 0.50f ? 0.50f : (v > 2.00f ? 2.00f : v);
+            for (int b = 0; b < 3; ++b) ui_config().box[b].scale = v;   // scale all party/alliance boxes together
+            save_ui_config();
+        }
+        ry += snap(52.0f);
+        // Buff Size -> fraction of the player row (independent of Font Size ; 40%..100% of the row)
+        char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
+        if (int d = row_selector(dev, fo, mo, click, coX, ry, coW, "Buff Size", bzbuf)) {
+            float v = ui_config().buffScale + (float)d * 0.05f;
+            ui_config().buffScale = v < 0.40f ? 0.40f : (v > 1.00f ? 1.00f : v);
+            save_ui_config();
+        }
+        ry += snap(56.0f);
+        // Buttons : Edit Layout (enter drag/resize) + Default (reset EVERYTHING)
+        {
+            const float bh = snap(34.0f), bw = snap(150.0f), gap = snap(10.0f);
+            const float defX = coX + coW - bw, edX = defX - gap - bw;
+            fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ry + bh * 0.5f, "Layout", snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const bool eh = inrect(mo, edX, ry, bw, bh);
+            vg(dev, edX, ry, bw, bh, eh ? 0xFF3A82E0 : 0xFF2A3548, eh ? 0xFF2A61B6 : 0xFF1D2738);
+            outline(dev, edX, ry, bw, bh, C_BORDERHI);
+            fo->begin(dev); fo->draw_c(dev, edX + bw * 0.5f, ry + bh * 0.5f, "Edit Layout", snap(13.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            if (eh && click) ui_config().editLayout = true;
+            const bool rh = inrect(mo, defX, ry, bw, bh);
+            vg(dev, defX, ry, bw, bh, rh ? 0xFFB85050 : 0xFF3A2A2E, rh ? 0xFF8A3A3A : 0xFF281D20);
+            outline(dev, defX, ry, bw, bh, C_BORDERHI);
+            fo->begin(dev); fo->draw_c(dev, defX + bw * 0.5f, ry + bh * 0.5f, "Default (all)", snap(13.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            if (rh && click) reset_ui_config();   // theme + font + positions + sizes
         }
     } else {
         fo->begin(dev);

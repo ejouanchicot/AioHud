@@ -17,6 +17,7 @@
 #include "model/layout.h"
 #include "model/party_state.h"
 #include "model/game_mem.h"
+#include "model/ui_config.h"
 #include "model/spells_gen.h"
 #include "model/abilities_gen.h"
 #include <string.h>
@@ -228,6 +229,7 @@ void aio_plugin_init(PluginManager host)
     g_host = host;
     debug::clear();
     debug::log("AioHUD init: device = 0x%08X", host.service_raw(2));
+    aio::load_ui_config();             // restore saved theme / font / box positions + sizes
     aio::party().load();               // cached roster (instant even before the game is ready)
     aio::party().load_from_memory();   // LIVE roster+vitals from FFXI memory -> correct party at load
     debug::log("party at load: %d member(s)", aio::party().count);
@@ -366,17 +368,19 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 x, u32 y, u32 delta, u32 blocke
         static int cnt = 0;
         if (cnt < 500) { ++cnt; debug::log("MOUSE et=%u x=%d y=%d d=%d blocked=%u", eventtype, (int)x, (int)y, (int)delta, blocked); }
     }
-    // Block until the button is RELEASED. If a DOWN is swallowed while the overlay is up, keep
-    // swallowing (move + the matching UP) even after it closes -- otherwise the game gets a lone UP
-    // (or a dangling DOWN) from the closing click and the character sticks in move/look.
     static bool held = false;                  // a press began while we were blocking
-    const bool open = g_hud.config().is_open();
-    if (open || held) {
-        if (eventtype == 1) held = true;       // Ldown swallowed -> latch
-        else if (eventtype == 2) held = false; // Lup -> release the latch (this up is still swallowed)
-        return 1u;                             // swallow
+    const bool active = g_hud.config().is_open() || aio::ui_config().editLayout;
+    if (active || held) {
+        // Wheel : in edit mode it resizes the hovered box ; consume it. (delta != 0 => a scroll event.)
+        if (aio::ui_config().editLayout && (int)delta != 0) { aio::ui_config().wheel += ((int)delta > 0) ? 1 : -1; return 1u; }
+        // Block only CLICKS (with a block-until-release latch). Plain MOVES pass through -> avoids the
+        // high-frequency move-event flood that tanked the framerate, and a bare move is a no-op in FFXI.
+        if (eventtype == 1) { held = true;  return 1u; }   // Ldown : swallow + latch
+        if (eventtype == 2) { held = false; return 1u; }   // Lup   : swallow + release latch
+        if (held)             return 1u;                   // mid-press : keep swallowing (move + the up)
+        return blocked;                                    // moves / hover : let them through
     }
-    return blocked;                            // otherwise pass the chain's current state through
+    return blocked;
 }
 
 void aio_plugin_unload()
@@ -463,6 +467,14 @@ void aio_plugin_command(const char* cmd)
         if (*cp >= '1' && *cp <= '3') { g_hud.config().set_tab(atoi(cp) - 1); g_hud.config().set_open(true); }
         else                          g_hud.config().toggle();
         g_host.console().print(g_hud.config().is_open() ? ">>> config OPEN <<<" : ">>> config closed <<<");
+        return;
+    }
+    if (strstr(buf, "edit")) {                            // toggle layout edit mode (drag/resize boxes on the live game)
+        bool e = !aio::ui_config().editLayout;
+        aio::ui_config().editLayout = e;
+        g_hud.config().set_open(e);                       // keep config "open" so the mouse is captured + toolbar shows
+        if (!e) aio::save_ui_config();                    // persist positions/sizes when leaving edit mode
+        g_host.console().print(e ? ">>> edit layout ON (drag boxes ; //aio edit to exit) <<<" : ">>> edit layout OFF <<<");
         return;
     }
     if (strstr(buf, "mouse")) {                           // toggle the mouse-slot probe (decode a/b/c)

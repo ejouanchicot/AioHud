@@ -15,3 +15,5 @@
 
 # Bulky external reference addon (kept locally for feature comparison only)
 /research/reference/Bars/
+aio_config.txt
+pol_*.png

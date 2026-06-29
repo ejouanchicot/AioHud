@@ -32,6 +32,7 @@ struct Frame {
     const GameState* game = nullptr;   // per-frame snapshot of live game data (poll_game_state) -> read, never poll memory in draw()
     const WindowSkin* skin = nullptr;  // FFXI 9-slice window skin (shared) -> draw_window() for native box chrome
     const MouseState* mouse = nullptr; // cursor + left-click for this frame (Win32-polled)
+    float screenW = 0.0f, screenH = 0.0f;   // real screen size (for fraction<->px in edit mode)
 };
 
 class Widget {

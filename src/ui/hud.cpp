@@ -145,9 +145,10 @@ void Hud::render(u32 dev) {
     fonts_.get(0, 0);          // register the default slot so ensure_all builds it this frame
     fonts_.ensure_all(dev);
     if (ui_config().skinTheme != skinIdx_) set_skin(ui_config().skinTheme);   // config page changed the theme
-    if (ui_config().partyScale != lastPartyScale_) {                          // config "Font Size" changed
-        lastPartyScale_ = ui_config().partyScale;
-        place_widgets();   // re-measure + re-anchor so boxes grow/shrink IN PLACE (anchor stays put)
+    {   // re-measure + re-anchor when any box scale changed (boxes grow/shrink IN PLACE)
+        bool changed = false;
+        for (int b = 0; b < 3; ++b) if (ui_config().box[b].scale != lastScale_[b]) { lastScale_[b] = ui_config().box[b].scale; changed = true; }
+        if (changed) place_widgets();
     }
     if (!skin_.ready()) skin_.load(dev, window_theme_name(skinIdx_));   // FFXI window skin (lazy ; rebuilds after a device loss / theme change)
 
@@ -172,6 +173,7 @@ void Hud::render(u32 dev) {
     f.skin  = &skin_;             // the shared FFXI window skin (9-slice chrome)
     poll_mouse(mouse_, screenW_, screenH_);   // cursor + click for this frame
     f.mouse = &mouse_;
+    f.screenW = screenW_; f.screenH = screenH_;
 
     // ONE state block around ALL our drawing: save the game's render state, set ours,
     // restore afterwards (else we corrupt the game's own rendering). Retained widgets

@@ -222,6 +222,12 @@ static PartyStyle g_mainStyle = { 0,0,false,"", 0,0,false,"", 0,0,false,"", fals
 static float g_partyTopY = 0.0f;
 static bool  g_partyTopReady = false;
 
+// edit-mode drag state (shared across the 3 box widgets so only ONE is grabbed at a time).
+static int   g_dragTier = -1;            // tier currently being dragged (-1 = none)
+static float g_grabDX = 0.0f, g_grabDY = 0.0f;
+// last-drawn rect of each box (px), for magnetic edge snapping while dragging.
+static struct BoxRect { float x, y, w, h; bool valid; } g_boxRect[3] = {};
+
 void Party::configure(const json::Value& cfg) {
     int n = (int)cfg["count"].as_num(6);
     if (n < 1) n = 1; if (n > MAXM) n = MAXM;
@@ -285,7 +291,7 @@ static void fill_self(Row& r, const PlayerInfo& me) {
 int Party::build_rows(void* outRows, const GameState& gs) const {
     Row* rows = (Row*)outRows;
     int n = 0;
-    const int demo = party_demo_level();
+    const int demo = ui_config().editLayout ? 3 : party_demo_level();   // edit mode : force the FULL demo (3 boxes, 6 each)
     // leaders / target come from the shared snapshot (0 = role/selection absent ; a real member
     // id is never 0, so comparing against a 0 field can't false-positive -> no extra "have" guard).
     auto isAlead = [&](unsigned id) { return id && id == gs.allianceLeader; };
@@ -373,9 +379,10 @@ void Party::demo_row(int i, void* out) const {
     r.offzone = false; r.zone = 0; r.id = (unsigned)(tier_ * 10 + i + 1); r.sel = false; r.subsel = false; r.castPct = 0.0f; r.castAlpha = 0.0f;
     r.dist = (float)i * 6.7f; r.outRange = (r.dist > kCastRange);   // demo : spread distances, last rows out of range
     const Member& dm = DEMO[tier_ * 6 + i];
-    int hp = dhp_[i]; if (hp < 0) hp = 0; if (hp > 100) hp = 100;
-    int mp = dmp_[i]; if (mp < 0) mp = 0; if (mp > 100) mp = 100;
-    int tp = dtp_[i]; if (tp < 0) tp = 0; if (tp > 3000) tp = 3000;
+    const bool edit = ui_config().editLayout;             // edit mode : everything full to show the MAX footprint
+    int hp = edit ? 100 : dhp_[i]; if (hp < 0) hp = 0; if (hp > 100) hp = 100;
+    int mp = edit ? 100 : dmp_[i]; if (mp < 0) mp = 0; if (mp > 100) mp = 100;
+    int tp = edit ? 3000 : dtp_[i]; if (tp < 0) tp = 0; if (tp > 3000) tp = 3000;
     r.name = dm.name; r.job = dm.job; r.sub = dm.sub; r.role = dm.role;
     r.hpp = hp; r.mpp = mp; r.tp = tp; r.hpVal = (dm.maxHp * hp + 50) / 100; r.mpVal = (dm.maxMp * mp + 50) / 100;
     // leader markers (demo) : one PARTY lead per box (row 0), one ALLIANCE lead total (the main
@@ -385,7 +392,7 @@ void Party::demo_row(int i, void* out) const {
     r.qm    = (tier_ == 0 && i == 1);
     r.cast = dm.cast; r.castAlpha = dm.cast ? 1.0f : 0.0f;
     r.sel = (tier_ == 0 && i == 0);                // only the main box shows the self cursor
-    int nb = dbuff_[i]; if (nb < 0) nb = 0; if (nb > BUFF_POOL_N) nb = BUFF_POOL_N;
+    int nb = edit ? BUFF_POOL_N : dbuff_[i]; if (nb < 0) nb = 0; if (nb > BUFF_POOL_N) nb = BUFF_POOL_N;   // edit : max buffs
     r.buffs = BUFF_POOL; r.nbuff = (tier_ == 0) ? nb : 0;   // alliance members have no buffs (game doesn't send them)
 }
 
@@ -401,7 +408,7 @@ float Party::box_w_base() const {
 }
 
 void Party::measure(float& w, float& h) const {
-    const float S = scale_ * BOOST * ui_config().partyScale;   // user "Font Size" scales the whole box
+    const float S = scale_ * BOOST * ui_config().box[tier_].scale;   // per-box size (config Font Size / edit-mode wheel)
     w = box_w_base() * S;
     h = (rowPit() * 6 + 2 * padB()) * S;   // always sized for a full party of 6 (fixed box, solo or not)
 }
@@ -446,7 +453,8 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
     const float au = (float)BCELL / (float)BATLAS_W;    // one cell, in UV space
     const float av = (float)BCELL / (float)BATLAS_H;
     const int   BMAX = 20;                              // cap : at most 20 icons per member
-    const float bs = snap(rowh * 0.92f);                // ONE row only, as tall as the member row allows
+    float bf = ui_config().buffScale; if (bf < 0.40f) bf = 0.40f; if (bf > 1.0f) bf = 1.0f;   // fraction of the row (capped at the row height)
+    const float bs = snap(rowh * bf);                   // size FOLLOWS the box (rowh scales) ; capped at one row, centred below
     for (int i = 0; i < n; ++i) {
         const Row& r = rows[i];
         if (r.offzone || !r.buffs || r.nbuff <= 0) continue;
@@ -478,29 +486,115 @@ void Party::draw(const Frame& f) {
     const int n = build_rows(rows, f.game ? *f.game : NOGAME);
     if (n <= 0) return;                           // nothing to show (e.g. an alliance box outside demo)
 
-    const float S = scale_ * BOOST * ui_config().partyScale;   // user "Font Size" scales the whole box
+    const float S = scale_ * BOOST * ui_config().box[tier_].scale;   // per-box size (config Font Size / edit-mode wheel)
     // Snap ALL box geometry to whole pixels so EVERY row sits at an identical pixel phase ->
     // the 1px borders (badge / selection frame) are crisp on every row, never blurred or
     // "truncated" on some rows (which happens with a fractional row pitch).
-    const float px = snap(px_);
+    float px = snap(px_);
     float oy = snap(py_);
-    const float pad = snap(padB() * S), rowh = snap(rowH() * S), rowpit = snap(rowPit() * S);
+    const float pad = snap(padB() * S), rowh = snap(rowH() * S);
+    float rowpit = snap(rowPit() * S);   // may be widened below to evenly distribute members across the box
     const float gw = snap(gaugeW() * S), gh = snap(gaugeH() * S), ggap = snap(gaugeGap() * S);
     const float bw = snap(badgeW() * S), bh = snap(badgeH() * S), mw = snap(marksW() * S);
     const float inset = snap(4 * S), gap5 = snap(5 * S);
     const float w   = snap(box_w_base() * S);
-    const float H   = rowpit * 6 + 2 * pad;   // box ALWAYS full 6-row height (fixed), even solo
+    float H   = rowpit * 6 + 2 * pad;   // alliances : always full 6-row height. Party : adapted below.
     // Vertical stacking : the main party box publishes its top Y ; alliance boxes ignore their
     // authored Y and stack UPWARD from just above the floating cost/next action box. The two
     // alliances stack FLUSH (border against border, no gap) -> sepH = 0.
+    // A user position override (set in edit mode) WINS over the default placement / stacking.
+    const bool posSet = ui_config().box[tier_].posSet && f.screenW > 0.0f;
+    if (posSet) { px = snap(ui_config().box[tier_].x * f.screenW); oy = snap(ui_config().box[tier_].y * f.screenH); }
+
     const float sepH = 0.0f;                               // no separator between the two alliance boxes
-    if (tier_ == 0) { g_partyTopY = oy; g_partyTopReady = true; }
-    else if (g_partyTopReady) {
+    // alliances stack on the party's DEFAULT top (py_), NOT its dragged position -> moving the party
+    // does NOT move the alliances (they stay independent ; drag them separately to reposition).
+    if (tier_ == 0) { g_partyTopY = snap(py_); g_partyTopReady = true; }
+    else if (!posSet && g_partyTopReady) {                 // alliances stack on the party ONLY when not user-placed
         const float fsC      = nameSz_ * S;
         const float costBoxH = 2.0f * fsC + 10.0f * S;     // reserve the 2-line cost/next box (its max height)
         const float allLift  = snap(24.0f * S);            // raise the alliance stack above the cost box
         oy = snap(g_partyTopY - costBoxH - (float)tier_ * H - (float)(tier_ - 1) * sepH - allLift);
     }
+
+    // PARTY (tier 0) adapts its height to the live member count, BOTTOM-anchored : the box shrinks
+    // from the TOP (members fill the bottom rows ; no empty space), and its bottom-right corner stays
+    // exactly where it was placed/dragged. (Alliances + edit mode keep the full 6-row footprint.)
+    if (tier_ == 0 && !ui_config().editLayout && n < 6) {
+        // Party adapts to the live member count : exactly n rows, BOTTOM-anchored (shrinks from the
+        // top, members at the top, no empty box below).
+        const float Hn = rowpit * (float)n + 2.0f * pad;
+        oy += (H - Hn);
+        H = Hn;
+    }
+
+    // height of the Cost/Next box that floats ABOVE the party (tier 0 only) -> used for snap + clamp.
+    const float costH = (tier_ == 0) ? snap(2.0f * nameSz_ * S + 10.0f * S) : 0.0f;
+
+    // TOP mask band : extends the box UP to also cover the game's target box. Our member block already
+    // covers the native party (our rows are bigger), so the band SHRINKS as members are added (linear,
+    // MASK_B < 0). Calibrate MASK_A (solo) + MASK_B (per member) from 2 counts. 0 in edit mode.
+    const float MASK_A = 2.0f, MASK_B = -0.24f, MASK_OFF = 2.0f;   // MASK_OFF = constant px tweak
+    float maskBand = (tier_ == 0 && !ui_config().editLayout) ? rowpit * (MASK_A + MASK_B * (float)(n - 1)) + MASK_OFF * S : 0.0f;
+    if (maskBand < 0.0f) maskBand = 0.0f;
+    maskBand = snap(maskBand);
+    // Put the mask BELOW the members : grow the box UP (top moves up = same coverage), keep the members
+    // at the TOP (no empty above), the empty/mask sits below them, bottom stays anchored.
+    if (tier_ == 0 && !ui_config().editLayout) { oy -= maskBand; H += maskBand; }
+
+    // The chrome / cost box / edit overlay use the real box rect (boxOy, boxH). For the rows, EVENLY
+    // DISTRIBUTE the members across the box : equal top/bottom margins AND equal gaps between members
+    // (widen rowpit + shift the row origin so oy+pad+i*rowpit lands them with n+1 identical spaces).
+    const float boxOy = oy, boxH = H;
+    if (tier_ == 0 && !ui_config().editLayout && n > 0) {
+        const float gap = (H - (float)n * rowh) / (float)(n + 1);
+        if (gap > 0.0f) { oy += snap(gap) - pad; rowpit = snap(rowh + gap); }
+    }
+
+    // EDIT MODE : drag this box to reposition it live on the game (stores a fraction-of-screen pos).
+    if (ui_config().editLayout && f.mouse && f.screenW > 0.0f) {
+        const MouseState* m = f.mouse;
+        const bool over = m->x >= px && m->x < px + w && m->y >= oy - costH && m->y < oy + H;   // include the cost box above
+        if (m->down && g_dragTier < 0 && over) { g_dragTier = tier_; g_grabDX = m->x - px; g_grabDY = m->y - oy; }
+        if (g_dragTier == tier_) {
+            if (m->down) {
+                float npx = m->x - g_grabDX, npy = m->y - g_grabDY;    // raw box top-left (px)
+                // The party CLUSTER's top is the Cost/Next box top (above the party) -> snap on the
+                // EFFECTIVE rect (party box + the cost box on top), not the bare party box.
+                const float topOff = (tier_ == 0) ? costH : 0.0f;
+                float ex = npx, ey = npy - topOff; const float ew = w, eh = H + topOff;
+                const float SNAP = snap(10.0f);
+                for (int b = 0; b < 3; ++b) {
+                    if (b == tier_ || !g_boxRect[b].valid) continue;
+                    const BoxRect& r = g_boxRect[b];
+                    if      (fabsf(ex - r.x) < SNAP)              ex = r.x;              // left  -> left
+                    else if (fabsf(ex - (r.x + r.w)) < SNAP)     ex = r.x + r.w;        // left  -> right
+                    else if (fabsf((ex + ew) - (r.x + r.w)) < SNAP) ex = r.x + r.w - ew;// right -> right
+                    else if (fabsf((ex + ew) - r.x) < SNAP)      ex = r.x - ew;         // right -> left
+                    if      (fabsf(ey - r.y) < SNAP)              ey = r.y;              // top    -> top
+                    else if (fabsf(ey - (r.y + r.h)) < SNAP)     ey = r.y + r.h;        // top    -> bottom
+                    else if (fabsf((ey + eh) - (r.y + r.h)) < SNAP) ey = r.y + r.h - eh;// bottom -> bottom
+                    else if (fabsf((ey + eh) - r.y) < SNAP)      ey = r.y - eh;         // bottom -> top
+                }
+                // keep the WHOLE box (effective rect) on screen
+                if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
+                if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
+                npx = ex; npy = ey + topOff;                           // back to the party box top-left
+                float nx = npx / f.screenW, ny = npy / f.screenH;
+                ui_config().box[tier_].posSet = true; ui_config().box[tier_].x = nx; ui_config().box[tier_].y = ny;
+                px = snap(nx * f.screenW); oy = snap(ny * f.screenH);   // immediate feedback this frame
+            } else g_dragTier = -1;                                     // released
+        }
+        // wheel over this box -> resize it (0.5x .. 2.0x)
+        if (over && ui_config().wheel != 0) {
+            float s = ui_config().box[tier_].scale + (float)ui_config().wheel * 0.05f;
+            ui_config().box[tier_].scale = s < 0.5f ? 0.5f : (s > 2.0f ? 2.0f : s);
+            ui_config().wheel = 0;
+        }
+    }
+    // store the CLUSTER rect (party box + the cost box above it for tier 0) so other boxes snap to
+    // its real top, and the party itself snaps using the cost-box top.
+    g_boxRect[tier_].x = px; g_boxRect[tier_].y = oy - costH; g_boxRect[tier_].w = w; g_boxRect[tier_].h = H + costH; g_boxRect[tier_].valid = true;
     const float cx  = px + pad + inset;
     const float gx0 = px + w - pad - inset - (3 * gw + 2 * ggap);
     // row-invariant column positions (only the row's Y varies) :
@@ -571,16 +665,15 @@ void Party::draw(const Frame& f) {
     // ---------- graphics : box chrome ----------
     setup_color_state(dev);
     if (f.skin && f.skin->ready()) {                            // FFXI native window skin (9-slice)
-        draw_window(dev, *f.skin, px, oy, w, H, 0xFFFFFFFF, S);
+        draw_window(dev, *f.skin, px, boxOy, w, boxH, 0xFFFFFFFF, S);
     } else {                                                    // fallback : the built-in navy chrome
-        grad_quad(dev, px - 1, oy - 1, w + 2, H + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow edge
-        vgrad(dev, px, oy, w, H, 0xFF232E54, 0xFF080B1A);            // deeper opaque main fill
-        vgrad(dev, px, oy, w, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);        // top sheen
-        vgrad(dev, px, oy + H - 4 * S, w, 4 * S, 0x00000000, 0x40000000);   // bottom vignette
+        grad_quad(dev, px - 1, boxOy - 1, w + 2, boxH + 2, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF, 0x6699BBFF);  // outer glow edge
+        vgrad(dev, px, boxOy, w, boxH, 0xFF232E54, 0xFF080B1A);     // deeper opaque main fill
+        vgrad(dev, px, boxOy, w, 3 * S, 0x4DBFD8FF, 0x00BFD8FF);    // top sheen
+        vgrad(dev, px, boxOy + boxH - 4 * S, w, 4 * S, 0x00000000, 0x40000000);   // bottom vignette
     }
 
     // (the wide divider band between the two alliance boxes was removed -- they now stack flush.)
-
 
     // ---------- per-row : zebra background + badge + animated gauges ----------
     for (int i = 0; i < n; ++i) {
@@ -820,7 +913,24 @@ void Party::draw(const Frame& f) {
     }
 
     // ---------- floating spell / JA / WS info box (main box only -- alliances would stack it) ----------
-    if (tier_ == 0) draw_action_box(f, S, px, w, oy, fName, nSTK, nOWf);
+    if (tier_ == 0) draw_action_box(f, S, px, w, boxOy, fName, nSTK, nOWf);
+
+    // ---------- EDIT MODE : draggable outline around this box (brighter when hovered / grabbed) ----------
+    if (ui_config().editLayout) {
+        setup_color_state(dev);
+        const float oy2 = oy - costH, H2 = H + costH;            // cluster rect (party + cost box above)
+        const bool drag  = (g_dragTier == tier_);
+        const bool hover = f.mouse && f.mouse->x >= px && f.mouse->x < px + w && f.mouse->y >= oy2 && f.mouse->y < oy2 + H2;
+        const u32  c = drag ? 0xFFFFD24A : (hover ? 0xFF7EC0FF : 0xAAFFFFFF);   // gold grabbed / blue hover / white idle
+        const float t = snap(2.0f);
+        grad_quad(dev, px,        oy2,         w, t, c, c, c, c);   // top
+        grad_quad(dev, px,        oy2 + H2 - t, w, t, c, c, c, c);  // bottom
+        grad_quad(dev, px,        oy2,         t, H2, c, c, c, c);  // left
+        grad_quad(dev, px + w - t, oy2,        t, H2, c, c, c, c);  // right
+        // a label so it's clear which box is which
+        const char* lbl = tier_ == 0 ? "PARTY" : tier_ == 1 ? "ALLIANCE 1" : "ALLIANCE 2";
+        if (fBar->ready()) { fBar->begin(dev); fBar->draw_lc(dev, px + snap(6.0f), oy2 + snap(9.0f), lbl, snap(11.0f) * S, c, 0xFF000000, 1.2f); }
+    }
 }
 
 // the floating Magic / Job-Ability / Weapon-Skill info box : RIGHT-aligned ABOVE the party,
@@ -846,6 +956,10 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
             infoCol = rs ? 0xFFFFB454 : 0xFF8FA0B8; } }                                                      // amber while on recast, dim grey-blue when ready
         else if (menuType_ == 3) { const WSRow* ws = ws_info(menuSpell_); if (ws) { nm = ws->en;             // Weapon Skill : show live TP
             if (f.game) { int tp = f.game->me.tp; sprintf(infobuf, "TP %d", tp); info = infobuf; infoCol = (tp >= 1000) ? 0xFF7CFF8A : 0xFFB0B0B0; } } }  // green when usable (>=1000)
+    }
+    if (ui_config().editLayout) {   // edit mode : always show a demo Cost/Next box so its footprint is visible
+        nm = "Protect V"; sprintf(infobuf, "Cost 24 MP"); info = infobuf; infoCol = 0xFFFFFFFF;
+        sprintf(info2buf, "Next 0:00"); info2 = info2buf; info2Col = 0xFF8FA0B8;
     }
     if (nm && fName->ready()) {
         const float fs = nameSz_ * S;
