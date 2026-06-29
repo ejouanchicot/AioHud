@@ -56,6 +56,7 @@ void ConfigPage::set_section(int s) { if (s >= 0) section_ = s; }   // (sections
 // ---- a global fade factor (open animation), applied to every quad + text colour ----
 static float g_fade = 1.0f;
 static float g_dt   = 0.016f;   // current frame delta (seconds) -- drives ease()
+static float g_t    = 0.0f;     // current (wrapping) seconds -- drives the hover shine sweep
 static inline u32 fa(u32 c) {
     u32 a = (u32)(((c >> 24) & 0xFF) * g_fade + 0.5f);
     return (c & 0x00FFFFFF) | (a << 24);
@@ -97,6 +98,19 @@ static void cs(u32 dev) {
     dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
     dSetTSS(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE);
 }
+// ADDITIVE colour state (SRCALPHA, ONE) -> light ACCUMULATES instead of replacing : real luminous
+// glow / bloom / shine, the way a neon HUD reads. Any following q4/flat/vg calls cs() -> resets to
+// normal alpha, so additive only affects the glow draws issued right after this.
+static void cs_add(u32 dev) {
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE);
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
+    dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+    dSetTex(dev, 0, 0);
+    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    dSetTSS(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+}
 static void q4(u32 dev, float x, float y, float w, float h, u32 tl, u32 tr, u32 bl, u32 br) {
     cs(dev); grad_quad(dev, x, y, w, h, fa(tl), fa(tr), fa(bl), fa(br));
 }
@@ -109,15 +123,37 @@ static void outline(u32 dev, float x, float y, float w, float h, u32 c) {
 static void shadow_down(u32 dev, float x, float y, float w, float h, u32 top) {
     q4(dev, x, y, w, h, top, top, top & 0x00FFFFFF, top & 0x00FFFFFF);
 }
-// soft accent halo BEHIND an element (draw before the element) -> a feathered glow that eases in.
-// Uses soft_blob (radial feather) instead of a hard rectangle -> a real glow, not a flat card.
+// luminous accent glow BEHIND an element (draw before it). ADDITIVE 3-layer bloom : a wide soft base,
+// a mid ring and a tight bright core -> the light builds up and reads as real neon glow, not a flat card.
 static void halo(u32 dev, float x, float y, float w, float h, u32 col, float t) {
     if (t <= 0.01f) return;
-    const float pad = snap(11.0f);
-    u32 a = (u32)(96.0f * clampf(t, 0.0f, 1.0f) * g_fade + 0.5f);
-    u32 c = (col & 0x00FFFFFF) | (a << 24);
-    cs(dev);
-    soft_blob(dev, x + w * 0.5f, y + h * 0.5f, w * 0.5f + pad, h * 0.5f + pad, c);
+    t = clampf(t, 0.0f, 1.0f) * g_fade;
+    const u32 rgb = col & 0x00FFFFFF;
+    const float cx = x + w * 0.5f, cy = y + h * 0.5f, hw = w * 0.5f, hh = h * 0.5f;
+    cs_add(dev);
+    soft_blob(dev, cx, cy, hw + snap(22.0f), hh + snap(22.0f), rgb | ((u32)(38.0f * t) << 24));   // wide soft base
+    soft_blob(dev, cx, cy, hw + snap(12.0f), hh + snap(12.0f), rgb | ((u32)(58.0f * t) << 24));   // mid bloom
+    soft_blob(dev, cx, cy, hw + snap(5.0f),  hh + snap(5.0f),  rgb | ((u32)(72.0f * t) << 24));   // bright core
+}
+// a moving glass "shine" streak that sweeps across an element while hovered (additive, clipped to the
+// rect by clamping the band). amt = hover strength (0..1) ; tsec = wrapping seconds for the motion.
+static void shine(u32 dev, float x, float y, float w, float h, float amt, float tsec) {
+    if (amt <= 0.01f || w <= 1.0f) return;
+    float ph = tsec * 0.55f; ph -= floorf(ph);                 // 0..1 loop (~1.8s)
+    const float mid = x - w * 0.35f + (w * 1.7f) * ph;         // streak centre travels left->right
+    const float sw = w * 0.16f;
+    float x0 = mid - sw, x1 = mid + sw;
+    if (x0 < x) x0 = x; if (x1 > x + w) x1 = x + w;
+    if (x1 - x0 <= 1.0f) return;
+    const u32 a = (u32)(46.0f * clampf(amt, 0.0f, 1.0f) * g_fade);
+    const u32 cMid = (a << 24) | 0x00FFFFFF, cEdge = 0x00FFFFFF;
+    cs_add(dev);
+    if (mid > x0 && mid < x1) {
+        grad_quad(dev, x0, y, mid - x0, h, cEdge, cMid, cEdge, cMid);
+        grad_quad(dev, mid, y, x1 - mid, h, cMid, cEdge, cMid, cEdge);
+    } else {
+        grad_quad(dev, x0, y, x1 - x0, h, cMid, cMid, cMid, cMid);
+    }
 }
 static inline bool inrect(const MouseState* m, float x, float y, float w, float h) {
     return m && m->x >= x && m->x < x + w && m->y >= y && m->y < y + h;
@@ -349,6 +385,7 @@ static bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int ui
     halo(dev, bx, by, bw, bh, tone ? 0xFFE06868 : C_ACCENT, t * 0.8f);
     rpanel(dev, bx, by, bw, bh, r, lerpc(idleT, hovT, t), lerpc(idleB, hovB, t), lerpc(C_BORDERHI, tone ? 0xFFE57078 : C_ACCENTHI, t), snap(1.5f));
     rrect_top(dev, bx + snap(2.0f), by + snap(2.0f), bw - snap(4.0f), bh * 0.42f, snap(r * 0.6f), 0x33FFFFFF, 0x05FFFFFF);   // top sheen
+    shine(dev, bx + snap(2.0f), by + snap(2.0f), bw - snap(4.0f), bh - snap(4.0f), t, g_t);   // glass sweep on hover
     fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, y + h * 0.5f, label, snap(13.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
     return hov && click;
 }
@@ -428,6 +465,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     if (dt < 0.0f || dt > 0.25f) dt = 0.016f;
     lastT_ = f.t;
     g_dt = dt;
+    g_t  = f.t;
 
     // --- EDIT LAYOUT mode : hide the page (the game + the real boxes show through) and draw only a
     //     floating toolbar. The party/alliance boxes handle their own drag/resize (see party.cpp). ---
@@ -474,15 +512,15 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     flat(dev, 0, 0, sw, sh, C_DIMBG);                                  // darken the game behind us
     vg(dev, 0, 0, sw, sh, 0xF01B2740, 0xF0080B14);                     // deep slate-blue -> near-black
     vg(dev, 0, 0, sw, snap(180.0f), 0x2A2E6AB0, 0x002E6AB0);           // soft blue glow falling from the top
-    // two large magical glows drifting slowly across the page (gold + indigo) -> living background
-    cs(dev);
+    // two large magical glows drifting slowly across the page (gold + indigo) -> living, LUMINOUS background (additive)
+    cs_add(dev);
     {
         const float gx1 = sw * (0.28f + 0.17f * sinf(f.t * 0.17f));
         const float gx2 = sw * (0.74f + 0.15f * sinf(f.t * 0.12f + 2.1f));
-        const u32 ag = (u32)((10.0f + 6.0f * pulse)) << 24;
+        const u32 ag = (u32)((9.0f + 5.0f * pulse)) << 24;
         soft_blob(dev, gx1, sh * 0.04f, sw * 0.36f, sh * 0.34f, ag | 0x00FFDC78);   // gold
-        soft_blob(dev, gx2, sh * 0.10f, sw * 0.34f, sh * 0.30f, 0x122E6AB0);        // indigo
-        soft_blob(dev, sw * 0.5f, sh * 1.02f, sw * 0.6f, sh * 0.28f, 0x14101A38);   // bottom lift
+        soft_blob(dev, gx2, sh * 0.10f, sw * 0.34f, sh * 0.30f, 0x0E2E6AB0);        // indigo
+        soft_blob(dev, sw * 0.5f, sh * 1.02f, sw * 0.6f, sh * 0.28f, 0x10244B8C);   // bottom lift
     }
     vg(dev, 0, sh - snap(120.0f), sw, snap(120.0f), 0x00000000, 0x55000000);   // bottom vignette
     flat(dev, 0, 0, sw, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse));           // top GOLD hairline (FFXI glint)
@@ -497,7 +535,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // ===== HEADER (title + close), directly on the skin =====
     const float titleSz = snap(28.0f);
     const float tw = fo->measure("AIOHUD", titleSz);
-    cs(dev); soft_blob(dev, ix + tw * 0.5f, iy + snap(20.0f), tw * 0.62f, snap(32.0f),   // soft gold aura behind the wordmark
+    cs_add(dev); soft_blob(dev, ix + tw * 0.5f, iy + snap(20.0f), tw * 0.62f, snap(32.0f),   // luminous gold aura behind the wordmark (additive)
                        ((u32)(48.0f * (0.6f + 0.4f * pulse)) << 24) | 0x00FFDC78);
     fo->begin(dev);
     fo->draw_lc(dev, ix, iy + snap(22.0f), "AIOHUD", titleSz, fa(C_GOLD), fa(C_STROKE), 2.4f);   // gold wordmark
@@ -551,7 +589,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // ===== CONTENT BODY (the tab content surface) =====
     const float bodyH = pageBot - bodyY;
     shadow_down(dev, ix, bodyY, iw, snap(10.0f), (u32)(0x44000000));            // inner top shadow for depth
-    vg(dev, ix, bodyY, iw, bodyH, C_CONTENT_T, C_CONTENT_B);
+    vg(dev, ix, bodyY, iw, bodyH, C_CONTENT_T, C_CONTENT_B);                    // base gradient
+    cs_add(dev); soft_blob(dev, ix + iw * 0.5f, bodyY + snap(4.0f), iw * 0.48f, bodyH * 0.40f, 0x0C2A4E84);   // cool light from the top (additive) -> depth
+    vg(dev, ix, bodyY + bodyH - snap(150.0f), iw, snap(150.0f), 0x00000000, 0x3A000000);   // bottom inner vignette
+    flat(dev, ix + 1, bodyY + 1, iw - 2, 1, 0x16FFFFFF);                        // crisp top inner highlight
     outline(dev, ix, bodyY, iw, bodyH, C_BORDERHI);
 
     if (tab_ == 0) {
@@ -561,6 +602,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // ===== LEFT : MODULES (one settings page per module ; scales to many) =====
         const float sbW = snap(220.0f);
         vg(dev, ix, bodyY, sbW, bodyH, C_SIDEBAR, 0xF0121A27);
+        cs_add(dev); soft_blob(dev, ix + sbW * 0.5f, bodyY + snap(2.0f), sbW * 0.62f, bodyH * 0.16f, 0x0A2A4E84);   // faint top glow
+        q4(dev, ix + sbW, bodyY, snap(22.0f), bodyH, 0x30000000, 0x00000000, 0x30000000, 0x00000000);              // recessed shadow on the content side
         flat(dev, ix + sbW, bodyY, 1, bodyH, C_BORDER);
         fo->begin(dev);
         fo->draw_lc(dev, ix + snap(20.0f), bodyY + snap(24.0f), "MODULES", snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
@@ -624,6 +667,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 halo(dev, bx, bY, saveW, bH, C_GOLD, 0.55f + 0.35f * pulse);
                 rpanel(dev, bx, bY, saveW, bH, sr, lerpc(0xFFF2C24E, 0xFFFFE08A, t), lerpc(0xFFCB901C, 0xFFE3A626, t), C_GOLDHI, snap(1.5f));
                 rrect_top(dev, bx + snap(2.0f), bY + snap(2.0f), saveW - snap(4.0f), bH * 0.42f, snap(sr * 0.6f), 0x44FFFFFF, 0x08FFFFFF);
+                shine(dev, bx + snap(2.0f), bY + snap(2.0f), saveW - snap(4.0f), bH - snap(4.0f), 0.85f, g_t);   // continuous sweep -> "act on me"
                 fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, "Save changes", snap(14.0f), fa(0xFF241600), 0, 0.0f);
             } else {                                      // saved / nothing to save -> quiet navy
                 if (canSave) halo(dev, bx, bY, saveW, bH, C_ACCENT, t * 0.7f);
@@ -659,7 +703,9 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             const float stageY = pvy + snap(22.0f), stageH = pageBot - stageY;
             drop_shadow(dev, pvx, stageY, previewW, stageH, snap(6.0f), 60);
             rpanel(dev, pvx, stageY, previewW, stageH, snap(12.0f), 0x40080C16, 0x40060A12, C_BORDER, snap(1.5f));
-            rrect_top(dev, pvx + snap(2.0f), stageY + snap(2.0f), previewW - snap(4.0f), snap(40.0f), snap(10.0f), 0x10FFFFFF, 0x00FFFFFF);   // faint top sheen
+            vg(dev, pvx + snap(2.0f), stageY + snap(2.0f), previewW - snap(4.0f), snap(46.0f), 0x55000000, 0x00000000);   // inner top shadow -> recessed screen
+            cs_add(dev); soft_blob(dev, pvx + previewW * 0.5f, stageY + stageH - snap(8.0f), previewW * 0.5f, stageH * 0.34f, 0x0E1E5AA0);   // soft blue backlight rising from the bottom (additive)
+            rrect_top(dev, pvx + snap(2.0f), stageY + snap(2.0f), previewW - snap(4.0f), snap(40.0f), snap(10.0f), 0x14FFFFFF, 0x00FFFFFF);   // top sheen
             pvRightX_  = pvx + previewW - snap(18.0f);
             pvBottomY_ = pageBot - snap(14.0f);
             pvOn_ = true;
@@ -751,6 +797,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // ===== LEFT RAIL : the current character + one-click saves =====
         const float sbW = snap(290.0f);
         vg(dev, ix, bodyY, sbW, bodyH, C_SIDEBAR, 0xF0121A27);
+        cs_add(dev); soft_blob(dev, ix + sbW * 0.5f, bodyY + snap(2.0f), sbW * 0.62f, bodyH * 0.16f, 0x0A2A4E84);   // faint top glow
+        q4(dev, ix + sbW, bodyY, snap(22.0f), bodyH, 0x30000000, 0x00000000, 0x30000000, 0x00000000);              // recessed shadow on the content side
         flat(dev, ix + sbW, bodyY, 1, bodyH, C_BORDER);
         const float cx0 = ix + snap(20.0f), cw0 = sbW - snap(40.0f);
         fo->begin(dev); fo->draw_lc(dev, cx0, bodyY + snap(24.0f), "CHARACTER", snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
@@ -876,6 +924,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // ===== HELP tab : a left menu of MODULES + the selected module's reference (scrollable) =====
         const float sbW = snap(220.0f);
         vg(dev, ix, bodyY, sbW, bodyH, C_SIDEBAR, 0xF0121A27);
+        cs_add(dev); soft_blob(dev, ix + sbW * 0.5f, bodyY + snap(2.0f), sbW * 0.62f, bodyH * 0.16f, 0x0A2A4E84);   // faint top glow
+        q4(dev, ix + sbW, bodyY, snap(22.0f), bodyH, 0x30000000, 0x00000000, 0x30000000, 0x00000000);              // recessed shadow on the content side
         flat(dev, ix + sbW, bodyY, 1, bodyH, C_BORDER);
         fo->begin(dev);
         fo->draw_lc(dev, ix + snap(20.0f), bodyY + snap(24.0f), "MODULES", snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
