@@ -152,33 +152,31 @@ void Hud::render(u32 dev) {
     fonts_.ensure_all(dev);
     if (ui_config().skinTheme != skinIdx_) set_skin(ui_config().skinTheme);   // config page changed the theme
     if (ui_config().box[0].scale < 1.0f) ui_config().box[0].scale = 1.0f;   // PARTY floor = 100% : below that its footprint can't cover the native party block (it may still grow)
-    {   // re-measure + re-anchor when any box scale changed (boxes grow/shrink IN PLACE).
-        // For a HAND-PLACED box, the stored position is its TOP-LEFT, so growing would push the
-        // bottom-right away. Keep the BOTTOM-RIGHT corner fixed instead (box grows UP-LEFT) by
-        // shifting the stored top-left by the size delta. measure() gives the footprint (right = x+w,
-        // bottom = y+h) -- exact for the party too (bottom-anchored : its bottom == y + measure_h).
-        bool changed = false, saved = false;
-        for (int b = 0; b < 3; ++b) {
-            const float newS = ui_config().box[b].scale, oldS = lastScale_[b];
-            if (newS == oldS) continue;
-            if (ui_config().box[b].posSet && screenW_ > 0.0f && screenH_ > 0.0f && oldS > 0.0f) {
-                for (size_t i = 0; i < widgets_.size(); ++i) {
-                    if (strcmp(widgets_[i]->type_name(), "PartyList") != 0) continue;
-                    Party* p = static_cast<Party*>(widgets_[i]);
-                    if (p->tier() != b) continue;
-                    float nw = 0.0f, nh = 0.0f; p->measure(nw, nh);       // footprint at the NEW scale
-                    const float ow = nw * oldS / newS, oh = nh * oldS / newS;   // footprint at the OLD scale
-                    ui_config().box[b].x += (ow - nw) / screenW_;         // keep bottom-right pinned -> grow up-left
-                    ui_config().box[b].y += (oh - nh) / screenH_;
-                    saved = true;
-                    break;
-                }
+    {   // Re-anchor any box whose FOOTPRINT changed -- scale, bar height/width, job-badge mode, casts on/off,
+        // anything. measure() captures every dimension setting (right = x+w, bottom = y+h ; exact for the
+        // bottom-anchored party too). A HAND-PLACED box stores its TOP-LEFT, so we shift it by the size delta
+        // to keep its BOTTOM-RIGHT corner fixed (it grows UP-LEFT). Layout-anchored boxes re-anchor via
+        // place_widgets(). A config/profile load ADOPTS the new sizes as baseline (no re-anchor).
+        const bool baseline = take_scale_baseline_reset();
+        bool saved = false, needPlace = false;
+        for (size_t i = 0; i < widgets_.size(); ++i) {
+            if (strcmp(widgets_[i]->type_name(), "PartyList") != 0) continue;
+            Party* p = static_cast<Party*>(widgets_[i]);
+            const int b = p->tier(); if (b < 0 || b > 2) continue;
+            float nw = 0.0f, nh = 0.0f; p->measure(nw, nh);
+            if (baseline || lastW_[b] < 0.0f) { lastW_[b] = nw; lastH_[b] = nh; continue; }   // adopt as baseline
+            if (nw == lastW_[b] && nh == lastH_[b]) continue;
+            if (ui_config().box[b].posSet && screenW_ > 0.0f && screenH_ > 0.0f) {
+                ui_config().box[b].x += (lastW_[b] - nw) / screenW_;   // keep bottom-right pinned
+                ui_config().box[b].y += (lastH_[b] - nh) / screenH_;
+                saved = true;
+            } else {
+                needPlace = true;                                      // layout-anchored -> re-anchor via place_widgets
             }
-            lastScale_[b] = newS;
-            changed = true;
+            lastW_[b] = nw; lastH_[b] = nh;
         }
         if (saved) save_ui_config();
-        if (changed) place_widgets();
+        if (needPlace) place_widgets();
     }
     if (!skin_.ready()) skin_.load(dev, window_theme_name(skinIdx_));   // FFXI window skin (lazy ; rebuilds after a device loss / theme change)
 
@@ -249,7 +247,9 @@ void Hud::draw_config_preview(const Frame& f) {
     UiConfig& C = ui_config();
     const int   savedLvl = party_demo_level(), savedCnt = party_demo_count();
     const bool  sp0 = C.box[0].posSet, sp1 = C.box[1].posSet, sp2 = C.box[2].posSet;
-    const float sref = C.partyRefY;
+    float sref[6]; for (int i = 0; i < 6; ++i) sref[i] = C.partyRef[i];
+    const float sbot = C.partyBottomY;
+    float sally[4]; for (int i = 0; i < 4; ++i) sally[i] = C.allyRefY[i];
     const float opx[3] = { tiers[0]->px(), tiers[1] ? tiers[1]->px() : 0.0f, tiers[2] ? tiers[2]->px() : 0.0f };
     const float opy[3] = { tiers[0]->py(), tiers[1] ? tiers[1]->py() : 0.0f, tiers[2] ? tiers[2]->py() : 0.0f };
 
@@ -258,7 +258,9 @@ void Hud::draw_config_preview(const Frame& f) {
     // use px_/py_ for ALL three (not the user's box overrides) so they SHARE the same right edge :
     // the party sits at the anchor, the alliances align to it and stack upward (cost-box space included).
     C.box[0].posSet = false; C.box[1].posSet = false; C.box[2].posSet = false;
-    C.partyRefY = -1.0f;
+    for (int i = 0; i < 6; ++i) C.partyRef[i] = -1.0f;
+    C.partyBottomY = -1.0f;
+    for (int i = 0; i < 4; ++i) C.allyRefY[i] = -1.0f;   // preview uses the stacked layout, not the markers
 
     float pw = 0.0f, ph = 0.0f; tiers[0]->measure(pw, ph);   // party box footprint (bottom-anchored, full 6 rows)
     // SNAP the box origin to whole pixels : measure() is fractional, so an un-snapped origin puts the
@@ -272,7 +274,9 @@ void Hud::draw_config_preview(const Frame& f) {
     set_demo_select(false);
 
     C.box[0].posSet = sp0; C.box[1].posSet = sp1; C.box[2].posSet = sp2;
-    C.partyRefY = sref;
+    for (int i = 0; i < 6; ++i) C.partyRef[i] = sref[i];
+    C.partyBottomY = sbot;
+    for (int i = 0; i < 4; ++i) C.allyRefY[i] = sally[i];
     for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->set_origin(opx[t], opy[t]);   // restore real placement
     set_party_demo_level(savedLvl); set_party_demo_count(savedCnt);
 }

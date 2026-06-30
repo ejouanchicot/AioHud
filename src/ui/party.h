@@ -9,6 +9,7 @@
 #pragma once
 #include <string>
 #include "ui/widget.h"
+#include "model/ui_config.h"   // gauge H/W scales (barHeight / barWidth)
 
 namespace aio {
 
@@ -74,19 +75,32 @@ private:
     // derived geometry (base px, pre-scale) -- box & badge adapt to their content:
     float subSz()    const { return badgeSz_ * 0.76f; }
     float castSz()   const { return nameSz_  * 1.0f; }
-    float badgeW()   const { return badgeSz_ * 1.9f + 8.0f; }     // ~3-char job + padding
-    float badgeH()   const { return badgeSz_ + subSz() + 4.0f; }  // main + sub stacked (tightened padding)
-    float gaugeW()   const { return barSz_   * 2.6f + 6.0f; }     // ~4-digit value
-    float gaugeH()   const { return barSz_   + 6.0f; }
+    float badgeW()   const { return ui_config().jobBadge == 0 ? 0.0f : (badgeSz_ * 1.9f + 8.0f); }   // 0 = off -> column collapses
+    float badgeH()   const { int m = ui_config().jobBadge; return m == 0 ? 0.0f : (m == 1 ? badgeSz_ + 4.0f : badgeSz_ + subSz() + 4.0f); }   // main-only is shorter
+    float gaugeW()   const { return (barSz_  * 2.6f + 6.0f) * ui_config().barWidth; }   // ~4-digit value, width-scalable
+    float gaugeH()   const { return (barSz_  + 6.0f) * ui_config().barHeight; }          // height-scalable (uses the taller-row room)
     float gaugeGap() const { return 3.0f; }
     float marksW()   const { return 20.0f; }   // holds up to ~3 leader/QM dots, centred -> badge stays clear
     float padB()     const { return 4.0f; }   // top/bottom inner margin -> rows + selection frame stay off the box border
-    // MAIN BAND : height of the primary line where badge / name / gauges / distance all centre
-    // together (tallest of badge, gauges, name). The cast/spell line sits BELOW this band.
-    float mainBandH() const { float a = badgeH(), b = gaugeH(), m = a > b ? a : b; return m < nameSz_ + 2.0f ? nameSz_ + 2.0f : m; }
+    bool  distOn()   const { int t = tier_ < 0 ? 0 : (tier_ > 2 ? 2 : tier_); return ui_config().dist[t]; }   // show distance for this box
+    // height of the marks column : leader/QM pips on TOP + (when shown) the distance number below. Used as
+    // a FLOOR for the main band so they never touch ; when the distance is OFF only the pips need room ->
+    // the floor drops and the row can be more compact.
+    float marksColH() const { return distOn() ? (8.0f + badgeSz_ * 1.20f) : 8.0f; }
+    // MAIN BAND : height of the primary line where badge / name / gauges / distance / marks all centre
+    // together (tallest of them). The cast/spell line sits BELOW this band.
+    float mainBandH() const {
+        float m = badgeH(); float v = gaugeH(); if (v > m) m = v;
+        float n = nameSz_ + 2.0f; if (n > m) m = n;
+        float k = marksColH();   if (k > m) m = k;
+        return m;
+    }
     // row = half the main band (the name centres in it) + half the name + the cast line + a gap, so the
-    // cast sits just under the name with clear air while badge/gauges/distance stay on the main line.
-    float rowH()     const { return mainBandH() * 0.5f + nameSz_ * 0.5f + castSz() + 6.0f; }
+    // cast sits just under the name with clear air. When casts are OFF for this box type the cast line is
+    // NOT reserved -> compact rows (= just the main band). Both feed measure() -> the box re-fits + the
+    // bottom-right re-anchors (HUD).
+    bool  castOn()   const { return (tier_ == 0) ? ui_config().castParty : ui_config().castAlly; }
+    float rowH()     const { return castOn() ? (mainBandH() * 0.5f + nameSz_ * 0.5f + castSz() + 6.0f) : (mainBandH() + 2.0f); }
     float rowPit()   const { return rowH() + 1.0f; }
 };
 

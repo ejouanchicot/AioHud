@@ -72,8 +72,10 @@ private:
     bool  kbCommit_    = false;   // Enter was pressed -> save on the next draw
     bool  profDirty_   = true;    // rescan the profile folder on the next Profile-tab draw
     char  activeProf_[32] = { 0 };// last saved/loaded profile -> highlighted in the list
+    bool  profSynced_  = false;   // one-time sync of activeProf_ from the persisted active profile (startup auto-load)
     int   helpSel_     = 0;       // Help tab : selected module in the left menu
     float helpScroll_  = 0.0f;    // Help tab vertical scroll (mouse wheel)
+    float helpMaxScroll_ = 0.0f;  // last frame's scroll limit -> clamp the wheel BEFORE drawing (no overscroll bounce)
     // live-preview anchor published each frame for the HUD (Configuration tab only)
     bool  pvOn_        = false;
     float pvRightX_    = 0.0f, pvBottomY_ = 0.0f;

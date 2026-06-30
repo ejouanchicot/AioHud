@@ -173,35 +173,86 @@ static void vgrad(u32 dev, float x, float y, float w, float h, u32 top, u32 bot)
 // shimmer ; `pulse` (0..1) brightens + adds an outer glow (used for TP >= 1000 = WS ready).
 // `danger` (0..1) : critical HP -> the bar BLINKS in alarm-red, same glow+pulse principle
 // as the TP WS-ready pulse but tinted red (red halo breathing + red flash over the liquid).
+// DX8 has no rounded primitive : the clean way for a SOLID rounded shape is to triangulate it so the
+// pieces tile EXACTLY (one blend per pixel, works with transparency, no seams). qfan = a 90-degree pie
+// of the corner ; rrnd/rrnd_l = edge bands + centre + corner pies. (Same method as the config panels.)
+static const float GPI = 3.14159265f;
+static void qfan(u32 dev, float cx, float cy, float r, float a0, float a1, u32 c) {
+    const int N = 6;
+    float px = cx + r * cosf(a0), py = cy + r * sinf(a0);
+    for (int i = 1; i <= N; ++i) {
+        const float a = a0 + (a1 - a0) * (float)i / (float)N;
+        const float nx = cx + r * cosf(a), ny = cy + r * sinf(a);
+        fill_tri(dev, cx, cy, px, py, nx, ny, c);
+        px = nx; py = ny;
+    }
+}
+static void rrnd(u32 dev, float x, float y, float w, float h, float r, u32 c) {   // rounded on all 4 corners
+    if (r > w * 0.5f) r = w * 0.5f; if (r > h * 0.5f) r = h * 0.5f;
+    if (r < 1.0f) { grad_quad(dev, x, y, w, h, c, c, c, c); return; }
+    grad_quad(dev, x + r, y,         w - 2 * r, r,         c, c, c, c);   // top band
+    grad_quad(dev, x + r, y + h - r, w - 2 * r, r,         c, c, c, c);   // bottom band
+    grad_quad(dev, x,     y + r,     r,         h - 2 * r, c, c, c, c);   // left band
+    grad_quad(dev, x + w - r, y + r, r,         h - 2 * r, c, c, c, c);   // right band
+    grad_quad(dev, x + r, y + r,     w - 2 * r, h - 2 * r, c, c, c, c);   // centre
+    qfan(dev, x + r,     y + r,     r, GPI,         1.5f * GPI, c);   // TL
+    qfan(dev, x + w - r, y + r,     r, 1.5f * GPI,  2.0f * GPI, c);   // TR
+    qfan(dev, x + r,     y + h - r, r, 0.5f * GPI,  GPI,        c);   // BL
+    qfan(dev, x + w - r, y + h - r, r, 0.0f,        0.5f * GPI, c);   // BR
+}
+static void rrnd_l(u32 dev, float x, float y, float w, float h, float r, u32 c) {   // rounded LEFT only (flat right = level)
+    if (r > h * 0.5f) r = h * 0.5f; if (r > w * 0.5f) r = w * 0.5f;
+    if (r < 1.0f) { grad_quad(dev, x, y, w, h, c, c, c, c); return; }
+    grad_quad(dev, x + r, y,     w - r, h,         c, c, c, c);   // body (square right)
+    grad_quad(dev, x,     y + r, r,     h - 2 * r, c, c, c, c);   // left band
+    qfan(dev, x + r, y + r,     r, GPI,        1.5f * GPI, c);   // TL
+    qfan(dev, x + r, y + h - r, r, 0.5f * GPI, GPI,        c);   // BL
+}
+
 static void draw_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger = 0.0f) {
     if (pct < 0) pct = 0; if (pct > 100) pct = 100;
-    if (pulse > 0.0f) {                                  // WS-ready glow breathing around the bar
-        float ph = 0.5f + 0.5f * sinf(t * 7.5f);         // 0..1
-        u32 g1 = (col & 0x00FFFFFF) | ((u32)((0.35f + 0.45f * ph) * pulse * 255) << 24);   // soft halo (kept tight so it doesn't reach the neighbour bar)
+    const float cyc = gy + gh * 0.5f;
+    float r = gh * 0.24f;                                 // gentle corner radius
+
+    if (pulse > 0.0f) {                                  // WS-ready glow breathing (transparent, behind)
+        float ph = 0.5f + 0.5f * sinf(t * 7.5f);
+        u32 g1 = (col & 0x00FFFFFF) | ((u32)((0.30f + 0.40f * ph) * pulse * 255) << 24);
         grad_quad(dev, gx - 3, gy - 3, gw + 6, gh + 6, g1, g1, g1, g1);
-        u32 g2 = (col & 0x00FFFFFF) | ((u32)((0.60f + 0.40f * ph) * pulse * 255) << 24);   // tight bright halo
+        u32 g2 = (col & 0x00FFFFFF) | ((u32)((0.55f + 0.40f * ph) * pulse * 255) << 24);
         grad_quad(dev, gx - 1, gy - 2, gw + 2, gh + 4, g2, g2, g2, g2);
     }
-    if (danger > 0.0f) {                                 // CRITICAL HP : red alarm halo breathing around the bar
-        float dh = 0.5f + 0.5f * sinf(t * 7.5f);         // 0..1 (same rhythm as the WS pulse)
-        u32 d1 = 0x00FF2A2A | ((u32)((0.35f + 0.50f * dh) * danger * 255) << 24);   // soft red halo
+    if (danger > 0.0f) {                                 // CRITICAL HP : red alarm halo breathing
+        float dh = 0.5f + 0.5f * sinf(t * 7.5f);
+        u32 d1 = 0x00FF2A2A | ((u32)((0.32f + 0.48f * dh) * danger * 255) << 24);
         grad_quad(dev, gx - 3, gy - 3, gw + 6, gh + 6, d1, d1, d1, d1);
-        u32 d2 = 0x00FF2A2A | ((u32)((0.60f + 0.40f * dh) * danger * 255) << 24);   // tight bright red halo
+        u32 d2 = 0x00FF2A2A | ((u32)((0.55f + 0.40f * dh) * danger * 255) << 24);
         grad_quad(dev, gx - 1, gy - 2, gw + 2, gh + 4, d2, d2, d2, d2);
     }
-    grad_quad(dev, gx, gy, gw, gh, 0xFF2A3354, 0xFF2A3354, 0xFF2A3354, 0xFF2A3354);   // thin frame
-    vgrad(dev, gx + 1, gy + 1, gw - 2, gh - 2, 0xFF0A0E1C, 0xFF161D33);               // recessed bg
-    float fw = (gw - 2) * pct / 100.0f, fh = gh - 2;
-    if (fw >= 0.5f) {
-        float b = 1.0f + 0.34f * pulse * sinf(t * 9.4f);          // pulse brightness
+    { u32 gl = (col & 0x00FFFFFF) | 0x1C000000; soft_blob(dev, gx + gw * 0.5f, cyc, gw * 0.58f, gh * 0.9f, gl); }   // faint always-on glow
+
+    // track : OPAQUE rounded rim + recessed bg (clean corners) + subtle inner shading
+    rrnd(dev, gx, gy, gw, gh, r, 0xFF243150);                          // rim
+    rrnd(dev, gx + 1, gy + 1, gw - 2, gh - 2, r - 1.0f, 0xFF0A0E1C);   // dark recessed bg
+    vgrad(dev, gx + r, gy + 2, gw - 2 * r, gh - 3, 0xFF0F1525, 0xFF05080F);   // vertical depth in the middle
+
+    // liquid fill : rounded on BOTH ends (a capsule that grows) -> the right matches the rounded track
+    // when full, and shows a clean rounded cap at the level when partial. All OPAQUE -> clean corners.
+    const float innerW = gw - 2.0f, fillW = innerW * pct / 100.0f, fh = gh - 2.0f;
+    if (fillW >= 1.0f) {
+        float b = 1.0f + 0.34f * pulse * sinf(t * 9.4f);
         u32 c = scl(col, b > 1.6f ? 1.6f : (b < 0.5f ? 0.5f : b));
-        vgrad(dev, gx + 1, gy + 1,              fw, fh * 0.52f, lt(c, 0.16f), c);     // liquid top
-        vgrad(dev, gx + 1, gy + 1 + fh * 0.52f, fw, fh * 0.48f, c, scl(c, 0.70f));    // liquid bottom
-        vgrad(dev, gx + 1, gy + 1,              fw, fh * 0.42f, 0x66FFFFFF, 0x00FFFFFF); // top gloss highlight
-        if (danger > 0.0f) {                                     // red wash OVER the liquid -> the fill visibly blinks red
-            float dl = 0.5f + 0.5f * sinf(t * 7.5f);             // 0..1, in sync with the halo
+        float fr = r - 1.0f; if (fr < 0.75f) fr = 0.75f;
+        rrnd(dev, gx + 1, gy + 1, fillW, fh, fr, scl(c, 0.78f));       // fill base (rounded both ends)
+        const float bx0 = gx + 1 + fr, bx1 = gx + 1 + fillW - fr;     // straight middle (between the rounded caps)
+        if (bx1 > bx0) {                                               // liquid vertical shading on the body
+            vgrad(dev, bx0, gy + 1,            bx1 - bx0, fh * 0.5f, lt(c, 0.22f), c);
+            vgrad(dev, bx0, gy + 1 + fh * 0.5f, bx1 - bx0, fh * 0.5f, c, scl(c, 0.6f));
+            vgrad(dev, bx0, gy + 1, bx1 - bx0, fh * 0.46f, 0x66FFFFFF, 0x00FFFFFF);   // glass gloss (over the body)
+        }
+        if (danger > 0.0f) {                                          // red wash so the fill visibly blinks
+            float dl = 0.5f + 0.5f * sinf(t * 7.5f);
             u32 dw = 0x00FF1E1E | ((u32)(dl * danger * 0.55f * 255) << 24);
-            grad_quad(dev, gx + 1, gy + 1, fw, fh, dw, dw, dw, dw);
+            rrnd(dev, gx + 1, gy + 1, fillW, fh, fr, dw);
         }
     }
 }
@@ -455,7 +506,7 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
     dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
     dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
     const float bgap = snap(1.0f * S);                  // gap between icons
-    const float bmar = snap(rowh * 1.18f);              // start the strip just LEFT of the cursor
+    const float bmar = snap(rowh * 1.34f);              // start the strip just LEFT of the cursor (cursor = mh*1.30 ; here `rowh` is the main band mh)
     const float au = (float)BCELL / (float)BATLAS_W;    // one cell, in UV space
     const float av = (float)BCELL / (float)BATLAS_H;
     const int   BMAX = 20;                              // cap : at most 20 icons per member
@@ -558,6 +609,30 @@ void Party::draw(const Frame& f) {
         }
     }
 
+    // MARKER-DRIVEN ALLIANCE PLACEMENT : when the four native alliance markers are set, drop our alliance
+    // boxes onto the native layout (BOTTOM-anchored, keeping our readable row height). The LOWER slot (the
+    // one nearest the party) has its bottom clamped to the party's LIVE top -> as the main party grows it
+    // covers the bottom and the alliance rides UP ; the UPPER slot stacks flush on the lower one. So our
+    // alliances move with the main party's member count, exactly like the native. (px / right-align kept.)
+    if (tier_ > 0 && f.screenH > 0.0f) {
+        const float* ar = ui_config().allyRefY;
+        if (ar[0] >= 0.0f && ar[1] >= 0.0f && ar[2] >= 0.0f && ar[3] >= 0.0f) {
+            const bool aLower = (ar[1] >= ar[3]);                          // which marker pair sits lower (near party)
+            const float loB = (aLower ? ar[1] : ar[3]) * f.screenH;       // lower slot bottom
+            const float hiB = (aLower ? ar[3] : ar[1]) * f.screenH;       // upper slot bottom
+            float bottom = (tier_ == 1) ? loB : ((g_boxRect[1].valid) ? g_boxRect[1].y : hiB);
+            if (g_partyTopReady && bottom > g_partyTopY) bottom = g_partyTopY;   // party (or its top) covers below it
+            oy = snap(bottom - H);
+        }
+    }
+
+    // EDIT LAYOUT safety : an alliance must never end up off-screen (a stale party rect, a bad stored
+    // position, or stacking above a high party could push it out) -> always keep it visible + grabbable.
+    if (tier_ > 0 && ui_config().editLayout && f.screenW > 0.0f && f.screenH > 0.0f) {
+        if (px + w > f.screenW) px = snap(f.screenW - w); if (px < 0.0f) px = 0.0f;
+        if (oy + H > f.screenH) oy = snap(f.screenH - H); if (oy < 0.0f) oy = 0.0f;
+    }
+
     const float placedOy = oy;   // box top AS PLACED (config / alliance stack), before the mask / solo / Set-Ref grow-up -> lets a drag convert the visual cluster back to a stored position
     // PARTY (tier 0) : BOTTOM-anchored (the bottom-right stays exactly where you place/drag it) and the
     // box GROWS UPWARD. First shrink to n rows (members at the top, bottom fixed)...
@@ -570,38 +645,22 @@ void Party::draw(const Frame& f) {
     // height of the Cost/Next box that floats ABOVE the party (tier 0 only) -> used for snap + clamp.
     const float costH = (tier_ == 0) ? snap(2.0f * nameSz_ * S + 20.0f * S) : 0.0f;   // == draw_action_box bh2 max : 2 lines + padding + the 10px topPad (keep in sync)
 
-    // ...then GROW UP by the mask band so the top reaches the game's native block top. Our member rows
-    // are BIGGER than the game's, so the band (linear, SHRINKS per member) just tops it up. Calibrated.
-    // MASK_B is POSITIVE : `grow` below already removes a full taller-row per member, so the per-member
-    // decrease must come almost entirely from there. A gentle positive slope keeps n=2/3 from collapsing
-    // too fast (they were ~10-15px short -> native peeked). Solo (n-1=0) is unaffected.
-    const float MASK_A = 1.4f, MASK_B = 0.30f, MASK_OFF = 0.0f;
-    // rowH was enlarged for the name+cast stack, so the box is TALLER and already covers more of the
-    // native block. Calibrate the mask on the OLD (game-equivalent) row height -- badge/gauge/name, NO
-    // cast -- and then SUBTRACT the extra height the taller rows add, so the top lands on the native
-    // block top, not above it (the "box too high" after the row enlargement).
-    const float ghMax   = badgeH() > gaugeH() ? badgeH() : gaugeH();
-    const float oldRowH = (ghMax > nameSz_ + 2.0f ? ghMax : nameSz_ + 2.0f) + 1.0f;
-    const float oldRowpit = snap((oldRowH + 1.0f) * S);
-    const float grow      = (float)n * (rowpit - oldRowpit);   // box height added by the enlarged rows
-    float maskBand = (tier_ == 0) ? oldRowpit * (MASK_A + MASK_B * (float)(n - 1)) + MASK_OFF * S - grow : 0.0f;
-    if (tier_ == 0 && n == 2) maskBand += 5.0f * S;   // FFXI's 2-member native block sits a touch higher than the linear fit (1 and 3 are spot-on) -> small targeted top-up
-    if (maskBand < 0.0f) maskBand = 0.0f;
-    maskBand = snap(maskBand);
-    if (tier_ == 0) { oy -= maskBand; H += maskBand; }   // grow UP, bottom anchored
+    // LINE 0 (partyBottomY) is just a VISUAL reference for the native party's bottom edge -- it does NOT
+    // move our box (you place the party freely at the screen bottom). It only documents, together with the
+    // top lines, exactly where the native party spans for each member count.
 
-    // Solo (1 member) : add 10px of height at the TOP (grow up, bottom anchored) -- the native solo
-    // block is a touch taller than our single row. This feeds the available space, so the member then
-    // RE-CENTERS in the taller box via the even-distribution below (same mechanism as any count).
-    if (tier_ == 0 && n == 1) { const float bump = snap(10.0f * S); oy -= bump; H += bump; }
-
-    // "Set reference" : once you align the box on the native block and lock the reference, lowering the
-    // box below it just makes it TALLER (top pinned, bottom follows the placement). delta = how far the
-    // box was lowered from the reference Y. LIVE only -- in edit the box stays its raw footprint so the
-    // drag/snap/clamp work on a clean rect (the growth would otherwise fight the bottom snap).
-    if (tier_ == 0 && ui_config().partyRefY >= 0.0f && ui_config().box[0].posSet && f.screenH > 0.0f) {
-        float delta = snap((ui_config().box[0].y - ui_config().partyRefY) * f.screenH);
-        if (delta > 0.0f) { oy -= delta; H += delta; }
+    // GROW UP to the REFERENCE LINE per count : the box top reaches that line, so the game's native
+    // party window is covered whatever the member count or row sizes -- no guessing. Set the lines in edit
+    // layout (drag each onto the native party's top edge for that size). Unset -> no grow up.
+    if (tier_ == 0 && f.screenH > 0.0f) {
+        const int ridx = (n <= 1) ? 0 : (n >= 6 ? 5 : n - 1);   // one reference line per member count (1..6)
+        const float frac = ui_config().partyRef[ridx];
+        if (frac >= 0.0f) {
+            const float lineY = snap(frac * f.screenH);
+            float maskBand = oy - lineY;   // grow up to the line (0 if already at/above it)
+            if (maskBand < 0.0f) maskBand = 0.0f;
+            oy -= maskBand; H += maskBand;
+        }
     }
 
     // The chrome / cost box / edit overlay use the real box rect (boxOy, boxH). For the rows, EVENLY
@@ -653,7 +712,9 @@ void Party::draw(const Frame& f) {
                 if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
                 if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
                 // cluster top-left -> stored PLACED top : undo costH (party box top) + maskOff (grow-up)
-                const float nx = ex / f.screenW, ny = (ey + costH + maskOff) / f.screenH;
+                float nx = ex / f.screenW, ny = (ey + costH + maskOff) / f.screenH;
+                nx = nx < 0.0f ? 0.0f : (nx > 1.0f ? 1.0f : nx);   // never store an off-screen position that
+                ny = ny < 0.0f ? 0.0f : (ny > 1.0f ? 1.0f : ny);   // would make the box un-grabbable next time
                 ui_config().box[tier_].posSet = true; ui_config().box[tier_].x = nx; ui_config().box[tier_].y = ny;
                 px = snap(ex);                                         // immediate horizontal feedback (vertical settles next frame, no row/chrome split)
             } else g_dragTier = -1;                                     // released
@@ -760,6 +821,7 @@ void Party::draw(const Frame& f) {
         if (kRowCells) { const u32 cellc = (i & 1) ? 0x99101A2Eu : 0x99223256u; vgrad(dev, px + 1, ry, w - 2, rowpit, cellc, cellc); }
         if (r.offzone) continue;                       // out of zone : no badge, no vitals/gauges
         // badge : NOT affected by the selection zoom (only the name zooms) ; dark inner then 4 border edges.
+        if (ui_config().jobBadge != 0) {               // 0 = job badge OFF (no box, column collapsed)
         const float iby = snap(ry + badgeYoff);
         const float bcx = ibx + bw * 0.5f, bcy = iby + bh * 0.5f, pbw = bw, pbh = bh;
         const float pbx = snap(bcx - pbw * 0.5f), pby = snap(bcy - pbh * 0.5f);
@@ -769,6 +831,7 @@ void Party::draw(const Frame& f) {
         grad_quad(dev, pbx,           pby + pbh - 1, pbw,  1.0f, rb, rb, rb, rb);   // bottom
         grad_quad(dev, pbx,           pby,           1.0f, pbh,  rb, rb, rb, rb);   // left
         grad_quad(dev, pbx + pbw - 1, pby,           1.0f, pbh,  rb, rb, rb, rb);   // right
+        }
 
         const float gy = ry + (mh - gh) * 0.5f;   // gauges centred on the MAIN BAND
         const RowAnim* a = ra[i];
@@ -786,7 +849,7 @@ void Party::draw(const Frame& f) {
     }
 
     // ---------- buffs : status icons LEFT of each party row (main box only -- alliance buffs aren't sent) ----------
-    if (tier_ == 0) draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S);   // size/centre buffs on the MAIN BAND, not the taller row
+    if (tier_ == 0) draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S);   // buffs sized + centred on the MAIN BAND -> aligned with name/badge/gauges (the cast line stays below)
 
     // ---------- leader / QM markers : round dots, animated pop-in/out (scale + fade) ----------
     if (dot_tex_) {
@@ -862,7 +925,7 @@ void Party::draw(const Frame& f) {
         const Row& r = rows[i];
         bool offz = r.offzone;
         bool dead = !offz && r.hpp <= 0;
-        bool hasCast = !dead && !offz && r.cast;
+        bool hasCast = castOn() && !dead && !offz && r.cast;   // casts shown per box type (castOn())
         const float ry = oy + pad + i * rowpit;
         const float by = snap(ry + badgeYoff);         // match the snapped badge rect
         // names never scale (no zoom on target) -> stable layout, room for the cast line below
@@ -870,7 +933,7 @@ void Party::draw(const Frame& f) {
         const float bcx = bx + bw * 0.5f, bcy = by + bh * 0.5f;               // badge centre (scale pivot)
 
         // distance (yalms) UNDER the leader/QM pips, centered in the marks column, format 00.00.
-        if (r.dist >= 0.0f && fBadge->ready()) {
+        if (distOn() && r.dist >= 0.0f && fBadge->ready()) {
             float d = r.dist; if (d > 99.99f) d = 99.99f;
             char db[12]; sprintf(db, "%05.2f", d);
             float dsz = badgeSz_ * S * 1.20f;                                 // as big as fits the marks column width
@@ -883,11 +946,12 @@ void Party::draw(const Frame& f) {
             fBadge->draw_cc(dev, cx + mw * 0.5f, ry + mh - dsz * 0.62f, db, dsz, dcol, bSTK, bOWf);   // distance within the MAIN BAND (under the pips), not pushed to the row bottom
         }
 
-        if (!offz && fBadge->ready()) {                // out of zone : no job badge text
+        const int badgeMode = ui_config().jobBadge;    // 0 = off, 1 = main only, 2 = main + sub
+        if (!offz && badgeMode != 0 && fBadge->ready()) {   // out of zone : no job badge text
             fBadge->begin(dev);
-            bool hasSub = r.sub && r.sub[0];
-            // with a subjob : main on top (0.34) + sub below (0.70). Without (e.g. SPC trusts,
-            // no subjob) : centre the lone main job vertically. Offsets scale around the badge centre.
+            bool hasSub = badgeMode == 2 && r.sub && r.sub[0];   // mode 1 -> ignore the sub job
+            // with a subjob : main on top (0.34) + sub below (0.70). Without (mode 1, SPC trusts...) :
+            // centre the lone main job vertically. Offsets scale around the badge centre.
             const float mfrac = hasSub ? 0.34f : 0.52f;
             fBadge->draw_cc(dev, bcx, bcy + (mfrac - 0.5f) * bh, r.job, badgeSz_ * S, r.role, bSTK, bOWf);
             if (hasSub) fBadge->draw_cc(dev, bcx, bcy + 0.20f * bh, r.sub, subSz() * S, C_DIM, bSTK, bOWf);
@@ -952,7 +1016,7 @@ void Party::draw(const Frame& f) {
     // EQUAL margin above and below, instead of spanning the whole reserved row (which sat flush at the
     // top and overshot far below the cast). selBot/selH are measured from the row top (ry).
     const float selPad = snap(2.0f * S);
-    const float selBot = mh * 0.5f + snap((nameSz_ * 0.5f + castSz() + 3.0f) * S);   // content bottom (cast line) from ry
+    const float selBot = castOn() ? (mh * 0.5f + snap((nameSz_ * 0.5f + castSz() + 3.0f) * S)) : mh;   // content bottom : cast line, or just the main band when casts are off
     const float selY0  = -selPad;                                                     // frame top, relative to ry
     const float selH   = selBot + 2.0f * selPad;                                      // frame height (content + equal margins)
 
@@ -1022,9 +1086,23 @@ void Party::draw(const Frame& f) {
         grad_quad(dev, px,        oy2 + H2 - t, w, t, c, c, c, c);  // bottom
         grad_quad(dev, px,        oy2,         t, H2, c, c, c, c);  // left
         grad_quad(dev, px + w - t, oy2,        t, H2, c, c, c, c);  // right
-        // a label so it's clear which box is which
+        // a styled tag so it's clear which box is which -- OUTSIDE the box (left of its top-left corner) :
+        // a rounded pill with an accent rim + colour dot per box (gold / blue / teal) + a top sheen.
         const char* lbl = tier_ == 0 ? "PARTY" : tier_ == 1 ? "ALLIANCE 1" : "ALLIANCE 2";
-        if (fBar->ready()) { fBar->begin(dev); fBar->draw_lc(dev, px + snap(6.0f), oy2 + snap(9.0f), lbl, snap(11.0f) * S, c, 0xFF000000, 1.2f); }
+        if (fBar->ready()) {
+            const u32 accent = (tier_ == 0) ? 0xFFFFCC55u : (tier_ == 1) ? 0xFF6EA8FFu : 0xFF4FD8C0u;   // gold / blue / teal
+            const float lsz = snap(11.0f) * S;
+            const float lw  = fBar->measure(lbl, lsz);
+            const float bh  = snap(21.0f), bw = lw + snap(30.0f), r = bh * 0.34f;
+            const float bx  = px - bw - snap(8.0f), by = oy2, cy2 = by + bh * 0.5f;
+            rrnd(dev, bx + snap(1.0f), by + snap(2.0f), bw, bh, r, 0x66000000);          // soft drop shadow
+            rrnd(dev, bx - snap(1.0f), by - snap(1.0f), bw + snap(2.0f), bh + snap(2.0f), r + snap(1.0f), (accent & 0x00FFFFFFu) | 0xE6000000u);  // accent rim
+            rrnd(dev, bx, by, bw, bh, r, 0xF0151D2C);                                     // dark base
+            vgrad(dev, bx + r, by + snap(1.0f), bw - 2.0f * r, bh * 0.46f, 0x2EFFFFFF, 0x00FFFFFF);   // top sheen
+            disc(dev, bx + snap(12.0f), cy2, snap(3.2f), accent);                         // accent dot
+            disc(dev, bx + snap(12.0f), cy2, snap(1.4f), 0xFFFFFFFF);                     // dot highlight
+            fBar->begin(dev); fBar->draw_lc(dev, bx + snap(21.0f), cy2, lbl, lsz, 0xFFF2F6FF, 0xFF000000, 1.2f);
+        }
     }
 }
 

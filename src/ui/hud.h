@@ -69,7 +69,8 @@ private:
     std::string          layout_path_;             // path of the last applied layout (for hot-reload)
     float screenW_ = 2560.0f, screenH_ = 1400.0f;  // real game resolution (read from the device each frame)
     float ui_scale_ = 1.0f;                         // real screen / authored viewport width
-    float lastScale_[3] = { 1.0f, 1.0f, 1.0f };     // re-anchor widgets when any box scale changes
+    float lastW_[3] = { -1.0f, -1.0f, -1.0f };      // last measured box footprint -> re-anchor (bottom-right pinned)
+    float lastH_[3] = { -1.0f, -1.0f, -1.0f };      // when ANY dimension setting changes (scale, bar size, badge, casts)
     u32   last_dev_ = 0;
 };
 
