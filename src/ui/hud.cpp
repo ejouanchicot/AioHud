@@ -151,9 +151,33 @@ void Hud::render(u32 dev) {
     fonts_.get(0, 0);          // register the default slot so ensure_all builds it this frame
     fonts_.ensure_all(dev);
     if (ui_config().skinTheme != skinIdx_) set_skin(ui_config().skinTheme);   // config page changed the theme
-    {   // re-measure + re-anchor when any box scale changed (boxes grow/shrink IN PLACE)
-        bool changed = false;
-        for (int b = 0; b < 3; ++b) if (ui_config().box[b].scale != lastScale_[b]) { lastScale_[b] = ui_config().box[b].scale; changed = true; }
+    if (ui_config().box[0].scale < 1.0f) ui_config().box[0].scale = 1.0f;   // PARTY floor = 100% : below that its footprint can't cover the native party block (it may still grow)
+    {   // re-measure + re-anchor when any box scale changed (boxes grow/shrink IN PLACE).
+        // For a HAND-PLACED box, the stored position is its TOP-LEFT, so growing would push the
+        // bottom-right away. Keep the BOTTOM-RIGHT corner fixed instead (box grows UP-LEFT) by
+        // shifting the stored top-left by the size delta. measure() gives the footprint (right = x+w,
+        // bottom = y+h) -- exact for the party too (bottom-anchored : its bottom == y + measure_h).
+        bool changed = false, saved = false;
+        for (int b = 0; b < 3; ++b) {
+            const float newS = ui_config().box[b].scale, oldS = lastScale_[b];
+            if (newS == oldS) continue;
+            if (ui_config().box[b].posSet && screenW_ > 0.0f && screenH_ > 0.0f && oldS > 0.0f) {
+                for (size_t i = 0; i < widgets_.size(); ++i) {
+                    if (strcmp(widgets_[i]->type_name(), "PartyList") != 0) continue;
+                    Party* p = static_cast<Party*>(widgets_[i]);
+                    if (p->tier() != b) continue;
+                    float nw = 0.0f, nh = 0.0f; p->measure(nw, nh);       // footprint at the NEW scale
+                    const float ow = nw * oldS / newS, oh = nh * oldS / newS;   // footprint at the OLD scale
+                    ui_config().box[b].x += (ow - nw) / screenW_;         // keep bottom-right pinned -> grow up-left
+                    ui_config().box[b].y += (oh - nh) / screenH_;
+                    saved = true;
+                    break;
+                }
+            }
+            lastScale_[b] = newS;
+            changed = true;
+        }
+        if (saved) save_ui_config();
         if (changed) place_widgets();
     }
     if (!skin_.ready()) skin_.load(dev, window_theme_name(skinIdx_));   // FFXI window skin (lazy ; rebuilds after a device loss / theme change)

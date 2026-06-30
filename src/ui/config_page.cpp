@@ -732,20 +732,26 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
           if (int d = row_selector(dev, fo, mo, click, 30, coX, ry + yo, ctrlW, "Font", ui_font_label(ui_config().fontFace))) {
               ui_config().fontFace = wrap(ui_config().fontFace + d, ui_font_count()); save_ui_config(); } }
         ROW_NEXT(52.0f)
-        // Box Size -> per-box scale, INDEPENDENT for Party / Alliance 1 / Alliance 2 (sliders, 50%..200%, 5% steps)
+        // Box Size -> per-box scale, INDEPENDENT for Party / Alliance 1 / Alliance 2 (sliders, 5% steps).
+        // PARTY min is 100% : below that its footprint can no longer cover the game's native party block,
+        // so it can only grow (100%..200%). Alliances are free to shrink too (50%..200%).
         {
-            const char* szLbl[3] = { "Party Size", "Ally 1 Size", "Ally 2 Size" };
-            const int   szId[3]  = { 1, 3, 4 };
-            const float lo = 0.50f, hi = 2.00f;
-            for (int t = 0; t < 3; ++t) {
+            const int   szTier[3] = { 0, 1, 2 };
+            const char* szLbl[3]  = { "Party Size", "Ally 1 Size", "Ally 2 Size" };
+            const int   szId[3]   = { 1, 3, 4 };
+            const float szLo[3]   = { 1.00f, 0.50f, 0.50f };   // party floor = 100% (native-block coverage)
+            const float hi = 2.00f;
+            for (int k = 0; k < 3; ++k) {
+                const int t = szTier[k]; const float lo = szLo[k];
                 ROW_BAND(46.0f)
                 char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[t].scale * 100.0f + 0.5f));
                 float v01 = (ui_config().box[t].scale - lo) / (hi - lo);
-                if (row_slider(dev, fo, mo, szId[t], coX, ry + yo, ctrlW, szLbl[t], szbuf, &v01)) {
+                v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+                if (row_slider(dev, fo, mo, szId[k], coX, ry + yo, ctrlW, szLbl[k], szbuf, &v01)) {
                     float v = lo + v01 * (hi - lo);
                     v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;       // snap to 5% steps
                     v = v < lo ? lo : (v > hi ? hi : v);
-                    ui_config().box[t].scale = v;                       // ONLY this tier (party / ally1 / ally2)
+                    ui_config().box[t].scale = v;                       // ONLY this tier
                 }
                 ROW_NEXT(46.0f)
             }

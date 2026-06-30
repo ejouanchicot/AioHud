@@ -538,11 +538,24 @@ void Party::draw(const Frame& f) {
     else if (!posSet && g_partyTopReady) {                 // alliances stack on the party ONLY when not user-placed
         const float fsC      = nameSz_ * S;
         const float costBoxH = 2.0f * fsC + 20.0f * S;     // reserve the 2-line cost/next box (2 lines + padding + the 10px top space ; keep == costH below)
-        const float allLift  = snap(24.0f * S);            // raise the alliance stack above the cost box
-        oy = snap(g_partyTopY - costBoxH - (float)tier_ * H - (float)(tier_ - 1) * sepH - allLift);
+        const float allLift  = 0.0f;                       // alliance 1 sits FLUSH on the cost box top (no gap) -> matches a hand-placed "glued to Cost MP/Next" layout
+        // Stack each alliance FLUSH on the box just below it, using that box's ACTUAL height -> different
+        // per-tier scales no longer leave a gap / overlap at the join. Tier 1 sits above the cost box ;
+        // tier 2 sits on tier 1's REAL top (g_boxRect[1]), not on a 2*H assumption of equal heights.
+        const float baseBottom = (tier_ == 2 && g_boxRect[1].valid)
+                                 ? g_boxRect[1].y - sepH
+                                 : g_partyTopY - costBoxH - allLift;
+        oy = snap(baseBottom - H);
         // RIGHT-align to the party's right edge (published in g_boxRect[0]) so an alliance at a SMALLER
         // scale (narrower box) still lines up on the right instead of drifting left of the party.
-        if (g_boxRect[0].valid) px = snap(g_boxRect[0].x + g_boxRect[0].w - w);
+        // Clamp on-screen : a stale/off-screen party rect (e.g. just after the config preview) must never
+        // fling the alliance off the right edge in edit layout.
+        if (g_boxRect[0].valid) {
+            float ax = g_boxRect[0].x + g_boxRect[0].w - w;
+            if (f.screenW > 0.0f && ax + w > f.screenW) ax = f.screenW - w;
+            if (ax < 0.0f) ax = 0.0f;
+            px = snap(ax);
+        }
     }
 
     const float placedOy = oy;   // box top AS PLACED (config / alliance stack), before the mask / solo / Set-Ref grow-up -> lets a drag convert the visual cluster back to a stored position
