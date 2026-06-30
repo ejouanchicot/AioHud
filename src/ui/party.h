@@ -81,9 +81,12 @@ private:
     float gaugeGap() const { return 3.0f; }
     float marksW()   const { return 20.0f; }   // holds up to ~3 leader/QM dots, centred -> badge stays clear
     float padB()     const { return 4.0f; }   // top/bottom inner margin -> rows + selection frame stay off the box border
-    // row height = tallest element + vertical margin, so the badge never touches the row
-    // edges / the selection frame.
-    float rowH()     const { float a = badgeH(), b = gaugeH(), c = nameSz_ + 2.0f, m = a > b ? a : b; m = m > c ? m : c; return m + 1.0f; }
+    // MAIN BAND : height of the primary line where badge / name / gauges / distance all centre
+    // together (tallest of badge, gauges, name). The cast/spell line sits BELOW this band.
+    float mainBandH() const { float a = badgeH(), b = gaugeH(), m = a > b ? a : b; return m < nameSz_ + 2.0f ? nameSz_ + 2.0f : m; }
+    // row = half the main band (the name centres in it) + half the name + the cast line + a gap, so the
+    // cast sits just under the name with clear air while badge/gauges/distance stay on the main line.
+    float rowH()     const { return mainBandH() * 0.5f + nameSz_ * 0.5f + castSz() + 6.0f; }
     float rowPit()   const { return rowH() + 1.0f; }
 };
 

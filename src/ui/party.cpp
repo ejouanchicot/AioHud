@@ -492,6 +492,16 @@ void Party::draw(const Frame& f) {
     const int n = build_rows(rows, f.game ? *f.game : NOGAME);
     if (n <= 0) return;                           // nothing to show (e.g. an alliance box outside demo)
 
+    // CONFIG PREVIEW : demonstrate the target cursor by sliding ONE selection through all 18 demo
+    // slots in the order PARTY -> ALLIANCE 2 -> ALLIANCE 1, then loop. Only this box's member when
+    // the cursor is in its block. (block 0 = party/tier0, 1 = ally2/tier2, 2 = ally1/tier1.)
+    if (demo_select() && party_demo_level() > 0) {
+        const int gsel  = ((int)(f.t / 1.5f)) % 18;            // advance every 1.5s
+        const int block = (tier_ == 0) ? 0 : (tier_ == 2 ? 1 : 2);
+        const int local = gsel - block * 6;
+        for (int i = 0; i < n; ++i) rows[i].sel = (i == local);
+    }
+
     const float S = scale_ * BOOST * ui_config().box[tier_].scale;   // per-box size (config Font Size / edit-mode wheel)
     // Live, //aio demo AND edit layout all share the SAME height + spacing (adaptive shrink, mask band,
     // Set-Ref growth, even member distribution) -> demo + edit are faithful PREVIEWS of the real in-game
@@ -506,6 +516,7 @@ void Party::draw(const Frame& f) {
     float rowpit = snap(rowPit() * S);   // may be widened below to evenly distribute members across the box
     const float gw = snap(gaugeW() * S), gh = snap(gaugeH() * S), ggap = snap(gaugeGap() * S);
     const float bw = snap(badgeW() * S), bh = snap(badgeH() * S), mw = snap(marksW() * S);
+    const float mh = snap(mainBandH() * S);   // MAIN BAND : badge / name / gauges / distance all centre in [ry, ry+mh] ; the cast line sits below it
     const float inset = snap(4 * S), gap5 = snap(5 * S);
     const float w   = snap(box_w_base() * S);
     float H   = rowpit * 6 + 2 * pad;   // alliances : always full 6-row height. Party : adapted below.
@@ -529,6 +540,9 @@ void Party::draw(const Frame& f) {
         const float costBoxH = 2.0f * fsC + 20.0f * S;     // reserve the 2-line cost/next box (2 lines + padding + the 10px top space ; keep == costH below)
         const float allLift  = snap(24.0f * S);            // raise the alliance stack above the cost box
         oy = snap(g_partyTopY - costBoxH - (float)tier_ * H - (float)(tier_ - 1) * sepH - allLift);
+        // RIGHT-align to the party's right edge (published in g_boxRect[0]) so an alliance at a SMALLER
+        // scale (narrower box) still lines up on the right instead of drifting left of the party.
+        if (g_boxRect[0].valid) px = snap(g_boxRect[0].x + g_boxRect[0].w - w);
     }
 
     const float placedOy = oy;   // box top AS PLACED (config / alliance stack), before the mask / solo / Set-Ref grow-up -> lets a drag convert the visual cluster back to a stored position
@@ -545,8 +559,20 @@ void Party::draw(const Frame& f) {
 
     // ...then GROW UP by the mask band so the top reaches the game's native block top. Our member rows
     // are BIGGER than the game's, so the band (linear, SHRINKS per member) just tops it up. Calibrated.
-    const float MASK_A = 2.0f, MASK_B = -0.24f, MASK_OFF = 2.0f;
-    float maskBand = (tier_ == 0) ? rowpit * (MASK_A + MASK_B * (float)(n - 1)) + MASK_OFF * S : 0.0f;
+    // MASK_B is POSITIVE : `grow` below already removes a full taller-row per member, so the per-member
+    // decrease must come almost entirely from there. A gentle positive slope keeps n=2/3 from collapsing
+    // too fast (they were ~10-15px short -> native peeked). Solo (n-1=0) is unaffected.
+    const float MASK_A = 1.4f, MASK_B = 0.30f, MASK_OFF = 0.0f;
+    // rowH was enlarged for the name+cast stack, so the box is TALLER and already covers more of the
+    // native block. Calibrate the mask on the OLD (game-equivalent) row height -- badge/gauge/name, NO
+    // cast -- and then SUBTRACT the extra height the taller rows add, so the top lands on the native
+    // block top, not above it (the "box too high" after the row enlargement).
+    const float ghMax   = badgeH() > gaugeH() ? badgeH() : gaugeH();
+    const float oldRowH = (ghMax > nameSz_ + 2.0f ? ghMax : nameSz_ + 2.0f) + 1.0f;
+    const float oldRowpit = snap((oldRowH + 1.0f) * S);
+    const float grow      = (float)n * (rowpit - oldRowpit);   // box height added by the enlarged rows
+    float maskBand = (tier_ == 0) ? oldRowpit * (MASK_A + MASK_B * (float)(n - 1)) + MASK_OFF * S - grow : 0.0f;
+    if (tier_ == 0 && n == 2) maskBand += 5.0f * S;   // FFXI's 2-member native block sits a touch higher than the linear fit (1 and 3 are spot-on) -> small targeted top-up
     if (maskBand < 0.0f) maskBand = 0.0f;
     maskBand = snap(maskBand);
     if (tier_ == 0) { oy -= maskBand; H += maskBand; }   // grow UP, bottom anchored
@@ -634,8 +660,8 @@ void Party::draw(const Frame& f) {
     // row-invariant column positions (only the row's Y varies) :
     const float ibx = snap(cx + mw + gap5);   // badge left  (snapped)
     const float bx  = cx + mw + gap5;          // badge anchor for text centring
-    const float nx  = bx + bw + gap5;          // name left
-    const float badgeYoff = (rowh - bh) * 0.5f;   // badge vertical inset within a row
+    const float nx  = snap(bx + bw + gap5);    // name left
+    const float badgeYoff = (mh - bh) * 0.5f;   // badge centred on the MAIN BAND (not the full row -> stays level with the name)
 
     // ---------- animation update (lerp displayed values toward live targets) ----------
     const float t = f.t;
@@ -731,7 +757,7 @@ void Party::draw(const Frame& f) {
         grad_quad(dev, pbx,           pby,           1.0f, pbh,  rb, rb, rb, rb);   // left
         grad_quad(dev, pbx + pbw - 1, pby,           1.0f, pbh,  rb, rb, rb, rb);   // right
 
-        const float gy = ry + (rowh - gh) * 0.5f;
+        const float gy = ry + (mh - gh) * 0.5f;   // gauges centred on the MAIN BAND
         const RowAnim* a = ra[i];
         const float hpp = a ? a->hpp : (float)r.hpp, mpp = a ? a->mpp : (float)r.mpp, tpp = a ? a->tpp : 0.0f;
         const float wsReady = (r.tp >= 1000) ? 1.0f : 0.0f;   // TP >= 1000 -> pulse (WS ready)
@@ -747,7 +773,7 @@ void Party::draw(const Frame& f) {
     }
 
     // ---------- buffs : status icons LEFT of each party row (main box only -- alliance buffs aren't sent) ----------
-    if (tier_ == 0) draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, rowh, S);
+    if (tier_ == 0) draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S);   // size/centre buffs on the MAIN BAND, not the taller row
 
     // ---------- leader / QM markers : round dots, animated pop-in/out (scale + fade) ----------
     if (dot_tex_) {
@@ -792,13 +818,13 @@ void Party::draw(const Frame& f) {
         dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
         dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_LINEAR);
         dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-        const float ih = rowh * 1.30f, iw = ih;                 // square icon, ~1.3 row tall
+        const float ih = mh * 1.30f, iw = ih;                 // square icon, ~1.3 main-band tall (points at the name line)
         const float es  = 1.0f;                                 // cursor keeps a constant size on target change (no pop)
         const float bob = 1.5f * S * gPulse;                     // cursor bob on the SHARED rhythm (already delayed + phase-reset)
         const float cx  = px - 0.0f * S - iw * 0.5f + bob;      // icon CENTRE x (finger points at the box) + bob
         // the cursor points at the SUB-target when one is in use, otherwise the main target
         const bool  onSub = (subA_ > 0.02f);
-        const float cy  = (onSub ? subY_ : selY_) + rowh * 0.5f;            // icon CENTRE y
+        const float cy  = (onSub ? subY_ : selY_) + mh * 0.5f;            // icon CENTRE y -> on the main band (name line)
         const u32 hrgb  = onSub ? 0x002E9CFF : 0x00FFFFFF;                  // strong blue when pointing the sub, white for the main
         const u32 tint  = ((u32)(0xFF * (onSub ? subA_ : selA_)) << 24) | hrgb;
         glow_quad(dev, snap(cx - iw * es * 0.5f), snap(cy - ih * es * 0.5f), iw * es, ih * es, tint);
@@ -815,6 +841,9 @@ void Party::draw(const Frame& f) {
     const u32 nSTK = nameStroke_  > 0 ? 0xFF000000u : 0u; const float nOWf = nameStroke_  * S;
     const u32 vSTK = barStroke_   > 0 ? 0xFF000000u : 0u; const float vOWf = barStroke_   * S;
     const u32 bSTK = badgeStroke_ > 0 ? 0xFF000000u : 0u; const float bOWf = badgeStroke_ * S;
+    // name/cast left, shifted RIGHT by the outline width (+1px AA) so the black STROKE -- drawn in 8
+    // passes at x +/- nOWf -- doesn't poke out to the LEFT of nx (it was, and the config preview clipped it).
+    const float nxt = snap(nx + nOWf + 1.0f);
     char buf[24];
     for (int i = 0; i < n; ++i) {
         const Row& r = rows[i];
@@ -838,7 +867,7 @@ void Party::draw(const Frame& f) {
                              r.dist >= kCastSafe  ? 0xFFE7C95A :              // yellow : marginal (still casts)
                                                     0xFF8FC6FF;               // blue : comfortably in range
             fBadge->begin(dev);
-            fBadge->draw_cc(dev, cx + mw * 0.5f, ry + rowh - dsz * 0.62f, db, dsz, dcol, bSTK, bOWf);
+            fBadge->draw_cc(dev, cx + mw * 0.5f, ry + mh - dsz * 0.62f, db, dsz, dcol, bSTK, bOWf);   // distance within the MAIN BAND (under the pips), not pushed to the row bottom
         }
 
         if (!offz && fBadge->ready()) {                // out of zone : no job badge text
@@ -867,7 +896,7 @@ void Party::draw(const Frame& f) {
         }
         // name sits at a FIXED height (always a bit high) -> it never jumps when a cast starts,
         // and there is always room below for the cast / zone line.
-        fName->draw_lc(dev, nx, ry + rowh * (offz ? 0.30f : 0.34f), nm, nsz, offz ? C_OFF : (dead ? C_BAD : C_INK), nSTK, nOWf);
+        fName->draw_lc(dev, nxt, ry + mh * 0.5f, nm, nsz, offz ? C_OFF : (dead ? C_BAD : C_INK), nSTK, nOWf);   // name centred on the MAIN BAND (level with badge/gauges)
         if (hasCast) {
             const float ca = r.castAlpha < 0.0f ? 0.0f : (r.castAlpha > 1.0f ? 1.0f : r.castAlpha);   // pop-in / depop fade
             const float cp = 0.5f + 0.5f * sinf(t * 5.0f);                       // OPACITY pulse during the cast
@@ -875,18 +904,22 @@ void Party::draw(const Frame& f) {
             const u32 crgb = 0x00FFD970;                                         // light gold (constant colour)
             const u32 ccol = ((u32)(0xFF * af) << 24) | crgb;
             const u32 cstk = nSTK ? ((u32)(0xFF * af) << 24) : 0u;              // stroke breathes with the text
-            fName->draw_lc(dev, nx, ry + rowh * 0.80f, r.cast, castSz() * S, ccol, cstk, nOWf);
+            char cbuf[16]; int cl = 0;                                          // cast name : 6 chars max, then "..."
+            for (; cl < 6 && r.cast && r.cast[cl]; ++cl) cbuf[cl] = r.cast[cl];
+            if (r.cast && r.cast[cl]) { while (cl > 0 && cbuf[cl - 1] == ' ') --cl; cbuf[cl] = '.'; cbuf[cl + 1] = '.'; cbuf[cl + 2] = '.'; cbuf[cl + 3] = 0; }
+            else cbuf[cl] = 0;
+            fName->draw_lc(dev, nxt, ry + mh * 0.5f + snap((nameSz_ * 0.5f + castSz() * 0.5f + 3.0f) * S), cbuf, castSz() * S, ccol, cstk, nOWf);   // cast just UNDER the name (half-name + half-cast + 3px gap)
         }
         if (offz) {                                    // no vitals -> show the zone the member is in
             const char* zn = zone_name(r.zone);
             char zbuf[40]; if (zn && zn[0]) { sprintf(zbuf, "%.36s", zn); } else { strcpy(zbuf, "out of zone"); }
-            fName->draw_lc(dev, nx, ry + rowh * 0.72f, zbuf, castSz() * S, C_OFF, nSTK, nOWf);  // zone under the (greyed) name
+            fName->draw_lc(dev, nxt, ry + mh * 0.5f + snap((nameSz_ * 0.5f + castSz() * 0.5f + 3.0f) * S), zbuf, castSz() * S, C_OFF, nSTK, nOWf);  // zone just under the (greyed) name
             continue;
         }
 
         int tp = r.tp < 0 ? 0 : (r.tp > 3000 ? 3000 : r.tp);
         int vals[3] = { dead ? 0 : r.hpVal, r.mpVal, tp };
-        const float gy = ry + (rowh - gh) * 0.5f;
+        const float gy = ry + (mh - gh) * 0.5f;   // bar values centred on the MAIN BAND (match the gauges)
         if (!fBar->ready()) continue;
         fBar->begin(dev);
         for (int g = 0; g < 3; ++g) {
@@ -902,6 +935,13 @@ void Party::draw(const Frame& f) {
     // by S like pad) so they reach the inner border edge at any box size, without spilling onto it.
     const float selIn = snap(3.0f);
     const float sx = px + selIn, sw = w - 2.0f * selIn;
+    // BALANCED selection frame : wrap the member content (main-band top .. cast-line bottom) with an
+    // EQUAL margin above and below, instead of spanning the whole reserved row (which sat flush at the
+    // top and overshot far below the cast). selBot/selH are measured from the row top (ry).
+    const float selPad = snap(2.0f * S);
+    const float selBot = mh * 0.5f + snap((nameSz_ * 0.5f + castSz() + 3.0f) * S);   // content bottom (cast line) from ry
+    const float selY0  = -selPad;                                                     // frame top, relative to ry
+    const float selH   = selBot + 2.0f * selPad;                                      // frame height (content + equal margins)
 
     // ---------- sub-target bar : ocean blue (the game's <st> colour), on top, below the main selection ----------
     if (subA_ > 0.02f) {
@@ -911,9 +951,9 @@ void Party::draw(const Frame& f) {
         // strong ocean-blue fill
         const u32 fillT = ((u32)(0x80 * a) << 24) | 0x00159CFF;   // vivid ocean blue
         const u32 fillB = ((u32)(0x34 * a) << 24) | 0x00064FB0;   // deeper ocean toward the bottom
-        vgrad(dev, sx, ry, sw, rowh, fillT, fillB);
+        vgrad(dev, sx, ry + selY0, sw, selH, fillT, fillB);
         // MODERN shine : the sub IS the cursor row whenever it shows, so it always sweeps (a bit stronger)
-        shine_sweep(dev, sx, ry, sw, rowh, gSweep, 0x00BFEFFF, 0.80f * a);
+        shine_sweep(dev, sx, ry + selY0, sw, selH, gSweep, 0x00BFEFFF, 0.80f * a);
     }
 
     // ---------- selection bar : drawn LAST, on top of everything. Faux "loupe / glass" look ----------
@@ -927,17 +967,17 @@ void Party::draw(const Frame& f) {
         // 1) base tinted gold fill (faint -> readable)
         const u32 fillT = ((u32)(0x3C * a) << 24) | 0x00FFE08A;
         const u32 fillB = ((u32)(0x16 * a) << 24) | 0x00FFC850;
-        vgrad(dev, sx, ry, sw, rowh, fillT, fillB);
+        vgrad(dev, sx, ry + selY0, sw, selH, fillT, fillB);
 
         // 2) MODERN shine : only when the CURSOR is on the main row (i.e. no sub-target active)
-        if (subA_ <= 0.02f) shine_sweep(dev, sx, ry, sw, rowh, gSweep, 0x00FFFFFF, 0.65f * a);
+        if (subA_ <= 0.02f) shine_sweep(dev, sx, ry + selY0, sw, selH, gSweep, 0x00FFFFFF, 0.65f * a);
 
         // 3) curved rims : darken the far left/right edges -> the lens bulge (refraction pinch)
         const float rw = sw * 0.085f;                      // narrow rims so the bars stay clear
         const u32 rO = ((u32)(0x3E * a) << 24);            // black at the very edge
         const u32 rI = 0x00000000;                         // transparent inward
-        grad_quad(dev, sx,           ry, rw, rowh, rO, rI, rO, rI);   // left rim
-        grad_quad(dev, sx + sw - rw, ry, rw, rowh, rI, rO, rI, rO);   // right rim
+        grad_quad(dev, sx,           ry + selY0, rw, selH, rO, rI, rO, rI);   // left rim
+        grad_quad(dev, sx + sw - rw, ry + selY0, rw, selH, rI, rO, rI, rO);   // right rim
     }
 
     // ---------- dim members beyond cast range : a translucent veil over their row, so it reads
@@ -948,8 +988,9 @@ void Party::draw(const Frame& f) {
         const float veilBot = boxOy + boxH - snap(2.0f * S);   // never let the veil reach the box bottom border
         for (int i = 0; i < n; ++i) if (rows[i].outRange) {
             const float ry = oy + pad + (float)i * rowpit;
-            float vh = rowpit; if (ry + vh > veilBot) vh = veilBot - ry;   // clamp the LAST row's veil to the inner margin
-            if (vh > 1.0f) grad_quad(dev, sx, ry, sw, vh, veil, veil, veil, veil);
+            const float vy = ry + selY0;                                   // SAME balanced box as the selection frame (content, not the whole reserved row)
+            float vh = selH; if (vy + vh > veilBot) vh = veilBot - vy;     // clamp the LAST row's veil to the inner margin
+            if (vh > 1.0f) grad_quad(dev, sx, vy, sw, vh, veil, veil, veil, veil);
         }
     }
 

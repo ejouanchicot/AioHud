@@ -78,5 +78,9 @@ void set_party_demo_level(int level);
 // height / mask / Set-Ref growth at any count (alliances always preview full 6).
 int  party_demo_count();
 void set_party_demo_count(int c);
+// demo "selection" : when on, the demo boxes show a target cursor cycling through all members
+// (party then alliances) so the config preview demonstrates the selection highlight. Off in real play.
+bool demo_select();
+void set_demo_select(bool on);
 
 } // namespace aio

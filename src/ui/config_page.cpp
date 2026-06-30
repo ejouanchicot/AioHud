@@ -732,19 +732,24 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
           if (int d = row_selector(dev, fo, mo, click, 30, coX, ry + yo, ctrlW, "Font", ui_font_label(ui_config().fontFace))) {
               ui_config().fontFace = wrap(ui_config().fontFace + d, ui_font_count()); save_ui_config(); } }
         ROW_NEXT(52.0f)
-        // Font Size -> party/alliance scale (slider, 50%..200%, 5% steps)
-        { ROW_BAND(52.0f)
+        // Box Size -> per-box scale, INDEPENDENT for Party / Alliance 1 / Alliance 2 (sliders, 50%..200%, 5% steps)
+        {
+            const char* szLbl[3] = { "Party Size", "Ally 1 Size", "Ally 2 Size" };
+            const int   szId[3]  = { 1, 3, 4 };
             const float lo = 0.50f, hi = 2.00f;
-            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[0].scale * 100.0f + 0.5f));
-            float v01 = (ui_config().box[0].scale - lo) / (hi - lo);
-            if (row_slider(dev, fo, mo, 1, coX, ry + yo, ctrlW, "Font Size", szbuf, &v01)) {
-                float v = lo + v01 * (hi - lo);
-                v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;          // snap to 5% steps
-                v = v < lo ? lo : (v > hi ? hi : v);
-                for (int b = 0; b < 3; ++b) ui_config().box[b].scale = v;   // scale all party/alliance boxes together
+            for (int t = 0; t < 3; ++t) {
+                ROW_BAND(46.0f)
+                char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[t].scale * 100.0f + 0.5f));
+                float v01 = (ui_config().box[t].scale - lo) / (hi - lo);
+                if (row_slider(dev, fo, mo, szId[t], coX, ry + yo, ctrlW, szLbl[t], szbuf, &v01)) {
+                    float v = lo + v01 * (hi - lo);
+                    v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;       // snap to 5% steps
+                    v = v < lo ? lo : (v > hi ? hi : v);
+                    ui_config().box[t].scale = v;                       // ONLY this tier (party / ally1 / ally2)
+                }
+                ROW_NEXT(46.0f)
             }
         }
-        ROW_NEXT(52.0f)
         // Buff Size -> fraction of the player row (slider, 40%..100%, 5% steps ; independent of Font Size)
         { ROW_BAND(52.0f)
             const float lo = 0.40f, hi = 1.00f;

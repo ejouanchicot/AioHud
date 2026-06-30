@@ -186,7 +186,15 @@ void Hud::render(u32 dev) {
     // (text/prims) are auto-rendered by Windower outside this block -- harmless here.
     u32 tok = dCreateSB(dev, D3DSBT_ALL);
     __try {
-        for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->draw(f);
+        // When the config LIVE PREVIEW is up, the party/alliance tiers are drawn ONCE by
+        // draw_config_preview (repositioned into the stage). Skip them in the normal loop so they
+        // aren't drawn twice -- the double draw left the preview pass with dt=0 (animations frozen ->
+        // no selection cursor) and ghosted faintly through the dim (names looked truncated).
+        float pvx_ = 0.0f, pvy_ = 0.0f; const bool pvActive = config_.preview_anchor(pvx_, pvy_);
+        for (size_t i = 0; i < widgets_.size(); ++i) {
+            if (pvActive && strcmp(widgets_[i]->type_name(), "PartyList") == 0) continue;
+            widgets_[i]->draw(f);
+        }
         config_.draw(f, screenW_, screenH_);   // full-screen config overlay, on top of everything
         draw_config_preview(f);                // real party+alliance demo boxes inside the config preview stage
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -229,10 +237,15 @@ void Hud::draw_config_preview(const Frame& f) {
     C.partyRefY = -1.0f;
 
     float pw = 0.0f, ph = 0.0f; tiers[0]->measure(pw, ph);   // party box footprint (bottom-anchored, full 6 rows)
-    const float boxX = rightX - pw, partyTop = bottomY - ph;
+    // SNAP the box origin to whole pixels : measure() is fractional, so an un-snapped origin puts the
+    // whole box (badge, name, gauges) on sub-pixel coords -> the first glyph's left column gets eaten by
+    // filtering ONLY in the preview (live uses an integer layout origin). This is the truncation cause.
+    const float boxX = (float)(int)(rightX - pw + 0.5f), partyTop = (float)(int)(bottomY - ph + 0.5f);
     for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->set_origin(boxX, partyTop);   // shared X ; party Y anchors the stack
 
+    set_demo_select(true);                                          // show a sliding target cursor in the preview
     for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->draw(f);   // tier 0 first (publishes the stack ref)
+    set_demo_select(false);
 
     C.box[0].posSet = sp0; C.box[1].posSet = sp1; C.box[2].posSet = sp2;
     C.partyRefY = sref;

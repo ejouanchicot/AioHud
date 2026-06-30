@@ -23,6 +23,10 @@ static int g_demoCount = 6;                                                  // 
 int  party_demo_count() { return g_demoCount; }
 void set_party_demo_count(int c) { g_demoCount = c < 1 ? 1 : (c > 6 ? 6 : c); }
 
+static bool g_demoSelect = false;
+bool demo_select()            { return g_demoSelect; }
+void set_demo_select(bool on) { g_demoSelect = on; }
+
 static const char* CACHE = "D:\\Windower Tetsouo\\plugins\\aiohud_party.bin";
 
 static const char* JOBS[] = {
