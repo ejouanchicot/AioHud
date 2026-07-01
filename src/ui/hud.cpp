@@ -220,6 +220,8 @@ void Hud::render(u32 dev) {
             if (pvActive && strcmp(widgets_[i]->type_name(), "PartyList") == 0) continue;
             widgets_[i]->draw(f);
         }
+        for (size_t i = 0; i < widgets_.size(); ++i)   // hand the Help the party's selection-hand texture (for its live cursor sample)
+            if (strcmp(widgets_[i]->type_name(), "PartyList") == 0 && static_cast<Party*>(widgets_[i])->tier() == 0) { config_.set_help_cursor_tex(static_cast<Party*>(widgets_[i])->cursor_tex()); break; }
         config_.draw(f, screenW_, screenH_);   // full-screen config overlay, on top of everything
         draw_config_preview(f);                // real party+alliance demo boxes inside the config preview stage
     } __except (EXCEPTION_EXECUTE_HANDLER) {

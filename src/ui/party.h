@@ -13,6 +13,12 @@
 
 namespace aio {
 
+// One real HP/MP/TP liquid gauge (the exact party-row renderer), exposed so the Help can show live
+// examples. pct 0..100 ; col = fill colour ; t = time ; pulse = WS-ready glow ; danger = critical-HP blink.
+void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger = 0.0f);
+// The REAL selection hand (tex from the Party widget), exposed so the Help can show it. sub = blue sub-target.
+void party_cursor(u32 dev, u32 tex, float cx, float cy, float size, bool sub);
+
 class Party : public Widget {
 public:
     const char* type_name() const override { return "PartyList"; }
@@ -23,6 +29,7 @@ public:
     void dispose() override;                  // release the dot texture (unload)
     void draw(const Frame& f) override;
     int  tier() const { return tier_; }      // 0 = main party, 1/2 = alliance boxes (used by the config preview)
+    u32  cursor_tex() const { return icon_tex_; }   // the loaded selection-hand texture (for the Help live sample)
 
 private:
     void row(int i, void* out) const;        // fill one demo Row ; void* keeps Row out of the header

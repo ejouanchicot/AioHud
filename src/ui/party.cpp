@@ -209,7 +209,13 @@ static void rrnd_l(u32 dev, float x, float y, float w, float h, float r, u32 c) 
     qfan(dev, x + r, y + h - r, r, 0.5f * GPI, GPI,        c);   // BL
 }
 
-static void draw_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger = 0.0f) {
+void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger) {   // exposed for the Help live samples
+    // untextured colour-quad state : the party rows draw gauges BEFORE any text, but the Help draws them
+    // AFTER text (font texture still bound + MODULATE) -> reset so the rounded/gradient quads render right.
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1); dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
     if (pct < 0) pct = 0; if (pct > 100) pct = 100;
     const float cyc = gy + gh * 0.5f;
     float r = gh * 0.24f;                                 // gentle corner radius
@@ -255,6 +261,26 @@ static void draw_gauge(u32 dev, float gx, float gy, float gw, float gh, float pc
             rrnd(dev, gx + 1, gy + 1, fillW, fh, fr, dw);
         }
     }
+}
+
+// The REAL selection hand (icon_tex passed in so it stays device-loss managed by the Party widget),
+// exposed for the Help live samples. sub = true tints it blue (sub-target), else white (main target).
+void party_cursor(u32 dev, u32 tex, float cx, float cy, float size, bool sub) {
+    if (!tex) return;
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
+    dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    dSetTex(dev, 0, tex);
+    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+    dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_LINEAR);
+    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+    const u32 tint = 0xFF000000u | (sub ? 0x002E9CFFu : 0x00FFFFFFu);
+    glow_quad(dev, cx - size * 0.5f, cy - size * 0.5f, size, size, tint);
+    dSetTex(dev, 0, 0);
+    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);   // restore the untextured pipeline for the primitives that follow
+    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
 }
 
 // The main party box (tier 0) is configured FIRST (file order), and publishes its exact style
@@ -862,7 +888,7 @@ void Party::draw(const Frame& f) {
         const float gdng[3] = { hpDanger, 0.0f, 0.0f };
         for (int gi = 0; gi < 3; ++gi) {                 // bars are NOT affected by the selection zoom (geometry or brightness)
             const float gx = gx0 + gi * (gw + ggap);
-            draw_gauge(dev, gx, gy, gw, gh, gpct[gi], gcol[gi], t, gpls[gi], gdng[gi]);
+            party_gauge(dev, gx, gy, gw, gh, gpct[gi], gcol[gi], t, gpls[gi], gdng[gi]);
         }
     }
 

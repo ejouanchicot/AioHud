@@ -21,6 +21,9 @@ public:
     // draw the overlay for the current frame (screen size in the HUD coord space). No-op if closed.
     void draw(const Frame& f, float sw, float sh);
 
+    // the HUD hands us the party's selection-hand texture each frame so the Help can show the real cursor.
+    void set_help_cursor_tex(u32 t) { helpCursorTex_ = t; }
+
     // LIVE PREVIEW anchor : when open on the Configuration tab, the HUD draws the real party +
     // alliance demo boxes (bottom-right) into the page. Returns false otherwise. (rightX, bottomY)
     // is where the party box's bottom-right corner should sit, in the HUD coord space.
@@ -93,6 +96,7 @@ private:
     float zoneDrawX_     = 0.0f;    // rubber-band : start corner (screen px) while zoneDrawing_ is set
     float zoneDrawY_     = 0.0f;
     bool  zoneDrawing_   = false;
+    u32   helpCursorTex_ = 0;       // party selection-hand texture, handed in by the HUD for the Help live cursor
 };
 
 } // namespace aio

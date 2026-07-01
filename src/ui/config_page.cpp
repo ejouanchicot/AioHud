@@ -10,6 +10,7 @@
 #include "gfx/window.h"
 #include "model/ui_config.h"
 #include "model/gamestate.h"   // GameState::me (character name) for the Profile page
+#include "ui/party.h"          // party_gauge() : the REAL HP/MP/TP liquid gauge, for the Help live samples
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -417,126 +418,143 @@ struct HelpItem { int kind; const char* en; const char* fr; };
 // help lives under its own page below, e.g. Party / Alliance.)
 static const HelpItem HELP_GENERAL[] = {
     {0, "AioHUD", "AioHUD"},
-    {1, "AioHUD is a from-scratch interface for FFXI, drawn live over the game. It currently provides the Party / Alliance module (see its own Help page); more modules will follow. Everything is set up from this window.",
-        "AioHUD est une interface repensée de zéro pour FFXI, dessinée en direct par-dessus le jeu. Pour l'instant elle fournit le module Groupe / Alliance (voir sa propre page d'aide) ; d'autres modules suivront. Tout se règle depuis cette fenêtre."},
+    {1, "AioHUD is a from-scratch interface for FFXI, drawn live over the game. For now it provides the *Party* and *Alliance* module, and more will follow. Everything is set up from this window.",
+        "AioHUD est une interface repensée de zéro pour FFXI, dessinée en direct par-dessus le jeu. Pour l'instant elle fournit le module *Party* et *Alliance*, et d'autres suivront. Tout se règle depuis cette fenêtre."},
 
     {0, "The config window", "La fenêtre de configuration"},
     {1, "Type //aio config to open this window. It has three tabs:",
         "Tape //aio config pour ouvrir cette fenêtre. Elle comporte trois onglets :"},
-    {2, "Configuration -- tune how things look, with a live preview on the right.",
-        "Configuration -- règle l'apparence, avec un aperçu en direct à droite."},
-    {2, "Profile -- save, load and manage complete setups.",
-        "Profil -- enregistre, charge et gère des configurations complètes."},
-    {2, "Help -- this reference. Pick a module in the left column to read about it.",
-        "Aide -- cette référence. Choisis un module dans la colonne de gauche pour le découvrir."},
+    {2, "*Configuration* tunes how things look, with a live preview on the right.",
+        "*Configuration* règle l'apparence, avec un aperçu en direct à droite."},
+    {2, "*Profile* saves, loads and manages complete setups.",
+        "*Profil* enregistre, charge et gère des configurations complètes."},
+    {2, "*Help* is this reference. Pick a module in the left column to read about it.",
+        "*Aide* est cette référence. Choisis un module dans la colonne de gauche pour le découvrir."},
 
     {0, "Language", "Langue"},
     {1, "The EN / FR button in the top-right corner switches the whole interface between English and French. It is on every tab and your choice is saved.",
         "Le bouton EN / FR en haut à droite bascule toute l'interface entre l'anglais et le français. Il est présent sur chaque onglet et ton choix est sauvegardé."},
 
     {0, "Profiles", "Profils"},
-    {1, "A profile stores every setting under a name. Load one to switch your whole setup at once; edit a loaded profile's name and press Save to rename it in place. They are handy for a per-character or per-job look.",
-        "Un profil enregistre tous les réglages sous un nom. Charges-en un pour changer toute ta configuration d'un coup ; modifie le nom d'un profil chargé puis appuie sur Enregistrer pour le renommer. Pratique pour un rendu par personnage ou par job."},
+    {1, "A profile stores every setting under a name. Load one to switch your whole setup at once. Edit a loaded profile's name and press Save to rename it in place. They are handy for a per-character or per-job look.",
+        "Un profil enregistre tous les réglages sous un nom. Charges-en un pour changer toute ta configuration d'un coup. Modifie le nom d'un profil chargé puis appuie sur Enregistrer pour le renommer. Pratique pour un rendu par personnage ou par job."},
     {1, "The last profile you load is remembered, so when the plugin restarts it automatically comes back on that same profile.",
         "Le dernier profil chargé est mémorisé : au redémarrage du plugin, il revient automatiquement sur ce même profil."},
 
     {0, "Commands", "Commandes"},
-    {2, "//aio config  --  open this window", "//aio config  --  ouvrir cette fenêtre"},
-    {2, "//aio edit  --  move & resize the boxes on screen", "//aio edit  --  déplacer et redimensionner les cadres"},
-    {2, "//aio profile save | load | delete | list <name>", "//aio profile save | load | delete | list <nom>"},
-    {2, "//aio party demo [N]  --  preview the party (N = 1 to 6)", "//aio party demo [N]  --  aperçu du groupe (N = 1 à 6)"},
-    {2, "//aio alliance1 demo / alliance2 demo  --  add alliance parties", "//aio alliance1 demo / alliance2 demo  --  ajouter des alliances"},
-    {2, "//aio demo off  --  return to live data", "//aio demo off  --  revenir aux données réelles"},
+    {2, "*//aio config* opens this window.", "*//aio config* ouvre cette fenêtre."},
+    {2, "*//aio edit* moves and resizes the boxes on screen.", "*//aio edit* déplace et redimensionne les cadres."},
+    {2, "*//aio profile* save, load, delete or list a named setup.", "*//aio profile* save, load, delete ou list un profil nommé."},
+    {2, "*//aio party demo N* previews the *Party* with N members, 1 to 6.", "*//aio party demo N* prévisualise la *Party* avec N membres, de 1 à 6."},
+    {2, "*//aio alliance1 demo* and *alliance2 demo* add alliances.", "*//aio alliance1 demo* et *alliance2 demo* ajoutent des alliances."},
+    {2, "*//aio demo off* returns to live data.", "*//aio demo off* revient aux données réelles."},
 };
 static const int HELP_GENERAL_N = (int)(sizeof(HELP_GENERAL) / sizeof(HELP_GENERAL[0]));
 
 // PARTY / ALLIANCE : only what concerns the party + alliance boxes.
 static const HelpItem HELP_PA[] = {
-    {0, "Party & Alliance", "Groupe & Alliance"},
-    {1, "AioHUD replaces the game's own party and alliance windows with up to three boxes: your party, plus alliance party 1 and alliance party 2. Each box lists its members with live HP, MP and TP, their jobs, leader markers, distance and -- for your own party -- their status effects. Everything updates in real time, and your current target is always highlighted.",
-        "AioHUD remplace les fenêtres de groupe et d'alliance du jeu par un maximum de trois cadres : ton groupe, plus l'alliance 1 et l'alliance 2. Chaque cadre liste ses membres avec leurs HP, MP et TP en direct, leurs jobs, les marqueurs de chef, la distance et -- pour ton propre groupe -- leurs effets de statut. Tout se met à jour en temps réel, et ta cible actuelle est toujours mise en évidence."},
+    {0, "Party and Alliance", "Party et Alliance"},
+    {1, "AioHUD replaces the game's *Party* and *Alliance* windows with up to three boxes, your *Party* plus *Alliance 1* and *Alliance 2*. Each one shows its members with live HP, MP and TP, their job, the leader marks, the distance, and for your own *Party* their status effects. It all moves in real time, and whoever you are targeting stays lit up.",
+        "AioHUD remplace les fenêtres *Party* et *Alliance* du jeu par un maximum de trois cadres, ta *Party* plus l'*Alliance 1* et l'*Alliance 2*. Chacun montre ses membres avec leurs HP, MP et TP en direct, leur job, les marques de leader, la distance, et pour ta propre *Party* leurs effets de statut. Tout bouge en temps réel, et la personne que tu cibles reste allumée."},
 
     {0, "Reading a member", "Lire un membre"},
-    {1, "A member's row reads from left to right: the leader / quartermaster dots and the distance, then the job badge, the player's name, and finally the three gauges.",
-        "La ligne d'un membre se lit de gauche à droite : les pastilles de chef / quartier-maître et la distance, puis le badge de job, le nom du joueur, et enfin les trois jauges."},
-    {2, "Name -- shown in a clear off-white. It turns red when the member is KO'd, and greys out when they are in another zone.",
-        "Nom -- en blanc cassé. Il devient rouge quand le membre est KO, et grisé quand il est dans une autre zone."},
-    {2, "Job badge -- the main job on top and the sub job below (for example WAR over NIN). The badge is tinted by the member's ROLE (tank, healer, damage, support), so you can read the party's makeup at a glance -- the name itself is not coloured by role.",
-        "Badge de job -- le job principal en haut et le sous-job en dessous (par exemple WAR sur NIN). Le badge est teinté selon le RÔLE du membre (tank, soigneur, DD, soutien), pour lire la composition du groupe d'un coup d'oeil -- le nom, lui, n'est pas coloré par le rôle."},
-    {2, "HP gauge -- green when high, shading through yellow and orange to red as it drops, and it blinks red when the member is critical (25% or below).",
-        "Jauge HP -- verte quand elle est haute, virant au jaune puis orange puis rouge en baissant, et elle clignote en rouge quand le membre est critique (25% ou moins)."},
-    {2, "MP gauge -- blue. TP gauge -- fills as TP builds and glows once it reaches 1000, meaning a weapon skill is ready.",
-        "Jauge MP -- bleue. Jauge TP -- se remplit avec les TP et s'illumine dès 1000, signe qu'une weapon skill est prête."},
-    {2, "Buff icons -- your own party members show their active status effects in a row to the left (up to 20). The game does not send alliance buffs, so alliance members have none.",
-        "Icônes de buffs -- les membres de ton groupe affichent leurs effets de statut actifs en ligne à gauche (jusqu'à 20). Le jeu n'envoie pas les buffs d'alliance, donc les membres d'alliance n'en ont pas."},
+    {1, "A member's row reads from left to right, starting with the leader dots and the distance, then the job badge, the name, and finally the three gauges.",
+        "La ligne d'un membre se lit de gauche à droite, en commençant par les pastilles de leader et la distance, puis le badge de job, le nom, et enfin les trois jauges."},
+    {2, "The *name* sits in a clean off-white. It turns *red* when the member is KO, and greys out when they are in another zone.",
+        "Le *nom* est en blanc cassé. Il passe au *rouge* quand le membre est KO, et grise quand il est dans une autre zone."},
+    {2, "The *job badge* carries the main job on top and the sub below, WAR over NIN for example. It is tinted by the member's *role*, tank, healer, damage or support, so you read the make-up of the group at a glance.",
+        "Le *badge de job* porte le job principal en haut et le sous-job en dessous, WAR sur NIN par exemple. Il est teinté selon le *rôle* du membre, tank, healer, damage ou support, pour lire la composition du groupe d'un coup d'œil."},
+    {2, "*HP* runs from green when it is high down through yellow and orange to red, and it blinks alarm-red once the member drops to a quarter or less.",
+        "Les *HP* vont du vert quand elles sont hautes jusqu'au rouge en passant par le jaune et l'orange, et clignotent en rouge d'alarme dès que le membre tombe à un quart ou moins."},
+    {12, "the HP colour, live, blinking at the critical quarter", "la couleur des HP en direct, clignotant au quart critique"},
+    {2, "*MP* is blue. *TP* fills as it builds and lights up at 1000, which means a weapon skill is ready.",
+        "Les *MP* sont bleus. Les *TP* se remplissent et s'illuminent à 1000, ce qui veut dire qu'une weapon skill est prête."},
+    {13, "the TP gauge, live, glowing past 1000", "la jauge de TP en direct, brillant au-delà de 1000"},
+    {2, "*Buff icons* for your own *Party*, up to 20 in a row on the left. The game never sends *Alliance* buffs, so alliance members show none.",
+        "Des *icônes de buffs* pour ta propre *Party*, jusqu'à 20 en ligne à gauche. Le jeu n'envoie jamais les buffs d'*Alliance*, donc les membres d'alliance n'en ont pas."},
 
-    {0, "Leader & quartermaster dots", "Pastilles chef & quartier-maître"},
-    {1, "Up to three small dots sit at the top of the left column, each in its own fixed slot so they never shuffle around: WHITE marks the alliance leader, YELLOW your party leader, and GREEN the quartermaster. A slot is just left empty when the member doesn't hold that role, and the dots pop in and out smoothly as roles change.",
-        "Jusqu'à trois petites pastilles en haut de la colonne de gauche, chacune dans un emplacement fixe pour ne jamais se mélanger : BLANC pour le chef d'alliance, JAUNE pour ton chef de groupe, VERT pour le quartier-maître. Un emplacement reste vide si le membre n'a pas ce rôle, et les pastilles apparaissent et disparaissent en douceur quand les rôles changent."},
+    {0, "Leader and Quartermaster dots", "Pastilles Party Leader, Alliance Leader et Quartermaster"},
+    {1, "Three little dots sit at the top of the left column, each in its own fixed slot so they never shuffle around. A slot stays empty when the member does not hold that role, and the dots fade in and out as roles change.",
+        "Trois petites pastilles en haut de la colonne de gauche, chacune dans un emplacement fixe pour ne jamais se mélanger. Un emplacement reste vide si le membre n'a pas ce rôle, et les pastilles apparaissent et disparaissent quand les rôles changent."},
+    {11, "", ""},
 
     {0, "Distance", "Distance"},
-    {1, "Just under the dots, each member shows their distance to you in yalms, written as 00.00. Its colour tells you at a glance whether your spells can reach them:",
-        "Juste sous les pastilles, chaque membre affiche sa distance jusqu'à toi en yalms, au format 00.00. Sa couleur indique d'un coup d'oeil si tes sorts peuvent l'atteindre :"},
-    {2, "BLUE (under 10') -- in range of everything: cures and the short ~10' spells (AoE -ra, Majesty, and so on).",
-        "BLEU (moins de 10') -- à portée de tout : cures et sorts courts ~10' (AoE en -ra, Majesty, etc.)."},
-    {2, "YELLOW (10' up to 20.8') -- within normal casting range, but too far for those short ~10' spells.",
-        "JAUNE (10' à 20.8') -- dans la portée de cast normale, mais trop loin pour les sorts courts ~10'."},
-    {2, "RED (20.8' and beyond) -- out of casting range; a normal cure or buff will fail, and the whole row is dimmed (see below).",
-        "ROUGE (20.8' et au-delà) -- hors de portée ; une cure ou un buff normal échouera, et toute la ligne est assombrie (voir plus bas)."},
-    {1, "You (your own row), trusts, and members in another zone show no distance number.",
-        "Toi (ta propre ligne), les trusts et les membres dans une autre zone n'affichent aucune distance."},
+    {1, "Under the dots, each member shows how far they are from you in yalms, written as 00.00. The colour tells you at a glance whether your spells can reach them.",
+        "Sous les pastilles, chaque membre montre à quelle distance il est de toi en yalms, au format 00.00. La couleur te dit d'un coup d'œil si tes sorts peuvent l'atteindre."},
+    {10, "under 10 blue, up to 20.8 yellow, beyond that red", "moins de 10 bleu, jusqu'à 20.8 jaune, au-delà rouge"},
+    {2, "*Blue* under 10 yalms, in range of everything, cures and the short spells like the AoE -ra line or Majesty.",
+        "*Bleu* sous 10 yalms, à portée de tout, cures et sorts courts comme les -ra de zone ou Majesty."},
+    {2, "*Yellow* from 10 up to 20.8, still in normal casting range but too far for those short spells.",
+        "*Jaune* de 10 à 20.8, encore dans la portée de cast normale mais trop loin pour ces sorts courts."},
+    {2, "*Red* at 20.8 and beyond, out of range. A normal cure or buff will fail, and the whole row dims.",
+        "*Rouge* à 20.8 et au-delà, hors de portée. Une cure ou un buff normal échouera, et toute la ligne s'assombrit."},
+    {1, "You, your trusts, and anyone in another zone show no distance.",
+        "Toi, tes trusts et quiconque dans une autre zone n'affichent pas de distance."},
 
-    {0, "The target cursor", "Le curseur de cible"},
-    {1, "When you target a party or alliance member, a hand icon appears at the left of their row pointing straight at them, and a soft highlight slides onto the row. The cursor follows your target from one member to the next, bobbing gently so it is always easy to spot.",
-        "Quand tu cibles un membre du groupe ou de l'alliance, une icône de main apparaît à gauche de sa ligne en le pointant, et une surbrillance douce glisse sur la ligne. Le curseur suit ta cible de membre en membre, en oscillant légèrement pour rester bien visible."},
-    {2, "A WHITE hand with a GOLD highlight marks your main target (<t>).",
-        "Une main BLANCHE avec une surbrillance OR indique ta cible principale (<t>)."},
-    {2, "A BLUE hand with a BLUE highlight marks your sub-target (<st>); it is drawn over the main one whenever you are picking a sub-target, for example while choosing who to heal.",
-        "Une main BLEUE avec une surbrillance BLEUE indique ta sous-cible (<st>) ; elle s'affiche par-dessus la principale quand tu choisis une sous-cible, par exemple qui soigner."},
-    {1, "The game's own party menu (Quartermaster, Lottery, remove member, and so on) also lights up the member it is pointing at, so the box always matches the menu you see on screen.",
-        "Le menu de groupe du jeu (quartier-maître, tirage, exclure un membre, etc.) met aussi en évidence le membre qu'il pointe, donc le cadre correspond toujours au menu affiché à l'écran."},
+    {0, "Target cursor", "Curseur de cible"},
+    {1, "When you target a *Party* or *Alliance* member, a hand appears at the left of their row pointing at them and a soft highlight slides onto it. The cursor follows your target from one member to the next, bobbing gently so it is always easy to spot.",
+        "Quand tu cibles un membre de la *Party* ou de l'*Alliance*, une main apparaît à gauche de sa ligne en le pointant et une surbrillance douce glisse dessus. Le curseur suit ta cible de membre en membre, en oscillant légèrement pour rester bien visible."},
+    {14, "", ""},
+    {1, "The game's own party menu, like Quartermaster or Lottery, also lights up the member it points at, so the box always matches the menu on screen.",
+        "Le menu de groupe du jeu, comme Quartermaster ou Lottery, allume aussi le membre qu'il pointe, donc le cadre correspond toujours au menu à l'écran."},
 
-    {0, "Selection highlight", "La surbrillance de sélection"},
-    {1, "The highlight is a faint, tinted bar with a soft glass sheen that sweeps slowly across it -- bright enough to frame the targeted member, but never enough to hide their gauges. It wraps the member evenly, leaving the same small margin above the name and below the cast line, and stays tucked inside the box so it never spills onto the border. The main target's bar is gold; a sub-target's bar is ocean blue and sits on top.",
-        "La surbrillance est une barre teintée discrète avec un reflet de verre qui la balaie doucement -- assez visible pour encadrer le membre ciblé, mais jamais au point de masquer ses jauges. Elle entoure le membre de façon équilibrée, avec la même petite marge au-dessus du nom et sous la ligne d'incantation, et reste à l'intérieur du cadre sans déborder sur la bordure. La barre de la cible principale est or ; celle d'une sous-cible est bleu océan et passe au-dessus."},
+    {0, "Selection highlight", "Surbrillance de sélection"},
+    {1, "The highlight is a faint tinted bar with a slow glass sheen sweeping across it, bright enough to frame the member but never enough to hide the gauges. The main target's bar is *gold*, and a sub-target's bar is ocean *blue* and sits on top.",
+        "La surbrillance est une barre teintée discrète avec un reflet de verre qui la balaie lentement, assez visible pour encadrer le membre mais jamais au point de masquer les jauges. La barre de la cible principale est *or*, et celle d'une sous-cible est *bleu* océan et passe au-dessus."},
 
-    {0, "Casting & out of range", "Incantation & hors de portée"},
-    {1, "While a member is casting, the spell's name appears in gold just under their name, breathing softly (long names are shortened so the row stays tidy). A member who is beyond casting range sits under a dark veil drawn over their row -- a clear 'can't reach them' cue -- and a member who has moved to another zone shows that zone's name in place of their gauges.",
-        "Quand un membre lance un sort, le nom du sort apparaît en or juste sous son nom, en pulsant doucement (les noms longs sont raccourcis pour garder la ligne propre). Un membre hors de portée de cast est recouvert d'un voile sombre sur sa ligne -- un signal clair de 'hors d'atteinte' -- et un membre parti dans une autre zone affiche le nom de cette zone à la place de ses jauges."},
+    {0, "Casting and out of range", "Incantation et hors de portée"},
+    {1, "While a member casts, the spell name shows in *gold* just under their name, breathing softly. A member beyond casting range sits under a dark veil over their row, a clear can't-reach-them cue. A member who has moved to another zone shows that zone's name in place of the gauges.",
+        "Quand un membre lance un sort, le nom du sort s'affiche en *or* juste sous son nom, en pulsant doucement. Un membre hors de portée de cast est recouvert d'un voile sombre sur sa ligne, un signal clair qu'on ne peut pas l'atteindre. Un membre parti dans une autre zone montre le nom de cette zone à la place des jauges."},
 
     {0, "Adaptive layout", "Disposition adaptative"},
-    {1, "The party box is anchored by its lower-right corner: it grows upward as members join and shrinks back down as they leave, but the corner you placed never moves. A solo party gets a little extra height, and the box reaches up just enough to keep the game's own party window hidden behind it.",
-        "Le cadre de groupe est ancré par son coin bas-droit : il s'agrandit vers le haut quand des membres arrivent et se réduit quand ils partent, mais le coin que tu as placé ne bouge jamais. Un groupe en solo gagne un peu de hauteur, et le cadre remonte juste assez pour garder la fenêtre de groupe native du jeu cachée derrière lui."},
+    {1, "The *Party* box is anchored by its lower-right corner. It grows upward as members join and shrinks back as they leave, but the corner you placed never moves. Whatever the member count, it reaches up just far enough to keep the game's own party window hidden behind it, and that top edge is set by the *Party* zones covered further down.",
+        "Le cadre *Party* est ancré par son coin bas-droit. Il grandit vers le haut quand des membres arrivent et se réduit quand ils partent, mais le coin que tu as placé ne bouge jamais. Quel que soit le nombre de membres, il remonte juste assez pour garder la fenêtre de groupe native du jeu cachée derrière lui, et ce bord haut est défini par les zones *Party* vues plus bas."},
 
-    {0, "Cost / Next box", "Cadre Coût / Next"},
-    {1, "When you open a spell, ability or weapon-skill menu, a small box appears just above the party. It shows the action's name with, depending on the action, its MP cost (spells), its recast 'Next' timer (spells and abilities), or your live TP (weapon skills). Alliance 1 stacks flush on top of this box.",
-        "Quand tu ouvres un menu de sort, d'aptitude ou de weapon skill, un petit cadre apparaît juste au-dessus du groupe. Il affiche le nom de l'action avec, selon le cas, son coût en MP (sorts), son délai de recast 'Next' (sorts et aptitudes), ou tes TP en direct (weapon skills). L'alliance 1 se cale juste au-dessus de ce cadre."},
+    {0, "Cost and Next box", "Cadre Coût et Next"},
+    {1, "When you open a spell, ability or weapon-skill menu, a small box appears just above the *Party*. It shows the action's name with, depending on the action, its MP cost for spells, its *Next* recast timer for spells and abilities, or your live TP for weapon skills. *Alliance 1* stacks flush on top of this box.",
+        "Quand tu ouvres un menu de sort, d'aptitude ou de weapon skill, un petit cadre apparaît juste au-dessus de la *Party*. Il montre le nom de l'action avec, selon le cas, son coût en MP pour les sorts, son délai *Next* pour les sorts et aptitudes, ou tes TP en direct pour les weapon skills. L'*Alliance 1* se cale juste au-dessus de ce cadre."},
 
     {0, "Configuration", "Configuration"},
-    {1, "The Configuration tab is where you set how the boxes look. A live preview on the right updates as you change things:",
-        "L'onglet Configuration sert à régler l'apparence des cadres. Un aperçu en direct à droite se met à jour quand tu changes les réglages :"},
-    {2, "Box Theme -- the FFXI window skin used for every box.",
-        "Thème de cadre -- l'habillage de fenêtre FFXI utilisé pour tous les cadres."},
-    {2, "Font -- the text face for names, jobs and numbers.",
-        "Police -- la police des noms, jobs et chiffres."},
-    {2, "Party Size -- scales the party box from 100% to 200%. It can't go below 100%, so it always stays large enough to cover the game's native party window.",
-        "Taille groupe -- met le cadre de groupe à l'échelle de 100% à 200%. Il ne peut pas descendre sous 100%, pour rester assez grand et couvrir la fenêtre de groupe native du jeu."},
-    {2, "Ally 1 Size / Ally 2 Size -- scale each alliance box on its own, from 50% to 200%. Whatever their size, the alliances keep their right edge lined up with the party and stack flush above it.",
-        "Taille alliance 1 / alliance 2 -- met chaque cadre d'alliance à l'échelle indépendamment, de 50% à 200%. Quelle que soit leur taille, les alliances gardent leur bord droit aligné sur le groupe et s'empilent juste au-dessus."},
-    {2, "Buff Size -- how large the buff icons are, as a share of the row height.",
-        "Taille des buffs -- la taille des icônes de buffs, en proportion de la hauteur de ligne."},
-    {2, "Borders -- turn the window frame off per box (Party, Cost, Alliance 1, Alliance 2); the background stays, only the frame is hidden.",
-        "Bordures -- désactive le cadre de fenêtre par boîte (Groupe, Coût, Alliance 1, Alliance 2) ; le fond reste, seule la bordure est cachée."},
-    {1, "Whenever a box is resized, its lower-right corner stays put: the box grows up and to the left from where you placed it, so nothing drifts out of position.",
-        "Quand un cadre est redimensionné, son coin bas-droit reste fixe : le cadre grandit vers le haut et la gauche depuis l'endroit où tu l'as placé, donc rien ne se décale."},
+    {1, "The Configuration tab sets how the boxes look, with a live preview on the right that follows your changes.",
+        "L'onglet Configuration règle l'apparence des cadres, avec un aperçu en direct à droite qui suit tes changements."},
+    {2, "*Box Theme* is the FFXI window skin used for every box.",
+        "*Box Theme* est l'habillage de fenêtre FFXI utilisé pour tous les cadres."},
+    {2, "*Font* is the text face for names, jobs and numbers.",
+        "*Font* est la police des noms, jobs et chiffres."},
+    {2, "*Party Size* scales the *Party* box from 100 to 200 percent. It never drops below 100 so it always covers the native window. *Ally 1* and *Ally 2* scale on their own, 50 to 200.",
+        "*Party Size* met le cadre *Party* à l'échelle de 100 à 200 pour cent. Il ne descend jamais sous 100 pour toujours couvrir la fenêtre native. *Ally 1* et *Ally 2* s'échelonnent seuls, de 50 à 200."},
+    {2, "*Buff Size* sets how big the buff icons are, as a share of the row height.",
+        "*Buff Size* règle la taille des icônes de buffs, en proportion de la hauteur de ligne."},
+    {2, "*Bar Height* and *Bar Width* size the HP, MP and TP gauges. The box grows to fit.",
+        "*Bar Height* et *Bar Width* dimensionnent les jauges HP, MP et TP. Le cadre s'agrandit en conséquence."},
+    {2, "*Job Badge* is Off, Main job only, or Main plus Sub.",
+        "*Job Badge* est Aucun, Job principal seul, ou Principal plus Sub."},
+    {2, "*Casts* shows the casting line, toggled apart for *Party* and *Alliance*. *Distance* shows the yalms number, toggled per box.",
+        "*Casts* affiche la ligne d'incantation, activable à part pour la *Party* et l'*Alliance*. *Distance* affiche le nombre de yalms, activable par cadre."},
+    {2, "*Borders* turns the window frame off per box, *Party*, *Cost*, *Alliance 1* and *Alliance 2*. The background stays, only the frame goes.",
+        "*Borders* enlève le cadre de fenêtre par boîte, *Party*, *Cost*, *Alliance 1* et *Alliance 2*. Le fond reste, seule la bordure part."},
+    {1, "Whenever a box is resized its lower-right corner stays put, so it grows up and to the left from where you placed it and nothing drifts.",
+        "Quand un cadre est redimensionné son coin bas-droit reste en place, il grandit vers le haut et la gauche depuis où tu l'as posé et rien ne dérive."},
 
-    {0, "Move & resize", "Déplacer & redimensionner"},
-    {1, "Click Edit Layout (or type //aio edit) to arrange the boxes right on the game screen: drag a box to move it, and roll the mouse wheel over it to resize. Boxes snap to each other's edges as you drag. 'Set Ref' locks the party's reference line, handy once you have it aligned on the native window. 'Default' resets every position and size; click Done to save and leave edit mode.",
-        "Clique sur Éditer dispo (ou tape //aio edit) pour disposer les cadres directement sur l'écran de jeu : glisse un cadre pour le déplacer, et utilise la molette dessus pour le redimensionner. Les cadres s'aimantent à leurs bords mutuels pendant le glissement. 'Régler réf' verrouille la ligne de référence du groupe, pratique une fois alignée sur la fenêtre native. 'Défaut' réinitialise toutes les positions et tailles ; clique sur Terminé pour sauvegarder et quitter le mode édition."},
+    {0, "Move and resize", "Déplacer et redimensionner"},
+    {1, "Type //aio edit, or click Edit Layout, to arrange the boxes right on the game screen. Drag a box to move it, and roll the wheel over it to resize, the *Party* from 100 to 200 and the alliances from 50 to 200. Boxes snap to each other's edges as you drag. Default resets every position and size, and Done saves and leaves edit mode.",
+        "Tape //aio edit, ou clique Éditer dispo, pour disposer les cadres directement sur l'écran. Glisse un cadre pour le déplacer, et utilise la molette dessus pour redimensionner, la *Party* de 100 à 200 et les alliances de 50 à 200. Les cadres s'aimantent à leurs bords pendant le glissement. Défaut réinitialise toutes les positions et tailles, et Terminé sauvegarde et quitte."},
 
-    {0, "Preview (Demo)", "Aperçu (Démo)"},
-    {1, "Use //aio party demo [N] to fill the party with N fake members (1-6), or //aio alliance1 demo / alliance2 demo to add alliance parties. In demo, a target cursor cycles through the members so you can watch the highlight move. //aio demo off returns to live data. Demo mirrors the real layout, so you can tune spacing and placement with no live party.",
-        "Utilise //aio party demo [N] pour remplir le groupe avec N faux membres (1-6), ou //aio alliance1 demo / alliance2 demo pour ajouter des alliances. En démo, un curseur de cible défile sur les membres pour voir bouger la surbrillance. //aio demo off revient aux données réelles. La démo reproduit la vraie disposition, pour régler l'espacement et le placement sans groupe réel."},
+    {0, "Zones", "Zones"},
+    {1, "In edit mode the *Rules* button opens the zone editor. The HUD hides so only your zones and the toolbar show. Zones are rectangles you draw over the screen to say where each box may sit, to line the boxes up on the game's native windows and keep them off spots like the chat log.",
+        "En mode édition le bouton *Rules* ouvre l'éditeur de zones. Le HUD se cache pour ne montrer que tes zones et la barre d'outils. Les zones sont des rectangles que tu dessines sur l'écran pour dire où chaque cadre peut se poser, pour aligner les cadres sur les fenêtres natives du jeu et les tenir à l'écart d'endroits comme le journal de chat."},
+    {2, "*Draw* a zone by dragging on an empty spot, or click + Zone. Move it by its body, resize it by its corners. A plain click only selects it.",
+        "*Dessine* une zone en glissant sur un endroit vide, ou clique + Zone. Déplace-la par son corps, redimensionne-la par ses coins. Un simple clic la sélectionne seulement."},
+    {2, "*Name and permissions*, pick a zone then rename it in the panel and choose which boxes may sit on it, *Party*, *Alliance* or *Hub*. A zone that allows nothing is a keep-out, a box dragged onto it is pushed back out.",
+        "*Nom et permissions*, choisis une zone puis renomme-la dans le panneau et choisis quels cadres peuvent s'y poser, *Party*, *Alliance* ou *Hub*. Une zone qui n'autorise rien est interdite, un cadre glissé dessus en est repoussé."},
+    {2, "*+ Party* creates the six party zones, 1p to 6p. The *Party* box grows up to the zone that matches your member count. *+ Ally* creates the two alliance zones. Drag and resize them onto the native windows.",
+        "*+ Party* crée les six zones party, 1p à 6p. Le cadre *Party* remonte jusqu'à la zone qui correspond à ton nombre de membres. *+ Ally* crée les deux zones d'alliance. Glisse-les et redimensionne-les sur les fenêtres natives."},
+    {1, "Turn *Rules* off to go back to placing the boxes. Your zones stay active and keep the boxes out of the forbidden spots. The panel is draggable and its place is remembered. Everything is stored as a share of the screen, so a saved layout scales to any resolution, you may just re-align the zones to your own native windows.",
+        "Désactive *Rules* pour revenir au placement des cadres. Tes zones restent actives et tiennent les cadres hors des endroits interdits. Le panneau est déplaçable et sa place est mémorisée. Tout est stocké en proportion de l'écran, donc une disposition sauvée s'adapte à toute résolution, il te suffira peut-être de ré-aligner les zones sur tes propres fenêtres natives."},
+
+    {0, "Preview and demo", "Aperçu et démo"},
+    {1, "Use //aio party demo N to fill the *Party* with N fake members from 1 to 6, or //aio alliance1 demo and alliance2 demo to add alliances. In demo a target cursor cycles through the members so you watch the highlight move. //aio demo off returns to live data. Demo mirrors the real layout, so you can tune spacing and placement with no live party.",
+        "Utilise //aio party demo N pour remplir la *Party* avec N faux membres de 1 à 6, ou //aio alliance1 demo et alliance2 demo pour ajouter des alliances. En démo un curseur de cible défile sur les membres pour voir bouger la surbrillance. //aio demo off revient aux données réelles. La démo reproduit la vraie disposition, pour régler l'espacement et le placement sans groupe réel."},
 };
 static const int HELP_PA_N = (int)(sizeof(HELP_PA) / sizeof(HELP_PA[0]));
 
@@ -544,31 +562,41 @@ static const int HELP_PA_N = (int)(sizeof(HELP_PA) / sizeof(HELP_PA[0]));
 struct HelpModule { const char* en; const char* fr; const HelpItem* items; int count; };
 static const HelpModule HELP_MODULES[] = {
     { "General",          "Général",            HELP_GENERAL, HELP_GENERAL_N },
-    { "Party / Alliance", "Groupe / Alliance",  HELP_PA,      HELP_PA_N },
+    { "Party / Alliance", "Party / Alliance",    HELP_PA,      HELP_PA_N },
 };
 static const int HELP_MODULE_N = (int)(sizeof(HELP_MODULES) / sizeof(HELP_MODULES[0]));
 
 // Draw word-wrapped text from (x,y), returning the new y. Lines whose center is outside [top,bot] are
 // skipped -- a cheap clip for the scrolling viewport (D3D8 has no scissor rect).
+// Word-wrap with tiny inline markup : *bold* (brighter + a heavier outline) and _highlight_ (gold).
+// Drawn word by word so emphasis can change mid-line. Markers are consumed, not shown. STRICT top/bot clip.
 static float draw_wrapped(u32 dev, Font* fo, float x, float y, float maxW, float top, float bot,
                           const char* text, float sz, u32 col, float lineH) {
-    char cur[512]; int cl = 0; char word[160]; const char* p = text;
+    const float spaceW = fo->measure(" ", sz);
+    const char* p = text; char word[160];
+    float lineX = x; bool lineStart = true; int emph = 0;   // 0 normal, 1 bold, 2 highlight (carried across words)
     for (;;) {
         while (*p == ' ') ++p;
-        int wl = 0; while (*p && *p != ' ' && wl < 159) word[wl++] = *p++;
-        word[wl] = 0;
-        if (wl == 0) break;
-        char trial[640];
-        if (cl == 0) { strncpy(trial, word, sizeof(trial) - 1); trial[sizeof(trial) - 1] = 0; }
-        else { _snprintf(trial, sizeof(trial), "%s %s", cur, word); trial[sizeof(trial) - 1] = 0; }
-        if (cl == 0 || fo->measure(trial, sz) <= maxW) { strncpy(cur, trial, sizeof(cur) - 1); cur[sizeof(cur) - 1] = 0; cl = (int)strlen(cur); }
-        else {
-            if (y >= top && y + lineH <= bot) { fo->begin(dev); fo->draw_lc(dev, x, y + lineH * 0.5f, cur, sz, fa(col), fa(C_STROKE), 1.0f); }   // STRICT clip : only fully-visible lines, so text never spills onto the tabs / footer
-            y += lineH; strncpy(cur, word, sizeof(cur) - 1); cur[sizeof(cur) - 1] = 0; cl = wl;
+        while (*p == '*' || *p == '_') { emph = (*p == '*') ? (emph == 1 ? 0 : 1) : (emph == 2 ? 0 : 2); ++p; }
+        const int wEmph = emph;
+        int wl = 0;
+        while (*p && *p != ' ' && wl < 159) {
+            if (*p == '*') { emph = (emph == 1 ? 0 : 1); ++p; continue; }
+            if (*p == '_') { emph = (emph == 2 ? 0 : 2); ++p; continue; }
+            word[wl++] = *p++;
         }
+        word[wl] = 0;
+        if (wl > 0) {
+            const float ww = fo->measure(word, sz);
+            if (!lineStart && lineX + spaceW + ww > x + maxW) { y += lineH; lineX = x; lineStart = true; }   // wrap
+            if (!lineStart) lineX += spaceW;
+            const u32 wc = (wEmph == 1) ? C_TEXT : (wEmph == 2) ? C_GOLD : col;
+            if (y >= top && y + lineH <= bot) { fo->begin(dev); fo->draw_lc(dev, lineX, y + lineH * 0.5f, word, sz, fa(wc), fa(C_STROKE), wEmph == 1 ? 1.9f : 1.0f); }
+            lineX += ww; lineStart = false;
+        }
+        if (!*p) break;
     }
-    if (cl > 0) { if (y >= top && y + lineH <= bot) { fo->begin(dev); fo->draw_lc(dev, x, y + lineH * 0.5f, cur, sz, fa(col), fa(C_STROKE), 1.0f); } y += lineH; }
-    return y;
+    return y + lineH;
 }
 
 void ConfigPage::draw(const Frame& f, float sw, float sh) {
@@ -1512,6 +1540,64 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 if (y >= top && y + lh <= bot) flat(dev, hx + snap(6.0f), y + lh * 0.5f - snap(2.0f), snap(4.0f), snap(4.0f), fa(C_ACCENT));
                 y = draw_wrapped(dev, fo, hx + snap(20.0f), y, hw - snap(20.0f), top, bot, txt, bsz, C_DIM, lh);
                 y += snap(3.0f);
+            } else if (it.kind == 10) {               // LIVE sample : the distance readout sweeping 0.00 -> 30.00
+                const float rh2 = snap(28.0f), bw = snap(96.0f);
+                if (y >= top && y + rh2 <= bot) {
+                    const float d = fmodf(f.t * 4.0f, 30.0f);
+                    const u32 dc = (d < 10.0f) ? 0xFF5AA2FF : (d < 20.8f) ? 0xFFEFD24A : 0xFFFF6E6E;   // blue / yellow / red
+                    vg(dev, hx, y, bw, rh2, 0xF01E2838, 0xF0141C24); outline(dev, hx, y, bw, rh2, C_BORDER);
+                    char db[16]; sprintf(db, "%05.2f", d);
+                    fo->begin(dev); fo->draw_c(dev, hx + bw * 0.5f, y + rh2 * 0.5f, db, snap(16.0f), fa(dc), fa(C_STROKE), 1.3f);
+                    fo->draw_lc(dev, hx + bw + snap(14.0f), y + rh2 * 0.5f, txt, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
+                }
+                y += rh2 + snap(10.0f);
+            } else if (it.kind == 11) {               // LIVE sample : the three leader / QM dots with their game terms
+                const u32 dcol[3] = { 0xFFFFFFFF, 0xFFFFEF3F, 0xFF42D98A };
+                const char* dlab[3] = { "Alliance Leader", "Party Leader", "Quartermaster" };
+                const float rh2 = snap(22.0f);
+                for (int k = 0; k < 3; ++k) {
+                    if (y >= top && y + rh2 <= bot) {
+                        disc(dev, hx + snap(9.0f), y + rh2 * 0.5f, snap(4.5f), dcol[k]);
+                        fo->begin(dev); fo->draw_lc(dev, hx + snap(24.0f), y + rh2 * 0.5f, dlab[k], bsz, fa(C_TEXT), fa(C_STROKE), 1.0f);
+                    }
+                    y += rh2;
+                }
+                y += snap(8.0f);
+            } else if (it.kind == 12) {               // LIVE sample : the REAL HP gauge sweeping full -> empty (colour + critical blink)
+                const float gh = snap(22.0f), gw = snap(210.0f), rh2 = gh + snap(12.0f);
+                if (y >= top && y + rh2 <= bot) {
+                    const float hp = 0.5f + 0.5f * sinf(f.t * 0.55f);   // 0..1
+                    const u32 hc = (hp >= 0.5f) ? lerpc(0xFFEFD24A, 0xFF5ADC5A, (hp - 0.5f) / 0.5f) : lerpc(0xFFFF4646, 0xFFEFD24A, hp / 0.5f);
+                    party_gauge(dev, hx + snap(4.0f), y + snap(5.0f), gw, gh, hp * 100.0f, hc, f.t, 0.0f, hp <= 0.25f ? 1.0f : 0.0f);
+                    fo->begin(dev); fo->draw_lc(dev, hx + gw + snap(24.0f), y + rh2 * 0.5f, txt, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
+                }
+                y += rh2 + snap(8.0f);
+            } else if (it.kind == 13) {               // LIVE sample : the REAL MP (blue) and TP (glows past 1000) gauges
+                const float gh = snap(22.0f), gw = snap(130.0f), gap = snap(16.0f), rh2 = gh + snap(12.0f);
+                if (y >= top && y + rh2 <= bot) {
+                    const float mp = 0.45f + 0.35f * sinf(f.t * 0.4f + 1.0f);
+                    party_gauge(dev, hx + snap(4.0f), y + snap(5.0f), gw, gh, mp * 100.0f, 0xFF4F9DFF, f.t, 0.0f, 0.0f);
+                    const float tpf = 0.5f + 0.5f * sinf(f.t * 0.5f);   // 0..1 = 0..3000 TP
+                    const bool ready = tpf >= (1000.0f / 3000.0f);
+                    party_gauge(dev, hx + snap(4.0f) + gw + gap, y + snap(5.0f), gw, gh, tpf * 100.0f, ready ? 0xFFFF7AE8 : 0xFFE35AD6, f.t, ready ? 1.0f : 0.0f, 0.0f);
+                    fo->begin(dev); fo->draw_lc(dev, hx + snap(4.0f) + 2 * gw + gap + snap(22.0f), y + rh2 * 0.5f, txt, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
+                }
+                y += rh2 + snap(8.0f);
+            } else if (it.kind == 14) {               // LIVE sample : the REAL selection hand + its highlight bar, gold (main) / blue (sub)
+                const float rh2 = snap(44.0f), hand = snap(44.0f), bx2 = hx + hand + snap(8.0f), bw = snap(200.0f);
+                for (int t2 = 0; t2 < 2; ++t2) {
+                    if (y >= top && y + rh2 <= bot) {
+                        const u32 base = (t2 == 0) ? 0xFFFFDC78 : 0xFF5AA2FF;
+                        flat(dev, bx2, y, bw, rh2, (base & 0x00FFFFFF) | 0x30000000);
+                        outline(dev, bx2, y, bw, rh2, (base & 0x00FFFFFF) | 0x99000000);
+                        party_cursor(dev, helpCursorTex_, hx + hand * 0.5f, y + rh2 * 0.5f, hand, t2 == 1);
+                        const char* cl = (t2 == 0) ? (ui_config().lang == 1 ? "Cible principale, curseur blanc" : "Main target, white hand")
+                                                   : (ui_config().lang == 1 ? "Sous-cible, curseur bleu" : "Sub-target, blue hand");
+                        fo->begin(dev); fo->draw_lc(dev, bx2 + bw + snap(14.0f), y + rh2 * 0.5f, cl, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
+                    }
+                    y += rh2 + snap(4.0f);
+                }
+                y += snap(6.0f);
             } else {                                  // paragraph
                 y = draw_wrapped(dev, fo, hx, y, hw, top, bot, txt, bsz, C_DIM, lh);
                 y += snap(10.0f);
