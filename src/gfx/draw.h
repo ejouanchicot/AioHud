@@ -67,4 +67,8 @@ void rrect_glow(u32 dev, float x, float y, float w, float h, float r, u32 col, f
 // Draw under ADDITIVE blend for a clean circular halo (e.g. behind a slider knob). No banding.
 void disc_glow(u32 dev, float cx, float cy, float r, u32 col, float glowW);
 
+// stroke the OUTLINE of a rounded rect : a `bt`-px border in `col` that hugs the capsule shape (feathered
+// outer arc = AA corners), WITHOUT filling the interior. A border that follows the fluid form. Draw on top.
+void rrect_stroke(u32 dev, float x, float y, float w, float h, float r, u32 col, float bt);
+
 } // namespace aio

@@ -308,6 +308,54 @@ void disc_glow(u32 dev, float cx, float cy, float r, u32 col, float glowW)
     dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * N, ring, sizeof(VtxC));
 }
 
+void rrect_stroke(u32 dev, float x, float y, float w, float h, float r, u32 col, float bt)
+{
+    if (w <= 0.0f || h <= 0.0f || bt <= 0.0f) return;
+    x -= 0.5f; y -= 0.5f;
+    if (r > w * 0.5f) r = w * 0.5f;
+    if (r > h * 0.5f) r = h * 0.5f;
+    if (r < 0.0f) r = 0.0f;
+    const float ri = (r - bt > 0.0f) ? r - bt : 0.0f;
+    const float fth = 1.0f;                                   // AA feather on the outer arc
+    const u32 c0 = col & 0x00FFFFFF;
+    // 4 straight edges (axis-aligned -> no aliasing, solid bands from the tangent points)
+    { VtxC v[4] = { { x + r, y, 0,1, col }, { x + w - r, y, 0,1, col },
+                    { x + r, y + bt, 0,1, col }, { x + w - r, y + bt, 0,1, col } };                 // top
+      dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC)); }
+    { VtxC v[4] = { { x + r, y + h - bt, 0,1, col }, { x + w - r, y + h - bt, 0,1, col },
+                    { x + r, y + h, 0,1, col }, { x + w - r, y + h, 0,1, col } };                    // bottom
+      dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC)); }
+    { VtxC v[4] = { { x, y + r, 0,1, col }, { x + bt, y + r, 0,1, col },
+                    { x, y + h - r, 0,1, col }, { x + bt, y + h - r, 0,1, col } };                   // left
+      dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC)); }
+    { VtxC v[4] = { { x + w - bt, y + r, 0,1, col }, { x + w, y + r, 0,1, col },
+                    { x + w - bt, y + h - r, 0,1, col }, { x + w, y + h - r, 0,1, col } };            // right
+      dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC)); }
+    // 4 corner arcs : a quarter annulus ri..r + a feathered rim r..r+fth
+    if (r > 0.25f) {
+        const int Nc = 8;
+        const float cs4[4][3] = {
+            { x + r,     y + r,     PI_        },   // TL
+            { x + w - r, y + r,     1.5f * PI_ },   // TR
+            { x + w - r, y + h - r, 0.0f       },   // BR
+            { x + r,     y + h - r, 0.5f * PI_ },   // BL
+        };
+        for (int k = 0; k < 4; ++k) {
+            const float ccx = cs4[k][0], ccy = cs4[k][1], a0 = cs4[k][2];
+            VtxC ann[2 * (Nc + 1)], rim[2 * (Nc + 1)];
+            for (int i = 0; i <= Nc; ++i) {
+                const float a = a0 + (0.5f * PI_) * (float)i / (float)Nc, ca = cosf(a), sa = sinf(a);
+                ann[2 * i]     = { ccx + r * ca,        ccy + r * sa,        0, 1, col };
+                ann[2 * i + 1] = { ccx + ri * ca,       ccy + ri * sa,       0, 1, col };
+                rim[2 * i]     = { ccx + r * ca,        ccy + r * sa,        0, 1, col };
+                rim[2 * i + 1] = { ccx + (r + fth) * ca, ccy + (r + fth) * sa, 0, 1, c0 };
+            }
+            dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * Nc, ann, sizeof(VtxC));
+            dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * Nc, rim, sizeof(VtxC));
+        }
+    }
+}
+
 void soft_blob(u32 dev, float cx, float cy, float hw, float hh, u32 col)
 {
     u32 c0 = col & 0x00FFFFFF;                                   // transparent at the edges

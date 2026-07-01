@@ -217,7 +217,7 @@ static bool gauge_glow(u32 col, float t, float pulse, float danger, u32& gcol, f
 // RECT border (Bars / Segments / Minimal) : a rounded-rect peeking behind.
 static void gauge_aura_soft(u32 dev, float gx, float gy, float gw, float gh, u32 col, float t, float pulse, float danger) {
     u32 gcol; float g;
-    if (gauge_glow(col, t, pulse, danger, gcol, g)) rrnd(dev, gx - g, gy - g, gw + 2 * g, gh + 2 * g, (gh + 2 * g) * 0.32f, gcol);
+    if (gauge_glow(col, t, pulse, danger, gcol, g)) rrect_glow(dev, gx, gy, gw, gh, gh * 0.5f, gcol, g + 2.5f);   // capsule-shaped glow hugging the fluid form
 }
 // DISC border (Sphere / Radial / Ring) : an AA circle peeking behind.
 static void gauge_aura_round(u32 dev, float cx, float cy, float R, u32 col, float t, float pulse, float danger) {

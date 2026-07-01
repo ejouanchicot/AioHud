@@ -544,46 +544,36 @@ void LiquidBars::draw(const Frame& f)
     draw_cap_pass(dev, cap_front_, ys, x, w, h);
 }
 
-// rounded-rect (bands + quarter-disc corners, non-overlapping) : the Fiole glow uses the SAME shape as
-// the Bars style. Matches party.cpp's rrnd().
-static void gl_qfan(u32 dev, float cx, float cy, float r, float a0, float a1, u32 c) {
-    const int N = 6; float px = cx + r * cosf(a0), py = cy + r * sinf(a0);
-    for (int i = 1; i <= N; ++i) { float a = a0 + (a1 - a0) * (float)i / N, nx = cx + r * cosf(a), ny = cy + r * sinf(a); fill_tri(dev, cx, cy, px, py, nx, ny, c); px = nx; py = ny; }
-}
-static void gl_rrect(u32 dev, float x, float y, float w, float h, float r, u32 c) {
-    const float PI = 3.14159265f;
-    if (r > w * 0.5f) r = w * 0.5f; if (r > h * 0.5f) r = h * 0.5f;
-    if (r < 1.0f) { grad_quad(dev, x, y, w, h, c, c, c, c); return; }
-    grad_quad(dev, x + r, y,         w - 2 * r, r,         c, c, c, c);   // top band
-    grad_quad(dev, x + r, y + h - r, w - 2 * r, r,         c, c, c, c);   // bottom band
-    grad_quad(dev, x,     y + r,     r,         h - 2 * r, c, c, c, c);   // left band
-    grad_quad(dev, x + w - r, y + r, r,         h - 2 * r, c, c, c, c);   // right band
-    grad_quad(dev, x + r, y + r,     w - 2 * r, h - 2 * r, c, c, c, c);   // centre
-    gl_qfan(dev, x + r,     y + r,     r, PI,          1.5f * PI, c);
-    gl_qfan(dev, x + w - r, y + r,     r, 1.5f * PI,   2.0f * PI, c);
-    gl_qfan(dev, x + r,     y + h - r, r, 0.5f * PI,   PI,        c);
-    gl_qfan(dev, x + w - r, y + h - r, r, 0.0f,        0.5f * PI, c);
-}
 
-// clip the 4 square corners of a rect into a rounded CAPSULE : fill each corner-minus-quarter-disc region
-// with `dark` (draw AFTER the liquid + glass, in the untextured colour state) so the tube reads as having
-// genuinely ROUND ends. Matches the dark rounded tube drawn behind -> seamless capsule.
-static void round_corners_dark(u32 dev, float x, float y, float w, float h, float r, u32 dark) {
-    const float PI = 3.14159265f; const int N = 6;
-    if (r > w * 0.5f) r = w * 0.5f; if (r > h * 0.5f) r = h * 0.5f; if (r < 1.0f) return;
-    const float vx[4] = { x,   x + w, x + w, x     };   // the real box corner
-    const float vy[4] = { y,   y,     y + h, y + h };
-    const float cx[4] = { x + r, x + w - r, x + w - r, x + r     };   // arc centre (inset)
-    const float cy[4] = { y + r, y + r,     y + h - r, y + h - r };
-    const float a0[4] = { PI, 1.5f * PI, 0.0f, 0.5f * PI };
-    for (int k = 0; k < 4; ++k) {
-        float px = cx[k] + r * cosf(a0[k]), py = cy[k] + r * sinf(a0[k]);
-        for (int i = 1; i <= N; ++i) {
-            float a = a0[k] + 0.5f * PI * (float)i / N, nx = cx[k] + r * cosf(a), ny = cy[k] + r * sinf(a);
-            fill_tri(dev, vx[k], vy[k], px, py, nx, ny, dark);
-            px = nx; py = ny;
-        }
-    }
+// ---- rounded CLIP via the stencil buffer : write a rounded-rect mask into stencil, then everything drawn
+// until rrect_clip_end() is limited to that shape -> the textured liquid gets genuinely ROUND ends with
+// TRANSPARENT corners (no dark fill, exactly like the solid Bars capsule). If the back-buffer has no
+// stencil, the ops are ignored -> falls back to square corners (still NEVER black). ----
+enum {   // D3D8 render states not in the d3d.h enum (passed as raw ids to dSetRS)
+    RS_STENCILENABLE = 52, RS_STENCILFAIL = 53, RS_STENCILZFAIL = 54, RS_STENCILPASS = 55,
+    RS_STENCILFUNC = 56, RS_STENCILREF = 57, RS_STENCILMASK = 58, RS_STENCILWRITEMASK = 59,
+};
+static void rrect_clip_begin(u32 dev, float x, float y, float w, float h, float r) {
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
+    dSetRS(dev, D3DRS_ALPHATESTENABLE, 0);
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 0);
+    dSetRS(dev, RS_STENCILENABLE, 1);
+    dSetRS(dev, RS_STENCILMASK, 0xFF); dSetRS(dev, RS_STENCILWRITEMASK, 0xFF);
+    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0);                                   // mask : write stencil only, no colour
+    dSetRS(dev, RS_STENCILFUNC, 8);                                          // ALWAYS
+    dSetRS(dev, RS_STENCILFAIL, 3); dSetRS(dev, RS_STENCILZFAIL, 3); dSetRS(dev, RS_STENCILPASS, 3);   // REPLACE
+    dSetRS(dev, RS_STENCILREF, 0);                                           // pass A : clear the region to 0
+    grad_quad(dev, x - 2.0f, y - 2.0f, w + 4.0f, h + 4.0f, 0, 0, 0, 0);
+    dSetRS(dev, RS_STENCILREF, 1);                                          // pass B : set 1 inside the rounded rect
+    rrect(dev, x, y, w, h, r, 0xFF000000, 0xFF000000);
+    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);                         // content : colour on, ONLY where stencil == 1
+    dSetRS(dev, RS_STENCILFUNC, 3);                                         // EQUAL
+    dSetRS(dev, RS_STENCILFAIL, 1); dSetRS(dev, RS_STENCILZFAIL, 1); dSetRS(dev, RS_STENCILPASS, 1);   // KEEP (don't touch stencil while drawing)
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
+}
+static void rrect_clip_end(u32 dev) {
+    dSetRS(dev, RS_STENCILENABLE, 0);
+    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);
 }
 
 // ---- shared provider : the HUD hands its LiquidBars here so party/help can borrow the real assets ----
@@ -620,14 +610,13 @@ void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, f
             int a = (int)(amt * (0.45f + 0.50f * ph) * 255.0f); if (a > 255) a = 255;
             u32 gcol = (danger > 0.0f ? 0x00FF2A2A : (col & 0x00FFFFFF)) | ((u32)a << 24);
             float g = 2.2f + 1.3f * ph;
-            gl_rrect(dev, x - g, y - g, w + 2 * g, h + 2 * g, (h + 2 * g) * 0.32f, gcol);   // SAME rounded-rect glow as the Bars style
+            rrect_glow(dev, x, y, w, h, h * 0.5f, gcol, g + 2.5f);   // capsule-shaped glow hugging the fluid form (matches the Bars style)
         }
     }
 
-    // dark ROUNDED tube behind the liquid (colour state still set from the glow block above) : gives the
-    // fiole genuinely round ends -- the empty part reads as an empty capsule, the liquid corners are masked
-    // back to this shape after the glass (round_corners_dark below).
-    rrect(dev, x, y, w, h, h * 0.5f, 0xFF141A2E, 0xFF0A0E1C);
+    // rounded CLIP : limit the liquid + glass to a capsule (round ends, TRANSPARENT corners -- no dark fill),
+    // exactly like the solid Bars capsule. Everything until rrect_clip_end() is masked to this shape.
+    rrect_clip_begin(dev, x, y, w, h, h * 0.5f);
 
     // --- full textured state (same block as LiquidBars::draw, so it survives the game's leftovers) ---
     dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
@@ -642,7 +631,6 @@ void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, f
     dSetTSS(dev, 0, D3DTSS_TEXCOORDINDEX, 0); dSetTSS(dev, 0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
     dSetTSS(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE); dSetTSS(dev, 1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
 
-    // NO caps : the liquid body fills the whole rect ; the glass overlay shapes the tube.
     const float bx = x, by = y, bw = w, bh = h;
 
     // LIQUID : wrap addressing + vertex-alpha (zoning-glitch fix). draw_bar carries the per-resource
@@ -681,13 +669,9 @@ void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, f
         surface_glow(dev, bx + fwi, by, bh, men);
     }
 
-    // ROUND ENDS : mask the liquid's square corners back to the dark rounded tube (same shape/colour as the
-    // backing) -> the fiole reads as a capsule with clean round ends over any background.
-    dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
-    dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
-    round_corners_dark(dev, bx, by, bw, bh, bh * 0.5f, 0xFF0C1020);
+    // end the rounded clip (stencil off) -> the fiole is a clean liquid capsule : round ends, transparent
+    // corners, no black.
+    rrect_clip_end(dev);
 }
 
 } // namespace aio
