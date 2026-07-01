@@ -591,7 +591,9 @@ static float draw_wrapped(u32 dev, Font* fo, float x, float y, float maxW, float
             if (!lineStart && lineX + spaceW + ww > x + maxW) { y += lineH; lineX = x; lineStart = true; }   // wrap
             if (!lineStart) lineX += spaceW;
             const u32 wc = (wEmph == 1) ? C_TEXT : (wEmph == 2) ? C_GOLD : col;
-            if (y >= top && y + lineH <= bot) { fo->begin(dev); fo->draw_lc(dev, lineX, y + lineH * 0.5f, word, sz, fa(wc), fa(C_STROKE), 1.0f); }   // uniform stroke -> every word sits on the same baseline ; emphasis is COLOUR only (bright = bold, gold = highlight)
+            // draw_lv centres on the font's CONSTANT cap box (not each word's own ink box), so words with
+            // descenders (Party, gauge) sit on the SAME baseline as words without (Leader) -> no vertical jitter.
+            if (y >= top && y + lineH <= bot) { fo->begin(dev); fo->draw_lv(dev, lineX, y + lineH * 0.5f, word, sz, fa(wc), fa(C_STROKE), 1.0f); }   // emphasis is COLOUR only (bright = bold, gold = highlight)
             lineX += ww; lineStart = false;
         }
         if (!*p) break;
