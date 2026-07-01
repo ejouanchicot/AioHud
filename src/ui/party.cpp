@@ -390,7 +390,7 @@ static void gauge_minimal(u32 dev, float gx, float gy, float gw, float gh, float
     }
 }
 
-void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger, int kind) {   // exposed for the Help live samples
+void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger, int kind, int style) {   // exposed for the Help live samples
     // untextured colour-quad state : the party rows draw gauges BEFORE any text, but the Help draws them
     // AFTER text (font texture still bound + MODULATE) -> reset so the rounded/gradient quads render right.
     dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
@@ -401,7 +401,7 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
     // gauge shape (config) : 0 = Vial (real fiole assets), 1 = Sphere, 2 = Radial. The classic bar below is
     // kept only as the automatic fallback for Vial before the fiole textures are resident.
     if (kind >= 0) {
-        switch (ui_config().gaugeStyle) {   // 0 Vial, 1 Bars, 2 Segments, 3 Minimal, 4 Sphere, 5 Ring, 6 Crystal, 7 Text
+        switch (style) {   // per-box gauge style : 0 Vial, 1 Bars, 2 Segments, 3 Minimal, 4 Sphere, 5 Ring, 6 Crystal, 7 Text
             case 7: return;                 // Text style : no shape at all -> the value number (drawn later) carries the colour + animation
             case 2: gauge_segmented(dev, gx, gy, gw, gh, pct, col, t, pulse, danger); return;
             case 3: gauge_minimal  (dev, gx, gy, gw, gh, pct, col, t, pulse, danger); return;
@@ -1084,7 +1084,7 @@ void Party::draw(const Frame& f) {
         if (kRowCells) { const u32 cellc = (i & 1) ? 0x99101A2Eu : 0x99223256u; vgrad(dev, px + 1, ry, w - 2, rowpit, cellc, cellc); }
         if (r.offzone) continue;                       // out of zone : no badge, no vitals/gauges
         // badge : NOT affected by the selection zoom (only the name zooms) ; dark inner then 4 border edges.
-        if (ui_config().jobBadge != 0) {               // 0 = job badge OFF (no box, column collapsed)
+        if (ui_config().jobBadge[tcfg()] != 0) {       // 0 = job badge OFF (no box, column collapsed)
         const float iby = snap(ry + badgeYoff);
         const float bcx = ibx + bw * 0.5f, bcy = iby + bh * 0.5f, pbw = bw, pbh = bh;
         const float pbx = snap(bcx - pbw * 0.5f), pby = snap(bcy - pbh * 0.5f);
@@ -1105,9 +1105,10 @@ void Party::draw(const Frame& f) {
         const float gpct[3] = { hpp, mpp, tpp };
         const float gpls[3] = { 0.0f, 0.0f, wsReady };
         const float gdng[3] = { hpDanger, 0.0f, 0.0f };
+        const int   gstyleBox = ui_config().gaugeStyle[tcfg()];   // this box's gauge style
         for (int gi = 0; gi < 3; ++gi) {                 // bars are NOT affected by the selection zoom (geometry or brightness)
             const float gx = gx0 + gi * (gw + ggap);
-            party_gauge(dev, gx, gy, gw, gh, gpct[gi], gcol[gi], t, gpls[gi], gdng[gi], gi);   // gi = kind : 0 HP, 1 MP, 2 TP (for the vial style)
+            party_gauge(dev, gx, gy, gw, gh, gpct[gi], gcol[gi], t, gpls[gi], gdng[gi], gi, gstyleBox);   // gi = kind (HP/MP/TP) ; per-box style
         }
     }
 
@@ -1209,7 +1210,7 @@ void Party::draw(const Frame& f) {
             fBadge->draw_cc(dev, cx + mw * 0.5f, ry + mh - dsz * 0.62f, db, dsz, dcol, bSTK, bOWf);   // distance within the MAIN BAND (under the pips), not pushed to the row bottom
         }
 
-        const int badgeMode = ui_config().jobBadge;    // 0 = off, 1 = main only, 2 = main + sub
+        const int badgeMode = ui_config().jobBadge[tcfg()];    // 0 = off, 1 = main only, 2 = main + sub
         if (!offz && badgeMode != 0 && fBadge->ready()) {   // out of zone : no job badge text
             fBadge->begin(dev);
             bool hasSub = badgeMode == 2 && r.sub && r.sub[0];   // mode 1 -> ignore the sub job
@@ -1262,7 +1263,7 @@ void Party::draw(const Frame& f) {
         const float gy = ry + (mh - gh) * 0.5f;   // bar values centred on the MAIN BAND (match the gauges)
         if (!fBar->ready()) continue;
         fBar->begin(dev);
-        const int gstyle = ui_config().gaugeStyle;
+        const int gstyle = ui_config().gaugeStyle[tcfg()];
         for (int g = 0; g < 3; ++g) {
             float gx = gx0 + g * (gw + ggap);
             sprintf(buf, "%d", vals[g]);

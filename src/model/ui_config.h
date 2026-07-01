@@ -38,12 +38,12 @@ struct UiConfig {
     int   skinTheme = 0;       // window-skin theme index (the Hud applies it -> all boxes)
     int   fontFace  = 0;       // 0 = layout default ; >0 = override every party/alliance text face
     float buffScale = 0.92f;   // buff-icon size as a FRACTION of the member row height (0.40 .. 1.00, capped at the row)
-    float barHeight = 1.0f;    // HP/MP/TP gauge HEIGHT scale (the taller rows give vertical room)
-    float barWidth  = 1.0f;    // HP/MP/TP gauge WIDTH scale (the box auto-fits wider)
-    int   gaugeStyle = 0;      // HP/MP/TP gauge look : 0 = current bars, 1 = glass "vial" (rounded liquid hugging the tube)
-    int   jobBadge  = 2;       // job badge : 0 = off (column collapses), 1 = main job only, 2 = main + sub
-    bool  castParty = true;    // show the casting-spell line for PARTY members
-    bool  castAlly  = true;    // show the casting-spell line for ALLIANCE members
+    // ---- PER-BOX settings : index 0 = party, 1 = alliance 1, 2 = alliance 2 (independent) ----
+    float barHeight[3] = { 1.0f, 1.0f, 1.0f };   // HP/MP/TP gauge HEIGHT scale, per box
+    float barWidth[3]  = { 1.0f, 1.0f, 1.0f };   // HP/MP/TP gauge WIDTH scale, per box
+    int   gaugeStyle[3] = { 0, 0, 0 };           // gauge look, per box (0 Vial, 1 Bars, 2 Segments, 3 Minimal, 4 Sphere, 5 Ring, 6 Crystal, 7 Text)
+    int   jobBadge[3]  = { 2, 2, 2 };            // job badge, per box (0 = off, 1 = main only, 2 = main + sub)
+    bool  cast[3]      = { true, true, true };   // show the casting-spell line, per box
     bool  dist[3]   = { true, true, true };   // show the distance number, per box (0 = party, 1 = ally 1, 2 = ally 2)
     BoxLayout box[3];          // 0 = party (+cost), 1 = alliance 1, 2 = alliance 2 (independent)
     bool  border[3] = { true, true, true };   // per-box window-skin border/chrome on/off (0=party, 1=alliance1, 2=alliance2)

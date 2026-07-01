@@ -1232,125 +1232,114 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
           if (int d = row_selector(dev, fo, mo, click, 30, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(ui_config().fontFace))) {
               ui_config().fontFace = wrap(ui_config().fontFace + d, ui_font_count()); save_ui_config(); } }
         ROW_NEXT(52.0f)
-        // Box Size -> per-box scale, INDEPENDENT for Party / Alliance 1 / Alliance 2 (sliders, 5% steps).
-        // PARTY min is 100% : below that its footprint can no longer cover the game's native party block,
-        // so it can only grow (100%..200%). Alliances are free to shrink too (50%..200%).
-        {
-            const int   szTier[3] = { 0, 1, 2 };
-            const char* szLbl[3]  = { tr("Party Size", "Taille groupe"), tr("Ally 1 Size", "Taille alliance 1"), tr("Ally 2 Size", "Taille alliance 2") };
-            const int   szId[3]   = { 1, 3, 4 };
-            const float szLo[3]   = { 1.00f, 0.50f, 0.50f };   // party floor = 100% (native-block coverage)
-            const float hi = 2.00f;
-            for (int k = 0; k < 3; ++k) {
-                const int t = szTier[k]; const float lo = szLo[k];
-                ROW_BAND(46.0f)
-                char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[t].scale * 100.0f + 0.5f));
-                float v01 = (ui_config().box[t].scale - lo) / (hi - lo);
-                v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-                if (row_slider(dev, fo, mo, szId[k], coX, ry + yo, ctrlW, szLbl[k], szbuf, &v01)) {
-                    float v = lo + v01 * (hi - lo);
-                    v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;       // snap to 5% steps
-                    v = v < lo ? lo : (v > hi ? hi : v);
-                    ui_config().box[t].scale = v;                       // ONLY this tier
-                }
-                ROW_NEXT(46.0f)
+        // TARGET selector : every box setting below applies to the chosen box (Party / Alliance 1 / Alliance 2).
+        { ROW_BAND(56.0f)
+            const float rowH = snap(40.0f), ty = ry + yo;
+            fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Box", "Boîte"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const char* tlbl[3] = { tr("Party", "Groupe"), tr("Alliance 1", "Alliance 1"), tr("Alliance 2", "Alliance 2") };
+            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f);
+            const float bx0 = coX + ctrlW - (3 * bbw + 2 * bgap), bty = ty + (rowH - bbh) * 0.5f;
+            for (int i = 0; i < 3; ++i) if (toggle_chip(dev, fo, mo, click, 80 + i * 2, bx0 + i * (bbw + bgap), bty, bbw, bbh, tlbl[i], cfgTarget_ == i)) cfgTarget_ = i;
+        }
+        ROW_NEXT(56.0f)
+        const int T = (cfgTarget_ < 0 || cfgTarget_ > 2) ? 0 : cfgTarget_;   // active box index into the per-box arrays
+        // Box Size -> this box's scale (party floor 100% : it must cover the native block ; alliances 50%..200%)
+        { ROW_BAND(46.0f)
+            const float lo = (T == 0) ? 1.00f : 0.50f, hi = 2.00f;
+            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[T].scale * 100.0f + 0.5f));
+            float v01 = (ui_config().box[T].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, 1, coX, ry + yo, ctrlW, tr("Box Size", "Taille de la boîte"), szbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().box[T].scale = v < lo ? lo : (v > hi ? hi : v);
             }
         }
-        // Buff Size -> fraction of the player row (slider, 40%..100%, 5% steps ; independent of Font Size)
-        { ROW_BAND(52.0f)
+        ROW_NEXT(46.0f)
+        // Buff Size -> only the Party box shows buffs (the game doesn't send alliance buffs)
+        if (T == 0) { ROW_BAND(52.0f)
             const float lo = 0.40f, hi = 1.00f;
             char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
             float v01 = (ui_config().buffScale - lo) / (hi - lo);
             if (row_slider(dev, fo, mo, 2, coX, ry + yo, ctrlW, tr("Buff Size", "Taille des buffs"), bzbuf, &v01)) {
                 float v = lo + v01 * (hi - lo);
-                v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;          // snap to 5% steps
+                v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
                 ui_config().buffScale = v < lo ? lo : (v > hi ? hi : v);
             }
+            ROW_NEXT(52.0f)
         }
-        ROW_NEXT(52.0f)
         // Bar Height -> HP/MP/TP gauge height (the taller rows give the room ; rows grow past the badge)
         { ROW_BAND(46.0f)
             const float lo = 0.80f, hi = 1.80f;
-            char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight * 100.0f + 0.5f));
-            float v01 = (ui_config().barHeight - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[T] * 100.0f + 0.5f));
+            float v01 = (ui_config().barHeight[T] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
             if (row_slider(dev, fo, mo, 5, coX, ry + yo, ctrlW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().barHeight = v < lo ? lo : (v > hi ? hi : v);
+                ui_config().barHeight[T] = v < lo ? lo : (v > hi ? hi : v);
             }
         }
         ROW_NEXT(46.0f)
         // Bar Width -> HP/MP/TP gauge width (the box auto-fits wider)
         { ROW_BAND(46.0f)
             const float lo = 0.80f, hi = 1.50f;
-            char wb[16]; sprintf(wb, "%d%%", (int)(ui_config().barWidth * 100.0f + 0.5f));
-            float v01 = (ui_config().barWidth - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            char wb[16]; sprintf(wb, "%d%%", (int)(ui_config().barWidth[T] * 100.0f + 0.5f));
+            float v01 = (ui_config().barWidth[T] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
             if (row_slider(dev, fo, mo, 6, coX, ry + yo, ctrlW, tr("Bar Width", "Largeur des barres"), wb, &v01)) {
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().barWidth = v < lo ? lo : (v > hi ? hi : v);
+                ui_config().barWidth[T] = v < lo ? lo : (v > hi ? hi : v);
             }
         }
         ROW_NEXT(46.0f)
         // Bar Style : the current bars, or the glass "vial" look (rounded liquid hugging the tube)
         { ROW_BAND(52.0f)
-            int s = ui_config().gaugeStyle; if (s < 0 || s > 7) s = 0;
+            int s = ui_config().gaugeStyle[T]; if (s < 0 || s > 7) s = 0;
             const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
                                   tr("Sphere", "Sphère"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
             if (int d = row_selector(dev, fo, mo, click, 36, coX, ry + yo, ctrlW, tr("Gauge Style", "Style de jauge"), sb[s])) {
-                ui_config().gaugeStyle = wrap(s + d, 8); save_ui_config(); }
+                ui_config().gaugeStyle[T] = wrap(s + d, 8); save_ui_config(); }
         }
         ROW_NEXT(52.0f)
         // Job Badge : Off / Main job only / Main + Sub
         { ROW_BAND(52.0f)
-            int m = ui_config().jobBadge; if (m < 0 || m > 2) m = 2;
+            int m = ui_config().jobBadge[T]; if (m < 0 || m > 2) m = 2;
             const char* jb[3] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub") };
             if (int d = row_selector(dev, fo, mo, click, 35, coX, ry + yo, ctrlW, tr("Job Badge", "Badge de job"), jb[m])) {
-                ui_config().jobBadge = wrap(m + d, 3); save_ui_config(); }
+                ui_config().jobBadge[T] = wrap(m + d, 3); save_ui_config(); }
         }
         ROW_NEXT(52.0f)
-        // Casts : show the casting-spell line, per box type
-        { ROW_BAND(56.0f)
+        // Casts : show the casting-spell line for THIS box
+        { ROW_BAND(52.0f)
             const float rowH = snap(40.0f), ty = ry + yo;
             fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Casts", "Sorts"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const char* clbl[2] = { tr("Party", "Groupe"), tr("Alliance", "Alliance") };
-            bool* cval[2] = { &ui_config().castParty, &ui_config().castAlly };
-            const float bbw = snap(118.0f), bgap = snap(8.0f), bbh = snap(34.0f);
-            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
-            for (int i = 0; i < 2; ++i) {
-                const float bx2 = bx0 + i * (bbw + bgap);
-                if (toggle_chip(dev, fo, mo, click, 70 + i * 2, bx2, bty, bbw, bbh, clbl[i], *cval[i])) { *cval[i] = !*cval[i]; save_ui_config(); }
-            }
+            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, 70, bx2, bty, bbw, bbh, ui_config().cast[T] ? tr("On", "Oui") : tr("Off", "Non"), ui_config().cast[T])) { ui_config().cast[T] = !ui_config().cast[T]; save_ui_config(); }
         }
-        ROW_NEXT(56.0f)
-        // Distance : show the yalms distance, per box
-        { ROW_BAND(56.0f)
+        ROW_NEXT(52.0f)
+        // Distance : show the yalms distance for THIS box
+        { ROW_BAND(52.0f)
             const float rowH = snap(40.0f), ty = ry + yo;
             fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Distance", "Distance"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const char* dlbl[3] = { tr("Party", "Groupe"), tr("All. 1", "All. 1"), tr("All. 2", "All. 2") };
-            const float bbw = snap(82.0f), bgap = snap(8.0f), bbh = snap(34.0f);
-            const float bx0 = coX + ctrlW - (3 * bbw + 2 * bgap), bty = ty + (rowH - bbh) * 0.5f;
-            for (int i = 0; i < 3; ++i) {
-                const float bx2 = bx0 + i * (bbw + bgap);
-                if (toggle_chip(dev, fo, mo, click, 74 + i * 2, bx2, bty, bbw, bbh, dlbl[i], ui_config().dist[i])) { ui_config().dist[i] = !ui_config().dist[i]; save_ui_config(); }
-            }
+            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, 74, bx2, bty, bbw, bbh, ui_config().dist[T] ? tr("On", "Oui") : tr("Off", "Non"), ui_config().dist[T])) { ui_config().dist[T] = !ui_config().dist[T]; save_ui_config(); }
         }
-        ROW_NEXT(56.0f)
-        // Borders : per-box window-skin chrome on/off (Party box, Cost MP box, Alliance 1, Alliance 2)
-        { ROW_BAND(56.0f)
+        ROW_NEXT(52.0f)
+        // Border : this box's window-skin chrome (+ the floating Cost box when Party is the target)
+        { ROW_BAND(52.0f)
             const float rowH = snap(40.0f), ty = ry + yo;
             fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Borders", "Bordures"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const char* blbl[4] = { tr("Party", "Groupe"), tr("Cost", "Coût"), tr("Ally 1", "All. 1"), tr("Ally 2", "All. 2") };
-            bool* bval[4] = { &ui_config().border[0], &ui_config().borderCost, &ui_config().border[1], &ui_config().border[2] };
-            const float bbw = snap(76.0f), bgap = snap(8.0f), bbh = snap(34.0f);
-            const float bx0 = coX + ctrlW - (4 * bbw + 3 * bgap), bty = ty + (rowH - bbh) * 0.5f;   // centred in the band
-            for (int i = 0; i < 4; ++i) {
-                const float bx2 = bx0 + i * (bbw + bgap);
-                if (toggle_chip(dev, fo, mo, click, 50 + i * 2, bx2, bty, bbw, bbh, blbl[i], *bval[i])) { *bval[i] = !*bval[i]; save_ui_config(); }
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Border", "Bordure"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f;
+            if (T == 0) {
+                const float bx0 = coX + ctrlW - (2 * bbw + bgap);
+                if (toggle_chip(dev, fo, mo, click, 50, bx0, bty, bbw, bbh, tr("Box", "Boîte"), ui_config().border[0])) { ui_config().border[0] = !ui_config().border[0]; save_ui_config(); }
+                if (toggle_chip(dev, fo, mo, click, 52, bx0 + bbw + bgap, bty, bbw, bbh, tr("Cost box", "Boîte coût"), ui_config().borderCost)) { ui_config().borderCost = !ui_config().borderCost; save_ui_config(); }
+            } else {
+                const float bx2 = coX + ctrlW - bbw;
+                if (toggle_chip(dev, fo, mo, click, 50, bx2, bty, bbw, bbh, ui_config().border[T] ? tr("On", "Oui") : tr("Off", "Non"), ui_config().border[T])) { ui_config().border[T] = !ui_config().border[T]; save_ui_config(); }
             }
         }
-        ROW_NEXT(56.0f)
+        ROW_NEXT(52.0f)
         // Buttons : Edit Layout (enter drag/resize) + Default (reset EVERYTHING)
         { ROW_BAND(56.0f)
             const float bh = snap(34.0f), bw = snap(168.0f), gap = snap(10.0f);
@@ -1579,7 +1568,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 if (y >= top && y + rh2 <= bot) {
                     const float hp = 0.5f + 0.5f * sinf(f.t * 0.55f);   // 0..1
                     const u32 hc = (hp >= 0.5f) ? lerpc(0xFFEFD24A, 0xFF5ADC5A, (hp - 0.5f) / 0.5f) : lerpc(0xFFFF4646, 0xFFEFD24A, hp / 0.5f);
-                    party_gauge(dev, hx + snap(4.0f), y + snap(5.0f), gw, gh, hp * 100.0f, hc, f.t, 0.0f, hp <= 0.25f ? 1.0f : 0.0f, 0);
+                    party_gauge(dev, hx + snap(4.0f), y + snap(5.0f), gw, gh, hp * 100.0f, hc, f.t, 0.0f, hp <= 0.25f ? 1.0f : 0.0f, 0, ui_config().gaugeStyle[0]);
                     fo->begin(dev); fo->draw_lc(dev, hx + gw + snap(24.0f), y + rh2 * 0.5f, txt, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
                 }
                 y += rh2 + snap(8.0f);
@@ -1587,10 +1576,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 const float gh = snap(22.0f), gw = snap(130.0f), gap = snap(16.0f), rh2 = gh + snap(12.0f);
                 if (y >= top && y + rh2 <= bot) {
                     const float mp = 0.45f + 0.35f * sinf(f.t * 0.4f + 1.0f);
-                    party_gauge(dev, hx + snap(4.0f), y + snap(5.0f), gw, gh, mp * 100.0f, 0xFF4F9DFF, f.t, 0.0f, 0.0f, 1);
+                    party_gauge(dev, hx + snap(4.0f), y + snap(5.0f), gw, gh, mp * 100.0f, 0xFF4F9DFF, f.t, 0.0f, 0.0f, 1, ui_config().gaugeStyle[0]);
                     const float tpf = 0.5f + 0.5f * sinf(f.t * 0.5f);   // 0..1 = 0..3000 TP
                     const bool ready = tpf >= (1000.0f / 3000.0f);
-                    party_gauge(dev, hx + snap(4.0f) + gw + gap, y + snap(5.0f), gw, gh, tpf * 100.0f, ready ? 0xFFFF7AE8 : 0xFF7A5C8E, f.t, ready ? 1.0f : 0.0f, 0.0f, 2);
+                    party_gauge(dev, hx + snap(4.0f) + gw + gap, y + snap(5.0f), gw, gh, tpf * 100.0f, ready ? 0xFFFF7AE8 : 0xFF7A5C8E, f.t, ready ? 1.0f : 0.0f, 0.0f, 2, ui_config().gaugeStyle[0]);
                     fo->begin(dev); fo->draw_lc(dev, hx + snap(4.0f) + 2 * gw + gap + snap(22.0f), y + rh2 * 0.5f, txt, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
                 }
                 y += rh2 + snap(8.0f);

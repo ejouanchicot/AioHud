@@ -15,7 +15,7 @@ namespace aio {
 
 // One real HP/MP/TP liquid gauge (the exact party-row renderer), exposed so the Help can show live
 // examples. pct 0..100 ; col = fill colour ; t = time ; pulse = WS-ready glow ; danger = critical-HP blink.
-void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger = 0.0f, int kind = -1);
+void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger = 0.0f, int kind = -1, int style = 0);
 // The REAL selection hand (tex from the Party widget), exposed so the Help can show it. sub = blue sub-target.
 void party_cursor(u32 dev, u32 tex, float cx, float cy, float size, bool sub);
 // The REAL selection frame (gold glass main / ocean-blue sub) with its moving glass sweep, exposed for the Help.
@@ -33,6 +33,7 @@ public:
     void dispose() override;                  // release the dot texture (unload)
     void draw(const Frame& f) override;
     int  tier() const { return tier_; }      // 0 = main party, 1/2 = alliance boxes (used by the config preview)
+    int  tcfg() const { return tier_ < 0 ? 0 : (tier_ > 2 ? 2 : tier_); }   // clamped tier -> index into the per-box ui_config arrays
     u32  cursor_tex() const { return icon_tex_; }   // the loaded selection-hand texture (for the Help live sample)
 
 private:
@@ -91,13 +92,13 @@ private:
     // derived geometry (base px, pre-scale) -- box & badge adapt to their content:
     float subSz()    const { return badgeSz_ * 0.76f; }
     float castSz()   const { return nameSz_  * 1.0f; }
-    float badgeW()   const { return ui_config().jobBadge == 0 ? 0.0f : (badgeSz_ * 1.9f + 8.0f); }   // 0 = off -> column collapses
-    float badgeH()   const { int m = ui_config().jobBadge; return m == 0 ? 0.0f : (m == 1 ? badgeSz_ + 4.0f : badgeSz_ + subSz() + 4.0f); }   // main-only is shorter
-    float gaugeW()   const { return (barSz_  * 2.6f + 6.0f) * ui_config().barWidth; }   // ~4-digit value, width-scalable
+    float badgeW()   const { return ui_config().jobBadge[tcfg()] == 0 ? 0.0f : (badgeSz_ * 1.9f + 8.0f); }   // 0 = off -> column collapses
+    float badgeH()   const { int m = ui_config().jobBadge[tcfg()]; return m == 0 ? 0.0f : (m == 1 ? badgeSz_ + 4.0f : badgeSz_ + subSz() + 4.0f); }   // main-only is shorter
+    float gaugeW()   const { return (barSz_  * 2.6f + 6.0f) * ui_config().barWidth[tcfg()]; }   // ~4-digit value, width-scalable (per box)
     // round styles (Sphere/Ring/Crystal = 4/5/6) use a SQUARE cell so the disc is big enough to hold the
     // value -> the row grows to fit. Vial/Bars/Segments/Minimal/Text keep the flat height.
-    bool  circularGauge() const { int s = ui_config().gaugeStyle; return s >= 4 && s <= 6; }
-    float gaugeH()   const { return circularGauge() ? gaugeW() : (barSz_ + 6.0f) * ui_config().barHeight; }   // height-scalable (uses the taller-row room)
+    bool  circularGauge() const { int s = ui_config().gaugeStyle[tcfg()]; return s >= 4 && s <= 6; }
+    float gaugeH()   const { return circularGauge() ? gaugeW() : (barSz_ + 6.0f) * ui_config().barHeight[tcfg()]; }   // height-scalable, per box
     float gaugeGap() const { return 3.0f; }
     float marksW()   const { return 20.0f; }   // holds up to ~3 leader/QM dots, centred -> badge stays clear
     float padB()     const { return 4.0f; }   // top/bottom inner margin -> rows + selection frame stay off the box border
@@ -117,7 +118,7 @@ private:
     // STABLE band height : mainBandH computed with the FLAT gauge height (ignores the round-style square-cell
     // inflation) -> used to size the buff icons so they DON'T grow/shrink when the gauge style changes.
     float mainBandHStable() const {
-        float gFlat = (barSz_ + 6.0f) * ui_config().barHeight;
+        float gFlat = (barSz_ + 6.0f) * ui_config().barHeight[tcfg()];
         float m = badgeH(); if (gFlat > m) m = gFlat;
         float n = nameSz_ + 2.0f; if (n > m) m = n;
         float k = marksColH();   if (k > m) m = k;
@@ -127,7 +128,7 @@ private:
     // cast sits just under the name with clear air. When casts are OFF for this box type the cast line is
     // NOT reserved -> compact rows (= just the main band). Both feed measure() -> the box re-fits + the
     // bottom-right re-anchors (HUD).
-    bool  castOn()   const { return (tier_ == 0) ? ui_config().castParty : ui_config().castAlly; }
+    bool  castOn()   const { return ui_config().cast[tcfg()]; }
     float rowH()     const { return castOn() ? (mainBandH() * 0.5f + nameSz_ * 0.5f + castSz() + 6.0f) : (mainBandH() + 2.0f); }
     float rowPit()   const { return rowH() + 1.0f; }
 };

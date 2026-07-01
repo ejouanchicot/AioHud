@@ -34,11 +34,11 @@ static void save_config_to(const char* path) {
     fprintf(f, "skinTheme=%d\n", c.skinTheme);
     fprintf(f, "fontFace=%d\n", c.fontFace);
     fprintf(f, "buffScale=%.4f\n", c.buffScale);
-    fprintf(f, "barHeight=%.4f\n", c.barHeight);
-    fprintf(f, "barWidth=%.4f\n", c.barWidth);
-    fprintf(f, "gaugeStyle=%d\n", c.gaugeStyle);
-    fprintf(f, "jobBadge=%d\n", c.jobBadge);
-    fprintf(f, "casts=%d,%d\n", c.castParty ? 1 : 0, c.castAlly ? 1 : 0);
+    fprintf(f, "barHeight=%.4f,%.4f,%.4f\n", c.barHeight[0], c.barHeight[1], c.barHeight[2]);
+    fprintf(f, "barWidth=%.4f,%.4f,%.4f\n", c.barWidth[0], c.barWidth[1], c.barWidth[2]);
+    fprintf(f, "gaugeStyle=%d,%d,%d\n", c.gaugeStyle[0], c.gaugeStyle[1], c.gaugeStyle[2]);
+    fprintf(f, "jobBadge=%d,%d,%d\n", c.jobBadge[0], c.jobBadge[1], c.jobBadge[2]);
+    fprintf(f, "cast=%d,%d,%d\n", c.cast[0] ? 1 : 0, c.cast[1] ? 1 : 0, c.cast[2] ? 1 : 0);
     fprintf(f, "dist=%d,%d,%d\n", c.dist[0] ? 1 : 0, c.dist[1] ? 1 : 0, c.dist[2] ? 1 : 0);
     fprintf(f, "lang=%d\n", c.lang);
     fprintf(f, "partyRef=%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n", c.partyRef[0], c.partyRef[1], c.partyRef[2], c.partyRef[3], c.partyRef[4], c.partyRef[5]);
@@ -61,15 +61,20 @@ static bool load_config_from(const char* path) {
     c.guideGroupCount = 0;   // dynamic list -> rebuilt from the file (a full-config load)
     char line[160];
     while (fgets(line, sizeof(line), f)) {
-        int v, ps, idx, b0, b1, b2, bc; float x, y, s, fv;
+        int v, v1, v2, ps, idx, b0, b1, b2, bc; float x, y, s, fv, f1, f2;
         if      (sscanf(line, "skinTheme=%d", &v) == 1) c.skinTheme = v;
         else if (sscanf(line, "fontFace=%d", &v) == 1)  c.fontFace = v;
         else if (sscanf(line, "buffScale=%f", &fv) == 1) c.buffScale = fv;
-        else if (sscanf(line, "barHeight=%f", &fv) == 1) c.barHeight = fv;
-        else if (sscanf(line, "barWidth=%f", &fv) == 1) c.barWidth = fv;
-        else if (sscanf(line, "gaugeStyle=%d", &v) == 1) c.gaugeStyle = v;
-        else if (sscanf(line, "jobBadge=%d", &v) == 1) c.jobBadge = v;
-        else if (sscanf(line, "casts=%d,%d", &b0, &b1) == 2) { c.castParty = (b0 != 0); c.castAlly = (b1 != 0); }
+        else if (sscanf(line, "barHeight=%f,%f,%f", &fv, &f1, &f2) == 3) { c.barHeight[0] = fv; c.barHeight[1] = f1; c.barHeight[2] = f2; }
+        else if (sscanf(line, "barHeight=%f", &fv) == 1) { c.barHeight[0] = c.barHeight[1] = c.barHeight[2] = fv; }   // old single value -> all boxes
+        else if (sscanf(line, "barWidth=%f,%f,%f", &fv, &f1, &f2) == 3) { c.barWidth[0] = fv; c.barWidth[1] = f1; c.barWidth[2] = f2; }
+        else if (sscanf(line, "barWidth=%f", &fv) == 1) { c.barWidth[0] = c.barWidth[1] = c.barWidth[2] = fv; }
+        else if (sscanf(line, "gaugeStyle=%d,%d,%d", &v, &v1, &v2) == 3) { c.gaugeStyle[0] = v; c.gaugeStyle[1] = v1; c.gaugeStyle[2] = v2; }
+        else if (sscanf(line, "gaugeStyle=%d", &v) == 1) { c.gaugeStyle[0] = c.gaugeStyle[1] = c.gaugeStyle[2] = v; }
+        else if (sscanf(line, "jobBadge=%d,%d,%d", &v, &v1, &v2) == 3) { c.jobBadge[0] = v; c.jobBadge[1] = v1; c.jobBadge[2] = v2; }
+        else if (sscanf(line, "jobBadge=%d", &v) == 1) { c.jobBadge[0] = c.jobBadge[1] = c.jobBadge[2] = v; }
+        else if (sscanf(line, "cast=%d,%d,%d", &b0, &b1, &b2) == 3) { c.cast[0] = (b0 != 0); c.cast[1] = (b1 != 0); c.cast[2] = (b2 != 0); }
+        else if (sscanf(line, "casts=%d,%d", &b0, &b1) == 2) { c.cast[0] = (b0 != 0); c.cast[1] = c.cast[2] = (b1 != 0); }   // old party,ally -> ally applies to both
         else if (sscanf(line, "dist=%d,%d,%d", &b0, &b1, &b2) == 3) { c.dist[0] = (b0 != 0); c.dist[1] = (b1 != 0); c.dist[2] = (b2 != 0); }
         else if (sscanf(line, "lang=%d", &v) == 1) c.lang = v;
         else if (strncmp(line, "partyRef=", 9) == 0) {   // 3 (old) or 6 values -> fill as many as present
@@ -228,8 +233,10 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
             strcmp(a.guideGroup[i].name, b.guideGroup[i].name) != 0) return false;
         for (int k = 0; k < ZPERM_COUNT; ++k) if (a.guideGroup[i].allow[k] != b.guideGroup[i].allow[k]) return false;
     }
-    if (a.barHeight != b.barHeight || a.barWidth != b.barWidth || a.gaugeStyle != b.gaugeStyle) return false;
-    if (a.jobBadge != b.jobBadge || a.castParty != b.castParty || a.castAlly != b.castAlly) return false;
+    for (int k = 0; k < 3; ++k) {
+        if (a.barHeight[k] != b.barHeight[k] || a.barWidth[k] != b.barWidth[k]) return false;
+        if (a.gaugeStyle[k] != b.gaugeStyle[k] || a.jobBadge[k] != b.jobBadge[k] || a.cast[k] != b.cast[k]) return false;
+    }
     if (a.dist[0] != b.dist[0] || a.dist[1] != b.dist[1] || a.dist[2] != b.dist[2]) return false;
     if (a.borderCost != b.borderCost) return false;
     for (int i = 0; i < 3; ++i) {
@@ -312,8 +319,9 @@ void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew
 
 void reset_ui_config() {   // general Default : everything
     UiConfig& c = ui_config();
-    c.skinTheme = 0; c.fontFace = 0; c.buffScale = 0.92f; c.barHeight = 1.0f; c.barWidth = 1.0f; c.gaugeStyle = 0;
-    c.jobBadge = 2; c.castParty = true; c.castAlly = true; c.dist[0] = c.dist[1] = c.dist[2] = true;
+    c.skinTheme = 0; c.fontFace = 0; c.buffScale = 0.92f;
+    for (int k = 0; k < 3; ++k) { c.barHeight[k] = 1.0f; c.barWidth[k] = 1.0f; c.gaugeStyle[k] = 0; c.jobBadge[k] = 2; c.cast[k] = true; }
+    c.dist[0] = c.dist[1] = c.dist[2] = true;
     c.border[0] = c.border[1] = c.border[2] = c.borderCost = true;   // all borders back on
     reset_boxes();   // (also saves)
 }
