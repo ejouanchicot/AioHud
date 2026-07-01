@@ -87,7 +87,7 @@ static const u32 C_OFF = 0xFF6E7689;   // out-of-zone member (greyed)
 
 // ---- colours ----
 static const u32 C_INK = 0xFFF0FFFF, C_DIM = 0xFFB6BFD6, C_GOLD = 0xFFFFDC78, C_BAD = 0xFFFF4646, C_MP = 0xFF4F9DFF;
-static u32 tp_color(int tp) { return tp >= 1000 ? 0xFFFF7AE8 : 0xFFE35AD6; }
+static u32 tp_color(int tp) { return tp >= 1000 ? 0xFFFF7AE8 : 0xFF7A5C8E; }   // bright pink when a WS is ready (>= 1000), dull muted purple below
 
 // lerp two ARGB colours (t in 0..1).
 static u32 lerp_color(u32 a, u32 b, float t) {
@@ -247,18 +247,14 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
     if (fillW >= 1.0f) {
         float b = 1.0f + 0.34f * pulse * sinf(t * 9.4f);
         u32 c = scl(col, b > 1.6f ? 1.6f : (b < 0.5f ? 0.5f : b));
-        float fr = r - 1.0f; if (fr < 0.75f) fr = 0.75f;
-        rrnd(dev, gx + 1, gy + 1, fillW, fh, fr, scl(c, 0.78f));       // fill base (rounded both ends)
-        const float bx0 = gx + 1 + fr, bx1 = gx + 1 + fillW - fr;     // straight middle (between the rounded caps)
-        if (bx1 > bx0) {                                               // liquid vertical shading on the body
-            vgrad(dev, bx0, gy + 1,            bx1 - bx0, fh * 0.5f, lt(c, 0.22f), c);
-            vgrad(dev, bx0, gy + 1 + fh * 0.5f, bx1 - bx0, fh * 0.5f, c, scl(c, 0.6f));
-            vgrad(dev, bx0, gy + 1, bx1 - bx0, fh * 0.46f, 0x66FFFFFF, 0x00FFFFFF);   // glass gloss (over the body)
-        }
+        const float fx = gx + 1, fy = gy + 1;                          // RECTANGULAR liquid fill (straight edges) inside the rounded track
+        vgrad(dev, fx, fy,             fillW, fh * 0.5f, lt(c, 0.22f), c);          // top half : lighter to base
+        vgrad(dev, fx, fy + fh * 0.5f, fillW, fh * 0.5f, c, scl(c, 0.6f));          // bottom half : base to darker
+        vgrad(dev, fx, fy,             fillW, fh * 0.46f, 0x66FFFFFF, 0x00FFFFFF);  // glass gloss on top
         if (danger > 0.0f) {                                          // red wash so the fill visibly blinks
             float dl = 0.5f + 0.5f * sinf(t * 7.5f);
             u32 dw = 0x00FF1E1E | ((u32)(dl * danger * 0.55f * 255) << 24);
-            rrnd(dev, gx + 1, gy + 1, fillW, fh, fr, dw);
+            grad_quad(dev, fx, fy, fillW, fh, dw, dw, dw, dw);
         }
     }
 }

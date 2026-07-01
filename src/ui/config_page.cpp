@@ -1579,7 +1579,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                     party_gauge(dev, hx + snap(4.0f), y + snap(5.0f), gw, gh, mp * 100.0f, 0xFF4F9DFF, f.t, 0.0f, 0.0f);
                     const float tpf = 0.5f + 0.5f * sinf(f.t * 0.5f);   // 0..1 = 0..3000 TP
                     const bool ready = tpf >= (1000.0f / 3000.0f);
-                    party_gauge(dev, hx + snap(4.0f) + gw + gap, y + snap(5.0f), gw, gh, tpf * 100.0f, ready ? 0xFFFF7AE8 : 0xFFE35AD6, f.t, ready ? 1.0f : 0.0f, 0.0f);
+                    party_gauge(dev, hx + snap(4.0f) + gw + gap, y + snap(5.0f), gw, gh, tpf * 100.0f, ready ? 0xFFFF7AE8 : 0xFF7A5C8E, f.t, ready ? 1.0f : 0.0f, 0.0f);
                     fo->begin(dev); fo->draw_lc(dev, hx + snap(4.0f) + 2 * gw + gap + snap(22.0f), y + rh2 * 0.5f, txt, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
                 }
                 y += rh2 + snap(8.0f);
