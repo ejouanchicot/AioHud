@@ -222,7 +222,7 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
     // below if the assets aren't resident yet (e.g. a layout without a PlayerHub widget).
     if (ui_config().gaugeStyle == 1 && kind >= 0) {
         LiquidBars* p = vial_provider();
-        if (p && p->vial_ready()) { p->draw_vial_scaled(dev, t, gx, gy, gw, gh, kind, pct / 100.0f, 4); return; }
+        if (p && p->vial_ready()) { p->draw_vial_scaled(dev, t, gx, gy, gw, gh, kind, pct / 100.0f, col, pulse, danger, 4); return; }
     }
     const float cyc = gy + gh * 0.5f;
     float r = gh * 0.24f;                                 // gentle corner radius

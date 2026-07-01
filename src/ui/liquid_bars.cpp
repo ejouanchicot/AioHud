@@ -553,7 +553,7 @@ LiquidBars* vial_provider()                  { return g_vialProvider; }
 // LiquidBars::draw() reduced to a single, arbitrarily-sized bar (no per-instance unlock flash). The core
 // identity -- glass caps + streaming liquid + curved glass -- scales cleanly ; the big absolute-px extras
 // (TP halo / electricity) are tuned for the 70px showcase bars and are left to the full widget.
-void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, float h, int kind, float fill01, int layers)
+void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, float h, int kind, float fill01, u32 col, float pulse, float danger, int layers)
 {
     if (kind < 0 || kind > 2 || !vial_ready()) return;
     if (fill01 < 0.0f) fill01 = 0.0f; if (fill01 > 1.0f) fill01 = 1.0f;
@@ -563,6 +563,32 @@ void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, f
     u32 dyn[3];
     if      (kind == 0) { hp_palette(fill01, dyn); pal = dyn; }   // HP : green / orange / red
     else if (kind == 2) { tp_palette(fill01, dyn); pal = dyn; }   // TP : continuous tiers
+
+    // BASE bar effects : the SAME luminous aura the bar style draws BEHIND the gauge -- WS-ready pulse
+    // (TP >= 1000), critical-HP red alarm, and a faint always-on glow. Colour-quad state (untextured).
+    {
+        dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
+        dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1); dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+        dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
+        dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+        dSetTSS(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE);
+        const float cyc = y + h * 0.5f;
+        if (pulse > 0.0f) {                                  // WS-ready glow breathing
+            float ph = 0.5f + 0.5f * sinf(t * 7.5f);
+            u32 g1 = (col & 0x00FFFFFF) | ((u32)((0.30f + 0.40f * ph) * pulse * 255) << 24);
+            grad_quad(dev, x - 3, y - 3, w + 6, h + 6, g1, g1, g1, g1);
+            u32 g2 = (col & 0x00FFFFFF) | ((u32)((0.55f + 0.40f * ph) * pulse * 255) << 24);
+            grad_quad(dev, x - 1, y - 2, w + 2, h + 4, g2, g2, g2, g2);
+        }
+        if (danger > 0.0f) {                                 // CRITICAL HP : red alarm halo breathing
+            float dh = 0.5f + 0.5f * sinf(t * 7.5f);
+            u32 d1 = 0x00FF2A2A | ((u32)((0.32f + 0.48f * dh) * danger * 255) << 24);
+            grad_quad(dev, x - 3, y - 3, w + 6, h + 6, d1, d1, d1, d1);
+            u32 d2 = 0x00FF2A2A | ((u32)((0.55f + 0.40f * dh) * danger * 255) << 24);
+            grad_quad(dev, x - 1, y - 2, w + 2, h + 4, d2, d2, d2, d2);
+        }
+        { u32 gl = (col & 0x00FFFFFF) | 0x1C000000; soft_blob(dev, x + w * 0.5f, cyc, w * 0.58f, h * 0.9f, gl); }
+    }
 
     // --- full textured state (same block as LiquidBars::draw, so it survives the game's leftovers) ---
     dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
@@ -577,49 +603,44 @@ void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, f
     dSetTSS(dev, 0, D3DTSS_TEXCOORDINDEX, 0); dSetTSS(dev, 0, D3DTSS_TEXTURETRANSFORMFLAGS, D3DTTFF_DISABLE);
     dSetTSS(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE); dSetTSS(dev, 1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
 
-    // cap geometry (mirrors draw_cap_pass, one bar)
-    const float capH = h * 1.42f, capW = capH * ((float)CAP_W / (float)CAP_H);
-    const float ccy = y + h * 0.5f - capH * 0.5f;
-    const float clx = x - capW * 0.70f, crx = x + w - capW * 0.30f;
+    // NO caps : the liquid body fills the whole rect ; the glass overlay shapes the tube.
+    const float bx = x, by = y, bw = w, bh = h;
 
-    // BACK cap (clamp)
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-    dSetTex(dev, 0, cap_back_);
-    cap_quad(dev, clx, ccy, capW, capH, true); cap_quad(dev, crx, ccy, capW, capH, false);
-
-    // LIQUID : wrap addressing + vertex-alpha (zoning-glitch fix)
+    // LIQUID : wrap addressing + vertex-alpha (zoning-glitch fix). draw_bar carries the per-resource
+    // behaviour : HP green->orange->red palette, TP transparency/emissive below vs above 1000, MP fade.
     preload_texture(tex_[kind]);
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
     dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
     dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
     dSetTex(dev, 0, tex_[kind]);
-    draw_bar(dev, x, y, w, h, t, pal, fill01, kind);
+    draw_bar(dev, bx, by, bw, bh, t, pal, fill01, kind);
     dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
 
-    // MP bubbles (only worth it when the bar is tall enough to read them)
-    if (layers >= 4 && kind == 1 && h >= 26.0f)
-        draw_bubbles(dev, bubble_, x, y, w, h, fill01, t, 0x00A0E8FF, 1.0f, h / 70.0f);
+    // MP bubbles (only worth it when the body is tall enough to read them)
+    if (layers >= 4 && kind == 1 && bh >= 26.0f)
+        draw_bubbles(dev, bubble_, bx, by, bw, bh, fill01, t, 0x00A0E8FF, 1.0f, bh / 70.0f);
 
     // GLASS : untextured diffuse geometry
     dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
     dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
     dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
-    glass_overlay(dev, x, y, w, h);
-    // meniscus at the exact fill level
-    float fwi = w * fill01;
-    if (fwi > 2.0f && fwi < w - 1.0f) {
-        u32 men = 0x40000000u | (scale_rgb(pal[1], 1.3f) & 0x00FFFFFF);
-        surface_glow(dev, x + fwi, y, h, men);
+    glass_overlay(dev, bx, by, bw, bh);
+
+    // CRITICAL HP : red wash over the fill so it visibly blinks (same as the bar style).
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    if (kind == 0 && danger > 0.0f) {
+        float dl = 0.5f + 0.5f * sinf(t * 7.5f);
+        float fwd = bw * fill01;
+        u32 dw = 0x00FF1E1E | ((u32)(dl * danger * 0.55f * 255) << 24);
+        grad_quad(dev, bx, by, fwd, bh, dw, dw, dw, dw);
     }
 
-    // FRONT cap (over everything)
-    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-    dSetTex(dev, 0, cap_front_);
-    cap_quad(dev, clx, ccy, capW, capH, true); cap_quad(dev, crx, ccy, capW, capH, false);
+    // meniscus at the exact fill level
+    float fwi = bw * fill01;
+    if (fwi > 2.0f && fwi < bw - 1.0f) {
+        u32 men = 0x40000000u | (scale_rgb(pal[1], 1.3f) & 0x00FFFFFF);
+        surface_glow(dev, bx + fwi, by, bh, men);
+    }
 }
 
 } // namespace aio
