@@ -92,26 +92,39 @@ private:
     // derived geometry (base px, pre-scale) -- box & badge adapt to their content:
     float subSz()    const { return badgeSz_ * 0.76f; }
     float castSz()   const { return nameSz_  * 1.0f; }
-    float badgeW()   const { return ui_config().jobBadge[tcfg()] == 0 ? 0.0f : (badgeSz_ * 1.9f + 8.0f); }   // 0 = off -> column collapses
-    float badgeH()   const { int m = ui_config().jobBadge[tcfg()]; return m == 0 ? 0.0f : (m == 1 ? badgeSz_ + 4.0f : badgeSz_ + subSz() + 4.0f); }   // main-only is shorter
-    float gaugeW()   const { return (barSz_  * 2.6f + 6.0f) * ui_config().barWidth[tcfg()]; }   // ~4-digit value, width-scalable (per box)
+    float badgeW()   const { return ui_config().jobBadge[tcfg()] == 0 ? 0.0f : (badgeSz_ * 1.9f * ui_config().text[TE_BADGE].size + 8.0f); }   // 0 = off -> column collapses ; grows with the badge text size
+    float badgeH()   const { int m = ui_config().jobBadge[tcfg()]; float s = ui_config().text[TE_BADGE].size; return m == 0 ? 0.0f : (m == 1 ? badgeSz_ * s + 4.0f : (badgeSz_ + subSz()) * s + 4.0f); }   // grows with the badge text size
+    // ~4-digit value : grows with the LARGEST of the HP/MP/TP value text sizes so the box makes room instead
+    // of the number overflowing the gauge, and stays width-scalable per box.
+    float gaugeW()   const {
+        float vm = ui_config().text[TE_HP].size;
+        if (ui_config().text[TE_MP].size > vm) vm = ui_config().text[TE_MP].size;
+        if (ui_config().text[TE_TP].size > vm) vm = ui_config().text[TE_TP].size;
+        return (barSz_ * 2.6f * vm + 6.0f) * ui_config().barWidth[tcfg()];
+    }
     // round styles (Sphere/Ring/Crystal = 4/5/6) use a SQUARE cell so the disc is big enough to hold the
     // value -> the row grows to fit. Vial/Bars/Segments/Minimal/Text keep the flat height.
     bool  circularGauge() const { int s = ui_config().gaugeStyle[tcfg()]; return s >= 4 && s <= 6; }
     float gaugeH()   const { return circularGauge() ? gaugeW() : (barSz_ + 6.0f) * ui_config().barHeight[tcfg()]; }   // height-scalable, per box
     float gaugeGap() const { return 3.0f; }
-    float marksW()   const { return 20.0f; }   // holds up to ~3 leader/QM dots, centred -> badge stays clear
+    // holds up to ~3 leader/QM dots ; when the distance is shown it must also fit "00.00" at ITS font size,
+    // so the column (and the whole box) GROWS with the Distance text size instead of the number being capped.
+    float marksW()   const {
+        float w = 20.0f;
+        if (distOn()) { float d = badgeSz_ * 3.4f * ui_config().text[TE_DIST].size; if (d > w) w = d; }
+        return w;
+    }
     float padB()     const { return 4.0f; }   // top/bottom inner margin -> rows + selection frame stay off the box border
     bool  distOn()   const { int t = tier_ < 0 ? 0 : (tier_ > 2 ? 2 : tier_); return ui_config().dist[t]; }   // show distance for this box
     // height of the marks column : leader/QM pips on TOP + (when shown) the distance number below. Used as
     // a FLOOR for the main band so they never touch ; when the distance is OFF only the pips need room ->
     // the floor drops and the row can be more compact.
-    float marksColH() const { return distOn() ? (8.0f + badgeSz_ * 1.20f) : 8.0f; }
+    float marksColH() const { return distOn() ? (8.0f + badgeSz_ * 1.20f * ui_config().text[TE_DIST].size) : 8.0f; }
     // MAIN BAND : height of the primary line where badge / name / gauges / distance / marks all centre
     // together (tallest of them). The cast/spell line sits BELOW this band.
     float mainBandH() const {
         float m = badgeH(); float v = gaugeH(); if (v > m) m = v;
-        float n = nameSz_ + 2.0f; if (n > m) m = n;
+        float n = nameSz_ * ui_config().text[TE_NAME].size + 2.0f; if (n > m) m = n;   // name grows with its text size
         float k = marksColH();   if (k > m) m = k;
         return m;
     }

@@ -422,6 +422,20 @@ static bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int ui
     return hov && click;
 }
 
+// a collapsible CATEGORY header : a full-width gold bar with a triangle (right = collapsed, down = open) +
+// label. Returns true on click (the caller toggles the open flag). uid = animation slot.
+static bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, float x, float y, float w, const char* label, bool open) {
+    const float h = snap(32.0f);
+    const bool hov = inrect(mo, x, y, w, h);
+    const float t = ease(uid, hov ? 1.0f : 0.0f);
+    rpanel(dev, x, y, w, h, 0.0f, lerpc(0x66182234, 0x88243A5C, t), lerpc(0x66101826, 0x88172C4E, t), lerpc(C_GOLD_DEEP, C_GOLD, t), snap(1.2f));
+    const float gx = x + snap(15.0f), gy = y + h * 0.5f, s = snap(4.0f);
+    if (open) fill_tri(dev, gx - s, gy - s * 0.55f, gx + s, gy - s * 0.55f, gx, gy + s * 0.85f, fa(C_GOLD));   // down triangle
+    else      fill_tri(dev, gx - s * 0.55f, gy - s, gx - s * 0.55f, gy + s, gx + s * 0.85f, gy, fa(C_GOLD));   // right triangle
+    fo->begin(dev); fo->draw_lc(dev, x + snap(30.0f), gy, label, snap(13.0f), fa(C_GOLD), fa(C_STROKE), 1.3f);
+    return hov && click;
+}
+
 // ---- Help content. kind 0 = heading, 1 = paragraph, 2 = bullet. Each item carries EN + FR text. ----
 struct HelpItem { int kind; const char* en; const char* fr; };
 
@@ -617,8 +631,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     if (!open_) return;
     if (!profSynced_) { strncpy(activeProf_, active_profile_name(), sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0; profSynced_ = true; }   // reflect the startup auto-loaded profile
     u32 dev = f.dev;
-    // the whole config interface is drawn in Verdana (get-or-build its atlas ; fall back to default)
-    Font* fo = (f.fonts ? f.fonts->get("Verdana", 600) : f.font);
+    // the whole config interface is drawn in the Interface text-element face (default Verdana)
+    const TextStyle& tsUI = ui_config().text[TE_UI];
+    const char* uiFace = tsUI.face > 0 ? ui_font_face(tsUI.face) : "Verdana";
+    Font* fo = (f.fonts ? f.fonts->get(uiFace, tsUI.bold ? 700 : 600, tsUI.italic) : f.font);
     if (fo) fo->ensure(dev);
     if (!fo || !fo->ready()) fo = f.font;
     if (!fo || !fo->ready() || sw <= 0 || sh <= 0) return;
@@ -1233,16 +1249,26 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             float yo = (1.0f - ap) * snap(14.0f) + (snap(slotH) - snap(40.0f)) * 0.5f; (void)ap;
         #define ROW_NEXT(adv)     ry += snap(adv); ri++;
 
+        const float hdrX = coX - snap(12.0f), hdrW = ctrlW + snap(24.0f);
+        // ===== category : GENERAL =====
+        if (cat_header(dev, fo, mo, click, 120, hdrX, ry, hdrW, tr("General", "Général"), catOpen_[0])) catOpen_[0] = !catOpen_[0];
+        ROW_NEXT(42.0f)
+        if (catOpen_[0]) {
         // Box Theme (name only -- the live preview shows the actual skin)
         { ROW_BAND(52.0f)
           if (int d = row_selector(dev, fo, mo, click, 20, coX, ry + yo, ctrlW, tr("Box Theme", "Thème de cadre"), window_theme_name(ui_config().skinTheme))) {
               ui_config().skinTheme = wrap(ui_config().skinTheme + d, window_theme_count()); save_ui_config(); } }
         ROW_NEXT(52.0f)
-        // Font -> party/alliance text face
+        // Font -> party/alliance text face (global override ; per-element faces live under Typography)
         { ROW_BAND(52.0f)
           if (int d = row_selector(dev, fo, mo, click, 30, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(ui_config().fontFace))) {
               ui_config().fontFace = wrap(ui_config().fontFace + d, ui_font_count()); save_ui_config(); } }
         ROW_NEXT(52.0f)
+        }
+        // ===== category : PARTY / ALLIANCE =====
+        if (cat_header(dev, fo, mo, click, 122, hdrX, ry, hdrW, tr("Party / Alliance", "Party / Alliance"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
+        ROW_NEXT(42.0f)
+        if (catOpen_[1]) {
         // TARGET selector : every box setting below applies to the chosen box (Party / Alliance 1 / Alliance 2).
         { ROW_BAND(56.0f)
             const float rowH = snap(40.0f), ty = ry + yo;
@@ -1362,7 +1388,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             }
         }
         ROW_NEXT(52.0f)
-        // Buttons : Edit Layout (enter drag/resize) + Default (reset EVERYTHING)
+        }
+        // Buttons : Edit Layout (enter drag/resize) + Default (reset EVERYTHING) -- always visible
         { ROW_BAND(56.0f)
             const float bh = snap(34.0f), bw = snap(168.0f), gap = snap(10.0f);
             const float ty = ry + yo + (snap(40.0f) - bh) * 0.5f;   // these buttons are 34px (not 40) -> recentre in the band
@@ -1373,6 +1400,65 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             if (push_btn(dev, fo, mo, click, 61, defX, ty, bw, bh, tr("Default (all)", "Défaut (tout)"), 1)) reset_ui_config();
         }
         ROW_NEXT(56.0f)
+
+        // ===== category : TYPOGRAPHY (per-element font / size / style) =====
+        if (cat_header(dev, fo, mo, click, 124, hdrX, ry, hdrW, tr("Typography", "Typographie"), catOpen_[2])) catOpen_[2] = !catOpen_[2];
+        ROW_NEXT(42.0f)
+        if (catOpen_[2]) {
+        { ROW_BAND(52.0f)   // element selector
+            int el = (cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT) ? 0 : cfgTextElem_;
+            if (int d = row_selector(dev, fo, mo, click, 100, coX, ry + yo, ctrlW, tr("Element", "Élément"), ui_text_elem_label(el))) cfgTextElem_ = wrap(el + d, TE_COUNT);
+        }
+        ROW_NEXT(52.0f)
+        {
+            TextStyle& ts = ui_config().text[(cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT) ? 0 : cfgTextElem_];
+            { ROW_BAND(52.0f)   // Font face (0 = default)
+                int fc = ts.face; if (fc < 0 || fc >= ui_font_count()) fc = 0;
+                if (int d = row_selector(dev, fo, mo, click, 101, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { ts.face = wrap(fc + d, ui_font_count()); save_ui_config(); }
+            }
+            ROW_NEXT(52.0f)
+            { ROW_BAND(46.0f)   // Size
+                const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ts.size * 100.0f + 0.5f));
+                float v01 = (ts.size - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+                if (row_slider(dev, fo, mo, 102, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ts.size = v < lo ? lo : (v > hi ? hi : v); }
+            }
+            ROW_NEXT(46.0f)
+            { ROW_BAND(46.0f)   // Outline width
+                const float lo = 0.00f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ts.outline * 100.0f + 0.5f));
+                float v01 = (ts.outline - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+                if (row_slider(dev, fo, mo, 103, coX, ry + yo, ctrlW, tr("Outline", "Contour"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ts.outline = v < lo ? lo : (v > hi ? hi : v); }
+            }
+            ROW_NEXT(46.0f)
+            { ROW_BAND(52.0f)   // Bold / Italic / CAPS
+                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Style", "Style"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                const float bbw = snap(80.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, bx0 = coX + ctrlW - (3 * bbw + 2 * bgap);
+                if (toggle_chip(dev, fo, mo, click, 104, bx0, bty, bbw, bbh, tr("Bold", "Gras"), ts.bold)) { ts.bold = !ts.bold; save_ui_config(); }
+                if (toggle_chip(dev, fo, mo, click, 106, bx0 + bbw + bgap, bty, bbw, bbh, tr("Italic", "Ital."), ts.italic)) { ts.italic = !ts.italic; save_ui_config(); }
+                if (toggle_chip(dev, fo, mo, click, 108, bx0 + 2 * (bbw + bgap), bty, bbw, bbh, tr("CAPS", "MAJ"), ts.upper)) { ts.upper = !ts.upper; save_ui_config(); }
+            }
+            ROW_NEXT(52.0f)
+            { ROW_BAND(52.0f)   // Colour : Default / Custom + preset swatches
+                static const u32 PRES[] = { 0xFFFFFFFF, 0xFFFF5A5A, 0xFF5ADC5A, 0xFF4F9DFF, 0xFFFFDC78, 0xFF7AE8FF, 0xFFFF7AE8, 0xFF202634 };
+                const int NP = (int)(sizeof(PRES) / sizeof(PRES[0]));
+                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, tgw = snap(96.0f), onx = coX + ctrlW - tgw;
+                if (toggle_chip(dev, fo, mo, click, 110, onx, bty, tgw, bbh, ts.colorOn ? tr("Custom", "Perso") : tr("Default", "Défaut"), ts.colorOn)) { ts.colorOn = !ts.colorOn; save_ui_config(); }
+                if (ts.colorOn) {
+                    const float sw = snap(20.0f), sg = snap(6.0f), sy = bty + (bbh - sw) * 0.5f;
+                    float sx = onx - snap(12.0f) - (NP * sw + (NP - 1) * sg);
+                    for (int k = 0; k < NP; ++k) {
+                        float x = sx + k * (sw + sg); bool sel = ((ts.color & 0x00FFFFFF) == (PRES[k] & 0x00FFFFFF));
+                        flat(dev, x, sy, sw, sw, PRES[k]); outline(dev, x, sy, sw, sw, sel ? 0xFFFFFFFF : C_BORDER);
+                        if (inrect(mo, x, sy, sw, sw) && click) { ts.color = PRES[k] | 0xFF000000; save_ui_config(); }
+                    }
+                }
+            }
+            ROW_NEXT(52.0f)
+        }
+        }   // end category Typography
+
         #undef ROW_BAND
         #undef ROW_NEXT
         g_fade = e;   // restore for the footer

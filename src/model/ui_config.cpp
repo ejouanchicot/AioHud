@@ -51,6 +51,11 @@ static void save_config_to(const char* path) {
                 c.guideGroup[i].allow[0] ? 1 : 0, c.guideGroup[i].allow[1] ? 1 : 0, c.guideGroup[i].allow[2] ? 1 : 0, c.guideGroup[i].role, c.guideGroup[i].name);
     fprintf(f, "border=%d,%d,%d,%d\n", c.border[0] ? 1 : 0, c.border[1] ? 1 : 0, c.border[2] ? 1 : 0, c.borderCost ? 1 : 0);
     fprintf(f, "anim=%d,%d\n", c.animHP ? 1 : 0, c.animTP ? 1 : 0);
+    for (int i = 0; i < TE_COUNT; ++i) {
+        const TextStyle& ts = c.text[i];
+        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
+        fprintf(f, "text%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
+    }
     for (int i = 0; i < 3; ++i)
         fprintf(f, "box%d=%d,%.5f,%.5f,%.4f\n", i, c.box[i].posSet ? 1 : 0, c.box[i].x, c.box[i].y, c.box[i].scale);
     fclose(f);
@@ -62,7 +67,7 @@ static bool load_config_from(const char* path) {
     c.guideGroupCount = 0;   // dynamic list -> rebuilt from the file (a full-config load)
     char line[160];
     while (fgets(line, sizeof(line), f)) {
-        int v, v1, v2, ps, idx, b0, b1, b2, bc; float x, y, s, fv, f1, f2;
+        int v, v1, v2, ps, idx, b0, b1, b2, bc; float x, y, s, fv, f1, f2; unsigned uc;
         if      (sscanf(line, "skinTheme=%d", &v) == 1) c.skinTheme = v;
         else if (sscanf(line, "fontFace=%d", &v) == 1)  c.fontFace = v;
         else if (sscanf(line, "buffScale=%f", &fv) == 1) c.buffScale = fv;
@@ -100,6 +105,11 @@ static bool load_config_from(const char* path) {
             c.border[0] = (b0 != 0); c.border[1] = (b1 != 0); c.border[2] = (b2 != 0); c.borderCost = (bc != 0);
         }
         else if (sscanf(line, "anim=%d,%d", &b0, &b1) == 2) { c.animHP = (b0 != 0); c.animTP = (b1 != 0); }
+        else if (sscanf(line, "text%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < TE_COUNT) {
+            TextStyle& ts = c.text[idx];
+            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
+            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
+        }
         else if (sscanf(line, "box%d=%d,%f,%f,%f", &idx, &ps, &x, &y, &s) == 5 && idx >= 0 && idx < 3) {
             // sanitise : a corrupt position (out of the [0,1] screen fraction) must never brick the box
             // off-screen where it can't be grabbed back. Clamp the placed top-left to the viewport.
@@ -241,6 +251,11 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     }
     if (a.dist[0] != b.dist[0] || a.dist[1] != b.dist[1] || a.dist[2] != b.dist[2]) return false;
     if (a.borderCost != b.borderCost || a.animHP != b.animHP || a.animTP != b.animTP) return false;
+    for (int k = 0; k < TE_COUNT; ++k) {
+        const TextStyle& x = a.text[k], & y = b.text[k];
+        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.color != y.color) return false;
+        if (x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn) return false;
+    }
     for (int i = 0; i < 3; ++i) {
         if (a.border[i] != b.border[i]) return false;
         if (a.box[i].posSet != b.box[i].posSet || a.box[i].x != b.box[i].x ||
@@ -326,6 +341,7 @@ void reset_ui_config() {   // general Default : everything
     c.dist[0] = c.dist[1] = c.dist[2] = true;
     c.border[0] = c.border[1] = c.border[2] = c.borderCost = true;   // all borders back on
     c.animHP = c.animTP = true;
+    for (int k = 0; k < TE_COUNT; ++k) c.text[k] = TextStyle();   // typography back to defaults
     reset_boxes();   // (also saves)
 }
 
@@ -343,6 +359,10 @@ static const char* FACE_NAME[] = {
 };
 static const int NFACE = (int)(sizeof(FACE_LABEL) / sizeof(FACE_LABEL[0]));
 
+const char* ui_text_elem_label(int e) {
+    static const char* L[TE_COUNT] = { "Name", "HP", "MP", "TP", "Cast", "Job Badge", "Distance", "Interface" };
+    return (e >= 0 && e < TE_COUNT) ? L[e] : "";
+}
 int         ui_font_count()        { return NFACE; }
 const char* ui_font_label(int i)   { return (i >= 0 && i < NFACE) ? FACE_LABEL[i] : ""; }
 const char* ui_font_face(int i)    { return (i >= 0 && i < NFACE) ? FACE_NAME[i]  : ""; }

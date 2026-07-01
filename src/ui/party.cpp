@@ -765,7 +765,7 @@ static const float BOOST = 1.25f;   // party-wide size boost over the global UI 
 // No font here, so the name column is approximated from nameSz_.
 float Party::box_w_base() const {
     const float gauges  = 3.0f * gaugeW() + 2.0f * gaugeGap();   // HP/MP/TP
-    const float nameCol = nameSz_ * 5.0f + 12.0f;               // ~name + gap before the HP gauge (approx)
+    const float nameCol = nameSz_ * 5.0f * ui_config().text[TE_NAME].size + 12.0f;   // ~name (grows with its text size) + gap before the HP gauge
     return 2.0f * padB() + 18.0f + marksW() + badgeW() + nameCol + gauges;   // 18 = the 4+5+5+4 column gaps
 }
 
@@ -835,6 +835,24 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
         }
     }
     dSetTex(dev, 0, 0);
+}
+
+// ---- per-element typography (ui_config().text[TE_*]) : each text element resolves its own Font + size /
+// outline / colour / UPPERCASE from the global TextStyle, on top of the layout's base face/bold/size. ----
+static Font* te_font(FontManager* fm, int elem, const char* ovGlobal, const char* baseFace, bool baseBold) {
+    const TextStyle& t = ui_config().text[elem];
+    const char* face = t.face > 0 ? ui_font_face(t.face) : (ovGlobal[0] ? ovGlobal : baseFace);
+    // Bold toggle is the SOLE authority : OFF = regular 400, ON = bold 700. So the button state always
+    // matches what's on screen (the layout's own bold no longer forces it on when the toggle is off).
+    (void)baseBold;
+    return fm->get(face, t.bold ? 700 : 400, t.italic);
+}
+static inline float te_sz(int e, float base)  { return base * ui_config().text[e].size; }
+static inline float te_ow(int e, float base)  { return base * ui_config().text[e].outline; }
+static inline u32   te_col(int e, u32 base)   { const TextStyle& t = ui_config().text[e]; return t.colorOn ? (t.color | 0xFF000000u) : base; }
+static const char*  te_up(int e, const char* s, char* buf, int n) {
+    if (!ui_config().text[e].upper || !s) return s;
+    int i = 0; for (; s[i] && i < n - 1; ++i) { char c = s[i]; buf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c; } buf[i] = 0; return buf;
 }
 
 void Party::draw(const Frame& f) {
@@ -1230,13 +1248,19 @@ void Party::draw(const Frame& f) {
     // ---------- text : each element (name / bars / badge) has its OWN face+weight atlas ----
     if (!f.fonts) return;
     const char* ov = ui_font_face(ui_config().fontFace);   // "" = keep the per-element layout faces
-    Font* fName  = f.fonts->get(ov[0] ? ov : nameFont_.c_str(),  nameBold_  ? 700 : 0);
-    Font* fBar   = f.fonts->get(ov[0] ? ov : barFont_.c_str(),   barBold_   ? 700 : 0);
-    Font* fBadge = f.fonts->get(ov[0] ? ov : badgeFont_.c_str(), badgeBold_ ? 700 : 0);
-    fName->ensure(dev); fBar->ensure(dev); fBadge->ensure(dev);   // build lazily (same frame)
-    const u32 nSTK = nameStroke_  > 0 ? 0xFF000000u : 0u; const float nOWf = nameStroke_  * S;
-    const u32 vSTK = barStroke_   > 0 ? 0xFF000000u : 0u; const float vOWf = barStroke_   * S;
-    const u32 bSTK = badgeStroke_ > 0 ? 0xFF000000u : 0u; const float bOWf = badgeStroke_ * S;
+    Font* fName  = te_font(f.fonts, TE_NAME,  ov, nameFont_.c_str(),  nameBold_);
+    Font* fCast  = te_font(f.fonts, TE_CAST,  ov, nameFont_.c_str(),  nameBold_);   // cast : same base as the name
+    Font* fHP    = te_font(f.fonts, TE_HP,    ov, barFont_.c_str(),   barBold_);
+    Font* fMP    = te_font(f.fonts, TE_MP,    ov, barFont_.c_str(),   barBold_);
+    Font* fTP    = te_font(f.fonts, TE_TP,    ov, barFont_.c_str(),   barBold_);
+    Font* fBadge = te_font(f.fonts, TE_BADGE, ov, badgeFont_.c_str(), badgeBold_);
+    Font* fDist  = te_font(f.fonts, TE_DIST,  ov, badgeFont_.c_str(), badgeBold_);
+    fName->ensure(dev); fCast->ensure(dev); fHP->ensure(dev); fMP->ensure(dev); fTP->ensure(dev); fBadge->ensure(dev); fDist->ensure(dev);
+    Font* fBarE[3] = { fHP, fMP, fTP };
+    const u32 nSTK = nameStroke_  > 0 ? 0xFF000000u : 0u; const float nOWf = te_ow(TE_NAME,  nameStroke_  * S);
+    const u32 vSTK = barStroke_   > 0 ? 0xFF000000u : 0u;
+    const u32 bSTK = badgeStroke_ > 0 ? 0xFF000000u : 0u; const float bOWf = te_ow(TE_BADGE, badgeStroke_ * S);
+    const float cOWf = te_ow(TE_CAST, nameStroke_ * S), dOWf = te_ow(TE_DIST, badgeStroke_ * S);
     // name/cast left, shifted RIGHT by the outline width (+1px AA) so the black STROKE -- drawn in 8
     // passes at x +/- nOWf -- doesn't poke out to the LEFT of nx (it was, and the config preview clipped it).
     const float nxt = snap(nx + nOWf + 1.0f);
@@ -1253,28 +1277,27 @@ void Party::draw(const Frame& f) {
         const float bcx = bx + bw * 0.5f, bcy = by + bh * 0.5f;               // badge centre (scale pivot)
 
         // distance (yalms) UNDER the leader/QM pips, centered in the marks column, format 00.00.
-        if (distOn() && r.dist >= 0.0f && fBadge->ready()) {
+        if (distOn() && r.dist >= 0.0f && fDist->ready()) {
             float d = r.dist; if (d > 99.99f) d = 99.99f;
             char db[12]; sprintf(db, "%05.2f", d);
-            float dsz = badgeSz_ * S * 1.20f;                                 // as big as fits the marks column width
-            const float dw = fBadge->measure(db, dsz);
+            float dsz = te_sz(TE_DIST, badgeSz_ * S * 1.20f);                 // as big as fits the marks column width
+            const float dw = fDist->measure(db, dsz);
             if (dw > mw * 0.98f && dw > 0.0f) dsz *= (mw * 0.98f) / dw;
             const u32 dcol = r.dist >= kCastRange ? 0xFFE76C6C :              // red  : out of cast range
                              r.dist >= kCastSafe  ? 0xFFE7C95A :              // yellow : marginal (still casts)
                                                     0xFF8FC6FF;               // blue : comfortably in range
-            fBadge->begin(dev);
-            fBadge->draw_cc(dev, cx + mw * 0.5f, ry + mh - dsz * 0.62f, db, dsz, dcol, bSTK, bOWf);   // distance within the MAIN BAND (under the pips), not pushed to the row bottom
+            fDist->begin(dev);
+            fDist->draw_cc(dev, cx + mw * 0.5f, ry + mh - dsz * 0.62f, db, dsz, te_col(TE_DIST, dcol), bSTK, dOWf);
         }
 
         const int badgeMode = ui_config().jobBadge[tcfg()];    // 0 = off, 1 = main only, 2 = main + sub
         if (!offz && badgeMode != 0 && fBadge->ready()) {   // out of zone : no job badge text
             fBadge->begin(dev);
             bool hasSub = badgeMode == 2 && r.sub && r.sub[0];   // mode 1 -> ignore the sub job
-            // with a subjob : main on top (0.34) + sub below (0.70). Without (mode 1, SPC trusts...) :
-            // centre the lone main job vertically. Offsets scale around the badge centre.
             const float mfrac = hasSub ? 0.34f : 0.52f;
-            fBadge->draw_cc(dev, bcx, bcy + (mfrac - 0.5f) * bh, r.job, badgeSz_ * S, r.role, bSTK, bOWf);
-            if (hasSub) fBadge->draw_cc(dev, bcx, bcy + 0.20f * bh, r.sub, subSz() * S, C_DIM, bSTK, bOWf);
+            char jb[10], sb2[10];
+            fBadge->draw_cc(dev, bcx, bcy + (mfrac - 0.5f) * bh, te_up(TE_BADGE, r.job, jb, 10), te_sz(TE_BADGE, badgeSz_ * S), te_col(TE_BADGE, r.role), bSTK, bOWf);
+            if (hasSub) fBadge->draw_cc(dev, bcx, bcy + 0.20f * bh, te_up(TE_BADGE, r.sub, sb2, 10), te_sz(TE_BADGE, subSz() * S), te_col(TE_BADGE, C_DIM), bSTK, bOWf);
         }
         if (!fName->ready()) continue;
         fName->begin(dev);
@@ -1282,8 +1305,9 @@ void Party::draw(const Frame& f) {
         // measured in the ACTUAL name font -> never touches the bar, no fixed char cap.
         char nm[28]; int nl = 0; for (; nl < 20 && r.name && r.name[nl]; ++nl) nm[nl] = r.name[nl];
         nm[nl] = 0;
+        if (ui_config().text[TE_NAME].upper) for (int k = 0; k < nl; ++k) { char c = nm[k]; if (c >= 'a' && c <= 'z') nm[k] = (char)(c - 32); }
         const float nmax = gx0 - nx - 6.0f * S;                  // 6px gap before the gauges
-        const float nsz = nameSz_ * S * es;                      // measure at the ZOOMED size so a zoomed long name never overflows onto HP
+        const float nsz = te_sz(TE_NAME, nameSz_ * S * es);      // measure at the ZOOMED size so a zoomed long name never overflows onto HP
         if (nmax > 0 && fName->measure(nm, nsz) > nmax) {
             while (nl > 0) {                                     // shrink + "..." until it fits
                 nm[nl] = '.'; nm[nl + 1] = '.'; nm[nl + 2] = '.'; nm[nl + 3] = 0;
@@ -1293,7 +1317,7 @@ void Party::draw(const Frame& f) {
         }
         // name sits at a FIXED height (always a bit high) -> it never jumps when a cast starts,
         // and there is always room below for the cast / zone line.
-        fName->draw_lc(dev, nxt, ry + mh * 0.5f, nm, nsz, offz ? C_OFF : (dead ? C_BAD : C_INK), nSTK, nOWf);   // name centred on the MAIN BAND (level with badge/gauges)
+        fName->draw_lc(dev, nxt, ry + mh * 0.5f, nm, nsz, te_col(TE_NAME, offz ? C_OFF : (dead ? C_BAD : C_INK)), nSTK, nOWf);   // name centred on the MAIN BAND
         if (hasCast) {
             const float ca = r.castAlpha < 0.0f ? 0.0f : (r.castAlpha > 1.0f ? 1.0f : r.castAlpha);   // pop-in / depop fade
             const float cp = 0.5f + 0.5f * sinf(t * 5.0f);                       // OPACITY pulse during the cast
@@ -1305,7 +1329,10 @@ void Party::draw(const Frame& f) {
             for (; cl < 6 && r.cast && r.cast[cl]; ++cl) cbuf[cl] = r.cast[cl];
             if (r.cast && r.cast[cl]) { while (cl > 0 && cbuf[cl - 1] == ' ') --cl; cbuf[cl] = '.'; cbuf[cl + 1] = '.'; cbuf[cl + 2] = '.'; cbuf[cl + 3] = 0; }
             else cbuf[cl] = 0;
-            fName->draw_lc(dev, nxt, ry + mh * 0.5f + snap((nameSz_ * 0.5f + castSz() * 0.5f + 3.0f) * S), cbuf, castSz() * S, ccol, cstk, nOWf);   // cast just UNDER the name (half-name + half-cast + 3px gap)
+            if (ui_config().text[TE_CAST].upper) for (int k = 0; cbuf[k]; ++k) { char c = cbuf[k]; if (c >= 'a' && c <= 'z') cbuf[k] = (char)(c - 32); }
+            const u32 ccolF = ui_config().text[TE_CAST].colorOn ? (((u32)(0xFF * af) << 24) | (ui_config().text[TE_CAST].color & 0x00FFFFFF)) : ccol;
+            fCast->begin(dev);
+            fCast->draw_lc(dev, nxt, ry + mh * 0.5f + snap((nameSz_ * 0.5f + castSz() * 0.5f + 3.0f) * S), cbuf, te_sz(TE_CAST, castSz() * S), ccolF, cstk, cOWf);   // cast just UNDER the name
         }
         if (offz) {                                    // no vitals -> show the zone the member is in
             const char* zn = zone_name(r.zone);
@@ -1317,8 +1344,7 @@ void Party::draw(const Frame& f) {
         int tp = r.tp < 0 ? 0 : (r.tp > 3000 ? 3000 : r.tp);
         int vals[3] = { dead ? 0 : r.hpVal, r.mpVal, tp };
         const float gy = ry + (mh - gh) * 0.5f;   // bar values centred on the MAIN BAND (match the gauges)
-        if (!fBar->ready()) continue;
-        fBar->begin(dev);
+        if (!fHP->ready()) continue;
         const int gstyle = ui_config().gaugeStyle[tcfg()];
         for (int g = 0; g < 3; ++g) {
             float gx = gx0 + g * (gw + ggap);
@@ -1331,7 +1357,8 @@ void Party::draw(const Frame& f) {
                 else if (g == 0 && r.hpp > 0 && r.hpp <= 25 && ui_config().animHP) br = 0.55f + 0.45f * (0.5f + 0.5f * sinf(t * 7.5f));   // HP critical : blink (option)
                 tcol = scl(base, br);
             }
-            fBar->draw_cc(dev, gx + gw * 0.5f, gy + gh * 0.5f, buf, barSz_ * S, tcol, vSTK, vOWf);   // bar values NOT zoomed
+            Font* fv = fBarE[g]; fv->begin(dev);   // HP / MP / TP each has its own element style
+            fv->draw_cc(dev, gx + gw * 0.5f, gy + gh * 0.5f, buf, te_sz(TE_HP + g, barSz_ * S), te_col(TE_HP + g, tcol), vSTK, te_ow(TE_HP + g, barStroke_ * S));
         }
     }
 
@@ -1418,10 +1445,10 @@ void Party::draw(const Frame& f) {
         // a styled tag so it's clear which box is which -- OUTSIDE the box (left of its top-left corner) :
         // a rounded pill with an accent rim + colour dot per box (gold / blue / teal) + a top sheen.
         const char* lbl = tier_ == 0 ? "PARTY" : tier_ == 1 ? "ALLIANCE 1" : "ALLIANCE 2";
-        if (fBar->ready()) {
+        if (fHP->ready()) {
             const u32 accent = (tier_ == 0) ? 0xFFFFCC55u : (tier_ == 1) ? 0xFF6EA8FFu : 0xFF4FD8C0u;   // gold / blue / teal
             const float lsz = snap(11.0f) * S;
-            const float lw  = fBar->measure(lbl, lsz);
+            const float lw  = fHP->measure(lbl, lsz);
             const float bh  = snap(21.0f), bw = lw + snap(30.0f), r = bh * 0.34f;
             const float bx  = px - bw - snap(8.0f), by = oy2, cy2 = by + bh * 0.5f;
             rrnd(dev, bx + snap(1.0f), by + snap(2.0f), bw, bh, r, 0x66000000);          // soft drop shadow
@@ -1430,7 +1457,7 @@ void Party::draw(const Frame& f) {
             vgrad(dev, bx + r, by + snap(1.0f), bw - 2.0f * r, bh * 0.46f, 0x2EFFFFFF, 0x00FFFFFF);   // top sheen
             disc(dev, bx + snap(12.0f), cy2, snap(3.2f), accent);                         // accent dot
             disc(dev, bx + snap(12.0f), cy2, snap(1.4f), 0xFFFFFFFF);                     // dot highlight
-            fBar->begin(dev); fBar->draw_lc(dev, bx + snap(21.0f), cy2, lbl, lsz, 0xFFF2F6FF, 0xFF000000, 1.2f);
+            fHP->begin(dev); fHP->draw_lc(dev, bx + snap(21.0f), cy2, lbl, lsz, 0xFFF2F6FF, 0xFF000000, 1.2f);
         }
     }
 }

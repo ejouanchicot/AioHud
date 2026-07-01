@@ -33,8 +33,20 @@ float guide_party_top(int count, float sh);
 // (role 7 = A1, role 8 = A2). Returns true only if BOTH exist ; else the caller uses allyRefY. See party.cpp.
 bool  guide_alliance_refs(float* ar);
 
+// ---- per-element typography (global : applies to every box) ----
+enum { TE_NAME = 0, TE_HP, TE_MP, TE_TP, TE_CAST, TE_BADGE, TE_DIST, TE_UI, TE_COUNT };
+struct TextStyle {
+    int   face    = 0;     // 0 = default (layout / global face) ; else index into the ui_font list
+    float size    = 1.0f;  // multiplier on the element's base size
+    float outline = 1.0f;  // multiplier on the element's outline width
+    bool  bold    = false, italic = false, upper = false, colorOn = false;
+    unsigned color = 0xFFFFFFFFu;   // tint used when colorOn (else the element keeps its own semantic colour)
+};
+const char* ui_text_elem_label(int e);   // "Name" / "HP" / ... / "Interface"
+
 struct UiConfig {
     // ---- Party / Alliance ----
+    TextStyle text[TE_COUNT];   // per-element typography (Name, HP, MP, TP, Cast, Badge, Distance, Interface)
     int   skinTheme = 0;       // window-skin theme index (the Hud applies it -> all boxes)
     int   fontFace  = 0;       // 0 = layout default ; >0 = override every party/alliance text face
     float buffScale = 0.92f;   // buff-icon size as a FRACTION of the member row height (0.40 .. 1.00, capped at the row)

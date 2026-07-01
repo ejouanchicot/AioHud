@@ -15,7 +15,7 @@ public:
     void  on_device_lost();                 // forget every slot's texture (rebuilt on next use)
     void  dispose();                        // release all slot textures
     bool  ready() const { return nslot_ > 0 && slot_[0].tex != 0; }
-    void  set_face(const char* face, int weight);   // change the baked GDI face/weight (drops the cached slots)
+    void  set_face(const char* face, int weight, bool italic = false);   // change the baked GDI face/weight/italic (drops the cached slots)
 
     void  begin(u32 dev);                   // set textured-quad render state (the texture is bound per draw, by size)
     // draw `s` with its CELL top-left at (x,y); `size` = em px; `color` = ARGB. Returns advance width.
@@ -42,6 +42,7 @@ private:
     bool  dirty_ = false;                   // face/weight changed -> drop slots on next ensure
     char  face_[64] = "Segoe UI";           // GDI face name (configurable, global)
     int   weight_ = 600;                    // FW_SEMIBOLD
+    bool  italic_ = false;                  // GDI italic flag
 };
 
 // Cache of Font atlases keyed by (face, weight). Lets different text use different faces
@@ -49,7 +50,7 @@ private:
 class FontManager {
 public:
     void  set_default(const char* face, int weight);
-    Font* get(const char* face, int weight);   // face ""/null = default ; weight 0 = default
+    Font* get(const char* face, int weight, bool italic = false);   // face ""/null = default ; weight 0 = default
     void  ensure_all(u32 dev);
     void  on_device_lost();
     void  dispose();
@@ -58,6 +59,7 @@ private:
     Font  f_[MAXF];
     char  face_[MAXF][64];
     int   wt_[MAXF];
+    bool  it_[MAXF];
     int   n_ = 0;
     char  defFace_[64] = "Segoe UI";
     int   defWeight_ = 600;

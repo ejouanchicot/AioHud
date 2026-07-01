@@ -45,7 +45,7 @@ void Font::build(u32 dev, Slot& s, int em) {
     HGDIOBJ oldbm = SelectObject(hdc, hbm);
     memset(bits, 0, AW * AH * 4);
 
-    HFONT hf = CreateFontA(-em, 0, 0, 0, weight_, 0, 0, 0,
+    HFONT hf = CreateFontA(-em, 0, 0, 0, weight_, italic_ ? 1 : 0, 0, 0,
                            DEFAULT_CHARSET, OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS,
                            ANTIALIASED_QUALITY, DEFAULT_PITCH | FF_DONTCARE, face_);
     HGDIOBJ oldf = SelectObject(hdc, hf);
@@ -153,9 +153,10 @@ void Font::ensure(u32 dev) {
 void Font::on_device_lost() { for (int i = 0; i < NSLOT; ++i) slot_[i].tex = 0; nslot_ = 0; }
 void Font::dispose()        { for (int i = 0; i < nslot_; ++i) if (slot_[i].tex) release_texture(slot_[i].tex); nslot_ = 0; }
 
-void Font::set_face(const char* face, int weight) {
+void Font::set_face(const char* face, int weight, bool italic) {
     if (face && face[0] && lstrcmpA(face, face_) != 0) { lstrcpynA(face_, face, sizeof(face_)); dirty_ = true; }
     if (weight > 0 && weight != weight_) { weight_ = weight; dirty_ = true; }
+    if (italic != italic_) { italic_ = italic; dirty_ = true; }
 }
 
 // ---- FontManager ----
@@ -185,14 +186,14 @@ static void register_bundled_fonts_once() {
     FindClose(h);
 }
 
-Font* FontManager::get(const char* face, int weight) {
+Font* FontManager::get(const char* face, int weight, bool italic) {
     register_bundled_fonts_once();
     const char* fc = (face && face[0]) ? face : defFace_;
     int w = weight > 0 ? weight : defWeight_;
-    for (int i = 0; i < n_; ++i) if (wt_[i] == w && lstrcmpA(face_[i], fc) == 0) return &f_[i];
+    for (int i = 0; i < n_; ++i) if (wt_[i] == w && it_[i] == italic && lstrcmpA(face_[i], fc) == 0) return &f_[i];
     if (n_ < MAXF) {
-        lstrcpynA(face_[n_], fc, 64); wt_[n_] = w;
-        f_[n_].set_face(fc, w);
+        lstrcpynA(face_[n_], fc, 64); wt_[n_] = w; it_[n_] = italic;
+        f_[n_].set_face(fc, w, italic);
         return &f_[n_++];
     }
     return &f_[0];   // pool full -> fall back to the default slot
