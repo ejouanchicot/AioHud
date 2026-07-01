@@ -428,11 +428,11 @@ static bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int 
     const float h = snap(32.0f);
     const bool hov = inrect(mo, x, y, w, h);
     const float t = ease(uid, hov ? 1.0f : 0.0f);
-    rpanel(dev, x, y, w, h, 0.0f, lerpc(0x66182234, 0x88243A5C, t), lerpc(0x66101826, 0x88172C4E, t), lerpc(C_GOLD_DEEP, C_GOLD, t), snap(1.2f));
+    rpanel(dev, x, y, w, h, 0.0f, lerpc(0x66182234, 0x88243A5C, t), lerpc(0x66101826, 0x88172C4E, t), lerpc(C_BORDERHI, C_ACCENT, t), snap(1.2f));
     const float gx = x + snap(15.0f), gy = y + h * 0.5f, s = snap(4.0f);
-    if (open) fill_tri(dev, gx - s, gy - s * 0.55f, gx + s, gy - s * 0.55f, gx, gy + s * 0.85f, fa(C_GOLD));   // down triangle
-    else      fill_tri(dev, gx - s * 0.55f, gy - s, gx - s * 0.55f, gy + s, gx + s * 0.85f, gy, fa(C_GOLD));   // right triangle
-    fo->begin(dev); fo->draw_lc(dev, x + snap(30.0f), gy, label, snap(13.0f), fa(C_GOLD), fa(C_STROKE), 1.3f);
+    if (open) fill_tri(dev, gx - s, gy - s * 0.55f, gx + s, gy - s * 0.55f, gx, gy + s * 0.85f, fa(C_ACCENTHI));   // down triangle
+    else      fill_tri(dev, gx - s * 0.55f, gy - s, gx - s * 0.55f, gy + s, gx + s * 0.85f, gy, fa(C_ACCENTHI));   // right triangle
+    fo->begin(dev); fo->draw_lc(dev, x + snap(30.0f), gy, label, snap(13.0f), fa(C_TEXT), fa(C_STROKE), 1.3f);
     return hov && click;
 }
 

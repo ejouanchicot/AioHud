@@ -1518,6 +1518,12 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
         sprintf(info2buf, "Next 0:00"); info2 = info2buf; info2Col = 0xFF8FA0B8;
     }
     if (!fName->ready()) return;
+    // per-element typography : the Cost/Next box is the TE_COST element (font / size / outline / caps / colour),
+    // falling back to the passed name font. Reassigning the local params routes every draw + measure below.
+    char nmbuf[40];
+    if (f.fonts) { const char* ovc = ui_font_face(ui_config().fontFace); Font* fc = te_font(f.fonts, TE_COST, ovc, nameFont_.c_str(), nameBold_); fc->ensure(f.dev); if (fc->ready()) fName = fc; }
+    nOWf = nameStroke_ * S * ui_config().text[TE_COST].outline;
+    if (nm && ui_config().text[TE_COST].upper) { int i = 0; for (; nm[i] && i < 38; ++i) { char c = nm[i]; nmbuf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c; } nmbuf[i] = 0; nm = nmbuf; }
     // The FRAME shows (empty when no live content) whenever : a magic/ability menu is OPEN (so you get an
     // empty Cost/Next box even on a no-magic job's menu), OR we're in an alliance (a permanent slot between
     // the party and the alliance). Solo + no menu : only while an action (nm) is up.
@@ -1525,7 +1531,7 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
     const bool inAlliance = party().alliance_count(1) > 0 || party().alliance_count(2) > 0
                             || ui_config().editLayout || party_demo_level() >= 2;
     if (!nm && !menuOpen && !inAlliance) return;
-    const float fs = nameSz_ * S;
+    const float fs = te_sz(TE_COST, nameSz_ * S);
     const float pdx = 7.0f * S, pdy = 4.0f * S, gapm = 9.0f * S, lineGap = 2.0f * S;
     const float topPad = snap(10.0f * S);                       // +10px empty at the TOP (text stays bottom-anchored)
     const float infoW  = info  ? fName->measure(info, fs)  : 0.0f;
@@ -1571,11 +1577,11 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
         const float nameX    = snap(bx2 + pdx);
         fName->begin(dev);
         const float ty  = by2 + topPad + pdy + fs * 0.5f;                          // text anchored to the BOTTOM region
-        fName->draw_lc(dev, nameX, ty, nm, fs, 0xFFFFD970, nSTK, nOWf);                              // action name (gold), left
-        if (info) fName->draw_lc(dev, infoColX, ty, info, fs, infoCol, nSTK, nOWf);                  // "Cost XX MP" / live TP, right column
+        fName->draw_lc(dev, nameX, ty, nm, fs, te_col(TE_COST, 0xFFFFD970), nSTK, nOWf);             // action name (gold, or the element colour), left
+        if (info) fName->draw_lc(dev, infoColX, ty, info, fs, te_col(TE_COST, infoCol), nSTK, nOWf); // "Cost XX MP" / live TP, right column
         if (info2) {                                                                                 // recast "Next", below, same column as Cost
             const float ty2 = ty + fs + lineGap;
-            fName->draw_lc(dev, infoColX, ty2, info2, fs, info2Col, nSTK, nOWf);
+            fName->draw_lc(dev, infoColX, ty2, info2, fs, te_col(TE_COST, info2Col), nSTK, nOWf);
         }
     }
 }

@@ -360,7 +360,7 @@ static const char* FACE_NAME[] = {
 static const int NFACE = (int)(sizeof(FACE_LABEL) / sizeof(FACE_LABEL[0]));
 
 const char* ui_text_elem_label(int e) {
-    static const char* L[TE_COUNT] = { "Name", "HP", "MP", "TP", "Cast", "Job Badge", "Distance", "Interface" };
+    static const char* L[TE_COUNT] = { "Name", "HP", "MP", "TP", "Cast", "Job Badge", "Distance", "Interface", "Cost box" };
     return (e >= 0 && e < TE_COUNT) ? L[e] : "";
 }
 int         ui_font_count()        { return NFACE; }

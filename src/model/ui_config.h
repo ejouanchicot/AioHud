@@ -34,7 +34,7 @@ float guide_party_top(int count, float sh);
 bool  guide_alliance_refs(float* ar);
 
 // ---- per-element typography (global : applies to every box) ----
-enum { TE_NAME = 0, TE_HP, TE_MP, TE_TP, TE_CAST, TE_BADGE, TE_DIST, TE_UI, TE_COUNT };
+enum { TE_NAME = 0, TE_HP, TE_MP, TE_TP, TE_CAST, TE_BADGE, TE_DIST, TE_UI, TE_COST, TE_COUNT };
 struct TextStyle {
     int   face    = 0;     // 0 = default (layout / global face) ; else index into the ui_font list
     float size    = 1.0f;  // multiplier on the element's base size
