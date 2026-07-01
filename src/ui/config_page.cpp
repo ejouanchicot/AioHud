@@ -1292,10 +1292,11 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         ROW_NEXT(46.0f)
         // Bar Style : the current bars, or the glass "vial" look (rounded liquid hugging the tube)
         { ROW_BAND(52.0f)
-            int s = ui_config().gaugeStyle; if (s < 0 || s > 1) s = 0;
-            const char* sb[2] = { tr("Bars", "Barres"), tr("Vial", "Fiole") };
-            if (int d = row_selector(dev, fo, mo, click, 36, coX, ry + yo, ctrlW, tr("Bar Style", "Style des barres"), sb[s])) {
-                ui_config().gaugeStyle = wrap(s + d, 2); save_ui_config(); }
+            int s = ui_config().gaugeStyle; if (s < 0 || s > 7) s = 0;
+            const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
+                                  tr("Sphere", "Sphère"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
+            if (int d = row_selector(dev, fo, mo, click, 36, coX, ry + yo, ctrlW, tr("Gauge Style", "Style de jauge"), sb[s])) {
+                ui_config().gaugeStyle = wrap(s + d, 8); save_ui_config(); }
         }
         ROW_NEXT(52.0f)
         // Job Badge : Off / Main job only / Main + Sub

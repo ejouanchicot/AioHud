@@ -210,6 +210,186 @@ static void rrnd_l(u32 dev, float x, float y, float w, float h, float r, u32 c) 
     qfan(dev, x + r, y + h - r, r, 0.5f * GPI, GPI,        c);   // BL
 }
 
+// ---- alternative gauge shapes (ui_config().gaugeStyle) : all sized to the player-row height ----
+
+// SHAPE-MATCHED GLOW : a coloured border that peeks out BEHIND the gauge (WS-ready = gauge colour,
+// critical-HP = red), pulsing. gauge_glow() returns the pulsing colour + border thickness ; each style
+// then draws its OWN shape (rect / disc / diamond) at size + g behind the gauge body.
+static bool gauge_glow(u32 col, float t, float pulse, float danger, u32& gcol, float& g) {
+    if (pulse <= 0.0f && danger <= 0.0f) return false;
+    float ph = 0.5f + 0.5f * sinf(t * 7.5f);
+    float amt = danger > 0.0f ? danger : pulse; if (amt > 1.0f) amt = 1.0f;
+    int a = (int)(amt * (0.45f + 0.50f * ph) * 255.0f); if (a > 255) a = 255;
+    gcol = (danger > 0.0f ? 0x00FF2A2A : (col & 0x00FFFFFF)) | ((u32)a << 24);
+    g = 2.2f + 1.3f * ph;                                // border thickness breathes
+    return true;
+}
+// RECT border (Bars / Segments / Minimal) : a rounded-rect peeking behind.
+static void gauge_aura_soft(u32 dev, float gx, float gy, float gw, float gh, u32 col, float t, float pulse, float danger) {
+    u32 gcol; float g;
+    if (gauge_glow(col, t, pulse, danger, gcol, g)) rrnd(dev, gx - g, gy - g, gw + 2 * g, gh + 2 * g, (gh + 2 * g) * 0.32f, gcol);
+}
+// DISC border (Sphere / Radial / Ring) : an AA circle peeking behind.
+static void gauge_aura_round(u32 dev, float cx, float cy, float R, u32 col, float t, float pulse, float danger) {
+    u32 gcol; float g;
+    if (gauge_glow(col, t, pulse, danger, gcol, g)) disc(dev, cx, cy, R + g, gcol);
+}
+
+// SMOOTH liquid : a circle filled from the bottom up to the surface line yTop, drawn as an anti-aliased
+// circular SEGMENT (curved arc with a feathered rim + a flat top) instead of stepped horizontal bands.
+static void liquid_segment(u32 dev, float cx, float cy, float r, float yTop, u32 col) {
+    cx -= 0.5f; cy -= 0.5f;                                   // D3D half-pixel rule (matches disc())
+    float s = (yTop - cy) / r; if (s < -1.0f) s = -1.0f; if (s >= 1.0f) return;
+    const float PI = 3.14159265f, a0 = asinf(s), a1 = PI - a0;   // arc through the bottom (theta = +pi/2, screen y down)
+    const int N = 48;
+    float span = (cy + r) - yTop; if (span < 1.0f) span = 1.0f;
+    // solid fan from the surface midpoint to the arc (per-vertex vertical shade)
+    VtxC fan[N + 2];
+    fan[0] = { cx, yTop - 0.5f, 0.0f, 1.0f, scl(col, 1.06f) };
+    for (int i = 0; i <= N; ++i) {
+        float a = a0 + (a1 - a0) * (float)i / N, y = cy + r * sinf(a);
+        float f = (y - (yTop - 0.5f)) / span; if (f < 0) f = 0; if (f > 1) f = 1;
+        fan[i + 1] = { cx + r * cosf(a), y, 0.0f, 1.0f, scl(col, 1.12f - 0.55f * f) };
+    }
+    dDrawUP(dev, D3DPT_TRIANGLEFAN, N, fan, sizeof(VtxC));
+    // feathered rim along the ARC only (opaque at r -> transparent at r+f) = the anti-aliased edge
+    const float fth = 1.2f;
+    VtxC ring[2 * (N + 1)];
+    for (int i = 0; i <= N; ++i) {
+        float a = a0 + (a1 - a0) * (float)i / N, ca = cosf(a), sa = sinf(a), y = cy + r * sa;
+        float f = (y - (yTop - 0.5f)) / span; if (f < 0) f = 0; if (f > 1) f = 1;
+        u32 ci = scl(col, 1.12f - 0.55f * f);
+        ring[2 * i]     = { cx + r * ca,         y,               0.0f, 1.0f, ci };
+        ring[2 * i + 1] = { cx + (r + fth) * ca, cy + (r + fth) * sa, 0.0f, 1.0f, ci & 0x00FFFFFF };
+    }
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * N, ring, sizeof(VtxC));
+}
+
+// SPHERE : a round glass bulb filling bottom -> top with liquid (horizontal bands clipped to the circle).
+static void gauge_sphere(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger) {
+    const float cx = gx + gw * 0.5f, cy = gy + gh * 0.5f;
+    float r = (gw < gh ? gw : gh) * 0.5f - 1.0f; if (r < 2.0f) r = 2.0f;
+    gauge_aura_round(dev, cx, cy, r, col, t, pulse, danger);
+    disc(dev, cx, cy, r + 1.0f, 0xFF243150);            // anti-aliased rim (feathered edge)
+    disc(dev, cx, cy, r,        0xFF0A0E1C);            // anti-aliased dark glass bulb
+    if (pct > 0.0f) {
+        const float rr = r - 1.0f;                       // keep the liquid just inside the smooth AA rim
+        const float yFill = cy + rr - 2.0f * rr * (pct / 100.0f);   // liquid surface Y
+        liquid_segment(dev, cx, cy, rr, yFill, col);     // smooth AA circular segment (no stepped edge)
+        if (yFill > cy - rr + 1.0f && yFill < cy + rr - 1.0f) {     // bright meniscus at the surface
+            float sfrac = (yFill - cy) / rr; float hc = rr * sqrtf(1.0f - sfrac * sfrac);
+            u32 me = lt(col, 0.5f); grad_quad(dev, cx - hc, yFill, 2.0f * hc, 1.2f, me, me, me, me);
+        }
+    }
+    { u32 hi = 0x66FFFFFF; soft_blob(dev, cx - r * 0.34f, cy - r * 0.42f, r * 0.5f, r * 0.42f, hi); }  // top-left gloss
+}
+
+static void ring_sector(u32 dev, float cx, float cy, float rIn, float rOut, float a0, float a1, u32 c) {   // ANTI-ALIASED annulus sector
+    cx -= 0.5f; cy -= 0.5f;
+    const int M = 56; const float fth = 1.1f; const u32 c0 = c & 0x00FFFFFF;
+    VtxC body[2 * (M + 1)], of[2 * (M + 1)], nf[2 * (M + 1)];
+    for (int i = 0; i <= M; ++i) {
+        float a = a0 + (a1 - a0) * (float)i / M, ca = cosf(a), sa = sinf(a);
+        body[2*i]   = { cx + rOut*ca,          cy + rOut*sa,          0,1, c };
+        body[2*i+1] = { cx + rIn*ca,           cy + rIn*sa,           0,1, c };
+        of[2*i]     = { cx + rOut*ca,          cy + rOut*sa,          0,1, c };
+        of[2*i+1]   = { cx + (rOut + fth)*ca,  cy + (rOut + fth)*sa,  0,1, c0 };   // outer feather -> transparent
+        nf[2*i]     = { cx + rIn*ca,           cy + rIn*sa,           0,1, c };
+        nf[2*i+1]   = { cx + (rIn - fth)*ca,   cy + (rIn - fth)*sa,   0,1, c0 };   // inner feather -> transparent
+    }
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2*M, body, sizeof(VtxC));
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2*M, of,   sizeof(VtxC));
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2*M, nf,   sizeof(VtxC));
+}
+// RING : a thin full-circle progress ring.
+static void gauge_ring(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger) {
+    const float cx = gx + gw * 0.5f, cy = gy + gh * 0.5f;
+    float R = (gw < gh ? gw : gh) * 0.5f - 1.0f; if (R < 3.0f) R = 3.0f;
+    const float rOut = R, rIn = R * 0.74f, TAU = 6.2831853f, a0 = -1.5708f;       // thin ring, start at the top
+    { u32 gcol; float g; if (gauge_glow(col, t, pulse, danger, gcol, g)) ring_sector(dev, cx, cy, rIn - g, rOut + g, 0.0f, TAU, gcol); }   // ring-shaped glow
+    ring_sector(dev, cx, cy, rIn, rOut, 0.0f, TAU, 0xFF0A0E1C);
+    if (pct > 0.0f) {
+        float a1 = a0 + TAU * (pct / 100.0f);
+        ring_sector(dev, cx, cy, rIn, rOut, a0, a1, col);
+        if (pct < 99.5f) { u32 me = lt(col, 0.5f); float da = 2.2f / rOut; ring_sector(dev, cx, cy, rIn, rOut, a1 - da, a1, me); }   // bright radial level line
+    }
+    { u32 hi = 0x40FFFFFF; soft_blob(dev, cx - R * 0.3f, cy - R * 0.35f, R * 0.5f, R * 0.4f, hi); }
+}
+
+// feather one straight edge (P->Q) outward along normal (nx,ny) : rim colour -> transparent = AA silhouette.
+static void edge_feather(u32 dev, float ax, float ay, float bx, float by, float nx, float ny, u32 rim) {
+    const float f = 1.3f; const u32 tr = rim & 0x00FFFFFF;
+    VtxC v[4] = { { ax, ay, 0.0f, 1.0f, rim }, { ax + nx * f, ay + ny * f, 0.0f, 1.0f, tr },
+                  { bx, by, 0.0f, 1.0f, rim }, { bx + nx * f, by + ny * f, 0.0f, 1.0f, tr } };
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC));
+}
+
+// CRYSTAL : an angular diamond/gem filling bottom -> top (straight edges, feathered AA silhouette).
+static void gauge_crystal(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger) {
+    const float cx = gx + gw * 0.5f, cy = gy + gh * 0.5f;
+    float R = (gw < gh ? gw : gh) * 0.5f - 1.0f; if (R < 3.0f) R = 3.0f;
+    { u32 gcol; float g; if (gauge_glow(col, t, pulse, danger, gcol, g)) {   // diamond-shaped glow peeking behind
+        float e = R + g;
+        fill_tri(dev, cx, cy - e, cx + e, cy, cx - e, cy, gcol);
+        fill_tri(dev, cx - e, cy, cx + e, cy, cx, cy + e, gcol);
+    } }
+    fill_tri(dev, cx, cy - R, cx + R, cy, cx - R, cy, 0xFF0A0E1C);      // dark glass body (diamond)
+    fill_tri(dev, cx - R, cy, cx + R, cy, cx, cy + R, 0xFF0A0E1C);
+    const float k = 0.70711f; const u32 rimC = 0xFF243150;             // AA silhouette : feather the 4 outer edges
+    edge_feather(dev, cx, cy - R, cx + R, cy,  k, -k, rimC);
+    edge_feather(dev, cx + R, cy, cx, cy + R,  k,  k, rimC);
+    edge_feather(dev, cx, cy + R, cx - R, cy, -k,  k, rimC);
+    edge_feather(dev, cx - R, cy, cx, cy - R, -k, -k, rimC);
+    if (pct > 0.0f) {
+        const float Rin = R - 1.0f;                                   // liquid stays 1px inside -> the rim frames it
+        const float yFill = cy + Rin - 2.0f * Rin * (pct / 100.0f);
+        float hc = Rin - fabsf(yFill - cy); if (hc < 0.0f) hc = 0.0f;  // diamond half-width at the surface
+        u32 c = scl(col, 0.92f);
+        if (yFill >= cy) {                                            // lower half : straight triangle to the bottom tip
+            fill_tri(dev, cx - hc, yFill, cx + hc, yFill, cx, cy + Rin, c);
+        } else {                                                      // over half : pentagon (fan from the left surface point)
+            fill_tri(dev, cx - hc, yFill, cx + hc, yFill, cx + Rin, cy, c);
+            fill_tri(dev, cx - hc, yFill, cx + Rin, cy,   cx, cy + Rin, c);
+            fill_tri(dev, cx - hc, yFill, cx, cy + Rin,   cx - Rin, cy, c);
+        }
+        u32 me = lt(col, 0.5f); grad_quad(dev, cx - hc, yFill, 2.0f * hc, 1.2f, me, me, me, me);   // meniscus
+    }
+    { u32 hi = 0x55FFFFFF; soft_blob(dev, cx - R * 0.28f, cy - R * 0.40f, R * 0.4f, R * 0.35f, hi); }
+}
+
+// SEGMENTED : a battery of blocks that light up left -> right.
+static void gauge_segmented(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger) {
+    gauge_aura_soft(dev, gx, gy, gw, gh, col, t, pulse, danger);
+    const int N = 5; const float g = 1.5f; float segW = (gw - (N - 1) * g) / (float)N; if (segW < 2.0f) segW = 2.0f;
+    const float r = gh * 0.22f, ih = gh - 2.0f;
+    for (int k = 0; k < N; ++k) {
+        float x = gx + k * (segW + g);
+        rrnd(dev, x, gy, segW, gh, r, 0xFF1B2540);                 // cell rim
+        rrnd(dev, x + 1, gy + 1, segW - 2, gh - 2, r - 1.0f, 0xFF080B16);   // cell bore
+        float lit = (pct / 100.0f) * N - k; if (lit < 0.0f) lit = 0.0f; if (lit > 1.0f) lit = 1.0f;
+        if (lit > 0.01f) {
+            float fw = (segW - 2) * lit;
+            vgrad(dev, x + 1, gy + 1,            fw, ih * 0.5f, lt(col, 0.25f), col);
+            vgrad(dev, x + 1, gy + 1 + ih * 0.5f, fw, ih * 0.5f, col, scl(col, 0.6f));
+            vgrad(dev, x + 1, gy + 1,            fw, ih * 0.44f, 0x66FFFFFF, 0x00FFFFFF);
+            if (lit < 0.999f) { u32 me = lt(col, 0.5f); grad_quad(dev, x + 1 + fw - 1.0f, gy + 1, 1.4f, ih, me, me, me, me); }   // bright level line on the partial cell
+        }
+    }
+}
+
+// MINIMAL : the big value number is the star ; a thin underline bar shows the level.
+static void gauge_minimal(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger) {
+    float bh = gh * 0.18f; if (bh < 2.0f) bh = 2.0f;
+    const float y = gy + gh - bh - 1.0f, r = bh * 0.5f;
+    gauge_aura_soft(dev, gx, y, gw, bh, col, t, pulse, danger);    // rounded-rect border hugging the thin bar
+    rrnd(dev, gx, y, gw, bh, r, 0xFF10182B);                       // track
+    float fw = gw * (pct / 100.0f);
+    if (fw > 1.0f) {
+        rrnd(dev, gx, y, fw, bh, r, col);
+        if (fw < gw - 1.0f) { u32 me = lt(col, 0.4f); grad_quad(dev, gx + fw - 1.0f, y, 1.2f, bh, me, me, me, me); }
+    }
+}
+
 void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger, int kind) {   // exposed for the Help live samples
     // untextured colour-quad state : the party rows draw gauges BEFORE any text, but the Help draws them
     // AFTER text (font texture still bound + MODULATE) -> reset so the rounded/gradient quads render right.
@@ -218,30 +398,27 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
     dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
     dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
     if (pct < 0) pct = 0; if (pct > 100) pct = 100;
-    // "Vial" style : borrow the REAL fiole (LiquidBars) assets at party scale. Falls through to the bar
-    // below if the assets aren't resident yet (e.g. a layout without a PlayerHub widget).
-    if (ui_config().gaugeStyle == 1 && kind >= 0) {
-        LiquidBars* p = vial_provider();
-        if (p && p->vial_ready()) { p->draw_vial_scaled(dev, t, gx, gy, gw, gh, kind, pct / 100.0f, col, pulse, danger, 4); return; }
+    // gauge shape (config) : 0 = Vial (real fiole assets), 1 = Sphere, 2 = Radial. The classic bar below is
+    // kept only as the automatic fallback for Vial before the fiole textures are resident.
+    if (kind >= 0) {
+        switch (ui_config().gaugeStyle) {   // 0 Vial, 1 Bars, 2 Segments, 3 Minimal, 4 Sphere, 5 Ring, 6 Crystal, 7 Text
+            case 7: return;                 // Text style : no shape at all -> the value number (drawn later) carries the colour + animation
+            case 2: gauge_segmented(dev, gx, gy, gw, gh, pct, col, t, pulse, danger); return;
+            case 3: gauge_minimal  (dev, gx, gy, gw, gh, pct, col, t, pulse, danger); return;
+            case 4: gauge_sphere   (dev, gx, gy, gw, gh, pct, col, t, pulse, danger); return;
+            case 5: gauge_ring     (dev, gx, gy, gw, gh, pct, col, t, pulse, danger); return;
+            case 6: gauge_crystal  (dev, gx, gy, gw, gh, pct, col, t, pulse, danger); return;
+            case 1: break;                  // classic bar (drawn below)
+            default: {                      // 0 = Vial : real fiole assets, bar fallback until resident
+                LiquidBars* p = vial_provider();
+                if (p && p->vial_ready()) { p->draw_vial_scaled(dev, t, gx, gy, gw, gh, kind, pct / 100.0f, col, pulse, danger, 4); return; }
+            }
+        }
     }
     const float cyc = gy + gh * 0.5f;
     float r = gh * 0.24f;                                 // gentle corner radius
 
-    if (pulse > 0.0f) {                                  // WS-ready glow breathing (transparent, behind)
-        float ph = 0.5f + 0.5f * sinf(t * 7.5f);
-        u32 g1 = (col & 0x00FFFFFF) | ((u32)((0.30f + 0.40f * ph) * pulse * 255) << 24);
-        grad_quad(dev, gx - 3, gy - 3, gw + 6, gh + 6, g1, g1, g1, g1);
-        u32 g2 = (col & 0x00FFFFFF) | ((u32)((0.55f + 0.40f * ph) * pulse * 255) << 24);
-        grad_quad(dev, gx - 1, gy - 2, gw + 2, gh + 4, g2, g2, g2, g2);
-    }
-    if (danger > 0.0f) {                                 // CRITICAL HP : red alarm halo breathing
-        float dh = 0.5f + 0.5f * sinf(t * 7.5f);
-        u32 d1 = 0x00FF2A2A | ((u32)((0.32f + 0.48f * dh) * danger * 255) << 24);
-        grad_quad(dev, gx - 3, gy - 3, gw + 6, gh + 6, d1, d1, d1, d1);
-        u32 d2 = 0x00FF2A2A | ((u32)((0.55f + 0.40f * dh) * danger * 255) << 24);
-        grad_quad(dev, gx - 1, gy - 2, gw + 2, gh + 4, d2, d2, d2, d2);
-    }
-    { u32 gl = (col & 0x00FFFFFF) | 0x1C000000; soft_blob(dev, gx + gw * 0.5f, cyc, gw * 0.58f, gh * 0.9f, gl); }   // faint always-on glow
+    gauge_aura_soft(dev, gx, gy, gw, gh, col, t, pulse, danger);   // adapted glow : soft radial, no box frame
 
     // track : OPAQUE rounded rim + recessed bg (clean corners) + subtle inner shading
     rrnd(dev, gx, gy, gw, gh, r, 0xFF243150);                          // rim
@@ -263,6 +440,7 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
             u32 dw = 0x00FF1E1E | ((u32)(dl * danger * 0.55f * 255) << 24);
             grad_quad(dev, fx, fy, fillW, fh, dw, dw, dw, dw);
         }
+        if (fillW < innerW - 0.5f) { u32 me = lt(c, 0.5f); grad_quad(dev, fx + fillW - 1.0f, fy, 1.4f, fh, me, me, me, me); }   // bright level line at the fill edge
     }
 }
 
@@ -502,10 +680,15 @@ void Party::demo_row(int i, void* out) const {
     r.offzone = false; r.zone = 0; r.id = (unsigned)(tier_ * 10 + i + 1); r.sel = false; r.subsel = false; r.castPct = 0.0f; r.castAlpha = 0.0f;
     r.dist = (float)i * 6.7f; r.outRange = (r.dist > kCastRange);   // demo : spread distances, last rows out of range
     const Member& dm = DEMO[tier_ * 6 + i];
-    const bool edit = ui_config().editLayout || party_demo_level() > 0;   // edit AND //aio demo : everything full -> a faithful preview of the REAL configured layout
-    int hp = edit ? 100 : dhp_[i]; if (hp < 0) hp = 0; if (hp > 100) hp = 100;
-    int mp = edit ? 100 : dmp_[i]; if (mp < 0) mp = 0; if (mp > 100) mp = 100;
-    int tp = edit ? 3000 : dtp_[i]; if (tp < 0) tp = 0; if (tp > 3000) tp = 3000;
+    const bool edit = ui_config().editLayout || party_demo_level() > 0;   // edit / //aio demo : spread every value across the range so all gauge states are visible at once
+    // PREVIEW spread : HP high/mid/low(+critical blink), MP mixed, TP empty / just-ready(1000) / 1500 / 2000 / 3000 / charging.
+    static const int EHP[6] = { 100,  76,  52,  24,   9,  88 };
+    static const int EMP[6] = {  65, 100,  34,  82,  12,  48 };
+    static const int ETP[6] = {   0, 1000, 1500, 2000, 3000, 780 };
+    const int ei = i % 6;
+    int hp = edit ? EHP[ei] : dhp_[i]; if (hp < 0) hp = 0; if (hp > 100) hp = 100;
+    int mp = edit ? EMP[ei] : dmp_[i]; if (mp < 0) mp = 0; if (mp > 100) mp = 100;
+    int tp = edit ? ETP[ei] : dtp_[i]; if (tp < 0) tp = 0; if (tp > 3000) tp = 3000;
     r.name = dm.name; r.job = dm.job; r.sub = dm.sub; r.role = dm.role;
     r.hpp = hp; r.mpp = mp; r.tp = tp; r.hpVal = (dm.maxHp * hp + 50) / 100; r.mpVal = (dm.maxMp * mp + 50) / 100;
     // leader markers (demo) : one PARTY lead per box (row 0), one ALLIANCE lead total (the main
@@ -560,7 +743,7 @@ Party::RowAnim* Party::anim_for(unsigned id) {
 // 20), right-to-left from just left of the selection cursor. Atlas id -> cell (id%32, id/32).
 // A static helper (it iterates the file-local Row) -> keeps draw() focused. buffTex 0 = no-op.
 static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
-                              float px, float oy, float pad, float rowpit, float rowh, float S) {
+                              float px, float oy, float pad, float rowpit, float rowh, float S, float sizeH) {
     if (!buffTex) return;
     dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
     dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
@@ -576,8 +759,8 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
     const float au = (float)BCELL / (float)BATLAS_W;    // one cell, in UV space
     const float av = (float)BCELL / (float)BATLAS_H;
     const int   BMAX = 20;                              // cap : at most 20 icons per member
-    float bf = ui_config().buffScale; if (bf < 0.40f) bf = 0.40f; if (bf > 1.0f) bf = 1.0f;   // fraction of the row (capped at the row height)
-    const float bs = snap(rowh * bf);                   // size FOLLOWS the box (rowh scales) ; capped at one row, centred below
+    float bf = ui_config().buffScale; if (bf < 0.40f) bf = 0.40f; if (bf > 1.0f) bf = 1.0f;   // fraction of the STABLE band height
+    const float bs = snap(sizeH * bf);                  // size follows the STABLE band -> stays put across gauge styles ; centred in the actual row
     for (int i = 0; i < n; ++i) {
         const Row& r = rows[i];
         if (r.offzone || !r.buffs || r.nbuff <= 0) continue;
@@ -929,7 +1112,7 @@ void Party::draw(const Frame& f) {
     }
 
     // ---------- buffs : status icons LEFT of each party row (main box only -- alliance buffs aren't sent) ----------
-    if (tier_ == 0) draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S);   // buffs sized + centred on the MAIN BAND -> aligned with name/badge/gauges (the cast line stays below)
+    if (tier_ == 0) draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S, snap(mainBandHStable() * S));   // buffs sized on the STABLE band (constant across gauge styles), centred in the actual row
 
     // ---------- leader / QM markers : round dots, animated pop-in/out (scale + fade) ----------
     if (dot_tex_) {
@@ -1079,10 +1262,19 @@ void Party::draw(const Frame& f) {
         const float gy = ry + (mh - gh) * 0.5f;   // bar values centred on the MAIN BAND (match the gauges)
         if (!fBar->ready()) continue;
         fBar->begin(dev);
+        const int gstyle = ui_config().gaugeStyle;
         for (int g = 0; g < 3; ++g) {
             float gx = gx0 + g * (gw + ggap);
             sprintf(buf, "%d", vals[g]);
-            fBar->draw_cc(dev, gx + gw * 0.5f, gy + gh * 0.5f, buf, barSz_ * S, 0xFFFFFFFF, vSTK, vOWf);   // bar values NOT zoomed
+            u32 tcol = 0xFFFFFFFF;
+            if (gstyle == 7) {   // TEXT style : the number itself is the gauge -> colour by state + animate
+                u32 base = (g == 0) ? hp_color((float)r.hpp) : (g == 1) ? C_MP : tp_color(r.tp);
+                float br = 1.0f;
+                if (g == 2 && r.tp >= 1000)                 br = 0.78f + 0.32f * (0.5f + 0.5f * sinf(t * 7.5f));   // TP ready : pulse
+                else if (g == 0 && r.hpp > 0 && r.hpp <= 25) br = 0.55f + 0.45f * (0.5f + 0.5f * sinf(t * 7.5f));   // HP critical : blink
+                tcol = scl(base, br);
+            }
+            fBar->draw_cc(dev, gx + gw * 0.5f, gy + gh * 0.5f, buf, barSz_ * S, tcol, vSTK, vOWf);   // bar values NOT zoomed
         }
     }
 

@@ -94,7 +94,10 @@ private:
     float badgeW()   const { return ui_config().jobBadge == 0 ? 0.0f : (badgeSz_ * 1.9f + 8.0f); }   // 0 = off -> column collapses
     float badgeH()   const { int m = ui_config().jobBadge; return m == 0 ? 0.0f : (m == 1 ? badgeSz_ + 4.0f : badgeSz_ + subSz() + 4.0f); }   // main-only is shorter
     float gaugeW()   const { return (barSz_  * 2.6f + 6.0f) * ui_config().barWidth; }   // ~4-digit value, width-scalable
-    float gaugeH()   const { return (barSz_  + 6.0f) * ui_config().barHeight; }          // height-scalable (uses the taller-row room)
+    // round styles (Sphere/Ring/Crystal = 4/5/6) use a SQUARE cell so the disc is big enough to hold the
+    // value -> the row grows to fit. Vial/Bars/Segments/Minimal/Text keep the flat height.
+    bool  circularGauge() const { int s = ui_config().gaugeStyle; return s >= 4 && s <= 6; }
+    float gaugeH()   const { return circularGauge() ? gaugeW() : (barSz_ + 6.0f) * ui_config().barHeight; }   // height-scalable (uses the taller-row room)
     float gaugeGap() const { return 3.0f; }
     float marksW()   const { return 20.0f; }   // holds up to ~3 leader/QM dots, centred -> badge stays clear
     float padB()     const { return 4.0f; }   // top/bottom inner margin -> rows + selection frame stay off the box border
@@ -107,6 +110,15 @@ private:
     // together (tallest of them). The cast/spell line sits BELOW this band.
     float mainBandH() const {
         float m = badgeH(); float v = gaugeH(); if (v > m) m = v;
+        float n = nameSz_ + 2.0f; if (n > m) m = n;
+        float k = marksColH();   if (k > m) m = k;
+        return m;
+    }
+    // STABLE band height : mainBandH computed with the FLAT gauge height (ignores the round-style square-cell
+    // inflation) -> used to size the buff icons so they DON'T grow/shrink when the gauge style changes.
+    float mainBandHStable() const {
+        float gFlat = (barSz_ + 6.0f) * ui_config().barHeight;
+        float m = badgeH(); if (gFlat > m) m = gFlat;
         float n = nameSz_ + 2.0f; if (n > m) m = n;
         float k = marksColH();   if (k > m) m = k;
         return m;

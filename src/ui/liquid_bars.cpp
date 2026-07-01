@@ -544,6 +544,27 @@ void LiquidBars::draw(const Frame& f)
     draw_cap_pass(dev, cap_front_, ys, x, w, h);
 }
 
+// rounded-rect (bands + quarter-disc corners, non-overlapping) : the Fiole glow uses the SAME shape as
+// the Bars style. Matches party.cpp's rrnd().
+static void gl_qfan(u32 dev, float cx, float cy, float r, float a0, float a1, u32 c) {
+    const int N = 6; float px = cx + r * cosf(a0), py = cy + r * sinf(a0);
+    for (int i = 1; i <= N; ++i) { float a = a0 + (a1 - a0) * (float)i / N, nx = cx + r * cosf(a), ny = cy + r * sinf(a); fill_tri(dev, cx, cy, px, py, nx, ny, c); px = nx; py = ny; }
+}
+static void gl_rrect(u32 dev, float x, float y, float w, float h, float r, u32 c) {
+    const float PI = 3.14159265f;
+    if (r > w * 0.5f) r = w * 0.5f; if (r > h * 0.5f) r = h * 0.5f;
+    if (r < 1.0f) { grad_quad(dev, x, y, w, h, c, c, c, c); return; }
+    grad_quad(dev, x + r, y,         w - 2 * r, r,         c, c, c, c);   // top band
+    grad_quad(dev, x + r, y + h - r, w - 2 * r, r,         c, c, c, c);   // bottom band
+    grad_quad(dev, x,     y + r,     r,         h - 2 * r, c, c, c, c);   // left band
+    grad_quad(dev, x + w - r, y + r, r,         h - 2 * r, c, c, c, c);   // right band
+    grad_quad(dev, x + r, y + r,     w - 2 * r, h - 2 * r, c, c, c, c);   // centre
+    gl_qfan(dev, x + r,     y + r,     r, PI,          1.5f * PI, c);
+    gl_qfan(dev, x + w - r, y + r,     r, 1.5f * PI,   2.0f * PI, c);
+    gl_qfan(dev, x + r,     y + h - r, r, 0.5f * PI,   PI,        c);
+    gl_qfan(dev, x + w - r, y + h - r, r, 0.0f,        0.5f * PI, c);
+}
+
 // ---- shared provider : the HUD hands its LiquidBars here so party/help can borrow the real assets ----
 static LiquidBars* g_vialProvider = nullptr;
 void        set_vial_provider(LiquidBars* p) { g_vialProvider = p; }
@@ -564,30 +585,22 @@ void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, f
     if      (kind == 0) { hp_palette(fill01, dyn); pal = dyn; }   // HP : green / orange / red
     else if (kind == 2) { tp_palette(fill01, dyn); pal = dyn; }   // TP : continuous tiers
 
-    // BASE bar effects : the SAME luminous aura the bar style draws BEHIND the gauge -- WS-ready pulse
-    // (TP >= 1000), critical-HP red alarm, and a faint always-on glow. Colour-quad state (untextured).
+    // BASE effects : WS-ready pulse (TP >= 1000) + critical-HP alarm + faint glow, as SOFT radial blobs that
+    // hug the fiole (no hard box frame). Colour-quad state (untextured).
     {
         dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
         dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1); dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
         dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
         dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
         dSetTSS(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE);
-        const float cyc = y + h * 0.5f;
-        if (pulse > 0.0f) {                                  // WS-ready glow breathing
+        if (pulse > 0.0f || danger > 0.0f) {                 // shape-matched border : a rounded-rect peeking behind the fiole
             float ph = 0.5f + 0.5f * sinf(t * 7.5f);
-            u32 g1 = (col & 0x00FFFFFF) | ((u32)((0.30f + 0.40f * ph) * pulse * 255) << 24);
-            grad_quad(dev, x - 3, y - 3, w + 6, h + 6, g1, g1, g1, g1);
-            u32 g2 = (col & 0x00FFFFFF) | ((u32)((0.55f + 0.40f * ph) * pulse * 255) << 24);
-            grad_quad(dev, x - 1, y - 2, w + 2, h + 4, g2, g2, g2, g2);
+            float amt = danger > 0.0f ? danger : pulse; if (amt > 1.0f) amt = 1.0f;
+            int a = (int)(amt * (0.45f + 0.50f * ph) * 255.0f); if (a > 255) a = 255;
+            u32 gcol = (danger > 0.0f ? 0x00FF2A2A : (col & 0x00FFFFFF)) | ((u32)a << 24);
+            float g = 2.2f + 1.3f * ph;
+            gl_rrect(dev, x - g, y - g, w + 2 * g, h + 2 * g, (h + 2 * g) * 0.32f, gcol);   // SAME rounded-rect glow as the Bars style
         }
-        if (danger > 0.0f) {                                 // CRITICAL HP : red alarm halo breathing
-            float dh = 0.5f + 0.5f * sinf(t * 7.5f);
-            u32 d1 = 0x00FF2A2A | ((u32)((0.32f + 0.48f * dh) * danger * 255) << 24);
-            grad_quad(dev, x - 3, y - 3, w + 6, h + 6, d1, d1, d1, d1);
-            u32 d2 = 0x00FF2A2A | ((u32)((0.55f + 0.40f * dh) * danger * 255) << 24);
-            grad_quad(dev, x - 1, y - 2, w + 2, h + 4, d2, d2, d2, d2);
-        }
-        { u32 gl = (col & 0x00FFFFFF) | 0x1C000000; soft_blob(dev, x + w * 0.5f, cyc, w * 0.58f, h * 0.9f, gl); }
     }
 
     // --- full textured state (same block as LiquidBars::draw, so it survives the game's leftovers) ---
