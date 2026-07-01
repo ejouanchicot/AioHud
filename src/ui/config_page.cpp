@@ -591,7 +591,7 @@ static float draw_wrapped(u32 dev, Font* fo, float x, float y, float maxW, float
             if (!lineStart && lineX + spaceW + ww > x + maxW) { y += lineH; lineX = x; lineStart = true; }   // wrap
             if (!lineStart) lineX += spaceW;
             const u32 wc = (wEmph == 1) ? C_TEXT : (wEmph == 2) ? C_GOLD : col;
-            if (y >= top && y + lineH <= bot) { fo->begin(dev); fo->draw_lc(dev, lineX, y + lineH * 0.5f, word, sz, fa(wc), fa(C_STROKE), wEmph == 1 ? 1.9f : 1.0f); }
+            if (y >= top && y + lineH <= bot) { fo->begin(dev); fo->draw_lc(dev, lineX, y + lineH * 0.5f, word, sz, fa(wc), fa(C_STROKE), 1.0f); }   // uniform stroke -> every word sits on the same baseline ; emphasis is COLOUR only (bright = bold, gold = highlight)
             lineX += ww; lineStart = false;
         }
         if (!*p) break;
@@ -1557,7 +1557,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 const float rh2 = snap(22.0f);
                 for (int k = 0; k < 3; ++k) {
                     if (y >= top && y + rh2 <= bot) {
-                        disc(dev, hx + snap(9.0f), y + rh2 * 0.5f, snap(4.5f), dcol[k]);
+                        cs(dev); disc(dev, hx + snap(9.0f), y + rh2 * 0.5f, snap(4.5f), dcol[k]);   // reset to the colour-quad state first (a prior paragraph left the font texture bound -> the dot came out black)
                         fo->begin(dev); fo->draw_lc(dev, hx + snap(24.0f), y + rh2 * 0.5f, dlab[k], bsz, fa(C_TEXT), fa(C_STROKE), 1.0f);
                     }
                     y += rh2;
@@ -1583,14 +1583,26 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                     fo->begin(dev); fo->draw_lc(dev, hx + snap(4.0f) + 2 * gw + gap + snap(22.0f), y + rh2 * 0.5f, txt, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
                 }
                 y += rh2 + snap(8.0f);
-            } else if (it.kind == 14) {               // LIVE sample : the REAL selection hand + its highlight bar, gold (main) / blue (sub)
+            } else if (it.kind == 14) {               // LIVE sample : the REAL selection hand (bobbing) + its highlight bar with a glass sweep, gold (main) / blue (sub)
                 const float rh2 = snap(44.0f), hand = snap(44.0f), bx2 = hx + hand + snap(8.0f), bw = snap(200.0f);
                 for (int t2 = 0; t2 < 2; ++t2) {
                     if (y >= top && y + rh2 <= bot) {
                         const u32 base = (t2 == 0) ? 0xFFFFDC78 : 0xFF5AA2FF;
-                        flat(dev, bx2, y, bw, rh2, (base & 0x00FFFFFF) | 0x30000000);
+                        flat(dev, bx2, y, bw, rh2, (base & 0x00FFFFFF) | 0x30000000);        // tinted fill
+                        // moving glass sheen sweeping left -> right, like the party selection frame
+                        const float shW = bw * 0.20f;
+                        const float sph = fmodf(f.t * 0.55f + t2 * 0.4f, 1.35f) / 1.35f;     // 0..1 loop with a pause between sweeps
+                        float shx = bx2 - shW + (bw + shW) * sph, shw = shW;
+                        if (shx < bx2)            { shw -= (bx2 - shx); shx = bx2; }
+                        if (shx + shw > bx2 + bw)   shw = bx2 + bw - shx;
+                        if (shw > 1.0f) {
+                            const u32 e = 0x00FFFFFF, m = 0x66FFFFFF;
+                            q4(dev, shx,              y, shw * 0.5f, rh2, e, m, e, m);        // ramp up to the bright centre
+                            q4(dev, shx + shw * 0.5f, y, shw * 0.5f, rh2, m, e, m, e);        // ramp back down
+                        }
                         outline(dev, bx2, y, bw, rh2, (base & 0x00FFFFFF) | 0x99000000);
-                        party_cursor(dev, helpCursorTex_, hx + hand * 0.5f, y + rh2 * 0.5f, hand, t2 == 1);
+                        const float bob = snap(3.0f) * sinf(f.t * 4.6f + t2 * 1.6f);         // horizontal bob, same rhythm as the in-game cursor
+                        party_cursor(dev, helpCursorTex_, hx + hand * 0.5f + bob, y + rh2 * 0.5f, hand, t2 == 1);
                         const char* cl = (t2 == 0) ? (ui_config().lang == 1 ? "Cible principale, curseur blanc" : "Main target, white hand")
                                                    : (ui_config().lang == 1 ? "Sous-cible, curseur bleu" : "Sub-target, blue hand");
                         fo->begin(dev); fo->draw_lc(dev, bx2 + bw + snap(14.0f), y + rh2 * 0.5f, cl, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
