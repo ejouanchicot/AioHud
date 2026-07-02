@@ -1338,13 +1338,13 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             const float rowH = snap(40.0f), ty = ry + yo;
             fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Box", "Boîte"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const char* tlbl[3] = { tr("Party", "Groupe"), tr("Alliance 1", "Alliance 1"), tr("Alliance 2", "Alliance 2") };
-            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f);
-            const float bx0 = coX + ctrlW - (3 * bbw + 2 * bgap), bty = ty + (rowH - bbh) * 0.5f;
-            for (int i = 0; i < 3; ++i) if (toggle_chip(dev, fo, mo, click, 80 + i * 2, bx0 + i * (bbw + bgap), bty, bbw, bbh, tlbl[i], cfgTarget_ == i)) cfgTarget_ = i;
+            const char* tlbl[2] = { tr("Party", "Groupe"), tr("Alliance", "Alliance") };   // 2 groups : both alliances share one config
+            const float bbw = snap(140.0f), bgap = snap(8.0f), bbh = snap(34.0f);
+            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
+            for (int i = 0; i < 2; ++i) if (toggle_chip(dev, fo, mo, click, 80 + i * 2, bx0 + i * (bbw + bgap), bty, bbw, bbh, tlbl[i], cfgTarget_ == i)) cfgTarget_ = i;
         }
         ROW_NEXT(56.0f)
-        const int T = (cfgTarget_ < 0 || cfgTarget_ > 2) ? 0 : cfgTarget_;   // active box index into the per-box arrays
+        const int T = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;   // config GROUP : 0 = Party, 1 = Alliance (both alliance boxes)
         // Box Size -> this box's scale (party floor 100% : it must cover the native block ; alliances 50%..200%)
         { ROW_BAND(46.0f)
             const float lo = (T == 0) ? 1.00f : 0.50f, hi = 2.00f;

@@ -763,7 +763,7 @@ float Party::box_w_base() const {
 }
 
 void Party::measure(float& w, float& h) const {
-    const float S = scale_ * BOOST * ui_config().box[tier_].scale;   // per-box size (config Font Size / edit-mode wheel)
+    const float S = scale_ * BOOST * ui_config().box[tcfg()].scale;  // per-box size (grouped : both alliances share ; config / edit-mode wheel)
     w = box_w_base() * S;
     h = (rowPit() * 6 + 2 * padB()) * S;   // always sized for a full party of 6 (fixed box, solo or not)
 }
@@ -897,7 +897,7 @@ void Party::draw(const Frame& f) {
         for (int i = 0; i < n; ++i) rows[i].sel = (i == local);
     }
 
-    const float S = scale_ * BOOST * ui_config().box[tier_].scale;   // per-box size (config Font Size / edit-mode wheel)
+    const float S = scale_ * BOOST * ui_config().box[tcfg()].scale;  // per-box size (grouped : both alliances share ; config / edit-mode wheel)
     // Live, //aio demo AND edit layout all share the SAME height + spacing (adaptive shrink, mask band,
     // Set-Ref growth, even member distribution) -> demo + edit are faithful PREVIEWS of the real in-game
     // party : the member spacing you tune live shows up identically everywhere, and you arrange the box
@@ -1079,8 +1079,8 @@ void Party::draw(const Frame& f) {
         }
         // wheel over this box -> resize it (0.5x .. 2.0x)
         if (over && ui_config().wheel != 0) {
-            float s = ui_config().box[tier_].scale + (float)ui_config().wheel * 0.05f;
-            ui_config().box[tier_].scale = s < 0.5f ? 0.5f : (s > 2.0f ? 2.0f : s);
+            float s = ui_config().box[tcfg()].scale + (float)ui_config().wheel * 0.05f;   // resize the config GROUP (both alliances share their scale)
+            ui_config().box[tcfg()].scale = s < 0.5f ? 0.5f : (s > 2.0f ? 2.0f : s);
             ui_config().wheel = 0;
         }
     }
