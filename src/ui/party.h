@@ -132,8 +132,10 @@ private:
     // stable base -> pushing it bigger GROWS the row height so the icons fit. The height ALWAYS reserves TWO
     // rows so the party size stays constant whatever Max Buffs is (Max Buffs only caps the count shown). Base px.
     float buffIconBase() const { float bf = ui_config().buffScale; if (bf < 0.40f) bf = 0.40f; if (bf > 2.0f) bf = 2.0f; return barSz_ * bf; }
-    int   buffRows()     const { return 2; }   // always 2 -> stable party height regardless of Max Buffs
-    float buffBandH()    const { return (float)buffRows() * buffIconBase() + (float)(buffRows() - 1) * 1.0f; }
+    int   buffRows()     const { int r = ui_config().buffRows; return (r <= 1) ? 1 : 2; }   // 1 or 2 rows (config)
+    // per-icon height : two-row = the base size ; ONE-row = a ~full-player-line-tall icon (so one line fills the row).
+    float buffIconH()    const { return (buffRows() == 1) ? (buffIconBase() * 1.9f) : buffIconBase(); }
+    float buffBandH()    const { return (float)buffRows() * buffIconH() + (float)(buffRows() - 1) * 1.0f; }
     // MAIN BAND : height of the primary line where badge / name / gauges / distance / marks all centre
     // together (tallest of them). The cast/spell line sits BELOW this band.
     float mainBandH() const {

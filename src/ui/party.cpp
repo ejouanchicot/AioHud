@@ -825,10 +825,10 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
     const float av = (float)BCELL / (float)BATLAS_H;
     int bmaxCfg = ui_config().buffMax; if (bmaxCfg < 1) bmaxCfg = 1; if (bmaxCfg > 32) bmaxCfg = 32;   // config choice
     const int   PERROW = 16;                            // at most 16 per row -> a 2nd row wraps 16+16
-    // ALWAYS a two-row layout : fixed icon size + first row in the TOP slot + the row already reserves two
-    // rows (party.h buffBandH) -> the party size and buff position never change with Max Buffs (which only
-    // caps the count). The second row simply stays empty when there are <= 16 buffs.
-    const bool  twoMode = true;
+    // ONE or TWO rows (config: Buff Rows). Two-row keeps a fixed icon size and reserves both rows so the
+    // party size is stable ; one-row uses a bigger (full-line-tall) icon. The reserved band (party.h
+    // buffBandH) matches whichever mode is active, so the row grows to fit.
+    const bool  twoMode = (ui_config().buffRows > 1);
     const float vgap  = snap(1.0f * S);
     const float bs    = iconH;                          // constant icon size (row grows to fit)
     const float totalH = twoMode ? (2.0f * bs + vgap) : bs;
@@ -1220,7 +1220,7 @@ void Party::draw(const Frame& f) {
     }
 
     // ---------- buffs : status icons LEFT of each party row (main box only -- alliance buffs aren't sent) ----------
-    if (tier_ == 0) draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S, snap(buffIconBase() * S));   // icon size driven by Buff Size % (the row was grown to fit) ; centred in the row
+    if (tier_ == 0) draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S, snap(buffIconH() * S));   // icon size driven by Buff Size % + 1/2-row mode (the row was grown to fit) ; centred in the row
 
     // ---------- leader / QM markers : round dots, animated pop-in/out (scale + fade) ----------
     if (dot_tex_) {

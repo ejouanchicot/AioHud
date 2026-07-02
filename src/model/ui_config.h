@@ -51,6 +51,7 @@ struct UiConfig {
     int   fontFace  = 0;       // 0 = layout default ; >0 = override every party/alliance text face
     float buffScale = 0.92f;   // buff-icon size as a FRACTION of the member row height (0.40 .. 1.00, capped at the row)
     int   buffMax   = 20;      // max buff icons shown per member (config choice) ; > 16 wraps to TWO rows of 16
+    int   buffRows  = 2;       // buff strip : 1 or 2 rows ; 1 = one bigger (full-line-tall) row
     float cursorScale = 1.0f;  // selection-cursor (hand) size multiplier (0.50 .. 2.00)
     // ---- PER-BOX settings : index 0 = party, 1 = alliance 1, 2 = alliance 2 (independent) ----
     float barHeight[3] = { 1.0f, 1.0f, 1.0f };   // HP/MP/TP gauge HEIGHT scale, per box

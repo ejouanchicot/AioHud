@@ -1296,7 +1296,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         if (ui_config().wheel != 0 && mo && mo->x >= bandX && mo->x <= bandX + bandW && mo->y >= cfgTop && mo->y <= cfgBot) {
             cfgScroll_ -= (float)ui_config().wheel * snap(64.0f);
             if (cfgScroll_ < 0.0f) cfgScroll_ = 0.0f;
-            if (cfgScroll_ > cfgMaxScroll_) cfgScroll_ = cfgMaxScroll_;  // clamp against LAST frame's extent
+            // upper clamp is applied AFTER layout (against THIS frame's real extent) so the bottom is always reachable
         }
         ui_config().wheel = 0;
         ry -= cfgScroll_;                                              // shift every row up by the scroll
@@ -1371,6 +1371,13 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                 if (int d = row_selector(dev, fo, mo, click, 38, coX, ry + yo, ctrlW, tr("Max Buffs", "Buffs max"), bmv)) {
                     idx = wrap(idx + d, 4); ui_config().buffMax = BM[idx]; save_ui_config(); }
                 ROW_NEXT(40.0f)
+            }
+            { ROW_BAND(52.0f)   // Buff Rows : 1 (one big full-line row) or 2 (two rows)
+                const char* brl[2] = { tr("1 line", "1 ligne"), tr("2 lines", "2 lignes") };
+                int bri = (ui_config().buffRows <= 1) ? 0 : 1;
+                if (int d = row_selector(dev, fo, mo, click, 40, coX, ry + yo, ctrlW, tr("Buff Rows", "Lignes de buffs"), brl[bri])) {
+                    bri = wrap(bri + d, 2); ui_config().buffRows = bri + 1; save_ui_config(); }
+                ROW_NEXT(52.0f)
             }
             { ROW_BAND(52.0f)
                 const float lo = 0.50f, hi = 2.00f;
@@ -1555,10 +1562,13 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         clip_rect_end(dev);
         // scroll extent (this frame) + a thin scrollbar in the split gap
         {
-            const float viewH = cfgBot - cfgTop, contentH = (ry + cfgScroll_) - cfgTop + snap(40.0f);   // ry advanced by every row (+ bottom breathing room)
+            const float viewH = cfgBot - cfgTop, contentH = (ry + cfgScroll_) - cfgTop + snap(56.0f);   // ry advanced by every row (+ bottom breathing room)
             float maxS = contentH - viewH; if (maxS < 0.0f) maxS = 0.0f;
             cfgMaxScroll_ = maxS;                                                          // remembered for next frame's clamp
             if (cfgScroll_ > maxS) cfgScroll_ = maxS;
+            { char db[96]; sprintf(db, "DBG scroll %.0f/%.0f  view %.0f  content %.0f  top %.0f bot %.0f",   // TEMP : remove after diagnosing
+                cfgScroll_, maxS, viewH, contentH, cfgTop, cfgBot);
+              fo->begin(dev); fo->draw_lc(dev, ix + snap(8.0f), pageBot - snap(9.0f), db, snap(11.0f), 0xFFFF66FF, 0xFF000000, 1.0f); }
             if (maxS > 0.5f && contentH > 1.0f) {
                 const float sbx = bandX + bandW + snap(4.0f), sbw = snap(4.0f);
                 flat(dev, sbx, cfgTop, sbw, viewH, 0x22000000);                            // track

@@ -35,6 +35,7 @@ static void save_config_to(const char* path) {
     fprintf(f, "fontFace=%d\n", c.fontFace);
     fprintf(f, "buffScale=%.4f\n", c.buffScale);
     fprintf(f, "buffMax=%d\n", c.buffMax);
+    fprintf(f, "buffRows=%d\n", c.buffRows);
     fprintf(f, "cursorScale=%.4f\n", c.cursorScale);
     fprintf(f, "barHeight=%.4f,%.4f,%.4f\n", c.barHeight[0], c.barHeight[1], c.barHeight[2]);
     fprintf(f, "barWidth=%.4f,%.4f,%.4f\n", c.barWidth[0], c.barWidth[1], c.barWidth[2]);
@@ -75,6 +76,7 @@ static bool load_config_from(const char* path) {
         else if (sscanf(line, "fontFace=%d", &v) == 1)  c.fontFace = v;
         else if (sscanf(line, "buffScale=%f", &fv) == 1) c.buffScale = fv;
         else if (sscanf(line, "buffMax=%d", &v) == 1)    c.buffMax = v;
+        else if (sscanf(line, "buffRows=%d", &v) == 1)   c.buffRows = v;
         else if (sscanf(line, "cursorScale=%f", &fv) == 1) c.cursorScale = fv;
         else if (sscanf(line, "barHeight=%f,%f,%f", &fv, &f1, &f2) == 3) { c.barHeight[0] = fv; c.barHeight[1] = f1; c.barHeight[2] = f2; }
         else if (sscanf(line, "barHeight=%f", &fv) == 1) { c.barHeight[0] = c.barHeight[1] = c.barHeight[2] = fv; }   // old single value -> all boxes
@@ -140,6 +142,7 @@ static bool load_config_from(const char* path) {
     #define CLF(x, lo, hi) do { if (x < (lo)) x = (lo); else if (x > (hi)) x = (hi); } while (0)
     CLF(c.buffScale, 0.10f, 4.0f); CLF(c.cursorScale, 0.10f, 4.0f);
     if (c.buffMax < 1) c.buffMax = 1; else if (c.buffMax > 32) c.buffMax = 32;
+    if (c.buffRows < 1) c.buffRows = 1; else if (c.buffRows > 2) c.buffRows = 2;
     for (int k = 0; k < 3; ++k) {
         CLF(c.barHeight[k], 0.10f, 4.0f); CLF(c.barWidth[k], 0.10f, 4.0f); CLF(c.badgeScale[k], 0.10f, 4.0f);
         if (c.gaugeStyle[k] < 0 || c.gaugeStyle[k] > 7) c.gaugeStyle[k] = 0;
@@ -261,6 +264,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.skinTheme != b.skinTheme || a.fontFace != b.fontFace) return false;
     if (a.buffScale != b.buffScale) return false;
     if (a.buffMax != b.buffMax) return false;
+    if (a.buffRows != b.buffRows) return false;
     if (a.cursorScale != b.cursorScale) return false;
     for (int i = 0; i < 6; ++i) if (a.partyRef[i] != b.partyRef[i]) return false;
     if (a.partyBottomY != b.partyBottomY) return false;
@@ -367,7 +371,7 @@ void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew
 
 void reset_ui_config() {   // general Default : everything
     UiConfig& c = ui_config();
-    c.skinTheme = 0; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.cursorScale = 1.0f;
+    c.skinTheme = 0; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.buffRows = 2; c.cursorScale = 1.0f;
     for (int k = 0; k < 3; ++k) { c.barHeight[k] = 1.0f; c.barWidth[k] = 1.0f; c.badgeScale[k] = 1.0f; c.gaugeStyle[k] = 0; c.jobBadge[k] = 2; c.cast[k] = true; }
     c.dist[0] = c.dist[1] = c.dist[2] = true;
     c.border[0] = c.border[1] = c.border[2] = c.borderCost = true;   // all borders back on
