@@ -141,15 +141,6 @@ private:
         if (tier_ == 0) { float b = buffBandH() + buffIconBase() * 0.6f; if (b > m) m = b; }   // party buffs GROW the row (+ margin so two-row buffs stay clear of the next player)
         return m;
     }
-    // STABLE band height : mainBandH computed with the FLAT gauge height (ignores the round-style square-cell
-    // inflation) -> used to size the buff icons so they DON'T grow/shrink when the gauge style changes.
-    float mainBandHStable() const {
-        float gFlat = (barSz_ + 6.0f) * ui_config().barHeight[tcfg()];
-        float m = badgeH(); if (gFlat > m) m = gFlat;
-        float n = nameSz_ + 2.0f; if (n > m) m = n;
-        float k = marksColH();   if (k > m) m = k;
-        return m;
-    }
     // row = half the main band (the name centres in it) + half the name + the cast line + a gap, so the
     // cast sits just under the name with clear air. When casts are OFF for this box type the cast line is
     // NOT reserved -> compact rows (= just the main band). Both feed measure() -> the box re-fits + the

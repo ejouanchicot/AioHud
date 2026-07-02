@@ -308,37 +308,6 @@ static int row_selector(u32 dev, Font* fo, const MouseState* mo, bool click, int
 }
 static int wrap(int v, int n) { if (v < 0) return n - 1; if (v >= n) return 0; return v; }
 
-// Box Theme row : a big SQUARE live preview of the window skin, flanked by [<] / [>] (centered on the
-// square). Returns -1/+1 on an arrow click. Taller than a normal row -> see THEME_ROW_H for the advance.
-static const float THEME_SQ = 84.0f;                         // square swatch size
-static const float THEME_ROW_H = THEME_SQ + 16.0f;           // row height (caller advances ry by this + gap)
-static int row_theme(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
-                     float x, float y, float w, const char* label, const char* value, const WindowSkin* skin) {
-    const float sq = snap(THEME_SQ), rowH = snap(THEME_ROW_H);
-    flat(dev, x, y + rowH, w, 1, 0x14FFFFFF);
-    fo->begin(dev);
-    fo->draw_lc(dev, x + snap(4.0f), y + rowH * 0.5f, label, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-
-    const float aS = snap(32.0f), agap = snap(10.0f);
-    const float ctlW = aS + agap + sq + agap + aS;
-    const float cx = x + w - ctlW, cyMid = y + rowH * 0.5f, aY = cyMid - aS * 0.5f;
-    int delta = 0;
-
-    if (arrow_btn(dev, fo, mo, click, uid + 0, cx, aY, aS, "<")) delta = -1;
-
-    const float sx = cx + aS + agap, sy = y + (rowH - sq) * 0.5f;                 // square preview
-    const bool sHov = inrect(mo, sx, sy, sq, sq);
-    const float st = ease(uid + 2, sHov ? 1.0f : 0.0f);
-    halo_rect(dev, sx, sy, sq, sq, C_ACCENT, st);
-    if (skin && skin->ready()) draw_window(dev, *skin, sx, sy, sq, sq, fa(0xFFFFFFFF), 1.0f);
-    else vg(dev, sx, sy, sq, sq, 0x33101620, 0x33080C12);
-    outline(dev, sx, sy, sq, sq, lerpc(C_BORDER, C_ACCENT, st));
-    fo->begin(dev); fo->draw_c(dev, sx + sq * 0.5f, sy + sq - snap(12.0f), value, snap(14.0f), fa(C_TEXT), fa(0xFF000000), 2.2f);   // name at the swatch bottom, heavy stroke
-
-    if (arrow_btn(dev, fo, mo, click, uid + 1, sx + sq + agap, aY, aS, ">")) delta = +1;
-    return delta;
-}
-
 // A labeled SLIDER row :  "Label        [===O      ]  value". Drag the track/knob to set. Updates
 // *v01 (normalized 0..1) LIVE while dragging and persists once on release. Returns true the frames it
 // changed. g_slider latches the dragged slider so a press that wanders off the row keeps control of it.
