@@ -449,10 +449,7 @@ static void gauge_minimal(u32 dev, float gx, float gy, float gw, float gh, float
 void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32 col, float t, float pulse, float danger, int kind, int style) {   // exposed for the Help live samples
     // untextured colour-quad state : the party rows draw gauges BEFORE any text, but the Help draws them
     // AFTER text (font texture still bound + MODULATE) -> reset so the rounded/gradient quads render right.
-    dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1); dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
+    setup_color_state(dev);   // the shared colour-quad state (superset of the old inline reset : also 2D-safe)
     if (pct < 0) pct = 0; if (pct > 100) pct = 100;
     // gauge shape (config) : 0 = Vial (real fiole assets), 1 = Sphere, 2 = Radial. The classic bar below is
     // kept only as the automatic fallback for Vial before the fiole textures are resident.
