@@ -7,7 +7,7 @@
 *.pdb
 
 # Heavy reverse-engineering artifacts — kept locally, not for version control.
-# See docs/REFERENCE.md for how/why they were produced (re/ = dump + Ghidra project).
+# See docs/reference/ for how/why they were produced (re/ = dump + Ghidra project).
 /re/ghidra_proj/
 /re/*.bin
 /re/*.dll
@@ -18,3 +18,12 @@
 aio_config.txt
 aiohud_profiles/
 pol_*.png
+
+# Runtime / debug scratch written by the plugin + //aio probes (regenerated in-game)
+aio_active.txt
+*_debug.txt
+aiohud_debug.log
+
+# Design concept deliverables — heavy binaries kept locally (the folder README is tracked)
+docs/design/concepts/*.html
+docs/design/concepts/*.pdf

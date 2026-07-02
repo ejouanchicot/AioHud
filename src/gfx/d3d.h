@@ -2,7 +2,7 @@
 //
 // AioHUD draws by talking to the game's D3D8 device directly (host service 2),
 // NOT through Windower's primitive API -- that's what unlocks UV scroll, gradients
-// and arbitrary geometry (see docs/REFERENCE.md "VERIFIED WORKING"). This header
+// and arbitrary geometry (see docs/reference/d3d8-rendering.md "VERIFIED WORKING"). This header
 // is the lowest layer: the D3D8 constants we use, our vertex formats, and thin
 // typed wrappers around the device vtable methods (indices reversed from Hook.dll).
 //

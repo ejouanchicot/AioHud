@@ -6,7 +6,7 @@
 //
 // IMPORTANT (zoning): a texture's ALPHA channel mis-samples as ~255 while a zone
 // loads, so glow/bubble sprites store their SHAPE in the RGB (greyscale), alpha
-// opaque, and are drawn with ALPHAOP=SELECTARG1/DIFFUSE. See docs/REFERENCE.md.
+// opaque, and are drawn with ALPHAOP=SELECTARG1/DIFFUSE. See docs/reference/d3d8-rendering.md.
 #pragma once
 #include "d3d.h"
 

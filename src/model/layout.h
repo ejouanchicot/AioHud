@@ -3,7 +3,7 @@
 // This is the native twin of the mockup's `layout.json`: the SINGLE persistence format
 // shared by the browser "studio" and the in-game native editor. It is MUTABLE and
 // SERIALISABLE both ways -- load it at startup to place widgets, mutate it from the
-// in-game editor (drag / toggle / options), save it back. Schema: docs/EXPORT.md.
+// in-game editor (drag / toggle / options), save it back. Schema: docs/formats/layout-json.md.
 #pragma once
 #include <string>
 #include <vector>

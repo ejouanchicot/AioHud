@@ -445,7 +445,7 @@ void LiquidBars::draw(const Frame& f)
     // liquid bars (each a different cell layout, desynced)
     dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP);
     dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
-    // ZONING-GLITCH FIX (docs/REFERENCE.md): a texture's ALPHA channel mis-samples as
+    // ZONING-GLITCH FIX (docs/reference/d3d8-rendering.md): a texture's ALPHA channel mis-samples as
     // ~255 while a zone loads (its RGB stays correct), so take the liquid's blend
     // alpha from the VERTEX. RGB stays MODULATE (texture * diffuse). Caps keep texture
     // alpha (they need it for shape and are stable at the safe 0/255 extremes).

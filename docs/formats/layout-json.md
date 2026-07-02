@@ -1,3 +1,8 @@
+---
+title: Layout descriptor — exports/layout.json
+summary: Le contrat (en français) entre la maquette HTML/CSS et l'UI native C++ — schéma version 1, convention de coordonnées ancre+%, champs config, et le stub du loader natif.
+source: EXPORT.md
+---
 # Layout descriptor — `exports/layout.json`
 
 Contrat **unique** entre la maquette HTML/CSS (`design/`) et l'UI native C++ (Windower).
@@ -43,7 +48,7 @@ Code : `design/src/app/exportLayout.js` → `buildLayout()`.
   - `anchor: "tr"` → `x` = % depuis la **droite**, `y` = % depuis le **haut**.
   - `anchor: "bl"` / `"br"` → idem avec le **bas**.
 - **`viewport`** = la résolution de référence au moment de l'export. Le natif **convertit en pixels**
-  selon la résolution réelle du client (cf. `docs/REFERENCE.md`). Les % rendent le layout pérenne
+  selon la résolution réelle du client (cf. [coordinates](../reference/coordinates.md)). Les % rendent le layout pérenne
   (indépendant de la résolution).
 - L'ancrage permet à une box de **grandir du bon côté** quand son contenu change (une box ancrée
   `br` grandit vers le haut-gauche, donc reste collée au coin bas-droit).
@@ -79,3 +84,9 @@ dans la factory sous le même nom que le `type` de la maquette.
 - L'export ne contient **aucun style** (couleurs, polices, géométrie interne) — c'est volontaire.
 - Concerne séparé : `export.mjs`/`export.html` produisent des **captures PNG** (party/alliances), sans
   rapport avec ce descriptor.
+
+## See also
+- [Widgets](../architecture/widgets.md)
+- [Coordinates](../reference/coordinates.md)
+- [Edit-layout GUIDES & ZONES](../design/edit-zones.md)
+- [UI composition](../tech-stack/ui-composition.md)
