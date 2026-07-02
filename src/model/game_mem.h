@@ -44,7 +44,7 @@ bool read_party_leaders(PartyLeaders& out);
 // the player's current selection: server-id of the main target <t> and the subtarget <st>
 // (0 = none). Used to draw the party selection cursor (cf. XivParty get_mob_by_target).
 // returns false if the target structure isn't located/ready.
-struct TargetInfo { unsigned id, sid; };
+struct TargetInfo { unsigned id, sid; bool locked; };   // locked = the main target is LOCK-ON'd (target_t+0x5C)
 bool read_target(TargetInfo& out);
 
 // the in-game action menu : returns true while the highlighted entry is a spell / job ability /

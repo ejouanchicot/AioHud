@@ -547,6 +547,20 @@ void aio_plugin_command(const char* cmd)
         return;
     }
 
+    // //aio tlock -> ONE-SHOT hexdump of target_t (*(FFXiMain+0x57876C), 0x80 bytes). Run it 3x, holding
+    // each state : (1) NO target, (2) TARGET a party member, (3) LOCK on it -> diff the 3 "tgt" dumps to
+    // find the LOCK flag byte (the one that flips only in state 3). T0=@0x04 reticle, T1=@0x2C, +50 flags.
+    if (strstr(buf, "tlock")) {
+        u32 ffm = (u32)GetModuleHandleA("FFXiMain.dll");
+        u32 tp = 0; if (ffm) safe_read(ffm + 0x57876C, &tp);
+        if (!valid_ptr(tp)) { g_host.console().print(">>> tlock: target_t not ready <<<"); return; }
+        u32 t0 = 0, t1 = 0, f50 = 0; safe_read(tp + 0x04, &t0); safe_read(tp + 0x2C, &t1); safe_read(tp + 0x50, &f50);
+        debug::log("TLOCK: T0=%08X T1=%08X +50=%08X", t0, t1, f50);
+        debug::hexdump("tgt", tp, 0x80);
+        g_host.console().print(">>> tlock -> aiohud_debug.log <<<");
+        return;
+    }
+
     // //aio sim [N] -> append N (0-5) FAKE members to the LIVE party, so the box grows and the alliances
     // react to the main-party size for testing. //aio sim 0 (or sim off) -> back to the real size.
     if (strstr(buf, "sim")) {

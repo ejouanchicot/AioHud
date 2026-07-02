@@ -24,6 +24,7 @@ struct GameState {
 
     // --- selection (the party cursor) : server-ids of <t> (main) and <st> (sub) ---
     unsigned targetId = 0, subTargetId = 0;
+    bool     targetLocked = false;   // the main target <t> is LOCKED on (target_t+0x5C == 1) -> lock symbol
 
     // --- leadership (server-id matches against allianceinfo_t ; 0 = role absent) ---
     unsigned allianceLeader = 0, partyLead1 = 0, partyLead2 = 0, partyLead3 = 0;

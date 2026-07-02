@@ -105,24 +105,28 @@ bool read_party_leaders(PartyLeaders& o) {
 //                          confirm and cancel ; NB: the byte at +0x78 is sticky -> do NOT use it)
 // id 0x04000000 is the "nothing" sentinel. (Old flat cache lived at FFXiMain+0x487F60.)
 static const u32 TARGET_T_PTR_RVA = 0x57876C;
-static const u32 T0_ID_OFF = 0x04, T1_ID_OFF = 0x2C, FLAGS_OFF = 0x50;
+static const u32 T0_ID_OFF = 0x04, T1_ID_OFF = 0x2C, FLAGS_OFF = 0x50, LOCK_OFF = 0x5C;
 static const u32 SUB_CURSOR_BIT = 0x00010000;
 static const u32 NO_TARGET = 0x04000000;
+// LOCK_OFF (u32) : 1 while the main target is LOCK-ON'd, 0 otherwise. Reversed 2026-07-02 via //aio tlock
+// (dump target_t targeting-vs-locked -> +0x5C is the only byte that flips ; the locked id is T0 @+0x04).
 
 bool read_target(TargetInfo& o) {
-    o.id = o.sid = 0;
+    o.id = o.sid = 0; o.locked = false;
     u32 ffm = ffximain_base();
     if (!ffm) return false;
     u32 tp = 0; safe_read(ffm + TARGET_T_PTR_RVA, &tp);
     if (!valid_ptr(tp)) return true;                    // target system not ready
-    u32 t0 = 0, t1 = 0, flags = 0;
+    u32 t0 = 0, t1 = 0, flags = 0, lk = 0;
     safe_read(tp + T0_ID_OFF, &t0);                     // active reticle
     safe_read(tp + T1_ID_OFF, &t1);                     // locked main (valid during sub-target)
     safe_read(tp + FLAGS_OFF, &flags);
+    safe_read(tp + LOCK_OFF,  &lk);                     // lock-on flag (1 = locked)
     if (flags & SUB_CURSOR_BIT) { o.sid = t0; o.id = t1; }   // <st> cursor open : sub = reticle, main = locked
     else                        { o.id = t0; }               // normal : main = reticle, no sub
     if (o.id  == NO_TARGET) o.id  = 0;
     if (o.sid == NO_TARGET) o.sid = 0;
+    o.locked = (lk != 0) && (o.id != 0);                // locked ON the main target
     return true;
 }
 
@@ -234,8 +238,8 @@ void poll_game_state(GameState& gs) {
     gs.tp = me.tp / 3000.0f; if (gs.tp > 1.0f) gs.tp = 1.0f; if (gs.tp < 0.0f) gs.tp = 0.0f;
 
     TargetInfo tg;
-    if (read_target(tg)) { gs.targetId = tg.id; gs.subTargetId = tg.sid; }
-    else                 { gs.targetId = gs.subTargetId = 0; }
+    if (read_target(tg)) { gs.targetId = tg.id; gs.subTargetId = tg.sid; gs.targetLocked = tg.locked; }
+    else                 { gs.targetId = gs.subTargetId = 0; gs.targetLocked = false; }
 
     PartyLeaders ld;
     if (read_party_leaders(ld)) { gs.allianceLeader = ld.alliance; gs.partyLead1 = ld.p1; gs.partyLead2 = ld.p2; gs.partyLead3 = ld.p3; }

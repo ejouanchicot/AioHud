@@ -184,6 +184,17 @@ static void setup_tex_state(u32 dev, u32 tex, bool mipLinear = true) {
 static void vgrad(u32 dev, float x, float y, float w, float h, u32 top, u32 bot) {
     grad_quad(dev, x, y, w, h, top, top, bot, bot);
 }
+// a small PADLOCK (lock-on indicator) centred at (cx,cy), total height ~sz, one colour : rounded body +
+// a shackle (rounded-rect OUTLINE whose top arc shows, legs hidden behind the body) + a keyhole dot.
+// Draw under colour-quad state (setup_color_state).
+static void draw_lock(u32 dev, float cx, float cy, float sz, u32 col) {
+    const float bw = sz * 0.80f, bh = sz * 0.56f;                       // body
+    const float bx = snap(cx - bw * 0.5f), by = snap(cy + sz * 0.5f - bh);
+    const float shW = sz * 0.46f, shH = sz * 0.52f, shT = sz * 0.14f;   // shackle (outline)
+    rrect_stroke(dev, snap(cx - shW * 0.5f), snap(cy - sz * 0.5f), shW, shH, shW * 0.5f, col, shT);   // top arc = shackle
+    rrect(dev, bx, by, bw, bh, snap(sz * 0.16f), col, col);            // body covers the shackle legs' base
+    disc(dev, cx, snap(by + bh * 0.52f), sz * 0.10f, 0xE01A1206);      // keyhole
+}
 // one HP/MP/TP gauge. `pct` is the (already-lerped) fill % ; `t` drives a subtle liquid
 // shimmer ; `pulse` (0..1) brightens + adds an outer glow (used for TP >= 1000 = WS ready).
 // `danger` (0..1) : critical HP -> the bar BLINKS in alarm-red, same glow+pulse principle
@@ -1245,6 +1256,17 @@ void Party::draw(const Frame& f) {
             }
         }
         dSetTex(dev, 0, 0);
+    }
+
+    // ---------- LOCK-ON symbol : a small gold padlock on the row of the LOCKED main target (<t>) ----------
+    if (f.game && f.game->targetLocked && f.game->targetId) {
+        for (int i = 0; i < n; ++i) if (rows[i].id == f.game->targetId) {
+            const float ry = oy + pad + i * rowpit;
+            const float lsz = snap(mh * 0.52f);
+            setup_color_state(dev);
+            draw_lock(dev, snap(cx + mw - lsz * 0.60f), snap(ry + mh * 0.5f), lsz, 0xFFFFD24A);   // gold, right edge of the row
+            break;
+        }
     }
 
     // ---------- selection cursor ICON (hand pointing right) : slides with the selection ----------
