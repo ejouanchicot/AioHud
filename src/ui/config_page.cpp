@@ -216,6 +216,33 @@ static void row_band(u32 dev, float x, float y, float w, float h, bool alt, floa
     flat(dev, x, y, w, h, ((u32)a << 24) | 0x00FFFFFF);
 }
 
+// ---- rectangular stencil CLIP for the scrolling controls viewport (D3D8 has no scissor rect ; same
+// technique as the vial's rounded clip). Everything drawn between begin/end is masked to the rect.
+// If the back-buffer has no stencil the ops are ignored -> the column just overflows as before (no crash). ----
+enum { SCL_ENABLE = 52, SCL_FAIL = 53, SCL_ZFAIL = 54, SCL_PASS = 55, SCL_FUNC = 56, SCL_REF = 57, SCL_MASK = 58, SCL_WRITEMASK = 59 };
+static void clip_rect_begin(u32 dev, float x, float y, float w, float h) {
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
+    dSetRS(dev, D3DRS_ALPHATESTENABLE, 0);
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 0);
+    dSetRS(dev, SCL_ENABLE, 1);
+    dSetRS(dev, SCL_MASK, 0xFF); dSetRS(dev, SCL_WRITEMASK, 0xFF);
+    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0);                        // mask pass : write stencil only, no colour
+    dSetRS(dev, SCL_FUNC, 8);                                      // ALWAYS
+    dSetRS(dev, SCL_FAIL, 3); dSetRS(dev, SCL_ZFAIL, 3); dSetRS(dev, SCL_PASS, 3);   // REPLACE
+    dSetRS(dev, SCL_REF, 0);
+    grad_quad(dev, x - 2.0f, y - 2.0f, w + 4.0f, h + 4.0f, 0, 0, 0, 0);              // clear the region -> 0
+    dSetRS(dev, SCL_REF, 1);
+    grad_quad(dev, x, y, w, h, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000);      // set 1 inside the rect
+    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);              // content : colour on, ONLY where stencil == 1
+    dSetRS(dev, SCL_FUNC, 3);                                      // EQUAL
+    dSetRS(dev, SCL_FAIL, 1); dSetRS(dev, SCL_ZFAIL, 1); dSetRS(dev, SCL_PASS, 1);   // KEEP (don't touch stencil while drawing)
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
+}
+static void clip_rect_end(u32 dev) {
+    dSetRS(dev, SCL_ENABLE, 0);
+    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);
+}
+
 // ---- modern primitives : rounded rects (rect bands + quarter-disc corners) + soft drop shadows. ----
 // A filled QUARTER disc (triangle fan) confined to ONE corner square -> it NEVER overlaps the bands,
 // so the whole rounded rect composites with a SINGLE blend per pixel (correct for translucent fills,
@@ -1137,7 +1164,6 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     outline(dev, ix, bodyY, iw, bodyH, C_BORDERHI);
 
     if (tab_ == 0) {
-        ui_config().wheel = 0;   // discard wheel on this tab (only Help scrolls / edit resizes)
         if (profDirty_) { profile_refresh(); profDirty_ = false; }
 
         // ===== LEFT : MODULES (one settings page per module ; scales to many) =====
@@ -1263,6 +1289,23 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             float yo = (1.0f - ap) * snap(14.0f) + (snap(slotH) - snap(40.0f)) * 0.5f; (void)ap;
         #define ROW_NEXT(adv)     ry += snap(adv); ri++;
 
+        // ---- scrolling viewport : all-open categories can exceed the page height, so scroll the
+        // column. Rows are stencil-clipped to [cfgTop, cfgBot] and the mouse is clipped to the same
+        // rect -> anything scrolled out of view is neither drawn nor click-through. ----
+        const float cfgTop = ry, cfgBot = pageBot;                     // ry == coY + 44 here (first row top)
+        if (ui_config().wheel != 0 && mo && mo->x >= bandX && mo->x <= bandX + bandW && mo->y >= cfgTop && mo->y <= cfgBot) {
+            cfgScroll_ -= (float)ui_config().wheel * snap(40.0f);
+            if (cfgScroll_ < 0.0f) cfgScroll_ = 0.0f;
+            if (cfgScroll_ > cfgMaxScroll_) cfgScroll_ = cfgMaxScroll_;  // clamp against LAST frame's extent
+        }
+        ui_config().wheel = 0;
+        ry -= cfgScroll_;                                              // shift every row up by the scroll
+        clip_rect_begin(dev, bandX - snap(2.0f), cfgTop, bandW + snap(4.0f), cfgBot - cfgTop);
+        const MouseState* moReal_ = mo;                               // gate the mouse to the viewport
+        const bool moIn_ = moReal_ && moReal_->x >= bandX && moReal_->x <= bandX + bandW && moReal_->y >= cfgTop && moReal_->y <= cfgBot;
+        {
+        const MouseState* mo = moIn_ ? moReal_ : nullptr;             // SHADOWS the outer mo/click for the rows below
+        const bool click = mo && mo->clicked;
         const float hdrX = coX - snap(12.0f), hdrW = ctrlW + snap(24.0f);
         // ===== category : GLOBAL (one setting, affects every box) =====
         if (cat_header(dev, fo, mo, click, 120, hdrX, ry, hdrW, tr("Global", "Global"), catOpen_[0])) catOpen_[0] = !catOpen_[0];
@@ -1504,6 +1547,23 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             ROW_NEXT(52.0f)
         }
         }   // end category Advanced (Layout + Typography)
+        }   // end mouse-clip block (restores the outer mo/click)
+
+        clip_rect_end(dev);
+        // scroll extent (this frame) + a thin scrollbar in the split gap
+        {
+            const float viewH = cfgBot - cfgTop, contentH = (ry + cfgScroll_) - cfgTop;   // ry advanced by every row
+            float maxS = contentH - viewH; if (maxS < 0.0f) maxS = 0.0f;
+            cfgMaxScroll_ = maxS;                                                          // remembered for next frame's clamp
+            if (cfgScroll_ > maxS) cfgScroll_ = maxS;
+            if (maxS > 0.5f && contentH > 1.0f) {
+                const float sbx = bandX + bandW + snap(4.0f), sbw = snap(4.0f);
+                flat(dev, sbx, cfgTop, sbw, viewH, 0x22000000);                            // track
+                float thH = viewH * (viewH / contentH); if (thH < snap(24.0f)) thH = snap(24.0f);
+                const float thY = cfgTop + (viewH - thH) * (cfgScroll_ / maxS);
+                rrect_fill(dev, sbx, thY, sbw, thH, sbw * 0.5f, 0x66FFFFFF, 0x66FFFFFF);    // thumb
+            }
+        }
 
         #undef ROW_BAND
         #undef ROW_NEXT

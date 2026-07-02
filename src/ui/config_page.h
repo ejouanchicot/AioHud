@@ -85,6 +85,8 @@ private:
     bool  profSynced_  = false;   // one-time sync of activeProf_ from the persisted active profile (startup auto-load)
     int   helpSel_     = 0;       // Help tab : selected module in the left menu
     float helpScroll_  = 0.0f;    // Help tab vertical scroll (mouse wheel)
+    float cfgScroll_   = 0.0f;    // Configuration tab controls vertical scroll (mouse wheel)
+    float cfgMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
     float helpMaxScroll_ = 0.0f;  // last frame's scroll limit -> clamp the wheel BEFORE drawing (no overscroll bounce)
     // live-preview anchor published each frame for the HUD (Configuration tab only)
     bool  pvOn_        = false;
