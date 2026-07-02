@@ -93,7 +93,10 @@ static float ease(int id, float target, float speed = 18.0f) {
     return s->v;
 }
 // staggered entrance factor (ease-out cubic) for content row i : later rows start a touch later.
+// The per-row delay is CAPPED so long, scrollable lists still reach FULL opacity when the page is
+// open -- without the cap, rows past index ~22 got a factor of 0 and stayed invisible.
 static float stagger(float anim, int i) {
+    if (i > 10) i = 10;
     float a = clampf((anim - 0.045f * (float)i) / 0.5f, 0.0f, 1.0f);
     return 1.0f - (1.0f - a) * (1.0f - a) * (1.0f - a);
 }
