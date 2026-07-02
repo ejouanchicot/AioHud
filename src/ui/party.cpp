@@ -777,8 +777,8 @@ static const char* ICON_PATH = "D:\\Windower Tetsouo\\plugins\\_aiohud_re\\asset
 static const char* JOBICON_PATH = "D:\\Windower Tetsouo\\plugins\\_aiohud_re\\assets\\job_icons.raw";
 static const int JI_W = 512, JI_H = 192, JI_CELL = 64, JI_COLS = 8;
 
-// draw one job emblem (white mask) at (x,y,sz) tinted by `tint` (role colour), from the atlas cell.
-// Leaves the device in textured state -> the caller's next gauge/party_gauge resets it.
+// draw one job emblem (white mask) at (x,y,sz) from the atlas cell, tinted by `tint` (role colour).
+// Leaves the device textured -> the caller's next draw resets it.
 static void draw_job_icon(u32 dev, u32 tex, float x, float y, float sz, int cell, u32 tint) {
     if (!tex || cell < 0) return;
     dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
@@ -796,7 +796,7 @@ static void draw_job_icon(u32 dev, u32 tex, float x, float y, float sz, int cell
     const float cu = au * cr, cv = av * cr;
     const float u0 = (float)(cell % JI_COLS) * au + cu, u1 = (float)(cell % JI_COLS) * au + au - cu;
     const float v0 = (float)(cell / JI_COLS) * av + cv, v1 = (float)(cell / JI_COLS) * av + av - cv;
-    tquad(dev, x, y, sz, sz, u0, u1, v0, v1, tint, tint);
+    tquad(dev, x, y, sz, sz, u0, u1, v0, v1, tint, tint);   // single role-colour tint
     dSetTex(dev, 0, 0);
 }
 
@@ -1210,7 +1210,7 @@ void Party::draw(const Frame& f) {
             const float bt2  = snap(1.0f);                  // just clear the 1px border ring (the emblem art already has its own transparent margin -> no extra pad)
             const float isz  = (pbw < pbh ? pbw : pbh) - 2.0f * bt2;
             const float ix   = snap(pbx + (pbw - isz) * 0.5f), iy = snap(pby + (pbh - isz) * 0.5f);   // CENTRED in the box (box may be non-square)
-            draw_job_icon(dev, jobicon_tex_, ix, iy, isz, cell, (r.role & 0x00FFFFFF) | 0xFF000000);
+            draw_job_icon(dev, jobicon_tex_, ix, iy, isz, cell, (r.role & 0x00FFFFFF) | 0xFF000000);   // single role colour
         }
         }
 

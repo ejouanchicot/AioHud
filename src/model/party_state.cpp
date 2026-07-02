@@ -89,13 +89,14 @@ static bool trust_job(const char* name, int& mj, int& sj) {
     return false;
 }
 
+// One role colour per job (icon tint + badge border + job text). Grouping per Tetsouo.
 unsigned job_role_color(int id) {
     switch (id) {
-        case 7: case 13: case 22:                      return 0xFF7D9BF0;  // PLD/NIN/RUN -> tank
-        case 3: case 20:                               return 0xFF86D36F;  // WHM/SCH     -> healer
-        case 5: case 10: case 15: case 17: case 21:    return 0xFFECC94A;  // RDM/BRD/SMN/COR/GEO -> support
-        case 23:                                       return 0xFFB58BF0;  // SPC (special trusts) -> distinct purple
-        default:                                       return 0xFFE08585;  // else -> dd
+        case 3: case 5: case 15:            return 0xFF86D36F;  // WHM/RDM/SMN -> healer (green)
+        case 21: case 17: case 10:          return 0xFFECC94A;  // GEO/COR/BRD -> buffer (yellow)
+        case 22: case 7:                    return 0xFF7D9BF0;  // RUN/PLD     -> tank   (blue)
+        case 23:                            return 0xFFB58BF0;  // SPC special trusts    -> purple
+        default:                            return 0xFFE08585;  // everything else       -> DD (red)
     }
 }
 

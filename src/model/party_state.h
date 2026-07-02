@@ -68,7 +68,7 @@ struct PartyState {
 PartyState& party();                      // global live party
 const char* job_abbr(int id);             // job id -> "WAR".."RUN" ("" if unknown)
 int         job_id_from_abbr(const char* a);   // "WAR" -> 1 .. "RUN" -> 22 (0 if unknown) ; job-icon atlas cell = id-1
-unsigned    job_role_color(int id);       // role tint (tank/healer/dd/support) ARGB
+unsigned    job_role_color(int id);       // role tint (healer/buffer/tank/dd) ARGB -- icon + border + text
 
 // DEMO mode (driven by //aio party|alliance1|alliance2 demo). 0 = off (live), 1 = party only,
 // 2 = party + 1 alliance, 3 = party + 2 alliances. Each PartyList box shows its tier when

@@ -42,8 +42,10 @@ bg + **role-colour border** from `job_role_color`). Text modes draw the abbr (`j
   `JOBS[1..22]` order (WAR=cell 0 … RUN=cell 21; SPC/unknown → skip).
 - **Regenerate** (source PNGs in `assets/job_icons_src/`, one white emblem per job): a Python+PIL step —
   load each PNG RGBA, resize to 64, force RGB white / keep alpha, paste in `JOBS` order, write BGRA raw.
-  (`JOBS` lives in `party_state.cpp`; `job_role_color` maps id → tank blue / healer green / support
-  yellow / dd red / SPC purple.)
+  (`JOBS` lives in `party_state.cpp`; `job_role_color` maps id → **one** role colour: healer green
+  (WHM/RDM/SMN), buffer yellow (GEO/COR/BRD), tank blue (RUN/PLD), DD red (everything else), SPC
+  purple (special trusts). One colour per job — the same tint drives the icon, the badge border and
+  the job text.)
 
 ### 9d. Buffs (party box only — the game never sends alliance buffs)
 Left of each row. `buffScale` (Buff Size %, 0.40..2.00) sizes the icon off `barSz_` and **grows the row
