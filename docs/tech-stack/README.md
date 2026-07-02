@@ -53,7 +53,7 @@ layer under both.
 - [Hand-rolled anti-aliasing (feathered vector primitives)](anti-aliasing.md) — alpha feathering, the consistent-feather rule, gamma caveat.
 - [Stencil-buffer clipping](stencil.md) — rounded-capsule masking for the vial liquid, square fallback.
 - [Textures — raw BGRA](textures.md) — flat `.raw` art, UV atlases, margin cropping, UV-scroll animation.
-- [Fonts — GDI bundled, atlas-rasterized](fonts.md) — private `AddFontResourceEx` faces, glyph atlas, weight authority.
+- [Fonts — GDI bundled, atlas-rasterized](fonts.md) — private `AddFontResourceEx` faces, glyph atlas, weight authority, one-batch glyph draw.
 - [UI composition — immediate-mode controls + 9-slice skin](ui-composition.md) — IMGUI config UI vs retained zones, nine-patch skin.
 - [Game data — RE'd memory reads + packet hooks](game-data-io.md) — SEH-guarded pointer chains, once-per-frame snapshot, packet top-ups.
 - [Tooling — Ghidra & Python](tooling.md) — headless decompile for offsets, deterministic PIL atlas regen.

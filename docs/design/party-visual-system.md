@@ -59,6 +59,16 @@ row keeps the TOP slot. A margin keeps the two rows clear of the next player. De
 - **Selection cursor** (hand): `cursorScale` (50..200%); size = `mh*1.30*scale`, +1.45× on alliance boxes
   (condensed rows). Nudged right (`+0.14*iw`) so the finger touches the box (the art has a transparent
   right margin). Buffs start just left of the *visible* cursor.
+  - **Cursor colour = target state** (`party.cpp` ~1263, `hrgb`): **WHITE** `0x00FFFFFF` = normal main
+    target, **BLUE** `0x002E9CFF` = sub-target (`onSub`), **RED** `0x00FF4030` = **locked-on** main target
+    (`f.game->targetLocked && !onSub`). The `targetLocked` flag is reversed from `target_t+0x5C` — see
+    [target & sub-target struct](../game-data/target-substruct.md).
+  - **Selection highlight frame** matches (`party.cpp` ~1426, `locked = targetLocked && subA_<=0.02`): the
+    glass fill turns red — `fillT 0x00FF6A5A` / `fillB 0x00D83028` (vs gold `0x00FFE08A` / `0x00FFC850`) —
+    and its shine sweep tints `0x00FFD5C8` (vs white). Sub-target keeps its ocean-blue fill.
+  - **In-app Help** ("Target cursor" section) demonstrates all three live rows — main (white/gold), sub
+    (blue), locked (red) — via the demo helpers `party_cursor` / `party_selframe`, which take an
+    `int mode` (0 main / 1 sub / 2 locked) that selects the same colours.
 - **Leader/QM pips + distance**: the pips+distance **unit** (height `marksColH`) is **centred in the main
   band** so it stays balanced when buffs grow the row (was pinned top/bottom → drifted apart).
 - **Per-element typography** (`TextStyle text[TE_*]`): Name/HP/MP/TP/Cast/Badge/Distance/Interface/Cost,
@@ -81,3 +91,4 @@ independent boxes** (not one 18-stack), bottom-anchored grow-up (floor 100 % nat
 - [Fonts](../tech-stack/fonts.md)
 - [Member buffs](../game-data/member-buffs.md)
 - [Cast bar](../game-data/cast-bar.md)
+- [Target & sub-target struct](../game-data/target-substruct.md)

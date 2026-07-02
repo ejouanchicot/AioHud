@@ -64,3 +64,4 @@ members so the index is non-zero — solo it is `0`, an all-zero byte you can't 
 - [The party member ARRAY in memory](party-array.md)
 - [Party cast bar — the 0x028 action packet](cast-bar.md)
 - [Action-menu info box](action-menu.md)
+- [Party visual system — the red locked cursor/frame colours](../design/party-visual-system.md)

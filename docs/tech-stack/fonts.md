@@ -14,6 +14,17 @@ face/size/weight/outline) needs real fonts we can ship without installing anythi
 - Rasterize glyphs with **GDI** into a texture **atlas**, then draw text as textured quads. **Bold is
   the sole weight authority** (400/700). Pool `MAXF = 48` (was 8, which silently fell back to slot 0).
 
+**Glyph batching (draw-call reduction).** `emit()` no longer draws per glyph — it **appends** each
+glyph's quad into ONE shared file-static vertex list (`g_gbuf`, `GBUF_CAP = 6144` = 1024 quads,
+`D3DPT_TRIANGLELIST`, 6 verts/quad); `draw()` flushes it once for **all 8 outline offset passes** and
+once for the **main pass** (`gbuf_flush`). So an outlined label costs **2** `DrawPrimitiveUP` submits
+instead of one per glyph per pass — a 5-char label went from `9×5 = 45` submits to `2`. The atlas
+is bound ONCE by `draw()` (was rebound in every emit pass). Geometry per quad is **byte-identical** to
+the old per-glyph `tquad()` path — same `-0.5` half-texel shift (`gbuf_quad`), same two triangles — so
+pixels are unchanged. `TRIANGLELIST` (not strip) lets quads concatenate with no degenerate verts;
+rendering is single-threaded inside `EndScene`, so the static scratch buffer is safe and keeps the
+"no per-frame heap" rule. (`D3DPT_TRIANGLELIST = 4` was added to `gfx/d3d.h`.)
+
 **Best-practices.** Use `GetCharABCWidths` / `GetTextExtentPoint32` for correct advance/kerning and a
 small gutter between glyphs to avoid bilinear bleed; one atlas per face+size bucket.
 

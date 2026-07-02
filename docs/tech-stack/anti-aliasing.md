@@ -21,6 +21,13 @@ one blend per pixel.
 **Arc tessellation.** Rounded corners/discs/segments are **triangle fans** whose vertex count scales
 with radius (arc length = `radius × angle`) so the curve stays smooth at any size — exactly how
 `qfan`/the corner loops in `rrect` work. Convex shapes fan cleanly (an n-gon = n−2 triangles).
+In `rrect`/`rrect_left` each corner arc uses `Nc = clamp((int)(r*0.9), 6, NcMax)` segments — **6** for
+small caps up to **14** (`NcMax`) for large radii — so big corners stay round without over-tessellating
+tiny ones. `NcMax` is a compile-time bound because the fan/ring vertices live in **stack arrays**
+(`VtxC fan[NcMax+2]`, `ring[2*(NcMax+1)]`). **The feather ring uses the SAME `Nc` as the solid fan** so
+both silhouettes extend by the same amount everywhere — mismatched segment counts would let the rounded
+end reach past the straight edge and show the backdrop as the 1px "black line". (`rrect_glow` /
+`rrect_bordered` corners use a smaller fixed `Nc` of 6/8.)
 
 **Colour-space caveat (why edges sometimes fringe).** Direct3D 8/9 blends in **gamma (sRGB) space**,
 not linear — so a feathered edge over a dark backdrop can read slightly dark/"fringed" (the same
