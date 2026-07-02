@@ -1119,6 +1119,12 @@ void Party::draw(const Frame& f) {
         if (rows[i].sel) selRow = i;
         if (rows[i].subsel) subRow = i;
     }
+    // the party-window PICKER (Menu -> Party -> Distribution : Quartermaster / change leader / lottery /
+    // remove) drives the frame with PRIORITY over the target/lock cursor. Both set rows[].sel, and the
+    // plain "last sel row wins" pick above let a LOCKED target (higher row index) steal the frame -> the
+    // menu cursor did nothing while locked. Force it to the menu-hovered member when that menu is open.
+    if (tier_ == 0 && f.game && f.game->partyMenuSel >= 1 && f.game->partyMenuSel <= n)
+        selRow = f.game->partyMenuSel - 1;
     // selection cursor : slide toward the targeted row (snap on first acquire, else ease) + fade
     if (selRow >= 0) {
         const unsigned sid = rows[selRow].id;
