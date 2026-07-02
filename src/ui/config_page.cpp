@@ -1264,8 +1264,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         #define ROW_NEXT(adv)     ry += snap(adv); ri++;
 
         const float hdrX = coX - snap(12.0f), hdrW = ctrlW + snap(24.0f);
-        // ===== category : GENERAL =====
-        if (cat_header(dev, fo, mo, click, 120, hdrX, ry, hdrW, tr("General", "Général"), catOpen_[0])) catOpen_[0] = !catOpen_[0];
+        // ===== category : GLOBAL (one setting, affects every box) =====
+        if (cat_header(dev, fo, mo, click, 120, hdrX, ry, hdrW, tr("Global", "Global"), catOpen_[0])) catOpen_[0] = !catOpen_[0];
         ROW_NEXT(42.0f)
         if (catOpen_[0]) {
         // Box Theme (name only -- the live preview shows the actual skin)
@@ -1273,14 +1273,57 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
           if (int d = row_selector(dev, fo, mo, click, 20, coX, ry + yo, ctrlW, tr("Box Theme", "Thème de cadre"), window_theme_name(ui_config().skinTheme))) {
               ui_config().skinTheme = wrap(ui_config().skinTheme + d, window_theme_count()); save_ui_config(); } }
         ROW_NEXT(52.0f)
-        // Font -> party/alliance text face (global override ; per-element faces live under Typography)
+        // Font -> party/alliance text face (global override ; per-element faces live under Advanced > Typography)
         { ROW_BAND(52.0f)
           if (int d = row_selector(dev, fo, mo, click, 30, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(ui_config().fontFace))) {
               ui_config().fontFace = wrap(ui_config().fontFace + d, ui_font_count()); save_ui_config(); } }
         ROW_NEXT(52.0f)
+        // Animation : HP critical blink / TP ready pulse on or off (global)
+        { ROW_BAND(52.0f)
+            const float rowH = snap(40.0f), ty = ry + yo;
+            fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Animation", "Animation"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f);
+            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, 90, bx0, bty, bbw, bbh, ui_config().animHP ? tr("HP on", "HP oui") : tr("HP off", "HP non"), ui_config().animHP)) { ui_config().animHP = !ui_config().animHP; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, 92, bx0 + bbw + bgap, bty, bbw, bbh, ui_config().animTP ? tr("TP on", "TP oui") : tr("TP off", "TP non"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); }
         }
-        // ===== category : PARTY / ALLIANCE =====
-        if (cat_header(dev, fo, mo, click, 122, hdrX, ry, hdrW, tr("Party / Alliance", "Party / Alliance"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
+        ROW_NEXT(52.0f)
+        // Cursor Size : the selection hand (one cursor -> a global setting)
+        { ROW_BAND(52.0f)
+            const float lo = 0.50f, hi = 2.00f;
+            char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));
+            float v01 = (ui_config().cursorScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, 3, coX, ry + yo, ctrlW, tr("Cursor Size", "Taille du curseur"), czbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().cursorScale = v < lo ? lo : (v > hi ? hi : v);
+            }
+        }
+        ROW_NEXT(52.0f)
+        // Buff Size : only the Party box shows buffs (the game doesn't send alliance buffs)
+        { ROW_BAND(52.0f)
+            const float lo = 0.40f, hi = 2.00f;   // >100% makes buffs bigger AND grows the player row to fit
+            char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
+            float v01 = (ui_config().buffScale - lo) / (hi - lo);
+            if (row_slider(dev, fo, mo, 2, coX, ry + yo, ctrlW, tr("Buff Size", "Taille des buffs"), bzbuf, &v01)) {
+                float v = lo + v01 * (hi - lo);
+                v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().buffScale = v < lo ? lo : (v > hi ? hi : v);
+            }
+        }
+        ROW_NEXT(52.0f)
+        // Max Buffs : how many status icons per member. > 16 wraps to TWO rows (16 + 16), centred.
+        { ROW_BAND(40.0f)
+            static const int BM[] = { 16, 20, 24, 32 };
+            int idx = 0; for (int k = 0; k < 4; ++k) if (BM[k] == ui_config().buffMax) { idx = k; break; }
+            char bmv[28]; sprintf(bmv, "%d", BM[idx]);   // caps the count ; the party always reserves 2 buff rows
+            if (int d = row_selector(dev, fo, mo, click, 38, coX, ry + yo, ctrlW, tr("Max Buffs", "Buffs max"), bmv)) {
+                idx = wrap(idx + d, 4); ui_config().buffMax = BM[idx]; save_ui_config(); }
+        }
+        ROW_NEXT(40.0f)
+        }
+        // ===== category : PER BOX (the selector below chooses which box) =====
+        if (cat_header(dev, fo, mo, click, 122, hdrX, ry, hdrW, tr("Per box", "Par boîte"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
         ROW_NEXT(42.0f)
         if (catOpen_[1]) {
         // TARGET selector : every box setting below applies to the chosen box (Party / Alliance 1 / Alliance 2).
@@ -1306,38 +1349,6 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             }
         }
         ROW_NEXT(46.0f)
-        // Buff Size -> only the Party box shows buffs (the game doesn't send alliance buffs)
-        if (T == 0) { ROW_BAND(52.0f)
-            const float lo = 0.40f, hi = 2.00f;   // >100% makes buffs bigger AND grows the player row to fit
-            char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
-            float v01 = (ui_config().buffScale - lo) / (hi - lo);
-            if (row_slider(dev, fo, mo, 2, coX, ry + yo, ctrlW, tr("Buff Size", "Taille des buffs"), bzbuf, &v01)) {
-                float v = lo + v01 * (hi - lo);
-                v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().buffScale = v < lo ? lo : (v > hi ? hi : v);
-            }
-            ROW_NEXT(52.0f)
-            // Max Buffs : how many status icons per member. > 16 wraps to TWO rows (16 + 16), centred.
-            { ROW_BAND(40.0f)
-                static const int BM[] = { 16, 20, 24, 32 };
-                int idx = 0; for (int k = 0; k < 4; ++k) if (BM[k] == ui_config().buffMax) { idx = k; break; }
-                char bmv[28]; sprintf(bmv, "%d", BM[idx]);   // caps the count ; the party always reserves 2 buff rows
-                if (int d = row_selector(dev, fo, mo, click, 38, coX, ry + yo, ctrlW, tr("Max Buffs", "Buffs max"), bmv)) {
-                    idx = wrap(idx + d, 4); ui_config().buffMax = BM[idx]; save_ui_config(); }
-                ROW_NEXT(40.0f)
-            }
-            // Cursor Size : the selection hand (target arrow) size
-            { ROW_BAND(52.0f)
-                const float lo = 0.50f, hi = 2.00f;
-                char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));
-                float v01 = (ui_config().cursorScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-                if (row_slider(dev, fo, mo, 3, coX, ry + yo, ctrlW, tr("Cursor Size", "Taille du curseur"), czbuf, &v01)) {
-                    float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                    ui_config().cursorScale = v < lo ? lo : (v > hi ? hi : v);
-                }
-                ROW_NEXT(52.0f)
-            }
-        }
         // Bar Height -> HP/MP/TP gauge height (the taller rows give the room ; rows grow past the badge)
         { ROW_BAND(46.0f)
             const float lo = 0.80f, hi = 1.80f;
@@ -1367,17 +1378,6 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                                   tr("Sphere", "Sphère"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
             if (int d = row_selector(dev, fo, mo, click, 36, coX, ry + yo, ctrlW, tr("Gauge Style", "Style de jauge"), sb[s])) {
                 ui_config().gaugeStyle[T] = wrap(s + d, 8); save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
-        // Animation : HP critical blink / TP ready pulse on or off (global)
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo;
-            fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Animation", "Animation"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f);
-            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, 90, bx0, bty, bbw, bbh, ui_config().animHP ? tr("HP on", "HP oui") : tr("HP off", "HP non"), ui_config().animHP)) { ui_config().animHP = !ui_config().animHP; save_ui_config(); }
-            if (toggle_chip(dev, fo, mo, click, 92, bx0 + bbw + bgap, bty, bbw, bbh, ui_config().animTP ? tr("TP on", "TP oui") : tr("TP off", "TP non"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
         // Job Badge : Off / Main job only / Main + Sub / Icon (job emblem tinted by role)
@@ -1436,7 +1436,11 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         }
         ROW_NEXT(52.0f)
         }
-        // Buttons : Edit Layout (enter drag/resize) + Default (reset EVERYTHING) -- always visible
+        // ===== category : ADVANCED (layout & zones, then per-element typography) =====
+        if (cat_header(dev, fo, mo, click, 124, hdrX, ry, hdrW, tr("Advanced", "Avancé"), catOpen_[2])) catOpen_[2] = !catOpen_[2];
+        ROW_NEXT(42.0f)
+        if (catOpen_[2]) {
+        // Layout : Edit Layout (enter drag/resize + the Zones / Rules editor) + Default (reset EVERYTHING)
         { ROW_BAND(56.0f)
             const float bh = snap(34.0f), bw = snap(168.0f), gap = snap(10.0f);
             const float ty = ry + yo + (snap(40.0f) - bh) * 0.5f;   // these buttons are 34px (not 40) -> recentre in the band
@@ -1447,11 +1451,6 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             if (push_btn(dev, fo, mo, click, 61, defX, ty, bw, bh, tr("Default (all)", "Défaut (tout)"), 1)) reset_ui_config();
         }
         ROW_NEXT(56.0f)
-
-        // ===== category : TYPOGRAPHY (per-element font / size / style) =====
-        if (cat_header(dev, fo, mo, click, 124, hdrX, ry, hdrW, tr("Typography", "Typographie"), catOpen_[2])) catOpen_[2] = !catOpen_[2];
-        ROW_NEXT(42.0f)
-        if (catOpen_[2]) {
         { ROW_BAND(52.0f)   // element selector
             int el = (cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT) ? 0 : cfgTextElem_;
             if (int d = row_selector(dev, fo, mo, click, 100, coX, ry + yo, ctrlW, tr("Element", "Élément"), ui_text_elem_label(el))) cfgTextElem_ = wrap(el + d, TE_COUNT);
@@ -1504,7 +1503,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             }
             ROW_NEXT(52.0f)
         }
-        }   // end category Typography
+        }   // end category Advanced (Layout + Typography)
 
         #undef ROW_BAND
         #undef ROW_NEXT
