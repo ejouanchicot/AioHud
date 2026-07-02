@@ -24,6 +24,33 @@ static inline int utf8_next(const char*& p) {
 
 static inline int iabs(int v) { return v < 0 ? -v : v; }
 
+// ---- glyph batching -------------------------------------------------------------
+// A whole string (all 8 outline offset passes, then the main pass) is accumulated into ONE
+// vertex list and submitted with a single DrawPrimitiveUP -- instead of one submit per glyph
+// (the old per-glyph tquad). A 5-char outlined label went from 9*5 = 45 DrawPrimitiveUP calls
+// to 2. Rendering is single-threaded (inside EndScene), so a file-static scratch buffer is safe
+// and keeps the "no per-frame heap" rule. TRIANGLELIST (6 verts/quad) so quads concatenate with
+// no degenerate verts a TRIANGLESTRIP would need; geometry per quad is byte-identical to tquad().
+static const int GBUF_CAP = 6144;                       // 1024 quads ; longer strings flush in chunks
+static Vtx  g_gbuf[GBUF_CAP];
+static int  g_gn = 0;
+
+static inline void gbuf_flush(u32 dev) {
+    if (g_gn >= 3) dDrawUP(dev, D3DPT_TRIANGLELIST, g_gn / 3, g_gbuf, sizeof(Vtx));
+    g_gn = 0;
+}
+static inline void gbuf_quad(u32 dev, float x, float y, float w, float h,
+                             float u0, float u1, float v0, float v1, u32 c) {
+    if (g_gn + 6 > GBUF_CAP) gbuf_flush(dev);           // full -> submit and keep going
+    x -= 0.5f; y -= 0.5f;                               // same D3D half-texel rule tquad() applied
+    const Vtx tl = { x,     y,     0, 1, c, u0, v0 };
+    const Vtx tr = { x + w, y,     0, 1, c, u1, v0 };
+    const Vtx bl = { x,     y + h, 0, 1, c, u0, v1 };
+    const Vtx br = { x + w, y + h, 0, 1, c, u1, v1 };
+    g_gbuf[g_gn++] = tl; g_gbuf[g_gn++] = tr; g_gbuf[g_gn++] = bl;   // tri 1
+    g_gbuf[g_gn++] = tr; g_gbuf[g_gn++] = br; g_gbuf[g_gn++] = bl;   // tri 2
+}
+
 // ---- bake the glyphs at `em` pixels into slot s, on a right-sized power-of-two atlas. ----
 void Font::build(u32 dev, Slot& s, int em) {
     if (em < 7) em = 7; if (em > 36) em = 36;
@@ -231,13 +258,14 @@ void Font::begin(u32 dev) {
     // the texture is bound per draw (each size has its own atlas)
 }
 
+// APPENDS the glyphs to the shared batch buffer (does not draw) -- the caller flushes once per pass.
 void Font::emit(u32 dev, u32 tex, const G* g, float x, float y, const char* s, float scale, u32 color) {
     (void)tex;   // the atlas is bound ONCE by the caller (same S.tex for every outline + main pass)
     float penx = x;
     for (const char* p = s; *p; ) {
         int c = upcase(utf8_next(p)); if (c < FIRST || c > LAST) c = '?';
         const G& gg = g[c - FIRST];
-        if (c != ' ') tquad(dev, penx, y, gg.w * scale, gg.h * scale, gg.u0, gg.u1, gg.v0, gg.v1, color, color);
+        if (c != ' ') gbuf_quad(dev, penx, y, gg.w * scale, gg.h * scale, gg.u0, gg.u1, gg.v0, gg.v1, color);
         penx += gg.adv * scale;
     }
 }
@@ -262,8 +290,10 @@ float Font::draw(u32 dev, float x, float y, const char* s, float size, u32 color
         static const float dx[8] = { -1, 1, 0, 0, -1, -1,  1, 1 };
         static const float dy[8] = {  0, 0, -1, 1, -1,  1, -1, 1 };
         for (int k = 0; k < 8; ++k) emit(dev, S.tex, S.g, x + dx[k] * ow, y + dy[k] * ow, s, scale, outline);
+        gbuf_flush(dev);                                      // all 8 offsets -> ONE draw, wholly behind the glyphs
     }
     emit(dev, S.tex, S.g, x, y, s, scale, color);
+    gbuf_flush(dev);                                          // main pass -> ONE draw, on top of the stroke
     float w = 0.0f;
     for (const char* p = s; *p; ) { int c = upcase(utf8_next(p)); if (c < FIRST || c > LAST) c = '?'; w += S.g[c - FIRST].adv * scale; }
     return w;

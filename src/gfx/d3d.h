@@ -18,7 +18,7 @@ using windower::valid_ptr;
 
 // ---- D3D8 constants (the subset we use) ----
 enum {
-    D3DPT_TRIANGLESTRIP = 5, D3DPT_TRIANGLEFAN = 6,
+    D3DPT_TRIANGLELIST = 4, D3DPT_TRIANGLESTRIP = 5, D3DPT_TRIANGLEFAN = 6,
     FVF_XYZRHW_DIFFUSE      = 0x44,    // VtxC : pos + diffuse        (glass / gradients)
     FVF_XYZRHW_DIFFUSE_TEX1 = 0x144,   // Vtx  : pos + diffuse + uv    (liquid / textures)
     D3DSBT_ALL = 1, D3DFMT_A8R8G8B8 = 21, D3DPOOL_MANAGED = 1,
