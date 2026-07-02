@@ -72,7 +72,7 @@ Column order, left → right, with the buff strip and cursor hanging off the far
 | **HP gauge** | current HP % | vitals | continuous gradient green `#6FDC74` → yellow → orange → red `#FB5A5A`. **Blinks red** when ≤25% (if HP anim on). |
 | **MP gauge** | current MP % | vitals | constant blue `#4F9DFF`. |
 | **TP gauge** | TP (0–3000 → 0–100%) | vitals | **bright pink `#FF7AE8` when TP ≥ 1000 (WS ready)** + glow pulse; dull purple `#7A5C8E` below. |
-| **Buff strip** (party only) | status-effect icons, 2 reserved rows of up to 16 | packet `0x076` + self memory | icons from the buff atlas; laid out right-to-left, just left of the cursor. `Max Buffs` caps the count, `Buff Size` scales them. |
+| **Buff strip** (party only) | status-effect icons, in **1 or 2 rows** (`Buff Rows`) | packet `0x076` + self memory | icons from the buff atlas; laid out right-to-left, just left of the cursor. **Two-row** = 16+16 (fixed icon size, both rows always reserved so the box height is stable); **one-row** = up to 32 on a single line using a ~1.9× full-player-line-tall icon. `Max Buffs` (16/20/24/32) caps the count, `Buff Size` scales the icons (and grows the row to fit). |
 | **Distance** | yalms to you, `00.00` | member position vs player | **blue `#8FC6FF`** <10' · **yellow `#E7C95A`** 10–20.79' · **red `#E76C6C`** ≥20.8' (out of cast range). You show none. |
 | **Leader / QM pips** | up to 3 dots (pop-in animated) | server-id leader match + QM flag | **white** = alliance leader (left) · **canary yellow `#FFEF3F`** = party leader (middle) · **green `#42D98A`** = Quartermaster (right). |
 | **Cast line** | spell being cast, under the name | action packet `0x028` | light gold `#FFD970`, breathing opacity. Truncated to ~6 chars. |
@@ -156,39 +156,61 @@ Layout: a left **MODULES** sidebar (only one module today — **Party / Alliance
 "more modules soon" hint), a **Profile quick-bar** across the top, then two columns —
 **controls** on the left, **Live Preview** on the right.
 
-Controls are grouped into three collapsible categories:
+Controls are grouped into **three collapsible categories, ordered by scope** — Global, Per box,
+Advanced. **The whole control column scrolls** (mouse wheel): all-open categories exceed the page,
+so the rows are stencil-clipped to a viewport `[cfgTop, cfgBot]` (`clip_rect_begin/end`) with a thin
+scrollbar in the split gap; the mouse is clipped to the same rect, so anything scrolled out of view
+is neither drawn nor click-through (`cfgScroll_` / `cfgMaxScroll_`).
 
-**GENERAL (global — affects every box)**
+> **Two fixes that make the scroll usable (keep them):** the row-entrance `stagger()` delay is
+> **capped at index ≤ 10** — without the cap, rows past index ~22 got an opacity factor of 0 and
+> stayed invisible in a long open list. And the **bottom inner vignette was removed** because it
+> darkened the last (now-scrollable) rows.
+
+**GLOBAL** (affects every box)
 
 | Control | Changes | Options |
 |---|---|---|
 | **Box Theme** | the FFXI window skin for all boxes | 9 themes (14…21) |
-| **Font** | text face for names/jobs/numbers | 20 faces |
+| **Font** | the **INTERFACE (menu) font** — and it also mirrors to the HUD's default text face | 20 faces |
 
-**PARTY / ALLIANCE** — a **Box selector** (Party · Alliance 1 · Alliance 2) chooses which box `T`
-the rows below edit. Most settings are **per-box**:
+The Font control writes `text[0][TE_UI].face` (the config menu's own font, live) **and** `fontFace`
+(the HUD default face), so one control drives both. "Interface" is therefore no longer a Typography
+element — it's set here.
+
+**PER BOX** — a **Box target** selector chooses **Party** or **Alliance** (two groups; **both
+alliance boxes share one config**). Every setting below reads that group `T` (0 = Party, 1 = Alliance):
 
 | Control | Changes | Scope | Range |
 |---|---|---|---|
-| **Box Size** | overall box scale | per-box | Party 100–200%, Alliances 50–200% |
+| **Box Size** | this group's box scale | per-group (box scale) | Party 100–200%, Alliance 50–200% |
 | **Buff Size** | buff icon size | **Party only** | 40–200% |
 | **Max Buffs** | how many buffs shown | **Party only** | 16 / 20 / 24 / 32 |
+| **Buff Rows** | buff strip layout | **Party only** | 1 line / 2 lines |
 | **Cursor Size** | selection hand size | **Party only (global cursor)** | 50–200% |
-| **Bar Height / Bar Width** | gauge dimensions | per-box | 80–180% / 80–150% |
-| **Gauge Style** | gauge look | per-box | Vial / Bars / Segments / Minimal / Sphere / Ring / Crystal / Text |
-| **Animation** | HP blink & TP glow | **global** | HP on/off, TP on/off |
-| **Job Badge** | badge mode | per-box | Off / Main / Main+Sub / Icons |
-| **Badge Size** | badge scale (hidden if Off) | per-box | 50–200% |
-| **Casts** | show the casting line | per-box | on/off |
-| **Distance** | show the yalm number | per-box | on/off |
-| **Border** | window frame per box | per-box (+ **Cost box** when Party) | on/off |
+| **Bar Height / Bar Width** | gauge dimensions | per-group | 80–180% / 80–150% |
+| **Gauge Style** | gauge look | per-group | Vial / Bars / Segments / Minimal / Sphere / Ring / Crystal / Text |
+| **Animation** | HP blink & TP glow | **global** (shown under Party) | HP on/off, TP on/off |
+| **Job Badge** | badge mode | per-group | Off / Main / Main+Sub / Icons |
+| **Badge Size** | badge scale (hidden if Off) | per-group | 50–200% |
+| **Casts** | show the casting line | per-group | on/off |
+| **Distance** | show the yalm number | per-group | on/off |
+| **Border** | window frame | per-group (+ **Cost box** when Party) | on/off |
 
-Plus a **Layout** row: **Edit Layout** (enters edit mode) and **Default (all)** (resets everything).
+> **Box POSITIONS stay per-tier** (Alliance 1 / Alliance 2 are placed independently in edit mode);
+> only the per-box *options* above collapse to two groups. The Box Size slider writes `box[T].scale`
+> where `T = tcfg()` is the group, so resizing Alliance 1 also resizes Alliance 2.
 
-**TYPOGRAPHY** — an **Element** selector picks one of 9 text elements (Name, HP, MP, TP, Cast,
-Job Badge, Distance, Interface, Cost box); the controls below edit that element's style **globally**:
-Font, Size (50–200%), Outline (0–200%), Style (Bold / Italic / CAPS), Colour (Default or a custom
-preset from 8 swatches). ("Interface" styles the config menu's own font.)
+**ADVANCED**
+
+- **Layout** row: **Edit Layout** (enters edit mode) and **Default (all)** (resets everything).
+- **Typography** — its own **Box target** (Party / Alliance group) + an **Element** selector over
+  8 text elements (Name, HP, MP, TP, Cast, Job Badge, Distance, Cost box — **Interface is skipped**,
+  its font is set by Global → Font). The controls edit that element's style **per group**: Font,
+  Size (50–200%), Outline (0–200%), Style (Bold / Italic / CAPS), and **Colour** — Default or Custom.
+  Custom opens a **24-swatch preset palette** (vivid + neutral, two rows of 12) plus **R / G / B / A
+  sliders (0–255)** and a live swatch drawn over a light/dark split so its alpha shows. The colour is
+  full RGBA, alpha included.
 
 ### B.2 Live Preview
 
@@ -334,9 +356,12 @@ fills, `layout`.
 
 Key linkages an outsider should keep in mind:
 
-- **One config, three boxes.** Per-box arrays (`box`, `barHeight`, `gaugeStyle`, `jobBadge`, `cast`,
-  `dist`, `border`) are indexed 0=Party, 1=Alliance 1, 2=Alliance 2. Global fields (theme, font,
-  buffs, cursor, animation, typography) hit all three.
+- **One config, two option groups, three placements.** The per-box *options* (`barHeight`,
+  `barWidth`, `badgeScale`, `gaugeStyle`, `jobBadge`, `cast`, `dist`, `border`, `box[].scale`, and
+  the `text[2][]` typography) are read through **`tcfg()`** — `0 = Party, 1 = Alliance` — so **both
+  alliance boxes share one config**. Box **positions** (`box[tier].x/y/posSet`) stay **per-tier**
+  (0=Party, 1=Alliance 1, 2=Alliance 2), so the two alliances are placed independently. Global fields
+  (theme, font/Interface, buffs, cursor, animation) hit all boxes.
 - **Size changes re-anchor, they don't drift.** Because every box is bottom-right anchored, changing
   a size (slider or edit-wheel) keeps the placed corner fixed. A bulk load (startup / profile / reset)
   flags a "scale baseline reset" so it isn't mistaken for a live resize.
@@ -361,12 +386,13 @@ are solved by **clearer grouping, great defaults and preset profiles**, never by
 
 Factual friction points surfaced while mapping:
 
-- **Scope is uneven and not obvious in the UI.** Some "Party / Alliance" controls are secretly
-  **Party-only** (Buff Size, Max Buffs, Cursor Size) or **global** (Animation, Box Theme, Font,
-  all Typography) even though they sit next to per-box controls behind the Box selector. A cleaner
-  layout would separate *global* from *per-box* explicitly.
+- **Scope grouping — DONE (2026-07-02).** The Configuration tab now splits explicitly into **Global**,
+  **Per box** and **Advanced** collapsible categories. Party-only controls (Buff Size, Max Buffs,
+  Buff Rows, Cursor Size, Animation) only appear when the Per-box target is Party; the Per-box target
+  itself is two groups (Party / Alliance), so both alliances share one config while placing
+  independently. Global settings (Box Theme, Interface Font) sit in their own category.
 - **Two ways to change size, two clamps.** The Box Size slider advertises 100–200% / 50–200%, but the
-  raw edit-mode wheel clamps 0.5–2.0× for all tiers — worth unifying.
+  raw edit-mode wheel clamps 0.5–2.0× for both groups — worth unifying.
 - **Profiles appear in two places** (the quick-bar on the Configuration tab and the full Profile tab)
   — fine, but the relationship should be obvious.
 - **One module, "more soon."** The MODULES sidebar has a single entry; the structure anticipates
@@ -374,8 +400,10 @@ Factual friction points surfaced while mapping:
 - **Zones are powerful but hard to discover** (behind Edit → Rules → panel), and their occlusion
   purpose isn't explained in the UI. Keep the system; make it easier to find and understand (in-Help
   explainer), not simpler-by-removal.
-- **Typography is deep** (9 elements × face/size/outline/bold/italic/caps/colour) — great power. Keep it
-  all; add a global "all text" quick control up front so the common case is one slider, the depth stays.
+- **Typography — DONE (colour depth).** The colour control is now a full 24-swatch palette + R/G/B/A
+  sliders (was 8 presets, forced opaque), and typography is per-group (`text[2][]`). Still deep
+  (8 elements × face/size/outline/bold/italic/caps/RGBA) — a global "all text" quick control up front
+  would still help the common case; the depth stays.
 
 ## See also
 - [Party / Alliance design brief](brief-party-alliance.md)

@@ -6,7 +6,10 @@ source: ARCHITECTURE.md §9
 # Party visual system & config  (2026-07-02)
 
 The party/alliance box (`ui/party.cpp` + `party.h`) is the most-styled widget. Everything below is
-driven by `ui_config()` and is **per-box** where noted (index 0 = party, 1 = alliance 1, 2 = alliance 2).
+driven by `ui_config()`. Per-box *options* are read through **`tcfg()`** — a config GROUP, `0 = Party,
+1 = Alliance` (both alliance boxes share one config) — not the raw tier. Box *positions* stay per-tier
+(0 = party, 1 = alliance 1, 2 = alliance 2, placed independently). Where a `[3]` array is named below
+(e.g. `gaugeStyle[3]`), it is indexed by `tcfg()` for rendering, so only slots `[0]`/`[1]` are used.
 
 ### 9a. AA rounded-rect primitives (`gfx/draw.{h,cpp}`)
 The house AA style is **feathered geometry** (a solid core + a rim that fades alpha 0 over `feather`
@@ -49,11 +52,17 @@ bg + **role-colour border** from `job_role_color`). Text modes draw the abbr (`j
 
 ### 9d. Buffs (party box only — the game never sends alliance buffs)
 Left of each row. `buffScale` (Buff Size %, 0.40..2.00) sizes the icon off `barSz_` and **grows the row
-height** (`party.h buffBandH` is a floor on `mainBandH`). The strip **always reserves TWO rows**
-(`buffRows()` fixed at 2) so changing `buffMax` (16/20/24/32 — a *count cap* only) never resizes the box;
-`buffMax > 16` wraps into a second row (16+16). Icon size is **constant** whether 1 or 2 rows; the first
-row keeps the TOP slot. A margin keeps the two rows clear of the next player. Demo buff set = `BUFF_POOL`
-(32 ids).
+height** (`party.h buffBandH` is a floor on `mainBandH`). **`buffRows` (config: 1 or 2) picks the mode**
+(`party.h buffRows()` clamps to 1 or 2):
+- **Two-row** (`buffRows==2`) — `PERROW = 16`, so up to 16+16 = 32 icons across two rows. `buffIconH()`
+  = the base icon size (`buffIconBase()`); `buffBandH()` reserves both rows so changing `buffMax`
+  (16/20/24/32 — a *count cap* only) never resizes the box.
+- **One-row** (`buffRows==1`) — `PERROW = 32`, all on a single line. `buffIconH()` = `buffIconBase() *
+  1.9f`, a ~full-player-line-tall icon; `buffBandH()` = that one taller icon.
+
+`buffBandH()`/`buffIconH()` (party.h) make the box height follow the mode; the reserved band is CENTRED
+vertically in each row (`draw_member_buffs`). `buffMax` (config, 16/20/24/32) caps the count shown; the
+strip sits just left of the *visible* cursor. Demo buff set = `BUFF_POOL` (32 ids).
 
 ### 9e. Cursor, markers, distance, typography
 - **Selection cursor** (hand): `cursorScale` (50..200%); size = `mh*1.30*scale`, +1.45× on alliance boxes
@@ -71,10 +80,23 @@ row keeps the TOP slot. A margin keeps the two rows clear of the next player. De
     `int mode` (0 main / 1 sub / 2 locked) that selects the same colours.
 - **Leader/QM pips + distance**: the pips+distance **unit** (height `marksColH`) is **centred in the main
   band** so it stays balanced when buffs grow the row (was pinned top/bottom → drifted apart).
-- **Per-element typography** (`TextStyle text[TE_*]`): Name/HP/MP/TP/Cast/Badge/Distance/Interface/Cost,
-  each Face/Size/Bold/Italic/Outline/CAPS/Color. Bold is the SOLE weight authority (400/700). Fonts are
-  bundled (`assets/fonts`, `AddFontResourceEx` FR_PRIVATE) — `MAXF=48` pool (was 8, which silently fell
-  back to slot 0).
+- **Per-box, per-element typography** (`TextStyle text[2][TE_COUNT]` in `ui_config`): **group
+  0 = Party, 1 = Alliance** (both alliance boxes share). Elements Name/HP/MP/TP/Cast/Badge/Distance/
+  Interface(`TE_UI`)/Cost, each Face/Size/Bold/Italic/Outline/CAPS/Color. Rendering reads
+  `text[tcfg()][elem]`: `Party::draw` sets a file-local `g_txtGrp = tcfg()` at its start, and the
+  static `te_font`/`te_sz`/`te_ow`/`te_col`/`te_up` helpers all index `text[g_txtGrp][elem]`. Bold is
+  the SOLE weight authority (400/700). The **Interface (menu) font is `text[0][TE_UI]`** — set by the
+  config's Global → Font control (which also mirrors to `fontFace`, the HUD default face); it is NOT
+  in the Typography element picker.
+  - **Colour is full RGBA including alpha** (`te_col`): `t.colorOn ? t.color : base` — the custom
+    `color` is passed through verbatim, so a sub-opaque alpha now shows (was previously forced opaque).
+    The config exposes a 24-swatch palette + R/G/B/A sliders (0..255).
+  - **Save/load format** (`ui_config.cpp`): `textP<i>=` (Party group) and `textA<i>=` (Alliance group)
+    lines; a legacy `text<i>=` line loads into **both** groups (backward-compatible). Fields:
+    `face,size,outline,flags,AARRGGBB` (`%08X` of the u32 colour) where flags =
+    bold|italic<<1|upper<<2|colorOn<<3.
+- Fonts are bundled (`assets/fonts`, `AddFontResourceEx` FR_PRIVATE) — `MAXF=48` pool (was 8, which
+  silently fell back to slot 0).
 
 ### 9f. Design brief
 [`brief-party-alliance.md`](brief-party-alliance.md) is a brief for an external "design" AI to invent new box concepts. Hard
