@@ -503,38 +503,11 @@ void aio_plugin_command(const char* cmd)
     for (; cmd[i] && i < 255; i++) { char c = cmd[i]; buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; }
     buf[i] = 0;
 
-    // //aio sim [N] -> append N (0-5) FAKE members to the LIVE party, so the box grows and the alliances
-    // react to the main-party size for testing. //aio sim 0 (or sim off) -> back to the real size.
-    if (strstr(buf, "sim")) {
-        const char* p = strstr(buf, "sim") + 3; while (*p == ' ' || *p == '\t') ++p;
-        const int v = strstr(buf, "off") ? 0 : ((*p >= '0' && *p <= '5') ? (*p - '0') : 1);
-        aio::set_party_sim_extra(v);
-        char msg[96]; sprintf(msg, ">>> sim: +%d fake party member(s) <<<", v);
-        g_host.console().print(msg);
-        return;
-    }
-
-    // //aio [party|alliance1|alliance2] demo [N] [off] -> fake roster for previewing the layout.
-    //   party demo [N]  -> a party of N members (1-6, default 6) -> preview the adaptive height/mask
-    //   alliance1 demo  -> party + 1 alliance party (12)
-    //   alliance2 demo  -> party + 2 alliance parties (18)
-    //   demo off        -> back to live data
-    if (strstr(buf, "demo")) {
-        int level = strstr(buf, "off")       ? 0 :
-                    strstr(buf, "alliance2")  ? 3 :
-                    strstr(buf, "alliance1")  ? 2 : 1;   // bare "party demo" / "demo" -> party only
-        aio::set_party_demo_level(level);
-        const char* p = strstr(buf, "demo");             // optional member count after "demo" (1-6)
-        if (p) { p += 4; while (*p == ' ' || *p == '\t') ++p; aio::set_party_demo_count((*p >= '1' && *p <= '6') ? (*p - '0') : 6); }
-        const char* what = level == 0 ? "off" : level == 1 ? "party" :
-                           level == 2 ? "party + alliance1" : "party + 2 alliances";
-        char msg[112]; sprintf(msg, ">>> demo: %s (party x%d) <<<", what, aio::party_demo_count());
-        g_host.console().print(msg);
-        return;
-    }
-
     // //aio profile save|load|delete <name> | profile list -> named snapshots of the whole config.
-    // (A clean CLI path that mirrors the Profile config page -- no keyboard focus needed.)
+    // Dispatched FIRST : the free-text <name> can contain other command keywords ("mydemo", "sim1",
+    // "myconfig", ...) that the substring-matched branches below (strstr over the whole buffer) would
+    // otherwise capture. (The dispatch is substring-based by design -- e.g. "party demo" -- so a proper
+    // verb tokenizer would be the fuller fix ; this keeps the free-text command safe for now.)
     if (strstr(buf, "profile")) {
         const char* a = strstr(buf, "profile") + 7; while (*a == ' ' || *a == '\t') ++a;
         if (strncmp(a, "list", 4) == 0) {
@@ -571,6 +544,36 @@ void aio_plugin_command(const char* cmd)
             return;
         }
         g_host.console().print(">>> usage: //aio profile save|load|delete <name>  |  profile list <<<");
+        return;
+    }
+
+    // //aio sim [N] -> append N (0-5) FAKE members to the LIVE party, so the box grows and the alliances
+    // react to the main-party size for testing. //aio sim 0 (or sim off) -> back to the real size.
+    if (strstr(buf, "sim")) {
+        const char* p = strstr(buf, "sim") + 3; while (*p == ' ' || *p == '\t') ++p;
+        const int v = strstr(buf, "off") ? 0 : ((*p >= '0' && *p <= '5') ? (*p - '0') : 1);
+        aio::set_party_sim_extra(v);
+        char msg[96]; sprintf(msg, ">>> sim: +%d fake party member(s) <<<", v);
+        g_host.console().print(msg);
+        return;
+    }
+
+    // //aio [party|alliance1|alliance2] demo [N] [off] -> fake roster for previewing the layout.
+    //   party demo [N]  -> a party of N members (1-6, default 6) -> preview the adaptive height/mask
+    //   alliance1 demo  -> party + 1 alliance party (12)
+    //   alliance2 demo  -> party + 2 alliance parties (18)
+    //   demo off        -> back to live data
+    if (strstr(buf, "demo")) {
+        int level = strstr(buf, "off")       ? 0 :
+                    strstr(buf, "alliance2")  ? 3 :
+                    strstr(buf, "alliance1")  ? 2 : 1;   // bare "party demo" / "demo" -> party only
+        aio::set_party_demo_level(level);
+        const char* p = strstr(buf, "demo");             // optional member count after "demo" (1-6)
+        if (p) { p += 4; while (*p == ' ' || *p == '\t') ++p; aio::set_party_demo_count((*p >= '1' && *p <= '6') ? (*p - '0') : 6); }
+        const char* what = level == 0 ? "off" : level == 1 ? "party" :
+                           level == 2 ? "party + alliance1" : "party + 2 alliances";
+        char msg[112]; sprintf(msg, ">>> demo: %s (party x%d) <<<", what, aio::party_demo_count());
+        g_host.console().print(msg);
         return;
     }
 
@@ -1030,7 +1033,12 @@ void aio_plugin_command(const char* cmd)
         if (*p && g_hud.bars()) g_hud.bars()->set_layers(*p - '0');
         return;
     }
-    parse_fill_string(buf);
+    // catch-all : the debug FILL command (//aio hp 50 / //aio 100 50 30). Only fire it when the command
+    // actually looks like one (an hp/mp/tp keyword, or a leading digit) -> a random typo no longer silently
+    // rewrites the player's HP/MP/TP fills.
+    { const char* p = buf; while (*p == ' ' || *p == '\t') ++p;
+      if (strstr(buf, "hp") || strstr(buf, "mp") || strstr(buf, "tp") || (*p >= '0' && *p <= '9')) parse_fill_string(buf);
+      else g_host.console().print(">>> aio: unknown command <<<"); }
 }
 
 const char* aio_plugin_name()        { return "AioTest"; }

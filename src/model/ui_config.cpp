@@ -98,10 +98,20 @@ static bool load_config_from(const char* path) {
         else if (strncmp(line, "allyRef=", 8) == 0) { float ar[4]; int g = sscanf(line + 8, "%f,%f,%f,%f", &ar[0], &ar[1], &ar[2], &ar[3]); for (int k = 0; k < g && k < 4; ++k) c.allyRefY[k] = ar[k]; }
         else if (sscanf(line, "zonePanel=%f,%f", &x, &y) == 2) { c.zonePanelX = x; c.zonePanelY = y; }
         else if (strncmp(line, "zone=", 5) == 0 && c.guideGroupCount < GUIDE_GROUPS_MAX) {
-            GuideGroup z; char nm[24] = { 0 }; float x = 0, y = 0, w = 0, h = 0; int a0 = 0, a1 = 0, a2 = 0, rl = 0;
-            int got = sscanf(line + 5, "%f,%f,%f,%f,%d,%d,%d,%d,%23[^\r\n]", &x, &y, &w, &h, &a0, &a1, &a2, &rl, nm);   // new (with role)
-            if (got < 8) { nm[0] = 0; rl = 0; got = sscanf(line + 5, "%f,%f,%f,%f,%d,%d,%d,%23[^\r\n]", &x, &y, &w, &h, &a0, &a1, &a2, nm); }   // legacy
-            if (got >= 7) {
+            GuideGroup z; char nm[24] = { 0 }; float x = 0, y = 0, w = 0, h = 0; int a0 = 0, a1 = 0, a2 = 0, rl = 0, off = 0;
+            // parse the 7 numeric fields common to BOTH formats ; the tail is either "role,name" (new) or
+            // "name" (legacy). Detect the optional role by an integer FOLLOWED BY a comma, so a legacy name
+            // that starts with a digit (e.g. "2nd wall") is no longer misread as a role field.
+            if (sscanf(line + 5, "%f,%f,%f,%f,%d,%d,%d%n", &x, &y, &w, &h, &a0, &a1, &a2, &off) == 7) {
+                const char* rest = line + 5 + off; if (*rest == ',') ++rest;    // skip the separating comma
+                const char* d = rest; if (*d == '-') ++d;
+                const char* e = d; while (*e >= '0' && *e <= '9') ++e;
+                if (e > d && *e == ',') {                                        // "<int>," -> a real role field
+                    int sgn = 1; const char* q = rest; if (*q == '-') { sgn = -1; ++q; }
+                    while (q < e) { rl = rl * 10 + (*q - '0'); ++q; }
+                    rl *= sgn; rest = e + 1;
+                }
+                int k = 0; for (; k < 23 && rest[k] && rest[k] != '\r' && rest[k] != '\n'; ++k) nm[k] = rest[k]; nm[k] = 0;
                 z.x = x; z.y = y; z.w = w; z.h = h; z.allow[0] = (a0 != 0); z.allow[1] = (a1 != 0); z.allow[2] = (a2 != 0); z.role = rl;
                 strncpy(z.name, nm, sizeof(z.name) - 1); z.name[sizeof(z.name) - 1] = 0;
                 c.guideGroup[c.guideGroupCount++] = z;
@@ -125,6 +135,17 @@ static bool load_config_from(const char* path) {
         }
     }
     fclose(f);
+    // sanitise numeric loads : a hand-edited / corrupt file must never feed out-of-range multipliers or
+    // counts into the draw loops (the config UI already enforces these ranges ; this is pure defense).
+    #define CLF(x, lo, hi) do { if (x < (lo)) x = (lo); else if (x > (hi)) x = (hi); } while (0)
+    CLF(c.buffScale, 0.10f, 4.0f); CLF(c.cursorScale, 0.10f, 4.0f);
+    if (c.buffMax < 1) c.buffMax = 1; else if (c.buffMax > 32) c.buffMax = 32;
+    for (int k = 0; k < 3; ++k) {
+        CLF(c.barHeight[k], 0.10f, 4.0f); CLF(c.barWidth[k], 0.10f, 4.0f); CLF(c.badgeScale[k], 0.10f, 4.0f);
+        if (c.gaugeStyle[k] < 0 || c.gaugeStyle[k] > 7) c.gaugeStyle[k] = 0;
+        if (c.jobBadge[k]   < 0 || c.jobBadge[k]   > 3) c.jobBadge[k]   = 2;
+    }
+    #undef CLF
     return true;
 }
 
@@ -244,7 +265,9 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     for (int i = 0; i < 6; ++i) if (a.partyRef[i] != b.partyRef[i]) return false;
     if (a.partyBottomY != b.partyBottomY) return false;
     if (a.partyRefX[0] != b.partyRefX[0] || a.partyRefX[1] != b.partyRefX[1]) return false;
+    if (a.zonePanelX != b.zonePanelX || a.zonePanelY != b.zonePanelY) return false;   // dragging the Zones panel is a layout edit -> must mark dirty
     for (int i = 0; i < 4; ++i) if (a.allyRefY[i] != b.allyRefY[i]) return false;
+    // (lang is a GLOBAL UI preference, deliberately NOT tracked here -> toggling FR/EN doesn't dirty a profile)
     if (a.guideGroupCount != b.guideGroupCount) return false;
     for (int i = 0; i < a.guideGroupCount; ++i) {
         if (a.guideGroup[i].x != b.guideGroup[i].x || a.guideGroup[i].y != b.guideGroup[i].y ||

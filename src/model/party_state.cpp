@@ -284,10 +284,10 @@ const PMember& PartyState::alliance_member(int tier, int i) const {
 //   actor id  @ bit 40 (byte 5), 32 bits      | category @ bit 82, 4 bits
 //   target[0].action[0].param @ bit 213, 17 bits  -> spell id on a "begin casting" (category 8)
 // category 8 = begin casting (magic) ; 4 = casting finished. Little-endian bit packing.
-static unsigned getbits(const unsigned char* p, int bitoff, int width) {
+static unsigned getbits(const unsigned char* p, int bitoff, int width, int nbytes) {
     unsigned long long v = 0;
     int bo = bitoff >> 3;
-    for (int i = 0; i < 8; ++i) v |= (unsigned long long)p[bo + i] << (8 * i);
+    for (int i = 0; i < 8 && bo + i < nbytes; ++i) v |= (unsigned long long)p[bo + i] << (8 * i);   // never read past the packet
     v >>= (bitoff & 7);
     return (unsigned)(v & ((1ull << width) - 1));
 }
@@ -296,11 +296,11 @@ void PartyState::on_action(const unsigned char* p) {
     u32 hdr = (u32)p[0] | ((u32)p[1] << 8);
     int size = (int)((hdr >> 9) & 0x7F) * 4;               // packet size in bytes
     if (size < 30) return;                                 // begin-cast needs the action block (bit 213 -> byte 26..)
-    u32 cat = getbits(p, 82, 4);
+    u32 cat = getbits(p, 82, 4, size);
     if (cat != 8) return;                                  // only "begin casting" (cat 4 = finish arrives instantly here ;
                                                            // we DON'T clear on it -> the bar lives on its own cast time)
-    u32 actor = getbits(p, 40, 32);
-    u32 sid = getbits(p, 213, 17);                         // spell id
+    u32 actor = getbits(p, 40, 32, size);
+    u32 sid = getbits(p, 213, 17, size);                   // spell id
     const SpellRow* sp = spell_info(sid);
     // claim a cast slot for this actor (reuse same-id / free / oldest)
     int slot = -1, oldest = 0;

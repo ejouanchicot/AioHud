@@ -62,6 +62,12 @@ void draw_window(u32 dev, const WindowSkin& s, float x, float y, float w, float 
     if (b * 2.0f > h) b = h * 0.5f;
 
     dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
+    dSetRS(dev, D3DRS_ZENABLE, 0);           // full 2D pipeline (like Font::begin) so the skin can't be
+    dSetRS(dev, D3DRS_CULLMODE, D3DCULL_NONE); // culled / z-rejected by the game's ambient state if it is
+    dSetRS(dev, D3DRS_LIGHTING, 0);          // the FIRST HUD primitive of the frame
+    dSetRS(dev, D3DRS_ALPHATESTENABLE, 0);
+    dSetRS(dev, D3DRS_FOGENABLE, 0);
+    dSetRS(dev, D3DRS_BLENDOP, D3DBLENDOP_ADD);
     dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
     dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
