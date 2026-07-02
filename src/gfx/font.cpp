@@ -232,7 +232,7 @@ void Font::begin(u32 dev) {
 }
 
 void Font::emit(u32 dev, u32 tex, const G* g, float x, float y, const char* s, float scale, u32 color) {
-    dSetTex(dev, 0, tex);
+    (void)tex;   // the atlas is bound ONCE by the caller (same S.tex for every outline + main pass)
     float penx = x;
     for (const char* p = s; *p; ) {
         int c = upcase(utf8_next(p)); if (c < FIRST || c > LAST) c = '?';
@@ -257,6 +257,7 @@ float Font::draw(u32 dev, float x, float y, const char* s, float size, u32 color
     const Slot& S = slot_[si];
     x = (float)(int)(x + 0.5f); y = (float)(int)(y + 0.5f);   // pixel-snap the origin -> crisp
     float scale = size / S.base;                              // == 1.0 for an integer `size` (its own atlas)
+    dSetTex(dev, 0, S.tex);                                   // bind the atlas ONCE (was rebound in every emit pass)
     if ((outline >> 24) && ow > 0.0f) {                       // stroke : 8 offset passes behind
         static const float dx[8] = { -1, 1, 0, 0, -1, -1,  1, 1 };
         static const float dy[8] = {  0, 0, -1, 1, -1,  1, -1, 1 };

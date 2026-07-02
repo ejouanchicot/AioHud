@@ -175,17 +175,16 @@ void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 c
             { x + w - r, y + h - r, 0.0f       },   // BR :   0 ->  90
             { x + r,     y + h - r, 0.5f * PI_ },   // BL :  90 -> 180
         };
-        for (int k = 0; k < 4; ++k) {
+        for (int k = 0; k < 4; ++k) {                            // ONE triangle-fan per corner (was Nc draws each)
             const float ccx = cs4[k].cx, ccy = cs4[k].cy, a0 = cs4[k].a0;
-            const u32 cc = CY(ccy);
-            float px = ccx + r * cosf(a0), py = ccy + r * sinf(a0);
-            for (int i = 1; i <= Nc; ++i) {
+            VtxC fan[Nc + 2];
+            fan[0] = { ccx, ccy, 0, 1, CY(ccy) };                // fan centre
+            for (int i = 0; i <= Nc; ++i) {
                 const float a = a0 + (0.5f * PI_) * (float)i / (float)Nc;
-                const float nx = ccx + r * cosf(a), ny = ccy + r * sinf(a);
-                VtxC t[3] = { { ccx, ccy, 0, 1, cc }, { px, py, 0, 1, CY(py) }, { nx, ny, 0, 1, CY(ny) } };
-                dDrawUP(dev, D3DPT_TRIANGLEFAN, 1, t, sizeof(VtxC));
-                px = nx; py = ny;
+                const float vx = ccx + r * cosf(a), vy = ccy + r * sinf(a);
+                fan[i + 1] = { vx, vy, 0, 1, CY(vy) };
             }
+            dDrawUP(dev, D3DPT_TRIANGLEFAN, Nc, fan, sizeof(VtxC));   // Nc triangles, one submit
         }
         // --- feather ALL edges + corners CONSISTENTLY, so the silhouette extends by the same `feather`
         // everywhere. (If only the corners feathered, the rounded ends would reach ~1px further than the
@@ -247,17 +246,16 @@ void rrect_left(u32 dev, float x, float y, float w, float h, float r, u32 cTop, 
         const int Nc = 6;
         const float cc[2][3] = { { x + r, y + r,     PI_ },          // TL : 180 -> 270
                                  { x + r, y + h - r, 0.5f * PI_ } };  // BL :  90 -> 180
-        for (int k = 0; k < 2; ++k) {
+        for (int k = 0; k < 2; ++k) {                            // ONE triangle-fan per (left) corner
             const float ccx = cc[k][0], ccy = cc[k][1], a0 = cc[k][2];
-            const u32 cc0 = CY(ccy);
-            float px = ccx + r * cosf(a0), py = ccy + r * sinf(a0);
-            for (int i = 1; i <= Nc; ++i) {
+            VtxC fan[Nc + 2];
+            fan[0] = { ccx, ccy, 0, 1, CY(ccy) };                // fan centre
+            for (int i = 0; i <= Nc; ++i) {
                 const float a = a0 + (0.5f * PI_) * (float)i / (float)Nc;
-                const float nx = ccx + r * cosf(a), ny = ccy + r * sinf(a);
-                VtxC t[3] = { { ccx, ccy, 0, 1, cc0 }, { px, py, 0, 1, CY(py) }, { nx, ny, 0, 1, CY(ny) } };
-                dDrawUP(dev, D3DPT_TRIANGLEFAN, 1, t, sizeof(VtxC));
-                px = nx; py = ny;
+                const float vx = ccx + r * cosf(a), vy = ccy + r * sinf(a);
+                fan[i + 1] = { vx, vy, 0, 1, CY(vy) };
             }
+            dDrawUP(dev, D3DPT_TRIANGLEFAN, Nc, fan, sizeof(VtxC));
         }
         if (feather > 0.0f) {
             const float f = feather;

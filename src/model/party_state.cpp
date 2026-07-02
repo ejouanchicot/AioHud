@@ -113,7 +113,8 @@ void PartyState::on_dd(const unsigned char* p) {
     unsigned id = rd32(p, 0x04);
     if (!id) return;
     int i = find(id);
-    if (i < 0) { if (count >= 6) return; i = count++; m[i] = PMember(); m[i].id = id; }
+    bool added = false;
+    if (i < 0) { if (count >= 6) return; i = count++; m[i] = PMember(); m[i].id = id; added = true; }
     m[i].hp    = (int)rd32(p, 0x08);
     m[i].mp    = (int)rd32(p, 0x0C);
     m[i].tp    = (int)rd32(p, 0x10);
@@ -127,7 +128,8 @@ void PartyState::on_dd(const unsigned char* p) {
     m[i].zone = (int)p[0x20] | ((int)p[0x21] << 8);   // member zone id (set when out of our zone)
     int j = 0; for (; j < 19 && p[0x28 + j]; ++j) m[i].name[j] = (char)p[0x28 + j];
     m[i].name[j] = 0;
-    save();                                                          // roster changed -> cache it (rare)
+    if (added) save();   // only when the roster SET actually grows (name/jobs are set in this same call) --
+                         // NOT on every vitals-carrying 0x0DD (was a full disk write per packet, packet thread)
 }
 
 void PartyState::on_df(const unsigned char* p) {
