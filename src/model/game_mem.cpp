@@ -168,8 +168,11 @@ bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid
     // (plus the description text). Unlike the static examine cache (0x634F28) it is NOT left stale, so it tells a
     // real selection from a ghost on OPEN and on RE-OPEN of the same item (where the frozen-value test fails).
     { u32 desc = 0; safe_read(mptr + 0x0C, &desc);
-      if (valid_ptr(desc)) { u32 dlen = 0, dsent = 0xFFFFFFFF; safe_read(desc + 0x30, &dlen); safe_read(desc + 0x34, &dsent);
-                             examValid = (dlen != 0) && (dsent != 0xFFFFFFFF); } }
+      if (valid_ptr(desc)) { u32 dsent = 0xFFFFFFFF; safe_read(desc + 0x34, &dsent);
+                             // the EMPTY / ghost description carries the 0xFFFFFFFF sentinel ; a REAL item has a
+                             // non-sentinel value even BEFORE its text length populates -- the auto-selected FIRST
+                             // spell reads dlen=0 dsent=1 (must still show). So gate on the sentinel ALONE, not len.
+                             examValid = (dsent != 0xFFFFFFFF); } }
     char tag[9]; read_tag(def + MENU_TAG_OFF, tag, 4);    // self-validate : real menu defs start "menu"
     if (tag[0] != 'm' || tag[1] != 'e' || tag[2] != 'n' || tag[3] != 'u') return false;
     char nm[9]; read_tag(def + MENU_NAME_OFF, nm, 8);     // 8-byte menu name -> menu type
