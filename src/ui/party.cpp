@@ -824,11 +824,11 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
     const float au = (float)BCELL / (float)BATLAS_W;    // one cell, in UV space
     const float av = (float)BCELL / (float)BATLAS_H;
     int bmaxCfg = ui_config().buffMax; if (bmaxCfg < 1) bmaxCfg = 1; if (bmaxCfg > 32) bmaxCfg = 32;   // config choice
-    const int   PERROW = 16;                            // at most 16 per row -> a 2nd row wraps 16+16
     // ONE or TWO rows (config: Buff Rows). Two-row keeps a fixed icon size and reserves both rows so the
     // party size is stable ; one-row uses a bigger (full-line-tall) icon. The reserved band (party.h
     // buffBandH) matches whichever mode is active, so the row grows to fit.
     const bool  twoMode = (ui_config().buffRows > 1);
+    const int   PERROW = twoMode ? 16 : 32;             // 2 rows : 16 + 16 ; 1 row : up to 32 on the single line
     const float vgap  = snap(1.0f * S);
     const float bs    = iconH;                          // constant icon size (row grows to fit)
     const float totalH = twoMode ? (2.0f * bs + vgap) : bs;
