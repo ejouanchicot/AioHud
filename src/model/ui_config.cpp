@@ -546,12 +546,10 @@ static bool load_config_from(const char* path) {
     return true;
 }
 
-// Edit-mode axis-lock modifiers, read LIVE from the OS (real-time hardware state) -> they can NEVER get stuck.
-// We used to hand-track them from the keyboard hook, but a missed key-up left Shift/Ctrl "held" and froze the
-// box on BOTH axes. GetAsyncKeyState is the true state and is safe to call from any thread.
-void edit_set_modifiers(bool, bool) {}   // deprecated no-op (the key hook no longer pushes modifier state)
-bool edit_shift() { return (GetAsyncKeyState(VK_SHIFT)   & 0x8000) != 0; }
-bool edit_ctrl()  { return (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0; }
+static bool g_editShift = false, g_editCtrl = false;
+void edit_set_modifiers(bool shift, bool ctrl) { g_editShift = shift; g_editCtrl = ctrl; }
+bool edit_shift() { return g_editShift; }
+bool edit_ctrl()  { return g_editCtrl; }
 
 void save_ui_config() { save_config_to(config_path()); }
 

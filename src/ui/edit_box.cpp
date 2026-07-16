@@ -134,10 +134,12 @@ bool edit_box_drag(EditBox& st, int boxId, const Frame& f, float& px, float& py,
     if (st.dragging) {
         if (m->down) {
             float ex = m->x - st.grabDX, ey = m->y - st.grabDY;
-            // AXIS-LOCK : Shift = horizontal only, Ctrl = vertical only. Read the modifiers LIVE from the OS
-            // (real-time hardware state) : stable, no flicker, and impossible to get stuck (a missed key-up used
-            // to freeze the box on both axes). No hold-bridge needed anymore.
-            const bool shift = edit_shift(), ctrl = edit_ctrl();
+            // AXIS-LOCK : Shift = horizontal only, Ctrl = vertical only. The keyboard hook FLICKERS while the
+            // mouse moves, so bridge it : engage instantly, release ~30 frames after the last true reading.
+            const bool shiftRaw = edit_shift(), ctrlRaw = edit_ctrl();
+            if (shiftRaw) st.shiftHold = 30; else if (st.shiftHold > 0) --st.shiftHold;
+            if (ctrlRaw)  st.ctrlHold  = 30; else if (st.ctrlHold  > 0) --st.ctrlHold;
+            const bool shift = st.shiftHold > 0, ctrl = st.ctrlHold > 0;
             st.dragShift = shift; st.dragCtrl = ctrl;
             // Freeze the locked axis to the box's current position AND re-sync that axis's grab offset each frame,
             // so releasing the key (or a flicker) never snaps the box to the mouse (no jump).
