@@ -41,6 +41,16 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtShow ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtShow != 0)) { ui_config().tgtShow = !ui_config().tgtShow; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        // Size : scale the whole target box (canonical : right after Show, before the Box chrome).
+        { ROW_BAND(46.0f)
+            const float lo = 0.50f, hi = 2.00f;
+            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().tgtScale * 100.0f + 0.5f));
+            float v01 = (ui_config().tgtScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), szbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().tgtScale = v < lo ? lo : (v > hi ? hi : v); }
+        }
+        ROW_NEXT(46.0f)
         // Box : draw the frame chrome or not. NO box -> name/%/bar/buffs/timer float with a heavy outline, and the
         // theme rows below are hidden (no chrome to theme).
         { ROW_BAND(52.0f)
@@ -128,16 +138,6 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         }   // end own-theme rows (!tgtThemeCopy)
         }   // end theme rows (tgtBox on)
-        // Target Size : scale the whole target box.
-        { ROW_BAND(46.0f)
-            const float lo = 0.50f, hi = 2.00f;
-            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().tgtScale * 100.0f + 0.5f));
-            float v01 = (ui_config().tgtScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), szbuf, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().tgtScale = v < lo ? lo : (v > hi ? hi : v); }
-        }
-        ROW_NEXT(46.0f)
         // Centre-lock hint : centring is done by DRAGGING the box to the screen centre in Edit Layout -- it snaps
         // and stays centred (so it survives a resolution change). No button ; edit-mode drag is the control.
         { ROW_BAND(34.0f)

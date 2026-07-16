@@ -29,18 +29,18 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.scShow ? tr("On", "Oui") : tr("Off", "Non"), c.scShow != 0)) { c.scShow = !c.scShow; save_ui_config(); }
         } ROW_NEXT(48.0f)
+        { ROW_BAND(46.0f)   // Size (overall box scale) -- canonical : right after Show
+            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.scScale * 100.0f + 0.5f));
+            float v01 = (c.scScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.scScale = v < lo ? lo : (v > hi ? hi : v); }
+        } ROW_NEXT(46.0f)
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.scBox);   // Box / Transparency / Theme / Hue / Luminosity
         { ROW_BAND(48.0f)   // Display scope : also show party/nearby chains (not just your target)
             const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show party/nearby chains", "Afficher SC du groupe/proches"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
             const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.scNearby ? tr("On", "Oui") : tr("Off", "Non"), c.scNearby != 0)) { c.scNearby = !c.scNearby; save_ui_config(); }
         } ROW_NEXT(48.0f)
-        { ROW_BAND(46.0f)   // Size (overall box scale)
-            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.scScale * 100.0f + 0.5f));
-            float v01 = (c.scScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.scScale = v < lo ? lo : (v > hi ? hi : v); }
-        } ROW_NEXT(46.0f)
-        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.scBox);   // Box / Transparency / Theme / Hue / Luminosity
         { ROW_BAND(44.0f)   // position -> drag it in //aio edit (like every other box)
             const float ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(19.0f), tr("Position: drag it in //aio edit", "Position : d\xC3\xA9place-la dans //aio edit"), snap(13.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);

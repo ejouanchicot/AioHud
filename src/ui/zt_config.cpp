@@ -28,18 +28,18 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.ztShow ? tr("On", "Oui") : tr("Off", "Non"), c.ztShow != 0)) { c.ztShow = !c.ztShow; save_ui_config(); }
         } ROW_NEXT(48.0f)
+        { ROW_BAND(46.0f)   // Size (canonical : right after Show)
+            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.ztScale * 100.0f + 0.5f));
+            float v01 = (c.ztScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.ztScale = v < lo ? lo : (v > hi ? hi : v); }
+        } ROW_NEXT(46.0f)
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.ztBox);   // Box / Transparency / Theme / Hue / Luminosity
         { ROW_BAND(48.0f)   // Show title row (Dynamis / Abyssea / Omen / Nyzul / Sheol)
             const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show title", "Afficher le titre"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
             const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.ztHeader ? tr("On", "Oui") : tr("Off", "Non"), c.ztHeader != 0)) { c.ztHeader = !c.ztHeader; save_ui_config(); }
         } ROW_NEXT(48.0f)
-        { ROW_BAND(46.0f)   // Size
-            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.ztScale * 100.0f + 0.5f));
-            float v01 = (c.ztScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.ztScale = v < lo ? lo : (v > hi ? hi : v); }
-        } ROW_NEXT(46.0f)
-        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.ztBox);   // Box / Transparency / Theme / Hue / Luminosity
         { ROW_BAND(52.0f)   // Preview zone
             const char* ZLBL[5] = { tr("Dynamis", "Dynamis"), tr("Abyssea", "Abyssea"), tr("Omen", "Omen"), tr("Nyzul", "Nyzul"), tr("Sheol", "Sheol") };
             int zv = (c.ztVariant < 0 || c.ztVariant > 4) ? 1 : c.ztVariant;

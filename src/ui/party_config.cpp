@@ -38,6 +38,23 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().partyShow ? tr("On", "Oui") : tr("Off", "Non"), ui_config().partyShow != 0)) { ui_config().partyShow = !ui_config().partyShow; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        // Size (canonical : right after Show). Party floor 100% : it must cover the native block.
+        { ROW_BAND(46.0f)
+            const float lo = 1.00f, hi = 2.00f;
+            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[0].scale * 100.0f + 0.5f));
+            float v01 = (ui_config().box[0].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), szbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().box[0].scale = v < lo ? lo : (v > hi ? hi : v); }
+        }
+        ROW_NEXT(46.0f)
+        { ROW_BAND(46.0f)   // Transparency (canonical : before the theme rows)
+            const float transp = 1.0f - ui_config().skinBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
+            float v01 = clampf(transp, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Transparency", "Transparence"), b, &v01)) {
+                ui_config().skinBoxAlpha = 1.0f - v01; save_ui_config(); }
+          ROW_NEXT(46.0f)
+        }
         // ---- Appearance : the PARTY box theme (procedural families = colour grid ; FFXI = game theme numbers). ----
         { ROW_BAND(52.0f)   // Box Theme (family)
           const int fam = window_theme_family(ui_config().skinTheme), var = window_theme_variant(ui_config().skinTheme);
@@ -94,23 +111,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 ui_config().skinLum = v01 * 2.0f - 1.0f; save_ui_config(); }
           ROW_NEXT(46.0f)
         }
-        { ROW_BAND(46.0f)   // Transparency
-            const float transp = 1.0f - ui_config().skinBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
-            float v01 = clampf(transp, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Transparency", "Transparence"), b, &v01)) {
-                ui_config().skinBoxAlpha = 1.0f - v01; save_ui_config(); }
-          ROW_NEXT(46.0f)
-        }
         // ---- Party box settings (index 0) ----
-        { ROW_BAND(46.0f)   // Size (party floor 100% : it must cover the native block)
-            const float lo = 1.00f, hi = 2.00f;
-            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[0].scale * 100.0f + 0.5f));
-            float v01 = (ui_config().box[0].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), szbuf, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().box[0].scale = v < lo ? lo : (v > hi ? hi : v); }
-        }
-        ROW_NEXT(46.0f)
         { ROW_BAND(52.0f)   // Buff Size (party only : the game sends no buffs for alliances)
             const float lo = 0.40f, hi = 2.00f;
             char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
@@ -234,6 +235,16 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().allyShow ? tr("On", "Oui") : tr("Off", "Non"), ui_config().allyShow != 0)) { ui_config().allyShow = !ui_config().allyShow; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        // ---- Alliance box settings (index 1 ; no buffs / animation -- alliances get none) ----
+        { ROW_BAND(46.0f)   // Size (alliance : 50%..200%) -- canonical : right after Show
+            const float lo = 0.50f, hi = 2.00f;
+            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[1].scale * 100.0f + 0.5f));
+            float v01 = (ui_config().box[1].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), szbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().box[1].scale = v < lo ? lo : (v > hi ? hi : v); }
+        }
+        ROW_NEXT(46.0f)
         // ---- Theme : follow the Party box theme, or give the alliance boxes their OWN (procedural themes fully). ----
         { ROW_BAND(52.0f)
             const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
@@ -306,16 +317,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           ROW_NEXT(46.0f)
         }
         }   // end custom alliance theme (!allyThemeCopy)
-        // ---- Alliance box settings (index 1 ; no buffs / animation -- alliances get none) ----
-        { ROW_BAND(46.0f)   // Size (alliance : 50%..200%)
-            const float lo = 0.50f, hi = 2.00f;
-            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[1].scale * 100.0f + 0.5f));
-            float v01 = (ui_config().box[1].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), szbuf, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().box[1].scale = v < lo ? lo : (v > hi ? hi : v); }
-        }
-        ROW_NEXT(46.0f)
         { ROW_BAND(46.0f)   // Bar Height
             const float lo = 0.80f, hi = 1.80f;
             char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[1] * 100.0f + 0.5f));

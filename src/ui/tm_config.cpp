@@ -38,20 +38,20 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
               const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;\
               if (toggle_chip(dev, fo, mo, click, UID, bx2, bty, bbw, bbh, (FIELD) ? tr("On", "Oui") : tr("Off", "Non"), (FIELD) != 0)) { FIELD = !(FIELD); save_ui_config(); } } ROW_NEXT(48.0f)
         TM_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.tmShow)
+        { ROW_BAND(46.0f)   // Size (canonical : right after Show, before the box appearance)
+            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tmScale * 100.0f + 0.5f));
+            float v01 = (c.tmScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmScale = v < lo ? lo : (v > hi ? hi : v); }
+        } ROW_NEXT(46.0f)
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.tmBox);   // Box / Transparency / Theme / Hue / Luminosity
         TM_TOGGLE(CTRL_ID, tr("Show titles", "Afficher les titres"), c.tmTitle)
         #undef TM_TOGGLE
-        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.tmBox);   // Box / Transparency / Theme / Hue / Luminosity
         { ROW_BAND(48.0f)   // Layout : fused (one box) vs separate (two draggable boxes)
             const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Layout", "Disposition"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
             const float bbw = snap(128.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.tmMerged ? tr("Fused", "Fusionn\xC3\xA9") : tr("Separate", "S\xC3\xA9par\xC3\xA9"), c.tmMerged != 0)) { c.tmMerged = !c.tmMerged; save_ui_config(); }
         } ROW_NEXT(48.0f)
-        { ROW_BAND(46.0f)   // Size
-            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tmScale * 100.0f + 0.5f));
-            float v01 = (c.tmScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmScale = v < lo ? lo : (v > hi ? hi : v); }
-        } ROW_NEXT(46.0f)
         { ROW_BAND(46.0f)   // Max per column
             const float lo = 1.0f, hi = 50.0f; char b[16]; sprintf(b, "%d", c.tmMax);
             float v01 = ((float)c.tmMax - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);

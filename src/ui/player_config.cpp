@@ -44,6 +44,14 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().plrShow ? tr("On", "Oui") : tr("Off", "Non"), ui_config().plrShow != 0)) { ui_config().plrShow = !ui_config().plrShow; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        // Size : scale the whole hub box (canonical : right after Show, before the Box chrome).
+        { ROW_BAND(46.0f)
+            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().plrScale * 100.0f + 0.5f));
+            float v01 = (ui_config().plrScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().plrScale = v < lo ? lo : (v > hi ? hi : v); }
+        }
+        ROW_NEXT(46.0f)
         // Box : draw the frame chrome or not.
         { ROW_BAND(52.0f)
             const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
@@ -130,14 +138,6 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         }   // end own-theme rows (!plrThemeCopy)
         }
-        // Player Size : scale the whole hub box.
-        { ROW_BAND(46.0f)
-            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().plrScale * 100.0f + 0.5f));
-            float v01 = (ui_config().plrScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().plrScale = v < lo ? lo : (v > hi ? hi : v); }
-        }
-        ROW_NEXT(46.0f)
         }   // end sub-section Box (catOpen_[6])
         // ---- sub-section : Content (what the hub shows) ----
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
