@@ -19,7 +19,7 @@ Everything is tuned from one full-screen config window (`//aio config`) with a l
 
 ## Install
 
-1. Copy **`AioHud.dll`** into `<Windower>\plugins\` and the **`AioHud\`** folder next to it (`<Windower>\plugins\AioHud\`).
+1. Download **`AioHud-x.y.z.zip`** from the [latest release](../../releases/latest) and **extract it into `<Windower>\plugins\`** — it drops `AioHud.dll` and the `AioHud\` folder in place.
 2. In game: `//load AioHud`
 3. Open the config: `//aio config` · move boxes: `//aio edit`
 

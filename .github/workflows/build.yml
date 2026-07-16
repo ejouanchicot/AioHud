@@ -41,11 +41,11 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path dist/* -DestinationPath "AioHud-${{ steps.ver.outputs.version }}.zip" -Force
 
+      # One user-facing asset : the payload zip (extract into <Windower>\plugins\ -> AioHud.dll + AioHud\).
+      # The in-game updater downloads this same zip and extracts it over the install (keeping AioHud\data\).
       - name: Publish Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: |
-            build/AioHud.dll
-            AioHud-*.zip
+          files: AioHud-*.zip
