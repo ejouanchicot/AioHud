@@ -31,13 +31,19 @@ namespace aio {
 // feed_char/backspace/enter while the name field is focused -- the hook CONSUMES those keys so the
 // game never sees them. No per-frame Win32 polling here.
 
-static const char* TABS[]     = { "Configuration", "Profile", "Edit Layout", "Help" };
-static const int   NTABS      = 4;
+static const char* TABS[]     = { "Configuration", "Profile", "Edit Layout", "Help", "Update" };
+static const int   NTABS      = 5;
 static const char* tab_label(int i) {
-    static const char* en[] = { "Configuration", "Profile", "Edit Layout", "Help" };
-    static const char* fr[] = { "Configuration", "Profil", "\xC3\x89""diter dispo", "Aide" };
+    static const char* en[] = { "Configuration", "Profile", "Edit Layout", "Help", "Update" };
+    static const char* fr[] = { "Configuration", "Profil", "\xC3\x89""diter dispo", "Aide", "Mise \xC3\xA0 jour" };
     return (ui_config().lang == 1 ? fr : en)[i];
 }
+
+// Update-tab bridge (implemented in the plugin layer, aiohud.cpp).
+int  aio_update_check_status(char* ver, int n);   // 0 unknown/checking, 1 up-to-date, 2 available, 3 error ; fills ver
+void aio_update_spawn_check();                     // re-run the no-window check
+void aio_update_request();                          // write the flag the AioUpdate addon polls -> full //aioupdate
+const char* aio_version_string();
 // Settings modules (the Configuration sidebar). Add a module here = a new settings page ; the profile
 // is GLOBAL (a profile snapshots every module), so it lives in the profile bar, not per-module.
 static const char* MODULES[]  = { "Party / Alliance", "Target", "Player", "Minimap", "Arcade WS", "Skillchains", "Treasure Pool", "Hate List", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "Interface" };
@@ -90,6 +96,13 @@ static void tab_icon(u32 dev, int kind, float cx, float cy, float s, u32 col, Fo
             seg_soft(dev, x, y, x + dxh, y, t, fa(col));
             seg_soft(dev, x, y, x, y + dyv, t, fa(col));
         }
+    } else if (kind == 4) {                                   // UPDATE : a download arrow dropping into a tray
+        cs(dev);
+        const float t = snap(2.8f);
+        seg_soft(dev, cx, cy - r * 0.72f, cx, cy + r * 0.18f, t, fa(col));                 // shaft
+        seg_soft(dev, cx, cy + r * 0.30f, cx - r * 0.42f, cy - r * 0.16f, t, fa(col));     // left barb
+        seg_soft(dev, cx, cy + r * 0.30f, cx + r * 0.42f, cy - r * 0.16f, t, fa(col));     // right barb
+        seg_soft(dev, cx - r * 0.62f, cy + r * 0.66f, cx + r * 0.62f, cy + r * 0.66f, t, fa(col)); // tray base
     } else {                                                  // HELP : the universal "?" glyph, icon-sized
         fo->begin(dev);
         fo->draw_c(dev, cx, cy, "?", s * 1.18f, col, fa(C_STROKE), 1.2f);
@@ -1215,6 +1228,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         g_fade = e;   // restore for the footer
     } else if (tab_ == 1) {
         draw_profile_tab(f, dev, fo, mo, click, ix, iw, bodyY, bodyH, pageBot, pulse, e);
+    } else if (tab_ == 4) {
+        draw_update_tab(f, dev, fo, mo, click, ix, iw, bodyY, bodyH, pageBot, pulse, e);
     } else {
         draw_help_tab(f, dev, fo, mo, click, ix, iw, bodyY, bodyH, pageBot, pulse);
     }
@@ -2129,6 +2144,48 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
             const float thH = (bot - top) * (viewH / contentH), thY = top + (bot - top - thH) * (helpScroll_ / maxScroll);
             flat(dev, sbX, thY, snap(3.0f), thH, lerpc(C_ACCENT, C_ACCENTHI, pulse));
         }
+}
+
+// ---- Update tab (tab_ == 4) : version + release check + a one-click in-game update button. ----
+void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
+                                 float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse, float e) {
+    (void)f; (void)pageBot; (void)e;
+    char ver[64] = { 0 };
+    const int  st  = aio_update_check_status(ver, sizeof(ver));   // 0 checking, 1 up-to-date, 2 available, 3 error
+    const char* cur = aio_version_string();
+
+    // centred card
+    const float cw = snap(560.0f), ch = snap(310.0f);
+    const float cx = ix + (iw - cw) * 0.5f, cy = bodyY + (bodyH - ch) * 0.5f;
+    rrect_fill(dev, cx, cy, cw, ch, snap(14.0f), 0xE0121A27, 0xF00A0F18);
+    cs_add(dev); soft_blob(dev, cx + cw * 0.5f, cy + snap(4.0f), cw * 0.5f, ch * 0.14f, 0x142A4E84); cs(dev);
+    outline(dev, cx, cy, cw, ch, C_BORDERHI);
+    const float midX = cx + cw * 0.5f;
+
+    fo->begin(dev);
+    fo->draw_c(dev, midX, cy + snap(46.0f), tr("AioHud Update", "Mise \xC3\xA0 jour AioHud"), snap(24.0f), fa(C_GOLDHI), fa(C_STROKE), 1.4f);
+    char inst[96]; _snprintf(inst, sizeof(inst), "%s : V%s", tr("Installed", "Install\xC3\xA9""e"), cur); inst[sizeof(inst) - 1] = 0;
+    fo->begin(dev); fo->draw_c(dev, midX, cy + snap(98.0f), inst, snap(16.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+
+    char status[96]; u32 col; const char* btn; bool doUpdate = false;
+    if (st == 2)      { col = C_GOLDHI;    _snprintf(status, sizeof(status), "%s : v%s", tr("Update available", "Mise \xC3\xA0 jour dispo"), ver); btn = tr("Update now", "Mettre \xC3\xA0 jour"); doUpdate = true; }
+    else if (st == 1) { col = 0xFF6BE06Bu; _snprintf(status, sizeof(status), "%s", tr("Up to date", "\xC3\x80 jour"));                              btn = tr("Check again", "Rev\xC3\xA9rifier"); }
+    else if (st == 3) { col = 0xFFF06060u; _snprintf(status, sizeof(status), "%s", tr("Check failed (network?)", "\xC3\x89""chec (r\xC3\xA9seau ?)")); btn = tr("Retry", "R\xC3\xA9""essayer"); }
+    else              { col = C_DIM;       _snprintf(status, sizeof(status), "%s", tr("Checking...", "V\xC3\xA9rification..."));                    btn = tr("Check now", "V\xC3\xA9rifier"); }
+    status[sizeof(status) - 1] = 0;
+    fo->begin(dev); fo->draw_c(dev, midX, cy + snap(146.0f), status, snap(18.0f), fa(col), fa(C_STROKE), 1.1f);
+
+    const float bw = snap(230.0f), bh = snap(46.0f), bx = midX - bw * 0.5f, by = cy + snap(188.0f);
+    if (push_btn(dev, fo, mo, click, CTRL_ID, bx, by, bw, bh, btn, doUpdate ? 1 : 0)) {
+        if (doUpdate) aio_update_request();    // -> the AioUpdate addon runs the full no-window update
+        else          aio_update_spawn_check();// re-run the check
+    }
+
+    fo->begin(dev);
+    fo->draw_c(dev, midX, cy + ch - snap(30.0f),
+               tr("Updates in game with no window. Your settings and profiles are kept.",
+                  "Mise \xC3\xA0 jour en jeu, sans fen\xC3\xAAtre. Tes r\xC3\xA9glages et profils sont conserv\xC3\xA9s."),
+               snap(12.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
 }
 
 } // namespace aio

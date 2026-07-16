@@ -154,6 +154,8 @@ private:
                           float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse, float e);
     void draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
                        float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse);
+    void draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
+                         float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse, float e);
 
     bool  open_    = false;
     int   tab_     = 0;       // 0 = Configuration, 1 = Profil, 2 = Help

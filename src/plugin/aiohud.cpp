@@ -125,10 +125,13 @@ static void ensure_addon_autoload()
 
 // ===== IPlugin hooks (declared in windower_plugin.h) =====
 
+static void spawn_updater(bool checkOnly);   // defined below ; launch the no-window updater / update-check
+
 void aio_plugin_init(PluginManager host)
 {
     g_host = host;
     ensure_addon_autoload();           // make the //aioupdate companion addon auto-load with Windower
+    spawn_updater(true);               // no-window update CHECK at startup -> writes data\update\check.txt for the Update tab
     debug::clear();
     debug::log("AioHUD init: device = 0x%08X", host.service_raw(2));
     aio::load_ui_config();             // restore saved theme / font / box positions + sizes
@@ -366,7 +369,7 @@ void aio_plugin_unload()
 // process always flashes a cmd console). The script checks the latest GitHub release, downloads it, WAITS for the
 // AioHud.dll to unlock (the companion Lua addon //unloads it), extracts over plugins\, and writes data\update\done.txt.
 // The spawned process is detached, so it survives this plugin being unloaded mid-update.
-static void spawn_updater()
+static void spawn_updater(bool checkOnly)
 {
     char ps1[300], data[300], plugins[300];
     aio::plugin_path(ps1, sizeof(ps1), "assets\\aioupdate.ps1");
@@ -375,18 +378,47 @@ static void spawn_updater()
     char* s = strrchr(plugins, '\\'); if (s) *s = 0;                 // -> ...\plugins
     char cmd[1400];
     _snprintf(cmd, sizeof(cmd),
-        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%s\" -Current \"%s\" -Repo \"Tetsouo/AioHud\" -Plugins \"%s\" -Data \"%s\"",
-        ps1, AIOHUD_VERSION, plugins, data);
+        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%s\" -Current \"%s\" -Repo \"Tetsouo/AioHud\" -Plugins \"%s\" -Data \"%s\"%s",
+        ps1, AIOHUD_VERSION, plugins, data, checkOnly ? " -CheckOnly" : "");
     cmd[sizeof(cmd) - 1] = 0;
     STARTUPINFOA si; ZeroMemory(&si, sizeof(si)); si.cb = sizeof(si);
     PROCESS_INFORMATION pi; ZeroMemory(&pi, sizeof(pi));
     if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {   // CREATE_NO_WINDOW = hidden console ; the child survives this DLL unloading (its parent is pol.exe, not the DLL)
         CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
-    } else {
+    } else if (!checkOnly) {
         char e[96]; _snprintf(e, sizeof(e), ">>> AioHud : updater launch failed (CreateProcess err %lu) <<<", GetLastError());
         g_host.console().print(e);
     }
 }
+
+// ===== Update-tab bridge (called from the config page, which lives in namespace aio) =====
+namespace aio {
+// read data\update\check.txt -> 0 unknown/checking, 1 up-to-date, 2 update available, 3 error ; fills `ver`.
+int aio_update_check_status(char* ver, int n)
+{
+    if (ver && n > 0) ver[0] = 0;
+    char p[300]; aio::plugin_path(p, sizeof(p), "data\\update\\check.txt");
+    FILE* f = fopen(p, "rb"); if (!f) return 0;
+    char buf[160]; size_t got = fread(buf, 1, sizeof(buf) - 1, f); buf[got] = 0; fclose(f);
+    char word[32] = { 0 }, v[96] = { 0 }; sscanf(buf, "%31s %95s", word, v);
+    if (ver && n > 0) lstrcpynA(ver, v, n);
+    if (!strcmp(word, "UPTODATE"))  return 1;
+    if (!strcmp(word, "AVAILABLE")) return 2;
+    if (!strcmp(word, "ERROR"))     return 3;
+    return 0;
+}
+// re-run the no-window check (Update tab "Check again").
+void aio_update_spawn_check() { spawn_updater(true); }
+// write the request flag the AioUpdate addon polls -> it runs the full //aioupdate (unload/download/load).
+void aio_update_request()
+{
+    char dir[300]; aio::plugin_path(dir, sizeof(dir), "data\\update");
+    CreateDirectoryA(dir, NULL);
+    char p[320]; _snprintf(p, sizeof(p), "%s\\request.txt", dir); p[sizeof(p) - 1] = 0;
+    FILE* f = fopen(p, "w"); if (f) { fputs("go", f); fclose(f); }
+}
+const char* aio_version_string() { return AIOHUD_VERSION; }
+}   // namespace aio
 
 void aio_plugin_command(const char* cmd)
 {
@@ -487,7 +519,7 @@ void aio_plugin_command(const char* cmd)
 
     // //aio config -> toggle the full-screen configuration overlay. "config N" = select tab N (1..3).
     if (strstr(buf, "update")) {   // //aio update -> spawn the no-window updater (the AioUpdate Lua addon drives the unload/load)
-        spawn_updater();           // silent on purpose : //aioupdate must produce no console output
+        spawn_updater(false);      // silent on purpose : //aioupdate must produce no console output
         return;
     }
     if (strstr(buf, "config")) {

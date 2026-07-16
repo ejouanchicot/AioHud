@@ -1,24 +1,37 @@
 # AioHud self-updater. Launched by the plugin with CreateProcess + CREATE_NO_WINDOW (no console window at all),
 # and driven together with the AioUpdate Lua addon (which does the //unload + //load the plugin can't do itself).
 #
-# Phases, each written as a single line to <Data>\update\done.txt (the Lua addon polls it):
-#   UPTODATE <ver>   already on the latest release -> nothing to do
-#   READY <ver>      newer release downloaded -> the addon //unloads AioHud so the DLL can be replaced
-#   OK <ver>         extracted the new build over the Windower root (plugins\ + addons\) -> the addon //loads AioHud
-#   ERROR <msg>      something went wrong -> the addon reloads the current build
-param([string]$Current = '0', [string]$Repo = 'Tetsouo/AioHud', [string]$Plugins, [string]$Data)
+# Two modes:
+#   -CheckOnly : just query the latest release and write <Data>\update\check.txt (no download, no reload) :
+#       UPTODATE <ver>   / AVAILABLE <ver>   / ERROR <msg>       (the plugin reads this for the Update tab)
+#   (default)  : full update, writing phases to <Data>\update\done.txt (the Lua addon polls it) :
+#       UPTODATE <ver>   already on the latest release -> nothing to do
+#       READY <ver>      newer release downloaded -> the addon //unloads AioHud so the DLL can be replaced
+#       OK <ver>         extracted the new build over the Windower root (plugins\ + addons\) -> the addon //loads AioHud
+#       ERROR <msg>      something went wrong -> the addon reloads the current build
+param([string]$Current = '0', [string]$Repo = 'Tetsouo/AioHud', [string]$Plugins, [string]$Data, [switch]$CheckOnly)
 $ErrorActionPreference = 'Stop'
 $updir = Join-Path $Data 'update'
 $done  = Join-Path $updir 'done.txt'
+$check = Join-Path $updir 'check.txt'
 $zip   = Join-Path (Join-Path $Data 'cache') 'update.zip'
-function Status($s) { New-Item -ItemType Directory -Force -Path $updir | Out-Null; Set-Content -LiteralPath $done -Value $s -Encoding ascii }
+function Write1($path, $s) { New-Item -ItemType Directory -Force -Path $updir | Out-Null; Set-Content -LiteralPath $path -Value $s -Encoding ascii }
+function Status($s) { Write1 $done  $s }
+function Check($s)  { Write1 $check $s }
 try {
     New-Item -ItemType Directory -Force -Path $updir | Out-Null
-    Remove-Item -LiteralPath $done -ErrorAction SilentlyContinue
+    if ($CheckOnly) { Remove-Item -LiteralPath $check -ErrorAction SilentlyContinue }
+    else            { Remove-Item -LiteralPath $done  -ErrorAction SilentlyContinue }
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
     $ua = @{ 'User-Agent' = 'AioUpdate' }
     $r = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers $ua
     $tag = ($r.tag_name -replace '^v', '')
+
+    if ($CheckOnly) {
+        if ($tag -eq $Current) { Check "UPTODATE $tag" } else { Check "AVAILABLE $tag" }
+        exit
+    }
+
     if ($tag -eq $Current) { Status "UPTODATE $tag"; exit }
     $a = $r.assets | Where-Object { $_.name -like 'AioHud-*.zip' } | Select-Object -First 1
     if (-not $a) { Status 'ERROR no-zip-asset-in-release'; exit }
@@ -39,4 +52,4 @@ try {
     Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
     Status "OK $tag"
 }
-catch { Status "ERROR $($_.Exception.Message)" }
+catch { if ($CheckOnly) { Check "ERROR $($_.Exception.Message)" } else { Status "ERROR $($_.Exception.Message)" } }
