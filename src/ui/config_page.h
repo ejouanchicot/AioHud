@@ -52,24 +52,37 @@ public:
     // A full single-line text field : insertion CURSOR (nameCur_) with left/right/home/end, insert +
     // backspace + forward-delete AT the cursor -- the same behaviour as any OS text input.
     bool wants_keys() const { return open_ && nameFocus_; }   // -> the hook consumes keys (name field is on the Config tab)
-    void feed_char(char c)  {
-        if (nameLen_ >= (int)sizeof(nameBuf_) - 1) return;
-        if ((unsigned char)c < 32) return;   // control chars only -- / \ : etc. are allowed (the file name %-encodes them)
-        for (int i = nameLen_; i > nameCur_; --i) nameBuf_[i] = nameBuf_[i - 1];   // make room at the cursor
-        nameBuf_[nameCur_++] = c; nameBuf_[++nameLen_] = 0;
+    // cp = a Unicode codepoint (32..255). STORED AS UTF-8 to match the font renderer (font.cpp utf8_next) --
+    // storing the raw Latin-1 byte (e.g. 0xE9 for 'é') showed a '?' AND could eat the next char. Latin-1 128..255
+    // -> a 2-byte UTF-8 sequence. Cursor / backspace / delete below operate on whole UTF-8 chars (never split one).
+    void feed_char(unsigned cp)  {
+        if (cp < 32) return;   // control chars only -- / \ : etc. are allowed (the file name %-encodes them)
+        char u[2]; int n;
+        if (cp < 128) { u[0] = (char)cp; n = 1; }
+        else          { u[0] = (char)(0xC0 | (cp >> 6)); u[1] = (char)(0x80 | (cp & 0x3F)); n = 2; }
+        if (nameLen_ + n > (int)sizeof(nameBuf_) - 1) return;
+        for (int i = nameLen_; i >= nameCur_; --i) nameBuf_[i + n] = nameBuf_[i];   // shift right by n (incl. the null)
+        for (int k = 0; k < n; ++k) nameBuf_[nameCur_ + k] = u[k];
+        nameCur_ += n; nameLen_ += n;
     }
-    void feed_backspace()   {                                  // delete the char BEFORE the cursor
+    void feed_backspace()   {                                  // delete the whole UTF-8 char BEFORE the cursor
         if (nameCur_ <= 0) return;
-        for (int i = nameCur_ - 1; i < nameLen_; ++i) nameBuf_[i] = nameBuf_[i + 1];
-        --nameLen_; --nameCur_;
+        int s = nameCur_ - 1;
+        while (s > 0 && ((unsigned char)nameBuf_[s] & 0xC0) == 0x80) --s;   // back up over continuation bytes to the lead
+        const int n = nameCur_ - s;
+        for (int i = s; i <= nameLen_ - n; ++i) nameBuf_[i] = nameBuf_[i + n];
+        nameLen_ -= n; nameCur_ = s;
     }
-    void feed_delete()      {                                  // delete the char AT the cursor (forward)
+    void feed_delete()      {                                  // delete the whole UTF-8 char AT the cursor (forward)
         if (nameCur_ >= nameLen_) return;
-        for (int i = nameCur_; i < nameLen_; ++i) nameBuf_[i] = nameBuf_[i + 1];
-        --nameLen_;
+        int e = nameCur_ + 1;
+        while (e < nameLen_ && ((unsigned char)nameBuf_[e] & 0xC0) == 0x80) ++e;   // advance past continuation bytes
+        const int n = e - nameCur_;
+        for (int i = nameCur_; i <= nameLen_ - n; ++i) nameBuf_[i] = nameBuf_[i + n];
+        nameLen_ -= n;
     }
-    void cursor_left()      { if (nameCur_ > 0) --nameCur_; }
-    void cursor_right()     { if (nameCur_ < nameLen_) ++nameCur_; }
+    void cursor_left()      { if (nameCur_ > 0) { --nameCur_; while (nameCur_ > 0 && ((unsigned char)nameBuf_[nameCur_] & 0xC0) == 0x80) --nameCur_; } }
+    void cursor_right()     { if (nameCur_ < nameLen_) { ++nameCur_; while (nameCur_ < nameLen_ && ((unsigned char)nameBuf_[nameCur_] & 0xC0) == 0x80) ++nameCur_; } }
     void cursor_home()      { nameCur_ = 0; }
     void cursor_end()       { nameCur_ = nameLen_; }
     void feed_enter()       { kbCommit_ = true; }   // consumed in draw() -> save the typed profile

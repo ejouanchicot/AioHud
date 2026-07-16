@@ -298,6 +298,7 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
 // through the OS keyboard LAYOUT (ToAsciiEx) so AZERTY / accents / Shift / AltGr / every symbol come
 // out right -- NOT a hard-coded QWERTY table. While a config text field is focused we feed the char
 // and CONSUME the key (return 1) so the game never sees it ; otherwise the key passes straight through.
+static bool g_keyLog = false;   // //aio keylog -> dump every key event to aiohud_debug.log for diagnosing input bugs
 unsigned int aio_plugin_key(u32 key, u32 b, u32 /*c*/) {
     // RE'd from a live capture : a = DirectInput scan code ; b distinguishes press vs release --
     // a PRESS carries a large value (a pointer, b > 0xFFFF), a RELEASE a small one (0 / modifier
@@ -328,6 +329,10 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 /*c*/) {
         nc = ToUnicodeEx(vk, (UINT)dik, ks, wbuf, 8, 0x4, frHkl);   // 0x4 = don't mutate kernel state
         ks[VK_CONTROL] = savedCtrl;
     }
+    if (g_keyLog) debug::log("KEY dik=%02X b=%08X vk=%02X pr=%d nc=%d ch=U+%04X sh=%d ct=%d al=%d want=%d",
+                             dik, (unsigned)b, vk, (int)pressed, nc, (unsigned)wbuf[0],
+                             (ks[VK_SHIFT] & 0x80) != 0, (ks[VK_CONTROL] & 0x80) != 0, (ks[VK_MENU] & 0x80) != 0,
+                             (int)g_hud.config().wants_keys());
 
     // DIK_RETURN key-UP guard : Enter's key-DOWN commits + blurs the field the SAME frame, so by the time
     // its key-UP arrives wants_keys() is false and the stray release would reach the game (opening chat).
@@ -355,7 +360,7 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 /*c*/) {
         else if (dik == 0xD3 || (dik == 0x53 && nc == 0)) g_hud.config().feed_delete();    // Delete
         else if (nc != 0) {   // nc 1 = char ; nc -1 = dead key (^ ¨ ...) -> feed its spacing form ; nc 2 = combined
             unsigned w = (unsigned)wbuf[0];
-            if (w >= 32 && w < 256 && w != 127) g_hud.config().feed_char((char)w);
+            if (w >= 32 && w < 256 && w != 127) g_hud.config().feed_char(w);   // codepoint -> feed_char UTF-8-encodes it
         }
     }
     return 1u;   // consume EVERY key while typing -> the game stays quiet
@@ -524,6 +529,12 @@ void aio_plugin_command(const char* cmd)
     // //aio config -> toggle the full-screen configuration overlay. "config N" = select tab N (1..3).
     if (strstr(buf, "update")) {   // //aio update -> spawn the no-window updater (the AioUpdate Lua addon drives the unload/load)
         spawn_updater(false);      // silent on purpose : //aioupdate must produce no console output
+        return;
+    }
+    if (strstr(buf, "keylog")) {   // //aio keylog -> toggle dumping every key event to aiohud_debug.log (input diagnosis)
+        g_keyLog = !g_keyLog;
+        g_host.console().print(g_keyLog ? ">>> AioHud : key log ON (type in the profile name field, then send aiohud_debug.log) <<<"
+                                        : ">>> AioHud : key log OFF <<<");
         return;
     }
     if (strstr(buf, "config")) {
