@@ -37,7 +37,7 @@ end
 
 -- run update.ps1 in a given mode ; return its trimmed stdout (a single status line)
 local function run(mode)
-    local cmd = ('powershell -NoProfile -ExecutionPolicy Bypass -File "%s" -Mode %s -Repo %s -Current "%s" -PluginsDir "%s" -Zip "%s" 2>&1')
+    local cmd = ('powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "%s" -Mode %s -Repo %s -Current "%s" -PluginsDir "%s" -Zip "%s" 2>&1')
         :format(ps1, mode, REPO, installed(), plugins_dir, zip)
     local h = io.popen(cmd)
     if not h then return 'ERROR could-not-run-powershell' end
