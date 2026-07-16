@@ -306,29 +306,31 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 /*c*/) {
     // non-zero -> it looked pressed -> keys stuck.) c is junk.
     const int  dik     = (int)key & 0xFF;
     const bool pressed = (b > 0xFFFF);
-    // Windower hands us a US-positional scan code (it built it from the VK via the US layout), NOT the
-    // hardware scan code -> mapping it back through the user's layout double-shifts it (AZERTY 'a' came
-    // in as US scan 0x1E, which French maps to 'q' = the QWERTY symptom). So : (1) undo with the US
-    // layout to recover the real VK, (2) translate that VK to a char with the USER's (game) layout.
+    // Windower hands us a US-POSITIONAL scan code (built from the VK via the US layout), NOT the raw hardware
+    // scan -> recover the real VK by mapping it back through the US layout, then translate that VK to a char
+    // with the USER's layout (AZERTY / accents / any locale -- e.g. AZERTY 'a' arrives as US scan 0x1E).
     static HKL usHkl = LoadKeyboardLayoutA("00000409", 0x80 /*KLF_NOTELLSHELL : load US, don't activate*/);
-    DWORD tid = g_gameHwnd ? GetWindowThreadProcessId((HWND)g_gameHwnd, NULL) : 0;
-    HKL   frHkl = GetKeyboardLayout(tid);                   // the user's real layout (e.g. French 040C)
-    static BYTE ks[256] = { 0 };
-    const UINT vk = MapVirtualKeyExA((UINT)dik, 1 /*MAPVK_VSC_TO_VK*/, usHkl);   // US scan -> real VK
-    if (vk) ks[vk & 0xFF] = pressed ? 0x80 : 0x00;          // keep Shift/Ctrl/Alt/AltGr current
-    aio::edit_set_modifiers((ks[VK_SHIFT] & 0x80) != 0, (ks[VK_CONTROL] & 0x80) != 0);   // expose to the render thread (edit-mode axis-lock)
+    const DWORD tid    = g_gameHwnd ? GetWindowThreadProcessId((HWND)g_gameHwnd, NULL) : 0;
+    const HKL   layout = GetKeyboardLayout(tid);           // the user's real layout (e.g. French 040C)
+    const UINT  vk     = MapVirtualKeyExA((UINT)dik, 1 /*MAPVK_VSC_TO_VK*/, usHkl);   // US scan -> real VK
+
+    // MODIFIER STATE lives in b's LOW BYTE on EVERY event (verified over 200+ captured events) : bit 0x01 = Shift,
+    // 0x04 = Ctrl, 0x08 = Alt. Reading it here is ROCK-SOLID. We do NOT track the modifier KEYS' press/release :
+    // Windower streams those as a FLICKERING press/release burst while the mouse moves, which used to leave the
+    // edit-mode axis-lock stuck on BOTH axes and type the wrong case. AltGr sets Ctrl+Alt here on its own.
+    const bool mShift = (b & 0x01) != 0, mCtrl = (b & 0x04) != 0, mAlt = (b & 0x08) != 0;
+    BYTE ks[256] = { 0 };
+    if (mShift) ks[VK_SHIFT]   = 0x80;
+    if (mCtrl)  ks[VK_CONTROL] = 0x80;
+    if (mAlt)   ks[VK_MENU]    = 0x80;
+    if (GetKeyState(VK_CAPITAL) & 1) ks[VK_CAPITAL] = 0x01;   // Caps Lock toggle (best-effort)
+    aio::edit_set_modifiers(mShift, mCtrl);                    // edit-mode axis-lock : always the TRUE state now
 
     int nc = 0; WCHAR wbuf[8] = { 0 };
-    // Pass the ORIGINAL scan code (a valid US scan) -- recomputing the user-layout scan returns 0 for
-    // many OEM/punctuation VKs, which made ToUnicode fail -> the missing , ; : ! ? . / etc.
-    if (pressed && vk) {
-        // AltGr = Ctrl+Alt. Windower may forward only Alt -> force Ctrl while Alt is held so ToUnicode
-        // emits the AltGr glyphs (@ # { [ | ...). Temporary, restored right after.
-        const BYTE savedCtrl = ks[VK_CONTROL];
-        if (ks[VK_MENU] & 0x80) ks[VK_CONTROL] = 0x80;
-        nc = ToUnicodeEx(vk, (UINT)dik, ks, wbuf, 8, 0x4, frHkl);   // 0x4 = don't mutate kernel state
-        ks[VK_CONTROL] = savedCtrl;
-    }
+    // Pass the ORIGINAL scan code (a valid US scan) -- recomputing the user-layout scan returns 0 for many
+    // OEM/punctuation VKs, which made ToUnicode fail (the missing , ; : ! ? . / etc.).
+    if (pressed && vk)
+        nc = ToUnicodeEx(vk, (UINT)dik, ks, wbuf, 8, 0x4, layout);   // 0x4 = don't mutate kernel dead-key state
     if (g_keyLog) debug::log("KEY dik=%02X b=%08X vk=%02X pr=%d nc=%d ch=U+%04X sh=%d ct=%d al=%d want=%d",
                              dik, (unsigned)b, vk, (int)pressed, nc, (unsigned)wbuf[0],
                              (ks[VK_SHIFT] & 0x80) != 0, (ks[VK_CONTROL] & 0x80) != 0, (ks[VK_MENU] & 0x80) != 0,
