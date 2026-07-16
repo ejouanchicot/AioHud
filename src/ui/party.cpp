@@ -991,13 +991,30 @@ void Party::draw(const Frame& f) {
         }
     }
 
+    // Reserve the BUFF STRIP (drawn to the LEFT of the party box, tier 0 only) in the box's edit/occlusion
+    // rect, so the buffs count toward the size even though they sit outside the box : they respect zones,
+    // repel other boxes, and are grabbable. Width = the real drawn strip (widest member, capped by Max Buffs).
+    float buffW = 0.0f;
+    if (tier_ == 0) {
+        int maxNb = 0; for (int i = 0; i < n; ++i) if (rows[i].buffs && rows[i].nbuff > maxNb) maxNb = rows[i].nbuff;
+        int bmax = ui_config().buffMax; if (bmax < 1) bmax = 1; if (bmax > 32) bmax = 32; if (maxNb > bmax) maxNb = bmax;
+        const int PERROW = (ui_config().buffRows > 1) ? 16 : 32;
+        const int cnt = maxNb < PERROW ? maxNb : PERROW;
+        if (cnt > 0) {
+            float csz = ui_config().cursorScale; if (csz < 0.5f) csz = 0.5f; if (csz > 2.0f) csz = 2.0f;
+            const float curBand = snap(coreBandH() * S), curW = curBand * 1.30f * csz;
+            const float bmar = snap(curW * 0.55f + 6.0f * S), bs = snap(buffIconH() * S), bgap = snap(1.0f * S);
+            buffW = bmar + (float)cnt * bs + (float)(cnt - 1) * bgap;
+        }
+    }
+
     // EDIT MODE : drag this box to reposition it live on the game (stores a fraction-of-screen pos).
-    // The drag operates on the REAL cluster rect (= g_boxRect : party box + the cost box on top, AFTER
-    // mask/solo grow-up), so dragging + snapping line up with what's drawn. The stored position is the
-    // PLACED top (cluster top + costH + maskOff) so it round-trips through the grow-up next frame.
+    // The drag operates on the REAL cluster rect (= g_boxRect : party box + the cost box on top + the left
+    // buff strip, AFTER mask/solo grow-up), so dragging + snapping line up with what's drawn. The stored
+    // position is the PLACED top (box top + costH + maskOff) so it round-trips through the grow-up next frame.
     if (ui_config().editLayout && f.mouse && f.screenW > 0.0f) {
         const MouseState* m = f.mouse;
-        const float clX = px, clY = boxOy - costH, clW = w, clH = boxH + costH;   // the published cluster rect (what the user sees / grabs)
+        const float clX = px - buffW, clY = boxOy - costH, clW = w + buffW, clH = boxH + costH;   // cluster incl. the left buff strip
         const bool over = m->x >= clX && m->x < clX + clW && m->y >= clY && m->y < clY + clH;
         if (m->clicked && g_dragTier < 0 && over && edit_drag_grab(&g_dragTier)) {   // FRESH click + shared lock (can't grab while any other box drags)
             g_dragTier = tier_; g_grabDX = m->x - clX; g_grabDY = m->y - clY;
@@ -1029,12 +1046,12 @@ void Party::draw(const Frame& f) {
                 edit_box_push_out(EDITBOX_PARTY + tier_, f.t, ex, ey, ew, eh);   // GLOBAL no-overlap : repelled by the standalone boxes + the other clusters (magnetic snap above already keeps them adjacent, so this only fires on a real overlap)
                 if (ex > f.screenW - ew) ex = f.screenW - ew; if (ex < 0.0f) ex = 0.0f;
                 if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
-                // cluster top-left -> stored PLACED top : undo costH (party box top) + maskOff (grow-up)
-                float nx = ex / f.screenW, ny = (ey + costH + maskOff) / f.screenH;
+                // cluster top-left -> stored PLACED top : the box px = ex + buffW (undo the left strip) ; undo costH + maskOff
+                float nx = (ex + buffW) / f.screenW, ny = (ey + costH + maskOff) / f.screenH;
                 nx = nx < 0.0f ? 0.0f : (nx > 1.0f ? 1.0f : nx);   // never store an off-screen position that
                 ny = ny < 0.0f ? 0.0f : (ny > 1.0f ? 1.0f : ny);   // would make the box un-grabbable next time
                 ui_config().box[tier_].posSet = true; ui_config().box[tier_].x = nx; ui_config().box[tier_].y = ny;
-                px = snap(ex);                                         // immediate horizontal feedback (vertical settles next frame, no row/chrome split)
+                px = snap(ex + buffW);                                 // immediate horizontal feedback (box px = cluster left + the buff strip)
             } else { g_dragTier = -1; edit_drag_release(&g_dragTier); }  // released -> free the shared lock
         }
         if (over && !edit_drag_busy())                                 // hovering a grabbable box (nothing dragging) -> same neon cue as the standalone boxes
@@ -1048,9 +1065,9 @@ void Party::draw(const Frame& f) {
     }
     // store the CLUSTER rect (party box + the cost box above it for tier 0) so other boxes snap to
     // its real top, and the party itself snaps using the cost-box top.
-    g_boxRect[tier_].x = px; g_boxRect[tier_].y = boxOy - costH; g_boxRect[tier_].w = w; g_boxRect[tier_].h = boxH + costH; g_boxRect[tier_].valid = true;
-    if (ui_config().editLayout)   // publish the cluster to the SHARED registry so the standalone boxes repel it too
-        edit_box_publish(EDITBOX_PARTY + tier_, px, boxOy - costH, w, boxH + costH, f.t);
+    g_boxRect[tier_].x = px - buffW; g_boxRect[tier_].y = boxOy - costH; g_boxRect[tier_].w = w + buffW; g_boxRect[tier_].h = boxH + costH; g_boxRect[tier_].valid = true;   // incl. the left buff strip (right edge px+w unchanged -> alliance right-align still holds)
+    if (ui_config().editLayout)   // publish the cluster (incl. the left buff strip) so the standalone boxes repel it too
+        edit_box_publish(EDITBOX_PARTY + tier_, px - buffW, boxOy - costH, w + buffW, boxH + costH, f.t);
     const float cx  = px + pad + inset;
     const float gx0 = px + w - pad - inset - (3 * gw + 2 * ggap);
     // row-invariant column positions (only the row's Y varies) :
