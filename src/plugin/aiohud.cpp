@@ -89,7 +89,9 @@ static void parse_fill_string(const char* s)
 
 // A plugin can't //lua load an addon itself (the host interface exposes no command executor), but Windower runs
 // <Windower>\scripts\init.txt at every launch. So we register "lua load aioupdate" there (idempotent) : the
-// companion updater addon then auto-loads with Windower, no manual //lua load needed. Takes effect next launch.
+// companion updater addon then auto-loads with Windower, no manual //lua load. We insert it right AFTER the
+// "load AioHud" line so it loads together with the plugin at startup (not late, after any post-login `wait`).
+// Takes effect on the next Windower launch (init.txt is only read then).
 static void ensure_addon_autoload()
 {
     char root[300];
@@ -98,16 +100,27 @@ static void ensure_addon_autoload()
     s = strrchr(root, '\\'); if (s) *s = 0;              // -> ...        (Windower root)
     char ini[360]; _snprintf(ini, sizeof(ini), "%s\\scripts\\init.txt", root); ini[sizeof(ini) - 1] = 0;
 
+    static char buf[32768]; size_t n = 0;
     FILE* f = fopen(ini, "rb");
-    if (f) {
-        static char buf[16384];
-        size_t n = fread(buf, 1, sizeof(buf) - 1, f); buf[n] = 0; fclose(f);
-        if (strstr(buf, "aioupdate")) return;            // already registered -> nothing to do
-    }
+    if (f) { n = fread(buf, 1, sizeof(buf) - 1, f); fclose(f); }
+    buf[n] = 0;
+    if (strstr(buf, "aioupdate")) return;                // already registered -> nothing to do
+    bool full = (n >= sizeof(buf) - 1);                  // file bigger than our buffer -> don't risk a truncating rewrite
+
     char dir[360]; _snprintf(dir, sizeof(dir), "%s\\scripts", root); dir[sizeof(dir) - 1] = 0;
     CreateDirectoryA(dir, NULL);                         // scripts\ may not exist yet
-    f = fopen(ini, "ab");                                // append (don't clobber the user's other init lines)
-    if (f) { fputs("\r\nlua load aioupdate\r\n", f); fclose(f); }
+
+    // Insert right after the line that loads the plugin, e.g. "\nload AioHud\n" -> keep it grouped + early.
+    char* at = strstr(buf, "\nload AioHud");
+    if (at && !full) {
+        char* eol = strchr(at + 1, '\n');               // end of the "load AioHud" line
+        size_t cut = eol ? (size_t)(eol - buf) + 1 : n;
+        f = fopen(ini, "wb");
+        if (f) { fwrite(buf, 1, cut, f); fputs("lua load aioupdate\r\n", f); fwrite(buf + cut, 1, n - cut, f); fclose(f); }
+    } else {
+        f = fopen(ini, "ab");                            // no plugin line found (or huge file) -> just append
+        if (f) { fputs("\r\nlua load aioupdate\r\n", f); fclose(f); }
+    }
 }
 
 // ===== IPlugin hooks (declared in windower_plugin.h) =====

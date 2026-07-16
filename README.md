@@ -53,14 +53,15 @@ Type `//aio edit` to arrange the interface live over the game:
 2. **Extract it into your Windower folder** — the one that already contains `plugins\` and `addons\` (e.g. `D:\Windower\`). This drops:
    - `plugins\AioHud.dll` + `plugins\AioHud\` (the plugin and its assets)
    - `addons\aioupdate\` (the in-game updater)
-3. **Load it at startup.** Open `Windower\scripts\init.txt` and add this line on its own line:
+3. **Load it at startup.** Open `Windower\scripts\init.txt` in a text editor and add these two lines (near the other addons is fine):
    ```
    load AioHud
+   lua load aioupdate
    ```
-   Save. AioHud now loads every time you launch the game. *(Or tick **AioHud** in the Windower launcher's Plugins tab.)*
-4. **Start the game** — or type `//load AioHud` if you're already in.
+   The first loads the HUD; the second loads the one-click in-game updater. Save the file — both now load every time you launch the game.
+4. **Start the game** (or, this once, type `//load AioHud` and `//lua load aioupdate` to load them without restarting).
 
-The first time it loads, AioHud registers its updater (`lua load aioupdate`) in `init.txt` for you, so updates work with nothing else to set up.
+> **Why two lines?** A Windower plugin can't load a Lua addon on its own, so the updater is a tiny companion addon that rides alongside AioHud. Add both once and you never think about it again.
 
 ## Commands
 
