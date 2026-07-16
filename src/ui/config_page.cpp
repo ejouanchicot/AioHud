@@ -108,6 +108,18 @@ static void tab_icon(u32 dev, int kind, float cx, float cy, float s, u32 col, Fo
         fo->draw_c(dev, cx, cy, "?", s * 1.18f, col, fa(C_STROKE), 1.2f);
     }
 }
+// AioHud's OWN arrow cursor (config option "Cursor", OFF by default) -> for players whose modded game DAT hides
+// the native pointer, so they'd otherwise have no cursor at all in this window. Drawn last, on top of everything.
+static void draw_ui_cursor(u32 dev, const MouseState* mo) {
+    if (!ui_config().uiCursor || !mo) return;
+    const float x = snap(mo->x), y = snap(mo->y), s = snap(1.0f);
+    const float cx[3] = { x, x, x + 11.0f * s };
+    const float cy[3] = { y, y + 16.0f * s, y + 11.0f * s };
+    for (int i = 0; i < 3; ++i) seg_soft(dev, cx[i], cy[i], cx[(i + 1) % 3], cy[(i + 1) % 3], snap(3.2f), 0xE6000000u);   // dark outline (visible on any background)
+    const float xy[6] = { cx[0], cy[0], cx[1], cy[1], cx[2], cy[2] };
+    fill_poly_aa(dev, xy, 3, 0xFFFFFFFFu);                                                                               // white arrow fill
+}
+
 // Hate List Help sample : the REAL Hate List renderer in preview mode (config-aware fiole rows). Defined in
 // hud_hatelist.cpp, reused here so the Help shows exactly the box you run.
 void hatelist_help_box(const Frame& f, float cx, float cy, float s);
@@ -818,6 +830,17 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
               ui_config().fontFace = gf;              // and the HUD default text face
               save_ui_config(); } }
         ROW_NEXT(52.0f)
+        // Cursor : draw AioHud's OWN mouse pointer in this window. OFF by default (the game already shows one) ;
+        // turn it ON if a modded game DAT hides the native cursor and you have no pointer here.
+        { ROW_BAND(48.0f)
+            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Cursor", "Curseur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            const bool on = ui_config().uiCursor != 0;
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
+                ui_config().uiCursor = !ui_config().uiCursor; save_ui_config(); }
+        }
+        ROW_NEXT(48.0f)
         // Custom accent : a toggle that swaps the style presets + nuance chart for the free HSV picker
         // (uiAccent != 0 = custom). Shown FIRST : a custom accent overrides style/colour in apply_ui_theme, so the
         // style selector + chart below are only shown when Custom is OFF (else they'd sit there inert).
@@ -1260,7 +1283,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     }
 
     fo->set_upper(false);   // clear the Interface UPPERCASE so the shared font atlas doesn't stay forced elsewhere
-    // (no custom cursor : the game/OS already shows one -> avoid a double pointer)
+    draw_ui_cursor(f.dev, mo);   // optional custom pointer (default off ; on for modded-DAT clients with no native cursor)
 }
 
 // Configuration-tab quick profile switcher. Drawn AFTER the module content (over an opaque cover) so a tall page's
@@ -1712,7 +1735,7 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
                 editConfirm_ = 0;
             }
         }
-        // (no custom cursor : the game/OS already shows one -> avoid a double pointer)
+        draw_ui_cursor(dev, mo);   // optional custom pointer (edit-layout mode) for modded-DAT clients with no native cursor
 }
 
 // ---- Profile tab (tab_ == 1 branch), lifted verbatim from draw() (byte-identical). ----

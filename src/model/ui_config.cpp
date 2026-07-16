@@ -112,6 +112,7 @@ static void save_config_to(const char* path) {
     fprintf(f, "uiStyle=%d\n", c.uiStyle);
     fprintf(f, "uiColor=%d\n", c.uiColor);
     fprintf(f, "uiAccent=%08X\n", c.uiAccent);
+    fprintf(f, "uiCursor=%d\n", c.uiCursor);
     fprintf(f, "cursorScale=%.4f\n", c.cursorScale);
     fprintf(f, "tgtBox=%d\n", c.tgtBox);
     fprintf(f, "tgtBoxAlpha=%.4f\n", c.tgtBoxAlpha);
@@ -313,6 +314,7 @@ static bool load_config_from(const char* path) {
         else if (sscanf(line, "uiStyle=%d", &v) == 1)    c.uiStyle = v;
         else if (sscanf(line, "uiColor=%d", &v) == 1)    c.uiColor = v;
         else if (sscanf(line, "uiAccent=%x", &uc) == 1)  c.uiAccent = uc;
+        else if (sscanf(line, "uiCursor=%d", &v) == 1)   c.uiCursor = v;
         else if (sscanf(line, "cursorScale=%f", &fv) == 1) c.cursorScale = fv;
         else if (sscanf(line, "tgtBox=%d", &v) == 1)     c.tgtBox = v;
         else if (sscanf(line, "tgtBoxAlpha=%f", &fv) == 1) c.tgtBoxAlpha = fv;
@@ -736,7 +738,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.buffScale != b.buffScale) return false;
     if (a.buffMax != b.buffMax) return false;
     if (a.buffRows != b.buffRows) return false;
-    if (a.uiStyle != b.uiStyle || a.uiColor != b.uiColor || a.uiAccent != b.uiAccent) return false;
+    if (a.uiStyle != b.uiStyle || a.uiColor != b.uiColor || a.uiAccent != b.uiAccent || a.uiCursor != b.uiCursor) return false;
     if (a.cursorScale != b.cursorScale) return false;
     for (int i = 0; i < 6; ++i) if (a.partyRef[i] != b.partyRef[i]) return false;
     if (a.partyBottomY != b.partyBottomY) return false;
@@ -936,7 +938,7 @@ void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew
 void reset_ui_config() {   // general Default : everything
     UiConfig& c = ui_config();
     c.partyShow = 1; c.allyShow = 1; c.tgtShow = 1; c.plrShow = 1;
-    c.skinTheme = 0; c.skinLum = 0.0f; c.skinHue = 0; c.skinBoxAlpha = 1.0f; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.buffRows = 2; c.uiStyle = 0; c.uiColor = 0; c.uiAccent = 0; c.cursorScale = 1.0f;
+    c.skinTheme = 0; c.skinLum = 0.0f; c.skinHue = 0; c.skinBoxAlpha = 1.0f; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.buffRows = 2; c.uiStyle = 0; c.uiColor = 0; c.uiAccent = 0; c.uiCursor = 0; c.cursorScale = 1.0f;
     c.allyThemeCopy = 1; c.allyTheme = 0; c.allyLum = 0.0f; c.allyHue = 0; c.allyBoxAlpha = 1.0f;
     for (int k = 0; k < 3; ++k) { c.barHeight[k] = 1.0f; c.barWidth[k] = 1.0f; c.badgeScale[k] = 1.0f; c.gaugeStyle[k] = 0; c.jobBadge[k] = 2; c.cast[k] = true; }
     c.dist[0] = c.dist[1] = c.dist[2] = true;
