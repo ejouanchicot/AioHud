@@ -13,7 +13,7 @@ namespace aio {
 // stable ids for EVERY draggable box (registry slots -> global box-vs-box collision : a dragged box is
 // repelled by all the others so no two overlap, across BOTH drag systems). Standalone boxes + the three
 // Party/Alliance clusters.
-enum { EDITBOX_TARGET = 0, EDITBOX_PLAYER, EDITBOX_MINIMAP, EDITBOX_PARTY, EDITBOX_ALLY1, EDITBOX_ALLY2, EDITBOX_WS, EDITBOX_SKILLCHAIN, EDITBOX_TREASURE, EDITBOX_HATE, EDITBOX_POINTWATCH, EDITBOX_GRIMOIRE, EDITBOX_ZONETRACKER, EDITBOX_TIMERS, EDITBOX_TIMERS_R, EDITBOX_COUNT };
+enum { EDITBOX_TARGET = 0, EDITBOX_PLAYER, EDITBOX_MINIMAP, EDITBOX_PARTY, EDITBOX_ALLY1, EDITBOX_ALLY2, EDITBOX_WS, EDITBOX_SKILLCHAIN, EDITBOX_TREASURE, EDITBOX_HATE, EDITBOX_POINTWATCH, EDITBOX_GRIMOIRE, EDITBOX_ZONETRACKER, EDITBOX_TIMERS, EDITBOX_TIMERS_R, EDITBOX_EQUIP, EDITBOX_COUNT };
 
 // GLOBAL box-occupancy registry (shared by both drag systems). Publish a box's screen rect each frame it is
 // drawn (`t` = f.t stamp -> a box not seen recently stops repelling). push_out shoves (ex,ey,ew,eh) out of

@@ -43,6 +43,8 @@ static const char* tab_label(int i) {
 int  aio_update_check_status(char* ver, int n);   // 0 unknown/checking, 1 up-to-date, 2 available, 3 error ; fills ver
 void aio_update_spawn_check();                     // re-run the no-window check
 void aio_update_request();                          // write the flag the AioUpdate addon polls -> full //aioupdate
+int  aio_update_progress(char* msg, int n);         // 0 idle, 1 working, 2 up-to-date, 3 updated, 4 error ; fills msg (version / error)
+void aio_update_clear();                            // forget the in-progress state -> back to the normal check flow
 const char* aio_version_string();
 // Settings modules (the Configuration sidebar). Add a module here = a new settings page ; the profile
 // is GLOBAL (a profile snapshots every module), so it lives in the profile bar, not per-module.
@@ -2197,7 +2199,7 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
 // ---- Update tab (tab_ == 4) : version + release check + a one-click in-game update button. ----
 void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
                                  float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse, float e) {
-    (void)f; (void)pageBot; (void)e;
+    (void)pageBot; (void)e; (void)pulse;
     char ver[64] = { 0 };
     const int  st  = aio_update_check_status(ver, sizeof(ver));   // 0 checking, 1 up-to-date, 2 available, 3 error
     const char* cur = aio_version_string();
@@ -2214,6 +2216,46 @@ void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseS
     fo->draw_c(dev, midX, cy + snap(46.0f), tr("AioHud Update", "Mise \xC3\xA0 jour AioHud"), snap(24.0f), fa(C_GOLDHI), fa(C_STROKE), 1.4f);
     char inst[96]; _snprintf(inst, sizeof(inst), "%s : V%s", tr("Installed", "Install\xC3\xA9""e"), cur); inst[sizeof(inst) - 1] = 0;
     fo->begin(dev); fo->draw_c(dev, midX, cy + snap(98.0f), inst, snap(16.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+
+    // ---- an update requested from this tab is IN FLIGHT (or just finished) -> show live progress instead of the
+    //      check status, so the user knows something is happening before the addon //unloads + //reloads the HUD. ----
+    char pmsg[96] = { 0 };
+    const int prog = aio_update_progress(pmsg, sizeof(pmsg));   // 0 idle, 1 working, 2 up-to-date, 3 updated, 4 error
+    if (prog != 0) {
+        char line[128]; u32 pcol; const char* pbtn = 0; int pbtnKind = 0;
+        if (prog == 1) {   // working : animated label + indeterminate bar, NO button (can't re-trigger mid-update)
+            int nd = ((int)(f.t * 2.0f)) % 4; char dots[4] = { 0 }; for (int i = 0; i < nd; ++i) dots[i] = '.';
+            _snprintf(line, sizeof(line), "%s%s", tr("Updating", "Mise \xC3\xA0 jour"), dots); pcol = C_GOLDHI;
+        } else if (prog == 2) { _snprintf(line, sizeof(line), "%s", tr("Already up to date", "D\xC3\xA9j\xC3\xA0 \xC3\xA0 jour")); pcol = 0xFF6BE06Bu; pbtn = tr("Check again", "Rev\xC3\xA9rifier"); }
+        else if (prog == 3)   { _snprintf(line, sizeof(line), "%s v%s", tr("Updated", "Mis \xC3\xA0 jour"), pmsg);             pcol = 0xFF6BE06Bu; pbtn = tr("Done", "OK"); }
+        else                  { _snprintf(line, sizeof(line), "%s", tr("Update failed", "\xC3\x89""chec de la mise \xC3\xA0 jour")); pcol = 0xFFF06060u; pbtn = tr("Retry", "R\xC3\xA9""essayer"); pbtnKind = 1; }
+        line[sizeof(line) - 1] = 0;
+        fo->begin(dev); fo->draw_c(dev, midX, cy + snap(146.0f), line, snap(18.0f), fa(pcol), fa(C_STROKE), 1.1f);
+        if (prog == 4 && pmsg[0]) { fo->begin(dev); fo->draw_c(dev, midX, cy + snap(170.0f), pmsg, snap(12.0f), fa(C_DIM), fa(C_STROKE), 1.0f); }
+
+        if (prog == 1) {
+            // indeterminate progress bar : a track + a highlight segment sliding across, looped on f.t.
+            const float trackW = snap(360.0f), trackH = snap(10.0f);
+            const float tx = midX - trackW * 0.5f, ty = cy + snap(192.0f);
+            rrect_fill(dev, tx, ty, trackW, trackH, trackH * 0.5f, 0xFF0E1622, 0xFF0A0F18);
+            const float segW = trackW * 0.30f;
+            float ph = f.t * 0.7f; ph -= (float)(int)ph;                 // 0..1 loop
+            const float sx = tx - segW + ph * (trackW + segW);
+            const float x0 = sx < tx ? tx : sx, x1 = (sx + segW) > (tx + trackW) ? (tx + trackW) : (sx + segW);
+            if (x1 > x0) rrect_fill(dev, x0, ty, x1 - x0, trackH, trackH * 0.5f, 0xFFF2C24Bu, 0xFFCE9A2Cu);
+            fo->begin(dev); fo->draw_c(dev, midX, ty + snap(34.0f),
+                tr("The HUD will reload in a moment -- your settings are kept.",
+                   "L'interface va se recharger dans un instant -- tes r\xC3\xA9glages sont gard\xC3\xA9s."),
+                snap(12.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
+        } else if (pbtn) {
+            const float bw = snap(230.0f), bh = snap(46.0f), bx = midX - bw * 0.5f, by = cy + snap(196.0f);
+            if (push_btn(dev, fo, mo, click, CTRL_ID, bx, by, bw, bh, pbtn, pbtnKind)) {
+                if (prog == 4) aio_update_request();          // retry the full update
+                else { aio_update_clear(); aio_update_spawn_check(); }   // back to the normal check flow
+            }
+        }
+        return;   // progress UI replaces the check status + button for this frame
+    }
 
     char status[96]; u32 col; const char* btn; bool doUpdate = false;
     if (st == 2)      { col = C_GOLDHI;    _snprintf(status, sizeof(status), "%s : v%s", tr("Update available", "Mise \xC3\xA0 jour dispo"), ver); btn = tr("Update now", "Mettre \xC3\xA0 jour"); doUpdate = true; }

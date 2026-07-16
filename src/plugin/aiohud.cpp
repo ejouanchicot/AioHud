@@ -420,13 +420,50 @@ int aio_update_check_status(char* ver, int n)
 }
 // re-run the no-window check (Update tab "Check again").
 void aio_update_spawn_check() { spawn_updater(true); }
+// ---- live update-progress state (Update tab shows "Checking.../Downloading..." from the click until the addon
+//      //unloads this DLL) : the PS writes phases to data\update\done.txt (READY/OK/UPTODATE/ERROR). We latch the
+//      FINAL phase in memory because the addon deletes done.txt as soon as it acts on it. ----
+static bool  g_updBusy  = false;  // an update was requested from the Update tab this session
+static int   g_updFinal = 0;      // latched terminal phase : 0 none, 1 up-to-date, 2 ok, 3 error
+static char  g_updMsg[96] = { 0 };// latched version (up-to-date/ok) or error message
+static DWORD g_updReqT  = 0;      // tick at request -> soft-timeout if the addon never answers (not loaded?)
+
 // write the request flag the AioUpdate addon polls -> it runs the full //aioupdate (unload/download/load).
 void aio_update_request()
 {
     char dir[300]; aio::plugin_path(dir, sizeof(dir), "data\\update");
     CreateDirectoryA(dir, NULL);
+    char done[340]; _snprintf(done, sizeof(done), "%s\\done.txt", dir); done[sizeof(done) - 1] = 0;
+    DeleteFileA(done);   // drop any stale phase so the tab reads only THIS run's progress
     char p[320]; _snprintf(p, sizeof(p), "%s\\request.txt", dir); p[sizeof(p) - 1] = 0;
     FILE* f = fopen(p, "w"); if (f) { fputs("go", f); fclose(f); }
+    g_updBusy = true; g_updFinal = 0; g_updMsg[0] = 0; g_updReqT = GetTickCount();
+}
+// forget the in-progress state (Update tab's terminal-state button -> back to the normal check flow).
+void aio_update_clear() { g_updBusy = false; g_updFinal = 0; g_updMsg[0] = 0; }
+// progress for the Update tab : 0 idle, 1 working (spinner/bar), 2 up-to-date, 3 updated, 4 error. Fills `msg`
+// with the version (2/3) or the error text (4). Reads data\update\done.txt, latching the terminal phase.
+int aio_update_progress(char* msg, int n)
+{
+    if (msg && n > 0) msg[0] = 0;
+    if (!g_updBusy) return 0;
+    if (g_updFinal) { if (msg && n > 0) lstrcpynA(msg, g_updMsg, n); return g_updFinal + 1; }
+    char p[320]; aio::plugin_path(p, sizeof(p), "data\\update\\done.txt");
+    FILE* f = fopen(p, "rb");
+    if (!f) {   // requested but no phase yet -> "starting/checking" ; time out if the addon never answers (not loaded?)
+        if (GetTickCount() - g_updReqT > 30000u) { g_updFinal = 3; lstrcpynA(g_updMsg, "no response (is AioUpdate loaded? type //aioupdate)", sizeof(g_updMsg)); return 4; }
+        return 1;
+    }
+    char buf[160]; size_t got = fread(buf, 1, sizeof(buf) - 1, f); buf[got] = 0; fclose(f);
+    char word[32] = { 0 }; int off = 0; sscanf(buf, "%31s%n", word, &off);
+    const char* rest = buf + off; while (*rest == ' ' || *rest == '\t') ++rest;   // remainder = version or error text
+    char clean[96]; lstrcpynA(clean, rest, sizeof(clean));
+    for (char* q = clean; *q; ++q) if (*q == '\r' || *q == '\n') { *q = 0; break; }
+    if (!strcmp(word, "READY")) { if (msg && n > 0) lstrcpynA(msg, clean, n); return 1; }   // downloaded, unload imminent
+    if (!strcmp(word, "UPTODATE")) { g_updFinal = 1; lstrcpynA(g_updMsg, clean, sizeof(g_updMsg)); if (msg && n > 0) lstrcpynA(msg, clean, n); return 2; }
+    if (!strcmp(word, "OK"))       { g_updFinal = 2; lstrcpynA(g_updMsg, clean, sizeof(g_updMsg)); if (msg && n > 0) lstrcpynA(msg, clean, n); return 3; }
+    if (!strcmp(word, "ERROR"))    { g_updFinal = 3; lstrcpynA(g_updMsg, clean, sizeof(g_updMsg)); if (msg && n > 0) lstrcpynA(msg, clean, n); return 4; }
+    return 1;
 }
 const char* aio_version_string() { return AIOHUD_VERSION; }
 }   // namespace aio
@@ -530,6 +567,7 @@ void aio_plugin_command(const char* cmd)
 
     // //aio config -> toggle the full-screen configuration overlay. "config N" = select tab N (1..3).
     if (strstr(buf, "update")) {   // //aio update -> spawn the no-window updater (the AioUpdate Lua addon drives the unload/load)
+        aio::g_updBusy = true; aio::g_updFinal = 0; aio::g_updMsg[0] = 0; aio::g_updReqT = GetTickCount();   // Update tab shows live progress whether the trigger was the button or a typed //aioupdate
         spawn_updater(false);      // silent on purpose : //aioupdate must produce no console output
         return;
     }

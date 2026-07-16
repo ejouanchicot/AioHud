@@ -287,7 +287,7 @@ void Hud::render(u32 dev) {
             // MASTER show/hide per module (the config preview draws these separately, so previews stay visible).
             if (strcmp(tn, "PartyList") == 0) { if (static_cast<Party*>(widgets_[i])->tier() == 0 ? !ui_config().partyShow : !ui_config().allyShow) continue; }
             else if (strcmp(tn, "TargetBar") == 0) { if (!ui_config().tgtShow) continue; }
-            else if (strcmp(tn, "PlayerHub")  == 0) { if (!ui_config().plrShow) continue; }
+            else if (strcmp(tn, "PlayerHub")  == 0) { if (!ui_config().plrShow && !(ui_config().plrEquip && ui_config().plrEquipDetach)) continue; }   // still run it when a STANDALONE equipment module needs drawing
             widgets_[i]->draw(f);
         }
         for (size_t i = 0; i < widgets_.size(); ++i)   // hand the Help the party's selection-hand texture (for its live cursor sample)

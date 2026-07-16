@@ -98,6 +98,7 @@ static const char*  plr_up(int e, const char* s, char* buf, int cap) {   // UPPE
 }
 
 static EditBox g_plrEdit;   // shared edit-mode drag state for the (single) Player box
+static EditBox g_equipEdit; // edit-mode drag state for the STANDALONE equipment module (when detached from the Hub)
 
 Player::Player(const GameState* state) : state_(state) {
     px_ = 304.0f; py_ = 636.0f;             // matches the layout default (place_widgets overrides it)
@@ -136,7 +137,7 @@ void Player::preview_footprint(float& w, float& h, float& l, float& t, float& r,
     const int brows = showBuffs ? (nbuff + perRow - 1) / perRow : 0;
     const float bH = brows > 0 ? brows * bIcon + (brows - 1) * bGap : 0.0f;
     const float eqCell = snap(28.0f * S * clampf(c.plrEqCell, 0.5f, 2.0f)), eqGW = 4.0f * eqCell, colGap = snap(6.0f * S);
-    const int   eqp = c.plrEquip ? c.plrEqPlace : -1;
+    const int   eqp = (c.plrEquip && !c.plrEquipDetach) ? c.plrEqPlace : -1;   // detached equipment reserves NO Hub space
     const bool  eqBelow = eqp >= 0 && eqp <= 2, eqSide = eqp == 7 || eqp == 8;
     const float gilBelowH = (c.plrEquip && c.plrGil) ? snap(24.0f * S) : 0.0f;   // gil row under the equip grid
     const float eqGrid = eqBelow ? (eqGW + gilBelowH) : 0.0f, sideW = eqSide ? (eqGW + colGap) : 0.0f;
@@ -253,7 +254,8 @@ void Player::draw(const Frame& f) {
     const float bH   = brows > 0 ? brows * bIcon + (brows - 1) * bGap : 0.0f;
     const float eqCell = snap(28.0f * S * clampf(c.plrEqCell, 0.5f, 2.0f));   // equipment viewer : 4x4 square of cells
     const float eqGW   = 4.0f * eqCell;                         // grid side length
-    const int   eqp    = showEquip ? c.plrEqPlace : -1;
+    const bool  detachEq = showEquip && c.plrEquipDetach != 0;  // equipment is a STANDALONE module -> the Hub reserves no space for it
+    const int   eqp    = (showEquip && !detachEq) ? c.plrEqPlace : -1;
     const bool  eqBelow = eqp >= 0 && eqp <= 2;                 // in-box, stacked BELOW the content (grows H)
     const bool  eqSide  = eqp == 7 || eqp == 8;                 // in-box, a COLUMN beside the content (widens W)
     const float colGap  = snap(6.0f * S);
@@ -296,7 +298,7 @@ void Player::draw(const Frame& f) {
     //      + the alignment grid, identical to the Target box (one implementation in edit_box.cpp). A DOCKED
     //      equipment grid extends the CLICK area (union of the box + the grid) so grabbing the grid drags all. ----
     float hx = px, hy = py, hw = W, hh = H;
-    if (showEquip && c.plrEqPlace >= 3 && c.plrEqPlace <= 6) {   // only the OUTSIDE docks extend the click area
+    if (showEquip && !detachEq && c.plrEqPlace >= 3 && c.plrEqPlace <= 6) {   // only the OUTSIDE docks extend the click area
         const float gw = 4.0f * eqCell, dg = snap(6.0f * S);
         float gX, gY;
         switch (c.plrEqPlace) {
@@ -310,7 +312,7 @@ void Player::draw(const Frame& f) {
         const float bb = (py + H) > (gY + gw) ? (py + H) : (gY + gw);
         hx = l; hy = tp; hw = rr - l; hh = bb - tp;
     }
-    if (c.editLayout && !demo_ &&
+    if (c.plrShow && c.editLayout && !demo_ &&
         edit_box_drag(g_plrEdit, EDITBOX_PLAYER, f, px, py, W, H, ZPERM_HUB,
                       ui_config().plrPosSet, ui_config().plrX, ui_config().plrY,
                       ui_config().plrCenterH, ui_config().plrCenterV, ui_config().plrScale, hx, hy, hw, hh))
@@ -325,6 +327,11 @@ void Player::draw(const Frame& f) {
     const float eqTop = y + eqOff;
     const float barX = ix + (innerW - barW) * 0.5f;              // centred
 
+    // The whole Hub (chrome + identity + vitals + buffs + cast) draws only when the Player module is ON. When
+    // it's OFF we fall straight through to the equipment block below, which STILL renders if equipment is a
+    // STANDALONE module -> the gear grid can be kept even with the Hub hidden. (Body kept at its original indent
+    // to keep this a minimal, reviewable diff.)
+    if (c.plrShow) {
     // ---- box chrome : own Box Theme (Copy Party / procedural family / FFXI-texture), like the Target box ----
     if (c.plrBox) {
         color_state(dev);
@@ -475,11 +482,15 @@ void Player::draw(const Frame& f) {
         }
         dSetTex(dev, 0, 0);
     }
+    }   // end if (c.plrShow) -- the whole Hub body ; the equipment block below still draws when STANDALONE
 
     // ---- equipment viewer : 4x4 grid of the 16 equipped items, each with its real gear icon (bundled 32x32
     //      BMP named by item id, loaded on demand + cached per slot). Slot -> grid position via EQ_DPOS
     //      (the addon's player_equip layout). Missing-icon slots fall back to the item-id text. ----
-    if (showEquip) {
+    if (showEquip && !(detachEq && demo_) && (c.plrShow || detachEq)) {   // draws when the Hub is shown (docked or standalone) OR whenever detached (independent of plrShow) ; skipped only in the config PREVIEW when detached
+        // DOCKED uses the Hub's scale ; STANDALONE uses its own (plrEquipScale) -> shadow S / eqCell for the whole block.
+        const float S = detachEq ? (scale_ * clampf(c.plrEquipScale, 0.5f, 2.0f)) : (scale_ * clampf(c.plrScale, 0.5f, 2.0f));
+        const float eqCell = snap(28.0f * S * clampf(c.plrEqCell, 0.5f, 2.0f));
         static const int EQ_DPOS[16] = { 0, 1, 2, 3, 4, 8, 9, 14, 15, 5, 13, 6, 7, 10, 11, 12 };
         // in-game (even in the config preview) show the player's REAL equipment ; only fabricate a demo
         // set when truly out of game (so the box still populates for out-of-game layout tuning).
@@ -513,19 +524,37 @@ void Player::draw(const Frame& f) {
             }
         }
         const float gridW = 4.0f * eqCell, dgap = snap(6.0f * S);
-        // placement : 0 in-box centre, 1 in-box left, 2 in-box right, 3 dock left, 4 dock right, 5 dock top,
-        //             6 dock bottom, 7 side column LEFT (in-box), 8 side column RIGHT (in-box).
         float gx0, gy0;
-        switch (c.plrEqPlace) {
-            case 1:  gx0 = ix;                          gy0 = eqTop; break;                       // in-box below, left
-            case 2:  gx0 = ix + innerW - gridW;         gy0 = eqTop; break;                       // in-box below, right
-            case 3:  gx0 = x - dgap - gridW;            gy0 = y + (H - gridW) * 0.5f; break;       // dock left  (v-centred)
-            case 4:  gx0 = x + W + dgap;                gy0 = y + (H - gridW) * 0.5f; break;       // dock right
-            case 5:  gx0 = x + (W - gridW) * 0.5f;      gy0 = y - dgap - gridW; break;             // dock top   (h-centred)
-            case 6:  gx0 = x + (W - gridW) * 0.5f;      gy0 = y + H + dgap; break;                 // dock bottom
-            case 7:  gx0 = x + outerPad;                     gy0 = y + vOff; break;       // side column LEFT : starts BELOW the full-width header (content shifted right)
-            case 8:  gx0 = x + outerPad + innerW + colGap;   gy0 = y + vOff; break;       // side column RIGHT : starts below the header too
-            default: gx0 = ix + (innerW - gridW) * 0.5f; gy0 = eqTop; break;                       // in-box below, centre
+        if (detachEq) {
+            // STANDALONE MODULE : own dragged position (a fraction of the screen) + own size. The gil row sits
+            // just under the grid -> include it in the drag/hit height so grabbing anywhere on it moves all.
+            const float gilB = (showGil && c.plrEqGilPlace == 0) ? snap(24.0f * S) : 0.0f;   // gil below -> taller hit rect
+            const float gilR = (showGil && c.plrEqGilPlace == 3) ? snap(80.0f * S) : 0.0f;   // gil right -> wider hit rect
+            const float ew = gridW + gilR, eh = gridW + gilB;   // above/left draw outside the -x/-y edge ; the grid stays the grab target
+            if (!demo_ && c.plrEquipPosSet && f.screenW > 0.0f && f.screenH > 0.0f) {
+                gx0 = c.plrEquipX * f.screenW; gy0 = c.plrEquipY * f.screenH;
+            } else { gx0 = px + W + snap(12.0f * S); gy0 = py; }   // first time : just right of the Hub
+            if (c.editLayout && !demo_) {
+                int chNo = 0, cvNo = 0;   // no centre-lock for the equipment module
+                if (edit_box_drag(g_equipEdit, EDITBOX_EQUIP, f, gx0, gy0, ew, eh, ZPERM_HUB,
+                                  ui_config().plrEquipPosSet, ui_config().plrEquipX, ui_config().plrEquipY,
+                                  chNo, cvNo, ui_config().plrEquipScale))
+                    edit_box_grid(dev, f, g_equipEdit, gx0, gy0, ew, eh, false, false);
+            }
+        } else {
+            // placement : 0 in-box centre, 1 in-box left, 2 in-box right, 3 dock left, 4 dock right, 5 dock top,
+            //             6 dock bottom, 7 side column LEFT (in-box), 8 side column RIGHT (in-box).
+            switch (c.plrEqPlace) {
+                case 1:  gx0 = ix;                          gy0 = eqTop; break;                       // in-box below, left
+                case 2:  gx0 = ix + innerW - gridW;         gy0 = eqTop; break;                       // in-box below, right
+                case 3:  gx0 = x - dgap - gridW;            gy0 = y + (H - gridW) * 0.5f; break;       // dock left  (v-centred)
+                case 4:  gx0 = x + W + dgap;                gy0 = y + (H - gridW) * 0.5f; break;       // dock right
+                case 5:  gx0 = x + (W - gridW) * 0.5f;      gy0 = y - dgap - gridW; break;             // dock top   (h-centred)
+                case 6:  gx0 = x + (W - gridW) * 0.5f;      gy0 = y + H + dgap; break;                 // dock bottom
+                case 7:  gx0 = x + outerPad;                     gy0 = y + vOff; break;       // side column LEFT : starts BELOW the full-width header (content shifted right)
+                case 8:  gx0 = x + outerPad + innerW + colGap;   gy0 = y + vOff; break;       // side column RIGHT : starts below the header too
+                default: gx0 = ix + (innerW - gridW) * 0.5f; gy0 = eqTop; break;                       // in-box below, centre
+            }
         }
         gx0 = snap(gx0); gy0 = snap(gy0);
         const float cellSz = eqCell - snap(1.0f), r = snap(3.0f * S), ipad = snap(2.0f * S), isz = cellSz - 2.0f * ipad;
@@ -604,8 +633,8 @@ void Player::draw(const Frame& f) {
                 seg_soft(dev, cx + cellSz - m, cy + m, cx + m, cy + cellSz - m, th, red);
             }
         }
-        // GIL : coin icon + amount, centred directly BELOW the equipment grid (the header carries it only when
-        // there is no equipment viewer). Uses the grid's own x/width so it stays under it in any placement.
+        // GIL : coin icon + amount, drawn WITH the grid (the header carries it only when there is no equipment
+        // viewer). Docked -> always centred below the grid. Standalone -> the chosen side (below/above/left/right).
         if (showGil && gil_tex_) {
             char gb[16]; format_gil(gb, fake ? 1234567u : g.meGil);
             Font* gf = plr_font(f.fonts, f.font, PLR_GIL);
@@ -613,8 +642,15 @@ void Player::draw(const Frame& f) {
             char gu[24]; const char* gs = plr_up(PLR_GIL, gb, gu, 24);
             const float tw = gf ? gf->measure(gs, gsz) : 0.0f;
             const float blockW = bandIcon + snap(4.0f * S) + tw;
-            const float gcy = snap(gy0 + gridW + snap(6.0f * S) + bandIcon * 0.5f);   // just under the grid
-            const float glx = snap(gx0 + gridW * 0.5f - blockW * 0.5f);              // centred on the grid
+            const float ggap = snap(6.0f * S);
+            const int   gpl = detachEq ? c.plrEqGilPlace : 0;   // docked always below
+            float glx, gcy;                                     // glx = block left, gcy = block vertical centre
+            switch (gpl) {
+                case 1:  glx = snap(gx0 + gridW * 0.5f - blockW * 0.5f); gcy = snap(gy0 - ggap - bandIcon * 0.5f); break;   // above (h-centred)
+                case 2:  glx = snap(gx0 - ggap - blockW);               gcy = snap(gy0 + gridW * 0.5f); break;             // left  (v-centred)
+                case 3:  glx = snap(gx0 + gridW + ggap);                gcy = snap(gy0 + gridW * 0.5f); break;             // right (v-centred)
+                default: glx = snap(gx0 + gridW * 0.5f - blockW * 0.5f); gcy = snap(gy0 + gridW + ggap + bandIcon * 0.5f); break;   // below (h-centred)
+            }
             tex_state(dev, gil_tex_);
             tquad(dev, glx, snap(gcy - bandIcon * 0.5f), bandIcon, bandIcon, 0.0f, 1.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
             dSetTex(dev, 0, 0);

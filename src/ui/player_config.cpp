@@ -149,7 +149,6 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         PLR_TOGGLE(CTRL_ID, "HP",               ui_config().plrHp)
         PLR_TOGGLE(CTRL_ID, "MP",               ui_config().plrMp)
         PLR_TOGGLE(CTRL_ID, "TP",               ui_config().plrTp)
-        PLR_TOGGLE(CTRL_ID, tr("Gil", "Gil"),       ui_config().plrGil)     // keyed by CTRL_ID
         PLR_TOGGLE(CTRL_ID, tr("Speed", "Vitesse"), ui_config().plrSpeed)
         PLR_TOGGLE(CTRL_ID, tr("Buffs", "Buffs"), ui_config().plrBuffs)
         PLR_TOGGLE(CTRL_ID, tr("Equipment", "Équipement"), ui_config().plrEquip)
@@ -236,6 +235,16 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Equipment", "Équipement"), catOpen_[12])) catOpen_[12] = !catOpen_[12];
         ROW_NEXT(42.0f)
         if (catOpen_[12] && ui_config().plrEquip) {
+        // Mode : the equipment lives INSIDE the Player Hub (docked, placement below) or as its OWN standalone
+        // box with its own size, dragged in //aio edit.
+        { ROW_BAND(52.0f)
+            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Mode", "Mode"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().plrEquipDetach ? tr("Standalone", "Autonome") : tr("In Player", "Dans Player"), ui_config().plrEquipDetach != 0)) { ui_config().plrEquipDetach = !ui_config().plrEquipDetach; save_ui_config(); }
+        }
+        ROW_NEXT(52.0f)
+        if (!ui_config().plrEquipDetach) {
         // Placement : inside the box (left/centre/right) or docked outside (left/right).
         { ROW_BAND(52.0f)
             static const char* PL_EN[9] = { "Box \xC2\xB7 Center", "Box \xC2\xB7 Left", "Box \xC2\xB7 Right", "Dock Left", "Dock Right", "Dock Top", "Dock Bottom", "Box \xC2\xB7 Side Left", "Box \xC2\xB7 Side Right" };
@@ -245,6 +254,34 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
                 ui_config().plrEqPlace = wrap(pl + d, 9); save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        } else {
+        // Standalone : its own size ; position is dragged in //aio edit.
+        { ROW_BAND(46.0f)
+            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().plrEquipScale * 100.0f + 0.5f));
+            float v01 = (ui_config().plrEquipScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().plrEquipScale = v < lo ? lo : (v > hi ? hi : v); save_ui_config(); }
+        }
+        ROW_NEXT(46.0f)
+        { ROW_BAND(44.0f)   // placement hint
+            const float ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(19.0f), tr("Position: drag it in //aio edit", "Position : d\xC3\xA9place-le dans //aio edit"), snap(13.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+        }
+        ROW_NEXT(44.0f)
+        }
+        // Gil : it renders WITH the equipment (icon + amount) -> its toggle lives here, not in Content.
+        PLR_TOGGLE(CTRL_ID, tr("Gil", "Gil"), ui_config().plrGil)
+        // Gil position (standalone only) : which side of the grid the gil row sits on.
+        if (ui_config().plrEquipDetach && ui_config().plrGil) {
+        { ROW_BAND(52.0f)
+            static const char* GP_EN[4] = { "Below", "Above", "Left", "Right" };
+            static const char* GP_FR[4] = { "Dessous", "Dessus", "Gauche", "Droite" };
+            int gp = ui_config().plrEqGilPlace; if (gp < 0 || gp > 3) gp = 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Gil position", "Position Gil"), tr(GP_EN[gp], GP_FR[gp]))) {
+                ui_config().plrEqGilPlace = wrap(gp + d, 4); save_ui_config(); }
+        }
+        ROW_NEXT(52.0f)
+        }
         // Cell Size : the gear-cell dimension.
         { ROW_BAND(46.0f)
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().plrEqCell * 100.0f + 0.5f));

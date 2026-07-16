@@ -146,6 +146,11 @@ struct UiConfig {
     int   plrEqThemeBorder = 1;// 1 = cell borders follow the box theme (proc hue / FFXI skin) ; 0 = custom colour below
     unsigned plrEqColor = 0xFF6699BBu;   // custom cell-border colour (used when plrEqThemeBorder == 0)
     int   plrEqPlace = 0;      // equipment grid placement : 0 = in-box centre, 1 = in-box left, 2 = in-box right, 3 = docked LEFT (outside), 4 = docked RIGHT (outside)
+    int   plrEquipDetach = 0;  // 0 = equipment lives INSIDE the Player Hub ; 1 = STANDALONE module (own position + size below, dragged in //aio edit)
+    bool  plrEquipPosSet = false;  // standalone equipment has a user-placed position (edit mode) ; else a default spot
+    float plrEquipX = 0.0f, plrEquipY = 0.0f;   // standalone grid top-left as a FRACTION of the screen when plrEquipPosSet
+    float plrEquipScale = 1.0f;   // standalone equipment size multiplier (0.50 .. 2.00), independent of the Hub scale
+    int   plrEqGilPlace = 0;   // STANDALONE gil position relative to the grid : 0 below, 1 above, 2 left, 3 right (docked always draws it below)
 
     // --- Minimap (phase 1) ---
     int   mmShow = 1;          // show the minimap
