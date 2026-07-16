@@ -4,7 +4,7 @@
 # Phases, each written as a single line to <Data>\update\done.txt (the Lua addon polls it):
 #   UPTODATE <ver>   already on the latest release -> nothing to do
 #   READY <ver>      newer release downloaded -> the addon //unloads AioHud so the DLL can be replaced
-#   OK <ver>         extracted the new build over plugins\ -> the addon //loads AioHud
+#   OK <ver>         extracted the new build over the Windower root (plugins\ + addons\) -> the addon //loads AioHud
 #   ERROR <msg>      something went wrong -> the addon reloads the current build
 param([string]$Current = '0', [string]$Repo = 'Tetsouo/AioHud', [string]$Plugins, [string]$Data)
 $ErrorActionPreference = 'Stop'
@@ -33,7 +33,9 @@ try {
         catch { Start-Sleep -Milliseconds 500 }
     }
     if (-not $unlocked) { Status 'ERROR dll-locked (dual-box? //unload AioHud on the other client)'; exit }
-    Expand-Archive -LiteralPath $zip -DestinationPath $Plugins -Force
+    # the zip is Windower-root-relative (plugins\... + addons\...), so extract over the root = parent of plugins\
+    $root = Split-Path $Plugins -Parent
+    Expand-Archive -LiteralPath $zip -DestinationPath $root -Force
     Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
     Status "OK $tag"
 }

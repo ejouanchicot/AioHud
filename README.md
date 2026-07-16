@@ -19,9 +19,10 @@ Everything is tuned from one full-screen config window (`//aio config`) with a l
 
 ## Install
 
-1. Download **`AioHud-x.y.z.zip`** from the [latest release](../../releases/latest) and **extract it into `<Windower>\plugins\`** — it drops `AioHud.dll` and the `AioHud\` folder in place.
-2. In game: `//load AioHud`
+1. Download **`AioHud-x.y.z.zip`** from the [latest release](../../releases/latest) and **extract it into your Windower root** (the folder that already contains `plugins\` and `addons\`, e.g. `D:\Windower\`). It drops the plugin in `plugins\` and the `//aioupdate` companion addon in `addons\` in one shot.
+2. In game: `//load AioHud` (and, for one-click updates, `//lua load aioupdate`)
 3. Open the config: `//aio config` · move boxes: `//aio edit`
+4. Update later, in game, with **no window**: `//aioupdate`
 
 ## Build from source
 

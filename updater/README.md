@@ -7,16 +7,17 @@ A tiny Windower **Lua addon** that updates the AioHud **plugin** from its latest
 - A Lua-spawned process (`io.popen` / `os.execute`) always **flashes a cmd window**.
 
 So the work is split:
-- **The plugin** launches the updater PowerShell with `CreateProcess + CREATE_NO_WINDOW` (native → truly no window): it checks the latest release, downloads it, **waits** for `AioHud.dll` to unlock, extracts over `plugins\`, and writes `data\update\done.txt`.
+- **The plugin** launches the updater PowerShell with `CreateProcess + CREATE_NO_WINDOW` (native → truly no window): it checks the latest release, downloads it, **waits** for `AioHud.dll` to unlock, extracts the zip over the **Windower root** (so it refreshes both `plugins\AioHud\` and this `addons\aioupdate\` addon), and writes `data\update\done.txt`.
 - **This addon** only sends the trigger (`//aio update`) and does the `//unload` + `//load` the plugin can't — all in **pure Lua** (`send_command` + polling that file), so it never opens a window either.
 
-Your settings are safe: the release zip contains only `AioHud.dll` + `AioHud\assets\` + `AioHud\design\` — your `AioHud\data\` (config, profiles) is never touched.
+Your settings are safe: the release zip contains only `plugins\AioHud.dll` + `plugins\AioHud\assets\` + `plugins\AioHud\design\` + `addons\aioupdate\` — your `plugins\AioHud\data\` (config, profiles) is never touched.
 
 ## Install (once)
-1. Copy the **`aioupdate`** folder into `<Windower>\addons\`.
-2. In game: `//lua load aioupdate` (or add `lua load aioupdate` to `<Windower>\scripts\init.txt` to auto-load).
+The release zip already places this addon in `<Windower>\addons\aioupdate\` when you extract it into your Windower root. So you only need to load it once:
 
-The `aioupdate.ps1` script ships **with the plugin** (in `plugins\AioHud\assets\`), so the addon itself is just the `.lua`.
+1. In game: `//lua load aioupdate` (or add `lua load aioupdate` to `<Windower>\scripts\init.txt` to auto-load).
+
+The `aioupdate.ps1` script ships **with the plugin** (in `plugins\AioHud\assets\`), so this addon is just the `.lua`.
 
 ## Use
 ```
