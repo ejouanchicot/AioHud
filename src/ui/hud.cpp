@@ -378,16 +378,7 @@ void Hud::draw_config_preview(const Frame& f) {
         float sx = 0, sy = 0, sw = 0, sh = 0; config_.preview_rect(sx, sy, sw, sh);
         const float osx = tg->px(), osy = tg->py();
         float tw = 0.0f, th = 0.0f; tg->measure(tw, th);
-        const UiConfig& C = ui_config();
-        const float scW = f.screenW > 0.0f ? f.screenW : 1920.0f, scH = f.screenH > 0.0f ? f.screenH : 1080.0f;
-        // the box CENTRE as a fraction of the real screen (mirror Target::draw's placement logic)
-        float cxf = C.tgtCenterH ? 0.5f : (C.tgtPosSet ? C.tgtX + (tw * 0.5f) / scW : (osx + tw * 0.5f) / scW);
-        float cyf = C.tgtCenterV ? 0.5f : (C.tgtPosSet ? C.tgtY + (th * 0.5f) / scH : (osy + th * 0.5f) / scH);
-        cxf = cxf < 0.0f ? 0.0f : (cxf > 1.0f ? 1.0f : cxf);
-        cyf = cyf < 0.0f ? 0.0f : (cyf > 1.0f ? 1.0f : cyf);
-        float bx = sx + cxf * sw - tw * 0.5f, by = sy + cyf * sh - th * 0.5f;   // centre-fraction -> stage, box centred on it
-        if (bx > sx + sw - tw) bx = sx + sw - tw; if (bx < sx) bx = sx;         // keep the box inside the stage
-        if (by > sy + sh - th) by = sy + sh - th; if (by < sy) by = sy;
+        const float bx = sx + (sw - tw) * 0.5f, by = sy + (sh - th) * 0.5f;   // ALWAYS centred in the preview stage
         tg->set_origin((float)(int)(bx + 0.5f), (float)(int)(by + 0.5f));
         tg->set_demo(true);
         tg->draw(f);
@@ -407,13 +398,9 @@ void Hud::draw_config_preview(const Frame& f) {
         // REAL footprint (incl. in-box equipment grid) + docked-grid margins -> position so nothing spills the preview.
         float tw = 0.0f, th = 0.0f, ml = 0.0f, mt = 0.0f, mr = 0.0f, mb = 0.0f;
         pl->preview_footprint(tw, th, ml, mt, mr, mb);
-        const float scW = f.screenW > 0.0f ? f.screenW : 1920.0f, scH = f.screenH > 0.0f ? f.screenH : 1080.0f;
-        float cxf = (osx + tw * 0.5f) / scW, cyf = (osy + th * 0.5f) / scH;
-        cxf = cxf < 0.0f ? 0.0f : (cxf > 1.0f ? 1.0f : cxf);
-        cyf = cyf < 0.0f ? 0.0f : (cyf > 1.0f ? 1.0f : cyf);
-        float bx = sx + cxf * sw - tw * 0.5f, by = sy + cyf * sh - th * 0.5f;
-        if (bx > sx + sw - tw - mr) bx = sx + sw - tw - mr; if (bx < sx + ml) bx = sx + ml;   // reserve the docked-grid margin
-        if (by > sy + sh - th - mb) by = sy + sh - th - mb; if (by < sy + mt) by = sy + mt;
+        // ALWAYS centred in the stage, within the docked-grid margins so a side equipment grid never spills.
+        const float bx = sx + ml + (sw - ml - mr - tw) * 0.5f;
+        const float by = sy + mt + (sh - mt - mb - th) * 0.5f;
         pl->set_origin((float)(int)(bx + 0.5f), (float)(int)(by + 0.5f));
         pl->set_demo(true);
         pl->draw(f);
@@ -543,10 +530,17 @@ void Hud::draw_config_preview(const Frame& f) {
     for (int i = 0; i < 4; ++i) C.allyRefY[i] = -1.0f;   // preview uses the stacked layout, not the markers
 
     float pw = 0.0f, ph = 0.0f; tiers[0]->measure(pw, ph);   // party box footprint (bottom-anchored, full 6 rows)
+    float tmw = 0.0f, ah1 = 0.0f, ah2 = 0.0f;                // alliance box heights (they stack ABOVE the party)
+    if (tiers[1]) tiers[1]->measure(tmw, ah1);
+    if (tiers[2]) tiers[2]->measure(tmw, ah2);
+    (void)rightX; (void)bottomY;
+    float psx = 0.0f, psy = 0.0f, psw = 0.0f, psh = 0.0f; config_.preview_rect(psx, psy, psw, psh);
+    const float stackH = ph + ah1 + ah2 + ph * 0.14f;        // + rough Cost/Next box reserve above the party
     // SNAP the box origin to whole pixels : measure() is fractional, so an un-snapped origin puts the
     // whole box (badge, name, gauges) on sub-pixel coords -> the first glyph's left column gets eaten by
     // filtering ONLY in the preview (live uses an integer layout origin). This is the truncation cause.
-    const float boxX = (float)(int)(rightX - pw + 0.5f), partyTop = (float)(int)(bottomY - ph + 0.5f);
+    const float boxX     = (float)(int)(psx + (psw - pw) * 0.5f + 0.5f);             // centre the stack horizontally
+    const float partyTop = (float)(int)(psy + (psh + stackH) * 0.5f - ph + 0.5f);    // centre the whole stack vertically
     for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->set_origin(boxX, partyTop);   // shared X ; party Y anchors the stack
 
     set_demo_select(true);                                          // show a sliding target cursor in the preview
