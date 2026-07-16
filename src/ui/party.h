@@ -125,7 +125,7 @@ private:
         return w;
     }
     float padB()     const { return 4.0f; }   // top/bottom inner margin -> rows + selection frame stay off the box border
-    bool  distOn()   const { int t = tier_ < 0 ? 0 : (tier_ > 2 ? 2 : tier_); return ui_config().dist[t]; }   // show distance for this box
+    bool  distOn()   const { return ui_config().dist[tcfg()]; }   // tcfg() : both alliance boxes share the Alliance config (was dist[tier_] -> Alliance 2 ignored the toggle)
     // height of the marks column : leader/QM pips on TOP + (when shown) the distance number below. Used as
     // a FLOOR for the main band so they never touch ; when the distance is OFF only the pips need room ->
     // the floor drops and the row can be more compact.

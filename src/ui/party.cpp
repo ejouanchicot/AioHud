@@ -1144,7 +1144,7 @@ void Party::draw(const Frame& f) {
 
     // ---------- graphics : box chrome -- background ALWAYS ; the BORDER (frame) is per-box on/off ----------
     setup_color_state(dev);
-    const bool drawBorder = ui_config().border[tier_];
+    const bool drawBorder = ui_config().border[tcfg()];   // tcfg() : both alliance boxes share the Alliance config (was border[tier_] -> Alliance 2 ignored the toggle)
     // Alliance boxes (tier > 0) may carry their OWN theme (else follow the Party skinTheme). Procedural themes honour
     // the per-box index/lum/hue fully ; the FFXI native skin texture is shared (loaded once) -- same as Target/Player.
     const bool allyOwn = (tier_ > 0) && !ui_config().allyThemeCopy;

@@ -1788,8 +1788,8 @@ void ConfigPage::draw_profile_tab(const Frame& f, u32 dev, Font* fo, const Mouse
             profile_save("Default"); record_char_profile("Default"); strcpy(activeProf_, "Default");
             nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; profDirty_ = true; }
         ry0 += qbH + snap(18.0f);
-        fo->begin(dev); fo->draw_lc(dev, cx0, ry0, tr("A profile snapshots every setting. Quick-save", "Un profil capture tous les réglages. La sauvegarde"), snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        fo->draw_lc(dev, cx0, ry0 + snap(16.0f), tr("binds one to this character or the default.", "rapide en lie un à ce personnage ou au défaut."), snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+        fo->begin(dev); fo->draw_lc(dev, cx0, ry0, tr("A profile saves every setting.", "Un profil garde tous les réglages."), snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+        fo->draw_lc(dev, cx0, ry0 + snap(16.0f), tr("Quick-save binds it to this character.", "La sauvegarde rapide le lie au perso."), snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         // Reset everything to factory defaults (was the per-module "Default (all)" button ; global -> lives here once).
         ry0 += snap(42.0f);
         fo->begin(dev); fo->draw_lc(dev, cx0, ry0, tr("RESET", "R\xC3\x89INITIALISER"), snap(11.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.2f);
