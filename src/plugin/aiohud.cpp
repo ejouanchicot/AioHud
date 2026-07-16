@@ -378,7 +378,7 @@ static void spawn_updater(bool checkOnly)
     char* s = strrchr(plugins, '\\'); if (s) *s = 0;                 // -> ...\plugins
     char cmd[1400];
     _snprintf(cmd, sizeof(cmd),
-        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%s\" -Current \"%s\" -Repo \"Tetsouo/AioHud\" -Plugins \"%s\" -Data \"%s\"%s",
+        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%s\" -Current \"%s\" -Repo \"ejouanchicot/AioHud\" -Plugins \"%s\" -Data \"%s\"%s",
         ps1, AIOHUD_VERSION, plugins, data, checkOnly ? " -CheckOnly" : "");
     cmd[sizeof(cmd) - 1] = 0;
     STARTUPINFOA si; ZeroMemory(&si, sizeof(si)); si.cb = sizeof(si);

@@ -9,7 +9,7 @@
 #       READY <ver>      newer release downloaded -> the addon //unloads AioHud so the DLL can be replaced
 #       OK <ver>         extracted the new build over the Windower root (plugins\ + addons\) -> the addon //loads AioHud
 #       ERROR <msg>      something went wrong -> the addon reloads the current build
-param([string]$Current = '0', [string]$Repo = 'Tetsouo/AioHud', [string]$Plugins, [string]$Data, [switch]$CheckOnly)
+param([string]$Current = '0', [string]$Repo = 'ejouanchicot/AioHud', [string]$Plugins, [string]$Data, [switch]$CheckOnly)
 $ErrorActionPreference = 'Stop'
 $updir = Join-Path $Data 'update'
 $done  = Join-Path $updir 'done.txt'
