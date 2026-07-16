@@ -196,7 +196,7 @@ private:
     float anim_     = 0.0f;   // open progress 0..1 (eased) -> fade in
     float lastT_    = -1.0f;  // previous frame time, for dt
     float tabSlide_ = -1.0f;  // interpolated x of the sliding active-tab indicator
-    float hov_[4]   = { 0.0f, 0.0f, 0.0f, 0.0f };   // eased hover amount per tab (Config / Profile / Help / Edit Layout)
+    float hov_[5]   = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };   // eased hover amount per tab (Config / Profile / Edit Layout / Help / Update) -- MUST match NTABS (5) or the last tab reads OOB
     // ---- Profile tab state ----
     char  nameBuf_[32] = { 0 };   // profile name being typed
     int   nameLen_     = 0;
