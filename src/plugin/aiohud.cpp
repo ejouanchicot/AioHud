@@ -322,6 +322,32 @@ void aio_plugin_unload()
     g_hud.dispose();
 }
 
+#ifndef AIOHUD_VERSION
+#define AIOHUD_VERSION "dev"
+#endif
+// Launch the updater PowerShell script WITH NO WINDOW (native CreateProcess + CREATE_NO_WINDOW -- a Lua-spawned
+// process always flashes a cmd console). The script checks the latest GitHub release, downloads it, WAITS for the
+// AioHud.dll to unlock (the companion Lua addon //unloads it), extracts over plugins\, and writes data\update\done.txt.
+// The spawned process is detached, so it survives this plugin being unloaded mid-update.
+static void spawn_updater()
+{
+    char ps1[300], data[300], plugins[300];
+    aio::plugin_path(ps1, sizeof(ps1), "assets\\aioupdate.ps1");
+    aio::plugin_path(data, sizeof(data), "data");
+    lstrcpynA(plugins, aio::plugin_dir(), sizeof(plugins));          // ...\plugins\AioHud
+    char* s = strrchr(plugins, '\\'); if (s) *s = 0;                 // -> ...\plugins
+    char cmd[1400];
+    _snprintf(cmd, sizeof(cmd),
+        "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"%s\" -Current \"%s\" -Repo \"Tetsouo/AioHud\" -Plugins \"%s\" -Data \"%s\"",
+        ps1, AIOHUD_VERSION, plugins, data);
+    cmd[sizeof(cmd) - 1] = 0;
+    STARTUPINFOA si; ZeroMemory(&si, sizeof(si)); si.cb = sizeof(si);
+    PROCESS_INFORMATION pi; ZeroMemory(&pi, sizeof(pi));
+    if (CreateProcessA(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW | DETACHED_PROCESS, NULL, NULL, &si, &pi)) {
+        CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
+    }
+}
+
 void aio_plugin_command(const char* cmd)
 {
     if (!cmd) return;
@@ -420,6 +446,11 @@ void aio_plugin_command(const char* cmd)
     }
 
     // //aio config -> toggle the full-screen configuration overlay. "config N" = select tab N (1..3).
+    if (strstr(buf, "update")) {   // //aio update -> spawn the no-window updater (the AioUpdate Lua addon drives the unload/load)
+        spawn_updater();
+        g_host.console().print(">>> AioHud : checking for updates (no window)... <<<");
+        return;
+    }
     if (strstr(buf, "config")) {
         // In edit layout the config flag is kept "open" (toolbar + mouse capture) -> a bare //aio config
         // must act like the "Done" button : leave edit mode (persisting positions/sizes) AND close, not

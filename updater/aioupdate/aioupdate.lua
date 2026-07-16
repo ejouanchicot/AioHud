@@ -1,9 +1,12 @@
---[[ AioUpdate -- a tiny companion addon that updates the AioHud plugin from its latest GitHub release.
+--[[ AioUpdate -- updates the AioHud plugin from its latest GitHub release, in game, WITH NO WINDOW.
 
-     A compiled C++ plugin can't hot-swap or unload itself (it would crash mid-call), so this Lua addon does the
-     dance the plugin can't: check the latest release, download the payload zip, //unload the plugin, extract the
-     new files over plugins\ (the DLL is unlocked once unloaded), then //load it again. The user's plugins\AioHud\
-     data\ (config, profiles) is never in the zip, so nothing is lost.
+     A compiled C++ plugin can't hot-swap or unload itself (it would crash mid-call), and a Lua-spawned process
+     always flashes a cmd console. So the split is:
+       - the PLUGIN launches the updater PowerShell with CREATE_NO_WINDOW (native -> truly no window) : it checks
+         the latest release, downloads it, waits for the DLL to unlock, extracts, and writes data\update\done.txt.
+       - THIS addon only sends the trigger and does the //unload + //load the plugin can't -- all via pure Lua
+         (send_command + polling a text file), so it never opens a window either.
+     The user's plugins\AioHud\data\ (config, profiles) is never in the zip, so nothing is lost.
 
      Install : copy this folder to <Windower>\addons\aioupdate\ , then  //lua load aioupdate  (or add to init.txt).
      Use     : //aioupdate    (checks + updates if a newer release exists ; the HUD blinks off ~3s during the reload)
@@ -11,64 +14,62 @@
 
 _addon.name     = 'AioUpdate'
 _addon.author   = 'Tetsouo'
-_addon.version  = '1.1'
+_addon.version  = '2.0'
 _addon.commands = { 'aioupdate', 'aioup' }
 
-local REPO = 'Tetsouo/AioHud'
--- IMPORTANT: keep path args WITHOUT a trailing backslash. A quoted "...\" makes \" escape the quote on the command
--- line -> "Illegal characters in path". Windower's windower_path / addon_path DO end with a backslash.
-local base        = windower.windower_path
-local plugins_dir = base .. 'plugins'                        -- no trailing backslash (passed quoted to PowerShell)
-local data_dir    = plugins_dir .. '\\AioHud\\data'
-local zip         = data_dir .. '\\cache\\update.zip'
-local vfile       = data_dir .. '\\version.txt'
-local ps1         = windower.addon_path .. 'update.ps1'      -- addon_path ends with '\', filename has no trailing '\'
+local base     = windower.windower_path
+local data_dir = base .. 'plugins\\AioHud\\data'
+local done     = data_dir .. '\\update\\done.txt'
+local vfile    = data_dir .. '\\version.txt'
 
--- ASCII-only chat output (FFXI's chat log is ASCII ; no inline color codes -- add_to_chat takes a colour number)
 local function log(s) windower.add_to_chat(207, 'AioUpdate: ' .. s) end
 
 local function installed()
     local f = io.open(vfile, 'r')
-    if not f then return '0' end
-    local v = (f:read('*a') or ''):gsub('[^%w%.%-]', '')   -- keep only version-safe chars
+    if not f then return '?' end
+    local v = (f:read('*a') or ''):gsub('[^%w%.%-]', '')
     f:close()
-    return v ~= '' and v or '0'
+    return v ~= '' and v or '?'
 end
 
--- run update.ps1 in a given mode ; return its trimmed stdout (a single status line)
-local function run(mode)
-    local cmd = ('powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File "%s" -Mode %s -Repo %s -Current "%s" -PluginsDir "%s" -Zip "%s" 2>&1')
-        :format(ps1, mode, REPO, installed(), plugins_dir, zip)
-    local h = io.popen(cmd)
-    if not h then return 'ERROR could-not-run-powershell' end
-    local out = h:read('*a') or ''
-    h:close()
-    return (out:gsub('^%s+', ''):gsub('%s+$', ''))
+local function read_status()
+    local f = io.open(done, 'r')
+    if not f then return nil end
+    local s = (f:read('*a') or ''):gsub('%s+$', '')
+    f:close()
+    return s ~= '' and s or nil
 end
 
 windower.register_event('addon command', function()
+    os.remove(done)                       -- clear any stale status
     log('checking for updates...')
-    local r = run('prepare')
-    if r:find('^UPTODATE') then
-        log('already up to date (v' .. installed() .. ').')
-    elseif r:find('^READY') then
-        local tag = r:match('READY%s+(%S+)') or '?'
-        log('downloading v' .. tag .. ', reloading AioHud...')
-        windower.send_command('unload AioHud')
-        -- wait for the unload so the DLL is unlocked, THEN extract + reload
-        coroutine.schedule(function()
-            local a = run('apply')
-            windower.send_command('load AioHud')   -- reload either way (the new build on OK, the old one on failure)
-            if a:find('^OK') then
-                log('updated to v' .. tag .. '.')
-            else
-                log('update failed: ' .. a)
-                log('(dual-box? //unload AioHud on the other client first, then //aioupdate again.)')
+    windower.send_command('aio update')   -- the plugin runs the no-window updater
+    local unloaded, tries = false, 0
+    local function poll()
+        tries = tries + 1
+        local s = read_status()
+        if s then
+            if s:find('^UPTODATE') then
+                log('already up to date (v' .. installed() .. ').')
+                os.remove(done); return
+            elseif s:find('^READY') and not unloaded then
+                unloaded = true
+                log('downloading v' .. (s:match('READY%s+(%S+)') or '?') .. ', reloading AioHud...')
+                windower.send_command('unload AioHud')   -- release the DLL so the (still-running) updater can extract
+            elseif s:find('^OK') then
+                if unloaded then windower.send_command('load AioHud') end
+                log('updated to v' .. (s:match('OK%s+(%S+)') or '?') .. '.')
+                os.remove(done); return
+            elseif s:find('^ERROR') then
+                if unloaded then windower.send_command('load AioHud') end
+                log('update failed: ' .. s)
+                os.remove(done); return
             end
-        end, 3)
-    else
-        log('check failed: ' .. (r ~= '' and r or 'no response (network / GitHub?)'))
+        end
+        if tries < 120 then coroutine.schedule(poll, 1)   -- poll ~2 min max
+        else log('timed out (network / GitHub?).'); if unloaded then windower.send_command('load AioHud') end end
     end
+    coroutine.schedule(poll, 1)
 end)
 
 log('ready. Type //aioupdate to check for updates.')
