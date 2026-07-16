@@ -87,11 +87,35 @@ static void parse_fill_string(const char* s)
     }
 }
 
+// A plugin can't //lua load an addon itself (the host interface exposes no command executor), but Windower runs
+// <Windower>\scripts\init.txt at every launch. So we register "lua load aioupdate" there (idempotent) : the
+// companion updater addon then auto-loads with Windower, no manual //lua load needed. Takes effect next launch.
+static void ensure_addon_autoload()
+{
+    char root[300];
+    lstrcpynA(root, aio::plugin_dir(), sizeof(root));   // ...\plugins\AioHud
+    char* s = strrchr(root, '\\'); if (s) *s = 0;        // -> ...\plugins
+    s = strrchr(root, '\\'); if (s) *s = 0;              // -> ...        (Windower root)
+    char ini[360]; _snprintf(ini, sizeof(ini), "%s\\scripts\\init.txt", root); ini[sizeof(ini) - 1] = 0;
+
+    FILE* f = fopen(ini, "rb");
+    if (f) {
+        static char buf[16384];
+        size_t n = fread(buf, 1, sizeof(buf) - 1, f); buf[n] = 0; fclose(f);
+        if (strstr(buf, "aioupdate")) return;            // already registered -> nothing to do
+    }
+    char dir[360]; _snprintf(dir, sizeof(dir), "%s\\scripts", root); dir[sizeof(dir) - 1] = 0;
+    CreateDirectoryA(dir, NULL);                         // scripts\ may not exist yet
+    f = fopen(ini, "ab");                                // append (don't clobber the user's other init lines)
+    if (f) { fputs("\r\nlua load aioupdate\r\n", f); fclose(f); }
+}
+
 // ===== IPlugin hooks (declared in windower_plugin.h) =====
 
 void aio_plugin_init(PluginManager host)
 {
     g_host = host;
+    ensure_addon_autoload();           // make the //aioupdate companion addon auto-load with Windower
     debug::clear();
     debug::log("AioHUD init: device = 0x%08X", host.service_raw(2));
     aio::load_ui_config();             // restore saved theme / font / box positions + sizes
@@ -450,8 +474,7 @@ void aio_plugin_command(const char* cmd)
 
     // //aio config -> toggle the full-screen configuration overlay. "config N" = select tab N (1..3).
     if (strstr(buf, "update")) {   // //aio update -> spawn the no-window updater (the AioUpdate Lua addon drives the unload/load)
-        spawn_updater();
-        g_host.console().print(">>> AioHud : checking for updates (no window)... <<<");
+        spawn_updater();           // silent on purpose : //aioupdate must produce no console output
         return;
     }
     if (strstr(buf, "config")) {

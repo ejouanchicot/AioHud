@@ -8,8 +8,11 @@
          (send_command + polling a text file), so it never opens a window either.
      The user's plugins\AioHud\data\ (config, profiles) is never in the zip, so nothing is lost.
 
-     Install : copy this folder to <Windower>\addons\aioupdate\ , then  //lua load aioupdate  (or add to init.txt).
+     Install : shipped in the release zip (extract into your Windower root). The plugin auto-registers
+               "lua load aioupdate" in scripts\init.txt, so it loads with Windower -- no manual //lua load.
      Use     : //aioupdate    (checks + updates if a newer release exists ; the HUD blinks off ~3s during the reload)
+     Silent by default : it prints NOTHING to chat (a real update is visible as the HUD reloading).
+                         Flip DEBUG=true below to trace the flag path + each poll while troubleshooting.
 ]]
 
 _addon.name     = 'AioUpdate'
@@ -24,7 +27,8 @@ local done     = data_dir .. '\\update\\done.txt'
 local vfile    = data_dir .. '\\version.txt'
 local DEBUG    = false   -- flip to true to trace the flag path + each poll in chat
 
-local function log(s) windower.add_to_chat(207, 'AioUpdate: ' .. s) end
+-- silent by default : every message is gated by DEBUG, so //aioupdate produces no chat output unless tracing.
+local function log(s) if DEBUG then windower.add_to_chat(207, 'AioUpdate: ' .. s) end end
 
 local function installed()
     local f = io.open(vfile, 'r')
@@ -75,5 +79,3 @@ windower.register_event('addon command', function()
     end
     coroutine.schedule(poll, 1)
 end)
-
-log('ready. Type //aioupdate to check for updates.')
