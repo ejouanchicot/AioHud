@@ -140,14 +140,16 @@ static const HelpItem HELP_GENERAL[] = {
         "AioHUD est une interface repensée de zéro pour FFXI, dessinée en direct par-dessus le jeu. Elle remplace et complète les fenêtres natives avec un ensemble complet de modules : *Party & Alliance*, *Cible*, *Hub Joueur*, *Minicarte*, *Liste d'aggro*, *PointWatch*, *Timers*, *Skillchains*, *Pool de trésor* et *Suivi de zone*. Tout se règle depuis cette fenêtre, et chaque module a sa propre page dans cette Aide."},
 
     {0, "The config window", "La fenêtre de configuration"},
-    {1, "Type //aio config to open this window. It has three tabs:",
-        "Tape //aio config pour ouvrir cette fenêtre. Elle comporte trois onglets :"},
+    {1, "Type //aio config to open this window. Its tabs:",
+        "Tape //aio config pour ouvrir cette fenêtre. Ses onglets :"},
     {2, "*Configuration* tunes how things look, with a live preview on the right.",
         "*Configuration* règle l'apparence, avec un aperçu en direct à droite."},
     {2, "*Profile* saves, loads and manages complete setups.",
         "*Profil* enregistre, charge et gère des configurations complètes."},
     {2, "*Help* is this reference. Pick a module in the left column to read about it.",
         "*Aide* est cette référence. Choisis un module dans la colonne de gauche pour le découvrir."},
+    {2, "*Update* checks for and installs new versions, right in the game (see the Update page here).",
+        "*Mise à jour* vérifie et installe les nouvelles versions, directement en jeu (voir la page Mise à jour ici)."},
 
     {0, "Language", "Langue"},
     {1, "The EN / FR button in the top-right corner switches the whole interface between English and French. It is on every tab and your choice is saved.",
@@ -720,6 +722,28 @@ static const HelpItem HELP_ZONETRACKER[] = {
 };
 static const int HELP_ZONETRACKER_N = (int)(sizeof(HELP_ZONETRACKER) / sizeof(HELP_ZONETRACKER[0]));
 
+// UPDATE : how to keep AioHud current from the Update tab (user-facing, no dev jargon).
+static const HelpItem HELP_UPDATE[] = {
+    {0, "Updating AioHud", "Mettre à jour AioHud"},
+    {1, "AioHud updates itself, right in the game. Open the *Update* tab at the top of this window to see your installed version and whether a newer one is available.",
+        "AioHud se met à jour tout seul, directement en jeu. Ouvre l'onglet *Mise à jour* en haut de cette fenêtre pour voir ta version installée et si une plus récente existe."},
+    {1, "It checks automatically each time the plugin loads, so the Update tab is already up to date when you open it.",
+        "Il vérifie automatiquement à chaque chargement du plugin, donc l'onglet est déjà à jour quand tu l'ouvres."},
+
+    {0, "One click", "En un clic"},
+    {1, "When an update is available, press *Update now*. AioHud downloads it and reloads itself : the HUD blinks off for a second or two, then comes back on the new version. No window, nothing to download by hand.",
+        "Quand une mise à jour est dispo, appuie sur *Mettre à jour*. AioHud la télécharge et se recharge : le HUD disparaît une seconde ou deux, puis revient sur la nouvelle version. Aucune fenêtre, rien à télécharger à la main."},
+    {2, "Your settings and profiles are always kept — an update never touches them.",
+        "Tes réglages et profils sont toujours conservés — une mise à jour n'y touche jamais."},
+    {2, "The //aioupdate command does exactly the same thing.",
+        "La commande //aioupdate fait exactement la même chose."},
+
+    {0, "Dual-boxing", "Dual-box"},
+    {1, "If you run two clients, unload AioHud on the OTHER client first (//unload AioHud), then update on this one. Every client has to release the plugin before it can be swapped.",
+        "Si tu lances deux clients, décharge AioHud sur l'AUTRE client d'abord (//unload AioHud), puis mets à jour sur celui-ci. Chaque client doit libérer le plugin avant qu'il puisse être remplacé."},
+};
+static const int HELP_UPDATE_N = (int)(sizeof(HELP_UPDATE) / sizeof(HELP_UPDATE[0]));
+
 // One help page per module (the Help tab's left menu lists these ; add a module = add a row here).
 struct HelpModule { const char* en; const char* fr; const HelpItem* items; int count; };
 static const HelpModule HELP_MODULES[] = {
@@ -734,6 +758,7 @@ static const HelpModule HELP_MODULES[] = {
     { "Skillchains",      "Skillchains",        HELP_SKILLCHAINS, HELP_SKILLCHAINS_N },
     { "Treasure Pool",    "Pool de trésor",     HELP_TREASURE, HELP_TREASURE_N },
     { "Zone Tracker",     "Suivi de zone",      HELP_ZONETRACKER, HELP_ZONETRACKER_N },
+    { "Update",           "Mise à jour",        HELP_UPDATE,  HELP_UPDATE_N },
 };
 static const int HELP_MODULE_N = (int)(sizeof(HELP_MODULES) / sizeof(HELP_MODULES[0]));
 
