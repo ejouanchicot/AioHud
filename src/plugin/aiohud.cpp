@@ -147,7 +147,8 @@ void aio_plugin_init(PluginManager host)
                    aio::party().m[i].hp, aio::party().m[i].maxHp, aio::party().m[i].mp, aio::party().m[i].maxMp,
                    aio::party().m[i].hpp, aio::party().m[i].zone);
     g_hud.apply_layout(LAYOUT_PATH());   // place widgets from the descriptor (keeps defaults if absent)
-    host.console().print(">>> AioHUD -- //aio hp|mp|tp <n>  |  lay 1-4  |  layout (reload) <<<");
+    char banner[128]; _snprintf(banner, sizeof(banner), ">>> AioHUD v%s by ejouanchicot  --  //aio config <<<", AIOHUD_VERSION); banner[sizeof(banner) - 1] = 0;
+    host.console().print(banner);   // user-facing load line : credits the author + points at the config (the //aio hp/mp/tp fill commands still work, just no longer advertised here)
 }
 
 void aio_plugin_render() {}   // slot 5 : unused (we draw on slot 6, like FFXIDB)
