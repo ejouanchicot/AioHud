@@ -278,7 +278,10 @@ void Hud::render(u32 dev) {
         // EDIT LAYOUT "Rules" mode : hide the WHOLE HUD so only the reference lines + the edit toolbar
         // (both drawn by config_.draw below) remain -- you align the rules onto the game's native windows.
         const bool hideForRules = ui_config().editLayout && config_.edit_lines_active();
-        const bool hideHud = hideForRules || peekHide_;   // peek (End held) hides the whole HUD too
+        // Config PAGE open (but NOT edit-layout, where you must see the boxes to drag them) -> hide the live HUD
+        // so the real boxes don't show through the transparent preview stage ; the config preview draws its own demos.
+        const bool hideForConfig = config_.is_open() && !ui_config().editLayout;
+        const bool hideHud = hideForRules || peekHide_ || hideForConfig;   // peek (End held) hides the whole HUD too
         set_vial_provider(bars_);   // let the party rows / Help borrow the real fiole assets this frame (null-safe -> fallback)
         if (worldReady) {           // logged in -> draw the HUD ; not yet (login/char screen) -> only the config overlay below
         for (size_t i = 0; !hideHud && i < widgets_.size(); ++i) {
@@ -310,6 +313,9 @@ void Hud::render(u32 dev) {
             // box next to the centred sample. pvActive reflects last frame's stage, cleared before edit-layout, so
             // this never hides the box you are dragging in //aio edit.
             if (!(pvActive && config_.section() == 12)) draw_empypop(f);
+            // detached target debuffs (a Target sub-feature) -- self-gates on dbShow ; placed via //aio edit.
+            // Skip the live draw while the Target config previews it (section 1 + Standalone) : it's redrawn in the stage.
+            if (!(pvActive && config_.section() == 1 && ui_config().dbShow)) draw_debuffs(f);
             draw_timers(f);                         // Timers box (self buff timers, exact) -- placed via //aio edit
             draw_ws_popup(f);                       // arcade WS popup, over the HUD but under the config overlay
         }
@@ -322,6 +328,10 @@ void Hud::render(u32 dev) {
     }
     if (tok) { dApplySB(dev, tok); dDelSB(dev, tok); }
 }
+
+// the detached-Debuffs free renderer (defined in hud_debuffs.cpp) : measureOnly to size it for preview placement.
+void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, float screenW, float screenH,
+                  u32 buffAtlas, bool measureOnly, float* outW, float* outH);
 
 // Draw the REAL party + 2-alliance demo boxes into the config page's preview stage. Runs AFTER
 // config_.draw so the boxes sit on top of the page. We force //aio alliance2 demo for the duration
@@ -390,12 +400,26 @@ void Hud::draw_config_preview(const Frame& f) {
         float sx = 0, sy = 0, sw = 0, sh = 0; config_.preview_rect(sx, sy, sw, sh);
         const float osx = tg->px(), osy = tg->py();
         float tw = 0.0f, th = 0.0f; tg->measure(tw, th);
-        const float bx = sx + (sw - tw) * 0.5f, by = sy + (sh - th) * 0.5f;   // ALWAYS centred in the preview stage
+        const float bx = sx + (sw - tw) * 0.5f;
+        const bool stackDb = ui_config().tgtDebuffs && ui_config().dbShow;
+        // With a detached Debuffs box, centre the target+debuff GROUP vertically (not each pinned to an edge).
+        // Use the target's FULL last-drawn height (measure() reports only name+bar) + the measured debuff height.
+        float by = sy + (sh - th) * 0.5f;   // default : target centred
+        float liveS = 0.0f, dh = 0.0f, gap = 14.0f;
+        if (stackDb) {
+            float dsc = ui_config().dbScale; if (dsc < 0.5f) dsc = 0.5f; if (dsc > 2.0f) dsc = 2.0f;
+            liveS = (screenH_ / 1000.0f) * dsc;
+            float dw = 0.0f; debuffs_draw(f, true, 0.0f, 0.0f, liveS, (float)screenW_, (float)screenH_, buffAtlas_, true, &dw, &dh);
+            const float realTh = tg->drawn_height();                     // full target height (last frame ; settles in 1)
+            by = sy + (sh - (realTh + gap + dh)) * 0.5f; if (by < sy + 6.0f) by = sy + 6.0f;   // centre the GROUP
+        }
         tg->set_origin((float)(int)(bx + 0.5f), (float)(int)(by + 0.5f));
         tg->set_demo(true);
         tg->draw(f);
         tg->set_demo(false);
         tg->set_origin(osx, osy);   // restore real placement
+        if (stackDb)   // debuff below the target's REAL bottom (this frame's height) -> centred group, no overlap
+            draw_debuffs(f, true, sx + sw * 0.5f, by + tg->drawn_height() + gap + dh * 0.5f, liveS);
         return;
     }
 
@@ -729,13 +753,16 @@ void Hud::draw_ws_popup(const Frame& f, bool preview, float ovCx, float ovCy, fl
 // Shared edit-mode drag for a module box : drag + snap-grid, write the new fractional origin back to
 // (cfgX,cfgY), persist on drop. centerX = the stored X is the box CENTRE (else its left edge). px/py updated.
 void box_edit(const Frame& f, EditBox& eb, int editId, float& px, float& py, float boxW, float boxH,
-                     float scale, float& cfgX, float& cfgY, int anchorX) {
+                     float& scale, float& cfgX, float& cfgY, int anchorX) {
     float tfx = px / f.screenW, tfy = py / f.screenH; bool ps = true; int ch = 0, cv = 0; const bool wasDrag = eb.dragging;
+    const float scale0 = scale;   // edit_box_drag WRITES scale on a wheel-resize -> now it reaches the config field
     if (edit_box_drag(eb, editId, f, px, py, boxW, boxH, ZPERM_HUB, ps, tfx, tfy, ch, cv, scale))
         edit_box_grid(f.dev, f, eb, px, py, boxW, boxH, ch != 0, cv != 0);
     cfgX = (px + (anchorX == 1 ? boxW * 0.5f : anchorX == 2 ? boxW : 0.0f)) / f.screenW;   // 0 left / 1 centre / 2 right
     cfgY = py / f.screenH;
-    if (wasDrag && !eb.dragging) save_ui_config();
+    // persist on a drag-drop OR a wheel-resize (the latter has no drag, so the old drop-only save missed it ->
+    // box_edit boxes appeared not to resize at all : the scale was written to a by-VALUE copy and discarded).
+    if ((wasDrag && !eb.dragging) || scale != scale0) save_ui_config();
 }
 
 // draw an atlas sub-cell [u0..u1]x[v0..v1] at (x,y,w,h) -- Sheol weapon strip (v 0..1) or the 2D buff atlas.

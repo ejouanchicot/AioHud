@@ -192,6 +192,7 @@ private:
     int   cfgZtTextElem_ = 0;    // which Zone Tracker text element the typography sub-section edits (ZT_HEADER / ZT_BODY)
     int   cfgEpTextElem_ = 0;    // which EmpyPop text element the typography sub-section edits (EP_TITLE / EP_POP / EP_FROM / EP_COLL)
     int   cfgTmTextElem_ = 0;    // which Timers text element the typography sub-section edits (TM_HEADER / TM_BODY)
+    int   cfgDbTextElem_ = 0;    // which Debuffs text element the typography sub-section edits (DB_HEADER / DB_NAME / DB_TIMER)
     int   trkJob_ = 0;           // Timers "track per job" : MAIN job whose checklist is shown (0 = follow current main job)
     int   trkSub_ = -1;          // SUB job for the checklist (-1 = follow current sub ; 0 = none ; 1..22 = a job)
     int   trkScope_ = 0;         // 0 = Self (buffs on you + your recasts) ; 1 = Allies (buffs you put on allies)

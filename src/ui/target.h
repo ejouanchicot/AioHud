@@ -17,6 +17,7 @@ class Target : public Widget {
 public:
     const char* type_name() const override { return "TargetBar"; }
     void measure(float& w, float& h) const override;   // authoritative size -> anchoring
+    float drawn_height() const { return lastH_; }       // FULL last-drawn box height (incl. detail/range/action) -> config preview stacking
     void ensure(u32 dev) override;                     // lazily load the buff/debuff atlas
     void on_device_lost() override;                    // forget the atlas handle (zoning)
     void dispose() override;                            // release the atlas (unload)

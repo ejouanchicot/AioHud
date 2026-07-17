@@ -397,6 +397,7 @@ void Target::draw(const Frame& f) {
         static const unsigned char DSF[20] = { 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1 };
         nd = 20; for (int i = 0; i < 20; ++i) { dids[i] = DID[i]; drem[i] = DRM[i]; dself[i] = DSF[i]; }
     } else if (present && ui_config().tgtDebuffs) nd = party().target_debuffs(g.target.id, dids, drem, dself, 20);
+    if (ui_config().dbShow) nd = 0;   // DETACHED : the Debuffs module owns them now -> zero the inline row (kills the width/height growth + the icon draw, all gated on nd>0), incl. the fake preview
     // compact to valid atlas ids, capped at the user's max (1..20 ; 2 rows/columns of 10) -> index-driven layout below.
     { int cap = ui_config().tgtBuffMax; if (cap < 1) cap = 1; if (cap > 20) cap = 20;
       int nv = 0; for (int i = 0; i < nd && nv < cap; ++i) { if (dids[i] >= (BUFF_COLS * BUFF_ATLAS_ROWS)) continue;
@@ -462,7 +463,8 @@ void Target::draw(const Frame& f) {
     const int  th = fake ? (ui_config().tgtTH ? 4 : 0) : (ui_config().tgtTH ? party().target_th(g.target.id) : 0);
     const bool showTH = ui_config().tgtTH != 0 && th > 0;   // th>0 is only ever set on a mob you hit -> auto mob-only
     float spdPct = 0.0f; u32 spdCol = 0xFFC8C8C8u;
-    const bool showDetail = (showSpd || showTH) && present;
+    const bool rangeMinShown = ui_config().tgtRange != 0 && ui_config().tgtRangeMin != 0 && present;   // minimal distance sits in the detail row (centre)
+    const bool showDetail = (showSpd || showTH || rangeMinShown) && present;
     if (showSpd && present) {
         if (fake) { spdPct = -12.0f; spdCol = 0xFF78E678u; }             // demo sample (a slowed mob)
         else {
@@ -533,7 +535,8 @@ void Target::draw(const Frame& f) {
             rBands[4] = { 30.0f, "Enmity", 0xFFE1504Bu, 0xFFEB827Du }; rScale = 35.0f; rN = 5;
         } else if (rDist > 0.0f) rN = range_zones(g.target.spawnType, 0.5f, rBands, rScale);
     }
-    const bool  rShow   = rN > 0;
+    const bool  rMinimal = ui_config().tgtRangeMin != 0;   // MINIMAL : just the number (coloured by its zone), drawn in the detail row -> the GAUGE section is skipped
+    const bool  rShow   = rN > 0 && !rMinimal;             // the below-action GAUGE only ; the minimal number lives in the detail row
     const float rTri    = snap(6.0f * S);                   // room above the gauge for the cursor triangle
     const float rGaugeH = snap(15.0f * S * ui_config().tgtRangeH);   // height : own multiplier (like the HP bar's tgtBarH)
     const float rLblSz  = snap(tgt_sz(TGT_RANGE, 9.0f * S));         // zone-label size (TGT_RANGE typography)
@@ -750,6 +753,16 @@ void Target::draw(const Frame& f) {
                 char tbu[16]; const char* tl = tgt_up(TGT_TH, tb, tbu, 16);
                 const float tw = hf->measure(tl, hsz);
                 hf->draw_lc(dev, innerX + innerW - tw, dcy, tl, hsz, hcol, stk, how);
+            }
+        }
+        if (rangeMinShown && rN > 0) {   // MINIMAL distance : the number, CENTRED in the detail row (between Speed & TH), coloured by its range zone
+            u32 zc = rBands[rN - 1].lcol;                                    // past the last zone -> keep the last band's colour
+            for (int i = 0; i < rN; ++i) if (rDist <= rBands[i].to) { zc = rBands[i].lcol; break; }
+            Font* rlf = tgt_font(f.fonts, f.font, TGT_RANGE);
+            if (rlf) {
+                const float rsz = snap(tgt_sz(TGT_RANGE, 11.0f * S)), row2 = tgt_ow(TGT_RANGE, 1.0f * S * owK);
+                char nb[12]; sprintf(nb, "%.1f", rDist > 99.9f ? 99.9f : rDist);
+                rlf->begin(dev); rlf->draw_c(dev, innerX + innerW * 0.5f, dcy, nb, rsz, mul_a(tgt_col(TGT_RANGE, zc), a), stk, row2);
             }
         }
     }

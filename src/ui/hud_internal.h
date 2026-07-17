@@ -13,7 +13,7 @@ namespace aio {
 // (right = the box grows LEFTWARD when its width changes, so its right edge stays put). px/py updated.
 // Used by ALL module renderers ; the caller derives px from cfgX with the matching anchor.
 void box_edit(const Frame& f, EditBox& eb, int editId, float& px, float& py, float boxW, float boxH,
-              float scale, float& cfgX, float& cfgY, int anchorX);
+              float& scale, float& cfgX, float& cfgY, int anchorX);   // scale BY REF : the wheel-resize writes it back
 
 // draw an atlas sub-cell [u0..u1]x[v0..v1] at (x,y,w,h) -- Sheol weapon strip (v 0..1) or the 2D buff atlas.
 // Used by draw_zonetracker (weapon-type strip) and draw_timers (buff status atlas). Defaults on this DECLARATION only.

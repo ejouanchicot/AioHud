@@ -41,10 +41,6 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.scNearby ? tr("On", "Oui") : tr("Off", "Non"), c.scNearby != 0)) { c.scNearby = !c.scNearby; save_ui_config(); }
         } ROW_NEXT(48.0f)
-        { ROW_BAND(44.0f)   // position -> drag it in //aio edit (like every other box)
-            const float ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(19.0f), tr("Position: drag it in //aio edit", "Position : d\xC3\xA9place-la dans //aio edit"), snap(13.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        } ROW_NEXT(44.0f)
     }   // end Display
 
     // ===== sub-section : ELEMENTS (which lines to show) =====

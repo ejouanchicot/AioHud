@@ -27,13 +27,14 @@ void draw_themed_box(u32 dev, const WindowSkin* partySkin, float x, float y, flo
     const unsigned hue = cp ? c.skinHue  : bs.hue;
     float a = base * bs.alpha; if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
     const u32 tint = mula(0xFFFFFFFFu, a);
+    const bool border = bs.border != 0;                          // Border off -> background only (draw_window's drawBorder=false)
     if (window_theme_is_proc(theme)) {
-        draw_proc_window(dev, theme, x, y, w, h, tint, false, true, lum, hue);
+        draw_proc_window(dev, theme, x, y, w, h, tint, false, border, lum, hue);
     } else if (partySkin && partySkin->ready()) {                // FFXI family : reuse the shared skin texture
-        draw_window(dev, *partySkin, x, y, w, h, tint, S, false, true);
+        draw_window(dev, *partySkin, x, y, w, h, tint, S, false, border);
     } else {
         const float R = 6.0f * S;                                // last-resort flat panel (skin not ready)
-        rrect_bordered(dev, x, y, w, h, R, mula(0xFF232E54u, a), mula(0xFF080B1Au, a), mula(0x6699BBFFu, a), 1.0f);
+        rrect_bordered(dev, x, y, w, h, R, mula(0xFF232E54u, a), mula(0xFF080B1Au, a), mula(border ? 0x6699BBFFu : 0x00000000u, a), 1.0f);
     }
 }
 
@@ -50,6 +51,13 @@ void ConfigPage::draw_box_appearance(u32 dev, Font* fo, const MouseState* mo, bo
     }
     ROW_NEXT(52.0f)
     if (bs.on) {
+    { ROW_BAND(52.0f)   // Border on/off (frame edges + corners ; off = background only)
+        const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+        fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Border", "Bordure"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+        const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+        if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, bs.border ? tr("On", "Oui") : tr("None", "Aucun"), bs.border != 0)) { bs.border = !bs.border; save_ui_config(); }
+    }
+    ROW_NEXT(52.0f)
     { ROW_BAND(46.0f)   // Transparency (content stays opaque)
         const float transp = 1.0f - bs.alpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
         float v01 = clampf(transp, 0.0f, 1.0f);   // full 0..100% range (100% = fully invisible box)

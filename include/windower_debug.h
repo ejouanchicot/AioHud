@@ -8,7 +8,22 @@
 
 namespace windower { namespace debug {
 
-inline const char* log_path() { return "aiohud_debug.log"; }   // relative to the game dir (dev-only trace)
+// Absolute path NEXT TO the plugin DLL (Windower\plugins\aiohud_debug.log). A relative path wrote to the game's
+// CWD, which FAILS silently when the game is installed under Program Files (write-protected -> no log, or a
+// hidden VirtualStore redirect). The plugins\ folder is writable (the config saves there) and easy to find --
+// right beside AioHud.dll. Resolved once from this DLL's own module path. Falls back to the relative name.
+inline const char* log_path() {
+    static char p[MAX_PATH] = { 0 };
+    if (!p[0]) {
+        HMODULE hm = NULL;
+        if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                               (LPCSTR)&log_path, &hm) && hm && GetModuleFileNameA(hm, p, MAX_PATH)) {
+            char* b = p; for (char* q = p; *q; ++q) if (*q == '\\' || *q == '/') b = q + 1;   // -> after the last slash
+            lstrcpynA(b, "aiohud_debug.log", (int)(MAX_PATH - (b - p)));                       // ...\plugins\aiohud_debug.log
+        } else { lstrcpynA(p, "aiohud_debug.log", MAX_PATH); }                                 // fallback : CWD
+    }
+    return p;
+}
 
 inline void raw(const char* s, int len) {
     HANDLE h = CreateFileA(log_path(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,

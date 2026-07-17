@@ -55,10 +55,6 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         ZT_SHEOL_TOGGLE(CTRL_ID, tr("Sheol: resistances", "Sheol : r\xC3\xA9sistances"), c.ztSheolRes)
         ZT_SHEOL_TOGGLE(CTRL_ID, tr("Sheol: Cruel Joke", "Sheol : Cruel Joke"),      c.ztSheolJoke)
         #undef ZT_SHEOL_TOGGLE
-        { ROW_BAND(44.0f)   // placement hint
-            const float ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(19.0f), tr("Position: drag it in //aio edit", "Position : d\xC3\xA9place-le dans //aio edit"), snap(13.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        } ROW_NEXT(44.0f)
         { ROW_BAND(40.0f)   // note
             const float ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Only appears in a tracked zone (Dynamis, Abyssea, Omen, Nyzul, Sheol).", "Appara\xC3\xAet seulement en zone suivie (Dynamis, Abyssea, Omen, Nyzul, Sheol)."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);

@@ -2240,9 +2240,12 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                     helpPlayerCx_ = hx + hw * 0.5f; helpPlayerCy_ = y + rh2 * 0.5f; helpPlayerW_ = hw - snap(16.0f); helpPlayerH_ = rh2 - snap(16.0f);
                 }
                 y += rh2 + snap(8.0f);
-            } else if (it.kind == 47) {               // LIVE sample : the EmpyPop stack in YOUR config -- as BIG as fits the help width
-                float s = 1.4f, bh = 0.0f;
-                empypop_help_fit(f, hw * 0.9f, 1.4f, s, bh);
+            } else if (it.kind == 47) {               // LIVE sample : the EmpyPop stack. Its chloris chain is NARROW + TALL,
+                float s = 1.0f, bh = 0.0f;            // so a width-only fit over-scales the height -> also clamp to the height left.
+                empypop_help_fit(f, hw * 0.7f, 1.0f, s, bh);
+                const float maxH = (bot - y) - snap(28.0f);
+                if (bh > maxH && bh > 1.0f) { s *= maxH / bh; bh = maxH; }   // shrink to fit the remaining panel height
+                if (s < 0.5f) s = 0.5f;
                 const float rh2 = bh + snap(14.0f);
                 if (y >= top && y + rh2 <= bot) {
                     cs(dev);
@@ -2273,16 +2276,16 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
 // jargon. UPDATE this with each release. `*bold*` markup works (draw_wrapped colours it brighter).
 struct ChangeLine { const char* en; const char* fr; };
 static const ChangeLine CHANGELOG[] = {
-    { "*EmpyPop* : a new tracker for Abyssea empyrean NMs -- it lists the pop items and key items you still need, and marks the ones already in hand. Pick your NM in its config page or with //aio ept.",
-      "*EmpyPop* : un nouveau tracker pour les NM empyr\xC3\xA9""ens d'Abyssea -- il liste les pop items et key items qu'il te reste \xC3\xA0 obtenir, et marque ceux d\xC3\xA9j\xC3\xA0 en main. Choisis ton NM dans sa page de config ou avec //aio ept." },
-    { "Fixed doubled typing : on some keyboards every letter was entered twice inside AioHud's own text fields.",
-      "Corrig\xC3\xA9 la saisie doubl\xC3\xA9""e : sur certains claviers, chaque lettre \xC3\xA9tait saisie deux fois dans les champs texte d'AioHud." },
-    { "The mouse no longer reaches the game while the config or edit screen is open -- no more character walking or camera turning behind it, and AioHud's own pointer is always shown there.",
-      "La souris n'atteint plus le jeu quand la config ou l'\xC3\xA9""dition est ouverte -- fini le perso qui marche ou la cam\xC3\xA9ra qui tourne derri\xC3\xA8re, et le pointeur d'AioHud y est toujours affich\xC3\xA9." },
-    { "*Player* and *Target* : new Cast and Cast-placeholder toggles for the action bar.",
-      "*Player* et *Target* : nouveaux boutons Cast et Cast fictif pour la barre d'action." },
-    { "The *Hide key* can now be Hold or Toggle (Interface), and the //aio ept list prints in colour in the game chat.",
-      "La *touche masquer* peut d\xC3\xA9sormais \xC3\xAAtre en Maintien ou Bascule (Interface), et la liste //aio ept s'affiche en couleur dans le chat du jeu." },
+    { "*Target debuffs* can now be DETACHED into their own list (Target > Debuffs > Standalone) -- a mob-name header then icon / name / timer rows, your debuffs in gold, others' in white. Icon / Name / Icon+Name display, place it with //aio edit.",
+      "*Les d\xC3\xA9""buffs de la cible* peuvent \xC3\xAAtre D\xC3\x89TACH\xC3\x89S dans leur propre liste (Target > Debuffs > Autonome) -- nom du mob puis lignes ic\xC3\xB4ne / nom / timer, tes d\xC3\xA9""buffs en or, ceux des autres en blanc. Affichage Ic\xC3\xB4ne / Nom / Ic\xC3\xB4ne+Nom, place-la avec //aio edit." },
+    { "*Border On/Off* : every box can now hide its frame border while keeping the background (config > any module > Box > Border).",
+      "*Bordure On/Off* : chaque cadre peut masquer son contour tout en gardant le fond (config > un module > Cadre > Bordure)." },
+    { "*Target distance* : a new Minimal display -- just the number, coloured by its range zone -- next to Speed / TH, instead of the full gauge.",
+      "*Distance de la cible* : un nouvel affichage Minimal -- juste le nombre, color\xC3\xA9 selon sa zone de port\xC3\xA9""e -- \xC3\xA0 c\xC3\xB4t\xC3\xA9 de Speed / TH, au lieu de la jauge compl\xC3\xA8te." },
+    { "The game no longer sees the mouse OR the numpad-End key while the config is open, and the Hide key is now the dedicated End only.",
+      "Le jeu ne re\xC3\xA7oit plus la souris NI la touche Fin du pav\xC3\xA9 num\xC3\xA9rique quand la config est ouverte, et la touche masquer est d\xC3\xA9sormais la touche Fin d\xC3\xA9""di\xC3\xA9""e uniquement." },
+    { "Fixed : the mouse wheel now resizes every floating box in //aio edit (it did nothing before).",
+      "Corrig\xC3\xA9 : la molette redimensionne maintenant chaque cadre flottant dans //aio edit (elle ne faisait rien avant)." },
 };
 static const int CHANGELOG_N = (int)(sizeof(CHANGELOG) / sizeof(CHANGELOG[0]));
 

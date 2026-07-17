@@ -169,8 +169,8 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().tgtBarW = v < lo ? lo : (v > hi ? hi : v); }
         }
         ROW_NEXT(46.0f)
-        // Distance Height : the range gauge height (like Bar Height for the HP bar).
-        if (ui_config().tgtRange)
+        // Distance Height : the range gauge height (like Bar Height for the HP bar). Gauge mode only (minimal = just a number).
+        if (ui_config().tgtRange && !ui_config().tgtRangeMin)
         { ROW_BAND(46.0f)
             const float lo = 0.60f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().tgtRangeH * 100.0f + 0.5f));
             float v01 = (ui_config().tgtRangeH - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
@@ -250,6 +250,15 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtRange ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtRange != 0)) { ui_config().tgtRange = !ui_config().tgtRange; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        // Distance display : the full GAUGE (zones + cursor) or MINIMAL (just the number, coloured by its range zone).
+        if (ui_config().tgtRange)
+        { ROW_BAND(52.0f)
+            const char* DDL[2] = { tr("Gauge", "Jauge"), tr("Minimal", "Minimal") };
+            int dm = ui_config().tgtRangeMin ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Distance display", "Affichage distance"), DDL[dm])) {
+                ui_config().tgtRangeMin = wrap(dm + d, 2); save_ui_config(); }
+        }
+        ROW_NEXT(52.0f)
         // Cast : show the target's ACTION bar (its live spell cast : name + filling bar) under the HP bar.
         { ROW_BAND(52.0f)
             const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
@@ -280,8 +289,19 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtDebuffs ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtDebuffs != 0)) { ui_config().tgtDebuffs = !ui_config().tgtDebuffs; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
-        // Max Debuffs : how many debuff icons to show at most (1..20 ; wraps 10 per row/column).
+        // Mode : the debuffs sit INSIDE the Target box (icons under the bar) or DETACHED into their own
+        // Timers-style list (mob name + icon/name/timer rows) placed with //aio edit -- like Player's
+        // Equipment "In Player / Standalone".
         if (ui_config().tgtDebuffs)
+        { ROW_BAND(52.0f)
+            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Mode", "Mode"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(126.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().dbShow ? tr("Standalone", "Autonome") : tr("In Target", "Dans la cible"), ui_config().dbShow != 0)) { ui_config().dbShow = !ui_config().dbShow; save_ui_config(); }
+        }
+        ROW_NEXT(52.0f)
+        // Max Debuffs : how many debuff icons to show at most (1..20 ; wraps 10 per row/column).
+        if (ui_config().tgtDebuffs && !ui_config().dbShow)
         { ROW_BAND(46.0f)
             const float lo = 1.0f, hi = 20.0f; int cur = ui_config().tgtBuffMax; if (cur < 1) cur = 1; if (cur > 20) cur = 20;
             char b[16]; sprintf(b, "%d", cur);
@@ -291,7 +311,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
           ROW_NEXT(46.0f)
         }
         // Buff position : where the debuff row sits -- inside the box (grows it) or floating outside on a side.
-        if (ui_config().tgtDebuffs)
+        if (ui_config().tgtDebuffs && !ui_config().dbShow)
         { ROW_BAND(52.0f)
             const char* BPL[5] = { tr("Inside", "Dans la box"), tr("Below", "Dessous"), tr("Above", "Dessus"), tr("Left", "Gauche"), tr("Right", "Droite") };
             const bool boxOff = !ui_config().tgtBox;                      // no box -> "Inside" is meaningless : offer only 1..4
@@ -303,7 +323,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         ROW_NEXT(52.0f)
         // Buff Size : the debuff icon size.
-        if (ui_config().tgtDebuffs)
+        if (ui_config().tgtDebuffs && !ui_config().dbShow)
         { ROW_BAND(46.0f)
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().tgtIconSz * 100.0f + 0.5f));
             float v01 = (ui_config().tgtIconSz - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
@@ -312,7 +332,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
           ROW_NEXT(46.0f)
         }
         // Debuff Timers : the countdown number under each icon (needs Debuffs on ; off = icons only).
-        if (ui_config().tgtDebuffs)
+        if (ui_config().tgtDebuffs && !ui_config().dbShow)
         { ROW_BAND(52.0f)
             const float rowH = snap(40.0f), ty = ry + yo;
             fo->begin(dev);
@@ -321,20 +341,71 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtTimers ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtTimers != 0)) { ui_config().tgtTimers = !ui_config().tgtTimers; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        // ---- STANDALONE (detached) list : its own Timers-style appearance. Shown only in Standalone mode. ----
+        if (ui_config().tgtDebuffs && ui_config().dbShow) {
+            UiConfig& c = ui_config();
+            { ROW_BAND(46.0f)   // Size
+                const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.dbScale * 100.0f + 0.5f));
+                float v01 = (c.dbScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.dbScale = v < lo ? lo : (v > hi ? hi : v); }
+            } ROW_NEXT(46.0f)
+            { ROW_BAND(46.0f)   // Max rows
+                const float lo = 1.0f, hi = 32.0f; char b[16]; sprintf(b, "%d", c.dbMax);
+                float v01 = ((float)c.dbMax - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Max", "Max"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.dbMax = v < 1 ? 1 : (v > 32 ? 32 : v); }
+            } ROW_NEXT(46.0f)
+            { ROW_BAND(52.0f)   // Header (mob name) toggle
+                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Header (mob name)", "En-t\xC3\xAAte (nom du mob)"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.dbHeader ? tr("On", "Oui") : tr("Off", "Non"), c.dbHeader != 0)) { c.dbHeader = !c.dbHeader; save_ui_config(); }
+            } ROW_NEXT(52.0f)
+            { ROW_BAND(52.0f)   // Display : Icon / Name / Icon+Name
+                const char* DISP[3] = { tr("Icon", "Ic\xC3\xB4ne"), tr("Name", "Nom"), tr("Icon+Name", "Ic\xC3\xB4ne+Nom") };
+                int m = (c.dbDisp < 0 || c.dbDisp > 2) ? 0 : c.dbDisp;
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Display", "Affichage"), DISP[m])) { c.dbDisp = wrap(m + d, 3); save_ui_config(); }
+            } ROW_NEXT(52.0f)
+            { ROW_BAND(46.0f)   // Icon size
+                const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.dbIconScale * 100.0f + 0.5f));
+                float v01 = (c.dbIconScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Icon size", "Taille ic\xC3\xB4nes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.dbIconScale = v < lo ? lo : (v > hi ? hi : v); }
+            } ROW_NEXT(46.0f)
+            { ROW_BAND(46.0f)   // Row spacing
+                const float lo = 0.60f, hi = 3.00f; char b[16]; sprintf(b, "%d%%", (int)(c.dbRowGap * 100.0f + 0.5f));
+                float v01 = (c.dbRowGap - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Row spacing", "Espacement lignes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.dbRowGap = v < lo ? lo : (v > hi ? hi : v); save_ui_config(); }
+            } ROW_NEXT(46.0f)
+            draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.dbBox);   // detached-box frame / transparency / theme
+        }
         }   // end sub-section Debuffs (catOpen_[9])
         // ---- Typography sub-section : per-element Font / Size / Outline / Style / Colour (Name / HP% / Timer) ----
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5])) catOpen_[5] = !catOpen_[5];
         ROW_NEXT(42.0f)
         if (catOpen_[5]) {
+        // The element list ADAPTS to the debuff mode : in-box shows the in-box debuff "Timer" (tgtText[TGT_TIMER]) ;
+        // DETACHED drops it and instead exposes the standalone box's own text (dbText : header / name / timer), so
+        // editing here modifies the right thing. (No dead controls, no cross-wiring.)
+        UiConfig& c = ui_config();
+        struct TE { const char* label; TextStyle* ts; };
+        TE items[TGT_TE_COUNT + DB_TE_COUNT]; int nte = 0;
+        items[nte++] = { tr("Name", "Nom"),  &c.tgtText[TGT_NAME] };
+        items[nte++] = { tr("HP%", "PV%"),   &c.tgtText[TGT_HP] };
+        if (!c.dbShow) items[nte++] = { tr("Timer", "Minuteur"), &c.tgtText[TGT_TIMER] };   // in-box debuff timer only
+        items[nte++] = { tr("Speed", "Vitesse"),  &c.tgtText[TGT_SPD] };
+        items[nte++] = { tr("TH", "TH"),          &c.tgtText[TGT_TH] };
+        items[nte++] = { tr("Distance", "Distance"), &c.tgtText[TGT_RANGE] };
+        if (c.dbShow) {   // detached debuff box -> its own typography
+            items[nte++] = { tr("Debuff header", "En-t\xC3\xAAte debuff"), &c.dbText[DB_HEADER] };
+            items[nte++] = { tr("Debuff name",   "Nom debuff"),           &c.dbText[DB_NAME] };
+            items[nte++] = { tr("Debuff timer",  "Timer debuff"),         &c.dbText[DB_TIMER] };
+        }
+        int te = (cfgTgtTextElem_ < 0 || cfgTgtTextElem_ >= nte) ? 0 : cfgTgtTextElem_;
         { ROW_BAND(52.0f)   // element selector
-            const char* TLBL[TGT_TE_COUNT] = { tr("Name", "Nom"), tr("HP%", "PV%"), tr("Timer", "Minuteur"), tr("Speed", "Vitesse"), tr("TH", "TH"), tr("Distance", "Distance") };
-            int te = (cfgTgtTextElem_ < 0 || cfgTgtTextElem_ >= TGT_TE_COUNT) ? 0 : cfgTgtTextElem_;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "Élément"), TLBL[te])) {
-                cfgTgtTextElem_ = wrap(te + d, TGT_TE_COUNT); }
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "\xC3\x89l\xC3\xA9ment"), items[te].label)) {
+                cfgTgtTextElem_ = wrap(te + d, nte); te = cfgTgtTextElem_; }
         }
         ROW_NEXT(52.0f)
-        draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
-                        ui_config().tgtText[(cfgTgtTextElem_ < 0 || cfgTgtTextElem_ >= TGT_TE_COUNT) ? 0 : cfgTgtTextElem_], true);
+        draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, *items[te].ts, true);
         }   // end Text sub-section (catOpen_[5])
         ry += snap(10.0f);
 

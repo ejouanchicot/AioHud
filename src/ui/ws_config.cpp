@@ -33,10 +33,6 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             float v01 = (c.wsScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.wsScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
-        { ROW_BAND(44.0f)   // position -> drag it in //aio edit (like every other box)
-            const float ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(19.0f), tr("Position: drag it in //aio edit", "Position : d\xC3\xA9place-la dans //aio edit"), snap(13.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        } ROW_NEXT(44.0f)
         { ROW_BAND(52.0f)   // Font
             int fc = c.wsFont; if (fc < 0 || fc >= ui_font_count()) fc = 0;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { c.wsFont = wrap(fc + d, ui_font_count()); save_ui_config(); }

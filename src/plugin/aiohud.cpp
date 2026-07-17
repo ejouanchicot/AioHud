@@ -356,9 +356,10 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
                              (int)g_hud.config().wants_keys());
 
     // End (HELD) = "peek" : hide the ENTIRE HUD while End is down, restore it on release. Only when NOT typing
-    // (inside a text field End = cursor-to-end, handled below). DIK 0xCF = the dedicated End ; 0x4F = numpad End
+    // (inside a text field End = cursor-to-end, handled below). ONLY the dedicated End (DIK 0xCF, above the arrows) --
+    // NOT the numpad 1/End (0x4F), which must stay a normal game key. Was: also 0x4F when NumLock off.
     // with NumLock off (nc == 0). Consume it so the game never sees End.
-    if (!g_hud.config().wants_keys() && (dik == 0xCF || (dik == 0x4F && nc == 0))) {
+    if (!g_hud.config().wants_keys() && dik == 0xCF) {
         if (aio::ui_config().hidePeekMode) {          // TOGGLE : each fresh PRESS flips hidden/shown ; ignore the release
             static bool s_peek = false;
             if (pressed) { s_peek = !s_peek; g_hud.set_peek(s_peek); }

@@ -158,6 +158,7 @@ static void save_config_to(const char* path) {
     fprintf(f, "tgtBars=%.4f,%.4f,%.4f\n", c.tgtBarH, c.tgtBarW, c.tgtIconSz);
     fprintf(f, "tgtDetailIconSz=%.4f\n", c.tgtDetailIconSz);
     fprintf(f, "tgtRangeH=%.4f\n", c.tgtRangeH);
+    fprintf(f, "tgtRangeMin=%d\n", c.tgtRangeMin);
     fprintf(f, "tgtPos=%d,%.5f,%.5f\n", c.tgtPosSet ? 1 : 0, c.tgtX, c.tgtY);
     fprintf(f, "tgtCenter=%d,%d\n", c.tgtCenterH, c.tgtCenterV);
     fprintf(f, "plrBox=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", c.plrBox, c.plrEmblem, c.plrName, c.plrLvl, c.plrHp, c.plrMp, c.plrTp, c.plrBuffs, c.plrBuffMax, c.plrSpeed, c.plrGil, c.plrEquip);   // plrSpeed/plrGil/plrEquip appended last -> old shorter lines still parse
@@ -196,9 +197,10 @@ static void save_config_to(const char* path) {
     fprintf(f, "zt=%d,%.3f,%.4f,%.4f,%d,%d\n", c.ztShow, c.ztScale, c.ztX, c.ztY, c.ztVariant, c.ztHeader);   // zone tracker box (+ title toggle)
     fprintf(f, "ztsheol=%d,%d,%d\n", c.ztSheolSeg, c.ztSheolRes, c.ztSheolJoke);   // Sheol : segments / resistances / cruel joke
     fprintf(f, "tm=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%.4f,%.4f,%d,%d,%d,%.3f,%d,%d,%d,%.3f\n", c.tmShow, c.tmScale, c.tmX, c.tmY, c.tmMax, c.tmTitle, c.tmBox.on, c.tmMerged, c.tmRX, c.tmRY, c.tmDurMode, c.tmRecMode, c.tmOthers, c.tmIconScale, c.tmMine, c.tmBuffSrc, c.tmSpAlert, c.tmRowGap);   // Timers box (+ box.on/merge/recast-pos/display modes/others/icon-scale/buffs-on-allies/buff-source/SP-alert/row-spacing)
+    fprintf(f, "db=%d,%.3f,%.4f,%.4f,%d,%d,%d,%.3f,%.3f\n", c.dbShow, c.dbScale, c.dbX, c.dbY, c.dbMax, c.dbHeader, c.dbDisp, c.dbIconScale, c.dbRowGap);   // Debuffs module (detached target debuffs)
     {   // per-module box appearance (shared BoxStyle : frame / transparency / theme / hue / luminosity)
-        auto sb = [&](const char* k, const BoxStyle& b) { fprintf(f, "%s=%d,%.4f,%d,%d,%.4f,%08X\n", k, b.on, b.alpha, b.themeCopy, b.theme, b.lum, b.hue); };
-        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox);
+        auto sb = [&](const char* k, const BoxStyle& b) { fprintf(f, "%s=%d,%.4f,%d,%d,%.4f,%08X,%d\n", k, b.on, b.alpha, b.themeCopy, b.theme, b.lum, b.hue, b.border); };   // border = trailing field (old 6-field configs load with border=default)
+        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox); sb("dbbox", c.dbBox);
     }
     fprintf(f, "ep=%d,%.3f,%.4f,%.4f,%d\n", c.epShow, c.epScale, c.epX, c.epY, c.epColl);   // EmpyPop box (+ collectable row)
     fprintf(f, "eptrack=%s\n", c.epTrack);   // the tracked NM KEY -- its OWN line : keys contain spaces
@@ -217,6 +219,11 @@ static void save_config_to(const char* path) {
         const TextStyle& ts = c.tmText[i];
         int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
         fprintf(f, "tmText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
+    }
+    for (int i = 0; i < DB_TE_COUNT; ++i) {                                       // Debuffs : per-element typography
+        const TextStyle& ts = c.dbText[i];
+        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
+        fprintf(f, "dbText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
     }
     fprintf(f, "tmAllyGroup=%d\n", c.tmAllyGroup);   // buffs on allies : group same-spell into (AoE N) vs one row per ally
     fprintf(f, "tmFocus=%d,%d\n", c.tmFocusWarn, c.tmFocusHold);   // focus alert : warn-threshold + hold-after-loss (seconds)
@@ -280,9 +287,10 @@ static void save_config_to(const char* path) {
     fclose(f);
 }
 
-static void parse_box(const char* s, BoxStyle& b) {   // "on,alpha,themeCopy,theme,lum,hue" -> BoxStyle (keeps defaults on short lines)
-    int on = b.on, tc = b.themeCopy, th = b.theme; float al = b.alpha, lm = b.lum; unsigned hu = b.hue;
-    if (sscanf(s, "%d,%f,%d,%d,%f,%x", &on, &al, &tc, &th, &lm, &hu) >= 1) { b.on = on; b.alpha = al; b.themeCopy = tc; b.theme = th; b.lum = lm; b.hue = hu; }
+static void parse_box(const char* s, BoxStyle& b) {   // "on,alpha,themeCopy,theme,lum,hue[,border]" -> BoxStyle (keeps defaults on short lines)
+    int on = b.on, tc = b.themeCopy, th = b.theme, bd = b.border; float al = b.alpha, lm = b.lum; unsigned hu = b.hue;
+    const int n = sscanf(s, "%d,%f,%d,%d,%f,%x,%d", &on, &al, &tc, &th, &lm, &hu, &bd);
+    if (n >= 1) { b.on = on; b.alpha = al; b.themeCopy = tc; b.theme = th; b.lum = lm; b.hue = hu; if (n >= 7) b.border = bd; }   // border absent (old config) -> keep default (1)
 }
 
 // One-time seed : RDM (job 5) starts every spell EXCEPT Haste/Refresh/Flurry/Phalanx in "Unfollow-Focus"
@@ -338,6 +346,28 @@ static bool parse_ep_line(const char* line, UiConfig& c) {
     return false;
 }
 
+// Debuffs-module config lines, parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line).
+static bool parse_db_line(const char* line, UiConfig& c) {
+    int idx, v, v1; float fv, f1; unsigned uc;
+    if (strncmp(line, "db=", 3) == 0) {
+        int sh = 0, mx = 20, hd = 1, dp = 2; float scl = 1.0f, x = 0.80f, y = 0.42f, isc = 1.0f, rg = 1.0f;
+        const int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d,%d,%f,%f", &sh, &scl, &x, &y, &mx, &hd, &dp, &isc, &rg);
+        if (n >= 1) { c.dbShow = sh; if (n >= 2) c.dbScale = scl; if (n >= 3) c.dbX = x; if (n >= 4) c.dbY = y;
+                      if (n >= 5) c.dbMax = mx; if (n >= 6) c.dbHeader = hd; if (n >= 7) c.dbDisp = dp;
+                      if (n >= 8) c.dbIconScale = isc; if (n >= 9) c.dbRowGap = rg; }
+        return true;
+    }
+    if (sscanf(line, "dbText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < DB_TE_COUNT) {
+        TextStyle& ts = c.dbText[idx];
+        ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
+        ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
+        return true;
+    }
+    if (!strncmp(line, "dbbox=", 6)) { parse_box(line + 6, c.dbBox); return true; }
+    { int mn; if (sscanf(line, "tgtRangeMin=%d", &mn) == 1) { c.tgtRangeMin = mn; return true; } }   // out-of-line : keeps the main chain off MSVC's C1061 limit
+    return false;
+}
+
 // Cast-placeholder lines, parsed OUT-OF-LINE (same reason as parse_ep_line : the else-if chain sits at MSVC's
 // C1061 nesting limit -- adding these two branches inline blew it). Consumed via `continue`, zero chain depth.
 static bool parse_cast_line(const char* line, UiConfig& c) {
@@ -361,6 +391,7 @@ static bool load_config_from(const char* path) {
         int v, v1, v2, ps, idx, b0, b1, b2, bc; float x, y, s, fv, f1, f2; unsigned uc;
         if (parse_ep_line(line, c)) continue;   // out-of-line : keeps the chain below off MSVC's nesting limit
         if (parse_cast_line(line, c)) continue; // out-of-line : cast-placeholder toggles (same nesting-limit reason)
+        if (parse_db_line(line, c)) continue;   // out-of-line : Debuffs module (same nesting-limit reason)
         if      (sscanf(line, "partyShow=%d", &v) == 1) c.partyShow = v;
         else if (sscanf(line, "allyShow=%d", &v) == 1)  c.allyShow = v;
         else if (sscanf(line, "tgtShow=%d", &v) == 1)   c.tgtShow = v;
@@ -799,7 +830,7 @@ void profile_autoload_tick() {
 // ---- "unsaved changes" tracking : snapshot the persisted fields, compare to live ----
 static UiConfig g_snap; static bool g_snapValid = false;
 static bool box_eq(const BoxStyle& a, const BoxStyle& b) {
-    return a.on == b.on && a.alpha == b.alpha && a.themeCopy == b.themeCopy && a.theme == b.theme && a.lum == b.lum && a.hue == b.hue;
+    return a.on == b.on && a.border == b.border && a.alpha == b.alpha && a.themeCopy == b.themeCopy && a.theme == b.theme && a.lum == b.lum && a.hue == b.hue;
 }
 static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.partyShow != b.partyShow || a.allyShow != b.allyShow || a.tgtShow != b.tgtShow || a.plrShow != b.plrShow) return false;
@@ -850,7 +881,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.tgtBuffMax != b.tgtBuffMax) return false;
     if (a.tgtBarH != b.tgtBarH || a.tgtBarW != b.tgtBarW || a.tgtIconSz != b.tgtIconSz) return false;
     if (a.tgtDetailIconSz != b.tgtDetailIconSz) return false;
-    if (a.tgtRangeH != b.tgtRangeH) return false;
+    if (a.tgtRangeH != b.tgtRangeH || a.tgtRangeMin != b.tgtRangeMin) return false;
     if (a.tgtPosSet != b.tgtPosSet || a.tgtX != b.tgtX || a.tgtY != b.tgtY) return false;
     if (a.tgtCenterH != b.tgtCenterH || a.tgtCenterV != b.tgtCenterV) return false;
     // Player Hub module : toggles / sizes all belong to the profile.
@@ -940,6 +971,14 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
         const TextStyle& x = a.tmText[k], & y = b.tmText[k];
         if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
     }
+    // Debuffs module : detach toggle / box / layout / display / typography.
+    if (a.dbShow != b.dbShow || a.dbScale != b.dbScale || a.dbX != b.dbX || a.dbY != b.dbY || a.dbMax != b.dbMax) return false;
+    if (a.dbHeader != b.dbHeader || a.dbDisp != b.dbDisp || a.dbIconScale != b.dbIconScale || a.dbRowGap != b.dbRowGap) return false;
+    if (!box_eq(a.dbBox, b.dbBox)) return false;
+    for (int k = 0; k < DB_TE_COUNT; ++k) {
+        const TextStyle& x = a.dbText[k], & y = b.dbText[k];
+        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
+    }
     return true;
 }
 void profile_mark_clean() { g_snap = ui_config(); g_snapValid = true; }
@@ -1025,7 +1064,7 @@ void reset_ui_config() {   // general Default : everything
     for (int g = 0; g < 2; ++g) for (int k = 0; k < TE_COUNT; ++k) c.text[g][k] = TextStyle();   // typography back to defaults
     // Target module back to defaults (theme / sizes / typography / placement)
     c.tgtBox = 1; c.tgtBoxAlpha = 1.0f; c.tgtThemeCopy = 0; c.tgtTheme = 0; c.tgtLum = 0.0f; c.tgtHue = 0; c.tgtScale = 1.0f; c.tgtNameHostile = 1; c.tgtSpeed = 1; c.tgtSpeedIcon = 0; c.tgtTH = 1; c.tgtThIcon = 0; c.tgtRange = 1; c.tgtCast = 1; c.tgtCastDemo = 0; c.tgtSub = 1; c.tgtDebuffs = 1; c.tgtBuffMax = 20; c.tgtBuffPos = 0; c.tgtTimers = 1;
-    c.tgtBarH = 1.0f; c.tgtBarW = 1.0f; c.tgtIconSz = 1.0f; c.tgtDetailIconSz = 1.6f; c.tgtRangeH = 1.0f;
+    c.tgtBarH = 1.0f; c.tgtBarW = 1.0f; c.tgtIconSz = 1.0f; c.tgtDetailIconSz = 1.6f; c.tgtRangeH = 1.0f; c.tgtRangeMin = 0;
     c.tgtPosSet = false; c.tgtX = 0.0f; c.tgtY = 0.0f; c.tgtCenterH = 0; c.tgtCenterV = 0;
     for (int k = 0; k < TGT_TE_COUNT; ++k) c.tgtText[k] = TextStyle();
     // Player Hub module back to defaults
@@ -1042,13 +1081,15 @@ void reset_ui_config() {   // general Default : everything
     c.ztShow = d.ztShow; c.ztScale = d.ztScale; c.ztX = d.ztX; c.ztY = d.ztY; c.ztVariant = d.ztVariant; c.ztHeader = d.ztHeader; c.ztSheolSeg = d.ztSheolSeg; c.ztSheolRes = d.ztSheolRes; c.ztSheolJoke = d.ztSheolJoke;
     c.epShow = d.epShow; c.epScale = d.epScale; c.epX = d.epX; c.epY = d.epY; c.epColl = d.epColl;
     lstrcpynA(c.epTrack, d.epTrack, sizeof(c.epTrack));   // char[] : copy the CONTENT (plain '=' won't compile)
-    c.scBox = d.scBox; c.tpBox = d.tpBox; c.hlBox = d.hlBox; c.pwBox = d.pwBox; c.ztBox = d.ztBox; c.mmBox = d.mmBox; c.epBox = d.epBox;
+    c.scBox = d.scBox; c.tpBox = d.tpBox; c.hlBox = d.hlBox; c.pwBox = d.pwBox; c.ztBox = d.ztBox; c.mmBox = d.mmBox; c.epBox = d.epBox; c.dbBox = d.dbBox;
+    c.dbShow = d.dbShow; c.dbScale = d.dbScale; c.dbX = d.dbX; c.dbY = d.dbY; c.dbMax = d.dbMax; c.dbHeader = d.dbHeader; c.dbDisp = d.dbDisp; c.dbIconScale = d.dbIconScale; c.dbRowGap = d.dbRowGap;
     c.tgtSubPos = d.tgtSubPos; c.mmClockPos = d.mmClockPos; c.scNearby = d.scNearby;
     for (int k = 0; k < HL_TE_COUNT; ++k)   c.hlText[k]   = TextStyle();
     for (int k = 0; k < PW_TE_COUNT; ++k)   c.pwText[k]   = TextStyle();
     for (int k = 0; k < GRIM_TE_COUNT; ++k) c.grimText[k] = TextStyle();
     for (int k = 0; k < ZT_TE_COUNT; ++k)   c.ztText[k]   = TextStyle();
     for (int k = 0; k < EP_TE_COUNT; ++k)   c.epText[k]   = TextStyle();
+    for (int k = 0; k < DB_TE_COUNT; ++k)   c.dbText[k]   = TextStyle();
     reset_boxes();   // (also saves)
 }
 

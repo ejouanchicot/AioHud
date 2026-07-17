@@ -55,10 +55,6 @@ void ConfigPage::draw_pw_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.pwRate ? tr("On", "Oui") : tr("Off", "Non"), c.pwRate != 0)) { c.pwRate = !c.pwRate; save_ui_config(); }
         } ROW_NEXT(48.0f)
-        { ROW_BAND(44.0f)   // placement hint
-            const float ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(19.0f), tr("Position: drag it in //aio edit", "Position : d\xC3\xA9place-la dans //aio edit"), snap(13.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        } ROW_NEXT(44.0f)
         { ROW_BAND(40.0f)   // note
             const float ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("XP under 99, CP at 99, ML once mastered. + Merits.", "XP <99, CP a\xCC\x80 99, ML si master. + Merits."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);

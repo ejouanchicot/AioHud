@@ -265,11 +265,6 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().plrEquipScale = v < lo ? lo : (v > hi ? hi : v); save_ui_config(); }
         }
         ROW_NEXT(46.0f)
-        { ROW_BAND(44.0f)   // placement hint
-            const float ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(19.0f), tr("Position: drag it in //aio edit", "Position : d\xC3\xA9place-le dans //aio edit"), snap(13.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        }
-        ROW_NEXT(44.0f)
         }
         // Gil : it renders WITH the equipment (icon + amount) -> its toggle lives here, not in Content.
         PLR_TOGGLE(CTRL_ID, tr("Gil", "Gil"), ui_config().plrGil)

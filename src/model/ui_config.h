@@ -46,6 +46,7 @@ enum { GRIM_CHARGE = 0, GRIM_TIMER, GRIM_TE_COUNT };           // Grimoire text 
 enum { ZT_HEADER = 0, ZT_BODY, ZT_TE_COUNT };                  // Zone Tracker text elements (Header / Body)
 enum { EP_TITLE = 0, EP_POP, EP_FROM, EP_COLL, EP_TE_COUNT };  // EmpyPop text elements (NM title / pop name / "from <mob>" / collectable)
 enum { TM_HEADER = 0, TM_NAME, TM_TIMER, TM_TE_COUNT };        // Timers text elements (column titles / buff+recast name / MM:SS)
+enum { DB_HEADER = 0, DB_NAME, DB_TIMER, DB_TE_COUNT };        // Debuffs module text elements (mob-name header / debuff name / timer)
 enum { TMDISP_ICON = 0, TMDISP_NAME, TMDISP_BOTH };           // Timers column display : Icon / Name / Icon+Name
 enum { TMSRC_MINE = 0, TMSRC_PLAYERS, TMSRC_TRUSTS, TMSRC_ALL };   // Timers Duration buff-source filter : mine / +players / +trusts / all
 struct TextStyle {
@@ -60,7 +61,8 @@ const char* ui_text_elem_label(int e);   // "Name" / "HP" / ... / "Interface"
 // The persisted "box appearance" bundle every non-Party module uses (Target/Player already inline the same fields).
 // Defaults = follow the Party theme, solid. See ui/box_style.{h,cpp} for the shared draw + config-row helpers.
 struct BoxStyle {
-    int      on        = 1;      // draw the frame + background (0 = the content floats bare)
+    int      on        = 1;      // draw the box chrome at all (0 = the content floats bare : no bg, no border)
+    int      border    = 1;      // draw the FRAME edges + corners (0 = background only -> a borderless panel). Needs on.
     float    alpha     = 1.0f;   // chrome opacity (1 = solid ; user "Transparency" slider = 1 - alpha)
     int      themeCopy = 1;      // 1 = follow the Party box theme (skinTheme/skinLum/skinHue) ; 0 = this box's own
     int      theme     = 0;      // own theme index (window_theme_index) when themeCopy = 0
@@ -109,6 +111,8 @@ struct UiConfig {
     int   tgtThIcon  = 0;      // TH display : 0 = text ("TH9") / 1 = coffer icon + value
     int   tgtRange   = 1;      // show the DISTANCE gauge (range zones : Melee/WS/Magic/... on a mob, Trade/AoE/Cast on an ally)
     float tgtRangeH  = 1.0f;   // DISTANCE gauge height multiplier (like tgtBarH for the HP bar)
+    int   tgtRangeMin = 0;     // Distance display : 0 = full gauge (zones + cursor) ; 1 = MINIMAL (just the number,
+                               // coloured by the RANGE ZONE it falls in -- same band colours as the gauge : Melee/WS/Magic/Ranged/Enmity on a mob, Trade/AoE/Cast on an ally)
     int   tgtCast    = 1;      // show the target's ACTION bar (its live spell cast : name + filling bar) under the HP bar
     int   tgtCastDemo = 0;     // show a DEMO cast bar during normal play (placeholder for positioning ; live cast wins)
     int   tgtSub     = 1;      // show the SUB-TARGET (<st>) compact bar (name + mini HP) at the bottom while a sub-target cursor is up
@@ -283,6 +287,21 @@ struct UiConfig {
     int   tmFocusHold = 60;          // FOCUS alerts : once a "Hidden + focus" buff is LOST, the red "OUT" row holds this many
                                      //   SECONDS then clears if not re-cast (a "Follow + focus" alert instead stays permanently). 5..300.
     TextStyle tmText[TM_TE_COUNT];   // Timers typography : [TM_HEADER] column titles  [TM_BODY] names + MM:SS
+    // ---- DEBUFFS module : the target's debuffs DETACHED from the Target box into a Timers-style list (mob-name
+    //      header + rows of icon / name / timer). Fed by party().target_debuffs (same data + colours + ??? logic
+    //      as the in-box icons ; nothing new in the model). dbShow is the "independent" toggle : when ON, the
+    //      Target box drops its debuff icons and this module draws them instead. ----
+    int   dbShow  = 0;         // 0 = debuffs stay IN the Target box (tgtDebuffs) ; 1 = detached into this module
+    float dbScale = 1.0f;      // size multiplier (0.5 .. 2.0)
+    float dbX     = 0.80f;     // horizontal LEFT edge (screen fraction) ; dbY = its TOP
+    float dbY     = 0.42f;
+    int   dbMax   = 20;        // max debuff rows shown (1 .. 32)
+    int   dbHeader = 1;        // show the mob-name header row
+    int   dbDisp  = TMDISP_BOTH;     // row display : icon / name / icon+name (reuses the Timers TMDISP_ enum)
+    float dbIconScale = 1.0f;        // debuff-icon size multiplier (0.5 .. 2.0 ; also grows the row height)
+    float dbRowGap    = 1.0f;        // vertical row-spacing multiplier (0.6 .. 3.0)
+    BoxStyle dbBox;                  // box appearance (frame / transparency / theme) -- shared bundle
+    TextStyle dbText[DB_TE_COUNT];   // Debuffs typography : [DB_HEADER] mob name  [DB_NAME] debuff name  [DB_TIMER] timer
     // ---- Timers "track per job" : DISABLED entries (BLACKLIST ; empty = track everything, the default). Per
     //      job id 1..23, a list of keys. A key is a buff STATUS id (< TM_KEY_RECAST) OR TM_KEY_RECAST+recast_id
     //      (a cooldown). One checklist entry toggled OFF stores BOTH its keys. hud_timers hides a buff/recast

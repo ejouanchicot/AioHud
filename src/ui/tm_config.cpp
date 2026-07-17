@@ -87,13 +87,6 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const float bbw = snap(140.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.tmAllyGroup ? tr("Grouped", "Group\xC3\xA9s") : tr("Per person", "Par personne"), c.tmAllyGroup != 0)) { c.tmAllyGroup = !c.tmAllyGroup; save_ui_config(); }
         } ROW_NEXT(48.0f)
-        { ROW_BAND(44.0f)   // placement hint
-            const float ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(19.0f),
-                        c.tmMerged ? tr("Position: drag it in //aio edit", "Position : d\xC3\xA9place-le dans //aio edit")
-                                   : tr("Separate: drag Duration & Recast independently in //aio edit", "S\xC3\xA9par\xC3\xA9 : bouge Duration et Recast ind\xC3\xA9pendamment dans //aio edit"),
-                        snap(13.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        } ROW_NEXT(44.0f)
     }   // end Display
 
     // ===== sub-section : ALERTS (SP blink + focus-alert timings) =====
