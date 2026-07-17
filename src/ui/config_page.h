@@ -217,6 +217,8 @@ private:
     float helpPlayerCx_ = 0.0f, helpPlayerCy_ = 0.0f, helpPlayerW_ = 0.0f, helpPlayerH_ = 0.0f;
     float cfgScroll_   = 0.0f;    // Configuration tab controls vertical scroll (mouse wheel)
     float cfgMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
+    float updScroll_   = 0.0f;    // Update tab "What's new" changelog vertical scroll
+    float updMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
     float helpMaxScroll_ = 0.0f;  // last frame's scroll limit -> clamp the wheel BEFORE drawing (no overscroll bounce)
     // live-preview anchor published each frame for the HUD (Configuration tab only)
     bool  pvOn_        = false;

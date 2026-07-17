@@ -255,11 +255,32 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
     static bool inGesture = false;   // a left button is currently held
     static bool blockGest = false;   // ...and we're swallowing this gesture (vs a refocus click we pass)
 
-    // Wheel : while the config/edit overlay is up, capture it (edit -> box resize ; Help tab -> scroll)
-    // and consume it so the game camera doesn't zoom underneath. Otherwise pass through.
+    // 1) LEFT gesture : fate LOCKED at the DOWN, same fate applied to its moves + the UP. NEVER split -- the
+    //    game seeing a DOWN but never the UP (or vice-versa) is the classic stuck avatar that walks forever.
+    //    This holds across every focus/overlay flip that happens MID-gesture :
+    //      - the refocus click : down while the game is NOT foreground -> passed so Windows activates the window ;
+    //        by the up the game is focused + overlay open, but we still pass it (locked) so no stuck button ;
+    //      - the click that CLOSES the config : down while open -> swallowed ; by the up the config is closed,
+    //        but we still swallow it (locked) so the game never sees a lone up.
+    //    (A previous "swallow everything while active" shortcut ignored this lock and reintroduced the stuck
+    //     avatar : a refocus up got swallowed while its down had already reached the game.)
+    if (eventtype == 1) {                 // L down -- lock the fate
+        inGesture = true;
+        blockGest = active;               // overlay up + focused -> swallow the whole gesture ; else pass it whole
+        return blockGest ? 1u : blocked;
+    }
+    if (eventtype == 2) {                 // L up -- SAME fate as its down, whatever changed since
+        const bool b = blockGest;
+        inGesture = false; blockGest = false;
+        return b ? 1u : blocked;
+    }
+    if (inGesture) return 1u;             // mid-gesture move : always swallow -> a passed refocus click stays a
+                                          // STATIONARY click (down+up, no moves) -> refocus without mouselook/walk
+
+    // 2) No left gesture in progress. Wheel : edit box-resize / Help scroll while the overlay is up ; else the
+    //    minimap zoom when the cursor is over it. Consume it so the game camera never zooms underneath.
     if ((int)delta != 0) {
         if (active) { aio::ui_config().wheel += ((int)delta > 0) ? 1 : -1; return 1u; }
-        // normal mode : zoom the minimap (player-centred) when the cursor is over it -> swallow so the game camera doesn't zoom too.
         aio::UiConfig& c = aio::ui_config();
         if (c.mmVisible && focused && g_gameHwnd) {
             POINT p;
@@ -279,21 +300,12 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
         }
         return blocked;
     }
-    if (eventtype == 1) {                 // Ldown : lock the gesture's fate now
-        inGesture = true;
-        blockGest = active;               // focused + overlay -> swallow ; else pass (let Windows activate)
-        return blockGest ? 1u : blocked;
-    }
-    if (eventtype == 2) {                 // Lup : end the gesture with the SAME fate as its down
-        const bool b = blockGest;
-        inGesture = false; blockGest = false;
-        return b ? 1u : blocked;
-    }
-    // mid-gesture move : swallow it either way. While swallowing it's obvious ; while PASSING (a refocus
-    // click) we still eat the moves so a drag can't trigger FFXI mouselook -> the down+up alone is a
-    // stationary click that just re-focuses, the avatar never turns.
-    if (inGesture) return 1u;
-    return blocked;                       // bare hover : pass through (a move is a no-op in FFXI)
+    // 3) A bare move, or a RIGHT / MIDDLE button event (no left gesture) : while the overlay is up the game must
+    //    see NOTHING -- swallow it (no hover, no right-drag camera mouselook). Otherwise pass straight through.
+    //    Right/middle aren't fate-locked like the left button, but a right gesture can only straddle the overlay
+    //    boundary via a bizarre sequence (config open/close is a left-click or Esc, never mid-right-drag).
+    if (active) return 1u;
+    return blocked;                       // normal play : a bare move is a no-op in FFXI -> pass through
 }
 
 // slot 14 : KEYBOARD (key, down, blocked). `key` is a DirectInput scan code (DIK_*). We translate it

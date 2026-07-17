@@ -111,10 +111,13 @@ static void tab_icon(u32 dev, int kind, float cx, float cy, float s, u32 col, Fo
         fo->draw_c(dev, cx, cy, "?", s * 1.18f, col, fa(C_STROKE), 1.2f);
     }
 }
-// AioHud's OWN arrow cursor (config option "Cursor", OFF by default) -> for players whose modded game DAT hides
-// the native pointer, so they'd otherwise have no cursor at all in this window. Drawn last, on top of everything.
+// AioHud's OWN arrow cursor, drawn last on top of everything. Both call sites are config / edit-layout only,
+// and those now FULLY capture the mouse (the game no longer gets events -> it stops drawing its native cursor),
+// so we always draw ours here whenever the game is focused -- otherwise there would be NO pointer at all. (This
+// used to be gated on the "Cursor" option, which only mattered back when the game still received the pointer ;
+// that option is now redundant.) Skip when the game isn't foreground : another window owns the pointer then.
 static void draw_ui_cursor(u32 dev, const MouseState* mo) {
-    if (!ui_config().uiCursor || !mo) return;
+    if (!mo || !mo->focused) return;
     const float x = snap(mo->x), y = snap(mo->y), s = snap(1.0f);
     const float cx[3] = { x, x, x + 11.0f * s };
     const float cy[3] = { y, y + 16.0f * s, y + 11.0f * s };
@@ -2265,17 +2268,36 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
         }
 }
 
-// ---- Update tab (tab_ == 4) : version + release check + a one-click in-game update button. ----
+// A short, user-facing "what changed" list for THIS build -- shown under the Update controls so a player knows
+// what the version they run (or just updated to) actually fixes / adds. PLAIN language, what not how ; no dev
+// jargon. UPDATE this with each release. `*bold*` markup works (draw_wrapped colours it brighter).
+struct ChangeLine { const char* en; const char* fr; };
+static const ChangeLine CHANGELOG[] = {
+    { "*EmpyPop* : a new tracker for Abyssea empyrean NMs -- it lists the pop items and key items you still need, and marks the ones already in hand. Pick your NM in its config page or with //aio ept.",
+      "*EmpyPop* : un nouveau tracker pour les NM empyr\xC3\xA9""ens d'Abyssea -- il liste les pop items et key items qu'il te reste \xC3\xA0 obtenir, et marque ceux d\xC3\xA9j\xC3\xA0 en main. Choisis ton NM dans sa page de config ou avec //aio ept." },
+    { "Fixed doubled typing : on some keyboards every letter was entered twice inside AioHud's own text fields.",
+      "Corrig\xC3\xA9 la saisie doubl\xC3\xA9""e : sur certains claviers, chaque lettre \xC3\xA9tait saisie deux fois dans les champs texte d'AioHud." },
+    { "The mouse no longer reaches the game while the config or edit screen is open -- no more character walking or camera turning behind it, and AioHud's own pointer is always shown there.",
+      "La souris n'atteint plus le jeu quand la config ou l'\xC3\xA9""dition est ouverte -- fini le perso qui marche ou la cam\xC3\xA9ra qui tourne derri\xC3\xA8re, et le pointeur d'AioHud y est toujours affich\xC3\xA9." },
+    { "*Player* and *Target* : new Cast and Cast-placeholder toggles for the action bar.",
+      "*Player* et *Target* : nouveaux boutons Cast et Cast fictif pour la barre d'action." },
+    { "The *Hide key* can now be Hold or Toggle (Interface), and the //aio ept list prints in colour in the game chat.",
+      "La *touche masquer* peut d\xC3\xA9sormais \xC3\xAAtre en Maintien ou Bascule (Interface), et la liste //aio ept s'affiche en couleur dans le chat du jeu." },
+};
+static const int CHANGELOG_N = (int)(sizeof(CHANGELOG) / sizeof(CHANGELOG[0]));
+
+// ---- Update tab (tab_ == 4) : version + release check + one-click update (top), then a "What's new" changelog
+//      (below, scrollable when the release is big). ----
 void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
                                  float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse, float e) {
-    (void)pageBot; (void)e; (void)pulse;
+    (void)bodyH; (void)pulse; (void)e;
     char ver[64] = { 0 };
     const int  st  = aio_update_check_status(ver, sizeof(ver));   // 0 checking, 1 up-to-date, 2 available, 3 error
     const char* cur = aio_version_string();
 
-    // centred card
-    const float cw = snap(560.0f), ch = snap(310.0f);
-    const float cx = ix + (iw - cw) * 0.5f, cy = bodyY + (bodyH - ch) * 0.5f;
+    // update card, anchored at the TOP (the changelog fills the space below it)
+    const float cw = snap(560.0f), ch = snap(250.0f);
+    const float cx = ix + (iw - cw) * 0.5f, cy = bodyY + snap(6.0f);
     rrect_fill(dev, cx, cy, cw, ch, snap(14.0f), 0xE0121A27, 0xF00A0F18);
     cs_add(dev); soft_blob(dev, cx + cw * 0.5f, cy + snap(4.0f), cw * 0.5f, ch * 0.14f, 0x142A4E84); cs(dev);
     outline(dev, cx, cy, cw, ch, C_BORDERHI);
@@ -2340,11 +2362,43 @@ void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseS
         else          aio_update_spawn_check();// re-run the check
     }
 
-    fo->begin(dev);
-    fo->draw_c(dev, midX, cy + ch - snap(30.0f),
-               tr("Updates right in game -- your settings and profiles are always kept.",
-                  "Mise \xC3\xA0 jour directement en jeu -- tes r\xC3\xA9glages et profils sont toujours conserv\xC3\xA9s."),
-               snap(12.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
+    // ---- "What's new" changelog, below the card : what THIS version fixes / adds, in plain language. Scrolls
+    //      when the release is big (D3D8 stencil clip + wheel, same pattern as the Configuration tab). ----
+    const float clX = cx, clW = cw;
+    const float clTop = cy + ch + snap(14.0f);
+    char wn[80]; _snprintf(wn, sizeof(wn), "%s V%s", tr("What's new in", "Nouveaut\xC3\xA9s de la"), cur); wn[sizeof(wn) - 1] = 0;
+    fo->begin(dev); fo->draw_lc(dev, clX + snap(2.0f), clTop + snap(11.0f), wn, snap(15.0f), fa(C_GOLDHI), fa(C_STROKE), 1.2f);
+    const float listTop = clTop + snap(30.0f), listBot = pageBot - snap(6.0f);
+    if (listBot > listTop + snap(20.0f)) {                                   // only if there's vertical room below
+        if (ui_config().wheel != 0 && mo && mo->x >= clX && mo->x <= clX + clW && mo->y >= listTop && mo->y <= listBot) {
+            updScroll_ -= (float)ui_config().wheel * snap(48.0f);
+            if (updScroll_ < 0.0f) updScroll_ = 0.0f;
+            if (updScroll_ > updMaxScroll_) updScroll_ = updMaxScroll_;      // clamp vs last frame's extent -> no overscroll
+            ui_config().wheel = 0;
+        }
+        clip_rect_begin(dev, clX - snap(2.0f), listTop, clW + snap(12.0f), listBot - listTop);
+        const float lh = snap(17.0f), tsz = snap(13.0f);
+        float y = listTop - updScroll_;
+        for (int i = 0; i < CHANGELOG_N; ++i) {
+            cs(dev); rrect_fill(dev, clX + snap(3.0f), snap(y + lh * 0.5f - 2.0f), snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI));   // gold bullet
+            const char* txt = (ui_config().lang == 1) ? CHANGELOG[i].fr : CHANGELOG[i].en;
+            y = draw_wrapped(dev, fo, clX + snap(16.0f), y, clW - snap(24.0f), listTop, listBot, txt, tsz, C_TEXT, lh);
+            y += snap(7.0f);                                                 // gap between entries
+        }
+        clip_rect_end(dev);
+        // this frame's content extent -> the wheel clamp + a thin scrollbar when it overflows
+        const float viewH = listBot - listTop, contentH = (y + updScroll_) - listTop + snap(6.0f);
+        float maxS = contentH - viewH; if (maxS < 0.0f) maxS = 0.0f;
+        updMaxScroll_ = maxS;
+        if (updScroll_ > maxS) updScroll_ = maxS;
+        if (maxS > 0.5f) {
+            const float sbx = clX + clW + snap(4.0f), sbw = snap(4.0f);
+            flat(dev, sbx, listTop, sbw, viewH, 0x22000000);                                        // track
+            float thH = viewH * (viewH / contentH); if (thH < snap(24.0f)) thH = snap(24.0f);
+            const float thY = listTop + (viewH - thH) * (updScroll_ / maxS);
+            rrect_fill(dev, sbx, thY, sbw, thH, sbw * 0.5f, 0x66FFFFFF, 0x66FFFFFF);                 // thumb
+        }
+    }
 }
 
 } // namespace aio
