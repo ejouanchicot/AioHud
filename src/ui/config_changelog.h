@@ -13,6 +13,12 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_30[] = {
+    { "In *Help > Zone Tracker*, the six zone examples stayed on one row again : the last one dropped to a second line after visiting another Help page. They were being laid out against the width reserved for reading text rather than the panel's real width, leaving them 16 pixels from wrapping.",
+      "Dans *Aide > Suivi de zone*, les six exemples de zones tiennent à nouveau sur une seule rangée : le dernier passait à la ligne après un passage sur une autre rubrique. Ils étaient disposés selon la largeur réservée à la lecture du texte plutôt que celle du panneau, à 16 pixels du basculement." },
+    { "Every module box is a touch crisper : their frames were drawn at fractional pixel positions, which softened borders and bars. Text was never affected, which is why it read as \"slightly blurry\" rather than as a bug.",
+      "Chaque boîte de module est un peu plus nette : leurs cadres étaient dessinés à des positions de pixel fractionnaires, ce qui adoucissait bordures et barres. Le texte n'était jamais concerné, d'où l'impression de « léger flou » plutôt que de défaut." },
+};
 static const ChangeLine CL_29[] = {
     { "The game's own mouse pointer no longer appears next to AioHud's over the config window when you come back from another application — it used to show up and flicker as soon as the mouse touched the game, even before clicking. AioHud's pointer now also follows the mouse over the game window while another window has focus.",
       "Le pointeur du jeu n'apparaît plus à côté de celui d'AioHud sur la fenêtre de config quand tu reviens d'une autre application — il se montrait et clignotait dès que la souris touchait le jeu, avant même de cliquer. Le pointeur d'AioHud suit désormais aussi la souris au-dessus du jeu pendant qu'une autre fenêtre a le focus." },
@@ -88,6 +94,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.30", CL_30, (int)(sizeof(CL_30) / sizeof(CL_30[0])) },
     { "1.0.29", CL_29, (int)(sizeof(CL_29) / sizeof(CL_29[0])) },
     { "1.0.28", CL_28, (int)(sizeof(CL_28) / sizeof(CL_28[0])) },
     { "1.0.27", CL_27, (int)(sizeof(CL_27) / sizeof(CL_27[0])) },
