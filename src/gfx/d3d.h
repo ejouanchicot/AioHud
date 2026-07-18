@@ -95,4 +95,28 @@ inline void dColorQuadState(u32 d) {
     dSetTSS(d, 1, D3DTSS_COLOROP, D3DTOP_DISABLE); dSetTSS(d, 1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
 }
 
+// Standard TEXTURED-quad state (MODULATE tex*diffuse, straight alpha, LINEAR min/mag), binding `tex` on
+// stage 0 -- the block every sprite draw shares (icons / cursors / buffs / map). This existed as FOUR copies
+// (party / target / player / minimap) that had already DIVERGED, so both axes they disagreed on are
+// parameters here rather than a choice imposed on everyone :
+//   mipLinear : LINEAR mips keep minified icons and the map crisp (minimap) ; NONE keeps a pixel-exact atlas
+//               sharp (target / player / the buff atlas).
+//   border    : BORDER addressing instead of CLAMP -- the minimap's round disc samples OUTSIDE [0,1] when
+//               zoomed out near a map edge, where CLAMP would smear the edge texels into a stretch artefact.
+// Addressing is always set explicitly : leaving it unset let WRAP leak in from the box chrome and fringe the
+// atlas cells whose UVs touch 0 or 1.
+inline void dTexQuadState(u32 d, u32 tex, bool mipLinear = false, bool border = false) {
+    dSetVS(d, FVF_XYZRHW_DIFFUSE_TEX1);
+    dSetRS(d, D3DRS_ALPHABLENDENABLE, 1);
+    dSetRS(d, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
+    dSetRS(d, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    dSetTex(d, 0, tex);
+    dSetTSS(d, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(d, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(d, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+    dSetTSS(d, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(d, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(d, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+    dSetTSS(d, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(d, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR);
+    dSetTSS(d, 0, D3DTSS_MIPFILTER, mipLinear ? D3DTEXF_LINEAR : D3DTEXF_NONE);
+    const u32 addr = border ? D3DTADDRESS_BORDER : D3DTADDRESS_CLAMP;
+    dSetTSS(d, 0, D3DTSS_ADDRESSU, addr); dSetTSS(d, 0, D3DTSS_ADDRESSV, addr);
+}
+
 } // namespace aio

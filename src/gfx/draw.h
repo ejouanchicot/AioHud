@@ -9,6 +9,12 @@
 
 namespace aio {
 
+// Round to the nearest whole pixel. The half-pixel offset every builder below applies only produces a crisp
+// 1px edge if the coordinate handed in is already ON the pixel grid -- see CLAUDE.md rule 1. This lived as
+// SEVEN byte-identical copies across the ui/ TUs ; one drifting copy would mean one silently blurry widget,
+// so it is defined once, here, next to the code whose contract depends on it.
+inline float snap(float v) { return (float)(int)(v + 0.5f); }
+
 // --- textured (FVF 0x144) ---
 
 // textured quad, explicit UVs, left/right vertex colours (horizontal gradient).

@@ -667,7 +667,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     }
 
     fo->set_upper(false);   // clear the Interface UPPERCASE so the shared font atlas doesn't stay forced elsewhere
-    draw_ui_cursor(f.dev, mo);   // optional custom pointer (default off ; on for modded-DAT clients with no native cursor)
+    draw_ui_cursor(f.dev, mo);   // ALWAYS : the overlay suppresses the OS cursor over the client area, so ours is the only one
 }
 
 // Configuration-tab quick profile switcher. Drawn AFTER the module content (over an opaque cover) so a tall page's
@@ -1128,7 +1128,7 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
                 editConfirm_ = 0;
             }
         }
-        draw_ui_cursor(dev, mo);   // optional custom pointer (edit-layout mode) for modded-DAT clients with no native cursor
+        draw_ui_cursor(dev, mo);   // ALWAYS, same reason as the config page : ours is the only pointer while editing
 }
 
 // ---- Profile tab (tab_ == 1 branch), lifted verbatim from draw() (byte-identical). ----

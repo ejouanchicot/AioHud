@@ -440,8 +440,8 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         if (measureOnly) { measH = boxH; return boxW; }
 
         float px, py;
-        if (ovS > 0.0f) { px = hud_snap(ovcx - boxW * 0.5f); py = hud_snap(ovcy - boxH * 0.5f); }
-        else            { px = hud_snap(fx * screenW); py = hud_snap(fy * screenH); }
+        if (ovS > 0.0f) { px = snap(ovcx - boxW * 0.5f); py = snap(ovcy - boxH * 0.5f); }
+        else            { px = snap(fx * screenW); py = snap(fy * screenH); }
         if (editing && saveFx) {
             static EditBox eb[2]; EditBox& g = eb[editId == EDITBOX_TIMERS ? 0 : 1];
             float tfx = px / screenW, tfy = py / screenH; bool ps = true; int ch = 0, cv = 0; const bool wasDrag = g.dragging;

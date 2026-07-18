@@ -93,8 +93,8 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
                          + (hasCnt ? cntLineH + 4.0f * S : 0.0f) + (hasRows ? nrows * rowLineH : 0.0f) + pad;
         if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }
         float px, py;
-        if (ovS > 0.0f) { px = hud_snap((ovX - boxW * 0.5f)); py = hud_snap((ovY - boxH * 0.5f)); }
-        else            { px = hud_snap(C.ztX * screenW - boxW * 0.5f); py = hud_snap(C.ztY * screenH); }
+        if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
+        else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
         if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
         dColorQuadState(dev);
         const float r0 = 6.0f * S;
@@ -175,8 +175,8 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
                          + (hasComp ? stH : 0.0f) + (hasRate ? stH : 0.0f) + (hasTok ? stH : 0.0f) + pad;
         if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }
         float px, py;
-        if (ovS > 0.0f) { px = hud_snap((ovX - boxW * 0.5f)); py = hud_snap((ovY - boxH * 0.5f)); }
-        else            { px = hud_snap(C.ztX * screenW - boxW * 0.5f); py = hud_snap(C.ztY * screenH); }
+        if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
+        else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
         if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
         dColorQuadState(dev);
         const float r0 = 6.0f * S;
@@ -275,8 +275,8 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         const float boxW = contentW + 2.0f * pad, boxH = pad + (showHdr ? headH + gap : 0.0f) + bodyH + pad;   // bottom margin = pad (was + an extra gap -> too much space under Cruel Joke)
         if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }
         float px, py;
-        if (ovS > 0.0f) { px = hud_snap((ovX - boxW * 0.5f)); py = hud_snap((ovY - boxH * 0.5f)); }
-        else            { px = hud_snap(C.ztX * screenW - boxW * 0.5f); py = hud_snap(C.ztY * screenH); }
+        if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
+        else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
         if (editing) { static EditBox g_ztEditS; box_edit(f, g_ztEditS, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
         dColorQuadState(dev);
         const float r0 = 6.0f * S;
@@ -416,8 +416,8 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
                          + (hasChip ? chipBlockH : 0.0f) + pad;
         if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }
         float px, py;
-        if (ovS > 0.0f) { px = hud_snap((ovX - boxW * 0.5f)); py = hud_snap((ovY - boxH * 0.5f)); }
-        else            { px = hud_snap(C.ztX * screenW - boxW * 0.5f); py = hud_snap(C.ztY * screenH); }
+        if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
+        else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
         if (editing) { static EditBox g_ztEditL; box_edit(f, g_ztEditL, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
         dColorQuadState(dev);
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
@@ -552,8 +552,8 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
 
     // ---- position (+ edit drag) ----
     float px, py;
-    if (ovS > 0.0f) { px = hud_snap((ovX - boxW * 0.5f)); py = hud_snap((ovY - boxH * 0.5f)); }
-    else            { px = hud_snap(C.ztX * screenW - boxW * 0.5f); py = hud_snap(C.ztY * screenH); }
+    if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
+    else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
     if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
 
     // ---- chrome ----

@@ -102,7 +102,6 @@ struct UiConfig {
     int   uiStyle   = 0;       // config-menu colour STYLE / family (Neon / Matte / Medieval / Heroic / Pastel ...)
     int   uiColor   = 0;       // colour index WITHIN the chosen style
     unsigned uiAccent = 0;     // custom config-menu accent (0 = use uiStyle/uiColor preset ; else derive the accent family from this opaque colour)
-    int   uiCursor  = 0;       // draw AioHud's OWN mouse cursor in the config window (for players whose modded game DAT hides the native cursor) ; 0 = rely on the game cursor
     int   hidePeekMode = 0;    // the HUD-hide key (End) : 0 = HOLD (hidden only while held) ; 1 = TOGGLE (press to hide, press again to show)
     float cursorScale = 1.0f;  // selection-cursor (hand) size multiplier (0.50 .. 2.00)
     // ---- Target module (its OWN box theme, independent of the party skinTheme) ----

@@ -113,8 +113,8 @@ void treasure_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
 
     // ---- position (+ edit drag) : tpX = horizontal centre, tpY = top ----
     float px, py;
-    if (ovS > 0.0f) { px = hud_snap((ovX - boxW * 0.5f)); py = hud_snap((ovY - boxH * 0.5f)); }
-    else            { px = hud_snap(C.tpX * screenW - boxW * 0.5f); py = hud_snap(C.tpY * screenH); }
+    if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
+    else            { px = snap(C.tpX * screenW - boxW * 0.5f); py = snap(C.tpY * screenH); }
     if (editing) { static EditBox g_tpEdit; box_edit(f, g_tpEdit, EDITBOX_TREASURE, px, py, boxW, boxH, ui_config().tpScale, ui_config().tpX, ui_config().tpY, 1); }
 
     // ---- box chrome ----

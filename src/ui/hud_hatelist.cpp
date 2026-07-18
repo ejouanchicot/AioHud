@@ -44,17 +44,9 @@ static float hl_dblarrow(u32 dev, float x, float cy, float sz, u32 col) {
     return step + hs;
 }
 
-// truncate `s` (CAPS already applied) with a ".." suffix until it fits maxW at size sz (like the mockup's
-// text-overflow: ellipsis, but the font atlas has no U+2026 glyph so ".." stands in). Returns s if it already fits.
+// hl_fit -> the shared fit_ellipsis (ui/text_style.h). Kept as a named forwarder : 4 call sites, 2 dots.
 static const char* hl_fit(Font* fo, const char* s, float sz, float maxW, char* buf, int cap) {
-    if (!s || fo->measure(s, sz) <= maxW) return s;
-    int n = 0; while (s[n]) ++n;
-    for (int len = n - 1; len >= 1; --len) {
-        int c = 0; for (; c < len && c < cap - 3; ++c) buf[c] = s[c];
-        buf[c++] = '.'; buf[c++] = '.'; buf[c] = 0;
-        if (fo->measure(buf, sz) <= maxW) return buf;
-    }
-    buf[0] = s[0]; buf[1] = 0; return buf;
+    return fit_ellipsis(fo, s, sz, maxW, buf, cap, 2);
 }
 
 // A representative 15-character name (the client's hard cap) : one capital + average-width lowercase.
@@ -148,8 +140,8 @@ void hatelist_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
 
     // ---- position (+ edit drag) : hlX = horizontal centre, hlY = top ----
     float px, py;
-    if (ovS > 0.0f) { px = hud_snap((ovX - boxW * 0.5f)); py = hud_snap((ovY - boxH * 0.5f)); }
-    else            { px = hud_snap(C.hlX * screenW - boxW * 0.5f); py = hud_snap(C.hlY * screenH); }
+    if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
+    else            { px = snap(C.hlX * screenW - boxW * 0.5f); py = snap(C.hlY * screenH); }
     if (editing) { static EditBox g_hlEdit; box_edit(f, g_hlEdit, EDITBOX_HATE, px, py, boxW, boxH, ui_config().hlScale, ui_config().hlX, ui_config().hlY, 1); }
 
     // ---- box chrome ----

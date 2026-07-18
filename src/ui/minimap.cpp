@@ -22,7 +22,6 @@
 
 namespace aio {
 
-static inline float snap(float v) { return (float)(int)(v + 0.5f); }
 static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 // darken a colour toward black by fraction f (0..1), keeping its alpha -> a crisp AA outline for the round rim.
 static inline u32 mm_darken(u32 c, float f) {
@@ -41,21 +40,7 @@ static void color_state(u32 dev) {
 }
 
 // textured-quad render state for the map image draw.
-static void tex_state(u32 dev, u32 tex) {
-    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
-    dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dSetTex(dev, 0, tex);
-    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_LINEAR);   // mip -> crisp minified icons/map
-    // BORDER (transparent) not CLAMP : when zoomed out / the player is near a map edge the round disc samples
-    // OUTSIDE [0,1] -> CLAMP would smear the edge texels (stretch bug) ; a transparent border shows the backdrop.
-    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_BORDER); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_BORDER);
-    dSetTSS(dev, 0, D3DTSS_BORDERCOLOR, 0x00000000u);
-    dSetTSS(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE); dSetTSS(dev, 1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
-}
-
+static void tex_state(u32 dev, u32 tex) { dTexQuadState(dev, tex, true, true); }   // LINEAR mips (crisp minified map) + BORDER (no edge smear)
 // marker colour, matching the Target box's name-colour convention (target.cpp target_name_color) :
 // NPC/object green ; mob unclaimed gold / your-claim|engaged red / other-claim magenta ; PC party cyan /
 // another-party blue / solo white.

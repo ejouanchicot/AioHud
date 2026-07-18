@@ -10,7 +10,6 @@
 
 namespace aio {
 
-static inline float snap(float v) { return (float)(int)(v + 0.5f); }
 
 // lerp_color / hp_color / scl -> ui/ui_colors.h (shared with target/player)
 static inline u32 lt(u32 c, float f) {
@@ -53,18 +52,7 @@ static inline void setup_color_state(u32 dev) {
 // standard TEXTURED-quad state (MODULATE tex*diffuse, straight alpha, CLAMP, LINEAR min/mag) : the block
 // every sprite draw shares (cursor / job icon / buffs / dot markers). Binds `tex` on stage 0.
 // mipLinear=false keeps a pixel-exact atlas crisp (the buff atlas) ; true = LINEAR mips elsewhere.
-static inline void setup_tex_state(u32 dev, u32 tex, bool mipLinear = true) {
-    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
-    dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dSetTex(dev, 0, tex);
-    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, mipLinear ? D3DTEXF_LINEAR : D3DTEXF_NONE);
-    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-}
-static inline void vgrad(u32 dev, float x, float y, float w, float h, u32 top, u32 bot) {
+static inline void setup_tex_state(u32 dev, u32 tex, bool mipLinear = true) { dTexQuadState(dev, tex, mipLinear); }static inline void vgrad(u32 dev, float x, float y, float w, float h, u32 top, u32 bot) {
     grad_quad(dev, x, y, w, h, top, top, bot, bot);
 }
 // one HP/MP/TP gauge. `pct` is the (already-lerped) fill % ; `t` drives a subtle liquid

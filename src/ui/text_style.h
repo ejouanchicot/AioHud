@@ -20,6 +20,23 @@ inline float te_ow (const TextStyle& t, float base) { return base * t.outline; }
 inline u32   te_col(const TextStyle& t, u32 base)   { return t.colorOn ? t.color : base; }   // custom colour override
 // UPPERCASE `s` into `buf` (cap = buffer size incl. NUL) when the element's style wants CAPS ; else return `s`
 // unchanged. Same ASCII a-z -> A-Z transform every module's per-element "_up" helper used to inline.
+// Truncate `s` with a trailing "." run until it fits `maxW` at `sz` (CSS text-overflow: ellipsis ; the font
+// atlas has no U+2026, so dots stand in). Returns `s` untouched when it already fits, else `buf`.
+// `dots` is a parameter because the existing call sites genuinely disagree -- the Hate List uses 2, the party
+// name uses 3 -- and unifying that would be a visible change nobody asked for. Bounded by `cap` in all cases.
+inline const char* fit_ellipsis(Font* fo, const char* s, float sz, float maxW, char* buf, int cap, int dots = 2) {
+    if (!s || !fo || fo->measure(s, sz) <= maxW) return s;
+    if (dots < 1) dots = 1; if (dots > 3) dots = 3;
+    int n = 0; while (s[n]) ++n;
+    for (int len = n - 1; len >= 1; --len) {
+        int c = 0; for (; c < len && c < cap - (dots + 1); ++c) buf[c] = s[c];
+        for (int d = 0; d < dots; ++d) buf[c++] = '.';
+        buf[c] = 0;
+        if (fo->measure(buf, sz) <= maxW) return buf;
+    }
+    buf[0] = s[0]; buf[1] = 0; return buf;
+}
+
 inline const char* te_upper(const TextStyle& t, const char* s, char* buf, int cap) {
     if (!t.upper || !s) return s;
     int i = 0; for (; s[i] && i < cap - 1; ++i) { char c = s[i]; buf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c; } buf[i] = 0; return buf;

@@ -22,7 +22,6 @@
 
 namespace aio {
 
-static inline float snap(float v) { return (float)(int)(v + 0.5f); }
 static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
 // mul_a -> ui/ui_colors.h (shared with target)
@@ -56,18 +55,7 @@ static void format_gil(char* out, unsigned v) {
 // status-icon atlas (assets/buff_atlas.raw) : fixed 32-col grid of 32px cells ; id -> cell (id%32, id/32).
 
 // textured-quad render state for an atlas draw (own copy : the party/target ones are file-static).
-static void tex_state(u32 dev, u32 tex) {
-    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
-    dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dSetTex(dev, 0, tex);
-    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
-    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-}
-
+static void tex_state(u32 dev, u32 tex) { dTexQuadState(dev, tex); }   // mip NONE + CLAMP : the defaults
 // one job emblem (white mask) from the atlas cell, tinted by the role colour. cell = job id - 1.
 static void draw_job_emblem(u32 dev, u32 tex, float x, float y, float sz, int cell, u32 tint) {
     if (!tex || cell < 0) return;

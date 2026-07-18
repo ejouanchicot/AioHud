@@ -4,6 +4,7 @@
 #include "ui/edit_box.h"      // edit_box_hover_glow : shared edit-mode hover affordance
 #include "ui/liquid_bars.h"   // borrow the real fiole assets for the "Vial" gauge style
 #include "ui/ui_colors.h"     // lerp_color / hp_color / scl : shared ARGB helpers (widgets' truncating versions)
+#include "ui/text_style.h"       // te_* + fit_ellipsis (the ONE width-driven truncation)
 #include "ui/party_internal.h"   // snap / lt / shine_sweep / setup_*_state / vgrad / rrnd (shared with party_gauges.cpp)
 #include "gfx/draw.h"
 #include "gfx/font.h"
@@ -996,16 +997,11 @@ void Party::draw(const Frame& f) {
         if (ui_config().text[tcfg()][TE_NAME].upper) for (int k = 0; k < nl; ++k) { char c = nm[k]; if (c >= 'a' && c <= 'z') nm[k] = (char)(c - 32); }
         const float nmax = gx0 - nx - 6.0f * S;                  // 6px gap before the gauges
         const float nsz = te_sz(TE_NAME, nameSz_ * S * es);      // measure at the ZOOMED size so a zoomed long name never overflows onto HP
-        if (nmax > 0 && fName->measure(nm, nsz) > nmax) {
-            while (nl > 0) {                                     // shrink + "..." until it fits
-                nm[nl] = '.'; nm[nl + 1] = '.'; nm[nl + 2] = '.'; nm[nl + 3] = 0;
-                if (fName->measure(nm, nsz) <= nmax) break;
-                --nl;
-            }
-        }
+        char nmFit[28];                                          // shared width-driven truncation (3 dots here)
+        const char* nmDraw = (nmax > 0) ? fit_ellipsis(fName, nm, nsz, nmax, nmFit, (int)sizeof(nmFit), 3) : nm;
         // name sits at a FIXED height (always a bit high) -> it never jumps when a cast starts,
         // and there is always room below for the cast / zone line.
-        fName->draw_lc(dev, nxt, ry + mh * 0.5f, nm, nsz, te_col(TE_NAME, offz ? C_OFF : (dead ? C_BAD : C_INK)), nSTK, nOWf);   // name centred on the MAIN BAND
+        fName->draw_lc(dev, nxt, ry + mh * 0.5f, nmDraw, nsz, te_col(TE_NAME, offz ? C_OFF : (dead ? C_BAD : C_INK)), nSTK, nOWf);   // name centred on the MAIN BAND
         if (hasCast) {
             const float ca = r.castAlpha < 0.0f ? 0.0f : (r.castAlpha > 1.0f ? 1.0f : r.castAlpha);   // pop-in / depop fade
             const float cp = 0.5f + 0.5f * sinf(t * 5.0f);                       // OPACITY pulse during the cast

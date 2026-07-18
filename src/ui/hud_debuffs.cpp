@@ -125,8 +125,8 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
 
     // ---- position (+ edit-mode drag). dbX = LEFT edge fraction, dbY = TOP (anchorX 0 : grows rightward/down). ----
     float px, py;
-    if (ovS > 0.0f) { px = hud_snap((ovX - boxW * 0.5f)); py = hud_snap((ovY - boxH * 0.5f)); }   // preview : centre on the given point
-    else            { px = hud_snap(C.dbX * screenW); py = hud_snap(C.dbY * screenH); }
+    if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }   // preview : centre on the given point
+    else            { px = snap(C.dbX * screenW); py = snap(C.dbY * screenH); }
     if (editing) { static EditBox g_dbEdit; box_edit(f, g_dbEdit, EDITBOX_DEBUFFS, px, py, boxW, boxH, ui_config().dbScale, ui_config().dbX, ui_config().dbY, 0); }
 
     // ---- box chrome (shared themed frame/transparency/theme) ----

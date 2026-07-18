@@ -26,7 +26,6 @@ static const int TB_SPEED_ID = 32;                               // buff-atlas c
 static const char* TGT_TH_ICON() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\icon_th_coffer.raw"); return b; }
 static const int TH_ICON_W = 64, TH_ICON_H = 64;                 // Treasure Hunter coffer icon (full-colour, straight alpha)
 
-static inline float snap(float v) { return (float)(int)(v + 0.5f); }
 static inline float clampf(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
 
 // edit-mode drag state for the (single) Target box (the drag maths + alignment grid live in edit_box.cpp,
@@ -34,18 +33,7 @@ static inline float clampf(float v, float a, float b) { return v < a ? a : (v > 
 static EditBox g_tgtEdit;
 
 // textured-quad render state for the atlas (mirrors party.cpp setup_tex_state, MIPFILTER NONE = crisp).
-static void setup_tex_state(u32 dev, u32 tex) {
-    dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
-    dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    dSetTex(dev, 0, tex);
-    dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(dev, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
-    dSetTSS(dev, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR); dSetTSS(dev, 0, D3DTSS_MIPFILTER, D3DTEXF_NONE);
-    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-}
-
+static void setup_tex_state(u32 dev, u32 tex) { dTexQuadState(dev, tex); }   // mip NONE + CLAMP : the defaults
 // scale a colour's RGB by f (keep alpha) -> a darker/brighter shade for the bar fill gradient.
 // scl / mul_a / lerp_color / hp_color -> ui/ui_colors.h (shared with party/player)
 // the shared colour-quad render state (mirrors party.cpp setup_color_state).

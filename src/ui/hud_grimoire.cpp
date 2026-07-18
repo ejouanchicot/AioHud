@@ -81,8 +81,8 @@ void Hud::draw_grimoire(const Frame& f, bool preview, float ovX, float ovY, floa
     const float boxW = bookW + 2.0f * auraPad, boxH = bookH + 2.0f * auraPad;
 
     float px, py;
-    if (ovS > 0.0f) { px = hud_snap((ovX - boxW * 0.5f)); py = hud_snap((ovY - boxH * 0.5f)); }
-    else            { px = hud_snap(C.grimX * screenW_ - boxW * 0.5f); py = hud_snap(C.grimY * screenH_); }
+    if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
+    else            { px = snap(C.grimX * screenW_ - boxW * 0.5f); py = snap(C.grimY * screenH_); }
     if (editing) { static EditBox g_grimEdit; box_edit(f, g_grimEdit, EDITBOX_GRIMOIRE, px, py, boxW, boxH, ui_config().grimScale, ui_config().grimX, ui_config().grimY, 1); }
 
     const float bx = px + auraPad, by = py + auraPad;      // book quad

@@ -193,8 +193,8 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     // ---- position (+ edit-mode drag). scX = the box's HORIZONTAL CENTRE (so it grows symmetrically as the
     // content width changes -> the anchor point stays put), scY = its TOP (it grows downward as the list grows). ----
     float px, py;
-    if (ovS > 0.0f) { px = hud_snap((ovX - boxW * 0.5f)); py = hud_snap((ovY - boxH * 0.5f)); }        // preview : centre on the given point
-    else            { px = hud_snap(C.scX * screenW - boxW * 0.5f); py = hud_snap(C.scY * screenH); }
+    if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }        // preview : centre on the given point
+    else            { px = snap(C.scX * screenW - boxW * 0.5f); py = snap(C.scY * screenH); }
     if (editing) { static EditBox g_scEdit; box_edit(f, g_scEdit, EDITBOX_SKILLCHAIN, px, py, boxW, boxH, ui_config().scScale, ui_config().scX, ui_config().scY, 1); }
 
     // ---- box chrome : dark rounded panel + gold border (Help-box look) ----

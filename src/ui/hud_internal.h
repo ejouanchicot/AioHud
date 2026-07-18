@@ -5,15 +5,10 @@
 #include "ui/widget.h"     // Frame
 #include "ui/edit_box.h"   // EditBox
 #include "gfx/d3d.h"       // u32
+#include "gfx/draw.h"     // snap() : the ONE definition
 
 namespace aio {
 
-// Round to the nearest whole pixel. Non-negotiable rule #1 : the half-pixel offset in draw.cpp only pays off
-// if the ORIGIN is on the pixel grid too, otherwise every border and bar edge lands on a fraction and
-// renders as a soft 2px smear that shimmers as the box resizes. The hud_*.cpp box family had no snap at all
-// -- it went unnoticed because Font::draw snaps its OWN origin, so crisp text sat next to blurry chrome and
-// it read as "the box looks a bit soft". Same body as the copies in party/target/player/minimap.
-static inline float hud_snap(float v) { return (float)(int)(v + 0.5f); }
 
 // Shared edit-mode drag for a module box : drag + snap-grid, write the new fractional origin back to
 // (cfgX,cfgY), persist on drop. anchorX = which box edge the stored X pins : 0 = LEFT, 1 = CENTRE, 2 = RIGHT

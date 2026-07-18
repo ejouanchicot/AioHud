@@ -191,8 +191,8 @@ void empypop_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
 
     // ---- position (+ edit drag) : epX = the LEFT edge (anchorX 0, unlike the centred boxes), epY = the top ----
     float px, py;
-    if (ovS > 0.0f) { px = hud_snap((ovX - boxW * 0.5f)); py = hud_snap((ovY - boxH * 0.5f)); }   // preview / Help : centred on the stage
-    else            { px = hud_snap(C.epX * screenW - boxW); py = hud_snap(C.epY * screenH); }   // epX = the RIGHT edge : the box grows LEFT (and down) as content widens, so the top-RIGHT corner stays where it was dropped
+    if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }   // preview / Help : centred on the stage
+    else            { px = snap(C.epX * screenW - boxW); py = snap(C.epY * screenH); }   // epX = the RIGHT edge : the box grows LEFT (and down) as content widens, so the top-RIGHT corner stays where it was dropped
     if (editing) { static EditBox g_epEdit; box_edit(f, g_epEdit, EDITBOX_EMPYPOP, px, py, boxW, boxH, ui_config().epScale, ui_config().epX, ui_config().epY, 2); }   // anchorX 2 = right edge -> box_edit stores epX as the right edge
 
     // ---- chrome : ONE themed container, then the per-box semantics on top ----

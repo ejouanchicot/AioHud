@@ -50,7 +50,6 @@ void edit_box_push_out(int id, float curT, float& ex, float& ey, float ew, float
     }
 }
 
-static inline float snap(float v) { return (float)(int)(v + 0.5f); }
 static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
 // colour-quad render state for the grid quads (untextured diffuse).

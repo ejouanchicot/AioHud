@@ -10,6 +10,7 @@
 // small id->spring table behind ease(id, target). The accent palette (C_ACCENT family) is MUTABLE and
 // rederived every frame by apply_ui_theme() from the chosen style+colour ; the graphite base is const.
 #pragma once
+#include "gfx/draw.h"   // snap() + the AA primitives
 #include "ui/widget.h"   // MouseState, u32 (via gfx/d3d.h -> windower.h)
 #include "gfx/font.h"    // Font
 
@@ -49,7 +50,7 @@ extern const ThemeStyle STYLES[];
 extern const int STYLE_N;
 
 // ---- inline trivials (pure ; header-defined so every TU inlines them) ----
-inline float snap(float v)                { return (float)(int)(v + 0.5f); }
+// snap() now lives in gfx/draw.h (one definition ; it was duplicated in seven TUs).
 inline float clampf(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
 inline bool  inrect(const MouseState* m, float x, float y, float w, float h) {
     return m && m->x >= x && m->x < x + w && m->y >= y && m->y < y + h;
