@@ -108,6 +108,7 @@ Player::~Player() { delete vials_; }
 
 void Player::measure(float& w, float& h) const { w = snap(324.0f * scale_); h = snap(150.0f * scale_); }
 
+
 // Config-preview footprint : mirrors draw()'s size block (demo = a full 32-buff strip capped by plrBuffMax)
 // so the preview positions the box knowing its REAL height (incl. an in-box equipment grid). Also reports
 // how far a DOCKED grid reaches beyond the box on each side (l/t/r/b) so the preview keeps it in view.
@@ -125,7 +126,12 @@ void Player::preview_footprint(float& w, float& h, float& l, float& t, float& r,
     const float lvlSz  = c.plrLvl ? snap(plr_sz(PLR_LVL, 12.0f * S)) : 0.0f;
     const float txtGap = (c.plrName && c.plrLvl) ? snap(2.0f * S) : 0.0f;
     const float textH = nameSz + lvlSz + txtGap;
-    const float idH = showId ? (emblemSz > textH ? emblemSz : textH) : 0.0f;
+    // the identity row hosts speed (left) + header-gil (right) : height = max(identity, their icon) so it's the
+    // SAME with or without name/level (matches draw()).
+    const float bandIcon = snap(18.0f * S);
+    const float sgRowH = (c.plrSpeed || (c.plrGil && !c.plrEquip)) ? bandIcon : 0.0f;
+    const float idBase = showId ? (emblemSz > textH ? emblemSz : textH) : 0.0f;
+    const float idH = idBase > sgRowH ? idBase : sgRowH;
     const float sectGap = snap(10.0f * S);
     const float barH = snap(20.0f * S * clampf(c.plrBarH, 0.5f, 2.0f));
     const float barGap = snap(7.0f * S * clampf(c.plrBarGap, 0.0f, 3.0f));
@@ -248,7 +254,13 @@ void Player::draw(const Frame& f) {
     const float lvlSz    = showLvl    ? snap(plr_sz(PLR_LVL, 12.0f * S)) : 0.0f;
     const float txtGap   = (showName && showLvl) ? snap(2.0f * S) : 0.0f;
     const float textH    = nameSz + lvlSz + txtGap;
-    const float idH      = showId ? (emblemSz > textH ? emblemSz : textH) : 0.0f;
+    // idH : the identity row also HOSTS speed (left) + header-gil (right). With no emblem/name/level, still keep a
+    // row for them so Speed isn't drawn into a zero-height row (its own line when Name/Level are hidden).
+    // idH : the identity row also HOSTS speed (left) + header-gil (right). Height = max(identity, speed/gil icon)
+    // so the row is the SAME height with or without name/level (speed alone no longer gets a taller row).
+    const float sgRowH   = (showSpeed || (showGil && !showEquip)) ? snap(18.0f * S) : 0.0f;   // bandIcon (declared below) = 18*S
+    const float idBase   = showId ? (emblemSz > textH ? emblemSz : textH) : 0.0f;
+    const float idH      = idBase > sgRowH ? idBase : sgRowH;
     const float sectGap  = snap(10.0f * S);
     const float barH   = snap(20.0f * S * clampf(c.plrBarH, 0.5f, 2.0f));
     const float barW   = snap(innerW * clampf(c.plrBarW, 0.4f, 1.0f));

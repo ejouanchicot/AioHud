@@ -390,20 +390,21 @@ void Target::draw(const Frame& f) {
     const float a = (appear_ > 1.0f) ? 1.0f : appear_;
 
     // debuffs on the target (icons only ; the //aio-act tracker). Query BEFORE the chrome so the box grows to fit.
-    unsigned short dids[20]; int drem[20] = {0}; unsigned char dself[20] = {0}; int nd = 0;
+    unsigned short dids[32]; int drem[32] = {0}; unsigned char dself[32] = {0}; int nd = 0;
     if (fake && ui_config().tgtDebuffs) {           // live-preview : a full 20-icon sample (yours=gold / others=white / "???")
         static const unsigned short DID[20] = { 2, 11, 6, 3, 4, 5, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21 };
         static const int           DRM[20] = { 45, 28, -30, 120, 90, 15, 300, 5, 60, 180, 30, 8, -18, 240, 75, 100, 20, -95, 55, 12 };
         static const unsigned char DSF[20] = { 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1 };
-        nd = 20; for (int i = 0; i < 20; ++i) { dids[i] = DID[i]; drem[i] = DRM[i]; dself[i] = DSF[i]; }
-    } else if (present && ui_config().tgtDebuffs) nd = party().target_debuffs(g.target.id, dids, drem, dself, 20);
+        int nSamp = ui_config().tgtBuffMax; if (nSamp < 1) nSamp = 1; if (nSamp > 32) nSamp = 32;   // cycle the 20 samples up to Max so the preview reflects the setting (up to 32)
+        nd = nSamp; for (int i = 0; i < nSamp; ++i) { const int s = i % 20; dids[i] = DID[s]; drem[i] = DRM[s]; dself[i] = DSF[s]; }
+    } else if (present && ui_config().tgtDebuffs) nd = party().target_debuffs(g.target.id, dids, drem, dself, 32);
     if (ui_config().dbShow) nd = 0;   // DETACHED : the Debuffs module owns them now -> zero the inline row (kills the width/height growth + the icon draw, all gated on nd>0), incl. the fake preview
-    // compact to valid atlas ids, capped at the user's max (1..20 ; 2 rows/columns of 10) -> index-driven layout below.
-    { int cap = ui_config().tgtBuffMax; if (cap < 1) cap = 1; if (cap > 20) cap = 20;
+    // compact to valid atlas ids, capped at the user's max (1..32 ; 2 rows/columns of 16) -> index-driven layout below.
+    { int cap = ui_config().tgtBuffMax; if (cap < 1) cap = 1; if (cap > 32) cap = 32;
       int nv = 0; for (int i = 0; i < nd && nv < cap; ++i) { if (dids[i] >= (BUFF_COLS * BUFF_ATLAS_ROWS)) continue;
         if (nv != i) { dids[nv] = dids[i]; drem[nv] = drem[i]; dself[nv] = dself[i]; } ++nv; } nd = nv; }
-    static const int BUFF_PER_LINE = 10;                     // max icons per row (horizontal) or per column (vertical)
-    const int nLines = (nd > BUFF_PER_LINE) ? 2 : 1;         // >10 -> a second row/column
+    static const int BUFF_PER_LINE = 16;                     // max icons per row (horizontal) or per column (vertical) -> 2 rows/cols of 16 = 32 max
+    const int nLines = (nd > BUFF_PER_LINE) ? 2 : 1;         // >16 -> a second row/column
     const bool showTimers = ui_config().tgtTimers != 0;
 
     // debuff icon metrics (needed up-front : an INSIDE row can widen the box). icon + its gap + timer track iconK.
@@ -809,7 +810,7 @@ void Target::draw(const Frame& f) {
         // VERTICAL is centred on the box height, based on the FIRST column's icon count (<=10).
         const int   col0 = buffVert ? ((nd + 1) / 2) : 0;   // vertical : BALANCED columns -> primary = ceil(N/2)
         const float colTop = buffVert ? snap(py + H * 0.5f - (col0 * icon + (col0 - 1) * igapV) * 0.5f) : dbY;
-        float icx[20], icy[20]; int trem[20]; unsigned char tsf[20], tdir[20]; int tn = 0;   // tdir : 0 below / 1 left / 2 right
+        float icx[32], icy[32]; int trem[32]; unsigned char tsf[32], tdir[32]; int tn = 0;   // tdir : 0 below / 1 left / 2 right
         for (int i = 0; i < nd; ++i) {
             const unsigned id = dids[i];                                 // already compacted to valid atlas ids
             float ix, iy; unsigned char dir;

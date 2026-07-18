@@ -22,7 +22,7 @@ inline u32 lerp_color(u32 a, u32 b, float t) {
 inline u32 hp_color(float p) {
     const u32 GRN = 0xFF6FDC74, YEL = 0xFFF2E173, ORG = 0xFFF6A862, RED = 0xFFFB5A5A;
     if (p >= 75.0f) return GRN;
-    if (p >= 50.0f) return lerp_color(YEL, GRN, (p - 50.0f) / 25.0f);
+    if (p >= 50.0f) return YEL;   // <75% -> YELLOW like the game (a yellow->green lerp read as green at ~72%)
     if (p >= 25.0f) return lerp_color(ORG, YEL, (p - 25.0f) / 25.0f);
     return lerp_color(RED, ORG, p / 25.0f);
 }

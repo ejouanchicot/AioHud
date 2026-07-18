@@ -165,6 +165,12 @@ void aio_plugin_render6()
     u32 dev = g_host.service_raw(2);   // host vtbl[2] = D3D8 device
     if (valid_ptr(dev)) g_gameHwnd = aio::dFocusWindow(dev);
     g_hud.render(dev);
+    // Config/edit overlay up + game focused : force-hide the OS cursor each frame (last SetCursor of the frame ->
+    // wins). The game re-shows its NATIVE cursor on WM_SETCURSOR (e.g. when the mouse RE-ENTERS the window), a
+    // WINDOW message our DirectInput mouse hook can't swallow -> without this it reappears on top of AioHud's own
+    // pointer (the "two cursors" bug). AioHud draws its own pointer, so hiding the native one leaves exactly one.
+    if ((g_hud.config().is_open() || aio::ui_config().editLayout) && g_gameHwnd && (HWND)g_gameHwnd == GetForegroundWindow())
+        SetCursor(NULL);
 }
 
 // SEH-guarded packet dispatch. The parsers read FIXED offsets off `b` ; a SHORT/truncated packet would

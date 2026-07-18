@@ -52,7 +52,10 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
             { 11,  300, 0 },   // Bind      -- other caster (white)
         };
         mobName = "Apademak";
-        for (int i = 0; i < 6; ++i) { rows[nd].rem = SMP[i].rem; rows[nd].icon = SMP[i].id; rows[nd].name = buff_status_name(SMP[i].id); rows[nd].self = SMP[i].self; ++nd; }
+        // Generate as many sample rows as the Max (dbMax), cycling the 6 -> the preview GROWS with Max so it's
+        // visible (it was stuck at the 6 sample entries no matter the setting).
+        int nSamp = C.dbMax; if (nSamp < 1) nSamp = 1; if (nSamp > 32) nSamp = 32;
+        for (int i = 0; i < nSamp && nd < 40; ++i) { const int s = i % 6; rows[nd].rem = SMP[s].rem; rows[nd].icon = SMP[s].id; rows[nd].name = buff_status_name(SMP[s].id); rows[nd].self = SMP[s].self; ++nd; }
     } else {
         if (!f.game) return;
         const GameState& g = *f.game;
@@ -97,7 +100,7 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
     char idb[8];
     auto rowNameStr = [&](const Row& R) -> const char* { if (R.name) return R.name; sprintf(idb, "#%d", R.icon); return idb; };
 
-    // ---- column widths (measure) -> box size ----
+    // ---- column widths (measure over ALL rows so both columns align) -> box size ----
     float nameW = 0.0f, timeW = 0.0f;
     for (int i = 0; i < nd; ++i) {
         const float tw = fT->measure(fmt(rows[i].rem), zT); if (tw > timeW) timeW = tw;
@@ -107,11 +110,16 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
     float leftW = colIcon ? icon : 0.0f;
     if (nameW > 0.0f) leftW += (colIcon ? icgap : 0.0f) + nameW;
     if (leftW <= 0.0f) leftW = icon;   // display mode with neither column resolvable -> keep the icon slot
-    float contentW = leftW + gap + timeW;
-    if (showHdr) { const float hW = fH->measure(mobName, zH); if (hW > contentW) contentW = hW; }
-    if (contentW < 46.0f * S) contentW = 46.0f * S;
-    const float boxW = pad * 2.0f + contentW;
-    const int   bodyRows = nd > 0 ? nd : 1;
+    float colW = leftW + gap + timeW;                       // ONE column's [icon][name][timer] content width
+    if (colW < 46.0f * S) colW = 46.0f * S;
+    // wrap into TWO columns past 16 debuffs ; balance the rows (32 -> 16+16, 20 -> 10+10, 16 -> single col of 16)
+    const int   nCol = (nd <= 16) ? 1 : 2;
+    const float colGap = 20.0f * S;
+    const int   rpc = (nd + nCol - 1) / nCol;               // rows per column (column-major fill)
+    float innerW = nCol * colW + (nCol - 1) * colGap;
+    if (showHdr) { const float hW = fH->measure(mobName, zH); if (hW > innerW) innerW = hW; }   // header spans full width
+    const float boxW = pad * 2.0f + innerW;
+    const int   bodyRows = rpc > 0 ? rpc : 1;
     const float boxH = pad + (showHdr ? headH + gap : 0.0f) + bodyRows * rowPit + pad;
     if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }   // Help scale-to-fit : report dims, no draw
 
@@ -127,30 +135,36 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
 
     float cyTop = py + pad;
     if (showHdr) { fH->begin(dev); fH->draw_c(dev, px + boxW * 0.5f, cyTop + headH * 0.5f, mobName, zH, db_col(DB_HEADER, orange), strk, oH); cyTop += headH + gap; }
-    const float cx = px + pad, tRight = px + boxW - pad;
+    const float innerX = px + pad;
     const bool tCustom = ui_config().dbText[DB_TIMER].colorOn;   // a custom timer colour overrides the caster/expiry tint
-    float cyy = cyTop;
-    for (int i = 0; i < nd; ++i) {
-        const Row& R = rows[i]; const int r = R.rem;
-        const bool haveIcon = (buffAtlas && R.icon >= 0 && R.icon < cells);
-        bool drewIcon = false;
-        if (colIcon && haveIcon) {
-            const float u0 = (float)(R.icon % BUFF_COLS) * au, v0 = (float)(R.icon / BUFF_COLS) * av;
-            draw_icon_cell(dev, buffAtlas, cx, cyy + (rowH - icon) * 0.5f, icon, icon, u0, u0 + au, v0, v0 + av);
-            drewIcon = true;
+    for (int c = 0; c < nCol; ++c) {
+        const float colX = innerX + c * (colW + colGap);        // this column's left edge
+        const float tRight = colX + colW;                       // timer right-aligned within the column
+        float cyy = cyTop;
+        for (int rr = 0; rr < rpc; ++rr) {
+            const int i = c * rpc + rr;                          // column-major : col 0 fills rows 0..rpc-1
+            if (i >= nd) break;
+            const Row& R = rows[i]; const int r = R.rem;
+            const bool haveIcon = (buffAtlas && R.icon >= 0 && R.icon < cells);
+            bool drewIcon = false;
+            if (colIcon && haveIcon) {
+                const float u0 = (float)(R.icon % BUFF_COLS) * au, v0 = (float)(R.icon / BUFF_COLS) * av;
+                draw_icon_cell(dev, buffAtlas, colX, cyy + (rowH - icon) * 0.5f, icon, icon, u0, u0 + au, v0, v0 + av);
+                drewIcon = true;
+            }
+            if (wantName || (colIcon && !haveIcon)) {   // name : requested, OR a fallback when the wanted icon is missing
+                const float nx = colX + (drewIcon ? icon + icgap : 0.0f);
+                const u32 nc = (r < 0) ? grey : R.self ? gold : other;   // name follows the timer caster tint
+                fN->begin(dev); fN->draw_lc(dev, nx, cyy + rowH * 0.5f, rowNameStr(R), zN, db_col(DB_NAME, nc), strk, oN);
+            }
+            // timer : "???" (grey) / MM:SS / seconds ; yours=gold (red about to wear off) / others=white / unknown=grey
+            fmt(r);
+            const u32 sem = (r < 0) ? grey : R.self ? ((r <= 5) ? goldWarn : gold) : other;
+            const u32 tc = tCustom ? ui_config().dbText[DB_TIMER].color : db_col(DB_TIMER, sem);
+            const float tw = fT->measure(tb, zT);
+            fT->begin(dev); fT->draw_lc(dev, tRight - tw, cyy + rowH * 0.5f, tb, zT, tc, strk, oT);
+            cyy += rowPit;
         }
-        if (wantName || (colIcon && !haveIcon)) {   // name : requested, OR a fallback when the wanted icon is missing
-            const float nx = cx + (drewIcon ? icon + icgap : 0.0f);
-            const u32 nc = (r < 0) ? grey : R.self ? gold : other;   // name follows the timer caster tint
-            fN->begin(dev); fN->draw_lc(dev, nx, cyy + rowH * 0.5f, rowNameStr(R), zN, db_col(DB_NAME, nc), strk, oN);
-        }
-        // timer : "???" (grey) / MM:SS / seconds ; yours=gold (red about to wear off) / others=white / unknown=grey
-        fmt(r);
-        const u32 sem = (r < 0) ? grey : R.self ? ((r <= 5) ? goldWarn : gold) : other;
-        const u32 tc = tCustom ? ui_config().dbText[DB_TIMER].color : db_col(DB_TIMER, sem);
-        const float tw = fT->measure(tb, zT);
-        fT->begin(dev); fT->draw_lc(dev, tRight - tw, cyy + rowH * 0.5f, tb, zT, tc, strk, oT);
-        cyy += rowPit;
     }
 }
 

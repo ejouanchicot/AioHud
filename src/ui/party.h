@@ -24,6 +24,9 @@ void party_cursor(u32 dev, u32 tex, float cx, float cy, float size, int mode);
 void party_selframe(u32 dev, float x, float y, float w, float h, float t, float alpha, int mode);
 // The cursor's horizontal bob offset (px) for a time + icon size, on the same rhythm as the live rows.
 float party_cursor_bob(float t, float size);
+// CONFIG-PREVIEW ONLY : clamp the LEFTWARD member buff strip to this stage-left X (px) ; icons past it collapse
+// into a "+N" marker at the leftmost fitting cell. 0 = live HUD (no cap ; every buff drawn as in game).
+void set_party_preview_buff_left(float x);
 
 class Party : public Widget {
 public:

@@ -116,6 +116,16 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         ROW_NEXT(52.0f)
         if (c.mmFrame == 2)   // custom frame colour : HSV picker
             CFG_COLOR_PICKER(&c.mmFrameColor)
+        // --- per-shape frame thickness / bezel options ---
+        if (c.mmShape == 1) {   // ROUND : brass bezel ring
+            MM_TOGGLE(CTRL_ID, tr("Bezel ring", "Anneau bordure"), c.mmBezel)
+            if (c.mmBezel) {
+                MM_PCT_SLIDER(CTRL_ID, tr("Bezel width", "Largeur anneau"), c.mmBezelW, 0.50f, 2.00f)
+                MM_PCT_SLIDER(CTRL_ID, tr("Cardinal size", "Taille cardinaux"), c.mmCardSz, 0.50f, 2.00f)
+            }
+        } else {                // SQUARE : frame/border thickness
+            MM_PCT_SLIDER(CTRL_ID, tr("Border width", "Largeur bordure"), c.mmSqBorder, 0.50f, 2.00f)
+        }
         }   // end Shape & Frame
 
         // ===== sub-section : MARKERS =====

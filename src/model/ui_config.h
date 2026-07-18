@@ -171,6 +171,10 @@ struct UiConfig {
     int   mmClkReal = 1;       // clock : show the real / GMT time row
     int   mmClockPos = 0;      // clock header placement vs the map : 0 Top, 1 Bottom, 2 Left, 3 Right
     float mmMapSize = 1.0f;    // map diameter multiplier, INDEPENDENT of the box/header scale (0.5 .. 1.6)
+    float mmBezelW  = 1.0f;    // ROUND : brass/copper bezel ring WIDTH multiplier (0.5 .. 2.0)
+    float mmCardSz  = 1.0f;    // ROUND : N/S/E/W cardinal-letter SIZE multiplier (0.5 .. 2.0)
+    int   mmBezel   = 1;       // ROUND : 1 = draw the brass bezel + cardinals ; 0 = none (just the round map lens)
+    float mmSqBorder = 1.0f;   // SQUARE : frame/border THICKNESS multiplier (0.5 .. 2.0)
 
     // --- Arcade "ULTRA COMBO" weaponskill popup ---
     int   wsShow    = 1;       // show the centre-screen popup on YOUR weaponskill

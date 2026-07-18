@@ -192,6 +192,7 @@ void PartyState::zt_recompute_dyn_limit() {
 }
 void PartyState::zt_set_zone(int zone, const char* name) {
     if (zone == zt_.curZone) return;                        // no transition
+    for (int i = 0; i < 10; ++i) treasure_[i] = TreasureItem{};   // Treasure Pool is ZONE-specific : empty it on ANY zone change (runs every frame here, module-independent). No packet clears the old zone's items, so without this they linger as a phantom pool until their ~5-min expiry.
     const int oldZone = zt_.curZone;
     const int prevMode = zt_.mode;
     // Fresh plugin load (crash/reload) while ALREADY standing in a tracked zone -> restore the cached run instead of

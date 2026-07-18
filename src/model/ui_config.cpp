@@ -168,6 +168,7 @@ static void save_config_to(const char* path) {
     fprintf(f, "mm2=%d,%d,%08X,%.3f,%.3f,%d,%d,%d\n", c.mmShape, c.mmFrame, c.mmFrameColor, c.mmBgAlpha, c.mmMarkerScale, c.mmPC, c.mmNPC, c.mmMob);   // shape / frame / frameColour / bgAlpha / markerScale / PC / NPC / mob
     fprintf(f, "mm4=%d,%08X,%d,%.2f,%08X\n", c.mmTgtLine, c.mmTgtLineCol, c.mmRing, c.mmRingR, c.mmRingCol);   // target-line on/colour ; range-ring on/radius/colour  (was mm3= -> collided with the clock line below, so it never reloaded)
     fprintf(f, "mm3=%d,%d,%d,%d,%d,%.3f,%d\n", c.mmClock, c.mmClkTime, c.mmClkDay, c.mmClkMoon, c.mmClkReal, c.mmMapSize, c.mmClockPos);   // clock : on/time/day/moon/real + independent map size + header placement
+    fprintf(f, "mm5=%.3f,%.3f,%d,%.3f\n", c.mmBezelW, c.mmCardSz, c.mmBezel, c.mmSqBorder);   // round bezel width / round cardinal size / round bezel on / square border width
     fprintf(f, "ws=%d,%.3f,%.3f,%.3f,%d,%d\n", c.wsShow, c.wsScale, c.wsX, c.wsY, c.wsFont, c.wsFx);   // arcade WS popup
     fprintf(f, "sc=%d,%.3f,%.4f,%.4f,%d\n", c.scShow, c.scScale, c.scX, c.scY, c.scNearby);   // skillchains box (+ display scope)
     fprintf(f, "tp=%d,%.3f,%.4f,%.4f,%d,%d\n", c.tpShow, c.tpScale, c.tpX, c.tpY, c.tpCount, c.tpIcon);   // treasure pool box
@@ -377,6 +378,19 @@ static bool parse_cast_line(const char* line, UiConfig& c) {
     return false;
 }
 
+// Minimap EXTRA options (round bezel width / cardinal size / bezel on-off / square border width), parsed
+// OUT-OF-LINE (same C1061 nesting reason as parse_ep_line : the main else-if chain is at MSVC's limit).
+// Distinct key mm5= ; missing keys keep the code defaults so an OLD config loads to the current look.
+static bool parse_mm_line(const char* line, UiConfig& c) {
+    if (strncmp(line, "mm5=", 4) == 0) {
+        float bw = 1.0f, cs = 1.0f, sb = 1.0f; int bz = 1;
+        const int n = sscanf(line + 4, "%f,%f,%d,%f", &bw, &cs, &bz, &sb);
+        if (n >= 1) { c.mmBezelW = bw; if (n >= 2) c.mmCardSz = cs; if (n >= 3) c.mmBezel = bz; if (n >= 4) c.mmSqBorder = sb; }
+        return true;
+    }
+    return false;
+}
+
 static bool load_config_from(const char* path) {
     CNumLoc _cnl;   // dot decimals regardless of the OS locale
     FILE* f = fopen(path, "r"); if (!f) return false;
@@ -392,6 +406,7 @@ static bool load_config_from(const char* path) {
         if (parse_ep_line(line, c)) continue;   // out-of-line : keeps the chain below off MSVC's nesting limit
         if (parse_cast_line(line, c)) continue; // out-of-line : cast-placeholder toggles (same nesting-limit reason)
         if (parse_db_line(line, c)) continue;   // out-of-line : Debuffs module (same nesting-limit reason)
+        if (parse_mm_line(line, c)) continue;   // out-of-line : Minimap extra options mm5= (same nesting-limit reason)
         if      (sscanf(line, "partyShow=%d", &v) == 1) c.partyShow = v;
         else if (sscanf(line, "allyShow=%d", &v) == 1)  c.allyShow = v;
         else if (sscanf(line, "tgtShow=%d", &v) == 1)   c.tgtShow = v;
@@ -899,6 +914,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.mmShape != b.mmShape || a.mmFrame != b.mmFrame || a.mmFrameColor != b.mmFrameColor || a.mmBgAlpha != b.mmBgAlpha || a.mmMarkerScale != b.mmMarkerScale || a.mmPC != b.mmPC || a.mmNPC != b.mmNPC || a.mmMob != b.mmMob) return false;
     if (a.mmTgtLine != b.mmTgtLine || a.mmTgtLineCol != b.mmTgtLineCol || a.mmRing != b.mmRing || a.mmRingR != b.mmRingR || a.mmRingCol != b.mmRingCol) return false;
     if (a.mmClock != b.mmClock || a.mmClkTime != b.mmClkTime || a.mmClkDay != b.mmClkDay || a.mmClkMoon != b.mmClkMoon || a.mmClkReal != b.mmClkReal || a.mmMapSize != b.mmMapSize || a.mmClockPos != b.mmClockPos) return false;
+    if (a.mmBezelW != b.mmBezelW || a.mmCardSz != b.mmCardSz || a.mmBezel != b.mmBezel || a.mmSqBorder != b.mmSqBorder) return false;
     if (a.wsShow != b.wsShow || a.wsScale != b.wsScale || a.wsX != b.wsX || a.wsY != b.wsY || a.wsFont != b.wsFont || a.wsFx != b.wsFx || a.wsNameCol != b.wsNameCol || a.wsDmgCol1 != b.wsDmgCol1 || a.wsDmgCol2 != b.wsDmgCol2) return false;
     if (a.scShow != b.scShow || a.scScale != b.scScale || a.scX != b.scX || a.scY != b.scY || a.scNearby != b.scNearby) return false;
     if (a.tpShow != b.tpShow || a.tpScale != b.tpScale || a.tpX != b.tpX || a.tpY != b.tpY || a.tpCount != b.tpCount || a.tpIcon != b.tpIcon) return false;
@@ -1068,7 +1084,7 @@ void reset_ui_config() {   // general Default : everything
     c.tgtPosSet = false; c.tgtX = 0.0f; c.tgtY = 0.0f; c.tgtCenterH = 0; c.tgtCenterV = 0;
     for (int k = 0; k < TGT_TE_COUNT; ++k) c.tgtText[k] = TextStyle();
     // Player Hub module back to defaults
-    c.plrBox = 1; c.plrBoxAlpha = 1.0f; c.plrThemeCopy = 1; c.plrTheme = 0; c.plrLum = 0.0f; c.plrHue = 0; c.plrScale = 1.0f; c.plrEmblem = 1; c.plrName = 1; c.plrLvl = 1; c.plrHp = 1; c.plrMp = 1; c.plrTp = 1; c.plrGil = 1; c.plrSpeed = 1; c.plrCast = 1; c.plrCastDemo = 0; c.plrEquip = 1; c.plrEqCell = 1.0f; c.plrEqThemeBorder = 1; c.plrEqColor = 0xFF6699BBu; c.plrEqPlace = 0; c.plrEqCellBgCustom = 0; c.plrEqCellBg = 0xE0121620u; c.plrEquipDetach = 0; c.plrEquipPosSet = false; c.plrEquipX = 0.0f; c.plrEquipY = 0.0f; c.plrEquipScale = 1.0f; c.plrEqGilPlace = 0; c.mmShow = 1; c.mmPosSet = false; c.mmX = 0.0f; c.mmY = 0.0f; c.mmScale = 1.0f; c.mmZoom = 2.0f; c.mmShape = 0; c.mmFrame = 1; c.mmFrameColor = 0xFF6699BBu; c.mmBgAlpha = 0.0f; c.mmMarkerScale = 1.0f; c.mmPC = 1; c.mmNPC = 1; c.mmMob = 1; c.mmTgtLine = 1; c.mmTgtLineCol = 0xFFFF6A6Au; c.mmRing = 0; c.mmRingR = 20.0f; c.mmRingCol = 0xFF66E0FFu; c.mmClock = 1; c.mmClkTime = 1; c.mmClkDay = 1; c.mmClkMoon = 1; c.mmClkReal = 1; c.mmMapSize = 1.0f; c.wsShow = 1; c.wsScale = 1.0f; c.wsX = 0.5f; c.wsY = 0.36f; c.wsFont = 0; c.wsFx = 1; c.wsNameCol = 0xFFFFA518u; c.wsDmgCol1 = 0xFFFFF024u; c.wsDmgCol2 = 0xFFFF5A0Au; c.scShow = 1; c.scScale = 1.0f; c.scX = 0.78f; c.scY = 0.06f; c.scTitle = 1; c.scTimer = 1; c.scStep = 1; c.scProps = 1; c.scList = 1; c.scListGap = 1.0f; for (int k = 0; k < SC_TE_COUNT; ++k) c.scText[k] = TextStyle(); c.tpShow = 1; c.tpScale = 1.0f; c.tpX = 0.72f; c.tpY = 0.30f; c.tpCount = 10; c.tpIcon = 1; for (int k = 0; k < TP_TE_COUNT; ++k) c.tpText[k] = TextStyle(); c.plrBuffs = 1; c.plrBuffMax = 24; c.plrBarH = 1.0f; c.plrBarW = 1.0f; c.plrIconSz = 1.0f;
+    c.plrBox = 1; c.plrBoxAlpha = 1.0f; c.plrThemeCopy = 1; c.plrTheme = 0; c.plrLum = 0.0f; c.plrHue = 0; c.plrScale = 1.0f; c.plrEmblem = 1; c.plrName = 1; c.plrLvl = 1; c.plrHp = 1; c.plrMp = 1; c.plrTp = 1; c.plrGil = 1; c.plrSpeed = 1; c.plrCast = 1; c.plrCastDemo = 0; c.plrEquip = 1; c.plrEqCell = 1.0f; c.plrEqThemeBorder = 1; c.plrEqColor = 0xFF6699BBu; c.plrEqPlace = 0; c.plrEqCellBgCustom = 0; c.plrEqCellBg = 0xE0121620u; c.plrEquipDetach = 0; c.plrEquipPosSet = false; c.plrEquipX = 0.0f; c.plrEquipY = 0.0f; c.plrEquipScale = 1.0f; c.plrEqGilPlace = 0; c.mmShow = 1; c.mmPosSet = false; c.mmX = 0.0f; c.mmY = 0.0f; c.mmScale = 1.0f; c.mmZoom = 2.0f; c.mmShape = 0; c.mmFrame = 1; c.mmFrameColor = 0xFF6699BBu; c.mmBgAlpha = 0.0f; c.mmMarkerScale = 1.0f; c.mmPC = 1; c.mmNPC = 1; c.mmMob = 1; c.mmTgtLine = 1; c.mmTgtLineCol = 0xFFFF6A6Au; c.mmRing = 0; c.mmRingR = 20.0f; c.mmRingCol = 0xFF66E0FFu; c.mmClock = 1; c.mmClkTime = 1; c.mmClkDay = 1; c.mmClkMoon = 1; c.mmClkReal = 1; c.mmMapSize = 1.0f; c.mmBezelW = 1.0f; c.mmCardSz = 1.0f; c.mmBezel = 1; c.mmSqBorder = 1.0f; c.wsShow = 1; c.wsScale = 1.0f; c.wsX = 0.5f; c.wsY = 0.36f; c.wsFont = 0; c.wsFx = 1; c.wsNameCol = 0xFFFFA518u; c.wsDmgCol1 = 0xFFFFF024u; c.wsDmgCol2 = 0xFFFF5A0Au; c.scShow = 1; c.scScale = 1.0f; c.scX = 0.78f; c.scY = 0.06f; c.scTitle = 1; c.scTimer = 1; c.scStep = 1; c.scProps = 1; c.scList = 1; c.scListGap = 1.0f; for (int k = 0; k < SC_TE_COUNT; ++k) c.scText[k] = TextStyle(); c.tpShow = 1; c.tpScale = 1.0f; c.tpX = 0.72f; c.tpY = 0.30f; c.tpCount = 10; c.tpIcon = 1; for (int k = 0; k < TP_TE_COUNT; ++k) c.tpText[k] = TextStyle(); c.plrBuffs = 1; c.plrBuffMax = 24; c.plrBarH = 1.0f; c.plrBarW = 1.0f; c.plrIconSz = 1.0f;
     c.plrBarGap = 1.0f; c.plrEmblemSz = 1.0f; c.plrPosSet = false; c.plrX = 0.0f; c.plrY = 0.0f; c.plrCenterH = 0; c.plrCenterV = 0;
     for (int k = 0; k < PLR_TE_COUNT; ++k) c.plrText[k] = TextStyle();
     for (int k = 0; k < MM_TE_COUNT; ++k) c.mmText[k] = TextStyle();

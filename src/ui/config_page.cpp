@@ -872,17 +872,8 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
               ui_config().fontFace = gf;              // and the HUD default text face
               save_ui_config(); } }
         ROW_NEXT(52.0f)
-        // Cursor : draw AioHud's OWN mouse pointer in this window. OFF by default (the game already shows one) ;
-        // turn it ON if a modded game DAT hides the native cursor and you have no pointer here.
-        { ROW_BAND(48.0f)
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Cursor", "Curseur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            const bool on = ui_config().uiCursor != 0;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
-                ui_config().uiCursor = !ui_config().uiCursor; save_ui_config(); }
-        }
-        ROW_NEXT(48.0f)
+        // (The old "Cursor" toggle was removed : the config/edit overlay now fully captures the mouse, so AioHud's
+        //  own pointer is always drawn and the game's native cursor no longer competes -- the option did nothing.)
         // Hide key (End) : HOLD = the HUD is hidden only while End is held (peek) ; TOGGLE = one press hides, the next shows.
         { ROW_BAND(48.0f)
             const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
@@ -2275,19 +2266,40 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
 // what the version they run (or just updated to) actually fixes / adds. PLAIN language, what not how ; no dev
 // jargon. UPDATE this with each release. `*bold*` markup works (draw_wrapped colours it brighter).
 struct ChangeLine { const char* en; const char* fr; };
-static const ChangeLine CHANGELOG[] = {
+
+// Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
+// older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_26[] = {
+    { "Minimap gains four options : a copper-bezel width slider, a cardinal-marks size slider, a No-bezel toggle (just the round lens), and a square-frame border width (which now grows OUTWARD). The target line on the minimap is coloured like the target's own marker.",
+      "La minimap gagne quatre options : un curseur de largeur de l'anneau cuivre, un curseur de taille des points cardinaux, un bouton Sans-anneau (juste la lentille ronde), et une largeur de bordure du cadre carr\xC3\xA9 (qui grandit vers l'EXT\xC3\x89RIEUR). Le trait vers la cible prend la couleur de la puce de la cible." },
+    { "Target debuffs : the detached box lays out in two columns past 16, the in-box list goes up to 32, and the Max is reflected live in the config preview.",
+      "D\xC3\xA9""buffs de cible : la box d\xC3\xA9tach\xC3\xA9""e passe en deux colonnes au-del\xC3\xA0 de 16, la liste dans la cible monte jusqu'\xC3\xA0 32, et le Max se refl\xC3\xA8te en direct dans l'aper\xC3\xA7u." },
+    { "Party fixes: HP turns yellow below 75% like the game; the member buff strip no longer overflows the config preview when Max Buffs is high; the Gil toggle now lives in Content (or Equipment when the gear is detached); Speed keeps its own row when Name/Level are hidden; the minimap retries loading on a zone-in; and the Treasure Pool clears on a zone change.",
+      "Corrections Party : les PV passent au jaune sous 75 % comme le jeu ; le bandeau de buffs des membres ne d\xC3\xA9""borde plus de l'aper\xC3\xA7u quand Max Buffs est haut ; le bouton Gil est d\xC3\xA9sormais dans Contenu (ou \xC3\x89quipement si l'\xC3\xA9quipement est d\xC3\xA9tach\xC3\xA9) ; Speed garde sa propre ligne quand Nom/Niveau sont masqu\xC3\xA9s ; la minimap r\xC3\xA9""essaie de charger au changement de zone ; et le Treasure Pool se vide au changement de zone." },
+    { "Removed the vestigial Cursor option ; and the game's native cursor no longer reappears on top of AioHud's own pointer when you move the mouse back into the window with the config open.",
+      "Retir\xC3\xA9 l'option Curseur devenue inutile ; et le curseur natif du jeu ne r\xC3\xA9""appara\xC3\xAet plus par-dessus le pointeur d'AioHud quand tu ram\xC3\xA8nes la souris dans la fen\xC3\xAAtre avec la config ouverte." },
+};
+static const ChangeLine CL_25[] = {
     { "Crowd-control debuffs now clear from what the mob DOES : any DoT or hit from anyone wakes Sleep ; the mob taking an action clears Sleep / Petrification / Stun / Terror ; and casting a spell clears Silence. So a mob you can see act no longer keeps a stale icon.",
       "Les d\xC3\xA9""buffs de contr\xC3\xB4le se retirent d\xC3\xA9sormais selon ce que FAIT le mob : un DoT ou un coup de n'importe qui r\xC3\xA9veille le Sleep ; le mob qui agit enl\xC3\xA8ve Sleep / P\xC3\xA9trification / Stun / Terror ; et lancer un sort enl\xC3\xA8ve Silence. Un mob qu'on voit agir ne garde plus d'ic\xC3\xB4ne p\xC3\xA9rim\xC3\xA9""e." },
+};
+static const ChangeLine CL_24[] = {
     { "Sleep debuffs (Sleep / Lullaby) now clear the instant the mob wakes -- hit, DoT (Requiem / Dia), or a natural wear-off -- read from the game's own \"no longer asleep\" message. And recasting a sleep that has No Effect no longer resets its timer to full.",
       "Les d\xC3\xA9""buffs de sommeil (Sleep / Lullaby) dispara\xC3\xAEssent d\xC3\xA9sormais d\xC3\xA8s que le mob se r\xC3\xA9veille -- coup, DoT (Requiem / Dia) ou expiration naturelle -- lu depuis le message \xC2\xAB no longer asleep \xC2\xBB du jeu. Et relancer un sommeil sans effet ne remet plus son timer \xC3\xA0 fond." },
     { "A debuff timer past its estimate now counts NEGATIVE (-0:30) instead of showing \"???\", so you see how far over it is.",
       "Un timer de d\xC3\xA9""buff au-del\xC3\xA0 de son estimation compte maintenant en N\xC3\x89GATIF (-0:30) au lieu d'afficher \xC2\xAB ??? \xC2\xBB, pour voir de combien il d\xC3\xA9""passe." },
+};
+static const ChangeLine CL_23[] = {
     { "Fixed target debuffs vanishing when you AoE a pack of same-name mobs -- the tracker ran out of room and two mobs ended up sharing one slot, so each cast wiped the other's box. It now holds a whole pack, and each mob keeps its own debuffs.",
       "Corrig\xC3\xA9 les d\xC3\xA9""buffs de cible qui disparaissaient en AoE sur un pack de mobs du m\xC3\xAAme nom -- le suivi manquait de place et deux mobs partageaient un emplacement, donc chaque cast effa\xC3\xA7""ait la box de l'autre. Il encaisse maintenant un pack entier, chaque mob garde ses propres d\xC3\xA9""buffs." },
     { "The detached Equipment grid (and its gil) now shows in the Player config Live Preview, stacked under the Hub like the detached debuffs under the target.",
       "La grille d'\xC3\xA9quipement d\xC3\xA9tach\xC3\xA9""e (et ses gils) appara\xC3\xAet maintenant dans l'aper\xC3\xA7u de la config Player, empil\xC3\xA9""e sous le Hub comme les d\xC3\xA9""buffs d\xC3\xA9tach\xC3\xA9s sous la cible." },
+};
+static const ChangeLine CL_22[] = {
     { "Fixed for real the doubled typing inside AioHud's fields on some keyboards -- the earlier fix relied on a value that a few Windower builds fill with garbage ; press/release is now read from a signal that holds on every setup.",
       "Corrig\xC3\xA9 pour de bon la saisie doubl\xC3\xA9""e dans les champs d'AioHud sur certains claviers -- l'ancien correctif se fiait \xC3\xA0 une valeur que quelques versions de Windower remplissent de d\xC3\xA9""chet ; l'appui/rel\xC3\xA2""chement est d\xC3\xA9sormais lu sur un signal fiable partout." },
+};
+static const ChangeLine CL_21[] = {
     { "*Target debuffs* can now be DETACHED into their own list (Target > Debuffs > Standalone) -- a mob-name header then icon / name / timer rows, your debuffs in gold, others' in white. Icon / Name / Icon+Name display, place it with //aio edit.",
       "*Les d\xC3\xA9""buffs de la cible* peuvent \xC3\xAAtre D\xC3\x89TACH\xC3\x89S dans leur propre liste (Target > Debuffs > Autonome) -- nom du mob puis lignes ic\xC3\xB4ne / nom / timer, tes d\xC3\xA9""buffs en or, ceux des autres en blanc. Affichage Ic\xC3\xB4ne / Nom / Ic\xC3\xB4ne+Nom, place-la avec //aio edit." },
     { "*Border On/Off* : every box can now hide its frame border while keeping the background (config > any module > Box > Border).",
@@ -2299,7 +2311,19 @@ static const ChangeLine CHANGELOG[] = {
     { "Fixed : the mouse wheel now resizes every floating box in //aio edit (it did nothing before).",
       "Corrig\xC3\xA9 : la molette redimensionne maintenant chaque cadre flottant dans //aio edit (elle ne faisait rien avant)." },
 };
-static const int CHANGELOG_N = (int)(sizeof(CHANGELOG) / sizeof(CHANGELOG[0]));
+
+// One entry per released version, NEWEST FIRST. The Update tab renders each as a collapsible header ; the newest
+// (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
+struct Release { const char* version; const ChangeLine* lines; int n; };
+static const Release RELEASES[] = {
+    { "1.0.26", CL_26, (int)(sizeof(CL_26) / sizeof(CL_26[0])) },
+    { "1.0.25", CL_25, (int)(sizeof(CL_25) / sizeof(CL_25[0])) },
+    { "1.0.24", CL_24, (int)(sizeof(CL_24) / sizeof(CL_24[0])) },
+    { "1.0.23", CL_23, (int)(sizeof(CL_23) / sizeof(CL_23[0])) },
+    { "1.0.22", CL_22, (int)(sizeof(CL_22) / sizeof(CL_22[0])) },
+    { "1.0.21", CL_21, (int)(sizeof(CL_21) / sizeof(CL_21[0])) },
+};
+static const int RELEASES_N = (int)(sizeof(RELEASES) / sizeof(RELEASES[0]));
 
 // ---- Update tab (tab_ == 4) : version + release check + one-click update (top), then a "What's new" changelog
 //      (below, scrollable when the release is big). ----
@@ -2393,12 +2417,25 @@ void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseS
         }
         clip_rect_begin(dev, clX - snap(2.0f), listTop, clW + snap(12.0f), listBot - listTop);
         const float lh = snap(17.0f), tsz = snap(13.0f);
+        const float hdrH = snap(30.0f), hdrGap = snap(4.0f);
         float y = listTop - updScroll_;
-        for (int i = 0; i < CHANGELOG_N; ++i) {
-            cs(dev); rrect_fill(dev, clX + snap(3.0f), snap(y + lh * 0.5f - 2.0f), snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI));   // gold bullet
-            const char* txt = (ui_config().lang == 1) ? CHANGELOG[i].fr : CHANGELOG[i].en;
-            y = draw_wrapped(dev, fo, clX + snap(16.0f), y, clW - snap(24.0f), listTop, listBot, txt, tsz, C_TEXT, lh);
-            y += snap(7.0f);                                                 // gap between entries
+        // grouped changelog : a clickable version header per release (newest first) ; its change lines show when open.
+        // relOpen_ sized >= RELEASES_N in config_page.h -- keep them in sync.
+        for (int r = 0; r < RELEASES_N && r < (int)(sizeof(relOpen_) / sizeof(relOpen_[0])); ++r) {
+            char vbuf[24]; _snprintf(vbuf, sizeof(vbuf), "v%s", RELEASES[r].version); vbuf[sizeof(vbuf) - 1] = 0;
+            const bool visible = (y + hdrH > listTop) && (y < listBot);     // only accept a click when the header is on-screen
+            if (cat_header(dev, fo, mo, click && visible, ctrl_uid_i(CTRL_ID, r), clX + snap(2.0f), snap(y), clW - snap(4.0f), vbuf, relOpen_[r]))
+                relOpen_[r] = !relOpen_[r];
+            y += hdrH + hdrGap;
+            if (relOpen_[r]) {
+                for (int i = 0; i < RELEASES[r].n; ++i) {
+                    cs(dev); rrect_fill(dev, clX + snap(9.0f), snap(y + lh * 0.5f - 2.0f), snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI));   // gold bullet
+                    const char* txt = (ui_config().lang == 1) ? RELEASES[r].lines[i].fr : RELEASES[r].lines[i].en;
+                    y = draw_wrapped(dev, fo, clX + snap(22.0f), y, clW - snap(30.0f), listTop, listBot, txt, tsz, C_TEXT, lh);
+                    y += snap(7.0f);                                         // gap between entries
+                }
+                y += snap(6.0f);                                            // extra gap after an open release
+            }
         }
         clip_rect_end(dev);
         // this frame's content extent -> the wheel clamp + a thin scrollbar when it overflows

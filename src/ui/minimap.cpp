@@ -333,7 +333,7 @@ static void draw_brass_bezel(u32 dev, const Frame& f, float cx, float cy, float 
     Font* fo = f.font;                                                                       // fixed engraved cardinals
     if (fo) {
         fo->begin(dev);
-        const float rm = (r + ri) * 0.5f, csz = snap(16.0f * S);   // bigger, proportional to the (large) lens
+        const float rm = (r + ri) * 0.5f, csz = snap(16.0f * S * clampf(ui_config().mmCardSz, 0.5f, 2.0f));   // bigger, proportional to the (large) lens ; scaled by the Cardinal-size slider
         static const char* NM[4] = { "N", "E", "S", "W" };
         static const float dx[4] = { 0.0f, 1.0f, 0.0f, -1.0f }, dy[4] = { -1.0f, 0.0f, 1.0f, 0.0f };
         for (int i = 0; i < 4; ++i) {
@@ -447,13 +447,23 @@ void Minimap::draw(const Frame& f) {
         return;
     }
 
-    // ---- sync the map texture : (re)load from the ROM DAT only when the zone's map file-id changes ----
-    if (g.map.fileId != mapFileId_) {
+    // ---- sync the map texture : (re)load from the ROM DAT when the zone's map file-id changes. If the DAT read
+    //      FAILS (data not ready right after a zone-in, or a registry/path hiccup on some installs), RETRY a bounded
+    //      number of times instead of caching the failure until the next zone -- that was the "minimap doesn't
+    //      always load when I zone" bug. On success we stop retrying ; after the budget we give up (truly no map). ----
+    if (g.map.fileId != mapFileId_) {                          // zone's map changed
         if (mapTex_) { release_texture(mapTex_); mapTex_ = 0; }
-        u32* pixels = 0; int mw = 0, mh = 0;
-        if (load_zone_map(g.map.fileId, pixels, mw, mh)) { mapTex_ = make_texture_argb_mip(dev, mw, mh, pixels); mapW_ = mw; mapH_ = mh; free_map_image(pixels); }
-        mapFileId_ = g.map.fileId;                              // remember even on failure -> no per-frame retry
+        mapFileId_ = g.map.fileId;
         mobAngN_ = 0;                                           // new zone -> drop the eased-angle cache
+        mapRetries_ = 12; mapRetryAt_ = 0;                     // fresh load budget, try immediately
+    }
+    if (mapTex_ == 0 && g.map.fileId && mapRetries_ > 0) {     // not loaded yet -> (re)try, throttled
+        const unsigned nowMs = GetTickCount();
+        if ((int)(nowMs - mapRetryAt_) >= 0) {
+            u32* pixels = 0; int mw = 0, mh = 0;
+            if (load_zone_map(g.map.fileId, pixels, mw, mh)) { mapTex_ = make_texture_argb_mip(dev, mw, mh, pixels); mapW_ = mw; mapH_ = mh; free_map_image(pixels); mapRetries_ = 0; }
+            else { --mapRetries_; mapRetryAt_ = nowMs + 300; }  // retry in 300 ms (bounded : ~3.6 s total)
+        }
     }
 
     // ---- player native map position (transform calibrated to the 512px native map) ----
@@ -493,11 +503,13 @@ void Minimap::draw(const Frame& f) {
     // as a crisp solid ring -- a thin dark AA outline + the colour band -- and inset the circular clip so the map
     // fills only the interior, leaving the ring visible. Gives the round minimap a real border, not a soft glow. ----
     float rc = r;                                            // circle clip radius = the interior map area (inside the ring)
-    if (round && c.mmClock) {
+    if (round && c.mmClock && c.mmBezel) {
         // longue-vue INSTRUMENT look (the Vana box) : a wide brass bezel + fixed cardinals around the lens.
-        const float bezelW = snap(22.0f * S);
+        const float bezelW = snap(22.0f * S * clampf(c.mmBezelW, 0.5f, 2.0f));   // Bezel-width slider
         rc = r - bezelW;
         draw_brass_bezel(dev, f, ccx, ccy, r, bezelW, S);
+    } else if (round && c.mmClock && !c.mmBezel) {
+        // no circle at all : no bezel, no cardinals -> the map lens fills the full radius (rc stays r).
     } else if (round && c.mmFrame != 0) {
         const bool procThemed = (c.mmFrame == 1 && window_theme_is_proc(c.skinTheme));   // real procedural frame available
         const float ringT = snap((procThemed ? 7.0f : 5.0f) * S);   // proc frame needs a thicker band to read the bevel/filet
@@ -571,7 +583,10 @@ void Minimap::draw(const Frame& f) {
         if (d > lim && d > 0.001f) { const float k = lim / d; sx = ccx + dx * k; sy = ccy + dy * k; }   // clamp to the lens edge -> points toward an off-map target
         {
             color_state(dev);
-            const u32 lc = c.mmTgtLineCol | 0xFF000000u;
+            // colour the line + reticle like the TARGET'S OWN MARKER (its dot colour : claim/allegiance), so it
+            // matches the mob/PC pip. Fall back to the configured line colour if the target isn't a mapped entity.
+            u32 lc = c.mmTgtLineCol | 0xFF000000u;
+            for (int e = 0; e < g.mapEntN; ++e) if (g.mapEnts[e].id == g.target.id) { lc = mm_ent_color(g.mapEnts[e]) | 0xFF000000u; break; }
             const float w = clampf(2.8f * S, 2.4f, 6.0f);                   // readable at any UI scale (was ~2px -> too thin)
             seg_soft(dev, ccx, ccy, sx, sy, w + snap(2.6f * S), 0x88000000u);   // dark under-stroke (halo)
             seg_soft(dev, ccx, ccy, sx, sy, w, lc);                            // colour line
@@ -635,7 +650,8 @@ void Minimap::draw(const Frame& f) {
     if (!themedOk && !round && c.mmFrame != 0) {
         const u32 fc = mm_frame_color(c, f);
         color_state(dev);
-        rrect_stroke(dev, mapLeft, mapTop, mapD, mapD, snap(3.0f * S), fc, snap(1.6f * S));
+        const float sqbw = snap(1.6f * S * clampf(c.mmSqBorder, 0.5f, 2.0f));   // Square border-width slider
+        rrect_stroke(dev, mapLeft - sqbw, mapTop - sqbw, mapD + 2.0f * sqbw, mapD + 2.0f * sqbw, snap(3.0f * S) + sqbw, fc, sqbw);   // grow the border OUTWARD from the map edge (was drawn inward -> it ate into the map)
     }
 }
 
@@ -670,7 +686,8 @@ void minimap_help_disc(u32 dev, const Frame& f, Font* fo, u32 mkPlayer, u32 mkMo
     //      themed window chrome for square) ----
     bool themedOk = false; float fi = 0.0f, rc = r;
     if (round) {
-        if (c.mmClock) { const float bw = snap(22.0f * Ss); draw_brass_bezel(dev, f, cx, cy, r, bw, Ss); rc = r - bw; }
+        if (c.mmClock && c.mmBezel) { const float bw = snap(22.0f * Ss * clampf(c.mmBezelW, 0.5f, 2.0f)); draw_brass_bezel(dev, f, cx, cy, r, bw, Ss); rc = r - bw; }
+        else if (c.mmClock && !c.mmBezel) { /* no circle at all : lens fills the full radius (rc stays r) */ }
         else if (c.mmFrame != 0) {
             const bool procThemed = (c.mmFrame == 1 && window_theme_is_proc(c.skinTheme));
             const float ringT = snap((procThemed ? 7.0f : 5.0f) * Ss); rc = r - ringT;

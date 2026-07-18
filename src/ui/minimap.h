@@ -21,6 +21,8 @@ private:
     const GameState* state_;
     u32      mapTex_ = 0;        // current zone/submap map texture (from the ROM DAT)
     unsigned mapFileId_ = 0;     // map file-id currently loaded (0 = none) -> reload only on change
+    int      mapRetries_ = 0;    // remaining (re)load attempts when the DAT read failed (transient : data not ready on zone-in / a registry hiccup) -> retry a bounded number of times instead of giving up until the next zone
+    unsigned mapRetryAt_ = 0;    // GetTickCount of the next allowed retry (throttle)
     int      mapW_ = 0, mapH_ = 0;
     u32      mkPlayer_ = 0, mkMob_ = 0;   // marker icons : player Location pin + mob Arrow (white, tinted)
     u32      elemTex_ = 0;                 // 8-cell elemental-icon atlas (clock header day icon)

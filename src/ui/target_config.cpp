@@ -303,11 +303,11 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         // Max Debuffs : how many debuff icons to show at most (1..20 ; wraps 10 per row/column).
         if (ui_config().tgtDebuffs && !ui_config().dbShow)
         { ROW_BAND(46.0f)
-            const float lo = 1.0f, hi = 20.0f; int cur = ui_config().tgtBuffMax; if (cur < 1) cur = 1; if (cur > 20) cur = 20;
+            const float lo = 1.0f, hi = 32.0f; int cur = ui_config().tgtBuffMax; if (cur < 1) cur = 1; if (cur > 32) cur = 32;
             char b[16]; sprintf(b, "%d", cur);
             float v01 = ((float)cur - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Max Debuffs", "Max debuffs"), b, &v01)) {
-                int v = (int)(lo + v01 * (hi - lo) + 0.5f); ui_config().tgtBuffMax = v < 1 ? 1 : (v > 20 ? 20 : v); }
+                int v = (int)(lo + v01 * (hi - lo) + 0.5f); ui_config().tgtBuffMax = v < 1 ? 1 : (v > 32 ? 32 : v); }
           ROW_NEXT(46.0f)
         }
         // Buff position : where the debuff row sits -- inside the box (grows it) or floating outside on a side.

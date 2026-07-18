@@ -721,6 +721,12 @@ void Party::measure(float& w, float& h) const {
     h = (rowPit() * 6 + 2 * padB()) * S;   // always sized for a full party of 6 (fixed box, solo or not)
 }
 
+// CONFIG-PREVIEW ONLY : the stage's left edge (px) past which the LEFTWARD member buff strip must not draw
+// -> icons fill leftward until they'd cross this X, then the leftmost fitting cell shows "+N" (hidden count).
+// 0 = live HUD (no cap, every buff drawn). Set by the Hud around the party-preview draw, reset right after.
+static float g_previewBuffLeft = 0.0f;
+void set_party_preview_buff_left(float x) { g_previewBuffLeft = x > 0.0f ? x : 0.0f; }
+
 static const char* ICON_PATH() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\hand_cursor.raw"); return b; }
 // job-emblem atlas (white masks, tinted per role) : 8 cols x 3 rows of 64px cells, in JOBS[1..22] order
 // (WAR = cell 0 ... RUN = cell 21). Built by the python step from assets\job_icons_src\*.png.
@@ -767,7 +773,8 @@ Party::RowAnim* Party::anim_for(unsigned id) {
 // 20), right-to-left from just left of the selection cursor. Atlas id -> cell (id%32, id/32).
 // A static helper (it iterates the file-local Row) -> keeps draw() focused. buffTex 0 = no-op.
 static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
-                              float px, float oy, float pad, float rowpit, float rowh, float S, float curBand, float iconH) {
+                              float px, float oy, float pad, float rowpit, float rowh, float S, float curBand, float iconH,
+                              Font* font) {
     if (!buffTex) return;
     setup_tex_state(dev, buffTex, false);               // MIPFILTER NONE : pixel-exact buff atlas (kept crisp)
     const float bgap = snap(1.0f * S);                  // gap between icons
@@ -786,6 +793,12 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
     const float bs    = iconH;                          // constant icon size (row grows to fit)
     const float totalH = twoMode ? (2.0f * bs + vgap) : bs;
     const int   rowsN = twoMode ? 2 : 1;
+    // CONFIG-PREVIEW ONLY : cap the LEFTWARD strip at the stage's left edge so it can't spill the rect ; the
+    // clipped buffs collapse into a "+N" marker at the leftmost fitting cell. lim <= 0 (live HUD) = no cap.
+    const float lim  = g_previewBuffLeft;
+    const bool  cap  = lim > 0.0f;
+    struct Mark { float x, y; int nn; };
+    Mark marks[12]; int nmark = 0;                       // <= 6 members x 2 rows
     for (int i = 0; i < n; ++i) {
         const Row& r = rows[i];
         if (r.offzone || !r.buffs || r.nbuff <= 0) continue;
@@ -797,18 +810,46 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
             const int start = rw * PERROW;
             int cnt = nbAll - start; if (cnt < 0) cnt = 0; if (cnt > PERROW) cnt = PERROW;
             const float y = snap(top + (float)rw * (bs + vgap));
-            for (int j = 0; j < cnt; ++j) {
+            // how many WHOLE cells fit before the left cap (cell j's left edge = xr - (j+1)*bs - j*bgap >= lim).
+            // Live HUD (no cap) : draw them all (the x<1 screen-edge guard still applies below).
+            int drawN = cnt;                            // icons to draw as real icons
+            bool clip = false;                          // clipped -> reserve the leftmost cell for "+N"
+            if (cap) {
+                int fit = (int)((xr - bs - lim) / (bs + bgap)) + 1;   // cells with left edge >= lim
+                if (fit < 0) fit = 0; if (fit > cnt) fit = cnt;
+                if (fit < cnt) { clip = true; drawN = fit - 1; if (drawN < 0) drawN = 0; }   // last fitting cell -> "+N"
+                else drawN = cnt;
+            }
+            for (int j = 0; j < drawN; ++j) {
                 const float x = snap(xr - (float)(j + 1) * bs - (float)j * bgap);
-                if (x < 1.0f) break;                    // ran off the left of the screen -> stop
+                if (!cap && x < 1.0f) break;            // live : ran off the left of the screen -> stop
                 const int id = r.buffs[start + j];
                 if (id < 0 || id >= BUFF_COLS * BUFF_ATLAS_ROWS) continue;   // id outside the atlas -> skip
                 const float u0 = (float)(id % BUFF_COLS) * au;
                 const float v0 = (float)(id / BUFF_COLS) * av;
                 tquad(dev, x, y, bs, bs, u0, u0 + au, v0, v0 + av, 0xFFFFFFFF, 0xFFFFFFFF);
             }
+            if (clip && drawN >= 0 && nmark < 12) {     // "+N" (hidden count) in the leftmost fitting cell
+                const int cellIdx = drawN;              // the cell just left of the last drawn icon
+                marks[nmark].x  = snap(xr - (float)(cellIdx + 1) * bs - (float)cellIdx * bgap);
+                marks[nmark].y  = y;
+                marks[nmark].nn = cnt - drawN;          // buffs not shown as icons
+                ++nmark;
+            }
         }
     }
     dSetTex(dev, 0, 0);
+    // draw the "+N" markers (preview only) in ONE font pass, centred on their reserved cell.
+    if (cap && font && nmark > 0) {
+        font->begin(dev);
+        const float fsz = bs * 0.66f;                   // fits inside a single icon cell
+        for (int m = 0; m < nmark; ++m) {
+            int nn = marks[m].nn; if (nn > 99) nn = 99;
+            char buf[8]; snprintf(buf, sizeof(buf), "+%d", nn);
+            font->draw_c(dev, marks[m].x + bs * 0.5f, marks[m].y + bs * 0.5f, buf, fsz, 0xFFFFFFFF, 0xE0000000, 1.4f);
+        }
+        dSetTex(dev, 0, 0);
+    }
 }
 
 // ---- per-element typography (ui_config().text[TE_*]) : each text element resolves its own Font + size /
@@ -1216,7 +1257,10 @@ void Party::draw(const Frame& f) {
     }
 
     // ---------- buffs : status icons LEFT of each party row (main box only -- alliance buffs aren't sent) ----------
-    if (tier_ == 0) draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S, snap(coreBandH() * S), snap(buffIconH() * S));   // curBand = cursor ref (coreBandH) so the strip hugs the cursor ; icon size driven by Buff Size % + 1/2-row mode ; centred in the row
+    if (tier_ == 0) {   // buffs LEFT of the row + (config preview only) a "+N" marker for the strip clipped at the stage edge
+        Font* bfn = f.fonts ? f.fonts->get(ui_font_face(ui_config().fontFace), 700) : f.font;
+        draw_member_buffs(dev, buff_tex_, rows, n, px, oy, pad, rowpit, mh, S, snap(coreBandH() * S), snap(buffIconH() * S), bfn);   // curBand = cursor ref (coreBandH) so the strip hugs the cursor ; icon size driven by Buff Size % + 1/2-row mode ; centred in the row
+    }
 
     // ---------- leader / QM markers : round dots, animated pop-in/out (scale + fade) ----------
     if (dot_tex_) {

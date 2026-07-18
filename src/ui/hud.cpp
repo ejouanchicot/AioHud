@@ -608,14 +608,22 @@ void Hud::draw_config_preview(const Frame& f) {
     // SNAP the box origin to whole pixels : measure() is fractional, so an un-snapped origin puts the
     // whole box (badge, name, gauges) on sub-pixel coords -> the first glyph's left column gets eaten by
     // filtering ONLY in the preview (live uses an integer layout origin). This is the truncation cause.
-    const float buffW    = tiers[0]->buff_reserve_w();                               // left buff strip -> shift right so the box+buffs cluster centres (not just the box)
-    const float boxX     = (float)(int)(psx + (psw - pw + buffW) * 0.5f + 0.5f);     // centre the box + buff-strip cluster horizontally
+    // Centre by the BOX footprint ONLY (NOT the buff strip) : the party box (+ alliances/cast box, which stack
+    // relative to it) stays perfectly centred and does NOT move when Max Buffs changes. The leftward strip is
+    // NOT part of the centering -- instead it's capped at the stage-left edge (+ "+N") by set_party_preview_buff_left below.
+    const float boxX     = (float)(int)(psx + (psw - pw) * 0.5f + 0.5f);             // centre the box horizontally (buff strip excluded)
     const float partyTop = (float)(int)(psy + (psh + stackH) * 0.5f - ph + 0.5f);    // centre the whole stack vertically
     for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->set_origin(boxX, partyTop);   // shared X ; party Y anchors the stack
+    // PREVIEW-ONLY : the party box keeps its REAL size, but its buff strip is drawn LEFTWARD and a long strip
+    // (high Max Buffs / 1-row) would spill past the stage's LEFT edge. Tell the party box to CAP the strip at
+    // the stage left (+ a small margin) and draw a "+N" marker for the buffs that didn't fit. Live HUD passes
+    // 0 (no cap) -> every buff still draws in game. Reset right after the party draw below.
+    set_party_preview_buff_left(psx + 6.0f);
 
     set_demo_select(true);                                          // show a sliding target cursor in the preview
     for (int t = 0; t < 3; ++t) if (tiers[t] && (t == 0 ? C.partyShow : C.allyShow)) tiers[t]->draw(f);   // tier 0 first (publishes the stack ref) ; honour per-side Show
     set_demo_select(false);
+    set_party_preview_buff_left(0.0f);                              // back to live : no strip cap / "+N" on the real HUD
 
     C.box[0].posSet = sp0; C.box[1].posSet = sp1; C.box[2].posSet = sp2;
     for (int i = 0; i < 6; ++i) C.partyRef[i] = sref[i];

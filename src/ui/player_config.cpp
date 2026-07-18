@@ -154,6 +154,9 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         PLR_TOGGLE(CTRL_ID, tr("Cast placeholder", "Sort fictif"), ui_config().plrCastDemo)
         PLR_TOGGLE(CTRL_ID, tr("Buffs", "Buffs"), ui_config().plrBuffs)
         PLR_TOGGLE(CTRL_ID, tr("Equipment", "Équipement"), ui_config().plrEquip)
+        // Gil : lives in Content while the equipment is docked or off (gil then rides the header / hub) ; when the
+        // equipment is DETACHED the gil goes with that box, so its toggle moves to the Equipment sub-section.
+        if (!(ui_config().plrEquip && ui_config().plrEquipDetach)) { PLR_TOGGLE(CTRL_ID, tr("Gil", "Gil"), ui_config().plrGil) }
         }   // end sub-section Content (catOpen_[7])
         // ---- sub-section : Identity (the job emblem is an icon -> size only) ----
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Identity", "Identité"), catOpen_[11])) catOpen_[11] = !catOpen_[11];
@@ -266,8 +269,8 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         ROW_NEXT(46.0f)
         }
-        // Gil : it renders WITH the equipment (icon + amount) -> its toggle lives here, not in Content.
-        PLR_TOGGLE(CTRL_ID, tr("Gil", "Gil"), ui_config().plrGil)
+        // Gil ON/OFF lives HERE only when the equipment is DETACHED (the gil rides that box) ; docked/off -> Content.
+        if (ui_config().plrEquipDetach) { PLR_TOGGLE(CTRL_ID, tr("Gil", "Gil"), ui_config().plrGil) }
         // Gil position (standalone only) : which side of the grid the gil row sits on.
         if (ui_config().plrEquipDetach && ui_config().plrGil) {
         { ROW_BAND(52.0f)
