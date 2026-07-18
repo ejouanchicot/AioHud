@@ -197,11 +197,17 @@ static void save_config_to(const char* path) {
     }
     fprintf(f, "zt=%d,%.3f,%.4f,%.4f,%d,%d\n", c.ztShow, c.ztScale, c.ztX, c.ztY, c.ztVariant, c.ztHeader);   // zone tracker box (+ title toggle)
     fprintf(f, "ztsheol=%d,%d,%d\n", c.ztSheolSeg, c.ztSheolRes, c.ztSheolJoke);   // Sheol : segments / resistances / cruel joke
+    fprintf(f, "ztlimbus=%d,%d,%d,%d,%d,%.2f,%.2f\n", c.ztLbFloor, c.ztLbCur, c.ztLbRun, c.ztLbChips, c.ztLbName, c.ztLbBarW, c.ztLbBarH);   // Limbus : floor-on-gauge / currencies / run / coffer dots / name row / gauge W / gauge H
+    fprintf(f, "ztdyn=%d,%d,%.2f,%.2f,%.2f\n", c.ztDyTimer, c.ztDyKi, c.ztDyBarW, c.ztDyBarH, c.ztDyDot);   // Dynamis : timer / key items / bar W / bar H / dot size
+    fprintf(f, "ztaby=%d,%d,%.2f,%.2f,%.2f,%.2f\n", c.ztAbTimer, c.ztAbLights, c.ztAbBarW, c.ztAbBarH, c.ztAbLightW, c.ztAbLightH);   // Abyssea : timer / lights / bar W / bar H / light W / light H
+    fprintf(f, "ztomen=%d,%d,%d\n", c.ztOmObj, c.ztOmCount, c.ztOmRows);   // Omen : floor objective / omen+bonus / objective rows
+    fprintf(f, "ztnyzul=%d,%d,%d,%d,%d,%d,%d\n", c.ztNyFloor, c.ztNyTime, c.ztNyObj, c.ztNyRestr, c.ztNyComp, c.ztNyRate, c.ztNyTok);   // Nyzul : per-row toggles
+    fprintf(f, "ztsheol2=%d,%.2f,%.2f\n", c.ztShFam, c.ztShIcon, c.ztShDot);   // Sheol : family row / weapon icon size / element puck size
     fprintf(f, "tm=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%.4f,%.4f,%d,%d,%d,%.3f,%d,%d,%d,%.3f\n", c.tmShow, c.tmScale, c.tmX, c.tmY, c.tmMax, c.tmTitle, c.tmBox.on, c.tmMerged, c.tmRX, c.tmRY, c.tmDurMode, c.tmRecMode, c.tmOthers, c.tmIconScale, c.tmMine, c.tmBuffSrc, c.tmSpAlert, c.tmRowGap);   // Timers box (+ box.on/merge/recast-pos/display modes/others/icon-scale/buffs-on-allies/buff-source/SP-alert/row-spacing)
     fprintf(f, "db=%d,%.3f,%.4f,%.4f,%d,%d,%d,%.3f,%.3f\n", c.dbShow, c.dbScale, c.dbX, c.dbY, c.dbMax, c.dbHeader, c.dbDisp, c.dbIconScale, c.dbRowGap);   // Debuffs module (detached target debuffs)
     {   // per-module box appearance (shared BoxStyle : frame / transparency / theme / hue / luminosity)
         auto sb = [&](const char* k, const BoxStyle& b) { fprintf(f, "%s=%d,%.4f,%d,%d,%.4f,%08X,%d\n", k, b.on, b.alpha, b.themeCopy, b.theme, b.lum, b.hue, b.border); };   // border = trailing field (old 6-field configs load with border=default)
-        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox); sb("dbbox", c.dbBox);
+        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox); sb("dbbox", c.dbBox); sb("plreqbox", c.plrEqBox);
     }
     fprintf(f, "ep=%d,%.3f,%.4f,%.4f,%d\n", c.epShow, c.epScale, c.epX, c.epY, c.epColl);   // EmpyPop box (+ collectable row)
     fprintf(f, "eptrack=%s\n", c.epTrack);   // the tracked NM KEY -- its OWN line : keys contain spaces
@@ -266,6 +272,7 @@ static void save_config_to(const char* path) {
     fprintf(f, "jobBadge=%d,%d,%d\n", c.jobBadge[0], c.jobBadge[1], c.jobBadge[2]);
     fprintf(f, "cast=%d,%d,%d\n", c.cast[0] ? 1 : 0, c.cast[1] ? 1 : 0, c.cast[2] ? 1 : 0);
     fprintf(f, "dist=%d,%d,%d\n", c.dist[0] ? 1 : 0, c.dist[1] ? 1 : 0, c.dist[2] ? 1 : 0);
+    fprintf(f, "distcol=%08X,%08X,%08X\n", c.distColClose, c.distColNormal, c.distColFar);   // distance-zone colours : Close / Normal / Far
     fprintf(f, "lang=%d\n", c.lang);
     fprintf(f, "partyRef=%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n", c.partyRef[0], c.partyRef[1], c.partyRef[2], c.partyRef[3], c.partyRef[4], c.partyRef[5]);
     fprintf(f, "partyBottom=%.5f\n", c.partyBottomY);
@@ -365,7 +372,9 @@ static bool parse_db_line(const char* line, UiConfig& c) {
         return true;
     }
     if (!strncmp(line, "dbbox=", 6)) { parse_box(line + 6, c.dbBox); return true; }
+    if (!strncmp(line, "plreqbox=", 9)) { parse_box(line + 9, c.plrEqBox); return true; }   // DETACHED equipment box chrome (out-of-line : same C1061 reason)
     { int mn; if (sscanf(line, "tgtRangeMin=%d", &mn) == 1) { c.tgtRangeMin = mn; return true; } }   // out-of-line : keeps the main chain off MSVC's C1061 limit
+    { unsigned cc, cn, cf; if (sscanf(line, "distcol=%x,%x,%x", &cc, &cn, &cf) == 3) { c.distColClose = cc; c.distColNormal = cn; c.distColFar = cf; return true; } }   // distance-zone colours (out-of-line : same C1061 reason)
     return false;
 }
 
@@ -381,6 +390,52 @@ static bool parse_cast_line(const char* line, UiConfig& c) {
 // Minimap EXTRA options (round bezel width / cardinal size / bezel on-off / square border width), parsed
 // OUT-OF-LINE (same C1061 nesting reason as parse_ep_line : the main else-if chain is at MSVC's limit).
 // Distinct key mm5= ; missing keys keep the code defaults so an OLD config loads to the current look.
+// Limbus row toggles (floor-on-gauge / currencies / run total / coffer dots), parsed OUT-OF-LINE for the same
+// C1061 reason as parse_mm_line. Missing key keeps the defaults, so an older config loads with every row shown.
+static bool parse_zt_line(const char* line, UiConfig& c) {
+    if (strncmp(line, "ztlimbus=", 9) == 0) {
+        int fl = 1, cu = 1, rn = 1, ch = 1, nm = 1; float bw = 1.0f, bh = 1.0f;
+        const int n = sscanf(line + 9, "%d,%d,%d,%d,%d,%f,%f", &fl, &cu, &rn, &ch, &nm, &bw, &bh);
+        if (n >= 1) { c.ztLbFloor = fl; if (n >= 2) c.ztLbCur = cu; if (n >= 3) c.ztLbRun = rn; if (n >= 4) c.ztLbChips = ch;
+                      if (n >= 5) c.ztLbName = nm; if (n >= 6) c.ztLbBarW = bw; if (n >= 7) c.ztLbBarH = bh; }
+        return true;
+    }
+    if (strncmp(line, "ztdyn=", 6) == 0) {
+        int tm = 1, ki = 1; float bw = 1.0f, bh = 1.0f, dt = 1.0f;
+        const int n = sscanf(line + 6, "%d,%d,%f,%f,%f", &tm, &ki, &bw, &bh, &dt);
+        if (n >= 1) { c.ztDyTimer = tm; if (n >= 2) c.ztDyKi = ki; if (n >= 3) c.ztDyBarW = bw;
+                      if (n >= 4) c.ztDyBarH = bh; if (n >= 5) c.ztDyDot = dt; }
+        return true;
+    }
+    if (strncmp(line, "ztaby=", 6) == 0) {
+        int tm = 1, lt = 1; float bw = 1.0f, bh = 1.0f, lw = 1.0f, lh = 1.0f;
+        const int n = sscanf(line + 6, "%d,%d,%f,%f,%f,%f", &tm, &lt, &bw, &bh, &lw, &lh);
+        if (n >= 1) { c.ztAbTimer = tm; if (n >= 2) c.ztAbLights = lt; if (n >= 3) c.ztAbBarW = bw;
+                      if (n >= 4) c.ztAbBarH = bh; if (n >= 5) c.ztAbLightW = lw; if (n >= 6) c.ztAbLightH = lh; }
+        return true;
+    }
+    if (strncmp(line, "ztomen=", 7) == 0) {
+        int ob = 1, ct = 1, rw = 1;
+        const int n = sscanf(line + 7, "%d,%d,%d", &ob, &ct, &rw);
+        if (n >= 1) { c.ztOmObj = ob; if (n >= 2) c.ztOmCount = ct; if (n >= 3) c.ztOmRows = rw; }
+        return true;
+    }
+    if (strncmp(line, "ztnyzul=", 8) == 0) {
+        int fl = 1, tm = 1, ob = 1, rs = 1, cp = 1, rt = 1, tk = 1;
+        const int n = sscanf(line + 8, "%d,%d,%d,%d,%d,%d,%d", &fl, &tm, &ob, &rs, &cp, &rt, &tk);
+        if (n >= 1) { c.ztNyFloor = fl; if (n >= 2) c.ztNyTime = tm; if (n >= 3) c.ztNyObj = ob; if (n >= 4) c.ztNyRestr = rs;
+                      if (n >= 5) c.ztNyComp = cp; if (n >= 6) c.ztNyRate = rt; if (n >= 7) c.ztNyTok = tk; }
+        return true;
+    }
+    if (strncmp(line, "ztsheol2=", 9) == 0) {
+        int fa = 1; float ic = 1.0f, dt = 1.0f;
+        const int n = sscanf(line + 9, "%d,%f,%f", &fa, &ic, &dt);
+        if (n >= 1) { c.ztShFam = fa; if (n >= 2) c.ztShIcon = ic; if (n >= 3) c.ztShDot = dt; }
+        return true;
+    }
+    return false;
+}
+
 static bool parse_mm_line(const char* line, UiConfig& c) {
     if (strncmp(line, "mm5=", 4) == 0) {
         float bw = 1.0f, cs = 1.0f, sb = 1.0f; int bz = 1;
@@ -407,6 +462,7 @@ static bool load_config_from(const char* path) {
         if (parse_cast_line(line, c)) continue; // out-of-line : cast-placeholder toggles (same nesting-limit reason)
         if (parse_db_line(line, c)) continue;   // out-of-line : Debuffs module (same nesting-limit reason)
         if (parse_mm_line(line, c)) continue;   // out-of-line : Minimap extra options mm5= (same nesting-limit reason)
+        if (parse_zt_line(line, c)) continue;   // out-of-line : Limbus row toggles ztlimbus= (same nesting-limit reason)
         if      (sscanf(line, "partyShow=%d", &v) == 1) c.partyShow = v;
         else if (sscanf(line, "allyShow=%d", &v) == 1)  c.allyShow = v;
         else if (sscanf(line, "tgtShow=%d", &v) == 1)   c.tgtShow = v;
@@ -875,6 +931,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
         if (a.gaugeStyle[k] != b.gaugeStyle[k] || a.jobBadge[k] != b.jobBadge[k] || a.cast[k] != b.cast[k]) return false;
     }
     if (a.dist[0] != b.dist[0] || a.dist[1] != b.dist[1] || a.dist[2] != b.dist[2]) return false;
+    if (a.distColClose != b.distColClose || a.distColNormal != b.distColNormal || a.distColFar != b.distColFar) return false;
     if (a.borderCost != b.borderCost || a.animHP != b.animHP || a.animTP != b.animTP) return false;
     for (int g = 0; g < 2; ++g) for (int k = 0; k < TE_COUNT; ++k) {
         const TextStyle& x = a.text[g][k], & y = b.text[g][k];
@@ -910,6 +967,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.plrEqCell != b.plrEqCell || a.plrEqThemeBorder != b.plrEqThemeBorder || a.plrEqColor != b.plrEqColor || a.plrEqPlace != b.plrEqPlace) return false;
     if (a.plrEqCellBgCustom != b.plrEqCellBgCustom || a.plrEqCellBg != b.plrEqCellBg) return false;
     if (a.plrEquipDetach != b.plrEquipDetach || a.plrEquipPosSet != b.plrEquipPosSet || a.plrEquipX != b.plrEquipX || a.plrEquipY != b.plrEquipY || a.plrEquipScale != b.plrEquipScale || a.plrEqGilPlace != b.plrEqGilPlace) return false;
+    if (!box_eq(a.plrEqBox, b.plrEqBox)) return false;   // DETACHED equipment box chrome
     if (a.mmShow != b.mmShow || a.mmPosSet != b.mmPosSet || a.mmX != b.mmX || a.mmY != b.mmY || a.mmScale != b.mmScale || a.mmZoom != b.mmZoom) return false;
     if (a.mmShape != b.mmShape || a.mmFrame != b.mmFrame || a.mmFrameColor != b.mmFrameColor || a.mmBgAlpha != b.mmBgAlpha || a.mmMarkerScale != b.mmMarkerScale || a.mmPC != b.mmPC || a.mmNPC != b.mmNPC || a.mmMob != b.mmMob) return false;
     if (a.mmTgtLine != b.mmTgtLine || a.mmTgtLineCol != b.mmTgtLineCol || a.mmRing != b.mmRing || a.mmRingR != b.mmRingR || a.mmRingCol != b.mmRingCol) return false;
@@ -939,6 +997,15 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     }
     if (a.ztShow != b.ztShow || a.ztScale != b.ztScale || a.ztX != b.ztX || a.ztY != b.ztY || a.ztVariant != b.ztVariant || a.ztHeader != b.ztHeader) return false;
     if (a.ztSheolSeg != b.ztSheolSeg || a.ztSheolRes != b.ztSheolRes || a.ztSheolJoke != b.ztSheolJoke) return false;
+    if (a.ztLbFloor != b.ztLbFloor || a.ztLbCur != b.ztLbCur || a.ztLbRun != b.ztLbRun || a.ztLbChips != b.ztLbChips) return false;
+    if (a.ztLbName != b.ztLbName || a.ztLbBarW != b.ztLbBarW || a.ztLbBarH != b.ztLbBarH) return false;
+    if (a.ztDyTimer != b.ztDyTimer || a.ztDyKi != b.ztDyKi || a.ztDyBarW != b.ztDyBarW || a.ztDyBarH != b.ztDyBarH || a.ztDyDot != b.ztDyDot) return false;
+    if (a.ztAbTimer != b.ztAbTimer || a.ztAbLights != b.ztAbLights || a.ztAbBarW != b.ztAbBarW || a.ztAbBarH != b.ztAbBarH
+        || a.ztAbLightW != b.ztAbLightW || a.ztAbLightH != b.ztAbLightH) return false;
+    if (a.ztOmObj != b.ztOmObj || a.ztOmCount != b.ztOmCount || a.ztOmRows != b.ztOmRows) return false;
+    if (a.ztNyFloor != b.ztNyFloor || a.ztNyTime != b.ztNyTime || a.ztNyObj != b.ztNyObj || a.ztNyRestr != b.ztNyRestr
+        || a.ztNyComp != b.ztNyComp || a.ztNyRate != b.ztNyRate || a.ztNyTok != b.ztNyTok) return false;
+    if (a.ztShFam != b.ztShFam || a.ztShIcon != b.ztShIcon || a.ztShDot != b.ztShDot) return false;
     for (int k = 0; k < ZT_TE_COUNT; ++k) {
         const TextStyle& x = a.ztText[k], & y = b.ztText[k];
         if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
@@ -1075,6 +1142,7 @@ void reset_ui_config() {   // general Default : everything
     c.allyThemeCopy = 1; c.allyTheme = 0; c.allyLum = 0.0f; c.allyHue = 0; c.allyBoxAlpha = 1.0f;
     for (int k = 0; k < 3; ++k) { c.barHeight[k] = 1.0f; c.barWidth[k] = 1.0f; c.badgeScale[k] = 1.0f; c.gaugeStyle[k] = 0; c.jobBadge[k] = 2; c.cast[k] = true; }
     c.dist[0] = c.dist[1] = c.dist[2] = true;
+    c.distColClose = 0xFF8FC6FF; c.distColNormal = 0xFFE7C95A; c.distColFar = 0xFFE76C6C;   // distance-zone colours back to defaults
     c.border[0] = c.border[1] = c.border[2] = c.borderCost = true;   // all borders back on
     c.animHP = c.animTP = true;
     for (int g = 0; g < 2; ++g) for (int k = 0; k < TE_COUNT; ++k) c.text[g][k] = TextStyle();   // typography back to defaults
@@ -1095,9 +1163,16 @@ void reset_ui_config() {   // general Default : everything
     c.pwShow = d.pwShow; c.pwScale = d.pwScale; c.pwX = d.pwX; c.pwY = d.pwY; c.pwMode = d.pwMode; c.pwLayout = d.pwLayout; c.pwDisplay = d.pwDisplay; c.pwRate = d.pwRate;
     c.grimShow = d.grimShow; c.grimScale = d.grimScale; c.grimX = d.grimX; c.grimY = d.grimY; c.grimArt = d.grimArt;
     c.ztShow = d.ztShow; c.ztScale = d.ztScale; c.ztX = d.ztX; c.ztY = d.ztY; c.ztVariant = d.ztVariant; c.ztHeader = d.ztHeader; c.ztSheolSeg = d.ztSheolSeg; c.ztSheolRes = d.ztSheolRes; c.ztSheolJoke = d.ztSheolJoke;
+    c.ztLbFloor = d.ztLbFloor; c.ztLbCur = d.ztLbCur; c.ztLbRun = d.ztLbRun; c.ztLbChips = d.ztLbChips;
+    c.ztLbName = d.ztLbName; c.ztLbBarW = d.ztLbBarW; c.ztLbBarH = d.ztLbBarH;
+    c.ztDyTimer = d.ztDyTimer; c.ztDyKi = d.ztDyKi; c.ztDyBarW = d.ztDyBarW; c.ztDyBarH = d.ztDyBarH; c.ztDyDot = d.ztDyDot;
+    c.ztAbTimer = d.ztAbTimer; c.ztAbLights = d.ztAbLights; c.ztAbBarW = d.ztAbBarW; c.ztAbBarH = d.ztAbBarH; c.ztAbLightW = d.ztAbLightW; c.ztAbLightH = d.ztAbLightH;
+    c.ztOmObj = d.ztOmObj; c.ztOmCount = d.ztOmCount; c.ztOmRows = d.ztOmRows;
+    c.ztNyFloor = d.ztNyFloor; c.ztNyTime = d.ztNyTime; c.ztNyObj = d.ztNyObj; c.ztNyRestr = d.ztNyRestr; c.ztNyComp = d.ztNyComp; c.ztNyRate = d.ztNyRate; c.ztNyTok = d.ztNyTok;
+    c.ztShFam = d.ztShFam; c.ztShIcon = d.ztShIcon; c.ztShDot = d.ztShDot;
     c.epShow = d.epShow; c.epScale = d.epScale; c.epX = d.epX; c.epY = d.epY; c.epColl = d.epColl;
     lstrcpynA(c.epTrack, d.epTrack, sizeof(c.epTrack));   // char[] : copy the CONTENT (plain '=' won't compile)
-    c.scBox = d.scBox; c.tpBox = d.tpBox; c.hlBox = d.hlBox; c.pwBox = d.pwBox; c.ztBox = d.ztBox; c.mmBox = d.mmBox; c.epBox = d.epBox; c.dbBox = d.dbBox;
+    c.scBox = d.scBox; c.tpBox = d.tpBox; c.hlBox = d.hlBox; c.pwBox = d.pwBox; c.ztBox = d.ztBox; c.mmBox = d.mmBox; c.epBox = d.epBox; c.dbBox = d.dbBox; c.plrEqBox = d.plrEqBox;
     c.dbShow = d.dbShow; c.dbScale = d.dbScale; c.dbX = d.dbX; c.dbY = d.dbY; c.dbMax = d.dbMax; c.dbHeader = d.dbHeader; c.dbDisp = d.dbDisp; c.dbIconScale = d.dbIconScale; c.dbRowGap = d.dbRowGap;
     c.tgtSubPos = d.tgtSubPos; c.mmClockPos = d.mmClockPos; c.scNearby = d.scNearby;
     for (int k = 0; k < HL_TE_COUNT; ++k)   c.hlText[k]   = TextStyle();

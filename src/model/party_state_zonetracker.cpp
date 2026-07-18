@@ -5,11 +5,74 @@
 #include "model/party_state.h"
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared packet readers)
 #include "model/paths.h"                  // plugin_path (the zone-cache path)
+#include "model/game_mem.h"               // key_items_base (Limbus run baseline : the run's KIs)
+#include <stdio.h>                        // snprintf (floor tags)
 #include <windows.h>                       // GetTickCount / CreateFileA / ReadFile / WriteFile
 #include <string.h>                        // strstr
 #include <math.h>                          // floor()
 
 namespace aio {
+
+// LIMBUS : a per-kill payout runs ~40-110 units ; the coffer paid 3000 in the reference capture and 5000 is the
+// payout worth calling out. So "in the thousands" separates a coffer from a kill -- a heuristic, but a wide one.
+static const int LIMBUS_COFFER_MIN = 1000;
+static const int LIMBUS_BIG_MIN    = 5000;
+// Limbus run key items : 9956..9980 Temenos (Tem. N-F1 .. C-F4), 9981..9998 Apollyon (NW #1 .. SE #4). Owning NONE
+// of them means no run is in progress -> the next entry starts a fresh count. Owning some means the previous run
+// is still going, so the running totals must be KEPT (the user's rule).
+static const int LIMBUS_KI_FIRST = 9956, LIMBUS_KI_LAST = 9998;
+
+// "SW #4" -- the floor an event happened on, from bar1 of the 0x075 block.
+static void limbus_floor_tag(const ZoneTracker& zt, char* out, int cap) {
+    out[0] = 0;
+    if (zt.limbusFloor < 0) return;
+    if (zt.limbusQuad[0]) snprintf(out, cap, "%.3s #%d", zt.limbusQuad, zt.limbusFloor);
+    else                  snprintf(out, cap, "#%d", zt.limbusFloor);
+}
+
+// How many Limbus run key items are owned right now (-1 = the KI store is not reachable yet).
+static int limbus_ki_owned() {
+    if (!key_items_base()) return -1;                      // store not reachable yet -> "unknown", never "zero"
+    int n = 0;
+    for (int id = LIMBUS_KI_FIRST; id <= LIMBUS_KI_LAST; ++id) if (owns_key_item((unsigned)id)) ++n;
+    return n;
+}
+
+// ---- Limbus coffer history : its OWN file. The zone cache cannot hold this (single shared file, restored only
+// when curZone matches -> a Dynamis run in between would wipe it). Version tag embeds the struct size so a layout
+// change auto-invalidates, same trick as ZT_CACHE_VER.
+static const int LC_VER = (int)(0x4C430000u | ((sizeof(LimbusCoffers) * 2) & 0xFFFF));
+static const char* lc_path() { static char b[260]; if (!b[0]) plugin_path(b, 260, "data\\cache\\limbus.bin"); return b; }
+
+bool PartyState::limbus_add_chip(int area, const char* quad, int amtK) {
+    const int a = (area == 1) ? 1 : 0, slot = limbus_slot_of(a, quad);
+    if (slot < 0 || amtK <= 0) return false;
+    LimbusCoffers& lc = lc_[a];
+    if (amtK >= (LIMBUS_BIG_MIN / 1000)) {                 // a 5k ends the cycle, hand-seeded or not
+        for (int i = 0; i < 4; ++i) lc.slotK[i] = 0;
+        lc.bigAmt = amtK * 1000;
+        int b = 0; for (; quad[b] && b < 7; ++b) lc.bigAt[b] = quad[b]; lc.bigAt[b] = 0;
+    }
+    lc.slotK[slot] = (unsigned char)amtK;
+    lc_save();
+    return true;
+}
+void PartyState::lc_save() const {
+    HANDLE h = CreateFileA(lc_path(), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h == INVALID_HANDLE_VALUE) return;
+    DWORD w = 0; int ver = LC_VER;
+    WriteFile(h, &ver, sizeof(ver), &w, 0);
+    WriteFile(h, lc_, sizeof(lc_), &w, 0);
+    CloseHandle(h);
+}
+void PartyState::lc_load() {
+    HANDLE h = CreateFileA(lc_path(), GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h == INVALID_HANDLE_VALUE) return;
+    int ver = 0; LimbusCoffers c[2]; DWORD got = 0;
+    if (ReadFile(h, &ver, sizeof(ver), &got, 0) && got == sizeof(ver) && ver == LC_VER &&
+        ReadFile(h, c, sizeof(c), &got, 0) && got == sizeof(c)) { lc_[0] = c[0]; lc_[1] = c[1]; }
+    CloseHandle(h);
+}
 
 // OMEN : parse a mode-161 objective line (ported from the Omen addon's text patterns). The number wanted is the one
 // preceding a keyword starting with the type's "check letter" (the addon's `check` pattern) -> skips the leading "N:".
@@ -205,6 +268,7 @@ void PartyState::zt_set_zone(int zone, const char* name) {
     if (zone == 292) mode = 3;                                                            // Reisenjima Henge (Omen)
     if (zone == 77)  mode = 4;                                                            // Nyzul Isle (Uncharted Area)
     if ((zone == 298 || zone == 279) && oldZone == 247) mode = 5;                         // Sheol A/B/C -- ONLY from Rabao (298/279 are also Selbina HTMBs)
+    if (zone == 38 || zone == 37) mode = 6;                                               // Limbus : Apollyon (38) / Temenos (37)
     if (mode == 3) {
         if (zt_.mode != 3) { omen_reset_objs(zt_); zt_.omens = 0; zt_.omenBonusSec = 0; zt_.omenCleared = 0; omen_set_floor(zt_, "Waiting for objectives..."); }
         zt_.mode = 3;
@@ -229,6 +293,23 @@ void PartyState::zt_set_zone(int zone, const char* name) {
         zt_.segBase = -1;
         zt_.segments = 0; zt_.segLastRun = 0;
         zt_.mode = 5;
+    } else if (mode == 6) {
+        // Fresh Limbus entry -> clear the run : the name + level arrive on the first 0x075 menu packet (on_limbus_075) ;
+        // progress/floor stay -1 (placeholders) until the memory phase fills them.
+        if (prevMode != 6) {
+            zt_.limbusArea[0] = 0; zt_.limbusLevel = 0; zt_.limbusProgress = -1; zt_.limbusQuad[0] = 0; zt_.limbusFloor = -1;
+            // Run accounting is baselined on KEY-ITEM ownership, not on zoning : the run KIs (9956..9998) are granted
+            // per cleared floor and wiped in bulk when the run ends. Owning none => this is a fresh run, so the
+            // totals restart at zero ; owning some => the previous run is still live and its count must survive the
+            // zone (the user's rule). A KI store that is not reachable yet (-1) is treated as "keep" -- never wipe
+            // a real count on a failed read.
+            lc_load();                                     // chips live in their own file -> restore on every entry
+            if (limbus_ki_owned() == 0) {
+                zt_.limbusRunUnits = 0; zt_.limbusUnitBase = -1;   // -1 -> re-baseline off the next payout's total
+                zt_.limbusCofferAmt = 0; zt_.limbusCofferAt[0] = 0;
+            }
+        }
+        zt_.mode = 6;
     } else {
         // Sheol -> Rabao (247) : FREEZE the run total as "N (last run)" (addon's conserve) + clear A/B/C for the next
         // run. Any other exit resets everything.
@@ -259,10 +340,52 @@ void PartyState::on_00e(const unsigned char* p) {          // 0x00E NPC update :
     for (int k = 0; k < 3; ++k)
         if (instance == INST[k][0] || instance == INST[k][1]) { zt_.sheolzone = k + 1; zt_save(); break; }
 }
+void PartyState::on_limbus_075(const unsigned char* p) {    // 0x075 : battlefield timer/BARS -> Limbus area/level + floor + gauge
+    if (zt_.mode != 6) return;                             // only while standing in a Limbus zone (38 Apollyon / 37 Temenos)
+    // bar[i] = { s32 progress ; char label[16] } at +0x28 + i*0x14, six of them (Windower's fields.lua documents
+    // five). 0x075 is multiplexed -- other senders put position floats here -- so we self-filter on the LABEL of
+    // each bar and only write a field whose label actually matched. A bar the server left empty reads label[0]==0
+    // (the client's own renderer skips those) and its progress is a sentinel (-1 / 0x7FFFFFFF), never 0..100.
+    bool hit = false;
+    for (int i = 0; i < 6; ++i) {
+        const int off = 0x28 + i * 0x14;
+        const int prog = (int)pkt_u32(p, off);
+        char lbl[17];                                      // label is a fixed 16-byte field : may be unterminated
+        int n = 0;
+        for (; n < 16; ++n) { char c = (char)p[off + 4 + n]; if (c < 0x20 || (unsigned char)c >= 0x7F) break; lbl[n] = c; }
+        lbl[n] = 0;
+        if (n < 3) continue;                               // empty / garbage -> the server did not fill this bar
+        // "<Area>_Lv<NNN>" -> area + level (bar 0 in practice ; matched by content, not by index)
+        int cut = -1;
+        for (int k = 0; k + 2 < n; ++k) if (lbl[k] == '_' && lbl[k + 1] == 'L' && lbl[k + 2] == 'v') { cut = k; break; }
+        if (cut > 0 && (lbl[0] == 'A' || lbl[0] == 'T')) {
+            int w = 0; for (; w < cut && w < 15; ++w) zt_.limbusArea[w] = lbl[w]; zt_.limbusArea[w] = 0;
+            int lvl = 0; for (const char* d = lbl + cut + 3; *d >= '0' && *d <= '9'; ++d) lvl = lvl * 10 + (*d - '0');
+            zt_.limbusLevel = lvl; hit = true;
+            continue;
+        }
+        // "<Quad>_Floor_#<N>" (e.g. "SW_Floor_#3") -> quadrant + floor number, and THIS bar's progress is the gauge
+        int fpos = -1;
+        for (int k = 0; k + 5 <= n; ++k)
+            if (lbl[k]=='F' && lbl[k+1]=='l' && lbl[k+2]=='o' && lbl[k+3]=='o' && lbl[k+4]=='r') { fpos = k; break; }
+        if (fpos < 0) continue;
+        int q = 0;                                         // everything before "Floor", minus the separator
+        for (; q < fpos && q < 7; ++q) { char c = lbl[q]; if (c == '_' || c == ' ') break; zt_.limbusQuad[q] = c; }
+        zt_.limbusQuad[q] = 0;
+        int fl = -1;
+        for (int k = fpos; k < n; ++k) if (lbl[k] >= '0' && lbl[k] <= '9') { fl = 0; for (; k < n && lbl[k] >= '0' && lbl[k] <= '9'; ++k) fl = fl * 10 + (lbl[k] - '0'); break; }
+        zt_.limbusFloor = fl;
+        zt_.limbusProgress = (prog >= 0 && prog <= 100) ? prog : -1;   // sentinels (-1 / 0x7FFFFFFF) = gauge inactive
+        hit = true;
+    }
+    if (hit) zt_save();
+}
 void PartyState::on_118(const unsigned char* p) {           // 0x118 currency2 : Mog Segments @byte 0x8C (reference total)
     // The banked total is NOT pushed live during a run (no 0x118 fires per kill) -> the run counter is driven by the
     // 0x02A msg-40016 per-kill message (on_2a). We only keep segBank here for reference (e.g. the Rabao "(last run)").
     zt_.segBank = (int)pkt_u32(p, 0x8C);
+    zt_.limbusTemenos  = (int)pkt_u32(p, 0x98);      // Limbus currencies ride the same currency2 packet
+    zt_.limbusApollyon = (int)pkt_u32(p, 0x9C);      // (fields.lua incoming[0x118] : 'Temenos Units' / 'Apollyon Units')
 }
 void PartyState::on_55(const unsigned char* p) {            // 0x055 : key items ; granules are Type 3, bits 9..13
     if (zt_.curZone == 72 && ny_has_ki(p, 797)) zt_.nyArmband = 1;   // Nyzul assault armband, captured in the staging point
@@ -284,6 +407,44 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
             const int gain = (int)pkt_u32(p, 0x08), total = (int)pkt_u32(p, 0x0C);
             if (zt_.segBase < 0) zt_.segBase = total - gain;   // baseline = banked total BEFORE this (first-seen) kill
             zt_.segments = (total > zt_.segBase) ? (total - zt_.segBase) : 0;
+            zt_save();
+        }
+        return;
+    }
+    // LIMBUS (mode 6) : the run economy. See the field block in party_state.h for the message map. Everything is
+    // tagged with the CURRENT floor (bar1 of the 0x075 block, already parsed into limbusQuad/limbusFloor) -- that
+    // cross of the two channels is what answers "which floor did this drop on".
+    if (zt_.mode == 6) {
+        const unsigned m = pkt_u16(p, 0x1A) & 0x3FFFu;
+        const int p1 = (int)pkt_u32(p, 0x08), p3 = (int)pkt_u32(p, 0x10), p4 = (int)pkt_u32(p, 0x14);
+        char at[12]; limbus_floor_tag(zt_, at, sizeof(at));
+        if (m == 7247) {                                   // units acquired (per kill ~40-110, coffer 3000/5000)
+            zt_.limbusUnits = p3; zt_.limbusUnitsCap = p4;
+            if (zt_.limbusUnitBase < 0) zt_.limbusUnitBase = p3 - p1;   // total BEFORE this (first-seen) payout
+            zt_.limbusRunUnits = (p3 > zt_.limbusUnitBase) ? (p3 - zt_.limbusUnitBase) : 0;
+            if (p1 >= LIMBUS_COFFER_MIN) {                 // a coffer, not a floor payout : record it
+                zt_.limbusCofferAmt = p1;
+                int w = 0; for (; at[w] && w < 11; ++w) zt_.limbusCofferAt[w] = at[w]; zt_.limbusCofferAt[w] = 0;
+                const int area = (zt_.curZone == 37) ? 1 : 0;               // 38 Apollyon / 37 Temenos, tracked apart
+                LimbusCoffers& lc = lc_[area];
+                const int slot = limbus_slot_of(area, zt_.limbusQuad);
+                if (p1 >= LIMBUS_BIG_MIN) {                                 // the 5k ends the cycle : the other slots
+                    for (int i = 0; i < 4; ++i) lc.slotK[i] = 0;            // clear, but the 5k itself stays GREEN so
+                    lc.bigAmt = p1;                                          // the row still shows where it was found
+                    int b = 0; for (; zt_.limbusQuad[b] && b < 7; ++b) lc.bigAt[b] = zt_.limbusQuad[b]; lc.bigAt[b] = 0;
+                }
+                if (slot >= 0) lc.slotK[slot] = (unsigned char)(p1 / 1000);
+                lc_save();
+            }
+            zt_save();
+        } else if (m == 7288) {                            // weekly allowance : "you may collect data N more times"
+            zt_.limbusWeekLeft = p1;
+            // NOTE: no weekly wipe. The row is not a per-week checklist -- it is the last known payout of each
+            // quadrant, and it self-corrects because reopening a coffer overwrites its slot (a 5k slot reopened
+            // for 3k goes back to red). Only finding a 5k clears the reds. Wiping on a new week would destroy
+            // the one thing worth keeping (where the 5k was) without ever being asked to.
+            lc_[(zt_.curZone == 37) ? 1 : 0].weekSeen = p1;
+            lc_save();
             zt_save();
         }
         return;

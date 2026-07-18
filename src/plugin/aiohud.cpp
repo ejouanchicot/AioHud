@@ -191,6 +191,7 @@ static void feed_packet(int id, const unsigned char* b)
         else if (id == 0x118) aio::party().on_118(b);              // Zone Tracker : currency2 -> Mog Segments (Sheol/Odyssey run delta)
         else if (id == 0x034) aio::party().on_034(b);              // Zone Tracker : Rabao conflux menu -> Sheol A/B/C
         else if (id == 0x00E) aio::party().on_00e(b);              // Zone Tracker : NPC update -> Sheol A/B/C fallback (instance bits)
+        else if (id == 0x075) aio::party().on_limbus_075(b);       // Zone Tracker : Limbus menu -> Apollyon/Temenos level (handler self-filters by the string)
         else if (id == 0x076) aio::party().on_076(b);      // party-member buffs
         else if (id == 0x01B) aio::party().on_01b(b);      // job info -> encumbrance flags (locked equip slots)
         else if (id == 0x0D2) aio::party().on_treasure_add(b);   // treasure pool : item dropped / removed

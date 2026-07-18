@@ -212,6 +212,25 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().dist[0] ? tr("On", "Oui") : tr("Off", "Non"), ui_config().dist[0])) { ui_config().dist[0] = !ui_config().dist[0]; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        // ---- Distance-zone colours : the yalms number is tinted by cast-range zone (Close < 10' / Normal 10'..20.8' / Far >= 20.8'). ----
+        {
+            struct ZoneCol { const char* en; const char* fr; unsigned* col; };
+            ZoneCol zc[3] = {
+                { "Close",  "Proche", &ui_config().distColClose  },
+                { "Normal", "Normal", &ui_config().distColNormal },
+                { "Far",    "Loin",   &ui_config().distColFar     },
+            };
+            for (int zi = 0; zi < 3; ++zi) {
+                unsigned& F = *zc[zi].col;
+                { ROW_BAND(52.0f)   // label + live swatch
+                    const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+                    fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr(zc[zi].en, zc[zi].fr), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                    const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, pw = snap(58.0f), pxs = coX + ctrlW - pw;
+                    flat(dev, pxs, bty, pw, bbh, F | 0xFF000000u); outline(dev, pxs, bty, pw, bbh, C_BORDER);
+                } ROW_NEXT(52.0f)
+                CFG_COLOR_PICKER(&F)
+            }
+        }
         { ROW_BAND(52.0f)   // Border : the box frame (+ the floating Cost box)
             const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Border", "Bordure"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);

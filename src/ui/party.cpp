@@ -1348,9 +1348,9 @@ void Party::draw(const Frame& f) {
             float dsz = te_sz(TE_DIST, badgeSz_ * S * 1.20f);                 // as big as fits the marks column width
             const float dw = fDist->measure(db, dsz);
             if (dw > mw * 0.98f && dw > 0.0f) dsz *= (mw * 0.98f) / dw;
-            const u32 dcol = r.dist >= kCastRange ? 0xFFE76C6C :              // red  : out of cast range
-                             r.dist >= kCastSafe  ? 0xFFE7C95A :              // yellow : marginal (still casts)
-                                                    0xFF8FC6FF;               // blue : comfortably in range
+            const u32 dcol = r.dist >= kCastRange ? ui_config().distColFar    :   // red  : out of cast range
+                             r.dist >= kCastSafe  ? ui_config().distColNormal :   // yellow : marginal (still casts)
+                                                    ui_config().distColClose;     // blue : comfortably in range
             const float markBlockH = snap(marksColH() * S);                   // match the pips : distance sits at the BOTTOM of the centred marks unit
             const float markTop = ry + (mh - markBlockH) * 0.5f;
             fDist->begin(dev);

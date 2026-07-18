@@ -126,7 +126,7 @@ struct PointWatch {
 // messages). Lights index/order + caps : [0]Pearl 230 [1]Azure 255 [2]Ruby 255 [3]Amber 255 [4]Gold 200 [5]Silver
 // 200 [6]Ebon 200 (matches the mockup zoneTracker display). Reset on zone change.
 struct ZoneTracker {
-    int mode = 0;                 // 0 none, 1 Dynamis, 2 Abyssea
+    int mode = 0;                 // 0 none, 1 Dynamis, 2 Abyssea, 3 Omen, 4 Nyzul, 5 Sheol, 6 Limbus
     int curZone = -1;             // last zone id seen (transition detection)
     // Dynamis
     unsigned dynEntryMs = 0;      // GetTickCount when we entered (timer origin)
@@ -168,7 +168,75 @@ struct ZoneTracker {
     int      segBase = -1;          // baseline banked total at run entry ; segments = segBank - segBase
     int      segments = 0;          // segments earned this run
     unsigned char segLastRun = 0;   // 1 = frozen "N (last run)" display back in Rabao after a run
+    // Limbus (mode 6, zones 38 Apollyon / 37 Temenos). 0x075 is the generic BATTLEFIELD TIMER/BARS packet, not a
+    // "menu" packet : bar[i] sits at +0x28 + i*0x14 as { s32 progress ; char label[16] }. In Limbus the server
+    // fills bar0 label = "<Area>_Lv<NNN>" (progress inactive) and bar1 = the floor, e.g. label "SW_Floor_#3" with
+    // progress = the on-screen gauge. The client draws that gauge as progress*0.01f, so it IS a percentage
+    // (FFXiMain+0x21F9D0). See game-data/zone-tracker.md. Reset on entering the zone.
+    char     limbusArea[16] = {0};  // "Apollyon" / "Temenos"
+    int      limbusLevel = 0;       // chosen level (e.g. 119)
+    int      limbusProgress = -1;   // 0..100 percent (floor bar) ; -1 = unknown -> no progress bar drawn
+    char     limbusQuad[8] = {0};   // quadrant from the floor label : "SW" / "NW" / ... ; empty = unknown
+    int      limbusFloor = -1;      // floor number ; -1 = unknown -> no floor line drawn
+    // Limbus currencies : packet 0x118 (the SAME one carrying Mog Segments @0x8C), Temenos Units @0x98 /
+    // Apollyon Units @0x9C -- both shown whichever Limbus zone you stand in. -1 = no 0x118 seen yet.
+    int      limbusTemenos = -1;
+    int      limbusApollyon = -1;
+    // Live run economy, all from 0x02A while in a Limbus zone (0x118 does NOT fire mid-run -- confirmed by a full
+    // //aio limbusrun capture : not one 0x118 all run). Message ids are ZONE-RELATIVE and drift across patches
+    // (the Sheol handler below documents 40005 -> 40015 -> 40016), so they are matched MASKED :
+    //   7247 : "Acquired Apollyon units: <p1>. Remaining: <p2>. Total: <p3>/<p4>"   -> live currency, no 0x118 needed
+    //   7288 : "You may collect data <p1> more times"                               -> unique-data allowance
+    //   7069 / 7070 : key item gained / lost -- ids 9956..9998, and the NAME carries the floor ("Apollyon SW #4",
+    //                 which cross-checks bar1's "SW_Floor_#4" label from the 0x075 block). Bulk 7070 = run over.
+    int      limbusUnits = -1;      // your running total (7247 p3) ; -1 = not seen this session
+    int      limbusUnitsCap = 0;    // your cap (7247 p4)
+    int      limbusUnitBase = -1;   // total BEFORE this run's first payout ; -1 = not baselined yet
+    int      limbusRunUnits = 0;    // units banked THIS run = limbusUnits - limbusUnitBase. Derived from the
+                                    // AUTHORITATIVE running total (p3), never accumulated from the per-event p1 --
+                                    // same reason as segBase/segments above : a duplicated packet cannot double-count
+                                    // and a dropped one cannot under-count, whereas a running sum breaks permanently.
+    int      limbusCofferAmt = 0;   // last coffer payout (a gain >= LIMBUS_COFFER_MIN, vs ~40-110 per kill)
+    char     limbusCofferAt[12] = {0};   // floor it dropped on, e.g. "SW #4"
+    int      limbusBigAmt = 0;      // last BIG payout (>= 5000) -- kept separately, it is the one worth remembering
+    char     limbusBigAt[12] = {0};
+    int      limbusWeekLeft = -1;   // "You may collect data N more times" (7288 p1) = the WEEKLY allowance left
+                                    // (5 data collections per week), NOT a per-map counter.
 };
+
+// LIMBUS coffer history -- ONE per area (0 = Apollyon, 1 = Temenos), deliberately OUTSIDE ZoneTracker. The zone
+// cache is a single file shared by every tracked mode and is only restored when curZone matches, so one Dynamis
+// run between two Limbus runs would wipe this. It gets its own file (limbus.dat) and its own lifetime.
+// A chip = one coffer opened : the floor it was on + its payout in thousands. Finding a 5k ENDS the cycle (chips
+// cleared, only "last 5000 @ floor" kept) ; so does the weekly allowance going back UP (a new week started).
+// One slot per QUADRANT, not per weekly collection : an area has four, and a coffer always sits on the last floor
+// of one of them (Apollyon NW#5 / SW#4 / NE#5 / SE#4, Temenos N-F7 / W-F7 / E-F7 / C-F4 -- read off the key-item
+// table, ids 9956..9998). slotK = that quadrant's payout in thousands, 0 = not opened yet (dim placeholder).
+struct LimbusCoffers {
+    unsigned char slotK[4] = {0};     // [quadrant] payout in thousands : 0 none, 3 = red, >=5 = green
+    int           bigAmt = 0;         // last cycle-ending payout
+    char          bigAt[8] = {0};     // and the quadrant it was found in
+    int           weekSeen = -1;      // last "collect data N more times" -> N going UP means a new week
+};
+// Quadrant labels per area, in slot order. Index 0 = Apollyon, 1 = Temenos.
+inline const char* limbus_slot_label(int area, int slot) {
+    static const char* A[4] = { "NW5", "SW4", "NE5", "SE4" };
+    static const char* T[4] = { "N7",  "W7",  "E7",  "C4"  };
+    if (slot < 0 || slot > 3) return "";
+    return (area == 1) ? T[slot] : A[slot];
+}
+// "SW" -> 1 for Apollyon, "W" -> 1 for Temenos ; -1 when it matches nothing.
+inline int limbus_slot_of(int area, const char* quad) {
+    if (!quad || !quad[0]) return -1;
+    static const char* A[4] = { "NW", "SW", "NE", "SE" };
+    static const char* T[4] = { "N",  "W",  "E",  "C"  };
+    for (int i = 0; i < 4; ++i) {
+        const char* k = (area == 1) ? T[i] : A[i];
+        int j = 0; while (k[j] && quad[j] == k[j]) ++j;
+        if (!k[j] && (quad[j] == 0 || quad[j] == '_' || quad[j] == ' ')) return i;
+    }
+    return -1;
+}
 
 // EMPYPOP (module) : the pop items / key items needed to spawn an Abyssea empyrean NM. Each GLOBAL pop is a
 // GROUP holding the chain of sub-pops that obtains it ; a group is "obtained" once you hold its global pop.
@@ -269,6 +337,8 @@ struct PartyState {
 
     ZoneTracker zt_;                             // Dynamis / Abyssea zone providers (Zone Tracker module)
     const ZoneTracker& zone_tracker() const { return zt_; }
+    LimbusCoffers lc_[2];                        // [0] Apollyon (zone 38), [1] Temenos (zone 37) -- own file, see lc_save
+    const LimbusCoffers& limbus_coffers(int area) const { return lc_[(area == 1) ? 1 : 0]; }
     void zt_set_zone(int zone, const char* name);   // called each frame ; detects the Dynamis/Abyssea zone + resets on change
     void zt_recompute_dyn_limit();                  // 3600 + owned-KI time-extensions for the current Dynamis zone
     void on_2a(const unsigned char* p);             // 0x02A : Abyssea zone messages (lights + visitant time)
@@ -276,12 +346,20 @@ struct PartyState {
     void on_118(const unsigned char* p);            // 0x118 currency2 : Mog Segments (@0x8C) -> Odyssey segment run delta (mode 5)
     void on_034(const unsigned char* p);            // 0x034 NPC interaction : Rabao conflux menu -> Sheol A/B/C (sheolzone)
     void on_00e(const unsigned char* p);            // 0x00E NPC update : fallback Sheol A/B/C from a mob's instance bits
+    void on_limbus_075(const unsigned char* p);     // 0x075 : Limbus menu -> <Area>_Lv<NNN> @+0x2C (mode 6)
     void on_omen_text(const char* s);               // mode-161 Omen objective text (via the incoming-text callback)
     static const char* omen_short(int type);        // objective type id (1..14) -> short label
     void on_nyzul_text(const char* s, int mode);    // Nyzul Isle text (modes 123/146/148 via the incoming-text callback)
     int  nyzul_remaining() const;                   // live floor-timer seconds left (0 = no timer ; may be < 0, clamp at display)
     void zt_save() const;                           // persist the current zone-tracker run to disk (survives an unload/reload/crash)
     bool zt_load(int zone);                         // restore it for `zone` -> true if a valid same-zone cache loaded (fresh plugin load)
+    // Seed a chip by hand : coffers opened BEFORE this feature existed (or before the build was deployed) cannot be
+    // recovered from anywhere -- the payout only ever arrives as a live 0x02A. `amtK` >= 5 ends the cycle, exactly
+    // as a real 5k would. Returns false on a full/invalid entry.
+    bool limbus_add_chip(int area, const char* quad, int amtK);   // quad = "SW" / "NE" / ... (Temenos : "N"/"W"/"E"/"C")
+    void limbus_clear_chips(int area) { LimbusCoffers& l = lc_[(area == 1) ? 1 : 0]; for (int i = 0; i < 4; ++i) l.slotK[i] = 0; l.bigAmt = 0; l.bigAt[0] = 0; lc_save(); }
+    void lc_save() const;                           // persist the Limbus coffer chips (own file : must outlive the zone cache)
+    void lc_load();                                 // restore them (any zone, any time -- no zone match required)
 
     EmpyPop ep_;                                 // EmpyPop module : the tracked NM's pop chain, resolved against live memory
     const EmpyPop& empypop() const { return ep_; }   // the EmpyPop widget reads this

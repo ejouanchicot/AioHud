@@ -43,7 +43,17 @@ enum { TP_IDX = 0, TP_NAME, TP_TIMER, TP_LOOT, TP_TE_COUNT };   // Treasure Pool
 enum { HL_DIST = 0, HL_NAME, HL_PCT, HL_TARGET, HL_TE_COUNT };  // Hate List text elements (Distance / Name / HP% / Target)
 enum { PW_LABEL = 0, PW_VALUE, PW_RATE, PW_TE_COUNT };          // PointWatch text elements (Label / Value / Rate)
 enum { GRIM_CHARGE = 0, GRIM_TIMER, GRIM_TE_COUNT };           // Grimoire text elements (Charge count / Recast timer)
-enum { ZT_HEADER = 0, ZT_BODY, ZT_TE_COUNT };                  // Zone Tracker text elements (Header / Body)
+// Zone Tracker text elements. Header/Body are shared by every variant ; the four after them are the Limbus
+// rows, split out so each can be sized/coloured on its own (the gauge caption, the currencies, the run line
+// and the coffer-dot labels). The per-variant elements that follow are APPENDED (never reordered) : the saved
+// "ztText<idx>=" lines are keyed by index, so an old config keeps pointing at the same element.
+enum { ZT_HEADER = 0, ZT_BODY, ZT_LB_GAUGE, ZT_LB_CUR, ZT_LB_RUN, ZT_LB_CHIP,
+       ZT_DY_TIMER, ZT_DY_KI,                              // Dynamis : run-timer caption / granule key-item names
+       ZT_AB_TIMER, ZT_AB_LIGHT, ZT_AB_VAL,                // Abyssea : visitant timer / light labels / light values
+       ZT_OM_OBJ, ZT_OM_COUNT, ZT_OM_ROW,                  // Omen    : floor objective / omen+bonus line / objective rows
+       ZT_NY_FLOOR, ZT_NY_TIME, ZT_NY_OBJ, ZT_NY_RESTR, ZT_NY_STATS,   // Nyzul : floor / timer / objective / restriction / completed+rate+tokens
+       ZT_SH_SEG, ZT_SH_FAM, ZT_SH_RES, ZT_SH_JOKE,        // Sheol   : segments / mob family / resistance values / Cruel Joke
+       ZT_TE_COUNT };
 enum { EP_TITLE = 0, EP_POP, EP_FROM, EP_COLL, EP_TE_COUNT };  // EmpyPop text elements (NM title / pop name / "from <mob>" / collectable)
 enum { TM_HEADER = 0, TM_NAME, TM_TIMER, TM_TE_COUNT };        // Timers text elements (column titles / buff+recast name / MM:SS)
 enum { DB_HEADER = 0, DB_NAME, DB_TIMER, DB_TE_COUNT };        // Debuffs module text elements (mob-name header / debuff name / timer)
@@ -161,6 +171,8 @@ struct UiConfig {
     float plrEquipX = 0.0f, plrEquipY = 0.0f;   // standalone grid top-left as a FRACTION of the screen when plrEquipPosSet
     float plrEquipScale = 1.0f;   // standalone equipment size multiplier (0.50 .. 2.00), independent of the Hub scale
     int   plrEqGilPlace = 0;   // STANDALONE gil position relative to the grid : 0 below, 1 above, 2 left, 3 right (docked always draws it below)
+    BoxStyle plrEqBox;         // DETACHED equipment : shared box chrome (bg frame + border) behind the standalone grid.
+                               // Defaults (on + border) = old configs keep the bare look until turned on ; DOCKED shares the Hub box, so this only applies when plrEquipDetach.
 
     // --- Minimap (phase 1) ---
     int   mmShow = 1;          // show the minimap
@@ -241,12 +253,45 @@ struct UiConfig {
     float ztScale   = 1.0f;    // size multiplier (0.5 .. 2.0)
     float ztX       = 0.145f;  // horizontal CENTRE (screen fraction) ; ztY = its TOP
     float ztY       = 0.33f;
-    int   ztVariant = 1;       // EDIT-preview zone : 0 Dynamis, 1 Abyssea, 2 Omen, 3 Nyzul, 4 Sheol
+    int   ztVariant = 1;       // EDIT-preview zone : 0 Dynamis, 1 Abyssea, 2 Omen, 3 Nyzul, 4 Sheol, 5 Limbus
     int   ztHeader  = 1;       // show the box TITLE row (Dynamis / Abyssea / Omen / Nyzul Isle / Sheol X)
+    // Every variant's rows are individually hideable and its bars/icons individually sizeable. Every toggle
+    // defaults to 1 and every size factor to 1.00, so an old config (missing keys) renders exactly as before.
+    int   ztDyTimer   = 1;     // Dynamis : show the run-timer bar
+    int   ztDyKi      = 1;     // Dynamis : show the 5 granule key-item rows
+    float ztDyBarW    = 1.00f; // Dynamis : run-timer bar width, fraction of the content width (0.40 .. 1.00)
+    float ztDyBarH    = 1.00f; // Dynamis : run-timer bar height multiplier (0.50 .. 2.50)
+    float ztDyDot     = 1.00f; // Dynamis : key-item dot size multiplier (0.50 .. 2.50)
+    int   ztAbTimer   = 1;     // Abyssea : show the visitant-timer bar
+    int   ztAbLights  = 1;     // Abyssea : show the seven light columns
+    float ztAbBarW    = 1.00f; // Abyssea : visitant bar width, fraction of the content width (0.40 .. 1.00)
+    float ztAbBarH    = 1.00f; // Abyssea : visitant bar height multiplier (0.50 .. 2.50)
+    float ztAbLightW  = 1.00f; // Abyssea : light-column bar WIDTH multiplier (0.50 .. 3.00)
+    float ztAbLightH  = 1.00f; // Abyssea : light-column bar HEIGHT multiplier (0.50 .. 2.50)
+    int   ztOmObj     = 1;     // Omen : show the floor objective line
+    int   ztOmCount   = 1;     // Omen : show the "Omens: N   Bonus M:SS" line
+    int   ztOmRows    = 1;     // Omen : show the numbered objective rows
+    int   ztNyFloor   = 1;     // Nyzul : show the Floor line
+    int   ztNyTime    = 1;     // Nyzul : show the floor Time line
+    int   ztNyObj     = 1;     // Nyzul : show the Objective line
+    int   ztNyRestr   = 1;     // Nyzul : show the Restriction line (only drawn when the floor has one)
+    int   ztNyComp    = 1;     // Nyzul : show the Completed (floors cleared) line
+    int   ztNyRate    = 1;     // Nyzul : show the Reward Rate line
+    int   ztNyTok     = 1;     // Nyzul : show the Tokens estimate line
+    int   ztShFam     = 1;     // Sheol : show the target's family name above the resistance block
+    float ztShIcon    = 1.00f; // Sheol : weapon damage-type ICON size multiplier (0.50 .. 2.50)
+    float ztShDot     = 1.00f; // Sheol : element colour-puck size multiplier (0.50 .. 2.50)
     int   ztSheolSeg  = 1;     // Sheol : show the segment counter
     int   ztSheolRes  = 1;     // Sheol : show the target's resistances (weapons / elements)
     int   ztSheolJoke = 1;     // Sheol : show the Cruel Joke vulnerability line
-    TextStyle ztText[ZT_TE_COUNT];   // per-element typography : [ZT_HEADER] [ZT_BODY]
+    int   ztLbName    = 1;     // Limbus : show the "<Area>  .  Lv <N>" identity row
+    float ztLbBarW    = 1.00f; // Limbus : gauge width, as a fraction of the box content width (0.40 .. 1.00)
+    float ztLbBarH    = 1.00f; // Limbus : gauge height multiplier (0.50 .. 2.50)
+    int   ztLbFloor   = 1;     // Limbus : show "<Quad> #<floor>" ON the progress gauge (else the gauge shows % only)
+    int   ztLbCur     = 1;     // Limbus : show the Temenos / Apollyon unit totals
+    int   ztLbRun     = 1;     // Limbus : show "Run +N  .  N runs left"
+    int   ztLbChips   = 1;     // Limbus : show the four quadrant coffer dots + their labels
+    TextStyle ztText[ZT_TE_COUNT];   // per-element typography : [ZT_HEADER] [ZT_BODY] then the Limbus rows
     // ---- EmpyPop module : the pop items / key items needed to spawn an Abyssea empyrean NM ----
     int   epShow  = 0;         // show the EmpyPop box. OFF by default : a niche tracker only useful while
                                // farming ONE specific NM -- unlike ztShow, nothing auto-hides it per zone.
@@ -371,6 +416,11 @@ struct UiConfig {
     int   jobBadge[3]  = { 2, 2, 2 };            // job badge, per box (0 = off, 1 = main only, 2 = main + sub)
     bool  cast[3]      = { true, true, true };   // show the casting-spell line, per box
     bool  dist[3]   = { true, true, true };   // show the distance number, per box (0 = party, 1 = ally 1, 2 = ally 2)
+    // Distance-zone colours (opaque ; the draw fades them). CLOSE = < ~10' (in range of everything),
+    // NORMAL = 10'..20.8' (standard cast range), FAR = >= 20.8' (out of cast range -> also dims the row).
+    unsigned distColClose  = 0xFF8FC6FF;   // blue   : comfortably in range
+    unsigned distColNormal = 0xFFE7C95A;   // yellow : marginal (still casts)
+    unsigned distColFar    = 0xFFE76C6C;   // red    : out of cast range
     BoxLayout box[3];          // 0 = party (+cost), 1 = alliance 1, 2 = alliance 2 (independent)
     bool  border[3] = { true, true, true };   // per-box window-skin border/chrome on/off (0=party, 1=alliance1, 2=alliance2)
     bool  borderCost = true;   // the floating Cost MP / Next box border/chrome on/off (independent of the party box)

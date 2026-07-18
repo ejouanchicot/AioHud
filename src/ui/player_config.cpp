@@ -268,6 +268,8 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().plrEquipScale = v < lo ? lo : (v > hi ? hi : v); save_ui_config(); }
         }
         ROW_NEXT(46.0f)
+        // Standalone box chrome (frame / border / transparency / theme) : DETACHED only ; docked shares the Hub box.
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, ui_config().plrEqBox);
         }
         // Gil ON/OFF lives HERE only when the equipment is DETACHED (the gil rides that box) ; docked/off -> Content.
         if (ui_config().plrEquipDetach) { PLR_TOGGLE(CTRL_ID, tr("Gil", "Gil"), ui_config().plrGil) }

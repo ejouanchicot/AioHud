@@ -13,6 +13,7 @@
 #include "gfx/font.h"
 #include "ui/text_style.h"       // te_sz/te_ow/te_col : shared TextStyle-resolve impl
 #include "ui/ui_colors.h"        // mul_a : shared ARGB helper
+#include "ui/box_style.h"        // draw_themed_box : shared box chrome (detached equipment frame)
 #include <windows.h>
 #include <string.h>
 #include <stdio.h>
@@ -592,6 +593,21 @@ void Player::draw(const Frame& f) {
             }
         }
         gx0 = snap(gx0); gy0 = snap(gy0);
+        // STANDALONE : a shared themed box (bg frame + border) wraps the grid + gil area, like the other detached
+        // modules. DOCKED shares the Hub's own box, so this only draws when detached. Rect = grid + the same gil
+        // reserve the hit-rect/preview use (24*S above/below, 80*S left/right) + a small pad. Drawn BEFORE the cells ;
+        // draw_themed_box restores its own D3D state and the cells re-issue color_state() below.
+        if (detachEq && c.plrEqBox.on) {
+            const float bpad = snap(8.0f * S);
+            float bcx = gx0, bcy = gy0, bcw = gridW, bch = gridW;   // content rect = the 4x4 grid
+            if (showGil) switch (c.plrEqGilPlace) {
+                case 1:  { const float e = snap(24.0f * S); bcy -= e; bch += e; } break;   // gil above
+                case 2:  { const float e = snap(80.0f * S); bcx -= e; bcw += e; } break;   // gil left
+                case 3:  bcw += snap(80.0f * S); break;                                     // gil right
+                default: bch += snap(24.0f * S); break;                                     // gil below
+            }
+            draw_themed_box(dev, f.skin, snap(bcx - bpad), snap(bcy - bpad), snap(bcw + 2.0f * bpad), snap(bch + 2.0f * bpad), c.plrEqBox, 1.0f, S);
+        }
         const float cellSz = eqCell - snap(1.0f), r = snap(3.0f * S), ipad = snap(2.0f * S), isz = cellSz - 2.0f * ipad;
         // BORDER : per-cell borders only (NO outer frame). "Box Theme" makes each cell's border the theme's real
         // FRAME colour (Royal gold, Medieval iron, FFXI skin border, ...) ; "Custom" uses the chosen colour.

@@ -728,14 +728,22 @@ static const HelpItem HELP_ZONETRACKER[] = {
         "*Nyzul Isle* : l'étage actuel, le timer d'étage, ton objectif et ta restriction, les étages faits, et une estimation de tokens en direct."},
     {2, "*Odyssey* : the Mog Segments you have banked this run.",
         "*Odyssey* : les Mog Segments accumulés durant ce run."},
+    {2, "*Limbus* : the area and its level, the floor with its progress gauge, your Temenos / Apollyon units, what this run has banked and how many data collections are left this week -- plus one dot per quadrant coffer (dim = not opened, red = 3k, green = 5k).",
+        "*Limbus* : la zone et son niveau, l'étage et sa jauge de progression, tes units Temenos / Apollyon, ce que ce run a rapporté et le nombre de collectes restantes cette semaine -- plus une pastille par coffre de quadrant (éteinte = pas ouvert, rouge = 3k, verte = 5k)."},
 
     {0, "Configuration", "Configuration"},
     {1, "The Zone Tracker module in //aio config tunes the box, with a live preview on the right.",
         "Le module Suivi de zone dans //aio config règle le cadre, avec un aperçu en direct à droite."},
-    {2, "*Preview variant* picks which content to show in the preview, so you can style and place the box even when you are not in that zone.",
-        "*Variante d'aperçu* choisit quel contenu montrer dans l'aperçu, pour styliser et placer le cadre même quand tu n'es pas dans cette zone."},
-    {2, "*Box / Frame* sets the theme and can turn the frame off. *Size* scales the whole box. *Text* styles the Header and Body each on its own, with font, size, outline, bold / italic / caps and colour.",
-        "*Box / Cadre* règle le thème et peut couper le cadre. *Taille* met tout le cadre à l'échelle. *Texte* stylise l'En-tête et le Corps chacun séparément, avec police, taille, contour, gras / italique / capitales et couleur."},
+    {2, "*Content* picks which zone to work on : it drives the preview AND which options the panel shows, so you can style and place the box even when you are not in that zone.",
+        "*Contenu* choisit la zone sur laquelle tu travailles : il pilote l'aperçu ET les options affichées dans le panneau, pour styliser et placer le cadre même quand tu n'es pas dans cette zone."},
+    {2, "*Box / Frame* sets the theme and can turn the frame off. *Size* scales the whole box, and *Show title* hides the title row.",
+        "*Box / Cadre* règle le thème et peut couper le cadre. *Taille* met tout le cadre à l'échelle, et *Afficher le titre* masque la ligne de titre."},
+    {2, "*Every zone* is configurable row by row : pick the preview variant and the panel shows only that zone's switches. Dynamis (run timer, key items), Abyssea (visitant timer, lights), Omen (floor objective, omens + bonus, objective rows), Nyzul (floor, floor timer, objective, restriction, floors cleared, reward rate, tokens), Sheol (segments, resistances, family name, Cruel Joke) and Limbus (name row, floor on the gauge, currencies, run total, coffer dots).",
+        "*Chaque zone* se règle ligne par ligne : choisis la variante d'aperçu et le panneau n'affiche que les interrupteurs de cette zone. Dynamis (timer de run, objets clés), Abyssea (timer visitant, lumières), Omen (objectif d'étage, omens + bonus, lignes d'objectifs), Nyzul (étage, timer d'étage, objectif, restriction, étages faits, taux de récompense, tokens), Sheol (segments, résistances, nom de famille, Cruel Joke) et Limbus (ligne du nom, étage sur la jauge, monnaies, total du run, pastilles de coffres)."},
+    {2, "*Text* styles each of those rows on its own : the element list follows the preview variant, so every zone exposes exactly its own text elements (font, size, outline, bold / italic / caps and colour).",
+        "*Texte* stylise chacune de ces lignes séparément : la liste d'éléments suit la variante d'aperçu, donc chaque zone expose exactement ses propres éléments de texte (police, taille, contour, gras / italique / capitales et couleur)."},
+    {2, "*Bars and gauges are dimensionable* : the Dynamis / Abyssea timer bar width and height, the Dynamis key-item dot size, the Abyssea light-bar width and height, the Sheol weapon-icon and element-dot sizes, and the Limbus gauge width and height.",
+        "*Les barres et jauges sont dimensionnables* : largeur et hauteur de la barre de timer Dynamis / Abyssea, taille des pastilles d'objets clés Dynamis, largeur et hauteur des barres de lumières Abyssea, taille des icônes d'armes et des pastilles d'éléments Sheol, et largeur / hauteur de la jauge Limbus."},
 
     {0, "Preview", "Aperçu"},
     {1, "Open //aio config on the Zone Tracker module and pick a preview variant to tune it, or just enter the content to see it live. Drag it anywhere in //aio edit.",
@@ -2212,10 +2220,10 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 }
                 y += rh2 + snap(8.0f);
             } else if (it.kind == 45) {               // LIVE sample : ONE small example of EACH content variant, side by side (each box carries its own title header)
-                static const int ZV[5] = { 0, 1, 2, 3, 4 };   // Dynamis / Abyssea / Omen / Nyzul / Odyssey
+                static const int ZV[6] = { 0, 1, 2, 3, 4, 5 };   // Dynamis / Abyssea / Omen / Nyzul / Odyssey / Limbus
                 const float sc = 1.05f, colGap = snap(16.0f);   // small : several fit per row (scale factor, not a pixel value)
                 float gx = hx, rowTop = y, rowMaxH = 0.0f;
-                for (int zi = 0; zi < 5; ++zi) {
+                for (int zi = 0; zi < 6; ++zi) {
                     float bw1 = 0.0f, bh1 = 0.0f; zonetracker_help_measure(f, ZV[zi], bw1, bh1);
                     const float bw = bw1 * sc, bh = bh1 * sc;
                     if (gx > hx && gx + bw > hx + hw) { rowTop += rowMaxH + snap(14.0f); gx = hx; rowMaxH = 0.0f; }   // wrap
@@ -2269,6 +2277,18 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_28[] = {
+    { "*Limbus* joins the Zone Tracker. In Apollyon or Temenos the box shows the area and its level, the floor you are on with its progress gauge, your Temenos and Apollyon units, what the run has banked so far, and how many data collections you have left this week.",
+      "*Limbus* rejoint le Suivi de zone. Dans Apollyon ou Temenos, le cadre affiche la zone et son niveau, l'étage où tu es avec sa jauge de progression, tes units Temenos et Apollyon, ce que le run a rapporté jusque-là, et le nombre de collectes de données qu'il te reste cette semaine." },
+    { "Limbus coffers get a row of dots, one per quadrant : dim when you have not opened it, red for a 3k, green for a 5k. Reopening a quadrant updates its dot, and finding a 5k clears the others while keeping the green one — so you can see at a glance where the good one was. The row is kept per zone and survives restarts.",
+      "Les coffres Limbus ont une rangée de pastilles, une par quadrant : éteinte tant que tu ne l'as pas ouvert, rouge pour un 3k, verte pour un 5k. Rouvrir un quadrant met sa pastille à jour, et trouver un 5k efface les autres en gardant la verte — tu vois d'un coup d'œil où était le bon. La rangée est gardée par zone et survit aux redémarrages." },
+    { "The whole Zone Tracker is now yours to arrange : for every zone (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus) each line can be hidden on its own, each piece of text has its own font, size, outline and colour, and the bars, dots and icons can be resized. Pick the zone with *Content* at the top of the panel — it drives both the preview and the options shown below.",
+      "Le Suivi de zone s'arrange entièrement : pour chaque zone (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus) chaque ligne se masque séparément, chaque texte a sa police, sa taille, son contour et sa couleur, et les barres, pastilles et icônes se redimensionnent. Choisis la zone avec *Contenu* en haut du panneau — il pilote l'aperçu et les options affichées en dessous." },
+    { "Party members can be coloured by distance (close / normal / far), and the detached equipment box can have its own frame.",
+      "Les membres du groupe peuvent être colorés selon la distance (proche / normale / loin), et la box d'équipement détachée peut avoir son propre cadre." },
+    { "Note for those who had styled the Zone Tracker : its rows now each carry their own text style instead of sharing *Body*, so a custom *Body* setting falls back to the default once on those lines.",
+      "Note pour ceux qui avaient stylisé le Suivi de zone : ses lignes ont désormais chacune leur propre style de texte au lieu de partager *Corps*, donc un réglage *Corps* personnalisé revient une fois au défaut sur ces lignes." },
+};
 static const ChangeLine CL_27[] = {
     { "Fixed the version headers in this changelog spilling over the update card (and the footer) while scrolling.",
       "Corrig\xC3\xA9 les en-t\xC3\xAAtes de version de ce changelog qui d\xC3\xA9""bordaient sur la carte de mise \xC3\xA0 jour (et le pied de page) pendant le d\xC3\xA9""filement." },
@@ -2320,6 +2340,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.28", CL_28, (int)(sizeof(CL_28) / sizeof(CL_28[0])) },
     { "1.0.27", CL_27, (int)(sizeof(CL_27) / sizeof(CL_27[0])) },
     { "1.0.26", CL_26, (int)(sizeof(CL_26) / sizeof(CL_26[0])) },
     { "1.0.25", CL_25, (int)(sizeof(CL_25) / sizeof(CL_25[0])) },
