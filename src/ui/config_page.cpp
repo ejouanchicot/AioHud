@@ -2269,6 +2269,10 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_27[] = {
+    { "Fixed the version headers in this changelog spilling over the update card (and the footer) while scrolling.",
+      "Corrig\xC3\xA9 les en-t\xC3\xAAtes de version de ce changelog qui d\xC3\xA9""bordaient sur la carte de mise \xC3\xA0 jour (et le pied de page) pendant le d\xC3\xA9""filement." },
+};
 static const ChangeLine CL_26[] = {
     { "Minimap gains four options : a copper-bezel width slider, a cardinal-marks size slider, a No-bezel toggle (just the round lens), and a square-frame border width (which now grows OUTWARD). The target line on the minimap is coloured like the target's own marker.",
       "La minimap gagne quatre options : un curseur de largeur de l'anneau cuivre, un curseur de taille des points cardinaux, un bouton Sans-anneau (juste la lentille ronde), et une largeur de bordure du cadre carr\xC3\xA9 (qui grandit vers l'EXT\xC3\x89RIEUR). Le trait vers la cible prend la couleur de la puce de la cible." },
@@ -2316,6 +2320,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.27", CL_27, (int)(sizeof(CL_27) / sizeof(CL_27[0])) },
     { "1.0.26", CL_26, (int)(sizeof(CL_26) / sizeof(CL_26[0])) },
     { "1.0.25", CL_25, (int)(sizeof(CL_25) / sizeof(CL_25[0])) },
     { "1.0.24", CL_24, (int)(sizeof(CL_24) / sizeof(CL_24[0])) },
@@ -2423,8 +2428,11 @@ void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseS
         // relOpen_ sized >= RELEASES_N in config_page.h -- keep them in sync.
         for (int r = 0; r < RELEASES_N && r < (int)(sizeof(relOpen_) / sizeof(relOpen_[0])); ++r) {
             char vbuf[24]; _snprintf(vbuf, sizeof(vbuf), "v%s", RELEASES[r].version); vbuf[sizeof(vbuf) - 1] = 0;
-            const bool visible = (y + hdrH > listTop) && (y < listBot);     // only accept a click when the header is on-screen
-            if (cat_header(dev, fo, mo, click && visible, ctrl_uid_i(CTRL_ID, r), clX + snap(2.0f), snap(y), clW - snap(4.0f), vbuf, relOpen_[r]))
+            // cat_header isn't line-clipped like the entries (draw_wrapped) and the stencil viewport clip can be a
+            // no-op on a stencil-less backbuffer -> draw the version header ONLY when it's FULLY inside the viewport,
+            // else a scrolled-up header spilled over the update card above (and the footer below).
+            const bool onScreen = (snap(y) >= listTop) && (snap(y) + hdrH <= listBot);
+            if (onScreen && cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, r), clX + snap(2.0f), snap(y), clW - snap(4.0f), vbuf, relOpen_[r]))
                 relOpen_[r] = !relOpen_[r];
             y += hdrH + hdrGap;
             if (relOpen_[r]) {
