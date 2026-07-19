@@ -45,7 +45,21 @@ static int limbus_ki_owned() {
 // when curZone matches -> a Dynamis run in between would wipe it). Version tag embeds the struct size so a layout
 // change auto-invalidates, same trick as ZT_CACHE_VER.
 static const int LC_VER = (int)(0x4C430000u | ((sizeof(LimbusCoffers) * 2) & 0xFFFF));
-static const char* lc_path() { static char b[260]; if (!b[0]) plugin_path(b, 260, "data\\cache\\limbus.bin"); return b; }
+// PER-CHARACTER cache paths. These files used to be ONE PER INSTALL ("zone.bin" / "limbus.bin"), so every
+// character on the same Windower shared them : the last one to save won, and the next character loaded its
+// values -- Kaories' Temenos units showing up on Tetsouo. Key them on the character's server id.
+//
+// Deliberately NOT cached in a static : one client can log out and back in as another character, and a
+// remembered path would keep writing the previous character's file. Returns false when no character is
+// resolved yet (not logged in / zoning) -> callers skip the save or load entirely rather than touch a shared
+// file. read_player is SEH-guarded and these run on events, not per frame, so the cost is irrelevant.
+static bool char_cache_path(const char* leaf, char* out, int cap) {
+    PlayerInfo me;
+    if (!read_player(me) || !me.id) return false;
+    char rel[80]; _snprintf(rel, sizeof(rel), "data\\cache\\%s_%u.bin", leaf, me.id); rel[sizeof(rel) - 1] = 0;
+    plugin_path(out, cap, rel);
+    return out[0] != 0;
+}
 
 bool PartyState::limbus_add_chip(int area, const char* quad, int amtK) {
     const int a = (area == 1) ? 1 : 0, slot = limbus_slot_of(a, quad);
@@ -62,7 +76,8 @@ bool PartyState::limbus_add_chip(int area, const char* quad, int amtK) {
     return true;
 }
 void PartyState::lc_save() const {
-    HANDLE h = CreateFileA(lc_path(), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    char path[300]; if (!char_cache_path("limbus", path, sizeof(path))) return;   // no character -> never write a shared file
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if (h == INVALID_HANDLE_VALUE) return;
     DWORD w = 0; int ver = LC_VER;
     WriteFile(h, &ver, sizeof(ver), &w, 0);
@@ -70,7 +85,8 @@ void PartyState::lc_save() const {
     CloseHandle(h);
 }
 void PartyState::lc_load() {
-    HANDLE h = CreateFileA(lc_path(), GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    char path[300]; if (!char_cache_path("limbus", path, sizeof(path))) return;
+    HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (h == INVALID_HANDLE_VALUE) return;
     int ver = 0; LimbusCoffers c[2]; DWORD got = 0;
     if (ReadFile(h, &ver, sizeof(ver), &got, 0) && got == sizeof(ver) && ver == LC_VER &&
@@ -193,11 +209,12 @@ int PartyState::nyzul_remaining() const {
 // counting across a DLL unload/reload (same game process), so the whole run stays live. We persist the ENTIRE
 // ZoneTracker (all four modes) and restore it ONLY on a fresh plugin load while already standing in the SAME zone (see
 // zt_set_zone) ; a new run always re-enters via a zone change, so it never picks up a stale cache. ----
-static const char* zt_cache_path() { static char b[260]; if (!b[0]) plugin_path(b, 260, "data\\cache\\zone.bin"); return b; }
+// (the zone cache is PER CHARACTER via char_cache_path -- see the note there ; it used to be one shared file)
 static const int ZT_CACHE_VER = (int)(0x5A540000u | (sizeof(ZoneTracker) & 0xFFFF));   // 'ZT' | struct size -> auto-invalidate
 void PartyState::zt_save() const {
     if (zt_.mode == 0) return;                              // nothing to persist outside a tracked zone
-    HANDLE h = CreateFileA(zt_cache_path(), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    char path[300]; if (!char_cache_path("zone", path, sizeof(path))) return;   // no character -> never write a shared file
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if (h == INVALID_HANDLE_VALUE) return;
     DWORD w = 0; int ver = ZT_CACHE_VER;
     WriteFile(h, &ver, sizeof(ver), &w, 0);
@@ -205,7 +222,8 @@ void PartyState::zt_save() const {
     CloseHandle(h);
 }
 bool PartyState::zt_load(int zone) {
-    HANDLE h = CreateFileA(zt_cache_path(), GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    char path[300]; if (!char_cache_path("zone", path, sizeof(path))) return false;
+    HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (h == INVALID_HANDLE_VALUE) return false;
     int ver = 0; ZoneTracker c; DWORD got = 0; bool ok = false;
     if (ReadFile(h, &ver, sizeof(ver), &got, 0) && got == sizeof(ver) && ver == ZT_CACHE_VER &&

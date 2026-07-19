@@ -13,6 +13,14 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_35[] = {
+    { "*Each character keeps its own tracker data again.* All characters on one Windower shared a single saved file, so the last one to save won and the next one loaded ITS values — you could see another character's Temenos units on yours. The saved data is now per character.",
+      "*Chaque personnage conserve à nouveau ses propres données de suivi.* Tous les personnages d'un même Windower partageaient un seul fichier de sauvegarde : le dernier à enregistrer l'emportait et le suivant chargeait SES valeurs — vous pouviez voir les unités Temenos d'un autre personnage sur le vôtre. Les données sauvegardées sont désormais par personnage." },
+    { "This affected the whole Zone Tracker, not just Limbus : Dynamis, Abyssea, Omen, Nyzul and Sheol shared the same file too.",
+      "Cela concernait tout le Suivi de zone, pas seulement Limbus : Dynamis, Abyssea, Omen, Nyzul et Sheol partageaient aussi le même fichier." },
+    { "Note : each character starts from an empty tracker once, because the old shared file cannot be attributed to anyone. The Limbus chip row resets a single time ; your units come back on their own at the next reward.",
+      "Note : chaque personnage repart une fois d'un suivi vide, l'ancien fichier partagé ne pouvant être attribué à personne. La rangée de chips Limbus se réinitialise une seule fois ; vos unités reviennent d'elles-mêmes à la prochaine récompense." },
+};
 static const ChangeLine CL_34[] = {
     { "*Temenos now shows its progress bar.* It never appeared : the floor gauge is labelled differently in Temenos than in Apollyon, and only the Apollyon wording was recognised — so the area name showed while the bar stayed missing.",
       "*Temenos affiche enfin sa barre de progression.* Elle n'apparaissait jamais : la jauge d'étage est nommée autrement en Temenos qu'en Apollyon, et seule la formulation d'Apollyon était reconnue — d'où le nom de la zone affiché mais la barre absente." },
@@ -132,6 +140,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.35", CL_35, (int)(sizeof(CL_35) / sizeof(CL_35[0])) },
     { "1.0.34", CL_34, (int)(sizeof(CL_34) / sizeof(CL_34[0])) },
     { "1.0.33", CL_33, (int)(sizeof(CL_33) / sizeof(CL_33[0])) },
     { "1.0.32", CL_32, (int)(sizeof(CL_32) / sizeof(CL_32[0])) },
