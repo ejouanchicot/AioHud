@@ -13,6 +13,12 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_37[] = {
+    { "*Updating with two clients open no longer reports a file error.* AioHud kept its image files open in a way that stopped the updater replacing them, so an update could fail on one of them the moment a client reloaded and drew its first frame. The files are now opened so they can be replaced while in use.",
+      "*Mettre à jour avec deux clients ouverts ne signale plus d'erreur de fichier.* AioHud gardait ses fichiers d'images ouverts d'une façon qui empêchait l'updater de les remplacer, donc une mise à jour pouvait échouer sur l'un d'eux dès qu'un client se rechargeait et affichait sa première image. Ils sont désormais ouverts de manière à pouvoir être remplacés pendant leur utilisation." },
+    { "Same cause, same fix for the equipment icons and the zone maps : two clients reading and writing the same icon file could collide.",
+      "Même cause, même correctif pour les icônes d'équipement et les cartes de zone : deux clients lisant et écrivant le même fichier d'icône pouvaient entrer en conflit." },
+};
 static const ChangeLine CL_36[] = {
     { "*Switching character on the same client no longer mixes up your Limbus chips.* Each character already had its own saved file since 1.0.35, but the previous character's chips stayed in memory until the next Limbus entry — long enough to be written into the new character's file.",
       "*Changer de personnage sur le même client ne mélange plus vos chips Limbus.* Chaque personnage avait déjà son fichier depuis la 1.0.35, mais les chips du précédent restaient en mémoire jusqu'à l'entrée en Limbus suivante — assez longtemps pour être écrits dans le fichier du nouveau." },
@@ -146,6 +152,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.37", CL_37, (int)(sizeof(CL_37) / sizeof(CL_37[0])) },
     { "1.0.36", CL_36, (int)(sizeof(CL_36) / sizeof(CL_36[0])) },
     { "1.0.35", CL_35, (int)(sizeof(CL_35) / sizeof(CL_35[0])) },
     { "1.0.34", CL_34, (int)(sizeof(CL_34) / sizeof(CL_34[0])) },

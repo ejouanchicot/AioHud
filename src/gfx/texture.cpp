@@ -229,9 +229,15 @@ u32 make_bubble(u32 dev)
     return tex;
 }
 
+// NB on the share mode used by every asset reader here: FILE_SHARE_WRITE | FILE_SHARE_DELETE, not just
+// FILE_SHARE_READ. Sharing READ alone locks OTHER processes out of WRITING the file for as long as we hold the
+// handle -- and that broke the updater in dual-box: the addon unloads the plugin on both clients, the updater
+// starts extracting, one client reloads and draws its first frame, the lazy asset load opens cap_front.bin, and
+// Expand-Archive fails with "access denied" on it. The whole file is read into memory and the handle closed
+// immediately, so letting a writer replace it underneath us costs nothing (we keep the bytes we already read).
 u32 load_raw_texture(u32 dev, const char* path, int W, int H)
 {
-    HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (hf == INVALID_HANDLE_VALUE) return 0;
     DWORD need = (DWORD)(W * H * 4), got = 0;
     char* buf = (char*)HeapAlloc(GetProcessHeap(), 0, need);
@@ -257,7 +263,7 @@ u32 load_raw_texture(u32 dev, const char* path, int W, int H)
 // their native size stay crisp instead of aliasing).
 u32 load_raw_texture_mip(u32 dev, const char* path, int W, int H)
 {
-    HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (hf == INVALID_HANDLE_VALUE) return 0;
     DWORD need = (DWORD)(W * H * 4), got = 0;
     u32* buf = (u32*)HeapAlloc(GetProcessHeap(), 0, need);
@@ -275,7 +281,7 @@ u32 load_raw_texture_mip(u32 dev, const char* path, int W, int H)
 // any IO/parse failure (a missing gearicon just draws no icon). W/H are read from the header.
 u32 load_bmp_texture(u32 dev, const char* path)
 {
-    HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (hf == INVALID_HANDLE_VALUE) return 0;
     DWORD fsz = GetFileSize(hf, 0);
     if (fsz < 54 || fsz > (1u << 20)) { CloseHandle(hf); return 0; }     // 54 = min BMP ; cap at 1 MB
@@ -387,7 +393,7 @@ u32 make_dot(u32 dev) {                              // solid white disc with a 
 // icon: drop a new PNG, re-run the convert step -> assets/icon_*.raw.
 static u32 load_icon_raw(u32 dev, const char* path) {
     const int N = 128;
-    HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (hf == INVALID_HANDLE_VALUE) return 0;
     DWORD need = (DWORD)(N * N * 4), got = 0;
     u32* buf = (u32*)HeapAlloc(GetProcessHeap(), 0, need);

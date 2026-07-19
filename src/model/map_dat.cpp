@@ -33,7 +33,7 @@ static const char* ffxi_root() {
 
 // read a whole file into a heap buffer (<= 64 MB). caller frees with HeapFree. null on failure.
 static unsigned char* read_file(const char* path, unsigned& sizeOut) {
-    HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (h == INVALID_HANDLE_VALUE) return 0;
     DWORD sz = GetFileSize(h, 0);
     if (sz == INVALID_FILE_SIZE || sz == 0 || sz > (64u << 20)) { CloseHandle(h); return 0; }
