@@ -359,7 +359,10 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
     //     Left down/up are deliberately NOT included : they are handled above under the gesture lock, so the
     //     refocus click still reaches Windows and cannot be split into a down without its up (the stuck-avatar
     //     bug a previous "swallow everything" shortcut reintroduced).
-    //     The RIGHT button (measured : et=4 down / et=5 up) is a gesture too, so it gets the SAME lock as the
+    //     The RIGHT button (et=4 down / et=5 up -- inferred from a capture, then CONFIRMED behaviourally on
+    //     2026-07-19 : right-click in game, reopen the config, the wheel still scrolls. Were the pairing the other
+    //     way round the lock would stay stuck on and kill the wheel for the rest of the session) is a gesture too,
+    //     so it gets the SAME lock as the
     //     left one -- decided at the down, applied verbatim to the up. Without it, moving the pointer off the
     //     game window mid-drag would swallow the down and pass the up (or vice versa), which is the stuck-input
     //     bug this file already documents for the left button, transposed to mouselook.
