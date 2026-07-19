@@ -479,6 +479,10 @@ bool        profile_delete(const char* name);
 bool        profile_exists(const char* name);
 void        profile_mark_clean();                  // snapshot the current config as "saved" (call on load/save)
 bool        profile_dirty();                       // true if the live config differs from that snapshot -> unsaved changes
+// MULTI-CLIENT : re-apply the active profile when ANOTHER client on the same Windower saves it (all clients share
+// data\profiles\). Throttled to one file-attribute read per second ; refuses to reload while this client has unsaved
+// changes, so it can never discard work in progress. Call once per frame.
+void        profile_sync_poll();
 // the LAST loaded/saved profile is remembered on disk and auto-applied at startup, so a relaunch
 // comes back on the same profile (set automatically by profile_load / profile_save).
 void        set_active_profile(const char* name);

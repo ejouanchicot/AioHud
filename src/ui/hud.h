@@ -84,8 +84,10 @@ private:
     bool                 grimTried_ = false;
     u32                  weaponIcons_ = 0;         // Sheol resistances : Slashing/Piercing/Blunt icon atlas (96x32, 3 cells)
     bool                 weaponIconsTried_ = false;
+    u32  ensure_buff_atlas(u32 dev);               // lazy load with a BOUNDED retry -- shared by Timers and Debuffs
     u32                  buffAtlas_ = 0;           // Timers box : the shared status-icon atlas (buff_atlas.raw), like Player/Party
-    bool                 buffAtlasTried_ = false;
+    int                  buffAtlasTries_ = 0;      // bounded RETRY budget (was a one-shot bool : a single transient miss killed every Timers icon for the session)
+    unsigned             buffAtlasNextMs_ = 0;
     bool                 reload_pending_ = false;  // //aio layout requested -> reload at next render()
     std::string          layout_path_;             // path of the last applied layout (for hot-reload)
     float screenW_ = 2560.0f, screenH_ = 1400.0f;  // real game resolution (read from the device each frame)
@@ -96,5 +98,18 @@ private:
     bool  everInGame_ = false;    // latched true on the first successful player poll -> gate ALL boxes on "logged in"
     int   notReadyFrames_ = 0;    // consecutive frames the player poll failed -> a SUSTAINED run = logout (re-hide)
 };
+
+// //aio songdump : the Timers row log records into RAM, NEVER to disk. Writing a line per event slowed the frame
+// just enough to make the ghost-song bug DISAPPEAR while observed -- a textbook heisenbug. Recording is therefore
+// always-on and allocation-free (a fixed ring of formatted lines), and the file write happens only on command.
+#ifdef AIOHUD_PROBES
+void songrow_ring_dump();
+#endif
+
+// //aio focustrace : log, for the next N self-buff rows, which "track per job" key was tested and what the
+// config actually holds -- job, source spell, hide key, focus key, and each lookup's result. Reading the code
+// could not explain a Hidden+Focus buff staying visible; this says which lookup misses.
+void timers_focus_trace(int seconds);   // armed for a DURATION : a per-row countdown burns out in seconds at 60 Hz
+bool timers_focus_trace_armed();
 
 } // namespace aio

@@ -53,6 +53,7 @@ struct GameState {
     // --- local player buffs (status-icon ids), snapshot once/frame (read_player_buffs, player+0x1C) ---
     unsigned short buffs[32] = { 0 };
     int            nbuff = 0;   // count of valid ids in buffs[]
+    bool           buffsOk = false;   // the buff read SUCCEEDED -> nbuff==0 means "no buffs", NOT "no data". Callers must not fail open on an empty list (that made the Timers FOCUS alert unreachable).
 
     // --- active RECASTS (Timers module) : job-ability (kind 0) + spell (kind 1) cooldowns, snapshot once/frame from
     //     the client recast tables (g+0x22C/0x230 abilities, g+0x234 spells). recastId -> name via the gen tables. ---

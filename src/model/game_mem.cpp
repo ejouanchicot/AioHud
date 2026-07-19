@@ -620,12 +620,18 @@ bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]) {
 // Player buffs, reversed from LuaCore get_player (FUN_10072040). The same player struct
 // pl = *(g + 0x3C) holds a 32-entry uint16 status-icon array at pl+0x1C (loop runs the ushorts
 // in [pl+0x1C, pl+0x5C) ); 0xFF marks an EMPTY slot. We compact the non-empty ids in slot order.
-int read_player_buffs(unsigned short* out, int maxN) {
+// `ok` (optional) separates "the read WORKED and you genuinely have no buffs" from "the read failed / not ready".
+// The count alone conflates them -- it is 0 in both cases -- and a caller that guesses gets it wrong: the Timers
+// FOCUS monitor read "count == 0" as "no data, assume every buff is still up", so once your last buff expired it
+// believed everything was still active and could never fire a lost-buff alert. Same defect class as equipValid.
+int read_player_buffs(unsigned short* out, int maxN, bool* ok) {
+    if (ok) *ok = false;
     if (!out || maxN <= 0) return 0;
     u32 pl = player_struct();
     if (!pl) return 0;
     u32 mhp = 0; safe_read(pl + 0x60, &mhp);
     if (mhp == 0 || mhp > 0x100000) return 0;           // struct not ready yet
+    if (ok) *ok = true;                                 // past here the player struct IS readable : an empty result is REAL
     int n = 0;
     for (int i = 0; i < 32 && n < maxN; ++i) {
         u32 v = 0; if (!safe_read(pl + 0x1C + i * 2, &v)) break;
@@ -977,7 +983,7 @@ void poll_game_state(GameState& gs) {
     gs.hp = me.hpp / 100.0f;
     gs.mp = me.mpp / 100.0f;
     gs.tp = me.tp / 3000.0f; if (gs.tp > 1.0f) gs.tp = 1.0f; if (gs.tp < 0.0f) gs.tp = 0.0f;
-    gs.nbuff = read_player_buffs(gs.buffs, 32);   // self status icons -> the Player Hub buff tray (snapshot, not poll-in-draw)
+    gs.nbuff = read_player_buffs(gs.buffs, 32, &gs.buffsOk);   // self status icons -> the Player Hub buff tray (snapshot, not poll-in-draw)
     { unsigned short rid[40]; unsigned char kd[40]; int sc[40];   // Timers module : active JA + spell recasts (snapshot)
       const int nr = read_recasts(rid, kd, sc, 40); gs.nRecast = (nr > 40) ? 40 : nr;
       for (int i = 0; i < gs.nRecast; ++i) { gs.recasts[i].recastId = rid[i]; gs.recasts[i].kind = kd[i]; gs.recasts[i].sec = sc[i]; } }

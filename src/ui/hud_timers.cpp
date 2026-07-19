@@ -15,9 +15,11 @@
 #include "gfx/texture.h"
 #include "model/paths.h"
 #include "model/gamestate.h"
+#include "windower_debug.h"   // //aio songlog layer 4 (dev diagnosis ; same precedent as ui/hud.cpp)
 #include <windows.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <algorithm>
 
@@ -85,6 +87,53 @@ static const char* song_mod_tag(unsigned char m, char* buf, int cap) {
 }
 // Core renderer, extracted as a FREE function so the config PREVIEW and the Help sample reuse the EXACT same
 // config-aware draw (fused / separate, icons / names, colours) with no Hud instance.
+// Per-SPELL track keys for a self buff, with the status keys as fallback. The STATUS keys are deliberately shared
+// by every spell granting the same buff (BLU Cocoon / Reactor Cool both give Defense Boost) -- the hide mirror is
+// an AND over them, the focus mirror an OR -- so for one specific spell they answer the wrong question.
+// selfBuffSpell_ remembers which spell actually produced the buff, which makes the per-entry key reachable.
+// HIDE uses the per-spell key when known (an OR there would re-hide the sibling spell). FOCUS accepts EITHER key,
+// matching the OR semantics the config panel already writes.
+static void tm_self_keys(unsigned status, unsigned& hideKey, unsigned& focusKeySpell) {
+    hideKey = status; focusKeySpell = UiConfig::TM_KEY_FOCUS | status;
+    const unsigned short sp = party().self_buff_spell(status);
+    const SpellRow* sr = sp ? spell_info(sp) : 0;
+    if (sr && sr->recast_id) {
+        hideKey       = UiConfig::TM_KEY_RECAST + sr->recast_id;
+        focusKeySpell = UiConfig::TM_KEY_FOCUS | (UiConfig::TM_KEY_RECAST + sr->recast_id);
+    }
+}
+static bool tm_self_focus_on(const UiConfig& C, int job, unsigned status) {
+    unsigned hk, fk; tm_self_keys(status, hk, fk);
+    return C.tm_track_off(job, fk) || C.tm_track_off(job, UiConfig::TM_KEY_FOCUS | status);
+}
+static bool tm_self_hidden(const UiConfig& C, int job, unsigned status) {
+    unsigned hk, fk; tm_self_keys(status, hk, fk);
+    return C.tm_track_off(job, hk);
+}
+
+// //aio ftrace : armed for a DURATION, not a row count. A per-row countdown burned out in seconds -- it decrements
+// once per buff PER FRAME (~60 Hz), so it never survived long enough to observe the one moment that matters, the
+// buff expiring. Twice in a row the trace died at rem=89 then rem=19. Time-based, it always covers the whole life
+// of a buff plus the alert window afterwards.
+static unsigned s_focusUntil = 0;                  // GetTickCount deadline (0 = off)
+static int      s_focusTrace = 0;                  // >0 while armed : the emit/prune traces gate on this
+static unsigned short s_focusLastRem[1024] = { 0 };// last rem logged per status -> one line per SECOND, not per frame
+void timers_focus_trace(int seconds) {
+    s_focusUntil = GetTickCount() + (unsigned)seconds * 1000u;
+    s_focusTrace = 1;
+    for (int i = 0; i < 1024; ++i) s_focusLastRem[i] = 0xFFFF;
+    const UiConfig& C = ui_config();
+    windower::debug::log("=== FTRACE armed for %ds ===  mainJob=%d  tmFocusWarn=%ds  tmFocusHold=%ds",
+                         seconds, party().self_main_job(), C.tmFocusWarn, C.tmFocusHold);
+}
+static bool focus_trace_live() {
+    if (!s_focusTrace) return false;
+    if ((int)(GetTickCount() - s_focusUntil) >= 0) { s_focusTrace = 0; windower::debug::log("=== FTRACE window closed ==="); return false; }
+    return true;
+}
+// per-ROW gate : live AND this status' remaining time actually changed (one line per second per buff).
+bool timers_focus_trace_armed() { return focus_trace_live(); }
+
 void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, float screenW, float screenH,
                  u32 buffAtlas, bool measureOnly = false, float* outW = 0, float* outH = 0) {
     const UiConfig& C = ui_config();
@@ -116,7 +165,11 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         // the player's REAL current buffs (status ids read from memory ; the same list the Player Hub shows). Authoritative
         // and instant, unlike the 0x063 timer list which can keep a replaced Corsair roll. meHas(0) skips (padding).
         auto meHas = [&](int st) -> bool {
-            if (st == 0 || !f.game || f.game->nbuff <= 0) return true;   // no live data -> don't hide anything
+            // Fail open only when the read FAILED. An EMPTY list is a real answer ("you have no buffs") -- treating
+            // nbuff==0 as "no data" made this return true for everything the moment your last buff expired, which is
+            // exactly when the FOCUS monitor needs to see a buff go missing. Measured: nbuff=0 list=[] with has=1 on
+            // 7783 consecutive samples, so the lost-buff alert could never fire. buffsOk splits the two cases.
+            if (st == 0 || !f.game || !f.game->buffsOk) return true;
             for (int i = 0; i < f.game->nbuff; ++i) if ((int)f.game->buffs[i] == st) return true;
             return false;
         };
@@ -160,13 +213,51 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         //      INTO that group (you count, your exact timer drives it) instead of getting its own row. ----
         int n = 0; const BuffTimer* bt = party().buff_timers(n);
         for (int i = 0; i < n && nb < 50; ++i) {
-            const int rem = (int)(bt[i].expiry - now) / 60;
-            if (rem <= 0 || rem > 6 * 3600) continue;
+            int rem = (int)(bt[i].expiry - now) / 60;   // not const : clamped to 0 below while the buff outlives our timer
+            // Our timer runs ~2s AHEAD of the client (measured): at rem 0 the game still shows the icon for about
+            // two more seconds. Dropping the row at 0 while the red OUT alert only fires once the buff really
+            // leaves the list left a visible HOLE between the two. Hold the row at 0:00 for as long as the buff is
+            // genuinely still on you, so the hand-off row -> alert is seamless. Only for a buff we still hold:
+            // meHas is authoritative now that an empty list is distinguished from no data.
+            if (rem > 6 * 3600) continue;
+            if (rem <= 0) { if (!meHas((int)bt[i].id)) continue; rem = 0; }
             // DEBUFFS (Blind / Poison / Slow / Dia / Bio...) leak into the 0x063 self-buff list -- they are NOT buffs,
             // so never in the Duration column (they'll get their own detachable column). Dropped for everyone.
             if (is_debuff_status(bt[i].id)) continue;
-            if (trkJob && C.tm_track_off(trkJob, bt[i].id)) {   // hidden (Unfollow) -- UNLESS it's Unfollow-Focus & expiring : then it pops under the warn threshold
-                if (!(C.tm_track_off(trkJob, UiConfig::TM_KEY_FOCUS | bt[i].id) && rem < C.tmFocusWarn)) continue;
+            // Hidden (Unfollow) -- UNLESS it's Unfollow-Focus & expiring : then it pops under the warn threshold.
+            // Key on the SPELL that produced this buff when we know it. The status key is deliberately an AND over
+            // every spell sharing that status (BLU Cocoon / Reactor Cool both give Defense Boost), so hiding ONLY
+            // Cocoon never set it -- its recast row hid but its BUFF row stayed visible until Reactor Cool was
+            // hidden too, which read as "Hidden+Focus does nothing". The per-entry recast key is always written by
+            // the config panel (tm_config.cpp entHiddenSet), so it is the precise answer; fall back to the status
+            // key for buffs with no known source spell (abilities, food, gear).
+            unsigned hideKey = bt[i].id;
+            unsigned focusKey = UiConfig::TM_KEY_FOCUS | bt[i].id;
+            // throttle : only when this status' remaining SECOND changed, else 60 identical lines a second
+            bool ftrace = false;
+            if (timers_focus_trace_armed() && bt[i].id < 1024) {
+                const unsigned short r16 = (unsigned short)(rem < 0 ? 0 : (rem > 65000 ? 65000 : rem));
+                if (s_focusLastRem[bt[i].id] != r16) { s_focusLastRem[bt[i].id] = r16; ftrace = true; }
+            }
+            {
+                const unsigned short srcSpell = party().self_buff_spell(bt[i].id);
+                const SpellRow* sr = srcSpell ? spell_info(srcSpell) : 0;
+                if (sr && sr->recast_id) {
+                    hideKey  = UiConfig::TM_KEY_RECAST + sr->recast_id;
+                    focusKey = UiConfig::TM_KEY_FOCUS | (UiConfig::TM_KEY_RECAST + sr->recast_id);
+                }
+            }
+            if (ftrace) {
+                const unsigned short srcSpell = party().self_buff_spell(bt[i].id);
+                windower::debug::log("FOCUS status=%u '%s' rem=%d  trkJob=%d  srcSpell=%u  hideKey=%04X off=%d  focusKey=%04X off=%d  warn=%d  statusKeyOff=%d",
+                                     (unsigned)bt[i].id, buff_status_name(bt[i].id), rem, trkJob, (unsigned)srcSpell,
+                                     hideKey,  trkJob ? (C.tm_track_off(trkJob, hideKey)  ? 1 : 0) : -1,
+                                     focusKey, trkJob ? (C.tm_track_off(trkJob, focusKey) ? 1 : 0) : -1,
+                                     C.tmFocusWarn,
+                                     trkJob ? (C.tm_track_off(trkJob, (unsigned)bt[i].id) ? 1 : 0) : -1);
+            }
+            if (trkJob && C.tm_track_off(trkJob, hideKey)) {
+                if (!(C.tm_track_off(trkJob, focusKey) && rem < C.tmFocusWarn)) continue;
             }
             // GEO aura noise : the geomancy effect status (542-556 Boosts) and "Colure Active" (612) pulse every ~3s
             // in 0x063 ; hide them (the Indi- YOU carry is redrawn as a stable computed row below).
@@ -296,7 +387,14 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 fmN = wj; } }
             { int n2 = 0; const BuffTimer* bt2 = party().buff_timers(n2);                      // remember FOCUS buffs currently up on YOU (Self focus key 0x8000|st)
               for (int i = 0; i < n2; ++i) { const unsigned st = bt2[i].id;
-                if (st >= 1024 || is_debuff_status(st) || !meHas((int)st) || !C.tm_track_off(trkJob, UiConfig::TM_KEY_FOCUS | st)) continue;   // gate on meHas (same source as the emit check) -> no false alert while it's up
+                if (focus_trace_live() && st < 1024 && !is_debuff_status(st) && meHas((int)st)) {
+                    unsigned hk, fk2; tm_self_keys(st, hk, fk2);
+                    windower::debug::log("FOCUSMON remember? st=%u '%s' meHas=%d focusOn=%d (spellKey=%04X off=%d statusKey=%04X off=%d)",
+                                         st, buff_status_name(st), meHas((int)st) ? 1 : 0, tm_self_focus_on(C, trkJob, st) ? 1 : 0,
+                                         fk2, C.tm_track_off(trkJob, fk2) ? 1 : 0,
+                                         UiConfig::TM_KEY_FOCUS | st, C.tm_track_off(trkJob, UiConfig::TM_KEY_FOCUS | st) ? 1 : 0);
+                }
+                if (st >= 1024 || is_debuff_status(st) || !meHas((int)st) || !tm_self_focus_on(C, trkJob, st)) continue;   // gate on meHas (same source as the emit check) -> no false alert while it's up ; per-SPELL focus key (see tm_self_keys)
                 int s = -1; for (int q = 0; q < fmN; ++q) if (fm[q].self && fm[q].status == st) { s = q; break; }
                 if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].lostMs = 0; fm[s].zoneCheck = 0; fm[s].name[0] = 0; }
                 if (s >= 0) fm[s].spell = party().self_buff_spell(st);   // refresh the spell/tier each frame (a re-cast at a higher tier updates the OUT label)
@@ -312,8 +410,12 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             int w = 0;                                                                        // prune : ally left the party/alliance, or the focus flag was turned off
             for (int q = 0; q < fmN; ++q) {
                 const bool live = fm[q].self ? true : (zoneGrace || party().party_order(fm[q].target) <= 17);   // 0..5 party, 6..17 alliance ; 99 = gone (roster is unstable mid-zone -> keep during grace)
-                const unsigned fk = (fm[q].self ? UiConfig::TM_KEY_FOCUS : (UiConfig::TM_KEY_FOCUS | UiConfig::TM_KEY_ALLY)) | fm[q].status;
-                if (!(live && C.tm_track_off(trkJob, fk))) continue;                           // gone / focus off -> drop
+                const bool fkOn = fm[q].self ? tm_self_focus_on(C, trkJob, fm[q].status)
+                                             : C.tm_track_off(trkJob, UiConfig::TM_KEY_FOCUS | UiConfig::TM_KEY_ALLY | fm[q].status);
+                if (focus_trace_live() && !(live && fkOn))
+                    windower::debug::log("FOCUSPRUNE st=%u '%s' DROPPED (live=%d focusOn=%d) -> no OUT row possible",
+                                         (unsigned)fm[q].status, buff_status_name(fm[q].status), live ? 1 : 0, fkOn ? 1 : 0);
+                if (!(live && fkOn)) continue;                                                 // gone / focus off -> drop
                 if (fm[q].zoneCheck) {                                                         // pending post-zone check : decide ONLY after the grace ends AND the list is back.
                     if (zoneGrace || !listReady(fm[q])) { /* still settling : keep, no decision, no alert */ }
                     else if (focusHas(fm[q])) fm[q].zoneCheck = 0;                             //   grace over + list stable + present -> survived the zone, track normally
@@ -322,8 +424,9 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // a "Hidden+focus" alert that has held its full tmFocusHold with the buff still gone -> FREE the slot
                 // (the emit stops drawing it at that point ; without this it lingers forever and can fill fm[24]).
                 if (!fm[q].zoneCheck && fm[q].lostMs && !focusHas(fm[q])) {
-                    const unsigned dk = (fm[q].self ? 0u : UiConfig::TM_KEY_ALLY) | fm[q].status;
-                    if (C.tm_track_off(trkJob, dk) && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
+                    const bool dkOn = fm[q].self ? tm_self_hidden(C, trkJob, fm[q].status)
+                                                 : C.tm_track_off(trkJob, UiConfig::TM_KEY_ALLY | fm[q].status);
+                    if (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
                 }
                 if (w != q) fm[w] = fm[q]; ++w;
             }
@@ -332,11 +435,31 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 bool has;
                 if (fm[q].self) has = meHas(fm[q].status);
                 else { const BuffSet* bs = party().buffs_for(fm[q].target); has = false; if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == fm[q].status) { has = true; break; } }
+                if (focus_trace_live()) {
+                    // nbuff is the crux : meHas() FAILS OPEN (returns true for everything) when the live buff list is
+                    // empty, so nbuff==0 would pin has=1 forever and make the alert unreachable. Log the list too.
+                    const int nb2 = f.game ? f.game->nbuff : -1;
+                    char lst[160]; int o = 0; lst[0] = 0;
+                    for (int j = 0; f.game && j < f.game->nbuff && j < 32 && o < 150; ++j)
+                        o += _snprintf(lst + o, sizeof(lst) - o, "%u ", (unsigned)f.game->buffs[j]);
+                    windower::debug::log("FOCUSEMIT st=%u '%s' self=%d has=%d lostMs=%u zoneGrace=%d nbuff=%d list=[%s]",
+                                         (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].self, has ? 1 : 0,
+                                         fm[q].lostMs, zoneGrace ? 1 : 0, nb2, lst);
+                }
                 if (has) { fm[q].lostMs = 0; continue; }                                       // still up -> the normal row covers it, reset the loss timer
                 if (zoneGrace) { fm[q].lostMs = 0; continue; }                                 // just zoned : buff lists still arriving -> don't false-alert (persist across the zone)
                 if (fm[q].lostMs == 0) fm[q].lostMs = nowMs;                                   // just went missing -> stamp it
-                const unsigned dk = (fm[q].self ? 0u : UiConfig::TM_KEY_ALLY) | fm[q].status;   // Unfollow-Focus = hidden + focus -> the alert holds tmFocusHold seconds then depops (Focus = permanent until re-cast)
-                if (C.tm_track_off(trkJob, dk) && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
+                // Unfollow-Focus = hidden + focus -> the alert holds tmFocusHold seconds then depops (Focus alone =
+                // permanent until re-cast). Per-SPELL hide key : keyed on the shared STATUS this never matched for a
+                // buff two spells can grant, so the "hold 15s then depop" branch was unreachable for Cocoon.
+                const bool dkOn = fm[q].self ? tm_self_hidden(C, trkJob, fm[q].status)
+                                             : C.tm_track_off(trkJob, UiConfig::TM_KEY_ALLY | fm[q].status);
+                if (focus_trace_live())
+                    windower::debug::log("FOCUSHOLD st=%u '%s' self=%d has=0 lostAgo=%ums hold=%ds dkOn=%d -> %s",
+                                         (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].self,
+                                         (unsigned)(nowMs - fm[q].lostMs), C.tmFocusHold, dkOn ? 1 : 0,
+                                         (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) ? "DROP (hold expired)" : "DRAW red OUT row");
+                if (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
                 if (fm[q].self) {
                     const SpellRow* sp = fm[q].spell ? spell_info(fm[q].spell) : 0;
                     _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s", (sp && sp->en) ? sp->en : buff_status_name(fm[q].status));
@@ -517,8 +640,25 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
 }
 
 // Live / edit path : the Hud draws the box(es) at their configured screen positions (lazy-loads its buff atlas).
+// Lazy load of the shared status-icon atlas, with a BOUNDED RETRY. Both call sites (Timers and Debuffs) used to
+// carry their own one-shot `if (!tried) { load; tried = true; }`, so ONE transient miss -- the updater replacing
+// buff_atlas.raw at that instant, the device not ready yet -- permanently killed EVERY status icon in those boxes
+// for the rest of the session. Reported right after an update as "Protect, Cocoon... no icons"; the atlas file was
+// intact, only the texture was missing. Same defect class as the gear icons: a permanent give-up on a transient
+// failure. ~12 tries, 300 ms apart, then stop (a genuinely absent asset must not retry forever).
+u32 Hud::ensure_buff_atlas(u32 dev) {
+    if (!buffAtlas_ && buffAtlasTries_ < 12) {
+        const unsigned nowMs = GetTickCount();
+        if ((int)(nowMs - buffAtlasNextMs_) >= 0) {
+            buffAtlas_ = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
+            if (!buffAtlas_) { ++buffAtlasTries_; buffAtlasNextMs_ = nowMs + 300; }
+        }
+    }
+    return buffAtlas_;
+}
+
 void Hud::draw_timers(const Frame& f, bool preview, float ovX, float ovY, float ovS) {
-    if (!buffAtlasTried_) { buffAtlas_ = load_raw_texture(f.dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H); buffAtlasTried_ = true; }
+    ensure_buff_atlas(f.dev);
     timers_draw(f, preview, ovX, ovY, ovS, (float)screenW_, (float)screenH_, buffAtlas_);
 }
 

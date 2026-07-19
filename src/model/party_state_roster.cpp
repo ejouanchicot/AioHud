@@ -10,6 +10,7 @@
 #include <windows.h>                       // CreateFileA / ReadFile / WriteFile
 #include <string.h>                        // memcpy
 #include <math.h>                          // sqrtf
+#include <stdio.h>                         // _snprintf (per-character cache filename)
 
 namespace aio {
 
@@ -49,7 +50,20 @@ static int g_simExtra = 0;                                                   // 
 int  party_sim_extra() { return g_simExtra; }
 void set_party_sim_extra(int n) { g_simExtra = n < 0 ? 0 : (n > 5 ? 5 : n); }
 
-static const char* cache_path() { static char b[260]; if (!b[0]) plugin_path(b, 260, "data\\cache\\party.bin"); return b; }   // runtime-derived (was a hardcoded dev path)
+// PER-CHARACTER roster cache. This was a single "party.bin" for the whole install, while its contents (your
+// party's names, jobs, HP) are strictly per character -- so at login, and INDEFINITELY at the character-select
+// screen where read_player fails and load_from_memory bails early, another character's full roster was drawn on
+// your screen. Not cached in a static: one client can log out and back in as someone else.
+// Returns false when no character is resolved yet -> the caller skips the read/write entirely rather than
+// falling back to a shared name (that fallback is how cross-contamination creeps back in).
+static bool cache_path_for(unsigned selfId, char* out, int cap) {
+    if (!out || cap <= 0) return false;
+    out[0] = 0;
+    if (!selfId) return false;
+    char rel[64]; _snprintf(rel, sizeof(rel), "data\\cache\\party_%08X.bin", selfId); rel[sizeof(rel) - 1] = 0;
+    plugin_path(out, cap, rel);
+    return out[0] != 0;
+}
 
 static const char* JOBS[] = {
     "", "WAR", "MNK", "WHM", "BLM", "RDM", "THF", "PLD", "DRK", "BST", "BRD",
@@ -152,10 +166,40 @@ void PartyState::on_df(const unsigned char* p) {
 }
 
 // version tag tied to the struct size -> any PMember layout change auto-invalidates old caches.
+// THE single reset point for a character switch on one client. See the declaration in party_state.h for why this
+// must stay the only one. Called every frame from the poller; a no-op unless the id actually changed.
+void PartyState::on_character_changed(unsigned newId) {
+    static unsigned s_last = 0;
+    if (!newId || newId == s_last) { if (newId) s_last = newId; return; }
+    const bool wasSomeoneElse = (s_last != 0);
+    s_last = newId;
+    if (!wasSomeoneElse) return;                    // first login of this process : nothing stale to clear
+
+    // Derived state keyed to "who I am". None of it self-heals: it is built from packets we watched as the
+    // PREVIOUS character, so it would render their roll pips / song tags / ally buffs under the new one.
+    for (int i = 0; i < 1024; ++i) { buffCaster_[i] = 0; rollVal_[i] = 0; rollLuck_[i] = 0; songMod_[i] = 0; selfBuffSpell_[i] = 0; }
+    for (int i = 0; i < 24; ++i) selfCasts_[i] = SelfCast{};
+    selfCastHead_ = 0;
+    otherBuffN_ = 0;
+    jobShadowN_ = 0;                                // else the 24 slots fill with two characters' alliances and new members stop being tracked
+    buffTimerN_ = 0;                                // refilled by the 0x063 order-9 full refresh at login
+    selfGeo_ = GeoAura{};
+    for (int i = 0; i < 256; ++i) learnedMs_[i] = 0;
+    pw_.xpReg = RateReg{}; pw_.cpReg = RateReg{}; pw_.epReg = RateReg{};   // else the new character's X/h is blended with the old one's samples
+
+    // The roster cache belongs to the previous character too : drop it and re-arm the load for the new one.
+    count = 0;
+    cacheLoaded_ = false; cacheChar_ = 0;
+
+    // Zone tracker + Limbus coffers, and their per-character files.
+    zt_on_character_changed();
+}
+
 static const int CACHE_VER = (int)(0xA10D0000u | (sizeof(PMember) & 0xFFFF));
 
 void PartyState::save() const {
-    HANDLE h = CreateFileA(cache_path(), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    char path[300]; if (!cache_path_for(selfId_, path, sizeof(path))) return;   // no character -> never write a shared file
+    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if (h == INVALID_HANDLE_VALUE) return;
     DWORD w = 0; int ver = CACHE_VER;
     WriteFile(h, &ver, sizeof(ver), &w, 0);
@@ -165,7 +209,13 @@ void PartyState::save() const {
 }
 
 void PartyState::load() {
-    HANDLE h = CreateFileA(cache_path(), GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    // Needs the character, so this can no longer run from aio_plugin_init (nothing is logged in yet) : it is
+    // driven from the poller once read_player succeeds. Before, the cache was loaded blind at init -- which is
+    // exactly what put another character's roster on screen at the character-select screen.
+    PlayerInfo me;
+    char path[300];
+    if (!read_player(me) || !cache_path_for(me.id, path, sizeof(path))) return;
+    HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (h == INVALID_HANDLE_VALUE) return;
     int ver = 0, c = 0; DWORD got = 0;
     if (ReadFile(h, &ver, sizeof(ver), &got, 0) && got == sizeof(ver) && ver == CACHE_VER &&
@@ -253,6 +303,8 @@ void PartyState::load_from_memory() {
     if (!pp) return;
 
     PlayerInfo me; if (!read_player(me)) return;          // not in game yet -> keep cache/packets
+    on_character_changed(me.id);                          // THE single reset point for a re-login as another character
+    if (!cacheLoaded_ && me.id) load();                   // roster cache : needs the character, so it runs HERE, not at plugin init
     if (!pw_.valid) pw_.jobLevel = me.mlvl;               // PointWatch : seed the stage from memory so the box shows at once
     { unsigned cp = 0, jp = 0; if (read_capacity_points((unsigned)me.mjob, cp, jp)) { pw_.cpCur = cp; pw_.cpJp = (int)jp; pw_.cpMem = true; } }   // CP/JP from memory
     { PwMem pm; if (read_pointwatch(pm)) {                // XP / Exemplar / Limit Points / merits / Master Level from client memory -> all rows fill on load
@@ -283,8 +335,11 @@ void PartyState::load_from_memory() {
         if (read_member(base + i * 0x7C, m[n], ent, px, pz)) ++n;
     count = n;                                             // n reflects the live roster (trust in/out)
 
-    if (me.id) {   // derived-state cache : restore once on (re)load, then persist throttled (~4s). Survives //unload+reload.
-        if (!cacheLoaded_) { load_cache(me.id); cacheLoaded_ = true; }
+    if (me.id) {   // derived-state cache : restore once per CHARACTER, then persist throttled (~4s). Survives //unload+reload.
+        // Keyed on cacheChar_, not a bare one-shot : after a re-login as someone else the old code kept
+        // cacheLoaded_ = true, never read the new character's file, and 4 s later wrote the PREVIOUS character's
+        // roll pips / song tags / buff casters into it -- destroying the real cache silently.
+        if (!cacheLoaded_ || cacheChar_ != me.id) { load_cache(me.id); cacheLoaded_ = true; cacheChar_ = me.id; lastCacheSaveMs_ = GetTickCount(); }
         const unsigned nowc = GetTickCount();
         if ((unsigned)(nowc - lastCacheSaveMs_) > 4000u) { save_cache(me.id); lastCacheSaveMs_ = nowc; }
     }

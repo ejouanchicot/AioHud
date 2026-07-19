@@ -193,7 +193,7 @@ void Hud::render(u32 dev) {
         config_.on_device_lost();   // forget the config logo texture -> reloaded on next draw
         tpCoffer_ = 0; tpCofferTried_ = false;   // forget the treasure-pool coffer icon (belongs to the old device)
         weaponIcons_ = 0; weaponIconsTried_ = false;   // forget the Sheol weapon-type icon atlas
-        buffAtlas_ = 0; buffAtlasTried_ = false;        // forget the buff-timers status-icon atlas
+        buffAtlas_ = 0; buffAtlasTries_ = 0; buffAtlasNextMs_ = 0;   // forget the buff-timers status-icon atlas (+ re-arm the retry budget)
         grimLight_ = 0; grimDark_ = 0; grimClosed_ = 0; grimTried_ = false;   // forget the grimoire book textures (belong to the old device)
         // The Help SAMPLES keep their own lazy copies at file scope in their hud_*.cpp -- unreachable from here
         // otherwise, so they used to survive a device recreate and hand a dead device's texture to SetTexture.
@@ -236,6 +236,7 @@ void Hud::render(u32 dev) {
     // draws from (player vitals/jobs, target, leaders, action menu). Read each pointer-chain
     // once here, never in a widget's draw(). See gamestate.h.
     poll_game_state(state_);
+    profile_sync_poll();   // another client on this Windower saved the profile we are on -> re-apply it (throttled 1/s)
 
     // GATE the whole HUD on "logged in / in the world". read_player STILL succeeds while zoning, so it alone can't
     // hide during a zone -- but the client sends 0x00B (zone-out) then 0x00A (zone-in), which set party().zoning_

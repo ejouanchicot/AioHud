@@ -63,8 +63,11 @@ bool profile_default_name(char* out, int cap) {
 // per-character "last profile this character loaded" -> the fallback when no "Name Main/Sub" profile exists.
 static const char* charprof_path() { static char b[260]; if (!b[0]) plugin_path(b, 260, "data\\charprofiles.txt"); return b; }
 static char g_charProf[32][2][48]; static int g_charProfN = 0; static bool g_charProfLoaded = false;
-static void charprof_load() {
-    if (g_charProfLoaded) return; g_charProfLoaded = true; g_charProfN = 0;
+// `force` re-reads even when already loaded. record_char_profile MUST force : every client on this Windower
+// writes this same file, and the write is a full rewrite from the in-memory copy -- so a client holding a stale
+// copy silently DELETED the entries another client had added since. Symptom: "my profile stopped auto-loading".
+static void charprof_load(bool force = false) {
+    if (g_charProfLoaded && !force) return; g_charProfLoaded = true; g_charProfN = 0;
     FILE* f = fopen(charprof_path(), "r"); if (!f) return;
     char line[128];
     while (fgets(line, sizeof(line), f) && g_charProfN < 32) {
@@ -77,16 +80,20 @@ static void charprof_load() {
     }
     fclose(f);
 }
+// Atomic : temp + rename, so a concurrent reader never sees a half-written file and a crash mid-write cannot
+// leave a truncated one. Same rule as the gear-icon cache (gfx/texture.cpp).
 static void charprof_save() {
-    FILE* f = fopen(charprof_path(), "w"); if (!f) return;
+    char tmp[300]; _snprintf(tmp, sizeof(tmp), "%s.%lu.tmp", charprof_path(), (unsigned long)GetCurrentProcessId()); tmp[sizeof(tmp) - 1] = 0;
+    FILE* f = fopen(tmp, "w"); if (!f) return;
     for (int i = 0; i < g_charProfN; ++i) fprintf(f, "%s\t%s\n", g_charProf[i][0], g_charProf[i][1]);
-    fclose(f);
+    const bool ok = (fclose(f) == 0);
+    if (!ok || !MoveFileExA(tmp, charprof_path(), MOVEFILE_REPLACE_EXISTING)) DeleteFileA(tmp);
 }
 // record that the CURRENT character just (manually) loaded/saved `prof`. Called from the UI load/save sites only.
 void record_char_profile(const char* prof) {
     if (!prof || !prof[0]) return;
     PlayerInfo me; if (!read_player(me) || !me.name[0]) return;
-    charprof_load();
+    charprof_load(true);   // FORCE : merge into what is on disk NOW, not into a copy another client has since added to
     int s = -1; for (int i = 0; i < g_charProfN; ++i) if (strcmp(g_charProf[i][0], me.name) == 0) { s = i; break; }
     if (s < 0) { if (g_charProfN >= 32) return; s = g_charProfN++; strncpy(g_charProf[s][0], me.name, 47); g_charProf[s][0][47] = 0; }
     strncpy(g_charProf[s][1], prof, 47); g_charProf[s][1][47] = 0;
@@ -858,6 +865,8 @@ bool        profile_exists(const char* name) {
     char p[300]; profile_path(name, p, sizeof(p));
     return GetFileAttributesA(p) != INVALID_FILE_ATTRIBUTES;
 }
+static void profile_stamp_remember(const char* name);   // (multi-client profile sync, defined below)
+
 bool profile_save(const char* name) {
     if (!name || !name[0]) return false;
     CreateDirectoryA(profile_dir(), NULL);
@@ -866,8 +875,54 @@ bool profile_save(const char* name) {
     profile_refresh();
     profile_mark_clean();
     set_active_profile(name);   // saving makes it the active profile too
+    profile_stamp_remember(name);   // our OWN write must not bounce back at us through profile_sync_poll
     return true;
 }
+// ---- MULTI-CLIENT profile sync -------------------------------------------------------------------------
+// Every client keeps the profile in MEMORY, so one client saving a profile changed nothing on the others: they
+// kept drawing the old settings until reloaded by hand. All clients on the same Windower share data\profiles\,
+// so the file itself is the signal -- watch the active profile's write time and re-apply when it moves.
+//
+// Deliberate refusals to reload (each would be worse than being stale):
+//   - the local config is DIRTY   -> the user is mid-edit here ; adopting another client's save would silently
+//                                    throw their work away.
+//   - we wrote it ourselves       -> stamp remembered on save/load, so our own write never bounces back.
+static FILETIME g_profStamp = { 0, 0 };
+static bool     g_profStampOk = false;
+
+static bool profile_stamp(const char* name, FILETIME& out) {
+    if (!name || !name[0]) return false;
+    char p[300]; profile_path(name, p, sizeof(p));
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    if (!GetFileAttributesExA(p, GetFileExInfoStandard, &fad)) return false;
+    out = fad.ftLastWriteTime;
+    return true;
+}
+static void profile_stamp_remember(const char* name) {
+    g_profStampOk = profile_stamp(name, g_profStamp);
+}
+
+void profile_sync_poll() {
+    if (!g_active[0]) return;                                  // no active profile -> nothing shared to follow
+    const unsigned now = GetTickCount();
+    static unsigned nextAt = 0;
+    if ((int)(now - nextAt) < 0) return;
+    nextAt = now + 1000;                                       // one cheap attribute read per second, not per frame
+
+    FILETIME ft;
+    if (!profile_stamp(g_active, ft)) return;                  // profile deleted / unreadable -> keep what we have
+    if (!g_profStampOk) { g_profStamp = ft; g_profStampOk = true; return; }   // first sight : adopt, never reload
+    if (ft.dwLowDateTime == g_profStamp.dwLowDateTime && ft.dwHighDateTime == g_profStamp.dwHighDateTime) return;
+
+    g_profStamp = ft;                                          // consume the change either way : never re-trigger on it
+    if (profile_dirty()) return;                               // mid-edit here -> keep this client's work
+
+    char p[300]; profile_path(g_active, p, sizeof(p));
+    if (!load_config_from(p)) return;
+    profile_mark_clean();
+    request_scale_baseline_reset();                            // adopt the profile's box scales as-is (same as profile_load)
+}
+
 bool profile_load(const char* name) {
     if (!name || !name[0]) return false;
     char p[300]; profile_path(name, p, sizeof(p));
@@ -875,6 +930,7 @@ bool profile_load(const char* name) {
     save_ui_config();   // adopt as the live config too
     profile_mark_clean();
     set_active_profile(name);   // remember for auto-load at next startup
+    profile_stamp_remember(name);   // baseline for profile_sync_poll : only LATER writes by another client count
     request_scale_baseline_reset();   // adopt the profile's box scales as-is (don't re-anchor -> no false "modified")
     return true;
 }

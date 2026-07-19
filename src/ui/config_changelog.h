@@ -13,6 +13,20 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_39[] = {
+    { "*Status icons could vanish from the Timers and Debuffs boxes.* The icon sheet was loaded with a single attempt : one badly-timed miss — typically while an update was replacing it — and every icon stayed missing for the rest of the session. It now retries.",
+      "*Les icônes d'état pouvaient disparaître des boîtes Timers et Debuffs.* La planche d'icônes était chargée en une seule tentative : un échec au mauvais moment — typiquement pendant qu'une mise à jour la remplaçait — et toutes les icônes restaient absentes jusqu'à la fin de la session. Elle réessaie désormais." },
+    { "*Hidden + Focus works for spells that share a buff with another spell* (BLU Cocoon and Reactor Cool both give Defense Boost). Hiding one is now recognised on its own instead of requiring every spell granting that buff to be hidden.",
+      "*Caché + Focus fonctionne pour les sorts partageant un buff avec un autre* (Cocoon et Reactor Cool de BLU donnent tous deux Defense Boost). Cacher l'un est désormais reconnu seul, au lieu d'exiger que tous les sorts donnant ce buff soient cachés." },
+    { "*The red \"lost buff\" alert now actually appears*, and holds for the time you set. It could never fire : once your last buff expired the plugin read the empty buff list as \"no data\" and assumed everything was still active.",
+      "*L'alerte rouge de perte de buff apparaît enfin*, et tient la durée que vous avez réglée. Elle ne pouvait jamais se déclencher : dès l'expiration de votre dernier buff, le plugin lisait la liste vide comme « pas de données » et supposait tout encore actif." },
+    { "The hand-off from the timer to that alert is seamless : the game keeps a buff about two seconds longer than our countdown, and the row used to disappear during the gap.",
+      "Le passage du minuteur à cette alerte se fait sans rupture : le jeu conserve un buff environ deux secondes de plus que notre décompte, et la ligne disparaissait pendant cet intervalle." },
+    { "*Multi-character on one Windower* : switching character on the same client no longer carries the previous one's data over — party roster, tracker run, Limbus chips, buff tags and XP/h rates are all reset together. Your saved party list is also per character now.",
+      "*Multi-personnage sur un même Windower* : changer de personnage sur le même client ne reporte plus les données du précédent — liste de groupe, run du suivi de zone, chips Limbus, tags de buffs et cadences XP/h sont réinitialisés ensemble. Votre liste de groupe sauvegardée est également par personnage désormais." },
+    { "*Editing a profile that several characters use now updates them all* : each client re-applies the profile when another one saves it. A client with unsaved changes is left alone.",
+      "*Modifier un profil utilisé par plusieurs personnages les met tous à jour* : chaque client réapplique le profil quand un autre l'enregistre. Un client ayant des modifications non sauvegardées n'est pas touché." },
+};
 static const ChangeLine CL_38[] = {
     { "*Updating with two clients open no longer reports a file error.* Every client runs its own updater, and they all downloaded to the same file — so the second one failed on \"file in use\" and the Update tab showed a failure, even though the update had actually gone through. Each updater now downloads to its own file.",
       "*Mettre à jour avec deux clients ouverts ne signale plus d'erreur de fichier.* Chaque client lance son propre updater, et tous téléchargeaient vers le même fichier — le second échouait donc sur « fichier en cours d'utilisation » et l'onglet MAJ affichait un échec, alors que la mise à jour était bel et bien passée. Chaque updater télécharge désormais vers son propre fichier." },
@@ -158,6 +172,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.39", CL_39, (int)(sizeof(CL_39) / sizeof(CL_39[0])) },
     { "1.0.38", CL_38, (int)(sizeof(CL_38) / sizeof(CL_38[0])) },
     { "1.0.37", CL_37, (int)(sizeof(CL_37) / sizeof(CL_37[0])) },
     { "1.0.36", CL_36, (int)(sizeof(CL_36) / sizeof(CL_36[0])) },

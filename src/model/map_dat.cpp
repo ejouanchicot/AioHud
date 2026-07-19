@@ -181,12 +181,23 @@ static u32* decode_dxt3_image(const unsigned char* d, unsigned dataOff, unsigned
     return px;
 }
 
-bool load_zone_map(unsigned fileId, u32*& outPixels, int& outW, int& outH) {
+bool load_zone_map(unsigned fileId, u32*& outPixels, int& outW, int& outH, MapLoadDiag* diag) {
     outPixels = 0; outW = outH = 0;
+    MapLoadDiag scratch; if (!diag) diag = &scratch;
+    diag->step = MLS_NO_PATH; diag->path[0] = 0; diag->overlay = false;
+    diag->fileSize = 0; diag->chunkTypes = 0; diag->W = diag->H = 0; diag->fmtFlags = 0;
     char path[MAX_PATH];
+    if (!ffxi_root()) { diag->step = MLS_NO_ROOT; return false; }
     if (!resolve_path(fileId, path)) return false;
+    lstrcpynA(diag->path, path, sizeof(diag->path));
+    for (const char* c = path; *c; ++c)                                  // case-insensitive "XIPivot" scan (no shlwapi dependency)
+        if ((c[0]|32)=='x' && (c[1]|32)=='i' && (c[2]|32)=='p' && (c[3]|32)=='i' &&
+            (c[4]|32)=='v' && (c[5]|32)=='o' && (c[6]|32)=='t') { diag->overlay = true; break; }
+    diag->step = MLS_NO_FILE;
     unsigned n = 0; unsigned char* d = read_file(path, n);
     if (!d) return false;
+    diag->fileSize = n;
+    diag->step = MLS_NO_CHUNK;
     bool ok = false;
     // walk the chunk stream : 8-byte header, type = u32@+4 & 0x7F, size = (u32@+4 >> 7)*16 ; type 0x20 = graphic
     unsigned off = 0;
@@ -194,6 +205,7 @@ bool load_zone_map(unsigned fileId, u32*& outPixels, int& outW, int& outH) {
         unsigned w2 = *(const unsigned*)(d + off + 4);
         unsigned type = w2 & 0x7F, size = (w2 >> 7) * 16;
         if (size == 0) break;
+        diag->chunkTypes |= (1u << (type & 31));                // what this DAT actually contains
         if (type == 0x20) {
             const unsigned hbase = off + 0x10;                  // graphic sub-header
             const unsigned palOff = hbase + 0x39 + 4, idxOff = palOff + 0x400;
@@ -201,6 +213,7 @@ bool load_zone_map(unsigned fileId, u32*& outPixels, int& outW, int& outH) {
                 const unsigned char* H = d + hbase;
                 const unsigned char flags = H[0x00];
                 const int W = *(const int*)(H + 0x15), Ht = *(const int*)(H + 0x19);
+                diag->step = MLS_BAD_FMT; diag->W = W; diag->H = Ht; diag->fmtFlags = flags;   // reached the graphic chunk
                 if ((flags & 0x10) && W > 0 && Ht > 0 && W <= 2048 && Ht <= 2048) {
                     const unsigned need = (unsigned)(W * Ht);
                     if (idxOff + need <= n) {
@@ -229,6 +242,7 @@ bool load_zone_map(unsigned fileId, u32*& outPixels, int& outW, int& outH) {
         off += size;
     }
     HeapFree(GetProcessHeap(), 0, d);
+    if (ok) diag->step = MLS_OK;
     return ok;
 }
 

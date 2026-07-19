@@ -8,6 +8,8 @@
 #include "model/ui_config.h"
 #include "model/party_state.h"       // party() : self id + roster (marker colour by claim/party, like the Target box)
 #include "model/map_dat.h"           // load_zone_map (ROM DAT extraction)
+#include "model/game_mem.h"          // current_submap : logged when a map load fails (black-minimap diagnosis)
+#include "windower_debug.h"          // MAP FAIL log (always on -- the bug is rare and can't be armed for)
 #include "gfx/draw.h"
 #include "gfx/font.h"
 #include "gfx/texture.h"             // make_texture_argb / release_texture
@@ -445,9 +447,23 @@ void Minimap::draw(const Frame& f) {
     if (mapTex_ == 0 && g.map.fileId && mapRetries_ > 0) {     // not loaded yet -> (re)try, throttled
         const unsigned nowMs = GetTickCount();
         if ((int)(nowMs - mapRetryAt_) >= 0) {
-            u32* pixels = 0; int mw = 0, mh = 0;
-            if (load_zone_map(g.map.fileId, pixels, mw, mh)) { mapTex_ = make_texture_argb_mip(dev, mw, mh, pixels); mapW_ = mw; mapH_ = mh; free_map_image(pixels); mapRetries_ = 0; }
-            else { --mapRetries_; mapRetryAt_ = nowMs + 300; }  // retry in 300 ms (bounded : ~3.6 s total)
+            u32* pixels = 0; int mw = 0, mh = 0; MapLoadDiag md;
+            if (load_zone_map(g.map.fileId, pixels, mw, mh, &md)) { mapTex_ = make_texture_argb_mip(dev, mw, mh, pixels); mapW_ = mw; mapH_ = mh; free_map_image(pixels); mapRetries_ = 0; }
+            else {
+                --mapRetries_; mapRetryAt_ = nowMs + 300;       // retry in 300 ms (bounded : ~3.6 s total)
+                // ALWAYS-ON failure log (not behind a command) : a black minimap is rare and unpredictable, so
+                // a probe you must remember to arm would miss the occurrence. One line per zone, only on the
+                // LAST retry -- by then it is a real failure, not the normal not-ready-yet right after a zone-in.
+                if (mapRetries_ == 0) {
+                    static const char* STEP[] = { "OK", "NO FFXI ROOT", "PATH UNRESOLVED", "FILE UNREADABLE", "NO GRAPHIC CHUNK", "FORMAT REJECTED" };
+                    windower::debug::log("MAP FAIL zone=%u submap=%d valid=%d flags=0x%04X fileIdx=%u fileId=0x%04X scale=%d off=(%d,%d)",
+                                         g.map.zone, current_submap(), g.map.valid ? 1 : 0, g.map.flags,
+                                         g.map.fileIdx, g.map.fileId, g.map.scale, g.map.offX, g.map.offY);
+                    windower::debug::log("MAP   step=%s  overlay=%d  size=%u  chunkTypes=0x%08X  dims=%dx%d  fmtFlags=0x%02X",
+                                         STEP[md.step & 7], md.overlay ? 1 : 0, md.fileSize, md.chunkTypes, md.W, md.H, md.fmtFlags);
+                    windower::debug::log("MAP   path='%s'", md.path[0] ? md.path : "<unresolved>");
+                }
+            }
         }
     }
 

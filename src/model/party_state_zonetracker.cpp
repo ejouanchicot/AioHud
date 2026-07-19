@@ -286,24 +286,20 @@ void PartyState::zt_recompute_dyn_limit() {
     if (city || other) { const int* TE = city ? ZT_CITY_TE : ZT_OTHER_TE; for (int i = 0; i < 5; ++i) if (zt_.ki[i]) lim += TE[i] * 60; }
     zt_.dynLimitSec = lim;
 }
+// Character switch : drop this character's run state and re-arm the cache restore for the new one. Driven by
+// PartyState::on_character_changed, NOT by zt_set_zone -- it lived there in v1.0.38, after the
+// `if (zone == zt_.curZone) return;` early return, so two characters parked in the SAME zone never triggered it
+// and a zt_save() in that window wrote one character's run into the other's file. The very bug it was added for.
+void PartyState::zt_on_character_changed() {
+    zt_ = ZoneTracker{};
+    lc_[0] = LimbusCoffers{}; lc_[1] = LimbusCoffers{};
+    zt_.curZone = -1;                       // -1 -> the one-shot restore in zt_set_zone re-runs for this character
+    for (int i = 0; i < 10; ++i) treasure_[i] = TreasureItem{};   // the pool is the previous character's too
+}
+
 void PartyState::zt_set_zone(int zone, const char* name) {
     if (zone == zt_.curZone) return;                        // no transition
     for (int i = 0; i < 10; ++i) treasure_[i] = TreasureItem{};   // Treasure Pool is ZONE-specific : empty it on ANY zone change (runs every frame here, module-independent). No packet clears the old zone's items, so without this they linger as a phantom pool until their ~5-min expiry.
-    // CHARACTER SWITCH on the same client (log out -> log in as someone else). The per-character cache files are
-    // only re-read when entering a tracked zone, so until then zt_/lc_ still hold the PREVIOUS character's run --
-    // and any save in between would write their data into the new character's file, re-creating by another route
-    // exactly the cross-contamination the per-character split fixes. Wipe both and force the restore path to run
-    // again for the new character.
-    {
-        static unsigned s_lastChar = 0;
-        PlayerInfo who;
-        const unsigned cur = (read_player(who) && who.id) ? who.id : 0;
-        if (cur && s_lastChar && cur != s_lastChar) {
-            zt_ = ZoneTracker{}; lc_[0] = LimbusCoffers{}; lc_[1] = LimbusCoffers{};
-            zt_.curZone = -1;                               // -1 -> the one-shot restore below re-runs for this character
-        }
-        if (cur) s_lastChar = cur;
-    }
     const int oldZone = zt_.curZone;
     const int prevMode = zt_.mode;
     // Fresh plugin load (crash/reload) while ALREADY standing in a tracked zone -> restore the cached run instead of

@@ -171,7 +171,7 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
 // Live / edit path : the Hud draws the box at its configured screen position (lazy-loads its buff atlas -- the
 // SAME shared atlas member the Timers box uses).
 void Hud::draw_debuffs(const Frame& f, bool preview, float ovX, float ovY, float ovS) {
-    if (!buffAtlasTried_) { buffAtlas_ = load_raw_texture(f.dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H); buffAtlasTried_ = true; }
+    ensure_buff_atlas(f.dev);   // same bounded-retry loader as the Timers box (this was a second copy of the one-shot)
     debuffs_draw(f, preview, ovX, ovY, ovS, (float)screenW_, (float)screenH_, buffAtlas_);
 }
 

@@ -521,6 +521,7 @@ struct PartyState {
     // buff casters, buffs-on-allies for AoE grouping) to a per-character file, and restore it on reload. Live 0x063/
     // 0x076 + pruning drop anything stale. Freshness-guarded (ignored if > 120 s old : game restart / long gap).
     bool cacheLoaded_ = false; unsigned lastCacheSaveMs_ = 0;
+    unsigned cacheChar_ = 0;              // WHICH character cacheLoaded_ refers to (0 = none). See on_character_changed.
     void save_cache(unsigned selfId) const;
     void load_cache(unsigned selfId);
     // active (non-expired) debuff status ids on target `id`, newest last. Fills `out` (status ids) and, if
@@ -529,6 +530,15 @@ struct PartyState {
     int  target_debuffs(unsigned id, unsigned short* out, int* remainSec, unsigned char* isSelf, int maxN) const;   // remainSec = -1 -> show "???"
     int  target_th(unsigned id) const;   // Treasure Hunter level applied to target `id` (0 = none / unknown)
     void clear_debuffs(unsigned id);     // drop a mob's tracked debuffs (on its death) so a recycled server id starts clean
+    // THE single reset point for a character switch on one client (log out, log in as someone else, no plugin
+    // reload). Called once per frame from the poller with the live id; a no-op unless it actually changed.
+    // Everything keyed to "who I am" must be reset HERE and nowhere else -- three ad-hoc reset sites is how this
+    // class of bug kept coming back (a per-character cache file written with the PREVIOUS character's contents).
+    // State that self-heals from a full server refresh at login (buffs_ via 0x076, buffTimers_ via 0x063 order 9,
+    // hate/skillchains/target-debuffs, which prune themselves) is deliberately NOT touched.
+    void on_character_changed(unsigned newId);
+    void zt_on_character_changed();      // zone-tracker half of the above (run state + Limbus coffers + treasure pool)
+
     void set_debuff_trace(int n);        // //aio dbflog : log the next N target-debuff mutations (add/reset/wipe/wake) to aiohud_debug.log
     void note_mob_hp(unsigned id, int hpp);   // per-frame HP feed for a mob : clears its debuffs on death (hpp<=0) or when a fresh mob RECYCLED this id (was near-dead, now near-full)
     unsigned debuff_dur_ms(unsigned status) const;   // LEARNED real duration if observed, else the base estimate

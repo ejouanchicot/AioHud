@@ -550,7 +550,9 @@ bool write_gear_icon_bmp(const char* out_bmp_path, const u32* px, int* out_err)
     u32 rows[1024];
     for (int y = 0; y < 32; ++y) for (int x = 0; x < 32; ++x) rows[y * 32 + x] = px[(31 - y) * 32 + x];
 
-    char tmp[344]; _snprintf(tmp, sizeof(tmp), "%s.tmp", out_bmp_path); tmp[sizeof(tmp) - 1] = 0;
+    // PER-PROCESS temp name : two clients sharing this plugin folder can decode the same icon at once, and with a
+    // shared "<target>.tmp" one client's failure path would DeleteFileA the other's finished file.
+    char tmp[344]; _snprintf(tmp, sizeof(tmp), "%s.%lu.tmp", out_bmp_path, (unsigned long)GetCurrentProcessId()); tmp[sizeof(tmp) - 1] = 0;
     FILE* out = fopen(tmp, "wb");
     if (!out) { if (out_err) *out_err = errno; return false; }   // folder read-only -> skip the cache, nothing else
     const bool wrote = fwrite(HDR,  1, sizeof(HDR),  out) == sizeof(HDR)

@@ -97,6 +97,14 @@ static void parse_fill_string(const char* s)
 // Takes effect on the next Windower launch (init.txt is only read then).
 static void ensure_addon_autoload()
 {
+    // init.txt belongs to WINDOWER, not to us, and every client rewrites it at startup. Two clients launching
+    // together both read "no aioupdate line", both truncate-rewrite, and their buffered writes can interleave into
+    // a truncated or duplicated file -- which breaks Windower's startup for EVERY plugin, not just this one, and
+    // nobody would suspect AioHud. Serialise across processes, then write atomically (temp + rename) below.
+    HANDLE mtx = CreateMutexA(NULL, FALSE, "Local\\AioHudInitTxt");
+    if (mtx) WaitForSingleObject(mtx, 5000);
+    struct MtxGuard { HANDLE h; ~MtxGuard() { if (h) { ReleaseMutex(h); CloseHandle(h); } } } guard{ mtx };
+
     char root[300];
     lstrcpynA(root, aio::plugin_dir(), sizeof(root));   // ...\plugins\AioHud
     char* s = strrchr(root, '\\'); if (s) *s = 0;        // -> ...\plugins
@@ -118,8 +126,16 @@ static void ensure_addon_autoload()
     if (at && !full) {
         char* eol = strchr(at + 1, '\n');               // end of the "load AioHud" line
         size_t cut = eol ? (size_t)(eol - buf) + 1 : n;
-        f = fopen(ini, "wb");
-        if (f) { fwrite(buf, 1, cut, f); fputs("lua load aioupdate\r\n", f); fwrite(buf + cut, 1, n - cut, f); fclose(f); }
+        // temp + rename : a crash or a short write mid-rewrite must never leave Windower's init.txt truncated.
+        char tmp[400]; _snprintf(tmp, sizeof(tmp), "%s.aiotmp", ini); tmp[sizeof(tmp) - 1] = 0;
+        f = fopen(tmp, "wb");
+        if (f) {
+            const bool ok = fwrite(buf, 1, cut, f) == cut
+                         && fputs("lua load aioupdate\r\n", f) >= 0
+                         && fwrite(buf + cut, 1, n - cut, f) == (n - cut);
+            const bool closed = (fclose(f) == 0);
+            if (!ok || !closed || !MoveFileExA(tmp, ini, MOVEFILE_REPLACE_EXISTING)) DeleteFileA(tmp);
+        }
     } else {
         f = fopen(ini, "ab");                            // no plugin line found (or huge file) -> just append
         if (f) { fputs("\r\nlua load aioupdate\r\n", f); fclose(f); }
@@ -141,7 +157,9 @@ void aio_plugin_init(PluginManager host)
     debug::clear();
     debug::log("AioHUD init: device = 0x%08X", host.service_raw(2));
     aio::load_ui_config();             // restore saved theme / font / box positions + sizes
-    aio::party().load();               // cached roster (instant even before the game is ready)
+    // NOT party().load() here : the roster cache is per character now, and nothing is logged in at init -- loading
+    // blind is exactly what drew another character's party on your screen at the character-select screen. The load
+    // is driven from load_from_memory() on the first frame where read_player succeeds.
     aio::party().load_from_memory();   // LIVE roster+vitals from FFXI memory -> correct party at load
     debug::log("party at load: %d member(s)", aio::party().count);
     for (int i = 0; i < aio::party().count; ++i)
@@ -793,6 +811,15 @@ void aio_plugin_command(const char* cmd)
         g_keyLog = !g_keyLog;
         g_host.console().print(g_keyLog ? ">>> AioHud : key log ON (type in the profile name field, then send aiohud_debug.log) <<<"
                                         : ">>> AioHud : key log OFF <<<");
+        return;
+    }
+    // NB the name: NOT "focustrace". Command dispatch is a chain of strstr(), and the pre-existing `//aio focus`
+    // probe runs earlier -- it matches the "focus" INSIDE "focustrace" and swallows the command, so the trace
+    // silently never armed while printing the other probe's output. Any new command must not contain an existing
+    // one as a substring.
+    if (strstr(buf, "ftrace")) {   // //aio ftrace -> explain the Timers "track per job" decision for the next N self-buff rows
+        aio::timers_focus_trace(180);   // 180 SECONDS -- long enough for a full buff cycle plus the alert window
+        g_host.console().print(">>> AioHud : ftrace ARMED (have the Hidden+Focus buff up, then send Windower\\plugins\\aiohud_debug.log ; look for FOCUS lines) <<<");
         return;
     }
     if (strstr(buf, "geartrace")) {   // //aio geartrace -> trace the next N gear-icon resolutions to aiohud_debug.log (raw-item-ID diagnosis)
