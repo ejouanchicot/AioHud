@@ -59,6 +59,7 @@ private:
     u32            gearTex_[16] = { 0 };
     unsigned short gearId_[16]  = { 0 };
     unsigned char  gearTry_[16] = { 0 };   // failed-load retry counter per slot (bounded) -> recover from a transient texture-create failure
+    bool           eqReadyPrev_ = false;   // //aio geartrace : last equipValid, so only its TRANSITIONS are logged
 
     WindowSkin plrSkin_;             // own FFXI window skin (for a custom FFXI-family box theme, independent of party)
     int        plrSkinVar_ = -1;     // currently loaded theme index (-1 = none) -> reload only on change

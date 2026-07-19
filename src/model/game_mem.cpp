@@ -521,10 +521,25 @@ bool owns_key_item(unsigned id) {
 // keyed by the packet equip-slot id S : index = u8 @(g+0x54)+S, bag = s32 @(g+0x58)+S*4 ; the equipped
 // item is then items_root + bag*0xCA8 + index*0x28 (id u16 @+0x00, count u32 @+0x04). index==0 = empty.
 // Reversed 2026-07-05 from LuaCore FUN_10074690 -> FUN_10094410. SEH-guarded per read ; no-op on bad ptr.
+// The return value means "this read RESOLVED", not "the pointers were non-null". It used to mean the latter,
+// which made it useless as a readiness flag : during the half-ready window after a zone the three roots are
+// already mapped but the containers aren't filled, so every slot read 0 and the caller was told all-empty is
+// AUTHORITATIVE. The Equipment Viewer then released all 16 cached icons and reloaded them a frame later
+// (src/ui/player.cpp) -- the reload storm its equipValid guard exists to prevent.
+//
+// Readiness = the item container is POPULATED, taken from the container's own metadata (inventory capacity,
+// bag 0 of the u8[18] at +ITEM_META_MAX) rather than from what happens to be equipped. That separates the two
+// cases an all-zero read conflates : containers not ready yet (capacity 0 -> not resolved, keep the cached
+// icons) vs a genuinely unequipped player (capacity non-zero -> resolved, empty grid is the truth).
+// The `found` fallback covers the reverse skew : if slots resolved, the data is plainly there whatever the
+// metadata says.
 bool read_equipment(EquipSet& out) {
     for (int s = 0; s < 16; ++s) { out.id[s] = 0; out.count[s] = 0; }
     u32 ir = items_root(), ia = equip_index_arr(), ba = equip_bag_arr();
     if (!ir || !ia || !ba) return false;
+    u32 cap = 0;                                                // inventory capacity : 0 until the containers fill
+    const bool ready = safe_read(ir + ITEM_META_MAX, &cap) && (cap & 0xFF) != 0;
+    int found = 0;
     for (int s = 0; s < 16; ++s) {
         u32 idx = 0; safe_read(ia + s, &idx); idx &= 0xFF;      // u8 index (0 = empty)
         if (idx == 0) continue;
@@ -534,8 +549,9 @@ bool read_equipment(EquipSet& out) {
         u32 id = 0, cnt = 0; safe_read(item + 0x00, &id); safe_read(item + 0x04, &cnt);
         out.id[s]    = (unsigned short)(id  & 0xFFFF);
         out.count[s] = (unsigned short)(cnt & 0xFFFF);
+        if (out.id[s] != 0 && out.id[s] != 0xFFFF) ++found;
     }
-    return true;
+    return ready || found > 0;
 }
 
 // ids + 24-byte extdata per equipped slot. The item entry (items_root + bag*0xCA8 + idx*0x28) holds the

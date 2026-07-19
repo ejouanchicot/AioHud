@@ -544,6 +544,13 @@ void Player::draw(const Frame& f) {
         // cached icons and force a reload storm exactly when the device is busiest (the "rebug apres chargement").
         // Skip -> the cached gearTex_ persist across the zone, mirroring how the addon keeps its icons on 0x0A/0x0B.
         const bool equipReady = eqDemo || g.equipValid;
+        // //aio geartrace : log only the TRANSITIONS (a zone crossing is the interesting moment, and a
+        // per-frame line would bury everything else). "not ready" here must mean the icons were KEPT.
+        if (gear_trace_armed() && equipReady != eqReadyPrev_) {
+            gear_trace("equipValid -> %s%s", equipReady ? "READY" : "NOT READY",
+                       equipReady ? "" : "  (icons kept, no reload)");
+            eqReadyPrev_ = equipReady;
+        }
         // sync per-slot textures : (re)load gearicons/<id>.bmp only when a slot's equipped item id changes.
         // BUDGET : a fresh ROM decode is file IO + a mip-chain build, inline on the render thread. Gearing up 16
         // unseen slots at once (a zone into new gear) used to do all 16 in ONE frame ; cap it and let the rest
