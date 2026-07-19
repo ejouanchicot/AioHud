@@ -278,11 +278,34 @@ void PartyState::zt_recompute_dyn_limit() {
 void PartyState::zt_set_zone(int zone, const char* name) {
     if (zone == zt_.curZone) return;                        // no transition
     for (int i = 0; i < 10; ++i) treasure_[i] = TreasureItem{};   // Treasure Pool is ZONE-specific : empty it on ANY zone change (runs every frame here, module-independent). No packet clears the old zone's items, so without this they linger as a phantom pool until their ~5-min expiry.
+    // CHARACTER SWITCH on the same client (log out -> log in as someone else). The per-character cache files are
+    // only re-read when entering a tracked zone, so until then zt_/lc_ still hold the PREVIOUS character's run --
+    // and any save in between would write their data into the new character's file, re-creating by another route
+    // exactly the cross-contamination the per-character split fixes. Wipe both and force the restore path to run
+    // again for the new character.
+    {
+        static unsigned s_lastChar = 0;
+        PlayerInfo who;
+        const unsigned cur = (read_player(who) && who.id) ? who.id : 0;
+        if (cur && s_lastChar && cur != s_lastChar) {
+            zt_ = ZoneTracker{}; lc_[0] = LimbusCoffers{}; lc_[1] = LimbusCoffers{};
+            zt_.curZone = -1;                               // -1 -> the one-shot restore below re-runs for this character
+        }
+        if (cur) s_lastChar = cur;
+    }
     const int oldZone = zt_.curZone;
     const int prevMode = zt_.mode;
     // Fresh plugin load (crash/reload) while ALREADY standing in a tracked zone -> restore the cached run instead of
     // resetting it. A NEW run always re-enters via a real zone change (oldZone >= 0), so it never restores a stale cache.
-    if (oldZone < 0 && zt_load(zone)) { zt_.curZone = zone; return; }
+    // The restore is a ONE-SHOT (it only fires while curZone is still -1), and the cache is now per character, so
+    // it needs the character resolved. Right after a plugin load the player struct can be a frame or two behind ;
+    // consuming the one-shot then would silently lose a mid-run reload. Wait instead -- leave curZone at -1 and
+    // retry on the next poll.
+    if (oldZone < 0) {
+        char probe[300];
+        if (!char_cache_path("zone", probe, sizeof(probe))) return;   // character not ready yet -> retry next frame
+        if (zt_load(zone)) { zt_.curZone = zone; return; }
+    }
     zt_.curZone = zone;
     int mode = 0;
     if (name) { if (name[0] == 'D' && name[1] == 'y' && name[2] == 'n') mode = 1;         // "Dynamis..."
@@ -446,7 +469,12 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
         const unsigned m = pkt_u16(p, 0x1A) & 0x3FFFu;
         const int p1 = (int)pkt_u32(p, 0x08), p3 = (int)pkt_u32(p, 0x10), p4 = (int)pkt_u32(p, 0x14);
         char at[12]; limbus_floor_tag(zt_, at, sizeof(at));
-        // Units acquired (per kill ~40-110, coffer/point-of-interest 3000/5000). The id keys on the WING, SETTLED
+        // Units acquired. NOTE (2026-07-19, per the player): mobs no longer pay units at all since a recent game
+        // update -- units come ONLY from coffers, points of interest and floor key items. The old "per kill ~40-110"
+        // note here was stale and cost real time: it suggested a per-kill stream like Odyssey's msg-40016, and led to
+        // reading msg=372's rising p1 as a running unit total. It is not. There is NO frequent update in Limbus, so
+        // the displayed total can only refresh a handful of times per run.
+        // The id keys on the WING, SETTLED
         // 2026-07-19 : Apollyon 7247 / Temenos 7239, proven by Apollyon-coffer == Apollyon-point-of-interest == 7247
         // while Temenos-point-of-interest == 7239. So the id can NOT tell a coffer from a point of interest.
         //

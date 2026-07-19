@@ -13,6 +13,12 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_36[] = {
+    { "*Switching character on the same client no longer mixes up your Limbus chips.* Each character already had its own saved file since 1.0.35, but the previous character's chips stayed in memory until the next Limbus entry — long enough to be written into the new character's file.",
+      "*Changer de personnage sur le même client ne mélange plus vos chips Limbus.* Chaque personnage avait déjà son fichier depuis la 1.0.35, mais les chips du précédent restaient en mémoire jusqu'à l'entrée en Limbus suivante — assez longtemps pour être écrits dans le fichier du nouveau." },
+    { "Reloading the plugin during a run no longer risks losing that run. Restoring the saved run needs the character to be identified, and right after a reload that can take a frame or two ; the restore only ever tried once, so it could fail silently. It now waits instead.",
+      "Recharger le plugin pendant une run ne risque plus de la perdre. Restaurer la run sauvegardée nécessite d'identifier le personnage, ce qui peut prendre une image ou deux juste après un rechargement ; la restauration n'essayait qu'une fois et pouvait donc échouer en silence. Elle attend désormais." },
+};
 static const ChangeLine CL_35[] = {
     { "*Each character keeps its own tracker data again.* All characters on one Windower shared a single saved file, so the last one to save won and the next one loaded ITS values — you could see another character's Temenos units on yours. The saved data is now per character.",
       "*Chaque personnage conserve à nouveau ses propres données de suivi.* Tous les personnages d'un même Windower partageaient un seul fichier de sauvegarde : le dernier à enregistrer l'emportait et le suivant chargeait SES valeurs — vous pouviez voir les unités Temenos d'un autre personnage sur le vôtre. Les données sauvegardées sont désormais par personnage." },
@@ -140,6 +146,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.36", CL_36, (int)(sizeof(CL_36) / sizeof(CL_36[0])) },
     { "1.0.35", CL_35, (int)(sizeof(CL_35) / sizeof(CL_35[0])) },
     { "1.0.34", CL_34, (int)(sizeof(CL_34) / sizeof(CL_34[0])) },
     { "1.0.33", CL_33, (int)(sizeof(CL_33) / sizeof(CL_33[0])) },
