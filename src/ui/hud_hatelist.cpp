@@ -44,9 +44,9 @@ static float hl_dblarrow(u32 dev, float x, float cy, float sz, u32 col) {
     return step + hs;
 }
 
-// hl_fit -> the shared fit_ellipsis (ui/text_style.h). Kept as a named forwarder : 4 call sites, 2 dots.
+// hl_fit -> the shared fit_ellipsis (ui/text_style.h). Kept as a named forwarder ; "..." like everywhere else.
 static const char* hl_fit(Font* fo, const char* s, float sz, float maxW, char* buf, int cap) {
-    return fit_ellipsis(fo, s, sz, maxW, buf, cap, 2);
+    return fit_ellipsis(fo, s, sz, maxW, buf, cap);
 }
 
 // A representative 15-character name (the client's hard cap) : one capital + average-width lowercase.
@@ -181,7 +181,7 @@ void hatelist_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
         }
         rrect_stroke(dev, tx, by, tw, barH, br, 0x94A5BEFFu, 1.2f * S);                   // bluish tube rim (css 2px rgba(165,190,255,.58))
 
-        // name (over the bar, left ; truncated with ".." to fit) + HP% (over the bar, right)
+        // name (over the bar, left ; truncated with "..." to fit) + HP% (over the bar, right)
         const char* sp = hl_up(HL_PCT, R.pct, pb, 6);
         const float nameW = barW - nameInsetL - pctReserve;
         const char* nm = hl_fit(fName, hl_up(HL_NAME, R.mob, nb, 24), zName, nameW, fitb, 24);

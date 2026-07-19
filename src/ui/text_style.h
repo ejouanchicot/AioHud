@@ -22,9 +22,9 @@ inline u32   te_col(const TextStyle& t, u32 base)   { return t.colorOn ? t.color
 // unchanged. Same ASCII a-z -> A-Z transform every module's per-element "_up" helper used to inline.
 // Truncate `s` with a trailing "." run until it fits `maxW` at `sz` (CSS text-overflow: ellipsis ; the font
 // atlas has no U+2026, so dots stand in). Returns `s` untouched when it already fits, else `buf`.
-// `dots` is a parameter because the existing call sites genuinely disagree -- the Hate List uses 2, the party
-// name uses 3 -- and unifying that would be a visible change nobody asked for. Bounded by `cap` in all cases.
-inline const char* fit_ellipsis(Font* fo, const char* s, float sz, float maxW, char* buf, int cap, int dots = 2) {
+// Three dots everywhere (the Hate List used two until it was aligned). `dots` stays a parameter for the
+// rare caller with a very narrow column, but "..." is the house style. Bounded by `cap` in all cases.
+inline const char* fit_ellipsis(Font* fo, const char* s, float sz, float maxW, char* buf, int cap, int dots = 3) {
     if (!s || !fo || fo->measure(s, sz) <= maxW) return s;
     if (dots < 1) dots = 1; if (dots > 3) dots = 3;
     int n = 0; while (s[n]) ++n;
