@@ -56,9 +56,20 @@ static const int LC_VER = (int)(0x4C430000u | ((sizeof(LimbusCoffers) * 2) & 0xF
 static bool char_cache_path(const char* leaf, char* out, int cap) {
     PlayerInfo me;
     if (!read_player(me) || !me.id) return false;
-    char rel[80]; _snprintf(rel, sizeof(rel), "data\\cache\\%s_%u.bin", leaf, me.id); rel[sizeof(rel) - 1] = 0;
+    // %08X, not %u : party_state.cpp's per-character state cache already names its files state_%08X.bin, and two
+    // conventions in one folder made the SAME character read as two (state_00016500.bin next to limbus_91392.bin).
+    char rel[80]; _snprintf(rel, sizeof(rel), "data\\cache\\%s_%08X.bin", leaf, me.id); rel[sizeof(rel) - 1] = 0;
     plugin_path(out, cap, rel);
-    return out[0] != 0;
+    if (!out[0]) return false;
+    // One-time migration of the v1.0.35/36 decimal names (limbus_91392.bin) to the %08X convention. Only fires
+    // while the hex file is absent, so it costs two GetFileAttributes once and nothing afterwards. Without it the
+    // chips recorded tonight would be silently orphaned -- a second needless reset for anyone who already updated.
+    if (GetFileAttributesA(out) == INVALID_FILE_ATTRIBUTES) {
+        char oldRel[80]; _snprintf(oldRel, sizeof(oldRel), "data\\cache\\%s_%u.bin", leaf, me.id); oldRel[sizeof(oldRel) - 1] = 0;
+        char oldAbs[300]; plugin_path(oldAbs, sizeof(oldAbs), oldRel);
+        if (oldAbs[0] && GetFileAttributesA(oldAbs) != INVALID_FILE_ATTRIBUTES) MoveFileA(oldAbs, out);
+    }
+    return true;
 }
 
 bool PartyState::limbus_add_chip(int area, const char* quad, int amtK) {
