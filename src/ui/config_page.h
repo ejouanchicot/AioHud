@@ -220,7 +220,7 @@ private:
     float cfgMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
     float updScroll_   = 0.0f;    // Update tab "What's new" changelog vertical scroll
     float updMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
-    bool  relOpen_[16] = { true };// Update tab : per-version collapse state (newest RELEASES[0] starts OPEN, rest closed). Size must be >= RELEASES_N (config_page.cpp).
+    bool  relOpen_[32] = { true };// Update tab : per-version collapse state (newest RELEASES[0] starts OPEN, rest closed). Size must be >= RELEASES_N (config_page.cpp). Was 16 and RELEASES_N reached 17 at v1.0.37 : the render loop clamps to this size, so the OLDEST releases silently stopped being listed. Grown with headroom -- check this when adding a release.
     float helpMaxScroll_ = 0.0f;  // last frame's scroll limit -> clamp the wheel BEFORE drawing (no overscroll bounce)
     // live-preview anchor published each frame for the HUD (Configuration tab only)
     bool  pvOn_        = false;

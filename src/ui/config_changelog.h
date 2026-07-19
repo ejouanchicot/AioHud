@@ -13,6 +13,12 @@ struct ChangeLine { const char* en; const char* fr; };
 
 // Per-version change lines. Grouped BY VERSION so the Update tab can show the newest release expanded and the
 // older ones as collapsible headers. `*bold*` markup works (draw_wrapped colours it brighter).
+static const ChangeLine CL_38[] = {
+    { "*Updating with two clients open no longer reports a file error.* Every client runs its own updater, and they all downloaded to the same file — so the second one failed on \"file in use\" and the Update tab showed a failure, even though the update had actually gone through. Each updater now downloads to its own file.",
+      "*Mettre à jour avec deux clients ouverts ne signale plus d'erreur de fichier.* Chaque client lance son propre updater, et tous téléchargeaient vers le même fichier — le second échouait donc sur « fichier en cours d'utilisation » et l'onglet MAJ affichait un échec, alors que la mise à jour était bel et bien passée. Chaque updater télécharge désormais vers son propre fichier." },
+    { "Housekeeping with no visible effect : the per-character save files added in 1.0.35 are renamed to match the naming the plugin already used elsewhere, so one character no longer appears twice in the folder. Your existing data is renamed with them — nothing is lost and nothing resets.",
+      "Rangement sans effet visible : les fichiers de sauvegarde par personnage ajoutés en 1.0.35 sont renommés pour suivre la nomenclature déjà utilisée ailleurs par le plugin, afin qu'un même personnage n'apparaisse plus deux fois dans le dossier. Vos données existantes sont renommées avec eux — rien n'est perdu et rien n'est réinitialisé." },
+};
 static const ChangeLine CL_37[] = {
     { "*Updating with two clients open no longer reports a file error.* AioHud kept its image files open in a way that stopped the updater replacing them, so an update could fail on one of them the moment a client reloaded and drew its first frame. The files are now opened so they can be replaced while in use.",
       "*Mettre à jour avec deux clients ouverts ne signale plus d'erreur de fichier.* AioHud gardait ses fichiers d'images ouverts d'une façon qui empêchait l'updater de les remplacer, donc une mise à jour pouvait échouer sur l'un d'eux dès qu'un client se rechargeait et affichait sa première image. Ils sont désormais ouverts de manière à pouvoir être remplacés pendant leur utilisation." },
@@ -152,6 +158,7 @@ static const ChangeLine CL_21[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.38", CL_38, (int)(sizeof(CL_38) / sizeof(CL_38[0])) },
     { "1.0.37", CL_37, (int)(sizeof(CL_37) / sizeof(CL_37[0])) },
     { "1.0.36", CL_36, (int)(sizeof(CL_36) / sizeof(CL_36[0])) },
     { "1.0.35", CL_35, (int)(sizeof(CL_35) / sizeof(CL_35[0])) },

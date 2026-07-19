@@ -14,7 +14,10 @@ $ErrorActionPreference = 'Stop'
 $updir = Join-Path $Data 'update'
 $done  = Join-Path $updir 'done.txt'
 $check = Join-Path $updir 'check.txt'
-$zip   = Join-Path (Join-Path $Data 'cache') 'update.zip'
+# PER-PROCESS download name. This was a fixed 'update.zip', and in dual-box EVERY client spawns its own updater :
+# both downloaded to the SAME path, so the second one died with "cannot access the file ... used by another
+# process" and the Update tab showed that as a failed update -- even though the first updater had succeeded.
+$zip   = Join-Path (Join-Path $Data 'cache') "update_$PID.zip"
 function Write1($path, $s) { New-Item -ItemType Directory -Force -Path $updir | Out-Null; Set-Content -LiteralPath $path -Value $s -Encoding ascii }
 function Status($s) { Write1 $done  $s }
 function Check($s)  { Write1 $check $s }
@@ -50,6 +53,8 @@ try {
     $root = Split-Path $Plugins -Parent
     Expand-Archive -LiteralPath $zip -DestinationPath $root -Force
     Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+    # drop the legacy fixed-name download if an older build left one behind
+    Remove-Item -LiteralPath (Join-Path (Join-Path $Data 'cache') 'update.zip') -Force -ErrorAction SilentlyContinue
     Status "OK $tag"
 }
 catch { if ($CheckOnly) { Check "ERROR $($_.Exception.Message)" } else { Status "ERROR $($_.Exception.Message)" } }
