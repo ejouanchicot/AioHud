@@ -41,7 +41,15 @@ docs/design/concepts/*.pdf
 /.claude/
 CLAUDE.md
 /scratchpad/
-/docs/
+# `/docs/*` and not `/docs/` : git does not descend into an excluded DIRECTORY, so a `!` negation inside one is
+# silently dead. Excluding the CONTENTS instead leaves the directory walkable and lets the two subtrees below be
+# re-included. Everything else under docs/ stays local.
+/docs/*
+# Reverse-engineered ground truth : offsets, packet layouts, the Ghidra addresses to redo a pass after a client
+# patch. Reproducing this costs hours of captures and static analysis -- it must not live on one machine only.
+!/docs/game-data/
+# Measured audit findings (what was wrong, how it was proven). Same argument: the proof is the expensive part.
+!/docs/audits/
 /research/
 /re/
 # loose dev notes / feature docs (the analyses/audits now live under /docs/, already ignored above)

@@ -1,0 +1,141 @@
+# Timers.dll -- UNIVERSAL Enhancing-Magic-Duration item tables
+# Reverse-engineered 2026-07-12 from Timers.dll (image base 0x10000000)
+# Source: FUN_100066e0 @ 0x100066e0 (the Enhancing-Magic helper).
+#
+# ==========================================================================
+# 0. THERE IS NO NAME-HASH FUNCTION.  The 16-bit values Timers compares are
+#    RAW FFXI ITEM IDs (res/items.lua 'id'), read straight from the equipped
+#    item. Confirmed: 0x6733=Ammurapi Shield, 0x5c8c=Leth. Houseaux +3(+40%),
+#    0x5db5=Atro. Gloves +4(+20%), 0x66f2=Embla Sash(+10%).
+#
+#    How the equipped item id is read (per slot n) in FUN_100066e0:
+#      self  = plugin+0x1c0 ; g = *(int*)self
+#      slotid= byte[ *(g+0x54) + n ]                 // per-slot inventory slot
+#      colbs = *( *(g+0x58) + n*4 )                  // per-slot category base
+#      itemid= u16[ *(g+0x50) + (colbs*0x51 + slotid)*0x28 ]   // = res item id
+#    Slot order n: 0 main,1 sub,2 range,3 ammo,4 head,5 body,6 hands,7 legs,
+#                  8 feet,9 neck,10 waist,11 L.ear,12 R.ear,13 L.ring,14 R.ring,15 back
+#    (Timers scans n = 0,1,4,5,6,7,8,9,12,15,10 for enhancing-duration gear.)
+#    => To build enh_dur.h: index by item id; no hashing needed.
+#
+# ==========================================================================
+# 1. m2  NATIVE 'Enhancing magic duration +N%' items  (ADD within: m2 = 1 + sum/100)
+#    Each equipped item whose id matches adds its % to m2 (record R+0x2c).
+#    NOTE Sroda Necklace is NEGATIVE (-50%).
+# ==========================================================================
+# item_id, pct, item_name
+0x2b8c,20,Estq. Houseaux +2
+0x2bf0,10,Estq. Houseaux +1
+0x3f4c,10,Estoqueur's Cape
+0x5627,10,Oranyan
+0x5651,10,Argute Staff
+0x5652,15,Pedagogy Staff
+0x5653,20,Musa
+0x5a42,20,Erilaz Galea +2
+0x5a5e,10,Viti. Tabard +2
+0x5a6d,8,Peda. Gown +2
+0x5a8a,18,Atrophy Gloves +2
+0x5af5,25,Futhark Trousers +2
+0x5b0e,5,Theo. Duckbills +2
+0x5b3d,35,Leth. Houseaux +2   ; ALSO counts as a Lethargy set piece (m1)
+0x5b91,25,Erilaz Galea +3
+0x5bad,15,Viti. Tabard +3
+0x5bbc,12,Peda. Gown +3
+0x5bd9,20,Atrophy Gloves +3
+0x5c44,30,Futhark Trousers +3
+0x5c5d,10,Theo. Duckbills +3
+0x5c8c,40,Leth. Houseaux +3
+0x5d9f,15,Viti. Tabard +4
+0x5dae,12,Peda. Gown +4
+0x5db5,20,Atro. Gloves +4
+0x5e0a,30,Futh. Trousers +4
+0x6364,7,Lethargy Earring
+0x6365,8,Leth. Earring +1
+0x6366,9,Leth. Earring +2
+0x64e0,20,Regal Gauntlets
+0x65b9,-50,Sroda Necklace
+0x668a,20,Sucellos's Cape
+0x66f2,10,Embla Sash
+0x6733,10,Ammurapi Shield
+0x689e,10,Erilaz Galea
+0x689f,15,Erilaz Galea +1
+0x6a3a,10,Futhark Trousers
+0x6a3b,20,Futhark Trousers +1
+0x6b1b,25,Leth. Houseaux
+0x6b1c,30,Leth. Houseaux +1
+0x6cf3,9,Shabti Cuirass
+0x6cf4,10,Shab. Cuirass +1
+0x6d2b,15,Atrophy Gloves
+0x6d40,16,Atrophy Gloves +1
+0x6d82,5,Dynasty Mitts
+#
+# ==========================================================================
+# 2. m1  Estoqueur's / Lethargy 'Augments Composure' SET pieces
+#    Count of equipped pieces (iVar7) -> m1 bonus, but ONLY for pet/trust
+#    targets (branchB): 2pc +0.10, 3pc +0.20, 4pc +0.35, 5pc +0.50. For a
+#    PLAYER target the set is ignored (Composure gives flat m1=3.0 instead).
+# ==========================================================================
+# item_id, item_name
+0x2b3c,Estq. Chappel +2
+0x2b50,Estq. Sayon +2
+0x2b64,Estq. Ganthrt. +2
+0x2b78,Estqr. Fuseau +2
+0x5a74,Lethargy Sayon +2
+0x5ab7,Leth. Ganth. +2
+0x5afa,Leth. Fuseau +2
+0x5b80,Leth. Chappel +3
+0x5bc3,Lethargy Sayon +3
+0x5c06,Leth. Ganth. +3
+0x5c49,Leth. Fuseau +3
+0x687c,Lethargy Chappel
+0x687d,Leth. Chappel +1
+0x691a,Lethargy Sayon
+0x691b,Lethargy Sayon +1
+0x69b4,Leth. Gantherots
+0x69b5,Leth. Gantherots +1
+0x6a6d,Leth. Fuseau
+0x6a6e,Leth. Fuseau +1
+#
+# ==========================================================================
+# 3. m1  Perpetuance-scaling gear (SCH; only when Perpetuance/0x1d5 is up)
+#    These MULTIPLY the Perpetuance component: m1_perp *= factor.
+# ==========================================================================
+# item_id, factor, item_name
+0x2b73,1.5,Svnt. Bracers +2
+0x2bd7,1.25,Svnt. Bracers +1
+0x5ac6,1.6,Arbatel Bracers +2
+0x5c15,1.65,Arbatel Bracers +3
+0x69d2,1.5,Arbatel Bracers
+0x69d3,1.55,Arbatel Bracers +1
+#
+# ==========================================================================
+# 4. m3  Augment / Path 'Enh. Mag. eff. dur.'  (ADD within: m3 = 1 + sum/100)
+# ==========================================================================
+# 4a. GENERAL extdata augments: at the end of FUN_100066e0,
+#       m3 += FUN_10005bf0(self, 0x4E0, 1) * 0.01
+#     FUN_10005bf0 walks all 16 slots and SUMS the value of augment id 0x4E0
+#     (=1248, 'Enhancing magic effect duration') found in each item's extdata
+#     id/val augment bytes (item entry +0x0F, 8 bytes, 5-bit-packed id/val).
+#     -> This covers Colada, Ghostfyre, augmented capes, etc. (you already
+#        decode these). Same id 0x4E0 you mentioned.
+#
+# 4b. NECK PATH decode (Delve items whose path bonus is NOT a plain id/val):
+#     For these 3 neck items Timers calls FUN_10005cf0(self, buf, 9) which
+#     hands the item's extdata (id + bytes @+0x0D/+0x11/+0x15) to the game's
+#     full augment parser DAT_100af9f0 (= FUN_1002edc0()), then adds
+#     buf[1]*0.01 to m3. The path->% (e.g. Duelist's Torque +2 Path A = +25%)
+#     is produced by that game parser from the item's path/rank extdata --
+#     there is NO standalone item+path+rank table inside Timers; it delegates
+#     to the client's augment decoder. Special-cased neck items:
+# item_id, item_name
+0x6361,Duelist's Torque
+0x6362,Dls. Torque +1
+0x6363,Dls. Torque +2
+#
+# ==========================================================================
+# 5. FINAL DURATION (recap, FUN_100059d0):
+#     dur = ( ( ( (a0 + Base) * m1 + a1 ) * m2 + a2 ) * m3 + a3 ) , min cap
+#     m2 = 1 + (sum of section-1 %)/100
+#     m3 = 1 + (section-4a sum + section-4b neck path)/100
+#     m1 = Composure/Perpetuance/set (see timers_onally_formula.txt)
+#     a0 = RDM JP gift 338 (+1/rank) + merit 2320 (+6/lvl), added to Base first

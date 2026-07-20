@@ -1,0 +1,186 @@
+# Timers.dll BRD song model -- PHASE 2: UNIFIED per-item table (FUN_10007a40)
+# Reverse-engineered 2026-07-12. Whole function body 0x10007a40..0x10008599
+# CFG-walked with symbolic song-family (edi) to split each item's m1 add into
+# a FLAT part (all songs) and a FAMILY-gated part. Raw FFXI item ids, no hash.
+#
+# FULL DURATION (songs): dur = ( ( (Base+a0)*m1 + a1 )*m2 + a2 )*m3 + a3, min cap
+#   Base = 120 (res/spells.lua duration; Miracle Cheer override = 900)
+#   a0=a1=a2 = 0 for songs
+#   m1 = 1 + Sum(flat_pct)/100 + Sum(family_pct where family_id==THIS song)/100
+#          + 0.05  (BRD JP gift, if u16[g+0x48+0x340] >= 1200)
+#   m2 = 2.0 if Troubadour(348) active, else 1.0
+#   m3, a3 : see CONFIRMED section at bottom
+#
+# COLUMNS:  item_id, flat_pct, family_id, family_pct, name
+#   flat_pct   : % added to m1 for EVERY song
+#   family_id  : song family that gets the extra (0 = none)
+#   family_pct : the extra % (applied only when the cast song's family==family_id)
+# examples: 0x5BC8 Fili Hongreline +3 = 14,4,10  (+14%% all songs, +10%% on Minuet)
+#           0x43C0 Cornette          =  0,4,10  (+10%% ONLY on Minuet)
+#           0x651A Inyanga Shalwar+2 = 17,0,0   (+17%% all songs)
+#
+# SONG FAMILY ids (param_2) for spell->family mapping:
+#   1 Paeon  2 Ballad  3 Minne  4 Minuet  5 Madrigal  6 Prelude  7 Mambo
+#   8 March  9 Etude  10 Carol  11 Hymnus(Goddess's Hymnus)  12 Mazurka(Choco/Raptor)
+#   13 Sirvente/Dirge(Foe Sirvente, Adventurer's Dirge)  14 Scherzo(Sentinel's Scherzo)
+#   15 Operetta/misc(Operetta, Capriccio, Aubade, Fantasia, Warding Round, Pastoral)
+#
+# --- WEAPON (main/sub): Carnwenhan ilvl stages (flat), Kali/Legato +5 ---
+0x4a38,10,0,0,Carnwenhan
+0x4a7d,20,0,0,Carnwenhan
+0x4a91,30,0,0,Carnwenhan
+0x4ca5,40,0,0,Carnwenhan
+0x4df5,50,0,0,Carnwenhan
+0x5051,50,0,0,Carnwenhan
+0x5052,50,0,0,Carnwenhan
+0x506a,50,0,0,Carnwenhan
+0x5077,5,0,0,Kali
+0x5095,5,0,0,Legato Dagger
+#
+# --- INSTRUMENTS (range slot): almost all purely family-gated ---
+0x43c0,0,4,10,Cornette   ; +10% on Minuet
+0x43c1,0,5,10,Flute   ; +10% on Madrigal
+0x43c2,0,5,10,Siren Flute   ; +10% on Madrigal
+0x43c3,0,5,10,Piccolo   ; +10% on Madrigal
+0x43c4,0,5,10,Traversiere   ; +10% on Madrigal
+0x43c5,0,8,20,Faerie Piccolo   ; +20% on March
+0x43c6,0,6,10,Angel's Flute   ; +10% on Prelude
+0x43c7,0,7,10,Gemshorn   ; +10% on Mambo
+0x43c8,0,5,10,Horn   ; +10% on Madrigal
+0x43c9,0,5,10,Maple Harp   ; +10% on Madrigal
+0x43ca,0,3,10,Harp   ; +10% on Minne
+0x43cb,0,9,10,Rose Harp   ; +10% on Etude
+0x43cc,0,5,10,Lamia Harp   ; +10% on Madrigal
+0x43cd,0,1,10,Ebony Harp   ; +10% on Paeon
+0x43ce,0,1,30,Oneiros Harp   ; +30% on Paeon
+0x43cf,0,9,10,Mythic Harp   ; +10% on Etude
+0x43d0,0,8,30,Langeleik   ; +30% on March
+0x43d1,0,10,10,Crumhorn   ; +10% on Carol
+0x43d2,0,5,10,Shofar   ; +10% on Madrigal
+0x43d3,0,11,30,Mass Chalemie   ; +30% on Hymnus
+0x43d4,0,5,10,Cythara Anglica   ; +10% on Madrigal
+0x43d5,0,5,10,Frenzy Fife   ; +10% on Madrigal
+0x43d6,0,5,10,Mary's Horn   ; +10% on Madrigal
+0x43d7,0,8,10,Ryl.Spr. Horn   ; +10% on March
+0x43d8,0,5,10,Piccolo +1   ; +10% on Madrigal
+0x43d9,0,4,20,Cornette +1   ; +20% on Minuet
+0x43da,0,7,20,Gemshorn +1   ; +20% on Mambo
+0x43db,0,5,10,Horn +1   ; +10% on Madrigal
+0x43dc,0,5,10,Flute +1   ; +10% on Madrigal
+0x43dd,0,3,10,Maple Harp +1   ; +10% on Minne
+0x43de,0,3,20,Harp +1   ; +20% on Minne
+0x43df,0,5,20,Traversiere +1   ; +20% on Madrigal
+0x43e0,0,9,20,Rose Harp +1   ; +20% on Etude
+0x43e1,0,10,20,Crumhorn +1   ; +20% on Carol
+0x43e2,0,6,20,Angel's Flute +1   ; +20% on Prelude
+0x45a9,0,1,20,Ebony Harp +1   ; +20% on Paeon
+0x45aa,0,9,20,Mythic Harp +1   ; +20% on Etude
+0x45ab,0,8,10,San d'Orian Horn   ; +10% on March
+0x45ac,0,8,10,Kingdom Horn   ; +10% on March
+0x45ad,0,5,10,Cyt. Anglica +1   ; +10% on Madrigal
+0x45ae,0,12,20,Harlequin's Horn   ; +20% on Mazurka
+0x45af,0,5,10,Military Harp   ; +10% on Madrigal
+0x45b0,0,11,20,Angel Lyre   ; +20% on Hymnus
+0x45b1,0,5,10,Nursemaid's Harp   ; +10% on Madrigal
+0x45b2,0,5,10,Sorrowful Harp   ; +10% on Madrigal
+0x45b3,0,5,10,Oliphant   ; +10% on Madrigal
+0x45b4,0,5,10,Flute +2   ; +10% on Madrigal
+0x45b5,0,5,20,Traversiere +2   ; +20% on Madrigal
+0x45b6,0,4,20,Cornette +2   ; +20% on Minuet
+0x45b7,0,10,20,Crumhorn +2   ; +20% on Carol
+0x45b8,0,1,20,Ebony Harp +2   ; +20% on Paeon
+0x45b9,0,7,10,Hellish Bugle   ; +10% on Mambo
+0x45ba,0,7,20,Hellish Bugle +1   ; +20% on Mambo
+0x45bb,0,5,10,Storm Fife   ; +10% on Madrigal
+0x45bc,0,5,10,Requiem Flute   ; +10% on Madrigal
+0x45bd,0,8,20,Iron Ram Horn   ; +20% on March
+0x45be,0,5,10,Cradle Horn   ; +10% on Madrigal
+0x45bf,0,5,10,Ney   ; +10% on Madrigal
+0x45c0,0,3,30,Syrinx   ; +30% on Minne
+0x56e9,0,0,0,Miracle Cheer
+0x5722,30,0,0,Loughnashade
+0x5723,40,0,0,Loughnashade
+#
+# --- ARMOUR (Aoidos/Fili/Brioso/Mousai/Inyanga, +0..+4 tiers) ---
+0x2b41,0,5,10,Aoidos' Calot +2   ; +10% on Madrigal
+0x2b55,10,4,10,Aoidos' Hngrln. +2   ; +10% on Minuet
+0x2b69,0,8,10,Ad. Mnchtte. +2   ; +10% on March
+0x2b7d,0,2,10,Aoidos' Rhing. +2   ; +10% on Ballad
+0x2b91,0,14,10,Aoidos' Cothrn. +2   ; +10% on Scherzo
+0x2d62,10,0,0,Aoidos' Matinee
+0x5a09,0,1,10,Brioso Roundlet +2   ; +10% on Paeon
+0x5a36,0,5,10,Fili Calot +2   ; +10% on Madrigal
+0x5a79,13,4,10,Fili Hongreline +2   ; +10% on Minuet
+0x5abc,0,8,10,Fili Manchettes +2   ; +10% on March
+0x5b15,13,0,0,Brioso Slippers +2
+0x5b42,0,14,10,Fili Cothurnes +2   ; +10% on Scherzo
+0x5b58,0,1,20,Brioso Roundlet +3   ; +20% on Paeon
+0x5b85,0,5,10,Fili Calot +3   ; +10% on Madrigal
+0x5bc8,14,4,10,Fili Hongreline +3   ; +10% on Minuet
+0x5c0b,0,8,10,Fili Manchettes +3   ; +10% on March
+0x5c4e,0,2,10,Fili Rhingrave +3   ; +10% on Ballad
+0x5c64,15,0,0,Brioso Slippers +3
+0x5c91,0,14,10,Fili Cothurnes +3   ; +10% on Scherzo
+0x5e14,15,0,0,Brioso Slippers +4
+0x63d9,0,9,10,Mousai Turban   ; +10% on Etude
+0x63da,0,9,20,Mousai Turban +1   ; +20% on Etude
+0x6509,12,0,0,Inyanga Shalwar
+0x650a,15,0,0,Inyanga Shalwar +1
+0x651a,17,0,0,Inyanga Shalwar +2
+0x652d,0,3,10,Mousai Seraweels   ; +10% on Minne
+0x652e,0,3,20,Mou. Seraweels +1   ; +20% on Minne
+0x6570,0,7,10,Mousai Crackows   ; +10% on Mambo
+0x6571,0,7,20,Mou. Crackows +1   ; +20% on Mambo
+0x6584,0,10,10,Mousai Gages   ; +10% on Carol
+0x6585,0,10,20,Mousai Gages +1   ; +20% on Carol
+0x65af,10,0,0,Brioso Whistle
+0x65b1,30,0,0,Mnbw. Whistle +1
+0x668f,0,5,10,Intarabus's Cape   ; +10% on Madrigal
+0x6886,0,5,10,Fili Calot   ; +10% on Madrigal
+0x6887,0,5,10,Fili Calot +1   ; +10% on Madrigal
+0x69be,0,8,10,Fili Manchettes   ; +10% on March
+0x69bf,0,8,10,Fili Manchettes +1   ; +10% on March
+0x6a77,0,2,10,Fili Rhingrave   ; +10% on Ballad
+0x6a78,0,2,10,Fili Rhingrave +1   ; +10% on Ballad
+0x6b25,0,14,10,Fili Cothurnes   ; +10% on Scherzo
+0x6b26,0,14,10,Fili Cothurnes +1   ; +10% on Scherzo
+0x6c18,0,1,10,Brioso Roundlet   ; +10% on Paeon
+0x6c2d,0,1,10,Brioso Roundlet +1   ; +10% on Paeon
+0x6e48,10,0,0,Brioso Slippers
+0x6e5d,11,0,0,Brioso Slippers +1
+#
+# NOTES:
+#  - Carnwenhan (mythic) by ilvl stage: +10/+20/+30/+40 then +50 at 99/119.
+#    (early ilvl75 id 0x4A24 is NOT recognised -> 0%.)
+#  - Kali(0x5077)/Legato Dagger(0x5095) sub-weapons = +5%% flat. The main-slot
+#    code also returns +5%% for a broad dagger id range (0x5053-0x5095) via a
+#    default jumptable slot -- a Timers catch-all, omitted here as non-gear.
+#  - Distinctive instruments individually confirmed: Cornette->Minuet,
+#    Faerie Piccolo->March, Angel's Flute->Prelude, Gemshorn->Mambo,
+#    Traversiere->Madrigal, Harp->Minne, Ebony Harp->Paeon, Oneiros Harp->Paeon+30,
+#    Langeleik->March+30, Crumhorn->Carol, Mass Chalemie->Hymnus+30, Syrinx->Minne+30,
+#    Harlequin's Horn->Mazurka, Angel Lyre->Hymnus, Loughnashade->flat +30/+40.
+#    Low-tier generic instruments route to a shared base handler that gates on
+#    family 5 (Madrigal) -- treat those Madrigal rows as lower-confidence.
+#
+# ==========================================================================
+# CONFIRMED m2 / m3 / a3 / JP terms (all read via FUN_10005e60(self,status)):
+# ==========================================================================
+# m2 (R+0x2c):  Troubadour (0x15C=348)  -> m2 += 1.0  (=> x2). Only m2 term.
+#
+# m3 (R+0x30):  Soul Voice (0x34=52) OR Marcato (0xE7=231) -> m3 += 0.50,
+#     ONLY when the cast song's family is 11 (Hymnus), 12 (Mazurka), or 14
+#     (Scherzo).  (code: cmp edi,0xB / 0xC / 0xE). Soul Voice has priority; if
+#     it is up, the Marcato branch is skipped.
+#
+# a3 (R+0x24), FLAT seconds (same field, last active JA wins):
+#     Marcato (231)       -> a3 = byte[g+0x48+0x148] * 1   (x1, no doubling)
+#     Clarion Call (499)  -> a3 = byte[g+0x48+0x142] * 2   (add eax,eax => x2)
+#     Tenuto (0x1C7=455)  -> a3 = byte[g+0x48+0x142] * 2   (add eax,eax => x2)
+#   g = *(self) = *(plugin+0x1c0); *(g)+0x48 = stat/merit block.
+#   +0x142 = BRD song-duration merit level (x2 s each);
+#   +0x148 = Marcato-related merit (x1 s).
+#
+# JP gift (m1 += 0.05): if mainjob==10 (BRD) and u16[g+0x48+0x340] >= 0x4B0(1200).
+#   FLAT +0.05, not per-level. NO other merit/JP feeds m1. NO 'Augments songs'
+#   SET bonus exists (exhaustively verified: no piece-counter, no count-switch).
