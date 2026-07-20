@@ -222,10 +222,20 @@ static const ChangeLine CL_43[] = {
       "Aftermath t'est desormais attribue au lieu de rester sans proprietaire -- il ne peut venir que de ton propre weaponskill, et le jeu n'en annonce aucune incantation." },
 };
 
+static const ChangeLine CL_44[] = {
+    { "Timers : a song another player casts on you now shows the job abilities that were up when they cast it -- Nightingale, Troubadour, Soul Voice, Marcato -- and a Corsair's roll shows Crooked Cards. Read from the party-buff cache, so it works for party members (not alliance).",
+      "Timers : un chant qu'un autre joueur vous pose affiche desormais les aptitudes qui etaient actives quand il l'a lance -- Nightingale, Troubadour, Soul Voice, Marcato -- et un roll de Corsair affiche Crooked Cards. Lu depuis le cache de buffs du groupe, donc valable pour les membres de votre equipe (pas l'alliance)." },
+    { "Timers : ability tags are amber like your own, the caster's name is grey beside them -- what was active and who cast it are two different things to read.",
+      "Timers : les marqueurs d'aptitudes sont en ambre comme les votres, le nom du lanceur en gris a cote -- ce qui etait actif et qui l'a lance sont deux informations differentes a lire." },
+    { "Fixed : another player's songs showed only a generic status name, with no tier and no tags. A safety check meant to stop a trust claiming your long song was rejecting real players' songs too, since we predicted their duration without knowing their Troubadour. It now applies to trusts only, and a party member's song duration accounts for the abilities they had up.",
+      "Corrige : les chants d'un autre joueur n'affichaient qu'un nom de statut generique, sans palier ni marqueur. Un controle de securite cense empecher un trust de revendiquer votre long chant rejetait aussi les chants des vrais joueurs, car nous predisions leur duree sans connaitre leur Troubadour. Il ne s'applique plus qu'aux trusts, et la duree d'un chant d'un membre du groupe tient compte des aptitudes qu'il avait actives." },
+};
+
 // One entry per released version, NEWEST FIRST. The Update tab renders each as a collapsible header ; the newest
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.44", CL_44, (int)(sizeof(CL_44) / sizeof(CL_44[0])) },
     { "1.0.43", CL_43, (int)(sizeof(CL_43) / sizeof(CL_43[0])) },
     { "1.0.42", CL_42, (int)(sizeof(CL_42) / sizeof(CL_42[0])) },
     { "1.0.41", CL_41, (int)(sizeof(CL_41) / sizeof(CL_41[0])) },

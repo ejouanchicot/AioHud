@@ -265,8 +265,13 @@ int PartyState::match_cast(unsigned short status, unsigned expiry, int timerIdx)
     // produce a buff that outlives its own base duration by minutes, so if the live timer runs far past what this
     // FOREIGN cast predicted, the pairing is wrong and the row is almost certainly ours. Returning "unknown" keeps the
     // row visible; attributing it to a trust HIDES it under the buff-source filter. When unsure, never blame a trust.
+    // TRUSTS only. A trust has no Troubadour / Marcato, so its cast genuinely cannot outlive its base duration and a
+    // big overshoot proves a mis-pairing. A real PLAYER can: MEASURED 2026-07-20 on a second client, Tetsouo's
+    // Troubadour'd songs (~600 s) were predicted at the 120 s base and this guard rejected every one of them, so the
+    // row resolved to no spell at all -- generic status name, no tier, no JA tags. Guarding against players cost more
+    // than it protected.
     const SelfCast& m = selfCasts_[idx[rank]];
-    if (m.caster != selfId_ && (int)(expiry - m.predExp) > 90 * 60) return -1;
+    if (m.caster != selfId_ && is_trust(m.caster) && (int)(expiry - m.predExp) > 90 * 60) return -1;
     return idx[rank];
 }
 // Per-timer caster, with a CO-EXPIRY fallback for statuses the action packet never names.
@@ -617,6 +622,30 @@ void PartyState::on_action(const unsigned char* p) {
             windower::debug::log("BCAPT CAST actor=%08X \"%s\"%s%s cat=%u id=%u \"%s\" bstTab=%u targets=%u",
                                  actor, an ? an : "?", is_trust(actor) ? " [TRUST]" : "",
                                  (actor == selfId_) ? " [ME]" : "", cat, aid, sn ? sn : "?", bstTab, tc2);
+            // CAN WE SEE ANOTHER CASTER'S JOB-ABILITY STATE ? The song tags (SV/NT/TR/M) and the COR (CC) tag are read
+            // from read_player_buffs today -- OUR OWN memory list -- so they only ever apply to what WE cast. On the
+            // other client they would have to come from the 0x076 party-buff cache instead. This dumps exactly that:
+            // the caster's buff set as WE have it, at the instant we process their cast. The open question is Marcato
+            // (231), which the song CONSUMES -- it may already be gone from the 0x076 by the time this runs. SV (52),
+            // Nightingale (347), Troubadour (348) and Crooked Cards (601) last long enough to be safe bets.
+            // Logs the NEGATIVE case too (no buff set cached at all) -- silence here would read as "no JAs were up".
+            if (actor != selfId_ && (cat == 4 || cat == 6)) {
+                const BuffSet* cb = buffs_for(actor);
+                if (!cb) windower::debug::log("BCAPT   JA-VIS: no 0x076 buff set cached for this caster (out of party / alliance ?)");
+                else {
+                    char ids[256]; int w = 0; ids[0] = 0;
+                    bool sv = false, nt = false, tr = false, mc = false, cc = false;
+                    for (int q = 0; q < cb->n; ++q) {
+                        const unsigned short b2 = cb->ids[q];
+                        if (b2 == 52) sv = true; else if (b2 == 347) nt = true; else if (b2 == 348) tr = true;
+                        else if (b2 == 231) mc = true; else if (b2 == 601) cc = true;
+                        if (w < (int)sizeof(ids) - 8) w += _snprintf(ids + w, sizeof(ids) - w - 1, "%u ", b2);
+                    }
+                    ids[sizeof(ids) - 1] = 0;
+                    windower::debug::log("BCAPT   JA-VIS: n=%d SV=%d NT=%d TR=%d Marcato=%d CC=%d  [%s]",
+                                         cb->n, sv, nt, tr, mc, cc, ids);
+                }
+            }
         }
         int off = 150;
         for (unsigned t = 0; t < tc2; ++t) {
@@ -668,13 +697,52 @@ void PartyState::on_action(const unsigned char* p) {
                         // rank slot and was handed OUR spell -- two "Honor March MNT" rows for one real song.
                         if (cat == 4 && actor != selfId_) {
                             const SpellBuff* sb = spell_buff(aid);
-                            if (sb && sb->effect == st)
-                                record_cast((unsigned short)st, (unsigned short)aid, actor, ffxi_now_tick() + (unsigned)sb->durSec * 60u);
+                            if (sb && sb->effect == st) {
+                                // Refine the prediction with the caster's OWN job abilities, which the 0x076 cache
+                                // does carry (MEASURED). Troubadour doubles a song; Soul Voice / Marcato add half on
+                                // the buffing families. Without this a player's song was predicted at its 120 s base
+                                // while it really ran ~600 s, and the ordering that pairs timers to casts drifted.
+                                double sec = (double)sb->durSec;
+                                if (sb->skill == 40) {
+                                    const BuffSet* cs = buffs_for(actor);
+                                    if (cs) { bool tr = false, sv = false, mc = false;
+                                        for (int q = 0; q < cs->n; ++q)
+                                            switch (cs->ids[q]) { case 348: tr = true; break; case 52: sv = true; break; case 231: mc = true; break; }
+                                        if (tr) sec *= 2.0;
+                                        if (sv || mc) sec *= 1.5;
+                                    }
+                                }
+                                record_cast((unsigned short)st, (unsigned short)aid, actor, ffxi_now_tick() + (unsigned)(sec * 60.0));
+                            }
                         }
                     }
                 }
             }
         }
+    }
+    // ---- SONG JA TAGS FOR SOMEONE ELSE'S CAST. The block below reads OUR OWN memory buff list, so SV/NT/TR/M
+    //      only ever tagged what WE cast. MEASURED 2026-07-20 on a second client: the 0x076 party-buff cache DOES
+    //      carry the caster's Nightingale (347) and Troubadour (348) at the moment we process their 0x028, and
+    //      Marcato (231) was caught there too -- the song consumes it, but only AFTER this packet. Soul Voice (52)
+    //      was never exercised in that capture, so it is included on the same reasoning, not on evidence.
+    //      Party only: 0x076 has 5 member slots, so an alliance caster has no buff set and simply gets no tags.
+    if (cat == 4 && actor != selfId_ && selfId_) {
+        const u32 fsid = getbits(p, 86, 16, size);
+        const SpellBuff* fb = spell_buff(fsid);
+        const BuffSet* cb = (fb && fb->skill == 40 && fsid < 1024) ? buffs_for(actor) : 0;
+        if (cb) {
+            unsigned char fm = 0;
+            for (int q = 0; q < cb->n; ++q)
+                switch (cb->ids[q]) { case 52: fm |= 1; break; case 347: fm |= 2; break;
+                                      case 348: fm |= 4; break; case 231: fm |= 8; break; }
+            songMod_[fsid] = fm;   // keyed by SPELL, like the self path -- same tier from two casters shares a tag
+        }
+        // Instrument EVERY branch, success included. The first cut of this block silently did nothing and looked
+        // exactly like "the game does not expose the data" -- which the JA-VIS probe had already disproved.
+        if (bcapt_armed())
+            windower::debug::log("SONGMOD: actor=%08X spell=%u fb=%d skill=%d set=%d -> songMod_[%u]=%02X",
+                                 actor, fsid, fb ? 1 : 0, fb ? (int)fb->skill : -1, cb ? cb->n : -1,
+                                 fsid, (fsid < 1024) ? songMod_[fsid] : 0);
     }
     // ---- GEO Entrust (JA 386) : arms the NEXT Indi- to be a FIXED buff on an ally (the effect does not move/pulse),
     //      so unlike a normal Indi- aura we DO want to show it on that ally. Remember when it was used. ----
@@ -817,7 +885,12 @@ void PartyState::on_action(const unsigned char* p) {
                 // was already crooked = a Double-Up continuing it). A bust / wear-off drops the buff -> the row just stops.
                 // (CC reads YOUR buffs, so it only tags YOUR crooked rolls ; an ally's crooked roll just shows no CC tag.)
                 bool ccNow = false, active = false;
-                { unsigned short mb[32]; int mn = read_player_buffs(mb, 32); for (int k = 0; k < mn; ++k) { if (mb[k] == 601) ccNow = true; if (tst && mb[k] == tst) active = true; } }
+                // Crooked Cards (601) : from OUR memory list when the roll is ours, from the 0x076 cache when a
+                // party COR rolled it -- same substitution as the song tags above, same 0x076 party-only limit.
+                if (bySelf) { unsigned short mb[32]; int mn = read_player_buffs(mb, 32); for (int k = 0; k < mn; ++k) { if (mb[k] == 601) ccNow = true; if (tst && mb[k] == tst) active = true; } }
+                else { const BuffSet* cb = buffs_for(actor);
+                       if (cb) for (int k = 0; k < cb->n; ++k) { if (cb->ids[k] == 601) ccNow = true; }
+                       if (tst) { unsigned short mb[32]; int mn = read_player_buffs(mb, 32); for (int k = 0; k < mn; ++k) if (mb[k] == tst) active = true; } }
                 const bool ccOld = (tst && tst < 1024) && ((rollLuck_[tst] >> 2) & 1);
                 const bool cc = ccNow || (active && ccOld);
                 if (tst && tst < 1024) { rollVal_[tst] = (unsigned char)pip; rollLuck_[tst] = (unsigned char)(roll_luck_of(taid, pip) | (cc ? 0x04 : 0)); }

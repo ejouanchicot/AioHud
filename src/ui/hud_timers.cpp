@@ -174,10 +174,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // COR roll : name = "Chaos Roll", pip = the coloured pip number (0 = none), post = " (AoE 6)" suffix -> drawn as
     // "Chaos Roll [5] (AoE 6)" with ONLY the pip in pipCol (unlucky=red, lucky/11=green, else white). nameCol overrides
     // the whole-name colour (unused now that only the pip is tinted).
-    struct Row { int rem; int icon; const char* name; int both; int order; u32 nameCol; int pip; u32 pipCol; const char* post; const char* tag; u32 tagCol; int src; };   // tag : BRD song modifiers "(SV)(T)" drawn in tagCol, between the name and the AoE suffix
+    struct Row { int rem; int icon; const char* name; int both; int order; u32 nameCol; int pip; u32 pipCol; const char* post; u32 postCol; const char* tag; u32 tagCol; int src; };   // tag : BRD song modifiers "(SV)(T)" drawn in tagCol, between the name and the AoE suffix
     static const int TM_REM_MISSING = -1000000000;   // FOCUS alert row : an ally is MISSING a critical buff -> timer shows "OUT" in red, sorts to the very top
     static Row bufs[50], recs[50]; int nb = 0, nr = 0;
-    for (int i = 0; i < 50; ++i) { bufs[i].nameCol = recs[i].nameCol = 0; bufs[i].pip = recs[i].pip = 0; bufs[i].post = recs[i].post = 0; bufs[i].tag = recs[i].tag = 0; bufs[i].src = recs[i].src = 0; }   // clear per-frame overrides (static arrays)
+    for (int i = 0; i < 50; ++i) { bufs[i].nameCol = recs[i].nameCol = 0; bufs[i].pip = recs[i].pip = 0; bufs[i].post = recs[i].post = 0; bufs[i].postCol = recs[i].postCol = 0; bufs[i].tag = recs[i].tag = 0; bufs[i].src = recs[i].src = 0; }   // clear per-frame overrides (static arrays)
     if (preview || editing) {
         static const struct { int id, rem; } SB[5] = { {43, 1490}, {57, 155}, {214, 309}, {40, 540}, {33, 28} };
         for (int i = 0; i < 5; ++i) { bufs[nb].rem = SB[i].rem; bufs[nb].icon = SB[i].id; bufs[nb].name = buff_status_name(SB[i].id); bufs[nb].both = 0; bufs[nb].order = 0; ++nb; }
@@ -186,8 +186,8 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             bufs[nb].rem = 280;  bufs[nb].icon = 313; bufs[nb].name = "Chaos Roll"; bufs[nb].pip = 11; bufs[nb].pipCol = 0xFF74D074u; bufs[nb].tag = " (CC)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (AoE 6)"; bufs[nb].both = 0; bufs[nb].order = 0; ++nb;   // pip 11 = green, under Crooked Cards
             // Band 1 = a real PLAYER's buff on you, band 2 = a TRUST's : both carry the owner in parentheses, which is
             // what the Help page has to teach. The per-ally sample below is band 5+ (it was left at 2, now "trusts").
-            bufs[nb].rem = 540;  bufs[nb].icon = 33;  bufs[nb].name = "Haste"; bufs[nb].tag = " (Aeryn)";   bufs[nb].tagCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 1; ++nb;
-            bufs[nb].rem = 62;   bufs[nb].icon = 41;  bufs[nb].name = "Shell V"; bufs[nb].tag = " (Monberaux)"; bufs[nb].tagCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 2; ++nb;
+            bufs[nb].rem = 540;  bufs[nb].icon = 33;  bufs[nb].name = "Haste"; bufs[nb].post = " (Aeryn)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 1; ++nb;
+            bufs[nb].rem = 62;   bufs[nb].icon = 41;  bufs[nb].name = "Shell V"; bufs[nb].tag = " (SV)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (Monberaux)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 2; ++nb;
             bufs[nb].rem = 1200; bufs[nb].icon = 40;  bufs[nb].name = "Aeryn - Haste";     bufs[nb].both = 1; bufs[nb].order = 5; ++nb;
         }
         static const struct { int icon, rem; const char* nm; } SR[4] = { {66, 8, "Mighty Strikes"}, {143, 22, "Haste"}, {160, 3, "Provoke"}, {56, 45, "Berserk"} };
@@ -242,11 +242,11 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         // modifier tags for solo songs" (a handful), then also became the "(caster name)" tag for every buff someone
         // else put on us. With a full trust party that is 20+ rows, and at 8 slots the overflow silently dropped the
         // owner name off most of them -- reported as "plein de buff sans porteur" while the model had them all.
-        // 20 chars holds " (" + a 15-char FFXI name + ")" + NUL.
+        // 32 chars holds the JA tag AND the owner: " (SV NT) (Fifteencharname)" + NUL.
         // Sized to bufs[] capacity ON PURPOSE : this pool must never be the thing that runs out. It was 8 (song
         // modifier tags only), and when it also became the "(caster name)" tag it silently dropped the owner off
         // most rows. Raising it to 32 only moved the cliff -- 50 is the row cap, so the tag can always be written.
-        static char selfTag[50][20]; int stN = 0;
+        static char selfTag[50][32]; int stN = 0;
         const int stMax = (int)(sizeof(selfTag) / sizeof(selfTag[0]));
         unsigned char jaBits[128]; const bool jaOk = read_usable_ja_bits(jaBits);   // once/frame : which JAs THIS job can use (self-cast filter + shared recast_id disambiguation)
         // ONE definition of "does the buff-source filter keep this timer", shared by the row emit AND by the FOCUS
@@ -392,23 +392,29 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             PartyState::RollInfo sri = party().roll_info(bt[i].id);   // COR roll : "Chaos Roll [7]", pip tinted by luck
             if (sri.value) {
                 bufs[nb].pip = sri.value; bufs[nb].pipCol = (sri.luck == 2) ? 0xFFF06060u : (sri.luck == 1 || sri.value == 11) ? 0xFF74D074u : 0xFFEAF0FFu;
-                if (stN < stMax && (rowOwner || sri.cc)) {
-                    _snprintf(selfTag[stN], sizeof(selfTag[0]) - 1, "%s%s%s%s", sri.cc ? " (CC)" : "",
-                              rowOwner ? " (" : "", rowOwner ? rowOwner : "", rowOwner ? ")" : "");
-                    selfTag[stN][sizeof(selfTag[0]) - 1] = 0;
-                    bufs[nb].tag = selfTag[stN]; bufs[nb].tagCol = rowOwner ? 0xFF9AB0C8u : 0xFFE8C55Au; ++stN;
-                }
+                if (sri.cc) { bufs[nb].tag = " (CC)"; bufs[nb].tagCol = 0xFFE8C55Au; }   // amber, like the song JA tags
+                if (rowOwner && rowOwner[0] && stN < stMax) { _snprintf(selfTag[stN], sizeof(selfTag[0]) - 1, " (%s)", rowOwner); selfTag[stN][sizeof(selfTag[0]) - 1] = 0;
+                    bufs[nb].post = selfTag[stN]; bufs[nb].postCol = 0xFF9AB0C8u; ++stN; }
             }
             else {
                 // Song JA tags (SV/NT/TR/M) describe OUR buffs at OUR cast time -- only ever put them on a row we cast.
                 // They were leaking onto trust songs that shared a status, printing "Honor March MNT" twice.
-                if (rowMine) {
-                    unsigned char sm = party().song_mods(ssid);
-                    if (sm && stN < stMax) { const char* tg = song_mod_tag(sm, selfTag[stN], sizeof(selfTag[0])); if (tg) { bufs[nb].tag = tg; bufs[nb].tagCol = 0xFFE8C55Au; ++stN; } }
-                } else if (rowOwner && rowOwner[0] && stN < stMax) {   // someone else's buff -> name the owner
-                    _snprintf(selfTag[stN], sizeof(selfTag[0]) - 1, " (%s)", rowOwner); selfTag[stN][sizeof(selfTag[0]) - 1] = 0;
-                    bufs[nb].tag = selfTag[stN]; bufs[nb].tagCol = 0xFF9AB0C8u; ++stN;
-                }
+                // JA tags AND the owner on the same row. song_mods() is now filled for OTHER casters too (from the
+                // 0x076 party-buff cache), so a song a party BRD puts on you can show "(SV NT) (Tetsouo)" -- you can
+                // finally tell a Soul Voice'd march from a plain one when you are not the one singing.
+                // TWO segments : the JA tag says WHAT was up at cast time (amber, same as your own rows), the owner
+                // says WHO cast it (grey, secondary). One colour for both made the name compete with the tag.
+                char mtag[16]; const char* tg = 0;
+                { const unsigned char sm = party().song_mods(ssid); if (sm) tg = song_mod_tag(sm, mtag, sizeof(mtag));
+                  // read-back probe : proves whether the DISPLAY sees what the packet path wrote, and under which
+                  // spell id. Throttled to the SONGFOLD gate so it cannot flood at 60 Hz.
+                  if (sfNew && party().bcapt_armed())
+                      windower::debug::log("SONGTAG: st=%u ssid=%u mods=%02X mine=%d owner=%s",
+                                           (unsigned)bt[i].id, ssid, sm, rowMine ? 1 : 0, rowOwner ? rowOwner : "-"); }
+                if (tg && stN < stMax) { _snprintf(selfTag[stN], sizeof(selfTag[0]) - 1, "%s", tg); selfTag[stN][sizeof(selfTag[0]) - 1] = 0;
+                    bufs[nb].tag = selfTag[stN]; bufs[nb].tagCol = 0xFFE8C55Au; ++stN; }
+                if (rowOwner && rowOwner[0] && stN < stMax) { _snprintf(selfTag[stN], sizeof(selfTag[0]) - 1, " (%s)", rowOwner); selfTag[stN][sizeof(selfTag[0]) - 1] = 0;
+                    bufs[nb].post = selfTag[stN]; bufs[nb].postCol = 0xFF9AB0C8u; ++stN; }
             }
             bufs[nb].src = 2;   // pass 2 : your OWN 0x063 buff timer
             ++nb;
@@ -681,7 +687,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             fN->draw_lc(dev, xx, cy, pb, zN, R.pipCol, strk, oN); xx += fN->measure(pb, zN);
             fN->draw_lc(dev, xx, cy, "]", zN, baseCol, strk, oN); xx += fN->measure("]", zN); }
         if (R.tag) { fN->draw_lc(dev, xx, cy, R.tag, zN, R.tagCol, strk, oN); xx += fN->measure(R.tag, zN); }
-        if (R.post) fN->draw_lc(dev, xx, cy, R.post, zN, baseCol, strk, oN);
+        if (R.post) fN->draw_lc(dev, xx, cy, R.post, zN, R.postCol ? R.postCol : baseCol, strk, oN);   // postCol 0 = follow the name
     };
 
     float measH = 0.0f;   // emit() stashes its boxH here so the top-level measureOnly (Help scale-to-fit) can read it

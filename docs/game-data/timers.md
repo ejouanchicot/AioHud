@@ -82,6 +82,30 @@ The mechanism now:
   instead. They still appear in `//aio songlog` dumps, which list every timer — do not read a probe dump as if it
   were the box.
 
+### Voir les aptitudes d'un AUTRE lanceur (marqueurs SV / NT / TR / M et CC)
+
+**MESURÉ 2026-07-20 sur un second client.** Le cache de buffs du groupe (`0x076`, `buffs_for(id)`) porte bien les
+statuts d'aptitude du lanceur **au moment où on traite son `0x028`** :
+
+```
+BCAPT   JA-VIS: n=3 SV=0 NT=1 TR=1 Marcato=0  [512 347 348]
+BCAPT   JA-VIS: n=4 SV=0 NT=1 TR=1 Marcato=1  [512 347 348 231]   <- Marcato encore présent
+```
+
+Nightingale (347) et Troubadour (348) sont visibles de façon constante. **Marcato (231) l'est aussi** : le chant le
+consomme, mais seulement *après* ce paquet. Soul Voice (52) et Crooked Cards (601) empruntent le même chemin, sans
+avoir été exercés dans cette capture.
+
+`songMod_` est donc rempli pour les lanceurs étrangers depuis `buffs_for(actor)`, au lieu de `read_player_buffs`
+qui ne concerne que nous. **Limite structurelle** : le `0x076` a 5 emplacements, donc un lanceur d'alliance n'a
+aucun jeu de buffs en cache et n'aura jamais de marqueur.
+
+Corollaire pour la prédiction de durée : on connaît désormais le Troubadour d'un autre joueur, donc `record_cast`
+double sa durée prédite (et ajoute la moitié sous SV/Marcato). Sans ça, un chant prédit à 120 s alors qu'il en dure
+600 faussait l'appariement — et le contrôle de cohérence le rejetait purement et simplement, laissant la ligne sans
+sort résolu : nom générique, ni palier ni marqueur. **Ce contrôle ne s'applique donc plus qu'aux trusts**, qui eux
+n'ont ni Troubadour ni Marcato.
+
 Consumers: `buff_caster_for(status, expiry, timerIdx)` for the filter, the sort band and the `(Owner)`
 row tag; `self_buff_spell_ranked(...)` for the row name and the hide/focus keys. The filter verdict is a
 single lambda (`srcKeeps`) shared by the row emit **and** the focus monitor — they disagreed before, so a
