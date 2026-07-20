@@ -276,7 +276,8 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         //      INTO that group (you count, your exact timer drives it) instead of getting its own row. ----
         int n = 0; const BuffTimer* bt = party().buff_timers(n);
         for (int i = 0; i < n && nb < 50; ++i) {
-            int rem = (int)(bt[i].expiry - now) / 60;   // not const : clamped to 0 below while the buff outlives our timer
+            if (bt[i].expiry == FFXI_EXPIRY_PERMANENT) continue;   // client's "permanent" sentinel -> it draws no countdown, nor do we
+            int rem = ticks_to_sec_ceil((int)(bt[i].expiry - now));   // CEIL, like the client (see ticks_to_sec_ceil) ; not const : clamped to 0 below
             // Our timer runs ~2s AHEAD of the client (measured): at rem 0 the game still shows the icon for about
             // two more seconds. Dropping the row at 0 while the red OUT alert only fires once the buff really
             // leaves the list left a visible HOLE between the two. Hold the row at 0:00 for as long as the buff is

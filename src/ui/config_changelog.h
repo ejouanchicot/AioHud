@@ -213,10 +213,20 @@ static const ChangeLine CL_42[] = {
       "Minimap : les membres d'alliance ont desormais leur propre couleur au lieu de partager celle de l'equipe -- lue directement sur les drapeaux party/alliance du client." },
 };
 
+static const ChangeLine CL_43[] = {
+    { "Buff countdowns now match the game's own display to the second. They were running 2-3 s low: we derived the current time from the Windows clock, while the client keeps its own counter re-synced from the server on every zone -- so any drift between your PC and the server landed on every timer.",
+      "Les decomptes de buffs correspondent desormais a la seconde pres a ceux du jeu. Ils accusaient 2 a 3 s de retard : nous calculions l'heure courante depuis l'horloge Windows, alors que le client tient son propre compteur resynchronise sur le serveur a chaque zonage -- toute derive entre ton PC et le serveur atterrissait donc sur chaque minuteur." },
+    { "Same fix, second cause : remaining time was rounded down where the game rounds up, costing one further second on almost every row.",
+      "Meme correctif, seconde cause : le temps restant etait arrondi a l'inferieur la ou le jeu arrondit au superieur, ce qui coutait une seconde de plus sur presque chaque ligne." },
+    { "Aftermath is now attributed to you rather than left without an owner -- it can only ever come from your own weaponskill, and the game announces no cast for it.",
+      "Aftermath t'est desormais attribue au lieu de rester sans proprietaire -- il ne peut venir que de ton propre weaponskill, et le jeu n'en annonce aucune incantation." },
+};
+
 // One entry per released version, NEWEST FIRST. The Update tab renders each as a collapsible header ; the newest
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.43", CL_43, (int)(sizeof(CL_43) / sizeof(CL_43[0])) },
     { "1.0.42", CL_42, (int)(sizeof(CL_42) / sizeof(CL_42[0])) },
     { "1.0.41", CL_41, (int)(sizeof(CL_41) / sizeof(CL_41[0])) },
     { "1.0.40", CL_40, (int)(sizeof(CL_40) / sizeof(CL_40[0])) },

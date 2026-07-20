@@ -309,7 +309,14 @@ void ep_build_sample(EmpyPop& out);
 // FFXI 1/60-second tick ; remaining seconds = (int)(expiry - ffxi_now_tick()) / 60 (the signed diff handles the
 // 32-bit wrap). Includes gear / merits / Composure / song duration -- nothing to estimate.
 struct BuffTimer { unsigned short id; unsigned expiry; };
-unsigned ffxi_now_tick();   // the current time as an FFXI buff tick (epoch 1009810800 + era offset, x60)
+unsigned ffxi_now_tick();
+// Ticks-remaining -> SECONDS, rounded exactly like the client does. REVERSED 2026-07-20 (FFXiMain 0x05E87AD0 and
+// 0x05E87BE0, the buff icon-overlay and tooltip): both compute (delta + 59) / 60, i.e. CEIL. We truncated, so every
+// countdown whose delta was not a whole multiple of 60 read ONE SECOND LOW against the game's own display -- a
+// systematic error independent of any clock skew, and roughly half of the 2-3 s gap the user measured.
+inline int ticks_to_sec_ceil(int deltaTicks) { return (deltaTicks > 0) ? (deltaTicks + 59) / 60 : 0; }
+// The client's "permanent, draw no countdown" sentinel for a buff expiry.
+static const unsigned FFXI_EXPIRY_PERMANENT = 0x7FFFFFFFu;   // the current time as an FFXI buff tick (epoch 1009810800 + era offset, x60)
 
 struct PartyState {
     PMember m[6];

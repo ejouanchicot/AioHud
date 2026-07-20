@@ -145,14 +145,47 @@ int RateReg::rate() const {
 }
 // current time as an FFXI buff tick : Unix seconds -> ticks, minus the epoch + era offset (Windower's bufftime).
 // era = 0x100000000/60 * 10 (increments ~every 2.27 years ; the signed diff at the call site tolerates a wrap).
+// "Now", in the same absolute 1/60 s ticks as the 0x063 expiries. Read from the CLIENT'S OWN clock, not the PC's.
+//
+// REVERSED 2026-07-20 (FFXiMain 0x05D63910): the client computes now_seconds = clock->sec + serverOffset, where
+// the clock struct is re-synced from the server on EVERY 0x00A zone-in packet (local sec := Timestamp1,
+// offset := Timestamp2 - Timestamp1) and free-runs off timeGetTime in between. It never touches the wall clock.
+// We did: `time(0)` at whole-second granularity. So any skew between the PC clock and the server -- plus up to a
+// second of quantisation -- landed on every countdown we drew. The user measured a steady 2-3 s gap against the
+// game's own display; a CONSTANT offset is the signature of a different time reference, not of jitter.
+//
+// The epoch was never the bug: serverOffset is exactly -1009810800, our EPOCH, and our ERA term is 10*2^32 which
+// is 0 mod 2^32. Only the SOURCE of "now" was wrong.
+//
+// Falls back to the old wall-clock formula whenever the client clock is unreadable or not yet seeded (before the
+// first 0x00A). A missing module or a bad pointer must degrade, never crash and never freeze the countdowns.
+static const u32 CLK_PTR_RVA = 0x492E10;   // -> the clock struct (single writer, static in .data, never null after init)
+static const u32 CLK_SEC_OFF = 0x0C;       // u32 unix seconds
+static const u32 CLK_OFF_RVA = 0x4E0AF8;   // i32 server offset (Timestamp2 - Timestamp1)
 unsigned ffxi_now_tick() {
-    const double EPOCH = 1009810800.0, ERA = (4294967296.0 / 60.0) * 10.0;
-    return (unsigned)(((double)time(0) - EPOCH - ERA) * 60.0);
+    static unsigned s_lastMs = 0xFFFFFFFFu; static unsigned s_cached = 0;
+    const unsigned nowMs = GetTickCount();
+    if (nowMs == s_lastMs) return s_cached;   // called per row per frame -- one guarded read per ms is plenty
+    unsigned out = 0;
+    HMODULE h = GetModuleHandleA("FFXiMain.dll");
+    if (h) {
+        const u32 base = (u32)h; u32 clk = 0, sec = 0, off = 0;
+        if (safe_read(base + CLK_PTR_RVA, &clk) && valid_ptr(clk) &&
+            safe_read(clk + CLK_SEC_OFF, &sec) && safe_read(base + CLK_OFF_RVA, &off) &&
+            !(sec == 0 && off == 0))                        // still zero = not yet seeded by a 0x00A
+            out = (sec + off) * 60u;                        // off is negative (-EPOCH) ; u32 wrap is the intended maths
+    }
+    if (!out) {   // fallback : the original wall-clock derivation
+        const double EPOCH = 1009810800.0, ERA = (4294967296.0 / 60.0) * 10.0;
+        out = (unsigned)(((double)time(0) - EPOCH - ERA) * 60.0);
+    }
+    s_lastMs = nowMs; s_cached = out;
+    return out;
 }
 
 int PartyState::self_buff_remaining(unsigned short status) const {
     const unsigned now = ffxi_now_tick();
-    for (int i = 0; i < buffTimerN_; ++i) if (buffTimers_[i].id == status) { int r = (int)(buffTimers_[i].expiry - now) / 60; return r > 0 ? r : -1; }
+    for (int i = 0; i < buffTimerN_; ++i) if (buffTimers_[i].id == status) { int r = ticks_to_sec_ceil((int)(buffTimers_[i].expiry - now)); return r > 0 ? r : -1; }
     return -1;
 }
 unsigned PartyState::self_buff_expiry(unsigned short status) const {
@@ -161,7 +194,7 @@ unsigned PartyState::self_buff_expiry(unsigned short status) const {
 }
 int PartyState::geo_aura_remaining(unsigned short status) const {   // computed lifetime of the Indi- YOU carry (not the 3s pulse)
     if (!selfGeo_.status || selfGeo_.status != status) return -1;
-    int r = (int)(selfGeo_.expTick - ffxi_now_tick()) / 60;
+    int r = ticks_to_sec_ceil((int)(selfGeo_.expTick - ffxi_now_tick()));
     return r > 0 ? r : -1;
 }
 // which spell/tier granted the self buff (status, expiry) -- disambiguates two same-status buffs (Minuet V + IV)
