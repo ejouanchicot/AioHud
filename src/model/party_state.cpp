@@ -248,11 +248,18 @@ int PartyState::match_cast(unsigned short status, unsigned expiry, int timerIdx)
         // both rows took the same rank -> the same cast -> the same name printed twice.
         if (timerIdx >= 0 && buffTimers_[i].expiry == expiry && i < timerIdx) ++rank;
     }
+    // Is a REAL 0x063 timer for this status still alive ? If so, the cast that produced it MUST stay a candidate even
+    // though its PREDICTED expiry has passed -- our duration prediction is only an estimate and underpredicts (a
+    // Troubadour'd song we guessed at ~6 min really runs ~8), and the row is driven by the authoritative timer, not by
+    // predExp. Dropping the entry at predExp+10 s made the NT tag + tier name vanish at ~6 min while the song was still
+    // up (reported 2026-07-21, every character). Only discard a stale cast when NO live timer could use it.
+    bool statusLive = false;
+    for (int j = 0; j < buffTimerN_; ++j) if (buffTimers_[j].id == status) { statusLive = true; break; }
     int idx[64]; unsigned pe[64]; int nc = 0;                   // candidate casts, still plausibly alive
     for (int i = 0; i < 64 && nc < 64; ++i) {
         const SelfCast& sc = selfCasts_[i];
         if (sc.status != status || !sc.spell || !sc.predExp) continue;
-        if ((int)(sc.predExp - now) < -600) continue;           // expired more than 10 s ago -> not a candidate
+        if (!statusLive && (int)(sc.predExp - now) < -600) continue;   // no live timer AND long expired -> not a candidate
         idx[nc] = i; pe[nc] = sc.predExp; ++nc;
     }
     for (int a = 1; a < nc; ++a) {                              // insertion sort, longest predicted expiry first
@@ -590,7 +597,25 @@ void PartyState::on_action(const unsigned char* p) {
     // ws_info(228)=Final Paradise) -> without this, /ja Mug popped "Atonement". Their action message is NOT a finish
     // message (that's why the skillchain box never fired for them), so this cleanly excludes them while keeping every
     // real weaponskill (physical AND magical).
-    if (cat == 3 && actor == selfId_ && sc_is_finish_msg(getbits(p, 230, 10, size))) {
+    // //aio bcaptlog : dump EVERY self action that could feed the WS popup -- category, action id, target message,
+    // and how BOTH tables resolve that id -- so a Jump / Weapon Bash capture shows exactly why it is mistaken for a
+    // WS. Jump(66) High Jump(67) Weapon Bash(77) Shield Bash(46) are JA ids that collide with WS ids 1-255.
+    if (actor == selfId_ && (cat == 3 || cat == 6 || cat == 7) && bcapt_armed()) {
+        const u32 aid2 = getbits(p, 86, 16, size);
+        const unsigned tmsg = getbits(p, 230, 10, size);
+        const WSRow* wr = ws_info(aid2); const AbilRow* ar = abil_info(aid2);
+        windower::debug::log("WSPOP? cat=%u id=%u tmsg=%u finishMsg=%d  ws=\"%s\" abil=\"%s\"",
+                             cat, aid2, tmsg, sc_is_finish_msg(tmsg) ? 1 : 0,
+                             wr ? wr->en : "-", ar ? ar->en : "-");
+    }
+    // The WS popup must fire for real weaponskills ONLY. Damage JAs (Jump, High Jump, Weapon Bash, Shield Bash...)
+    // arrive as cat 3 too, with an id that COLLIDES with a WS id (id 66 = both "Jump" and the WS "Gale Axe"), so
+    // neither the category nor the id nor abil-table lookup can tell them apart -- MEASURED 2026-07-21, Savage Blade
+    // (id 42) even resolves to the JA "Flee". The ONE field that differs is the target message: a real WS uses 185
+    // (Savage Blade, measured), a damage JA uses 317 (Jump, measured). So the popup excludes the JA-damage message.
+    // 317 stays in sc_is_finish_msg for skillchains, which is a separate concern.
+    const unsigned wsMsg = getbits(p, 230, 10, size);
+    if (cat == 3 && actor == selfId_ && sc_is_finish_msg(wsMsg) && wsMsg != 317) {
         const u32 wsid = getbits(p, 86, 16, size);         //   WS id = actor.param @bit 86 (like cat 4/6)
         const u32 dmg  = getbits(p, 213, 17, size);        //   damage = target[0].param @bit 213 (target base 150 + 63)
         const WSRow* w = ws_info(wsid); const char* nm = w ? w->en : "Weapon Skill";

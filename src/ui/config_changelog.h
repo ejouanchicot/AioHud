@@ -231,10 +231,24 @@ static const ChangeLine CL_44[] = {
       "Corrige : les chants d'un autre joueur n'affichaient qu'un nom de statut generique, sans palier ni marqueur. Un controle de securite cense empecher un trust de revendiquer votre long chant rejetait aussi les chants des vrais joueurs, car nous predisions leur duree sans connaitre leur Troubadour. Il ne s'applique plus qu'aux trusts, et la duree d'un chant d'un membre du groupe tient compte des aptitudes qu'il avait actives." },
 };
 
+static const ChangeLine CL_45[] = {
+    { "Target : the HP bar is now a flowing liquid vial tinted by the target's allegiance -- a boiling blood-red for a monster, its own vivid hue for a player or NPC, every colour at one consistent intensity. The whole box (HP, sub-target, distance) shares the same recessed glass frame.",
+      "Cible : la barre HP est desormais une fiole de liquide en mouvement, teintee selon l'allegeance de la cible -- un rouge sang bouillonnant pour un monstre, sa propre teinte vive pour un joueur ou un PNJ, toutes a la meme intensite. Toute la boite (HP, sous-cible, distance) partage le meme cadre en verre." },
+    { "Timers : Scholar stratagems now show \"Stratagem\" with the number of charges available and the time to the next one, instead of always showing \"Penury\" (they all share one recast).",
+      "Timers : les stratagemes de Scholar affichent desormais \"Stratagem\" avec le nombre de charges disponibles et le temps avant la prochaine, au lieu d'afficher toujours \"Penury\" (ils partagent tous un seul recast)." },
+    { "Timers : a song's SV / NT / TR / M tags no longer vanish a few minutes in on a long (Troubadour'd) song -- the tag now lasts as long as the song itself.",
+      "Timers : les marqueurs SV / NT / TR / M d'un chant ne disparaissent plus au bout de quelques minutes sur un chant long (sous Troubadour) -- le marqueur tient desormais aussi longtemps que le chant." },
+    { "Party : a dead member stays in place with all their info and HP 0, shown in a pulsing red instead of being greyed out as if in another zone. Death and out-of-zone are now told apart by the member's actual zone, not by missing HP.",
+      "Party : un membre mort reste a sa place avec toutes ses infos et HP 0, affiche en rouge pulsant au lieu d'etre grise comme s'il etait dans une autre zone. Mort et hors-zone sont desormais distingues par la vraie zone du membre, pas par l'absence de HP." },
+    { "Fixed : damage job abilities (Jump, High Jump, Weapon Bash, Shield Bash...) no longer trigger the weaponskill popup as if they were a WS -- they share an id with real weaponskills, so they are now told apart by the action message.",
+      "Corrige : les aptitudes de degats (Jump, High Jump, Weapon Bash, Shield Bash...) ne declenchent plus le popup de weaponskill comme si c'en etait un -- elles partagent un identifiant avec de vrais WS, elles sont donc desormais distinguees par le message d'action." },
+};
+
 // One entry per released version, NEWEST FIRST. The Update tab renders each as a collapsible header ; the newest
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.45", CL_45, (int)(sizeof(CL_45) / sizeof(CL_45[0])) },
     { "1.0.44", CL_44, (int)(sizeof(CL_44) / sizeof(CL_44[0])) },
     { "1.0.43", CL_43, (int)(sizeof(CL_43) / sizeof(CL_43[0])) },
     { "1.0.42", CL_42, (int)(sizeof(CL_42) / sizeof(CL_42[0])) },

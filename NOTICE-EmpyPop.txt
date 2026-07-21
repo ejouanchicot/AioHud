@@ -1,7 +1,7 @@
 ﻿AioHUD — EmpyPop module
 =======================
 
-Engine, rendering, UI, integration : (c) Tetsouo (ejouanchicot)
+Engine, rendering, UI, integration : (c) AioHUD
 
 NM pop-chain data derived from Empy Pop Tracker
 (c) 2020 Dean James (Xurion of Bismarck) — BSD 3-Clause

@@ -169,7 +169,7 @@ static void fill_member(Row& r, const PMember& pm) {
     r.hpVal = pm.hp; r.mpVal = pm.mp; r.tp = pm.tp; r.hpp = pm.hpp; r.mpp = pm.mpp;
     r.plead = pm.party_lead(); r.alead = pm.alliance_lead(); r.qm = pm.quarter_master();
     r.cast = party().cast_label(pm.id, r.castPct, r.castAlpha);   // live spell cast (0 if not casting)
-    r.offzone = (pm.maxHp == 0);                       // no vitals at all -> member is out of our zone
+    r.offzone = pm.offzone;                            // in a DIFFERENT zone (model, by zone id) ; a DEAD member in our zone is NOT offzone -> the red dead row fires (was maxHp==0, which caught the dead too)
     r.outRange = (pm.dist >= 0.0f && pm.dist >= kCastRange);  // in zone but beyond cast range -> dim
     r.dist = pm.dist;
     r.zone = pm.zone;
@@ -850,7 +850,7 @@ void Party::draw(const Frame& f) {
         const RowAnim* a = ra[i];
         const float hpp = a ? a->hpp : (float)r.hpp, mpp = a ? a->mpp : (float)r.mpp, tpp = a ? a->tpp : 0.0f;
         const float wsReady = (r.tp >= 1000) ? 1.0f : 0.0f;   // TP >= 1000 -> pulse (WS ready)
-        const float hpDanger = (r.hpp > 0 && r.hpp <= 25) ? 1.0f : 0.0f;   // HP <= 25% (alive) -> red danger blink
+        const float hpDanger = (!r.offzone && r.hpp <= 25) ? 1.0f : 0.0f;   // HP <= 25% AND dead (hpp==0) -> red danger blink ; a DEAD member's empty HP bar pulses red exactly like a critical one
         const u32   gcol[3] = { hp_color(hpp), C_MP, tp_color(r.tp) };
         const float gpct[3] = { hpp, mpp, tpp };
         const float gpls[3] = { 0.0f, 0.0f, ui_config().animTP ? wsReady : 0.0f };   // TP WS-ready pulse (config option)
@@ -940,6 +940,10 @@ void Party::draw(const Frame& f) {
         const Row& r = rows[i];
         bool offz = r.offzone;
         bool dead = !offz && r.hpp <= 0;
+        // DEAD red, pulsing like critical HP. ONE value for the name AND the HP "0", so they read as the same red at
+        // every instant of the blink.
+        const float deadBr = (dead && ui_config().animHP) ? (0.55f + 0.45f * (0.5f + 0.5f * sinf(t * 7.5f))) : 1.0f;
+        const u32   deadRed = scl(0xFFFF4646u, deadBr);
         bool hasCast = castOn() && !dead && !offz && r.cast;   // casts shown per box type (castOn())
         const float ry = oy + pad + i * rowpit;
         const float by = snap(ry + badgeYoff);         // match the snapped badge rect
@@ -1001,7 +1005,7 @@ void Party::draw(const Frame& f) {
         const char* nmDraw = (nmax > 0) ? fit_ellipsis(fName, nm, nsz, nmax, nmFit, (int)sizeof(nmFit)) : nm;
         // name sits at a FIXED height (always a bit high) -> it never jumps when a cast starts,
         // and there is always room below for the cast / zone line.
-        fName->draw_lc(dev, nxt, ry + mh * 0.5f, nmDraw, nsz, te_col(TE_NAME, offz ? C_OFF : (dead ? C_BAD : C_INK)), nSTK, nOWf);   // name centred on the MAIN BAND
+        fName->draw_lc(dev, nxt, ry + mh * 0.5f, nmDraw, nsz, te_col(TE_NAME, offz ? C_OFF : (dead ? deadRed : C_INK)), nSTK, nOWf);   // name centred on the MAIN BAND
         if (hasCast) {
             const float ca = r.castAlpha < 0.0f ? 0.0f : (r.castAlpha > 1.0f ? 1.0f : r.castAlpha);   // pop-in / depop fade
             const float cp = 0.5f + 0.5f * sinf(t * 5.0f);                       // OPACITY pulse during the cast
@@ -1041,6 +1045,9 @@ void Party::draw(const Frame& f) {
                 else if (g == 0 && r.hpp > 0 && r.hpp <= 25 && ui_config().animHP) br = 0.55f + 0.45f * (0.5f + 0.5f * sinf(t * 7.5f));   // HP critical : blink (option)
                 tcol = scl(base, br);
             }
+            // DEAD : the HP "0" is danger red and blinks like critical HP, in EVERY gauge style. SAME deadRed as the
+            // name, so the two match at every instant.
+            if (dead && g == 0) tcol = deadRed;
             Font* fv = fBarE[g]; fv->begin(dev);   // HP / MP / TP each has its own element style
             fv->draw_cc(dev, gx + gw * 0.5f, gy + gh * 0.5f, buf, te_sz(TE_HP + g, barSz_ * S), te_col(TE_HP + g, tcol), vSTK, te_ow(TE_HP + g, barStroke_ * S));
         }

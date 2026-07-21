@@ -16,6 +16,9 @@ struct PMember {
     int  mlvl = 0;                   // main-job level (member +0x72 ; 0 = unknown)
     int  slvl = 0;                   // sub-job level (member +0x74 ; already the displayed/capped value ; 0 = unknown)
     int  zone = 0;                   // 0x0DD @+0x20 : member's zone id when OUT of our zone (0 = in zone)
+    bool offzone = false;            // in a DIFFERENT zone than us (zone set AND != our zone). MEASURED 2026-07-21 :
+                                     //   a DEAD member reports hp/hpp/maxHp = 0 exactly like an out-of-zone one, so
+                                     //   maxHp==0 conflated the two. The member's zone id vs our zone separates them.
     unsigned flags = 0;              // 0x0DD flags @+0x14 (leadership bits ; tentative)
     float dist = -1.0f;              // horizontal distance to the player (yalms) ; -1 = unknown (out of zone / trust)
     unsigned char isTrust = 0;       // 1 = a Trust NPC (name matched the TRUSTS DB ; packet carries no job for trusts)

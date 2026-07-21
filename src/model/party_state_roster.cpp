@@ -7,6 +7,7 @@
 #include "model/game_mem.h"               // party_ptr / self_party_base / entity_array / read_player / read_member helpers
 #include "model/paths.h"                  // plugin_path (the roster cache path)
 #include "windower.h"                      // safe_read / valid_ptr (guarded game-memory reads)
+#include "windower_debug.h"                // debug::log (//aio bcaptlog : per-member party dump)
 #include <windows.h>                       // CreateFileA / ReadFile / WriteFile
 #include <string.h>                        // memcpy
 #include <math.h>                          // sqrtf
@@ -334,6 +335,29 @@ void PartyState::load_from_memory() {
     for (int i = 0; i < wantN; ++i)                        // only the first `wantN` ACTIVE slots
         if (read_member(base + i * 0x7C, m[n], ent, px, pz)) ++n;
     count = n;                                             // n reflects the live roster (trust in/out)
+
+    // OUT OF ZONE = the member is in a DIFFERENT zone, decided by the zone id, NOT by maxHp==0 (which a DEAD member
+    // in our zone also hits -- MEASURED 2026-07-21: Kaories dead read zone=262=ours while Gab out-of-zone read 249).
+    { const unsigned oz = zone_id();
+      for (int i = 0; i < n; ++i) m[i].offzone = (m[i].zone != 0 && (unsigned)m[i].zone != oz); }
+
+    // //aio bcaptlog : per-member field dump, throttled to 1/s. Two bugs to settle from real data (2026-07-21):
+    //   (1) distance is sometimes garbage -> print the raw entity idx + its (x,z) vs ours ;
+    //   (2) a DEAD member is shown as out-of-zone -> print hp/hpp/maxHp/zone so we see which field cleanly
+    //       separates "dead in our zone" from "in another zone" (maxHp==0 conflates them).
+    if (bcapt_armed()) {
+        static unsigned s_ptLogMs = 0; const unsigned nowMs = GetTickCount();
+        if ((int)(nowMs - s_ptLogMs) >= 1000) { s_ptLogMs = nowMs;
+            // debug::log has NO %f (MEASURED : it printed "dist=f") -> everything as scaled INTEGERS. dist*10, pos*10.
+            windower::debug::log("PARTY zone=%u self=(%d,%d) n=%d", zone_id(), (int)(px * 10), (int)(pz * 10), n);
+            for (int i = 0; i < n; ++i) {
+                u32 mb = base + i * 0x7C; u32 idx = 0; safe_read(mb + 0x20, &idx); idx &= 0xFFFF;
+                windower::debug::log(
+                    "  [%d] \"%s\" id=%08X hpp=%d zone=%d off=%d idx=%u distx10=%d",
+                    i, m[i].name, m[i].id, m[i].hpp, m[i].zone, m[i].offzone ? 1 : 0, idx, (int)(m[i].dist * 10.0f));
+            }
+        }
+    }
 
     if (me.id) {   // derived-state cache : restore once per CHARACTER, then persist throttled (~4s). Survives //unload+reload.
         // Keyed on cacheChar_, not a bare one-shot : after a re-login as someone else the old code kept

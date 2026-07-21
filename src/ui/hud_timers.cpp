@@ -43,6 +43,12 @@ static const char* abil_name_by_recast(unsigned rid, const unsigned char* jaBits
     // usable at once, and the wanted label is the family header = the first table row. So : exactly one usable ->
     // that ability ; otherwise the first row -- EXCEPT rc 0, whose first row (Mighty Strikes) would mislabel every
     // job, so bail there instead.
+    // Shared-charge families whose FIRST table row is a real ability, not a header. SCH stratagems all share
+    // recast_id 231 and Penury (id 215) is row one, so every stratagem -- Accession, Addendum, Manifestation... --
+    // used to show "Penury" (reported). The recast is the charge-recharge timer, not any one stratagem, so the
+    // honest label is the family name. (Blood Pacts / Steps / Rolls work by the first-row rule because their first
+    // row genuinely IS the family header.)
+    if (rid == 231) return "Stratagem";
     const char* first = 0; const char* only = 0; int nUsable = 0;
     for (int i = 0; i < ABILS_N; ++i) if (ABILS[i].recast_id == rid) {
         if (!first) first = ABILS[i].en;
@@ -601,7 +607,18 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             const char* nm = (re.kind == 0) ? abil_name_by_recast(re.recastId, jaBits, jaOk) : spell_name_by_recast(re.recastId);
             if (!nm) continue;
             if (trkJob && C.tm_track_off(trkJob, UiConfig::TM_KEY_RECAST + re.recastId)) continue;   // "track per job" : this recast is unchecked for your job
-            recs[nr].rem = re.sec; recs[nr].icon = 0; recs[nr].name = nm; recs[nr].both = 0; recs[nr].order = 0; ++nr;
+            recs[nr].rem = re.sec; recs[nr].icon = 0; recs[nr].name = nm; recs[nr].both = 0; recs[nr].order = 0;
+            // SCH stratagems : the raw recast 231 is the FULL charge-bar time, meaningless as a cooldown. The grimoire
+            // poller already turns it into (charges available now, seconds to the NEXT charge) using the level/JP
+            // interval -- reuse that. Show "Stratagem [3]" counting down to the next charge, so a full bar (no recast
+            // entry) simply shows nothing and a recharging bar shows what you can spend right now.
+            if (re.recastId == 231 && f.game->grimoire.visible) {
+                recs[nr].pip = f.game->grimoire.charges;
+                recs[nr].pipCol = f.game->grimoire.charges > 0 ? 0xFF74D074u : 0xFF9AB0C8u;   // green when you have some, grey at zero
+                const int t = f.game->grimoire.timerSec;
+                recs[nr].rem = (t >= 0) ? t : re.sec;   // seconds to the next charge (fallback to raw if somehow -1)
+            }
+            ++nr;
         }
     }
     if (nb == 0 && nr == 0 && !editing) return;

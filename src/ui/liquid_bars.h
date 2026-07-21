@@ -37,7 +37,7 @@ public:
     bool vial_ready() const { return tex_[0] && tex_[1] && tex_[2] && cap_front_ && cap_back_; }
     // draw ONE real fiole into an arbitrary rect (party rows / Help), reusing this widget's textures.
     // Geometry scales with w/h. kind : 0 = HP, 1 = MP, 2 = TP. fill01 0..1. layers = effect level.
-    void draw_vial_scaled(u32 dev, float t, float x, float y, float w, float h, int kind, float fill01, u32 col, float pulse, float danger, int layers);
+    void draw_vial_scaled(u32 dev, float t, float x, float y, float w, float h, int kind, float fill01, u32 col, float pulse, float danger, int layers, bool colPalette = false);
 
 private:
     const GameState* state_;

@@ -576,7 +576,7 @@ LiquidBars* vial_provider()                  { return g_vialProvider; }
 // LiquidBars::draw() reduced to a single, arbitrarily-sized bar (no per-instance unlock flash). The core
 // identity -- glass caps + streaming liquid + curved glass -- scales cleanly ; the big absolute-px extras
 // (TP halo / electricity) are tuned for the 70px showcase bars and are left to the full widget.
-void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, float h, int kind, float fill01, u32 col, float pulse, float danger, int layers)
+void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, float h, int kind, float fill01, u32 col, float pulse, float danger, int layers, bool colPalette)
 {
     if (kind < 0 || kind > 2 || !vial_ready()) return;
     if (fill01 < 0.0f) fill01 = 0.0f; if (fill01 > 1.0f) fill01 = 1.0f;
@@ -586,6 +586,10 @@ void LiquidBars::draw_vial_scaled(u32 dev, float t, float x, float y, float w, f
     u32 dyn[3];
     if      (kind == 0) { hp_palette(fill01, dyn); pal = dyn; }   // HP : green / orange / red
     else if (kind == 2) { tp_palette(fill01, dyn); pal = dyn; }   // TP : continuous tiers
+    // colPalette : replace the fill-based palette with a WIDE light->deep 3-stop from `col`, so the scrolling liquid
+    // texture shows the full range of that hue -- a blood-red vial for the enemy Target bar. The wider spread (1.6 ..
+    // 0.32) makes the flowing shade variation read clearly, like blood in a tube.
+    if (colPalette) { dyn[0] = scale_rgb(col, 1.60f); dyn[1] = col; dyn[2] = scale_rgb(col, 0.32f); pal = dyn; }
 
     // BASE effects : WS-ready pulse (TP >= 1000) + critical-HP alarm + faint glow, as SOFT radial blobs that
     // hug the fiole (no hard box frame). Colour-quad state (untextured).

@@ -116,6 +116,74 @@ static u32 target_name_color(const GameState& g, bool present, bool fake) {
     return target_name_color_e(g.target);
 }
 
+// The Target bar tint : every target's bar renders at the SAME saturation and brightness, differing ONLY in hue, so a
+// red mob and a cyan ally read at one consistent intensity (the allegiance palette itself is uneven -- pale cyan, dark
+// red -- which made the red look muddy next to the others). Done in HSV : keep the source hue, force S/V to fixed.
+static u32 hsv_to_rgb(float h, float s, float v) {   // h in degrees [0,360)
+    const float c = v * s, x = c * (1.0f - fabsf(fmodf(h / 60.0f, 2.0f) - 1.0f)), m = v - c;
+    float r, g, b;
+    if      (h < 60)  { r = c; g = x; b = 0; }
+    else if (h < 120) { r = x; g = c; b = 0; }
+    else if (h < 180) { r = 0; g = c; b = x; }
+    else if (h < 240) { r = 0; g = x; b = c; }
+    else if (h < 300) { r = x; g = 0; b = c; }
+    else              { r = c; g = 0; b = x; }
+    auto B = [&](float f) { int o = (int)((f + m) * 255.0f + 0.5f); if (o < 0) o = 0; if (o > 255) o = 255; return (u32)o; };
+    return 0xFF000000u | (B(r) << 16) | (B(g) << 8) | B(b);
+}
+static void rgb_to_hsv(u32 c, float& h, float& s, float& v) {
+    const float r = ((c >> 16) & 0xFF) / 255.0f, g = ((c >> 8) & 0xFF) / 255.0f, b = (c & 0xFF) / 255.0f;
+    const float mx = fmaxf(r, fmaxf(g, b)), mn = fminf(r, fminf(g, b)), d = mx - mn;
+    v = mx; s = (mx <= 0.0f) ? 0.0f : d / mx; h = 0.0f;
+    if (d <= 0.0f) return;
+    if      (mx == r) h = 60.0f * fmodf((g - b) / d + 6.0f, 6.0f);
+    else if (mx == g) h = 60.0f * ((b - r) / d + 2.0f);
+    else              h = 60.0f * ((r - g) / d + 4.0f);
+}
+static u32 bar_tint(u32 nameCol, bool mob) {
+    if (mob) return hsv_to_rgb(2.0f, 0.90f, 0.92f);          // enemy : pure vivid RED at the shared intensity
+    float h, s, v; rgb_to_hsv(nameCol, h, s, v);
+    if (s < 0.15f) return 0xFFEDEDF5u;                       // achromatic (you = white) -> a bright neutral, no forced hue
+    return hsv_to_rgb(h, 0.85f, 0.92f);                      // same S / V as the enemy -> one intensity, each its own hue
+}
+
+// Bar CHROME, drawn BEFORE the fill : a soft dark drop-halo for depth, a gradient track, and an inner top shadow so
+// the empty portion reads as a recessed well rather than a flat black slab.
+static void bar_track(u32 dev, float x, float y, float w, float h, float r, float a) {
+    rrect_glow(dev, x, y, w, h, r, mul_a(0x55000000u, a), 2.6f);                                  // soft dark halo = depth
+    rrect(dev, x, y, w, h, r, mul_a(0xFF121824u, a), mul_a(0xFF05070Cu, a));                      // gradient track (top lit, bottom deep)
+    rrect_clip_begin(dev, x, y, w, h, r);
+    grad_quad(dev, x, y, w, h * 0.45f, mul_a(0x99000000u, a), mul_a(0x99000000u, a), mul_a(0x00000000u, a), mul_a(0x00000000u, a));   // inner top shadow
+    rrect_clip_end(dev);
+}
+// Bar CHROME, drawn AFTER the fill : a glass highlight along the top inner edge (over the liquid) + a crisp beveled
+// rim (bright top, dark bottom) -> the capsule looks like polished glass, not a flat outline.
+static void bar_rim(u32 dev, float x, float y, float w, float h, float r, float a, float lw) {
+    rrect_clip_begin(dev, x, y, w, h, r);
+    grad_quad(dev, x, y, w, h * 0.30f, mul_a(0x5AFFFFFFu, a), mul_a(0x5AFFFFFFu, a), mul_a(0x00FFFFFFu, a), mul_a(0x00FFFFFFu, a));   // glass sheen on top (the bright bevel)
+    // thin bright line hugging just the TOP inner edge -> the highlight of a glass rim (clipped, so no mid-bar line)
+    grad_quad(dev, x, y, w, lw * 1.4f, mul_a(0x66FFFFFFu, a), mul_a(0x66FFFFFFu, a), mul_a(0x10FFFFFFu, a), mul_a(0x10FFFFFFu, a));
+    rrect_clip_end(dev);
+    rrect_stroke(dev, x, y, w, h, r, mul_a(0xC8000000u, a), lw);                                  // crisp dark outer edge (definition)
+}
+
+// Flat name-colour HP fill (PC / NPC targets) : a clean solid block clipped to the capsule, plus a glossy top and a
+// hot fill edge. No liquid -- calm, so the enemy liquid bar stands out against it.
+static void fx_bar_fill(u32 dev, float x, float y, float w, float h, float r, float fw, u32 base, float a) {
+    if (fw <= 1.0f) return;
+    rrect_clip_begin(dev, x, y, w, h, r);
+    grad_quad(dev, x, y, fw, h, mul_a(base, a), mul_a(base, a), mul_a(scl(base, 0.72f), a), mul_a(scl(base, 0.72f), a));
+    { const u32 g0 = mul_a(0x55FFFFFF, a), g1 = mul_a(0x00FFFFFF, a);
+      grad_quad(dev, x, y + h * 0.10f, fw, h * 0.36f, g0, g0, g1, g1); }   // glossy top
+    rrect_clip_end(dev);
+    if (fw < w - 1.0f) {   // hot bright edge at the fill tip
+        const u32 e0 = mul_a(base, 0.0f), e1 = mul_a(scl(base, 1.7f), a), bw = h * 0.55f;
+        rrect_clip_begin(dev, x, y, w, h, r);
+        grad_quad(dev, x + fw - bw, y, bw, h, e0, e1, e0, e1);
+        rrect_clip_end(dev);
+    }
+}
+
 // ---- DISTANCE gauge : range zones (yalms), ported from the old addon (targetbar.lua). A MOB shows offensive
 //      ranges (Melee/WS/Magic/Ranged/Enmity, scaled by model_size) ; a PC/ally shows support ranges
 //      (Trade/AoE/Cast). Colours = the addon's. lcol = the lighter label / in-zone cursor tint. ----
@@ -160,7 +228,7 @@ static void draw_range_gauge(u32 dev, Font* lf, float gx, float gy, float gw, fl
                              float lblSz, float numSz, u32 numCol, bool upper, float a, u32 stk, float ow, float S) {
     const float r = gaugeH * 0.5f;
     setup_color_state(dev);
-    rrect(dev, gx, gy, gw, gaugeH, r, mul_a(0xFF0A0E14u, a), mul_a(0xFF05070Cu, a));   // dark rounded capsule track (== HP bar)
+    bar_track(dev, gx, gy, gw, gaugeH, r, a);                                           // SAME recessed glass track as the HP bar
     rrect_clip_begin(dev, gx, gy, gw, gaugeH, r);                                       // clip the zones to the round ends
     float prev = 0.0f;
     for (int i = 0; i < nb; ++i) {
@@ -173,7 +241,7 @@ static void draw_range_gauge(u32 dev, Font* lf, float gx, float gy, float gw, fl
     if (a > 0.4f) fiole_glass(dev, gx, gy, gw, gaugeH);   // the HP-bar's glass front-face (curvature + specular)
     rrect_clip_end(dev);
     setup_color_state(dev);                               // resets the blend fiole_glass left additive
-    rrect_stroke(dev, gx, gy, gw, gaugeH, r, mul_a(0x66FFFFFFu, a), snap(1.0f * S));    // AA capsule rim (== HP bar)
+    bar_rim(dev, gx, gy, gw, gaugeH, r, a, snap(1.4f * S));                             // SAME glass sheen + beveled rim as the HP bar
     u32 core = 0xFFF5463Cu;                                                             // out of range -> red (245,70,60)
     for (int i = 0; i < nb; ++i) if (dist <= b[i].to) { core = b[i].lcol; break; }
     const float tcur = fminf(1.0f, fmaxf(0.0f, dist / scale));
@@ -601,32 +669,24 @@ void Target::draw(const Frame& f) {
     // ---- HP bar : a real HD animated FIOLE (the Player-Hub liquid vial), borrowed via the vial provider.
     //      Streaming liquid + glass + green->orange->red palette + critical alarm are all handled by the fiole. ----
     setup_color_state(dev);
-    const u32 hc = hp_color(hpp_);
-    const bool crit = present && hpp_ > 0.0f && hpp_ <= 25.0f;
-    { LiquidBars* vp = vial_provider();
-      // a clean AA dark CAPSULE track behind the fiole -> smooth ROUND ends (the fiole's stencil-clipped
-      // capsule has hard/transparent corners that looked bevelled against the box ; the AA track owns the silhouette).
-      rrect(dev, barX, barY, barW, barH, barR, mul_a(0xFF0A0E14, a), mul_a(0xFF05070C, a));
-      // the fiole ignores our fade alpha -> only draw it once the box is mostly in (avoids a hard pop vs the fading frame).
-      if (vp && vp->vial_ready() && a > 0.4f) {
-          vp->draw_vial_scaled(dev, f.t, barX, barY, barW, barH, 0 /*HP*/, hpp_ / 100.0f, hc, 0.0f, crit ? 1.0f : 0.0f, 4);
-          if (hppGhost_ > hpp_ + 0.3f) {                                  // DELAYED damage trail on top : strong orange = the HP just lost
-              rrect_clip_begin(dev, barX, barY, barW, barH, barR);
-              const float gx = barX + barW * (hpp_ / 100.0f), gw = barW * ((hppGhost_ - hpp_) / 100.0f);
-              grad_quad(dev, gx, barY, gw, barH, mul_a(0xDCFF9A2C, a), mul_a(0xDCFF9A2C, a), mul_a(0xD4EE5A0E, a), mul_a(0xD4EE5A0E, a));
-              rrect_clip_end(dev);
-              setup_color_state(dev);
-          }
-      } else {                                                          // fallback (fiole not ready / fading out) : flat capsule fill on the track
-          const float fw = barW * (hpp_ / 100.0f);
-          if (fw > 1.0f) rrect_left(dev, barX, barY, fw, barH, barR, mul_a(hc, a), mul_a(scl(hc, 0.6f), a));
-      }
-      // AA capsule rim on top -> a crisp smooth outline hiding the fiole's hard clip edge at the round ends.
-      // The fiole leaves a bound texture + MODULATE op ; reset to colour-quad state first, else the rim AND the
-      // lock padlock below sample that texture's corner texel and come out a wrong colour (only the damage-trail
-      // path reset it before, so the bug only showed when HP was stable).
-      setup_color_state(dev);
-      rrect_stroke(dev, barX, barY, barW, barH, barR, mul_a(0x66FFFFFF, a), snap(1.0f * S));
+    // FLAT HP bar, filled with the EXACT name colour -- no fiole, no gradient, no glow, no damage trail, no crit
+    // pulse. Requested: the bar reads as one solid block the same colour as the name (red when claimed by you, etc.).
+    // The fill LEVEL and the HP% number still say how much HP is left.
+    // A MOB target always gets the ENEMY-RED bar, whatever its claim -- it reads instantly as "this is a monster".
+    // MOB -> a blood-red LIQUID vial (the fiole, tinted -> real flowing liquid, many shades). PC/NPC -> a calm flat
+    // name-colour block. The liquid vs flat contrast is itself the "this is an enemy" tell.
+    const bool tgtMob = present && !fake && (g.target.spawnType == 0x10);
+    const u32 hc = bar_tint(target_name_color(g, present, fake), tgtMob);   // one shared intensity, hue per allegiance (red = mob)
+    {
+        LiquidBars* vp = vial_provider();
+        bar_track(dev, barX, barY, barW, barH, barR, a);                                        // recessed glass track
+        const float fw = barW * (hpp_ / 100.0f);
+        if (vp && vp->vial_ready() && a > 0.4f)                                                 // EVERY target gets flowing liquid, tinted (red = enemy, allegiance colour otherwise)
+            vp->draw_vial_scaled(dev, f.t, barX, barY, barW, barH, 0 /*HP*/, hpp_ / 100.0f, hc, 0.0f, 0.0f, 4, true /*tint palette*/);
+        else                                                                                   // vial not ready -> flat fallback
+            fx_bar_fill(dev, barX, barY, barW, barH, barR, fw, hc, a);
+        setup_color_state(dev);
+        bar_rim(dev, barX, barY, barW, barH, barR, a, snap(1.4f * S));                          // glass sheen + beveled rim
     }
 
     // ---- lock-on : a red padlock LEFT of the name when the main target is LOCKED (<t>). Drawn in the
@@ -849,7 +909,7 @@ void Target::draw(const Frame& f) {
         const char* rawName = fake ? "Bumba" : (se.name[0] ? se.name : "Sub");
         int shp = fake ? 93 : se.hpp; if (shp < 0) shp = 0; if (shp > 100) shp = 100;
         const u32 snCol = fake ? 0xFFF0787Au : target_name_color_e(se);
-        const u32 hcS   = hp_color((float)shp);
+        const u32 hcS   = bar_tint(snCol, (fake || se.spawnType == 0x10));   // same shared-intensity tint as the main bar
         const float sPad = snap(7.0f * S), sGap = snap(6.0f * S);
         const float sTxt = snap(tgt_sz(TGT_NAME, 12.0f * S)), sBarH = snap(12.0f * S), sBarR = sBarH * 0.5f, dsz = snap(sTxt * 0.85f);
         const float rowH = sBarH > sTxt ? sBarH : sTxt;
@@ -893,12 +953,18 @@ void Target::draw(const Frame& f) {
         const float nameX = snap(sIx + distW + sGap), barX = snap(nameX + nameW + sGap);
         if (sf) { sf->begin(dev); sf->draw_lc(dev, sIx, rowCy, db, dsz, 0xFF9AA6BEu, 0xFF000000u, tgt_ow(TGT_NAME, 1.0f * S)); }   // DISTANCE : left
         if (sf) { sf->begin(dev); sf->draw_lc(dev, nameX, rowCy, nb, sTxt, snCol, 0xFF000000u, tgt_ow(TGT_NAME, 1.2f * S)); }      // name
-        {   // themed FIOLE HP bar + inline %
+        {   // mob -> blood-red liquid vial, else flat name colour (same rule as the main bar)
             setup_color_state(dev);
-            rrect(dev, barX, snap(rowCy - sBarH * 0.5f), barW, sBarH, sBarR, 0xFF0A0E14u, 0xFF05070Cu);
-            LiquidBars* vp = vial_provider();
-            if (vp && vp->vial_ready()) vp->draw_vial_scaled(dev, f.t, barX, snap(rowCy - sBarH * 0.5f), barW, sBarH, 0, (float)shp / 100.0f, hcS, 0.0f, shp <= 25 ? 1.0f : 0.0f, 4);
-            else { const float fw = barW * ((float)shp / 100.0f); if (fw > 1.0f) rrect_left(dev, barX, snap(rowCy - sBarH * 0.5f), fw, sBarH, sBarR, hcS, scl(hcS, 0.6f)); }
+            const float sby = snap(rowCy - sBarH * 0.5f);
+            bar_track(dev, barX, sby, barW, sBarH, sBarR, 1.0f);
+            const float fw = barW * ((float)shp / 100.0f);
+            LiquidBars* svp = vial_provider();
+            if (svp && svp->vial_ready())
+                svp->draw_vial_scaled(dev, f.t, barX, sby, barW, sBarH, 0, (float)shp / 100.0f, hcS, 0.0f, 0.0f, 4, true);
+            else
+                fx_bar_fill(dev, barX, sby, barW, sBarH, sBarR, fw, hcS, 1.0f);
+            setup_color_state(dev);
+            bar_rim(dev, barX, sby, barW, sBarH, sBarR, 1.0f, snap(1.2f * S));
             if (sf) { sf->begin(dev); char pb[6]; sprintf(pb, "%d%%", shp); sf->draw_c(dev, snap(barX + barW * 0.5f), rowCy, pb, snap(sTxt * 0.78f), 0xFFF4FAFFu, 0xFF000000u, snap(1.4f * S)); }
         }
     }
