@@ -260,6 +260,7 @@ void Hud::render(u32 dev) {
     if (state_.hasSubTarget && state_.subTarget.valid && state_.subTarget.spawnType == 0x10) party().note_mob_hp(state_.subTarget.id, state_.subTarget.hpp);
     party().refresh_hate();   // hate list : resolve tracked aggro mobs -> display rows (needs the fresh self pos + <t>)
     party().prune_skillchains();   // skillchains : drop resonance windows whose mob has died (so the box doesn't linger)
+    party().reconcile_treasure();  // treasure pool : prune packet slots the game's own treasure memory says are empty (kills the "box with no pool" phantom)
     party().zt_set_zone((int)state_.zone, zone_name((int)state_.zone));   // zone tracker : detect Dynamis/Abyssea + reset on change
     party().ep_refresh(ui_config().epTrack);   // EmpyPop : resolve the tracked NM's pop chain (self-throttled 2 Hz ; rebuilds instantly on a key change)
     profile_autoload_tick();   // auto-switch profile when the character's Name/Main/Sub changes (login / job change)

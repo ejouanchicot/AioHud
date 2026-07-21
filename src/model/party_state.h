@@ -51,6 +51,7 @@ struct TreasureItem {
     unsigned expireUnix = 0;      // unix time when it drops out of the pool (~5 min)
     unsigned short lot = 0;       // highest lot value (0 = nobody lotted)
     char lotter[20] = {0};        // highest lotter's name
+    unsigned seenMs = 0;          // GetTickCount when this slot was added -> a fresh-add grace so reconcile_treasure() never wipes a slot the client memory hasn't reflected yet
 };
 
 // SKILLCHAINS : a resonating window on a target (module : Skillchains). Opened at step 1 by a WS/spell
@@ -344,6 +345,7 @@ struct PartyState {
     const TreasureItem* treasure_slots() const { return treasure_; }   // the TreasurePool widget reads this
     void on_treasure_add(const unsigned char* p);   // 0x0D2 : item added / removed
     void on_treasure_lot(const unsigned char* p);   // 0x0D3 : lot info / won-dropped
+    void reconcile_treasure();                      // once/frame : prune packet slots the in-game memory (*(g+0x5C)) says are empty -> kills "box with no pool" phantoms
     void treasure_clear() { for (int i = 0; i < 10; ++i) treasure_[i] = TreasureItem{}; }   // on zone change
 
     HateEntry hate_[128];                 // tracked aggro (0x028-fed, sticky) : mob -> PC + last-seen ms. Sole membership
@@ -601,6 +603,9 @@ struct PartyState {
     void zt_on_character_changed();      // zone-tracker half of the above (run state + Limbus coffers + treasure pool)
 
     void set_debuff_trace(int n);        // //aio dbflog : log the next N target-debuff mutations (add/reset/wipe/wake) to aiohud_debug.log
+    void set_treasure_trace(int n);      // //aio tpool : log the next N treasure-pool packets (0x0D2/0x0D3) + expiry math to aiohud_debug.log
+    bool treasure_trace_active() const;  // //aio tpool : true while the trace budget is unspent (gates the zone-in/out markers in the dispatch)
+    void treasure_mem_probe();           // //aio tmem : one-shot hex dump of the in-game treasure view (*(g+0x5C)) -> reconcile treasure_[] against memory ground truth
     void note_mob_hp(unsigned id, int hpp);   // per-frame HP feed for a mob : clears its debuffs on death (hpp<=0) or when a fresh mob RECYCLED this id (was near-dead, now near-full)
     unsigned debuff_dur_ms(unsigned status) const;   // LEARNED real duration if observed, else the base estimate
     int  alliance_count(int tier) const;           // live member count for alliance box tier 1 / 2

@@ -283,8 +283,8 @@ static void feed_packet(int id, const unsigned char* b)
         else if (id == 0x0D3) aio::party().on_treasure_lot(b);   // treasure pool : lot info / won
         else if (id == 0x067) aio::party().on_pet_info(b);       // hate list : learn friendly pet ids (Pet Info)
         else if (id == 0x068) aio::party().on_pet_status(b);     // hate list : friendly pet id + its target mob (Pet Status)
-        else if (id == 0x00B) { aio::party().set_zoning(true); aio::party().treasure_clear(); aio::party().hate_clear(); aio::party().pets_clear(); aio::party().buff_timers_clear(); }   // zone-OUT (loading) -> hide HUD + reset pool/hate/pets/self buff timers (0x063 re-sends). Ally buffs (estimates) PERSIST across a zone : the prune drops them on real wear-off / disband / death, not here.
-        else if (id == 0x00A) aio::party().set_zoning(false);   // zone-IN : the new zone is ready -> show the HUD again
+        else if (id == 0x00B) { if (aio::party().treasure_trace_active()) windower::debug::log("TPOOL zone-OUT (0x00B) tick=%u -> pool cleared", (unsigned)GetTickCount()); aio::party().set_zoning(true); aio::party().treasure_clear(); aio::party().hate_clear(); aio::party().pets_clear(); aio::party().buff_timers_clear(); }   // zone-OUT (loading) -> hide HUD + reset pool/hate/pets/self buff timers (0x063 re-sends). Ally buffs (estimates) PERSIST across a zone : the prune drops them on real wear-off / disband / death, not here.
+        else if (id == 0x00A) { if (aio::party().treasure_trace_active()) windower::debug::log("TPOOL zone-IN (0x00A) tick=%u", (unsigned)GetTickCount()); aio::party().set_zoning(false); }   // zone-IN : the new zone is ready -> show the HUD again
     } __except (EXCEPTION_EXECUTE_HANDLER) { /* short/malformed packet -> ignore, never crash the game */ }
 }
 
@@ -886,6 +886,16 @@ static void aio_command_dispatch(const char* cmd)
     if (strstr(buf, "dbflog")) {   // //aio dbflog -> trace the next N target-debuff mutations to aiohud_debug.log (debuff-box diagnosis)
         aio::party().set_debuff_trace(400);
         g_host.console().print(">>> AioHud : debuff log ARMED (cast a debuff on a mob, melee/sleep it, then send Windower\\plugins\\aiohud_debug.log ; look for DBF lines) <<<");
+        return;
+    }
+    if (strstr(buf, "tpool")) {   // //aio tpool -> trace the next N treasure-pool packets (0x0D2/0x0D3) + expiry math to aiohud_debug.log ("box with no pool" phantom diagnosis)
+        aio::party().set_treasure_trace(200);
+        g_host.console().print(">>> AioHud : treasure-pool log ARMED (go THF ; drop / lot / win treasures, and zone in-out ; then send Windower\\plugins\\aiohud_debug.log ; look for TPOOL lines) <<<");
+        return;
+    }
+    if (strstr(buf, "tmem")) {   // //aio tmem -> one-shot raw dump of the in-game treasure view (*(g+0x5C)) to aiohud_debug.log (memory ground-truth for reconciliation)
+        aio::party().treasure_mem_probe();
+        g_host.console().print(">>> AioHud : treasure MEMORY dumped (have a REAL pool up first) -- send Windower\\plugins\\aiohud_debug.log ; look for TMEM lines <<<");
         return;
     }
     if (strstr(buf, "config")) {

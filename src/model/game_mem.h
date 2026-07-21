@@ -123,6 +123,25 @@ bool read_player_gil(unsigned& gil);
 struct EquipSet { unsigned short id[16]; unsigned short count[16]; };
 bool read_equipment(EquipSet& out);
 
+// --- TREASURE POOL (memory GROUND TRUTH) : the struct the game's own Treasure menu renders --------------------
+// Base = *(g+0x5C) ("treasure" view of get_items). 10 slots, stride 0x30. Reversed 2026-07-21 from LuaCore
+// get_items (FUN_10074690 -> FUN_100935c0 -> FUN_10094270) AND confirmed live via //aio tmem :
+//   +0x00 u8  status (!=0 = slot in use : the game's OWN per-slot gate)   +0x02 u16 item_id
+//   +0x04 u16 lot (0..999)   +0x08 u32 lot_id (winner ; 0 = un-lotted)   +0x0C u32 lot_index
+//   +0x10 char[20] lot_name  +0x24 u32 dropper_id   +0x28 u32 timestamp (unix, == packet 0x0D2 ts)
+// The packet-fed PartyState::treasure_[] is RECONCILED against this each frame : a slot the memory says is empty
+// is a phantom (a missed/misparsed 0x0D3 clear) -> pruned. status + item_id are the fields confirmed live ;
+// lot/lot_name are Ghidra-confirmed only (nobody had lotted at the dump). See docs/game-data/treasure-pool.md.
+struct TreasureSlot {
+    bool           occupied;      // status u8 @+0x00 != 0  (authoritative "slot in use")
+    unsigned short item_id;       // @+0x02
+    unsigned short lot;           // @+0x04  highest lot (valid when lot_id != 0)
+    unsigned       lot_id;        // @+0x08  winner char id (0 = nobody lotted yet)
+    unsigned       timestamp;     // @+0x28  drop time (unix)
+    char           lot_name[20];  // @+0x10  winning-lotter name (null-terminated)
+};
+bool read_treasure_pool(TreasureSlot out[10]);   // false = view not mapped (zoning) -> caller treats as UNKNOWN, NOT empty (rule 10)
+
 // --- INVENTORY : "how many of item id X do I own, across all bags?" (see game-data/inventory.md) ---
 // The item container at items_root holds 18 BAGS of 81 entries each (bag stride 0xCA8 = 81 * 0x28) :
 // entry = items_root + bag*0xCA8 + slot*0x28 (id u16 @+0x00, count u32 @+0x04). Entry 0 of EVERY bag is a

@@ -608,6 +608,32 @@ bool read_equipment(EquipSet& out) {
     return ready || found > 0;
 }
 
+// TREASURE POOL ground truth : *(g+0x5C), 10 slots x 0x30. ONE SEH-guarded block copy of the 0x1E0-byte array
+// (rule 5/6 : snapshot, not a safe_read per field), then parse the local copy. Returns false when the view is
+// not mapped (zoning) so the caller keeps the packet-fed pool instead of wiping it (rule 10 : unknown != empty).
+static u32 treasure_base() { u32 g = data_root(); u32 t = 0; return (g && safe_read(g + 0x5C, &t) && valid_ptr(t)) ? t : 0; }
+bool read_treasure_pool(TreasureSlot out[10]) {
+    for (int i = 0; i < 10; ++i) { out[i] = TreasureSlot{}; }
+    const u32 base = treasure_base();
+    if (!base) return false;
+    unsigned char buf[0x1E0];
+    bool ok = false;
+    __try { memcpy(buf, (const void*)base, sizeof(buf)); ok = true; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+    if (!ok) return false;
+    for (int i = 0; i < 10; ++i) {
+        const unsigned char* s = buf + i * 0x30;
+        out[i].occupied  = (s[0x00] != 0);
+        out[i].item_id   = (unsigned short)(s[0x02] | (s[0x03] << 8));
+        out[i].lot       = (unsigned short)(s[0x04] | (s[0x05] << 8));
+        out[i].lot_id    = (unsigned)(s[0x08] | (s[0x09] << 8) | (s[0x0A] << 16) | (s[0x0B] << 24));
+        out[i].timestamp = (unsigned)(s[0x28] | (s[0x29] << 8) | (s[0x2A] << 16) | (s[0x2B] << 24));
+        int k = 0; for (; k < 19 && s[0x10 + k]; ++k) out[i].lot_name[k] = (char)s[0x10 + k];
+        out[i].lot_name[k] = 0;
+    }
+    return true;
+}
+
 // ids + 24-byte extdata per equipped slot. The item entry (items_root + bag*0xCA8 + idx*0x28) holds the
 // extdata (augment blob) at +0x0D (24 bytes) -- per the reversed item struct (id@0, slot@2, count@4, bazaar@8,
 // status@0xC, extdata char[0x18]@0x0D ; see docs/game-data/player-equipment.md).

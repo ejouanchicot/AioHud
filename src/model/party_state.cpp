@@ -87,6 +87,15 @@ static int s_dbfTrace = 0;
 #define DBFTRACE(...) do { if (s_dbfTrace > 0) { --s_dbfTrace; windower::debug::log(__VA_ARGS__); \
                            if (s_dbfTrace == 0) windower::debug::log("=== DBFLOG budget spent -- re-arm with //aio dbflog ==="); } } while (0)
 
+// //aio tpool : trace the next N treasure-pool packet mutations (0x0D2 add / 0x0D3 lot) to aiohud_debug.log, to
+// diagnose the "box pops with no pool for ~1 min" phantom. Each ADD line dumps the raw fields + the computed
+// expiry branch (ts-now shows a STALE re-broadcast ; residual ~60s IS the phantom ; branch shows natural-vs-fallback),
+// and the zone dispatch logs a marker so a capture reveals if the phantom enters right after a zone-in. Kept
+// OUTSIDE AIOHUD_PROBES (like geartrace) so a tester on a release build can capture. Self-limiting.
+static int s_tpoolTrace = 0;
+#define TPTRACE(...) do { if (s_tpoolTrace > 0) { --s_tpoolTrace; windower::debug::log(__VA_ARGS__); \
+                          if (s_tpoolTrace == 0) windower::debug::log("=== TPOOL budget spent -- re-arm with //aio tpool ==="); } } while (0)
+
 static inline bool is_sleep_status(unsigned s) { return s == 2 || s == 19 || s == 193; }   // Sleep, Sleep II, Lullaby (song sleep)
 // Statuses that PREVENT a mob from acting : sleep-family + Petrification (7), Stun (10), Terror (28). If the mob
 // ACTS, it is no longer under ANY of them -> drop them. (NOT Bind / Silence / Amnesia / Charm : a mob still acts.)
@@ -1245,6 +1254,33 @@ int PartyState::target_th(unsigned id) const {
 }
 
 void PartyState::set_debuff_trace(int n) { s_dbfTrace = n; }   // //aio dbflog
+void PartyState::set_treasure_trace(int n) { s_tpoolTrace = n; }        // //aio tpool
+bool PartyState::treasure_trace_active() const { return s_tpoolTrace > 0; }   // //aio tpool : gate the zone-in/out markers in the packet dispatch
+
+// //aio tmem : one-shot raw dump of the in-game TREASURE view in memory (*(g+0x5C) -- the struct the game's own
+// Treasure menu renders, per get_items() reversing in docs/game-data/inventory.md). This is the GROUND TRUTH to
+// reconcile the packet-fed treasure_[] against, to kill "box with no pool" phantoms whatever the cause. Dumps 512
+// bytes as little-endian words + a lo16 column so the per-slot stride / item-id offset can be read off by matching
+// a live pool's item ids (the 0x0D2 lines from //aio tpool). Guarded word-by-word : a bad pointer stops the dump,
+// never crashes. Run it WITH a real pool up.
+void PartyState::treasure_mem_probe() {
+    const u32 g = data_root();
+    if (!g) { windower::debug::log("TMEM: data_root() = 0 (not ready)"); return; }
+    u32 tr = 0;
+    if (!safe_read(g + 0x5C, &tr) || !valid_ptr(tr)) { windower::debug::log("TMEM: *(g+0x5C) invalid (tr=%08X) -- treasure view not mapped", tr); return; }
+    windower::debug::log("TMEM: g=%08X  treasure=*(g+0x5C)=%08X  -- dumping 512 bytes (little-endian)", g, tr);
+    char line[160];
+    for (int off = 0; off < 512; off += 16) {
+        u32 w0 = 0, w1 = 0, w2 = 0, w3 = 0;
+        const bool ok = safe_read(tr + off, &w0) && safe_read(tr + off + 4, &w1) && safe_read(tr + off + 8, &w2) && safe_read(tr + off + 12, &w3);
+        if (!ok) { windower::debug::log("TMEM +0x%03X: read failed -> stop", off); break; }
+        _snprintf(line, sizeof(line) - 1, "TMEM +0x%03X: %08X %08X %08X %08X   lo16= %04X %04X %04X %04X",
+                  off, w0, w1, w2, w3, w0 & 0xFFFF, w1 & 0xFFFF, w2 & 0xFFFF, w3 & 0xFFFF);
+        line[sizeof(line) - 1] = 0;
+        windower::debug::log("%s", line);
+    }
+    windower::debug::log("TMEM: done -- match the lo16 columns against your live pool item ids (the //aio tpool 0x0D2 lines)");
+}
 
 void PartyState::clear_debuffs(unsigned id) {
     if (!id) return;
@@ -1296,29 +1332,57 @@ int PartyState::target_debuffs(unsigned id, unsigned short* out, int* remainSec,
 void PartyState::on_treasure_add(const unsigned char* p) {
     const unsigned item = (unsigned)p[0x10] | ((unsigned)p[0x11] << 8);
     const unsigned idx  = p[0x14];
-    if (idx >= 10) return;
-    if (item == 0xFFFF) return;                                   // marker : nothing changed
-    if (item == 0) { treasure_[idx] = TreasureItem{}; return; }   // slot emptied
+    if (idx >= 10) { TPTRACE("TPOOL 0x0D2 BAD idx=%u item=0x%04X", idx, item); return; }
+    if (item == 0xFFFF) { TPTRACE("TPOOL 0x0D2 slot=%u no-change (0xFFFF)", idx); return; }              // marker : nothing changed
+    if (item == 0) { TPTRACE("TPOOL 0x0D2 slot=%u EMPTIED (item=0)", idx); treasure_[idx] = TreasureItem{}; return; }   // slot emptied
     const unsigned ts = (unsigned)p[0x18] | ((unsigned)p[0x19] << 8) | ((unsigned)p[0x1A] << 16) | ((unsigned)p[0x1B] << 24);
-    if (treasure_[idx].itemId == (unsigned short)item && treasure_[idx].timestamp == ts) return;   // already have it -> keep its lot info
+    if (treasure_[idx].itemId == (unsigned short)item && treasure_[idx].timestamp == ts) { TPTRACE("TPOOL 0x0D2 slot=%u item=0x%04X DUP (kept)", idx, item); return; }   // already have it -> keep its lot info
     const unsigned now = (unsigned)time(0);
     const unsigned natural = ts + 300;                            // 5-min lottery window
-    const unsigned exp = (natural >= now && natural - now <= 300) ? natural : (now + 300);   // fresh drop -> real window ; old item -> give it a fresh 5 min
+    const bool freshWindow = (natural >= now && natural - now <= 300);
+    const unsigned exp = freshWindow ? natural : (now + 300);   // fresh drop -> real window ; old item -> give it a fresh 5 min
+    TPTRACE("TPOOL 0x0D2 slot=%u item=0x%04X ts=%u now=%u ts-now=%d natural=%u exp=%u branch=%s residual=%ds tick=%u",
+            idx, item, ts, now, (int)(ts - now), natural, exp, freshWindow ? "natural" : "fallback+300", (int)(exp - now), (unsigned)GetTickCount());
     treasure_[idx] = TreasureItem{};
     treasure_[idx].itemId = (unsigned short)item;
     treasure_[idx].timestamp = ts;
     treasure_[idx].expireUnix = exp;
+    treasure_[idx].seenMs = GetTickCount();          // reconcile_treasure() grace : don't let a 1-frame memory lag wipe this fresh add
+}
+
+// Once per frame : reconcile the packet-fed pool against the game's OWN treasure memory (*(g+0x5C), read via
+// read_treasure_pool). This is the structural fix for "the Treasure Pool box appears with no pool" : the pool is
+// packet-only with no other ground truth, so a single missed / misparsed 0x0D3 clear left an item lingering until
+// its ~5-min expiry (a ~1-min phantom for a mature drop). The memory struct is what the in-game Treasure menu
+// renders, so a slot it reports empty is authoritatively gone -> prune it. Rule 10 : a FAILED read (view unmapped
+// while zoning) returns false and is treated as UNKNOWN -- we keep the packet pool rather than wipe a live one.
+void PartyState::reconcile_treasure() {
+    bool any = false;
+    for (int i = 0; i < 10; ++i) if (treasure_[i].itemId) { any = true; break; }
+    if (!any) return;                                        // nothing to check -> skip the memory read
+    TreasureSlot mem[10];
+    if (!read_treasure_pool(mem)) return;                    // view not mapped (zoning) -> UNKNOWN, keep the packet pool (rule 10)
+    const unsigned now = GetTickCount();
+    for (int i = 0; i < 10; ++i) {
+        if (!treasure_[i].itemId) continue;
+        if (mem[i].occupied && mem[i].item_id == treasure_[i].itemId) continue;   // corroborated by memory -> real, keep
+        if ((unsigned)(now - treasure_[i].seenMs) < 2000u) continue;              // fresh add : give the client memory time to reflect it before trusting "empty"
+        TPTRACE("TPOOL RECONCILE slot=%u pruned (packet item=0x%04X, mem occupied=%d id=0x%04X) -- phantom cleared",
+                (unsigned)i, (unsigned)treasure_[i].itemId, (int)mem[i].occupied, (unsigned)mem[i].item_id);
+        treasure_[i] = TreasureItem{};                                            // phantom / already gone in game -> drop it
+    }
 }
 // 0x0D3 : Index @0x14 (u8), Drop @0x15 (u8 ; !=0 -> won/floored -> gone), Highest Lot @0x0E (u16),
 // Highest Lotter Name @0x16 (char[16]).
 void PartyState::on_treasure_lot(const unsigned char* p) {
     const unsigned idx = p[0x14];
-    if (idx >= 10) return;
-    if (p[0x15] != 0) { treasure_[idx] = TreasureItem{}; return; }   // item left the pool (won or dropped to floor)
-    if (!treasure_[idx].itemId) return;
+    if (idx >= 10) { TPTRACE("TPOOL 0x0D3 BAD idx=%u", idx); return; }
+    if (p[0x15] != 0) { TPTRACE("TPOOL 0x0D3 slot=%u DROP=%u -> cleared (had item=0x%04X)", idx, (unsigned)p[0x15], (unsigned)treasure_[idx].itemId); treasure_[idx] = TreasureItem{}; return; }   // item left the pool (won or dropped to floor)
+    if (!treasure_[idx].itemId) { TPTRACE("TPOOL 0x0D3 slot=%u lot-info but NO cached item (ignored)", idx); return; }
     treasure_[idx].lot = (unsigned short)((unsigned)p[0x0E] | ((unsigned)p[0x0F] << 8));
     int i = 0; for (; i < 16 && p[0x16 + i]; ++i) treasure_[idx].lotter[i] = (char)p[0x16 + i];
     treasure_[idx].lotter[i] = 0;
+    TPTRACE("TPOOL 0x0D3 slot=%u lot=%u lotter=\"%s\" (item=0x%04X)", idx, (unsigned)treasure_[idx].lot, treasure_[idx].lotter, (unsigned)treasure_[idx].itemId);
 }
 
 } // namespace aio

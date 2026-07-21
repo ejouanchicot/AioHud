@@ -58,4 +58,17 @@ bool edit_drag_busy();
 bool edit_drag_grab(const void* owner);
 void edit_drag_release(const void* owner);
 
+// Z-ORDER arbiter, SHARED across every draggable box (standalone AND the Party/Alliance clusters, which have their
+// own drag code). Boxes draw in a fixed order, so the LAST box under the cursor is the one ON TOP. Each box calls
+// edit_z_track(its id, is-cursor-over-it, frame-t) every edit frame ; edit_z_topmost(id) then answers "is this the
+// top box under the cursor" (decided from LAST frame, so it's stable) -> only the top box glows / grabs / resizes.
+void edit_z_track(int boxId, bool over, float t);
+bool edit_z_topmost(int boxId);
+
+// UI BLOCKER : the edit-layout TOOLBAR (the top bar with Done / Default / Rules) owns every click over it, above all
+// boxes. It publishes its rect each frame ; a box under it must NOT grab / glow / resize, so a box parked behind the
+// toolbar can't steal the Done button's click (reported). `t` staleness-gates it (edit off / toolbar hidden = inert).
+void edit_set_ui_blocker(float x, float y, float w, float h, float t);
+bool edit_over_ui_blocker(float mx, float my, float t);
+
 } // namespace aio

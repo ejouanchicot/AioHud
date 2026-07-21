@@ -17,6 +17,25 @@ bool edit_drag_busy() { return g_editDragOwner != nullptr; }
 bool edit_drag_grab(const void* owner) { if (g_editDragOwner || !owner) return false; g_editDragOwner = owner; return true; }
 void edit_drag_release(const void* owner) { if (g_editDragOwner == owner) g_editDragOwner = nullptr; }
 
+// Z-ORDER arbiter (see edit_box.h). One instance shared by every box. The LAST box to report `over` in a frame is
+// the topmost (drawn last). Decisions read LAST frame's winner (g_zTopPrev), so a click grabs the box that was
+// visibly on top rather than whichever widget happened to draw first.
+static int g_zTopBox = -1, g_zTopPrev = -1; static float g_zTopT = -1.0f;
+void edit_z_track(int boxId, bool over, float t) {
+    if (t != g_zTopT) { g_zTopPrev = g_zTopBox; g_zTopBox = -1; g_zTopT = t; }   // new frame -> roll last frame's result forward
+    if (over) g_zTopBox = boxId;                                                 // last over box wins = topmost
+}
+bool edit_z_topmost(int boxId) { return g_zTopPrev < 0 || boxId == g_zTopPrev; }   // <0 : first frame -> allow (self-corrects next frame)
+
+// UI BLOCKER (the edit toolbar). Published each frame it's visible ; boxes check it (with their own f.t) so a
+// stale rect (edit off, or the toolbar hidden during a drag) is inert past a short window.
+static float g_blkX = 0, g_blkY = 0, g_blkW = 0, g_blkH = 0, g_blkT = -1e9f;
+void edit_set_ui_blocker(float x, float y, float w, float h, float t) { g_blkX = x; g_blkY = y; g_blkW = w; g_blkH = h; g_blkT = t; }
+bool edit_over_ui_blocker(float mx, float my, float t) {
+    if (t - g_blkT > 0.25f) return false;                   // not published recently -> inert
+    return mx >= g_blkX && mx < g_blkX + g_blkW && my >= g_blkY && my < g_blkY + g_blkH;
+}
+
 // Box-vs-box occupancy : every standalone box publishes its rect here each edit frame ; a dragged box is
 // then shoved out of the OTHERS so two boxes can't overlap (same minimal-translation resolve as the zone
 // push-out). Keyed by boxId. `t` = the frame time it last published -> a box not drawn recently (module
@@ -114,15 +133,18 @@ bool edit_box_drag(EditBox& st, int boxId, const Frame& f, float& px, float& py,
     const bool useHit = hitW > 0.0f && hitH > 0.0f;
     const float hx = useHit ? hitX : px, hy = useHit ? hitY : py, hw = useHit ? hitW : W, hh = useHit ? hitH : H;
     const bool over = m->x >= hx && m->x < hx + hw && m->y >= hy && m->y < hy + hh;
-    // Grab only on a FRESH press (clicked), over the box, when no OTHER box already owns the drag. Using
-    // `clicked` (not held `down`) means sweeping over a box mid-drag can't grab it, and the owner lock
-    // stops a second box being picked up even if two overlap at the click point.
-    if (m->clicked && !st.dragging && over && edit_drag_grab(&st)) {
+    edit_z_track(boxId, over, f.t);                         // feed the shared z-order arbiter (see edit_box.h)
+    // Topmost under the cursor AND not under the toolbar (which owns its own clicks). A box already being dragged
+    // keeps priority regardless (the toolbar is hidden mid-drag anyway).
+    const bool topmost = (edit_z_topmost(boxId) && !edit_over_ui_blocker(m->x, m->y, f.t)) || st.dragging;
+    // Grab only on a FRESH press (clicked), over the box, when it is the TOPMOST under the cursor and no OTHER box
+    // already owns the drag. `clicked` (not held `down`) means sweeping over a box mid-drag can't grab it.
+    if (m->clicked && !st.dragging && over && topmost && edit_drag_grab(&st)) {
         st.dragging = true;
         st.grabDX = m->x - px; st.grabDY = m->y - py; st.dragShift = st.dragCtrl = false;
         st.shiftHold = st.ctrlHold = 0;   // FRESH grab : clear any leftover axis-lock hold from a previous drag
     }
-    if (over && !st.dragging && !edit_drag_busy())               // hovering a grabbable box -> instant glow cue
+    if (over && topmost && !st.dragging && !edit_drag_busy())    // hovering a grabbable box (only the TOP one glows)
         edit_box_hover_glow(f.dev, f, px, py, W, H);
     if (st.dragging) {
         if (m->down) {
@@ -165,7 +187,7 @@ bool edit_box_drag(EditBox& st, int boxId, const Frame& f, float& px, float& py,
         } else { st.dragging = false; st.dragShift = st.dragCtrl = false;                        // released -> persist once + free the lock
                  edit_drag_release(&st); save_ui_config(); }
     }
-    if (over && ui_config().wheel != 0) {                               // wheel -> resize the whole box (0.5x .. 2.0x)
+    if (over && topmost && ui_config().wheel != 0) {                    // wheel -> resize the whole box (0.5x .. 2.0x) ; only the TOP box under the cursor
         float s = scale + (float)ui_config().wheel * 0.05f;
         scale = s < 0.5f ? 0.5f : (s > 2.0f ? 2.0f : s);
         ui_config().wheel = 0;

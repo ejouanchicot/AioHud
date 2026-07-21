@@ -35,7 +35,9 @@ Names come from the `max_*` / `count_*` / `enabled_*` fields `FUN_100935c0` publ
 | 5 | satchel | 11 | wardrobe3 | 17 | recycle |
 
 `gil` (`items_root+0x04`), `equipment` (`*(G+0x54)`/`*(G+0x58)`) and `treasure` (`*(G+0x5C)`) are
-*separate* views in `get_items()`, **not** bag indices.
+*separate* views in `get_items()`, **not** bag indices. The `treasure` view (10 slots × 0x30, the
+in-game Treasure menu's own struct) is reversed in [Treasure Pool](treasure-pool.md#memory-reconciliation-the-box-with-no-pool-fix)
+— AioHUD reads it to reconcile away phantom pool rows.
 
 ## Per-bag metadata — three parallel u8[18] arrays
 There IS a per-bag size/occupancy record, so no need to guess from a scan:

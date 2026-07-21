@@ -173,6 +173,8 @@ private:
                        float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse);
     void draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
                          float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse, float e);
+    void draw_debug_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
+                        float ix, float iw, float bodyY, float bodyH, float pageBot);
 
     bool  open_    = false;
     int   tab_     = 0;       // 0 = Configuration, 1 = Profil, 2 = Help
@@ -202,7 +204,7 @@ private:
     float anim_     = 0.0f;   // open progress 0..1 (eased) -> fade in
     float lastT_    = -1.0f;  // previous frame time, for dt
     float tabSlide_ = -1.0f;  // interpolated x of the sliding active-tab indicator
-    float hov_[5]   = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };   // eased hover amount per tab (Config / Profile / Edit Layout / Help / Update) -- MUST match NTABS (5) or the last tab reads OOB
+    float hov_[6]   = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };   // eased hover amount per tab (Config / Profile / Edit Layout / Help / Update / Debug) -- MUST match NTABS (6) or the last tab reads OOB
     // ---- Profile tab state ----
     char  nameBuf_[32] = { 0 };   // profile name being typed
     int   nameLen_     = 0;
@@ -220,7 +222,10 @@ private:
     float cfgMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
     float updScroll_   = 0.0f;    // Update tab "What's new" changelog vertical scroll
     float updMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
+    float dbgScroll_   = 0.0f;    // Debug tab vertical scroll
+    float dbgMaxScroll_= 0.0f;
     bool  relOpen_[32] = { true };// Update tab : per-version collapse state (newest RELEASES[0] starts OPEN, rest closed). Size must be >= RELEASES_N (config_page.cpp). Was 16 and RELEASES_N reached 17 at v1.0.37 : the render loop clamps to this size, so the OLDEST releases silently stopped being listed. Grown with headroom -- check this when adding a release.
+    bool  dbgOpen_[8] = { true, true };   // Debug tab : per-section collapse state (To fix + Planned open, Fixed closed). Size must be >= DEBUG_SECTIONS_N.
     float helpMaxScroll_ = 0.0f;  // last frame's scroll limit -> clamp the wheel BEFORE drawing (no overscroll bounce)
     // live-preview anchor published each frame for the HUD (Configuration tab only)
     bool  pvOn_        = false;

@@ -32,11 +32,11 @@ namespace aio {
 // feed_char/backspace/enter while the name field is focused -- the hook CONSUMES those keys so the
 // game never sees them. No per-frame Win32 polling here.
 
-static const char* TABS[]     = { "Configuration", "Profile", "Edit Layout", "Help", "Update" };
-static const int   NTABS      = 5;
+static const char* TABS[]     = { "Configuration", "Profile", "Edit Layout", "Help", "Update", "Debug" };
+static const int   NTABS      = 6;
 static const char* tab_label(int i) {
-    static const char* en[] = { "Configuration", "Profile", "Edit Layout", "Help", "Update" };
-    static const char* fr[] = { "Configuration", "Profil", "\xC3\x89""diter dispo", "Aide", "Mise \xC3\xA0 jour" };
+    static const char* en[] = { "Configuration", "Profile", "Edit Layout", "Help", "Update", "Debug" };
+    static const char* fr[] = { "Configuration", "Profil", "\xC3\x89""diter dispo", "Aide", "Mise \xC3\xA0 jour", "Debug" };
     return (ui_config().lang == 1 ? fr : en)[i];
 }
 
@@ -153,6 +153,33 @@ void empypop_help_box(const Frame& f, float cx, float cy, float s);
 void empypop_help_fit(const Frame& f, float availW, float maxScale, float& outScale, float& outH);
 
 #include "ui/config_help_data.h"   // HELP_* pages + HELP_MODULES[] (data only -- see the header)
+
+// Shared GRABBABLE vertical scrollbar for the config scroll regions (options viewport, Help, Update changelog,
+// Debug). Draws the track + thumb AND handles thumb-drag -- every one of these bars used to draw a DEAD thumb and
+// scroll ONLY by the wheel, so a user who grabs the bar (or has no wheel) couldn't reach the lower rows (reported
+// by morph). One bar dragged at a time, keyed by `barId`. Immediate-mode : the new `scroll` shifts the rows NEXT
+// frame ; the thumb is moved THIS frame so it tracks the cursor. Call once per region, after this frame's content
+// extent (contentH) is known. No-op (and releases any grab) when the region isn't tall enough to scroll.
+static int   s_sbGrab = 0;         // barId currently being dragged (0 = none)
+static float s_sbGrabOff = 0.0f;   // cursor -> thumb-top offset captured on grab
+static void scrollbar_vert(u32 dev, const MouseState* mo, int barId, float sbx, float top, float sbw,
+                           float viewH, float contentH, float& scroll, float maxS) {
+    if (maxS <= 0.5f || contentH <= 1.0f) { if (s_sbGrab == barId) s_sbGrab = 0; return; }
+    flat(dev, sbx, top, sbw, viewH, 0x22000000u);                                       // track
+    float thH = viewH * (viewH / contentH); if (thH < snap(24.0f)) thH = snap(24.0f);
+    float thY = top + (viewH - thH) * (scroll / maxS);
+    const bool hov = inrect(mo, sbx - snap(3.0f), thY, sbw + snap(6.0f), thH);           // generous grab area
+    if (mo && mo->down && !s_sbGrab && hov) { s_sbGrab = barId; s_sbGrabOff = mo->y - thY; }
+    if (!(mo && mo->down) && s_sbGrab == barId) s_sbGrab = 0;
+    if (s_sbGrab == barId && mo) {
+        float t = (viewH - thH > 0.0f) ? (mo->y - s_sbGrabOff - top) / (viewH - thH) : 0.0f;
+        t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+        scroll = t * maxS;
+        thY = top + (viewH - thH) * (scroll / maxS);                                     // reflect the drag this same frame
+    }
+    const u32 col = (hov || s_sbGrab == barId) ? 0x99FFFFFFu : 0x66FFFFFFu;              // brighter on hover / drag
+    rrect_fill(dev, sbx, thY, sbw, thH, sbw * 0.5f, col, col);                           // thumb
+}
 
 // Draw word-wrapped text from (x,y), returning the new y. Lines whose center is outside [top,bot] are
 // skipped -- a cheap clip for the scrolling viewport (D3D8 has no scissor rect).
@@ -646,13 +673,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             float maxS = contentH - viewH; if (maxS < 0.0f) maxS = 0.0f;
             cfgMaxScroll_ = maxS;                                                          // remembered for next frame's clamp
             if (cfgScroll_ > maxS) cfgScroll_ = maxS;
-            if (maxS > 0.5f && contentH > 1.0f) {
-                const float sbx = bandX + bandW + snap(4.0f), sbw = snap(4.0f);
-                flat(dev, sbx, cfgTop, sbw, viewH, 0x22000000);                            // track
-                float thH = viewH * (viewH / contentH); if (thH < snap(24.0f)) thH = snap(24.0f);
-                const float thY = cfgTop + (viewH - thH) * (cfgScroll_ / maxS);
-                rrect_fill(dev, sbx, thY, sbw, thH, sbw * 0.5f, 0x66FFFFFF, 0x66FFFFFF);    // thumb
-            }
+            scrollbar_vert(dev, mo, 1 /*options viewport*/, bandX + bandW + snap(4.0f), cfgTop, snap(6.0f), viewH, contentH, cfgScroll_, maxS);
         }
 
         #undef ROW_BAND
@@ -662,6 +683,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         draw_profile_tab(f, dev, fo, mo, click, ix, iw, bodyY, bodyH, pageBot, pulse, e);
     } else if (tab_ == 4) {
         draw_update_tab(f, dev, fo, mo, click, ix, iw, bodyY, bodyH, pageBot, pulse, e);
+    } else if (tab_ == 5) {
+        draw_debug_tab(f, dev, fo, mo, click, ix, iw, bodyY, bodyH, pageBot);
     } else {
         draw_help_tab(f, dev, fo, mo, click, ix, iw, bodyY, bodyH, pageBot, pulse);
     }
@@ -1053,6 +1076,7 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
         const float bw = snap(820.0f), bh = snap(62.0f), bx = snap((sw - bw) * 0.5f), by = snap(22.0f);
         const float pop = ease(900, 1.0f, 16.0f);                                   // subtle slide-in
         const float byA = by - (1.0f - pop) * snap(10.0f);
+        edit_set_ui_blocker(bx - snap(4.0f), byA - snap(2.0f), bw + snap(8.0f), bh + snap(12.0f), f.t);   // TOP priority : boxes under the toolbar don't grab (so Done/Default/Rules always click)
         shadow_down(dev, bx - snap(4.0f), byA + bh, bw + snap(8.0f), snap(10.0f), 0x55000000);
         vg(dev, bx, byA, bw, bh, 0xF0202B3C, 0xF0141C28);
         flat(dev, bx, byA, bw, 1, 0x55FFFFFF);                                       // top sheen
@@ -1598,12 +1622,7 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
         float maxScroll = contentH - viewH; if (maxScroll < 0.0f) maxScroll = 0.0f;
         helpMaxScroll_ = maxScroll;   // remember for next frame's wheel clamp (kills the overscroll bounce)
         if (helpScroll_ < 0.0f) helpScroll_ = 0.0f; if (helpScroll_ > maxScroll) helpScroll_ = maxScroll;
-        if (maxScroll > 0.0f) {
-            const float sbX = ix + iw - snap(8.0f);
-            flat(dev, sbX, top, snap(3.0f), bot - top, 0x22FFFFFF);
-            const float thH = (bot - top) * (viewH / contentH), thY = top + (bot - top - thH) * (helpScroll_ / maxScroll);
-            flat(dev, sbX, thY, snap(3.0f), thH, lerpc(C_ACCENT, C_ACCENTHI, pulse));
-        }
+        scrollbar_vert(dev, mo, 2 /*Help*/, ix + iw - snap(8.0f), natTop, snap(6.0f), viewH, contentH, helpScroll_, maxScroll);
 }
 
 #include "ui/config_changelog.h"   // CL_<ver> groups + RELEASES[] (data only -- see the header)
@@ -1729,14 +1748,58 @@ void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseS
         float maxS = contentH - viewH; if (maxS < 0.0f) maxS = 0.0f;
         updMaxScroll_ = maxS;
         if (updScroll_ > maxS) updScroll_ = maxS;
-        if (maxS > 0.5f) {
-            const float sbx = clX + clW + snap(4.0f), sbw = snap(4.0f);
-            flat(dev, sbx, listTop, sbw, viewH, 0x22000000);                                        // track
-            float thH = viewH * (viewH / contentH); if (thH < snap(24.0f)) thH = snap(24.0f);
-            const float thY = listTop + (viewH - thH) * (updScroll_ / maxS);
-            rrect_fill(dev, sbx, thY, sbw, thH, sbw * 0.5f, 0x66FFFFFF, 0x66FFFFFF);                 // thumb
+        scrollbar_vert(dev, mo, 3 /*Update changelog*/, clX + clW + snap(4.0f), listTop, snap(6.0f), viewH, contentH, updScroll_, maxS);
+    }
+}
+
+// ---- Debug tab (tab_ == 5) : the known-bugs / planned-work tracker, in-game. Collapsible sections, scrollable,
+//      same stencil-clip + wheel pattern as the Update changelog. Data in config_debug.h (mirrors Debug.txt). ----
+#include "ui/config_debug.h"   // DEBUG_SECTIONS[] (data only)
+
+void ConfigPage::draw_debug_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
+                                float ix, float iw, float bodyY, float bodyH, float pageBot) {
+    (void)bodyH;
+    const float clW = snap(560.0f), clX = ix + (iw - clW) * 0.5f;
+    const float titleY = bodyY + snap(12.0f);
+    fo->begin(dev);
+    fo->draw_c(dev, clX + clW * 0.5f, titleY + snap(6.0f), tr("Known bugs & planned work", "Bugs connus & \xC3\xA0 faire"), snap(22.0f), fa(C_GOLDHI), fa(C_STROKE), 1.4f);
+    fo->begin(dev);
+    fo->draw_c(dev, clX + clW * 0.5f, titleY + snap(30.0f), tr("Fixed items are listed per version in the Update tab.", "Les \xC3\xA9l\xC3\xA9ments corrig\xC3\xA9s sont list\xC3\xA9s par version dans l'onglet Mise \xC3\xA0 jour."), snap(12.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
+
+    const float listTop = titleY + snap(48.0f), listBot = pageBot - snap(6.0f);
+    if (listBot <= listTop + snap(20.0f)) return;
+    if (ui_config().wheel != 0 && mo && mo->x >= clX && mo->x <= clX + clW && mo->y >= listTop && mo->y <= listBot) {
+        dbgScroll_ -= (float)ui_config().wheel * snap(48.0f);
+        if (dbgScroll_ < 0.0f) dbgScroll_ = 0.0f;
+        if (dbgScroll_ > dbgMaxScroll_) dbgScroll_ = dbgMaxScroll_;
+        ui_config().wheel = 0;
+    }
+    clip_rect_begin(dev, clX - snap(2.0f), listTop, clW + snap(12.0f), listBot - listTop);
+    const float lh = snap(17.0f), tsz = snap(13.0f), hdrH = snap(30.0f), hdrGap = snap(4.0f);
+    float y = listTop - dbgScroll_;
+    for (int r = 0; r < DEBUG_SECTIONS_N && r < (int)(sizeof(dbgOpen_) / sizeof(dbgOpen_[0])); ++r) {
+        const char* title = (ui_config().lang == 1) ? DEBUG_SECTIONS[r].titleFr : DEBUG_SECTIONS[r].titleEn;
+        const bool onScreen = (snap(y) >= listTop) && (snap(y) + hdrH <= listBot);
+        if (onScreen && cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, r), clX + snap(2.0f), snap(y), clW - snap(4.0f), title, dbgOpen_[r]))
+            dbgOpen_[r] = !dbgOpen_[r];
+        y += hdrH + hdrGap;
+        if (dbgOpen_[r]) {
+            for (int i = 0; i < DEBUG_SECTIONS[r].n; ++i) {
+                cs(dev); rrect_fill(dev, clX + snap(9.0f), snap(y + lh * 0.5f - 2.0f), snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI));   // gold bullet
+                const char* txt = (ui_config().lang == 1) ? DEBUG_SECTIONS[r].lines[i].fr : DEBUG_SECTIONS[r].lines[i].en;
+                y = draw_wrapped(dev, fo, clX + snap(22.0f), y, clW - snap(30.0f), listTop, listBot, txt, tsz, C_TEXT, lh);
+                y += snap(7.0f);
+            }
+            y += snap(6.0f);
         }
     }
+    clip_rect_end(dev);
+    const float viewH = listBot - listTop, contentH = (y + dbgScroll_) - listTop + snap(6.0f);
+    float maxS = contentH - viewH; if (maxS < 0.0f) maxS = 0.0f;
+    dbgMaxScroll_ = maxS;
+    if (dbgScroll_ > maxS) dbgScroll_ = maxS;
+    scrollbar_vert(dev, mo, 4 /*Debug*/, clX + clW + snap(4.0f), listTop, snap(6.0f), viewH, contentH, dbgScroll_, maxS);
+    (void)f;
 }
 
 } // namespace aio

@@ -264,10 +264,22 @@ static const ChangeLine CL_47[] = {
       "Nouvelle commande : //aio selfcheck ecrit la sante de chaque chargement de texture/icone dans aiohud_debug.log (sert a verifier les corrections ci-dessus)." },
 };
 
+static const ChangeLine CL_48[] = {
+    { "Fixed : the Treasure Pool box could appear with no pool in the game for about a minute. The pool is now checked against the game's own treasure window every frame, so a leftover item can no longer linger.",
+      "Corrige : la boite Treasure Pool pouvait s'afficher sans pool dans le jeu pendant environ une minute. Le pool est desormais compare a la fenetre tresor du jeu a chaque image, donc un objet residuel ne peut plus trainer." },
+    { "Fixed : the config scrollbars could not be grabbed -- only the mouse wheel scrolled. You can now drag the scrollbar to move through the options, Help, Update and Debug tabs.",
+      "Corrige : les barres de defilement de la config ne pouvaient pas etre attrapees -- seule la molette faisait defiler. On peut desormais glisser la barre pour parcourir les onglets options, Aide, Mise a jour et Debug." },
+    { "Fixed (edit layout) : when boxes overlap, only the top one now reacts to the mouse, and the top toolbar always keeps priority -- a box parked underneath no longer steals its clicks.",
+      "Corrige (edition de la mise en page) : quand des boites se chevauchent, seule celle du dessus reagit a la souris, et la barre du haut garde toujours la priorite -- une boite garee dessous ne vole plus ses clics." },
+    { "New : a Debug tab in the config (next to Update) lists the known bugs and the planned work, kept up to date.",
+      "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
+};
+
 // One entry per released version, NEWEST FIRST. The Update tab renders each as a collapsible header ; the newest
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.48", CL_48, (int)(sizeof(CL_48) / sizeof(CL_48[0])) },
     { "1.0.47", CL_47, (int)(sizeof(CL_47) / sizeof(CL_47[0])) },
     { "1.0.46", CL_46, (int)(sizeof(CL_46) / sizeof(CL_46[0])) },
     { "1.0.45", CL_45, (int)(sizeof(CL_45) / sizeof(CL_45[0])) },

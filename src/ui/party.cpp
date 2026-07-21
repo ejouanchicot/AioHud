@@ -670,7 +670,9 @@ void Party::draw(const Frame& f) {
         const MouseState* m = f.mouse;
         const float clX = px - buffW, clY = boxOy - costH, clW = w + buffW, clH = boxH + costH;   // cluster incl. the left buff strip
         const bool over = m->x >= clX && m->x < clX + clW && m->y >= clY && m->y < clY + clH;
-        if (m->clicked && g_dragTier < 0 && over && edit_drag_grab(&g_dragTier)) {   // FRESH click + shared lock (can't grab while any other box drags)
+        edit_z_track(EDITBOX_PARTY + tier_, over, f.t);                            // shared z-order arbiter (see edit_box.h) -> a party box under another only reacts when it's on TOP
+        const bool topmost = (edit_z_topmost(EDITBOX_PARTY + tier_) && !edit_over_ui_blocker(m->x, m->y, f.t)) || (g_dragTier == tier_);   // also yield to the toolbar
+        if (m->clicked && g_dragTier < 0 && over && topmost && edit_drag_grab(&g_dragTier)) {   // FRESH click + TOP box + shared lock (can't grab while any other box drags)
             g_dragTier = tier_; g_grabDX = m->x - clX; g_grabDY = m->y - clY;
         }
         if (g_dragTier == tier_) {
@@ -711,7 +713,7 @@ void Party::draw(const Frame& f) {
                 px = snap(ex + buffW);                                 // immediate horizontal feedback (box px = cluster left + the buff strip)
             } else { g_dragTier = -1; edit_drag_release(&g_dragTier); }  // released -> free the shared lock
         }
-        if (over && !edit_drag_busy())                                 // hovering a grabbable box (nothing dragging) -> same neon cue as the standalone boxes
+        if (over && topmost && !edit_drag_busy())                      // hovering a grabbable box (only the TOP one glows) -> same neon cue as the standalone boxes
             edit_box_hover_glow(f.dev, f, clX, clY, clW, clH);
         // wheel over this box -> resize it (0.5x .. 2.0x)
         if (over && ui_config().wheel != 0) {
