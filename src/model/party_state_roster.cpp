@@ -293,9 +293,13 @@ static bool read_member(u32 mb, PMember& pm, u32 ent, float px, float pz) {
     const unsigned char spawn = entity_spawn(ent, idx);
     const bool spawnKnown = (spawn != 0);
     if (spawnKnown) pm.isTrust = (spawn & 0x02) ? 1 : 0;
-    // Trusts carry NO job in the packet -> resolve their main/sub job by name for display. The name DB also
-    // marks isTrust, but ONLY as a fallback when the entity was unreadable (e.g. an alliance member out of zone).
-    if (pm.mjob == 0) { int mj = 0, sj = 0; if (trust_job(pm.name, mj, sj)) { pm.mjob = mj; pm.sjob = sj; if (!spawnKnown) pm.isTrust = 1; } }
+    // Trusts carry NO job in the packet -> resolve their main/sub job by name for display. A KNOWN trust name is
+    // ALSO authoritative for isTrust : ANOTHER player's trust (you're partied with them) can read a SpawnType
+    // WITHOUT the NPC bit in your client, so trusting the byte alone left is_trust() false for it -> the Timers
+    // "Buff source : me + players" filter then failed to hide, e.g., their Monberaux's cures. A job-less member
+    // whose name is in the global TRUSTS[] table IS a trust (a real player always carries a job), so mark it one
+    // regardless of what the entity byte said. (Was: only when the entity was unreadable -- too narrow.)
+    if (pm.mjob == 0) { int mj = 0, sj = 0; if (trust_job(pm.name, mj, sj)) { pm.mjob = mj; pm.sjob = sj; pm.isTrust = 1; } }
     return true;
 }
 
