@@ -312,3 +312,4 @@ Fowl Aubade (Sleep res.) · Herb Pastoral (Poison res.) · Shining Fantasia (Bli
 - `bard.md` — job BRD, liste des chants par level
 - `fili-attire-set.md` — set Empyrean : Madrigal+1, Minuet+1, March+1, Ballad+1, Scherzo+1
 - `carnwenhan.md` — Mythic BRD, song duration +50 %
+- [song-duration-items.txt](song-duration-items.txt) — la liste extraite du gear qui augmente la **durée** des chants (provenance de `song_dur.h` ; ces tables-ci ne couvrent que la **puissance**). Cf. [buffs-on-allies.md](buffs-on-allies.md).

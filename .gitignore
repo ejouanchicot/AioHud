@@ -54,6 +54,8 @@ CLAUDE.md
 /re/
 # loose dev notes / feature docs (the analyses/audits now live under /docs/, already ignored above)
 /FOCUS.md
+# Local bug / TODO tracker (the in-game Debug tab, src/ui/config_debug.h, is the shipped mirror of it)
+/Debug.txt
 /design/README.md
 /design/exports/DESIGN_BRIEF.md
 

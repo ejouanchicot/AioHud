@@ -132,10 +132,11 @@ actor  server id @ 0x04 u32     target server id @ 0x08 u32
 param             @ 0x0C u32     value / param2   @ 0x10 u32
 actor  index      @ 0x14 u16     target index     @ 0x16 u16     message id @ 0x18 u16 (& 0x7FFF)
 ```
-The `//aio wear` and `//aio dbflog` probes are kept for re-locating fields after a client patch
-(`//aio dbflog N` traces the next N debuff mutations to `aiohud_debug.log`, self-limiting).
-`dbflog` lives in `plugin/aiohud.cpp`; the rest of the RE probes now live in
-`plugin/aiohud_probes.cpp` — see [architecture/re-probes.md](../architecture/re-probes.md).
+**`//aio dbflog N`** (survivor) traces the next N debuff mutations to `aiohud_debug.log` (self-limiting);
+it lives in `plugin/aiohud.cpp`. The **`//aio act` and `//aio wear`** probes used to reverse the layouts
+above have since been **removed** — probes churn and live in the untracked `plugin/aiohud_probes.cpp`; the
+fields they produced are still valid, and to recapture re-add a probe per
+[architecture/re-probes.md](../architecture/re-probes.md).
 
 ## Display caps
 

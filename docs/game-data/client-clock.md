@@ -1,3 +1,8 @@
+---
+title: The client clock — "now" for buff countdowns
+summary: How the client computes "now" for buff timers (a pulled monotonic clock + signed server offset, resynced on 0x00A) and the CEIL(delta/60) rounding — the two fixes that made AioHUD's countdowns match the game to the second.
+source: Ghidra decompile of FFXiMain (re/ffximain_dump.bin), 2026-07-20; model/party_state.cpp ffxi_now_tick(), model/party_state.h ticks_to_sec_ceil()
+---
 # L'horloge du client — « maintenant » pour les décomptes de buffs
 
 **Source : le code du client, décompilé sous Ghidra le 2026-07-20.** Confirmé en jeu : après correction,
@@ -90,3 +95,8 @@ affiché quelque part, il vient d'ailleurs et mérite sa propre passe.
 
 `src/model/party_state.cpp` — `ffxi_now_tick()` ; `src/model/party_state.h` — `ticks_to_sec_ceil()`,
 `FFXI_EXPIRY_PERMANENT`.
+
+## See also
+- [Timers](timers.md) — the self-buff/recast countdowns that consume this clock.
+- [0x028 action packet](action-packet.md) — the sibling client-parser trace from the same 2026-07-20 Ghidra pass.
+- [Moon phases](moonphase.md) — the other Vana'diel-time readout.

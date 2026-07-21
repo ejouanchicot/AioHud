@@ -1,3 +1,8 @@
+---
+title: 0x028 action packet — bit layout from the client parser
+summary: The 0x028 action-packet bit layout reversed from the client's own Ghidra-decompiled parser — the 150-bit header, per-target/per-effect strides, the add-effect/spike blocks, and why the fixed 150+i*123 step is only safe for target[0].
+source: Ghidra decompile of FFXiMain (re/ffximain_dump.bin, image base 0x05C60000), 2026-07-20; model/party_state.cpp on_action()
+---
 # 0x028 — action packet (bit layout)
 
 **Source : le parseur du client lui-même**, décompilé sous Ghidra le 2026-07-20. Ce n'est pas une reconstitution
@@ -105,3 +110,9 @@ contenir qu'un lanceur, et le dernier écrivain gagne **par construction**.
 Le correctif doit porter sur **la clé** — statut + quelque chose qui sépare les instances concurrentes, ou refus
 d'écraser une attribution self par une attribution non-self — **pas** sur la recherche d'un champ lanceur qui
 n'existe pas.
+
+## See also
+- [Party cast bar — the 0x028 action packet](cast-bar.md) — the higher-level parse this bit layout underpins.
+- [Target debuffs](target-debuffs.md) — another 0x028 consumer (mob-side debuff tracking).
+- [Buffs you cast on ALLIES](buffs-on-allies.md) — the `aoeSelf` / ally buff-line scans that still use the fixed step.
+- [Static analysis of FFXiMain](../architecture/re-static-analysis.md) — the 0x05C60000 image base and the `0x44730` correction noted above.

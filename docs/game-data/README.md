@@ -15,6 +15,7 @@ Until host `ffxi[7]` is walked, AioHUD sources live data two ways: the **local p
 - [Core offsets verified against LuaCore](luacore-verified-offsets.md) — the 2026-07-19 Ghidra audit: party stride/fields, the member→entity hop, the 0x900 bound, the entity struct, recast constants and the PointWatch RVAs, each checked against the Windower binding that implements it (two entity fields came back contradicted).
 - [Target & SUB-target struct](target-substruct.md) — the heap `target_t` (main vs sub reticle) driving the target bars, the `+0x5C` lock-on flag, plus the party-window picker cursor.
 - [Party cast bar — the 0x028 action packet](cast-bar.md) — bit-packed action parse for casting bars, with the don't-clear-on-cat-4 gotcha.
+- [0x028 action packet — bit layout from the client parser](action-packet.md) — the ground-truth bit layout reversed from the client's own Ghidra-decompiled parser: the 150-bit header, per-target/per-effect strides, add-effect/spike blocks, and why the fixed `150+i*123` step is only safe for `target[0]`.
 - [Target debuffs](target-debuffs.md) — tracking debuffs ON a mob from the 0x028/0x029: detect by SPELL id, "no effect" (msg 75) gating, the 32-slot table, sleep/crowd-control inference from the mob's own actions (wake msg 204/param 2, hit/act/DoT wakes), wear-off + duration learning, and the display caps.
 - [Action-menu info box](action-menu.md) — zero-tap Magic / Job Ability / Weapon Skill readout with recast tables and the ghost-menu fix.
 - [Party-member buffs — the 0x076 packet](member-buffs.md) — self buffs from memory, other members from the packed `0x076` packet, and the buff atlas.
@@ -29,6 +30,7 @@ Until host `ffxi[7]` is walked, AioHUD sources live data two ways: the **local p
 - [Treasure Pool](treasure-pool.md) — the 0x0D2/0x0D3 lottery-pool packets (item, index, timestamp, lot, lotter), the 5-min expiry rule, and the 23.5k item-name table.
 - [Skillchains](skillchains.md) — 0x028 resonance OPEN/CLOSE detection (add-effect animation @bit 272), the property/combo tables, and the usable-move continuation prediction.
 - [Timers](timers.md) — self buff durations from the 0x063 order-9 packet (absolute FFXI ticks) + ability/spell recasts from the client tables (g+0x22C/0x230/0x234), the 0x028 buff-caster self-cast filter, the shared-recast_id name-collision disambiguation, and why ROM/119/57.DAT can't supply menu icons.
+- [The client clock](client-clock.md) — how the client computes "now" for buff countdowns (a pulled monotonic clock + signed server offset resynced on 0x00A) and the `CEIL(delta/60)` rounding — the two fixes that made AioHUD's timers match the game to the second.
 - [Buffs you cast on ALLIES](buffs-on-allies.md) — the Timers `tmMine` rows: 0x028 cat-4/6 detection keyed by (target, spell), the AoE self-mirror exact-timer trick, and the per-job estimation models (Enhancing skill 34, BRD songs skill 40, COR rolls cat 6).
 - [Geomancy duration (GEO Indi-)](geomancy-duration.md) — skill 44 is an AURA (0x063 status pulses every ~3s) so the duration is COMPUTED (Base + JP1362×2 + flat Indicolure gear); the self/normal/Entrust cases + the 542-556/612 pulse-noise filter.
 - [Target movement speed](movement-speed-analysis.md) — consolidates the in-game captures + the wiki into the method behind the Target box `Spd +NN%` readout (`ui/target.cpp`, base 5.0 yalms/s = 100%). Verbatim wiki background: [movement-speed.md](movement-speed.md) · screenshot [compteur-de-vitesse.png](compteur-de-vitesse.png) · capture [pol_mnrUtoubLy.png](pol_mnrUtoubLy.png).
@@ -40,7 +42,7 @@ Raw game/wiki reference dropped in during the "buffs cast on allies" duration RE
 
 - [Enhancing Magic (wiki)](enhancing-magic-wiki.md) — full BG-wiki enhancing-magic page (skill = potency/interrupt, never duration). Curated RE summary lives in [enhancing-magic.md](enhancing-magic.md).
 - [Enhancing duration gear](enhancing-duration-gear.md) — the gear that grants "Enhancing magic effect duration"; pairs with [enhancing-duration-items.txt](enhancing-duration-items.txt) (the extracted %s).
-- [Song Potency](song-potency.md) — per-`+song` potency tables (Minuet=Attack, Ballad=MP/tick, …). Proves the `+1 <Song>` gear is potency, NOT duration — why `song_dur.h` ignores the family columns.
+- [Song Potency](song-potency.md) — per-`+song` potency tables (Minuet=Attack, Ballad=MP/tick, …). Proves the `+1 <Song>` gear is potency, NOT duration — why `song_dur.h` ignores the family columns. The song **duration** gear list is [song-duration-items.txt](song-duration-items.txt) (the extracted %s, provenance for `song_dur.h`).
 - [Bard (BRD)](bard.md) — job page: song list, JAs, merits/JP that touch song duration.
 - [Composure](composure.md) — RDM job ability reference sheet (the ×3 self-duration multiplier the model applies).
 - [Lethargy Armor Set (RDM)](lethargy-armor-set.md) — the Empyrean set that augments Composure (per-piece duration %).

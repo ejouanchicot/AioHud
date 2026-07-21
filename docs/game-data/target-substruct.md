@@ -14,6 +14,12 @@ two `targetentry_t` (40 bytes / `0x28` each) + a sub-active flag.
 > (gitignored, compiled only when present under `/DAIOHUD_PROBES`); only `keylog` / `dbflog` and the
 > `#ifdef`-ed call sites remain in `aiohud.cpp`. See
 > [architecture/re-probes.md](../architecture/re-probes.md) for the full command list.
+>
+> **Removed-probe note:** the `//aio tent`, `//aio tdbg` and `//aio pcur` commands referenced below
+> have since been **removed** from the source (probes churn — they live in the untracked
+> `src/plugin/aiohud_probes.cpp`). The offsets/findings they produced are still valid; to recapture,
+> re-add a probe per [architecture/re-probes.md](../architecture/re-probes.md). `//aio tlock`, `//aio tgt`
+> and `//aio sub` still exist.
 
 ```
 *(FFXiMain.dll + 0x57876C)        -> target_t base (HEAP ptr ; ASLR-shifted, resolve at runtime)

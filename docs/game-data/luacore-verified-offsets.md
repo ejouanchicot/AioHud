@@ -89,7 +89,9 @@ equality tests in `game_mem.cpp` are wrong. Bits `0x01` = PC and `0x10` = Mob re
 Windower does not name them.
 
 **`status` is NOT settled.** Windower reads `+0x16C`; AioHUD reads `+0x170`, found by a clean live
-idle-vs-engaged A/B (`//aio tent`, `target-substruct.md`). Both flip 0 to 1 on engage, which is exactly what an
+idle-vs-engaged A/B (`//aio tent` — since **removed**; probes churn and live in the untracked
+`plugin/aiohud_probes.cpp`, re-add one per [../architecture/re-probes.md](../architecture/re-probes.md) to
+recapture — see `target-substruct.md`). Both flip 0 to 1 on engage, which is exactly what an
 adjacent Status / StatusServer pair would do - the A/B could never have separated them. Aligning on `+0x16C`
 (what every Windower addon means by `mob.status`) needs one more probe logging BOTH dwords through an
 engage / disengage / KO cycle.
