@@ -208,7 +208,7 @@ void Player::on_device_lost() {   // FORGET handles (dead device) -> reload next
     jobicon_tex_ = 0; jobicon_tried_ = false;
     buff_tex_ = 0; buff_tried_ = false;
     gil_tex_ = 0; gil_tried_ = false;
-    for (int s = 0; s < 16; ++s) { gearTex_[s] = 0; gearId_[s] = 0; }   // FORGET handles + force reload
+    for (int s = 0; s < 16; ++s) { gearTex_[s] = 0; gearId_[s] = 0; gearTry_[s] = 0; gearNextMs_[s] = 0; }   // FORGET handles + force reload
     plrSkin_.on_device_lost(); plrSkinVar_ = -1;
 }
 
@@ -217,7 +217,7 @@ void Player::dispose() {
     release_texture(jobicon_tex_); jobicon_tex_ = 0; jobicon_tried_ = false;
     release_texture(buff_tex_);    buff_tex_ = 0;    buff_tried_ = false;
     release_texture(gil_tex_);     gil_tex_ = 0;     gil_tried_ = false;
-    for (int s = 0; s < 16; ++s) { release_texture(gearTex_[s]); gearTex_[s] = 0; gearId_[s] = 0; }
+    for (int s = 0; s < 16; ++s) { release_texture(gearTex_[s]); gearTex_[s] = 0; gearId_[s] = 0; gearTry_[s] = 0; gearNextMs_[s] = 0; }
     plrSkin_.dispose(); plrSkinVar_ = -1;
 }
 
@@ -569,9 +569,9 @@ void Player::draw(const Frame& f) {
             // non-empty slot whose BMP exists -> a transient create failure ; keep retrying until it sticks).
             const bool needLoad = (gearId_[s] != want) || (want != 0 && gearTex_[s] == 0 && gearTry_[s] != 255);
             if (needLoad) {
-                if (gearId_[s] != want) { if (gearTex_[s]) { release_texture(gearTex_[s]); gearTex_[s] = 0; } gearTry_[s] = 0; }   // new item -> drop the old + reset retries
+                if (gearId_[s] != want) { if (gearTex_[s]) { release_texture(gearTex_[s]); gearTex_[s] = 0; } gearTry_[s] = 0; gearNextMs_[s] = 0; }   // new item -> drop the old + reset retries + back-off
                 if (!want) { gearId_[s] = want; }
-                else if (decodes < MAX_GEAR_DECODES) {
+                else if (decodes < MAX_GEAR_DECODES && (int)(GetTickCount() - gearNextMs_[s]) >= 0) {   // back-off : a transient ROM failure retries after a delay, not every frame
                     char p[300]; _snprintf(p, sizeof(p), "%s%u.bmp", GEARICON_DIR(), want); p[sizeof(p) - 1] = 0;
                     const bool tr = gear_trace_armed();
                     if (tr) { --s_gearTrace; gear_trace("slot %d  id=%u (0x%04X) '%s'", s, want, want, item_name(want) ? item_name(want) : "?"); }
@@ -605,12 +605,30 @@ void Player::draw(const Frame& f) {
                                                     cached ? "" : (werr == 13 ? "  errno=13 EACCES : folder is READ-ONLY" : ""));
                                 if (tex && !cached && werr != 13) gear_trace("         err=%d (negative = Win32 GetLastError)", werr);
                             }
-                        } else { gearId_[s] = want; gearTry_[s] = 255;   // unreachable for real (no game install / id outside every DAT range) -> id-text, don't retry
+                        } else {   // DECODE FAILED. Permanent vs TRANSIENT is the whole point (rule 10).
+                            gearId_[s] = want;
+                            // GS_NO_RANGE (id in no DAT) / GS_NO_ROMDIR (no PlayOnline install found) are static for the
+                            // session -> id-text, don't retry. GS_NO_DAT (fopen failed, errno set) and GS_BAD_READ are
+                            // FILE I/O -> TRANSIENT : a DAT on a Program Files install is routinely blocked on first
+                            // touch by AV / Controlled Folder Access, then opens. Giving up on the same frame froze a
+                            // handful of icons as raw ids for the whole session on a tester's NA/Program Files box
+                            // (e.g. Atrophy Chapeau). Retry, spaced ~1 s, bounded, then say so.
+                            const bool permanent = (gi.step == GS_NO_RANGE || gi.step == GS_NO_ROMDIR);
+                            if (permanent) {
+                                gearTry_[s] = 255;
 #ifdef AIOHUD_PROBES
-                            windower::debug::log("GEARICON FAIL id=%u (0x%04X) [%s] -- ROM decode unreachable (step=%d)",
-                                                 want, want, item_name(want) ? item_name(want) : "?", gi.step);
+                                windower::debug::log("GEARICON FAIL id=%u (0x%04X) [%s] -- ROM decode unreachable (step=%d)",
+                                                     want, want, item_name(want) ? item_name(want) : "?", gi.step);
 #endif
-                            if (tr) gear_trace("  RESULT id-text fallback (permanent for this session)");
+                                if (tr) gear_trace("  RESULT id-text fallback (permanent : step %d)", gi.step);
+                            } else if (gearTry_[s] < 15) {   // transient I/O -> back off ~1 s and try again
+                                ++gearTry_[s]; gearNextMs_[s] = GetTickCount() + 1000u;
+                                if (tr) gear_trace("  RESULT transient (step %d errno %d) -> retry #%d in ~1 s", gi.step, gi.err, gearTry_[s]);
+                            } else {   // budget spent -- SAY SO (rule 10 corollary), then stop
+                                gearTry_[s] = 255;
+                                windower::debug::log("GEARICON give up id=%u (0x%04X) [%s] after 15 transient ROM failures (step=%d errno=%d) -- DAT stays unreadable (permission / AV / path?)",
+                                                     want, want, item_name(want) ? item_name(want) : "?", gi.step, gi.err);
+                            }
                             continue;
                         }
                     }

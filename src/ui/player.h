@@ -59,6 +59,7 @@ private:
     u32            gearTex_[16] = { 0 };
     unsigned short gearId_[16]  = { 0 };
     unsigned char  gearTry_[16] = { 0 };   // failed-load retry counter per slot (bounded) -> recover from a transient texture-create failure
+    unsigned       gearNextMs_[16] = { 0 };   // per-slot back-off : earliest GetTickCount to RETRY a transient ROM-decode failure (0 = now). A DAT held by AV / Controlled Folder Access on a Program Files install fails the first touch, then opens -- so the failure must be re-tried over SECONDS, not given up on the same frame (rule 10).
     bool           eqReadyPrev_ = false;   // //aio geartrace : last equipValid, so only its TRANSITIONS are logged
 
     WindowSkin plrSkin_;             // own FFXI window skin (for a custom FFXI-family box theme, independent of party)

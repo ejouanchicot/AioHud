@@ -244,10 +244,16 @@ static const ChangeLine CL_45[] = {
       "Corrige : les aptitudes de degats (Jump, High Jump, Weapon Bash, Shield Bash...) ne declenchent plus le popup de weaponskill comme si c'en etait un -- elles partagent un identifiant avec de vrais WS, elles sont donc desormais distinguees par le message d'action." },
 };
 
+static const ChangeLine CL_46[] = {
+    { "Equipment viewer : a gear icon that failed to decode from the game's ROM on the FIRST touch -- which happens on a Program Files install when antivirus or Controlled Folder Access briefly blocks the file -- no longer sticks as a raw item id for the whole session. The failed slots are now retried for ~15 seconds before giving up, and the give-up is logged.",
+      "Visualiseur d'equipement : une icone qui n'a pas pu etre decodee depuis la ROM du jeu au PREMIER acces -- ce qui arrive sur une installation en Program Files quand l'antivirus ou Controlled Folder Access bloque brievement le fichier -- ne reste plus bloquee en identifiant brut pour toute la session. Les emplacements en echec sont desormais reessayes pendant ~15 secondes avant d'abandonner, et l'abandon est journalise." },
+};
+
 // One entry per released version, NEWEST FIRST. The Update tab renders each as a collapsible header ; the newest
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.46", CL_46, (int)(sizeof(CL_46) / sizeof(CL_46[0])) },
     { "1.0.45", CL_45, (int)(sizeof(CL_45) / sizeof(CL_45[0])) },
     { "1.0.44", CL_44, (int)(sizeof(CL_44) / sizeof(CL_44[0])) },
     { "1.0.43", CL_43, (int)(sizeof(CL_43) / sizeof(CL_43[0])) },
