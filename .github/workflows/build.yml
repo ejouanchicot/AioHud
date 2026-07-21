@@ -1,4 +1,8 @@
 name: build
+# Title the run by the TAG on a release (v1.0.48), else by the commit message. Without this, a tag pushed
+# AFTER its commit is already on the branch carries no head_commit, so the run fell back to the workflow name
+# ("build") instead of a versioned title.
+run-name: ${{ github.ref_type == 'tag' && github.ref_name || github.event.head_commit.message || github.workflow }}
 
 # Compiles the 32-bit AioHud.dll on a Windows runner. On a `v*` tag it publishes a GitHub Release
 # with the raw DLL (for the in-game auto-updater) + a full payload zip (for manual install).
