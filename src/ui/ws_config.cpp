@@ -49,11 +49,11 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Colours", "Couleurs"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (catOpen_[7]) {
-        struct ColRow { const char* en; const char* fr; unsigned* col; int sb; };
+        struct ColRow { const char* en; const char* fr; unsigned* col; };
         ColRow cols[3] = {
-            { "Name",     "Nom",       &c.wsNameCol, 304 },
-            { "Damage A", "D\xC3\xA9g\xC3\xA2ts A", &c.wsDmgCol1, 308 },   // the number flashes between A and B
-            { "Damage B", "D\xC3\xA9g\xC3\xA2ts B", &c.wsDmgCol2, 312 },
+            { "Name",     "Nom",       &c.wsNameCol },
+            { "Damage A", "D\xC3\xA9g\xC3\xA2ts A", &c.wsDmgCol1 },   // the number flashes between A and B
+            { "Damage B", "D\xC3\xA9g\xC3\xA2ts B", &c.wsDmgCol2 },
         };
         for (int i = 0; i < 3; ++i) {
             unsigned& F = *cols[i].col;
@@ -63,7 +63,7 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                 const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, pw = snap(58.0f), pxs = coX + ctrlW - pw;
                 flat(dev, pxs, bty, pw, bbh, F | 0xFF000000u); outline(dev, pxs, bty, pw, bbh, C_BORDER);
             } ROW_NEXT(52.0f)
-            CFG_COLOR_PICKER(&F)
+            CFG_COLOR_PICKER_I(&F, i)   // loop variant : distinct drag/hover uids per colour row (plain CFG_COLOR_PICKER = IDX 0 -> the 3 pickers collided)
         }
     }   // end Colours
 
