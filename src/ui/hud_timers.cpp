@@ -127,22 +127,15 @@ static const char* song_mod_tag(unsigned char m, char* buf, int cap) {
 // selfBuffSpell_ remembers which spell actually produced the buff, which makes the per-entry key reachable.
 // HIDE uses the per-spell key when known (an OR there would re-hide the sibling spell). FOCUS accepts EITHER key,
 // matching the OR semantics the config panel already writes.
-static void tm_self_keys(unsigned status, unsigned& hideKey, unsigned& focusKeySpell) {
-    hideKey = status; focusKeySpell = UiConfig::TM_KEY_FOCUS | status;
-    const unsigned short sp = party().self_buff_spell(status);
-    const SpellRow* sr = sp ? spell_info(sp) : 0;
-    if (sr && sr->recast_id) {
-        hideKey       = UiConfig::TM_KEY_RECAST + sr->recast_id;
-        focusKeySpell = UiConfig::TM_KEY_FOCUS | (UiConfig::TM_KEY_RECAST + sr->recast_id);
-    }
+// The Timers buff filter is now JOB-AGNOSTIC and keyed purely by STATUS (the config writes c.tm_buff_off, one state
+// per buff family, shared across every job). HIDDEN = tm_buff_off(status) ; FOCUS = tm_buff_off(TM_KEY_FOCUS|status).
+// No recast / ally / status-mirror keys anymore, and recasts are no longer filtered (always shown). The `job` params
+// are kept only so the many call sites don't all have to change their arguments.
+static bool tm_self_focus_on(const UiConfig& C, int /*job*/, unsigned status) {
+    return C.tm_buff_off(UiConfig::TM_KEY_FOCUS | status);
 }
-static bool tm_self_focus_on(const UiConfig& C, int job, unsigned status) {
-    unsigned hk, fk; tm_self_keys(status, hk, fk);
-    return C.tm_track_off(job, fk) || C.tm_track_off(job, UiConfig::TM_KEY_FOCUS | status);
-}
-static bool tm_self_hidden(const UiConfig& C, int job, unsigned status) {
-    unsigned hk, fk; tm_self_keys(status, hk, fk);
-    return C.tm_track_off(job, hk);
+static bool tm_self_hidden(const UiConfig& C, int /*job*/, unsigned status) {
+    return C.tm_buff_off(status);
 }
 
 // //aio ftrace : armed for a DURATION, not a row count. A per-row countdown burned out in seconds -- it decrements
@@ -301,39 +294,21 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // hidden too, which read as "Hidden+Focus does nothing". The per-entry recast key is always written by
             // the config panel (tm_config.cpp entHiddenSet), so it is the precise answer; fall back to the status
             // key for buffs with no known source spell (abilities, food, gear).
-            unsigned hideKey = bt[i].id;
-            unsigned focusKey = UiConfig::TM_KEY_FOCUS | bt[i].id;
             // throttle : only when this status' remaining SECOND changed, else 60 identical lines a second
             bool ftrace = false;
             if (timers_focus_trace_armed() && bt[i].id < 1024) {
                 const unsigned short r16 = (unsigned short)(rem < 0 ? 0 : (rem > 65000 ? 65000 : rem));
                 if (s_focusLastRem[bt[i].id] != r16) { s_focusLastRem[bt[i].id] = r16; ftrace = true; }
             }
-            {
-                // PER-TIMER spell, exactly like the row's NAME below. self_buff_spell() is per-STATUS and holds only
-                // YOUR last cast, so a trust's Honor March inherited the Hidden/Focus settings of YOUR Victory March
-                // (same status 214): hiding your song silently hid theirs, and your Hidden+Focus made THEIR row alert.
-                const unsigned short srcSpell = party().self_buff_spell_ranked(bt[i].id, bt[i].expiry, i);
-                const SpellRow* sr = srcSpell ? spell_info(srcSpell) : 0;
-                if (sr && sr->recast_id) {
-                    hideKey  = UiConfig::TM_KEY_RECAST + sr->recast_id;
-                    focusKey = UiConfig::TM_KEY_FOCUS | (UiConfig::TM_KEY_RECAST + sr->recast_id);
-                }
-            }
             if (ftrace) {
-                const unsigned short srcSpell = party().self_buff_spell(bt[i].id);
-                windower::debug::log("FOCUS status=%u '%s' rem=%d  trkJob=%d  srcSpell=%u  hideKey=%04X off=%d  focusKey=%04X off=%d  warn=%d  statusKeyOff=%d",
-                                     (unsigned)bt[i].id, buff_status_name(bt[i].id), rem, trkJob, (unsigned)srcSpell,
-                                     hideKey,  trkJob ? (C.tm_track_off(trkJob, hideKey)  ? 1 : 0) : -1,
-                                     focusKey, trkJob ? (C.tm_track_off(trkJob, focusKey) ? 1 : 0) : -1,
-                                     C.tmFocusWarn,
-                                     trkJob ? (C.tm_track_off(trkJob, (unsigned)bt[i].id) ? 1 : 0) : -1);
+                windower::debug::log("FOCUS status=%u '%s' rem=%d  hidden=%d  focus=%d  warn=%d",
+                                     (unsigned)bt[i].id, buff_status_name(bt[i].id), rem,
+                                     C.tm_buff_off((unsigned)bt[i].id) ? 1 : 0,
+                                     C.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)bt[i].id) ? 1 : 0, C.tmFocusWarn);
             }
-            // tm_self_focus_on(), not the raw focusKey : the monitor that fires the red OUT row ORs in the status
-            // mirror, and the config panel writes that mirror as an OR over every same-status spell. Reading only the
-            // per-spell key here made the two disagree -- a spell set to plain "Hidden" (help: "never shown. Silence.")
-            // still produced a permanent OUT alert because a same-status sibling was focused.
-            if (trkJob && C.tm_track_off(trkJob, hideKey)) {
+            // Buff filter : JOB-AGNOSTIC, keyed by STATUS (the family filter). Hidden -> drop the row, UNLESS it is
+            // Hidden+Focus and expiring (surface it under the warn threshold as the alert).
+            if (C.tm_buff_off((unsigned)bt[i].id)) {
                 if (!(tm_self_focus_on(C, trkJob, bt[i].id) && rem < C.tmFocusWarn)) continue;
             }
             // GEO aura noise : the geomancy effect status (542-556 Boosts) and "Colure Active" (612) pulse every ~3s
@@ -358,8 +333,8 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // SELF row -- pass 3's per-ally branch only emits allies, so folding here would make your own buff vanish.
             // Likewise if the ALLY scope hides this status (and it's not an expiring focus), pass 3 drops the group -> don't
             // fold, or a self-Tracked buff would vanish behind an ally-Hidden setting.
-            const bool allyHides = trkJob && C.tm_track_off(trkJob, UiConfig::TM_KEY_ALLY | bt[i].id)
-                                   && !(C.tm_track_off(trkJob, UiConfig::TM_KEY_FOCUS | UiConfig::TM_KEY_ALLY | bt[i].id) && rem < C.tmFocusWarn);
+            const bool allyHides = C.tm_buff_off((unsigned)bt[i].id)   // one state per buff : the ally copy honours the same family filter
+                                   && !(C.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)bt[i].id) && rem < C.tmFocusWarn);
             // NB : expTick canNOT be used here as a "same cast" test. Captured : two March groups (Honor + Victory)
             // both carried expTick 682 while the Victory March self timer read 712 -- the frozen expiry is shared
             // between same-status songs, not per cast. Gating the fold on it made the fold never fire for the second
@@ -444,8 +419,8 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             int effN = total;
             if (graceOB) { const int est = grp[k].allies + (meHas(grp[k].status) ? 1 : 0); if (est > effN) effN = est; }   // across a zone : fall back to the estimated target count
             if (effN < 1) continue;                        // nobody has it anymore (worn / replaced roll) -> drop the group
-            if (trkJob && C.tm_track_off(trkJob, UiConfig::TM_KEY_ALLY | grp[k].status)) {   // hidden ally buff -- UNLESS Unfollow-Focus & expiring (pops under the warn threshold)
-                if (!(C.tm_track_off(trkJob, UiConfig::TM_KEY_FOCUS | UiConfig::TM_KEY_ALLY | grp[k].status) && grp[k].rem < C.tmFocusWarn)) continue;
+            if (C.tm_buff_off((unsigned)grp[k].status)) {   // hidden buff (family filter) -- UNLESS Hidden+Focus & expiring (pops under the warn threshold)
+                if (!(C.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)grp[k].status) && grp[k].rem < C.tmFocusWarn)) continue;
             }
             const char* en = grp[k].isAbil ? abil_name_by_id(grp[k].spell) : (spell_info(grp[k].spell) ? spell_info(grp[k].spell)->en : 0);   // rolls -> ability name ; spells -> spell name
             int rem = grp[k].rem;
@@ -518,11 +493,9 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             { int n2 = 0; const BuffTimer* bt2 = party().buff_timers(n2);                      // remember FOCUS buffs currently up on YOU (Self focus key 0x8000|st)
               for (int i = 0; i < n2; ++i) { const unsigned st = bt2[i].id;
                 if (focus_trace_live() && st < 1024 && !is_debuff_status(st) && meHas((int)st)) {
-                    unsigned hk, fk2; tm_self_keys(st, hk, fk2);
-                    windower::debug::log("FOCUSMON remember? st=%u '%s' meHas=%d focusOn=%d (spellKey=%04X off=%d statusKey=%04X off=%d)",
+                    windower::debug::log("FOCUSMON remember? st=%u '%s' meHas=%d focusOn=%d (focusKey off=%d)",
                                          st, buff_status_name(st), meHas((int)st) ? 1 : 0, tm_self_focus_on(C, trkJob, st) ? 1 : 0,
-                                         fk2, C.tm_track_off(trkJob, fk2) ? 1 : 0,
-                                         UiConfig::TM_KEY_FOCUS | st, C.tm_track_off(trkJob, UiConfig::TM_KEY_FOCUS | st) ? 1 : 0);
+                                         C.tm_buff_off(UiConfig::TM_KEY_FOCUS | st) ? 1 : 0);
                 }
                 if (st >= 1024 || is_debuff_status(st) || !meHas((int)st) || !tm_self_focus_on(C, trkJob, st)) continue;
                 if (!srcKeeps((unsigned short)st, bt2[i].expiry, i)) continue;   // the source filter hides this row -> it must not alert either   // gate on meHas (same source as the emit check) -> no false alert while it's up ; per-SPELL focus key (see tm_self_keys)
@@ -532,7 +505,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
               } }
             for (int i = 0; i < no; ++i) {                                                     // remember FOCUS buffs currently up on allies (Allies focus key 0xC000|st ; needs tmMine)
                 const unsigned st = ob[i].status;
-                if (!C.tm_track_off(trkJob, UiConfig::TM_KEY_FOCUS | UiConfig::TM_KEY_ALLY | st)) continue;
+                if (!C.tm_buff_off(UiConfig::TM_KEY_FOCUS | st)) continue;   // ally focus = the same global buff-focus state
                 int s = -1; for (int q = 0; q < fmN; ++q) if (!fm[q].self && fm[q].target == ob[i].target && fm[q].status == st) { s = q; break; }
                 if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].lostMs = 0; fm[s].zoneCheck = 0; }
                 if (s >= 0) { fm[s].spell = ob[i].spell; fm[s].isAbil = ob[i].isAbil; int j = 0; for (; j < 19 && ob[i].name[j]; ++j) fm[s].name[j] = ob[i].name[j]; fm[s].name[j] = 0; }
@@ -541,8 +514,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             int w = 0;                                                                        // prune : ally left the party/alliance, or the focus flag was turned off
             for (int q = 0; q < fmN; ++q) {
                 const bool live = fm[q].self ? true : (zoneGrace || party().party_order(fm[q].target) <= 17);   // 0..5 party, 6..17 alliance ; 99 = gone (roster is unstable mid-zone -> keep during grace)
-                const bool fkOn = fm[q].self ? tm_self_focus_on(C, trkJob, fm[q].status)
-                                             : C.tm_track_off(trkJob, UiConfig::TM_KEY_FOCUS | UiConfig::TM_KEY_ALLY | fm[q].status);
+                const bool fkOn = C.tm_buff_off(UiConfig::TM_KEY_FOCUS | fm[q].status);   // self & ally share ONE global focus state
                 if (focus_trace_live() && !(live && fkOn))
                     windower::debug::log("FOCUSPRUNE st=%u '%s' DROPPED (live=%d focusOn=%d) -> no OUT row possible",
                                          (unsigned)fm[q].status, buff_status_name(fm[q].status), live ? 1 : 0, fkOn ? 1 : 0);
@@ -555,8 +527,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // a "Hidden+focus" alert that has held its full tmFocusHold with the buff still gone -> FREE the slot
                 // (the emit stops drawing it at that point ; without this it lingers forever and can fill fm[24]).
                 if (!fm[q].zoneCheck && fm[q].lostMs && !focusHas(fm[q])) {
-                    const bool dkOn = fm[q].self ? tm_self_hidden(C, trkJob, fm[q].status)
-                                                 : C.tm_track_off(trkJob, UiConfig::TM_KEY_ALLY | fm[q].status);
+                    const bool dkOn = C.tm_buff_off((unsigned)fm[q].status);   // self & ally share ONE global hidden state
                     if (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
                 }
                 if (w != q) fm[w] = fm[q]; ++w;
@@ -584,8 +555,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // Unfollow-Focus = hidden + focus -> the alert holds tmFocusHold seconds then depops (Focus alone =
                 // permanent until re-cast). Per-SPELL hide key : keyed on the shared STATUS this never matched for a
                 // buff two spells can grant, so the "hold 15s then depop" branch was unreachable for Cocoon.
-                const bool dkOn = fm[q].self ? tm_self_hidden(C, trkJob, fm[q].status)
-                                             : C.tm_track_off(trkJob, UiConfig::TM_KEY_ALLY | fm[q].status);
+                const bool dkOn = C.tm_buff_off((unsigned)fm[q].status);   // self & ally share ONE global hidden state
                 if (focus_trace_live())
                     windower::debug::log("FOCUSHOLD st=%u '%s' self=%d has=0 lostAgo=%ums hold=%ds dkOn=%d -> %s",
                                          (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].self,
@@ -607,7 +577,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             const GameState::RecastEntry& re = f.game->recasts[i];
             const char* nm = (re.kind == 0) ? abil_name_by_recast(re.recastId, jaBits, jaOk) : spell_name_by_recast(re.recastId);
             if (!nm) continue;
-            if (trkJob && C.tm_track_off(trkJob, UiConfig::TM_KEY_RECAST + re.recastId)) continue;   // "track per job" : this recast is unchecked for your job
+            // recasts are ALWAYS shown now (the family filter is buff-only ; recasts are your own cooldowns).
             recs[nr].rem = re.sec; recs[nr].icon = 0; recs[nr].name = nm; recs[nr].both = 0; recs[nr].order = 0;
             // SCH stratagems : the raw recast 231 is the FULL charge-bar time, meaningless as a cooldown. The grimoire
             // poller already turns it into (charges available now, seconds to the NEXT charge) using the level/JP

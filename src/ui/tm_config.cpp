@@ -134,67 +134,10 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                         c.tmText[(cfgTmTextElem_ < 0 || cfgTmTextElem_ >= TM_TE_COUNT) ? 0 : cfgTmTextElem_]);
     }   // end Text
 
-    // ===== sub-section : TRACK PER JOB (checklist of buffs/recasts to show, per job) =====
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Track per job", "Suivi par job"), trkSecOpen_)) trkSecOpen_ = !trkSecOpen_;
+    // ===== sub-section : BUFF FILTER (job-agnostic checklist of buffs to show, grouped by magic family) =====
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buff filter", "Filtre de buffs"), trkSecOpen_)) trkSecOpen_ = !trkSecOpen_;
     ROW_NEXT(42.0f)
     if (trkSecOpen_) {
-        static const char* const JAB[24] = { "-","WAR","MNK","WHM","BLM","RDM","THF","PLD","DRK","BST","BRD","RNG","SAM",
-                                             "NIN","DRG","SMN","BLU","COR","PUP","DNC","SCH","GEO","RUN","MON" };
-        PlayerInfo me; const bool haveMe = read_player(me);
-        const int curMain = haveMe ? me.mjob : 0, curSub = haveMe ? me.sjob : 0;
-        const int curMlvl = haveMe ? me.mlvl : 99, curSlvl = haveMe ? me.slvl : 49;
-        int job = (trkJob_ >= 1 && trkJob_ <= 22) ? trkJob_ : (curMain >= 1 && curMain <= 22 ? curMain : 5);   // MAIN
-        int sub = (trkSub_ >= 0) ? trkSub_ : (curSub >= 1 && curSub <= 22 ? curSub : 0);                        // SUB (0 = none)
-        if (job < 1 || job > 22) job = 5;
-        if (sub < 0 || sub > 22) sub = 0;
-        // ---- MAIN + SUB job pickers : a grid of NAME buttons. Selected = lit panel + ring ; a gold corner dot marks
-        //      your LIVE job ; the Sub grid leads with a '-' (none). Section title is CENTERED + underlined. ----
-        for (int which = 0; which < 2; ++which) {
-            { ROW_BAND(26.0f) fo->begin(dev);
-              const char* t = which == 0 ? tr("MAIN JOB", "JOB PRINCIPAL") : tr("SUB JOB", "SOUS-JOB");
-              const float tcx = coX + ctrlW * 0.5f, tw = fo->measure(t, snap(15.0f));
-              fo->draw_c(dev, tcx, ry + yo + snap(13.0f), t, snap(15.0f), fa(C_GOLD), fa(C_STROKE), 1.3f);
-              flat(dev, tcx - tw * 0.5f, ry + yo + snap(23.0f), tw, snap(1.5f), C_GOLD);   // gold underline
-            } ROW_NEXT(32.0f)   // + a gap between the title and its job list
-            const int perRow = 11; const float gap = snap(3.0f), cw = (ctrlW - (perRow - 1) * gap) / perRow, ch = snap(23.0f);
-            const int first = (which == 1) ? 0 : 1;   // the Sub grid leads with 'None' (job 0)
-            const int total = 22 - first + 1;
-            for (int r = 0; r * perRow < total; ++r) {
-                ROW_BAND(26.0f)
-                // sub-pass A : panels + selection ring + None-dash + live dot + click (colour quads)
-                for (int col = 0; col < perRow; ++col) {
-                    const int gi = r * perRow + col; if (gi >= total) break;
-                    const int jv = first + gi;
-                    const bool seld = (which == 0) ? (jv == job) : (jv == sub);
-                    const bool live = (which == 0) ? (jv == curMain) : (jv == curSub);
-                    const float cx = coX + col * (cw + gap), cy = ry + yo;
-                    const bool hov = inrect(mo, cx, cy, cw, ch);
-                    rrect_fill(dev, cx, cy, cw, ch, snap(4.0f), seld ? C_ACCENTHI : (hov ? 0xFF2C363Eu : 0xFF1B2228u), seld ? C_ACCENT : (hov ? 0xFF20292Fu : 0xFF141A1Fu));
-                    if (seld) outline(dev, cx, cy, cw, ch, 0xFFEAFBF9u);
-                    if (jv == 0) flat(dev, cx + cw * 0.5f - snap(5.0f), cy + ch * 0.5f - snap(1.0f), snap(10.0f), snap(2.0f), C_MUTE);   // 'None'
-                    if (live) flat(dev, cx + snap(3.0f), cy + ch - snap(3.5f), cw - snap(6.0f), snap(3.0f), 0xFFFFB300u);                // live-job : a fixed AMBER underline (visible on ANY theme, incl. a white/bright selected panel)
-                    if (hov && click) { if (which == 0) { trkJob_ = jv; job = jv; } else { trkSub_ = jv; sub = jv; } }
-                }
-                // sub-pass B : the job NAMES (font ; dark text on the bright SELECTED panel, light otherwise)
-                fo->begin(dev);
-                for (int col = 0; col < perRow; ++col) {
-                    const int gi = r * perRow + col; if (gi >= total) break;
-                    const int jv = first + gi; if (jv == 0) continue;
-                    const bool seld = (which == 0) ? (jv == job) : (jv == sub);
-                    const bool live = (which == 0) ? (jv == curMain) : (jv == curSub);
-                    const float cx = coX + col * (cw + gap), cy = ry + yo;
-                    const u32 tc = seld ? 0xFF0B1014u : (live ? 0xFFFFC94Du : C_TEXT);   // live (unselected) job name in amber
-                    fo->draw_c(dev, cx + cw * 0.5f, cy + ch * 0.5f, JAB[jv], snap(11.0f), fa(tc), fa(seld ? 0x66FFFFFFu : C_STROKE), 1.0f);
-                }
-                ROW_NEXT(26.0f)
-            }
-            ry += snap(9.0f);   // space between the Main and Sub sections (and after Sub, before the scope selector)
-        }
-        { ROW_BAND(52.0f)   // SCOPE : Self (buffs on you + your recasts) vs Allies (buffs YOU cast on others)
-            const char* SC[2] = { tr("Self", "Soi"), tr("Allies", "Alli\xC3\xA9s") };
-            int sc = (trkScope_ == 1) ? 1 : 0;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Track on", "Suivre sur"), SC[sc])) trkScope_ = wrap(sc + d, 2);
-        } ROW_NEXT(52.0f)
         { ROW_BAND(58.0f)   // LEGEND : one click on a spell's dot cycles it through these 4 states (dots match the checklist below)
             const float ty = ry + yo, lx = coX + snap(6.0f), lr = snap(4.0f), colW = ctrlW * 0.5f;
             struct LG { int focus, off; const char* en; const char* fr; };
@@ -220,83 +163,17 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                 fo->draw_lc(dev, dcx + lr + snap(6.0f), cyy, tr(lg[i].en, lg[i].fr), snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
             }
         } ROW_NEXT(58.0f)
-        const bool ally = (trkScope_ == 1);
-        // scope-aware helpers. Self : status-key (buff) + recast-key. Allies : only buffs, keyed TM_KEY_ALLY|status.
-        // ALLIES scope drops what you can't put on another player : recast-only cooldowns, Job Abilities, and the
-        // self-only enhancing families (Gains, Spikes, Enspells). Self scope shows everything.
-        #define ENT_APPLIES(E) ( ally ? ((E).status != 0 && (E).cat != TC_JA && (E).cat != TC_GAIN && (E).cat != TC_SPIKES && (E).cat != TC_ENSPELL) : true )
-        // The checkbox/focus state keys on the entry's UNIQUE recast (distinct per spell) so distinct spells that merely
-        // SHARE a buff status (BLU Cocoon / Reactor Cool = Defense Boost) don't toggle together. Recast-less entries
-        // fall back to their status. (The runtime hud reads the STATUS key ; entFocusSet mirrors it below.)
-        #define ENT_OFF(E) ( ally ? ((E).status && c.tm_track_off(job, UiConfig::TM_KEY_ALLY | (E).status)) \
-                                  : ((E).recast ? c.tm_track_off(job, UiConfig::TM_KEY_RECAST + (E).recast) \
-                                                : ((E).status && c.tm_track_off(job, (E).status))) )
-        // Self routes through entHiddenSet (defined below, after the entry list is built) so the shared STATUS mirror =
-        // AND over same-status entries ; ally keys purely on status.
-        #define ENT_SET(E, OFF) do { if (ally) { if ((E).status) c.tm_track_set(job, UiConfig::TM_KEY_ALLY | (E).status, (OFF)); } \
-                                     else entHiddenSet((E), (OFF)); } while (0)
-        // FOCUS read : per-entry (unique) so shared-status spells show independent dots. Self : FOCUS|recast (else FOCUS|status). Allies : FOCUS|ALLY|status.
-        #define ENT_FOFF(E) ( ally ? ((E).status && c.tm_track_off(job, UiConfig::TM_KEY_FOCUS | UiConfig::TM_KEY_ALLY | (E).status)) \
-                                   : ((E).recast ? c.tm_track_off(job, UiConfig::TM_KEY_FOCUS | (UiConfig::TM_KEY_RECAST + (E).recast)) \
-                                                 : ((E).status && c.tm_track_off(job, UiConfig::TM_KEY_FOCUS | (E).status))) )
-        // ---- build the checklist : MAIN entries (level <= your main level) + SUB entries (level <= sub cap = half
-        //      main), deduped. Off-job selections show the full job (main cap 99 / sub cap 49). ----
-        const int mainLvl = (job == curMain) ? curMlvl : 99;
-        const int subCap  = (sub == curSub && job == curMain) ? curSlvl : (mainLvl / 2);
-        static JobBuff comb[768]; int n = 0;
-        auto addJob = [&](int jj, int lvlCap) {
-            if (jj < 1 || jj > 22) return;
-            int nn = 0; const JobBuff* a = job_track((unsigned)jj, nn);
-            for (int i = 0; i < nn && n < 768; ++i) {
-                if (a[i].level > lvlCap) continue;
-                bool dup = false;
-                for (int q = 0; q < n; ++q) if (comb[q].status == a[i].status && comb[q].recast == a[i].recast && !strcmp(comb[q].name, a[i].name)) { dup = true; break; }
-                if (!dup) comb[n++] = a[i];
-            }
-        };
-        addJob(job, mainLvl);
-        if (sub && sub != job) addJob(sub, subCap);
-        const JobBuff* jb = comb;
-        // Set/clear an entry's FOCUS flag. Writes the per-entry (unique) key AND re-mirrors the STATUS key that the
-        // runtime hud reads = OR over every listed entry sharing this status (so un-focusing one of two same-status
-        // spells doesn't silence the other at runtime).
-        auto entFocusSet = [&](const JobBuff& E, bool on) {
-            if (ally) { if (E.status) c.tm_track_set(job, UiConfig::TM_KEY_FOCUS | UiConfig::TM_KEY_ALLY | E.status, on); return; }
-            if (E.recast)      c.tm_track_set(job, UiConfig::TM_KEY_FOCUS | (UiConfig::TM_KEY_RECAST + E.recast), on);
-            else if (E.status) c.tm_track_set(job, UiConfig::TM_KEY_FOCUS | E.status, on);
-            if (E.status) {
-                bool any = false;
-                for (int q = 0; q < n && !any; ++q) if (jb[q].status == E.status)
-                    any = jb[q].recast ? c.tm_track_off(job, UiConfig::TM_KEY_FOCUS | (UiConfig::TM_KEY_RECAST + jb[q].recast))
-                                       : c.tm_track_off(job, UiConfig::TM_KEY_FOCUS | jb[q].status);
-                c.tm_track_set(job, UiConfig::TM_KEY_FOCUS | E.status, any);   // status mirror for the runtime monitor
-            }
-        };
-        // Set/clear an entry's HIDDEN flag (self scope). Writes the per-entry recast key AND re-mirrors the STATUS key the
-        // runtime reads = AND over every listed entry sharing this status : the shared-status icon hides only when ALL its
-        // spells are hidden, so hiding ONE of two same-status spells (BLU Cocoon / Reactor Cool = Defense Boost) no longer
-        // hides the other's icon at runtime. ENT_SET (self) routes here.
-        auto entHiddenSet = [&](const JobBuff& E, bool off) {
-            if (E.recast) c.tm_track_set(job, UiConfig::TM_KEY_RECAST + E.recast, off);
-            if (E.status) {
-                bool all = true;
-                for (int q = 0; q < n && all; ++q) if (jb[q].status == E.status) {
-                    const bool h = jb[q].recast ? c.tm_track_off(job, UiConfig::TM_KEY_RECAST + jb[q].recast)
-                                                : (&jb[q] == &E ? off : c.tm_track_off(job, E.status));   // recast-less entry's own state = the value being set
-                    if (!h) all = false;
-                }
-                c.tm_track_set(job, E.status, all);   // runtime hides the icon only when ALL same-status spells are hidden
-            }
-        };
-        if (n <= 0) { ROW_BAND(40.0f) fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(8.0f), ry + yo + snap(18.0f), tr("No trackable buffs/recasts here.", "Rien \xC3\xA0 suivre ici."), snap(13.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-            ROW_NEXT(40.0f)
-        }
+        // Job-agnostic filter : one GLOBAL state per buff STATUS (shared across every job, stored per profile via tmBuffOff).
+        // HIDDEN if the raw status key is set ; FOCUSED if TM_KEY_FOCUS|status is. Direct, no recast/ally/mirror logic.
+        #define BF_OFF(st)      ( c.tm_buff_off((unsigned)(st)) )
+        #define BF_FOFF(st)     ( c.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)(st)) )
+        #define BF_SET(st, OFF) c.tm_buff_set((unsigned)(st), (OFF))
+        #define BF_FSET(st, ON) c.tm_buff_set(UiConfig::TM_KEY_FOCUS | (unsigned)(st), (ON))
         for (int cat = 0; cat < TC_COUNT; ++cat) {
             int cn = 0, catState = -2;   // group state : -2 none yet, -1 mixed, 0 Follow, 1 Follow+focus, 2 Hidden, 3 Hidden+focus
-            for (int i = 0; i < n; ++i) if (jb[i].cat == cat && ENT_APPLIES(jb[i])) {
+            for (int i = 0; i < BUFF_FAM_N; ++i) if (BUFF_FAM[i].cat == cat) {
                 ++cn;
-                const int s = (ENT_OFF(jb[i]) ? 2 : 0) | (ENT_FOFF(jb[i]) ? 1 : 0);
+                const int s = (BF_OFF(BUFF_FAM[i].status) ? 2 : 0) | (BF_FOFF(BUFF_FAM[i].status) ? 1 : 0);
                 catState = (catState == -2) ? s : (catState == s ? s : -1);
             }
             if (!cn) continue;
@@ -312,82 +189,69 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                 const bool lit = (catState == 1 || catState == 3);   // a focus state -> highlight
                 if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hdrX + hdrW - gchipW, ry + snap(4.0f), gchipW, snap(30.0f), glbl, lit)) {
                     const int next = (catState < 0) ? 0 : (catState + 1) % 4;   // mixed -> Follow, else advance
-                    for (int i = 0; i < n; ++i) if (jb[i].cat == cat && ENT_APPLIES(jb[i])) { ENT_SET(jb[i], (next & 2) != 0); entFocusSet(jb[i], (next & 1) != 0); }
+                    for (int i = 0; i < BUFF_FAM_N; ++i) if (BUFF_FAM[i].cat == cat) { BF_SET(BUFF_FAM[i].status, (next & 2) != 0); BF_FSET(BUFF_FAM[i].status, (next & 1) != 0); }
                     save_ui_config();
                 }
             }
             ROW_NEXT(40.0f)
-            // ---- entries : compact chips in a wrapping grid, split into two sub-groups : buffs (duration + recast)
-            //      then recast-only. The split labels only show when the category actually has both kinds. ----
+            // ---- entries : a checklist grid, laid COLUMN-major, one 4-state dot per buff. Every entry is a buff, so
+            //      there's no duration/recast split -- one flat list per family. ----
             if (trkCatOpen_[cat]) {
-                int nBuf = 0, nRec = 0;
-                for (int i = 0; i < n; ++i) if (jb[i].cat == cat && ENT_APPLIES(jb[i])) { if (jb[i].status) ++nBuf; else ++nRec; }
-                const bool split = (nBuf > 0 && nRec > 0);
+                int idx[256], m = 0;
+                for (int i = 0; i < BUFF_FAM_N && m < 256; ++i) if (BUFF_FAM[i].cat == cat) idx[m++] = i;
                 const float avail = ctrlW - snap(18.0f), x0 = coX + snap(18.0f);
                 const int cols = (avail > snap(560.0f)) ? 3 : (avail > snap(300.0f)) ? 2 : 1;
                 const float colW = avail / cols;
-                for (int pass = 0; pass < 2; ++pass) {   // 0 = buffs (duration + recast) ; 1 = recast-only
-                    int idx[256], m = 0;
-                    for (int i = 0; i < n && m < 256; ++i) if (jb[i].cat == cat && ENT_APPLIES(jb[i]) && ((jb[i].status != 0) == (pass == 0))) idx[m++] = i;
-                    if (!m) continue;
-                    if (split) { ROW_BAND(20.0f) fo->begin(dev);
-                        fo->draw_lc(dev, x0, ry + yo + snap(10.0f),
-                                    (pass == 0) ? tr("Duration + recast", "Dur\xC3\xA9""e + recast") : tr("Recast only", "Recast seul"),
-                                    snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-                        ROW_NEXT(20.0f)
-                    }
-                    // CHECKLIST : aligned rows of [checkbox] Name, laid COLUMN-major (reads down each column). Filled
-                    // box = tracked, empty box = hidden. Far more scannable than a cloud of pill-buttons.
-                    const int rpc = (m + cols - 1) / cols;   // rows per column
-                    for (int r = 0; r < rpc; ++r) {
-                        ROW_BAND(21.0f)
-                        const float ty = ry + yo, rh = snap(21.0f), cbs = snap(13.0f);
-                        // --- sub-pass A : QUADS (hover band + checkboxes) + click handling ---
-                        for (int col = 0; col < cols; ++col) {
-                            const int k = col * rpc + r; if (k >= m) continue;   // column-major
-                            const JobBuff& en = jb[idx[k]]; const bool off = ENT_OFF(en);
-                            // 4 states (buff entries) via 2 bits (hidden?, focus?). Click cycles in the SAME order as the
-                            // legend : Follow -> Follow+focus -> Hidden -> Hidden+focus -> Follow.
-                            //   Follow+focus = shown + permanent red alert when lost ; Hidden+focus = hidden but pops an
-                            //   alert when < 1 min left OR lost (60s).
-                            const bool focusable = (en.status != 0);
-                            const bool focus = focusable && ENT_FOFF(en);
-                            const float cx = x0 + col * colW, cby = ty + (rh - cbs) * 0.5f;
-                            if (inrect(mo, cx - snap(2.0f), ty, colW - snap(4.0f), rh)) {
-                                flat(dev, cx - snap(2.0f), ty, colW - snap(4.0f), rh, 0x18FFFFFFu);
-                                if (click) {
-                                    if (!focusable) ENT_SET(en, !off);                                       // 2-state (recast-only)
-                                    else if (!off && !focus) entFocusSet(en, true);                          // Follow -> Follow+focus
-                                    else if (!off && focus) { ENT_SET(en, true); entFocusSet(en, false); }   // Follow+focus -> Hidden
-                                    else if (off && !focus) entFocusSet(en, true);                           // Hidden -> Hidden+focus
-                                    else { ENT_SET(en, false); entFocusSet(en, false); }                     // Hidden+focus -> Follow
-                                    save_ui_config();
-                                }
+                // CHECKLIST : aligned rows of [dot] Name, laid COLUMN-major (reads down each column). Filled dot =
+                // tracked, hollow ring = hidden. Far more scannable than a cloud of pill-buttons.
+                const int rpc = (m + cols - 1) / cols;   // rows per column
+                for (int r = 0; r < rpc; ++r) {
+                    ROW_BAND(21.0f)
+                    const float ty = ry + yo, rh = snap(21.0f), cbs = snap(13.0f);
+                    // --- sub-pass A : QUADS (hover band + dots) + click handling ---
+                    for (int col = 0; col < cols; ++col) {
+                        const int k = col * rpc + r; if (k >= m) continue;   // column-major
+                        const unsigned st = BUFF_FAM[idx[k]].status; const bool off = BF_OFF(st);
+                        // 4 states via 2 bits (hidden?, focus?). Click cycles in the SAME order as the legend :
+                        // Follow -> Follow+focus -> Hidden -> Hidden+focus -> Follow.
+                        //   Follow+focus = shown + permanent red alert when lost ; Hidden+focus = hidden but pops an
+                        //   alert when < 1 min left OR lost (60s).
+                        const bool focus = BF_FOFF(st);
+                        const float cx = x0 + col * colW, cby = ty + (rh - cbs) * 0.5f;
+                        if (inrect(mo, cx - snap(2.0f), ty, colW - snap(4.0f), rh)) {
+                            flat(dev, cx - snap(2.0f), ty, colW - snap(4.0f), rh, 0x18FFFFFFu);
+                            if (click) {
+                                if (!off && !focus) BF_FSET(st, true);                          // Follow -> Follow+focus
+                                else if (!off && focus) { BF_SET(st, true); BF_FSET(st, false); }   // Follow+focus -> Hidden
+                                else if (off && !focus) BF_FSET(st, true);                       // Hidden -> Hidden+focus
+                                else { BF_SET(st, false); BF_FSET(st, false); }                  // Hidden+focus -> Follow
+                                save_ui_config();
                             }
-                            const float dcx = cx + cbs * 0.5f, dcy = cby + cbs * 0.5f, dr = cbs * 0.44f;
-                            if (focus && !off)      { gem(dev, dcx, dcy, dr + snap(1.0f), 0xFFFF7043u); gem(dev, dcx, dcy, dr - snap(3.0f), 0xFFFFE0C0u); }   // Focus : solid orange-red + light core
-                            else if (focus && off)  { gem(dev, dcx, dcy, dr + snap(1.0f), 0xFFFF7043u); gem(dev, dcx, dcy, dr - snap(2.0f), 0xFF12181Cu); }   // Unfollow-Focus : orange-red RING
-                            else if (!off)          gem(dev, dcx, dcy, dr, C_ACCENTHI);                                                                        // Follow : solid accent
-                            else                    { gem(dev, dcx, dcy, dr, 0xFF3A4650u); gem(dev, dcx, dcy, dr - snap(2.0f), 0xFF12181Cu); }                 // Unfollow : hollow ring
                         }
-                        // --- sub-pass B : LABELS (font must be re-bound AFTER the quads above) ---
-                        fo->begin(dev);
-                        for (int col = 0; col < cols; ++col) {
-                            const int k = col * rpc + r; if (k >= m) continue;
-                            const JobBuff& en = jb[idx[k]]; const bool off = ENT_OFF(en);
-                            const bool focus = en.status && ENT_FOFF(en);
-                            const float cx = x0 + col * colW;
-                            fo->draw_lc(dev, cx + cbs + snap(5.0f), ty + rh * 0.5f, en.name, snap(12.0f), fa(focus ? 0xFFFFB78Au : (off ? C_MUTE : C_TEXT)), fa(C_STROKE), 1.0f);
-                        }
-                        ROW_NEXT(21.0f)
+                        const float dcx = cx + cbs * 0.5f, dcy = cby + cbs * 0.5f, dr = cbs * 0.44f;
+                        if (focus && !off)      { gem(dev, dcx, dcy, dr + snap(1.0f), 0xFFFF7043u); gem(dev, dcx, dcy, dr - snap(3.0f), 0xFFFFE0C0u); }   // Focus : solid orange-red + light core
+                        else if (focus && off)  { gem(dev, dcx, dcy, dr + snap(1.0f), 0xFFFF7043u); gem(dev, dcx, dcy, dr - snap(2.0f), 0xFF12181Cu); }   // Unfollow-Focus : orange-red RING
+                        else if (!off)          gem(dev, dcx, dcy, dr, C_ACCENTHI);                                                                        // Follow : solid accent
+                        else                    { gem(dev, dcx, dcy, dr, 0xFF3A4650u); gem(dev, dcx, dcy, dr - snap(2.0f), 0xFF12181Cu); }                 // Unfollow : hollow ring
                     }
+                    // --- sub-pass B : LABELS (font must be re-bound AFTER the quads above) ---
+                    fo->begin(dev);
+                    for (int col = 0; col < cols; ++col) {
+                        const int k = col * rpc + r; if (k >= m) continue;
+                        const unsigned st = BUFF_FAM[idx[k]].status; const bool off = BF_OFF(st);
+                        const bool focus = BF_FOFF(st);
+                        const float cx = x0 + col * colW;
+                        fo->draw_lc(dev, cx + cbs + snap(5.0f), ty + rh * 0.5f, BUFF_FAM[idx[k]].name, snap(12.0f), fa(focus ? 0xFFFFB78Au : (off ? C_MUTE : C_TEXT)), fa(C_STROKE), 1.0f);
+                    }
+                    ROW_NEXT(21.0f)
                 }
             }
         }
-        #undef ENT_APPLIES
-        #undef ENT_OFF
-        #undef ENT_SET
-    }   // end Track per job
+        #undef BF_OFF
+        #undef BF_FOFF
+        #undef BF_SET
+        #undef BF_FSET
+    }   // end Buff filter
 
     ry += snap(10.0f);
     #undef ROW_BAND
