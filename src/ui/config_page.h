@@ -200,6 +200,7 @@ private:
     int   trkScope_ = 0;         // 0 = Self (buffs on you + your recasts) ; 1 = Allies (buffs you put on allies)
     bool  trkSecOpen_ = false;   // the "Track per job" collapsible section
     bool  trkCatOpen_[32] = { false };   // per-category collapsible state within the checklist (index = TrackCat)
+    bool  jaJobOpen_[24] = { false };    // Buff filter / Job Abilities : per-JOB sub-section collapse (index = job id 1..23 ; in-memory only, NOT serialised). The current main job is forced open each frame.
     // animation state (driven by the frame clock)
     float anim_     = 0.0f;   // open progress 0..1 (eased) -> fade in
     float lastT_    = -1.0f;  // previous frame time, for dt

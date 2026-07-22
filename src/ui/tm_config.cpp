@@ -170,6 +170,113 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         #define BF_SET(st, OFF) c.tm_buff_set((unsigned)(st), (OFF))
         #define BF_FSET(st, ON) c.tm_buff_set(UiConfig::TM_KEY_FOCUS | (unsigned)(st), (ON))
         for (int cat = 0; cat < TC_COUNT; ++cat) {
+            // ---- SPECIAL CASE : Job Abilities are grouped BY JOB (the per-job tables), not flat from BUFF_FAM.
+            //      The player's current main job comes FIRST, gold-tinted + expanded ; every other job with a
+            //      status-bearing JA follows under a collapsible sub-header. State is still GLOBAL (keyed by
+            //      .status), so the same 4-state dots / BF_* macros as the flat categories apply. ----
+            if (cat == TC_JA) {
+                const int mainJob = party().self_main_job();   // 1..23, 0 if unknown -> its sub-section is gold + open by default
+                // gather the UNIQUE JA statuses across every job (global filter state) for the header count + group chip
+                unsigned jaSt[512]; int jaN = 0, catState = -2;
+                for (int j = 1; j <= 23; ++j) {
+                    int njt = 0; const JobBuff* jt = job_track((unsigned)j, njt);
+                    for (int k = 0; k < njt && jaN < 512; ++k) if (jt[k].cat == TC_JA && jt[k].status > 0) {
+                        const unsigned st = jt[k].status; bool dup = false;
+                        for (int q = 0; q < jaN; ++q) if (jaSt[q] == st) { dup = true; break; }
+                        if (!dup) jaSt[jaN++] = st;
+                    }
+                }
+                if (!jaN) continue;
+                for (int q = 0; q < jaN; ++q) { const int s = (BF_OFF(jaSt[q]) ? 2 : 0) | (BF_FOFF(jaSt[q]) ? 1 : 0); catState = (catState == -2) ? s : (catState == s ? s : -1); }
+                // ---- category header (collapsible) + GROUP state chip : cycles EVERY shown JA status at once ----
+                char hl[56]; _snprintf(hl, sizeof(hl), "%s (%d)", tr(TRACK_CAT_EN[cat], TRACK_CAT_FR[cat]), jaN); hl[sizeof(hl) - 1] = 0;
+                const float gchipW = snap(96.0f), hbX = hdrX + snap(14.0f);
+                if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hbX, ry, hdrW - snap(14.0f) - gchipW - snap(6.0f), hl, trkCatOpen_[cat])) trkCatOpen_[cat] = !trkCatOpen_[cat];
+                {
+                    static const char* const SN_EN[4] = { "Tracked", "Track+foc", "Hidden", "Hid+foc" };
+                    static const char* const SN_FR[4] = { "Suivi", "Suivi+f", "Masqu\xC3\xA9", "Masq+f" };
+                    const char* glbl = (catState < 0) ? tr("Mixed", "Mixte") : tr(SN_EN[catState], SN_FR[catState]);
+                    const bool lit = (catState == 1 || catState == 3);
+                    if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hdrX + hdrW - gchipW, ry + snap(4.0f), gchipW, snap(30.0f), glbl, lit)) {
+                        const int next = (catState < 0) ? 0 : (catState + 1) % 4;
+                        for (int q = 0; q < jaN; ++q) { BF_SET(jaSt[q], (next & 2) != 0); BF_FSET(jaSt[q], (next & 1) != 0); }
+                        save_ui_config();
+                    }
+                }
+                ROW_NEXT(40.0f)
+                if (trkCatOpen_[cat]) {
+                    if (mainJob >= 1 && mainJob <= 23) jaJobOpen_[mainJob] = true;   // player's own JAs always visible (forced open ; gold path ignores this anyway)
+                    int order[24], on = 0;                                           // draw ORDER : current main job first, then the rest
+                    if (mainJob >= 1 && mainJob <= 23) order[on++] = mainJob;
+                    for (int j = 1; j <= 23; ++j) if (j != mainJob) order[on++] = j;
+                    for (int oi = 0; oi < on; ++oi) {
+                        const int j = order[oi];
+                        int njt = 0; const JobBuff* jt = job_track((unsigned)j, njt);
+                        unsigned jst[64]; const char* jnm[64]; int jm = 0;           // this job's status-bearing JAs (deduped within the job)
+                        for (int k = 0; k < njt && jm < 64; ++k) if (jt[k].cat == TC_JA && jt[k].status > 0) {
+                            const unsigned st = jt[k].status; bool dup = false;
+                            for (int q = 0; q < jm; ++q) if (jst[q] == st) { dup = true; break; }
+                            if (!dup) { jst[jm] = st; jnm[jm] = jt[k].name; ++jm; }
+                        }
+                        if (!jm) continue;
+                        const bool gold = (j == mainJob);                            // current main job : gold + always expanded
+                        const bool jopen = gold ? true : jaJobOpen_[j];
+                        const u32 baseCol = gold ? C_GOLDHI : C_TEXT;
+                        // ---- job SUB-HEADER : an indented row [caret] ABBR (hover band + click-to-collapse ; the forced-open main job ignores the click) ----
+                        { ROW_BAND(26.0f)
+                            const float ty = ry + yo, rh = snap(24.0f), sx = coX + snap(14.0f), swj = ctrlW - snap(14.0f);
+                            const bool hov = inrect(mo, sx, ty, swj, rh);
+                            if (hov) flat(dev, sx, ty, swj, rh, gold ? 0x18FFD24Au : 0x14FFFFFFu);
+                            if (hov && click && !gold) jaJobOpen_[j] = !jaJobOpen_[j];   // collapse state is in-memory only, like trkCatOpen_ (no save)
+                            const float gx = sx + snap(9.0f), gy = ty + rh * 0.5f, s = snap(3.5f); const u32 cc = fa(gold ? C_GOLDHI : C_ACCENTHI);
+                            if (jopen) { const float d[6] = { gx - s, gy - s * 0.55f,  gx + s, gy - s * 0.55f,  gx, gy + s * 0.85f }; fill_poly_aa(dev, d, 3, cc); }   // down caret (open)
+                            else       { const float d[6] = { gx - s * 0.55f, gy - s,  gx - s * 0.55f, gy + s,  gx + s * 0.85f, gy }; fill_poly_aa(dev, d, 3, cc); }   // right caret (collapsed)
+                            fo->begin(dev);
+                            fo->draw_lc(dev, gx + snap(13.0f), gy, job_abbr(j), snap(13.0f), fa(baseCol), fa(C_STROKE), 1.2f);
+                        } ROW_NEXT(26.0f)
+                        // ---- this job's JA checklist : the SAME column-major grid + 4-state dots as the flat categories ----
+                        if (jopen) {
+                            const float avail = ctrlW - snap(32.0f), x0 = coX + snap(32.0f);   // one indent deeper than a flat category
+                            const int cols = (avail > snap(560.0f)) ? 3 : (avail > snap(300.0f)) ? 2 : 1;
+                            const float colW = avail / cols;
+                            const int rpc = (jm + cols - 1) / cols;
+                            for (int r = 0; r < rpc; ++r) {
+                                ROW_BAND(21.0f)
+                                const float ty = ry + yo, rh = snap(21.0f), cbs = snap(13.0f);
+                                for (int col = 0; col < cols; ++col) {   // sub-pass A : QUADS (hover band + dots) + click
+                                    const int k = col * rpc + r; if (k >= jm) continue;
+                                    const unsigned st = jst[k]; const bool off = BF_OFF(st), focus = BF_FOFF(st);
+                                    const float cx = x0 + col * colW, cby = ty + (rh - cbs) * 0.5f;
+                                    if (inrect(mo, cx - snap(2.0f), ty, colW - snap(4.0f), rh)) {
+                                        flat(dev, cx - snap(2.0f), ty, colW - snap(4.0f), rh, 0x18FFFFFFu);
+                                        if (click) {
+                                            if (!off && !focus) BF_FSET(st, true);                              // Follow -> Follow+focus
+                                            else if (!off && focus) { BF_SET(st, true); BF_FSET(st, false); }   // Follow+focus -> Hidden
+                                            else if (off && !focus) BF_FSET(st, true);                          // Hidden -> Hidden+focus
+                                            else { BF_SET(st, false); BF_FSET(st, false); }                     // Hidden+focus -> Follow
+                                            save_ui_config();
+                                        }
+                                    }
+                                    const float dcx = cx + cbs * 0.5f, dcy = cby + cbs * 0.5f, dr = cbs * 0.44f;
+                                    if (focus && !off)      { gem(dev, dcx, dcy, dr + snap(1.0f), 0xFFFF7043u); gem(dev, dcx, dcy, dr - snap(3.0f), 0xFFFFE0C0u); }
+                                    else if (focus && off)  { gem(dev, dcx, dcy, dr + snap(1.0f), 0xFFFF7043u); gem(dev, dcx, dcy, dr - snap(2.0f), 0xFF12181Cu); }
+                                    else if (!off)          gem(dev, dcx, dcy, dr, C_ACCENTHI);
+                                    else                    { gem(dev, dcx, dcy, dr, 0xFF3A4650u); gem(dev, dcx, dcy, dr - snap(2.0f), 0xFF12181Cu); }
+                                }
+                                fo->begin(dev);   // sub-pass B : LABELS (font re-bound after the quads)
+                                for (int col = 0; col < cols; ++col) {
+                                    const int k = col * rpc + r; if (k >= jm) continue;
+                                    const unsigned st = jst[k]; const bool off = BF_OFF(st), focus = BF_FOFF(st);
+                                    const float cx = x0 + col * colW;
+                                    fo->draw_lc(dev, cx + cbs + snap(5.0f), ty + rh * 0.5f, jnm[k], snap(12.0f), fa(focus ? 0xFFFFB78Au : (off ? C_MUTE : baseCol)), fa(C_STROKE), 1.0f);
+                                }
+                                ROW_NEXT(21.0f)
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
             int cn = 0, catState = -2;   // group state : -2 none yet, -1 mixed, 0 Follow, 1 Follow+focus, 2 Hidden, 3 Hidden+focus
             for (int i = 0; i < BUFF_FAM_N; ++i) if (BUFF_FAM[i].cat == cat) {
                 ++cn;
