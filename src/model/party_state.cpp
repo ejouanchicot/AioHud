@@ -317,7 +317,9 @@ unsigned PartyState::buff_caster_for(unsigned short status, unsigned expiry, int
     for (int i = 0; i < buffTimerN_; ++i) {
         if (buffTimers_[i].id == status || buffTimers_[i].expiry != expiry) continue;
         const unsigned c = buff_caster(buffTimers_[i].id);
-        if (!c || !caster_resolves(c)) continue;
+        if (!c || c == selfId_ || !caster_resolves(c)) continue;   // never borrow SELF via co-expiry (see latch_co_expiry_casters) : your own
+                                                                    // buffs are directly attributed, and a trust's unnamed mix-boost that shares
+                                                                    // an expiry with your Gain-MND must not be claimed as yours.
         if (found && found != c) return 0;     // co-expiring statuses disagree -> don't guess
         found = c;
     }

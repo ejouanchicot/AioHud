@@ -55,7 +55,10 @@ void PartyState::latch_co_expiry_casters() {
             if (j == i || buffTimers_[j].expiry != buffTimers_[i].expiry) continue;
             const unsigned short o = buffTimers_[j].id;
             const unsigned c = (o < 1024) ? buffCaster_[o] : 0;
-            if (!c || !caster_resolves(c)) continue;
+            if (!c || c == selfId_ || !caster_resolves(c)) continue;   // NEVER latch from a SELF-attributed partner. Your own buffs are already
+                                                                       // attributed directly (the isMe path) ; borrowing self here mis-claimed a
+                                                                       // trust's UNNAMED mix-boost (STR/DEX/AGI/INT/CHR) that merely shared an
+                                                                       // expiry tick with your own live Gain-MND -> it stuck to you permanently.
             if (found && found != c) { split = true; break; }  // co-expiring statuses disagree -> don't guess
             found = c;
         }
