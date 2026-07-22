@@ -35,3 +35,16 @@
       color_picker(dev, fo, mo, ::aio::ctrl_uid_i(CTRL_ID, (IDX) * 2), ::aio::ctrl_uid_i(CTRL_ID, (IDX) * 2 + 1), \
                    coX, ry + (1.0f - ap_) * snap(14.0f) + snap(6.0f), ctrlW, FIELDPTR); } \
     ROW_NEXT(color_picker_height())
+
+// A collapsible COLOUR FIELD (accordion) : a compact "[caret] label ... [swatch]" row that expands ONE colour picker
+// below it on click. Only one field open at a time (global latch) -> a panel with several colours stays tidy instead
+// of stacking a full picker per colour. LABEL = const char* ; FIELDPTR = &u32 ; IDX = unique per loop iteration.
+#define CFG_COLOR_FIELD_I(LABEL, FIELDPTR, IDX) \
+    { const int cfu_ = ::aio::ctrl_uid_i(CTRL_ID, 900 + (IDX)); const bool cfo_ = ::aio::color_field_open(cfu_); \
+      { row_band(dev, bandX, ry, bandW, snap(42.0f), (ri & 1) != 0, 0.0f); \
+        float ap_ = stagger(anim_, ri); g_fade = e * ap_; \
+        if (::aio::color_field_row(dev, fo, mo, coX, ry + (1.0f - ap_) * snap(14.0f) + snap(2.0f), ctrlW, LABEL, *(FIELDPTR), cfo_)) \
+            ::aio::color_field_toggle(cfu_); } \
+      ROW_NEXT(42.0f) \
+      if (cfo_) { CFG_COLOR_PICKER_I(FIELDPTR, IDX) } }
+#define CFG_COLOR_FIELD(LABEL, FIELDPTR) CFG_COLOR_FIELD_I(LABEL, FIELDPTR, 0)

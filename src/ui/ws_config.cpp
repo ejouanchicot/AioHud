@@ -55,16 +55,8 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             { "Damage A", "D\xC3\xA9g\xC3\xA2ts A", &c.wsDmgCol1 },   // the number flashes between A and B
             { "Damage B", "D\xC3\xA9g\xC3\xA2ts B", &c.wsDmgCol2 },
         };
-        for (int i = 0; i < 3; ++i) {
-            unsigned& F = *cols[i].col;
-            { ROW_BAND(52.0f)   // label + swatch
-                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr(cols[i].en, cols[i].fr), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-                const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, pw = snap(58.0f), pxs = coX + ctrlW - pw;
-                flat(dev, pxs, bty, pw, bbh, F | 0xFF000000u); outline(dev, pxs, bty, pw, bbh, C_BORDER);
-            } ROW_NEXT(52.0f)
-            CFG_COLOR_PICKER_I(&F, i)   // loop variant : distinct drag/hover uids per colour row (plain CFG_COLOR_PICKER = IDX 0 -> the 3 pickers collided)
-        }
+        for (int i = 0; i < 3; ++i)
+            CFG_COLOR_FIELD_I(tr(cols[i].en, cols[i].fr), cols[i].col, i)   // accordion : compact row + swatch ; one picker open at a time
     }   // end Colours
 
     ry += snap(10.0f);

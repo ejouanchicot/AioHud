@@ -509,6 +509,25 @@ static const u32 CP_PRESETS[15] = {
     0xFF8B5CF6u, 0xFFD946EFu, 0xFFEC4899u, 0xFFFFFFFFu, 0xFF0F172Au,
 };
 
+// ---- Collapsible colour FIELD (accordion) : a compact "[caret] label ... [swatch]" row that expands ONE colour
+//      picker below it. Only one field is open at a time (global latch), so a panel with several colours stays tidy
+//      instead of stacking a full picker per colour. ----
+static int g_openColorField = -1;
+bool color_field_open(int uid)   { return g_openColorField == uid; }
+void color_field_toggle(int uid) { g_openColorField = (g_openColorField == uid) ? -1 : uid; }
+bool color_field_row(u32 dev, Font* fo, const MouseState* mo, float x, float y, float w, const char* label, u32 color, bool open) {
+    const float rh = snap(38.0f);
+    const bool hov = inrect(mo, x, y, w, rh);
+    if (hov || open) rrect(dev, x, y, w, rh, snap(6.0f), fa(open ? 0xFF212932u : 0xFF181D22u), fa(open ? 0xFF212932u : 0xFF181D22u));
+    const float gx = x + snap(11.0f), gy = y + rh * 0.5f, s = snap(3.6f);                  // caret : right (closed) / down (open)
+    if (open) { const float d[6] = { gx - s, gy - s * 0.55f, gx + s, gy - s * 0.55f, gx, gy + s * 0.85f }; fill_poly_aa(dev, d, 3, fa(C_ACCENTHI)); }
+    else      { const float d[6] = { gx - s * 0.55f, gy - s, gx - s * 0.55f, gy + s, gx + s * 0.85f, gy }; fill_poly_aa(dev, d, 3, fa(C_ACCENTHI)); }
+    if (fo) { fo->begin(dev); fo->draw_lc(dev, x + snap(26.0f), gy, label, snap(14.0f), fa(C_TEXT), fa(C_STROKE), 1.2f); }
+    const float sw = snap(48.0f), sh = snap(22.0f), sxp = x + w - sw - snap(8.0f), syp = y + (rh - sh) * 0.5f;   // colour swatch, right
+    rrect_bordered(dev, sxp, syp, sw, sh, snap(4.0f), fa(color | 0xFF000000u), fa(color | 0xFF000000u), fa(C_BORDERHI), snap(1.2f));
+    return hov && mo && mo->clicked;
+}
+
 bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue,
                   float x, float y, float w, u32* color) {
     if (!color) return false;
@@ -519,6 +538,7 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
     // ---- layout : big SV SQUARE on top (+ live swatch/hex to its right) | full-width horizontal HUE slider below |
     //      full-width PRESET grid (2 rows of larger chips) at the bottom. Taller, properly proportioned. ----
     const float gap = snap(8.0f);
+    const float W = (w > snap(360.0f)) ? snap(360.0f) : w;   // cap the working width : a compact CARD, never stretched across the whole panel
     const float sqW = snap(112.0f), sqH = sqW;             // SV : a real SQUARE
     const float rx  = x + sqW + gap;                       // live swatch + hex, right of the square
     const float swW = snap(26.0f), swH = snap(18.0f);
@@ -527,13 +547,13 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
     const u32   hue = hsv2rgb(p->h, 1.0f, 1.0f, 0xFF000000u);
     const int   PC = 8;                                    // preset columns (8 + 7 = 15)
     const float cg = snap(4.0f);
-    const float cw = snap((w - (PC - 1) * cg) / (float)PC), ch = snap(20.0f);
+    const float cw = snap((W - (PC - 1) * cg) / (float)PC), ch = snap(20.0f);
     const float favLabelY = preY + 2.0f * (ch + cg) + snap(4.0f);   // FAVOURITES : small label, then a "+" add button + the saved swatches
     const float favY = favLabelY + snap(15.0f);
 
     // ---- interaction : SV square + hue slider share the row_slider latch ; presets are one-shot clicks ----
     const bool hotSV  = inrect(mo, x, y, sqW, sqH);
-    const bool hotHue = inrect(mo, x, hueY, w, hbH);
+    const bool hotHue = inrect(mo, x, hueY, W, hbH);
     if (mo && mo->clicked && g_slider < 0) { if (hotSV) g_slider = uidSV; else if (hotHue) g_slider = uidHue; }
     bool changed = false;
     if (g_slider == uidSV) {
@@ -541,7 +561,7 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
                               const u32 nc = hsv2rgb(p->h, p->s, p->v, alpha); if (nc != *color) { *color = nc; p->col = nc; changed = true; } }
         else { g_slider = -1; save_ui_config(); }
     } else if (g_slider == uidHue) {
-        if (mo && mo->down) { p->h = clampf((mo->x - x) / w, 0.0f, 1.0f) * 360.0f;   // horizontal -> map X to hue
+        if (mo && mo->down) { p->h = clampf((mo->x - x) / W, 0.0f, 1.0f) * 360.0f;   // horizontal -> map X to hue
                               const u32 nc = hsv2rgb(p->h, p->s, p->v, alpha); if (nc != *color) { *color = nc; p->col = nc; changed = true; } }
         else { g_slider = -1; save_ui_config(); }
     }
@@ -579,10 +599,10 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
 
     // ---- horizontal hue slider : 6 rainbow segments left->right, thin vertical cursor ----
     static const u32 HUE6[7] = { 0xFFFF0000u, 0xFFFFFF00u, 0xFF00FF00u, 0xFF00FFFFu, 0xFF0000FFu, 0xFFFF00FFu, 0xFFFF0000u };
-    const float segW = w / 6.0f;
+    const float segW = W / 6.0f;
     for (int i = 0; i < 6; ++i) { const float sx = x + i * segW; q4(dev, sx, hueY, segW + 1.0f, hbH, HUE6[i], HUE6[i + 1], HUE6[i], HUE6[i + 1]); }
-    outline(dev, x, hueY, w, hbH, C_BORDER);
-    const float hcx = x + (p->h / 360.0f) * w;
+    outline(dev, x, hueY, W, hbH, C_BORDER);
+    const float hcx = x + (p->h / 360.0f) * W;
     flat(dev, snap(hcx) - snap(2.0f), hueY - snap(2.0f), snap(4.0f), hbH + snap(4.0f), 0xFF000000u);
     flat(dev, snap(hcx) - snap(1.0f), hueY - snap(2.0f), snap(2.0f), hbH + snap(4.0f), 0xFFFFFFFFu);
 
