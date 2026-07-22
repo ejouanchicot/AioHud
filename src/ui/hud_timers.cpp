@@ -740,6 +740,11 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             float cyy = cyTop;
             for (int i = 0; i < CC.n; ++i) {
                 const int r = CC.list[i].rem, ic = CC.list[i].icon; const char* nm = CC.list[i].name;
+                // A "+ focus" buff (Tracked OR Hidden) that drops UNDER the focus-warn threshold blinks (name + timer) as an
+                // early "recast soon" cue -- the warn threshold used to affect Hidden+focus only (it made the row APPEAR) ;
+                // a Tracked+focus row was already visible, so it never warned before its normal <10s red flash.
+                const bool focusWarn = !CC.recast && ic > 0 && r > 0 && r < C.tmFocusWarn
+                                       && C.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)ic);
                 const bool rWantIcon = wantIcon || CC.list[i].both, rWantName = wantName || CC.list[i].both;
                 const bool haveIcon = (CC.tex && ic >= 0 && ic < CC.cells);
                 bool drewIcon = false;
@@ -749,6 +754,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     u32 baseNameCol = CC.list[i].nameCol ? CC.list[i].nameCol : tm_col(TM_NAME, dim);
                     if (CC.list[i].rem == TM_REM_MISSING) baseNameCol = flashStrong ? 0xFFFF6A6Au : 0xFFFF2020u;   // FOCUS alert : the whole "Ally - Buff" row blinks red
                     else if (C.tmSpAlert && CC.list[i].icon > 0 && CC.list[i].rem > 0 && CC.list[i].rem < 60 && is_sp_buff_status(CC.list[i].icon)) baseNameCol = flashStrong ? 0xFFFFF000u : 0xFFFF1010u;   // SP last-minute : the whole row blinks hard
+                    else if (focusWarn) baseNameCol = flash ? 0xFFFF6A6Au : baseNameCol;   // +focus under the warn threshold : name blinks red
                     fN->begin(dev); drawRowName(CC.list[i], nx, cyy + rowH * 0.5f, baseNameCol);   // name + optional coloured roll pip / song tag
                 }
                 fmt(r);
@@ -756,6 +762,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (r == TM_REM_MISSING) { tc = flashStrong ? 0xFFFF6A6Au : 0xFFFF2020u; }   // FOCUS alert : "OUT" blinks red
                 else if (CC.recast) { tc = (r <= 10) ? green : (r <= 30) ? orange : red; }   // recast : INVERSE -- red just after use (long wait) -> orange -> green as it nears ready
                 else if (C.tmSpAlert && CC.list[i].icon > 0 && r > 0 && r < 60 && is_sp_buff_status(CC.list[i].icon)) { tc = flashStrong ? 0xFFFFF000u : 0xFFFF1010u; }   // SP ability last minute : HARD blink bright-yellow<->red (Soul Voice -> Nitro window, etc.)
+                else if (focusWarn) { tc = (r <= 10) ? (flash ? red : 0xFFFFC8C8u) : (flash ? red : orange); }   // +focus under the warn threshold : timer blinks orange<->red (harder <10s) in sync with the name
                 else { tc = tm_col(TM_TIMER, white); if (r <= 10) tc = flash ? red : 0xFFFFC8C8u; else if (r <= 30) tc = orange; }   // duration : white -> orange (<30) -> flashing red (<10)
                 const float tw = fT->measure(tb, zT);
                 fT->begin(dev); fT->draw_lc(dev, cx + colW[c] - tw, cyy + rowH * 0.5f, tb, zT, tc, strk, oT);
