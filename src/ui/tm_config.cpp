@@ -169,19 +169,26 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         #define BF_FOFF(st)     ( c.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)(st)) )
         #define BF_SET(st, OFF) c.tm_buff_set((unsigned)(st), (OFF))
         #define BF_FSET(st, ON) c.tm_buff_set(UiConfig::TM_KEY_FOCUS | (unsigned)(st), (ON))
-        // ---- 2-column packing cursor : closed flat families draw as compact half-width CELLS, two per row.
-        //      A closed family with no partner takes column 0 WITHOUT advancing ry ; the next closed family
-        //      fills column 1 and THEN advances. An OPEN family (or TC_JA, or the loop end) first FLUSHES a
-        //      lone left cell so it starts on a clean full-width row. ----
-        bool pendCell = false;
-        #define TM_FAM_FLUSH   if (pendCell) { ROW_NEXT(40.0f) pendCell = false; }
+        // ---- MASONRY : flat families flow into TWO INDEPENDENT half-width columns, each with its OWN vertical
+        //      cursor (yL / yR). Every family lands in the column that is currently SHORTER (ties -> left) and that
+        //      column OWNS the whole family : an OPEN family renders its checklist half-width directly under its
+        //      header, extending ONLY that column. TC_JA is the exception -- it spans FULL width, so both cursors
+        //      sync to a common baseline around it (see the sync-in / sync-out below). The global ry is NOT touched
+        //      per-family ; it is dropped to the taller column once the whole grid is laid out. ----
+        const float gutter = snap(12.0f), cellW = (hdrW - gutter) * 0.5f;
+        const float colX[2] = { hdrX, hdrX + cellW + gutter };
+        const float chipW = snap(84.0f), chipH = snap(28.0f);
+        float yL = ry, yR = ry;     // per-column cursors, both starting at the grid top
+        int   riL = ri, riR = ri;   // per-column zebra/stagger index (the global ri would alternate wrong across two side-by-side columns)
         for (int cat = 0; cat < TC_COUNT; ++cat) {
             // ---- SPECIAL CASE : Job Abilities are grouped BY JOB (the per-job tables), not flat from BUFF_FAM.
             //      The player's current main job comes FIRST, gold-tinted + expanded ; every other job with a
             //      status-bearing JA follows under a collapsible sub-header. State is still GLOBAL (keyed by
             //      .status), so the same 4-state dots / BF_* macros as the flat categories apply. ----
             if (cat == TC_JA) {
-                TM_FAM_FLUSH   // Job Abilities is a FULL-WIDTH entry : flush a dangling left cell first, resume column 0 after
+                // Job Abilities is FULL WIDTH : sync BOTH column cursors to a common baseline (the taller one) and
+                // render from there on the GLOBAL ry/ri, exactly as before. sync-out below rejoins the columns.
+                { const float base = (yL > yR) ? yL : yR; ry = base; ri = (riL > riR) ? riL : riR; }
                 const int mainJob = party().self_main_job();   // 1..23, 0 if unknown -> its sub-section is gold + open by default
                 // gather the UNIQUE JA statuses across every job (global filter state) for the header count + group chip
                 unsigned jaSt[512]; int jaN = 0, catState = -2;
@@ -282,6 +289,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                         }
                     }
                 }
+                yL = yR = ry; riL = riR = ri;   // sync-out : both columns resume together BELOW the full-width JA block
                 continue;
             }
             int cn = 0, catState = -2;   // group state : -2 none yet, -1 mixed, 0 Follow, 1 Follow+focus, 2 Hidden, 3 Hidden+focus
@@ -291,72 +299,61 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                 catState = (catState == -2) ? s : (catState == s ? s : -1);
             }
             if (!cn) continue;
-            // group state chip label + lit flag (shared by the compact cell and the full-width open header)
+            // group state chip label + lit flag (shared by the header cell and its group chip)
             char hl[56]; _snprintf(hl, sizeof(hl), "%s (%d)", tr(TRACK_CAT_EN[cat], TRACK_CAT_FR[cat]), cn); hl[sizeof(hl) - 1] = 0;
             static const char* const SN_EN[4] = { "Show", "Show+al", "Hide", "Hide+al" };
             static const char* const SN_FR[4] = { "Afficher", "Aff+al", "Masquer", "Masq+al" };
             const char* glbl = (catState < 0) ? tr("Mixed", "Mixte") : tr(SN_EN[catState], SN_FR[catState]);
             const bool lit = (catState == 1 || catState == 3);   // a focus state -> highlight
-            if (!trkCatOpen_[cat]) {
-                // ===== CLOSED : a compact half-width cell -- [caret] Name (count) on the left, GROUP chip on the
-                //      cell's RIGHT EDGE. Two cells per row (see the packing cursor above). Cell click toggles open ;
-                //      chip click cycles the whole family's 4-state. ry advances only after column 1 is placed. =====
-                const int col = pendCell ? 1 : 0;
-                const float gutter = snap(12.0f), cellW = (hdrW - gutter) * 0.5f;
-                const float chipW = snap(84.0f), chipH = snap(28.0f);
-                const float cellX = hdrX + (float)col * (cellW + gutter);
-                if (col == 0) row_band(dev, bandX, ry, bandW, snap(40.0f), (ri & 1) != 0, 0.0f);   // ONE band per packed row (drawn with the left cell)
-                const float ap = stagger(anim_, ri); g_fade = e * ap;                              // same ri for both cells -> matched entrance
+            // ---- pick the SHORTER column (masonry balance ; ties -> left). That column owns this whole family. ----
+            const int   ci = (yL <= yR) ? 0 : 1;
+            float&      yc = ci ? yR : yL;
+            int&        rc = ci ? riR : riL;
+            const float cx = colX[ci];
+            const bool  open = trkCatOpen_[cat];
+            // ---- compact header cell : [caret] Name (count) on the left, GROUP state chip on the cell's right edge.
+            //      The cell is half-width whether the family is open or closed ; only the caret + the checklist differ. ----
+            row_band(dev, cx, yc, cellW, snap(40.0f), (rc & 1) != 0, 0.0f);
+            {
+                const float ap = stagger(anim_, rc); g_fade = e * ap;
                 const float yoff = (1.0f - ap) * snap(10.0f);
-                const float hy = ry + yoff + snap(4.0f), chy = ry + yoff + (snap(40.0f) - chipH) * 0.5f;
+                const float hy = yc + yoff + snap(4.0f), chy = yc + yoff + (snap(40.0f) - chipH) * 0.5f;
                 const float hw = cellW - chipW - snap(6.0f);
-                // header cell : cat_header hosts the caret + "Name (count)" and hit-tests the toggle
-                if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), cellX, hy, hw, hl, false)) trkCatOpen_[cat] = !trkCatOpen_[cat];
+                if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), cx, hy, hw, hl, open)) trkCatOpen_[cat] = !trkCatOpen_[cat];
                 // group chip on the cell's right edge (distinct source line -> distinct CTRL_ID -> its own spring)
-                if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), cellX + cellW - chipW, chy, chipW, chipH, glbl, lit)) {
+                if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), cx + cellW - chipW, chy, chipW, chipH, glbl, lit)) {
                     const int next = (catState < 0) ? 0 : (catState + 1) % 4;   // mixed -> Follow, else advance
                     for (int i = 0; i < BUFF_FAM_N; ++i) if (BUFF_FAM[i].cat == cat) { BF_SET(BUFF_FAM[i].status, (next & 2) != 0); BF_FSET(BUFF_FAM[i].status, (next & 1) != 0); }
                     save_ui_config();
                 }
-                if (col == 0) pendCell = true; else { ROW_NEXT(40.0f) pendCell = false; }
-                continue;
             }
-            // ===== OPEN : break out to FULL WIDTH -- flush a lone left cell, then the header + chip + checklist span ctrlW =====
-            TM_FAM_FLUSH
-            const float gchipW = snap(96.0f), hbX = hdrX + snap(14.0f);
-            if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hbX, ry, hdrW - snap(14.0f) - gchipW - snap(6.0f), hl, true)) trkCatOpen_[cat] = !trkCatOpen_[cat];
-            if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hdrX + hdrW - gchipW, ry + snap(4.0f), gchipW, snap(30.0f), glbl, lit)) {
-                const int next = (catState < 0) ? 0 : (catState + 1) % 4;   // mixed -> Follow, else advance
-                for (int i = 0; i < BUFF_FAM_N; ++i) if (BUFF_FAM[i].cat == cat) { BF_SET(BUFF_FAM[i].status, (next & 2) != 0); BF_FSET(BUFF_FAM[i].status, (next & 1) != 0); }
-                save_ui_config();
-            }
-            ROW_NEXT(40.0f)
-            // ---- entries : a checklist grid, laid COLUMN-major, one 4-state dot per buff. Every entry is a buff, so
-            //      there's no duration/recast split -- one flat list per family. Spans the full ctrlW. ----
-            {
+            yc += snap(40.0f); ++rc;
+            // ---- OPEN : the buff checklist renders HALF-WIDTH directly under the header, extending only THIS column.
+            //      Drawn at an EXPLICIT (x = cx, y = yc, w = cellW) and advancing the column cursor by hand -- NEVER via
+            //      ROW_NEXT (that moves the GLOBAL ry and would cross-wire the two columns). The 1/2/3-column rule now
+            //      keys off cellW, so a half-width family uses fewer inner columns. Same 4-state dots / BF_* / cycle. ----
+            if (open) {
                 int idx[256], m = 0;
                 for (int i = 0; i < BUFF_FAM_N && m < 256; ++i) if (BUFF_FAM[i].cat == cat) idx[m++] = i;
-                const float avail = ctrlW - snap(18.0f), x0 = coX + snap(18.0f);
+                const float avail = cellW - snap(20.0f), x0 = cx + snap(14.0f);
                 const int cols = (avail > snap(560.0f)) ? 3 : (avail > snap(300.0f)) ? 2 : 1;
                 const float colW = avail / cols;
-                // CHECKLIST : aligned rows of [dot] Name, laid COLUMN-major (reads down each column). Filled dot =
-                // tracked, hollow ring = hidden. Far more scannable than a cloud of pill-buttons.
-                const int rpc = (m + cols - 1) / cols;   // rows per column
+                const int rpc = (m + cols - 1) / cols;   // rows per column (column-major : reads down each column)
                 for (int r = 0; r < rpc; ++r) {
-                    ROW_BAND(21.0f)
-                    const float ty = ry + yo, rh = snap(21.0f), cbs = snap(13.0f);
+                    const float ap = stagger(anim_, rc); g_fade = e * ap;
+                    const float yo = (1.0f - ap) * snap(14.0f) + (snap(21.0f) - snap(40.0f)) * 0.5f;   // same content-centring as ROW_BAND(21)
+                    row_band(dev, cx, yc, cellW, snap(21.0f), (rc & 1) != 0, 0.0f);
+                    const float ty = yc + yo, rh = snap(21.0f), cbs = snap(13.0f);
                     // --- sub-pass A : QUADS (hover band + dots) + click handling ---
                     for (int col = 0; col < cols; ++col) {
-                        const int k = col * rpc + r; if (k >= m) continue;   // column-major
+                        const int k = col * rpc + r; if (k >= m) continue;
                         const unsigned st = BUFF_FAM[idx[k]].status; const bool off = BF_OFF(st);
-                        // 4 states via 2 bits (hidden?, focus?). Click cycles in the SAME order as the legend :
+                        // 4 states via 2 bits (hidden?, focus?). Click cycles in the legend order :
                         // Follow -> Follow+focus -> Hidden -> Hidden+focus -> Follow.
-                        //   Follow+focus = shown + permanent red alert when lost ; Hidden+focus = hidden but pops an
-                        //   alert when < 1 min left OR lost (60s).
                         const bool focus = BF_FOFF(st);
-                        const float cx = x0 + col * colW, cby = ty + (rh - cbs) * 0.5f;
-                        if (inrect(mo, cx - snap(2.0f), ty, colW - snap(4.0f), rh)) {
-                            flat(dev, cx - snap(2.0f), ty, colW - snap(4.0f), rh, 0x18FFFFFFu);
+                        const float dx = x0 + col * colW, cby = ty + (rh - cbs) * 0.5f;
+                        if (inrect(mo, dx - snap(2.0f), ty, colW - snap(4.0f), rh)) {
+                            flat(dev, dx - snap(2.0f), ty, colW - snap(4.0f), rh, 0x18FFFFFFu);
                             if (click) {
                                 if (!off && !focus) BF_FSET(st, true);                          // Follow -> Follow+focus
                                 else if (!off && focus) { BF_SET(st, true); BF_FSET(st, false); }   // Follow+focus -> Hidden
@@ -365,7 +362,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                                 save_ui_config();
                             }
                         }
-                        const float dcx = cx + cbs * 0.5f, dcy = cby + cbs * 0.5f, dr = cbs * 0.44f;
+                        const float dcx = dx + cbs * 0.5f, dcy = cby + cbs * 0.5f, dr = cbs * 0.44f;
                         if (focus && !off)      { gem(dev, dcx, dcy, dr + snap(1.0f), 0xFFFF7043u); gem(dev, dcx, dcy, dr - snap(3.0f), 0xFFFFE0C0u); }   // Focus : solid orange-red + light core
                         else if (focus && off)  { gem(dev, dcx, dcy, dr + snap(1.0f), 0xFFFF7043u); gem(dev, dcx, dcy, dr - snap(2.0f), 0xFF12181Cu); }   // Unfollow-Focus : orange-red RING
                         else if (!off)          gem(dev, dcx, dcy, dr, C_ACCENTHI);                                                                        // Follow : solid accent
@@ -377,15 +374,17 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                         const int k = col * rpc + r; if (k >= m) continue;
                         const unsigned st = BUFF_FAM[idx[k]].status; const bool off = BF_OFF(st);
                         const bool focus = BF_FOFF(st);
-                        const float cx = x0 + col * colW;
-                        fo->draw_lc(dev, cx + cbs + snap(5.0f), ty + rh * 0.5f, BUFF_FAM[idx[k]].name, snap(12.0f), fa(focus ? 0xFFFFB78Au : (off ? C_MUTE : C_TEXT)), fa(C_STROKE), 1.0f);
+                        const float dx = x0 + col * colW;
+                        fo->draw_lc(dev, dx + cbs + snap(5.0f), ty + rh * 0.5f, BUFF_FAM[idx[k]].name, snap(12.0f), fa(focus ? 0xFFFFB78Au : (off ? C_MUTE : C_TEXT)), fa(C_STROKE), 1.0f);
                     }
-                    ROW_NEXT(21.0f)
+                    yc += snap(21.0f); ++rc;
                 }
+                yc += snap(6.0f);   // a little breathing room beneath an expanded family
             }
         }
-        TM_FAM_FLUSH   // a trailing lone left cell (odd family count) still needs its row advanced
-        #undef TM_FAM_FLUSH
+        // ---- grid laid out : drop the GLOBAL cursor to the TALLER column so every section BELOW renders correctly ----
+        ry = (yL > yR) ? yL : yR;
+        ri = (riL > riR) ? riL : riR;
         #undef BF_OFF
         #undef BF_FOFF
         #undef BF_SET
