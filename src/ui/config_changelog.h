@@ -275,6 +275,14 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_52[] = {
+    { "*The colour picker is redesigned and better proportioned.* A real square saturation/value box on top, a full-width hue slider below it, and a larger preset grid -- laid out as a compact card instead of one strip stretched across the whole panel. Applies to every colour in every module.",
+      "*Le selecteur de couleur est repense et mieux proportionne.* Un vrai carre saturation/valeur en haut, un slider de teinte en dessous, et une grille de presets plus grande -- en carte compacte au lieu d'une bande etiree sur toute la largeur. S'applique a chaque couleur de chaque module." },
+    { "*Favourite colours.* Build your own palette right in the colour picker : the *+* button saves the current colour, a click on a saved swatch reuses it, and hovering one shows a small *x* to remove it. Shared by every picker and kept across sessions.",
+      "*Couleurs favorites.* Compose ta propre palette dans le selecteur : le bouton *+* enregistre la couleur actuelle, un clic sur un favori la reapplique, et le survol affiche un petit *x* pour l'enlever. Partagee par tous les selecteurs et conservee d'une session a l'autre." },
+    { "Fix : in Arcade WS, the three colour pickers (Name / Damage A / Damage B) no longer interfere with each other -- dragging one used to move the others.",
+      "Correctif : dans Arcade WS, les trois selecteurs de couleur (Nom / Degats A / Degats B) n'interferent plus entre eux -- deplacer l'un bougeait les autres." },
+};
 static const ChangeLine CL_51[] = {
     { "*The Timers buff-filter alerts are clearer and warn you earlier.* The four states are now *Show / Show+alert / Hide / Hide+alert* (the old \"focus\" wording is gone), and a *+alert* buff now BLINKS its name and timer the moment it drops under the *Alert under* time -- an early \"recast soon\" cue, not just the last-10-seconds flash. The two sliders are *Alert under* and *Alert duration*.",
       "*Les alertes du filtre de buffs sont plus claires et te previennent plus tot.* Les quatre etats sont maintenant *Afficher / Afficher+alerte / Masquer / Masquer+alerte* (le mot \"focus\" disparait), et un buff *+alerte* CLIGNOTE desormais son nom et son minuteur des qu'il passe sous le temps *Alerter sous* -- un avertissement \"recast bientot\", pas seulement le clignotement des 10 dernieres secondes. Les deux curseurs sont *Alerter sous* et *Duree de l'alerte*." },
@@ -310,6 +318,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.52", CL_52, (int)(sizeof(CL_52) / sizeof(CL_52[0])) },
     { "1.0.51", CL_51, (int)(sizeof(CL_51) / sizeof(CL_51[0])) },
     { "1.0.50", CL_50, (int)(sizeof(CL_50) / sizeof(CL_50[0])) },
     { "1.0.49", CL_49, (int)(sizeof(CL_49) / sizeof(CL_49[0])) },
