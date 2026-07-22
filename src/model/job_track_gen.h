@@ -277,7 +277,6 @@ static const JobBuff JT_RDM[] = {
     {36,53,23,8,"Blink"},   // TC_DEFENSE
     {116,106,33,8,"Phalanx"},   // TC_DEFENSE
     {37,54,34,8,"Stoneskin"},   // TC_DEFENSE
-    {432,493,95,8,"Temper"},   // TC_DEFENSE
     {0,23,1,20,"Dia"},   // TC_ENFEEBLE
     {0,220,5,20,"Poison"},   // TC_ENFEEBLE
     {0,58,6,20,"Paralyze"},   // TC_ENFEEBLE
@@ -310,6 +309,7 @@ static const JobBuff JT_RDM[] = {
     {70,138,15,17,"Deodorize"},   // TC_ENHANCE
     {71,137,20,17,"Sneak"},   // TC_ENHANCE
     {69,136,25,17,"Invisible"},   // TC_ENHANCE
+    {432,493,95,17,"Temper"},   // TC_ENHANCE
     {98,104,16,4,"Enthunder"},   // TC_ENSPELL
     {97,103,18,4,"Enstone"},   // TC_ENSPELL
     {96,102,20,4,"Enaero"},   // TC_ENSPELL
@@ -1355,10 +1355,10 @@ static const JobBuff JT_RUN[] = {
     {36,53,35,8,"Blink"},   // TC_DEFENSE
     {37,54,55,8,"Stoneskin"},   // TC_DEFENSE
     {116,106,68,8,"Phalanx"},   // TC_DEFENSE
-    {432,493,550,8,"Temper"},   // TC_DEFENSE
     {0,112,45,22,"Flash"},   // TC_DIVINE
     {568,840,58,17,"Foil"},   // TC_ENHANCE
     {289,476,88,17,"Crusade"},   // TC_ENHANCE
+    {432,493,550,17,"Temper"},   // TC_ENHANCE
     {522,0,1,32,"Elemental Sforzo"},   // TC_JA
     {532,24,20,32,"Swordplay"},   // TC_JA
     {534,72,60,32,"Embolden"},   // TC_JA
@@ -1434,7 +1434,6 @@ static const BuffFam BUFF_FAM[] = {
     {36,8,"Blink"},   // TC_DEFENSE
     {116,8,"Phalanx"},   // TC_DEFENSE
     {37,8,"Stoneskin"},   // TC_DEFENSE
-    {432,8,"Temper"},   // TC_DEFENSE
     {221,9,"Adventurer's Dirge"},   // TC_SONG
     {213,9,"Aria of Passion"},   // TC_SONG
     {195,9,"Army's Paeon"},   // TC_SONG
@@ -1488,17 +1487,28 @@ static const BuffFam BUFF_FAM[] = {
     {544,10,"Indi-VIT"},   // TC_GEO
     {554,10,"Indi-Voidance"},   // TC_GEO
     {557,10,"Indi-Wilt"},   // TC_GEO
+    {289,11,"Gekka: Ichi"},   // TC_NINJUTSU
     {227,11,"Kakka: Ichi"},   // TC_NINJUTSU
     {471,11,"Migawari: Ichi"},   // TC_NINJUTSU
+    {71,11,"Monomi: Ichi"},   // TC_NINJUTSU
     {290,11,"Myoshu: Ichi"},   // TC_NINJUTSU
+    {69,11,"Tonko: Ni"},   // TC_NINJUTSU
+    {171,11,"Yain: Ichi"},   // TC_NINJUTSU
+    {116,13,"Barrier Tusk"},   // TC_BLU_BUFF
+    {43,13,"Battery Charge"},   // TC_BLU_BUFF
     {93,13,"Cocoon"},   // TC_BLU_BUFF
+    {37,13,"Diamondhide"},   // TC_BLU_BUFF
     {45,13,"Fantod"},   // TC_BLU_BUFF
     {92,13,"Feather Barrier"},   // TC_BLU_BUFF
     {152,13,"Magic Barrier"},   // TC_BLU_BUFF
     {190,13,"Memento Mori"},   // TC_BLU_BUFF
     {604,13,"Mighty Guard"},   // TC_BLU_BUFF
     {486,13,"O. Counterstance"},   // TC_BLU_BUFF
+    {36,13,"Occultation"},   // TC_BLU_BUFF
+    {38,13,"Plasma Charge"},   // TC_BLU_BUFF
     {150,13,"Pyric Bulwark"},   // TC_BLU_BUFF
+    {33,13,"Refueling"},   // TC_BLU_BUFF
+    {42,13,"Regeneration"},   // TC_BLU_BUFF
     {191,13,"Saline Coat"},   // TC_BLU_BUFF
     {91,13,"Triumphant Roar"},   // TC_BLU_BUFF
     {170,17,"Adloquium"},   // TC_ENHANCE
@@ -1516,6 +1526,7 @@ static const BuffFam BUFF_FAM[] = {
     {403,17,"Reprisal"},   // TC_ENHANCE
     {181,17,"Sandstorm"},   // TC_ENHANCE
     {71,17,"Sneak"},   // TC_ENHANCE
+    {432,17,"Temper"},   // TC_ENHANCE
     {182,17,"Thunderstorm"},   // TC_ENHANCE
     {185,17,"Voidstorm"},   // TC_ENHANCE
     {180,17,"Windstorm"},   // TC_ENHANCE
@@ -1578,11 +1589,25 @@ static const BuffFam BUFF_FAM[] = {
     {531,29,"Vallation"},   // TC_WARD
     {402,30,"Addendum: Black"},   // TC_STRAT
     {401,30,"Addendum: White"},   // TC_STRAT
+    {36,31,"Aerial Armor"},   // TC_BPACT
+    {39,31,"Chinook"},   // TC_BPACT
     {68,31,"Crimson Howl"},   // TC_BPACT
     {587,31,"Crystal Blessing"},   // TC_BPACT
+    {190,31,"Dream Shroud"},   // TC_BPACT
     {458,31,"Earthen Armor"},   // TC_BPACT
+    {37,31,"Earthen Ward"},   // TC_BPACT
+    {176,31,"Fleet Wind"},   // TC_BPACT
+    {35,31,"Frost Armor"},   // TC_BPACT
+    {33,31,"Hastega"},   // TC_BPACT
+    {94,31,"Inferno Howl"},   // TC_BPACT
+    {96,31,"Katabatic Blades"},   // TC_BPACT
+    {38,31,"Lightning Armor"},   // TC_BPACT
+    {116,31,"Noctoshield"},   // TC_BPACT
+    {113,31,"Reraise II"},   // TC_BPACT
+    {98,31,"Rolling Thunder"},   // TC_BPACT
     {154,31,"Shining Ruby"},   // TC_BPACT
     {586,31,"Soothing Current"},   // TC_BPACT
+    {152,31,"Wind's Blessing"},   // TC_BPACT
     {418,32,"Afflatus Misery"},   // TC_JA
     {417,32,"Afflatus Solace"},   // TC_JA
     {58,32,"Aggressor"},   // TC_JA
@@ -1667,6 +1692,7 @@ static const BuffFam BUFF_FAM[] = {
     {502,32,"Mikage"},   // TC_JA
     {439,32,"Nether Void"},   // TC_JA
     {347,32,"Nightingale"},   // TC_JA
+    {152,32,"One for All"},   // TC_JA
     {166,32,"Overdrive"},   // TC_JA
     {500,32,"Overkill"},   // TC_JA
     {478,32,"Palisade"},   // TC_JA
@@ -1674,6 +1700,7 @@ static const BuffFam BUFF_FAM[] = {
     {49,32,"Perfect Dodge"},   // TC_JA
     {409,32,"Pianissimo"},   // TC_JA
     {442,32,"Presto"},   // TC_JA
+    {93,32,"Rampart"},   // TC_JA
     {435,32,"Restraint"},   // TC_JA
     {405,32,"Retaliation"},   // TC_JA
     {410,32,"Saber Dance"},   // TC_JA
@@ -1709,6 +1736,7 @@ static const BuffFam BUFF_FAM[] = {
     {498,32,"Unleash"},   // TC_JA
     {115,32,"Unlimited Shot"},   // TC_JA
     {371,32,"Velocity Shot"},   // TC_JA
+    {68,32,"Warcry"},   // TC_JA
     {117,32,"Warding Circle"},   // TC_JA
     {340,32,"Warrior's Charge"},   // TC_JA
     {508,32,"Widened Compass"},   // TC_JA

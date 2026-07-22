@@ -80,7 +80,7 @@ JOBIDX = {a: i for i, a in enumerate(JOBS) if a}   # abbrev -> job id
 BAR_NAMES  = ('Bar',)   # Barfire, Barfira, Barsleep(ra), Baraero...
 EN_NAMES   = ('Enfire','Enblizzard','Enthunder','Enstone','Enwater','Enaero','Enlight','Endark')
 SPIKES     = ('Blaze Spikes','Ice Spikes','Shock Spikes','Dread Spikes')
-DEFENSE    = ('Phalanx','Stoneskin','Blink','Aquaveil','Temper','Protect','Shell','Boost')
+DEFENSE    = ('Phalanx','Stoneskin','Blink','Aquaveil')   # NB: Temper is OFFENSIVE (grants Double Attack), NOT defensive -> falls to Enhancing
 
 def category(name, sptype, skill):
     n = name
@@ -232,41 +232,19 @@ for name, (rc, st, tg, typ) in res_ab.items():
 #      (family-organised) Timers filter. Deduped by STATUS ; the family name is the SHORTEST base name that
 #      carries that status (Shell V + Shellra V share status 41 -> "Shell"). Recast-only entries (nukes, cures,
 #      Steal...) are NOT here -- they stay per-job (a cooldown only ever shows on the job that owns it). ----
-# the ENHANCING families (skill-34 buffs + their fine sub-families) : the canonical "buff on me" set, preferred
-# over an alternative source (Ninjutsu/Blue/JA) when they share a status.
-ENH_FAM = {CAT_IDX[c] for c in ('TC_REFRESH','TC_HASTE','TC_PROTECT','TC_REGEN','TC_ENSPELL',
-                                'TC_BARSPELL','TC_GAIN','TC_SPIKES','TC_DEFENSE','TC_ENHANCE')}
-# status -> { catEnum : shortest base name IN that category }. Collecting per-category, then resolving the
-# winning family AND taking the name FROM that family, keeps the two consistent -- no "Enhancing category but a
-# Ninjutsu name (Yain)" mismatch, no "Defensive but named Chinook" artefact.
-famcat = {}
+# ONE row per (family, status). A buff stays under ITS OWN school : if a status is granted by spells of two
+# schools (e.g. status 71 : WHM "Sneak" (Enhancing) AND NIN "Monomi: Ichi" (Ninjutsu)), it appears once under
+# EACH, so no family gets emptied by a cross-school "absorption". The runtime filter keys on the STATUS, so the
+# two rows share ONE on/off state -- consistent, just listed under both schools where a player would look for it.
+fam = {}   # (catEnum, status) -> shortest base name for that (family, status)
 for _job, _d in job_buffs.items():
     for _v in _d.values():
         _jl, _cat, _name, _status, _recast = _v
         if _status <= 0:
             continue
-        d = famcat.setdefault(_status, {})
-        if _cat not in d or len(_name) < len(d[_cat]):
-            d[_cat] = _name
-
-def _resolve(catmap):
-    # CONFLICT RESOLUTION for a status granted by several families. Deterministic :
-    #   1) prefer an ENHANCING family (canonical "buff on me") over an alternative source (Ninjutsu/Blue/JA) ;
-    #   2) else the MORE SPECIFIC family wins (lower enum index). Name comes from the WINNING family.
-    best = None
-    for c in catmap:
-        if best is None:
-            best = c; continue
-        ci, bi = CAT_IDX[c], CAT_IDX[best]
-        ce, be = (ci in ENH_FAM), (bi in ENH_FAM)
-        if (ce and not be) or (ce == be and ci < bi):
-            best = c
-    return best, catmap[best]
-
-fam = {}   # status -> [catEnum, name]
-for _status, _cm in famcat.items():
-    _c, _n = _resolve(_cm)
-    fam[_status] = [_c, _n]
+        _k = (_cat, _status)
+        if _k not in fam or len(_name) < len(fam[_k]):
+            fam[_k] = _name
 
 def cesc(s):
     return s.replace('\\', '\\\\').replace('"', '\\"')
@@ -301,9 +279,8 @@ for job in range(1, 24):
 L.append('// GLOBAL buff families (job-agnostic) : one row per distinct buff STATUS, for the family-organised filter.')
 L.append('struct BuffFam { unsigned short status; unsigned char cat; const char* name; };')
 L.append('static const BuffFam BUFF_FAM[] = {')
-for _status in sorted(fam, key=lambda s: (CAT_IDX[fam[s][0]], fam[s][1].lower())):
-    _cat, _name = fam[_status]
-    L.append('    {%d,%d,"%s"},   // %s' % (_status, CAT_IDX[_cat], cesc(_name), _cat))
+for (_cat, _status) in sorted(fam, key=lambda k: (CAT_IDX[k[0]], fam[k].lower())):
+    L.append('    {%d,%d,"%s"},   // %s' % (_status, CAT_IDX[_cat], cesc(fam[(_cat, _status)]), _cat))
 L.append('};')
 L.append('static const int BUFF_FAM_N = (int)(sizeof(BUFF_FAM) / sizeof(BUFF_FAM[0]));')
 
@@ -325,7 +302,7 @@ print('wrote %s : %d jobs, %d rows (%d with buff status, %d with recast)' % (OUT
 for job, arr, n in present:
     print('  %-3s : %2d entries' % (JOBS[job], n))
 from collections import Counter as _Counter
-_fc = _Counter(fam[s][0] for s in fam)
-print('BUFF_FAM : %d distinct buff families (global, by status)' % len(fam))
+_fc = _Counter(k[0] for k in fam)
+print('BUFF_FAM : %d rows (family x status)' % len(fam))
 for _c, _n in sorted(_fc.items(), key=lambda x: -x[1]):
     print('  %-12s %2d' % (_c.replace('TC_', ''), _n))
