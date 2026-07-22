@@ -413,7 +413,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             const char* tlbl[2] = { tr("Party", "Groupe"), tr("Alliance", "Alliance") };
             const float bbw = snap(140.0f), bgap = snap(8.0f), bbh = snap(34.0f);
             const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
-            for (int i = 0; i < 2; ++i) if (toggle_chip(dev, fo, mo, click, 80 + i * 2, bx0 + i * (bbw + bgap), bty, bbw, bbh, tlbl[i], cfgTarget_ == i)) cfgTarget_ = i;
+            for (int i = 0; i < 2; ++i) if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, i), bx0 + i * (bbw + bgap), bty, bbw, bbh, tlbl[i], cfgTarget_ == i)) cfgTarget_ = i;
         }
         ROW_NEXT(56.0f)
         const int T = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;

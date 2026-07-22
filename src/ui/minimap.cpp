@@ -350,7 +350,7 @@ void Minimap::draw(const Frame& f) {
     // icons in the clock header for the whole device generation. Each texture is retried on its own.
     if ((!mkPlayer_ || !mkMob_ || !elemTex_) && mkTries_ < 12) {
         const unsigned nowMs = GetTickCount();
-        if ((int)(nowMs - mkNextMs_) >= 0) {
+        if (!mkNextMs_ || (int)(nowMs - mkNextMs_) >= 0) {   // !mkNextMs_ : the 0 sentinel (init / device-lost) must fire even past 24.8d uptime, when (int)(nowMs-0) is negative (cf. player.cpp / hud_timers.cpp)
             if (!mkPlayer_) mkPlayer_ = load_raw_texture_mip(dev, MK_PLAYER_PATH(), 64, 64);
             if (!mkMob_)    mkMob_    = load_raw_texture_mip(dev, MK_MOB_PATH(),    64, 64);
             if (!elemTex_)  elemTex_  = load_raw_texture_mip(dev, ELEM_ATLAS_PATH(), 256, 32);
@@ -461,7 +461,7 @@ void Minimap::draw(const Frame& f) {
     }
     if (mapTex_ == 0 && g.map.fileId && mapRetries_ > 0) {     // not loaded yet -> (re)try, throttled
         const unsigned nowMs = GetTickCount();
-        if ((int)(nowMs - mapRetryAt_) >= 0) {
+        if (!mapRetryAt_ || (int)(nowMs - mapRetryAt_) >= 0) {   // !mapRetryAt_ : the 0 sentinel (set on every zone change, line ~460) must fire even past 24.8d uptime, when (int)(nowMs-0) is negative -> else the map stays black
             u32* pixels = 0; int mw = 0, mh = 0; MapLoadDiag md;
             // Only STOP retrying when the texture actually exists. This used to clear the budget as soon as the DAT
             // DECODED, without checking make_texture_argb_mip -- so a decode that succeeded followed by a failed
