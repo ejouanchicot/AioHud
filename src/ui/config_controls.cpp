@@ -467,7 +467,7 @@ bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
 // ---- HSV colour picker (shared) : an SV square + a rainbow hue bar + a live swatch. Replaces the per-channel
 // R/G/B slider triples in every module. The two draggable zones (SV square, hue bar) share the g_slider latch.
 // HSV is CACHED per-uid so dragging Value to black or Saturation to 0 doesn't lose the hue (RGB can't encode it).
-float color_picker_height() { return 80.0f; }
+float color_picker_height() { return 200.0f; }   // SV square (112) + gap + horizontal hue slider (18) + gap + 2 preset rows (20 each)
 
 static void rgb2hsv(u32 c, float& h, float& s, float& v) {
     const float r = ((c >> 16) & 0xFF) / 255.0f, g = ((c >> 8) & 0xFF) / 255.0f, b = (c & 0xFF) / 255.0f;
@@ -513,20 +513,22 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
     if (!p) return false;
     const u32 alpha = *color & 0xFF000000u;
 
-    // ---- layout : SV square | slim hue strip | right column (small swatch+hex on top, mini preset grid below) ----
-    const float gap = snap(8.0f), hbW = snap(13.0f), sqH = snap(66.0f), rcW = snap(88.0f);
-    const float sqW = snap(w - hbW - rcW - 2.0f * gap);
-    const float hx  = x + sqW + gap;                     // vertical hue strip x
-    const float rx  = hx + hbW + gap;                    // right column x
-    const float swW = snap(22.0f), swH = snap(16.0f);    // small live swatch
+    // ---- layout : big SV SQUARE on top (+ live swatch/hex to its right) | full-width horizontal HUE slider below |
+    //      full-width PRESET grid (2 rows of larger chips) at the bottom. Taller, properly proportioned. ----
+    const float gap = snap(8.0f);
+    const float sqW = snap(112.0f), sqH = sqW;             // SV : a real SQUARE
+    const float rx  = x + sqW + gap;                       // live swatch + hex, right of the square
+    const float swW = snap(26.0f), swH = snap(18.0f);
+    const float hueY = y + sqH + gap, hbH = snap(18.0f);   // horizontal hue slider, FULL WIDTH
+    const float preY = hueY + hbH + gap;                   // preset grid top (full width, 2 rows)
     const u32   hue = hsv2rgb(p->h, 1.0f, 1.0f, 0xFF000000u);
-    const int   PC = 5;                                  // preset columns (5x3 = 15)
-    const float cg = snap(3.0f), pgY = y + swH + snap(6.0f);   // preset grid top (under the swatch)
-    const float cw = snap((rcW - (PC - 1) * cg) / (float)PC), ch = snap(13.0f);
+    const int   PC = 8;                                    // preset columns (8 + 7 = 15)
+    const float cg = snap(4.0f);
+    const float cw = snap((w - (PC - 1) * cg) / (float)PC), ch = snap(20.0f);
 
-    // ---- interaction : SV square + hue strip share the row_slider latch ; presets are one-shot clicks ----
+    // ---- interaction : SV square + hue slider share the row_slider latch ; presets are one-shot clicks ----
     const bool hotSV  = inrect(mo, x, y, sqW, sqH);
-    const bool hotHue = inrect(mo, hx, y, hbW, sqH);
+    const bool hotHue = inrect(mo, x, hueY, w, hbH);
     if (mo && mo->clicked && g_slider < 0) { if (hotSV) g_slider = uidSV; else if (hotHue) g_slider = uidHue; }
     bool changed = false;
     if (g_slider == uidSV) {
@@ -534,13 +536,13 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
                               const u32 nc = hsv2rgb(p->h, p->s, p->v, alpha); if (nc != *color) { *color = nc; p->col = nc; changed = true; } }
         else { g_slider = -1; save_ui_config(); }
     } else if (g_slider == uidHue) {
-        if (mo && mo->down) { p->h = clampf((mo->y - y) / sqH, 0.0f, 1.0f) * 360.0f;   // vertical -> map Y to hue
+        if (mo && mo->down) { p->h = clampf((mo->x - x) / w, 0.0f, 1.0f) * 360.0f;   // horizontal -> map X to hue
                               const u32 nc = hsv2rgb(p->h, p->s, p->v, alpha); if (nc != *color) { *color = nc; p->col = nc; changed = true; } }
         else { g_slider = -1; save_ui_config(); }
     }
     if (mo && mo->clicked && g_slider < 0) {                                            // preset click (separate region)
         for (int i = 0; i < 15; ++i) {
-            const float sx = rx + (i % PC) * (cw + cg), sy = pgY + (i / PC) * (ch + cg);
+            const float sx = x + (i % PC) * (cw + cg), sy = preY + (i / PC) * (ch + cg);
             if (inrect(mo, sx, sy, cw, ch)) {
                 const u32 nc = (CP_PRESETS[i] & 0x00FFFFFFu) | alpha;
                 if (nc != *color) { *color = nc; rgb2hsv(nc, p->h, p->s, p->v); p->col = nc; changed = true; save_ui_config(); }
@@ -555,26 +557,26 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
     const float cxp = x + p->s * sqW, cyp = y + (1.0f - p->v) * sqH;                    // SV cursor (readable on any shade)
     disc(dev, cxp, cyp, snap(5.0f), 0xCC000000u); disc(dev, cxp, cyp, snap(3.6f), 0xFFFFFFFFu); disc(dev, cxp, cyp, snap(2.0f), *color | 0xFF000000u);
 
-    // ---- vertical hue strip : 6 rainbow segments top->bottom, thin horizontal cursor ----
-    static const u32 HUE6[7] = { 0xFFFF0000u, 0xFFFFFF00u, 0xFF00FF00u, 0xFF00FFFFu, 0xFF0000FFu, 0xFFFF00FFu, 0xFFFF0000u };
-    const float segH = sqH / 6.0f;
-    for (int i = 0; i < 6; ++i) { const float sy = y + i * segH; q4(dev, hx, sy, hbW, segH + 1.0f, HUE6[i], HUE6[i], HUE6[i + 1], HUE6[i + 1]); }
-    outline(dev, hx, y, hbW, sqH, C_BORDER);
-    const float hcy = y + (p->h / 360.0f) * sqH;
-    flat(dev, hx - snap(2.0f), snap(hcy) - snap(2.0f), hbW + snap(4.0f), snap(4.0f), 0xFF000000u);
-    flat(dev, hx - snap(2.0f), snap(hcy) - snap(1.0f), hbW + snap(4.0f), snap(2.0f), 0xFFFFFFFFu);
-
-    // ---- small live swatch (rounded) + hex readout beside it ----
+    // ---- live swatch (rounded) + hex readout, top-right of the square ----
     rrect_bordered(dev, rx, y, swW, swH, snap(4.0f), *color | 0xFF000000u, *color | 0xFF000000u, C_BORDERHI, snap(1.2f));
     if (fo) { char hb[10]; sprintf(hb, "#%06X", (unsigned)(*color & 0x00FFFFFFu));
-              fo->begin(dev); fo->draw_lc(dev, rx + swW + snap(6.0f), y + swH * 0.5f, hb, snap(11.0f), C_DIM, C_STROKE, 1.0f); }
+              fo->begin(dev); fo->draw_lc(dev, rx + swW + snap(8.0f), y + swH * 0.5f, hb, snap(12.0f), C_DIM, C_STROKE, 1.0f); }
 
-    // ---- mini preset grid (the nuancier) : rounded chips ; a white ring marks the active colour ----
+    // ---- horizontal hue slider : 6 rainbow segments left->right, thin vertical cursor ----
+    static const u32 HUE6[7] = { 0xFFFF0000u, 0xFFFFFF00u, 0xFF00FF00u, 0xFF00FFFFu, 0xFF0000FFu, 0xFFFF00FFu, 0xFFFF0000u };
+    const float segW = w / 6.0f;
+    for (int i = 0; i < 6; ++i) { const float sx = x + i * segW; q4(dev, sx, hueY, segW + 1.0f, hbH, HUE6[i], HUE6[i + 1], HUE6[i], HUE6[i + 1]); }
+    outline(dev, x, hueY, w, hbH, C_BORDER);
+    const float hcx = x + (p->h / 360.0f) * w;
+    flat(dev, snap(hcx) - snap(2.0f), hueY - snap(2.0f), snap(4.0f), hbH + snap(4.0f), 0xFF000000u);
+    flat(dev, snap(hcx) - snap(1.0f), hueY - snap(2.0f), snap(2.0f), hbH + snap(4.0f), 0xFFFFFFFFu);
+
+    // ---- preset grid (the nuancier) : larger rounded chips, full width, 2 rows ; a white ring marks the active colour ----
     for (int i = 0; i < 15; ++i) {
-        const float sx = rx + (i % PC) * (cw + cg), sy = pgY + (i / PC) * (ch + cg);
-        rrect_bordered(dev, sx, sy, cw, ch, snap(3.0f), CP_PRESETS[i], CP_PRESETS[i], C_BORDER, snap(1.0f));
+        const float sx = x + (i % PC) * (cw + cg), sy = preY + (i / PC) * (ch + cg);
+        rrect_bordered(dev, sx, sy, cw, ch, snap(4.0f), CP_PRESETS[i], CP_PRESETS[i], C_BORDER, snap(1.0f));
         if (((*color) & 0x00FFFFFFu) == (CP_PRESETS[i] & 0x00FFFFFFu))
-            rrect_stroke(dev, sx - snap(1.0f), sy - snap(1.0f), cw + snap(2.0f), ch + snap(2.0f), snap(4.0f), 0xFFFFFFFFu, snap(1.6f));
+            rrect_stroke(dev, sx - snap(1.0f), sy - snap(1.0f), cw + snap(2.0f), ch + snap(2.0f), snap(5.0f), 0xFFFFFFFFu, snap(1.8f));
     }
     return changed;
 }
