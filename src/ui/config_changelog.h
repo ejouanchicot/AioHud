@@ -275,6 +275,16 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_51[] = {
+    { "*The Timers buff-filter alerts are clearer and warn you earlier.* The four states are now *Show / Show+alert / Hide / Hide+alert* (the old \"focus\" wording is gone), and a *+alert* buff now BLINKS its name and timer the moment it drops under the *Alert under* time -- an early \"recast soon\" cue, not just the last-10-seconds flash. The two sliders are *Alert under* and *Alert duration*.",
+      "*Les alertes du filtre de buffs sont plus claires et te previennent plus tot.* Les quatre etats sont maintenant *Afficher / Afficher+alerte / Masquer / Masquer+alerte* (le mot \"focus\" disparait), et un buff *+alerte* CLIGNOTE desormais son nom et son minuteur des qu'il passe sous le temps *Alerter sous* -- un avertissement \"recast bientot\", pas seulement le clignotement des 10 dernieres secondes. Les deux curseurs sont *Alerter sous* et *Duree de l'alerte*." },
+    { "*A buff someone re-casts over yours now shows the right caster and timer.* When an ally or a trust overwrites your Protect / Shell -- or a weaker spell is refused with \"no effect\" (e.g. a lower Phalanx over your Phalanx II) -- the row no longer keeps the old name and owner while only the time updates. Covers the Majesty AoE case too : your own copy stops folding into the \"(AoE N)\" group once someone re-casts it on you.",
+      "*Un buff qu'on relance par-dessus le tien affiche le bon lanceur et le bon temps.* Quand un allie ou un trust ecrase ton Protect / Shell -- ou qu'un sort plus faible est refuse en \"no effect\" (ex. un Phalanx inferieur sur ton Phalanx II) -- la ligne ne garde plus l'ancien nom et proprietaire avec juste le temps qui change. Couvre aussi le cas Majesty AoE : ta propre copie ne se replie plus dans le groupe \"(AoE N)\" une fois qu'on te la relance." },
+    { "Fix : the minimap and its markers could stop loading -- a black map on every zone-in -- after the PC had been running for about 25 days. They load again.",
+      "Correctif : la minicarte et ses marqueurs pouvaient cesser de se charger -- carte noire a chaque changement de zone -- apres environ 25 jours d'allumage du PC. Ils se rechargent." },
+    { "The in-game Help was refreshed to match the current modules : Timers rewritten for the family filter, plus several stale control names and two wrong descriptions (Treasure Pool's index and timer colours, PointWatch) corrected.",
+      "L'Aide en jeu a ete mise a jour pour coller aux modules actuels : Timers reecrit pour le filtre par famille, plus plusieurs noms de controles perimes et deux descriptions fausses (l'index et les couleurs du Pool de tresor, PointWatch) corriges." },
+};
 static const ChangeLine CL_50[] = {
     { "*Timers has a new buff filter, organised by family.* The old per-job track list is gone -- buffs are grouped by magic family (Protect/Shell, Haste, Barspells, Songs, Rolls, Ninjutsu...) and Job Abilities are listed by job with your current job in gold. Each buff has ONE setting shared across all your jobs (Show / Show+alert / Hide / Hide+alert), so hiding e.g. Shell hides it on every job. Recasts are always shown.",
       "*Timers a un nouveau filtre de buffs, range par famille.* L'ancienne liste 'suivi par job' disparait -- les buffs sont groupes par famille de magie (Protect/Shell, Haste, Barspells, Chants, Rolls, Ninjutsu...) et les capacites de job sont listees par job, ton job actuel en dore. Chaque buff a UN seul reglage partage entre tous tes jobs (Afficher / Afficher+alerte / Masquer / Masquer+alerte), donc masquer par ex. Shell le masque sur tous tes jobs. Les recast sont toujours affiches." },
@@ -300,6 +310,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.51", CL_51, (int)(sizeof(CL_51) / sizeof(CL_51[0])) },
     { "1.0.50", CL_50, (int)(sizeof(CL_50) / sizeof(CL_50[0])) },
     { "1.0.49", CL_49, (int)(sizeof(CL_49) / sizeof(CL_49[0])) },
     { "1.0.48", CL_48, (int)(sizeof(CL_48) / sizeof(CL_48[0])) },
