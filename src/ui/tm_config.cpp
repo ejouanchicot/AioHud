@@ -169,12 +169,19 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         #define BF_FOFF(st)     ( c.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)(st)) )
         #define BF_SET(st, OFF) c.tm_buff_set((unsigned)(st), (OFF))
         #define BF_FSET(st, ON) c.tm_buff_set(UiConfig::TM_KEY_FOCUS | (unsigned)(st), (ON))
+        // ---- 2-column packing cursor : closed flat families draw as compact half-width CELLS, two per row.
+        //      A closed family with no partner takes column 0 WITHOUT advancing ry ; the next closed family
+        //      fills column 1 and THEN advances. An OPEN family (or TC_JA, or the loop end) first FLUSHES a
+        //      lone left cell so it starts on a clean full-width row. ----
+        bool pendCell = false;
+        #define TM_FAM_FLUSH   if (pendCell) { ROW_NEXT(40.0f) pendCell = false; }
         for (int cat = 0; cat < TC_COUNT; ++cat) {
             // ---- SPECIAL CASE : Job Abilities are grouped BY JOB (the per-job tables), not flat from BUFF_FAM.
             //      The player's current main job comes FIRST, gold-tinted + expanded ; every other job with a
             //      status-bearing JA follows under a collapsible sub-header. State is still GLOBAL (keyed by
             //      .status), so the same 4-state dots / BF_* macros as the flat categories apply. ----
             if (cat == TC_JA) {
+                TM_FAM_FLUSH   // Job Abilities is a FULL-WIDTH entry : flush a dangling left cell first, resume column 0 after
                 const int mainJob = party().self_main_job();   // 1..23, 0 if unknown -> its sub-section is gold + open by default
                 // gather the UNIQUE JA statuses across every job (global filter state) for the header count + group chip
                 unsigned jaSt[512]; int jaN = 0, catState = -2;
@@ -284,26 +291,49 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                 catState = (catState == -2) ? s : (catState == s ? s : -1);
             }
             if (!cn) continue;
-            // ---- category header (collapsible) + a GROUP state chip : one click sets the WHOLE category to the next
-            //      of the 4 states (Follow -> Follow+focus -> Hidden -> Hidden+focus), same cycle as a single dot ----
+            // group state chip label + lit flag (shared by the compact cell and the full-width open header)
             char hl[56]; _snprintf(hl, sizeof(hl), "%s (%d)", tr(TRACK_CAT_EN[cat], TRACK_CAT_FR[cat]), cn); hl[sizeof(hl) - 1] = 0;
-            const float gchipW = snap(96.0f), hbX = hdrX + snap(14.0f);
-            if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hbX, ry, hdrW - snap(14.0f) - gchipW - snap(6.0f), hl, trkCatOpen_[cat])) trkCatOpen_[cat] = !trkCatOpen_[cat];
-            {
-                static const char* const SN_EN[4] = { "Show", "Show+al", "Hide", "Hide+al" };
-                static const char* const SN_FR[4] = { "Afficher", "Aff+al", "Masquer", "Masq+al" };
-                const char* glbl = (catState < 0) ? tr("Mixed", "Mixte") : tr(SN_EN[catState], SN_FR[catState]);
-                const bool lit = (catState == 1 || catState == 3);   // a focus state -> highlight
-                if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hdrX + hdrW - gchipW, ry + snap(4.0f), gchipW, snap(30.0f), glbl, lit)) {
+            static const char* const SN_EN[4] = { "Show", "Show+al", "Hide", "Hide+al" };
+            static const char* const SN_FR[4] = { "Afficher", "Aff+al", "Masquer", "Masq+al" };
+            const char* glbl = (catState < 0) ? tr("Mixed", "Mixte") : tr(SN_EN[catState], SN_FR[catState]);
+            const bool lit = (catState == 1 || catState == 3);   // a focus state -> highlight
+            if (!trkCatOpen_[cat]) {
+                // ===== CLOSED : a compact half-width cell -- [caret] Name (count) on the left, GROUP chip on the
+                //      cell's RIGHT EDGE. Two cells per row (see the packing cursor above). Cell click toggles open ;
+                //      chip click cycles the whole family's 4-state. ry advances only after column 1 is placed. =====
+                const int col = pendCell ? 1 : 0;
+                const float gutter = snap(12.0f), cellW = (hdrW - gutter) * 0.5f;
+                const float chipW = snap(84.0f), chipH = snap(28.0f);
+                const float cellX = hdrX + (float)col * (cellW + gutter);
+                if (col == 0) row_band(dev, bandX, ry, bandW, snap(40.0f), (ri & 1) != 0, 0.0f);   // ONE band per packed row (drawn with the left cell)
+                const float ap = stagger(anim_, ri); g_fade = e * ap;                              // same ri for both cells -> matched entrance
+                const float yoff = (1.0f - ap) * snap(10.0f);
+                const float hy = ry + yoff + snap(4.0f), chy = ry + yoff + (snap(40.0f) - chipH) * 0.5f;
+                const float hw = cellW - chipW - snap(6.0f);
+                // header cell : cat_header hosts the caret + "Name (count)" and hit-tests the toggle
+                if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), cellX, hy, hw, hl, false)) trkCatOpen_[cat] = !trkCatOpen_[cat];
+                // group chip on the cell's right edge (distinct source line -> distinct CTRL_ID -> its own spring)
+                if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), cellX + cellW - chipW, chy, chipW, chipH, glbl, lit)) {
                     const int next = (catState < 0) ? 0 : (catState + 1) % 4;   // mixed -> Follow, else advance
                     for (int i = 0; i < BUFF_FAM_N; ++i) if (BUFF_FAM[i].cat == cat) { BF_SET(BUFF_FAM[i].status, (next & 2) != 0); BF_FSET(BUFF_FAM[i].status, (next & 1) != 0); }
                     save_ui_config();
                 }
+                if (col == 0) pendCell = true; else { ROW_NEXT(40.0f) pendCell = false; }
+                continue;
+            }
+            // ===== OPEN : break out to FULL WIDTH -- flush a lone left cell, then the header + chip + checklist span ctrlW =====
+            TM_FAM_FLUSH
+            const float gchipW = snap(96.0f), hbX = hdrX + snap(14.0f);
+            if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hbX, ry, hdrW - snap(14.0f) - gchipW - snap(6.0f), hl, true)) trkCatOpen_[cat] = !trkCatOpen_[cat];
+            if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), hdrX + hdrW - gchipW, ry + snap(4.0f), gchipW, snap(30.0f), glbl, lit)) {
+                const int next = (catState < 0) ? 0 : (catState + 1) % 4;   // mixed -> Follow, else advance
+                for (int i = 0; i < BUFF_FAM_N; ++i) if (BUFF_FAM[i].cat == cat) { BF_SET(BUFF_FAM[i].status, (next & 2) != 0); BF_FSET(BUFF_FAM[i].status, (next & 1) != 0); }
+                save_ui_config();
             }
             ROW_NEXT(40.0f)
             // ---- entries : a checklist grid, laid COLUMN-major, one 4-state dot per buff. Every entry is a buff, so
-            //      there's no duration/recast split -- one flat list per family. ----
-            if (trkCatOpen_[cat]) {
+            //      there's no duration/recast split -- one flat list per family. Spans the full ctrlW. ----
+            {
                 int idx[256], m = 0;
                 for (int i = 0; i < BUFF_FAM_N && m < 256; ++i) if (BUFF_FAM[i].cat == cat) idx[m++] = i;
                 const float avail = ctrlW - snap(18.0f), x0 = coX + snap(18.0f);
@@ -354,6 +384,8 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                 }
             }
         }
+        TM_FAM_FLUSH   // a trailing lone left cell (odd family count) still needs its row advanced
+        #undef TM_FAM_FLUSH
         #undef BF_OFF
         #undef BF_FOFF
         #undef BF_SET

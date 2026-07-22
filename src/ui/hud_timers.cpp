@@ -181,13 +181,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         static const struct { int id, rem; } SB[5] = { {43, 1490}, {57, 155}, {214, 309}, {40, 540}, {33, 28} };
         for (int i = 0; i < 5; ++i) { bufs[nb].rem = SB[i].rem; bufs[nb].icon = SB[i].id; bufs[nb].name = buff_status_name(SB[i].id); bufs[nb].both = 0; bufs[nb].order = 0; ++nb; }
         if (C.tmMine) {   // demo : an AoE song grouped for the whole party (you included) + a COR roll pip + a single-target buff on one ally
-            bufs[nb].rem = 168;  bufs[nb].icon = 43;  bufs[nb].name = "Minuet V"; bufs[nb].tag = " (SV NT)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (AoE 6)"; bufs[nb].both = 0; bufs[nb].order = 0; ++nb;
+            bufs[nb].rem = 168;  bufs[nb].icon = 198; bufs[nb].name = "Minuet V"; bufs[nb].tag = " (SV NT)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (AoE 6)"; bufs[nb].both = 0; bufs[nb].order = 0; ++nb;   // 198 = Minuet (was 43 = Refresh -- wrong icon)
             bufs[nb].rem = 280;  bufs[nb].icon = 313; bufs[nb].name = "Chaos Roll"; bufs[nb].pip = 11; bufs[nb].pipCol = 0xFF74D074u; bufs[nb].tag = " (CC)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (AoE 6)"; bufs[nb].both = 0; bufs[nb].order = 0; ++nb;   // pip 11 = green, under Crooked Cards
             // Band 1 = a real PLAYER's buff on you, band 2 = a TRUST's : both carry the owner in parentheses, which is
             // what the Help page has to teach. The per-ally sample below is band 5+ (it was left at 2, now "trusts").
             bufs[nb].rem = 540;  bufs[nb].icon = 33;  bufs[nb].name = "Haste"; bufs[nb].post = " (Aeryn)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 1; ++nb;
             bufs[nb].rem = 62;   bufs[nb].icon = 41;  bufs[nb].name = "Shell V"; bufs[nb].tag = " (SV)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (Monberaux)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 2; ++nb;
-            bufs[nb].rem = 1200; bufs[nb].icon = 40;  bufs[nb].name = "Aeryn - Haste";     bufs[nb].both = 1; bufs[nb].order = 5; ++nb;
+            bufs[nb].rem = 1200; bufs[nb].icon = 33;  bufs[nb].name = "Aeryn - Haste";     bufs[nb].both = 1; bufs[nb].order = 5; ++nb;   // 33 = Haste (was 40 = Protect -- wrong icon)
         }
         static const struct { int icon, rem; const char* nm; } SR[4] = { {66, 8, "Mighty Strikes"}, {143, 22, "Haste"}, {160, 3, "Provoke"}, {56, 45, "Berserk"} };
         for (int i = 0; i < 4; ++i) { recs[nr].rem = SR[i].rem; recs[nr].icon = SR[i].icon; recs[nr].name = SR[i].nm; recs[nr].both = 0; recs[nr].order = 0; ++nr; }
