@@ -275,6 +275,14 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_50[] = {
+    { "*Timers has a new buff filter, organised by family.* The old per-job track list is gone -- buffs are grouped by magic family (Protect/Shell, Haste, Barspells, Songs, Rolls, Ninjutsu...) and Job Abilities are listed by job with your current job in gold. Each buff has ONE setting shared across all your jobs (Tracked / +Focus / Hidden / Hidden+Focus), so hiding e.g. Shell hides it on every job. Recasts are always shown.",
+      "*Timers a un nouveau filtre de buffs, range par famille.* L'ancienne liste 'suivi par job' disparait -- les buffs sont groupes par famille de magie (Protect/Shell, Hate, Barspells, Chants, Rolls, Ninjutsu...) et les capacites de job sont listees par job, ton job actuel en dore. Chaque buff a UN seul reglage partage entre tous tes jobs (Suivi / +Focus / Masque / Masque+Focus), donc masquer par ex. Shell le masque sur tous tes jobs. Les recast sont toujours affiches." },
+    { "*The buff-source filter now handles another player's trusts and their mixes.* On a second character in your party (your mule, while your main's trusts are out), a trust's buffs are correctly seen as trust-cast, so 'me only' / 'me + players' hide them. In particular a Trust's stat-boost mix (STR/DEX/VIT... Boost from Monberaux/Ygnas) no longer counts as your own -- only a Gain-X you actually cast stays.",
+      "*Le filtre de source des buffs gere maintenant les trusts d'un autre joueur et leurs mix.* Sur un second personnage dans ta party (ton mule, pendant que les trusts de ton main sont sortis), les buffs d'un trust sont bien vus comme lances par un trust, donc 'moi seulement' / 'moi + joueurs' les cachent. En particulier le mix de boost de stats d'un trust (STR/DEX/VIT... Boost de Monberaux/Ygnas) ne compte plus comme le tien -- seul un Gain-X que tu as reellement lance reste." },
+    { "Small fix : a song sung by someone else no longer wears a previous singer's job-ability tag (e.g. Ulmia's Madrigal showing \"NT\").",
+      "Petit correctif : un chant chante par quelqu'un d'autre ne porte plus le tag de capacite d'un chanteur precedent (par ex. le Madrigal d'Ulmia affiche \"NT\")." },
+};
 static const ChangeLine CL_49[] = {
     { "*Minimap dots no longer spill past the frame.* Party, NPC and monster markers are now cut cleanly at the map's edge instead of poking outside it just before they vanish -- on the round map and the square one, with or without a border.",
       "*Les points du minimap ne debordent plus du cadre.* Les marqueurs de joueurs, PNJ et monstres sont desormais coupes net au bord de la carte au lieu de depasser juste avant de disparaitre -- en carte ronde comme carree, avec ou sans bordure." },
@@ -292,6 +300,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.50", CL_50, (int)(sizeof(CL_50) / sizeof(CL_50[0])) },
     { "1.0.49", CL_49, (int)(sizeof(CL_49) / sizeof(CL_49[0])) },
     { "1.0.48", CL_48, (int)(sizeof(CL_48) / sizeof(CL_48[0])) },
     { "1.0.47", CL_47, (int)(sizeof(CL_47) / sizeof(CL_47[0])) },
