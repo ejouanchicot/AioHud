@@ -309,6 +309,19 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // DEBUFFS (Blind / Poison / Slow / Dia / Bio...) leak into the 0x063 self-buff list -- they are NOT buffs,
             // so never in the Duration column (they'll get their own detachable column). Dropped for everyone.
             if (is_debuff_status(bt[i].id)) continue;
+            if (party().bcapt_armed() && bt[i].id < 1024) {   // //aio bcaptlog ATTR : the FULL ownership decision per self-buff (logged on CHANGE only)
+                const unsigned owner = party().buff_caster_for(bt[i].id, bt[i].expiry, i);   // what buff_caster_for resolves (ring -> direct -> co-expiry)
+                const unsigned direct = party().buff_caster(bt[i].id);                        // raw buffCaster_[status]
+                const bool selfProd = party().self_can_produce_buff(bt[i].id, jaBits, jaOk);  // can YOUR current job even make this ?
+                static unsigned char al[1024] = { 0 };
+                const unsigned char pk = (unsigned char)(1 + (owner == party().self_id() ? 2 : 0) + (owner && party().is_trust(owner) ? 4 : 0) + (direct ? 8 : 0) + (selfProd ? 16 : 0) + (owner ? 32 : 0));
+                if (al[bt[i].id] != pk) { al[bt[i].id] = pk;
+                    windower::debug::log("ATTR st=%-4u exp=%u owner=%08X trust=%d direct=%08X ring=%d spell=%-5u selfProd=%d meHas=%d self=%08X",
+                                         bt[i].id, bt[i].expiry, owner, owner ? (int)party().is_trust(owner) : -1, direct,
+                                         party().self_cast_ring_count(bt[i].id), party().self_buff_spell_ranked(bt[i].id, bt[i].expiry, i),
+                                         selfProd ? 1 : 0, meHas((int)bt[i].id) ? 1 : 0, party().self_id());
+                }
+            }
             // Hidden (Unfollow) -- UNLESS it's Unfollow-Focus & expiring : then it pops under the warn threshold.
             // Key on the SPELL that produced this buff when we know it. The status key is deliberately an AND over
             // every spell sharing that status (BLU Cocoon / Reactor Cool both give Defense Boost), so hiding ONLY
