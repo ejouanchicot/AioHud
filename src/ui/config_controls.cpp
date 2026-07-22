@@ -509,25 +509,6 @@ static const u32 CP_PRESETS[15] = {
     0xFF8B5CF6u, 0xFFD946EFu, 0xFFEC4899u, 0xFFFFFFFFu, 0xFF0F172Au,
 };
 
-// ---- Collapsible colour FIELD (accordion) : a compact "[caret] label ... [swatch]" row that expands ONE colour
-//      picker below it. Only one field is open at a time (global latch), so a panel with several colours stays tidy
-//      instead of stacking a full picker per colour. ----
-static int g_openColorField = -1;
-bool color_field_open(int uid)   { return g_openColorField == uid; }
-void color_field_toggle(int uid) { g_openColorField = (g_openColorField == uid) ? -1 : uid; }
-bool color_field_row(u32 dev, Font* fo, const MouseState* mo, float x, float y, float w, const char* label, u32 color, bool open) {
-    const float rh = snap(38.0f);
-    const bool hov = inrect(mo, x, y, w, rh);
-    if (hov || open) rrect(dev, x, y, w, rh, snap(6.0f), fa(open ? 0xFF212932u : 0xFF181D22u), fa(open ? 0xFF212932u : 0xFF181D22u));
-    const float gx = x + snap(11.0f), gy = y + rh * 0.5f, s = snap(3.6f);                  // caret : right (closed) / down (open)
-    if (open) { const float d[6] = { gx - s, gy - s * 0.55f, gx + s, gy - s * 0.55f, gx, gy + s * 0.85f }; fill_poly_aa(dev, d, 3, fa(C_ACCENTHI)); }
-    else      { const float d[6] = { gx - s * 0.55f, gy - s, gx - s * 0.55f, gy + s, gx + s * 0.85f, gy }; fill_poly_aa(dev, d, 3, fa(C_ACCENTHI)); }
-    if (fo) { fo->begin(dev); fo->draw_lc(dev, x + snap(26.0f), gy, label, snap(14.0f), fa(C_TEXT), fa(C_STROKE), 1.2f); }
-    const float sw = snap(48.0f), sh = snap(22.0f), sxp = x + w - sw - snap(8.0f), syp = y + (rh - sh) * 0.5f;   // colour swatch, right
-    rrect_bordered(dev, sxp, syp, sw, sh, snap(4.0f), fa(color | 0xFF000000u), fa(color | 0xFF000000u), fa(C_BORDERHI), snap(1.2f));
-    return hov && mo && mo->clicked;
-}
-
 bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue,
                   float x, float y, float w, u32* color) {
     if (!color) return false;

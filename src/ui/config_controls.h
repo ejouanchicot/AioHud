@@ -132,11 +132,6 @@ bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
 bool  color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue,
                    float x, float y, float w, u32* color);
 float color_picker_height();
-// Collapsible colour field (accordion). color_field_row draws the compact "label + swatch" header (returns true on
-// click) ; color_field_open/toggle track which one is expanded (one at a time). See CFG_COLOR_FIELD in config_rows.h.
-bool color_field_open(int uid);
-void color_field_toggle(int uid);
-bool color_field_row(u32 dev, Font* fo, const MouseState* mo, float x, float y, float w, const char* label, u32 color, bool open);
 bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                  float x, float y, float w, float h, const char* label, bool on);
 bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
