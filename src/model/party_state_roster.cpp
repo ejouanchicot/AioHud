@@ -356,9 +356,10 @@ void PartyState::load_from_memory() {
             windower::debug::log("PARTY zone=%u self=(%d,%d) n=%d", zone_id(), (int)(px * 10), (int)(pz * 10), n);
             for (int i = 0; i < n; ++i) {
                 u32 mb = base + i * 0x7C; u32 idx = 0; safe_read(mb + 0x20, &idx); idx &= 0xFFFF;
+                u32 pent = 0; safe_read(ent + idx * 4, &pent); u32 sp = 0; if (valid_ptr(pent)) safe_read(pent + 0x1D0, &sp);   // raw SpawnType byte -> why is_trust may fail for ANOTHER player's trust
                 windower::debug::log(
-                    "  [%d] \"%s\" id=%08X hpp=%d zone=%d off=%d idx=%u distx10=%d",
-                    i, m[i].name, m[i].id, m[i].hpp, m[i].zone, m[i].offzone ? 1 : 0, idx, (int)(m[i].dist * 10.0f));
+                    "  [%d] \"%s\" id=%08X isTrust=%d mjob=%d spawn=%02X hpp=%d zone=%d off=%d idx=%u",
+                    i, m[i].name, m[i].id, m[i].isTrust, m[i].mjob, (unsigned)(sp & 0xFF), m[i].hpp, m[i].zone, m[i].offzone ? 1 : 0, idx);
             }
         }
     }
