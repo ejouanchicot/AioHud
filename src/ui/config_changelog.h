@@ -275,6 +275,12 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_56[] = {
+    { "*Your HUD layout can no longer be corrupted by a crash while it saves.* The edit-mode layout file is now written to a temporary copy and swapped in atomically, so a crash mid-save can never leave it half-written or empty.",
+      "*Ta disposition HUD ne peut plus etre corrompue par un crash pendant sa sauvegarde.* Le fichier de disposition (mode edition) est desormais ecrit dans une copie temporaire puis echange de facon atomique, donc un crash en pleine sauvegarde ne peut plus le laisser a moitie ecrit ou vide." },
+    { "*Config-page preview icons no longer go missing for the rest of the session.* The Timers, Zone Tracker, Debuffs and Treasure preview panels gave up loading their icons after a single badly-timed miss; they now retry, like the rest of the HUD already did.",
+      "*Les icones d'apercu de la page Config ne disparaissent plus pour le reste de la session.* Les apercus Timers, Zone Tracker, Debuffs et Treasure abandonnaient le chargement de leurs icones apres un seul echec mal tombe ; ils reessaient maintenant, comme le reste du HUD le faisait deja." },
+};
 static const ChangeLine CL_55[] = {
     { "*Area song counts are more accurate when you re-sing.* If a party member is out of range when you re-cast, their older song is now listed by name (\"Kaories - Victory March\") on its own timer, instead of being hidden inside the \"(AoE N)\" count as if they were still fully buffed. A song still on an ally but no longer on you (pushed off by newer songs) also stops showing a false \"(AoE 2)\".",
       "*Les comptes de chants de zone sont plus precis quand tu rechantes.* Si un membre est hors de portee au moment ou tu relances, son ancien chant est desormais liste par nom (\"Kaories - Victory March\") sur son propre minuteur, au lieu d'etre cache dans le compte \"(AoE N)\" comme s'il etait encore pleinement buffe. Un chant encore sur un allie mais plus sur toi (pousse dehors par de nouveaux chants) n'affiche plus non plus un faux \"(AoE 2)\"." },
@@ -336,6 +342,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.56", CL_56, (int)(sizeof(CL_56) / sizeof(CL_56[0])) },
     { "1.0.55", CL_55, (int)(sizeof(CL_55) / sizeof(CL_55[0])) },
     { "1.0.54", CL_54, (int)(sizeof(CL_54) / sizeof(CL_54[0])) },
     { "1.0.53", CL_53, (int)(sizeof(CL_53) / sizeof(CL_53[0])) },

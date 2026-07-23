@@ -19,12 +19,18 @@ static bool read_file(const char* path, std::string& out) {
     return ok;
 }
 static bool write_file(const char* path, const std::string& data) {
-    HANDLE h = CreateFileA(path, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    // ATOMIC : write a temp then rename over the target, so a crash / torn write mid-save can never leave a
+    // half-written or empty layout.json (the in-game edit-mode save was CREATE_ALWAYS = truncate-in-place before).
+    // Same temp+MoveFileEx pattern as ui_config.cpp's save_config_to.
+    const std::string tmp = std::string(path) + ".tmp";
+    HANDLE h = CreateFileA(tmp.c_str(), GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if (h == INVALID_HANDLE_VALUE) return false;
     DWORD wrote = 0;
     BOOL ok = WriteFile(h, data.data(), (DWORD)data.size(), &wrote, 0);
     CloseHandle(h);
-    return ok && wrote == (DWORD)data.size();
+    if (!ok || wrote != (DWORD)data.size()) { DeleteFileA(tmp.c_str()); return false; }
+    if (!MoveFileExA(tmp.c_str(), path, MOVEFILE_REPLACE_EXISTING)) { DeleteFileA(tmp.c_str()); return false; }
+    return true;
 }
 
 static double round1(double v) { return (double)((long long)(v * 10.0 + (v < 0 ? -0.5 : 0.5))) / 10.0; }

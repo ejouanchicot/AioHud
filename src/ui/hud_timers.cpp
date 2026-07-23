@@ -25,6 +25,7 @@
 #include <algorithm>
 
 #include "ui/buff_atlas.h"
+#include "ui/tex_retry.h"   // bounded lazy texture load (Help atlas) -- rule 10
 
 namespace aio {
 
@@ -1010,11 +1011,10 @@ void Hud::draw_timers(const Frame& f, bool preview, float ovX, float ovY, float 
 // File-scope, NOT function-local : Hud::render's dev-change block forgets the member handles, and a
 // function-local static is unreachable from it. After a device recreate (zoning / alt-tab) the stale
 // handle would go to SetTexture with its owning device destroyed. timers_help_forget() clears it from that block.
-static u32 g_tmHelpTex = 0; static bool g_tmHelpTried = false;
-void timers_help_forget() { g_tmHelpTex = 0; g_tmHelpTried = false; }
-static u32 timers_help_atlas(u32 dev) {
-    if (!g_tmHelpTried) { g_tmHelpTex = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H); g_tmHelpTried = true; }
-    return g_tmHelpTex;
+static u32 g_tmHelpTex = 0; static TexRetry g_tmHelpRetry;
+void timers_help_forget() { g_tmHelpTex = 0; g_tmHelpRetry = TexRetry{}; }   // device recreate : drop the handle AND re-arm the bounded retry
+static u32 timers_help_atlas(u32 dev) {   // bounded retry (rule 10) via the shared helper -- was a one-shot latch that stranded the Help icons on a single miss
+    return ensure_raw_tex(dev, g_tmHelpTex, g_tmHelpRetry, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
 }
 
 // Help sample : the REAL Timers box(es) in preview mode (config-aware), centred at (cx,cy) at scale `s`.

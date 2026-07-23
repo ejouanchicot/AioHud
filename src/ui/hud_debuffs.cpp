@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "ui/buff_atlas.h"
+#include "ui/tex_retry.h"   // bounded lazy texture load (Help atlas) -- rule 10
 
 namespace aio {
 
@@ -179,11 +180,10 @@ void Hud::draw_debuffs(const Frame& f, bool preview, float ovX, float ovY, float
 // File-scope, NOT function-local : Hud::render's dev-change block forgets the member handles, and a
 // function-local static is unreachable from it. After a device recreate (zoning / alt-tab) the stale
 // handle would go to SetTexture with its owning device destroyed. debuffs_help_forget() clears it from that block.
-static u32 g_dbHelpTex = 0; static bool g_dbHelpTried = false;
-void debuffs_help_forget() { g_dbHelpTex = 0; g_dbHelpTried = false; }
-static u32 debuffs_help_atlas(u32 dev) {
-    if (!g_dbHelpTried) { g_dbHelpTex = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H); g_dbHelpTried = true; }
-    return g_dbHelpTex;
+static u32 g_dbHelpTex = 0; static TexRetry g_dbHelpRetry;
+void debuffs_help_forget() { g_dbHelpTex = 0; g_dbHelpRetry = TexRetry{}; }   // device recreate : drop the handle AND re-arm the bounded retry
+static u32 debuffs_help_atlas(u32 dev) {   // bounded retry (rule 10) -- was a one-shot latch that stranded the Help icons on a single miss
+    return ensure_raw_tex(dev, g_dbHelpTex, g_dbHelpRetry, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
 }
 
 // Help sample : the REAL Debuffs box in preview mode (config-aware), centred at (cx,cy) at scale s.

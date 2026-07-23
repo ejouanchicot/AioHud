@@ -149,11 +149,10 @@ void Hud::draw_treasure_pool(const Frame& f, bool preview, float ovX, float ovY,
 // File-scope, NOT function-local : Hud::render's dev-change block forgets the member handles, and a
 // function-local static is unreachable from it. After a device recreate (zoning / alt-tab) the stale
 // handle would go to SetTexture with its owning device destroyed. treasure_help_forget() clears it from that block.
-static u32 g_tpHelpTex = 0; static bool g_tpHelpTried = false;
-void treasure_help_forget() { g_tpHelpTex = 0; g_tpHelpTried = false; }
-static u32 treasure_help_coffer(u32 dev) {
-    if (!g_tpHelpTried) { g_tpHelpTex = load_raw_texture_mip(dev, COFFER_PATH(), 128, 128); g_tpHelpTried = true; }
-    return g_tpHelpTex;
+static u32 g_tpHelpTex = 0; static TexRetry g_tpHelpRetry;
+void treasure_help_forget() { g_tpHelpTex = 0; g_tpHelpRetry = TexRetry{}; }   // device recreate : drop the handle AND re-arm the bounded retry
+static u32 treasure_help_coffer(u32 dev) {   // bounded retry (rule 10) -- was a one-shot latch that stranded the Help icon on a single miss
+    return ensure_raw_tex_mip(dev, g_tpHelpTex, g_tpHelpRetry, COFFER_PATH(), 128, 128);
 }
 
 // Help sample : the REAL Treasure Pool box in preview mode (config-aware), centred at (cx,cy) at scale `s`.

@@ -623,11 +623,10 @@ void Hud::draw_zonetracker(const Frame& f, bool preview, float ovX, float ovY, f
 // File-scope, NOT function-local : Hud::render's dev-change block forgets the member handles, and a
 // function-local static is unreachable from it. After a device recreate (zoning / alt-tab) the stale
 // handle would go to SetTexture with its owning device destroyed. zonetracker_help_forget() clears it from that block.
-static u32 g_ztHelpTex = 0; static bool g_ztHelpTried = false;
-void zonetracker_help_forget() { g_ztHelpTex = 0; g_ztHelpTried = false; }
-static u32 zonetracker_help_weapons(u32 dev) {
-    if (!g_ztHelpTried) { g_ztHelpTex = load_raw_texture(dev, WEAPON_ICONS_PATH(), 96, 32); g_ztHelpTried = true; }
-    return g_ztHelpTex;
+static u32 g_ztHelpTex = 0; static TexRetry g_ztHelpRetry;
+void zonetracker_help_forget() { g_ztHelpTex = 0; g_ztHelpRetry = TexRetry{}; }   // device recreate : drop the handle AND re-arm the bounded retry
+static u32 zonetracker_help_weapons(u32 dev) {   // bounded retry (rule 10) -- was a one-shot latch that stranded the Help icons on a single miss
+    return ensure_raw_tex(dev, g_ztHelpTex, g_ztHelpRetry, WEAPON_ICONS_PATH(), 96, 32);
 }
 
 // Help sample : the REAL Zone Tracker box in preview mode for a FORCED content `variant` (config-aware), centred.
