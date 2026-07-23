@@ -275,6 +275,10 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_58[] = {
+    { "*More guards against malformed packets.* Several Zone Tracker packet handlers (Odyssey / Limbus / Nyzul) now reject a truncated packet instead of reading stale bytes past its real end -- the same length check the rest of the packet handlers already do. Purely defensive : no change to normal behaviour.",
+      "*Plus de protections contre les paquets malformes.* Plusieurs handlers de paquets du Zone Tracker (Odyssey / Limbus / Nyzul) rejettent desormais un paquet tronque au lieu de lire des octets perimes au-dela de sa fin -- le meme controle de longueur que font deja les autres handlers. Purement defensif : aucun changement en fonctionnement normal." },
+};
 static const ChangeLine CL_57[] = {
     { "*Each box can now use its OWN FFXI window skin, independent of the party.* Set a box (Timers, Hate List, Debuffs, ...) to Custom -> FFXI and pick any of the game skins in the grid -- it no longer has to match the party's skin, and it works even when the party is on a procedural theme. (Before, every FFXI box was forced to show the party's skin, and could not use FFXI at all unless the party did too.)",
       "*Chaque boite peut desormais utiliser son PROPRE skin de fenetre FFXI, independamment de la party.* Mets une boite (Timers, Hate List, Debuffs...) en Custom -> FFXI et choisis n'importe quel skin du jeu dans la grille -- il n'est plus oblige de suivre le skin de la party, et ca marche meme quand la party est sur un theme procedural. (Avant, toute boite FFXI etait forcee d'afficher le skin de la party, et ne pouvait meme pas etre en FFXI si la party ne l'etait pas.)" },
@@ -346,6 +350,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.58", CL_58, (int)(sizeof(CL_58) / sizeof(CL_58[0])) },
     { "1.0.57", CL_57, (int)(sizeof(CL_57) / sizeof(CL_57[0])) },
     { "1.0.56", CL_56, (int)(sizeof(CL_56) / sizeof(CL_56[0])) },
     { "1.0.55", CL_55, (int)(sizeof(CL_55) / sizeof(CL_55[0])) },
