@@ -275,6 +275,10 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_54[] = {
+    { "*The duration shown for a Regen you cast on a party member is now correct.* It was reading too short : gear that specifically lengthens Regen (a staff, certain armor pieces) was not being counted -- unlike other enhancing spells, Regen has its own duration-boosting gear. AioHUD now reads that straight from the game's item data, so it is right for any set.",
+      "*La duree affichee pour un Regen que tu poses sur un membre de la party est desormais correcte.* Elle etait trop courte : l'equipement qui allonge specifiquement le Regen (un baton, certaines pieces) n'etait pas compte -- contrairement aux autres sorts d'enhancing, le Regen a son propre gear de duree. AioHUD le lit maintenant directement dans les donnees d'items du jeu, donc c'est juste pour n'importe quel set." },
+};
 static const ChangeLine CL_53[] = {
     { "*Bard song timers are more accurate.* A song now shows its own remaining time (Victory March no longer borrows Honor March's), two songs of the same name no longer share one timer, and area songs on your party regroup correctly when you re-sing one -- and now survive a plugin reload or a zone change.",
       "*Les minuteurs de chants du barde sont plus precis.* Un chant affiche desormais son propre temps restant (Victory March n'emprunte plus celui d'Honor March), deux chants de meme nom ne partagent plus un minuteur, et les chants de zone sur ta party se regroupent correctement quand tu en rechantes un -- et survivent maintenant a un rechargement du plugin ou a un changement de zone." },
@@ -326,6 +330,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.54", CL_54, (int)(sizeof(CL_54) / sizeof(CL_54[0])) },
     { "1.0.53", CL_53, (int)(sizeof(CL_53) / sizeof(CL_53[0])) },
     { "1.0.52", CL_52, (int)(sizeof(CL_52) / sizeof(CL_52[0])) },
     { "1.0.51", CL_51, (int)(sizeof(CL_51) / sizeof(CL_51[0])) },

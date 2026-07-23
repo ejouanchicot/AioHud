@@ -10,6 +10,7 @@
 #include "model/tb_debuff_gen.h"
 #include "model/tb_buff_gen.h"          // spell_buff : buff spell id -> { status, base duration } (Timers "buff on ally")
 #include "model/enh_dur.h"              // caster_enh_dur_pct : "Enhancing Magic eff. dur. +%" from live gear/augments
+#include "model/regen_dur.h"           // regen_dur_gear_sec : REGEN-only "+N s" duration gear (Bolelabunga...) added to Regen's base
 #include "model/song_dur.h"            // BRD song duration : per-item flat song-duration gear + Troubadour
 #include "model/geo_dur.h"             // GEO Indi- duration : base + JP 1362 + flat Indicolure-duration gear
 #include "model/action_status_gen.h"   // spell_buff_status / abil_buff_status : action id -> status (self-cast filter)
@@ -894,6 +895,23 @@ void PartyState::on_action(const unsigned char* p) {
             const double setMult  = (composure && setPct > 0) ? (1.0 + setPct / 100.0) : 1.0;                              // RDM set, needs Composure
             const double perpMult = perpetuance ? perpetuance_mult(eids) : 1.0;                                            // SCH Perpetuance
             const double gearMult = (1.0 + listedPct / 100.0) * (1.0 + augPct / 100.0);                                   // gear : ALL jobs
+            // Enhancing Magic duration on an ally = MULTIPLICATIVE (composure.md, validated in-game incl. Haste) :
+            //   (base + flatSec + regenSec) x (1+set) x (1+listed) x (1+augment) , cap 1800s. See enh_sec below.
+            auto enh_sec = [&](unsigned base, unsigned short status) -> double {
+                // Multiplicative model (validated accurate to 1-3s in-game, incl. Haste). REGEN (status 42) alone read
+                // short because Regen-SPECIFIC duration gear (flat seconds : Bolelabunga +12, Ebers/Orison Mitts...)
+                // adds to the base and multiplies through, but AioHUD wasn't reading it. Now added universally from
+                // the game's item text (regen_dur_gear_sec). It lengthens ONLY Regen, so no other spell moves.
+                // Calibrated : (60 + 20 JP + 12 Bolelabunga) x 1.20 set x 1.88 listed x 1.45 aug = 301s == real.
+                const int regenSec = (status == 42) ? regen_dur_gear_sec(eids) : 0;
+                double s = ((double)base + (double)flatSec + (double)regenSec) * setMult * gearMult * perpMult;
+                return s > 1800.0 ? 1800.0 : s;
+            };
+            if (b->skill == 34 && buff076_trace_active())   // //aio ftrace : per Enhancing-Magic cast -> finalSec = enh_sec() (incl. regenSec for Regen), to compare against the real self timer. NOTE debug::log has NO %f -> mults x100.
+                windower::debug::log("ENHDUR spell=%u status=%u base=%us mjob=%d flatSec=%d (merit2320=%d jp338=%d) regenSec=%d comp=%d setPct=%d listed=%d aug=%d gearMultx100=%d -> finalSec=%d%s",
+                    sid, (unsigned)b->effect, (unsigned)b->durSec, haveMe ? (int)me.mjob : -1, flatSec, read_merit_level(2320), read_jp_gift_rank(338),
+                    (b->effect == 42) ? regen_dur_gear_sec(eids) : 0, composure ? 1 : 0, setPct, listedPct, augPct, (int)(gearMult * 100.0 + 0.5),
+                    (int)(enh_sec(b->durSec, b->effect) + 0.5), (b->effect == 42) ? " [REGEN +gear]" : "");
             // --- BRD song (skill 40) : dur = 120 x m1 x m2 x m3 + a3 (Miracle Cheer -> flat 900). m1 = flat + per-
             // family gear + JP(+5% BRD main) ; m2 = x2 Troubadour ; m3/a3 : Soul Voice/Marcato/Clarion/Tenuto. ---
             const int    songFam  = song_family(sid);
@@ -920,7 +938,7 @@ void PartyState::on_action(const unsigned char* p) {
                 // is what lets match_cast tell our long song from a trust's short one on the SAME status.
                 double selfSec = (double)b->durSec;
                 if (b->skill == 40) selfSec = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
-                else if (b->skill == 34) { selfSec = ((double)b->durSec + (double)flatSec) * setMult * gearMult * perpMult; if (selfSec > 1800.0) selfSec = 1800.0; }
+                else if (b->skill == 34) selfSec = enh_sec(b->durSec, b->effect);   // Enhancing Magic (Regen special-cased inside)
                 else if (b->skill == 44) selfSec = (double)((int)b->durSec + geoJpSec + geoGear);
                 record_cast((unsigned short)b->effect, (unsigned short)sid, selfId_, ffxi_now_tick() + (unsigned)(selfSec * 60.0));
             }
@@ -954,10 +972,8 @@ void PartyState::on_action(const unsigned char* p) {
                 otherBuffs_[slot].mirrorSelf = aoeSelf ? 1 : 0;   // AoE-on-self -> the drawer uses your exact self timer
                 otherBuffs_[slot].aoe = (tc >= 2) ? 1 : 0;        // the cast hit >=2 targets -> a REAL AoE (Protectra / a spell under SCH Accession) ; 1-target = single-cast, don't force-group it
                 unsigned long long ms;
-                if (b->skill == 34) {   // Enhancing Magic : (Base + flatSec) x set x gear x Perpetuance, cap 30 min
-                    double sec = ((double)b->durSec + (double)flatSec) * setMult * gearMult * perpMult;
-                    if (sec > 1800.0) sec = 1800.0;   // 30-min hard cap (Timers : cap=1800s)
-                    ms = (unsigned long long)(sec * 1000.0);
+                if (b->skill == 34) {   // Enhancing Magic (Regen status 42 : regenSec added to the base before the multipliers ; cap 30 min)
+                    ms = (unsigned long long)(enh_sec(b->durSec, b->effect) * 1000.0);
                 } else if (b->skill == 40) {   // BRD song : 120 x m1 x m2 x m3 + a3 (Miracle Cheer -> flat 900)
                     double sec = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
                     ms = (unsigned long long)(sec * 1000.0);
