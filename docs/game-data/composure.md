@@ -97,4 +97,4 @@ Les multiplicateurs sont appliqués séparément : `Enhancing Magic Duration +x%
 - Le bonus set étant évalué au cast, un swap out post-cast ne retire pas la durée déjà acquise.
 - Composure étant un état de 2 h avec recast 5 min, le reproc est trivial ; le vrai coût opérationnel reste le +25 % recast pendant les phases de nuking.
 
-Voir aussi : `lethargy-armor-set.md`.
+Voir aussi : `lethargy-armor-set.md` · [Buffs sur les alliés](buffs-on-allies.md) — l'estimation ally-cast qui applique ce modèle multiplicatif (dont le cas Regen : les secondes flat spécifiques à Regen entrent dans la base via `regen_dur_gear_sec`).

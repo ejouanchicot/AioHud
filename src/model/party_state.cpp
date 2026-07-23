@@ -907,11 +907,6 @@ void PartyState::on_action(const unsigned char* p) {
                 double s = ((double)base + (double)flatSec + (double)regenSec) * setMult * gearMult * perpMult;
                 return s > 1800.0 ? 1800.0 : s;
             };
-            if (b->skill == 34 && buff076_trace_active())   // //aio ftrace : per Enhancing-Magic cast -> finalSec = enh_sec() (incl. regenSec for Regen), to compare against the real self timer. NOTE debug::log has NO %f -> mults x100.
-                windower::debug::log("ENHDUR spell=%u status=%u base=%us mjob=%d flatSec=%d (merit2320=%d jp338=%d) regenSec=%d comp=%d setPct=%d listed=%d aug=%d gearMultx100=%d -> finalSec=%d%s",
-                    sid, (unsigned)b->effect, (unsigned)b->durSec, haveMe ? (int)me.mjob : -1, flatSec, read_merit_level(2320), read_jp_gift_rank(338),
-                    (b->effect == 42) ? regen_dur_gear_sec(eids) : 0, composure ? 1 : 0, setPct, listedPct, augPct, (int)(gearMult * 100.0 + 0.5),
-                    (int)(enh_sec(b->durSec, b->effect) + 0.5), (b->effect == 42) ? " [REGEN +gear]" : "");
             // --- BRD song (skill 40) : dur = 120 x m1 x m2 x m3 + a3 (Miracle Cheer -> flat 900). m1 = flat + per-
             // family gear + JP(+5% BRD main) ; m2 = x2 Troubadour ; m3/a3 : Soul Voice/Marcato/Clarion/Tenuto. ---
             const int    songFam  = song_family(sid);

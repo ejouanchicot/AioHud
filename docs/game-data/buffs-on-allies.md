@@ -51,7 +51,7 @@ gear normally only affects **self**-cast; the RDM **Estoqueur's / Lethargy** set
 **unlocks** the caster's full enhancing-duration gear onto party members. Evaluated at cast time:
 
 ```
-dur = (Base + flatSec)
+dur = (Base + flatSec + regenSec)
     × (1 + setBonus)     // Estoqueur's/Lethargy worn count 2/3/4/5 -> +10/20/35/50%
     × (1 + listed%)      // native "Enhancing magic duration +N%" item stats (ADD within category)
     × (1 + augment%)     // augment "Enh. Mag. eff. dur. +N%" (extdata 0x4E0 + path augments; ADD within)
@@ -59,13 +59,19 @@ dur = (Base + flatSec)
     , capped at 1800 s (30 min).
 ```
 
+**The model is MULTIPLICATIVE** — the flat additions all fold into the base, then each `(1 + %)` factor
+multiplies. This is confirmed by [Composure](composure.md) and validated in-game to 1–3 s. An **ADDITIVE**
+model was once suggested (`Regen_Duration.md §3` at the repo root: `floor(base × (1 + Σ%)) + flat`); it was
+**TESTED and is WORSE** — **do not switch to it.**
+
 The three % multipliers are **separate** (native × augment multiply; within a category the %s add).
 Validated: Haste (180) + 20 JP, 4pc set, listed 88%, augment 49% → `(180+20)×1.35×1.88×1.49 = 756.3 s == Timers`.
 
-Term by term (party_state.cpp:1117-1128):
+Term by term (party_state.cpp `enh_sec` lambda, ~line 900):
 
 - **flatSec** = **RDM-main only** JP gift **338** "Enhancing Magic Duration" (+1 s/rank, `read_jp_gift_rank`)
   + merit **2320** (+6 s/level, `read_merit_level`). `me.mjob == 5`.
+- **regenSec** = **Regen only** (status **42**, all tiers I–V share it) — see [Regen-specific duration gear](#regen-specific-duration-gear-the-v1054-fix) below. `0` for every other spell.
 - **setBonus** = `composure_set_pct(eids)` (`COMPOSURE_SET_IDS`, worn count → %), gated on **Composure
   status 419** being active (`read_player_buffs`). No Composure → no set bonus.
 - **listed%** = `enh_dur_listed_pct` — the **generated** `enh_dur_listed_gen.h` (from res
@@ -77,6 +83,43 @@ Term by term (party_state.cpp:1117-1128):
   Bracers +3 (`PERP_BRACERS`).
 
 `//aio enhdur` dumps the per-slot breakdown.
+
+### Regen-specific duration gear (the v1.0.54 fix)
+
+**Regen is the ONLY enhancing spell with spell-SPECIFIC duration gear.** Several items grant flat seconds
+that lengthen **only Regen** — e.g. Bolelabunga (`'"Regen" duration +12'`), Ebers / Orison Mitts, Theophany
+Pantaloons, Runeist Bandeau, Coeus, Lugh's Cape. These add to Regen's **base** (so they multiply through the
+whole formula) and touch nothing else — which is exactly why Regen alone read short while Haste / Refresh /
+etc. (which only see the general enhancing-duration gear) stayed correct.
+
+The fix reads them **universally**: `regen_dur_gear_sec(eids)` (`src/model/regen_dur.h`) sums the
+`'"Regen" (effect) duration +N'` seconds over the 16 equipped ids from a **generated** table
+`src/model/regen_dur_gen.h` (built by `scripts/gen_regen_dur.py` from `res/item_descriptions.lua`, mirroring
+`gen_enh_dur.py` — universal, future-proof). It is added to the base **only for Regen** (status 42; all tiers
+I–V share that status) inside the `enh_sec` lambda in `party_state.cpp on_action` (`regenSec` above).
+
+`*_gen.h` files are **generated** — don't hand-edit; regenerate via `scripts/`.
+
+**Calibration** (RDM caster, Regen II on an ally — each point a separate controlled cast reading the REAL
+timer on the target):
+
+- **NU** (no gear, no Composure) = **79 s** → base 60 (`tb_buff_gen` Regen II = 60) + JP gift 338 (+1 s/rank,
+  ~+20 s here) ≈ 80. So base = 60 and the RDM Enhancing-Magic-Duration JP applies. Merit 2320 (+6 s/level)
+  reads correctly (the tester simply had 0 points in it).
+- **Composure ALONE** (no gear) = **79 s** (unchanged) → **Composure does NOTHING for an ally cast**
+  (self-only — see [Composure](composure.md)). The ally lever is the **Estoqueur / Lethargy SET count**:
+  2/3/4/5 pieces → +10/20/35/50 % (`composure_set_pct`).
+- **Full set + Composure** = **301 s** → total multiplier ×3.76 on base+JP.
+- **Final calibration**: `(60 base + 20 JP + 12 Bolelabunga) × 1.20 set × 1.88 listed × 1.45 aug = 301 s == real`.
+
+**Scope** (enumerated from the item data): **no other enhancing spell has its own duration line** — every
+other `'X duration +N'` item is a self **job ability** (Berserk, Aggressor, Meditate, Jig, Liement, Rampart…)
+which uses the real 0x063 self timer (no estimate, so no gear-modeling needed), or an already-handled path
+(COR Phantom Roll mirrors the self timer; BRD songs use `song_dur`; GEO Indi- uses `geo_dur`). So the
+ally-cast enhancing estimate is now **complete**.
+
+> `Regen_Duration.md` at the repo root is a LOCAL working reference — **not** the source of truth; the source
+> is the in-game calibration above + the item data (`res/item_descriptions.lua`).
 
 ## BRD songs (skill 40) — `song_dur.h`
 
