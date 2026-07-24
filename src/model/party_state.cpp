@@ -668,9 +668,15 @@ void PartyState::on_action(const unsigned char* p) {
             if (getbits(p, 271, 1, size) && sc_is_skillchain_msg(getbits(p, 299, 10, size))) {   // CLOSE
                 const int prop = sc_from_add_effect_anim(getbits(p, 272, 6, size));
                 if (prop >= 0) { const SkillRow* sk = sc_skill_lookup(scRes, aid); sc_close(tid, aid, scRes, prop, sk ? sk->delay : 3); }
-            } else if (sc_is_finish_msg(getbits(p, 230, 10, size))) {                            // OPEN
-                const SkillRow* sk = sc_skill_lookup(scRes, aid);
-                if (sk) sc_open(tid, aid, scRes, sk->prop, sk->delay);
+            } else {
+                const unsigned amsg = getbits(p, 230, 10, size);
+                // OPEN : a WS/ability FINISH message, OR a SCH ELEMENTAL SPELL cast while Immanence (470) is up (the
+                // reference addon's message_id==2 + chain_buff) -- the spell then acts as a step-1 skillchain opener.
+                const bool immanence = (scRes == SCR_SPELL && amsg == 2 && has_immanence(actor));
+                if (sc_is_finish_msg(amsg) || immanence) {
+                    const SkillRow* sk = sc_skill_lookup(scRes, aid);
+                    if (sk) sc_open(tid, aid, scRes, sk->prop, sk->delay);
+                }
             }
         }
     }

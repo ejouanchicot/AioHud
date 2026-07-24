@@ -340,6 +340,7 @@ struct PartyState {
     void prune_skillchains();             // once/frame : drop resonance windows whose mob has died (call near refresh_hate)
     void sc_open(unsigned tid, unsigned aid, int res, const unsigned char* props, int delay);   // WS/spell finish -> step-1 resonance (its opening properties)
     void sc_close(unsigned tid, unsigned aid, int res, int prop, int delay);                    // add-effect skillchain -> step+1 (the 1 resulting property)
+    bool has_immanence(unsigned actor) const;   // SCH Immanence (buff 470) up on `actor` -> its next elemental spell opens a skillchain (self : memory buff list ; ally : 0x076)
 
     TreasureItem treasure_[10];           // the lottery pool, indexed by packet slot 0..9
     const TreasureItem* treasure_slots() const { return treasure_; }   // the TreasurePool widget reads this

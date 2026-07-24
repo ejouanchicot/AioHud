@@ -55,6 +55,18 @@ void PartyState::prune_skillchains() {
         if (v.valid && (v.hpp <= 0 || v.spawnType != 0x10)) reson_[slot[q]] = Resonating{};   // confirmed dead / not-a-mob -> drop
     }
 }
+// SCH Immanence (status 470) : while it is up, the caster's NEXT elemental spell can OPEN/continue a skillchain
+// (the reference addon's chain_buff). Self reads the live memory buff list ; an ally reads its 0x076 icon cache.
+bool PartyState::has_immanence(unsigned actor) const {
+    if (actor == selfId_) {
+        unsigned short mb[32]; const int n = read_player_buffs(mb, 32);
+        for (int i = 0; i < n; ++i) if (mb[i] == 470) return true;
+        return false;
+    }
+    const BuffSet* bs = buffs_for(actor);
+    if (bs) for (int i = 0; i < bs->n; ++i) if (bs->ids[i] == 470) return true;
+    return false;
+}
 const Resonating* PartyState::skillchain_newest_live() const {
     const unsigned now = GetTickCount();
     const Resonating* best = 0;
