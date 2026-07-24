@@ -246,7 +246,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         };
 
         // ---- pass 1 : group the buffs YOU cast on ALLIES by spell -> AoE groups (songs / rolls hit the whole party) ----
-        struct AoeGrp { unsigned short spell, status; int allies, rem; unsigned expTick; unsigned char isAbil, selfHas, aoe, fresh; };   // expTick : the exact self-expiry the ally copies were frozen on -> identifies WHICH cast they came from ; fresh=1 : the ally copies track YOUR current cast ; fresh=0 : a LAGGARD group (members left on an older, shorter cast because a re-sing missed them)
+        struct AoeGrp { unsigned short spell, status; int allies, rem; unsigned expTick; unsigned char isAbil, selfHas, aoe, fresh, selfCast; };   // expTick : the exact self-expiry the ally copies were frozen on -> identifies WHICH cast they came from ; fresh=1 : the ally copies track YOUR current cast ; fresh=0 : a LAGGARD group (members left on an older, shorter cast because a re-sing missed them) ; selfCast=1 : this cast ALSO landed on YOU (mirrorSelf) -> count yourself in the AoE total IMMEDIATELY, before your own 0x063/memory buff has landed (kills the ~1s post-cast "named-ally then group" flicker)
         static AoeGrp grp[32]; int ng = 0;
         int no = 0; const PartyState::OtherBuff* ob = 0;
         auto obRem = [&](const PartyState::OtherBuff& o) -> int {
@@ -281,8 +281,8 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (r <= 0) continue;
                 const unsigned char fb = obFresh(ob[i]) ? 1 : 0;   // FRESH (your current cast) vs LAGGARD (an older cast a re-sing missed) -- see obFresh
                 int gi = -1; for (int k = 0; k < ng; ++k) if (grp[k].spell == ob[i].spell && grp[k].fresh == fb) { gi = k; break; }
-                if (gi < 0 && ng < 32) { gi = ng++; grp[gi].spell = ob[i].spell; grp[gi].status = ob[i].status; grp[gi].allies = 0; grp[gi].rem = r; grp[gi].isAbil = ob[i].isAbil; grp[gi].selfHas = 0; grp[gi].aoe = 0; grp[gi].expTick = ob[i].expTick; grp[gi].fresh = fb; }
-                if (gi >= 0) { grp[gi].allies++; grp[gi].aoe |= ob[i].aoe; if (r < grp[gi].rem) grp[gi].rem = r; }   // aoe = this spell was ever cast as a REAL AoE (>=2 targets) ; rem = SHORTEST in the group (drives the laggard row ; a fresh row overwrites it with your self timer)
+                if (gi < 0 && ng < 32) { gi = ng++; grp[gi].spell = ob[i].spell; grp[gi].status = ob[i].status; grp[gi].allies = 0; grp[gi].rem = r; grp[gi].isAbil = ob[i].isAbil; grp[gi].selfHas = 0; grp[gi].aoe = 0; grp[gi].expTick = ob[i].expTick; grp[gi].fresh = fb; grp[gi].selfCast = 0; }
+                if (gi >= 0) { grp[gi].allies++; grp[gi].aoe |= ob[i].aoe; grp[gi].selfCast |= ob[i].mirrorSelf; if (r < grp[gi].rem) grp[gi].rem = r; }   // aoe = this spell was ever cast as a REAL AoE (>=2 targets) ; selfCast |= mirrorSelf = the cast hit you too (still fresh, < 2s) ; rem = SHORTEST in the group (drives the laggard row ; a fresh row overwrites it with your self timer)
             }
         }
 
@@ -512,12 +512,12 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // and can over-count a member who carries only Victory. Known residual (0x076 has no spell id) ; the
                 // orphan case (selfExp==0) IS fixed via obFresh. See timers-songs-brd.md §4. Fix only if it surfaces.
                 bool hasLag = false; for (int j = 0; j < ng; ++j) if (grp[j].spell == grp[k].spell && !grp[j].fresh) { hasLag = true; break; }
-                if (hasLag) { effN = grp[k].allies + (meHas(grp[k].status) ? 1 : 0); }
+                if (hasLag) { effN = grp[k].allies + ((meHas(grp[k].status) || grp[k].selfCast) ? 1 : 0); }
                 // Floor the real-carrier count by the allies you FRESHLY cast on (ob[]) -- not only across a zone (graceOB)
                 // but ALWAYS : right after a //reload the 0x076 ally-buff cache is empty and never re-counts them, so a song
                 // you AoE'd onto the party stopped regrouping as "(AoE N)" until a zone. ob[] is your own recent casts
                 // (honest -- pruned against 0x076 once it flows), so it is the right floor here too.
-                else { effN = countHas(grp[k].status); const int est = grp[k].allies + (meHas(grp[k].status) ? 1 : 0); if (est > effN) effN = est; }
+                else { effN = countHas(grp[k].status); const int est = grp[k].allies + ((meHas(grp[k].status) || grp[k].selfCast) ? 1 : 0); if (est > effN) effN = est; }   // selfCast : you cast it on yourself -> count yourself NOW, don't wait for the 0x063/0x076 lists to catch up (~1s flicker)
             }
             if (effN < 1) continue;                        // nobody has it anymore (worn / replaced roll) -> drop the group
             if (C.tm_buff_off((unsigned)grp[k].status)) {   // hidden buff (family filter) -- UNLESS Hidden+Focus & expiring (pops under the warn threshold)
@@ -531,12 +531,22 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // A LAGGARD group NEVER groups : it lists each un-refreshed person by NAME (Kaories, Gab, ...) on their own
             // timer in the per-ally branch below -- that named-per-person listing is the whole point of the split.
             const bool group = lag ? false : ((grp[k].aoe || C.tmAllyGroup != 0) && effN >= 2);
+            if (party().bcapt_armed()) {   // //aio bcaptlog OBGRP : the group-vs-per-ally verdict + its inputs -- WHY an Accession buff draws (AoE N) or a named per-ally row. Throttled to CHANGE (else 60 Hz flood).
+                static unsigned short olS[32]; static unsigned char olF[32]; static short olN[32], olG[32]; static bool olInit = false;
+                if (!olInit) { olInit = true; for (int q = 0; q < 32; ++q) { olS[q] = 0xFFFF; olF[q] = 0xFF; olN[q] = -1; olG[q] = -1; } }
+                const int oidx = k & 31;
+                if (olS[oidx] != grp[k].spell || olF[oidx] != grp[k].fresh || olN[oidx] != (short)effN || olG[oidx] != (short)(group ? 1 : 0)) {
+                    olS[oidx] = grp[k].spell; olF[oidx] = grp[k].fresh; olN[oidx] = (short)effN; olG[oidx] = (short)(group ? 1 : 0);
+                    windower::debug::log("OBGRP spell=%u \"%s\" st=%u fresh=%d aoe=%d allies=%d effN=%d selfHas=%d allyGroup=%d -> %s",
+                                         grp[k].spell, en ? en : "?", grp[k].status, grp[k].fresh, grp[k].aoe, grp[k].allies, effN, grp[k].selfHas, C.tmAllyGroup, group ? "GROUPED (AoE N)" : "PER-ALLY");
+                }
+            }
             if (group) {   // AoE : one grouped row (Minuet V (AoE 6))
                 PartyState::RollInfo ri = grp[k].isAbil ? party().roll_info(grp[k].status) : PartyState::RollInfo{ 0, 0 };   // COR roll -> pip value (double-up included)
-                bufs[nb].rem = rem; bufs[nb].icon = grp[k].status; bufs[nb].both = meHas(grp[k].status) ? 0 : 1;
+                bufs[nb].rem = rem; bufs[nb].icon = grp[k].status; bufs[nb].both = (meHas(grp[k].status) || grp[k].selfCast) ? 0 : 1;   // selfCast : render as YOUR-buff styling (icon only) from the first frame too -- match the tier at line below, else the icon/name presentation flips ~1s in (same flicker class)
                 // A group whose SELF copy folded in (grp[].selfHas) is YOUR OWN buff -> stays in the top tier (0).
                 // One you only put on allies goes to the "your ally-casts" tier (10), above the players-on-you tier (40+).
-                bufs[nb].order = grp[k].selfHas ? 0 : 10;
+                bufs[nb].order = (grp[k].selfHas || grp[k].selfCast) ? 0 : 10;   // selfCast : keep it in YOUR tier from the first frame too (else the row jumps tier 10 -> 0 when the fold lands ~1s later)
                 if (grp[k].isAbil && ri.value && en) {   // roll : "Chaos Roll [11] (CC) (AoE 6)" -- ONLY the pip tinted
                     _snprintf(obLabel[nb], sizeof(obLabel[nb]), " (AoE %d)", effN); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0;
                     bufs[nb].name = en; bufs[nb].pip = ri.value; bufs[nb].post = obLabel[nb];
