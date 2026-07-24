@@ -280,7 +280,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             if (o.isAbil || !o.aoe) return true;
             if (o.mirrorSelf) return true;   // just cast (< 2s, still mirroring your live self timer) -> fresh, even before your 0x063 self timer has landed (no post-cast flicker)
             const unsigned selfExp = party().self_buff_expiry_for(o.status, o.spell);
-            if (!selfExp) return false;      // you no longer hold this song -> the ally copy is orphan/laggard, not a self AoE
+            if (!selfExp) return party().in_zone_grace() && song_family(o.spell) <= 0;   // normally selfExp==0 -> you don't hold this -> laggard. EXCEPT the post-zone repop window : your 0x063 self timer reads 0 for a few seconds while it repopulates, but an ENHANCING buff PERSISTS across a zone -> hold it FRESH (grouped, on the pre-zone estimate) during the grace so it never flashes per-person ; the re-align snaps it to the real self timer the instant it lands. Songs (lost on zone) stay laggard.
             int d = (int)(o.expTick - selfExp); if (d < 0) d = -d;
             return d <= 600;                 // 600 ticks = 10s : casts more than 10s apart are distinct generations
         };

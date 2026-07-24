@@ -548,6 +548,10 @@ struct PartyState {
     // Windower derives its own `zoning` flag the same way. The HUD gate hides every box while this is set.
     void set_zoning(bool z) { zoning_ = z; }
     bool is_zoning() const { return zoning_; }
+    // Snapshot the wall clock at zone-OUT (0x00B, in the packet dispatch -- runs during the loading screen ; prune is
+    // frozen then). prune at zone-IN pauses a single-target ally-buff estimate (no self timer to mirror) by the load
+    // duration, since our wall-clock countdown kept running while the real buff was PRESERVED across the load.
+    void mark_zone_out(unsigned wall) { zoneOutWall_ = wall; }
     // remaining seconds of the caster's OWN copy of `status` (exact 0x063 self timer), or -1 if not present.
     // Used to mirror an EXACT timer onto an AoE buff you cast that ALSO landed on yourself (songs, -ra, Accession).
     int self_buff_remaining(unsigned short status) const;
@@ -573,6 +577,7 @@ struct PartyState {
     GeoAura selfGeo_{};                                                   // the single Indi- you are carrying (status 0 = none)
     unsigned entrustTick_ = 0;                                            // GetTickCount when Entrust (JA 386) was used -> the NEXT Indi- is a fixed buff on an ally
     bool     zoning_ = false;                                             // between 0x00B (zone-out) and 0x00A (zone-in) -> HUD hidden
+    unsigned zoneOutWall_ = 0;                                            // wall clock snapshotted at zone-out (mark_zone_out) -> prune pauses estimates by the load duration
     void record_geo_aura(unsigned short status, unsigned short spell, unsigned expTick) { selfGeo_.status = status; selfGeo_.spell = spell; selfGeo_.expTick = expTick; }
     int geo_aura_remaining(unsigned short status) const;                 // computed seconds left for a self Indi- you cast, -1 if none/expired
     const GeoAura& self_geo() const { return selfGeo_; }

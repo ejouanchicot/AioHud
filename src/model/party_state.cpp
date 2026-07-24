@@ -963,8 +963,7 @@ void PartyState::on_action(const unsigned char* p) {
                 }
                 otherBuffs_[slot].target = tid; otherBuffs_[slot].status = (unsigned short)b->effect; otherBuffs_[slot].spell = (unsigned short)sid;
                 otherBuffs_[slot].startMs = nowMs;
-                otherBuffs_[slot].expTick = 0;   // fresh estimate-based buff : NO frozen expiry yet (prune snapshots one later via mirrorSelf). A recycled/stolen slot kept the PREVIOUS occupant's frozen expTick -> the row was dropped early or held too long.
-                otherBuffs_[slot].mirrorSelf = aoeSelf ? 1 : 0;   // AoE-on-self -> the drawer uses your exact self timer
+                otherBuffs_[slot].mirrorSelf = aoeSelf ? 1 : 0;   // AoE-on-self -> the drawer uses your exact self timer (expTick set below, after the duration is known)
                 otherBuffs_[slot].aoe = (tc >= 2) ? 1 : 0;        // the cast hit >=2 targets -> a REAL AoE (Protectra / a spell under SCH Accession) ; 1-target = single-cast, don't force-group it
                 unsigned long long ms;
                 if (b->skill == 34) {   // Enhancing Magic (Regen status 42 : regenSec added to the base before the multipliers ; cap 30 min)
@@ -978,6 +977,7 @@ void PartyState::on_action(const unsigned char* p) {
                     ms = (unsigned long long)b->durSec * 1000ull;
                 }
                 otherBuffs_[slot].durMs = (unsigned)ms;
+                otherBuffs_[slot].expTick = 0;   // AoE-on-self : frozen from your exact self 0x063 timer later (prune). Single-target : wall-clock estimate (startMs+durMs). Overwrites a recycled slot's stale expTick.
                 otherBuffs_[slot].isAbil = 0;
                 int j = 0; for (; j < 19 && nm[j]; ++j) otherBuffs_[slot].name[j] = nm[j]; otherBuffs_[slot].name[j] = 0;
             }
@@ -1287,6 +1287,19 @@ const BuffSet* PartyState::buffs_for(unsigned id) const {
 void PartyState::prune_other_buffs_worn() {
     const unsigned now = GetTickCount();
     const unsigned z = zone_id();                                 // ZONING grace : a zone change (or the loading screen) blanks the
+    // ZONE-IN BUMP for SINGLE-TARGET ally estimates (no self timer to mirror). Across the load the server preserves
+    // every real buff (re-syncs the FFXI clock + bumps expiries), but our wall-clock estimate keeps counting -> it reads
+    // SHORT by the preserved time on every zone (measured ~5s ; 1s -> 4s -> 8s under Fast CS). Snapshot both clocks at
+    // zone-OUT (0x00B, mark_zone_out, runs during the load) ; HERE at zone-IN measure how far the FFXI (server) clock
+    // jumped OVER the wall clock across the WHOLE load = that preserved time, and push the estimates by it. Measured
+    // over the full zone so the FFXI clock's chunky 1s steps average out ; machine-independent (server elapsed, not our
+    // wall/Fast-CS load). An AoE ally copy is unaffected (expTick set -> re-aligns to your bumped self timer instead).
+    if (z != obZone_ && obZone_ != 0 && zoneOutWall_ != 0) {
+        const unsigned bumpMs = now - zoneOutWall_;   // wall time our estimate WRONGLY counted during the loading screen -- the real buff was PRESERVED (the game bumps its expiry), so pause the estimate by adding the load time back
+        if (bumpMs > 500 && bumpMs < 120000)
+            for (int k = 0; k < otherBuffN_; ++k) if (otherBuffs_[k].expTick == 0 && !otherBuffs_[k].isAbil && !otherBuffs_[k].mirrorSelf) otherBuffs_[k].startMs += bumpMs;
+        zoneOutWall_ = 0;
+    }
     if (is_zoning() || z != obZone_) obZoneGraceMs_ = now + 8000; //   0x076 party-buff cache for a moment. Enhancing buffs PERSIST across
     obZone_ = z;                                                  //   a zone, so during the grace we keep ally buffs on their estimate
     const bool zoneGrace = (int)(obZoneGraceMs_ - now) > 0;       //   and skip the "worn / disband" checks (they'd false-drop on the empty cache).
@@ -1313,6 +1326,20 @@ void PartyState::prune_other_buffs_worn() {
             // Timers box a few seconds after every reload. Keep what we have until a real timer shows up.
             const unsigned e = self_buff_expiry_for(ob.status, ob.spell);   // THIS song's own timer, not the first same-status one -> two Marches no longer share the shorter's expiry
             if (e != 0) { ob.expTick = e; ob.mirrorSelf = 0; }
+        }
+        // ZONE RE-ALIGN. Across a zone the game (0x037) adds the loading time to EVERY self timer, but the ally copy's
+        // FROZEN expTick is not bumped -> |expTick - selfExp| grows ~6s per zone and, after the 2nd zone, exceeds the
+        // 10s fresh/laggard tolerance -> the ally flips to a laggard (per-person, showing a stale shorter time).
+        // Captured: expTick fixed at 294268 while selfExp bumped 294268 -> 294627 (|d|=359t, still fresh) -> 295028
+        // (|d|=760t > 600 -> laggard). The ally is REALLY still fresh (its own client bumped its timer the same way).
+        // So re-align expTick onto the bumped self expiry, keyed on the DELTA not on a time window : a zone load is a
+        // small bump (<60s) that we absorb whenever your self timer re-appears (it can lag several seconds after the
+        // zone -- longer than the 8s prune grace on a slow load, which is why this is NOT gated on zoneGrace) ; a
+        // self-only re-cast is a FULL-duration jump (>>60s) that correctly does NOT re-align, so a real laggard's
+        // large offset is preserved. Fires only while they diverge, so it self-corrects and never accumulates.
+        if (ob.expTick && !ob.isAbil) {   // AoE-on-self : re-align the frozen expTick onto your zone-bumped self timer (self is 0x063-exact and preserved across your zone). selfE=0 for a spell you don't hold -> no-op for a single-target ally buff.
+            const unsigned selfE = self_buff_expiry_for(ob.status, ob.spell);
+            if (selfE != 0 && selfE > ob.expTick && (int)(selfE - ob.expTick) < 3600) ob.expTick = selfE;   // 3600t = 60s : load-sized bump, absorbed whenever it lands
         }
         if (ob.expTick) { if ((int)(ob.expTick - ffxi_now_tick()) <= 0) { drop[k] = true; continue; } }   // frozen on the self expiry
         else if ((int)((ob.startMs + ob.durMs) - now) <= 0) { drop[k] = true; continue; }                 // estimate elapsed

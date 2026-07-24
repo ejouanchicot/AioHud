@@ -275,6 +275,12 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_64[] = {
+    { "*Buffs you cast on your party now keep their timer across a zone.* An area buff that also lands on you -- a Protect / Regen under Accession, a song, a roll -- stays grouped as \"(AoE N)\" with the correct countdown after you zone, instead of breaking into separate per-person rows showing a stale, too-short time. It also no longer briefly flickers to a per-person row while your own buffs reappear after the loading screen.",
+      "*Les buffs que vous lancez sur votre groupe gardent leur minuteur en changeant de zone.* Un buff de zone qui vous touche aussi -- un Protect / Regen sous Accession, un chant, un roll -- reste regroupe en \"(AoE N)\" avec le bon decompte apres un zone, au lieu de se casser en lignes separees par personne avec un temps perime trop court. Il ne clignote plus non plus brievement en ligne par-personne pendant que vos propres buffs reapparaissent apres l'ecran de chargement." },
+    { "A single-target buff you cast on ONE ally now also keeps a closer time across a zone (its countdown is paused for the loading screen). Note it stays an estimate : the game sends no buff-duration for other players at all -- only for yourself -- so a perfect ally timer is impossible, confirmed by reverse-engineering the client.",
+      "Un buff monocible que vous lancez sur UN allie garde aussi un temps plus juste en changeant de zone (son decompte est mis en pause pour l'ecran de chargement). A noter que ca reste un estime : le jeu n'envoie aucune duree de buff pour les autres joueurs -- seulement pour vous -- donc un minuteur d'allie parfait est impossible, confirme en reverse-engineering du client." },
+};
 static const ChangeLine CL_63[] = {
     { "*You can now show or hide Food, Aftermath, Signet-type and crafting buffs in the Timers box.* Food, the three Aftermath levels, the conquest buffs (Signet / Sanction / Sigil / Ionis) and the synthesis \"Imagery\" buffs each get their own line in the Timers \"Buff filter\" -- with an individual Show/Hide toggle and a whole-group switch. They stay shown by default, so nothing changes until you turn one off.",
       "*Vous pouvez desormais afficher ou masquer les buffs de Nourriture, d'Aftermath, de type Signet et d'Artisanat dans la boite Timers.* La Nourriture, les trois niveaux d'Aftermath, les buffs de conquete (Signet / Sanction / Sigil / Ionis) et les buffs d'atelier (\"Imagery\" de synthese) ont chacun leur ligne dans le \"Filtre de buffs\" -- avec un interrupteur Afficher/Masquer individuel et un interrupteur de groupe. Affiches par defaut : rien ne change tant que vous n'en coupez pas un." },
@@ -372,6 +378,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.64", CL_64, (int)(sizeof(CL_64) / sizeof(CL_64[0])) },
     { "1.0.63", CL_63, (int)(sizeof(CL_63) / sizeof(CL_63[0])) },
     { "1.0.62", CL_62, (int)(sizeof(CL_62) / sizeof(CL_62[0])) },
     { "1.0.61", CL_61, (int)(sizeof(CL_61) / sizeof(CL_61[0])) },

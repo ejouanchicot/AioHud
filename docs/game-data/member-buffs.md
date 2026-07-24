@@ -28,6 +28,40 @@ base as `0x0DD` (payload at `+0x04`). **5 member slots of 48 (`0x30`) bytes:**
 refresh every `0x076`); the UI reads them via `buffs_for(id)`.
 *Credit: Kenshi/PartyBuffs + Byrth/GearSwap, via XivParty's `0x076` parse.*
 
+## Is there a per-ally buff TIMER anywhere? — NO. (Ghidra-closed, 2026-07-24)
+
+**Definitive: the client keeps NO remaining-time / expiry for a party or alliance member's buffs —
+not in memory, not in any packet.** Reversed from the FFXiMain dump (`re/ffximain_dump.bin`, base
+`0x05C60000`; scanners `re/scratch_reg.py` + `re/scratch_dis076.py`). Evidence, so we never re-ask:
+
+- **The `0x076` handler is `FFXiMain+0x098E80`** (found via the `register_incoming` push-id/push-fn
+  scan, not the edx-relative dispatch table). Its **entire body is one instruction of work:**
+  `memcpy(0x060E09A0, packet+4, 0x3C dwords = 240 bytes)` — a **verbatim copy** of the 5×48 payload
+  into a static buffer at **`FFXiMain+0x4A09A0`** (runtime `0x060E09A0`). It computes nothing,
+  timestamps nothing, stores nothing else, then `return 1`.
+- **That 240-byte buffer is the client's ONLY store of ally buffs.** A full-image scan for references
+  into `[0x060E0980, 0x060E0B00)` returns for `buf+0x000` exactly **three** sites: `0x098E8F` (the
+  memcpy dest above), `0x098EA5` (the id→member lookup, `FFXiMain+0x098EA0`, stride `0x30`, end
+  sentinel `0x060E0A90`), and `0x093683` (a reset routine that `rep stosd`-**zeroes** the buffer).
+  So the buffer has **one writer (the 0x076 memcpy) and one clearer** — no other packet handler
+  touches it, and none adds a time value.
+- **Each 48-byte member entry is fully accounted for with no room for a timer:** id `u32 @+0x00`,
+  4 pad, 8 bytes of packed high-2-bits `@+0x08`, 32 status low-bytes `@+0x10..+0x2F`. The decoder
+  `FFXiMain+0x098EC0` reads exactly `low = entry[0x10+i]`, `hi2 = (entry[0x08+(i>>2)] >> 2*(i&3)) & 3`,
+  `id = low + 256*hi2`, `0xFFFF` = empty — **byte-for-byte our `on_076` parse.**
+- **The exact-timer packet `0x063` (`FFXiMain+0x0991A0`) is structurally SELF-ONLY.** It is a switch on
+  the sub-command that `rep movsd`-copies each payload into **fixed singleton globals**
+  (`0x60e2f98`, `0x60e306c`, `0x60e5830`, `0x60e58c4`, …) — the local player's char-update block. **No
+  case is indexed by a member server id**, so the order-9 buff-timer array it fills is the player's
+  own; there is no ally equivalent.
+- The [party-member array](party-array.md) (`partymember_t`, stride `0x7C`) carries vitals/name/jobs
+  and **no buff field at all** — buffs live only in the `0x060E09A0` buffer above.
+
+**Consequence for AioHUD:** ally-buff durations MUST stay estimated (see [buffs on allies](buffs-on-allies.md)).
+The only exact ally figure available is the **AoE self-mirror** (a buff that also lands on you → mirror your
+own `0x063` self timer). The static RVAs above are client-version-specific — re-run the two `re/scratch_*.py`
+scanners after a client patch to re-locate the `0x076` handler and its buffer.
+
 **Icons:** a single atlas `assets/buff_atlas.raw` (1024×640 BGRA, 32-col grid of 32px
 cells, id → cell `(id%32, id/32)`), built by `scripts/gen_buff_atlas.ps1` from
 XivParty's `assets/buffIcons/*.png`. Ids ≥ 640 (outside the atlas) are skipped.
