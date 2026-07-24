@@ -225,7 +225,7 @@ private:
     float updMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
     float dbgScroll_   = 0.0f;    // Debug tab vertical scroll
     float dbgMaxScroll_= 0.0f;
-    bool  relOpen_[48] = { true };// Update tab : per-version collapse state (newest RELEASES[0] starts OPEN, rest closed). Size must be >= RELEASES_N (config_page.cpp). Was 16 and RELEASES_N reached 17 at v1.0.37 : the render loop clamps to this size, so the OLDEST releases silently stopped being listed. Grown with headroom (RELEASES_N = 32 at v1.0.52) -- check this when adding a release.
+    bool  relOpen_[128] = { true };// Update tab : per-version collapse state (newest RELEASES[0] starts OPEN, rest closed). Size must be >= RELEASES_N (config_page.cpp). Was 16 and RELEASES_N reached 17 at v1.0.37 : the render loop clamps to this size, so the OLDEST releases silently stopped being listed. It clamped again silently at 48 (grown 48->128 at v1.0.62 era, RELEASES_N = 42) -- 128 = room for ~86 more releases. Not serialized (session-only UI state) and the render loop self-bounds via sizeof(relOpen_), so this size is free to raise -- but keep it >= RELEASES_N.
     bool  dbgOpen_[8] = { true, true };   // Debug tab : per-section collapse state (To fix + Planned open, Fixed closed). Size must be >= DEBUG_SECTIONS_N.
     float helpMaxScroll_ = 0.0f;  // last frame's scroll limit -> clamp the wheel BEFORE drawing (no overscroll bounce)
     // live-preview anchor published each frame for the HUD (Configuration tab only)
