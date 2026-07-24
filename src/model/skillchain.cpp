@@ -17,6 +17,11 @@ static const SkillRow* find_row(const SkillRow* a, int n, unsigned id) {
     return 0;
 }
 
+int sc_aeonic_weapon_of_item(unsigned item) {
+    if (!item) return -1;
+    for (int i = 0; i < SC_AEONIC_ITEMS_N; ++i) if (SC_AEONIC_ITEMS[i].item == item) return SC_AEONIC_ITEMS[i].weapon;   // 16 entries : a linear scan is fine
+    return -1;
+}
 const SkillRow* sc_skill_lookup(int resource, unsigned id) {
     switch (resource) {
         case SCR_WS:    return find_row(SC_WEAPON_SKILLS,    SC_WEAPON_SKILLS_N,    id);

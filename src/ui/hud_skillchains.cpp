@@ -80,9 +80,14 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         if (nProp <= 0) { props[0] = SCP_Fusion; nProp = 1; }
         // timer : NEVER subtract two unsigned ms when the right side is bigger (it underflows to a huge value ->
         // the "94548988.54" garbage during the grace) -> clamp to 0 once we're at/after endMs.
-        if      (now >= r->endMs)  { phase = r->closed ? 2 : 1; timerSec = 0.0f; }
+        // A CLOSED chain (Lv.4 / step>5) goes straight to BURST for the whole remaining window -- NO Wait/Go phase and
+        // NO continuation list (the reference addon's `if closed then disp_info=''`). Without this the closed chain
+        // still passed through its post-close Wait window (phase 0), which REBUILDS the continuation list -> the stale
+        // "Ukko's Fury -> Light" lingered a moment before the box reached phase 2 and cleared it.
+        if      (r->closed)        { phase = 2; timerSec = (now < r->endMs) ? (float)(r->endMs - now) / 1000.0f : 0.0f; }
+        else if (now >= r->endMs)  { phase = 1; timerSec = 0.0f; }
         else if (now < r->delayMs) { phase = 0; timerSec = (float)(r->delayMs - now) / 1000.0f; }
-        else                       { phase = r->closed ? 2 : 1; timerSec = (float)(r->endMs - now) / 1000.0f; }
+        else                       { phase = 1; timerSec = (float)(r->endMs - now) / 1000.0f; }
         actName = "";
         if (r->resource == SCR_WS)         { const WSRow* w = ws_info(r->actionId);        if (w) actName = w->en; }
         else if (r->resource == SCR_SPELL) { const SpellRow* s = spell_info(r->actionId);   if (s) actName = s->en; }
@@ -104,20 +109,37 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         listN = 0; listKey = 0;                                 // closed chain -> burst only, no continuation list
     } else {
         const int mjob = f.game->me.mjob;
+        // AEONIC : if your equipped MAIN or RANGED is an Aeonic weapon, a WS bound to it gains its aeonic opening
+        // property (Light/Darkness) -> it can form Radiance/Umbra. Reliable only for YOU : you can read your own gear ;
+        // for another player an Aeonic is indistinguishable from a look-alike, so their aeonic props are never assumed.
+        int selfAeonic = sc_aeonic_weapon_of_item(f.game->equip.id[0]);
+        if (selfAeonic < 0) selfAeonic = sc_aeonic_weapon_of_item(f.game->equip.id[2]);
+        // Aftermath gate (the reference aeonic_am) : an Aeonic's Radiance/Umbra can only close from a high enough step
+        // for your AM level (270/271/272 = Lv.1/2/3 -> AM3 from step 1, AM2 from step 2, AM1 from step 3). No AM = no
+        // Radiance/Umbra offered at all. `step` here is the CURRENT resonance step ; the continuation would be step+... .
+        int amLvl = 0; for (int i = 0; i < f.game->nbuff; ++i) { const int s = f.game->buffs[i]; if (s == 272) { amLvl = 3; break; } else if (s == 271) { if (amLvl < 2) amLvl = 2; } else if (s == 270) { if (amLvl < 1) amLvl = 1; } }
+        const bool aeonicOk = (selfAeonic >= 0) && (amLvl >= 1) && ((3 - amLvl) < step);
         // Hash ALL active opening properties + their count, not just props[0]. A new resonance that shares the
         // primary property but differs in props[1..2]/nProp (e.g. a lone WS with two props vs a closed chain leaving
         // one) reused the stale continuation list -> wrong "what continues" suggestions until the key happened to move.
         const unsigned key = f.game->target.id * 2654435761u + (unsigned)step * 131u + (unsigned)mjob * 97u
-                           + (unsigned)props[0] * 7u + (unsigned)props[1] * 1013u + (unsigned)props[2] * 65537u + (unsigned)nProp * 40503u;
+                           + (unsigned)props[0] * 7u + (unsigned)props[1] * 1013u + (unsigned)props[2] * 65537u + (unsigned)nProp * 40503u
+                           + (unsigned)(selfAeonic + 1) * 277u + (unsigned)amLvl * 1201u;   // rebuild on weapon swap / AM change (aeonic on/off changes what continues)
         if (key != listKey) {
             listKey = key; listN = 0;
             // add a candidate move (weapon skill / job ability / SCH element) IF it continues the active chain.
             auto tryAdd = [&](int resource, unsigned id, const char* nm) {
                 if (listN >= 16) return;
                 const SkillRow* sk = sc_skill_lookup(resource, id); if (!sk) return;
+                // wsAeonic : THIS candidate is the WS of YOUR equipped Aeonic AND your Aftermath allows Radiance/Umbra.
+                // Only then does it gain its aeonic opening property and can UPGRADE a Light/Darkness Lv.4 close to
+                // Radiance/Umbra. An Empyrean (Ukko's Fury) or any non-Aeonic WS never does, even with its own Aftermath.
+                const bool wsAeonic = (aeonicOk && sk->aeonic < SCP_N && sk->weapon != 255 && (int)sk->weapon == selfAeonic);
                 unsigned char cp[3]; int ncp = 0; for (int j = 0; j < 3 && sk->prop[j] < SCP_N; ++j) cp[ncp++] = sk->prop[j];
+                if (wsAeonic && ncp < 3) cp[ncp++] = sk->aeonic;   // add the aeonic opening property (Light/Darkness) so the aeonic WS can form a Light/Darkness chain
                 int lv = 0, rs = 0;
                 if (sc_check_props(props, nProp, cp, ncp, lv, rs)) {
+                    if (wsAeonic) { if (rs == SCP_Light) rs = SCP_Radiance; else if (rs == SCP_Darkness) rs = SCP_Umbra; }   // aeonic close -> Radiance/Umbra ; otherwise the Light/Darkness Lv.4 stands
                     ScLine& L = list[listN++]; if (!nm) nm = "";
                     int c = 0; for (; nm[c] && c < 27; ++c) L.name[c] = nm[c]; L.name[c] = 0;
                     L.lvl = (unsigned char)lv; L.prop = (unsigned char)rs;

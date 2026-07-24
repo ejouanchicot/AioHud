@@ -10,7 +10,13 @@
 import re, os, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LUA  = os.path.join(ROOT, '..', '..', 'addons', 'AioHUD', 'data', 'tables', 'skills.lua')
+def _find_lua():   # the repo copy is authoritative + versioned ; fall back to the runtime addon(s) if it's missing
+    for c in [os.path.join(ROOT, 'scripts', 'skills.lua'),
+              os.path.join(ROOT, '..', '..', 'addons', 'AioHUD', 'data', 'tables', 'skills.lua'),
+              r'D:\Windower Tetsouo\addons\Skillchains\skills.lua']:
+        if os.path.isfile(c): return c
+    sys.exit('skills.lua not found (put it at scripts/skills.lua)')
+LUA  = _find_lua()
 OUT  = os.path.join(ROOT, 'src', 'model', 'skillchain_gen.h')
 
 # SCProp enum order -- MUST match src/model/skillchain.h.
@@ -18,6 +24,19 @@ PROPS = ['Transfixion','Compression','Liquefaction','Scission','Reverberation','
          'Impaction','Induration','Gravitation','Fragmentation','Distortion','Fusion',
          'Light','Darkness','Radiance','Umbra']
 PROP_IX = {p: i for i, p in enumerate(PROPS)}
+
+# Aeonic weapons : the WS `weapon=` name (skills.lua) paired with its equipment ITEM ids (the reference addon's
+# aeonic_weapon table). The list index = SkillRow.weapon (255 = none) AND the SC_AEONIC_ITEMS weapon idx -- so a
+# WS's aeonic skillchain property applies only when your equipped main/ranged item resolves to the SAME index.
+AEONIC = [
+    ('Godhand',            [20515]),  ('Aeneas',   [20594]),        ('Sequence', [20695]),
+    ('Chango',             [20843]),  ('Anguta',   [20890]),        ('Trishula', [20935]),
+    ('Heishi Shorinken',   [20977]),  ('Dojikiri Yasutsuna', [21025]), ('Tishtrya', [21082]),
+    ('Khatvanga',          [21147]),  ('Fomalhaut', [21485, 22143]),('Lionheart', [21694]),
+    ('Tri-Edge',           [21753]),  ('Fail-Not', [22117, 22131]),
+]
+def _wnorm(s): return re.sub(r'[^a-z]', '', s.lower())
+WEAPON_IX = { _wnorm(name): i for i, (name, ids) in enumerate(AEONIC) }
 
 RESOURCES = ['weapon_skills', 'spells', 'monster_abilities', 'job_abilities', 'elements']
 
@@ -62,8 +81,10 @@ def parse_resource(text, name):
         delay = int(d.group(1)) if d else 3
         ae = re.search(r"aeonic\s*=\s*'([^']+)'", fields)
         aeonic = PROP_IX[ae.group(1)] if ae and ae.group(1) in PROP_IX else 255
+        we = re.search(r"weapon\s*=\s*'([^']+)'", fields)
+        weapon = WEAPON_IX.get(_wnorm(we.group(1)), 255) if we else 255
         nm = re.search(r"en\s*=\s*'([^']*)'", fields)
-        rows.append((eid, ix[0], ix[1], ix[2], delay, aeonic, nm.group(1) if nm else ''))
+        rows.append((eid, ix[0], ix[1], ix[2], delay, aeonic, weapon, nm.group(1) if nm else ''))
     rows.sort(key=lambda r: r[0])
     return rows
 
@@ -88,7 +109,7 @@ def main():
     # prediction coverage (better than the reference addon), keyed by the Ready-menu id read at runtime.
     mob_by_name = {}
     for row in res_rows['monster_abilities']:
-        nm = (row[6] or '').lower()
+        nm = (row[7] or '').lower()
         if nm and nm not in mob_by_name:
             mob_by_name[nm] = row
     ja_ids = set(r[0] for r in res_rows['job_abilities'])
@@ -102,7 +123,7 @@ def main():
                 continue
             mob = mob_by_name.get(anm)
             if mob:
-                res_rows['job_abilities'].append((aid, mob[1], mob[2], mob[3], mob[4], 255, m.group(2)))
+                res_rows['job_abilities'].append((aid, mob[1], mob[2], mob[3], mob[4], 255, 255, m.group(2)))
                 ja_ids.add(aid); added += 1
         res_rows['job_abilities'].sort(key=lambda r: r[0])
     print('[gen_skillchain] augmented job_abilities with %d name-matched pet ready moves' % added)
@@ -114,10 +135,21 @@ def main():
         out.append('// %s : %d entries' % (r, len(rows)))
         out.append('static const SkillRow SC_%s[] = {' % r.upper())
         for row in rows:
-            out.append('    {%d, {%d,%d,%d}, %d, %d},' % (row[0], row[1], row[2], row[3], row[4], row[5]))
+            out.append('    {%d, {%d,%d,%d}, %d, %d, %d},' % (row[0], row[1], row[2], row[3], row[4], row[5], row[6]))
         out.append('};')
         out.append('static const int SC_%s_N = %d;' % (r.upper(), len(rows)))
         out.append('')
+    # Aeonic weapon items : equipped item id -> weapon idx (matches SkillRow.weapon). Lets the plugin tell if YOUR
+    # equipped main/ranged is an Aeonic and which one, so its WS get their aeonic skillchain property (aeonic_prop).
+    aitems = sorted((iid, i) for i, (name, ids) in enumerate(AEONIC) for iid in ids)
+    out.append('// Aeonic weapon ITEM ids -> weapon idx (matches SkillRow.weapon), sorted for binary search.')
+    out.append('struct ScAeonicItem { unsigned short item; unsigned char weapon; };')
+    out.append('static const ScAeonicItem SC_AEONIC_ITEMS[] = {')
+    for iid, wi in aitems:
+        out.append('    {%d, %d},' % (iid, wi))
+    out.append('};')
+    out.append('static const int SC_AEONIC_ITEMS_N = %d;' % len(aitems))
+    out.append('')
     out.append('} // namespace aio')
     out.append('')
     with open(OUT, 'w', encoding='utf-8', newline='\n') as f:

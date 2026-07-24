@@ -21,8 +21,9 @@ enum SCProp {
 // --- magic-burst ELEMENTS ---
 enum SCElem { EL_Fire = 0, EL_Ice, EL_Wind, EL_Earth, EL_Lightning, EL_Water, EL_Light, EL_Dark, EL_N };
 
-// one generated per-action row : id -> up to 3 opening skillchain properties (255 = none) + TP delay + aeonic prop.
-struct SkillRow { unsigned short id; unsigned char prop[3]; unsigned char delay; unsigned char aeonic; };
+// one generated per-action row : id -> up to 3 opening skillchain properties (255 = none) + TP delay + aeonic prop
+// (the SCProp it gains on an Aeonic weapon, 255 = none) + weapon (the Aeonic-weapon idx that grants it, 255 = none).
+struct SkillRow { unsigned short id; unsigned char prop[3]; unsigned char delay; unsigned char aeonic; unsigned char weapon; };
 
 // --- names ---
 inline const char* scprop_name(int p) {
@@ -83,8 +84,8 @@ inline const SCInfo& sc_info(int p) {
         /*Fragmentation*/{ {EL_Wind,EL_Lightning},2,2, { {SCP_Fusion,3,SCP_Light},{SCP_Distortion,2,SCP_Distortion} },2 },
         /*Distortion  */ { {EL_Ice,EL_Water},2,2, { {SCP_Gravitation,3,SCP_Darkness},{SCP_Fusion,2,SCP_Fusion} },2 },
         /*Fusion      */ { {EL_Fire,EL_Light},2,2, { {SCP_Fragmentation,3,SCP_Light},{SCP_Gravitation,2,SCP_Gravitation} },2 },
-        /*Light       */ { {EL_Fire,EL_Wind,EL_Lightning,EL_Light},4,3, { {SCP_Light,4,SCP_Radiance} },1 },
-        /*Darkness    */ { {EL_Earth,EL_Ice,EL_Water,EL_Dark},4,3, { {SCP_Darkness,4,SCP_Umbra} },1 },
+        /*Light       */ { {EL_Fire,EL_Wind,EL_Lightning,EL_Light},4,3, { {SCP_Light,4,SCP_Light} },1 },     // Light+Light -> Light Lv.4 ; ONLY an Aeonic weapon's WS upgrades it to Radiance (done in the continuation list, gated on the equipped Aeonic + Aftermath -- NOT an Empyrean like Ukko's Fury)
+        /*Darkness    */ { {EL_Earth,EL_Ice,EL_Water,EL_Dark},4,3, { {SCP_Darkness,4,SCP_Darkness} },1 },   // Darkness+Darkness -> Darkness Lv.4 ; Aeonic upgrades to Umbra the same way
         /*Radiance    */ { {EL_Fire,EL_Wind,EL_Lightning,EL_Light},4,4, {},0 },
         /*Umbra       */ { {EL_Earth,EL_Ice,EL_Water,EL_Dark},4,4, {},0 },
     };
@@ -117,6 +118,10 @@ inline bool sc_is_finish_msg(unsigned m) {
 // per-action property lookup (weapon skill / spell / mob TP / job ability / SCH element) -> the generated row, or 0.
 enum SCResource { SCR_WS = 0, SCR_SPELL, SCR_MOB, SCR_JA, SCR_ELEM };
 const SkillRow* sc_skill_lookup(int resource, unsigned id);
+
+// the Aeonic-weapon idx for an equipped item id (SC_AEONIC_ITEMS), or -1 if that item is not an Aeonic. A WS whose
+// SkillRow.weapon == this idx gains its aeonic opening property while you wield it (see the Phase-2 continuation list).
+int sc_aeonic_weapon_of_item(unsigned item);
 
 // Does a candidate move's opening properties `neu` CONTINUE a chain whose active properties are `old` ?
 // (the addon's check_props). On success returns true + the resulting skillchain level (1..4) and property.

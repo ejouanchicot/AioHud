@@ -81,11 +81,26 @@ const Resonating* PartyState::skillchain_newest_live() const {
 void PartyState::sc_close(unsigned tid, unsigned aid, int res, int prop, int delay) {
     const unsigned now = GetTickCount();
     Resonating* r = sc_reson_slot(reson_, tid);
-    const int prevStep = (r->endMs && now < r->endMs + 3000u && r->step >= 1) ? r->step : 1;
+    const bool recent = (r->endMs && now < r->endMs + 3000u && r->step >= 1 && r->nProp > 0);
+    const int prevStep = recent ? r->step : 1;
+    // RE-COMPUTE the skillchain LEVEL. The 0x028 add-effect names the skillchain (its animation) but NOT its level,
+    // so a Light+Light (Lv.4 -- which CLOSES) reads identically to a fresh Lv.3 Light. Using sc_info(prop).lvl (always
+    // 3 for Light/Darkness) left a Light chain forever "open" -> the continuation list kept proposing Light. The
+    // reference addon re-checks a Lv.3 result via check_props against the PREVIOUS resonance's props (aeonic doesn't
+    // change the level, only the result name, so the base WS props are enough here).
+    int lvl = sc_info(prop).lvl;
+    if (lvl == 3 && recent) {
+        const SkillRow* sk = sc_skill_lookup(res, aid);
+        if (sk) {
+            unsigned char cp[3]; int ncp = 0; for (int j = 0; j < 3 && sk->prop[j] < SCP_N; ++j) cp[ncp++] = sk->prop[j];
+            int lv2 = 0, rs2 = 0;
+            if (sc_check_props(r->prop, r->nProp, cp, ncp, lv2, rs2)) lvl = lv2;   // real chain level (Light+Light -> 4)
+        }
+    }
     r->target = tid; r->actionId = aid; r->resource = (unsigned char)res;
     r->prop[0] = (unsigned char)prop; r->nProp = 1; r->step = (unsigned char)(prevStep + 1);
-    r->lvl = (unsigned char)sc_info(prop).lvl;
-    r->closed = (r->step > 5 || r->lvl == 4) ? 1 : 0;
+    r->lvl = (unsigned char)lvl;
+    r->closed = (r->step > 5 || r->lvl == 4) ? 1 : 0;   // Lv.4 (incl. Light+Light) or step>5 -> closed : burst only, no more continuation
     r->formed = 1;
     sc_set_timing(r, delay, (int)r->step);
 }
