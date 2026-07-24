@@ -139,6 +139,17 @@ static bool tm_self_focus_on(const UiConfig& C, int /*job*/, unsigned status) {
 static bool tm_self_hidden(const UiConfig& C, int /*job*/, unsigned status) {
     return C.tm_buff_off(status);
 }
+// SELF-CARRIED buffs : Food / Aftermath / conquest (Signet, Sanction, Sigil, Ionis) / synthesis Imagery. NO job
+// CASTS these, so buff_caster_for can't attribute them and self_can_produce_buff says no -> the "buff source" filter
+// (srcKeeps) would classify them as "not yours" and hide them under anything but "All". But they ARE yours (you
+// carry them), not someone's buff cast ON you, so they must be exempt from the source filter -- their family-filter
+// toggle is their only control. Status ids mirror the EXTRA_FAM list in scripts/gen_job_track.py (keep in sync).
+static inline bool tm_self_carried(unsigned st) {
+    return st == 251                                            // Food
+        || (st >= 270 && st <= 272)                            // Aftermath: Lv.1 / Lv.2 / Lv.3 (3 tiers ; 273 generic is legacy)
+        || st == 253 || st == 256 || st == 268 || st == 512    // Signet / Sanction / Sigil / Ionis
+        || (st >= 235 && st <= 243);                           // synthesis Imagery (Fishing .. Cooking)
+}
 
 // //aio ftrace : armed for a DURATION, not a row count. A per-row countdown burned out in seconds -- it decrements
 // once per buff PER FRAME (~60 Hz), so it never survived long enough to observe the one moment that matters, the
@@ -303,6 +314,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         // Half a feature reachable, half not. Same verdict for both, so they are reachable or unreachable together.
         auto srcKeeps = [&](unsigned short status, unsigned expiry, int timerIdx) -> bool {
             if (C.tmBuffSrc == TMSRC_ALL) return true;
+            if (tm_self_carried(status)) return true;   // Food/Signet/Craft/Aftermath : self-carried, no external caster -> always yours ; the family-filter toggle is their sole control (else "Mine only" hides them despite being set to Show)
             // A trust/chemist multi-stat MIX boost (a STR..CHR you did NOT cast, co-expiring with a sibling boost) is
             // decided FIRST -- ahead of the caster lookup -- because a stale buffCaster_ can still name YOU on it (the
             // attribution is never cleared when the buff wears off), which would otherwise keep it as "your own".
@@ -336,7 +348,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // leaves the list left a visible HOLE between the two. Hold the row at 0:00 for as long as the buff is
             // genuinely still on you, so the hand-off row -> alert is seamless. Only for a buff we still hold:
             // meHas is authoritative now that an empty list is distinguished from no data.
-            if (rem > 6 * 3600) continue;
+            if (rem > 6 * 3600 && !tm_self_carried(bt[i].id)) continue;   // 6h cap drops garbage/absurd timers -- EXCEPT self-carried area buffs, which legitimately run for many hours (San d'Oria base Signet = 13h). fmt() already renders them H:MM:SS ; the family toggle stays their control
             if (rem <= 0) { if (!meHas((int)bt[i].id)) continue; rem = 0; }
             // DEBUFFS (Blind / Poison / Slow / Dia / Bio...) leak into the 0x063 self-buff list -- they are NOT buffs,
             // so never in the Duration column (they'll get their own detachable column). Dropped for everyone.

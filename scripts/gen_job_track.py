@@ -72,6 +72,12 @@ CATS = [   # (enum, EN, FR)
     ('TC_STRAT',    'Stratagems',     'Stratagemes'),
     ('TC_BPACT',    'Blood Pacts',    'Pactes'),
     ('TC_JA',       'Job Abilities',  'Aptitudes'),
+    # --- non-spell status buffs (food / conquest / synthesis events) : no job CASTS these, so they never come from
+    #     spells.lua -- injected via EXTRA_FAM below so the family filter can show/hide them. ---
+    ('TC_FOOD',     'Food',           'Nourriture'),
+    ('TC_AFTERMATH','Aftermath',      'Aftermath'),
+    ('TC_SIGNET',   'Signet',         'Signet'),
+    ('TC_CRAFT',    'Craft',          'Artisanat'),
     ('TC_OTHER',    'Other',          'Autre'),
 ]
 CAT_IDX = {c[0]: i for i, c in enumerate(CATS)}
@@ -245,6 +251,33 @@ for _job, _d in job_buffs.items():
         _k = (_cat, _status)
         if _k not in fam or len(_name) < len(fam[_k]):
             fam[_k] = _name
+
+# --- inject non-spell status buffs : Food / Aftermath / conquest (Signet...) / synthesis Imagery. No job CASTS
+#     these, so they never appear in spells.lua -- but they DO show up in the Timers 0x063 self-buff list, and until
+#     now there was no way to hide them. Adding them here gives each its own family-filter row (one on/off per
+#     status, same as every other row), grouped under its own category so a group-chip can toggle the whole set.
+#     status ids are static game data (see src/model/buffs_gen.h). ---
+EXTRA_FAM = [
+    ('TC_FOOD',      251, 'Food'),
+    ('TC_AFTERMATH', 270, 'Aftermath: Lv.1'),
+    ('TC_AFTERMATH', 271, 'Aftermath: Lv.2'),
+    ('TC_AFTERMATH', 272, 'Aftermath: Lv.3'),   # 3 tiers only ; status 273 "Aftermath" (generic) is legacy/unused -> not listed
+    ('TC_SIGNET',    253, 'Signet'),
+    ('TC_SIGNET',    256, 'Sanction'),
+    ('TC_SIGNET',    268, 'Sigil'),
+    ('TC_SIGNET',    512, 'Ionis'),
+    ('TC_CRAFT',     235, 'Fishing'),
+    ('TC_CRAFT',     236, 'Woodworking'),
+    ('TC_CRAFT',     237, 'Smithing'),
+    ('TC_CRAFT',     238, 'Goldsmithing'),
+    ('TC_CRAFT',     239, 'Clothcraft'),
+    ('TC_CRAFT',     240, 'Leathercraft'),
+    ('TC_CRAFT',     241, 'Bonecraft'),
+    ('TC_CRAFT',     242, 'Alchemy'),
+    ('TC_CRAFT',     243, 'Cooking'),
+]
+for _cat, _status, _name in EXTRA_FAM:
+    fam.setdefault((_cat, _status), _name)   # setdefault : never clobber a real spell family that already owns this status
 
 def cesc(s):
     return s.replace('\\', '\\\\').replace('"', '\\"')

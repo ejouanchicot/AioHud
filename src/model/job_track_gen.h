@@ -4,9 +4,9 @@
 //   status AND/OR a recast (cooldown) -- Steal/Mug have recast only. Spells are deduped by status.
 #pragma once
 namespace aio {
-enum TrackCat { TC_REFRESH, TC_HASTE, TC_PROTECT, TC_REGEN, TC_ENSPELL, TC_BARSPELL, TC_GAIN, TC_SPIKES, TC_DEFENSE, TC_SONG, TC_GEO, TC_NINJUTSU, TC_BLUE, TC_BLU_BUFF, TC_BLU_PHYS, TC_BLU_MAG, TC_BLU_DEB, TC_ENHANCE, TC_HEAL, TC_NUKE, TC_ENFEEBLE, TC_DARK, TC_DIVINE, TC_SUMMON, TC_UTILITY, TC_ROLL, TC_SAMBA, TC_DANCE, TC_RUNE, TC_WARD, TC_STRAT, TC_BPACT, TC_JA, TC_OTHER, TC_COUNT };
-static const char* const TRACK_CAT_EN[TC_COUNT] = { "Refresh", "Haste / Flurry", "Protect / Shell", "Regen", "Enspells", "Barspells", "Gains", "Spikes", "Defensive", "Songs", "Geomancy", "Ninjutsu", "Blue Magic", "Blue: Buff", "Blue: Physical", "Blue: Magical", "Blue: Debuff", "Enhancing", "Healing", "Elemental", "Enfeebling", "Dark Magic", "Divine", "Summons", "Utility", "Rolls", "Sambas", "Dances", "Runes", "Wards", "Stratagems", "Blood Pacts", "Job Abilities", "Other" };
-static const char* const TRACK_CAT_FR[TC_COUNT] = { "Refresh", "Haste / Flurry", "Protect / Shell", "Regen", "Enchantements", "Barspells", "Gains", "Spikes", "Defensif", "Chants", "Geomancie", "Ninjutsu", "Magie Bleue", "Bleu: Buff", "Bleu: Physique", "Bleu: Magique", "Bleu: Debuff", "Amelioration", "Soins", "Elementaire", "Affaiblissement", "Magie Noire", "Divine", "Invocations", "Utilitaire", "Rolls", "Sambas", "Danses", "Runes", "Wards", "Stratagemes", "Pactes", "Aptitudes", "Autre" };
+enum TrackCat { TC_REFRESH, TC_HASTE, TC_PROTECT, TC_REGEN, TC_ENSPELL, TC_BARSPELL, TC_GAIN, TC_SPIKES, TC_DEFENSE, TC_SONG, TC_GEO, TC_NINJUTSU, TC_BLUE, TC_BLU_BUFF, TC_BLU_PHYS, TC_BLU_MAG, TC_BLU_DEB, TC_ENHANCE, TC_HEAL, TC_NUKE, TC_ENFEEBLE, TC_DARK, TC_DIVINE, TC_SUMMON, TC_UTILITY, TC_ROLL, TC_SAMBA, TC_DANCE, TC_RUNE, TC_WARD, TC_STRAT, TC_BPACT, TC_JA, TC_FOOD, TC_AFTERMATH, TC_SIGNET, TC_CRAFT, TC_OTHER, TC_COUNT };
+static const char* const TRACK_CAT_EN[TC_COUNT] = { "Refresh", "Haste / Flurry", "Protect / Shell", "Regen", "Enspells", "Barspells", "Gains", "Spikes", "Defensive", "Songs", "Geomancy", "Ninjutsu", "Blue Magic", "Blue: Buff", "Blue: Physical", "Blue: Magical", "Blue: Debuff", "Enhancing", "Healing", "Elemental", "Enfeebling", "Dark Magic", "Divine", "Summons", "Utility", "Rolls", "Sambas", "Dances", "Runes", "Wards", "Stratagems", "Blood Pacts", "Job Abilities", "Food", "Aftermath", "Signet", "Craft", "Other" };
+static const char* const TRACK_CAT_FR[TC_COUNT] = { "Refresh", "Haste / Flurry", "Protect / Shell", "Regen", "Enchantements", "Barspells", "Gains", "Spikes", "Defensif", "Chants", "Geomancie", "Ninjutsu", "Magie Bleue", "Bleu: Buff", "Bleu: Physique", "Bleu: Magique", "Bleu: Debuff", "Amelioration", "Soins", "Elementaire", "Affaiblissement", "Magie Noire", "Divine", "Invocations", "Utilitaire", "Rolls", "Sambas", "Danses", "Runes", "Wards", "Stratagemes", "Pactes", "Aptitudes", "Nourriture", "Aftermath", "Signet", "Artisanat", "Autre" };
 struct JobBuff { unsigned short status; unsigned short recast; unsigned short level; unsigned char cat; const char* name; };
 static const JobBuff JT_WAR[] = {
     {44,0,1,32,"Mighty Strikes"},   // TC_JA
@@ -1742,6 +1742,23 @@ static const BuffFam BUFF_FAM[] = {
     {508,32,"Widened Compass"},   // TC_JA
     {501,32,"Yaegasumi"},   // TC_JA
     {420,32,"Yonin"},   // TC_JA
+    {251,33,"Food"},   // TC_FOOD
+    {270,34,"Aftermath: Lv.1"},   // TC_AFTERMATH
+    {271,34,"Aftermath: Lv.2"},   // TC_AFTERMATH
+    {272,34,"Aftermath: Lv.3"},   // TC_AFTERMATH
+    {512,35,"Ionis"},   // TC_SIGNET
+    {256,35,"Sanction"},   // TC_SIGNET
+    {268,35,"Sigil"},   // TC_SIGNET
+    {253,35,"Signet"},   // TC_SIGNET
+    {242,36,"Alchemy"},   // TC_CRAFT
+    {241,36,"Bonecraft"},   // TC_CRAFT
+    {239,36,"Clothcraft"},   // TC_CRAFT
+    {243,36,"Cooking"},   // TC_CRAFT
+    {235,36,"Fishing"},   // TC_CRAFT
+    {238,36,"Goldsmithing"},   // TC_CRAFT
+    {240,36,"Leathercraft"},   // TC_CRAFT
+    {237,36,"Smithing"},   // TC_CRAFT
+    {236,36,"Woodworking"},   // TC_CRAFT
 };
 static const int BUFF_FAM_N = (int)(sizeof(BUFF_FAM) / sizeof(BUFF_FAM[0]));
 struct JobTrack { const JobBuff* buffs; int n; };

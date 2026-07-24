@@ -199,7 +199,7 @@ private:
     int   trkSub_ = -1;          // SUB job for the checklist (-1 = follow current sub ; 0 = none ; 1..22 = a job)
     int   trkScope_ = 0;         // 0 = Self (buffs on you + your recasts) ; 1 = Allies (buffs you put on allies)
     bool  trkSecOpen_ = false;   // the "Track per job" collapsible section
-    bool  trkCatOpen_[32] = { false };   // per-category collapsible state within the checklist (index = TrackCat)
+    bool  trkCatOpen_[48] = { false };   // per-category collapsible state within the checklist (index = TrackCat). MUST be >= TC_COUNT (job_track_gen.h) : it silently overflowed into jaJobOpen_ once TC_COUNT passed 32 (TC_JA/TC_OTHER indexed out of bounds) -- grown 32->48 at TC_COUNT=38 (added Food/Aftermath/Signet/Craft). Same trap as relOpen_.
     bool  jaJobOpen_[24] = { false };    // Buff filter / Job Abilities : per-JOB sub-section collapse (index = job id 1..23 ; in-memory only, NOT serialised). The current main job is forced open each frame.
     // animation state (driven by the frame clock)
     float anim_     = 0.0f;   // open progress 0..1 (eased) -> fade in

@@ -275,6 +275,12 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_63[] = {
+    { "*You can now show or hide Food, Aftermath, Signet-type and crafting buffs in the Timers box.* Food, the three Aftermath levels, the conquest buffs (Signet / Sanction / Sigil / Ionis) and the synthesis \"Imagery\" buffs each get their own line in the Timers \"Buff filter\" -- with an individual Show/Hide toggle and a whole-group switch. They stay shown by default, so nothing changes until you turn one off.",
+      "*Vous pouvez desormais afficher ou masquer les buffs de Nourriture, d'Aftermath, de type Signet et d'Artisanat dans la boite Timers.* La Nourriture, les trois niveaux d'Aftermath, les buffs de conquete (Signet / Sanction / Sigil / Ionis) et les buffs d'atelier (\"Imagery\" de synthese) ont chacun leur ligne dans le \"Filtre de buffs\" -- avec un interrupteur Afficher/Masquer individuel et un interrupteur de groupe. Affiches par defaut : rien ne change tant que vous n'en coupez pas un." },
+    { "Very long area buffs (a San d'Oria Signet lasts 13 hours) now show in the Timers box instead of being dropped, and self-carried buffs like these are no longer hidden by the \"Mine only\" buff-source filter -- their own toggle controls them.",
+      "Les buffs de zone tres longs (un Signet de San d'Oria dure 13 heures) s'affichent maintenant dans la boite Timers au lieu d'etre ignores, et ces buffs qu'on porte soi-meme ne sont plus caches par le filtre de source \"Moi seul\" -- c'est leur propre interrupteur qui les controle." },
+};
 static const ChangeLine CL_62[] = {
     { "*Buffs you cast on your whole party at once now group instantly.* A Protect, Regen or similar spell cast as an area effect -- under Scholar's Accession or Paladin's Majesty -- shows as \"(AoE N)\" right away, instead of briefly listing one party member by name for about a second before grouping.",
       "*Les buffs que vous lancez sur tout votre groupe d'un coup se regroupent instantanement.* Un Protect, Regen ou sort similaire lance en zone -- sous Accession (Erudit) ou Majesty (Paladin) -- s'affiche directement en \"(AoE N)\", au lieu de lister brievement un membre du groupe par son nom pendant environ une seconde avant de se regrouper." },
@@ -366,6 +372,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.63", CL_63, (int)(sizeof(CL_63) / sizeof(CL_63[0])) },
     { "1.0.62", CL_62, (int)(sizeof(CL_62) / sizeof(CL_62[0])) },
     { "1.0.61", CL_61, (int)(sizeof(CL_61) / sizeof(CL_61[0])) },
     { "1.0.60", CL_60, (int)(sizeof(CL_60) / sizeof(CL_60[0])) },
