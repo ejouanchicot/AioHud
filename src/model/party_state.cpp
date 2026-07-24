@@ -348,28 +348,50 @@ unsigned PartyState::buff_caster_for(unsigned short status, unsigned expiry, int
     // relic / empyrean; there is no cast for it in the 0x028 at all, which is why the ring can never explain it.
     // Keep this list to cases that are certain: a wrong entry here would claim someone else's buff as ours.
     if (status >= 270 && status <= 273) return selfId_;
+
+    // Resolve a CO-EXPIRING buff's caster the reliable way : its OWN match_cast (selfCasts_) first -- the raw
+    // buffCaster_ latch holds STALE trust ids after a re-summon (MEASURED 2026-07-24: Protect's latch named Ulmia
+    // 0100480C while match_cast found the live Monberaux 0100480B) -- then its raw latch. Non-recursive : match_cast
+    // never calls back here, so this can't loop even when two buffs co-expire.
+    auto coCaster = [&](int i) -> unsigned {
+        const int kk = match_cast(buffTimers_[i].id, buffTimers_[i].expiry, i);
+        const unsigned c = (kk >= 0) ? selfCasts_[kk].caster : buff_caster(buffTimers_[i].id);
+        return (c && caster_resolves(c)) ? c : 0;
+    };
+    // The UNANIMOUS FOREIGN caster among buffs that share THIS exact expiry. An identical server-tick expiry means one
+    // action = one caster (line: Monberaux's move 4255 grants Protect(40)+Shell(41) in one tick). UNANIMITY required :
+    // a disagreement yields 0, never a coin flip -- mis-attributing YOUR buff to a trust would DROP it under "hide
+    // trusts", the exact bug this code was written to avoid.
+    auto coForeign = [&]() -> unsigned {
+        unsigned found = 0;
+        for (int i = 0; i < buffTimerN_; ++i) {
+            if (buffTimers_[i].id == status || buffTimers_[i].expiry != expiry) continue;
+            const unsigned c = coCaster(i);
+            if (!c || c == selfId_) continue;
+            if (found && found != c) return 0;
+            found = c;
+        }
+        return found;
+    };
+
     const int k = match_cast(status, expiry, timerIdx);
-    if (k >= 0) return selfCasts_[k].caster;
-    // A stored caster whose id NO LONGER RESOLVES is stale, not an answer. MEASURED 2026-07-20: re-summoning the
-    // trusts gave them new entity ids (Monberaux 011069C6 -> 0110682C), so Shell's attribution pointed at a dead id
-    // and rendered as an empty owner. Treat it as unknown and re-derive, instead of reporting a name nobody has.
-    const unsigned direct = buff_caster(status);
-    if (direct && caster_resolves(direct)) return direct;
-    // UNANIMITY required : borrow only if every attributed co-expiring status names the SAME caster. Two casters
-    // acting in one server tick is rare but possible, and a wrong borrow is not cosmetic here -- with the buff-source
-    // filter on "hide trusts", mis-attributing our own buff to a trust DROPS the row. That is exactly the bug this
-    // whole session was spent fixing, so a disagreement must yield "unknown" rather than a coin flip.
-    unsigned found = 0;
-    for (int i = 0; i < buffTimerN_; ++i) {
-        if (buffTimers_[i].id == status || buffTimers_[i].expiry != expiry) continue;
-        const unsigned c = buff_caster(buffTimers_[i].id);
-        if (!c || c == selfId_ || !caster_resolves(c)) continue;   // never borrow SELF via co-expiry (see latch_co_expiry_casters) : your own
-                                                                    // buffs are directly attributed, and a trust's unnamed mix-boost that shares
-                                                                    // an expiry with your Gain-MND must not be claimed as yours.
-        if (found && found != c) return 0;     // co-expiring statuses disagree -> don't guess
-        found = c;
+    if (k >= 0) {
+        const unsigned mc = selfCasts_[k].caster;
+        if (mc != selfId_) return mc;                        // a FOREIGN match is authoritative
+        // mc == self, but a STALE self-cast can shadow a foreign co-grant we never saw a 0x028 for : Monberaux's move
+        // 4255 reports only Protect, so Shell keeps your OLD self-cast and survives "Mine only". If a buff sharing this
+        // EXACT expiry resolves to a trust/player, the whole group is theirs -> yield it, not your stale self-claim.
+        const unsigned f = coForeign();
+        return f ? f : selfId_;
     }
-    return found;
+    // No self-cast at all. A resolving OTHER direct latch is authoritative ; else borrow a foreign co-expiring caster ;
+    // else fall back to a resolving (possibly self) direct latch ; else unknown.
+    const unsigned direct = buff_caster(status);
+    if (direct && direct != selfId_ && caster_resolves(direct)) return direct;
+    const unsigned f = coForeign();
+    if (f) return f;
+    if (direct && caster_resolves(direct)) return direct;
+    return 0;
 }
 unsigned short PartyState::self_buff_spell_ranked(unsigned short status, unsigned expiry, int timerIdx) const {
     const int k = match_cast(status, expiry, timerIdx);
