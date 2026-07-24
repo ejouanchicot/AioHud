@@ -47,11 +47,7 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Elements", "\xC3\x89l\xC3\xA9ments"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (catOpen_[7]) {
-        #define SC_TOGGLE(UID, LABEL, FIELD)                                                                                  \
-            { ROW_BAND(48.0f) const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);                                 \
-              fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, LABEL, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);      \
-              const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;    \
-              if (toggle_chip(dev, fo, mo, click, UID, bx2, bty, bbw, bbh, (FIELD) ? tr("On", "Oui") : tr("Off", "Non"), (FIELD) != 0)) { FIELD = !(FIELD); save_ui_config(); } } ROW_NEXT(48.0f)
+        #define SC_TOGGLE(UID, LABEL, FIELD) { ROW_BAND(48.0f) row_toggle(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD)); } ROW_NEXT(48.0f)
         SC_TOGGLE(CTRL_ID, tr("Title", "Titre"),                            c.scTitle)
         SC_TOGGLE(CTRL_ID, tr("Timer (Go! / Burst)", "Timer (Go! / Burst)"), c.scTimer)
         SC_TOGGLE(CTRL_ID, tr("Step line", "Ligne Step"),                    c.scStep)

@@ -15,22 +15,10 @@
 namespace aio {
 
 // one On/Off toggle row (label left, chip right) -- mirrors PLR_TOGGLE.
-#define MM_TOGGLE(UID, LABEL, FIELD)                                                                                     \
-    { ROW_BAND(48.0f)                                                                                                  \
-        const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);                                                 \
-        fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, LABEL, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);      \
-        const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;    \
-        if (toggle_chip(dev, fo, mo, click, UID, bx2, bty, bbw, bbh, (FIELD) ? tr("On", "Oui") : tr("Off", "Non"), (FIELD) != 0)) { FIELD = !(FIELD); save_ui_config(); } \
-    } ROW_NEXT(48.0f)
-
-// a 0.50..2.00 (x%) size slider bound to a float FIELD, on uid UID.
-#define MM_PCT_SLIDER(UID, LABEL, FIELD, LO, HI)                                                                        \
-    { ROW_BAND(46.0f)                                                                                                  \
-        const float lo = (LO), hi = (HI); char b[16]; sprintf(b, "%d%%", (int)((FIELD) * 100.0f + 0.5f));              \
-        float v01 = ((FIELD) - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);                                         \
-        if (row_slider(dev, fo, mo, UID, coX, ry + yo, ctrlW, LABEL, b, &v01)) {                                       \
-            float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; FIELD = v < lo ? lo : (v > hi ? hi : v); } \
-    } ROW_NEXT(46.0f)
+// Thin wrappers over the shared row_toggle / row_pct_slider (config_controls). Kept as macros only so call sites read
+// the same and each expansion lands on its own __LINE__ for CTRL_ID ; the body is now one shared helper call.
+#define MM_TOGGLE(UID, LABEL, FIELD)             { ROW_BAND(48.0f) row_toggle(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD)); } ROW_NEXT(48.0f)
+#define MM_PCT_SLIDER(UID, LABEL, FIELD, LO, HI) { ROW_BAND(46.0f) row_pct_slider(dev, fo, mo, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD), (LO), (HI)); } ROW_NEXT(46.0f)
 
 void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bool click,
                                      float& ry, int& ri, float e,

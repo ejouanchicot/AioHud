@@ -125,6 +125,12 @@ int  row_selector(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
 int  wrap(int v, int n);
 bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
                 float x, float y, float w, const char* label, const char* valueText, float* v01);
+// Higher-level rows shared by every module panel (replace the per-panel *_TOGGLE / *_PCT_SLIDER macros). Call each
+// inside a ROW_BAND(48) / ROW_BAND(46) block respectively, passing y = ry + yo.
+bool row_toggle(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
+                float coX, float y, float ctrlW, const char* label, int* field);        // On/Off toggle ; persists on change
+bool row_pct_slider(u32 dev, Font* fo, const MouseState* mo, int uid,
+                    float coX, float y, float ctrlW, const char* label, float* field, float lo, float hi, float step = 0.05f);   // NN% slider ; persists on RELEASE (no per-frame save)
 // HSV colour picker : an SV square + a slim vertical hue strip + a live swatch (with hex) + a preset "nuancier"
 // grid (replaces the R/G/B slider triples). Two draggable zones share the slider latch -> give a UNIQUE
 // (uidSV, uidHue) pair. Edits *color in place (preserves its alpha byte) ; returns true the frames it changes.

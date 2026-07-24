@@ -275,6 +275,10 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_61[] = {
+    { "*The Zone Tracker size slider no longer rewrites your settings file while you drag it.* Like every other slider, it now saves once when you let go, instead of about 60 times a second during the drag. Behind the scenes several config controls were also unified -- no change to how they work.",
+      "*Le curseur de taille du Zone Tracker ne reecrit plus votre fichier de reglages pendant que vous le glissez.* Comme tous les autres curseurs, il enregistre desormais une seule fois au relachement, au lieu d'environ 60 fois par seconde pendant le glissement. En coulisses, plusieurs controles de config ont aussi ete unifies -- sans changement de fonctionnement." },
+};
 static const ChangeLine CL_60[] = {
     { "*More packet guards (continued).* The truncated-packet protection added in 1.0.58 now also covers the PointWatch handlers (XP / CP / Merits / Master Level). Purely defensive : no change to normal behaviour.",
       "*Plus de protections paquets (suite).* La protection contre les paquets tronques ajoutee en 1.0.58 couvre maintenant aussi les handlers PointWatch (XP / CP / Merites / Master Level). Purement defensif : aucun changement en fonctionnement normal." },
@@ -358,6 +362,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.61", CL_61, (int)(sizeof(CL_61) / sizeof(CL_61[0])) },
     { "1.0.60", CL_60, (int)(sizeof(CL_60) / sizeof(CL_60[0])) },
     { "1.0.59", CL_59, (int)(sizeof(CL_59) / sizeof(CL_59[0])) },
     { "1.0.58", CL_58, (int)(sizeof(CL_58) / sizeof(CL_58[0])) },

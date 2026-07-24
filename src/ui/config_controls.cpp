@@ -464,6 +464,36 @@ bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
     return changed;
 }
 
+// A labeled ON/OFF toggle row : "Label .......... [On]". Flips *field and persists on change ; returns true on the
+// click. Shared body of the old per-panel *_TOGGLE macros (they were byte-identical). Call inside a ROW_BAND(48) block,
+// passing y = ry + yo. `field` is the int 0/1 config flag.
+bool row_toggle(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
+                float coX, float y, float ctrlW, const char* label, int* field) {
+    const float rowH = snap(38.0f);
+    fo->begin(dev);
+    fo->draw_lc(dev, coX + snap(4.0f), y + rowH * 0.5f, label, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+    const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = y + (rowH - bbh) * 0.5f;
+    if (toggle_chip(dev, fo, mo, click, uid, bx2, bty, bbw, bbh, *field ? tr("On", "Oui") : tr("Off", "Non"), *field != 0)) {
+        *field = !*field; save_ui_config(); return true;
+    }
+    return false;
+}
+// A labeled percent slider bound to a float *field in [lo,hi], shown as "NN%", stepped to `step`. Persists on RELEASE
+// (via row_slider) -- do NOT add a save here (that was the per-drag-frame save bug some panels had). Shared body of the
+// old *_PCT_SLIDER / *_SIZE_SLIDER macros. Call inside a ROW_BAND(46) block, passing y = ry + yo.
+bool row_pct_slider(u32 dev, Font* fo, const MouseState* mo, int uid,
+                    float coX, float y, float ctrlW, const char* label, float* field, float lo, float hi, float step) {
+    char b[16]; _snprintf(b, sizeof(b), "%d%%", (int)(*field * 100.0f + 0.5f)); b[sizeof(b) - 1] = 0;
+    float v01 = clampf((*field - lo) / (hi - lo), 0.0f, 1.0f);
+    if (row_slider(dev, fo, mo, uid, coX, y, ctrlW, label, b, &v01)) {
+        float v = lo + v01 * (hi - lo);
+        v = (float)((int)(v / step + 0.5f)) * step;
+        *field = clampf(v, lo, hi);
+        return true;
+    }
+    return false;
+}
+
 // ---- HSV colour picker (shared) : an SV square + a rainbow hue bar + a live swatch. Replaces the per-channel
 // R/G/B slider triples in every module. The two draggable zones (SV square, hue bar) share the g_slider latch.
 // HSV is CACHED per-uid so dragging Value to black or Saturation to 0 doesn't lose the hue (RGB can't encode it).

@@ -18,13 +18,8 @@
 namespace aio {
 
 // one On/Off toggle row (label left, chip right). Its own { } block (ROW_BAND declares ap/yo).
-#define PLR_TOGGLE(UID, LABEL, FIELD)                                                                                   \
-    { ROW_BAND(48.0f)                                                                                                  \
-        const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);                                                 \
-        fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, LABEL, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);      \
-        const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;    \
-        if (toggle_chip(dev, fo, mo, click, UID, bx2, bty, bbw, bbh, (FIELD) ? tr("On", "Oui") : tr("Off", "Non"), (FIELD) != 0)) { FIELD = !(FIELD); save_ui_config(); } \
-    } ROW_NEXT(48.0f)
+// Thin wrapper over the shared row_toggle (config_controls) -- kept as a macro so each call lands on its own __LINE__.
+#define PLR_TOGGLE(UID, LABEL, FIELD) { ROW_BAND(48.0f) row_toggle(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD)); } ROW_NEXT(48.0f)
 
 // draw the Player category (+ its Box / Content / Bars / Buffs sub-sections). Advances ry/ri.
 void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, bool click,
