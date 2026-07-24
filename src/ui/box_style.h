@@ -13,6 +13,10 @@ struct WindowSkin;
 void draw_themed_box(u32 dev, const WindowSkin* partySkin, float x, float y, float w, float h,
                      const BoxStyle& bs, float base, float S);
 
+// The box's effective FRAME colour (RGB, alpha 0xFF), resolving Same-as-Party / procedural-hue / FFXI-skin -> tint an
+// inner accent (e.g. the Skillchains "Nuke:" outline) to MATCH the box border. Soft-blue fallback while a skin loads.
+u32 box_style_border_color(u32 dev, const WindowSkin* partySkin, const BoxStyle& bs);
+
 // Per-box "Custom -> FFXI" skins own their own textures (independent of the shared party skin). Wired from Hud :
 void box_skins_forget();    // device recreate : forget the handles (reload lazily)
 void box_skins_dispose();   // shutdown : release them

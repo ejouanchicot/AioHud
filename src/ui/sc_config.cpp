@@ -53,6 +53,7 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         SC_TOGGLE(CTRL_ID, tr("Step line", "Ligne Step"),                    c.scStep)
         SC_TOGGLE(CTRL_ID, tr("Property + elements", "Propri\xC3\xA9t\xC3\xA9 + \xC3\xA9l\xC3\xA9ments"), c.scProps)
         SC_TOGGLE(CTRL_ID, tr("Weaponskill list", "Liste weaponskills"),     c.scList)
+        SC_TOGGLE(CTRL_ID, tr("TP indicator", "Indicateur TP"),              c.scTP)
         // WS spacing : the vertical gap between each weaponskill in the continuation list. Always shown (it only
         // has a visible effect while the list is on, but hiding it made it hard to find).
         { ROW_BAND(46.0f)

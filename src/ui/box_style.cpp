@@ -59,6 +59,19 @@ void draw_themed_box(u32 dev, const WindowSkin* partySkin, float x, float y, flo
     }
 }
 
+// The effective FRAME colour (RGB, alpha 0xFF) of a themed box -> lets a widget tint an inner accent to MATCH the box's
+// border. Resolves Same-as-Party / procedural-hue / FFXI-skin, exactly like draw_themed_box picks its frame. Soft-blue
+// fallback while a skin is still loading. (mirrors the per-cell border recipe in player.cpp's equipment grid)
+u32 box_style_border_color(u32 dev, const WindowSkin* partySkin, const BoxStyle& bs) {
+    const UiConfig& c = ui_config();
+    const bool cp = bs.themeCopy != 0;
+    const int   theme = cp ? c.skinTheme : bs.theme;
+    const unsigned hue = cp ? c.skinHue : bs.hue;
+    if (window_theme_is_proc(theme)) return box_theme_border_color(theme, hue) | 0xFF000000u;
+    const WindowSkin* skin = cp ? partySkin : box_ffxi_skin(dev, window_theme_variant(theme));
+    return ((skin && skin->ready()) ? skin->borderColor : 0xFF6699BBu) | 0xFF000000u;
+}
+
 // ---- shared config rows (Box on/off, Transparency, Theme Same-as-Party/own family+hue+grid+luminosity) ----
 // Each control is keyed by CTRL_ID (file:line hash, see config_controls.h) -- no hand-numbered uids.
 void ConfigPage::draw_box_appearance(u32 dev, Font* fo, const MouseState* mo, bool click,

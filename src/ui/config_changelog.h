@@ -275,6 +275,14 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_65[] = {
+    { "*The Skillchains box now tells nukers which element to burst -- at a glance.* When a chain forms, a \"Nuke:\" line shows the burst element(s) as coloured chips, and every weaponskill in the continuation list carries a coloured square for the element it would produce. A TP gauge at the bottom fills toward 1000 and turns green the moment you can weaponskill.",
+      "*La boite Skillchains indique maintenant aux nukeurs quel element burst -- d'un coup d'oeil.* Quand une chaine se forme, une ligne \"Nuke:\" montre le(s) element(s) de burst en pastilles colorees, et chaque weaponskill de la liste de continuation porte un carre colore pour l'element qu'il produirait. Une jauge de TP en bas se remplit vers 1000 et passe au vert des que vous pouvez weaponskill." },
+    { "*Sharper timing.* The \"Wait\" now switches to \"Go!\" about half a second early -- a weaponskill you start then still lands in time with normal server lag -- and the closing \"Burst\" countdown is precise now, fading from green through yellow to red as it runs out.",
+      "*Timing plus juste.* Le \"Wait\" passe en \"Go!\" environ une demi-seconde plus tot -- un weaponskill lance a ce moment atterrit quand meme a temps avec la latence serveur normale -- et le decompte du \"Burst\" final est desormais precis, virant du vert au jaune puis au rouge en s'ecoulant." },
+    { "*Better skillchain detection.* Scholar Immanence spells are recognised as chain openers and continuers, and Aeonic weapons correctly offer their Radiance / Umbra follow-ups -- but ONLY when you actually wield one, so a non-Aeonic weapon like Ukko's Fury no longer falsely shows Radiance. A Light or Darkness chain also closes correctly now instead of suggesting an impossible next step.",
+      "*Meilleure detection des skillchains.* Les sorts d'Immanence du Scholar sont reconnus comme ouvreurs et continuateurs de chaine, et les armes Aeonic proposent correctement leurs suites Radiance / Umbra -- mais UNIQUEMENT quand vous en portez une, donc une arme non-Aeonic comme Ukko's Fury n'affiche plus Radiance a tort. Une chaine Light ou Darkness se ferme aussi correctement au lieu de proposer une etape impossible." },
+};
 static const ChangeLine CL_64[] = {
     { "*Buffs you cast on your party now keep their timer across a zone.* An area ENHANCING buff that also lands on you -- Protect / Shell / Regen... under Accession -- stays grouped as \"(AoE N)\" with the correct countdown after you zone, instead of breaking into separate per-person rows showing a stale, too-short time. It also no longer briefly flickers to a per-person row while your own buffs reappear after the loading screen. (Songs and rolls drop on a zone, so they don't apply here.)",
       "*Les buffs que vous lancez sur votre groupe gardent leur minuteur en changeant de zone.* Un buff d'AMELIORATION de zone qui vous touche aussi -- Protect / Shell / Regen... sous Accession -- reste regroupe en \"(AoE N)\" avec le bon decompte apres un zone, au lieu de se casser en lignes separees par personne avec un temps perime trop court. Il ne clignote plus non plus brievement en ligne par-personne pendant que vos propres buffs reapparaissent apres l'ecran de chargement. (Les chants et rolls disparaissent au zone, donc ils ne sont pas concernes.)" },
@@ -378,6 +386,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.65", CL_65, (int)(sizeof(CL_65) / sizeof(CL_65[0])) },
     { "1.0.64", CL_64, (int)(sizeof(CL_64) / sizeof(CL_64[0])) },
     { "1.0.63", CL_63, (int)(sizeof(CL_63) / sizeof(CL_63[0])) },
     { "1.0.62", CL_62, (int)(sizeof(CL_62) / sizeof(CL_62[0])) },

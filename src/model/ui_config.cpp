@@ -271,7 +271,7 @@ static void save_config_to(const char* path) {
         for (int i = 0; i < c.favColorN; ++i) fprintf(f, "%s%u", i ? "," : "", c.favColors[i]);
         fprintf(f, "\n");
     }
-    fprintf(f, "sc2=%d,%d,%d,%d,%d,%.4f\n", c.scTimer, c.scStep, c.scProps, c.scList, c.scTitle, c.scListGap);   // skillchains : element toggles (title + WS-list spacing appended)
+    fprintf(f, "sc2=%d,%d,%d,%d,%d,%.4f,%d\n", c.scTimer, c.scStep, c.scProps, c.scList, c.scTitle, c.scListGap, c.scTP);   // skillchains : element toggles (title + WS-list spacing + TP line appended)
     for (int i = 0; i < SC_TE_COUNT; ++i) {                                       // skillchains : per-element typography
         const TextStyle& ts = c.scText[i];
         int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
@@ -567,7 +567,7 @@ static bool load_config_from(const char* path) {
         else if (strncmp(line, "mm3=", 4) == 0) { int ck = 1, ti = 1, dy = 1, mo = 1, re = 1, cp = 0; float ms = 1.0f; int n = sscanf(line + 4, "%d,%d,%d,%d,%d,%f,%d", &ck, &ti, &dy, &mo, &re, &ms, &cp); if (n >= 1) { c.mmClock = ck; c.mmClkTime = ti; c.mmClkDay = dy; c.mmClkMoon = mo; c.mmClkReal = re; if (n >= 6) c.mmMapSize = ms; if (n >= 7) c.mmClockPos = cp; } }
         else if (strncmp(line, "wscol=", 6) == 0) { unsigned na = 0, d1 = 0, d2 = 0; if (sscanf(line + 6, "%x,%x,%x", &na, &d1, &d2) == 3) { c.wsNameCol = na; c.wsDmgCol1 = d1; c.wsDmgCol2 = d2; } }
         else if (strncmp(line, "ws=", 3) == 0) { int sh = 1, ft = 0, fx = 1; float sc = 1.0f, x = 0.5f, y = 0.36f; int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d", &sh, &sc, &x, &y, &ft, &fx); if (n >= 1) { c.wsShow = sh; if (n >= 2) c.wsScale = sc; if (n >= 3) c.wsX = x; if (n >= 4) c.wsY = y; if (n >= 5) c.wsFont = ft; if (n >= 6) c.wsFx = fx; } }
-        else if (strncmp(line, "sc2=", 4) == 0) { int tm = 1, st = 1, pr = 1, ls = 1, ti = 1; float lg = 1.0f; int n = sscanf(line + 4, "%d,%d,%d,%d,%d,%f", &tm, &st, &pr, &ls, &ti, &lg); if (n >= 1) { c.scTimer = tm; c.scStep = st; c.scProps = pr; c.scList = ls; if (n >= 5) c.scTitle = ti; if (n >= 6) c.scListGap = lg; } }
+        else if (strncmp(line, "sc2=", 4) == 0) { int tm = 1, st = 1, pr = 1, ls = 1, ti = 1, tp = 1; float lg = 1.0f; int n = sscanf(line + 4, "%d,%d,%d,%d,%d,%f,%d", &tm, &st, &pr, &ls, &ti, &lg, &tp); if (n >= 1) { c.scTimer = tm; c.scStep = st; c.scProps = pr; c.scList = ls; if (n >= 5) c.scTitle = ti; if (n >= 6) c.scListGap = lg; if (n >= 7) c.scTP = tp; } }
         else if (sscanf(line, "scText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < SC_TE_COUNT) {
             TextStyle& ts = c.scText[idx];
             ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
@@ -1125,7 +1125,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
         const TextStyle& x = a.epText[k], & y = b.epText[k];
         if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
     }
-    if (a.scTitle != b.scTitle || a.scTimer != b.scTimer || a.scStep != b.scStep || a.scProps != b.scProps || a.scList != b.scList || a.scListGap != b.scListGap) return false;
+    if (a.scTitle != b.scTitle || a.scTimer != b.scTimer || a.scStep != b.scStep || a.scProps != b.scProps || a.scList != b.scList || a.scListGap != b.scListGap || a.scTP != b.scTP) return false;
     for (int k = 0; k < SC_TE_COUNT; ++k) {
         const TextStyle& x = a.scText[k], & y = b.scText[k];
         if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;

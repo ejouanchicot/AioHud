@@ -37,6 +37,21 @@ static float sc_arrow(u32 dev, float x, float cy, float sz, u32 col) {
     seg_soft(dev, x + w - hs, cy + hs, x + w + 0.5f, cy, th, col);     // lower head
     return w + hs * 0.5f;
 }
+// lerp two ARGB colours (t in 0..1) -- used for the closing-burst timer fade (green -> yellow -> red as it expires).
+static u32 sc_mix(u32 a, u32 b, float t) {
+    if (t < 0.0f) t = 0.0f; if (t > 1.0f) t = 1.0f;
+    const int ar=(a>>16)&0xFF, ag=(a>>8)&0xFF, ab=a&0xFF, aa=(a>>24)&0xFF;
+    const int br=(b>>16)&0xFF, bg=(b>>8)&0xFF, bb=b&0xFF, ba=(b>>24)&0xFF;
+    const int r=ar+(int)((br-ar)*t+0.5f), g=ag+(int)((bg-ag)*t+0.5f), bl=ab+(int)((bb-ab)*t+0.5f), al=aa+(int)((ba-aa)*t+0.5f);
+    return ((u32)al<<24)|((u32)r<<16)|((u32)g<<8)|(u32)bl;
+}
+// a small filled colour SQUARE (an element "pip"), vertically centred at cy -> the burst element reads at a GLANCE
+// by colour, not by name. Returns its side. Caller must be in colour-quad state (dColorQuadState).
+static float sc_pip(u32 dev, float x, float cy, float sz, u32 col) {
+    const float s = sz * 0.66f;
+    rrect(dev, snap(x), snap(cy - s * 0.5f), s, s, s * 0.24f, col, col, 1.0f);
+    return s;
+}
 
 // A small themed box on the CURRENT target's active skillchain : title / burst timer (Wait->Go!->Burst) /
 // "Step: N > <closing move>" / "[property] (burst elements)" / the WS continuation list. Data from
@@ -52,7 +67,7 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     if (!f.font && !f.fonts) return;
 
     // ---- gather the display data (live resonance, or a sample in preview/edit) ----
-    int step, phase, nProp; unsigned char props[3]; bool formed; const char* actName; float timerSec;
+    int step, phase, nProp; unsigned char props[3]; bool formed; const char* actName; float timerSec; float burstFrac = 1.0f;
     if (preview || editing) {
         step = 2; props[0] = SCP_Fusion; nProp = 1; formed = true; actName = "Savage Blade"; phase = 1;
         timerSec = preview ? (5.0f - (float)(GetTickCount() % 5000u) / 1000.0f) : 5.0f;   // preview counts down + loops
@@ -84,10 +99,16 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         // NO continuation list (the reference addon's `if closed then disp_info=''`). Without this the closed chain
         // still passed through its post-close Wait window (phase 0), which REBUILDS the continuation list -> the stale
         // "Ukko's Fury -> Light" lingered a moment before the box reached phase 2 and cleared it.
-        if      (r->closed)        { phase = 2; timerSec = (now < r->endMs) ? (float)(r->endMs - now) / 1000.0f : 0.0f; }
-        else if (now >= r->endMs)  { phase = 1; timerSec = 0.0f; }
-        else if (now < r->delayMs) { phase = 0; timerSec = (float)(r->delayMs - now) / 1000.0f; }
-        else                       { phase = 1; timerSec = (float)(r->endMs - now) / 1000.0f; }
+        // WS LEAD : the Wait phase isn't hard -- a WS started ~0.5s BEFORE the window truly opens still lands in time
+        // (server lag carries it), so flip to Go! that early and count the Wait down to the actionable moment, not to
+        // delayMs. Practical difference the player feels : you may fire at ~0.5 left on Wait.
+        const unsigned WS_LEAD = 500u;
+        const unsigned goAt = (r->delayMs > WS_LEAD) ? (r->delayMs - WS_LEAD) : 0u;
+        if      (r->closed)       { phase = 2; timerSec = (now < r->endMs) ? (float)(r->endMs - now) / 1000.0f : 0.0f;
+                                    burstFrac = (r->endMs > r->openMs && now < r->endMs) ? (float)(r->endMs - now) / (float)(r->endMs - r->openMs) : 0.0f; }   // 1 = window full (green) .. 0 = expired (red)
+        else if (now >= r->endMs) { phase = 1; timerSec = 0.0f; }
+        else if (now < goAt)      { phase = 0; timerSec = (float)(goAt - now) / 1000.0f; }
+        else                      { phase = 1; timerSec = (float)(r->endMs - now) / 1000.0f; }
         actName = "";
         if (r->resource == SCR_WS)         { const WSRow* w = ws_info(r->actionId);        if (w) actName = w->en; }
         else if (r->resource == SCR_SPELL) { const SpellRow* s = spell_info(r->actionId);   if (s) actName = s->en; }
@@ -166,11 +187,19 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     const float zTitle = sc_sz(SC_TITLE, 16.0f) * S, zTimer = sc_sz(SC_TIMER, 14.0f) * S, zStep = sc_sz(SC_STEP, 14.0f) * S, zProp = sc_sz(SC_PROP, 14.0f) * S, zList = sc_sz(SC_LIST, 14.0f) * S;
     const float oTitle = sc_ow(SC_TITLE, 1.2f) * S, oTimer = sc_ow(SC_TIMER, 1.2f) * S, oStep = sc_ow(SC_STEP, 1.2f) * S, oProp = sc_ow(SC_PROP, 1.2f) * S, oList = sc_ow(SC_LIST, 1.2f) * S;
 
+    // TP indicator, appended to the timer line : GREEN once you have >=1000 TP, so at a glance you know whether the
+    // listed WS continuations are actually doable RIGHT NOW (reads self TP from memory -- a packet-only addon can't).
+    const int tpRaw = (preview || editing) ? 1000 : (f.game ? f.game->me.tp : 0);
+    const int tpVal = tpRaw < 0 ? 0 : (tpRaw > 3000 ? 3000 : tpRaw);
+    char tpBuf[16]; sprintf(tpBuf, "TP %d", tpVal);
+
     // ---- text lines (+ per-element CAPS + colour) ----
     char l2[24]; u32 tcol;
     if      (phase == 0) { sprintf(l2, "Wait  %.1f", timerSec); tcol = 0xFFFF6060u; }
     else if (phase == 1) { sprintf(l2, "Go!  %.1f",  timerSec); tcol = 0xFF66FF66u; }
-    else                 { sprintf(l2, "Burst %.0f", timerSec); tcol = white; }
+    else                 { sprintf(l2, "Burst %.1f", timerSec);   // closing burst : fade green (full window) -> yellow -> red (0.0)
+        tcol = burstFrac > 0.5f ? sc_mix(0xFFFFD84Au, 0xFF6EE66Eu, (burstFrac - 0.5f) * 2.0f)
+                                : sc_mix(0xFFFF5A5Au, 0xFFFFD84Au, burstFrac * 2.0f); }
     char l3pre[24]; sprintf(l3pre, "Step: %d", step);
     const char* aname = (actName && actName[0]) ? actName : "?";
     char up0[24], up2[24], up3[32], up3b[32], pbuf[24];
@@ -185,35 +214,53 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     const u32 propOver = ui_config().scText[SC_PROP].colorOn ? ui_config().scText[SC_PROP].color : 0;   // 0 = keep semantic per-segment
     const SCInfo& si = sc_info(props[0]);   // elements only meaningful once formed
 
-    // ---- measure -> box size. Property line = "[p1, p2, ...]" (+ " (e1, e2)" once a chain has FORMED). ----
-    float w4 = fProp->measure("[", zProp) + fProp->measure("]", zProp);
-    for (int i = 0; i < nProp; ++i) { w4 += fProp->measure(sc_up(SC_PROP, scprop_name(props[i]), pbuf, 24), zProp); if (i + 1 < nProp) w4 += fProp->measure(" · ", zProp); }
-    if (formed) { w4 += fProp->measure(" (", zProp) + fProp->measure(")", zProp);
-        for (int i = 0; i < si.nElem; ++i) { w4 += fProp->measure(sc_up(SC_PROP, scelem_name(si.elem[i]), pbuf, 24), zProp); if (i + 1 < si.nElem) w4 += fProp->measure(" · ", zProp); } }
-    const bool shTitle = C.scTitle != 0, shTimer = C.scTimer != 0, shStep = C.scStep != 0, shProps = C.scProps != 0;
+    const bool shTitle = C.scTitle != 0, shTimer = C.scTimer != 0, shStep = C.scStep != 0, shProps = C.scProps != 0, shTP = C.scTP != 0;
     const int  shownList = C.scList ? listN : 0;
     float scGap = C.scListGap; if (scGap < 0.6f) scGap = 0.6f; if (scGap > 3.0f) scGap = 3.0f;
     const float listPit = lineH * scGap;   // per-WS row pitch in the continuation list (config: WS spacing slider)
+
+    // ---- NUKE bandeau (the redesigned property line) : once a chain has FORMED, a bordered strip = "NUKE" + a colour
+    // PIP + name per burst element (a nuker reads which element to magic-burst at a GLANCE, not by memorising SC->element).
+    // Before a chain forms it's just the resonating property name. The same pips are appended to each continuation row. ----
+    const float pPip = zProp * 0.66f, lPip = zList * 0.66f, pipGap = 3.0f * S, bandGap = 7.0f * S, bandPad = 8.0f * S;
+    char eb[24];
+    float bandContent;
+    if (formed) {
+        bandContent = fProp->measure(sc_up(SC_PROP, "Nuke:", pbuf, 24), zProp);
+        for (int i = 0; i < si.nElem; ++i) bandContent += bandGap + pPip + pipGap + fProp->measure(sc_up(SC_PROP, scelem_name(si.elem[i]), eb, 24), zProp);
+    } else {
+        bandContent = fProp->measure("[", zProp) + fProp->measure("]", zProp);
+        for (int i = 0; i < nProp; ++i) { bandContent += fProp->measure(sc_up(SC_PROP, scprop_name(props[i]), pbuf, 24), zProp); if (i + 1 < nProp) bandContent += fProp->measure(" · ", zProp); }
+    }
+    const bool  bandBorder = formed && C.scBox.on && C.scBox.border;      // frame the Nuke strip only when the box itself has a border
+    const float bandBoxH = lineH + 2.0f * S;                              // the framed strip's height (thin outline only)
+    const float bandW = bandBorder ? (bandContent + 2.0f * bandPad) : bandContent;
+    const float bandH = bandBorder ? (bandBoxH + 4.0f * S) : lineH;       // vertical space the bandeau consumes
+
     float bw = shTitle ? fTitle->measure(title, zTitle) : 0.0f;
     if (shTimer) { const float a = fTimer->measure(l2u, zTimer); if (a > bw) bw = a; }
     if (shStep && stepW > bw) bw = stepW;
-    if (shProps && w4 > bw) bw = w4;
-    // continuation list = 3 ALIGNED columns : [name]  ->  [Lv.X]  [property]. Column widths = the max across rows,
-    // so the arrow / level / property line up vertically (reused in the draw pass below).
+    if (shProps && bandW > bw) bw = bandW;
+    // continuation list = ALIGNED columns : [name] -> [Lv.X] [property] [element pips]. Column widths = the max across
+    // rows, so arrow / level / property / pips line up vertically (reused in the draw pass below).
     const float lColGap = 8.0f * S;
-    float lcName = 0.0f, lcLvl = 0.0f, lcProp = 0.0f;
+    float lcName = 0.0f, lcLvl = 0.0f, lcProp = 0.0f, lcPips = 0.0f;
     for (int i = 0; i < shownList; ++i) {
         char nb[28], pb2[24], lvb[10]; sprintf(lvb, "Lv.%d", list[i].lvl);
         const float wN = fList->measure(sc_up(SC_LIST, list[i].name, nb, 28), zList);
         const float wL = fList->measure(lvb, zList);
         const float wP = fList->measure(sc_up(SC_LIST, scprop_name(list[i].prop), pb2, 24), zList);
-        if (wN > lcName) lcName = wN; if (wL > lcLvl) lcLvl = wL; if (wP > lcProp) lcProp = wP;
+        const int ne = sc_info(list[i].prop).nElem;
+        const float wPips = ne > 0 ? (ne * lPip + (ne - 1) * pipGap) : 0.0f;
+        if (wN > lcName) lcName = wN; if (wL > lcLvl) lcLvl = wL; if (wP > lcProp) lcProp = wP; if (wPips > lcPips) lcPips = wPips;
     }
-    if (shownList > 0) { const float lw = lcName + listGap + listArrowW + listGap + lcLvl + lColGap + lcProp; if (lw > bw) bw = lw; }
+    if (shownList > 0) { const float lw = lcName + listGap + listArrowW + listGap + lcLvl + lColGap + lcProp + (lcPips > 0.0f ? (lColGap + lcPips) : 0.0f); if (lw > bw) bw = lw; }
+    if (shTP) { const float a = fTimer->measure(tpBuf, zTimer) + 18.0f * S; if (a > bw) bw = a; }   // TP gauge pill (bottom)
     if (bw < 40.0f * S) bw = 40.0f * S;   // floor : keep a sane minimum even with everything but one line off
-    const int nBody = (shTimer ? 1 : 0) + (shStep ? 1 : 0) + (shProps ? 1 : 0);
     const float listH = (shownList > 0) ? (7.0f * S + shownList * listPit) : 0.0f;
-    const float boxW = bw + 2.0f * pad, boxH = (shTitle ? titleH : 0.0f) + nBody * lineH + listH + 2.0f * pad;
+    const float tpH = shTP ? (lineH + 6.0f * S) : 0.0f;   // the TP indicator line at the very bottom + a small gap above it
+    const float bodyH = (shTimer ? lineH : 0.0f) + (shStep ? lineH : 0.0f) + (shProps ? bandH : 0.0f);
+    const float boxW = bw + 2.0f * pad, boxH = (shTitle ? titleH : 0.0f) + bodyH + listH + tpH + 2.0f * pad;
     if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }   // Help scale-to-fit : report dims, don't draw
 
     // ---- position (+ edit-mode drag). scX = the box's HORIZONTAL CENTRE (so it grows symmetrically as the
@@ -232,7 +279,41 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     float cy = py + pad;
     if (shTitle) { cy += titleH * 0.5f; fTitle->begin(dev); fTitle->draw_c(dev, cx, cy, title, zTitle, titleCol, strk, oTitle); cy += titleH * 0.5f + lineH * 0.5f; }
     else cy += lineH * 0.5f;   // no title -> first body line starts at the top pad
-    if (shTimer) { fTimer->begin(dev); fTimer->draw_c(dev, cx, cy, l2u, zTimer, timerCol, strk, oTimer); cy += lineH; }
+    if (shTimer) { fTimer->begin(dev); fTimer->draw_c(dev, cx, cy, l2u, zTimer, timerCol, strk, oTimer); cy += lineH; }   // timer (phase colour)
+    // ---- NUKE bandeau (right under the timer = the nuker's line). FORMED -> "Nuke:" + a colour PIP and name per burst
+    // element (a thin outline only when the box has a border) ; not formed yet -> the resonating property name (centred). ----
+    if (shProps) {
+        if (formed) {
+            float sx;
+            if (bandBorder) {                                                      // frame only when the box has a border (matches its chrome)
+                const float bx = snap(cx - bandW * 0.5f), by = snap(cy - bandBoxH * 0.5f);
+                const u32 bcol = (box_style_border_color(dev, f.skin, C.scBox) & 0x00FFFFFFu) | 0xB4000000u;   // the box's OWN theme frame colour (Royal gold / iron / neon / FFXI skin), ~70% alpha
+                dColorQuadState(dev);
+                rrect_stroke(dev, bx, by, bandW, bandBoxH, 4.0f * S, bcol, 1.2f * S);   // thin outline, no fill, matching the theme
+                sx = bx + bandPad;
+            } else {
+                sx = cx - bandW * 0.5f;
+            }
+            const char* lbl = sc_up(SC_PROP, "Nuke:", pbuf, 24);
+            fProp->begin(dev); fProp->draw_lc(dev, sx, cy, lbl, zProp, dim, strk, oProp); sx += fProp->measure(lbl, zProp);
+            for (int i = 0; i < si.nElem; ++i) {                                    // one colour PIP + element name per burst element
+                sx += bandGap;
+                const u32 ecol = scelem_color(si.elem[i]);
+                dColorQuadState(dev); sc_pip(dev, sx, cy, zProp, ecol); sx += pPip + pipGap;
+                const char* en = sc_up(SC_PROP, scelem_name(si.elem[i]), eb, 24);
+                fProp->begin(dev); fProp->draw_lc(dev, sx, cy, en, zProp, ecol, strk, oProp); sx += fProp->measure(en, zProp);
+            }
+        } else {
+            fProp->begin(dev);
+            char sb[24]; float sx = cx - bandW * 0.5f;
+            #define SEG(str, col) { const char* _s = (str); fProp->draw_lc(dev, sx, cy, _s, zProp, (col), strk, oProp); sx += fProp->measure(_s, zProp); }
+            SEG("[", dim);
+            for (int i = 0; i < nProp; ++i) { SEG(sc_up(SC_PROP, scprop_name(props[i]), sb, 24), propOver ? propOver : scprop_color(props[i])); if (i + 1 < nProp) SEG(" · ", dim); }
+            SEG("]", dim);
+            #undef SEG
+        }
+        cy += bandH;
+    }
     if (shStep)  {   // "Step: N  ->  <move>" with a VECTOR arrow (font can't bake U+2192), centred
         float sx = cx - stepW * 0.5f;
         fStep->begin(dev); fStep->draw_lc(dev, sx, cy, l3preU, zStep, stepCol, strk, oStep); sx += fStep->measure(l3preU, zStep) + stepGap;
@@ -240,30 +321,16 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         fStep->begin(dev); fStep->draw_lc(dev, sx, cy, l3name, zStep, stepCol, strk, oStep);
         cy += lineH;
     }
-    // property line : multi-colour "[prop] (elem, ...)" (semantic colours, or the element's custom colour if set).
-    if (shProps) {
-        fProp->begin(dev);
-        char sb[24]; float sx = cx - w4 * 0.5f;
-        #define SEG(str, col) { const char* _s = (str); fProp->draw_lc(dev, sx, cy, _s, zProp, (col), strk, oProp); sx += fProp->measure(_s, zProp); }
-        SEG("[", dim);
-        for (int i = 0; i < nProp; ++i) { SEG(sc_up(SC_PROP, scprop_name(props[i]), sb, 24), propOver ? propOver : scprop_color(props[i])); if (i + 1 < nProp) SEG(" · ", dim); }
-        SEG("]", dim);
-        if (formed) { SEG(" (", dim);
-            for (int i = 0; i < si.nElem; ++i) { SEG(sc_up(SC_PROP, scelem_name(si.elem[i]), sb, 24), propOver ? propOver : scelem_color(si.elem[i])); if (i + 1 < si.nElem) SEG(" · ", dim); }
-            SEG(")", dim); }
-        #undef SEG
-        cy += lineH;
-    }
 
-    // ---- continuation list : 3 ALIGNED columns -> [name]  ->  [Lv.X]  [property]. Fixed column x from the max
-    // widths measured above, so the arrow / level / property line up down the list (name in the List colour,
-    // level dim, result in its semantic colour). ----
+    // ---- continuation list : ALIGNED columns -> [name] -> [Lv.X] [property] [element pips]. Fixed column x from the max
+    // widths measured above, so arrow / level / property / pips line up down the list. ----
     if (shownList > 0) {
         cy += 6.0f * S;   // small gap above the list
         const float lx = px + pad;                                   // col 1 : name
         const float arrowX = lx + lcName + listGap;                  //         arrow
         const float lvlX   = arrowX + listArrowW + listGap;          // col 2 : Lv.X
         const float propX  = lvlX + lcLvl + lColGap;                 // col 3 : property
+        const float pipsX  = propX + lcProp + lColGap;               // col 4 : burst-element pips
         char nb[28], pb2[24], lvb[10];
         for (int i = 0; i < shownList; ++i) {
             const char* nm = sc_up(SC_LIST, list[i].name, nb, 28);
@@ -273,8 +340,27 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             fList->begin(dev); fList->draw_lc(dev, lvlX, cy, lvb, zList, dim, strk, oList);
             const char* pp = sc_up(SC_LIST, scprop_name(list[i].prop), pb2, 24);
             fList->draw_lc(dev, propX, cy, pp, zList, scprop_color(list[i].prop), strk, oList);
+            const SCInfo& ei = sc_info(list[i].prop);                 // this result's burst elements -> colour pips
+            float ppx = pipsX; dColorQuadState(dev);
+            for (int e = 0; e < ei.nElem; ++e) { sc_pip(dev, ppx, cy, zList, scelem_color(ei.elem[e])); ppx += lPip + pipGap; }
             cy += listPit;
         }
+    }
+
+    // ---- TP indicator (bottom) : a compact gauge PILL that fills toward 1000 (weaponskill-ready) and turns GREEN once
+    // full -> at a glance you know if the listed continuations are actually doable now. Blue while building. ----
+    if (shTP) {
+        cy += 6.0f * S;
+        const bool ready = tpVal >= 1000;
+        const float frac = ready ? 1.0f : (float)tpVal / 1000.0f;
+        const float pillW = fTimer->measure(tpBuf, zTimer) + 18.0f * S, pillH = zTimer + 6.0f * S, rr = pillH * 0.5f;
+        const float bx = snap(cx - pillW * 0.5f), by = snap(cy - pillH * 0.5f);
+        dColorQuadState(dev);
+        rrect(dev, bx, by, pillW, pillH, rr, 0x552A3450u, 0x55151C30u, 1.2f);                       // dim track
+        const u32 fTop = ready ? 0xFF57C878u : 0xFF3E6EA6u, fBot = ready ? 0xFF2E9E52u : 0xFF29477Au;
+        if (ready)               rrect(dev, bx, by, pillW, pillH, rr, fTop, fBot, 1.2f);            // full capsule
+        else if (frac > 0.03f)   rrect_left(dev, bx, by, pillW * frac, pillH, rr, fTop, fBot, 1.2f); // left-filled gauge (flat level edge)
+        fTimer->begin(dev); fTimer->draw_c(dev, cx, cy, tpBuf, zTimer, ready ? 0xFFEFFFF3u : 0xFFDDE5F2u, strk, oTimer);
     }
 }
 
