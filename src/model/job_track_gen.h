@@ -5,8 +5,8 @@
 #pragma once
 namespace aio {
 enum TrackCat { TC_REFRESH, TC_HASTE, TC_PROTECT, TC_REGEN, TC_ENSPELL, TC_BARSPELL, TC_GAIN, TC_SPIKES, TC_DEFENSE, TC_SONG, TC_GEO, TC_NINJUTSU, TC_BLUE, TC_BLU_BUFF, TC_BLU_PHYS, TC_BLU_MAG, TC_BLU_DEB, TC_ENHANCE, TC_HEAL, TC_NUKE, TC_ENFEEBLE, TC_DARK, TC_DIVINE, TC_SUMMON, TC_UTILITY, TC_ROLL, TC_SAMBA, TC_DANCE, TC_RUNE, TC_WARD, TC_STRAT, TC_BPACT, TC_JA, TC_FOOD, TC_AFTERMATH, TC_SIGNET, TC_CRAFT, TC_OTHER, TC_COUNT };
-static const char* const TRACK_CAT_EN[TC_COUNT] = { "Refresh", "Haste / Flurry", "Protect / Shell", "Regen", "Enspells", "Barspells", "Gains", "Spikes", "Defensive", "Songs", "Geomancy", "Ninjutsu", "Blue Magic", "Blue: Buff", "Blue: Physical", "Blue: Magical", "Blue: Debuff", "Enhancing", "Healing", "Elemental", "Enfeebling", "Dark Magic", "Divine", "Summons", "Utility", "Rolls", "Sambas", "Dances", "Runes", "Wards", "Stratagems", "Blood Pacts", "Job Abilities", "Food", "Aftermath", "Signet", "Craft", "Other" };
-static const char* const TRACK_CAT_FR[TC_COUNT] = { "Refresh", "Haste / Flurry", "Protect / Shell", "Regen", "Enchantements", "Barspells", "Gains", "Spikes", "Defensif", "Chants", "Geomancie", "Ninjutsu", "Magie Bleue", "Bleu: Buff", "Bleu: Physique", "Bleu: Magique", "Bleu: Debuff", "Amelioration", "Soins", "Elementaire", "Affaiblissement", "Magie Noire", "Divine", "Invocations", "Utilitaire", "Rolls", "Sambas", "Danses", "Runes", "Wards", "Stratagemes", "Pactes", "Aptitudes", "Nourriture", "Aftermath", "Signet", "Artisanat", "Autre" };
+static const char* const TRACK_CAT_EN[TC_COUNT] = { "Refresh", "Haste / Flurry", "Protect / Shell", "Regen", "Enspells", "Barspells", "Gain / Boost", "Spikes", "Defensive", "Songs", "Geomancy", "Ninjutsu", "Blue Magic", "Blue: Buff", "Blue: Physical", "Blue: Magical", "Blue: Debuff", "Enhancing", "Healing", "Elemental", "Enfeebling", "Dark Magic", "Divine", "Summons", "Utility", "Rolls", "Sambas", "Dances", "Runes", "Wards", "Stratagems", "Blood Pacts", "Job Abilities", "Food", "Aftermath", "Signet", "Craft", "Other" };
+static const char* const TRACK_CAT_FR[TC_COUNT] = { "Refresh", "Haste / Flurry", "Protect / Shell", "Regen", "Enchantements", "Barspells", "Gain / Boost", "Spikes", "Defensif", "Chants", "Geomancie", "Ninjutsu", "Magie Bleue", "Bleu: Buff", "Bleu: Physique", "Bleu: Magique", "Bleu: Debuff", "Amelioration", "Soins", "Elementaire", "Affaiblissement", "Magie Noire", "Divine", "Invocations", "Utilitaire", "Rolls", "Sambas", "Danses", "Runes", "Wards", "Stratagemes", "Pactes", "Aptitudes", "Nourriture", "Aftermath", "Signet", "Artisanat", "Autre" };
 struct JobBuff { unsigned short status; unsigned short recast; unsigned short level; unsigned char cat; const char* name; };
 static const JobBuff JT_WAR[] = {
     {44,0,1,32,"Mighty Strikes"},   // TC_JA
@@ -1391,374 +1391,376 @@ static const JobBuff JT_RUN[] = {
     {0,119,75,29,"Rayke"},   // TC_WARD
 };
 // GLOBAL buff families (job-agnostic) : one row per distinct buff STATUS, for the family-organised filter.
-struct BuffFam { unsigned short status; unsigned char cat; const char* name; };
+// alias : a SECOND status this one row also owns (0 = none). The game sometimes splits one buff over two
+// status ids -- Boost-CHR (WHM) lands 86 where Gain-CHR (RDM) lands 125, both named "CHR Boost". The row
+// toggles BOTH, so the filter behaves the way the player reads the list : one line, one buff.
+struct BuffFam { unsigned short status; unsigned short alias; unsigned char cat; const char* name; };
 static const BuffFam BUFF_FAM[] = {
-    {43,0,"Refresh"},   // TC_REFRESH
-    {581,1,"Flurry"},   // TC_HASTE
-    {33,1,"Haste"},   // TC_HASTE
-    {40,2,"Protect"},   // TC_PROTECT
-    {41,2,"Shell"},   // TC_PROTECT
-    {42,3,"Regen"},   // TC_REGEN
-    {96,4,"Enaero"},   // TC_ENSPELL
-    {95,4,"Enblizzard"},   // TC_ENSPELL
-    {94,4,"Enfire"},   // TC_ENSPELL
-    {97,4,"Enstone"},   // TC_ENSPELL
-    {98,4,"Enthunder"},   // TC_ENSPELL
-    {99,4,"Enwater"},   // TC_ENSPELL
-    {102,5,"Baraera"},   // TC_BARSPELL
-    {286,5,"Baramnesra"},   // TC_BARSPELL
-    {109,5,"Barblind"},   // TC_BARSPELL
-    {101,5,"Barblizzara"},   // TC_BARSPELL
-    {100,5,"Barfira"},   // TC_BARSPELL
-    {108,5,"Barparalyze"},   // TC_BARSPELL
-    {111,5,"Barpetra"},   // TC_BARSPELL
-    {107,5,"Barpoison"},   // TC_BARSPELL
-    {110,5,"Barsilence"},   // TC_BARSPELL
-    {106,5,"Barsleep"},   // TC_BARSPELL
-    {103,5,"Barstone"},   // TC_BARSPELL
-    {104,5,"Barthundra"},   // TC_BARSPELL
-    {112,5,"Barvira"},   // TC_BARSPELL
-    {105,5,"Barwater"},   // TC_BARSPELL
-    {86,6,"Boost-CHR"},   // TC_GAIN
-    {122,6,"Gain-AGI"},   // TC_GAIN
-    {125,6,"Gain-CHR"},   // TC_GAIN
-    {120,6,"Gain-DEX"},   // TC_GAIN
-    {123,6,"Gain-INT"},   // TC_GAIN
-    {124,6,"Gain-MND"},   // TC_GAIN
-    {119,6,"Gain-STR"},   // TC_GAIN
-    {121,6,"Gain-VIT"},   // TC_GAIN
-    {34,7,"Blaze Spikes"},   // TC_SPIKES
-    {35,7,"Ice Spikes"},   // TC_SPIKES
-    {38,7,"Shock Spikes"},   // TC_SPIKES
-    {39,8,"Aquaveil"},   // TC_DEFENSE
-    {36,8,"Blink"},   // TC_DEFENSE
-    {116,8,"Phalanx"},   // TC_DEFENSE
-    {37,8,"Stoneskin"},   // TC_DEFENSE
-    {221,9,"Adventurer's Dirge"},   // TC_SONG
-    {213,9,"Aria of Passion"},   // TC_SONG
-    {195,9,"Army's Paeon"},   // TC_SONG
-    {220,9,"Foe Sirvente"},   // TC_SONG
-    {202,9,"Fowl Aubade"},   // TC_SONG
-    {210,9,"Goblin Gavotte"},   // TC_SONG
-    {218,9,"Goddess's Hymnus"},   // TC_SONG
-    {207,9,"Gold Capriccio"},   // TC_SONG
-    {203,9,"Herb Pastoral"},   // TC_SONG
-    {214,9,"Honor March"},   // TC_SONG
-    {200,9,"Hunter's Prelude"},   // TC_SONG
-    {216,9,"Ice Carol"},   // TC_SONG
-    {197,9,"Knight's Minne"},   // TC_SONG
-    {196,9,"Mage's Ballad"},   // TC_SONG
-    {219,9,"Raptor Mazurka"},   // TC_SONG
-    {215,9,"Sage Etude"},   // TC_SONG
-    {206,9,"Scop's Operetta"},   // TC_SONG
-    {222,9,"Sentinel's Scherzo"},   // TC_SONG
-    {201,9,"Sheepfoe Mambo"},   // TC_SONG
-    {205,9,"Shining Fantasia"},   // TC_SONG
-    {199,9,"Sword Madrigal"},   // TC_SONG
-    {198,9,"Valor Minuet"},   // TC_SONG
-    {209,9,"Warding Round"},   // TC_SONG
-    {539,10,"Geo-Regen"},   // TC_GEO
-    {551,10,"Indi-Acumen"},   // TC_GEO
-    {545,10,"Indi-AGI"},   // TC_GEO
-    {556,10,"Indi-Attunement"},   // TC_GEO
-    {550,10,"Indi-Barrier"},   // TC_GEO
-    {548,10,"Indi-CHR"},   // TC_GEO
-    {543,10,"Indi-DEX"},   // TC_GEO
-    {559,10,"Indi-Fade"},   // TC_GEO
-    {552,10,"Indi-Fend"},   // TC_GEO
-    {555,10,"Indi-Focus"},   // TC_GEO
-    {558,10,"Indi-Frailty"},   // TC_GEO
-    {549,10,"Indi-Fury"},   // TC_GEO
-    {567,10,"Indi-Gravity"},   // TC_GEO
-    {580,10,"Indi-Haste"},   // TC_GEO
-    {546,10,"Indi-INT"},   // TC_GEO
-    {564,10,"Indi-Languor"},   // TC_GEO
-    {560,10,"Indi-Malaise"},   // TC_GEO
-    {547,10,"Indi-MND"},   // TC_GEO
-    {566,10,"Indi-Paralysis"},   // TC_GEO
-    {540,10,"Indi-Poison"},   // TC_GEO
-    {553,10,"Indi-Precision"},   // TC_GEO
-    {541,10,"Indi-Refresh"},   // TC_GEO
-    {561,10,"Indi-Slip"},   // TC_GEO
-    {565,10,"Indi-Slow"},   // TC_GEO
-    {542,10,"Indi-STR"},   // TC_GEO
-    {562,10,"Indi-Torpor"},   // TC_GEO
-    {563,10,"Indi-Vex"},   // TC_GEO
-    {544,10,"Indi-VIT"},   // TC_GEO
-    {554,10,"Indi-Voidance"},   // TC_GEO
-    {557,10,"Indi-Wilt"},   // TC_GEO
-    {289,11,"Gekka: Ichi"},   // TC_NINJUTSU
-    {227,11,"Kakka: Ichi"},   // TC_NINJUTSU
-    {471,11,"Migawari: Ichi"},   // TC_NINJUTSU
-    {71,11,"Monomi: Ichi"},   // TC_NINJUTSU
-    {290,11,"Myoshu: Ichi"},   // TC_NINJUTSU
-    {69,11,"Tonko: Ni"},   // TC_NINJUTSU
-    {171,11,"Yain: Ichi"},   // TC_NINJUTSU
-    {116,13,"Barrier Tusk"},   // TC_BLU_BUFF
-    {43,13,"Battery Charge"},   // TC_BLU_BUFF
-    {93,13,"Cocoon"},   // TC_BLU_BUFF
-    {37,13,"Diamondhide"},   // TC_BLU_BUFF
-    {45,13,"Fantod"},   // TC_BLU_BUFF
-    {92,13,"Feather Barrier"},   // TC_BLU_BUFF
-    {152,13,"Magic Barrier"},   // TC_BLU_BUFF
-    {190,13,"Memento Mori"},   // TC_BLU_BUFF
-    {604,13,"Mighty Guard"},   // TC_BLU_BUFF
-    {486,13,"O. Counterstance"},   // TC_BLU_BUFF
-    {36,13,"Occultation"},   // TC_BLU_BUFF
-    {38,13,"Plasma Charge"},   // TC_BLU_BUFF
-    {150,13,"Pyric Bulwark"},   // TC_BLU_BUFF
-    {33,13,"Refueling"},   // TC_BLU_BUFF
-    {42,13,"Regeneration"},   // TC_BLU_BUFF
-    {191,13,"Saline Coat"},   // TC_BLU_BUFF
-    {91,13,"Triumphant Roar"},   // TC_BLU_BUFF
-    {170,17,"Adloquium"},   // TC_ENHANCE
-    {171,17,"Animus Minuo"},   // TC_ENHANCE
-    {184,17,"Aurorastorm"},   // TC_ENHANCE
-    {275,17,"Auspice"},   // TC_ENHANCE
-    {289,17,"Crusade"},   // TC_ENHANCE
-    {70,17,"Deodorize"},   // TC_ENHANCE
-    {228,17,"Embrava"},   // TC_ENHANCE
-    {178,17,"Firestorm"},   // TC_ENHANCE
-    {568,17,"Foil"},   // TC_ENHANCE
-    {179,17,"Hailstorm"},   // TC_ENHANCE
-    {69,17,"Invisible"},   // TC_ENHANCE
-    {183,17,"Rainstorm"},   // TC_ENHANCE
-    {403,17,"Reprisal"},   // TC_ENHANCE
-    {181,17,"Sandstorm"},   // TC_ENHANCE
-    {71,17,"Sneak"},   // TC_ENHANCE
-    {432,17,"Temper"},   // TC_ENHANCE
-    {182,17,"Thunderstorm"},   // TC_ENHANCE
-    {185,17,"Voidstorm"},   // TC_ENHANCE
-    {180,17,"Windstorm"},   // TC_ENHANCE
-    {113,18,"Reraise"},   // TC_HEAL
-    {173,21,"Dread Spikes"},   // TC_DARK
-    {288,21,"Endark"},   // TC_DARK
-    {407,21,"Klimaform"},   // TC_DARK
-    {274,22,"Enlight"},   // TC_DIVINE
-    {335,25,"Allies' Roll"},   // TC_ROLL
-    {338,25,"Avenger's Roll"},   // TC_ROLL
-    {318,25,"Beast Roll"},   // TC_ROLL
-    {333,25,"Blitzer's Roll"},   // TC_ROLL
-    {330,25,"Bolter's Roll"},   // TC_ROLL
-    {331,25,"Caster's Roll"},   // TC_ROLL
-    {317,25,"Chaos Roll"},   // TC_ROLL
-    {319,25,"Choral Roll"},   // TC_ROLL
-    {337,25,"Companion's Roll"},   // TC_ROLL
-    {326,25,"Corsair's Roll"},   // TC_ROLL
-    {332,25,"Courser's Roll"},   // TC_ROLL
-    {328,25,"Dancer's Roll"},   // TC_ROLL
-    {323,25,"Drachen Roll"},   // TC_ROLL
-    {324,25,"Evoker's Roll"},   // TC_ROLL
-    {310,25,"Fighter's Roll"},   // TC_ROLL
-    {316,25,"Gallant's Roll"},   // TC_ROLL
-    {312,25,"Healer's Roll"},   // TC_ROLL
-    {320,25,"Hunter's Roll"},   // TC_ROLL
-    {325,25,"Magus's Roll"},   // TC_ROLL
-    {336,25,"Miser's Roll"},   // TC_ROLL
-    {311,25,"Monk's Roll"},   // TC_ROLL
-    {339,25,"Naturalist's Roll"},   // TC_ROLL
-    {322,25,"Ninja Roll"},   // TC_ROLL
-    {327,25,"Puppet Roll"},   // TC_ROLL
-    {315,25,"Rogue's Roll"},   // TC_ROLL
-    {600,25,"Runeist's Roll"},   // TC_ROLL
-    {321,25,"Samurai Roll"},   // TC_ROLL
-    {329,25,"Scholar's Roll"},   // TC_ROLL
-    {334,25,"Tactician's Roll"},   // TC_ROLL
-    {314,25,"Warlock's Roll"},   // TC_ROLL
-    {313,25,"Wizard's Roll"},   // TC_ROLL
-    {369,26,"Aspir Samba"},   // TC_SAMBA
-    {368,26,"Drain Samba"},   // TC_SAMBA
-    {370,26,"Haste Samba"},   // TC_SAMBA
-    {375,27,"Building Flourish"},   // TC_DANCE
-    {176,27,"Chocobo Jig"},   // TC_DANCE
-    {443,27,"Climactic Flourish"},   // TC_DANCE
-    {468,27,"Striking Flourish"},   // TC_DANCE
-    {472,27,"Ternary Flourish"},   // TC_DANCE
-    {525,28,"Flabra"},   // TC_RUNE
-    {524,28,"Gelus"},   // TC_RUNE
-    {523,28,"Ignis"},   // TC_RUNE
-    {529,28,"Lux"},   // TC_RUNE
-    {527,28,"Sulpor"},   // TC_RUNE
-    {526,28,"Tellus"},   // TC_RUNE
-    {530,28,"Tenebrae"},   // TC_RUNE
-    {528,28,"Unda"},   // TC_RUNE
-    {570,29,"Battuta"},   // TC_WARD
-    {537,29,"Liement"},   // TC_WARD
-    {533,29,"Pflug"},   // TC_WARD
-    {535,29,"Valiance"},   // TC_WARD
-    {531,29,"Vallation"},   // TC_WARD
-    {402,30,"Addendum: Black"},   // TC_STRAT
-    {401,30,"Addendum: White"},   // TC_STRAT
-    {36,31,"Aerial Armor"},   // TC_BPACT
-    {39,31,"Chinook"},   // TC_BPACT
-    {68,31,"Crimson Howl"},   // TC_BPACT
-    {587,31,"Crystal Blessing"},   // TC_BPACT
-    {190,31,"Dream Shroud"},   // TC_BPACT
-    {458,31,"Earthen Armor"},   // TC_BPACT
-    {37,31,"Earthen Ward"},   // TC_BPACT
-    {176,31,"Fleet Wind"},   // TC_BPACT
-    {35,31,"Frost Armor"},   // TC_BPACT
-    {33,31,"Hastega"},   // TC_BPACT
-    {94,31,"Inferno Howl"},   // TC_BPACT
-    {96,31,"Katabatic Blades"},   // TC_BPACT
-    {38,31,"Lightning Armor"},   // TC_BPACT
-    {116,31,"Noctoshield"},   // TC_BPACT
-    {113,31,"Reraise II"},   // TC_BPACT
-    {98,31,"Rolling Thunder"},   // TC_BPACT
-    {154,31,"Shining Ruby"},   // TC_BPACT
-    {586,31,"Soothing Current"},   // TC_BPACT
-    {152,31,"Wind's Blessing"},   // TC_BPACT
-    {418,32,"Afflatus Misery"},   // TC_JA
-    {417,32,"Afflatus Solace"},   // TC_JA
-    {58,32,"Aggressor"},   // TC_JA
-    {118,32,"Ancient Circle"},   // TC_JA
-    {583,32,"Apogee"},   // TC_JA
-    {75,32,"Arcane Circle"},   // TC_JA
-    {342,32,"Assassin's Charge"},   // TC_JA
-    {504,32,"Astral Conduit"},   // TC_JA
-    {55,32,"Astral Flow"},   // TC_JA
-    {492,32,"Asylum"},   // TC_JA
-    {163,32,"Azure Lore"},   // TC_JA
-    {73,32,"Barrage"},   // TC_JA
-    {56,32,"Berserk"},   // TC_JA
-    {569,32,"Blaze of Glory"},   // TC_JA
-    {460,32,"Blood Rage"},   // TC_JA
-    {51,32,"Blood Weapon"},   // TC_JA
-    {513,32,"Bolster"},   // TC_JA
-    {490,32,"Brazen Rush"},   // TC_JA
-    {165,32,"Burst Affinity"},   // TC_JA
-    {598,32,"Cascade"},   // TC_JA
-    {164,32,"Chain Affinity"},   // TC_JA
-    {48,32,"Chainspell"},   // TC_JA
-    {499,32,"Clarion Call"},   // TC_JA
-    {517,32,"Collimated Fervor"},   // TC_JA
-    {419,32,"Composure"},   // TC_JA
-    {462,32,"Conspirator"},   // TC_JA
-    {599,32,"Consume Mana"},   // TC_JA
-    {582,32,"Contradance"},   // TC_JA
-    {355,32,"Convergence"},   // TC_JA
-    {61,32,"Counterstance"},   // TC_JA
-    {114,32,"Cover"},   // TC_JA
-    {601,32,"Crooked Cards"},   // TC_JA
-    {359,32,"Dark Arts"},   // TC_JA
-    {345,32,"Dark Seal"},   // TC_JA
-    {482,32,"Decoy Shot"},   // TC_JA
-    {57,32,"Defender"},   // TC_JA
-    {518,32,"Dematerialize"},   // TC_JA
-    {346,32,"Diabolic Eye"},   // TC_JA
-    {356,32,"Diffusion"},   // TC_JA
-    {453,32,"Divine Caress"},   // TC_JA
-    {438,32,"Divine Emblem"},   // TC_JA
-    {78,32,"Divine Seal"},   // TC_JA
-    {60,32,"Dodge"},   // TC_JA
-    {433,32,"Double Shot"},   // TC_JA
-    {457,32,"Efflux"},   // TC_JA
-    {79,32,"Elemental Seal"},   // TC_JA
-    {522,32,"Elemental Sforzo"},   // TC_JA
-    {534,32,"Embolden"},   // TC_JA
-    {416,32,"Enlightenment"},   // TC_JA
-    {584,32,"Entrust"},   // TC_JA
-    {411,32,"Fan Dance"},   // TC_JA
-    {344,32,"Fealty"},   // TC_JA
-    {343,32,"Feint"},   // TC_JA
-    {351,32,"Flashy Shot"},   // TC_JA
-    {32,32,"Flee"},   // TC_JA
-    {503,32,"Fly High"},   // TC_JA
-    {59,32,"Focus"},   // TC_JA
-    {406,32,"Footwork"},   // TC_JA
-    {341,32,"Formless Strikes"},   // TC_JA
-    {441,32,"Futae"},   // TC_JA
-    {507,32,"Grand Pas"},   // TC_JA
-    {483,32,"Hagakure"},   // TC_JA
-    {353,32,"Hasso"},   // TC_JA
-    {74,32,"Holy Circle"},   // TC_JA
-    {46,32,"Hundred Fists"},   // TC_JA
-    {461,32,"Impetus"},   // TC_JA
-    {491,32,"Inner Strength"},   // TC_JA
-    {421,32,"Innin"},   // TC_JA
-    {50,32,"Invincible"},   // TC_JA
-    {484,32,"Issekigan"},   // TC_JA
-    {349,32,"Killer Instinct"},   // TC_JA
-    {64,32,"Last Resort"},   // TC_JA
-    {358,32,"Light Arts"},   // TC_JA
-    {621,32,"Majesty"},   // TC_JA
-    {437,32,"Mana Wall"},   // TC_JA
-    {47,32,"Manafont"},   // TC_JA
-    {229,32,"Manawell"},   // TC_JA
-    {88,32,"Mantra"},   // TC_JA
-    {231,32,"Marcato"},   // TC_JA
-    {54,32,"Meikyo Shisui"},   // TC_JA
-    {44,32,"Mighty Strikes"},   // TC_JA
-    {502,32,"Mikage"},   // TC_JA
-    {439,32,"Nether Void"},   // TC_JA
-    {347,32,"Nightingale"},   // TC_JA
-    {152,32,"One for All"},   // TC_JA
-    {166,32,"Overdrive"},   // TC_JA
-    {500,32,"Overkill"},   // TC_JA
-    {478,32,"Palisade"},   // TC_JA
-    {436,32,"Perfect Counter"},   // TC_JA
-    {49,32,"Perfect Dodge"},   // TC_JA
-    {409,32,"Pianissimo"},   // TC_JA
-    {442,32,"Presto"},   // TC_JA
-    {93,32,"Rampart"},   // TC_JA
-    {435,32,"Restraint"},   // TC_JA
-    {405,32,"Retaliation"},   // TC_JA
-    {410,32,"Saber Dance"},   // TC_JA
-    {454,32,"Saboteur"},   // TC_JA
-    {477,32,"Sacrosanctity"},   // TC_JA
-    {352,32,"Sange"},   // TC_JA
-    {479,32,"Scarlet Delirium"},   // TC_JA
-    {354,32,"Seigan"},   // TC_JA
-    {440,32,"Sengikori"},   // TC_JA
-    {62,32,"Sentinel"},   // TC_JA
-    {72,32,"Sharpshot"},   // TC_JA
-    {357,32,"Snake Eye"},   // TC_JA
-    {65,32,"Sneak Attack"},   // TC_JA
-    {497,32,"Soul Enslavement"},   // TC_JA
-    {52,32,"Soul Voice"},   // TC_JA
-    {63,32,"Souleater"},   // TC_JA
-    {126,32,"Spirit Surge"},   // TC_JA
-    {230,32,"Spontaneity"},   // TC_JA
-    {350,32,"Stealth Shot"},   // TC_JA
-    {494,32,"Stymie"},   // TC_JA
-    {187,32,"Sublimation"},   // TC_JA
-    {493,32,"Subtle Sorcery"},   // TC_JA
-    {532,32,"Swordplay"},   // TC_JA
-    {377,32,"Tabula Rasa"},   // TC_JA
-    {455,32,"Tenuto"},   // TC_JA
-    {67,32,"Third Eye"},   // TC_JA
-    {376,32,"Trance"},   // TC_JA
-    {87,32,"Trick Attack"},   // TC_JA
-    {467,32,"Triple Shot"},   // TC_JA
-    {348,32,"Troubadour"},   // TC_JA
-    {485,32,"Unbridled Learning"},   // TC_JA
-    {505,32,"Unbridled Wisdom"},   // TC_JA
-    {498,32,"Unleash"},   // TC_JA
-    {115,32,"Unlimited Shot"},   // TC_JA
-    {371,32,"Velocity Shot"},   // TC_JA
-    {68,32,"Warcry"},   // TC_JA
-    {117,32,"Warding Circle"},   // TC_JA
-    {340,32,"Warrior's Charge"},   // TC_JA
-    {508,32,"Widened Compass"},   // TC_JA
-    {501,32,"Yaegasumi"},   // TC_JA
-    {420,32,"Yonin"},   // TC_JA
-    {251,33,"Food"},   // TC_FOOD
-    {270,34,"Aftermath: Lv.1"},   // TC_AFTERMATH
-    {271,34,"Aftermath: Lv.2"},   // TC_AFTERMATH
-    {272,34,"Aftermath: Lv.3"},   // TC_AFTERMATH
-    {512,35,"Ionis"},   // TC_SIGNET
-    {256,35,"Sanction"},   // TC_SIGNET
-    {268,35,"Sigil"},   // TC_SIGNET
-    {253,35,"Signet"},   // TC_SIGNET
-    {242,36,"Alchemy"},   // TC_CRAFT
-    {241,36,"Bonecraft"},   // TC_CRAFT
-    {239,36,"Clothcraft"},   // TC_CRAFT
-    {243,36,"Cooking"},   // TC_CRAFT
-    {235,36,"Fishing"},   // TC_CRAFT
-    {238,36,"Goldsmithing"},   // TC_CRAFT
-    {240,36,"Leathercraft"},   // TC_CRAFT
-    {237,36,"Smithing"},   // TC_CRAFT
-    {236,36,"Woodworking"},   // TC_CRAFT
+    {43,0,0,"Refresh"},   // TC_REFRESH
+    {581,0,1,"Flurry"},   // TC_HASTE
+    {33,0,1,"Haste"},   // TC_HASTE
+    {40,0,2,"Protect"},   // TC_PROTECT
+    {41,0,2,"Shell"},   // TC_PROTECT
+    {42,0,3,"Regen"},   // TC_REGEN
+    {96,0,4,"Enaero"},   // TC_ENSPELL
+    {95,0,4,"Enblizzard"},   // TC_ENSPELL
+    {94,0,4,"Enfire"},   // TC_ENSPELL
+    {97,0,4,"Enstone"},   // TC_ENSPELL
+    {98,0,4,"Enthunder"},   // TC_ENSPELL
+    {99,0,4,"Enwater"},   // TC_ENSPELL
+    {102,0,5,"Aero"},   // TC_BARSPELL
+    {286,0,5,"Amnesia"},   // TC_BARSPELL
+    {109,0,5,"Blind"},   // TC_BARSPELL
+    {101,0,5,"Blizzard"},   // TC_BARSPELL
+    {100,0,5,"Fire"},   // TC_BARSPELL
+    {108,0,5,"Paralyze"},   // TC_BARSPELL
+    {111,0,5,"Petrify"},   // TC_BARSPELL
+    {107,0,5,"Poison"},   // TC_BARSPELL
+    {110,0,5,"Silence"},   // TC_BARSPELL
+    {106,0,5,"Sleep"},   // TC_BARSPELL
+    {103,0,5,"Stone"},   // TC_BARSPELL
+    {104,0,5,"Thunder"},   // TC_BARSPELL
+    {112,0,5,"Virus"},   // TC_BARSPELL
+    {105,0,5,"Water"},   // TC_BARSPELL
+    {122,0,6,"AGI"},   // TC_GAIN
+    {86,125,6,"CHR"},   // TC_GAIN
+    {120,0,6,"DEX"},   // TC_GAIN
+    {123,0,6,"INT"},   // TC_GAIN
+    {124,0,6,"MND"},   // TC_GAIN
+    {119,0,6,"STR"},   // TC_GAIN
+    {121,0,6,"VIT"},   // TC_GAIN
+    {34,0,7,"Blaze Spikes"},   // TC_SPIKES
+    {35,0,7,"Ice Spikes"},   // TC_SPIKES
+    {38,0,7,"Shock Spikes"},   // TC_SPIKES
+    {39,0,8,"Aquaveil"},   // TC_DEFENSE
+    {36,0,8,"Blink"},   // TC_DEFENSE
+    {116,0,8,"Phalanx"},   // TC_DEFENSE
+    {37,0,8,"Stoneskin"},   // TC_DEFENSE
+    {221,0,9,"Adventurer's Dirge"},   // TC_SONG
+    {200,0,9,"Archer's Prelude"},   // TC_SONG
+    {213,0,9,"Aria of Passion"},   // TC_SONG
+    {195,0,9,"Army's Paeon"},   // TC_SONG
+    {199,0,9,"Blade Madrigal"},   // TC_SONG
+    {220,0,9,"Foe Sirvente"},   // TC_SONG
+    {202,0,9,"Fowl Aubade"},   // TC_SONG
+    {210,0,9,"Goblin Gavotte"},   // TC_SONG
+    {218,0,9,"Goddess's Hymnus"},   // TC_SONG
+    {207,0,9,"Gold Capriccio"},   // TC_SONG
+    {203,0,9,"Herb Pastoral"},   // TC_SONG
+    {214,0,9,"Honor March"},   // TC_SONG
+    {216,0,9,"Ice Carol"},   // TC_SONG
+    {197,0,9,"Knight's Minne"},   // TC_SONG
+    {196,0,9,"Mage's Ballad"},   // TC_SONG
+    {219,0,9,"Raptor Mazurka"},   // TC_SONG
+    {215,0,9,"Sage Etude"},   // TC_SONG
+    {206,0,9,"Scop's Operetta"},   // TC_SONG
+    {222,0,9,"Sentinel's Scherzo"},   // TC_SONG
+    {201,0,9,"Sheepfoe Mambo"},   // TC_SONG
+    {205,0,9,"Shining Fantasia"},   // TC_SONG
+    {198,0,9,"Valor Minuet"},   // TC_SONG
+    {209,0,9,"Warding Round"},   // TC_SONG
+    {551,0,10,"Acumen"},   // TC_GEO
+    {545,0,10,"AGI"},   // TC_GEO
+    {556,0,10,"Attunement"},   // TC_GEO
+    {550,0,10,"Barrier"},   // TC_GEO
+    {548,0,10,"CHR"},   // TC_GEO
+    {543,0,10,"DEX"},   // TC_GEO
+    {559,0,10,"Fade"},   // TC_GEO
+    {552,0,10,"Fend"},   // TC_GEO
+    {555,0,10,"Focus"},   // TC_GEO
+    {558,0,10,"Frailty"},   // TC_GEO
+    {549,0,10,"Fury"},   // TC_GEO
+    {567,0,10,"Gravity"},   // TC_GEO
+    {580,0,10,"Haste"},   // TC_GEO
+    {546,0,10,"INT"},   // TC_GEO
+    {564,0,10,"Languor"},   // TC_GEO
+    {560,0,10,"Malaise"},   // TC_GEO
+    {547,0,10,"MND"},   // TC_GEO
+    {566,0,10,"Paralysis"},   // TC_GEO
+    {540,0,10,"Poison"},   // TC_GEO
+    {553,0,10,"Precision"},   // TC_GEO
+    {541,0,10,"Refresh"},   // TC_GEO
+    {539,0,10,"Regen"},   // TC_GEO
+    {561,0,10,"Slip"},   // TC_GEO
+    {565,0,10,"Slow"},   // TC_GEO
+    {542,0,10,"STR"},   // TC_GEO
+    {562,0,10,"Torpor"},   // TC_GEO
+    {563,0,10,"Vex"},   // TC_GEO
+    {544,0,10,"VIT"},   // TC_GEO
+    {554,0,10,"Voidance"},   // TC_GEO
+    {557,0,10,"Wilt"},   // TC_GEO
+    {289,0,11,"Gekka: Ichi"},   // TC_NINJUTSU
+    {227,0,11,"Kakka: Ichi"},   // TC_NINJUTSU
+    {471,0,11,"Migawari: Ichi"},   // TC_NINJUTSU
+    {71,0,11,"Monomi: Ichi"},   // TC_NINJUTSU
+    {290,0,11,"Myoshu: Ichi"},   // TC_NINJUTSU
+    {69,0,11,"Tonko: Ni"},   // TC_NINJUTSU
+    {171,0,11,"Yain: Ichi"},   // TC_NINJUTSU
+    {116,0,13,"Barrier Tusk"},   // TC_BLU_BUFF
+    {43,0,13,"Battery Charge"},   // TC_BLU_BUFF
+    {93,0,13,"Cocoon"},   // TC_BLU_BUFF
+    {37,0,13,"Diamondhide"},   // TC_BLU_BUFF
+    {45,0,13,"Fantod"},   // TC_BLU_BUFF
+    {92,0,13,"Feather Barrier"},   // TC_BLU_BUFF
+    {152,0,13,"Magic Barrier"},   // TC_BLU_BUFF
+    {190,0,13,"Memento Mori"},   // TC_BLU_BUFF
+    {604,0,13,"Mighty Guard"},   // TC_BLU_BUFF
+    {91,0,13,"Nat. Meditation"},   // TC_BLU_BUFF
+    {486,0,13,"O. Counterstance"},   // TC_BLU_BUFF
+    {36,0,13,"Occultation"},   // TC_BLU_BUFF
+    {38,0,13,"Plasma Charge"},   // TC_BLU_BUFF
+    {150,0,13,"Pyric Bulwark"},   // TC_BLU_BUFF
+    {33,0,13,"Refueling"},   // TC_BLU_BUFF
+    {42,0,13,"Regeneration"},   // TC_BLU_BUFF
+    {191,0,13,"Saline Coat"},   // TC_BLU_BUFF
+    {170,0,17,"Adloquium"},   // TC_ENHANCE
+    {171,0,17,"Animus Minuo"},   // TC_ENHANCE
+    {184,0,17,"Aurorastorm"},   // TC_ENHANCE
+    {275,0,17,"Auspice"},   // TC_ENHANCE
+    {289,0,17,"Crusade"},   // TC_ENHANCE
+    {70,0,17,"Deodorize"},   // TC_ENHANCE
+    {228,0,17,"Embrava"},   // TC_ENHANCE
+    {178,0,17,"Firestorm"},   // TC_ENHANCE
+    {568,0,17,"Foil"},   // TC_ENHANCE
+    {179,0,17,"Hailstorm"},   // TC_ENHANCE
+    {69,0,17,"Invisible"},   // TC_ENHANCE
+    {183,0,17,"Rainstorm"},   // TC_ENHANCE
+    {403,0,17,"Reprisal"},   // TC_ENHANCE
+    {181,0,17,"Sandstorm"},   // TC_ENHANCE
+    {71,0,17,"Sneak"},   // TC_ENHANCE
+    {432,0,17,"Temper"},   // TC_ENHANCE
+    {182,0,17,"Thunderstorm"},   // TC_ENHANCE
+    {185,0,17,"Voidstorm"},   // TC_ENHANCE
+    {180,0,17,"Windstorm"},   // TC_ENHANCE
+    {113,0,18,"Reraise"},   // TC_HEAL
+    {173,0,21,"Dread Spikes"},   // TC_DARK
+    {288,0,21,"Endark"},   // TC_DARK
+    {407,0,21,"Klimaform"},   // TC_DARK
+    {274,0,22,"Enlight"},   // TC_DIVINE
+    {335,0,25,"Allies' Roll"},   // TC_ROLL
+    {338,0,25,"Avenger's Roll"},   // TC_ROLL
+    {318,0,25,"Beast Roll"},   // TC_ROLL
+    {333,0,25,"Blitzer's Roll"},   // TC_ROLL
+    {330,0,25,"Bolter's Roll"},   // TC_ROLL
+    {331,0,25,"Caster's Roll"},   // TC_ROLL
+    {317,0,25,"Chaos Roll"},   // TC_ROLL
+    {319,0,25,"Choral Roll"},   // TC_ROLL
+    {337,0,25,"Companion's Roll"},   // TC_ROLL
+    {326,0,25,"Corsair's Roll"},   // TC_ROLL
+    {332,0,25,"Courser's Roll"},   // TC_ROLL
+    {328,0,25,"Dancer's Roll"},   // TC_ROLL
+    {323,0,25,"Drachen Roll"},   // TC_ROLL
+    {324,0,25,"Evoker's Roll"},   // TC_ROLL
+    {310,0,25,"Fighter's Roll"},   // TC_ROLL
+    {316,0,25,"Gallant's Roll"},   // TC_ROLL
+    {312,0,25,"Healer's Roll"},   // TC_ROLL
+    {320,0,25,"Hunter's Roll"},   // TC_ROLL
+    {325,0,25,"Magus's Roll"},   // TC_ROLL
+    {336,0,25,"Miser's Roll"},   // TC_ROLL
+    {311,0,25,"Monk's Roll"},   // TC_ROLL
+    {339,0,25,"Naturalist's Roll"},   // TC_ROLL
+    {322,0,25,"Ninja Roll"},   // TC_ROLL
+    {327,0,25,"Puppet Roll"},   // TC_ROLL
+    {315,0,25,"Rogue's Roll"},   // TC_ROLL
+    {600,0,25,"Runeist's Roll"},   // TC_ROLL
+    {321,0,25,"Samurai Roll"},   // TC_ROLL
+    {329,0,25,"Scholar's Roll"},   // TC_ROLL
+    {334,0,25,"Tactician's Roll"},   // TC_ROLL
+    {314,0,25,"Warlock's Roll"},   // TC_ROLL
+    {313,0,25,"Wizard's Roll"},   // TC_ROLL
+    {369,0,26,"Aspir Samba"},   // TC_SAMBA
+    {368,0,26,"Drain Samba"},   // TC_SAMBA
+    {370,0,26,"Haste Samba"},   // TC_SAMBA
+    {375,0,27,"Building Flourish"},   // TC_DANCE
+    {176,0,27,"Chocobo Jig"},   // TC_DANCE
+    {443,0,27,"Climactic Flourish"},   // TC_DANCE
+    {468,0,27,"Striking Flourish"},   // TC_DANCE
+    {472,0,27,"Ternary Flourish"},   // TC_DANCE
+    {525,0,28,"Flabra"},   // TC_RUNE
+    {524,0,28,"Gelus"},   // TC_RUNE
+    {523,0,28,"Ignis"},   // TC_RUNE
+    {529,0,28,"Lux"},   // TC_RUNE
+    {527,0,28,"Sulpor"},   // TC_RUNE
+    {526,0,28,"Tellus"},   // TC_RUNE
+    {530,0,28,"Tenebrae"},   // TC_RUNE
+    {528,0,28,"Unda"},   // TC_RUNE
+    {570,0,29,"Battuta"},   // TC_WARD
+    {537,0,29,"Liement"},   // TC_WARD
+    {533,0,29,"Pflug"},   // TC_WARD
+    {535,0,29,"Valiance"},   // TC_WARD
+    {531,0,29,"Vallation"},   // TC_WARD
+    {402,0,30,"Addendum: Black"},   // TC_STRAT
+    {401,0,30,"Addendum: White"},   // TC_STRAT
+    {36,0,31,"Aerial Armor"},   // TC_BPACT
+    {39,0,31,"Chinook"},   // TC_BPACT
+    {68,0,31,"Crimson Howl"},   // TC_BPACT
+    {587,0,31,"Crystal Blessing"},   // TC_BPACT
+    {190,0,31,"Dream Shroud"},   // TC_BPACT
+    {458,0,31,"Earthen Armor"},   // TC_BPACT
+    {37,0,31,"Earthen Ward"},   // TC_BPACT
+    {176,0,31,"Fleet Wind"},   // TC_BPACT
+    {35,0,31,"Frost Armor"},   // TC_BPACT
+    {33,0,31,"Hastega"},   // TC_BPACT
+    {94,0,31,"Inferno Howl"},   // TC_BPACT
+    {96,0,31,"Katabatic Blades"},   // TC_BPACT
+    {38,0,31,"Lightning Armor"},   // TC_BPACT
+    {116,0,31,"Noctoshield"},   // TC_BPACT
+    {113,0,31,"Reraise II"},   // TC_BPACT
+    {98,0,31,"Rolling Thunder"},   // TC_BPACT
+    {154,0,31,"Shining Ruby"},   // TC_BPACT
+    {586,0,31,"Soothing Current"},   // TC_BPACT
+    {152,0,31,"Wind's Blessing"},   // TC_BPACT
+    {418,0,32,"Afflatus Misery"},   // TC_JA
+    {417,0,32,"Afflatus Solace"},   // TC_JA
+    {58,0,32,"Aggressor"},   // TC_JA
+    {118,0,32,"Ancient Circle"},   // TC_JA
+    {583,0,32,"Apogee"},   // TC_JA
+    {75,0,32,"Arcane Circle"},   // TC_JA
+    {342,0,32,"Assassin's Charge"},   // TC_JA
+    {504,0,32,"Astral Conduit"},   // TC_JA
+    {55,0,32,"Astral Flow"},   // TC_JA
+    {492,0,32,"Asylum"},   // TC_JA
+    {163,0,32,"Azure Lore"},   // TC_JA
+    {73,0,32,"Barrage"},   // TC_JA
+    {56,0,32,"Berserk"},   // TC_JA
+    {569,0,32,"Blaze of Glory"},   // TC_JA
+    {460,0,32,"Blood Rage"},   // TC_JA
+    {51,0,32,"Blood Weapon"},   // TC_JA
+    {513,0,32,"Bolster"},   // TC_JA
+    {490,0,32,"Brazen Rush"},   // TC_JA
+    {165,0,32,"Burst Affinity"},   // TC_JA
+    {598,0,32,"Cascade"},   // TC_JA
+    {164,0,32,"Chain Affinity"},   // TC_JA
+    {48,0,32,"Chainspell"},   // TC_JA
+    {499,0,32,"Clarion Call"},   // TC_JA
+    {517,0,32,"Collimated Fervor"},   // TC_JA
+    {419,0,32,"Composure"},   // TC_JA
+    {462,0,32,"Conspirator"},   // TC_JA
+    {599,0,32,"Consume Mana"},   // TC_JA
+    {582,0,32,"Contradance"},   // TC_JA
+    {355,0,32,"Convergence"},   // TC_JA
+    {61,0,32,"Counterstance"},   // TC_JA
+    {114,0,32,"Cover"},   // TC_JA
+    {601,0,32,"Crooked Cards"},   // TC_JA
+    {359,0,32,"Dark Arts"},   // TC_JA
+    {345,0,32,"Dark Seal"},   // TC_JA
+    {482,0,32,"Decoy Shot"},   // TC_JA
+    {57,0,32,"Defender"},   // TC_JA
+    {518,0,32,"Dematerialize"},   // TC_JA
+    {346,0,32,"Diabolic Eye"},   // TC_JA
+    {356,0,32,"Diffusion"},   // TC_JA
+    {453,0,32,"Divine Caress"},   // TC_JA
+    {438,0,32,"Divine Emblem"},   // TC_JA
+    {78,0,32,"Divine Seal"},   // TC_JA
+    {60,0,32,"Dodge"},   // TC_JA
+    {433,0,32,"Double Shot"},   // TC_JA
+    {457,0,32,"Efflux"},   // TC_JA
+    {79,0,32,"Elemental Seal"},   // TC_JA
+    {522,0,32,"Elemental Sforzo"},   // TC_JA
+    {534,0,32,"Embolden"},   // TC_JA
+    {416,0,32,"Enlightenment"},   // TC_JA
+    {584,0,32,"Entrust"},   // TC_JA
+    {411,0,32,"Fan Dance"},   // TC_JA
+    {344,0,32,"Fealty"},   // TC_JA
+    {343,0,32,"Feint"},   // TC_JA
+    {351,0,32,"Flashy Shot"},   // TC_JA
+    {32,0,32,"Flee"},   // TC_JA
+    {503,0,32,"Fly High"},   // TC_JA
+    {59,0,32,"Focus"},   // TC_JA
+    {406,0,32,"Footwork"},   // TC_JA
+    {341,0,32,"Formless Strikes"},   // TC_JA
+    {441,0,32,"Futae"},   // TC_JA
+    {507,0,32,"Grand Pas"},   // TC_JA
+    {483,0,32,"Hagakure"},   // TC_JA
+    {353,0,32,"Hasso"},   // TC_JA
+    {74,0,32,"Holy Circle"},   // TC_JA
+    {46,0,32,"Hundred Fists"},   // TC_JA
+    {461,0,32,"Impetus"},   // TC_JA
+    {491,0,32,"Inner Strength"},   // TC_JA
+    {421,0,32,"Innin"},   // TC_JA
+    {50,0,32,"Invincible"},   // TC_JA
+    {484,0,32,"Issekigan"},   // TC_JA
+    {349,0,32,"Killer Instinct"},   // TC_JA
+    {64,0,32,"Last Resort"},   // TC_JA
+    {358,0,32,"Light Arts"},   // TC_JA
+    {621,0,32,"Majesty"},   // TC_JA
+    {437,0,32,"Mana Wall"},   // TC_JA
+    {47,0,32,"Manafont"},   // TC_JA
+    {229,0,32,"Manawell"},   // TC_JA
+    {88,0,32,"Mantra"},   // TC_JA
+    {231,0,32,"Marcato"},   // TC_JA
+    {54,0,32,"Meikyo Shisui"},   // TC_JA
+    {44,0,32,"Mighty Strikes"},   // TC_JA
+    {502,0,32,"Mikage"},   // TC_JA
+    {439,0,32,"Nether Void"},   // TC_JA
+    {347,0,32,"Nightingale"},   // TC_JA
+    {152,0,32,"One for All"},   // TC_JA
+    {166,0,32,"Overdrive"},   // TC_JA
+    {500,0,32,"Overkill"},   // TC_JA
+    {478,0,32,"Palisade"},   // TC_JA
+    {436,0,32,"Perfect Counter"},   // TC_JA
+    {49,0,32,"Perfect Dodge"},   // TC_JA
+    {409,0,32,"Pianissimo"},   // TC_JA
+    {442,0,32,"Presto"},   // TC_JA
+    {93,0,32,"Rampart"},   // TC_JA
+    {435,0,32,"Restraint"},   // TC_JA
+    {405,0,32,"Retaliation"},   // TC_JA
+    {410,0,32,"Saber Dance"},   // TC_JA
+    {454,0,32,"Saboteur"},   // TC_JA
+    {477,0,32,"Sacrosanctity"},   // TC_JA
+    {352,0,32,"Sange"},   // TC_JA
+    {479,0,32,"Scarlet Delirium"},   // TC_JA
+    {354,0,32,"Seigan"},   // TC_JA
+    {440,0,32,"Sengikori"},   // TC_JA
+    {62,0,32,"Sentinel"},   // TC_JA
+    {72,0,32,"Sharpshot"},   // TC_JA
+    {357,0,32,"Snake Eye"},   // TC_JA
+    {65,0,32,"Sneak Attack"},   // TC_JA
+    {497,0,32,"Soul Enslavement"},   // TC_JA
+    {52,0,32,"Soul Voice"},   // TC_JA
+    {63,0,32,"Souleater"},   // TC_JA
+    {126,0,32,"Spirit Surge"},   // TC_JA
+    {230,0,32,"Spontaneity"},   // TC_JA
+    {350,0,32,"Stealth Shot"},   // TC_JA
+    {494,0,32,"Stymie"},   // TC_JA
+    {187,0,32,"Sublimation"},   // TC_JA
+    {493,0,32,"Subtle Sorcery"},   // TC_JA
+    {532,0,32,"Swordplay"},   // TC_JA
+    {377,0,32,"Tabula Rasa"},   // TC_JA
+    {455,0,32,"Tenuto"},   // TC_JA
+    {67,0,32,"Third Eye"},   // TC_JA
+    {376,0,32,"Trance"},   // TC_JA
+    {87,0,32,"Trick Attack"},   // TC_JA
+    {467,0,32,"Triple Shot"},   // TC_JA
+    {348,0,32,"Troubadour"},   // TC_JA
+    {485,0,32,"Unbridled Learning"},   // TC_JA
+    {505,0,32,"Unbridled Wisdom"},   // TC_JA
+    {498,0,32,"Unleash"},   // TC_JA
+    {115,0,32,"Unlimited Shot"},   // TC_JA
+    {371,0,32,"Velocity Shot"},   // TC_JA
+    {68,0,32,"Warcry"},   // TC_JA
+    {117,0,32,"Warding Circle"},   // TC_JA
+    {340,0,32,"Warrior's Charge"},   // TC_JA
+    {508,0,32,"Widened Compass"},   // TC_JA
+    {501,0,32,"Yaegasumi"},   // TC_JA
+    {420,0,32,"Yonin"},   // TC_JA
+    {251,0,33,"Food"},   // TC_FOOD
+    {270,0,34,"Aftermath: Lv.1"},   // TC_AFTERMATH
+    {271,0,34,"Aftermath: Lv.2"},   // TC_AFTERMATH
+    {272,0,34,"Aftermath: Lv.3"},   // TC_AFTERMATH
+    {512,0,35,"Ionis"},   // TC_SIGNET
+    {256,0,35,"Sanction"},   // TC_SIGNET
+    {268,0,35,"Sigil"},   // TC_SIGNET
+    {253,0,35,"Signet"},   // TC_SIGNET
+    {242,0,36,"Alchemy"},   // TC_CRAFT
+    {241,0,36,"Bonecraft"},   // TC_CRAFT
+    {239,0,36,"Clothcraft"},   // TC_CRAFT
+    {243,0,36,"Cooking"},   // TC_CRAFT
+    {235,0,36,"Fishing"},   // TC_CRAFT
+    {238,0,36,"Goldsmithing"},   // TC_CRAFT
+    {240,0,36,"Leathercraft"},   // TC_CRAFT
+    {237,0,36,"Smithing"},   // TC_CRAFT
+    {236,0,36,"Woodworking"},   // TC_CRAFT
 };
 static const int BUFF_FAM_N = (int)(sizeof(BUFF_FAM) / sizeof(BUFF_FAM[0]));
 struct JobTrack { const JobBuff* buffs; int n; };

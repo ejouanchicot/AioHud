@@ -42,7 +42,7 @@ CATS = [   # (enum, EN, FR)
     ('TC_REGEN',    'Regen',          'Regen'),
     ('TC_ENSPELL',  'Enspells',       'Enchantements'),
     ('TC_BARSPELL', 'Barspells',      'Barspells'),
-    ('TC_GAIN',     'Gains',          'Gains'),
+    ('TC_GAIN',     'Gain / Boost',   'Gain / Boost'),   # the rows dropped the prefix (STR/DEX/...), so the header carries both spell families
     ('TC_SPIKES',   'Spikes',         'Spikes'),
     ('TC_DEFENSE',  'Defensive',      'Defensif'),
     ('TC_SONG',     'Songs',          'Chants'),
@@ -235,22 +235,71 @@ for name, (rc, st, tg, typ) in res_ab.items():
         put(JOBIDX[j], ('A', name), l, cat, name, stt, rc)
 
 # ---- GLOBAL buff-family table : ONE row per distinct buff STATUS across ALL jobs, for the job-agnostic
-#      (family-organised) Timers filter. Deduped by STATUS ; the family name is the SHORTEST base name that
-#      carries that status (Shell V + Shellra V share status 41 -> "Shell"). Recast-only entries (nukes, cures,
+#      (family-organised) Timers filter. Deduped by STATUS ; the family name is CANONICAL, not one of the forms
+#      that carry the status (Shell V + Shellra V share status 41 -> "Shell"). Recast-only entries (nukes, cures,
 #      Steal...) are NOT here -- they stay per-job (a cooldown only ever shows on the job that owns it). ----
 # ONE row per (family, status). A buff stays under ITS OWN school : if a status is granted by spells of two
 # schools (e.g. status 71 : WHM "Sneak" (Enhancing) AND NIN "Monomi: Ichi" (Ninjutsu)), it appears once under
 # EACH, so no family gets emptied by a cross-school "absorption". The runtime filter keys on the STATUS, so the
 # two rows share ONE on/off state -- consistent, just listed under both schools where a player would look for it.
-fam = {}   # (catEnum, status) -> shortest base name for that (family, status)
+_fam_names = {}   # (catEnum, status) -> {every spell name that lands this status}
+_fam_jobs  = {}   # (catEnum, status) -> {job ids that can cast it}  (collision tie-break of last resort)
 for _job, _d in job_buffs.items():
     for _v in _d.values():
         _jl, _cat, _name, _status, _recast = _v
         if _status <= 0:
             continue
         _k = (_cat, _status)
-        if _k not in fam or len(_name) < len(fam[_k]):
-            fam[_k] = _name
+        _fam_names.setdefault(_k, set()).add(_name)
+        _fam_jobs.setdefault(_k, set()).add(_job)
+
+# The label used to be "the SHORTEST name carrying that status", ties going to whichever job happened to be
+# visited first. That is a coin flip on word length, and it showed : the Barspell rows came out 7 single-target
+# and 7 AoE (Barstone next to Baraera), the Gain rows were 7x "Gain-" plus a lone "Boost-CHR", and the 30
+# Geomancy rows were 29x "Indi-" plus a lone "Geo-Regen" (Geo-Regen is the only Geo- spell res/spells.lua gives
+# a caster status, and 9 chars beat 10).
+# A row is keyed by STATUS, so it ALWAYS covers both castable forms -- single-target AND -ra, Gain- AND Boost-,
+# Indi- AND Geo-. The label must therefore name the FAMILY, not one arbitrary form : we drop the part that only
+# says "which form", which is also the part the category header already carries.
+def _cap(s):
+    return s if s.isupper() else (s[:1].upper() + s[1:])   # "stone" -> "Stone" ; "STR" stays "STR"
+
+def _fam_label(cat, names):
+    ns = sorted(names)                                     # deterministic base order, always
+    if cat == 'TC_BARSPELL':
+        # The AoE form is exactly the one ending in "ra" (Barstonra / Baraera / Barvira / Barpetra ...) -- checked
+        # on all 14 pairs, and no single-target form ends in "ra". Keep the single-target one, drop the "Bar".
+        base = [n for n in ns if not n.lower().endswith('ra')] or ns
+        pick = min(base, key=lambda n: (len(n), n))
+        return _cap(pick[3:]) if (pick.lower().startswith('bar') and len(pick) > 3) else pick
+    if cat in ('TC_GAIN', 'TC_GEO'):
+        # "Gain-STR"/"Boost-STR" and "Indi-Regen"/"Geo-Regen" differ only by the prefix -> keep the stem.
+        stems = sorted({n.split('-', 1)[1] for n in ns if '-' in n})
+        return _cap(stems[0]) if stems else min(ns, key=lambda n: (len(n), n))
+    return min(ns, key=lambda n: (len(n), n))               # elsewhere: shortest, alphabetical tie-break
+
+fam = dict(((_k, _fam_label(_k[0], _fam_names[_k])) for _k in _fam_names))
+
+# Dropping the prefix can make two DISTINCT statuses collide inside one category. CHR is the only real case :
+# for six stats the WHM spell and the RDM one share a status (Boost-STR and Gain-STR both land 119), but for
+# CHR they do NOT -- Boost-CHR (WHM) lands 86, Gain-CHR (RDM) lands 125, and the game names BOTH "CHR Boost".
+# To the player that is ONE buff, so two rows would be unusable and suffixing them ("CHR (Boost)") would just
+# expose an internal id split he never asked about. MERGE them instead : one row that OWNS both statuses and
+# toggles them together (BuffFam.alias), so ticking "CHR" hides the WHM and the RDM version at once.
+fam_alias = {}
+_dup = {}
+for _k, _v in fam.items():
+    _dup.setdefault((_k[0], _v), []).append(_k)
+for (_c, _v), _ks in _dup.items():
+    if len(_ks) < 2:
+        continue
+    _ks.sort(key=lambda k: k[1])          # lowest status id = the row's primary key (stable across regenerations)
+    _extra = [k[1] for k in _ks[1:]]
+    if len(_extra) > 1:                   # a 3-way collision would need a list, not one alias -- say so instead of silently dropping
+        print('WARN: %s "%s" spans %d statuses %s -- only the first alias is kept' % (_c, _v, len(_ks), _extra))
+    fam_alias[_ks[0]] = _extra[0]
+    for _k in _ks[1:]:
+        del fam[_k]
 
 # --- inject non-spell status buffs : Food / Aftermath / conquest (Signet...) / synthesis Imagery. No job CASTS
 #     these, so they never appear in spells.lua -- but they DO show up in the Timers 0x063 self-buff list, and until
@@ -310,10 +359,13 @@ for job in range(1, 24):
     total += len(rows)
 
 L.append('// GLOBAL buff families (job-agnostic) : one row per distinct buff STATUS, for the family-organised filter.')
-L.append('struct BuffFam { unsigned short status; unsigned char cat; const char* name; };')
+L.append('// alias : a SECOND status this one row also owns (0 = none). The game sometimes splits one buff over two')
+L.append('// status ids -- Boost-CHR (WHM) lands 86 where Gain-CHR (RDM) lands 125, both named "CHR Boost". The row')
+L.append('// toggles BOTH, so the filter behaves the way the player reads the list : one line, one buff.')
+L.append('struct BuffFam { unsigned short status; unsigned short alias; unsigned char cat; const char* name; };')
 L.append('static const BuffFam BUFF_FAM[] = {')
 for (_cat, _status) in sorted(fam, key=lambda k: (CAT_IDX[k[0]], fam[k].lower())):
-    L.append('    {%d,%d,"%s"},   // %s' % (_status, CAT_IDX[_cat], cesc(fam[(_cat, _status)]), _cat))
+    L.append('    {%d,%d,%d,"%s"},   // %s' % (_status, fam_alias.get((_cat, _status), 0), CAT_IDX[_cat], cesc(fam[(_cat, _status)]), _cat))
 L.append('};')
 L.append('static const int BUFF_FAM_N = (int)(sizeof(BUFF_FAM) / sizeof(BUFF_FAM[0]));')
 

@@ -172,6 +172,13 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         #define BF_FOFF(st)     ( c.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)(st)) )
         #define BF_SET(st, OFF) c.tm_buff_set((unsigned)(st), (OFF))
         #define BF_FSET(st, ON) c.tm_buff_set(UiConfig::TM_KEY_FOCUS | (unsigned)(st), (ON))
+        // A row may own TWO statuses (BuffFam.alias) when the game split one buff over two ids -- CHR : the WHM
+        // spell lands 86, the RDM one 125. Every read/write goes through these so the pair can never drift apart
+        // (a row read from `status` alone but written to both would flicker back on the next frame).
+        #define BFR_OFF(F)      ( BF_OFF((F).status)  || ((F).alias && BF_OFF((F).alias)) )
+        #define BFR_FOFF(F)     ( BF_FOFF((F).status) || ((F).alias && BF_FOFF((F).alias)) )
+        #define BFR_SET(F, OFF) do { BF_SET((F).status, (OFF));  if ((F).alias) BF_SET((F).alias, (OFF));  } while (0)
+        #define BFR_FSET(F, ON) do { BF_FSET((F).status, (ON));  if ((F).alias) BF_FSET((F).alias, (ON)); } while (0)
         // ---- MASONRY : flat families flow into TWO INDEPENDENT half-width columns, each with its OWN vertical
         //      cursor (yL / yR). Every family lands in the column that is currently SHORTER (ties -> left) and that
         //      column OWNS the whole family : an OPEN family renders its checklist half-width directly under its
@@ -300,7 +307,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             int cn = 0, catState = -2;   // group state : -2 none yet, -1 mixed, 0 Follow, 1 Follow+focus, 2 Hidden, 3 Hidden+focus
             for (int i = 0; i < BUFF_FAM_N; ++i) if (BUFF_FAM[i].cat == cat) {
                 ++cn;
-                const int s = (BF_OFF(BUFF_FAM[i].status) ? 2 : 0) | (BF_FOFF(BUFF_FAM[i].status) ? 1 : 0);
+                const int s = (BFR_OFF(BUFF_FAM[i]) ? 2 : 0) | (BFR_FOFF(BUFF_FAM[i]) ? 1 : 0);
                 catState = (catState == -2) ? s : (catState == s ? s : -1);
             }
             if (!cn) continue;
@@ -329,7 +336,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                 // group chip on the cell's right edge (distinct source line -> distinct CTRL_ID -> its own spring)
                 if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, cat), cx + cellW - chipW, chy, chipW, chipH, glbl, lit)) {
                     const int next = (catState < 0) ? 0 : (catState + 1) % 4;   // mixed -> Follow, else advance
-                    for (int i = 0; i < BUFF_FAM_N; ++i) if (BUFF_FAM[i].cat == cat) { BF_SET(BUFF_FAM[i].status, (next & 2) != 0); BF_FSET(BUFF_FAM[i].status, (next & 1) != 0); }
+                    for (int i = 0; i < BUFF_FAM_N; ++i) if (BUFF_FAM[i].cat == cat) { BFR_SET(BUFF_FAM[i], (next & 2) != 0); BFR_FSET(BUFF_FAM[i], (next & 1) != 0); }
                     save_ui_config();
                 }
             }
@@ -354,18 +361,18 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                     // --- sub-pass A : QUADS (hover band + dots) + click handling ---
                     for (int col = 0; col < cols; ++col) {
                         const int k = col * rpc + r; if (k >= m) continue;
-                        const unsigned st = BUFF_FAM[idx[k]].status; const bool off = BF_OFF(st);
+                        const BuffFam& F = BUFF_FAM[idx[k]]; const bool off = BFR_OFF(F);
                         // 4 states via 2 bits (hidden?, focus?). Click cycles in the legend order :
                         // Follow -> Follow+focus -> Hidden -> Hidden+focus -> Follow.
-                        const bool focus = BF_FOFF(st);
+                        const bool focus = BFR_FOFF(F);
                         const float dx = x0 + col * colW, cby = ty + (rh - cbs) * 0.5f;
                         if (inrect(mo, dx - snap(2.0f), ty, colW - snap(4.0f), rh)) {
                             flat(dev, dx - snap(2.0f), ty, colW - snap(4.0f), rh, 0x18FFFFFFu);
                             if (click) {
-                                if (!off && !focus) BF_FSET(st, true);                          // Follow -> Follow+focus
-                                else if (!off && focus) { BF_SET(st, true); BF_FSET(st, false); }   // Follow+focus -> Hidden
-                                else if (off && !focus) BF_FSET(st, true);                       // Hidden -> Hidden+focus
-                                else { BF_SET(st, false); BF_FSET(st, false); }                  // Hidden+focus -> Follow
+                                if (!off && !focus) BFR_FSET(F, true);                          // Follow -> Follow+focus
+                                else if (!off && focus) { BFR_SET(F, true); BFR_FSET(F, false); }   // Follow+focus -> Hidden
+                                else if (off && !focus) BFR_FSET(F, true);                       // Hidden -> Hidden+focus
+                                else { BFR_SET(F, false); BFR_FSET(F, false); }                  // Hidden+focus -> Follow
                                 save_ui_config();
                             }
                         }
@@ -379,8 +386,8 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                     fo->begin(dev);
                     for (int col = 0; col < cols; ++col) {
                         const int k = col * rpc + r; if (k >= m) continue;
-                        const unsigned st = BUFF_FAM[idx[k]].status; const bool off = BF_OFF(st);
-                        const bool focus = BF_FOFF(st);
+                        const BuffFam& F = BUFF_FAM[idx[k]]; const bool off = BFR_OFF(F);
+                        const bool focus = BFR_FOFF(F);
                         const float dx = x0 + col * colW;
                         fo->draw_lc(dev, dx + cbs + snap(5.0f), ty + rh * 0.5f, BUFF_FAM[idx[k]].name, snap(12.0f), fa(focus ? 0xFFFFB78Au : (off ? C_MUTE : C_TEXT)), fa(C_STROKE), 1.0f);
                     }
