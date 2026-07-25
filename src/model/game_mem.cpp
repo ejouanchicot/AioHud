@@ -30,22 +30,6 @@ u32 player_struct() {
     return (g && safe_read(g + 0x3C, &pl) && valid_ptr(pl)) ? pl : 0;
 }
 
-bool read_player_vitals(float& hpFrac, float& mpFrac, float& tpFrac) {
-    u32 pl = player_struct();
-    if (!pl) return false;
-    u32 mhp = 0, hpp = 0, mpp = 0, tp = 0;
-    safe_read(pl + 0x60, &mhp);                     // max_hp -> validity gate
-    if (mhp == 0 || mhp > 0x100000) return false;   // struct not ready yet
-    // hpp/mpp = the game's own % (0..100), so the bar always reads "full = full",
-    // adapting to the CURRENT max (gear/food included).
-    safe_read(pl + 0x64, &hpp);  safe_read(pl + 0x70, &mpp);  safe_read(pl + 0x74, &tp);
-    hpp &= 0xFF;  mpp &= 0xFF;  if (hpp > 100) hpp = 100;  if (mpp > 100) mpp = 100;
-    hpFrac = hpp / 100.0f;
-    mpFrac = mpp / 100.0f;
-    tpFrac = (float)tp / 3000.0f;  if (tpFrac > 1) tpFrac = 1; if (tpFrac < 0) tpFrac = 0;
-    return true;
-}
-
 // read_player is hit ~5x per poll cycle (poll + self_entity + read_map_entities' self_entity +
 // read_self_speed + load_from_memory), each ~30 SEH-guarded reads. Cache it for the DURATION OF ONE
 // poll only : PlayerCacheScope (RAII, on the poll_game_state stack) turns caching on ; outside the poll
@@ -290,26 +274,6 @@ unsigned entity_id_by_index(unsigned index) {
 // since ids are not an index. Used to tell a Limbus COFFER from a POINT OF INTEREST, which the award message id
 // cannot (it keys on the wing) : a point of interest is the unnamed '???', a coffer is 'Apollyon Coffer #4'.
 // SEH-guarded per read ; false (and out[0]=0) when the id isn't in the array.
-bool entity_name_by_id(unsigned id, char* out, int sz) {
-    if (out && sz > 0) out[0] = 0;
-    if (!id || !out || sz <= 0) return false;
-    u32 ent = entity_array();
-    if (!ent) return false;
-    for (unsigned i = 1; i < 0x900; ++i) {
-        u32 p = 0; if (!safe_read(ent + i * 4, &p) || !valid_ptr(p)) continue;
-        u32 eid = 0; if (!safe_read(p + ENT_ID_OFF, &eid) || eid != id) continue;
-        int j = 0;
-        for (; j < sz - 1; ++j) {
-            u32 c = 0; if (!safe_read(p + ENT_NAME_OFF + j, &c)) break;
-            const char ch = (char)(c & 0xFF); if (!ch) break;
-            out[j] = ch;
-        }
-        out[j] = 0;
-        return true;
-    }
-    return false;
-}
-
 // entity INDEX -> name. Packets carry a target INDEX (a slot in the entity array), not a server id -- reading
 // the 0x02A "target" field as an id is what made the first coffer/point-of-interest capture come back
 // <unresolved>. One indexed read, no scan. SEH-guarded ; false (out[0]=0) if the slot is empty.
@@ -556,7 +520,6 @@ int count_items(const unsigned* ids, int n, unsigned* out) {
 }
 
 unsigned count_item(unsigned id) { unsigned c = 0; count_items(&id, 1, &c); return c; }
-bool     owns_item(unsigned id)  { return count_item(id) != 0; }
 
 // KEY ITEMS. The store is a FLAT u8[0x2000] -- one byte per id, non-zero = owned -- NOT the 0x055 packet's
 // bitfield, so there is no id/512 table arithmetic here (that scheme is packet-only ; game-data/key-items.md).

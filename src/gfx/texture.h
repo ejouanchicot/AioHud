@@ -16,7 +16,6 @@ namespace aio {
 u32 make_liquid_texture(u32 dev, int variant);
 
 // procedural NEBULA background (domain-warped fbm clouds in a cosmic palette on dark space, opaque).
-u32 make_nebula(u32 dev, int W, int H);
 
 // MATERIAL textures for procedural box themes : grayscale luminance patterns, tinted per hue by the
 // caller (MODULATE). wood grain / soft frost clouds / velvet nap / brushed steel.
@@ -68,7 +67,6 @@ bool write_gear_icon_bmp(const char* out_bmp_path, const u32* px, int* out_err =
 const char* ffxi_rom_dir_probe(const char** out_regkey);
 
 // create an A8R8G8B8 texture from an in-memory ARGB buffer (W*H DWORDs, row-major).
-u32 make_texture_argb(u32 dev, int W, int H, const u32* pixels);
 
 // same, but with a full MIP CHAIN (box-filtered) -> clean minification (crisp scaled text).
 u32 make_texture_argb_mip(u32 dev, int W, int H, const u32* pixels);
@@ -76,9 +74,6 @@ u32 make_texture_argb_mip(u32 dev, int W, int H, const u32* pixels);
 // party marker icons (procedural pixel-art, 32x32 A8R8G8B8 + mips, straight alpha):
 // gold crown = party leader, gold star = alliance leader, green coin = quartermaster.
 u32 make_dot(u32 dev);   // solid white AA disc (tinted per role for the leader/QM bullets)
-u32 make_icon_party_lead(u32 dev);
-u32 make_icon_alliance_lead(u32 dev);
-u32 make_icon_qm(u32 dev);
 
 // release a texture (IUnknown::Release, vtbl[2]); safe on 0.
 void release_texture(u32 tex);

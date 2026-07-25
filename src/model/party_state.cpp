@@ -10,7 +10,7 @@
 #include "model/tb_debuff_gen.h"
 #include "model/overwrites_gen.h"       // spell_overwrites_spell : res `overwrites` -> which debuff replaces which (Dia III over Dia I / Bio I-II)
 #include "model/tb_buff_gen.h"          // spell_buff : buff spell id -> { status, base duration } (Timers "buff on ally")
-#include "model/enh_dur.h"              // caster_enh_dur_pct : "Enhancing Magic eff. dur. +%" from live gear/augments
+#include "model/enh_dur.h"              // enh_dur_table / composure_set_pct / perpetuance_mult : "Enhancing Magic eff. dur. +%" from live gear + augments
 #include "model/regen_dur.h"           // regen_dur_gear_sec : REGEN-only "+N s" duration gear (Bolelabunga...) added to Regen's base
 #include "model/song_dur.h"            // BRD song duration : per-item flat song-duration gear + Troubadour
 #include "model/geo_dur.h"             // GEO Indi- duration : base + JP 1362 + flat Indicolure-duration gear

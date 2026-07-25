@@ -99,12 +99,12 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             { ROW_BAND(46.0f)   // gauge width, as a fraction of the box content width
                 const float lo = 0.40f, hi = 1.00f; char b[16]; sprintf(b, "%d%%", (int)(c.ztLbBarW * 100.0f + 0.5f));
                 float v01 = (c.ztLbBarW - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Gauge width", "Largeur jauge"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.ztLbBarW = clampf(v, lo, hi); save_ui_config(); }
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Gauge width", "Largeur jauge"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.ztLbBarW = clampf(v, lo, hi); }
             } ROW_NEXT(46.0f)
             { ROW_BAND(46.0f)   // gauge height multiplier
                 const float lo = 0.50f, hi = 2.50f; char b[16]; sprintf(b, "%d%%", (int)(c.ztLbBarH * 100.0f + 0.5f));
                 float v01 = (c.ztLbBarH - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Gauge height", "Hauteur jauge"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.ztLbBarH = clampf(v, lo, hi); save_ui_config(); }
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Gauge height", "Hauteur jauge"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.ztLbBarH = clampf(v, lo, hi); }
             } ROW_NEXT(46.0f)
             ZT_SHEOL_TOGGLE(CTRL_ID, tr("Floor on gauge", "\xC3\x89tage sur la jauge"), c.ztLbFloor)
             ZT_SHEOL_TOGGLE(CTRL_ID, tr("Currencies", "Monnaies"),                      c.ztLbCur)

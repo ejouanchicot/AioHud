@@ -70,42 +70,6 @@ u32 make_liquid_texture(u32 dev, int variant)
     return tex;
 }
 
-u32 make_nebula(u32 dev, int W, int H)
-{
-    LR lr; u32 tex = create_locked(dev, W, H, &lr);
-    if (tex && lr.pBits) {
-        // cosmic palette : deep blue -> violet -> teal -> magenta (clouds tint drifts across the field)
-        static const float P[4][3] = { { 40, 64, 150 }, { 86, 54, 150 }, { 40, 120, 150 }, { 140, 58, 128 } };
-        for (int y = 0; y < H; y++) {
-            u32* row = (u32*)((char*)lr.pBits + y * lr.Pitch);
-            for (int x = 0; x < W; x++) {
-                const float u = (float)x / W, v = (float)y / H;
-                // domain-warp the sampling coords -> wispy, organic clouds. SEAMLESS: every u/v frequency
-                // multiplier is an INTEGER (fbm has period 1), and the warp is added onto an integer base,
-                // so the texture wraps perfectly at the edges (no visible tile seam).
-                const float wx = fbm(2.0f * u, 2.0f * v + 0.30f) - 0.5f;
-                const float wy = fbm(2.0f * u + 1.7f, 2.0f * v) - 0.5f;
-                const float d1 = fbm(3.0f * u + 0.7f * wx, 3.0f * v + 0.7f * wy);   // broad clouds
-                const float d2 = fbm(6.0f * u, 6.0f * v);                           // finer detail
-                float dens = d1 * 0.72f + d2 * 0.28f;
-                dens = (dens - 0.44f) / 0.40f; if (dens < 0.0f) dens = 0.0f; if (dens > 1.0f) dens = 1.0f;
-                dens = dens * dens;                                                 // soft falloff -> dark voids between clouds
-                float h = fbm(2.0f * u + 3.1f, 2.0f * v + 1.3f) * 3.0f;             // hue position 0..3
-                if (h < 0.0f) h = 0.0f; if (h > 2.999f) h = 2.999f;
-                const int i0 = (int)h; const float ft = h - i0;
-                const float cr = P[i0][0] + (P[i0 + 1][0] - P[i0][0]) * ft;
-                const float cg = P[i0][1] + (P[i0 + 1][1] - P[i0][1]) * ft;
-                const float cb = P[i0][2] + (P[i0 + 1][2] - P[i0][2]) * ft;
-                float R = 6.0f + cr * dens, G = 9.0f + cg * dens, B = 18.0f + cb * dens;   // dark space base + clouds
-                if (R > 255.0f) R = 255.0f; if (G > 255.0f) G = 255.0f; if (B > 255.0f) B = 255.0f;
-                row[x] = 0xFF000000 | ((u32)R << 16) | ((u32)G << 8) | (u32)B;
-            }
-        }
-        unlock(tex);
-    }
-    return tex;
-}
-
 // ---- MATERIAL textures for the procedural box themes (like the nebula : real procedural texture, not
 // flat quads). Each is a GRAYSCALE luminance pattern ; the box colours it per hue via MODULATE. ----
 
@@ -311,20 +275,6 @@ u32 load_bmp_texture(u32 dev, const char* path)
     return tex;
 }
 
-u32 make_texture_argb(u32 dev, int W, int H, const u32* pixels)
-{
-    LR lr; u32 tex = create_locked(dev, W, H, &lr);
-    if (tex && lr.pBits) {
-        for (int y = 0; y < H; y++) {
-            u32* dpix = (u32*)((char*)lr.pBits + y * lr.Pitch);
-            const u32* spix = pixels + y * W;
-            for (int x = 0; x < W; x++) dpix[x] = spix[x];
-        }
-        unlock(tex);
-    }
-    return tex;
-}
-
 static int mip_count(int w, int h) {
     int n = 1; while (w > 1 || h > 1) { w >>= 1; if (!w) w = 1; h >>= 1; if (!h) h = 1; n++; } return n;
 }
@@ -391,22 +341,6 @@ u32 make_dot(u32 dev) {                              // solid white disc with a 
 // no PNG decoder in the plugin). Loaded into an A8R8G8B8 + mip texture; the party
 // widget draws them TINTED (COLOROP=MODULATE with a diffuse colour). To change an
 // icon: drop a new PNG, re-run the convert step -> assets/icon_*.raw.
-static u32 load_icon_raw(u32 dev, const char* path) {
-    const int N = 128;
-    HANDLE hf = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
-    if (hf == INVALID_HANDLE_VALUE) return 0;
-    DWORD need = (DWORD)(N * N * 4), got = 0;
-    u32* buf = (u32*)HeapAlloc(GetProcessHeap(), 0, need);
-    if (!buf) { CloseHandle(hf); return 0; }
-    BOOL ok = ReadFile(hf, buf, need, &got, 0);
-    CloseHandle(hf);
-    u32 tex = (ok && got == need) ? make_texture_argb_mip(dev, N, N, buf) : 0;
-    HeapFree(GetProcessHeap(), 0, buf);
-    return tex;
-}
-u32 make_icon_party_lead(u32 dev)    { return load_icon_raw(dev, plugin_path_r("assets\\icon_crown.raw")); }
-u32 make_icon_alliance_lead(u32 dev) { return load_icon_raw(dev, plugin_path_r("assets\\icon_laurel.raw")); }
-u32 make_icon_qm(u32 dev)            { return load_icon_raw(dev, plugin_path_r("assets\\icon_chest.raw")); }
 
 void release_texture(u32 tex)
 {

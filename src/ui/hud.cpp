@@ -11,21 +11,11 @@
 #include "model/gamestate.h"
 #include "model/party_state.h"
 #include "model/zones.h"   // zone_name -> Zone Tracker (Dynamis/Abyssea) detection
-#include "model/resistances.h"   // Sheol/Odyssey : target resistance model (compute_resistances)
 #include "model/ui_config.h"
 #include "windower_debug.h"
 #include "ui/edit_box.h"  // edit-mode drag for the WS popup (place it in //aio edit like the other boxes)
 #include "gfx/draw.h"     // rrect_glow / disc_glow for the WS popup burst
 #include "model/skillchain.h"         // Skillchains : Resonating fields -> names / colours / elements
-#include "model/weapon_skills_gen.h"  // ws_info (closing WS name)
-#include "model/spells_gen.h"         // spell_info (closing spell name)
-#include "model/abilities_gen.h"      // abil_info (job-ability / avatar / pet ready-move names)
-#include "model/buffs_gen.h"          // buff_status_name : status id -> name (Timers Duration column, name mode)
-#include "ui/box_style.h"             // draw_themed_box : shared themed chrome for every module box
-#include "ui/text_style.h"            // te_font/te_sz/te_ow/te_col : the ONE TextStyle-resolve impl (per-module helpers delegate here)
-#include "model/mobskills_gen.h"      // mobskill_info (BST charmed/jug pet TP-move names)
-#include "model/itemnames_gen.h"      // item_name (treasure-pool item labels)
-#include "model/paths.h"              // plugin_path (coffer icon asset)
 #include "gfx/texture.h"              // load_raw_texture / release_texture (coffer icon)
 #include "gfx/d3d.h"                  // textured-quad state for the coffer icon (dSet* + FVF)
 #include <windows.h>

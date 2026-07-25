@@ -128,7 +128,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
             const int pct = (int)(ui_config().plrLum * 100.0f + (ui_config().plrLum >= 0.0f ? 0.5f : -0.5f));
             char b[16]; sprintf(b, "%+d%%", pct);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Luminosity", "Luminosité"), b, &v01)) {
-                ui_config().plrLum = v01 * 2.0f - 1.0f; save_ui_config(); }
+                ui_config().plrLum = v01 * 2.0f - 1.0f; }
           ROW_NEXT(46.0f)
         }
         }   // end own-theme rows (!plrThemeCopy)
@@ -260,7 +260,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().plrEquipScale * 100.0f + 0.5f));
             float v01 = (ui_config().plrEquipScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().plrEquipScale = v < lo ? lo : (v > hi ? hi : v); save_ui_config(); }
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().plrEquipScale = v < lo ? lo : (v > hi ? hi : v); }
         }
         ROW_NEXT(46.0f)
         // Standalone box chrome (frame / border / transparency / theme) : DETACHED only ; docked shares the Hub box.

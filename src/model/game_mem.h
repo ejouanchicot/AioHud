@@ -30,7 +30,6 @@ unsigned zone_id();    // current zone id (*(g+0x40)+0x02) -- matches the zones 
 // 512px native map. Reversed + live-confirmed 2026-07-06 (see docs/game-data/map-system.md).
 struct MapRecord { unsigned zone = 0, fileIdx = 0, flags = 0, fileId = 0; int scale = 0, offX = 0, offY = 0; bool valid = false; };
 bool read_map_record(unsigned zone, int submap, MapRecord& out);   // fileId = (flags&1 ? 0xD02F : 0x14C0) + fileIdx
-bool entity_name_by_id(unsigned id, char* out, int sz);      // server id -> entity name ('???' = unnamed) ; false if not found
 bool entity_name_by_index(unsigned index, char* out, int sz);// entity INDEX (what packets carry) -> name ; false if the slot is empty
 int  current_submap();   // current FLOOR index (multi-level zones) via the client position->floor routine ; 0 if mapless/ground
 int  read_usable_weapon_skills(unsigned short* out, int maxN);   // the player's usable WS ids (get_abilities bitmask) ; count
@@ -90,7 +89,6 @@ u32 equip_bag_arr();   // *(g + 0x58) -- s32[16] : bag/container id per equip sl
 
 // read the player's vitals as fractions (HP/MP in 0..1, TP in 0..1 of 3000).
 // returns false if the player structure isn't available yet (loading / not in game).
-bool read_player_vitals(float& hpFrac, float& mpFrac, float& tpFrac);
 
 // the local player, read straight from memory (always present + game-accurate) ->
 // shown as the self row in the party (the game never sends you your own party packet).
@@ -175,7 +173,6 @@ bool item_slot(int bag, int slot, unsigned& id, unsigned& count);
 // exists yet, so a one-shot caller (probe) works standalone -- but a POLLER must call refresh_items()
 // itself each cycle, else it re-reads a stale snapshot.
 unsigned count_item(unsigned id);
-bool     owns_item(unsigned id);        // count_item(id) != 0
 
 // Batch form : counts n ids in ONE pass over the snapshot (the EmpyPop tracker's ~5-30 ids at ~2 Hz).
 // out[i] pairs with ids[i]. Returns the number of ids with a non-zero count.

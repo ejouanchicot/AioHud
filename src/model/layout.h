@@ -58,6 +58,5 @@ PxRect widget_px(const LWidget& w, float sw, float sh, float contentW, float con
 
 // Inverse (for in-game drag): given the box's pixel rect on screen, pick the nearest
 // anchor (like the mockup) and set the widget's anchor + % accordingly.
-void widget_set_from_px(LWidget& w, float px, float py, float ww, float hh, float sw, float sh);
 
 } // namespace aio

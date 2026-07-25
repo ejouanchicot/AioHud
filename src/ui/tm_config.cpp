@@ -7,10 +7,7 @@
 #include "ui/config_rows.h"
 #include "model/ui_config.h"
 #include "model/party_state.h"       // self_main_job : default the track checklist to the current job
-#include "model/game_mem.h"          // read_player : current main/sub job + levels (level-gate the checklist)
 #include "model/job_track_gen.h"     // per-job trackable buff/recast entries + categories
-#include "model/paths.h"             // plugin_path : locate the job-icon atlas
-#include "gfx/texture.h"             // load_raw_texture : the job-icon atlas
 #include <cstring>
 #include "gfx/font.h"
 #include "gfx/draw.h"

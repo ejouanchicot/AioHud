@@ -59,7 +59,7 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         { ROW_BAND(46.0f)
             const float lo = 0.60f, hi = 3.00f; char b[16]; sprintf(b, "%d%%", (int)(c.scListGap * 100.0f + 0.5f));
             float v01 = (c.scListGap - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("WS spacing", "Espacement WS"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.scListGap = v < lo ? lo : (v > hi ? hi : v); save_ui_config(); }
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("WS spacing", "Espacement WS"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.scListGap = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
         #undef SC_TOGGLE
     }   // end Elements

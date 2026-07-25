@@ -6,7 +6,6 @@
 // before reaching the box itself.
 #include "ui/party.h"
 #include "ui/party_internal.h"   // the drawing helpers shared with party.cpp
-#include "ui/ui_colors.h"     // scl / lerp_color / hp_color : the shared ARGB helpers
 #include "ui/hud_internal.h"
 #include "ui/liquid_bars.h"
 #include "model/ui_config.h"

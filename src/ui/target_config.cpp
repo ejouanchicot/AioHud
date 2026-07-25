@@ -133,7 +133,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             const int pct = (int)(ui_config().tgtLum * 100.0f + (ui_config().tgtLum >= 0.0f ? 0.5f : -0.5f));
             char b[16]; sprintf(b, "%+d%%", pct);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Luminosity", "Luminosité"), b, &v01)) {
-                ui_config().tgtLum = v01 * 2.0f - 1.0f; save_ui_config(); }
+                ui_config().tgtLum = v01 * 2.0f - 1.0f; }
           ROW_NEXT(46.0f)
         }
         }   // end own-theme rows (!tgtThemeCopy)
@@ -373,7 +373,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             { ROW_BAND(46.0f)   // Row spacing
                 const float lo = 0.60f, hi = 3.00f; char b[16]; sprintf(b, "%d%%", (int)(c.dbRowGap * 100.0f + 0.5f));
                 float v01 = (c.dbRowGap - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Row spacing", "Espacement lignes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.dbRowGap = v < lo ? lo : (v > hi ? hi : v); save_ui_config(); }
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Row spacing", "Espacement lignes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.dbRowGap = v < lo ? lo : (v > hi ? hi : v); }
             } ROW_NEXT(46.0f)
             draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.dbBox);   // detached-box frame / transparency / theme
         }

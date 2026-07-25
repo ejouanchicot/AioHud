@@ -136,9 +136,6 @@ static const char* song_mod_tag(unsigned char m, char* buf, int cap) {
 static bool tm_self_focus_on(const UiConfig& C, int /*job*/, unsigned status) {
     return C.tm_buff_off(UiConfig::TM_KEY_FOCUS | status);
 }
-static bool tm_self_hidden(const UiConfig& C, int /*job*/, unsigned status) {
-    return C.tm_buff_off(status);
-}
 // SELF-CARRIED buffs : Food / Aftermath / conquest (Signet, Sanction, Sigil, Ionis) / synthesis Imagery. NO job
 // CASTS these, so buff_caster_for can't attribute them and self_can_produce_buff says no -> the "buff source" filter
 // (srcKeeps) would classify them as "not yours" and hide them under anything but "All". But they ARE yours (you

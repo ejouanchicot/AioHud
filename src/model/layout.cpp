@@ -151,13 +151,4 @@ PxRect widget_px(const LWidget& w, float sw, float sh, float contentW, float con
 }
 
 // ---- pixels -> nearest anchor + % (for in-game drag ; mirrors the mockup's anchorPanel) ----
-void widget_set_from_px(LWidget& w, float px, float py, float ww, float hh, float sw, float sh) {
-    bool right  = (px + ww * 0.5f) > sw * 0.5f;
-    bool bottom = (py + hh * 0.5f) > sh * 0.5f;
-    w.ah = right  ? 'r' : 'l';
-    w.av = bottom ? 'b' : 't';
-    w.x = round1(right  ? (sw - (px + ww)) / sw * 100.0 : px / sw * 100.0);
-    w.y = round1(bottom ? (sh - (py + hh)) / sh * 100.0 : py / sh * 100.0);
-}
-
 } // namespace aio

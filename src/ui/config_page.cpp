@@ -7,8 +7,6 @@
 #include "ui/config_page.h"
 #include "ui/config_controls.h"   // shared config toolkit (palette, ease, primitives, controls)
 #include "ui/config_rows.h"       // ROW_BAND / ROW_NEXT row-layout macros (shared with the *_config.cpp panels)
-#include "gfx/draw.h"      // grad_quad
-#include "gfx/texture.h"   // load_raw_texture (logo)
 #include "gfx/font.h"
 #include "gfx/window.h"
 #include "model/ui_config.h"
@@ -69,7 +67,6 @@ void ConfigPage::dispose() {   // //unload : device is still alive -> RELEASE ou
     on_device_lost();   // zero the handles + retry flags
 }
 void ConfigPage::set_tab(int t)     { if (t >= 0 && t < NTABS) tab_ = t; }
-void ConfigPage::set_section(int s) { if (s >= 0) section_ = s; }   // (sections folded into the profile sidebar)
 // a crisp little VECTOR icon for a tab/module, drawn in `col` with an optional soft accent glow behind.
 // kind 0 = gear (Configuration), 1 = person (Profile), 2 = "?" (Help). `s` = icon box size (px).
 static void tab_icon(u32 dev, int kind, float cx, float cy, float s, u32 col, Font* fo, u32 glowCol, float glow) {

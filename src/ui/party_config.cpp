@@ -52,7 +52,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             const float transp = 1.0f - ui_config().skinBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
             float v01 = clampf(transp, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Transparency", "Transparence"), b, &v01)) {
-                ui_config().skinBoxAlpha = 1.0f - v01; save_ui_config(); }
+                ui_config().skinBoxAlpha = 1.0f - v01; }
           ROW_NEXT(46.0f)
         }
         // ---- Appearance : the PARTY box theme (procedural families = colour grid ; FFXI = game theme numbers). ----
@@ -108,7 +108,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             const int pct = (int)(ui_config().skinLum * 100.0f + (ui_config().skinLum >= 0.0f ? 0.5f : -0.5f));
             char b[16]; sprintf(b, "%+d%%", pct);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Luminosity", "Luminosité"), b, &v01)) {
-                ui_config().skinLum = v01 * 2.0f - 1.0f; save_ui_config(); }
+                ui_config().skinLum = v01 * 2.0f - 1.0f; }
           ROW_NEXT(46.0f)
         }
         // ---- Party box settings (index 0) ----
@@ -325,14 +325,14 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             const int pct = (int)(ui_config().allyLum * 100.0f + (ui_config().allyLum >= 0.0f ? 0.5f : -0.5f));
             char b[16]; sprintf(b, "%+d%%", pct);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Luminosity", "Luminosité"), b, &v01)) {
-                ui_config().allyLum = v01 * 2.0f - 1.0f; save_ui_config(); }
+                ui_config().allyLum = v01 * 2.0f - 1.0f; }
           ROW_NEXT(46.0f)
         }
         { ROW_BAND(46.0f)   // Transparency
             const float transp = 1.0f - ui_config().allyBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
             float v01 = clampf(transp, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Transparency", "Transparence"), b, &v01)) {
-                ui_config().allyBoxAlpha = 1.0f - v01; save_ui_config(); }
+                ui_config().allyBoxAlpha = 1.0f - v01; }
           ROW_NEXT(46.0f)
         }
         }   // end custom alliance theme (!allyThemeCopy)

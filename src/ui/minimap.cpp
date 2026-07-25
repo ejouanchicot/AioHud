@@ -12,7 +12,7 @@
 #include "windower_debug.h"          // MAP FAIL log (always on -- the bug is rare and can't be armed for)
 #include "gfx/draw.h"
 #include "gfx/font.h"
-#include "gfx/texture.h"             // make_texture_argb / release_texture
+#include "gfx/texture.h"             // make_texture_argb_mip / release_texture
 #include "gfx/window.h"              // window_theme_family / window_theme_variant / box_hue_color (frame theme)
 #include "gfx/d3d.h"                 // dSet* + FVF constants
 #include "ui/text_style.h"           // te_sz/te_ow/te_col : shared TextStyle-resolve impl

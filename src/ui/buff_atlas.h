@@ -1,7 +1,10 @@
 // buff_atlas.h -- the shared status-icon atlas geometry (assets/buff_atlas.raw, built by
 // scripts/gen_buff_atlas.ps1 from XivParty's icon set). A fixed 32-col grid of 32px cells ; a status id maps
-// to cell (id % COLS, id / COLS). party / player / target / timers all read the SAME atlas, so the dimensions,
-// the runtime path, and the id->UV math live here once (each widget keeps its own per-icon layout/draw).
+// to cell (id % COLS, id / COLS). party / player / target / timers all read the SAME atlas, so the dimensions
+// and the runtime path live here once (each widget keeps its own per-icon layout/draw).
+// NOTE : buff_cell_uv() below is the intended single source for the id->UV math, but no widget calls it yet --
+// the 9 draw sites still inline the same two divisions. Adopting it is a behaviour-preserving cleanup, listed
+// in docs/notes/audit-technique-2026-07-26.md ; until then this header holds TWO copies of that math, not one.
 #pragma once
 #include "gfx/d3d.h"          // u32
 #include "model/paths.h"      // plugin_path (runtime-derived asset path)

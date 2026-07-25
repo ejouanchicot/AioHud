@@ -16,7 +16,6 @@ public:
     void set_open(bool o) { if (o && !open_) { anim_ = 0.0f; profDirty_ = true; } open_ = o; }
     bool is_open() const  { return open_; }
     void set_tab(int t);
-    void set_section(int s);
 
     // draw the overlay for the current frame (screen size in the HUD coord space). No-op if closed.
     void draw(const Frame& f, float sw, float sh);
