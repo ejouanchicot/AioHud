@@ -33,6 +33,7 @@
 #include <locale.h>
 
 namespace aio { void timers_reset(); }   // hud_timers.cpp : //aio timers reset -> flush live buff/recast timers + focus alerts
+namespace aio { void timers_oblog_arm(); }   // hud_timers.cpp : //aio oblog -> one-frame dump of the ally-buff pipeline
 
 // NB: the reverse-engineering DIAGNOSTIC surface (mem_scan / scan_word_range / th_bits / thfx_walk /
 // bt_scan / pw_scan_* / collect_ptr_hits / f2s_probe + every g_*log ring + the //aio debug/dump/scan
@@ -873,6 +874,11 @@ static void aio_command_dispatch(const char* cmd)
         aio::timers_focus_trace(180);   // 180 SECONDS -- long enough for a full buff cycle plus the alert window
         aio::party().set_buff076_trace(180);   // model-side twin : log 0x076 arrivals + zone markers over the same window (does an ally's buff set refresh after a zone ?)
         g_host.console().print(">>> AioHud : ftrace ARMED (have the Hidden+Focus buff up, then send Windower\\plugins\\aiohud_debug.log ; look for FOCUS / B076 lines) <<<");
+        return;
+    }
+    if (strstr(buf, "oblog")) {   // //aio oblog -> ONE-frame dump of the ally-buff pipeline : model -> groups -> rows
+        aio::timers_oblog_arm();
+        g_host.console().print(">>> AioHud : oblog ARME -- la prochaine frame dumpe le pipeline des buffs allies dans Windower\\plugins\\aiohud_debug.log (bloc OBLOG) <<<");
         return;
     }
     if (strstr(buf, "doctor")) {   // //aio doctor -> run every RUNTIME check and print what to DO about each problem

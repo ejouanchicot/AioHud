@@ -35,6 +35,18 @@ namespace aio {
 static unsigned g_tmResetGen = 0;
 void timers_reset() { party().buff_timers_clear(); party().other_buffs_clear(); ++g_tmResetGen; }
 
+// //aio oblog -- ONE-FRAME dump of the whole ally-buff pipeline, in the three stages it actually has :
+//   MODEL  : what on_action recorded, per entry, with every field a later decision reads
+//   GROUP  : what the entries were merged into, with the key that merged them and the timer chosen
+//   ROW    : what was finally emitted, and by which branch
+// A symptom -- "that row is missing", "that timer is wrong", "why are these two on one line" -- can come from
+// any of the three, and no description can tell them apart. Guessing which one it was is how a good fix and a
+// regression get written on the same afternoon. One capture answers it.
+// Armed for a SINGLE frame : this runs at 60 Hz and the interesting state is one instant, not a stream.
+static int g_obLog = 0;
+void timers_oblog_arm() { g_obLog = 1; }
+#define OBLOG(...) do { if (g_obLog) windower::debug::log(__VA_ARGS__); } while (0)
+
 // Timers box : the SAME status-icon atlas as the Player / Party boxes (buff_atlas.raw : 1024x640, 32px cells, 32-col
 // grid ; a status id maps to cell (id%32, id/32)).
 // recast_id -> ability / spell NAME (linear scan of the generated tables ; only ever run for the few active recasts).
@@ -283,6 +295,22 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         };
         if (C.tmMine) {
             ob = party().other_buffs(no);   // (prune_other_buffs_worn now runs once per frame from the model tick, not from here)
+            if (g_obLog) {   // ---- stage 1 : the MODEL, before any grouping decision touches it ----
+                windower::debug::log("=== OBLOG : %d ally entr(ies) in the model ===", no);
+                for (int i = 0; i < no; ++i) {
+                    const PartyState::OtherBuff& o = ob[i];
+                    const char* sp = o.isAbil ? abil_name_by_id(o.spell) : (spell_info(o.spell) ? spell_info(o.spell)->en : 0);
+                    const unsigned selfExp = party().self_buff_expiry_for(o.status, o.spell);
+                    const BuffSet* bs = party().buffs_for(o.target);
+                    bool has = false; if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == o.status) { has = true; break; }
+                    windower::debug::log("  MODEL[%d] %-16s %-18s st=%-4u aoe=%d mirrorSelf=%d fresh=%d | est=%ds (start+%ums dur=%ums) expTick=%u selfExp=%u dTick=%d | buffset=%s has=%d",
+                                         i, o.name[0] ? o.name : "<no name>", sp ? sp : "<unknown spell>", o.status,
+                                         o.aoe, o.mirrorSelf, obFresh(o) ? 1 : 0,
+                                         obRem(o), o.startMs, o.durMs, o.expTick, selfExp,
+                                         (o.expTick && selfExp) ? (int)(o.expTick - selfExp) : 0,
+                                         bs ? "yes" : "NONE", has ? 1 : 0);
+                }
+            }
             for (int i = 0; i < no; ++i) {
                 const int r = obRem(ob[i]);
                 if (r <= 0) continue;
@@ -504,6 +532,17 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         // ---- pass 3 : emit the buffs you cast on allies, COUNTED + VALIDATED against everyone's REAL buffs. So the AoE
         //      count matches who actually got it (not our 0x028 target parse -- BattleMod-accurate) and a replaced roll
         //      nobody carries drops. total >= 2 -> one "Spell (AoE N)" row (N counts you) ; exactly 1 -> "Person - Spell". ----
+        if (g_obLog) {   // ---- stage 2 : the GROUPS the entries were merged into, and the key that merged them ----
+            windower::debug::log("=== OBLOG : %d group(s) formed  [key = spell + fresh ; aoe is OR-ed in, not part of the key] ===", ng);
+            for (int k = 0; k < ng; ++k) {
+                const char* sp = grp[k].isAbil ? abil_name_by_id(grp[k].spell) : (spell_info(grp[k].spell) ? spell_info(grp[k].spell)->en : 0);
+                const int selfRem = party().self_buff_remaining_for(grp[k].status, grp[k].spell);
+                windower::debug::log("  GROUP[%d] %-18s st=%-4u fresh=%d aoe=%d allies=%d selfHas=%d selfCast=%d | rem(shortest est)=%ds selfRem=%ds -> displayed=%ds",
+                                     k, sp ? sp : "<unknown spell>", grp[k].status, grp[k].fresh, grp[k].aoe,
+                                     grp[k].allies, grp[k].selfHas, grp[k].selfCast,
+                                     grp[k].rem, selfRem, (grp[k].aoe && selfRem > 0) ? selfRem : grp[k].rem);
+            }
+        }
         static char obLabel[64][44], tagBuf[64][16];
         const bool graceOB = party().in_zone_grace();   // just zoned : the real 0x076 caches are still refilling -> trust the estimate, don't validate
         if (C.tmMine) for (int k = 0; k < ng && nb < 50; ++k) {
@@ -569,6 +608,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     _snprintf(obLabel[nb], sizeof(obLabel[nb]), "(AoE %d)", effN); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0; bufs[nb].name = obLabel[nb];
                 }
                 bufs[nb].src = 4;   // pass 3 : a buff YOU cast on allies, shown as one AoE group
+                OBLOG("  ROW  GROUPED   \"%s%s\"  rem=%ds  order=%d   [group %d, effN=%d]", bufs[nb].name ? bufs[nb].name : "?", bufs[nb].post ? bufs[nb].post : "", bufs[nb].rem, bufs[nb].order, k, effN);
                 ++nb;   // your AoE -> group first
             } else {   // PER-ALLY : one "Person - Spell" row for each ally who really carries it (self is in pass 2).
                        // For a LAGGARD group this is the whole point : one NAMED row per un-refreshed person (Kaories,
@@ -590,8 +630,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     if (en) { _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s - %s", ob[i].name, en); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0; bufs[nb].name = obLabel[nb]; }
                     else bufs[nb].name = ob[i].name;
                     bufs[nb].rem = obRem(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].both = 1; bufs[nb].order = poBase + party().party_order(ob[i].target); bufs[nb].src = 5; ++nb;   // ally-cast rows GROUPED BY ally ; laggards form a named block after the fresh ones
+                    OBLOG("  ROW  per-ally  \"%s\"  rem=%ds  order=%d   [group %d, %s]", bufs[nb-1].name ? bufs[nb-1].name : "?", bufs[nb-1].rem, bufs[nb-1].order, k, lag ? "laggard" : "fresh");
                 }
             }
+        }
+        if (g_obLog) {   // ---- stage 3 done : every ally row emitted. Disarm -- one frame is the whole point. ----
+            windower::debug::log("=== OBLOG : end (%d row(s) emitted so far this frame) ===", nb);
+            g_obLog = 0;
         }
         // ---- FOCUS monitor : for buffs marked FOCUS (Haste/Refresh/Phalanx/Flurry/Composure/Reraise...), remember
         //      them once they're UP -- on YOU (Self) or on an ally (Allies you cast them on) -- and keep a RED row
