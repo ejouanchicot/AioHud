@@ -628,7 +628,11 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                        // For a LAGGARD group this is the whole point : one NAMED row per un-refreshed person (Kaories,
                        // Gab, ...) on THEIR own shorter timer, as a block AFTER your fresh ally-casts (order 30+ vs 11-28).
                 const int poBase = lag ? 30 : 11;
-                for (int i = 0; i < no && nb < 50; ++i) if (ob[i].spell == grp[k].spell && (obFresh(ob[i]) ? 1 : 0) == grp[k].fresh && obRem(ob[i]) > 0) {   // ONLY this generation's members -> a laggard row lists exactly the people the re-sing missed
+                // Selector must match the group KEY exactly -- spell, freshness AND delivery. Missing `aoe` here
+                // while it was part of the key made the single-target group re-emit every AoE member as well :
+                // //aio oblog showed one per-ally row per ally all tagged [group 0], next to the correct
+                // "(AoE 4)" from group 1. Whenever the key gains a field, this line gains it too.
+                for (int i = 0; i < no && nb < 50; ++i) if (ob[i].spell == grp[k].spell && (obFresh(ob[i]) ? 1 : 0) == grp[k].fresh && ob[i].aoe == grp[k].aoe && obRem(ob[i]) > 0) {   // ONLY this generation's members -> a laggard row lists exactly the people the re-sing missed
                     const BuffSet* bs = party().buffs_for(ob[i].target); bool has = false; if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == grp[k].status) { has = true; break; }
                     // Drop the row ONLY on positive evidence that the ally lost the buff : we hold that member's
                     // 0x076 list AND the status is not in it. buffs_for() returning null is "we have never been
