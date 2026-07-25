@@ -49,6 +49,11 @@ jobs:
           # Rule 9 -- every control passes CTRL_ID ; a hand-picked number silently shares a spring.
           if git grep -nE 'ease\( *[0-9]' -- 'src/*'; then
             echo "::error::hand-picked ease() uid (rule 9) -- use CTRL_ID / ctrl_uid_i"; fail=1; fi
+          # windower::debug::log goes through wvsprintfA, which has NO floating point : a %f prints garbage.
+          # It bites exactly where it hurts most -- a diagnostic probe, unreadable on the one capture that
+          # mattered, which reads like the bug not reproducing. Format tenths/percentages with integer math.
+          if git grep -nE 'debug::log\("[^"]*%[-0-9.+ ]*[fgeFGE][^a-zA-Z]' -- 'src/*' 'include/*'; then
+            echo "::error::%f in a debug::log format -- wvsprintfA has no floating point, use integer math"; fail=1; fi
           # A generated header with no banner is one somebody will hand-edit.
           if git grep -L 'GENERATED' -- 'src/model/*_gen.h'; then
             echo "::error::generated header without a 'GENERATED' banner"; fail=1; fi
