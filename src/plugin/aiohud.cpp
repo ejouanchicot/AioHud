@@ -876,9 +876,9 @@ static void aio_command_dispatch(const char* cmd)
         g_host.console().print(">>> AioHud : ftrace ARMED (have the Hidden+Focus buff up, then send Windower\\plugins\\aiohud_debug.log ; look for FOCUS / B076 lines) <<<");
         return;
     }
-    if (strstr(buf, "oblog")) {   // //aio oblog -> ONE-frame dump of the ally-buff pipeline : model -> groups -> rows
+    if (strstr(buf, "oblog")) {   // //aio oblog -> ONE-frame dump of the ally-buff pipeline : prune -> model -> groups -> rows -> focus
         aio::timers_oblog_arm();
-        g_host.console().print(">>> AioHud : oblog ARME -- la prochaine frame dumpe le pipeline des buffs allies dans Windower\\plugins\\aiohud_debug.log (bloc OBLOG) <<<");
+        g_host.console().print(">>> AioHud : oblog ARME -- la prochaine frame dumpe le pipeline des buffs allies dans Windower\\plugins\\aiohud_debug.log (blocs OBPRUNE + OBLOG) <<<");
         return;
     }
     if (strstr(buf, "doctor")) {   // //aio doctor -> run every RUNTIME check and print what to DO about each problem

@@ -36,6 +36,7 @@ static unsigned g_tmResetGen = 0;
 void timers_reset() { party().buff_timers_clear(); party().other_buffs_clear(); ++g_tmResetGen; }
 
 // //aio oblog -- ONE-FRAME dump of the whole ally-buff pipeline, in the three stages it actually has :
+//   PRUNE  : what the model THREW AWAY before the drawer ever saw it, and the 0x076 evidence for each drop
 //   MODEL  : what on_action recorded, per entry, with every field a later decision reads
 //   GROUP  : what the entries were merged into, with the key that merged them and the timer chosen
 //   ROW    : what was finally emitted, and by which branch
@@ -44,7 +45,9 @@ void timers_reset() { party().buff_timers_clear(); party().other_buffs_clear(); 
 // regression get written on the same afternoon. One capture answers it.
 // Armed for a SINGLE frame : this runs at 60 Hz and the interesting state is one instant, not a stream.
 static int g_obLog = 0;
-void timers_oblog_arm() { g_obLog = 1; }
+// Also arms the MODEL-side prune trace (stage 0). The prune runs on the model tick, so it fires just before the
+// next draw -> the OBPRUNE block lands directly above the OBLOG block in the same log, reading in pipeline order.
+void timers_oblog_arm() { g_obLog = 1; party().arm_ob_prune_trace(); }
 #define OBLOG(...) do { if (g_obLog) windower::debug::log(__VA_ARGS__); } while (0)
 
 // Timers box : the SAME status-icon atlas as the Player / Party boxes (buff_atlas.raw : 1024x640, 32px cells, 32-col
@@ -800,10 +803,24 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (w != q) fm[w] = fm[q]; ++w;
             }
             fmN = w;
+            // //aio oblog stage 4 : the FOCUS monitor. It decides "OUT" from a SEPARATE input (0x076 presence of the
+            // STATUS on the target) than the rows above, so a song can draw a healthy timer AND a red OUT at once --
+            // and the group/row stages show nothing about why. Songs share statuses across spells (both Marches are
+            // 214), so `has` answering for the family and `spell` naming one member of it is exactly where an "it IS
+            // up, you re-cast it in AoE" symptom lives. Dumped for every monitored entry, kept or not.
+            OBLOG("=== OBLOG : %d focus monitor entr(ies) ===", fmN);
             for (int q = 0; q < fmN && nb < 50; ++q) {                                         // emit a RED row for each MISSING focus buff (self or ally)
                 bool has;
                 if (fm[q].self) has = meHas(fm[q].status);
                 else { const BuffSet* bs = party().buffs_for(fm[q].target); has = false; if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == fm[q].status) { has = true; break; } }
+                if (g_obLog) {
+                    const char* fen = fm[q].isAbil ? abil_name_by_id(fm[q].spell) : (spell_info(fm[q].spell) ? spell_info(fm[q].spell)->en : 0);
+                    OBLOG("  FOCUS q=%-2d %-16s tgt=%08X st=%-4u spell=%-5u \"%s\" self=%d  has(0x076)=%d listReady=%d lostAgo=%dms  replaced=%d unrecov=%d",
+                          q, fm[q].self ? "<you>" : fm[q].name, fm[q].target, fm[q].status, fm[q].spell, fen ? fen : "?",
+                          fm[q].self, has ? 1 : 0, listReady(fm[q]) ? 1 : 0,
+                          fm[q].lostMs ? (int)(nowMs - fm[q].lostMs) : -1,
+                          songReplaced(fm[q]) ? 1 : 0, songUnrecoverable(fm[q]) ? 1 : 0);
+                }
                 if (focus_trace_live()) {
                     // nbuff is the crux : meHas() FAILS OPEN (returns true for everything) when the live buff list is
                     // empty, so nbuff==0 would pin has=1 forever and make the alert unreachable. Log the list too.

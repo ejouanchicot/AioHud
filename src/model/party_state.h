@@ -517,6 +517,7 @@ struct PartyState {
     bool in_zone_grace() const { return obZoneGrace_; }
     const OtherBuff* other_buffs(int& n) const { n = otherBuffN_; return otherBuffs_; }
     void other_buffs_clear() { otherBuffN_ = 0; }
+    unsigned char obPruneTrace_ = 0;   // //aio oblog : dump the next prune pass (see arm_ob_prune_trace)
     void clear_other_buffs_for(unsigned id) { int w = 0; for (int k = 0; k < otherBuffN_; ++k) if (otherBuffs_[k].target != id) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; } otherBuffN_ = w; }
     // --- JOB-CHANGE detection (Timers) : a member (self or ally) that swaps main/sub drops ALL buffs and resets
     //     recasts (except the SP 2-hr, whose recast is shared across jobs -> read live, unaffected). We shadow each
@@ -575,6 +576,11 @@ struct PartyState {
     // (Troubadour-extended) timer had ~1 min left -- so recasting one song made every other song lose its "(AoE N)".
     bool ob_self_alive(const OtherBuff& o) const;
     void prune_other_buffs_worn();   // drop entries whose target no longer shows the status (0x076) -> early wear-off
+    // //aio oblog stage 0 : trace the NEXT prune pass. An entry that never reaches the drawer is invisible to the
+    // other three stages -- they can only show what survived, so "the row is missing" reads identically whether
+    // on_action never recorded it or the prune dropped it a frame later. This dumps the drop decision and the
+    // 0x076 evidence it was made on. One pass only : prune runs at the model tick rate.
+    void arm_ob_prune_trace() { obPruneTrace_ = 1; }
     // --- GEO self Indi- aura : a GEO carries ONE Indi- ; the effect status in 0x063 is REFRESHED every ~3s by the
     //     aura pulse, so it never shows the real aura lifetime. When YOU cast an Indi- on yourself we compute the
     //     aura duration (base + JP 1362 + Indicolure gear) and show THAT instead, keyed by the effect status. ---

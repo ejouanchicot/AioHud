@@ -1482,15 +1482,34 @@ void PartyState::prune_other_buffs_worn() {
     obZone_ = z;                                                  //   a zone, so during the grace we keep ally buffs on their estimate
     const bool zoneGrace = (int)(obZoneGraceMs_ - now) > 0;       //   and skip the "worn / disband" checks (they'd false-drop on the empty cache).
     obZoneGrace_ = zoneGrace;                                     //   the drawer (in_zone_grace) uses this to keep showing ally/AoE rows from the estimate.
-    bool drop[32]; for (int k = 0; k < otherBuffN_; ++k) drop[k] = false;
+    // //aio oblog stage 0. An entry dropped HERE never reaches the drawer, so the MODEL/GROUP/ROW stages cannot
+    // show it at all -- "the row is missing" looks the same whether on_action never recorded it or this pass threw
+    // it away. Log every entry with the drop verdict AND the 0x076 evidence behind it (`has` is the whole basis of
+    // the slot rule below, and it is status-scoped while songs are spell-scoped -- exactly the ambiguity to see).
+    const bool ptr = obPruneTrace_ != 0;
+    obPruneTrace_ = 0;
+    if (ptr) {
+        windower::debug::log("=== OBPRUNE : %d entr(ies) before the pass  zoneGrace=%d ===", otherBuffN_, zoneGrace ? 1 : 0);
+        for (int mi = 0; mi < count; ++mi) {   // the raw 0x076 evidence, per member, BEFORE any decision reads it
+            if (m[mi].id == 0 || m[mi].id == selfId_) continue;
+            const BuffSet* bs = buffs_for(m[mi].id);
+            if (!bs) { windower::debug::log("  0x076  %-16s id=%08X  <no cache>  (unverifiable -> entries are KEPT)", m[mi].name, m[mi].id); continue; }
+            char ln[300]; int w2 = 0;
+            for (int i = 0; i < bs->n && w2 < 260; ++i) w2 += _snprintf(ln + w2, sizeof(ln) - 1 - w2, "%u ", bs->ids[i]);
+            ln[(w2 > 0 && w2 < (int)sizeof(ln)) ? w2 : 0] = 0;
+            windower::debug::log("  0x076  %-16s id=%08X  n=%d : %s", m[mi].name, m[mi].id, bs->n, ln);
+        }
+    }
+    bool drop[32]; const char* why[32];
+    for (int k = 0; k < otherBuffN_; ++k) { drop[k] = false; why[k] = "kept"; }
     for (int k = 0; k < otherBuffN_; ++k) {
         OtherBuff& ob = otherBuffs_[k];
-        if (!zoneGrace && party_order(ob.target) > 17) { drop[k] = true; continue; }   // target left the party/alliance (disband) -> drop
-        if (!zoneGrace && song_family(ob.spell) > 0 && member_offzone(ob.target)) { drop[k] = true; continue; }   // SONG on a member who left YOUR zone : 0x076 no longer refreshes them -> unverifiable, clean it (matches the hud_timers song-offzone rule ; also keeps such a frozen song out of the AoE song-count / base learning)
+        if (!zoneGrace && party_order(ob.target) > 17) { drop[k] = true; why[k] = "target left the party (disband)"; continue; }   // target left the party/alliance (disband) -> drop
+        if (!zoneGrace && song_family(ob.spell) > 0 && member_offzone(ob.target)) { drop[k] = true; why[k] = "song on a member outside your zone (unverifiable)"; continue; }   // SONG on a member who left YOUR zone : 0x076 no longer refreshes them -> unverifiable, clean it (matches the hud_timers song-offzone rule ; also keeps such a frozen song out of the AoE song-count / base learning)
         if (ob.isAbil) {   // ROLLS are always on you + the party TOGETHER : lock the ally copy to YOUR live 0x063 roll
             const unsigned e = self_buff_expiry(ob.status);   // timer, and drop it the moment you lose the roll (worn OR replaced by a newer roll).
             if (e != 0) { ob.expTick = e; ob.mirrorSelf = 0; }
-            else if (!zoneGrace && (int)(now - ob.startMs) > 3000) drop[k] = true;   // grace : let the fresh cast's 0x063 arrive first (and survive a zone)
+            else if (!zoneGrace && (int)(now - ob.startMs) > 3000) { drop[k] = true; why[k] = "roll : you no longer hold it (worn/replaced)"; }   // grace : let the fresh cast's 0x063 arrive first (and survive a zone)
             continue;
         }
         // AoE-on-self : mirror your live self timer only briefly, then SNAPSHOT the exact remaining + freeze (so a
@@ -1519,16 +1538,25 @@ void PartyState::prune_other_buffs_worn() {
             const unsigned selfE = self_buff_expiry_for(ob.status, ob.spell);
             if (selfE != 0 && selfE > ob.expTick && (int)(selfE - ob.expTick) < 3600) ob.expTick = selfE;   // 3600t = 60s : load-sized bump, absorbed whenever it lands
         }
-        if (ob.expTick) { if ((int)(ob.expTick - ffxi_now_tick()) <= 0) { drop[k] = true; continue; } }   // frozen on the self expiry
-        else if ((int)((ob.startMs + ob.durMs) - now) <= 0) { drop[k] = true; continue; }                 // estimate elapsed
-        if ((int)(now - ob.startMs) <= 3000) continue;             // grace : let the 0x076 reflect a fresh cast
-        if (zoneGrace) continue;                                   // just zoned : the buff persists, the 0x076 cache is still refilling -> keep
+        if (ob.expTick) { if ((int)(ob.expTick - ffxi_now_tick()) <= 0) { drop[k] = true; why[k] = "frozen self expiry elapsed"; continue; } }   // frozen on the self expiry
+        else if ((int)((ob.startMs + ob.durMs) - now) <= 0) { drop[k] = true; why[k] = "estimate elapsed"; continue; }                 // estimate elapsed
+        if ((int)(now - ob.startMs) <= 3000) { why[k] = "kept (fresh <3s : 0x076 not caught up)"; continue; }             // grace : let the 0x076 reflect a fresh cast
+        if (zoneGrace) { why[k] = "kept (zone grace)"; continue; }                                   // just zoned : the buff persists, the 0x076 cache is still refilling -> keep
         const BuffSet* bs = buffs_for(ob.target);
-        if (!bs) continue;                                         // member buffs not cached (alliance/out of zone) -> keep
+        if (!bs) { why[k] = "kept (no 0x076 cache for this member -> unverifiable)"; continue; }   // member buffs not cached (alliance/out of zone) -> keep
         int has = 0; for (int i = 0; i < bs->n; ++i) if (bs->ids[i] == ob.status) ++has;   // active copies of this status
         int newer = 0;                                             // fresher entries of the same status on this member
         for (int j = 0; j < otherBuffN_; ++j) if (j != k && otherBuffs_[j].target == ob.target && otherBuffs_[j].status == ob.status && otherBuffs_[j].startMs > ob.startMs) ++newer;
-        if (newer >= has) drop[k] = true;                          // beyond the member's active slot count -> replaced/worn
+        if (newer >= has) { drop[k] = true; why[k] = "slot rule : newer >= has"; }   // beyond the member's active slot count -> replaced/worn
+        if (ptr) windower::debug::log("  SLOT  k=%-2d %-18s tgt=%08X st=%-4u spell=%-5u  has(0x076)=%d newer=%d -> %s",
+                                      k, ob.name, ob.target, ob.status, ob.spell, has, newer, drop[k] ? "DROP" : "keep");
+    }
+    if (ptr) {
+        for (int k = 0; k < otherBuffN_; ++k)
+            windower::debug::log("  ENTRY k=%-2d %-18s tgt=%08X st=%-4u spell=%-5u aoe=%d mirror=%d expTick=%u age=%dms dur=%ums -> %s : %s",
+                                 k, otherBuffs_[k].name, otherBuffs_[k].target, otherBuffs_[k].status, otherBuffs_[k].spell,
+                                 otherBuffs_[k].aoe, otherBuffs_[k].mirrorSelf, otherBuffs_[k].expTick,
+                                 (int)(now - otherBuffs_[k].startMs), otherBuffs_[k].durMs, drop[k] ? "DROP" : "KEEP", why[k]);
     }
     int w = 0;
     for (int k = 0; k < otherBuffN_; ++k) if (!drop[k]) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; }
