@@ -661,10 +661,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 }
             }
         }
-        if (g_obLog) {   // ---- stage 3 done : every ally row emitted. Disarm -- one frame is the whole point. ----
-            windower::debug::log("=== OBLOG : end (%d row(s) emitted so far this frame) ===", nb);
-            g_obLog = 0;
-        }
+        OBLOG("=== OBLOG : ally rows done (%d row(s) emitted so far this frame) ===", nb);
+        // NB : do NOT disarm here. The FOCUS monitor below is stage 4 and runs AFTER this point -- clearing
+        // g_obLog now made that whole stage unreachable, so a capture came back with no focus lines at all and
+        // read exactly like "no focus buff is being watched". The disarm belongs at the true end of the frame.
         // ---- FOCUS monitor : for buffs marked FOCUS (Haste/Refresh/Phalanx/Flurry/Composure/Reraise...), remember
         //      them once they're UP -- on YOU (Self) or on an ally (Allies you cast them on) -- and keep a RED row
         //      while the buff is MISSING, until it's re-applied. Pruned when the ally leaves the party or you zone. ----
@@ -869,6 +869,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 obLabel[nb][sizeof(obLabel[nb]) - 1] = 0;
                 bufs[nb].name = obLabel[nb]; bufs[nb].nameCol = 0xFFFF3B3Bu; bufs[nb].rem = TM_REM_MISSING; bufs[nb].icon = fm[q].status; bufs[nb].both = 1; bufs[nb].order = 0; bufs[nb].src = 6; ++nb;   // ALL "OUT" alerts (self + ally) sort to order 0 : rem=MISSING pulls them to the very top so a small tmMax can't clip a critical alert
             }
+        }
+        if (g_obLog) {   // ---- every stage done, focus monitor included. Disarm : one frame is the whole point. ----
+            windower::debug::log("=== OBLOG : end (%d row(s) total this frame) ===", nb);
+            g_obLog = 0;
         }
         if (f.game) for (int i = 0; i < f.game->nRecast && nr < 50; ++i) {   // recasts are TEXT-only (no menu-icon set exists)
             const GameState::RecastEntry& re = f.game->recasts[i];
