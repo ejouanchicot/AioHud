@@ -1056,6 +1056,21 @@ void PartyState::on_action(const unsigned char* p) {
                 // already says whether a cast took, and a spell table cannot predict it.
                 if (tgtMsg[i] == 75) { DBFTRACE("OB no-effect tid=%08X spell=%u msg=75 -> not recorded", tid, sid); continue; }
                 const char* nm = pc_name_by_id(tid); if (!nm || !nm[0]) continue;   // the RELIABLE ally gate : resolves only real party/alliance members (PC ids don't all use the 0x01 mob top-byte)
+                // A landed cast REPLACES the effect that was there : Protect II on a target holding Protect III
+                // leaves ONE Protect, whichever tier -- the game keeps a single entry per status. Rows are keyed
+                // by (target, SPELL), which is right for SONGS (a BRD really does run several tiers on one status
+                // slot at once) and wrong for everything else : it left two live rows counting down side by side.
+                // So for a non-song, drop this target's other rows on the SAME STATUS before recording.
+                if (b->skill != 40) {
+                    int w = 0;
+                    for (int k = 0; k < otherBuffN_; ++k) {
+                        if (otherBuffs_[k].target == tid && otherBuffs_[k].status == (unsigned short)b->effect
+                            && otherBuffs_[k].spell != (unsigned short)sid) { DBFTRACE("OB replace tid=%08X st=%u : spell %u dropped for %u", tid, b->effect, otherBuffs_[k].spell, sid); continue; }
+                        if (w != k) otherBuffs_[w] = otherBuffs_[k];
+                        ++w;
+                    }
+                    otherBuffN_ = w;
+                }
                 int slot = -1;   // key by (target, SPELL) so two tiers of the same song (Minuet V + IV, same status) are two rows
                 for (int k = 0; k < otherBuffN_; ++k) if (otherBuffs_[k].target == tid && otherBuffs_[k].spell == (unsigned short)sid) { slot = k; break; }
                 if (slot < 0) {                                 // new entry : append, else steal the oldest slot
