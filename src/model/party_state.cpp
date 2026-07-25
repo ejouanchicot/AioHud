@@ -1081,15 +1081,17 @@ void PartyState::on_action(const unsigned char* p) {
                 else if (b->skill == 44) selfSec = (double)((int)b->durSec + geoJpSec + geoGear);
                 const unsigned predExp = ffxi_now_tick() + (unsigned)(selfSec * 60.0);
                 record_cast((unsigned short)b->effect, (unsigned short)sid, selfId_, predExp);
-                // //aio songlog : a cast that landed on YOU has a 0x063 ground truth coming. File the prediction so
-                // songdur_check() can print predicted-vs-real once the server timer arrives (Pianissimo ON YOURSELF is
-                // therefore the clean isolation test : single-target math, but with a real timer to check it against).
-                if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0 && b->skill == 40) {
+                // A song cast that ALSO landed on you has a 0x063 ground truth coming. File it so songdur_check()
+                // can MEASURE the real duration when the server timer arrives, and remember it per spell -- that
+                // measurement is what a single-target (Pianissimo) copy of the same song will use instead of the
+                // model. Unconditional : this is the duration source now, not a probe (the trace only adds logging).
+                if (b->skill == 40) {
                     int sl = -1;
                     for (int q = 0; q < songPredN_; ++q) if (songPred_[q].done) { sl = q; break; }
                     if (sl < 0 && songPredN_ < 8) sl = songPredN_++;
                     if (sl >= 0) { songPred_[sl].status = (unsigned short)b->effect; songPred_[sl].spell = (unsigned short)sid;
-                                   songPred_[sl].predExp = predExp; songPred_[sl].wallMs = GetTickCount(); songPred_[sl].done = 0; }
+                                   songPred_[sl].predExp = predExp; songPred_[sl].castTick = ffxi_now_tick();
+                                   songPred_[sl].wallMs = GetTickCount(); songPred_[sl].done = 0; }
                 }
             }
             if (b->skill == 40 && sid < 1024) {   // BRD song : snapshot the song-enhancing JAs UP at cast, keyed by SPELL id
@@ -1143,9 +1145,18 @@ void PartyState::on_action(const unsigned char* p) {
                 unsigned long long ms;
                 if (b->skill == 34) {   // Enhancing Magic (Regen status 42 : regenSec added to the base before the multipliers ; cap 30 min)
                     ms = (unsigned long long)(enh_sec(b->durSec, b->effect) * 1000.0);
-                } else if (b->skill == 40) {   // BRD song : 120 x m1 x m2 x m3 + a3 (Miracle Cheer -> flat 900)
-                    double sec = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
-                    ms = (unsigned long long)(sec * 1000.0);
+                } else if (b->skill == 40) {   // BRD song : the server's own measurement if we have one, else the model
+                    // A song lasts the same on everyone it lands on -- the duration belongs to the CAST, not to the
+                    // target. So a previous cast of THIS song that landed on you was measured exactly off 0x063, and
+                    // that is the honest duration for this ally copy whether or not it was sung with Pianissimo.
+                    // The model (120 x m1 x m2 x m3 + a3) stays as the fallback for a song never yet sung on you ;
+                    // measured against the server it runs 22-37% short, because its item table misses Carnwenhan's
+                    // current stage and every modern instrument. Gear changes make a learned value stale until the
+                    // next cast that lands on you re-measures it -- self-correcting, and never worse than the model.
+                    const unsigned learned = song_learned_ms((unsigned short)sid);
+                    if (learned) { ms = (unsigned long long)learned; }
+                    else { double sec = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
+                           ms = (unsigned long long)(sec * 1000.0); }
                 } else if (b->skill == 44) {   // GEO Entrust'd Indi- on an ally : additive Base + JP 1362 + Indicolure gear
                     ms = (unsigned long long)((int)b->durSec + geoJpSec + geoGear) * 1000ull;
                 } else {
@@ -1492,7 +1503,7 @@ const BuffSet* PartyState::buffs_for(unsigned id) const {
 // wear-off) AND songs pushed out of the BRD song slots when the limit is hit (incl. same-status tiers). A short
 // grace period lets a fresh cast register in the 0x076 before it can be pruned.
 void PartyState::prune_other_buffs_worn() {
-    songdur_check();   // //aio songlog : model-vs-0x063 comparison, driven off the same model tick
+    songdur_check();   // learn ally song durations from the server 0x063, off the same model tick
     const unsigned now = GetTickCount();
     const unsigned z = zone_id();                                 // ZONING grace : a zone change (or the loading screen) blanks the
     // ZONE-IN BUMP for SINGLE-TARGET ally estimates (no self timer to mirror). Across the load the server preserves
@@ -1605,23 +1616,37 @@ void PartyState::set_songdur_trace(int seconds) {
     songPredN_ = 0;
     windower::debug::log("=== SONGDUR trace armed for %ds -- sing, then compare SONGDUR (model) with SONGREAL (the game's own 0x063) ===", seconds);
 }
-// Match a filed prediction against the server's own timer. Waited on rather than read at cast time : the 0x063
-// for a fresh cast lands a beat later, and reading 0 there would look exactly like a wrong model.
+// MEASURE a song's real duration off the server's own 0x063, and remember it per spell. Waited on rather than
+// read at cast time : the 0x063 for a fresh cast lands a beat later, and reading 0 there would look exactly like
+// a wrong model. Runs unconditionally -- this is where ally song durations come from now ; the //aio songlog
+// trace only adds the comparison logging on top.
 void PartyState::songdur_check() {
-    if (!s_songUntil || (int)(s_songUntil - GetTickCount()) <= 0) return;
+    if (songPredN_ == 0) return;
+    const bool trace = s_songUntil && (int)(s_songUntil - GetTickCount()) > 0;
     const unsigned now = GetTickCount();
     for (int q = 0; q < songPredN_; ++q) {
         SongPred& sp = songPred_[q];
         if (sp.done || (int)(now - sp.wallMs) < 2500) continue;
         const unsigned real = self_buff_expiry_for(sp.status, sp.spell);
         if (real == 0) { if ((int)(now - sp.wallMs) > 15000) sp.done = 1; continue; }   // give up quietly after 15s rather than poll forever
-        const int nowT = (int)ffxi_now_tick();
-        const int predSec = ((int)sp.predExp - nowT) / 60, realSec = ((int)real - nowT) / 60;
-        const SpellRow* srw = spell_info(sp.spell);
-        const int dSec = realSec - predSec;
-        const int dPct = realSec ? (100 * dSec) / realSec : 0;   // integer : wvsprintfA has no %f (windower_debug.h)
-        windower::debug::log("SONGREAL spell=%u \"%s\" st=%u : model predicted %ds remaining, game says %ds  -> delta %d s (%d%%)",
-                             sp.spell, (srw && srw->en) ? srw->en : "?", sp.status, predSec, realSec, dSec, dPct);
+        // The measurement : from the tick the cast landed to the expiry the server itself reports.
+        const int durTicks = (int)(real - sp.castTick);
+        if (durTicks > 0 && durTicks < 60 * 3600) {   // sane window (< 1 h) -- a garbage expiry must not be learned
+            const unsigned durMs = (unsigned)((long long)durTicks * 1000 / 60);
+            int slot = -1;
+            for (int i = 0; i < songLearnN_; ++i) if (songLearn_[i].spell == sp.spell) { slot = i; break; }
+            if (slot < 0 && songLearnN_ < 32) slot = songLearnN_++;
+            if (slot >= 0) { songLearn_[slot].spell = sp.spell; songLearn_[slot].durMs = durMs; }
+        }
+        if (trace) {
+            const int nowT = (int)ffxi_now_tick();
+            const int predSec = ((int)sp.predExp - nowT) / 60, realSec = ((int)real - nowT) / 60;
+            const SpellRow* srw = spell_info(sp.spell);
+            const int dSec = realSec - predSec;
+            const int dPct = realSec ? (100 * dSec) / realSec : 0;   // integer : wvsprintfA has no %f (windower_debug.h)
+            windower::debug::log("SONGREAL spell=%u \"%s\" st=%u : model predicted %ds remaining, game says %ds  -> delta %d s (%d%%)  [LEARNED %d s for ally copies]",
+                                 sp.spell, (srw && srw->en) ? srw->en : "?", sp.status, predSec, realSec, dSec, dPct, durTicks / 60);
+        }
         sp.done = 1;
     }
 }
