@@ -55,6 +55,13 @@ jobs:
           exit $fail
         continue-on-error: true   # reporting only for now : the tree still has known hits (see docs/notes/audit-technique-2026-07-26.md)
 
+      # Offline suite : the pure core only (layout parser, skillchain resolution, duration model). No device,
+      # no game memory -- it needs nothing the runner does not already have, and takes about two seconds.
+      # BLOCKING, unlike the greps above : it is green today, so a red one is a real regression.
+      - name: Tests
+        shell: cmd
+        run: tests.bat
+
       # package.bat calls build.bat (compiles the x86 DLL) then assembles the shippable payload into dist\.
       - name: Build + package
         shell: cmd
