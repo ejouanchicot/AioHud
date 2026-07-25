@@ -21,6 +21,16 @@ $zip   = Join-Path (Join-Path $Data 'cache') "update_$PID.zip"
 function Write1($path, $s) { New-Item -ItemType Directory -Force -Path $updir | Out-Null; Set-Content -LiteralPath $path -Value $s -Encoding ascii }
 function Status($s) { Write1 $done  $s }
 function Check($s)  { Write1 $check $s }
+# Version comparison must be an ORDER, not an equality. This was `$tag -eq $Current`, so ANY value that wasn't
+# the remote tag counted as "behind" : a locally built DLL (Current = 'dev') was offered an update on every
+# single load, and one click OVERWROTE the dev build with the published release. Same trap for a tester left on
+# a pre-release. Rule now : only ever move FORWARD, and never touch a build whose version isn't a real number.
+function Newer($remote, $local) {
+    $rx = '^\d+(\.\d+){1,3}$'
+    if ($local  -notmatch $rx) { return $false }   # 'dev' / '0' / garbage = a local build -> leave it alone
+    if ($remote -notmatch $rx) { return $false }   # unparsable tag -> do nothing rather than guess
+    return ([version]$remote -gt [version]$local)
+}
 try {
     New-Item -ItemType Directory -Force -Path $updir | Out-Null
     if ($CheckOnly) { Remove-Item -LiteralPath $check -ErrorAction SilentlyContinue }
@@ -31,11 +41,11 @@ try {
     $tag = ($r.tag_name -replace '^v', '')
 
     if ($CheckOnly) {
-        if ($tag -eq $Current) { Check "UPTODATE $tag" } else { Check "AVAILABLE $tag" }
+        if (Newer $tag $Current) { Check "AVAILABLE $tag" } else { Check "UPTODATE $Current" }
         exit
     }
 
-    if ($tag -eq $Current) { Status "UPTODATE $tag"; exit }
+    if (-not (Newer $tag $Current)) { Status "UPTODATE $Current"; exit }
     $a = $r.assets | Where-Object { $_.name -like 'AioHud-*.zip' } | Select-Object -First 1
     if (-not $a) { Status 'ERROR no-zip-asset-in-release'; exit }
     New-Item -ItemType Directory -Force -Path (Split-Path $zip) | Out-Null

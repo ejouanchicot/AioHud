@@ -66,7 +66,12 @@ inline void set(Value& o, const std::string& k, const Value& val) {
 // ======================= parser =======================
 namespace detail {
 
-struct P { const char* s; const char* e; bool ok; };
+// `depth` bounds the parse_value <-> parse_object/parse_array recursion. layout.json is FILE input : a
+// truncated / corrupt / hand-edited file of "[[[[[..." would otherwise recurse until the stack is gone, and
+// load_layout runs at startup OUTSIDE any __try -> a silent crash with no diagnostic. 64 is ~8x the deepest
+// nesting a real layout uses (root > widgets > widget > config > object).
+static const int MAX_DEPTH = 64;
+struct P { const char* s; const char* e; bool ok; int depth; };
 
 inline void skip_ws(P& p) {
     while (p.s < p.e) { char c = *p.s; if (c==' '||c=='\t'||c=='\n'||c=='\r') ++p.s; else break; }
@@ -154,8 +159,13 @@ inline bool parse_value(P& p, Value& out) {
     if (p.s >= p.e) { p.ok = false; return false; }
     char c = *p.s;
     if (c == '"') { out.type = Value::Str; return parse_string(p, out.str); }
-    if (c == '{') return parse_object(p, out);
-    if (c == '[') return parse_array(p, out);
+    if (c == '{' || c == '[') {                           // the ONE descent point -> bound it here
+        if (p.depth >= MAX_DEPTH) { p.ok = false; return false; }
+        ++p.depth;
+        const bool r = (c == '{') ? parse_object(p, out) : parse_array(p, out);
+        --p.depth;
+        return r;
+    }
     if (c == 't') { if (p.e-p.s>=4 && p.s[1]=='r'&&p.s[2]=='u'&&p.s[3]=='e')             { p.s+=4; out.type=Value::Bool; out.b=true;  return true; } p.ok=false; return false; }
     if (c == 'f') { if (p.e-p.s>=5 && p.s[1]=='a'&&p.s[2]=='l'&&p.s[3]=='s'&&p.s[4]=='e'){ p.s+=5; out.type=Value::Bool; out.b=false; return true; } p.ok=false; return false; }
     if (c == 'n') { if (p.e-p.s>=4 && p.s[1]=='u'&&p.s[2]=='l'&&p.s[3]=='l')             { p.s+=4; out.type=Value::Null; return true; }              p.ok=false; return false; }
@@ -186,9 +196,15 @@ inline void esc(const std::string& s, std::string& out) {
 }
 inline void indent(std::string& out, int n) { for (int i = 0; i < n; ++i) out += "  "; }
 inline void num_str(double d, std::string& out) {
+    // The +-1e15 window used to guard ONLY the integer fast path, so an out-of-range double fell through to
+    // "%.4f" -- and 1e300 formats to 301 digits + ".0000" = 306 bytes into a char[40]. Every number read from
+    // layout.json round-trips through here on the next save, so a corrupt file smashed the stack. Clamp FIRST
+    // (this also maps NaN to 0, since every comparison against NaN is false) and size the buffer for the
+    // clamped worst case ("-1000000000000000.0000" = 22 chars).
+    if (!(d > -1e15 && d < 1e15)) d = (d > 0.0) ? 1e15 : ((d < 0.0) ? -1e15 : 0.0);
     long long ll = (long long)d;
-    if ((double)ll == d && d < 1e15 && d > -1e15) { char t[32]; sprintf(t, "%lld", ll); out += t; return; }
-    char t[40]; sprintf(t, "%.4f", d);
+    if ((double)ll == d) { char t[32]; sprintf(t, "%lld", ll); out += t; return; }
+    char t[64]; _snprintf(t, sizeof(t), "%.4f", d); t[sizeof(t) - 1] = 0;
     int n = (int)strlen(t);                          // trim trailing zeros (36.5000 -> 36.5)
     while (n > 0 && t[n-1] == '0') t[--n] = 0;
     if (n > 0 && t[n-1] == '.') t[--n] = 0;
@@ -217,7 +233,7 @@ inline void dump_v(const Value& v, std::string& out, int ind) {
 
 // ---- public API ----
 inline bool parse(const std::string& text, Value& out) {
-    detail::P p; p.s = text.c_str(); p.e = p.s + text.size(); p.ok = true;
+    detail::P p; p.s = text.c_str(); p.e = p.s + text.size(); p.ok = true; p.depth = 0;
     if (!detail::parse_value(p, out)) return false;
     return p.ok;
 }
