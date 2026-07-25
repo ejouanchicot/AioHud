@@ -265,6 +265,13 @@ void Hud::render(u32 dev) {
     // also refreshed once per frame, into the party() singleton. Mirrors XivParty's per-tick
     // get_party(); a freshly-summoned trust / new alliance member appears at once.
     party().load_from_memory();
+    // Ally-buff upkeep : early wear-off (dispel / overwrite / death) from the member's 0x076 icons, the zone-in
+    // estimate bump, and the zone grace window that in_zone_grace() reports. This used to be called from inside
+    // timers_draw, BELOW its `if (!tmShow) return` and inside `if (tmMine)` -- so hiding the Timers box, or just
+    // unticking Mine, froze all three. Ally buffs then survived on their estimate long after they were gone, and
+    // were written to the cache file ; reopening the box showed buffs dispelled minutes earlier. It is model
+    // upkeep, not drawing, and a draw() must never be the only thing keeping the model honest.
+    party().prune_other_buffs_worn();
     party().set_target_ctx(state_.target.id, state_.me.id);   // context for the debuff tracker (on_action attributes YOUR debuffs to the current target)
     if (state_.target.valid && state_.target.spawnType == 0x10) party().note_mob_hp(state_.target.id, state_.target.hpp);   // debuff tracker : drop a mob's debuffs on death / when its server id gets recycled (Apex farming)
     if (state_.hasSubTarget && state_.subTarget.valid && state_.subTarget.spawnType == 0x10) party().note_mob_hp(state_.subTarget.id, state_.subTarget.hpp);

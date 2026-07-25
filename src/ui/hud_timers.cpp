@@ -285,8 +285,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             return d <= 600;                 // 600 ticks = 10s : casts more than 10s apart are distinct generations
         };
         if (C.tmMine) {
-            party().prune_other_buffs_worn();   // drop any that wore off early (dispel/overwrite/death) per the member's 0x076 icons
-            ob = party().other_buffs(no);
+            ob = party().other_buffs(no);   // (prune_other_buffs_worn now runs once per frame from the model tick, not from here)
             for (int i = 0; i < no; ++i) {
                 const int r = obRem(ob[i]);
                 if (r <= 0) continue;
