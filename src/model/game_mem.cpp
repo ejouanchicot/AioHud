@@ -154,6 +154,11 @@ int read_map_entities(MapEntity* out, int maxN) {
         // silently dropped every party and alliance member from the minimap while solo players still showed.
         if (sp & 0x01) type = 1; else if (sp & 0x02) type = 2; else if (sp & 0x10) type = 3; else continue;
         u32 rf = 0; safe_read(p + ENT_RENDER_OFF, &rf); if (rf & 0x4000) continue;   // render/valid flag : filters despawned/invalid ghost slots
+        // A DEAD mob (corpse, HP% 0) keeps its stale claim id, so allegiance_color would render it RED until it
+        // despawns -- at a heavy camp (Crawlers' Nest [S], 100+ mobs) the map fills with red dead-claim dots that
+        // never clear. A corpse is not a threat -> drop it. Guard the read : a FAILED read (hp stays 0) must NOT
+        // drop a live mob, so require the read to SUCCEED before treating 0 as dead.
+        if (type == 3) { u32 hp = 0; if (safe_read(p + ENT_HPP_OFF, &hp) && (hp & 0xFF) == 0) continue; }
         u32 xx = 0, zz = 0; if (!safe_read(p + ENT_X_OFF, &xx) || !safe_read(p + ENT_Z_OFF, &zz)) continue;
         const float ex = *(float*)&xx, ez = *(float*)&zz;
         if (ex == 0.0f && ez == 0.0f) continue;                            // unloaded / invalid slot
