@@ -262,7 +262,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         int no = 0; const PartyState::OtherBuff* ob = 0;
         auto obRem = [&](const PartyState::OtherBuff& o) -> int {
             if (o.mirrorSelf) { int r = party().self_buff_remaining_for(o.status, o.spell); return (r >= 0) ? r : (int)((o.startMs + o.durMs) - nowMs) / 1000; }   // per-SPELL : two same-status songs (Honor+Victory March) must not borrow each other's self timer
-            if (o.expTick) return (int)(o.expTick - now) / 60;   // frozen on the exact self expiry (same FFXI clock as self rows)
+            if (o.expTick) return ticks_to_sec_ceil((int)(o.expTick - now));   // frozen on the exact self expiry (same FFXI clock as self rows) -- CEIL like the client, or this row reads 1 s under the self row right above it
             return (int)((o.startMs + o.durMs) - nowMs) / 1000;  // estimate
         };
         // FRESH vs LAGGARD. A song copy on an ally is FRESH only when it tracks YOUR CURRENT cast of THIS SPELL : still
@@ -1035,6 +1035,9 @@ void Hud::draw_timers(const Frame& f, bool preview, float ovX, float ovY, float 
 // handle would go to SetTexture with its owning device destroyed. timers_help_forget() clears it from that block.
 static u32 g_tmHelpTex = 0; static TexRetry g_tmHelpRetry;
 void timers_help_forget() { g_tmHelpTex = 0; g_tmHelpRetry = TexRetry{}; }   // device recreate : drop the handle AND re-arm the bounded retry
+// //unload : the device is still ALIVE here, so this one must actually Release (rule 4). Forgetting alone leaked
+// the whole atlas -- 1024x640 mipmapped -- on every unload/load cycle, i.e. on every dev iteration.
+void timers_help_dispose() { if (g_tmHelpTex) release_texture(g_tmHelpTex); timers_help_forget(); }
 static u32 timers_help_atlas(u32 dev) {   // bounded retry (rule 10) via the shared helper -- was a one-shot latch that stranded the Help icons on a single miss
     return ensure_raw_tex(dev, g_tmHelpTex, g_tmHelpRetry, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
 }
