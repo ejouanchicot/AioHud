@@ -1091,7 +1091,12 @@ void PartyState::on_action(const unsigned char* p) {
                     if (sl < 0 && songPredN_ < 8) sl = songPredN_++;
                     if (sl >= 0) { songPred_[sl].status = (unsigned short)b->effect; songPred_[sl].spell = (unsigned short)sid;
                                    songPred_[sl].predExp = predExp; songPred_[sl].castTick = ffxi_now_tick();
-                                   songPred_[sl].wallMs = GetTickCount(); songPred_[sl].done = 0; }
+                                   songPred_[sl].wallMs = GetTickCount(); songPred_[sl].done = 0;
+                                   // the terms active at THIS cast -- divided back out of the measurement below
+                                   songPred_[sl].base = b->durSec;
+                                   songPred_[sl].knownX100 = (unsigned short)(songM2 * songM3 * 100.0 + 0.5);
+                                   songPred_[sl].a3 = (short)songA3;
+                                   songPred_[sl].miracle = miracle ? 1 : 0; }
                 }
             }
             if (b->skill == 40 && sid < 1024) {   // BRD song : snapshot the song-enhancing JAs UP at cast, keyed by SPELL id
@@ -1153,10 +1158,12 @@ void PartyState::on_action(const unsigned char* p) {
                     // measured against the server it runs 22-37% short, because its item table misses Carnwenhan's
                     // current stage and every modern instrument. Gear changes make a learned value stale until the
                     // next cast that lands on you re-measures it -- self-correcting, and never worse than the model.
-                    const unsigned learned = song_learned_ms((unsigned short)sid);
-                    if (learned) { ms = (unsigned long long)learned; }
-                    else { double sec = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
-                           ms = (unsigned long long)(sec * 1000.0); }
+                    const unsigned gear = miracle ? 0 : song_learned_gear_x1000((unsigned short)sid);
+                    // The measured GEAR factor replaces m1 ; m2/m3/a3 come from your buffs RIGHT NOW. Sing it once
+                    // in AoE bare and re-sing it under Nitro and the ally row doubles, exactly like your own does.
+                    double sec = gear ? ((double)b->durSec * (gear / 1000.0) * songM2 * songM3 + songA3)
+                                      : (miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3));
+                    ms = (unsigned long long)(sec * 1000.0);
                 } else if (b->skill == 44) {   // GEO Entrust'd Indi- on an ally : additive Base + JP 1362 + Indicolure gear
                     ms = (unsigned long long)((int)b->durSec + geoJpSec + geoGear) * 1000ull;
                 } else {
@@ -1631,12 +1638,18 @@ void PartyState::songdur_check() {
         if (real == 0) { if ((int)(now - sp.wallMs) > 15000) sp.done = 1; continue; }   // give up quietly after 15s rather than poll forever
         // The measurement : from the tick the cast landed to the expiry the server itself reports.
         const int durTicks = (int)(real - sp.castTick);
-        if (durTicks > 0 && durTicks < 60 * 3600) {   // sane window (< 1 h) -- a garbage expiry must not be learned
-            const unsigned durMs = (unsigned)((long long)durTicks * 1000 / 60);
+        const int measSec = durTicks / 60;
+        // Divide the measurement back out by everything we already read correctly, leaving ONLY the gear+family
+        // factor -- the one term our item table gets wrong. Miracle Cheer is a flat 900 s : nothing to learn.
+        long long gx = 0;
+        const long long den = (long long)sp.base * sp.knownX100;
+        if (!sp.miracle && den > 0 && durTicks > 0 && durTicks < 60 * 3600)
+            gx = ((long long)(measSec - sp.a3) * 100000) / den;
+        if (gx > 500 && gx < 20000) {   // 0.5x .. 20x : a garbage expiry must never be learned as a factor
             int slot = -1;
             for (int i = 0; i < songLearnN_; ++i) if (songLearn_[i].spell == sp.spell) { slot = i; break; }
             if (slot < 0 && songLearnN_ < 32) slot = songLearnN_++;
-            if (slot >= 0) { songLearn_[slot].spell = sp.spell; songLearn_[slot].durMs = durMs; }
+            if (slot >= 0) { songLearn_[slot].spell = sp.spell; songLearn_[slot].gearX1000 = (unsigned)gx; }
         }
         if (trace) {
             const int nowT = (int)ffxi_now_tick();
@@ -1644,8 +1657,9 @@ void PartyState::songdur_check() {
             const SpellRow* srw = spell_info(sp.spell);
             const int dSec = realSec - predSec;
             const int dPct = realSec ? (100 * dSec) / realSec : 0;   // integer : wvsprintfA has no %f (windower_debug.h)
-            windower::debug::log("SONGREAL spell=%u \"%s\" st=%u : model predicted %ds remaining, game says %ds  -> delta %d s (%d%%)  [LEARNED %d s for ally copies]",
-                                 sp.spell, (srw && srw->en) ? srw->en : "?", sp.status, predSec, realSec, dSec, dPct, durTicks / 60);
+            windower::debug::log("SONGREAL spell=%u \"%s\" st=%u : model predicted %ds remaining, game says %ds  -> delta %d s (%d%%)  [measured %ds ; LEARNED gear x%d.%03d for ally copies]",
+                                 sp.spell, (srw && srw->en) ? srw->en : "?", sp.status, predSec, realSec, dSec, dPct,
+                                 measSec, (int)(gx / 1000), (int)(gx % 1000));
         }
         sp.done = 1;
     }

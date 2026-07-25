@@ -665,7 +665,10 @@ struct PartyState {
     // that fed it, m2, m3, a3) and, for a cast that DID land on you, the game's own 0x063 expiry a few seconds
     // later next to the prediction -- turning "the timer is wrong" into a number and naming the guilty factor.
     void set_songdur_trace(int seconds);
-    struct SongPred { unsigned short status, spell; unsigned predExp, castTick, wallMs; unsigned char done; };
+    // base/knownX100/a3 are the terms that were ACTIVE at that cast : the measurement has to be divided back out
+    // by them, or Troubadour gets baked into the stored value and re-applied to casts that never had it.
+    struct SongPred { unsigned short status, spell, base, knownX100; short a3;
+                      unsigned predExp, castTick, wallMs; unsigned char done, miracle; };
     SongPred songPred_[8]; int songPredN_ = 0;   // casts awaiting their real 0x063 expiry (self-landed only)
     void songdur_check();                        // called from the model tick : learn the real duration off 0x063
     // LEARNED song durations, straight from the server. A song's duration is a property of the CAST, not of the
@@ -674,10 +677,15 @@ struct PartyState {
     // not. This beats the m1/m2/m3 model outright, and it does not rot : the model reads a HARDCODED item table
     // that is already stale (Carnwenhan's current stage, Gjallarhorn, Marsyas and Daurdabla are all absent, which
     // measured as a 22-37% underestimate), whereas a learned value re-measures itself on every AoE cast.
-    struct SongLearn { unsigned short spell; unsigned durMs; };
+    // What is stored is NOT the total duration but the GEAR+family factor alone (x1000), i.e. the m1 term our item
+    // table gets wrong. Troubadour (x2), Soul Voice/Marcato (x1.5) and the Marcato flat seconds are read straight
+    // from your live buffs and are RELIABLE, so they must be re-applied fresh at every cast instead of being frozen
+    // into the measurement. Storing the total instead made a song measured without Troubadour render at half length
+    // when re-sung under it (5:30 where 11:00 was due) -- the same value, applied to a cast it never described.
+    struct SongLearn { unsigned short spell; unsigned gearX1000; };
     SongLearn songLearn_[32]; int songLearnN_ = 0;
-    unsigned song_learned_ms(unsigned short spell) const {   // 0 = never measured -> caller falls back to the model
-        for (int i = 0; i < songLearnN_; ++i) if (songLearn_[i].spell == spell) return songLearn_[i].durMs;
+    unsigned song_learned_gear_x1000(unsigned short spell) const {   // 0 = never measured -> caller falls back to the model
+        for (int i = 0; i < songLearnN_; ++i) if (songLearn_[i].spell == spell) return songLearn_[i].gearX1000;
         return 0;
     }
     void set_buff076_trace(int seconds); // //aio ftrace : DURATION-armed (mirrors the ui-side focus trace) -> log every 0x076 party-buff arrival + zone markers, to prove whether an ally's buff set actually refreshes after a zone
