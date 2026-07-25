@@ -418,13 +418,18 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     for (int i = 0; i < np; ++i)
         windower::debug::log("  packet   : 0x%03X n=%u last=%us ago", pf[i].id, pf[i].n,
                              pf[i].lastMs ? (nowMs - pf[i].lastMs) / 1000u : 0u);
-    for (int i = 0; i < np; ++i) {
-        if (pf[i].n) continue;
-        if (pf[i].id == 0x076) DOC("Aucun paquet 0x076 recu : les buffs des membres du groupe sont invisibles. "
-                                   "Attendu si tu es solo -- sinon le HUD n'est pas branche sur le flux reseau%s", "");
-        if (pf[i].id == 0x028) DOC("Aucun paquet 0x028 recu : ni barre d'incantation, ni debuffs de cible, ni skillchains. "
-                                   "Lance un sort pour verifier ; si ca reste a zero, le hook de paquets ne recoit rien%s", "");
-    }
+    // A raw zero is NOT a fault : solo, no party buff packet ever arrives ; before you act, no action packet
+    // does either. Only a CONTRADICTION is worth reporting -- a packet that the current situation says must be
+    // flowing and is not. Anything else stays in the log, where it answers the question when one is asked.
+    // (The first live run of this command flagged "no 0x076" while solo. An alarm that cries wolf on its very
+    //  first use is never read again, so the rule is now stated in terms of the roster.)
+    unsigned n076 = 0, n028 = 0;
+    for (int i = 0; i < np; ++i) { if (pf[i].id == 0x076) n076 = pf[i].n; if (pf[i].id == 0x028) n028 = pf[i].n; }
+    if (roster > 1 && n076 == 0)
+        DOC("Tu es en groupe (%d membres) mais aucun paquet de buffs de groupe (0x076) n'est arrive : les buffs "
+            "des autres resteront invisibles. Le HUD ne recoit pas ce flux -- signale-le avec le log.", roster);
+    if (n028 == 0)
+        windower::debug::log("  note     : no 0x028 seen yet -- cast or attack once, then re-run (expected right after a load)");
 
     // ---- 4. textures : a missing handle whose retry budget is SPENT is permanent for this session ----
     int texMiss = 0;
