@@ -61,7 +61,7 @@ dur = (Base + flatSec + regenSec)
 
 **The model is MULTIPLICATIVE** — the flat additions all fold into the base, then each `(1 + %)` factor
 multiplies. This is confirmed by [Composure](composure.md) and validated in-game to 1–3 s. An **ADDITIVE**
-model was once suggested (`Regen_Duration.md §3` at the repo root: `floor(base × (1 + Σ%)) + flat`); it was
+model was once suggested (`docs/game-data/reference-sheets/regen-duration.md §3` at the repo root: `floor(base × (1 + Σ%)) + flat`); it was
 **TESTED and is WORSE** — **do not switch to it.**
 
 The three % multipliers are **separate** (native × augment multiply; within a category the %s add).
@@ -118,7 +118,7 @@ which uses the real 0x063 self timer (no estimate, so no gear-modeling needed), 
 (COR Phantom Roll mirrors the self timer; BRD songs use `song_dur`; GEO Indi- uses `geo_dur`). So the
 ally-cast enhancing estimate is now **complete**.
 
-> `Regen_Duration.md` at the repo root is a LOCAL working reference — **not** the source of truth; the source
+> `docs/game-data/reference-sheets/regen-duration.md` at the repo root is a LOCAL working reference — **not** the source of truth; the source
 > is the in-game calibration above + the item data (`res/item_descriptions.lua`).
 
 ## BRD songs (skill 40) — `song_dur.h`

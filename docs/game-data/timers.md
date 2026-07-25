@@ -154,19 +154,22 @@ So the net change vs the old first-row behaviour is **only** the one-usable case
 
 | file | script | maps |
 |---|---|---|
-| `recast_icons_gen.h` | `gen_recast_icons.py` | `recast_id → icon index` (`JA_RC_ICON` / `SP_RC_ICON`) |
 | `buffs_gen.h` | `gen_buff_names.py` | `status id → name` (res/buffs.lua) |
 | `action_status_gen.h` | `gen_action_status.py` | `action id → status` (res spells + job_abilities `status=`) |
 
-The recast **icon atlas** is `assets/action_icons.raw`, baked by `gen_action_icons.py` from the
-addon's `assets/icons/` set. The Duration column reuses the **buff status-icon atlas** shared with
-the Player / Party boxes.
+The Duration column reuses the **buff status-icon atlas** (`assets/buff_atlas.raw`) shared with the
+Player / Party boxes.
 
-## Note: `ROM/119/57.DAT` is a dead end for menu icons
+## The recast column is TEXT-only — there is no recast icon atlas
 
-The recast column's icons come from the addon's **curated `assets/icons/` set**, which only
-contains buff/debuff-duration actions. Actions without a duration icon (Provoke, nukes, cures)
-have **no atlas cell and fall back to the NAME** — this is by design, not a bug to "fix".
+Earlier revisions of this page described a `recast_icons_gen.h` / `gen_recast_icons.py` /
+`assets/action_icons.raw` pipeline mapping `recast_id → icon index`. **None of the three exists**, and
+nothing in `src/` references them — `hud_timers.cpp` says so itself at the emit site: *"recasts are
+TEXT-only (no menu-icon set exists)"*.
+
+That is a design decision, not a gap to fill: a menu-icon set covering every ability and spell was never
+produced, and a partial one would have shown an icon for some recasts and a bare name for others. If it is
+ever revisited, `ROM/119/57.DAT` is a **known dead end** for menu icons — it does not contain them.
 
 Do **not** re-attempt sourcing menu icons from the game's `ROM/119/57.DAT`: it is a **640-entry
 STATUS-icon set** (BMP 32×32, 32bpp BGRA, bottom-up, stride 6144, pixels at +701), **NOT** indexed

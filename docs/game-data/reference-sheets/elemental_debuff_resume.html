@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Elemental Debuffs — Fiche de référence (BLM)</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171c22; --panel2:#1d242c; --line:#2a333d;
+    --ink:#e6ebf1; --muted:#9aa7b4; --accent:#a06cd5; --accent2:#5aa9e6;
+    --good:#5fbf7f; --bad:#e06666;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:32px 20px;
+  }
+  .wrap{max-width:900px;margin:0 auto}
+  header{border-bottom:2px solid var(--accent); padding-bottom:16px; margin-bottom:28px;}
+  h1{margin:0 0 4px;font-size:28px;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:14px}
+  h2{font-size:19px;margin:32px 0 12px;color:var(--accent);border-left:3px solid var(--accent);padding-left:10px;}
+  h3{font-size:15px;margin:18px 0 6px;color:var(--accent2)}
+  p{margin:8px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:12px 0}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  .stat .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .stat .v{font-size:18px;font-weight:600;margin-top:2px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--panel2);color:var(--accent2);font-weight:600}
+  tr:hover td{background:rgba(255,255,255,.02)}
+  code{background:var(--panel2);padding:2px 6px;border-radius:4px;font-size:13px;color:var(--accent)}
+  ul{margin:8px 0;padding-left:20px}
+  li{margin:4px 0}
+  .warn{border-left:3px solid var(--bad);background:rgba(224,102,102,.08);padding:10px 14px;border-radius:6px;margin:10px 0}
+  .tip{border-left:3px solid var(--good);background:rgba(95,191,127,.08);padding:10px 14px;border-radius:6px;margin:10px 0}
+  .muted{color:var(--muted)}
+  .tag{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:2px 10px;font-size:12px;margin:2px}
+  footer{margin-top:36px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Elemental Debuffs</h1>
+  <div class="sub">Black Mage · Elemental Magic · Fiche de référence</div>
+</header>
+
+<h2>En bref</h2>
+<div class="card">
+Catégorie de sorts d'Elemental Magic <strong>spécifiques au BLM</strong> qui n'infligent <strong>aucun dégât de base</strong>. À la place, ils <strong>réduisent un Base Stat</strong> de la cible (celui faible à l'élément) et appliquent un <strong>DoT</strong> (ticks de 3 s) sur une base de <strong>90 s</strong>, prolongeable par merits.
+<br><br>
+La réduction de stat et le DoT dépendent <strong>directement de l'INT du lanceur</strong>, indépendamment de l'INT de la cible.
+</div>
+
+<h2>Caractéristiques communes</h2>
+<div class="grid">
+  <div class="stat"><div class="k">Type</div><div class="v">Black Magic</div></div>
+  <div class="stat"><div class="k">Skill</div><div class="v">Elemental Magic</div></div>
+  <div class="stat"><div class="k">Casting Time</div><div class="v">2.5 s</div></div>
+  <div class="stat"><div class="k">Recast</div><div class="v">10 s</div></div>
+  <div class="stat"><div class="k">Coût</div><div class="v">25 MP</div></div>
+  <div class="stat"><div class="k">Durée</div><div class="v">1.5 min (90 s)</div></div>
+  <div class="stat"><div class="k">Portée</div><div class="v">20'</div></div>
+  <div class="stat"><div class="k">Cumulative Enmity</div><div class="v">1</div></div>
+  <div class="stat"><div class="k">Volatile Enmity</div><div class="v">300</div></div>
+</div>
+<p class="muted">Commande : <code>/ma "&lt;Sort&gt;" &lt;t&gt;</code> · Le DoT augmente avec l'INT.</p>
+
+<h2>Les 6 sorts</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Sort</th><th>Niv.</th><th>Élément</th><th>Stat réduit</th>
+      <th>1~39 INT</th><th>40~69</th><th>70~99</th><th>100~149</th><th>&gt;150</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Shock</td><td>16</td><td>Thunder</td><td>MND</td><td>−5 / 1 HP</td><td>−7 / 2 HP</td><td>−9 / 3 HP</td><td>−11 / 4 HP</td><td>−13 / 5 HP</td></tr>
+    <tr><td>Rasp</td><td>18</td><td>Earth</td><td>DEX</td><td>−5 / 1 HP</td><td>−7 / 2 HP</td><td>−9 / 3 HP</td><td>−11 / 4 HP</td><td>−13 / 5 HP</td></tr>
+    <tr><td>Choke</td><td>20</td><td>Wind</td><td>VIT</td><td>−5 / 1 HP</td><td>−7 / 2 HP</td><td>−9 / 3 HP</td><td>−11 / 4 HP</td><td>−13 / 5 HP</td></tr>
+    <tr><td>Frost</td><td>22</td><td>Ice</td><td>AGI</td><td>−5 / 1 HP</td><td>−7 / 2 HP</td><td>−9 / 3 HP</td><td>−11 / 4 HP</td><td>−13 / 5 HP</td></tr>
+    <tr><td>Burn</td><td>24</td><td>Fire</td><td>INT</td><td>−5 / 1 HP</td><td>−7 / 2 HP</td><td>−9 / 3 HP</td><td>−11 / 4 HP</td><td>−13 / 5 HP</td></tr>
+    <tr><td>Drown</td><td>27</td><td>Water</td><td>STR</td><td>−5 / 1 HP</td><td>−7 / 2 HP</td><td>−9 / 3 HP</td><td>−11 / 4 HP</td><td>−13 / 5 HP</td></tr>
+  </tbody>
+</table>
+<p class="muted">Format des cellules : <code>−Stat / DoT par tick</code>, selon l'INT totale du lanceur.</p>
+
+<h2>Stacking (empilement)</h2>
+<div class="card">
+  <p>Les debuffs élémentaires <strong>non opposés</strong> peuvent s'empiler : jusqu'à <strong>3 actifs en même temps</strong> sur une cible. Les autres n'ont aucun effet ou écrasent le debuff existant selon l'ascendance élémentaire.</p>
+  <h3>Groupe A — cumulables ensemble</h3>
+  <p><span class="tag">Rasp (−DEX)</span><span class="tag">Drown (−STR)</span><span class="tag">Frost (−AGI)</span></p>
+  <h3>Groupe B — cumulables ensemble</h3>
+  <p><span class="tag">Shock (−MND)</span><span class="tag">Burn (−INT)</span><span class="tag">Choke (−VIT)</span></p>
+  <div class="tip">En pratique : on peut avoir un sort de chaque groupe actif, soit jusqu'à 3 debuffs simultanés bien choisis.</div>
+</div>
+
+<h2>Chaîne d'overwrite (éléments opposés)</h2>
+<div class="card">
+  <p>Chaque sort <strong>écrase (overwrite)</strong> un élément et est <strong>écrasé</strong> par un autre, formant un cycle. Utile pour comprendre pourquoi un debuff en remplace un autre au lieu de s'empiler.</p>
+  <div class="formula">Burn → Frost → Choke → Rasp → Shock → Drown → (Burn…)</div>
+  <p class="muted">Lecture : chaque sort <strong>écrase le suivant</strong> dans la liste (ex. Burn overwrite Frost), et le cycle boucle (Drown overwrite Burn).</p>
+  <table>
+    <thead><tr><th>Sort</th><th>Écrase</th><th>Est écrasé par</th><th>Stackable avec</th></tr></thead>
+    <tbody>
+      <tr><td>Shock</td><td>Drown</td><td>Rasp</td><td>Choke &amp; Burn, ou Frost</td></tr>
+      <tr><td>Rasp</td><td>Shock</td><td>Choke</td><td>Frost &amp; Drown, ou Burn</td></tr>
+      <tr><td>Choke</td><td>Rasp</td><td>Frost</td><td>Burn &amp; Shock, ou Drown</td></tr>
+      <tr><td>Frost</td><td>Choke</td><td>Burn</td><td>Rasp &amp; Drown, ou Shock</td></tr>
+      <tr><td>Burn</td><td>Frost</td><td>Drown</td><td>Choke &amp; Shock, ou Rasp</td></tr>
+      <tr><td>Drown</td><td>Burn</td><td>Shock</td><td>Rasp &amp; Frost, ou Choke</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>Potence maximale (paliers)</h2>
+<table>
+  <thead><tr><th>Configuration</th><th>−Stat</th><th>DoT / tick</th><th>Durée</th><th>Dégâts totaux</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>&gt;150 INT + 5/5 durée + 5/5 potence</td>
+      <td>−23</td><td>10 HP</td><td>150 s</td><td>500</td>
+    </tr>
+    <tr>
+      <td>+ Archmage's Sabots +3</td>
+      <td>−53</td><td>25 HP</td><td>150 s</td><td>1250</td>
+    </tr>
+    <tr>
+      <td>+ Archmage's Sabots +3 &amp; Archmage's Tonban +3</td>
+      <td>−63</td><td>30 HP</td><td>180 s</td><td>1800</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>Merits — Duration Bonus (Group 2)</h2>
+<div class="card">
+  <p>Augmente la durée des debuffs d'Elemental Magic. <strong>5 rangs</strong>, <strong>+12 s par rang</strong> (soit jusqu'à +60 s).</p>
+  <table>
+    <thead><tr><th>Équipement (augment)</th><th>Niv.</th><th>Slot</th><th>Modificateur</th></tr></thead>
+    <tbody>
+      <tr><td>Sorcerer's Tonban +2</td><td>90</td><td>Legs</td><td>+6 s / rang (max +30 s)</td></tr>
+      <tr><td>Archmage's Tonban → +3</td><td>99</td><td>Legs</td><td>+6 s / rang (max +30 s)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>Merits — Potency Bonus (Group 2)</h2>
+<div class="card">
+  <p>Augmente la potence des debuffs et le DoT. <strong>5 rangs</strong> : <strong>+2 potence</strong> et <strong>+1 DoT</strong> par rang.</p>
+  <table>
+    <thead><tr><th>Équipement (augment)</th><th>Niv.</th><th>Slot</th><th>Modificateur</th></tr></thead>
+    <tbody>
+      <tr><td>Sorcerer's Tonban +2</td><td>90</td><td>Legs</td><td>−2 Base Stat &amp; DoT +1 / rang (max −10 Stat, DoT +5)</td></tr>
+      <tr><td>Archmage's Tonban → +3</td><td>99</td><td>Legs</td><td>−2 Base Stat &amp; DoT +1 / rang (max −10 Stat, DoT +5)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>Points clés à retenir</h2>
+<div class="card">
+  <ul>
+    <li>Aucun dégât direct : l'intérêt est le <strong>−Stat</strong> et le <strong>DoT</strong>, pas le nuke.</li>
+    <li>Potence liée à l'<strong>INT du lanceur</strong> uniquement (paliers &lt;40, 40, 70, 100, 150).</li>
+    <li>Jusqu'à <strong>3 debuffs</strong> cumulés (1 par groupe recommandé).</li>
+    <li>Durée de base <strong>90 s</strong>, extensible jusqu'à <strong>180 s</strong> avec merits + Tonban.</li>
+    <li>Le stuff Archmage (Sabots +3 / Tonban +3) multiplie fortement −Stat, DoT et durée.</li>
+  </ul>
+</div>
+
+<h2>Achat des parchemins (NPC)</h2>
+<div class="card">
+  <p>Vendeurs : <strong>Regine</strong> (Port San d'Oria J-8), <strong>Aroro</strong> (Port Windurst H-8), <strong>Zaira</strong> (Bastok Markets H-5) — même prix chez les trois. Aussi obtenables via Goblin Box.</p>
+  <table>
+    <thead><tr><th>Sort</th><th>Niv.</th><th>Prix</th></tr></thead>
+    <tbody>
+      <tr><td>Shock</td><td>16</td><td>1 393 Gil</td></tr>
+      <tr><td>Rasp</td><td>18</td><td>1 867 Gil</td></tr>
+      <tr><td>Choke</td><td>20</td><td>2 300 Gil</td></tr>
+      <tr><td>Frost</td><td>22</td><td>3 770 Gil</td></tr>
+      <tr><td>Burn</td><td>24</td><td>4 747 Gil</td></tr>
+      <tr><td>Drown</td><td>27</td><td>6 508 Gil</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<footer>
+  Fiche de synthèse générée à partir des données Category:Elemental Debuff et pages de sorts (BG-Wiki style). Termes du jeu conservés en anglais.
+</footer>
+</div>
+</body>
+</html>

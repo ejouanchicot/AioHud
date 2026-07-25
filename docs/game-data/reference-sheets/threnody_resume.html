@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Threnody — Fiche de référence (BRD)</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171c22; --panel2:#1d242c; --line:#2a333d;
+    --ink:#e6ebf1; --muted:#9aa7b4; --accent:#3fb9a5; --accent2:#5aa9e6;
+    --good:#5fbf7f; --bad:#e06666;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; padding:32px 20px;}
+  .wrap{max-width:900px;margin:0 auto}
+  header{border-bottom:2px solid var(--accent); padding-bottom:16px; margin-bottom:28px;}
+  h1{margin:0 0 4px;font-size:28px;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:14px}
+  h2{font-size:19px;margin:32px 0 12px;color:var(--accent);border-left:3px solid var(--accent);padding-left:10px;}
+  h3{font-size:15px;margin:18px 0 6px;color:var(--accent2)}
+  p{margin:8px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:12px 0}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  .stat .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .stat .v{font-size:18px;font-weight:600;margin-top:2px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--panel2);color:var(--accent2);font-weight:600}
+  td.num,th.num{text-align:center}
+  tr:hover td{background:rgba(255,255,255,.02)}
+  code{background:var(--panel2);padding:2px 6px;border-radius:4px;font-size:13px;color:var(--accent)}
+  .formula{background:#0b0e12;border:1px solid var(--line);border-radius:8px;padding:14px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;overflow-x:auto;color:#cfe3f2}
+  ul{margin:8px 0;padding-left:20px}
+  li{margin:4px 0}
+  .warn{border-left:3px solid var(--bad);background:rgba(224,102,102,.08);padding:10px 14px;border-radius:6px;margin:10px 0}
+  .tip{border-left:3px solid var(--good);background:rgba(95,191,127,.08);padding:10px 14px;border-radius:6px;margin:10px 0}
+  .muted{color:var(--muted)}
+  footer{margin-top:36px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Threnody</h1>
+  <div class="sub">Bard · Song · Fiche de référence</div>
+</header>
+
+<h2>En bref</h2>
+<div class="card">
+Les Threnodies sont des chants qui <strong>réduisent la résistance de l'ennemi à un élément</strong> (baisse de Magic Evasion élémentaire). Ex. : <em>Ice Threnody</em> réduit la résistance de la cible aux dégâts de glace (Blizzard, Distract, Herculean Slash…).
+<div class="warn"><strong>Attention :</strong> le sort est de l'<strong>élément opposé</strong> à celui qu'il abaisse. <em>Ice Threnody</em> est donc un sort <strong>Fire-based</strong>.</div>
+<div class="tip">Un seul Threnody actif à la fois : n'importe quel nouveau Threnody <strong>écrase</strong> le précédent, quel que soit l'élément.</div>
+</div>
+
+<h2>Fonctionnement des bonus d'équipement</h2>
+<div class="card">
+  <ul>
+    <li><strong>Threnody I</strong> : chaque « Threnody +1 » d'équipement augmente <strong>durée ET potence de +10%</strong>.</li>
+    <li><strong>Threnody II</strong> : chaque « Threnody +1 » augmente la <strong>durée de +10%</strong> et donne <strong>−5 Magic Evasion</strong> supplémentaire.</li>
+    <li>Bonus maximum disponible via équipement : <strong>+9</strong>.</li>
+  </ul>
+  <div class="grid">
+    <div class="stat"><div class="k">Soul Voice</div><div class="v">×2 potence</div></div>
+    <div class="stat"><div class="k">Marcato</div><div class="v">+50% potence</div></div>
+  </div>
+  <p class="muted">Exemple : Fire Threnody II à +9 = 205 de base, soit <strong>−307</strong> Fire Magic Evasion avec Marcato (205 × 1.5).</p>
+</div>
+
+<h2>Éléments — sort vs résistance abaissée</h2>
+<table>
+  <thead><tr><th>Threnody</th><th>Résistance abaissée</th><th>Élément du sort (opposé)</th></tr></thead>
+  <tbody>
+    <tr><td>Fire Threnody</td><td>Fire</td><td>Ice</td></tr>
+    <tr><td>Ice Threnody</td><td>Ice</td><td>Fire</td></tr>
+    <tr><td>Wind Threnody</td><td>Wind</td><td>Earth</td></tr>
+    <tr><td>Earth Threnody</td><td>Earth</td><td>Wind</td></tr>
+    <tr><td>Lightning Threnody</td><td>Thunder</td><td>Water</td></tr>
+    <tr><td>Water Threnody</td><td>Water</td><td>Thunder</td></tr>
+    <tr><td>Light Threnody</td><td>Light</td><td>Dark</td></tr>
+    <tr><td>Dark Threnody</td><td>Dark</td><td>Light</td></tr>
+  </tbody>
+</table>
+
+<h2>Skill Caps &amp; potence de base</h2>
+<div class="card">
+  <p>À moins de <strong>900 skill</strong> (Singing), la potence de base est plafonnée :</p>
+  <table>
+    <thead><tr><th>Type</th><th>Skill Cap</th><th>Potence de base (+0)</th></tr></thead>
+    <tbody>
+      <tr><td>Threnody I (tous éléments)</td><td>&lt; 900 skill</td><td>Element Magic Evasion : −50</td></tr>
+      <tr><td>Threnody II (tous éléments)</td><td>&lt; 900 skill</td><td>Element Magic Evasion : −160</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>Potence par bonus d'équipement</h2>
+<p class="muted">Valeurs identiques pour les 8 éléments. Potence = Magic Evasion down de l'élément abaissé.</p>
+<table>
+  <thead>
+    <tr><th>Type</th><th class="num">+0</th><th class="num">+1</th><th class="num">+2</th><th class="num">+3</th><th class="num">+4</th><th class="num">+5</th><th class="num">+6</th><th class="num">+7</th><th class="num">+8</th><th class="num">+9</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Threnody I</td><td class="num">50</td><td class="num">55</td><td class="num">60</td><td class="num">65</td><td class="num">70</td><td class="num">75</td><td class="num">80</td><td class="num">85</td><td class="num">90</td><td class="num">95</td></tr>
+    <tr><td>Threnody II</td><td class="num">160</td><td class="num">165</td><td class="num">170</td><td class="num">175</td><td class="num">180</td><td class="num">185</td><td class="num">190</td><td class="num">195</td><td class="num">200</td><td class="num">205</td></tr>
+  </tbody>
+</table>
+<p class="muted">Threnody I : +5 par bonus. Threnody II : +5 par bonus. Ces valeurs s'entendent avant Soul Voice / Marcato.</p>
+
+<h2>Équipement — Song +X</h2>
+<div class="grid">
+  <div class="stat" style="grid-column:1/-1">
+    <div class="k">Instruments</div>
+    <div class="v" style="font-size:14px;font-weight:400;line-height:1.7">
+      Gjallarhorn : Song +2~4 · Sorrowful Harp : +3 · Linos : +1~3 · Nibiru Harp : +2 · Blurred Harp +1 : +2 · Eminent Flute : +2 · Piccolo +1 : +2 · Blurred Harp : +1 · Piccolo : +1 · Millennium Horn : +2 (Dynamis) · Homestead Flute : +2 (Reives) · Forefront Flute : +2 (Reives)
+    </div>
+  </div>
+  <div class="stat" style="grid-column:1/-1">
+    <div class="k">Armures</div>
+    <div class="v" style="font-size:14px;font-weight:400;line-height:1.7">
+      Moonbow Whistle +1 : Song +3 · Moonbow Whistle : +2 · Mousai Manteel +1 : +2 · Brioso Whistle : +1 · Mousai Manteel : +1
+    </div>
+  </div>
+</div>
+
+<h2>Points clés à retenir</h2>
+<div class="card">
+  <ul>
+    <li>Le Threnody <strong>abaisse la Magic Evasion</strong> de la cible pour un élément → boost les nukes de cet élément.</li>
+    <li>Le <strong>sort est de l'élément opposé</strong> (piège classique lors du gearswap / cast).</li>
+    <li><strong>Un seul</strong> Threnody à la fois, tout nouveau écrase l'ancien.</li>
+    <li>Tier I : +10% durée <em>et</em> potence par +1. Tier II : +10% durée + −5 Macc Eva par +1. Max +9.</li>
+    <li><strong>Soul Voice ×2</strong> et <strong>Marcato +50%</strong> multiplient la potence (Fire II +9 → −307 avec Marcato).</li>
+  </ul>
+</div>
+
+<footer>
+  Fiche de synthèse générée à partir des données Category:Threnody (BG-Wiki style). Termes du jeu conservés en anglais.
+</footer>
+</div>
+</body>
+</html>

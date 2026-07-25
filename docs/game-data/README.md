@@ -38,11 +38,22 @@ Until host `ffxi[7]` is walked, AioHUD sources live data two ways: the **local p
 
 ## External reference pages (buff/song duration model)
 
-Raw game/wiki reference dropped in during the "buffs cast on allies" duration RE — background for the [Buffs you cast on ALLIES](buffs-on-allies.md) / [Geomancy duration](geomancy-duration.md) models (`enh_dur.h` / `song_dur.h` / `geo_dur.h`). Not AioHUD-specific; kept verbatim for provenance.
+Raw game/wiki reference dropped in during the "buffs cast on allies" duration RE. Full verbatim sheets live in [`reference-sheets/`](reference-sheets/) — `song_resume.html` there is a **build input**, read by `scripts/gen_song_dur.py` — background for the [Buffs you cast on ALLIES](buffs-on-allies.md) / [Geomancy duration](geomancy-duration.md) models (`enh_dur.h` / `song_dur.h` / `geo_dur.h`). Not AioHUD-specific; kept verbatim for provenance.
 
 - [Enhancing Magic (wiki)](enhancing-magic-wiki.md) — full BG-wiki enhancing-magic page (skill = potency/interrupt, never duration). Curated RE summary lives in [enhancing-magic.md](enhancing-magic.md).
 - [Enhancing duration gear](enhancing-duration-gear.md) — the gear that grants "Enhancing magic effect duration"; pairs with [enhancing-duration-items.txt](enhancing-duration-items.txt) (the extracted %s).
-- [Song Potency](song-potency.md) — per-`+song` potency tables (Minuet=Attack, Ballad=MP/tick, …). Proves the `+1 <Song>` gear is potency, NOT duration — why `song_dur.h` ignores the family columns. The song **duration** gear list is [song-duration-items.txt](song-duration-items.txt) (the extracted %s, provenance for `song_dur.h`).
+- **[Song duration](song-duration.md) — the model, and the rule that had it wrong for months.** Start here for
+  anything about how long an ally's song lasts. **Potency IS duration**: +10 % per point of `Song+`, so
+  Gjallarhorn's `All songs +4` is +40 % on every song. Measured against the server, ~1 % off on five songs.
+- [Song Potency](song-potency.md) — per-`+song` potency tables (Minuet=Attack, Ballad=MP/tick, …).
+  > ⚠️ This index used to claim the page *"proves the `+1 <Song>` gear is potency, NOT duration — why
+  > `song_dur.h` ignores the family columns"*. **That was wrong, and it is what propagated the bug**: the
+  > family columns were excluded from the duration model on the strength of it, leaving every ally song row
+  > 22–37 % short. It is potency *and* duration. Corrected 2026-07-25, see [song-duration.md](song-duration.md).
+- [song-duration-items.txt](song-duration-items.txt) — the `Timers.dll` reverse (historical). Its **formula was
+  right all along** — `m1 = 1 + Σflat + Σfamily + 0.05` — the code just ignored half of it. Per-item values are
+  superseded by the generated table (`scripts/gen_song_dur.py`).
+- [Les chants du barde](chants-barde-comment-ca-marche.md) — the same mechanics in plain French, no code, no jargon.
 - [Bard (BRD)](bard.md) — job page: song list, JAs, merits/JP that touch song duration.
 - [Composure](composure.md) — RDM job ability reference sheet (the ×3 self-duration multiplier the model applies).
 - [Lethargy Armor Set (RDM)](lethargy-armor-set.md) — the Empyrean set that augments Composure (per-piece duration %).

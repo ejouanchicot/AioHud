@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Song — Fiche de référence complète (BRD)</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171c22; --panel2:#1d242c; --line:#2a333d;
+    --ink:#e6ebf1; --muted:#9aa7b4; --accent:#c9a24a; --accent2:#5aa9e6;
+    --good:#5fbf7f; --bad:#e06666;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; padding:32px 20px;}
+  .wrap{max-width:960px;margin:0 auto}
+  header{border-bottom:2px solid var(--accent); padding-bottom:16px; margin-bottom:24px;}
+  h1{margin:0 0 4px;font-size:28px;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:14px}
+  h2{font-size:19px;margin:34px 0 12px;color:var(--accent);border-left:3px solid var(--accent);padding-left:10px;}
+  h3{font-size:15px;margin:18px 0 6px;color:var(--accent2)}
+  p{margin:8px 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:12px 0}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  .stat .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .stat .v{font-size:18px;font-weight:600;margin-top:2px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.5px}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--panel2);color:var(--accent2);font-weight:600;position:sticky;top:0}
+  td.num,th.num{text-align:center}
+  tr:hover td{background:rgba(255,255,255,.02)}
+  code{background:var(--panel2);padding:2px 6px;border-radius:4px;font-size:13px;color:var(--accent)}
+  ul{margin:8px 0;padding-left:20px}
+  li{margin:4px 0}
+  .warn{border-left:3px solid var(--bad);background:rgba(224,102,102,.08);padding:10px 14px;border-radius:6px;margin:10px 0}
+  .tip{border-left:3px solid var(--good);background:rgba(95,191,127,.08);padding:10px 14px;border-radius:6px;margin:10px 0}
+  .muted{color:var(--muted)}
+  .toc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 18px;margin:12px 0}
+  .toc a{color:var(--accent2);text-decoration:none;margin-right:14px;font-size:14px;white-space:nowrap}
+  .toc a:hover{text-decoration:underline}
+  .jobs{color:var(--muted);font-size:12.5px}
+  .scroll{overflow-x:auto}
+  footer{margin-top:36px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Song</h1>
+  <div class="sub">Bard · Catégorie de magie · Fiche de référence complète</div>
+</header>
+
+<div class="toc">
+  <a href="#overview">Overview</a>
+  <a href="#skillcaps">Skill caps</a>
+  <a href="#mechanics">Mécaniques</a>
+  <a href="#skillbonus">Skill Bonuses</a>
+  <a href="#cast">Cast −%</a>
+  <a href="#recast">Recast −s</a>
+  <a href="#duration">Durée</a>
+</div>
+
+<h2 id="overview">Overview</h2>
+<div class="card">
+  <p>Les Songs sont une catégorie de magie <strong>propre au Bard</strong>. Contrairement aux autres magies, l'efficacité d'un chant est calculée par <strong>deux skills combinés</strong> : le <strong>Singing skill</strong> et un <strong>Instrument skill</strong> (Wind ou String selon l'instrument équipé — flûte ou harpe). Ensemble ils forment le « combined skill », qui détermine <strong>potence et précision</strong> des chants.</p>
+  <p>Les chants <strong>ne peuvent pas être interrompus</strong> par les attaques ennemies (pas de spell interruption nécessaire).</p>
+  <h3>Deux catégories</h3>
+  <ul>
+    <li><strong>Buffs</strong> ciblés sur le groupe.</li>
+    <li><strong>Debuffs</strong> ciblés sur l'ennemi.</li>
+  </ul>
+  <p class="muted">La Magic Accuracy des chants de debuff n'est pas parfaitement comprise, mais scalerait avec la <strong>CHR</strong> du Bard et le combined skill, multipliés par un facteur d'échelle.</p>
+</div>
+
+<h2 id="skillcaps">Skill caps par job</h2>
+<table>
+  <thead><tr><th>Job</th><th>Grade</th><th class="num">Niveau 49</th><th class="num">Niveau 99</th></tr></thead>
+  <tbody>
+    <tr><td>BRD</td><td>C</td><td class="num">139</td><td class="num">373</td></tr>
+  </tbody>
+</table>
+<p class="muted">Valeurs identiques pour Singing, Wind instrument et String instrument.</p>
+
+<h2 id="mechanics">Mécaniques des slots de chants</h2>
+<div class="card">
+  <ul>
+    <li>Par défaut, avec un instrument équipé : <strong>2 buffs actifs</strong> maintenables. Un chant supplémentaire <strong>écrase celui dont la durée restante est la plus courte</strong>.</li>
+    <li><strong>Clarion Call</strong> (SP 1h) : permet un <strong>3e</strong> buff actif.</li>
+    <li>Un même chant ne peut être <strong>réappliqué</strong> tant que sa durée restante n'est pas <em>inférieure à sa durée de base</em> (non-améliorée). Les chants uniques écrasent toujours un chant actif, mais uniquement celui avec la <strong>durée restante la plus basse</strong>.</li>
+    <li><strong>Sans instrument</strong>, ou avec BRD en <strong>sous-job</strong> : <strong>un seul</strong> buff maintenable.</li>
+    <li>Instruments spécialisés (Blurred Harp, Terpander, Miracle Cheer, Loughnashade, Daurdabla) : étendent la limite à <strong>3 ou 4</strong> buffs actifs, et jusqu'à <strong>5</strong> avec Clarion Call.</li>
+  </ul>
+  <div class="warn"><strong>12 slots de buff partagés</strong> entre les Songs du Bard et les Phantom Roll du Corsair. Une fois la limite atteinte, les nouveaux buffs écrasent les plus anciens dans l'ordre d'application.</div>
+</div>
+
+<h2 id="skillbonus">Equipment — Skill Bonuses</h2>
+<p class="muted">Ajoute directement au skill de Singing / Wind / String. Colonne « Combined » = valeur combinée indiquée par la source.</p>
+<div class="scroll">
+<table>
+  <thead><tr>
+    <th>Item</th><th class="num">Niv.</th><th>Slot</th><th>Jobs</th>
+    <th class="num">Sing</th><th class="num">Wind</th><th class="num">String</th><th class="num">Comb.</th>
+  </tr></thead>
+  <tbody>
+    <tr><td>Gjallarhorn (Lv95)</td><td class="num">95</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">25</td><td class="num">25</td><td class="num">0</td><td class="num">50</td></tr>
+    <tr><td>Gjallarhorn (Lv99)</td><td class="num">99</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">25</td><td class="num">25</td><td class="num">0</td><td class="num">50</td></tr>
+    <tr><td>Gjallarhorn (Lv99 II)</td><td class="num">99</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">25</td><td class="num">25</td><td class="num">0</td><td class="num">50</td></tr>
+    <tr><td>Daurdabla (Lv90)</td><td class="num">90</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">20</td><td class="num">0</td><td class="num">20</td><td class="num">40</td></tr>
+    <tr><td>Daurdabla (Lv95)</td><td class="num">95</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">20</td><td class="num">0</td><td class="num">20</td><td class="num">40</td></tr>
+    <tr><td>Daurdabla (Lv99)</td><td class="num">99</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">20</td><td class="num">0</td><td class="num">20</td><td class="num">40</td></tr>
+    <tr><td>Daurdabla (Lv99 II)</td><td class="num">99</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">20</td><td class="num">0</td><td class="num">20</td><td class="num">40</td></tr>
+    <tr><td>Gjallarhorn (Lv85)</td><td class="num">85</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">20</td><td class="num">20</td><td class="num">0</td><td class="num">40</td></tr>
+    <tr><td>Gjallarhorn (Lv90)</td><td class="num">90</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">20</td><td class="num">20</td><td class="num">0</td><td class="num">40</td></tr>
+    <tr><td>Gjallarhorn (Lv80)</td><td class="num">80</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">15</td><td class="num">15</td><td class="num">0</td><td class="num">30</td></tr>
+    <tr><td>Brioso Justaucorps +1</td><td class="num">99</td><td>Body</td><td class="jobs">BRD</td><td class="num">13</td><td class="num">0</td><td class="num">10</td><td class="num">23</td></tr>
+    <tr><td>Aoidos' Hongreline +2</td><td class="num">89</td><td>Body</td><td class="jobs">BRD</td><td class="num">10</td><td class="num">10</td><td class="num">0</td><td class="num">20</td></tr>
+    <tr><td>Brioso Justaucorps</td><td class="num">99</td><td>Body</td><td class="jobs">BRD</td><td class="num">10</td><td class="num">0</td><td class="num">10</td><td class="num">20</td></tr>
+    <tr><td>Gjallarhorn (Lv75)</td><td class="num">75</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">10</td><td class="num">10</td><td class="num">0</td><td class="num">20</td></tr>
+    <tr><td>Aoidos' Hongreline +1</td><td class="num">89</td><td>Body</td><td class="jobs">BRD</td><td class="num">8</td><td class="num">8</td><td class="num">0</td><td class="num">16</td></tr>
+    <tr><td>Aoidos' Manchettes +2</td><td class="num">87</td><td>Hands</td><td class="jobs">BRD</td><td class="num">8</td><td class="num">8</td><td class="num">8</td><td class="num">16</td></tr>
+    <tr><td>Brioso Cannions +1</td><td class="num">99</td><td>Legs</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">15</td><td class="num">0</td><td class="num">15</td></tr>
+    <tr><td>Bihu Roundlet</td><td class="num">99</td><td>Head</td><td class="jobs">BRD</td><td class="num">14</td><td class="num">0</td><td class="num">0</td><td class="num">14</td></tr>
+    <tr><td>Brioso Cuffs</td><td class="num">99</td><td>Hands</td><td class="jobs">BRD</td><td class="num">13</td><td class="num">0</td><td class="num">0</td><td class="num">13</td></tr>
+    <tr><td>Brioso Cuffs +1</td><td class="num">99</td><td>Hands</td><td class="jobs">BRD</td><td class="num">13</td><td class="num">0</td><td class="num">0</td><td class="num">13</td></tr>
+    <tr><td>Brioso Cannions</td><td class="num">99</td><td>Legs</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">13</td><td class="num">0</td><td class="num">13</td></tr>
+    <tr><td>Aoidos' Manchettes +1</td><td class="num">87</td><td>Hands</td><td class="jobs">BRD</td><td class="num">6</td><td class="num">6</td><td class="num">6</td><td class="num">12</td></tr>
+    <tr><td>Bihu Roundlet</td><td class="num">99</td><td>Head</td><td class="jobs">BRD</td><td class="num">12</td><td class="num">0</td><td class="num">0</td><td class="num">12</td></tr>
+    <tr><td>Marduk's Tiara +1</td><td class="num">99</td><td>Head</td><td class="jobs">WHM BRD SMN</td><td class="num">12</td><td class="num">0</td><td class="num">0</td><td class="num">12</td></tr>
+    <tr><td>Aneirin's Gloves</td><td class="num">99</td><td>Hands</td><td class="jobs">WHM BLM RDM BRD SMN BLU PUP SCH</td><td class="num">11</td><td class="num">0</td><td class="num">0</td><td class="num">11</td></tr>
+    <tr><td>Bihu Cuffs +1</td><td class="num">99</td><td>Hands</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">11</td><td class="num">0</td><td class="num">11</td></tr>
+    <tr><td>Marduk's Dastanas +1</td><td class="num">99</td><td>Hands</td><td class="jobs">WHM BRD SMN</td><td class="num">0</td><td class="num">11</td><td class="num">0</td><td class="num">11</td></tr>
+    <tr><td>Marduk's Shalwar +1</td><td class="num">99</td><td>Hands</td><td class="jobs">WHM BRD SMN</td><td class="num">0</td><td class="num">11</td><td class="num">0</td><td class="num">11</td></tr>
+    <tr><td>Bihu Slippers +1</td><td class="num">99</td><td>Feet</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">0</td><td class="num">11</td><td class="num">11</td></tr>
+    <tr><td>Marduk's Crackows +1</td><td class="num">99</td><td>Feet</td><td class="jobs">WHM BRD SMN</td><td class="num">0</td><td class="num">0</td><td class="num">11</td><td class="num">11</td></tr>
+    <tr><td>Bragi Earring</td><td class="num">99</td><td>Earrings</td><td class="jobs">All Jobs</td><td class="num">10</td><td class="num">0</td><td class="num">0</td><td class="num">10</td></tr>
+    <tr><td>Aoidos' Rhingrave +2</td><td class="num">83</td><td>Legs</td><td class="jobs">BRD</td><td class="num">10</td><td class="num">0</td><td class="num">0</td><td class="num">10</td></tr>
+    <tr><td>Choral Cuffs +1</td><td class="num">74</td><td>Hands</td><td class="jobs">BRD</td><td class="num">10</td><td class="num">0</td><td class="num">0</td><td class="num">10</td></tr>
+    <tr><td>Daurdabla (Lv85)</td><td class="num">85</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">5</td><td class="num">0</td><td class="num">5</td><td class="num">10</td></tr>
+    <tr><td>Nabu's Crackows</td><td class="num">99</td><td>Feet</td><td class="jobs">WHM BRD SMN</td><td class="num">3</td><td class="num">0</td><td class="num">7</td><td class="num">10</td></tr>
+    <tr><td>Bokwus Boots</td><td class="num">99</td><td>Feet</td><td class="jobs">WHM BLM RDM BRD SMN SCH GEO</td><td class="num">0</td><td class="num">10</td><td class="num">0</td><td class="num">10</td></tr>
+    <tr><td>Brioso Slippers +1</td><td class="num">99</td><td>Feet</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">10</td><td class="num">0</td><td class="num">10</td></tr>
+    <tr><td>Brioso Slippers</td><td class="num">99</td><td>Feet</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">10</td><td class="num">0</td><td class="num">10</td></tr>
+    <tr><td>Camaraderie Harp</td><td class="num">99</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">0</td><td class="num">10</td><td class="num">10</td></tr>
+    <tr><td>Bihu Cuffs</td><td class="num">99</td><td>Hands</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">9</td><td class="num">0</td><td class="num">9</td></tr>
+    <tr><td>Bihu Slippers</td><td class="num">99</td><td>Feet</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">0</td><td class="num">9</td><td class="num">9</td></tr>
+    <tr><td>Brioso Roundlet +1</td><td class="num">99</td><td>Head</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">0</td><td class="num">9</td><td class="num">9</td></tr>
+    <tr><td>Aoidos' Rhingrave +1</td><td class="num">83</td><td>Legs</td><td class="jobs">BRD</td><td class="num">8</td><td class="num">0</td><td class="num">0</td><td class="num">8</td></tr>
+    <tr><td>Choral Cannions +1</td><td class="num">74</td><td>Legs</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">8</td><td class="num">0</td><td class="num">8</td></tr>
+    <tr><td>Rhapsode's Cape</td><td class="num">99</td><td>Back</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">8</td><td class="num">0</td><td class="num">8</td></tr>
+    <tr><td>Bard's Roundlet +2</td><td class="num">90</td><td>Head</td><td class="jobs">BRD</td><td class="num">7</td><td class="num">0</td><td class="num">0</td><td class="num">7</td></tr>
+    <tr><td>Felibre's Dague</td><td class="num">89</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">7</td><td class="num">0</td><td class="num">0</td><td class="num">7</td></tr>
+    <tr><td>Marduk's Tiara</td><td class="num">75</td><td>Head</td><td class="jobs">WHM BRD SMN</td><td class="num">7</td><td class="num">0</td><td class="num">0</td><td class="num">7</td></tr>
+    <tr><td>Bard's Cuffs +2</td><td class="num">90</td><td>Hands</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">7</td><td class="num">0</td><td class="num">7</td></tr>
+    <tr><td>Wind Torque</td><td class="num">65</td><td>Neck</td><td class="jobs">All jobs</td><td class="num">0</td><td class="num">7</td><td class="num">0</td><td class="num">7</td></tr>
+    <tr><td>Zenith Slacks +1</td><td class="num">73</td><td>Legs</td><td class="jobs">WHM BLM RDM BRD SMN</td><td class="num">0</td><td class="num">7 (max)</td><td class="num">0</td><td class="num">7 (max)</td></tr>
+    <tr><td>Brioso Roundlet</td><td class="num">99</td><td>Head</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">0</td><td class="num">7</td><td class="num">7</td></tr>
+    <tr><td>String Torque</td><td class="num">65</td><td>Neck</td><td class="jobs">All jobs</td><td class="num">0</td><td class="num">0</td><td class="num">7</td><td class="num">7</td></tr>
+    <tr><td>Demon Helm +1</td><td class="num">73</td><td>Head</td><td class="jobs">BLM DRK BRD</td><td class="num">6</td><td class="num">0</td><td class="num">0</td><td class="num">6</td></tr>
+    <tr><td>Balladeer's Cape</td><td class="num">92</td><td>Back</td><td class="jobs">WHM BLM RDM BRD SMN BLU PUP SCH</td><td class="num">0</td><td class="num">6</td><td class="num">0</td><td class="num">6</td></tr>
+    <tr><td>Zenith Slacks</td><td class="num">73</td><td>Legs</td><td class="jobs">WHM BLM RDM BRD SMN</td><td class="num">0</td><td class="num">6 (max)</td><td class="num">0</td><td class="num">6 (max)</td></tr>
+    <tr><td>Choral Justaucorps +1</td><td class="num">74</td><td>Body</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">0</td><td class="num">6</td><td class="num">6</td></tr>
+    <tr><td>Astute Cape</td><td class="num">75</td><td>Back</td><td class="jobs">All jobs</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td class="num">5</td></tr>
+    <tr><td>Barcarolle Medal</td><td class="num">78</td><td>Neck</td><td class="jobs">BRD</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td class="num">5</td></tr>
+    <tr><td>Bard's Roundlet</td><td class="num">72</td><td>Head</td><td class="jobs">BRD</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td class="num">5</td></tr>
+    <tr><td>Bard's Roundlet +1</td><td class="num">75</td><td>Head</td><td class="jobs">BRD</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td class="num">5</td></tr>
+    <tr><td>Choral Cuffs</td><td class="num">60</td><td>Hands</td><td class="jobs">BRD</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td class="num">5</td></tr>
+    <tr><td>Demon Helm</td><td class="num">73</td><td>Head</td><td class="jobs">BLM DRK BRD</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td class="num">5</td></tr>
+    <tr><td>Hidalgo Slops</td><td class="num">98</td><td>Legs</td><td class="jobs">WHM BLM RDM SMN BLU</td><td class="num">5</td><td class="num">0</td><td class="num">0</td><td class="num">5</td></tr>
+    <tr><td>Valkyrie's Clogs</td><td class="num">75</td><td>Feet</td><td class="jobs">WHM BLM RDM BRD SMN</td><td class="num">5 (max)</td><td class="num">0</td><td class="num">0</td><td class="num">5 (max)</td></tr>
+    <tr><td>Musical Earring</td><td class="num">75</td><td>Earring</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">5</td><td class="num">5</td><td class="num">5</td></tr>
+    <tr><td>Harfner's Sash</td><td class="num">93</td><td>Waist</td><td class="jobs">All jobs</td><td class="num">0</td><td class="num">5</td><td class="num">5</td><td class="num">5</td></tr>
+    <tr><td>Bard's Cuffs +1</td><td class="num">75</td><td>Hands</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">5</td><td class="num">0</td><td class="num">5</td></tr>
+    <tr><td>Marduk's Shalwar</td><td class="num">75</td><td>Legs</td><td class="jobs">WHM BRD SMN</td><td class="num">0</td><td class="num">5</td><td class="num">0</td><td class="num">5</td></tr>
+    <tr><td>Oracle's Pigaches</td><td class="num">75</td><td>Feet</td><td class="jobs">WHM BLM BRD SMN</td><td class="num">0</td><td class="num">5</td><td class="num">0</td><td class="num">5</td></tr>
+    <tr><td>Piper's Torque</td><td class="num">69</td><td>Neck</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">5 (Camp: 10)</td><td class="num">0</td><td class="num">5 (Camp: 10)</td></tr>
+    <tr><td>Bard's Slippers +2</td><td class="num">90</td><td>Feet</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">0</td><td class="num">5</td><td class="num">5</td></tr>
+    <tr><td>Marduk's Crackows</td><td class="num">75</td><td>Feet</td><td class="jobs">WHM BRD SMN</td><td class="num">0</td><td class="num">0</td><td class="num">5</td><td class="num">5</td></tr>
+    <tr><td>Valkyrie's Hat</td><td class="num">75</td><td>Head</td><td class="jobs">WHM BLM RDM BRD SMN</td><td class="num">0</td><td class="num">0</td><td class="num">5 (max)</td><td class="num">5 (max)</td></tr>
+    <tr><td>Song Belt</td><td class="num">30</td><td>Waist</td><td class="jobs">All jobs</td><td class="num">5 (BRD sub)</td><td class="num">0</td><td class="num">0</td><td class="num">5 (BRD sub)</td></tr>
+    <tr><td>Epsilon Ring</td><td class="num">75</td><td>Ring</td><td class="jobs">All jobs</td><td class="num">0</td><td class="num">5 (Salv.)</td><td class="num">0</td><td class="num">5 (Salv.)</td></tr>
+    <tr><td>Augur's Brais</td><td class="num">79</td><td>Legs</td><td class="jobs">WHM BLM RDM BRD SMN SCH</td><td class="num">4</td><td class="num">0</td><td class="num">0</td><td class="num">4</td></tr>
+    <tr><td>Chanter's Staff</td><td class="num">40</td><td>Weapon</td><td class="jobs">WAR MNK WHM BLM RDM BST BRD SMN SCH</td><td class="num">4</td><td class="num">0</td><td class="num">0</td><td class="num">4</td></tr>
+    <tr><td>Shadow Clogs</td><td class="num">75</td><td>Feet</td><td class="jobs">WHM BLM RDM BRD SMN</td><td class="num">4 (max)</td><td class="num">0</td><td class="num">0</td><td class="num">4 (max)</td></tr>
+    <tr><td>Erato's Cape</td><td class="num">74</td><td>Back</td><td class="jobs">WHM BLM RDM BRD SMN BLU PUP SCH</td><td class="num">0</td><td class="num">0</td><td class="num">4</td><td class="num">4</td></tr>
+    <tr><td>Shadow Hat</td><td class="num">75</td><td>Head</td><td class="jobs">WHM BLM RDM BRD SMN</td><td class="num">0</td><td class="num">0</td><td class="num">4 (max)</td><td class="num">4 (max)</td></tr>
+    <tr><td>Shedir Turban</td><td class="num">99</td><td>Head</td><td class="jobs">WHM BLM RDM BRD SMN BLU SCH</td><td class="num">3</td><td class="num">0</td><td class="num">0</td><td class="num">3</td></tr>
+    <tr><td>Aoide's Pumps</td><td class="num">72</td><td>Feet</td><td class="jobs">BRD</td><td class="num">3</td><td class="num">0</td><td class="num">0</td><td class="num">3</td></tr>
+    <tr><td>Namru's Crackows</td><td class="num">45</td><td>Feet</td><td class="jobs">WHM BRD SMN</td><td class="num">1</td><td class="num">0</td><td class="num">2</td><td class="num">3</td></tr>
+    <tr><td>Singing Earring</td><td class="num">35</td><td>Earring</td><td class="jobs">All jobs</td><td class="num">3</td><td class="num">0</td><td class="num">0</td><td class="num">3</td></tr>
+    <tr><td>Quire Grip</td><td class="num">83</td><td>Grips</td><td class="jobs">All jobs</td><td class="num">3</td><td class="num">0</td><td class="num">0</td><td class="num">3</td></tr>
+    <tr><td>Silktone</td><td class="num">65</td><td>Weapon</td><td class="jobs">THF BST BRD</td><td class="num">2</td><td class="num">0</td><td class="num">0</td><td class="num">2</td></tr>
+    <tr><td>Minstrel's Coat</td><td class="num">62</td><td>Body</td><td class="jobs">MNK WHM RDM THF PLD BST BRD DRG SMN BLU COR PUP DNC</td><td class="num">0</td><td class="num">3</td><td class="num">3</td><td class="num">3</td></tr>
+    <tr><td>Bard's Cuffs</td><td class="num">73</td><td>Hands</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">3</td><td class="num">0</td><td class="num">3</td></tr>
+    <tr><td>Echo Cape</td><td class="num">69</td><td>Back</td><td class="jobs">WHM BLM RDM BRD SMN BLU PUP SCH</td><td class="num">0</td><td class="num">3</td><td class="num">0</td><td class="num">3</td></tr>
+    <tr><td>Marching Belt</td><td class="num">75</td><td>Waist</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">3</td><td class="num">0</td><td class="num">3</td></tr>
+    <tr><td>Nereid Ring</td><td class="num">51</td><td>Ring</td><td class="jobs">All jobs</td><td class="num">0</td><td class="num">3</td><td class="num">0</td><td class="num">3</td></tr>
+    <tr><td>Wind Earring</td><td class="num">35</td><td>Earring</td><td class="jobs">All jobs</td><td class="num">0</td><td class="num">3</td><td class="num">0</td><td class="num">3</td></tr>
+    <tr><td>Bard's Slippers</td><td class="num">71</td><td>Feet</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">0</td><td class="num">3</td><td class="num">3</td></tr>
+    <tr><td>Bard's Slippers +1</td><td class="num">75</td><td>Feet</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">0</td><td class="num">3</td><td class="num">3</td></tr>
+    <tr><td>Choral Justaucorps</td><td class="num">58</td><td>Body</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">0</td><td class="num">3</td><td class="num">3</td></tr>
+    <tr><td>String Earring</td><td class="num">35</td><td>Earring</td><td class="jobs">All jobs</td><td class="num">0</td><td class="num">0</td><td class="num">3</td><td class="num">3</td></tr>
+    <tr><td>Taillefer's Dagger</td><td class="num">70</td><td>Weapon</td><td class="jobs">WAR RDM THF BST BRD RNG NIN COR DNC</td><td class="num">0</td><td class="num">0</td><td class="num">3</td><td class="num">3</td></tr>
+    <tr><td>Oliphant</td><td class="num">40</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">3 (Conq.)</td><td class="num">0</td><td class="num">3 (Conq.)</td></tr>
+    <tr><td>Lambda Sash</td><td class="num">75</td><td>Waist</td><td class="jobs">MNK WHM BLM RDM PLD BRD RNG SMN BLU PUP SCH</td><td class="num">0</td><td class="num">0</td><td class="num">3 (Salv.)</td><td class="num">3 (Salv.)</td></tr>
+    <tr><td>Kumbira Cape</td><td class="num">99</td><td>Back</td><td class="jobs">WHM BLM RDM BRD SMN BLU PUP SCH GEO</td><td class="num">2</td><td class="num">0</td><td class="num">0</td><td class="num">2</td></tr>
+    <tr><td>Trumpet Ring</td><td class="num">51</td><td>Ring</td><td class="jobs">All jobs</td><td class="num">0</td><td class="num">2</td><td class="num">0</td><td class="num">2</td></tr>
+    <tr><td>Dream Bell +1</td><td class="num">1</td><td>Weapon</td><td class="jobs">All jobs</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">1</td></tr>
+    <tr><td>Orphic Egg</td><td class="num">1</td><td>Ammo</td><td class="jobs">All jobs</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num">1</td></tr>
+    <tr><td>Pyf Harp</td><td class="num">85</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">0</td><td class="num">0</td><td class="num">1</td><td class="num">1</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="cast">Song Spellcasting Reduction (temps de cast −%)</h2>
+<p class="muted">Réduit le casting time de tous les chants du % indiqué ; se cumule avec les autres réductions de cast.</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>Item</th><th class="num">Niv.</th><th>Slot</th><th>Jobs</th><th class="num">Réduction</th></tr></thead>
+  <tbody>
+    <tr><td>Minstrel's Ring</td><td class="num">50</td><td>Ring</td><td class="jobs">BRD</td><td class="num">25% (Latent)</td></tr>
+    <tr><td>Fili Calot +2</td><td class="num">99</td><td>Head</td><td class="jobs">BRD</td><td class="num">15%</td></tr>
+    <tr><td>Fili Calot +1</td><td class="num">99</td><td>Head</td><td class="jobs">BRD</td><td class="num">14%</td></tr>
+    <tr><td>Fili Calot</td><td class="num">99</td><td>Head</td><td class="jobs">BRD</td><td class="num">13%</td></tr>
+    <tr><td>Sheikh Manteel</td><td class="num">72</td><td>Body</td><td class="jobs">BRD</td><td class="num">13%</td></tr>
+    <tr><td>Aoidos' Calot +2</td><td class="num">85</td><td>Head</td><td class="jobs">BRD</td><td class="num">12%</td></tr>
+    <tr><td>Sha'ir Manteel</td><td class="num">72</td><td>Body</td><td class="jobs">BRD</td><td class="num">12%</td></tr>
+    <tr><td>Praeco Doublet</td><td class="num">97</td><td>Body</td><td class="jobs">WHM BLM RDM BRD SMN BLU PUP SCH</td><td class="num">10%</td></tr>
+    <tr><td>Yigit Gomlek</td><td class="num">72</td><td>Body</td><td class="jobs">WHM BLM RDM BRD SMN BLU SCH</td><td class="num">10%</td></tr>
+    <tr><td>Aoidos' Calot +1</td><td class="num">85</td><td>Head</td><td class="jobs">BRD</td><td class="num">8%</td></tr>
+    <tr><td>Bihu Slippers +1</td><td class="num">99</td><td>Feet</td><td class="jobs">BRD</td><td class="num">8%</td></tr>
+    <tr><td>Bihu Slippers</td><td class="num">99</td><td>Feet</td><td class="jobs">BRD</td><td class="num">7%</td></tr>
+    <tr><td>Marduk's Dastanas +1</td><td class="num">99</td><td>Hands</td><td class="jobs">WHM BRD SMN</td><td class="num">7%</td></tr>
+    <tr><td>Bard's Slippers +2</td><td class="num">90</td><td>Feet</td><td class="jobs">BRD</td><td class="num">6%</td></tr>
+    <tr><td>Bokwus Boots</td><td class="num">99</td><td>Feet</td><td class="jobs">WHM BLM RDM BRD SMN SCH GEO</td><td class="num">6%</td></tr>
+    <tr><td>Felibre's Dague</td><td class="num">89</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">6%</td></tr>
+    <tr><td>Aneirin's Gloves</td><td class="num">99</td><td>Hands</td><td class="jobs">WHM BLM RDM BRD SMN BLU PUP SCH</td><td class="num">5%</td></tr>
+    <tr><td>Gendewitha Spats</td><td class="num">99</td><td>Legs</td><td class="jobs">WHM RDM BRD SCH</td><td class="num">5%</td></tr>
+    <tr><td>Gendewitha Spats +1</td><td class="num">99</td><td>Legs</td><td class="jobs">WHM RDM BRD SCH</td><td class="num">5%</td></tr>
+    <tr><td>Praeco Beret</td><td class="num">97</td><td>Head</td><td class="jobs">WHM BLM RDM BRD SMN BLU PUP SCH</td><td class="num">5%</td></tr>
+    <tr><td>Schellenband</td><td class="num">82</td><td>Hands</td><td class="jobs">BRD</td><td class="num">5%</td></tr>
+    <tr><td>Zenith Slacks +1</td><td class="num">73</td><td>Legs</td><td class="jobs">WHM BLM RDM BRD SMN</td><td class="num">4% (max)</td></tr>
+    <tr><td>Aoidos' Belt</td><td class="num">80</td><td>Waist</td><td class="jobs">BRD</td><td class="num">3%</td></tr>
+    <tr><td>Aoidos' Matinee</td><td class="num">84</td><td>Neck</td><td class="jobs">BRD</td><td class="num">3%</td></tr>
+    <tr><td>Zenith Slacks</td><td class="num">73</td><td>Legs</td><td class="jobs">WHM BLM RDM BRD SMN</td><td class="num">3% (max)</td></tr>
+    <tr><td>Aoidos' Earring</td><td class="num">90</td><td>Earring</td><td class="jobs">BRD</td><td class="num">2%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="recast">Song Recast Delay Reduction (recast −s)</h2>
+<p class="muted">Réduit le recast de base de tous les chants du nombre de secondes indiqué ; se cumule avec les autres réductions de recast.</p>
+<div class="scroll">
+<table>
+  <thead><tr><th>Item</th><th class="num">Niv.</th><th>Slot</th><th>Jobs</th><th class="num">Réduction (s)</th></tr></thead>
+  <tbody>
+    <tr><td>Fili Rhingrave +3</td><td class="num">99</td><td>Legs</td><td class="jobs">BRD</td><td class="num">10</td></tr>
+    <tr><td>Fili Rhingrave +2</td><td class="num">99</td><td>Legs</td><td class="jobs">BRD</td><td class="num">9</td></tr>
+    <tr><td>Fili Rhingrave +1</td><td class="num">99</td><td>Legs</td><td class="jobs">BRD</td><td class="num">8</td></tr>
+    <tr><td>Iaso Cuffs</td><td class="num">99</td><td>Hands</td><td class="jobs">WHM RDM BRD SCH</td><td class="num">7</td></tr>
+    <tr><td>Fili Rhingrave</td><td class="num">99</td><td>Legs</td><td class="jobs">BRD</td><td class="num">7</td></tr>
+    <tr><td>Aoidos' Rhingrave +2</td><td class="num">83</td><td>Legs</td><td class="jobs">BRD</td><td class="num">6</td></tr>
+    <tr><td>Aoidos' Rhingrave +1</td><td class="num">83</td><td>Legs</td><td class="jobs">BRD</td><td class="num">4</td></tr>
+    <tr><td>Paean Cuffs</td><td class="num">99</td><td>Hands</td><td class="jobs">WHM RDM BRD SCH</td><td class="num">4</td></tr>
+    <tr><td>Sheikh Gages</td><td class="num">72</td><td>Hands</td><td class="jobs">BRD</td><td class="num">4</td></tr>
+    <tr><td>Volunteer's Nails</td><td class="num">70</td><td>Feet</td><td class="jobs">MNK WHM RDM THF PLD BST BRD RNG DRG SMN BLU COR PUP DNC</td><td class="num">4 (Besieged)</td></tr>
+    <tr><td>Harmony Cape</td><td class="num">78</td><td>Back</td><td class="jobs">WHM BLM RDM BRD SMN BLU PUP SCH</td><td class="num">3</td></tr>
+    <tr><td>Shedir Turban</td><td class="num">99</td><td>Head</td><td class="jobs">WHM BLM RDM BRD SMN BLU SCH</td><td class="num">3</td></tr>
+    <tr><td>Blitzer Poleyn</td><td class="num">75</td><td>Legs</td><td class="jobs">WAR PLD DRK SAM DRG</td><td class="num">3</td></tr>
+    <tr><td>Desultor Tassets</td><td class="num">75</td><td>Legs</td><td class="jobs">MNK THF BST RNG NIN BLU COR PUP DNC</td><td class="num">3</td></tr>
+    <tr><td>Tatsumaki Sitagoromo</td><td class="num">75</td><td>Legs</td><td class="jobs">WHM BLM RDM BRD SMN SCH</td><td class="num">3</td></tr>
+    <tr><td>Aoidos' Rhingrave</td><td class="num">83</td><td>Legs</td><td class="jobs">BRD</td><td class="num">2</td></tr>
+    <tr><td>Corvax Sash</td><td class="num">92</td><td>Waist</td><td class="jobs">MNK WHM BLM RDM PLD BRD RNG SMN BLU PUP SCH</td><td class="num">2</td></tr>
+    <tr><td>Sha'ir Gages</td><td class="num">72</td><td>Hands</td><td class="jobs">BRD</td><td class="num">2</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="duration">Song Effect Duration (durée)</h2>
+<div class="card">
+  <ul>
+    <li>La durée d'équipement <strong>affecte aussi les durées de debuff offensif</strong>.</li>
+    <li>Durée de base d'un buff de groupe : <strong>120 s</strong>.</li>
+    <li>Le gear « Song+ » (potence) ajoute <strong>+10% de durée par 1 Song+</strong>.</li>
+    <li>Tous les bonus de durée d'équipement sont <strong>additifs entre eux</strong>, et additifs avec le bonus de durée des effets Song+ potence.</li>
+    <li><strong>Troubadour double</strong> la durée totale après application de tous les autres bonus.</li>
+    <li>« Song effect duration +10 » et « +10% » = même chose (+10% de durée).</li>
+  </ul>
+  <div class="tip">Exemple : March +1 sur Fili Manchettes +1 → +10% (+12 s) et +1 potence ; avec Inyanga Shalwar +2 (+17%), March cumule <strong>+27%</strong> de durée. → Marsyas a +10% de durée de plus que le Gjallarhorn Relic Lv99, mais aucun boost de potence sur les buffs de groupe.</div>
+  <p class="muted">Le tableau ci-dessous <strong>n'inclut pas</strong> les bonus Song+. La colonne « Buff Duration » = secondes ajoutées sur une base de 120 s ; les décimales sont <strong>tronquées après totalisation</strong>.</p>
+</div>
+<div class="scroll">
+<table>
+  <thead><tr><th>Item</th><th class="num">Niv.</th><th>Slot</th><th>Jobs</th><th class="num">Durée</th><th class="num">Buff Duration</th></tr></thead>
+  <tbody>
+    <tr><td>Legato Dagger</td><td class="num">99</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">+5%</td><td class="num">+6s</td></tr>
+    <tr><td>Kali</td><td class="num">99</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">+5%</td><td class="num">+6s</td></tr>
+    <tr><td>Carnwenhan (Lv75)</td><td class="num">75</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">+10%</td><td class="num">+12s</td></tr>
+    <tr><td>Carnwenhan (Lv80)</td><td class="num">80</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">+20%</td><td class="num">+24s</td></tr>
+    <tr><td>Carnwenhan (Lv85)</td><td class="num">85</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">+30%</td><td class="num">+36s</td></tr>
+    <tr><td>Carnwenhan (Lv90)</td><td class="num">90</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">+40%</td><td class="num">+48s</td></tr>
+    <tr><td>Carnwenhan (Lv95)</td><td class="num">95</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">+40%</td><td class="num">+48s</td></tr>
+    <tr><td>Carnwenhan (Lv99)</td><td class="num">99</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">+50%</td><td class="num">+60s</td></tr>
+    <tr><td>Carnwenhan (Lv99 II)</td><td class="num">99</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">+50%</td><td class="num">+60s</td></tr>
+    <tr><td>Carnwenhan (Lv119)</td><td class="num">99</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">+50%</td><td class="num">+60s</td></tr>
+    <tr><td>Carnwenhan (Lv119 II)</td><td class="num">99</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">+50%</td><td class="num">+60s</td></tr>
+    <tr><td>Carnwenhan (Lv119 III)</td><td class="num">99</td><td>Weapon</td><td class="jobs">BRD</td><td class="num">+50%</td><td class="num">+60s</td></tr>
+    <tr><td>Daurdabla (Lv90)</td><td class="num">90</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">+25%</td><td class="num">+30s</td></tr>
+    <tr><td>Daurdabla (Lv95)</td><td class="num">95</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">+30%</td><td class="num">+36s</td></tr>
+    <tr><td>Daurdabla (Lv99)</td><td class="num">99</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">+30%</td><td class="num">+36s</td></tr>
+    <tr><td>Daurdabla (Lv99 II)</td><td class="num">99</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">+30%</td><td class="num">+36s</td></tr>
+    <tr><td>Marsyas</td><td class="num">99</td><td>Instrument</td><td class="jobs">BRD</td><td class="num">+50%</td><td class="num">+60s</td></tr>
+    <tr><td>Aoidos' Hongreline +1</td><td class="num">89</td><td>Body</td><td class="jobs">BRD</td><td class="num">+5%</td><td class="num">+6s</td></tr>
+    <tr><td>Aoidos' Hongreline +2</td><td class="num">89</td><td>Body</td><td class="jobs">BRD</td><td class="num">+10%</td><td class="num">+12s</td></tr>
+    <tr><td>Fili Hongreline</td><td class="num">99</td><td>Body</td><td class="jobs">BRD</td><td class="num">+11%</td><td class="num">+13.2s</td></tr>
+    <tr><td>Fili Hongreline +1</td><td class="num">99</td><td>Body</td><td class="jobs">BRD</td><td class="num">+12%</td><td class="num">+14.4s</td></tr>
+    <tr><td>Fili Hongreline +2</td><td class="num">99</td><td>Body</td><td class="jobs">BRD</td><td class="num">+13%</td><td class="num">+16.6s</td></tr>
+    <tr><td>Fili Hongreline +3</td><td class="num">99</td><td>Body</td><td class="jobs">BRD</td><td class="num">+14%</td><td class="num">+17.8s</td></tr>
+    <tr><td>Marduk's Shalwar +1</td><td class="num">99</td><td>Legs</td><td class="jobs">WHM BRD SMN</td><td class="num">+10%</td><td class="num">+12s</td></tr>
+    <tr><td>Inyanga Shalwar</td><td class="num">99</td><td>Legs</td><td class="jobs">WHM BRD SMN</td><td class="num">+12%</td><td class="num">+14.4s</td></tr>
+    <tr><td>Inyanga Shalwar +1</td><td class="num">99</td><td>Legs</td><td class="jobs">WHM BRD SMN</td><td class="num">+15%</td><td class="num">+18s</td></tr>
+    <tr><td>Inyanga Shalwar +2</td><td class="num">99</td><td>Legs</td><td class="jobs">WHM BRD SMN</td><td class="num">+17%</td><td class="num">+20.4s</td></tr>
+    <tr><td>Brioso Slippers</td><td class="num">99</td><td>Feet</td><td class="jobs">BRD</td><td class="num">+10%</td><td class="num">+12s</td></tr>
+    <tr><td>Brioso Slippers +1</td><td class="num">99</td><td>Feet</td><td class="jobs">BRD</td><td class="num">+11%</td><td class="num">+13.2s</td></tr>
+    <tr><td>Brioso Slippers +2</td><td class="num">99</td><td>Feet</td><td class="jobs">BRD</td><td class="num">+13%</td><td class="num">+15.6s</td></tr>
+    <tr><td>Brioso Slippers +3</td><td class="num">99</td><td>Feet</td><td class="jobs">BRD</td><td class="num">+15%</td><td class="num">+18s</td></tr>
+    <tr><td>Brioso Slippers +4</td><td class="num">99</td><td>Feet</td><td class="jobs">BRD</td><td class="num">+15%</td><td class="num">+18s</td></tr>
+    <tr><td>Aoidos' Matinee</td><td class="num">84</td><td>Neck</td><td class="jobs">BRD</td><td class="num">+10%</td><td class="num">+12s</td></tr>
+  </tbody>
+</table>
+</div>
+
+<footer>
+  Fiche de synthèse générée à partir de la page Category:Song (BG-Wiki style). Tables transcrites intégralement ; termes du jeu conservés en anglais.
+  Note : les valeurs « Buff Duration » de Fili Hongreline +2 (+16.6s) et +3 (+17.8s) sont reprises telles quelles de la source.
+</footer>
+</div>
+</body>
+</html>

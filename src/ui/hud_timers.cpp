@@ -574,7 +574,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // NB : hasLag keys on SPELL, so this only de-counts a laggard of the SAME spell. A same-STATUS DIFFERENT
                 // spell (Honor + Victory March both 214) is NOT caught here -> a fresh Honor group still uses countHas(214)
                 // and can over-count a member who carries only Victory. Known residual (0x076 has no spell id) ; the
-                // orphan case (selfExp==0) IS fixed via obFresh. See timers-songs-brd.md §4. Fix only if it surfaces.
+                // orphan case (selfExp==0) IS fixed via obFresh. See docs/architecture/timers-songs-brd.md §4. Fix only if it surfaces.
                 bool hasLag = false; for (int j = 0; j < ng; ++j) if (grp[j].spell == grp[k].spell && !grp[j].fresh) { hasLag = true; break; }
                 if (hasLag) { effN = grp[k].allies + ((meHas(grp[k].status) || grp[k].selfCast) ? 1 : 0); }
                 // Floor the real-carrier count by the allies you FRESHLY cast on (ob[]) -- not only across a zone (graceOB)

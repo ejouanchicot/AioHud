@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quick Draw — Fiche de référence (COR)</title>
+<style>
+  :root{
+    --bg:#0f1216; --panel:#171c22; --panel2:#1d242c; --line:#2a333d;
+    --ink:#e6ebf1; --muted:#9aa7b4; --accent:#e0b341; --accent2:#5aa9e6;
+    --good:#5fbf7f; --bad:#e06666;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:32px 20px;
+  }
+  .wrap{max-width:900px;margin:0 auto}
+  header{
+    border-bottom:2px solid var(--accent); padding-bottom:16px; margin-bottom:28px;
+  }
+  h1{margin:0 0 4px;font-size:28px;letter-spacing:.3px}
+  .sub{color:var(--muted);font-size:14px}
+  h2{
+    font-size:19px;margin:32px 0 12px;color:var(--accent);
+    border-left:3px solid var(--accent);padding-left:10px;
+  }
+  h3{font-size:15px;margin:18px 0 6px;color:var(--accent2)}
+  p{margin:8px 0}
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:16px 18px;margin:12px 0;
+  }
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:12px 0}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+  .stat .k{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .stat .v{font-size:18px;font-weight:600;margin-top:2px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:var(--panel2);color:var(--accent2);font-weight:600}
+  tr:hover td{background:rgba(255,255,255,.02)}
+  code{background:var(--panel2);padding:2px 6px;border-radius:4px;font-size:13px;color:var(--accent)}
+  .formula{background:#0b0e12;border:1px solid var(--line);border-radius:8px;padding:14px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;overflow-x:auto;color:#cfe3f2}
+  ul{margin:8px 0;padding-left:20px}
+  li{margin:4px 0}
+  .warn{border-left:3px solid var(--bad);background:rgba(224,102,102,.08);padding:10px 14px;border-radius:6px;margin:10px 0}
+  .tip{border-left:3px solid var(--good);background:rgba(95,191,127,.08);padding:10px 14px;border-radius:6px;margin:10px 0}
+  .muted{color:var(--muted)}
+  footer{margin-top:36px;padding-top:14px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Quick Draw</h1>
+  <div class="sub">Corsair · Job Ability · Fiche de référence</div>
+</header>
+
+<h2>En bref</h2>
+<div class="card">
+Tir d'une balle chargée de l'énergie magique d'une <strong>Elemental Card</strong>. Sert à la fois à infliger des dégâts magiques élémentaires et à <strong>amplifier les debuffs</strong> présents sur la cible. Deux usages principaux : nuker élémentaire et « booster » de debuffs (Dia, Slow, Blind, Paralyze, etc.).
+</div>
+
+<div class="grid">
+  <div class="stat"><div class="k">Niveau</div><div class="v">40</div></div>
+  <div class="stat"><div class="k">Portée</div><div class="v">22'</div></div>
+  <div class="stat"><div class="k">Recast de base</div><div class="v">01:00</div></div>
+  <div class="stat"><div class="k">Charges max</div><div class="v">2</div></div>
+  <div class="stat"><div class="k">TP donné à la cible</div><div class="v">0</div></div>
+  <div class="stat"><div class="k">Requis</div><div class="v">Gun + Bullet + Card</div></div>
+</div>
+
+<h2>Système de charges</h2>
+<div class="card">
+  <ul>
+    <li>On dépense une <strong>charge</strong> par tir; elles se régénèrent une à la fois selon le recast, jusqu'à <strong>2 en réserve</strong>.</li>
+    <li>Requiert un <strong>gun</strong>, une <strong>bullet</strong> et une <strong>elemental card</strong>. Une carte est consommée par tir, <em>la bullet non</em>.</li>
+    <li>COR en main job peut utiliser des <strong>Trump Cards</strong> comme substitut à n'importe quelle carte élémentaire.</li>
+    <li class="muted">Réduction de recast : l'équipement doit être porté <em>au moment où chaque charge démarre son timer</em> pour compter.</li>
+  </ul>
+</div>
+
+<h2>Recast &amp; réductions</h2>
+<div class="card">
+  <ul>
+    <li>Merits <em>Quick Draw Recast</em> : jusqu'à <strong>−10 s</strong> (5 × −2 s) → 00:50.</li>
+    <li>Gift 550 JP : <strong>−10 s</strong> de plus.</li>
+    <li>Crimson/Blood Mask augmenté et/ou ACP Body : <strong>−4 à −10 s</strong>.</li>
+  </ul>
+  <div class="warn">Cap global de <strong>−25 s</strong> (recast minimum <strong>35 s</strong>), même si le total des sources atteindrait −30 s.</div>
+</div>
+
+<h2>Précision (Accuracy)</h2>
+<div class="card">
+  <ul>
+    <li>Modifiée par l'<strong>AGI</strong> et la <strong>Magic Accuracy</strong> du joueur.</li>
+    <li>Le <strong>Marksmanship skill n'affecte PAS</strong> la précision de Quick Draw.</li>
+    <li>Merits <em>Quick Draw Accuracy</em> : jusqu'à <strong>+10 acc</strong> (5 × +2).</li>
+  </ul>
+</div>
+
+<h2>Dégâts</h2>
+<div class="card">
+  <p>Calculés comme des dégâts magiques : on multiplie les facteurs dans l'ordre en floorant à chaque étape (Base Damage → resist → Staff Bonus → Day/Weather → MAB/MDB → Affinity). La plupart des <em>Damage Taken −%</em> sont ignorés.</p>
+  <div class="formula">damage = int{ [ (Gun_DMG + Bullet_DMG)*2 + QuickDraw_Damage_Stat ] * (1 + DeathPenaltyBonus) + Magic_Damage_Stat } * Magic_Damage_Multipliers</div>
+  <h3>QuickDraw_Damage_Stat (stat unique à Quick Draw)</h3>
+  <ul>
+    <li>JP category « Quick Draw Effect » : jusqu'à <strong>+40</strong> (+2 / rang, 20 rangs).</li>
+    <li>Équipement « Quick Draw+ » : Laksa. Tricorne +3 (+20), Laksa. Bottes +3 (+20) — <em>exclut</em> Chass. Bottes +3.</li>
+  </ul>
+</div>
+
+<h2>Les 8 tirs élémentaires</h2>
+<table>
+  <thead><tr><th>Shot</th><th>Carte</th><th>Effet additionnel</th><th>Debuffs corrélés</th></tr></thead>
+  <tbody>
+    <tr><td>Light Shot</td><td>Light</td><td>Sleep (light)</td><td>Dia</td></tr>
+    <tr><td>Dark Shot</td><td>Dark</td><td>Dispel (dark)</td><td>Bio, Blind</td></tr>
+    <tr><td>Fire Shot</td><td>Fire</td><td>Dégâts feu</td><td>Burn</td></tr>
+    <tr><td>Water Shot</td><td>Water</td><td>Dégâts eau</td><td>Drown</td></tr>
+    <tr><td>Thunder Shot</td><td>Thunder</td><td>Dégâts foudre</td><td>Shock</td></tr>
+    <tr><td>Earth Shot</td><td>Earth</td><td>Dégâts terre</td><td>Slow, Rasp</td></tr>
+    <tr><td>Wind Shot</td><td>Wind</td><td>Dégâts vent</td><td>Choke</td></tr>
+    <tr><td>Ice Shot</td><td>Ice</td><td>Dégâts glace</td><td>Frost, Paralyze</td></tr>
+  </tbody>
+</table>
+<p class="muted">Commande : <code>/ja "&lt;element&gt; Shot" &lt;t&gt;</code></p>
+<div class="warn"><strong>Bug connu :</strong> Dark Shot annule actuellement les effets de <strong>Bio</strong>.</div>
+
+<h2>Amplification des debuffs</h2>
+<div class="card">
+  <p>Quick Draw renforce certains debuffs présents sur la cible <em>au moment du tir</em>. L'effet s'applique <strong>même si le tir échoue (rate)</strong>. Debuffs affectés : Dia, Bio, Burn, Drown, Shock, Rasp, Choke, Frost, Slow, Blind, Paralyze. La potence est identique que COR soit main ou support job, et compte les debuffs de toutes les sources jusqu'à un seuil par effet.</p>
+</div>
+<table>
+  <thead><tr><th>Debuff</th><th>Amplification</th><th>Cap</th><th>Tir</th></tr></thead>
+  <tbody>
+    <tr><td>Dia</td><td>Defense Down +2.73% (28/1024), DoT +1</td><td>1 tir</td><td>Light Shot</td></tr>
+    <tr><td>Bio</td><td>Attack Down +2.73% (28/1024), DoT +3</td><td>1 tir</td><td>Dark Shot</td></tr>
+    <tr><td>Debuff élémentaire</td><td>DoT renforcé, Stat −4 (1er tir) puis −2 (2e)</td><td>−6 (2 tirs)</td><td>Tir de l'élément</td></tr>
+    <tr><td>Slow</td><td>+~10% / tir</td><td>+~35% (2 tirs)</td><td>Earth Shot</td></tr>
+    <tr><td>Blind</td><td>−10 acc / tir</td><td>−30 acc (2 tirs)</td><td>Dark Shot</td></tr>
+    <tr><td>Paralyze</td><td>+5% / tir</td><td>+30% (2 tirs)</td><td>Ice Shot</td></tr>
+  </tbody>
+</table>
+
+<h2>Bonus de dégâts élémentaires (footgear Empyrean)</h2>
+<div class="card">
+  <p>Avec Navarch's Bottes +1 ou mieux, le <strong>prochain</strong> dégât magique du <em>même élément</em> dans les <strong>10 s</strong> est augmenté. Réutiliser le même Quick Draw consomme et réapplique le bonus. Aucun bonus si le tir échoue.</p>
+  <table>
+    <thead><tr><th>Pièce</th><th>Bonus élémentaire (10 s, 1er hit)</th></tr></thead>
+    <tbody>
+      <tr><td>Navarch's Bottes +1</td><td>+10%</td></tr>
+      <tr><td>Navarch's Bottes +2</td><td>+20%</td></tr>
+      <tr><td>Chasseur's Bottes</td><td>+22%</td></tr>
+      <tr><td>Chasseur's Bottes +1</td><td>+25%</td></tr>
+      <tr><td>Chasseur's Bottes +2</td><td>+28%</td></tr>
+      <tr><td>Chasseur's Bottes +3</td><td>+31%</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>Équipement clé</h2>
+<table>
+  <thead><tr><th>Item</th><th>Effet</th></tr></thead>
+  <tbody>
+    <tr><td>Chasseur's Set (2→3+)</td><td>(Set bonus) Triple occasionnellement les dégâts de Quick Draw (plus souvent avec + de pièces). Mix 99/109/119 possible.</td></tr>
+    <tr><td>Laksa. Tricorne/Bottes +3</td><td>Dégâts +20 (versions inférieures : +10)</td></tr>
+    <tr><td>Death Penalty</td><td>Dégâts +20% à +60% et Magic Acc +20 à +60 selon le niveau (75→119)</td></tr>
+    <tr><td>Crimson / Blood Mask</td><td>Recast −1~5 s (Crimson cap à −4)</td></tr>
+    <tr><td>Nuevo Coselete</td><td>Recast −5 s</td></tr>
+    <tr><td>Schutzen Mittens</td><td>TP gagné +25 (non affecté par Store TP)</td></tr>
+    <tr><td>Surcouf's Jambiya</td><td>Ne consomme parfois pas de carte au tir</td></tr>
+  </tbody>
+</table>
+
+<h2>TP</h2>
+<div class="card">
+  <ul>
+    <li>Génère du TP pour l'utilisateur, équivalent à une attaque à distance standard; augmenté par <strong>Store TP</strong>.</li>
+    <li><strong>Ne donne aucun TP à la cible</strong> (0 TP feed).</li>
+  </ul>
+</div>
+
+<h2>Merits &amp; Job Points (récap)</h2>
+<table>
+  <thead><tr><th>Source</th><th>Effet</th></tr></thead>
+  <tbody>
+    <tr><td>Merit — Recast (5)</td><td>−2 s / rang (−10 s max)</td></tr>
+    <tr><td>Merit — Magic Accuracy (5)</td><td>+2 Macc / rang</td></tr>
+    <tr><td>Merit — Accuracy (5)</td><td>+2 acc / rang (+10 max)</td></tr>
+    <tr><td>JP — Quick Draw Effect (20)</td><td>+2 magic damage / rang (+40 max)</td></tr>
+    <tr><td>Gift 550 JP</td><td>Recast −10 s</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  Fiche de synthèse générée à partir des données Quick Draw (BG-Wiki style). Termes du jeu conservés en anglais.
+</footer>
+</div>
+</body>
+</html>

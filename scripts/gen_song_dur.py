@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate src/model/song_dur_gen.h -- the BRD song-duration gear table.
 
-THE RULE (song_resume.html, the BG-Wiki Category:Song sheet) is what makes this table derivable instead of
+THE RULE (docs/game-data/reference-sheets/song_resume.html, the BG-Wiki Category:Song sheet) is what makes this table derivable instead of
 reverse-engineered: a point of song POTENCY is also duration.
 
     "Le gear Song+ (potence) ajoute +10% de duree par 1 Song+"
@@ -43,7 +43,7 @@ FAMILIES = {1: "Paeon", 2: "Ballad", 3: "Minne", 4: "Minuet", 5: "Madrigal", 6: 
             14: "Scherzo", 15: "Operetta"}
 BY_NAME = dict((v, k) for k, v in FAMILIES.items())
 
-# EXPLICIT "Song effect duration +N%" per the reference sheet (song_resume.html, BG-Wiki Category:Song).
+# EXPLICIT "Song effect duration +N%" per the reference sheet (docs/game-data/reference-sheets/song_resume.html, BG-Wiki Category:Song).
 # The sheet -- not the item text -- is authoritative here: 19 items describe their duration qualitatively
 # ("Increases song effect duration"), and several state NOTHING at all yet do carry one. Brioso Slippers +4
 # is the case that proves it: no duration line in game, +15% on the sheet, and dropping it put the model 15

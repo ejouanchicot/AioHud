@@ -2,10 +2,20 @@
 # Generate src/model/weapon_skills_gen.h from Windower res/weapon_skills.lua.
 # WS examine cache (FFXiMain+0x634590) holds the raw WS id (< 0x200) while hovering
 # a Weapon Skill in the "ability " menu. We only need id -> English name (no MP).
+import os, pathlib
+
+# Output goes to THIS repo, resolved from the script's own location. It used to be an absolute path into
+# `D:\Windower Tetsouo\plugins\_aiohud_re\src\model\` -- a runtime folder that was renamed to `AioHud`
+# and that never held `src/` anyway, so this generator wrote into a phantom path and the table it produces
+# was effectively un-regenerable. Windower's res/ stays absolute (it lives outside the repo) but is
+# overridable with WINDOWER_RES so another machine can run this without editing the script.
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+RES  = pathlib.Path(os.environ.get('WINDOWER_RES', r'D:\Windower Tetsouo\res'))
+
 import re, io
 
-RES = r"D:\Windower Tetsouo\res\weapon_skills.lua"
-OUT = r"D:\Windower Tetsouo\plugins\_aiohud_re\src\model\weapon_skills_gen.h"
+RES = str(RES / "weapon_skills.lua")
+OUT = str(ROOT / "src" / "model" / "weapon_skills_gen.h")
 
 rows = []
 with io.open(RES, "r", encoding="utf-8") as f:

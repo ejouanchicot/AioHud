@@ -8,12 +8,22 @@
 #
 # Every entry with an id + English name is emitted, sorted by id, plus a binary-search accessor.
 #   python scripts/gen_actions.py
+import os, pathlib
+
+# Output goes to THIS repo, resolved from the script's own location. It used to be an absolute path into
+# `D:\Windower Tetsouo\plugins\_aiohud_re\src\model\` -- a runtime folder that was renamed to `AioHud`
+# and that never held `src/` anyway, so this generator wrote into a phantom path and the table it produces
+# was effectively un-regenerable. Windower's res/ stays absolute (it lives outside the repo) but is
+# overridable with WINDOWER_RES so another machine can run this without editing the script.
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+RES  = pathlib.Path(os.environ.get('WINDOWER_RES', r'D:\Windower Tetsouo\res'))
+
 import re, io
 
-SPELLS_RES = r"D:\Windower Tetsouo\res\spells.lua"
-ABILS_RES  = r"D:\Windower Tetsouo\res\job_abilities.lua"
-SPELLS_OUT = r"D:\Windower Tetsouo\plugins\_aiohud_re\src\model\spells_gen.h"
-ABILS_OUT  = r"D:\Windower Tetsouo\plugins\_aiohud_re\src\model\abilities_gen.h"
+SPELLS_RES = str(RES / "spells.lua")
+ABILS_RES  = str(RES / "job_abilities.lua")
+SPELLS_OUT = str(ROOT / "src" / "model" / "spells_gen.h")
+ABILS_OUT  = str(ROOT / "src" / "model" / "abilities_gen.h")
 
 LINE = re.compile(r'\[(\d+)\]\s*=\s*\{.*?\bid=(\d+)\b.*?\ben="((?:[^"\\]|\\.)*)"', re.S)
 

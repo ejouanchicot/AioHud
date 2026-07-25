@@ -1,3 +1,20 @@
+# ============================================================================
+# STATUT (2026-07-25) : HISTORIQUE. La FORMULE ci-dessous est JUSTE et a ete
+# confirmee par la mesure serveur -- m1 = 1 + Sum(flat) + Sum(famille) + 0.05.
+# C'est le CODE qui l'ignorait : la colonne famille avait ete exclue du calcul
+# de duree, sur la croyance qu'elle etait de la potence. Elle EST de la potence
+# -- et la potence EST de la duree (+10%% par point de Song+). Les deux lectures
+# etaient a moitie justes ; le modele tournait 22-37%% court.
+#
+# Les VALEURS par item ci-dessous sont REMPLACEES : la table est desormais
+# generee par scripts/gen_song_dur.py -> src/model/song_dur_gen.h, en lisant la
+# potence directement dans res/item_descriptions.lua (couvre tout le jeu, y
+# compris les items que ce reverse n'a jamais vus : Gjallarhorn, Marsyas...).
+# Reference courante : docs/game-data/song-duration.md
+# Ce fichier reste comme preuve independante de la formule et des adresses
+# Ghidra necessaires pour refaire une passe apres un patch client.
+# ============================================================================
+#
 # Timers.dll BRD song model -- PHASE 2: UNIFIED per-item table (FUN_10007a40)
 # Reverse-engineered 2026-07-12. Whole function body 0x10007a40..0x10008599
 # CFG-walked with symbolic song-family (edi) to split each item's m1 add into
