@@ -1,5 +1,5 @@
 // minimap.h -- the Minimap module (phase 1a : placeholder). Draws a square panel with the player dot +
-// heading arrow placed via the reversed world->map-pixel transform (docs/game-data/map-system.md). The
+// heading arrow placed via the reversed world->map-pixel transform (docs/game-data/world/map-system.md). The
 // real zone map image (extracted from the ROM DATs) replaces the placeholder frame in phase 1b.
 #pragma once
 #include "widget.h"

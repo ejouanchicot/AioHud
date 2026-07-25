@@ -312,7 +312,7 @@ Fowl Aubade (Sleep res.) · Herb Pastoral (Poison res.) · Shining Fantasia (Bli
 - `bard.md` — job BRD, liste des chants par level
 - `fili-attire-set.md` — set Empyrean : Madrigal+1, Minuet+1, March+1, Ballad+1, Scherzo+1
 - `carnwenhan.md` — Mythic BRD, song duration +50 %
-- **[song-duration.md](../song-duration.md) — le modèle de DURÉE.** À lire avec celui-ci, parce que les deux ne
+- **[song-duration.md](../buffs-and-timers/song-duration.md) — le modèle de DURÉE.** À lire avec celui-ci, parce que les deux ne
   sont pas séparés comme on l'a longtemps cru : **la potence EST de la durée**, +10 % par point de `Song+`
   (`All songs +4` = +40 % sur toutes les songs, `"Madrigal"+1` = +10 % sur Madrigal). Les tables ci-dessus
   décrivent la puissance de l'effet ; ce même `+1` allonge aussi le chant.
@@ -321,5 +321,5 @@ Fowl Aubade (Sleep res.) · Herb Pastoral (Poison res.) · Shining Fantasia (Bli
   > rangé : la colonne famille était volontairement exclue du calcul de durée. Mesuré contre le serveur, le
   > modèle tournait 22–37 % court. Corrigé le 2026-07-25 — voir song-duration.md pour la preuve.
 
-- [song-duration-items.txt](../song-duration-items.txt) — le reverse de `Timers.dll` (historique : sa formule
-  était juste, ses valeurs par item sont remplacées par le générateur). Cf. [buffs-on-allies.md](../buffs-on-allies.md).
+- [song-duration-items.txt](../buffs-and-timers/song-duration-items.txt) — le reverse de `Timers.dll` (historique : sa formule
+  était juste, ses valeurs par item sont remplacées par le générateur). Cf. [buffs-on-allies.md](../buffs-and-timers/buffs-on-allies.md).

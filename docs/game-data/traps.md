@@ -32,6 +32,6 @@ ONLY needed to redeploy a rebuilt DLL. Guard: the string `mjlvl` contains `jlvl`
 player-dump probe), so the `jlvl` handler now excludes `mjlvl`.
 
 ## See also
-- [Local player struct](player-struct.md)
-- [Party member packets](party-packets.md)
-- [The party member ARRAY in memory](party-array.md)
+- [Local player struct](player/player-struct.md)
+- [Party member packets](party/party-packets.md)
+- [The party member ARRAY in memory](party/party-array.md)

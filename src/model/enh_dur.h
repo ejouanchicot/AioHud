@@ -90,7 +90,7 @@ inline double perpetuance_mult(const unsigned short ids[16]) {
 }
 
 // decode augment id 0x4E0 ("Enh. Mag. eff. dur.") from one item's 24-byte extdata (system-1 packing, see
-// docs/game-data/player-equipment.md + extdata.lua). % = value + 1. Non-augmented / other systems -> 0.
+// docs/game-data/player/player-equipment.md + extdata.lua). % = value + 1. Non-augmented / other systems -> 0.
 inline int enh_dur_augment_ext(const unsigned char ext[24]) {
     const unsigned flag2 = ext[1];
     if (flag2 & 0x08) return 0;                 // crafting shield

@@ -912,7 +912,7 @@ void PartyState::on_action(const unsigned char* p) {
                     // was still live at 11 min. With the buff-source filter on "mine + players" (tmBuffSrc=1) the
                     // trust attribution then dropped the player's own row: the song vanished from Timers while it
                     // was plainly still up in game. The client keeps NO per-status caster (proven in Ghidra, see
-                    // docs/game-data/action-packet.md), so a status-keyed map can hold exactly one caster -- the
+                    // docs/game-data/actions/action-packet.md), so a status-keyed map can hold exactly one caster -- the
                     // only correct rule is that a live self-cast wins over a later foreign cast on the same status.
                     if (st && st < 1024) {
                         const bool mineAndLive = (buffCaster_[st] == selfId_) && (self_buff_expiry((unsigned short)st) != 0);
@@ -1673,7 +1673,7 @@ void PartyState::set_treasure_trace(int n) { s_tpoolTrace = n; }        // //aio
 bool PartyState::treasure_trace_active() const { return s_tpoolTrace > 0; }   // //aio tpool : gate the zone-in/out markers in the packet dispatch
 
 // //aio tmem : one-shot raw dump of the in-game TREASURE view in memory (*(g+0x5C) -- the struct the game's own
-// Treasure menu renders, per get_items() reversing in docs/game-data/inventory.md). This is the GROUND TRUTH to
+// Treasure menu renders, per get_items() reversing in docs/game-data/player/inventory.md). This is the GROUND TRUTH to
 // reconcile the packet-fed treasure_[] against, to kill "box with no pool" phantoms whatever the cause. Dumps 512
 // bytes as little-endian words + a lo16 column so the per-slot stride / item-id offset can be read off by matching
 // a live pool's item ids (the 0x0D2 lines from //aio tpool). Guarded word-by-word : a bad pointer stops the dump,

@@ -1,5 +1,5 @@
 // map_dat.h -- extract a zone's map image from the FFXI ROM DATs (reversed from FFXIDB, see
-// docs/game-data/map-system.md section 4). Resolves a map file-id via the VTABLE/FTABLE volume scheme
+// docs/game-data/world/map-system.md section 4). Resolves a map file-id via the VTABLE/FTABLE volume scheme
 // off the FFXI install (registry PlayOnline InstallFolder), reads the DAT, and decodes the 8-bit-palette
 // graphic chunk to an A8R8G8B8 buffer. The stored image is horizontally MIRRORED -> flip U at draw.
 #pragma once

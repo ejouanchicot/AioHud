@@ -295,7 +295,7 @@ bool entity_name_by_index(unsigned index, char* out, int sz) {
 
 // The client map-info record for (zone, submap). Linear scan of the table at *(g+0x10) : 14-byte records,
 // key (zone u16 @+0x00, submap u8 @+0x02). Returns false (valid=false) when the zone/submap has no record
-// (e.g. a zone with no map). SEH-guarded per read. See docs/game-data/map-system.md.
+// (e.g. a zone with no map). SEH-guarded per read. See docs/game-data/world/map-system.md.
 bool read_map_record(unsigned zone, int submap, MapRecord& out) {
     out = MapRecord{}; out.zone = zone;
     if (!zone) return false;
@@ -604,7 +604,7 @@ bool read_treasure_pool(TreasureSlot out[10]) {
 
 // ids + 24-byte extdata per equipped slot. The item entry (items_root + bag*0xCA8 + idx*0x28) holds the
 // extdata (augment blob) at +0x0D (24 bytes) -- per the reversed item struct (id@0, slot@2, count@4, bazaar@8,
-// status@0xC, extdata char[0x18]@0x0D ; see docs/game-data/player-equipment.md).
+// status@0xC, extdata char[0x18]@0x0D ; see docs/game-data/player/player-equipment.md).
 bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]) {
     for (int s = 0; s < 16; ++s) { ids[s] = 0; for (int k = 0; k < 24; ++k) ext[s][k] = 0; }
     u32 ir = items_root(), ia = equip_index_arr(), ba = equip_bag_arr();
@@ -717,7 +717,7 @@ bool read_target(TargetInfo& o) {
 }
 
 // The ACTIVE target's ENTITY (name / HP% / id / index) for the Target HUD module. Reversed
-// 2026-07-03 via //aio tent (see docs/game-data/target-substruct.md). The entity struct is reached
+// 2026-07-03 via //aio tent (see docs/game-data/target/target-substruct.md). The entity struct is reached
 // DIRECTLY off target_t (no id->index scan) :
 //   target_t + 0x08   u32  Targets[0].EntityPointer  -> the reticle's entity struct  (match=1 in every probe)
 //   entity   + 0x74   u16  Index

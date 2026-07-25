@@ -4,7 +4,7 @@
 > partie de ce qu'il décrit a été corrigée dans la journée : l'attribution par ligne, le tri par blocs, l'atlas
 > d'icônes, le curseur d'espacement, la largeur du champ de comptage des cibles, le cache de rechargement, et la
 > mise en accord de l'aide. Voir le message de commit de la v1.0.42 et
-> [`../game-data/timers.md`](../game-data/timers.md) pour l'état réel du code.
+> [`../game-data/timers.md`](../game-data/buffs-and-timers/timers.md) pour l'état réel du code.
 >
 > **Restent ouverts** : le bouton « Réinitialiser » qui vide durablement la colonne Durée, le nettoyage des buffs
 > alliés piloté depuis le chemin de dessin, les buffs sur membres d'alliance indessinables, les trois parcours de

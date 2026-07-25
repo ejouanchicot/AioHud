@@ -27,7 +27,7 @@ unsigned zone_id();    // current zone id (*(g+0x40)+0x02) -- matches the zones 
 // the client map-info record for (zone, submap) : the world->map-pixel calibration. Walked from the table
 // at *(g+0x10) (14-byte records, key zone u16 @+0x00 / submap u8 @+0x02 ; scale u8 @+0x05, fileIdx u16 @+0x08,
 // offX s16 @+0x0A, offY s16 @+0x0C). Transform: mapX=(scale*worldX)/5-offX, mapY=(scale*-worldZ)/5-offY, on a
-// 512px native map. Reversed + live-confirmed 2026-07-06 (see docs/game-data/map-system.md).
+// 512px native map. Reversed + live-confirmed 2026-07-06 (see docs/game-data/world/map-system.md).
 struct MapRecord { unsigned zone = 0, fileIdx = 0, flags = 0, fileId = 0; int scale = 0, offX = 0, offY = 0; bool valid = false; };
 bool read_map_record(unsigned zone, int submap, MapRecord& out);   // fileId = (flags&1 ? 0xD02F : 0x14C0) + fileIdx
 bool entity_name_by_index(unsigned index, char* out, int sz);// entity INDEX (what packets carry) -> name ; false if the slot is empty
@@ -117,7 +117,7 @@ bool read_player_gil(unsigned& gil);
 // 11 left_ear, 12 right_ear, 13 left_ring, 14 right_ring, 15 back. Resolved via the equip index/bag
 // arrays (g+0x54 / g+0x58) into the item container (items_root + bag*0xCA8 + index*0x28) : id u16 @+0x00,
 // count u32 @+0x04. id 0 = EMPTY slot (index was 0). Reversed 2026-07-05 from LuaCore get_items('equipment')
-// (FUN_10074690 -> FUN_10094410). See docs/game-data/player-equipment.md.
+// (FUN_10074690 -> FUN_10094410). See docs/game-data/player/player-equipment.md.
 struct EquipSet { unsigned short id[16]; unsigned short count[16]; };
 bool read_equipment(EquipSet& out);
 
@@ -129,7 +129,7 @@ bool read_equipment(EquipSet& out);
 //   +0x10 char[20] lot_name  +0x24 u32 dropper_id   +0x28 u32 timestamp (unix, == packet 0x0D2 ts)
 // The packet-fed PartyState::treasure_[] is RECONCILED against this each frame : a slot the memory says is empty
 // is a phantom (a missed/misparsed 0x0D3 clear) -> pruned. status + item_id are the fields confirmed live ;
-// lot/lot_name are Ghidra-confirmed only (nobody had lotted at the dump). See docs/game-data/treasure-pool.md.
+// lot/lot_name are Ghidra-confirmed only (nobody had lotted at the dump). See docs/game-data/world/treasure-pool.md.
 struct TreasureSlot {
     bool           occupied;      // status u8 @+0x00 != 0  (authoritative "slot in use")
     unsigned short item_id;       // @+0x02
