@@ -991,7 +991,7 @@ void PartyState::on_action(const unsigned char* p) {
             const double perpMult = perpetuance ? perpetuance_mult(eids) : 1.0;                                            // SCH Perpetuance
             const double gearMult = (1.0 + listedPct / 100.0) * (1.0 + augPct / 100.0);                                   // gear : ALL jobs
             // Enhancing Magic duration on an ally = MULTIPLICATIVE (composure.md, validated in-game incl. Haste) :
-            //   (base + flatSec + regenSec) x (1+set) x (1+listed) x (1+augment) , cap 1800s. See enh_sec below.
+            //   (base + flatSec + regenSec) x (1+set) x (1+listed) x (1+augment). No cap -- see enh_sec below.
             auto enh_sec = [&](unsigned base, unsigned short status) -> double {
                 // Multiplicative model (validated accurate to 1-3s in-game, incl. Haste). REGEN (status 42) alone read
                 // short because Regen-SPECIFIC duration gear (flat seconds : Bolelabunga +12, Ebers/Orison Mitts...)
@@ -999,8 +999,16 @@ void PartyState::on_action(const unsigned char* p) {
                 // the game's item text (regen_dur_gear_sec). It lengthens ONLY Regen, so no other spell moves.
                 // Calibrated : (60 + 20 JP + 12 Bolelabunga) x 1.20 set x 1.88 listed x 1.45 aug = 301s == real.
                 const int regenSec = (status == 42) ? regen_dur_gear_sec(eids) : 0;
-                double s = ((double)base + (double)flatSec + (double)regenSec) * setMult * gearMult * perpMult;
-                return s > 1800.0 ? 1800.0 : s;
+                // NO 1800 s ceiling. There used to be one, carried unexplained since the first commit and never
+                // justified by any message. It is provably wrong : //aio oblog on a Protect III (base 1800 s)
+                // captured the game's OWN 0x063 timer for the same cast at 2952 s -- ground truth, not a model.
+                // The clamp made every long-base buff estimate exactly its base, so a Protect or Shell cast on
+                // ONE ally read ~30 min against a real ~49. It stayed invisible because an AoE cast also lands
+                // on you, and those rows display your exact self timer instead of this estimate -- the grouping
+                // was borrowing the truth and hiding the error underneath.
+                // Nothing here is unbounded : every multiplier comes from an equipment table and defaults to
+                // 1.0 when the read fails, so the worst case degrades to the base duration.
+                return ((double)base + (double)flatSec + (double)regenSec) * setMult * gearMult * perpMult;
             };
             // --- BRD song (skill 40) : dur = 120 x m1 x m2 x m3 + a3 (Miracle Cheer -> flat 900). m1 = flat + per-
             // family gear + JP(+5% BRD main) ; m2 = x2 Troubadour ; m3/a3 : Soul Voice/Marcato/Clarion/Tenuto. ---
