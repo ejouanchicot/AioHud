@@ -8,6 +8,7 @@
 #include "model/abilities_gen.h"       // abil_info : job-ability names (cat 7)
 #include "model/mobskills_gen.h"       // mobskill_info : MOB TP-move names (cat 7, ids >= 257)
 #include "model/tb_debuff_gen.h"
+#include "model/overwrites_gen.h"       // spell_overwrites_spell : res `overwrites` -> which debuff replaces which (Dia III over Dia I / Bio I-II)
 #include "model/tb_buff_gen.h"          // spell_buff : buff spell id -> { status, base duration } (Timers "buff on ally")
 #include "model/enh_dur.h"              // caster_enh_dur_pct : "Enhancing Magic eff. dur. +%" from live gear/augments
 #include "model/regen_dur.h"           // regen_dur_gear_sec : REGEN-only "+N s" duration gear (Bolelabunga...) added to Regen's base
@@ -113,7 +114,18 @@ static inline bool is_magic_block_status(unsigned s) { return s == 6; }
 // Burn/Frost/Choke/Rasp/Shock/Drown (128-133), Dia (134), Bio (135), Helix (186), Requiem (192).
 static inline bool is_dot_status(unsigned s) { return s == 3 || s == 23 || (s >= 128 && s <= 135) || s == 186 || s == 192; }
 
-static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsigned baseMs, bool bySelf) {
+// Drop entry `i` from a DebuffSet, keeping every parallel array in step. This shift was open-coded in FOUR
+// places, so each new per-entry field had to be added to all of them -- spell[] is the fifth array, and that
+// is exactly the kind of edit that gets forgotten in one branch.
+static inline void debuff_erase(DebuffSet& d, int i) {
+    for (int j = i; j < d.n - 1; ++j) {
+        d.ids[j]  = d.ids[j + 1];  d.startMs[j] = d.startMs[j + 1]; d.baseMs[j] = d.baseMs[j + 1];
+        d.self[j] = d.self[j + 1]; d.spell[j]   = d.spell[j + 1];   d.shot[j] = d.shot[j + 1];
+    }
+    --d.n;
+}
+
+static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsigned baseMs, bool bySelf, unsigned short spell) {
     const unsigned now = GetTickCount();
     const unsigned char sf = bySelf ? 1 : 0;
     if (!baseMs) baseMs = debuff_fallback_ms(st);
@@ -128,10 +140,28 @@ static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsig
     // DoT/hit wakes the mob -> enforce it from what we DO track (every caster's debuffs) : any DoT drops any sleep,
     // and a sleep landing on a DoT'd mob is a no-op. (Hits from anyone are handled by the cat 1/2 wake path.)
     if (is_sleep_status(st)) { for (int i = 0; i < d.n; ++i) if (is_dot_status(d.ids[i])) { DBFTRACE("DBF sleep-skip (DoT %u up) tid=%08X st=%u", d.ids[i], tid, st); return; } }
-    else if (is_dot_status(st)) { for (int i = 0; i < d.n; ) { if (is_sleep_status(d.ids[i])) { DBFTRACE("DBF sleep-drop (DoT %u) tid=%08X st=%u", st, tid, d.ids[i]); for (int j = i; j < d.n - 1; ++j) { d.ids[j] = d.ids[j + 1]; d.startMs[j] = d.startMs[j + 1]; d.baseMs[j] = d.baseMs[j + 1]; d.self[j] = d.self[j + 1]; } --d.n; } else ++i; } }
-    for (int i = 0; i < d.n; ++i) if (d.ids[i] == st) { d.startMs[i] = now; d.baseMs[i] = baseMs; d.self[i] = sf; DBFTRACE("DBF rec-refresh tid=%08X st=%u self=%u n=%d", tid, st, sf, d.n); return; }   // already present -> refresh + caster
-    if (d.n < 16) { d.ids[d.n] = st; d.startMs[d.n] = now; d.baseMs[d.n] = baseMs; d.self[d.n] = sf; ++d.n; }
-    else { int o = 0; for (int i = 1; i < 16; ++i) if (d.startMs[i] < d.startMs[o]) o = i; d.ids[o] = st; d.startMs[o] = now; d.baseMs[o] = baseMs; d.self[o] = sf; }
+    else if (is_dot_status(st)) { for (int i = 0; i < d.n; ) { if (is_sleep_status(d.ids[i])) { DBFTRACE("DBF sleep-drop (DoT %u) tid=%08X st=%u", st, tid, d.ids[i]); debuff_erase(d, i); } else ++i; } }
+    // OVERWRITE arbitration (res/spells.lua `overwrites`, overwrites_gen.h). FFXI refuses a weaker debuff while
+    // a stronger one is up, and replaces the weaker when the stronger lands -- and the relation CROSSES families
+    // (Dia III overwrites Bio I/II), so it can't be read off the status id. Without this, a mate's Dia I landing
+    // on your Dia III'd mob simply refreshed the entry : tier shown dropped to "Dia I" and the countdown was
+    // reseeded to 60 s instead of 180. Runs BEFORE the refresh/insert below, on the WHOLE set (any status).
+    if (spell) {
+        for (int i = 0; i < d.n; ++i)
+            if (spell_overwrites_spell(d.spell[i], spell)) {   // a stronger debuff already holds this mob -> ours does not land
+                DBFTRACE("DBF overwrite-reject tid=%08X spell=%u blocked by spell=%u (st=%u)", tid, spell, d.spell[i], d.ids[i]);
+                return;
+            }
+        for (int i = 0; i < d.n; )
+            if (spell_overwrites_spell(spell, d.spell[i])) {   // ours is stronger -> the weaker one is gone, even under another status
+                DBFTRACE("DBF overwrite-drop tid=%08X spell=%u removes spell=%u (st=%u)", tid, spell, d.spell[i], d.ids[i]);
+                debuff_erase(d, i);
+            } else ++i;
+    }
+    // A re-cast replaces the effect outright, so any Quick Draw reinforcement on the old one is gone -> shot = 0.
+    for (int i = 0; i < d.n; ++i) if (d.ids[i] == st) { d.startMs[i] = now; d.baseMs[i] = baseMs; d.self[i] = sf; d.spell[i] = spell; d.shot[i] = 0; DBFTRACE("DBF rec-refresh tid=%08X st=%u self=%u spell=%u n=%d", tid, st, sf, spell, d.n); return; }   // already present -> refresh + caster + tier
+    if (d.n < 16) { d.ids[d.n] = st; d.startMs[d.n] = now; d.baseMs[d.n] = baseMs; d.self[d.n] = sf; d.spell[d.n] = spell; d.shot[d.n] = 0; ++d.n; }
+    else { int o = 0; for (int i = 1; i < 16; ++i) if (d.startMs[i] < d.startMs[o]) o = i; d.ids[o] = st; d.startMs[o] = now; d.baseMs[o] = baseMs; d.self[o] = sf; d.spell[o] = spell; d.shot[o] = 0; }
     DBFTRACE("DBF rec-ADD tid=%08X st=%u self=%u n=%d", tid, st, sf, d.n);
 }
 // Treasure Hunter proc on `tid` : find/create the mob's slot and raise its TH level (TH only ever increases on a mob).
@@ -596,7 +626,7 @@ void PartyState::on_action(const unsigned char* p) {
             for (int i = 0; i < d.n; ) {
                 const unsigned cur = d.ids[i];
                 if (is_incapacitate_status(cur) || (magicCast && is_magic_block_status(cur))) { DBFTRACE("DBF actor-wake tid=%08X cat=%u st=%u", actor, cat, cur);
-                    for (int j = i; j < d.n - 1; ++j) { d.ids[j] = d.ids[j + 1]; d.startMs[j] = d.startMs[j + 1]; d.baseMs[j] = d.baseMs[j + 1]; d.self[j] = d.self[j + 1]; } --d.n; }
+                    debuff_erase(d, i); }
                 else ++i;
             }
             break;
@@ -1129,10 +1159,32 @@ void PartyState::on_action(const unsigned char* p) {
                 // (re)apply -- the target resisted or already has it -> do NOT add or refresh its timer. Without
                 // this, recasting Sleep/Lullaby on an already-slept mob wrongly reset the countdown to full.
                 if (amsg == 75) continue;
-                record_debuff(tdebuffs_, tid, de->effect, de->durSec * 1000u, bySelf);
+                record_debuff(tdebuffs_, tid, de->effect, de->durSec * 1000u, bySelf, (unsigned short)spellId);
             }
         }
         return;
+    }
+    // COR Quick Draw : Light Shot (131) REINFORCES an existing Dia, Dark Shot (132) an existing Bio -- +2.73%
+    // Def/Att down and a DoT tick, capping after ONE shot. It does NOT cast the debuff and it does NOT raise its
+    // tier : the status (134/135) and the spell are unchanged, so the tier we display must stay the one that was
+    // actually cast. (The widespread "Light Shot pushes Dia III to Dia IV" is a DISPLAY shorthand -- the addon
+    // this was modelled on stores tier+1 for it, which is why it stops at the non-castable Dia IV. We keep the
+    // real tier and flag the reinforcement instead.) The timer is untouched : the shot does not re-seed it.
+    // NOTE: no early return -- cat 6 is still consumed further down (the target action bar reads it).
+    if (cat == 6) {
+        const u32 abil = getbits(p, 86, 16, size);         // actor.param = ability id
+        const unsigned short shotSt = (abil == 131) ? 134 : (abil == 132) ? 135 : 0;   // Light -> Dia, Dark -> Bio
+        if (shotSt) {
+            const u32 tid = getbits(p, 150, 32, size);     // single-target ability -> target[0] only
+            if (tid && (tid >> 24) == 0x01) {
+                for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id == tid) {
+                    DebuffSet& d = tdebuffs_[s];
+                    for (int i = 0; i < d.n; ++i)
+                        if (d.ids[i] == shotSt) { DBFTRACE("DBF quickdraw tid=%08X abil=%u reinforces st=%u spell=%u", tid, abil, shotSt, d.spell[i]); d.shot[i] = 1; }
+                    break;
+                }
+            }
+        }
     }
     if (cat == 1 || cat == 2) {                            // auto-attack / ranged : a DAMAGING hit wakes Sleep/Lullaby
         // on the struck mob. FFXI sends NO wear-off packet for a broken sleep, so without this the Sleep icon
@@ -1155,8 +1207,7 @@ void PartyState::on_action(const unsigned char* p) {
                     unsigned short id = d.ids[i];
                     if (is_sleep_status(id)) {                 // Sleep, Sleep II, Lullaby (song sleep)
                         DBFTRACE("DBF wake-remove tid=%08X st=%u dmg=%u (n was %d)", tid, id, st, d.n);
-                        for (int j = i; j < d.n - 1; ++j) { d.ids[j] = d.ids[j + 1]; d.startMs[j] = d.startMs[j + 1]; d.baseMs[j] = d.baseMs[j + 1]; d.self[j] = d.self[j + 1]; }
-                        --d.n;
+                        debuff_erase(d, i);
                     } else ++i;
                 }
                 break;
@@ -1216,8 +1267,7 @@ void PartyState::on_029(const unsigned char* p) {
                 const unsigned life = GetTickCount() - d.startMs[i];       // LEARN the real duration (keep the longest = the unresisted full duration)
                 if (cur < 256 && life >= 2000 && life <= 1800000 && life > learnedMs_[cur]) learnedMs_[cur] = life;
                 DBFTRACE("DBF 029-remove tid=%08X st=%u (msg=%u param=%u)", tid, cur, msg, st);
-                for (int j = i; j < d.n - 1; ++j) { d.ids[j] = d.ids[j + 1]; d.startMs[j] = d.startMs[j + 1]; d.baseMs[j] = d.baseMs[j + 1]; d.self[j] = d.self[j + 1]; }
-                --d.n;                                     // remove the entry (compact)
+                debuff_erase(d, i);                        // remove the entry (compact)
             } else ++i;
         }
         break;
@@ -1443,7 +1493,14 @@ void PartyState::note_mob_hp(unsigned id, int hpp) {
     }
 }
 
-int PartyState::target_debuffs(unsigned id, unsigned short* out, int* remainSec, unsigned char* isSelf, int maxN) const {
+// Spell -> display name ("Dia III"). 0 when unknown : the caller then falls back to the status name.
+const char* debuff_spell_name(unsigned short spell) {
+    if (!spell) return 0;
+    const SpellRow* s = spell_info(spell);
+    return (s && s->en && s->en[0]) ? s->en : 0;
+}
+
+int PartyState::target_debuffs(unsigned id, unsigned short* out, int* remainSec, unsigned char* isSelf, int maxN, unsigned short* spellOut, unsigned char* shotOut) const {
     if (!id || !out || maxN <= 0) return 0;
     const DebuffSet* d = 0;
     for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id == id) { d = &tdebuffs_[s]; break; }
@@ -1460,6 +1517,8 @@ int PartyState::target_debuffs(unsigned id, unsigned short* out, int* remainSec,
         unsigned dur = (st < 256 && learnedMs_[st]) ? learnedMs_[st] : (d->baseMs[i] ? d->baseMs[i] : debuff_dur_ms(st));
         if (remainSec) remainSec[n] = (el < dur) ? (int)((dur - el + 999) / 1000) : -(int)((el - dur + 999) / 1000);   // countdown ; past the estimate -> NEGATIVE (-0:30 = 30 s over the estimate), icon kept
         if (isSelf) isSelf[n] = self ? 1 : 0;
+        if (spellOut) spellOut[n] = d->spell[i];           // the landing spell -> the caller can name the TIER
+        if (shotOut)  shotOut[n]  = d->shot[i];            // reinforced by a COR Quick Draw shot
         out[n] = (unsigned short)st;
         ++n;
     }

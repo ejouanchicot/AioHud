@@ -41,32 +41,36 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
     if (!f.font && !f.fonts) return;
 
     // ---- gather rows (mob name + per-debuff icon / remaining seconds / who cast it) ----
-    struct Row { int rem; int icon; const char* name; unsigned char self; };
+    struct Row { int rem; int icon; const char* name; unsigned char self; unsigned char shot; };   // shot : reinforced by a COR Quick Draw (rendered as a trailing red reticle)
     static Row rows[40]; int nd = 0; const char* mobName = "";
     if (preview || editing) {   // a static sample so the box renders (config preview + //aio edit) for any player
-        static const struct { unsigned short id; int rem; unsigned char self; } SMP[6] = {
-            { 134, 145, 1 },   // Dia       -- yours (gold, counting down)
-            { 13,   90, 0 },   // Slow      -- other caster (white)
-            { 3,     8, 1 },   // Poison    -- yours (gold)
-            { 6,     4, 1 },   // Silence   -- yours, about to wear off (red)
-            { 4,   -30, 0 },   // Paralysis -- past the estimate (grey : counting negative -0:30)
-            { 11,  300, 0 },   // Bind      -- other caster (white)
+        static const struct { unsigned short id; int rem; unsigned char self; unsigned short spell; unsigned char shot; } SMP[6] = {
+            { 134, 145, 1, 25, 1 },   // Dia III   -- yours (gold) ; spell 25 = the TIER, shot 1 = the reticle (Light Shot)
+            { 13,   90, 0, 0, 0 },   // Slow      -- other caster (white)
+            { 3,     8, 1, 0, 0 },   // Poison    -- yours (gold)
+            { 6,     4, 1, 0, 0 },   // Silence   -- yours, about to wear off (red)
+            { 4,   -30, 0, 0, 0 },   // Paralysis -- past the estimate (grey : counting negative -0:30)
+            { 11,  300, 0, 0, 0 },   // Bind      -- other caster (white)
         };
         mobName = "Apademak";
         // Generate as many sample rows as the Max (dbMax), cycling the 6 -> the preview GROWS with Max so it's
         // visible (it was stuck at the 6 sample entries no matter the setting).
         int nSamp = C.dbMax; if (nSamp < 1) nSamp = 1; if (nSamp > 32) nSamp = 32;
-        for (int i = 0; i < nSamp && nd < 40; ++i) { const int s = i % 6; rows[nd].rem = SMP[s].rem; rows[nd].icon = SMP[s].id; rows[nd].name = buff_status_name(SMP[s].id); rows[nd].self = SMP[s].self; ++nd; }
+        for (int i = 0; i < nSamp && nd < 40; ++i) { const int s = i % 6; const char* nm = debuff_spell_name(SMP[s].spell);
+            rows[nd].rem = SMP[s].rem; rows[nd].icon = SMP[s].id; rows[nd].name = nm ? nm : buff_status_name(SMP[s].id); rows[nd].self = SMP[s].self; rows[nd].shot = SMP[s].shot; ++nd; }
     } else {
         if (!f.game) return;
         const GameState& g = *f.game;
         if (!g.target.valid || g.target.name[0] == 0) return;   // nothing targeted -> the box depops
         mobName = g.target.name;
-        unsigned short ids[40]; int rem[40] = { 0 }; unsigned char self[40] = { 0 };
-        int n = party().target_debuffs(g.target.id, ids, rem, self, 40);
+        unsigned short ids[40]; int rem[40] = { 0 }; unsigned char self[40] = { 0 }; unsigned short sp[40] = { 0 }; unsigned char sh[40] = { 0 };
+        int n = party().target_debuffs(g.target.id, ids, rem, self, 40, sp, sh);
         for (int i = 0; i < n && nd < 40; ++i) {
             if (ids[i] >= (BUFF_COLS * BUFF_ATLAS_ROWS)) continue;   // keep to mappable atlas cells
-            rows[nd].rem = rem[i]; rows[nd].icon = ids[i]; rows[nd].name = buff_status_name(ids[i]); rows[nd].self = self[i]; ++nd;
+            // Prefer the SPELL name over the status name : status 134 is "Dia" for every tier, so only the spell
+            // that landed it can say "Dia III" (and it carries COR Light Shot's tier bump). Unknown spell -> status.
+            const char* nm = debuff_spell_name(sp[i]);
+            rows[nd].rem = rem[i]; rows[nd].icon = ids[i]; rows[nd].name = nm ? nm : buff_status_name(ids[i]); rows[nd].self = self[i]; rows[nd].shot = sh[i]; ++nd;
         }
     }
     int cap = C.dbMax; if (cap < 1) cap = 1; if (cap > 32) cap = 32;
@@ -98,14 +102,35 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
         else              sprintf(tb, "%d", r);
         return tb;
     };
-    char idb[8];
+    char idb[40];
     auto rowNameStr = [&](const Row& R) -> const char* { if (R.name) return R.name; sprintf(idb, "#%d", R.icon); return idb; };
+    // A COR Quick Draw shot reinforces the debuff WITHOUT changing its tier, so the tier keeps its own name and
+    // colour and the reinforcement is a separate MARK drawn after it : a shooter's RETICLE, which says "a shot
+    // landed on this" far better than any letter. It is drawn as VECTORS, not written : the font atlas bakes
+    // only 32..255 (font.cpp), so such a glyph would come out as '?'. Reduced to what still reads at ~12 px --
+    // ring + centre dot + the four axis ticks crossing it. One red for both shots : the row already says Dia or
+    // Bio, so tinting it by element carried no information the player didn't already have.
+    const float markR = zN * 0.33f;                       // ring radius
+    const float markGap = snap(4.0f * S), markW = markR * 2.9f;   // 2.9 R = the ticks stick out past the ring
+    const u32   markCol = 0xFFFF5050u;                    // the palette's red (same value the Fire element uses)
+    auto draw_reticle = [&](float cx, float cy, float R, u32 col) {
+        const float bt = R * 0.34f;                       // ring / tick thickness
+        rrect_stroke(dev, cx - R, cy - R, R * 2.0f, R * 2.0f, R, col, bt);   // w == h and r == R -> a circle outline
+        disc(dev, cx, cy, R * 0.26f, col);
+        const float i0 = R * 0.50f, i1 = R * 1.45f;       // ticks run from inside the ring to outside it
+        seg_soft(dev, cx - i1, cy, cx - i0, cy, bt, col);
+        seg_soft(dev, cx + i0, cy, cx + i1, cy, bt, col);
+        seg_soft(dev, cx, cy - i1, cx, cy - i0, bt, col);
+        seg_soft(dev, cx, cy + i0, cx, cy + i1, bt, col);
+    };
 
     // ---- column widths (measure over ALL rows so both columns align) -> box size ----
     float nameW = 0.0f, timeW = 0.0f;
     for (int i = 0; i < nd; ++i) {
         const float tw = fT->measure(fmt(rows[i].rem), zT); if (tw > timeW) timeW = tw;
-        if (wantName) { const float nw = fN->measure(rowNameStr(rows[i]), zN); if (nw > nameW) nameW = nw; }
+        if (wantName) { float nw = fN->measure(rowNameStr(rows[i]), zN);
+            if (rows[i].shot) nw += markGap + markW;      // the mark lives in the name column -> reserve it, or the timer column shifts
+            if (nw > nameW) nameW = nw; }
     }
     const bool colIcon = wantIcon;
     float leftW = colIcon ? icon : 0.0f;
@@ -156,7 +181,13 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
             if (wantName || (colIcon && !haveIcon)) {   // name : requested, OR a fallback when the wanted icon is missing
                 const float nx = colX + (drewIcon ? icon + icgap : 0.0f);
                 const u32 nc = (r < 0) ? grey : R.self ? gold : other;   // name follows the timer caster tint
-                fN->begin(dev); fN->draw_lc(dev, nx, cyy + rowH * 0.5f, rowNameStr(R), zN, db_col(DB_NAME, nc), strk, oN);
+                const char* nmS = rowNameStr(R);
+                fN->begin(dev); fN->draw_lc(dev, nx, cyy + rowH * 0.5f, nmS, zN, db_col(DB_NAME, nc), strk, oN);
+                if (R.shot) {   // Quick Draw mark : the reticle, drawn as its own token after the name
+                    dColorQuadState(dev);                      // colour-quad state (the font left the textured-quad one)
+                    draw_reticle(snap(nx + fN->measure(nmS, zN) + markGap + markR * 1.45f),
+                                 snap(cyy + rowH * 0.5f), markR, markCol);
+                }   // the timer below re-binds the font state (fT->begin), so nothing is left dirty
             }
             // timer : "???" (grey) / MM:SS / seconds ; yours=gold (red about to wear off) / others=white / unknown=grey
             fmt(r);

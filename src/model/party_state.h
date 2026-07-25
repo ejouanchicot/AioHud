@@ -98,7 +98,7 @@ struct BuffSet { unsigned id = 0; int n = 0; unsigned short ids[32] = {}; };
 // into slot 0, so two mobs "shared" it and each recast wiped the other (the ping-pong depop). touchMs = last time
 // this set was updated -> on overflow we evict the OLDEST set, never an actively-debuffed target.
 static const int DEBUFF_SLOTS = 32;
-struct DebuffSet { unsigned id = 0; int n = 0; unsigned short ids[16] = {}; unsigned startMs[16] = {}; unsigned baseMs[16] = {}; unsigned char self[16] = {}; unsigned char th = 0; unsigned char lastHpp = 100; unsigned touchMs = 0; };   // lastHpp : last seen HP% of this mob -> detect death (0) / a fresh mob that RECYCLED this server id (near-dead -> near-full = new spawn) so Apex mobs never inherit a dead mob's debuffs   // baseMs[i] : the casting spell's base duration (tb_debuff_gen) ; self[i] : 1 = YOU cast it (exact wear-off + real timer), 0 = another caster (no wear-off -> kept as "???") ; th : Treasure Hunter level applied to this mob (0 = none)
+struct DebuffSet { unsigned id = 0; int n = 0; unsigned short ids[16] = {}; unsigned startMs[16] = {}; unsigned baseMs[16] = {}; unsigned char self[16] = {}; unsigned short spell[16] = {}; unsigned char shot[16] = {}; unsigned char th = 0; unsigned char lastHpp = 100; unsigned touchMs = 0; };   // lastHpp : last seen HP% of this mob -> detect death (0) / a fresh mob that RECYCLED this server id (near-dead -> near-full = new spawn) so Apex mobs never inherit a dead mob's debuffs   // baseMs[i] : the casting spell's base duration (tb_debuff_gen) ; self[i] : 1 = YOU cast it (exact wear-off + real timer), 0 = another caster (no wear-off -> kept as "???") ; spell[i] : the SPELL that landed it, kept because the status alone loses the tier (Dia I..V all report status 134) -- shot[i] : a COR Quick Draw shot has REINFORCED this debuff (Light Shot on Dia / Dark Shot on Bio : +2.73% Def/Att down, caps after ONE shot -- it does NOT raise the tier, contrary to a widespread shorthand) ; th : Treasure Hunter level applied to this mob (0 = none)
 
 // POINTWATCH (module) : the XP / CP / ML progression bar + Merits, ported from AioHUD's pointwatch engine
 // (Byrthnoth's pwcore). 100% packet-fed : 0x061 (char stats : level / EXP / Master Level / Exemplar Points),
@@ -313,6 +313,10 @@ void ep_build_sample(EmpyPop& out);
 // FFXI 1/60-second tick ; remaining seconds = (int)(expiry - ffxi_now_tick()) / 60 (the signed diff handles the
 // 32-bit wrap). Includes gear / merits / Composure / song duration -- nothing to estimate.
 struct BuffTimer { unsigned short id; unsigned expiry; };
+// Display name for a debuff, from the SPELL that landed it : "Dia III" where the status id (134) only ever
+// says "Dia". Returns 0 when the spell is unknown -> the caller falls back to buff_status_name(status).
+// Lives here (not in the widget) so the 977-row spell table stays in the ONE TU that already carries it.
+const char* debuff_spell_name(unsigned short spell);
 unsigned ffxi_now_tick();
 // Ticks-remaining -> SECONDS, rounded exactly like the client does. REVERSED 2026-07-20 (FFXiMain 0x05E87AD0 and
 // 0x05E87BE0, the buff icon-overlay and tooltip): both compute (delta + 59) / 60, i.e. CEIL. We truncated, so every
@@ -621,7 +625,7 @@ struct PartyState {
     // active (non-expired) debuff status ids on target `id`, newest last. Fills `out` (status ids) and, if
     // non-null, `remainSec` (approx seconds left = base duration - elapsed ; exact removal comes from the 0x029
     // wear-off). Returns the count written.
-    int  target_debuffs(unsigned id, unsigned short* out, int* remainSec, unsigned char* isSelf, int maxN) const;   // remainSec = -1 -> show "???"
+    int  target_debuffs(unsigned id, unsigned short* out, int* remainSec, unsigned char* isSelf, int maxN, unsigned short* spellOut = 0, unsigned char* shotOut = 0) const;   // remainSec = -1 -> show "???" ; spellOut = the landing spell (0 = unknown) -> lets the caller name the TIER ("Dia III"), which the status id alone cannot express ; shotOut = reinforced by a COR Quick Draw shot
     int  target_th(unsigned id) const;   // Treasure Hunter level applied to target `id` (0 = none / unknown)
     void clear_debuffs(unsigned id);     // drop a mob's tracked debuffs (on its death) so a recycled server id starts clean
     // THE single reset point for a character switch on one client (log out, log in as someone else, no plugin
