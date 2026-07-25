@@ -50,7 +50,7 @@ Id space: the array spans ids `0..8191`; real ids in use today top out around **
    The `< 0x2000` bound is Windower's own — reading that range is as safe as `get_key_items()`.
    ```
    analyzeHeadless re/ghidra_proj aiohud_re -process LuaCore.dll -noanalysis \
-       -scriptPath scripts -postScript DecompOne.java 10073b80
+       -scriptPath scripts/ghidra -postScript DecompOne.java 10073b80
    ```
 2. **Live validation, out-of-process** (`ReadProcessMemory` on `pol.exe`, 32-bit PowerShell — used
    because the deployed DLL was file-locked by the running game). Walked the chain and dumped all

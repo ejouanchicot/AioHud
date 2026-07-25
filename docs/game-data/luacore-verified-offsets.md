@@ -150,7 +150,7 @@ cannot use Windower's own liveness test.
 
 ```
 analyzeHeadless <projdir> aiohud_re -process LuaCore.dll -noanalysis \
-  -scriptPath scripts -postScript DecompForce.java 10070ae0 10094e70 1008db90 1006ff00 1006fe80
+  -scriptPath scripts/ghidra -postScript DecompForce.java 10070ae0 10094e70 1008db90 1006ff00 1006fe80
 ```
 
 `DecompForce.java` (added for this audit) creates the function first - several `lua_pushcclosure` targets are

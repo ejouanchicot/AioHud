@@ -79,7 +79,7 @@ early-out (`count == 0` -> skip the bag's 80 slots).
    These bounds (18 bags, slots 1..80) are Windower's own -> as safe to read as `get_items()`.
    ```
    analyzeHeadless re/ghidra_proj aiohud_re -process LuaCore.dll -noanalysis \
-       -scriptPath scripts -postScript DecompOne.java 10093360     # and 100935c0 / 10074690
+       -scriptPath scripts/ghidra -postScript DecompOne.java 10093360     # and 100935c0 / 10074690
    ```
 2. **Live validation, out-of-process** (`ReadProcessMemory` on `pol.exe`, 32-bit PowerShell — the
    deployed DLL was file-locked by the running game). Walked the chain, one 0x19552-byte read from
