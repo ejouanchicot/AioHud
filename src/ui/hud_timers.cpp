@@ -576,15 +576,17 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 const int poBase = lag ? 30 : 11;
                 for (int i = 0; i < no && nb < 50; ++i) if (ob[i].spell == grp[k].spell && (obFresh(ob[i]) ? 1 : 0) == grp[k].fresh && obRem(ob[i]) > 0) {   // ONLY this generation's members -> a laggard row lists exactly the people the re-sing missed
                     const BuffSet* bs = party().buffs_for(ob[i].target); bool has = false; if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == grp[k].status) { has = true; break; }
-                    // The confirmation comes from the member's own 0x076 buff list. The server never sends one
-                    // for a TRUST -- verified with 5 trusts in the party and two Protects cast on them : 0x076
-                    // stayed at zero and buffs_for() returned nothing for either of them. So this gate was
-                    // unsatisfiable for trusts, and the row vanished the moment the zone grace lapsed, while
-                    // the model held it correctly the whole time (name, status and timer all right).
-                    // A trust therefore rides its estimate, exactly like every row does during the grace. The
-                    // cost is the same as the grace's : an early wear-off (dispel, death) is not detected for
-                    // them. Showing a row a few seconds too long beats never showing it at all.
-                    if (!has && !graceOB && !party().is_trust(ob[i].target)) continue;   // a real player who lost it -> drop
+                    // Drop the row ONLY on positive evidence that the ally lost the buff : we hold that member's
+                    // 0x076 list AND the status is not in it. buffs_for() returning null is "we have never been
+                    // told anything about this member", not "the buff is gone" -- and treating the two the same
+                    // is rule 10 ("empty is not unavailable") in its most expensive form. It emptied the row for
+                    // every trust, and for real players too whenever no 0x076 had arrived : verified in game --
+                    // five trusts AND a player (Kaories, trust=0) all reporting buffset=NONE while the model held
+                    // the right name, status and timer for each of them.
+                    // Cost of keeping it : an early wear-off (dispel, death) is invisible while we have no list,
+                    // so the row rides its estimate to the end -- the same trade the zone grace already makes.
+                    const bool known = (bs != 0);   // do we hold this member's buff list at all ?
+                    if (known && !has && !graceOB) continue;   // told about them, and the buff is not there -> gone
                     if (en) { _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s - %s", ob[i].name, en); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0; bufs[nb].name = obLabel[nb]; }
                     else bufs[nb].name = ob[i].name;
                     bufs[nb].rem = obRem(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].both = 1; bufs[nb].order = poBase + party().party_order(ob[i].target); bufs[nb].src = 5; ++nb;   // ally-cast rows GROUPED BY ally ; laggards form a named block after the fresh ones
