@@ -453,10 +453,29 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     int nhr = 0; party().hate_rows(nhr);
     windower::debug::log("  model    : selfTimers=%d allyBuffs=%d hateRows=%d zoneGrace=%d",
                          nbt, nob, nhr, party().in_zone_grace() ? 1 : 0);
-    if (nob > 0 && n076 == 0)
-        DOC("Tu suis %d buff(s) sur allies mais aucun paquet 0x076 n'est jamais arrive : leur fin ANTICIPEE "
-            "(dispel, ecrasement, mort de l'allie) ne peut pas etre detectee. Les lignes tiendront jusqu'au "
-            "bout de leur estimation, meme si le buff est deja tombe.", nob);
+    // Per ally-buff row : is it CONFIRMED by the member's own buff list (0x076) ? The per-ally row -- the
+    // "Name - Spell" one, as opposed to the grouped "(AoE N)" -- is dropped when it is not, so this is the
+    // line that explains a row that pops and then vanishes. A member with no BuffSet at all has simply never
+    // been described by a 0x076.
+    int unconfirmedPlayers = 0;
+    {
+        const PartyState::OtherBuff* obp = party().other_buffs(nob);
+        for (int i = 0; i < nob && i < 8; ++i) {
+            const BuffSet* bs = party().buffs_for(obp[i].target);
+            bool has = false; if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == obp[i].status) { has = true; break; }
+            const bool trust = party().is_trust(obp[i].target);
+            windower::debug::log("  ally[%d]  : '%s' id=%08X trust=%d status=%u buffset=%s confirmed=%d",
+                                 i, obp[i].name[0] ? obp[i].name : "<no name>", obp[i].target,
+                                 trust ? 1 : 0, obp[i].status, bs ? "yes" : "NONE", has ? 1 : 0);
+            if (!has && !trust) ++unconfirmedPlayers;
+        }
+    }
+    // Only PLAYERS are worth reporting : the server sends no 0x076 for a trust at all, so an unconfirmed
+    // trust row is the normal state, not a fault -- it rides its estimate by design.
+    if (unconfirmedPlayers > 0)
+        DOC("%d buff(s) que tu as poses sur des JOUEURS ne sont pas confirmes par leur liste de buffs (0x076) : "
+            "leur fin anticipee (dispel, ecrasement, mort) ne sera pas detectee et la ligne tiendra jusqu'au "
+            "bout de son estimation. Les trusts, eux, sont normaux : le serveur ne diffuse pas leurs buffs.", unconfirmedPlayers);
 
     // ---- 6. the current target's debuffs, and whether we know the TIER of each ----
     if (state_.target.valid && state_.target.id) {

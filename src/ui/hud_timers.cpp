@@ -576,7 +576,15 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 const int poBase = lag ? 30 : 11;
                 for (int i = 0; i < no && nb < 50; ++i) if (ob[i].spell == grp[k].spell && (obFresh(ob[i]) ? 1 : 0) == grp[k].fresh && obRem(ob[i]) > 0) {   // ONLY this generation's members -> a laggard row lists exactly the people the re-sing missed
                     const BuffSet* bs = party().buffs_for(ob[i].target); bool has = false; if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == grp[k].status) { has = true; break; }
-                    if (!has && !graceOB) continue;   // that ally lost it (stale) -> skip ; during the zone grace trust the estimate
+                    // The confirmation comes from the member's own 0x076 buff list. The server never sends one
+                    // for a TRUST -- verified with 5 trusts in the party and two Protects cast on them : 0x076
+                    // stayed at zero and buffs_for() returned nothing for either of them. So this gate was
+                    // unsatisfiable for trusts, and the row vanished the moment the zone grace lapsed, while
+                    // the model held it correctly the whole time (name, status and timer all right).
+                    // A trust therefore rides its estimate, exactly like every row does during the grace. The
+                    // cost is the same as the grace's : an early wear-off (dispel, death) is not detected for
+                    // them. Showing a row a few seconds too long beats never showing it at all.
+                    if (!has && !graceOB && !party().is_trust(ob[i].target)) continue;   // a real player who lost it -> drop
                     if (en) { _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s - %s", ob[i].name, en); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0; bufs[nb].name = obLabel[nb]; }
                     else bufs[nb].name = ob[i].name;
                     bufs[nb].rem = obRem(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].both = 1; bufs[nb].order = poBase + party().party_order(ob[i].target); bufs[nb].src = 5; ++nb;   // ally-cast rows GROUPED BY ally ; laggards form a named block after the fresh ones
