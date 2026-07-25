@@ -315,9 +315,16 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 const int r = obRem(ob[i]);
                 if (r <= 0) continue;
                 const unsigned char fb = obFresh(ob[i]) ? 1 : 0;   // FRESH (your current cast) vs LAGGARD (an older cast a re-sing missed) -- see obFresh
-                int gi = -1; for (int k = 0; k < ng; ++k) if (grp[k].spell == ob[i].spell && grp[k].fresh == fb) { gi = k; break; }
-                if (gi < 0 && ng < 32) { gi = ng++; grp[gi].spell = ob[i].spell; grp[gi].status = ob[i].status; grp[gi].allies = 0; grp[gi].rem = r; grp[gi].isAbil = ob[i].isAbil; grp[gi].selfHas = 0; grp[gi].aoe = 0; grp[gi].expTick = ob[i].expTick; grp[gi].fresh = fb; grp[gi].selfCast = 0; }
-                if (gi >= 0) { grp[gi].allies++; grp[gi].aoe |= ob[i].aoe; grp[gi].selfCast |= ob[i].mirrorSelf; if (r < grp[gi].rem) grp[gi].rem = r; }   // aoe = this spell was ever cast as a REAL AoE (>=2 targets) ; selfCast |= mirrorSelf = the cast hit you too (still fresh, < 2s) ; rem = SHORTEST in the group (drives the laggard row ; a fresh row overwrites it with your self timer)
+                // Key on (spell, freshness, AND delivery). A single-target re-cast is a DIFFERENT cast from the
+                // AoE that preceded it : it has its own, longer timer. Keyed only by (spell, fresh) the two
+                // merged, because refreshing an ally's slot clears its `aoe` flag and obFresh() calls any
+                // single-target entry fresh -- so an AoE Protect on the party followed by a Protect on one ally
+                // drew ONE "(AoE 3)" row carrying the SELF timer, and the ally's newer duration was invisible.
+                // Single-target casts still group with each other under "Grouped" ; they simply never merge
+                // with an AoE generation again.
+                int gi = -1; for (int k = 0; k < ng; ++k) if (grp[k].spell == ob[i].spell && grp[k].fresh == fb && grp[k].aoe == ob[i].aoe) { gi = k; break; }
+                if (gi < 0 && ng < 32) { gi = ng++; grp[gi].spell = ob[i].spell; grp[gi].status = ob[i].status; grp[gi].allies = 0; grp[gi].rem = r; grp[gi].isAbil = ob[i].isAbil; grp[gi].selfHas = 0; grp[gi].aoe = ob[i].aoe; grp[gi].expTick = ob[i].expTick; grp[gi].fresh = fb; grp[gi].selfCast = 0; }
+                if (gi >= 0) { grp[gi].allies++; grp[gi].selfCast |= ob[i].mirrorSelf; if (r < grp[gi].rem) grp[gi].rem = r; }   // aoe is part of the KEY now, no longer OR-ed in ; selfCast |= mirrorSelf = the cast hit you too (still fresh, < 2s) ; rem = SHORTEST in the group
             }
         }
 
@@ -429,7 +436,14 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             const unsigned ssid = party().self_buff_spell_ranked(bt[i].id, bt[i].expiry, i);   // spell/tier (Valor Minuet V), disambiguating same-status buffs by expiry rank
             int sameSt = 0; for (int k = 0; k < n; ++k) if (bt[k].id == bt[i].id) ++sameSt;
             int gi = -1;
-            for (int k = 0; k < ng; ++k) if (grp[k].spell == ssid && grp[k].fresh) { gi = k; break; }   // fold ONLY into the FRESH group : your self buff IS the current cast, never a laggard row
+            // Fold ONLY into a FRESH group : your self buff IS the current cast, never a laggard row.
+            // Since groups are keyed by delivery too, one spell can now have TWO fresh groups -- an AoE
+            // generation and a single-target one. Your own copy belongs to the AoE : that is the cast that also
+            // hit you and whose exact 0x063 timer the group displays. Prefer it ; fall back to a single-target
+            // group only when no AoE one exists (you re-cast on one ally without touching yourself).
+            for (int k = 0; k < ng; ++k) if (grp[k].spell == ssid && grp[k].fresh && grp[k].aoe) { gi = k; break; }
+            if (gi < 0) for (int k = 0; k < ng; ++k) if (grp[k].spell == ssid && grp[k].fresh) { gi = k; break; }
+            if (gi < 0 && sameSt < 2) for (int k = 0; k < ng; ++k) if (grp[k].status == bt[i].id && grp[k].fresh && grp[k].aoe) { gi = k; break; }
             if (gi < 0 && sameSt < 2) for (int k = 0; k < ng; ++k) if (grp[k].status == bt[i].id && grp[k].fresh) { gi = k; break; }
             // no fresh group (you re-sang on yourself only, the ally is a laggard) -> gi stays -1 : your buff emits as its
             // own row and the laggard group draws separately, which is exactly the split.
