@@ -881,6 +881,14 @@ static void aio_command_dispatch(const char* cmd)
         g_host.console().print(">>> AioHud : oblog ARME -- la prochaine frame dumpe le pipeline des buffs allies dans Windower\\plugins\\aiohud_debug.log (blocs OBPRUNE + OBLOG) <<<");
         return;
     }
+    if (strstr(buf, "songlog")) {   // //aio songlog [sec] -> the BRD song-duration MODEL, inputs included, checked against the game's own 0x063
+        int sec = 120; { const char* a = strstr(buf, "songlog") + 7; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
+        if (sec < 10) sec = 10; if (sec > 900) sec = 900;
+        aio::party().set_songdur_trace(sec);
+        g_host.console().print(">>> AioHud : songlog ARME -- chante, puis envoie Windower\\plugins\\aiohud_debug.log (lignes SONGDUR = le modele, SONGREAL = le timer reel du jeu) <<<");
+        g_host.console().print(">>> Test le plus net : Pianissimo la song SUR TOI -- meme calcul qu'un Pianissimo sur un allie, mais avec un vrai timer pour le verifier <<<");
+        return;
+    }
     if (strstr(buf, "doctor")) {   // //aio doctor -> run every RUNTIME check and print what to DO about each problem
         char lines[12][aio::Hud::DOC_LINE];
         const int n = g_hud.doctor(lines, 12);

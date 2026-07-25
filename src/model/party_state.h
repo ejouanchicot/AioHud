@@ -658,6 +658,16 @@ struct PartyState {
     void set_debuff_trace(int n);        // //aio dbflog : log the next N target-debuff mutations (add/reset/wipe/wake) to aiohud_debug.log
     void set_treasure_trace(int n);      // //aio tpool : log the next N treasure-pool packets (0x0D2/0x0D3) + expiry math to aiohud_debug.log
     bool treasure_trace_active() const;  // //aio tpool : true while the trace budget is unspent (gates the zone-in/out markers in the dispatch)
+    // //aio songlog : BRD song-duration model probe. An ally song row shows the MODEL's estimate, but an AoE song
+    // also lands on YOU and those rows display your exact 0x063 timer instead -- so a wrong model is invisible on
+    // AoE songs and only surfaces on a Pianissimo (single-target) cast, which has no self timer to borrow. Exactly
+    // the trap the old 1800 s enhancing cap hid behind. This logs the full breakdown at cast (base, m1 and the gear
+    // that fed it, m2, m3, a3) and, for a cast that DID land on you, the game's own 0x063 expiry a few seconds
+    // later next to the prediction -- turning "the timer is wrong" into a number and naming the guilty factor.
+    void set_songdur_trace(int seconds);
+    struct SongPred { unsigned short status, spell; unsigned predExp, wallMs; unsigned char done; };
+    SongPred songPred_[8]; int songPredN_ = 0;   // casts awaiting their real 0x063 expiry (self-landed only)
+    void songdur_check();                        // called from the model tick : match predictions against 0x063
     void set_buff076_trace(int seconds); // //aio ftrace : DURATION-armed (mirrors the ui-side focus trace) -> log every 0x076 party-buff arrival + zone markers, to prove whether an ally's buff set actually refreshes after a zone
     bool buff076_trace_active() const;   // true while that window is open (gates the 0x00A/0x00B zone markers in the dispatch)
     void treasure_mem_probe();           // //aio tmem : one-shot hex dump of the in-game treasure view (*(g+0x5C)) -> reconcile treasure_[] against memory ground truth

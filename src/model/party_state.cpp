@@ -122,6 +122,7 @@ static int s_dbfTrace = 0;
 // of the ui focus trace : both are armed together by the one //aio ftrace command (the plugin layer bridges them,
 // keeping model independent of ui). Answers "does an ally's 0x076 buff set actually refresh after a zone, and how fast".
 static unsigned s_b076Until = 0;
+static unsigned s_songUntil = 0;   // //aio songlog : BRD song-duration model probe (see set_songdur_trace)
 // Says so when the budget runs out : a probe that goes quiet is indistinguishable from a bug that stopped
 // reproducing, which is exactly how two captures were misread during the Timers hunt.
 #define DBFTRACE(...) do { if (s_dbfTrace > 0) { --s_dbfTrace; windower::debug::log(__VA_ARGS__); \
@@ -1052,6 +1053,19 @@ void PartyState::on_action(const unsigned char* p) {
             // selfCasts_ -- poisoning buff_caster_for and the "Mine only" filter -- and marks every ally copy
             // mirrorSelf, so they mirror a self timer that does not exist.
             for (unsigned i = 0; i < nTgt; ++i) if (tgtIds[i] == selfId_ && tgtMsg[i] != 75) { aoeSelf = true; break; }
+            // //aio songlog : the song-duration model, with the INPUTS -- durMs alone only says the answer is wrong,
+            // not which factor produced it. The equipped ids are dumped too : the whole m1 term is read out of the
+            // gear AT PACKET TIME, so a Gearswap aftercast that beat us back to the idle set would silently erase it.
+            if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0 && b->skill == 40) {
+                char gl[220]; int go = 0; gl[0] = 0;
+                for (int gi2 = 0; gi2 < 16 && go < 200; ++gi2) go += _snprintf(gl + go, sizeof(gl) - 1 - go, "%u ", eids[gi2]);
+                const double dbg = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
+                windower::debug::log("SONGDUR spell=%u st=%u fam=%d base=%us  m1=%.3f (gear %d%% + jp %d%%)  m2=%.1f (troub=%d)  m3=%.1f (sv=%d marc=%d)  a3=%ds  miracle=%d  -> %.1fs   tc=%u nTgt=%u aoeSelf=%d",
+                                     sid, b->effect, songFam, b->durSec, songM1, song_dur_m1_pct(eids, songFam), songJp,
+                                     songM2, troubadour ? 1 : 0, songM3, soulvoice ? 1 : 0, marcato ? 1 : 0, songA3,
+                                     miracle ? 1 : 0, dbg, tc, nTgt, aoeSelf ? 1 : 0);
+                windower::debug::log("SONGDUR   equipped ids = [%s]", gl);
+            }
             if (aoeSelf && b->effect < 1024) {   // remember the spell/tier for the self row name (+ a ring for same-status doubles)
                 selfBuffSpell_[b->effect] = (unsigned short)sid;
                 // Our OWN cast : predict the expiry from the duration we actually computed for it (songs get the full
@@ -1061,7 +1075,18 @@ void PartyState::on_action(const unsigned char* p) {
                 if (b->skill == 40) selfSec = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
                 else if (b->skill == 34) selfSec = enh_sec(b->durSec, b->effect);   // Enhancing Magic (Regen special-cased inside)
                 else if (b->skill == 44) selfSec = (double)((int)b->durSec + geoJpSec + geoGear);
-                record_cast((unsigned short)b->effect, (unsigned short)sid, selfId_, ffxi_now_tick() + (unsigned)(selfSec * 60.0));
+                const unsigned predExp = ffxi_now_tick() + (unsigned)(selfSec * 60.0);
+                record_cast((unsigned short)b->effect, (unsigned short)sid, selfId_, predExp);
+                // //aio songlog : a cast that landed on YOU has a 0x063 ground truth coming. File the prediction so
+                // songdur_check() can print predicted-vs-real once the server timer arrives (Pianissimo ON YOURSELF is
+                // therefore the clean isolation test : single-target math, but with a real timer to check it against).
+                if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0 && b->skill == 40) {
+                    int sl = -1;
+                    for (int q = 0; q < songPredN_; ++q) if (songPred_[q].done) { sl = q; break; }
+                    if (sl < 0 && songPredN_ < 8) sl = songPredN_++;
+                    if (sl >= 0) { songPred_[sl].status = (unsigned short)b->effect; songPred_[sl].spell = (unsigned short)sid;
+                                   songPred_[sl].predExp = predExp; songPred_[sl].wallMs = GetTickCount(); songPred_[sl].done = 0; }
+                }
             }
             if (b->skill == 40 && sid < 1024) {   // BRD song : snapshot the song-enhancing JAs UP at cast, keyed by SPELL id
                 songMod_[sid] = (unsigned char)((soulvoice ? 1 : 0) | (nightingale ? 2 : 0) | (troubadour ? 4 : 0) | (marcato ? 8 : 0));   // by spell (not status) so two same-family songs (Advancing + Victory March) keep separate tags
@@ -1463,6 +1488,7 @@ const BuffSet* PartyState::buffs_for(unsigned id) const {
 // wear-off) AND songs pushed out of the BRD song slots when the limit is hit (incl. same-status tiers). A short
 // grace period lets a fresh cast register in the 0x076 before it can be pruned.
 void PartyState::prune_other_buffs_worn() {
+    songdur_check();   // //aio songlog : model-vs-0x063 comparison, driven off the same model tick
     const unsigned now = GetTickCount();
     const unsigned z = zone_id();                                 // ZONING grace : a zone change (or the loading screen) blanks the
     // ZONE-IN BUMP for SINGLE-TARGET ally estimates (no self timer to mirror). Across the load the server preserves
@@ -1570,6 +1596,30 @@ int PartyState::target_th(unsigned id) const {
 }
 
 void PartyState::set_debuff_trace(int n) { s_dbfTrace = n; }   // //aio dbflog
+void PartyState::set_songdur_trace(int seconds) {
+    s_songUntil = GetTickCount() + (unsigned)seconds * 1000u;
+    songPredN_ = 0;
+    windower::debug::log("=== SONGDUR trace armed for %ds -- sing, then compare SONGDUR (model) with SONGREAL (the game's own 0x063) ===", seconds);
+}
+// Match a filed prediction against the server's own timer. Waited on rather than read at cast time : the 0x063
+// for a fresh cast lands a beat later, and reading 0 there would look exactly like a wrong model.
+void PartyState::songdur_check() {
+    if (!s_songUntil || (int)(s_songUntil - GetTickCount()) <= 0) return;
+    const unsigned now = GetTickCount();
+    for (int q = 0; q < songPredN_; ++q) {
+        SongPred& sp = songPred_[q];
+        if (sp.done || (int)(now - sp.wallMs) < 2500) continue;
+        const unsigned real = self_buff_expiry_for(sp.status, sp.spell);
+        if (real == 0) { if ((int)(now - sp.wallMs) > 15000) sp.done = 1; continue; }   // give up quietly after 15s rather than poll forever
+        const int nowT = (int)ffxi_now_tick();
+        const int predSec = ((int)sp.predExp - nowT) / 60, realSec = ((int)real - nowT) / 60;
+        const SpellRow* srw = spell_info(sp.spell);
+        windower::debug::log("SONGREAL spell=%u \"%s\" st=%u : model predicted %ds remaining, game says %ds  -> delta %+ds (%.1f%%)",
+                             sp.spell, (srw && srw->en) ? srw->en : "?", sp.status, predSec, realSec,
+                             realSec - predSec, realSec ? (100.0 * (realSec - predSec)) / (double)realSec : 0.0);
+        sp.done = 1;
+    }
+}
 void PartyState::set_buff076_trace(int seconds) { s_b076Until = GetTickCount() + (unsigned)seconds * 1000u; windower::debug::log("=== B076 trace armed for %ds ===", seconds); }   // //aio ftrace (model-side twin)
 bool PartyState::buff076_trace_active() const { return s_b076Until && (int)(s_b076Until - GetTickCount()) > 0; }   // sentinel-guard : 0 = off ; (int)(0-GetTickCount()) would read positive past ~25 days uptime and self-arm the probe
 void PartyState::set_treasure_trace(int n) { s_tpoolTrace = n; }        // //aio tpool
