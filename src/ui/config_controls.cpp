@@ -425,6 +425,19 @@ int wrap(int v, int n) { if (v < 0) return n - 1; if (v >= n) return 0; return v
 // *v01 (normalized 0..1) LIVE while dragging and persists once on release. Returns true the frames it
 // changed. g_slider latches the dragged slider so a press that wanders off the row keeps control of it.
 static int g_slider = -1;   // id of the slider being dragged (-1 = none)
+
+// Release the drag latch from OUTSIDE the control, and persist what it was editing.
+// The latch is only ever cleared by the dragged row being drawn again with the button up -- so closing the
+// config page (or switching tab) mid-drag strands it: the row stops being drawn, `g_slider` stays set, and
+// the `g_slider < 0` gate then blocks EVERY slider and colour picker in the whole menu, with nothing on
+// screen to explain it. The value is lost too, because the release branch is what calls save_ui_config().
+// This was harmless while each panel also saved on every drag frame ; removing those 11 redundant saves is
+// what exposed it.
+void ctrl_release_drag() {
+    if (g_slider < 0) return;
+    g_slider = -1;
+    save_ui_config();   // the release branch never ran -> persist the value the drag left in memory
+}
 bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
                        float x, float y, float w, const char* label, const char* valueText, float* v01) {
     const float rowH = snap(40.0f);

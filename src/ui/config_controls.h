@@ -94,6 +94,7 @@ constexpr int ctrl_uid_i(int base, int i) {
 
 // ---- D3D colour-quad state + AA primitives ----
 void cs(u32 dev);        // normal alpha colour-quad state
+void ctrl_release_drag();   // drop the slider/picker drag latch and persist -- call when the page stops being drawn
 void cs_add(u32 dev);    // ADDITIVE colour state (glow / bloom / shine)
 void q4(u32 dev, float x, float y, float w, float h, u32 tl, u32 tr, u32 bl, u32 br);
 void flat(u32 dev, float x, float y, float w, float h, u32 c);

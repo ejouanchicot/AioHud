@@ -77,7 +77,7 @@ static unsigned action_target_ids(const unsigned char* p, int size, unsigned tc,
         const unsigned id = getbits(p, off, 32, size);
         unsigned ac = getbits(p, off + 32, 4, size); off += 36;
         unsigned amsg = 0;
-        for (unsigned a = 0; a < ac && a < 12; ++a) {
+        for (unsigned a = 0; a < ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound
             if (off + 86 > size * 8) { off = size * 8; break; }
             if (a == 0) amsg = getbits(p, off + 44, 10, size);         // this target's main message
             const unsigned hasAdd = getbits(p, off + 85, 1, size);
@@ -172,7 +172,24 @@ static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsig
     // game's "no longer asleep" message (on_029) exactly, but we do NOT receive that message when ANOTHER player's
     // DoT/hit wakes the mob -> enforce it from what we DO track (every caster's debuffs) : any DoT drops any sleep,
     // and a sleep landing on a DoT'd mob is a no-op. (Hits from anyone are handled by the cat 1/2 wake path.)
-    if (is_sleep_status(st)) { for (int i = 0; i < d.n; ++i) if (is_dot_status(d.ids[i])) { DBFTRACE("DBF sleep-skip (DoT %u up) tid=%08X st=%u", d.ids[i], tid, st); return; } }
+    // The DoT that vetoes a sleep must still be RUNNING. A debuff another player cast is never pruned -- no
+    // wear-off packet exists for it -- so an entry sits in the set long past its duration, and a veto that
+    // reads d.ids[] without checking is acting on a ghost : a mate's Dia from ten minutes ago silently blocked
+    // every Sleep on that mob for the rest of its life. This is the exact defect removed from the overwrite
+    // path a few lines below ; it was left standing here.
+    // Learned durations live on PartyState and are not reachable from this file-static helper, so the base
+    // duration is used. Erring toward "expired" costs at most a sleep row drawn next to a live DoT ; erring
+    // the other way is a row that can never appear again.
+    if (is_sleep_status(st)) {
+        const unsigned nowMs = now;
+        for (int i = 0; i < d.n; ++i) {
+            if (!is_dot_status(d.ids[i])) continue;
+            const unsigned dur = d.baseMs[i] ? d.baseMs[i] : debuff_fallback_ms(d.ids[i]);
+            if ((unsigned)(nowMs - d.startMs[i]) >= dur) continue;   // expired ghost -> it vetoes nothing
+            DBFTRACE("DBF sleep-skip (live DoT %u up) tid=%08X st=%u", d.ids[i], tid, st);
+            return;
+        }
+    }
     else if (is_dot_status(st)) { for (int i = 0; i < d.n; ) { if (is_sleep_status(d.ids[i])) { DBFTRACE("DBF sleep-drop (DoT %u) tid=%08X st=%u", st, tid, d.ids[i]); debuff_erase(d, i); } else ++i; } }
     // OVERWRITE : we only ever REMOVE what a landing spell replaced. We never REFUSE a spell.
     //
@@ -686,7 +703,7 @@ void PartyState::on_action(const unsigned char* p) {
             if (off + 36 > size * 8) break;
             const u32 tgt = getbits(p, off, 32, size);
             unsigned ac = getbits(p, off + 32, 4, size); off += 36;
-            for (unsigned a = 0; a < ac && a < 12; ++a) {
+            for (unsigned a = 0; a < ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound
                 if (off + 86 > size * 8) { off = size * 8; break; }
                 const unsigned mainMsg   = getbits(p, off + 44, 10, size);   // action main message @ off+44
                 const unsigned mainParam = getbits(p, off + 27, 17, size);   // action main param   @ off+27
@@ -731,7 +748,7 @@ void PartyState::on_action(const unsigned char* p) {
             if (actorFriend) pc = actor; else if (actorEnemy) mob = actor;
             if (is_party_or_pet(tid)) pc = tid; else if (tid >= 0x01000000u) mob = tid;
             if (mob && pc) record_hate(hate_, mob, pet_owner(pc));   // show the OWNER (not the pet) in the Target column
-            for (unsigned a = 0; a < ac && a < 12; ++a) {            // skip this target's actions to reach the next target
+            for (unsigned a = 0; a < ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound            // skip this target's actions to reach the next target
                 if (off + 86 > size * 8) { off = size * 8; break; }
                 const unsigned hasAdd = getbits(p, off + 85, 1, size);
                 off += 86;
@@ -856,7 +873,7 @@ void PartyState::on_action(const unsigned char* p) {
             const u32 tgt = getbits(p, off, 32, size);
             unsigned ac = getbits(p, off + 32, 4, size); off += 36;
             const bool isMe = (tgt == selfId_);
-            for (unsigned a = 0; a < ac && a < 12; ++a) {
+            for (unsigned a = 0; a < ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound
                 if (off + 86 > size * 8) { off = size * 8; break; }
                 const unsigned mMsg   = getbits(p, off + 44, 10, size);   // this action's main message
                 const unsigned mParam = getbits(p, off + 27, 17, size);   // this action's main param
@@ -1029,7 +1046,12 @@ void PartyState::on_action(const unsigned char* p) {
             u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
             unsigned tgtIds[16], tgtMsg[16]; const unsigned nTgt = action_target_ids(p, size, tc, tgtIds, 16, tgtMsg);
             bool aoeSelf = false;   // an AoE buff that ALSO landed on YOU -> the ally copies share your EXACT 0x063 timer
-            for (unsigned i = 0; i < nTgt; ++i) if (tgtIds[i] == selfId_) { aoeSelf = true; break; }
+            // Read the verdict here too, not just on the ally targets. A Protectra cast while a party WHM's
+            // Protect V is already on you reports msg 75 on YOUR target block : without this test the cast is
+            // treated as having landed on you, which reassigns selfBuffSpell_ and files a phantom prediction in
+            // selfCasts_ -- poisoning buff_caster_for and the "Mine only" filter -- and marks every ally copy
+            // mirrorSelf, so they mirror a self timer that does not exist.
+            for (unsigned i = 0; i < nTgt; ++i) if (tgtIds[i] == selfId_ && tgtMsg[i] != 75) { aoeSelf = true; break; }
             if (aoeSelf && b->effect < 1024) {   // remember the spell/tier for the self row name (+ a ring for same-status doubles)
                 selfBuffSpell_[b->effect] = (unsigned short)sid;
                 // Our OWN cast : predict the expiry from the duration we actually computed for it (songs get the full
@@ -1100,6 +1122,14 @@ void PartyState::on_action(const unsigned char* p) {
                 } else {
                     ms = (unsigned long long)b->durSec * 1000ull;
                 }
+                // Sanity bound. Every branch above multiplies a base by values read out of equipment tables ; a bad
+                // read can only inflate, and `durMs` is a 32-bit ms field feeding a countdown, so one absurd value
+                // would paint a row that never expires (worst case ~53 h). Nothing in the game exceeds 2 h on an
+                // ally, and this clamp is a GUARD, not a model -- it must stay far above every real duration so it
+                // can never quietly truncate a legitimate estimate the way the old 1800 s cap did.
+                const unsigned long long MAX_ALLY_MS = 2ull * 60ull * 60ull * 1000ull;   // 2 h
+                if (ms > MAX_ALLY_MS) ms = MAX_ALLY_MS;
+                if (ms == 0) ms = 1000ull;   // a zero-duration row would draw as instantly-expired instead of unknown
                 otherBuffs_[slot].durMs = (unsigned)ms;
                 otherBuffs_[slot].expTick = 0;   // AoE-on-self : frozen from your exact self 0x063 timer later (prune). Single-target : wall-clock estimate (startMs+durMs). Overwrites a recycled slot's stale expTick.
                 otherBuffs_[slot].isAbil = 0;
@@ -1212,7 +1242,7 @@ void PartyState::on_action(const unsigned char* p) {
             const u32 tid = getbits(p, off, 32, size);
             unsigned ac = getbits(p, off + 32, 4, size); off += 36;
             u32 amsg = 0;                                  // the FIRST action's main message -- what `base + 80` used to read
-            for (unsigned a = 0; a < ac && a < 12; ++a) {
+            for (unsigned a = 0; a < ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound
                 if (off + 86 > size * 8) { off = size * 8; break; }
                 if (a == 0) amsg = getbits(p, off + 44, 10, size);
                 const unsigned hasAdd = getbits(p, off + 85, 1, size);

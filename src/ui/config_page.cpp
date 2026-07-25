@@ -6,6 +6,7 @@
 // toggle crossfades, knob grow, etc. The page also fades + scales in, and the content rows stagger.
 #include "ui/config_page.h"
 #include "ui/config_controls.h"   // shared config toolkit (palette, ease, primitives, controls)
+#include "gfx/texture.h"          // release_texture / make_texture_argb_mip : called DIRECTLY here -- it only compiled through ui/tex_retry.h, pulled in by party.h for an unrelated reason
 #include "ui/config_rows.h"       // ROW_BAND / ROW_NEXT row-layout macros (shared with the *_config.cpp panels)
 #include "gfx/font.h"
 #include "gfx/window.h"

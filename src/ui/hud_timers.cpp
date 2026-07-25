@@ -547,7 +547,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         //      count matches who actually got it (not our 0x028 target parse -- BattleMod-accurate) and a replaced roll
         //      nobody carries drops. total >= 2 -> one "Spell (AoE N)" row (N counts you) ; exactly 1 -> "Person - Spell". ----
         if (g_obLog) {   // ---- stage 2 : the GROUPS the entries were merged into, and the key that merged them ----
-            windower::debug::log("=== OBLOG : %d group(s) formed  [key = spell + fresh ; aoe is OR-ed in, not part of the key] ===", ng);
+            windower::debug::log("=== OBLOG : %d group(s) formed  [key = spell + fresh + aoe] ===", ng);
             for (int k = 0; k < ng; ++k) {
                 const char* sp = grp[k].isAbil ? abil_name_by_id(grp[k].spell) : (spell_info(grp[k].spell) ? spell_info(grp[k].spell)->en : 0);
                 const int selfRem = party().self_buff_remaining_for(grp[k].status, grp[k].spell);
@@ -578,6 +578,12 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // but ALWAYS : right after a //reload the 0x076 ally-buff cache is empty and never re-counts them, so a song
                 // you AoE'd onto the party stopped regrouping as "(AoE N)" until a zone. ob[] is your own recent casts
                 // (honest -- pruned against 0x076 once it flows), so it is the right floor here too.
+                // countHas is STATUS-scoped (0x076 carries no spell id) but the group key is (spell, fresh, aoe) -- so it
+                // must only be trusted for a group that could actually own every carrier : a real AoE. On a SINGLE-TARGET
+                // group it counts the other groups' people too : Protectra V on the party, then Protect V on one ally,
+                // gives that 1-ally group effN = 6 and (with "group ally buffs" on) a bogus "(AoE 6)" row. A single-target
+                // cast has nothing for countHas to recover anyway -- the 0x028 walk cannot miss a target you named.
+                else if (!grp[k].aoe) { effN = grp[k].allies + (grp[k].selfCast ? 1 : 0); }
                 else { effN = countHas(grp[k].status); const int est = grp[k].allies + ((meHas(grp[k].status) || grp[k].selfCast) ? 1 : 0); if (est > effN) effN = est; }   // selfCast : you cast it on yourself -> count yourself NOW, don't wait for the 0x063/0x076 lists to catch up (~1s flicker)
             }
             if (effN < 1) continue;                        // nobody has it anymore (worn / replaced roll) -> drop the group

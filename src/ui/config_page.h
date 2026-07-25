@@ -10,10 +10,14 @@
 
 namespace aio {
 
+void ctrl_release_drag();   // config_controls.cpp -- drops a held slider/picker latch and persists it
+
 class ConfigPage {
 public:
-    void toggle()         { open_ = !open_; if (open_) { anim_ = 0.0f; profDirty_ = true; } }
-    void set_open(bool o) { if (o && !open_) { anim_ = 0.0f; profDirty_ = true; } open_ = o; }
+    void toggle()         { set_open(!open_); }
+    // Closing (or switching tab) while a slider is held strands the drag latch in config_controls and loses
+    // the edit -- the row that would release it stops being drawn. Release it here instead.
+    void set_open(bool o) { if (o && !open_) { anim_ = 0.0f; profDirty_ = true; } if (!o && open_) ctrl_release_drag(); open_ = o; }
     bool is_open() const  { return open_; }
     void set_tab(int t);
 
