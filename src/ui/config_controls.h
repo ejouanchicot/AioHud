@@ -20,7 +20,7 @@ namespace aio {
 const u32 C_DIMBG    = 0xCC05080A;
 const u32 C_TABOFF_T = 0xC01A2228, C_TABOFF_B = 0xC012181D;
 const u32 C_TABHOV_T = 0xD0233C39, C_TABHOV_B = 0xD0182D2B;
-const u32 C_CONTENT_T= 0xD2161C22, C_CONTENT_B= 0xD20E1317;   // slightly translucent -> the nebula shows faintly behind the controls
+const u32 C_CONTENT_T= 0xD2161C22, C_CONTENT_B= 0xD20E1317;   // slightly translucent -> the dimmed game screen shows faintly behind the controls
 const u32 C_SIDEBAR  = 0xF0171C22;
 const u32 C_BORDER   = 0x2EFFFFFF, C_BORDERHI = 0x58FFFFFF;
 const u32 C_TEXT     = 0xFFE7ECF0, C_DIM = 0xFF97A2AC, C_MUTE = 0xFF7E8894;

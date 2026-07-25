@@ -507,9 +507,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
 
     // ===== CONTENT BODY (the tab content surface) =====
     const float bodyH = pageBot - bodyY;
-    // The container background is intentionally 100% TRANSPARENT : the nebula shows straight through the
-    // big frame. Only the frame edge (border + top inner highlight) is kept. The Live preview draws its
-    // OWN opaque backdrop, and each control carries its own faint row band -> nothing floats unreadably.
+    // The container background is intentionally 100% TRANSPARENT : the dimmed game screen shows straight
+    // through the big frame. Only the frame edge (border + top inner highlight) is kept. The Live preview
+    // draws its OWN opaque backdrop, and each control carries its own faint row band -> nothing floats
+    // unreadably. (This used to read "the nebula shows through" -- that procedural backdrop was removed.)
     flat(dev, ix + 1, bodyY + 1, iw - 2, 1, 0x16FFFFFF);                        // crisp top inner highlight
     outline(dev, ix, bodyY, iw, bodyH, C_BORDERHI);
 

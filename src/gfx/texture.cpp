@@ -70,7 +70,7 @@ u32 make_liquid_texture(u32 dev, int variant)
     return tex;
 }
 
-// ---- MATERIAL textures for the procedural box themes (like the nebula : real procedural texture, not
+// ---- MATERIAL textures for the procedural box themes (real procedural textures, not
 // flat quads). Each is a GRAYSCALE luminance pattern ; the box colours it per hue via MODULATE. ----
 
 // WOOD : horizontal planks with fbm grain + soft seams (stretched to the box -> ~5 planks).
