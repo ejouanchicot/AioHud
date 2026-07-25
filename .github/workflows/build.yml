@@ -32,6 +32,29 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "AIOHUD_VERSION=$V" >> "$GITHUB_ENV"
 
+      # Cheap greps for the four conventions that have each already cost a user-visible bug. They read the
+      # working tree, so they run before anything is compiled. Each `git grep` EXITS 0 when it finds something,
+      # which is why the sense looks inverted : a hit is a failure.
+      - name: Guardrails
+        shell: bash
+        run: |
+          fail=0
+          # Rule 10 -- a transient failure must never become permanent. The one-shot `static bool tried` latch
+          # produced six user-visible bugs in a single day ; tex_retry.h is the bounded replacement.
+          if git grep -nE 'static bool +[A-Za-z_]*tried|[A-Za-z_]*[Tt]ried *= *true' -- 'src/*' ':!src/ui/tex_retry.h'; then
+            echo "::error::one-shot 'tried' latch (rule 10) -- use the bounded retry in ui/tex_retry.h"; fail=1; fi
+          # Rule 6 -- widgets read the once-per-frame snapshot ; only the poller touches game memory.
+          if git grep -nE '\b(read_[a-z_]+|zone_id) *\(' -- 'src/ui/*.cpp'; then
+            echo "::error::game-memory read inside src/ui (rule 6) -- read it from the GameState snapshot"; fail=1; fi
+          # Rule 9 -- every control passes CTRL_ID ; a hand-picked number silently shares a spring.
+          if git grep -nE 'ease\( *[0-9]' -- 'src/*'; then
+            echo "::error::hand-picked ease() uid (rule 9) -- use CTRL_ID / ctrl_uid_i"; fail=1; fi
+          # A generated header with no banner is one somebody will hand-edit.
+          if git grep -L 'GENERATED' -- 'src/model/*_gen.h'; then
+            echo "::error::generated header without a 'GENERATED' banner"; fail=1; fi
+          exit $fail
+        continue-on-error: true   # reporting only for now : the tree still has known hits (see docs/notes/audit-technique-2026-07-26.md)
+
       # package.bat calls build.bat (compiles the x86 DLL) then assembles the shippable payload into dist\.
       - name: Build + package
         shell: cmd
@@ -56,5 +79,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          gh release create "$TAG" AioHud-*.zip --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes
+          TAG="${GITHUB_REF#refs/tags/}"; V="${TAG#v}"
+          # The in-game Update tab reads RELEASES[] in src/ui/config_changelog.h. Nothing linked it to the tag,
+          # so a version could ship with no changelog entry at all -- the tab would show the installed build and
+          # list nothing for it. Refuse the release instead of publishing a silent one.
+          grep -q "{ \"$V\", CL_" src/ui/config_changelog.h \
+            || { echo "::error::tag $TAG has no RELEASES[] entry in src/ui/config_changelog.h"; exit 1; }
+          TOP="$(grep -oE '\{ "[0-9]+\.[0-9]+\.[0-9]+", CL_' src/ui/config_changelog.h | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
+          [ "$TOP" = "$V" ] \
+            || { echo "::error::RELEASES[0] is $TOP, not $V -- the newest release must come first"; exit 1; }
+          # --latest is NOT the default : GitHub marks whichever release was PUBLISHED last, which is publish
+          # time, not semver. v1.0.61 published 24 s after v1.0.62 once, and the updater queries /releases/latest.
+          gh release create "$TAG" AioHud-*.zip --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --latest

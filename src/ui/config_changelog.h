@@ -275,6 +275,25 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_66[] = {
+    { "*The Debuffs box now shows which TIER is on the mob.* A Dia III reads \"Dia III\", not just \"Dia\" -- and it works whoever cast it, yours or a party member's. A debuff replaced by a stronger one (Bio III over your Dia III) now disappears the way the game replaced it, instead of lingering with a dead countdown.",
+      "*La boite Debuffs indique maintenant quel PALIER est sur le mob.* Un Dia III affiche \"Dia III\", plus seulement \"Dia\" -- et ca marche quel que soit le lanceur, vous ou un membre du groupe. Un debuff remplace par un plus fort (Bio III sur votre Dia III) disparait comme le jeu l'a remplace, au lieu de trainer avec un decompte mort." },
+    { "*Corsair Quick Draw is marked.* A Light Shot on a Dia, or a Dark Shot on a Bio, reinforces it without changing its tier -- so the row keeps its real tier and gets a small red reticle. The mark clears as soon as the spell is recast.",
+      "*Les Quick Draw du Corsair sont signales.* Un Light Shot sur un Dia, ou un Dark Shot sur un Bio, le renforce sans changer son palier -- la ligne garde donc son vrai palier et recoit un petit reticule rouge. La marque disparait des que le sort est relance." },
+    { "*Your buffs on allies no longer vanish on area casts.* A Protectra V on six people, a Horde song or a Corsair roll on the party could silently drop every ally row but the first. All the rows show up now, and they stay locked to your own exact timer.",
+      "*Vos buffs sur allies ne disparaissent plus sur les sorts de zone.* Un Protectra V a six, un chant Horde ou un roll de Corsair sur le groupe pouvait faire disparaitre en silence toutes les lignes alliees sauf la premiere. Toutes s'affichent maintenant, et restent calees sur votre propre timer exact." },
+    { "*Ally buffs stay honest with the box closed.* Hiding the Timers box, or unticking \"My buffs on allies\", used to freeze the check that drops a buff dispelled or overwritten early -- so reopening the box showed buffs that were long gone. That upkeep now runs whatever is displayed. Ally countdowns also read to the same second as your own rows.",
+      "*Les buffs allies restent justes boite fermee.* Masquer la boite Timers, ou decocher \"Mes buffs sur allies\", gelait la detection des buffs dispelles ou ecrases -- rouvrir la boite montrait donc des buffs disparus depuis longtemps. Cet entretien tourne maintenant quel que soit l'affichage. Les decomptes allies s'accordent aussi a la seconde pres avec vos propres lignes." },
+    { "*Clearer names in the Timers filter.* The buff list mixed single-target and area names (Barstone next to Baraera), \"Gain-\" with one stray \"Boost-\", and 29 \"Indi-\" with a lone \"Geo-\". Each row now carries the family only -- Stone, Water, STR, Regen -- under a header that says which spells it covers. Ticking CHR hides both versions at once.",
+      "*Des noms plus clairs dans le filtre Timers.* La liste melangeait noms monocibles et de zone (Barstone a cote de Baraera), des \"Gain-\" avec un \"Boost-\" isole, et 29 \"Indi-\" avec un seul \"Geo-\". Chaque ligne ne porte plus que la famille -- Stone, Water, STR, Regen -- sous un en-tete qui dit quels sorts elle couvre. Cocher CHR masque les deux versions d'un coup." },
+    { "*The minimap drops dead mobs.* A corpse kept its claim colour until it despawned, so a busy camp filled with red dots that never cleared.",
+      "*La minimap retire les mobs morts.* Un cadavre gardait sa couleur de claim jusqu'a sa disparition, donc un camp charge se remplissait de points rouges qui ne partaient jamais." },
+    { "*A failed save no longer says OK.* If the settings folder is read-only or the disk is full, saving a profile now reports FAILED and keeps it marked unsaved -- before, it announced success and the work was lost at the next load. The updater also stopped offering an \"update\" that would move you BACKWARDS, and a broken layout file can no longer take the plugin down on start-up.",
+      "*Une sauvegarde ratee ne dit plus OK.* Si le dossier de reglages est en lecture seule ou le disque plein, sauvegarder un profil signale maintenant FAILED et le garde marque non sauvegarde -- avant, il annoncait un succes et le travail etait perdu au chargement suivant. L'updater a aussi cesse de proposer une \"mise a jour\" qui vous ferait RECULER, et un fichier de disposition corrompu ne peut plus faire tomber le plugin au demarrage." },
+    { "*Lighter.* About 2.8 MB of unused artwork left the download, and the Help images are now freed when the plugin unloads instead of piling up over a session.",
+      "*Plus leger.* Environ 2,8 Mo d'images inutilisees ont quitte le telechargement, et les visuels d'aide sont maintenant liberes au dechargement du plugin au lieu de s'accumuler au fil d'une session." },
+};
+
 static const ChangeLine CL_65[] = {
     { "*The Skillchains box now tells nukers which element to burst -- at a glance.* When a chain forms, a \"Nuke:\" line shows the burst element(s) as coloured chips, and every weaponskill in the continuation list carries a coloured square for the element it would produce. A TP gauge at the bottom fills toward 1000 and turns green the moment you can weaponskill.",
       "*La boite Skillchains indique maintenant aux nukeurs quel element burst -- d'un coup d'oeil.* Quand une chaine se forme, une ligne \"Nuke:\" montre le(s) element(s) de burst en pastilles colorees, et chaque weaponskill de la liste de continuation porte un carre colore pour l'element qu'il produirait. Une jauge de TP en bas se remplit vers 1000 et passe au vert des que vous pouvez weaponskill." },
@@ -386,6 +405,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.66", CL_66, (int)(sizeof(CL_66) / sizeof(CL_66[0])) },
     { "1.0.65", CL_65, (int)(sizeof(CL_65) / sizeof(CL_65[0])) },
     { "1.0.64", CL_64, (int)(sizeof(CL_64) / sizeof(CL_64[0])) },
     { "1.0.63", CL_63, (int)(sizeof(CL_63) / sizeof(CL_63[0])) },

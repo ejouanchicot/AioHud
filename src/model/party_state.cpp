@@ -1345,6 +1345,9 @@ const char* PartyState::cast_label(unsigned id, float& pctOut, float& alphaOut, 
 //   buff i (0..31) : low = p[k*48+20+i] ; hi2 = (p[k*48+12 + i/4] >> 2*(i&3)) & 3 ; buff = low + 256*hi2
 //   255 = empty buff. (Credit: Kenshi/PartyBuffs + Byrth/GearSwap, via XivParty.)
 void PartyState::on_076(const unsigned char* p) {
+    // The 0x076 layout gives 32 status ids per member and the loop below writes all 32 -- the link between the
+    // packet's fixed 32 and BuffSet::ids was implicit in a literal. Make it a compile error instead.
+    static_assert(32 <= (int)(sizeof(((BuffSet*)0)->ids) / sizeof(((BuffSet*)0)->ids[0])), "BuffSet::ids must hold the 32 status ids a 0x076 slot carries");
     if (pkt_bytes(p) < 0xF4) return;                           // 5 slots x 48 : reads up to p[4*48+20+31] = p[0xF3]
     for (int k = 0; k < 5; ++k) {
         const int base = k * 48;

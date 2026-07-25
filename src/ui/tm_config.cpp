@@ -21,6 +21,9 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                                 float& ry, int& ri, float e,
                                 float bandX, float bandW, float coX, float ctrlW,
                                 float hdrX, float hdrW) {
+    // trkCatOpen_ holds the per-category collapse state of the track checklist, indexed by TrackCat. It has
+    // already overflowed once into the neighbouring jaJobOpen_ ; the generator can add a category at any time.
+    static_assert(TC_COUNT <= (int)(sizeof(trkCatOpen_) / sizeof(trkCatOpen_[0])), "trkCatOpen_[] must cover every TrackCat");
     UiConfig& c = ui_config();
     const char* MODE[3] = { tr("Icon", "Ic\xC3\xB4ne"), tr("Name", "Nom"), tr("Both", "Les deux") };
     const char* SRC[4]  = { tr("Mine only", "Moi seul"), tr("Mine + players", "Moi + joueurs"), tr("Mine + trusts", "Moi + trusts"), tr("All", "Tout") };   // Duration buff-source filter (tmBuffSrc)

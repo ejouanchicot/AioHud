@@ -330,6 +330,9 @@ void ConfigPage::draw_layout_category(u32 dev, Font* fo, const MouseState* mo, b
 }
 
 void ConfigPage::draw(const Frame& f, float sw, float sh) {
+    // hov_ carries one eased hover value per tab. It is exactly NTABS today -- adding a 7th tab without growing
+    // it writes past the array in the loop below. In a member function because the array is private.
+    static_assert(NTABS <= (int)(sizeof(hov_) / sizeof(hov_[0])), "hov_[] needs one slot per tab");
     pvOn_ = false;   // live-preview anchor : off unless we reach the Configuration tab below
     helpPlayer_ = false;   // off unless the Help tab reaches the visible Player-box sample this frame
     if (!open_) return;
@@ -1640,6 +1643,11 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
 //      (below, scrollable when the release is big). ----
 void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
                                  float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse, float e) {
+    // The render loop below CLAMPS to sizeof(relOpen_) instead of overflowing, so an undersized array does not
+    // crash -- the OLDEST releases just stop being listed, silently. That has already happened twice (at v1.0.37
+    // with relOpen_[16], and again at 48). A comment asked future readers to keep it >= RELEASES_N ; this asks
+    // the compiler instead.
+    static_assert(RELEASES_N <= (int)(sizeof(relOpen_) / sizeof(relOpen_[0])), "relOpen_[] smaller than RELEASES[] -- the oldest releases would silently stop being listed");
     (void)bodyH; (void)pulse; (void)e;
     char ver[64] = { 0 };
     const int  st  = aio_update_check_status(ver, sizeof(ver));   // 0 checking, 1 up-to-date, 2 available, 3 error
@@ -1767,6 +1775,9 @@ void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseS
 
 void ConfigPage::draw_debug_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
                                 float ix, float iw, float bodyY, float bodyH, float pageBot) {
+    // Same silent-clamp shape as relOpen_ above, and dbgOpen_[8] is at DEBUG_SECTIONS_N exactly -- the next
+    // section added to config_debug.h would vanish from the tab with nothing to explain it.
+    static_assert(DEBUG_SECTIONS_N <= (int)(sizeof(dbgOpen_) / sizeof(dbgOpen_[0])), "dbgOpen_[] must cover every debug section");
     (void)bodyH;
     const float clW = snap(560.0f), clX = ix + (iw - clW) * 0.5f;
     const float titleY = bodyY + snap(12.0f);
