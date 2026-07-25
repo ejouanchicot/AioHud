@@ -86,7 +86,7 @@ the real spell list AND the Trust list, and BOTH read the same examine cache `0x
 castable spell (WAR opening Magic) and on the magic **category** level, the game never re-examines, so
 `0x634F28` keeps its **last** value (a stale trust) → the box showed a "ghost". The examine cache is the
 ONLY per-item id (proved with the `//aio sfind` probe — since **removed**; probes churn and live in the
-untracked `plugin/aiohud_probes.cpp`, re-add one per [../architecture/re-probes.md](../architecture/re-probes.md)
+untracked `plugin/aiohud_probes.cpp`, re-add one per [../reverse-engineering/probes.md](../reverse-engineering/probes.md)
 to recapture. `//aio menu` and `//aio grabmod` still exist. There is no per-row spell id in the menu struct),
 so value alone can't tell fresh from stale on the open frame. The discriminator is the menu's **shared
 examine-DESCRIPTION object** at `*(mptr+0x0C)` (a singleton) : the game clears it when nothing is

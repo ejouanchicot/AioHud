@@ -190,7 +190,7 @@ auto-translate — and no code that groups the song status range 195–223).
 ### What DOES exist: the local player's status-effect + duration array
 
 Found by walking the `0x063` "char info" packet dispatcher **`FUN_05cf91a0`** (RVA `0x991A0`; the same
-one that writes `PW_FM_MERIT` — see [luacore-verified-offsets](luacore-verified-offsets.md)). It is a
+one that writes `PW_FM_MERIT` — see [luacore-verified-offsets](../luacore-verified-offsets.md)). It is a
 sub-type jump table (`order = body[+4]`, arms 2..10 at jump table `0x05CF930C`). Sub-type **9**
 (arm `0x05cf92cc`) does `rep movsd ecx=0x30` (48 dwords = **192 bytes**) from the packet body into a
 static block:

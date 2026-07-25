@@ -136,7 +136,7 @@ actor  index      @ 0x14 u16     target index     @ 0x16 u16     message id @ 0x
 it lives in `plugin/aiohud.cpp`. The **`//aio act` and `//aio wear`** probes used to reverse the layouts
 above have since been **removed** — probes churn and live in the untracked `plugin/aiohud_probes.cpp`; the
 fields they produced are still valid, and to recapture re-add a probe per
-[architecture/re-probes.md](../architecture/re-probes.md).
+[reverse-engineering/probes.md](../reverse-engineering/probes.md).
 
 ## Display caps
 

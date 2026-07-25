@@ -46,7 +46,7 @@ So Gjallarhorn's `All songs +4` is **+40 % duration on every song**, and Fili Ca
 
 This resolved a contradiction the project had been stuck on. The old hand-written table carried a *family*
 column believed to be potency, and therefore deliberately **not** counted as duration
-([song-potency.md](song-potency.md) said so explicitly). It **was** potency — and potency **is** duration.
+([song-potency.md](reference-sheets/song-potency.md) said so explicitly). It **was** potency — and potency **is** duration.
 Both readings were half right, which is why the model sat 22–37 % under the server for months.
 
 ## Why nobody noticed
@@ -110,6 +110,6 @@ of as a complaint. `SONGUSE` prints the m1 each ally row was built from.
 ## See also
 
 - [chants-barde-comment-ca-marche.md](chants-barde-comment-ca-marche.md) — the same mechanics in plain French, no code
-- [song-potency.md](song-potency.md) — per-song effect strength
-- [bard.md](bard.md) — the job: song list, JAs, job points
+- [song-potency.md](reference-sheets/song-potency.md) — per-song effect strength
+- [bard.md](reference-sheets/bard.md) — the job: song list, JAs, job points
 - [`docs/architecture/timers-songs-brd.md`](../architecture/timers-songs-brd.md) — how the Timers column *displays* songs

@@ -19,7 +19,7 @@ Adresses à la base d'image `0x05C60000` (`re/ffximain_dump.bin`) :
 | Lecteur de bits (LSB d'abord) | `0x05DEC480` |
 | Copieur de résultat | `0x05DED0E0` |
 
-> Correction d'une doc existante : `re-static-analysis.md` présente `0x44730` comme un RVA brut. C'est **faux** —
+> Correction d'une doc existante : `reverse-engineering/static-analysis.md` présente `0x44730` comme un RVA brut. C'est **faux** —
 > c'est un déplacement relatif à un pointeur global.
 
 ## Pourquoi l'ancrage à 150 est exact
@@ -115,4 +115,4 @@ n'existe pas.
 - [Party cast bar — the 0x028 action packet](cast-bar.md) — the higher-level parse this bit layout underpins.
 - [Target debuffs](target-debuffs.md) — another 0x028 consumer (mob-side debuff tracking).
 - [Buffs you cast on ALLIES](buffs-on-allies.md) — the `aoeSelf` / ally buff-line scans that still use the fixed step.
-- [Static analysis of FFXiMain](../architecture/re-static-analysis.md) — the 0x05C60000 image base and the `0x44730` correction noted above.
+- [Static analysis of FFXiMain](../reverse-engineering/static-analysis.md) — the 0x05C60000 image base and the `0x44730` correction noted above.

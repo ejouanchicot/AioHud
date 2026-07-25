@@ -99,4 +99,4 @@ affiché quelque part, il vient d'ailleurs et mérite sa propre passe.
 ## See also
 - [Timers](timers.md) — the self-buff/recast countdowns that consume this clock.
 - [0x028 action packet](action-packet.md) — the sibling client-parser trace from the same 2026-07-20 Ghidra pass.
-- [Moon phases](moonphase.md) — the other Vana'diel-time readout.
+- [Moon phases](reference-sheets/moonphase.md) — the other Vana'diel-time readout.

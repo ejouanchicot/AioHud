@@ -363,4 +363,4 @@ were fine.
 - Target & sub-target struct (target-substruct.md) - the same target_t FFXIDB reaches at the client
   map object +0x30 (0x04000000 = nothing; entity ptr at +0x08).
 - Gear icons (gear-icons.md) - the ROM-DAT / bundle pattern recommended for the map images.
-- Reverse-engineering recipe (../architecture/reverse-engineering-recipe.md).
+- Reverse-engineering recipe (../reverse-engineering/recipe.md).

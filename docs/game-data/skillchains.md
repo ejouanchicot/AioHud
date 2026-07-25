@@ -118,4 +118,4 @@ multi-colour. Center-anchored, `EDITBOX_SKILLCHAIN`. Config module "Skillchains"
 ## See also
 - [Party cast bar — 0x028](cast-bar.md) — the shared ActionPacket bit layout (this module reuses those offsets).
 - [Data channels](../architecture/data-channels.md) — the packet-hook channel + the `get_abilities` memory read for prediction.
-- [Reverse-engineering recipe](../architecture/reverse-engineering-recipe.md) — how `get_abilities`/BLU were reversed.
+- [Reverse-engineering recipe](../reverse-engineering/recipe.md) — how `get_abilities`/BLU were reversed.

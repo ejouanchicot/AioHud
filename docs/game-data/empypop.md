@@ -81,7 +81,7 @@ memory — it renders identically on a fresh character who owns nothing.
 | `//aio ep [key]` | resolves that NM (default `briareus`) and logs the whole chain: per node `KI/IT`, id, name, `owned`, `pool`, and which NM it comes from; plus the collectable line |
 | `//aio eplist` | every NM `key` the generated table knows, so `//aio ep <key>` can be aimed |
 
-Both are probe-build only — see [The in-game RE probe toolkit](../architecture/re-probes.md).
+Both are probe-build only — see [The in-game RE probe toolkit](../reverse-engineering/probes.md).
 
 ## See also
 - [Key items](key-items.md) — the `u8[8192]` read behind `owns_key_item`.

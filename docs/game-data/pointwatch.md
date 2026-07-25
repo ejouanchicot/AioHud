@@ -118,4 +118,4 @@ Rate X/h) + per-element Text (Label / Value / Rate). Lines `pw=` / `pwText%d=`.
 - [Data channels](../architecture/data-channels.md) — why PointWatch needs both memory reads AND packets.
 - [SCH grimoire](grimoire-sch.md) — reuses `read_job_spent` (job_point_info +0x04).
 - [Player struct](player-struct.md) — the LuaCore `g` root and other pointer chains.
-- [Reverse-engineering recipe](../architecture/reverse-engineering-recipe.md) — the scan/calibrate method behind `//aio pwscan`.
+- [Reverse-engineering recipe](../reverse-engineering/recipe.md) — the scan/calibrate method behind `//aio pwscan`.

@@ -33,29 +33,32 @@ Until host `ffxi[7]` is walked, AioHUD sources live data two ways: the **local p
 - [The client clock](client-clock.md) — how the client computes "now" for buff countdowns (a pulled monotonic clock + signed server offset resynced on 0x00A) and the `CEIL(delta/60)` rounding — the two fixes that made AioHUD's timers match the game to the second.
 - [Buffs you cast on ALLIES](buffs-on-allies.md) — the Timers `tmMine` rows: 0x028 cat-4/6 detection keyed by (target, spell), the AoE self-mirror exact-timer trick, and the per-job estimation models (Enhancing skill 34, BRD songs skill 40, COR rolls cat 6).
 - [Geomancy duration (GEO Indi-)](geomancy-duration.md) — skill 44 is an AURA (0x063 status pulses every ~3s) so the duration is COMPUTED (Base + JP1362×2 + flat Indicolure gear); the self/normal/Entrust cases + the 542-556/612 pulse-noise filter.
-- [Target movement speed](movement-speed-analysis.md) — consolidates the in-game captures + the wiki into the method behind the Target box `Spd +NN%` readout (`ui/target.cpp`, base 5.0 yalms/s = 100%). Verbatim wiki background: [movement-speed.md](movement-speed.md) · screenshot [compteur-de-vitesse.png](compteur-de-vitesse.png) · capture [pol_mnrUtoubLy.png](pol_mnrUtoubLy.png).
-- [Moon phases](moonphase.md) — the id→percent→phase table behind the Vana'diel clock's moon readout (`model/gamestate.h`).
+- [Target movement speed](movement-speed-analysis.md) — consolidates the in-game captures + the wiki into the method behind the Target box `Spd +NN%` readout (`ui/target.cpp`, base 5.0 yalms/s = 100%). Verbatim wiki background: [movement-speed.md](reference-sheets/movement-speed.md) · screenshot [compteur-de-vitesse.png](compteur-de-vitesse.png) · capture [pol_mnrUtoubLy.png](pol_mnrUtoubLy.png).
+- [Moon phases](reference-sheets/moonphase.md) — the id→percent→phase table behind the Vana'diel clock's moon readout (`model/gamestate.h`).
 
-## External reference pages (buff/song duration model)
+## External reference pages — moved to [`reference-sheets/`](reference-sheets/README.md)
 
-Raw game/wiki reference dropped in during the "buffs cast on allies" duration RE. Full verbatim sheets live in [`reference-sheets/`](reference-sheets/) — `song_resume.html` there is a **build input**, read by `scripts/gen_song_dur.py` — background for the [Buffs you cast on ALLIES](buffs-on-allies.md) / [Geomancy duration](geomancy-duration.md) models (`enh_dur.h` / `song_dur.h` / `geo_dur.h`). Not AioHUD-specific; kept verbatim for provenance.
+The verbatim game/wiki material that used to sit in this folder now lives one level down. The split is the
+point of it: **`game-data/` is what WE reversed** — offsets, packet bit layouts, struct fields, none of it
+findable anywhere else — while `reference-sheets/` is **what the game and the wiki already say**, kept only
+because our models were derived from it and must stay re-checkable against it.
 
-- [Enhancing Magic (wiki)](enhancing-magic-wiki.md) — full BG-wiki enhancing-magic page (skill = potency/interrupt, never duration). Curated RE summary lives in [enhancing-magic.md](enhancing-magic.md).
-- [Enhancing duration gear](enhancing-duration-gear.md) — the gear that grants "Enhancing magic effect duration"; pairs with [enhancing-duration-items.txt](enhancing-duration-items.txt) (the extracted %s).
-- **[Song duration](song-duration.md) — the model, and the rule that had it wrong for months.** Start here for
-  anything about how long an ally's song lasts. **Potency IS duration**: +10 % per point of `Song+`, so
-  Gjallarhorn's `All songs +4` is +40 % on every song. Measured against the server, ~1 % off on five songs.
-- [Song Potency](song-potency.md) — per-`+song` potency tables (Minuet=Attack, Ballad=MP/tick, …).
-  > ⚠️ This index used to claim the page *"proves the `+1 <Song>` gear is potency, NOT duration — why
-  > `song_dur.h` ignores the family columns"*. **That was wrong, and it is what propagated the bug**: the
-  > family columns were excluded from the duration model on the strength of it, leaving every ally song row
-  > 22–37 % short. It is potency *and* duration. Corrected 2026-07-25, see [song-duration.md](song-duration.md).
-- [song-duration-items.txt](song-duration-items.txt) — the `Timers.dll` reverse (historical). Its **formula was
-  right all along** — `m1 = 1 + Σflat + Σfamily + 0.05` — the code just ignored half of it. Per-item values are
-  superseded by the generated table (`scripts/gen_song_dur.py`).
-- [Les chants du barde](chants-barde-comment-ca-marche.md) — the same mechanics in plain French, no code, no jargon.
-- [Bard (BRD)](bard.md) — job page: song list, JAs, merits/JP that touch song duration.
-- [Composure](composure.md) — RDM job ability reference sheet (the ×3 self-duration multiplier the model applies).
-- [Lethargy Armor Set (RDM)](lethargy-armor-set.md) — the Empyrean set that augments Composure (per-piece duration %).
-- [Carnwenhan](carnwenhan.md) — Mythic dagger, song effect duration +50%.
-- [Fili Attire Set](fili-attire-set.md) · [Fili (BRD view)](fili-attire-set-brd.md) — Empyrean set (Madrigal+1, Minuet+1, March+1, Ballad+1, Scherzo+1 = potency) + the per-piece song duration %.
+Mixed together, ~2 000 lines of wiki tables drowned the reversed pages they were supposed to support.
+
+Moved there: `bard.md` · `carnwenhan.md` · `composure.md` · `enhancing-magic.md` · `enhancing-duration-gear.md`
+· `fili-attire-set.md` · `lethargy-armor-set.md` · `song-potency.md` · `movement-speed.md` · `moonphase.md`,
+plus the four HTML sheets.
+
+Two duplicates were deleted rather than moved: `enhancing-magic-wiki.md` was **byte-identical** to
+`enhancing-magic.md` (this index claimed one was a "curated RE summary" — it was the same wiki dump), and
+`fili-attire-set-brd.md` was a strict subset of `fili-attire-set.md`.
+
+### Still here, because they ARE reversed
+
+- [song-duration-items.txt](song-duration-items.txt) · [enhancing-duration-items.txt](enhancing-duration-items.txt)
+  — per-item percentages lifted out of `Timers.dll` by static analysis. Not wiki content: the game states most
+  of these qualitatively or not at all.
+- [song-duration.md](song-duration.md) — the BRD duration model, its measurements, and the rule that had it
+  wrong for months (**potency IS duration**, +10 % per point of `Song+`).
+- [chants-barde-comment-ca-marche.md](chants-barde-comment-ca-marche.md) — the same mechanics in plain French,
+  written here rather than copied.

@@ -120,4 +120,4 @@ outstanding — validation above was done out-of-process (same chain, same bound
 ## See also
 - [Player equipment](player-equipment.md) — the `equipment` view over the same entries (`0xCA8`/`0x28`)
 - [Key items](key-items.md) — `*(G+0x4C)`, the container's neighbour
-- [Reverse-engineering recipe](../architecture/reverse-engineering-recipe.md)
+- [Reverse-engineering recipe](../reverse-engineering/recipe.md)

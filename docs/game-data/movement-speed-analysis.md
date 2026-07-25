@@ -6,7 +6,7 @@ solide au lieu de bricoler des formules.
 
 ---
 
-## 1. Faits du wiki ([`movement-speed.md`](movement-speed.md))
+## 1. Faits du wiki ([`movement-speed.md`](reference-sheets/movement-speed.md))
 
 - **Base = 5.0 yalms/seconde.  MAX = 8.0** (= +60%).
 - Chaque **+0.1 = +2%**. Le client ne reçoit que des **pourcentages pairs**.

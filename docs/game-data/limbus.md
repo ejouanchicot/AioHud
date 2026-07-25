@@ -177,5 +177,5 @@ in a release build. See [release checklist](../architecture/release-checklist.md
 - [Limbus currencies have no static — a negative result](limbus-currency-no-static.md) — why the unit totals cannot be read from memory.
 - [Per-character caches](../architecture/per-character-caches.md) — where `limbus_%08X.bin` and `zone_%08X.bin` live and why.
 - [Release checklist](../architecture/release-checklist.md) — why the probes above are absent from a tester's build.
-- [Reverse-engineering recipe](../architecture/reverse-engineering-recipe.md) — the masked-id lesson and the channels in cost order.
-- [Static analysis of FFXiMain](../architecture/re-static-analysis.md) — the dump and its 0x05C60000 base.
+- [Reverse-engineering recipe](../reverse-engineering/recipe.md) — the masked-id lesson and the channels in cost order.
+- [Static analysis of FFXiMain](../reverse-engineering/static-analysis.md) — the dump and its 0x05C60000 base.

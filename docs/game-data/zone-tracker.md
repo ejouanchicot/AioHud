@@ -335,10 +335,10 @@ incoming-text lines with mode).
 - [Release checklist](../architecture/release-checklist.md) — why none of the probes on this page exist on a tester's machine.
 - [Plugin ABI — incoming text (slot 9)](../reference/plugin-abi.md) — the Omen text channel + mode-mask gotcha.
 - [Data channels](../architecture/data-channels.md) — the three ways this plugin gets game data.
-- [Reverse-engineering recipe](../architecture/reverse-engineering-recipe.md) — the general method this page's findings produced (channels in cost order + the masked-id lesson).
-- [Static analysis of FFXiMain](../architecture/re-static-analysis.md) — the dump, its **0x05C60000** base, and how to re-pin it.
-- [The differential memory scanner](../architecture/re-memory-scanner.md) — the generalized protocol + failure modes behind the post-mortem above.
-- [The in-game RE probe toolkit](../architecture/re-probes.md) — every `//aio` diagnostic, including `limbusrun`/`limbusmem`.
+- [Reverse-engineering recipe](../reverse-engineering/recipe.md) — the general method this page's findings produced (channels in cost order + the masked-id lesson).
+- [Static analysis of FFXiMain](../reverse-engineering/static-analysis.md) — the dump, its **0x05C60000** base, and how to re-pin it.
+- [The differential memory scanner](../reverse-engineering/memory-scanner.md) — the generalized protocol + failure modes behind the post-mortem above.
+- [The in-game RE probe toolkit](../reverse-engineering/probes.md) — every `//aio` diagnostic, including `limbusrun`/`limbusmem`.
 - [Config panels](../architecture/config-panels.md) — the `Content`-selector pattern and the C1061 out-of-line parser rule.
 - [PointWatch](pointwatch.md) — the same `pwcore.lua` engine (the core XP/CP/ML providers).
 - [Party cast bar — 0x028](cast-bar.md) — the packet-bit-read pattern.

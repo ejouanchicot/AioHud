@@ -60,7 +60,7 @@ dur = (Base + flatSec + regenSec)
 ```
 
 **The model is MULTIPLICATIVE** — the flat additions all fold into the base, then each `(1 + %)` factor
-multiplies. This is confirmed by [Composure](composure.md) and validated in-game to 1–3 s. An **ADDITIVE**
+multiplies. This is confirmed by [Composure](reference-sheets/composure.md) and validated in-game to 1–3 s. An **ADDITIVE**
 model was once suggested (`docs/game-data/reference-sheets/regen-duration.md §3` at the repo root: `floor(base × (1 + Σ%)) + flat`); it was
 **TESTED and is WORSE** — **do not switch to it.**
 
@@ -107,7 +107,7 @@ timer on the target):
   ~+20 s here) ≈ 80. So base = 60 and the RDM Enhancing-Magic-Duration JP applies. Merit 2320 (+6 s/level)
   reads correctly (the tester simply had 0 points in it).
 - **Composure ALONE** (no gear) = **79 s** (unchanged) → **Composure does NOTHING for an ally cast**
-  (self-only — see [Composure](composure.md)). The ally lever is the **Estoqueur / Lethargy SET count**:
+  (self-only — see [Composure](reference-sheets/composure.md)). The ally lever is the **Estoqueur / Lethargy SET count**:
   2/3/4/5 pieces → +10/20/35/50 % (`composure_set_pct`).
 - **Full set + Composure** = **301 s** → total multiplier ×3.76 on base+JP.
 - **Final calibration**: `(60 base + 20 JP + 12 Bolelabunga) × 1.20 set × 1.88 listed × 1.45 aug = 301 s == real`.
@@ -134,7 +134,7 @@ a3  = flat merit seconds: Clarion Call(499)/Tenuto(455) -> read_jp_u8(0x142)×2 
 ```
 
 **IMPORTANT**: the per-item **"+1 <Song>"** gear (Madrigal+1, Minuet+1, …) is **POTENCY, not duration**
-(see [Song Potency](song-potency.md)) — the RE mis-read those `family/familyPct` columns into the timer's
+(see [Song Potency](reference-sheets/song-potency.md)) — the RE mis-read those `family/familyPct` columns into the timer's
 m1 register, so `song_dur_m1_pct` deliberately counts **only the `flat` column**. Miracle Cheer is detected
 at range slot (`ids[2]`). Family via `song_family_gen.h`.
 
@@ -154,9 +154,9 @@ there is **no roll-duration model**. Detection: `abil_buff_status(aid)` in **310
 ## See also
 - [Timers](timers.md) — the exact self-buff Duration column + the Recast column this block sits beside.
 - [Geomancy duration (GEO Indi-)](geomancy-duration.md) — skill 44, an AURA — computed, not mirrored; its own doc.
-- [Composure](composure.md) · [Lethargy Armor Set](lethargy-armor-set.md) — the RDM set bonus that unlocks enhancing duration onto allies.
-- [Enhancing duration gear](enhancing-duration-gear.md) — the native `+%` gear feeding `listed%` (extracted %s in `enhancing-duration-items.txt`).
-- [Song Potency](song-potency.md) — proves the `+1 <Song>` gear is potency, not duration (why `song_dur.h` ignores the family columns); the extracted song-duration gear list is `song-duration-items.txt`.
+- [Composure](reference-sheets/composure.md) · [Lethargy Armor Set](reference-sheets/lethargy-armor-set.md) — the RDM set bonus that unlocks enhancing duration onto allies.
+- [Enhancing duration gear](reference-sheets/enhancing-duration-gear.md) — the native `+%` gear feeding `listed%` (extracted %s in `enhancing-duration-items.txt`).
+- [Song Potency](reference-sheets/song-potency.md) — proves the `+1 <Song>` gear is potency, not duration (why `song_dur.h` ignores the family columns); the extracted song-duration gear list is `song-duration-items.txt`.
 - [Player equipment](player-equipment.md) — the equipped-item ids + extdata the augment decode reads.
 - [Party cast bar — 0x028](cast-bar.md) — the ActionPacket bit layout (actor.param @bit 86, target stride 123).
 - [Party-member buffs — 0x076](member-buffs.md) — the live status icons `prune_other_buffs_worn` reconciles against.

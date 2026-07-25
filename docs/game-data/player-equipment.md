@@ -1,7 +1,7 @@
 ---
 title: Player Equipment (16 equipped items)
 summary: Pointer chain for the 16 currently-equipped item ids, reversed from LuaCore's windower.ffxi.get_items('equipment') binding. Same items_root as the gil chain.
-source: reverse-engineering-recipe.md §5a (Ghidra LuaCore decompile)
+source: reverse-engineering/recipe.md §5a (Ghidra LuaCore decompile)
 ---
 # Player equipment — read from memory
 
@@ -109,4 +109,4 @@ Spans to eyeball with debug::hexdump:
 - [Gear icons](gear-icons.md) — the 32x32 icon per equipped item id.
 - [Player Equipment Viewer](../design/player-equipment-viewer.md) — the 4x4 grid UI that renders these 16 ids (placement, config, edit).
 - [Local player struct](player-struct.md)
-- [Reverse-engineering recipe](../architecture/reverse-engineering-recipe.md)
+- [Reverse-engineering recipe](../reverse-engineering/recipe.md)

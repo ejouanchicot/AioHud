@@ -49,6 +49,6 @@ analysing the on-disk file finds neither the handler nor the strings.
 ## See also
 - [Limbus tracker](limbus.md) — where the totals actually come from.
 - [Zone Tracker](zone-tracker.md) — `on_118` and the other providers that ride currency2.
-- [Static analysis of FFXiMain](../architecture/re-static-analysis.md) — the dump, its base, and how to re-pin it.
-- [Ghidra setup](../architecture/ghidra-setup.md) — which of the three FFXiMain images is usable.
-- [The differential memory scanner](../architecture/re-memory-scanner.md) — why the ~17 "hits" were packet copies.
+- [Static analysis of FFXiMain](../reverse-engineering/static-analysis.md) — the dump, its base, and how to re-pin it.
+- [Ghidra setup](../reverse-engineering/ghidra-setup.md) — which of the three FFXiMain images is usable.
+- [The differential memory scanner](../reverse-engineering/memory-scanner.md) — why the ~17 "hits" were packet copies.

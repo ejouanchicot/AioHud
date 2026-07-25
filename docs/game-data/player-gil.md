@@ -1,7 +1,7 @@
 ---
 title: Player Gil
 summary: Pointer chain for the local player's gil amount, reversed from LuaCore's windower.ffxi.get_items('gil') binding.
-source: reverse-engineering-recipe.md §5a (Ghidra LuaCore decompile)
+source: reverse-engineering/recipe.md §5a (Ghidra LuaCore decompile)
 ---
 # Player gil — read from memory
 
@@ -56,4 +56,4 @@ at `+0x04` equals the real gil, and note `+0x00` (expected `0xFFFF`, the gil pse
 
 ## See also
 - [Local player struct](player-struct.md)
-- [Reverse-engineering recipe](../architecture/reverse-engineering-recipe.md)
+- [Reverse-engineering recipe](../reverse-engineering/recipe.md)

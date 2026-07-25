@@ -82,4 +82,4 @@ still outstanding — validation above was done out-of-process (equivalent chain
 ## See also
 - [Player equipment](player-equipment.md) — `items_root` = `*(G+0x50)`, the array's neighbour
 - [Zone tracker](zone-tracker.md) — the 0x055 packet path (`ny_has_ki`), still used for live deltas
-- [Reverse-engineering recipe](../architecture/reverse-engineering-recipe.md)
+- [Reverse-engineering recipe](../reverse-engineering/recipe.md)
