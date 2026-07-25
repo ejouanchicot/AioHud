@@ -1,124 +1,150 @@
 #!/usr/bin/env python3
 """Generate src/model/song_dur_gen.h -- the BRD song-duration gear table.
 
-SOURCE OF TRUTH: scratchpad/timers_song.txt, the reverse of Timers.dll FUN_10007a40. That file's
-"CORRECTED / COMPLETE per-item FLAT song-duration table" (2026-07-12 addendum) supersedes an earlier
-partial list; the first RE pass had truncated the function at 0x10008200 and missed the whole tail,
-where the +3/+4 gear tiers live.
+THE RULE (song_resume.html, the BG-Wiki Category:Song sheet) is what makes this table derivable instead of
+reverse-engineered: a point of song POTENCY is also duration.
 
-The table was originally transcribed into song_dur.h BY HAND and the transcription lost data:
-  - every item that also carries a per-family extra had its FLAT column zeroed (Fili Calot +3 is
-    +10 flat AND +10% Madrigal -- it was stored as flat 0),
-  - two Carnwenhan ilvl stages (0x4D07, 0x4D74) were dropped, which is a straight -50%,
-  - and song_dur_m1_pct then ignored the family column outright.
-Measured against the server that added up to a 22-37% underestimate on every ally song row.
+    "Le gear Song+ (potence) ajoute +10% de duree par 1 Song+"
+    "Tous les bonus de duree d'equipement sont additifs entre eux, et additifs avec le bonus
+     de duree des effets Song+ potence."
 
-Generating it removes the hand step. Run:  python scripts/gen_song_dur.py
+So m1 = 1 + SUM(explicit "Song effect duration +N%")
+          + SUM(10% per point of "All songs +N")                  (every song)
+          + SUM(10% per point of '"<Song>"+N' for THIS family)    (that family only)
+          + 0.05 BRD job-point gift.
+Troubadour's x2 is applied afterwards, on the total -- it is NOT part of m1.
+
+That collapses a long-standing confusion. The earlier hand table carried a "family" column that was believed to
+be potency and therefore NOT counted as duration ; it WAS potency, and potency IS duration. Both readings were
+half right, which is why the model sat 22-37% under the server for months : the family term was dropped, and so
+was every "All songs +N" instrument.
+
+DYNAMIC SOURCE. Potency is stated numerically on the item itself, so it is read straight out of Windower's
+res/item_descriptions.lua and covers EVERY item in the game -- including ones no reverse could have known.
+Explicit "+N%" duration lines are read from the same file (12 items state one). Only the items whose text is
+qualitative ("Increases song effect duration", 19 of them) need a value from the reference sheet ; they are
+resolved by (name, level) so a new tier picks itself up.
+
+Validated against five server measurements (//aio songlog): Minuet 343 vs 342 real, Madrigal 355 vs 352,
+March 355 vs 352, Gavotte 162 vs 159, Capriccio 162 vs 158.
+
+Run:  python scripts/gen_song_dur.py
 """
-import re, pathlib, sys
+import re, io, os, pathlib, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SRC  = ROOT / "scratchpad" / "timers_song.txt"
 OUT  = ROOT / "src" / "model" / "song_dur_gen.h"
 
-# Carnwenhan stages named only in the addendum's prose, not in the table body:
-#   "CARNWENHAN (main/sub) by ilvl stage: ... 0x4D07/0x4D74/0x5051/0x5052/0x506A/0x4DF5 +50"
-EXTRA_FLAT = {0x4D07: (50, "Carnwenhan", "main/sub"), 0x4D74: (50, "Carnwenhan", "main/sub")}
+# Windower's resource folder. Overridable for a machine that installed it elsewhere.
+RES = pathlib.Path(os.environ.get("WINDOWER_RES", r"D:\Windower Tetsouo\res"))
 
-# Per-family EXTRA %, i.e. a bonus that applies ONLY when the song being sung is of that family.
-# m1 = 1 + SUM(flat) + SUM(family-extra for THIS song) + 0.05 JP gift -- verbatim from the RE.
-# Family ids: 1 Paeon 2 Ballad 3 Minne 4 Minuet 5 Madrigal 6 Prelude 7 Mambo 8 March 9 Etude
-#             10 Carol 11 Hymnus 12 Mazurka 13 Sirvente 14 Scherzo 15 Operetta
-#
-# TWO sources, merged. The addendum's prose lists only six 'decoded examples', but the earlier HAND
-# transcription into song_dur.h had carried a family column for 94 items -- real decoded data, and the
-# only place it survives (it is what makes Cornette +10% Minuet, matching the addendum's own remark).
-# The hand table is the base; the addendum's examples are layered on top and win on conflict, since the
-# hand table could hold only ONE family per item and the addendum shows some carry two.
-FAMILY_EXTRA = {
-    0x2B41: [(5, 10)], 0x2B55: [(4, 10)], 0x2B69: [(8, 10)], 0x2B7D: [(2, 10)], 0x2B91: [(14, 10)],
-    0x43C0: [(4, 10)], 0x43C1: [(5, 10)], 0x43C2: [(5, 10)], 0x43C3: [(5, 10)], 0x43C4: [(5, 10)],
-    0x43C5: [(8, 20)], 0x43C6: [(6, 10)], 0x43C7: [(7, 10)], 0x43C8: [(5, 10)], 0x43C9: [(5, 10)],
-    0x43CA: [(3, 10)], 0x43CB: [(9, 10)], 0x43CC: [(5, 10)], 0x43CD: [(1, 10)], 0x43CE: [(1, 30)],
-    0x43CF: [(9, 10)], 0x43D0: [(8, 30)], 0x43D1: [(10, 10)], 0x43D2: [(5, 10)], 0x43D3: [(11, 30)],
-    0x43D4: [(5, 10)], 0x43D5: [(5, 10)], 0x43D6: [(5, 10)], 0x43D7: [(8, 10)], 0x43D8: [(5, 10)],
-    0x43D9: [(4, 20)], 0x43DA: [(7, 20)], 0x43DB: [(5, 10)], 0x43DC: [(5, 10)], 0x43DD: [(3, 10)],
-    0x43DE: [(3, 20)], 0x43DF: [(5, 20)], 0x43E0: [(9, 20)], 0x43E1: [(10, 20)], 0x43E2: [(6, 20)],
-    0x45A9: [(1, 20)], 0x45AA: [(9, 20)], 0x45AB: [(8, 10)], 0x45AC: [(8, 10)], 0x45AD: [(5, 10)],
-    0x45AE: [(12, 20)], 0x45AF: [(5, 10)], 0x45B0: [(11, 20)], 0x45B1: [(5, 10)], 0x45B2: [(5, 10)],
-    0x45B3: [(5, 10)], 0x45B4: [(5, 10)], 0x45B5: [(5, 20)], 0x45B6: [(4, 20)], 0x45B7: [(10, 20)],
-    0x45B8: [(1, 20)], 0x45B9: [(7, 10)], 0x45BA: [(7, 20)], 0x45BB: [(5, 10)], 0x45BC: [(5, 10)],
-    0x45BD: [(8, 20)], 0x45BE: [(5, 10)], 0x45BF: [(5, 10)], 0x45C0: [(3, 30)], 0x5A09: [(1, 10)],
-    0x5A36: [(5, 10)], 0x5A79: [(4, 10)], 0x5ABC: [(8, 10)], 0x5B42: [(14, 10)], 0x5B58: [(1, 20)],
-    0x5B85: [(5, 10)], 0x5BC8: [(4, 10)], 0x5C0B: [(8, 10)], 0x5C4E: [(2, 10)], 0x5C91: [(14, 10)],
-    0x63D9: [(9, 10)], 0x63DA: [(9, 20)], 0x652D: [(3, 10)], 0x652E: [(3, 20)], 0x6570: [(7, 10)],
-    0x6571: [(7, 20)], 0x6584: [(10, 10)], 0x6585: [(10, 20)], 0x668F: [(5, 10)], 0x6886: [(5, 10)],
-    0x6887: [(5, 10)], 0x69BE: [(8, 10)], 0x69BF: [(8, 10)], 0x6A77: [(2, 10)], 0x6A78: [(2, 10)],
-    0x6B25: [(14, 10)], 0x6B26: [(14, 10)], 0x6C18: [(1, 10)], 0x6C2D: [(1, 10)]
+FAMILIES = {1: "Paeon", 2: "Ballad", 3: "Minne", 4: "Minuet", 5: "Madrigal", 6: "Prelude", 7: "Mambo",
+            8: "March", 9: "Etude", 10: "Carol", 11: "Hymnus", 12: "Mazurka", 13: "Sirvente",
+            14: "Scherzo", 15: "Operetta"}
+BY_NAME = dict((v, k) for k, v in FAMILIES.items())
+
+# EXPLICIT "Song effect duration +N%" per the reference sheet (song_resume.html, BG-Wiki Category:Song).
+# The sheet -- not the item text -- is authoritative here: 19 items describe their duration qualitatively
+# ("Increases song effect duration"), and several state NOTHING at all yet do carry one. Brioso Slippers +4
+# is the case that proves it: no duration line in game, +15% on the sheet, and dropping it put the model 15
+# points under a server measurement. Keyed by (name, level) as res/items.lua spells them -- so a new tier of
+# an existing piece is picked up by adding one line, and the ilvl stages of a relic/mythic resolve themselves.
+SHEET_DURATION = {
+    ("Legato Dagger", 99): 5, ("Kali", 99): 5, ("Marsyas", 99): 50,
+    ("Carnwenhan", 75): 10, ("Carnwenhan", 80): 20, ("Carnwenhan", 85): 30,
+    ("Carnwenhan", 90): 40, ("Carnwenhan", 95): 40, ("Carnwenhan", 99): 50,
+    ("Daurdabla", 90): 25, ("Daurdabla", 95): 30, ("Daurdabla", 99): 30,
+    ("Aoidos' Hngrln. +1", 89): 5, ("Aoidos' Hngrln. +2", 89): 10, ("Aoidos' Matinee", 84): 10,
+    ("Fili Hongreline", 99): 11, ("Fili Hongreline +1", 99): 12,
+    ("Fili Hongreline +2", 99): 13, ("Fili Hongreline +3", 99): 14,
+    ("Mdk. Shalwar +1", 99): 10,
+    ("Inyanga Shalwar", 99): 12, ("Inyanga Shalwar +1", 99): 15, ("Inyanga Shalwar +2", 99): 17,
+    ("Brioso Slippers", 99): 10, ("Brioso Slippers +1", 99): 11, ("Brioso Slippers +2", 99): 13,
+    ("Brioso Slippers +3", 99): 15, ("Brioso Slippers +4", 99): 15,
 }
-for _iid, _fams in {0x5BC8: [(4, 10)], 0x5C0B: [(8, 10), (10, 10)], 0x5B85: [(5, 10)],
-                    0x6585: [(10, 20)], 0x5397: [(10, 20)], 0x2F84: [(14, 10)]}.items():
-    FAMILY_EXTRA[_iid] = _fams   # addendum wins : it is the later, fuller decode
 
-ROW = re.compile(r"^(0x[0-9a-fA-F]+),\+(\d+),([^,]+),(\S+)\s*$")
+ENTRY = re.compile(r'\[(\d+)\] = \{id=\d+,en="((?:[^"\\]|\\.)*)"')
+LEVEL = re.compile(r'\[(\d+)\] = \{id=\d+,[^\n]*?\blevel=(\d+)')
+EXPLICIT = re.compile(r'Song effect duration \+(\d+)%')
+ALL_SONGS = re.compile(r'All songs \+(\d+)')
+ONE_SONG = re.compile(r'\\"([A-Za-z\' ]+)\\"\+(\d+)')
+VAGUE = re.compile(r'Increases song effect duration')
+
+def read(fn):
+    p = RES / fn
+    if not p.exists():
+        sys.exit("missing %s -- point WINDOWER_RES at your Windower res/ folder" % p)
+    return io.open(str(p), encoding="utf-8", errors="ignore").read()
 
 def main():
-    if not SRC.exists():
-        sys.exit("missing %s -- the Timers.dll reverse dump is the source of truth" % SRC)
-    text = SRC.read_text(encoding="utf-8", errors="ignore").splitlines()
+    ditems = read("item_descriptions.lua")
+    nitems = read("items.lua")
+    desc  = dict((int(m.group(1)), m.group(2)) for m in ENTRY.finditer(ditems))
+    name  = dict((int(m.group(1)), m.group(2)) for m in ENTRY.finditer(nitems))
+    level = dict((int(m.group(1)), int(m.group(2))) for m in LEVEL.finditer(nitems))
 
-    # Take the CORRECTED table only: everything after the addendum banner. The file also contains the
-    # earlier partial list, and parsing both would silently reintroduce the superseded values.
-    start = next((i for i, l in enumerate(text) if "CORRECTED / COMPLETE per-item FLAT" in l), None)
-    if start is None:
-        sys.exit("the CORRECTED table banner is gone from %s -- refusing to parse the superseded list" % SRC)
+    rows, vague_unresolved, mismatches = [], [], []
+    for iid, d in sorted(desc.items()):
+        flat, fams = 0, []
+        key = (name.get(iid, ""), level.get(iid, 0))
+        sheet = SHEET_DURATION.get(key)
+        if sheet is not None:
+            flat += sheet
+            # Cross-check against the item's own text where it states a number. A divergence means the sheet
+            # and the game disagree -- report it rather than silently trusting either.
+            m = EXPLICIT.search(d)
+            if m and int(m.group(1)) != sheet:
+                mismatches.append((iid, key[0], sheet, int(m.group(1))))
+        else:
+            m = EXPLICIT.search(d)
+            if m:
+                flat += int(m.group(1))
+            elif VAGUE.search(d):
+                vague_unresolved.append((iid, name.get(iid, "?"), level.get(iid, 0)))
+        m = ALL_SONGS.search(d)
+        if m:
+            flat += 10 * int(m.group(1))     # a point of potency on every song = +10% duration on every song
+        for mm in ONE_SONG.finditer(d):
+            fam = BY_NAME.get(mm.group(1))
+            if fam:
+                fams.append((fam, 10 * int(mm.group(2))))
+        if flat or fams:
+            rows.append((iid, flat, fams, name.get(iid, "?")))
 
-    flats = {}
-    for line in text[start:]:
-        m = ROW.match(line)
-        if not m:
-            continue
-        iid = int(m.group(1), 16)
-        if iid in flats:
-            sys.exit("duplicate item 0x%04X in the source table" % iid)
-        flats[iid] = (int(m.group(2)), m.group(3).strip(), m.group(4).strip())
-    for iid, v in EXTRA_FLAT.items():
-        flats.setdefault(iid, v)
+    if mismatches:
+        print("WARNING: sheet and item text disagree on %d item(s):" % len(mismatches))
+        for iid, n, sh, it in mismatches:
+            print("   %-28s id=%-6d sheet +%d%% vs in-game +%d%%" % (n, iid, sh, it))
+    if vague_unresolved:
+        # LOUD, not silent: an unpriced item is a hole in every duration it touches. The sheet needs a line.
+        print("WARNING: %d item(s) say 'Increases song effect duration' with no number and no sheet entry:"
+              % len(vague_unresolved))
+        for iid, n, lv in vague_unresolved:
+            print("   %-28s id=%-6d level=%d" % (n, iid, lv))
 
-    fam_only = sorted(set(FAMILY_EXTRA) - set(flats))   # family extra but no flat % of its own
-    for iid in fam_only:
-        flats[iid] = (0, "(family-extra only)", "?")
-
-    rows = []
-    for iid in sorted(flats):
-        pct, name, slot = flats[iid]
-        rows.append((iid, pct, FAMILY_EXTRA.get(iid, []), name, slot))
-
-    maxfam = max((len(f) for _, _, f, _, _ in rows), default=0)
-    out = []
-    out.append("// song_dur_gen.h -- GENERATED by scripts/gen_song_dur.py from scratchpad/timers_song.txt")
-    out.append("// (the reverse of Timers.dll FUN_10007a40). Do NOT hand-edit ; regenerate.")
-    out.append("//")
-    out.append("// m1 = 1 + SUM(flat %) + SUM(family-extra % for THIS song's family) + 0.05 BRD JP gift.")
-    out.append("// Song-duration gear is a QUALITATIVE res stat (no number in res/items.lua), so the percentages")
-    out.append("// can only come from the RE. %d items, %d of them carrying a family-gated extra." % (len(rows), sum(1 for r in rows if r[2])))
-    out.append("#pragma once")
-    out.append("namespace aio {")
-    out.append("")
-    out.append("struct SongDurFam { unsigned char family, pct; };")
-    out.append("struct SongDurItem { unsigned short id; unsigned char flat; SongDurFam fam[%d]; };" % max(maxfam, 1))
-    out.append("static const SongDurItem SONG_DUR[] = {")
-    for iid, pct, fams, name, slot in rows:
-        f = ",".join("{%d,%d}" % (a, b) for a, b in fams)
-        pad = max(maxfam, 1) - len(fams)
-        f = ",".join([x for x in ([f] if f else []) + ["{0,0}"] * pad])
-        out.append("    {0x%04x,%3d,{%s}},   // %s (%s)" % (iid, pct, f, name, slot))
-    out.append("};")
-    out.append("static const int SONG_DUR_N = (int)(sizeof(SONG_DUR) / sizeof(SONG_DUR[0]));")
-    out.append("")
-    out.append("} // namespace aio")
+    maxfam = max([len(f) for _, _, f, _ in rows] + [1])
+    out = ["// song_dur_gen.h -- GENERATED by scripts/gen_song_dur.py. Do NOT hand-edit ; regenerate.",
+           "// Built from Windower res/item_descriptions.lua (+ the reference sheet for the items whose text is",
+           "// qualitative). Song POTENCY is duration: +10% per point, per the BG-Wiki Category:Song rule --",
+           "//   m1 = 1 + SUM(explicit +N%) + SUM(10% per 'All songs +N') + SUM(10% per '\"<Song>\"+N' of THIS",
+           "//            family) + 0.05 BRD JP gift.        Troubadour's x2 multiplies the TOTAL, not m1.",
+           "// `flat` already folds 'All songs +N' in, since that applies to every song exactly like an explicit %.",
+           "// %d items carry song duration ; %d of them through a family-specific potency." % (len(rows), sum(1 for r in rows if r[2])),
+           "#pragma once",
+           "namespace aio {",
+           "",
+           "struct SongDurFam { unsigned char family, pct; };",
+           "struct SongDurItem { unsigned short id; unsigned char flat; SongDurFam fam[%d]; };" % maxfam,
+           "static const SongDurItem SONG_DUR[] = {"]
+    for iid, flat, fams, nm in rows:
+        cells = ["{%d,%d}" % (a, b) for a, b in fams] + ["{0,0}"] * (maxfam - len(fams))
+        out.append("    {%5d,%4d,{%s}},   // %s" % (iid, flat, ",".join(cells), nm))
+    out += ["};",
+            "static const int SONG_DUR_N = (int)(sizeof(SONG_DUR) / sizeof(SONG_DUR[0]));",
+            "",
+            "} // namespace aio"]
     OUT.write_text("\n".join(out) + "\n", encoding="utf-8")
-    print("wrote %s : %d items (%d with a family extra)" % (OUT, len(rows), sum(1 for r in rows if r[2])))
+    print("wrote %s : %d items (%d with a family-specific term)" % (OUT, len(rows), sum(1 for r in rows if r[2])))
 
 if __name__ == "__main__":
     main()

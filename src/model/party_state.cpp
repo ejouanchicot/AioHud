@@ -1162,25 +1162,16 @@ void PartyState::on_action(const unsigned char* p) {
                     // measured against the server it runs 22-37% short, because its item table misses Carnwenhan's
                     // current stage and every modern instrument. Gear changes make a learned value stale until the
                     // next cast that lands on you re-measures it -- self-correcting, and never worse than the model.
-                    // Three sources, best first. m2/m3/a3 always come from your buffs RIGHT NOW, never from the
-                    // measurement -- that is what makes a song measured bare still double correctly under Nitro.
-                    //   1. this very song, measured off your own 0x063         -> exact
-                    //   2. no measurement for it, but another song was measured on the SAME sixteen equipped ids
-                    //      -> reuse that set's shortfall (the duration gear the RE never captured, which is flat)
-                    //   3. nothing measured at all                             -> the raw model
-                    double m1eff = songM1; const char* srcTag = "model";
-                    const unsigned gear = miracle ? 0 : song_learned_gear_x1000((unsigned short)sid);
-                    int setDelta = 0;
-                    if (gear) { m1eff = gear / 1000.0; srcTag = "measured"; }
-                    else if (!miracle && song_set_delta_x1000(eids, setDelta)) { m1eff = songM1 + setDelta / 1000.0; srcTag = "set-corrected"; }
-                    if (m1eff < 1.0) m1eff = 1.0;   // a correction must never drag a duration below its bare base
-                    double sec = miracle ? 900.0 : ((double)b->durSec * m1eff * songM2 * songM3 + songA3);
+                    // ONE source : the generated gear table. Song POTENCY is duration (+10% per point), so
+                    // song_dur_m1_pct now sees every "All songs +N" instrument and every '"<Song>"+N' piece --
+                    // which is what the model was missing. Validated against the server to ~1% on five songs,
+                    // so there is nothing left for a learned correction to add. m2/m3/a3 stay live-read.
+                    double sec = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
                     ms = (unsigned long long)(sec * 1000.0);
                     if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0)
-                        windower::debug::log("SONGUSE spell=%u -> %s : m1 %d.%03d (model %d.%03d, setDelta %d) x m2 %d x m3 %s -> %d s",
-                                             sid, srcTag, (int)m1eff, (int)(m1eff * 1000) % 1000,
-                                             (int)songM1, (int)(songM1 * 1000) % 1000, setDelta,
-                                             (int)songM2, (songM3 > 1.0) ? "1.5" : "1", (int)sec);
+                        windower::debug::log("SONGUSE spell=%u fam=%d : m1 %d.%03d x m2 %d x m3 %s + a3 %d -> %d s",
+                                             sid, songFam, (int)songM1, (int)(songM1 * 1000) % 1000,
+                                             (int)songM2, (songM3 > 1.0) ? "1.5" : "1", songA3, (int)sec);
                 } else if (b->skill == 44) {   // GEO Entrust'd Indi- on an ally : additive Base + JP 1362 + Indicolure gear
                     ms = (unsigned long long)((int)b->durSec + geoJpSec + geoGear) * 1000ull;
                 } else {
@@ -1642,8 +1633,9 @@ void PartyState::set_songdur_trace(int seconds) {
 }
 // MEASURE a song's real duration off the server's own 0x063, and remember it per spell. Waited on rather than
 // read at cast time : the 0x063 for a fresh cast lands a beat later, and reading 0 there would look exactly like
-// a wrong model. Runs unconditionally -- this is where ally song durations come from now ; the //aio songlog
-// trace only adds the comparison logging on top.
+// a wrong model. This is a CHECK on the generated gear table, not a duration source : it prints the gear factor
+// the server implies next to the one the table produced, so a table error surfaces as a number. Cheap enough to
+// keep filed unconditionally ; only the printing is gated on //aio songlog.
 void PartyState::songdur_check() {
     if (songPredN_ == 0) return;
     const bool trace = s_songUntil && (int)(s_songUntil - GetTickCount()) > 0;
@@ -1656,31 +1648,19 @@ void PartyState::songdur_check() {
         // The measurement : from the tick the cast landed to the expiry the server itself reports.
         const int durTicks = (int)(real - sp.castTick);
         const int measSec = durTicks / 60;
-        // Divide the measurement back out by everything we already read correctly, leaving ONLY the gear+family
-        // factor -- the one term our item table gets wrong. Miracle Cheer is a flat 900 s : nothing to learn.
+        // Divide the measurement back out by the terms we read from your buffs, leaving the GEAR factor the
+        // table is supposed to produce. Printed next to the model's own m1 : if they diverge, the table is wrong.
         long long gx = 0;
         const long long den = (long long)sp.base * sp.knownX100;
         if (!sp.miracle && den > 0 && durTicks > 0 && durTicks < 60 * 3600)
             gx = ((long long)(measSec - sp.a3) * 100000) / den;
-        if (gx > 500 && gx < 20000) {   // 0.5x .. 20x : a garbage expiry must never be learned as a factor
-            int slot = -1;
-            for (int i = 0; i < songLearnN_; ++i) if (songLearn_[i].spell == sp.spell) { slot = i; break; }
-            if (slot < 0 && songLearnN_ < 32) slot = songLearnN_++;
-            if (slot >= 0) {
-                songLearn_[slot].spell = sp.spell;
-                songLearn_[slot].gearX1000 = (unsigned)gx;
-                // how far the model was off ON THIS SET -- reusable by any song sung with the same sixteen ids
-                songLearn_[slot].deltaX1000 = (int)gx - (int)sp.m1X1000;
-                for (int e = 0; e < 16; ++e) songLearn_[slot].ids[e] = sp.ids[e];
-            }
-        }
         if (trace) {
             const int nowT = (int)ffxi_now_tick();
             const int predSec = ((int)sp.predExp - nowT) / 60, realSec = ((int)real - nowT) / 60;
             const SpellRow* srw = spell_info(sp.spell);
             const int dSec = realSec - predSec;
             const int dPct = realSec ? (100 * dSec) / realSec : 0;   // integer : wvsprintfA has no %f (windower_debug.h)
-            windower::debug::log("SONGREAL spell=%u \"%s\" st=%u : model predicted %ds remaining, game says %ds  -> delta %d s (%d%%)  [measured %ds ; LEARNED gear x%d.%03d for ally copies]",
+            windower::debug::log("SONGREAL spell=%u \"%s\" st=%u : model predicted %ds remaining, game says %ds  -> delta %d s (%d%%)  [real %ds : the gear factor the table SHOULD produce is x%d.%03d]",
                                  sp.spell, (srw && srw->en) ? srw->en : "?", sp.status, predSec, realSec, dSec, dPct,
                                  measSec, (int)(gx / 1000), (int)(gx % 1000));
         }

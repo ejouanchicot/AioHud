@@ -9,6 +9,7 @@
 #include "check.h"
 #include "model/enh_dur.h"
 #include "model/regen_dur.h"
+#include "model/song_dur.h"
 
 using namespace aio;
 
@@ -56,10 +57,12 @@ void test_durations() {
         unsigned short g[16];
         const unsigned short NONE[1] = { 0 };
         gear(g, NONE, 0);            CHECK_EQ(regen_dur_gear_sec(g), 0);
+        CHECK_EQ(song_dur_m1_pct(g, 4), 0);
         const unsigned short ONE[1] = { 21175 };
         gear(g, ONE, 1);             CHECK_EQ(regen_dur_gear_sec(g), 12);
         const unsigned short OTHER[1] = { 1 };                 // an item in no Regen table
         gear(g, OTHER, 1);           CHECK_EQ(regen_dur_gear_sec(g), 0);
+        CHECK_EQ(song_dur_m1_pct(g, 4), 0);
         const unsigned short TWO[2] = { 21175, 23062 };        // 12 + 24 : each item counted once
         gear(g, TWO, 2);             CHECK_EQ(regen_dur_gear_sec(g), 36);
     }
@@ -80,6 +83,36 @@ void test_durations() {
         CHECK(perpetuance_mult(g) == 2.50);
     }
 
+    SECTION("durations : BRD song m1 reproduces five SERVER measurements");
+    {
+        // Captured with //aio songlog on 2026-07-25 : the equipped ids at cast time and, next to them, the
+        // duration the server's own 0x063 reported. These five numbers are the reason the model was rewritten
+        // (it was running 22-37% short), so they are exactly what must never silently drift again -- the gear
+        // table is GENERATED, and a bad regeneration would otherwise be invisible until somebody sang.
+        //
+        // m1 = 1 + flat gear + family gear + 0.05 JP gift. Song POTENCY counts as duration, +10% per point :
+        // Gjallarhorn "All songs +4" is +40% on everything, Fili Calot +3 '"Madrigal"+1' is +10% on Madrigal.
+        const unsigned short SONG[16] = {   // Carnwenhan / Kali / Gjallarhorn / - / Fili +3 set / Inyanga +2 ...
+            19828, 20599, 18572, 0, 23429, 23496, 23563, 25882, 24084, 26033, 10826, 15961, 25475, 26184, 26184, 26255 };
+        const unsigned short MARCH[16] = {  // the same set with Marsyas (+50%) in the instrument slot
+            19828, 20599, 21398, 0, 23429, 23496, 23563, 25882, 24084, 26033, 10826, 15961, 25475, 26184, 26184, 26255 };
+        const unsigned short DUMMY[16] = {  // the "dummy song" set : Daurdabla, almost no duration gear
+            21589, 17440, 18571, 0, 23761, 23861, 23563, 23782, 23789, 26042, 26367, 28475, 27549, 26190, 26190, 26245 };
+        const int JP = 5;   // BRD job-point gift, a flat +5% on m1
+
+        // family ids : 4 Minuet, 5 Madrigal, 6 Prelude, 8 March, 15 Operetta(Capriccio), 0 = none (Gavotte)
+        CHECK_EQ(song_dur_m1_pct(SONG,  4) + JP, 186);   // Valor Minuet IV/V -> 120 * 2.86 = 343 s (real 342)
+        CHECK_EQ(song_dur_m1_pct(SONG,  5) + JP, 196);   // Blade Madrigal    -> 120 * 2.96 = 355 s (real 352)
+        CHECK_EQ(song_dur_m1_pct(MARCH, 8) + JP, 196);   // Honor March       -> 120 * 2.96 = 355 s (real 352)
+        CHECK_EQ(song_dur_m1_pct(DUMMY, 0) + JP,  35);   // Goblin Gavotte    -> 120 * 1.35 = 162 s (real 159)
+        CHECK_EQ(song_dur_m1_pct(DUMMY, 15) + JP, 35);   // Gold Capriccio    -> 120 * 1.35 = 162 s (real 158)
+
+        // The family term is the whole point : same sixteen ids, two songs, twelve seconds apart in game.
+        CHECK(song_dur_m1_pct(SONG, 5) > song_dur_m1_pct(SONG, 4));
+        // A song with no family collects flat gear only -- never a family extra it is not entitled to.
+        CHECK_EQ(song_dur_m1_pct(SONG, 0) + JP, 176);
+    }
+
     SECTION("durations : empty gear never reports a bonus");
     {
         unsigned short g[16];
@@ -88,5 +121,6 @@ void test_durations() {
         CHECK_EQ(composure_set_pct(g), 0);
         CHECK_EQ(enh_dur_listed_pct(g), 0);
         CHECK_EQ(regen_dur_gear_sec(g), 0);
+        CHECK_EQ(song_dur_m1_pct(g, 4), 0);
     }
 }

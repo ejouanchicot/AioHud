@@ -671,38 +671,12 @@ struct PartyState {
                       unsigned predExp, castTick, wallMs; unsigned char done, miracle; unsigned short ids[16]; };
     SongPred songPred_[8]; int songPredN_ = 0;   // casts awaiting their real 0x063 expiry (self-landed only)
     void songdur_check();                        // called from the model tick : learn the real duration off 0x063
-    // LEARNED song durations, straight from the server. A song's duration is a property of the CAST, not of the
-    // target : whoever it lands on gets the same seconds. So any cast that also lands on YOU is measured exactly by
-    // the 0x063 timer, and that measurement is the right duration for an ALLY copy of the same song -- Pianissimo or
-    // not. This beats the m1/m2/m3 model outright, and it does not rot : the model reads a HARDCODED item table
-    // that is already stale (Carnwenhan's current stage, Gjallarhorn, Marsyas and Daurdabla are all absent, which
-    // measured as a 22-37% underestimate), whereas a learned value re-measures itself on every AoE cast.
-    // What is stored is NOT the total duration but the GEAR+family factor alone (x1000), i.e. the m1 term our item
-    // table gets wrong. Troubadour (x2), Soul Voice/Marcato (x1.5) and the Marcato flat seconds are read straight
-    // from your live buffs and are RELIABLE, so they must be re-applied fresh at every cast instead of being frozen
-    // into the measurement. Storing the total instead made a song measured without Troubadour render at half length
-    // when re-sung under it (5:30 where 11:00 was due) -- the same value, applied to a cast it never described.
-    struct SongLearn { unsigned short spell; unsigned gearX1000; int deltaX1000; unsigned short ids[16]; };
-    SongLearn songLearn_[32]; int songLearnN_ = 0;
-    unsigned song_learned_gear_x1000(unsigned short spell) const {   // 0 = never measured -> caller falls back to the model
-        for (int i = 0; i < songLearnN_; ++i) if (songLearn_[i].spell == spell) return songLearn_[i].gearX1000;
-        return 0;
-    }
-    // The model's SET-WIDE error, for a song we have never measured. Some equipped items carry song duration
-    // the RE never captured (measured on this player : ~+10% for one set, ~+17% for another). That shortfall is
-    // FLAT -- it showed up as +7/+9/+11% across three different song families on one set, and +17/+18% across
-    // two on the other -- so it is a property of the GEAR, not of the song. Keyed on the exact sixteen equipped
-    // ids so a dummy-song set can never lend its correction to a real-song set. This is what rescues a song that
-    // can NEVER be learned directly : Archer's Prelude gets evicted before it lands on the caster, so no 0x063
-    // ever describes it, and without this it would sit on the raw model forever.
-    bool song_set_delta_x1000(const unsigned short ids[16], int& outDelta) const {
-        for (int i = 0; i < songLearnN_; ++i) {
-            if (!songLearn_[i].spell) continue;
-            int k = 0; for (; k < 16; ++k) if (songLearn_[i].ids[k] != ids[k]) break;
-            if (k == 16) { outDelta = songLearn_[i].deltaX1000; return true; }
-        }
-        return false;
-    }
+    // The server measurement is kept as a CHECK on the table, not as a duration source. //aio songlog files
+    // every song cast that lands on you and prints model-vs-0x063 once the server timer arrives -- so a wrong
+    // table shows up as a number instead of as a complaint. It briefly WAS the source, back when the table was
+    // 22-37% short ; the potency-is-duration rule closed that gap to ~1%, and a learned value cannot beat a
+    // correct table (it goes stale on a gear change, and it can never describe a song that gets evicted before
+    // it lands on you, like Archer's Prelude on a full song list).
     void set_buff076_trace(int seconds); // //aio ftrace : DURATION-armed (mirrors the ui-side focus trace) -> log every 0x076 party-buff arrival + zone markers, to prove whether an ally's buff set actually refreshes after a zone
     bool buff076_trace_active() const;   // true while that window is open (gates the 0x00A/0x00B zone markers in the dispatch)
     void treasure_mem_probe();           // //aio tmem : one-shot hex dump of the in-game treasure view (*(g+0x5C)) -> reconcile treasure_[] against memory ground truth
