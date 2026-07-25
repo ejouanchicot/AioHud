@@ -141,19 +141,23 @@ static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsig
     // and a sleep landing on a DoT'd mob is a no-op. (Hits from anyone are handled by the cat 1/2 wake path.)
     if (is_sleep_status(st)) { for (int i = 0; i < d.n; ++i) if (is_dot_status(d.ids[i])) { DBFTRACE("DBF sleep-skip (DoT %u up) tid=%08X st=%u", d.ids[i], tid, st); return; } }
     else if (is_dot_status(st)) { for (int i = 0; i < d.n; ) { if (is_sleep_status(d.ids[i])) { DBFTRACE("DBF sleep-drop (DoT %u) tid=%08X st=%u", st, tid, d.ids[i]); debuff_erase(d, i); } else ++i; } }
-    // OVERWRITE arbitration (res/spells.lua `overwrites`, overwrites_gen.h). FFXI refuses a weaker debuff while
-    // a stronger one is up, and replaces the weaker when the stronger lands -- and the relation CROSSES families
-    // (Dia III overwrites Bio I/II), so it can't be read off the status id. Without this, a mate's Dia I landing
-    // on your Dia III'd mob simply refreshed the entry : tier shown dropped to "Dia I" and the countdown was
-    // reseeded to 60 s instead of 180. Runs BEFORE the refresh/insert below, on the WHOLE set (any status).
+    // OVERWRITE : we only ever REMOVE what a landing spell replaced. We never REFUSE a spell.
+    //
+    // Refusing was the first shape of this code and it was wrong twice over. The game already tells us whether a
+    // cast took, at the exact moment it lands : the caller checks `amsg == 75` ("no effect -- resisted, or the
+    // target ALREADY has it", reversed via //aio dbflog) and never calls us for those. So a weaker Dia landing on
+    // a stronger one is reported BY THE SERVER, for our casts and everyone else's alike -- predicting it from a
+    // table was redundant, and predicting it badly broke two real cases :
+    //   - MUTUAL overwrites (the 8 Threnody II list each other, all on status 217) always resolved as "refuse",
+    //     so switching element froze the row on the first Threnody for the life of the mob ;
+    //   - a debuff another player cast is NEVER pruned (no wear-off packet exists for it, see target_debuffs),
+    //     so a long-expired Dia III vetoed every weaker re-cast until the mob died.
+    // Removal is the one thing the server does NOT tell us -- no wear-off packet is sent for the debuff that got
+    // replaced -- so it stays inferred, over the WHOLE set, since the relation crosses families (Dia III replaces
+    // Bio I/II, two different statuses).
     if (spell) {
-        for (int i = 0; i < d.n; ++i)
-            if (spell_overwrites_spell(d.spell[i], spell)) {   // a stronger debuff already holds this mob -> ours does not land
-                DBFTRACE("DBF overwrite-reject tid=%08X spell=%u blocked by spell=%u (st=%u)", tid, spell, d.spell[i], d.ids[i]);
-                return;
-            }
         for (int i = 0; i < d.n; )
-            if (spell_overwrites_spell(spell, d.spell[i])) {   // ours is stronger -> the weaker one is gone, even under another status
+            if (spell_overwrites_spell(spell, d.spell[i])) {   // this cast replaced that one -> it is gone, whatever its status
                 DBFTRACE("DBF overwrite-drop tid=%08X spell=%u removes spell=%u (st=%u)", tid, spell, d.spell[i], d.ids[i]);
                 debuff_erase(d, i);
             } else ++i;
