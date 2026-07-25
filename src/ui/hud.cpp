@@ -425,11 +425,13 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     //  first use is never read again, so the rule is now stated in terms of the roster.)
     unsigned n076 = 0, n028 = 0;
     for (int i = 0; i < np; ++i) { if (pf[i].id == 0x076) n076 = pf[i].n; if (pf[i].id == 0x028) n028 = pf[i].n; }
-    if (roster > 1 && n076 == 0)
-        DOC("Tu es en groupe (%d membres) mais aucun paquet de buffs de groupe (0x076) n'est arrive : les buffs "
-            "des autres resteront invisibles. Le HUD ne recoit pas ce flux -- signale-le avec le log.", roster);
     if (n028 == 0)
         windower::debug::log("  note     : no 0x028 seen yet -- cast or attack once, then re-run (expected right after a load)");
+    // NB : 0x076 is EVENT-driven, not periodic -- it is sent when a member's buff list CHANGES. Being in a
+    // party proves nothing (a trust that receives nothing produces none), which is why the earlier
+    // roster-based rule was wrong twice. The genuine contradiction is tracking ally buffs while never
+    // receiving the packet that confirms and prunes them : the rows then ride their estimate to the end.
+    // Checked after the model section below, where the ally count is known.
 
     // ---- 4. textures : a missing handle whose retry budget is SPENT is permanent for this session ----
     int texMiss = 0;
@@ -451,8 +453,10 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     int nhr = 0; party().hate_rows(nhr);
     windower::debug::log("  model    : selfTimers=%d allyBuffs=%d hateRows=%d zoneGrace=%d",
                          nbt, nob, nhr, party().in_zone_grace() ? 1 : 0);
-    if (ui_config().tmMine && nob == 0 && pf[1].n > 0)
-        windower::debug::log("  note     : 'My buffs on allies' is ON but no ally row is live (nothing cast on an ally yet)");
+    if (nob > 0 && n076 == 0)
+        DOC("Tu suis %d buff(s) sur allies mais aucun paquet 0x076 n'est jamais arrive : leur fin ANTICIPEE "
+            "(dispel, ecrasement, mort de l'allie) ne peut pas etre detectee. Les lignes tiendront jusqu'au "
+            "bout de leur estimation, meme si le buff est deja tombe.", nob);
 
     // ---- 6. the current target's debuffs, and whether we know the TIER of each ----
     if (state_.target.valid && state_.target.id) {
