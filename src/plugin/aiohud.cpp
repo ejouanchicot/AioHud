@@ -881,11 +881,14 @@ static void aio_command_dispatch(const char* cmd)
         g_host.console().print(">>> AioHud : oblog ARME -- la prochaine frame dumpe le pipeline des buffs allies dans Windower\\plugins\\aiohud_debug.log (blocs OBPRUNE + OBLOG) <<<");
         return;
     }
-    if (strstr(buf, "songlog")) {   // //aio songlog [sec] -> the BRD song-duration MODEL, inputs included, checked against the game's own 0x063
-        int sec = 120; { const char* a = strstr(buf, "songlog") + 7; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
+    // NB : NOT "songlog" -- aiohud_probes.cpp already owns that name, and probes::command() runs FIRST (above),
+    // so a colliding name is silently unreachable : the probe answers, this never runs, and the capture comes back
+    // looking like the trace simply produced nothing. Checked against all 93 command patterns in both files.
+    if (strstr(buf, "songdur")) {   // //aio songdur [sec] -> the BRD song-duration MODEL, inputs included, checked against the game's own 0x063
+        int sec = 120; { const char* a = strstr(buf, "songdur") + 7; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
         if (sec < 10) sec = 10; if (sec > 900) sec = 900;
         aio::party().set_songdur_trace(sec);
-        g_host.console().print(">>> AioHud : songlog ARME -- chante, puis envoie Windower\\plugins\\aiohud_debug.log (lignes SONGDUR = le modele, SONGREAL = le timer reel du jeu) <<<");
+        g_host.console().print(">>> AioHud : songdur ARME -- chante, puis envoie Windower\\plugins\\aiohud_debug.log (lignes SONGDUR = le modele, SONGREAL = le timer reel du jeu) <<<");
         g_host.console().print(">>> Test le plus net : Pianissimo la song SUR TOI -- meme calcul qu'un Pianissimo sur un allie, mais avec un vrai timer pour le verifier <<<");
         return;
     }
