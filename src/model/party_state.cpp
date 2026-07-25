@@ -58,6 +58,30 @@ static unsigned getbits(const unsigned char* p, int bitoff, int width, int nbyte
     return (unsigned)(v & ((1ull << width) - 1));
 }
 
+// Collect the per-target server ids of a 0x028 action, walking the VARIABLE stride. A target block is 36 bits
+// (id + action count) followed by `ac` actions of 86 bits, and EACH action may carry an optional 37-bit
+// add-effect body and an optional 35-bit spike block. The old fixed `150 + i*123` is therefore only right while
+// no earlier target has either -- one proc, one spike, and every id after it is garbage.
+// This walk was written three times (Treasure Hunter, hate, buff-caster) and MISSED in two blocks (ally buffs,
+// COR rolls), where it silently emptied the ally rows on exactly the AoE casts those rows exist for. One
+// implementation now, four call sites. Returns the number of ids written (<= tc, <= cap).
+static unsigned action_target_ids(const unsigned char* p, int size, unsigned tc, unsigned* out, unsigned cap) {
+    unsigned n = 0; int off = 150;
+    for (unsigned i = 0; i < tc && n < cap; ++i) {
+        if (off + 36 > size * 8) break;
+        out[n++] = getbits(p, off, 32, size);
+        unsigned ac = getbits(p, off + 32, 4, size); off += 36;
+        for (unsigned a = 0; a < ac && a < 12; ++a) {
+            if (off + 86 > size * 8) { off = size * 8; break; }
+            const unsigned hasAdd = getbits(p, off + 85, 1, size);
+            off += 86;
+            if (hasAdd) off += 37;                                     // add-effect body (anim 6 / param 17 / msg 10)
+            if (getbits(p, off, 1, size)) off += 35; else off += 1;    // spike block : +1 flag, +34 body
+        }
+    }
+    return n;
+}
+
 // TARGET DEBUFFS (icons + learned countdown). The client stores NO per-mob status list and the 0x028 action
 // packet carries NO remaining-time, so we IDENTIFY the debuff a cast lands by mapping the SPELL id (the 0x028
 // animation field) -> { status effect, base duration } via tb_debuff_gen.h (generated from the old AioHUD
@@ -986,8 +1010,9 @@ void PartyState::on_action(const unsigned char* p) {
             const int    songA3   = marcato ? read_jp_u8(0x148) : 0;
             const bool   miracle  = has_miracle_cheer(eids);
             u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
+            unsigned tgtIds[16]; const unsigned nTgt = action_target_ids(p, size, tc, tgtIds, 16);
             bool aoeSelf = false;   // an AoE buff that ALSO landed on YOU -> the ally copies share your EXACT 0x063 timer
-            for (u32 i = 0; i < tc; ++i) { const int b2 = 150 + (int)i * 123; if (b2 + 32 > size * 8) break; if (getbits(p, b2, 32, size) == selfId_) { aoeSelf = true; break; } }
+            for (unsigned i = 0; i < nTgt; ++i) if (tgtIds[i] == selfId_) { aoeSelf = true; break; }
             if (aoeSelf && b->effect < 1024) {   // remember the spell/tier for the self row name (+ a ring for same-status doubles)
                 selfBuffSpell_[b->effect] = (unsigned short)sid;
                 // Our OWN cast : predict the expiry from the duration we actually computed for it (songs get the full
@@ -1012,9 +1037,8 @@ void PartyState::on_action(const unsigned char* p) {
                 entrustTick_ = 0;
             }
             if (b->skill == 44 && !geoEntrust) {} else   // normal Indi- (aura) -> skip the ally loop ; entrusted -> run it
-            for (u32 i = 0; i < tc; ++i) {
-                const int base = 150 + (int)i * 123; if (base + 32 > size * 8) break;
-                const u32 tid = getbits(p, base, 32, size);
+            for (unsigned i = 0; i < nTgt; ++i) {
+                const u32 tid = tgtIds[i];                                     // from the variable-stride walk above
                 if (!tid || tid == selfId_) continue;                          // skip empties / yourself (your own buffs come from 0x063)
                 const char* nm = pc_name_by_id(tid); if (!nm || !nm[0]) continue;   // the RELIABLE ally gate : resolves only real party/alliance members (PC ids don't all use the 0x01 mob top-byte)
                 int slot = -1;   // key by (target, SPELL) so two tiers of the same song (Minuet V + IV, same status) are two rows
@@ -1063,7 +1087,8 @@ void PartyState::on_action(const unsigned char* p) {
             bool landsOnMe = bySelf;                                        // your own roll always applies to you
             if (!bySelf) {                                                  // else confirm the AoE roll actually hit you
                 u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
-                for (u32 i = 0; i < tc; ++i) { const int b2 = 150 + (int)i * 123; if (b2 + 32 > size * 8) break; if (getbits(p, b2, 32, size) == selfId_) { landsOnMe = true; break; } }
+                unsigned ids[16]; const unsigned n = action_target_ids(p, size, tc, ids, 16);
+                for (unsigned i = 0; i < n; ++i) if (ids[i] == selfId_) { landsOnMe = true; break; }
             }
             const unsigned pip = getbits(p, 150 + 63, 17, size);           // target[0] action param = the pip total (1..12), global to the roll
             if (landsOnMe && pip >= 1 && pip <= 12) {
@@ -1097,13 +1122,13 @@ void PartyState::on_action(const unsigned char* p) {
             for (int k = 0; k < otherBuffN_; ++k) if ((int)((otherBuffs_[k].startMs + otherBuffs_[k].durMs) - nowMs) > 0 || ob_self_alive(otherBuffs_[k])) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; }   // keep while EITHER the estimate OR the real self timer runs -> recasting one song no longer prunes siblings whose estimate lapsed early (Troubadour)
             otherBuffN_ = w;
             u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
+            unsigned tgtIds[16]; const unsigned nTgt = action_target_ids(p, size, tc, tgtIds, 16);
             bool aoeSelf = false;                                          // the roll landed on YOU -> ally copies mirror your exact 0x063 timer
-            for (u32 i = 0; i < tc; ++i) { const int b2 = 150 + (int)i * 123; if (b2 + 32 > size * 8) break; if (getbits(p, b2, 32, size) == selfId_) { aoeSelf = true; break; } }
+            for (unsigned i = 0; i < nTgt; ++i) if (tgtIds[i] == selfId_) { aoeSelf = true; break; }
             // NB : do NOT seed selfBuffSpell_/selfCasts_ here -- those map a status to a SPELL id for the self-row name ;
             // a roll has no tiers, so the self row resolves fine via buff_status_name. Seeding it would mis-name the row.
-            for (u32 i = 0; i < tc; ++i) {
-                const int base = 150 + (int)i * 123; if (base + 32 > size * 8) break;
-                const u32 tid = getbits(p, base, 32, size);
+            for (unsigned i = 0; i < nTgt; ++i) {
+                const u32 tid = tgtIds[i];                                // from the variable-stride walk above
                 if (!tid || tid == selfId_) continue;                     // skip empties / yourself (your own roll comes from 0x063)
                 const char* nm = pc_name_by_id(tid); if (!nm || !nm[0]) continue;   // resolve real party/alliance members only
                 int slot = -1;                                            // key by (target, ABILITY) -- one row per roll type per member
