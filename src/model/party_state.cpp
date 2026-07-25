@@ -65,19 +65,28 @@ static unsigned getbits(const unsigned char* p, int bitoff, int width, int nbyte
 // This walk was written three times (Treasure Hunter, hate, buff-caster) and MISSED in two blocks (ally buffs,
 // COR rolls), where it silently emptied the ally rows on exactly the AoE casts those rows exist for. One
 // implementation now, four call sites. Returns the number of ids written (<= tc, <= cap).
-static unsigned action_target_ids(const unsigned char* p, int size, unsigned tc, unsigned* out, unsigned cap) {
+// `msgOut` (optional) receives each target's FIRST action message -- the server's verdict on that target.
+// 236 = the effect landed, 75 = "no effect" (resisted, or the target already has something better). Reading
+// it is the only way to know a cast did nothing : predicting it from a spell table is what broke the debuff
+// arbitration, and the ally-buff path never looked at it at all.
+static unsigned action_target_ids(const unsigned char* p, int size, unsigned tc, unsigned* out, unsigned cap,
+                                  unsigned* msgOut = 0) {
     unsigned n = 0; int off = 150;
     for (unsigned i = 0; i < tc && n < cap; ++i) {
         if (off + 36 > size * 8) break;
-        out[n++] = getbits(p, off, 32, size);
+        const unsigned id = getbits(p, off, 32, size);
         unsigned ac = getbits(p, off + 32, 4, size); off += 36;
+        unsigned amsg = 0;
         for (unsigned a = 0; a < ac && a < 12; ++a) {
             if (off + 86 > size * 8) { off = size * 8; break; }
+            if (a == 0) amsg = getbits(p, off + 44, 10, size);         // this target's main message
             const unsigned hasAdd = getbits(p, off + 85, 1, size);
             off += 86;
             if (hasAdd) off += 37;                                     // add-effect body (anim 6 / param 17 / msg 10)
             if (getbits(p, off, 1, size)) off += 35; else off += 1;    // spike block : +1 flag, +34 body
         }
+        out[n] = id; if (msgOut) msgOut[n] = amsg;
+        ++n;
     }
     return n;
 }
@@ -1010,7 +1019,7 @@ void PartyState::on_action(const unsigned char* p) {
             const int    songA3   = marcato ? read_jp_u8(0x148) : 0;
             const bool   miracle  = has_miracle_cheer(eids);
             u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
-            unsigned tgtIds[16]; const unsigned nTgt = action_target_ids(p, size, tc, tgtIds, 16);
+            unsigned tgtIds[16], tgtMsg[16]; const unsigned nTgt = action_target_ids(p, size, tc, tgtIds, 16, tgtMsg);
             bool aoeSelf = false;   // an AoE buff that ALSO landed on YOU -> the ally copies share your EXACT 0x063 timer
             for (unsigned i = 0; i < nTgt; ++i) if (tgtIds[i] == selfId_) { aoeSelf = true; break; }
             if (aoeSelf && b->effect < 1024) {   // remember the spell/tier for the self row name (+ a ring for same-status doubles)
@@ -1040,6 +1049,12 @@ void PartyState::on_action(const unsigned char* p) {
             for (unsigned i = 0; i < nTgt; ++i) {
                 const u32 tid = tgtIds[i];                                     // from the variable-stride walk above
                 if (!tid || tid == selfId_) continue;                          // skip empties / yourself (your own buffs come from 0x063)
+                // The server's verdict ON THIS TARGET. "No effect" (75) means the cast did nothing here --
+                // a Protect II on someone already holding Protect III, or a resist. We used to record it
+                // anyway, so a weaker re-cast added a SECOND row and the box showed two live timers for one
+                // buff. Same mistake the debuff path made until it started reading this field : the game
+                // already says whether a cast took, and a spell table cannot predict it.
+                if (tgtMsg[i] == 75) { DBFTRACE("OB no-effect tid=%08X spell=%u msg=75 -> not recorded", tid, sid); continue; }
                 const char* nm = pc_name_by_id(tid); if (!nm || !nm[0]) continue;   // the RELIABLE ally gate : resolves only real party/alliance members (PC ids don't all use the 0x01 mob top-byte)
                 int slot = -1;   // key by (target, SPELL) so two tiers of the same song (Minuet V + IV, same status) are two rows
                 for (int k = 0; k < otherBuffN_; ++k) if (otherBuffs_[k].target == tid && otherBuffs_[k].spell == (unsigned short)sid) { slot = k; break; }
