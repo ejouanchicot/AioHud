@@ -264,6 +264,7 @@ void aio_plugin_render6()
 static void feed_packet(int id, const unsigned char* b)
 {
     __try {
+        aio::party().note_packet(id, (unsigned)GetTickCount());   // flow counters for //aio doctor (tracked ids only)
         if      (id == 0xDD)  aio::party().on_dd(b);
         else if (id == 0xDF)  aio::party().on_df(b);
         else if (id == 0x028) aio::party().on_action(b);   // cast bar + landed target debuffs
@@ -872,6 +873,19 @@ static void aio_command_dispatch(const char* cmd)
         aio::timers_focus_trace(180);   // 180 SECONDS -- long enough for a full buff cycle plus the alert window
         aio::party().set_buff076_trace(180);   // model-side twin : log 0x076 arrivals + zone markers over the same window (does an ally's buff set refresh after a zone ?)
         g_host.console().print(">>> AioHud : ftrace ARMED (have the Hidden+Focus buff up, then send Windower\\plugins\\aiohud_debug.log ; look for FOCUS / B076 lines) <<<");
+        return;
+    }
+    if (strstr(buf, "doctor")) {   // //aio doctor -> run every RUNTIME check and print what to DO about each problem
+        char lines[12][aio::Hud::DOC_LINE];
+        const int n = g_hud.doctor(lines, 12);
+        if (!n) {
+            g_host.console().print(">>> AioHud doctor : tout est sain -- detail dans Windower\\plugins\\aiohud_debug.log <<<");
+        } else {
+            char hdr[96]; _snprintf(hdr, sizeof(hdr), ">>> AioHud doctor : %d probleme(s) <<<", n); hdr[sizeof(hdr) - 1] = 0;
+            g_host.console().print(hdr);
+            for (int i = 0; i < n; ++i) g_host.console().print(lines[i]);
+            g_host.console().print(">>> detail complet : Windower\\plugins\\aiohud_debug.log (bloc AIO DOCTOR) <<<");
+        }
         return;
     }
     if (strstr(buf, "selfcheck")) {   // //aio selfcheck -> dump texture-load health to aiohud_debug.log (verify the rule-10 latch fixes held : no stuck give-up, no permanently-missing icon)

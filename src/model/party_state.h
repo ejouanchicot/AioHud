@@ -603,6 +603,18 @@ struct PartyState {
     PMember alli_[12];
     int      alliN_[2] = { 0, 0 };        // live member count for alliance party 2 / 3
 
+    // --- packet flow, for //aio doctor -------------------------------------------------------------------
+    // The first question behind any "module X shows nothing" report is whether the packet that FEEDS it
+    // arrives at all -- a broken reader and a silent server look identical from the box. One increment at the
+    // single dispatch point answers it. Tracked ids only ; anything else is ignored.
+    struct PktFlow { unsigned short id; unsigned n; unsigned lastMs; };
+    static const int PKT_TRACKED = 6;
+    PktFlow pkt_[PKT_TRACKED] = { {0x028,0,0}, {0x076,0,0}, {0x063,0,0}, {0x029,0,0}, {0x0DD,0,0}, {0x00A,0,0} };
+    void note_packet(int id, unsigned nowMs) {
+        for (int i = 0; i < PKT_TRACKED; ++i) if (pkt_[i].id == (unsigned short)id) { ++pkt_[i].n; pkt_[i].lastMs = nowMs; return; }
+    }
+    const PktFlow* pkt_flow(int& n) const { n = PKT_TRACKED; return pkt_; }
+
     void on_dd(const unsigned char* p);   // 0x0DD : member update (name/jobs/HP/MP/TP/%) -> also caches
     void on_df(const unsigned char* p);   // 0x0DF : vitals update (HP/MP/TP, refresh %)
     void on_action(const unsigned char* p); // 0x028 : begin/finish casting -> cast bar + landed target debuffs

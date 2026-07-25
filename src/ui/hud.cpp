@@ -377,6 +377,104 @@ void Hud::render(u32 dev) {
 }
 
 
+// //aio doctor -- everything that can only be checked with the game running. Each finding is written as a
+// SYMPTOM plus the action that resolves it : a diagnostic that only states facts leaves the reader to guess
+// the remedy, which is the part they do not have. Healthy checks are logged, not printed -- the console is a
+// scarce resource and a wall of green hides the one red line.
+const char* aio_version_string();   // plugin/aiohud.cpp : the build's version string (tag, or "dev")
+
+int Hud::doctor(char out[][DOC_LINE], int maxOut) {
+    int n = 0;
+    #define DOC(fmt, ...) do { if (n < maxOut) { _snprintf(out[n], DOC_LINE, fmt, __VA_ARGS__); out[n][DOC_LINE-1] = 0; \
+                                                 windower::debug::log("  PROBLEM : %s", out[n]); ++n; } } while (0)
+    const unsigned nowMs = GetTickCount();
+    windower::debug::log("=== AIO DOCTOR : %s ===", aio_version_string());
+
+    // ---- 1. the game link. Everything else is meaningless if this fails, so it reports first and alone. ----
+    const int roster = party().count;
+    windower::debug::log("  link     : inGame=%d selfId=%08X roster=%d zone=%u job=%d",
+                         state_.inGame ? 1 : 0, party().self_id(), roster, state_.zone, party().self_main_job());
+    if (!state_.inGame || !party().self_id()) {
+        DOC("Le plugin ne voit pas ton personnage (inGame=%d, selfId=%08X). Rien d'autre ne peut fonctionner. "
+            "Si tu es bien en jeu : la DLL ne correspond pas a ta version de Windower -- redeploie, puis //aio doctor.",
+            state_.inGame ? 1 : 0, party().self_id());
+        windower::debug::log("=== AIO DOCTOR : stopped -- no game link ===");
+        return n;   // (no #undef here : the preprocessor knows nothing of control flow, it would kill DOC below)
+    }
+
+    // ---- 2. the three memory reads every box depends on ----
+    windower::debug::log("  reads    : buffsOk=%d nbuff=%d equipValid=%d mapEnt=%d",
+                         state_.buffsOk ? 1 : 0, state_.nbuff, state_.equipValid ? 1 : 0, state_.mapEntN);
+    if (!state_.buffsOk)
+        DOC("Tes propres buffs ne se lisent pas (buffsOk=0) : la boite Timers et le filtre resteront vides. "
+            "Normal pendant un chargement de zone -- relance //aio doctor une fois arrive%s", "");
+    if (!state_.equipValid)
+        DOC("L'equipement ne se lit pas (equipValid=0) : les icones de gear gardent le cache precedent. "
+            "Normal en zoning ; persistant = les conteneurs d'objets ne sont pas prets%s", "");
+
+    // ---- 3. packet flow. A box that shows nothing because NO PACKET ARRIVES looks exactly like a broken
+    //         reader from the outside ; this is the check that tells the two apart. ----
+    int np = 0; const PartyState::PktFlow* pf = party().pkt_flow(np);
+    for (int i = 0; i < np; ++i)
+        windower::debug::log("  packet   : 0x%03X n=%u last=%us ago", pf[i].id, pf[i].n,
+                             pf[i].lastMs ? (nowMs - pf[i].lastMs) / 1000u : 0u);
+    for (int i = 0; i < np; ++i) {
+        if (pf[i].n) continue;
+        if (pf[i].id == 0x076) DOC("Aucun paquet 0x076 recu : les buffs des membres du groupe sont invisibles. "
+                                   "Attendu si tu es solo -- sinon le HUD n'est pas branche sur le flux reseau%s", "");
+        if (pf[i].id == 0x028) DOC("Aucun paquet 0x028 recu : ni barre d'incantation, ni debuffs de cible, ni skillchains. "
+                                   "Lance un sort pour verifier ; si ca reste a zero, le hook de paquets ne recoit rien%s", "");
+    }
+
+    // ---- 4. textures : a missing handle whose retry budget is SPENT is permanent for this session ----
+    int texMiss = 0;
+    if (!buffAtlas_)  { ++texMiss; DOC("L'atlas d'icones de statut n'est pas charge (%u essais) : les icones de buff manquent partout. "
+                                       "Verifie que plugins\\AioHud\\assets\\buff_atlas.raw existe, puis //unload + //load", buffAtlasTries_); }
+    if (!weaponIcons_) ++texMiss;
+    if (!tpCoffer_)    ++texMiss;
+    windower::debug::log("  textures : atlas=%d(t%u) weapon=%d coffer=%d grim=%d/%d/%d  (missing=%d)",
+                         buffAtlas_ ? 1 : 0, buffAtlasTries_, weaponIcons_ ? 1 : 0, tpCoffer_ ? 1 : 0,
+                         grimLight_ ? 1 : 0, grimDark_ ? 1 : 0, grimClosed_ ? 1 : 0, texMiss);
+    const char* rk = 0; const char* rom = ffxi_rom_dir_probe(&rk);
+    windower::debug::log("  romdir   : %s (key %s)", rom ? rom : "<unresolved>", rk ? rk : "<none>");
+    if (!rom) DOC("Le dossier ROM de FFXI est introuvable : les icones d'equipement s'afficheront en texte. "
+                  "Installation hors registre standard -- c'est le cas connu des installs sous Program Files%s", "");
+
+    // ---- 5. model state : what the boxes are actually holding right now ----
+    int nob = 0; party().other_buffs(nob);
+    int nbt = 0; party().buff_timers(nbt);
+    int nhr = 0; party().hate_rows(nhr);
+    windower::debug::log("  model    : selfTimers=%d allyBuffs=%d hateRows=%d zoneGrace=%d",
+                         nbt, nob, nhr, party().in_zone_grace() ? 1 : 0);
+    if (ui_config().tmMine && nob == 0 && pf[1].n > 0)
+        windower::debug::log("  note     : 'My buffs on allies' is ON but no ally row is live (nothing cast on an ally yet)");
+
+    // ---- 6. the current target's debuffs, and whether we know the TIER of each ----
+    if (state_.target.valid && state_.target.id) {
+        unsigned short ids[16], sp[16]; int rem[16]; unsigned char self[16], sh[16];
+        const int nd = party().target_debuffs(state_.target.id, ids, rem, self, 16, sp, sh);
+        int known = 0, shots = 0;
+        for (int i = 0; i < nd; ++i) { if (sp[i]) ++known; if (sh[i]) ++shots; }
+        windower::debug::log("  target   : '%s' debuffs=%d tierKnown=%d quickDraw=%d", state_.target.name, nd, known, shots);
+        if (nd > 0 && known == 0)
+            windower::debug::log("  note     : no tier known on this mob -- the plugin saw none of those casts (normal if they predate your arrival)");
+    }
+
+    // ---- 7. config / layout : the two files whose loss is silent ----
+    windower::debug::log("  config   : profile='%s' dirty=%d layout=%s",
+                         active_profile_name(), profile_dirty() ? 1 : 0,
+                         have_layout_ ? layout_path_.c_str() : "<default, no file loaded>");
+    if (!have_layout_)
+        DOC("Aucun layout charge : les boites sont a leur position par defaut. "
+            "design\\exports\\layout.json est absent ou illisible%s", "");
+    if (profile_dirty())
+        windower::debug::log("  note     : the live config differs from the saved profile (unsaved changes)");
+
+    windower::debug::log("=== AIO DOCTOR : %d problem(s) ===", n);
+    #undef DOC
+    return n;
+}
+
 void Hud::self_check() {
     windower::debug::log("=== AIO SELFCHECK : texture-load health (1 = handle set ; tN = retry misses so far) ===");
     windower::debug::log("  hud      : buffAtlas=%d(t%u) skin=%s  grim L=%d D=%d C=%d  weapon=%d coffer=%d",

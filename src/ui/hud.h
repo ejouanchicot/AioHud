@@ -31,6 +31,11 @@ public:
     void render(u32 dev);   // one game frame (slot-6 hook)
     void dispose();         // release all resources (at //unload)
     void self_check();      // //aio selfcheck : log the health of every texture-load subsystem (stuck latches, missing icons)
+    // //aio doctor : run every runtime check we cannot make offline (game link, packet flow, texture health,
+    // model state) and fill `out` with ONE LINE PER PROBLEM, each ending in what to do about it. Returns the
+    // number of lines written ; 0 means everything checked is healthy. The full detail always goes to the log.
+    static const int DOC_LINE = 200;
+    int doctor(char out[][DOC_LINE], int maxOut);
 
     // (re)build the widget list from the layout descriptor (load + place + sort by z).
     // No-op-safe: on a missing/invalid file it keeps the current widgets.
