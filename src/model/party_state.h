@@ -667,8 +667,8 @@ struct PartyState {
     void set_songdur_trace(int seconds);
     // base/knownX100/a3 are the terms that were ACTIVE at that cast : the measurement has to be divided back out
     // by them, or Troubadour gets baked into the stored value and re-applied to casts that never had it.
-    struct SongPred { unsigned short status, spell, base, knownX100; short a3;
-                      unsigned predExp, castTick, wallMs; unsigned char done, miracle; };
+    struct SongPred { unsigned short status, spell, base, knownX100, m1X1000; short a3;
+                      unsigned predExp, castTick, wallMs; unsigned char done, miracle; unsigned short ids[16]; };
     SongPred songPred_[8]; int songPredN_ = 0;   // casts awaiting their real 0x063 expiry (self-landed only)
     void songdur_check();                        // called from the model tick : learn the real duration off 0x063
     // LEARNED song durations, straight from the server. A song's duration is a property of the CAST, not of the
@@ -682,11 +682,26 @@ struct PartyState {
     // from your live buffs and are RELIABLE, so they must be re-applied fresh at every cast instead of being frozen
     // into the measurement. Storing the total instead made a song measured without Troubadour render at half length
     // when re-sung under it (5:30 where 11:00 was due) -- the same value, applied to a cast it never described.
-    struct SongLearn { unsigned short spell; unsigned gearX1000; };
+    struct SongLearn { unsigned short spell; unsigned gearX1000; int deltaX1000; unsigned short ids[16]; };
     SongLearn songLearn_[32]; int songLearnN_ = 0;
     unsigned song_learned_gear_x1000(unsigned short spell) const {   // 0 = never measured -> caller falls back to the model
         for (int i = 0; i < songLearnN_; ++i) if (songLearn_[i].spell == spell) return songLearn_[i].gearX1000;
         return 0;
+    }
+    // The model's SET-WIDE error, for a song we have never measured. Some equipped items carry song duration
+    // the RE never captured (measured on this player : ~+10% for one set, ~+17% for another). That shortfall is
+    // FLAT -- it showed up as +7/+9/+11% across three different song families on one set, and +17/+18% across
+    // two on the other -- so it is a property of the GEAR, not of the song. Keyed on the exact sixteen equipped
+    // ids so a dummy-song set can never lend its correction to a real-song set. This is what rescues a song that
+    // can NEVER be learned directly : Archer's Prelude gets evicted before it lands on the caster, so no 0x063
+    // ever describes it, and without this it would sit on the raw model forever.
+    bool song_set_delta_x1000(const unsigned short ids[16], int& outDelta) const {
+        for (int i = 0; i < songLearnN_; ++i) {
+            if (!songLearn_[i].spell) continue;
+            int k = 0; for (; k < 16; ++k) if (songLearn_[i].ids[k] != ids[k]) break;
+            if (k == 16) { outDelta = songLearn_[i].deltaX1000; return true; }
+        }
+        return false;
     }
     void set_buff076_trace(int seconds); // //aio ftrace : DURATION-armed (mirrors the ui-side focus trace) -> log every 0x076 party-buff arrival + zone markers, to prove whether an ally's buff set actually refreshes after a zone
     bool buff076_trace_active() const;   // true while that window is open (gates the 0x00A/0x00B zone markers in the dispatch)

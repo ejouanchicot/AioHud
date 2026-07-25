@@ -1096,7 +1096,11 @@ void PartyState::on_action(const unsigned char* p) {
                                    songPred_[sl].base = b->durSec;
                                    songPred_[sl].knownX100 = (unsigned short)(songM2 * songM3 * 100.0 + 0.5);
                                    songPred_[sl].a3 = (short)songA3;
-                                   songPred_[sl].miracle = miracle ? 1 : 0; }
+                                   songPred_[sl].miracle = miracle ? 1 : 0;
+                                   // what the MODEL believed, and the set it believed it from : their difference
+                                   // is the set-wide shortfall reusable by songs we can never measure directly.
+                                   songPred_[sl].m1X1000 = (unsigned short)(songM1 * 1000.0 + 0.5);
+                                   for (int e = 0; e < 16; ++e) songPred_[sl].ids[e] = eids[e]; }
                 }
             }
             if (b->skill == 40 && sid < 1024) {   // BRD song : snapshot the song-enhancing JAs UP at cast, keyed by SPELL id
@@ -1158,12 +1162,25 @@ void PartyState::on_action(const unsigned char* p) {
                     // measured against the server it runs 22-37% short, because its item table misses Carnwenhan's
                     // current stage and every modern instrument. Gear changes make a learned value stale until the
                     // next cast that lands on you re-measures it -- self-correcting, and never worse than the model.
+                    // Three sources, best first. m2/m3/a3 always come from your buffs RIGHT NOW, never from the
+                    // measurement -- that is what makes a song measured bare still double correctly under Nitro.
+                    //   1. this very song, measured off your own 0x063         -> exact
+                    //   2. no measurement for it, but another song was measured on the SAME sixteen equipped ids
+                    //      -> reuse that set's shortfall (the duration gear the RE never captured, which is flat)
+                    //   3. nothing measured at all                             -> the raw model
+                    double m1eff = songM1; const char* srcTag = "model";
                     const unsigned gear = miracle ? 0 : song_learned_gear_x1000((unsigned short)sid);
-                    // The measured GEAR factor replaces m1 ; m2/m3/a3 come from your buffs RIGHT NOW. Sing it once
-                    // in AoE bare and re-sing it under Nitro and the ally row doubles, exactly like your own does.
-                    double sec = gear ? ((double)b->durSec * (gear / 1000.0) * songM2 * songM3 + songA3)
-                                      : (miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3));
+                    int setDelta = 0;
+                    if (gear) { m1eff = gear / 1000.0; srcTag = "measured"; }
+                    else if (!miracle && song_set_delta_x1000(eids, setDelta)) { m1eff = songM1 + setDelta / 1000.0; srcTag = "set-corrected"; }
+                    if (m1eff < 1.0) m1eff = 1.0;   // a correction must never drag a duration below its bare base
+                    double sec = miracle ? 900.0 : ((double)b->durSec * m1eff * songM2 * songM3 + songA3);
                     ms = (unsigned long long)(sec * 1000.0);
+                    if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0)
+                        windower::debug::log("SONGUSE spell=%u -> %s : m1 %d.%03d (model %d.%03d, setDelta %d) x m2 %d x m3 %s -> %d s",
+                                             sid, srcTag, (int)m1eff, (int)(m1eff * 1000) % 1000,
+                                             (int)songM1, (int)(songM1 * 1000) % 1000, setDelta,
+                                             (int)songM2, (songM3 > 1.0) ? "1.5" : "1", (int)sec);
                 } else if (b->skill == 44) {   // GEO Entrust'd Indi- on an ally : additive Base + JP 1362 + Indicolure gear
                     ms = (unsigned long long)((int)b->durSec + geoJpSec + geoGear) * 1000ull;
                 } else {
@@ -1649,7 +1666,13 @@ void PartyState::songdur_check() {
             int slot = -1;
             for (int i = 0; i < songLearnN_; ++i) if (songLearn_[i].spell == sp.spell) { slot = i; break; }
             if (slot < 0 && songLearnN_ < 32) slot = songLearnN_++;
-            if (slot >= 0) { songLearn_[slot].spell = sp.spell; songLearn_[slot].gearX1000 = (unsigned)gx; }
+            if (slot >= 0) {
+                songLearn_[slot].spell = sp.spell;
+                songLearn_[slot].gearX1000 = (unsigned)gx;
+                // how far the model was off ON THIS SET -- reusable by any song sung with the same sixteen ids
+                songLearn_[slot].deltaX1000 = (int)gx - (int)sp.m1X1000;
+                for (int e = 0; e < 16; ++e) songLearn_[slot].ids[e] = sp.ids[e];
+            }
         }
         if (trace) {
             const int nowT = (int)ffxi_now_tick();
