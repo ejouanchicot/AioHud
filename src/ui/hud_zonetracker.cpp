@@ -625,6 +625,8 @@ void Hud::draw_zonetracker(const Frame& f, bool preview, float ovX, float ovY, f
 // handle would go to SetTexture with its owning device destroyed. zonetracker_help_forget() clears it from that block.
 static u32 g_ztHelpTex = 0; static TexRetry g_ztHelpRetry;
 void zonetracker_help_forget() { g_ztHelpTex = 0; g_ztHelpRetry = TexRetry{}; }   // device recreate : drop the handle AND re-arm the bounded retry
+// //unload : device still ALIVE -> Release for real (rule 4). Forget alone leaked the icon atlas per cycle.
+void zonetracker_help_dispose() { if (g_ztHelpTex) release_texture(g_ztHelpTex); zonetracker_help_forget(); }
 static u32 zonetracker_help_weapons(u32 dev) {   // bounded retry (rule 10) -- was a one-shot latch that stranded the Help icons on a single miss
     return ensure_raw_tex(dev, g_ztHelpTex, g_ztHelpRetry, WEAPON_ICONS_PATH(), 96, 32);
 }

@@ -43,6 +43,13 @@ void zonetracker_help_forget();
 void debuffs_help_forget();
 void timers_help_forget();
 void treasure_help_forget();
+// ...and their //unload counterparts. FORGET is for a dead device (rule 4 : never Release on one) ; DISPOSE runs
+// while the device is alive and must actually Release. Only the forget half existed, so every Help sample the
+// user had opened leaked its texture on each //unload -- two of the four are copies of the 1024x640 buff atlas.
+void zonetracker_help_dispose();
+void debuffs_help_dispose();
+void timers_help_dispose();
+void treasure_help_dispose();
 void box_skins_forget();    // per-box Custom->FFXI skins (box_style.cpp) : forget on a device change
 void box_skins_dispose();   // ... release at shutdown
 
@@ -396,6 +403,7 @@ void Hud::dispose() {
     if (grimLight_) { release_texture(grimLight_); grimLight_ = 0; }   // grimoire books
     if (grimDark_)  { release_texture(grimDark_);  grimDark_ = 0; }
     if (grimClosed_){ release_texture(grimClosed_);grimClosed_= 0; }   // grimoire : closed-book (no Arts) texture
+    zonetracker_help_dispose(); debuffs_help_dispose(); timers_help_dispose(); treasure_help_dispose();   // the module-owned Help samples (file-static, not members) -- symmetric with the forget block in render()
     config_.dispose();   // Release the ConfigPage's owned Help/preview textures (zone map, logo, atlases) -- else they leak per //unload
 }
 

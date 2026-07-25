@@ -213,6 +213,8 @@ void Hud::draw_debuffs(const Frame& f, bool preview, float ovX, float ovY, float
 // handle would go to SetTexture with its owning device destroyed. debuffs_help_forget() clears it from that block.
 static u32 g_dbHelpTex = 0; static TexRetry g_dbHelpRetry;
 void debuffs_help_forget() { g_dbHelpTex = 0; g_dbHelpRetry = TexRetry{}; }   // device recreate : drop the handle AND re-arm the bounded retry
+// //unload : device still ALIVE -> Release for real (rule 4). Forget alone leaked the atlas per unload/load cycle.
+void debuffs_help_dispose() { if (g_dbHelpTex) release_texture(g_dbHelpTex); debuffs_help_forget(); }
 static u32 debuffs_help_atlas(u32 dev) {   // bounded retry (rule 10) -- was a one-shot latch that stranded the Help icons on a single miss
     return ensure_raw_tex(dev, g_dbHelpTex, g_dbHelpRetry, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
 }

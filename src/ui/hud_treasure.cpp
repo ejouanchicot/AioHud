@@ -151,6 +151,8 @@ void Hud::draw_treasure_pool(const Frame& f, bool preview, float ovX, float ovY,
 // handle would go to SetTexture with its owning device destroyed. treasure_help_forget() clears it from that block.
 static u32 g_tpHelpTex = 0; static TexRetry g_tpHelpRetry;
 void treasure_help_forget() { g_tpHelpTex = 0; g_tpHelpRetry = TexRetry{}; }   // device recreate : drop the handle AND re-arm the bounded retry
+// //unload : device still ALIVE -> Release for real (rule 4). Forget alone leaked the coffer icon per cycle.
+void treasure_help_dispose() { if (g_tpHelpTex) release_texture(g_tpHelpTex); treasure_help_forget(); }
 static u32 treasure_help_coffer(u32 dev) {   // bounded retry (rule 10) -- was a one-shot latch that stranded the Help icon on a single miss
     return ensure_raw_tex_mip(dev, g_tpHelpTex, g_tpHelpRetry, COFFER_PATH(), 128, 128);
 }
