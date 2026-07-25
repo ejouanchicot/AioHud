@@ -3,6 +3,7 @@
 #include "model/paths.h"
 #include "model/job_track_gen.h"
 #include "model/game_mem.h"   // read_player : current character name + main/sub job -> default profile name + auto-load
+#include "windower_debug.h"   // debug::log : this file persists EVERYTHING and used to fail in total silence
 
 #ifndef AIOHUD_VERSION
 #define AIOHUD_VERSION "dev"   // injected by build.bat / CI from the git tag ; fallback for ad-hoc builds
@@ -121,10 +122,15 @@ static const char* last_char_profile(const char* charName) {
 // the truth, and the loss is written back to disk on that client's next save. Same rule as the gear-icon cache
 // and charprofiles.txt. (An earlier comment in profile_sync_poll claimed this write was already MoveFileEx-based.
 // It was not -- that was an assumption, and this is the fix that makes it true.)
-static void save_config_to(const char* path) {
+// Returns TRUE only when the file is fully written AND published. It used to return void, so every caller was
+// structurally unable to tell a successful save from a failed one -- and profile_save() went on to mark the
+// config CLEAN and report "OK" to the user. A read-only data folder (an install under Program Files) or a full
+// disk therefore lost the profile silently, and the user was told it was saved.
+static bool save_config_to(const char* path) {
     CNumLoc _cnl;   // dot decimals regardless of the OS locale
     char tmp[320]; _snprintf(tmp, sizeof(tmp), "%s.%lu.tmp", path, (unsigned long)GetCurrentProcessId()); tmp[sizeof(tmp) - 1] = 0;
-    FILE* f = fopen(tmp, "w"); if (!f) return;
+    FILE* f = fopen(tmp, "w");
+    if (!f) { windower::debug::log("config save FAILED (open) : %s (err=%lu)", tmp, (unsigned long)GetLastError()); return false; }
     UiConfig& c = ui_config();
     fprintf(f, "partyShow=%d\n", c.partyShow);
     fprintf(f, "allyShow=%d\n", c.allyShow);
@@ -326,7 +332,12 @@ static void save_config_to(const char* path) {
     // fclose is where buffered-write failures surface (disk full, quota) -- check it, then publish in one step.
     // On any failure the ORIGINAL file is left untouched, which is the whole point: a config we could not write
     // completely must never replace a config that was complete.
-    if (fclose(f) != 0 || !MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING)) DeleteFileA(tmp);
+    if (fclose(f) != 0 || !MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING)) {
+        windower::debug::log("config save FAILED (write/publish) : %s (err=%lu)", path, (unsigned long)GetLastError());
+        DeleteFileA(tmp);
+        return false;
+    }
+    return true;
 }
 
 static void parse_box(const char* s, BoxStyle& b) {   // "on,alpha,themeCopy,theme,lum,hue[,border]" -> BoxStyle (keeps defaults on short lines)
@@ -918,7 +929,9 @@ bool profile_save(const char* name) {
     if (!name || !name[0]) return false;
     CreateDirectoryA(profile_dir(), NULL);
     char p[300]; profile_path(name, p, sizeof(p));
-    save_config_to(p);
+    // Never mark the config clean on a save that did not happen : the user would be told "OK", the dirty flag
+    // would be cleared, and the work would be gone at the next load with nothing to explain it.
+    if (!save_config_to(p)) { windower::debug::log("profile save FAILED : '%s' -> %s", name, p); return false; }
     profile_refresh();
     profile_mark_clean();
     set_active_profile(name);   // saving makes it the active profile too
