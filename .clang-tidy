@@ -8,6 +8,21 @@
 #   cppcoreguidelines-pro-type-reinterpret-cast / -cstyle-cast   -> reinterpreting game memory is inherent here
 #   modernize-use-trailing-return-type                           -> not the house style
 #   *-exceptions*, anything pushing std::vector/std::string      -> SEH boundary, no per-frame heap
+#   performance-no-int-to-ptr                                    -> meme raison que reinterpret-cast : convertir
+#     une adresse entiere lue dans le jeu en pointeur EST le principe du projet (16 constats sur game_mem.cpp
+#     seul). Oubliee a l'origine, ajoutee apres l'evaluation du 2026-07-25.
+#   readability-make-member-function-const                       -> 90 des 158 constats. Rendre 90 signatures
+#     const ne change aucun comportement : meme edition de masse a risque nul de gain que ci-dessous.
+#   modernize-use-nullptr                                        -> 92 des 146 constats sur 5 fichiers. Le code
+#     appelle massivement l'API Win32 qui prend NULL ; convertir 92 sites ne change aucun comportement et fait
+#     courir un risque de regression pour rien.
+#
+# EVALUE le 2026-07-25 sur 5 fichiers / ~5000 lignes (game_mem, party_state, hud_timers, texture, party) :
+#   ZERO bug reel trouve. Les constats bugprone-* etaient tous corrects mais sans consequence (indexation
+#   d'atlas en division entiere = voulue ; arrondi d'un log de debug ; un depassement qui demanderait une
+#   texture de 536 millions de pixels). C'est pourquoi ce fichier n'est PAS branche en CI : un garde-fou qui
+#   ne rapporte rien d'actionnable est ignore en deux semaines, et un garde-fou ignore est pire qu'absent.
+#   Il reste un OUTIL LOCAL, utile sur du code NEUF -> scripts/tidy.ps1
 #
 # Run (needs clang-tidy + a compile-commands.json or explicit flags -- the shipping build stays MSVC cl):
 #   clang-tidy src/model/game_mem.cpp -- -m32 -std=c++17 -Iinclude -Isrc
@@ -16,7 +31,6 @@ Checks: >
   bugprone-*,
   performance-*,
   misc-*,
-  modernize-use-nullptr,
   modernize-use-override,
   modernize-use-bool-literals,
   modernize-use-using,
@@ -24,7 +38,6 @@ Checks: >
   modernize-use-equals-delete,
   modernize-redundant-void-arg,
   readability-const-return-type,
-  readability-make-member-function-const,
   readability-redundant-member-init,
   readability-redundant-string-init,
   readability-redundant-declaration,
@@ -37,7 +50,9 @@ Checks: >
   -bugprone-implicit-widening-of-multiplication-result,
   -misc-non-private-member-variables-in-classes,
   -misc-use-anonymous-namespace,
-  -misc-include-cleaner
+  -misc-include-cleaner,
+  -performance-no-int-to-ptr,
+  -readability-make-member-function-const
 
 WarningsAsErrors: ''
 HeaderFilterRegex: '(src|include)/.*\.(h|hpp)$'

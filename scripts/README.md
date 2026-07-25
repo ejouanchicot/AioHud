@@ -9,7 +9,28 @@ Two very different toolchains used to sit side by side; the Ghidra ones moved do
 |---|---|---|
 | `*.py` (23) | **Generators** — turn Windower resources or a reference sheet into a `*_gen.h` table or a `.raw` atlas | `python scripts/<name>.py` |
 | `*.ps1` / `*.sh` (7) | Asset baking (window skin, icons, capitalisation pass) | run directly |
+| `tidy.ps1` | **clang-tidy**, avec les drapeaux qui le font marcher sur ce projet — outil LOCAL, pas une etape de CI | `.\scripts	idy.ps1 [fichier]` |
 | [`ghidra/`](ghidra/README.md) (32 `.java`) | **Ghidra headless scripts** — static analysis of `FFXiMain`. Different tool, different workflow | `analyzeHeadless ... -scriptPath scripts/ghidra -postScript <Script>.java` |
+
+## clang-tidy : outil local, delibrement PAS en CI
+
+`clang-tidy` est deja livre avec VS BuildTools (rien a installer). `.\scripts	idy.ps1` l'appelle avec les
+trois drapeaux non evidents : `--header-filter` (sans lui, 7994 des 8018 avertissements viennent des en-tetes
+systeme), `-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH` (clang 12 refuse la STL de VS 2022) et `-m32`.
+
+**Evalue le 2026-07-25 sur les 5 fichiers les plus charges (~5000 lignes) : aucun bug reel trouve.** Les
+constats `bugprone-*` etaient corrects mais sans consequence (indexation d'atlas en division entiere = voulue ;
+arrondi dans un log de debug ; un depassement qui demanderait une texture de 536 millions de pixels).
+
+C'est pourquoi il n'est PAS branche en CI : un garde-fou qui ne rapporte rien d'actionnable est ignore en deux
+semaines, et un garde-fou ignore est pire qu'absent. Trois regles ont ete desactivees pour la meme raison
+qu'elles produisaient l'essentiel du bruit sans rien apprendre (`-performance-no-int-to-ptr` : lire la memoire
+du jeu depuis une adresse entiere EST le principe du projet ; `-modernize-use-nullptr` et
+`-readability-make-member-function-const` : 182 editions de masse a comportement inchange). Le rapport est
+passe de 158 a 68 constats sur ces memes fichiers.
+
+**Ou il sert vraiment : le code NEUF.** Sur un fichier recent il rend 0 constat, donc tout ce qu'il signale sur
+un fichier qu'on vient d'ecrire merite un regard. Le lancer apres avoir ajoute un module, pas sur l'existant.
 
 ## Rules that bite
 
