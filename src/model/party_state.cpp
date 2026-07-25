@@ -1059,11 +1059,15 @@ void PartyState::on_action(const unsigned char* p) {
             if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0 && b->skill == 40) {
                 char gl[220]; int go = 0; gl[0] = 0;
                 for (int gi2 = 0; gi2 < 16 && go < 200; ++gi2) go += _snprintf(gl + go, sizeof(gl) - 1 - go, "%u ", eids[gi2]);
+                // INTEGER formatting only : wvsprintfA (windower_debug.h) has no %f -- a float here prints garbage and
+                // would make a good capture unreadable. Every factor is expressed as a percentage or a tenth instead.
                 const double dbg = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
-                windower::debug::log("SONGDUR spell=%u st=%u fam=%d base=%us  m1=%.3f (gear %d%% + jp %d%%)  m2=%.1f (troub=%d)  m3=%.1f (sv=%d marc=%d)  a3=%ds  miracle=%d  -> %.1fs   tc=%u nTgt=%u aoeSelf=%d",
-                                     sid, b->effect, songFam, b->durSec, songM1, song_dur_m1_pct(eids, songFam), songJp,
-                                     songM2, troubadour ? 1 : 0, songM3, soulvoice ? 1 : 0, marcato ? 1 : 0, songA3,
-                                     miracle ? 1 : 0, dbg, tc, nTgt, aoeSelf ? 1 : 0);
+                const int m1pct = song_dur_m1_pct(eids, songFam), dbg10 = (int)(dbg * 10.0 + 0.5);
+                windower::debug::log("SONGDUR spell=%u st=%u fam=%d base=%us  m1=+%d%% (gear %d%% + jp %d%%)  m2=x%d (troub=%d)  m3=%s (sv=%d marc=%d)  a3=%ds  miracle=%d  -> %d.%ds   tc=%u nTgt=%u aoeSelf=%d",
+                                     sid, b->effect, songFam, b->durSec, m1pct + songJp, m1pct, songJp,
+                                     troubadour ? 2 : 1, troubadour ? 1 : 0, (songM3 > 1.0) ? "x1.5" : "x1",
+                                     soulvoice ? 1 : 0, marcato ? 1 : 0, songA3, miracle ? 1 : 0,
+                                     dbg10 / 10, dbg10 % 10, tc, nTgt, aoeSelf ? 1 : 0);
                 windower::debug::log("SONGDUR   equipped ids = [%s]", gl);
             }
             if (aoeSelf && b->effect < 1024) {   // remember the spell/tier for the self row name (+ a ring for same-status doubles)
@@ -1614,9 +1618,10 @@ void PartyState::songdur_check() {
         const int nowT = (int)ffxi_now_tick();
         const int predSec = ((int)sp.predExp - nowT) / 60, realSec = ((int)real - nowT) / 60;
         const SpellRow* srw = spell_info(sp.spell);
-        windower::debug::log("SONGREAL spell=%u \"%s\" st=%u : model predicted %ds remaining, game says %ds  -> delta %+ds (%.1f%%)",
-                             sp.spell, (srw && srw->en) ? srw->en : "?", sp.status, predSec, realSec,
-                             realSec - predSec, realSec ? (100.0 * (realSec - predSec)) / (double)realSec : 0.0);
+        const int dSec = realSec - predSec;
+        const int dPct = realSec ? (100 * dSec) / realSec : 0;   // integer : wvsprintfA has no %f (windower_debug.h)
+        windower::debug::log("SONGREAL spell=%u \"%s\" st=%u : model predicted %ds remaining, game says %ds  -> delta %d s (%d%%)",
+                             sp.spell, (srw && srw->en) ? srw->en : "?", sp.status, predSec, realSec, dSec, dPct);
         sp.done = 1;
     }
 }
