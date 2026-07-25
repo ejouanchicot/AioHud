@@ -275,6 +275,19 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_67[] = {
+    { "*Your songs on allies had the wrong duration -- by a lot.* An ally's row could read 3:43 for a Minuet that really lasts 5:42. The gear that lengthens a song was only half counted : a point of \"Song+\" potency also grants +10% duration, and that half was ignored, along with every modern instrument. Measured against the game's own timer, ally song rows now land within about a second on every song tested.",
+      "*Vos chants sur les allies affichaient une duree fausse -- de beaucoup.* La ligne d'un allie pouvait indiquer 3:43 pour un Minuet qui dure reellement 5:42. L'equipement qui allonge un chant n'etait compte qu'a moitie : un point de potence \"Song+\" donne aussi +10% de duree, et cette moitie etait ignoree, ainsi que tous les instruments modernes. Compare au timer du jeu lui-meme, les lignes alliees tombent maintenant a la seconde pres sur tous les chants testes." },
+    { "Why it was invisible for so long : a song sung on the whole party lands on YOU too, and those rows show your own exact server timer. Only a Pianissimo on a single ally reveals the estimate -- which is where the gap finally showed.",
+      "Pourquoi c'est reste invisible si longtemps : un chant lance sur tout le groupe vous touche AUSSI, et ces lignes affichent votre propre timer serveur exact. Seul un Pianissimo sur un allie isole revele l'estimation -- c'est la que l'ecart a fini par apparaitre." },
+    { "Fixed : a buff cast on ONE ally could show a group count that included people who never received it -- a Protectra V on the party followed by a Protect V on one person displayed \"(AoE 6)\" on a row that covered a single ally.",
+      "Corrige : un buff lance sur UN seul allie pouvait afficher un compteur de groupe incluant des gens qui ne l'avaient pas recu -- un Protectra V sur le groupe suivi d'un Protect V sur une personne affichait \"(AoE 6)\" sur une ligne qui ne couvrait qu'un allie." },
+    { "Fixed : a trust carrying a Protect and a Shell cast by someone else slipped through the \"my buffs only\" filter.",
+      "Corrige : un trust portant un Protect et un Shell lances par quelqu'un d'autre passait au travers du filtre \"mes buffs uniquement\"." },
+    { "Fixed : on a busy action packet -- many effects on one target -- the following targets could be read wrong, so a buff or debuff landing on them was occasionally missed.",
+      "Corrige : sur un paquet d'action charge -- beaucoup d'effets sur une meme cible -- les cibles suivantes pouvaient etre mal lues, et un buff ou un debuff qui les touchait etait parfois manque." },
+};
+
 static const ChangeLine CL_66[] = {
     { "*The Debuffs box now shows which TIER is on the mob.* A Dia III reads \"Dia III\", not just \"Dia\" -- and it works whoever cast it, yours or a party member's. A debuff replaced by a stronger one (Bio III over your Dia III) now disappears the way the game replaced it, instead of lingering with a dead countdown.",
       "*La boite Debuffs indique maintenant quel PALIER est sur le mob.* Un Dia III affiche \"Dia III\", plus seulement \"Dia\" -- et ca marche quel que soit le lanceur, vous ou un membre du groupe. Un debuff remplace par un plus fort (Bio III sur votre Dia III) disparait comme le jeu l'a remplace, au lieu de trainer avec un decompte mort." },
@@ -405,6 +418,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.67", CL_67, (int)(sizeof(CL_67) / sizeof(CL_67[0])) },
     { "1.0.66", CL_66, (int)(sizeof(CL_66) / sizeof(CL_66[0])) },
     { "1.0.65", CL_65, (int)(sizeof(CL_65) / sizeof(CL_65[0])) },
     { "1.0.64", CL_64, (int)(sizeof(CL_64) / sizeof(CL_64[0])) },
