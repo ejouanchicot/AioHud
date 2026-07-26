@@ -811,6 +811,25 @@ void PartyState::on_action(const unsigned char* p) {
     // (Savage Blade, measured), a damage JA uses 317 (Jump, measured). So the popup excludes the JA-damage message.
     // 317 stays in sc_is_finish_msg for skillchains, which is a separate concern.
     const unsigned wsMsg = getbits(p, 230, 10, size);
+    // The 317 exclusion above was measured on JUMP alone, and it does not cover every damage JA : Shield Bash
+    // (ability 46) collides with WS 46 "Expiacion" and still pops under its name (reported 2026-07-26), so its
+    // target message is something else. Excluding the ID cannot work -- a PLD really does have both -- so the
+    // message is the only discriminator, and it has to be MEASURED per JA rather than guessed.
+    // One line per DISTINCT (id, message) pair, always-on: quiet (a handful of lines covering your repertoire),
+    // needs no probe armed in advance, and the first Shield Bash / Weapon Bash writes the number the fix needs.
+    if (cat == 3 && actor == selfId_ && sc_is_finish_msg(wsMsg)) {
+        const u32 dbgId = getbits(p, 86, 16, size);
+        static unsigned seen[64]; static int seenN = 0;
+        const unsigned key = (dbgId << 10) | (wsMsg & 0x3FF);
+        bool dup = false; for (int i = 0; i < seenN; ++i) if (seen[i] == key) { dup = true; break; }
+        if (!dup) {
+            if (seenN < 64) seen[seenN++] = key;
+            const WSRow* dw = ws_info(dbgId); const AbilRow* dab = abil_info(dbgId); const char* da = dab ? dab->en : 0;
+            windower::debug::log("WSPOP id=%u msg=%u -> WS table says '%s', ability table says '%s' -> popup %s",
+                                 dbgId, wsMsg, dw && dw->en ? dw->en : "-", da ? da : "-",
+                                 (wsMsg != 317) ? "FIRES" : "suppressed (317 = damage JA)");
+        }
+    }
     if (cat == 3 && actor == selfId_ && sc_is_finish_msg(wsMsg) && wsMsg != 317) {
         const u32 wsid = getbits(p, 86, 16, size);         //   WS id = actor.param @bit 86 (like cat 4/6)
         const u32 dmg  = getbits(p, 213, 17, size);        //   damage = target[0].param @bit 213 (target base 150 + 63)
