@@ -862,7 +862,30 @@ void PartyState::on_action(const unsigned char* p) {
                                  (wsMsg != 317) ? "FIRES" : "suppressed (317 = damage JA)");
         }
     }
-    if (cat == 3 && actor == selfId_ && sc_is_finish_msg(wsMsg) && wsMsg != 317) {
+    // WHITELIST, not a blacklist -- the inversion this bug asked for. The old rule fired for every finish message
+    // except the ONE damage-JA message that had been measured (317, Jump), so any JA whose message had never been
+    // seen fired the popup under its collision partner's name : Shield Bash (JA 46) announced "Expiacion" (WS 46),
+    // Weapon Bash (JA 77) likewise. Excluding the ID cannot work -- a Paladin genuinely has both on 46 -- and the
+    // message is the only field that separates them.
+    // Measured so far on this character: real weaponskills use 185 (Savage Blade id 42, Ruthless Stroke id 232);
+    // Jump uses 317. 110 / 187 / 802 are accepted by sc_is_finish_msg for the skillchain box but have never been
+    // observed on a weaponskill here, so they now FAIL CLOSED: an unmeasured message produces no popup instead of a
+    // popup under someone else's name. A missing popup is a strictly better error than a lying one, and the log
+    // line below turns the first occurrence of a legitimate 110/187/802 weaponskill into a one-line fix.
+    const bool wsMsgIsReal = (wsMsg == 185);
+    if (cat == 3 && actor == selfId_ && sc_is_finish_msg(wsMsg) && !wsMsgIsReal) {
+        static unsigned seenSup[16]; static int seenSupN = 0;   // one line per (id,msg), never per use
+        const u32 sid2 = getbits(p, 86, 16, size);
+        const unsigned k2 = (sid2 << 10) | (wsMsg & 0x3FF);
+        bool dup2 = false; for (int q = 0; q < seenSupN; ++q) if (seenSup[q] == k2) { dup2 = true; break; }
+        if (!dup2) {
+            if (seenSupN < 16) seenSup[seenSupN++] = k2;
+            const WSRow* sw = ws_info(sid2); const AbilRow* sa = abil_info(sid2);
+            windower::debug::log("WSPOP suppressed id=%u msg=%u -> WS table '%s', ability table '%s'. If this WAS a real weaponskill, say so : msg %u must join the whitelist",
+                                 sid2, wsMsg, sw && sw->en ? sw->en : "-", sa && sa->en ? sa->en : "-", wsMsg);
+        }
+    }
+    if (cat == 3 && actor == selfId_ && wsMsgIsReal) {
         const u32 wsid = getbits(p, 86, 16, size);         //   WS id = actor.param @bit 86 (like cat 4/6)
         const u32 dmg  = getbits(p, 213, 17, size);        //   damage = target[0].param @bit 213 (target base 150 + 63)
         const WSRow* w = ws_info(wsid); const char* nm = w ? w->en : "Weapon Skill";
