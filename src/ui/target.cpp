@@ -186,7 +186,12 @@ static void fx_bar_fill(u32 dev, float x, float y, float w, float h, float r, fl
       grad_quad(dev, x, y + h * 0.10f, fw, h * 0.36f, g0, g0, g1, g1); }   // glossy top
     rrect_clip_end(dev);
     if (fw < w - 1.0f) {   // hot bright edge at the fill tip
-        const u32 e0 = mul_a(base, 0.0f), e1 = mul_a(scl(base, 1.7f), a), bw = h * 0.55f;
+        // `bw` USED TO SIT IN THE u32 LIST ABOVE, so a pixel WIDTH inherited the integer type and `h * 0.55f`
+        // was truncated : the edge snapped to whole pixels as the bar-height slider moved, and vanished outright
+        // once barH fell under 1.82 px (tgtBarH at its 0.10 floor) because the width floored to 0. MSVC had been
+        // saying so all along -- C4244 x3 on these two lines, one of the warnings build.bat keeps ON on purpose.
+        const u32   e0 = mul_a(base, 0.0f), e1 = mul_a(scl(base, 1.7f), a);
+        const float bw = h * 0.55f;
         rrect_clip_begin(dev, x, y, w, h, r);
         grad_quad(dev, x + fw - bw, y, bw, h, e0, e1, e0, e1);
         rrect_clip_end(dev);
