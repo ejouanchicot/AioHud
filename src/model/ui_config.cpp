@@ -126,6 +126,47 @@ static const char* last_char_profile(const char* charName) {
 // structurally unable to tell a successful save from a failed one -- and profile_save() went on to mark the
 // config CLEAN and report "OK" to the user. A read-only data folder (an install under Program Files) or a full
 // disk therefore lost the profile silently, and the user was told it was saved.
+// ---- TextStyle : ONE (de)serialiser + ONE comparison, instead of the same 4 lines copied per module ----
+// A TextStyle array was written, parsed and compared by hand in every module: 12 save blocks, 15 load blocks
+// and 13 compares, all byte-identical apart from the key. That is the four-place tax the audit named -- adding
+// a field meant editing 40 places, and forgetting one of them is a silent bug (a style that saves but never
+// reloads). The wire format is unchanged: "<key><i>=face,size,outline,flags,RRGGBB" with the flag bits in the
+// same order, so existing config files and profiles load exactly as before.
+static void save_text_styles(FILE* f, const char* key, const TextStyle* arr, int n) {
+    for (int i = 0; i < n; ++i) {
+        const TextStyle& t = arr[i];
+        const int fl = (t.bold ? 1 : 0) | (t.italic ? 2 : 0) | (t.upper ? 4 : 0) | (t.colorOn ? 8 : 0);
+        fprintf(f, "%s%d=%d,%.4f,%.4f,%d,%08X\n", key, i, t.face, t.size, t.outline, fl, t.color);
+    }
+}
+// "<key><idx>=..." -> arr[idx]. Returns false (touching nothing) when the line is not this key, so it drops
+// into an if/else chain exactly where the hand-written sscanf used to sit. The index is read by hand rather
+// than through a built format string: sscanf's "%s%d=" cannot be composed portably, and a bad idx must be
+// rejected BEFORE it indexes the array.
+static bool parse_text_style(const char* line, const char* key, TextStyle* arr, int n) {
+    const size_t kl = strlen(key);
+    if (strncmp(line, key, kl) != 0) return false;
+    const char* p = line + kl;
+    if (*p < '0' || *p > '9') return false;
+    int idx = 0;
+    while (*p >= '0' && *p <= '9') { idx = idx * 10 + (*p - '0'); ++p; }
+    if (*p != '=' || idx < 0 || idx >= n) return false;
+    int face = 0, fl = 0; float size = 0.0f, outline = 0.0f; unsigned col = 0;
+    if (sscanf(p + 1, "%d,%f,%f,%d,%x", &face, &size, &outline, &fl, &col) != 5) return false;
+    TextStyle& t = arr[idx];
+    t.face = face; t.size = size; t.outline = outline; t.color = col;
+    t.bold = (fl & 1) != 0; t.italic = (fl & 2) != 0; t.upper = (fl & 4) != 0; t.colorOn = (fl & 8) != 0;
+    return true;
+}
+static bool text_style_eq(const TextStyle& x, const TextStyle& y) {
+    return x.face == y.face && x.size == y.size && x.outline == y.outline && x.color == y.color
+        && x.bold == y.bold && x.italic == y.italic && x.upper == y.upper && x.colorOn == y.colorOn;
+}
+static bool text_styles_eq(const TextStyle* x, const TextStyle* y, int n) {
+    for (int i = 0; i < n; ++i) if (!text_style_eq(x[i], y[i])) return false;
+    return true;
+}
+
 static bool save_config_to(const char* path) {
     CNumLoc _cnl;   // dot decimals regardless of the OS locale
     char tmp[320]; _snprintf(tmp, sizeof(tmp), "%s.%lu.tmp", path, (unsigned long)GetCurrentProcessId()); tmp[sizeof(tmp) - 1] = 0;
@@ -177,11 +218,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "tgtDebuffs=%d\n", c.tgtDebuffs);
     fprintf(f, "tgtBuffPos=%d\n", c.tgtBuffPos);
     fprintf(f, "tgtTimers=%d\n", c.tgtTimers);
-    for (int i = 0; i < TGT_TE_COUNT; ++i) {
-        const TextStyle& ts = c.tgtText[i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "tgtText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
+    save_text_styles(f, "tgtText", c.tgtText, TGT_TE_COUNT);
     fprintf(f, "tgtBars=%.4f,%.4f,%.4f\n", c.tgtBarH, c.tgtBarW, c.tgtIconSz);
     fprintf(f, "tgtDetailIconSz=%.4f\n", c.tgtDetailIconSz);
     fprintf(f, "tgtRangeH=%.4f\n", c.tgtRangeH);
@@ -199,29 +236,13 @@ static bool save_config_to(const char* path) {
     fprintf(f, "ws=%d,%.3f,%.3f,%.3f,%d,%d\n", c.wsShow, c.wsScale, c.wsX, c.wsY, c.wsFont, c.wsFx);   // arcade WS popup
     fprintf(f, "sc=%d,%.3f,%.4f,%.4f,%d\n", c.scShow, c.scScale, c.scX, c.scY, c.scNearby);   // skillchains box (+ display scope)
     fprintf(f, "tp=%d,%.3f,%.4f,%.4f,%d,%d\n", c.tpShow, c.tpScale, c.tpX, c.tpY, c.tpCount, c.tpIcon);   // treasure pool box
-    for (int i = 0; i < TP_TE_COUNT; ++i) {                                       // treasure pool : per-element typography
-        const TextStyle& ts = c.tpText[i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "tpText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
+    save_text_styles(f, "tpText", c.tpText, TP_TE_COUNT);   // treasure pool : per-element typography
     fprintf(f, "hl=%d,%.3f,%.4f,%.4f,%d,%d,%d\n", c.hlShow, c.hlScale, c.hlX, c.hlY, c.hlCount, c.hlDist, c.hlTgt);   // hate list box
-    for (int i = 0; i < HL_TE_COUNT; ++i) {                                       // hate list : per-element typography
-        const TextStyle& ts = c.hlText[i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "hlText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
+    save_text_styles(f, "hlText", c.hlText, HL_TE_COUNT);   // hate list : per-element typography
     fprintf(f, "pw=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d\n", c.pwShow, c.pwScale, c.pwX, c.pwY, c.pwMode, c.pwRate, c.pwLayout, c.pwDisplay);   // pointwatch box (+ layout/display)
-    for (int i = 0; i < PW_TE_COUNT; ++i) {                                       // pointwatch : per-element typography
-        const TextStyle& ts = c.pwText[i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "pwText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
+    save_text_styles(f, "pwText", c.pwText, PW_TE_COUNT);   // pointwatch : per-element typography
     fprintf(f, "grim=%d,%.3f,%.4f,%.4f,%d\n", c.grimShow, c.grimScale, c.grimX, c.grimY, c.grimArt);   // grimoire box
-    for (int i = 0; i < GRIM_TE_COUNT; ++i) {                                     // grimoire : per-element typography
-        const TextStyle& ts = c.grimText[i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "grimText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
+    save_text_styles(f, "grimText", c.grimText, GRIM_TE_COUNT);   // grimoire : per-element typography
     fprintf(f, "zt=%d,%.3f,%.4f,%.4f,%d,%d\n", c.ztShow, c.ztScale, c.ztX, c.ztY, c.ztVariant, c.ztHeader);   // zone tracker box (+ title toggle)
     fprintf(f, "ztsheol=%d,%d,%d\n", c.ztSheolSeg, c.ztSheolRes, c.ztSheolJoke);   // Sheol : segments / resistances / cruel joke
     fprintf(f, "ztlimbus=%d,%d,%d,%d,%d,%.2f,%.2f\n", c.ztLbFloor, c.ztLbCur, c.ztLbRun, c.ztLbChips, c.ztLbName, c.ztLbBarW, c.ztLbBarH);   // Limbus : floor-on-gauge / currencies / run / coffer dots / name row / gauge W / gauge H
@@ -239,26 +260,10 @@ static bool save_config_to(const char* path) {
     fprintf(f, "ep=%d,%.3f,%.4f,%.4f,%d\n", c.epShow, c.epScale, c.epX, c.epY, c.epColl);   // EmpyPop box (+ collectable row)
     fprintf(f, "eptrack=%s\n", c.epTrack);   // the tracked NM KEY -- its OWN line : keys contain spaces
                                              // ("arch dynamis lord"), so it must never share a CSV line.
-    for (int i = 0; i < EP_TE_COUNT; ++i) {                                       // EmpyPop : per-element typography
-        const TextStyle& ts = c.epText[i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "epText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
-    for (int i = 0; i < ZT_TE_COUNT; ++i) {                                       // zone tracker : per-element typography
-        const TextStyle& ts = c.ztText[i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "ztText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
-    for (int i = 0; i < TM_TE_COUNT; ++i) {                                       // Timers : per-element typography
-        const TextStyle& ts = c.tmText[i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "tmText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
-    for (int i = 0; i < DB_TE_COUNT; ++i) {                                       // Debuffs : per-element typography
-        const TextStyle& ts = c.dbText[i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "dbText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
+    save_text_styles(f, "epText", c.epText, EP_TE_COUNT);   // EmpyPop : per-element typography
+    save_text_styles(f, "ztText", c.ztText, ZT_TE_COUNT);   // zone tracker : per-element typography
+    save_text_styles(f, "tmText", c.tmText, TM_TE_COUNT);   // Timers : per-element typography
+    save_text_styles(f, "dbText", c.dbText, DB_TE_COUNT);   // Debuffs : per-element typography
     fprintf(f, "tmAllyGroup=%d\n", c.tmAllyGroup);   // buffs on allies : group same-spell into (AoE N) vs one row per ally
     fprintf(f, "tmFocus=%d,%d\n", c.tmFocusWarn, c.tmFocusHold);   // focus alert : warn-threshold + hold-after-loss (seconds)
     fprintf(f, "tmPreset=%d\n", c.tmPreset);         // track-preset seed version (see apply_rdm_uff_preset)
@@ -278,25 +283,13 @@ static bool save_config_to(const char* path) {
         fprintf(f, "\n");
     }
     fprintf(f, "sc2=%d,%d,%d,%d,%d,%.4f,%d\n", c.scTimer, c.scStep, c.scProps, c.scList, c.scTitle, c.scListGap, c.scTP);   // skillchains : element toggles (title + WS-list spacing + TP line appended)
-    for (int i = 0; i < SC_TE_COUNT; ++i) {                                       // skillchains : per-element typography
-        const TextStyle& ts = c.scText[i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "scText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
+    save_text_styles(f, "scText", c.scText, SC_TE_COUNT);   // skillchains : per-element typography
     fprintf(f, "wscol=%08X,%08X,%08X\n", c.wsNameCol, c.wsDmgCol1, c.wsDmgCol2);
     fprintf(f, "plrSizes=%.4f,%.4f,%.4f,%.4f,%.4f\n", c.plrBoxAlpha, c.plrScale, c.plrBarH, c.plrBarW, c.plrIconSz);
     fprintf(f, "plrEmblemSz=%.4f\n", c.plrEmblemSz);
     fprintf(f, "plrBarGap=%.4f\n", c.plrBarGap);
-    for (int i = 0; i < PLR_TE_COUNT; ++i) {
-        const TextStyle& ts = c.plrText[i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "plrText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
-    for (int i = 0; i < MM_TE_COUNT; ++i) {
-        const TextStyle& ts = c.mmText[i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "mmText%d=%d,%.4f,%.4f,%d,%08X\n", i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
+    save_text_styles(f, "plrText", c.plrText, PLR_TE_COUNT);
+    save_text_styles(f, "mmText", c.mmText, MM_TE_COUNT);
     fprintf(f, "plrTheme=%d,%d\n", c.plrThemeCopy, c.plrTheme);
     fprintf(f, "plrHue=%08X\n", c.plrHue);
     fprintf(f, "plrLum=%.3f\n", c.plrLum);
@@ -322,11 +315,8 @@ static bool save_config_to(const char* path) {
                 c.guideGroup[i].role | (c.guideGroup[i].allow[ZPERM_TARGET] ? 0x100 : 0), c.guideGroup[i].name);   // Target-allow packed into role bit 8 (backward compatible)
     fprintf(f, "border=%d,%d,%d,%d\n", c.border[0] ? 1 : 0, c.border[1] ? 1 : 0, c.border[2] ? 1 : 0, c.borderCost ? 1 : 0);
     fprintf(f, "anim=%d,%d\n", c.animHP ? 1 : 0, c.animTP ? 1 : 0);
-    for (int g = 0; g < 2; ++g) for (int i = 0; i < TE_COUNT; ++i) {
-        const TextStyle& ts = c.text[g][i];
-        int fl = (ts.bold ? 1 : 0) | (ts.italic ? 2 : 0) | (ts.upper ? 4 : 0) | (ts.colorOn ? 8 : 0);
-        fprintf(f, "text%c%d=%d,%.4f,%.4f,%d,%08X\n", g == 0 ? 'P' : 'A', i, ts.face, ts.size, ts.outline, fl, ts.color);
-    }
+    save_text_styles(f, "textP", c.text[0], TE_COUNT);   // per-group typography : [0] Party, [1] Alliance. The old
+    save_text_styles(f, "textA", c.text[1], TE_COUNT);   // loop built the key as "text%c" -- same bytes, spelled out
     for (int i = 0; i < 3; ++i)
         fprintf(f, "box%d=%d,%.5f,%.5f,%.4f\n", i, c.box[i].posSet ? 1 : 0, c.box[i].x, c.box[i].y, c.box[i].scale);
     // fclose is where buffered-write failures surface (disk full, quota) -- check it, then publish in one step.
@@ -389,12 +379,7 @@ static bool parse_ep_line(const char* line, UiConfig& c) {
         while (n && (c.epTrack[n-1] == '\n' || c.epTrack[n-1] == '\r')) c.epTrack[--n] = 0;
         return true;
     }
-    if (sscanf(line, "epText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < EP_TE_COUNT) {
-        TextStyle& ts = c.epText[idx];
-        ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-        ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        return true;
-    }
+    if (parse_text_style(line, "epText", c.epText, EP_TE_COUNT)) return true;
     if (!strncmp(line, "epbox=", 6)) { parse_box(line + 6, c.epBox); return true; }
     return false;
 }
@@ -410,12 +395,7 @@ static bool parse_db_line(const char* line, UiConfig& c) {
                       if (n >= 8) c.dbIconScale = isc; if (n >= 9) c.dbRowGap = rg; }
         return true;
     }
-    if (sscanf(line, "dbText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < DB_TE_COUNT) {
-        TextStyle& ts = c.dbText[idx];
-        ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-        ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        return true;
-    }
+    if (parse_text_style(line, "dbText", c.dbText, DB_TE_COUNT)) return true;
     if (!strncmp(line, "dbbox=", 6)) { parse_box(line + 6, c.dbBox); return true; }
     if (!strncmp(line, "plreqbox=", 9)) { parse_box(line + 9, c.plrEqBox); return true; }   // DETACHED equipment box chrome (out-of-line : same C1061 reason)
     { int mn; if (sscanf(line, "tgtRangeMin=%d", &mn) == 1) { c.tgtRangeMin = mn; return true; } }   // out-of-line : keeps the main chain off MSVC's C1061 limit
@@ -562,11 +542,7 @@ static bool load_config_from(const char* path) {
         else if (sscanf(line, "tgtDebuffs=%d", &v) == 1) c.tgtDebuffs = v;
         else if (sscanf(line, "tgtBuffPos=%d", &v) == 1) c.tgtBuffPos = v;
         else if (sscanf(line, "tgtTimers=%d", &v) == 1)  c.tgtTimers = v;
-        else if (sscanf(line, "tgtText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < TGT_TE_COUNT) {
-            TextStyle& ts = c.tgtText[idx];
-            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        }
+        else if (parse_text_style(line, "tgtText", c.tgtText, TGT_TE_COUNT)) {}
         else if (sscanf(line, "tgtBars=%f,%f,%f", &fv, &f1, &f2) == 3) { c.tgtBarH = fv; c.tgtBarW = f1; c.tgtIconSz = f2; }
         else if (sscanf(line, "tgtDetailIconSz=%f", &fv) == 1) c.tgtDetailIconSz = fv;
         else if (sscanf(line, "tgtRangeH=%f", &fv) == 1) c.tgtRangeH = fv;
@@ -579,49 +555,21 @@ static bool load_config_from(const char* path) {
         else if (strncmp(line, "wscol=", 6) == 0) { unsigned na = 0, d1 = 0, d2 = 0; if (sscanf(line + 6, "%x,%x,%x", &na, &d1, &d2) == 3) { c.wsNameCol = na; c.wsDmgCol1 = d1; c.wsDmgCol2 = d2; } }
         else if (strncmp(line, "ws=", 3) == 0) { int sh = 1, ft = 0, fx = 1; float sc = 1.0f, x = 0.5f, y = 0.36f; int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d", &sh, &sc, &x, &y, &ft, &fx); if (n >= 1) { c.wsShow = sh; if (n >= 2) c.wsScale = sc; if (n >= 3) c.wsX = x; if (n >= 4) c.wsY = y; if (n >= 5) c.wsFont = ft; if (n >= 6) c.wsFx = fx; } }
         else if (strncmp(line, "sc2=", 4) == 0) { int tm = 1, st = 1, pr = 1, ls = 1, ti = 1, tp = 1; float lg = 1.0f; int n = sscanf(line + 4, "%d,%d,%d,%d,%d,%f,%d", &tm, &st, &pr, &ls, &ti, &lg, &tp); if (n >= 1) { c.scTimer = tm; c.scStep = st; c.scProps = pr; c.scList = ls; if (n >= 5) c.scTitle = ti; if (n >= 6) c.scListGap = lg; if (n >= 7) c.scTP = tp; } }
-        else if (sscanf(line, "scText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < SC_TE_COUNT) {
-            TextStyle& ts = c.scText[idx];
-            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        }
+        else if (parse_text_style(line, "scText", c.scText, SC_TE_COUNT)) {}
         else if (strncmp(line, "sc=", 3) == 0) { int sh = 1; float scl = 1.0f, x = 0.78f, y = 0.06f; int nb = 1; int n = sscanf(line + 3, "%d,%f,%f,%f,%d", &sh, &scl, &x, &y, &nb); if (n >= 1) { c.scShow = sh; if (n >= 2) c.scScale = scl; if (n >= 3) c.scX = x; if (n >= 4) c.scY = y; if (n >= 5) c.scNearby = nb; } }
         else if (strncmp(line, "tp=", 3) == 0) { int sh = 1, cnt = 10, ic = 1; float scl = 1.0f, x = 0.72f, y = 0.30f; int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d", &sh, &scl, &x, &y, &cnt, &ic); if (n >= 1) { c.tpShow = sh; if (n >= 2) c.tpScale = scl; if (n >= 3) c.tpX = x; if (n >= 4) c.tpY = y; if (n >= 5) c.tpCount = cnt; if (n >= 6) c.tpIcon = ic; } }
-        else if (sscanf(line, "tpText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < TP_TE_COUNT) {
-            TextStyle& ts = c.tpText[idx];
-            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        }
+        else if (parse_text_style(line, "tpText", c.tpText, TP_TE_COUNT)) {}
         else if (strncmp(line, "hl=", 3) == 0) { int sh = 1, cnt = 8, sd = 1, st = 1; float scl = 1.0f, x = 0.22f, y = 0.32f; int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d,%d", &sh, &scl, &x, &y, &cnt, &sd, &st); if (n >= 1) { c.hlShow = sh; if (n >= 2) c.hlScale = scl; if (n >= 3) c.hlX = x; if (n >= 4) c.hlY = y; if (n >= 5) c.hlCount = cnt; if (n >= 6) c.hlDist = sd; if (n >= 7) c.hlTgt = st; } }
-        else if (sscanf(line, "hlText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < HL_TE_COUNT) {
-            TextStyle& ts = c.hlText[idx];
-            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        }
+        else if (parse_text_style(line, "hlText", c.hlText, HL_TE_COUNT)) {}
         else if (strncmp(line, "pw=", 3) == 0) { int sh = 1, md = 0, rt = 1, ly = 0, dp = 0; float scl = 1.0f, x = 0.015f, y = 0.04f; int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d,%d,%d", &sh, &scl, &x, &y, &md, &rt, &ly, &dp); if (n >= 1) { c.pwShow = sh; if (n >= 2) c.pwScale = scl; if (n >= 3) c.pwX = x; if (n >= 4) c.pwY = y; if (n >= 5) c.pwMode = md; if (n >= 6) c.pwRate = rt; if (n >= 7) c.pwLayout = ly; if (n >= 8) c.pwDisplay = dp; } }
-        else if (sscanf(line, "pwText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < PW_TE_COUNT) {
-            TextStyle& ts = c.pwText[idx];
-            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        }
+        else if (parse_text_style(line, "pwText", c.pwText, PW_TE_COUNT)) {}
         else if (strncmp(line, "grim=", 5) == 0) { int sh = 1, ar = 2; float scl = 1.0f, x = 0.28f, y = 0.58f; int n = sscanf(line + 5, "%d,%f,%f,%f,%d", &sh, &scl, &x, &y, &ar); if (n >= 1) { c.grimShow = sh; if (n >= 2) c.grimScale = scl; if (n >= 3) c.grimX = x; if (n >= 4) c.grimY = y; if (n >= 5) c.grimArt = ar; } }
-        else if (sscanf(line, "grimText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < GRIM_TE_COUNT) {
-            TextStyle& ts = c.grimText[idx];
-            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        }
+        else if (parse_text_style(line, "grimText", c.grimText, GRIM_TE_COUNT)) {}
         else if (strncmp(line, "zt=", 3) == 0) { int sh = 1, vr = 1, hd = 1; float scl = 1.0f, x = 0.145f, y = 0.33f; int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d", &sh, &scl, &x, &y, &vr, &hd); if (n >= 1) { c.ztShow = sh; if (n >= 2) c.ztScale = scl; if (n >= 3) c.ztX = x; if (n >= 4) c.ztY = y; if (n >= 5) c.ztVariant = vr; if (n >= 6) c.ztHeader = hd; } }
         else if (strncmp(line, "ztsheol=", 8) == 0) { int sg = 1, rs = 1, jk = 1; int n = sscanf(line + 8, "%d,%d,%d", &sg, &rs, &jk); if (n >= 1) { c.ztSheolSeg = sg; if (n >= 2) c.ztSheolRes = rs; if (n >= 3) c.ztSheolJoke = jk; } }
         else if (strncmp(line, "tm=", 3) == 0) { int sh = 1, mx = 16, ti = 1, bx = 1, mg = 1, dm = 0, rm = 0, ot = 1, mn = 1, bs = -1, sp = 1; float scl = 1.0f, x = 0.86f, y = 0.30f, rx = 0.86f, ry2 = 0.44f, isc = 1.0f, rg = 1.0f; int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d,%d,%d,%f,%f,%d,%d,%d,%f,%d,%d,%d,%f", &sh, &scl, &x, &y, &mx, &ti, &bx, &mg, &rx, &ry2, &dm, &rm, &ot, &isc, &mn, &bs, &sp, &rg); if (n >= 1) { c.tmShow = sh; if (n >= 2) c.tmScale = scl; if (n >= 3) c.tmX = x; if (n >= 4) c.tmY = y; if (n >= 5) c.tmMax = mx; if (n >= 6) c.tmTitle = ti; if (n >= 7) c.tmBox.on = bx; if (n >= 8) c.tmMerged = mg; if (n >= 9) c.tmRX = rx; if (n >= 10) c.tmRY = ry2; if (n >= 11) c.tmDurMode = dm; if (n >= 12) c.tmRecMode = rm; if (n >= 13) c.tmOthers = ot; if (n >= 14) c.tmIconScale = isc; if (n >= 15) c.tmMine = mn; c.tmBuffSrc = (n >= 16 && bs >= 0) ? bs : (ot ? 3 : 0); if (n >= 17) c.tmSpAlert = sp; if (n >= 18) c.tmRowGap = rg; } }   // tmBuffSrc absent (old config) -> migrate from tmOthers
-        else if (sscanf(line, "ztText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < ZT_TE_COUNT) {
-            TextStyle& ts = c.ztText[idx];
-            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        }
-        else if (sscanf(line, "tmText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < TM_TE_COUNT) {
-            TextStyle& ts = c.tmText[idx];
-            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        }
+        else if (parse_text_style(line, "ztText", c.ztText, ZT_TE_COUNT)) {}
+        else if (parse_text_style(line, "tmText", c.tmText, TM_TE_COUNT)) {}
         else if (sscanf(line, "tmAllyGroup=%d", &v) == 1) c.tmAllyGroup = v;
         else if (sscanf(line, "tmFocus=%d,%d", &v, &v1) == 2) { c.tmFocusWarn = v; c.tmFocusHold = v1; }
         else if (sscanf(line, "tmPreset=%d", &v) == 1) c.tmPreset = v;
@@ -658,16 +606,8 @@ static bool load_config_from(const char* path) {
         else if (strncmp(line, "mm=", 3) == 0) { int sh = 1, ps = 0; float mx = 0.0f, my = 0.0f, ms = 1.0f, mz = 2.0f; int n = sscanf(line + 3, "%d,%d,%f,%f,%f,%f", &sh, &ps, &mx, &my, &ms, &mz); if (n >= 1) { c.mmShow = sh; c.mmPosSet = ps != 0; c.mmX = mx; c.mmY = my; if (n >= 5) c.mmScale = ms; if (n >= 6) c.mmZoom = mz; } }
         else if (sscanf(line, "plrEmblemSz=%f", &fv) == 1) c.plrEmblemSz = fv;
         else if (sscanf(line, "plrBarGap=%f", &fv) == 1)   c.plrBarGap = fv;
-        else if (sscanf(line, "plrText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < PLR_TE_COUNT) {
-            TextStyle& ts = c.plrText[idx];
-            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        }
-        else if (sscanf(line, "mmText%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < MM_TE_COUNT) {
-            TextStyle& ts = c.mmText[idx];
-            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        }
+        else if (parse_text_style(line, "plrText", c.plrText, PLR_TE_COUNT)) {}
+        else if (parse_text_style(line, "mmText", c.mmText, MM_TE_COUNT)) {}
         else if (strncmp(line, "plrSizes=", 9) == 0) { float s[5] = {0}; if (sscanf(line + 9, "%f,%f,%f,%f,%f", &s[0],&s[1],&s[2],&s[3],&s[4]) == 5) { c.plrBoxAlpha=s[0]; c.plrScale=s[1]; c.plrBarH=s[2]; c.plrBarW=s[3]; c.plrIconSz=s[4]; } }
         else if (sscanf(line, "plrTheme=%d,%d", &v, &v1) == 2) { c.plrThemeCopy = v; c.plrTheme = v1; }
         else if (sscanf(line, "plrLum=%f", &fv) == 1)    c.plrLum = fv;
@@ -719,23 +659,12 @@ static bool load_config_from(const char* path) {
             c.border[0] = (b0 != 0); c.border[1] = (b1 != 0); c.border[2] = (b2 != 0); c.borderCost = (bc != 0);
         }
         else if (sscanf(line, "anim=%d,%d", &b0, &b1) == 2) { c.animHP = (b0 != 0); c.animTP = (b1 != 0); }
-        else if (sscanf(line, "textP%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < TE_COUNT) {
-            TextStyle& ts = c.text[0][idx];
-            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        }
-        else if (sscanf(line, "textA%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < TE_COUNT) {
-            TextStyle& ts = c.text[1][idx];
-            ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-            ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-        }
-        else if (sscanf(line, "text%d=%d,%f,%f,%d,%x", &idx, &v, &fv, &f1, &v1, &uc) == 6 && idx >= 0 && idx < TE_COUNT) {
-            for (int g = 0; g < 2; ++g) {   // legacy (pre per-box typography) : apply to BOTH groups
-                TextStyle& ts = c.text[g][idx];
-                ts.face = v; ts.size = fv; ts.outline = f1; ts.color = uc;
-                ts.bold = (v1 & 1) != 0; ts.italic = (v1 & 2) != 0; ts.upper = (v1 & 4) != 0; ts.colorOn = (v1 & 8) != 0;
-            }
-        }
+        else if (parse_text_style(line, "textP", c.text[0], TE_COUNT)) {}   // per-group typography : [0] = Party
+        else if (parse_text_style(line, "textA", c.text[1], TE_COUNT)) {}   //                        [1] = Alliance
+        // legacy key (pre per-box typography) : one style applied to BOTH groups. Reachable even though "text"
+        // prefixes the two above, because parse_text_style requires a DIGIT right after the key -- "textP0=" is
+        // rejected by the "text" parser at that character, not silently absorbed.
+        else if (parse_text_style(line, "text", c.text[0], TE_COUNT)) { parse_text_style(line, "text", c.text[1], TE_COUNT); }
         else if (sscanf(line, "box%d=%d,%f,%f,%f", &idx, &ps, &x, &y, &s) == 5 && idx >= 0 && idx < 3) {
             // sanitise : a corrupt position (out of the [0,1] screen fraction) must never brick the box
             // off-screen where it can't be grabbed back. Clamp the placed top-left to the viewport.
@@ -1056,9 +985,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.distColClose != b.distColClose || a.distColNormal != b.distColNormal || a.distColFar != b.distColFar) return false;
     if (a.borderCost != b.borderCost || a.animHP != b.animHP || a.animTP != b.animTP) return false;
     for (int g = 0; g < 2; ++g) for (int k = 0; k < TE_COUNT; ++k) {
-        const TextStyle& x = a.text[g][k], & y = b.text[g][k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.color != y.color) return false;
-        if (x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn) return false;
+        if (!text_style_eq(a.text[g][k], b.text[g][k])) return false;
     }
     for (int i = 0; i < 3; ++i) {
         if (a.border[i] != b.border[i]) return false;
@@ -1098,25 +1025,13 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.wsShow != b.wsShow || a.wsScale != b.wsScale || a.wsX != b.wsX || a.wsY != b.wsY || a.wsFont != b.wsFont || a.wsFx != b.wsFx || a.wsNameCol != b.wsNameCol || a.wsDmgCol1 != b.wsDmgCol1 || a.wsDmgCol2 != b.wsDmgCol2) return false;
     if (a.scShow != b.scShow || a.scScale != b.scScale || a.scX != b.scX || a.scY != b.scY || a.scNearby != b.scNearby) return false;
     if (a.tpShow != b.tpShow || a.tpScale != b.tpScale || a.tpX != b.tpX || a.tpY != b.tpY || a.tpCount != b.tpCount || a.tpIcon != b.tpIcon) return false;
-    for (int k = 0; k < TP_TE_COUNT; ++k) {
-        const TextStyle& x = a.tpText[k], & y = b.tpText[k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
-    }
+    if (!text_styles_eq(a.tpText, b.tpText, TP_TE_COUNT)) return false;
     if (a.hlShow != b.hlShow || a.hlScale != b.hlScale || a.hlX != b.hlX || a.hlY != b.hlY || a.hlCount != b.hlCount || a.hlDist != b.hlDist || a.hlTgt != b.hlTgt) return false;
-    for (int k = 0; k < HL_TE_COUNT; ++k) {
-        const TextStyle& x = a.hlText[k], & y = b.hlText[k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
-    }
+    if (!text_styles_eq(a.hlText, b.hlText, HL_TE_COUNT)) return false;
     if (a.pwShow != b.pwShow || a.pwScale != b.pwScale || a.pwX != b.pwX || a.pwY != b.pwY || a.pwMode != b.pwMode || a.pwRate != b.pwRate || a.pwLayout != b.pwLayout || a.pwDisplay != b.pwDisplay) return false;
-    for (int k = 0; k < PW_TE_COUNT; ++k) {
-        const TextStyle& x = a.pwText[k], & y = b.pwText[k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
-    }
+    if (!text_styles_eq(a.pwText, b.pwText, PW_TE_COUNT)) return false;
     if (a.grimShow != b.grimShow || a.grimScale != b.grimScale || a.grimX != b.grimX || a.grimY != b.grimY || a.grimArt != b.grimArt) return false;
-    for (int k = 0; k < GRIM_TE_COUNT; ++k) {
-        const TextStyle& x = a.grimText[k], & y = b.grimText[k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
-    }
+    if (!text_styles_eq(a.grimText, b.grimText, GRIM_TE_COUNT)) return false;
     if (a.ztShow != b.ztShow || a.ztScale != b.ztScale || a.ztX != b.ztX || a.ztY != b.ztY || a.ztVariant != b.ztVariant || a.ztHeader != b.ztHeader) return false;
     if (a.ztSheolSeg != b.ztSheolSeg || a.ztSheolRes != b.ztSheolRes || a.ztSheolJoke != b.ztSheolJoke) return false;
     if (a.ztLbFloor != b.ztLbFloor || a.ztLbCur != b.ztLbCur || a.ztLbRun != b.ztLbRun || a.ztLbChips != b.ztLbChips) return false;
@@ -1128,37 +1043,22 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.ztNyFloor != b.ztNyFloor || a.ztNyTime != b.ztNyTime || a.ztNyObj != b.ztNyObj || a.ztNyRestr != b.ztNyRestr
         || a.ztNyComp != b.ztNyComp || a.ztNyRate != b.ztNyRate || a.ztNyTok != b.ztNyTok) return false;
     if (a.ztShFam != b.ztShFam || a.ztShIcon != b.ztShIcon || a.ztShDot != b.ztShDot) return false;
-    for (int k = 0; k < ZT_TE_COUNT; ++k) {
-        const TextStyle& x = a.ztText[k], & y = b.ztText[k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
-    }
+    if (!text_styles_eq(a.ztText, b.ztText, ZT_TE_COUNT)) return false;
     if (a.epShow != b.epShow || a.epScale != b.epScale || a.epX != b.epX || a.epY != b.epY || a.epColl != b.epColl) return false;
     if (strcmp(a.epTrack, b.epTrack) != 0) return false;   // char[] : compare CONTENT, not the array address
-    for (int k = 0; k < EP_TE_COUNT; ++k) {
-        const TextStyle& x = a.epText[k], & y = b.epText[k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
-    }
+    if (!text_styles_eq(a.epText, b.epText, EP_TE_COUNT)) return false;
     if (a.scTitle != b.scTitle || a.scTimer != b.scTimer || a.scStep != b.scStep || a.scProps != b.scProps || a.scList != b.scList || a.scListGap != b.scListGap || a.scTP != b.scTP) return false;
-    for (int k = 0; k < SC_TE_COUNT; ++k) {
-        const TextStyle& x = a.scText[k], & y = b.scText[k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
-    }
+    if (!text_styles_eq(a.scText, b.scText, SC_TE_COUNT)) return false;
     if (a.plrBarH != b.plrBarH || a.plrBarW != b.plrBarW || a.plrIconSz != b.plrIconSz) return false;
     if (a.plrBarGap != b.plrBarGap || a.plrEmblemSz != b.plrEmblemSz) return false;
     for (int k = 0; k < PLR_TE_COUNT; ++k) {
-        const TextStyle& x = a.plrText[k], & y = b.plrText[k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.color != y.color) return false;
-        if (x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn) return false;
+        if (!text_style_eq(a.plrText[k], b.plrText[k])) return false;
     }
     for (int k = 0; k < MM_TE_COUNT; ++k) {
-        const TextStyle& x = a.mmText[k], & y = b.mmText[k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.color != y.color) return false;
-        if (x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn) return false;
+        if (!text_style_eq(a.mmText[k], b.mmText[k])) return false;
     }
     for (int k = 0; k < TGT_TE_COUNT; ++k) {
-        const TextStyle& x = a.tgtText[k], & y = b.tgtText[k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.color != y.color) return false;
-        if (x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn) return false;
+        if (!text_style_eq(a.tgtText[k], b.tgtText[k])) return false;
     }
     // Timers module : box / layout / display / self-cast filter / typography all belong to the profile.
     if (a.tmShow != b.tmShow || a.tmScale != b.tmScale || a.tmX != b.tmX || a.tmY != b.tmY || a.tmMax != b.tmMax || a.tmTitle != b.tmTitle) return false;
@@ -1174,18 +1074,12 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     }
     if (a.tmBuffOffN != b.tmBuffOffN) return false;                          // job-agnostic buff-family filter -> part of the profile too
     for (int i = 0; i < a.tmBuffOffN; ++i) if (a.tmBuffOff[i] != b.tmBuffOff[i]) return false;
-    for (int k = 0; k < TM_TE_COUNT; ++k) {
-        const TextStyle& x = a.tmText[k], & y = b.tmText[k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
-    }
+    if (!text_styles_eq(a.tmText, b.tmText, TM_TE_COUNT)) return false;
     // Debuffs module : detach toggle / box / layout / display / typography.
     if (a.dbShow != b.dbShow || a.dbScale != b.dbScale || a.dbX != b.dbX || a.dbY != b.dbY || a.dbMax != b.dbMax) return false;
     if (a.dbHeader != b.dbHeader || a.dbDisp != b.dbDisp || a.dbIconScale != b.dbIconScale || a.dbRowGap != b.dbRowGap) return false;
     if (!box_eq(a.dbBox, b.dbBox)) return false;
-    for (int k = 0; k < DB_TE_COUNT; ++k) {
-        const TextStyle& x = a.dbText[k], & y = b.dbText[k];
-        if (x.face != y.face || x.size != y.size || x.outline != y.outline || x.bold != y.bold || x.italic != y.italic || x.upper != y.upper || x.colorOn != y.colorOn || x.color != y.color) return false;
-    }
+    if (!text_styles_eq(a.dbText, b.dbText, DB_TE_COUNT)) return false;
     return true;
 }
 void profile_mark_clean() { g_snap = ui_config(); g_snapValid = true; }
