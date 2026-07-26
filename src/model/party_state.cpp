@@ -851,11 +851,9 @@ void PartyState::on_action(const unsigned char* p) {
     // needs no probe armed in advance, and the first Shield Bash / Weapon Bash writes the number the fix needs.
     if (cat == 3 && actor == selfId_ && sc_is_finish_msg(wsMsg)) {
         const u32 dbgId = getbits(p, 86, 16, size);
-        static unsigned seen[64]; static int seenN = 0;
+        static windower::debug::LogOnce<64> onceWs;   // a FULL table must go quiet, not start logging every hit (see windower_debug.h)
         const unsigned key = (dbgId << 10) | (wsMsg & 0x3FF);
-        bool dup = false; for (int i = 0; i < seenN; ++i) if (seen[i] == key) { dup = true; break; }
-        if (!dup) {
-            if (seenN < 64) seen[seenN++] = key;
+        if (onceWs.first(key)) {
             const WSRow* dw = ws_info(dbgId); const AbilRow* dab = abil_info(dbgId); const char* da = dab ? dab->en : 0;
             windower::debug::log("WSPOP id=%u msg=%u -> WS table says '%s', ability table says '%s' -> popup %s",
                                  dbgId, wsMsg, dw && dw->en ? dw->en : "-", da ? da : "-",
@@ -874,15 +872,21 @@ void PartyState::on_action(const unsigned char* p) {
     // line below turns the first occurrence of a legitimate 110/187/802 weaponskill into a one-line fix.
     const bool wsMsgIsReal = (wsMsg == 185);
     if (cat == 3 && actor == selfId_ && sc_is_finish_msg(wsMsg) && !wsMsgIsReal) {
-        static unsigned seenSup[16]; static int seenSupN = 0;   // one line per (id,msg), never per use
+        static windower::debug::LogOnce<16> onceSup;   // one line per (id,msg), never per use -- and a FULL table goes quiet
         const u32 sid2 = getbits(p, 86, 16, size);
         const unsigned k2 = (sid2 << 10) | (wsMsg & 0x3FF);
-        bool dup2 = false; for (int q = 0; q < seenSupN; ++q) if (seenSup[q] == k2) { dup2 = true; break; }
-        if (!dup2) {
-            if (seenSupN < 16) seenSup[seenSupN++] = k2;
+        if (onceSup.first(k2)) {
             const WSRow* sw = ws_info(sid2); const AbilRow* sa = abil_info(sid2);
             windower::debug::log("WSPOP suppressed id=%u msg=%u -> WS table '%s', ability table '%s'. If this WAS a real weaponskill, say so : msg %u must join the whitelist",
                                  sid2, wsMsg, sw && sw->en ? sw->en : "-", sa && sa->en ? sa->en : "-", wsMsg);
+            // ALSO remember it for //aio doctor. The whitelist was measured on ONE character, and the recovery
+            // path for a WS whose message we have never seen is "the user notices a missing popup, and thinks to
+            // send aiohud_debug.log" -- a loop whose last step almost never happens for something cosmetic.
+            // doctor() prints to the CONSOLE, in game, on demand : that is a step the user can actually take.
+            ++wsSupN_;
+            wsSupId_ = (unsigned short)sid2; wsSupMsg_ = (unsigned short)wsMsg;
+            const char* wn = (sw && sw->en) ? sw->en : ((sa && sa->en) ? sa->en : "?");
+            int wi = 0; for (; wn[wi] && wi < 31; ++wi) wsSupName_[wi] = wn[wi]; wsSupName_[wi] = 0;
         }
     }
     if (cat == 3 && actor == selfId_ && wsMsgIsReal) {
@@ -1144,6 +1148,7 @@ void PartyState::on_action(const unsigned char* p) {
             if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0 && b->skill == 40) {
                 char gl[220]; int go = 0; gl[0] = 0;
                 for (int gi2 = 0; gi2 < 16 && go < 200; ++gi2) go += _snprintf(gl + go, sizeof(gl) - 1 - go, "%u ", eids[gi2]);
+                gl[sizeof(gl) - 1] = 0;   // _snprintf returns -1 and does NOT terminate on truncation : unreachable at "%u " (6 bytes into a 19-byte margin), but the day this format widens, `go` would step BACK and this buffer would reach debug::log("%s") unterminated. Every sibling site force-terminates ; these three did not.
                 // INTEGER formatting only : wvsprintfA (windower_debug.h) has no %f -- a float here prints garbage and
                 // would make a good capture unreadable. Every factor is expressed as a percentage or a tenth instead.
                 const double dbg = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
@@ -1581,6 +1586,7 @@ void PartyState::on_076(const unsigned char* p) {
         if (s_b076Until && (int)(s_b076Until - GetTickCount()) > 0) {   // //aio ftrace : one line per member per 0x076 -> the arrival cadence around a zone. Sentinel-guard s_b076Until!=0 FIRST : (int)(0-GetTickCount()) reads POSITIVE once uptime passes ~25 days, which would self-arm a disarmed probe and spam a shipped log.
             char ids[160]; int o = 0; ids[0] = 0;
             for (int i = 0; i < bs.n && i < 32 && o < 150; ++i) o += _snprintf(ids + o, sizeof(ids) - o, "%u ", (unsigned)bs.ids[i]);
+            ids[sizeof(ids) - 1] = 0;   // force-terminate : _snprintf does not, on truncation (see the note at the songdur dump)
             windower::debug::log("B076 mem=%08X slot=%d n=%d t=%u ids=[%s]", mid, slot, bs.n, (unsigned)GetTickCount(), ids);
         }
     }

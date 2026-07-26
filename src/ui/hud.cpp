@@ -444,6 +444,21 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     // receiving the packet that confirms and prunes them : the rows then ride their estimate to the end.
     // Checked after the model section below, where the ally count is known.
 
+    // ---- 3b. WS popup : a weaponskill whose target message is not on the (measured) whitelist fails CLOSED.
+    //          Correct -- a missing popup beats one under a colliding ability's name -- but the whitelist was
+    //          measured on ONE character, so on another the popup can be silently dead for every weaponskill.
+    //          The evidence already lands in the log ; nobody reads a log for a missing cosmetic. Say it HERE,
+    //          where the user can see it on demand, and give the exact line to send back. ----
+    {
+        unsigned short sid = 0, smsg = 0; const char* sname = 0;
+        const unsigned nsup = party().ws_suppressed(sid, smsg, sname);
+        windower::debug::log("  wspopup  : suppressed=%u last id=%u msg=%u '%s'", nsup, sid, smsg, sname ? sname : "-");
+        if (nsup)
+            DOC("Le popup de weaponskill a ete supprime %u fois (dernier : '%s', id %u, message %u). Si c'ETAIT bien un "
+                "weaponskill, le message %u doit rejoindre la liste blanche -- signale-le avec cette ligne.",
+                nsup, sname && sname[0] ? sname : "?", (unsigned)sid, (unsigned)smsg, (unsigned)smsg);
+    }
+
     // ---- 4. textures : a missing handle whose retry budget is SPENT is permanent for this session ----
     int texMiss = 0;
     if (!buffAtlas_)  { ++texMiss; DOC("L'atlas d'icones de statut n'est pas charge (%u essais) : les icones de buff manquent partout. "

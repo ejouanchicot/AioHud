@@ -32,6 +32,13 @@
 #include <windows.h>
 #include <locale.h>
 
+// build.bat always passes /DAIOHUD_VERSION, but the fallback used to sit ~400 lines BELOW the first use of the
+// macro -- so a build that did not define it failed at the use site with a confusing error instead of falling
+// back to "dev". Guard it before anything reads it.
+#ifndef AIOHUD_VERSION
+#define AIOHUD_VERSION "dev"
+#endif
+
 namespace aio { void timers_reset(); }   // hud_timers.cpp : //aio timers reset -> flush live buff/recast timers + focus alerts
 namespace aio { void timers_oblog_arm(); }   // hud_timers.cpp : //aio oblog -> one-frame dump of the ally-buff pipeline
 
@@ -172,7 +179,7 @@ void aio_plugin_init(PluginManager host)
                                         // otherwise misparse every saved/loaded position/scale and wreck box placement.
     ensure_addon_autoload();           // make the //aioupdate companion addon auto-load with Windower
     spawn_updater(true);               // no-window update CHECK at startup -> writes data\update\check.txt for the Update tab
-    debug::clear();
+    debug::begin_session(AIOHUD_VERSION);   // was debug::clear() -- a //unload + //load (or an updater pass) then destroyed the capture of whatever you were chasing. Appends a version+timestamp banner, rotates once past ~4 MB.
     debug::log("AioHUD init: device = 0x%08X", host.service_raw(2));
     aio::load_ui_config();             // restore saved theme / font / box positions + sizes
     // NOT party().load() here : the roster cache is per character now, and nothing is logged in at init -- loading
@@ -572,9 +579,6 @@ void aio_plugin_unload()
     g_hud.dispose();
 }
 
-#ifndef AIOHUD_VERSION
-#define AIOHUD_VERSION "dev"
-#endif
 // Launch the updater PowerShell script WITH NO WINDOW (native CreateProcess + CREATE_NO_WINDOW -- a Lua-spawned
 // process always flashes a cmd console). The script checks the latest GitHub release, downloads it, WAITS for the
 // AioHud.dll to unlock (the companion Lua addon //unloads it), extracts over plugins\, and writes data\update\done.txt.

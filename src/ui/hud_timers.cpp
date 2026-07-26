@@ -503,11 +503,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // One line per DISTINCT (status, resolved caster), always-on and deduped -> a handful of lines a
             // session, no probe to arm, and it survives the //unload+//load that wipes the log.
             {
-                static unsigned seenOwn[48]; static int seenOwnN = 0;
+                // MEASURED 2026-07-27 : this emitted 103 380 lines for 184 distinct ones in one session. The old
+                // hand-rolled set stopped RECORDING at 48 but kept LOGGING, so past saturation every row wrote two
+                // lines every frame -- each one a CreateFile/WriteFile/CloseHandle on the render thread. LogOnce
+                // goes quiet instead, and says so once. (windower_debug.h carries the full note.)
+                static windower::debug::LogOnce<48> onceOwn;
                 const unsigned key = ((unsigned)bt[i].id << 20) ^ rowCaster;
-                bool dupO = false; for (int q = 0; q < seenOwnN; ++q) if (seenOwn[q] == key) { dupO = true; break; }
-                if (!dupO) {
-                    if (seenOwnN < 48) seenOwn[seenOwnN++] = key;
+                if (onceOwn.first(key)) {
                     const char* onm = rowCaster ? party().pc_name_by_id(rowCaster) : 0;
                     unsigned latch = 0; const unsigned ring = party().caster_paths(bt[i].id, bt[i].expiry, i, latch);
                     const char* rnm = ring ? party().pc_name_by_id(ring) : 0; const char* lnm = latch ? party().pc_name_by_id(latch) : 0;
@@ -885,6 +887,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     char lst[160]; int o = 0; lst[0] = 0;
                     for (int j = 0; f.game && j < f.game->nbuff && j < 32 && o < 150; ++j)
                         o += _snprintf(lst + o, sizeof(lst) - o, "%u ", (unsigned)f.game->buffs[j]);
+                    lst[sizeof(lst) - 1] = 0;   // force-terminate : _snprintf does not, on truncation (party_state.cpp carries the full note)
                     windower::debug::log("FOCUSEMIT st=%u '%s' self=%d has=%d lostMs=%u zoneGrace=%d buffsOk=%d nbuff=%d list=[%s]",
                                          (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].self, has ? 1 : 0,
                                          fm[q].lostMs, zoneGrace ? 1 : 0, okv, nb2, lst);

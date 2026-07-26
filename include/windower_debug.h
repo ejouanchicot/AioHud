@@ -52,9 +52,63 @@ inline void log(const char* fmt, ...) {
     buf[n++] = '\r'; buf[n++] = '\n';
     raw(buf, n);
 }
-inline void clear() {
-    HANDLE h = CreateFileA(log_path(), GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, 0, NULL);
-    if (h != INVALID_HANDLE_VALUE) CloseHandle(h);
+// "Log this once per distinct key" -- with the trap removed.
+//
+// MEASURED on a live log, 2026-07-27: 103 380 BUFFOWNER lines for 184 DISTINCT ones. A x562 amplification, in a
+// diagnostic whose own comment promised "a handful of lines a session". Every hand-rolled copy of this idiom had
+// the same shape:
+//     if (!seen_it) { if (n < CAP) tbl[n++] = key; log(...); }      <-- the bug
+// Once the table is FULL the key is no longer recorded, so `seen_it` is false forever after and the line logs on
+// EVERY FRAME. Saturation does not stop the logging, it starts it. And it is not just disk: raw() opens, writes
+// and closes the file per line, on the render thread, inside the draw loop.
+//
+// Here, a full table goes QUIET -- and says so once, because a probe that dies silently reads exactly like a bug
+// that stopped happening (CLAUDE.md rule 10's corollary).
+template <int N>
+struct LogOnce {
+    unsigned k[N] = {};
+    int      n = 0;
+    bool     warned = false;
+    bool first(unsigned key) {
+        for (int i = 0; i < n; ++i) if (k[i] == key) return false;
+        if (n >= N) {
+            if (!warned) { warned = true; log("log-once table full (%d distinct keys) -- further NEW keys are MUTED for this session", N); }
+            return false;
+        }
+        k[n++] = key;
+        return true;
+    }
+};
+
+// SESSION START. This used to be clear() -- truncate the log at every plugin init -- and that quietly destroyed
+// the evidence for the exact bug you were chasing. "//unload AioHud, //load AioHud" is a tester's first reflex
+// when something looks wrong, and it is also what the auto-updater does on every update: both wiped the capture
+// of the very thing that had just gone wrong, so the reply was always "reproduce it again". A log that erases
+// itself at the moment of interest is worse than no log, because you believe you have one.
+//
+// Instead: BOUND it and ROTATE it. Past the cap, the current file becomes aiohud_debug.prev.log (one generation
+// kept -- enough to survive exactly the unload/load cycle that used to destroy it) and a fresh one starts. Under
+// the cap, we simply append. Either way the session banner below is the first thing written.
+//
+// The banner also answers the two questions every capture used to leave open -- WHICH BUILD, and WHEN. The
+// updater silently replaces a tester's build, so "which version produced this line" was never answerable from
+// the file itself; and with no timestamps, two clients' interleaved lines could not be ordered.
+inline void begin_session(const char* version) {
+    const DWORD CAP = 4u * 1024u * 1024u;                     // ~4 MB : dozens of sessions of ordinary logging
+    WIN32_FILE_ATTRIBUTE_DATA fa;
+    if (GetFileAttributesExA(log_path(), GetFileExInfoStandard, &fa) && fa.nFileSizeHigh == 0 && fa.nFileSizeLow > CAP) {
+        char prev[MAX_PATH]; lstrcpynA(prev, log_path(), MAX_PATH);
+        char* b = prev; for (char* q = prev; *q; ++q) if (*q == '\\' || *q == '/') b = q + 1;
+        lstrcpynA(b, "aiohud_debug.prev.log", (int)(MAX_PATH - (b - prev)));
+        DeleteFileA(prev);
+        MoveFileA(log_path(), prev);                          // best-effort : if it fails we just keep appending
+    }
+    SYSTEMTIME t; GetLocalTime(&t);
+    char line[256];
+    int n = wsprintfA(line, "\r\n===== AioHUD v%s  session start  %04d-%02d-%02d %02d:%02d:%02d  pid=%lu =====\r\n",
+                      version ? version : "?", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond,
+                      (unsigned long)GetCurrentProcessId());
+    if (n > 0) raw(line, n);
 }
 
 // MSVC RTTI class name of a polymorphic object (obj->vtbl[-1]=COL -> TypeDescriptor+8).

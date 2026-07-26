@@ -332,6 +332,16 @@ struct PartyState {
     CastSlot casts_[18];
     WsPopup  wsPop_;                      // your last WS (arcade popup) ; startMs=0 = none yet
     const WsPopup& ws_popup() const { return wsPop_; }
+    // WS-popup suppressions : the popup fires only on the MEASURED weaponskill target message (185). Anything
+    // else that sc_is_finish_msg accepts fails closed rather than pop under a colliding ability's name -- but
+    // the whitelist was measured on one character, so a player whose weaponskills use another message would
+    // simply get no popup, forever, with the evidence buried in a log file. //aio doctor reads these and says so.
+    unsigned       wsSupN_ = 0;           // how many DISTINCT (id, message) pairs were suppressed this session
+    unsigned short wsSupId_ = 0, wsSupMsg_ = 0;   // the most recent one
+    char           wsSupName_[32] = {0};          // ...and how the WS / ability table names that id
+    unsigned ws_suppressed(unsigned short& id, unsigned short& msg, const char*& name) const {
+        id = wsSupId_; msg = wsSupMsg_; name = wsSupName_; return wsSupN_;
+    }
     Resonating reson_[8];                 // skillchain windows per tracked target
     // the FORMED skillchain window on `tid` (or 0) -> the Skillchains widget reads this from the party() singleton.
     const Resonating* skillchain_for(unsigned tid) const {   // any LIVE window on the target (step-1 open OR formed)
