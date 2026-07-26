@@ -30,10 +30,25 @@ inline void raw(const char* s, int len) {
                            NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h != INVALID_HANDLE_VALUE) { DWORD w; WriteFile(h, s, len, &w, NULL); CloseHandle(h); }
 }
+// WHO wrote this line. Every client of a multi-boxed setup appends to the SAME file (the path is derived from
+// the DLL, not from the character), so a capture from two clients interleaves into something that can be read
+// both ways -- and was, on 2026-07-26 : a BUFFOWNER line from the mule's client was taken as proof that the
+// main's `self_id()` was wrong, and cost a full round of analysis. A capture that cannot say who produced it is
+// worse than no capture, because it produces confident wrong conclusions.
+inline char* tag_buf() { static char t[24] = { 0 }; return t; }
+inline void set_tag(const char* name) {   // called once the character name is known ; cheap, idempotent
+    char* t = tag_buf();
+    if (!name || !name[0]) { t[0] = 0; return; }
+    if (t[0] && !lstrcmpA(t, name)) return;
+    lstrcpynA(t, name, 24);
+}
 inline void log(const char* fmt, ...) {
-    char buf[1026]; va_list ap; va_start(ap, fmt);   // 1024 for wvsprintfA + 2 for CRLF
-    int n = wvsprintfA(buf, fmt, ap); va_end(ap);    // NB: wvsprintfA has no %f ; caps at 1023 chars
+    char buf[1060]; int pre = 0;                     // 1024 for wvsprintfA + the tag + 2 for CRLF
+    { const char* t = tag_buf(); if (t[0]) { pre = wsprintfA(buf, "[%s] ", t); if (pre < 0) pre = 0; } }
+    va_list ap; va_start(ap, fmt);
+    int n = wvsprintfA(buf + pre, fmt, ap); va_end(ap);   // NB: wvsprintfA has no %f ; caps at 1023 chars
     if (n < 0) n = 0; if (n > 1023) n = 1023;        // never let CRLF write past buf (was buf[1024] overrun)
+    n += pre;
     buf[n++] = '\r'; buf[n++] = '\n';
     raw(buf, n);
 }

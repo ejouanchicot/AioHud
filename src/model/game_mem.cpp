@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <cstring>
 
+#include "windower_debug.h"   // set_tag : every client of a multi-box appends to the SAME log file
 namespace aio {
 
 using windower::safe_read;
@@ -996,6 +997,8 @@ void poll_game_state(GameState& gs) {
     if (!read_player(me)) { gs.inGame = false; return; }     // not ready (zoning) -> keep last-good
     gs.inGame = true;
     gs.me = me;
+    windower::debug::set_tag(me.name);   // stamp every log line with WHO wrote it : all clients of a multi-box share one log file
+
     gs.hp = me.hpp / 100.0f;
     gs.mp = me.mpp / 100.0f;
     gs.tp = me.tp / 3000.0f; if (gs.tp > 1.0f) gs.tp = 1.0f; if (gs.tp < 0.0f) gs.tp = 0.0f;
