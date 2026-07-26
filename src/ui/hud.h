@@ -99,6 +99,13 @@ private:
     float ui_scale_ = 1.0f;                         // real screen / authored viewport width
     float lastW_[3] = { -1.0f, -1.0f, -1.0f };      // last measured box footprint -> re-anchor (bottom-right pinned)
     float lastH_[3] = { -1.0f, -1.0f, -1.0f };      // when ANY dimension setting changes (scale, bar size, badge, casts)
+    // The re-anchor's two EXPENSIVE consequences, debounced. The geometry correction itself stays immediate --
+    // the box must track the slider -- but a footprint changes on EVERY frame of a drag, and each change used to
+    // trigger a full atomic rewrite of config.txt and/or a place_widgets() (destroy + rebuild every widget,
+    // reload its assets, re-decode the zone map DAT). Per slider notch, with the HUD on screen. Coalesced now:
+    // flag it, stamp a deadline, act once the size has settled. 0 = nothing pending.
+    unsigned savePendMs_  = 0;                      // config.txt rewrite owed (pure I/O -> can wait longer)
+    unsigned placePendMs_ = 0;                      // widget re-placement owed (visible -> shorter, still ~9 frames coalesced)
     u32   last_dev_ = 0;
     bool  everInGame_ = false;    // latched true on the first successful player poll -> gate ALL boxes on "logged in"
     int   notReadyFrames_ = 0;    // consecutive frames the player poll failed -> a SUSTAINED run = logout (re-hide)

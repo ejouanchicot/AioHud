@@ -228,8 +228,18 @@ void Hud::render(u32 dev) {
             }
             lastW_[b] = nw; lastH_[b] = nh;
         }
-        if (saved) save_ui_config();
-        if (needPlace) place_widgets();
+        // DEBOUNCED, not per-frame. Dragging a size slider changes the footprint on every frame, and both of
+        // these are heavy : save_ui_config() rewrites the whole config file atomically, and place_widgets()
+        // tears down and rebuilds every widget -- reloading assets and re-decoding the zone map DAT with it.
+        // Paying either 60x a second while the user drags is the same defect the config panels already fixed on
+        // their own side (they persist on RELEASE), reintroduced here by the consumer that reacts to the result.
+        // The correction above is still applied immediately, so the box tracks the slider; only the consequences
+        // wait for it to settle. Re-stamping on every change means the deadline is "N ms after the LAST change".
+        const unsigned nowMs2 = GetTickCount();
+        if (saved)     savePendMs_  = (nowMs2 + 500u) | 1u;   // | 1 : keep 0 free as the "nothing pending" sentinel (a raw tick can BE 0)
+        if (needPlace) placePendMs_ = (nowMs2 + 150u) | 1u;   // shorter : this one is visible
+        if (savePendMs_  && (int)(nowMs2 - savePendMs_)  >= 0) { savePendMs_  = 0; save_ui_config(); }
+        if (placePendMs_ && (int)(nowMs2 - placePendMs_) >= 0) { placePendMs_ = 0; place_widgets(); }
     }
     if (!window_theme_is_proc(skinIdx_) && !skin_.ready()) skin_.load(dev, window_theme_name(skinIdx_));   // FFXI window skin (lazy, shared by the party + Same-as-Party boxes) ; procedural themes have no texture. A Custom->FFXI box uses its OWN variant via box_ffxi_skin (box_style.cpp).
 
@@ -515,6 +525,10 @@ void Hud::self_check() {
     windower::debug::log("=== end selfcheck : a `0` handle that never turns 1, or tries climbing to 12, is a stuck load ===");
 }
 void Hud::dispose() {
+    // FLUSH the debounced re-anchor save. Without this, resizing a box and //unloading within the debounce
+    // window would drop the position shift -- which is the standard iteration loop (tweak, unload, deploy),
+    // i.e. exactly when it would be noticed and blamed on something else.
+    if (savePendMs_) { savePendMs_ = 0; save_ui_config(); }
     for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->dispose();
     clear_widgets();
     fonts_.dispose();
