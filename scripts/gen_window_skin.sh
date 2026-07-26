@@ -9,11 +9,15 @@
 # Source layout: "assets/window_src/0/<theme>/menu {corner,hfr1|fr1,vfr1,newtex|newtext}.dds"
 # (_Bis = the user's modified variants ; a couple of themes have typo'd filenames -> handled below).
 #
-# Run from anywhere (paths are absolute). Needs python + ImageMagick (magick) on PATH.
+# Run from anywhere : paths resolve from THIS script's own location, so they follow the repo instead of
+# the machine. (They used to be hardcoded to the old runtime folder `plugins\_aiohud_re`, which was renamed
+# AND split from the dev repo -- the script had been unrunnable ever since.)
+# Needs python + ImageMagick (magick) on PATH.
 set -u
-ROOT="D:/Windower Tetsouo/plugins/_aiohud_re"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRCBASE="$ROOT/assets/window_src/0"
 OUTBASE="$ROOT/assets/window"
+[ -d "$SRCBASE" ] || { echo "gen_window_skin: source themes not found : $SRCBASE" >&2; exit 1; }
 
 # patch the DDS flags to standard, then magick -> BGRA raw. $1=src dds  $2=out raw  $3=tmp dir
 conv() {

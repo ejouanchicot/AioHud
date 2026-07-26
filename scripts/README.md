@@ -42,6 +42,10 @@ un fichier qu'on vient d'ecrire merite un regard. Le lancer apres avoir ajoute u
 - **Output paths are resolved from the script's own location.** Three generators used to write to an absolute
   `…\plugins\_aiohud_re\src\model\` — a runtime folder renamed long ago that never held `src/` — so their
   tables were silently un-regenerable. Fixed 2026-07-25; keep the `ROOT = Path(__file__)…` pattern.
+  The three **asset** tools below had the same dead paths, still live rather than in a comment, and were
+  fixed the same way on 2026-07-26 (`$PSScriptRoot` / `BASH_SOURCE`). Both runnable ones were then verified
+  the only way that proves a path fix: **re-run, output byte-identical to the shipped asset** — 48/48 window
+  `.raw` unchanged in `git status`, and both `cap_*.bin` matching by SHA-256.
 - **Regenerating can change game data, not just formatting.** After a `res/` update, `gen_mobskills.py` renames
   31 mob skills. Check `git diff` before committing a regeneration: a path fix should come back byte-identical.
 
@@ -75,6 +79,22 @@ un fichier qu'on vient d'ecrire merite un regard. Le lancer apres avoir ajoute u
 
 `gen_grimoire.py` emits no table of its own — it prints the SCH grimoire interval/charge figures used to fill
 `docs/game-data/buffs-and-timers/grimoire-sch.md` by hand.
+
+## Asset tools (`.ps1` / `.sh`)
+
+These bake binaries the plugin loads at runtime, from sources kept in `assets/*_src/` or `research/art_src/`.
+
+| Script | Reads | Produces | Needs |
+|---|---|---|---|
+| `gen_window_skin.sh` | `assets/window_src/0/<theme>/*.dds` | `assets/window/<theme>/{corner,hframe,vframe,bg}.raw` (12 themes × 4) | python + ImageMagick |
+| `conv_caps.ps1` | `research/art_src/out3_capuchon/*.png` | `assets/cap_{front,back}.bin` (the fiole caps, `ui/liquid_bars.cpp`) | — |
+| `gen_buff_atlas.ps1` · `gen_gil_icon.ps1` · `gen_th_icon.ps1` · `patch_buff_icon.ps1` | icon sources | `assets/*.raw` | — |
+| `gen_flow.ps1` | *(32 `Flow0_*.png`, **not in this repo**)* | `research/art_src/FlowX_00..95.png` | — |
+
+`gen_flow.ps1` is a **historical** art tool: nothing loads its frames today (the fiole liquid is drawn
+procedurally), and its 32 input frames lived in an old Windower addon folder that no longer exists. It is kept
+because it documents how the 96 surviving frames were made, and it now **fails with that explanation** instead
+of silently pointing at a dead disk. Pass `-SrcDir` if you ever recover the originals.
 
 ## See also
 

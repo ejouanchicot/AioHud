@@ -3,11 +3,28 @@
 # original plus 2 in-between frames (pixel-wise A*(1-f)+B*f over all 4 channels)
 # -> 96 frames FlowX_00..95. i+1 wraps 31->0 (seamless loop). Output to a
 # dedicated folder so the addon assets stay untouched.
+#
+# HISTORICAL ART TOOL -- nothing in the plugin loads these frames today (the fiole liquid is drawn
+# procedurally by ui/liquid_bars.cpp). Its 96 OUTPUT frames survive as research\art_src\FlowX_00..95.png ;
+# its 32 INPUT frames (Flow0_00..31.png) lived in an old Windower addon folder and are NOT in this repo,
+# so the script cannot run as-is. Kept because it documents how the 96 were produced. Point -SrcDir at a
+# folder holding Flow0_00..31.png to run it again.
+# Paths resolve from THIS script's location (they were hardcoded to machine-absolute dead paths).
+param(
+    [string]$SrcDir,
+    [string]$DstDir
+)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
-$src = 'D:\Windower Tetsouo\addons\AioHUD\assets\fiole\'
-$dst = 'D:\Windower Tetsouo\plugins\_aiohud_re\sandbox_assets\'
+$root = Split-Path -Parent $PSScriptRoot
+if (-not $SrcDir) { $SrcDir = Join-Path $root 'research\art_src\fiole_src' }
+if (-not $DstDir) { $DstDir = Join-Path $root 'research\art_src' }
+$src = (Join-Path $SrcDir '')
+$dst = (Join-Path $DstDir '')
+if (-not (Test-Path (Join-Path $SrcDir 'Flow0_00.png'))) {
+    throw "gen_flow: the 32 source frames Flow0_00..31.png are not in this repo (looked in $SrcDir). The 96 frames this script produced are kept in research\art_src\FlowX_*.png ; pass -SrcDir to regenerate from a folder that has the originals."
+}
 if (-not (Test-Path $dst)) { New-Item -ItemType Directory -Path $dst | Out-Null }
 
 $N = 32; $STEPS = 3        # NB: PowerShell vars are case-insensitive -> don't name the loop counter $m
