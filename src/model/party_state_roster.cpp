@@ -153,6 +153,7 @@ void PartyState::on_character_changed(unsigned newId) {
     jobShadowN_ = 0;                                // else the 24 slots fill with two characters' alliances and new members stop being tracked
     buffTimerN_ = 0;                                // refilled by the 0x063 order-9 full refresh at login
     selfGeo_ = GeoAura{};
+    trustSeenN_ = 0; trustSeenHead_ = 0;             // remembered trust ids belong to the previous character's party
     for (int i = 0; i < 256; ++i) learnedMs_[i] = 0;
     pw_.xpReg = RateReg{}; pw_.cpReg = RateReg{}; pw_.epReg = RateReg{};   // else the new character's X/h is blended with the old one's samples
 
@@ -305,7 +306,7 @@ void PartyState::load_from_memory() {
 
     int n = 0;
     for (int i = 0; i < wantN; ++i)                        // only the first `wantN` ACTIVE slots
-        if (read_member(base + i * 0x7C, m[n], ent, px, pz)) ++n;
+        if (read_member(base + i * 0x7C, m[n], ent, px, pz)) { if (m[n].isTrust && m[n].id) remember_trust(m[n].id); ++n; }   // remember WHILE the roster knows : a trust's buffs outlive its party membership
     count = n;                                             // n reflects the live roster (trust in/out)
 
     // OUT OF ZONE = the member is in a DIFFERENT zone, decided by the zone id, NOT by maxHp==0 (which a DEAD member
@@ -363,7 +364,7 @@ void PartyState::load_from_memory() {
         if (cnt < 1) cnt = 6; if (cnt > 6) cnt = 6;           // gate already proved the party exists -> default to a full scan
         int an = 0;
         for (int i = 0; i < cnt; ++i)
-            if (read_member(base + (6 + ap * 6 + i) * 0x7C, alli_[ap * 6 + an], ent, px, pz)) ++an;
+            if (read_member(base + (6 + ap * 6 + i) * 0x7C, alli_[ap * 6 + an], ent, px, pz)) { PMember& am = alli_[ap * 6 + an]; if (am.isTrust && am.id) remember_trust(am.id); ++an; }
         alliN_[ap] = an;
     }
 

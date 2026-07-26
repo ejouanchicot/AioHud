@@ -464,6 +464,9 @@ struct PartyState {
     // 64, not 24 : the ring now holds EVERY caster's buff casts, and five trusts spamming Haste / Protectra / Indi- /
     // songs churned a 24-slot ring in minutes -- it evicted the PLAYER's own song casts, so their rows borrowed a
     // trust's entry and the buff-source filter then hid them. Reported as "two of my songs depop" (2026-07-20).
+    // Ids the roster has reported as Trusts. Survives them leaving the party -- see is_trust() for why that
+    // matters. 32 covers a long session of trust churn (5 out at a time, re-summoned on every zone).
+    unsigned trustSeen_[32] = { 0 }; int trustSeenN_ = 0; int trustSeenHead_ = 0;
     SelfCast selfCasts_[64]; int selfCastHead_ = 0;
     void record_cast(unsigned short status, unsigned short spell, unsigned caster, unsigned predExp);
     // ring index of the cast that best explains this timer, -1 if none. `timerIdx` is the caller's index into
@@ -492,7 +495,30 @@ struct PartyState {
     }
     unsigned self_id() const { return selfId_; }
     int self_main_job() const { for (int i = 0; i < count; ++i) if (m[i].id == selfId_) return m[i].mjob; return 0; }   // current MAIN job id (Timers "track per job" filter) ; 0 if unknown
-    bool is_trust(unsigned id) const { for (int i = 0; i < count; ++i) if (m[i].id == id) return m[i].isTrust != 0; return false; }   // a caster id -> is it a Trust NPC ? (Timers buff-source filter)
+    // A caster id -> is it a Trust NPC ? (Timers buff-source filter, and the sort banding.)
+    // The ROSTER answers first and is authoritative. The remembered set below is the fallback for an id the roster
+    // no longer holds -- which is the case that was broken : a trust's Protect/Shell runs ~30 min, and by the time
+    // it expires the trust has usually been dismissed, re-summoned with a NEW id, or lost to a zone. The roster
+    // scan then found nothing and returned FALSE, so "was not a trust" and "I have never heard of this id" were the
+    // same answer, and the buff passed the "me + players" filter as if a player had cast it. That is rule 10 form B
+    // ("empty is not unavailable") applied to an identity instead of a list. Reported 2026-07-26 : Monberaux's
+    // Protect + Shell surfacing under Hidden+Focus as they expired, on the one filter level that consults this.
+    // Note "moi uniquement" never called this (it rejects on caster != me), which is why the July fix worked there
+    // and this level kept leaking.
+    bool is_trust(unsigned id) const {
+        for (int i = 0; i < count; ++i) if (m[i].id == id) return m[i].isTrust != 0;   // in the party -> authoritative, both ways
+        for (int i = 0; i < trustSeenN_; ++i) if (trustSeen_[i] == id) return true;    // gone from the party, but we SAW it be a trust
+        return false;
+    }
+    // Remember an id that the roster currently reports as a Trust. Only ever consulted for ids NOT in the party, so
+    // a stale entry cannot override a live member : a real player sitting on a recycled id is found by the scan
+    // above first. Bounded ring ; wiped on a character change with the rest of the derived state.
+    void remember_trust(unsigned id) {
+        if (!id) return;
+        for (int i = 0; i < trustSeenN_; ++i) if (trustSeen_[i] == id) return;
+        if (trustSeenN_ < (int)(sizeof(trustSeen_) / sizeof(trustSeen_[0]))) trustSeen_[trustSeenN_++] = id;
+        else { trustSeen_[trustSeenHead_] = id; trustSeenHead_ = (trustSeenHead_ + 1) % (int)(sizeof(trustSeen_) / sizeof(trustSeen_[0])); }
+    }
     // On YOU, a stat-boost (STR..CHR Boost = 119..125) comes from exactly two places: your OWN Gain-X spell, or a
     // foreign Trust/chemist MIX (Monberaux's "Mix: Samson's Strength" -> STR Boost, Ygnas's full-stat boost, etc.).
     // Players cannot put Gain-X on you. So the reliable test is the self-cast ring: a 119..125 boost that is NOT one
