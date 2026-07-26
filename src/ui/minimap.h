@@ -3,6 +3,7 @@
 // real zone map image (extracted from the ROM DATs) replaces the placeholder frame in phase 1b.
 #pragma once
 #include "widget.h"
+#include "ui/tex_retry.h"   // TexRetry : the Help marker/atlas load is a BOUNDED retry, not a one-shot latch (rule 10)
 
 namespace aio {
 
@@ -50,10 +51,12 @@ private:
 };
 
 // ---- Help live samples : draw the REAL minimap elements (SAME code path / colours as the widget) for the
-// Help tab. The Help owns the marker + element-atlas + moon textures : call minimap_help_textures() lazily to
-// load the three marker/atlas handles, and pass the caller-owned moon handle/key into minimap_help_moon() (it
-// rebuilds it on a phase change). Forget every handle on device-lost. `t` is the frame clock (animation).
-void        minimap_help_textures(u32 dev, u32& mkPlayer, u32& mkMob, u32& elemTex);                                       // lazy-load the 3 textures
+// Help tab. The Help owns the marker + element-atlas + moon textures : call minimap_help_textures() EVERY FRAME
+// (it self-gates on its own bounded retry, like target_help_textures) and pass the caller-owned moon handle/key
+// into minimap_help_moon() (it rebuilds it on a phase change). Forget every handle AND re-arm every TexRetry on
+// device-lost. `t` is the frame clock (animation).
+void        minimap_help_textures(u32 dev, u32& mkPlayer, u32& mkMob, u32& elemTex,
+                                  TexRetry& rPlayer, TexRetry& rMob, TexRetry& rElem);                                     // lazy-load the 3 textures under a bounded retry (caller owns the state)
 void        minimap_help_disc  (u32 dev, const Frame& f, Font* fo, u32 mkPlayer, u32 mkMob, u32 mapTex, float cx, float cy, float r, float t);   // a live round minimap : brass bezel FIRST, then the REAL current-zone map (mapTex = caller-owned, config-loaded) + the REAL live entity markers + player pin -- same transform/colours as the widget
 float       minimap_help_legend(u32 dev, Font* fo, u32 mkPlayer, u32 mkMob, float x, float y, float rowH, float top, float bot, int lang);   // the marker legend (dot/arrow/pin + meaning) ; returns the new y
 const char* minimap_help_moon  (u32 dev, u32& moonTex, int& moonKey, float cx, float cy, float r, float t, int lang);      // the moon sweeping New->Full->New ; returns its phase name

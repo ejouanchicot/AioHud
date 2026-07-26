@@ -11,9 +11,9 @@ namespace aio {
 // One-time migration : the folder used to be "_aiohud_re" -> rename it (a dir rename is atomic and keeps all contents).
 const char* plugin_dir() {
     static char dir[MAX_PATH] = { 0 };
-    static bool tried = false;
-    if (tried) return dir;
-    tried = true;
+    static bool tried = false;   // rule10-ok: memoises the DLL's OWN module path. GetModuleHandleEx on our own address cannot fail transiently -- we are executing inside that module -- so there is no miss for a retry to recover from.
+    if (tried) return dir;       // rule10-ok: see above
+    tried = true;                // rule10-ok: see above
     HMODULE hm = 0;
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                            (LPCSTR)&plugin_dir, &hm) && hm) {

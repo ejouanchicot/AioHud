@@ -758,10 +758,16 @@ void Minimap::draw(const Frame& f) {
 // widget) for the Help tab (config_page.cpp). Everything below reuses the widget's marker/moon/day renderers
 // so the sample and the live minimap can never drift. No game memory is touched -- the data is synthetic.
 
-void minimap_help_textures(u32 dev, u32& mkPlayer, u32& mkMob, u32& elemTex) {   // caller caches these + forgets on device-lost
-    if (!mkPlayer) mkPlayer = load_raw_texture_mip(dev, MK_PLAYER_PATH(), 64, 64);
-    if (!mkMob)    mkMob    = load_raw_texture_mip(dev, MK_MOB_PATH(),    64, 64);
-    if (!elemTex)  elemTex  = load_raw_texture_mip(dev, ELEM_ATLAS_PATH(), 256, 32);
+// Caller caches the handles AND the retry state, and forgets/re-arms both on device-lost. Safe to call every
+// frame : each handle self-gates on its own bounded, time-spaced budget (ui/tex_retry.h). The `if (!tex)` guard
+// alone was NOT enough -- the three call sites wrapped this in a one-shot `if (!mmTried_)` latch, so a single
+// miss (device not ready on the first Help draw after a zone-in, or an .raw briefly locked by the updater) left
+// the marker/atlas samples blank for the whole session. Same shape as target_help_textures.
+void minimap_help_textures(u32 dev, u32& mkPlayer, u32& mkMob, u32& elemTex,
+                           TexRetry& rPlayer, TexRetry& rMob, TexRetry& rElem) {
+    ensure_raw_tex_mip(dev, mkPlayer, rPlayer, MK_PLAYER_PATH(),  64,  64);
+    ensure_raw_tex_mip(dev, mkMob,    rMob,    MK_MOB_PATH(),     64,  64);
+    ensure_raw_tex_mip(dev, elemTex,  rElem,   ELEM_ATLAS_PATH(), 256, 32);
 }
 
 // a little round minimap : the themed frame ring + a dark lens (with a faint terrain feel) + the player pin at

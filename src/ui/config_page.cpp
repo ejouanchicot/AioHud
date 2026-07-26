@@ -1492,7 +1492,7 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 y += rh2 + snap(8.0f);
             } else if (it.kind == 30) {               // LIVE sample : the minimap in YOUR shape/frame/zoom -- the REAL zone map + player pin + real markers
                 const float r = snap(110.0f), rh2 = 2.0f * r + snap(10.0f);
-                if (!mmTried_) { minimap_help_textures(dev, mmMkPlayer_, mmMkMob_, mmElem_); mmTried_ = true; }
+                minimap_help_textures(dev, mmMkPlayer_, mmMkMob_, mmElem_, mmMkPlayerRetry_, mmMkMobRetry_, mmElemRetry_);   // every frame : each handle retries under its own bounded budget
                 // Own our copy of the live zone map (loaded straight from the ROM DAT, exactly like the widget) so the
                 // radar sample shows the REAL map even when the floating Minimap is hidden / hasn't drawn this frame.
                 // Reload only when the zone's map file-id changes ; remember it even on failure (no per-frame retry).
@@ -1514,7 +1514,7 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 y += rh2 + snap(8.0f);
             } else if (it.kind == 31) {               // LIVE sample : the marker legend (real dot / arrow / pin + its meaning), one row each
                 const float rowH = snap(24.0f);
-                if (!mmTried_) { minimap_help_textures(dev, mmMkPlayer_, mmMkMob_, mmElem_); mmTried_ = true; }
+                minimap_help_textures(dev, mmMkPlayer_, mmMkMob_, mmElem_, mmMkPlayerRetry_, mmMkMobRetry_, mmElemRetry_);   // every frame : each handle retries under its own bounded budget
                 cs(dev);
                 y = minimap_help_legend(dev, fo, mmMkPlayer_, mmMkMob_, hx + snap(6.0f), y, rowH, top, bot, ui_config().lang);
                 y += snap(8.0f);
@@ -1532,7 +1532,7 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 y += rh2 + snap(8.0f);
             } else if (it.kind == 33) {               // LIVE sample : the eight elemental-day icons, the active one cycling + its name
                 const float rh2 = snap(30.0f), rowW = snap(250.0f);
-                if (!mmTried_) { minimap_help_textures(dev, mmMkPlayer_, mmMkMob_, mmElem_); mmTried_ = true; }
+                minimap_help_textures(dev, mmMkPlayer_, mmMkMob_, mmElem_, mmMkPlayerRetry_, mmMkMobRetry_, mmElemRetry_);   // every frame : each handle retries under its own bounded budget
                 if (y >= top && y + rh2 <= bot) {
                     cs(dev);
                     const char* dn = minimap_help_day(dev, fo, mmElem_, hx + snap(4.0f), y + rh2 * 0.5f, f.t, ui_config().lang);

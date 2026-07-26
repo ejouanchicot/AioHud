@@ -32,17 +32,47 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "AIOHUD_VERSION=$V" >> "$GITHUB_ENV"
 
-      # Cheap greps for the four conventions that have each already cost a user-visible bug. They read the
+      # Cheap greps for the five conventions that have each already cost a user-visible bug. They read the
       # working tree, so they run before anything is compiled. Each `git grep` EXITS 0 when it finds something,
-      # which is why the sense looks inverted : a hit is a failure.
-      - name: Guardrails
+      # which is why the sense below looks inverted : a hit is a failure.
+      #
+      # SPLIT IN TWO, deliberately. Rule 10 is the one that produced six user-visible bugs in a single day, and
+      # its check now sits at zero hits on a clean tree -- the only state in which enforcing a guard is worth
+      # anything. It gets its own BLOCKING step precisely so the four advisory rules cannot hold it hostage:
+      # while all five share a step with known hits, `continue-on-error` has to cover the lot, and a rule that
+      # never blocks is a rule people stop reading. That is not hypothetical -- this guard already missed a real
+      # `mmTried_` latch and nobody noticed, because its output was noise by default.
+      #
+      # Two filters keep rule 10 at zero on a clean tree. COMMENT lines are skipped: four files document this
+      # very pattern in prose, and a guard that fires on the text explaining it punishes writing the explanation
+      # down. And `rule10-ok: <reason>` on the line suppresses it, for the cases where a one-shot really is
+      # right -- memoising something that CANNOT fail transiently (the DLL's own module path), or a budget whose
+      # variable merely still carries the name `*Tried`. The marker must carry its reason, at the site.
+      #
+      # The `_?` in the pattern is load-bearing, not cosmetic. This project suffixes MEMBER variables with `_`,
+      # so the latch this rule must catch most often is written `mmTried_ = true` -- and `[Tt]ried *= *true`
+      # cannot match that: the underscore sits between the word and the `=`. Every latch carried by a class
+      # member was invisible here. Measured 2026-07-26: the old regex found 6 hits (all plain locals), the same
+      # regex with `_?` found 9 -- the three extra being config_page.cpp:1495/1517/1535, the one-shot
+      # minimap-sample loader the audit had to find BY HAND while this guard stayed silent on it. The read side
+      # (`if (!fooTried_)`) is matched too: a latch is a pair, catching either half stops it reaching main.
+      - name: Guardrail (rule 10) -- BLOCKING
+        shell: bash
+        run: |
+          hits="$(git grep -nE 'static bool +[A-Za-z_]*[Tt]ried|[A-Za-z_]*[Tt]ried_? *= *true|if *\( *! *[A-Za-z_]*[Tt]ried_? *\)' -- 'src/*' ':!src/ui/tex_retry.h' \
+                  | grep -vE ':[0-9]+:[[:space:]]*(//|\*)' | grep -v 'rule10-ok' || true)"
+          if [ -n "$hits" ]; then printf '%s\n' "$hits"
+            echo "::error::one-shot 'tried' latch (rule 10) -- use the bounded retry in ui/tex_retry.h, or justify it inline with 'rule10-ok: <reason>'"
+            exit 1; fi
+          echo "rule 10 : clean"
+
+      # The four ADVISORY rules. Each still has known hits in the tree, so this step reports without blocking.
+      # Promote a rule into the blocking step above the moment its own hit count reaches zero -- one at a time,
+      # never as a batch: the point is that a red guard always means something.
+      - name: Guardrails (advisory)
         shell: bash
         run: |
           fail=0
-          # Rule 10 -- a transient failure must never become permanent. The one-shot `static bool tried` latch
-          # produced six user-visible bugs in a single day ; tex_retry.h is the bounded replacement.
-          if git grep -nE 'static bool +[A-Za-z_]*tried|[A-Za-z_]*[Tt]ried *= *true' -- 'src/*' ':!src/ui/tex_retry.h'; then
-            echo "::error::one-shot 'tried' latch (rule 10) -- use the bounded retry in ui/tex_retry.h"; fail=1; fi
           # Rule 6 -- widgets read the once-per-frame snapshot ; only the poller touches game memory.
           if git grep -nE '\b(read_[a-z_]+|zone_id) *\(' -- 'src/ui/*.cpp'; then
             echo "::error::game-memory read inside src/ui (rule 6) -- read it from the GameState snapshot"; fail=1; fi

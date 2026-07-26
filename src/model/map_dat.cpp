@@ -13,9 +13,12 @@ namespace aio {
 // --- FFXI install root (PlayOnline InstallFolder value "0001"), resolved once from the registry ---
 static const char* ffxi_root() {
     static char root[MAX_PATH] = { 0 };
-    static bool tried = false;
-    if (tried) return root[0] ? root : 0;
-    tried = true;
+    // rule10-ok: the failure this latches is PERMANENT by nature, not transient -- "no PlayOnline InstallFolder
+    // value in the registry" does not become true mid-session, and the six keys are read in one pass. It is also
+    // diagnosed rather than silent: resolve_path logs `step=NO FFXI ROOT` (verified 2026-07-26 audit).
+    static bool tried = false;              // rule10-ok: see above
+    if (tried) return root[0] ? root : 0;   // rule10-ok: see above
+    tried = true;                           // rule10-ok: see above
     static const char* KEYS[] = {
         "SOFTWARE\\WOW6432Node\\PlayOnlineEU\\InstallFolder", "SOFTWARE\\WOW6432Node\\PlayOnlineUS\\InstallFolder",
         "SOFTWARE\\WOW6432Node\\PlayOnline\\InstallFolder",   "SOFTWARE\\PlayOnlineEU\\InstallFolder",
@@ -49,9 +52,9 @@ static unsigned char* read_file(const char* path, unsigned& sizeOut) {
 // --- Windower root (our DLL is at <windower>\plugins\AioHud.dll -> strip two components), cached ---
 static const char* windower_root() {
     static char root[MAX_PATH] = { 0 };
-    static bool tried = false;
-    if (tried) return root[0] ? root : 0;
-    tried = true;
+    static bool tried = false;   // rule10-ok: memoises the DLL's OWN module path (same argument as paths.cpp::plugin_dir) -- GetModuleHandleEx on our own address cannot fail transiently.
+    if (tried) return root[0] ? root : 0;   // rule10-ok: see above
+    tried = true;                           // rule10-ok: see above
     HMODULE hm = 0;
     if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                            (LPCSTR)&read_file, &hm) && hm) {
@@ -65,7 +68,7 @@ static const char* windower_root() {
 }
 
 // --- XIPivot active overlays (data/settings.xml <overlays>a,b,c</overlays>), in priority order, cached ---
-static char g_ovl[16][64]; static int g_ovlN = 0; static bool g_ovlTried = false;
+static char g_ovl[16][64]; static int g_ovlN = 0; static bool g_ovlTried = false;   // rule10-ok: NOT a one-shot -- it is the terminal flag of the bounded, time-spaced retry below (8 tries / 3 s). Only the name still says "tried".
 static void load_overlays() {
     // Latch g_ovlTried only when settings.xml was actually READ (whether or not it had <overlays>), NOT on the first
     // attempt. It runs right after a zone-in -- the disk-busy / AV / Controlled-Folder-Access / XIPivot-mid-rewrite
@@ -81,8 +84,8 @@ static void load_overlays() {
     // for in gfx/window.cpp, and this is the path most likely to differ on a Program Files install.
     char p[MAX_PATH]; unsigned n = 0; unsigned char* d = 0;
     if (wr) { _snprintf(p, MAX_PATH, "%s\\addons\\XIPivot\\data\\settings.xml", wr); p[MAX_PATH - 1] = 0; d = read_file(p, n); }
-    if (!d) { nextTryMs = now + 3000; if (++tries >= 8) g_ovlTried = true; return; }   // locked/absent -> retry, then give up
-    g_ovlTried = true;   // opened -> authoritative (even if it has no <overlays>)
+    if (!d) { nextTryMs = now + 3000; if (++tries >= 8) g_ovlTried = true; return; }   // locked/absent -> retry, then give up   (rule10-ok: this IS the bounded budget)
+    g_ovlTried = true;   // opened -> authoritative (even if it has no <overlays>)     (rule10-ok: latched on SUCCESS, not on the attempt)
     char* txt = (char*)HeapAlloc(GetProcessHeap(), 0, n + 1);
     if (txt) {
         memcpy(txt, d, n); txt[n] = 0;
@@ -110,7 +113,7 @@ static const int MAX_VOL = 10;
 static unsigned char* g_vt[MAX_VOL] = { 0 }; static unsigned g_vtN[MAX_VOL] = { 0 };
 static unsigned char* g_ft[MAX_VOL] = { 0 }; static unsigned g_ftN[MAX_VOL] = { 0 };
 static int  g_maxVol = 0;
-static bool g_tablesTried = false;
+static bool g_tablesTried = false;   // rule10-ok: NOT a one-shot -- it only gates the 3 s spacing of the retry in load_tables() below, which caches on SUCCESS. Only the name still says "tried".
 
 // Cache only SUCCESS. This latched `tried` up-front, so one unreadable VTABLE.DAT -- XIPivot rewriting its
 // overlays, an AV hold -- left g_maxVol at 0 and made resolve_path() fail for EVERY map for the rest of the
@@ -123,7 +126,7 @@ static void load_tables() {
         if (!retry_due(nextTryMs)) return;
         retry_arm(nextTryMs, 3000);
     }
-    g_tablesTried = true;
+    g_tablesTried = true;   // rule10-ok: see the declaration -- spacing flag for the bounded retry, not a give-up
     const char* root = ffxi_root(); if (!root) return;
     char p[MAX_PATH];
     for (int v = 1; v < MAX_VOL; ++v) {

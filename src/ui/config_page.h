@@ -34,7 +34,8 @@ public:
     // Help samples in hud_timers.cpp document and guard against.
     void on_device_lost() { logoTex_ = 0; logoTried_ = false; helpCursorTex_ = 0;
                             tgtBuffTex_ = 0; tgtThTex_ = 0; tgtThRetry_ = TexRetry{};
-                            mmMkPlayer_ = 0; mmMkMob_ = 0; mmElem_ = 0; mmMoonTex_ = 0; mmMoonKey_ = -1; mmMapTex_ = 0; mmMapFileId_ = 0; mmTried_ = false; }   // FORGET our GPU handles (don't Release -- device may be dead)
+                            mmMkPlayer_ = 0; mmMkMob_ = 0; mmElem_ = 0; mmMoonTex_ = 0; mmMoonKey_ = -1; mmMapTex_ = 0; mmMapFileId_ = 0;
+                            mmMkPlayerRetry_ = TexRetry{}; mmMkMobRetry_ = TexRetry{}; mmElemRetry_ = TexRetry{}; }   // FORGET our GPU handles (don't Release -- device may be dead) + RE-ARM every retry budget : a device recreate is a zone-in, which is exactly when the "not ready yet" miss this retry exists for happens
     void dispose();   // teardown (//unload) : RELEASE our owned textures (device is still alive) so they don't leak per reload
 
     // LIVE PREVIEW anchor : when open on the Configuration tab, the HUD draws the real party +
@@ -267,7 +268,7 @@ private:
     int   mmMoonKey_ = -1;          // cache key : day tint / phase bucket / waning
     u32   mmMapTex_ = 0;            // OWNED : the Help's own copy of the live zone map (loaded straight from the ROM DAT, like the widget) so the radar sample never depends on the floating Minimap having drawn. Released + reloaded on a zone change.
     unsigned mmMapFileId_ = 0;      // map file-id currently loaded into mmMapTex_ (0 = none) -> reload only when the zone's map changes
-    bool  mmTried_ = false;         // attempted the marker/atlas load (don't retry the files every frame)
+    TexRetry mmMkPlayerRetry_, mmMkMobRetry_, mmElemRetry_;   // marker pin / mob arrow / element atlas : BOUNDED retry each (replaced a one-shot `mmTried_` latch -- rule 10)
 };
 
 } // namespace aio
