@@ -275,6 +275,12 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_68[] = {
+    { "*A Geomancy aura you replaced no longer stays flagged as lost.* You carry only one Indi- at a time, so casting another one replaces it -- but Timers read the old one leaving as a loss and kept a permanent red OUT for it. Casting Indi-Fury, then Indi-Refresh, then Indi-Regen left the first two alerting for good. Only the Indi- you are actually carrying can raise that alert now ; one that really expires still does.",
+      "*Une aura de geomancie que vous avez remplacee ne reste plus signalee comme perdue.* Vous ne portez qu'un seul Indi- a la fois, donc en lancer un autre remplace le precedent -- mais Timers lisait le depart de l'ancien comme une perte et gardait une alerte rouge OUT permanente. Lancer Indi-Fury, puis Indi-Refresh, puis Indi-Regen laissait les deux premiers en alerte definitivement. Seul l'Indi- que vous portez reellement peut declencher cette alerte maintenant ; un Indi- qui expire vraiment la declenche toujours." },
+    { "Same for an Indi- placed on an ally with Entrust : replacing it with another one is a swap, not a loss.",
+      "Idem pour un Indi- pose sur un allie avec Entrust : le remplacer par un autre est un echange, pas une perte." },
+};
 static const ChangeLine CL_67[] = {
     { "*Your songs on allies had the wrong duration -- by a lot.* An ally's row could read 3:43 for a Minuet that really lasts 5:42. The gear that lengthens a song was only half counted : a point of \"Song+\" potency also grants +10% duration, and that half was ignored, along with every modern instrument. Measured against the game's own timer, ally song rows now land within about a second on every song tested.",
       "*Vos chants sur les allies affichaient une duree fausse -- de beaucoup.* La ligne d'un allie pouvait indiquer 3:43 pour un Minuet qui dure reellement 5:42. L'equipement qui allonge un chant n'etait compte qu'a moitie : un point de potence \"Song+\" donne aussi +10% de duree, et cette moitie etait ignoree, ainsi que tous les instruments modernes. Compare au timer du jeu lui-meme, les lignes alliees tombent maintenant a la seconde pres sur tous les chants testes." },
@@ -418,6 +424,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.68", CL_68, (int)(sizeof(CL_68) / sizeof(CL_68[0])) },
     { "1.0.67", CL_67, (int)(sizeof(CL_67) / sizeof(CL_67[0])) },
     { "1.0.66", CL_66, (int)(sizeof(CL_66) / sizeof(CL_66[0])) },
     { "1.0.65", CL_65, (int)(sizeof(CL_65) / sizeof(CL_65[0])) },
