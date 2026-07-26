@@ -331,6 +331,20 @@ static void draw_brass_bezel(u32 dev, const Frame& f, float cx, float cy, float 
     }
 }
 
+// Map-load retry SCHEDULE. It plateaus, it never terminates : 3 next-frame attempts (a CreateTexture miss right
+// after a zone-in recovers instantly, so no black flash), then 300 ms apart through the "data not ready" window,
+// then one attempt every 15 s for as long as the zone lasts. The old form was a budget of 12 that STOPPED after
+// ~2.7 s, which turned a DAT briefly held by AV / a busy disk into a black map for the entire visit. Staying in
+// the slow lane costs one file open per 15 s -- nothing -- and is the difference between "black for 15 s" and
+// "black until you zone again".
+static const int      MAP_SLOW_AFTER = 12;      // attempts before dropping to the slow lane
+static const unsigned MAP_SLOW_MS    = 15000;   // slow-lane spacing
+static void map_retry_later(int& tries, unsigned& retryAt, unsigned nowMs) {
+    ++tries;
+    retryAt = nowMs + (tries < 3 ? 0u : (tries < MAP_SLOW_AFTER ? 300u : MAP_SLOW_MS));
+    if (retryAt == 0) retryAt = 1;   // 0 is the "try now" sentinel -- never land back on it
+}
+
 void Minimap::on_device_lost() { mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
 void Minimap::dispose() {
     release_texture(mapTex_); mapTex_ = 0; mapFileId_ = 0;
@@ -457,9 +471,9 @@ void Minimap::draw(const Frame& f) {
         if (mapTex_) { release_texture(mapTex_); mapTex_ = 0; }
         mapFileId_ = g.map.fileId;
         mobAngN_ = 0;                                           // new zone -> drop the eased-angle cache
-        mapRetries_ = 12; mapRetryAt_ = 0;                     // fresh load budget, try immediately
+        mapTries_ = 0; mapRetryAt_ = 0;                        // new zone -> fresh schedule, try immediately
     }
-    if (mapTex_ == 0 && g.map.fileId && mapRetries_ > 0) {     // not loaded yet -> (re)try, throttled
+    if (mapTex_ == 0 && g.map.fileId) {                        // not loaded yet -> (re)try, throttled. NO terminating budget : see minimap.h
         const unsigned nowMs = GetTickCount();
         if (!mapRetryAt_ || (int)(nowMs - mapRetryAt_) >= 0) {   // !mapRetryAt_ : the 0 sentinel (set on every zone change, line ~460) must fire even past 24.8d uptime, when (int)(nowMs-0) is negative -> else the map stays black
             u32* pixels = 0; int mw = 0, mh = 0; MapLoadDiag md;
@@ -469,20 +483,31 @@ void Minimap::draw(const Frame& f) {
             // in the else branch). That is the black-map-on-a-valid-record case: file fine, texture missing.
             if (load_zone_map(g.map.fileId, pixels, mw, mh, &md)) {
                 mapTex_ = make_texture_argb_mip(dev, mw, mh, pixels); mapW_ = mw; mapH_ = mh; free_map_image(pixels);
-                if (mapTex_) mapRetries_ = 0;
+                if (mapTex_) {
+                    // INSTRUMENT THE SUCCESS PATH (rule 10 corollary) : a recovery in the slow lane is the proof
+                    // that the failure was transient. Without this line a fixed black map and a map that was never
+                    // broken read exactly the same in the log.
+                    if (mapTries_ >= MAP_SLOW_AFTER)
+                        windower::debug::log("MAP OK zone=%u fileId=0x%04X : loaded on slow-lane attempt %d (~%d s after the zone-in) -- the earlier failure WAS transient",
+                                             g.map.zone, g.map.fileId, mapTries_ + 1,
+                                             (MAP_SLOW_AFTER * 300 + (mapTries_ - MAP_SLOW_AFTER + 1) * MAP_SLOW_MS) / 1000);
+                    mapTries_ = 0;
+                }
                 else {
-                    --mapRetries_; mapRetryAt_ = nowMs + (mapRetries_ > 8 ? 0u : 300u);   // first tries NEXT FRAME : a CreateTexture miss right after a zone-in recovers at once, so the map no longer flashes black for 300 ms
-                    if (mapRetries_ == 0)
-                        windower::debug::log("MAP FAIL zone=%u fileId=0x%04X : DAT decoded fine (%dx%d) but CreateTexture failed -- image too large for the device, or out of video memory",
-                                             g.map.zone, g.map.fileId, mw, mh);
+                    map_retry_later(mapTries_, mapRetryAt_, nowMs);
+                    if (mapTries_ == MAP_SLOW_AFTER)
+                        windower::debug::log("MAP FAIL zone=%u fileId=0x%04X : DAT decoded fine (%dx%d) but CreateTexture failed -- image too large for the device, or out of video memory. Slowing to one attempt every %d s (NOT giving up)",
+                                             g.map.zone, g.map.fileId, mw, mh, MAP_SLOW_MS / 1000);
                 }
             }
             else {
-                --mapRetries_; mapRetryAt_ = nowMs + (mapRetries_ > 8 ? 0u : 300u);   // first 3 next-frame (kills the black flash), then 300 ms apart (bounded)
+                map_retry_later(mapTries_, mapRetryAt_, nowMs);   // fast lane then a 15 s slow lane -- never a permanent stop
                 // ALWAYS-ON failure log (not behind a command) : a black minimap is rare and unpredictable, so
-                // a probe you must remember to arm would miss the occurrence. One line per zone, only on the
-                // LAST retry -- by then it is a real failure, not the normal not-ready-yet right after a zone-in.
-                if (mapRetries_ == 0) {
+                // a probe you must remember to arm would miss the occurrence. Fired ONCE, on the attempt that
+                // drops into the slow lane -- by then it is a real failure, not the normal not-ready-yet right
+                // after a zone-in, and `step` names WHICH stage failed (this is the line that answers "is it the
+                // path, or a file briefly unreadable" -- PATH UNRESOLVED vs FILE UNREADABLE).
+                if (mapTries_ == MAP_SLOW_AFTER) {
                     static const char* STEP[] = { "OK", "NO FFXI ROOT", "PATH UNRESOLVED", "FILE UNREADABLE", "NO GRAPHIC CHUNK", "FORMAT REJECTED" };
                     windower::debug::log("MAP FAIL zone=%u submap=%d valid=%d flags=0x%04X fileIdx=%u fileId=0x%04X scale=%d off=(%d,%d)",
                                          g.map.zone, current_submap(), g.map.valid ? 1 : 0, g.map.flags,
@@ -500,7 +525,7 @@ void Minimap::draw(const Frame& f) {
     // is what "elle pop noir puis s'affiche" describes: the load can miss on the first frame after a zone-in and
     // only succeed on a retry. Once the budget is spent we fall through and show the normal empty panel, so a
     // zone whose map genuinely cannot load still renders its frame rather than silently vanishing.
-    if (!mapTex_ && mapRetries_ > 0) return;
+    if (!mapTex_ && mapTries_ < MAP_SLOW_AFTER) return;   // only the FAST lane waits ; in the slow lane draw the normal empty panel and keep retrying underneath
 
     // BLACK-MAP catch-all. The block above only logs after its 12 retries are spent, and it only RUNS when
     // g.map.fileId is non-zero -- so a record that is "valid" with fileId 0 (or one whose retries were never
@@ -508,11 +533,11 @@ void Minimap::draw(const Frame& f) {
     // One line per zone, only once the texture is genuinely absent and no retry budget is left.
     if (!mapTex_) {
         static unsigned lastLoggedZone = 0xFFFFFFFFu;
-        if (g.map.zone != lastLoggedZone && mapRetries_ <= 0) {
+        if (g.map.zone != lastLoggedZone && mapTries_ >= MAP_SLOW_AFTER) {
             lastLoggedZone = g.map.zone;
-            windower::debug::log("MAP BLACK zone=%u submap=%d valid=%d fileId=0x%04X fileIdx=%u flags=0x%04X scale=%d retries=%d",
+            windower::debug::log("MAP BLACK zone=%u submap=%d valid=%d fileId=0x%04X fileIdx=%u flags=0x%04X scale=%d tries=%d",
                                  g.map.zone, current_submap(), g.map.valid ? 1 : 0, g.map.fileId, g.map.fileIdx,
-                                 g.map.flags, g.map.scale, mapRetries_);
+                                 g.map.flags, g.map.scale, mapTries_);
             const char* key = 0; const char* rom = ffxi_rom_dir_probe(&key);
             windower::debug::log("MAP   ROM dir : %s   (registry key: %s)", rom ? rom : "<NOT FOUND>", key ? key : "<none>");
         }

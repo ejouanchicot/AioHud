@@ -21,7 +21,17 @@ private:
     const GameState* state_;
     u32      mapTex_ = 0;        // current zone/submap map texture (from the ROM DAT)
     unsigned mapFileId_ = 0;     // map file-id currently loaded (0 = none) -> reload only on change
-    int      mapRetries_ = 0;    // remaining (re)load attempts when the DAT read failed (transient : data not ready on zone-in / a registry hiccup) -> retry a bounded number of times instead of giving up until the next zone
+    // (re)load attempts made for THIS zone's map. The schedule PLATEAUS, it does not terminate :
+    //   0..2   next frame   -- a CreateTexture miss right after a zone-in recovers at once (no black flash)
+    //   3..11  300 ms apart -- the normal "data not ready yet" window
+    //   >= 12  every 15 s, FOREVER (MAP_SLOW_AFTER / MAP_SLOW_MS in minimap.cpp)
+    // It used to be a budget of 12 that simply STOPPED -- ~2.7 s after the zone-in -- leaving the map black for
+    // the WHOLE visit if the DAT was still held (AV / Controlled Folder Access on a Program Files install, a
+    // slow disk). Reported by the NA tester as "random black maps". A bound must mean "stop hammering", never
+    // "stay blind for the session" (CLAUDE.md rule 10). The panel still WAITS instead of drawing black only
+    // while in the fast lane (< MAP_SLOW_AFTER) ; after that it renders its normal empty frame and the slow
+    // lane keeps trying underneath, so a map that becomes readable later simply appears.
+    int      mapTries_ = 0;
     unsigned mapRetryAt_ = 0;    // GetTickCount of the next allowed retry (throttle)
     int      mapW_ = 0, mapH_ = 0;
     u32      mkPlayer_ = 0, mkMob_ = 0;   // marker icons : player Location pin + mob Arrow (white, tinted)

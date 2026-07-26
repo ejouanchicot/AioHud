@@ -572,6 +572,10 @@ void Player::draw(const Frame& f) {
         // BUDGET : a fresh ROM decode is file IO + a mip-chain build, inline on the render thread. Gearing up 16
         // unseen slots at once (a zone into new gear) used to do all 16 in ONE frame ; cap it and let the rest
         // land on the following frames -- the slot just shows its id-text for a frame or two instead of hitching.
+        // Slow-lane spacing for a gear slot whose ROM decode keeps failing. See the transient branch below:
+        // the retry schedule PLATEAUS at this interval instead of stopping, so a DAT that becomes readable later
+        // fills the icon in rather than leaving a raw id for the session.
+        const unsigned GEAR_SLOW_MS = 30000;
         const int MAX_GEAR_DECODES = 2;
         int decodes = 0;
         if (equipReady) for (int s = 0; s < 16; ++s) {
@@ -627,29 +631,45 @@ void Player::draw(const Frame& f) {
                             const bool permanent = (gi.step == GS_NO_RANGE || gi.step == GS_NO_ROMDIR);
                             if (permanent) {
                                 gearTry_[s] = 255;
-#ifdef AIOHUD_PROBES
-                                windower::debug::log("GEARICON FAIL id=%u (0x%04X) [%s] -- ROM decode unreachable (step=%d)",
-                                                     want, want, item_name(want) ? item_name(want) : "?", gi.step);
-#endif
+                                // SHIPPED, not probe-only. This used to sit behind AIOHUD_PROBES, so on a RELEASE
+                                // build the permanent give-up was completely silent -- a tester seeing raw ids had
+                                // nothing in his log, and the two causes are told apart by exactly this line:
+                                //   NO_RANGE  = this id is in no DAT (a client/region that does not have the item)
+                                //               -> the SAME pieces fail every session, and no retry can ever help.
+                                //   NO_ROMDIR = no PlayOnline install found -> ALL icons fail, never a few.
+                                // Fires once per item (gearTry_ latches at 255 immediately after), so it cannot spam.
+                                windower::debug::log("GEARICON permanent id=%u (0x%04X) [%s] -- ROM decode unreachable (step=%d : %s). Not retried : this cannot change during the session",
+                                                     want, want, item_name(want) ? item_name(want) : "?", gi.step,
+                                                     gi.step == GS_NO_ROMDIR ? "no PlayOnline/FFXI install found" : "id outside every DAT range");
                                 if (tr) gear_trace("  RESULT id-text fallback (permanent : step %d)", gi.step);
-                            } else if (gearTry_[s] < 15) {   // transient I/O -> back off ~1 s and try again
-                                ++gearTry_[s]; gearNextMs_[s] = (GetTickCount() + 1000u) | 1u;   // |1 : never land on the 0 "try now" sentinel
-                                if (tr) gear_trace("  RESULT transient (step %d errno %d) -> retry #%d in ~1 s", gi.step, gi.err, gearTry_[s]);
-                            } else {   // budget spent -- SAY SO (rule 10 corollary), then stop
-                                gearTry_[s] = 255;
-                                windower::debug::log("GEARICON give up id=%u (0x%04X) [%s] after 15 transient ROM failures (step=%d errno=%d) -- DAT stays unreadable (permission / AV / path?)",
-                                                     want, want, item_name(want) ? item_name(want) : "?", gi.step, gi.err);
+                            } else {
+                                // TRANSIENT I/O -> back off and try again, on a schedule that PLATEAUS instead of
+                                // terminating : ~1 s apart for the first 15 attempts, then one attempt every 30 s
+                                // for as long as the slot holds this item. It used to STOP at 15 (~15 s) and show
+                                // the raw id for the REST OF THE SESSION unless the slot's item changed -- which is
+                                // exactly the "random ids in equipment" the NA tester reports. A DAT that is briefly
+                                // unreadable (AV first touch, a busy disk during a zone-in) is not a permanent fact
+                                // about the world, and the plugin must not treat it as one (rule 10). One file open
+                                // per 30 s per stuck slot is nothing; being wrong all session is not.
+                                if (gearTry_[s] < 200) ++gearTry_[s];
+                                const unsigned wait = (gearTry_[s] < 15) ? 1000u : GEAR_SLOW_MS;
+                                gearNextMs_[s] = (GetTickCount() + wait) | 1u;   // |1 : never land on the 0 "try now" sentinel
+                                if (gearTry_[s] == 15)   // SAY SO on the transition (rule 10 corollary) -- and name the step/errno, which is what tells a path problem from a file briefly held
+                                    windower::debug::log("GEARICON slow lane id=%u (0x%04X) [%s] after 15 transient ROM failures (step=%d errno=%d) -- still retrying every %d s, id-text meanwhile",
+                                                         want, want, item_name(want) ? item_name(want) : "?", gi.step, gi.err, GEAR_SLOW_MS / 1000);
+                                if (tr) gear_trace("  RESULT transient (step %d errno %d) -> retry #%d in ~%u ms", gi.step, gi.err, gearTry_[s], wait);
                             }
                             continue;
                         }
                     }
                     if (tr) gear_trace("  RESULT %s", tex ? "ICON DRAWN" : "id-text fallback (will retry next frame)");
                     if (tex) { gearTex_[s] = tex; gearId_[s] = want; gearTry_[s] = 0; }   // loaded -> cache it
-                    // Decoded but the texture create failed -> retry, but BOUNDED. gearTry_ saturating at 254 with
-                    // only 255 suppressing retries meant a slot whose CreateTexture keeps failing (VRAM pressure,
-                    // a device in a bad state) retried FOREVER : with 2 decodes/frame that is ~120 file operations
-                    // a second on the render thread, sustained. Eight attempts, then fall back to the id text.
-                    else { gearId_[s] = want; if (gearTry_[s] < 8) ++gearTry_[s]; else gearTry_[s] = 255; }
+                    // Decoded but the texture create failed (VRAM pressure, a device in a bad state) -> same
+                    // plateau. The concern that made this stop dead was cost: retrying every frame is ~120 file
+                    // operations a second on the render thread, sustained. The slow lane answers that without
+                    // going permanently blind -- 8 quick attempts, then one every 30 s, id-text in between.
+                    else { gearId_[s] = want; if (gearTry_[s] < 200) ++gearTry_[s];
+                           gearNextMs_[s] = (GetTickCount() + (gearTry_[s] < 8 ? 0u : GEAR_SLOW_MS)) | 1u; }
                 }
             }
         }
