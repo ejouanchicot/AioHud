@@ -11,6 +11,7 @@
 #include "model/spells_gen.h"
 #include "model/buffs_gen.h"
 #include "model/song_family_gen.h"   // song_family(spell) : identify a BRD song (spell-keyed -> no status family-collapse) for the song-OUT rule
+#include "model/tb_buff_gen.h"       // spell_buff(spell)->skill : identify a GEO Indicolure (skill 44) for the Indi--replaced OUT rule
 #include "model/action_status_gen.h"   // is_debuff_status : keep enfeebles (Blind/Poison/Slow) out of the buff list
 #include "model/mobskills_gen.h"
 #include "gfx/texture.h"
@@ -768,6 +769,33 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                         && (unsigned)(nowMs - ob[i].startMs) < 6000u) return true;   // single-target replacer only ; 6s covers the 0x076 cadence, short enough a real later dispel still OUTs
                 return false;
             };
+            // GEO Indi- : you carry exactly ONE aura (`selfGeo_`, party_state.h -- a single slot, not a list), so casting
+            // a DIFFERENT Indi- REPLACES the previous one. Its status leaving the buff list is that SWAP, not a loss :
+            // you cannot "put it back" without dropping the one you deliberately chose, so a red OUT is permanent and
+            // wrong. Reported : Indi-Fury -> Indi-Refresh -> Indi-Regen left Fury and Refresh stuck OUT ; only the Indi-
+            // you carry NOW may alert. Same shape as songReplaced above.
+            // Identifying a geomancy entry : the SPELL when we attributed the cast (skill 44 = Indicolure, tb_buff_gen),
+            // else the GEO-ONLY statuses -- Boosts 542-556 and "Colure Active" 612, which no other spell grants. The
+            // status alone can NOT decide for the shared ones (539 Regen / 541 Refresh / 580 Haste), hence the spell
+            // first : a real Refresh must keep its normal OUT.
+            auto geoEntry = [&](const FocusMem& e) -> bool {
+                const SpellBuff* sb = e.spell ? spell_buff(e.spell) : 0;
+                return (sb && sb->skill == 44) || (e.status >= 542 && e.status <= 556) || e.status == 612;
+            };
+            auto geoReplaced = [&](const FocusMem& e) -> bool {
+                if (!geoEntry(e)) return false;
+                if (e.self) { const PartyState::GeoAura& ga = party().self_geo();
+                              return ga.status && ga.status != e.status; }   // the aura you carry now is a DIFFERENT Indi- -> this one was swapped out
+                // ENTRUST'd Indi- on an ally : same rule, but the model keeps no per-ally aura slot -- so require the
+                // EVIDENCE, a newer Indi- cast we actually saw land on that same ally (the 6 s window mirrors the song
+                // rule : long enough for the 0x076 update the swap arrives in, short enough that a later dispel OUTs).
+                for (int i = 0; i < no; ++i) {
+                    if (ob[i].target != e.target || ob[i].spell == e.spell) continue;
+                    const SpellBuff* sb2 = spell_buff(ob[i].spell);
+                    if (sb2 && sb2->skill == 44 && (unsigned)(nowMs - ob[i].startMs) < 6000u) return true;
+                }
+                return false;
+            };
             int w = 0;                                                                        // prune : ally left the party/alliance, or the focus flag was turned off
             for (int q = 0; q < fmN; ++q) {
                 const bool live = fm[q].self ? true : (zoneGrace || party().party_order(fm[q].target) <= 17);   // 0..5 party, 6..17 alliance ; 99 = gone (roster is unstable mid-zone -> keep during grace)
@@ -798,6 +826,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     const bool dkOn = C.tm_buff_off((unsigned)fm[q].status);   // self & ally share ONE global hidden state
                     if (songUnrecoverable(fm[q])) continue;   // un-refillable 5th Clarion-Call song -> free the slot (no OUT will ever draw ; without this the un-drawn entry lingers and fills fm[24])
                     if (songReplaced(fm[q])) continue;        // deliberately swapped out by a new song on the same ally (Pianissimo) -> free the slot, never an OUT
+                    if (geoReplaced(fm[q])) continue;         // a previous Indi- you replaced by casting another one -> free the slot, never an OUT
                     if (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
                 }
                 if (w != q) fm[w] = fm[q]; ++w;
@@ -815,11 +844,12 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 else { const BuffSet* bs = party().buffs_for(fm[q].target); has = false; if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == fm[q].status) { has = true; break; } }
                 if (g_obLog) {
                     const char* fen = fm[q].isAbil ? abil_name_by_id(fm[q].spell) : (spell_info(fm[q].spell) ? spell_info(fm[q].spell)->en : 0);
-                    OBLOG("  FOCUS q=%-2d %-16s tgt=%08X st=%-4u spell=%-5u \"%s\" self=%d  has(0x076)=%d listReady=%d lostAgo=%dms  replaced=%d unrecov=%d",
+                    OBLOG("  FOCUS q=%-2d %-16s tgt=%08X st=%-4u spell=%-5u \"%s\" self=%d  has(0x076)=%d listReady=%d lostAgo=%dms  replaced=%d unrecov=%d geoRepl=%d (aura st=%u)",
                           q, fm[q].self ? "<you>" : fm[q].name, fm[q].target, fm[q].status, fm[q].spell, fen ? fen : "?",
                           fm[q].self, has ? 1 : 0, listReady(fm[q]) ? 1 : 0,
                           fm[q].lostMs ? (int)(nowMs - fm[q].lostMs) : -1,
-                          songReplaced(fm[q]) ? 1 : 0, songUnrecoverable(fm[q]) ? 1 : 0);
+                          songReplaced(fm[q]) ? 1 : 0, songUnrecoverable(fm[q]) ? 1 : 0,
+                          geoReplaced(fm[q]) ? 1 : 0, (unsigned)party().self_geo().status);
                 }
                 if (focus_trace_live()) {
                     // nbuff is the crux : meHas() FAILS OPEN (returns true for everything) when the live buff list is
@@ -857,6 +887,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     if (focus_trace_live())
                         windower::debug::log("SONGOUT st=%u '%s' target=%08X SUPPRESSED -> no OUT (song deliberately replaced on this ally)",
                                              (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].target);
+                    continue;
+                }
+                if (geoReplaced(fm[q])) {   // an Indi- you replaced with another Indi- -> no OUT, not even a one-frame flash (the prune frees the slot next frame)
+                    if (focus_trace_live())
+                        windower::debug::log("GEOOUT st=%u '%s' spell=%u self=%d SUPPRESSED (carrying st=%u now) -> no OUT (Indi- deliberately replaced)",
+                                             (unsigned)fm[q].status, buff_status_name(fm[q].status), (unsigned)fm[q].spell,
+                                             fm[q].self, (unsigned)party().self_geo().status);
                     continue;
                 }
                 if (fm[q].self) {
