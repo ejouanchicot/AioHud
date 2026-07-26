@@ -275,6 +275,18 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_69[] = {
+    { "*A black minimap, or raw item numbers instead of gear icons, no longer last until you zone or restart.* When a game file is momentarily unreadable -- typically while the zone is loading and the disk is busy, or when an antivirus touches it for the first time -- the plugin retried for a few seconds and then stopped for good : the map stayed black for your whole visit to that zone, and an equipment slot kept showing a number for the rest of the session. It now keeps retrying quietly in the background, so it repairs itself within seconds instead.",
+      "*Une minicarte noire, ou des numeros d'objet a la place des icones d'equipement, ne durent plus jusqu'au changement de zone ou au redemarrage.* Quand un fichier du jeu est momentanement illisible -- typiquement pendant le chargement d'une zone quand le disque travaille, ou quand un antivirus y touche pour la premiere fois -- le plugin reessayait quelques secondes puis abandonnait definitivement : la carte restait noire tout le temps passe dans la zone, et un emplacement d'equipement affichait un numero jusqu'a la fin de la session. Il continue desormais de reessayer discretement en arriere-plan, et se repare donc tout seul en quelques secondes." },
+    { "Nothing changes when everything works : the quick retries are untouched, only the giving-up part was removed.",
+      "Rien ne change quand tout fonctionne : les tentatives rapides sont inchangees, seul l'abandon definitif a ete retire." },
+    { "Fixed : the icons in a module's Help tab could stay missing for the whole session if the very first attempt to load them failed.",
+      "Corrige : les icones de l'onglet Aide d'un module pouvaient rester absentes toute la session si la toute premiere tentative de chargement echouait." },
+    { "The status-icon sheet is now loaded once and shared by every box instead of being loaded separately by each one -- around 13 MB less video memory in a normal session.",
+      "La planche d'icones d'etat est desormais chargee une seule fois et partagee par toutes les boites au lieu d'etre chargee separement par chacune -- environ 13 Mo de memoire video en moins dans une session normale." },
+    { "For testers : when an equipment icon cannot be built at all, the log now says so on a released build (it only did on a development one), and says which step failed.",
+      "Pour les testeurs : quand une icone d'equipement ne peut pas etre construite du tout, le journal le dit desormais sur une version publiee (il ne le faisait que sur une version de developpement), et precise quelle etape a echoue." },
+};
 static const ChangeLine CL_68[] = {
     { "*A Geomancy aura you replaced no longer stays flagged as lost.* You carry only one Indi- at a time, so casting another one replaces it -- but Timers read the old one leaving as a loss and kept a permanent red OUT for it. Casting Indi-Fury, then Indi-Refresh, then Indi-Regen left the first two alerting for good. Only the Indi- you are actually carrying can raise that alert now ; one that really expires still does.",
       "*Une aura de geomancie que vous avez remplacee ne reste plus signalee comme perdue.* Vous ne portez qu'un seul Indi- a la fois, donc en lancer un autre remplace le precedent -- mais Timers lisait le depart de l'ancien comme une perte et gardait une alerte rouge OUT permanente. Lancer Indi-Fury, puis Indi-Refresh, puis Indi-Regen laissait les deux premiers en alerte definitivement. Seul l'Indi- que vous portez reellement peut declencher cette alerte maintenant ; un Indi- qui expire vraiment la declenche toujours." },
@@ -424,6 +436,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.69", CL_69, (int)(sizeof(CL_69) / sizeof(CL_69[0])) },
     { "1.0.68", CL_68, (int)(sizeof(CL_68) / sizeof(CL_68[0])) },
     { "1.0.67", CL_67, (int)(sizeof(CL_67) / sizeof(CL_67[0])) },
     { "1.0.66", CL_66, (int)(sizeof(CL_66) / sizeof(CL_66[0])) },
