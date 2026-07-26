@@ -102,6 +102,42 @@ coroutine.schedule(watch_done, 1)
 -- fresh reload. A real update always rewrites the file, which reads as a change from this baseline.
 acted = read_status()
 
+-- SELF-UNINSTALL. The plugin appends "lua load aioupdate" to Windower's scripts\init.txt at every init, and
+-- nothing ever removed it -- so a user who DELETES AioHud left Windower trying to load a missing addon at every
+-- launch, for good, with no way to diagnose it (the thing that would explain it is the thing they removed).
+-- The addon is the right place to undo it: it is the only piece that still runs once the plugin is gone.
+--
+-- Deliberately conservative. It fires only when the plugin DLL is actually absent, it rewrites init.txt by
+-- copying every line except its own, and it does nothing at all if the file cannot be read or rewritten -- an
+-- uninstall tidy-up must never be able to damage a working Windower install. Runs once, ~5 s after load, so it
+-- never races the plugin's own init-time write on a normal startup.
+local function self_uninstall_if_orphaned()
+    local dll = base .. 'plugins\\AioHud.dll'
+    local f = io.open(dll, 'rb')
+    if f then f:close(); return end                 -- plugin present -> nothing to do, ever
+
+    local ini = base .. 'scripts\\init.txt'
+    local rf = io.open(ini, 'r'); if not rf then return end
+    local lines, found = {}, false
+    for line in rf:lines() do
+        if line:lower():find('aioupdate', 1, true) then found = true else lines[#lines + 1] = line end
+    end
+    rf:close()
+    if not found then return end
+
+    -- temp + rename, like the plugin's own writer : a half-written init.txt breaks EVERY plugin, not just ours.
+    local tmp = ini .. '.aiotmp'
+    local wf = io.open(tmp, 'w'); if not wf then return end
+    local ok = true
+    for _, l in ipairs(lines) do ok = ok and (wf:write(l, '\n') ~= nil) end
+    wf:close()
+    if not ok then os.remove(tmp); return end
+    os.remove(ini)
+    if not os.rename(tmp, ini) then os.remove(tmp); return end
+    windower.add_to_chat(207, 'AioUpdate: AioHud is gone -- removed its autoload line from init.txt. You can //lua unload aioupdate and delete this addon.')
+end
+coroutine.schedule(self_uninstall_if_orphaned, 5)
+
 -- typed //aioupdate : just ask the plugin to spawn (the watcher above handles the unload/load).
 windower.register_event('addon command', trigger)
 

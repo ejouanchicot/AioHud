@@ -105,10 +105,17 @@ jobs:
       # Only build a payload zip on a release tag (it's attached to the Release below). Non-tag pushes just
       # compile to validate the build. (No upload-artifact step -> no third-party Node-20 action ; the
       # in-game updater pulls from Releases, not from CI artifacts.)
+      # The .sha256 sidecar is what makes the in-game updater able to REFUSE a payload. Without it the updater
+      # extracts whatever the download produced, straight over the Windower root, on trust alone -- and that is
+      # the one code path in this project that runs downloaded content inside the game process.
       - name: Zip payload
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
-        run: Compress-Archive -Path dist/* -DestinationPath "AioHud-${{ steps.ver.outputs.version }}.zip" -Force
+        run: |
+          $zip = "AioHud-${{ steps.ver.outputs.version }}.zip"
+          Compress-Archive -Path dist/* -DestinationPath $zip -Force
+          (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower() | Set-Content -NoNewline -Encoding ascii "$zip.sha256"
+          Write-Host "sha256 $(Get-Content "$zip.sha256")  $zip"
 
       # One user-facing asset : the payload zip (extract into the <Windower> ROOT -> plugins\AioHud... + addons\aioupdate\).
       # The in-game updater downloads this same zip and extracts it over the Windower root (keeping AioHud\data\).
@@ -130,6 +137,14 @@ jobs:
           TOP="$(grep -oE '\{ "[0-9]+\.[0-9]+\.[0-9]+", CL_' src/ui/config_changelog.h | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
           [ "$TOP" = "$V" ] \
             || { echo "::error::RELEASES[0] is $TOP, not $V -- the newest release must come first"; exit 1; }
+          # The .sha256 sidecar is now LOAD-BEARING, not a nicety. From v1.0.71 the in-game updater fails CLOSED
+          # when a release has no checksum -- so a release published without one cannot be installed by anybody,
+          # and it surfaces to the player as "the updater is broken". Refuse to publish rather than ship that.
+          # This bites hardest on a RE-release (delete the release, re-run the workflow) : both assets must go up.
+          ls AioHud-*.zip >/dev/null 2>&1 \
+            || { echo "::error::no payload zip to publish"; exit 1; }
+          ls AioHud-*.zip.sha256 >/dev/null 2>&1 \
+            || { echo "::error::payload has no .sha256 sidecar -- every client on v1.0.71+ would refuse this release"; exit 1; }
           # --latest is NOT the default : GitHub marks whichever release was PUBLISHED last, which is publish
           # time, not semver. v1.0.61 published 24 s after v1.0.62 once, and the updater queries /releases/latest.
-          gh release create "$TAG" AioHud-*.zip --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --latest
+          gh release create "$TAG" AioHud-*.zip AioHud-*.zip.sha256 --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --latest

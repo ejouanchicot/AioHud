@@ -28,10 +28,16 @@ REM     file version (Windower prints it at load, instead of 0.0.0.0). Non-numer
 REM     gracefully if rc.exe isn't on PATH (build still succeeds, just without the version stamp).
 set "VMAJ=0" & set "VMIN=0" & set "VPAT=0"
 echo %AIOHUD_VERSION%| findstr /r "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul && for /f "tokens=1-3 delims=." %%a in ("%AIOHUD_VERSION%") do (set "VMAJ=%%a" & set "VMIN=%%b" & set "VPAT=%%c")
+REM DELETE FIRST, then trust rc's EXIT CODE -- not the file's existence. This tested `if exist` on the output,
+REM so a FAILED rc left the previous build's .res sitting there and it was linked anyway : the DLL then carried
+REM the version of whatever was built last, which is the single most misleading thing a binary can lie about
+REM (a tester reports against v1.0.70 while running v1.0.68). It is the same lesson stated twenty lines below
+REM for cl, where the exit code is trusted precisely so a stale DLL cannot mask a failed compile.
 set "AIORES="
+del /q "%ROOT%build\aiohud.res" 2>nul
 where rc.exe >nul 2>nul && (
     rc /nologo /fo "%ROOT%build\aiohud.res" /dAIO_VMAJ=%VMAJ% /dAIO_VMIN=%VMIN% /dAIO_VPAT=%VPAT% "%ROOT%src\plugin\aiohud.rc" >nul
-    if exist "%ROOT%build\aiohud.res" set AIORES="%ROOT%build\aiohud.res"
+    if errorlevel 1 ( echo [build] WARNING: rc.exe failed -- DLL will carry version 0.0.0.0 ) else ( set AIORES="%ROOT%build\aiohud.res" )
 )
 
 REM /W4 /permissive- : high warnings + strict conformance (catches shadowing, dead code, bad conversions).

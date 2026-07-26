@@ -46,11 +46,31 @@ try {
     }
 
     if (-not (Newer $tag $Current)) { Status "UPTODATE $Current"; exit }
-    $a = $r.assets | Where-Object { $_.name -like 'AioHud-*.zip' } | Select-Object -First 1
+    $a = $r.assets | Where-Object { $_.name -like 'AioHud-*.zip' -and $_.name -notlike '*.sha256' } | Select-Object -First 1
     if (-not $a) { Status 'ERROR no-zip-asset-in-release'; exit }
     New-Item -ItemType Directory -Force -Path (Split-Path $zip) | Out-Null
     Invoke-WebRequest $a.browser_download_url -OutFile $zip -Headers $ua
-    Status "READY $tag"    # download done -> the addon now //unloads AioHud
+
+    # INTEGRITY GATE. Everything below this point extracts attacker-controlled-if-compromised content over the
+    # Windower ROOT, and a plugin DLL there is loaded into the game process on the next //load. HTTPS proves we
+    # talked to GitHub; it does not prove the asset is the one CI built. Compare against the .sha256 sidecar the
+    # release workflow publishes next to the zip.
+    # FAILS CLOSED, on purpose, including when the sidecar is missing. That does mean a release published
+    # without one cannot be installed by this updater -- which is the intent: "no checksum" and "wrong checksum"
+    # are the same statement about how much we know. Both messages name the remedy so it is never a silent stall.
+    $sa = $r.assets | Where-Object { $_.name -like '*.zip.sha256' } | Select-Object -First 1
+    if (-not $sa) {
+        Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+        Status 'ERROR release has no .sha256 checksum -- refusing to install it. Update manually from the GitHub release page.'; exit
+    }
+    $want = ((Invoke-WebRequest $sa.browser_download_url -Headers $ua).Content -replace '[^0-9a-fA-F]', '').ToLower()
+    $got  = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLower()
+    if ($want -ne $got) {
+        Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+        Status "ERROR checksum mismatch (expected $($want.Substring(0,[Math]::Min(12,$want.Length))), got $($got.Substring(0,12))) -- download refused, nothing was installed"; exit
+    }
+
+    Status "READY $tag"    # download verified -> the addon now //unloads AioHud
     # wait (up to 30s) for AioHud.dll to become writable = the plugin unloaded (on ALL clients, for dual-box)
     $dll = Join-Path $Plugins 'AioHud.dll'
     $unlocked = $false
