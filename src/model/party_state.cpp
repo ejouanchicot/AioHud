@@ -1000,7 +1000,18 @@ void PartyState::on_action(const unsigned char* p) {
             int setPct = 0, listedPct = 0, augPct = 0;
             if (read_equipment_ext(eids, eext)) { setPct = composure_set_pct(eids); listedPct = enh_dur_listed_pct(eids); augPct = enh_dur_augment_pct(eids, eext); }
             bool composure = false, perpetuance = false, troubadour = false, soulvoice = false, marcato = false, nightingale = false;
-            { unsigned short mb[32]; int mn = read_player_buffs(mb, 32); for (int k = 0; k < mn; ++k) {
+            // The `ok` flag is READ now, and its failure is REPORTED. read_player_buffs returns 0 both when you
+            // genuinely carry nothing and when the player struct could not be read -- so a transient miss at this
+            // exact instant silently clears all six flags at once. The visible symptom is a missing (NT)/(SV)/(M)
+            // tag, but the expensive one is invisible: Troubadour lost here halves the duration this cast predicts
+            // for every ally it lands on, and Composure/Perpetuance do the same for enhancing and SCH.
+            // ALWAYS-ON and one line per occurrence, deliberately not behind a probe command: this was reported
+            // once in months, and a capture you must remember to arm before a once-in-months event will never
+            // catch it (the same reasoning the MAP FAIL log is built on). Nothing is CHANGED on this path yet --
+            // whether to skip the snapshot or keep the stale one is a decision to make with the capture in hand,
+            // not by guessing which failure it was.
+            bool buffsOk = false;
+            { unsigned short mb[32]; int mn = read_player_buffs(mb, 32, &buffsOk); for (int k = 0; k < mn; ++k) {
                 switch (mb[k]) { case 419: composure = true; break; case 469: perpetuance = true; break; case 348: troubadour = true; break;
                                  case 52: soulvoice = true; break; case 231: marcato = true; break; case 347: nightingale = true; break; } } }   // 499 Clarion Call / 455 Tenuto : no duration effect, deliberately not read
             PlayerInfo me; const bool haveMe = read_player(me);
@@ -1104,6 +1115,8 @@ void PartyState::on_action(const unsigned char* p) {
                 }
             }
             if (b->skill == 40 && sid < 1024) {   // BRD song : snapshot the song-enhancing JAs UP at cast, keyed by SPELL id
+                if (!buffsOk)   // the snapshot behind this tag was NOT readable -> say so, once, with what it cost
+                    windower::debug::log("SONGMOD UNREADABLE spell=%u : the player buff list could not be read at cast time, so SV/NT/TR/M all read as DOWN. Tag will be missing AND this cast's predicted duration lost its Troubadour/Marcato multipliers.", sid);
                 songMod_[sid] = (unsigned char)((soulvoice ? 1 : 0) | (nightingale ? 2 : 0) | (troubadour ? 4 : 0) | (marcato ? 8 : 0));   // by spell (not status) so two same-family songs (Advancing + Victory March) keep separate tags
             }
             // GEO Indi- (skill 44) is an AURA (the pulse refreshes the effect every ~3s) : normally we make NO per-ally
