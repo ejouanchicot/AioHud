@@ -509,6 +509,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (!dupO) {
                     if (seenOwnN < 48) seenOwn[seenOwnN++] = key;
                     const char* onm = rowCaster ? party().pc_name_by_id(rowCaster) : 0;
+                    unsigned latch = 0; const unsigned ring = party().caster_paths(bt[i].id, bt[i].expiry, i, latch);
+                    const char* rnm = ring ? party().pc_name_by_id(ring) : 0; const char* lnm = latch ? party().pc_name_by_id(latch) : 0;
+                    windower::debug::log("BUFFPATH st=%u ring=%08X '%s'  latch=%08X '%s'  -> resolved=%08X",
+                                         (unsigned)bt[i].id, ring, rnm ? rnm : "-", latch, lnm ? lnm : "-", rowCaster);
                     windower::debug::log("BUFFOWNER st=%u '%s' exp=%u idx=%d -> caster=%08X '%s' trust=%d mine=%d | srcKeeps=%d (filter=%d)",
                                          (unsigned)bt[i].id, buff_status_name(bt[i].id), bt[i].expiry, i,
                                          rowCaster, onm ? onm : "<unresolved>",

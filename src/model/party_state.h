@@ -474,6 +474,14 @@ struct PartyState {
     // with an IDENTICAL expiry, and without a tiebreak both take the same rank and resolve to the same spell
     // (reported as "Ulmia Advancing March en double", 2026-07-20). Pass -1 only when no index is available.
     int  match_cast(unsigned short status, unsigned expiry, int timerIdx = -1) const;
+    // DIAGNOSTIC : which of the two paths answered buff_caster_for, and what each one holds on its own. The
+    // status-keyed latch and the per-timer cast ring can disagree, and when they do the displayed owner is
+    // whichever won -- invisible from outside. Returns the ring's caster (0 = no match) and fills the latch.
+    unsigned caster_paths(unsigned short status, unsigned expiry, int timerIdx, unsigned& latch) const {
+        latch = buff_caster(status);
+        const int k = match_cast(status, expiry, timerIdx);
+        return (k >= 0) ? selfCasts_[k].caster : 0;
+    }
     unsigned short self_buff_spell_ranked(unsigned short status, unsigned expiry, int timerIdx = -1) const;
     // WHO cast the buff behind THIS timer (0 = unknown). Per-timer, unlike buffCaster_ which holds one caster per
     // status and therefore cannot separate our song from a trust's on the same status.

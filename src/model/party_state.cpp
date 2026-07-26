@@ -462,7 +462,39 @@ unsigned PartyState::buff_caster_for(unsigned short status, unsigned expiry, int
     const int k = match_cast(status, expiry, timerIdx);
     if (k >= 0) {
         const unsigned mc = selfCasts_[k].caster;
-        if (mc != selfId_) return mc;                        // a FOREIGN match is authoritative
+        // A foreign match is authoritative ONLY while nothing later has granted this status. The ring keeps a cast
+        // as a candidate for as long as ANY timer of that status is live (deliberately -- our predictions run short,
+        // see match_cast), so a cast that was long ago OVERWRITTEN stays pairable forever. MEASURED 2026-07-26 :
+        // Kaories (a player) cast Protect/Regen early in the session ; Monberaux's move 4255 re-applied both much
+        // later ; the ring still offered Kaories, "a FOREIGN match is authoritative" returned her, and the row read
+        // "Protect (Kaories)" -- which then PASSED the "me + players" filter that exists to hide a trust's buffs.
+        //
+        // The latch is the discriminator, and it is exact rather than a tolerance: buffCaster_[status] is rewritten
+        // by every landing, so if it names someone ELSE, a later action granted this status and the ring's candidate
+        // cannot be the live buff. Guarded to a status carrying a SINGLE live timer, which is precisely where the
+        // ring's per-timer advantage is worth nothing -- songs run several concurrent timers on one status and must
+        // keep the ring's ranking (that is why the existing overshoot guard is trust-only : it was written for them).
+        if (mc != selfId_) {
+            int nTim = 0; for (int j = 0; j < buffTimerN_; ++j) if (buffTimers_[j].id == status) ++nTim;
+            const unsigned lat = buff_caster(status);
+            if (nTim <= 1 && lat && lat != mc && caster_resolves(lat)) return lat;   // superseded by a later cast -> the latch is fresher
+            // Same staleness, but for a status the packet NEVER names : Monberaux's 4255 grants Protect AND Shell
+            // while reporting only status 40, so 41's latch keeps whoever cast Shell last -- Kaories, half an hour
+            // ago. Nothing fresher exists for 41 itself, so ask the co-expiry GROUP: an identical expiry tick means
+            // one action, and Protect's latch in that group is fresh. Unanimity required, exact equality only --
+            // the same discipline coForeign already uses, and for the same reason.
+            if (nTim <= 1) {
+                unsigned grp = 0; bool split = false;
+                for (int j = 0; j < buffTimerN_ && !split; ++j) {
+                    if (buffTimers_[j].id == status || buffTimers_[j].expiry != expiry) continue;
+                    const unsigned c = buff_caster(buffTimers_[j].id);
+                    if (!c || c == selfId_ || !caster_resolves(c)) continue;
+                    if (grp && grp != c) split = true; else grp = c;
+                }
+                if (!split && grp && grp != mc) return grp;
+            }
+            return mc;
+        }
         // mc == self, but a STALE self-cast can shadow a foreign co-grant we never saw a 0x028 for : Monberaux's move
         // 4255 reports only Protect, so Shell keeps your OLD self-cast and survives "Mine only". If a buff sharing this
         // EXACT expiry resolves to a trust/player, the whole group is theirs -> yield it, not your stale self-claim.
