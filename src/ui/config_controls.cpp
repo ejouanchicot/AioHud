@@ -4,6 +4,7 @@
 #include "ui/config_controls.h"
 #include "gfx/draw.h"          // grad_quad, rrect, soft_blob, rrect_glow, disc, disc_glow, seg_soft, fill_tri, tquad, dSet*
 #include "model/ui_config.h"   // ui_config(), save_ui_config() (row_slider persists on release)
+#include "windower_debug.h"    // debug::log : ease()'s spring table says so when it fills (rule 10 corollary)
 #include <cmath>
 #include <cstdio>
 
@@ -115,7 +116,20 @@ u32 lerpc(u32 a, u32 b, float t) {
 float ease(int id, int sub, float target, float speed) {
     Anim* s = nullptr;
     for (int i = 0; i < g_animN; ++i) if (g_anim[i].id == id && g_anim[i].sub == sub) { s = &g_anim[i]; break; }
-    if (!s) { if (g_animN >= ANIM_MAX) return target; s = &g_anim[g_animN++]; s->id = id; s->sub = sub; s->v = target; }
+    if (!s) {
+        // SAY SO when the budget is spent (rule 10's corollary). Silently returning `target` means the control
+        // appears fully-formed with no transition while its neighbours still animate -- a symptom nobody would
+        // trace back to a full table. Probably unreachable today (entries are never recycled, so the count
+        // tracks DISTINCT controls visited, not time), but an unreachable budget that dies quietly reads exactly
+        // like a bug that isn't happening. One line, once per saturation. buff_atlas.cpp / minimap.cpp already
+        // do this for theirs ; this was the last silent one.
+        if (g_animN >= ANIM_MAX) {
+            static bool full = false;
+            if (!full) { full = true; windower::debug::log("ease(): animation table FULL (%d springs) -- new controls will snap instead of animating", ANIM_MAX); }
+            return target;
+        }
+        s = &g_anim[g_animN++]; s->id = id; s->sub = sub; s->v = target;
+    }
     s->v += (target - s->v) * clampf(g_dt * speed, 0.0f, 1.0f);
     return s->v;
 }
