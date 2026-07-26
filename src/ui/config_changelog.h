@@ -275,6 +275,18 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_70[] = {
+    { "*Buffs put on you by a trust no longer survive the \"me + players\" filter.* A Protect, Shell or Regen applied by a trust could keep showing -- sometimes named after a party member who had cast the same spell much earlier in the session, which is exactly why it slipped through. Two separate causes were behind it : a trust that had been dismissed or re-summoned was no longer recognised as a trust at all, and an old cast could out-rank the correct, more recent one.",
+      "*Les buffs qu'un trust vous pose ne survivent plus au filtre \"moi + joueurs\".* Un Protect, Shell ou Regen applique par un trust pouvait rester affiche -- parfois au nom d'un membre du groupe qui avait lance le meme sort bien plus tot dans la session, ce qui est precisement ce qui lui permettait de passer. Deux causes distinctes : un trust renvoye ou re-invoque n'etait plus reconnu comme trust du tout, et un ancien lancement pouvait l'emporter sur l'attribution correcte, plus recente." },
+    { "*Shield Bash and Weapon Bash no longer trigger the Arcade WS banner under a weaponskill's name.* Those abilities share their internal number with a real weaponskill -- Shield Bash with Expiacion -- so the banner announced the wrong one. The rule now recognises real weaponskills instead of trying to list every ability that is not one : anything unrecognised stays silent rather than showing a wrong name.",
+      "*Shield Bash et Weapon Bash ne declenchent plus la banniere Arcade WS sous le nom d'un weaponskill.* Ces capacites partagent leur numero interne avec un vrai weaponskill -- Shield Bash avec Expiacion -- d'ou le mauvais nom annonce. La regle reconnait desormais les vrais weaponskills au lieu d'essayer d'enumerer toutes les capacites qui n'en sont pas : ce qui n'est pas reconnu reste silencieux plutot que d'afficher un nom faux." },
+    { "*A damaged settings file can no longer crash the game.* One value of the Minimap settings was printed without any length check, so an out-of-range number -- from a hand-edited or corrupted file -- ended the game process the moment the Minimap tab was opened. The value is now bounded when the file is read and when it is displayed.",
+      "*Un fichier de reglages abime ne peut plus faire planter le jeu.* Une valeur des reglages Minicarte etait affichee sans aucun controle de longueur : un nombre hors plage -- fichier edite a la main ou corrompu -- terminait le processus du jeu des l'ouverture de l'onglet Minicarte. La valeur est desormais bornee a la lecture du fichier et a l'affichage." },
+    { "After about 25 days without restarting the PC, two things quietly stopped retrying : the zone-map tables and the shared-profile follow-up. Both work again at any uptime.",
+      "Apres environ 25 jours sans redemarrer le PC, deux choses cessaient discretement de reessayer : les tables de cartes de zone et le suivi des profils partages. Les deux fonctionnent de nouveau quelle que soit la duree de fonctionnement." },
+    { "For testers : every line of the diagnostic log now says which character wrote it, so a capture taken with two clients running can still be read.",
+      "Pour les testeurs : chaque ligne du journal de diagnostic indique desormais quel personnage l'a ecrite, afin qu'une capture prise avec deux clients ouverts reste lisible." },
+};
 static const ChangeLine CL_69[] = {
     { "*A black minimap, or raw item numbers instead of gear icons, no longer last until you zone or restart.* When a game file is momentarily unreadable -- typically while the zone is loading and the disk is busy, or when an antivirus touches it for the first time -- the plugin retried for a few seconds and then stopped for good : the map stayed black for your whole visit to that zone, and an equipment slot kept showing a number for the rest of the session. It now keeps retrying quietly in the background, so it repairs itself within seconds instead.",
       "*Une minicarte noire, ou des numeros d'objet a la place des icones d'equipement, ne durent plus jusqu'au changement de zone ou au redemarrage.* Quand un fichier du jeu est momentanement illisible -- typiquement pendant le chargement d'une zone quand le disque travaille, ou quand un antivirus y touche pour la premiere fois -- le plugin reessayait quelques secondes puis abandonnait definitivement : la carte restait noire tout le temps passe dans la zone, et un emplacement d'equipement affichait un numero jusqu'a la fin de la session. Il continue desormais de reessayer discretement en arriere-plan, et se repare donc tout seul en quelques secondes." },
@@ -436,6 +448,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.70", CL_70, (int)(sizeof(CL_70) / sizeof(CL_70[0])) },
     { "1.0.69", CL_69, (int)(sizeof(CL_69) / sizeof(CL_69[0])) },
     { "1.0.68", CL_68, (int)(sizeof(CL_68) / sizeof(CL_68[0])) },
     { "1.0.67", CL_67, (int)(sizeof(CL_67) / sizeof(CL_67[0])) },
