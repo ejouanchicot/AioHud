@@ -7,6 +7,7 @@
 // layout + state. Tabs/sections can also be driven from //aio config <args>.
 #pragma once
 #include "ui/widget.h"   // Frame
+#include "ui/tex_retry.h"   // TexRetry : the Help TH-icon load is a BOUNDED retry, not a one-shot latch (rule 10)
 
 namespace aio {
 
@@ -27,7 +28,7 @@ public:
     // the HUD hands us the party's selection-hand texture each frame so the Help can show the real cursor.
     void set_help_cursor_tex(u32 t) { helpCursorTex_ = t; }
     void on_device_lost() { logoTex_ = 0; logoTried_ = false;
-                            tgtBuffTex_ = 0; tgtThTex_ = 0; tgtTexTried_ = false;
+                            tgtBuffTex_ = 0; tgtThTex_ = 0; tgtThRetry_ = TexRetry{};
                             mmMkPlayer_ = 0; mmMkMob_ = 0; mmElem_ = 0; mmMoonTex_ = 0; mmMoonKey_ = -1; mmMapTex_ = 0; mmMapFileId_ = 0; mmTried_ = false; }   // FORGET our GPU handles (don't Release -- device may be dead)
     void dispose();   // teardown (//unload) : RELEASE our owned textures (device is still alive) so they don't leak per reload
 
@@ -253,7 +254,7 @@ private:
     bool  logoTried_ = false;       // load attempted (don't retry every frame on failure)
     u32   tgtBuffTex_ = 0;          // Help tab : the Target debuff atlas + TH coffer, for the live samples (own copy, lazily loaded)
     u32   tgtThTex_ = 0;
-    bool  tgtTexTried_ = false;     // attempted the load (don't retry the file every frame)
+    TexRetry tgtThRetry_;           // TH coffer icon : BOUNDED retry (replaced a one-shot `tried` latch -- rule 10)
     u32   mmMkPlayer_ = 0;          // Help tab : the Minimap live samples -- player pin + mob arrow + element atlas + moon (own copies)
     u32   mmMkMob_ = 0;
     u32   mmElem_ = 0;

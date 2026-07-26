@@ -6,6 +6,7 @@
 #include "ui/party.h"
 #include "ui/target.h"
 #include "ui/minimap.h"
+#include "ui/buff_atlas.h"   // buff_atlas_forget / buff_atlas_dispose : the ONE owner of the shared status-icon atlas
 #include "model/layout.h"
 #include "model/game_mem.h"
 #include "model/gamestate.h"
@@ -30,15 +31,13 @@ namespace aio {
 // The Help samples own lazy texture copies at file scope in their own hud_*.cpp (they must draw without a Hud).
 // These forget them on a device change -- see the dev != last_dev_ block in Hud::render.
 void zonetracker_help_forget();
-void debuffs_help_forget();
-void timers_help_forget();
+// (debuffs / timers Help samples no longer own a texture -- they borrow the shared atlas, buff_atlas.cpp)
 void treasure_help_forget();
 // ...and their //unload counterparts. FORGET is for a dead device (rule 4 : never Release on one) ; DISPOSE runs
 // while the device is alive and must actually Release. Only the forget half existed, so every Help sample the
-// user had opened leaked its texture on each //unload -- two of the four are copies of the 1024x640 buff atlas.
+// user had opened leaked its texture on each //unload. Two of the four WERE copies of the 1024x640 buff atlas;
+// those two now borrow the shared one, so only zonetracker / treasure still own a Help texture.
 void zonetracker_help_dispose();
-void debuffs_help_dispose();
-void timers_help_dispose();
 void treasure_help_dispose();
 void box_skins_forget();    // per-box Custom->FFXI skins (box_style.cpp) : forget on a device change
 void box_skins_dispose();   // ... release at shutdown
@@ -192,11 +191,13 @@ void Hud::render(u32 dev) {
         config_.on_device_lost();   // forget the config logo texture -> reloaded on next draw
         tpCoffer_ = 0; tpCoffer_r_ = {};   // forget the treasure-pool coffer icon (belongs to the old device)
         weaponIcons_ = 0; weaponIcons_r_ = {};   // forget the Sheol weapon-type icon atlas
-        buffAtlas_ = 0; buffAtlasTries_ = 0; buffAtlasNextMs_ = 0;   // forget the buff-timers status-icon atlas (+ re-arm the retry budget)
+        buffAtlas_ = 0; buff_atlas_forget();   // the SHARED status-icon atlas : forget the one handle every box borrows, and RE-ARM its retry
+                                               // budget. This is the re-arm the shared budget depends on (buff_atlas.cpp) -- it fires on every
+                                               // device recreate, i.e. every zone-in, which is exactly when a "device not ready" miss happens.
         grimLight_ = 0; grimDark_ = 0; grimClosed_ = 0; grimLight_r_ = {}; grimDark_r_ = {}; grimClosed_r_ = {};   // forget the grimoire book textures (belong to the old device)
         // The Help SAMPLES keep their own lazy copies at file scope in their hud_*.cpp -- unreachable from here
         // otherwise, so they used to survive a device recreate and hand a dead device's texture to SetTexture.
-        zonetracker_help_forget(); debuffs_help_forget(); timers_help_forget(); treasure_help_forget();
+        zonetracker_help_forget(); treasure_help_forget();   // (the debuffs / timers Help samples borrow the shared atlas forgotten just above)
         box_skins_forget();        // per-box Custom->FFXI skins belong to the old device too
         for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->on_device_lost();
     }
@@ -436,11 +437,11 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     // ---- 4. textures : a missing handle whose retry budget is SPENT is permanent for this session ----
     int texMiss = 0;
     if (!buffAtlas_)  { ++texMiss; DOC("L'atlas d'icones de statut n'est pas charge (%u essais) : les icones de buff manquent partout. "
-                                       "Verifie que plugins\\AioHud\\assets\\buff_atlas.raw existe, puis //unload + //load", buffAtlasTries_); }
+                                       "Verifie que plugins\\AioHud\\assets\\buff_atlas.raw existe, puis //unload + //load", buff_atlas_tries()); }
     if (!weaponIcons_) ++texMiss;
     if (!tpCoffer_)    ++texMiss;
     windower::debug::log("  textures : atlas=%d(t%u) weapon=%d coffer=%d grim=%d/%d/%d  (missing=%d)",
-                         buffAtlas_ ? 1 : 0, buffAtlasTries_, weaponIcons_ ? 1 : 0, tpCoffer_ ? 1 : 0,
+                         buffAtlas_ ? 1 : 0, buff_atlas_tries(), weaponIcons_ ? 1 : 0, tpCoffer_ ? 1 : 0,
                          grimLight_ ? 1 : 0, grimDark_ ? 1 : 0, grimClosed_ ? 1 : 0, texMiss);
     const char* rk = 0; const char* rom = ffxi_rom_dir_probe(&rk);
     windower::debug::log("  romdir   : %s (key %s)", rom ? rom : "<unresolved>", rk ? rk : "<none>");
@@ -506,7 +507,7 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
 void Hud::self_check() {
     windower::debug::log("=== AIO SELFCHECK : texture-load health (1 = handle set ; tN = retry misses so far) ===");
     windower::debug::log("  hud      : buffAtlas=%d(t%u) skin=%s  grim L=%d D=%d C=%d  weapon=%d coffer=%d",
-                         buffAtlas_ ? 1 : 0, buffAtlasTries_, skin_.ready() ? "ready" : "(none/proc)",
+                         buffAtlas_ ? 1 : 0, buff_atlas_tries(), skin_.ready() ? "ready" : "(none/proc)",
                          grimLight_ ? 1 : 0, grimDark_ ? 1 : 0, grimClosed_ ? 1 : 0, weaponIcons_ ? 1 : 0, tpCoffer_ ? 1 : 0);
     const char* rk = 0; const char* rom = ffxi_rom_dir_probe(&rk);   // gear-icon ROM path (EquipViewer id-vs-icon)
     windower::debug::log("  romdir   : %s   (key: %s)", rom ? rom : "<UNRESOLVED : gear icons will be id-text>", rk ? rk : "<none>");
@@ -522,11 +523,11 @@ void Hud::dispose() {
     window_materials_dispose();   // Release the procedural box-theme material textures (else they leak per //unload)
     if (tpCoffer_) { release_texture(tpCoffer_); tpCoffer_ = 0; }   // treasure-pool coffer icon
     if (weaponIcons_) { release_texture(weaponIcons_); weaponIcons_ = 0; }   // Sheol weapon-type icon atlas
-    if (buffAtlas_) { release_texture(buffAtlas_); buffAtlas_ = 0; }   // buff-timers status-icon atlas
+    buffAtlas_ = 0; buff_atlas_dispose();   // the SHARED status-icon atlas : the program's ONLY Release of it (every box borrows this handle)
     if (grimLight_) { release_texture(grimLight_); grimLight_ = 0; }   // grimoire books
     if (grimDark_)  { release_texture(grimDark_);  grimDark_ = 0; }
     if (grimClosed_){ release_texture(grimClosed_);grimClosed_= 0; }   // grimoire : closed-book (no Arts) texture
-    zonetracker_help_dispose(); debuffs_help_dispose(); timers_help_dispose(); treasure_help_dispose();   // the module-owned Help samples (file-static, not members) -- symmetric with the forget block in render()
+    zonetracker_help_dispose(); treasure_help_dispose();   // the module-owned Help samples (file-static, not members) -- symmetric with the forget block in render()
     config_.dispose();   // Release the ConfigPage's owned Help/preview textures (zone map, logo, atlases) -- else they leak per //unload
 }
 

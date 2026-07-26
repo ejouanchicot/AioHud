@@ -77,12 +77,12 @@ static void draw_lock(u32 dev, float x, float cy, float h, u32 col, float a) {
 
 // rounded stencil CLIP (rrect_clip_begin/end) -> gfx/draw.h (shared with liquid_bars.cpp)
 void Target::ensure(u32 dev) {
-    ensure_raw_tex(dev, buff_tex_, buff_r_, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
+    buff_tex_ = buff_atlas_tex(dev);   // SHARED (buff_atlas.cpp) : borrowed handle, re-read each frame, never released here
     ensure_raw_tex(dev, th_tex_,   th_r_,   TGT_TH_ICON(),     TH_ICON_W,  TH_ICON_H);
 }
-void Target::on_device_lost() { buff_tex_ = 0; buff_r_ = {}; th_tex_ = 0; th_r_ = {}; tgtSkin_.on_device_lost(); tgtSkinVar_ = -1; }   // FORGET handles (don't Release) -> reload
+void Target::on_device_lost() { buff_tex_ = 0; th_tex_ = 0; th_r_ = {}; tgtSkin_.on_device_lost(); tgtSkinVar_ = -1; }   // FORGET handles (don't Release) -> reload
 void Target::dispose() {
-    release_texture(buff_tex_);    buff_tex_ = 0;    buff_r_ = {};
+    buff_tex_ = 0;                                   // BORROWED from buff_atlas.cpp -- never Release it here
     release_texture(th_tex_);      th_tex_   = 0;    th_r_   = {};
     tgtSkin_.dispose();            tgtSkinVar_ = -1;
 }
@@ -92,7 +92,7 @@ void Target::self_check() const {
     const char* skin = copy ? "copy-party (no own tex)" : window_theme_is_proc(th) ? "procedural (no tex)"
                                                         : (tgtSkin_.ready() ? "ready" : "FALLBACK - load FAILED");
     windower::debug::log("  target   : buff=%d(t%u) th=%d(t%u) skin=%s",
-                         buff_tex_ ? 1 : 0, buff_r_.tries, th_tex_ ? 1 : 0, th_r_.tries, skin);
+                         buff_tex_ ? 1 : 0, buff_atlas_tries(), th_tex_ ? 1 : 0, th_r_.tries, skin);
 }
 
 // ---- per-element typography (ui_config().tgtText[TGT_*]) : each Target text element resolves its own Font
@@ -285,9 +285,12 @@ static void draw_range_gauge(u32 dev, Font* lf, float gx, float gy, float gw, fl
 // Called by the Help tab (config_page.cpp) so it shows the ACTUAL visuals, not a mock-up. Everything here
 // reuses the static draw helpers above -> the sample and the live widget can never drift.
 
-void target_help_textures(u32 dev, u32& buffTex, u32& thTex) {   // caller caches these + forgets on device-lost
-    if (!buffTex) buffTex = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
-    if (!thTex)   thTex   = load_raw_texture(dev, TGT_TH_ICON(),    TH_ICON_W,  TH_ICON_H);
+// buffTex is BORROWED from the shared owner (buff_atlas.cpp) : the caller must NOT release it. thTex stays
+// caller-owned, but on a BOUNDED retry -- the call site guarded both with a one-shot `tried` latch, so a single
+// miss (device not ready when the Help tab is first opened) killed these icons for the whole session : rule 10.
+void target_help_textures(u32 dev, u32& buffTex, u32& thTex, TexRetry& thRetry) {
+    buffTex = buff_atlas_tex(dev);
+    ensure_raw_tex(dev, thTex, thRetry, TGT_TH_ICON(), TH_ICON_W, TH_ICON_H);
 }
 
 // HP bar with the delayed "white damage" trail : a looping hit drops the bar, the orange trail holds then drains.

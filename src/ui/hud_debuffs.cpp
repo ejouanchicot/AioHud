@@ -207,17 +207,10 @@ void Hud::draw_debuffs(const Frame& f, bool preview, float ovX, float ovY, float
     debuffs_draw(f, preview, ovX, ovY, ovS, (float)screenW_, (float)screenH_, buffAtlas_);
 }
 
-// The Help sample owns its own copy of the buff-icon atlas (lazy) so it can draw debuff icons without a Hud.
-// File-scope, NOT function-local : Hud::render's dev-change block forgets the member handles, and a
-// function-local static is unreachable from it. After a device recreate (zoning / alt-tab) the stale
-// handle would go to SetTexture with its owning device destroyed. debuffs_help_forget() clears it from that block.
-static u32 g_dbHelpTex = 0; static TexRetry g_dbHelpRetry;
-void debuffs_help_forget() { g_dbHelpTex = 0; g_dbHelpRetry = TexRetry{}; }   // device recreate : drop the handle AND re-arm the bounded retry
-// //unload : device still ALIVE -> Release for real (rule 4). Forget alone leaked the atlas per unload/load cycle.
-void debuffs_help_dispose() { if (g_dbHelpTex) release_texture(g_dbHelpTex); debuffs_help_forget(); }
-static u32 debuffs_help_atlas(u32 dev) {   // bounded retry (rule 10) -- was a one-shot latch that stranded the Help icons on a single miss
-    return ensure_raw_tex(dev, g_dbHelpTex, g_dbHelpRetry, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
-}
+// The Help sample used to keep its OWN copy of the buff-icon atlas, with its own forget/dispose pair wired
+// into Hud::render's dev-change block. It now borrows the shared one (buff_atlas.cpp), forgotten and released
+// once from those same two blocks -- so this file no longer owns a texture at all.
+static u32 debuffs_help_atlas(u32 dev) { return buff_atlas_tex(dev); }
 
 // Help sample : the REAL Debuffs box in preview mode (config-aware), centred at (cx,cy) at scale s.
 void debuffs_help_box(const Frame& f, float cx, float cy, float s) {

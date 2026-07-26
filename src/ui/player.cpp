@@ -199,14 +199,14 @@ void Player::ensure(u32 dev) {
     if (!valid_ptr(dev)) return;
     vials_->ensure(dev);
     ensure_raw_tex(dev, jobicon_tex_, jobicon_r_, JOBICON_PATH(),    JI_W, JI_H);
-    ensure_raw_tex(dev, buff_tex_,    buff_r_,    buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
+    buff_tex_ = buff_atlas_tex(dev);   // SHARED (buff_atlas.cpp) : borrowed handle, re-read each frame, never released here
     ensure_raw_tex(dev, gil_tex_,     gil_r_,     GIL_ICON_PATH(),   GIL_ICON_W, GIL_ICON_H);
 }
 
 void Player::on_device_lost() {   // FORGET handles (dead device) -> reload next ensure. Do NOT Release.
     vials_->on_device_lost();
     jobicon_tex_ = 0; jobicon_r_ = {};
-    buff_tex_ = 0; buff_r_ = {};
+    buff_tex_ = 0;                     // borrowed : drop the reference (the shared owner re-arms its own retry)
     gil_tex_ = 0; gil_r_ = {};
     for (int s = 0; s < 16; ++s) { gearTex_[s] = 0; gearId_[s] = 0; gearTry_[s] = 0; gearNextMs_[s] = 0; }   // FORGET handles + force reload
     plrSkin_.on_device_lost(); plrSkinVar_ = -1;
@@ -215,7 +215,7 @@ void Player::on_device_lost() {   // FORGET handles (dead device) -> reload next
 void Player::dispose() {
     vials_->dispose();
     release_texture(jobicon_tex_); jobicon_tex_ = 0; jobicon_r_ = {};
-    release_texture(buff_tex_);    buff_tex_ = 0;    buff_r_ = {};
+    buff_tex_ = 0;                                   // BORROWED from buff_atlas.cpp -- never Release it here
     release_texture(gil_tex_);     gil_tex_ = 0;     gil_r_ = {};
     for (int s = 0; s < 16; ++s) { release_texture(gearTex_[s]); gearTex_[s] = 0; gearId_[s] = 0; gearTry_[s] = 0; gearNextMs_[s] = 0; }
     plrSkin_.dispose(); plrSkinVar_ = -1;
@@ -228,7 +228,7 @@ void Player::self_check() const {
     const char* skin = copy ? "copy-party (no own tex)" : window_theme_is_proc(th) ? "procedural (no tex)"
                                                         : (plrSkin_.ready() ? "ready" : "FALLBACK - load FAILED");
     windower::debug::log("  player   : buff=%d(t%u) job=%d(t%u) gil=%d(t%u) skin=%s  gear=%d/%d icons, %d gave-up",
-                         buff_tex_ ? 1 : 0, buff_r_.tries, jobicon_tex_ ? 1 : 0, jobicon_r_.tries,
+                         buff_tex_ ? 1 : 0, buff_atlas_tries(), jobicon_tex_ ? 1 : 0, jobicon_r_.tries,
                          gil_tex_ ? 1 : 0, gil_r_.tries, skin, drawn, slots, gaveup);
 }
 

@@ -53,7 +53,7 @@ private:
     bool  pvEq_ = false; float pvEqX_ = 0.0f, pvEqY_ = 0.0f;   // config-preview override for the DETACHED equipment box
 
     u32   jobicon_tex_ = 0; TexRetry jobicon_r_;
-    u32   buff_tex_    = 0; TexRetry buff_r_;
+    u32   buff_tex_    = 0;   // BORROWED from buff_atlas.cpp (shared) : never Released here, no own retry state
     u32   gil_tex_     = 0; TexRetry gil_r_;           // gil coin icon (icon_gil.raw) for the gil/speed band
 
     // equipment viewer : one gear-icon texture per equip slot, loaded from gearicons/<id>.bmp on demand.

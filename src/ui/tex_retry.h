@@ -3,9 +3,15 @@
 // an .raw briefly held by the updater / AV / Controlled Folder Access) into a PERMANENT missing icon for the whole
 // session (CLAUDE.md rule 10). A genuinely-absent asset stops after ~12 tries so a broken install doesn't hammer.
 //
-// PER-HANDLE state on purpose : each widget keeps its OWN texture handle + its OWN TexRetry, so consolidating five
-// buff-atlas loaders onto one shared handle (and its triple-Release / shared-budget hazards, see the coherence
-// audit) is deliberately avoided. Every owner still disposes its own handle exactly as before.
+// PER-HANDLE state, EXCEPT the buff atlas. Each widget keeps its OWN texture handle + its OWN TexRetry, and
+// disposes exactly what it owns. v1.0.47 extended that rule to the buff atlas too, because the coherence pass
+// showed consolidating those loaders "would triple-Release" -- correct for the design it evaluated: share one
+// handle VALUE between owners that each still call release_texture, and the second Release hits a dead pointer.
+// That hazard belongs to "shared value, several owners". Superseded 2026-07-26 by a SINGLE-owner design instead
+// (ui/buff_atlas.cpp): consumers only READ the handle and never release it, so the whole program holds exactly
+// one release_texture call site for that texture -- the hazard is removed by construction, not managed. It was
+// worth doing because that one sheet was held by NINE handles (party x3, player, target, timers/debuffs, and
+// three Help samples) at 2.5 MiB each. Nothing else is shared; keep this per-handle for every other texture.
 //
 // The `!r.nextMs` guard is load-bearing : nextMs starts 0 ("try now"), and comparing a raw GetTickCount() against 0
 // goes NEGATIVE past ~24.8 days of uptime -- the exact bug that silently killed the buff atlas AND (once) the gear

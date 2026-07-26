@@ -361,15 +361,15 @@ void Party::ensure(u32 dev) {
     if (!valid_ptr(dev)) return;
     if (!dot_tex_) dot_tex_ = make_dot(dev);
     ensure_raw_tex(dev, icon_tex_,    icon_r_,    ICON_PATH(),        128, 128);
-    ensure_raw_tex(dev, buff_tex_,    buff_r_,    buff_atlas_path(),  BUFF_ATLAS_W, BUFF_ATLAS_H);
-    ensure_raw_tex(dev, jobicon_tex_, jobicon_r_, JOBICON_PATH(),     JI_W, JI_H);
+    buff_tex_ = buff_atlas_tex(dev);   // SHARED (buff_atlas.cpp) : re-read every frame, never released here. Three Party
+    ensure_raw_tex(dev, jobicon_tex_, jobicon_r_, JOBICON_PATH(),     JI_W, JI_H);   // instances exist (party + 2 alliance boxes) and each used to hold its own 2.6 MB copy
 }
-void Party::on_device_lost() { dot_tex_ = 0; icon_tex_ = 0; icon_r_ = {}; buff_tex_ = 0; buff_r_ = {}; jobicon_tex_ = 0; jobicon_r_ = {}; }   // forget (dead device), reload next ensure
-void Party::dispose() { release_texture(dot_tex_); dot_tex_ = 0; release_texture(icon_tex_); icon_tex_ = 0; icon_r_ = {}; release_texture(buff_tex_); buff_tex_ = 0; buff_r_ = {}; release_texture(jobicon_tex_); jobicon_tex_ = 0; jobicon_r_ = {}; }
+void Party::on_device_lost() { dot_tex_ = 0; icon_tex_ = 0; icon_r_ = {}; buff_tex_ = 0; jobicon_tex_ = 0; jobicon_r_ = {}; }   // forget (dead device), reload next ensure ; the shared atlas is forgotten once, by the HUD
+void Party::dispose() { release_texture(dot_tex_); dot_tex_ = 0; release_texture(icon_tex_); icon_tex_ = 0; icon_r_ = {}; buff_tex_ = 0; release_texture(jobicon_tex_); jobicon_tex_ = 0; jobicon_r_ = {}; }   // buff_tex_ is BORROWED : drop the reference, never Release it
 void Party::self_check() const {
     if (tier_ != 0) return;   // one line for the main party (alliance boxes share the same textures)
     windower::debug::log("  party    : buff=%d(t%u) cursor=%d(t%u) job=%d(t%u)",
-                         buff_tex_ ? 1 : 0, buff_r_.tries, icon_tex_ ? 1 : 0, icon_r_.tries, jobicon_tex_ ? 1 : 0, jobicon_r_.tries);
+                         buff_tex_ ? 1 : 0, buff_atlas_tries(), icon_tex_ ? 1 : 0, icon_r_.tries, jobicon_tex_ ? 1 : 0, jobicon_r_.tries);
 }
 
 // find the persisted animation slot for a member (or claim a free/stale one).

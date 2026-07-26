@@ -58,7 +58,7 @@ static const char* module_label(int i) {                       // Configuration 
 
 void ConfigPage::dispose() {   // //unload : device is still alive -> RELEASE our owned Help/preview textures (helpCursorTex_ is handed in, NOT owned)
     if (logoTex_)    release_texture(logoTex_);
-    if (tgtBuffTex_) release_texture(tgtBuffTex_);
+    tgtBuffTex_ = 0;   // BORROWED from buff_atlas.cpp (shared) -- released once, by the HUD
     if (tgtThTex_)   release_texture(tgtThTex_);
     if (mmMkPlayer_) release_texture(mmMkPlayer_);
     if (mmMkMob_)    release_texture(mmMkMob_);
@@ -1464,7 +1464,7 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 y += rh2 + snap(8.0f);
             } else if (it.kind == 23) {               // LIVE sample : the REAL speed readout (Speed icon + NN%) -- green on a player, red on a monster
                 const float rh2 = snap(26.0f), gap = snap(96.0f);
-                if (!tgtTexTried_) { target_help_textures(dev, tgtBuffTex_, tgtThTex_); tgtTexTried_ = true; }
+                target_help_textures(dev, tgtBuffTex_, tgtThTex_, tgtThRetry_);   // every frame : the atlas is a shared read, the TH icon retries under its own budget
                 if (y >= top && y + rh2 <= bot) {
                     const int v = 6 + (int)(9.0f * (0.5f + 0.5f * sinf(f.t * 0.9f)));   // +6..+15
                     const float cy = y + rh2 * 0.5f;
@@ -1475,7 +1475,7 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 y += rh2 + snap(10.0f);
             } else if (it.kind == 24) {               // LIVE sample : the Treasure Hunter coffer + tier
                 const float sz = snap(30.0f), rh2 = sz + snap(6.0f);
-                if (!tgtTexTried_) { target_help_textures(dev, tgtBuffTex_, tgtThTex_); tgtTexTried_ = true; }
+                target_help_textures(dev, tgtBuffTex_, tgtThTex_, tgtThRetry_);   // every frame : the atlas is a shared read, the TH icon retries under its own budget
                 if (y >= top && y + rh2 <= bot) {
                     target_help_th(dev, fo, tgtThTex_, hx + snap(4.0f), y, sz, f.t);
                     fo->begin(dev); fo->draw_lc(dev, hx + sz + snap(46.0f), y + sz * 0.5f, txt, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);
@@ -1484,7 +1484,7 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
             } else if (it.kind == 25) {               // LIVE sample : a row of real debuff icons + live timers
                 const float cell = snap(28.0f), gap = snap(8.0f); const int nd = 5;
                 const float rh2 = cell + snap(24.0f), rowW = nd * (cell + gap);
-                if (!tgtTexTried_) { target_help_textures(dev, tgtBuffTex_, tgtThTex_); tgtTexTried_ = true; }
+                target_help_textures(dev, tgtBuffTex_, tgtThTex_, tgtThRetry_);   // every frame : the atlas is a shared read, the TH icon retries under its own budget
                 if (y >= top && y + rh2 <= bot) {
                     target_help_debuffs(dev, fo, tgtBuffTex_, hx + snap(4.0f), y, cell, nd, f.t);
                     fo->begin(dev); fo->draw_lc(dev, hx + rowW + snap(20.0f), y + cell * 0.5f, txt, bsz, fa(C_DIM), fa(C_STROKE), 1.0f);

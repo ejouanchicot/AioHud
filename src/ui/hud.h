@@ -93,8 +93,6 @@ private:
     TexRetry             weaponIcons_r_;
     u32  ensure_buff_atlas(u32 dev);               // lazy load with a BOUNDED retry -- shared by Timers and Debuffs
     u32                  buffAtlas_ = 0;           // Timers box : the shared status-icon atlas (buff_atlas.raw), like Player/Party
-    int                  buffAtlasTries_ = 0;      // bounded RETRY budget (was a one-shot bool : a single transient miss killed every Timers icon for the session)
-    unsigned             buffAtlasNextMs_ = 0;
     bool                 reload_pending_ = false;  // //aio layout requested -> reload at next render()
     std::string          layout_path_;             // path of the last applied layout (for hot-reload)
     float screenW_ = 2560.0f, screenH_ = 1400.0f;  // real game resolution (read from the device each frame)

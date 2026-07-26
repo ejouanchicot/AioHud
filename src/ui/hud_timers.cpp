@@ -1138,22 +1138,11 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
 // for the rest of the session. Reported right after an update as "Protect, Cocoon... no icons"; the atlas file was
 // intact, only the texture was missing. Same defect class as the gear icons: a permanent give-up on a transient
 // failure. ~12 tries, 300 ms apart, then stop (a genuinely absent asset must not retry forever).
+// The retry itself now lives with the ONE owner (buff_atlas.cpp) : same 12-tries / 300 ms budget, same "say so
+// when the budget dies" log, but one texture instead of eight. buffAtlas_ is a BORROWED handle refreshed here
+// each frame -- the HUD must not Release it (buff_atlas_dispose() is the single Release site).
 u32 Hud::ensure_buff_atlas(u32 dev) {
-    if (!buffAtlas_ && buffAtlasTries_ < 12) {
-        const unsigned nowMs = GetTickCount();
-        // `!buffAtlasNextMs_` FIRST : 0 is the "never tried" sentinel (init + every device change), and comparing a
-        // raw GetTickCount() against it goes NEGATIVE once uptime passes 24.8 days -- which silently killed the very
-        // first attempt, so the whole bounded retry never armed and EVERY status icon stayed missing for the session.
-        if (!buffAtlasNextMs_ || (int)(nowMs - buffAtlasNextMs_) >= 0) {
-            buffAtlas_ = load_raw_texture(dev, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
-            if (!buffAtlas_) {
-                ++buffAtlasTries_;
-                buffAtlasNextMs_ = (nowMs + 300) | 1;   // |1 : never land back on the 0 "never tried" sentinel
-                if (buffAtlasTries_ >= 12)                          // SAY SO when the budget dies -- a probe that goes quiet reads exactly like a bug that isn't happening
-                    windower::debug::log("buff atlas: giving up after 12 tries (%s) -- status icons will be missing", buff_atlas_path());
-            }
-        }
-    }
+    buffAtlas_ = buff_atlas_tex(dev);
     return buffAtlas_;
 }
 
@@ -1163,17 +1152,10 @@ void Hud::draw_timers(const Frame& f, bool preview, float ovX, float ovY, float 
 }
 
 // The Help sample owns its own copy of the buff-icon atlas (lazy) so it can draw Duration icons without a Hud.
-// File-scope, NOT function-local : Hud::render's dev-change block forgets the member handles, and a
-// function-local static is unreachable from it. After a device recreate (zoning / alt-tab) the stale
-// handle would go to SetTexture with its owning device destroyed. timers_help_forget() clears it from that block.
-static u32 g_tmHelpTex = 0; static TexRetry g_tmHelpRetry;
-void timers_help_forget() { g_tmHelpTex = 0; g_tmHelpRetry = TexRetry{}; }   // device recreate : drop the handle AND re-arm the bounded retry
-// //unload : the device is still ALIVE here, so this one must actually Release (rule 4). Forgetting alone leaked
-// the whole atlas -- 1024x640 mipmapped -- on every unload/load cycle, i.e. on every dev iteration.
-void timers_help_dispose() { if (g_tmHelpTex) release_texture(g_tmHelpTex); timers_help_forget(); }
-static u32 timers_help_atlas(u32 dev) {   // bounded retry (rule 10) via the shared helper -- was a one-shot latch that stranded the Help icons on a single miss
-    return ensure_raw_tex(dev, g_tmHelpTex, g_tmHelpRetry, buff_atlas_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);
-}
+// The Help sample used to keep its OWN copy of the atlas, with its own forget/dispose pair wired into
+// Hud::render's dev-change block. It now borrows the shared one (buff_atlas.cpp), which is forgotten and
+// released once from those same two blocks -- so this file no longer owns a texture at all.
+static u32 timers_help_atlas(u32 dev) { return buff_atlas_tex(dev); }
 
 // Help sample : the REAL Timers box(es) in preview mode (config-aware), centred at (cx,cy) at scale `s`.
 void timers_help_box(const Frame& f, float cx, float cy, float s) {

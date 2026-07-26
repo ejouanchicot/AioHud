@@ -80,7 +80,6 @@ private:
     u32 icon_tex_ = 0;                        // selection-cursor icon (hand pointing right), loaded from assets
     TexRetry icon_r_;                         // bounded retry (was a give-up-once bool -> a zone-in miss killed it for the session)
     u32 buff_tex_ = 0;                        // status-icon atlas (buffs drawn to the left of each party row)
-    TexRetry buff_r_;
     u32 jobicon_tex_ = 0;                     // job-emblem atlas (white masks, tinted per role ; job badge "Icons" mode)
     TexRetry jobicon_r_;
 

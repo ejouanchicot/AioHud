@@ -46,7 +46,6 @@ private:
     float spdShown_ = 0.0f;                     // eased displayed speed % -> smooths the readout
     float spdWindow_ = 5.0f;                     // MOB : last PLAUSIBLE field speed (yalms/s), held during the bogus 10-17 chase spikes
     u32   buff_tex_   = 0;                     // status-icon atlas (shared layout with the party buffs) for the debuff row
-    TexRetry buff_r_;                         // bounded retry (was a give-up-once bool)
     u32   th_tex_     = 0;                     // Treasure Hunter coffer icon (icon_th_coffer.raw) for the detail row's icon mode
     TexRetry th_r_;
     WindowSkin tgtSkin_;                       // the Target's OWN FFXI window skin (its texture variant is independent of the party's)
@@ -56,7 +55,7 @@ private:
 // ---- Help live samples : draw ONE real Target element (SAME code path as the widget), for the Help tab.
 // The Help owns the atlas/coffer textures : call target_help_textures() lazily to load them (returns the
 // handles) and forget them on device-lost. `t` is the frame clock (drives the looping animation).
-void target_help_textures(u32 dev, u32& buffTex, u32& thTex);                                      // lazy-load the two textures
+void target_help_textures(u32 dev, u32& buffTex, u32& thTex, TexRetry& thRetry);                   // buffTex = the SHARED atlas (borrowed, do not Release) ; thTex = caller-owned, bounded retry
 void target_help_hpbar (u32 dev, float x, float y, float w, float h, float t);                     // HP bar + white-damage trail
 void target_help_range (u32 dev, Font* lf, float x, float y, float w, float h, bool mob, float t); // distance/range gauge (mob vs PC zones)
 void target_help_debuffs(u32 dev, Font* f, u32 buffTex, float x, float y, float cell, int n, float t); // debuff icons + timers
