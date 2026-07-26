@@ -1089,6 +1089,12 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
 }
 void profile_mark_clean() { g_snap = ui_config(); g_snapValid = true; }
 bool profile_dirty()      { return g_snapValid && !persist_eq(g_snap, ui_config()); }
+// Exposed for the offline suite. persist_eq IS the definition of "which fields a profile carries", and it is
+// hand-maintained across ~290 fields -- exactly the shape that rots silently. It could not be tested through
+// profile_dirty(), because profile_load() calls profile_mark_clean() AFTER reading (line ~928), so the snapshot
+// is taken from the freshly-loaded config and the comparison is vacuous by construction. The round-trip test
+// needs to compare a config it captured ITSELF against the one that came back off disk.
+bool ui_config_persist_eq(const UiConfig& a, const UiConfig& b) { return persist_eq(a, b); }
 bool profile_delete(const char* name) {
     if (!name || !name[0]) return false;
     char p[300]; profile_path(name, p, sizeof(p));

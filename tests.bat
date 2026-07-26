@@ -25,8 +25,9 @@ if not exist "%ROOT%build\t" mkdir "%ROOT%build\t"
 REM /Od : these are logic tests, not benchmarks -- build speed matters more than the generated code.
 cl /nologo /EHsc /W4 /permissive- /std:c++17 /Od /wd4456 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS ^
    /I"%ROOT%include" /I"%ROOT%src" ^
-   "%ROOT%tests\test_main.cpp" "%ROOT%tests\t_json.cpp" "%ROOT%tests\t_skillchain.cpp" "%ROOT%tests\t_durations.cpp" ^
-   "%ROOT%src\model\skillchain.cpp" ^
+   "%ROOT%tests\test_main.cpp" "%ROOT%tests\t_json.cpp" "%ROOT%tests\t_skillchain.cpp" "%ROOT%tests\t_durations.cpp" "%ROOT%tests\t_config.cpp" ^
+   "%ROOT%src\model\skillchain.cpp" "%ROOT%src\model\ui_config.cpp" ^
+   user32.lib kernel32.lib ^
    /Fo"%ROOT%build\t\\" /Fe"%ROOT%build\tests.exe"
 if errorlevel 1 ( echo [tests] BUILD FAILED & exit /b 1 )
 

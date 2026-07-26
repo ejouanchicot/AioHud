@@ -515,6 +515,7 @@ bool        profile_delete(const char* name);
 bool        profile_exists(const char* name);
 void        profile_mark_clean();                  // snapshot the current config as "saved" (call on load/save)
 bool        profile_dirty();                       // true if the live config differs from that snapshot -> unsaved changes
+bool        ui_config_persist_eq(const UiConfig& a, const UiConfig& b);   // do these two agree on every PERSISTED field? (the profile_dirty comparator, exposed for the offline round-trip test -- see the .cpp for why profile_dirty itself cannot serve as that oracle)
 // MULTI-CLIENT : re-apply the active profile when ANOTHER client on the same Windower saves it (all clients share
 // data\profiles\). Throttled to one file-attribute read per second ; refuses to reload while this client has unsaved
 // changes, so it can never discard work in progress. Call once per frame.

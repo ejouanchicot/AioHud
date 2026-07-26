@@ -14,11 +14,13 @@ int g_run = 0, g_fail = 0;
 void test_json();
 void test_skillchain();
 void test_durations();
+void test_config();
 
 int main() {
     test_json();
     test_skillchain();
     test_durations();
+    test_config();
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail;
 }
