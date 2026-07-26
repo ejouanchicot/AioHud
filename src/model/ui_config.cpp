@@ -1,5 +1,6 @@
 // ui_config.cpp -- see ui_config.h.
 #include "model/ui_config.h"
+#include "retry_clock.h"   // retry_due / retry_arm : the 0-sentinel-safe "try again later" (see the header for the 24.8 d trap)
 #include "model/paths.h"
 #include "model/job_track_gen.h"
 #include "model/game_mem.h"   // read_player : current character name + main/sub job -> default profile name + auto-load
@@ -678,6 +679,11 @@ static bool load_config_from(const char* path) {
     // counts into the draw loops (the config UI already enforces these ranges ; this is pure defense).
     #define CLF(x, lo, hi) do { if (x < (lo)) x = (lo); else if (x > (hi)) x = (hi); } while (0)
     CLF(c.buffScale, 0.10f, 4.0f); CLF(c.cursorScale, 0.10f, 4.0f);
+    // mmZoom was the ONLY float reaching a raw sprintf into a short buffer (minimap_config.cpp) -- a value of
+    // 1e30 from a hand-edited file printed 35 bytes into char[16] and killed the client. The print is bounded
+    // now, but clamp at the SOURCE too : the widget only ever clamped into a local, so an absurd value survived
+    // every load and was re-serialised by every save. Same range the config UI enforces.
+    CLF(c.mmZoom, 1.0f, 24.0f);
     if (c.buffMax < 0) c.buffMax = 0; else if (c.buffMax > 32) c.buffMax = 32;   // 0 = no party/alliance buffs
     if (c.buffRows < 1) c.buffRows = 1; else if (c.buffRows > 2) c.buffRows = 2;
     if (c.tmFocusWarn < 10) c.tmFocusWarn = 10; else if (c.tmFocusWarn > 300) c.tmFocusWarn = 300;
@@ -893,10 +899,9 @@ static void profile_stamp_remember(const char* name) {
 
 void profile_sync_poll() {
     if (!g_active[0]) return;                                  // no active profile -> nothing shared to follow
-    const unsigned now = GetTickCount();
-    static unsigned nextAt = 0;
-    if ((int)(now - nextAt) < 0) return;
-    nextAt = now + 1000;                                       // one cheap attribute read per second, not per frame
+    static unsigned nextAt = 0;                                // via retry_clock.h : the hand-rolled compare here skipped the poll ENTIRELY past 24.8 d of uptime
+    if (!retry_due(nextAt)) return;
+    retry_arm(nextAt, 1000);                                   // one cheap attribute read per second, not per frame
 
     FILETIME ft;
     if (!profile_stamp(g_active, ft)) return;                  // profile deleted / unreadable -> keep what we have

@@ -27,7 +27,12 @@ public:
 
     // the HUD hands us the party's selection-hand texture each frame so the Help can show the real cursor.
     void set_help_cursor_tex(u32 t) { helpCursorTex_ = t; }
-    void on_device_lost() { logoTex_ = 0; logoTried_ = false;
+    // helpCursorTex_ is BORROWED from the Party widget, and a borrowed handle still belongs to the dead device :
+    // it must be forgotten here like an owned one. It was missed because the forget list was built from the
+    // textures this class OWNS. It is only refreshed inside Hud::render's `worldReady` block while config_.draw
+    // runs OUTSIDE it, so after a device recreate the stale handle reached SetTexture -- the exact failure the
+    // Help samples in hud_timers.cpp document and guard against.
+    void on_device_lost() { logoTex_ = 0; logoTried_ = false; helpCursorTex_ = 0;
                             tgtBuffTex_ = 0; tgtThTex_ = 0; tgtThRetry_ = TexRetry{};
                             mmMkPlayer_ = 0; mmMkMob_ = 0; mmElem_ = 0; mmMoonTex_ = 0; mmMoonKey_ = -1; mmMapTex_ = 0; mmMapFileId_ = 0; mmTried_ = false; }   // FORGET our GPU handles (don't Release -- device may be dead)
     void dispose();   // teardown (//unload) : RELEASE our owned textures (device is still alive) so they don't leak per reload

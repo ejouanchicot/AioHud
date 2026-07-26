@@ -2,6 +2,7 @@
 // file-id via the VTABLE/FTABLE volume scheme, reads the DAT, and decodes the type-0x20 8-bit-palette
 // graphic to A8R8G8B8. Confirmed against the live install (Valkurm ROM/17/27.DAT, Selbina ROM/18/80.DAT).
 #include "model/map_dat.h"
+#include "retry_clock.h"   // retry_due / retry_arm : the 0-sentinel-safe "try again later" (see the header for the 24.8 d trap)
 #include <windows.h>
 #include <string.h>
 #include <stdio.h>   // _snprintf : bounded path formatting (wsprintfA is capped by its own buffer, not the destination)
@@ -118,10 +119,9 @@ static bool g_tablesTried = false;
 static void load_tables() {
     if (g_maxVol > 0) return;                       // already have usable tables -> done
     if (g_tablesTried) {                            // previous attempt found nothing : allow a retry, but not every call
-        static unsigned nextTryMs = 0;
-        const unsigned now = GetTickCount();
-        if ((int)(now - nextTryMs) < 0) return;
-        nextTryMs = now + 3000;
+        static unsigned nextTryMs = 0;              // via retry_clock.h : the hand-rolled compare here blocked EVERY retry past 24.8 d of uptime
+        if (!retry_due(nextTryMs)) return;
+        retry_arm(nextTryMs, 3000);
     }
     g_tablesTried = true;
     const char* root = ffxi_root(); if (!root) return;

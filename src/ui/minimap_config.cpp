@@ -34,7 +34,13 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         MM_PCT_SLIDER(CTRL_ID, tr("Map size", "Taille carte"), c.mmMapSize, 0.50f, 1.60f)
         // Zoom (1x .. 24x)
         { ROW_BAND(46.0f)
-            const float lo = 1.0f, hi = 24.0f; char b[16]; sprintf(b, "%.1fx", c.mmZoom);
+            // BOUNDED print of a value that comes from a FILE. `sprintf("%.1fx")` into char[16] wrote 35 bytes
+            // for mmZoom=1e30 -> stack cookie -> the player's client dies on opening this tab. Nothing clamped
+            // mmZoom between the config file and this line (the widget clamps into a LOCAL, never back into the
+            // config), so a hand-edited or corrupted file reached it directly. Same class as the char[40] +
+            // "%.4f" smash fixed in io/json.h in July -- that time the class was never swept for siblings.
+            const float lo = 1.0f, hi = 24.0f;
+            char b[16]; _snprintf(b, sizeof(b), "%.1fx", clampf(c.mmZoom, lo, hi)); b[sizeof(b) - 1] = 0;
             float v01 = (c.mmZoom - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Zoom", "Zoom"), b, &v01)) {
                 float v = lo + v01 * (hi - lo); c.mmZoom = v < lo ? lo : (v > hi ? hi : v); }
