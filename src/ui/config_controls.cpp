@@ -480,20 +480,37 @@ bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
 // A labeled ON/OFF toggle row : "Label .......... [On]". Flips *field and persists on change ; returns true on the
 // click. Shared body of the old per-panel *_TOGGLE macros (they were byte-identical). Call inside a ROW_BAND(48) block,
 // passing y = ry + yo. `field` is the int 0/1 config flag.
-bool row_toggle(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
-                float coX, float y, float ctrlW, const char* label, int* field) {
-    const float rowH = snap(38.0f);
+bool row_choice(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
+                float coX, float y, float ctrlW, const char* label, int* field,
+                const char* onText, const char* offText, float rowHf, float chipWf) {
+    const float rowH = snap(rowHf);
     fo->begin(dev);
     fo->draw_lc(dev, coX + snap(4.0f), y + rowH * 0.5f, label, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-    const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = y + (rowH - bbh) * 0.5f;
-    if (toggle_chip(dev, fo, mo, click, uid, bx2, bty, bbw, bbh, *field ? tr("On", "Oui") : tr("Off", "Non"), *field != 0)) {
+    const float bbw = snap(chipWf), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = y + (rowH - bbh) * 0.5f;
+    if (toggle_chip(dev, fo, mo, click, uid, bx2, bty, bbw, bbh, *field ? onText : offText, *field != 0)) {
         *field = !*field; save_ui_config(); return true;
     }
     return false;
 }
+bool row_toggle(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
+                float coX, float y, float ctrlW, const char* label, int* field,
+                float rowHf, float chipWf) {
+    return row_choice(dev, fo, mo, click, uid, coX, y, ctrlW, label, field, tr("On", "Oui"), tr("Off", "Non"), rowHf, chipWf);
+}
 // A labeled percent slider bound to a float *field in [lo,hi], shown as "NN%", stepped to `step`. Persists on RELEASE
 // (via row_slider) -- do NOT add a save here (that was the per-drag-frame save bug some panels had). Shared body of the
 // old *_PCT_SLIDER / *_SIZE_SLIDER macros. Call inside a ROW_BAND(46) block, passing y = ry + yo.
+// bool* fields (party's animHP/animTP, the per-tier flags...) : convert, delegate, convert back. Deliberately
+// NOT a second copy of the row -- the drawing and the save live in exactly one place.
+bool row_toggle(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
+                float coX, float y, float ctrlW, const char* label, bool* field,
+                float rowHf, float chipWf) {
+    int v = *field ? 1 : 0;
+    const bool changed = row_toggle(dev, fo, mo, click, uid, coX, y, ctrlW, label, &v, rowHf, chipWf);
+    if (changed) *field = (v != 0);
+    return changed;
+}
+
 bool row_pct_slider(u32 dev, Font* fo, const MouseState* mo, int uid,
                     float coX, float y, float ctrlW, const char* label, float* field, float lo, float hi, float step) {
     char b[16]; _snprintf(b, sizeof(b), "%d%%", (int)(*field * 100.0f + 0.5f)); b[sizeof(b) - 1] = 0;

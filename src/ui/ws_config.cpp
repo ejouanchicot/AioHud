@@ -22,12 +22,7 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (catOpen_[6]) {
-        { ROW_BAND(48.0f)   // Show on weaponskill
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.wsShow ? tr("On", "Oui") : tr("Off", "Non"), c.wsShow != 0)) { c.wsShow = !c.wsShow; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.wsShow)   // Show on weaponskill
         { ROW_BAND(46.0f)   // Size
             const float lo = 0.50f, hi = 2.50f; char b[16]; sprintf(b, "%d%%", (int)(c.wsScale * 100.0f + 0.5f));
             float v01 = (c.wsScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
@@ -37,12 +32,7 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             int fc = c.wsFont; if (fc < 0 || fc >= ui_font_count()) fc = 0;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { c.wsFont = wrap(fc + d, ui_font_count()); save_ui_config(); }
         } ROW_NEXT(52.0f)
-        { ROW_BAND(48.0f)   // Impact effects
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Impact effects", "Effets d'impact"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.wsFx ? tr("On", "Oui") : tr("Off", "Non"), c.wsFx != 0)) { c.wsFx = !c.wsFx; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Impact effects", "Effets d'impact"), c.wsFx)   // Impact effects
     }   // end Display
 
     // ===== sub-section : COLOURS =====

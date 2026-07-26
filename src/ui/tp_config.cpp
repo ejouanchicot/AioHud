@@ -22,12 +22,7 @@ void ConfigPage::draw_tp_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (catOpen_[6]) {
-        { ROW_BAND(48.0f)   // Show
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.tpShow ? tr("On", "Oui") : tr("Off", "Non"), c.tpShow != 0)) { c.tpShow = !c.tpShow; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.tpShow)   // Show
         { ROW_BAND(46.0f)   // Size
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tpScale * 100.0f + 0.5f));
             float v01 = (c.tpScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
@@ -39,12 +34,7 @@ void ConfigPage::draw_tp_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             float v01 = ((float)c.tpCount - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Max items", "Items max"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.tpCount = v < 1 ? 1 : (v > 10 ? 10 : v); }
         } ROW_NEXT(46.0f)
-        { ROW_BAND(48.0f)   // Coffer icon
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Coffer icon", "Ic\xC3\xB4ne coffre"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.tpIcon ? tr("On", "Oui") : tr("Off", "Non"), c.tpIcon != 0)) { c.tpIcon = !c.tpIcon; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Coffer icon", "Ic\xC3\xB4ne coffre"), c.tpIcon)   // Coffer icon
         { ROW_BAND(40.0f)   // note
             const float ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Appears when items are in the lottery pool.", "Appara\xC3\xAet quand des items sont dans le pool."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);

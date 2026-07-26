@@ -17,7 +17,6 @@ namespace aio {
 // one On/Off toggle row (label left, chip right) -- mirrors PLR_TOGGLE.
 // Thin wrappers over the shared row_toggle / row_pct_slider (config_controls). Kept as macros only so call sites read
 // the same and each expansion lands on its own __LINE__ for CTRL_ID ; the body is now one shared helper call.
-#define MM_TOGGLE(UID, LABEL, FIELD)             { ROW_BAND(48.0f) row_toggle(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD)); } ROW_NEXT(48.0f)
 #define MM_PCT_SLIDER(UID, LABEL, FIELD, LO, HI) { ROW_BAND(46.0f) row_pct_slider(dev, fo, mo, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD), (LO), (HI)); } ROW_NEXT(46.0f)
 
 void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bool click,
@@ -30,7 +29,7 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
         ROW_NEXT(42.0f)
         if (catOpen_[6]) {
-        MM_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.mmShow)
+        ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.mmShow)
         MM_PCT_SLIDER(CTRL_ID, tr("Size", "Taille"), c.mmScale, 0.50f, 2.00f)
         MM_PCT_SLIDER(CTRL_ID, tr("Map size", "Taille carte"), c.mmMapSize, 0.50f, 1.60f)
         // Zoom (1x .. 24x)
@@ -54,12 +53,12 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Clock", "Horloge"), catOpen_[9])) catOpen_[9] = !catOpen_[9];
         ROW_NEXT(42.0f)
         if (catOpen_[9]) {
-        MM_TOGGLE(CTRL_ID, tr("Clock header", "En-t\xC3\xAAte horloge"), c.mmClock)
+        ROW_TOGGLE(CTRL_ID, tr("Clock header", "En-t\xC3\xAAte horloge"), c.mmClock)
         if (c.mmClock) {
-        MM_TOGGLE(CTRL_ID, tr("Vana'diel time", "Heure Vana'diel"), c.mmClkTime)
-        MM_TOGGLE(CTRL_ID, tr("Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire"), c.mmClkDay)
-        MM_TOGGLE(CTRL_ID, tr("Moon phase", "Phase de lune"), c.mmClkMoon)
-        MM_TOGGLE(CTRL_ID, tr("Real / GMT time", "Heure r\xC3\xA9""elle / GMT"), c.mmClkReal)
+        ROW_TOGGLE(CTRL_ID, tr("Vana'diel time", "Heure Vana'diel"), c.mmClkTime)
+        ROW_TOGGLE(CTRL_ID, tr("Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire"), c.mmClkDay)
+        ROW_TOGGLE(CTRL_ID, tr("Moon phase", "Phase de lune"), c.mmClkMoon)
+        ROW_TOGGLE(CTRL_ID, tr("Real / GMT time", "Heure r\xC3\xA9""elle / GMT"), c.mmClkReal)
         { ROW_BAND(52.0f)
             static const char* PLBL_EN[4] = { "Top", "Bottom", "Left", "Right" }; static const char* PLBL_FR[4] = { "Haut", "Bas", "Gauche", "Droite" };
             int cp = (c.mmClockPos < 0 || c.mmClockPos > 3) ? 0 : c.mmClockPos;
@@ -106,7 +105,7 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
             CFG_COLOR_PICKER(&c.mmFrameColor)
         // --- per-shape frame thickness / bezel options ---
         if (c.mmShape == 1) {   // ROUND : brass bezel ring
-            MM_TOGGLE(CTRL_ID, tr("Bezel ring", "Anneau bordure"), c.mmBezel)
+            ROW_TOGGLE(CTRL_ID, tr("Bezel ring", "Anneau bordure"), c.mmBezel)
             if (c.mmBezel) {
                 MM_PCT_SLIDER(CTRL_ID, tr("Bezel width", "Largeur anneau"), c.mmBezelW, 0.50f, 2.00f)
                 MM_PCT_SLIDER(CTRL_ID, tr("Cardinal size", "Taille cardinaux"), c.mmCardSz, 0.50f, 2.00f)
@@ -121,15 +120,15 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         ROW_NEXT(42.0f)
         if (catOpen_[8]) {
         MM_PCT_SLIDER(CTRL_ID, tr("Marker Size", "Taille marqueurs"), c.mmMarkerScale, 0.50f, 2.00f)
-        MM_TOGGLE(CTRL_ID, tr("Players (PC)", "Joueurs (PC)"), c.mmPC)
-        MM_TOGGLE(CTRL_ID, tr("NPCs", "PNJ"),                  c.mmNPC)
-        MM_TOGGLE(CTRL_ID, tr("Monsters", "Monstres"),         c.mmMob)
+        ROW_TOGGLE(CTRL_ID, tr("Players (PC)", "Joueurs (PC)"), c.mmPC)
+        ROW_TOGGLE(CTRL_ID, tr("NPCs", "PNJ"),                  c.mmNPC)
+        ROW_TOGGLE(CTRL_ID, tr("Monsters", "Monstres"),         c.mmMob)
         // --- Target line : you -> your <t> target ---
-        MM_TOGGLE(CTRL_ID, tr("Target line", "Ligne cible"), c.mmTgtLine)
+        ROW_TOGGLE(CTRL_ID, tr("Target line", "Ligne cible"), c.mmTgtLine)
         if (c.mmTgtLine)
             CFG_COLOR_PICKER(&c.mmTgtLineCol)
         // --- Range ring : a pull / aggro distance gauge around you ---
-        MM_TOGGLE(CTRL_ID, tr("Range ring", "Anneau de port\xC3\xA9""e"), c.mmRing)
+        ROW_TOGGLE(CTRL_ID, tr("Range ring", "Anneau de port\xC3\xA9""e"), c.mmRing)
         if (c.mmRing) {
             { ROW_BAND(46.0f)   // radius (3 .. 50 yalms)
                 const float lo = 3.0f, hi = 50.0f; char b[16]; sprintf(b, "%d", (int)(c.mmRingR + 0.5f));
@@ -143,7 +142,6 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         }   // end Markers
 
         ry += snap(10.0f);
-    #undef MM_TOGGLE
     #undef MM_PCT_SLIDER
     #undef ROW_BAND
     #undef ROW_NEXT

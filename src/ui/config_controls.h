@@ -128,8 +128,18 @@ bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
                 float x, float y, float w, const char* label, const char* valueText, float* v01);
 // Higher-level rows shared by every module panel (replace the per-panel *_TOGGLE / *_PCT_SLIDER macros). Call each
 // inside a ROW_BAND(48) / ROW_BAND(46) block respectively, passing y = ry + yo.
-bool row_toggle(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
-                float coX, float y, float ctrlW, const char* label, int* field);        // On/Off toggle ; persists on change
+// The two-state chip ROW. row_choice carries the two labels ("Fused"/"Separate", "Standalone"/"In Player"...) ;
+// row_toggle is its On/Off case. Same row, same geometry, one implementation -- the panels held ~60 hand-copies
+// of it differing only in those two strings.
+bool row_choice(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
+                float coX, float y, float ctrlW, const char* label, int* field,
+                const char* onText, const char* offText, float rowH = 38.0f, float chipW = 112.0f);
+bool row_toggle(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,                                  // On/Off toggle ; persists on change
+                float coX, float y, float ctrlW, const char* label, int* field,
+                float rowH = 38.0f, float chipW = 112.0f);   // geometry defaults to the standard row ; party/target/player pass 40/150 etc. so their taller rows stay pixel-identical
+bool row_toggle(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,                                  // bool* overload : a few config fields are bool, not int.
+                float coX, float y, float ctrlW, const char* label, bool* field,                               // It DELEGATES to the int version -- no second copy of the drawing code.
+                float rowH = 38.0f, float chipW = 112.0f);
 bool row_pct_slider(u32 dev, Font* fo, const MouseState* mo, int uid,
                     float coX, float y, float ctrlW, const char* label, float* field, float lo, float hi, float step = 0.05f);   // NN% slider ; persists on RELEASE (no per-frame save)
 // HSV colour picker : an SV square + a slim vertical hue strip + a live swatch (with hex) + a preset "nuancier"

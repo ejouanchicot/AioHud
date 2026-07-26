@@ -34,13 +34,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         ROW_NEXT(42.0f)
         if (catOpen_[6]) {
         // Show : master on/off for the WHOLE Target module (hidden everywhere when off ; other rows stay editable).
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtShow ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtShow != 0)) { ui_config().tgtShow = !ui_config().tgtShow; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_TOGGLE_G(CTRL_ID, tr("Show", "Afficher"), ui_config().tgtShow, 52.0f, 40.0f, 150.0f)
         // Size : scale the whole target box (canonical : right after Show, before the Box chrome).
         { ROW_BAND(46.0f)
             const float lo = 0.50f, hi = 2.00f;
@@ -53,13 +47,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         ROW_NEXT(46.0f)
         // Box : draw the frame chrome or not. NO box -> name/%/bar/buffs/timer float with a heavy outline, and the
         // theme rows below are hidden (no chrome to theme).
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Box", "Cadre"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtBox ? tr("On", "Oui") : tr("None", "Aucun"), ui_config().tgtBox != 0)) { ui_config().tgtBox = !ui_config().tgtBox; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_CHOICE_G(CTRL_ID, tr("Box", "Cadre"), ui_config().tgtBox, tr("On", "Oui"), tr("None", "Aucun"), 52.0f, 40.0f, 150.0f)
         if (ui_config().tgtBox) {
         // Transparence : how see-through the box chrome is (the content stays opaque). 0% = solid.
         { ROW_BAND(46.0f)
@@ -70,13 +58,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         ROW_NEXT(46.0f)
         // Copy Party : follow the party box theme (hides the own-theme rows below).
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Theme", "Thème"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtThemeCopy ? tr("Same as Party", "Comme Party") : tr("Custom", "Perso"), ui_config().tgtThemeCopy != 0)) { ui_config().tgtThemeCopy = !ui_config().tgtThemeCopy; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_CHOICE_G(CTRL_ID, tr("Theme", "Thème"), ui_config().tgtThemeCopy, tr("Same as Party", "Comme Party"), tr("Custom", "Perso"), 52.0f, 40.0f, 150.0f)
         if (!ui_config().tgtThemeCopy) {
         // Box Theme : a FAMILY selector + a variant grid, INDEPENDENT of the party theme (tgtTheme).
         { ROW_BAND(52.0f)
@@ -203,13 +185,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         ROW_NEXT(52.0f)
         // Speed : show the target's movement speed % (green = slower, red = faster) in the detail row.
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Speed", "Vitesse"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtSpeed ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtSpeed != 0)) { ui_config().tgtSpeed = !ui_config().tgtSpeed; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_TOGGLE_G(CTRL_ID, tr("Speed", "Vitesse"), ui_config().tgtSpeed, 52.0f, 40.0f, 112.0f)
         // Speed display : plain text ("Spd +12%") or the buff-atlas Speed icon + the value.
         if (ui_config().tgtSpeed) { ROW_BAND(52.0f)
             const char* SDL[2] = { tr("Text", "Texte"), tr("Icon", "Icône") };
@@ -227,13 +203,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
           ROW_NEXT(46.0f)
         }
         // Treasure Hunter : show the TH level applied to the target (packet-tracked).
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Treasure Hunter", "Treasure Hunter"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtTH ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtTH != 0)) { ui_config().tgtTH = !ui_config().tgtTH; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_TOGGLE_G(CTRL_ID, tr("Treasure Hunter", "Treasure Hunter"), ui_config().tgtTH, 52.0f, 40.0f, 112.0f)
         // TH display : plain text ("TH9") or the coffer icon + the level.
         if (ui_config().tgtTH) { ROW_BAND(52.0f)
             const char* HDL[2] = { tr("Text", "Texte"), tr("Icon", "Icône") };
@@ -260,21 +230,9 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         ROW_NEXT(52.0f)
         // Cast : show the target's ACTION bar (its live spell cast : name + filling bar) under the HP bar.
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Cast", "Sort"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtCast ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtCast != 0)) { ui_config().tgtCast = !ui_config().tgtCast; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_TOGGLE_G(CTRL_ID, tr("Cast", "Sort"), ui_config().tgtCast, 52.0f, 40.0f, 112.0f)
         // Cast placeholder : a demo cast bar during normal play so it can be positioned even when not casting.
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Cast placeholder", "Sort fictif"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtCastDemo ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtCastDemo != 0)) { ui_config().tgtCastDemo = !ui_config().tgtCastDemo; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_TOGGLE_G(CTRL_ID, tr("Cast placeholder", "Sort fictif"), ui_config().tgtCastDemo, 52.0f, 40.0f, 112.0f)
         }   // end sub-section Detail (catOpen_[8])
         // ---- sub-section : Debuffs ----
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Debuffs", "Debuffs"), catOpen_[9])) catOpen_[9] = !catOpen_[9];
@@ -293,13 +251,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         // Timers-style list (mob name + icon/name/timer rows) placed with //aio edit -- like Player's
         // Equipment "In Player / Standalone".
         if (ui_config().tgtDebuffs)
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Mode", "Mode"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(126.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().dbShow ? tr("Standalone", "Autonome") : tr("In Target", "Dans la cible"), ui_config().dbShow != 0)) { ui_config().dbShow = !ui_config().dbShow; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_CHOICE_G(CTRL_ID, tr("Mode", "Mode"), ui_config().dbShow, tr("Standalone", "Autonome"), tr("In Target", "Dans la cible"), 52.0f, 40.0f, 126.0f)
         // Max Debuffs : how many debuff icons to show at most (1..20 ; wraps 10 per row/column).
         if (ui_config().tgtDebuffs && !ui_config().dbShow)
         { ROW_BAND(46.0f)
@@ -354,12 +306,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
                 float v01 = ((float)c.dbMax - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
                 if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Max", "Max"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.dbMax = v < 1 ? 1 : (v > 32 ? 32 : v); }
             } ROW_NEXT(46.0f)
-            { ROW_BAND(52.0f)   // Header (mob name) toggle
-                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Header (mob name)", "En-t\xC3\xAAte (nom du mob)"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-                const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.dbHeader ? tr("On", "Oui") : tr("Off", "Non"), c.dbHeader != 0)) { c.dbHeader = !c.dbHeader; save_ui_config(); }
-            } ROW_NEXT(52.0f)
+            ROW_TOGGLE_G(CTRL_ID, tr("Header (mob name)", "En-t\xC3\xAAte (nom du mob)"), c.dbHeader, 52.0f, 40.0f, 112.0f)   // Header (mob name) toggle
             { ROW_BAND(52.0f)   // Display : Icon / Name / Icon+Name
                 const char* DISP[3] = { tr("Icon", "Ic\xC3\xB4ne"), tr("Name", "Nom"), tr("Icon+Name", "Ic\xC3\xB4ne+Nom") };
                 int m = (c.dbDisp < 0 || c.dbDisp > 2) ? 0 : c.dbDisp;

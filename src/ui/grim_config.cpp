@@ -22,12 +22,7 @@ void ConfigPage::draw_grim_config(u32 dev, Font* fo, const MouseState* mo, bool 
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (catOpen_[6]) {
-        { ROW_BAND(48.0f)   // Show
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.grimShow ? tr("On", "Oui") : tr("Off", "Non"), c.grimShow != 0)) { c.grimShow = !c.grimShow; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.grimShow)   // Show
         { ROW_BAND(46.0f)   // Size
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.grimScale * 100.0f + 0.5f));
             float v01 = (c.grimScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);

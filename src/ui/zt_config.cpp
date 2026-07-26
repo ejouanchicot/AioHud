@@ -24,12 +24,7 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (catOpen_[6]) {
-        { ROW_BAND(48.0f)   // Show
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.ztShow ? tr("On", "Oui") : tr("Off", "Non"), c.ztShow != 0)) { c.ztShow = !c.ztShow; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.ztShow)   // Show
         { ROW_BAND(52.0f)   // Content -- placed right under Show : it drives BOTH the preview and which options
                             // appear below, so it has to be read before anything else on this panel. This is the
                             // one panel where Size is not the row after Show (the canonical order elsewhere).
@@ -43,14 +38,8 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.ztScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.ztBox);   // Box / Transparency / Theme / Hue / Luminosity
-        { ROW_BAND(48.0f)   // Show title row (Dynamis / Abyssea / Omen / Nyzul / Sheol)
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show title", "Afficher le titre"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.ztHeader ? tr("On", "Oui") : tr("Off", "Non"), c.ztHeader != 0)) { c.ztHeader = !c.ztHeader; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Show title", "Afficher le titre"), c.ztHeader)   // Show title row (Dynamis / Abyssea / Omen / Nyzul / Sheol)
         // ---- Sheol / Odyssey sub-options (only meaningful in Sheol ; harmless elsewhere) ----
-        #define ZT_SHEOL_TOGGLE(UID, LABEL, FIELD) { ROW_BAND(48.0f) row_toggle(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD)); } ROW_NEXT(48.0f)
         // Size factors (bar / dot / icon) as a percentage slider. Same shape as the Limbus gauge sliders below.
         // UID is passed IN (like ZT_SHEOL_TOGGLE) : CTRL_ID inside a multi-line macro body would give every
         // expansion the same file:line hash, and one shared slot animates all the sliders together.
@@ -58,44 +47,44 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         // Per-variant rows : only the options of the zone selected just above are shown, so the panel matches
         // what the preview is actually drawing instead of listing every zone's switches at once.
         if (zvSel == 0) {   // Dynamis
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Run timer", "Timer de run"),        c.ztDyTimer)
+            ROW_TOGGLE(CTRL_ID, tr("Run timer", "Timer de run"),        c.ztDyTimer)
             ZT_SIZE_SLIDER(CTRL_ID, tr("Timer bar width", "Largeur barre timer"),     c.ztDyBarW, 0.40f, 1.00f)
             ZT_SIZE_SLIDER(CTRL_ID, tr("Timer bar height", "Hauteur barre timer"),    c.ztDyBarH, 0.50f, 2.50f)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Key items", "Objets cl\xC3\xA9s"),  c.ztDyKi)
+            ROW_TOGGLE(CTRL_ID, tr("Key items", "Objets cl\xC3\xA9s"),  c.ztDyKi)
             ZT_SIZE_SLIDER(CTRL_ID, tr("Key-item dot size", "Taille pastilles"),      c.ztDyDot, 0.50f, 2.50f)
         }
         if (zvSel == 1) {   // Abyssea
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Visitant timer", "Timer visitant"),  c.ztAbTimer)
+            ROW_TOGGLE(CTRL_ID, tr("Visitant timer", "Timer visitant"),  c.ztAbTimer)
             ZT_SIZE_SLIDER(CTRL_ID, tr("Timer bar width", "Largeur barre timer"),      c.ztAbBarW, 0.40f, 1.00f)
             ZT_SIZE_SLIDER(CTRL_ID, tr("Timer bar height", "Hauteur barre timer"),     c.ztAbBarH, 0.50f, 2.50f)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Lights", "Lumi\xC3\xA8res"),         c.ztAbLights)
+            ROW_TOGGLE(CTRL_ID, tr("Lights", "Lumi\xC3\xA8res"),         c.ztAbLights)
             ZT_SIZE_SLIDER(CTRL_ID, tr("Light bar width", "Largeur barre lumi\xC3\xA8re"),  c.ztAbLightW, 0.50f, 3.00f)
             ZT_SIZE_SLIDER(CTRL_ID, tr("Light bar height", "Hauteur barre lumi\xC3\xA8re"), c.ztAbLightH, 0.50f, 2.50f)
         }
         if (zvSel == 2) {   // Omen
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Floor objective", "Objectif d'\xC3\xA9tage"), c.ztOmObj)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Omens + bonus", "Omens + bonus"),             c.ztOmCount)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Objective rows", "Lignes d'objectifs"),       c.ztOmRows)
+            ROW_TOGGLE(CTRL_ID, tr("Floor objective", "Objectif d'\xC3\xA9tage"), c.ztOmObj)
+            ROW_TOGGLE(CTRL_ID, tr("Omens + bonus", "Omens + bonus"),             c.ztOmCount)
+            ROW_TOGGLE(CTRL_ID, tr("Objective rows", "Lignes d'objectifs"),       c.ztOmRows)
         }
         if (zvSel == 3) {   // Nyzul Isle
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Floor", "\xC3\x89tage"),               c.ztNyFloor)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Floor timer", "Timer d'\xC3\xA9tage"), c.ztNyTime)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Objective", "Objectif"),               c.ztNyObj)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Restriction", "Restriction"),          c.ztNyRestr)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Floors cleared", "\xC3\x89tages faits"), c.ztNyComp)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Reward rate", "Taux de r\xC3\xA9" "compense"), c.ztNyRate)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Tokens", "Tokens"),                    c.ztNyTok)
+            ROW_TOGGLE(CTRL_ID, tr("Floor", "\xC3\x89tage"),               c.ztNyFloor)
+            ROW_TOGGLE(CTRL_ID, tr("Floor timer", "Timer d'\xC3\xA9tage"), c.ztNyTime)
+            ROW_TOGGLE(CTRL_ID, tr("Objective", "Objectif"),               c.ztNyObj)
+            ROW_TOGGLE(CTRL_ID, tr("Restriction", "Restriction"),          c.ztNyRestr)
+            ROW_TOGGLE(CTRL_ID, tr("Floors cleared", "\xC3\x89tages faits"), c.ztNyComp)
+            ROW_TOGGLE(CTRL_ID, tr("Reward rate", "Taux de r\xC3\xA9" "compense"), c.ztNyRate)
+            ROW_TOGGLE(CTRL_ID, tr("Tokens", "Tokens"),                    c.ztNyTok)
         }
         if (zvSel == 4) {
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Segments", "Segments"),                  c.ztSheolSeg)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Resistances", "R\xC3\xA9sistances"),     c.ztSheolRes)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Family name", "Nom de famille"),         c.ztShFam)
+            ROW_TOGGLE(CTRL_ID, tr("Segments", "Segments"),                  c.ztSheolSeg)
+            ROW_TOGGLE(CTRL_ID, tr("Resistances", "R\xC3\xA9sistances"),     c.ztSheolRes)
+            ROW_TOGGLE(CTRL_ID, tr("Family name", "Nom de famille"),         c.ztShFam)
             ZT_SIZE_SLIDER(CTRL_ID, tr("Weapon icon size", "Taille ic\xC3\xB4nes armes"),  c.ztShIcon, 0.50f, 2.50f)
             ZT_SIZE_SLIDER(CTRL_ID, tr("Element dot size", "Taille pastilles \xC3\xA9l\xC3\xA9ments"), c.ztShDot, 0.50f, 2.50f)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Cruel Joke", "Cruel Joke"),              c.ztSheolJoke)
+            ROW_TOGGLE(CTRL_ID, tr("Cruel Joke", "Cruel Joke"),              c.ztSheolJoke)
         }
         if (zvSel == 5) {
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Area & level", "Zone et niveau"),              c.ztLbName)
+            ROW_TOGGLE(CTRL_ID, tr("Area & level", "Zone et niveau"),              c.ztLbName)
             { ROW_BAND(46.0f)   // gauge width, as a fraction of the box content width
                 const float lo = 0.40f, hi = 1.00f; char b[16]; sprintf(b, "%d%%", (int)(c.ztLbBarW * 100.0f + 0.5f));
                 float v01 = (c.ztLbBarW - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
@@ -106,13 +95,12 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                 float v01 = (c.ztLbBarH - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
                 if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Gauge height", "Hauteur jauge"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.ztLbBarH = clampf(v, lo, hi); }
             } ROW_NEXT(46.0f)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Floor on gauge", "\xC3\x89tage sur la jauge"), c.ztLbFloor)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Currencies", "Monnaies"),                      c.ztLbCur)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Run total", "Total du run"),                    c.ztLbRun)
-            ZT_SHEOL_TOGGLE(CTRL_ID, tr("Coffer dots", "Pastilles coffres"),             c.ztLbChips)
+            ROW_TOGGLE(CTRL_ID, tr("Floor on gauge", "\xC3\x89tage sur la jauge"), c.ztLbFloor)
+            ROW_TOGGLE(CTRL_ID, tr("Currencies", "Monnaies"),                      c.ztLbCur)
+            ROW_TOGGLE(CTRL_ID, tr("Run total", "Total du run"),                    c.ztLbRun)
+            ROW_TOGGLE(CTRL_ID, tr("Coffer dots", "Pastilles coffres"),             c.ztLbChips)
         }
         #undef ZT_SIZE_SLIDER
-        #undef ZT_SHEOL_TOGGLE
         { ROW_BAND(40.0f)   // note
             const float ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Only appears in a tracked zone (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus).", "Appara\xC3\xAet seulement en zone suivie (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus)."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);

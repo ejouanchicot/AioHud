@@ -23,37 +23,26 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (catOpen_[6]) {
-        { ROW_BAND(48.0f)   // Show the skillchains box
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.scShow ? tr("On", "Oui") : tr("Off", "Non"), c.scShow != 0)) { c.scShow = !c.scShow; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.scShow)   // Show the skillchains box
         { ROW_BAND(46.0f)   // Size (overall box scale) -- canonical : right after Show
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.scScale * 100.0f + 0.5f));
             float v01 = (c.scScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.scScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.scBox);   // Box / Transparency / Theme / Hue / Luminosity
-        { ROW_BAND(48.0f)   // Display scope : also show party/nearby chains (not just your target)
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show party/nearby chains", "Afficher SC du groupe/proches"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.scNearby ? tr("On", "Oui") : tr("Off", "Non"), c.scNearby != 0)) { c.scNearby = !c.scNearby; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Show party/nearby chains", "Afficher SC du groupe/proches"), c.scNearby)   // Display scope : also show party/nearby chains (not just your target)
     }   // end Display
 
     // ===== sub-section : ELEMENTS (which lines to show) =====
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Elements", "\xC3\x89l\xC3\xA9ments"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (catOpen_[7]) {
-        #define SC_TOGGLE(UID, LABEL, FIELD) { ROW_BAND(48.0f) row_toggle(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD)); } ROW_NEXT(48.0f)
-        SC_TOGGLE(CTRL_ID, tr("Title", "Titre"),                            c.scTitle)
-        SC_TOGGLE(CTRL_ID, tr("Timer (Go! / Burst)", "Timer (Go! / Burst)"), c.scTimer)
-        SC_TOGGLE(CTRL_ID, tr("Step line", "Ligne Step"),                    c.scStep)
-        SC_TOGGLE(CTRL_ID, tr("Property + elements", "Propri\xC3\xA9t\xC3\xA9 + \xC3\xA9l\xC3\xA9ments"), c.scProps)
-        SC_TOGGLE(CTRL_ID, tr("Weaponskill list", "Liste weaponskills"),     c.scList)
-        SC_TOGGLE(CTRL_ID, tr("TP indicator", "Indicateur TP"),              c.scTP)
+        ROW_TOGGLE(CTRL_ID, tr("Title", "Titre"),                            c.scTitle)
+        ROW_TOGGLE(CTRL_ID, tr("Timer (Go! / Burst)", "Timer (Go! / Burst)"), c.scTimer)
+        ROW_TOGGLE(CTRL_ID, tr("Step line", "Ligne Step"),                    c.scStep)
+        ROW_TOGGLE(CTRL_ID, tr("Property + elements", "Propri\xC3\xA9t\xC3\xA9 + \xC3\xA9l\xC3\xA9ments"), c.scProps)
+        ROW_TOGGLE(CTRL_ID, tr("Weaponskill list", "Liste weaponskills"),     c.scList)
+        ROW_TOGGLE(CTRL_ID, tr("TP indicator", "Indicateur TP"),              c.scTP)
         // WS spacing : the vertical gap between each weaponskill in the continuation list. Always shown (it only
         // has a visible effect while the list is on, but hiding it made it hard to find).
         { ROW_BAND(46.0f)
@@ -61,7 +50,6 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             float v01 = (c.scListGap - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("WS spacing", "Espacement WS"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.scListGap = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
-        #undef SC_TOGGLE
     }   // end Elements
 
     // ===== sub-section : TEXT (per-element typography, like the other modules) =====

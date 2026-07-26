@@ -19,7 +19,6 @@ namespace aio {
 
 // one On/Off toggle row (label left, chip right). Its own { } block (ROW_BAND declares ap/yo).
 // Thin wrapper over the shared row_toggle (config_controls) -- kept as a macro so each call lands on its own __LINE__.
-#define PLR_TOGGLE(UID, LABEL, FIELD) { ROW_BAND(48.0f) row_toggle(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD)); } ROW_NEXT(48.0f)
 
 // draw the Player category (+ its Box / Content / Bars / Buffs sub-sections). Advances ry/ri.
 void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, bool click,
@@ -32,13 +31,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         ROW_NEXT(42.0f)
         if (catOpen_[6]) {
         // Show : master on/off for the WHOLE Player Hub (hidden everywhere when off ; other rows stay editable).
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().plrShow ? tr("On", "Oui") : tr("Off", "Non"), ui_config().plrShow != 0)) { ui_config().plrShow = !ui_config().plrShow; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_TOGGLE_G(CTRL_ID, tr("Show", "Afficher"), ui_config().plrShow, 52.0f, 40.0f, 150.0f)
         // Size : scale the whole hub box (canonical : right after Show, before the Box chrome).
         { ROW_BAND(46.0f)
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().plrScale * 100.0f + 0.5f));
@@ -48,13 +41,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         ROW_NEXT(46.0f)
         // Box : draw the frame chrome or not.
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Box", "Cadre"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().plrBox ? tr("On", "Oui") : tr("None", "Aucun"), ui_config().plrBox != 0)) { ui_config().plrBox = !ui_config().plrBox; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_CHOICE_G(CTRL_ID, tr("Box", "Cadre"), ui_config().plrBox, tr("On", "Oui"), tr("None", "Aucun"), 52.0f, 40.0f, 150.0f)
         if (ui_config().plrBox) {
         // Transparency : how see-through the box chrome is (content stays opaque). 0% = solid.
         { ROW_BAND(46.0f)
@@ -65,13 +52,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         ROW_NEXT(46.0f)
         // Copy Party : follow the party box theme (hides the own-theme rows below).
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Theme", "Thème"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().plrThemeCopy ? tr("Same as Party", "Comme Party") : tr("Custom", "Perso"), ui_config().plrThemeCopy != 0)) { ui_config().plrThemeCopy = !ui_config().plrThemeCopy; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_CHOICE_G(CTRL_ID, tr("Theme", "Thème"), ui_config().plrThemeCopy, tr("Same as Party", "Comme Party"), tr("Custom", "Perso"), 52.0f, 40.0f, 150.0f)
         if (!ui_config().plrThemeCopy) {
         // Box Theme : a FAMILY selector + a variant grid, INDEPENDENT of the party theme (plrTheme).
         { ROW_BAND(52.0f)
@@ -138,20 +119,20 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
         ROW_NEXT(42.0f)
         if (catOpen_[7]) {
-        PLR_TOGGLE(CTRL_ID, tr("Emblem", "Emblème"), ui_config().plrEmblem)
-        PLR_TOGGLE(CTRL_ID, tr("Name", "Nom"),       ui_config().plrName)
-        PLR_TOGGLE(CTRL_ID, tr("Level", "Niveau"),   ui_config().plrLvl)
-        PLR_TOGGLE(CTRL_ID, "HP",               ui_config().plrHp)
-        PLR_TOGGLE(CTRL_ID, "MP",               ui_config().plrMp)
-        PLR_TOGGLE(CTRL_ID, "TP",               ui_config().plrTp)
-        PLR_TOGGLE(CTRL_ID, tr("Speed", "Vitesse"), ui_config().plrSpeed)
-        PLR_TOGGLE(CTRL_ID, tr("Cast", "Sort"), ui_config().plrCast)
-        PLR_TOGGLE(CTRL_ID, tr("Cast placeholder", "Sort fictif"), ui_config().plrCastDemo)
-        PLR_TOGGLE(CTRL_ID, tr("Buffs", "Buffs"), ui_config().plrBuffs)
-        PLR_TOGGLE(CTRL_ID, tr("Equipment", "Équipement"), ui_config().plrEquip)
+        ROW_TOGGLE(CTRL_ID, tr("Emblem", "Emblème"), ui_config().plrEmblem)
+        ROW_TOGGLE(CTRL_ID, tr("Name", "Nom"),       ui_config().plrName)
+        ROW_TOGGLE(CTRL_ID, tr("Level", "Niveau"),   ui_config().plrLvl)
+        ROW_TOGGLE(CTRL_ID, "HP",               ui_config().plrHp)
+        ROW_TOGGLE(CTRL_ID, "MP",               ui_config().plrMp)
+        ROW_TOGGLE(CTRL_ID, "TP",               ui_config().plrTp)
+        ROW_TOGGLE(CTRL_ID, tr("Speed", "Vitesse"), ui_config().plrSpeed)
+        ROW_TOGGLE(CTRL_ID, tr("Cast", "Sort"), ui_config().plrCast)
+        ROW_TOGGLE(CTRL_ID, tr("Cast placeholder", "Sort fictif"), ui_config().plrCastDemo)
+        ROW_TOGGLE(CTRL_ID, tr("Buffs", "Buffs"), ui_config().plrBuffs)
+        ROW_TOGGLE(CTRL_ID, tr("Equipment", "Équipement"), ui_config().plrEquip)
         // Gil : lives in Content while the equipment is docked or off (gil then rides the header / hub) ; when the
         // equipment is DETACHED the gil goes with that box, so its toggle moves to the Equipment sub-section.
-        if (!(ui_config().plrEquip && ui_config().plrEquipDetach)) { PLR_TOGGLE(CTRL_ID, tr("Gil", "Gil"), ui_config().plrGil) }
+        if (!(ui_config().plrEquip && ui_config().plrEquipDetach)) { ROW_TOGGLE(CTRL_ID, tr("Gil", "Gil"), ui_config().plrGil) }
         }   // end sub-section Content (catOpen_[7])
         // ---- sub-section : Identity (the job emblem is an icon -> size only) ----
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Identity", "Identité"), catOpen_[11])) catOpen_[11] = !catOpen_[11];
@@ -237,13 +218,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         if (catOpen_[12] && ui_config().plrEquip) {
         // Mode : the equipment lives INSIDE the Player Hub (docked, placement below) or as its OWN standalone
         // box with its own size, dragged in //aio edit.
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Mode", "Mode"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().plrEquipDetach ? tr("Standalone", "Autonome") : tr("In Player", "Dans Player"), ui_config().plrEquipDetach != 0)) { ui_config().plrEquipDetach = !ui_config().plrEquipDetach; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_CHOICE_G(CTRL_ID, tr("Mode", "Mode"), ui_config().plrEquipDetach, tr("Standalone", "Autonome"), tr("In Player", "Dans Player"), 52.0f, 40.0f, 150.0f)
         if (!ui_config().plrEquipDetach) {
         // Placement : inside the box (left/centre/right) or docked outside (left/right).
         { ROW_BAND(52.0f)
@@ -267,7 +242,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, ui_config().plrEqBox);
         }
         // Gil ON/OFF lives HERE only when the equipment is DETACHED (the gil rides that box) ; docked/off -> Content.
-        if (ui_config().plrEquipDetach) { PLR_TOGGLE(CTRL_ID, tr("Gil", "Gil"), ui_config().plrGil) }
+        if (ui_config().plrEquipDetach) { ROW_TOGGLE(CTRL_ID, tr("Gil", "Gil"), ui_config().plrGil) }
         // Gil position (standalone only) : which side of the grid the gil row sits on.
         if (ui_config().plrEquipDetach && ui_config().plrGil) {
         { ROW_BAND(52.0f)
@@ -288,31 +263,18 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         ROW_NEXT(46.0f)
         // Border : follow the box theme, or a custom colour.
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Border", "Bordure"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().plrEqThemeBorder ? tr("Box Theme", "Thème box") : tr("Custom", "Perso"), ui_config().plrEqThemeBorder != 0)) { ui_config().plrEqThemeBorder = !ui_config().plrEqThemeBorder; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_CHOICE_G(CTRL_ID, tr("Border", "Bordure"), ui_config().plrEqThemeBorder, tr("Box Theme", "Thème box"), tr("Custom", "Perso"), 52.0f, 40.0f, 150.0f)
         if (!ui_config().plrEqThemeBorder) {
         CFG_COLOR_PICKER(&ui_config().plrEqColor)
         }   // end custom colour (!plrEqThemeBorder)
         // Cell background : the cell FILL colour -- Default dark, or a custom colour (filled slots stay a touch brighter).
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Cell background", "Fond des cases"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().plrEqCellBgCustom ? tr("Custom", "Perso") : tr("Default", "Défaut"), ui_config().plrEqCellBgCustom != 0)) { ui_config().plrEqCellBgCustom = !ui_config().plrEqCellBgCustom; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_CHOICE_G(CTRL_ID, tr("Cell background", "Fond des cases"), ui_config().plrEqCellBgCustom, tr("Custom", "Perso"), tr("Default", "Défaut"), 52.0f, 40.0f, 150.0f)
         if (ui_config().plrEqCellBgCustom) {
         CFG_COLOR_PICKER(&ui_config().plrEqCellBg)
         }   // end custom cell background
         }   // end sub-section Equipment (catOpen_[12])
         ry += snap(10.0f);
 
-    #undef PLR_TOGGLE
     #undef ROW_BAND
     #undef ROW_NEXT
 }

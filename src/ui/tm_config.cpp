@@ -32,22 +32,15 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (catOpen_[6]) {
-        #define TM_TOGGLE(UID, LABEL, FIELD) { ROW_BAND(48.0f) row_toggle(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD)); } ROW_NEXT(48.0f)
-        TM_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.tmShow)
+        ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.tmShow)
         { ROW_BAND(46.0f)   // Size (canonical : right after Show, before the box appearance)
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tmScale * 100.0f + 0.5f));
             float v01 = (c.tmScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.tmBox);   // Box / Transparency / Theme / Hue / Luminosity
-        TM_TOGGLE(CTRL_ID, tr("Show titles", "Afficher les titres"), c.tmTitle)
-        #undef TM_TOGGLE
-        { ROW_BAND(48.0f)   // Layout : fused (one box) vs separate (two draggable boxes)
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Layout", "Disposition"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(128.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.tmMerged ? tr("Fused", "Fusionn\xC3\xA9") : tr("Separate", "S\xC3\xA9par\xC3\xA9"), c.tmMerged != 0)) { c.tmMerged = !c.tmMerged; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Show titles", "Afficher les titres"), c.tmTitle)
+        ROW_CHOICE_G(CTRL_ID, tr("Layout", "Disposition"), c.tmMerged, tr("Fused", "Fusionn\xC3\xA9"), tr("Separate", "S\xC3\xA9par\xC3\xA9"), 48.0f, 38.0f, 128.0f)   // Layout : fused (one box) vs separate (two draggable boxes)
         { ROW_BAND(46.0f)   // Max per column
             const float lo = 1.0f, hi = 50.0f; char b[16]; sprintf(b, "%d", c.tmMax);
             float v01 = ((float)c.tmMax - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
@@ -71,12 +64,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             int s = (c.tmBuffSrc < 0 || c.tmBuffSrc > 3) ? TMSRC_ALL : c.tmBuffSrc;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff source", "Source des buffs"), SRC[s])) { c.tmBuffSrc = wrap(s + d, 4); c.tmOthers = (c.tmBuffSrc != TMSRC_MINE); save_ui_config(); }
         } ROW_NEXT(52.0f)
-        { ROW_BAND(48.0f)   // Buffs on allies : show a buff YOU cast on another player (person name + ESTIMATED timer)
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("My buffs on allies", "Mes buffs sur alli\xC3\xA9s"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.tmMine ? tr("On", "Oui") : tr("Off", "Non"), c.tmMine != 0)) { c.tmMine = !c.tmMine; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("My buffs on allies", "Mes buffs sur alli\xC3\xA9s"), c.tmMine)   // Buffs on allies : show a buff YOU cast on another player (person name + ESTIMATED timer)
         if (c.tmMine) { ROW_BAND(48.0f)   // Ally-buff layout : GROUP same-spell into "(AoE N)" or one row PER ally (single-target
             const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);   //   Haste/Protect spread ; real AoE like Protectra / SCH Accession is grouped either way)
             fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Single-target on allies", "Monocible sur alli\xC3\xA9s"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
@@ -89,12 +77,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alerts", "Alertes"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (catOpen_[7]) {
-        { ROW_BAND(48.0f)   // SP alert : SP1/SP2 buffs (all jobs) blink hard in their last minute (Soul Voice -> Nitro window)
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("SP last-min alert", "Alerte SP derni\xC3\xA8re min"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.tmSpAlert ? tr("On", "Oui") : tr("Off", "Non"), c.tmSpAlert != 0)) { c.tmSpAlert = !c.tmSpAlert; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("SP last-min alert", "Alerte SP derni\xC3\xA8re min"), c.tmSpAlert)   // SP alert : SP1/SP2 buffs (all jobs) blink hard in their last minute (Soul Voice -> Nitro window)
         { ROW_BAND(46.0f)   // Focus WARN : a "Hidden + focus" buff surfaces when it drops below this many seconds
             const float lo = 10.0f, hi = 300.0f; char b[16]; sprintf(b, "%ds", c.tmFocusWarn);
             float v01 = ((float)c.tmFocusWarn - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);

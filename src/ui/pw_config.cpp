@@ -22,12 +22,7 @@ void ConfigPage::draw_pw_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (catOpen_[6]) {
-        { ROW_BAND(48.0f)   // Show
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.pwShow ? tr("On", "Oui") : tr("Off", "Non"), c.pwShow != 0)) { c.pwShow = !c.pwShow; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.pwShow)   // Show
         { ROW_BAND(46.0f)   // Size
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.pwScale * 100.0f + 0.5f));
             float v01 = (c.pwScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
@@ -49,12 +44,7 @@ void ConfigPage::draw_pw_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             int dm = (c.pwDisplay < 0 || c.pwDisplay > 2) ? 0 : c.pwDisplay;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Show", "Afficher"), DLBL[dm])) { c.pwDisplay = wrap(dm + d, 3); save_ui_config(); }
         } ROW_NEXT(52.0f)
-        { ROW_BAND(48.0f)   // Rate X/h
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show rate (X/h)", "Afficher le taux (X/h)"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.pwRate ? tr("On", "Oui") : tr("Off", "Non"), c.pwRate != 0)) { c.pwRate = !c.pwRate; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Show rate (X/h)", "Afficher le taux (X/h)"), c.pwRate)   // Rate X/h
         { ROW_BAND(40.0f)   // note
             const float ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("XP under 99, CP at 99, ML once mastered. + Merits.", "XP <99, CP a\xCC\x80 99, ML si master. + Merits."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);

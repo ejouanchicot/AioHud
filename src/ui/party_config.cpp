@@ -31,13 +31,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     ROW_NEXT(42.0f)
     if (catOpen_[1]) {
         // Show : master on/off for the main PARTY box (independent of Alliance below).
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().partyShow ? tr("On", "Oui") : tr("Off", "Non"), ui_config().partyShow != 0)) { ui_config().partyShow = !ui_config().partyShow; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_TOGGLE_G(CTRL_ID, tr("Show", "Afficher"), ui_config().partyShow, 52.0f, 40.0f, 150.0f)
         // Size (canonical : right after Show). Party floor 100% : it must cover the native block.
         { ROW_BAND(46.0f)
             const float lo = 1.00f, hi = 2.00f;
@@ -198,20 +192,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           }
           ROW_NEXT(46.0f)
         }
-        { ROW_BAND(52.0f)   // Casts
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Casts", "Sorts"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().cast[0] ? tr("On", "Oui") : tr("Off", "Non"), ui_config().cast[0])) { ui_config().cast[0] = !ui_config().cast[0]; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
-        { ROW_BAND(52.0f)   // Distance
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Distance", "Distance"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().dist[0] ? tr("On", "Oui") : tr("Off", "Non"), ui_config().dist[0])) { ui_config().dist[0] = !ui_config().dist[0]; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_TOGGLE_G(CTRL_ID, tr("Casts", "Sorts"), ui_config().cast[0], 52.0f, 40.0f, 112.0f)   // Casts
+        ROW_TOGGLE_G(CTRL_ID, tr("Distance", "Distance"), ui_config().dist[0], 52.0f, 40.0f, 112.0f)   // Distance
         // ---- Distance-zone colours : the yalms number is tinted by cast-range zone (Close < 10' / Normal 10'..20.8' / Far >= 20.8'). ----
         {
             struct ZoneCol { const char* en; const char* fr; unsigned* col; };
@@ -247,13 +229,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     ROW_NEXT(42.0f)
     if (catOpen_[7]) {
         // Show : master on/off for the two ALLIANCE boxes (independent of the Party box above).
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Show", "Afficher"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().allyShow ? tr("On", "Oui") : tr("Off", "Non"), ui_config().allyShow != 0)) { ui_config().allyShow = !ui_config().allyShow; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_TOGGLE_G(CTRL_ID, tr("Show", "Afficher"), ui_config().allyShow, 52.0f, 40.0f, 150.0f)
         // ---- Alliance box settings (index 1 ; no buffs / animation -- alliances get none) ----
         { ROW_BAND(46.0f)   // Size (alliance : 50%..200%) -- canonical : right after Show
             const float lo = 0.50f, hi = 2.00f;
@@ -265,13 +241,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         }
         ROW_NEXT(46.0f)
         // ---- Theme : follow the Party box theme, or give the alliance boxes their OWN (procedural themes fully). ----
-        { ROW_BAND(52.0f)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Theme", "Thème"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().allyThemeCopy ? tr("Same as Party", "Comme Party") : tr("Custom", "Perso"), ui_config().allyThemeCopy != 0)) { ui_config().allyThemeCopy = !ui_config().allyThemeCopy; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_CHOICE_G(CTRL_ID, tr("Theme", "Thème"), ui_config().allyThemeCopy, tr("Same as Party", "Comme Party"), tr("Custom", "Perso"), 52.0f, 40.0f, 150.0f)
         if (!ui_config().allyThemeCopy) {
         { ROW_BAND(52.0f)   // Box Theme (family)
           const int fam = window_theme_family(ui_config().allyTheme), var = window_theme_variant(ui_config().allyTheme);
@@ -380,27 +350,9 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           }
           ROW_NEXT(46.0f)
         }
-        { ROW_BAND(52.0f)   // Casts
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Casts", "Sorts"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().cast[1] ? tr("On", "Oui") : tr("Off", "Non"), ui_config().cast[1])) { ui_config().cast[1] = !ui_config().cast[1]; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
-        { ROW_BAND(52.0f)   // Distance
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Distance", "Distance"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().dist[1] ? tr("On", "Oui") : tr("Off", "Non"), ui_config().dist[1])) { ui_config().dist[1] = !ui_config().dist[1]; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
-        { ROW_BAND(52.0f)   // Border
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Border", "Bordure"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().border[1] ? tr("On", "Oui") : tr("Off", "Non"), ui_config().border[1])) { ui_config().border[1] = !ui_config().border[1]; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
+        ROW_TOGGLE_G(CTRL_ID, tr("Casts", "Sorts"), ui_config().cast[1], 52.0f, 40.0f, 112.0f)   // Casts
+        ROW_TOGGLE_G(CTRL_ID, tr("Distance", "Distance"), ui_config().dist[1], 52.0f, 40.0f, 112.0f)   // Distance
+        ROW_TOGGLE_G(CTRL_ID, tr("Border", "Bordure"), ui_config().border[1], 52.0f, 40.0f, 112.0f)   // Border
     }   // end Alliance
 
     // =========================================================== TEXT ===========================================================
