@@ -495,6 +495,28 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // BAND : what YOU cast (0), then what real PLAYERS put on you (1), then TRUSTS (2). Each band is still
             // sorted soonest-first by the comparator below. "Yours" is the per-timer caster, not "it is on me".
             const unsigned rowCaster = party().buff_caster_for(bt[i].id, bt[i].expiry, i);
+            // OWNER RESOLUTION, self-reporting. Reported 2026-07-26 : Protect / Shell / Regen actually cast by the
+            // trust Monberaux display "(Kaories)" -- a COR, a job that cannot produce any of those three -- so the
+            // row passes the "me + players" filter under a player's name. Neither of the two mechanisms I reasoned
+            // through explains it: the per-status latch is only ever written by a cast that GRANTS that status, and
+            // a Corsair grants none of them. So the resolution itself has to be observed rather than argued about.
+            // One line per DISTINCT (status, resolved caster), always-on and deduped -> a handful of lines a
+            // session, no probe to arm, and it survives the //unload+//load that wipes the log.
+            {
+                static unsigned seenOwn[48]; static int seenOwnN = 0;
+                const unsigned key = ((unsigned)bt[i].id << 20) ^ rowCaster;
+                bool dupO = false; for (int q = 0; q < seenOwnN; ++q) if (seenOwn[q] == key) { dupO = true; break; }
+                if (!dupO) {
+                    if (seenOwnN < 48) seenOwn[seenOwnN++] = key;
+                    const char* onm = rowCaster ? party().pc_name_by_id(rowCaster) : 0;
+                    windower::debug::log("BUFFOWNER st=%u '%s' exp=%u idx=%d -> caster=%08X '%s' trust=%d mine=%d | srcKeeps=%d (filter=%d)",
+                                         (unsigned)bt[i].id, buff_status_name(bt[i].id), bt[i].expiry, i,
+                                         rowCaster, onm ? onm : "<unresolved>",
+                                         rowCaster ? (party().is_trust(rowCaster) ? 1 : 0) : -1,
+                                         (rowCaster == party().self_id()) ? 1 : 0,
+                                         srcKeeps(bt[i].id, bt[i].expiry, i) ? 1 : 0, (int)C.tmBuffSrc);
+                }
+            }
             const bool rowMine = (rowCaster == 0 || rowCaster == party().self_id());   // for TAGS: unknown is probably ours
             // For BANDING, unknown is its own thing. The source filter already treats caster==0 as "infer", but the
             // sort treated it as "mine", so every unattributed row -- food, gear, a 3000-TP boost we failed to parse --
