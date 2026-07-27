@@ -10,6 +10,7 @@ Two very different toolchains used to sit side by side; the Ghidra ones moved do
 | `*.py` (23) | **Generators** — turn Windower resources or a reference sheet into a `*_gen.h` table or a `.raw` atlas | `python scripts/<name>.py` |
 | `*.ps1` / `*.sh` (7) | Asset baking (window skin, icons, capitalisation pass) | run directly |
 | `tidy.ps1` | **clang-tidy**, avec les drapeaux qui le font marcher sur ce projet — outil LOCAL, pas une etape de CI | `.\scripts	idy.ps1 [fichier]` |
+| `verify_release.ps1` | Verifie une release **publiee** comme la voit l'updater d'un joueur. Branche en CI apres la publication | `.\scripts\verify_release.ps1 [-Tag v1.0.71]` |
 | [`ghidra/`](ghidra/README.md) (32 `.java`) | **Ghidra headless scripts** — static analysis of `FFXiMain`. Different tool, different workflow | `analyzeHeadless ... -scriptPath scripts/ghidra -postScript <Script>.java` |
 
 ## clang-tidy : outil local, delibrement PAS en CI
@@ -95,6 +96,37 @@ These bake binaries the plugin loads at runtime, from sources kept in `assets/*_
 procedurally), and its 32 input frames lived in an old Windower addon folder that no longer exists. It is kept
 because it documents how the 96 surviving frames were made, and it now **fails with that explanation** instead
 of silently pointing at a dead disk. Pass `-SrcDir` if you ever recover the originals.
+
+## verify_release.ps1 : le seul controle qui regarde l'artefact, pas les entrees
+
+Tout le reste de la CI verifie ce qui ENTRE dans une release — l'arbre compile, la suite passe, le changelog
+porte la bonne version. Ce script est le seul a verifier ce qui en SORT, depuis l'exterieur, exactement comme
+l'updater d'un joueur le voit : il interroge `/releases/latest` (pas le tag — GitHub y pointe la release
+publiee en DERNIER, pas la plus recente en semver), telecharge les deux assets, recalcule l'empreinte, prouve
+qu'une archive alteree est bien refusee, et ouvre le zip pour verifier qu'il contient les trois fichiers sans
+lesquels une mise a jour ne peut pas aboutir.
+
+**Pourquoi il existe.** La v1.0.71 a ete publiee avec un controle d'integrite incapable de reussir : la
+comparaison lisait `(Invoke-WebRequest ...).Content`, qui vaut un TABLEAU D'OCTETS sur PowerShell 5.1 des que
+la reponse n'est pas d'un type texte reconnu — et GitHub sert les assets en `application/octet-stream`. Le
+`-replace` s'appliquait donc octet par octet et produisait « 49 56 99 52 ... », les codes ASCII des chiffres
+hexadecimaux. La comparaison ne pouvait jamais correspondre : **toutes** les mises a jour suivantes auraient
+ete refusees pour « checksum mismatch ».
+
+Le code avait ete relu, sa syntaxe validee, et la logique de hachage exercee sur un fichier local. Rien de
+tout cela ne pouvait voir le defaut, parce qu'il vivait dans ce que GitHub renvoie sur le reseau. Seul
+l'artefact reel pouvait le reveler — et ce script l'a trouve a sa premiere entree veritable, avant qu'aucun
+joueur n'ait telecharge la release.
+
+Il verifie aussi une chose qu'on oublie facilement : **la compatibilite avec les clients d'AVANT**. Chaque
+joueur execute le script de la version PRECEDENTE au moment ou il se met a jour, et celui-la filtre
+`-like 'AioHud-*.zip'` sans exclusion, en prenant le premier resultat. Il tombe encore sur le zip et jamais
+sur le sidecar uniquement parce que `-like` ancre la fin du motif — renommer un asset romprait ca en silence,
+pour tous ceux qui ne sont pas encore a jour.
+
+Sortie non nulle en cas d'echec, donc la CI l'execute apres `gh release create` : un job rouge signifie que la
+release n'est pas installable. Il ne demande aucun jeton (l'API des releases est publique), donc il tourne a
+l'identique sur une machine de dev et sur un runner.
 
 ## See also
 

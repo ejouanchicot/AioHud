@@ -148,3 +148,19 @@ jobs:
           # --latest is NOT the default : GitHub marks whichever release was PUBLISHED last, which is publish
           # time, not semver. v1.0.61 published 24 s after v1.0.62 once, and the updater queries /releases/latest.
           gh release create "$TAG" AioHud-*.zip AioHud-*.zip.sha256 --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --latest
+
+      # VERIFY WHAT WAS ACTUALLY PUBLISHED, from the outside, the way a player's updater sees it. Everything
+      # above this point checks inputs -- this is the only step that checks the artifact people will install.
+      # It exists because v1.0.71 shipped an integrity check that could never pass: the comparison read
+      # (Invoke-WebRequest).Content, a BYTE ARRAY on PS 5.1 for octet-stream responses, so it compared the ASCII
+      # codes of the hex digits against the digest and every future update would have been refused. Reviewed,
+      # syntax-checked, and exercised on a local file -- none of which could see it, because the defect lived in
+      # what GitHub hands back over the wire. Only the real artifact could reveal it.
+      # A red job here means the release is not installable, which is worth knowing now rather than at everyone's
+      # next update. The script needs no token: the release API is public.
+      - name: Verify published release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        # github.ref_name IS the tag on a tag push -- `${GITHUB_REF#refs/tags/}` is bash and expands to nothing
+        # under pwsh, which would have silently verified /releases/latest instead of the tag just published.
+        run: ./scripts/verify_release.ps1 -Repo "${{ github.repository }}" -Tag "${{ github.ref_name }}"
