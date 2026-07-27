@@ -63,7 +63,16 @@ try {
         Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
         Status 'ERROR release has no .sha256 checksum -- refusing to install it. Update manually from the GitHub release page.'; exit
     }
-    $want = ((Invoke-WebRequest $sa.browser_download_url -Headers $ua).Content -replace '[^0-9a-fA-F]', '').ToLower()
+    # -OutFile, NOT (Invoke-WebRequest).Content. On PS 5.1 that property is a BYTE ARRAY whenever the response
+    # is not a recognised text type -- and GitHub serves release assets as application/octet-stream. The
+    # `-replace` then ran per byte and produced "49 56 99 52 ..." (the ASCII codes of the hex digits), so the
+    # comparison could never match and EVERY update would have been refused as a checksum mismatch. Caught by
+    # running this against the real published release instead of trusting it; reading it from a file is
+    # deterministic regardless of content type or PowerShell version.
+    $shaFile = "$zip.sha256"
+    Invoke-WebRequest $sa.browser_download_url -OutFile $shaFile -Headers $ua
+    $want = ((Get-Content -Raw -LiteralPath $shaFile) -replace '[^0-9a-fA-F]', '').ToLower()
+    Remove-Item -LiteralPath $shaFile -Force -ErrorAction SilentlyContinue
     $got  = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLower()
     if ($want -ne $got) {
         Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
