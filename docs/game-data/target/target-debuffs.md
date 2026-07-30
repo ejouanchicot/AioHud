@@ -30,21 +30,44 @@ spell table (`vendor/targetbar/tb_spells.lua`), filtered to the debuff status-id
 Protect/Haste excluded, so an ally buff is never mistaken for a mob debuff). Don't hand-edit — regenerate.
 
 **Multi-target (AoE) parse — REVERSED via `//aio act` bit-scan.** The finish (category 4) lists EVERY target
-hit: **target[0].id `@ bit 150`** (32b, was mis-derived as 152), **per-target STRIDE = 123 bits**
-(target[1].id @ 273, …), and `target_count @ bit 72` (6b). `on_action` loops
-`for i<tcount: tid = getbits(150+123*i, 32)` and calls `record_debuff(tid, effect, durSec*1000, bySelf)` for
-each real server id (guard: `tid` top byte must be `0x01`). Tracks EVERY caster → Sleepga hits all mobs, and
-other players' debuffs show.
+hit: **target[0].id `@ bit 150`** (32b, was mis-derived as 152) and `target_count @ bit 72` (6b). The stride is
+**VARIABLE, not the fixed 123 bits** this file used to claim: each target is `32b id + 4b action count`, then
+per action `86b + 37b if the add-effect flag is set + (1b | 35b) spike block`. `on_action` walks it that way and
+calls `record_debuff(tid, effect, durSec*1000, bySelf)` for each real server id (guard: `tid` top byte must be
+`0x01`). Tracks EVERY caster → Sleepga hits all mobs, and other players' debuffs show.
 
-## "No effect" / resisted — the per-target MESSAGE at bit 230 (REVERSED via `//aio dbflog`)
+## Did it LAND? — the per-target action MESSAGE (REVERSED via `//aio dbflog` + `res/action_messages.lua`)
 
-Unlike the caster-level fields, a cat-4 spell **finish carries a usable per-target action message**: for
-target[0] it sits `@ bit 230` (`getbits(p, base+80, 10)`, `base = 150 + 123*i`, width 10). Two ids matter:
+Unlike the caster-level fields, a cat-4 spell **finish carries a usable per-target action message**: it sits
+`@ bit 44` of each action block (10b), its param `@ bit 27` (17b). **The message is the verdict** — the spell
+table only says which status a cast *can* land, never whether it did.
 
-- **message 236 = the debuff LANDED** — record/refresh it.
-- **message 75 = "no effect" / resisted / target already has it** — on it we `continue` **without** recording
-  or refreshing. Without this gate, recasting **Sleep / Lullaby on an already-slept mob wrongly reset the
-  countdown to full**.
+The **failure family** — all eight mean *nothing was applied*, so `on_action` `continue`s without recording or
+refreshing:
+
+| ids | text |
+|---|---|
+| 75 / 283 | `<actor>'s <spell> has no effect on <target>.` / `No effect on <target>.` |
+| **85 / 284** | **`<target> resists the spell.`** / `<target> resists the effects of the spell!` |
+| 653 / 654 | `<target> resists the spell.` + `Immunobreak!` |
+| 655 / 656 | `<target> completely resists the spell.` |
+
+> **This is the bug that shipped.** The gate was written against **75 alone**, so a **resisted Distract** and an
+> **Elegy on an earth elemental** (msg **85**) were recorded as if they had landed. 75 also covers "the target
+> already has it" — without *that* half, recasting Sleep / Lullaby on an already-slept mob reset the countdown
+> to full.
+
+**Landing** messages, by what `param` then means — `2 / 252 / 264 / 265` = damage (`param` = DAMAGE, so a rider
+like Dia/Bio/Burn is invisible and the table's status is all we have), and `82 / 236 / 237 / 268 / 271` (+ the
+no-actor echo forms an AoE uses for targets 2..N) = `param` is THE STATUS ID.
+
+Those two land sets are **diagnostic only** — they log once per `(spell, msg)` and record anyway. Turning them
+into a whitelist is the fail-closed shape this code wants, but neither is measured: the echo ids are inferred
+from message *text*, and `param == table status` is not safe either, because `res/spells.lua` and
+`tb_debuff_gen.h` **disagree on 5 spells with both readings defensible** (Foe/Horde Lullaby → `sleep` (2) or
+`Lullaby` (193)? Graviga → `weight` (12), where res says `petrification` (7) and is plainly wrong; Aisha: Ichi
+→ 557 or 147, both named "Attack Down") and `res` carries **no** status at all for ~150 of the 275 table rows
+(every `-ga`, all blue magic, all Geo-). One capture of those log lines is what promotes them to a real gate.
 
 (The *caster-level* `0x028` message reads `0`, which is why detection is driven by the spell-id table, not a
 message — but the *per-target* result blocks do carry one.)

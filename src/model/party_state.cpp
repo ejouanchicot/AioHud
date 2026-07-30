@@ -114,6 +114,37 @@ static unsigned debuff_fallback_ms(unsigned s) {
 static bool is_wearoff_msg(unsigned m) {
     switch (m) { case 64: case 204: case 206: case 321: case 322: case 350: case 531: return true; default: return false; }
 }
+// ---- the cat-4 VERDICT : did the debuff actually stick ? -------------------------------------------------
+// The server says so in the action MESSAGE ; the spell table only says WHICH status a cast CAN land. Treating
+// "the spell is in the table" as the verdict is what showed a RESISTED Distract and an Elegy on an earth
+// elemental as landed : the old rule rejected msg 75, and 75 ALONE, so every OTHER way the server has of
+// saying "nothing happened" fell straight through to record_debuff. Ids from res/action_messages.lua
+// (Windower), grouped by what the param field then means :
+//   failure forms -- no status was applied : 75/283 "no effect" · 85/284 "<target> resists the spell" ·
+//                    653/654 resists + "Immunobreak!" · 655/656 "completely resists". This is the set that
+//                    REJECTS -- all eight texts are unambiguous, so widening to them cannot lose a real land.
+//   status forms  -- "<target> is / receives / gains the effect of <status>", param = THE STATUS ID. The
+//                    no-actor variants are the echo an AoE (Sleepga / Horde Lullaby) uses for targets 2..N,
+//                    where the "<actor> casts <spell>" line is not repeated.
+//   damage forms  -- "<target> takes N points of damage", param = DAMAGE. A rider (Dia/Bio/Burn/Choke...) is
+//                    invisible in the packet, so there the message alone vouches for the table's status.
+// The last two sets are DIAGNOSTIC only (see the call site) : they are inferred from message text, never yet
+// measured, and rejecting on an inferred id would trade a lying icon for a missing one.
+static bool is_status_land_msg(unsigned m) {
+    switch (m) {
+        case 82: case 236: case 237: case 268: case 271:                    // "<actor> casts <spell>. <target> is/receives <status>" (+ Magic Burst)
+        case 203: case 205: case 230: case 266: case 267: case 269:         // no-actor echo forms (AoE targets 2..N)
+        case 270: case 272: case 277: case 278: case 279: case 280:
+            return true;
+        default: return false;
+    }
+}
+static bool is_damage_land_msg(unsigned m) {
+    switch (m) { case 2: case 252: case 264: case 265: return true; default: return false; }   // cast / Magic Burst / their no-actor echoes
+}
+static bool is_no_land_msg(unsigned m) {
+    switch (m) { case 75: case 283: case 85: case 284: case 653: case 654: case 655: case 656: return true; default: return false; }
+}
 // //aio dbflog : a countdown of target-debuff mutations still to trace to aiohud_debug.log (0 = off). File-scope
 // so the static record_* helpers can log too. Each traced line decrements it, so a capture self-limits.
 static int s_dbfTrace = 0;
@@ -983,7 +1014,7 @@ void PartyState::on_action(const unsigned char* p) {
                     // over your Phalanx II ; reversed on real data, same field/packet as the debuff path ~L1033). The status
                     // was NOT (re)applied, so it must NOT enter the cast ring : recording it left a phantom same-status cast
                     // that match_cast could pair to the live timer and mis-name/mis-own it. bstTab fallback ONLY when applied.
-                    else if (a == 0 && bstTab && mMsg != 75) st = bstTab;
+                    else if (a == 0 && bstTab && !is_no_land_msg(mMsg)) st = bstTab;
                     // DON'T let someone else's cast steal an attribution that is still YOURS. MEASURED 2026-07-20:
                     // all marches share status 214 and all madrigals 199, so when Ulmia/Joachim sang over the
                     // player, buffCaster_[214] went Tetsouo -> Ulmia -> Joachim while the player's OWN Honor March
@@ -1141,7 +1172,10 @@ void PartyState::on_action(const unsigned char* p) {
             // treated as having landed on you, which reassigns selfBuffSpell_ and files a phantom prediction in
             // selfCasts_ -- poisoning buff_caster_for and the "Mine only" filter -- and marks every ally copy
             // mirrorSelf, so they mirror a self timer that does not exist.
-            for (unsigned i = 0; i < nTgt; ++i) if (tgtIds[i] == selfId_ && tgtMsg[i] != 75) { aoeSelf = true; break; }
+            // is_no_land_msg, not a bare 75 : on an AoE the "<actor> casts" line is printed once, so target 2..N
+            // report the NO-ACTOR echo of the same verdict (283 = "No effect on <target>.") -- the same widening
+            // the debuff path needed for resists.
+            for (unsigned i = 0; i < nTgt; ++i) if (tgtIds[i] == selfId_ && !is_no_land_msg(tgtMsg[i])) { aoeSelf = true; break; }
             // //aio songlog : the song-duration model, with the INPUTS -- durMs alone only says the answer is wrong,
             // not which factor produced it. The equipped ids are dumped too : the whole m1 term is read out of the
             // gear AT PACKET TIME, so a Gearswap aftercast that beat us back to the idle set would silently erase it.
@@ -1216,7 +1250,7 @@ void PartyState::on_action(const unsigned char* p) {
                 // anyway, so a weaker re-cast added a SECOND row and the box showed two live timers for one
                 // buff. Same mistake the debuff path made until it started reading this field : the game
                 // already says whether a cast took, and a spell table cannot predict it.
-                if (tgtMsg[i] == 75) { DBFTRACE("OB no-effect tid=%08X spell=%u msg=75 -> not recorded", tid, sid); continue; }
+                if (is_no_land_msg(tgtMsg[i])) { DBFTRACE("OB no-effect tid=%08X spell=%u msg=%u -> not recorded", tid, sid, tgtMsg[i]); continue; }
                 const char* nm = pc_name_by_id(tid); if (!nm || !nm[0]) continue;   // the RELIABLE ally gate : resolves only real party/alliance members (PC ids don't all use the 0x01 mob top-byte)
                 // A landed cast REPLACES the effect that was there : Protect II on a target holding Protect III
                 // leaves ONE Protect, whichever tier -- the game keeps a single entry per status. Rows are keyed
@@ -1388,21 +1422,47 @@ void PartyState::on_action(const unsigned char* p) {
             if (off + 36 > size * 8) break;                // past the packet
             const u32 tid = getbits(p, off, 32, size);
             unsigned ac = getbits(p, off + 32, 4, size); off += 36;
-            u32 amsg = 0;                                  // the FIRST action's main message -- what `base + 80` used to read
+            u32 amsg = 0, aparam = 0;                      // the FIRST action's main message -- what `base + 80` used to read
             for (unsigned a = 0; a < ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound
                 if (off + 86 > size * 8) { off = size * 8; break; }
-                if (a == 0) amsg = getbits(p, off + 44, 10, size);
+                if (a == 0) { amsg = getbits(p, off + 44, 10, size); aparam = getbits(p, off + 27, 17, size); }
                 const unsigned hasAdd = getbits(p, off + 85, 1, size);
                 off += 86;
                 if (hasAdd) off += 37;                     // optional add-effect block
                 if (getbits(p, off, 1, size)) off += 35; else off += 1;   // optional spike block (+1 flag, +34 body)
             }
             if (tid && (tid >> 24) == 0x01) {              // a real server id (top byte 0x01)
-                DBFTRACE("DBF cat4-tgt tid=%08X msg=%u effect=%u self=%u", tid, amsg, de->effect, bySelf ? 1u : 0u);
-                // "No effect" (msg 75, reversed via //aio dbflog : land = 236, no-effect = 75) : the cast did NOT
-                // (re)apply -- the target resisted or already has it -> do NOT add or refresh its timer. Without
-                // this, recasting Sleep/Lullaby on an already-slept mob wrongly reset the countdown to full.
-                if (amsg == 75) continue;
+                DBFTRACE("DBF cat4-tgt tid=%08X msg=%u param=%u effect=%u self=%u", tid, amsg, aparam, de->effect, bySelf ? 1u : 0u);
+                // The cast did NOT (re)apply : resisted, immune, or the target already has it -> do NOT add or
+                // refresh its timer. Two failures, both seen in game : "no effect" (msg 75 -- recasting Sleep on
+                // an already-slept mob used to reset the countdown to full) and "<target> resists the spell"
+                // (msg 85 -- a resisted Distract, an Elegy on an earth elemental, both shown as if they landed).
+                if (is_no_land_msg(amsg)) { DBFTRACE("DBF no-land tid=%08X spell=%u msg=%u -> not recorded", tid, spellId, amsg); continue; }
+                // The two probes below do NOT reject -- they only report. A whitelist ("record only on a message
+                // known to mean it landed") is the fail-closed shape this code wants, but it cannot be turned on
+                // from a resource file, and turning it on blind would have silently killed working debuffs :
+                //   - is_status_land_msg's no-actor ECHO ids (an AoE's targets 2..N) are inferred from the message
+                //     TEXT, not measured -- a wrong guess = Sleepga/Horde Lullaby stop showing past target 1.
+                //   - `param == de->effect` looks airtight and is not : res/spells.lua and the tb_debuff table
+                //     disagree on 5 spells, and BOTH readings are defensible (Foe Lullaby -> "sleep" (2) or
+                //     "Lullaby" (193) ? Graviga -> "weight" (12), where res says "petrification" (7) and is
+                //     plainly wrong). Which one the SERVER names in param has never been captured.
+                // So: log the first occurrence of each, always-on, and tighten to a real whitelist once a capture
+                // says what the ids and the params actually are. A probe that only fires on the failure branch is
+                // the mistake this file has made before, so both branches below are reachable by normal play.
+                if (is_status_land_msg(amsg)) {
+                    if (aparam != de->effect) {
+                        static windower::debug::LogOnce<32> onceSt;         // one line per (spell,msg) -- never per cast
+                        if (onceSt.first((spellId << 10) | (amsg & 0x3FF)))
+                            windower::debug::log("DBF spell %u msg %u : server names status %u, tb_debuff table says %u -- recorded as %u (which is right ?)",
+                                                 spellId, amsg, aparam, de->effect, de->effect);
+                    }
+                } else if (!is_damage_land_msg(amsg)) {
+                    static windower::debug::LogOnce<32> onceMsg;
+                    if (onceMsg.first((spellId << 10) | (amsg & 0x3FF)))
+                        windower::debug::log("DBF spell %u : action message %u is in NEITHER land set (param=%u, table status=%u) -- recorded anyway. If that cast did NOT land, msg %u must join is_no_land_msg",
+                                             spellId, amsg, aparam, de->effect, amsg);
+                }
                 record_debuff(tdebuffs_, tid, de->effect, de->durSec * 1000u, bySelf, (unsigned short)spellId);
             }
         }
