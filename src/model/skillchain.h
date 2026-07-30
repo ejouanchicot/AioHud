@@ -114,6 +114,32 @@ inline bool sc_is_skillchain_msg(unsigned m) {
 inline bool sc_is_finish_msg(unsigned m) {
     return m == 110 || m == 185 || m == 187 || m == 317 || m == 802;   // "uses <WS>" / hits-with-add-effect finishes
 }
+// A category-3 action is a REAL WEAPONSKILL only when its target message is this one. THE ONE RULE, in one
+// place, because it already existed in two and they drifted -- which is this function's whole reason to exist.
+//
+// Category 3 carries damage JOB ABILITIES as well as weaponskills, and their action ids collide inside a shared
+// id space, so neither the category nor the id nor an ability-table lookup can separate them:
+//     46 = Shield Bash AND Expiacion    77 = Weapon Bash AND Ruinator
+//     66 = Jump        AND Gale Axe     67 = High Jump   AND Avalanche Axe
+//     45 = Mug         AND Atonement   228 = Despoil     AND Final Paradise
+// A Paladin genuinely has both 46s, so excluding the id would silence a real weaponskill. The target message is
+// the only field that separates them.
+//
+// MEASURED, not assumed (//aio bcaptlog captures, 2026-07-26/27) : eleven distinct weaponskills across physical
+// and magical -- Savage Blade, Impulse Drive, Stardiver, Ruthless Stroke, Shark Bite, Evisceration, Mandalic
+// Stab, Aeolian Edge, Rudra's Storm, Ukko's Fury, Upheaval -- all report 185. Shield Bash reports 110 and Jump
+// reports 317, and both of those sit in sc_is_finish_msg above.
+//
+// That overlap is exactly the bug. sc_is_finish_msg is the OPEN gate for FIVE categories, and 110/187/802 are
+// there for the other four (pet ready moves, blood pacts, spells) -- so it cannot be narrowed globally without
+// killing skillchains that legitimately open. It must be narrowed only where the id space collides, i.e. for
+// category 3. The WS popup was given this rule on 2026-07-26 ; the skillchain box was not, so Shield Bash kept
+// opening a resonance window under Expiacion's properties. One predicate now, used by both.
+//
+// FAILS CLOSED, like the popup: a weaponskill whose message we have never seen opens nothing rather than
+// opening under a colliding ability's properties. If a legitimate weaponskill ever reports something else,
+// //aio doctor reports the suppression with the line to send back.
+inline bool sc_is_weaponskill_msg(unsigned m) { return m == 185; }
 
 // per-action property lookup (weapon skill / spell / mob TP / job ability / SCH element) -> the generated row, or 0.
 enum SCResource { SCR_WS = 0, SCR_SPELL, SCR_MOB, SCR_JA, SCR_ELEM };

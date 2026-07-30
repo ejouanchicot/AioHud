@@ -843,7 +843,15 @@ void PartyState::on_action(const unsigned char* p) {
                 // OPEN : a WS/ability FINISH message, OR a SCH ELEMENTAL SPELL cast while Immanence (470) is up (the
                 // reference addon's message_id==2 + chain_buff) -- the spell then acts as a step-1 skillchain opener.
                 const bool immanence = (scRes == SCR_SPELL && amsg == 2 && has_immanence(actor));
-                if (sc_is_finish_msg(amsg) || immanence) {
+                // Category 3 shares its id space with damage JOB ABILITIES (46 = Shield Bash AND Expiacion,
+                // 77 = Weapon Bash AND Ruinator), so it needs the strict weaponskill message -- otherwise
+                // /ja Shield Bash opened a resonance window under Expiacion's properties, which is what a
+                // player reported on 2026-07-27. The other four categories keep the broad finish set: 110 /
+                // 187 / 802 are there FOR them (pet ready moves, blood pacts, spells), and narrowing globally
+                // would kill skillchains that legitimately open. Same predicate as the WS popup below -- the
+                // rule lived in two places and only one of them was fixed, which is how this survived.
+                const bool opens = (scRes == SCR_WS) ? sc_is_weaponskill_msg(amsg) : sc_is_finish_msg(amsg);
+                if (opens || immanence) {
                     const SkillRow* sk = sc_skill_lookup(scRes, aid);
                     if (sk) sc_open(tid, aid, scRes, sk->prop, sk->delay);
                 }
@@ -901,7 +909,7 @@ void PartyState::on_action(const unsigned char* p) {
     // observed on a weaponskill here, so they now FAIL CLOSED: an unmeasured message produces no popup instead of a
     // popup under someone else's name. A missing popup is a strictly better error than a lying one, and the log
     // line below turns the first occurrence of a legitimate 110/187/802 weaponskill into a one-line fix.
-    const bool wsMsgIsReal = (wsMsg == 185);
+    const bool wsMsgIsReal = sc_is_weaponskill_msg(wsMsg);   // THE shared rule (skillchain.h) -- the literal 185 lived here AND nowhere else, so the skillchain box never got it
     if (cat == 3 && actor == selfId_ && sc_is_finish_msg(wsMsg) && !wsMsgIsReal) {
         static windower::debug::LogOnce<16> onceSup;   // one line per (id,msg), never per use -- and a FULL table goes quiet
         const u32 sid2 = getbits(p, 86, 16, size);
