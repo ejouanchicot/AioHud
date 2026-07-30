@@ -370,7 +370,7 @@ void PartyState::load_from_memory() {
 
     // JOB-CHANGE detection (Timers) : shadow every member's main/sub ; a change lists the id + clears their tracked
     // ally buffs. jobChanged_ is rebuilt each load (momentary : only the frame the job actually differs).
-    jobChangedN_ = 0;
+    jobChangedN_ = 0; selfMainJobChanged_ = 0;
     for (int i = 0; i < count; ++i) note_member_job(m[i]);
     for (int ap = 0; ap < 2; ++ap) for (int i = 0; i < alliN_[ap]; ++i) note_member_job(alli_[ap * 6 + i]);
 }

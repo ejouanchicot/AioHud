@@ -723,6 +723,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
               for (int c = 0; c < jcn; ++c) { int wj = 0;
                 for (int q = 0; q < fmN; ++q) { const bool drop = fm[q].self ? (jc[c] == meId) : (fm[q].target == jc[c]); if (!drop) { if (wj != q) fm[wj] = fm[q]; ++wj; } }
                 fmN = wj; } }
+            // YOU swapped MAIN job -> also drop the ALLY focus rows. Their buffs are still really up (only your own
+            // are stripped), but on BRD a Regen you cast as SCH is noise : you will not recast it, so it must not
+            // sit there counting down, and it must not raise an OUT alert when it finally wears. The model already
+            // cleared the tracked entries that seed these rows ; fm[] is static, so it needs telling too.
+            if (party().self_main_job_changed()) { int wj = 0;
+              for (int q = 0; q < fmN; ++q) if (fm[q].self) { if (wj != q) fm[wj] = fm[q]; ++wj; }
+              fmN = wj; }
             { int n2 = 0; const BuffTimer* bt2 = party().buff_timers(n2);                      // remember FOCUS buffs currently up on YOU (Self focus key 0x8000|st)
               for (int i = 0; i < n2; ++i) { const unsigned st = bt2[i].id;
                 if (focus_trace_live() && st < 1024 && !is_debuff_status(st) && meHas((int)st)) {

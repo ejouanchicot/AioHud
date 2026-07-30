@@ -570,6 +570,8 @@ struct PartyState {
     struct JobShadow { unsigned id; unsigned char mj, sj; unsigned seen; };
     JobShadow jobShadow_[24]; int jobShadowN_ = 0; unsigned jobShadowClock_ = 0;
     unsigned jobChanged_[24]; int jobChangedN_ = 0;
+    unsigned char selfMainJobChanged_ = 0;   // momentary, same lifetime as jobChanged_ : YOU swapped MAIN job on this load.
+    bool self_main_job_changed() const { return selfMainJobChanged_ != 0; }   // Timers also drops the ALLY focus rows on it -- they were seeded from the entries just cleared, and fm[] is static (it would outlive them and alert on a buff you can no longer cast).
     int job_changes(unsigned* out, int maxN) const { int n = jobChangedN_ < maxN ? jobChangedN_ : maxN; for (int i = 0; i < n; ++i) out[i] = jobChanged_[i]; return n; }
     void note_member_job(const PMember& mm) {   // called per member each load ; records the change into jobChanged_
         if (!mm.id) return;
@@ -589,9 +591,15 @@ struct PartyState {
         }
         jobShadow_[s].seen = clk;   // touch : this member is still around
         if (jobShadow_[s].mj != (unsigned char)mm.mjob || jobShadow_[s].sj != (unsigned char)mm.sjob) {
+            const bool mainChanged = (jobShadow_[s].mj != (unsigned char)mm.mjob);
             jobShadow_[s].mj = (unsigned char)mm.mjob; jobShadow_[s].sj = (unsigned char)mm.sjob;
             if (jobChangedN_ < 24) jobChanged_[jobChangedN_++] = mm.id;
             if (mm.id != selfId_) clear_other_buffs_for(mm.id);   // an ally's buffs dropped -> drop the tracked rows (self keeps none here)
+            // YOU changed MAIN job -> drop every buff you had put on allies. Those buffs are still really ON them
+            // (a job change strips only your OWN), so this is a DELIBERATE display choice, not a correctness fix :
+            // on BRD, the remaining time of a Regen you cast as SCH is noise -- you are not going to recast it.
+            // MAIN job only. A SUBjob swap (SCH/WHM -> SCH/BLM) leaves you able to recast, so those rows stay.
+            else if (mainChanged) { other_buffs_clear(); selfMainJobChanged_ = 1; }
         }
     }
     // zoning : true between the 0x00B (zone-out -> loading screen) and the next 0x00A (zone-in, new zone ready).
