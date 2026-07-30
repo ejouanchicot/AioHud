@@ -275,6 +275,12 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_72[] = {
+    { "*A resisted spell is no longer shown as if it had landed.* Casting Distract on a target that resists it -- or an Elegy on an earth elemental -- still put the debuff in the box, with a full countdown. The game announces a resist in a different way from a plain \"no effect\", and only that second one was recognised : every other way it has of saying nothing happened was being read as a success. All of them are now understood, on debuffs and on buffs alike.",
+      "*Un sort resiste n'est plus affiche comme s'il avait pris.* Lancer un Distract sur une cible qui y resiste -- ou une Elegy sur un elemental de terre -- ajoutait quand meme le debuff dans la boite, avec un decompte complet. Le jeu annonce un resist autrement qu'un simple \"aucun effet\", et seul ce second cas etait reconnu : toutes les autres facons qu'il a de dire que rien ne s'est passe etaient lues comme une reussite. Elles sont desormais toutes comprises, sur les debuffs comme sur les buffs." },
+    { "*Changing job now clears the buffs you had put on your party.* Your own buffs vanish on a job change because the game removes them, but the ones you had cast on the others kept counting down -- and on BRD, the time left on a Regen you cast as SCH is not something you are going to act on. They now leave with the job, along with any alert watching them. Changing only your support job keeps them, since you can still recast.",
+      "*Changer de job efface desormais les buffs que vous aviez poses sur votre groupe.* Vos propres buffs disparaissent lors d'un changement de job parce que le jeu les retire, mais ceux que vous aviez lances sur les autres continuaient leur decompte -- et en BRD, le temps restant d'un Regen lance en SCH n'est pas une information sur laquelle vous allez agir. Ils s'en vont maintenant avec le job, ainsi que toute alerte qui les surveillait. Changer seulement de job de support les conserve, puisque vous pouvez toujours relancer." },
+};
 static const ChangeLine CL_71[] = {
     { "*The updater now checks the download before installing it.* Each release is published with a checksum, and the update is compared against it and refused if it does not match -- nothing is written over your Windower folder unless the file is exactly the one that was built. If a release ever arrives without a checksum, the update stops and says so rather than installing on trust.",
       "*La mise a jour verifie desormais le telechargement avant de l'installer.* Chaque version est publiee avec une empreinte, la mise a jour est comparee a celle-ci et refusee si elle ne correspond pas -- rien n'est ecrit dans votre dossier Windower tant que le fichier n'est pas exactement celui qui a ete compile. Si une version arrive un jour sans empreinte, la mise a jour s'arrete et le dit, plutot que d'installer sur parole." },
@@ -460,6 +466,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.72", CL_72, (int)(sizeof(CL_72) / sizeof(CL_72[0])) },
     { "1.0.71", CL_71, (int)(sizeof(CL_71) / sizeof(CL_71[0])) },
     { "1.0.70", CL_70, (int)(sizeof(CL_70) / sizeof(CL_70[0])) },
     { "1.0.69", CL_69, (int)(sizeof(CL_69) / sizeof(CL_69[0])) },
