@@ -159,13 +159,24 @@ void PartyState::omen_state_dump(const char* why) {
     if (!shown) windower::debug::log("OMENSTATE   (no objectives held -- the box shows no rows)");
 }
 
+// One state dump per bonus window when it EXPIRES, not one per failed objective (a ten-slot floor prints ten
+// "You have failed to ..." lines in a row). Cleared whenever a new window opens.
+static bool s_omenFailDumped = false;
+
 void PartyState::on_omen_text(const char* s) {
     if (!s) { OTRACE("OMEN drop: null line"); return; }
     if (zt_.mode != 3) { OTRACE("OMEN drop: mode=%d (not Omen, zone=%d) | %s", zt_.mode, zt_.curZone, s); return; }
 
     // The floor you are LEAVING, captured before anything overwrites it -- that snapshot is the evidence for
     // "these rows never validated", and after the wipe it is gone for good.
-    if (omen_is_new_floor_line(s)) omen_state_dump("end of floor -- about to wipe");
+    if (omen_is_new_floor_line(s)) { omen_state_dump("end of floor -- about to wipe"); s_omenFailDumped = false; }
+
+    // The slot as it stood BEFORE the fold, so the trace can show the STEP the server just announced. Logging
+    // only the new total hides where the surprises are: an AoE ability counting per foe moved slot 3 from 1 to 4
+    // in a single line on 2026-07-30, which reads exactly like a parser dropping two lines until the trace can
+    // show that the server itself skipped 2 and 3.
+    int prevCur = 0;
+    { const OmenLine P = omen_parse_line(s); if (P.slot >= 1 && P.slot <= 10) prevCur = zt_.omen[P.slot - 1].cur; }
 
     // THE SLOTS, in ONE call, for EVERY line -- wipe included. Splitting "which line resets the objectives" away
     // from "which line updates them" is precisely what produced the reported bug, so the two decisions now live
@@ -177,11 +188,18 @@ void PartyState::on_omen_text(const char* s) {
     if (s[0] >= '1' && s[0] <= '9') {                              // "N: <objective>" line
         const OmenLine L = omen_parse_line(s);
         if (!L.slot) { OTRACE("OMEN drop: bad slot header | %s", s); return; }
-        if (L.fail)  { OTRACE("OMEN fail line, slot=%d | %s", L.slot, s); return; }        // fail line -> ignore
+        if (L.fail)  {
+            // The window closed on this objective. This is the ABANDONED-floor path, and no capture has ever
+            // reached it in a state worth reading -- the 2026-07-30 run gave every floor its window and ended on
+            // a clear -- so dump the box once here, the moment the game says the floor was not finished.
+            if (!s_omenFailDumped) { s_omenFailDumped = true; omen_state_dump("bonus window EXPIRED -- objectives failed"); }
+            OTRACE("OMEN fail line, slot=%d | %s", L.slot, s); return;                     // fail line -> ignore
+        }
         if (!L.type) { OTRACE("OMEN drop: slot=%d eval=%d NO TYPE MATCH | %s", L.slot, (int)L.eval, s); return; }
         const OmenObj& o = zt_.omen[L.slot - 1];
-        OTRACE("OMEN slot=%d %s type=%d('%s') letter=%c num=%d -> cur=%d req=%d | %s",
-               L.slot, L.eval ? "EVAL" : "init", L.type, omen_short(L.type), L.letter ? L.letter : '?', L.num, o.cur, o.req, s);
+        OTRACE("OMEN slot=%d %s type=%d('%s') letter=%c num=%d -> cur=%d->%d step=%d req=%d | %s",
+               L.slot, L.eval ? "EVAL" : "init", L.type, omen_short(L.type), L.letter ? L.letter : '?', L.num,
+               prevCur, o.cur, o.cur - prevCur, o.req, s);
         zt_save();
         return;
     }
@@ -195,7 +213,21 @@ void PartyState::on_omen_text(const char* s) {
     if (strstr(s, " omen")) { const int n = omen_first_num(s); if (n >= 0) { zt_.omens = n; zt_save(); } OTRACE("OMEN omens=%d | %s", n, s); return; }
     if (strstr(s, "spectral light flares up")) { zt_.omenCleared = 1; zt_save(); OTRACE("OMEN floor CLEARED | %s", s); return; }
     if (strstr(s, "light shall come even if you fail")) { omen_set_floor(zt_, "Free Floor!"); zt_save(); OTRACE("OMEN free floor (objectives wiped=%d) | %s", (int)wiped, s); return; }
-    if (strstr(s, "Vanquish") || strstr(s, "treasure portent")) { omen_set_floor(zt_, s); zt_save(); OTRACE("OMEN floor objective (objectives wiped=%d) | %s", (int)wiped, s); return; }
+    if (strstr(s, "Vanquish") || strstr(s, "treasure portent")) {
+        // The banner is RE-BROADCAST all floor long -- one floor of the 2026-07-30 run printed it seven times --
+        // so only a CHANGE is news. It is also the ONE line that says whether the floor carries a bonus at all,
+        // and that classification (the Kin/Gin/Kei/Kyou/Fu/Ou + Craver/Gorger/Thinker + Treasure list) has never
+        // been exercised against the game: no boss, mid-boss or treasure floor has yet been captured. Naming it
+        // here is what will settle it on the next run, whichever way it goes.
+        char now[48]; omen_clean_text(s, now, (int)sizeof(now));
+        const bool changed = (lstrcmpA(now, zt_.floorObj) != 0);
+        omen_set_floor(zt_, s); zt_save();
+        if (changed) OTRACE("OMEN FLOOR CHANGE -> '%s' bonusFloor=%d (objectives wiped=%d) | %s",
+                            now, (int)omen_floor_has_bonus(now), (int)wiped, s);
+        else         OTRACE("OMEN floor banner repeat, bonusFloor=%d (objectives wiped=%d) | %s",
+                            (int)omen_floor_has_bonus(now), (int)wiped, s);
+        return;
+    }
     OTRACE("OMEN drop: no rule matched | %s", s);
 }
 

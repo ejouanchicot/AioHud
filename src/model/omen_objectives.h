@@ -80,16 +80,32 @@ inline OmenLine omen_parse_line(const char* s) {
     return L;
 }
 
+// Is this objective's number a PER-ATTEMPT damage report rather than a running total?
+//
+// Types 1-4 are the "reduce your foe's HP by at least N in a single ..." family, and the game reports EVERY
+// attempt: one auto-attack chain in the 2026-07-30 capture walked 659, 998, 1055, 1175, 1703 through slot 7.
+// The counting types (spells, weapon skills, abilities, ...) instead send the running total, which is
+// authoritative and must be taken exactly as stated -- it can even JUMP (an AoE ability counting per foe took
+// slot 3 straight from 1 to 4, with no line in between), so clamping those to +1 would be wrong.
+inline bool omen_is_damage_type(int t) { return t >= 1 && t <= 4; }
+
 // Fold a parsed line into the slot array.
 //
 // A progress line sets the COUNT ONLY. It must never touch req : for a damage objective the game reports what
 // you actually dealt ("You have reduced your foe's HP by 455 in a single auto-attack." against a 2000 target),
 // so taking its number as the requirement would declare every such objective complete on the first hit.
+//
+// And for those same damage objectives the progress is the BEST attempt so far, not the latest : assigning the
+// latest makes the bar walk BACKWARDS the moment a weaker hit lands after a strong one. The 2026-07-30 capture
+// only ever climbed, by luck, so the box never showed it -- the rule is still wrong.
 inline void omen_apply_line(OmenObj* objs, const OmenLine& L) {
     if (!objs || L.slot < 1 || L.slot > 10 || !L.type || L.fail) return;
     OmenObj& o = objs[L.slot - 1];
     if (L.eval) {
-        if (L.num >= 0) o.cur = L.num;
+        // Keep the best only while the slot still holds the SAME objective -- a stale high value from a
+        // different objective must not survive into the one that replaced it.
+        const bool worse = omen_is_damage_type(L.type) && o.type == L.type && L.num < o.cur;
+        if (L.num >= 0 && !worse) o.cur = L.num;
         if (o.type == 0) { o.type = L.type; o.req = -1; }        // joined mid-floor : count known, target not
     } else {
         if (o.type != L.type) o.cur = 0;                          // a DIFFERENT objective now occupies this slot

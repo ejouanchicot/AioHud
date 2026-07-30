@@ -306,6 +306,22 @@ static int g_omenRaw = 0;
 // packet bodies would burn its budget in seconds and still miss the floor change.
 static unsigned g_omenPkt[512] = {0};
 static bool     g_omenPktOn = false;
+// The zone-tracker mode the census last saw, so that LEAVING Omen can dump itself. The 2026-07-30 capture lost
+// the histogram outright because the run ended and nobody typed //aio omenstate -- a probe whose only output
+// depends on a human remembering a second command is a probe that reports nothing.
+static int      g_omenPktMode = -1;
+
+// The histogram, plus an explicit verdict when it is empty. "None seen" is a RESULT and must be stated : silence
+// here reads exactly like "the census never ran".
+static void omen_census_dump()
+{
+    int kinds = 0;
+    for (int i = 0; i < 512; ++i) if (g_omenPkt[i]) {
+        ++kinds; windower::debug::log("OMENPKT 0x%03X x%u", i, g_omenPkt[i]);
+    }
+    windower::debug::log("OMENPKT census: %d distinct packet id(s) seen inside Omen (census %s)",
+                         kinds, g_omenPktOn ? "on" : "OFF -- run //aio omenparse first");
+}
 
 void aio_plugin_packet_in(u32 a, u32 b, u32 c, u32 d)
 {
@@ -337,8 +353,19 @@ void aio_plugin_packet_in(u32 a, u32 b, u32 c, u32 d)
     feed_packet(id, pkt);
 
     // //aio omenparse : count, don't dump. Only inside Omen (mode 3), so the histogram is about THIS content and
-    // not about standing in a city. Read back by //aio omenstate.
-    if (g_omenPktOn && id >= 0 && id < 512 && aio::party().zone_tracker().mode == 3) ++g_omenPkt[id];
+    // not about standing in a city. Read back by //aio omenstate -- or, since 2026-07-30, by simply leaving.
+    if (g_omenPktOn) {
+        const int zm = aio::party().zone_tracker().mode;
+        if (zm == 3 && id >= 0 && id < 512) ++g_omenPkt[id];
+        // Zoning OUT of Omen is the moment the census is complete AND the last floor is still in the slots, so
+        // the whole capture closes itself. Guarded on the previous mode: this fires once per exit, not per packet.
+        if (g_omenPktMode == 3 && zm != 3) {
+            windower::debug::log("=== OMEN run ENDED (left the zone) -- auto-dumping the final state + packet census ===");
+            aio::party().omen_state_dump("left Omen -- final floor");
+            omen_census_dump();
+        }
+        g_omenPktMode = zm;
+    }
 
 #ifdef AIOHUD_PROBES
     __try { aio::probes::packet_in(a, b, c, d, id, pkt); } __except (EXCEPTION_EXECUTE_HANDLER) {}   // dev-only armed probes (SEH-guarded)
@@ -348,7 +375,24 @@ void aio_plugin_packet_in(u32 a, u32 b, u32 c, u32 d)
 // slot 9 : INCOMING TEXT (original, modified, mode). Read-only use : we read `original` (the chat line) + `*mode`
 // (161 = Omen objective color) and NEVER touch `modified`/`mode` -> the line is not blocked/altered (blocking is
 // done by emptying `modified`, not by the return value). SEH-guarded : a bad text pointer must never fault the game.
-void aio_plugin_text_in(const char* original, char* /*modified*/, int* mode)
+// Is another text handler running BEFORE us on this line, and what did it do to it?
+//
+// BattleMod (and any addon that reformats combat text) sits on the SAME chain and is handed the SAME `modified`
+// buffer, so "we read `original`, therefore we are immune" is a claim, not a fact -- and the corroboration
+// channel below depends on it. This states the answer in the log instead: `modified` still equal to `original`
+// means nothing has touched the line before us, a different `modified` means we are downstream of a reformatter
+// (harmless -- we never read it), and an EMPTY `modified` is a line somebody upstream BLOCKED.
+//
+// The one thing it cannot show is a line dropped so early that this callback never fires at all. If a skillchain
+// happens with no OMENCORR line and no OMENCHAIN line either, that -- not silence -- is the signature.
+static void omen_chain_note(const char* original, const char* modified)
+{
+    if (!modified || !valid_ptr((u32)modified)) { windower::debug::log("OMENCHAIN modified=<unreadable> | %s", original); return; }
+    if (!modified[0])                           { windower::debug::log("OMENCHAIN BLOCKED upstream (modified emptied) | %s", original); return; }
+    if (lstrcmpA(modified, original))             windower::debug::log("OMENCHAIN rewritten upstream -> '%s' | %s", modified, original);
+}
+
+void aio_plugin_text_in(const char* original, char* modified, int* mode)
 {
     tid_once("text_in");
     __try {
@@ -367,7 +411,17 @@ void aio_plugin_text_in(const char* original, char* /*modified*/, int* mode)
         // enough to prove nothing Omen-shaped hides in an unexpected colour. The sample ANNOUNCES its own end:
         // a probe that goes quiet reads exactly like a bug that stopped happening.
         if (aio::omen_trace_active()) {
-            if (mm == 161) windower::debug::log("OMENRAW mode=%d (masked %d) | %s", m, mm, original);
+            if (mm == 161) { windower::debug::log("OMENRAW mode=%d (masked %d) | %s", m, mm, original); omen_chain_note(original, modified); }
+            // CORROBORATION, and deliberately NOT part of the sample budget. The 2026-07-30 run showed slot 1 go
+            // from 0/2 to 2/2 with no "You have executed 1 skillchain" line in between, and the log could not say
+            // whether the player did two skillchains and the server announced only one, or one skillchain counted
+            // twice -- because the blind sample had run dry 111 lines earlier, right before the moment in
+            // question. A bounded sample cannot answer a question about a specific event; these two lines are
+            // low-volume (one per skillchain / per burst) and map straight onto objective types 10 and 9, so they
+            // get their own unbudgeted channel and the next run settles it.
+            else if (aio::party().zone_tracker().mode == 3 &&
+                     (strstr(original, "Skillchain:") || strstr(original, "Magic Burst")))
+                { windower::debug::log("OMENCORR mode=%d | %s", mm, original); omen_chain_note(original, modified); }
             else if (g_omenRaw > 0) {
                 --g_omenRaw;
                 windower::debug::log("OMENRAW mode=%d (masked %d) | %s", m, mm, original);
@@ -963,24 +1017,23 @@ static void aio_command_dispatch(const char* cmd)
         // exactly where the interesting floor transition was. Mode 161 is unbudgeted in the callback ; this bounds
         // the parse side, which emits at most one line per objective line.
         aio::party().set_omen_trace(8000);
-        g_omenRaw = 400;                                   // NON-161 sample only -- combat spam, bounded on purpose
+        // 100, down from 400. The 2026-07-30 capture spent its 400 across 30+ other modes and found NOTHING
+        // Omen-shaped outside 161 -- even the "Records of Eminence: Vanquish ..." lines, the one wording that
+        // could confuse the floor banner, arrive in mode 127 and never reach the parser. That question is
+        // answered ; what is left is a small re-confirmation, not a survey.
+        g_omenRaw = 100;
         for (int i = 0; i < 512; ++i) g_omenPkt[i] = 0;
         g_omenPktOn = true;
+        g_omenPktMode = aio::party().zone_tracker().mode;
         // ARMED goes in the LOG, not just the console : the first attempt at this probe was shadowed by another
         // command and produced an empty capture, which is indistinguishable from "the lines never came".
-        windower::debug::log("=== OMENPARSE armed : mode-161 unlimited, 8000 parse lines, 400 other-mode samples, packet census ON ===");
-        g_host.console().print(">>> AioHud : Omen capture ARMED for a FULL RUN. At the end, run //aio omenstate, then send Windower\\plugins\\aiohud_debug.log <<<");
+        windower::debug::log("=== OMENPARSE armed : mode-161 unlimited, OMENCORR (Skillchain/Magic Burst) unlimited, 8000 parse lines, 100 other-mode samples, packet census ON, auto-dump on leaving Omen ===");
+        g_host.console().print(">>> AioHud : Omen capture ARMED for a FULL RUN. It closes itself when you leave the zone -- then send Windower\\plugins\\aiohud_debug.log <<<");
         return;
     }
     if (strstr(buf, "omenstate")) {   // //aio omenstate -> the ten slots as the BOX sees them + the Omen packet census
         aio::party().omen_state_dump("on demand");
-        int kinds = 0;
-        for (int i = 0; i < 512; ++i) if (g_omenPkt[i]) {
-            ++kinds; windower::debug::log("OMENPKT 0x%03X x%u", i, g_omenPkt[i]);
-        }
-        // "None seen" is a RESULT and must be stated. Silence here would read as "the census did not run".
-        windower::debug::log("OMENPKT census: %d distinct packet id(s) seen inside Omen (census %s)",
-                             kinds, g_omenPktOn ? "on" : "OFF -- run //aio omenparse first");
+        omen_census_dump();
         g_host.console().print(">>> AioHud : Omen state + packet census written to Windower\\plugins\\aiohud_debug.log (OMENSTATE / OMENPKT lines) <<<");
         return;
     }

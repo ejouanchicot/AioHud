@@ -74,6 +74,39 @@ void test_omen() {
     feed(o, OM("7: You have reduced your foe's HP by 1750 in a single auto-attack."));
     CHECK_EQ(o[6].cur, 1750); CHECK(!omen_done(o[6]));
 
+    SECTION("omen : a damage objective keeps its BEST attempt, it never walks backwards");
+
+    // The game reports EVERY attempt, not the best so far -- slot 7 of the 2026-07-30 run went 659, 998, 1055,
+    // 1175, 1703 through five separate auto-attacks. That capture only ever climbed, so assigning the latest
+    // looked correct; the very next weaker hit would have dragged the bar back down in front of the player.
+    omen_reset(o);
+    feed(o, OM("7: Reduce your foe's HP by at least 2000 in a single auto-attack."));
+    feed(o, OM("7: You have reduced your foe's HP by 1703 in a single auto-attack."));
+    CHECK_EQ(o[6].cur, 1703);
+    feed(o, OM("7: You have reduced your foe's HP by 659 in a single auto-attack."));
+    CHECK_EQ(o[6].cur, 1703);                                  // the weak hit is not progress
+    feed(o, OM("7: You have reduced your foe's HP by 2100 in a single auto-attack."));
+    CHECK_EQ(o[6].cur, 2100); CHECK(omen_done(o[6]));           // a better one still is
+
+    // A COUNTING objective is the opposite case: its number is the running total the server keeps, so it is
+    // taken exactly as stated -- including a jump, which an AoE ability counting per foe really produced
+    // (slot 3 went straight from 1 to 4, with no line in between, in the same run).
+    omen_reset(o);
+    feed(o, OM("3: Use 4 abilities on your foes."));
+    feed(o, OM("3: You have used 1 ability on your foes."));    CHECK_EQ(o[2].cur, 1);
+    feed(o, OM("3: You have used 4 abilities on your foes."));
+    CHECK_EQ(o[2].cur, 4); CHECK(omen_done(o[2]));
+
+    // And a damage slot REPLACED by another objective starts from zero -- the best-attempt rule must not carry
+    // a stale high value across.
+    omen_reset(o);
+    feed(o, OM("7: Reduce your foe's HP by at least 2000 in a single auto-attack."));
+    feed(o, OM("7: You have reduced your foe's HP by 1900 in a single auto-attack."));
+    feed(o, OM("7: Reduce your foe's HP by at least 30000 using a single weapon skill."));
+    CHECK_EQ(o[6].type, 1); CHECK_EQ(o[6].cur, 0); CHECK_EQ(o[6].req, 30000);
+    feed(o, OM("7: You have reduced your foe's HP by 800 using a single weapon skill."));
+    CHECK_EQ(o[6].cur, 800);
+
     SECTION("omen : all ten objective types of the captured floor classify correctly");
 
     // Floor B, exactly as captured: ten objectives, announced right after the 600 s window opened.
