@@ -3,6 +3,8 @@
 // nyzul_remaining/omen_short methods + their packet handlers (on_2a/on_55/on_118/on_034/on_00e)
 // and the file-static helpers used only by them. See party_state.h for the ZoneTracker struct.
 #include "model/party_state.h"
+#include "model/limbus_week.h"   // limbus_week_rolled : the Sunday 15:00 UTC allowance rollover
+#include <time.h>              // time() : UTC epoch stamp on the weekly allowance
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared packet readers)
 #include "model/paths.h"                  // plugin_path (the zone-cache path)
 #include "model/game_mem.h"               // key_items_base (Limbus run baseline : the run's KIs) + entity_name_by_index
@@ -44,7 +46,10 @@ static int limbus_ki_owned() {
 // ---- Limbus coffer history : its OWN file. The zone cache cannot hold this (single shared file, restored only
 // when curZone matches -> a Dynamis run in between would wipe it). Version tag embeds the struct size so a layout
 // change auto-invalidates, same trick as ZT_CACHE_VER.
-static const int LC_VER = (int)(0x4C430000u | ((sizeof(LimbusCoffers) * 2) & 0xFFFF));
+// The version encodes the on-disk SIZE, so adding a field to either struct invalidates old files automatically
+// rather than reading them as garbage. LimbusWeek is part of the image now (the weekly allowance is account-wide,
+// so it sits beside the two per-area coffer records, not inside them).
+static const int LC_VER = (int)(0x4C430000u | ((sizeof(LimbusCoffers) * 2 + sizeof(LimbusWeek)) & 0xFFFF));
 // PER-CHARACTER cache paths. These files used to be ONE PER INSTALL ("zone.bin" / "limbus.bin"), so every
 // character on the same Windower shared them : the last one to save won, and the next character loaded its
 // values -- Kaories' Temenos units showing up on Tetsouo. Key them on the character's server id.
@@ -93,69 +98,105 @@ void PartyState::lc_save() const {
     DWORD w = 0; int ver = LC_VER;
     WriteFile(h, &ver, sizeof(ver), &w, 0);
     WriteFile(h, lc_, sizeof(lc_), &w, 0);
+    WriteFile(h, &lw_, sizeof(lw_), &w, 0);
     CloseHandle(h);
 }
 void PartyState::lc_load() {
     char path[300]; if (!char_cache_path("limbus", path, sizeof(path))) return;
     HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (h == INVALID_HANDLE_VALUE) return;
-    int ver = 0; LimbusCoffers c[2]; DWORD got = 0;
+    int ver = 0; LimbusCoffers c[2]; LimbusWeek w{}; DWORD got = 0;
     if (ReadFile(h, &ver, sizeof(ver), &got, 0) && got == sizeof(ver) && ver == LC_VER &&
-        ReadFile(h, c, sizeof(c), &got, 0) && got == sizeof(c)) { lc_[0] = c[0]; lc_[1] = c[1]; }
+        ReadFile(h, c, sizeof(c), &got, 0) && got == sizeof(c)) {
+        lc_[0] = c[0]; lc_[1] = c[1];
+        // The allowance is OPTIONAL on read : a file written by the previous layout stops here, and losing the
+        // count is harmless (it re-reports as a full week until the game says otherwise).
+        if (ReadFile(h, &w, sizeof(w), &got, 0) && got == sizeof(w)) lw_ = w;
+    }
     CloseHandle(h);
 }
 
-// OMEN : parse a mode-161 objective line (ported from the Omen addon's text patterns). The number wanted is the one
-// preceding a keyword starting with the type's "check letter" (the addon's `check` pattern) -> skips the leading "N:".
-static int omen_num_before(const char* s, char letter) {
-    for (int i = 0; s[i]; ) {
-        if (s[i] >= '0' && s[i] <= '9') {
-            long v = 0; int j = i; while (s[j] >= '0' && s[j] <= '9') { v = v * 10 + (s[j] - '0'); ++j; }
-            int k = j; while (s[k] == ' ') ++k;
-            if (s[k] == letter) return (int)v;
-            i = j;
-        } else ++i;
+// OMEN : every text RULE lives in model/omen_objectives.h, pure and offline-testable (tests/t_omen.cpp replays a
+// real capture through them). What stays here is the part that cannot be pure : the mode gate, the tick stamp,
+// the trace and the save.
+const char* PartyState::omen_short(int t) { return omen_short_name(t); }
+static void omen_reset_objs(ZoneTracker& zt) { omen_reset(zt.omen); }
+static void omen_set_floor(ZoneTracker& zt, const char* s) { omen_clean_text(s, zt.floorObj, (int)sizeof(zt.floorObj)); }
+
+// //aio omenparse : countdown of Omen text lines still to trace to aiohud_debug.log (0 = off). The SUCCESS path is
+// instrumented too, and every reject says WHY it rejected -- an objective that silently never validates and one
+// whose line never arrives read identically in the box, and that is the whole question this probe answers.
+static int s_omenTrace = 0;
+void PartyState::set_omen_trace(int n) { s_omenTrace = n; }
+bool omen_trace_active() { return s_omenTrace > 0; }
+#define OTRACE(...) do { if (s_omenTrace > 0) { --s_omenTrace; windower::debug::log(__VA_ARGS__); \
+                         if (s_omenTrace == 0) windower::debug::log("=== OMENPARSE parse budget spent -- re-arm with //aio omenparse ==="); } } while (0)
+
+// What the BOX holds right now, in the log, next to the chat lines that produced it. The entire bug class here is
+// "the chat said the objective was done and the box disagreed", and until this existed the two halves of that
+// sentence lived in different places -- the log had the text, only a screenshot had the box. Dumped on every
+// floor transition (BEFORE the wipe, so the floor you just left is preserved) and on demand via //aio omenstate.
+void PartyState::omen_state_dump(const char* why) {
+    if (s_omenTrace <= 0) return;                       // only while a capture is running
+    const bool known = (zt_.omenBonusMs != 0);
+    int left = zt_.omenBonusSec - (int)((GetTickCount() - zt_.omenBonusMs) / 1000u);
+    if (left < 0) left = 0;
+    windower::debug::log("OMENSTATE [%s] floor='%s' bonusFloor=%d omens=%d window=%s cleared=%d",
+                         why ? why : "?", zt_.floorObj, (int)omen_floor_has_bonus(zt_.floorObj), zt_.omens,
+                         known ? "known" : "NEVER ANNOUNCED", (int)zt_.omenCleared);
+    if (known) windower::debug::log("OMENSTATE   window %d:%02d left (announced %ds)", left / 60, left % 60, zt_.omenBonusSec);
+    int shown = 0;
+    for (int i = 0; i < 10; ++i) {
+        const OmenObj& o = zt_.omen[i];
+        if (!o.type) continue;
+        ++shown;
+        char req[16]; if (o.req < 0) { req[0] = '?'; req[1] = '?'; req[2] = '?'; req[3] = 0; } else wsprintfA(req, "%d", o.req);
+        const bool done = omen_done(o);
+        const bool fail = (known && left < 1 && o.req > 0 && o.cur < o.req);
+        windower::debug::log("OMENSTATE   %2d: %-14s [%d/%s] %s", i + 1, omen_short_name(o.type), o.cur, req,
+                             done ? "DONE (green)" : (fail ? "FAILED (red)" : "open"));
     }
-    return -1;
+    if (!shown) windower::debug::log("OMENSTATE   (no objectives held -- the box shows no rows)");
 }
-static int omen_first_num(const char* s) {
-    for (int i = 0; s[i]; ++i) if (s[i] >= '0' && s[i] <= '9') { long v = 0; while (s[i] >= '0' && s[i] <= '9') { v = v * 10 + (s[i] - '0'); ++i; } return (int)v; }
-    return -1;
-}
-static const char* OMEN_SHORT[15] = { "", "WS Damage", "MB Damage", "Non-MB Nuke", "Melee Round", "Kills",
-    "Critical Hits", "Abilities", "Spells", "Magic Bursts", "Skillchains", "All WS", "Physical WS", "Magic WS", "500 HP Cures" };
-const char* PartyState::omen_short(int t) { return (t >= 1 && t <= 14) ? OMEN_SHORT[t] : ""; }
-static void omen_reset_objs(ZoneTracker& zt) { for (int k = 0; k < 10; ++k) zt.omen[k] = ZoneTracker::OmenObj{}; }
-static void omen_set_floor(ZoneTracker& zt, const char* s) { int w = 0; for (int i = 0; s[i] && w < 47; ++i) { char c = s[i]; if (c >= 0x20 && c < 0x7F) zt.floorObj[w++] = c; } zt.floorObj[w] = 0; }
 
 void PartyState::on_omen_text(const char* s) {
-    if (zt_.mode != 3 || !s) return;
+    if (!s) { OTRACE("OMEN drop: null line"); return; }
+    if (zt_.mode != 3) { OTRACE("OMEN drop: mode=%d (not Omen, zone=%d) | %s", zt_.mode, zt_.curZone, s); return; }
+
+    // The floor you are LEAVING, captured before anything overwrites it -- that snapshot is the evidence for
+    // "these rows never validated", and after the wipe it is gone for good.
+    if (omen_is_new_floor_line(s)) omen_state_dump("end of floor -- about to wipe");
+
+    // THE SLOTS, in ONE call, for EVERY line -- wipe included. Splitting "which line resets the objectives" away
+    // from "which line updates them" is precisely what produced the reported bug, so the two decisions now live
+    // in the same pure function (model/omen_objectives.h, replayed in tests/t_omen.cpp). Everything below only
+    // handles what a pure function cannot: the tick stamp, the banner text, the trace and the save.
+    const bool wiped = omen_feed_slots(zt_.omen, s, zt_.omenCleared != 0);
+    if (wiped) zt_.omenCleared = 0;
+
     if (s[0] >= '1' && s[0] <= '9') {                              // "N: <objective>" line
-        int slot = 0, i = 0; while (s[i] >= '0' && s[i] <= '9') { slot = slot * 10 + (s[i] - '0'); ++i; }
-        if (s[i] != ':' || slot < 1 || slot > 10) return;
-        if (strstr(s, "You have failed")) return;                  // fail line -> ignore
-        const bool eval = strstr(s, "You have") != 0;
-        struct T { const char* sub; int id; char c; };
-        static const T TT[] = {                                    // distinctive tails, specific-first ; c = check letter
-            { "without performing a magic burst", 3, 'u' }, { "single magic burst", 2, 'u' }, { "single weapon skill", 1, 'u' },
-            { "single auto-attack", 4, 'i' }, { "killchain", 10, 's' }, { "elemental weapon", 13, 'e' }, { "physical weapon", 12, 'p' },
-            { "weapon skill", 11, 'w' }, { "critical", 6, 'c' }, { "magic burst", 9, 'm' }, { "anquish", 5, 'f' },
-            { "500 HP", 14, 't' }, { "pell", 8, 's' }, { "bilit", 7, 'a' } };
-        int typeId = 0; char letter = 0;
-        for (unsigned k = 0; k < sizeof(TT) / sizeof(TT[0]); ++k) if (strstr(s, TT[k].sub)) { typeId = TT[k].id; letter = TT[k].c; break; }
-        if (!typeId) return;
-        const int num = omen_num_before(s, letter);
-        ZoneTracker::OmenObj& o = zt_.omen[slot - 1];
-        if (eval) { if (num >= 0) o.cur = num; if (o.type == 0) { o.type = typeId; o.req = -1; } }
-        else      { if (o.type != typeId) o.cur = 0; o.type = typeId; if (num >= 0) o.req = num; }
+        const OmenLine L = omen_parse_line(s);
+        if (!L.slot) { OTRACE("OMEN drop: bad slot header | %s", s); return; }
+        if (L.fail)  { OTRACE("OMEN fail line, slot=%d | %s", L.slot, s); return; }        // fail line -> ignore
+        if (!L.type) { OTRACE("OMEN drop: slot=%d eval=%d NO TYPE MATCH | %s", L.slot, (int)L.eval, s); return; }
+        const OmenObj& o = zt_.omen[L.slot - 1];
+        OTRACE("OMEN slot=%d %s type=%d('%s') letter=%c num=%d -> cur=%d req=%d | %s",
+               L.slot, L.eval ? "EVAL" : "init", L.type, omen_short(L.type), L.letter ? L.letter : '?', L.num, o.cur, o.req, s);
         zt_save();
         return;
     }
-    if (strstr(s, "seconds remaining")) { const int n = omen_first_num(s); if (n >= 0) { zt_.omenBonusSec = n; zt_.omenBonusMs = GetTickCount(); zt_save(); } return; }
-    if (strstr(s, " omen")) { const int n = omen_first_num(s); if (n >= 0) { zt_.omens = n; zt_save(); } return; }
-    if (strstr(s, "spectral light flares up")) { zt_.omenCleared = 1; zt_save(); return; }
-    if (strstr(s, "light shall come even if you fail")) { omen_set_floor(zt_, "Free Floor!"); if (zt_.omenCleared) { omen_reset_objs(zt_); zt_.omenCleared = 0; } zt_save(); return; }
-    if (strstr(s, "Vanquish") || strstr(s, "treasure portent")) { omen_set_floor(zt_, s); if (zt_.omenCleared) { omen_reset_objs(zt_); zt_.omenCleared = 0; } zt_save(); return; }
+    if (omen_is_timer_line(s)) {
+        const int n = omen_first_num(s);
+        if (n >= 0) { zt_.omenBonusSec = n; zt_.omenBonusMs = GetTickCount(); }
+        zt_save();
+        OTRACE("OMEN bonus timer=%d newFloor=%d | %s", n, (int)wiped, s);
+        return;
+    }
+    if (strstr(s, " omen")) { const int n = omen_first_num(s); if (n >= 0) { zt_.omens = n; zt_save(); } OTRACE("OMEN omens=%d | %s", n, s); return; }
+    if (strstr(s, "spectral light flares up")) { zt_.omenCleared = 1; zt_save(); OTRACE("OMEN floor CLEARED | %s", s); return; }
+    if (strstr(s, "light shall come even if you fail")) { omen_set_floor(zt_, "Free Floor!"); zt_save(); OTRACE("OMEN free floor (objectives wiped=%d) | %s", (int)wiped, s); return; }
+    if (strstr(s, "Vanquish") || strstr(s, "treasure portent")) { omen_set_floor(zt_, s); zt_save(); OTRACE("OMEN floor objective (objectives wiped=%d) | %s", (int)wiped, s); return; }
+    OTRACE("OMEN drop: no rule matched | %s", s);
 }
 
 // ---- NYZUL ISLE : token estimator + floor/timer/objective tracker, ported 1:1 from the NyzulHelper addon (Glarin
@@ -293,6 +334,7 @@ void PartyState::zt_recompute_dyn_limit() {
 void PartyState::zt_on_character_changed() {
     zt_ = ZoneTracker{};
     lc_[0] = LimbusCoffers{}; lc_[1] = LimbusCoffers{};
+    lw_ = LimbusWeek{};                     // the weekly allowance is per CHARACTER too -- lc_load() refills it from that character's file
     zt_.curZone = -1;                       // -1 -> the one-shot restore in zt_set_zone re-runs for this character
     for (int i = 0; i < 10; ++i) treasure_[i] = TreasureItem{};   // the pool is the previous character's too
 }
@@ -538,6 +580,13 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
             // previously assumed value and never matched anything, so this counter was simply never filled. Both are
             // kept : these ids are zone-relative and drift across patches, and the payload shape is identical.
             zt_.limbusWeekLeft = p1;
+            // ...and to the store that SURVIVES A ZONE. zt_ is wiped by zt_set_zone, so this number used to
+            // vanish the moment you stepped out of Limbus and was blank when you came back -- reported
+            // 2026-07-27. Stamped with the wall clock so a count from LAST week can be told apart from this
+            // week's (limbus_week.h), instead of being shown forever as if it were current.
+            lw_.left = p1;
+            lw_.stampUtc = (long long)time(0);
+            lc_save();
             // NOTE: no weekly wipe. The row is not a per-week checklist -- it is the last known payout of each
             // quadrant, and it self-corrects because reopening a coffer overwrites its slot (a 5k slot reopened
             // for 3k goes back to red). Only finding a 5k clears the reds. Wiping on a new week would destroy
@@ -585,7 +634,12 @@ static volatile long g_gtTail = 0;   // written by the MAIN thread only
 void queue_game_text(const char* s, int mode) {
     if (!s) return;
     const long head = g_gtHead;
-    if (head - g_gtTail >= GT_N) return;                 // full : drop (an Omen line is worth less than a torn read)
+    if (head - g_gtTail >= GT_N) {                       // full : drop (an Omen line is worth less than a torn read)
+        // SAY SO. A dropped objective line and a parser that mishandled one are the same picture in the box, and
+        // this branch used to be the one place a capture could lose evidence without leaving a trace of it.
+        if (omen_trace_active()) windower::debug::log("OMENDROP ring full (%d queued) -- LINE LOST | %s", GT_N, s);
+        return;
+    }
     const int slot = (int)(head & (GT_N - 1));
     int i = 0; for (; i < (int)sizeof(g_gtText[0]) - 1 && s[i]; ++i) g_gtText[slot][i] = s[i];
     g_gtText[slot][i] = 0;
@@ -601,6 +655,22 @@ void drain_game_text() {
         else           party().on_nyzul_text(g_gtText[slot], mm);
         g_gtTail = g_gtTail + 1;
     }
+}
+
+// Runs left THIS week. The stored count is only meaningful inside the week it was observed in : past the
+// Sunday 15:00 UTC reset the allowance is full again, and reporting the old number would be confidently wrong
+// rather than merely unknown. See model/limbus_week.h for why that instant needs no daylight-saving logic.
+int PartyState::limbus_runs_left() const {
+    // NEVER OBSERVED is UNKNOWN, and must be reported as such -- not as a full week. Returning 5 here was the
+    // first thing this function did, and it was a fabrication: it told a player who had already spent runs that
+    // they had five, with no way to tell that number from a measured one. CLAUDE.md rule 10, second form --
+    // "empty" is not "unavailable", and a reader that returns the same value for both forces every caller to
+    // guess. -1 travels to the display, which prints "?" instead of a number it does not have.
+    if (lw_.left < 0) return -1;
+    // A REAL observation from an earlier week, though, does justify a full allowance : the game grants five at
+    // the Sunday 15:00 UTC reset (limbus_week.h), so this is derived, not assumed.
+    if (limbus_week_rolled(lw_.stampUtc, (long long)time(0))) return LIMBUS_WEEK_RUNS;
+    return lw_.left > LIMBUS_WEEK_RUNS ? LIMBUS_WEEK_RUNS : lw_.left;           // clamp : a bad read must not print "9 runs left"
 }
 
 } // namespace aio

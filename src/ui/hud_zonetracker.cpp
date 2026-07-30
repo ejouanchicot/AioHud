@@ -62,11 +62,15 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             int k = 0; for (; zt.floorObj[k] && k < 47; ++k) floorObj[k] = zt.floorObj[k]; floorObj[k] = 0;
             omens = zt.omens;
             bonusSec = zt.omenBonusSec - (int)((GetTickCount() - zt.omenBonusMs) / 1000u); if (bonusSec < 0) bonusSec = 0;
+            // NOT ANNOUNCED is not EXPIRED. omenBonusMs stays 0 until the game states the window, so a plugin
+            // loaded mid-floor (or a floor whose announcement was missed) computed a huge elapsed, clamped to 0,
+            // and painted EVERY objective red as "failed" -- reporting a deadline it had never been told about.
+            const bool windowKnown = (zt.omenBonusMs != 0);
             for (int i = 0; i < 10; ++i) if (zt.omen[i].type) { ORow& r = orows[nrows]; const char* nm = PartyState::omen_short(zt.omen[i].type);
                 int j = 0; for (; nm[j] && j < 15; ++j) r.label[j] = nm[j]; r.label[j] = 0;
                 r.cur = zt.omen[i].cur; r.req = zt.omen[i].req;
-                r.done = (zt.omen[i].req > 0 && r.cur >= zt.omen[i].req);
-                r.failed = (bonusSec < 1 && zt.omen[i].req > 0 && r.cur < zt.omen[i].req); ++nrows; }
+                r.done = omen_done(zt.omen[i]);                    // one definition of "complete" (omen_objectives.h)
+                r.failed = (windowKnown && bonusSec < 1 && zt.omen[i].req > 0 && r.cur < zt.omen[i].req); ++nrows; }
         }
         float sscl = C.ztScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
         const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
@@ -80,8 +84,15 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         const float zO = zt_sz(ZT_OM_OBJ, 12.0f) * S, zN = zt_sz(ZT_OM_COUNT, 12.0f) * S, zR = zt_sz(ZT_OM_ROW, 12.0f) * S;
         const float oO = zt_ow(ZT_OM_OBJ, 1.0f) * S, oN = zt_ow(ZT_OM_COUNT, 1.0f) * S, oR = zt_ow(ZT_OM_ROW, 1.0f) * S;
         const float objLineH = zO + 5.0f * S, cntLineH = zN + 5.0f * S, rowLineH = zR + 5.0f * S;
-        const bool hasObj = (C.ztOmObj != 0), hasCnt = (C.ztOmCount != 0), hasRows = (C.ztOmRows != 0);
-        char sb[48], hb[40]; sprintf(hb, "Omens: %d   Bonus %d:%02d", omens, bonusSec / 60, bonusSec % 60);
+        // A boss / treasure-portent floor carries NO bonus objectives (omen_objectives.h, ported from the
+        // reference addon's hide list). Announcing a countdown there is inventing a deadline, so the bonus line
+        // collapses to the omen count and the rows drop out entirely. The preview keeps them: it exists to show
+        // what the widget looks like when full.
+        const bool bonusFloor = (preview || editing) ? true : omen_floor_has_bonus(floorObj);
+        const bool hasObj = (C.ztOmObj != 0), hasCnt = (C.ztOmCount != 0), hasRows = (C.ztOmRows != 0) && bonusFloor;
+        char sb[48], hb[40];
+        if (bonusFloor) sprintf(hb, "Omens: %d   Bonus %d:%02d", omens, bonusSec / 60, bonusSec % 60);
+        else            sprintf(hb, "Omens: %d", omens);
         #define OMEN_FMT(i) (orows[i].req < 0 ? (sprintf(sb, "%d: %.14s [%d/???]", (i) + 1, orows[i].label, orows[i].cur), sb) : (sprintf(sb, "%d: %.14s [%d/%d]", (i) + 1, orows[i].label, orows[i].cur, orows[i].req), sb))
         float contentW = fH->measure("Omen", zH);
         if (hasObj && fO->measure(floorObj, zO) > contentW) contentW = fO->measure(floorObj, zO);
@@ -337,7 +348,13 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             // reads these from memory -- the packet is the only source) that left the Temenos row permanently empty
             // no matter how much Temenos was run. Route it by zone : 37 = Temenos, 38 = Apollyon.
             if (zt.limbusUnits >= 0) { if (zt.curZone == 37) tem = zt.limbusUnits; else apo = zt.limbusUnits; }
-            runUnits = zt.limbusRunUnits; weekLeft = zt.limbusWeekLeft;
+            runUnits = zt.limbusRunUnits;
+            // NOT zt.limbusWeekLeft : zt_ is wiped on every zone change, so leaving Limbus and coming back
+            // showed no count at all until the game happened to announce it again. limbus_runs_left() reads the
+            // value persisted in limbus.dat and applies the Sunday-15:00-UTC rollover, so it is ALWAYS a true
+            // answer -- 5 before the first run of the week, and 5 again once the week turns over, rather than
+            // last week's number shown as if it were current.
+            weekLeft = party().limbus_runs_left();
             areaIdx = (zt.curZone == 37) ? 1 : 0;                                        // Apollyon / Temenos kept apart
             const LimbusCoffers& lc = party().limbus_coffers(areaIdx);
             for (int i = 0; i < 4; ++i) slotK[i] = lc.slotK[i];
@@ -388,7 +405,12 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         // where a missing 0x118 means UNKNOWN and must not be printed as a balance.
         char runLine[64] = {0};
         int rw = snprintf(runLine, sizeof(runLine), "Run  +%d", runUnits < 0 ? 0 : runUnits);
-        if (weekLeft >= 0)  snprintf(runLine + rw, sizeof(runLine) - rw, "   \xC2\xB7   %d run%s left", weekLeft, weekLeft == 1 ? "" : "s");
+        // "?" when the allowance has never been observed, rather than a number. The count only reaches us when the
+        // game states it ("you may collect data N more times"), so before that we genuinely do not know -- and
+        // printing a plausible 5 there told a player who had already spent runs that they had a full week. A
+        // question mark says "ask the Operator once and I will remember it", which is both true and actionable.
+        if (weekLeft >= 0) snprintf(runLine + rw, sizeof(runLine) - rw, "   \xC2\xB7   %d run%s left", weekLeft, weekLeft == 1 ? "" : "s");
+        else               snprintf(runLine + rw, sizeof(runLine) - rw, "   \xC2\xB7   ? runs left");
         const bool hasRun = C.ztLbRun && runLine[0] != 0;
         // No "Data <amt>" / "Last 5000" rows : with only two payouts in play the dot row already says it (red = 3k,
         // green = 5k, label = quadrant). FOUR fixed slots -- the area's quadrants, each holding one coffer on its

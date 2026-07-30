@@ -4,6 +4,7 @@
 // (incl. name + jobs), 0x0DF = frequent vitals update (HP/MP/TP). The HUD's Party
 // widget reads this when it holds members, else it falls back to demo data.
 #pragma once
+#include "model/omen_objectives.h"   // OmenObj + the pure Omen objective-text rules (ZoneTracker holds the slots)
 
 namespace aio {
 
@@ -144,7 +145,8 @@ struct ZoneTracker {
     unsigned visitantMs = 0;      // GetTickCount when visitantMin was set -> live MM:SS countdown
     // Omen (mode 3, zone 292) : up to 10 bonus objectives + omen count + bonus timer, parsed from the mode-161
     // objective text (incoming-text callback). type = 1..14 (see omen_short), req = -1 = unknown (loaded mid-floor).
-    struct OmenObj { int type = 0; int cur = 0; int req = 0; };
+    // The slot type and every rule that reads or writes it live in model/omen_objectives.h -- pure, and replayed
+    // offline against a real capture in tests/t_omen.cpp.
     OmenObj  omen[10];
     int      omens = 0;
     int      omenBonusSec = 0; unsigned omenBonusMs = 0;   // bonus-objective timer -> live MM:SS
@@ -226,6 +228,20 @@ struct LimbusCoffers {
                                       // guess : keep the previous row so it can be restored if the threshold is
                                       // ever found to be wrong.
     int           weekSeen = -1;      // last "collect data N more times" -> N going UP means a new week
+};
+// The WEEKLY ALLOWANCE, persisted next to the coffers and deliberately NOT inside them : it is account-wide
+// (five data collections a week, shared between Apollyon and Temenos), not per-area.
+//
+// It used to live only in zt_.limbusWeekLeft, and zt_ is wiped on every zone change -- so leaving Limbus and
+// coming back showed nothing, which is exactly what a player reported. The datum survives a zone now.
+//
+// The STAMP is what makes it honest. A count with no date is worse than no count: it would keep showing "2 runs
+// left" into the following week, when the true answer is 5. limbus_week.h turns the stamp into "was this
+// observed before the last Sunday 15:00 UTC reset", and a stale one reports a full allowance instead.
+struct LimbusWeek {
+    int       left = -1;      // last observed "you may collect data N more times" ; -1 = never seen
+    int       pad = 0;        // keep the 8-byte member below aligned in the on-disk image
+    long long stampUtc = 0;   // when it was observed (UTC epoch seconds) ; 0 = never
 };
 // Quadrant labels per area, in slot order. Index 0 = Apollyon, 1 = Temenos.
 inline const char* limbus_slot_label(int area, int slot) {
@@ -385,6 +401,13 @@ struct PartyState {
     const ZoneTracker& zone_tracker() const { return zt_; }
     LimbusCoffers lc_[2];                        // [0] Apollyon (zone 38), [1] Temenos (zone 37) -- own file, see lc_save
     const LimbusCoffers& limbus_coffers(int area) const { return lc_[(area == 1) ? 1 : 0]; }
+    LimbusWeek    lw_;                           // account-wide weekly allowance, persisted in the same file
+    // Runs left THIS week. -1 = NEVER OBSERVED, which the display must show as "?" rather than as a number :
+    // the count only exists once the game has stated it, and inventing a plausible 5 there is indistinguishable
+    // from a measured 5 (rule 10 : "empty" is not "unavailable"). A count observed in an EARLIER week does
+    // report LIMBUS_WEEK_RUNS -- that is derived from the Sunday-15:00-UTC reset, not assumed. Reads the wall
+    // clock, so it is a query, not cached state.
+    int limbus_runs_left() const;
     void zt_set_zone(int zone, const char* name);   // called each frame ; detects the Dynamis/Abyssea zone + resets on change
     void zt_recompute_dyn_limit();                  // 3600 + owned-KI time-extensions for the current Dynamis zone
     void on_2a(const unsigned char* p);             // 0x02A : Abyssea zone messages (lights + visitant time)
@@ -708,6 +731,8 @@ struct PartyState {
     void zt_on_character_changed();      // zone-tracker half of the above (run state + Limbus coffers + treasure pool)
 
     void set_debuff_trace(int n);        // //aio dbflog : log the next N target-debuff mutations (add/reset/wipe/wake) to aiohud_debug.log
+    void set_omen_trace(int n);          // //aio omenparse : log the next N Omen objective lines + their PARSE RESULT to aiohud_debug.log
+    void omen_state_dump(const char* why);   // //aio omenstate : the ten slots AS THE BOX SEES THEM, beside the chat that fed them
     void set_treasure_trace(int n);      // //aio tpool : log the next N treasure-pool packets (0x0D2/0x0D3) + expiry math to aiohud_debug.log
     bool treasure_trace_active() const;  // //aio tpool : true while the trace budget is unspent (gates the zone-in/out markers in the dispatch)
     // //aio songlog : BRD song-duration model probe. An ally song row shows the MODEL's estimate, but an AoE song
@@ -782,6 +807,10 @@ void set_party_sim_extra(int n);
 // losing an Omen objective line is strictly better than tearing zt_ under the renderer.
 void queue_game_text(const char* s, int mode);
 void drain_game_text();
+// //aio omenlog : true while the Omen parse trace is armed. The text callback consults it to dump the RAW line and
+// its UNMASKED mode for every incoming line -- including the modes we filter out, which is the only way to tell
+// "the parser mishandled it" from "the line never reached the parser".
+bool omen_trace_active();
 // Same hand-off for //aio commands : slot 7 also runs on its own thread (tid 23508 when measured). The callback
 // only queues ; this executes the queued lines on the main thread. Defined in plugin/aiohud.cpp.
 void drain_commands();

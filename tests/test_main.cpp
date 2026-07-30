@@ -15,12 +15,16 @@ void test_json();
 void test_skillchain();
 void test_durations();
 void test_config();
+void test_limbus();
+void test_omen();
 
 int main() {
     test_json();
     test_skillchain();
     test_durations();
     test_config();
+    test_limbus();
+    test_omen();
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail;
 }
