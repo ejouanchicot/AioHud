@@ -25,18 +25,26 @@
 
 _addon.name     = 'AioUpdate'
 _addon.author   = 'ejouanchicot'
-_addon.version  = '2.2'
+_addon.version  = '2.3'
 _addon.commands = { 'aioupdate', 'aioup' }
 
 local base     = windower.windower_path
 if base:sub(-1) ~= '\\' and base:sub(-1) ~= '/' then base = base .. '\\' end   -- ensure a trailing separator
-local data_dir = base .. 'plugins\\AioHud\\data'
+local plug_dir = base .. 'plugins\\AioHud'          -- the plugin's runtime folder (assets + data)
+local data_dir = plug_dir .. '\\data'
 local done     = data_dir .. '\\update\\done.txt'
 local request  = data_dir .. '\\update\\request.txt'
+local dll      = base .. 'plugins\\AioHud.dll'
 local DEBUG    = false   -- flip to true to trace each phase in chat
 
 -- silent by default : every message is gated by DEBUG, so an update produces no chat output unless tracing.
 local function log(s) if DEBUG then windower.add_to_chat(207, 'AioUpdate: ' .. s) end end
+-- a FAILURE is never silent, DEBUG or not. The reason an update did not go through was written to done.txt and
+-- read by nobody : the player saw the HUD close and Windower say "File does not exist", and had no way to reach
+-- the one line that named the cause. Anything the player must act on goes to chat.
+local function warn(s) windower.add_to_chat(167, 'AioUpdate: ' .. s) end
+
+local function file_exists(p) local f = io.open(p, 'rb'); if f then f:close(); return true end return false end
 
 local function read_status()
     local f = io.open(done, 'r')
@@ -70,29 +78,43 @@ end
 local unloaded = false   -- did WE //unload this cycle ? (so we know whether to //load again)
 local acted    = nil     -- the phase line this client has already handled
 
+-- Bring the plugin back -- but NEVER ask Windower to load a file that is not there. `load AioHud` on a missing
+-- DLL answers "Error: aiohud - File does not exist.", which tells the player nothing about what happened and
+-- reads like the plugin broke rather than like an update that did not complete. The updater now guarantees a
+-- DLL is always on disk (see aioupdate.ps1), so this is a belt-and-braces check -- and the branch that says so.
+local function reload_plugin()
+    if not unloaded then return end
+    unloaded = false
+    if file_exists(dll) then windower.send_command('load AioHud'); return end
+    warn('AioHud.dll is missing -- the update did not complete. Download the zip from')
+    warn('https://github.com/ejouanchicot/AioHud/releases and extract it into your Windower folder.')
+end
+
 local function watch_done()
     local s = read_status()
     if s and s ~= acted then
         acted = s
         if s:find('^READY') then
-            unloaded = true
             log('downloaded v' .. (s:match('READY%s+(%S+)') or '?') .. ', reloading AioHud...')
-            windower.send_command('unload AioHud')       -- release the DLL so the (still-running) updater can extract
+            if not unloaded then windower.send_command('unload AioHud') end   -- release the DLL so the (still-running) updater can install over it
+            unloaded = true
         elseif s:find('^OK') then
-            if unloaded then windower.send_command('load AioHud') end
+            reload_plugin()
             log('updated to v' .. (s:match('OK%s+(%S+)') or '?') .. '.')
-            unloaded = false
         elseif s:find('^ERROR') then
-            if unloaded then windower.send_command('load AioHud') end
-            log('update failed: ' .. s)
-            unloaded = false
+            -- VISIBLE : this is the only place the reason ever reaches the player.
+            warn('update failed -- ' .. (s:gsub('^ERROR%s*', '')))
+            reload_plugin()
         elseif s:find('^UPTODATE') then
             log('already up to date.')
-            unloaded = false
+            reload_plugin()   -- a no-op unless WE unloaded : every terminal phase must bring the HUD back
         end
     elseif not s then
-        acted = nil          -- the updater cleared it : ready for the next cycle
-        unloaded = false
+        -- the updater (or a second client's trigger) cleared it : ready for the next cycle. `unloaded` is NOT
+        -- cleared here. It used to be, and that is a way to stay unloaded FOREVER : trigger() os.remove()s
+        -- done.txt, so a client that had already acted on READY forgot it owed itself a //load and sat dark
+        -- until the player typed one by hand. What we took down, we put back -- whatever happens to the file.
+        acted = nil
     end
     coroutine.schedule(watch_done, 1)
 end
@@ -111,10 +133,20 @@ acted = read_status()
 -- copying every line except its own, and it does nothing at all if the file cannot be read or rewritten -- an
 -- uninstall tidy-up must never be able to damage a working Windower install. Runs once, ~5 s after load, so it
 -- never races the plugin's own init-time write on a normal startup.
+--
+-- "DLL absent" alone is NOT "uninstalled". A failed update used to leave no AioHud.dll on disk, so on the next
+-- Windower launch this tidy-up read a BROKEN install as a deliberate removal, quietly took the addon's autoload
+-- line back out, and announced that AioHud was gone -- turning an update that did not complete into what looked
+-- like an uninstall, and taking the piece that could still repair it out of the picture. The data folder
+-- (settings, profiles, assets) is what tells the two apart : an uninstall takes it, an accident leaves it.
 local function self_uninstall_if_orphaned()
-    local dll = base .. 'plugins\\AioHud.dll'
-    local f = io.open(dll, 'rb')
-    if f then f:close(); return end                 -- plugin present -> nothing to do, ever
+    if file_exists(dll) then return end             -- plugin present -> nothing to do, ever
+
+    if file_exists(plug_dir .. '\\assets\\aioupdate.ps1') then       -- runtime folder still there -> broken, not removed
+        warn('AioHud.dll is missing but its data folder is still here -- the plugin is not installed, not removed.')
+        warn('Download the zip from https://github.com/ejouanchicot/AioHud/releases and extract it into your Windower folder.')
+        return
+    end
 
     local ini = base .. 'scripts\\init.txt'
     local rf = io.open(ini, 'r'); if not rf then return end

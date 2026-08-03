@@ -6,9 +6,14 @@
 #       UPTODATE <ver>   / AVAILABLE <ver>   / ERROR <msg>       (the plugin reads this for the Update tab)
 #   (default)  : full update, writing phases to <Data>\update\done.txt (the Lua addon polls it) :
 #       UPTODATE <ver>   already on the latest release -> nothing to do
-#       READY <ver>      newer release downloaded -> the addon //unloads AioHud so the DLL can be replaced
-#       OK <ver>         extracted the new build over the Windower root (plugins\ + addons\) -> the addon //loads AioHud
+#       READY <ver>      newer release downloaded, VERIFIED and staged -> the addon //unloads AioHud so the DLL can be replaced
+#       OK <ver>         installed over the Windower root (plugins\ + addons\) -> the addon //loads AioHud
 #       ERROR <msg>      something went wrong -> the addon reloads the current build
+#
+# INVARIANT (the one this script exists to keep) : a failed update leaves the install EXACTLY as it was. Download,
+# checksum and extraction all happen before the plugin is even unloaded ; the install is then additive (assets
+# first) with the DLL swapped last, from a backup that is restored if that single copy fails. There is no path
+# that ends with no AioHud.dll on disk -- there used to be, and it read to the player as "File does not exist".
 param([string]$Current = '0', [string]$Repo = 'ejouanchicot/AioHud', [string]$Plugins, [string]$Data, [switch]$CheckOnly)
 $ErrorActionPreference = 'Stop'
 $updir = Join-Path $Data 'update'
@@ -33,6 +38,16 @@ function Newer($remote, $local) {
 }
 try {
     New-Item -ItemType Directory -Force -Path $updir | Out-Null
+    # Sweep the leftovers of runs that died before their own cleanup (killed process, closed game mid-update) :
+    # per-PID downloads and scratch folders. Measured on a dev install : 28 MB of update_*.zip from four aborted
+    # runs, kept forever. Only touch what is over a day old, so a CONCURRENT updater (dual-box) is never robbed.
+    $cache = Join-Path $Data 'cache'
+    if (Test-Path -LiteralPath $cache) {
+        $cut = (Get-Date).AddDays(-1)
+        Get-ChildItem -LiteralPath $cache -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTime -lt $cut -and ($_.Name -like 'update_*.zip' -or $_.Name -like 'stage_*') } |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
     if ($CheckOnly) { Remove-Item -LiteralPath $check -ErrorAction SilentlyContinue }
     else            { Remove-Item -LiteralPath $done  -ErrorAction SilentlyContinue }
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -79,7 +94,28 @@ try {
         Status "ERROR checksum mismatch (expected $($want.Substring(0,[Math]::Min(12,$want.Length))), got $($got.Substring(0,12))) -- download refused, nothing was installed"; exit
     }
 
-    Status "READY $tag"    # download verified -> the addon now //unloads AioHud
+    # STAGE THE PAYLOAD -- never expand straight over the live Windower root. `Expand-Archive -Force` there is
+    # what turned a failed update into a DEAD install : per entry it Remove-Item's the destination file BEFORE
+    # extracting (Microsoft.PowerShell.Archive.psm1 l.1029), and its `finally` DELETES everything it had already
+    # expanded if anything throws on the way (l.411). So one access-denied / antivirus / I-O hiccup anywhere in
+    # the 1400-file payload left plugins\AioHud.dll simply GONE ; the addon then //loaded a file that no longer
+    # existed and Windower answered "File does not exist", with the real reason unread in done.txt. Reported
+    # 2026-08-03 by a player going 1.0.71 -> 1.0.73.
+    # Expanding into a scratch folder first also moves the risky step BEFORE the //unload : an extraction failure
+    # now aborts with the HUD still running, instead of interrupting a half-finished install.
+    $stage = Join-Path (Join-Path $Data 'cache') "stage_$PID"
+    Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+    Expand-Archive -LiteralPath $zip -DestinationPath $stage -Force
+    Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+    # A partial success is not a success : check what the extraction actually PRODUCED, not that it returned.
+    $newDll = Join-Path $stage 'plugins\AioHud.dll'
+    if (-not (Test-Path -LiteralPath $newDll -PathType Leaf) -or (Get-Item -LiteralPath $newDll).Length -lt 100000) {
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+        Status 'ERROR the downloaded payload carries no usable AioHud.dll -- nothing was installed'; exit
+    }
+
+    Status "READY $tag"    # payload staged AND verified -> the addon now //unloads AioHud
     # wait (up to 30s) for AioHud.dll to become writable = the plugin unloaded (on ALL clients, for dual-box)
     $dll = Join-Path $Plugins 'AioHud.dll'
     $unlocked = $false
@@ -87,11 +123,42 @@ try {
         try { $fs = [IO.File]::Open($dll, 'Open', 'ReadWrite', 'None'); $fs.Close(); $unlocked = $true; break }
         catch { Start-Sleep -Milliseconds 500 }
     }
-    if (-not $unlocked) { Status 'ERROR dll-locked (dual-box? //unload AioHud on the other client)'; exit }
-    # the zip is Windower-root-relative (plugins\... + addons\...), so extract over the root = parent of plugins\
+    if (-not $unlocked) {
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+        Status 'ERROR dll-locked (dual-box? //unload AioHud on the other client)'; exit
+    }
+    # the payload is Windower-root-relative (plugins\... + addons\...), so it installs over the root = parent of plugins\
     $root = Split-Path $Plugins -Parent
-    Expand-Archive -LiteralPath $zip -DestinationPath $root -Force
-    Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+    # 1) everything EXCEPT the DLL. /R:2 /W:1 : robocopy's default is a million retries 30s apart -- one locked
+    #    file and the update would hang until the player gives up. Exit codes 0-7 are success, 8+ a real error.
+    & robocopy $stage $root /E /XF AioHud.dll /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) {
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+        Status "ERROR asset install failed (robocopy $LASTEXITCODE) -- your current build was left untouched"; exit
+    }
+    # 2) the DLL LAST, and with a restorable copy of the one that works. Everything above this line is additive ;
+    #    this is the only step that can leave the plugin unloadable, so it owns the shortest possible window.
+    $bak = "$dll.bak"
+    Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $dll -PathType Leaf) { Copy-Item -LiteralPath $dll -Destination $bak -Force }
+    try {
+        Copy-Item -LiteralPath $newDll -Destination $dll -Force
+        if (-not (Test-Path -LiteralPath $dll -PathType Leaf) -or
+            (Get-Item -LiteralPath $dll).Length -ne (Get-Item -LiteralPath $newDll).Length) { throw 'truncated copy' }
+    } catch {
+        $why = $_.Exception.Message
+        if (Test-Path -LiteralPath $bak -PathType Leaf) { Copy-Item -LiteralPath $bak -Destination $dll -Force -ErrorAction SilentlyContinue }
+        Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $dll -PathType Leaf) {
+            Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
+            Status "ERROR install failed ($why) -- your previous build was restored"
+        } else {
+            Status "ERROR install failed ($why) -- AioHud.dll is MISSING, reinstall the zip from the release page"
+        }
+        exit
+    }
+    Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
     # drop the legacy fixed-name download if an older build left one behind
     Remove-Item -LiteralPath (Join-Path (Join-Path $Data 'cache') 'update.zip') -Force -ErrorAction SilentlyContinue
     Status "OK $tag"

@@ -747,8 +747,11 @@ int aio_update_progress(char* msg, int n)
     if (g_updFinal) { if (msg && n > 0) lstrcpynA(msg, g_updMsg, n); return g_updFinal + 1; }
     char p[320]; aio::plugin_path(p, sizeof(p), "data\\update\\done.txt");
     FILE* f = fopen(p, "rb");
-    if (!f) {   // requested but no phase yet -> "starting/checking" ; time out if the addon never answers (not loaded?)
-        if (GetTickCount() - g_updReqT > 30000u) { g_updFinal = 3; lstrcpynA(g_updMsg, "no response (is AioUpdate loaded? type //aioupdate)", sizeof(g_updMsg)); return 4; }
+    if (!f) {   // requested but no phase yet -> "starting/checking" ; time out if the updater never answers (never started?)
+        // 90 s, not 30. The first phase now lands AFTER the payload has been downloaded, checksummed AND expanded
+        // into a scratch folder (that move is what makes a failed update harmless), so the silent window is
+        // legitimately longer -- and a false "no response" on a slow connection would report a working update as broken.
+        if (GetTickCount() - g_updReqT > 90000u) { g_updFinal = 3; lstrcpynA(g_updMsg, "no response (is AioUpdate loaded? type //aioupdate)", sizeof(g_updMsg)); return 4; }
         return 1;
     }
     char buf[160]; size_t got = fread(buf, 1, sizeof(buf) - 1, f); buf[got] = 0; fclose(f);
