@@ -369,6 +369,13 @@ void aio_plugin_packet_in(u32 a, u32 b, u32 c, u32 d)
 
 #ifdef AIOHUD_PROBES
     __try { aio::probes::packet_in(a, b, c, d, id, pkt); } __except (EXCEPTION_EXECUTE_HANDLER) {}   // dev-only armed probes (SEH-guarded)
+#else
+    // `c` and `d` exist because Windower's callback signature has four arguments ; only the probe build reads
+    // them. Their NAMES cannot be dropped (the #ifdef branch above uses them), so say "deliberately unused" to
+    // the compiler. This is the ONE shape /WX needs told, and it is not hiding anything: a real unused local
+    // would still be an error. It only shows up in a RELEASE build, which is exactly the configuration a dev
+    // machine never compiles -- v1.0.75's first CI run failed here, on a tree that was clean locally.
+    (void)c; (void)d;
 #endif
 }
 
