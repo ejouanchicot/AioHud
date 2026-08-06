@@ -449,8 +449,8 @@ int PartyState::match_cast(unsigned short status, unsigned expiry, int timerIdx)
     // Troubadour'd songs (~600 s) were predicted at the 120 s base and this guard rejected every one of them, so the
     // row resolved to no spell at all -- generic status name, no tier, no JA tags. Guarding against players cost more
     // than it protected.
-    const SelfCast& m = selfCasts_[idx[rank]];
-    if (m.caster != selfId_ && is_trust(m.caster) && (int)(expiry - m.predExp) > 90 * 60) return -1;
+    const SelfCast& sc = selfCasts_[idx[rank]];
+    if (sc.caster != selfId_ && is_trust(sc.caster) && (int)(expiry - sc.predExp) > 90 * 60) return -1;
     return idx[rank];
 }
 // Per-timer caster, with a CO-EXPIRY fallback for statuses the action packet never names.
@@ -695,6 +695,21 @@ bool PartyState::bcapt_armed() {
     if ((int)(GetTickCount() - bcaptUntilMs_) >= 0) {   // SAY SO when the window dies -- silence is indistinguishable from "no bug"
         bcaptClosed_ = true;
         windower::debug::log("BCAPT window CLOSED (expired) -- re-arm with //aio bcaptlog if you need more");
+        return false;
+    }
+    return true;
+}
+void PartyState::arm_dist_log(int seconds) {
+    distUntilMs_ = GetTickCount() + (unsigned)(seconds > 0 ? seconds : 120) * 1000u;
+    distClosed_  = false;
+    windower::debug::log("DIST window OPEN for %ds -- one block per second : party + both alliance parties.", seconds > 0 ? seconds : 120);
+    windower::debug::log("DIST   read MATCH/STALE to settle the stale-index question, and dh vs d3 for the height question.");
+}
+bool PartyState::dist_armed() {
+    if (distClosed_) return false;
+    if ((int)(GetTickCount() - distUntilMs_) >= 0) {   // the window ANNOUNCES its own end : a probe that goes quiet reads exactly like a bug that stopped happening
+        distClosed_ = true;
+        windower::debug::log("DIST window CLOSED (expired) -- re-arm with //aio rangelog [seconds]");
         return false;
     }
     return true;
@@ -1116,6 +1131,17 @@ void PartyState::on_action(const unsigned char* p) {
             unsigned short eids[16]; unsigned char eext[16][24];
             int setPct = 0, listedPct = 0, augPct = 0;
             if (read_equipment_ext(eids, eext)) { setPct = composure_set_pct(eids); listedPct = enh_dur_listed_pct(eids); augPct = enh_dur_augment_pct(eids, eext); }
+            else {
+                // REPORT it, same reasoning as the buff read just below. There is no `else` recovery on purpose --
+                // what to do instead (reuse the last good snapshot? skip the cast?) is a decision to make with a
+                // capture in hand. What is NOT acceptable is silence: every duration term below falls back to
+                // "no gear" and durMs is written ONCE, so a single miss in the half-ready window after a zone
+                // under-estimates that ally's buff for its whole life (Protect III : 1800s instead of ~2950s).
+                // ONE line per session, not per cast : this sits on the cast path, and a per-cast line would be a
+                // CreateFile/WriteFile on every ally buff you land. Knowing it happened at all is what was missing.
+                static windower::debug::LogOnce<4> onceEq;
+                if (onceEq.first(0)) windower::debug::log("EQUIP UNREADABLE at cast -- ally duration estimated on BASE only (no set/listed/augment/perpetuance)");
+            }
             bool composure = false, perpetuance = false, troubadour = false, soulvoice = false, marcato = false, nightingale = false;
             // The `ok` flag is READ now, and its failure is REPORTED. read_player_buffs returns 0 both when you
             // genuinely carry nothing and when the player struct could not be read -- so a transient miss at this
@@ -1288,7 +1314,7 @@ void PartyState::on_action(const unsigned char* p) {
                 unsigned long long ms;
                 if (b->skill == 34) {   // Enhancing Magic (Regen status 42 : regenSec added to the base before the multipliers ; cap 30 min)
                     ms = (unsigned long long)(enh_sec(b->durSec, b->effect) * 1000.0);
-                } else if (b->skill == 40) {   // BRD song : the server's own measurement if we have one, else the model
+                } else if (b->skill == 40) {   // BRD song : the generated gear model (songdur_check only VERIFIES it, see song_dur.h)
                     // A song lasts the same on everyone it lands on -- the duration belongs to the CAST, not to the
                     // target. So a previous cast of THIS song that landed on you was measured exactly off 0x063, and
                     // that is the honest duration for this ally copy whether or not it was sung with Pianissimo.
@@ -1632,18 +1658,35 @@ void PartyState::on_076(const unsigned char* p) {
     // packet's fixed 32 and BuffSet::ids was implicit in a literal. Make it a compile error instead.
     static_assert(32 <= (int)(sizeof(((BuffSet*)0)->ids) / sizeof(((BuffSet*)0)->ids[0])), "BuffSet::ids must hold the 32 status ids a 0x076 slot carries");
     if (pkt_bytes(p) < 0xF4) return;                           // 5 slots x 48 : reads up to p[4*48+20+31] = p[0xF3]
+    // DROP the sets we can no longer refresh. The 0x076 carries YOUR party only (party_order 0..5), so a member who
+    // moved to an alliance party -- or left -- keeps a set that is frozen at whatever they wore back then. That third
+    // state, STALE, is invisible to every caller : they test `buffs_for(id) != 0` and read a frozen list as authority,
+    // which hides ally rows and suppresses OUT alerts for that member. Dropping it restores the honest "unknown"
+    // (callers then DRAW the row) rather than answering with data we know is old. If the roster is momentarily
+    // unreadable this drops live sets too -- the safe direction, and the members in THIS packet are re-added below.
+    for (int s = 0; s < 18; ++s) {
+        if (!buffs_[s].id) continue;
+        const int po = party_order(buffs_[s].id);
+        if (po > 5) buffs_[s] = BuffSet{};
+    }
     for (int k = 0; k < 5; ++k) {
         const int base = k * 48;
         unsigned mid = pkt_u32(p, base + 4);
         if (!mid) continue;
-        int slot = -1, free = -1;                              // reuse same-id / first free / overwrite slot 0
+        const unsigned clk = ++buffsClock_;
+        int slot = -1, free = -1;                              // reuse same-id / first free / EVICT the stalest
         for (int s = 0; s < 18; ++s) {
             if (buffs_[s].id == mid) { slot = s; break; }
             if (!buffs_[s].id && free < 0) free = s;
         }
-        if (slot < 0) slot = (free >= 0) ? free : 0;
+        if (slot < 0) {
+            // Never fall back to slot 0 : that made a full table collapse every later member onto one entry, so a
+            // single 0x076 (5 members) left only the LAST one cached and every other lookup answered "unknown".
+            if (free >= 0) slot = free;
+            else { slot = 0; for (int s = 1; s < 18; ++s) if (buffs_[s].seen < buffs_[slot].seen) slot = s; }
+        }
         BuffSet& bs = buffs_[slot];
-        bs.id = mid; bs.n = 0;
+        bs.id = mid; bs.n = 0; bs.seen = clk;
         for (int i = 0; i < 32; ++i) {
             unsigned low = p[base + 20 + i];
             unsigned hi2 = (p[base + 12 + (i >> 2)] >> (2 * (i & 3))) & 3;
@@ -1915,6 +1958,9 @@ int PartyState::target_debuffs(unsigned id, unsigned short* out, int* remainSec,
 // 0x0D2 : Item @0x10 (u16), Index @0x14 (u8, slot 0..9), Timestamp @0x18 (u32 unix). Item 0xFFFF = "no change",
 // 0 = slot cleared. Each item drops out of the pool ~5 min after its drop timestamp.
 void PartyState::on_treasure_add(const unsigned char* p) {
+    if (pkt_bytes(p) < 0x1C) return;          // floor on the highest field read (timestamp @0x18..0x1B) -- see the note in
+                                              // party_state_internal.h : a truncated packet still lands in the decode buffer,
+                                              // so SEH alone won't stop us parsing the PREVIOUS packet's residue into a slot.
     const unsigned item = (unsigned)p[0x10] | ((unsigned)p[0x11] << 8);
     const unsigned idx  = p[0x14];
     if (idx >= 10) { TPTRACE("TPOOL 0x0D2 BAD idx=%u item=0x%04X", idx, item); return; }
@@ -1960,6 +2006,7 @@ void PartyState::reconcile_treasure() {
 // 0x0D3 : Index @0x14 (u8), Drop @0x15 (u8 ; !=0 -> won/floored -> gone), Highest Lot @0x0E (u16),
 // Highest Lotter Name @0x16 (char[16]).
 void PartyState::on_treasure_lot(const unsigned char* p) {
+    if (pkt_bytes(p) < 0x26) return;          // floor : the lotter name runs p[0x16]..p[0x25]
     const unsigned idx = p[0x14];
     if (idx >= 10) { TPTRACE("TPOOL 0x0D3 BAD idx=%u", idx); return; }
     if (p[0x15] != 0) { TPTRACE("TPOOL 0x0D3 slot=%u DROP=%u -> cleared (had item=0x%04X)", idx, (unsigned)p[0x15], (unsigned)treasure_[idx].itemId); treasure_[idx] = TreasureItem{}; return; }   // item left the pool (won or dropped to floor)

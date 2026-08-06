@@ -67,11 +67,26 @@ static const char* abil_name_by_recast(unsigned rid, const unsigned char* jaBits
     // honest label is the family name. (Blood Pacts / Steps / Rolls work by the first-row rule because their first
     // row genuinely IS the family header.)
     if (rid == 231) return "Stratagem";
-    const char* first = 0; const char* only = 0; int nUsable = 0;
-    for (int i = 0; i < ABILS_N; ++i) if (ABILS[i].recast_id == rid) {
-        if (!first) first = ABILS[i].en;
-        if (jaOk) { unsigned id = ABILS[i].id; if (id < 1024 && (jaBits[id >> 3] & (1u << (id & 7)))) { if (!only) only = ABILS[i].en; ++nUsable; } }
+    // INDEXED, like spell_name_by_recast below -- this used to walk all ABILS_N (626) rows for EVERY active recast,
+    // EVERY frame: up to 40 x 626 row tests a frame. The answer is not a pure function of rid (it depends on the
+    // job's usable-ability bitmap), but that bitmap only changes on a job change -- so cache the whole table and
+    // rebuild it when the bitmap actually differs, not once per frame.
+    struct Entry { const char* first; const char* only; int nUsable; };
+    static Entry idx[4096];
+    static unsigned char builtBits[128];
+    static bool built = false, builtOk = false;
+    if (!built || builtOk != jaOk || memcmp(builtBits, jaBits, 128) != 0) {
+        built = true; builtOk = jaOk; memcpy(builtBits, jaBits, 128);
+        for (int r = 0; r < 4096; ++r) { idx[r].first = 0; idx[r].only = 0; idx[r].nUsable = 0; }
+        for (int i = 0; i < ABILS_N; ++i) {
+            const unsigned r = ABILS[i].recast_id; if (r >= 4096) continue;
+            if (!idx[r].first) idx[r].first = ABILS[i].en;
+            if (jaOk) { const unsigned id = ABILS[i].id;
+                if (id < 1024 && (jaBits[id >> 3] & (1u << (id & 7)))) { if (!idx[r].only) idx[r].only = ABILS[i].en; ++idx[r].nUsable; } }
+        }
     }
+    if (rid >= 4096) return 0;
+    const char* first = idx[rid].first; const char* only = idx[rid].only; const int nUsable = idx[rid].nUsable;
     if (nUsable == 1) return only;
     if (jaOk && nUsable == 0 && first) return 0;   // NONE of this recast's abilities is usable by your job -> it's a cross-job
                                                    //   phantom slot the client reuses (e.g. DNC Chocobo Jig II drives slot 242 =
@@ -342,7 +357,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         // most rows. Raising it to 32 only moved the cliff -- 50 is the row cap, so the tag can always be written.
         static char selfTag[50][32]; int stN = 0;
         const int stMax = (int)(sizeof(selfTag) / sizeof(selfTag[0]));
-        unsigned char jaBits[128]; const bool jaOk = read_usable_ja_bits(jaBits);   // once/frame : which JAs THIS job can use (self-cast filter + shared recast_id disambiguation)
+        // Which JAs THIS job can use (self-cast filter + shared recast_id disambiguation). Taken from the frame
+        // SNAPSHOT: read_usable_ja_bits makes two indirect calls into the client's own resource manager, and doing
+        // that from draw() put client code on the render path 60 times a second for a value that only changes on a
+        // job change. The poller reads it now (rule 6).
+        static const unsigned char JA_NONE[128] = {};
+        const unsigned char* jaBits = f.game ? f.game->jaBits : JA_NONE;
+        const bool jaOk = f.game ? f.game->jaOk : false;
         // ONE definition of "does the buff-source filter keep this timer", shared by the row emit AND by the FOCUS
         // monitor. They used to disagree: the emit applied the filter, the monitor did not -- so under "Mine only" a
         // party WHM's Haste never warned you it was about to expire, then screamed HASTE OUT in red the moment it did.
@@ -701,7 +722,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             static struct FocusMem { unsigned target; unsigned short status, spell; unsigned char isAbil, self, zoneCheck; unsigned lostMs; char name[20]; } fm[24];
             static int fmN = 0; static unsigned fmZone = 0xFFFFFFFFu; static unsigned fmZoneGraceMs = 0; static unsigned fmGen = 0;
             if (fmGen != g_tmResetGen) { fmN = 0; fmGen = g_tmResetGen; }                       // //aio timers reset -> wipe the monitor
-            const unsigned zone = zone_id();
+            const unsigned zone = f.game ? f.game->zone : 0;   // the SNAPSHOT, not a second read of the same offset (rules 6 & 7)
             // a focus buff PERSISTS across a zone : KEEP the monitor, just grace the "lost" alerts while the 0x063 / 0x076 buff
             // lists re-populate. Every entry is flagged for post-zone re-validation (below) : one still MISSING once the lists
             // are back was removed BY THE GAME on zoning (not a real loss) -> it depops silently, no OUT alert.
@@ -753,8 +774,14 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             for (int i = 0; i < no; ++i) {                                                     // remember FOCUS buffs currently up on allies (Allies focus key 0xC000|st ; needs tmMine)
                 const unsigned st = ob[i].status;
                 if (!C.tm_buff_off(UiConfig::TM_KEY_FOCUS | st)) continue;   // ally focus = the same global buff-focus state
+                // Only PARTY targets can ever be monitored -- their buff list comes from the 0x076, which stops at
+                // your party (see the `live` note in the prune). Creating an entry we could never decide is what
+                // filled fm[] on an alliance run and starved your own rows.
+                if (party().party_order(ob[i].target) > 5) continue;
                 int s = -1; for (int q = 0; q < fmN; ++q) if (!fm[q].self && fm[q].target == ob[i].target && fm[q].status == st) { s = q; break; }
                 if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].lostMs = 0; fm[s].zoneCheck = 0; }
+                else if (s < 0) { static windower::debug::LogOnce<2> onceFull;   // SAY it. A silent refusal here is indistinguishable from "no buff to watch".
+                    if (onceFull.first(0)) windower::debug::log("FOCUS monitor FULL (%d entries) -- new ally focus buffs are NOT tracked this session", 24); }
                 if (s >= 0) { fm[s].spell = ob[i].spell; fm[s].isAbil = ob[i].isAbil; int j = 0; for (; j < 19 && ob[i].name[j]; ++j) fm[s].name[j] = ob[i].name[j]; fm[s].name[j] = 0; }
             }
             if (zoneGrace) for (int q = 0; q < fmN; ++q) fm[q].zoneCheck = 1;                 // through the WHOLE settle : flag every entry (incl. ones just re-populated from a stale list) for post-grace validation
@@ -833,7 +860,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             };
             int w = 0;                                                                        // prune : ally left the party/alliance, or the focus flag was turned off
             for (int q = 0; q < fmN; ++q) {
-                const bool live = fm[q].self ? true : (zoneGrace || party().party_order(fm[q].target) <= 17);   // 0..5 party, 6..17 alliance ; 99 = gone (roster is unstable mid-zone -> keep during grace)
+                // <= 5, NOT <= 17. The 0x076 that feeds listReady/focusHas carries YOUR PARTY ONLY, so a monitor
+                // entry on an alliance member can never be decided: listReady stays false forever, the emit below
+                // resets lostMs every frame, and the only prune path here needs lostMs != 0 -- the entry became
+                // IMMORTAL. It also never drew anything, so it was pure dead weight that filled the 24 slots and
+                // then silently blocked new entries, including your own. Alliance targets are dropped here, and
+                // refused at creation below.
+                const bool live = fm[q].self ? true : (zoneGrace || party().party_order(fm[q].target) <= 5);   // 0..5 party ; 6..17 alliance and 99 = gone (roster is unstable mid-zone -> keep during grace)
                 const bool fkOn = C.tm_buff_off(UiConfig::TM_KEY_FOCUS | fm[q].status);   // self & ally share ONE global focus state
                 if (focus_trace_live() && !(live && fkOn))
                     windower::debug::log("FOCUSPRUNE st=%u '%s' DROPPED (live=%d focusOn=%d) -> no OUT row possible",
@@ -874,6 +907,12 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // up, you re-cast it in AoE" symptom lives. Dumped for every monitored entry, kept or not.
             OBLOG("=== OBLOG : %d focus monitor entr(ies) ===", fmN);
             for (int q = 0; q < fmN && nb < 50; ++q) {                                         // emit a RED row for each MISSING focus buff (self or ally)
+                // Honour "My buffs on allies" here too. Turning it off stops ob[] being built, so no NEW ally entry
+                // is created -- but the ones already in fm[] kept emitting, leaving a red blinking "Name - Haste OUT"
+                // at the top of the box for a category the user had just switched off, until they re-cast it. Worse,
+                // with ob[] empty the three deliberate-swap suppressors below (song replaced / unrecoverable / geo
+                // replaced) iterate over nothing, so a Pianissimo swap would raise an OUT that is normally silenced.
+                if (!fm[q].self && !C.tmMine) { fm[q].lostMs = 0; continue; }
                 bool has;
                 if (fm[q].self) has = meHas(fm[q].status);
                 else { const BuffSet* bs = party().buffs_for(fm[q].target); has = false; if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == fm[q].status) { has = true; break; } }
@@ -1016,7 +1055,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     float sscl = C.tmScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
     const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
     const float pad = (ui_config().tmBox.on ? 8.0f : 0.0f) * S, gap = 4.0f * S, midGap = 30.0f * S, icgap = 4.0f * S;   // pad 0 when no box chrome ; midGap : space between the Duration & Recast columns (fused)
-    const u32 white = 0xFFEAF0FFu, gold = 0xFFE8C55Au, strk = 0xFF000000u, orange = 0xFFEB9660u, red = 0xFFF06060u, dim = 0xFFB4B9C8u, green = 0xFF74D074u;
+    const u32 white = 0xFFEAF0FFu, strk = 0xFF000000u, orange = 0xFFEB9660u, red = 0xFFF06060u, dim = 0xFFB4B9C8u, green = 0xFF74D074u;
     Font* fN = tm_font(f, TM_NAME); Font* fT = tm_font(f, TM_TIMER); Font* fH = tm_font(f, TM_HEADER);
     const float zN = tm_sz(TM_NAME, 13.0f) * S, zT = tm_sz(TM_TIMER, 13.0f) * S, zH = tm_sz(TM_HEADER, 13.0f) * S;
     const float oN = tm_ow(TM_NAME, 1.0f) * S, oT = tm_ow(TM_TIMER, 1.0f) * S, oH = tm_ow(TM_HEADER, 1.0f) * S;

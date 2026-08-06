@@ -19,8 +19,11 @@
 //
 // Even correct, this is a MODEL over a hardcoded table that cannot know an item the RE never saw (Gjallarhorn,
 // Marsyas and Daurdabla are absent from Timers' table too, so Timers is a few percent short on those sets).
-// It is therefore the FALLBACK only: PartyState learns the real factor off the server's own 0x063 whenever a
-// song lands on you, and prefers that. See PartyState::songdur_check.
+// This model is nevertheless the SINGLE source of ally song duration -- there is no learned correction layered on
+// top of it. PartyState::songdur_check is a CHECK, not a source: it compares the prediction against the server's
+// own 0x063 when a song of yours lands on YOU, logs the ratio under //aio songdur, and writes nothing back.
+// (An earlier draft of this comment promised a learned factor that "wins over the model". It never existed in
+// this form, and looking for it cost a reader real time -- so: if you want one, it has to be built.)
 #pragma once
 #include "model/song_family_gen.h"   // song_family(spell) : spell id -> song family id
 #include "model/song_dur_gen.h"      // SONG_DUR[] : per-item flat % + per-family extra % (generated)

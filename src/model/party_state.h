@@ -22,6 +22,10 @@ struct PMember {
                                      //   maxHp==0 conflated the two. The member's zone id vs our zone separates them.
     unsigned flags = 0;              // 0x0DD flags @+0x14 (leadership bits ; tentative)
     float dist = -1.0f;              // horizontal distance to the player (yalms) ; -1 = unknown (out of zone / trust)
+    bool  distFar = false;           // dist is unknown BECAUSE the client stopped tracking them (~49 yalms) : their
+                                     // entity is a despawned ghost whose position is frozen. Distinct from "no data
+                                     // at all" so the HUD can say "50+" instead of going blank -- the blank reads as
+                                     // a broken widget, and the frozen number it replaced read as a real distance.
     unsigned char isTrust = 0;       // 1 = a Trust NPC (name matched the TRUSTS DB ; packet carries no job for trusts)
     char name[20] = {0};
 
@@ -86,7 +90,10 @@ struct HateRow  { unsigned id = 0; char mob[24] = {0}; char pc[20] = {0}; int hp
 // Member buffs from the party-buffs packet 0x076 (which never carries the local player -> self
 // buffs come from memory). Keyed by server id, sized for a full alliance, refreshed each 0x076.
 // Transient (NOT part of the cached roster). ids are FFXI status ids (uint16) ; n = count.
-struct BuffSet { unsigned id = 0; int n = 0; unsigned short ids[32] = {}; };
+// `seen` is the eviction clock, NOT a timestamp : bumped every time the 0x076 refreshes this member. It exists
+// because the 18 slots were never freed -- trust ids change on every re-summon, so a long session filled the
+// table and every later member collapsed onto slot 0. Same failure, same fix, as JobShadow (see note there).
+struct BuffSet { unsigned id = 0; int n = 0; unsigned seen = 0; unsigned short ids[32] = {}; };
 
 // Debuffs ON A TARGET (mob), inferred from the 0x028 action packet : FFXI does NOT store a
 // readable per-mob status list (see docs target-substruct.md), so we TRACK the debuffs the local
@@ -206,8 +213,13 @@ struct ZoneTracker {
     char     limbusCofferAt[12] = {0};   // floor it dropped on, e.g. "SW #4"
     int      limbusBigAmt = 0;      // last BIG payout (>= 5000) -- kept separately, it is the one worth remembering
     char     limbusBigAt[12] = {0};
-    int      limbusWeekLeft = -1;   // "You may collect data N more times" (7288 p1) = the WEEKLY allowance left
-                                    // (5 data collections per week), NOT a per-map counter.
+    int      limbusWeekLeft = -1;   // HISTORICAL -- WRITTEN, NEVER READ. DO NOT USE IT AS A SOURCE.
+                                    // "You may collect data N more times" (7288 p1) = the weekly allowance left.
+                                    // Superseded by LimbusWeek (lw_), which stamps the count with the wall clock so
+                                    // LAST week's number can be told apart from this week's -- this field cannot,
+                                    // and it is wiped by zt_set_zone on every zone change besides. Kept only
+                                    // because it sits inside the on-disk ZoneTracker image: removing it would
+                                    // change ZT_CACHE_VER and invalidate every player's zone cache for nothing.
 };
 
 // LIMBUS coffer history -- ONE per area (0 = Apollyon, 1 = Temenos), deliberately OUTSIDE ZoneTracker. The zone
@@ -227,7 +239,11 @@ struct LimbusCoffers {
                                       // coffer), so the wipe must not be able to destroy a week of history on a
                                       // guess : keep the previous row so it can be restored if the threshold is
                                       // ever found to be wrong.
-    int           weekSeen = -1;      // last "collect data N more times" -> N going UP means a new week
+    int           weekSeen = -1;      // HISTORICAL -- WRITTEN, NEVER READ. DO NOT USE IT AS A SOURCE.
+                                      // The "N going UP means a new week" rule it was added for is NOT implemented
+                                      // anywhere: the cycle end is detected from the 5k threshold above, and the
+                                      // week boundary from LimbusWeek's UTC stamp. Kept because it is part of the
+                                      // on-disk LimbusCoffers image (see LC_VER).
 };
 // The WEEKLY ALLOWANCE, persisted next to the coffers and deliberately NOT inside them : it is account-wide
 // (five data collections a week, shared between Apollyon and Temenos), not per-area.
@@ -423,6 +439,13 @@ struct PartyState {
     //   2026-07-20, tid 34944 vs the 11880 shared by render / packets / input). Go through queue_game_text().
     int  nyzul_remaining() const;                   // live floor-timer seconds left (0 = no timer ; may be < 0, clamp at display)
     void zt_save() const;                           // persist the current zone-tracker run to disk (survives an unload/reload/crash)
+    // Same thing, COALESCED to one write per text drain. Every Omen chat line used to call zt_save() directly --
+    // and each call is a read_player (a ~30-read pointer chain) + CreateFile + 2x WriteFile + CloseHandle. During a
+    // bonus window the server sends a progress line per action, so a single fight produced a burst of full file
+    // writes. The roster learned this already: "only when the SET actually grows, NOT on every packet"
+    // (party_state_roster.cpp). Callers on the text path mark; drain_game_text flushes once at the end.
+    void zt_save_soon() { ztDirty_ = true; }
+    void zt_flush_save() { if (ztDirty_) { ztDirty_ = false; zt_save(); } }
     bool zt_load(int zone);                         // restore it for `zone` -> true if a valid same-zone cache loaded (fresh plugin load)
     // Seed a chip by hand : coffers opened BEFORE this feature existed (or before the build was deployed) cannot be
     // recovered from anywhere -- the payout only ever arrives as a live 0x02A. `amtK` >= 5 ends the cycle, exactly
@@ -462,6 +485,14 @@ struct PartyState {
     bool     bcaptClosed_  = true;
     void arm_bcapt_log(int seconds);
     bool bcapt_armed();                 // true while the window is open ; logs "window closed" once on expiry
+    // //aio rangelog : party + alliance distance capture. Settles two open questions at once -- whether the entity
+    // index at member+0x20 goes STALE (the "distance is sometimes garbage" note of 2026-07-21), and whether the
+    // game's range check is horizontal or 3D (both distances are printed side by side). See the dump in
+    // party_state_roster.cpp, which is where the roster, the entity array and the player position already live.
+    unsigned distUntilMs_ = 0;
+    bool     distClosed_  = true;
+    void arm_dist_log(int seconds);
+    bool dist_armed();                  // true while the window is open ; logs "window closed" once on expiry
     // Corsair roll : the pip total (1..12, DOUBLE-UP included) + lucky/unlucky flag, keyed by the roll's status.
     // Filled by on_action from the roll's 0x028 (target[0] param = pip). Read by the Timers box to show "Roll (7)".
     unsigned char rollVal_[1024]  = { 0 };
@@ -672,6 +703,8 @@ struct PartyState {
     bool member_offzone(unsigned id) const;          // PARTY members only : true iff that party member is in a DIFFERENT zone than us (PMember.offzone, computed for the 6-member party in party_state_roster). Alliance members and unknown ids -> false (offzone isn't tracked past the party, and we must never ASSERT out-of-zone on missing data). Fine for the "clean ally SONG rows when the target left my zone" rule : AoE songs are party-scoped, and a truly-gone member is already dropped via party_order>17.
     void on_exp_msg(const unsigned char* p, unsigned id);   // 0x029 / 0x02D : live gains (Param1) + X/h rate
     BuffSet  buffs_[18];
+    unsigned buffsClock_ = 0;             // monotonic tick for BuffSet::seen (evict the stalest slot, never drop a new member)
+    bool     ztDirty_ = false;            // a text-path change is pending -> drain_game_text flushes it once (zt_save_soon)
     DebuffSet tdebuffs_[DEBUFF_SLOTS];    // debuffs per tracked target id (roomy : AoE/-ga/Horde songs debuff a whole same-name pack at once)
     unsigned  curTarget_ = 0, selfId_ = 0;   // context for on_action : the mob you're on + your own id
     float     selfX_ = 0.0f, selfZ_ = 0.0f;  // the player's own horizontal position (entity X@+0x04 / Z@+0x0C) -> target distance
@@ -807,6 +840,12 @@ void set_party_sim_extra(int n);
 // losing an Omen objective line is strictly better than tearing zt_ under the renderer.
 void queue_game_text(const char* s, int mode);
 void drain_game_text();
+// The zone-tracker mode, PUBLISHED by the main thread for the text thread to read. The text callback needs it to
+// decide whether a line is worth an unbudgeted trace, and it used to reach straight into zone_tracker().mode --
+// six lines above the comment forbidding exactly that. Today that read is a single aligned int and therefore
+// harmless on x86; the hazard is the precedent, because the next person following it reaches for zt_.floorObj or
+// an omen slot and gets a torn read with nothing to signal it. One scalar, published in one place, read in one.
+int zt_mode_published();
 // //aio omenlog : true while the Omen parse trace is armed. The text callback consults it to dump the RAW line and
 // its UNMASKED mode for every incoming line -- including the modes we filter out, which is the only way to tell
 // "the parser mishandled it" from "the line never reached the parser".
