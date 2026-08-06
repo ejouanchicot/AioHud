@@ -241,6 +241,43 @@ void test_omen() {
     CHECK(omen_floor_has_bonus("Vanquish all Kindred."));       // contains "Kin"
     CHECK(omen_floor_has_bonus("Free Floor!"));
 
+    SECTION("omen : the same wording must reach both floor predicates the same way");
+
+    // These two predicates describe the SAME banner and used to carry two spellings of it -- "treasure portent"
+    // in one, "Treasure" in the other. strstr is case-sensitive, so whichever way the game writes it, exactly one
+    // of them fired. The test that missed it checked only ONE predicate; this one runs a single string through
+    // both, in every casing the game could plausibly use.
+    {
+        static const char* TREASURE[] = { "Open 3 treasure portents.", "Open 3 Treasure portents.",
+                                          "Open 3 Treasure Portents.", "OPEN 3 TREASURE PORTENTS." };
+        for (unsigned i = 0; i < sizeof(TREASURE) / sizeof(TREASURE[0]); ++i) {
+            CHECK(omen_is_floor_banner_line(TREASURE[i]));    // recognised as a banner -> the floor label updates
+            CHECK(!omen_floor_has_bonus(TREASURE[i]));        // ...and as a coffer floor -> no bonus countdown
+        }
+    }
+
+    SECTION("omen : after a clear, a re-announced objective is recorded, not swallowed");
+
+    // "3: Vanquish 2 foes." satisfies BOTH omen_is_floor_banner_line (it contains "Vanquish") and the objective
+    // parser. With the clear latch armed, the banner branch won: the ten slots were wiped AND the line was never
+    // applied. The whole point of driving this through feed() is that the latch is armed the way the plugin arms
+    // it -- no test in this file did that before, so the branch was never exercised at all.
+    {
+        OmenObj c[10];
+        omen_reset(c);
+        feed(c, OM("1: Vanquish 5 foes."));
+        feed(c, OM("A spectral light flares up."));            // arms the latch, exactly as the plugin does
+        feed(c, OM("3: Vanquish 2 foes."));                    // an objective line -- must NOT be read as a banner
+        CHECK(c[2].type != 0);                                 // slot 3 recorded
+        CHECK_EQ(c[2].req, 2);
+        // A REAL banner arriving with the latch armed still wipes -- the second chance must keep working.
+        omen_reset(c);
+        feed(c, OM("1: Vanquish 5 foes."));
+        feed(c, OM("A spectral light flares up."));
+        feed(c, OM("Vanquish all transcended foes."));
+        CHECK_EQ(c[0].type, 0);                                // slots wiped by the banner
+    }
+
     SECTION("omen : lines that are not objectives are left alone");
 
     CHECK_EQ(omen_parse_line(OM("There are 827 omens from your foes!")).slot, 0);

@@ -66,8 +66,15 @@ void test_skillchain() {
 
     SECTION("skillchain : message-id predicates");
     {
-        CHECK(sc_is_skillchain_msg(288) || sc_is_skillchain_msg(287) || true);   // presence check only
+        // `|| true` used to make this line unfailable -- it was counted and reported green whatever the predicates
+        // returned. Assert the MEASURED ids instead (skillchain.h documents where each one comes from), so the
+        // Shield-Bash-under-Expiacion fix is locked against a regression rather than merely linked.
+        CHECK(sc_is_weaponskill_msg(185));      // the one message a real weaponskill finish carries
+        CHECK(!sc_is_weaponskill_msg(110));     // ...a JA finish is not one, which is the whole point of the split
+        CHECK(sc_is_finish_msg(110));           // ...but it IS a chain-opening finish message
+        CHECK(sc_is_finish_msg(185));
         CHECK(!sc_is_skillchain_msg(0));
         CHECK(!sc_is_finish_msg(0));
+        CHECK(!sc_is_weaponskill_msg(0));
     }
 }
