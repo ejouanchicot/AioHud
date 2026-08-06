@@ -272,7 +272,6 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
             }
         }
     }
-    const float cyc = gy + gh * 0.5f;
     float r = gh * 0.5f;                                  // full capsule -> genuinely ROUND ends
 
     gauge_aura_soft(dev, gx, gy, gw, gh, col, t, pulse, danger);   // adapted glow : soft radial, no box frame

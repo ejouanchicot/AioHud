@@ -160,7 +160,6 @@ void pointwatch_draw(const Frame& f, bool preview, float ovX, float ovY, float o
 
     // ---- box chrome ----
     dColorQuadState(dev);
-    const float r0 = 5.0f * S;
     draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().pwBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
 
     const float x0 = px + pad;

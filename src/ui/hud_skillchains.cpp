@@ -272,7 +272,6 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
 
     // ---- box chrome : dark rounded panel + gold border (Help-box look) ----
     dColorQuadState(dev);
-    const float r = 6.0f * S;
     draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().scBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
 
     const float cx = px + boxW * 0.5f;

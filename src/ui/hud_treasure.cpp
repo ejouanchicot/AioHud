@@ -88,7 +88,7 @@ void treasure_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
     const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
     const float pad = (ui_config().tpBox.on ? 8.0f : 0.0f) * S, gap = 10.0f * S;   // no box chrome -> hug the content
     const float iconW = C.tpIcon ? 34.0f * S : 0.0f, iconH = 36.0f * S, iconGap = C.tpIcon ? 8.0f * S : 0.0f;
-    const u32 white = 0xFFEAF0FFu, dim = 0xFFC8D2E6u, cyan = 0xFF7AD8F0u, gold = 0xFFE8C55Au, strk = 0xFF000000u;
+    const u32 white = 0xFFEAF0FFu, dim = 0xFFC8D2E6u, cyan = 0xFF7AD8F0u, strk = 0xFF000000u;
     // per-element fonts / sizes / outlines / colours
     Font* fIdx = tp_font(f, TP_IDX); Font* fName = tp_font(f, TP_NAME); Font* fTime = tp_font(f, TP_TIMER); Font* fLoot = tp_font(f, TP_LOOT);
     const float zIdx = tp_sz(TP_IDX, 14.0f) * S, zName = tp_sz(TP_NAME, 14.0f) * S, zTime = tp_sz(TP_TIMER, 14.0f) * S, zLoot = tp_sz(TP_LOOT, 14.0f) * S;
@@ -119,7 +119,6 @@ void treasure_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
 
     // ---- box chrome ----
     dColorQuadState(dev);
-    const float r = 6.0f * S;
     draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().tpBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
 
     // ---- coffer icon (left, vertically centred) ----

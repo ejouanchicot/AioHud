@@ -33,7 +33,6 @@ static bool write_file(const char* path, const std::string& data) {
     return true;
 }
 
-static double round1(double v) { return (double)((long long)(v * 10.0 + (v < 0 ? -0.5 : 0.5))) / 10.0; }
 
 // ---- load ----
 bool load_layout(const char* path, Layout& out) {

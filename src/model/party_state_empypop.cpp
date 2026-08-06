@@ -80,7 +80,7 @@ static bool ep_add_chain(EmpyPop& e, const TreasureItem* pool, int idx, int dept
 // fake inventory above) so both produce byte-identical shapes. Assumes e is freshly zeroed and its key set.
 static void ep_build(EmpyPop& e, const Nm* nm, const TreasureItem* pool, bool sample) {
     e.nmName = nm->en;
-    e.allDone = true;
+    e.allDone = true;   // rule10-ok: a data field of the row being built (cleared below per group), not a latch
     const int ng = (nm->popCount < EmpyPop::MAX_GROUPS) ? nm->popCount : EmpyPop::MAX_GROUPS;
     for (int g = 0; g < ng; ++g) {
         const int first = e.nNodes;

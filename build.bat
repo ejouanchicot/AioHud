@@ -43,9 +43,26 @@ where rc.exe >nul 2>nul && (
 REM /W4 /permissive- : high warnings + strict conformance (catches shadowing, dead code, bad conversions).
 REM /std:c++17 : pin the standard (VS2017). _CRT_SECURE_NO_WARNINGS : silence MSVC's C4996 nags on sprintf/sscanf
 REM -- reviewed safe here (fixed buffers ; the string ops already use bounded _snprintf/lstrcpynA ; sscanf is numeric).
-REM /wd4456 : local-scope shadowing is idiomatic here (immediate-mode UI redeclares ty/x/y per control block ;
-REM nested loop counters `i`). Reviewed benign. Kept ON : C4457 (shadows a param), C4244 (lossy conversion), etc.
-cl /nologo /LD /O2 /MT /EHsc- /utf-8 /W4 /permissive- /std:c++17 /wd4456 /D_CRT_SECURE_NO_WARNINGS /DAIOHUD_VERSION=\"%AIOHUD_VERSION%\" %PROBEDEF% /I"%ROOT%include" /I"%ROOT%src" ^
+REM
+REM /WX : warnings ARE errors. Only worth turning on because the tree builds at ZERO warnings (2026-08-06).
+REM Before that day it emitted 39 permanent ones, which is the state in which a NEW warning is invisible --
+REM and that is exactly how a real rendering bug shipped once (C4244, a pixel width truncated to an integer
+REM by a stray u32 in a declaration list, sitting unread among 41 others).
+REM
+REM /wd4456 : local-scope shadowing. KEPT, but the old justification was only half true and is worth stating
+REM properly, because it was measured on 2026-08-06 -- the flag was hiding 41 warnings, in TWO different
+REM populations:
+REM   * 21 in model\ui_config.cpp, which were NOT idiomatic at all : a leftover shared parse scratch declared
+REM     `float x, y, s` while nine per-key branches correctly declare their own. In a config PARSER, picking up
+REM     the wrong `x` writes one module's coordinate into another's. Those are FIXED (the shared names are now
+REM     gx/gy/gsc/gps), not muted -- and the collision had also been suppressing C4101 on the dead leftovers,
+REM     since MSVC does not report an unused variable whose name is redeclared in a nested scope.
+REM   * 20 in the drawing code (party/player/target/minimap/config_page + two nested `for (int i` counters),
+REM     which ARE the immediate-mode idiom : each is confined to one small per-block geometry scope.
+REM Those 20 stay suppressed deliberately. Renaming them buys no correctness and carries a real hazard: if one
+REM use inside the block is missed, it silently resolves to the OUTER variable and still compiles -- the
+REM compiler cannot catch it. C4457 (shadows a PARAMETER) is the dangerous half and is kept ON.
+cl /nologo /LD /O2 /MT /EHsc- /utf-8 /W4 /WX /permissive- /std:c++17 /wd4456 /D_CRT_SECURE_NO_WARNINGS /DAIOHUD_VERSION=\"%AIOHUD_VERSION%\" %PROBEDEF% /I"%ROOT%include" /I"%ROOT%src" ^
    "%ROOT%src\gfx\noise.cpp" "%ROOT%src\gfx\draw.cpp" "%ROOT%src\gfx\texture.cpp" "%ROOT%src\gfx\font.cpp" "%ROOT%src\gfx\window.cpp" ^
    "%ROOT%src\model\layout.cpp" "%ROOT%src\model\party_state.cpp" "%ROOT%src\model\party_state_zonetracker.cpp" "%ROOT%src\model\party_state_pointwatch.cpp" "%ROOT%src\model\party_state_hate.cpp" "%ROOT%src\model\party_state_skillchain.cpp" "%ROOT%src\model\party_state_roster.cpp" "%ROOT%src\model\party_state_empypop.cpp" "%ROOT%src\model\game_mem.cpp" "%ROOT%src\model\map_dat.cpp" "%ROOT%src\model\zones.cpp" "%ROOT%src\model\vana_clock.cpp" "%ROOT%src\model\paths.cpp" "%ROOT%src\model\ui_config.cpp" "%ROOT%src\model\skillchain.cpp" "%ROOT%src\model\resistances.cpp" ^
    "%ROOT%src\ui\buff_atlas.cpp" "%ROOT%src\ui\palette.cpp" "%ROOT%src\ui\edit_box.cpp" "%ROOT%src\ui\liquid_bars.cpp" "%ROOT%src\ui\player.cpp" "%ROOT%src\ui\party.cpp" "%ROOT%src\ui\party_gauges.cpp" "%ROOT%src\ui\target.cpp" "%ROOT%src\ui\minimap.cpp" "%ROOT%src\ui\factory.cpp" "%ROOT%src\ui\config_controls.cpp" "%ROOT%src\ui\party_config.cpp" "%ROOT%src\ui\target_config.cpp" "%ROOT%src\ui\player_config.cpp" "%ROOT%src\ui\minimap_config.cpp" "%ROOT%src\ui\ws_config.cpp" "%ROOT%src\ui\sc_config.cpp" "%ROOT%src\ui\tp_config.cpp" "%ROOT%src\ui\hl_config.cpp" "%ROOT%src\ui\pw_config.cpp" "%ROOT%src\ui\grim_config.cpp" "%ROOT%src\ui\zt_config.cpp" "%ROOT%src\ui\tm_config.cpp" "%ROOT%src\ui\ep_config.cpp" "%ROOT%src\ui\box_style.cpp" "%ROOT%src\ui\config_page.cpp" "%ROOT%src\ui\hud.cpp" "%ROOT%src\ui\hud_preview.cpp" ^
