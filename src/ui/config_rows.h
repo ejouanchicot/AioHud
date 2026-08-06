@@ -26,9 +26,13 @@
 //
 //   { ROW_BAND(band) label at coX+4 ; a chip of chipW x 34 right-aligned in ctrlW ; click -> !field + save } ROW_NEXT(band)
 //
-// UID MUST come from the CALL SITE, not from here : CTRL_ID is a __FILE__:__LINE__ hash, so a uid taken inside
-// this macro would give EVERY row in a file the same ease() spring (the exact trap CFG_COLOR_PICKER_I documents
-// just below). Always pass CTRL_ID as the first argument -- it then expands on the caller's own line.
+// Pass CTRL_ID from the CALL SITE. (To be precise about WHY, because the older wording here was wrong and would
+// send you chasing the wrong thing: __FILE__ and __LINE__ inside a macro body expand at the point of INVOCATION,
+// so a CTRL_ID written inside the macro would still be unique per call site -- CFG_COLOR_PICKER_I below relies on
+// exactly that and is correct. The real trap is a LOOP: several iterations invoked on the SAME source line share
+// one CTRL_ID, which is how the three distance colours in party_config.cpp ended up on one spring and dragged
+// together. That is what `sub` / ctrl_uid_i(CTRL_ID, i) is for.) Keeping it at the call site is still the rule
+// here -- it makes the uid visible where the row is written.
 //
 // ROW_TOGGLE   : the standard row (band 48, content 38 high, 112-wide chip).
 // ROW_TOGGLE_G : same row with explicit geometry, for the panels whose rows are deliberately taller/wider

@@ -65,7 +65,7 @@ bool profile_default_name(char* out, int cap) {
 }
 // per-character "last profile this character loaded" -> the fallback when no "Name Main/Sub" profile exists.
 static const char* charprof_path() { static char b[260]; if (!b[0]) plugin_path(b, 260, "data\\charprofiles.txt"); return b; }
-static char g_charProf[32][2][48]; static int g_charProfN = 0; static bool g_charProfLoaded = false;
+static char g_charProf[32][2][48]; static int g_charProfN = 0; static bool g_charProfLoaded = false;   // rule10-ok: set only once the file OPENS (see charprof_load) -- a failed open retries
 // `force` re-reads even when already loaded. record_char_profile MUST force : every client on this Windower
 // writes this same file, and the write is a full rewrite from the in-memory copy -- so a client holding a stale
 // copy silently DELETED the entries another client had added since. Symptom: "my profile stopped auto-loading".
@@ -77,7 +77,7 @@ static void charprof_load(bool force = false) {
     // That is the very "my profile stopped auto-loading" symptom, arriving by a second route.
     FILE* f = fopen(charprof_path(), "r");
     if (!f) return;                                  // NOT loaded : retry on the next call
-    g_charProfLoaded = true; g_charProfN = 0;
+    g_charProfLoaded = true; g_charProfN = 0;   // rule10-ok: reached only after fopen SUCCEEDED ; the !f path above returns without latching
     char line[128];
     while (fgets(line, sizeof(line), f) && g_charProfN < 32) {
         char* tab = strchr(line, '\t'); if (!tab) continue; *tab = 0;
@@ -365,7 +365,6 @@ static void apply_rdm_uff_preset(UiConfig& c) {
 // called with `continue` costs the chain ZERO depth. Do this for the next module too, rather than compacting
 // lines to buy a few levels. Returns true if `line` was consumed.
 static bool parse_ep_line(const char* line, UiConfig& c) {
-    int idx, v, v1; float fv, f1; unsigned uc;
     if (strncmp(line, "ep=", 3) == 0) {
         int sh = 0, cl = 1; float scl = 1.0f, x = 0.80f, y = 0.25f;
         const int n = sscanf(line + 3, "%d,%f,%f,%f,%d", &sh, &scl, &x, &y, &cl);
@@ -387,7 +386,6 @@ static bool parse_ep_line(const char* line, UiConfig& c) {
 
 // Debuffs-module config lines, parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line).
 static bool parse_db_line(const char* line, UiConfig& c) {
-    int idx, v, v1; float fv, f1; unsigned uc;
     if (strncmp(line, "db=", 3) == 0) {
         int sh = 0, mx = 20, hd = 1, dp = 2; float scl = 1.0f, x = 0.80f, y = 0.42f, isc = 1.0f, rg = 1.0f;
         const int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d,%d,%f,%f", &sh, &scl, &x, &y, &mx, &hd, &dp, &isc, &rg);
@@ -484,7 +482,14 @@ static bool load_config_from(const char* path) {
     static char line[8192];  // BIG : a "tmTrkOff<job>=" line can hold up to TM_TRACK_MAX (512) comma-separated keys ~= 3 KB.
                              // A small buffer truncated it mid-line, so most tracked-spell keys were dropped on reload.
     while (fgets(line, sizeof(line), f)) {
-        int v, v1, v2, ps, idx, b0, b1, b2, bc; float x, y, s, fv, f1, f2; unsigned uc;
+        // Shared parse scratch. The four position/scale names are gx / gy / gsc / gps, NOT x / y / s / ps, and
+        // that is the whole point: NINE of the per-key branches below correctly declare their own `float x, y`
+        // for their own line, and every one of them was shadowing this block. That produced 21 C4456 warnings
+        // which /wd4456 then hid -- so the flag was not suppressing an idiom, it was suppressing a real name
+        // collision in the config parser, where picking up the wrong `x` writes one module's coordinate into
+        // another's. Renaming the SHARED names (only four sites use them: partyRefX, zonePanel, guide, box)
+        // leaves the well-behaved branches untouched and removes the collision instead of muting it.
+        int v, v1, v2, gps, idx, b0, b1, b2, bc; float gx, gy, gsc, fv, f1, f2; unsigned uc;
         if (parse_ep_line(line, c)) continue;   // out-of-line : keeps the chain below off MSVC's nesting limit
         if (parse_cast_line(line, c)) continue; // out-of-line : cast-placeholder toggles (same nesting-limit reason)
         if (parse_db_line(line, c)) continue;   // out-of-line : Debuffs module (same nesting-limit reason)
@@ -632,9 +637,9 @@ static bool load_config_from(const char* path) {
             for (int k = 0; k < got && k < 6; ++k) c.partyRef[k] = pr[k];
         }
         else if (sscanf(line, "partyBottom=%f", &fv) == 1) c.partyBottomY = fv;
-        else if (sscanf(line, "partyRefX=%f,%f", &x, &y) == 2) { c.partyRefX[0] = x; c.partyRefX[1] = y; }
+        else if (sscanf(line, "partyRefX=%f,%f", &gx, &gy) == 2) { c.partyRefX[0] = gx; c.partyRefX[1] = gy; }
         else if (strncmp(line, "allyRef=", 8) == 0) { float ar[4]; int g = sscanf(line + 8, "%f,%f,%f,%f", &ar[0], &ar[1], &ar[2], &ar[3]); for (int k = 0; k < g && k < 4; ++k) c.allyRefY[k] = ar[k]; }
-        else if (sscanf(line, "zonePanel=%f,%f", &x, &y) == 2) { c.zonePanelX = x; c.zonePanelY = y; }
+        else if (sscanf(line, "zonePanel=%f,%f", &gx, &gy) == 2) { c.zonePanelX = gx; c.zonePanelY = gy; }
         else if (strncmp(line, "zone=", 5) == 0 && c.guideGroupCount < GUIDE_GROUPS_MAX) {
             GuideGroup z; char nm[24] = { 0 }; float x = 0, y = 0, w = 0, h = 0; int a0 = 0, a1 = 0, a2 = 0, rl = 0, off = 0;
             // parse the 7 numeric fields common to BOTH formats ; the tail is either "role,name" (new) or
@@ -666,12 +671,12 @@ static bool load_config_from(const char* path) {
         // prefixes the two above, because parse_text_style requires a DIGIT right after the key -- "textP0=" is
         // rejected by the "text" parser at that character, not silently absorbed.
         else if (parse_text_style(line, "text", c.text[0], TE_COUNT)) { parse_text_style(line, "text", c.text[1], TE_COUNT); }
-        else if (sscanf(line, "box%d=%d,%f,%f,%f", &idx, &ps, &x, &y, &s) == 5 && idx >= 0 && idx < 3) {
+        else if (sscanf(line, "box%d=%d,%f,%f,%f", &idx, &gps, &gx, &gy, &gsc) == 5 && idx >= 0 && idx < 3) {
             // sanitise : a corrupt position (out of the [0,1] screen fraction) must never brick the box
             // off-screen where it can't be grabbed back. Clamp the placed top-left to the viewport.
-            x = x < 0.0f ? 0.0f : (x > 1.0f ? 1.0f : x);
-            y = y < 0.0f ? 0.0f : (y > 1.0f ? 1.0f : y);
-            c.box[idx].posSet = (ps != 0); c.box[idx].x = x; c.box[idx].y = y; c.box[idx].scale = s;
+            gx = gx < 0.0f ? 0.0f : (gx > 1.0f ? 1.0f : gx);
+            gy = gy < 0.0f ? 0.0f : (gy > 1.0f ? 1.0f : gy);
+            c.box[idx].posSet = (gps != 0); c.box[idx].x = gx; c.box[idx].y = gy; c.box[idx].scale = gsc;
         }
     }
     fclose(f);
@@ -694,6 +699,11 @@ static bool load_config_from(const char* path) {
     CLF(c.skinBoxAlpha, 0.0f, 1.0f);
     for (int k = 0; k < 3; ++k) {
         CLF(c.barHeight[k], 0.10f, 4.0f); CLF(c.barWidth[k], 0.10f, 4.0f); CLF(c.badgeScale[k], 0.10f, 4.0f);
+        // box[].scale belongs here too. The box line sanitises x and y right where it is parsed ("a corrupt
+        // position must never brick the box off-screen") and then assigns scale untouched -- so a 0 from a
+        // truncated or hand-edited file multiplies the whole box to nothing, and only the Party box (index 0)
+        // has a floor at the draw site. Same range the edit-mode wheel and the Size slider already enforce.
+        CLF(c.box[k].scale, 0.50f, 2.0f);
         if (c.gaugeStyle[k] < 0 || c.gaugeStyle[k] > 7) c.gaugeStyle[k] = 0;
         if (c.jobBadge[k]   < 0 || c.jobBadge[k]   > 3) c.jobBadge[k]   = 2;
     }
@@ -742,7 +752,7 @@ static void move_glob(const char* patternRel, const char* srcDirRel, const char*
     FindClose(h);
 }
 static void migrate_data_folder() {
-    static bool done = false; if (done) return; done = true;
+    static bool done = false; if (done) return; done = true;   // rule10-ok: one-time folder migration, not a resource load -- it runs again next session, and re-running it mid-session would move nothing new
     char p[300];
     plugin_path(p, sizeof(p), "data");            CreateDirectoryA(p, NULL);   // parents first (CreateDirectory won't make intermediates)
     plugin_path(p, sizeof(p), "data\\profiles");  CreateDirectoryA(p, NULL);
@@ -1097,10 +1107,17 @@ bool profile_dirty()      { return g_snapValid && !persist_eq(g_snap, ui_config(
 bool ui_config_persist_eq(const UiConfig& a, const UiConfig& b) { return persist_eq(a, b); }
 bool profile_delete(const char* name) {
     if (!name || !name[0]) return false;
-    char p[300]; profile_path(name, p, sizeof(p));
+    // COPY the name first. Callers pass profile_name(i), which points straight into g_profNames[] -- and
+    // profile_refresh() below rescans the folder and REWRITES that array in place. The comparison that follows
+    // was therefore reading whatever name had shifted into that slot, so deleting the ACTIVE profile compared it
+    // against its successor, the strcmp failed, and g_active kept naming a file that no longer exists. The UI
+    // still showed "active: <name>", and Save changes silently recreated the profile the user had just deleted.
+    // (It happened to work when the deleted profile was last alphabetically -- nothing moved into its slot.)
+    char nm[64]; int i = 0; for (; i < (int)sizeof(nm) - 1 && name[i]; ++i) nm[i] = name[i]; nm[i] = 0;
+    char p[300]; profile_path(nm, p, sizeof(p));
     bool ok = DeleteFileA(p) != 0;
     profile_refresh();
-    if (g_active[0] && strcmp(g_active, name) == 0) set_active_profile("");   // deleting the active profile clears it
+    if (g_active[0] && strcmp(g_active, nm) == 0) set_active_profile("");   // deleting the active profile clears it
     return ok;
 }
 
@@ -1218,6 +1235,9 @@ void reset_ui_config() {   // general Default : everything
     c.scBox = d.scBox; c.tpBox = d.tpBox; c.hlBox = d.hlBox; c.pwBox = d.pwBox; c.ztBox = d.ztBox; c.mmBox = d.mmBox; c.epBox = d.epBox; c.dbBox = d.dbBox; c.plrEqBox = d.plrEqBox;
     c.dbShow = d.dbShow; c.dbScale = d.dbScale; c.dbX = d.dbX; c.dbY = d.dbY; c.dbMax = d.dbMax; c.dbHeader = d.dbHeader; c.dbDisp = d.dbDisp; c.dbIconScale = d.dbIconScale; c.dbRowGap = d.dbRowGap;
     c.tgtSubPos = d.tgtSubPos; c.mmClockPos = d.mmClockPos; c.scNearby = d.scNearby;
+    c.scTP = d.scTP;   // was MISSING : the only field of 302 that "Reset all settings" left alone, so a hidden
+                       // TP line stayed hidden through a full reset with nothing to explain why (it was appended
+                       // to the sc2= line late, and this function did not follow).
     for (int k = 0; k < HL_TE_COUNT; ++k)   c.hlText[k]   = TextStyle();
     for (int k = 0; k < PW_TE_COUNT; ++k)   c.pwText[k]   = TextStyle();
     for (int k = 0; k < GRIM_TE_COUNT; ++k) c.grimText[k] = TextStyle();

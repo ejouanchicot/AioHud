@@ -191,8 +191,14 @@ private:
     int   section_ = 0;       // Configuration sidebar : 0 = Party/Alliance (more later)
     int   cfgTarget_ = 0;     // which box GROUP the Per box settings edit : 0 = Party, 1 = Alliance (both alliances)
     int   cfgTextElem_ = 0;   // which text element the Typography controls edit (Name/HP/MP/TP/Cast/Badge/Distance/Cost)
-    bool  catOpen_[13] = { false, false, false, true, true, false, false, false, false, false, true, false, false };  // Config categories : sub-sections + the Party/Alliance category ([1]) START COLLAPSED ; open one to reveal its controls. ([3]Interface [4]Target [10]Player tops stay open so their collapsed sub-headers show.)
-    float catH_[13] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };  // each OPEN category's measured block height -> its SOLID menu-card panel is drawn a frame later (0 = closed ; [6..9,11,12] unused, sub-sections have no panel)
+    // HEADROOM, deliberately. Unlike hov_/relOpen_/dbgOpen_/trkCatOpen_ -- all of which got a static_assert after
+    // being caught undersized -- these two are indexed by LITERALS written at the call sites (catOpen_[11] = ...),
+    // so there is no count to assert against and nothing bounds the write. They were sized exactly 13 for 13 used
+    // indices: adding a 14th category compiles clean and writes past the end, straight into catH_. Sized to 32 so
+    // that cannot happen, and if you ever need a 33rd, grow BOTH.
+    static const int CFG_CAT_N = 32;
+    bool  catOpen_[CFG_CAT_N] = { false, false, false, true, true, false, false, false, false, false, true, false, false };  // Config categories : sub-sections + the Party/Alliance category ([1]) START COLLAPSED ; open one to reveal its controls. ([3]Interface [4]Target [10]Player tops stay open so their collapsed sub-headers show.)
+    float catH_[CFG_CAT_N] = { 0.0f };  // each OPEN category's measured block height -> its SOLID menu-card panel is drawn a frame later (0 = closed ; [6..9,11,12] unused, sub-sections have no panel)
     int   cfgTgtTextElem_ = 0;   // which Target text element the typography sub-section edits (TGT_NAME / TGT_HP / TGT_TIMER)
     int   cfgPlrTextElem_ = 0;   // which Player text element the typography sub-section edits (PLR_NAME / PLR_LVL)
     int   cfgMmTextElem_ = 0;    // which Minimap clock text element the typography sub-section edits (MM_TIME / MM_DAY / MM_MOON / MM_REAL)
@@ -224,6 +230,12 @@ private:
     bool  kbCommit_    = false;   // Enter was pressed -> save on the next draw
     bool  profDirty_   = true;    // rescan the profile folder on the next Profile-tab draw
     char  activeProf_[32] = { 0 };// last saved/loaded profile -> highlighted in the list
+    // A profile write that FAILED, surfaced in the page for a few seconds. profile_save() already returns false
+    // and logs on a write failure -- the four call sites here dropped that return on the floor, cleared the name
+    // field and set activeProf_, so an unwritable profiles\ folder (Program Files, disk full, AV lock) looked
+    // exactly like a successful save. The only clue was the profile never appearing in the SAVED list.
+    unsigned profErrMs_ = 0;      // GetTickCount of the failure (0 = none) -> the banner shows for ~8 s
+    char     profErrName_[64] = { 0 };
     bool  profSynced_  = false;   // one-time sync of activeProf_ from the persisted active profile (startup auto-load)
     int   helpSel_     = 0;       // Help tab : selected module in the left menu
     float helpScroll_  = 0.0f;    // Help tab vertical scroll (mouse wheel)

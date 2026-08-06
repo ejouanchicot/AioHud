@@ -571,7 +571,15 @@ static PickHSV* pick_slot(int uid, u32 col) {
         if (g_pick[i].col != col) { rgb2hsv(col, g_pick[i].h, g_pick[i].s, g_pick[i].v); g_pick[i].col = col; }   // colour changed elsewhere -> resync HSV
         return &g_pick[i];
     }
-    if (g_pickN < 24) { PickHSV& p = g_pick[g_pickN]; p.uid = uid; rgb2hsv(col, p.h, p.s, p.v); p.col = col; return &g_pick[g_pickN++]; }
+    // SATURATION IS ANNOUNCED, like ease()'s spring table right above. Returning 0 here makes color_picker()
+    // bail before its first quad, so the picker draws NOTHING -- a ~249px hole in the panel, permanently, with
+    // no log line anywhere. Slots are never recycled, so the count is "distinct pickers visited since load":
+    // whether it happens at all depends on the order the user opened panels in. 19 of 24 are in use today.
+    if (g_pickN >= 24) {
+        static bool warned = false;
+        if (!warned) { warned = true; windower::debug::log("colour-picker slot table FULL (24) -- further pickers will NOT be drawn this session"); }
+    }
+    if (g_pickN < 24) {PickHSV& p = g_pick[g_pickN]; p.uid = uid; rgb2hsv(col, p.h, p.s, p.v); p.col = col; return &g_pick[g_pickN++]; }
     return 0;
 }
 

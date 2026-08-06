@@ -744,7 +744,10 @@ void ConfigPage::draw_profile_bar(u32 dev, Font* fo, const MouseState* mo, bool 
             rpanel(dev, bx, bY, saveW, bH, sr, canSave ? lerpc(0xFF1E252B, 0xFF27313A, t) : 0xFF1A2027, canSave ? lerpc(0xFF161C21, 0xFF1C232A, t) : 0xFF121820, lerpc(C_CTL_BR, C_ACCENTHI, t), snap(1.3f));
             fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, tr("Saved", "Enregistré"), snap(14.0f), fa(canSave ? C_TEXT : C_MUTE), fa(C_STROKE), 1.0f);
         }
-        if (canSave && dirty && hov && click) { profile_save(activeProf_); }
+        if (canSave && dirty && hov && click) {
+            if (!profile_save(activeProf_)) { profErrMs_ = GetTickCount(); _snprintf(profErrName_, sizeof(profErrName_), "%s", activeProf_); profErrName_[sizeof(profErrName_) - 1] = 0; }
+            else profErrMs_ = 0;
+        }
     }
 }
 
@@ -1212,12 +1215,17 @@ void ConfigPage::draw_profile_tab(const Frame& f, u32 dev, Font* fo, const Mouse
         { char defn[64]; const bool haveDef = profile_default_name(defn, sizeof(defn));   // "Name Main/Sub" -> the auto-loading profile for this character/job
           char lbl[96]; if (haveDef) _snprintf(lbl, sizeof(lbl), tr("Save for %s", "Sauver pour %s"), defn); else strcpy(lbl, tr("Save for character", "Sauver pour le perso"));
           if (push_btn(dev, fo, mo, click, CTRL_ID, cx0, ry0, cw0, qbH, lbl, 0) && haveDef) {
-              profile_save(defn); record_char_profile(defn); strncpy(activeProf_, defn, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0;
-              nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; profDirty_ = true; } }
+              // HONOUR the return : on failure nothing is renamed active and nothing is cleared, and the banner says so.
+              if (!profile_save(defn)) { profErrMs_ = GetTickCount(); _snprintf(profErrName_, sizeof(profErrName_), "%s", defn); profErrName_[sizeof(profErrName_) - 1] = 0; }
+              else { profErrMs_ = 0; record_char_profile(defn); strncpy(activeProf_, defn, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0;
+                     nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; }
+              profDirty_ = true; } }
         ry0 += qbH + snap(10.0f);
         if (push_btn(dev, fo, mo, click, CTRL_ID, cx0, ry0, cw0, qbH, tr("Save as Default", "Sauver comme Défaut"), 0)) {
-            profile_save("Default"); record_char_profile("Default"); strcpy(activeProf_, "Default");
-            nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; profDirty_ = true; }
+            if (!profile_save("Default")) { profErrMs_ = GetTickCount(); strcpy(profErrName_, "Default"); }
+            else { profErrMs_ = 0; record_char_profile("Default"); strcpy(activeProf_, "Default");
+                   nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false; }
+            profDirty_ = true; }
         ry0 += qbH + snap(18.0f);
         fo->begin(dev); fo->draw_lc(dev, cx0, ry0, tr("A profile saves every setting.", "Un profil garde tous les réglages."), snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         fo->draw_lc(dev, cx0, ry0 + snap(16.0f), tr("Quick-save binds it to this character.", "La sauvegarde rapide le lie au perso."), snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
@@ -1261,14 +1269,30 @@ void ConfigPage::draw_profile_tab(const Frame& f, u32 dev, Font* fo, const Mouse
         const char* lbl = exists ? tr("Overwrite", "Remplacer") : tr("Create", "Créer");   // always non-destructive : never auto-renames the active one
         const bool doSave = (push_btn(dev, fo, mo, click, CTRL_ID, pX + fW + fGap, py, btnW, fH, lbl, 0) || commit) && canSave;
         if (doSave) {
-            profile_save(nameBuf_); record_char_profile(nameBuf_);
-            strncpy(activeProf_, nameBuf_, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0;
-            nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false;   // clear the field -> ready for the NEXT new profile
+            // Keep the typed name in the field when the write fails -- clearing it told the user it had been
+            // saved, and cost them the name they had just typed.
+            if (!profile_save(nameBuf_)) { profErrMs_ = GetTickCount(); _snprintf(profErrName_, sizeof(profErrName_), "%s", nameBuf_); profErrName_[sizeof(profErrName_) - 1] = 0; }
+            else {
+                profErrMs_ = 0; record_char_profile(nameBuf_);
+                strncpy(activeProf_, nameBuf_, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0;
+                nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false;   // clear the field -> ready for the NEXT new profile
+            }
             profDirty_ = true;
         }
 
+        // A failed write, said out loud. Without this the ONLY evidence was a line in aiohud_debug.log and the
+        // profile quietly missing from the list below -- and the person who needs it is the one whose install
+        // sits somewhere unwritable, i.e. the one least able to guess.
+        py += fH + snap(8.0f);
+        if (profErrMs_ && (unsigned)(GetTickCount() - profErrMs_) < 8000u) {
+            char eb[160];
+            _snprintf(eb, sizeof(eb), tr("Could not save \"%s\" -- check that the plugin folder is writable.",
+                                         "Impossible d'enregistrer \"%s\" -- verifie que le dossier du plugin est accessible en ecriture."), profErrName_);
+            eb[sizeof(eb) - 1] = 0;
+            fo->begin(dev); fo->draw_lc(dev, pX, py, eb, snap(12.0f), fa(0xFFF06060), fa(C_STROKE), 1.2f);
+        }
         // saved library
-        py += fH + snap(24.0f);
+        py += snap(16.0f);
         fo->begin(dev); char hdr[48]; sprintf(hdr, tr("SAVED  (%d)", "ENREGISTRÉS  (%d)"), nprof);
         fo->draw_lc(dev, pX, py, hdr, snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.2f);
         py += snap(24.0f);
