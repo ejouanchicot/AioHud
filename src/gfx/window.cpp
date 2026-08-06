@@ -3,6 +3,7 @@
 #include "gfx/draw.h"      // tquad
 #include "gfx/texture.h"   // load_raw_texture, release_texture
 #include "model/paths.h"   // plugin_path : runtime-derived asset base (gfx infra exception to the layering rule)
+#include "windower_debug.h"   // debug::log -- a skin that never loads must not be silent
 #include <cstdio>
 #include <cstdlib>
 
@@ -94,8 +95,18 @@ bool WindowSkin::load(u32 dev, const char* themeName) {
     _snprintf(p, sizeof(p), "%s\\%s\\bg.raw",     ASSET_BASE(), themeName); p[sizeof(p) - 1] = 0; b  = load_raw_texture(dev, p, 128, 128);
     if (!(c && hf && vf && b)) {   // partial load -> release the fragments, keep whatever we already had, retry later
         release_texture(c); release_texture(hf); release_texture(vf); release_texture(b);
+        // ...and SAY SO, once per theme. The callers (hud.cpp, player.cpp, target.cpp, box_style.cpp) all retry
+        // on `!ready()`, i.e. EVERY FRAME -- so a missing or unreadable window\<theme>\ folder meant four failed
+        // CreateFileA per frame, forever, with no line anywhere. The visible symptom is a box with no background,
+        // and //aio self_check reported it as "(none/proc)" -- the same string it prints for a genuinely
+        // procedural theme, so the one diagnostic available said "working as intended".
+        ++failN;
+        if (failN == 1)
+            windower::debug::log("SKIN '%s' FAILED to load (corner=%d hframe=%d vframe=%d bg=%d) -- base '%s'. Boxes draw with NO skin ; retrying.",
+                                 themeName, c ? 1 : 0, hf ? 1 : 0, vf ? 1 : 0, b ? 1 : 0, ASSET_BASE());
         return false;
     }
+    if (failN) { windower::debug::log("SKIN '%s' loaded after %d failed attempt(s)", themeName, failN); failN = 0; }
     release_texture(corner); release_texture(hframe); release_texture(vframe); release_texture(bg);   // swap in atomically
     corner = c; hframe = hf; vframe = vf; bg = b;
     borderColor = border_from_bg(p);     // derive the border colour from this theme's bg

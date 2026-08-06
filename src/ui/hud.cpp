@@ -301,20 +301,25 @@ void Hud::render(u32 dev) {
     // first frames.
     static u32 s_frame = 0; ++s_frame;
     font_set_bake_budget(s_frame < 180 ? 2 : (1 << 30));   // throttle only the first ~3s (the load) ; unlimited after
-    if (!wsFontWarmed_ && s_frame > 40) {   // PRE-BAKE the WS-popup font atlases off-screen ONCE, but only after the
-                                            // HUD has settled -> the big 58/34px atlases never pile onto the load frames
-        Font* pf = fonts_.get(ui_font_face(ui_config().wsFont), 900);
-        if (pf) { const float US = (screenH_ / 1400.0f) * ui_config().wsScale; pf->begin(dev);
-                  pf->draw(dev, -9999.0f, -9999.0f, "0123456789", 58.0f * US, 0);
-                  pf->draw(dev, -9999.0f, -9999.0f, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 34.0f * US, 0); }
-        wsFontWarmed_ = true;
-    }
-
     // ONE state block around ALL our drawing: save the game's render state, set ours,
     // restore afterwards (else we corrupt the game's own rendering). Retained widgets
     // (text/prims) are auto-rendered by Windower outside this block -- harmless here.
     u32 tok = dCreateSB(dev, D3DSBT_ALL);
     __try {
+        // PRE-BAKE the WS-popup font atlases off-screen ONCE, but only after the HUD has settled -> the big 58/34px
+        // atlases never pile onto the load frames.
+        // INSIDE the state block, and this is not cosmetic. Font::begin sets 11 render states + 13 texture-stage
+        // states and Font::draw submits real geometry, so running it above the block did two things: it left the
+        // game's own state trashed on the way out of EndScene, and -- worse -- dCreateSB then captured the state we
+        // had already dirtied, so the ApplySB at the bottom "restored" the FONT's state instead of the game's.
+        // This was the only drawing the plugin did outside its own save/restore.
+        if (!wsFontWarmed_ && s_frame > 40) {
+            Font* pf = fonts_.get(ui_font_face(ui_config().wsFont), 900);
+            if (pf) { const float US = (screenH_ / 1400.0f) * ui_config().wsScale; pf->begin(dev);
+                      pf->draw(dev, -9999.0f, -9999.0f, "0123456789", 58.0f * US, 0);
+                      pf->draw(dev, -9999.0f, -9999.0f, "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 34.0f * US, 0); }
+            wsFontWarmed_ = true;
+        }
         // When the config LIVE PREVIEW is up, the party/alliance tiers are drawn ONCE by
         // draw_config_preview (repositioned into the stage). Skip them in the normal loop so they
         // aren't drawn twice -- the double draw left the preview pass with dt=0 (animations frozen ->
@@ -372,6 +377,10 @@ void Hud::render(u32 dev) {
         // produced exactly one line for the whole session -- indistinguishable in the log from a single transient
         // hiccup, while the HUD silently drew nothing. Report the first one immediately, then at most one line
         // every 5 s with the running count, so a REPEATING fault is visible as such (rule 10's corollary).
+        // The aborted pass may have left glyphs half-accumulated in the shared text batch. Drop them: the next
+        // frame would otherwise append behind them and submit this frame's leftovers -- old positions, old UVs,
+        // whatever atlas is bound by then -- as a stray line of ghost text.
+        font_reset_batch();
         static unsigned faults = 0, nextLogMs = 0;
         const unsigned nowMs = GetTickCount();
         ++faults;
@@ -532,7 +541,10 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
 void Hud::self_check() {
     windower::debug::log("=== AIO SELFCHECK : texture-load health (1 = handle set ; tN = retry misses so far) ===");
     windower::debug::log("  hud      : buffAtlas=%d(t%u) skin=%s  grim L=%d D=%d C=%d  weapon=%d coffer=%d",
-                         buffAtlas_ ? 1 : 0, buff_atlas_tries(), skin_.ready() ? "ready" : "(none/proc)",
+                         // three states, not two : loaded / this theme has no textures by design / its textures
+                         // will not load. The last two used to print the same string, so a broken install read as
+                         // normal to the one person running the diagnostic.
+                         buffAtlas_ ? 1 : 0, buff_atlas_tries(), skin_.ready() ? "ready" : (skin_.failed() ? "MISSING (texture theme, files unreadable)" : "(none/proc)"),
                          grimLight_ ? 1 : 0, grimDark_ ? 1 : 0, grimClosed_ ? 1 : 0, weaponIcons_ ? 1 : 0, tpCoffer_ ? 1 : 0);
     const char* rk = 0; const char* rom = ffxi_rom_dir_probe(&rk);   // gear-icon ROM path (EquipViewer id-vs-icon)
     windower::debug::log("  romdir   : %s   (key: %s)", rom ? rom : "<UNRESOLVED : gear icons will be id-text>", rk ? rk : "<none>");

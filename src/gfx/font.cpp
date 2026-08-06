@@ -3,6 +3,7 @@
 #include "gfx/draw.h"
 #include "gfx/texture.h"
 #include "model/paths.h"   // plugin_path_w : runtime-derived fonts dir (gfx infra exception to the layering rule)
+#include "windower_debug.h"   // debug::log -- gfx had NO instrumentation at all, so every failure here was mute
 #include <windows.h>
 
 namespace aio {
@@ -93,7 +94,16 @@ void Font::build(u32 dev, Slot& s, int em) {
         else { SIZE sz; GetTextExtentPoint32A(hdc, &ch, 1, &sz); adv = sz.cx; }
         if (adv < 1) adv = (int)(em * 0.3f);
         if (penx + adv + pad > AW) { penx = pad; peny += rowH; }
-        if (peny + cellH > AH) break;
+        if (peny + cellH > AH) {
+            // SAY IT. Every glyph past this point keeps its default G -- w = h = adv = 0 -- and the slot is still
+            // published as valid below, so those characters render as nothing AND advance nothing: they vanish
+            // without even shifting the rest of the line. That is a partial success being treated as a success
+            // (CLAUDE.md rule 10, third form), and it was completely silent. Reachable at the 41..72px tier,
+            // where a wide face can run out of the 512x2048 sheet before the Latin-1 accents are engraved.
+            windower::debug::log("FONT atlas FULL : '%s' w%d em=%d -- engraved up to codepoint %d of %d, the rest render as NOTHING",
+                                 face_, weight_, em, c - 1, LAST);
+            break;
+        }
         if (c != ' ') TextOutA(hdc, penx, peny, &ch, 1);
         G& g = s.g[c - FIRST];
         g.u0 = (float)penx / AW;          g.u1 = (float)(penx + adv) / AW;
@@ -152,16 +162,41 @@ void Font::build(u32 dev, Slot& s, int em) {
 static int g_fontBakeBudget = 1 << 30;
 void font_set_bake_budget(int n) { g_fontBakeBudget = n; }
 
+// Drop whatever glyphs are sitting half-accumulated in the shared batch. Called from the HUD's SEH handler: a
+// widget faulting mid-Font::emit leaves g_gn pointing past vertices that were never flushed, and the NEXT frame
+// appends behind them -- so the first flush of the new frame submits the faulting frame's leftovers, with their
+// old screen coordinates and old UVs, against whatever atlas is bound now. One stray line of ghost text. The
+// HUD's handler is explicitly built to absorb faults that repeat every frame, so this is not a corner case.
+void font_reset_batch() { g_gn = 0; }
+
 int Font::pick(u32 dev, float size) {
     int em = (int)(size + 0.5f); if (em < 7) em = 7; if (em > 72) em = 72;
-    for (int i = 0; i < nslot_; ++i) if (slot_[i].em == em) return slot_[i].tex ? i : -1;
+    const unsigned clk = ++useClock_;
+    for (int i = 0; i < nslot_; ++i) if (slot_[i].em == em) { slot_[i].used = clk; return slot_[i].tex ? i : -1; }
     // want a NEW size : bake it only if the frame's bake budget allows AND we have a fallback to show meanwhile.
     if (nslot_ < NSLOT && (g_fontBakeBudget > 0 || nslot_ == 0)) {
         build(dev, slot_[nslot_], em);
-        if (slot_[nslot_].tex) { --g_fontBakeBudget; return nslot_++; }
+        if (slot_[nslot_].tex) { slot_[nslot_].used = clk; --g_fontBakeBudget; return nslot_++; }
         return -1;
     }
-    int best = -1, bd = 99999;                       // budget spent / pool full -> reuse the nearest baked size for now
+    // POOL FULL : recycle the least recently used slot instead of blurring this size forever. Without this the
+    // first NSLOT sizes ever requested owned the pool for the whole session (nslot_ only ever grew), so which
+    // text was crisp depended on the order the user happened to open things in -- and changed at every zone.
+    // Still budget-gated: under the load-time throttle we keep falling back to the nearest size for a frame or
+    // two rather than thrashing the atlas, exactly as before.
+    if (nslot_ >= NSLOT && g_fontBakeBudget > 0) {
+        int v = 0; for (int i = 1; i < nslot_; ++i) if (slot_[i].used < slot_[v].used) v = i;
+        const u32 old = slot_[v].tex;
+        Slot fresh; build(dev, fresh, em);
+        if (fresh.tex) {
+            // Only drop the old atlas once the new one exists -- a failed bake must not cost us a working slot.
+            if (old) release_texture(old);
+            slot_[v] = fresh; slot_[v].used = clk;
+            --g_fontBakeBudget;
+            return v;
+        }
+    }
+    int best = -1, bd = 99999;                       // budget spent / bake failed -> reuse the nearest baked size for now
     for (int i = 0; i < nslot_; ++i) if (slot_[i].tex) { int d = iabs(slot_[i].em - em); if (d < bd) { bd = d; best = i; } }
     return best;
 }
@@ -187,7 +222,9 @@ void Font::ensure(u32 dev) {
 }
 
 void Font::on_device_lost() { for (int i = 0; i < NSLOT; ++i) slot_[i].tex = 0; nslot_ = 0; }
-void Font::dispose()        { for (int i = 0; i < nslot_; ++i) if (slot_[i].tex) release_texture(slot_[i].tex); nslot_ = 0; }
+// Release AND forget. Zeroing the handles matters now that pick() recycles slots: nslot_ = 0 alone left dangling
+// handles in the array that a later build() would silently overwrite, leaking whatever they pointed at.
+void Font::dispose()        { for (int i = 0; i < nslot_; ++i) if (slot_[i].tex) { release_texture(slot_[i].tex); slot_[i].tex = 0; } nslot_ = 0; }
 
 void Font::set_face(const char* face, int weight, bool italic) {
     if (face && face[0] && lstrcmpA(face, face_) != 0) { lstrcpynA(face_, face, sizeof(face_)); dirty_ = true; }
@@ -207,13 +244,13 @@ static void register_bundled_fonts_once() {
     // Latch on SUCCESS, not on the first attempt : the assets\fonts\ folder can be briefly unreadable while the
     // updater extracts the zip (the exact scenario CLAUDE.md documents), and giving up then left the bundled faces
     // unavailable all session (falling back to a system face). Retry a few times, then stop.
-    static bool done = false; static int tries = 0; if (done) return;
+    static bool done = false; static int tries = 0; if (done) return;   // rule10-ok: bounded retry (8 tries), latched on SUCCESS -- this IS the prescribed shape
     wchar_t dir[MAX_PATH]; plugin_path_w(dir, MAX_PATH, L"assets\\fonts\\");   // runtime-derived (was a hardcoded dev path)
-    if (!dir[0]) { if (++tries >= 8) done = true; return; }
+    if (!dir[0]) { if (++tries >= 8) done = true; return; }   // rule10-ok: bounded retry, see the note above
     wchar_t pat[600]; wsprintfW(pat, L"%s*.*", dir);
     WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW(pat, &fd);
-    if (h == INVALID_HANDLE_VALUE) { if (++tries >= 8) done = true; return; }   // transient lock -> retry next call
-    done = true;   // folder opened -> this is the authoritative pass (even if empty)
+    if (h == INVALID_HANDLE_VALUE) { if (++tries >= 8) done = true; return; }   // transient lock -> retry next call ; rule10-ok: bounded
+    done = true;   // folder opened -> this is the authoritative pass (even if empty) ; rule10-ok: latched on SUCCESS
     do {
         int L = lstrlenW(fd.cFileName);
         if (L > 4) {

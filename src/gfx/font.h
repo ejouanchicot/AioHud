@@ -33,16 +33,24 @@ public:
 
 private:
     struct G { float u0, v0, u1, v1; float w, h, adv; float il, ir, it, ib; };  // il..ib = ink bbox (rel. cell top-left), atlas px
-    struct Slot { u32 tex = 0; int em = 0; float base = 0.0f, cap_top = 0.0f, cap_h = 0.0f; G g[224] = {}; };  // one atlas, baked at `em` px
+    struct Slot { u32 tex = 0; int em = 0; unsigned used = 0; float base = 0.0f, cap_top = 0.0f, cap_h = 0.0f; G g[224] = {}; };  // one atlas, baked at `em` px ; `used` = LRU stamp
 
     void build(u32 dev, Slot& s, int em);   // bake the glyphs at `em` px into slot s (its own right-sized atlas)
     int  pick(u32 dev, float size);         // slot index for `size` (build on demand) ; -1 on failure
     int  pickC(float size) const;           // nearest already-built slot (const) ; -1 if none built yet
     void emit(u32 dev, u32 tex, const G* g, float x, float y, const char* s, float scale, u32 color);
 
-    static const int NSLOT = 16;            // distinct cached sizes per (face,weight)
+    // Distinct cached sizes per (face,weight). This was 16 with NO recycling, and the config page alone asks for
+    // 13+ distinct pixel sizes from the SAME Font object the HUD draws with -- so opening //aio over a live HUD
+    // exhausted the pool, and every size requested afterwards was silently rendered by STRETCHING the nearest
+    // baked atlas. That is precisely the "no minification, crisp at any size" property this class exists for.
+    // Dragging a text-size slider was the reliable way to see it: the transient sizes claimed the slots and the
+    // size you settled on stayed blurry until the next zone (device loss) reshuffled which sizes won.
+    // 32 slots + LRU recycling: the pool now yields to the sizes actually in use instead of to whoever asked first.
+    static const int NSLOT = 32;
     Slot  slot_[NSLOT];
     int   nslot_ = 0;
+    unsigned useClock_ = 0;                 // monotonic, bumped on every pick -> Slot::used (LRU victim = smallest)
     bool  dirty_ = false;                   // face/weight changed -> drop slots on next ensure
     char  face_[64] = "Segoe UI";           // GDI face name (configurable, global)
     int   weight_ = 600;                    // FW_SEMIBOLD
@@ -74,5 +82,8 @@ private:
 // Cap how many NEW font-atlas sizes may bake THIS frame (amortises the startup hitch : the Hud sets a small
 // budget each frame so ~10-15 first-use sizes spread over a few frames instead of freezing frame 1).
 void font_set_bake_budget(int n);
+// Discard a half-built glyph batch (see the note at the definition). Call it when a draw pass was ABORTED --
+// i.e. from a SEH handler -- not in normal flow, where every Font::draw flushes its own batch.
+void font_reset_batch();
 
 } // namespace aio

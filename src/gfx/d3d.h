@@ -116,6 +116,13 @@ inline void dTexQuadState(u32 d, u32 tex, bool mipLinear = false, bool border = 
     dSetTSS(d, 0, D3DTSS_ALPHAOP, D3DTOP_MODULATE); dSetTSS(d, 0, D3DTSS_ALPHAARG1, D3DTA_TEXTURE); dSetTSS(d, 0, D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
     dSetTSS(d, 0, D3DTSS_MINFILTER, D3DTEXF_LINEAR); dSetTSS(d, 0, D3DTSS_MAGFILTER, D3DTEXF_LINEAR);
     dSetTSS(d, 0, D3DTSS_MIPFILTER, mipLinear ? D3DTEXF_LINEAR : D3DTEXF_NONE);
+    // ...and the LOD bias with it, for exactly the reason the addressing note above gives. Font::begin sets
+    // MIPMAPLODBIAS to +0.20 (it wants its glyph atlas very slightly softened) and nothing ever set it back --
+    // it is a texture-stage state, so it persisted for the rest of the frame. Every mipLinear consumer that drew
+    // AFTER any text -- the minimap, the party job/buff icons -- was then sampled at LOD+0.2, blending in the
+    // half-resolution mip at 1:1. Two widgets calling this same function rendered differently depending on the
+    // draw order. Setting it here makes the block self-contained, like MIPFILTER and the addressing.
+    { union { float f; u32 u; } lod; lod.f = 0.0f; dSetTSS(d, 0, D3DTSS_MIPMAPLODBIAS, lod.u); }
     const u32 addr = border ? D3DTADDRESS_BORDER : D3DTADDRESS_CLAMP;
     dSetTSS(d, 0, D3DTSS_ADDRESSU, addr); dSetTSS(d, 0, D3DTSS_ADDRESSV, addr);
 }

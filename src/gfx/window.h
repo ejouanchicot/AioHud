@@ -13,7 +13,10 @@ namespace aio {
 struct WindowSkin {
     u32 corner = 0, hframe = 0, vframe = 0, bg = 0;   // the 4 skin textures (BGRA)
     u32 borderColor = 0xFFFFFFFF;                     // per-theme border colour, derived from the bg at load
+    int failN = 0;                                    // consecutive failed load() attempts -> lets self_check tell
+                                                      // "this theme's files are missing" from "this theme has no files"
     bool ready() const { return corner && hframe && vframe && bg; }
+    bool failed() const { return failN > 0; }         // a TEXTURE theme that will not load (NOT the same as a procedural one)
     bool load(u32 dev, const char* themeName);   // assets/window/<themeName>/{corner,hframe,vframe,bg}.raw
     void on_device_lost();              // forget handles (zoning) -> reload on next load()
     void dispose();                     // release textures (unload)
