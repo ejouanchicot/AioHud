@@ -20,13 +20,18 @@ def find_res():
         if os.path.isfile(os.path.join(c, 'spells.lua')): return c
     raise SystemExit('res/spells.lua not found')
 RES = find_res()
-ROSTER = os.path.join(ROOT, '..', 'src', 'model', 'party_state_roster.cpp')
 OUT = os.path.join(ROOT, '..', 'src', 'model', 'trusts_gen.h')
+# The curated jobs are re-read from THIS GENERATOR'S OWN OUTPUT, which is where the TRUSTS[] table lives.
+# It used to point at party_state_roster.cpp, where the table was defined LONG AGO; after the move, the regex
+# below matched nothing, `jobs` stayed empty, and a re-run silently rewrote all 106 rows as {"Name", 0, 0} --
+# wiping every hand-reversed job and blanking the trust job badges. That is a generator that destroys its own
+# data when you follow the instruction in CLAUDE.md to regenerate rather than hand-edit.
+PREV = OUT
 
 # --- curated jobs : parse the CURRENT table so hand-reversed jobs survive. Keyed by name AS WRITTEN there. ---
 jobs = {}
-if os.path.isfile(ROSTER):
-    txt = open(ROSTER, encoding='utf-8', errors='ignore').read()
+if os.path.isfile(PREV):
+    txt = open(PREV, encoding='utf-8', errors='ignore').read()
     m = re.search(r'TRUSTS\[\]\s*=\s*\{(.*?)\};', txt, re.S)
     if m:
         for name, mj, sj in re.findall(r'\{"([^"]+)"\s*,\s*("[^"]*"|0)\s*,\s*("[^"]*"|0)\}', m.group(1)):
@@ -57,6 +62,15 @@ for pn, en in trusts:
     mj, sj = job_of(pn)
     L.append('    {"%s", %s, %s},' % (pn, mj, sj))
 L.append('};')
-open(OUT, 'w', encoding='utf-8', newline='\n').write('\n'.join(L) + '\n')
 have_jobs = sum(1 for pn, _ in trusts if job_of(pn) != ('0', '0'))
+# REFUSE to write a table that knows FEWER jobs than the one already on disk. The jobs are hand-reversed and
+# exist nowhere else -- no res file carries them -- so a regression here is unrecoverable data loss, and the run
+# that caused it printed a cheerful success line ("106 trusts -> ..., 0 with a known job") that reads as normal
+# because a brand-new trust legitimately has job 0. Loud and non-zero, or don't touch the file.
+prev_known = sum(1 for v in jobs.values() if v != ('0', '0'))
+if have_jobs < prev_known:
+    sys.exit('gen_trusts: REFUSING to write -- would drop %d known job(s) (%d on disk, %d now). '
+             'The jobs are hand-reversed and unrecoverable. Check that the TRUSTS[] regex still matches %s.'
+             % (prev_known - have_jobs, prev_known, have_jobs, os.path.relpath(PREV, os.path.join(ROOT, '..'))))
+open(OUT, 'w', encoding='utf-8', newline='\n').write('\n'.join(L) + '\n')
 print('gen_trusts: %d trusts -> %s  (%d with a known job, %d job-unknown)' % (len(trusts), os.path.relpath(OUT, os.path.join(ROOT, '..')), have_jobs, len(trusts) - have_jobs))

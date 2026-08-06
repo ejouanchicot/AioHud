@@ -10,7 +10,21 @@
 import re, sys, os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ADDONS = os.path.join(ROOT, '..', '..', 'addons')          # D:\Windower Tetsouo\addons
+# addons/ lookup with a fallback + env override, like the res/ lookups elsewhere in scripts/. The bare
+# '../../addons' assumed the repo sat inside Windower\plugins\ ; since the repo moved out it resolves to a
+# folder that does not exist, so this generator could not run at all. It still needs the SheolHelper addon to
+# be installed -- there is no other source for these tables -- but it now SAYS that instead of dying on a path.
+def find_addons():
+    cands = []
+    env = os.environ.get('WINDOWER_ADDONS')
+    if env: cands.append(env)
+    cands.append(os.path.join(ROOT, '..', '..', 'addons'))
+    cands.append(os.path.join('D:' + os.sep, 'Windower Tetsouo', 'addons'))
+    for c in cands:
+        if os.path.isfile(os.path.join(c, 'sheolhelper', 'resistances.lua')): return c
+    raise SystemExit('addons/sheolhelper/resistances.lua not found -- install the SheolHelper addon, '
+                     'or set WINDOWER_ADDONS to your Windower addons folder')
+ADDONS = find_addons()
 RES_LUA  = os.path.join(ADDONS, 'sheolhelper', 'resistances.lua')
 TYPE_LUA = os.path.join(ADDONS, 'sheolhelper', 'types.lua')
 JOKE_LUA = os.path.join(ADDONS, 'AioHUD', 'modules', 'sheolhelper.lua')
