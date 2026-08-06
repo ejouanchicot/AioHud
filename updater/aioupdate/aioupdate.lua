@@ -175,6 +175,13 @@ windower.register_event('addon command', trigger)
 
 -- config "Update now" button : the plugin writes request.txt. New plugins ALSO spawn directly (this relay is
 -- then a de-duped no-op) ; old plugins rely on this relay to spawn. Either way the watcher does the unload/load.
+--
+-- DUAL-BOX : request.txt lives in the SHARED plugins\AioHud\data\update\ folder, so BOTH clients' addons see the
+-- one file that one of them wrote, and both can spawn an updater (the plugin's own de-dup guard is a per-process
+-- static, so it only covers the client that was clicked). The relay is kept -- an older plugin has no other way
+-- to be triggered -- and the collision is settled downstream instead: aioupdate.ps1 takes a named mutex
+-- (Global\AioHudUpdater) and the second installer exits immediately without touching done.txt. Before that, the
+-- loser's robocopy hit sharing violations and wrote "update failed" over the winner's "OK".
 local function watch_request()
     local f = io.open(request, 'r')
     if f then f:close(); os.remove(request); trigger() end

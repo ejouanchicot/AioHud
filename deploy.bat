@@ -27,4 +27,11 @@ robocopy "%ROOT%assets" "%DATA%\assets" /E /XD *_src /NFL /NDL /NJH /NJS /NP >nu
 mkdir "%DATA%\design\exports" 2>nul
 copy /Y "%ROOT%design\exports\layout.json" "%DATA%\design\exports\layout.json" >nul
 
-echo [deploy] OK -^> %WP%\AioHud.dll  (+ assets synced to AioHud\)   (now //load AioHud in game)
+REM 3) the updater companion addon -> addons\aioupdate\  (package.bat ships it ; deploy did NOT, so the dev box
+REM    kept running whatever the last RELEASE installed). That left the most exposed file in the whole chain
+REM    never exercised before it reached every user -- and its code only runs on a path you reach when an update
+REM    has ALREADY failed. Same three lines package.bat uses.
+mkdir "%WP%\..\addons\aioupdate" 2>nul
+copy /Y "%ROOT%updater\aioupdate\aioupdate.lua" "%WP%\..\addons\aioupdate\aioupdate.lua" >nul
+
+echo [deploy] OK -^> %WP%\AioHud.dll  (+ assets synced to AioHud\, addon synced to addons\aioupdate\)   (now //load AioHud in game)

@@ -1,4 +1,4 @@
-# AioHud self-updater. Launched by the plugin with CreateProcess + CREATE_NO_WINDOW (no console window at all),
+﻿# AioHud self-updater. Launched by the plugin with CreateProcess + CREATE_NO_WINDOW (no console window at all),
 # and driven together with the AioUpdate Lua addon (which does the //unload + //load the plugin can't do itself).
 #
 # Two modes:
@@ -35,6 +35,22 @@ function Newer($remote, $local) {
     if ($local  -notmatch $rx) { return $false }   # 'dev' / '0' / garbage = a local build -> leave it alone
     if ($remote -notmatch $rx) { return $false }   # unparsable tag -> do nothing rather than guess
     return ([version]$remote -gt [version]$local)
+}
+# ONE INSTALLER AT A TIME, ACROSS PROCESSES. In dual-box both clients spawn an updater : the download and the
+# staging folder are per-PID, but done.txt, AioHud.dll.bak and the destination tree are NOT. Both waited for the
+# same DLL unlock, so they restarted together and robocopied the same 1390 files into the same root -- the loser
+# hit sharing violations, exited 8+, and wrote its ERROR line over the OK the winner had just written. The player
+# was told the update failed while it had actually succeeded. Worse, the shared .bak meant one updater could
+# delete the other's backup mid-swap. A CheckOnly run touches nothing installed, so it is not serialised.
+$mutex = $null
+if (-not $CheckOnly) {
+    $created = $false
+    $mutex = New-Object System.Threading.Mutex($true, 'Global\AioHudUpdater', [ref]$created)
+    if (-not $created) {
+        # The other client is already installing exactly this. Say nothing and leave: writing to done.txt here is
+        # precisely the race we are removing, and the winner's OK/ERROR is the one the player must see.
+        $mutex.Dispose(); exit
+    }
 }
 try {
     New-Item -ItemType Directory -Force -Path $updir | Out-Null
@@ -134,11 +150,13 @@ try {
     & robocopy $stage $root /E /XF AioHud.dll /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
     if ($LASTEXITCODE -ge 8) {
         Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
-        Status "ERROR asset install failed (robocopy $LASTEXITCODE) -- your current build was left untouched"; exit
+        Status "ERROR asset install failed (robocopy $LASTEXITCODE) -- some asset files may already be updated; your AioHud.dll was NOT touched. Re-run the update."; exit
     }
     # 2) the DLL LAST, and with a restorable copy of the one that works. Everything above this line is additive ;
     #    this is the only step that can leave the plugin unloadable, so it owns the shortest possible window.
-    $bak = "$dll.bak"
+    # PER-PID backup name. A shared "$dll.bak" could be deleted by a concurrent updater between our copy and our
+    # restore -- the mutex above makes that unreachable, and this makes it harmless even if it ever is.
+    $bak = "$dll.bak.$PID"
     Remove-Item -LiteralPath $bak -Force -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $dll -PathType Leaf) { Copy-Item -LiteralPath $dll -Destination $bak -Force }
     try {
@@ -163,4 +181,20 @@ try {
     Remove-Item -LiteralPath (Join-Path (Join-Path $Data 'cache') 'update.zip') -Force -ErrorAction SilentlyContinue
     Status "OK $tag"
 }
-catch { if ($CheckOnly) { Check "ERROR $($_.Exception.Message)" } else { Status "ERROR $($_.Exception.Message)" } }
+catch {
+    # The reporting channel must not be able to die with the thing it is reporting. Write1 creates <Data>\update\
+    # and writes into it, and $ErrorActionPreference is 'Stop' -- so when the failure IS that the folder cannot be
+    # written (Program Files without elevation, disk full, AV lock), this handler threw too and the script died
+    # with no done.txt at all. The plugin then waited 90 s and blamed the addon ("is AioUpdate loaded?"), which is
+    # the wrong remedy for a permissions problem. Fall back to a log next to the DLL -- the folder we know is
+    # readable, because that is where aiohud_debug.log already lives.
+    $msg = $_.Exception.Message
+    try { if ($CheckOnly) { Check "ERROR $msg" } else { Status "ERROR $msg" } } catch { }
+    try {
+        if ($Plugins) {
+            $line = '[' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + "] update failed: $msg"
+            Add-Content -LiteralPath (Join-Path $Plugins 'aiohud_update.log') -Value $line -Encoding ascii
+        }
+    } catch { }
+}
+finally { if ($mutex) { try { $mutex.ReleaseMutex() } catch { } ; $mutex.Dispose() } }

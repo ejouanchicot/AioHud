@@ -64,7 +64,18 @@ jobs:
           if [ -n "$hits" ]; then printf '%s\n' "$hits"
             echo "::error::one-shot 'tried' latch (rule 10) -- use the bounded retry in ui/tex_retry.h, or justify it inline with 'rule10-ok: <reason>'"
             exit 1; fi
-          echo "rule 10 : clean"
+          # THE OTHER SPELLINGS. The guard above is indexed on the word "tried" -- and this project also writes the
+          # same one-shot shape as `done` and `loaded` (gfx/font.cpp, model/ui_config.cpp), which is how the audit
+          # of 2026-08-06 could still point at latches AFTER this guard had already been widened once, for the `_`
+          # suffix. A guard that recognises only one synonym is a guard you have to remember, i.e. not a guard.
+          # Every current hit is a legitimate bounded retry or a plain data field and now carries an inline
+          # `rule10-ok: <reason>`, so this starts at ZERO and goes straight to blocking, per the rule below.
+          hits2="$(git grep -nE 'static bool +[A-Za-z_]*([Dd]one|[Ll]oaded)|[A-Za-z_]*([Dd]one|[Ll]oaded)_? *= *true' -- 'src/*' ':!src/ui/tex_retry.h' \
+                   | grep -vE ':[0-9]+:[[:space:]]*(//|\*)' | grep -v 'rule10-ok' || true)"
+          if [ -n "$hits2" ]; then printf '%s\n' "$hits2"
+            echo "::error::possible one-shot latch spelled done/loaded (rule 10) -- bounded retry, or justify it inline with 'rule10-ok: <reason>'"
+            exit 1; fi
+          echo "rule 10 : clean (tried / done / loaded)"
 
       # The four ADVISORY rules. Each still has known hits in the tree, so this step reports without blocking.
       # Promote a rule into the blocking step above the moment its own hit count reaches zero -- one at a time,
@@ -97,6 +108,28 @@ jobs:
         shell: cmd
         run: tests.bat
 
+      # PARSE the two scripts we SHIP. Nothing else in this pipeline ever looks at them: tests.bat is C++ only,
+      # the guardrails grep src/ and include/, package.bat is a robocopy, and verify_release.ps1 only does a
+      # substring test on the updater's text. So an unbalanced brace in either file compiles nothing, breaks
+      # nothing, and ships -- and then PowerShell fails at parse time on EVERY player's machine before executing
+      # a single line: no done.txt, and the Update tab blames the addon. Two parsers, no execution.
+      - name: Parse the shipped scripts
+        shell: pwsh
+        run: |
+          $bad = 0
+          foreach ($f in @('assets/aioupdate.ps1', 'scripts/verify_release.ps1')) {
+            $err = $null
+            [void][System.Management.Automation.PSParser]::Tokenize((Get-Content -Raw $f), [ref]$err)
+            if ($err.Count) { $err | ForEach-Object { Write-Host "::error file=$f,line=$($_.Token.StartLine)::$($_.Message)" }; $bad = 1 }
+            else { Write-Host "$f parses OK" }
+          }
+          # The Lua ADDON is deliberately NOT checked here: the runner has no Lua, and the structural
+          # heuristic that would replace a real parser (counting block keywords against `end`) produces false
+          # failures on perfectly good code -- a guard that cries wolf is worse than none. It is parsed for real
+          # before release instead: `luac -p updater/aioupdate/aioupdate.lua` (see scripts/README.md), and
+          # deploy.bat now installs it to addons\ so it is actually exercised in game.
+          if ($bad) { exit 1 }
+
       # package.bat calls build.bat (compiles the x86 DLL) then assembles the shippable payload into dist\.
       - name: Build + package
         shell: cmd
@@ -116,6 +149,48 @@ jobs:
           Compress-Archive -Path dist/* -DestinationPath $zip -Force
           (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower() | Set-Content -NoNewline -Encoding ascii "$zip.sha256"
           Write-Host "sha256 $(Get-Content "$zip.sha256")  $zip"
+
+      # VERIFY THE ZIP BEFORE PUBLISHING IT. verify_release.ps1 runs at the very end, AFTER `gh release create
+      # --latest` -- so a payload it rejects is already online and already the one /releases/latest points at, and
+      # every client that checks on load is offered it. Four of its six checks need only the local artefact, so
+      # they belong here, in front of the door. The post-publication pass keeps the one check that genuinely
+      # requires publication (does /releases/latest resolve to this tag).
+      - name: Verify the payload before publishing
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $zip = "AioHud-${{ steps.ver.outputs.version }}.zip"
+          $bad = 0
+          # 1. the sidecar actually describes THIS zip (the updater refuses the payload on a mismatch, so a wrong
+          #    sidecar is a release nobody can install)
+          $want = (Get-Content -Raw "$zip.sha256").Trim().ToLower()
+          $got  = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          if ($want -ne $got) { Write-Host "::error::sha256 sidecar does not match the zip ($want vs $got)"; $bad = 1 }
+          else { Write-Host "sha256 sidecar matches" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $z = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $zip))
+          try {
+            # 2. the DLL is in there, at the path the updater looks for, and is not a stub
+            $dll = $z.Entries | Where-Object { $_.FullName -eq 'plugins/AioHud.dll' }
+            if (-not $dll) { Write-Host "::error::payload has no plugins/AioHud.dll"; $bad = 1 }
+            elseif ($dll.Length -lt 100000) { Write-Host "::error::plugins/AioHud.dll is only $($dll.Length) bytes"; $bad = 1 }
+            else { Write-Host "plugins/AioHud.dll present ($($dll.Length) bytes)" }
+            # 3. the companion addon ships too -- without it nobody unloads the DLL and every update ends in
+            #    'dll-locked', which reads to the player as a dual-box problem they do not have
+            if (-not ($z.Entries | Where-Object { $_.FullName -eq 'addons/aioupdate/aioupdate.lua' })) {
+              Write-Host "::error::payload has no addons/aioupdate/aioupdate.lua"; $bad = 1 }
+            else { Write-Host "addons/aioupdate/aioupdate.lua present" }
+            # 4. the updater we ship reads the sidecar from a FILE, not from a byte array. v1.0.71 nearly shipped
+            #    the reverse, which would have made every update refuse itself.
+            $e = $z.Entries | Where-Object { $_.FullName -eq 'plugins/AioHud/assets/aioupdate.ps1' }
+            if (-not $e) { Write-Host "::error::payload has no plugins/AioHud/assets/aioupdate.ps1"; $bad = 1 }
+            else {
+              $sr = New-Object IO.StreamReader($e.Open()); $txt = $sr.ReadToEnd(); $sr.Close()
+              if ($txt.Contains(').Content -replace')) { Write-Host "::error::the shipped updater reads the sidecar from .Content -- the byte-array bug is back"; $bad = 1 }
+              else { Write-Host "shipped updater does not read the sidecar from .Content" }
+            }
+          } finally { $z.Dispose() }
+          if ($bad) { exit 1 }
 
       # One user-facing asset : the payload zip (extract into the <Windower> ROOT -> plugins\AioHud... + addons\aioupdate\).
       # The in-game updater downloads this same zip and extracts it over the Windower root (keeping AioHud\data\).
