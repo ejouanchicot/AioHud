@@ -66,6 +66,7 @@ static const Member DEMO[18] = {
 struct Row { const char* name; const char* job; const char* sub; unsigned role; int hpVal, mpVal, tp, hpp, mpp; bool plead, alead, qm; bool offzone; int zone; const char* cast; float castPct; float castAlpha; unsigned id; bool sel; bool subsel;
              bool outRange = false;   // beyond spell cast range -> drawn dimmed (out of healing/buff range)
              float dist = -1.0f;      // horizontal distance to the player (yalms) ; <0 = unknown (hidden)
+             bool  distFar = false;   // unknown BECAUSE the client stopped tracking them (~49 yalms) -> draw "50+", not a blank
              const unsigned short* buffs = nullptr; int nbuff = 0;   // status icons (left of the row) ; null/0 = none (uint16 ids: > 255 exist)
              int mlvl = 0;      // main-job level -> shown in the job badge (text modes) ; 0 = unknown (no level drawn)
              int slvl = 0; };   // sub-job level (self only : memory @pl+0xA0) -> appended to the sub abbr ; 0 = unknown (abbr only)
@@ -171,8 +172,10 @@ static void fill_member(Row& r, const PMember& pm) {
     r.plead = pm.party_lead(); r.alead = pm.alliance_lead(); r.qm = pm.quarter_master();
     r.cast = party().cast_label(pm.id, r.castPct, r.castAlpha);   // live spell cast (0 if not casting)
     r.offzone = pm.offzone;                            // in a DIFFERENT zone (model, by zone id) ; a DEAD member in our zone is NOT offzone -> the red dead row fires (was maxHp==0, which caught the dead too)
-    r.outRange = (pm.dist >= 0.0f && pm.dist >= kCastRange);  // in zone but beyond cast range -> dim
-    r.dist = pm.dist;
+    // distFar counts as out of range too : the client only drops a member past ~49 yalms, which is more than
+    // twice the cast limit. Without this the row stayed BRIGHT exactly when the member is least reachable.
+    r.outRange = pm.distFar || (pm.dist >= 0.0f && pm.dist >= kCastRange);  // in zone but beyond cast range -> dim
+    r.dist = pm.dist; r.distFar = pm.distFar;
     r.zone = pm.zone;
     r.id = pm.id; r.sel = false; r.subsel = false;
     const BuffSet* bs = party().buffs_for(pm.id);      // status icons from packet 0x076 (null until first seen)
@@ -181,7 +184,7 @@ static void fill_member(Row& r, const PMember& pm) {
 static void fill_self(Row& r, const PlayerInfo& me) {
     r.name = me.name; r.job = job_abbr(me.mjob); r.sub = job_abbr(me.sjob); r.role = job_role_color(me.mjob); r.mlvl = me.mlvl; r.slvl = me.slvl;
     r.hpVal = me.hp; r.mpVal = me.mp; r.tp = me.tp; r.hpp = me.hpp; r.mpp = me.mpp;
-    r.plead = false; r.alead = false; r.qm = false; r.offzone = false; r.zone = 0; r.outRange = false; r.dist = -1.0f;   // self : no distance (always 00.00)
+    r.plead = false; r.alead = false; r.qm = false; r.offzone = false; r.zone = 0; r.outRange = false; r.dist = -1.0f; r.distFar = false;   // self : no distance (always 00.00)
     r.cast = party().cast_label(me.id, r.castPct, r.castAlpha);   // self can cast too (own action packet echoes back)
     r.id = me.id; r.sel = false; r.subsel = false;
 }
@@ -962,13 +965,17 @@ void Party::draw(const Frame& f) {
         const float bcx = bx + bw * 0.5f, bcy = by + bh * 0.5f;               // badge centre (scale pivot)
 
         // distance (yalms) UNDER the leader/QM pips, centered in the marks column, format 00.00.
-        if (distOn() && r.dist >= 0.0f && fDist->ready()) {
+        // "50+" when the client has stopped tracking them. A blank reads as a broken widget, and the frozen
+        // number this replaced read as a real distance -- it was the actual reported bug ("la distance part en
+        // couille" after a member runs off and comes back). MEASURED 2026-08-06 at Delkfutt: the entity despawns
+        // at ~48.8 yalms and its position freezes there, so 50 is the honest floor to announce.
+        if (distOn() && (r.dist >= 0.0f || r.distFar) && fDist->ready()) {
             float d = r.dist; if (d > 99.99f) d = 99.99f;
-            char db[12]; sprintf(db, "%05.2f", d);
+            char db[12]; if (r.distFar) strcpy(db, "50+"); else sprintf(db, "%05.2f", d);
             float dsz = te_sz(TE_DIST, badgeSz_ * S * 1.20f);                 // as big as fits the marks column width
             const float dw = fDist->measure(db, dsz);
             if (dw > mw * 0.98f && dw > 0.0f) dsz *= (mw * 0.98f) / dw;
-            const u32 dcol = r.dist >= kCastRange ? ui_config().distColFar    :   // red  : out of cast range
+            const u32 dcol = (r.distFar || r.dist >= kCastRange) ? ui_config().distColFar :   // red  : out of cast range (or past the client's tracking range)
                              r.dist >= kCastSafe  ? ui_config().distColNormal :   // yellow : marginal (still casts)
                                                     ui_config().distColClose;     // blue : comfortably in range
             const float markBlockH = snap(marksColH() * S);                   // match the pips : distance sits at the BOTTOM of the centred marks unit

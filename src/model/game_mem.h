@@ -57,11 +57,16 @@ int read_map_entities(MapEntity* out, int maxN);
 struct EntityVitals { unsigned id; char name[24]; int hpp; float x, z; unsigned status, claimId, spawnType; bool valid; };
 int read_entities_by_id(const unsigned* ids, int n, EntityVitals* out);
 
-// Scan the entity array for MOBS currently CLAIMED by one of the friendly ids (self + party + alliance). A pet's
-// damage claims for its OWNER, so avatar / jug / automaton / trust-pet-tanked mobs surface here automatically --
-// this is what makes the hate list stable (self-refreshing every frame) instead of popping only on your own hits.
-// Fills out[] (live vitals) + claimOut[] (the claiming friendly id) for up to maxN mobs. One block-copy. Returns count.
-int read_party_aggro_mobs(const unsigned* friendlyIds, int nFriendly, EntityVitals* out, unsigned* claimOut, int maxN);
+// Position of entity_array[index], ONLY if that entity is still `expectId` and is not a despawned ghost.
+// Returns false otherwise -- and false means UNKNOWN, not "at the origin": callers must leave the distance
+// negative so the HUD draws nothing. A member's entity index is NOT a stable handle (the client despawns and
+// recycles slots past its ~100-yalm tracking range), which is exactly how a distance to a member who ran off
+// and came back could freeze or jump to a stranger. See the note at the definition.
+// `despawned` (optional) distinguishes the two failures the display must NOT confuse : true = this IS the
+// member but the client has dropped them past its tracking range (~49 yalms, measured 2026-08-06), so the
+// position is frozen ; false = no usable entity at all. The first is "too far to track", the second is
+// "no data" -- and a HUD that prints nothing for both tells the player nothing about which.
+bool entity_pos_verified(unsigned index, unsigned expectId, float& x, float& y, float& z, bool* despawned = 0);
 
 // The server id at entity_array[index] (+0x78), or 0 if the slot is empty/invalid. Used to resolve the pet /
 // owner INDEX carried by the pet packets (0x067/0x068) into a server id (to key the friendly-pet set).

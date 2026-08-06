@@ -189,36 +189,6 @@ int read_entities_by_id(const unsigned* ids, int n, EntityVitals* out) {
     return found;
 }
 
-// Mobs claimed by a friendly (self / party / alliance ; pet claims land on the owner). One entity-array block-copy.
-int read_party_aggro_mobs(const unsigned* friendlyIds, int nFriendly, EntityVitals* out, unsigned* claimOut, int maxN) {
-    if (!out || !claimOut || !friendlyIds || nFriendly <= 0 || maxN <= 0) return 0;
-    u32 ent = entity_array();
-    if (!ent) return 0;
-    static u32 ptrs[0x900];
-    __try { memcpy(ptrs, (const void*)ent, sizeof(ptrs)); }
-    __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
-    int n = 0;
-    for (unsigned i = 0; i < 0x900 && n < maxN; ++i) {
-        u32 p = ptrs[i];
-        if (!valid_ptr(p)) continue;
-        u32 sp = 0; if (!safe_read(p + ENT_SPAWN_OFF, &sp) || !(sp & 0x10)) continue;   // mobs only : BIT 4, not equality -- a charmed mob in your party reads 0x1C
-        u32 rf = 0; safe_read(p + ENT_RENDER_OFF, &rf); if (rf & 0x4000) continue;             // hidden / despawned ghost
-        u32 cl = 0; if (!safe_read(p + ENT_CLAIM_OFF, &cl) || !cl) continue;                   // unclaimed -> skip (packet path handles it)
-        bool friendly = false; for (int k = 0; k < nFriendly; ++k) if (friendlyIds[k] == cl) { friendly = true; break; }
-        if (!friendly) continue;
-        u32 hp = 0; safe_read(p + ENT_HPP_OFF, &hp); if ((hp & 0xFF) == 0) continue;           // dead
-        u32 id = 0, st = 0, xx = 0, zz = 0;
-        safe_read(p + ENT_ID_OFF, &id); safe_read(p + ENT_STATUS_OFF, &st); safe_read(p + ENT_X_OFF, &xx); safe_read(p + ENT_Z_OFF, &zz);
-        EntityVitals& v = out[n];
-        v.id = id; v.hpp = (int)(hp & 0xFF); v.status = st; v.claimId = cl; v.spawnType = 0x10;
-        v.x = *(float*)&xx; v.z = *(float*)&zz; v.valid = true;
-        __try { const char* nm = (const char*)(p + ENT_NAME_OFF); int j = 0; for (; j < 23 && nm[j]; ++j) v.name[j] = nm[j]; v.name[j] = 0; }
-        __except (EXCEPTION_EXECUTE_HANDLER) { v.name[0] = 0; }
-        claimOut[n] = cl; ++n;
-    }
-    return n;
-}
-
 // PointWatch : main-job Capacity Points + Job Points from the client's persistent struct *(g+0x48). CP u16 @+0,
 // JP u16 @+2 are adjacent -> one u32 read (cp = low 16, jp = high 16). Reversed via LuaCore FUN_10091110.
 bool read_capacity_points(unsigned mainJob, unsigned& cp, unsigned& jp) {
@@ -269,6 +239,37 @@ unsigned entity_id_by_index(unsigned index) {
     u32 p = 0; if (!safe_read(ent + index * 4, &p) || !valid_ptr(p)) return 0;
     u32 id = 0; if (!safe_read(p + ENT_ID_OFF, &id)) return 0;
     return id;
+}
+
+// Position of entity_array[index], but ONLY if that entity is still `expectId` and is not a despawned ghost.
+//
+// This exists because the party/alliance distance was computed from ent[member+0x20] with NEITHER check, and a
+// party-member entity index is not a stable handle: the client DESPAWNS a player who goes past its tracking
+// range (~100 yalms) and is free to hand that slot to somebody else. Two failure shapes follow, both of which
+// produce a perfectly plausible number rather than a missing one:
+//   * ghost slot  -> the entity object survives with its LAST position, so the distance FREEZES and keeps
+//                    counting a member who is nowhere near there ;
+//   * recycled    -> the slot now holds another entity, so the distance jumps to a stranger's position.
+// Both were reported in game as "the distance went haywire" after a member ran far away and came back.
+// The identity check is what makes it honest: no match, no number. Callers get false and must degrade to
+// UNKNOWN (dist < 0 -> the HUD draws nothing), never to a guess.
+//
+// The render-flag half is not new knowledge either -- the minimap scan above already filters 0x4000 with the
+// same comment. This path was simply the one place that skipped it.
+bool entity_pos_verified(unsigned index, unsigned expectId, float& x, float& y, float& z, bool* despawned) {
+    if (despawned) *despawned = false;
+    if (index == 0 || index >= 0x900 || !expectId) return false;
+    u32 ent = entity_array();
+    if (!ent) return false;
+    u32 p = 0; if (!safe_read(ent + index * 4, &p) || !valid_ptr(p)) return false;
+    u32 id = 0; if (!safe_read(p + ENT_ID_OFF, &id) || id != expectId) return false;   // recycled / not this member
+    u32 rf = 0;
+    if (!safe_read(p + ENT_RENDER_OFF, &rf)) return false;
+    if (rf & 0x4000) { if (despawned) *despawned = true; return false; }   // ghost : right member, frozen position
+    u32 a = 0, b = 0, c = 0;
+    if (!safe_read(p + ENT_X_OFF, &a) || !safe_read(p + 0x08, &b) || !safe_read(p + ENT_Z_OFF, &c)) return false;
+    x = *(float*)&a; y = *(float*)&b; z = *(float*)&c;   // Y @+0x08 : height, read for the probe only
+    return true;
 }
 
 // server id -> entity NAME (ENT_NAME_OFF, ASCII up to 0x18). The reverse of entity_id_by_index : a linear scan,
@@ -1008,6 +1009,7 @@ void poll_game_state(GameState& gs) {
       for (int i = 0; i < gs.nRecast; ++i) { gs.recasts[i].recastId = rid[i]; gs.recasts[i].kind = kd[i]; gs.recasts[i].sec = sc[i]; } }
     { float ms = 0.0f; gs.meSpeed = read_self_speed(me.id, ms) ? ms : 0.0f; }   // own movement speed -> Player Hub speed band
     { unsigned gv = 0; gs.meGil = read_player_gil(gv) ? gv : 0; }               // own gil -> Player Hub gil band
+    gs.jaOk = read_usable_ja_bits(gs.jaBits);                                    // usable-JA bitmap -> snapshot, NOT re-read from the draw path
     gs.equipValid = read_equipment(gs.equip);                                    // 16 equipped items -> Equipment Viewer grid
     if (!gs.equipValid) gs.equip = EquipSet{};                                   // not ready (zone / not-logged-in) : zero it AND flag it so the viewer keeps its cached icons
 

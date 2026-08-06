@@ -1,6 +1,6 @@
 // party_state_roster.cpp -- the party/alliance ROSTER, split out of party_state.cpp. PURE MOVE :
 // the packet-fed roster (on_dd 0x0DD / on_df 0x0DF + find + save/load disk cache) AND the live
-// memory roster (load_from_memory + read_member / entity_xz), the job-abbreviation + trust-job
+// memory roster (load_from_memory + read_member / entity_xyz), the job-abbreviation + trust-job
 // tables, and the DEMO/SIM harness (//aio party N). The g_party singleton stays in party_state.cpp.
 #include "model/party_state.h"
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 / pkt_bytes (shared packet readers)
@@ -213,12 +213,15 @@ void PartyState::load() {
 // entity position : ent[idx] (the entity array from game_mem entity_array()) -> X @+0x04, Z @+0x0C.
 // Returns true + fills x/z when the index is in range and the entity object is readable. Shared by a
 // member's position (read_member) and the player's own (load_from_memory).
-static bool entity_xz(u32 ent, u32 idx, float& x, float& z) {
+// Y @+0x08 is read too, but ONLY the probe uses it (see //aio rangelog) : whether FFXI's own range check is
+// horizontal or 3D has never been measured for this project, and the display has always used the horizontal
+// distance. One reader for the three coordinates so there is still a single source of truth for the offsets.
+static bool entity_xyz(u32 ent, u32 idx, float& x, float& y, float& z) {
     if (!ent || !idx || idx >= 0x900) return false;
     u32 p = 0;
     if (!safe_read(ent + idx * 4, &p) || !valid_ptr(p)) return false;
-    u32 a = 0, c = 0; safe_read(p + 0x04, &a); safe_read(p + 0x0C, &c);
-    x = *(float*)&a; z = *(float*)&c;
+    u32 a = 0, b = 0, c = 0; safe_read(p + 0x04, &a); safe_read(p + 0x08, &b); safe_read(p + 0x0C, &c);
+    x = *(float*)&a; y = *(float*)&b; z = *(float*)&c;
     return true;
 }
 
@@ -233,7 +236,7 @@ static unsigned char entity_spawn(u32 ent, u32 idx) {
     return safe_read(p + 0x1D0, &sp) ? (unsigned char)(sp & 0xFF) : 0;
 }
 
-static bool read_member(u32 mb, PMember& pm, u32 ent, float px, float pz) {
+static bool read_member(u32 mb, PMember& pm, u32 ent, float px, float pz, bool selfPosOk) {
     unsigned char b[0x7C];
     __try { memcpy(b, (const void*)mb, sizeof(b)); }
     __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
@@ -241,10 +244,18 @@ static bool read_member(u32 mb, PMember& pm, u32 ent, float px, float pz) {
     if (!id) return false;                                  // empty slot
     pm = PMember();
     u32 idx = *(const unsigned short*)(b + 0x20);           // entity index
-    float mx = 0.0f, mz = 0.0f;
-    if (entity_xz(ent, idx, mx, mz) && (mx != 0.0f || mz != 0.0f)) {
+    // VERIFIED read : the entity at that index must still BE this member (server id) and must not be a
+    // despawned ghost. The index alone is not a handle -- the client drops a player past its ~100-yalm
+    // tracking range and may hand the slot to someone else, so the old unchecked read kept producing a
+    // credible distance to a frozen position, or to a stranger, exactly when a member ran off and returned.
+    // No verification -> pm.dist stays -1 -> the row simply shows no number. Unknown, not invented.
+    float mx = 0.0f, my = 0.0f, mz = 0.0f; bool ghost = false;
+    if (selfPosOk && entity_pos_verified(idx, id, mx, my, mz, &ghost) && (mx != 0.0f || mz != 0.0f)) {
         float dx = mx - px, dz = mz - pz; pm.dist = sqrtf(dx * dx + dz * dz);
     }
+    else pm.distFar = ghost;   // measured 2026-08-06 : the client drops a member at ~49 yalms and FREEZES their
+                               // position, so the old code kept drawing that frozen number for as long as they
+                               // stayed away. The HUD says "50+" for this case instead -- unknown, but WHY.
     pm.id = id;
     int k = 0; for (; k < 18 && b[0x0A + k]; ++k) pm.name[k] = (char)b[0x0A + k];
     pm.name[k] = 0;
@@ -293,9 +304,17 @@ void PartyState::load_from_memory() {
     // Entity position-object array (g+0x24) + the player's own horizontal position (member+0x20 =
     // entity index -> ent[idx] -> X @+0x04, Z @+0x0C). Used to fill each member's distance (yalms).
     u32 ent = entity_array();                             // *(g+0x24) ; one source of truth (game_mem)
-    float px = 0.0f, pz = 0.0f;
-    { u32 pidx = 0; safe_read(base + 0x20, &pidx); pidx &= 0xFFFF; entity_xz(ent, pidx, px, pz); }
-    selfX_ = px; selfZ_ = pz;                            // expose the player's own position (target distance uses it)
+    // The player's OWN position, and whether it could be read AT ALL. The result used to be discarded : on a
+    // failed read px/pz silently stayed (0,0) -- a coordinate that LOOKS valid -- so every member distance was
+    // then measured from the zone origin, every row went red and dimmed, the target ring lied, and the hate
+    // list purged every mob past its 50-yalm gate. Six consumers, one dropped return value. A failure is now
+    // UNKNOWN : the last good position is kept (it self-corrects next frame) and selfPosOk gates the distances.
+    float px = selfX_, pz = selfZ_;
+    bool selfPosOk = false;
+    { u32 pidx = 0; safe_read(base + 0x20, &pidx); pidx &= 0xFFFF;
+      float py = 0.0f, sx = 0.0f, sz2 = 0.0f;
+      if (entity_pos_verified(pidx, me.id, sx, py, sz2)) { px = sx; pz = sz2; selfPosOk = true; } }
+    if (selfPosOk) { selfX_ = px; selfZ_ = pz; }          // expose the player's own position (target distance uses it)
 
     // ACTIVE member count = allianceinfo+0x13 (party-1 count). The member-array slots are NOT
     // cleared when a trust is dismissed (their id/HP linger), so the id!=0 scan over-reports
@@ -306,7 +325,7 @@ void PartyState::load_from_memory() {
 
     int n = 0;
     for (int i = 0; i < wantN; ++i)                        // only the first `wantN` ACTIVE slots
-        if (read_member(base + i * 0x7C, m[n], ent, px, pz)) { if (m[n].isTrust && m[n].id) remember_trust(m[n].id); ++n; }   // remember WHILE the roster knows : a trust's buffs outlive its party membership
+        if (read_member(base + i * 0x7C, m[n], ent, px, pz, selfPosOk)) { if (m[n].isTrust && m[n].id) remember_trust(m[n].id); ++n; }   // remember WHILE the roster knows : a trust's buffs outlive its party membership
     count = n;                                             // n reflects the live roster (trust in/out)
 
     // OUT OF ZONE = the member is in a DIFFERENT zone, decided by the zone id, NOT by maxHp==0 (which a DEAD member
@@ -343,7 +362,7 @@ void PartyState::load_from_memory() {
             // tags / buff casters for the whole session. Retry a bounded number of frames, then give up. (rule 10)
             static unsigned char s_cacheTries = 0;
             if (cacheChar_ != me.id) s_cacheTries = 0;   // new character -> fresh retry budget
-            if (load_cache(me.id) || ++s_cacheTries >= 120) { cacheLoaded_ = true; cacheChar_ = me.id; lastCacheSaveMs_ = GetTickCount(); s_cacheTries = 0; }
+            if (load_cache(me.id) || ++s_cacheTries >= 120) { cacheLoaded_ = true; cacheChar_ = me.id; lastCacheSaveMs_ = GetTickCount(); s_cacheTries = 0; }   // rule10-ok: bounded retry (120 polls) before giving up
         }
         const unsigned nowc = GetTickCount();
         if ((unsigned)(nowc - lastCacheSaveMs_) > 4000u) { save_cache(me.id); lastCacheSaveMs_ = nowc; }
@@ -364,8 +383,61 @@ void PartyState::load_from_memory() {
         if (cnt < 1) cnt = 6; if (cnt > 6) cnt = 6;           // gate already proved the party exists -> default to a full scan
         int an = 0;
         for (int i = 0; i < cnt; ++i)
-            if (read_member(base + (6 + ap * 6 + i) * 0x7C, alli_[ap * 6 + an], ent, px, pz)) { PMember& am = alli_[ap * 6 + an]; if (am.isTrust && am.id) remember_trust(am.id); ++an; }
+            if (read_member(base + (6 + ap * 6 + i) * 0x7C, alli_[ap * 6 + an], ent, px, pz, selfPosOk)) { PMember& am = alli_[ap * 6 + an]; if (am.isTrust && am.id) remember_trust(am.id); ++an; }
         alliN_[ap] = an;
+    }
+
+    // //aio rangelog : THE capture that settles the two open questions about party/alliance distances.
+    //
+    //  (1) "distance is sometimes garbage" -- open since 2026-07-21, see the bcaptlog note above. The distance is
+    //      computed from the entity index at member+0x20, and NOTHING checks that the entity still IS that member.
+    //      If the game leaves a stale index on a member who left our zone, ent[idx] resolves to whatever occupies
+    //      that slot now, and we draw a perfectly plausible distance to a stranger. So the line prints the entity's
+    //      OWN server id next to the member's, and says MATCH or STALE. That single word decides it.
+    //
+    //  (2) is FFXI's range check HORIZONTAL or 3D? The display has always used sqrt(dx^2+dz^2) and ignored the
+    //      height, which is stated in a comment and justified nowhere. Both numbers are printed (dh and d3, plus
+    //      the height gap dy), so ONE cast at a known vertical offset settles it: stand above a party member,
+    //      note dh and d3, and try a Cure. If it lands, horizontal is right; if it fails while dh says in-range,
+    //      the model owes the Y axis.
+    //
+    // Runs on the main thread inside the once-per-frame roster load, throttled to 1/s, and covers PARTY and BOTH
+    // alliance parties -- an alliance spread over several zones is exactly where (1) is expected to show.
+    // No %f anywhere: windower::debug::log goes through wvsprintfA, which prints "f" for a float. x10 integers.
+    if (dist_armed()) {
+        static unsigned s_distLogMs = 0; const unsigned nowMs = GetTickCount();
+        if ((int)(nowMs - s_distLogMs) >= 1000) { s_distLogMs = nowMs;
+            u32 pidx = 0; safe_read(base + 0x20, &pidx); pidx &= 0xFFFF;
+            float sx = 0.0f, sy = 0.0f, sz = 0.0f;
+            const bool selfOk = entity_xyz(ent, pidx, sx, sy, sz);
+            // The self read's success is printed because the display DISCARDS it: on failure px/pz silently
+            // become (0,0), a valid-looking position, and every distance is then measured from the zone origin.
+            windower::debug::log("DIST === zone=%u selfIdx=%u selfPos=(%d,%d,%d)x10 selfRead=%s ent=%s ===",
+                                 zone_id(), pidx, (int)(sx * 10), (int)(sy * 10), (int)(sz * 10),
+                                 selfOk ? "OK" : "FAILED -> distances measured from the ORIGIN",
+                                 ent ? "mapped" : "NULL");
+            for (int grp = 0; grp < 3; ++grp) {                       // 0 = party, 1 = alliance 2, 2 = alliance 3
+                const int nn = (grp == 0) ? count : alliN_[grp - 1];
+                for (int i = 0; i < nn; ++i) {
+                    const PMember& pm = (grp == 0) ? m[i] : alli_[(grp - 1) * 6 + i];
+                    const u32 mb = base + (u32)((grp == 0 ? 0 : 6 + (grp - 1) * 6) + i) * 0x7C;
+                    u32 idx = 0; safe_read(mb + 0x20, &idx); idx &= 0xFFFF;
+                    float ex = 0.0f, ey = 0.0f, ez = 0.0f;
+                    const bool eok = entity_xyz(ent, idx, ex, ey, ez);
+                    const u32  eid = entity_id_by_index(idx);          // the entity's OWN server id (+0x78)
+                    const float dx = ex - sx, dy = ey - sy, dz = ez - sz;
+                    const float dh = sqrtf(dx * dx + dz * dz);         // what the HUD shows today
+                    const float d3 = sqrtf(dx * dx + dy * dy + dz * dz);
+                    windower::debug::log(
+                        "  [%c%d] \"%s\" id=%08X zone=%d off=%d | idx=%u ent=%s entId=%08X %s | dy=%dx10 dh=%dx10 d3=%dx10 | shown=%dx10",
+                        grp == 0 ? 'P' : 'A', grp == 0 ? i : (grp - 1) * 6 + i,
+                        pm.name, pm.id, pm.zone, pm.offzone ? 1 : 0,
+                        idx, eok ? "ok" : "UNREADABLE", eid,
+                        (!eok || !eid) ? "no-entity" : (eid == pm.id ? "MATCH" : "STALE <-- the index points at ANOTHER entity"),
+                        (int)(dy * 10), (int)(dh * 10), (int)(d3 * 10), (int)(pm.dist * 10));
+                }
+            }
+        }
     }
 
     // JOB-CHANGE detection (Timers) : shadow every member's main/sub ; a change lists the id + clears their tracked

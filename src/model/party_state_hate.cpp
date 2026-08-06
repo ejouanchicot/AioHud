@@ -4,7 +4,7 @@
 // and the record_hate enmity tracker (now external : on_action in party_state.cpp also calls it).
 #include "model/party_state.h"
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 + record_hate declaration
-#include "model/game_mem.h"               // read_party_aggro_mobs / read_entities_by_id / entity_id_by_index / EntityVitals
+#include "model/game_mem.h"               // read_entities_by_id / entity_id_by_index / entity_array / EntityVitals
 #include <windows.h>                        // GetTickCount
 #include <math.h>                           // sqrtf
 
@@ -48,7 +48,12 @@ void PartyState::refresh_hate() {
     for (int i = 0; i < 128; ++i) if (hate_[i].mob) { ids[nq] = hate_[i].mob; idx[nq] = i; ++nq; }
     if (nq > 0) {
         static EntityVitals ev[128];   // ~7 KB kept off the per-frame stack (single-threaded, once/frame)
-        read_entities_by_id(ids, nq, ev);
+        const int got = read_entities_by_id(ids, nq, ev);
+        // Rule 10 : read_entities_by_id answers 0 both for "the entity array is not mapped right now" (zoning, a
+        // re-map window) and for "none of these ids are live". Taking the first for the second purges every tracked
+        // mob idle > 3 s -- so a mob holding aggro but not acting vanished from the list on a single missed read.
+        // A miss is UNKNOWN : keep what we have and re-ask next frame. reconcile_treasure already does exactly this.
+        if (got == 0 && !entity_array()) return;
         for (int q = 0; q < nq; ++q) {
             HateEntry& he = hate_[idx[q]];
             const EntityVitals& v = ev[q];
@@ -91,12 +96,14 @@ unsigned PartyState::pet_owner(unsigned id) const {
     return id;
 }
 void PartyState::on_pet_info(const unsigned char* p) {     // 0x067 Pet Info : Pet ID @+0x08, Owner Index @+0x0C
+    if (pkt_bytes(p) < 0x0E) return;                       // floor on the highest field read (owner index @0x0C..0x0D)
     const unsigned petId = pkt_u32(p, 0x08), ownerIdx = pkt_u16(p, 0x0C);
     if (!petId || !ownerIdx) return;
     const unsigned ownerId = entity_id_by_index(ownerIdx);
     if (ownerId && is_party_or_pet(ownerId)) register_pet(petId_, petOwner_, petId, ownerId);
 }
 void PartyState::on_pet_status(const unsigned char* p) {   // 0x068 Pet Status : Owner ID @+0x08, Pet Index @+0x0C, Target ID @+0x14
+    if (pkt_bytes(p) < 0x18) return;                       // floor on the highest field read (target id @0x14..0x17)
     const unsigned ownerId = pkt_u32(p, 0x08);
     if (!ownerId || !is_party_or_pet(ownerId)) return;
     const unsigned petIdx = pkt_u16(p, 0x0C);

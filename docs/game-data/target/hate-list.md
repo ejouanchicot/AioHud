@@ -1,7 +1,7 @@
 ---
 title: Hate List — mobs aggro'd on the party
-summary: The hybrid claim-scan + 0x028-enmity detection of mobs aggro'd on you/your party, the shared entity offsets it reuses, and the 0x067/0x068 friendly-pet learning.
-source: model/game_mem.cpp (read_entities_by_id/read_party_aggro_mobs), model/party_state.cpp (on_action enmity, refresh_hate, on_pet_info/on_pet_status)
+summary: How mobs aggro'd on you/your party are detected (0x028 enmity tracking, verified against the entity array at display), the shared entity offsets it reuses, and the 0x067/0x068 friendly-pet learning.
+source: model/game_mem.cpp (read_entities_by_id), model/party_state_hate.cpp (record_hate, refresh_hate, on_pet_info/on_pet_status)
 ---
 # Hate List — mobs aggro'd on the party
 
@@ -24,18 +24,20 @@ once and reuse the same field offsets (also used by the minimap):
 | spawn type | `+0x1D0` (low byte; **mob = 0x10**) |
 | render flags | `ENT_RENDER_OFF` (`& 0x4000` = hidden/despawned) |
 
-## Hybrid detection (the pop/depop fix)
-`refresh_hate` builds rows from TWO sources, deduped by mob id, 50-yalm filtered,
-sorted by HP ascending:
+## Detection — ONE source, verified at display
+`refresh_hate` builds rows from the sticky enmity tracker only, then verifies each
+tracked id against the entity array before drawing it.
 
-1. **PRIMARY — claim scan** (`read_party_aggro_mobs`, game_mem.cpp): scans the
-   entity array for MOBS (spawnType 0x10, hpp > 0, not hidden) whose **claim id ∈
-   friendly set** (self + party + alliance ids). KEY INSIGHT: a pet / avatar / jug /
-   automaton / trust-pet's damage **claims for its OWNER** (a roster id), so
-   pet-tanked mobs surface here automatically. Self-refreshing every frame → ZERO
-   pop/depop. (This replaced a broken id-range classifier that mislabelled pet ids
-   as mobs, so the box only popped on YOUR own hits.)
-2. **SUPPLEMENT — 0x028 enmity tracking** (`on_action` → `hate_[24] {mob, pc,
+> **Historical note.** There used to be a second, PRIMARY source: a claim scan
+> (`read_party_aggro_mobs`) that walked the entity array for mobs whose claim id was
+> in the friendly set. It was **removed on 2026-08-06**: `refresh_hate` had already
+> stopped calling it (the tracker became the sole membership source), so it was 28
+> lines of dead code carrying a third private copy of the entity offsets — a third
+> place to fix when an offset drifts after a client patch. The insight it was built
+> on still holds and is why pet-tanked mobs work: a pet / avatar / jug / automaton
+> claims for its **OWNER**, a roster id. That now arrives through the 0x028 instead.
+
+1. **0x028 enmity tracking** (`on_action` → `hate_[24] {mob, pc,
    lastMs}` via `record_hate`): catches UNCLAIMED aggro on a party member/pet
    (incoming adds before first damage). Loops ALL targets (AoE / cleave). Friendly
    = self / roster PC / a tracked friendly pet (`is_party_or_pet`); enemy candidate
@@ -67,8 +69,6 @@ pet.
 ## Entity readers (game_mem.cpp)
 - `read_entities_by_id(ids, n, EntityVitals*)` — resolve a set of ids → live vitals
   in one block-copy (used to re-check the 0x028-tracked ids at display).
-- `read_party_aggro_mobs(friendlyIds, nFriendly, out, claimOut, maxN)` — the claim
-  scan (mobs claimed by a friendly), one block-copy.
 - `entity_id_by_index(index)` — one indexed read of `entity_array[index] + 0x78`
   (used to resolve the 0x067/0x068 pet/owner indices).
 

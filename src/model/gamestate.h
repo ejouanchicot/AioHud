@@ -40,6 +40,11 @@ struct GameState {
     EquipSet equip = {};      // 16 equipped item ids (0 = empty) + counts -> Player Hub Equipment Viewer grid
     bool equipValid = false;  // the equip read actually resolved (item containers ready) : false during a zone / not-logged-in
                               // -> the viewer must NOT clobber its cached icons on a not-ready read (persist, like the addon does across a zone)
+    // Which job abilities THIS job can use (1024 bits, bit id = usable). Read by the POLLER, not in draw : the
+    // reader calls twice into the client's own resource manager through its vtables, and Timers was doing that
+    // 60 times a second from inside EndScene. It changes on a job change, not per frame.
+    unsigned char jaBits[128] = {};
+    bool jaOk = false;        // the bitmap actually resolved -- honour it, an all-zero bitmap is NOT "no abilities"
 
     // --- minimap : current zone, self world position + heading, and the zone's map calibration record ---
     unsigned  zone = 0;       // current zone id (*(g+0x40)+0x02)
