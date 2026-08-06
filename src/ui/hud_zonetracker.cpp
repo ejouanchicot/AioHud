@@ -75,7 +75,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         float sscl = C.ztScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
         const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
         const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S, gap = 5.0f * S;   // no box chrome -> hug the content
-        const u32 white = 0xFFEAF0FFu, gold = 0xFFE8C55Au, strk = 0xFF000000u, orange = 0xFFEB9660u, dim = 0xFFB4B9C8u, green = 0xFF6BE06Bu, red = 0xFFF06060u;
+        const u32 white = 0xFFEAF0FFu, strk = 0xFF000000u, orange = 0xFFEB9660u, dim = 0xFFB4B9C8u, green = 0xFF6BE06Bu, red = 0xFFF06060u;
         Font* fH = zt_font(f, ZT_HEADER);
         const float zH = zt_sz(ZT_HEADER, 15.0f) * S, oH = zt_ow(ZT_HEADER, 1.1f) * S, headH = zH + 6.0f * S;
         // Each Omen row group owns a text element + a visibility toggle, so the objective line, the omen/bonus
@@ -88,7 +88,12 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         // reference addon's hide list). Announcing a countdown there is inventing a deadline, so the bonus line
         // collapses to the omen count and the rows drop out entirely. The preview keeps them: it exists to show
         // what the widget looks like when full.
-        const bool bonusFloor = (preview || editing) ? true : omen_floor_has_bonus(floorObj);
+        // ...but PARSED OBJECTIVES OUTRANK THE BANNER. omen_floor_has_bonus answers false for two very different
+        // things: "this floor has no bonus" and "no banner has arrived yet" -- and the placeholder we set on entry,
+        // "Waiting for objectives...", is itself in the no-bonus list. So on the first floor the rows were parsed
+        // correctly and then hidden, until a Vanquish banner happened to be re-broadcast. A non-empty row set is
+        // positive proof that this floor carries objectives, whatever the banner says or has not said yet.
+        const bool bonusFloor = (preview || editing) ? true : (omen_floor_has_bonus(floorObj) || nrows > 0);
         const bool hasObj = (C.ztOmObj != 0), hasCnt = (C.ztOmCount != 0), hasRows = (C.ztOmRows != 0) && bonusFloor;
         char sb[48], hb[40];
         if (bonusFloor) sprintf(hb, "Omens: %d   Bonus %d:%02d", omens, bonusSec / 60, bonusSec % 60);
@@ -108,7 +113,6 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
         if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
         dColorQuadState(dev);
-        const float r0 = 6.0f * S;
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
         const float cx = px + boxW * 0.5f, x0 = px + pad;
         float cy = py + pad;
@@ -144,7 +148,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         float sscl = C.ztScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
         const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
         const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S, gap = 5.0f * S;   // no box chrome -> hug the content
-        const u32 white = 0xFFEAF0FFu, gold = 0xFFE8C55Au, strk = 0xFF000000u, orange = 0xFFEB9660u;
+        const u32 white = 0xFFEAF0FFu, strk = 0xFF000000u, orange = 0xFFEB9660u;
         const u32 yellow = 0xFFFFFA78u, green = 0xFF6BE06Bu, red = 0xFFF06060u, orst = 0xFFFFA500u;
         Font* fH = zt_font(f, ZT_HEADER);
         const float zH = zt_sz(ZT_HEADER, 15.0f) * S, oH = zt_ow(ZT_HEADER, 1.1f) * S, headH = zH + 6.0f * S;
@@ -190,7 +194,6 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
         if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
         dColorQuadState(dev);
-        const float r0 = 6.0f * S;
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
         const float cx = px + boxW * 0.5f, x0 = px + pad;
         float cy = py + pad;
@@ -237,7 +240,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         float sscl = C.ztScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
         const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
         const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S, gap = 5.0f * S;   // no box chrome -> hug the content
-        const u32 white = 0xFFEAF0FFu, gold = 0xFFE8C55Au, strk = 0xFF000000u, orange = 0xFFEB9660u, green = 0xFF6BE06Bu, red = 0xFFF06060u, dim = 0xFFB4B9C8u;
+        const u32 white = 0xFFEAF0FFu, strk = 0xFF000000u, orange = 0xFFEB9660u, green = 0xFF6BE06Bu, red = 0xFFF06060u;
         Font* fH = zt_font(f, ZT_HEADER);
         const float zH = zt_sz(ZT_HEADER, 15.0f) * S, oH = zt_ow(ZT_HEADER, 1.1f) * S, headH = zH + 6.0f * S;
         // One text element per Sheol group : the segment counter, the family name, the resistance values and the
@@ -290,9 +293,8 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
         if (editing) { static EditBox g_ztEditS; box_edit(f, g_ztEditS, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
         dColorQuadState(dev);
-        const float r0 = 6.0f * S;
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
-        const float cx = px + boxW * 0.5f, x0 = px + pad;
+        const float cx = px + boxW * 0.5f;
         float cy = py + pad;
         if (showHdr) { fH->begin(dev); fH->draw_c(dev, cx, cy + headH * 0.5f, hdr, zH, zt_col(ZT_HEADER, orange), strk, oH); cy += headH + gap; }
         if (showSeg) { fSg->begin(dev); fSg->draw_c(dev, cx, cy + segH * 0.5f, sb, zSg, zt_col(ZT_SH_SEG, white), strk, oSg); cy += segH; }
@@ -448,7 +450,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         if (editing) { static EditBox g_ztEditL; box_edit(f, g_ztEditL, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
         dColorQuadState(dev);
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
-        const float cx = px + boxW * 0.5f, x0 = px + pad;
+        const float cx = px + boxW * 0.5f;
         float cy = py + pad;
         if (showHdr) { fH->begin(dev); fH->draw_c(dev, cx, cy + headH * 0.5f, "Limbus", zH, zt_col(ZT_HEADER, orange), strk, oH); cy += headH + gap; }
         if (hasName) { fB->begin(dev); fB->draw_c(dev, cx, cy + lineH * 0.5f, nameLine, zB, zt_col(ZT_BODY, white), strk, oB); cy += lineH; }
@@ -531,7 +533,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     float sscl = C.ztScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
     const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
     const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S, gap = 6.0f * S;   // no box chrome -> hug the content
-    const u32 white = 0xFFEAF0FFu, gold = 0xFFE8C55Au, strk = 0xFF000000u, orange = 0xFFEB9660u;
+    const u32 white = 0xFFEAF0FFu, strk = 0xFF000000u, orange = 0xFFEB9660u;
     Font* fH = zt_font(f, ZT_HEADER);
     const float zH = zt_sz(ZT_HEADER, 15.0f) * S, oH = zt_ow(ZT_HEADER, 1.1f) * S, headH = zH + 6.0f * S;
     // Dynamis and Abyssea share this tail but NOT their elements : each owns its timer caption, its body text
@@ -585,7 +587,6 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
 
     // ---- chrome ----
     dColorQuadState(dev);
-    const float r0 = 6.0f * S;
     draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
 
     const float cx = px + boxW * 0.5f, x0 = px + pad;

@@ -419,7 +419,7 @@ void aio_plugin_text_in(const char* original, char* modified, int* mode)
             // question. A bounded sample cannot answer a question about a specific event; these two lines are
             // low-volume (one per skillchain / per burst) and map straight onto objective types 10 and 9, so they
             // get their own unbudgeted channel and the next run settles it.
-            else if (aio::party().zone_tracker().mode == 3 &&
+            else if (aio::zt_mode_published() == 3 &&      // published snapshot -- never reach into zt_ from THIS thread
                      (strstr(original, "Skillchain:") || strstr(original, "Magic Burst")))
                 { windower::debug::log("OMENCORR mode=%d | %s", mm, original); omen_chain_note(original, modified); }
             else if (g_omenRaw > 0) {
@@ -1004,6 +1004,21 @@ static void aio_command_dispatch(const char* cmd)
     if (strstr(buf, "geartrace")) {   // //aio geartrace -> trace the next N gear-icon resolutions to aiohud_debug.log (raw-item-ID diagnosis)
         aio::set_gear_trace(120);
         g_host.console().print(">>> AioHud : gear trace ARMED (open the equipment viewer / change gear, then send Windower\\plugins\\aiohud_debug.log ; look for GEAR lines) <<<");
+        return;
+    }
+    // //aio rangelog [sec] -> party + alliance DISTANCE capture. Named "rangelog", not "distlog" : probes::command()
+    // runs first with a bare strstr and already owns the token "dist" (the old entity-offset calibration probe), so
+    // "distlog" would have been swallowed by it on a dev build and never reached here -- the exact collision
+    // documented at the bottom of this dispatch. Checked, not chosen by eye.
+    // Lives HERE, in the tracked file, on purpose: aiohud_probes.cpp is untracked, so a probe defined there is
+    // absent from any release AND is replaced by the published build the moment the updater runs mid-test.
+    if (strstr(buf, "rangelog")) {
+        int sec = 120; { const char* a = strstr(buf, "rangelog") + 8; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
+        if (sec < 10) sec = 10; if (sec > 900) sec = 900;
+        aio::party().arm_dist_log(sec);
+        g_host.console().print(">>> AioHud : rangelog ARME -- une capture par seconde, party + alliances, dans Windower\\plugins\\aiohud_debug.log <<<");
+        g_host.console().print(">>> (1) index perime : cherche STALE sur une ligne d'un membre HORS ZONE (off=1) <<<");
+        g_host.console().print(">>> (2) hauteur : place-toi AU-DESSUS d'un membre, compare dh et d3, puis tente un Cure <<<");
         return;
     }
     if (strstr(buf, "dbflog")) {   // //aio dbflog -> trace the next N target-debuff mutations to aiohud_debug.log (debuff-box diagnosis)

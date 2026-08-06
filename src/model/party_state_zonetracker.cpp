@@ -46,10 +46,16 @@ static int limbus_ki_owned() {
 // ---- Limbus coffer history : its OWN file. The zone cache cannot hold this (single shared file, restored only
 // when curZone matches -> a Dynamis run in between would wipe it). Version tag embeds the struct size so a layout
 // change auto-invalidates, same trick as ZT_CACHE_VER.
-// The version encodes the on-disk SIZE, so adding a field to either struct invalidates old files automatically
-// rather than reading them as garbage. LimbusWeek is part of the image now (the weekly allowance is account-wide,
-// so it sits beside the two per-area coffer records, not inside them).
-static const int LC_VER = (int)(0x4C430000u | ((sizeof(LimbusCoffers) * 2 + sizeof(LimbusWeek)) & 0xFFFF));
+// The version encodes the on-disk SIZE of the REQUIRED prefix only -- the two coffer records. LimbusWeek is
+// appended AFTER them and is read optionally (see lc_load), so an older file is not garbage: it is this same
+// image minus its tail, which lc_load already handles. Folding sizeof(LimbusWeek) in here made every existing
+// limbus_*.bin fail the version test and lose its coffer history -- silently, and for a field the reader was
+// explicitly written to do without. Rule for the next field: append it, read it optionally, leave LC_VER alone.
+// LC_VER must change only when the PREFIX layout changes.
+static const int LC_VER = (int)(0x4C430000u | ((sizeof(LimbusCoffers) * 2) & 0xFFFF));
+// ...and v1.0.73/74 DID ship the folded tag, so those files carry it. The prefix layout is identical in both, so
+// accept either on read rather than making the fix itself cost a second reset. New files are written with LC_VER.
+static const int LC_VER_V73 = (int)(0x4C430000u | ((sizeof(LimbusCoffers) * 2 + sizeof(LimbusWeek)) & 0xFFFF));
 // PER-CHARACTER cache paths. These files used to be ONE PER INSTALL ("zone.bin" / "limbus.bin"), so every
 // character on the same Windower shared them : the last one to save won, and the next character loaded its
 // values -- Kaories' Temenos units showing up on Tetsouo. Key them on the character's server id.
@@ -106,7 +112,7 @@ void PartyState::lc_load() {
     HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
     if (h == INVALID_HANDLE_VALUE) return;
     int ver = 0; LimbusCoffers c[2]; LimbusWeek w{}; DWORD got = 0;
-    if (ReadFile(h, &ver, sizeof(ver), &got, 0) && got == sizeof(ver) && ver == LC_VER &&
+    if (ReadFile(h, &ver, sizeof(ver), &got, 0) && got == sizeof(ver) && (ver == LC_VER || ver == LC_VER_V73) &&
         ReadFile(h, c, sizeof(c), &got, 0) && got == sizeof(c)) {
         lc_[0] = c[0]; lc_[1] = c[1];
         // The allowance is OPTIONAL on read : a file written by the previous layout stops here, and losing the
@@ -200,20 +206,20 @@ void PartyState::on_omen_text(const char* s) {
         OTRACE("OMEN slot=%d %s type=%d('%s') letter=%c num=%d -> cur=%d->%d step=%d req=%d | %s",
                L.slot, L.eval ? "EVAL" : "init", L.type, omen_short(L.type), L.letter ? L.letter : '?', L.num,
                prevCur, o.cur, o.cur - prevCur, o.req, s);
-        zt_save();
+        zt_save_soon();
         return;
     }
     if (omen_is_timer_line(s)) {
         const int n = omen_first_num(s);
         if (n >= 0) { zt_.omenBonusSec = n; zt_.omenBonusMs = GetTickCount(); }
-        zt_save();
+        zt_save_soon();
         OTRACE("OMEN bonus timer=%d newFloor=%d | %s", n, (int)wiped, s);
         return;
     }
-    if (strstr(s, " omen")) { const int n = omen_first_num(s); if (n >= 0) { zt_.omens = n; zt_save(); } OTRACE("OMEN omens=%d | %s", n, s); return; }
-    if (strstr(s, "spectral light flares up")) { zt_.omenCleared = 1; zt_save(); OTRACE("OMEN floor CLEARED | %s", s); return; }
-    if (strstr(s, "light shall come even if you fail")) { omen_set_floor(zt_, "Free Floor!"); zt_save(); OTRACE("OMEN free floor (objectives wiped=%d) | %s", (int)wiped, s); return; }
-    if (strstr(s, "Vanquish") || strstr(s, "treasure portent")) {
+    if (strstr(s, " omen")) { const int n = omen_first_num(s); if (n >= 0) { zt_.omens = n; zt_save_soon(); } OTRACE("OMEN omens=%d | %s", n, s); return; }
+    if (strstr(s, "spectral light flares up")) { zt_.omenCleared = 1; zt_save_soon(); OTRACE("OMEN floor CLEARED | %s", s); return; }
+    if (strstr(s, "light shall come even if you fail")) { omen_set_floor(zt_, "Free Floor!"); zt_save_soon(); OTRACE("OMEN free floor (objectives wiped=%d) | %s", (int)wiped, s); return; }
+    if (omen_is_floor_banner_line(s) && !strstr(s, "light shall come even if you fail")) {   // ONE definition of "this is a banner", shared with the classifier (casing included)
         // The banner is RE-BROADCAST all floor long -- one floor of the 2026-07-30 run printed it seven times --
         // so only a CHANGE is news. It is also the ONE line that says whether the floor carries a bonus at all,
         // and that classification (the Kin/Gin/Kei/Kyou/Fu/Ou + Craver/Gorger/Thinker + Treasure list) has never
@@ -221,7 +227,7 @@ void PartyState::on_omen_text(const char* s) {
         // here is what will settle it on the next run, whichever way it goes.
         char now[48]; omen_clean_text(s, now, (int)sizeof(now));
         const bool changed = (lstrcmpA(now, zt_.floorObj) != 0);
-        omen_set_floor(zt_, s); zt_save();
+        omen_set_floor(zt_, s); zt_save_soon();
         if (changed) OTRACE("OMEN FLOOR CHANGE -> '%s' bonusFloor=%d (objectives wiped=%d) | %s",
                             now, (int)omen_floor_has_bonus(now), (int)wiped, s);
         else         OTRACE("OMEN floor banner repeat, bonusFloor=%d (objectives wiped=%d) | %s",
@@ -342,7 +348,7 @@ void PartyState::on_nyzul_text(const char* s, int mode) {
         } else if (strstr(s, "archaic")) { ny_copy_text(zt_.nyRestriction, 40, s, 0); ch = true; }   // a floor restriction (keeps warning colour)
         else if (strstr(s, "Welcome to Floor")) { const int n = omen_first_num(s); if (n >= 0) { zt_.nyFloor = n; ny_resync(zt_); ch = true; } }
     }
-    if (ch) zt_save();
+    if (ch) zt_save_soon();
 }
 
 static void omen_reset_objs(ZoneTracker& zt);            // fwd : zt_set_zone resets the Omen objectives on entry
@@ -385,7 +391,11 @@ void PartyState::zt_set_zone(int zone, const char* name) {
     if (oldZone < 0) {
         char probe[300];
         if (!char_cache_path("zone", probe, sizeof(probe))) return;   // character not ready yet -> retry next frame
-        if (zt_load(zone)) { zt_.curZone = zone; return; }
+        // The coffer chips and the weekly allowance live in their OWN file, so restoring the zone cache does not
+        // restore them -- and this branch RETURNS, so the mode-6 entry below (the only other caller of lc_load)
+        // never runs on a reload. That is how a //unload + //load inside Limbus came back with "? runs left" and
+        // an empty chip row while limbus_<id>.bin held the right values all along. Load them here too.
+        if (zt_load(zone)) { lc_load(); zt_.curZone = zone; return; }
     }
     zt_.curZone = zone;
     int mode = 0;
@@ -553,7 +563,7 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
     // tagged with the CURRENT floor (bar1 of the 0x075 block, already parsed into limbusQuad/limbusFloor) -- that
     // cross of the two channels is what answers "which floor did this drop on".
     if (zt_.mode == 6) {
-        const unsigned m = pkt_u16(p, 0x1A) & 0x3FFFu;
+        const unsigned msg = pkt_u16(p, 0x1A) & 0x3FFFu;
         const int p1 = (int)pkt_u32(p, 0x08), p3 = (int)pkt_u32(p, 0x10), p4 = (int)pkt_u32(p, 0x14);
         char at[12]; limbus_floor_tag(zt_, at, sizeof(at));
         // Units acquired. NOTE (2026-07-19, per the player): mobs no longer pay units at all since a recent game
@@ -570,17 +580,25 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
         // name is 'Temenos Coffer #4' for a coffer, '???' for a point of interest. That is the ONLY reliable
         // discriminant : a point of interest grants the Code only ONCE PER WEEK, so the accompanying 7069/7070 item
         // message is absent the rest of the time and cannot be used (verified dead end -- do not rebuild on it).
-        if (m == 7247 || m == 7239) {
+        if (msg == 7247 || msg == 7239) {
             // Is this award a real coffer ? Name-based, so a client in another language degrades to "not a coffer"
             // (a missed chip, visible) rather than a false one (silent corruption of the quadrant row).
             char src[28] = { 0 };
             const unsigned tidx = (unsigned)p[0x18] | ((unsigned)p[0x19] << 8);
             entity_name_by_index(tidx, src, sizeof(src));
             bool isCoffer = false;
-            for (const char* c = src; *c && !isCoffer; ++c)
+            // Bound the scan on the LENGTH, not on `*c`. The loop reads c[0]..c[5] but only required c[0] to be
+            // non-NUL, so a 24-character entity name (the field is 24 bytes and is not guaranteed terminated)
+            // walked up to 4 bytes past this 28-byte buffer. Harmless in practice -- same stack page, inside a
+            // guarded frame, and the array is zero-initialised so short names never reach it -- but it is real
+            // out-of-bounds reading on a string that comes from the game.
+            const int srcLen = (int)strlen(src);
+            for (int i = 0; i + 6 <= srcLen && !isCoffer; ++i) {
+                const char* c = src + i;
                 if (((c[0]|32)=='c' && (c[1]|32)=='o' && (c[2]|32)=='f' && (c[3]|32)=='f' && (c[4]|32)=='e' && (c[5]|32)=='r') ||
                     ((c[0]|32)=='c' && (c[1]|32)=='o' && (c[2]|32)=='f' && (c[3]|32)=='f' && (c[4]|32)=='r' && (c[5]|32)=='e'))
                     isCoffer = true;   // "Coffer" (EN) / "Coffre" (FR)
+            }
             zt_.limbusUnits = p3; zt_.limbusUnitsCap = p4;
             if (zt_.limbusUnitBase < 0) zt_.limbusUnitBase = p3 - p1;   // total BEFORE this (first-seen) payout
             zt_.limbusRunUnits = (p3 > zt_.limbusUnitBase) ? (p3 - zt_.limbusUnitBase) : 0;
@@ -607,7 +625,7 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
                 lc_save();
             }
             zt_save();
-        } else if (m == 7280 || m == 7288) {               // weekly allowance : "you may collect data N more times"
+        } else if (msg == 7280 || msg == 7288) {               // weekly allowance : "you may collect data N more times"
             // 7280 is the CAPTURED id (2026-07-19, from the 'Temenos Operator' entity, p1 = the count). 7288 was the
             // previously assumed value and never matched anything, so this counter was simply never filled. Both are
             // kept : these ids are zone-relative and drift across patches, and the payload shape is identical.
@@ -618,13 +636,14 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
             // week's (limbus_week.h), instead of being shown forever as if it were current.
             lw_.left = p1;
             lw_.stampUtc = (long long)time(0);
-            lc_save();
             // NOTE: no weekly wipe. The row is not a per-week checklist -- it is the last known payout of each
             // quadrant, and it self-corrects because reopening a coffer overwrites its slot (a 5k slot reopened
             // for 3k goes back to red). Only finding a 5k clears the reds. Wiping on a new week would destroy
             // the one thing worth keeping (where the 5k was) without ever being asked to.
             lc_[(zt_.curZone == 37) ? 1 : 0].weekSeen = p1;
-            lc_save();
+            lc_save();          // ONE save for the whole message : lw_ and weekSeen live in the same file, and saving
+                                // between the two writes meant two full read_player + CreateFile + WriteFile cycles
+                                // for a single packet, the second one immediately superseding the first.
             zt_save();
         }
         return;
@@ -663,6 +682,11 @@ static int           g_gtMode[GT_N];
 static volatile long g_gtHead = 0;   // written by the TEXT thread only
 static volatile long g_gtTail = 0;   // written by the MAIN thread only
 
+// Written ONLY by the main thread (end of drain_game_text), read ONLY by the text thread. A single aligned int,
+// so no tearing ; `volatile` just stops the compiler from caching it across the text callback.
+static volatile int g_ztModePub = 0;
+int zt_mode_published() { return g_ztModePub; }
+
 void queue_game_text(const char* s, int mode) {
     if (!s) return;
     const long head = g_gtHead;
@@ -687,6 +711,10 @@ void drain_game_text() {
         else           party().on_nyzul_text(g_gtText[slot], mm);
         g_gtTail = g_gtTail + 1;
     }
+    // ONE disk write for the whole batch, whatever it contained (see zt_save_soon). A burst of Omen progress
+    // lines now costs one save instead of one per line.
+    party().zt_flush_save();
+    g_ztModePub = party().zone_tracker().mode;   // publish for the text thread (see zt_mode_published)
 }
 
 // Runs left THIS week. The stored count is only meaningful inside the week it was observed in : past the

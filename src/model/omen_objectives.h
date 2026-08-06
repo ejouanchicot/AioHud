@@ -136,8 +136,28 @@ inline bool omen_is_new_floor_line(const char* s) {
 // The floor's own objective banner ("Vanquish all transcended foes.", "Open 3 treasure portents", or the
 // free-floor "The light shall come even if you fail to obey."). RE-BROADCAST periodically during a floor, so on
 // its own it says nothing about a floor CHANGE -- it only means one when a clear was seen just before it.
+// ONE spelling of the treasure token, matched WITHOUT case, shared by both predicates below. They used to carry
+// two mutually exclusive spellings of the same phrase -- "treasure portent" here, "Treasure" in the NOBONUS list --
+// and strstr is case-sensitive, so at most one of them could ever match the game's real wording. Whichever way the
+// game writes it, exactly one predicate fired: either the box promised a bonus window on a coffer floor, or the
+// banner was not recognised at all and the PREVIOUS floor's banner stayed up for the whole coffer floor.
+static const char OMEN_TREASURE_TOK[] = "treasure portent";
+inline bool omen_ci_find(const char* hay, const char* needle) {   // case-insensitive substring, ASCII only (chat text is filtered to 0x20..0x7E)
+    if (!hay || !needle || !needle[0]) return false;
+    for (const char* h = hay; *h; ++h) {
+        const char *a = h, *b = needle;
+        while (*a && *b) {
+            const char ca = (*a >= 'A' && *a <= 'Z') ? (char)(*a + 32) : *a;
+            const char cb = (*b >= 'A' && *b <= 'Z') ? (char)(*b + 32) : *b;
+            if (ca != cb) break;
+            ++a; ++b;
+        }
+        if (!*b) return true;
+    }
+    return false;
+}
 inline bool omen_is_floor_banner_line(const char* s) {
-    return s && (strstr(s, "Vanquish") || strstr(s, "treasure portent") || strstr(s, "light shall come even if you fail"));
+    return s && (strstr(s, "Vanquish") || omen_ci_find(s, OMEN_TREASURE_TOK) || strstr(s, "light shall come even if you fail"));
 }
 
 // Does THIS floor carry bonus objectives at all?
@@ -154,8 +174,9 @@ inline bool omen_is_floor_banner_line(const char* s) {
 // objectives -- a silent, hard-to-attribute failure.
 inline bool omen_floor_has_bonus(const char* banner) {
     if (!banner || !banner[0]) return false;                      // nothing known yet -> nothing to promise
+    if (omen_ci_find(banner, OMEN_TREASURE_TOK)) return false;    // coffer floor -- same token, same casing rule, as the banner predicate
     static const char* NOBONUS[] = { "Kin", "Gin", "Kei", "Kyou", "Fu", "Ou",
-                                     "Craver", "Gorger", "Thinker", "Treasure", "Waiting" };
+                                     "Craver", "Gorger", "Thinker", "Waiting" };
     for (unsigned k = 0; k < sizeof(NOBONUS) / sizeof(NOBONUS[0]); ++k) {
         const char* t = NOBONUS[k];
         const int n = (int)strlen(t);
@@ -180,8 +201,13 @@ inline bool omen_floor_has_bonus(const char* banner) {
 inline bool omen_feed_slots(OmenObj* objs, const char* s, bool floorCleared) {
     if (!objs || !s) return false;
     if (omen_is_new_floor_line(s)) { omen_reset(objs); return true; }        // the bonus window opening
-    if (floorCleared && omen_is_floor_banner_line(s)) { omen_reset(objs); return true; }   // second chance, after a clear
-    omen_apply_line(objs, omen_parse_line(s));
+    const OmenLine L = omen_parse_line(s);
+    // An objective line is NEVER a banner. The two predicates overlap on the word "Vanquish": a real objective
+    // reads "3: Vanquish 2 foes.", so with the clear latch armed the second chance below wiped the ten slots AND
+    // dropped that very line instead of recording it. Parsing first and refusing the banner branch for anything
+    // that parsed as "N: ..." makes them disjoint. (A banner never starts with a slot number.)
+    if (floorCleared && L.slot == 0 && omen_is_floor_banner_line(s)) { omen_reset(objs); return true; }   // second chance, after a clear
+    omen_apply_line(objs, L);
     return false;
 }
 
