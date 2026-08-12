@@ -275,6 +275,13 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_77[] = {
+    { "*The plugin now watches itself for the kind of breakage that shows no symptom.* A game update can move a value without anything going dark : the box keeps displaying a number, the number looks normal, and it is wrong. Several things are known twice -- the server sends them, and the game also keeps them in memory -- so those two are now compared, and `//aio doctor` says plainly if they stop agreeing.",
+      "*Le plugin surveille desormais lui-meme le type de casse qui ne donne aucun symptome.* Une mise a jour du jeu peut deplacer une valeur sans que rien ne s'eteigne : la boite continue d'afficher un chiffre, le chiffre a l'air normal, et il est faux. Plusieurs informations sont connues deux fois -- le serveur les envoie, et le jeu les garde aussi en memoire -- ces deux sources sont donc comparees, et `//aio doctor` le dit clairement si elles cessent de concorder." },
+    { "It never corrects anything on its own : when two sources disagree, nothing can tell which one is right, so guessing would be worse than saying nothing. It reports both values and leaves the decision to a human.",
+      "Il ne corrige jamais rien de lui-meme : quand deux sources divergent, rien ne permet de dire laquelle a raison, et deviner serait pire que se taire. Il affiche les deux valeurs et laisse la decision a un humain." },
+};
+
 static const ChangeLine CL_76[] = {
     { "*The FFXI update of August 12 broke several boxes -- they are back.* Selecting a party member no longer highlighted their line, the Cost/Next box stayed dark, and the EXP / Master Level / merit panel showed nothing. The game update had moved the places in memory where those values live ; everything read through Windower kept working, which is why only a few things went dark while the rest looked perfectly fine.",
       "*La mise a jour de FFXI du 12 aout avait casse plusieurs boites -- elles sont de retour.* Selectionner un membre du groupe n'illuminait plus sa ligne, la boite Cout/Next restait eteinte, et le panneau EXP / Master Level / merites n'affichait rien. La mise a jour du jeu avait deplace les endroits en memoire ou ces valeurs se trouvent ; tout ce qui passe par Windower continuait de fonctionner, d'ou ces quelques boites eteintes au milieu d'un ensemble qui semblait parfaitement sain." },
@@ -517,6 +524,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.77", CL_77, (int)(sizeof(CL_77) / sizeof(CL_77[0])) },
     { "1.0.76", CL_76, (int)(sizeof(CL_76) / sizeof(CL_76[0])) },
     { "1.0.75", CL_75, (int)(sizeof(CL_75) / sizeof(CL_75[0])) },
     { "1.0.74", CL_74, (int)(sizeof(CL_74) / sizeof(CL_74[0])) },
