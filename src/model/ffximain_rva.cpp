@@ -34,7 +34,7 @@ static const Entry ENTRIES[FM_N] = {
 static u32   g_rva[FM_N];
 static bool  g_healed[FM_N], g_confirmed[FM_N];
 static char  g_how[FM_N][40];
-static bool  g_loaded = false;
+static bool  g_loaded = false;   // rule10-ok: latched ONLY once FFXiMain is mapped -- see ensure_loaded, the transient "module not ready" case deliberately does not latch
 
 // PointWatch ground truth, handed over by the packet handlers. `due` counts frames down : our hook runs
 // BEFORE the client writes its own statics, so an immediate compare tests the values about to be replaced.
@@ -109,7 +109,7 @@ static void seed_all() {
 
 static void cache_load() {
     seed_all();
-    g_loaded = true;
+    g_loaded = true;   // rule10-ok: reached only with FFXiMain mapped (ensure_loaded gates it), and a re-read would only re-parse the same file -- the retry that matters is the per-static healing, which is bounded and never latches
     FILE* f = fopen(cache_path(), "r");
     if (!f) return;
     char line[256]; u32 fp = 0; bool fpOk = false, fmtOk = false; int n = 0;
