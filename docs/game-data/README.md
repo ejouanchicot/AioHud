@@ -27,6 +27,9 @@ AioHUD sources live data two ways: the **local player** from memory (always pres
 
 ## Cross-cutting, so kept at this level
 
+- [**FFXiMain statics, and how they repair themselves**](ffximain-statics.md) — the six addresses that move
+  at *every* client patch, why a game update kills a handful of features while everything else keeps working,
+  and the proof each one has to pass before it is adopted at runtime. Start here after any FFXI update.
 - [**Two traps that cost real time**](traps.md) — the dangling self-name pointer and the job-ID-vs-job-LEVEL
   offset. Read before reversing anything: both look like working code until they don't.
 - [**Core offsets verified against LuaCore**](luacore-verified-offsets.md) — the 2026-07-19 Ghidra audit.

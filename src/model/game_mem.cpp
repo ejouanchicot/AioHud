@@ -1,6 +1,7 @@
 // game_mem.cpp -- see game_mem.h.
 #include "model/game_mem.h"
 #include "model/gamestate.h"
+#include "model/ffximain_rva.h"   // the FFXiMain statics : addresses as data, re-derived after a client patch
 #include "model/ui_config.h"   // mmShow : skip the entity-array sweep entirely when the minimap is off (model->model, no layering issue)
 #include "windower.h"   // safe_read / valid_ptr (guarded game-memory reads)
 #include <windows.h>
@@ -201,33 +202,39 @@ bool read_capacity_points(unsigned mainJob, unsigned& cp, unsigned& jp) {
     return true;
 }
 
-// PointWatch : Exemplar Points + Limit Points/merits from FFXiMain static data ; Master Level from the LuaCore
-// player struct. FFXiMain RVAs (0x48569C exemplar cur/req, 0x485826 limit-points/merit block) reversed via
-// //aio pwscan -- client-version-specific. The merit block matches the 0x063 order-2 payload : LP u16 @+0,
-// merit-count byte @+2 (low 7 bits), max-merit byte @+4.
-static const u32 PW_FM_EXP       = 0x485644;   // u16 Current EXP, u16 Required EXP @+2 (= exemplar-0x58, packet-mirror)
-static const u32 PW_FM_MLVL      = 0x485699;   // u8 Master Level (packet 0x65 = exemplar-0x03, same static struct)
-static const u32 PW_FM_EXEMPLAR = 0x48569C;   // u32 Current, u32 Required @+4
-static const u32 PW_FM_MERIT     = 0x485826;   // u16 Limit Points, byte MeritCount @+2, byte MaxMerit @+4
+// PointWatch : Exemplar Points + Limit Points/merits, read out of FFXiMain static data. These are not four
+// independent addresses -- they are TWO structs, and saying so is what makes them repairable. The client
+// copies packet 0x061's body verbatim from body+0x10 onward into the first one (disassembled in
+// docs/game-data/luacore-verified-offsets.md), so every field below is that packet at a fixed offset :
+//   block + 0x00   u16 Current EXP, u16 Required EXP @+2        (= body +0x10 / +0x12)
+//   block + 0x55   u8  Master Level                             (= body +0x65)
+//   block + 0x58   u32 Exemplar Current, u32 Required @+4       (= body +0x68 / +0x6C)
+// and the merit block mirrors 0x063 order 2 : LP u16 @+0, merit count byte @+2 (low 7 bits), max @+4.
+// The BASE of each block lives in ffximain_rva.cpp, which re-derives it from those very packets when a
+// client patch moves it -- which is why nothing here hard-codes an address any more.
+static const u32 PW_MLVL_OFF = 0x55, PW_EXEMPLAR_OFF = 0x58;
+
 bool read_pointwatch(PwMem& out) {
     out = PwMem{};
-    u32 fm = ffximain_base();
-    if (fm) {
+    const u32 blk = fm_addr(FM_PW_BLOCK), mer = fm_addr(FM_PW_MERIT);
+    if (blk) {
         u32 xw = 0;
-        if (safe_read(fm + PW_FM_EXP, &xw)) { out.xpCur = xw & 0xFFFF; out.xpTnl = (xw >> 16) & 0xFFFF; out.xpOk = (out.xpTnl != 0); }
+        if (safe_read(blk, &xw)) { out.xpCur = xw & 0xFFFF; out.xpTnl = (xw >> 16) & 0xFFFF; out.xpOk = (out.xpTnl != 0); }
         u32 ep = 0, et = 0;
-        if (safe_read(fm + PW_FM_EXEMPLAR, &ep) && safe_read(fm + PW_FM_EXEMPLAR + 4, &et)) {
+        if (safe_read(blk + PW_EXEMPLAR_OFF, &ep) && safe_read(blk + PW_EXEMPLAR_OFF + 4, &et)) {
             out.epCur = ep; out.epTnml = et; out.epOk = (et != 0);
         }
+        u32 v = 0; if (safe_read(blk + PW_MLVL_OFF, &v)) { out.masterLevel = (int)(v & 0xFF); out.mlOk = true; }
+    }
+    if (mer) {
         u32 lp = 0, mx = 0;
-        if (safe_read(fm + PW_FM_MERIT, &lp) && safe_read(fm + PW_FM_MERIT + 4, &mx)) {
+        if (safe_read(mer, &lp) && safe_read(mer + 4, &mx)) {
             out.lpCur = lp & 0xFFFF;               // Limit Points (u16 @+0)
             out.merits = (int)((lp >> 16) & 0x7F); // merit count (byte @+2, low 7 bits)
             out.maxMerits = (int)(mx & 0xFF);      // max merits (byte @+4)
             out.merOk = (out.maxMerits > 0);
         }
     }
-    if (fm) { u32 v = 0; if (safe_read(fm + PW_FM_MLVL, &v)) { out.masterLevel = (int)(v & 0xFF); out.mlOk = true; } }   // Master Level (FFXiMain static struct)
     return out.epOk || out.merOk || out.mlOk;
 }
 
@@ -676,14 +683,25 @@ bool read_party_leaders(PartyLeaders& o) {
 // Target + sub-target. Reversed in-game (2026-06-27, retail) matching Ashita's target_t
 // layout (see plugins/sdk/ffxi/target.h). A STATIC pointer in FFXiMain.dll points at a heap
 // target_t (ASLR-shifted base resolved at runtime). Located via the //aio tgt2 probe.
-//   *(FFXiMain.dll + 0x57876C)            -> target_t base (heap)
+//   *(FFXiMain.dll + 0x5787AC)            -> target_t base (heap ; 0x57876C before the 2026-08-12 patch)
 //   target_t + 0x04   u32  Targets[0].ServerId   = the ACTIVE reticle (sub when <st> open, else main)
 //   target_t + 0x2C   u32  Targets[1].ServerId   = the LOCKED main (while a <st> cursor is open)
 //   target_t + 0x50   u32  flags ; bit 0x00010000 = sub-target CURSOR open (clears on BOTH
 //                          confirm and cancel ; NB: the byte at +0x78 is sticky -> do NOT use it)
 // id 0x04000000 is the "nothing" sentinel. (Old flat cache lived at FFXiMain+0x487F60.)
-static const u32 TARGET_T_PTR_RVA = 0x57876C;
+//
+// 2026-08-12 : an FFXI CLIENT PATCH rewrote FFXiMain.dll (+20 KB) and moved this static 0x57876C -> 0x5787AC.
+// The chains hung off LuaCore survived, so the party kept drawing and ONLY the selection cursor died -- the
+// failure looked like a widget bug, not a patch. The address itself now lives in ffximain_rva.cpp (FM_TARGET_T)
+// and is re-derived at runtime ; there is deliberately NO copy of it here, because a second copy is exactly
+// what turns the next patch into three edits and one forgotten one.
 static const u32 T0_ID_OFF = 0x04, T1_ID_OFF = 0x2C, FLAGS_OFF = 0x50, LOCK_OFF = 0x5C;
+static const u32 T0_EPTR_OFF = 0x08;      // Targets[0].EntityPointer (reticle = main unless a <st> cursor is up) -- a TARGET-system
+                                          // field, not an entity field ; the ENT_*_OFF struct offsets live near read_map_entities.
+                                          // (Declared with its siblings, not next to read_target_entity : target_root's signature
+                                          //  check below needs it, and rule 7 wants one declaration, not a second literal 0x08.)
+static const u32 T1_EPTR_OFF = 0x30;      // Targets[1].EntityPointer (the LOCKED main, valid while a <st> cursor is up).
+                                          // Targets stride = T1_ID(0x2C) - T0_ID(0x04) = 0x28 ; so T1_EPTR = T0_EPTR(0x08) + 0x28.
 // BT_ID_OFF : the BATTLE-TARGET ServerId (the mob you're engaged with). Unlike the reticle T0, this stays set
 // when you drop the cursor <t> off the mob while still fighting it, and CLEARS to 0 on disengage. Reversed
 // 2026-07-10 via //aio bt (self-calibrating id/index scan across the 3 states) : off the Targets[] grid at
@@ -697,12 +715,67 @@ static const u32 NO_TARGET = 0x04000000;
 // Reversed 2026-07-02 via //aio tlock (mob: +0x5C flipped 0->1) ; corrected 2026-07-05 (friendly targets carry
 // the upper flags). The locked id is T0 @+0x04.
 
+// ---- target_root : the ONE resolution of target_t, and the ONE place that survives a client patch ----
+// A hard-coded RVA is a bet that the game's layout never moves ; on 2026-08-12 it moved and the selection
+// cursor died silently for everyone. So the RVA is a VARIABLE seeded with the known-good value, and when the
+// static stops being a pointer at all (the exact broken state observed : it read 0) we RE-DERIVE it with the
+// same structural signature //aio rva uses -- a pointer whose Targets[0].ServerId (+0x04) equals the ServerId
+// of the entity at +0x08, that entity being the one entity_array holds at its own index (+0x74). Three
+// mutually-confirming facts : nothing else in the image satisfies them, so a hit is the answer, not a guess.
+//
+// Bounded, and it says so both ways (rule 10) : a scan needs SOMETHING TARGETED to prove itself, so it retries
+// on a timer -- window around the seed only (a patch shifts by bytes, this one by 0x40), at most HEAL_MAX
+// times. When the budget runs out it logs that it closed, because a healer that dies quietly reads exactly
+// like an RVA that was fine all along.
+static const u32 HEAL_WINDOW = 0x4000;   // +/- around the seed : covers a patch-sized shift, ~8k candidates
+static const int HEAL_EVERY  = 120;      // frames between attempts (~2 s)
+static const int HEAL_MAX    = 60;       // ~2 min of play -- long enough that the player targets something
+
+static bool target_sig_ok(u32 v) {
+    if (!valid_ptr(v)) return false;
+    u32 id0 = 0, e0 = 0;
+    safe_read(v + T0_ID_OFF, &id0); safe_read(v + T0_EPTR_OFF, &e0);
+    if (!id0 || id0 == NO_TARGET || !valid_ptr(e0)) return false;   // nothing targeted -> cannot prove it, not now
+    u32 eid = 0, eidx = 0, back = 0;
+    safe_read(e0 + ENT_ID_OFF, &eid); safe_read(e0 + ENT_INDEX_OFF, &eidx); eidx &= 0xFFFF;
+    if (eid != id0 || !eidx || eidx >= 0x900) return false;
+    u32 ent = entity_array();
+    return ent && safe_read(ent + eidx * 4, &back) && back == e0;
+}
+
+u32 target_root() {
+    static int s_frames = 0, s_tries = 0;
+    const u32 ffm = ffximain_base();
+    if (!ffm) return 0;
+    const u32 rva = fm_rva(FM_TARGET_T);
+    u32 tp = 0; safe_read(ffm + rva, &tp);
+    if (valid_ptr(tp)) {
+        // Healthy. Take the first chance to CONFIRM it (needs a target up) so the address gets cached and
+        // the next session skips the whole question.
+        if (!fm_confirmed(FM_TARGET_T) && target_sig_ok(tp)) fm_adopt(FM_TARGET_T, rva, "structural signature");
+        return tp;
+    }
+    if (s_tries >= HEAL_MAX) return 0;                  // budget spent -- already logged, stay quiet
+    if (++s_frames < HEAL_EVERY) return 0;
+    s_frames = 0; ++s_tries;
+    const u32 lo = (rva > HEAL_WINDOW) ? (rva - HEAL_WINDOW) : 0;
+    for (u32 r = lo; r <= rva + HEAL_WINDOW; r += 4) {
+        u32 v = 0;
+        if (!safe_read(ffm + r, &v) || !target_sig_ok(v)) continue;
+        fm_adopt(FM_TARGET_T, r, "structural signature");
+        return v;
+    }
+    if (s_tries == HEAL_MAX)
+        windower::debug::log("target_root: FFXiMain+0x%X still dead after %d tries -- selection cursor stays off. "
+                             "Target a party member and run //aio rva (the shift is bigger than the 0x%X window).",
+                             rva, s_tries, HEAL_WINDOW);
+    return 0;
+}
+
 bool read_target(TargetInfo& o) {
     o.id = o.sid = o.bt = 0; o.locked = false;
-    u32 ffm = ffximain_base();
-    if (!ffm) return false;
-    u32 tp = 0; safe_read(ffm + TARGET_T_PTR_RVA, &tp);
-    if (!valid_ptr(tp)) return true;                    // target system not ready
+    u32 tp = target_root();
+    if (!tp) return true;                               // target system not ready (or the static moved -- see target_root)
     u32 t0 = 0, t1 = 0, bt = 0, flags = 0, lk = 0;
     safe_read(tp + T0_ID_OFF, &t0);                     // active reticle
     safe_read(tp + T1_ID_OFF, &t1);                     // locked main (valid during sub-target)
@@ -727,12 +800,6 @@ bool read_target(TargetInfo& o) {
 //   entity   + 0x7C   char[0x18]  Name (ASCII, NUL-padded)
 //   entity   + 0xEC   u8   HP% (0..100)  -- the ONLY 0..100 byte that tracked damage : a 9% mob read 9 here
 //                          while +0xDC/+0xE0 stayed pinned at 100 (so those are NOT HP%).
-static const u32 T0_EPTR_OFF = 0x08;      // Targets[0].EntityPointer (reticle = main unless a <st> cursor is up) -- a TARGET-system
-                                          // field, not an entity field ; the ENT_*_OFF struct offsets live near read_map_entities.
-
-static const u32 T1_EPTR_OFF = 0x30;      // Targets[1].EntityPointer (the LOCKED main, valid while a <st> cursor is up).
-                                          // Targets stride = T1_ID(0x2C) - T0_ID(0x04) = 0x28 ; so T1_EPTR = T0_EPTR(0x08) + 0x28.
-
 // Fill a TargetEntity from an entity-struct pointer (name / HP% / id / status / claim / spawn / speed / pos /
 // heading). Leaves o invalid (o.valid=false) on a bad pointer or an empty/sentinel id.
 static void read_entity_fields(u32 ep, TargetEntity& o) {
@@ -761,10 +828,8 @@ static void read_entity_fields(u32 ep, TargetEntity& o) {
 // main = Targets[0] (reticle), no sub. <st> open : main = Targets[1] (the locked target), sub = Targets[0] (reticle).
 bool read_target_entity(TargetEntity& main, TargetEntity& sub, bool& hasSub) {
     main = TargetEntity{}; sub = TargetEntity{}; hasSub = false;
-    u32 ffm = ffximain_base();
-    if (!ffm) return false;
-    u32 tp = 0; safe_read(ffm + TARGET_T_PTR_RVA, &tp);
-    if (!valid_ptr(tp)) return true;                    // target system not ready
+    u32 tp = target_root();                             // same resolution as read_target : patch-healing lives there
+    if (!tp) return true;                               // target system not ready
     u32 flags = 0; safe_read(tp + FLAGS_OFF, &flags);
     u32 mep = 0;
     if (flags & SUB_CURSOR_BIT) {                       // <st> cursor : main = locked (Targets[1]), sub = reticle (Targets[0])
@@ -778,9 +843,10 @@ bool read_target_entity(TargetEntity& main, TargetEntity& sub, bool& hasSub) {
 }
 
 // Action menu (reversed 2026-06-27). Statics in FFXiMain :
-//   +0x5EED6C  u32  live-menu pointer : 0 closed, heap ptr while any menu is open ; *(ptr+0x04) = menu DEF
-//   +0x634F28  u32  "examined SPELL" id   (the game writes it in the Magic menu to show MP Cost / recast)
-//   +0x634590  u32  "examined ABILITY" id + 0x200 (Job-Ability / Weapon-Skill menus ; -0x200 = raw id)
+//   +0x5EEDAC  u32  live-menu pointer : 0 closed, heap ptr while any menu is open ; *(ptr+0x04) = menu DEF
+//   +0x634F68  u32  "examined SPELL" id   (the game writes it in the Magic menu to show MP Cost / recast)
+//   +0x6345D0  u32  "examined ABILITY" id + 0x200 (Job-Ability / Weapon-Skill menus ; -0x200 = raw id)
+//   (all three are the 2026-08-12 post-patch addresses ; pre-patch they were 0x5EED6C / 0x634F28 / 0x634590)
 //
 // ZERO-TAP menu type (reversed 2026-06-27 via //aio menu) : the def carries the menu's INTERNAL NAME
 // inline -- two 8-byte fields at def+0x46 : a constant "menu    " tag then the menu name at def+0x4E.
@@ -791,7 +857,14 @@ bool read_target_entity(TargetEntity& main, TargetEntity& sub, bool& hasSub) {
 //   "abiselec" -> the Abilities CATEGORY selector (no item examined -> cache is 0xFFFFFFFF) -> ignored
 // This replaces the old "learn which def changed the cache" trick : no cursor tap needed, and it is
 // stable across sessions (it's read from the def, not the per-session heap pointer value).
-static const u32 MENU_PTR_RVA = 0x5EED6C, EXAM_SPELL_RVA = 0x634F28, EXAM_ABIL_RVA = 0x634590;
+// 2026-08-12 client patch : the live-menu pointer moved 0x5EED6C -> 0x5EEDAC, the same +0x40 shift that hit
+// target_t. PROVEN by running //aio rva twice : that slot's def name read 'magic' with the Magic menu open and
+// 'ability' with the Abilities menu open, while the three other menu-shaped slots never changed. (An always-
+// 'ability' slot at 0x455C60 is a cache, not the focus -- it stayed 'ability' while Magic was open.)
+// The three addresses now live in ffximain_rva.cpp (fm_addr), which re-derives them after a client patch :
+// the menu pointer by watching which slot's name follows the menu you open, the examine caches by decoding
+// their value back to a real spell / ability name. Only the STRUCTURE offsets stay here -- those belong to
+// the menu object, not to the module, and a recompile does not move them.
 static const u32 MENU_NAME_OFF = 0x4E, MENU_TAG_OFF = 0x46;   // def+0x46 = "menu    ", def+0x4E = name
 
 // read `n` (<=8) bytes of inline ASCII at addr into out (NUL-terminated).
@@ -804,7 +877,7 @@ bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid
     type = 0; id = 0; cursor = 0; examValid = false;
     u32 ffm = ffximain_base();
     if (!ffm) return false;
-    u32 mptr = 0; safe_read(ffm + MENU_PTR_RVA, &mptr);
+    u32 mptr = 0; safe_read(fm_addr(FM_MENU_PTR), &mptr);
     if (!valid_ptr(mptr)) return false;                   // no menu open
     safe_read(mptr + 0x4C, &cursor);                      // 1-based highlight index -> stale-examine detection
     u32 def = 0; safe_read(mptr + 0x04, &def);            // menu category definition
@@ -828,7 +901,7 @@ bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid
 
 
     if (nm[0]=='m' && nm[1]=='a' && nm[2]=='g' && nm[3]=='i' && nm[4]=='c') {        // "magic   " (real spells AND trusts)
-        u32 spell = 0; safe_read(ffm + EXAM_SPELL_RVA, &spell);
+        u32 spell = 0; safe_read(fm_addr(FM_EXAM_SPELL), &spell);
         type = 1; id = (spell == 0 || spell > 0x4000) ? 0 : spell; return true;     // menu IS open (frame shows) ;
         // GHOST gate = the description-object sentinel (examValid, computed above : dsent != 0xFFFFFFFF). A
         // no-magic job's EMPTY magic menu never populates it (stays 0xFFFFFFFF) -> the stale EXAM_SPELL ghost
@@ -840,7 +913,7 @@ bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid
         // box draws an EMPTY frame whenever the magic menu is open (id may be a trust / stale until proven live).
     }
     if (nm[0]=='a' && nm[1]=='b' && nm[2]=='i' && nm[3]=='l') {                      // "ability " (JA + WS list)
-        u32 araw = 0; safe_read(ffm + EXAM_ABIL_RVA, &araw);                         // NB "abiselec" (nm[3]='s') is excluded
+        u32 araw = 0; safe_read(fm_addr(FM_EXAM_ABIL), &araw);                         // NB "abiselec" (nm[3]='s') is excluded
         if (araw >= 0x200 && araw <= 0x200 + 0x4000) { type = 2; id = araw - 0x200; return true; }  // Job Ability
         if (araw >= 1 && araw < 0x200)               { type = 3; id = araw;         return true; }  // Weapon Skill
         return false;                                                               // 0 / 0xFFFFFFFF : not populated
@@ -993,6 +1066,7 @@ static void compute_grimoire(GameState& gs) {
 }
 
 void poll_game_state(GameState& gs) {
+    fm_tick();                                               // FFXiMain statics : validate / re-derive whatever is due
     PlayerCacheScope _plc;                                   // cache read_player for this whole poll cycle (hit ~5x below)
     PlayerInfo me;
     if (!read_player(me)) { gs.inGame = false; return; }     // not ready (zoning) -> keep last-good
@@ -1043,7 +1117,7 @@ void poll_game_state(GameState& gs) {
     // RAW ability examine, read EVERY frame -> a change = the game examined a real ability, used to tell a
     // live Job-Ability/WS selection from a stale one (the Magic box uses menuExamValid instead ; see party.cpp).
     { u32 ffm2 = ffximain_base(); u32 ea = 0;
-      if (ffm2) safe_read(ffm2 + EXAM_ABIL_RVA, &ea);
+      if (ffm2) safe_read(fm_addr(FM_EXAM_ABIL), &ea);
       gs.examAbilRaw = ea; }
 
     // party-window picker : the focused menu is "partywin" with a 1-based cursor index at +0x4C.
@@ -1051,7 +1125,7 @@ void poll_game_state(GameState& gs) {
     gs.partyMenuSel = 0;
     u32 ffm = ffximain_base();
     if (ffm) {
-        u32 mptr = 0; safe_read(ffm + MENU_PTR_RVA, &mptr);
+        u32 mptr = 0; safe_read(fm_addr(FM_MENU_PTR), &mptr);
         u32 def = 0; if (valid_ptr(mptr)) safe_read(mptr + 0x04, &def);
         if (valid_ptr(def)) {
             char nm[6] = {0}; for (int i = 0; i < 5; ++i) { u32 c = 0; safe_read(def + MENU_NAME_OFF + i, &c); nm[i] = (char)(c & 0xFF); }

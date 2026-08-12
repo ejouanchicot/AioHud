@@ -21,8 +21,16 @@ two `targetentry_t` (40 bytes / `0x28` each) + a sub-active flag.
 > re-add a probe per [reverse-engineering/probes.md](../../reverse-engineering/probes.md). `//aio tlock`, `//aio tgt`
 > and `//aio sub` still exist.
 
+> 🔁 **Re-pinned 2026-08-12** (FFXI client patch): the anchor moved `0x57876C` → **`0x5787AC`** (+0x40),
+> and the focused-menu pointer below moved `0x5EED6C` → **`0x5EEDAC`**. Nothing INSIDE `target_t` changed —
+> only the module address of the static that points at it. That is the general rule after a patch: **RVAs
+> move, struct field offsets usually don't.** Symptom was the party selection cursor going dead while the
+> party itself kept drawing (everything else hangs off LuaCore, which a game patch does not touch).
+> Re-derived with **`//aio rva`** ; `read_target`/`read_target_entity` now go through `target_root()`, which
+> re-derives the anchor by itself when the static stops being a pointer.
+
 ```
-*(FFXiMain.dll + 0x57876C)        -> target_t base (HEAP ptr ; ASLR-shifted, resolve at runtime)
+*(FFXiMain.dll + 0x5787AC)        -> target_t base (HEAP ptr ; ASLR-shifted, resolve at runtime)
   target_t + 0x00  u32  Targets[0].Index       (entity index)
   target_t + 0x04  u32  Targets[0].ServerId    = ACTIVE RETICLE  (sub when <st> open, else main)
   target_t + 0x08  u32  Targets[0].EntityPointer
@@ -60,7 +68,7 @@ pointer). It follows the `<st>` cursor too, so it CANNOT tell main from sub, and
 1. `//aio tgt2` — Tab a party member, then scan all memory for that ServerId. The real
    `target_t` is the hit with `Index@-4` small **and** a valid `EntityPointer@+4` **and**
    `Targets[1].ServerId@+0x28` is *another* party id. Then scan for a STATIC (FFXiMain)
-   pointer holding that heap base → the `0x57876C` anchor. (Cap the id-scan high: the id
+   pointer holding that heap base → the `0x5787AC` anchor. (Cap the id-scan high: the id
    appears 1000s of times; `target_t` can be past the 1024th hit.)
 2. `//aio sub` — per-frame change-watcher over `target_t[0..0x80]`. Open then cancel a
    `<stpc>` cursor: the dword that flips `0↔1` on open/cancel is the flag (`+0x78`).
@@ -69,7 +77,7 @@ These probe commands live in `plugin/aiohud.cpp` (kept for re-locating after a c
 **Party-window picker cursor (Quartermaster / Lottery / remove member / leader) — WORKING, 2026-06-28.**
 This picker is **NOT a target** — `target_t`, the LuaCore target list `*(g+0x30)`, and the targeting
 struct all stay `0x04000000` ("nothing") while it's open. It's a pure **menu cursor**: when it's
-active the focused-menu pointer `*(FFXiMain+0x5EED6C)` points at the menu named **`"partywin"`**
+active the focused-menu pointer `*(FFXiMain+0x5EEDAC)` points at the menu named **`"partywin"`**
 (name at `def+0x4E`, `def = *(menu+0x04)`), and the hovered member is a **1-based cursor index at
 `menu+0x4C`** (`+0x08` = a pointer to the selected row's UI object). The party window lists members
 in slot order = our row order, so the hovered member is `rows[index-1]`. `poll_game_state` fills

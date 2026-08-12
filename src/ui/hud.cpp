@@ -9,6 +9,7 @@
 #include "ui/buff_atlas.h"   // buff_atlas_forget / buff_atlas_dispose : the ONE owner of the shared status-icon atlas
 #include "model/layout.h"
 #include "model/game_mem.h"
+#include "model/ffximain_rva.h"   // //aio doctor : report every FFXiMain static + the client fingerprint
 #include "model/gamestate.h"
 #include "model/party_state.h"
 #include "model/zones.h"   // zone_name -> Zone Tracker (Dynamis/Abyssea) detection
@@ -431,6 +432,33 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     if (!state_.equipValid)
         DOC("L'equipement ne se lit pas (equipValid=0) : les icones de gear gardent le cache precedent. "
             "Normal en zoning ; persistant = les conteneurs d'objets ne sont pas prets%s", "");
+
+    // ---- 2b. the FFXiMain statics. Every OTHER read hangs off LuaCore, which a game patch does not touch --
+    //          so when the client updates, THESE are what break, alone, and the symptom is a single feature
+    //          going dead (2026-08-12 : target_t moved 0x40 bytes, the party selection cursor stopped
+    //          following <t>, and nothing anywhere said why). The chain is up if it resolves at all ; whether
+    //          something is currently targeted is not the question here. ----
+    {
+        const unsigned troot = target_root();
+        windower::debug::log("  statics  : client fingerprint %08X -- target_t=%08X targetId=%08X menuType=%d",
+                             fm_fingerprint(), troot, state_.targetId, state_.menuType);
+        { char fl[FM_N][160]; const int fn = fm_report(fl, FM_N);
+          for (int i = 0; i < fn; ++i) windower::debug::log("             %s", fl[i]); }
+        // A CONTRADICTION, which is the only kind of static worth alarming on : the game says a menu is open
+        // (menuType != 0, so the box is on screen) while the cache that fills it reads nothing usable. That
+        // is the "box pops but stays empty" report, named at its cause instead of left to be re-diagnosed.
+        if (state_.menuType != 0 && state_.menuAction == 0 &&
+            !fm_confirmed((state_.menuType == 1) ? FM_EXAM_SPELL : FM_EXAM_ABIL))
+            DOC("La boite cout/Next s'affiche mais reste VIDE : le jeu a bien un menu ouvert (type %d) et "
+                "l'adresse qui porte l'action surlignee n'a pas fait ses preuves. Bouge le curseur sur "
+                "quelques sorts/abilites : elle se recale toute seule en suivant le surlignage%s",
+                state_.menuType, "");
+        if (!troot)
+            DOC("La chaine de CIBLE est morte (target_t introuvable) : le curseur de selection ne suivra plus "
+                "personne dans la party, et la boite Target restera vide. C'est la signature d'une MISE A JOUR "
+                "de FFXI qui a deplace les adresses. Cible un membre puis lance //aio rva : il retrouve la "
+                "nouvelle adresse tout seul%s", "");
+    }
 
     // ---- 3. packet flow. A box that shows nothing because NO PACKET ARRIVES looks exactly like a broken
     //         reader from the outside ; this is the check that tells the two apart. ----

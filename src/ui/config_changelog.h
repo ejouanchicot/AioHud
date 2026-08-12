@@ -275,6 +275,17 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_76[] = {
+    { "*The FFXI update of August 12 broke several boxes -- they are back.* Selecting a party member no longer highlighted their line, the Cost/Next box stayed dark, and the EXP / Master Level / merit panel showed nothing. The game update had moved the places in memory where those values live ; everything read through Windower kept working, which is why only a few things went dark while the rest looked perfectly fine.",
+      "*La mise a jour de FFXI du 12 aout avait casse plusieurs boites -- elles sont de retour.* Selectionner un membre du groupe n'illuminait plus sa ligne, la boite Cout/Next restait eteinte, et le panneau EXP / Master Level / merites n'affichait rien. La mise a jour du jeu avait deplace les endroits en memoire ou ces valeurs se trouvent ; tout ce qui passe par Windower continuait de fonctionner, d'ou ces quelques boites eteintes au milieu d'un ensemble qui semblait parfaitement sain." },
+    { "*And the plugin now repairs itself after a game update, without waiting for a new release.* It recognises that the client has changed, finds the values again on its own -- by checking them against the data the server sends, or against what you have targeted or highlighted -- and remembers the result. In practice you play, and within a few seconds to a few minutes everything is back, with nothing to type.",
+      "*Et le plugin se repare desormais tout seul apres une mise a jour du jeu, sans attendre une nouvelle version.* Il reconnait que le client a change, retrouve les valeurs par lui-meme -- en les recoupant avec les donnees envoyees par le serveur, ou avec ce que vous ciblez et survolez -- et retient le resultat. En pratique vous jouez, et en quelques secondes a quelques minutes tout est revenu, sans rien taper." },
+    { "*The Cost/Next box no longer shows an empty frame while it is still working out where to read.* An empty frame already means \"nothing to display here\" (a job with no magic, for instance), so it now stays hidden rather than looking broken.",
+      "*La boite Cout/Next n'affiche plus un cadre vide pendant qu'elle cherche encore ou lire.* Un cadre vide veut deja dire \" rien a afficher ici \" (un job sans magie, par exemple), elle reste donc masquee au lieu de sembler cassee." },
+    { "Note for anyone still on the old build : if a box stays dark after a game update, `//aio doctor` now names exactly which value cannot be read and what to do about it.",
+      "Note pour ceux restes sur l'ancienne version : si une boite reste eteinte apres une mise a jour du jeu, `//aio doctor` nomme desormais precisement la valeur illisible et la marche a suivre." },
+};
+
 static const ChangeLine CL_75[] = {
     { "*If you are updating from 1.0.73 or older, this one update runs your OLD updater.* That version could, in rare cases, leave you with no plugin file at all if anything interrupted it. If that happens, re-extract the zip from the release page once -- every update after this one is protected.",
       "*Si vous mettez a jour depuis la 1.0.73 ou plus ancienne, cette mise a jour utilise votre ANCIEN updater.* Cette version pouvait, dans de rares cas, vous laisser sans aucun fichier plugin si quelque chose l'interrompait. Si cela arrive, re-extrayez le zip depuis la page de release une fois -- toutes les mises a jour suivantes sont protegees." },
@@ -506,6 +517,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.76", CL_76, (int)(sizeof(CL_76) / sizeof(CL_76[0])) },
     { "1.0.75", CL_75, (int)(sizeof(CL_75) / sizeof(CL_75[0])) },
     { "1.0.74", CL_74, (int)(sizeof(CL_74) / sizeof(CL_74[0])) },
     { "1.0.73", CL_73, (int)(sizeof(CL_73) / sizeof(CL_73[0])) },

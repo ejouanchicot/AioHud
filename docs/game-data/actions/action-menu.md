@@ -10,12 +10,19 @@ while you hover an action in the **Magic**, **Job Ability** or **Weapon Skill** 
 `party.cpp` (end of `render()`), fed by `read_action_menu(int& type, unsigned& id)` in
 `game_mem.cpp` (`type` : 1=spell, 2=job ability, 3=weapon skill).
 
+> 🔁 **Re-pinned 2026-08-12** (FFXI client patch): all the statics below moved **+0x40** —
+> live-menu ptr `0x5EED6C` → `0x5EEDAC`, examined SPELL `0x634F28` → `0x634F68`, examined ACTION
+> `0x634590` → `0x6345D0`. Proven, not assumed: two `//aio rva` runs showed that slot's def name follow
+> the menu actually open (`magic` then `ability`) while three other menu-shaped slots never changed, and
+> the examine caches decoded back to the highlighted "Cure IV" / "Manafont". The recast static `0x63449C`
+> below is **not re-verified** — it is documentation only, nothing reads it.
+
 Statics in FFXiMain :
 ```
-+0x5EED6C  u32  live-menu POINTER : 0 while no menu is open, a heap ptr while ANY menu is open.
++0x5EEDAC  u32  live-menu POINTER : 0 while no menu is open, a heap ptr while ANY menu is open.
                 *(ptr + 0x04) = the menu DEFINITION pointer (the def — see the menu NAME below).
-+0x634F28  u32  "examined SPELL" id      (the Magic menu writes the highlighted spell here).
-+0x634590  u32  "examined ACTION" id in the "ability " menu, in FFXI's UNIFIED id space :
++0x634F68  u32  "examined SPELL" id      (the Magic menu writes the highlighted spell here).
++0x6345D0  u32  "examined ACTION" id in the "ability " menu, in FFXI's UNIFIED id space :
                    >= 0x200 -> Job Ability  (real id = value - 0x200)
                    <  0x200 -> Weapon Skill (raw id, no offset)
                    0xFFFFFFFF / 0 -> not populated yet.
@@ -27,9 +34,9 @@ Statics in FFXiMain :
 **internal name inline** — two 8-byte fields at `def+0x46` : a constant `"menu    "` tag, then the
 **menu name at `def+0x4E`** :
 ```
-"magic   "  -> spell list      (read 0x634F28)
-"ability "  -> Job Ability AND Weapon Skill list (SAME menu name; disambiguate by 0x634590 range)
-"abiselec"  -> the Abilities CATEGORY selector (no item examined -> 0x634590 = 0xFFFFFFFF) -> ignore
+"magic   "  -> spell list      (read 0x634F68)
+"ability "  -> Job Ability AND Weapon Skill list (SAME menu name; disambiguate by 0x6345D0 range)
+"abiselec"  -> the Abilities CATEGORY selector (no item examined -> 0x6345D0 = 0xFFFFFFFF) -> ignore
 ```
 This name is **stable across sessions** (it's read from the def, not the per-session heap pointer
 value), so we know the menu type **without moving the cursor**. It replaces the old "learn which def
@@ -82,9 +89,9 @@ Done: Magic shows name + Next(recast)/MP, Job Ability shows name + Next(recast),
 1000/2000/3000 are the universal damage/effect tiers, so "live TP, green ≥ 1000" is already correct.)
 
 **The "ghost" fix — no-magic job / category level  (2026-07-01).** The `"magic"` menu name is shared by
-the real spell list AND the Trust list, and BOTH read the same examine cache `0x634F28`. On a job with no
+the real spell list AND the Trust list, and BOTH read the same examine cache `0x634F68`. On a job with no
 castable spell (WAR opening Magic) and on the magic **category** level, the game never re-examines, so
-`0x634F28` keeps its **last** value (a stale trust) → the box showed a "ghost". The examine cache is the
+`0x634F68` keeps its **last** value (a stale trust) → the box showed a "ghost". The examine cache is the
 ONLY per-item id (proved with the `//aio sfind` probe — since **removed**; probes churn and live in the
 untracked `plugin/aiohud_probes.cpp`, re-add one per [../reverse-engineering/probes.md](../../reverse-engineering/probes.md)
 to recapture. `//aio menu` and `//aio grabmod` still exist. There is no per-row spell id in the menu struct),

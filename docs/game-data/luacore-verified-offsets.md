@@ -125,18 +125,26 @@ Fencer with no sub): the player struct's **main job at `+0x94`** and **sub-job l
 ## PointWatch RVAs (FFXiMain side, no LuaCore needed)
 
 `FUN_05CF93D0` (RVA `0x993D0`) is the **packet 0x061** handler; it copies the body verbatim into the static
-block at `0x485640`:
+block at `0x485680`:
+
+> 🔁 **Re-pinned 2026-08-12** (FFXI client patch): every static address in this section moved **+0x40**
+> (the block was at `0x485640` before). The Ghidra function RVAs and the verification reasoning are
+> unchanged — only where the data landed. Note what this section already proves and what the patch
+> confirms: the client copies packet 0x061/0x063 **verbatim** into these statics, so the packets are a
+> ground truth that survives every patch. Re-pinning by searching for the values a packet just delivered
+> is therefore always possible, and needs nothing from the user.
+
 
 | Packet 0x061 body | Static addr | AioHUD |
 |---|---|---|
-| `+0x0C..0x0F` | `0x485640..43` | main job / main lvl / sub job / sub lvl |
-| `+0x10` u16, `+0x12` u16 | **`0x485644`, `0x485646`** | `PW_FM_EXP` - CONFIRMED, despite having been derived by arithmetic (`0x48569C - 0x58`) and never scanned |
-| `+0x64..0x67` dword | `0x485698..9B` | byte `0x485699` = `PW_FM_MLVL`; `0x48569A` is bit-tested with 1 next door (Master Breaker) |
-| `+0x68` u32, `+0x6C` u32 | **`0x48569C`, `0x4856A0`** | `PW_FM_EXEMPLAR` cur/req - CONFIRMED as an adjacent u32 pair written from one packet |
+| `+0x0C..0x0F` | `0x485680..83` | main job / main lvl / sub job / sub lvl |
+| `+0x10` u16, `+0x12` u16 | **`0x485684`, `0x485686`** | `PW_FM_EXP` - CONFIRMED, despite having been derived by arithmetic (`0x4856DC - 0x58`) and never scanned |
+| `+0x64..0x67` dword | `0x4856D8..DB` | byte `0x4856D9` = `PW_FM_MLVL`; `0x4856DA` is bit-tested with 1 next door (Master Breaker) |
+| `+0x68` u32, `+0x6C` u32 | **`0x4856DC`, `0x4856E0`** | `PW_FM_EXEMPLAR` cur/req - CONFIRMED as an adjacent u32 pair written from one packet |
 
-`PW_FM_MERIT = 0x485826` is written by the **packet 0x063** dispatcher at `05CF91A0`
+`PW_FM_MERIT = 0x485866` is written by the **packet 0x063** dispatcher at `05CF91A0`
 (`MOV CX,[EAX+4]; ADD ECX,-0x2; CMP ECX,0x8; JA ...; JMP [ECX*0x4 + 0x5CF930C]` - an order 2..10 jump table).
-The order-2 arm copies body `+0x08` and `+0x0C` as two dwords to `0x485826` / `0x48582A`, so LP u16 `@+0`,
+The order-2 arm copies body `+0x08` and `+0x0C` as two dwords to `0x485866` / `0x48586A`, so LP u16 `@+0`,
 merit count `@+2` and max merit `@+4` map to body `+0x08` / `+0x0A` / `+0x0C`. CONFIRMED.
 
 ## Known gap left behind

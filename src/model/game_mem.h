@@ -212,6 +212,12 @@ bool read_party_leaders(PartyLeaders& out);
 struct TargetInfo { unsigned id, sid, bt; bool locked; };   // locked = the main target is LOCK-ON'd (target_t+0x5C) ; bt = battle target (target_t+0x7C : the engaged mob, held even when the reticle <t> is off ; 0 when disengaged)
 bool read_target(TargetInfo& out);
 
+// the heap target_t itself (0 = not ready). ONE resolution point for every target reader AND for the
+// probes : the static that points at it is an FFXiMain RVA, and a CLIENT PATCH moves it (2026-08-12
+// shifted it by 0x40 and killed the selection cursor). target_root re-derives it structurally when the
+// static goes dead -- see the comment block in the .cpp. Anything reading target_t must go through here.
+u32 target_root();
+
 // the ACTIVE target's entity : name + HP% + id/index, for the Target HUD module. The reticle's
 // entity struct is reached DIRECTLY via target_t+0x08 (Targets[0].EntityPointer -- no id->index
 // scan ; the //aio tent probe confirmed EntityPointer == entity_array[Index]). Fields reversed

@@ -4,6 +4,7 @@
 // The RateReg X/h ring + ffxi_now_tick stay in party_state.cpp (shared / used by other modules).
 #include "model/party_state.h"
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared packet readers)
+#include "model/ffximain_rva.h"           // fm_pw_expect : these packets are what re-pins the static block
 
 namespace aio {
 
@@ -17,6 +18,10 @@ void PartyState::on_char_stats(const unsigned char* p) {   // 0x061 Char Stats
     pw_.epCur     = pkt_u32(p, 0x68);
     pw_.epTnml    = pkt_u32(p, 0x6C);
     pw_.valid     = true;
+    // The client mirrors this very body into a FFXiMain static block. Hand the values over : they are the
+    // ground truth that lets that block be FOUND AGAIN after a client patch moves it, with nothing asked
+    // of the player. (Checked a few frames later -- our hook runs before the client writes its own copy.)
+    fm_pw_expect(pw_.xpCur, pw_.xpTnl, pw_.masterLevel, pw_.epCur, pw_.epTnml);
 }
 void PartyState::on_set_update(const unsigned char* p) {   // 0x063 Set Update
     if (pkt_bytes(p) < 0x06) return;                        // need the order field @0x04 ; each order then floors on its OWN fields (their sizes differ wildly -- 0x0D vs 0xC8 -- so a single top floor would wrongly drop the small orders)
@@ -26,6 +31,7 @@ void PartyState::on_set_update(const unsigned char* p) {   // 0x063 Set Update
         pw_.lpCur     = pkt_u16(p, 0x08);
         pw_.merits    = p[0x0A] & 0x7F;                     // bit[7]
         pw_.maxMerits = p[0x0C];
+        fm_pw_merit_expect(pw_.lpCur, pw_.merits, pw_.maxMerits);   // ground truth for the merit block's address
     } else if (order == 5 && pwMainJob_ >= 1 && pwMainJob_ <= 23) {   // Order 5 : per-job Capacity / Job Points
         const int e = 0x0C + (int)pwMainJob_ * 6;           // job_point_info[jobId] (6 bytes each)
         if (pkt_bytes(p) < e + 4) return;                   // reads the u16 @e and @e+2 (up to e+3 ; e grows with the job id)

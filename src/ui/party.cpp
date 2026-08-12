@@ -14,6 +14,7 @@
 #include "io/json.h"
 #include "model/party_state.h"
 #include "model/game_mem.h"
+#include "model/ffximain_rva.h"   // fm_confirmed : do not draw the cost frame on an address that is still unproven
 #include "model/gamestate.h"
 #include "model/spells_gen.h"
 #include "model/abilities_gen.h"
@@ -1236,7 +1237,13 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
     // The FRAME shows (empty when no live content) whenever : a magic/ability menu is OPEN (so you get an
     // empty Cost/Next box even on a no-magic job's menu), OR we're in an alliance (a permanent slot between
     // the party and the alliance). Solo + no menu : only while an action (nm) is up.
-    const bool menuOpen = (menuHold_ >= 4 && menuType_ != 0);
+    // ...but NOT while the address that carries the highlighted action is still unproven. An empty frame
+    // already means something specific here -- "there is nothing examinable", e.g. a no-magic job's menu --
+    // so showing the same empty frame for "I cannot read the id yet" makes two different states look
+    // identical. That window is real : right after a client patch the cache is re-derived only once you
+    // have opened a menu, and until then the box would sit there blank, looking broken. Draw nothing.
+    const bool examReady = fm_confirmed((menuType_ == 1) ? FM_EXAM_SPELL : FM_EXAM_ABIL);
+    const bool menuOpen = (menuHold_ >= 4 && menuType_ != 0 && examReady);
     const bool inAlliance = party().alliance_count(1) > 0 || party().alliance_count(2) > 0
                             || ui_config().editLayout || party_demo_level() >= 2;
     if (!nm && !menuOpen && !inAlliance) return;

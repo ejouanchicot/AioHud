@@ -81,18 +81,24 @@ Read off `ffximain_base()`:
 
 | value | RVA | type |
 |---|---|---|
-| Current EXP / Required EXP | `FM+0x485644` | u16 / u16 @+2 (= exemplar−0x58, packet-mirror; DERIVED) |
-| Master Level | `FM+0x485699` | u8 (= packet 0x65 = exemplar−0x03, same struct) |
-| Current / Required Exemplar | `FM+0x48569C` / `FM+0x4856A0` | u32 / u32 (adjacent = the ML bar) |
-| Limit Points | `FM+0x485826` | u16 |
-| Merit count | `FM+0x485828` | `byte & 0x7F` |
-| Max Merits | `FM+0x48582A` | u8 |
+| Current EXP / Required EXP | `FM+0x485684` | u16 / u16 @+2 (= exemplar−0x58, packet-mirror; DERIVED) |
+| Master Level | `FM+0x4856D9` | u8 (= packet 0x65 = exemplar−0x03, same struct) |
+| Current / Required Exemplar | `FM+0x4856DC` / `FM+0x4856E0` | u32 / u32 (adjacent = the ML bar) |
+| Limit Points | `FM+0x485866` | u16 |
+| Merit count | `FM+0x485868` | `byte & 0x7F` |
+| Max Merits | `FM+0x48586A` | u8 |
 
 The merit block mirrors the 0x063 order-2 payload exactly (LP u16 @+0, count byte
 @+2, max byte @+4). **XP is DERIVED**, not directly scanned: in 0x061 CurrentEXP is
 0x58 bytes before Exemplar-cur and the client mirrors the packet body contiguously
-(the two adjacent exemplar u32s prove it) → `0x48569C − 0x58 = 0x485644`.
+(the two adjacent exemplar u32s prove it) → `0x4856DC − 0x58 = 0x485684`.
 
+> 🔁 **Re-pinned 2026-08-12** (FFXI client patch): every RVA on this page moved **+0x40**.
+> Pre-patch values, for anyone reading an older build: EXP `0x485644`, ML `0x485699`,
+> Exemplar `0x48569C`/`0x4856A0`, Limit Points `0x485826`, merits `0x485828`/`0x48582A`.
+> Re-derived with **`//aio rva`**, which reads the block back DECODED (EXP 55999/56000, ML 34,
+> LimitPts 9999) — a block of bare integers can only prove itself by matching the character sheet.
+>
 > ⚠️ **These FFXiMain RVAs are CLIENT-VERSION-SPECIFIC.** Re-pin them after a
 > client patch with **`//aio pwscan`**: it arms `pw_scan_061` / `pw_scan_063`, and
 > on the next 0x061/0x063 they `scan_word_range` all memory for the packet's exact
