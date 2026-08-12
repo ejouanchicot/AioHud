@@ -238,4 +238,9 @@ jobs:
         shell: pwsh
         # github.ref_name IS the tag on a tag push -- `${GITHUB_REF#refs/tags/}` is bash and expands to nothing
         # under pwsh, which would have silently verified /releases/latest instead of the tag just published.
+        # The token is what keeps this step honest : unauthenticated API calls are rate-limited per IP and
+        # runners share theirs, so without it the check fails on GitHub's traffic rather than on the release
+        # (v1.0.77 was published correctly and reported red for exactly that reason).
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/verify_release.ps1 -Repo "${{ github.repository }}" -Tag "${{ github.ref_name }}"

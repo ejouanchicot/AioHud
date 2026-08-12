@@ -17,14 +17,21 @@
 #   .\scripts\verify_release.ps1                       # the current /releases/latest
 #   .\scripts\verify_release.ps1 -Tag v1.0.71          # a specific tag
 #
-# Needs nothing but network access (no gh, no token -- the release API is public), so it runs identically on a
-# dev machine and on a CI runner.
+# Needs nothing but network access (no gh -- the release API is public), so it runs identically on a dev
+# machine and on a CI runner.
+#
+# It DOES use GITHUB_TOKEN when the environment offers one, and that is not an optimisation. Unauthenticated
+# callers are rate-limited PER IP, and CI runners share theirs: v1.0.77 published perfectly and then failed
+# here on "API rate limit exceeded", turning a healthy release into a red job. A verification step that fails
+# for reasons unrelated to what it verifies is worse than none -- it teaches you to ignore the red, which is
+# exactly what this file exists to prevent. Authenticated, the limit stops being reachable.
 param(
     [string]$Repo = 'ejouanchicot/AioHud',
     [string]$Tag  = ''            # empty = whatever /releases/latest points at, i.e. what the updater queries
 )
 $ErrorActionPreference = 'Stop'
 $ua   = @{ 'User-Agent' = 'AioUpdate' }
+if ($env:GITHUB_TOKEN) { $ua['Authorization'] = "Bearer $env:GITHUB_TOKEN" }   # absent on a dev box : same behaviour as before
 $fail = 0
 function Ok  ($m) { Write-Host "  OK    $m" }
 function Bad ($m) { Write-Host "  FAIL  $m"; $script:fail++ }
