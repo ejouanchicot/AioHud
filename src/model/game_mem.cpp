@@ -2,6 +2,7 @@
 #include "model/game_mem.h"
 #include "model/gamestate.h"
 #include "model/ffximain_rva.h"   // the FFXiMain statics : addresses as data, re-derived after a client patch
+#include "model/sentinel.h"       // packet-vs-memory cross-check, run once the snapshot is complete
 #include "model/ui_config.h"   // mmShow : skip the entity-array sweep entirely when the minimap is off (model->model, no layering issue)
 #include "windower.h"   // safe_read / valid_ptr (guarded game-memory reads)
 #include <windows.h>
@@ -1137,6 +1138,11 @@ void poll_game_state(GameState& gs) {
     }
 
     compute_grimoire(gs);   // SCH grimoire (book + charges + timer) from buffs / jobs / stratagem recast
+
+    // Last, with the snapshot complete : cross-check what the server said against what memory says. It
+    // repairs nothing -- it exists so the day a struct or packet field shifts, we hear about it that day
+    // instead of noticing three weeks later that a number has quietly been wrong.
+    sentinel_tick(gs);
 }
 
 } // namespace aio

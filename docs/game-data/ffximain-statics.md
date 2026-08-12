@@ -93,10 +93,29 @@ real defect:
 
 Neither would have surfaced before the next patch.
 
-## What this does *not* cover
+## What this does *not* cover — and the sentinel that watches for it
 
 Healing repairs a **move**. It cannot repair a **redesign**: if SE changes a structure's layout, or shifts a
-field inside a packet, the values keep reading and start being quietly wrong. That class is silent, which
-makes it the dangerous one — see [traps.md](traps.md). The intended answer there is cross-checking the two
-independent sources we already receive (memory vs packet) and alarming on disagreement, which is not built
-yet.
+field inside a packet, the values keep reading and start being quietly wrong. Nothing goes dark, so nobody
+looks. That is the dangerous class.
+
+`model/sentinel.{h,cpp}` exists for it. Several values reach us **twice**, by paths that break
+independently — the server sends them in a packet, and the client also keeps them in memory. Today one is
+used and the other ignored; made to disagree out loud, that redundancy becomes an alarm for breakage nobody
+predicted. It **never repairs anything**: a cross-check cannot tell which side is wrong, so acting on it
+would be guessing with the user's data. It reports, names both values, and stops.
+
+| pair | packet side | memory side | compared on |
+|---|---|---|---|
+| `SEN_MEMBER` | 0x0DD name / job / level | the member block via `read_member` | identity, never HP |
+| `SEN_BUFFS` | 0x063 order 9 buff ids | the self buff array | set **overlap**, not equality |
+| `SEN_POINTWATCH` | 0x061 / 0x063 values | the static block | raised by the re-pinner when the values match *nowhere* |
+
+Choosing the pairs **is** the design, and the trap is obvious only in hindsight: comparing HP compares two
+samples taken at different instants, so it would disagree constantly and the alarm would be muted within a
+minute. Every pair compares something stable — a name, a job, a level — or an overlap that one expiring
+entry cannot break. Likewise a single disagreement says nothing: it takes **four in a row, each from a
+different packet**, and any agreement resets the streak. Real breakage does not agree intermittently.
+
+`//aio doctor` prints one line per pair, including **"not checked yet"** — because a cross-check that never
+ran is not reassurance, and printing only the good news makes the two look identical.

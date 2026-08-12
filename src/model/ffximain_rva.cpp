@@ -5,6 +5,7 @@
 #include "model/spells_gen.h"      // spell_info  : an examine cache proves itself by DECODING
 #include "model/abilities_gen.h"   // abil_info
 #include "model/weapon_skills_gen.h" // ws_info : the ability cache carries weapon skills too (raw id, no +0x200)
+#include "model/sentinel.h"        // a packet that matches NOWHERE is a layout change, not a moved address
 #include "windower.h"
 #include "windower_debug.h"
 #include <windows.h>
@@ -320,10 +321,14 @@ static void heal_pw_block() {
     }
     const u32 args[5] = { xpCur, xpTnl, ml, epCur, epTnml };
     const u32 hit = image_scan(1, args, 0, 0, 0);
-    if (hit) fm_adopt(FM_PW_BLOCK, hit - ffximain_base(), "packet 0x061");
-    else     windower::debug::log("fm: PointWatch block does not match packet 0x061 (exp %u/%u ep %u/%u) and no "
-                                  "address in FFXiMain holds those values -- the block layout itself changed, "
-                                  "this needs a reverse session, not a re-pin", xpCur, xpTnl, epCur, epTnml);
+    if (hit) { fm_adopt(FM_PW_BLOCK, hit - ffximain_base(), "packet 0x061"); return; }
+    // No address in the whole image holds what the server just sent. That is not an address that slid --
+    // it is the block's layout, or the packet's, having changed. Nothing re-pins that, so it goes to the
+    // sentinel, which is where "we are now reading something we no longer understand" belongs.
+    { char d[120];
+      _snprintf(d, sizeof(d), "no address holds the 0x061 values (exp %u/%u ep %u/%u)", xpCur, xpTnl, epCur, epTnml);
+      d[sizeof(d) - 1] = 0;
+      sentinel_note_unmatched(SEN_POINTWATCH, d); }
 }
 
 static void heal_pw_merit() {

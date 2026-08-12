@@ -38,6 +38,10 @@ struct PMember {
     bool quarter_master()const { return (flags & 0x10) != 0; }
 };
 
+// One member's identity as MEMORY sees it (party_state_roster.cpp), for the packet-vs-memory sentinel.
+// false = the block is not ready, or that id simply is not in the party -- neither is a disagreement.
+bool member_identity_from_memory(unsigned id, PMember& out);
+
 // Cast state lives OUTSIDE PMember : the member array is rebuilt from memory every frame
 // (load_from_memory -> pm = PMember()), which would wipe a packet-set cast. Keyed by server id,
 // sized for a full alliance so any visible member's cast survives the per-frame roster refresh.

@@ -5,6 +5,7 @@
 #include "model/party_state.h"
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 / pkt_bytes (shared packet readers)
 #include "model/game_mem.h"               // party_ptr / self_party_base / entity_array / read_player / read_member helpers
+#include "model/sentinel.h"               // packet-vs-memory cross-check : 0x0DD identity is one half of it
 #include "model/paths.h"                  // plugin_path (the roster cache path)
 #include "windower.h"                      // safe_read / valid_ptr (guarded game-memory reads)
 #include "windower_debug.h"                // debug::log (//aio bcaptlog : per-member party dump)
@@ -117,6 +118,9 @@ void PartyState::on_dd(const unsigned char* p) {
     m[i].zone = (int)p[0x20] | ((int)p[0x21] << 8);   // member zone id (set when out of our zone)
     int j = 0; for (; j < 19 && p[0x28 + j]; ++j) m[i].name[j] = (char)p[0x28 + j];
     m[i].name[j] = 0;
+    // The packet and the member block in memory carry the same identity by two independent paths. Hand the
+    // packet's version over BEFORE memory overwrites this row, so the two can be made to disagree out loud.
+    sentinel_packet_member(id, m[i].name, (unsigned)m[i].mjob, (unsigned)m[i].mlvl);
     if (added) save();   // only when the roster SET actually grows (name/jobs are set in this same call) --
                          // NOT on every vitals-carrying 0x0DD (was a full disk write per packet, packet thread)
 }
@@ -213,6 +217,9 @@ void PartyState::load() {
 // entity position : ent[idx] (the entity array from game_mem entity_array()) -> X @+0x04, Z @+0x0C.
 // Returns true + fills x/z when the index is in range and the entity object is readable. Shared by a
 // member's position (read_member) and the player's own (load_from_memory).
+// (member_identity_from_memory, at the bottom of this file, REUSES read_member rather than re-reading the
+//  block itself -- a cross-check that carried its own copy of the offsets would drift away from the thing
+//  it is supposed to be checking, which is the one bug it could never report.)
 // Y @+0x08 is read too, but ONLY the probe uses it (see //aio rangelog) : whether FFXI's own range check is
 // horizontal or 3D has never been measured for this project, and the display has always used the horizontal
 // distance. One reader for the three coordinates so there is still a single source of truth for the offsets.
@@ -455,6 +462,26 @@ const PMember& PartyState::alliance_member(int tier, int i) const {
     int idx = tier - 1; if (idx < 0) idx = 0; if (idx > 1) idx = 1;
     if (i < 0) i = 0; if (i > 5) i = 5;
     return alli_[idx * 6 + i];
+}
+
+// One member's IDENTITY as MEMORY sees it, for the packet-vs-memory sentinel. Deliberately goes through
+// read_member -- the same parse the HUD itself uses -- so the cross-check can never quietly disagree with
+// production about where a field lives. Position work is skipped (selfPosOk=false, ent=0) : identity only.
+// Returns false when the party block is not ready or the id is not in it, which is NOT a divergence : a
+// member leaving the party is exactly that.
+bool member_identity_from_memory(unsigned id, PMember& out) {
+    PlayerInfo me;
+    if (!read_player(me)) return false;
+    const u32 base = self_party_base(me.id);
+    if (!base) return false;
+    for (int i = 0; i < 6; ++i) {
+        PMember pm;
+        if (!read_member(base + i * 0x7C, pm, 0, 0.0f, 0.0f, false)) continue;
+        if (pm.id != id) continue;
+        out = pm;
+        return true;
+    }
+    return false;
 }
 
 } // namespace aio

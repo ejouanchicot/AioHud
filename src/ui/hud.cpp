@@ -10,6 +10,7 @@
 #include "model/layout.h"
 #include "model/game_mem.h"
 #include "model/ffximain_rva.h"   // //aio doctor : report every FFXiMain static + the client fingerprint
+#include "model/sentinel.h"       // //aio doctor : the packet-vs-memory cross-checks
 #include "model/gamestate.h"
 #include "model/party_state.h"
 #include "model/zones.h"   // zone_name -> Zone Tracker (Dynamis/Abyssea) detection
@@ -444,6 +445,16 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
                              fm_fingerprint(), troot, state_.targetId, state_.menuType);
         { char fl[FM_N][160]; const int fn = fm_report(fl, FM_N);
           for (int i = 0; i < fn; ++i) windower::debug::log("             %s", fl[i]); }
+        // The cross-checks. A DIVERGED pair is the loudest thing this command can say : the plugin is
+        // still drawing numbers, and one of the two sources feeding them no longer means what it did.
+        { char sl[SEN_N][160]; const int sn = sentinel_report(sl, SEN_N);
+          for (int i = 0; i < sn; ++i) windower::debug::log("  crosscheck : %s", sl[i]); }
+        for (int i = 0; i < SEN_N; ++i)
+            if (sentinel_diverged((SentinelPair)i))
+                DOC("Le serveur et la memoire du jeu ne racontent plus la meme chose (%s). Ce n'est PAS une "
+                    "adresse deplacee -- ca ne se repare pas tout seul : un champ a bouge dans une structure "
+                    "ou dans un paquet. Ce qui s'affiche a partir de la peut etre faux SANS avoir l'air faux. "
+                    "Detail dans aiohud_debug.log, ligne SENTINEL", sentinel_report_name((SentinelPair)i));
         // A CONTRADICTION, which is the only kind of static worth alarming on : the game says a menu is open
         // (menuType != 0, so the box is on screen) while the cache that fills it reads nothing usable. That
         // is the "box pops but stays empty" report, named at its cause instead of left to be re-diagnosed.

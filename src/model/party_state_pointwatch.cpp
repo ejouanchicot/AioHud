@@ -5,6 +5,7 @@
 #include "model/party_state.h"
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared packet readers)
 #include "model/ffximain_rva.h"           // fm_pw_expect : these packets are what re-pins the static block
+#include "model/sentinel.h"                // the same packets are the ground truth the cross-check compares against
 
 namespace aio {
 
@@ -48,6 +49,11 @@ void PartyState::on_set_update(const unsigned char* p) {   // 0x063 Set Update
             ++buffTimerN_;
         }
         latch_co_expiry_casters();
+        // The server just named every buff you are carrying. Memory holds the same list by an entirely
+        // different path, so handing this over turns the redundancy into an alarm for the day one of the
+        // two silently stops meaning what it used to.
+        { unsigned short ids[32]; for (int i = 0; i < buffTimerN_ && i < 32; ++i) ids[i] = buffTimers_[i].id;
+          sentinel_packet_buffs(ids, buffTimerN_); }
     }
 }
 // A trust move can grant SEVERAL statuses while the 0x028 names only ONE (MEASURED : Monberaux's move gives Protect
