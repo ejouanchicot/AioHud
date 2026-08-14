@@ -47,6 +47,17 @@ abyOffset = 7238 for zones 215/253, else 7338
 > + /heal + get visitant) to re-pin after a client patch. CONFIRMED LIVE: gaining 8
 > ruby fired mid 7526 = rel 188 → +8. ✓
 
+**Planned — heal this base instead of re-pinning it.** Today Abyssea is only *watched*
+(`//aio doctor` counts matched vs unmatched, and "all traffic, no match" means the base
+moved) because no *single* light message identifies which light it is. But the table
+below is a **constellation**, and that is provable: solve for the base that lands the most
+observed ids on known offsets. A wrong base aligning four or five of them is as improbable
+as noise satisfying [the payout arithmetic](#the-message-id-that-moves) — the same proof in
+another form. Strongest signature: `rel 0` and `rel 1` arrive as **two consecutive ids**
+right after a `/heal`, carrying 4 then 3 values all inside the light caps. That would
+retire `//aio abylog` as a *required* step, the way the payout healer retired `//aio
+sheollog`.
+
 Lights are stored/displayed in order **[0]Pearl [1]Azure [2]Ruby [3]Amber [4]Gold
 [5]Silver [6]Ebon** (caps **230 / 255 / 255 / 255 / 200 / 200 / 200**).
 
@@ -127,6 +138,14 @@ header, and *"Segments"* simply stays at **0** — nothing looks broken enough t
 patched. It is the same shape as the [FFXiMain statics](../ffximain-statics.md) failing that day, from an
 unrelated cause: the client renumbers its dialog table, not its globals.
 
+**Why it moves at all:** a 0x02A message id is an **index into the zone's own dialog table**, not a global
+constant for "you gained segments". The same capture shows it plainly — the Rabao side of the zone-in
+speaks in the **448xx** band, the Sheol side in **39xxx–40xxx**; Limbus pays the *same* kind of message at
+7247 in Apollyon and 7239 in Temenos. So any patch that edits a zone's text — one inserted line is enough —
+slides every entry after it, and a counter pinned to a number reads a different sentence. It is the same
+phenomenon as the Abyssea base drifting **+23** (7315 → 7338), just one zone at a time. Nothing about
+Odyssey itself changed on 2026-08-12; the segment counter was collateral.
+
 Re-pinning it by hand costs a capture (`//aio sheollog`) **inside a run you get one of per day**, with a
 command that does **not exist in a release build** — so a tester cannot even produce the evidence. The id
 is therefore **derived**, in `party_state_zonetracker.cpp`:
@@ -142,8 +161,9 @@ is therefore **derived**, in `party_state_zonetracker.cpp`:
 - **Presence is not proof of life** — the trap that made the first version of this useless. A renumbered
   dialog table does not *retire* the old number, it **hands it to another message**: on 2026-08-12 msg 7248
   kept arriving (`gain=23, total=0`) while the payout had moved to 7249. Freezing the search on the id's
-  mere presence therefore froze it on a decoy, and the run's **105** real payouts went past unread with
-  `//aio doctor` reporting `seen=2 traffic=108`. The payout-shape check (`gain > 0 && total >= gain`) now
+  mere presence therefore froze it on a decoy, and the run's real payouts — **183** on 7249 by the end of
+  the capture — all went past unread, with `//aio doctor` reporting `seen=2` against `traffic=108` at the
+  moment it was run. The payout-shape check (`gain > 0 && total >= gain`) now
   runs **before** the id in use gets its free pass, so only a message that behaves like a payout counts as
   the id being alive.
 - Candidates are per **run** (a half-seen pair from yesterday proves nothing) and live in a fixed table of

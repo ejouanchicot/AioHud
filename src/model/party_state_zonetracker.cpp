@@ -417,9 +417,10 @@ static MsgHealer sgHeal_ = { "SHEOL",  7249 };   // 40017 masked -- //aio sheoll
                                                  // p2 tracked its own p1 throughout. Was 40016 until the 08-12 patch.
 static MsgHealer lbHeal_[2] = { { "LIMBUS/Apollyon", 7247 },     // [0] = zone 38, [1] = zone 37 (2026-07-19 capture)
                                 { "LIMBUS/Temenos",  7239 } };
-// Abyssea has NO such arithmetic -- its lights are matched by an OFFSET from a per-zone base, and nothing in the
-// message proves that base. So it is not healed, it is WATCHED : a run where 0x02A keeps arriving and not one
-// message ever lands on a known offset is the signature of a base that moved (it already drifted +23 once).
+// Abyssea has no such arithmetic IN ONE MESSAGE -- its lights are matched by an OFFSET from a per-zone base, and
+// no single light message proves that base. So today it is not healed, it is WATCHED : a run where 0x02A keeps
+// arriving and not one message ever lands on a known offset is the signature of a base that moved (it already
+// drifted +23 once). Provable across SEVERAL messages though -- see the TODO(abyssea) at the light switch.
 static int abyMatched_ = 0, abyUnmatched_ = 0;
 
 static void zt_msg_reset_run() {                 // fresh run -> forget this run's counters
@@ -837,9 +838,14 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
         case 12:  zt_.visitantMin += p1; zt_.visitantMs = GetTickCount(); break;                          // extend
         default: ch = false; break;
     }
-    // Abyssea cannot prove its base (nothing in a light message identifies which light it is -- only the offset
-    // does), so instead of guessing, COUNT. A run where these keep arriving and none ever lands on a known
+    // No SINGLE light message can prove the base (nothing in it identifies which light it is -- only the offset
+    // does), so for now : don't guess, COUNT. A run where these keep arriving and none ever lands on a known
     // offset is the base having moved, and //aio doctor is where that gets said out loud.
+    // TODO(abyssea) : the base IS provable, just not one message at a time -- the offsets above are a
+    // CONSTELLATION (0, 1, 9, 10, 12, 45, 183..189), so solve for the base that lands the most observed ids on
+    // known offsets. A wrong base aligning four or five of them is as improbable as noise satisfying the payout
+    // arithmetic, which is the same proof in another form. Strongest signature : cases 0 and 1 arrive as two
+    // CONSECUTIVE ids right after a /heal, carrying 4 then 3 values all within the light caps.
     if (ch) ++abyMatched_; else ++abyUnmatched_;
     if (ch) zt_save();
 }
