@@ -201,7 +201,9 @@ struct ZoneTracker {
     int      limbusApollyon = -1;
     // Live run economy, all from 0x02A while in a Limbus zone (0x118 does NOT fire mid-run -- confirmed by a full
     // //aio limbusrun capture : not one 0x118 all run). Message ids are ZONE-RELATIVE and drift across patches
-    // (the Sheol handler below documents 40005 -> 40015 -> 40016), so they are matched MASKED :
+    // (the Sheol handler documents 40005 -> 40015 -> 40016 -> 40017 on 2026-08-12, and now DERIVES its id from
+    // the payout arithmetic rather than declaring one -- note the patch REUSED the old number for an unrelated
+    // message rather than retiring it, so "the id still arrives" proves nothing), so they are matched MASKED :
     //   7247 : "Acquired Apollyon units: <p1>. Remaining: <p2>. Total: <p3>/<p4>"   -> live currency, no 0x118 needed
     //   7288 : "You may collect data <p1> more times"                               -> unique-data allowance
     //   7069 / 7070 : key item gained / lost -- ids 9956..9998, and the NAME carries the floor ("Apollyon SW #4",
@@ -857,5 +859,16 @@ bool omen_trace_active();
 // Same hand-off for //aio commands : slot 7 also runs on its own thread (tid 23508 when measured). The callback
 // only queues ; this executes the queued lines on the main thread. Defined in plugin/aiohud.cpp.
 void drain_commands();
+// //aio doctor : which 0x02A message a healed counter listens to (0 = Odyssey segments, 1 = Apollyon units,
+// 2 = Temenos units), whether that id was DERIVED (the client renumbers these at every patch) or inherited
+// from the seed, how many messages carried it, and how much traffic the run produced -- the last two are what
+// separate "the id moved" from "nothing has happened yet".
+void zt_msg_state(int which, unsigned& id, bool& proven, int& seen, int& traffic);
+// Abyssea has no arithmetic to prove its message base with, so it is watched instead : how many 0x02A landed
+// on a known offset this run, and how many did not. All traffic and no match = the base moved.
+void zt_aby_msg_state(int& matched, int& unmatched);
+// //aio sheoltest : drives that same decision through a healthy / patched / noisy sequence on scratch healers.
+// The healing fires about once a year -- this is how it stays tested.
+bool sheol_selftest(char* out, int cap);
 
 } // namespace aio

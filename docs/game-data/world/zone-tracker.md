@@ -1,6 +1,6 @@
 ---
 title: Zone Tracker — Dynamis / Abyssea / Omen / Nyzul / Sheol / Limbus providers
-summary: The six zone providers — 0x055 Dynamis granule bits + timer, 0x02A Abyssea lights/visitant, the slot-9 rendered-text Omen and Nyzul parsers, Sheol Mog Segments (0x034 + 0x02A 40016), and the generic 0x075 battlefield timer/bars packet with its FFXiMain+0x480800 mirror; the Limbus provider itself has its own page (limbus.md).
+summary: The six zone providers — 0x055 Dynamis granule bits + timer, 0x02A Abyssea lights/visitant, the slot-9 rendered-text Omen and Nyzul parsers, Sheol Mog Segments (0x034 + a per-kill 0x02A whose id re-derives itself), and the generic 0x075 battlefield timer/bars packet with its FFXiMain+0x480800 mirror; the Limbus provider itself has its own page (limbus.md).
 source: model/party_state_zonetracker.cpp (zt_set_zone/on_55/on_2a/on_omen_text/on_nyzul_text/on_034/on_00e/on_118/on_limbus_075), plugin/aiohud.cpp (routing), plugin/aiohud_probes.cpp (calibration commands)
 ---
 # Zone Tracker — Dynamis / Abyssea / Omen / Nyzul / Sheol / Limbus providers
@@ -111,12 +111,57 @@ expansion).
 - **Sheol A/B/C (Odyssey)**, zones **298 / 279** — but **only when entered from Rabao (247)**,
   because 298/279 are *also* the Selbina HTMB zones. The Sheol choice (A/B/C) comes from **packet
   0x034** (NPC interaction, the Rabao conflux entry menu: `Menu Parameters[0]` = 1/2/3).
-  Mog-Segment totals come from 0x02A **msg 40016**, and the first one of a run **self-baselines**
-  the counter (`segBase = p2 - p1` = the banked total before the first kill) — the same
-  derive-from-an-absolute rule as `limbusRunUnits`. Leaving Sheol → Rabao **freezes** the run total
+  Mog-Segment totals come from a per-kill 0x02A (seeded at **msg 40016**), and the first one of a run
+  **self-baselines** the counter (`segBase = p2 - p1` = the banked total before the first kill) — the
+  same derive-from-an-absolute rule as `limbusRunUnits`. That id is **no longer a constant**: see
+  [the message id that moves](#the-message-id-that-moves) below. Leaving Sheol → Rabao **freezes** the run total
   as *"N (last run)"* (the addon's *conserve*) and clears A/B/C for the next run. Config keys
   `ztsheol=` (segments / resistances / cruel joke) and `ztsheol2=` (family row / weapon-icon size /
   element-puck size).
+
+### The message id that moves
+
+The Odyssey payout id has been **40005 → 40015 → 40016 → 40017** (the **2026-08-12** client patch, measured
+on the 2026-08-14 run). The symptom is specific and quiet: the box still detects the run, still draws its Sheol A/B/C
+header, and *"Segments"* simply stays at **0** — nothing looks broken enough to suspect the game was
+patched. It is the same shape as the [FFXiMain statics](../ffximain-statics.md) failing that day, from an
+unrelated cause: the client renumbers its dialog table, not its globals.
+
+Re-pinning it by hand costs a capture (`//aio sheollog`) **inside a run you get one of per day**, with a
+command that does **not exist in a release build** — so a tester cannot even produce the evidence. The id
+is therefore **derived**, in `party_state_zonetracker.cpp`:
+
+- **The proof is the payout's own arithmetic.** `p1` is what the kill paid, `p2` the running banked total
+  after it, so two observations of one id must satisfy `p2_new - p2_old == p1_new`. Noise does not keep
+  satisfying that; a zero-gain or non-cumulative message never does.
+- **Proving costs no segment.** The first observation of the pair still carries the baseline (`p2 - p1`),
+  so adopting on the *second* payout counts the first kill too.
+- **A working id can never be displaced.** As soon as one message *pays* on the id in use, the search stops
+  for the session; it only ever runs while the current id pays nothing, which is exactly the patch case.
+  A decoy can replace a dead id, never a live one.
+- **Presence is not proof of life** — the trap that made the first version of this useless. A renumbered
+  dialog table does not *retire* the old number, it **hands it to another message**: on 2026-08-12 msg 7248
+  kept arriving (`gain=23, total=0`) while the payout had moved to 7249. Freezing the search on the id's
+  mere presence therefore froze it on a decoy, and the run's **105** real payouts went past unread with
+  `//aio doctor` reporting `seen=2 traffic=108`. The payout-shape check (`gain > 0 && total >= gain`) now
+  runs **before** the id in use gets its free pass, so only a message that behaves like a payout counts as
+  the id being alive.
+- Candidates are per **run** (a half-seen pair from yesterday proves nothing) and live in a fixed table of
+  16 — no allocation. Duplicated chunks are harmless: the count is `total - baseline`, never a sum of
+  gains, and a repeated `total` fails the `p2_new - p2_old == p1_new` test rather than passing it.
+
+| command | what it does |
+|---|---|
+| `//aio doctor` | in Sheol, reports the id in use, whether it was DERIVED or inherited from the seed, how many messages carried it, and the 0x02A traffic — and alarms only on the contradiction *"Odyssey is talking, our id is not"* |
+| `//aio sheoltest` | drives the real decision through a healthy / patched / noisy sequence on a scratch `ZoneTracker` and restores everything. Present in a release build, needs no run, no zone, no packet |
+
+`//aio sheoltest` exists for the same reason as `//aio rva break`: this heals about **once a year**, so
+without a way to exercise it on demand it would go untested until the day everything depends on it.
+
+It also has to model the failure that **actually happens**. Its first version only drove the seed going
+*silent*, so it stayed green through a whole run that displayed 0 — the real patch **reused** the seed.
+Scenario `E` now replays that capture verbatim (7248 paying nothing twice, 7249 paying 15 with a duplicated
+chunk in the middle) and fails at `E1` against the pre-fix code.
 
 ## Limbus (mode 6, zones 38 Apollyon / 37 Temenos)
 

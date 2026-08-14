@@ -1008,6 +1008,14 @@ static void aio_command_dispatch(const char* cmd)
         g_host.console().print(">>> AioHud : selfcheck written to Windower\\plugins\\aiohud_debug.log (look for the AIO SELFCHECK block) <<<");
         return;
     }
+    if (strstr(buf, "sheoltest")) {   // //aio sheoltest -> exercise the Odyssey segment-id healing WITHOUT an Odyssey run
+        char r[200]; const bool ok = aio::sheol_selftest(r, sizeof(r));
+        char line[240]; _snprintf(line, sizeof(line), ">>> AioHud sheoltest : %s <<<", r); line[sizeof(line) - 1] = 0;
+        g_host.console().print(line);
+        windower::debug::log("SHEOL selftest : %s", r);
+        if (!ok) g_host.console().print(">>> le compteur de segments NE se reparera PAS tout seul apres une maj du client -- signale ce message <<<");
+        return;
+    }
     if (strstr(buf, "geartrace")) {   // //aio geartrace -> trace the next N gear-icon resolutions to aiohud_debug.log (raw-item-ID diagnosis)
         aio::set_gear_trace(120);
         g_host.console().print(">>> AioHud : gear trace ARMED (open the equipment viewer / change gear, then send Windower\\plugins\\aiohud_debug.log ; look for GEAR lines) <<<");

@@ -351,6 +351,160 @@ void PartyState::on_nyzul_text(const char* s, int mode) {
     if (ch) zt_save_soon();
 }
 
+// ---- SHEOL / ODYSSEY : the segment message id, which the client renumbers at every patch ------------------
+// The per-kill payout arrives as a 0x02A whose masked message id has already been 40005 -> 40015 -> 40016 ->
+// 40017 (the 2026-08-12 client patch), each time leaving the box drawing its Sheol A/B/C header with the counter
+// just sitting at 0, because nothing matched any more. Hard-coding the id makes that a release-shaped problem once a
+// year, on a run you get one of per day, found with a capture command (//aio sheollog) that does not exist in a
+// release build. So the id is DERIVED instead.
+//
+// The proof is arithmetic the payout cannot avoid and an unrelated message does not keep satisfying : p1 is what
+// this kill paid, p2 the RUNNING banked total after it, so two observations of one id must satisfy
+// p2_new - p2_old == p1_new. It costs no segment either -- the first observation carries the baseline (p2 - p1),
+// exactly what the counter needs, so adopting on the second message counts the first kill too.
+//
+// The id in use always wins : as soon as ONE message BEHAVES like the payout on it the search stops for the
+// session, so nothing can be adopted over a working id, and the search only ever runs while the current id pays
+// nothing -- which is precisely the patch case. A wrong id cannot displace a right one, only a dead one.
+// "Behaves like", not "arrives" : the id in use is checked against the payout shape first, because a renumbered
+// dialog table hands the old number to some OTHER message rather than retiring it (see accept()).
+// A payout id that heals itself. Odyssey is not the only one built this way : Limbus's unit award has the SAME
+// shape (p1 paid, p3 the running total), so both use one healer rather than two copies that drift apart.
+struct MsgHealer {
+    const char* tag;                           // what to call it in the log
+    unsigned    id;                            // the id in use
+    bool        proven;                        // DERIVED here (vs. inherited from the seed)
+    int         seen;                          // messages carrying `id` this session -> >0 freezes the search
+    int         traffic;                       // messages offered this run -> tells a SILENT id from "nothing yet"
+    struct Cand { unsigned msg; int gain, total; };
+    Cand        cand[16];                      // fixed capacity, no allocation ; a run shows far fewer distinct ids
+    int         ncand;
+
+    void reset_run() { ncand = 0; traffic = 0; }   // a half-seen pair from yesterday proves nothing
+
+    // Does this message carry the payout ? On adoption, *baseline receives the banked total BEFORE the first
+    // observation of the winning pair -- which is what makes proving cost nothing : the kill that opened the
+    // pair is still counted.
+    bool accept(unsigned msg, int gain, int total, int* baseline) {
+        ++traffic;
+        // A payout is positive, and the banked total already includes what it just paid. That gate comes FIRST,
+        // before the id in use gets its free pass -- a client patch renumbers the dialog TABLE, so the seed can
+        // SURVIVE the patch carrying an unrelated message. Which is exactly what 2026-08-12 did : 7248 kept
+        // arriving (gain=23, total=0) while the real payout had moved to 7249, and freezing the search on the
+        // id's mere PRESENCE held the counter at 0 for a whole run with 105 payouts going past unread.
+        // Presence is not proof of life -- behaving like a payout is.
+        if (gain <= 0 || total < gain) return false;            // not a payout shape -> neither usable nor proof
+        if (msg == id) { ++seen; return true; }                 // the id in use is alive -> the search stays off
+        if (seen) return false;                                 // ...and can never be displaced by a candidate
+        for (int i = 0; i < ncand; ++i) {
+            if (cand[i].msg != msg) continue;
+            if (cand[i].gain > 0 && total - cand[i].total == gain) {   // the total rose by exactly this payout
+                if (baseline) *baseline = cand[i].total - cand[i].gain;
+                windower::debug::log("%s: message id %u is silent, adopted %u (proven: %d + %d = %d, baseline %d)",
+                                     tag, id, msg, cand[i].total, gain, total, cand[i].total - cand[i].gain);
+                id = msg; proven = true;
+                return true;
+            }
+            cand[i].gain = gain; cand[i].total = total;         // keep the latest pair for this id
+            return false;
+        }
+        if (ncand < 16) { cand[ncand].msg = msg; cand[ncand].gain = gain; cand[ncand].total = total; ++ncand; }
+        return false;
+    }
+};
+// The seeds : last known-good, and still correct on a client that has not been patched since.
+static MsgHealer sgHeal_ = { "SHEOL",  7249 };   // 40017 masked -- //aio sheollog, run of 2026-08-14 : 105 payouts,
+                                                 // p2 tracked its own p1 throughout. Was 40016 until the 08-12 patch.
+static MsgHealer lbHeal_[2] = { { "LIMBUS/Apollyon", 7247 },     // [0] = zone 38, [1] = zone 37 (2026-07-19 capture)
+                                { "LIMBUS/Temenos",  7239 } };
+// Abyssea has NO such arithmetic -- its lights are matched by an OFFSET from a per-zone base, and nothing in the
+// message proves that base. So it is not healed, it is WATCHED : a run where 0x02A keeps arriving and not one
+// message ever lands on a known offset is the signature of a base that moved (it already drifted +23 once).
+static int abyMatched_ = 0, abyUnmatched_ = 0;
+
+static void zt_msg_reset_run() {                 // fresh run -> forget this run's counters
+    sgHeal_.reset_run(); lbHeal_[0].reset_run(); lbHeal_[1].reset_run();
+    abyMatched_ = 0; abyUnmatched_ = 0;
+}
+
+// //aio doctor : what each healed counter is listening to, and on what grounds. 0 = Odyssey, 1 = Apollyon,
+// 2 = Temenos ; the Abyssea watch reports through zt_aby_msg_state instead, having nothing to prove.
+void zt_msg_state(int which, unsigned& id, bool& proven, int& seen, int& traffic) {
+    const MsgHealer& h = (which == 0) ? sgHeal_ : lbHeal_[(which == 1) ? 0 : 1];
+    id = h.id; proven = h.proven; seen = h.seen; traffic = h.traffic;
+}
+void zt_aby_msg_state(int& matched, int& unmatched) { matched = abyMatched_; unmatched = abyUnmatched_; }
+
+// ---- //aio sheoltest : the scripted invariant ------------------------------------------------------------
+// The healing runs about once a year, inside a run you get one of per day (and Limbus's is weekly). Without a
+// way to exercise it on demand it would go untested until the day everything depends on it -- the same argument
+// that gave //aio rva break, which found two real defects on its first use. Pure : scratch healers, no live
+// state, no packet, no disk. Runs on a release build, which //aio sheollog does not. It tests the SHIPPED
+// MsgHealer, which is the one Odyssey and both Limbus wings run on.
+bool sheol_selftest(char* out, int cap) {
+    const char* fail = 0;
+    #define SG_CHK(cond, why) do { if (!fail && !(cond)) fail = why; } while (0)
+    {
+        // A. HEALTHY client : the seed's own messages are used, and a decoy that satisfies the arithmetic
+        //    perfectly still cannot displace a working id.
+        MsgHealer h = { "TEST", 7248 }; int base = -1;
+        SG_CHK(h.accept(7248, 13, 947498, &base), "A1 the seeded id was not accepted");
+        SG_CHK(!h.accept(9999, 10, 500, &base), "A2 a decoy was accepted on first sight");
+        SG_CHK(!h.accept(9999, 10, 510, &base), "A3 a decoy displaced a WORKING id");
+        SG_CHK(h.id == 7248 && base == -1, "A4 the id in use changed while it was still alive");
+    }
+    {
+        // B. PATCHED client : the seed is silent, the moved id proves itself on its second payout, and the
+        //    first kill is NOT lost -- the baseline is recovered from the observation that opened the pair.
+        MsgHealer h = { "TEST", 7248 }; int base = -1;
+        SG_CHK(!h.accept(7249, 13, 947498, &base), "B1 an id was adopted on a single observation");
+        SG_CHK(h.accept(7249, 13, 947511, &base), "B2 the moved id was not adopted on its second payout");
+        SG_CHK(h.id == 7249 && h.proven, "B3 adopted without being marked derived");
+        SG_CHK(base == 947485, "B4 the baseline lost the first kill");
+        SG_CHK(947511 - base == 26, "B5 the count does not include both kills");
+        // a duplicated chunk repeats the total -> the total-minus-baseline form cannot double-count
+        SG_CHK(h.accept(7249, 13, 947511, &base) && (947511 - base) == 26, "B6 a duplicate double-counted");
+    }
+    {
+        // C. NOISE alone proves nothing : ids whose total does not track their own gain, and zero-gain messages.
+        MsgHealer h = { "TEST", 7248 }; int base = -1;
+        SG_CHK(!h.accept(7300, 5, 100, &base), "C1");
+        SG_CHK(!h.accept(7300, 5, 130, &base), "C2 an id was adopted whose total does not track its gain");
+        SG_CHK(!h.accept(7301, 0, 100, &base), "C3");
+        SG_CHK(!h.accept(7301, 0, 100, &base), "C4 a zero-gain message was adopted");
+        SG_CHK(h.id == 7248 && !h.proven, "C5 noise moved the id");
+        SG_CHK(base == -1, "C6 noise wrote a baseline");
+    }
+    {
+        // D. The two Limbus wings are INDEPENDENT healers : proving one must not touch the other, or a Temenos
+        //    run would re-point Apollyon's award at whatever Temenos happened to pay.
+        MsgHealer a = { "TEST/A", 7247 }, t = { "TEST/T", 7239 }; int ba = -1, bt = -1;
+        SG_CHK(!t.accept(7241, 3000, 12000, &bt), "D1");
+        SG_CHK(t.accept(7241, 5000, 17000, &bt), "D2 the moved wing id was not adopted");
+        SG_CHK(a.id == 7247 && !a.proven && ba == -1, "D3 proving one wing moved the other");
+    }
+    {
+        // E. The shape the 2026-08-12 patch ACTUALLY had, and the one B misses : the seed did not fall silent,
+        //    it was REUSED. 7248 kept arriving (gain=23, total=0, twice) while the payout moved to 7249 -- so a
+        //    healer that trusts PRESENCE froze its own search and read none of that run's 105 payouts. B only
+        //    ever modelled a quiet seed, which is why the self-test stayed green through a run that showed 0.
+        //    Values are the real capture (//aio sheollog, 2026-08-14), duplicate chunk included.
+        MsgHealer h = { "TEST", 7248 }; int base = -1;
+        SG_CHK(!h.accept(7248, 23, 0, &base), "E1 a message that paid nothing was used as the payout");
+        SG_CHK(!h.accept(7248, 23, 0, &base), "E2 idem, second sighting");
+        SG_CHK(!h.accept(7249, 15, 893828, &base), "E3");
+        SG_CHK(!h.accept(7249, 15, 893828, &base), "E4 a duplicated chunk proved an id on its own");
+        SG_CHK(h.accept(7249, 15, 893843, &base), "E5 a REUSED seed still blocks the moved id");
+        SG_CHK(h.id == 7249 && h.proven, "E6 adopted without being marked derived");
+        SG_CHK(base == 893813 && 893843 - base == 30, "E7 the baseline lost the first kill");
+    }
+    #undef SG_CHK
+    if (fail) _snprintf(out, cap, "ECHEC : %s", fail);
+    else      _snprintf(out, cap, "OK : id sain non deplacable, id deplace adopte au 2e paiement sans perdre le 1er kill, bruit ignore");
+    out[cap - 1] = 0;
+    return fail == 0;
+}
+
 static void omen_reset_objs(ZoneTracker& zt);            // fwd : zt_set_zone resets the Omen objectives on entry
 static void omen_set_floor(ZoneTracker& zt, const char* s);
 
@@ -379,6 +533,10 @@ void PartyState::zt_on_character_changed() {
 
 void PartyState::zt_set_zone(int zone, const char* name) {
     if (zone == zt_.curZone) return;                        // no transition
+    // Message-id candidates and their traffic counters are per RUN : a half-seen pair from yesterday's run
+    // proves nothing, and last run's traffic would make a healthy id look silent. What an id HAS proven is not
+    // reset here -- that belongs to the client build, not to the run.
+    zt_msg_reset_run();
     for (int i = 0; i < 10; ++i) treasure_[i] = TreasureItem{};   // Treasure Pool is ZONE-specific : empty it on ANY zone change (runs every frame here, module-independent). No packet clears the old zone's items, so without this they linger as a phantom pool until their ~5-min expiry.
     const int oldZone = zt_.curZone;
     const int prevMode = zt_.mode;
@@ -423,7 +581,7 @@ void PartyState::zt_set_zone(int zone, const char* name) {
         if (prevMode != 4) { ny_reset_run(zt_); zt_.nyPartySize = (count > 0) ? count : 1; }
         zt_.mode = 4;
     } else if (mode == 5) {
-        // Fresh Sheol entry from Rabao -> new run : the FIRST 0x02A msg-40016 self-baselines the counter (segBase =
+        // Fresh Sheol entry from Rabao -> new run : the FIRST payout message self-baselines the counter (segBase =
         // its p2-p1 = the banked total before the first kill), so start unset. KEEP zt_.sheolzone : on_034 set it at
         // the Rabao conflux menu just before this zone change, and it must carry into the run (cleared on exit, below).
         zt_.segBase = -1;
@@ -544,19 +702,25 @@ void PartyState::on_55(const unsigned char* p) {            // 0x055 : key items
 }
 void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol segments (mode 5) + Abyssea zone messages (mode 2)
     if (pkt_bytes(p) < 0x1C) return;                        // truncated -> the params/message id (up to the u16 @0x1A) aren't there ; covers all mode branches
-    // SHEOL / ODYSSEY segments : msg **40016** (masked 0x7FFF = 7248) carries p1 = segments THIS kill, p2 = the RUNNING
-    // banked total. segments = p2 - baseline (baseline = p2-p1 at the first message) -> IDEMPOTENT (a duplicate chunk
-    // shares p2 so it can't double-count) and packet-loss-proof (p2 is authoritative). The banked total does NOT push
-    // a live 0x118, so this per-kill message is the only live source (confirmed via //aio sheollog 2026-07-10 : 40016
-    // p2 = 947498/947511/947524, p1=13, baseline 947485). The msg id drifts every patch (was 40005/40015...) -> if the
-    // counter stops after a client update, //aio sheollog + find the new id whose p2 tracks your banked total.
+    // SHEOL / ODYSSEY segments : the per-kill message (seeded at 40016, masked 0x7FFF = 7248) carries p1 = segments
+    // THIS kill, p2 = the RUNNING banked total. segments = p2 - baseline (baseline = p2-p1 at the first message) ->
+    // IDEMPOTENT (a duplicate chunk shares p2 so it can't double-count) and packet-loss-proof (p2 is authoritative).
+    // The banked total does NOT push a live 0x118, so this per-kill message is the only live source (confirmed via
+    // //aio sheollog 2026-07-10 : 40016 p2 = 947498/947511/947524, p1=13, baseline 947485). The id drifts at every
+    // client patch (40005 -> 40015 -> 40016 -> ...), so it is no longer matched as a constant : see the resolver
+    // above -- while the id in use stays silent, the one whose p2 tracks its own p1 is adopted, with no capture and
+    // no release.
     if (zt_.mode == 5) {
-        if (!zt_.segLastRun && (pkt_u16(p, 0x1A) & 0x7FFFu) == 7248) {
-            const int gain = (int)pkt_u32(p, 0x08), total = (int)pkt_u32(p, 0x0C);
-            if (zt_.segBase < 0) zt_.segBase = total - gain;   // baseline = banked total BEFORE this (first-seen) kill
-            zt_.segments = (total > zt_.segBase) ? (total - zt_.segBase) : 0;
-            zt_save();
-        }
+        if (zt_.segLastRun) return;                            // back in Rabao : the frozen "N (last run)" total
+        const unsigned msg = pkt_u16(p, 0x1A) & 0x7FFFu;
+        const int gain = (int)pkt_u32(p, 0x08), total = (int)pkt_u32(p, 0x0C);
+        int base = -1;
+        if (!sgHeal_.accept(msg, gain, total, &base)) return;
+        // baseline = banked total BEFORE this (first-seen) kill -- or, when this message is the one that just
+        // PROVED a moved id, the total before the kill that opened the winning pair, so that kill still counts.
+        if (zt_.segBase < 0) zt_.segBase = (base >= 0) ? base : (total - gain);
+        zt_.segments = (total > zt_.segBase) ? (total - zt_.segBase) : 0;
+        zt_save();
         return;
     }
     // LIMBUS (mode 6) : the run economy. See the field block in party_state.h for the message map. Everything is
@@ -580,7 +744,12 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
         // name is 'Temenos Coffer #4' for a coffer, '???' for a point of interest. That is the ONLY reliable
         // discriminant : a point of interest grants the Code only ONCE PER WEEK, so the accompanying 7069/7070 item
         // message is absent the rest of the time and cannot be used (verified dead end -- do not rebuild on it).
-        if (msg == 7247 || msg == 7239) {
+        const int area = (zt_.curZone == 37) ? 1 : 0;          // 38 Apollyon / 37 Temenos, tracked apart
+        int ubase = -1;
+        // Same treatment as Odyssey, same reason : this id is zone-relative and the client renumbers it. The
+        // award carries p1 = paid and p3 = the running total, so it proves itself on the second payout of a run.
+        // Per WING : each has its own id, and proving one must never re-point the other.
+        if (lbHeal_[area].accept(msg, p1, p3, &ubase)) {
             // Is this award a real coffer ? Name-based, so a client in another language degrades to "not a coffer"
             // (a missed chip, visible) rather than a false one (silent corruption of the quadrant row).
             char src[28] = { 0 };
@@ -600,7 +769,9 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
                     isCoffer = true;   // "Coffer" (EN) / "Coffre" (FR)
             }
             zt_.limbusUnits = p3; zt_.limbusUnitsCap = p4;
-            if (zt_.limbusUnitBase < 0) zt_.limbusUnitBase = p3 - p1;   // total BEFORE this (first-seen) payout
+            // total BEFORE this (first-seen) payout -- or before the one that opened the pair that proved a
+            // moved id, so the payout spent proving it is still banked in the run total.
+            if (zt_.limbusUnitBase < 0) zt_.limbusUnitBase = (ubase >= 0) ? ubase : (p3 - p1);
             zt_.limbusRunUnits = (p3 > zt_.limbusUnitBase) ? (p3 - zt_.limbusUnitBase) : 0;
             // A big award whose source we could not name is the one case that silently loses a chip (a client in a
             // language whose coffer is neither "Coffer" nor "Coffre", or an entity slot we failed to read). Say so,
@@ -612,7 +783,6 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
             if (p1 >= LIMBUS_COFFER_MIN && isCoffer) {     // a REAL coffer (named entity), not a point of interest
                 zt_.limbusCofferAmt = p1;
                 int w = 0; for (; at[w] && w < 11; ++w) zt_.limbusCofferAt[w] = at[w]; zt_.limbusCofferAt[w] = 0;
-                const int area = (zt_.curZone == 37) ? 1 : 0;               // 38 Apollyon / 37 Temenos, tracked apart
                 LimbusCoffers& lc = lc_[area];
                 const int slot = limbus_slot_of(area, zt_.limbusQuad);
                 if (p1 >= LIMBUS_BIG_MIN) {                                 // the 5k ends the cycle : the other slots
@@ -667,6 +837,10 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
         case 12:  zt_.visitantMin += p1; zt_.visitantMs = GetTickCount(); break;                          // extend
         default: ch = false; break;
     }
+    // Abyssea cannot prove its base (nothing in a light message identifies which light it is -- only the offset
+    // does), so instead of guessing, COUNT. A run where these keep arriving and none ever lands on a known
+    // offset is the base having moved, and //aio doctor is where that gets said out loud.
+    if (ch) ++abyMatched_; else ++abyUnmatched_;
     if (ch) zt_save();
 }
 

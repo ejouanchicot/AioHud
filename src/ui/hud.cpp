@@ -507,6 +507,36 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
                 nsup, sname && sname[0] ? sname : "?", (unsigned)sid, (unsigned)smsg, (unsigned)smsg);
     }
 
+    // ---- 3c. The 0x02A message ids. These are ZONE-RELATIVE and the client renumbers them at every patch --
+    //          the second family that a game update kills, after the FFXiMain statics, and the quieter one :
+    //          on 2026-08-12 the Sheol box kept drawing its header and "Segments" simply stayed at 0. Odyssey
+    //          and both Limbus wings now re-derive their id from the payout arithmetic (two payouts), so what
+    //          is reported here is the STATE ; the only thing worth alarming on is the contradiction "the zone
+    //          is talking and our id is not". Abyssea cannot prove a base, so it is counted, not healed. ----
+    {
+        const int ztm = party().zone_tracker().mode;
+        static const char* WHO[3] = { "Odyssey (segments)", "Apollyon (unites)", "Temenos (unites)" };
+        const int which = (ztm == 5) ? 0 : (party().zone_tracker().curZone == 38) ? 1 : (party().zone_tracker().curZone == 37) ? 2 : -1;
+        if (which >= 0) {
+            unsigned mid = 0; bool prov = false; int seen = 0, traf = 0;
+            zt_msg_state(which, mid, prov, seen, traf);
+            windower::debug::log("  msgid    : %s msg=%u %s seen=%d traffic=%d", WHO[which], mid,
+                                 prov ? "(DERIVED)" : "(seed)", seen, traf);
+            if (!prov && seen == 0 && traf >= 6)
+                DOC("Le compteur %s est muet alors que la zone parle (%d messages, aucun avec l'id %u) : la mise a "
+                    "jour du client a renumerote le message. Il se recale TOUT SEUL au deuxieme gain -- continue, et "
+                    "s'il reste a 0 apres deux gains, envoie aiohud_debug.log", WHO[which], traf, mid);
+        }
+        if (ztm == 2) {   // Abyssea : matched by an OFFSET from a per-zone base, which already drifted +23 once
+            int am = 0, au = 0; zt_aby_msg_state(am, au);
+            windower::debug::log("  msgid    : Abyssea base=%d matched=%d unmatched=%d", party().zone_tracker().abyOffset, am, au);
+            if (am == 0 && au >= 12)
+                DOC("Aucun message d'Abyssea n'est reconnu (%d recus, 0 exploite) : la base des ids a bouge avec une "
+                    "mise a jour du client. Contrairement a Odyssey, celle-ci ne peut PAS se deviner -- fais /heal "
+                    "puis envoie aiohud_debug.log, la nouvelle base se lit dans la capture", au);
+        }
+    }
+
     // ---- 4. textures : a missing handle whose retry budget is SPENT is permanent for this session ----
     int texMiss = 0;
     if (!buffAtlas_)  { ++texMiss; DOC("L'atlas d'icones de statut n'est pas charge (%u essais) : les icones de buff manquent partout. "
