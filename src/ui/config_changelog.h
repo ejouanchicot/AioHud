@@ -275,6 +275,15 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_78[] = {
+    { "*Odyssey counts your segments again.* Since the game update of August 12 the box drew its Sheol header with the total stuck at zero for a whole run : the message that announces a payout had been renumbered, and the plugin was still listening to the old number -- which the update had handed to an unrelated message that pays nothing. So it kept hearing something, and never heard a segment.",
+      "*Odyssey compte de nouveau vos segments.* Depuis la mise a jour du jeu du 12 aout, la boite affichait son en-tete Sheol avec le total bloque a zero pendant toute une run : le message qui annonce un gain avait ete renumerote, et le plugin ecoutait toujours l'ancien numero -- que la mise a jour avait attribue a un message sans rapport, qui ne paie rien. Il entendait donc quelque chose, et n'entendait jamais un segment." },
+    { "*And it now finds that number again on its own, at every future game update.* Two payouts are enough to prove it : what a kill paid, added to the total before it, must give the total after it -- no other message adds up that way. Nothing to type, no segment lost while it works it out, and a message that merely talks without paying can no longer pass for the right one.",
+      "*Et il retrouve desormais ce numero tout seul, a chaque future mise a jour du jeu.* Deux gains suffisent a le prouver : ce qu'un kill a rapporte, ajoute au total d'avant, doit donner le total d'apres -- aucun autre message ne tombe juste ainsi. Rien a taper, aucun segment perdu pendant la recherche, et un message qui se contente de parler sans rien payer ne peut plus passer pour le bon." },
+    { "Limbus gets the same treatment for its two wings. Abyssea cannot be proven the same way for now, so it says so instead : `//aio doctor` reports when the zone is talking and the plugin no longer recognises any of it.",
+      "Limbus recoit le meme traitement pour ses deux ailes. Abyssea ne peut pas encore etre prouve de la meme facon, alors il le dit : `//aio doctor` signale quand la zone parle et que le plugin n'y reconnait plus rien." },
+};
+
 static const ChangeLine CL_77[] = {
     { "*The plugin now watches itself for the kind of breakage that shows no symptom.* A game update can move a value without anything going dark : the box keeps displaying a number, the number looks normal, and it is wrong. Several things are known twice -- the server sends them, and the game also keeps them in memory -- so those two are now compared, and `//aio doctor` says plainly if they stop agreeing.",
       "*Le plugin surveille desormais lui-meme le type de casse qui ne donne aucun symptome.* Une mise a jour du jeu peut deplacer une valeur sans que rien ne s'eteigne : la boite continue d'afficher un chiffre, le chiffre a l'air normal, et il est faux. Plusieurs informations sont connues deux fois -- le serveur les envoie, et le jeu les garde aussi en memoire -- ces deux sources sont donc comparees, et `//aio doctor` le dit clairement si elles cessent de concorder." },
@@ -524,6 +533,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.78", CL_78, (int)(sizeof(CL_78) / sizeof(CL_78[0])) },
     { "1.0.77", CL_77, (int)(sizeof(CL_77) / sizeof(CL_77[0])) },
     { "1.0.76", CL_76, (int)(sizeof(CL_76) / sizeof(CL_76[0])) },
     { "1.0.75", CL_75, (int)(sizeof(CL_75) / sizeof(CL_75[0])) },
