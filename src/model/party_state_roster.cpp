@@ -203,7 +203,7 @@ void PartyState::load() {
 // (no waiting for packets). Reversed against the Ashita SDK partymember_t and verified
 // in-game 2026-06-26 (retail/Carbuncle). Layout (member stride 0x7C, 18 slots; party =
 // slots 0..5, alliance party 2 = 6..11, alliance party 3 = 12..17 -- all VERIFIED in an
-// alliance 2026-06-28). Anchor: g = *(LuaCore+0x1C8400); *(g+0x248) points 4 bytes INTO
+// alliance 2026-06-28). Anchor: g = data_root(); *(g+0x248) points 4 bytes INTO
 // member[0] -> base = that - 4 (self-validated against the player id).
 // Member fields used: +0x0A name(18) +0x1C serverid +0x28 hp +0x2C mp +0x30 tp +0x34 hp%
 // +0x35 mp% +0x36 zone(u16) +0x3C flags +0x71 main-job +0x72 main-lvl +0x73 sub-job.

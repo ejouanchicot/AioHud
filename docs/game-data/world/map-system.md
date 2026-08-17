@@ -8,7 +8,7 @@ source: LuaCore get_info (FUN_10070120) + FFXIDB.dll marker/transform/map-DAT de
 Phase-0 research to place the player dot on a zone map. Reversed from LuaCore get_info (zone id), the
 FFXIDB minimap plugin (plugins/FFXIDB.dll, imported in the Ghidra project - it reads the CLIENT own
 map subsystem), and FFXiMain.dll (the map-info table static). Every read is SEH-guarded off
-g = *(LuaCore+0x1C8400), the usual data root.
+g = aio::data_root(), the usual data root (its LuaCore RVA is derived at runtime — luacore-data-root.md).
 
 Confidence tags: [decomp] read straight from a decompiled binding; [decomp-ffxidb] read from FFXIDB
 use of the client structs (cross-checked against our known offsets); [inferred] derived / needs a

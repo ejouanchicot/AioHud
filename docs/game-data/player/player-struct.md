@@ -7,7 +7,7 @@ source: REFERENCE.md §9a
 
 Pointer chain (this install, `LuaCore.dll 2.6.8.2`):
 ```
-G      = *(LuaCore.dll + 0x1C8400)      // data root
+G      = aio::data_root()               // data root -- *(LuaCore.dll + a DERIVED rva), see luacore-data-root.md
 player = *(G + 0x3C)                    // local player struct
 ```
 **Validity gate:** read `max_hp` first; if `0` or `> 0x100000` the struct isn't

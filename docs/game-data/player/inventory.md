@@ -9,7 +9,7 @@ bags?" needs no packets — the whole container is resident and can be snapshott
 
 ## Pointer chain
 ```
-G          = *(LuaCore.dll + 0x1C8400)                  // data root  (aio::data_root())
+G          = aio::data_root()                           // *(LuaCore.dll + a DERIVED rva) -- luacore-data-root.md
 items_root = *(G + 0x50)                                // aio::items_root()
 entry      = items_root + (slot + bag*0x51) * 0x28      // == items_root + bag*0xCA8 + slot*0x28
     id     = u16 @ entry+0x00        // 0 = empty slot ; 0xFFFF = the reserved entry-0 header

@@ -11,13 +11,15 @@ On **retail** this is the documented **Ashita `partymember_t`** (stride **`0x7C`
 slots**: 0..5 = your party, 6..11 / 12..17 = alliance parties 2 / 3). Verified field-by-
 field in-game (`model/party_state.cpp` `load_from_memory`).
 
-**Anchor:** `g = *(LuaCore+0x1C8400)`; `pp = *(g+0x248)` (points **4 bytes into**
+**Anchor:** `g = aio::data_root()` (the RVA into LuaCore is **derived at runtime** — a Windower update
+moves it, see [luacore-data-root.md](../luacore-data-root.md)); `pp = *(g+0x248)` (points **4 bytes into**
 member[0]); `member[0] = pp - 4`; `member[i] = member[0] + i*0x7C`. Self-validate:
 `member[0].ServerId` must equal the player id (else don't trust it).
 
 > In code these chains go through the shared accessors in `model/game_mem.{h,cpp}` — **one source
 > of truth** for the offsets: `data_root()` = `g`, `party_ptr()` = `pp`, `entity_array()` = `*(g+0x24)`,
-> plus cached `luacore_base()` / `ffximain_base()`. Don't re-resolve `LuaCore+0x1C8400` inline.
+> plus cached `luacore_base()` / `ffximain_base()`. Don't re-resolve the LuaCore root inline — and never
+> hard-code its RVA: `lc_root_addr()` is the one place that knows it.
 
 | member offset | field | notes |
 |---|---|---|

@@ -669,7 +669,7 @@ int read_player_buffs(unsigned short* out, int maxN, bool* ok) {
     return n;
 }
 
-// allianceinfo_t : g=*(LuaCore+0x1C8400) ; pp=*(g+0x248) (=&member[0]+4) ; allianceinfo = *(pp).
+// allianceinfo_t : g=data_root() ; pp=*(g+0x248) (=&member[0]+4) ; allianceinfo = *(pp).
 // Fields (verified in-game 2026-06-26): +0x00 alliance leader id, +0x04/+0x08/+0x0C party
 // 1/2/3 leader ids. A member is that role iff its serverid matches.
 bool read_party_leaders(PartyLeaders& o) {

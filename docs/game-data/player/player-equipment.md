@@ -12,7 +12,7 @@ an `{inventory_index, bag_id}` pair; the item id is resolved by indexing the ite
 
 ## Pointer chain (this install, `LuaCore.dll`)
 ```
-G          = *(LuaCore.dll + 0x1C8400)   // data root (our `g`)
+G          = aio::data_root()            // our `g` -- *(LuaCore.dll + a DERIVED rva), luacore-data-root.md
 items_root = *(G + 0x50)                 // item-container root (gil @+0x04)
 idx_arr    = *(G + 0x54)                 // u8[16]  : inventory index per equip slot
 bag_arr    = *(G + 0x58)                 // s32[16] : bag/container id per equip slot
@@ -86,7 +86,7 @@ Live-probe pending (`//aio equip`, below) to eyeball the 16 ids against real gea
 Model it on `//aio gil`/`//aio jlvl` (debug::log + debug::hexdump). For each slot S 0..15,
 log name / bag / index / id / count so the user can compare to real gear:
 ```
-g          = aio::data_root();              // *(LuaCore+0x1C8400)
+g          = aio::data_root();              // *(LuaCore + lc_root_rva())
 items_root = *(g + 0x50);                    // safe_read + valid_ptr
 idx_arr    = *(g + 0x54);                     // u8[16]
 bag_arr    = *(g + 0x58);                     // s32[16]

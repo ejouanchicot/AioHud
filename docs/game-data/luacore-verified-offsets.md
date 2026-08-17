@@ -9,6 +9,19 @@ Method: `docs/architecture/ghidra-setup.md`. The registration function **`FUN_10
 `windower.ffxi.*` closure next to its name, so each binding pairs with the code that implements it.
 `g` = `DAT_101C8400` = `*(LuaCore+0x1C8400)`.
 
+> **This page is a dated RECORD of one LuaCore build, not a current address list.** It was taken against
+> LuaCore as shipped with Windower ≤ 4.7.9.0, and the decompiler output below is quoted verbatim on
+> purpose — rewriting it would falsify the evidence the conclusions rest on. Two things in it have since
+> moved (Windower 4.7.9.3 / LuaCore 2.6.8.4):
+>
+> - the root itself, `0x1C8400` → `0x1CA420`;
+> - the recast block, `+4` each: JA timers `0x22C`→`0x230`, ids `0x230`→`0x234`, spells `0x234`→`0x238`.
+>
+> Both are **derived at runtime** now and must be read through `lc_root_addr()` / `lc_recast_*()` — see
+> [luacore-data-root.md](luacore-data-root.md). What remains valid, and is why this page still matters, is
+> everything it establishes about the *structures* the root points at: the `0x7C` member stride, the field
+> map, the member→entity hop, the `0x900` bound. Those are the game's layout, not Windower's.
+
 ## Framing: Windower's member[i] is `*(g+0x248) + i*0x7C` - AioHUD's is that MINUS 4
 
 `get_party` = **`FUN_10070AE0`**:

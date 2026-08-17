@@ -9,7 +9,7 @@ player's key items — the client decodes it into a persistent flat array we can
 
 ## Pointer chain
 ```
-G       = *(LuaCore.dll + 0x1C8400)     // data root  (aio::data_root())
+G       = aio::data_root()              // *(LuaCore.dll + a DERIVED rva) -- luacore-data-root.md
 ki_base = *(G + 0x4C)                   // u8[0x2000] : ONE BYTE per key-item id
 has(id) = ki_base[id] != 0              // id in 0 .. 0x1FFF
 ```

@@ -38,7 +38,7 @@ value, though not independently packet-probed. Reversed 2026-07-05.
 > different places in the packet (`+0x1E`,`+0x22`/`+0x24`) vs memory
 > (`+0x64`,`+0x94`/`+0x9C`). Don't copy one offset set onto the other.
 
-**Alt — party struct in memory** (used by `//aio chain`): `a=*(LuaCore+0x1C8400)`,
+**Alt — party struct in memory** (used by `//aio chain`): `a=aio::data_root()`,
 `b=*(a+0x248)`, `party=*b` → this is the **allianceinfo_t** (leaders/counts, see [party array](party-array.md)),
 NOT a member array. Its `+0x18` pointers go to UI/menu structs, not clean member data
 (an early wrong turn). The real member array is in [party array](party-array.md).

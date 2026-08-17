@@ -1,6 +1,6 @@
 ---
 title: Timers — self buff durations + ability/spell recasts
-summary: The 0x063 order-9 self buff-timer packet (absolute FFXI ticks), the client recast tables (g+0x22C/0x230 abilities, g+0x234 spells), the buff-caster self-cast filter, the shared-recast_id name-collision disambiguation, and the curated addon icon set (why ROM/119/57.DAT can't supply menu icons).
+summary: The 0x063 order-9 self buff-timer packet (absolute FFXI ticks), the client recast tables (offsets DERIVED at runtime — they moved in Windower 4.7.9.3), the buff-caster self-cast filter, the shared-recast_id name-collision disambiguation, and the curated addon icon set (why ROM/119/57.DAT can't supply menu icons).
 source: model/party_state.cpp (on_set_update order 9 / on_action buff-caster / ffxi_now_tick), model/game_mem.cpp (read_recasts)
 ---
 # Timers — self buff durations + ability/spell recasts
@@ -116,10 +116,24 @@ buff the column hid could still fire a red OUT alert.
 Snapshotted **once/frame** into `GameState.recasts[40]` (`RecastEntry {recastId, kind, sec}`,
 gamestate.h:58). Two client tables off the LuaCore `g` root:
 
-- **Job abilities** — timers `*(g+0x22C)` int32[32]; ids `*(g+0x230)` **stride 8**, byte0 =
-  `recast_id`. A slot counts when `0 < t ≤ 60*7200` (else ready / empty / garbage). `kind = 0`.
-- **Spells** — `*(g+0x234)` ushort[1024], **indexed directly by `recast_id`**, which for a spell
-  **equals the spell's own id**. Same `0 < v ≤ 60*7200` gate. `kind = 1`.
+These three offsets are **derived at runtime, not constants** — Windower 4.7.9.3 slid the whole block by
+`+4` and the plugin read the neighbouring table without noticing. Always go through the accessors; see
+[luacore-data-root.md](../luacore-data-root.md) for how they are re-derived and why.
+
+- **Job abilities** — timers `*(g + lc_recast_ja_timers())` int32[32]; ids `*(g + lc_recast_ja_ids())`
+  **stride 8**, byte0 = `recast_id`. A slot counts when `0 < t ≤ 60*7200`. `kind = 0`.
+- **Spells** — `*(g + lc_recast_spells())` ushort[1024], **indexed directly by `recast_id`**, which for a
+  spell **equals the spell's own id**. `kind = 1`.
+  > The `v ≤ 60*7200` gate here is **dead code**: `v` is a `ushort`, so it can never exceed 65535 while the
+  > bound is 432000. It is not a garbage filter and never was — which is why a wrong offset showed a
+  > screenful of spells on the same timer instead of being rejected. The offset being derived is the real
+  > protection.
+
+| table | ≤ Windower 4.7.9.0 | 4.7.9.3 |
+|---|---|---|
+| JA timers | `0x22C` | `0x230` |
+| JA ids | `0x230` | `0x234` |
+| Spells | `0x234` | `0x238` |
 
 Seconds are **ceil'd**: `sec = (v + 59) / 60`. (`spell_recast_sec(recast_id)`, game_mem.cpp:700,
 does the single-entry version for the action-menu "Next".)

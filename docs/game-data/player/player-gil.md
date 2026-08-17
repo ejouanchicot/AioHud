@@ -11,7 +11,7 @@ decompiling LuaCore's `get_items` binding (`FUN_10074690`, the fn behind
 
 Pointer chain (this install, `LuaCore.dll`):
 ```
-G          = *(LuaCore.dll + 0x1C8400)   // data root (our `g`)
+G          = aio::data_root()            // our `g` -- *(LuaCore.dll + a DERIVED rva), luacore-data-root.md
 items_root = *(G + 0x50)                 // item-container root object
 gil        = *(items_root + 0x04)        // u32, UNSIGNED
 ```
@@ -45,7 +45,7 @@ player's real in-game gil before wiring the poller read.
 ## Verification probe (`//aio gil`)
 Model it on `//aio jlvl`: dump the container root and the u32 so the user can compare.
 ```
-g          = aio::data_root();                 // *(LuaCore+0x1C8400)
+g          = aio::data_root();                 // *(LuaCore + lc_root_rva())
 items_root = *(g + 0x50)                        // safe_read + valid_ptr
 gil        = *(items_root + 0x04)   (u32)
 debug::log("GIL: g=%08X items_root=%08X  gil=%u (0x%08X)", g, items_root, gil, gil);
