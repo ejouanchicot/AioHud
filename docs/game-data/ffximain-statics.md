@@ -7,7 +7,10 @@ summary: The six FFXiMain RVAs AioHUD reads, why a game update breaks exactly th
 
 Everything AioHUD reads hangs off one of two anchors:
 
-- **LuaCore's data root** `g = *(LuaCore+0x1C8400)` — Windower's own DLL. A **game** patch does not touch it.
+- **LuaCore's data root** `g = *(LuaCore + <rva>)` — Windower's own DLL. A **game** patch does not touch it…
+  but a **Windower** update does, and Windower updates itself silently for everyone. 4.7.9.3 moved it and
+  blanked the entire HUD. That RVA is derived at runtime too now — see
+  [luacore-data-root.md](luacore-data-root.md).
 - **A hard-coded RVA inside FFXiMain.dll** — the game's own module, **recompiled at every client patch**.
 
 Only six things live in the second group. That asymmetry is the whole story of this page: when the client

@@ -2,6 +2,7 @@
 #include "model/game_mem.h"
 #include "model/gamestate.h"
 #include "model/ffximain_rva.h"   // the FFXiMain statics : addresses as data, re-derived after a client patch
+#include "model/luacore_root.h"   // where LuaCore keeps `g` : a WINDOWER update moves it, so it is derived too
 #include "model/sentinel.h"       // packet-vs-memory cross-check, run once the snapshot is complete
 #include "model/ui_config.h"   // mmShow : skip the entity-array sweep entirely when the minimap is off (model->model, no layering issue)
 #include "windower.h"   // safe_read / valid_ptr (guarded game-memory reads)
@@ -18,7 +19,10 @@ using windower::safe_read;
 // zoning (read each call). All return 0 -> the caller no-ops. Offsets live HERE, nowhere else. ---
 u32 ffximain_base() { static u32 b = 0; if (!b) b = (u32)GetModuleHandleA("FFXiMain.dll"); return b; }
 u32 luacore_base()  { static u32 b = 0; if (!b) b = (u32)GetModuleHandleA("LuaCore.dll");  return b; }
-u32 data_root()   { u32 lc = luacore_base(); u32 g = 0; return (lc && safe_read(lc + 0x1C8400, &g) && valid_ptr(g)) ? g : 0; }   // g = *(LuaCore+0x1C8400)
+// g = *(LuaCore + root rva). The RVA is NOT a constant : Windower recompiles LuaCore and updates itself
+// silently, and 4.7.9.3 slid the root from 0x1C8400 to 0x1CA420 -- which zeroed every read in this file and
+// blanked the whole HUD. lc_root_addr() derives it from LuaCore's own code (see model/luacore_root.h).
+u32 data_root()   { u32 s = lc_root_addr(); u32 g = 0; return (s && safe_read(s, &g) && valid_ptr(g)) ? g : 0; }
 u32 party_ptr()   { u32 g = data_root(); u32 pp = 0; return (g && safe_read(g + 0x248, &pp) && valid_ptr(pp)) ? pp : 0; }         // *(g+0x248) = &member[0]+4
 u32 entity_array(){ u32 g = data_root(); u32 e  = 0; return (g && safe_read(g + 0x24,  &e)  && valid_ptr(e))  ? e  : 0; }         // *(g+0x24) = entity array
 u32 key_items_base(){ u32 g = data_root(); u32 kb = 0; return (g && safe_read(g + 0x4C, &kb) && valid_ptr(kb)) ? kb : 0; }        // *(g+0x4C) = u8[0x2000], one BYTE per key-item id (game-data/key-items.md)
@@ -922,17 +926,19 @@ bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid
     return false;                                         // any other menu : no box
 }
 
-// Ability/Job-Ability RECAST, reversed from LuaCore's get_ability_recasts (FUN_1006FF00). The client
-// keeps two parallel 32-slot arrays hung off the data root g = *(LuaCore+0x1C8400) :
-//   *(g + 0x22C) -> int32[32]  remaining recast in 1/60 s (frames)   ; seconds = timer / 60
-//   *(g + 0x230) -> stride-8 entries, byte[0] = the slot's recast_id
+// Ability/Job-Ability RECAST, reversed from LuaCore's get_ability_recasts. The client keeps two parallel
+// 32-slot arrays hung off the data root, at offsets that are NOT constants -- Windower 4.7.9.3 slid the
+// whole recast block by +4 (timers 0x22C->0x230, ids 0x230->0x234, spells 0x234->0x238), so they are
+// derived from LuaCore's own code like the root itself (model/luacore_root.h) :
+//   *(g + lc_recast_ja_timers()) -> int32[32]  remaining recast in 1/60 s (frames) ; seconds = timer / 60
+//   *(g + lc_recast_ja_ids())    -> stride-8 entries, byte[0] = the slot's recast_id
 // Windower builds recasts[id] = timer/60. We do the inverse : given the highlighted JA's recast_id,
 // scan the 32 slots for an ACTIVE one (timer>0) whose id matches -> its remaining seconds (0 = ready).
 // recast_id comes from abilities_gen.h (caller side). This is the menu's exact "Next".
 unsigned ability_recast_sec(unsigned recast_id) {
     u32 g = data_root(); if (!g) return 0;
     u32 idsP = 0, timersP = 0;
-    safe_read(g + 0x230, &idsP); safe_read(g + 0x22C, &timersP);
+    safe_read(g + lc_recast_ja_ids(), &idsP); safe_read(g + lc_recast_ja_timers(), &timersP);
     if (!valid_ptr(idsP) || !valid_ptr(timersP)) return 0;
     for (int s = 0; s < 32; ++s) {
         u32 t = 0; safe_read(timersP + s * 4, &t);
@@ -943,19 +949,21 @@ unsigned ability_recast_sec(unsigned recast_id) {
     return 0;                                                  // not on recast
 }
 
-// Spell RECAST ("Next" for the Magic menu), reversed from LuaCore's get_spell_recasts (FUN_1006FE80 --
-// the cclosure pushed just before the "get_spell_recasts" setfield ; the memory's old FUN_100732B0 guess
-// was wrong, that one is get_abilities). Far simpler than abilities : NO 32-slot scan -- a flat array.
-//   base = *(g + 0x234) -> ushort[1024], indexed directly by recast_id, remaining recast in 1/60 s.
-//   Windower builds recasts[id] = base[id] ; seconds = base[id] / 60. (0x234 sits right after the
-//   ability timers/ids at 0x22C/0x230.) recast_id comes from spells_gen.h (SpellRow::recast_id).
-// LIST all active recasts -> parallel arrays. Job abilities : 32-slot table (timers @0x22C /4, ids @0x230 /8,
-// byte[0]=recast_id). Spells : ushort[1024] @0x234, indexed by recast_id (block-copied under SEH, then scanned).
+// Spell RECAST ("Next" for the Magic menu), reversed from LuaCore's get_spell_recasts (the cclosure pushed
+// just before the "get_spell_recasts" setfield ; the memory's old FUN_100732B0 guess was wrong, that one is
+// get_abilities). Far simpler than abilities : NO 32-slot scan -- a flat array.
+//   base = *(g + lc_recast_spells()) -> ushort[1024], indexed directly by recast_id, remaining in 1/60 s.
+//   Windower builds recasts[id] = base[id] ; seconds = base[id] / 60. It sits one dword after the ability
+//   ids table, which is how the two derivations cross-check each other (luacore_root.h). recast_id comes
+//   from spells_gen.h (SpellRow::recast_id).
+// LIST all active recasts -> parallel arrays. Job abilities : the 32-slot table. Spells : ushort[1024]
+// indexed by recast_id (block-copied under SEH, then scanned).
 int read_recasts(unsigned short* rid, unsigned char* kind, int* sec, int maxN) {
     int n = 0;
     u32 g = data_root(); if (!g) return 0;
     u32 idsP = 0, timersP = 0, spellB = 0;
-    safe_read(g + 0x230, &idsP); safe_read(g + 0x22C, &timersP); safe_read(g + 0x234, &spellB);
+    safe_read(g + lc_recast_ja_ids(), &idsP); safe_read(g + lc_recast_ja_timers(), &timersP);
+    safe_read(g + lc_recast_spells(), &spellB);
     if (valid_ptr(idsP) && valid_ptr(timersP)) {
         for (int s = 0; s < 32 && n < maxN; ++s) {
             u32 t = 0; safe_read(timersP + s * 4, &t);
@@ -979,7 +987,7 @@ int read_recasts(unsigned short* rid, unsigned char* kind, int* sec, int maxN) {
 unsigned spell_recast_sec(unsigned recast_id) {
     if (recast_id >= 0x400) return 0;                          // array is exactly 1024 entries
     u32 g = data_root(); if (!g) return 0;
-    u32 base = 0; if (!safe_read(g + 0x234, &base) || !valid_ptr(base)) return 0;
+    u32 base = 0; if (!safe_read(g + lc_recast_spells(), &base) || !valid_ptr(base)) return 0;
     u32 v = 0; if (!safe_read(base + recast_id * 2, &v)) return 0;   // 32-bit read, keep the low ushort
     v &= 0xFFFF;                                               // little-endian : this entry, ignore the next
     if (v == 0 || v > 60u * 7200u) return 0;                   // ready, or garbage (>2h)

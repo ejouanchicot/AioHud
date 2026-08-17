@@ -10,6 +10,7 @@
 #include "model/layout.h"
 #include "model/game_mem.h"
 #include "model/ffximain_rva.h"   // //aio doctor : report every FFXiMain static + the client fingerprint
+#include "model/luacore_root.h"   // //aio doctor : the LuaCore data root -- a WINDOWER update moves it
 #include "model/sentinel.h"       // //aio doctor : the packet-vs-memory cross-checks
 #include "model/gamestate.h"
 #include "model/party_state.h"
@@ -416,7 +417,17 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     const int roster = party().count;
     windower::debug::log("  link     : inGame=%d selfId=%08X roster=%d zone=%u job=%d",
                          state_.inGame ? 1 : 0, party().self_id(), roster, state_.zone, party().self_main_job());
+    windower::debug::log("  luacore  : root rva %06X (%s) live=%d",
+                         lc_root_rva(), lc_root_how(), lc_root_live() ? 1 : 0);
     if (!state_.inGame || !party().self_id()) {
+        // Which of the two it is decides the remedy, so the check says which. A dead root means Windower
+        // moved LuaCore's data root under us (4.7.9.3 did exactly that) and NOTHING can be read ; a live
+        // root with no character just means you are at the login screen.
+        if (!lc_root_live())
+            DOC("AioHUD ne trouve plus la memoire du jeu : la racine LuaCore (rva %06X, %s) ne repond pas. "
+                "C'est ce qui arrive quand Windower se met a jour et deplace cette adresse -- mets AioHUD a "
+                "jour (onglet Update). Si tu es juste a l'ecran de login, c'est normal.",
+                lc_root_rva(), lc_root_how());
         DOC("Le plugin ne voit pas ton personnage (inGame=%d, selfId=%08X). Rien d'autre ne peut fonctionner. "
             "Si tu es bien en jeu : la DLL ne correspond pas a ta version de Windower -- redeploie, puis //aio doctor.",
             state_.inGame ? 1 : 0, party().self_id());

@@ -53,12 +53,16 @@ chases every dword as a char* to surface the ASCII name strings — in `aiohud.c
 **Job-Ability recast ("Next") — reversed 2026-06-27 from LuaCore's `get_ability_recasts` (`FUN_1006FF00`).**
 DEAD END first: `FFXiMain+0x63449C` is NOT the hovered action's recast — it's sticky (keeps the last
 nonzero value), so it wrongly showed Elemental Seal's timer on every JA. The REAL source is the client's
-32-slot recast table, hung off the SAME data root we already use, `g = *(LuaCore.dll + 0x1C8400)`:
+32-slot recast table, hung off the SAME data root we already use, `g` (whose RVA is now **derived**, not
+constant — see [luacore-data-root.md](../luacore-data-root.md)):
 ```
-*(g + 0x22C)  -> int32[32]   remaining recast in 1/60 s (frames).  seconds = timer / 60  (divisor 60.0
+*(g + timers) -> int32[32]   remaining recast in 1/60 s (frames).  seconds = timer / 60  (divisor 60.0
                              is a literal in LuaCore; Windower builds recasts[id] = timer/60).
-*(g + 0x230)  -> stride-8 entries, byte[0] = that slot's recast_id.
+*(g + ids)    -> stride-8 entries, byte[0] = that slot's recast_id.
 ```
+> **These offsets MOVED on 2026-08-16** (Windower 4.7.9.3): timers `0x22C`→`0x230`, ids `0x230`→`0x234`,
+> spells `0x234`→`0x238`. They are read through `lc_recast_ja_timers()` / `lc_recast_ja_ids()` /
+> `lc_recast_spells()`, which re-derive them from these very bindings each session.
 We invert Windower's loop: take the highlighted JA's `recast_id` (from `abilities_gen.h`), scan the 32
 slots for an ACTIVE one (timer>0) whose id matches → remaining seconds (`ability_recast_sec()` in
 `game_mem.cpp`); 0 = ready. The box shows `Next m:ss` (amber) for a JA on cooldown — matches the game's
@@ -76,9 +80,11 @@ job_abilities/job_traits/weapon_skills/mounts bitmaps. The real impl is the cclo
 the `"get_spell_recasts"` setfield: `FUN_1006FE80`.) Far simpler than abilities — no 32-slot scan, a
 flat array hung off the same root:
 ```
-base = *(g + 0x234)  -> ushort[1024], indexed DIRECTLY by recast_id, remaining recast in 1/60 s.
-                        seconds = base[recast_id] / 60.  (0x234 sits right after 0x22C/0x230.)
+base = *(g + spells) -> ushort[1024], indexed DIRECTLY by recast_id, remaining recast in 1/60 s.
+                        seconds = base[recast_id] / 60.  (it sits one dword after the ability ids.)
 ```
+Reading this one at the ability-ids offset does not fail — it returns the neighbouring table and reports a
+screenful of spells on the same timer. The `v > 60*7200` guard cannot catch that: `v` is a `ushort`.
 `spell_recast_sec(recast_id)` in `game_mem.cpp` reads `base[recast_id]` (low ushort of a 32-bit
 safe_read), 0/garbage → ready. `recast_id` from `spells_gen.h` (`SpellRow::recast_id`). The box shows
 `Next m:ss` (amber) when a spell is on cooldown, else its MP cost. Weapon skills have no recast

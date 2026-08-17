@@ -16,7 +16,8 @@ namespace aio {
 // can be 0 while zoning). All return 0 -> the caller no-ops. Keeps the offsets in one place. ---
 u32 ffximain_base();   // GetModuleHandleA("FFXiMain.dll"), cached
 u32 luacore_base();    // GetModuleHandleA("LuaCore.dll"),  cached
-u32 data_root();       // g  = *(LuaCore + 0x1C8400) -- anchor for player / party / recast chains
+u32 data_root();       // g  = *(LuaCore + lc_root_rva()) -- anchor for player / party / recast chains. The
+                       // RVA is DERIVED at runtime (model/luacore_root.h) : a Windower update moves it.
 u32 party_ptr();       // pp = *(g + 0x248) (= &member[0] + 4) ; base = party_ptr() - 4
 u32 entity_array();    // *(g + 0x24) -- the entity position-object array (index -> ent[idx])
 u32 player_struct();   // *(g + 0x3C) -- the local player struct (main job @+0x94, main lvl @+0x98, sub job @+0x9C, sub lvl @+0xA0)
@@ -233,11 +234,12 @@ bool read_target_entity(TargetEntity& main, TargetEntity& sub, bool& hasSub);   
 bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid);
 
 // remaining recast (seconds, 0 = ready) for a job-ability recast_id, read from the client's 32-slot
-// recast table (g+0x22C timers / g+0x230 ids) -- the menu's exact "Next". recast_id from abilities_gen.h.
+// recast table (lc_recast_ja_timers() / lc_recast_ja_ids()) -- the menu's exact "Next". The offsets are
+// derived, not constants : Windower 4.7.9.3 slid the whole block by +4. recast_id from abilities_gen.h.
 unsigned ability_recast_sec(unsigned recast_id);
 
 // remaining recast (seconds, 0 = ready) for a SPELL recast_id, read from the client's ushort[1024]
-// recast array (*(g+0x234), adjacent to the ability arrays) -- the menu's exact "Next" for Magic.
+// recast array (*(g + lc_recast_spells()), one dword past the ability ids) -- the menu's exact "Next".
 // recast_id from spells_gen.h (SpellRow::recast_id).
 unsigned spell_recast_sec(unsigned recast_id);
 

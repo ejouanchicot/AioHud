@@ -27,6 +27,9 @@ AioHUD sources live data two ways: the **local player** from memory (always pres
 
 ## Cross-cutting, so kept at this level
 
+- [**LuaCore's data root**](luacore-data-root.md) — the ONE address every game read hangs off, why it is no
+  longer a constant, and the 4.7.9.3 update that moved it (and the recast block with it). Start here after
+  any **Windower** update: this is the failure where the config panel still draws and the HUD is simply gone.
 - [**FFXiMain statics, and how they repair themselves**](ffximain-statics.md) — the six addresses that move
   at *every* client patch, why a game update kills a handful of features while everything else keeps working,
   and the proof each one has to pass before it is adopted at runtime. Start here after any FFXI update.
