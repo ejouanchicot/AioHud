@@ -149,8 +149,8 @@ static bool root_alive(u32 slot)
 
 static u32         g_rva     = 0;
 static const char* g_how     = "unresolved";
-static bool        g_done    = false;   // an answer we will not revisit (scan hit, or a seed proven live)
-static bool        g_scanned = false;   // .text has been walked once ; the image cannot change under us
+static bool        g_done    = false;   // rule10-ok: latched only on a PROVEN answer -- a code-scan hit (whose input is the mapped image, not transient state) or a seed that read back live. The transient case, LuaCore not mapped yet, returns before touching this.
+static bool        g_scanned = false;   // rule10-ok: .text has been walked once ; the image cannot change under us, so re-walking would give the same answer at 1.4 MB a read. Set only once module_ranges() succeeded -- unreadable headers leave it false and retry.
 static bool        g_warned  = false;   // the "nothing proven yet" line is worth saying ONCE, not per read
 
 // The scan is DETERMINISTIC -- same image, same answer -- so it runs exactly once per session and its
@@ -170,7 +170,7 @@ static void scan_stage(u32 base)
                              "falling back to the seeds. If the HUD is blank, this line is why.", win, second);
         return;
     }
-    g_rva = hit - base; g_how = "code scan"; g_done = true;
+    g_rva = hit - base; g_how = "code scan"; g_done = true;   // rule10-ok: the scan RECOGNISED the root in LuaCore's code -- a fact about the image, which does not change while it is mapped
     windower::debug::log("lc: data root = LuaCore+%06X (code scan : %d matching derefs, next best %d)%s",
                          g_rva, win, second, root_alive(base + g_rva) ? " [live]" : " [no world loaded yet]");
     for (int i = 0; i < SEED_N; ++i) if (SEED_RVA[i] == g_rva) return;
@@ -189,7 +189,7 @@ static void resolve(u32 base)
     // then we keep handing out the newest seed -- an unproven best guess, revisited on the next call.
     for (int i = 0; i < SEED_N; ++i) {
         if (root_alive(base + SEED_RVA[i])) {
-            g_rva = SEED_RVA[i]; g_how = "seed"; g_done = true;
+            g_rva = SEED_RVA[i]; g_how = "seed"; g_done = true;   // rule10-ok: adopted only because it just READ BACK as a live root ; an unproven seed leaves this false and is revisited on the next call
             windower::debug::log("lc: data root = LuaCore+%06X (seed, proven live)", g_rva);
             return;
         }
@@ -219,7 +219,7 @@ bool        lc_root_live() { const u32 slot = lc_root_addr(); return slot && roo
 static const u32 SEED_RECAST_SPELLS = 0x238;   // 4.7.9.3 ; it was 0x234 up to 4.7.9.0
 static u32         g_rcSpells = 0;
 static const char* g_rcHow    = "seed";
-static bool        g_rcDone   = false;
+static bool        g_rcDone   = false;   // rule10-ok: same contract as g_scanned -- set only once .text has actually been walked ; every "not ready yet" path (no root, unreadable headers) returns before it
 
 // get_spell_recasts' shape : load the root, deref at X, and loop to 0x400 (the 1024-entry array). The bound
 // is what makes it unmistakable -- no other binding walks that far off this root.
@@ -298,7 +298,7 @@ static void ensure_recast()
 
     u32 ids = 0;
     const u32 spells = scan_recast(tLo, tHi, root, ids);
-    g_rcDone = true;
+    g_rcDone = true;   // rule10-ok: the walk HAPPENED ; whether it recognised the shapes or fell back to the seed is reported, not retried, because a second identical walk gives an identical answer
 
     // Neither binding is trusted alone : the spell array must sit exactly one dword past the ids table,
     // which is the only layout either of them describes. Disagreement means we matched something else.
