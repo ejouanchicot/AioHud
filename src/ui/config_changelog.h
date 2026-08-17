@@ -275,6 +275,14 @@ static const ChangeLine CL_48[] = {
       "Nouveau : un onglet Debug dans la config (a cote de Mise a jour) liste les bugs connus et le travail prevu, tenu a jour." },
 };
 
+static const ChangeLine CL_79[] = {
+    { "*The HUD comes back after Windower's August 16 update.* Windower updates itself, and that one moved the place where the plugin reads everything about your character. Every box vanished at once -- while the config window still opened and simply said you were not logged in, which is exactly what it saw. Nothing was broken in the plugin : it was reading an address that no longer meant anything.",
+      "*Le HUD revient apres la mise a jour Windower du 16 aout.* Windower se met a jour tout seul, et celle-ci a deplace l'endroit ou le plugin lit tout ce qui concerne votre personnage. Toutes les boites ont disparu d'un coup -- pendant que la fenetre de config s'ouvrait encore et disait simplement que vous n'etiez pas connecte, ce qui est exactement ce qu'elle voyait. Rien n'etait casse dans le plugin : il lisait une adresse qui ne voulait plus rien dire." },
+    { "*And it now finds that address by itself, at every future Windower update.* Instead of remembering a number, the plugin asks Windower's own code where it keeps your data -- a question that has the same answer on every machine, and that can be asked from the login screen, before you even pick a character. `//aio doctor` says which address it is using and where it got it from.",
+      "*Et il retrouve desormais cette adresse tout seul, a chaque future mise a jour de Windower.* Au lieu de retenir un numero, le plugin demande au code de Windower lui-meme ou il range vos donnees -- une question dont la reponse est la meme sur toutes les machines, et qui peut etre posee des l'ecran de login, avant meme de choisir un personnage. `//aio doctor` indique quelle adresse est utilisee et d'ou elle vient." },
+    { "*The recast list no longer shows a screenful of spells stuck on the same timer.* The same update moved the recast tables as well, and this one did not go quiet -- it read the neighbouring table and displayed nonsense as if it were real. Those are found on their own now too, and each one is only trusted when a second, independent check agrees with it.",
+      "*La liste des recasts n'affiche plus une pleine page de sorts bloques sur le meme minuteur.* La meme mise a jour a aussi deplace les tables de recast, et celle-ci ne s'est pas tue : elle lisait la table voisine et affichait n'importe quoi comme si c'etait vrai. Elles sont retrouvees toutes seules egalement, et chacune n'est acceptee que si une seconde verification independante la confirme." },
+};
 static const ChangeLine CL_78[] = {
     { "*Odyssey counts your segments again.* Since the game update of August 12 the box drew its Sheol header with the total stuck at zero for a whole run : the message that announces a payout had been renumbered, and the plugin was still listening to the old number -- which the update had handed to an unrelated message that pays nothing. So it kept hearing something, and never heard a segment.",
       "*Odyssey compte de nouveau vos segments.* Depuis la mise a jour du jeu du 12 aout, la boite affichait son en-tete Sheol avec le total bloque a zero pendant toute une run : le message qui annonce un gain avait ete renumerote, et le plugin ecoutait toujours l'ancien numero -- que la mise a jour avait attribue a un message sans rapport, qui ne paie rien. Il entendait donc quelque chose, et n'entendait jamais un segment." },
@@ -533,6 +541,7 @@ static const ChangeLine CL_49[] = {
 // (index 0) starts expanded, the rest collapsed (relOpen_ in config_page.h defaults index 0 = true).
 struct Release { const char* version; const ChangeLine* lines; int n; };
 static const Release RELEASES[] = {
+    { "1.0.79", CL_79, (int)(sizeof(CL_79) / sizeof(CL_79[0])) },
     { "1.0.78", CL_78, (int)(sizeof(CL_78) / sizeof(CL_78[0])) },
     { "1.0.77", CL_77, (int)(sizeof(CL_77) / sizeof(CL_77[0])) },
     { "1.0.76", CL_76, (int)(sizeof(CL_76) / sizeof(CL_76[0])) },
