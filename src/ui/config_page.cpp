@@ -530,7 +530,11 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
               // nothing black left for the complement to find and the peak no longer has to hide.
               // The tint stays the METAL'S OWN HUE rather than white: gold's blue channel is a third of its red,
               // so nearly-white light raises blue the most in proportion and desaturates the letters to grey.
-              const float peakF = 96.0f;
+              // 168 : the profile is a FACTOR now, not an amount. 168/255 of the tint puts the peak at about
+              // 1.66x on red and 1.26x on blue -- a strong highlight that still cannot destroy the modelling,
+              // because multiplying keeps every ratio. This number was worth a fraction of its old range when
+              // it was an addition ; it can be spent freely now.
+              const float peakF = 168.0f;
               const u32   tintG = 0x00FFC864u;                    // the metal's own hue : R high, G mid, B low
               struct G { static u32 at(float u, float v, float c3, float rx2, float ry2, float tl, float pk) {
                   const float ax = (u - (c3 + tl * (v - 0.5f))) / rx2;
