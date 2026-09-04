@@ -569,6 +569,25 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     r.hid   = ui_config().buff_status_hidden(inner[i]);   // hidden ONE buff, not the whole group
                     r.lbl = buff_status_name(inner[i]);   // named above its icon, exactly like a group : the band has to be readable at BOTH levels
                 }
+                // THE GAME REUSES NAMES. "Flurry" is both 265 and 581, "STR Boost" is 80, 119 and 542, and
+                // 46 names in all are shared by two or three statuses. Two tiles reading the same word say
+                // nothing about which is which -- and one of them is usually the one you actually carry.
+                // Where a name repeats INSIDE this list, the id is appended ; where it does not, nothing
+                // changes, so the common case stays clean. Done before the fit loop so the wider label is
+                // measured, not clipped.
+                {
+                    static char lblBuf[UiConfig::BUFF_PIN_MAX][40];
+                    for (int a = 0; a < nRun; ++a) {
+                        if (!runs[a].lbl) continue;
+                        bool dup = false;
+                        for (int b = 0; b < nRun && !dup; ++b)
+                            if (b != a && runs[b].lbl && strcmp(runs[a].lbl, runs[b].lbl) == 0) dup = true;
+                        if (!dup) continue;
+                        _snprintf(lblBuf[a], sizeof(lblBuf[a]), "%s #%u", runs[a].lbl, (unsigned)runs[a].ic[0]);
+                        lblBuf[a][sizeof(lblBuf[a]) - 1] = 0;   // _snprintf does not terminate on truncation
+                        runs[a].lbl = lblBuf[a];
+                    }
+                }
             }
             if (bsSel_ >= nRun) bsSel_ = -1;
             if (bsDrag_ >= nRun) { bsDrag_ = -1; bsDrop_ = -1; }
