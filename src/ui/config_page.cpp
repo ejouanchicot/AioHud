@@ -422,19 +422,12 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         soft_blob(dev, ix + iw * (0.18f + 0.10f * sinf(f.t * 0.17f)), cy2, iw * 0.26f, mhH * 0.95f, (26u << 24) | acc);
         soft_blob(dev, ix + iw * (0.55f + 0.14f * sinf(f.t * 0.11f + 2.1f)), cy2, iw * 0.30f, mhH * 0.85f, (18u << 24) | (C_GOLD & 0x00FFFFFF));
         soft_blob(dev, ix + iw * (0.86f + 0.08f * sinf(f.t * 0.23f + 4.0f)), cy2, iw * 0.20f, mhH * 0.90f, (16u << 24) | acc);
-        // 3. slanted light streaks -- the one element with an EDGE to it. D3D8 fixed-function draws axis-aligned
-        //    quads, so a parallelogram is a column of tall thin ones stepped up by a slope ; the stencil above
-        //    crops the overhang. Faint, and fading out along their own length, so they suggest speed rather than
-        //    announcing it.
-        for (int st = 0; st < 3; ++st) {
-            const float x0 = ix + iw * (0.06f + 0.13f * (float)st), len = iw * 0.16f;
-            const int N = 22; const float seg = len / (float)N;
-            for (int q = 0; q < N; ++q) {
-                const float sx = x0 + (float)q * seg, k = (float)q / (float)N;
-                const u32 a2 = (u32)(20.0f * (1.0f - k) * (0.7f + 0.3f * pulse));
-                flat(dev, sx, mhTop - k * mhH * 0.55f, seg + 1.0f, mhH * 1.7f, (a2 << 24) | acc);
-            }
-        }
+        // (Slanted light streaks were tried here and removed. A parallelogram out of axis-aligned quads needs
+        //  the steps to be invisible, and on a 2400px page they were 18px wide with a 1.6px rise -- so it read as
+        //  vertical banding rather than as a diagonal, and `flat` has no feathered edge to hide the seams. The
+        //  alpha ramp made it worse: 20 integer levels across the length is 20 visible steps. The lesson is not
+        //  "use more segments" -- it is that hard-edged quads cannot fake a soft diagonal at this width, and the
+        //  drifting lights below already carry the movement.)
         cs(dev);
         clip_rect_end(dev);
     }
