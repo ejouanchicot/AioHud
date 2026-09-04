@@ -470,7 +470,13 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // for a column of content and too timid for a masthead -- a full-bleed plate wants its name near the
         // edge it bleeds to. The controls below still align to ix ; only the wordmark steps outside it.
         const float lkX = snap(12.0f) - lkW * LOGO_ART_X0;
-        const float lkY = ty - lkH * (LOGO_ART_Y0 + LOGO_ART_Y1) * 0.5f;
+        // Snap the ART, then place the quad around it -- not the other way round. The quad is taller than the
+        // artwork by whatever transparent margin the render had, and that height is fractional (46 / 0.754 =
+        // 61.017), so snapping the quad's top edge moved the art's centre 0.39px off the axis every other
+        // element sits exactly on. Every one of them checks out at 44; this was the only one that did not, and
+        // it is the element the eye measures the rest against.
+        const float artTop = snap(ty - artH * 0.5f);
+        const float lkY = artTop - lkH * LOGO_ART_Y0;
         // (No glow behind the logo. There was one -- 274x68px of accent at alpha 40, PULSING on a two-second
         //  sine -- and it was the "opaque rectangle over the word" through every one of the gleam's six
         //  rewrites, none of which could touch it. soft_blob is a bilinear tent: straight edges, hard corners,
@@ -479,7 +485,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         //  are wide enough that their edges fall outside it. Third tent found this way; the lesson is to sweep
         //  for the SHAPE whenever one of them turns out to be the culprit, not to fix the one that was noticed.)
         dTexQuadState(dev, logoTex_, false);
-        tquad(dev, snap(lkX), snap(lkY), lkW, lkH, 0.0f, 1.0f, 0.0f, 1.0f, fa(0xFFFFFFFFu), fa(0xFFFFFFFFu));
+        tquad(dev, snap(lkX), lkY, lkW, lkH, 0.0f, 1.0f, 0.0f, 1.0f, fa(0xFFFFFFFFu), fa(0xFFFFFFFFu));   // lkY is already placed from a snapped ART edge
         // GLEAM : a light travelling across the letterforms, masked BY the letterforms. A second textured pass
         // of the same art, additive, so the highlight rides the gold and the gaps between letters stay dark.
         // It has a SHAPE. The first version varied only in x -- a band spanning the logo's full height, with
