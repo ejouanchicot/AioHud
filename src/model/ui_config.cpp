@@ -1269,7 +1269,7 @@ void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew
 void reset_ui_config() {   // general Default : everything
     UiConfig& c = ui_config();
     c.partyShow = 1; c.allyShow = 1; c.tgtShow = 1; c.plrShow = 1;
-    c.skinTheme = 0; c.skinLum = 0.0f; c.skinHue = 0; c.skinBoxAlpha = 1.0f; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.buffRows = 2; c.uiStyle = 0; c.uiColor = 0; c.uiAccent = 0; c.hidePeekMode = 0; c.cursorScale = 1.0f; c.cfgDrawer = 1;
+    c.skinTheme = 0; c.skinLum = 0.0f; c.skinHue = 0; c.skinBoxAlpha = 1.0f; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.buffRows = 2; c.uiStyle = 0; c.uiColor = 0; c.uiAccent = 0; c.hidePeekMode = 0; c.cursorScale = 1.0f; c.cfgDrawer = 0;
     c.allyThemeCopy = 1; c.allyTheme = 0; c.allyLum = 0.0f; c.allyHue = 0; c.allyBoxAlpha = 1.0f;
     for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = (unsigned char)i;   // buff groups back to their declared order
     c.buffGroupOff = 0;                                                                  // ... and all of them visible
