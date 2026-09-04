@@ -215,12 +215,14 @@ private:
     int   trkSub_ = -1;          // SUB job for the checklist (-1 = follow current sub ; 0 = none ; 1..22 = a job)
     int   trkScope_ = 0;         // 0 = Self (buffs on you + your recasts) ; 1 = Allies (buffs you put on allies)
     bool  trkSecOpen_ = false;   // the "Track per job" collapsible section
-    // Party panel, the shared grammar : General / Frame / Content / (workshop) / Text. General reuses catOpen_[1] ;
-    // these two are the new sections. Open by DEFAULT -- what people need often belongs at the first level, and
-    // burying the frame and the content behind a click is what made the old panel feel like a form.
-    bool  pcFrameOpen_   = true;
-    bool  pcContentOpen_ = true;
-    bool  pcBuffsOpen_   = true;    // Buffs : the strip's size/count/rows AND its order editor, one object in one place
+    // Party panel, the shared grammar : General / Frame / Content / Buffs / Text. General reuses catOpen_[1].
+    // ALL CLOSED at launch. The research argues for opening what people need often, and the counter-argument
+    // won on use: a panel that opens showing every section expanded is a wall again, and the whole point of
+    // naming the sections well is that you can pick the one you want without opening any of them first.
+    // Closed is also the state that makes the panel's SHAPE visible -- six labels, one screen, no scrolling.
+    bool  pcFrameOpen_   = false;
+    bool  pcContentOpen_ = false;
+    bool  pcBuffsOpen_   = false;   // Buffs : the strip's size/count/rows AND its order editor, one object in one place
     int   pcDistPick_    = -1;      // which distance zone's colour picker is open (-1 = none). Three open pickers was ~690px for a setting touched once.
     // ---- the buff STRIP editor (party panel). The strip itself is the control : one row of icon runs, dragged
     // to reorder. Session-only view state -- what is arranged lives in UiConfig. ----
