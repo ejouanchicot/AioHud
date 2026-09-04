@@ -232,6 +232,23 @@ void test_buff_groups() {
     CHECK(buff_status_ghost(605));   // Gale Spikes -- same
     CHECK(!buff_status_ghost(214));  // Honor March
     CHECK(!buff_status_ghost(34));   // Blaze Spikes : a real spell grants it
+    CHECK(buff_group(615) == BG_JA);   // MNK's Boost is an ability, whatever its name shares with Boost-STR
+    {   // A ghost must not SHARE ITS NAME with a status the game really grants. Names are what the canon
+        // merge keys on, so ghosting one half of a shared name would take the real half's row down with it --
+        // exactly what would have happened had 80 "STR Boost" been judged on "nothing in res grants it",
+        // when 119 of the same name is cast by Boost-STR every day.
+        bool clash = false;
+        for (unsigned a = 0; a < (unsigned)BUFF_GROUP_MAX_ID; ++a) {
+            if (!buff_status_ghost(a)) continue;
+            const char* na = buff_status_name(a); if (!na) continue;
+            for (unsigned b = 0; b < (unsigned)BUFF_GROUP_MAX_ID; ++b) {
+                if (b == a || buff_status_ghost(b)) continue;
+                const char* nb = buff_status_name(b);
+                if (nb && strcmp(na, nb) == 0) { clash = true; printf("   ghost %u shares %s with %u\n", a, na, b); }
+            }
+        }
+        CHECK(!clash);
+    }
     {
         UiConfig& c = ui_config();
         unsigned short m[UiConfig::BUFF_PIN_MAX]; int tot = 0;

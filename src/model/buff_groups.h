@@ -40,7 +40,9 @@ enum BuffGroup {
     BG_DANCE,      // DNC sambas + jigs
     BG_ENHANCE,    // enspells, barspells, spikes, stat gains, storms, ninjutsu, BLU self-buffs
     BG_JA,         // job abilities, blood pacts, stratagems, everything ability-shaped
-    BG_PERM,       // food, signet/sanction/ionis, aftermath, craft imagery -- the all-day ones
+    BG_PERM,       // food, signet/sanction/ionis, aftermath, craft imagery -- set once, forgotten all day.
+                   // Called "Long-lasting", not "Permanent" : none of them IS permanent, and the label has to
+                   // say why they are parked at the far end of the strip, which is that they never change.
     BG_DEBUFF,     // what the game put on you and you did not want
     BG_OTHER,      // unclassified
     // ---- APPENDED, and that is not a style choice. buffOrder[] and buffPin[][] are saved BY INDEX, so an
@@ -56,12 +58,12 @@ enum BuffGroup {
 
 static const char* const BUFF_GROUP_EN[BG_COUNT] = {
     "Stealth", "Watch", "Protection", "Songs", "Rolls", "Geomancy", "Runes / Wards",
-    "Dances", "Enhancing", "Abilities", "Permanent", "Debuffs", "Other",
+    "Dances", "Enhancing", "Abilities", "Long-lasting", "Debuffs", "Other",
     "Enspells", "Bar-spells", "Spikes", "Stat boosts"
 };
 static const char* const BUFF_GROUP_FR[BG_COUNT] = {   // accents spelled as UTF-8 bytes (these sources carry no BOM), like tm_config.cpp does
     "Discr\xC3\xA9tion", "Surveillance", "Protections", "Chants", "Rolls", "G\xC3\xA9omancie", "Runes / Wards",
-    "Danses", "Am\xC3\xA9lioration", "Aptitudes", "Permanents", "Debuffs", "Autre",
+    "Danses", "Am\xC3\xA9lioration", "Aptitudes", "Longue duree", "Debuffs", "Autre",
     "Enspells", "Bar-sorts", "Spikes", "Gains de stat"
 };
 // SHORT labels, for the config strip : the name sits centred over its block, and a block is only as wide as the
@@ -69,12 +71,12 @@ static const char* const BUFF_GROUP_FR[BG_COUNT] = {   // accents spelled as UTF
 // widens a block to fit the SHORT name and uses the full one everywhere else (the selection line, this file).
 static const char* const BUFF_GROUP_SHORT_EN[BG_COUNT] = {
     "Stealth", "Watch", "Protect", "Songs", "Rolls", "Geo", "Runes",
-    "Dances", "Enhance", "Abils", "Perm", "Debuffs", "Other",
+    "Dances", "Enhance", "Abils", "Long", "Debuffs", "Other",
     "Enspell", "Bar", "Spikes", "Stats"
 };
 static const char* const BUFF_GROUP_SHORT_FR[BG_COUNT] = {
     "Discr", "Surv", "Prot", "Chants", "Rolls", "G\xC3\xA9o", "Runes",
-    "Danses", "Am\xC3\xA9lio", "Aptit", "Perm", "Debuffs", "Autre",
+    "Danses", "Am\xC3\xA9lio", "Aptit", "Long", "Debuffs", "Autre",
     "Enspell", "Bar", "Spikes", "Stats"
 };
 
@@ -188,7 +190,7 @@ static const BuffGroupRange BUFF_GROUP_RANGE[] = {
     {  80,  85, BG_STATS,   "STR..MND Boost" },
     {  89,  90, BG_STATS,   "Max MP / Accuracy Boost" },
     { 125, 125, BG_STATS,   "CHR Boost" },
-    { 615, 615, BG_STATS,   "Boost (MNK)" },
+    { 615, 615, BG_JA,      "Boost -- MNK's job ability, not a stat spell : it shares a word with the Boost-/Gain- line and nothing else" },
     { 277, 282, BG_ENSPELL, "Enspell II" },
     { 487, 488, BG_ENSPELL, "Endrain, Enaspir" },
     { 589, 596, BG_ENHANCE, "the storms" },
