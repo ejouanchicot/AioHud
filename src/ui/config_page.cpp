@@ -466,7 +466,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         const float artH = snap(46.0f);
         const float lkH = artH / (LOGO_ART_Y1 - LOGO_ART_Y0);
         const float lkW = lkH * (float)LOGO_TEX_W / (float)LOGO_TEX_H;
-        const float lkX = ix + snap(2.0f) - lkW * LOGO_ART_X0;
+        // The logo sits on its OWN margin, not the page's. Aligning it to ix put it 32px in, which is right
+        // for a column of content and too timid for a masthead -- a full-bleed plate wants its name near the
+        // edge it bleeds to. The controls below still align to ix ; only the wordmark steps outside it.
+        const float lkX = snap(12.0f) - lkW * LOGO_ART_X0;
         const float lkY = ty - lkH * (LOGO_ART_Y0 + LOGO_ART_Y1) * 0.5f;
         // (No glow behind the logo. There was one -- 274x68px of accent at alpha 40, PULSING on a two-second
         //  sine -- and it was the "opaque rectangle over the word" through every one of the gleam's six
