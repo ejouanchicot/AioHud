@@ -261,11 +261,10 @@ void row_band(u32 dev, float x, float y, float w, float h, bool alt, float hov) 
     (void)alt;                                                       // no zebra bands : the category card is a full solid surface
     const int a = (int)(0x14 * clampf(hov, 0.0f, 1.0f) + 0.5f);      // hover highlight (base is flat)
     if (a > 0) flat(dev, x, y, w, h, ((u32)a << 24) | 0x00FFFFFF);
-    // A whisper, not a rule. Sections sit on their own CARD now, so grouping is done by the surface -- a bright
-    // line under every single row on top of that is the belt-and-braces look that dates an interface. Inset
-    // further too, so it reads as breathing room rather than a table. Still skipped on the dense 21px checklist
-    // rows, where a divider under every spell was too busy even before the cards.
-    if (h >= snap(24.0f)) flat(dev, x + snap(28.0f), y + h - 1.0f, w - snap(56.0f), 1, 0x0BFFFFFF);
+    // NO rule under every row. Sections sit on their own card, so the grouping is already done by the surface ;
+    // a line under each row on top of that is the belt-and-braces look that dates an interface, and it was the
+    // reason a page of settings read as a spreadsheet. Fading it was not enough -- a faint wrong thing is still
+    // the wrong thing. Rows are separated by their own height and by the contrast between label and control.
 }
 
 // ---- rectangular stencil CLIP for the scrolling controls viewport (D3D8 has no scissor rect ; same
@@ -431,7 +430,7 @@ int row_selector(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
     const float rt = ease(uid, 1, rh ? 1.0f : 0.0f);
     const float anyT = lt > rt ? lt : rt;
 
-    rpanel(dev, cx, cy, ctlW, aH, r, 0x7016211F, 0x700C1513, lerpc(C_CTL_BR, C_ACCENT, anyT), snap(1.2f));   // one glass capsule, border warms to accent
+    rpanel(dev, cx, cy, ctlW, aH, r, 0x8C1B242B, 0x8C121920, lerpc(0x22FFFFFFu, C_ACCENT, anyT), snap(1.0f));   // lighter surface, fainter edge : the CONTROL should read, not its fence
     flat(dev, cx + r, cy + snap(1.0f), ctlW - 2.0f * r, 1, 0x14FFFFFF);                                      // top sheen hairline
 
     const float lcx = cx + aEnd * 0.5f, rcx = cx + ctlW - aEnd * 0.5f;
@@ -792,8 +791,11 @@ void cat_panel(u32 dev, float x, float y, float w, float h) {
     // depth that carries hierarchy is the one form of it worth having (blur for its own sake is the trend every
     // 2026 survey warns off).
     drop_shadow(dev, x, y, w, h, snap(5.0f), 64);
-    rpanel(dev, x, y, w, h, snap(9.0f), 0xF2141B22, 0xF20D1219, C_BORDER, snap(1.2f));   // solid graphite card
-    flat(dev, x + snap(9.0f), y + snap(1.0f), w - snap(18.0f), 1, 0x12FFFFFF);           // faint top hairline
+    // A tier reads as a tier when it is a different TONE, not when it is fenced off. The card used to be darker
+    // than the page and held together by a 1px white border -- an outline doing a job that a shade does better.
+    // It is a step LIGHTER than the content surface now, and the border is barely there.
+    rpanel(dev, x, y, w, h, snap(9.0f), 0xF41E262E, 0xF4151C23, 0x1AFFFFFFu, snap(1.0f));
+    flat(dev, x + snap(9.0f), y + snap(1.0f), w - snap(18.0f), 1, 0x16FFFFFF);           // the light catches the top edge
     // A slim accent rail down the open section : it says WHERE you are without spending another label on it.
     // It starts BELOW the header. The card is drawn at the same y as the section's cat_header and therefore
     // spans it -- a rail from the card's top ran straight through the title bar and out of its rounded left
@@ -808,15 +810,34 @@ bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, fl
     const float h = snap(32.0f);
     const bool hov = inrect(mo, x, y, w, h);
     const float t = ease(uid, hov ? 1.0f : 0.0f);
-    rpanel(dev, x, y, w, h, snap(7.0f), lerpc(0x6614302C, 0x99203A36, t), lerpc(0x660E1B19, 0x99152A28, t), lerpc(C_BORDER, C_ACCENT, t), snap(1.2f));   // clean teal surface on hover
-    if (t > 0.01f) { cs_add(dev); rrect_glow(dev, x, y, w, h, snap(7.0f), (C_ACCENT & 0x00FFFFFF) | ((u32)(24.0f * t) << 24), snap(5.0f)); }   // thin accent ring
-    cs(dev);                                                                              // back to the colour-quad state before the caret triangle
-    const float gx = x + snap(15.0f), gy = y + h * 0.5f, s = snap(4.0f);
-    if (open) { const float d[6] = { gx - s, gy - s * 0.55f,  gx + s, gy - s * 0.55f,  gx, gy + s * 0.85f };   // down triangle (AA)
-                fill_poly_aa(dev, d, 3, fa(C_ACCENTHI)); }
-    else      { const float d[6] = { gx - s * 0.55f, gy - s,  gx - s * 0.55f, gy + s,  gx + s * 0.85f, gy };   // right triangle (AA)
-                fill_poly_aa(dev, d, 3, fa(C_ACCENTHI)); }
-    fo->begin(dev); fo->draw_lc(dev, x + snap(30.0f), gy, label, ts_section(), fa(C_TEXT), fa(C_STROKE), 1.3f);
+    const float o = open ? 1.0f : 0.0f;
+
+    // A HEADING IS TYPE, NOT A BUTTON. This was a filled teal pill that shouted as loudly as the controls it
+    // introduces, and half a dozen of them down a page read as half a dozen buttons -- the single thing that made
+    // the panel look assembled rather than composed. Now it is the oldest and quietest way to say "section": a
+    // caret, a small uppercase label, and a hairline running out to the right of it. Saturation goes back to being
+    // a signal -- the accent is spent on what is ON and what is selected, not on every heading.
+    // The click target is still the whole strip, and a faint wash appears under the pointer so it stays obviously
+    // live. Measure BEFORE drawing: the rule starts after the text, and quads and text are kept in separate passes.
+    const bool up0 = fo->upper();
+    fo->set_upper(true);
+    const float tw = fo->measure(label, ts_section());
+    const float gy = y + h * 0.5f, tx = x + snap(27.0f), s = snap(4.0f), gx = x + snap(12.0f);
+
+    if (t > 0.01f) rrect_fill(dev, x, y, w, h, snap(7.0f),                                   // hover : a wash, not a surface
+                              ((u32)(0x14 * t) << 24) | 0x00FFFFFFu, ((u32)(0x09 * t) << 24) | 0x00FFFFFFu);
+    cs(dev);
+    const u32 caret = lerpc(C_MUTE, C_ACCENTHI, o > t ? o : t);
+    if (open) { const float d[6] = { gx - s, gy - s * 0.55f,  gx + s, gy - s * 0.55f,  gx, gy + s * 0.85f };   // down (AA)
+                fill_poly_aa(dev, d, 3, fa(caret)); }
+    else      { const float d[6] = { gx - s * 0.55f, gy - s,  gx - s * 0.55f, gy + s,  gx + s * 0.85f, gy };   // right (AA)
+                fill_poly_aa(dev, d, 3, fa(caret)); }
+    { const float rx = tx + tw + snap(14.0f), rw = (x + w) - rx - snap(8.0f);                // the rule, out to the edge
+      if (rw > snap(12.0f)) flat(dev, rx, snap(gy), rw, 1, ((u32)(0x14 + (u32)(0x14 * t)) << 24) | 0x00FFFFFFu); }
+
+    fo->begin(dev);
+    fo->draw_lc(dev, tx, gy, label, ts_section(), fa(lerpc(C_DIM, C_TEXT, o > t ? o : t)), fa(C_STROKE), 1.2f);
+    fo->set_upper(up0);                                                                      // put the font back as we found it
     return hov && click;
 }
 

@@ -17,6 +17,7 @@ public:
     bool  ready() const { return nslot_ > 0 && slot_[0].tex != 0; }
     void  set_face(const char* face, int weight, bool italic = false);   // change the baked GDI face/weight/italic (drops the cached slots)
     void  set_upper(bool u) { upper_ = u; }   // force UPPERCASE at draw/measure time (used for the config Interface element)
+    bool  upper() const { return upper_; }    // ... and read it back, so a caller can set it for ONE string and restore
 
     void  begin(u32 dev);                   // set textured-quad render state (the texture is bound per draw, by size)
     // draw `s` with its CELL top-left at (x,y); `size` = em px; `color` = ARGB. Returns advance width.
