@@ -11,6 +11,7 @@ the tool needed — and shipping it would roughly double the payload for no gain
 | `*.raw` (flat) | **runtime** | Raw BGRA, loaded directly. No decoder in the plugin — that is the point |
 | `gearicons/` | **runtime** | 1 323 pre-extracted 32×32 item icons |
 | `window/` | **runtime** | The FFXI window-skin pieces |
+| `logo_src/` | source | The AioHUD emblem render -> `aiohud_logo.raw` (`scripts/gen_logo.py`). The baked file is the CRYSTAL AND RING only : the wordmark is drawn live by the config header, so it stays crisp at any size and follows the theme accent |
 | `job_icons_src/` | source | Job PNGs → `job_icons.raw` (`scripts/`, Python + PIL) |
 | `window_src/` | source | Window DDS → `window/` (`scripts/gen_window_skin.sh`) |
 | `marker_src/` · `weapon_icons_src/` · `icon_gil_src/` · `icon_th_src/` | source | Same pattern, one atlas each |

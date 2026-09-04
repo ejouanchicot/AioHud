@@ -6,6 +6,7 @@
 // toggle crossfades, knob grow, etc. The page also fades + scales in, and the content rows stagger.
 #include "ui/config_page.h"
 #include "ui/config_controls.h"   // shared config toolkit (palette, ease, primitives, controls)
+#include "model/paths.h"          // plugin_path : the emblem is loaded from assets\ beside the DLL
 #include "gfx/texture.h"          // release_texture / make_texture_argb_mip : called DIRECTLY here -- it only compiled through ui/tex_retry.h, pulled in by party.h for an unrelated reason
 #include "ui/config_rows.h"       // ROW_BAND / ROW_NEXT row-layout macros (shared with the *_config.cpp panels)
 #include "gfx/font.h"
@@ -32,6 +33,7 @@ namespace aio {
 // game never sees them. No per-frame Win32 polling here.
 
 static const char* TABS[]     = { "Configuration", "Profile", "Edit Layout", "Help", "Update", "Debug" };
+static const char* LOGO_PATH() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\aiohud_logo.raw"); return b; }
 static const int   NTABS      = 6;
 static const char* tab_label(int i) {
     static const char* en[] = { "Configuration", "Profile", "Edit Layout", "Help", "Update", "Debug" };
@@ -436,11 +438,23 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         cs(dev);
         clip_rect_end(dev);
     }
+    // 4. the EMBLEM. Baked art, and only the crystal-and-ring half of it : the wordmark stays live text, so it
+    //    keeps its edges at any size and follows the theme accent, which a bitmap of it could do neither.
+    //    Bounded retry, never a one-shot latch -- the usual miss is a device that is not ready yet (rule 10).
+    const float emS = snap(56.0f), emX = ix + snap(2.0f), emY = mhTop + (mhH - emS) * 0.5f;
+    ensure_raw_tex(dev, logoTex_, logoRetry_, LOGO_PATH(), 256, 256);
+    if (logoTex_) {
+        cs_add(dev); soft_blob(dev, emX + emS * 0.5f, emY + emS * 0.5f, emS * 0.62f, emS * 0.52f,
+                               ((u32)(38.0f * (0.6f + 0.4f * pulse)) << 24) | acc); cs(dev);   // it sits IN the light, not on it
+        dTexQuadState(dev, logoTex_, false);
+        tquad(dev, snap(emX), snap(emY), emS, emS, 0.0f, 1.0f, 0.0f, 1.0f, fa(0xFFFFFFFFu), fa(0xFFFFFFFFu));
+        dSetTex(dev, 0, 0); cs(dev);   // never leave a bound texture for the next control (rule 8)
+    }
     const float titleSz = snap(38.0f);
     fo->begin(dev);
     const float tw = fo->measure("AIOHUD", titleSz);
     const float gemR = snap(6.0f), gemGap = snap(16.0f);
-    const float wx = ix + gemR * 2.0f + gemGap + snap(6.0f);                   // room for the left lozenge ornament
+    const float wx = (logoTex_ ? (emX + emS + snap(14.0f)) : (ix + gemR * 2.0f + gemGap + snap(6.0f)));   // after the emblem, or where the lozenge used to be
     const float ty = iy + snap(23.0f);
     const float bandTop = ty - titleSz * 0.62f, bandBot = ty + titleSz * 0.54f;
     // 4. the name again, three times the size, behind itself and bled off both edges of the plate. An editorial

@@ -32,7 +32,7 @@ public:
     // textures this class OWNS. It is only refreshed inside Hud::render's `worldReady` block while config_.draw
     // runs OUTSIDE it, so after a device recreate the stale handle reached SetTexture -- the exact failure the
     // Help samples in hud_timers.cpp document and guard against.
-    void on_device_lost() { logoTex_ = 0; logoTried_ = false; helpCursorTex_ = 0;
+    void on_device_lost() { logoTex_ = 0; logoRetry_ = TexRetry{}; helpCursorTex_ = 0;
                             tgtBuffTex_ = 0; tgtThTex_ = 0; tgtThRetry_ = TexRetry{};
                             mmMkPlayer_ = 0; mmMkMob_ = 0; mmElem_ = 0; mmMoonTex_ = 0; mmMoonKey_ = -1; mmMapTex_ = 0; mmMapFileId_ = 0;
                             mmMkPlayerRetry_ = TexRetry{}; mmMkMobRetry_ = TexRetry{}; mmElemRetry_ = TexRetry{}; }   // FORGET our GPU handles (don't Release -- device may be dead) + RE-ARM every retry budget : a device recreate is a zone-in, which is exactly when the "not ready yet" miss this retry exists for happens
@@ -309,8 +309,8 @@ private:
     float zoneDrawY_     = 0.0f;
     bool  zoneDrawing_   = false;
     u32   helpCursorTex_ = 0;       // party selection-hand texture, handed in by the HUD for the Help live cursor
-    u32   logoTex_ = 0;             // AIOHUD logo mark (assets/aiohud_logo.raw), lazily loaded ; 0 = not loaded
-    bool  logoTried_ = false;       // load attempted (don't retry every frame on failure)
+    u32   logoTex_ = 0;             // AIOHUD emblem (assets/aiohud_logo.raw, 256x256 BGRA), lazily loaded ; 0 = not loaded
+    TexRetry logoRetry_;            // BOUNDED retry -- the usual miss is a device not ready right after a zone-in (rule 10)
     u32   tgtBuffTex_ = 0;          // Help tab : the Target debuff atlas + TH coffer, for the live samples (own copy, lazily loaded)
     u32   tgtThTex_ = 0;
     TexRetry tgtThRetry_;           // TH coffer icon : BOUNDED retry (replaced a one-shot `tried` latch -- rule 10)
