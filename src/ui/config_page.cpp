@@ -409,7 +409,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // is under 0x30 alpha. That is the whole trick to "rich, not loud" : depth comes from many faint layers that
     // agree, never from one loud one. And it is all live geometry -- D3D8 has no shaders, but it has additive
     // blending, gradients and a stencil scissor, which is enough to light a band from the inside.
-    const float mhTop = iy - snap(8.0f), mhH = snap(92.0f), mhBot = mhTop + mhH;
+    const float mhTop = iy - snap(8.0f), mhH = snap(74.0f), mhBot = mhTop + mhH;
     const u32 acc = C_ACCENT & 0x00FFFFFF;
     {
         // 1. the plate itself : a raised slab, warmed a few percent toward the accent so it separates from the
@@ -442,16 +442,18 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     const float ty = mhTop + mhH * 0.5f;
     float rgx;                                                   // where the version chip starts
     if (logoTex_) {
-        // The canvas is a fixed power of two, and the art is centred in it at whatever proportion the render
-        // happened to have. So the quad is positioned from the GENERATED metrics rather than from its own edges:
-        // shifted left by the art's leading margin, the artwork itself starts exactly where the header wants it,
-        // and the version chip lands against the art's real right edge. A render of another shape changes the
-        // header's layout without anyone touching the header.
-        const float lkH = snap(78.0f);
+        // The canvas is a fixed power of two and the ART is centred in it at whatever proportion the render
+        // happened to have, so the quad is sized and placed from the GENERATED metrics rather than from its own
+        // edges. artH is what the header actually cares about -- how tall the drawing should READ -- and the quad
+        // is scaled up from it by the fraction of the canvas the art occupies. The result is that swapping in a
+        // render of a completely different shape re-lays the header correctly without anyone editing this file.
+        const float artH = snap(46.0f);
+        const float lkH = artH / (LOGO_ART_Y1 - LOGO_ART_Y0);
         const float lkW = lkH * (float)LOGO_TEX_W / (float)LOGO_TEX_H;
-        const float lkX = ix + snap(2.0f) - lkW * LOGO_ART_X0, lkY = ty - lkH * 0.5f;
+        const float lkX = ix + snap(2.0f) - lkW * LOGO_ART_X0;
+        const float lkY = ty - lkH * (LOGO_ART_Y0 + LOGO_ART_Y1) * 0.5f;
         cs_add(dev); soft_blob(dev, lkX + lkW * (LOGO_ART_X0 + LOGO_ART_X1) * 0.5f, ty,
-                               lkW * (LOGO_ART_X1 - LOGO_ART_X0) * 0.56f, lkH * 0.44f,
+                               lkW * (LOGO_ART_X1 - LOGO_ART_X0) * 0.56f, artH * 0.75f,
                                ((u32)(40.0f * (0.6f + 0.4f * pulse)) << 24) | acc); cs(dev);   // it sits IN the light, not on it
         dTexQuadState(dev, logoTex_, false);
         tquad(dev, snap(lkX), snap(lkY), lkW, lkH, 0.0f, 1.0f, 0.0f, 1.0f, fa(0xFFFFFFFFu), fa(0xFFFFFFFFu));

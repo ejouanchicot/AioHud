@@ -5,5 +5,6 @@
 #pragma once
 namespace aio {
 static const int   LOGO_TEX_W = 1024, LOGO_TEX_H = 256;
-static const float LOGO_ART_X0 = 0.05957f, LOGO_ART_X1 = 0.94043f;   // fractions of the texture width
+static const float LOGO_ART_X0 = 0.00000f, LOGO_ART_X1 = 1.00000f;   // fractions of the texture width
+static const float LOGO_ART_Y0 = 0.12109f, LOGO_ART_Y1 = 0.87500f;   // ... and of its height
 } // namespace aio
