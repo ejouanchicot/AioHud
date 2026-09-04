@@ -261,7 +261,11 @@ void row_band(u32 dev, float x, float y, float w, float h, bool alt, float hov) 
     (void)alt;                                                       // no zebra bands : the category card is a full solid surface
     const int a = (int)(0x14 * clampf(hov, 0.0f, 1.0f) + 0.5f);      // hover highlight (base is flat)
     if (a > 0) flat(dev, x, y, w, h, ((u32)a << 24) | 0x00FFFFFF);
-    if (h >= snap(24.0f)) flat(dev, x + snap(8.0f), y + h - 1.0f, w - snap(16.0f), 1, 0x16FFFFFF);   // interligne between SETTINGS rows only ; skip the dense 21px spell-checklist rows (a divider under every spell was too busy)
+    // A whisper, not a rule. Sections sit on their own CARD now, so grouping is done by the surface -- a bright
+    // line under every single row on top of that is the belt-and-braces look that dates an interface. Inset
+    // further too, so it reads as breathing room rather than a table. Still skipped on the dense 21px checklist
+    // rows, where a divider under every spell was too busy even before the cards.
+    if (h >= snap(24.0f)) flat(dev, x + snap(28.0f), y + h - 1.0f, w - snap(56.0f), 1, 0x0BFFFFFF);
 }
 
 // ---- rectangular stencil CLIP for the scrolling controls viewport (D3D8 has no scissor rect ; same
@@ -410,7 +414,7 @@ int row_selector(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                         float x, float y, float w, const char* label, const char* value) {
     const float rowH = snap(40.0f);
     fo->begin(dev);
-    fo->draw_lc(dev, x + snap(4.0f), y + rowH * 0.5f, label, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+    fo->draw_lc(dev, x + snap(4.0f), y + rowH * 0.5f, label, ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
 
     const float aH = snap(30.0f), aEnd = snap(46.0f), valW = snap(168.0f);
     const float ctlW = aEnd + valW + aEnd;
@@ -485,7 +489,7 @@ bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
                        float x, float y, float w, const char* label, const char* valueText, float* v01) {
     const float rowH = snap(40.0f);
     fo->begin(dev);
-    fo->draw_lc(dev, x + snap(4.0f), y + rowH * 0.5f, label, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+    fo->draw_lc(dev, x + snap(4.0f), y + rowH * 0.5f, label, ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
 
     const float valW = snap(56.0f), gap = snap(12.0f), trkW = snap(176.0f);
     const float trkX = x + w - valW - gap - trkW;
@@ -516,7 +520,7 @@ bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
     disc(dev, kx, cy + snap(1.0f), kr + snap(1.0f), fa(0x55000000));           // subtle drop shadow under the knob
     disc(dev, kx, cy, kr, fa(0xFFF6FAFA));                                     // clean white knob
     fo->begin(dev);
-    fo->draw_c(dev, trkX + trkW + gap + valW * 0.5f, cy, valueText, snap(14.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+    fo->draw_c(dev, trkX + trkW + gap + valW * 0.5f, cy, valueText, ts_value(), fa(C_TEXT), fa(C_STROKE), 1.0f);
     return changed;
 }
 
@@ -753,7 +757,7 @@ bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
     const u32 onStk = onBright ? 0x66FFFFFFu : 0xFF000000u;          // contrasting outline in each case
     const u32 txt = lerpc(C_TEXT,   onTxt, st);
     const u32 stk = lerpc(C_STROKE, onStk, st);
-    fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, y + h * 0.5f, label, snap(12.0f), fa(txt), fa(stk), 1.0f);
+    fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, y + h * 0.5f, label, ts_chip(), fa(txt), fa(stk), 1.0f);
     return hov && click;
 }
 
@@ -784,8 +788,15 @@ bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
 // transparent, so THIS is what gives each menu a full, solid surface -- not the striped row bands.
 void cat_panel(u32 dev, float x, float y, float w, float h) {
     if (h < snap(4.0f)) return;
+    // The card FLOATS : a shadow is what separates the tier you are working in from the page behind it, and
+    // depth that carries hierarchy is the one form of it worth having (blur for its own sake is the trend every
+    // 2026 survey warns off).
+    drop_shadow(dev, x, y, w, h, snap(5.0f), 64);
     rpanel(dev, x, y, w, h, snap(9.0f), 0xF2141B22, 0xF20D1219, C_BORDER, snap(1.2f));   // solid graphite card
     flat(dev, x + snap(9.0f), y + snap(1.0f), w - snap(18.0f), 1, 0x12FFFFFF);           // faint top hairline
+    // A slim accent rail down the open section : it says WHERE you are without spending another label on it.
+    rrect_fill(dev, x + snap(2.0f), y + snap(9.0f), snap(3.0f), h - snap(18.0f), snap(1.5f),
+               (C_ACCENTHI & 0x00FFFFFF) | 0x70000000u, (C_ACCENT & 0x00FFFFFF) | 0x30000000u);
 }
 bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, float x, float y, float w, const char* label, bool open) {
     const float h = snap(32.0f);
@@ -799,7 +810,7 @@ bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, fl
                 fill_poly_aa(dev, d, 3, fa(C_ACCENTHI)); }
     else      { const float d[6] = { gx - s * 0.55f, gy - s,  gx - s * 0.55f, gy + s,  gx + s * 0.85f, gy };   // right triangle (AA)
                 fill_poly_aa(dev, d, 3, fa(C_ACCENTHI)); }
-    fo->begin(dev); fo->draw_lc(dev, x + snap(30.0f), gy, label, snap(13.0f), fa(C_TEXT), fa(C_STROKE), 1.3f);
+    fo->begin(dev); fo->draw_lc(dev, x + snap(30.0f), gy, label, ts_section(), fa(C_TEXT), fa(C_STROKE), 1.3f);
     return hov && click;
 }
 

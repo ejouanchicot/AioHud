@@ -56,6 +56,16 @@ inline bool  inrect(const MouseState* m, float x, float y, float w, float h) {
     return m && m->x >= x && m->x < x + w && m->y >= y && m->y < y + h;
 }
 
+// ---- the menu's TYPE SCALE. Six sizes, named, so a new control cannot invent a seventh by accident.
+// The sizes were already nearly consistent -- what was missing was somewhere to look them up, which is how a
+// 13.5 and a 12.5 appear next to a 13 and a 12 and nobody notices for a year. Use these, never a literal.
+inline float ts_section() { return snap(13.5f); }   // a section header
+inline float ts_label()   { return snap(15.0f); }   // a control's label -- the workhorse
+inline float ts_value()   { return snap(14.0f); }   // the number or word a control reads out
+inline float ts_chip()    { return snap(12.0f); }   // inside a chip or a small button
+inline float ts_note()    { return snap(12.5f); }   // an explanatory line under a row
+inline float ts_micro()   { return snap(10.5f); }   // a tile's name, a caption
+
 // ---- language + theme helpers ----
 const char* tr(const char* en, const char* fr);
 u32  shade(u32 c, float f, u32 alpha = 0xFF);   // brighten (f>0 -> white) / darken (f<0 -> black), keep alpha

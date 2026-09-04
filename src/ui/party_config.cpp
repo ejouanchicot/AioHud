@@ -163,7 +163,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Gauge Style", "Style de jauge"), sb[s])) {
                 ui_config().gaugeStyle[0] = wrap(s + d, 8); save_ui_config(); } }
           { const float rowH = snap(38.0f); fo->begin(dev);   // Animation : two chips, HP and TP
-            fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Animation", "Animation"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Animation", "Animation"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
             const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yB + (rowH - bbh) * 0.5f;
             const float bx0 = xB + halfW - (2 * bbw + bgap);
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, ui_config().animHP ? tr("HP on", "HP oui") : tr("HP off", "HP non"), ui_config().animHP)) { ui_config().animHP = !ui_config().animHP; save_ui_config(); }
@@ -222,7 +222,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
                 ui_config().cursorScale = v < lo ? lo : (v > hi ? hi : v); } }
           { const float rowH = snap(38.0f); fo->begin(dev);
-            fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Row extras", "Sur la ligne"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Row extras", "Sur la ligne"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
             const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yB + (rowH - bbh) * 0.5f;
             const float bx0 = xB + halfW - (2 * bbw + bgap);
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Casts", "Sorts"), ui_config().cast[0] != 0)) { ui_config().cast[0] = !ui_config().cast[0]; save_ui_config(); }
@@ -238,7 +238,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             const char* dsh[3] = { tr("Close", "Proche"), tr("Normal", "Normal"), tr("Far", "Loin") };
             { ROW_BAND(48.0f)
                 const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Distance colours", "Couleurs de distance"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Distance colours", "Couleurs de distance"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
                 const float sw2 = snap(74.0f), sh2 = snap(28.0f), sg = snap(8.0f);
                 const float sx0 = coX + ctrlW - (3 * sw2 + 2 * sg), sy2 = ty + (rowH - sh2) * 0.5f;
                 for (int di = 0; di < 3; ++di) {   // PASS 1 : the swatches (quads) + the clicks
@@ -336,7 +336,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float xB = twoCol ? col2X : coX;
           sepv(ry, bh2, hasBadge);   // an empty second half has no split to state
           { const float rowH = snap(38.0f); fo->begin(dev);   // what else an alliance row may show
-            fo->draw_lc(dev, coX + snap(4.0f), yA + rowH * 0.5f, tr("Row extras", "Sur la ligne"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            fo->draw_lc(dev, coX + snap(4.0f), yA + rowH * 0.5f, tr("Row extras", "Sur la ligne"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
             const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yA + (rowH - bbh) * 0.5f;
             const float bx0 = coX + halfW - (2 * bbw + bgap);
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Casts", "Sorts"), ui_config().cast[1] != 0)) { ui_config().cast[1] = !ui_config().cast[1]; save_ui_config(); }
@@ -361,7 +361,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     if (catOpen_[0]) {
         { ROW_BAND(56.0f)   // which box's text : Party / Alliance
             const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Box", "Boîte"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Box", "Boîte"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
             const char* tlbl[2] = { tr("Party", "Groupe"), tr("Alliance", "Alliance") };
             const float bbw = snap(140.0f), bgap = snap(8.0f), bbh = snap(34.0f);
             const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
@@ -396,7 +396,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             ROW_NEXT(46.0f)
             { ROW_BAND(52.0f)   // Bold / Italic / CAPS
                 const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Style", "Style"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Style", "Style"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
                 const float bbw = snap(80.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, bx0 = coX + ctrlW - (3 * bbw + 2 * bgap);
                 if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Bold", "Gras"), ts.bold)) { ts.bold = !ts.bold; save_ui_config(); }
                 if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Italic", "Ital."), ts.italic)) { ts.italic = !ts.italic; save_ui_config(); }
@@ -405,7 +405,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             ROW_NEXT(52.0f)
             { ROW_BAND(52.0f)   // Colour : Default / Custom + a live swatch
                 const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Colour", "Couleur"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
                 const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, tgw = snap(96.0f), onx = coX + ctrlW - tgw;
                 if (toggle_chip(dev, fo, mo, click, CTRL_ID, onx, bty, tgw, bbh, ts.colorOn ? tr("Custom", "Perso") : tr("Default", "Défaut"), ts.colorOn)) {
                     ts.colorOn = !ts.colorOn; if (ts.colorOn && (ts.color >> 24) == 0) ts.color |= 0xFF000000u; save_ui_config(); }
@@ -442,9 +442,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             }
         }
     }   // end Text
-    ry += snap(10.0f);
-
-
+    pcH_[3] = catOpen_[0] ? (ry - pcTop3) : 0.0f;   // measured -> next frame's card
     // ======================================================= BUFFS =======================================================
     // Everything about the buff strip in ONE place -- how big, how many, over how many lines, and in what order.
     // Splitting them was a failure of the panel's own rule: Content groups by the OBJECT a setting acts on, and the
@@ -452,8 +450,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // "how do my buffs show up" meant visiting two places.
     // It is also why this is a top-level section rather than a sub-section: the band is an EDITOR, and nesting it
     // one level deeper is exactly the third disclosure level the research says to avoid.
-    pcH_[3] = catOpen_[0] ? (ry - pcTop3) : 0.0f;   // measured -> next frame's card
-
     const float pcTop4 = ry;   // the card is drawn from LAST frame's height, behind this section
     if (pcBuffsOpen_) cat_panel(dev, hdrX, ry, hdrW, pcH_[4]);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_)) pcBuffsOpen_ = !pcBuffsOpen_;
@@ -657,7 +653,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     lstrcpynA(lb, tr(BUFF_GROUP_EN[g], BUFF_GROUP_FR[g]), sizeof(lb));   // the Open button says how to go deeper ; the label just names what is selected
                 } else { const char* n2 = buff_status_name(runs[bsSel_].ic[0]); lstrcpynA(lb, n2 ? n2 : "?", sizeof(lb)); }
                 fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ty + bh * 0.5f, lb, snap(12.5f), fa(bsSel_ >= 0 ? C_TEXT : C_MUTE), fa(C_STROKE), 1.0f);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + bh * 0.5f, lb, ts_note(), fa(bsSel_ >= 0 ? C_TEXT : C_MUTE), fa(C_STROKE), 1.0f);
             }
             ROW_NEXT(34.0f)
 
@@ -840,7 +836,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 else lstrcpynA(lb2, tr("The rightmost block sits against the member row",
                                        "Le bloc le plus a droite est contre la ligne du membre"), sizeof(lb2));
                 fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(12.0f), lb2, snap(11.5f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+                fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(12.0f), lb2, ts_micro(), fa(C_MUTE), fa(C_STROKE), 1.0f);
             }
             ROW_NEXT(24.0f)
 
