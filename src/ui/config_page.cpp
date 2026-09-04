@@ -408,7 +408,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // is under 0x30 alpha. That is the whole trick to "rich, not loud" : depth comes from many faint layers that
     // agree, never from one loud one. And it is all live geometry -- D3D8 has no shaders, but it has additive
     // blending, gradients and a stencil scissor, which is enough to light a band from the inside.
-    const float mhTop = iy - snap(8.0f), mhH = snap(64.0f), mhBot = mhTop + mhH;
+    const float mhTop = iy - snap(8.0f), mhH = snap(92.0f), mhBot = mhTop + mhH;
     const u32 acc = C_ACCENT & 0x00FFFFFF;
     {
         // 1. the plate itself : a raised slab, warmed a few percent toward the accent so it separates from the
@@ -434,55 +434,48 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // 4. the EMBLEM. Baked art, and only the crystal-and-ring half of it : the wordmark stays live text, so it
     //    keeps its edges at any size and follows the theme accent, which a bitmap of it could do neither.
     //    Bounded retry, never a one-shot latch -- the usual miss is a device that is not ready yet (rule 10).
-    const float emS = snap(56.0f), emX = ix + snap(2.0f), emY = mhTop + (mhH - emS) * 0.5f;
-    ensure_raw_tex(dev, logoTex_, logoRetry_, LOGO_PATH(), 256, 256);
+    //    The BAKED lockup is the whole thing, emblem AND word. Drawing the word live kept it crisp and let it
+    //    follow the theme accent, but it also meant the header carried two different renderings of one name --
+    //    the artwork's and the font's -- and no amount of matching makes those agree. One name, one drawing.
+    ensure_raw_tex_mip(dev, logoTex_, logoRetry_, LOGO_PATH(), 1024, 256);
+    const float ty = mhTop + mhH * 0.5f;
+    float rgx;                                                   // where the version chip starts
     if (logoTex_) {
-        cs_add(dev); soft_blob(dev, emX + emS * 0.5f, emY + emS * 0.5f, emS * 0.62f, emS * 0.52f,
-                               ((u32)(38.0f * (0.6f + 0.4f * pulse)) << 24) | acc); cs(dev);   // it sits IN the light, not on it
+        // 1024x256 art, so the aspect is fixed at 4:1. The lockup is CENTRED in that canvas with ~36px of
+        // transparent margin either side (gen_logo.py), which at this scale is about 11px of air -- exactly the
+        // breathing room a masthead wants, so the whole texture is drawn and the margin left to do its job.
+        const float lkH = snap(78.0f), lkW = lkH * 4.0f, lkX = ix + snap(2.0f), lkY = ty - lkH * 0.5f;
+        cs_add(dev); soft_blob(dev, lkX + lkW * 0.42f, ty, lkW * 0.46f, lkH * 0.44f,
+                               ((u32)(40.0f * (0.6f + 0.4f * pulse)) << 24) | acc); cs(dev);   // it sits IN the light, not on it
         dTexQuadState(dev, logoTex_, false);
-        tquad(dev, snap(emX), snap(emY), emS, emS, 0.0f, 1.0f, 0.0f, 1.0f, fa(0xFFFFFFFFu), fa(0xFFFFFFFFu));
+        tquad(dev, snap(lkX), snap(lkY), lkW, lkH, 0.0f, 1.0f, 0.0f, 1.0f, fa(0xFFFFFFFFu), fa(0xFFFFFFFFu));
         dSetTex(dev, 0, 0); cs(dev);   // never leave a bound texture for the next control (rule 8)
-    }
-    const float titleSz = snap(38.0f);
-    fo->begin(dev);
-    const float tw = fo->measure("AIOHUD", titleSz);
-    const float gemR = snap(6.0f), gemGap = snap(16.0f);
-    const float wx = (logoTex_ ? (emX + emS + snap(14.0f)) : (ix + gemR * 2.0f + gemGap + snap(6.0f)));   // after the emblem, or where the lozenge used to be
-    const float ty = iy + snap(23.0f);
-    const float bandTop = ty - titleSz * 0.62f, bandBot = ty + titleSz * 0.54f;
-    // warm torchlight glow behind the emblem
-    cs_add(dev); soft_blob(dev, wx + tw * 0.5f, ty - snap(1.0f), tw * 0.64f, snap(28.0f), ((u32)(46.0f * (0.6f + 0.4f * pulse)) << 24) | acc); cs(dev);
-    // gilded wordmark : bright top -> deep bottom = engraved gilt (accent-tinted), extruded for relief
-    chrome_text(dev, fo, wx, ty, "AIOHUD", titleSz, tw, C_ACCENTHI, shade(C_ACCENT, -0.5f), bandTop, bandBot);
-    shine(dev, wx - snap(4.0f), bandTop, tw + snap(8.0f), bandBot - bandTop, 0.32f, f.t * 0.6f);   // slow gilt gleam
-    // The flanking lozenges are the EMBLEM's job now -- its ring carries two of its own, and a second pair
-    // beside the wordmark was the same word said twice in a different alphabet. They stand in only when the
-    // texture failed to load, which is the one case where the header would otherwise start with bare text.
-    const float rgx = logoTex_ ? (wx + tw) : (wx + tw + gemGap - snap(2.0f));
-    if (!logoTex_) {
-        const float lgx = ix + gemR;
+        rgx = lkX + lkW - snap(14.0f);
+    } else {
+        // FALLBACK, and the only reason the live wordmark survives at all : an art file that failed to load must
+        // not leave the page headless. Same composition, drawn -- gilt word between two heraldic lozenges.
+        const float titleSz = snap(38.0f);
+        fo->begin(dev);
+        const float tw = fo->measure("AIOHUD", titleSz);
+        const float gemR = snap(6.0f), gemGap = snap(16.0f);
+        const float wx = ix + gemR * 2.0f + gemGap + snap(6.0f);
+        const float bandTop = ty - titleSz * 0.62f, bandBot = ty + titleSz * 0.54f;
+        cs_add(dev); soft_blob(dev, wx + tw * 0.5f, ty - snap(1.0f), tw * 0.64f, snap(28.0f), ((u32)(46.0f * (0.6f + 0.4f * pulse)) << 24) | acc); cs(dev);
+        chrome_text(dev, fo, wx, ty, "AIOHUD", titleSz, tw, C_ACCENTHI, shade(C_ACCENT, -0.5f), bandTop, bandBot);
+        shine(dev, wx - snap(4.0f), bandTop, tw + snap(8.0f), bandBot - bandTop, 0.32f, f.t * 0.6f);
+        rgx = wx + tw + gemGap - snap(2.0f);
         for (int gi = 0; gi < 2; ++gi) {
-            const float gxo = gi ? rgx : lgx;
+            const float gxo = gi ? rgx : (ix + gemR);
             gem(dev, gxo, ty, gemR + snap(1.5f), shade(C_ACCENT, -0.6f));
             gem(dev, gxo, ty, gemR, C_GOLD);
             gem(dev, gxo - snap(1.0f), ty - snap(1.5f), gemR * 0.42f, C_ACCENTHI);
         }
     }
-    // One gilt rule beneath the lockup, and one gem on it. It runs the full width of wordmark AND version so the
-    // two read as a single object rather than as a title with something parked next to it ; its terminals are
-    // gone for the same reason the flanking pair is -- three sets of lozenges in one header is a pattern, not
-    // an ornament.
-    { const float uy = bandBot + snap(1.0f), u0 = wx - snap(2.0f);
-      const float u1 = u0 + tw + snap(4.0f) + (logoTex_ ? snap(14.0f) + fo->measure("V" AIOHUD_VERSION, snap(15.0f)) : 0.0f);
-      cs(dev);
-      flat(dev, u0, uy, u1 - u0, snap(1.0f), fa((0x99u << 24) | acc));
-      flat(dev, u0 + snap(12.0f), uy + snap(2.0f), (u1 - u0) - snap(24.0f), snap(1.0f), fa((0x3Cu << 24) | acc));   // faint second rule
-      gem(dev, wx + tw * 0.5f, uy + snap(1.0f), snap(3.5f), C_GOLDHI); }
     // subtitle : the AioHud VERSION (small-caps), to the right of the emblem -- shown on every tab.
     fo->begin(dev); fo->draw_lc(dev, rgx + snap(14.0f), ty + snap(2.0f), "V" AIOHUD_VERSION, snap(15.0f), fa(lerpc(C_ACCENT, C_ACCENTHI, pulse)), fa(C_STROKE), 1.2f);
 
     // close button (X), top-right -- eased red crossfade + a tiny size bump on hover
-    const float cbS = snap(36.0f), cbX = ix + iw - cbS, cbY = iy + snap(2.0f);
+    const float cbS = snap(36.0f), cbX = ix + iw - cbS, cbY = mhTop + (mhH - cbS) * 0.5f;   // centred in the plate, not pinned to its top
     const bool cbHov = inrect(mo, cbX, cbY, cbS, cbS);
     const float ct = ease(1, cbHov ? 1.0f : 0.0f);
     halo(dev, cbX, cbY, cbS, cbS, C_CLOSEHOV, ct * 0.9f);
