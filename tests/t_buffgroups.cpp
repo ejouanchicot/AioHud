@@ -220,14 +220,31 @@ void test_buff_groups() {
     CHECK(buff_status_name_real(226) == 0);
     CHECK(buff_status_name_real(24)  == 0);
     CHECK(buff_status_name_real(232) == 0);
-    // Songs that were named but never put in the game : res/spells.lua marks their spell unlearnable=true,
-    // and nothing grants Rhapsody at all. Honor March sits in the same block, carries no flag, and stays.
-    CHECK(buff_status_name_real(204) == 0);   // Hum
-    CHECK(buff_status_name_real(208) == 0);   // Serenade
-    CHECK(buff_status_name_real(211) == 0);   // Fugue
-    CHECK(buff_status_name_real(212) == 0);   // Rhapsody
     CHECK(buff_status_name_real(214) != 0);   // March -- Honor March is real
     CHECK(buff_status_name_real(9)   != 0);   // Curse -- unlearnable as a SPELL, but monsters cast it
+
+    SECTION("buff groups : a ghost is hidden until the game contradicts it");
+    // Named, but nothing in any res table grants them : an unlearnable spell, or no source at all. They are
+    // kept OUT of the editor and come straight back the moment one is seen on somebody -- res cannot see a
+    // status granted by gear, so the exclusion is an argument from silence and must be revocable.
+    CHECK(buff_status_ghost(204));   // Hum -- unlearnable spell
+    CHECK(buff_status_ghost(212));   // Rhapsody -- no source anywhere
+    CHECK(buff_status_ghost(605));   // Gale Spikes -- same
+    CHECK(!buff_status_ghost(214));  // Honor March
+    CHECK(!buff_status_ghost(34));   // Blaze Spikes : a real spell grants it
+    {
+        UiConfig& c = ui_config();
+        unsigned short m[UiConfig::BUFF_PIN_MAX]; int tot = 0;
+        bool listedUnseen = false, listedSeen = false;
+        for (int g = 0; g < BG_COUNT; ++g) {
+            int n = buff_group_members(c, g, m, UiConfig::BUFF_PIN_MAX, &tot, 0);   // nothing seen
+            for (int i = 0; i < n; ++i) if (buff_status_ghost(m[i])) listedUnseen = true;
+            n = buff_group_members(c, g, m, UiConfig::BUFF_PIN_MAX, &tot, [](unsigned) { return true; });
+            for (int i = 0; i < n; ++i) if (buff_status_ghost(m[i])) listedSeen = true;
+        }
+        CHECK(!listedUnseen);   // silence -> no row
+        CHECK(listedSeen);      // one sighting -> the row is back
+    }
     // ... and a real name that merely BEGINS like one still is one.
     CHECK(buff_status_name_real(227) != 0);   // "Store TP"
     CHECK(buff_status_name_real(33)  != 0);   // "Haste"

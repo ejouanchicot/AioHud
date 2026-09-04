@@ -283,21 +283,30 @@ static const int BUFF_GROUP_MAX_ID = 640;
 // which is what they are, so the editor skips them exactly the way it skips an id with no entry at all.
 // Kept here rather than in buffs_gen.h because that file is GENERATED, and because this is a statement about
 // what is worth a config row, not about what the game calls things.
-// Songs that were NAMED but never put in the game. res/spells.lua marks their spell unlearnable=true --
-// Chocobo Hum (204), Devotee Serenade (208), Cactuar Fugue (211) -- and nothing in spells.lua or
-// job_abilities.lua grants Rhapsody (212) at all. Honor March sits in the same block, has no such flag, and
-// stays: the flag is the evidence, not the neighbourhood.
-// Listed by hand rather than derived from unlearnable=true, because that rule alone also catches status 9
-// Curse -- whose only LEARNABLE source is a monster, and monster skills are in neither table. "Every source
-// I can see is unlearnable" is not "the game cannot give you this", and the difference would have quietly
-// removed a debuff people really get.
-static const unsigned short BUFF_NEVER_SHIPPED[] = { 204, 208, 211, 212 };
+// ---- GHOSTS : properly named, and nothing in the game is known to grant them. ----
+// Two kinds, found the same way -- by asking every res/*.lua table which action carries the status:
+//   204 Hum, 208 Serenade, 211 Fugue : their spell is marked unlearnable=true (Chocobo Hum, Devotee
+//     Serenade, Cactuar Fugue). Honor March sits in the same block, carries no such flag, and stays -- the
+//     flag is the evidence, not the neighbourhood.
+//   212 Rhapsody, 153 Damage Spikes, 573 Deluge, 605 Gale, 606 Clod, 607 Glint Spikes : NOTHING anywhere
+//     grants them. Not a spell, not an ability, not a mob skill.
+// A ghost is hidden from the EDITOR only, and only until the game contradicts it -- see buff_group_members.
+// That is the whole point of the distinction: this list is an argument from silence, and an argument from
+// silence must never become a permanent state (rule 10). res tables cannot see a status granted by GEAR, and
+// a status nobody can arrange is a smaller failure than a status nobody can arrange OR hide, so the moment
+// one is actually observed on somebody it earns its row back.
+// Kept by hand rather than derived from unlearnable=true, because that rule alone also catches status 9
+// Curse -- whose only real source is a monster, and monster skills carry no unlearnable flag at all.
+static const unsigned short BUFF_GHOST[] = { 153, 204, 208, 211, 212, 573, 605, 606, 607 };
+inline bool buff_status_ghost(unsigned id) {
+    for (int i = 0; i < (int)(sizeof(BUFF_GHOST) / sizeof(BUFF_GHOST[0])); ++i)
+        if (BUFF_GHOST[i] == id) return true;
+    return false;
+}
 
 inline const char* buff_status_name_real(unsigned id) {
     const char* n = buff_status_name(id);
     if (!n) return 0;
-    for (int i = 0; i < (int)(sizeof(BUFF_NEVER_SHIPPED) / sizeof(BUFF_NEVER_SHIPPED[0])); ++i)
-        if (BUFF_NEVER_SHIPPED[i] == id) return 0;
     if (n[0] == '(') return 0;                                    // "(N/A)"
     if (n[0] == 'S' && n[1] == 'T' && n[2] >= '0' && n[2] <= '9') {  // "ST" + digits only
         int k = 2;
@@ -423,6 +432,9 @@ inline int buff_group_members(const UiConfig& c, int g, unsigned short* out, int
     int n = 0, qualified = 0;
     for (unsigned id = 0; id < (unsigned)BUFF_GROUP_MAX_ID; ++id) {
         if (buff_group(id) != g || !buff_status_name_real(id)) continue;   // no name -> nothing to arrange
+        // A ghost stays out of the list UNTIL the game puts it on somebody. Silence is why it is on the list ;
+        // one sighting is louder than the silence, and then it is just a buff like any other.
+        if (buff_status_ghost(id) && !(seen && seen(id))) continue;
         if (buff_canon(id) != id) continue;   // a second id for an effect already listed -- one tile, not two
         const unsigned char pr = buff_pri_effective(c, id);
         if (pr == 0xFF && buff_group_pri(id) == 0xFF && !(seen && seen(id))) continue;
