@@ -411,8 +411,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // faint, and both are movable -- which is what "fill it yourself" has to mean.
                 // Capped to one line's worth : past BUFF_PIN_MAX nothing can be stored anyway, and the last
                 // line reports whatever is left.
-                int capN = (int)((ctrlW + snap(6.0f)) / (icsProbe + snap(8.0f) + snap(6.0f)));
-                if (capN < 4) capN = 4;
+                int capN = (int)((ctrlW + snap(6.0f)) / (icsProbe + snap(8.0f) + snap(6.0f))) * 3;   // the band wraps : budget three lines, not one
+                if (capN < 8) capN = 8;
                 if (capN > UiConfig::BUFF_PIN_MAX) capN = UiConfig::BUFF_PIN_MAX;
                 innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, [](unsigned) { return true; });
                 for (int i = 0; i < innerN && nRun < 64; ++i) {
@@ -620,9 +620,13 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     }
                     else if (i == bsSel_) rrect_fill(dev, runs[i].x, by, runs[i].w, lineH, snap(7.0f), (C_ACCENT & 0x00FFFFFF) | 0x3C000000u, (C_ACCENT & 0x00FFFFFF) | 0x18000000u);
                     else if (i == hot && bsDrag_ < 0) rrect_fill(dev, runs[i].x, by, runs[i].w, lineH, snap(7.0f), 0x18FFFFFFu, 0x0CFFFFFFu);
+                    // A block is as wide as its ICONS or its NAME, whichever is larger -- so the icons must be
+                    // CENTRED in it, not hugged to its right edge. Right-hugging was invisible while the icons
+                    // were the widest thing ; the moment every buff got a name, the name sat on the block's axis
+                    // and the icon sat off it. Everything in a block shares one axis now : name, icons, rule.
                     const int kk = runs[i].hid ? 0 : (runs[i].n < capI ? runs[i].n : capI);
                     const float uw = (kk > 0) ? (kk * ics + (kk - 1) * gapI) : snap(6.0f);
-                    flat(dev, snap(runs[i].x + runs[i].w - padR - uw), snap(uy2), uw, snap(2.0f), fa(runs[i].hid ? C_MUTE : buff_group_tint(runs[i].grp)));
+                    flat(dev, snap(runs[i].x + (runs[i].w - uw) * 0.5f), snap(uy2), uw, snap(2.0f), fa(runs[i].hid ? C_MUTE : buff_group_tint(runs[i].grp)));
                 }
                 // ---- PASS 2 : every icon, under ONE texture bind for the whole band ----
                 if (bTex) {
@@ -635,7 +639,9 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                             // own block. Drawing the preview left-to-right inside a band that reads right-to-left put
                             // Haste on the wrong side of Refresh -- the block contradicted the strip it lives in.
                             float au, av, u0, v0; buff_cell_uv(runs[i].ic[q], au, av, u0, v0);
-                            const float ix = runs[i].x + runs[i].w - padR - (q + 1) * ics - q * gapI;
+                            const float rw = kk * ics + (kk - 1) * gapI;                 // the icon run's own width
+                            const float r0 = runs[i].x + (runs[i].w - rw) * 0.5f;         // centred in the block
+                            const float ix = r0 + rw - (q + 1) * ics - q * gapI;          // rank 0 still the RIGHTMOST of the run
                             const u32 tc = runs[i].faint ? fa(0x70FFFFFFu) : 0xFFFFFFFFu;   // fade in the VERTEX colour : a MANAGED texture's alpha mis-samples as opaque while a zone loads
                             tquad(dev, snap(ix), snap(runs[i].iy), ics, ics, u0, u0 + au, v0, v0 + av, tc, tc);
                         }
@@ -653,7 +659,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 }
                 // ---- PASS 4 : hidden groups, as a mark rather than icons ----
                 for (int i = 0; i < nRun; ++i) if (runs[i].hid)
-                    rrect_fill(dev, snap(runs[i].x + runs[i].w - snap(9.0f)), snap(runs[i].iy + ics * 0.35f), snap(6.0f), snap(6.0f), snap(3.0f), fa(C_MUTE), fa(C_MUTE));
+                    rrect_fill(dev, snap(runs[i].x + runs[i].w * 0.5f - snap(3.0f)), snap(runs[i].iy + ics * 0.35f), snap(6.0f), snap(6.0f), snap(3.0f), fa(C_MUTE), fa(C_MUTE));
                 ROW_NEXT(bandH)
             }
 
