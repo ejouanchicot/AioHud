@@ -499,7 +499,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
               // light added is proportional to the room LEFT in each channel: dst = tex + (1-tex)*k, which is a
               // screen blend. It approaches 255 and never passes it, at any strength, on any pixel. A texel
               // already at 255 receives exactly nothing. So the peak can go up where it was forced down.
-              const float peakF = 150.0f;
+              // 60, not 150. The screen blend removed the ceiling, and with the ceiling gone the number stops
+              // being a workaround and becomes a taste setting -- so it is set by eye, low. The point of the
+              // technique was never a brighter gleam ; it was a gleam whose softness survives being visible.
+              const float peakF = 60.0f;
               const u32   tintG = 0x00FFE9B4u;                    // warm, not white : light ON gold, not instead of it
               struct G { static u32 at(float u, float v, float c3, float rx2, float ry2, float tl, float pk) {
                   const float ax = (u - (c3 + tl * (v - 0.5f))) / rx2;
