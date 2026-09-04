@@ -795,8 +795,14 @@ void cat_panel(u32 dev, float x, float y, float w, float h) {
     rpanel(dev, x, y, w, h, snap(9.0f), 0xF2141B22, 0xF20D1219, C_BORDER, snap(1.2f));   // solid graphite card
     flat(dev, x + snap(9.0f), y + snap(1.0f), w - snap(18.0f), 1, 0x12FFFFFF);           // faint top hairline
     // A slim accent rail down the open section : it says WHERE you are without spending another label on it.
-    rrect_fill(dev, x + snap(2.0f), y + snap(9.0f), snap(3.0f), h - snap(18.0f), snap(1.5f),
-               (C_ACCENTHI & 0x00FFFFFF) | 0x70000000u, (C_ACCENT & 0x00FFFFFF) | 0x30000000u);
+    // It starts BELOW the header. The card is drawn at the same y as the section's cat_header and therefore
+    // spans it -- a rail from the card's top ran straight through the title bar and out of its rounded left
+    // edge. CAT_HEADER_ADV is the row the callers advance by (cat_header is 32 tall inside a 42 slot), so the
+    // rail begins where the section's CONTENT begins, which is the thing it is pointing at.
+    const float railY = y + CAT_HEADER_ADV, railH = h - CAT_HEADER_ADV - snap(9.0f);
+    if (railH > snap(8.0f))
+        rrect_fill(dev, x + snap(2.0f), railY, snap(3.0f), railH, snap(1.5f),
+                   (C_ACCENTHI & 0x00FFFFFF) | 0x70000000u, (C_ACCENT & 0x00FFFFFF) | 0x30000000u);
 }
 bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, float x, float y, float w, const char* label, bool open) {
     const float h = snap(32.0f);

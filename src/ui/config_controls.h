@@ -59,6 +59,10 @@ inline bool  inrect(const MouseState* m, float x, float y, float w, float h) {
 // ---- the menu's TYPE SCALE. Six sizes, named, so a new control cannot invent a seventh by accident.
 // The sizes were already nearly consistent -- what was missing was somewhere to look them up, which is how a
 // 13.5 and a 12.5 appear next to a 13 and a 12 and nobody notices for a year. Use these, never a literal.
+// A section header is 32 tall and every panel advances 42 past it (ROW_NEXT(42.0f)). Named because cat_panel
+// has to know where a section's CONTENT starts -- the card spans the header, so anything meant for the rows
+// alone must skip it.
+#define CAT_HEADER_ADV snap(42.0f)
 inline float ts_section() { return snap(13.5f); }   // a section header
 inline float ts_label()   { return snap(15.0f); }   // a control's label -- the workhorse
 inline float ts_value()   { return snap(14.0f); }   // the number or word a control reads out
