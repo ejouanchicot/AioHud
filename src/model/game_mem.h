@@ -246,6 +246,6 @@ unsigned spell_recast_sec(unsigned recast_id);
 // LIST all active recasts (Timers module) into parallel arrays : recastId[], kind[] (0 = job ability, 1 = spell),
 // sec[] (remaining seconds). Returns the count. SEH-guarded (block-reads the 1024-entry spell array). Kept separate
 // from poll_game_state (which hosts C++ objects and so can't use __try). Names resolved caller-side via the gen tables.
-int read_recasts(unsigned short* recastId, unsigned char* kind, int* sec, int maxN);
+int read_recasts(unsigned short* recastId, unsigned char* kind, int* sec, int maxN, int* ticks = 0);   // ticks (optional) : the raw 1/60 s value `sec` was ceil-ed from -- sub-second ordering, see GameState::RecastEntry
 
 } // namespace aio

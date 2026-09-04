@@ -958,7 +958,7 @@ unsigned ability_recast_sec(unsigned recast_id) {
 //   from spells_gen.h (SpellRow::recast_id).
 // LIST all active recasts -> parallel arrays. Job abilities : the 32-slot table. Spells : ushort[1024]
 // indexed by recast_id (block-copied under SEH, then scanned).
-int read_recasts(unsigned short* rid, unsigned char* kind, int* sec, int maxN) {
+int read_recasts(unsigned short* rid, unsigned char* kind, int* sec, int maxN, int* ticks) {
     int n = 0;
     u32 g = data_root(); if (!g) return 0;
     u32 idsP = 0, timersP = 0, spellB = 0;
@@ -969,7 +969,7 @@ int read_recasts(unsigned short* rid, unsigned char* kind, int* sec, int maxN) {
             u32 t = 0; safe_read(timersP + s * 4, &t);
             if ((int)t <= 0 || t > 60u * 7200u) continue;          // ready / empty / garbage
             u32 idb = 0; safe_read(idsP + s * 8, &idb);
-            rid[n] = (unsigned short)(idb & 0xFF); kind[n] = 0; sec[n] = ((int)t + 59) / 60; ++n;
+            rid[n] = (unsigned short)(idb & 0xFF); kind[n] = 0; sec[n] = ((int)t + 59) / 60; if (ticks) ticks[n] = (int)t; ++n;
         }
     }
     if (valid_ptr(spellB)) {
@@ -979,7 +979,7 @@ int read_recasts(unsigned short* rid, unsigned char* kind, int* sec, int maxN) {
         if (ok) for (int i = 0; i < 1024 && n < maxN; ++i) {
             const unsigned v = sr[i];
             if (v == 0 || v > 60u * 7200u) continue;
-            rid[n] = (unsigned short)i; kind[n] = 1; sec[n] = ((int)v + 59) / 60; ++n;
+            rid[n] = (unsigned short)i; kind[n] = 1; sec[n] = ((int)v + 59) / 60; if (ticks) ticks[n] = (int)v; ++n;
         }
     }
     return n;
@@ -1087,9 +1087,9 @@ void poll_game_state(GameState& gs) {
     gs.mp = me.mpp / 100.0f;
     gs.tp = me.tp / 3000.0f; if (gs.tp > 1.0f) gs.tp = 1.0f; if (gs.tp < 0.0f) gs.tp = 0.0f;
     gs.nbuff = read_player_buffs(gs.buffs, 32, &gs.buffsOk);   // self status icons -> the Player Hub buff tray (snapshot, not poll-in-draw)
-    { unsigned short rid[40]; unsigned char kd[40]; int sc[40];   // Timers module : active JA + spell recasts (snapshot)
-      const int nr = read_recasts(rid, kd, sc, 40); gs.nRecast = (nr > 40) ? 40 : nr;
-      for (int i = 0; i < gs.nRecast; ++i) { gs.recasts[i].recastId = rid[i]; gs.recasts[i].kind = kd[i]; gs.recasts[i].sec = sc[i]; } }
+    { unsigned short rid[40]; unsigned char kd[40]; int sc[40]; int tk[40] = { 0 };   // Timers module : active JA + spell recasts (snapshot)
+      const int nr = read_recasts(rid, kd, sc, 40, tk); gs.nRecast = (nr > 40) ? 40 : nr;
+      for (int i = 0; i < gs.nRecast; ++i) { gs.recasts[i].recastId = rid[i]; gs.recasts[i].kind = kd[i]; gs.recasts[i].sec = sc[i]; gs.recasts[i].ticks = tk[i]; } }
     { float ms = 0.0f; gs.meSpeed = read_self_speed(me.id, ms) ? ms : 0.0f; }   // own movement speed -> Player Hub speed band
     { unsigned gv = 0; gs.meGil = read_player_gil(gv) ? gv : 0; }               // own gil -> Player Hub gil band
     gs.jaOk = read_usable_ja_bits(gs.jaBits);                                    // usable-JA bitmap -> snapshot, NOT re-read from the draw path

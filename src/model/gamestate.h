@@ -62,7 +62,7 @@ struct GameState {
 
     // --- active RECASTS (Timers module) : job-ability (kind 0) + spell (kind 1) cooldowns, snapshot once/frame from
     //     the client recast tables (g+0x22C/0x230 abilities, g+0x234 spells). recastId -> name via the gen tables. ---
-    struct RecastEntry { unsigned short recastId; unsigned char kind; int sec; };
+    struct RecastEntry { unsigned short recastId; unsigned char kind; int sec; int ticks; };   // ticks : the raw 1/60 s countdown `sec` was ceil-ed from -- the Timers list SORTS on it, so two recasts one second apart keep a stable order instead of swapping rows every time the ceil ties (see hud_timers "fine")
     RecastEntry recasts[40];
     int         nRecast = 0;
 
