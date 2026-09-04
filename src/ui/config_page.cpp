@@ -473,67 +473,18 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                                ((u32)(40.0f * (0.6f + 0.4f * pulse)) << 24) | acc); cs(dev);   // it sits IN the light, not on it
         dTexQuadState(dev, logoTex_, false);
         tquad(dev, snap(lkX), snap(lkY), lkW, lkH, 0.0f, 1.0f, 0.0f, 1.0f, fa(0xFFFFFFFFu), fa(0xFFFFFFFFu));
-        // GLEAM : a light travelling across the letterforms, masked BY the letterforms. A second textured pass
-        // of the same art, additive, so the highlight rides the gold and the gaps between letters stay dark.
-        // It has a SHAPE. The first version varied only in x -- a band spanning the logo's full height, with
-        // soft flanks but a top and a bottom cut dead straight. That is not a reflection, it is a ribbon, and
-        // straight edges are exactly what kept reading as a rectangle sliding over the word however smooth the
-        // horizontal ramp became. The light is now a tilted ELLIPSE: alpha falls off in both axes from a moving
-        // centre, so it fades out at the top and bottom of the letters as well as at its leading and trailing
-        // edges, and there is no straight edge anywhere in it.
-        // Which needs a GRID, not a row of slices: tquad4 takes four independent corner colours, so a cell can
-        // carry a 2D gradient. 20 x 6 cells over the quad is a cell every ~12px, and a cosine sampled that
-        // finely and interpolated linearly between samples is smooth well past what the eye resolves.
-        { const float per = 7.0f; float lp = f.t / per; lp -= floorf(lp);
-          if (lp < 0.42f) {
-              const float k = lp / 0.42f;
-              const float rx = 0.46f, ry = 0.62f, tilt = 0.22f;   // ellipse radii in quad fractions ; tilt = lean
-              const float c2 = -rx - 0.2f + (1.0f + 2.0f * rx + 0.4f) * k;
-              // A highlight that CANNOT clip, which is what finally settles the hard sides.
-              // Plain additive light is proportional to the texel (MODULATE), so the brightest gold gets the
-              // most added and reaches 255 first ; the region where it saturates goes flat, and the boundary of
-              // that flat region is a hard edge travelling with the sweep. Shaping the falloff cannot help --
-              // clipping is not a falloff problem -- and the only remaining lever was to keep the peak so low
-              // the effect barely showed.
-              // D3DTA_COMPLEMENT is the way out. OR-ed into COLORARG1 the stage receives (1 - texel), so the
-              // light added is proportional to the room LEFT in each channel: dst = tex + (1-tex)*k, which is a
-              // screen blend. It approaches 255 and never passes it, at any strength, on any pixel. A texel
-              // already at 255 receives exactly nothing. So the peak can go up where it was forced down.
-              // 34, and a GOLD tint rather than a near-white one -- which is the half that made it read as
-              // opaque. Gold is (227,180,78): its blue channel is a third of its red. Light that is nearly white
-              // therefore raises blue the most IN PROPORTION, the colour desaturates toward grey, and the result
-              // looks like a milky film laid over the letters instead of light falling on them. Tinting the
-              // gleam to the metal's own hue keeps the highlight golden, and a highlight that stays the right
-              // colour can be far weaker and still read.
-              const float peakF = 34.0f;
-              const u32   tintG = 0x00FFC864u;                    // the metal's own hue : R high, G mid, B low
-              struct G { static u32 at(float u, float v, float c3, float rx2, float ry2, float tl, float pk) {
-                  const float ax = (u - (c3 + tl * (v - 0.5f))) / rx2;
-                  const float ay = (v - 0.5f) / ry2;
-                  float d = sqrtf(ax * ax + ay * ay); if (d > 1.0f) d = 1.0f;
-                  const float w2 = 0.5f + 0.5f * cosf(3.14159265f * d);
-                  return (u32)(pk * w2 * w2); } };
-              dTexQuadState(dev, logoTex_, true);
-              dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);         // ADD light to the gold, never replace it
-              dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE | D3DTA_COMPLEMENT);   // ... proportional to the room left
-              // ALPHAARG1 stays the plain TEXTURE : the glyph mask must not be complemented, or the light would
-              // land in the gaps between the letters instead of on them.
-              const int NX = 32, NY = 8;
-              for (int gy = 0; gy < NY; ++gy) {
-                  const float v0 = (float)gy / (float)NY, v1 = (float)(gy + 1) / (float)NY;
-                  for (int gx = 0; gx < NX; ++gx) {
-                      const float u0 = (float)gx / (float)NX, u1 = (float)(gx + 1) / (float)NX;
-                      const u32 aTL = G::at(u0, v0, c2, rx, ry, tilt, peakF), aTR = G::at(u1, v0, c2, rx, ry, tilt, peakF);
-                      const u32 aBL = G::at(u0, v1, c2, rx, ry, tilt, peakF), aBR = G::at(u1, v1, c2, rx, ry, tilt, peakF);
-                      if (!(aTL | aTR | aBL | aBR)) continue;     // wholly outside the ellipse -> nothing to draw
-                      tquad4(dev, lkX + lkW * u0, lkY + lkH * v0, lkW * (u1 - u0), lkH * (v1 - v0),
-                             u0, u1, v0, v1,
-                             fa((aTL << 24) | tintG), fa((aTR << 24) | tintG),
-                             fa((aBL << 24) | tintG), fa((aBR << 24) | tintG));
-                  }
-              }
-          } }
-        dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);   // drop the complement before anything else draws (rule 8)
+        // (A GLEAM travelled the letterforms here, and it is gone at the user's call after six attempts. Worth
+        //  recording WHY it failed, because none of the six was the reason:
+        //    - additive light is MODULATE, so it is proportional to the texel ; the brightest gold clips first,
+        //      and the boundary of a clipped region is a hard edge that travels with the sweep.
+        //    - D3DTA_COMPLEMENT fixes exactly that -- light proportional to the room left, dst = tex + (1-tex)k,
+        //      which cannot pass 255 -- and it made things worse, for a reason that was in the ASSET.
+        //    - this baker used to zero the RGB of transparent pixels. A transparent pixel still has a colour and
+        //      the GPU interpolates colour and alpha independently, so every letter carried a black halo one
+        //      filter-width wide. 1 - black is WHITE: the complement lit that halo at full strength, which is
+        //      the "milky film" no intensity setting could remove.
+        //  gen_logo.py now floods the opaque colours outward instead, so the cause is gone and the effect could
+        //  be tried again. It is not, because it was asked for six times and disliked six times.)
         dSetTex(dev, 0, 0); cs(dev);   // reset the blend after the additive pass (rule 3) and unbind
         rgx = lkX + lkW * LOGO_ART_X1;
     } else {

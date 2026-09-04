@@ -18,7 +18,7 @@
 # header where the art actually sits inside that canvas -- so a render of any proportion lands in the right
 # place without anyone editing a magic number.
 import os, sys
-from PIL import Image
+from PIL import Image, ImageFilter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC  = os.path.join(ROOT, 'assets', 'logo_src', 'aiohud_logo.png')
@@ -134,10 +134,36 @@ if contaminated:
             elif al < 250:
                 f = min(255.0 / float(al), 2.6)   # a hard divide blows the softest edges out to white
                 px[x, y] = (min(255, int(r * f)), min(255, int(g * f)), min(255, int(b2 * f)), al)
-else:
+# ---- EDGE EXTENSION. ----
+# A transparent pixel still has a COLOUR, and the GPU interpolates colour and alpha independently: bilinear
+# filtering and every mip level blend the RGB of transparent neighbours into the visible edge regardless of
+# their alpha. Zeroing them -- which this script used to do, thinking it was tidy -- floods black into every
+# letter's outline. Measured on the previous bake: edge pixels came out at a median luma of 62 against 117 for
+# solid ones, so the wordmark was drawn with a dark fringe all round it. It also destroyed the D3DTA_COMPLEMENT
+# highlight outright, because 1 - black is WHITE: the header's gleam lit that black halo at full strength and
+# read as a milky film that no intensity setting could remove.
+# The fix is standard and unglamorous: flood the opaque colours outward into the transparent region, leaving
+# alpha untouched. Six dilations reach well past anything the mip chain can sample.
+rgbI = out.convert('RGB')
+mask = out.split()[3].point(lambda v: 255 if v > 0 else 0)
+for _ in range(6):
+    blurRGB = rgbI.filter(ImageFilter.BoxBlur(1))
+    blurM   = mask.filter(ImageFilter.BoxBlur(1))
+    rp, mp, bp, bmp = rgbI.load(), mask.load(), blurRGB.load(), blurM.load()
     for y in range(H_OUT):
         for x in range(W_OUT):
-            if px[x, y][3] == 0: px[x, y] = (0, 0, 0, 0)   # clear pixels carry no colour -> nothing bleeds under bilinear
+            if mp[x, y]: continue
+            wgt = bmp[x, y]
+            if not wgt: continue
+            k2 = 255.0 / float(wgt)
+            r2, g2, b3 = bp[x, y]
+            rp[x, y] = (min(255, int(r2 * k2)), min(255, int(g2 * k2)), min(255, int(b3 * k2)))
+            mp[x, y] = 255
+out = Image.merge('RGBA', (rgbI.split()[0], rgbI.split()[1], rgbI.split()[2], out.split()[3]))
+px = out.load()
+
+if False:
+    pass
 
 with open(OUT, 'wb') as f:
     for y in range(H_OUT):
