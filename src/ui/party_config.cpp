@@ -374,7 +374,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             const int dragUid = CTRL_ID;
             const u32 bTex = buff_atlas_tex(dev);   // BORROWED : buff_atlas.cpp owns it and is the only place that releases it. 0 while its bounded retry has not landed -> the band draws its tints and stays usable, rather than holes.
 
-            struct Run { int n; unsigned short ic[4]; float x, w, ly, iy; unsigned char grp; bool hid; bool faint; const char* lbl; };
+            struct Run { int n; unsigned short ic[4]; float x, w, by, ly, iy; unsigned char grp; bool hid; bool faint; const char* lbl; };
             Run runs[64]; int nRun = 0;
             int slots[UiConfig::BUFF_ORDER_N];   // slots[k] = the buffOrder position the k-th visible run occupies
             unsigned short inner[256]; int innerTotal = 0, innerN = 0;
@@ -558,8 +558,14 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 if (bsDrag_ >= 0 && !ctrl_drag_active(dragUid)) { bsDrag_ = -1; bsDrop_ = -1; bsEnter_ = 0; }
 
                 // ---- position each block, smoothing the reflow only while something is being carried ----
+                // BOTH axes are eased. X alone was half a reflow : a block pushed onto the next line slid sideways
+                // and then teleported down, which is the one moment the eye most needs to follow it. With Y eased
+                // too, a block that wraps travels there, and dragging between lines reads as one continuous motion.
                 { const float sp = (bsDrag_ >= 0) ? 26.0f : 1000.0f;   // idle : snap, so a rebuilt list cannot animate the wrong block
-                  for (int k = 0; k < nRun; ++k) runs[k].x = ease(dragUid, 128 + k, tx[k], sp); }
+                  for (int k = 0; k < nRun; ++k) {
+                      runs[k].x  = ease(dragUid, 128 + k, tx[k], sp);
+                      runs[k].by = ease(dragUid, 256 + k, sy0 + tline[k] * lineH, sp);
+                  } }
 
                 // ---- grab : remember WHERE in the block you took hold of it ----
                 int hot = -1;
@@ -568,6 +574,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     bsEnter_ = (bsSel_ == hot) ? 1 : 0;   // a press on the ALREADY selected block means "go inside", if it turns out not to be a drag
                     bsDrag_ = hot; bsDrop_ = hot; bsSel_ = hot;
                     bsGrabDX_ = mo->x - runs[hot].x; bsGrabX_ = mo->x; bsMoved_ = 0;
+                    bsLine_ = tline[hot];
                 }
 
                 // ---- where would it land ? ----
@@ -579,7 +586,14 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // resting on a boundary does not flutter between two answers.
                 if (bsDrag_ >= 0 && ctrl_drag_active(dragUid) && mo) {
                     const float cx = (mo->x - bsGrabDX_) + runs[bsDrag_].w * 0.5f;
-                    int cl = (int)((mo->y - sy0) / lineH); if (cl < 0) cl = 0; if (cl >= nLines) cl = nLines - 1;
+                    // The LINE is sticky as well. A hard boundary meant a centre resting near it flipped a whole
+                    // line's worth of arrangement back and forth -- far more violent than the horizontal case,
+                    // because a line change re-wraps everything. You have to move CLEARLY into the next line.
+                    int cl = bsLine_;
+                    { const float top = sy0 + bsLine_ * lineH, hysY = snap(10.0f);
+                      if (mo->y < top - hysY) --cl; else if (mo->y > top + lineH + hysY) ++cl; }
+                    if (cl < 0) cl = 0; if (cl >= nLines) cl = nLines - 1;
+                    bsLine_ = cl;
                     const float eps = snap(7.0f);
                     int atLo = 0, atHi = 0;
                     for (int k = 0; k < nRun; ++k) {
@@ -610,7 +624,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 for (int k = 0; k < nv; ++k) {
                     const int i = vis[k];
                     const bool lift = (i == bsDrag_);
-                    const float by = sy0 + (lift ? ((mo ? mo->y : sy0) - lineH * 0.5f - sy0) : tline[i] * lineH);
+                    const float by = lift ? ((mo ? mo->y : sy0) - lineH * 0.5f) : runs[i].by;   // carried : centred on the pointer ; the rest : their eased slot
                     const float ly2 = by + snap(11.0f), iy2 = ly2 + snap(9.0f), uy2 = iy2 + ics + snap(6.0f);
                     runs[i].ly = ly2; runs[i].iy = iy2;   // the icon and text passes read these back
                     if (lift) {
