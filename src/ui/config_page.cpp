@@ -499,6 +499,20 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
               // light added is proportional to the room LEFT in each channel: dst = tex + (1-tex)*k, which is a
               // screen blend. It approaches 255 and never passes it, at any strength, on any pixel. A texel
               // already at 255 receives exactly nothing. So the peak can go up where it was forced down.
+              // THE LIGHT IS NOT MADE OUT OF THE LOGO. That was the mistake behind every earlier attempt, and
+              // it is a whole family of them, not a setting: each one drew the art again and derived the
+              // highlight from its own colours. Through MODULATE the light is proportional to the texel, so the
+              // brightest gold clips first and the clipped region's boundary is a hard travelling edge. Through
+              // D3DTA_COMPLEMENT it is proportional to (1 - texel), so the letter's dark modelling lifts far
+              // more than its highlights, the relief flattens, and a flat letter reads as an opaque shape laid
+              // over the word. Neither is fixable by tuning: they are what those two operations DO.
+              // The standard technique -- After Effects' track matte, Unity's UI/Shine shader, the same idea
+              // everywhere -- is a light that exists independently, CONFINED by the artwork's alpha. The art
+              // decides where the light may land and contributes nothing else.
+              // Fixed function does that in one pass with no second texture and no stencil: take the COLOUR from
+              // DIFFUSE alone (SELECTARG2) and the ALPHA from texture x diffuse. Every lit pixel then receives
+              // the same warm light scaled only by the profile, so nothing is proportional to the letter and
+              // there is nothing to clip early or flatten.
               // Back on, with the cause of six failed attempts removed from the ASSET rather than from here.
               // The baker used to zero the RGB of transparent pixels, leaving a black halo one filter-width wide
               // around every letter -- and 1 - black is WHITE, so the complement lit that halo at full strength
@@ -506,7 +520,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
               // nothing black left for the complement to find and the peak no longer has to hide.
               // The tint stays the METAL'S OWN HUE rather than white: gold's blue channel is a third of its red,
               // so nearly-white light raises blue the most in proportion and desaturates the letters to grey.
-              const float peakF = 88.0f;
+              const float peakF = 74.0f;
               const u32   tintG = 0x00FFC864u;                    // the metal's own hue : R high, G mid, B low
               struct G { static u32 at(float u, float v, float c3, float rx2, float ry2, float tl, float pk) {
                   const float ax = (u - (c3 + tl * (v - 0.5f))) / rx2;
@@ -516,9 +530,9 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                   return (u32)(pk * w2 * w2); } };
               dTexQuadState(dev, logoTex_, true);
               dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);         // ADD light to the gold, never replace it
-              dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE | D3DTA_COMPLEMENT);   // ... proportional to the room left
-              // ALPHAARG1 stays the plain TEXTURE : the glyph mask must not be complemented, or the light would
-              // land in the gaps between the letters instead of on them.
+              dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);   // COLOUR = diffuse only : the light's own hue
+              // ALPHAOP stays MODULATE(TEXTURE, DIFFUSE) -- the glyph alpha is the matte, the vertex alpha is
+              // the profile, and their product is where and how strongly the light lands.
               const int NX = 32, NY = 8;
               for (int gy = 0; gy < NY; ++gy) {
                   const float v0 = (float)gy / (float)NY, v1 = (float)(gy + 1) / (float)NY;
@@ -534,7 +548,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                   }
               }
           } }
-        dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);   // drop the complement before anything else draws (rule 8)
+        dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE);   // put the stage back before anything else draws (rule 8)
         dSetTex(dev, 0, 0); cs(dev);   // reset the blend after the additive pass (rule 3) and unbind
         rgx = lkX + lkW * LOGO_ART_X1;
     } else {
