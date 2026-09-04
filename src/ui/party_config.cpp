@@ -815,24 +815,32 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     bsEnter_ = 0; bsMoved_ = 0;
                 }
                 // the carried block leaves the layout and follows the pointer
-                if (carrying && mo) runs[bsDrag_].x = mo->x - bsGrabDX_;
+                // `carrying` was computed at the TOP of the frame ; the release handler just above may have set
+                // bsDrag_ to -1 since. Without the second test that is runs[-1].x -- a write off the front of the
+                // array, on every release, into whatever the stack put there.
+                if (carrying && mo && bsDrag_ >= 0) runs[bsDrag_].x = mo->x - bsGrabDX_;
 
                 // ---- PASS 1 : the TILES (colour-quad state) ----
                 // Every block is a real cell : a rounded panel with a border, drawn always -- not only when hovered.
                 // Floating icons over a bare band left the eye to infer where one group ended and the next began,
                 // from a gap. A bordered tile states it. The BORDER carries the group's tint, which is why the
                 // separate tint rule underneath is gone : one identity mark per tile, not two.
-                // ---- the slot the carried tile came out of : drawn, not left as a hole. ----
-                // Lifting a tile opened a blank gap the width of a tile, and a blank gap in a band of bordered
-                // cells reads as something broken rather than as somewhere to drop. It is the one place the eye
-                // is looking during a drag, so it gets a cell of its own : recessed instead of raised, the
-                // group's tint on the edge at a fraction of the strength, no icons and no name. Its position is
-                // the carried tile's TARGET slot, so it is literally "here is where this lands".
+                // ---- where the carried tile will LAND. ----
+                // A blank gap read as something broken. But a full-size bordered panel there read as the tile's
+                // own background left behind -- as if the cell had stayed put and only its contents had come
+                // away in your hand. Both are the same mistake from opposite ends: the mark has to say RECEPTACLE,
+                // and anything shaped like a tile says TILE.
+                // So it is deliberately not one: inset on every side, no fill worth the name, one thin tinted
+                // outline. Smaller than the thing it will hold, which is what makes it read as the hole rather
+                // than as the object. Its position is the carried tile's TARGET slot, so it also answers the only
+                // question being asked during a drag -- where does this land.
                 if (carrying && bsDrag_ >= 0 && bsDrag_ < nRun) {
-                    const float px = tx[bsDrag_], py = sy0 + tline[bsDrag_] * lineH + snap(3.0f);
-                    const u32 pt = (buff_group_tint(runs[bsDrag_].grp) & 0x00FFFFFF) | 0x66000000u;
-                    rpanel(dev, px, py, runs[bsDrag_].w, lineH - snap(6.0f), snap(8.0f),
-                           0x30060809u, 0x300A0F13u, pt, snap(1.2f));
+                    const float in3 = snap(5.0f);
+                    const float px = tx[bsDrag_] + in3, py = sy0 + tline[bsDrag_] * lineH + snap(3.0f) + in3;
+                    const float pw2 = runs[bsDrag_].w - in3 * 2.0f, ph2 = lineH - snap(6.0f) - in3 * 2.0f;
+                    const u32 pt = (buff_group_tint(runs[bsDrag_].grp) & 0x00FFFFFF) | 0x7A000000u;
+                    if (pw2 > 0.0f && ph2 > 0.0f)
+                        rpanel(dev, px, py, pw2, ph2, snap(6.0f), 0x12000000u, 0x12000000u, pt, snap(1.2f));
                 }
                 for (int k = 0; k < nv; ++k) {
                     const int i = vis[k];
