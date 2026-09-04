@@ -539,10 +539,19 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // faint, and both are movable -- which is what "fill it yourself" has to mean.
                 // Capped to one line's worth : past BUFF_PIN_MAX nothing can be stored anyway, and the last
                 // line reports whatever is left.
-                int capN = (int)((ctrlW + snap(6.0f)) / (icsProbe + snap(8.0f) + snap(6.0f))) * 3;   // the band wraps : budget three lines, not one
-                if (capN < 8) capN = 8;
-                if (capN > UiConfig::BUFF_PIN_MAX) capN = UiConfig::BUFF_PIN_MAX;
-                innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, [](unsigned) { return true; });
+                // WHAT YOU HAVE ACTUALLY MET (plus the curated ones), not the whole catalogue. Listing the
+                // catalogue made every group complete in theory and unusable in practice: "Other" reached 214
+                // entries, and a "+N more" line came back on Rolls and Songs. That line is worse than useless
+                // here -- it names things you cannot reach, on the one screen whose entire job is to let you
+                // arrange them. Filtered to what you meet, a group fits whole and the line never appears.
+                // A group NEVER met still falls back to its catalogue, so opening it is not a dead end --
+                // that was the reason the filter was dropped in the first place, and it is kept.
+                (void)icsProbe;
+                const int capN = UiConfig::BUFF_PIN_MAX;
+                innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal,
+                                            [](unsigned st) { return party().status_seen(st); });
+                if (innerN == 0)
+                    innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, [](unsigned) { return true; });
                 for (int i = 0; i < innerN && nRun < 64; ++i) {
                     slots[0] = 0;
                     Run& r = runs[nRun++];

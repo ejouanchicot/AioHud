@@ -128,7 +128,7 @@ struct UiConfig {
     // The cap is what the UI lets you arrange, and it is deliberate : the groups where order is meaningful
     // (Stealth 3, Watch 5, Protection 6, Songs 23) fit whole, while Abilities (134) and Other (~250) do not
     // pretend to be hand-orderable to the end.
-    static const int BUFF_PIN_MAX = 24;
+    static const int BUFF_PIN_MAX = 32;   // 32 = a member's whole buff array : past that nothing can be ON someone anyway
     unsigned short buffPin[BUFF_ORDER_N][BUFF_PIN_MAX] = {};
     unsigned char  buffPinN[BUFF_ORDER_N] = {};
     int buff_pin_rank(int g, unsigned status) const {   // position in this group's arranged prefix, or -1
