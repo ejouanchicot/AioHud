@@ -827,11 +827,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                         bw2 = snap(1.2f);
                     }
                     rpanel(dev, runs[i].x, ty2, runs[i].w, th2, snap(8.0f), ft, fb, br, bw2);
-                    if (runs[i].hid) {   // struck through, corner to corner : the one mark nobody has to learn
-                        const float in2 = snap(6.0f);
-                        seg_soft(dev, runs[i].x + in2, ty2 + th2 - in2, runs[i].x + runs[i].w - in2, ty2 + in2,
-                                 snap(1.6f), fa((C_MUTE & 0x00FFFFFF) | 0x9A000000u));
-                    }
                     if (lift) rrect_top(dev, runs[i].x, ty2, runs[i].w, snap(2.0f), snap(8.0f), (C_ACCENTHI & 0x00FFFFFF) | 0x90000000u, (C_ACCENT & 0x00FFFFFF) | 0x00000000u);
                 }
                 // ---- PASS 2 : every icon, under ONE texture bind for the whole band ----
@@ -851,7 +846,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                             // removing it from the editor would be a one-way door. Faint = in the catalogue but
                             // not met yet. Both fade in the VERTEX colour -- a MANAGED texture's alpha
                             // mis-samples as opaque while a zone loads (reference/d3d8-rendering.md).
-                            const u32 tc = runs[i].hid ? fa(0x22FFFFFFu) : (runs[i].faint ? fa(0x70FFFFFFu) : 0xFFFFFFFFu);
+                            const u32 tc = runs[i].faint ? fa(0x70FFFFFFu) : 0xFFFFFFFFu;   // hidden is handled by the scrim below, not here
                             tquad(dev, snap(ix), snap(runs[i].iy), ics, ics, u0, u0 + au, v0, v0 + av, tc, tc);
                         }
                     }
@@ -866,9 +861,21 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                                  : (runs[i].faint ? C_MUTE : C_DIM);
                     fo->draw_c(dev, runs[i].x + runs[i].w * 0.5f, runs[i].ly, runs[i].lbl, lsz, fa(c2), fa(C_STROKE), 1.0f);
                 }
-                // ---- PASS 4 : hidden groups, as a mark rather than icons ----
-                for (int i = 0; i < nRun; ++i) if (runs[i].hid)
-                    rrect_fill(dev, snap(runs[i].x + runs[i].w * 0.5f - snap(3.0f)), snap(runs[i].iy + ics * 0.35f), snap(6.0f), snap(6.0f), snap(3.0f), fa(C_MUTE), fa(C_MUTE));
+                // ---- PASS 4 : HIDDEN -- a scrim over the whole finished tile, then the slash on top ----
+                // Knocking the icon back alone was never going to be enough : it left a fully lit NAME and a
+                // fully lit tile around a dim picture, so the eye read the tile as live. The scrim goes over
+                // everything the tile has drawn -- surface, icon, name -- so the whole cell dims as ONE thing,
+                // which is what "off" looks like. Drawn last, for the same reason.
+                // The icon survives underneath as a ghost, which is the point : you must still be able to tell
+                // WHAT you hid, because this editor is the only place to bring it back.
+                for (int i = 0; i < nRun; ++i) {
+                    if (!runs[i].hid) continue;
+                    const float by2 = runs[i].ly - snap(12.0f) + snap(3.0f), th3 = lineH - snap(6.0f);
+                    rrect_fill(dev, runs[i].x, by2, runs[i].w, th3, snap(8.0f), 0xC4070A0Du, 0xCC040608u);
+                    const float in2 = snap(7.0f);
+                    seg_soft(dev, runs[i].x + in2, by2 + th3 - in2, runs[i].x + runs[i].w - in2, by2 + in2,
+                             snap(2.0f), fa(0xC8A8B0BAu));
+                }
                 ROW_NEXT(bandH)
             }
 
