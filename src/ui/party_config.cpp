@@ -447,25 +447,29 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             if (ics <= 0.0f) ics = snap(22.0f);
             if (ics < snap(14.0f)) ics = snap(14.0f);
             ics = snap(ics);
-            float lsz = snap(10.5f); const float gapI = snap(2.0f), padR = snap(4.0f);
+            float lsz = snap(10.5f); const float gapI = snap(2.0f), padR = snap(8.0f);   // padR : the tile's inner margin, so the icons never touch its border
             int   capI = atGroups ? 4 : 1;
+            // ONE WIDTH FOR EVERY TILE, taken from the widest thing any of them has to hold -- its icons or
+            // its name. Cells sized individually made a ragged band : the eye reads a row of equal cells as a
+            // grid and a row of unequal ones as debris, and nothing here is worth the raggedness, since the
+            // information is the ORDER, not the width. Uniform cells also mean the drop targets are uniform.
+            float cellW = 0.0f;
             for (int pass = 0; pass < 10; ++pass) {
-                float totalW = 0.0f;
+                cellW = 0.0f;
                 for (int i = 0; i < nRun; ++i) {
                     const int k = runs[i].hid ? 0 : (runs[i].n < capI ? runs[i].n : capI);
-                    float w = (k > 0) ? (k * ics + (k - 1) * gapI + 2 * padR) : snap(12.0f);
-                    // A block is as wide as its icons OR its name, whichever needs more : the name is centred
-                    // over the block, so a one-icon group would otherwise print its label across its
-                    // neighbours. Widening the block is the honest fix ; clipping the name is not.
+                    float w = (k > 0) ? (k * ics + (k - 1) * gapI + 2 * padR) : (ics + 2 * padR);
                     if (runs[i].lbl) { const float lw = fo->measure(runs[i].lbl, lsz) + 2 * padR; if (lw > w) w = lw; }
-                    runs[i].w = w;
-                    totalW += w + (i ? gapR : 0.0f);
+                    if (w > cellW) cellW = w;
                 }
+                const float totalW = nRun * cellW + (nRun > 0 ? (nRun - 1) * gapR : 0.0f);
                 if (totalW <= ctrlW * 3.0f) break;               // up to three lines : past that it stops being a band
-                if (capI > 1) --capI;                            // first : fewer icons per block
+                if (capI > 1) --capI;                            // first : fewer icons per tile
                 else if (lsz > snap(8.0f)) lsz -= snap(0.5f);    // then the label
                 else break;                                      // the icons are NEVER scaled : they are the game's own size
             }
+            for (int i = 0; i < nRun; ++i) runs[i].w = cellW;
+
             // Entry 0 sits at the RIGHT edge and the band fills leftward, wrapping down. No position numbers
             // anywhere, because the position IS the position.
             const float rightX = coX + ctrlW;
@@ -620,27 +624,35 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // the carried block leaves the layout and follows the pointer
                 if (bsDrag_ >= 0 && mo) runs[bsDrag_].x = mo->x - bsGrabDX_;
 
-                // ---- PASS 1 : surfaces (colour-quad state) ----
+                // ---- PASS 1 : the TILES (colour-quad state) ----
+                // Every block is a real cell : a rounded panel with a border, drawn always -- not only when hovered.
+                // Floating icons over a bare band left the eye to infer where one group ended and the next began,
+                // from a gap. A bordered tile states it. The BORDER carries the group's tint, which is why the
+                // separate tint rule underneath is gone : one identity mark per tile, not two.
                 for (int k = 0; k < nv; ++k) {
                     const int i = vis[k];
                     const bool lift = (i == bsDrag_);
                     const float by = lift ? ((mo ? mo->y : sy0) - lineH * 0.5f) : runs[i].by;   // carried : centred on the pointer ; the rest : their eased slot
-                    const float ly2 = by + snap(11.0f), iy2 = ly2 + snap(9.0f), uy2 = iy2 + ics + snap(6.0f);
-                    runs[i].ly = ly2; runs[i].iy = iy2;   // the icon and text passes read these back
-                    if (lift) {
-                        drop_shadow(dev, runs[i].x, by, runs[i].w, lineH, snap(6.0f), 110);
-                        rrect_fill(dev, runs[i].x, by, runs[i].w, lineH, snap(7.0f), 0xFF232C33u, 0xFF161C22u);
-                        rrect_top(dev, runs[i].x, by, runs[i].w, snap(2.0f), snap(7.0f), (C_ACCENTHI & 0x00FFFFFF) | 0x90000000u, (C_ACCENT & 0x00FFFFFF) | 0x00000000u);
+                    const float ty2 = by + snap(3.0f), th2 = lineH - snap(6.0f);   // inset, so wrapped lines do not touch
+                    runs[i].ly = by + snap(12.0f);
+                    runs[i].iy = runs[i].ly + snap(9.0f);
+                    const u32 tint = runs[i].hid ? C_MUTE : buff_group_tint(runs[i].grp);
+                    u32 ft, fb, br; float bw2;
+                    if (lift) {   // carried : opaque and raised, so it reads as held ABOVE the band
+                        drop_shadow(dev, runs[i].x, ty2, runs[i].w, th2, snap(6.0f), 110);
+                        ft = 0xFF232C33u; fb = 0xFF161C22u; br = C_ACCENTHI; bw2 = snap(1.6f);
+                    } else if (i == bsSel_) {
+                        ft = (C_ACCENT & 0x00FFFFFF) | 0x3C000000u; fb = (C_ACCENT & 0x00FFFFFF) | 0x18000000u;
+                        br = C_ACCENTHI; bw2 = snap(1.5f);
+                    } else if (i == hot && bsDrag_ < 0) {
+                        ft = 0x40202830u; fb = 0x40161C22u; br = (tint & 0x00FFFFFF) | 0xAA000000u; bw2 = snap(1.3f);
+                    } else {
+                        ft = 0x2A141A1Fu; fb = 0x2A0E1317u;
+                        br = (tint & 0x00FFFFFF) | (runs[i].faint ? 0x38000000u : 0x70000000u);   // not met yet -> a fainter edge, same hue
+                        bw2 = snap(1.2f);
                     }
-                    else if (i == bsSel_) rrect_fill(dev, runs[i].x, by, runs[i].w, lineH, snap(7.0f), (C_ACCENT & 0x00FFFFFF) | 0x3C000000u, (C_ACCENT & 0x00FFFFFF) | 0x18000000u);
-                    else if (i == hot && bsDrag_ < 0) rrect_fill(dev, runs[i].x, by, runs[i].w, lineH, snap(7.0f), 0x18FFFFFFu, 0x0CFFFFFFu);
-                    // A block is as wide as its ICONS or its NAME, whichever is larger -- so the icons must be
-                    // CENTRED in it, not hugged to its right edge. Right-hugging was invisible while the icons
-                    // were the widest thing ; the moment every buff got a name, the name sat on the block's axis
-                    // and the icon sat off it. Everything in a block shares one axis now : name, icons, rule.
-                    const int kk = runs[i].hid ? 0 : (runs[i].n < capI ? runs[i].n : capI);
-                    const float uw = (kk > 0) ? (kk * ics + (kk - 1) * gapI) : snap(6.0f);
-                    flat(dev, snap(runs[i].x + (runs[i].w - uw) * 0.5f), snap(uy2), uw, snap(2.0f), fa(runs[i].hid ? C_MUTE : buff_group_tint(runs[i].grp)));
+                    rpanel(dev, runs[i].x, ty2, runs[i].w, th2, snap(8.0f), ft, fb, br, bw2);
+                    if (lift) rrect_top(dev, runs[i].x, ty2, runs[i].w, snap(2.0f), snap(8.0f), (C_ACCENTHI & 0x00FFFFFF) | 0x90000000u, (C_ACCENT & 0x00FFFFFF) | 0x00000000u);
                 }
                 // ---- PASS 2 : every icon, under ONE texture bind for the whole band ----
                 if (bTex) {
