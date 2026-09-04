@@ -382,7 +382,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     //  configuring. Showing the live HUD instead degrades to showing nothing the moment you are solo. Kept in
     //  history at the tag stable-pre-drawer if the idea is ever worth revisiting.)
     const float m = snap(30.0f);
-    const float ix = m, iy = m, iw = sw - 2.0f * m;
+    const float ix = m, iw = sw - 2.0f * m;   // no iy any more : the masthead is full-bleed and everything
+                                             // below it starts from the rail, so nothing measures from a top margin
     const float pageBot = sh - m;
     const float hx = pvStageX_, hy = pvStageY_, hw = pvStageW_, hh = pvStageH_;
     pvStageW_ = 0.0f;
@@ -409,20 +410,24 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // is under 0x30 alpha. That is the whole trick to "rich, not loud" : depth comes from many faint layers that
     // agree, never from one loud one. And it is all live geometry -- D3D8 has no shaders, but it has additive
     // blending, gradients and a stencil scissor, which is enough to light a band from the inside.
-    const float mhTop = iy - snap(8.0f), mhH = snap(74.0f), mhBot = mhTop + mhH;
+    // FULL BLEED : the plate runs to the top and to both screen edges. Inset by the page margin it read as a
+    // panel floating inside a window -- a dialog, not a masthead -- and the strip of page showing above and
+    // beside it served nothing. What stays aligned to the page margin is the CONTENT of the plate, so the logo
+    // sits over the module list and the close button over the right edge of the work area.
+    const float mhTop = 0.0f, mhH = snap(88.0f), mhBot = mhTop + mhH;
     const u32 acc = C_ACCENT & 0x00FFFFFF;
     {
         // 1. the plate itself : a raised slab, warmed a few percent toward the accent so it separates from the
         //    page behind it by TEMPERATURE as well as by value.
-        vg(dev, ix, mhTop, iw, mhH, lerpc(0xFF10151Bu, C_ACCENT, 0.10f), lerpc(0xFF080B0Fu, C_ACCENT, 0.04f));
-        clip_rect_begin(dev, ix, mhTop, iw, mhH);
+        vg(dev, 0.0f, mhTop, sw, mhH, lerpc(0xFF10151Bu, C_ACCENT, 0.10f), lerpc(0xFF080B0Fu, C_ACCENT, 0.04f));
+        clip_rect_begin(dev, 0.0f, mhTop, sw, mhH);
         cs_add(dev);
         // 2. three lights drifting behind it at different speeds, so the band is never twice the same and never
         //    obviously moving either. Sine pairs that do not share a period : the eye reads "alive", not "loop".
         const float cy2 = mhTop + mhH * 0.5f;
-        soft_blob(dev, ix + iw * (0.18f + 0.10f * sinf(f.t * 0.17f)), cy2, iw * 0.26f, mhH * 0.95f, (26u << 24) | acc);
-        soft_blob(dev, ix + iw * (0.55f + 0.14f * sinf(f.t * 0.11f + 2.1f)), cy2, iw * 0.30f, mhH * 0.85f, (18u << 24) | (C_GOLD & 0x00FFFFFF));
-        soft_blob(dev, ix + iw * (0.86f + 0.08f * sinf(f.t * 0.23f + 4.0f)), cy2, iw * 0.20f, mhH * 0.90f, (16u << 24) | acc);
+        soft_blob(dev, sw * (0.18f + 0.10f * sinf(f.t * 0.17f)), cy2, sw * 0.26f, mhH * 0.95f, (26u << 24) | acc);
+        soft_blob(dev, sw * (0.55f + 0.14f * sinf(f.t * 0.11f + 2.1f)), cy2, sw * 0.30f, mhH * 0.85f, (18u << 24) | (C_GOLD & 0x00FFFFFF));
+        soft_blob(dev, sw * (0.86f + 0.08f * sinf(f.t * 0.23f + 4.0f)), cy2, sw * 0.20f, mhH * 0.90f, (16u << 24) | acc);
         // (Slanted light streaks were tried here and removed. A parallelogram out of axis-aligned quads needs
         //  the steps to be invisible, and on a 2400px page they were 18px wide with a 1.6px rise -- so it read as
         //  vertical banding rather than as a diagonal, and `flat` has no feathered edge to hide the seams. The
@@ -515,16 +520,16 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     //    to finish. The travel is slow enough -- one pass every twenty-odd seconds -- that it is never a
     //    progress bar, and it is the one thing on the page that says the overlay is live rather than a picture.
     const float divY = mhBot;
-    shadow_down(dev, ix, divY, iw, snap(16.0f), 0x66000000u);                  // the plate casts onto the content
-    flat(dev, ix, divY - snap(1.0f), iw, 1, (0x30FFFFFFu));                    // inner top light on the rail
+    shadow_down(dev, 0.0f, divY, sw, snap(16.0f), 0x66000000u);               // the plate casts onto the content
+    flat(dev, 0.0f, divY - snap(1.0f), sw, 1, (0x30FFFFFFu));                  // inner top light on the rail
     { const u32 gl = lerpc(C_GOLD, C_GOLDHI, pulse), gr = C_ACCENT;
-      const float rw = iw * e;                                                 // still wipes in with the page
-      q4(dev, ix, divY, rw, snap(3.0f), gl, gr, shade(gl, -0.35f), shade(gr, -0.35f));
+      const float rw = sw * e;                                                 // still wipes in with the page
+      q4(dev, 0.0f, divY, rw, snap(3.0f), gl, gr, shade(gl, -0.35f), shade(gr, -0.35f));
       cs_add(dev);
       const float tt = f.t * 0.045f, ph = tt - floorf(tt);                     // one pass every ~22 s
-      soft_blob(dev, ix + rw * ph, divY + snap(1.5f), snap(90.0f), snap(4.0f), (70u << 24) | (C_GOLDHI & 0x00FFFFFF));
+      soft_blob(dev, rw * ph, divY + snap(1.5f), snap(90.0f), snap(4.0f), (70u << 24) | (C_GOLDHI & 0x00FFFFFF));
       cs(dev); }
-    flat(dev, ix, divY + snap(3.0f), iw, 1, C_BORDER);
+    flat(dev, 0.0f, divY + snap(3.0f), sw, 1, C_BORDER);
 
     // ===== TAB STRIP (glass "modules" : gear / profile / help, an accent-lit active pill) =====
     const float tabY = divY + snap(18.0f), tabH = snap(42.0f), tabW = snap(176.0f), tabGap = snap(6.0f);
