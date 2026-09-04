@@ -24,7 +24,9 @@ namespace aio {
 // The two are deliberately separate : while the game is not foreground but the mouse sits over it, the old code
 // stopped drawing our pointer AND stopped hiding the native one at the same instant, so the game's cursor came
 // back and flickered with every WM_SETCURSOR. Input still requires `focused` ; only the drawing follows overGame.
-struct MouseState { float x = 0.0f, y = 0.0f; bool down = false; bool clicked = false; bool focused = true; bool overGame = false; };
+// `back` / `backClicked` : the thumb BACK button (VK_XBUTTON1), tracked with the same press-edge rule as the
+// left one. It is what a hand expects for "up one level" -- the config's Back button stays, this is beside it.
+struct MouseState { float x = 0.0f, y = 0.0f; bool down = false; bool clicked = false; bool back = false; bool backClicked = false; bool focused = true; bool overGame = false; };
 
 // per-frame context handed to every widget. Everything is drawn in DIRECT D3D8 inside
 // the HUD's render block: graphics via gfx/draw.h, text via the shared `font` atlas

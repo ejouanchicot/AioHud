@@ -374,7 +374,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             const int dragUid = CTRL_ID;
             const u32 bTex = buff_atlas_tex(dev);   // BORROWED : buff_atlas.cpp owns it and is the only place that releases it. 0 while its bounded retry has not landed -> the band draws its tints and stays usable, rather than holes.
 
-            struct Run { int n; unsigned short ic[4]; float x, w; unsigned char grp; bool hid; bool faint; const char* lbl; };
+            struct Run { int n; unsigned short ic[4]; float x, w, ly, iy; unsigned char grp; bool hid; bool faint; const char* lbl; };
             Run runs[64]; int nRun = 0;
             int slots[UiConfig::BUFF_ORDER_N];   // slots[k] = the buffOrder position the k-th visible run occupies
             unsigned short inner[256]; int innerTotal = 0, innerN = 0;
@@ -420,14 +420,19 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     Run& r = runs[nRun++];
                     r.n = 1; r.ic[0] = inner[i]; r.grp = (unsigned char)g; r.hid = false;
                     r.faint = !party().status_seen(inner[i]);   // in the catalogue, not on anyone yet
-                    r.lbl = 0;   // one buff per block : its name is far wider than its icon, so the selection line names it
+                    r.lbl = buff_status_name(inner[i]);   // named above its icon, exactly like a group : the band has to be readable at BOTH levels
                 }
             }
             if (bsSel_ >= nRun) bsSel_ = -1;
             if (bsDrag_ >= nRun) { bsDrag_ = -1; bsDrop_ = -1; }
 
-            // ---- fit the whole band on ONE line ----
-            // Shrink the per-run PREVIEW before shrinking the icons : losing Watch's 4th icon costs nothing,
+            // ---- fit the band, WRAPPING it over as many lines as it needs ----
+            // One line was a mistake with teeth : once thirteen blocks (or a group's whole catalogue, now that
+            // every buff is named) outgrew the column, the overflow ran off the LEFT -- and the band is
+            // right-aligned, so what vanished was the TAIL of the order. Other and Debuffs simply were not
+            // there, and the page's stencil clip hid the fact. Wrapping is also the HUD's own idiom : the real
+            // strip already runs on two rows.
+            // Shrink the per-run PREVIEW before shrinking anything else : losing Watch's 4th icon costs nothing,
             // losing legibility costs everything. A hidden group keeps a narrow stub -- hiding a group must not
             // remove it from the editor that is the only place to bring it back.
             const float gapR = snap(6.0f);
@@ -456,19 +461,16 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     runs[i].w = w;
                     totalW += w + (i ? gapR : 0.0f);
                 }
-                if (totalW <= ctrlW) break;
+                if (totalW <= ctrlW * 3.0f) break;               // up to three lines : past that it stops being a band
                 if (capI > 1) --capI;                            // first : fewer icons per block
-                else if (lsz > snap(8.0f)) lsz -= snap(0.5f);    // then the label, now the widest part
-                else break;                                      // the icons are never scaled : they are the game's
-                                                                 // own size. At the narrowest panel the leftmost
-                                                                 // blocks clip instead, and the page is
-                                                                 // stencil-clipped so nothing spills
+                else if (lsz > snap(8.0f)) lsz -= snap(0.5f);    // then the label
+                else break;                                      // the icons are NEVER scaled : they are the game's own size
             }
-            // Entry 0 sits at the RIGHT edge and the band fills leftward. No position numbers anywhere, because
-            // the position IS the position.
+            // Entry 0 sits at the RIGHT edge and the band fills leftward, wrapping down. No position numbers
+            // anywhere, because the position IS the position.
             const float rightX = coX + ctrlW;
-            { float x = rightX;
-              for (int i = 0; i < nRun; ++i) { x -= runs[i].w; runs[i].x = x; x -= gapR; } }
+            const float lineH = snap(ics + snap(42.0f));
+            int nLines = 1;
 
             int mvFrom = -1, mvTo = -1;   // one move per frame, whatever produced it -- applied after the band
 
@@ -502,7 +504,12 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     }
                 } else {
                     bx -= chipW2;
-                    if (push_btn(dev, fo, mo, click, CTRL_ID, bx, ty, chipW2, bh, tr("Back", "Retour"), 0)) { bsInner_ = -1; bsSel_ = -1; }
+                    // The mouse's thumb BACK button does the same thing -- that is what a hand reaches for to go up
+                    // a level. Beside the button, never instead of it : a gesture with no visible control is not a
+                    // feature, and a mouse without thumb buttons is not a broken mouse.
+                    const bool wentBack = push_btn(dev, fo, mo, click, CTRL_ID, bx, ty, chipW2, bh, tr("Back", "Retour"), 0)
+                                       || (mo && mo->backClicked);
+                    if (wentBack) { bsInner_ = -1; bsSel_ = -1; }
                     bx -= snap(8.0f);
                 }
                 // The band carries no text of its own : this line names what is selected, and says how to go deeper.
@@ -519,82 +526,73 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             ROW_NEXT(34.0f)
 
             // ================= the band =================
-            // the band is as tall as it needs to be for the game's own icon size, not a number picked for one
-            const float bandH = snap(ics + snap(42.0f));
-            { ROW_BAND(bandH)
-                const float sy = ry + yo + (snap(40.0f) - bandH) * 0.5f;
-                const float ly = sy + snap(11.0f);                      // the name, centred over its own block
-                const float iy = ly + snap(9.0f), uy = iy + ics + snap(6.0f);
-                // A drag we think we own but the LATCH no longer does : the page was closed, or the tab switched,
-                // mid-drag and ctrl_release_drag() freed it under us. Without this the run stays lifted and the
-                // `bsDrag_ < 0` gate below blocks every future grab -- one badly-timed close and the editor is dead
-                // for the session. Recover ; never latch a transient into a state.
-                if (bsDrag_ >= 0 && !ctrl_drag_active(dragUid)) { bsDrag_ = -1; bsDrop_ = -1; bsEnter_ = 0; }
-
-                // ---- grab : remember WHERE in the block you took hold of it ----
-                // The block then hangs off the pointer at the point you grabbed, like dragging a desktop icon,
-                // instead of snapping its corner to the cursor.
-                int hot = -1;
-                for (int i = 0; i < nRun; ++i) if (inrect(mo, runs[i].x, sy, runs[i].w, bandH)) { hot = i; break; }
-                if (bsDrag_ < 0 && hot >= 0 && ctrl_drag_begin(dragUid, mo, true)) {
-                    bsEnter_ = (bsSel_ == hot) ? 1 : 0;   // a press on the ALREADY selected run means "go inside", if it turns out not to be a drag
-                    bsDrag_ = hot; bsDrop_ = hot; bsSel_ = hot;
-                    bsGrabDX_ = mo->x - runs[hot].x;
-                    bsGrabX_ = mo->x; bsMoved_ = 0;
-                }
-
-                // ---- where would it land ? ----
-                // Walk the OTHER blocks right-to-left and count how many sit right of the pointer. Monotonic in
-                // the pointer's x, so it cannot oscillate the way a "compare against my own current slot" test
-                // does once the reflow has already moved things.
-                if (bsDrag_ >= 0 && ctrl_drag_active(dragUid) && mo) {
-                    // The test is the CARRIED BLOCK'S CENTRE against a neighbour's middle -- not the pointer's.
-                    // Using the raw pointer ignored where you took hold : grab a block by its right edge and
-                    // the pointer has already crossed the neighbour while the block visibly has not, so it
-                    // swapped the instant you touched anything. You have to actually carry it PAST.
-                    const float ctr = (mo->x - bsGrabDX_) + runs[bsDrag_].w * 0.5f;
-                    // ... plus a little stickiness, so a centre resting on a boundary does not flutter between
-                    // two arrangements : leaving the current slot costs a few pixels, returning to it is free.
-                    const float hys = snap(7.0f);
-                    float px2 = rightX; int at = 0;
-                    bool placed = false;
-                    for (int k = 0, seen2 = 0; k < nRun; ++k) {
-                        if (k == bsDrag_) continue;
-                        const float w = runs[k].w;
-                        const float thr = (px2 - w * 0.5f) + ((seen2 < bsDrop_) ? hys : -hys);
-                        if (ctr >= thr) { at = seen2; placed = true; break; }
-                        px2 -= w + gapR; ++seen2;
-                    }
-                    if (!placed) at = nRun - 1;          // left of everything -> last
-                    bsDrop_ = at;
-                    // Click or drag is decided by how far the POINTER travelled, never by whether the computed
-                    // drop index changed : that index flips the moment the pointer sits in the left half of a
-                    // block, so a perfectly still click on that half was being read as a drag -- which is why
-                    // clicking a selected group again did nothing at all.
-                    const float dx = mo->x - bsGrabX_;
-                    if ((dx < 0 ? -dx : dx) > snap(4.0f)) bsMoved_ = 1;
-                }
-
-                // ---- the layout, with the gap already open ----
-                // The other blocks slide apart to show where it will land. That IS the drop indicator : a caret
-                // drawn over the band said the same thing in a language the band does not speak, and it read as
-                // debug output. The gap is the answer, and it is the thing that will actually be there.
+            // Laid out in READING ORDER : right-to-left along a line, then down to the next. Position 1 is the
+            // top-RIGHT block, against the member row -- the direction the HUD strip fills, continued exactly the
+            // way its own two-row mode continues.
+            {
+                // ---- the order the blocks are laid out in : with the carried one lifted out and re-inserted ----
                 int vis[64], nv = 0;
                 if (bsDrag_ >= 0 && bsDrop_ >= 0) {
                     for (int k = 0; k < nRun; ++k) if (k != bsDrag_) { if (nv == bsDrop_) vis[nv++] = bsDrag_; vis[nv++] = k; }
                     if (nv <= bsDrop_) vis[nv++] = bsDrag_;
                 } else for (int k = 0; k < nRun; ++k) vis[nv++] = k;
 
-                { float tx[64]; float x = rightX;
-                  for (int k = 0; k < nv; ++k) { x -= runs[vis[k]].w; tx[vis[k]] = x; x -= gapR; }
-                  // Smooth ONLY while dragging : the springs are keyed by run index, and the runs are rebuilt every
-                  // frame, so between frames where the list itself changes (entering a group, revealing the empties)
-                  // an index means a different block. Snapping when idle keeps the spring in step with reality and
-                  // costs nothing -- there is nothing to animate when nothing is being moved.
-                  const float sp = (bsDrag_ >= 0) ? 26.0f : 1000.0f;
-                  for (int k = 0; k < nRun; ++k) runs[k].x = ease(dragUid, 128 + k, tx[k], sp);
-                  // the dragged block leaves the layout and follows the pointer
-                  if (bsDrag_ >= 0 && mo) runs[bsDrag_].x = mo->x - bsGrabDX_;
+                // ---- wrap : a block that no longer fits on this line starts the next one ----
+                float tx[64]; int tline[64];
+                { float x = rightX; int ln = 0;
+                  for (int k = 0; k < nv; ++k) {
+                      const int i = vis[k];
+                      if (x - runs[i].w < coX && x < rightX) { ++ln; x = rightX; }
+                      x -= runs[i].w; tx[i] = x; tline[i] = ln; x -= gapR;
+                  }
+                  nLines = ln + 1;
+                }
+                const float bandH = lineH * nLines;
+                ROW_BAND(bandH) (void)yo;
+                const float sy0 = ry;
+
+                // A drag we think we own but the LATCH no longer does : the page was closed, or the tab switched,
+                // mid-drag and ctrl_release_drag() freed it under us. Without this the block stays lifted and the
+                // `bsDrag_ < 0` gate below blocks every future grab -- one badly-timed close and the editor is dead
+                // for the session. Recover ; never latch a transient into a state.
+                if (bsDrag_ >= 0 && !ctrl_drag_active(dragUid)) { bsDrag_ = -1; bsDrop_ = -1; bsEnter_ = 0; }
+
+                // ---- position each block, smoothing the reflow only while something is being carried ----
+                { const float sp = (bsDrag_ >= 0) ? 26.0f : 1000.0f;   // idle : snap, so a rebuilt list cannot animate the wrong block
+                  for (int k = 0; k < nRun; ++k) runs[k].x = ease(dragUid, 128 + k, tx[k], sp); }
+
+                // ---- grab : remember WHERE in the block you took hold of it ----
+                int hot = -1;
+                for (int i = 0; i < nRun; ++i) if (inrect(mo, runs[i].x, sy0 + tline[i] * lineH, runs[i].w, lineH)) { hot = i; break; }
+                if (bsDrag_ < 0 && hot >= 0 && ctrl_drag_begin(dragUid, mo, true)) {
+                    bsEnter_ = (bsSel_ == hot) ? 1 : 0;   // a press on the ALREADY selected block means "go inside", if it turns out not to be a drag
+                    bsDrag_ = hot; bsDrop_ = hot; bsSel_ = hot;
+                    bsGrabDX_ = mo->x - runs[hot].x; bsGrabX_ = mo->x; bsMoved_ = 0;
+                }
+
+                // ---- where would it land ? ----
+                // Count how many of the OTHER blocks come BEFORE the carried one in reading order -- earlier line,
+                // or same line and further right. That count IS the insertion index, and it is monotonic in the
+                // pointer, so it cannot oscillate. The test uses the CARRIED BLOCK'S CENTRE, not the pointer :
+                // grab a block by its right edge and the pointer crosses a neighbour while the block visibly has
+                // not. The +/- epsilon is a dead zone -- inside it the current arrangement is kept, so a centre
+                // resting on a boundary does not flutter between two answers.
+                if (bsDrag_ >= 0 && ctrl_drag_active(dragUid) && mo) {
+                    const float cx = (mo->x - bsGrabDX_) + runs[bsDrag_].w * 0.5f;
+                    int cl = (int)((mo->y - sy0) / lineH); if (cl < 0) cl = 0; if (cl >= nLines) cl = nLines - 1;
+                    const float eps = snap(7.0f);
+                    int atLo = 0, atHi = 0;
+                    for (int k = 0; k < nRun; ++k) {
+                        if (k == bsDrag_) continue;
+                        const float kc = tx[k] + runs[k].w * 0.5f;
+                        if (tline[k] < cl) { ++atLo; ++atHi; continue; }
+                        if (tline[k] > cl) continue;
+                        if (kc > cx + eps) ++atLo;
+                        if (kc > cx - eps) ++atHi;
+                    }
+                    bsDrop_ = (bsDrop_ >= atLo && bsDrop_ <= atHi) ? bsDrop_ : ((bsDrop_ < atLo) ? atLo : atHi);
+                    const float dx = mo->x - bsGrabX_;
+                    if ((dx < 0 ? -dx : dx) > snap(4.0f)) bsMoved_ = 1;   // click or drag is decided by TRAVEL, never by whether the index moved
                 }
 
                 // ---- release ----
@@ -605,46 +603,41 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     else if (!bsMoved_ && bsEnter_ && atGroups) { bsInner_ = runs[from].grp; bsSel_ = -1; }   // a click on an already-selected group : go inside
                     bsEnter_ = 0; bsMoved_ = 0;
                 }
+                // the carried block leaves the layout and follows the pointer
+                if (bsDrag_ >= 0 && mo) runs[bsDrag_].x = mo->x - bsGrabDX_;
 
                 // ---- PASS 1 : surfaces (colour-quad state) ----
                 for (int k = 0; k < nv; ++k) {
                     const int i = vis[k];
                     const bool lift = (i == bsDrag_);
-                    const float dy = lift ? -snap(5.0f) : 0.0f;
+                    const float by = sy0 + (lift ? ((mo ? mo->y : sy0) - lineH * 0.5f - sy0) : tline[i] * lineH);
+                    const float ly2 = by + snap(11.0f), iy2 = ly2 + snap(9.0f), uy2 = iy2 + ics + snap(6.0f);
+                    runs[i].ly = ly2; runs[i].iy = iy2;   // the icon and text passes read these back
                     if (lift) {
-                        // carried, not just highlighted : a shadow under it and a solid surface, so it reads as
-                        // something held ABOVE the band rather than a cell that changed colour.
-                        drop_shadow(dev, runs[i].x, sy + dy, runs[i].w, bandH, snap(6.0f), 110);
-                        rrect_fill(dev, runs[i].x, sy + dy, runs[i].w, bandH, snap(7.0f), 0xFF232C33u, 0xFF161C22u);
-                        rrect_top(dev, runs[i].x, sy + dy, runs[i].w, snap(2.0f), snap(7.0f), (C_ACCENTHI & 0x00FFFFFF) | 0x90000000u, (C_ACCENT & 0x00FFFFFF) | 0x00000000u);
+                        drop_shadow(dev, runs[i].x, by, runs[i].w, lineH, snap(6.0f), 110);
+                        rrect_fill(dev, runs[i].x, by, runs[i].w, lineH, snap(7.0f), 0xFF232C33u, 0xFF161C22u);
+                        rrect_top(dev, runs[i].x, by, runs[i].w, snap(2.0f), snap(7.0f), (C_ACCENTHI & 0x00FFFFFF) | 0x90000000u, (C_ACCENT & 0x00FFFFFF) | 0x00000000u);
                     }
-                    else if (i == bsSel_) rrect_fill(dev, runs[i].x, sy, runs[i].w, bandH, snap(7.0f), (C_ACCENT & 0x00FFFFFF) | 0x3C000000u, (C_ACCENT & 0x00FFFFFF) | 0x18000000u);
-                    else if (i == hot && bsDrag_ < 0) rrect_fill(dev, runs[i].x, sy, runs[i].w, bandH, snap(7.0f), 0x18FFFFFFu, 0x0CFFFFFFu);
+                    else if (i == bsSel_) rrect_fill(dev, runs[i].x, by, runs[i].w, lineH, snap(7.0f), (C_ACCENT & 0x00FFFFFF) | 0x3C000000u, (C_ACCENT & 0x00FFFFFF) | 0x18000000u);
+                    else if (i == hot && bsDrag_ < 0) rrect_fill(dev, runs[i].x, by, runs[i].w, lineH, snap(7.0f), 0x18FFFFFFu, 0x0CFFFFFFu);
                     const int kk = runs[i].hid ? 0 : (runs[i].n < capI ? runs[i].n : capI);
                     const float uw = (kk > 0) ? (kk * ics + (kk - 1) * gapI) : snap(6.0f);
-                    flat(dev, snap(runs[i].x + runs[i].w - padR - uw), snap(uy + dy), uw, snap(2.0f), fa(runs[i].hid ? C_MUTE : buff_group_tint(runs[i].grp)));
+                    flat(dev, snap(runs[i].x + runs[i].w - padR - uw), snap(uy2), uw, snap(2.0f), fa(runs[i].hid ? C_MUTE : buff_group_tint(runs[i].grp)));
                 }
                 // ---- PASS 2 : every icon, under ONE texture bind for the whole band ----
                 if (bTex) {
                     dTexQuadState(dev, bTex, false);
                     for (int i = 0; i < nRun; ++i) {
                         if (runs[i].hid) continue;
-                        const float y0 = iy + ((i == bsDrag_) ? -snap(5.0f) : 0.0f);
                         const int kk = runs[i].n < capI ? runs[i].n : capI;
                         for (int q = 0; q < kk; ++q) {
-                            // MIRRORED inside the run, like the band itself : rank 0 is the RIGHTMOST icon of its
-                            // own block, not the leftmost. Drawing the preview left-to-right inside a band that
-                            // reads right-to-left put Haste on the wrong side of Refresh -- the run contradicted
-                            // the strip it lives in, and the config then disagreed with the HUD it is editing.
+                            // MIRRORED inside the block, like the band itself : rank 0 is the RIGHTMOST icon of its
+                            // own block. Drawing the preview left-to-right inside a band that reads right-to-left put
+                            // Haste on the wrong side of Refresh -- the block contradicted the strip it lives in.
                             float au, av, u0, v0; buff_cell_uv(runs[i].ic[q], au, av, u0, v0);
                             const float ix = runs[i].x + runs[i].w - padR - (q + 1) * ics - q * gapI;
-                            // A group you have not met yet is previewed from its own catalogue and drawn
-                            // faint -- it says "this is what this group is" without pretending you carry it.
-                            // The fade is in the VERTEX colour, never the texture's alpha : a MANAGED
-                            // texture's alpha mis-samples as opaque while a zone loads (reference/d3d8-rendering.md).
-                            const u32 tc = runs[i].faint ? fa(0x70FFFFFFu) : 0xFFFFFFFFu;
-                            tquad(dev, snap(ix), snap(y0), ics, ics,
-                                  u0, u0 + au, v0, v0 + av, tc, tc);
+                            const u32 tc = runs[i].faint ? fa(0x70FFFFFFu) : 0xFFFFFFFFu;   // fade in the VERTEX colour : a MANAGED texture's alpha mis-samples as opaque while a zone loads
+                            tquad(dev, snap(ix), snap(runs[i].iy), ics, ics, u0, u0 + au, v0, v0 + av, tc, tc);
                         }
                     }
                     dSetTex(dev, 0, 0); cs(dev);   // never leave a bound texture / textured state for the next control (rule 8)
@@ -653,17 +646,17 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 fo->begin(dev);
                 for (int i = 0; i < nRun; ++i) {
                     if (!runs[i].lbl) continue;
-                    const float dy = (i == bsDrag_) ? -snap(5.0f) : 0.0f;
                     const u32 c2 = runs[i].hid ? C_MUTE
                                  : (i == bsSel_ || i == bsDrag_) ? C_ACCENTHI
                                  : (runs[i].faint ? C_MUTE : C_DIM);
-                    fo->draw_c(dev, runs[i].x + runs[i].w * 0.5f, ly + dy, runs[i].lbl, lsz, fa(c2), fa(C_STROKE), 1.0f);
+                    fo->draw_c(dev, runs[i].x + runs[i].w * 0.5f, runs[i].ly, runs[i].lbl, lsz, fa(c2), fa(C_STROKE), 1.0f);
                 }
                 // ---- PASS 4 : hidden groups, as a mark rather than icons ----
                 for (int i = 0; i < nRun; ++i) if (runs[i].hid)
-                    rrect_fill(dev, snap(runs[i].x + runs[i].w - snap(9.0f)), snap(iy + ics * 0.35f), snap(6.0f), snap(6.0f), snap(3.0f), fa(C_MUTE), fa(C_MUTE));
+                    rrect_fill(dev, snap(runs[i].x + runs[i].w - snap(9.0f)), snap(runs[i].iy + ics * 0.35f), snap(6.0f), snap(6.0f), snap(3.0f), fa(C_MUTE), fa(C_MUTE));
+                ROW_NEXT(bandH)
             }
-            ROW_NEXT(bandH)
+
 
             // ---- the one thing the band cannot say about itself ----
             { ROW_BAND(24.0f)

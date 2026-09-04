@@ -50,7 +50,7 @@ void box_skins_dispose();   // ... release at shutdown
 // Cursor is client-relative to the focused (game) window, scaled by client size -> coord space.
 static void poll_mouse(MouseState& m, float coordW, float coordH, HWND gameHw) {
     POINT p;
-    if (!GetCursorPos(&p)) { m.clicked = false; m.down = false; return; }
+    if (!GetCursorPos(&p)) { m.clicked = false; m.down = false; m.backClicked = false; m.back = false; return; }
     HWND fg = GetForegroundWindow();
     // Two SEPARATE questions, deliberately not merged (they used to be, and that was the double-cursor bug) :
     //   focused  -> may we ACT on input ? Only when the game is the OS foreground, else a click meant for the
@@ -64,7 +64,7 @@ static void poll_mouse(MouseState& m, float coordW, float coordH, HWND gameHw) {
     // resolves to the top-level game window. This drives who OWNS the pointer, independently of focus.
     HWND under = WindowFromPoint(p);
     m.overGame = (gameHw != nullptr && under != nullptr && GetAncestor(under, GA_ROOT) == gameHw);
-    if (!m.focused && !m.overGame) { m.clicked = false; m.down = false; return; }
+    if (!m.focused && !m.overGame) { m.clicked = false; m.down = false; m.backClicked = false; m.back = false; return; }
     // Map through the GAME window, never through `fg` : when the game is not foreground, `fg` is the OTHER
     // app, and mapping into ITS client rect put our drawn pointer in the wrong place entirely.
     POINT cp = p; ScreenToClient(gameHw, &cp);
@@ -76,10 +76,13 @@ static void poll_mouse(MouseState& m, float coordW, float coordH, HWND gameHw) {
     // POSITION is tracked whenever the pointer is over the game (so our pointer can be drawn while another app
     // has focus) but the BUTTON is only ever read when the game is focused -- otherwise a click meant for the
     // other application would register as a config click here.
-    if (!m.focused) { m.clicked = false; m.down = false; return; }
+    if (!m.focused) { m.clicked = false; m.down = false; m.backClicked = false; m.back = false; return; }
     bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     m.clicked = down && !m.down;   // press edge = one-shot click
     m.down    = down;
+    const bool bk = (GetAsyncKeyState(VK_XBUTTON1) & 0x8000) != 0;   // thumb BACK : same press edge, same focus gate
+    m.backClicked = bk && !m.back;
+    m.back        = bk;
 }
 
 Hud::Hud()  { add_default(); }   // show the fioles even before a layout is applied
