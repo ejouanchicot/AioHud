@@ -269,9 +269,67 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           }
           ROW_NEXT(bh2)
         }
-        // --- buffs : size, how many, over how many lines ---
+        // --- the cursor, and what else the member row may show ---
         { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
           ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          { const float lo = 0.50f, hi = 2.00f; char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));
+            float v01 = (ui_config().cursorScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Cursor Size", "Taille du curseur"), czbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().cursorScale = v < lo ? lo : (v > hi ? hi : v); } }
+          { const float rowH = snap(38.0f); fo->begin(dev);
+            fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Row extras", "Sur la ligne"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yB + (rowH - bbh) * 0.5f;
+            const float bx0 = xB + halfW - (2 * bbw + bgap);
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Casts", "Sorts"), ui_config().cast[0] != 0)) { ui_config().cast[0] = !ui_config().cast[0]; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Distance", "Distance"), ui_config().dist[0] != 0)) { ui_config().dist[0] = !ui_config().dist[0]; save_ui_config(); } }
+          ROW_NEXT(bh2)
+        }
+        // ---- Distance-zone colours : the yalms number is tinted by cast-range zone (Close < 10' / Normal 10'..20.8' / Far >= 20.8'). ----
+        // Three zones, three colours -- but three OPEN pickers is ~690px of panel for a setting most people touch
+        // once. One row of swatches says everything the three label rows said (the colour IS the label), and the
+        // picker opens for the one you click. Click it again to close it.
+        if (ui_config().dist[0]) {
+            u32* dcol[3] = { &ui_config().distColClose, &ui_config().distColNormal, &ui_config().distColFar };
+            const char* dsh[3] = { tr("Close", "Proche"), tr("Normal", "Normal"), tr("Far", "Loin") };
+            { ROW_BAND(48.0f)
+                const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Distance colours", "Couleurs de distance"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                const float sw2 = snap(74.0f), sh2 = snap(28.0f), sg = snap(8.0f);
+                const float sx0 = coX + ctrlW - (3 * sw2 + 2 * sg), sy2 = ty + (rowH - sh2) * 0.5f;
+                for (int di = 0; di < 3; ++di) {   // PASS 1 : the swatches (quads) + the clicks
+                    const float sx = sx0 + di * (sw2 + sg);
+                    const bool selc = (pcDistPick_ == di);
+                    if (selc) { cs_add(dev); rrect_glow(dev, sx, sy2, sw2, sh2, snap(6.0f), (*dcol[di] & 0x00FFFFFF) | 0x80000000u, snap(6.0f)); cs(dev); }
+                    rrect_fill(dev, sx, sy2, sw2, sh2, snap(6.0f), *dcol[di], shade(*dcol[di], -0.25f));
+                    outline(dev, sx, sy2, sw2, sh2, selc ? 0xFFFFFFFF : C_BORDER);
+                    if (inrect(mo, sx, sy2, sw2, sh2) && click) pcDistPick_ = selc ? -1 : di;
+                }
+                fo->begin(dev);
+                for (int di = 0; di < 3; ++di) {   // PASS 2 : the zone names, in ONE font pass. White on a stroke so
+                    const float sx = sx0 + di * (sw2 + sg);   // they stay readable on ANY colour the user picks.
+                    fo->draw_c(dev, sx + sw2 * 0.5f, sy2 + sh2 * 0.5f, dsh[di], snap(11.5f), fa(0xFFFFFFFFu), fa(0xFF000000u), 1.4f);
+                }
+                ROW_NEXT(48.0f)
+            }
+            if (pcDistPick_ >= 0 && pcDistPick_ < 3) { CFG_COLOR_PICKER_I(dcol[pcDistPick_], pcDistPick_) }
+        }
+    }   // end Content
+    // ======================================================= BUFFS =======================================================
+    // Everything about the buff strip in ONE place -- how big, how many, over how many lines, and in what order.
+    // Splitting them was a failure of the panel's own rule: Content groups by the OBJECT a setting acts on, and the
+    // strip is one object. Its size lived under Content while its order lived in a section of its own, so answering
+    // "how do my buffs show up" meant visiting two places.
+    // It is also why this is a top-level section rather than a sub-section: the band is an EDITOR, and nesting it
+    // one level deeper is exactly the third disclosure level the research says to avoid.
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_)) pcBuffsOpen_ = !pcBuffsOpen_;
+    ROW_NEXT(42.0f)
+    if (pcBuffsOpen_) {
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // how big, and how many
+          ROW_BAND(bh2) (void)yo;
           const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
           const float yB = twoCol ? yA : yA + snap(48.0f);
           const float xB = twoCol ? col2X : coX;
@@ -287,58 +345,21 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 idx = wrap(idx + d, 5); ui_config().buffMax = BM[idx]; save_ui_config(); } }
           ROW_NEXT(bh2)
         }
-        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // buff rows + the selection cursor
-          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          { const char* brl[2] = { tr("1 line", "1 ligne"), tr("2 lines", "2 lignes") };
+        { ROW_BAND(48.0f)   // over how many lines
+            const char* brl[2] = { tr("1 line", "1 ligne"), tr("2 lines", "2 lignes") };
             int bri = (ui_config().buffRows <= 1) ? 0 : 1;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Buff Rows", "Lignes de buffs"), brl[bri])) {
-                bri = wrap(bri + d, 2); ui_config().buffRows = bri + 1; save_ui_config(); } }
-          { const float lo = 0.50f, hi = 2.00f; char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));
-            float v01 = (ui_config().cursorScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Cursor Size", "Taille du curseur"), czbuf, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().cursorScale = v < lo ? lo : (v > hi ? hi : v); } }
-          ROW_NEXT(bh2)
-        }
-        // --- the row's optional readouts ---
-        { ROW_BAND(48.0f)
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Row extras", "Sur la ligne"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f;
-            const float bx0 = coX + ctrlW - (2 * bbw + bgap);
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Casts", "Sorts"), ui_config().cast[0] != 0)) { ui_config().cast[0] = !ui_config().cast[0]; save_ui_config(); }
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Distance", "Distance"), ui_config().dist[0] != 0)) { ui_config().dist[0] = !ui_config().dist[0]; save_ui_config(); }
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff Rows", "Lignes de buffs"), brl[bri])) {
+                bri = wrap(bri + d, 2); ui_config().buffRows = bri + 1; save_ui_config(); }
             ROW_NEXT(48.0f)
         }
-        // ---- Distance-zone colours : the yalms number is tinted by cast-range zone (Close < 10' / Normal 10'..20.8' / Far >= 20.8'). ----
-        if (ui_config().dist[0]) {
-            u32* dcol[3] = { &ui_config().distColClose, &ui_config().distColNormal, &ui_config().distColFar };
-            const char* dlab[3] = { tr("Close (< 10')", "Proche (< 10')"), tr("Normal (10-20.8')", "Normal (10-20.8')"), tr("Far (>= 20.8')", "Loin (>= 20.8')") };
-            for (int di = 0; di < 3; ++di) {
-                { ROW_BAND(52.0f)   // label + live swatch
-                    const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-                    fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, dlab[di], snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-                    const float sw2 = snap(64.0f), sh2 = snap(26.0f), sx = coX + ctrlW - sw2, sy2 = ty + (rowH - sh2) * 0.5f;
-                    rrect_fill(dev, sx, sy2, sw2, sh2, snap(6.0f), *dcol[di], shade(*dcol[di], -0.25f));
-                    outline(dev, sx, sy2, sw2, sh2, C_BORDER);
-                } ROW_NEXT(52.0f)
-                CFG_COLOR_PICKER_I(dcol[di], di)
-            }
-        }
-    }   // end Content
-    // ==================================================== BUFF ORDER ====================================================
-    // Its own section, not a sub-section of another : it is an EDITOR, not a list of settings, and burying it one
-    // level deeper is exactly the third disclosure level the research says to avoid.
+    }
         // ---- sub-section : BUFF ORDER. The strip draws its icons RIGHT-TO-LEFT from index 0, so the group at
         // position 1 ends up nearest the member's row. Ordering by GROUP (13 rows) rather than by status (624 of
         // them) is what keeps this configurable at all -- and it makes Max Buffs deliberate : the cut now falls on
         // whatever the user parked last instead of on whichever buff the server happened to send late. ----
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buff order", "Ordre des buffs"), buffOrderOpen_)) buffOrderOpen_ = !buffOrderOpen_;
+        if (pcBuffsOpen_ && cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Order", "Ordre"), buffOrderOpen_)) buffOrderOpen_ = !buffOrderOpen_;
         ROW_NEXT(42.0f)
-        if (buffOrderOpen_) {
+        if (pcBuffsOpen_ && buffOrderOpen_) {
             // ================= THE STRIP IS THE CONTROL =================
             // What is configured is a horizontal band of icons, so the editor IS that band : the real atlas, filling
             // right-to-left exactly like the HUD strip hugging a member row. You grab a run and slide it. "Where will
