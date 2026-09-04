@@ -714,135 +714,165 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
 
     // ---- (Alliance and Text follow, unchanged : Text covers BOTH groups, so it stays last) ----
 
-    // ========================================================= ALLIANCE =========================================================
+    // ==================================================== ALLIANCE ====================================================
+    // The SAME three sections as the party box, in the same order, holding the same kinds of thing. That is the
+    // point of a grammar : what you learned one category up still applies here. Alliance has no buff strip (the game
+    // never sends alliance buffs) and no selection cursor, so those simply do not appear -- a missing row is not a
+    // different layout.
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (catOpen_[7]) {
-        // Show : master on/off for the two ALLIANCE boxes (independent of the Party box above).
-        ROW_TOGGLE_G(CTRL_ID, tr("Show", "Afficher"), ui_config().allyShow, 52.0f, 40.0f, 150.0f)
-        // ---- Alliance box settings (index 1 ; no buffs / animation -- alliances get none) ----
-        { ROW_BAND(46.0f)   // Size (alliance : 50%..200%) -- canonical : right after Show
-            const float lo = 0.50f, hi = 2.00f;
+        // ---- General ----
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          row_toggle(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Show", "Afficher"), &ui_config().allyShow, 40.0f, 150.0f);
+          { const float lo = 0.50f, hi = 2.00f;   // alliance may go smaller than the party box
             char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[1].scale * 100.0f + 0.5f));
             float v01 = (ui_config().box[1].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), szbuf, &v01)) {
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Size", "Taille"), szbuf, &v01)) {
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().box[1].scale = v < lo ? lo : (v > hi ? hi : v); }
+                ui_config().box[1].scale = v < lo ? lo : (v > hi ? hi : v); } }
+          ROW_NEXT(bh2)
         }
-        ROW_NEXT(46.0f)
-        // ---- Theme : follow the Party box theme, or give the alliance boxes their OWN (procedural themes fully). ----
-        ROW_CHOICE_G(CTRL_ID, tr("Theme", "Thème"), ui_config().allyThemeCopy, tr("Same as Party", "Comme Party"), tr("Custom", "Perso"), 52.0f, 40.0f, 150.0f)
+        // ---- Frame ----
+        // Follow the party box, or have its own. Everything below this row exists only in the second case, which is
+        // why the choice is the row that opens the section rather than one buried inside it.
+        ROW_CHOICE_G(CTRL_ID, tr("Theme", "Th\xC3\xA8me"), ui_config().allyThemeCopy, tr("Same as Party", "Comme Party"), tr("Custom", "Perso"), 48.0f, 38.0f, 150.0f)
         if (!ui_config().allyThemeCopy) {
-        { ROW_BAND(52.0f)   // Box Theme (family)
-          const int fam = window_theme_family(ui_config().allyTheme), var = window_theme_variant(ui_config().allyTheme);
-          if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Box Theme", "Thème de cadre"), box_family_name(fam))) {
-              ui_config().allyTheme = window_theme_index(wrap(fam + d, box_family_count()), var); save_ui_config(); } }
-        ROW_NEXT(52.0f)
-        if (window_theme_family(ui_config().allyTheme) != 0) { ROW_BAND(48.0f)   // Custom colour toggle
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Custom colour", "Couleur perso"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            const bool on = ui_config().allyHue != 0;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
-                ui_config().allyHue = on ? 0u : (box_hue_color(window_theme_variant(ui_config().allyTheme)) | 0xFF000000u); save_ui_config(); }
-            ROW_NEXT(48.0f)
-        }
-        if (window_theme_family(ui_config().allyTheme) != 0 && ui_config().allyHue != 0) {
-            CFG_COLOR_PICKER(&ui_config().allyHue)
-        } else
-        {   // variant grid
-          const int fam = window_theme_family(ui_config().allyTheme), var = window_theme_variant(ui_config().allyTheme);
-          const bool isFFXI = (fam == 0);
-          const int nVar = isFFXI ? window_tex_theme_count() : box_hue_count();
-          const int COLS = isFFXI ? (nVar < 1 ? 1 : nVar) : 15;
-          const int nrows = (nVar + COLS - 1) / COLS;
-          const float cw = isFFXI ? snap(42.0f) : snap(22.0f), ch = isFFXI ? snap(26.0f) : snap(22.0f), cg = snap(7.0f);
-          const float gridH = nrows * ch + (nrows - 1) * cg, slotH = gridH + snap(20.0f);
-          ROW_BAND(slotH) (void)yo;
-          fo->begin(dev);
-          fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, isFFXI ? tr("Theme", "Thème") : tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-          const float gridW = COLS * cw + (COLS - 1) * cg;
-          const float gx = coX + ctrlW - gridW, gy = ry + (slotH - gridH) * 0.5f;
-          for (int k = 0; k < nVar; ++k) {
-              const float xk = gx + (k % COLS) * (cw + cg), yk = gy + (k / COLS) * (ch + cg);
-              const bool sel = (var == k);
-              if (isFFXI) {
-                  rpanel(dev, xk, yk, cw, ch, snap(6.0f), sel ? C_ROWON_T : 0x66121A18, sel ? C_ROWON_B : 0x66090D0F, sel ? C_ACCENT : C_BORDER, snap(1.2f));
-                  fo->begin(dev); fo->draw_c(dev, xk + cw * 0.5f, yk + ch * 0.5f, window_theme_name(k), snap(13.0f), fa(sel ? C_ACCENTHI : C_TEXT), fa(C_STROKE), 1.0f);
-              } else {
-                  const u32 c = box_hue_color(k);
-                  if (sel) { cs_add(dev); rrect_glow(dev, xk, yk, cw, ch, snap(6.0f), (c & 0x00FFFFFF) | 0x80000000, snap(6.0f)); cs(dev); }
-                  rrect_fill(dev, xk, yk, cw, ch, snap(6.0f), c, shade(c, -0.28f));
-                  outline(dev, xk, yk, cw, ch, sel ? 0xFFFFFFFF : C_BORDER);
+            { const bool proc = (window_theme_family(ui_config().allyTheme) != 0);
+              const float bh2 = (twoCol || !proc) ? snap(48.0f) : snap(96.0f);
+              ROW_BAND(bh2) (void)yo;
+              const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+              const float yB = twoCol ? yA : yA + snap(48.0f);
+              const float xB = twoCol ? col2X : coX;
+              { const int fam = window_theme_family(ui_config().allyTheme), var = window_theme_variant(ui_config().allyTheme);
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, proc ? halfW : ctrlW, tr("Box Theme", "Th\xC3\xA8me de cadre"), box_family_name(fam))) {
+                    ui_config().allyTheme = window_theme_index(wrap(fam + d, box_family_count()), var); save_ui_config(); } }
+              if (proc) {   // FFXI skins have no hue of their own -- the switch would control nothing
+                  const float rowH = snap(38.0f);
+                  fo->begin(dev);
+                  fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Custom colour", "Couleur perso"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                  const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = xB + halfW - bbw, bty = yB + (rowH - bbh) * 0.5f;
+                  const bool on = ui_config().allyHue != 0;
+                  if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
+                      ui_config().allyHue = on ? 0u : (box_hue_color(window_theme_variant(ui_config().allyTheme)) | 0xFF000000u); save_ui_config(); }
               }
-              if (inrect(mo, xk, yk, cw, ch) && click) { ui_config().allyTheme = window_theme_index(fam, k); save_ui_config(); }
+              ROW_NEXT(bh2)
+            }
+            if (window_theme_family(ui_config().allyTheme) != 0 && ui_config().allyHue != 0) {
+                CFG_COLOR_PICKER(&ui_config().allyHue)
+            } else
+            {   // variant grid : FFXI -> theme-number chips ; procedural family -> hue swatches (click to pick)
+              const int fam = window_theme_family(ui_config().allyTheme), var = window_theme_variant(ui_config().allyTheme);
+              const bool isFFXI = (fam == 0);
+              const int nVar = isFFXI ? window_tex_theme_count() : box_hue_count();
+              const int COLS = isFFXI ? (nVar < 1 ? 1 : nVar) : 15;
+              const int nrows = (nVar + COLS - 1) / COLS;
+              const float cw = isFFXI ? snap(42.0f) : snap(22.0f), ch = isFFXI ? snap(26.0f) : snap(22.0f), cg = snap(7.0f);
+              const float gridH = nrows * ch + (nrows - 1) * cg, slotH = gridH + snap(20.0f);
+              ROW_BAND(slotH) (void)yo;
+              fo->begin(dev);
+              fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, isFFXI ? tr("Theme", "Th\xC3\xA8me") : tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+              const float gridW = COLS * cw + (COLS - 1) * cg;
+              const float gx = coX + ctrlW - gridW, gy = ry + (slotH - gridH) * 0.5f;
+              for (int k = 0; k < nVar; ++k) {
+                  const float xk = gx + (k % COLS) * (cw + cg), yk = gy + (k / COLS) * (ch + cg);
+                  const bool sel = (var == k);
+                  if (isFFXI) {
+                      rpanel(dev, xk, yk, cw, ch, snap(6.0f), sel ? C_ROWON_T : 0x66121A18, sel ? C_ROWON_B : 0x66090D0F, sel ? C_ACCENT : C_BORDER, snap(1.2f));
+                      fo->begin(dev); fo->draw_c(dev, xk + cw * 0.5f, yk + ch * 0.5f, window_theme_name(k), snap(13.0f), fa(sel ? C_ACCENTHI : C_TEXT), fa(C_STROKE), 1.0f);
+                  } else {
+                      const u32 c = box_hue_color(k);
+                      if (sel) { cs_add(dev); rrect_glow(dev, xk, yk, cw, ch, snap(6.0f), (c & 0x00FFFFFF) | 0x80000000, snap(6.0f)); cs(dev); }
+                      rrect_fill(dev, xk, yk, cw, ch, snap(6.0f), c, shade(c, -0.28f));
+                      outline(dev, xk, yk, cw, ch, sel ? 0xFFFFFFFF : C_BORDER);
+                  }
+                  if (inrect(mo, xk, yk, cw, ch) && click) { ui_config().allyTheme = window_theme_index(fam, k); save_ui_config(); }
+              }
+              ROW_NEXT(slotH)
+            }
+        }
+        // Luminosity + Transparency : both "how much of the frame you see". Luminosity only exists on a procedural
+        // theme the alliance owns ; transparency always does, so the pair collapses to one when it must.
+        { const bool proc = (!ui_config().allyThemeCopy && window_theme_family(ui_config().allyTheme) != 0);
+          const float bh2 = (twoCol || !proc) ? snap(46.0f) : snap(92.0f);
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
+          const float yB = twoCol ? yA : yA + snap(46.0f);
+          const float xB = proc ? (twoCol ? col2X : coX) : coX;
+          const float wB = proc ? halfW : ctrlW;
+          if (proc) {
+              float v01 = (ui_config().allyLum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
+              const int pct = (int)(ui_config().allyLum * 100.0f + (ui_config().allyLum >= 0.0f ? 0.5f : -0.5f));
+              char b[16]; sprintf(b, "%+d%%", pct);
+              if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Luminosity", "Luminosit\xC3\xA9"), b, &v01)) {
+                  ui_config().allyLum = v01 * 2.0f - 1.0f; }
           }
-          ROW_NEXT(slotH)
-        }
-        if (window_theme_family(ui_config().allyTheme) != 0)   // Luminosity
-        { ROW_BAND(46.0f)
-            float v01 = (ui_config().allyLum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
-            const int pct = (int)(ui_config().allyLum * 100.0f + (ui_config().allyLum >= 0.0f ? 0.5f : -0.5f));
-            char b[16]; sprintf(b, "%+d%%", pct);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Luminosity", "Luminosité"), b, &v01)) {
-                ui_config().allyLum = v01 * 2.0f - 1.0f; }
-          ROW_NEXT(46.0f)
-        }
-        { ROW_BAND(46.0f)   // Transparency
-            const float transp = 1.0f - ui_config().allyBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
+          { const float transp = 1.0f - ui_config().allyBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
             float v01 = clampf(transp, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Transparency", "Transparence"), b, &v01)) {
-                ui_config().allyBoxAlpha = 1.0f - v01; }
-          ROW_NEXT(46.0f)
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, wB, tr("Transparency", "Transparence"), b, &v01)) {
+                ui_config().allyBoxAlpha = 1.0f - v01; } }
+          ROW_NEXT(bh2)
         }
-        }   // end custom alliance theme (!allyThemeCopy)
-        { ROW_BAND(46.0f)   // Bar Height
-            const float lo = 0.80f, hi = 1.80f;
-            char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[1] * 100.0f + 0.5f));
-            float v01 = (ui_config().barHeight[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().barHeight[1] = v < lo ? lo : (v > hi ? hi : v); }
-        }
-        ROW_NEXT(46.0f)
-        { ROW_BAND(46.0f)   // Bar Width
-            const float lo = 0.80f, hi = 1.50f;
-            char wb[16]; sprintf(wb, "%d%%", (int)(ui_config().barWidth[1] * 100.0f + 0.5f));
-            float v01 = (ui_config().barWidth[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Bar Width", "Largeur des barres"), wb, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().barWidth[1] = v < lo ? lo : (v > hi ? hi : v); }
-        }
-        ROW_NEXT(46.0f)
-        { ROW_BAND(52.0f)   // Gauge Style
-            int s = ui_config().gaugeStyle[1]; if (s < 0 || s > 7) s = 0;
+        ROW_TOGGLE_G(CTRL_ID, tr("Border", "Bordure"), ui_config().border[1], 48.0f, 38.0f, 112.0f)
+        // ---- Content ----
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // what the gauges are, and what the badge says
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          { int s = ui_config().gaugeStyle[1]; if (s < 0 || s > 7) s = 0;
             const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
-                                  tr("Sphere", "Sphère"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Gauge Style", "Style de jauge"), sb[s])) {
-                ui_config().gaugeStyle[1] = wrap(s + d, 8); save_ui_config(); }
+                                  tr("Sphere", "Sph\xC3\xA8re"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Gauge Style", "Style de jauge"), sb[s])) {
+                ui_config().gaugeStyle[1] = wrap(s + d, 8); save_ui_config(); } }
+          { int m = ui_config().jobBadge[1]; if (m < 0 || m > 3) m = 0;
+            const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Ic\xC3\xB4nes") };
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, xB, yB, halfW, tr("Job Badge", "Badge de job"), jb[m])) {
+                ui_config().jobBadge[1] = wrap(m + d, 4); save_ui_config(); } }
+          ROW_NEXT(bh2)
         }
-        ROW_NEXT(52.0f)
-        { ROW_BAND(52.0f)   // Job Badge
-            int m = ui_config().jobBadge[1]; if (m < 0 || m > 3) m = 2;
-            const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Icônes") };
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Job Badge", "Badge de job"), jb[m])) {
-                ui_config().jobBadge[1] = wrap(m + d, 4); save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
-        if (ui_config().jobBadge[1] != 0) {
-          { ROW_BAND(46.0f)   // Badge Size
-            const float lo = 0.50f, hi = 2.00f;
-            char gb[16]; sprintf(gb, "%d%%", (int)(ui_config().badgeScale[1] * 100.0f + 0.5f));
-            float v01 = (ui_config().badgeScale[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Badge Size", "Taille du badge"), gb, &v01)) {
+        { const float bh2 = twoCol ? snap(46.0f) : snap(92.0f);   // the two dimensions of the bars
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
+          const float yB = twoCol ? yA : yA + snap(46.0f);
+          const float xB = twoCol ? col2X : coX;
+          { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[1] * 100.0f + 0.5f));
+            float v01 = (ui_config().barHeight[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().badgeScale[1] = v < lo ? lo : (v > hi ? hi : v); }
-          }
-          ROW_NEXT(46.0f)
+                ui_config().barHeight[1] = v < lo ? lo : (v > hi ? hi : v); } }
+          { const float lo = 0.70f, hi = 1.60f; char wb[16]; sprintf(wb, "%d%%", (int)(ui_config().barWidth[1] * 100.0f + 0.5f));
+            float v01 = (ui_config().barWidth[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Bar Width", "Largeur des barres"), wb, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().barWidth[1] = v < lo ? lo : (v > hi ? hi : v); } }
+          ROW_NEXT(bh2)
         }
-        ROW_TOGGLE_G(CTRL_ID, tr("Casts", "Sorts"), ui_config().cast[1], 52.0f, 40.0f, 112.0f)   // Casts
-        ROW_TOGGLE_G(CTRL_ID, tr("Distance", "Distance"), ui_config().dist[1], 52.0f, 40.0f, 112.0f)   // Distance
-        ROW_TOGGLE_G(CTRL_ID, tr("Border", "Bordure"), ui_config().border[1], 52.0f, 40.0f, 112.0f)   // Border
+        { const bool hasBadge = (ui_config().jobBadge[1] != 0);
+          const float bh2 = (twoCol || !hasBadge) ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !hasBadge) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          { const float rowH = snap(38.0f); fo->begin(dev);   // what else an alliance row may show
+            fo->draw_lc(dev, coX + snap(4.0f), yA + rowH * 0.5f, tr("Row extras", "Sur la ligne"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yA + (rowH - bbh) * 0.5f;
+            const float bx0 = coX + halfW - (2 * bbw + bgap);
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Casts", "Sorts"), ui_config().cast[1] != 0)) { ui_config().cast[1] = !ui_config().cast[1]; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Distance", "Distance"), ui_config().dist[1] != 0)) { ui_config().dist[1] = !ui_config().dist[1]; save_ui_config(); } }
+          if (hasBadge) {   // no badge, nothing to size
+              const float lo = 0.60f, hi = 1.80f; char gb[16]; sprintf(gb, "%d%%", (int)(ui_config().badgeScale[1] * 100.0f + 0.5f));
+              float v01 = (ui_config().badgeScale[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+              if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Badge Size", "Taille du badge"), gb, &v01)) {
+                  float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                  ui_config().badgeScale[1] = v < lo ? lo : (v > hi ? hi : v); }
+          }
+          ROW_NEXT(bh2)
+        }
     }   // end Alliance
 
     // =========================================================== TEXT ===========================================================
