@@ -105,28 +105,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         if (twoCol && on) flat(dev, sepX, snap(y + snap(7.0f)), snap(1.0f), snap(h) - snap(14.0f), 0x1EFFFFFFu);
     };
 
-    // ========================================================= GENERAL =========================================================
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("General", "G\xC3\xA9n\xC3\xA9ral"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
-    ROW_NEXT(42.0f)
-    if (catOpen_[1]) {
-        // Show + Size : the two settings everyone touches, first, on one line.
-        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
-          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, true);
-          row_toggle(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Show", "Afficher"), &ui_config().partyShow, 40.0f, 150.0f);
-          { const float lo = 1.00f, hi = 2.00f;   // party floor 100% : it must cover the native block
-            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[0].scale * 100.0f + 0.5f));
-            float v01 = (ui_config().box[0].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Size", "Taille"), szbuf, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().box[0].scale = v < lo ? lo : (v > hi ? hi : v); } }
-          ROW_NEXT(bh2)
-        }
-    }   // end General
-
     // ========================================================== FRAME ==========================================================
     // The same block in every module : theme family, its colour, luminosity, transparency, border. One thing to learn.
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_)) pcFrameOpen_ = !pcFrameOpen_;
@@ -221,12 +199,31 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         }
     }   // end Frame
 
-    // ========================================================= CONTENT =========================================================
+    // ========================================================== PARTY ==========================================================
+    // The party box itself : whether it shows, how big, and what a member row carries. Its FRAME is the section
+    // above -- shared shape with every other module -- and its BUFF STRIP is the section at the bottom, because
+    // the strip is one object and its editor belongs with the settings that describe it.
     // The only section that really differs between modules, so it gets the room. Grouped by the OBJECT each setting
     // acts on -- gauges, badge, buffs, cursor -- which is what turns three rows into one.
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), pcContentOpen_)) pcContentOpen_ = !pcContentOpen_;
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
     ROW_NEXT(42.0f)
-    if (pcContentOpen_) {
+    if (catOpen_[1]) {
+        // Show + Size : the two settings everyone touches, first, on one line.
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
+          row_toggle(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Show", "Afficher"), &ui_config().partyShow, 40.0f, 150.0f);
+          { const float lo = 1.00f, hi = 2.00f;   // party floor 100% : it must cover the native block
+            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[0].scale * 100.0f + 0.5f));
+            float v01 = (ui_config().box[0].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Size", "Taille"), szbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().box[0].scale = v < lo ? lo : (v > hi ? hi : v); } }
+          ROW_NEXT(bh2)
+        }
         // --- gauges : the style, and the two dimensions of the bars it draws ---
         { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
           ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
@@ -335,7 +332,265 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             }
             if (pcDistPick_ >= 0 && pcDistPick_ < 3) { CFG_COLOR_PICKER_I(dcol[pcDistPick_], pcDistPick_) }
         }
-    }   // end Content
+    }   // end Party
+
+    // ==================================================== ALLIANCE ====================================================
+    // The SAME three sections as the party box, in the same order, holding the same kinds of thing. That is the
+    // point of a grammar : what you learned one category up still applies here. Alliance has no buff strip (the game
+    // never sends alliance buffs) and no selection cursor, so those simply do not appear -- a missing row is not a
+    // different layout.
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
+    ROW_NEXT(42.0f)
+    if (catOpen_[7]) {
+        // ---- General ----
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
+          row_toggle(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Show", "Afficher"), &ui_config().allyShow, 40.0f, 150.0f);
+          { const float lo = 0.50f, hi = 2.00f;   // alliance may go smaller than the party box
+            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[1].scale * 100.0f + 0.5f));
+            float v01 = (ui_config().box[1].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Size", "Taille"), szbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().box[1].scale = v < lo ? lo : (v > hi ? hi : v); } }
+          ROW_NEXT(bh2)
+        }
+        // ---- Frame ----
+        // Follow the party box, or have its own. Everything below this row exists only in the second case, which is
+        // why the choice is the row that opens the section rather than one buried inside it.
+        ROW_CHOICE_G(CTRL_ID, tr("Theme", "Th\xC3\xA8me"), ui_config().allyThemeCopy, tr("Same as Party", "Comme Party"), tr("Custom", "Perso"), 48.0f, 38.0f, 150.0f)
+        if (!ui_config().allyThemeCopy) {
+            { const bool proc = (window_theme_family(ui_config().allyTheme) != 0);
+              const float bh2 = (twoCol || !proc) ? snap(48.0f) : snap(96.0f);
+              ROW_BAND(bh2) (void)yo;
+              const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+              const float yB = twoCol ? yA : yA + snap(48.0f);
+              const float xB = twoCol ? col2X : coX;
+              sepv(ry, bh2, proc);   // an empty second half has no split to state
+              { const int fam = window_theme_family(ui_config().allyTheme), var = window_theme_variant(ui_config().allyTheme);
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, proc ? halfW : ctrlW, tr("Box Theme", "Th\xC3\xA8me de cadre"), box_family_name(fam))) {
+                    ui_config().allyTheme = window_theme_index(wrap(fam + d, box_family_count()), var); save_ui_config(); } }
+              if (proc) {   // FFXI skins have no hue of their own -- the switch would control nothing
+                  const float rowH = snap(38.0f);
+                  fo->begin(dev);
+                  fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Custom colour", "Couleur perso"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                  const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = xB + halfW - bbw, bty = yB + (rowH - bbh) * 0.5f;
+                  const bool on = ui_config().allyHue != 0;
+                  if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
+                      ui_config().allyHue = on ? 0u : (box_hue_color(window_theme_variant(ui_config().allyTheme)) | 0xFF000000u); save_ui_config(); }
+              }
+              ROW_NEXT(bh2)
+            }
+            if (window_theme_family(ui_config().allyTheme) != 0 && ui_config().allyHue != 0) {
+                CFG_COLOR_PICKER(&ui_config().allyHue)
+            } else
+            {   // variant grid : FFXI -> theme-number chips ; procedural family -> hue swatches (click to pick)
+              const int fam = window_theme_family(ui_config().allyTheme), var = window_theme_variant(ui_config().allyTheme);
+              const bool isFFXI = (fam == 0);
+              const int nVar = isFFXI ? window_tex_theme_count() : box_hue_count();
+              const int COLS = isFFXI ? (nVar < 1 ? 1 : nVar) : 15;
+              const int nrows = (nVar + COLS - 1) / COLS;
+              const float cw = isFFXI ? snap(42.0f) : snap(22.0f), ch = isFFXI ? snap(26.0f) : snap(22.0f), cg = snap(7.0f);
+              const float gridH = nrows * ch + (nrows - 1) * cg, slotH = gridH + snap(20.0f);
+              ROW_BAND(slotH) (void)yo;
+              fo->begin(dev);
+              fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, isFFXI ? tr("Theme", "Th\xC3\xA8me") : tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+              const float gridW = COLS * cw + (COLS - 1) * cg;
+              const float gx = coX + ctrlW - gridW, gy = ry + (slotH - gridH) * 0.5f;
+              for (int k = 0; k < nVar; ++k) {
+                  const float xk = gx + (k % COLS) * (cw + cg), yk = gy + (k / COLS) * (ch + cg);
+                  const bool sel = (var == k);
+                  if (isFFXI) {
+                      rpanel(dev, xk, yk, cw, ch, snap(6.0f), sel ? C_ROWON_T : 0x66121A18, sel ? C_ROWON_B : 0x66090D0F, sel ? C_ACCENT : C_BORDER, snap(1.2f));
+                      fo->begin(dev); fo->draw_c(dev, xk + cw * 0.5f, yk + ch * 0.5f, window_theme_name(k), snap(13.0f), fa(sel ? C_ACCENTHI : C_TEXT), fa(C_STROKE), 1.0f);
+                  } else {
+                      const u32 c = box_hue_color(k);
+                      if (sel) { cs_add(dev); rrect_glow(dev, xk, yk, cw, ch, snap(6.0f), (c & 0x00FFFFFF) | 0x80000000, snap(6.0f)); cs(dev); }
+                      rrect_fill(dev, xk, yk, cw, ch, snap(6.0f), c, shade(c, -0.28f));
+                      outline(dev, xk, yk, cw, ch, sel ? 0xFFFFFFFF : C_BORDER);
+                  }
+                  if (inrect(mo, xk, yk, cw, ch) && click) { ui_config().allyTheme = window_theme_index(fam, k); save_ui_config(); }
+              }
+              ROW_NEXT(slotH)
+            }
+        }
+        // Luminosity + Transparency : both "how much of the frame you see". Luminosity only exists on a procedural
+        // theme the alliance owns ; transparency always does, so the pair collapses to one when it must.
+        { const bool proc = (!ui_config().allyThemeCopy && window_theme_family(ui_config().allyTheme) != 0);
+          const float bh2 = (twoCol || !proc) ? snap(46.0f) : snap(92.0f);
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
+          const float yB = twoCol ? yA : yA + snap(46.0f);
+          const float xB = proc ? (twoCol ? col2X : coX) : coX;
+          sepv(ry, bh2, proc);   // an empty second half has no split to state
+          const float wB = proc ? halfW : ctrlW;
+          if (proc) {
+              float v01 = (ui_config().allyLum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
+              const int pct = (int)(ui_config().allyLum * 100.0f + (ui_config().allyLum >= 0.0f ? 0.5f : -0.5f));
+              char b[16]; sprintf(b, "%+d%%", pct);
+              if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Luminosity", "Luminosit\xC3\xA9"), b, &v01)) {
+                  ui_config().allyLum = v01 * 2.0f - 1.0f; }
+          }
+          { const float transp = 1.0f - ui_config().allyBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
+            float v01 = clampf(transp, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, wB, tr("Transparency", "Transparence"), b, &v01)) {
+                ui_config().allyBoxAlpha = 1.0f - v01; } }
+          ROW_NEXT(bh2)
+        }
+        ROW_TOGGLE_G(CTRL_ID, tr("Border", "Bordure"), ui_config().border[1], 48.0f, 38.0f, 112.0f)
+        // ---- Content ----
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // what the gauges are, and what the badge says
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
+          { int s = ui_config().gaugeStyle[1]; if (s < 0 || s > 7) s = 0;
+            const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
+                                  tr("Sphere", "Sph\xC3\xA8re"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Gauge Style", "Style de jauge"), sb[s])) {
+                ui_config().gaugeStyle[1] = wrap(s + d, 8); save_ui_config(); } }
+          { int m = ui_config().jobBadge[1]; if (m < 0 || m > 3) m = 0;
+            const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Ic\xC3\xB4nes") };
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, xB, yB, halfW, tr("Job Badge", "Badge de job"), jb[m])) {
+                ui_config().jobBadge[1] = wrap(m + d, 4); save_ui_config(); } }
+          ROW_NEXT(bh2)
+        }
+        { const float bh2 = twoCol ? snap(46.0f) : snap(92.0f);   // the two dimensions of the bars
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
+          const float yB = twoCol ? yA : yA + snap(46.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
+          { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[1] * 100.0f + 0.5f));
+            float v01 = (ui_config().barHeight[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().barHeight[1] = v < lo ? lo : (v > hi ? hi : v); } }
+          { const float lo = 0.70f, hi = 1.60f; char wb[16]; sprintf(wb, "%d%%", (int)(ui_config().barWidth[1] * 100.0f + 0.5f));
+            float v01 = (ui_config().barWidth[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Bar Width", "Largeur des barres"), wb, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().barWidth[1] = v < lo ? lo : (v > hi ? hi : v); } }
+          ROW_NEXT(bh2)
+        }
+        { const bool hasBadge = (ui_config().jobBadge[1] != 0);
+          const float bh2 = (twoCol || !hasBadge) ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !hasBadge) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, hasBadge);   // an empty second half has no split to state
+          { const float rowH = snap(38.0f); fo->begin(dev);   // what else an alliance row may show
+            fo->draw_lc(dev, coX + snap(4.0f), yA + rowH * 0.5f, tr("Row extras", "Sur la ligne"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yA + (rowH - bbh) * 0.5f;
+            const float bx0 = coX + halfW - (2 * bbw + bgap);
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Casts", "Sorts"), ui_config().cast[1] != 0)) { ui_config().cast[1] = !ui_config().cast[1]; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Distance", "Distance"), ui_config().dist[1] != 0)) { ui_config().dist[1] = !ui_config().dist[1]; save_ui_config(); } }
+          if (hasBadge) {   // no badge, nothing to size
+              const float lo = 0.60f, hi = 1.80f; char gb[16]; sprintf(gb, "%d%%", (int)(ui_config().badgeScale[1] * 100.0f + 0.5f));
+              float v01 = (ui_config().badgeScale[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+              if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Badge Size", "Taille du badge"), gb, &v01)) {
+                  float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                  ui_config().badgeScale[1] = v < lo ? lo : (v > hi ? hi : v); }
+          }
+          ROW_NEXT(bh2)
+        }
+    }   // end Alliance
+
+    // =========================================================== TEXT ===========================================================
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0])) catOpen_[0] = !catOpen_[0];
+    ROW_NEXT(42.0f)
+    if (catOpen_[0]) {
+        { ROW_BAND(56.0f)   // which box's text : Party / Alliance
+            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Box", "Boîte"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const char* tlbl[2] = { tr("Party", "Groupe"), tr("Alliance", "Alliance") };
+            const float bbw = snap(140.0f), bgap = snap(8.0f), bbh = snap(34.0f);
+            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
+            for (int i = 0; i < 2; ++i) if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, i), bx0 + i * (bbw + bgap), bty, bbw, bbh, tlbl[i], cfgTarget_ == i)) cfgTarget_ = i;
+        }
+        ROW_NEXT(56.0f)
+        const int T = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;
+        { ROW_BAND(52.0f)   // element selector -- Interface (TE_UI) is skipped : its font is Interface > Font
+            int el = (cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT || cfgTextElem_ == TE_UI) ? 0 : cfgTextElem_;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "Élément"), ui_text_elem_label(el))) {
+                int n = wrap(el + d, TE_COUNT); if (n == TE_UI) n = wrap(n + d, TE_COUNT); cfgTextElem_ = n; }
+        }
+        ROW_NEXT(52.0f)
+        {
+            TextStyle& ts = ui_config().text[T][(cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT) ? 0 : cfgTextElem_];
+            { ROW_BAND(52.0f)   // Font face (0 = default)
+                int fc = ts.face; if (fc < 0 || fc >= ui_font_count()) fc = 0;
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { ts.face = wrap(fc + d, ui_font_count()); save_ui_config(); }
+            }
+            ROW_NEXT(52.0f)
+            { ROW_BAND(46.0f)   // Size
+                const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ts.size * 100.0f + 0.5f));
+                float v01 = (ts.size - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ts.size = v < lo ? lo : (v > hi ? hi : v); }
+            }
+            ROW_NEXT(46.0f)
+            { ROW_BAND(46.0f)   // Outline width
+                const float lo = 0.00f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ts.outline * 100.0f + 0.5f));
+                float v01 = (ts.outline - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Outline", "Contour"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ts.outline = v < lo ? lo : (v > hi ? hi : v); }
+            }
+            ROW_NEXT(46.0f)
+            { ROW_BAND(52.0f)   // Bold / Italic / CAPS
+                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Style", "Style"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                const float bbw = snap(80.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, bx0 = coX + ctrlW - (3 * bbw + 2 * bgap);
+                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Bold", "Gras"), ts.bold)) { ts.bold = !ts.bold; save_ui_config(); }
+                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Italic", "Ital."), ts.italic)) { ts.italic = !ts.italic; save_ui_config(); }
+                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + 2 * (bbw + bgap), bty, bbw, bbh, tr("CAPS", "MAJ"), ts.upper)) { ts.upper = !ts.upper; save_ui_config(); }
+            }
+            ROW_NEXT(52.0f)
+            { ROW_BAND(52.0f)   // Colour : Default / Custom + a live swatch
+                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, tgw = snap(96.0f), onx = coX + ctrlW - tgw;
+                if (toggle_chip(dev, fo, mo, click, CTRL_ID, onx, bty, tgw, bbh, ts.colorOn ? tr("Custom", "Perso") : tr("Default", "Défaut"), ts.colorOn)) {
+                    ts.colorOn = !ts.colorOn; if (ts.colorOn && (ts.color >> 24) == 0) ts.color |= 0xFF000000u; save_ui_config(); }
+                if (ts.colorOn) {
+                    const float pw = snap(58.0f), pxs = onx - snap(12.0f) - pw;
+                    flat(dev, pxs, bty, pw * 0.5f, bbh, 0xFFFFFFFF); flat(dev, pxs + pw * 0.5f, bty, pw * 0.5f, bbh, 0xFF262A31);
+                    flat(dev, pxs, bty, pw, bbh, ts.color); outline(dev, pxs, bty, pw, bbh, C_BORDER);
+                }
+            }
+            ROW_NEXT(52.0f)
+            if (ts.colorOn) {
+                static const u32 PAL[] = {
+                    0xFFFFFFFF,0xFFC8CDD6,0xFF8A93A2,0xFF3A4150,0xFFFF5A5A,0xFFFF9A4A,0xFFFFDC78,0xFFF2F25A,0xFF9BE85A,0xFF5ADC5A,0xFF5ADCB0,0xFF5AC8FF,
+                    0xFF4F9DFF,0xFF6A7AF0,0xFFB07AF0,0xFFF07AE8,0xFFFF7AB0,0xFFE08585,0xFF86D36F,0xFFECC94A,0xFF7D9BF0,0xFFB58BF0,0xFF2C6AC4,0xFF141414 };
+                const int NPAL = (int)(sizeof(PAL) / sizeof(PAL[0])), COLS = 12;
+                { ROW_BAND(52.0f)
+                    const float sqw = snap(20.0f), sg = snap(6.0f), gx = coX + snap(4.0f), gy = ry + yo - snap(1.0f);
+                    for (int k = 0; k < NPAL; ++k) {
+                        const float x = gx + (k % COLS) * (sqw + sg), y = gy + (k / COLS) * (sqw + sg);
+                        const bool sel = ((ts.color & 0x00FFFFFF) == (PAL[k] & 0x00FFFFFF));
+                        flat(dev, x, y, sqw, sqw, PAL[k]); outline(dev, x, y, sqw, sqw, sel ? 0xFFFFFFFF : C_BORDER);
+                        if (inrect(mo, x, y, sqw, sqw) && click) { ts.color = (ts.color & 0xFF000000u) | (PAL[k] & 0x00FFFFFF); if ((ts.color >> 24) == 0) ts.color |= 0xFF000000u; save_ui_config(); }
+                    }
+                }
+                ROW_NEXT(52.0f)
+                CFG_COLOR_PICKER(&ts.color)
+                { ROW_BAND(40.0f)
+                    int a = (int)((ts.color >> 24) & 0xFFu); char vb[8]; sprintf(vb, "%d", a); float v01 = a / 255.0f;
+                    if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, "A", vb, &v01)) {
+                        int nv = (int)(v01 * 255.0f + 0.5f); if (nv < 0) nv = 0; if (nv > 255) nv = 255;
+                        ts.color = (ts.color & 0x00FFFFFFu) | ((u32)nv << 24); }
+                }
+                ROW_NEXT(40.0f)
+            }
+        }
+    }   // end Text
+    ry += snap(10.0f);
+
+
     // ======================================================= BUFFS =======================================================
     // Everything about the buff strip in ONE place -- how big, how many, over how many lines, and in what order.
     // Splitting them was a failure of the panel's own rule: Content groups by the OBJECT a setting acts on, and the
@@ -730,264 +985,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             }
         }
     }   // end Buffs
-
-    // ---- (Alliance and Text follow, unchanged : Text covers BOTH groups, so it stays last) ----
-
-    // ==================================================== ALLIANCE ====================================================
-    // The SAME three sections as the party box, in the same order, holding the same kinds of thing. That is the
-    // point of a grammar : what you learned one category up still applies here. Alliance has no buff strip (the game
-    // never sends alliance buffs) and no selection cursor, so those simply do not appear -- a missing row is not a
-    // different layout.
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
-    ROW_NEXT(42.0f)
-    if (catOpen_[7]) {
-        // ---- General ----
-        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
-          ROW_BAND(bh2) (void)yo;
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, true);
-          row_toggle(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Show", "Afficher"), &ui_config().allyShow, 40.0f, 150.0f);
-          { const float lo = 0.50f, hi = 2.00f;   // alliance may go smaller than the party box
-            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[1].scale * 100.0f + 0.5f));
-            float v01 = (ui_config().box[1].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Size", "Taille"), szbuf, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().box[1].scale = v < lo ? lo : (v > hi ? hi : v); } }
-          ROW_NEXT(bh2)
-        }
-        // ---- Frame ----
-        // Follow the party box, or have its own. Everything below this row exists only in the second case, which is
-        // why the choice is the row that opens the section rather than one buried inside it.
-        ROW_CHOICE_G(CTRL_ID, tr("Theme", "Th\xC3\xA8me"), ui_config().allyThemeCopy, tr("Same as Party", "Comme Party"), tr("Custom", "Perso"), 48.0f, 38.0f, 150.0f)
-        if (!ui_config().allyThemeCopy) {
-            { const bool proc = (window_theme_family(ui_config().allyTheme) != 0);
-              const float bh2 = (twoCol || !proc) ? snap(48.0f) : snap(96.0f);
-              ROW_BAND(bh2) (void)yo;
-              const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-              const float yB = twoCol ? yA : yA + snap(48.0f);
-              const float xB = twoCol ? col2X : coX;
-              sepv(ry, bh2, proc);   // an empty second half has no split to state
-              { const int fam = window_theme_family(ui_config().allyTheme), var = window_theme_variant(ui_config().allyTheme);
-                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, proc ? halfW : ctrlW, tr("Box Theme", "Th\xC3\xA8me de cadre"), box_family_name(fam))) {
-                    ui_config().allyTheme = window_theme_index(wrap(fam + d, box_family_count()), var); save_ui_config(); } }
-              if (proc) {   // FFXI skins have no hue of their own -- the switch would control nothing
-                  const float rowH = snap(38.0f);
-                  fo->begin(dev);
-                  fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Custom colour", "Couleur perso"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-                  const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = xB + halfW - bbw, bty = yB + (rowH - bbh) * 0.5f;
-                  const bool on = ui_config().allyHue != 0;
-                  if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
-                      ui_config().allyHue = on ? 0u : (box_hue_color(window_theme_variant(ui_config().allyTheme)) | 0xFF000000u); save_ui_config(); }
-              }
-              ROW_NEXT(bh2)
-            }
-            if (window_theme_family(ui_config().allyTheme) != 0 && ui_config().allyHue != 0) {
-                CFG_COLOR_PICKER(&ui_config().allyHue)
-            } else
-            {   // variant grid : FFXI -> theme-number chips ; procedural family -> hue swatches (click to pick)
-              const int fam = window_theme_family(ui_config().allyTheme), var = window_theme_variant(ui_config().allyTheme);
-              const bool isFFXI = (fam == 0);
-              const int nVar = isFFXI ? window_tex_theme_count() : box_hue_count();
-              const int COLS = isFFXI ? (nVar < 1 ? 1 : nVar) : 15;
-              const int nrows = (nVar + COLS - 1) / COLS;
-              const float cw = isFFXI ? snap(42.0f) : snap(22.0f), ch = isFFXI ? snap(26.0f) : snap(22.0f), cg = snap(7.0f);
-              const float gridH = nrows * ch + (nrows - 1) * cg, slotH = gridH + snap(20.0f);
-              ROW_BAND(slotH) (void)yo;
-              fo->begin(dev);
-              fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, isFFXI ? tr("Theme", "Th\xC3\xA8me") : tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-              const float gridW = COLS * cw + (COLS - 1) * cg;
-              const float gx = coX + ctrlW - gridW, gy = ry + (slotH - gridH) * 0.5f;
-              for (int k = 0; k < nVar; ++k) {
-                  const float xk = gx + (k % COLS) * (cw + cg), yk = gy + (k / COLS) * (ch + cg);
-                  const bool sel = (var == k);
-                  if (isFFXI) {
-                      rpanel(dev, xk, yk, cw, ch, snap(6.0f), sel ? C_ROWON_T : 0x66121A18, sel ? C_ROWON_B : 0x66090D0F, sel ? C_ACCENT : C_BORDER, snap(1.2f));
-                      fo->begin(dev); fo->draw_c(dev, xk + cw * 0.5f, yk + ch * 0.5f, window_theme_name(k), snap(13.0f), fa(sel ? C_ACCENTHI : C_TEXT), fa(C_STROKE), 1.0f);
-                  } else {
-                      const u32 c = box_hue_color(k);
-                      if (sel) { cs_add(dev); rrect_glow(dev, xk, yk, cw, ch, snap(6.0f), (c & 0x00FFFFFF) | 0x80000000, snap(6.0f)); cs(dev); }
-                      rrect_fill(dev, xk, yk, cw, ch, snap(6.0f), c, shade(c, -0.28f));
-                      outline(dev, xk, yk, cw, ch, sel ? 0xFFFFFFFF : C_BORDER);
-                  }
-                  if (inrect(mo, xk, yk, cw, ch) && click) { ui_config().allyTheme = window_theme_index(fam, k); save_ui_config(); }
-              }
-              ROW_NEXT(slotH)
-            }
-        }
-        // Luminosity + Transparency : both "how much of the frame you see". Luminosity only exists on a procedural
-        // theme the alliance owns ; transparency always does, so the pair collapses to one when it must.
-        { const bool proc = (!ui_config().allyThemeCopy && window_theme_family(ui_config().allyTheme) != 0);
-          const float bh2 = (twoCol || !proc) ? snap(46.0f) : snap(92.0f);
-          ROW_BAND(bh2) (void)yo;
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
-          const float yB = twoCol ? yA : yA + snap(46.0f);
-          const float xB = proc ? (twoCol ? col2X : coX) : coX;
-          sepv(ry, bh2, proc);   // an empty second half has no split to state
-          const float wB = proc ? halfW : ctrlW;
-          if (proc) {
-              float v01 = (ui_config().allyLum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
-              const int pct = (int)(ui_config().allyLum * 100.0f + (ui_config().allyLum >= 0.0f ? 0.5f : -0.5f));
-              char b[16]; sprintf(b, "%+d%%", pct);
-              if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Luminosity", "Luminosit\xC3\xA9"), b, &v01)) {
-                  ui_config().allyLum = v01 * 2.0f - 1.0f; }
-          }
-          { const float transp = 1.0f - ui_config().allyBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
-            float v01 = clampf(transp, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, wB, tr("Transparency", "Transparence"), b, &v01)) {
-                ui_config().allyBoxAlpha = 1.0f - v01; } }
-          ROW_NEXT(bh2)
-        }
-        ROW_TOGGLE_G(CTRL_ID, tr("Border", "Bordure"), ui_config().border[1], 48.0f, 38.0f, 112.0f)
-        // ---- Content ----
-        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // what the gauges are, and what the badge says
-          ROW_BAND(bh2) (void)yo;
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, true);
-          { int s = ui_config().gaugeStyle[1]; if (s < 0 || s > 7) s = 0;
-            const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
-                                  tr("Sphere", "Sph\xC3\xA8re"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Gauge Style", "Style de jauge"), sb[s])) {
-                ui_config().gaugeStyle[1] = wrap(s + d, 8); save_ui_config(); } }
-          { int m = ui_config().jobBadge[1]; if (m < 0 || m > 3) m = 0;
-            const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Ic\xC3\xB4nes") };
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, xB, yB, halfW, tr("Job Badge", "Badge de job"), jb[m])) {
-                ui_config().jobBadge[1] = wrap(m + d, 4); save_ui_config(); } }
-          ROW_NEXT(bh2)
-        }
-        { const float bh2 = twoCol ? snap(46.0f) : snap(92.0f);   // the two dimensions of the bars
-          ROW_BAND(bh2) (void)yo;
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
-          const float yB = twoCol ? yA : yA + snap(46.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, true);
-          { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[1] * 100.0f + 0.5f));
-            float v01 = (ui_config().barHeight[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().barHeight[1] = v < lo ? lo : (v > hi ? hi : v); } }
-          { const float lo = 0.70f, hi = 1.60f; char wb[16]; sprintf(wb, "%d%%", (int)(ui_config().barWidth[1] * 100.0f + 0.5f));
-            float v01 = (ui_config().barWidth[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Bar Width", "Largeur des barres"), wb, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().barWidth[1] = v < lo ? lo : (v > hi ? hi : v); } }
-          ROW_NEXT(bh2)
-        }
-        { const bool hasBadge = (ui_config().jobBadge[1] != 0);
-          const float bh2 = (twoCol || !hasBadge) ? snap(48.0f) : snap(96.0f);
-          ROW_BAND(bh2) (void)yo;
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !hasBadge) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, hasBadge);   // an empty second half has no split to state
-          { const float rowH = snap(38.0f); fo->begin(dev);   // what else an alliance row may show
-            fo->draw_lc(dev, coX + snap(4.0f), yA + rowH * 0.5f, tr("Row extras", "Sur la ligne"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yA + (rowH - bbh) * 0.5f;
-            const float bx0 = coX + halfW - (2 * bbw + bgap);
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Casts", "Sorts"), ui_config().cast[1] != 0)) { ui_config().cast[1] = !ui_config().cast[1]; save_ui_config(); }
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Distance", "Distance"), ui_config().dist[1] != 0)) { ui_config().dist[1] = !ui_config().dist[1]; save_ui_config(); } }
-          if (hasBadge) {   // no badge, nothing to size
-              const float lo = 0.60f, hi = 1.80f; char gb[16]; sprintf(gb, "%d%%", (int)(ui_config().badgeScale[1] * 100.0f + 0.5f));
-              float v01 = (ui_config().badgeScale[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-              if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Badge Size", "Taille du badge"), gb, &v01)) {
-                  float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                  ui_config().badgeScale[1] = v < lo ? lo : (v > hi ? hi : v); }
-          }
-          ROW_NEXT(bh2)
-        }
-    }   // end Alliance
-
-    // =========================================================== TEXT ===========================================================
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0])) catOpen_[0] = !catOpen_[0];
-    ROW_NEXT(42.0f)
-    if (catOpen_[0]) {
-        { ROW_BAND(56.0f)   // which box's text : Party / Alliance
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Box", "Boîte"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const char* tlbl[2] = { tr("Party", "Groupe"), tr("Alliance", "Alliance") };
-            const float bbw = snap(140.0f), bgap = snap(8.0f), bbh = snap(34.0f);
-            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
-            for (int i = 0; i < 2; ++i) if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, i), bx0 + i * (bbw + bgap), bty, bbw, bbh, tlbl[i], cfgTarget_ == i)) cfgTarget_ = i;
-        }
-        ROW_NEXT(56.0f)
-        const int T = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;
-        { ROW_BAND(52.0f)   // element selector -- Interface (TE_UI) is skipped : its font is Interface > Font
-            int el = (cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT || cfgTextElem_ == TE_UI) ? 0 : cfgTextElem_;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "Élément"), ui_text_elem_label(el))) {
-                int n = wrap(el + d, TE_COUNT); if (n == TE_UI) n = wrap(n + d, TE_COUNT); cfgTextElem_ = n; }
-        }
-        ROW_NEXT(52.0f)
-        {
-            TextStyle& ts = ui_config().text[T][(cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT) ? 0 : cfgTextElem_];
-            { ROW_BAND(52.0f)   // Font face (0 = default)
-                int fc = ts.face; if (fc < 0 || fc >= ui_font_count()) fc = 0;
-                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { ts.face = wrap(fc + d, ui_font_count()); save_ui_config(); }
-            }
-            ROW_NEXT(52.0f)
-            { ROW_BAND(46.0f)   // Size
-                const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ts.size * 100.0f + 0.5f));
-                float v01 = (ts.size - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ts.size = v < lo ? lo : (v > hi ? hi : v); }
-            }
-            ROW_NEXT(46.0f)
-            { ROW_BAND(46.0f)   // Outline width
-                const float lo = 0.00f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ts.outline * 100.0f + 0.5f));
-                float v01 = (ts.outline - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Outline", "Contour"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ts.outline = v < lo ? lo : (v > hi ? hi : v); }
-            }
-            ROW_NEXT(46.0f)
-            { ROW_BAND(52.0f)   // Bold / Italic / CAPS
-                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Style", "Style"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-                const float bbw = snap(80.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, bx0 = coX + ctrlW - (3 * bbw + 2 * bgap);
-                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Bold", "Gras"), ts.bold)) { ts.bold = !ts.bold; save_ui_config(); }
-                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Italic", "Ital."), ts.italic)) { ts.italic = !ts.italic; save_ui_config(); }
-                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + 2 * (bbw + bgap), bty, bbw, bbh, tr("CAPS", "MAJ"), ts.upper)) { ts.upper = !ts.upper; save_ui_config(); }
-            }
-            ROW_NEXT(52.0f)
-            { ROW_BAND(52.0f)   // Colour : Default / Custom + a live swatch
-                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-                const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, tgw = snap(96.0f), onx = coX + ctrlW - tgw;
-                if (toggle_chip(dev, fo, mo, click, CTRL_ID, onx, bty, tgw, bbh, ts.colorOn ? tr("Custom", "Perso") : tr("Default", "Défaut"), ts.colorOn)) {
-                    ts.colorOn = !ts.colorOn; if (ts.colorOn && (ts.color >> 24) == 0) ts.color |= 0xFF000000u; save_ui_config(); }
-                if (ts.colorOn) {
-                    const float pw = snap(58.0f), pxs = onx - snap(12.0f) - pw;
-                    flat(dev, pxs, bty, pw * 0.5f, bbh, 0xFFFFFFFF); flat(dev, pxs + pw * 0.5f, bty, pw * 0.5f, bbh, 0xFF262A31);
-                    flat(dev, pxs, bty, pw, bbh, ts.color); outline(dev, pxs, bty, pw, bbh, C_BORDER);
-                }
-            }
-            ROW_NEXT(52.0f)
-            if (ts.colorOn) {
-                static const u32 PAL[] = {
-                    0xFFFFFFFF,0xFFC8CDD6,0xFF8A93A2,0xFF3A4150,0xFFFF5A5A,0xFFFF9A4A,0xFFFFDC78,0xFFF2F25A,0xFF9BE85A,0xFF5ADC5A,0xFF5ADCB0,0xFF5AC8FF,
-                    0xFF4F9DFF,0xFF6A7AF0,0xFFB07AF0,0xFFF07AE8,0xFFFF7AB0,0xFFE08585,0xFF86D36F,0xFFECC94A,0xFF7D9BF0,0xFFB58BF0,0xFF2C6AC4,0xFF141414 };
-                const int NPAL = (int)(sizeof(PAL) / sizeof(PAL[0])), COLS = 12;
-                { ROW_BAND(52.0f)
-                    const float sqw = snap(20.0f), sg = snap(6.0f), gx = coX + snap(4.0f), gy = ry + yo - snap(1.0f);
-                    for (int k = 0; k < NPAL; ++k) {
-                        const float x = gx + (k % COLS) * (sqw + sg), y = gy + (k / COLS) * (sqw + sg);
-                        const bool sel = ((ts.color & 0x00FFFFFF) == (PAL[k] & 0x00FFFFFF));
-                        flat(dev, x, y, sqw, sqw, PAL[k]); outline(dev, x, y, sqw, sqw, sel ? 0xFFFFFFFF : C_BORDER);
-                        if (inrect(mo, x, y, sqw, sqw) && click) { ts.color = (ts.color & 0xFF000000u) | (PAL[k] & 0x00FFFFFF); if ((ts.color >> 24) == 0) ts.color |= 0xFF000000u; save_ui_config(); }
-                    }
-                }
-                ROW_NEXT(52.0f)
-                CFG_COLOR_PICKER(&ts.color)
-                { ROW_BAND(40.0f)
-                    int a = (int)((ts.color >> 24) & 0xFFu); char vb[8]; sprintf(vb, "%d", a); float v01 = a / 255.0f;
-                    if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, "A", vb, &v01)) {
-                        int nv = (int)(v01 * 255.0f + 0.5f); if (nv < 0) nv = 0; if (nv > 255) nv = 255;
-                        ts.color = (ts.color & 0x00FFFFFFu) | ((u32)nv << 24); }
-                }
-                ROW_NEXT(40.0f)
-            }
-        }
-    }   // end Text
-    ry += snap(10.0f);
 
     #undef ROW_BAND
     #undef ROW_NEXT
