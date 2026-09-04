@@ -35,27 +35,37 @@ namespace aio {
 // about what the user was looking at. Beyond BUFF_PIN_MAX there is nothing to store, so the move is a
 // no-op rather than a silent partial one.
 static void strip_apply_move(bool atGroups, int innerG, int from, int to,
-                             const unsigned short* mem, int nmem) {
+                             const unsigned short* mem, int nmem,
+                             const int* slots, int nslots) {
     UiConfig& c = ui_config();
-    if (from == to) return;
+    if (from == to || from < 0 || to < 0) return;
     if (atGroups) {
-        if (from < 0 || to < 0 || from >= UiConfig::BUFF_ORDER_N || to >= UiConfig::BUFF_ORDER_N) return;
-        const unsigned char g = c.buffOrder[from];
-        if (from < to) for (int i = from; i < to; ++i) c.buffOrder[i] = c.buffOrder[i + 1];
-        else           for (int i = from; i > to; --i) c.buffOrder[i] = c.buffOrder[i - 1];
-        c.buffOrder[to] = g;
+        // `from`/`to` index the VISIBLE band, which may be missing the empty groups. Reorder the values
+        // among the slots the band is actually showing and write them back : a group the band left out
+        // keeps its own position exactly, so hiding the empties from view never silently re-ranks them.
+        if (!slots || from >= nslots || to >= nslots || nslots > UiConfig::BUFF_ORDER_N) return;
+        unsigned char v[UiConfig::BUFF_ORDER_N];
+        for (int k = 0; k < nslots; ++k) {
+            if (slots[k] < 0 || slots[k] >= UiConfig::BUFF_ORDER_N) return;
+            v[k] = c.buffOrder[slots[k]];
+        }
+        const unsigned char g0 = v[from];
+        if (from < to) for (int k = from; k < to; ++k) v[k] = v[k + 1];
+        else           for (int k = from; k > to; --k) v[k] = v[k - 1];
+        v[to] = g0;
+        for (int k = 0; k < nslots; ++k) c.buffOrder[slots[k]] = v[k];
         save_ui_config();
         return;
     }
     const int g = innerG;
-    if (g < 0 || g >= UiConfig::BUFF_ORDER_N || from < 0 || to < 0) return;
+    if (g < 0 || g >= UiConfig::BUFF_ORDER_N) return;
     int need = (from > to ? from : to) + 1; if (need > UiConfig::BUFF_PIN_MAX) need = UiConfig::BUFF_PIN_MAX;
     while (c.buffPinN[g] < need && c.buffPinN[g] < nmem) { c.buffPin[g][c.buffPinN[g]] = mem[c.buffPinN[g]]; ++c.buffPinN[g]; }
     if (from >= c.buffPinN[g] || to >= c.buffPinN[g]) return;   // past what the prefix can hold
-    const unsigned short v = c.buffPin[g][from];
+    const unsigned short vv = c.buffPin[g][from];
     if (from < to) for (int i = from; i < to; ++i) c.buffPin[g][i] = c.buffPin[g][i + 1];
     else           for (int i = from; i > to; --i) c.buffPin[g][i] = c.buffPin[g][i - 1];
-    c.buffPin[g][to] = v;
+    c.buffPin[g][to] = vv;
     save_ui_config();
 }
 
@@ -185,10 +195,17 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             // Same geometry, same grab, same drop; entering a group changes the scale, never the gesture. That is
             // the whole design claim, so the two levels are deliberately not two blocks of code.
             static_assert(BG_COUNT <= (int)(sizeof(((ConfigPage*)0)->bgAll_) / sizeof(bool)), "bgAll_ must be at least BG_COUNT wide");
+            // ONE uid for the WHOLE drag, taken once. CTRL_ID is a __FILE__:__LINE__ hash, so writing it at
+            // the grab, the hold, the release and the recovery would mint FOUR different ids : the grab would
+            // latch one and every other call would ask about another. The drag then died after a frame AND
+            // left g_slider latched forever, which also blocks every slider in the menu. This is the exact
+            // trap config-panels.md warns about for controls in a loop -- it bites a multi-call control too.
+            const int dragUid = CTRL_ID;
             const u32 bTex = buff_atlas_tex(dev);   // BORROWED : buff_atlas.cpp owns it and is the only place that releases it. 0 while its bounded retry has not landed -> the band draws its tints and stays usable, rather than holes.
 
             struct Run { int n; unsigned short ic[4]; float x, w; unsigned char grp; bool hid; };
             Run runs[64]; int nRun = 0;
+            int slots[UiConfig::BUFF_ORDER_N]; int nEmpty = 0;   // slots[k] = the buffOrder position the k-th visible run occupies
             unsigned short inner[256]; int innerTotal = 0, innerN = 0;
             const bool atGroups = (bsInner_ < 0 || bsInner_ >= BG_COUNT);
             if (atGroups) {
@@ -196,9 +213,17 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     const int g = ui_config().buffOrder[i];
                     unsigned short m[4]; int t = 0;
                     const int k = buff_group_members(ui_config(), g, m, 4, &t, [](unsigned st) { return party().status_seen(st); });
+                    const bool hid = ui_config().buff_group_hidden(g);
+                    // A group with nothing in it has nothing to show and nothing to order -- and there are
+                    // usually five or six of them (you are not every job at once). Leaving them in the band as
+                    // blank stubs is the noise this editor exists to remove, so they come out of the VIEW while
+                    // keeping their POSITION : the instant one of their buffs turns up, it lands where it was
+                    // put. The chip on the last line brings them back when you want to pre-arrange one.
+                    if (k == 0 && !hid && !bsShowEmpty_) { ++nEmpty; continue; }
+                    slots[nRun] = i;
                     Run& r = runs[nRun++];
                     r.n = k; for (int q = 0; q < k; ++q) r.ic[q] = m[q];
-                    r.grp = (unsigned char)g; r.hid = ui_config().buff_group_hidden(g);
+                    r.grp = (unsigned char)g; r.hid = hid;
                 }
             } else {
                 const int g = bsInner_;
@@ -207,7 +232,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     : buff_group_members(ui_config(), g, inner, UiConfig::BUFF_PIN_MAX, &innerTotal,
                                          [](unsigned st) { return party().status_seen(st); });
                 if (innerN > 64) innerN = 64;   // the band is one line ; the rest keeps the game's order
-                for (int i = 0; i < innerN; ++i) { Run& r = runs[nRun++]; r.n = 1; r.ic[0] = inner[i]; r.grp = (unsigned char)g; r.hid = false; }
+                for (int i = 0; i < innerN; ++i) { slots[0] = 0; Run& r = runs[nRun++]; r.n = 1; r.ic[0] = inner[i]; r.grp = (unsigned char)g; r.hid = false; }
             }
             if (bsSel_ >= nRun) bsSel_ = -1;
             if (bsDrag_ >= nRun) { bsDrag_ = -1; bsDrop_ = -1; }
@@ -297,11 +322,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // switched, mid-drag and ctrl_release_drag() freed it under us. Without this the run stays
                 // lifted and the `bsDrag_ < 0` gate below blocks every future grab -- one badly-timed close
                 // and the editor is dead for the session. Recover, do not latch a transient into a state.
-                if (bsDrag_ >= 0 && !ctrl_drag_active(CTRL_ID)) { bsDrag_ = -1; bsDrop_ = -1; bsEnter_ = 0; }
+                if (bsDrag_ >= 0 && !ctrl_drag_active(dragUid)) { bsDrag_ = -1; bsDrop_ = -1; bsEnter_ = 0; }
                 int hot = -1;
                 for (int i = 0; i < nRun; ++i) if (inrect(mo, runs[i].x, sy, runs[i].w, bandH)) { hot = i; break; }
                 // ---- grab ----
-                if (bsDrag_ < 0 && hot >= 0 && ctrl_drag_begin(CTRL_ID, mo, true)) {
+                if (bsDrag_ < 0 && hot >= 0 && ctrl_drag_begin(dragUid, mo, true)) {
                     bsEnter_ = (bsSel_ == hot) ? 1 : 0;   // a press on the ALREADY selected run means "go inside", if it turns out not to be a drag
                     bsDrag_ = hot; bsDrop_ = hot; bsSel_ = hot;
                 }
@@ -309,7 +334,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // Re-target as soon as the pointer passes a neighbour's MIDPOINT, not on release -- the band has to
                 // answer "here" while you are still holding, or the drop is a guess. The band paints right-to-left,
                 // so a pointer LEFT of a run's middle means LATER in the order.
-                if (bsDrag_ >= 0 && ctrl_drag_active(CTRL_ID) && mo) {
+                if (bsDrag_ >= 0 && ctrl_drag_active(dragUid) && mo) {
                     int at = bsDrop_;
                     for (int i = 0; i < nRun; ++i)
                         if (mo->x >= runs[i].x && mo->x < runs[i].x + runs[i].w) { at = (mo->x < runs[i].x + runs[i].w * 0.5f) ? i + 1 : i; break; }
@@ -319,7 +344,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     bsDrop_ = at;
                 }
                 // ---- release ----
-                if (bsDrag_ >= 0 && ctrl_drag_end(CTRL_ID, mo)) {
+                if (bsDrag_ >= 0 && ctrl_drag_end(dragUid, mo)) {
                     const int from = bsDrag_; int to = bsDrop_;
                     bsDrag_ = -1; bsDrop_ = -1;
                     if (to >= 0 && to != from && to != from + 1) {
@@ -339,7 +364,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     else if (i == hot) rrect_fill(dev, runs[i].x, sy + dy, runs[i].w, bandH, snap(7.0f), 0x18FFFFFFu, 0x0CFFFFFFu);
                     const int k = runs[i].hid ? 0 : (runs[i].n < capI ? runs[i].n : capI);
                     const float uw = (k > 0) ? (k * ics + (k - 1) * gapI) : snap(6.0f);
-                    flat(dev, snap(runs[i].x + padR), snap(uy + dy), uw, snap(2.0f), fa(runs[i].hid ? C_MUTE : buff_group_tint(runs[i].grp)));
+                    flat(dev, snap(runs[i].x + runs[i].w - padR - uw), snap(uy + dy), uw, snap(2.0f), fa(runs[i].hid ? C_MUTE : buff_group_tint(runs[i].grp)));
                 }
                 if (bsDrag_ >= 0 && bsDrop_ >= 0 && nRun > 0) {
                     const float cx3 = (bsDrop_ >= nRun) ? (runs[nRun - 1].x - gapR * 0.5f)
@@ -354,8 +379,13 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                         const float y0 = iy + ((i == bsDrag_) ? -snap(4.0f) : 0.0f);
                         const int k = runs[i].n < capI ? runs[i].n : capI;
                         for (int q = 0; q < k; ++q) {
+                            // MIRRORED inside the run, like the band itself : rank 0 is the RIGHTMOST icon of its
+                            // own block, not the leftmost. Drawing the preview left-to-right inside a band that
+                            // reads right-to-left put Haste on the wrong side of Refresh -- the run contradicted
+                            // the strip it lives in, and the config then disagreed with the HUD it is editing.
                             float au, av, u0, v0; buff_cell_uv(runs[i].ic[q], au, av, u0, v0);
-                            tquad(dev, snap(runs[i].x + padR + q * (ics + gapI)), snap(y0), ics, ics,
+                            const float ix = runs[i].x + runs[i].w - padR - (q + 1) * ics - q * gapI;
+                            tquad(dev, snap(ix), snap(y0), ics, ics,
                                   u0, u0 + au, v0, v0 + av, 0xFFFFFFFFu, 0xFFFFFFFFu);
                         }
                     }
@@ -363,7 +393,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 }
                 // ---- PASS 3 : hidden groups, as a mark rather than icons ----
                 for (int i = 0; i < nRun; ++i) if (runs[i].hid)
-                    rrect_fill(dev, snap(runs[i].x + snap(3.0f)), snap(iy + ics * 0.35f), snap(6.0f), snap(6.0f), snap(3.0f), fa(C_MUTE), fa(C_MUTE));
+                    rrect_fill(dev, snap(runs[i].x + runs[i].w - snap(9.0f)), snap(iy + ics * 0.35f), snap(6.0f), snap(6.0f), snap(3.0f), fa(C_MUTE), fa(C_MUTE));
             }
             ROW_NEXT(46.0f)
 
@@ -371,16 +401,22 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             { ROW_BAND(24.0f)
                 char lb2[140];
                 if (!atGroups && innerTotal > innerN) { _snprintf(lb2, sizeof(lb2), tr("+%d more, in the game's order", "+%d autres, dans l'ordre du jeu"), innerTotal - innerN); lb2[sizeof(lb2) - 1] = 0; }
-                else lstrcpynA(lb2, tr("Position 1 is on the right, against the member row",
-                                       "La position 1 est a droite, contre la ligne du membre"), sizeof(lb2));
+                else if (atGroups && nEmpty > 0) { _snprintf(lb2, sizeof(lb2), tr("%d empty groups, position kept", "%d groupes vides, place conservee"), nEmpty); lb2[sizeof(lb2) - 1] = 0; }
+                else lstrcpynA(lb2, tr("The rightmost block sits against the member row",
+                                       "Le bloc le plus a droite est contre la ligne du membre"), sizeof(lb2));
                 fo->begin(dev);
                 fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(12.0f), lb2, snap(11.5f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+                if (atGroups && (nEmpty > 0 || bsShowEmpty_)) {
+                    const float cw3 = snap(74.0f), ch3 = snap(20.0f);
+                    if (toggle_chip(dev, fo, mo, click, CTRL_ID, coX + ctrlW - cw3, ry + yo + snap(2.0f), cw3, ch3,
+                                    tr("Empty", "Vides"), bsShowEmpty_)) { bsShowEmpty_ = !bsShowEmpty_; bsSel_ = -1; }
+                }
             }
             ROW_NEXT(24.0f)
 
             // ---- apply the single move of this frame, whatever produced it (arrow or drop) ----
             if (mvFrom >= 0 && mvTo >= 0 && mvFrom != mvTo) {
-                strip_apply_move(atGroups, bsInner_, mvFrom, mvTo, inner, innerN);
+                strip_apply_move(atGroups, bsInner_, mvFrom, mvTo, inner, innerN, slots, nRun);
                 bsSel_ = mvTo;   // the selection FOLLOWS what you moved, so a second press keeps moving the same thing
             }
         }
