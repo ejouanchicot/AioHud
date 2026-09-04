@@ -825,23 +825,13 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // Floating icons over a bare band left the eye to infer where one group ended and the next began,
                 // from a gap. A bordered tile states it. The BORDER carries the group's tint, which is why the
                 // separate tint rule underneath is gone : one identity mark per tile, not two.
-                // ---- where the carried tile will LAND. ----
-                // A blank gap read as something broken. But a full-size bordered panel there read as the tile's
-                // own background left behind -- as if the cell had stayed put and only its contents had come
-                // away in your hand. Both are the same mistake from opposite ends: the mark has to say RECEPTACLE,
-                // and anything shaped like a tile says TILE.
-                // So it is deliberately not one: inset on every side, no fill worth the name, one thin tinted
-                // outline. Smaller than the thing it will hold, which is what makes it read as the hole rather
-                // than as the object. Its position is the carried tile's TARGET slot, so it also answers the only
-                // question being asked during a drag -- where does this land.
-                if (carrying && bsDrag_ >= 0 && bsDrag_ < nRun) {
-                    const float in3 = snap(5.0f);
-                    const float px = tx[bsDrag_] + in3, py = sy0 + tline[bsDrag_] * lineH + snap(3.0f) + in3;
-                    const float pw2 = runs[bsDrag_].w - in3 * 2.0f, ph2 = lineH - snap(6.0f) - in3 * 2.0f;
-                    const u32 pt = (buff_group_tint(runs[bsDrag_].grp) & 0x00FFFFFF) | 0x7A000000u;
-                    if (pw2 > 0.0f && ph2 > 0.0f)
-                        rpanel(dev, px, py, pw2, ph2, snap(6.0f), 0x12000000u, 0x12000000u, pt, snap(1.2f));
-                }
+                // (NOTHING is drawn in the slot the carried tile came out of, and that was tried twice.
+                //  A full-size panel there read as the tile's own background left behind ; insetting it and
+                //  thinning it to an outline did not help, because the problem was never the styling -- any
+                //  mark sitting still at the place you just lifted from reads as something you failed to
+                //  pick up. The gap alone is the right answer : the neighbours shifting into it is the
+                //  feedback, which is what was asked for in the first place, and an empty space is the one
+                //  thing that cannot be mistaken for an object.)
                 for (int k = 0; k < nv; ++k) {
                     const int i = vis[k];
                     const bool lift = carrying && (i == bsDrag_);
@@ -856,8 +846,17 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     const u32 tint = runs[i].hid ? C_MUTE : buff_group_tint(runs[i].grp);
                     u32 ft, fb, br; float bw2;
                     if (lift) {   // carried : opaque and raised, so it reads as held ABOVE the band
+                        // ... and it takes ITS OWN COLOUR with it. This used to go neutral grey with the generic
+                        // accent on the edge, so the moment you picked a tile up it stopped being Songs or Rolls
+                        // and became a slab -- the group's identity stayed behind in the band while the thing in
+                        // your hand had none. Opaque is what says "held above" ; the tint is what says WHAT is
+                        // held, and the two are not the same job. So: the tint washed into a dark opaque base,
+                        // and the edge at full strength.
                         drop_shadow(dev, runs[i].x, ty2, runs[i].w, th2, snap(6.0f), 110);
-                        ft = 0xFF232C33u; fb = 0xFF161C22u; br = C_ACCENTHI; bw2 = snap(1.6f);
+                        ft = lerpc(0xFF232C33u, tint, 0.22f);
+                        fb = lerpc(0xFF161C22u, tint, 0.13f);
+                        br = (tint & 0x00FFFFFF) | 0xFF000000u;
+                        bw2 = snap(1.6f);
                     } else if (i == bsSel_) {
                         ft = (C_ACCENT & 0x00FFFFFF) | 0x3C000000u; fb = (C_ACCENT & 0x00FFFFFF) | 0x18000000u;
                         br = C_ACCENTHI; bw2 = snap(1.5f);
@@ -891,7 +890,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                             for (int c3 = 0; c3 < 3; ++c3)
                                 rrect_fill(dev, snap(gx + c3 * sp), snap(gy + r2 * sp), d, d, d * 0.5f, gc, gc);
                     }
-                    if (lift) rrect_top(dev, runs[i].x, ty2, runs[i].w, snap(2.0f), snap(8.0f), (C_ACCENTHI & 0x00FFFFFF) | 0x90000000u, (C_ACCENT & 0x00FFFFFF) | 0x00000000u);
+                    if (lift) rrect_top(dev, runs[i].x, ty2, runs[i].w, snap(2.0f), snap(8.0f), (tint & 0x00FFFFFF) | 0xB4000000u, (tint & 0x00FFFFFF) | 0x00000000u);   // the top light is the group's colour too
                 }
                 // ---- PASS 2 : every icon, under ONE texture bind for the whole band ----
                 if (bTex) {
