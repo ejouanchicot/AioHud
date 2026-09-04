@@ -17,6 +17,7 @@ void test_durations();
 void test_config();
 void test_limbus();
 void test_omen();
+void test_buff_groups();
 
 int main() {
     test_json();
@@ -25,6 +26,7 @@ int main() {
     test_config();
     test_limbus();
     test_omen();
+    test_buff_groups();
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail;
 }

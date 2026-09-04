@@ -475,6 +475,15 @@ struct PartyState {
 
     // --- Timers module : self buff timers (exact durations, from 0x063 type-9) ---
     BuffTimer buffTimers_[32]; int buffTimerN_ = 0;
+    // ---- statuses this SESSION has actually seen on somebody (self 0x063 + party 0x076). ----
+    // Not game state : it exists so the config can list the statuses a group really contains for YOU instead of
+    // every one it could ever contain. "Other" holds ~238 named statuses ; a menu that lists all of them to be
+    // hand-ordered is a menu nobody uses. Deliberately NOT persisted -- it would make every profile read as
+    // modified the first time a new status went by, and the built-in priority list already covers the groups
+    // that matter before you have met anything.
+    unsigned char statusSeen_[80] = { 0 };   // 640 bits, one per status id (the atlas ceiling)
+    void note_status_seen(unsigned st) { if (st < 640u) statusSeen_[st >> 3] |= (unsigned char)(1u << (st & 7)); }
+    bool status_seen(unsigned st) const { return st < 640u && (statusSeen_[st >> 3] & (1u << (st & 7))) != 0; }
     const BuffTimer* buff_timers(int& n) const { n = buffTimerN_; return buffTimers_; }
     void buff_timers_clear() { buffTimerN_ = 0; }
     // Timers "self-cast only" filter : who last applied each status ON YOU (server id ; 0 = unknown). Filled by

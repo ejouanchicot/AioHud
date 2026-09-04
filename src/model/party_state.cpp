@@ -1693,6 +1693,7 @@ void PartyState::on_076(const unsigned char* p) {
             unsigned buff = low + 256u * hi2;
             if (buff == 255) continue;                         // empty buff
             bs.ids[bs.n++] = (unsigned short)buff;
+            note_status_seen(buff);   // remember that this status really occurs -> the config lists what you meet, not the whole universe
         }
         if (s_b076Until && (int)(s_b076Until - GetTickCount()) > 0) {   // //aio ftrace : one line per member per 0x076 -> the arrival cadence around a zone. Sentinel-guard s_b076Until!=0 FIRST : (int)(0-GetTickCount()) reads POSITIVE once uptime passes ~25 days, which would self-arm a disarmed probe and spam a shipped log.
             char ids[160]; int o = 0; ids[0] = 0;

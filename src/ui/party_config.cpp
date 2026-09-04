@@ -11,6 +11,8 @@
 #include "ui/config_controls.h"   // shared toolkit : cat_header / row_slider / toggle_chip / row_selector + palette + g_fade
 #include "ui/config_rows.h"       // ROW_BAND / ROW_NEXT row-layout macros (shared with config_page.cpp)
 #include "model/ui_config.h"      // ui_config(), save/reset, TE_* enum, TextStyle
+#include "model/buff_groups.h"    // BuffGroup + BUFF_GROUP_EN/FR : the party buff strip's display groups
+#include "model/party_state.h"    // party().status_seen : which statuses have actually turned up this session
 #include "gfx/font.h"
 #include "gfx/draw.h"
 #include "gfx/window.h"           // box themes : window_theme_family/variant/name, box_family_*, box_hue_*
@@ -130,6 +132,140 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 bri = wrap(bri + d, 2); ui_config().buffRows = bri + 1; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        // ---- sub-section : BUFF ORDER. The strip draws its icons RIGHT-TO-LEFT from index 0, so the group at
+        // position 1 ends up nearest the member's row. Ordering by GROUP (13 rows) rather than by status (624 of
+        // them) is what keeps this configurable at all -- and it makes Max Buffs deliberate : the cut now falls on
+        // whatever the user parked last instead of on whichever buff the server happened to send late. ----
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buff order", "Ordre des buffs"), buffOrderOpen_)) buffOrderOpen_ = !buffOrderOpen_;
+        ROW_NEXT(42.0f)
+        if (buffOrderOpen_) {
+            // bgOpen_ is indexed by BuffGroup. trkCatOpen_ and relOpen_ each overflowed into their neighbour
+            // exactly this way once their enum outgrew the array -- silently, because nothing checked.
+            static_assert(BG_COUNT <= (int)(sizeof(((ConfigPage*)0)->bgOpen_) / sizeof(bool)), "bgOpen_ must be at least BG_COUNT wide");
+            static_assert(BG_COUNT <= (int)(sizeof(((ConfigPage*)0)->bgAll_)  / sizeof(bool)), "bgAll_ must be at least BG_COUNT wide");
+            { ROW_BAND(34.0f)   // the one thing a number alone cannot say : which END of the strip position 1 is
+                fo->begin(dev);
+                fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(17.0f),
+                            tr("1 = closest to the row (right)", "1 = le plus pres de la ligne (droite)"),
+                            snap(13.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
+            }
+            ROW_NEXT(34.0f)
+            // The swap is applied AFTER the loop : moving a group mid-iteration would draw the rest of the list
+            // against an order that has already changed, and the row under the cursor would no longer be the one
+            // that was clicked. CTRL_ID is a file:LINE hash, so every iteration would share ONE uid (and one hover
+            // spring) -- ctrl_uid_i scatters them, exactly as the distance-colour pickers below have to.
+            int mvFrom = -1, mvTo = -1;
+            const float chipW = snap(96.0f), chipH = snap(30.0f), chipGap = snap(10.0f), indent = snap(22.0f);
+            const float capW = snap(46.0f) + snap(168.0f) + snap(46.0f);   // row_selector's capsule : the SAME three snaps it uses, so the caret hit zone below stops exactly where the capsule starts
+            for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) {
+                const int g = ui_config().buffOrder[i];
+                const bool hid = ui_config().buff_group_hidden(g);
+                { ROW_BAND(40.0f)
+                char pos[8]; sprintf(pos, "%d", i + 1);
+                const float selX = coX + indent, selW = ctrlW - indent - chipW - chipGap, ty = ry + yo;
+                // ---- the caret : click the NAME half of the row to expand the group. Its zone is clamped to end
+                // where the selector capsule begins, so expanding can never steal a click meant for an arrow. ----
+                const float czW = (selX + selW - capW) - coX - snap(6.0f);
+                const bool czHov = (czW > snap(20.0f)) && inrect(mo, coX, ty, czW, snap(40.0f));
+                if (czHov) flat(dev, coX, ty, czW, snap(40.0f), 0x14FFFFFFu);
+                if (czHov && click) bgOpen_[g] = !bgOpen_[g];
+                { const float gx = coX + snap(9.0f), gy = ty + snap(20.0f), cs3 = snap(3.5f); const u32 cc = fa(C_ACCENTHI);
+                  if (bgOpen_[g]) { const float d[6] = { gx - cs3, gy - cs3 * 0.55f,  gx + cs3, gy - cs3 * 0.55f,  gx, gy + cs3 * 0.85f }; fill_poly_aa(dev, d, 3, cc); }
+                  else            { const float d[6] = { gx - cs3 * 0.55f, gy - cs3,  gx - cs3 * 0.55f, gy + cs3,  gx + cs3 * 0.85f, gy }; fill_poly_aa(dev, d, 3, cc); } }
+                // The position selector is narrowed so the visibility chip owns the right end of the row.
+                // A hidden group KEEPS its number : unhide it and it returns to the same slot, so the list
+                // never renumbers under you while you are still arranging it.
+                if (int d = row_selector(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, i), selX, ty, selW,
+                                         tr(BUFF_GROUP_EN[g], BUFF_GROUP_FR[g]), pos)) {
+                    const int j = i + (d < 0 ? -1 : +1);
+                    if (j >= 0 && j < UiConfig::BUFF_ORDER_N) { mvFrom = i; mvTo = j; }   // at the ends, the arrow is simply inert (no wrap : a group teleporting from one end of the strip to the other is never what you meant)
+                }
+                // Separate source line -> its own CTRL_ID, so the chip and the selector above cannot share
+                // a spring even though both key their hover on sub 0/1 of their uid.
+                if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, i),
+                                coX + ctrlW - chipW, ty + (snap(40.0f) - chipH) * 0.5f, chipW, chipH,
+                                hid ? tr("Hidden", "MasquÃ©") : tr("Shown", "AffichÃ©"), !hid)) {
+                    ui_config().buff_group_toggle(g); save_ui_config();
+                }
+                }
+                ROW_NEXT(40.0f)
+                // ---- expanded : the group's members, in the order the strip draws them. ----
+                // NOT every status the group can hold -- "Other" can hold ~238 named ones, and listing them to be
+                // hand-ordered is a menu nobody opens. A status gets a row when it is curated (the built-in list),
+                // arranged, or has actually turned up on somebody this session. So the groups that matter are
+                // complete from the first launch, and the open-ended ones show what you really meet.
+                if (!bgOpen_[g]) continue;
+                // ---- list mode. Two things are true at once and they pull opposite ways : you must be able to
+                // arrange ANY status (party composition changes -- a job you have never grouped with brings statuses
+                // this session has never seen), and the default view must not be a wall of 134 job abilities.
+                // So : "Met" is the short list (curated + actually seen), "All" is every named status the group can
+                // hold. The mode is per group and lives only for the session -- it is a way of looking, not a setting.
+                { ROW_BAND(30.0f)
+                    const float mchipW = snap(84.0f), mchipH = snap(26.0f), ty2 = ry + yo;
+                    fo->begin(dev);
+                    // The label carries the meaning, not the chip : "Seen" alone is ambiguous, and the chip is too
+                    // narrow to say "the ones that have actually turned up this session" -- so the row says it.
+                    fo->draw_lc(dev, coX + snap(42.0f), ty2 + snap(15.0f),
+                                bgAll_[g] ? tr("List : every status of this group", "Liste : tous les statuts du groupe")
+                                          : tr("List : only those seen so far", "Liste : ceux rencontr\xC3\xA9s jusqu'ici"),
+                                snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+                    if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, i),
+                                    coX + ctrlW - mchipW, ty2 + (snap(30.0f) - mchipH) * 0.5f, mchipW, mchipH,
+                                    bgAll_[g] ? tr("All", "Tous") : tr("Seen", "Vus"), bgAll_[g])) bgAll_[g] = !bgAll_[g];
+                }
+                ROW_NEXT(30.0f)
+                unsigned short mem[256]; int total = 0;
+                const int listCap = bgAll_[g] ? (int)(sizeof(mem) / sizeof(mem[0])) : UiConfig::BUFF_PIN_MAX;
+                const int nm = bgAll_[g]
+                    ? buff_group_members(ui_config(), g, mem, listCap, &total, [](unsigned) { return true; })
+                    : buff_group_members(ui_config(), g, mem, listCap, &total,
+                                         [](unsigned st) { return party().status_seen(st); });
+                int mvA = -1, mvB = -1;   // applied after this group's loop : a swap mid-iteration would draw the
+                for (int k = 0; k < nm; ++k) {   //  rest of the list against an order that has already changed
+                    ROW_BAND(40.0f)
+                    const char* nm2 = buff_status_name(mem[k]);
+                    if (k < UiConfig::BUFF_PIN_MAX) {
+                        char mp[8]; sprintf(mp, "%d", k + 1);
+                        if (int d = row_selector(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, g * UiConfig::BUFF_PIN_MAX + k),
+                                                 coX + snap(38.0f), ry + yo, ctrlW - snap(38.0f), nm2 ? nm2 : "?", mp)) {
+                            const int j2 = k + (d < 0 ? -1 : +1);
+                            if (j2 >= 0 && j2 < nm) { mvA = k; mvB = j2; }
+                        }
+                    } else {
+                        // Past what can be STORED (the arranged prefix materialises down to the row you touch, so
+                        // moving row 200 would mean storing 200 ids). The row is still listed -- you can see the
+                        // status is there -- but it carries no arrows and says why, rather than offering a control
+                        // that would quietly do nothing.
+                        fo->begin(dev);
+                        fo->draw_lc(dev, coX + snap(42.0f), ry + yo + snap(20.0f), nm2 ? nm2 : "?", snap(13.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+                        fo->draw_lc(dev, coX + ctrlW - snap(120.0f), ry + yo + snap(20.0f), tr("game order", "ordre du jeu"), snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+                    }
+                    ROW_NEXT(40.0f)
+                }
+                if (nm == 0 || total > nm) { ROW_BAND(28.0f)
+                    // Two different things to say, and saying neither would leave an empty block that reads as a bug.
+                    char lb[110];
+                    if (nm == 0) lstrcpynA(lb, tr("none seen yet -- switch to All to arrange them", "rien de rencontr\xC3\xA9 -- passe sur Tous pour les ranger"), sizeof(lb));
+                    else { _snprintf(lb, sizeof(lb), tr("+%d more, in the game's order", "+%d autres, dans l'ordre du jeu"), total - nm); lb[sizeof(lb) - 1] = 0; }
+                    fo->begin(dev);
+                    fo->draw_lc(dev, coX + snap(42.0f), ry + yo + snap(14.0f), lb, snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+                    ROW_NEXT(28.0f)
+                }
+                if (mvA >= 0) {
+                    // Materialise the arranged prefix from WHAT IS ON SCREEN, down to the row that was touched, then
+                    // swap. Seeding from the displayed order is what makes the first move on a group preserve
+                    // everything above it -- the built-in order and the stored one can never disagree about it.
+                    UiConfig& c = ui_config();
+                    int need = (mvA > mvB ? mvA : mvB) + 1; if (need > UiConfig::BUFF_PIN_MAX) need = UiConfig::BUFF_PIN_MAX;
+                    while (c.buffPinN[g] < need && c.buffPinN[g] < nm) { c.buffPin[g][c.buffPinN[g]] = mem[c.buffPinN[g]]; ++c.buffPinN[g]; }
+                    if (mvA < c.buffPinN[g] && mvB < c.buffPinN[g]) {
+                        const unsigned short t = c.buffPin[g][mvA]; c.buffPin[g][mvA] = c.buffPin[g][mvB]; c.buffPin[g][mvB] = t;
+                        save_ui_config();
+                    }
+                }
+            }
+            if (mvFrom >= 0) { ui_config().buff_order_swap(mvFrom, mvTo); save_ui_config(); }
+        }
         { ROW_BAND(52.0f)   // Cursor Size
             const float lo = 0.50f, hi = 2.00f;
             char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));

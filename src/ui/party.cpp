@@ -26,6 +26,8 @@
 #include <math.h>
 
 #include "ui/buff_atlas.h"
+#include "model/buff_groups.h"   // buff_group() : status -> display group, for the configurable strip order
+#include "ui/party_demo_buffs.h" // BUFF_POOL : the demo/preview buff set (own header so the tests can check its group coverage)
 
 namespace aio {
 
@@ -89,15 +91,6 @@ static const float kCastRange = 20.8f;   // yellow -> red : standard cast FAILS 
 // ---- buff icons : a single status-icon atlas (assets/buff_atlas.raw, built by
 // scripts/gen_buff_atlas.ps1 from XivParty's icon set). Fixed 32-col grid, 32px cells.
 // A status id maps to cell (id%COLS, id/COLS) -> see gen_buff_atlas.ps1 for the layout.
-// demo buff set (-> something realistic to render in //aio demo). Front = a plausible party buff spread
-// (Protect/Shell/Haste/Refresh/Phalanx/Food, COR Chaos+Samurai Rolls, BRD Honor March + two Minuets, Blink,
-// Stoneskin) ; the rest keeps the old filler. NOTE: FFXI collapses ALL Minuets to status 198 and ALL Marches
-// to 214, so Minuet IV/V share one icon (198). (Dia 134 is a near-white icon -> looks blank ; kept in the tail.)
-static const unsigned short BUFF_POOL[] = {
-    40, 41, 33, 43, 116, 251, 317, 321, 214, 198, 198, 36, 37,      // the requested realistic spread
-    134, 13, 4, 5, 3, 30, 31, 32, 44, 45, 46, 39, 42, 0, 1, 2, 6, 7 // filler (kept from the old pool)
-};
-static const int BUFF_POOL_N = (int)(sizeof(BUFF_POOL) / sizeof(BUFF_POOL[0]));
 static const u32 C_OFF = 0xFF6E7689;   // out-of-zone member (greyed)
 
 // ---- colours ----
@@ -417,10 +410,46 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
     const bool  cap  = lim > 0.0f;
     struct Mark { float x, y; int nn; };
     Mark marks[12]; int nmark = 0;                       // <= 6 members x 2 rows
+    // ---- strip ORDER : the user lists the buff GROUPS (buff_groups.h) in the order they want them drawn, and
+    // the strip fills right-to-left, so rank 0 ends up nearest the member row. Resolve each group's rank ONCE
+    // here (13 short scans) rather than per status per member -- the per-member sort below is then a lookup.
+    static_assert(BG_COUNT == UiConfig::BUFF_ORDER_N, "UiConfig::BUFF_ORDER_N must track BuffGroup -- adding a group without widening the stored order silently drops it");
+    unsigned char grank[BG_COUNT]; bool ghide[BG_COUNT];
+    for (int g = 0; g < BG_COUNT; ++g) { grank[g] = (unsigned char)ui_config().buff_group_rank(g); ghide[g] = ui_config().buff_group_hidden(g); }
     for (int i = 0; i < n; ++i) {
         const Row& r = rows[i];
         if (r.offzone || !r.buffs || r.nbuff <= 0) continue;
-        const int   nbAll = r.nbuff < bmaxCfg ? r.nbuff : bmaxCfg;
+        // Sort this member's statuses into the configured group order, keeping the GAME's own order inside each
+        // group (a counting sort is stable, so two Marches stay in the order the server sent them). Into a LOCAL
+        // copy : r.buffs points straight at the model's 0x076 cache (or the frame snapshot) and the UI must not
+        // reorder what the model owns. Fixed 32 entries on the stack -- no per-frame allocation.
+        // Sort this member's statuses into the configured group order, and INSIDE a group into the order the
+        // user arranged (config: Buff order) or, where they arranged nothing, the built-in priority list in
+        // buff_groups.h (Sneak before Invisible, Haste before Refresh before Phalanx) -- anything unranked
+        // keeps the game's own order behind them. One 16-bit key carries both levels
+        // (group rank in the high byte, in-group rank in the low), and the insertion sort is STABLE, so the
+        // game's order survives wherever we have not stated one. Into a LOCAL copy : r.buffs points straight
+        // at the model's 0x076 cache (or the frame snapshot) and the UI must not reorder what the model owns.
+        // A HIDDEN group is dropped HERE, before the sort and before the count -- not skipped while drawing.
+        // That is what makes hiding useful : the icons it would have taken cost no width and no slot against
+        // Max Buffs, so hiding Debuffs genuinely buys room for the groups you kept.
+        // Fixed 32 entries on the stack -- no per-frame allocation.
+        unsigned short ord[32]; unsigned short key[32]; int nOrd = 0;
+        {
+            const int nAll = r.nbuff < 32 ? r.nbuff : 32;
+            for (int j = 0; j < nAll; ++j) {
+                const unsigned char g = buff_group(r.buffs[j]);
+                if (ghide[g]) continue;
+                const unsigned short k = (unsigned short)(((unsigned)grank[g] << 8) | buff_pri_effective(ui_config(), r.buffs[j]));
+                int q = nOrd++;
+                for (; q > 0 && key[q - 1] > k; --q) { key[q] = key[q - 1]; ord[q] = ord[q - 1]; }   // strict > : equal keys keep their arrival order
+                key[q] = k; ord[q] = r.buffs[j];
+            }
+        }
+        if (nOrd <= 0) continue;   // everything this member carries is in a hidden group -> no strip at all
+        // Max Buffs now cuts the TAIL of the USER's order instead of the tail of the game's : whatever they
+        // parked last (Other, debuffs...) is what disappears, not whichever buff happened to land late.
+        const int   nbAll = nOrd < bmaxCfg ? nOrd : bmaxCfg;
         const float ry    = oy + pad + i * rowpit;
         const float top   = snap(ry + (rowh - totalH) * 0.5f);   // the (reserved) block CENTRED vertically in the row
         const float xr    = px - bmar;                  // right edge of the strip (just left of the cursor)
@@ -441,7 +470,7 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
             for (int j = 0; j < drawN; ++j) {
                 const float x = snap(xr - (float)(j + 1) * bs - (float)j * bgap);
                 if (!cap && x < 1.0f) break;            // live : ran off the left of the screen -> stop
-                const int id = r.buffs[start + j];
+                const int id = ord[start + j];
                 if (id < 0 || id >= BUFF_COLS * BUFF_ATLAS_ROWS) continue;   // id outside the atlas -> skip
                 const float u0 = (float)(id % BUFF_COLS) * au;
                 const float v0 = (float)(id / BUFF_COLS) * av;
@@ -655,7 +684,15 @@ void Party::draw(const Frame& f) {
     // repel other boxes, and are grabbable. Width = the real drawn strip (widest member, capped by Max Buffs).
     float buffW = 0.0f;
     if (tier_ == 0) {
-        int maxNb = 0; for (int i = 0; i < n; ++i) if (rows[i].buffs && rows[i].nbuff > maxNb) maxNb = rows[i].nbuff;
+        // Count the VISIBLE statuses : a hidden group must not reserve width it will never draw, or the box's
+        // occlusion / edit rect stays as wide as before and the cluster no longer matches what is on screen.
+        int maxNb = 0;
+        for (int i = 0; i < n; ++i) {
+            if (!rows[i].buffs) continue;
+            int vis = 0;
+            for (int j = 0; j < rows[i].nbuff; ++j) if (!ui_config().buff_group_hidden(buff_group(rows[i].buffs[j]))) ++vis;
+            if (vis > maxNb) maxNb = vis;
+        }
         int bmax = ui_config().buffMax; if (bmax < 0) bmax = 0; if (bmax > 32) bmax = 32; if (maxNb > bmax) maxNb = bmax;
         const int PERROW = (ui_config().buffRows > 1) ? 16 : 32;
         const int cnt = maxNb < PERROW ? maxNb : PERROW;

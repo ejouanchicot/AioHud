@@ -215,6 +215,9 @@ private:
     int   trkSub_ = -1;          // SUB job for the checklist (-1 = follow current sub ; 0 = none ; 1..22 = a job)
     int   trkScope_ = 0;         // 0 = Self (buffs on you + your recasts) ; 1 = Allies (buffs you put on allies)
     bool  trkSecOpen_ = false;   // the "Track per job" collapsible section
+    bool  buffOrderOpen_ = false;   // Party panel : the "Buff order" collapsible sub-section (group ranking). Session-only UI state, like the other *Open_ flags.
+    bool  bgOpen_[16] = { false };   // Party panel : per-GROUP expand inside "Buff order" (index = BuffGroup). MUST be >= BG_COUNT (buff_groups.h) -- same trap as trkCatOpen_/relOpen_, which both silently overflowed into their neighbour once their enum grew. 16 = room for three more groups.
+    bool  bgAll_[16] = { false };    // ... and whether that group lists EVERY status it can hold, or only the ones worth offering (curated + met this session). Same size rule as bgOpen_.
     bool  trkCatOpen_[48] = { false };   // per-category collapsible state within the checklist (index = TrackCat). MUST be >= TC_COUNT (job_track_gen.h) : it silently overflowed into jaJobOpen_ once TC_COUNT passed 32 (TC_JA/TC_OTHER indexed out of bounds) -- grown 32->48 at TC_COUNT=38 (added Food/Aftermath/Signet/Craft). Same trap as relOpen_.
     bool  jaJobOpen_[24] = { false };    // Buff filter / Job Abilities : per-JOB sub-section collapse (index = job id 1..23 ; in-memory only, NOT serialised). The current main job is forced open each frame.
     // animation state (driven by the frame clock)

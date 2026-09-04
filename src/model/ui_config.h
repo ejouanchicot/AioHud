@@ -99,6 +99,42 @@ struct UiConfig {
     float buffScale = 0.92f;   // buff-icon size as a FRACTION of the member row height (0.40 .. 1.00, capped at the row)
     int   buffMax   = 20;      // max buff icons shown per member (config choice) ; > 16 wraps to TWO rows of 16
     int   buffRows  = 2;       // buff strip : 1 or 2 rows ; 1 = one bigger (full-line-tall) row
+    // ---- buff strip ORDER : the display groups (buff_groups.h, BuffGroup) listed in the order they are drawn.
+    // Position 0 is drawn FIRST = nearest the member's row = RIGHTMOST, because the strip fills right-to-left.
+    // That also makes the Max Buffs cut deliberate : it drops the tail, i.e. whatever the user parked last.
+    // Kept as a plain id list (not a rank per group) so reordering is a swap and the file stays readable.
+    // BUFF_ORDER_N must equal BG_COUNT -- static_assert'd in party.cpp, where both headers are visible ; the
+    // constant is duplicated here only to keep this header free of includes (it has none, deliberately).
+    static const int BUFF_ORDER_N = 13;
+    unsigned char buffOrder[BUFF_ORDER_N] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
+    int buff_group_rank(int g) const {   // where this group sits in the strip ; unknown -> last
+        for (int i = 0; i < BUFF_ORDER_N; ++i) if (buffOrder[i] == g) return i;
+        return BUFF_ORDER_N - 1; }
+    void buff_order_swap(int a, int b) {   // move a group one slot ; out-of-range = no-op (the arrows call this at the ends)
+        if (a < 0 || b < 0 || a >= BUFF_ORDER_N || b >= BUFF_ORDER_N) return;
+        const unsigned char t = buffOrder[a]; buffOrder[a] = buffOrder[b]; buffOrder[b] = t; }
+    // Per-group VISIBILITY, one bit per BuffGroup (1 = hidden). A hidden group is dropped before the strip is
+    // even measured, so it costs no width and no slot against Max Buffs -- hiding Debuffs really does buy you
+    // room for the rest, which is the point. Its POSITION is kept : unhide and it returns to its own slot.
+    unsigned buffGroupOff = 0;
+    bool buff_group_hidden(int g) const { return (g >= 0 && g < BUFF_ORDER_N) && ((buffGroupOff >> g) & 1u) != 0; }
+    void buff_group_toggle(int g) { if (g >= 0 && g < BUFF_ORDER_N) buffGroupOff ^= (1u << g); }
+    // ---- order INSIDE a group. Only the PREFIX the user has actually arranged is stored : a list of status
+    // ids, in display order, per group. Empty (the default) = use the built-in priority list in buff_groups.h.
+    // Why a prefix and not a rank per status : a move is always a swap of two ADJACENT visible rows, and the
+    // rows after the arranged ones are ordered by the game, not by us. To push a row up past one of those you
+    // have to state where everything above it goes -- so the prefix materialises up to the row you touched,
+    // and no further. Arranging the top three of Watch stores three ids, not 337.
+    // The cap is what the UI lets you arrange, and it is deliberate : the groups where order is meaningful
+    // (Stealth 3, Watch 5, Protection 6, Songs 23) fit whole, while Abilities (134) and Other (~250) do not
+    // pretend to be hand-orderable to the end.
+    static const int BUFF_PIN_MAX = 24;
+    unsigned short buffPin[BUFF_ORDER_N][BUFF_PIN_MAX] = {};
+    unsigned char  buffPinN[BUFF_ORDER_N] = {};
+    int buff_pin_rank(int g, unsigned status) const {   // position in this group's arranged prefix, or -1
+        if (g < 0 || g >= BUFF_ORDER_N) return -1;
+        for (int i = 0; i < buffPinN[g]; ++i) if (buffPin[g][i] == status) return i;
+        return -1; }
     int   uiStyle   = 0;       // config-menu colour STYLE / family (Neon / Matte / Medieval / Heroic / Pastel ...)
     int   uiColor   = 0;       // colour index WITHIN the chosen style
     unsigned uiAccent = 0;     // custom config-menu accent (0 = use uiStyle/uiColor preset ; else derive the accent family from this opaque colour)

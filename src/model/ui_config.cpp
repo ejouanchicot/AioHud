@@ -191,6 +191,16 @@ static bool save_config_to(const char* path) {
     fprintf(f, "buffScale=%.4f\n", c.buffScale);
     fprintf(f, "buffMax=%d\n", c.buffMax);
     fprintf(f, "buffRows=%d\n", c.buffRows);
+    fprintf(f, "buffOrder=");                                                  // party buff strip : the display groups, in drawing order
+    for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) fprintf(f, "%s%u", i ? "," : "", (unsigned)c.buffOrder[i]);
+    fprintf(f, "\n");
+    fprintf(f, "buffGroupOff=%u\n", c.buffGroupOff);                        // party buff strip : which groups are hidden (bit per group)
+    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) {                        // and the order INSIDE a group -- only the arranged prefix, only where there is one
+        if (c.buffPinN[g] <= 0) continue;
+        fprintf(f, "buffPin%d=", g);
+        for (int i = 0; i < c.buffPinN[g]; ++i) fprintf(f, "%s%u", i ? "," : "", (unsigned)c.buffPin[g][i]);
+        fprintf(f, "\n");
+    }
     fprintf(f, "uiStyle=%d\n", c.uiStyle);
     fprintf(f, "uiColor=%d\n", c.uiColor);
     fprintf(f, "uiAccent=%08X\n", c.uiAccent);
@@ -414,6 +424,65 @@ static bool parse_cast_line(const char* line, UiConfig& c) {
 // Minimap EXTRA options (round bezel width / cardinal size / bezel on-off / square border width), parsed
 // OUT-OF-LINE (same C1061 nesting reason as parse_ep_line : the main else-if chain is at MSVC's limit).
 // Distinct key mm5= ; missing keys keep the code defaults so an OLD config loads to the current look.
+// Party buff-strip group order, parsed OUT-OF-LINE for the same C1061 reason as parse_mm_line.
+// A missing key keeps the defaults, so an older config loads with the declared order.
+static bool parse_buff_order_line(const char* line, UiConfig& c) {
+    if (strncmp(line, "buffPin", 7) == 0) {                    // buffPin<g>=id,id,... : one group's arranged prefix
+        int g = 0; const char* q = line + 7;
+        if (*q < '0' || *q > '9') return false;
+        while (*q >= '0' && *q <= '9') g = g * 10 + (*q++ - '0');
+        if (*q != '=' || g < 0 || g >= UiConfig::BUFF_ORDER_N) return true;   // a key we wrote is malformed or names no group -> swallow it, do not fall through to the chain
+        ++q;
+        int nb = 0;
+        while (*q && nb < UiConfig::BUFF_PIN_MAX) {
+            while (*q == ',' || *q == ' ') ++q;
+            if (*q < '0' || *q > '9') break;
+            unsigned v = 0; while (*q >= '0' && *q <= '9') v = v * 10 + (unsigned)(*q++ - '0');
+            c.buffPin[g][nb++] = (unsigned short)v;
+        }
+        c.buffPinN[g] = (unsigned char)nb;
+        return true;
+    }
+    if (strncmp(line, "buffGroupOff=", 13) == 0) {   // same helper, NOT a new link in the else-if chain (C1061)
+        unsigned m = 0; if (sscanf(line + 13, "%u", &m) == 1) c.buffGroupOff = m;
+        return true;
+    }
+    if (strncmp(line, "buffOrder=", 10) != 0) return false;
+    int nb = 0;
+    for (const char* q = line + 10; *q && nb < UiConfig::BUFF_ORDER_N; ) {
+        while (*q == ',' || *q == ' ') ++q;
+        if (*q < '0' || *q > '9') break;
+        int g = 0; while (*q >= '0' && *q <= '9') g = g * 10 + (*q++ - '0');
+        c.buffOrder[nb++] = (unsigned char)g;
+    }
+    for (int i = nb; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = 0xFF;   // short line -> tail unset ; repair_buff_order rebuilds it
+    return true;
+}
+// buffOrder must be a PERMUTATION of 0..BUFF_ORDER_N-1. A hand-edited file, a truncated line, or a build that
+// added a group leaves duplicates or holes -- and a HOLE means a whole group of buffs is never drawn at all.
+// Keep the valid, not-yet-seen entries in the order given, then append whatever is missing in its declared
+// position : a broken list degrades to "the rest sits at the end", never to a group that silently disappears.
+static void repair_buff_order(UiConfig& c) {
+    c.buffGroupOff &= (UiConfig::BUFF_ORDER_N >= 32) ? 0xFFFFFFFFu : ((1u << UiConfig::BUFF_ORDER_N) - 1u);   // bits past the last group name nothing
+    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) {   // an arranged prefix must be a list of DISTINCT statuses : a duplicate would
+        if (c.buffPinN[g] > UiConfig::BUFF_PIN_MAX) c.buffPinN[g] = UiConfig::BUFF_PIN_MAX;   // give one status two positions and make the strip order depend on which is found first
+        int w = 0;
+        for (int i = 0; i < c.buffPinN[g]; ++i) {
+            bool dup = false;
+            for (int k = 0; k < w; ++k) if (c.buffPin[g][k] == c.buffPin[g][i]) { dup = true; break; }
+            if (!dup) c.buffPin[g][w++] = c.buffPin[g][i];
+        }
+        c.buffPinN[g] = (unsigned char)w;
+    }
+    bool seen[UiConfig::BUFF_ORDER_N] = { false };
+    unsigned char fixed[UiConfig::BUFF_ORDER_N]; int nf = 0;
+    for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) {
+        const unsigned char g = c.buffOrder[i];
+        if (g < UiConfig::BUFF_ORDER_N && !seen[g]) { seen[g] = true; fixed[nf++] = g; }
+    }
+    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) if (!seen[g]) fixed[nf++] = (unsigned char)g;
+    for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = fixed[i];
+}
 // Limbus row toggles (floor-on-gauge / currencies / run total / coffer dots), parsed OUT-OF-LINE for the same
 // C1061 reason as parse_mm_line. Missing key keeps the defaults, so an older config loads with every row shown.
 static bool parse_zt_line(const char* line, UiConfig& c) {
@@ -477,6 +546,7 @@ static bool load_config_from(const char* path) {
     c.guideGroupCount = 0;   // dynamic list -> rebuilt from the file (a full-config load)
     for (int j = 1; j <= 23; ++j) c.tmTrackOffN[j] = 0;   // per-job track blacklists are REBUILT from the file : a job with no tmTrkOff line
     c.tmBuffOffN = 0;                                     // job-agnostic buff-family filter : rebuilt from the file too
+    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) c.buffPinN[g] = 0;   // party buff-strip in-group order : REBUILT from the file. A group with no buffPin line means "built-in order" -> it must not inherit the previous config's prefix (same trap as the per-job track lists above).
                                                           //   means "track everything" -> must not inherit the previous config's keys (else a profile that cleared a job stays stale + re-saves polluted).
     c.tmPreset = 0;          // reflect THIS file's value (fields overlay ; reset so an un-seeded file re-seeds even if a prior config was seeded)
     static char line[8192];  // BIG : a "tmTrkOff<job>=" line can hold up to TM_TRACK_MAX (512) comma-separated keys ~= 3 KB.
@@ -495,6 +565,7 @@ static bool load_config_from(const char* path) {
         if (parse_db_line(line, c)) continue;   // out-of-line : Debuffs module (same nesting-limit reason)
         if (parse_mm_line(line, c)) continue;   // out-of-line : Minimap extra options mm5= (same nesting-limit reason)
         if (parse_zt_line(line, c)) continue;   // out-of-line : Limbus row toggles ztlimbus= (same nesting-limit reason)
+        if (parse_buff_order_line(line, c)) continue;   // out-of-line : party buff-strip group order (same nesting-limit reason)
         if (!strncmp(line, "favColors=", 10)) {  // out-of-line : favourite colours (sticky ; same C1061 nesting-limit reason)
             c.favColorN = 0;
             for (const char* p = line + 10; *p && c.favColorN < UiConfig::FAV_COLOR_MAX; ) {
@@ -691,6 +762,7 @@ static bool load_config_from(const char* path) {
     CLF(c.mmZoom, 1.0f, 24.0f);
     if (c.buffMax < 0) c.buffMax = 0; else if (c.buffMax > 32) c.buffMax = 32;   // 0 = no party/alliance buffs
     if (c.buffRows < 1) c.buffRows = 1; else if (c.buffRows > 2) c.buffRows = 2;
+    repair_buff_order(c);   // a corrupt / short / outdated buffOrder line must never leave a group undrawn
     if (c.tmFocusWarn < 10) c.tmFocusWarn = 10; else if (c.tmFocusWarn > 300) c.tmFocusWarn = 300;
     if (c.tmFocusHold < 5)  c.tmFocusHold = 5;  else if (c.tmFocusHold > 300) c.tmFocusHold = 300;
     if (c.uiStyle < 0) c.uiStyle = 0; else if (c.uiStyle > 15) c.uiStyle = 15;
@@ -976,6 +1048,12 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.buffScale != b.buffScale) return false;
     if (a.buffMax != b.buffMax) return false;
     if (a.buffRows != b.buffRows) return false;
+    for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) if (a.buffOrder[i] != b.buffOrder[i]) return false;   // the strip order is part of the profile
+    if (a.buffGroupOff != b.buffGroupOff) return false;                                                    // and so is which groups are hidden
+    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) {                                                     // ... and the order arranged inside each group
+        if (a.buffPinN[g] != b.buffPinN[g]) return false;
+        for (int i = 0; i < a.buffPinN[g]; ++i) if (a.buffPin[g][i] != b.buffPin[g][i]) return false;
+    }
     if (a.uiStyle != b.uiStyle || a.uiColor != b.uiColor || a.uiAccent != b.uiAccent || a.hidePeekMode != b.hidePeekMode) return false;
     if (a.cursorScale != b.cursorScale) return false;
     for (int i = 0; i < 6; ++i) if (a.partyRef[i] != b.partyRef[i]) return false;
@@ -1186,6 +1264,9 @@ void reset_ui_config() {   // general Default : everything
     c.partyShow = 1; c.allyShow = 1; c.tgtShow = 1; c.plrShow = 1;
     c.skinTheme = 0; c.skinLum = 0.0f; c.skinHue = 0; c.skinBoxAlpha = 1.0f; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.buffRows = 2; c.uiStyle = 0; c.uiColor = 0; c.uiAccent = 0; c.hidePeekMode = 0; c.cursorScale = 1.0f;
     c.allyThemeCopy = 1; c.allyTheme = 0; c.allyLum = 0.0f; c.allyHue = 0; c.allyBoxAlpha = 1.0f;
+    for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = (unsigned char)i;   // buff groups back to their declared order
+    c.buffGroupOff = 0;                                                                  // ... and all of them visible
+    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) c.buffPinN[g] = 0;                  // ... and back to the built-in order inside each group
     for (int k = 0; k < 3; ++k) { c.barHeight[k] = 1.0f; c.barWidth[k] = 1.0f; c.badgeScale[k] = 1.0f; c.gaugeStyle[k] = 0; c.jobBadge[k] = 2; c.cast[k] = true; }
     c.dist[0] = c.dist[1] = c.dist[2] = true;
     c.distColClose = 0xFF8FC6FF; c.distColNormal = 0xFFE7C95A; c.distColFar = 0xFFE76C6C;   // distance-zone colours back to defaults

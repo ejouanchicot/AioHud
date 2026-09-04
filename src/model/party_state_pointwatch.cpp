@@ -44,6 +44,7 @@ void PartyState::on_set_update(const unsigned char* p) {   // 0x063 Set Update
         for (int i = 0; i < 32; ++i) {
             const unsigned bid = pkt_u16(p, 0x08 + i * 2);
             if (bid == 0xFFFF || bid == 0xFF || bid == 0) continue;   // empty slot
+            note_status_seen(bid);   // same registry as the 0x076 path : the config lists statuses that really occur
             buffTimers_[buffTimerN_].id = (unsigned short)bid;
             buffTimers_[buffTimerN_].expiry = pkt_u32(p, 0x48 + i * 4);
             ++buffTimerN_;

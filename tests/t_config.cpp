@@ -95,6 +95,18 @@ static void scribble(UiConfig& c, int seed) {
     }
     c.borderCost = (i1 & 1) != 0; c.animHP = !(i1 & 1); c.animTP = (i1 & 1) != 0;
     c.distColClose = x1 + 21; c.distColNormal = x1 + 23; c.distColFar = x1 + 29;
+    // buffOrder : a ROTATION, so it stays a valid permutation. Anything else and the loader's repair would
+    // legitimately rewrite it, and the round-trip would fail on the test's own bad input, not on a real bug.
+    for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = (unsigned char)((i + seed) % UiConfig::BUFF_ORDER_N);
+    c.buffGroupOff = (unsigned)(0x15u + seed) & ((1u << UiConfig::BUFF_ORDER_N) - 1u);
+    // arranged in-group prefixes : DISTINCT ids (the loader drops duplicates, so a repeated one would make the
+    // round-trip fail on the test's own bad input), and only some groups have one -- absence is a state too.
+    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) {
+        if ((g + seed) % 3 == 0) { c.buffPinN[g] = 0; continue; }
+        const int k = 2 + ((g + seed) % 3);
+        for (int q = 0; q < k; ++q) c.buffPin[g][q] = (unsigned short)(40 + g * 20 + q);
+        c.buffPinN[g] = (unsigned char)k;
+    }
 
     // per-group typography : the block that was 40 hand-copies until the 1cf54bb de-duplication.
     for (int g = 0; g < 2; ++g) for (int k = 0; k < TE_COUNT; ++k) {
@@ -154,7 +166,10 @@ void test_config() {
         char dir[MAX_PATH]; plugin_path(dir, sizeof(dir), "data"); CreateDirectoryA(dir, NULL);
         plugin_path(dir, sizeof(dir), "data\\profiles"); CreateDirectoryA(dir, NULL);
         FILE* f = fopen(p, "w");
-        if (f) { fputs("mm=1,1,0.5,0.5,1,1e30\nbuffScale=1e30\ncursorScale=-1e30\nbuffMax=99999\n", f); fclose(f); }
+        if (f) { fputs("mm=1,1,0.5,0.5,1,1e30\nbuffScale=1e30\ncursorScale=-1e30\nbuffMax=99999\n"
+                       "buffOrder=5,5,5,99\n"
+                       "buffPin1=33,43,33,43\n"
+                       "buffPin99=1,2,3\n", f); fclose(f); }   // duplicates, an out-of-range group, a line far too short, a repeated status, and a group that does not exist
         profile_refresh();
         CHECK(profile_load("t_evil"));
         const UiConfig& c = ui_config();
@@ -162,6 +177,27 @@ void test_config() {
         CHECK(c.buffScale >= 0.10f && c.buffScale <= 4.0f);
         CHECK(c.cursorScale >= 0.10f && c.cursorScale <= 4.0f);
         CHECK(c.buffMax >= 0 && c.buffMax <= 32);
+        {   // buffOrder must come back a PERMUTATION whatever the file said : a duplicate or a hole means a
+            // whole group of buffs is never drawn, which reads as "my icons vanished", not as a bad file.
+            bool seen[UiConfig::BUFF_ORDER_N] = { false }; bool perm = true;
+            for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) {
+                const unsigned char g = c.buffOrder[i];
+                if (g >= UiConfig::BUFF_ORDER_N || seen[g]) { perm = false; break; }
+                seen[g] = true;
+            }
+            CHECK(perm);
+            CHECK(c.buffOrder[0] == 5);   // the one valid entry the file gave is honoured, and kept first
+        }
+        {   // an arranged prefix must come back with no DUPLICATE : one status holding two positions makes the
+            // strip order depend on which copy is found first, which is not a thing a user can reason about.
+            bool anyDup = false;
+            for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g)
+                for (int a = 0; a < c.buffPinN[g]; ++a)
+                    for (int b = a + 1; b < c.buffPinN[g]; ++b)
+                        if (c.buffPin[g][a] == c.buffPin[g][b]) anyDup = true;
+            CHECK(!anyDup);
+            CHECK(c.buffPinN[0] <= UiConfig::BUFF_PIN_MAX);
+        }
         profile_delete("t_evil");
     }
 
