@@ -145,6 +145,14 @@ inline unsigned char buff_group_of_cat(int cat) {
 // them plainly belong somewhere: Hide and Camouflage are stealth, Copy Image is what Utsusemi leaves behind,
 // Finishing Moves are DNC's, the Dazes are debuffs by any reading.
 //
+// WHAT THIS TABLE CANNOT KNOW. It says where a status BELONGS, never that the game ever sends it. Auto-Regen
+// and Auto-Refresh are named in the resource table and are job TRAITS -- they never reach anyone's buff
+// list -- and classifying them only put rows in groups that could never show them. Entries shaped like a
+// trait or a resistance (Negate Petrify, Magic Evasion Boost, Guarding Rate Boost, Fast Cast, Arrow Shield,
+// Provoke, Preparations) were removed for the same reason. A name in the data is not evidence of a buff ;
+// only seeing one arrive is, and the plugin records exactly that (PartyState::status_seen). When something
+// here looks wrong in game, that is the evidence -- not this list.
+//
 // Written as RANGES rather than 150 rows because that is what they are -- the game numbers a family
 // consecutively -- and because a range states the intent where a list of ids states nothing. Applied ONLY to a
 // status still unclassified, so it can never overrule the generated table or the debuff list; the priority
@@ -157,8 +165,6 @@ static const BuffGroupRange BUFF_GROUP_RANGE[] = {
     {  80,  85, BG_ENHANCE, "STR..MND Boost" },
     {  89,  90, BG_ENHANCE, "Max MP / Accuracy Boost" },
     { 125, 125, BG_ENHANCE, "CHR Boost" },
-    { 611, 611, BG_ENHANCE, "Magic Evasion Boost" },
-    { 622, 622, BG_ENHANCE, "Guarding Rate Boost" },
     { 615, 615, BG_ENHANCE, "Boost (MNK)" },
     { 277, 282, BG_ENHANCE, "Enspell II" },
     { 487, 488, BG_ENHANCE, "Endrain, Enaspir" },
@@ -166,7 +172,6 @@ static const BuffGroupRange BUFF_GROUP_RANGE[] = {
     { 153, 153, BG_ENHANCE, "Damage Spikes" },
     { 573, 573, BG_ENHANCE, "Deluge Spikes" },
     { 605, 607, BG_ENHANCE, "Gale / Clod / Glint Spikes" },
-    { 574, 574, BG_ENHANCE, "Fast Cast" },
     { 188, 188, BG_ENHANCE, "Sublimation: Complete" },
     { 161, 161, BG_ENHANCE, "Sprint" },
     { 162, 162, BG_ENHANCE, "Enchantment" },
@@ -175,10 +180,6 @@ static const BuffGroupRange BUFF_GROUP_RANGE[] = {
     //  group that can never show them. Unclassified is the honest place for a status that never arrives --
     //  a name in the data is not evidence that the game ever sends it.)
     { 265, 265, BG_WATCH,   "Flurry (the second one)" },
-    { 151, 151, BG_PROTECT, "Arrow Shield" },
-    { 293, 297, BG_PROTECT, "Negate Petrify..Poison" },
-    { 608, 610, BG_PROTECT, "Negate Virus / Curse / Charm" },
-    { 626, 626, BG_PROTECT, "Negate Sleep" },
     { 193, 193, BG_SONG,    "Lullaby" },
     { 204, 204, BG_SONG,    "Hum" },
     { 208, 208, BG_SONG,    "Serenade" },
@@ -213,7 +214,8 @@ static const BuffGroupRange BUFF_GROUP_RANGE[] = {
     { 602, 603, BG_PERM,    "Vorseal, Elvorseal" },
     { 616, 616, BG_PERM,    "Artisanal Knowledge" },
     { 136, 149, BG_DEBUFF,  "STR..CHR Down, Level Restriction, Max HP/MP Down, Accuracy Down" },
-    { 156, 160, BG_DEBUFF,  "Flash, SJ Restriction, Provoke, Penalty, Preparations" },
+    { 156, 157, BG_DEBUFF,  "Flash, SJ Restriction" },
+    { 159, 159, BG_DEBUFF,  "Penalty" },   // 158 Provoke and 160 Preparations left out : states, not statuses anyone carries
     { 167, 167, BG_DEBUFF,  "Magic Def. Down" },
     { 174, 175, BG_DEBUFF,  "Magic Acc. / Atk. Down" },
     { 177, 177, BG_DEBUFF,  "Encumbrance" },
