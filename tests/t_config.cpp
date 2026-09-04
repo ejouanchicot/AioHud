@@ -99,6 +99,7 @@ static void scribble(UiConfig& c, int seed) {
     // legitimately rewrite it, and the round-trip would fail on the test's own bad input, not on a real bug.
     for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = (unsigned char)((i + seed) % UiConfig::BUFF_ORDER_N);
     c.buffGroupOff = (unsigned)(0x15u + seed) & ((1u << UiConfig::BUFF_ORDER_N) - 1u);
+    for (int i = 0; i < 80; ++i) c.buffStatusOff[i] = (unsigned char)((i * 7 + seed * 13) & 0xFF);
     // arranged in-group prefixes : DISTINCT ids (the loader drops duplicates, so a repeated one would make the
     // round-trip fail on the test's own bad input), and only some groups have one -- absence is a state too.
     for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) {

@@ -194,6 +194,10 @@ static bool save_config_to(const char* path) {
     fprintf(f, "buffOrder=");                                                  // party buff strip : the display groups, in drawing order
     for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) fprintf(f, "%s%u", i ? "," : "", (unsigned)c.buffOrder[i]);
     fprintf(f, "\n");
+    fprintf(f, "buffStatusOff=");                                              // one hex digit pair per byte : 640 status bits
+    { int last = -1; for (int i = 0; i < 80; ++i) if (c.buffStatusOff[i]) last = i;
+      for (int i = 0; i <= last; ++i) fprintf(f, "%02X", c.buffStatusOff[i]); }   // trailing zero bytes are not written
+    fprintf(f, "\n");
     fprintf(f, "buffGroupOff=%u\n", c.buffGroupOff);                        // party buff strip : which groups are hidden (bit per group)
     for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) {                        // and the order INSIDE a group -- only the arranged prefix, only where there is one
         if (c.buffPinN[g] <= 0) continue;
@@ -427,6 +431,23 @@ static bool parse_cast_line(const char* line, UiConfig& c) {
 // Party buff-strip group order, parsed OUT-OF-LINE for the same C1061 reason as parse_mm_line.
 // A missing key keeps the defaults, so an older config loads with the declared order.
 static bool parse_buff_order_line(const char* line, UiConfig& c) {
+    if (strncmp(line, "buffStatusOff=", 14) == 0) {   // hex bitmap ; here, not on the chain (C1061)
+        for (int i = 0; i < 80; ++i) c.buffStatusOff[i] = 0;
+        const char* q = line + 14;
+        for (int i = 0; i < 80 && q[0] && q[1]; ++i, q += 2) {
+            unsigned v = 0;
+            for (int k = 0; k < 2; ++k) {
+                const char ch = q[k];
+                const int d = (ch >= '0' && ch <= '9') ? ch - '0'
+                            : (ch >= 'A' && ch <= 'F') ? ch - 'A' + 10
+                            : (ch >= 'a' && ch <= 'f') ? ch - 'a' + 10 : -1;
+                if (d < 0) return true;   // ragged line -> keep what parsed, drop the rest
+                v = (v << 4) | (unsigned)d;
+            }
+            c.buffStatusOff[i] = (unsigned char)v;
+        }
+        return true;
+    }
     if (strncmp(line, "cfgDrawer=", 10) == 0) return true;   // a key from the removed drawer layout : swallow it so an
                                                             // existing file loads clean instead of falling through the chain
     if (strncmp(line, "buffPin", 7) == 0) {                    // buffPin<g>=id,id,... : one group's arranged prefix
@@ -1051,6 +1072,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.buffMax != b.buffMax) return false;
     if (a.buffRows != b.buffRows) return false;
     for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) if (a.buffOrder[i] != b.buffOrder[i]) return false;   // the strip order is part of the profile
+    for (int i = 0; i < 80; ++i) if (a.buffStatusOff[i] != b.buffStatusOff[i]) return false;   // hidden buffs are part of the profile
     if (a.buffGroupOff != b.buffGroupOff) return false;                                                    // and so is which groups are hidden
     for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) {                                                     // ... and the order arranged inside each group
         if (a.buffPinN[g] != b.buffPinN[g]) return false;
@@ -1268,6 +1290,7 @@ void reset_ui_config() {   // general Default : everything
     c.allyThemeCopy = 1; c.allyTheme = 0; c.allyLum = 0.0f; c.allyHue = 0; c.allyBoxAlpha = 1.0f;
     for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = (unsigned char)i;   // buff groups back to their declared order
     c.buffGroupOff = 0;                                                                  // ... and all of them visible
+    for (int i = 0; i < 80; ++i) c.buffStatusOff[i] = 0;                                 // ... and no individual buff hidden either
     for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) c.buffPinN[g] = 0;                  // ... and back to the built-in order inside each group
     for (int k = 0; k < 3; ++k) { c.barHeight[k] = 1.0f; c.barWidth[k] = 1.0f; c.badgeScale[k] = 1.0f; c.gaugeStyle[k] = 0; c.jobBadge[k] = 2; c.cast[k] = true; }
     c.dist[0] = c.dist[1] = c.dist[2] = true;

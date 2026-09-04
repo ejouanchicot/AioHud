@@ -137,6 +137,12 @@ struct UiConfig {
     static const int BUFF_PIN_MAX = 224;
     unsigned short buffPin[BUFF_ORDER_N][BUFF_PIN_MAX] = {};
     unsigned char  buffPinN[BUFF_ORDER_N] = {};
+    // ---- hiding ONE buff, as opposed to a whole group. One bit per status id (640 of them, 80 bytes) : a set
+    // is the honest shape here, because what is hidden has nothing to do with where it sits in the order, and
+    // tying the two would mean losing an arrangement every time something is hidden.
+    unsigned char buffStatusOff[80] = { 0 };
+    bool buff_status_hidden(unsigned st) const { return st < 640u && (buffStatusOff[st >> 3] & (1u << (st & 7))) != 0; }
+    void buff_status_toggle(unsigned st) { if (st < 640u) buffStatusOff[st >> 3] ^= (unsigned char)(1u << (st & 7)); }
     int buff_pin_rank(int g, unsigned status) const {   // position in this group's arranged prefix, or -1
         if (g < 0 || g >= BUFF_ORDER_N) return -1;
         for (int i = 0; i < buffPinN[g]; ++i) if (buffPin[g][i] == status) return i;

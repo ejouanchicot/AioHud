@@ -566,6 +566,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     Run& r = runs[nRun++];
                     r.n = 1; r.ic[0] = inner[i]; r.grp = (unsigned char)g; r.hid = false;
                     r.faint = !party().status_seen(inner[i]);   // in the catalogue, not on anyone yet
+                    r.hid   = ui_config().buff_status_hidden(inner[i]);   // hidden ONE buff, not the whole group
                     r.lbl = buff_status_name(inner[i]);   // named above its icon, exactly like a group : the band has to be readable at BOTH levels
                 }
             }
@@ -653,6 +654,15 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                         bx -= snap(8.0f);
                     }
                 } else {
+                    if (bsSel_ >= 0) {   // the same chip, one level down : it hides ONE buff instead of the group
+                        const bool bHid = runs[bsSel_].hid;   // NOT `bh` : that is the row's chip HEIGHT, and shadowing it here cost a build
+                        bx -= chipW2;
+                        if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx, ty, chipW2, bh,
+                                        bHid ? tr("Hidden", "Masque") : tr("Shown", "Affiche"), !bHid)) {
+                            ui_config().buff_status_toggle(runs[bsSel_].ic[0]); save_ui_config();
+                        }
+                        bx -= snap(8.0f);
+                    }
                     bx -= chipW2;
                     // The mouse's thumb BACK button does the same thing -- that is what a hand reaches for to go up
                     // a level. Beside the button, never instead of it : a gesture with no visible control is not a
@@ -815,7 +825,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 if (bTex) {
                     dTexQuadState(dev, bTex, false);
                     for (int i = 0; i < nRun; ++i) {
-                        if (runs[i].hid) continue;
                         const int kk = runs[i].n < capI ? runs[i].n : capI;
                         for (int q = 0; q < kk; ++q) {
                             // MIRRORED inside the block, like the band itself : rank 0 is the RIGHTMOST icon of its
@@ -825,7 +834,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                             const float rw = kk * ics + (kk - 1) * gapI;                 // the icon run's own width
                             const float r0 = runs[i].x + (runs[i].w - rw) * 0.5f;         // centred in the block
                             const float ix = r0 + rw - (q + 1) * ics - q * gapI;          // rank 0 still the RIGHTMOST of the run
-                            const u32 tc = runs[i].faint ? fa(0x70FFFFFFu) : 0xFFFFFFFFu;   // fade in the VERTEX colour : a MANAGED texture's alpha mis-samples as opaque while a zone loads
+                            // HIDDEN draws dim, never absent : the editor is the only place to bring it back, so
+                            // removing it from the editor would be a one-way door. Faint = in the catalogue but
+                            // not met yet. Both fade in the VERTEX colour -- a MANAGED texture's alpha
+                            // mis-samples as opaque while a zone loads (reference/d3d8-rendering.md).
+                            const u32 tc = runs[i].hid ? fa(0x40FFFFFFu) : (runs[i].faint ? fa(0x70FFFFFFu) : 0xFFFFFFFFu);
                             tquad(dev, snap(ix), snap(runs[i].iy), ics, ics, u0, u0 + au, v0, v0 + av, tc, tc);
                         }
                     }
