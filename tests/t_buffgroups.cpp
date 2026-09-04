@@ -15,6 +15,7 @@
 #include "check.h"
 #include "model/buff_groups.h"
 #include "model/ui_config.h"
+#include <string.h>
 #include "ui/party_demo_buffs.h"   // BUFF_POOL : what the config preview actually renders
 
 using namespace aio;
@@ -125,9 +126,13 @@ void test_buff_groups() {
         SECTION("buff groups : listing a group's members, in draw order");
         unsigned short mem[UiConfig::BUFF_PIN_MAX]; int total = 0;
         // seen = null : the CURATED list only. This is the state at first launch, and the groups that matter
-        // must already be complete there -- Watch shows its five whether or not anything has turned up yet.
+        // must already be complete there -- Watch shows its ranked ones whether or not anything has turned
+        // up yet. The COUNT is not pinned to a number : Watch legitimately grew from five to seven when
+        // Auto-Regen and Auto-Refresh were classified out of Other, and an assertion that has to be edited
+        // every time the data improves is an assertion nobody trusts. What is asserted is the thing that
+        // must not drift : the arrangement drives the head of the list.
         int n = buff_group_members(c, BG_WATCH, mem, UiConfig::BUFF_PIN_MAX, &total, 0);
-        CHECK(n == 5);
+        CHECK(n >= 5);
         CHECK(mem[0] == 43);   // the arrangement drives the list the config shows
         CHECK(mem[1] == 33);
         CHECK(total >= n);
@@ -172,6 +177,33 @@ void test_buff_groups() {
             if (t > biggest) biggest = t;
         }
         CHECK(biggest <= 256);
+    }
+
+    SECTION("buff groups : the several ids of one effect behave as one");
+    // The game gives one buff several status ids depending on where it came from -- Flurry is 265 and 581,
+    // STR Boost is 80, 119 and 542. You never carry two at once, so the editor lists one tile and order and
+    // visibility hang off a single canonical id. The "same GROUP" half matters just as much: Haste is 33 in
+    // Watch and 580 as a GEO aura, and those ARE two different rows on the HUD.
+    CHECK(buff_canon(581) == buff_canon(265));      // both are Flurry, both in Watch -> one entry
+    CHECK(buff_canon(119) == buff_canon(80));       // STR Boost, twice in Enhancing
+    CHECK(buff_canon(33)  != buff_canon(580));      // Haste : Watch vs a GEO aura -> NOT merged
+    CHECK(buff_canon(43)  != buff_canon(541));      // Refresh, same reason
+    CHECK(buff_canon(214) == 214);                  // a name nobody shares is its own canonical id
+    {   // and the merge is what the editor lists : no name appears twice in a group
+        UiConfig& c = ui_config();
+        for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) c.buffPinN[g] = 0;
+        unsigned short mm[UiConfig::BUFF_PIN_MAX]; bool anyDup = false;
+        for (int g = 0; g < BG_COUNT; ++g) {
+            int t = 0;
+            const int n = buff_group_members(c, g, mm, UiConfig::BUFF_PIN_MAX, &t, [](unsigned) { return true; });
+            for (int a = 0; a < n && !anyDup; ++a)
+                for (int b = a + 1; b < n && !anyDup; ++b)
+                    if (strcmp(buff_status_name(mm[a]), buff_status_name(mm[b])) == 0) {
+                        anyDup = true;
+                        printf("   %s listed twice in group %s\n", buff_status_name(mm[a]), BUFF_GROUP_EN[g]);
+                    }
+        }
+        CHECK(!anyDup);
     }
 
     SECTION("buff groups : the groups whose ORDER matters fit whole in the editor");

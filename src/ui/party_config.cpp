@@ -566,28 +566,12 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     Run& r = runs[nRun++];
                     r.n = 1; r.ic[0] = inner[i]; r.grp = (unsigned char)g; r.hid = false;
                     r.faint = !party().status_seen(inner[i]);   // in the catalogue, not on anyone yet
-                    r.hid   = ui_config().buff_status_hidden(inner[i]);   // hidden ONE buff, not the whole group
+                    r.hid   = buff_hidden_effective(ui_config(), inner[i]);   // hidden ONE buff, not the whole group
                     r.lbl = buff_status_name(inner[i]);   // named above its icon, exactly like a group : the band has to be readable at BOTH levels
                 }
-                // THE GAME REUSES NAMES. "Flurry" is both 265 and 581, "STR Boost" is 80, 119 and 542, and
-                // 46 names in all are shared by two or three statuses. Two tiles reading the same word say
-                // nothing about which is which -- and one of them is usually the one you actually carry.
-                // Where a name repeats INSIDE this list, the id is appended ; where it does not, nothing
-                // changes, so the common case stays clean. Done before the fit loop so the wider label is
-                // measured, not clipped.
-                {
-                    static char lblBuf[UiConfig::BUFF_PIN_MAX][40];
-                    for (int a = 0; a < nRun; ++a) {
-                        if (!runs[a].lbl) continue;
-                        bool dup = false;
-                        for (int b = 0; b < nRun && !dup; ++b)
-                            if (b != a && runs[b].lbl && strcmp(runs[a].lbl, runs[b].lbl) == 0) dup = true;
-                        if (!dup) continue;
-                        _snprintf(lblBuf[a], sizeof(lblBuf[a]), "%s #%u", runs[a].lbl, (unsigned)runs[a].ic[0]);
-                        lblBuf[a][sizeof(lblBuf[a]) - 1] = 0;   // _snprintf does not terminate on truncation
-                        runs[a].lbl = lblBuf[a];
-                    }
-                }
+                // (No "#id" disambiguation any more : buff_group_members lists ONE entry per effect, so two
+                //  tiles can no longer read the same word. The several ids the game gives one buff are the same
+                //  buff, and you never carry two of them at once.)
             }
             if (bsSel_ >= nRun) bsSel_ = -1;
             if (bsDrag_ >= nRun) { bsDrag_ = -1; bsDrop_ = -1; }
@@ -678,7 +662,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                         bx -= chipW2;
                         if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx, ty, chipW2, bh,
                                         bHid ? tr("Hidden", "Masque") : tr("Shown", "Affiche"), !bHid)) {
-                            ui_config().buff_status_toggle(runs[bsSel_].ic[0]); save_ui_config();
+                            ui_config().buff_status_toggle(buff_canon(runs[bsSel_].ic[0])); save_ui_config();   // the effect, not one of its ids
                         }
                         bx -= snap(8.0f);
                     }

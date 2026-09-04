@@ -240,8 +240,9 @@ static const int BUFF_GROUP_MAX_ID = 640;
 // member, per frame is the kind of cost that shows up in a profile.
 // (A one-shot init with no failure mode -- pure computation over baked tables, no device, no file,
 // nothing that can be "not ready yet" -- so it is not the give-up-once-give-up-forever trap of rule 10.)
-inline void buff_group_tables(const unsigned char*& grp, const unsigned char*& pri) {
+inline void buff_group_tables(const unsigned char*& grp, const unsigned char*& pri, const unsigned short** canon = 0) {
     static unsigned char tblG[BUFF_GROUP_MAX_ID], tblP[BUFF_GROUP_MAX_ID];
+    static unsigned short tblC[BUFF_GROUP_MAX_ID];
     static bool built = false;
     if (!built) {
         for (int i = 0; i < BUFF_GROUP_MAX_ID; ++i) { tblG[i] = BG_OTHER; tblP[i] = 0xFF; }
@@ -252,25 +253,65 @@ inline void buff_group_tables(const unsigned char*& grp, const unsigned char*& p
         for (int r = 0; r < BUFF_GROUP_RANGE_N; ++r)          // the families the generator never sees ; ONLY over what is still unclassified
             for (int i = BUFF_GROUP_RANGE[r].lo; i <= BUFF_GROUP_RANGE[r].hi && i < BUFF_GROUP_MAX_ID; ++i)
                 if (tblG[i] == BG_OTHER) tblG[i] = BUFF_GROUP_RANGE[r].group;
-        unsigned char next[BG_COUNT] = { 0 };                 // running rank per group -> "listed order" becomes "draw order"
-        for (int i = 0; i < BUFF_GROUP_FIX_N; ++i) {          // the priority list, last : it wins the group AND sets the rank
+        for (int i = 0; i < BUFF_GROUP_FIX_N; ++i) {          // the priority list wins the GROUP ; its rank waits for canon
+            const unsigned st = BUFF_GROUP_FIX[i].status, g = BUFF_GROUP_FIX[i].group;
+            if (st < (unsigned)BUFF_GROUP_MAX_ID && g < BG_COUNT) tblG[st] = (unsigned char)g;
+        }
+        // ---- ONE ENTRY PER NAME, per group. The game gives the same buff several status ids depending on
+        // where it came from : Flurry is 265 and 581, STR Boost is 80, 119 and 542, 46 names in all. You never
+        // carry two of them at once -- they are the same effect -- so showing two tiles, ordering them twice
+        // and hiding them separately is asking the user to maintain a distinction the game does not make.
+        // Each id maps to the LOWEST id sharing its name AND its group ; order and visibility then hang off
+        // that one, and every variant follows. Same group is the essential half: Haste is 33 in Watch and 580
+        // as a GEO aura, and those are genuinely different rows on the HUD.
+        for (int i = 0; i < BUFF_GROUP_MAX_ID; ++i) {
+            tblC[i] = (unsigned short)i;
+            const char* ni = buff_status_name((unsigned)i);
+            if (!ni) continue;
+            for (int j = 0; j < i; ++j) {
+                if (tblG[j] != tblG[i]) continue;
+                const char* nj = buff_status_name((unsigned)j);
+                if (!nj) continue;
+                bool same = true;
+                for (int k = 0; ; ++k) { if (ni[k] != nj[k]) { same = false; break; } if (!ni[k]) break; }
+                if (same) { tblC[i] = tblC[j]; break; }
+            }
+        }
+        // The RANK is written on the CANONICAL id, and only now, because canon needs the final groups. The
+        // priority list names 581 for Flurry while the canonical Flurry is 265 (the lower of the two ids the
+        // game gives the same buff) -- writing the rank on 581 left the entry the editor actually lists with
+        // no rank at all, and Flurry fell out of Watch's order entirely. The list names an EFFECT ; the rank
+        // has to land on whichever id represents it.
+        unsigned char next[BG_COUNT] = { 0 };
+        for (int i = 0; i < BUFF_GROUP_FIX_N; ++i) {
             const unsigned st = BUFF_GROUP_FIX[i].status, g = BUFF_GROUP_FIX[i].group;
             if (st >= (unsigned)BUFF_GROUP_MAX_ID || g >= BG_COUNT) continue;
-            tblG[st] = (unsigned char)g;
-            tblP[st] = next[g]++;
+            const unsigned short cid = tblC[st];
+            if (tblP[cid] == 0xFF) tblP[cid] = next[g]++;   // once per effect, in the order the list states
         }
         built = true;
     }
-    grp = tblG; pri = tblP;
+    grp = tblG; pri = tblP; if (canon) *canon = tblC;
 }
 inline unsigned char buff_group(unsigned status) {
     const unsigned char *g, *p; buff_group_tables(g, p);
     return (status < (unsigned)BUFF_GROUP_MAX_ID) ? g[status] : (unsigned char)BG_OTHER;
 }
+// The id that REPRESENTS a status : itself, or the lowest id sharing its name inside the same group. Order,
+// visibility and the editor all key on this, so the several ids of one effect behave as the one effect they are.
+inline unsigned short buff_canon(unsigned status) {
+    const unsigned char *g, *p; const unsigned short* c = 0; buff_group_tables(g, p, &c);
+    return (status < (unsigned)BUFF_GROUP_MAX_ID && c) ? c[status] : (unsigned short)status;
+}
+// Hidden, resolved through the canonical id : hiding "Flurry" hides every id the game calls Flurry in that group.
+inline bool buff_hidden_effective(const UiConfig& cfg, unsigned status) {
+    return cfg.buff_status_hidden(buff_canon(status));
+}
 // Rank inside the group : lower draws first. 255 = unlisted -> after every listed status, in game order.
 inline unsigned char buff_group_pri(unsigned status) {
-    const unsigned char *g, *p; buff_group_tables(g, p);
-    return (status < (unsigned)BUFF_GROUP_MAX_ID) ? p[status] : (unsigned char)0xFF;
+    const unsigned char *g, *p; const unsigned short* c = 0; buff_group_tables(g, p, &c);
+    if (status >= (unsigned)BUFF_GROUP_MAX_ID) return 0xFF;
+    return p[c ? c[status] : status];   // any id of an effect answers with the effect's rank
 }
 
 // ---- the EFFECTIVE order inside a group : the user's arrangement if there is one, else the built-in list.
@@ -278,6 +319,7 @@ inline unsigned char buff_group_pri(unsigned status) {
 // touched. That is not a loss : the UI seeds the prefix from the order being displayed, so the first move
 // preserves everything above it and the two rules can never disagree about what is on screen.
 inline unsigned char buff_pri_effective(const UiConfig& c, unsigned status) {
+    status = buff_canon(status);   // every id of one effect shares its place in the order
     const int g = buff_group(status);
     if (g >= 0 && g < UiConfig::BUFF_ORDER_N && c.buffPinN[g] > 0) {
         const int r = c.buff_pin_rank(g, status);
@@ -305,6 +347,7 @@ inline int buff_group_members(const UiConfig& c, int g, unsigned short* out, int
     int n = 0, qualified = 0;
     for (unsigned id = 0; id < (unsigned)BUFF_GROUP_MAX_ID; ++id) {
         if (buff_group(id) != g || !buff_status_name(id)) continue;
+        if (buff_canon(id) != id) continue;   // a second id for an effect already listed -- one tile, not two
         const unsigned char pr = buff_pri_effective(c, id);
         if (pr == 0xFF && buff_group_pri(id) == 0xFF && !(seen && seen(id))) continue;
         ++qualified;

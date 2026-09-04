@@ -443,7 +443,7 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
             for (int j = 0; j < nAll; ++j) {
                 const unsigned char g = buff_group(r.buffs[j]);
                 if (ghide[g]) continue;
-                if (ui_config().buff_status_hidden(r.buffs[j])) continue;   // hidden one by one, not by group
+                if (buff_hidden_effective(ui_config(), r.buffs[j])) continue;   // hidden one by one ; every id of an effect follows its canonical one
                 const unsigned short k = (unsigned short)(((unsigned)grank[g] << 8) | buff_pri_effective(ui_config(), r.buffs[j]));
                 int q = nOrd++;
                 for (; q > 0 && key[q - 1] > k; --q) { key[q] = key[q - 1]; ord[q] = ord[q - 1]; }   // strict > : equal keys keep their arrival order
@@ -695,7 +695,7 @@ void Party::draw(const Frame& f) {
             if (!rows[i].buffs) continue;
             int vis = 0;
             for (int j = 0; j < rows[i].nbuff; ++j)
-                if (!ui_config().buff_group_hidden(buff_group(rows[i].buffs[j])) && !ui_config().buff_status_hidden(rows[i].buffs[j])) ++vis;
+                if (!ui_config().buff_group_hidden(buff_group(rows[i].buffs[j])) && !buff_hidden_effective(ui_config(), rows[i].buffs[j])) ++vis;
             if (vis > maxNb) maxNb = vis;
         }
         int bmax = ui_config().buffMax; if (bmax < 0) bmax = 0; if (bmax > 32) bmax = 32; if (maxNb > bmax) maxNb = bmax;
