@@ -43,27 +43,39 @@ enum BuffGroup {
     BG_PERM,       // food, signet/sanction/ionis, aftermath, craft imagery -- the all-day ones
     BG_DEBUFF,     // what the game put on you and you did not want
     BG_OTHER,      // unclassified
+    // ---- APPENDED, and that is not a style choice. buffOrder[] and buffPin[][] are saved BY INDEX, so an
+    // enum value is a file format : slotting BG_ENSPELL in beside BG_ENHANCE where it reads better would
+    // have silently re-pointed every existing config's arrangement at the wrong groups. Where they READ is
+    // BUFF_GROUP_DEFAULT_ORDER's business, and that is data.
+    BG_ENSPELL,    // Enfire..Enwater, the II line, Endrain / Enaspir
+    BG_BAR,        // Bar-element and Bar-status
+    BG_SPIKES,     // Blaze / Ice / Shock / Damage / Deluge / Gale / Clod / Glint Spikes
+    BG_STATS,      // Gain-STR and the Boost line -- one stat, up
     BG_COUNT
 };
 
 static const char* const BUFF_GROUP_EN[BG_COUNT] = {
     "Stealth", "Watch", "Protection", "Songs", "Rolls", "Geomancy", "Runes / Wards",
-    "Dances", "Enhancing", "Abilities", "Permanent", "Debuffs", "Other"
+    "Dances", "Enhancing", "Abilities", "Permanent", "Debuffs", "Other",
+    "Enspells", "Bar-spells", "Spikes", "Stat boosts"
 };
 static const char* const BUFF_GROUP_FR[BG_COUNT] = {   // accents spelled as UTF-8 bytes (these sources carry no BOM), like tm_config.cpp does
     "Discr\xC3\xA9tion", "Surveillance", "Protections", "Chants", "Rolls", "G\xC3\xA9omancie", "Runes / Wards",
-    "Danses", "Am\xC3\xA9lioration", "Aptitudes", "Permanents", "Debuffs", "Autre"
+    "Danses", "Am\xC3\xA9lioration", "Aptitudes", "Permanents", "Debuffs", "Autre",
+    "Enspells", "Bar-sorts", "Spikes", "Gains de stat"
 };
 // SHORT labels, for the config strip : the name sits centred over its block, and a block is only as wide as the
 // two or three icons it previews. "Surveillance" over 40 pixels would collide with its neighbours, so the strip
 // widens a block to fit the SHORT name and uses the full one everywhere else (the selection line, this file).
 static const char* const BUFF_GROUP_SHORT_EN[BG_COUNT] = {
     "Stealth", "Watch", "Protect", "Songs", "Rolls", "Geo", "Runes",
-    "Dances", "Enhance", "Abils", "Perm", "Debuffs", "Other"
+    "Dances", "Enhance", "Abils", "Perm", "Debuffs", "Other",
+    "Enspell", "Bar", "Spikes", "Stats"
 };
 static const char* const BUFF_GROUP_SHORT_FR[BG_COUNT] = {
     "Discr", "Surv", "Prot", "Chants", "Rolls", "G\xC3\xA9o", "Runes",
-    "Danses", "Am\xC3\xA9lio", "Aptit", "Perm", "Debuffs", "Autre"
+    "Danses", "Am\xC3\xA9lio", "Aptit", "Perm", "Debuffs", "Autre",
+    "Enspell", "Bar", "Spikes", "Stats"
 };
 
 // ---- the PRIORITY LIST : the statuses whose group is a judgement call, AND whose position inside that
@@ -116,7 +128,11 @@ inline unsigned buff_group_tint(int g) {
         0xFFE08585u,   // Abilities   -- DD red (job_role_color)
         0xFF8C93A0u,   // Permanent   -- deliberately grey : it never changes, it should never draw the eye
         0xFFC4565Fu,   // Debuffs
-        0xFF5F6975u    // Other       -- greyest of all
+        0xFF5F6975u,   // Other       -- greyest of all
+        0xFFE0866Fu,   // Enspells    -- the four below came out of Enhancing, so they keep to its half of
+        0xFF6FD3C4u,   // Bar-spells     the wheel while each takes a hue of its own : nothing about the
+        0xFFD3C46Fu,   // Spikes         split is worth stealing a job role colour for
+        0xFF9FB8D3u    // Stat boosts
     };
     return (g >= 0 && g < BG_COUNT) ? T[g] : 0xFF5F6975u;
 }
@@ -131,7 +147,14 @@ inline unsigned char buff_group_of_cat(int cat) {
         case TC_GEO:                                                        return BG_GEO;
         case TC_RUNE: case TC_WARD:                                         return BG_RUNE;
         case TC_SAMBA: case TC_DANCE:                                       return BG_DANCE;
-        case TC_ENSPELL: case TC_BARSPELL: case TC_SPIKES: case TC_GAIN:
+        case TC_ENSPELL:                                                    return BG_ENSPELL;
+        case TC_BARSPELL:                                                   return BG_BAR;
+        case TC_SPIKES:                                                     return BG_SPIKES;
+        case TC_GAIN:                                                       return BG_STATS;
+        // Ninjutsu and the BLU self-buffs get NO group of their own, and the reason is worth stating :
+        // they mostly grant statuses that already belong elsewhere. Tonko gives 69 Invisible, Refueling
+        // gives 33 Haste, Occultation gives 36 Blink. A "Ninjutsu" group would be laying claim to
+        // Stealth's and Watch's rows -- a CATEGORY names the spell, and the strip is keyed by the STATUS.
         case TC_ENHANCE: case TC_NINJUTSU: case TC_BLU_BUFF:                return BG_ENHANCE;
         case TC_FOOD: case TC_SIGNET: case TC_AFTERMATH: case TC_CRAFT:     return BG_PERM;
         default:                                                            return BG_JA;   // JA, blood pacts, stratagems, summons, utility, the magic schools
@@ -162,16 +185,16 @@ static const BuffGroupRange BUFF_GROUP_RANGE[] = {
     {  76,  77, BG_STEALTH, "Hide, Camouflage" },
     {  66,  66, BG_ENHANCE, "Copy Image (Utsusemi)" },
     { 444, 446, BG_ENHANCE, "Copy Image 2/3/4+" },
-    {  80,  85, BG_ENHANCE, "STR..MND Boost" },
-    {  89,  90, BG_ENHANCE, "Max MP / Accuracy Boost" },
-    { 125, 125, BG_ENHANCE, "CHR Boost" },
-    { 615, 615, BG_ENHANCE, "Boost (MNK)" },
-    { 277, 282, BG_ENHANCE, "Enspell II" },
-    { 487, 488, BG_ENHANCE, "Endrain, Enaspir" },
+    {  80,  85, BG_STATS,   "STR..MND Boost" },
+    {  89,  90, BG_STATS,   "Max MP / Accuracy Boost" },
+    { 125, 125, BG_STATS,   "CHR Boost" },
+    { 615, 615, BG_STATS,   "Boost (MNK)" },
+    { 277, 282, BG_ENSPELL, "Enspell II" },
+    { 487, 488, BG_ENSPELL, "Endrain, Enaspir" },
     { 589, 596, BG_ENHANCE, "the storms" },
-    { 153, 153, BG_ENHANCE, "Damage Spikes" },
-    { 573, 573, BG_ENHANCE, "Deluge Spikes" },
-    { 605, 607, BG_ENHANCE, "Gale / Clod / Glint Spikes" },
+    { 153, 153, BG_SPIKES,  "Damage Spikes" },
+    { 573, 573, BG_SPIKES,  "Deluge Spikes" },
+    { 605, 607, BG_SPIKES,  "Gale / Clod / Glint Spikes" },
     { 188, 188, BG_ENHANCE, "Sublimation: Complete" },
     { 161, 161, BG_ENHANCE, "Sprint" },
     { 162, 162, BG_ENHANCE, "Enchantment" },
@@ -260,9 +283,21 @@ static const int BUFF_GROUP_MAX_ID = 640;
 // which is what they are, so the editor skips them exactly the way it skips an id with no entry at all.
 // Kept here rather than in buffs_gen.h because that file is GENERATED, and because this is a statement about
 // what is worth a config row, not about what the game calls things.
+// Songs that were NAMED but never put in the game. res/spells.lua marks their spell unlearnable=true --
+// Chocobo Hum (204), Devotee Serenade (208), Cactuar Fugue (211) -- and nothing in spells.lua or
+// job_abilities.lua grants Rhapsody (212) at all. Honor March sits in the same block, has no such flag, and
+// stays: the flag is the evidence, not the neighbourhood.
+// Listed by hand rather than derived from unlearnable=true, because that rule alone also catches status 9
+// Curse -- whose only LEARNABLE source is a monster, and monster skills are in neither table. "Every source
+// I can see is unlearnable" is not "the game cannot give you this", and the difference would have quietly
+// removed a debuff people really get.
+static const unsigned short BUFF_NEVER_SHIPPED[] = { 204, 208, 211, 212 };
+
 inline const char* buff_status_name_real(unsigned id) {
     const char* n = buff_status_name(id);
     if (!n) return 0;
+    for (int i = 0; i < (int)(sizeof(BUFF_NEVER_SHIPPED) / sizeof(BUFF_NEVER_SHIPPED[0])); ++i)
+        if (BUFF_NEVER_SHIPPED[i] == id) return 0;
     if (n[0] == '(') return 0;                                    // "(N/A)"
     if (n[0] == 'S' && n[1] == 'T' && n[2] >= '0' && n[2] <= '9') {  // "ST" + digits only
         int k = 2;

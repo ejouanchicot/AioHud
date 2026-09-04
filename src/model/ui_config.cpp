@@ -503,7 +503,28 @@ static void repair_buff_order(UiConfig& c) {
         const unsigned char g = c.buffOrder[i];
         if (g < UiConfig::BUFF_ORDER_N && !seen[g]) { seen[g] = true; fixed[nf++] = g; }
     }
-    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) if (!seen[g]) fixed[nf++] = (unsigned char)g;
+    // A group the file never mentioned goes in beside the group it was SPLIT FROM, not at the end. A config
+    // written before Enspells/Bar-spells/Spikes/Stat boosts existed lists thirteen groups, and appending the
+    // four would park them past Other -- the far end of the strip -- for everyone who had ever touched the
+    // editor. Inserted after the parent, they land where they would have been all along. A parentless group
+    // still appends, which is the old behaviour and the right one when there is nothing to be beside.
+    const unsigned char* par = UiConfig::buff_group_parent();
+    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) {
+        if (seen[g]) continue;
+        int at = nf;                                   // default : the end
+        if (par[g] < UiConfig::BUFF_ORDER_N)
+            for (int i = 0; i < nf; ++i)
+                if (fixed[i] == par[g]) {
+                    at = i + 1;
+                    // ... and PAST any sibling already sitting there, or each new child would be shoved in
+                    // ahead of the last, and four siblings would come out in reverse.
+                    while (at < nf && par[fixed[at]] == par[g]) ++at;
+                    break;
+                }
+        for (int i = nf; i > at; --i) fixed[i] = fixed[i - 1];
+        fixed[at] = (unsigned char)g;
+        ++nf;
+    }
     for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = fixed[i];
 }
 // Limbus row toggles (floor-on-gauge / currencies / run total / coffer dots), parsed OUT-OF-LINE for the same

@@ -159,6 +159,31 @@ void test_config() {
     CHECK(profile_load("t_roundtrip2"));
     CHECK(ui_config_persist_eq(stored, ui_config()));
 
+    SECTION("config : a group split out later lands beside its parent, not at the end");
+    // A config written before Enspells/Bar-spells/Spikes/Stat boosts existed lists thirteen groups. The
+    // permutation repair alone would append the four missing ones, parking them past Other -- the far end
+    // of the strip -- for everyone who had ever opened the editor. They belong beside Enhancing (8), which
+    // is what they were split out of.
+    {
+        char p[MAX_PATH]; plugin_path(p, sizeof(p), "data\\profiles\\t_legacy.txt");
+        char dir[MAX_PATH]; plugin_path(dir, sizeof(dir), "data"); CreateDirectoryA(dir, NULL);
+        plugin_path(dir, sizeof(dir), "data\\profiles"); CreateDirectoryA(dir, NULL);
+        FILE* f = fopen(p, "w");
+        if (f) { fputs("buffOrder=0,1,2,3,4,5,6,7,8,9,10,11,12\n", f); fclose(f); }
+        profile_refresh();
+        CHECK(profile_load("t_legacy"));
+        const UiConfig& c = ui_config();
+        const unsigned char want[UiConfig::BUFF_ORDER_N] = { 0,1,2,3,4,5,6,7,8, 13,14,15,16, 9,10,11,12 };
+        bool same = true;
+        for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) if (c.buffOrder[i] != want[i]) same = false;
+        CHECK(same);
+        if (!same) {
+            printf("   got ");
+            for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) printf("%u ", (unsigned)c.buffOrder[i]);
+            printf("\n");
+        }
+    }
+
     SECTION("config : a corrupt value is clamped, not propagated");
     // The 2026-07-26 S0 in one line : mmZoom read from a hand-edited file used to reach a sprintf unclamped.
     // Write a hostile value directly into the profile file and check the loader refuses it.

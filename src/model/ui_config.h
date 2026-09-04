@@ -105,8 +105,23 @@ struct UiConfig {
     // Kept as a plain id list (not a rank per group) so reordering is a swap and the file stays readable.
     // BUFF_ORDER_N must equal BG_COUNT -- static_assert'd in party.cpp, where both headers are visible ; the
     // constant is duplicated here only to keep this header free of includes (it has none, deliberately).
-    static const int BUFF_ORDER_N = 13;
-    unsigned char buffOrder[BUFF_ORDER_N] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 };
+    static const int BUFF_ORDER_N = 17;
+    // The DEFAULT is not 0..N-1 : the last four groups were split out of Enhancing long after the enum was
+    // written, and an enum value is a saved-file format (see BuffGroup), so they had to be APPENDED there
+    // while reading beside their parent HERE. Enhancing, then its four children, then Abilities.
+    unsigned char buffOrder[BUFF_ORDER_N] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 13, 14, 15, 16, 9, 10, 11, 12 };
+    // Where a group came FROM, for the one job repair has that a permutation fix cannot do : a config saved
+    // before a split lists neither child, and appending them at the end would park Enspells and Bar-spells
+    // out past Other -- the far end of the strip -- for everyone who had ever opened the editor. A child is
+    // inserted directly after its parent instead, which is where it would have been had it always existed.
+    // 0xFF = no parent (append). Indexed by group id.
+    static const unsigned char* buff_group_parent() {
+        static const unsigned char P[BUFF_ORDER_N] = {
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            8, 8, 8, 8   // Enspells, Bar-spells, Spikes, Stat boosts <- Enhancing
+        };
+        return P;
+    }
     int buff_group_rank(int g) const {   // where this group sits in the strip ; unknown -> last
         for (int i = 0; i < BUFF_ORDER_N; ++i) if (buffOrder[i] == g) return i;
         return BUFF_ORDER_N - 1; }

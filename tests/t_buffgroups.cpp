@@ -197,12 +197,37 @@ void test_buff_groups() {
     CHECK(buff_group(308) == BG_ROLL);     // Double-Up Chance
     CHECK(buff_group(309) == BG_ROLL);     // Bust
 
+    SECTION("buff groups : the families split out of Enhancing own their own statuses");
+    // Only families whose statuses belong to NOTHING else can become a group. Enspells, Bar-spells,
+    // Spikes and the stat Boosts qualify ; Ninjutsu and the BLU self-buffs do not, because their spells
+    // grant statuses that are already Stealth's or Watch's (Tonko -> 69 Invisible, Refueling -> 33 Haste).
+    CHECK(buff_group(94)  == BG_ENSPELL);   // Enfire
+    CHECK(buff_group(277) == BG_ENSPELL);   // the II line
+    CHECK(buff_group(487) == BG_ENSPELL);   // Endrain
+    CHECK(buff_group(100) == BG_BAR);       // Barfire
+    CHECK(buff_group(112) == BG_BAR);       // Barvirus
+    CHECK(buff_group(34)  == BG_SPIKES);    // Blaze Spikes
+    CHECK(buff_group(605) == BG_SPIKES);    // Gale Spikes
+    CHECK(buff_group(119) == BG_STATS);     // Gain-STR
+    CHECK(buff_group(80)  == BG_STATS);     // ... and the Boost that shares its name
+    CHECK(buff_group(69)  == BG_STEALTH);   // Tonko's status stayed where it belongs
+    CHECK(buff_group(33)  == BG_WATCH);     // Refueling's too
+    CHECK(buff_group(178) == BG_ENHANCE);   // Firestorm : the storms did NOT get a group
+
     SECTION("buff groups : a slot the game never shipped is not a config row");
     // "ST224" and "(N/A)" are what the resource file writes for an unused id, not names.
     CHECK(buff_status_name_real(224) == 0);
     CHECK(buff_status_name_real(226) == 0);
     CHECK(buff_status_name_real(24)  == 0);
     CHECK(buff_status_name_real(232) == 0);
+    // Songs that were named but never put in the game : res/spells.lua marks their spell unlearnable=true,
+    // and nothing grants Rhapsody at all. Honor March sits in the same block, carries no flag, and stays.
+    CHECK(buff_status_name_real(204) == 0);   // Hum
+    CHECK(buff_status_name_real(208) == 0);   // Serenade
+    CHECK(buff_status_name_real(211) == 0);   // Fugue
+    CHECK(buff_status_name_real(212) == 0);   // Rhapsody
+    CHECK(buff_status_name_real(214) != 0);   // March -- Honor March is real
+    CHECK(buff_status_name_real(9)   != 0);   // Curse -- unlearnable as a SPELL, but monsters cast it
     // ... and a real name that merely BEGINS like one still is one.
     CHECK(buff_status_name_real(227) != 0);   // "Store TP"
     CHECK(buff_status_name_real(33)  != 0);   // "Haste"

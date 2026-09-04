@@ -21,9 +21,9 @@ namespace aio {
 // (Dia 134 is a near-white icon -> looks nearly blank, which is the game's own art, not a missing cell.)
 static const unsigned short BUFF_POOL[] = {
      40,  71,  43, 214, 134, 317, 541,  33,   // Protect, Sneak, Refresh, Honor March, Dia, Chaos Roll, Indi-Refresh, Haste
-    251, 523,  69,  41, 370, 198,  13,  94,   // Food, Ignis, Invisible, Shell, Haste Samba, Valor Minuet, Slow, Enfire
-     44, 116, 321,  37,  70, 535,  42,   3,   // Mighty Strikes, Phalanx, Samurai Roll, Stoneskin, Deodorize, Valiance, Regen, Poison
-    178, 253,  36,  46, 581,  39,  32, 252    // Firestorm, Signet, Blink, Hundred Fists, Flurry, Aquaveil, Flee, Mounted
+    251, 100,  69,  41, 370, 198,  13,  94,   // Food, Barfire, Invisible, Shell, Haste Samba, Valor Minuet, Slow, Enfire
+     44, 116, 321,  37,  70, 535,  42,  34,   // Mighty Strikes, Phalanx, Samurai Roll, Stoneskin, Deodorize, Valiance, Regen, Blaze Spikes
+    178, 253,  36, 119, 581,  39,  32, 252    // Firestorm, Signet, Blink, STR Boost, Flurry, Aquaveil, Flee, Mounted
 };
 static const int BUFF_POOL_N = (int)(sizeof(BUFF_POOL) / sizeof(BUFF_POOL[0]));
 
