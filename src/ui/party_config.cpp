@@ -503,9 +503,9 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             const u32 bTex = buff_atlas_tex(dev);   // BORROWED : buff_atlas.cpp owns it and is the only place that releases it. 0 while its bounded retry has not landed -> the band draws its tints and stays usable, rather than holes.
 
             struct Run { int n; unsigned short ic[4]; float x, w, by, ly, iy; unsigned char grp; bool hid; bool faint; const char* lbl; };
-            Run runs[64]; int nRun = 0;
+            Run runs[UiConfig::BUFF_PIN_MAX]; int nRun = 0;   // sized by the cap, not by a number that was once big enough
             int slots[UiConfig::BUFF_ORDER_N];   // slots[k] = the buffOrder position the k-th visible run occupies
-            unsigned short inner[256]; int innerTotal = 0, innerN = 0;
+            unsigned short inner[UiConfig::BUFF_PIN_MAX]; int innerTotal = 0, innerN = 0;
             const bool atGroups = (bsInner_ < 0 || bsInner_ >= BG_COUNT);
             if (atGroups) {
                 for (int i = 0; i < UiConfig::BUFF_ORDER_N && nRun < 64; ++i) {
@@ -546,13 +546,12 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // arrange them. Filtered to what you meet, a group fits whole and the line never appears.
                 // A group NEVER met still falls back to its catalogue, so opening it is not a dead end --
                 // that was the reason the filter was dropped in the first place, and it is kept.
-                // THE WHOLE CATALOGUE WHENEVER IT FITS, and it fits for every group where the order actually
-                // matters : Rolls is 31, Songs 23, Geomancy 30, Runes 13, Dances 8 -- all under the 32 cap.
-                // So a COR opening Rolls gets ALL of them, arrangeable, whether or not they have been seen,
-                // and no "+N more" line appears.
-                // Only the open-ended groups overflow -- Abilities 134, Debuffs 49, Other 214 -- and those
-                // fall back to what you have actually MET, which is a handful. Listing 214 unreachable
-                // statuses to say "+182 more" helps nobody on the screen whose job is arranging them.
+                // THE WHOLE CATALOGUE WHENEVER IT FITS -- and with the cap at 160 that is every group but one.
+                // Abilities 142, Enhancing 59, Debuffs 49, Rolls 31, Geomancy 30, Songs 23 : all complete, all
+                // arrangeable, seen or not, with no "+N more" line anywhere.
+                // Other (238) is the single exception and stays filtered to what you have met : it is the
+                // unclassified bin, and listing 238 statuses to announce a remainder helps nobody on the
+                // screen whose whole job is arranging them.
                 (void)icsProbe;
                 const int capN = UiConfig::BUFF_PIN_MAX;
                 innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, [](unsigned) { return true; });
@@ -689,14 +688,14 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // the two can never disagree about what the gesture was.)
                 const bool carrying = (bsDrag_ >= 0 && bsMoved_ != 0);
                 // ---- the order the blocks are laid out in : with the carried one lifted out and re-inserted ----
-                int vis[64], nv = 0;
+                int vis[UiConfig::BUFF_PIN_MAX], nv = 0;
                 if (carrying && bsDrop_ >= 0) {
                     for (int k = 0; k < nRun; ++k) if (k != bsDrag_) { if (nv == bsDrop_) vis[nv++] = bsDrag_; vis[nv++] = k; }
                     if (nv <= bsDrop_) vis[nv++] = bsDrag_;
                 } else for (int k = 0; k < nRun; ++k) vis[nv++] = k;
 
                 // ---- wrap : a block that no longer fits on this line starts the next one ----
-                float tx[64]; int tline[64];
+                float tx[UiConfig::BUFF_PIN_MAX]; int tline[UiConfig::BUFF_PIN_MAX];
                 { float x = rightX; int ln = 0;
                   for (int k = 0; k < nv; ++k) {
                       const int i = vis[k];
@@ -725,11 +724,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // must not animate one tile into another tile's place.
                 { for (int k = 0; k < nRun; ++k) {
                       if (carrying) {
-                          runs[k].x  = spring(dragUid, 128 + k, tx[k]);
-                          runs[k].by = spring(dragUid, 256 + k, sy0 + tline[k] * lineH);
+                          runs[k].x  = spring(dragUid, 1000 + k, tx[k]);
+                          runs[k].by = spring(dragUid, 3000 + k, sy0 + tline[k] * lineH);
                       } else {
-                          runs[k].x  = ease(dragUid, 128 + k, tx[k], 1000.0f);
-                          runs[k].by = ease(dragUid, 256 + k, sy0 + tline[k] * lineH, 1000.0f);
+                          runs[k].x  = ease(dragUid, 1000 + k, tx[k], 1000.0f);
+                          runs[k].by = ease(dragUid, 3000 + k, sy0 + tline[k] * lineH, 1000.0f);
                       }
                   } }
 

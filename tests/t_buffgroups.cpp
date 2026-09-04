@@ -183,10 +183,12 @@ void test_buff_groups() {
         UiConfig& c = ui_config();
         for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) c.buffPinN[g] = 0;
         unsigned short m[UiConfig::BUFF_PIN_MAX];
+        // EVERY group except Other must fit whole -- that is the promise, so every one of them is named.
         struct { int g; const char* n; } WHOLE[] = {
             { BG_ROLL, "Rolls" }, { BG_SONG, "Songs" }, { BG_GEO, "Geomancy" },
             { BG_RUNE, "Runes" }, { BG_DANCE, "Dances" }, { BG_STEALTH, "Stealth" },
             { BG_WATCH, "Watch" }, { BG_PROTECT, "Protection" }, { BG_PERM, "Permanent" },
+            { BG_JA, "Abilities" }, { BG_ENHANCE, "Enhancing" }, { BG_DEBUFF, "Debuffs" },
         };
         bool allFit = true;
         for (int i = 0; i < (int)(sizeof(WHOLE) / sizeof(WHOLE[0])); ++i) {
