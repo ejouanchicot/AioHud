@@ -165,6 +165,16 @@ private:
                               float bandX, float bandW, float coX, float ctrlW,
                               float hdrX, float hdrW);
     // shared "box appearance" rows (Box/Transparency/Theme/Hue/Luminosity) operating on any module's BoxStyle.
+    // The FRAME rows (theme / colour / luminosity + transparency / border), in the two-column grammar.
+    // Callable MORE THAN ONCE per panel -- every control hangs off ctrl_uid_i(CTRL_ID, group), so the two
+    // boxes of the party panel cannot share a spring. themeCopy null = this box is the master ;
+    // borderExtra null = one border chip instead of two.
+    void draw_frame_section(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW,
+                            int group, int* themeCopy,
+                            int* theme, unsigned* hue, float* lum, float* alpha,
+                            bool* border, bool* borderExtra, const char* extraLabel);
     void draw_box_appearance(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW, struct BoxStyle& bs);

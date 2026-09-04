@@ -4,9 +4,12 @@
 //   Party    -- its box theme (appearance) + all party-box settings.
 //   Alliance -- a "Same as Party / Custom" theme toggle (+ its own theme if Custom) + alliance-box settings.
 //   Text     -- per-element typography, with a small Party/Alliance selector for which box's text to edit.
-// The per-box control blocks are written out for each group (index 0 = Party, 1 = Alliance) rather than shared via a
-// helper : a helper called twice would reuse each control's CTRL_ID (source-line uid) and the two groups' sliders
-// would collide. Distinct source lines -> distinct uids -> no collision.
+// The FRAME block IS shared now (draw_frame_section, box_style.cpp), called once per group. This file used to say
+// the opposite -- that the blocks were written out twice on purpose, because a helper called twice would reuse
+// each control's CTRL_ID (a source-line uid) and the two groups' sliders would drag together. That was true when
+// it was written; ctrl_uid_i(CTRL_ID, group) is the escape and the config-panels doc says so. The justification
+// outlived the problem, which is how ~90 duplicated lines became permanent. Any block copied per group should be
+// read the same way: ask whether the reason still holds before copying it again.
 #include "ui/config_page.h"
 #include "ui/config_controls.h"   // shared toolkit : cat_header / row_slider / toggle_chip / row_selector + palette + g_fade
 #include "ui/config_rows.h"       // ROW_BAND / ROW_NEXT row-layout macros (shared with config_page.cpp)
@@ -105,98 +108,16 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         if (twoCol && on) flat(dev, sepX, snap(y + snap(7.0f)), snap(1.0f), snap(h) - snap(14.0f), 0x1EFFFFFFu);
     };
 
-    // ========================================================== FRAME ==========================================================
-    // The same block in every module : theme family, its colour, luminosity, transparency, border. One thing to learn.
+    // ========================================================== FRAME =========================================================
+    // The same block every module gets, because it drives the same shared code. Drawn by draw_frame_section so
+    // the party box and the alliance boxes cannot drift apart -- they used to be two ~90-line copies.
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_)) pcFrameOpen_ = !pcFrameOpen_;
     ROW_NEXT(42.0f)
     if (pcFrameOpen_) {
-        // Theme family + the custom-colour switch it enables : one is meaningless without the other.
-        { const bool proc = (window_theme_family(ui_config().skinTheme) != 0);
-          const float bh2 = (twoCol || !proc) ? snap(48.0f) : snap(96.0f);
-          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, proc);   // an empty second half has no split to state
-          const float wA = proc ? halfW : ctrlW;
-          { const int fam = window_theme_family(ui_config().skinTheme), var = window_theme_variant(ui_config().skinTheme);
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, wA, tr("Box Theme", "Th\xC3\xA8me de cadre"), box_family_name(fam))) {
-                ui_config().skinTheme = window_theme_index(wrap(fam + d, box_family_count()), var); save_ui_config(); } }
-          if (proc) {   // FFXI skins have no hue of their own -- the switch would control nothing
-              const float rowH = snap(38.0f);
-              fo->begin(dev);
-              fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Custom colour", "Couleur perso"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-              const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = xB + halfW - bbw, bty = yB + (rowH - bbh) * 0.5f;
-              const bool on = ui_config().skinHue != 0;
-              if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
-                  ui_config().skinHue = on ? 0u : (box_hue_color(window_theme_variant(ui_config().skinTheme)) | 0xFF000000u); save_ui_config(); }
-          }
-          ROW_NEXT(bh2)
-        }
-        // The picker / swatch grid keeps the full width : it is a grid, it cannot share a row with anything.
-        if (window_theme_family(ui_config().skinTheme) != 0 && ui_config().skinHue != 0) {
-            CFG_COLOR_PICKER(&ui_config().skinHue)
-        } else
-        {   // variant grid : FFXI -> theme-number chips ; procedural family -> hue swatches (click to pick)
-          const int fam = window_theme_family(ui_config().skinTheme), var = window_theme_variant(ui_config().skinTheme);
-          const bool isFFXI = (fam == 0);
-          const int nVar = isFFXI ? window_tex_theme_count() : box_hue_count();
-          const int COLS = isFFXI ? (nVar < 1 ? 1 : nVar) : 15;
-          const int nrows = (nVar + COLS - 1) / COLS;
-          const float cw = isFFXI ? snap(42.0f) : snap(22.0f), ch = isFFXI ? snap(26.0f) : snap(22.0f), cg = snap(7.0f);
-          const float gridH = nrows * ch + (nrows - 1) * cg, slotH = gridH + snap(20.0f);
-          ROW_BAND(slotH) (void)yo;
-          fo->begin(dev);
-          fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, isFFXI ? tr("Theme", "Th\xC3\xA8me") : tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-          const float gridW = COLS * cw + (COLS - 1) * cg;
-          const float gx = coX + ctrlW - gridW, gy = ry + (slotH - gridH) * 0.5f;
-          for (int k = 0; k < nVar; ++k) {
-              const float xk = gx + (k % COLS) * (cw + cg), yk = gy + (k / COLS) * (ch + cg);
-              const bool sel = (var == k);
-              if (isFFXI) {
-                  rpanel(dev, xk, yk, cw, ch, snap(6.0f), sel ? C_ROWON_T : 0x66121A18, sel ? C_ROWON_B : 0x66090D0F, sel ? C_ACCENT : C_BORDER, snap(1.2f));
-                  fo->begin(dev); fo->draw_c(dev, xk + cw * 0.5f, yk + ch * 0.5f, window_theme_name(k), snap(13.0f), fa(sel ? C_ACCENTHI : C_TEXT), fa(C_STROKE), 1.0f);
-              } else {
-                  const u32 c = box_hue_color(k);
-                  if (sel) { cs_add(dev); rrect_glow(dev, xk, yk, cw, ch, snap(6.0f), (c & 0x00FFFFFF) | 0x80000000, snap(6.0f)); cs(dev); }
-                  rrect_fill(dev, xk, yk, cw, ch, snap(6.0f), c, shade(c, -0.28f));
-                  outline(dev, xk, yk, cw, ch, sel ? 0xFFFFFFFF : C_BORDER);
-              }
-              if (inrect(mo, xk, yk, cw, ch) && click) { ui_config().skinTheme = window_theme_index(fam, k); save_ui_config(); }
-          }
-          ROW_NEXT(slotH)
-        }
-        // Luminosity + Transparency : both "how much of the frame you see", so one line.
-        { const bool proc = (window_theme_family(ui_config().skinTheme) != 0);
-          const float bh2 = (twoCol || !proc) ? snap(46.0f) : snap(92.0f);
-          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
-          const float yB = twoCol ? yA : yA + snap(46.0f);
-          const float xB = proc ? (twoCol ? col2X : coX) : coX;
-          sepv(ry, bh2, proc);   // an empty second half has no split to state
-          const float wB = proc ? halfW : ctrlW;
-          if (proc) {   // FFXI skins are bitmaps : there is no procedural luminosity to move
-              float v01 = (ui_config().skinLum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
-              const int pct = (int)(ui_config().skinLum * 100.0f + (ui_config().skinLum >= 0.0f ? 0.5f : -0.5f));
-              char b[16]; sprintf(b, "%+d%%", pct);
-              if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Luminosity", "Luminosit\xC3\xA9"), b, &v01)) {
-                  ui_config().skinLum = v01 * 2.0f - 1.0f; }
-          }
-          { const float transp = 1.0f - ui_config().skinBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
-            float v01 = clampf(transp, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, wB, tr("Transparency", "Transparence"), b, &v01)) {
-                ui_config().skinBoxAlpha = 1.0f - v01; } }
-          ROW_NEXT(bh2)
-        }
-        { ROW_BAND(48.0f)   // Border : the box frame, and the floating Cost box that rides on it
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Border", "Bordure"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f;
-            const float bx0 = coX + ctrlW - (2 * bbw + bgap);
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Box", "Bo\xC3\xAEte"), ui_config().border[0])) { ui_config().border[0] = !ui_config().border[0]; save_ui_config(); }
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Cost box", "Bo\xC3\xAEte co\xC3\xBBt"), ui_config().borderCost)) { ui_config().borderCost = !ui_config().borderCost; save_ui_config(); }
-            ROW_NEXT(48.0f)
-        }
+        draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
+                           0, nullptr,                                   // the party box IS the master : nothing to follow
+                           &ui_config().skinTheme, &ui_config().skinHue, &ui_config().skinLum, &ui_config().skinBoxAlpha,
+                           &ui_config().border[0], &ui_config().borderCost, tr("Cost box", "BoÃ®te coÃ»t"));
     }   // end Frame
 
     // ========================================================== PARTY ==========================================================
@@ -358,89 +279,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 ui_config().box[1].scale = v < lo ? lo : (v > hi ? hi : v); } }
           ROW_NEXT(bh2)
         }
-        // ---- Frame ----
-        // Follow the party box, or have its own. Everything below this row exists only in the second case, which is
-        // why the choice is the row that opens the section rather than one buried inside it.
-        ROW_CHOICE_G(CTRL_ID, tr("Theme", "Th\xC3\xA8me"), ui_config().allyThemeCopy, tr("Same as Party", "Comme Party"), tr("Custom", "Perso"), 48.0f, 38.0f, 150.0f)
-        if (!ui_config().allyThemeCopy) {
-            { const bool proc = (window_theme_family(ui_config().allyTheme) != 0);
-              const float bh2 = (twoCol || !proc) ? snap(48.0f) : snap(96.0f);
-              ROW_BAND(bh2) (void)yo;
-              const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-              const float yB = twoCol ? yA : yA + snap(48.0f);
-              const float xB = twoCol ? col2X : coX;
-              sepv(ry, bh2, proc);   // an empty second half has no split to state
-              { const int fam = window_theme_family(ui_config().allyTheme), var = window_theme_variant(ui_config().allyTheme);
-                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, proc ? halfW : ctrlW, tr("Box Theme", "Th\xC3\xA8me de cadre"), box_family_name(fam))) {
-                    ui_config().allyTheme = window_theme_index(wrap(fam + d, box_family_count()), var); save_ui_config(); } }
-              if (proc) {   // FFXI skins have no hue of their own -- the switch would control nothing
-                  const float rowH = snap(38.0f);
-                  fo->begin(dev);
-                  fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Custom colour", "Couleur perso"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-                  const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = xB + halfW - bbw, bty = yB + (rowH - bbh) * 0.5f;
-                  const bool on = ui_config().allyHue != 0;
-                  if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
-                      ui_config().allyHue = on ? 0u : (box_hue_color(window_theme_variant(ui_config().allyTheme)) | 0xFF000000u); save_ui_config(); }
-              }
-              ROW_NEXT(bh2)
-            }
-            if (window_theme_family(ui_config().allyTheme) != 0 && ui_config().allyHue != 0) {
-                CFG_COLOR_PICKER(&ui_config().allyHue)
-            } else
-            {   // variant grid : FFXI -> theme-number chips ; procedural family -> hue swatches (click to pick)
-              const int fam = window_theme_family(ui_config().allyTheme), var = window_theme_variant(ui_config().allyTheme);
-              const bool isFFXI = (fam == 0);
-              const int nVar = isFFXI ? window_tex_theme_count() : box_hue_count();
-              const int COLS = isFFXI ? (nVar < 1 ? 1 : nVar) : 15;
-              const int nrows = (nVar + COLS - 1) / COLS;
-              const float cw = isFFXI ? snap(42.0f) : snap(22.0f), ch = isFFXI ? snap(26.0f) : snap(22.0f), cg = snap(7.0f);
-              const float gridH = nrows * ch + (nrows - 1) * cg, slotH = gridH + snap(20.0f);
-              ROW_BAND(slotH) (void)yo;
-              fo->begin(dev);
-              fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, isFFXI ? tr("Theme", "Th\xC3\xA8me") : tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-              const float gridW = COLS * cw + (COLS - 1) * cg;
-              const float gx = coX + ctrlW - gridW, gy = ry + (slotH - gridH) * 0.5f;
-              for (int k = 0; k < nVar; ++k) {
-                  const float xk = gx + (k % COLS) * (cw + cg), yk = gy + (k / COLS) * (ch + cg);
-                  const bool sel = (var == k);
-                  if (isFFXI) {
-                      rpanel(dev, xk, yk, cw, ch, snap(6.0f), sel ? C_ROWON_T : 0x66121A18, sel ? C_ROWON_B : 0x66090D0F, sel ? C_ACCENT : C_BORDER, snap(1.2f));
-                      fo->begin(dev); fo->draw_c(dev, xk + cw * 0.5f, yk + ch * 0.5f, window_theme_name(k), snap(13.0f), fa(sel ? C_ACCENTHI : C_TEXT), fa(C_STROKE), 1.0f);
-                  } else {
-                      const u32 c = box_hue_color(k);
-                      if (sel) { cs_add(dev); rrect_glow(dev, xk, yk, cw, ch, snap(6.0f), (c & 0x00FFFFFF) | 0x80000000, snap(6.0f)); cs(dev); }
-                      rrect_fill(dev, xk, yk, cw, ch, snap(6.0f), c, shade(c, -0.28f));
-                      outline(dev, xk, yk, cw, ch, sel ? 0xFFFFFFFF : C_BORDER);
-                  }
-                  if (inrect(mo, xk, yk, cw, ch) && click) { ui_config().allyTheme = window_theme_index(fam, k); save_ui_config(); }
-              }
-              ROW_NEXT(slotH)
-            }
-        }
-        // Luminosity + Transparency : both "how much of the frame you see". Luminosity only exists on a procedural
-        // theme the alliance owns ; transparency always does, so the pair collapses to one when it must.
-        { const bool proc = (!ui_config().allyThemeCopy && window_theme_family(ui_config().allyTheme) != 0);
-          const float bh2 = (twoCol || !proc) ? snap(46.0f) : snap(92.0f);
-          ROW_BAND(bh2) (void)yo;
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
-          const float yB = twoCol ? yA : yA + snap(46.0f);
-          const float xB = proc ? (twoCol ? col2X : coX) : coX;
-          sepv(ry, bh2, proc);   // an empty second half has no split to state
-          const float wB = proc ? halfW : ctrlW;
-          if (proc) {
-              float v01 = (ui_config().allyLum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
-              const int pct = (int)(ui_config().allyLum * 100.0f + (ui_config().allyLum >= 0.0f ? 0.5f : -0.5f));
-              char b[16]; sprintf(b, "%+d%%", pct);
-              if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Luminosity", "Luminosit\xC3\xA9"), b, &v01)) {
-                  ui_config().allyLum = v01 * 2.0f - 1.0f; }
-          }
-          { const float transp = 1.0f - ui_config().allyBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
-            float v01 = clampf(transp, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, wB, tr("Transparency", "Transparence"), b, &v01)) {
-                ui_config().allyBoxAlpha = 1.0f - v01; } }
-          ROW_NEXT(bh2)
-        }
-        ROW_TOGGLE_G(CTRL_ID, tr("Border", "Bordure"), ui_config().border[1], 48.0f, 38.0f, 112.0f)
+        // ---- Frame : the same rows as the party box, from the same function ----
+        draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
+                           1, &ui_config().allyThemeCopy,                // may simply follow the party theme
+                           &ui_config().allyTheme, &ui_config().allyHue, &ui_config().allyLum, &ui_config().allyBoxAlpha,
+                           &ui_config().border[1], nullptr, nullptr);    // no Cost box on an alliance row
         // ---- Content ----
         { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // what the gauges are, and what the badge says
           ROW_BAND(bh2) (void)yo;

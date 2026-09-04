@@ -161,6 +161,139 @@ void ConfigPage::draw_box_appearance(u32 dev, Font* fo, const MouseState* mo, bo
     }   // end box on
 }
 
+// ---- the FRAME section, shared by the two boxes that have one in the same panel ----
+// party_config.cpp used to carry this block TWICE, ~90 lines each, differing only in which fields they wrote.
+// Its file header explained why: a helper called twice would reuse each control's CTRL_ID (a __FILE__:__LINE__
+// hash) and the two groups' sliders would drag together. That was true when it was written and is not any more --
+// ctrl_uid_i(CTRL_ID, group) is exactly the escape, and the config-panels doc says so. The justification outlived
+// the problem, which is the usual way a duplication becomes permanent.
+//
+// `themeCopy` null   = this box IS the master (the party box) : no Same-as-Party row, the theme always shows.
+// `borderExtra` null = one border chip instead of two (only the party box owns the floating Cost box).
+// Two-column layout is recomputed here rather than passed : it is a function of ctrlW alone, and a caller that
+// derived it differently would drift from the rows this draws.
+void ConfigPage::draw_frame_section(u32 dev, Font* fo, const MouseState* mo, bool click,
+                                    float& ry, int& ri, float e,
+                                    float bandX, float bandW, float coX, float ctrlW,
+                                    int group, int* themeCopy,
+                                    int* theme, unsigned* hue, float* lum, float* alpha,
+                                    bool* border, bool* borderExtra, const char* extraLabel) {
+    const bool  twoCol = ctrlW >= snap(720.0f);
+    const float gutter = snap(44.0f);
+    const float halfW  = twoCol ? (ctrlW - gutter) * 0.5f : ctrlW;
+    const float col2X  = coX + (twoCol ? halfW + gutter : 0.0f);
+    const float sepX   = snap(coX + halfW + gutter * 0.5f);
+    auto sepv = [&](float y, float h, bool on) {
+        if (twoCol && on) flat(dev, sepX, snap(y + snap(7.0f)), snap(1.0f), snap(h) - snap(14.0f), 0x1EFFFFFFu);
+    };
+    const int uidBase = ctrl_uid_i(CTRL_ID, group);   // every control below hangs off this, so two calls never share a spring
+
+    // Follow the master box, or have its own. Everything under it exists only in the second case, which is why the
+    // choice is the row that OPENS the block rather than one buried inside it.
+    if (themeCopy) {
+        { ROW_BAND(48.0f)
+            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Theme", "Th\xC3\xA8me"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(uidBase, 1), bx2, bty, bbw, bbh,
+                            *themeCopy ? tr("Same as Party", "Comme Party") : tr("Custom", "Perso"), *themeCopy != 0)) {
+                *themeCopy = !*themeCopy; save_ui_config(); }
+            ROW_NEXT(48.0f)
+        }
+    }
+    const bool own = (!themeCopy || !*themeCopy);
+    if (own) {
+        { const bool proc = (window_theme_family(*theme) != 0);
+          const float bh2 = (twoCol || !proc) ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, proc);   // an empty second half has no split to state
+          { const int fam = window_theme_family(*theme), var = window_theme_variant(*theme);
+            if (int d = row_selector(dev, fo, mo, click, ctrl_uid_i(uidBase, 2), coX, yA, proc ? halfW : ctrlW,
+                                     tr("Box Theme", "Th\xC3\xA8me de cadre"), box_family_name(fam))) {
+                *theme = window_theme_index(wrap(fam + d, box_family_count()), var); save_ui_config(); } }
+          if (proc) {   // FFXI skins have no hue of their own -- the switch would control nothing
+              const float rowH = snap(38.0f);
+              fo->begin(dev);
+              fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Custom colour", "Couleur perso"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+              const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = xB + halfW - bbw, bty = yB + (rowH - bbh) * 0.5f;
+              const bool on = (*hue != 0);
+              if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(uidBase, 3), bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
+                  *hue = on ? 0u : (box_hue_color(window_theme_variant(*theme)) | 0xFF000000u); save_ui_config(); }
+          }
+          ROW_NEXT(bh2)
+        }
+        // The picker / swatch grid keeps the full width : it is a grid, it cannot share a row with anything.
+        if (window_theme_family(*theme) != 0 && *hue != 0) {
+            CFG_COLOR_PICKER_I(hue, group)
+        } else
+        {   // variant grid : FFXI -> theme-number chips ; procedural family -> hue swatches (click to pick)
+          const int fam = window_theme_family(*theme), var = window_theme_variant(*theme);
+          const bool isFFXI = (fam == 0);
+          const int nVar = isFFXI ? window_tex_theme_count() : box_hue_count();
+          const int COLS = isFFXI ? (nVar < 1 ? 1 : nVar) : 15;
+          const int nrows = (nVar + COLS - 1) / COLS;
+          const float cw = isFFXI ? snap(42.0f) : snap(22.0f), ch = isFFXI ? snap(26.0f) : snap(22.0f), cg = snap(7.0f);
+          const float gridH = nrows * ch + (nrows - 1) * cg, slotH = gridH + snap(20.0f);
+          ROW_BAND(slotH) (void)yo;
+          fo->begin(dev);
+          fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, isFFXI ? tr("Theme", "Th\xC3\xA8me") : tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+          const float gridW = COLS * cw + (COLS - 1) * cg;
+          const float gx = coX + ctrlW - gridW, gy = ry + (slotH - gridH) * 0.5f;
+          for (int k = 0; k < nVar; ++k) {
+              const float xk = gx + (k % COLS) * (cw + cg), yk = gy + (k / COLS) * (ch + cg);
+              const bool sel = (var == k);
+              if (isFFXI) {
+                  rpanel(dev, xk, yk, cw, ch, snap(6.0f), sel ? C_ROWON_T : 0x66121A18, sel ? C_ROWON_B : 0x66090D0F, sel ? C_ACCENT : C_BORDER, snap(1.2f));
+                  fo->begin(dev); fo->draw_c(dev, xk + cw * 0.5f, yk + ch * 0.5f, window_theme_name(k), snap(13.0f), fa(sel ? C_ACCENTHI : C_TEXT), fa(C_STROKE), 1.0f);
+              } else {
+                  const u32 c = box_hue_color(k);
+                  if (sel) { cs_add(dev); rrect_glow(dev, xk, yk, cw, ch, snap(6.0f), (c & 0x00FFFFFF) | 0x80000000, snap(6.0f)); cs(dev); }
+                  rrect_fill(dev, xk, yk, cw, ch, snap(6.0f), c, shade(c, -0.28f));
+                  outline(dev, xk, yk, cw, ch, sel ? 0xFFFFFFFF : C_BORDER);
+              }
+              if (inrect(mo, xk, yk, cw, ch) && click) { *theme = window_theme_index(fam, k); save_ui_config(); }
+          }
+          ROW_NEXT(slotH)
+        }
+    }
+    // Luminosity + Transparency : both "how much of the frame you see". Luminosity exists only on a procedural
+    // theme this box owns ; transparency always does, so the pair collapses to one when it must.
+    { const bool proc = (own && window_theme_family(*theme) != 0);
+      const float bh2 = (twoCol || !proc) ? snap(46.0f) : snap(92.0f);
+      ROW_BAND(bh2) (void)yo;
+      const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
+      const float yB = twoCol ? yA : yA + snap(46.0f);
+      const float xB = proc ? (twoCol ? col2X : coX) : coX;
+      const float wB = proc ? halfW : ctrlW;
+      sepv(ry, bh2, proc);
+      if (proc) {
+          float v01 = (*lum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
+          const int pct = (int)(*lum * 100.0f + (*lum >= 0.0f ? 0.5f : -0.5f));
+          char b[16]; sprintf(b, "%+d%%", pct);
+          if (row_slider(dev, fo, mo, ctrl_uid_i(uidBase, 4), coX, yA, halfW, tr("Luminosity", "Luminosit\xC3\xA9"), b, &v01)) {
+              *lum = v01 * 2.0f - 1.0f; }
+      }
+      { const float transp = 1.0f - *alpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
+        float v01 = clampf(transp, 0.0f, 1.0f);
+        if (row_slider(dev, fo, mo, ctrl_uid_i(uidBase, 5), xB, yB, wB, tr("Transparency", "Transparence"), b, &v01)) {
+            *alpha = 1.0f - v01; } }
+      ROW_NEXT(bh2)
+    }
+    { ROW_BAND(48.0f)   // the frame edges, and (party only) the floating Cost box that rides on them
+        const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+        fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Border", "Bordure"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+        const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f;
+        const int nchips = borderExtra ? 2 : 1;
+        const float bx0 = coX + ctrlW - (nchips * bbw + (nchips - 1) * bgap);
+        if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(uidBase, 6), bx0, bty, bbw, bbh, tr("Box", "Bo\xC3\xAEte"), *border)) { *border = !*border; save_ui_config(); }
+        if (borderExtra && toggle_chip(dev, fo, mo, click, ctrl_uid_i(uidBase, 7), bx0 + bbw + bgap, bty, bbw, bbh, extraLabel, *borderExtra)) { *borderExtra = !*borderExtra; save_ui_config(); }
+        ROW_NEXT(48.0f)
+    }
+}
+
 // shared per-element "Text" style rows -- see config_page.h. The caller draws the element SELECTOR and passes the
 // chosen TextStyle ; these are the identical Font/Size/Outline/Style/Colour/Alpha controls every module's Text
 // sub-section used to copy-paste. CTRL_ID is collision-free (one call per panel, panels mutually exclusive), like
