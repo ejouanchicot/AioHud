@@ -336,10 +336,20 @@ void Hud::render(u32 dev) {
         const bool hideForRules = ui_config().editLayout && config_.edit_lines_active();
         // Config PAGE open (but NOT edit-layout, where you must see the boxes to drag them) -> hide the live HUD
         // so the real boxes don't show through the transparent preview stage ; the config preview draws its own demos.
-        const bool hideForConfig = config_.is_open() && !ui_config().editLayout;
+        // The config used to hide the whole HUD, which was free : the full-screen page covered it anyway, and
+        // the preview pane redrew the boxes inside its own stage. The DRAWER leaves the right of the screen as
+        // a hole onto the real game, so hiding the HUD there is the one thing that would empty it -- you would
+        // be editing a HUD you cannot see, which is exactly what the drawer exists to fix.
+        const bool drawerCfg = config_.is_open() && !ui_config().editLayout && ui_config().cfgDrawer != 0;
+        const bool hideForConfig = config_.is_open() && !ui_config().editLayout && !drawerCfg;
         const bool hideHud = hideForRules || peekHide_ || hideForConfig;   // peek (End held) hides the whole HUD too
         set_vial_provider(bars_);   // let the party rows / Help borrow the real fiole assets this frame (null-safe -> fallback)
-        if (worldReady) {           // logged in -> draw the HUD ; not yet (login/char screen) -> only the config overlay below
+        // ... and it shows the DEMO roster while the drawer is open, exactly as the preview pane did : a full
+        // party and both alliances, so every box you can configure is on screen and populated even when you are
+        // solo. Seeing the real thing is only better than a demo when the real thing is actually there.
+        const int savedDemoLvl = party_demo_level(), savedDemoCnt = party_demo_count();
+        if (drawerCfg) { set_party_demo_level(3); set_party_demo_count(6); }
+        if (worldReady || drawerCfg) {   // logged in -> draw the HUD ; not yet (login/char screen) -> only the config overlay below
         for (size_t i = 0; !hideHud && i < widgets_.size(); ++i) {
             const char* tn = widgets_[i]->type_name();
             // preview active -> the party tiers AND the target box are redrawn inside the stage by
@@ -354,6 +364,7 @@ void Hud::render(u32 dev) {
             else if (strcmp(tn, "PlayerHub")  == 0) { if (!ui_config().plrShow && !(ui_config().plrEquip && ui_config().plrEquipDetach)) continue; }   // still run it when a STANDALONE equipment module needs drawing
             widgets_[i]->draw(f);
         }
+        if (drawerCfg) { set_party_demo_level(savedDemoLvl); set_party_demo_count(savedDemoCnt); }   // never leaks past this frame
         for (size_t i = 0; i < widgets_.size(); ++i)   // hand the Help the party's selection-hand texture (for its live cursor sample)
             if (strcmp(widgets_[i]->type_name(), "PartyList") == 0 && static_cast<Party*>(widgets_[i])->tier() == 0) { config_.set_help_cursor_tex(static_cast<Party*>(widgets_[i])->cursor_tex()); break; }
         if (!hideHud) {   // Rules mode / End-peek hide the WHOLE HUD (like the widget loop above) -- these boxes must depop too
