@@ -425,9 +425,19 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // 2. three lights drifting behind it at different speeds, so the band is never twice the same and never
         //    obviously moving either. Sine pairs that do not share a period : the eye reads "alive", not "loop".
         const float cy2 = mhTop + mhH * 0.5f;
-        soft_blob(dev, sw * (0.18f + 0.10f * sinf(f.t * 0.17f)), cy2, sw * 0.26f, mhH * 0.95f, (26u << 24) | acc);
-        soft_blob(dev, sw * (0.55f + 0.14f * sinf(f.t * 0.11f + 2.1f)), cy2, sw * 0.30f, mhH * 0.85f, (18u << 24) | (C_GOLD & 0x00FFFFFF));
-        soft_blob(dev, sw * (0.86f + 0.08f * sinf(f.t * 0.23f + 4.0f)), cy2, sw * 0.20f, mhH * 0.90f, (16u << 24) | acc);
+        // PARALLAX. The three lights shift with the pointer, each by a different amount, as though they lay at
+        // different depths behind the plate. It is a few pixels of travel and nobody will ever consciously see
+        // it -- what they see is that the header responds to them, which is most of what "alive" means on a
+        // surface that cannot move.
+        const float par = mo ? (mo->x / sw - 0.5f) : 0.0f;
+        soft_blob(dev, sw * (0.18f + 0.10f * sinf(f.t * 0.17f)) + par * snap(26.0f), cy2, sw * 0.26f, mhH * 0.95f, (26u << 24) | acc);
+        soft_blob(dev, sw * (0.55f + 0.14f * sinf(f.t * 0.11f + 2.1f)) + par * snap(14.0f), cy2, sw * 0.30f, mhH * 0.85f, (18u << 24) | (C_GOLD & 0x00FFFFFF));
+        soft_blob(dev, sw * (0.86f + 0.08f * sinf(f.t * 0.23f + 4.0f)) + par * snap(34.0f), cy2, sw * 0.20f, mhH * 0.90f, (16u << 24) | acc);
+        // A single wider light crossing the whole plate, once every ~13 s and out of step with everything else,
+        // so the band has a slow event in it as well as a slow drift. Feathered, because the one thing that has
+        // already failed here is a hard-edged quad pretending to be light.
+        { float cr = f.t / 13.0f; cr -= floorf(cr);
+          soft_blob(dev, sw * (-0.18f + 1.36f * cr), cy2, sw * 0.15f, mhH * 1.15f, (20u << 24) | (C_GOLDHI & 0x00FFFFFF)); }
         // (Slanted light streaks were tried here and removed. A parallelogram out of axis-aligned quads needs
         //  the steps to be invisible, and on a 2400px page they were 18px wide with a 1.6px rise -- so it read as
         //  vertical banding rather than as a diagonal, and `flat` has no feathered edge to hide the seams. The
@@ -462,7 +472,34 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                                ((u32)(40.0f * (0.6f + 0.4f * pulse)) << 24) | acc); cs(dev);   // it sits IN the light, not on it
         dTexQuadState(dev, logoTex_, false);
         tquad(dev, snap(lkX), snap(lkY), lkW, lkH, 0.0f, 1.0f, 0.0f, 1.0f, fa(0xFFFFFFFFu), fa(0xFFFFFFFFu));
-        dSetTex(dev, 0, 0); cs(dev);   // never leave a bound texture for the next control (rule 8)
+        // GLEAM : a light travelling across the letterforms, masked BY the letterforms. A second textured pass
+        // of the same art, additive, its vertex colours forming a moving triangular ramp -- so the highlight
+        // rides the gold and leaves the gaps between letters dark. Drawing a bright rectangle over the logo
+        // instead would have swept a visible box across the plate, which is the cheap version of this and looks
+        // it. tquad's two colours are LEFT and RIGHT, which is exactly the axis a sweep needs.
+        { const float per = 7.0f; float lp = f.t / per; lp -= floorf(lp);
+          if (lp < 0.32f) {
+              const float k = lp / 0.32f, bw = 0.20f;
+              const float c2 = -bw + (1.0f + 2.0f * bw) * k;         // centre travels from off-left to off-right
+              const float peakF = 118.0f;
+              // alpha is linear in each half of the ramp, so sampling it at the CLAMPED endpoints is exact --
+              // no need to interpolate a clipped edge, and no hard block when the streak is half off the art.
+              struct A { static u32 at(float t, float c3, float bw2, float pk) {
+                  float d = fabsf(t - c3) / bw2; if (d > 1.0f) d = 1.0f;
+                  return (u32)(pk * (1.0f - d)); } };
+              dTexQuadState(dev, logoTex_, true);
+              dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);            // ADD light to the gold, never replace it
+              for (int hs = 0; hs < 2; ++hs) {
+                  float t0 = hs ? c2 : (c2 - bw), t1 = hs ? (c2 + bw) : c2;
+                  if (t0 < 0.0f) t0 = 0.0f;
+                  if (t1 > 1.0f) t1 = 1.0f;
+                  if (t1 - t0 <= 0.001f) continue;
+                  const u32 a0 = A::at(t0, c2, bw, peakF), a1 = A::at(t1, c2, bw, peakF);
+                  tquad(dev, snap(lkX + lkW * t0), snap(lkY), lkW * (t1 - t0), lkH,
+                        t0, t1, 0.0f, 1.0f, fa((a0 << 24) | 0x00FFFFFFu), fa((a1 << 24) | 0x00FFFFFFu));
+              }
+          } }
+        dSetTex(dev, 0, 0); cs(dev);   // reset the blend after the additive pass (rule 3) and unbind (rule 8)
         rgx = lkX + lkW * LOGO_ART_X1;
     } else {
         // FALLBACK, and the only reason the live wordmark survives at all : an art file that failed to load must
@@ -527,7 +564,15 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
       q4(dev, 0.0f, divY, rw, snap(3.0f), gl, gr, shade(gl, -0.35f), shade(gr, -0.35f));
       cs_add(dev);
       const float tt = f.t * 0.045f, ph = tt - floorf(tt);                     // one pass every ~22 s
-      soft_blob(dev, rw * ph, divY + snap(1.5f), snap(90.0f), snap(4.0f), (70u << 24) | (C_GOLDHI & 0x00FFFFFF));
+      // A head and three fading lengths of tail behind it. One blob was a dot sliding along a line ; a comet
+      // has a DIRECTION, which is the whole difference between something moving and something being moved.
+      for (int tl = 3; tl >= 0; --tl) {
+          const float back = (float)tl * snap(52.0f);
+          const float bx2 = rw * ph - back;
+          if (bx2 < -snap(90.0f)) continue;
+          const u32 al2 = (u32)(70.0f / (1.0f + 1.5f * (float)tl));
+          soft_blob(dev, bx2, divY + snap(1.5f), snap(90.0f) + back * 0.35f, snap(4.0f), (al2 << 24) | (C_GOLDHI & 0x00FFFFFF));
+      }
       cs(dev); }
     flat(dev, 0.0f, divY + snap(3.0f), sw, 1, C_BORDER);
 
