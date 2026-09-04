@@ -813,12 +813,25 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                         br = C_ACCENTHI; bw2 = snap(1.5f);
                     } else if (i == hot && !carrying) {
                         ft = 0x40202830u; fb = 0x40161C22u; br = (tint & 0x00FFFFFF) | 0xAA000000u; bw2 = snap(1.3f);
+                    } else if (runs[i].hid) {
+                        // HIDDEN has to read before the icon does, not after. A dim icon alone was too polite :
+                        // it looked like "not met yet", which is a different thing entirely. So the tile itself
+                        // goes flat and colourless -- no group tint on the edge, nothing to catch the eye --
+                        // and a slash is struck across it below. Three signals, none of which needs reading.
+                        ft = 0x14090C10u; fb = 0x14060809u;
+                        br = (C_MUTE & 0x00FFFFFF) | 0x30000000u;
+                        bw2 = snap(1.0f);
                     } else {
                         ft = 0x2A141A1Fu; fb = 0x2A0E1317u;
                         br = (tint & 0x00FFFFFF) | (runs[i].faint ? 0x38000000u : 0x70000000u);   // not met yet -> a fainter edge, same hue
                         bw2 = snap(1.2f);
                     }
                     rpanel(dev, runs[i].x, ty2, runs[i].w, th2, snap(8.0f), ft, fb, br, bw2);
+                    if (runs[i].hid) {   // struck through, corner to corner : the one mark nobody has to learn
+                        const float in2 = snap(6.0f);
+                        seg_soft(dev, runs[i].x + in2, ty2 + th2 - in2, runs[i].x + runs[i].w - in2, ty2 + in2,
+                                 snap(1.6f), fa((C_MUTE & 0x00FFFFFF) | 0x9A000000u));
+                    }
                     if (lift) rrect_top(dev, runs[i].x, ty2, runs[i].w, snap(2.0f), snap(8.0f), (C_ACCENTHI & 0x00FFFFFF) | 0x90000000u, (C_ACCENT & 0x00FFFFFF) | 0x00000000u);
                 }
                 // ---- PASS 2 : every icon, under ONE texture bind for the whole band ----
@@ -838,7 +851,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                             // removing it from the editor would be a one-way door. Faint = in the catalogue but
                             // not met yet. Both fade in the VERTEX colour -- a MANAGED texture's alpha
                             // mis-samples as opaque while a zone loads (reference/d3d8-rendering.md).
-                            const u32 tc = runs[i].hid ? fa(0x40FFFFFFu) : (runs[i].faint ? fa(0x70FFFFFFu) : 0xFFFFFFFFu);
+                            const u32 tc = runs[i].hid ? fa(0x22FFFFFFu) : (runs[i].faint ? fa(0x70FFFFFFu) : 0xFFFFFFFFu);
                             tquad(dev, snap(ix), snap(runs[i].iy), ics, ics, u0, u0 + au, v0, v0 + av, tc, tc);
                         }
                     }
