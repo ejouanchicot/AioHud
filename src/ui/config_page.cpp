@@ -604,8 +604,31 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             gem(dev, gxo - snap(1.0f), ty - snap(1.5f), gemR * 0.42f, C_ACCENTHI);
         }
     }
-    // subtitle : the AioHud VERSION (small-caps), to the right of the emblem -- shown on every tab.
-    fo->begin(dev); fo->draw_lc(dev, rgx + snap(14.0f), ty + snap(2.0f), "V" AIOHUD_VERSION, snap(15.0f), fa(lerpc(C_ACCENT, C_ACCENTHI, pulse)), fa(C_STROKE), 1.2f);
+    // The VERSION, as a struck plate rather than a floating word -- gold hairline, dark bed, gold text. A
+    // full-bleed masthead cannot be framed: it has no left or right edge left to draw on, and its top and bottom
+    // are already the page hairline and the rail. So the gold goes into the ELEMENTS instead of around them,
+    // and this is the one that had none: a bare word beside a struck-metal logotype reads as a caption someone
+    // forgot to finish.
+    float verRight;
+    { fo->begin(dev);
+      const char* vs = "V" AIOHUD_VERSION;
+      const float vsz = snap(14.0f), vw = fo->measure(vs, vsz);
+      const float vh = snap(24.0f), vx = rgx + snap(16.0f), vy = ty - vh * 0.5f, vpad = snap(9.0f);
+      const u32 gold = lerpc(C_GOLD, C_GOLDHI, pulse);
+      rpanel(dev, vx, vy, vw + vpad * 2.0f, vh, snap(5.0f), 0x66101820u, 0x66080C11u,
+             (gold & 0x00FFFFFFu) | 0x88000000u, snap(1.0f));
+      fo->begin(dev);
+      fo->draw_lc(dev, vx + vpad, ty + snap(1.0f), vs, vsz, fa(gold), fa(C_STROKE), 1.1f);
+      verRight = vx + vw + vpad * 2.0f; }
+
+    // A vertical gold rule after the lockup, fading out at both ends. The masthead's whole middle was empty and
+    // unstructured : this closes the name off as a unit and gives the space to its right a left edge to start
+    // from. Two quads because a single one can only ramp between two colours, and this wants to arrive from
+    // nothing and leave into nothing.
+    { const float rx2 = verRight + snap(20.0f), rh = snap(30.0f), ry2 = ty - rh * 0.5f;
+      const u32 gold = (lerpc(C_GOLD, C_GOLDHI, pulse) & 0x00FFFFFFu);
+      q4(dev, rx2, ry2, snap(1.0f), rh * 0.5f, gold, gold, gold | 0x70000000u, gold | 0x70000000u);
+      q4(dev, rx2, ty, snap(1.0f), rh * 0.5f, gold | 0x70000000u, gold | 0x70000000u, gold, gold); }
 
     // close button (X), top-right -- eased red crossfade + a tiny size bump on hover
     const float cbS = snap(36.0f), cbX = ix + iw - cbS, cbY = mhTop + (mhH - cbS) * 0.5f;   // centred in the plate, not pinned to its top
@@ -621,7 +644,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     {
         const float lh = snap(26.0f), segW = snap(34.0f), lw = segW * 2.0f;
         const float lx = cbX - snap(12.0f) - lw, ly = cbY + (cbS - lh) * 0.5f;
-        rpanel(dev, lx, ly, lw, lh, snap(7.0f), C_CTL_T, C_CTL_B, C_CTL_BR, snap(1.5f));
+        rpanel(dev, lx, ly, lw, lh, snap(7.0f), C_CTL_T, C_CTL_B,
+               (lerpc(C_GOLD, C_GOLDHI, pulse) & 0x00FFFFFFu) | 0x70000000u, snap(1.0f));   // the header's controls share the version plate's hairline
         const char* seg[2] = { "EN", "FR" };
         for (int i = 0; i < 2; ++i) {
             const float sx = lx + (float)i * segW;
