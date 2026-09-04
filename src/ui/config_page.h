@@ -231,6 +231,10 @@ private:
     // won on use: a panel that opens showing every section expanded is a wall again, and the whole point of
     // naming the sections well is that you can pick the one you want without opening any of them first.
     // Closed is also the state that makes the panel's SHAPE visible -- six labels, one screen, no scrolling.
+    // Each open section's measured height -> its card is drawn a frame later, the same one-frame-late trick the
+    // Interface and Layout categories already use. Immediate mode cannot know a block's height before drawing it,
+    // and a card drawn after its rows would cover them.
+    float pcH_[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };   // 0=Frame 1=Party 2=Alliance 3=Text 4=Buffs
     bool  pcFrameOpen_   = false;
     bool  pcBuffsOpen_   = false;   // Buffs : the strip's size/count/rows AND its order editor, one object in one place
     int   pcDistPick_    = -1;      // which distance zone's colour picker is open (-1 = none). Three open pickers was ~690px for a setting touched once.

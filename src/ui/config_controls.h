@@ -71,6 +71,12 @@ u32  lerpc(u32 a, u32 b, float t);    // linear blend of two ARGB colours
 // ---- animation springs + entrance stagger ----
 float ease(int id, int sub, float target, float speed = 18.0f);   // one 0..1 spring per (control id, sub-slot)
 float ease(int id, float target, float speed = 18.0f);            // legacy : sub 0
+// A SPRING, for the one thing ease() cannot express : direct manipulation. ease() is critically damped -- it
+// approaches and stops, which is right for a hover wash or an on/off crossfade. Something the user is MOVING
+// with their hand wants mass: it should overshoot a little and settle, because that is what tells the eye the
+// thing has weight and that the movement is finished. Defaults are ~0.74 damping ratio -- one small overshoot,
+// no wobble. Same (id, sub) slot table as ease(), so the two never fight over a value.
+float spring(int id, int sub, float target, float stiffness = 220.0f, float damping = 22.0f);
 float stagger(float anim, int i);                                 // staggered row entrance factor
 
 // ---- CONTROL IDENTITY -----------------------------------------------------------------------------------------

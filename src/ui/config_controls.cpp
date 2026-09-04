@@ -24,7 +24,7 @@ float g_dt   = 0.016f;
 float g_t    = 0.0f;
 
 // ---- per-element animation springs : one 0..1 value per stable id, eased toward a target ----
-struct Anim { int id; int sub; float v; };
+struct Anim { int id; int sub; float v; float vel; };   // vel : only a spring uses it ; ease() leaves it at 0
 static const int ANIM_MAX = 1024;  // hover/toggle springs, one per distinct (control id, sub-slot)
 static Anim g_anim[ANIM_MAX];
 static int  g_animN = 0;
@@ -128,12 +128,26 @@ float ease(int id, int sub, float target, float speed) {
             if (!full) { full = true; windower::debug::log("ease(): animation table FULL (%d springs) -- new controls will snap instead of animating", ANIM_MAX); }
             return target;
         }
-        s = &g_anim[g_animN++]; s->id = id; s->sub = sub; s->v = target;
+        s = &g_anim[g_animN++]; s->id = id; s->sub = sub; s->v = target; s->vel = 0.0f;
     }
     s->v += (target - s->v) * clampf(g_dt * speed, 0.0f, 1.0f);
     return s->v;
 }
 float ease(int id, float target, float speed) { return ease(id, 0, target, speed); }
+float spring(int id, int sub, float target, float stiffness, float damping) {
+    Anim* s = nullptr;
+    for (int i = 0; i < g_animN; ++i) if (g_anim[i].id == id && g_anim[i].sub == sub) { s = &g_anim[i]; break; }
+    if (!s) {
+        if (g_animN >= ANIM_MAX) return target;   // budget spent : snap, and ease() already says so once in the log
+        s = &g_anim[g_animN++]; s->id = id; s->sub = sub; s->v = target; s->vel = 0.0f;
+    }
+    // Semi-implicit Euler, with dt CLAMPED. A long frame (a zone load, a stall) would otherwise integrate a huge
+    // step and fling the value across the screen -- the classic way a spring explodes in a game loop.
+    float dt = g_dt; if (dt < 0.0f) dt = 0.0f; if (dt > 0.033f) dt = 0.033f;
+    s->vel += ((target - s->v) * stiffness - s->vel * damping) * dt;
+    s->v   += s->vel * dt;
+    return s->v;
+}
 // staggered entrance factor (ease-out cubic) for content row i : later rows start a touch later.
 // The per-row delay is CAPPED so long, scrollable lists still reach FULL opacity when the page is
 // open -- without the cap, rows past index ~22 got a factor of 0 and stayed invisible.

@@ -111,6 +111,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // ========================================================== FRAME =========================================================
     // The same block every module gets, because it drives the same shared code. Drawn by draw_frame_section so
     // the party box and the alliance boxes cannot drift apart -- they used to be two ~90-line copies.
+    const float pcTop0 = ry;   // the card is drawn from LAST frame's height, behind this section
+    if (pcFrameOpen_) cat_panel(dev, hdrX, ry, hdrW, pcH_[0]);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_)) pcFrameOpen_ = !pcFrameOpen_;
     ROW_NEXT(42.0f)
     if (pcFrameOpen_) {
@@ -119,6 +121,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                            &ui_config().skinTheme, &ui_config().skinHue, &ui_config().skinLum, &ui_config().skinBoxAlpha,
                            &ui_config().border[0], &ui_config().borderCost, tr("Cost box", "BoÃ®te coÃ»t"));
     }   // end Frame
+    pcH_[0] = pcFrameOpen_ ? (ry - pcTop0) : 0.0f;   // measured -> next frame's card
 
     // ========================================================== PARTY ==========================================================
     // The party box itself : whether it shows, how big, and what a member row carries. Its FRAME is the section
@@ -126,6 +129,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // the strip is one object and its editor belongs with the settings that describe it.
     // The only section that really differs between modules, so it gets the room. Grouped by the OBJECT each setting
     // acts on -- gauges, badge, buffs, cursor -- which is what turns three rows into one.
+    const float pcTop1 = ry;   // the card is drawn from LAST frame's height, behind this section
+    if (catOpen_[1]) cat_panel(dev, hdrX, ry, hdrW, pcH_[1]);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
     ROW_NEXT(42.0f)
     if (catOpen_[1]) {
@@ -254,12 +259,15 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             if (pcDistPick_ >= 0 && pcDistPick_ < 3) { CFG_COLOR_PICKER_I(dcol[pcDistPick_], pcDistPick_) }
         }
     }   // end Party
+    pcH_[1] = catOpen_[1] ? (ry - pcTop1) : 0.0f;   // measured -> next frame's card
 
     // ==================================================== ALLIANCE ====================================================
     // The SAME three sections as the party box, in the same order, holding the same kinds of thing. That is the
     // point of a grammar : what you learned one category up still applies here. Alliance has no buff strip (the game
     // never sends alliance buffs) and no selection cursor, so those simply do not appear -- a missing row is not a
     // different layout.
+    const float pcTop2 = ry;   // the card is drawn from LAST frame's height, behind this section
+    if (catOpen_[7]) cat_panel(dev, hdrX, ry, hdrW, pcH_[2]);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (catOpen_[7]) {
@@ -343,8 +351,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           ROW_NEXT(bh2)
         }
     }   // end Alliance
+    pcH_[2] = catOpen_[7] ? (ry - pcTop2) : 0.0f;   // measured -> next frame's card
 
     // =========================================================== TEXT ===========================================================
+    const float pcTop3 = ry;   // the card is drawn from LAST frame's height, behind this section
+    if (catOpen_[0]) cat_panel(dev, hdrX, ry, hdrW, pcH_[3]);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0])) catOpen_[0] = !catOpen_[0];
     ROW_NEXT(42.0f)
     if (catOpen_[0]) {
@@ -441,6 +452,10 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // "how do my buffs show up" meant visiting two places.
     // It is also why this is a top-level section rather than a sub-section: the band is an EDITOR, and nesting it
     // one level deeper is exactly the third disclosure level the research says to avoid.
+    pcH_[3] = catOpen_[0] ? (ry - pcTop3) : 0.0f;   // measured -> next frame's card
+
+    const float pcTop4 = ry;   // the card is drawn from LAST frame's height, behind this section
+    if (pcBuffsOpen_) cat_panel(dev, hdrX, ry, hdrW, pcH_[4]);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_)) pcBuffsOpen_ = !pcBuffsOpen_;
     ROW_NEXT(42.0f)
     if (pcBuffsOpen_) {
@@ -689,10 +704,18 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // BOTH axes are eased. X alone was half a reflow : a block pushed onto the next line slid sideways
                 // and then teleported down, which is the one moment the eye most needs to follow it. With Y eased
                 // too, a block that wraps travels there, and dragging between lines reads as one continuous motion.
-                { const float sp = carrying ? 26.0f : 1000.0f;   // idle : snap, so a rebuilt list cannot animate the wrong block
-                  for (int k = 0; k < nRun; ++k) {
-                      runs[k].x  = ease(dragUid, 128 + k, tx[k], sp);
-                      runs[k].by = ease(dragUid, 256 + k, sy0 + tline[k] * lineH, sp);
+                // While something is CARRIED the tiles move on springs : they lead, overshoot a hair and settle,
+                // which is what makes a reflow read as things being pushed aside rather than redrawn elsewhere.
+                // Idle they snap (ease at a huge speed) -- there is nothing being manipulated, and a rebuilt list
+                // must not animate one tile into another tile's place.
+                { for (int k = 0; k < nRun; ++k) {
+                      if (carrying) {
+                          runs[k].x  = spring(dragUid, 128 + k, tx[k]);
+                          runs[k].by = spring(dragUid, 256 + k, sy0 + tline[k] * lineH);
+                      } else {
+                          runs[k].x  = ease(dragUid, 128 + k, tx[k], 1000.0f);
+                          runs[k].by = ease(dragUid, 256 + k, sy0 + tline[k] * lineH, 1000.0f);
+                      }
                   } }
 
                 // ---- grab : remember WHERE in the block you took hold of it ----
@@ -828,6 +851,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             }
         }
     }   // end Buffs
+    pcH_[4] = pcBuffsOpen_ ? (ry - pcTop4) : 0.0f;   // measured -> next frame's card
 
     #undef ROW_BAND
     #undef ROW_NEXT
