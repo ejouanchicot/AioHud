@@ -138,6 +138,11 @@ struct UiConfig {
     int   uiStyle   = 0;       // config-menu colour STYLE / family (Neon / Matte / Medieval / Heroic / Pastel ...)
     int   uiColor   = 0;       // colour index WITHIN the chosen style
     unsigned uiAccent = 0;     // custom config-menu accent (0 = use uiStyle/uiColor preset ; else derive the accent family from this opaque colour)
+    // The config overlay's SHAPE. 1 = drawer : the menu occupies a column on the left and the rest of the screen
+    // stays the game, dimmed, with the real HUD live in it -- you see what you are changing while you change it.
+    // 0 = the original full-screen page, which covers the game and therefore needs a synthetic preview pane to
+    // compensate. Kept switchable on purpose: this is a taste call, and it must be one click to undo.
+    int   cfgDrawer = 1;
     int   hidePeekMode = 0;    // the HUD-hide key (End) : 0 = HOLD (hidden only while held) ; 1 = TOGGLE (press to hide, press again to show)
     float cursorScale = 1.0f;  // selection-cursor (hand) size multiplier (0.50 .. 2.00)
     // ---- Target module (its OWN box theme, independent of the party skinTheme) ----

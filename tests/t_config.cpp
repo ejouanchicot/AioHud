@@ -60,6 +60,7 @@ static void scribble(UiConfig& c, int seed) {
     c.allyThemeCopy = i1 & 1; c.allyTheme = i1 % 3; c.allyLum = f1 * 0.4f; c.allyHue = x1 + 7; c.allyBoxAlpha = f1 * 0.9f;
     c.fontFace = i1 % 3; c.buffScale = 0.5f + 0.25f * seed; c.buffMax = 4 + seed; c.buffRows = 1 + (seed & 1);
     c.uiStyle = i1 % 8; c.uiColor = i1 % 12; c.uiAccent = x1 + 11; c.hidePeekMode = i1 & 1;
+    c.cfgDrawer = i1 & 1;
     c.cursorScale = 0.6f + 0.2f * seed; c.lang = i1 & 1;
 
     c.tgtBox = i1 & 1; c.tgtBoxAlpha = f1; c.tgtScale = 0.8f + 0.1f * seed; c.tgtTheme = i1 % 3;
