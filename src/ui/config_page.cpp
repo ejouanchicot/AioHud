@@ -489,13 +489,17 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
               const float k = lp / 0.42f;
               const float rx = 0.46f, ry = 0.62f, tilt = 0.22f;   // ellipse radii in quad fractions ; tilt = lean
               const float c2 = -rx - 0.2f + (1.0f + 2.0f * rx + 0.4f) * k;
-              // PEAK is bounded by the frame buffer, not by taste. Gold sits at 227..255 and this pass ADDS to
-              // it, so past a certain strength red and green hit 255, the highlight goes flat where they clip,
-              // and the boundary of that flat region is a hard edge that travels with the sweep -- which is the
-              // "abrupt sides", and no amount of shaping the falloff can remove it. A real engine solves this in
-              // HDR; in an 8-bit buffer the only lever is to stay under the ceiling. 38 puts the brightest gold
-              // at roughly 255 with nothing beyond it, so the falloff is the whole of what is visible.
-              const float peakF = 38.0f;
+              // A highlight that CANNOT clip, which is what finally settles the hard sides.
+              // Plain additive light is proportional to the texel (MODULATE), so the brightest gold gets the
+              // most added and reaches 255 first ; the region where it saturates goes flat, and the boundary of
+              // that flat region is a hard edge travelling with the sweep. Shaping the falloff cannot help --
+              // clipping is not a falloff problem -- and the only remaining lever was to keep the peak so low
+              // the effect barely showed.
+              // D3DTA_COMPLEMENT is the way out. OR-ed into COLORARG1 the stage receives (1 - texel), so the
+              // light added is proportional to the room LEFT in each channel: dst = tex + (1-tex)*k, which is a
+              // screen blend. It approaches 255 and never passes it, at any strength, on any pixel. A texel
+              // already at 255 receives exactly nothing. So the peak can go up where it was forced down.
+              const float peakF = 150.0f;
               const u32   tintG = 0x00FFE9B4u;                    // warm, not white : light ON gold, not instead of it
               struct G { static u32 at(float u, float v, float c3, float rx2, float ry2, float tl, float pk) {
                   const float ax = (u - (c3 + tl * (v - 0.5f))) / rx2;
@@ -505,6 +509,9 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                   return (u32)(pk * w2 * w2); } };
               dTexQuadState(dev, logoTex_, true);
               dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);         // ADD light to the gold, never replace it
+              dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE | D3DTA_COMPLEMENT);   // ... proportional to the room left
+              // ALPHAARG1 stays the plain TEXTURE : the glyph mask must not be complemented, or the light would
+              // land in the gaps between the letters instead of on them.
               const int NX = 32, NY = 8;
               for (int gy = 0; gy < NY; ++gy) {
                   const float v0 = (float)gy / (float)NY, v1 = (float)(gy + 1) / (float)NY;
@@ -520,7 +527,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                   }
               }
           } }
-        dSetTex(dev, 0, 0); cs(dev);   // reset the blend after the additive pass (rule 3) and unbind (rule 8)
+        dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);   // drop the complement before anything else draws (rule 8)
+        dSetTex(dev, 0, 0); cs(dev);   // reset the blend after the additive pass (rule 3) and unbind
         rgx = lkX + lkW * LOGO_ART_X1;
     } else {
         // FALLBACK, and the only reason the live wordmark survives at all : an art file that failed to load must

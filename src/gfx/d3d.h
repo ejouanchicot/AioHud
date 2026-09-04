@@ -35,6 +35,10 @@ enum {
     D3DTSS_MAGFILTER = 16, D3DTSS_MINFILTER = 17, D3DTSS_MIPFILTER = 18, D3DTSS_MIPMAPLODBIAS = 19,
     D3DTEXF_NONE = 0, D3DTEXF_LINEAR = 2,
     D3DTOP_DISABLE = 1, D3DTOP_SELECTARG1 = 2, D3DTOP_SELECTARG2 = 3, D3DTOP_MODULATE = 4, D3DTA_DIFFUSE = 0, D3DTA_TEXTURE = 2,
+    // Argument MODIFIER, OR-ed into a COLORARG/ALPHAARG : the stage receives (1 - arg) instead of arg. It is
+    // what makes a highlight that cannot clip -- add light proportional to the COMPLEMENT of the texel and a
+    // texel already at 255 receives none (config_page.cpp, the logo gleam).
+    D3DTA_COMPLEMENT = 0x00000010,
     D3DTADDRESS_WRAP = 1, D3DTADDRESS_CLAMP = 3, D3DTADDRESS_BORDER = 4,
 };
 
