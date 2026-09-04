@@ -230,9 +230,9 @@ private:
     int   bsDrop_  = -1;   // where it would land (insertion index ; -1 = nowhere)
     int   bsEnter_ = 0;    // the press landed on the ALREADY selected entry -> if it turns out not to be a drag, go inside it
     float bsGrabDX_ = 0.0f;       // where inside the block you took hold of it, so it hangs off the pointer there
-    float bsGrabX_  = 0.0f;       // pointer x at the grab -- a press that never travels is a CLICK, not a drag
+    float bsGrabX_  = 0.0f;       // pointer at the grab -- a press that never travels is a CLICK, not a drag
+    float bsGrabY_  = 0.0f;       //   (both axes : dragging straight up between lines barely moves x)
     int   bsMoved_  = 0;          // the pointer has travelled far enough for this to be a drag
-    int   bsLine_   = 0;          // which LINE of the wrapped band the carried block is considered to be on
     bool  trkCatOpen_[48] = { false };   // per-category collapsible state within the checklist (index = TrackCat). MUST be >= TC_COUNT (job_track_gen.h) : it silently overflowed into jaJobOpen_ once TC_COUNT passed 32 (TC_JA/TC_OTHER indexed out of bounds) -- grown 32->48 at TC_COUNT=38 (added Food/Aftermath/Signet/Craft). Same trap as relOpen_.
     bool  jaJobOpen_[24] = { false };    // Buff filter / Job Abilities : per-JOB sub-section collapse (index = job id 1..23 ; in-memory only, NOT serialised). The current main job is forced open each frame.
     // animation state (driven by the frame clock)

@@ -534,9 +534,16 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             // top-RIGHT block, against the member row -- the direction the HUD strip fills, continued exactly the
             // way its own two-row mode continues.
             {
+                // A press LATCHES the tile ; it does not yet CARRY it. Until the pointer has travelled past the
+                // threshold, the tile stays exactly where it is -- no lift, no gap, no reflow. Detaching on the
+                // press meant a plain click to open a group looked like the start of a move : the tile jumped to
+                // the cursor and the band opened a hole, then everything snapped back. A drag should have to be
+                // meant. (`bsMoved_` is the same travel test that already decides click-vs-drag on release, so
+                // the two can never disagree about what the gesture was.)
+                const bool carrying = (bsDrag_ >= 0 && bsMoved_ != 0);
                 // ---- the order the blocks are laid out in : with the carried one lifted out and re-inserted ----
                 int vis[64], nv = 0;
-                if (bsDrag_ >= 0 && bsDrop_ >= 0) {
+                if (carrying && bsDrop_ >= 0) {
                     for (int k = 0; k < nRun; ++k) if (k != bsDrag_) { if (nv == bsDrop_) vis[nv++] = bsDrag_; vis[nv++] = k; }
                     if (nv <= bsDrop_) vis[nv++] = bsDrag_;
                 } else for (int k = 0; k < nRun; ++k) vis[nv++] = k;
@@ -565,7 +572,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // BOTH axes are eased. X alone was half a reflow : a block pushed onto the next line slid sideways
                 // and then teleported down, which is the one moment the eye most needs to follow it. With Y eased
                 // too, a block that wraps travels there, and dragging between lines reads as one continuous motion.
-                { const float sp = (bsDrag_ >= 0) ? 26.0f : 1000.0f;   // idle : snap, so a rebuilt list cannot animate the wrong block
+                { const float sp = carrying ? 26.0f : 1000.0f;   // idle : snap, so a rebuilt list cannot animate the wrong block
                   for (int k = 0; k < nRun; ++k) {
                       runs[k].x  = ease(dragUid, 128 + k, tx[k], sp);
                       runs[k].by = ease(dragUid, 256 + k, sy0 + tline[k] * lineH, sp);
@@ -577,40 +584,36 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 if (bsDrag_ < 0 && hot >= 0 && ctrl_drag_begin(dragUid, mo, true)) {
                     bsEnter_ = (bsSel_ == hot) ? 1 : 0;   // a press on the ALREADY selected block means "go inside", if it turns out not to be a drag
                     bsDrag_ = hot; bsDrop_ = hot; bsSel_ = hot;
-                    bsGrabDX_ = mo->x - runs[hot].x; bsGrabX_ = mo->x; bsMoved_ = 0;
-                    bsLine_ = tline[hot];
+                    bsGrabDX_ = mo->x - runs[hot].x; bsGrabX_ = mo->x; bsGrabY_ = mo->y; bsMoved_ = 0;
                 }
 
                 // ---- where would it land ? ----
-                // Count how many of the OTHER blocks come BEFORE the carried one in reading order -- earlier line,
-                // or same line and further right. That count IS the insertion index, and it is monotonic in the
-                // pointer, so it cannot oscillate. The test uses the CARRIED BLOCK'S CENTRE, not the pointer :
-                // grab a block by its right edge and the pointer crosses a neighbour while the block visibly has
-                // not. The +/- epsilon is a dead zone -- inside it the current arrangement is kept, so a centre
-                // resting on a boundary does not flutter between two answers.
+                // Decided against a layout that does NOT depend on the answer : the other tiles, in reading order,
+                // at the uniform cellW. Using the DRAWN positions was a feedback loop -- they have already moved
+                // because of the previous frame's answer, and with wrapping a change of answer moves tiles between
+                // LINES, which changes the very positions the next answer is read from. That is what made a drag
+                // from the third line feel like it was arguing with you.
+                // The rule is now the one a hand expects : the slot the carried tile's CENTRE is over. Uniform
+                // cells make that a division instead of a search, and the presentation (the gap opening) is left
+                // free to follow the answer without ever feeding it.
+                const int perLine = (int)((ctrlW + gapR) / (cellW + gapR)) > 0 ? (int)((ctrlW + gapR) / (cellW + gapR)) : 1;
                 if (bsDrag_ >= 0 && ctrl_drag_active(dragUid) && mo) {
-                    const float cx = (mo->x - bsGrabDX_) + runs[bsDrag_].w * 0.5f;
-                    // The LINE is sticky as well. A hard boundary meant a centre resting near it flipped a whole
-                    // line's worth of arrangement back and forth -- far more violent than the horizontal case,
-                    // because a line change re-wraps everything. You have to move CLEARLY into the next line.
-                    int cl = bsLine_;
-                    { const float top = sy0 + bsLine_ * lineH, hysY = snap(10.0f);
-                      if (mo->y < top - hysY) --cl; else if (mo->y > top + lineH + hysY) ++cl; }
-                    if (cl < 0) cl = 0; if (cl >= nLines) cl = nLines - 1;
-                    bsLine_ = cl;
-                    const float eps = snap(7.0f);
-                    int atLo = 0, atHi = 0;
-                    for (int k = 0; k < nRun; ++k) {
-                        if (k == bsDrag_) continue;
-                        const float kc = tx[k] + runs[k].w * 0.5f;
-                        if (tline[k] < cl) { ++atLo; ++atHi; continue; }
-                        if (tline[k] > cl) continue;
-                        if (kc > cx + eps) ++atLo;
-                        if (kc > cx - eps) ++atHi;
+                    // Travel first : it is what promotes a latched press into a real carry. 6px is the stickiness --
+                    // enough that a click cannot trip it, little enough that a move never feels resisted.
+                    { const float dx0 = mo->x - bsGrabX_, dy0 = mo->y - bsGrabY_;
+                      const float ax = dx0 < 0 ? -dx0 : dx0, ay = dy0 < 0 ? -dy0 : dy0;
+                      if (ax > snap(6.0f) || ay > snap(6.0f)) bsMoved_ = 1; }
+                    if (bsMoved_) {
+                        const float cx = (mo->x - bsGrabDX_) + cellW * 0.5f;   // the carried tile's centre, not the pointer's
+                        int col = (int)((rightX - cx + cellW * 0.5f) / (cellW + gapR));   // 0 = the rightmost slot
+                        if (col < 0) col = 0; if (col >= perLine) col = perLine - 1;
+                        int line = (int)((mo->y - sy0) / lineH);
+                        const int maxLine = (nRun - 1) / perLine;
+                        if (line < 0) line = 0; if (line > maxLine) line = maxLine;
+                        int at = line * perLine + col;
+                        if (at < 0) at = 0; if (at > nRun - 1) at = nRun - 1;
+                        bsDrop_ = at;
                     }
-                    bsDrop_ = (bsDrop_ >= atLo && bsDrop_ <= atHi) ? bsDrop_ : ((bsDrop_ < atLo) ? atLo : atHi);
-                    const float dx = mo->x - bsGrabX_;
-                    if ((dx < 0 ? -dx : dx) > snap(4.0f)) bsMoved_ = 1;   // click or drag is decided by TRAVEL, never by whether the index moved
                 }
 
                 // ---- release ----
@@ -622,7 +625,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     bsEnter_ = 0; bsMoved_ = 0;
                 }
                 // the carried block leaves the layout and follows the pointer
-                if (bsDrag_ >= 0 && mo) runs[bsDrag_].x = mo->x - bsGrabDX_;
+                if (carrying && mo) runs[bsDrag_].x = mo->x - bsGrabDX_;
 
                 // ---- PASS 1 : the TILES (colour-quad state) ----
                 // Every block is a real cell : a rounded panel with a border, drawn always -- not only when hovered.
@@ -631,7 +634,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // separate tint rule underneath is gone : one identity mark per tile, not two.
                 for (int k = 0; k < nv; ++k) {
                     const int i = vis[k];
-                    const bool lift = (i == bsDrag_);
+                    const bool lift = carrying && (i == bsDrag_);
                     const float by = lift ? ((mo ? mo->y : sy0) - lineH * 0.5f) : runs[i].by;   // carried : centred on the pointer ; the rest : their eased slot
                     const float ty2 = by + snap(3.0f), th2 = lineH - snap(6.0f);   // inset, so wrapped lines do not touch
                     runs[i].ly = by + snap(12.0f);
@@ -644,7 +647,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     } else if (i == bsSel_) {
                         ft = (C_ACCENT & 0x00FFFFFF) | 0x3C000000u; fb = (C_ACCENT & 0x00FFFFFF) | 0x18000000u;
                         br = C_ACCENTHI; bw2 = snap(1.5f);
-                    } else if (i == hot && bsDrag_ < 0) {
+                    } else if (i == hot && !carrying) {
                         ft = 0x40202830u; fb = 0x40161C22u; br = (tint & 0x00FFFFFF) | 0xAA000000u; bw2 = snap(1.3f);
                     } else {
                         ft = 0x2A141A1Fu; fb = 0x2A0E1317u;
@@ -679,7 +682,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 for (int i = 0; i < nRun; ++i) {
                     if (!runs[i].lbl) continue;
                     const u32 c2 = runs[i].hid ? C_MUTE
-                                 : (i == bsSel_ || i == bsDrag_) ? C_ACCENTHI
+                                 : (i == bsSel_ || (carrying && i == bsDrag_)) ? C_ACCENTHI
                                  : (runs[i].faint ? C_MUTE : C_DIM);
                     fo->draw_c(dev, runs[i].x + runs[i].w * 0.5f, runs[i].ly, runs[i].lbl, lsz, fa(c2), fa(C_STROKE), 1.0f);
                 }
