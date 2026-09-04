@@ -468,9 +468,13 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         const float lkW = lkH * (float)LOGO_TEX_W / (float)LOGO_TEX_H;
         const float lkX = ix + snap(2.0f) - lkW * LOGO_ART_X0;
         const float lkY = ty - lkH * (LOGO_ART_Y0 + LOGO_ART_Y1) * 0.5f;
-        cs_add(dev); soft_blob(dev, lkX + lkW * (LOGO_ART_X0 + LOGO_ART_X1) * 0.5f, ty,
-                               lkW * (LOGO_ART_X1 - LOGO_ART_X0) * 0.56f, artH * 0.75f,
-                               ((u32)(40.0f * (0.6f + 0.4f * pulse)) << 24) | acc); cs(dev);   // it sits IN the light, not on it
+        // (No glow behind the logo. There was one -- 274x68px of accent at alpha 40, PULSING on a two-second
+        //  sine -- and it was the "opaque rectangle over the word" through every one of the gleam's six
+        //  rewrites, none of which could touch it. soft_blob is a bilinear tent: straight edges, hard corners,
+        //  so at the size of the wordmark it IS a blurred rectangle, and breathing twice a second it reads as an
+        //  effect passing over. The plate's own drifting lights get away with the same shape only because they
+        //  are wide enough that their edges fall outside it. Third tent found this way; the lesson is to sweep
+        //  for the SHAPE whenever one of them turns out to be the culprit, not to fix the one that was noticed.)
         dTexQuadState(dev, logoTex_, false);
         tquad(dev, snap(lkX), snap(lkY), lkW, lkH, 0.0f, 1.0f, 0.0f, 1.0f, fa(0xFFFFFFFFu), fa(0xFFFFFFFFu));
         // GLEAM : a light travelling across the letterforms, masked BY the letterforms. A second textured pass
