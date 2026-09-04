@@ -474,55 +474,50 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         dTexQuadState(dev, logoTex_, false);
         tquad(dev, snap(lkX), snap(lkY), lkW, lkH, 0.0f, 1.0f, 0.0f, 1.0f, fa(0xFFFFFFFFu), fa(0xFFFFFFFFu));
         // GLEAM : a light travelling across the letterforms, masked BY the letterforms. A second textured pass
-        // of the same art, additive, its vertex colours forming a moving triangular ramp -- so the highlight
-        // rides the gold and leaves the gaps between letters dark. Drawing a bright rectangle over the logo
-        // instead would have swept a visible box across the plate, which is the cheap version of this and looks
-        // it. tquad's two colours are LEFT and RIGHT, which is exactly the axis a sweep needs.
+        // of the same art, additive, so the highlight rides the gold and the gaps between letters stay dark.
+        // It has a SHAPE. The first version varied only in x -- a band spanning the logo's full height, with
+        // soft flanks but a top and a bottom cut dead straight. That is not a reflection, it is a ribbon, and
+        // straight edges are exactly what kept reading as a rectangle sliding over the word however smooth the
+        // horizontal ramp became. The light is now a tilted ELLIPSE: alpha falls off in both axes from a moving
+        // centre, so it fades out at the top and bottom of the letters as well as at its leading and trailing
+        // edges, and there is no straight edge anywhere in it.
+        // Which needs a GRID, not a row of slices: tquad4 takes four independent corner colours, so a cell can
+        // carry a 2D gradient. 20 x 6 cells over the quad is a cell every ~12px, and a cosine sampled that
+        // finely and interpolated linearly between samples is smooth well past what the eye resolves.
         { const float per = 7.0f; float lp = f.t / per; lp -= floorf(lp);
-          if (lp < 0.46f) {
-              const float k = lp / 0.46f, bw = 0.78f;
-              const float c2 = -bw + (1.0f + 2.0f * bw) * k;         // centre travels from off-left to off-right
-              // WHY THIS IS A SWELL AND NOT A STREAK, after three attempts at a streak.
-              // The texture stage is MODULATE, so the additive pass contributes texRGB * diffuse * alpha: the
-              // light added is PROPORTIONAL TO THE TEXEL'S OWN BRIGHTNESS. Gold's bevel highlights already sit
-              // near 255, so they clip first and hardest, and a clipped region has a flat top whose boundary is
-              // a hard line -- by construction, at any peak, however smooth the ramp feeding it. Lowering the
-              // peak from 120 to 46 moved that boundary; it could not remove it. Fixed-function has no per-pixel
-              // test to add light only where there is room for it.
-              // What CAN be removed is the band. At bw 0.78 the ramp is wider than the wordmark itself, so no
-              // edge of it is ever inside the art -- the whole logo brightens and falls again as the peak passes
-              // over, and there is no travelling boundary to read as hard. Slower, wider, quieter: 24 slices and
-              // a peak that stays under the ceiling on everything but the highlights themselves.
-              // 58, not 34. Frozen at 34 the swell was invisible -- which is what finally proved this was not
-              // what looked harsh. With no edge of the ramp ever inside the art, a peak that clips the very
-              // brightest bevels is fine: it saturates smoothly at the centre of a dome instead of drawing a
-              // boundary.
-              const float peakF = 58.0f;
-              const u32   tintG = 0x00FFE9B4u;
-              // The profile is a RAISED COSINE, squared, sampled across many slices. A triangle looked hard-edged
-              // and was: its slope breaks at the peak and again at both ends, and the eye reads a discontinuity
-              // in the DERIVATIVE as an edge even when the value itself is continuous (Mach bands). This curve is
-              // flat at the centre and flat where it reaches zero, so there is nothing for the eye to catch.
-              // Slices are NOT pixel-snapped either: snapping x while computing width in floats left a hairline
-              // seam between them, which was the other half of what read as "sharp limits". A glow is the one
-              // thing that gains nothing from the pixel grid.
-              struct A { static u32 at(float t, float c3, float bw2, float pk) {
-                  float d = fabsf(t - c3) / bw2; if (d > 1.0f) d = 1.0f;
-                  const float wgt = 0.5f + 0.5f * cosf(3.14159265f * d);
-                  return (u32)(pk * wgt * wgt); } };
+          if (lp < 0.42f) {
+              const float k = lp / 0.42f;
+              const float rx = 0.46f, ry = 0.62f, tilt = 0.22f;   // ellipse radii in quad fractions ; tilt = lean
+              const float c2 = -rx - 0.2f + (1.0f + 2.0f * rx + 0.4f) * k;
+              // PEAK is bounded by the frame buffer, not by taste. Gold sits at 227..255 and this pass ADDS to
+              // it, so past a certain strength red and green hit 255, the highlight goes flat where they clip,
+              // and the boundary of that flat region is a hard edge that travels with the sweep -- which is the
+              // "abrupt sides", and no amount of shaping the falloff can remove it. A real engine solves this in
+              // HDR; in an 8-bit buffer the only lever is to stay under the ceiling. 38 puts the brightest gold
+              // at roughly 255 with nothing beyond it, so the falloff is the whole of what is visible.
+              const float peakF = 38.0f;
+              const u32   tintG = 0x00FFE9B4u;                    // warm, not white : light ON gold, not instead of it
+              struct G { static u32 at(float u, float v, float c3, float rx2, float ry2, float tl, float pk) {
+                  const float ax = (u - (c3 + tl * (v - 0.5f))) / rx2;
+                  const float ay = (v - 0.5f) / ry2;
+                  float d = sqrtf(ax * ax + ay * ay); if (d > 1.0f) d = 1.0f;
+                  const float w2 = 0.5f + 0.5f * cosf(3.14159265f * d);
+                  return (u32)(pk * w2 * w2); } };
               dTexQuadState(dev, logoTex_, true);
-              dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);            // ADD light to the gold, never replace it
-              const int NS = 24;
-              for (int i2 = 0; i2 < NS; ++i2) {
-                  float t0 = c2 - bw + (2.0f * bw) * (float)i2 / (float)NS;
-                  float t1 = c2 - bw + (2.0f * bw) * (float)(i2 + 1) / (float)NS;
-                  if (t1 <= 0.0f || t0 >= 1.0f) continue;
-                  if (t0 < 0.0f) t0 = 0.0f;
-                  if (t1 > 1.0f) t1 = 1.0f;
-                  if (t1 - t0 <= 0.0005f) continue;
-                  const u32 a0 = A::at(t0, c2, bw, peakF), a1 = A::at(t1, c2, bw, peakF);
-                  tquad(dev, lkX + lkW * t0, lkY, lkW * (t1 - t0), lkH,
-                        t0, t1, 0.0f, 1.0f, fa((a0 << 24) | tintG), fa((a1 << 24) | tintG));
+              dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);         // ADD light to the gold, never replace it
+              const int NX = 32, NY = 8;
+              for (int gy = 0; gy < NY; ++gy) {
+                  const float v0 = (float)gy / (float)NY, v1 = (float)(gy + 1) / (float)NY;
+                  for (int gx = 0; gx < NX; ++gx) {
+                      const float u0 = (float)gx / (float)NX, u1 = (float)(gx + 1) / (float)NX;
+                      const u32 aTL = G::at(u0, v0, c2, rx, ry, tilt, peakF), aTR = G::at(u1, v0, c2, rx, ry, tilt, peakF);
+                      const u32 aBL = G::at(u0, v1, c2, rx, ry, tilt, peakF), aBR = G::at(u1, v1, c2, rx, ry, tilt, peakF);
+                      if (!(aTL | aTR | aBL | aBR)) continue;     // wholly outside the ellipse -> nothing to draw
+                      tquad4(dev, lkX + lkW * u0, lkY + lkH * v0, lkW * (u1 - u0), lkH * (v1 - v0),
+                             u0, u1, v0, v1,
+                             fa((aTL << 24) | tintG), fa((aTR << 24) | tintG),
+                             fa((aBL << 24) | tintG), fa((aBR << 24) | tintG));
+                  }
               }
           } }
         dSetTex(dev, 0, 0); cs(dev);   // reset the blend after the additive pass (rule 3) and unbind (rule 8)
