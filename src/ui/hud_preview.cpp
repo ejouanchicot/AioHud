@@ -310,7 +310,14 @@ void Hud::draw_config_preview(const Frame& f) {
     // the thing everyone sees: the strip pushes the visual mass left, so a box centred on its own footprint
     // sits visibly right of centre. buff_reserve_w() is the width the strip really drew last frame, and it was
     // exposed for exactly this.
-    const float buffW    = tiers[0]->buff_reserve_w();
+    // CLAMPED to what the stage can actually show. buff_reserve_w() is the width the strip RESERVES, and the
+    // preview then clips that strip at the stage's left edge (set_party_preview_buff_left, with a "+N" for
+    // the rest). Centring on the reserved width therefore centred on something wider than what gets drawn,
+    // and the whole cluster slid right as soon as Buff Size grew -- the exact symptom. Centre on what will
+    // be VISIBLE : the cluster can then never overflow the stage, and the strip drops to "+N" instead.
+    float buffW = tiers[0]->buff_reserve_w();
+    const float buffRoom = psw - pw - snap(12.0f);
+    if (buffW > buffRoom) buffW = (buffRoom > 0.0f) ? buffRoom : 0.0f;
     const float boxX     = (float)(int)(psx + (psw - (pw + buffW)) * 0.5f + buffW + 0.5f);
     const float partyTop = (float)(int)(psy + (psh + stackH) * 0.5f - ph + 0.5f);    // centre the whole stack vertically
     for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->set_origin(boxX, partyTop);   // shared X ; party Y anchors the stack
