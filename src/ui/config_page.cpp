@@ -433,11 +433,12 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         soft_blob(dev, sw * (0.18f + 0.10f * sinf(f.t * 0.17f)) + par * snap(26.0f), cy2, sw * 0.26f, mhH * 0.95f, (26u << 24) | acc);
         soft_blob(dev, sw * (0.55f + 0.14f * sinf(f.t * 0.11f + 2.1f)) + par * snap(14.0f), cy2, sw * 0.30f, mhH * 0.85f, (18u << 24) | (C_GOLD & 0x00FFFFFF));
         soft_blob(dev, sw * (0.86f + 0.08f * sinf(f.t * 0.23f + 4.0f)) + par * snap(34.0f), cy2, sw * 0.20f, mhH * 0.90f, (16u << 24) | acc);
-        // A single wider light crossing the whole plate, once every ~13 s and out of step with everything else,
-        // so the band has a slow event in it as well as a slow drift. Feathered, because the one thing that has
-        // already failed here is a hard-edged quad pretending to be light.
-        { float cr = f.t / 13.0f; cr -= floorf(cr);
-          soft_blob(dev, sw * (-0.18f + 1.36f * cr), cy2, sw * 0.15f, mhH * 1.15f, (20u << 24) | (C_GOLDHI & 0x00FFFFFF)); }
+        // (A single wider light used to cross the whole plate here every 13 s. It was the "rectangle sliding
+        //  over the word": soft_blob is a bilinear TENT -- its falloff is linear and its outer boundary is four
+        //  straight lines, so at 380px wide it reads as a blurred rectangle with visible edges, and it passed
+        //  straight over the logo. The three drifting lights get away with the same shape only because they are
+        //  wide enough that their edges sit off the plate. Removed rather than resized: the band already has a
+        //  slow event in it, and it cost three rounds of tuning the WRONG element to find that out.)
         // (Slanted light streaks were tried here and removed. A parallelogram out of axis-aligned quads needs
         //  the steps to be invisible, and on a 2400px page they were 18px wide with a 1.6px rise -- so it read as
         //  vertical banding rather than as a diagonal, and `flat` has no feathered edge to hide the seams. The
@@ -492,7 +493,11 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
               // edge of it is ever inside the art -- the whole logo brightens and falls again as the peak passes
               // over, and there is no travelling boundary to read as hard. Slower, wider, quieter: 24 slices and
               // a peak that stays under the ceiling on everything but the highlights themselves.
-              const float peakF = 34.0f;
+              // 58, not 34. Frozen at 34 the swell was invisible -- which is what finally proved this was not
+              // what looked harsh. With no edge of the ramp ever inside the art, a peak that clips the very
+              // brightest bevels is fine: it saturates smoothly at the centre of a dome instead of drawing a
+              // boundary.
+              const float peakF = 58.0f;
               const u32   tintG = 0x00FFE9B4u;
               // The profile is a RAISED COSINE, squared, sampled across many slices. A triangle looked hard-edged
               // and was: its slope breaks at the peak and again at both ends, and the eye reads a discontinuity
