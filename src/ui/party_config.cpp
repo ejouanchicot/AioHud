@@ -873,8 +873,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     const float by2 = runs[i].ly - snap(12.0f) + snap(3.0f), th3 = lineH - snap(6.0f);
                     rrect_fill(dev, runs[i].x, by2, runs[i].w, th3, snap(8.0f), 0xC4070A0Du, 0xCC040608u);
                     const float in2 = snap(7.0f);
+                    // RED and thick : the slash is the only mark that has to survive a glance across a band of
+                    // thirty tiles, so it gets the one saturated colour the menu reserves for "no" (C_CLOSEHOV's
+                    // family, the close button's red) and a stroke wide enough to read at icon scale.
                     seg_soft(dev, runs[i].x + in2, by2 + th3 - in2, runs[i].x + runs[i].w - in2, by2 + in2,
-                             snap(2.0f), fa(0xC8A8B0BAu));
+                             snap(3.4f), fa(0xE6E0555Fu));
                 }
                 ROW_NEXT(bandH)
             }
