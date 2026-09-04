@@ -235,20 +235,6 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
               ui_config().fontFace = gf;              // and the HUD default text face
               save_ui_config(); } }
         ROW_NEXT(52.0f)
-        // The overlay's SHAPE. Drawer = the menu is a column and the rest of the screen stays the game, dimmed,
-        // with the real HUD live in it -- so a change is visible the moment it is made, and no preview pane is
-        // needed to fake it. Full page = the original, which covers the game and therefore has to.
-        // Switchable because it is a taste call, and a taste call must be one click to undo.
-        { ROW_BAND(48.0f)
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Menu shape", "Forme du menu"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(126.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            const bool on = (ui_config().cfgDrawer != 0);
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh,
-                            on ? tr("Drawer", "Tiroir") : tr("Full page", "Plein ecran"), on)) {
-                ui_config().cfgDrawer = on ? 0 : 1; save_ui_config(); }
-            ROW_NEXT(48.0f)
-        }
         // (The old "Cursor" toggle was removed : the config/edit overlay now fully captures the mouse, so AioHud's
         //  own pointer is always drawn and the game's native cursor no longer competes -- the option did nothing.)
         // Hide key (End) : HOLD = the HUD is hidden only while End is held (peek) ; TOGGLE = one press hides, the next shows.
@@ -385,16 +371,15 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // ===== BACK LAYER : an OPAQUE page, leaving a HOLE at the live-preview stage so the REAL game shows
     //       through it (transparent preview). The hole is last frame's stage rect (stable ; cleared each
     //       frame and refilled by the preview stage below, so it vanishes when no preview is shown). =====
-    // ===== THE SHAPE OF THE OVERLAY =====
-    // DRAWER : the menu is a column on the left, and the PREVIEW takes everything to the right of it -- the same
-    // stage as before, framed, with the demo boxes drawn inside it, just far bigger than the 40% column it used
-    // to get. FULL PAGE : the original split, controls left / preview right, inside one full-screen page.
-    // Either way the stage is what punches the hole in the opaque page, so the real game shows behind the demo
+    // The page is FULL WIDTH : header, tabs, module list, controls and the preview stage all inside it. The
+    // preview's stage is what punches the hole in the opaque background, so the real game shows behind the demo
     // boxes and the preview is exactly what ships in play.
-    const bool drawer = (ui_config().cfgDrawer != 0);
+    // (A left-drawer variant was tried and removed: it had to drop the preview to be worth anything, and the
+    //  preview is a GUARANTEE -- it forces a full party and both alliances, so you always see what you are
+    //  configuring. Showing the live HUD instead degrades to showing nothing the moment you are solo. Kept in
+    //  history at the tag stable-pre-drawer if the idea is ever worth revisiting.)
     const float m = snap(30.0f);
-    const float ix = m, iy = m;
-    const float iw = drawer ? (sw * 0.46f - 2.0f * m) : (sw - 2.0f * m);
+    const float ix = m, iy = m, iw = sw - 2.0f * m;
     const float pageBot = sh - m;
     const float hx = pvStageX_, hy = pvStageY_, hw = pvStageW_, hh = pvStageH_;
     pvStageW_ = 0.0f;
@@ -571,18 +556,12 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // ===== two columns below the bar : controls (left) | LIVE PREVIEW (right) =====
         // previewW is PROPORTIONAL (screenW_ is the real backbuffer, not a fixed canvas) with guards
         // so the controls column never collapses on a small resolution.
-        // DRAWER : the controls own the whole (narrow) page, and the preview is everything to the right of it.
-        // FULL PAGE : the old split, both columns inside the page.
         const float splitGap = snap(40.0f);
-        float previewW;
-        if (drawer) previewW = (sw - m) - (ix + iw + m);
-        else {
-            previewW = coW * 0.40f;
-            const float minCtrl = snap(560.0f);
-            if (coW - previewW - splitGap < minCtrl) previewW = coW - splitGap - minCtrl;
-            if (previewW < snap(260.0f)) previewW = snap(260.0f);
-        }
-        const float ctrlW = drawer ? coW : (coW - previewW - splitGap);
+        float previewW = coW * 0.40f;
+        const float minCtrl = snap(560.0f);
+        if (coW - previewW - splitGap < minCtrl) previewW = coW - splitGap - minCtrl;
+        if (previewW < snap(260.0f)) previewW = snap(260.0f);
+        const float ctrlW = coW - previewW - splitGap;
         const float coY = barY + barH + snap(26.0f);
 
         // section title (GOLD) -- underline spans the FULL title width (wipes in)
@@ -595,7 +574,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // party + 2-alliance demo boxes (forced //aio alliance2 demo) on top, anchored bottom-right
         // here -- so the preview is exactly what ships in game (cost box space included).
         {
-            const float pvx = drawer ? (ix + iw + m) : (coX + ctrlW + splitGap), pvy = coY - snap(2.0f);
+            const float pvx = coX + ctrlW + splitGap, pvy = coY - snap(2.0f);
             fo->begin(dev); fo->draw_lc(dev, pvx, pvy + snap(7.0f), tr("LIVE PREVIEW", "APERÇU EN DIRECT"), snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
             const float stageY = pvy + snap(22.0f), stageH = pageBot - stageY;
             // TRANSPARENT stage : the opaque page bg leaves a HOLE here (recorded below -> punched next frame)

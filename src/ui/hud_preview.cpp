@@ -305,10 +305,13 @@ void Hud::draw_config_preview(const Frame& f) {
     // SNAP the box origin to whole pixels : measure() is fractional, so an un-snapped origin puts the
     // whole box (badge, name, gauges) on sub-pixel coords -> the first glyph's left column gets eaten by
     // filtering ONLY in the preview (live uses an integer layout origin). This is the truncation cause.
-    // Centre by the BOX footprint ONLY (NOT the buff strip) : the party box (+ alliances/cast box, which stack
-    // relative to it) stays perfectly centred and does NOT move when Max Buffs changes. The leftward strip is
-    // NOT part of the centering -- instead it's capped at the stage-left edge (+ "+N") by set_party_preview_buff_left below.
-    const float boxX     = (float)(int)(psx + (psw - pw) * 0.5f + 0.5f);             // centre the box horizontally (buff strip excluded)
+    // Centre the WHOLE CLUSTER -- the box plus the buff strip that hangs off its left edge. Centring the box
+    // alone kept it from shifting when Max Buffs changed, which is a stability nobody asked for and which cost
+    // the thing everyone sees: the strip pushes the visual mass left, so a box centred on its own footprint
+    // sits visibly right of centre. buff_reserve_w() is the width the strip really drew last frame, and it was
+    // exposed for exactly this.
+    const float buffW    = tiers[0]->buff_reserve_w();
+    const float boxX     = (float)(int)(psx + (psw - (pw + buffW)) * 0.5f + buffW + 0.5f);
     const float partyTop = (float)(int)(psy + (psh + stackH) * 0.5f - ph + 0.5f);    // centre the whole stack vertically
     for (int t = 0; t < 3; ++t) if (tiers[t]) tiers[t]->set_origin(boxX, partyTop);   // shared X ; party Y anchors the stack
     // PREVIEW-ONLY : the party box keeps its REAL size, but its buff strip is drawn LEFTWARD and a long strip

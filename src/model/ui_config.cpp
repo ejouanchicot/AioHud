@@ -201,7 +201,6 @@ static bool save_config_to(const char* path) {
         for (int i = 0; i < c.buffPinN[g]; ++i) fprintf(f, "%s%u", i ? "," : "", (unsigned)c.buffPin[g][i]);
         fprintf(f, "\n");
     }
-    fprintf(f, "cfgDrawer=%d\n", c.cfgDrawer);
     fprintf(f, "uiStyle=%d\n", c.uiStyle);
     fprintf(f, "uiColor=%d\n", c.uiColor);
     fprintf(f, "uiAccent=%08X\n", c.uiAccent);
@@ -428,10 +427,8 @@ static bool parse_cast_line(const char* line, UiConfig& c) {
 // Party buff-strip group order, parsed OUT-OF-LINE for the same C1061 reason as parse_mm_line.
 // A missing key keeps the defaults, so an older config loads with the declared order.
 static bool parse_buff_order_line(const char* line, UiConfig& c) {
-    if (strncmp(line, "cfgDrawer=", 10) == 0) {   // the overlay's shape ; here, not on the chain (C1061)
-        int v = 1; if (sscanf(line + 10, "%d", &v) == 1) c.cfgDrawer = v;
-        return true;
-    }
+    if (strncmp(line, "cfgDrawer=", 10) == 0) return true;   // a key from the removed drawer layout : swallow it so an
+                                                            // existing file loads clean instead of falling through the chain
     if (strncmp(line, "buffPin", 7) == 0) {                    // buffPin<g>=id,id,... : one group's arranged prefix
         int g = 0; const char* q = line + 7;
         if (*q < '0' || *q > '9') return false;
@@ -770,7 +767,6 @@ static bool load_config_from(const char* path) {
     repair_buff_order(c);   // a corrupt / short / outdated buffOrder line must never leave a group undrawn
     if (c.tmFocusWarn < 10) c.tmFocusWarn = 10; else if (c.tmFocusWarn > 300) c.tmFocusWarn = 300;
     if (c.tmFocusHold < 5)  c.tmFocusHold = 5;  else if (c.tmFocusHold > 300) c.tmFocusHold = 300;
-    if (c.cfgDrawer < 0) c.cfgDrawer = 0; else if (c.cfgDrawer > 1) c.cfgDrawer = 1;
     if (c.uiStyle < 0) c.uiStyle = 0; else if (c.uiStyle > 15) c.uiStyle = 15;
     if (c.uiColor < 0) c.uiColor = 0; else if (c.uiColor > 35) c.uiColor = 35;   // 12 hues x 3 lightness rows = 36 swatches (0..35)
     CLF(c.skinLum, -1.0f, 1.0f);
@@ -1060,7 +1056,6 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
         if (a.buffPinN[g] != b.buffPinN[g]) return false;
         for (int i = 0; i < a.buffPinN[g]; ++i) if (a.buffPin[g][i] != b.buffPin[g][i]) return false;
     }
-    if (a.cfgDrawer != b.cfgDrawer) return false;
     if (a.uiStyle != b.uiStyle || a.uiColor != b.uiColor || a.uiAccent != b.uiAccent || a.hidePeekMode != b.hidePeekMode) return false;
     if (a.cursorScale != b.cursorScale) return false;
     for (int i = 0; i < 6; ++i) if (a.partyRef[i] != b.partyRef[i]) return false;
@@ -1269,7 +1264,7 @@ void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew
 void reset_ui_config() {   // general Default : everything
     UiConfig& c = ui_config();
     c.partyShow = 1; c.allyShow = 1; c.tgtShow = 1; c.plrShow = 1;
-    c.skinTheme = 0; c.skinLum = 0.0f; c.skinHue = 0; c.skinBoxAlpha = 1.0f; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.buffRows = 2; c.uiStyle = 0; c.uiColor = 0; c.uiAccent = 0; c.hidePeekMode = 0; c.cursorScale = 1.0f; c.cfgDrawer = 0;
+    c.skinTheme = 0; c.skinLum = 0.0f; c.skinHue = 0; c.skinBoxAlpha = 1.0f; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.buffRows = 2; c.uiStyle = 0; c.uiColor = 0; c.uiAccent = 0; c.hidePeekMode = 0; c.cursorScale = 1.0f;
     c.allyThemeCopy = 1; c.allyTheme = 0; c.allyLum = 0.0f; c.allyHue = 0; c.allyBoxAlpha = 1.0f;
     for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = (unsigned char)i;   // buff groups back to their declared order
     c.buffGroupOff = 0;                                                                  // ... and all of them visible

@@ -138,12 +138,6 @@ struct UiConfig {
     int   uiStyle   = 0;       // config-menu colour STYLE / family (Neon / Matte / Medieval / Heroic / Pastel ...)
     int   uiColor   = 0;       // colour index WITHIN the chosen style
     unsigned uiAccent = 0;     // custom config-menu accent (0 = use uiStyle/uiColor preset ; else derive the accent family from this opaque colour)
-    // The config overlay's SHAPE, and the DEFAULT is the full-screen page -- the one that shipped.
-    // 0 = full page : controls left, preview right, both inside one page. 1 = drawer : the menu is a column on
-    // the left and the preview takes the whole right side, far larger, same framed stage and same demo boxes.
-    // Switchable because it is a taste call ; defaulting to the familiar one because a taste call should not be
-    // made FOR someone by an update.
-    int   cfgDrawer = 0;
     int   hidePeekMode = 0;    // the HUD-hide key (End) : 0 = HOLD (hidden only while held) ; 1 = TOGGLE (press to hide, press again to show)
     float cursorScale = 1.0f;  // selection-cursor (hand) size multiplier (0.50 .. 2.00)
     // ---- Target module (its OWN box theme, independent of the party skinTheme) ----
