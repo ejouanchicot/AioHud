@@ -77,43 +77,72 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // ROW_BAND / ROW_NEXT come from config_rows.h (dev/bandX/bandW/e/ry/ri/anim_ are all in scope here).
 
     // =========================================================== PARTY ===========================================================
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Groupe"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
+    // ===================================================== THE GRAMMAR =====================================================
+    // Every module panel reads in the same four sections -- General, Frame, Content, Text -- and the first two are
+    // literally the same controls everywhere, because they drive the same shared code (box_style.cpp). Nothing was
+    // removed: this is a RELAYOUT. Same UiConfig fields, same file keys, same profiles.
+    //
+    // Two things did the damage before. A single "Party" section carried eighteen unrelated settings, so opening it
+    // did not narrow the search; and every row held ONE control on a column 560-960px wide, leaving the right half
+    // empty -- Bar Height and Bar Width were two rows. The panel measured ~2370px, 2.3 screens.
+    //
+    // So: settings are grouped by the OBJECT they act on (gauges, badge, buffs, cursor), and related ones share a
+    // row. A slider needs about 340px (its 244px capsule plus a readable label), so pairing is only done when the
+    // column can actually hold two; below that the pair stacks and the band is twice as tall. One code path either
+    // way -- the geometry is two ternaries, not two branches, because a second branch is what drifts.
+    const bool  twoCol = ctrlW >= snap(720.0f);
+    const float halfW  = twoCol ? (ctrlW - snap(18.0f)) * 0.5f : ctrlW;
+    const float col2X  = coX + (twoCol ? halfW + snap(18.0f) : 0.0f);
+
+    // ========================================================= GENERAL =========================================================
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("General", "G\xC3\xA9n\xC3\xA9ral"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
     ROW_NEXT(42.0f)
     if (catOpen_[1]) {
-        // Show : master on/off for the main PARTY box (independent of Alliance below).
-        ROW_TOGGLE_G(CTRL_ID, tr("Show", "Afficher"), ui_config().partyShow, 52.0f, 40.0f, 150.0f)
-        // Size (canonical : right after Show). Party floor 100% : it must cover the native block.
-        { ROW_BAND(46.0f)
-            const float lo = 1.00f, hi = 2.00f;
+        // Show + Size : the two settings everyone touches, first, on one line.
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          row_toggle(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Show", "Afficher"), &ui_config().partyShow, 40.0f, 150.0f);
+          { const float lo = 1.00f, hi = 2.00f;   // party floor 100% : it must cover the native block
             char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[0].scale * 100.0f + 0.5f));
             float v01 = (ui_config().box[0].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), szbuf, &v01)) {
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Size", "Taille"), szbuf, &v01)) {
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().box[0].scale = v < lo ? lo : (v > hi ? hi : v); }
+                ui_config().box[0].scale = v < lo ? lo : (v > hi ? hi : v); } }
+          ROW_NEXT(bh2)
         }
-        ROW_NEXT(46.0f)
-        { ROW_BAND(46.0f)   // Transparency (canonical : before the theme rows)
-            const float transp = 1.0f - ui_config().skinBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
-            float v01 = clampf(transp, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Transparency", "Transparence"), b, &v01)) {
-                ui_config().skinBoxAlpha = 1.0f - v01; }
-          ROW_NEXT(46.0f)
+    }   // end General
+
+    // ========================================================== FRAME ==========================================================
+    // The same block in every module : theme family, its colour, luminosity, transparency, border. One thing to learn.
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_)) pcFrameOpen_ = !pcFrameOpen_;
+    ROW_NEXT(42.0f)
+    if (pcFrameOpen_) {
+        // Theme family + the custom-colour switch it enables : one is meaningless without the other.
+        { const bool proc = (window_theme_family(ui_config().skinTheme) != 0);
+          const float bh2 = (twoCol || !proc) ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          const float wA = proc ? halfW : ctrlW;
+          { const int fam = window_theme_family(ui_config().skinTheme), var = window_theme_variant(ui_config().skinTheme);
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, wA, tr("Box Theme", "Th\xC3\xA8me de cadre"), box_family_name(fam))) {
+                ui_config().skinTheme = window_theme_index(wrap(fam + d, box_family_count()), var); save_ui_config(); } }
+          if (proc) {   // FFXI skins have no hue of their own -- the switch would control nothing
+              const float rowH = snap(38.0f);
+              fo->begin(dev);
+              fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Custom colour", "Couleur perso"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+              const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = xB + halfW - bbw, bty = yB + (rowH - bbh) * 0.5f;
+              const bool on = ui_config().skinHue != 0;
+              if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
+                  ui_config().skinHue = on ? 0u : (box_hue_color(window_theme_variant(ui_config().skinTheme)) | 0xFF000000u); save_ui_config(); }
+          }
+          ROW_NEXT(bh2)
         }
-        // ---- Appearance : the PARTY box theme (procedural families = colour grid ; FFXI = game theme numbers). ----
-        { ROW_BAND(52.0f)   // Box Theme (family)
-          const int fam = window_theme_family(ui_config().skinTheme), var = window_theme_variant(ui_config().skinTheme);
-          if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Box Theme", "Thème de cadre"), box_family_name(fam))) {
-              ui_config().skinTheme = window_theme_index(wrap(fam + d, box_family_count()), var); save_ui_config(); } }
-        ROW_NEXT(52.0f)
-        if (window_theme_family(ui_config().skinTheme) != 0) { ROW_BAND(48.0f)   // Custom colour toggle
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Custom colour", "Couleur perso"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            const bool on = ui_config().skinHue != 0;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
-                ui_config().skinHue = on ? 0u : (box_hue_color(window_theme_variant(ui_config().skinTheme)) | 0xFF000000u); save_ui_config(); }
-            ROW_NEXT(48.0f)
-        }
+        // The picker / swatch grid keeps the full width : it is a grid, it cannot share a row with anything.
         if (window_theme_family(ui_config().skinTheme) != 0 && ui_config().skinHue != 0) {
             CFG_COLOR_PICKER(&ui_config().skinHue)
         } else
@@ -127,7 +156,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float gridH = nrows * ch + (nrows - 1) * cg, slotH = gridH + snap(20.0f);
           ROW_BAND(slotH) (void)yo;
           fo->begin(dev);
-          fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, isFFXI ? tr("Theme", "Thème") : tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+          fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, isFFXI ? tr("Theme", "Th\xC3\xA8me") : tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
           const float gridW = COLS * cw + (COLS - 1) * cg;
           const float gx = coX + ctrlW - gridW, gy = ry + (slotH - gridH) * 0.5f;
           for (int k = 0; k < nVar; ++k) {
@@ -146,40 +175,163 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           }
           ROW_NEXT(slotH)
         }
-        if (window_theme_family(ui_config().skinTheme) != 0)   // Luminosity
-        { ROW_BAND(46.0f)
-            float v01 = (ui_config().skinLum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
-            const int pct = (int)(ui_config().skinLum * 100.0f + (ui_config().skinLum >= 0.0f ? 0.5f : -0.5f));
-            char b[16]; sprintf(b, "%+d%%", pct);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Luminosity", "Luminosité"), b, &v01)) {
-                ui_config().skinLum = v01 * 2.0f - 1.0f; }
-          ROW_NEXT(46.0f)
+        // Luminosity + Transparency : both "how much of the frame you see", so one line.
+        { const bool proc = (window_theme_family(ui_config().skinTheme) != 0);
+          const float bh2 = (twoCol || !proc) ? snap(46.0f) : snap(92.0f);
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
+          const float yB = twoCol ? yA : yA + snap(46.0f);
+          const float xB = proc ? (twoCol ? col2X : coX) : coX;
+          const float wB = proc ? halfW : ctrlW;
+          if (proc) {   // FFXI skins are bitmaps : there is no procedural luminosity to move
+              float v01 = (ui_config().skinLum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
+              const int pct = (int)(ui_config().skinLum * 100.0f + (ui_config().skinLum >= 0.0f ? 0.5f : -0.5f));
+              char b[16]; sprintf(b, "%+d%%", pct);
+              if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Luminosity", "Luminosit\xC3\xA9"), b, &v01)) {
+                  ui_config().skinLum = v01 * 2.0f - 1.0f; }
+          }
+          { const float transp = 1.0f - ui_config().skinBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
+            float v01 = clampf(transp, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, wB, tr("Transparency", "Transparence"), b, &v01)) {
+                ui_config().skinBoxAlpha = 1.0f - v01; } }
+          ROW_NEXT(bh2)
         }
-        // ---- Party box settings (index 0) ----
-        { ROW_BAND(52.0f)   // Buff Size (party only : the game sends no buffs for alliances)
-            const float lo = 0.40f, hi = 2.00f;
-            char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
-            float v01 = (ui_config().buffScale - lo) / (hi - lo);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff Size", "Taille des buffs"), bzbuf, &v01)) {
+        { ROW_BAND(48.0f)   // Border : the box frame, and the floating Cost box that rides on it
+            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Border", "Bordure"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f;
+            const float bx0 = coX + ctrlW - (2 * bbw + bgap);
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Box", "Bo\xC3\xAEte"), ui_config().border[0])) { ui_config().border[0] = !ui_config().border[0]; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Cost box", "Bo\xC3\xAEte co\xC3\xBBt"), ui_config().borderCost)) { ui_config().borderCost = !ui_config().borderCost; save_ui_config(); }
+            ROW_NEXT(48.0f)
+        }
+    }   // end Frame
+
+    // ========================================================= CONTENT =========================================================
+    // The only section that really differs between modules, so it gets the room. Grouped by the OBJECT each setting
+    // acts on -- gauges, badge, buffs, cursor -- which is what turns three rows into one.
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), pcContentOpen_)) pcContentOpen_ = !pcContentOpen_;
+    ROW_NEXT(42.0f)
+    if (pcContentOpen_) {
+        // --- gauges : the style, and the two dimensions of the bars it draws ---
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          { int s = ui_config().gaugeStyle[0]; if (s < 0 || s > 7) s = 0;
+            const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
+                                  tr("Sphere", "Sph\xC3\xA8re"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Gauge Style", "Style de jauge"), sb[s])) {
+                ui_config().gaugeStyle[0] = wrap(s + d, 8); save_ui_config(); } }
+          { const float rowH = snap(38.0f); fo->begin(dev);   // Animation : two chips, HP and TP
+            fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Animation", "Animation"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yB + (rowH - bbh) * 0.5f;
+            const float bx0 = xB + halfW - (2 * bbw + bgap);
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, ui_config().animHP ? tr("HP on", "HP oui") : tr("HP off", "HP non"), ui_config().animHP)) { ui_config().animHP = !ui_config().animHP; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, ui_config().animTP ? tr("TP on", "TP oui") : tr("TP off", "TP non"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); } }
+          ROW_NEXT(bh2)
+        }
+        { const float bh2 = twoCol ? snap(46.0f) : snap(92.0f);   // bar height + width : the pair that was two rows
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
+          const float yB = twoCol ? yA : yA + snap(46.0f);
+          const float xB = twoCol ? col2X : coX;
+          { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[0] * 100.0f + 0.5f));
+            float v01 = (ui_config().barHeight[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().buffScale = v < lo ? lo : (v > hi ? hi : v); }
+                ui_config().barHeight[0] = v < lo ? lo : (v > hi ? hi : v); } }
+          { const float lo = 0.70f, hi = 1.60f; char wb[16]; sprintf(wb, "%d%%", (int)(ui_config().barWidth[0] * 100.0f + 0.5f));
+            float v01 = (ui_config().barWidth[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Bar Width", "Largeur des barres"), wb, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().barWidth[0] = v < lo ? lo : (v > hi ? hi : v); } }
+          ROW_NEXT(bh2)
         }
-        ROW_NEXT(52.0f)
-        { ROW_BAND(40.0f)   // Max Buffs
-            static const int BM[] = { 0, 16, 20, 24, 32 };   // 0 = no buff strip at all
+        // --- badge : what it shows, and how big ---
+        { const bool hasBadge = (ui_config().jobBadge[0] != 0);
+          const float bh2 = (twoCol || !hasBadge) ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !hasBadge) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          { int m = ui_config().jobBadge[0]; if (m < 0 || m > 3) m = 0;
+            const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Ic\xC3\xB4nes") };
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, hasBadge ? halfW : ctrlW, tr("Job Badge", "Badge de job"), jb[m])) {
+                ui_config().jobBadge[0] = wrap(m + d, 4); save_ui_config(); } }
+          if (hasBadge) {   // no badge, nothing to size
+              const float lo = 0.60f, hi = 1.80f; char gb[16]; sprintf(gb, "%d%%", (int)(ui_config().badgeScale[0] * 100.0f + 0.5f));
+              float v01 = (ui_config().badgeScale[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+              if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Badge Size", "Taille du badge"), gb, &v01)) {
+                  float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                  ui_config().badgeScale[0] = v < lo ? lo : (v > hi ? hi : v); }
+          }
+          ROW_NEXT(bh2)
+        }
+        // --- buffs : size, how many, over how many lines ---
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          { const float lo = 0.40f, hi = 2.00f; char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
+            float v01 = (ui_config().buffScale - lo) / (hi - lo);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Buff Size", "Taille des buffs"), bzbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().buffScale = v < lo ? lo : (v > hi ? hi : v); } }
+          { static const int BM[] = { 0, 16, 20, 24, 32 };   // 0 = no buff strip at all
             int idx = 0; for (int k = 0; k < 5; ++k) if (BM[k] == ui_config().buffMax) { idx = k; break; }
             char bmv[28]; if (BM[idx] == 0) lstrcpynA(bmv, tr("None", "Aucun"), sizeof(bmv)); else sprintf(bmv, "%d", BM[idx]);
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Max Buffs", "Buffs max"), bmv)) {
-                idx = wrap(idx + d, 5); ui_config().buffMax = BM[idx]; save_ui_config(); }
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, xB, yB, halfW, tr("Max Buffs", "Buffs max"), bmv)) {
+                idx = wrap(idx + d, 5); ui_config().buffMax = BM[idx]; save_ui_config(); } }
+          ROW_NEXT(bh2)
         }
-        ROW_NEXT(40.0f)
-        { ROW_BAND(52.0f)   // Buff Rows : 1 or 2
-            const char* brl[2] = { tr("1 line", "1 ligne"), tr("2 lines", "2 lignes") };
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // buff rows + the selection cursor
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          { const char* brl[2] = { tr("1 line", "1 ligne"), tr("2 lines", "2 lignes") };
             int bri = (ui_config().buffRows <= 1) ? 0 : 1;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff Rows", "Lignes de buffs"), brl[bri])) {
-                bri = wrap(bri + d, 2); ui_config().buffRows = bri + 1; save_ui_config(); }
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Buff Rows", "Lignes de buffs"), brl[bri])) {
+                bri = wrap(bri + d, 2); ui_config().buffRows = bri + 1; save_ui_config(); } }
+          { const float lo = 0.50f, hi = 2.00f; char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));
+            float v01 = (ui_config().cursorScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Cursor Size", "Taille du curseur"), czbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().cursorScale = v < lo ? lo : (v > hi ? hi : v); } }
+          ROW_NEXT(bh2)
         }
-        ROW_NEXT(52.0f)
+        // --- the row's optional readouts ---
+        { ROW_BAND(48.0f)
+            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Row extras", "Sur la ligne"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f;
+            const float bx0 = coX + ctrlW - (2 * bbw + bgap);
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Casts", "Sorts"), ui_config().cast[0] != 0)) { ui_config().cast[0] = !ui_config().cast[0]; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Distance", "Distance"), ui_config().dist[0] != 0)) { ui_config().dist[0] = !ui_config().dist[0]; save_ui_config(); }
+            ROW_NEXT(48.0f)
+        }
+        // ---- Distance-zone colours : the yalms number is tinted by cast-range zone (Close < 10' / Normal 10'..20.8' / Far >= 20.8'). ----
+        if (ui_config().dist[0]) {
+            u32* dcol[3] = { &ui_config().distColClose, &ui_config().distColNormal, &ui_config().distColFar };
+            const char* dlab[3] = { tr("Close (< 10')", "Proche (< 10')"), tr("Normal (10-20.8')", "Normal (10-20.8')"), tr("Far (>= 20.8')", "Loin (>= 20.8')") };
+            for (int di = 0; di < 3; ++di) {
+                { ROW_BAND(52.0f)   // label + live swatch
+                    const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+                    fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, dlab[di], snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                    const float sw2 = snap(64.0f), sh2 = snap(26.0f), sx = coX + ctrlW - sw2, sy2 = ty + (rowH - sh2) * 0.5f;
+                    rrect_fill(dev, sx, sy2, sw2, sh2, snap(6.0f), *dcol[di], shade(*dcol[di], -0.25f));
+                    outline(dev, sx, sy2, sw2, sh2, C_BORDER);
+                } ROW_NEXT(52.0f)
+                CFG_COLOR_PICKER_I(dcol[di], di)
+            }
+        }
+    }   // end Content
+    // ==================================================== BUFF ORDER ====================================================
+    // Its own section, not a sub-section of another : it is an EDITOR, not a list of settings, and burying it one
+    // level deeper is exactly the third disclosure level the research says to avoid.
         // ---- sub-section : BUFF ORDER. The strip draws its icons RIGHT-TO-LEFT from index 0, so the group at
         // position 1 ends up nearest the member's row. Ordering by GROUP (13 rows) rather than by status (624 of
         // them) is what keeps this configurable at all -- and it makes Max Buffs deliberate : the cut now falls on
@@ -512,99 +664,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 bsSel_ = mvTo;   // the selection FOLLOWS what you moved, so a second press keeps moving the same thing
             }
         }
-        { ROW_BAND(52.0f)   // Cursor Size
-            const float lo = 0.50f, hi = 2.00f;
-            char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));
-            float v01 = (ui_config().cursorScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Cursor Size", "Taille du curseur"), czbuf, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().cursorScale = v < lo ? lo : (v > hi ? hi : v); }
-        }
-        ROW_NEXT(52.0f)
-        { ROW_BAND(46.0f)   // Bar Height
-            const float lo = 0.80f, hi = 1.80f;
-            char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[0] * 100.0f + 0.5f));
-            float v01 = (ui_config().barHeight[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().barHeight[0] = v < lo ? lo : (v > hi ? hi : v); }
-        }
-        ROW_NEXT(46.0f)
-        { ROW_BAND(46.0f)   // Bar Width
-            const float lo = 0.80f, hi = 1.50f;
-            char wb[16]; sprintf(wb, "%d%%", (int)(ui_config().barWidth[0] * 100.0f + 0.5f));
-            float v01 = (ui_config().barWidth[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Bar Width", "Largeur des barres"), wb, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().barWidth[0] = v < lo ? lo : (v > hi ? hi : v); }
-        }
-        ROW_NEXT(46.0f)
-        { ROW_BAND(52.0f)   // Gauge Style
-            int s = ui_config().gaugeStyle[0]; if (s < 0 || s > 7) s = 0;
-            const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
-                                  tr("Sphere", "Sphère"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Gauge Style", "Style de jauge"), sb[s])) {
-                ui_config().gaugeStyle[0] = wrap(s + d, 8); save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
-        { ROW_BAND(52.0f)   // Animation (party only)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Animation", "Animation"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f);
-            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, ui_config().animHP ? tr("HP on", "HP oui") : tr("HP off", "HP non"), ui_config().animHP)) { ui_config().animHP = !ui_config().animHP; save_ui_config(); }
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, ui_config().animTP ? tr("TP on", "TP oui") : tr("TP off", "TP non"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
-        { ROW_BAND(52.0f)   // Job Badge
-            int m = ui_config().jobBadge[0]; if (m < 0 || m > 3) m = 2;
-            const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Icônes") };
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Job Badge", "Badge de job"), jb[m])) {
-                ui_config().jobBadge[0] = wrap(m + d, 4); save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
-        if (ui_config().jobBadge[0] != 0) {
-          { ROW_BAND(46.0f)   // Badge Size
-            const float lo = 0.50f, hi = 2.00f;
-            char gb[16]; sprintf(gb, "%d%%", (int)(ui_config().badgeScale[0] * 100.0f + 0.5f));
-            float v01 = (ui_config().badgeScale[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Badge Size", "Taille du badge"), gb, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().badgeScale[0] = v < lo ? lo : (v > hi ? hi : v); }
-          }
-          ROW_NEXT(46.0f)
-        }
-        ROW_TOGGLE_G(CTRL_ID, tr("Casts", "Sorts"), ui_config().cast[0], 52.0f, 40.0f, 112.0f)   // Casts
-        ROW_TOGGLE_G(CTRL_ID, tr("Distance", "Distance"), ui_config().dist[0], 52.0f, 40.0f, 112.0f)   // Distance
-        // ---- Distance-zone colours : the yalms number is tinted by cast-range zone (Close < 10' / Normal 10'..20.8' / Far >= 20.8'). ----
-        {
-            struct ZoneCol { const char* en; const char* fr; unsigned* col; };
-            ZoneCol zc[3] = {
-                { "Close",  "Proche", &ui_config().distColClose  },
-                { "Normal", "Normal", &ui_config().distColNormal },
-                { "Far",    "Loin",   &ui_config().distColFar     },
-            };
-            for (int zi = 0; zi < 3; ++zi) {
-                unsigned& F = *zc[zi].col;
-                { ROW_BAND(52.0f)   // label + live swatch
-                    const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-                    fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr(zc[zi].en, zc[zi].fr), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-                    const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, pw = snap(58.0f), pxs = coX + ctrlW - pw;
-                    flat(dev, pxs, bty, pw, bbh, F | 0xFF000000u); outline(dev, pxs, bty, pw, bbh, C_BORDER);
-                } ROW_NEXT(52.0f)
-                CFG_COLOR_PICKER_I(&F, zi)   // per-item uids : all three expand on THIS line, see the macro
-            }
-        }
-        { ROW_BAND(52.0f)   // Border : the box frame (+ the floating Cost box)
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Border", "Bordure"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f;
-            const float bx0 = coX + ctrlW - (2 * bbw + bgap);
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Box", "Boîte"), ui_config().border[0])) { ui_config().border[0] = !ui_config().border[0]; save_ui_config(); }
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Cost box", "Boîte coût"), ui_config().borderCost)) { ui_config().borderCost = !ui_config().borderCost; save_ui_config(); }
-        }
-        ROW_NEXT(52.0f)
-    }   // end Party
+
+    // ---- (Alliance and Text follow, unchanged : Text covers BOTH groups, so it stays last) ----
 
     // ========================================================= ALLIANCE =========================================================
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7])) catOpen_[7] = !catOpen_[7];

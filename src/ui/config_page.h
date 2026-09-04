@@ -215,6 +215,11 @@ private:
     int   trkSub_ = -1;          // SUB job for the checklist (-1 = follow current sub ; 0 = none ; 1..22 = a job)
     int   trkScope_ = 0;         // 0 = Self (buffs on you + your recasts) ; 1 = Allies (buffs you put on allies)
     bool  trkSecOpen_ = false;   // the "Track per job" collapsible section
+    // Party panel, the shared grammar : General / Frame / Content / (workshop) / Text. General reuses catOpen_[1] ;
+    // these two are the new sections. Open by DEFAULT -- what people need often belongs at the first level, and
+    // burying the frame and the content behind a click is what made the old panel feel like a form.
+    bool  pcFrameOpen_   = true;
+    bool  pcContentOpen_ = true;
     bool  buffOrderOpen_ = false;   // Party panel : the "Buff order" collapsible sub-section (group ranking). Session-only UI state, like the other *Open_ flags.
     // ---- the buff STRIP editor (party panel). The strip itself is the control : one row of icon runs, dragged
     // to reorder. Session-only view state -- what is arranged lives in UiConfig. ----
