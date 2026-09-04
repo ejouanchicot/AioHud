@@ -180,7 +180,6 @@ static const BuffGroupRange BUFF_GROUP_RANGE[] = {
     //  group that can never show them. Unclassified is the honest place for a status that never arrives --
     //  a name in the data is not evidence that the game ever sends it.)
     { 265, 265, BG_WATCH,   "Flurry (the second one)" },
-    { 193, 193, BG_SONG,    "Lullaby" },
     { 204, 204, BG_SONG,    "Hum" },
     { 208, 208, BG_SONG,    "Serenade" },
     { 211, 212, BG_SONG,    "Fugue, Rhapsody" },
@@ -232,6 +231,7 @@ static const BuffGroupRange BUFF_GROUP_RANGE[] = {
     { 576, 576, BG_DEBUFF,  "Doubt" },
     { 630, 631, BG_DEBUFF,  "Taint, Haunt" },
     {  11,  11, BG_DEBUFF,  "Bind" },
+    { 193, 193, BG_DEBUFF,  "Lullaby -- a song, but never one of YOURS : on a player it is a mob bard's sleep" },
 };
 static const int BUFF_GROUP_RANGE_N = (int)(sizeof(BUFF_GROUP_RANGE) / sizeof(BUFF_GROUP_RANGE[0]));
 
