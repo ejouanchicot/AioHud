@@ -216,7 +216,6 @@ private:
     int   trkScope_ = 0;         // 0 = Self (buffs on you + your recasts) ; 1 = Allies (buffs you put on allies)
     bool  trkSecOpen_ = false;   // the "Track per job" collapsible section
     bool  buffOrderOpen_ = false;   // Party panel : the "Buff order" collapsible sub-section (group ranking). Session-only UI state, like the other *Open_ flags.
-    bool  bgAll_[16] = { false };    // Party panel : per-GROUP catalogue switch -- does the strip list EVERY status the group can hold, or only the ones worth offering (curated + met this session) ? Indexed by BuffGroup, so it MUST be >= BG_COUNT (static_assert'd in party_config.cpp) : trkCatOpen_ and relOpen_ each overflowed into their neighbour exactly this way. 16 = room for three more groups.
     // ---- the buff STRIP editor (party panel). The strip itself is the control : one row of icon runs, dragged
     // to reorder. Session-only view state -- what is arranged lives in UiConfig. ----
     int   bsInner_ = -1;   // -1 = arranging GROUPS ; else the BuffGroup whose own buffs are being arranged
@@ -227,7 +226,6 @@ private:
     float bsGrabDX_ = 0.0f;       // where inside the block you took hold of it, so it hangs off the pointer there
     float bsGrabX_  = 0.0f;       // pointer x at the grab -- a press that never travels is a CLICK, not a drag
     int   bsMoved_  = 0;          // the pointer has travelled far enough for this to be a drag
-    bool  bsShowAll_ = false;     // band shows EVERY group (unmet ones previewed from their own catalogue, dimmed) instead of only the ones you carry
     bool  trkCatOpen_[48] = { false };   // per-category collapsible state within the checklist (index = TrackCat). MUST be >= TC_COUNT (job_track_gen.h) : it silently overflowed into jaJobOpen_ once TC_COUNT passed 32 (TC_JA/TC_OTHER indexed out of bounds) -- grown 32->48 at TC_COUNT=38 (added Food/Aftermath/Signet/Craft). Same trap as relOpen_.
     bool  jaJobOpen_[24] = { false };    // Buff filter / Job Abilities : per-JOB sub-section collapse (index = job id 1..23 ; in-memory only, NOT serialised). The current main job is forced open each frame.
     // animation state (driven by the frame clock)

@@ -54,6 +54,17 @@ static const char* const BUFF_GROUP_FR[BG_COUNT] = {   // accents spelled as UTF
     "Discr\xC3\xA9tion", "Surveillance", "Protections", "Chants", "Rolls", "G\xC3\xA9omancie", "Runes / Wards",
     "Danses", "Am\xC3\xA9lioration", "Aptitudes", "Permanents", "Debuffs", "Autre"
 };
+// SHORT labels, for the config strip : the name sits centred over its block, and a block is only as wide as the
+// two or three icons it previews. "Surveillance" over 40 pixels would collide with its neighbours, so the strip
+// widens a block to fit the SHORT name and uses the full one everywhere else (the selection line, this file).
+static const char* const BUFF_GROUP_SHORT_EN[BG_COUNT] = {
+    "Stealth", "Watch", "Protect", "Songs", "Rolls", "Geo", "Runes",
+    "Dances", "Enhance", "Abils", "Perm", "Debuffs", "Other"
+};
+static const char* const BUFF_GROUP_SHORT_FR[BG_COUNT] = {
+    "Discr", "Surv", "Prot", "Chants", "Rolls", "G\xC3\xA9o", "Runes",
+    "Danses", "Am\xC3\xA9lio", "Aptit", "Perm", "Debuffs", "Autre"
+};
 
 // ---- the PRIORITY LIST : the statuses whose group is a judgement call, AND whose position inside that
 // group is deliberate. It does two jobs at once, on purpose :

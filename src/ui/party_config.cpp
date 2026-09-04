@@ -194,7 +194,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             // ONE code path drives BOTH levels -- arranging the 13 groups, and arranging one group's own buffs.
             // Same geometry, same grab, same drop; entering a group changes the scale, never the gesture. That is
             // the whole design claim, so the two levels are deliberately not two blocks of code.
-            static_assert(BG_COUNT <= (int)(sizeof(((ConfigPage*)0)->bgAll_) / sizeof(bool)), "bgAll_ must be at least BG_COUNT wide");
+            static_assert(BG_COUNT <= UiConfig::BUFF_ORDER_N, "every BuffGroup must have a slot in the stored order");
             // ONE uid for the WHOLE drag, taken once. CTRL_ID is a __FILE__:__LINE__ hash, so writing it at
             // the grab, the hold, the release and the recovery would mint FOUR different ids : the grab would
             // latch one and every other call would ask about another. The drag then died after a frame AND
@@ -203,9 +203,9 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             const int dragUid = CTRL_ID;
             const u32 bTex = buff_atlas_tex(dev);   // BORROWED : buff_atlas.cpp owns it and is the only place that releases it. 0 while its bounded retry has not landed -> the band draws its tints and stays usable, rather than holes.
 
-            struct Run { int n; unsigned short ic[4]; float x, w; unsigned char grp; bool hid; bool faint; };
+            struct Run { int n; unsigned short ic[4]; float x, w; unsigned char grp; bool hid; bool faint; const char* lbl; };
             Run runs[64]; int nRun = 0;
-            int slots[UiConfig::BUFF_ORDER_N]; int nUnmet = 0;   // slots[k] = the buffOrder position the k-th visible run occupies
+            int slots[UiConfig::BUFF_ORDER_N];   // slots[k] = the buffOrder position the k-th visible run occupies
             unsigned short inner[256]; int innerTotal = 0, innerN = 0;
             const bool atGroups = (bsInner_ < 0 || bsInner_ >= BG_COUNT);
             if (atGroups) {
@@ -220,8 +220,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     // catalogue and dimmed to say "not met yet". A group left out of the VIEW keeps its
                     // POSITION : the instant one of its buffs turns up, it lands where it was put.
                     bool faint = false;
-                    if (k == 0) {
-                        if (!bsShowAll_) { ++nUnmet; continue; }
+                    if (k == 0) {   // not met yet -> preview it from its own catalogue, faint
                         k = buff_group_members(ui_config(), g, m, 4, &t, [](unsigned) { return true; });
                         faint = true;
                         if (k == 0) continue;   // a group the catalogue itself cannot fill has nothing to say
@@ -230,15 +229,27 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     Run& r = runs[nRun++];
                     r.n = k; for (int q = 0; q < k; ++q) r.ic[q] = m[q];
                     r.grp = (unsigned char)g; r.hid = hid; r.faint = faint;
+                    r.lbl = tr(BUFF_GROUP_SHORT_EN[g], BUFF_GROUP_SHORT_FR[g]);
                 }
             } else {
                 const int g = bsInner_;
-                innerN = bgAll_[g]
-                    ? buff_group_members(ui_config(), g, inner, 256, &innerTotal, [](unsigned) { return true; })
-                    : buff_group_members(ui_config(), g, inner, UiConfig::BUFF_PIN_MAX, &innerTotal,
-                                         [](unsigned st) { return party().status_seen(st); });
-                if (innerN > 64) innerN = 64;   // the band is one line ; the rest keeps the game's order
-                for (int i = 0; i < innerN; ++i) { slots[0] = 0; Run& r = runs[nRun++]; r.n = 1; r.ic[0] = inner[i]; r.grp = (unsigned char)g; r.hid = false; r.faint = false; }
+                // The group's OWN CATALOGUE, always -- not just what this session has met. Opening a group you
+                // have never played and finding an empty band is not a view, it is a dead end : there is
+                // nothing to arrange and no way to arrange it. What you carry draws normally, the rest draws
+                // faint, and both are movable -- which is what "fill it yourself" has to mean.
+                // Capped to one line's worth : past BUFF_PIN_MAX nothing can be stored anyway, and the last
+                // line reports whatever is left.
+                int capN = (int)((ctrlW + snap(6.0f)) / (snap(32.0f) + snap(8.0f) + snap(6.0f)));
+                if (capN < 4) capN = 4;
+                if (capN > UiConfig::BUFF_PIN_MAX) capN = UiConfig::BUFF_PIN_MAX;
+                innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, [](unsigned) { return true; });
+                for (int i = 0; i < innerN && nRun < 64; ++i) {
+                    slots[0] = 0;
+                    Run& r = runs[nRun++];
+                    r.n = 1; r.ic[0] = inner[i]; r.grp = (unsigned char)g; r.hid = false;
+                    r.faint = !party().status_seen(inner[i]);   // in the catalogue, not on anyone yet
+                    r.lbl = 0;   // one buff per block : its name is far wider than its icon, so the selection line names it
+                }
             }
             if (bsSel_ >= nRun) bsSel_ = -1;
             if (bsDrag_ >= nRun) { bsDrag_ = -1; bsDrop_ = -1; }
@@ -248,19 +259,30 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             // losing legibility costs everything. A hidden group keeps a narrow stub -- hiding a group must not
             // remove it from the editor that is the only place to bring it back.
             const float gapR = snap(6.0f);
-            float ics = snap(18.0f); const float gapI = snap(2.0f), padR = snap(4.0f);
+            // NATIVE cell size. The atlas is a 32px grid and these are the same icons the HUD draws ; scaling
+            // them down here would make the editor show something the game never shows. So the band gives way
+            // on everything ELSE to fit -- the per-block preview first, then the label -- and never on this.
+            const float ics = snap((float)BUFF_CELL);
+            float lsz = snap(10.5f); const float gapI = snap(2.0f), padR = snap(4.0f);
             int   capI = atGroups ? 4 : 1;
-            for (int pass = 0; pass < 6; ++pass) {
+            for (int pass = 0; pass < 10; ++pass) {
                 float totalW = 0.0f;
                 for (int i = 0; i < nRun; ++i) {
                     const int k = runs[i].hid ? 0 : (runs[i].n < capI ? runs[i].n : capI);
-                    runs[i].w = (k > 0) ? (k * ics + (k - 1) * gapI + 2 * padR) : snap(12.0f);
-                    totalW += runs[i].w + (i ? gapR : 0.0f);
+                    float w = (k > 0) ? (k * ics + (k - 1) * gapI + 2 * padR) : snap(12.0f);
+                    // A block is as wide as its icons OR its name, whichever needs more : the name is centred
+                    // over the block, so a one-icon group would otherwise print its label across its
+                    // neighbours. Widening the block is the honest fix ; clipping the name is not.
+                    if (runs[i].lbl) { const float lw = fo->measure(runs[i].lbl, lsz) + 2 * padR; if (lw > w) w = lw; }
+                    runs[i].w = w;
+                    totalW += w + (i ? gapR : 0.0f);
                 }
                 if (totalW <= ctrlW) break;
-                if (capI > 1) --capI;                            // first : fewer icons per run
-                else if (ics > snap(11.0f)) ics -= snap(2.0f);   // then, and only then : smaller icons
-                else break;                                      // still over -> the tail clips ; never scale to mush
+                if (capI > 1) --capI;                            // first : fewer icons per block
+                else if (lsz > snap(8.0f)) lsz -= snap(0.5f);    // then the label, now the widest part
+                else break;                                      // the icons are never touched : at the narrowest
+                                                                 // panel the leftmost blocks clip instead, and the
+                                                                 // page is stencil-clipped so nothing spills
             }
             // Entry 0 sits at the RIGHT edge and the band fills leftward. No position numbers anywhere, because
             // the position IS the position.
@@ -276,13 +298,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             { ROW_BAND(34.0f)
                 const float ty = ry + yo + snap(3.0f), bh = snap(26.0f), aS = snap(15.0f), chipW2 = snap(74.0f);
                 float bx = coX + ctrlW;
-                if (!atGroups) {   // the catalogue switch : the band shows what you carry ; All reaches the rest
-                    bx -= chipW2;
-                    if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx, ty, chipW2, bh,
-                                    bgAll_[bsInner_] ? tr("All", "Tous") : tr("Seen", "Vus"), bgAll_[bsInner_]))
-                        { bgAll_[bsInner_] = !bgAll_[bsInner_]; bsSel_ = -1; }
-                    bx -= snap(8.0f);
-                }
                 bx -= aS; const float rArrX = bx; bx -= snap(10.0f) + aS; const float lArrX = bx;
                 const float aY = ty + (bh - aS) * 0.5f;
                 if (bsSel_ >= 0) {   // left = further from the member row (later), right = closer (earlier)
@@ -324,10 +339,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             ROW_NEXT(34.0f)
 
             // ================= the band =================
-            { const float bandH = snap(46.0f);
-              ROW_BAND(46.0f)
+            { const float bandH = snap(74.0f);
+              ROW_BAND(74.0f)
                 const float sy = ry + yo + (snap(40.0f) - bandH) * 0.5f;
-                const float iy = sy + snap(9.0f), uy = iy + ics + snap(5.0f);
+                const float ly = sy + snap(11.0f);                      // the name, centred over its own block
+                const float iy = ly + snap(9.0f), uy = iy + ics + snap(6.0f);
                 // A drag we think we own but the LATCH no longer does : the page was closed, or the tab switched,
                 // mid-drag and ctrl_release_drag() freed it under us. Without this the run stays lifted and the
                 // `bsDrag_ < 0` gate below blocks every future grab -- one badly-timed close and the editor is dead
@@ -351,12 +367,21 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // the pointer's x, so it cannot oscillate the way a "compare against my own current slot" test
                 // does once the reflow has already moved things.
                 if (bsDrag_ >= 0 && ctrl_drag_active(dragUid) && mo) {
+                    // The test is the CARRIED BLOCK'S CENTRE against a neighbour's middle -- not the pointer's.
+                    // Using the raw pointer ignored where you took hold : grab a block by its right edge and
+                    // the pointer has already crossed the neighbour while the block visibly has not, so it
+                    // swapped the instant you touched anything. You have to actually carry it PAST.
+                    const float ctr = (mo->x - bsGrabDX_) + runs[bsDrag_].w * 0.5f;
+                    // ... plus a little stickiness, so a centre resting on a boundary does not flutter between
+                    // two arrangements : leaving the current slot costs a few pixels, returning to it is free.
+                    const float hys = snap(7.0f);
                     float px2 = rightX; int at = 0;
                     bool placed = false;
                     for (int k = 0, seen2 = 0; k < nRun; ++k) {
                         if (k == bsDrag_) continue;
                         const float w = runs[k].w;
-                        if (mo->x >= px2 - w * 0.5f) { at = seen2; placed = true; break; }
+                        const float thr = (px2 - w * 0.5f) + ((seen2 < bsDrop_) ? hys : -hys);
+                        if (ctr >= thr) { at = seen2; placed = true; break; }
                         px2 -= w + gapR; ++seen2;
                     }
                     if (!placed) at = nRun - 1;          // left of everything -> last
@@ -443,27 +468,30 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     }
                     dSetTex(dev, 0, 0); cs(dev);   // never leave a bound texture / textured state for the next control (rule 8)
                 }
-                // ---- PASS 3 : hidden groups, as a mark rather than icons ----
+                // ---- PASS 3 : the names, ONE font pass, each centred over its own block ----
+                fo->begin(dev);
+                for (int i = 0; i < nRun; ++i) {
+                    if (!runs[i].lbl) continue;
+                    const float dy = (i == bsDrag_) ? -snap(5.0f) : 0.0f;
+                    const u32 c2 = runs[i].hid ? C_MUTE
+                                 : (i == bsSel_ || i == bsDrag_) ? C_ACCENTHI
+                                 : (runs[i].faint ? C_MUTE : C_DIM);
+                    fo->draw_c(dev, runs[i].x + runs[i].w * 0.5f, ly + dy, runs[i].lbl, lsz, fa(c2), fa(C_STROKE), 1.0f);
+                }
+                // ---- PASS 4 : hidden groups, as a mark rather than icons ----
                 for (int i = 0; i < nRun; ++i) if (runs[i].hid)
                     rrect_fill(dev, snap(runs[i].x + runs[i].w - snap(9.0f)), snap(iy + ics * 0.35f), snap(6.0f), snap(6.0f), snap(3.0f), fa(C_MUTE), fa(C_MUTE));
             }
-            ROW_NEXT(46.0f)
+            ROW_NEXT(74.0f)
 
             // ---- the one thing the band cannot say about itself ----
             { ROW_BAND(24.0f)
                 char lb2[140];
                 if (!atGroups && innerTotal > innerN) { _snprintf(lb2, sizeof(lb2), tr("+%d more, in the game's order", "+%d autres, dans l'ordre du jeu"), innerTotal - innerN); lb2[sizeof(lb2) - 1] = 0; }
-                else if (atGroups && nUnmet > 0) { _snprintf(lb2, sizeof(lb2), tr("%d groups not met yet, position kept", "%d groupes pas encore rencontres, place conservee"), nUnmet); lb2[sizeof(lb2) - 1] = 0; }
                 else lstrcpynA(lb2, tr("The rightmost block sits against the member row",
                                        "Le bloc le plus a droite est contre la ligne du membre"), sizeof(lb2));
                 fo->begin(dev);
                 fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(12.0f), lb2, snap(11.5f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-                if (atGroups && (nUnmet > 0 || bsShowAll_)) {
-                    const float cw3 = snap(96.0f), ch3 = snap(20.0f);
-                    if (toggle_chip(dev, fo, mo, click, CTRL_ID, coX + ctrlW - cw3, ry + yo + snap(2.0f), cw3, ch3,
-                                    bsShowAll_ ? tr("All groups", "Tous groupes") : tr("Carried", "Portes"), bsShowAll_))
-                        { bsShowAll_ = !bsShowAll_; bsSel_ = -1; }
-                }
             }
             ROW_NEXT(24.0f)
 
