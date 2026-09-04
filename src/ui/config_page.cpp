@@ -396,7 +396,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     } else {
         flat(dev, 0, 0, sw, sh, BG);                                  // no preview -> full opaque page
     }
-    flat(dev, 0, 0, sw, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse));           // top GOLD hairline (FFXI glint)
+    flat(dev, 0, 0, sw, snap(2.0f), lerpc(C_METAL, C_METAL_HI, pulse));        // top hairline : REAL gold, matching the logotype rather than the theme
     flat(dev, 0, 0, sw, 1, 0x40FFFFFF);                               // crisp top inner highlight
     outline(dev, 0, 0, sw, sh, C_BORDERHI);
 
@@ -431,7 +431,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // surface that cannot move.
         const float par = mo ? (mo->x / sw - 0.5f) : 0.0f;
         soft_blob(dev, sw * (0.18f + 0.10f * sinf(f.t * 0.17f)) + par * snap(26.0f), cy2, sw * 0.26f, mhH * 0.95f, (26u << 24) | acc);
-        soft_blob(dev, sw * (0.55f + 0.14f * sinf(f.t * 0.11f + 2.1f)) + par * snap(14.0f), cy2, sw * 0.30f, mhH * 0.85f, (18u << 24) | (C_GOLD & 0x00FFFFFF));
+        soft_blob(dev, sw * (0.55f + 0.14f * sinf(f.t * 0.11f + 2.1f)) + par * snap(14.0f), cy2, sw * 0.30f, mhH * 0.85f, (18u << 24) | (C_METAL & 0x00FFFFFF));
         soft_blob(dev, sw * (0.86f + 0.08f * sinf(f.t * 0.23f + 4.0f)) + par * snap(34.0f), cy2, sw * 0.20f, mhH * 0.90f, (16u << 24) | acc);
         // (A single wider light used to cross the whole plate here every 13 s. It was the "rectangle sliding
         //  over the word": soft_blob is a bilinear TENT -- its falloff is linear and its outer boundary is four
@@ -614,7 +614,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
       const char* vs = "V" AIOHUD_VERSION;
       const float vsz = snap(14.0f), vw = fo->measure(vs, vsz);
       const float vh = snap(24.0f), vx = rgx + snap(16.0f), vy = ty - vh * 0.5f, vpad = snap(9.0f);
-      const u32 gold = lerpc(C_GOLD, C_GOLDHI, pulse);
+      const u32 gold = lerpc(C_METAL, C_METAL_HI, pulse);
       rpanel(dev, vx, vy, vw + vpad * 2.0f, vh, snap(5.0f), 0x66101820u, 0x66080C11u,
              (gold & 0x00FFFFFFu) | 0x88000000u, snap(1.0f));
       fo->begin(dev);
@@ -626,7 +626,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // from. Two quads because a single one can only ramp between two colours, and this wants to arrive from
     // nothing and leave into nothing.
     { const float rx2 = verRight + snap(20.0f), rh = snap(30.0f), ry2 = ty - rh * 0.5f;
-      const u32 gold = (lerpc(C_GOLD, C_GOLDHI, pulse) & 0x00FFFFFFu);
+      const u32 gold = (lerpc(C_METAL, C_METAL_HI, pulse) & 0x00FFFFFFu);
       q4(dev, rx2, ry2, snap(1.0f), rh * 0.5f, gold, gold, gold | 0x70000000u, gold | 0x70000000u);
       q4(dev, rx2, ty, snap(1.0f), rh * 0.5f, gold | 0x70000000u, gold | 0x70000000u, gold, gold); }
 
@@ -645,7 +645,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         const float lh = snap(26.0f), segW = snap(34.0f), lw = segW * 2.0f;
         const float lx = cbX - snap(12.0f) - lw, ly = cbY + (cbS - lh) * 0.5f;
         rpanel(dev, lx, ly, lw, lh, snap(7.0f), C_CTL_T, C_CTL_B,
-               (lerpc(C_GOLD, C_GOLDHI, pulse) & 0x00FFFFFFu) | 0x70000000u, snap(1.0f));   // the header's controls share the version plate's hairline
+               (lerpc(C_METAL, C_METAL_HI, pulse) & 0x00FFFFFFu) | 0x70000000u, snap(1.0f));   // the header's controls share the version plate's hairline
         const char* seg[2] = { "EN", "FR" };
         for (int i = 0; i < 2; ++i) {
             const float sx = lx + (float)i * segW;
@@ -666,7 +666,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     const float divY = mhBot;
     shadow_down(dev, 0.0f, divY, sw, snap(16.0f), 0x66000000u);               // the plate casts onto the content
     flat(dev, 0.0f, divY - snap(1.0f), sw, 1, (0x30FFFFFFu));                  // inner top light on the rail
-    { const u32 gl = lerpc(C_GOLD, C_GOLDHI, pulse), gr = C_ACCENT;
+    { const u32 gl = lerpc(C_METAL, C_METAL_HI, pulse), gr = C_ACCENT;   // metal at the logo end, the theme accent at the far one
       const float rw = sw * e;                                                 // still wipes in with the page
       // The rail is not one uniform ribbon any more. A band of even weight from edge to edge is a RULE -- it
       // divides, and that is all it does. This one carries its light where the content is: full strength under
@@ -698,7 +698,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
           if (sw * t >= rw) break;
           const float w2 = 0.30f + 0.70f * powf(1.0f - t, 1.6f);
           soft_blob(dev, sw * t, divY + snap(3.0f), sw / 16.0f, snap(10.0f),
-                    ((u32)(52.0f * w2) << 24) | (lerpc(C_GOLDHI, C_ACCENT, t) & 0x00FFFFFFu));
+                    ((u32)(52.0f * w2) << 24) | (lerpc(C_METAL_HI, C_ACCENT, t) & 0x00FFFFFFu));
       }
       const float tt = f.t * 0.045f, ph = tt - floorf(tt);                     // one pass every ~22 s
       // A head and three fading lengths of tail behind it. One blob was a dot sliding along a line ; a comet
@@ -708,7 +708,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
           const float bx2 = rw * ph - back;
           if (bx2 < -snap(90.0f)) continue;
           const u32 al2 = (u32)(70.0f / (1.0f + 1.5f * (float)tl));
-          soft_blob(dev, bx2, divY + snap(1.5f), snap(90.0f) + back * 0.35f, snap(4.0f), (al2 << 24) | (C_GOLDHI & 0x00FFFFFF));
+          soft_blob(dev, bx2, divY + snap(1.5f), snap(90.0f) + back * 0.35f, snap(4.0f), (al2 << 24) | (C_METAL_HI & 0x00FFFFFF));
       }
       cs(dev); }
     flat(dev, 0.0f, divY + snap(3.0f), sw, 1, C_BORDER);

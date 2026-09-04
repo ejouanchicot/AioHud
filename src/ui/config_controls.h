@@ -34,6 +34,13 @@ const int   NUANCE_ROWS = 3;   // lightness rows per hue (light tint / base / de
 // ---- MUTABLE accent family (single shared instance ; rederived each frame by apply_ui_theme) ----
 extern u32 C_ACCENT, C_ACCENTHI;
 extern u32 C_GOLD, C_GOLDHI, C_GOLD_DEEP;
+// REAL metal, and deliberately NOT theme-derived -- unlike C_GOLD, which is an alias of C_ACCENT and is
+// therefore whatever colour the user picked. The masthead carries a wordmark whose gold is baked into a
+// texture and follows no theme, so the furniture around it cannot follow one either: on a steel-blue accent
+// every "gold" hairline came out grey beside a gold logotype. These three are the logo art's own palette.
+static const u32 C_METAL_HI   = 0xFFFFE9A8;   // polished top facet
+static const u32 C_METAL      = 0xFFE3B44E;   // the body of the metal
+static const u32 C_METAL_DEEP = 0xFF8A5F22;   // shadowed underside
 extern u32 C_CTL_T, C_CTL_B, C_CTL_BR, C_ARROW;
 extern u32 C_TABON_T, C_TABON_B;
 extern u32 C_ROWON_T, C_ROWON_B;
