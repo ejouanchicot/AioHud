@@ -14,6 +14,7 @@
 #include "model/buff_groups.h"    // BuffGroup + BUFF_GROUP_EN/FR : the party buff strip's display groups
 #include "model/party_state.h"    // party().status_seen : which statuses have actually turned up this session
 #include "ui/buff_atlas.h"       // the ONE shared status-icon atlas + buff_cell_uv (borrowed, never released here)
+#include "ui/party.h"            // party_last_buff_icon_px : the size the HUD really draws a status icon at
 #include "gfx/draw.h"            // tquad : the grid cells draw a real status icon, not a placeholder
 #include "gfx/d3d.h"             // dTexQuadState / dSetTex
 #include "gfx/font.h"
@@ -233,13 +234,14 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 }
             } else {
                 const int g = bsInner_;
+                const float icsProbe = (party_last_buff_icon_px() > 0.0f) ? party_last_buff_icon_px() : snap(22.0f);   // how many fit on one line, at the size they will really be
                 // The group's OWN CATALOGUE, always -- not just what this session has met. Opening a group you
                 // have never played and finding an empty band is not a view, it is a dead end : there is
                 // nothing to arrange and no way to arrange it. What you carry draws normally, the rest draws
                 // faint, and both are movable -- which is what "fill it yourself" has to mean.
                 // Capped to one line's worth : past BUFF_PIN_MAX nothing can be stored anyway, and the last
                 // line reports whatever is left.
-                int capN = (int)((ctrlW + snap(6.0f)) / (snap(32.0f) + snap(8.0f) + snap(6.0f)));
+                int capN = (int)((ctrlW + snap(6.0f)) / (icsProbe + snap(8.0f) + snap(6.0f)));
                 if (capN < 4) capN = 4;
                 if (capN > UiConfig::BUFF_PIN_MAX) capN = UiConfig::BUFF_PIN_MAX;
                 innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, [](unsigned) { return true; });
@@ -259,10 +261,17 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             // losing legibility costs everything. A hidden group keeps a narrow stub -- hiding a group must not
             // remove it from the editor that is the only place to bring it back.
             const float gapR = snap(6.0f);
-            // NATIVE cell size. The atlas is a 32px grid and these are the same icons the HUD draws ; scaling
-            // them down here would make the editor show something the game never shows. So the band gives way
-            // on everything ELSE to fit -- the per-block preview first, then the label -- and never on this.
-            const float ics = snap((float)BUFF_CELL);
+            // THE SIZE THE GAME ACTUALLY DRAWS. 32 is the atlas CELL, not the rendered size : the strip draws at
+            // buffIconH() * S, which follows Buff Size, the 1/2-row mode, the box scale and the screen. Asking
+            // the party box (party_last_buff_icon_px) instead of recomputing that chain keeps ONE source of
+            // truth -- and the editor then shows the icons at exactly the size you will see in game, which is
+            // the entire premise of editing the band rather than a list. The fallback covers the first frames
+            // before the party box has drawn (fresh load, or party hidden) ; the floor keeps a block big enough
+            // to grab when someone runs a very small HUD.
+            float ics = party_last_buff_icon_px();
+            if (ics <= 0.0f) ics = snap(22.0f);
+            if (ics < snap(14.0f)) ics = snap(14.0f);
+            ics = snap(ics);
             float lsz = snap(10.5f); const float gapI = snap(2.0f), padR = snap(4.0f);
             int   capI = atGroups ? 4 : 1;
             for (int pass = 0; pass < 10; ++pass) {
@@ -280,9 +289,10 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 if (totalW <= ctrlW) break;
                 if (capI > 1) --capI;                            // first : fewer icons per block
                 else if (lsz > snap(8.0f)) lsz -= snap(0.5f);    // then the label, now the widest part
-                else break;                                      // the icons are never touched : at the narrowest
-                                                                 // panel the leftmost blocks clip instead, and the
-                                                                 // page is stencil-clipped so nothing spills
+                else break;                                      // the icons are never scaled : they are the game's
+                                                                 // own size. At the narrowest panel the leftmost
+                                                                 // blocks clip instead, and the page is
+                                                                 // stencil-clipped so nothing spills
             }
             // Entry 0 sits at the RIGHT edge and the band fills leftward. No position numbers anywhere, because
             // the position IS the position.
@@ -339,8 +349,9 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             ROW_NEXT(34.0f)
 
             // ================= the band =================
-            { const float bandH = snap(74.0f);
-              ROW_BAND(74.0f)
+            // the band is as tall as it needs to be for the game's own icon size, not a number picked for one
+            const float bandH = snap(ics + snap(42.0f));
+            { ROW_BAND(bandH)
                 const float sy = ry + yo + (snap(40.0f) - bandH) * 0.5f;
                 const float ly = sy + snap(11.0f);                      // the name, centred over its own block
                 const float iy = ly + snap(9.0f), uy = iy + ics + snap(6.0f);
@@ -482,7 +493,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 for (int i = 0; i < nRun; ++i) if (runs[i].hid)
                     rrect_fill(dev, snap(runs[i].x + runs[i].w - snap(9.0f)), snap(iy + ics * 0.35f), snap(6.0f), snap(6.0f), snap(3.0f), fa(C_MUTE), fa(C_MUTE));
             }
-            ROW_NEXT(74.0f)
+            ROW_NEXT(bandH)
 
             // ---- the one thing the band cannot say about itself ----
             { ROW_BAND(24.0f)

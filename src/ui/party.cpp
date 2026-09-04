@@ -330,6 +330,8 @@ void Party::measure(float& w, float& h) const {
 // 0 = live HUD (no cap, every buff drawn). Set by the Hud around the party-preview draw, reset right after.
 static float g_previewBuffLeft = 0.0f;
 void set_party_preview_buff_left(float x) { g_previewBuffLeft = x > 0.0f ? x : 0.0f; }
+static float g_lastBuffIconPx = 0.0f;   // what draw_member_buffs last used -> the config band matches the game exactly
+float party_last_buff_icon_px() { return g_lastBuffIconPx; }
 
 static const char* ICON_PATH() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\hand_cursor.raw"); return b; }
 // job-emblem atlas (white masks, tinted per role) : 8 cols x 3 rows of 64px cells, in JOBS[1..22] order
@@ -400,6 +402,7 @@ static void draw_member_buffs(u32 dev, u32 buffTex, const Row* rows, int n,
     const int   PERROW = twoMode ? 16 : 32;             // 2 rows : 16 + 16 ; 1 row : up to 32 on the single line
     const float vgap  = snap(1.0f * S);
     const float bs    = iconH;                          // constant icon size (row grows to fit)
+    g_lastBuffIconPx  = bs;                             // publish it : the config strip draws at the SAME size, so the editor shows what the game shows
     const float totalH = twoMode ? (2.0f * bs + vgap) : bs;
     const int   rowsN = twoMode ? 2 : 1;
     const float bmgn  = snap(bs * 0.35f);               // "+N" breathing gap : the inter-buff bgap is ~1px (buffs nearly touch),

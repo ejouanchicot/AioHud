@@ -28,6 +28,11 @@ float party_cursor_bob(float t, float size);
 // CONFIG-PREVIEW ONLY : clamp the LEFTWARD member buff strip to this stage-left X (px) ; icons past it collapse
 // into a "+N" marker at the leftmost fitting cell. 0 = live HUD (no cap ; every buff drawn as in game).
 void set_party_preview_buff_left(float x);
+// The size, in logical px, at which the party strip LAST drew a status icon. 32 is the atlas CELL ; what the
+// game actually renders is buffIconH() * S, which depends on Buff Size, the 1/2-row mode, the box scale and
+// the screen. The config band asks instead of recomputing it -- one source of truth, and it cannot drift.
+// 0 until the party box has drawn once (fresh load, party hidden) -- callers must have a fallback.
+float party_last_buff_icon_px();
 
 class Party : public Widget {
 public:
