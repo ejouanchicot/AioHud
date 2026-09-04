@@ -396,8 +396,12 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     } else {
         flat(dev, 0, 0, sw, sh, BG);                                  // no preview -> full opaque page
     }
-    flat(dev, 0, 0, sw, snap(2.0f), lerpc(C_METAL, C_METAL_HI, pulse));        // top hairline : REAL gold, matching the logotype rather than the theme
-    flat(dev, 0, 0, sw, 1, 0x40FFFFFF);                               // crisp top inner highlight
+    // The top edging, and it is BEVELLED rather than animated. A pulsing line reads as an effect ; metal reads
+    // as metal because it has a lit facet and a shadowed underside, and that is a matter of three static rows,
+    // not of movement. Bright, body, dark -- the order light falls in.
+    flat(dev, 0, 0, sw, snap(1.0f), C_METAL_HI);
+    flat(dev, 0, snap(1.0f), sw, snap(1.0f), C_METAL);
+    flat(dev, 0, snap(2.0f), sw, snap(1.0f), (C_METAL_DEEP & 0x00FFFFFFu) | 0xCC000000u);
     outline(dev, 0, 0, sw, sh, C_BORDERHI);
 
     // (the page rect and the hole are computed above : the background needs them)
@@ -620,7 +624,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
       const char* vs = "V" AIOHUD_VERSION;
       const float vsz = snap(14.0f), vw = fo->measure(vs, vsz);
       const float vh = snap(24.0f), vx = rgx + snap(16.0f), vy = ty - vh * 0.5f, vpad = snap(9.0f);
-      const u32 gold = lerpc(C_METAL, C_METAL_HI, pulse);
+      const u32 gold = C_METAL;   // static : an edging that breathes is an effect, not a material
       const float vbw = vw + vpad * 2.0f;
       rpanel(dev, vx, vy, vbw, vh, snap(5.0f), 0x66101820u, 0x66080C11u,
              (gold & 0x00FFFFFFu) | 0x88000000u, snap(1.0f));
@@ -635,10 +639,15 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // unstructured : this closes the name off as a unit and gives the space to its right a left edge to start
     // from. Two quads because a single one can only ramp between two colours, and this wants to arrive from
     // nothing and leave into nothing.
-    { const float rx2 = verRight + snap(20.0f), rh = snap(30.0f), ry2 = ty - rh * 0.5f;
-      const u32 gold = (lerpc(C_METAL, C_METAL_HI, pulse) & 0x00FFFFFFu);
-      q4(dev, rx2, ry2, snap(1.0f), rh * 0.5f, gold, gold, gold | 0x70000000u, gold | 0x70000000u);
-      q4(dev, rx2, ty, snap(1.0f), rh * 0.5f, gold | 0x70000000u, gold | 0x70000000u, gold, gold); }
+    { const float rx2 = snap(verRight + snap(20.0f)), rh = snap(30.0f), ry2 = ty - rh * 0.5f;
+      // Two columns, not one : the lit face and the shadow beside it. A single-colour line is a rule ; an edge
+      // with a light side and a dark side is a piece of metal standing up out of the plate. Both fade to nothing
+      // at top and bottom, which is why each takes two quads -- one can only ramp between two colours.
+      const u32 hi = (C_METAL_HI & 0x00FFFFFFu), dp = (C_METAL_DEEP & 0x00FFFFFFu);
+      q4(dev, rx2, ry2, snap(1.0f), rh * 0.5f, hi, hi, hi | 0x88000000u, hi | 0x88000000u);
+      q4(dev, rx2, ty,  snap(1.0f), rh * 0.5f, hi | 0x88000000u, hi | 0x88000000u, hi, hi);
+      q4(dev, rx2 + snap(1.0f), ry2, snap(1.0f), rh * 0.5f, dp, dp, dp | 0xAA000000u, dp | 0xAA000000u);
+      q4(dev, rx2 + snap(1.0f), ty,  snap(1.0f), rh * 0.5f, dp | 0xAA000000u, dp | 0xAA000000u, dp, dp); }
 
     // close button (X), top-right -- eased red crossfade + a tiny size bump on hover
     const float cbS = snap(36.0f), cbX = ix + iw - cbS, cbY = mhTop + (mhH - cbS) * 0.5f;   // centred in the plate, not pinned to its top
@@ -655,7 +664,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         const float lh = snap(26.0f), segW = snap(34.0f), lw = segW * 2.0f;
         const float lx = cbX - snap(12.0f) - lw, ly = cbY + (cbS - lh) * 0.5f;
         rpanel(dev, lx, ly, lw, lh, snap(7.0f), C_CTL_T, C_CTL_B,
-               (lerpc(C_METAL, C_METAL_HI, pulse) & 0x00FFFFFFu) | 0x70000000u, snap(1.0f));   // the header's controls share the version plate's hairline
+               (C_METAL & 0x00FFFFFFu) | 0x70000000u, snap(1.0f));   // the header's controls share the version plate's hairline
         const char* seg[2] = { "EN", "FR" };
         for (int i = 0; i < 2; ++i) {
             const float sx = lx + (float)i * segW;
@@ -676,7 +685,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     const float divY = mhBot;
     shadow_down(dev, 0.0f, divY, sw, snap(16.0f), 0x66000000u);               // the plate casts onto the content
     flat(dev, 0.0f, divY - snap(1.0f), sw, 1, (0x30FFFFFFu));                  // inner top light on the rail
-    { const u32 gl = lerpc(C_METAL, C_METAL_HI, pulse), gr = C_ACCENT;   // metal at the logo end, the theme accent at the far one
+    { const u32 gl = C_METAL_HI, gr = C_ACCENT;   // metal at the logo end, the theme accent at the far one
       const float rw = sw * e;                                                 // still wipes in with the page
       // The rail is not one uniform ribbon any more. A band of even weight from edge to edge is a RULE -- it
       // divides, and that is all it does. This one carries its light where the content is: full strength under
