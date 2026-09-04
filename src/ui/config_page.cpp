@@ -499,11 +499,14 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
               // light added is proportional to the room LEFT in each channel: dst = tex + (1-tex)*k, which is a
               // screen blend. It approaches 255 and never passes it, at any strength, on any pixel. A texel
               // already at 255 receives exactly nothing. So the peak can go up where it was forced down.
-              // 60, not 150. The screen blend removed the ceiling, and with the ceiling gone the number stops
-              // being a workaround and becomes a taste setting -- so it is set by eye, low. The point of the
-              // technique was never a brighter gleam ; it was a gleam whose softness survives being visible.
-              const float peakF = 60.0f;
-              const u32   tintG = 0x00FFE9B4u;                    // warm, not white : light ON gold, not instead of it
+              // 34, and a GOLD tint rather than a near-white one -- which is the half that made it read as
+              // opaque. Gold is (227,180,78): its blue channel is a third of its red. Light that is nearly white
+              // therefore raises blue the most IN PROPORTION, the colour desaturates toward grey, and the result
+              // looks like a milky film laid over the letters instead of light falling on them. Tinting the
+              // gleam to the metal's own hue keeps the highlight golden, and a highlight that stays the right
+              // colour can be far weaker and still read.
+              const float peakF = 34.0f;
+              const u32   tintG = 0x00FFC864u;                    // the metal's own hue : R high, G mid, B low
               struct G { static u32 at(float u, float v, float c3, float rx2, float ry2, float tl, float pk) {
                   const float ax = (u - (c3 + tl * (v - 0.5f))) / rx2;
                   const float ay = (v - 0.5f) / ry2;
