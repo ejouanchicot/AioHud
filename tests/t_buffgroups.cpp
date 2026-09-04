@@ -174,6 +174,33 @@ void test_buff_groups() {
         CHECK(biggest <= 256);
     }
 
+    SECTION("buff groups : the groups whose ORDER matters fit whole in the editor");
+    // The in-group editor shows the whole catalogue when it fits under BUFF_PIN_MAX, and falls back to
+    // "what you have met" only when it does not. Which groups fall on which side is the difference between
+    // "all my rolls are here" and a "+N more" line naming things you cannot reach -- so it is asserted, not
+    // assumed. If a generator ever grows Rolls or Songs past the cap, this is where it says so.
+    {
+        UiConfig& c = ui_config();
+        for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) c.buffPinN[g] = 0;
+        unsigned short m[UiConfig::BUFF_PIN_MAX];
+        struct { int g; const char* n; } WHOLE[] = {
+            { BG_ROLL, "Rolls" }, { BG_SONG, "Songs" }, { BG_GEO, "Geomancy" },
+            { BG_RUNE, "Runes" }, { BG_DANCE, "Dances" }, { BG_STEALTH, "Stealth" },
+            { BG_WATCH, "Watch" }, { BG_PROTECT, "Protection" }, { BG_PERM, "Permanent" },
+        };
+        bool allFit = true;
+        for (int i = 0; i < (int)(sizeof(WHOLE) / sizeof(WHOLE[0])); ++i) {
+            int t = 0;
+            buff_group_members(c, WHOLE[i].g, m, UiConfig::BUFF_PIN_MAX, &t, [](unsigned) { return true; });
+            if (t > UiConfig::BUFF_PIN_MAX) { allFit = false; printf("   %s needs %d entries, cap is %d\n", WHOLE[i].n, t, UiConfig::BUFF_PIN_MAX); }
+        }
+        CHECK(allFit);
+        // ... and the open-ended ones genuinely do NOT fit, or the fallback would be dead code.
+        int tOther = 0;
+        buff_group_members(c, BG_OTHER, m, UiConfig::BUFF_PIN_MAX, &tOther, [](unsigned) { return true; });
+        CHECK(tOther > UiConfig::BUFF_PIN_MAX);
+    }
+
     SECTION("buff groups : the config preview can demonstrate every group");
     // The preview draws the demo pool through the SAME sort as the live HUD. A group with no status in the
     // pool is a row in the "Buff order" list that the user can move up and down while NOTHING on screen

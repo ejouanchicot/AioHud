@@ -546,12 +546,22 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // arrange them. Filtered to what you meet, a group fits whole and the line never appears.
                 // A group NEVER met still falls back to its catalogue, so opening it is not a dead end --
                 // that was the reason the filter was dropped in the first place, and it is kept.
+                // THE WHOLE CATALOGUE WHENEVER IT FITS, and it fits for every group where the order actually
+                // matters : Rolls is 31, Songs 23, Geomancy 30, Runes 13, Dances 8 -- all under the 32 cap.
+                // So a COR opening Rolls gets ALL of them, arrangeable, whether or not they have been seen,
+                // and no "+N more" line appears.
+                // Only the open-ended groups overflow -- Abilities 134, Debuffs 49, Other 214 -- and those
+                // fall back to what you have actually MET, which is a handful. Listing 214 unreachable
+                // statuses to say "+182 more" helps nobody on the screen whose job is arranging them.
                 (void)icsProbe;
                 const int capN = UiConfig::BUFF_PIN_MAX;
-                innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal,
-                                            [](unsigned st) { return party().status_seen(st); });
-                if (innerN == 0)
-                    innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, [](unsigned) { return true; });
+                innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, [](unsigned) { return true; });
+                if (innerTotal > capN) {   // does not fit whole -> the ones you have met
+                    innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal,
+                                                [](unsigned st) { return party().status_seen(st); });
+                    if (innerN == 0)       // ... and never met either -> its catalogue, capped, so it is not a dead end
+                        innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, [](unsigned) { return true; });
+                }
                 for (int i = 0; i < innerN && nRun < 64; ++i) {
                     slots[0] = 0;
                     Run& r = runs[nRun++];
