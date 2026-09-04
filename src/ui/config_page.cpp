@@ -481,7 +481,14 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
           if (lp < 0.34f) {
               const float k = lp / 0.34f, bw = 0.26f;
               const float c2 = -bw + (1.0f + 2.0f * bw) * k;         // centre travels from off-left to off-right
-              const float peakF = 120.0f;
+              // PEAK, and this is the number that mattered. At 120 the additive pass put +120 on every channel
+              // of gold that already sits near (227,180,78): red and green both CLIP at 255, the gradient goes
+              // flat wherever they clip, and the edge of that flat region is a hard line. The profile was never
+              // the problem -- a clipped highlight has a hard edge by construction, however smooth the ramp that
+              // produced it. Kept under the ceiling now, and tinted warm rather than white so it reads as light
+              // ON gold instead of light INSTEAD OF gold.
+              const float peakF = 46.0f;
+              const u32   tintG = 0x00FFE9B4u;
               // The profile is a RAISED COSINE, squared, sampled across many slices. A triangle looked hard-edged
               // and was: its slope breaks at the peak and again at both ends, and the eye reads a discontinuity
               // in the DERIVATIVE as an edge even when the value itself is continuous (Mach bands). This curve is
@@ -505,7 +512,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                   if (t1 - t0 <= 0.0005f) continue;
                   const u32 a0 = A::at(t0, c2, bw, peakF), a1 = A::at(t1, c2, bw, peakF);
                   tquad(dev, lkX + lkW * t0, lkY, lkW * (t1 - t0), lkH,
-                        t0, t1, 0.0f, 1.0f, fa((a0 << 24) | 0x00FFFFFFu), fa((a1 << 24) | 0x00FFFFFFu));
+                        t0, t1, 0.0f, 1.0f, fa((a0 << 24) | tintG), fa((a1 << 24) | tintG));
               }
           } }
         dSetTex(dev, 0, 0); cs(dev);   // reset the blend after the additive pass (rule 3) and unbind (rule 8)
@@ -584,7 +591,13 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
               const float w2 = 0.30f + 0.70f * powf(1.0f - t, 1.6f);
               return (hue & 0x00FFFFFFu) | ((u32)(255.0f * w2) << 24); } };
           const u32 cA = R::at(f0, gl, gr), cB = R::at(f1, gl, gr);
-          q4(dev, x0, divY, x1 - x0, snap(3.0f), cA, cB, shade(cA, -0.35f), shade(cB, -0.35f));
+          // ONE crisp pixel of light with two of shadow under it, not a three-pixel slab. A thick coloured band
+          // is what a divider looked like fifteen years ago ; weight now comes from the light a thin edge
+          // throws, which is the bloom below. The dark line beneath is what makes the bright one sit ON the
+          // content rather than float over it.
+          q4(dev, x0, divY, x1 - x0, snap(1.0f), cA, cB, cA, cB);
+          q4(dev, x0, divY + snap(1.0f), x1 - x0, snap(2.0f),
+             shade(cA, -0.72f), shade(cB, -0.72f), shade(cA, -0.88f), shade(cB, -0.88f));
       }
       cs_add(dev);
       // ... and it BLEEDS onto the content below, following the same falloff. A line that emits light reads as
