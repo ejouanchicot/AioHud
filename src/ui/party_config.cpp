@@ -90,9 +90,20 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // row. A slider needs about 340px (its 244px capsule plus a readable label), so pairing is only done when the
     // column can actually hold two; below that the pair stacks and the band is twice as tall. One code path either
     // way -- the geometry is two ternaries, not two branches, because a second branch is what drifts.
+    // The gutter is 44px, not 18. At 18 the first column's control -- which is RIGHT-aligned inside its half --
+    // finished a hair before the second column's label began, so the two read as one run-on line instead of two
+    // columns. A column needs air on both sides of its content before the eye accepts it as a column.
+    // And a rule down the middle of that gutter, so the split is STATED rather than inferred from a gap.
     const bool  twoCol = ctrlW >= snap(720.0f);
-    const float halfW  = twoCol ? (ctrlW - snap(18.0f)) * 0.5f : ctrlW;
-    const float col2X  = coX + (twoCol ? halfW + snap(18.0f) : 0.0f);
+    const float gutter = snap(44.0f);
+    const float halfW  = twoCol ? (ctrlW - gutter) * 0.5f : ctrlW;
+    const float col2X  = coX + (twoCol ? halfW + gutter : 0.0f);
+    const float sepX   = snap(coX + halfW + gutter * 0.5f);
+    // Drawn per paired ROW, never as one line down the whole section : a row whose second half is empty (no
+    // procedural theme, no badge to size) has no split to state, and a rule through it would claim one.
+    auto sepv = [&](float y, float h, bool on) {
+        if (twoCol && on) flat(dev, sepX, snap(y + snap(7.0f)), snap(1.0f), snap(h) - snap(14.0f), 0x1EFFFFFFu);
+    };
 
     // ========================================================= GENERAL =========================================================
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("General", "G\xC3\xA9n\xC3\xA9ral"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
@@ -104,6 +115,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
           const float yB = twoCol ? yA : yA + snap(48.0f);
           const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
           row_toggle(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Show", "Afficher"), &ui_config().partyShow, 40.0f, 150.0f);
           { const float lo = 1.00f, hi = 2.00f;   // party floor 100% : it must cover the native block
             char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[0].scale * 100.0f + 0.5f));
@@ -127,6 +139,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
           const float yB = twoCol ? yA : yA + snap(48.0f);
           const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, proc);   // an empty second half has no split to state
           const float wA = proc ? halfW : ctrlW;
           { const int fam = window_theme_family(ui_config().skinTheme), var = window_theme_variant(ui_config().skinTheme);
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, wA, tr("Box Theme", "Th\xC3\xA8me de cadre"), box_family_name(fam))) {
@@ -182,6 +195,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
           const float yB = twoCol ? yA : yA + snap(46.0f);
           const float xB = proc ? (twoCol ? col2X : coX) : coX;
+          sepv(ry, bh2, proc);   // an empty second half has no split to state
           const float wB = proc ? halfW : ctrlW;
           if (proc) {   // FFXI skins are bitmaps : there is no procedural luminosity to move
               float v01 = (ui_config().skinLum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
@@ -219,6 +233,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
           const float yB = twoCol ? yA : yA + snap(48.0f);
           const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
           { int s = ui_config().gaugeStyle[0]; if (s < 0 || s > 7) s = 0;
             const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
                                   tr("Sphere", "Sph\xC3\xA8re"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
@@ -237,6 +252,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
           const float yB = twoCol ? yA : yA + snap(46.0f);
           const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
           { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[0] * 100.0f + 0.5f));
             float v01 = (ui_config().barHeight[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
@@ -256,6 +272,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !hasBadge) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
           const float yB = twoCol ? yA : yA + snap(48.0f);
           const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, hasBadge);   // an empty second half has no split to state
           { int m = ui_config().jobBadge[0]; if (m < 0 || m > 3) m = 0;
             const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Ic\xC3\xB4nes") };
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, hasBadge ? halfW : ctrlW, tr("Job Badge", "Badge de job"), jb[m])) {
@@ -275,6 +292,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
           const float yB = twoCol ? yA : yA + snap(48.0f);
           const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
           { const float lo = 0.50f, hi = 2.00f; char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));
             float v01 = (ui_config().cursorScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Cursor Size", "Taille du curseur"), czbuf, &v01)) {
@@ -333,6 +351,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
           const float yB = twoCol ? yA : yA + snap(48.0f);
           const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
           { const float lo = 0.40f, hi = 2.00f; char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
             float v01 = (ui_config().buffScale - lo) / (hi - lo);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Buff Size", "Taille des buffs"), bzbuf, &v01)) {
@@ -728,6 +747,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
           const float yB = twoCol ? yA : yA + snap(48.0f);
           const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
           row_toggle(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Show", "Afficher"), &ui_config().allyShow, 40.0f, 150.0f);
           { const float lo = 0.50f, hi = 2.00f;   // alliance may go smaller than the party box
             char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[1].scale * 100.0f + 0.5f));
@@ -748,6 +768,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
               const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
               const float yB = twoCol ? yA : yA + snap(48.0f);
               const float xB = twoCol ? col2X : coX;
+              sepv(ry, bh2, proc);   // an empty second half has no split to state
               { const int fam = window_theme_family(ui_config().allyTheme), var = window_theme_variant(ui_config().allyTheme);
                 if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, proc ? halfW : ctrlW, tr("Box Theme", "Th\xC3\xA8me de cadre"), box_family_name(fam))) {
                     ui_config().allyTheme = window_theme_index(wrap(fam + d, box_family_count()), var); save_ui_config(); } }
@@ -803,6 +824,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
           const float yB = twoCol ? yA : yA + snap(46.0f);
           const float xB = proc ? (twoCol ? col2X : coX) : coX;
+          sepv(ry, bh2, proc);   // an empty second half has no split to state
           const float wB = proc ? halfW : ctrlW;
           if (proc) {
               float v01 = (ui_config().allyLum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
@@ -824,6 +846,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
           const float yB = twoCol ? yA : yA + snap(48.0f);
           const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
           { int s = ui_config().gaugeStyle[1]; if (s < 0 || s > 7) s = 0;
             const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
                                   tr("Sphere", "Sph\xC3\xA8re"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
@@ -840,6 +863,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
           const float yB = twoCol ? yA : yA + snap(46.0f);
           const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
           { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[1] * 100.0f + 0.5f));
             float v01 = (ui_config().barHeight[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
@@ -858,6 +882,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !hasBadge) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
           const float yB = twoCol ? yA : yA + snap(48.0f);
           const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, hasBadge);   // an empty second half has no split to state
           { const float rowH = snap(38.0f); fo->begin(dev);   // what else an alliance row may show
             fo->draw_lc(dev, coX + snap(4.0f), yA + rowH * 0.5f, tr("Row extras", "Sur la ligne"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
             const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yA + (rowH - bbh) * 0.5f;
