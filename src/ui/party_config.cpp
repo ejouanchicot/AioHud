@@ -675,14 +675,28 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     if (wentBack) { bsInner_ = -1; bsSel_ = -1; }
                     bx -= snap(8.0f);
                 }
-                // The band carries no text of its own : this line names what is selected, and says how to go deeper.
+                // The band carries no text of its own, so this line does the talking -- and it has to, because
+                // NOTHING else told you the tiles were draggable or that a group opened. It names whatever is
+                // under the pointer and, in the same breath, the gesture that acts on it : a hint that arrives
+                // when the hand is already there is read, where a static caption over the band is furniture.
+                // Hover wins over selection : the pointer is the more recent statement of intent.
                 char lb[140];
-                if (bsSel_ < 0) lstrcpynA(lb, atGroups ? tr("Drag a block to move it", "Glisse un bloc pour le deplacer")
-                                                       : tr("Drag a buff to move it", "Glisse un buff pour le deplacer"), sizeof(lb));
-                else if (atGroups) {
-                    const int g = runs[bsSel_].grp;
-                    lstrcpynA(lb, tr(BUFF_GROUP_EN[g], BUFF_GROUP_FR[g]), sizeof(lb));   // the Open button says how to go deeper ; the label just names what is selected
-                } else { const char* n2 = buff_status_name(runs[bsSel_].ic[0]); lstrcpynA(lb, n2 ? n2 : "?", sizeof(lb)); }
+                const int hov = (bsHot_ >= 0 && bsHot_ < nRun) ? bsHot_ : -1;   // last frame's, see bsHot_
+                const int nam = (hov >= 0) ? hov : bsSel_;
+                if (nam < 0) lstrcpynA(lb, atGroups ? tr("Drag a block to move it  -  double-click a group to open it",
+                                                        "Glisse un bloc pour le deplacer  -  double-clic sur un groupe pour l'ouvrir")
+                                                    : tr("Drag a buff to move it", "Glisse un buff pour le deplacer"), sizeof(lb));
+                else {
+                    const char* n2 = atGroups ? tr(BUFF_GROUP_EN[runs[nam].grp], BUFF_GROUP_FR[runs[nam].grp])
+                                              : buff_status_name(runs[nam].ic[0]);
+                    if (!n2) n2 = "?";
+                    const char* fm = !atGroups        ? tr("%s  -  drag to move", "%s  -  glisse pour deplacer")
+                                   : (hov < 0)        ? tr("%s  -  click again to open", "%s  -  clique encore pour ouvrir")
+                                                      : tr("%s  -  drag to move, double-click to open",
+                                                           "%s  -  glisse pour deplacer, double-clic pour ouvrir");
+                    _snprintf(lb, sizeof(lb), fm, n2);
+                    lb[sizeof(lb) - 1] = 0;   // _snprintf does not terminate on truncation
+                }
                 fo->begin(dev);
                 fo->draw_lc(dev, coX + snap(4.0f), ty + bh * 0.5f, lb, ts_note(), fa(bsSel_ >= 0 ? C_TEXT : C_MUTE), fa(C_STROKE), 1.0f);
             }
@@ -748,6 +762,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // ---- grab : remember WHERE in the block you took hold of it ----
                 int hot = -1;
                 for (int i = 0; i < nRun; ++i) if (inrect(mo, runs[i].x, sy0 + tline[i] * lineH, runs[i].w, lineH)) { hot = i; break; }
+                bsHot_ = hot;   // for the hint line, which is drawn ABOVE the band and so runs a frame ahead of it
                 if (bsDrag_ < 0 && hot >= 0 && ctrl_drag_begin(dragUid, mo, true)) {
                     bsEnter_ = (bsSel_ == hot) ? 1 : 0;   // a press on the ALREADY selected block means "go inside", if it turns out not to be a drag
                     bsDrag_ = hot; bsDrop_ = hot; bsSel_ = hot;
@@ -802,7 +817,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 for (int k = 0; k < nv; ++k) {
                     const int i = vis[k];
                     const bool lift = carrying && (i == bsDrag_);
-                    const float by = lift ? ((mo ? mo->y : sy0) - lineH * 0.5f) : runs[i].by;   // carried : centred on the pointer ; the rest : their eased slot
+                    // HOVER LIFTS the tile a few pixels. Motion is the cheapest way to say "this one is loose" --
+                    // it costs no pixels of a band that has none to spare, and it reads before any label does.
+                    // Eased, because a tile that jumps on hover reads as a glitch rather than as an invitation.
+                    const float hov2 = ease(dragUid, 5000 + i, (i == hot && !carrying && bsDrag_ < 0) ? 1.0f : 0.0f, 16.0f);
+                    const float by = lift ? ((mo ? mo->y : sy0) - lineH * 0.5f) : (runs[i].by - hov2 * snap(3.0f));   // carried : centred on the pointer ; the rest : their eased slot
                     const float ty2 = by + snap(3.0f), th2 = lineH - snap(6.0f);   // inset, so wrapped lines do not touch
                     runs[i].ly = by + snap(12.0f);
                     runs[i].iy = runs[i].ly + snap(9.0f);
@@ -815,6 +834,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                         ft = (C_ACCENT & 0x00FFFFFF) | 0x3C000000u; fb = (C_ACCENT & 0x00FFFFFF) | 0x18000000u;
                         br = C_ACCENTHI; bw2 = snap(1.5f);
                     } else if (i == hot && !carrying) {
+                        drop_shadow(dev, runs[i].x, ty2, runs[i].w, th2, snap(5.0f), (u32)(70.0f * hov2));   // the lift needs a shadow or it is just a nudge
                         ft = 0x40202830u; fb = 0x40161C22u; br = (tint & 0x00FFFFFF) | 0xAA000000u; bw2 = snap(1.3f);
                     } else if (runs[i].hid) {
                         // HIDDEN has to read before the icon does, not after. A dim icon alone was too polite :
@@ -830,6 +850,19 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                         bw2 = snap(1.2f);
                     }
                     rpanel(dev, runs[i].x, ty2, runs[i].w, th2, snap(8.0f), ft, fb, br, bw2);
+                    // ---- the GRIP : six dots in the dead strip under the icons, faded in with the hover. ----
+                    // The lift says something is loose ; the grip says what to do about it. It is the one mark
+                    // every desktop already uses for "take hold of this", so it needs no legend, and it lives in
+                    // space the tile was not using -- between the bottom of the icons and its own border.
+                    if (hov2 > 0.01f) {
+                        const u32 ga = (u32)(190.0f * hov2) << 24;
+                        const u32 gc = (buff_group_tint(runs[i].grp) & 0x00FFFFFF) | ga;
+                        const float d = snap(1.8f), sp = snap(3.6f);
+                        const float gx = runs[i].x + runs[i].w * 0.5f - (sp + d * 0.5f), gy = by + ics + snap(29.0f);
+                        for (int r2 = 0; r2 < 2; ++r2)
+                            for (int c3 = 0; c3 < 3; ++c3)
+                                rrect_fill(dev, snap(gx + c3 * sp), snap(gy + r2 * sp), d, d, d * 0.5f, gc, gc);
+                    }
                     if (lift) rrect_top(dev, runs[i].x, ty2, runs[i].w, snap(2.0f), snap(8.0f), (C_ACCENTHI & 0x00FFFFFF) | 0x90000000u, (C_ACCENT & 0x00FFFFFF) | 0x00000000u);
                 }
                 // ---- PASS 2 : every icon, under ONE texture bind for the whole band ----
