@@ -252,6 +252,26 @@ static const int BUFF_GROUP_RANGE_N = (int)(sizeof(BUFF_GROUP_RANGE) / sizeof(BU
 // that is not drawable anyway, and buffs_gen.h stops at 635.
 static const int BUFF_GROUP_MAX_ID = 640;
 
+// ---- a status the game never shipped has no NAME, only a placeholder. ----
+// The resource file fills an unused slot with "ST<id>" ("ST224") or "(N/A)" rather than leaving a hole, so
+// buff_status_name answers for eight ids that no player will ever carry -- 24..27, 224..226 (three unused
+// slots at the tail of the song block) and 232. They are not songs and they are not anything else ; putting
+// them in a group would give the user a tile to arrange for an effect that cannot occur. Treated as unnamed,
+// which is what they are, so the editor skips them exactly the way it skips an id with no entry at all.
+// Kept here rather than in buffs_gen.h because that file is GENERATED, and because this is a statement about
+// what is worth a config row, not about what the game calls things.
+inline const char* buff_status_name_real(unsigned id) {
+    const char* n = buff_status_name(id);
+    if (!n) return 0;
+    if (n[0] == '(') return 0;                                    // "(N/A)"
+    if (n[0] == 'S' && n[1] == 'T' && n[2] >= '0' && n[2] <= '9') {  // "ST" + digits only
+        int k = 2;
+        while (n[k] >= '0' && n[k] <= '9') ++k;
+        if (!n[k]) return 0;
+    }
+    return n;
+}
+
 // Two flat byte tables, built ONCE together : the group of a status, and its rank INSIDE that group
 // (255 = not on the priority list -> keeps the game's own order, after everything that is listed).
 // Flat, because the strip resolves up to 32 ids per member per frame and a binary search per id, per
@@ -287,11 +307,11 @@ inline void buff_group_tables(const unsigned char*& grp, const unsigned char*& p
         // as a GEO aura, and those are genuinely different rows on the HUD.
         for (int i = 0; i < BUFF_GROUP_MAX_ID; ++i) {
             tblC[i] = (unsigned short)i;
-            const char* ni = buff_status_name((unsigned)i);
+            const char* ni = buff_status_name_real((unsigned)i);
             if (!ni) continue;
             for (int j = 0; j < i; ++j) {
                 if (tblG[j] != tblG[i]) continue;
-                const char* nj = buff_status_name((unsigned)j);
+                const char* nj = buff_status_name_real((unsigned)j);
                 if (!nj) continue;
                 bool same = true;
                 for (int k = 0; ; ++k) { if (ni[k] != nj[k]) { same = false; break; } if (!ni[k]) break; }
@@ -367,7 +387,7 @@ inline int buff_group_members(const UiConfig& c, int g, unsigned short* out, int
                               bool (*seen)(unsigned)) {
     int n = 0, qualified = 0;
     for (unsigned id = 0; id < (unsigned)BUFF_GROUP_MAX_ID; ++id) {
-        if (buff_group(id) != g || !buff_status_name(id)) continue;
+        if (buff_group(id) != g || !buff_status_name_real(id)) continue;   // no name -> nothing to arrange
         if (buff_canon(id) != id) continue;   // a second id for an effect already listed -- one tile, not two
         const unsigned char pr = buff_pri_effective(c, id);
         if (pr == 0xFF && buff_group_pri(id) == 0xFF && !(seen && seen(id))) continue;

@@ -197,6 +197,27 @@ void test_buff_groups() {
     CHECK(buff_group(308) == BG_ROLL);     // Double-Up Chance
     CHECK(buff_group(309) == BG_ROLL);     // Bust
 
+    SECTION("buff groups : a slot the game never shipped is not a config row");
+    // "ST224" and "(N/A)" are what the resource file writes for an unused id, not names.
+    CHECK(buff_status_name_real(224) == 0);
+    CHECK(buff_status_name_real(226) == 0);
+    CHECK(buff_status_name_real(24)  == 0);
+    CHECK(buff_status_name_real(232) == 0);
+    // ... and a real name that merely BEGINS like one still is one.
+    CHECK(buff_status_name_real(227) != 0);   // "Store TP"
+    CHECK(buff_status_name_real(33)  != 0);   // "Haste"
+    {   // none of them can reach the editor, in any group
+        UiConfig& c = ui_config();
+        unsigned short m[UiConfig::BUFF_PIN_MAX]; int tot = 0;
+        for (int g = 0; g < BG_COUNT; ++g) {
+            const int n = buff_group_members(c, g, m, UiConfig::BUFF_PIN_MAX, &tot,
+                                             [](unsigned) { return true; });   // even asking for EVERYTHING
+            for (int i = 0; i < n; ++i)
+                CHECK(m[i] != 224 && m[i] != 225 && m[i] != 226 && m[i] != 232 &&
+                      m[i] != 24 && m[i] != 25 && m[i] != 26 && m[i] != 27);
+        }
+    }
+
     SECTION("buff groups : the several ids of one effect behave as one");
     // The game gives one buff several status ids depending on where it came from -- Flurry is 265 and 581,
     // STR Boost is 80, 119 and 542. You never carry two at once, so the editor lists one tile and order and
