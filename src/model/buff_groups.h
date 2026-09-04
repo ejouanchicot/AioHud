@@ -86,6 +86,30 @@ static const BuffGroupFix BUFF_GROUP_FIX[] = {
 };
 static const int BUFF_GROUP_FIX_N = (int)(sizeof(BUFF_GROUP_FIX) / sizeof(BUFF_GROUP_FIX[0]));
 
+// ---- one TINT per group. It is the only mark that ties a run of icons in the config strip to the group it
+// belongs to, so it needs an origin rather than thirteen hand-picked hues : the first four ARE the HUD's own
+// role colours (job_role_color, party_state.cpp) -- tank blue, healer green, buffer gold, DD red -- and the
+// rest are chosen to sit in that same muted family. They live in the CONFIG only, never on the HUD, so they
+// do not spend the "at most ~2 saturated accents in steady state" budget the design brief sets for in-game.
+inline unsigned buff_group_tint(int g) {
+    static const unsigned T[BG_COUNT] = {
+        0xFF9B8CE0u,   // Stealth     -- violet : the one block you park at an end and never hunt for
+        0xFF86D36Fu,   // Watch       -- healer green (job_role_color)
+        0xFF7D9BF0u,   // Protection  -- tank blue (job_role_color)
+        0xFFECC94Au,   // Songs       -- buffer gold (job_role_color)
+        0xFFE0A85Eu,   // Rolls       -- amber, a step off the songs
+        0xFF5EC8C0u,   // Geomancy    -- the accent family
+        0xFFC87D9Bu,   // Runes/Wards
+        0xFFB0D36Fu,   // Dances
+        0xFF6FB8E0u,   // Enhancing
+        0xFFE08585u,   // Abilities   -- DD red (job_role_color)
+        0xFF8C93A0u,   // Permanent   -- deliberately grey : it never changes, it should never draw the eye
+        0xFFC4565Fu,   // Debuffs
+        0xFF5F6975u    // Other       -- greyest of all
+    };
+    return (g >= 0 && g < BG_COUNT) ? T[g] : 0xFF5F6975u;
+}
+
 // ---- BUFF_FAM category -> group, for everything the fix table does not name. ----
 inline unsigned char buff_group_of_cat(int cat) {
     switch (cat) {

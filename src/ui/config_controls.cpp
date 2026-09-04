@@ -452,6 +452,21 @@ void ctrl_release_drag() {
     g_slider = -1;
     save_ui_config();   // the release branch never ran -> persist the value the drag left in memory
 }
+// ---- the latch, reused by a NON-value drag (the buff-strip reorder in party_config.cpp). ----
+// Deliberately the same `g_slider`, not a second variable : two independent latches would let a strip drag and
+// a slider drag run at once, which is the whole failure mode the latch was added for. ctrl_release_drag()
+// therefore also frees a stranded strip drag when the page stops being drawn.
+bool ctrl_drag_begin(int id, const MouseState* mo, bool hot) {
+    if (!(mo && mo->clicked && hot && g_slider < 0)) return false;
+    g_slider = id; return true;
+}
+bool ctrl_drag_active(int id) { return g_slider == id; }
+bool ctrl_drag_end(int id, const MouseState* mo) {
+    if (g_slider != id) return false;
+    if (mo && mo->down) return false;      // still held
+    g_slider = -1; return true;            // the caller persists what the drop changed -- no blanket save here
+}
+
 bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
                        float x, float y, float w, const char* label, const char* valueText, float* v01) {
     const float rowH = snap(40.0f);

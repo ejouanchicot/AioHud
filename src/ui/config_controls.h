@@ -95,6 +95,12 @@ constexpr int ctrl_uid_i(int base, int i) {
 // ---- D3D colour-quad state + AA primitives ----
 void cs(u32 dev);        // normal alpha colour-quad state
 void ctrl_release_drag();   // drop the slider/picker drag latch and persist -- call when the page stops being drawn
+// The SAME latch, for a control that drags something other than a value (the buff-strip reorder). Sharing it is
+// the point : a strip drag and a slider drag can then never both be live, which is exactly the bug the latch
+// exists to prevent. `hot` = the pointer is over the grabbable thing.
+bool ctrl_drag_begin(int id, const MouseState* mo, bool hot);   // true on the press that takes the latch
+bool ctrl_drag_active(int id);                                  // is this id the one currently holding it ?
+bool ctrl_drag_end(int id, const MouseState* mo);               // true on the frame the button comes up ; frees the latch
 void cs_add(u32 dev);    // ADDITIVE colour state (glow / bloom / shine)
 void q4(u32 dev, float x, float y, float w, float h, u32 tl, u32 tr, u32 bl, u32 br);
 void flat(u32 dev, float x, float y, float w, float h, u32 c);
