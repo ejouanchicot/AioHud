@@ -191,7 +191,7 @@ static const BuffGroupRange BUFF_GROUP_RANGE[] = {
     { 519, 519, BG_JA,      "Theurgic Focus (SCH)" },
     { 381, 385, BG_JA,      "Finishing Moves 1-5 (DNC)" },
     { 588, 588, BG_JA,      "Finishing Move 6+" },
-    { 308, 309, BG_JA,      "Double-Up Chance, Bust (COR)" },
+    { 308, 309, BG_ROLL,    "Double-Up Chance, Bust -- COR, and they belong beside the rolls they act on, not with the job abilities" },
     { 422, 431, BG_JA,      "the avatars' Favor (SMN)" },
     { 577, 577, BG_JA,      "Cait Sith's Favor" },
     { 625, 625, BG_JA,      "Siren's Favor" },
@@ -233,6 +233,19 @@ static const BuffGroupRange BUFF_GROUP_RANGE[] = {
     {  11,  11, BG_DEBUFF,  "Bind" },
     { 193, 193, BG_DEBUFF,  "Lullaby -- a song, but never one of YOURS : on a player it is a mob bard's sleep" },
 };
+// ---- and the ones the generator classifies CORRECTLY BY FAMILY but wrongly by DIRECTION. ----
+// TC_GEO holds both halves of geomancy : the boons an Indi- puts on you (Haste, Refresh, Fury, Barrier...)
+// and the banes it puts on a mob -- which land on YOU when the caster is on the other side. Gravity, Slow,
+// Paralysis, Frailty, Torpor and the rest are not geomancy buffs you arrange, they are things being done to
+// you, and they belong with the other debuffs.
+// This table OVERRIDES a classification instead of only filling a gap, which is why it is separate from the
+// ranges above : "the generator was silent" and "the generator was wrong" are different claims and should
+// not be able to be made by accident.
+static const BuffGroupRange BUFF_GROUP_FORCE[] = {
+    { 540, 540, BG_DEBUFF, "Poison (geo)" },
+    { 557, 567, BG_DEBUFF, "Wilt, Frailty, Fade, Malaise, Slip, Torpor, Vex, Languor, Slow, Paralysis, Gravity" },
+};
+static const int BUFF_GROUP_FORCE_N = (int)(sizeof(BUFF_GROUP_FORCE) / sizeof(BUFF_GROUP_FORCE[0]));
 static const int BUFF_GROUP_RANGE_N = (int)(sizeof(BUFF_GROUP_RANGE) / sizeof(BUFF_GROUP_RANGE[0]));
 
 // Highest status id we resolve. Matches the buff atlas ceiling (32 cols x 20 rows = 640 cells) : an id past
@@ -258,6 +271,9 @@ inline void buff_group_tables(const unsigned char*& grp, const unsigned char*& p
         for (int r = 0; r < BUFF_GROUP_RANGE_N; ++r)          // the families the generator never sees ; ONLY over what is still unclassified
             for (int i = BUFF_GROUP_RANGE[r].lo; i <= BUFF_GROUP_RANGE[r].hi && i < BUFF_GROUP_MAX_ID; ++i)
                 if (tblG[i] == BG_OTHER) tblG[i] = BUFF_GROUP_RANGE[r].group;
+        for (int r = 0; r < BUFF_GROUP_FORCE_N; ++r)          // ... and the ones it got the DIRECTION wrong on
+            for (int i = BUFF_GROUP_FORCE[r].lo; i <= BUFF_GROUP_FORCE[r].hi && i < BUFF_GROUP_MAX_ID; ++i)
+                tblG[i] = BUFF_GROUP_FORCE[r].group;
         for (int i = 0; i < BUFF_GROUP_FIX_N; ++i) {          // the priority list wins the GROUP ; its rank waits for canon
             const unsigned st = BUFF_GROUP_FIX[i].status, g = BUFF_GROUP_FIX[i].group;
             if (st < (unsigned)BUFF_GROUP_MAX_ID && g < BG_COUNT) tblG[st] = (unsigned char)g;

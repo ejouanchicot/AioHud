@@ -180,6 +180,23 @@ void test_buff_groups() {
         CHECK(biggest <= 256);
     }
 
+    SECTION("buff groups : geomancy's banes are debuffs, its boons are not");
+    // TC_GEO holds both halves : what an Indi- gives you, and what it does to a mob -- which lands on YOU
+    // when the caster is on the other side. The split is by direction, not by family, and the generator
+    // cannot see direction at all, so it is asserted here in both senses.
+    CHECK(buff_group(567) == BG_DEBUFF);   // Gravity
+    CHECK(buff_group(565) == BG_DEBUFF);   // Slow
+    CHECK(buff_group(566) == BG_DEBUFF);   // Paralysis
+    CHECK(buff_group(558) == BG_DEBUFF);   // Frailty
+    CHECK(buff_group(540) == BG_DEBUFF);   // Poison
+    CHECK(buff_group(580) == BG_GEO);      // Haste : a boon, stays geomancy
+    CHECK(buff_group(541) == BG_GEO);      // Refresh
+    CHECK(buff_group(549) == BG_GEO);      // Fury
+
+    SECTION("buff groups : COR's roll machinery sits with the rolls");
+    CHECK(buff_group(308) == BG_ROLL);     // Double-Up Chance
+    CHECK(buff_group(309) == BG_ROLL);     // Bust
+
     SECTION("buff groups : the several ids of one effect behave as one");
     // The game gives one buff several status ids depending on where it came from -- Flurry is 265 and 581,
     // STR Boost is 80, 119 and 542. You never carry two at once, so the editor lists one tile and order and
