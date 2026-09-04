@@ -398,15 +398,60 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
 
     // (the page rect and the hole are computed above : the background needs them)
 
-    // ===== HEADER : the AIOHUD wordmark as a GILDED heraldic emblem (heroic-fantasy, not hi-tech) =====
-    const float titleSz = snap(34.0f);
+    // ===== MASTHEAD : a full-width plate, not a line of text with two buttons at the far end =====
+    // The header used to be a 50px strip carrying an emblem hard against the left edge and the close/language
+    // controls hard against the right, with the entire width of a full-screen page dead in between. Nothing was
+    // wrong with the emblem ; there was simply no MASTHEAD for it to sit on.
+    // So it gets one, built in layers that are each nearly invisible on their own -- every decorative pass below
+    // is under 0x30 alpha. That is the whole trick to "rich, not loud" : depth comes from many faint layers that
+    // agree, never from one loud one. And it is all live geometry -- D3D8 has no shaders, but it has additive
+    // blending, gradients and a stencil scissor, which is enough to light a band from the inside.
+    const float mhTop = iy - snap(8.0f), mhH = snap(64.0f), mhBot = mhTop + mhH;
+    const u32 acc = C_ACCENT & 0x00FFFFFF;
+    {
+        // 1. the plate itself : a raised slab, warmed a few percent toward the accent so it separates from the
+        //    page behind it by TEMPERATURE as well as by value.
+        vg(dev, ix, mhTop, iw, mhH, lerpc(0xFF10151Bu, C_ACCENT, 0.10f), lerpc(0xFF080B0Fu, C_ACCENT, 0.04f));
+        clip_rect_begin(dev, ix, mhTop, iw, mhH);
+        cs_add(dev);
+        // 2. three lights drifting behind it at different speeds, so the band is never twice the same and never
+        //    obviously moving either. Sine pairs that do not share a period : the eye reads "alive", not "loop".
+        const float cy2 = mhTop + mhH * 0.5f;
+        soft_blob(dev, ix + iw * (0.18f + 0.10f * sinf(f.t * 0.17f)), cy2, iw * 0.26f, mhH * 0.95f, (26u << 24) | acc);
+        soft_blob(dev, ix + iw * (0.55f + 0.14f * sinf(f.t * 0.11f + 2.1f)), cy2, iw * 0.30f, mhH * 0.85f, (18u << 24) | (C_GOLD & 0x00FFFFFF));
+        soft_blob(dev, ix + iw * (0.86f + 0.08f * sinf(f.t * 0.23f + 4.0f)), cy2, iw * 0.20f, mhH * 0.90f, (16u << 24) | acc);
+        // 3. slanted light streaks -- the one element with an EDGE to it. D3D8 fixed-function draws axis-aligned
+        //    quads, so a parallelogram is a column of tall thin ones stepped up by a slope ; the stencil above
+        //    crops the overhang. Faint, and fading out along their own length, so they suggest speed rather than
+        //    announcing it.
+        for (int st = 0; st < 3; ++st) {
+            const float x0 = ix + iw * (0.06f + 0.13f * (float)st), len = iw * 0.16f;
+            const int N = 22; const float seg = len / (float)N;
+            for (int q = 0; q < N; ++q) {
+                const float sx = x0 + (float)q * seg, k = (float)q / (float)N;
+                const u32 a2 = (u32)(20.0f * (1.0f - k) * (0.7f + 0.3f * pulse));
+                flat(dev, sx, mhTop - k * mhH * 0.55f, seg + 1.0f, mhH * 1.7f, (a2 << 24) | acc);
+            }
+        }
+        cs(dev);
+        clip_rect_end(dev);
+    }
+    const float titleSz = snap(38.0f);
     fo->begin(dev);
     const float tw = fo->measure("AIOHUD", titleSz);
     const float gemR = snap(6.0f), gemGap = snap(16.0f);
-    const float wx = ix + gemR * 2.0f + gemGap;                                // room for the left lozenge ornament
+    const float wx = ix + gemR * 2.0f + gemGap + snap(6.0f);                   // room for the left lozenge ornament
     const float ty = iy + snap(23.0f);
     const float bandTop = ty - titleSz * 0.62f, bandBot = ty + titleSz * 0.54f;
-    const u32 acc = C_ACCENT & 0x00FFFFFF;
+    // 4. the name again, three times the size, behind itself and bled off both edges of the plate. An editorial
+    //    device, and the cheapest depth there is : the eye reads a background it never quite resolves.
+    {
+        clip_rect_begin(dev, ix, mhTop, iw, mhH);
+        const float gs = titleSz * 2.9f;
+        fo->begin(dev);
+        fo->draw_lc(dev, wx - snap(10.0f), mhTop + mhH * 0.46f, "AIOHUD", gs, fa((0x0Eu << 24) | acc), 0, 0.0f);
+        clip_rect_end(dev);
+    }
     // warm torchlight glow behind the emblem
     cs_add(dev); soft_blob(dev, wx + tw * 0.5f, ty - snap(1.0f), tw * 0.64f, snap(28.0f), ((u32)(46.0f * (0.6f + 0.4f * pulse)) << 24) | acc); cs(dev);
     // gilded wordmark : bright top -> deep bottom = engraved gilt (accent-tinted), extruded for relief
@@ -459,10 +504,21 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         }
     }
 
-    // accent divider under the header (animated wipe-in width + a soft glow seat)
-    const float divY = iy + snap(50.0f);
-    flat(dev, ix, divY, iw, 1, C_BORDER);
-    flat(dev, ix, divY, iw * e, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse));   // gold wipe-in divider
+    // 5. the plate's own edge : a rail that CHANGES HUE along its length (gold at the emblem, accent at the far
+    //    end) with a single light travelling it. A flat divider under a lit band reads as a line someone forgot
+    //    to finish. The travel is slow enough -- one pass every twenty-odd seconds -- that it is never a
+    //    progress bar, and it is the one thing on the page that says the overlay is live rather than a picture.
+    const float divY = mhBot;
+    shadow_down(dev, ix, divY, iw, snap(16.0f), 0x66000000u);                  // the plate casts onto the content
+    flat(dev, ix, divY - snap(1.0f), iw, 1, (0x30FFFFFFu));                    // inner top light on the rail
+    { const u32 gl = lerpc(C_GOLD, C_GOLDHI, pulse), gr = C_ACCENT;
+      const float rw = iw * e;                                                 // still wipes in with the page
+      q4(dev, ix, divY, rw, snap(3.0f), gl, gr, shade(gl, -0.35f), shade(gr, -0.35f));
+      cs_add(dev);
+      const float tt = f.t * 0.045f, ph = tt - floorf(tt);                     // one pass every ~22 s
+      soft_blob(dev, ix + rw * ph, divY + snap(1.5f), snap(90.0f), snap(4.0f), (70u << 24) | (C_GOLDHI & 0x00FFFFFF));
+      cs(dev); }
+    flat(dev, ix, divY + snap(3.0f), iw, 1, C_BORDER);
 
     // ===== TAB STRIP (glass "modules" : gear / profile / help, an accent-lit active pill) =====
     const float tabY = divY + snap(18.0f), tabH = snap(42.0f), tabW = snap(176.0f), tabGap = snap(6.0f);
