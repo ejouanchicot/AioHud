@@ -478,16 +478,21 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // instead would have swept a visible box across the plate, which is the cheap version of this and looks
         // it. tquad's two colours are LEFT and RIGHT, which is exactly the axis a sweep needs.
         { const float per = 7.0f; float lp = f.t / per; lp -= floorf(lp);
-          if (lp < 0.34f) {
-              const float k = lp / 0.34f, bw = 0.26f;
+          if (lp < 0.46f) {
+              const float k = lp / 0.46f, bw = 0.78f;
               const float c2 = -bw + (1.0f + 2.0f * bw) * k;         // centre travels from off-left to off-right
-              // PEAK, and this is the number that mattered. At 120 the additive pass put +120 on every channel
-              // of gold that already sits near (227,180,78): red and green both CLIP at 255, the gradient goes
-              // flat wherever they clip, and the edge of that flat region is a hard line. The profile was never
-              // the problem -- a clipped highlight has a hard edge by construction, however smooth the ramp that
-              // produced it. Kept under the ceiling now, and tinted warm rather than white so it reads as light
-              // ON gold instead of light INSTEAD OF gold.
-              const float peakF = 46.0f;
+              // WHY THIS IS A SWELL AND NOT A STREAK, after three attempts at a streak.
+              // The texture stage is MODULATE, so the additive pass contributes texRGB * diffuse * alpha: the
+              // light added is PROPORTIONAL TO THE TEXEL'S OWN BRIGHTNESS. Gold's bevel highlights already sit
+              // near 255, so they clip first and hardest, and a clipped region has a flat top whose boundary is
+              // a hard line -- by construction, at any peak, however smooth the ramp feeding it. Lowering the
+              // peak from 120 to 46 moved that boundary; it could not remove it. Fixed-function has no per-pixel
+              // test to add light only where there is room for it.
+              // What CAN be removed is the band. At bw 0.78 the ramp is wider than the wordmark itself, so no
+              // edge of it is ever inside the art -- the whole logo brightens and falls again as the peak passes
+              // over, and there is no travelling boundary to read as hard. Slower, wider, quieter: 24 slices and
+              // a peak that stays under the ceiling on everything but the highlights themselves.
+              const float peakF = 34.0f;
               const u32   tintG = 0x00FFE9B4u;
               // The profile is a RAISED COSINE, squared, sampled across many slices. A triangle looked hard-edged
               // and was: its slope breaks at the peak and again at both ends, and the eye reads a discontinuity
@@ -502,7 +507,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                   return (u32)(pk * wgt * wgt); } };
               dTexQuadState(dev, logoTex_, true);
               dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);            // ADD light to the gold, never replace it
-              const int NS = 14;
+              const int NS = 24;
               for (int i2 = 0; i2 < NS; ++i2) {
                   float t0 = c2 - bw + (2.0f * bw) * (float)i2 / (float)NS;
                   float t1 = c2 - bw + (2.0f * bw) * (float)(i2 + 1) / (float)NS;
