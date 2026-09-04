@@ -203,27 +203,33 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             const int dragUid = CTRL_ID;
             const u32 bTex = buff_atlas_tex(dev);   // BORROWED : buff_atlas.cpp owns it and is the only place that releases it. 0 while its bounded retry has not landed -> the band draws its tints and stays usable, rather than holes.
 
-            struct Run { int n; unsigned short ic[4]; float x, w; unsigned char grp; bool hid; };
+            struct Run { int n; unsigned short ic[4]; float x, w; unsigned char grp; bool hid; bool faint; };
             Run runs[64]; int nRun = 0;
-            int slots[UiConfig::BUFF_ORDER_N]; int nEmpty = 0;   // slots[k] = the buffOrder position the k-th visible run occupies
+            int slots[UiConfig::BUFF_ORDER_N]; int nUnmet = 0;   // slots[k] = the buffOrder position the k-th visible run occupies
             unsigned short inner[256]; int innerTotal = 0, innerN = 0;
             const bool atGroups = (bsInner_ < 0 || bsInner_ >= BG_COUNT);
             if (atGroups) {
                 for (int i = 0; i < UiConfig::BUFF_ORDER_N && nRun < 64; ++i) {
                     const int g = ui_config().buffOrder[i];
                     unsigned short m[4]; int t = 0;
-                    const int k = buff_group_members(ui_config(), g, m, 4, &t, [](unsigned st) { return party().status_seen(st); });
+                    int k = buff_group_members(ui_config(), g, m, 4, &t, [](unsigned st) { return party().status_seen(st); });
                     const bool hid = ui_config().buff_group_hidden(g);
-                    // A group with nothing in it has nothing to show and nothing to order -- and there are
-                    // usually five or six of them (you are not every job at once). Leaving them in the band as
-                    // blank stubs is the noise this editor exists to remove, so they come out of the VIEW while
-                    // keeping their POSITION : the instant one of their buffs turns up, it lands where it was
-                    // put. The chip on the last line brings them back when you want to pre-arrange one.
-                    if (k == 0 && !hid && !bsShowEmpty_) { ++nEmpty; continue; }
+                    // NO EMPTY BLOCKS, EVER. A block that shows nothing says nothing -- and five or six groups
+                    // hold nothing at any given time, because nobody is every job at once. So a group either
+                    // shows what you actually carry, or (with All on) what it IS, previewed from its own
+                    // catalogue and dimmed to say "not met yet". A group left out of the VIEW keeps its
+                    // POSITION : the instant one of its buffs turns up, it lands where it was put.
+                    bool faint = false;
+                    if (k == 0) {
+                        if (!bsShowAll_) { ++nUnmet; continue; }
+                        k = buff_group_members(ui_config(), g, m, 4, &t, [](unsigned) { return true; });
+                        faint = true;
+                        if (k == 0) continue;   // a group the catalogue itself cannot fill has nothing to say
+                    }
                     slots[nRun] = i;
                     Run& r = runs[nRun++];
                     r.n = k; for (int q = 0; q < k; ++q) r.ic[q] = m[q];
-                    r.grp = (unsigned char)g; r.hid = hid;
+                    r.grp = (unsigned char)g; r.hid = hid; r.faint = faint;
                 }
             } else {
                 const int g = bsInner_;
@@ -232,7 +238,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     : buff_group_members(ui_config(), g, inner, UiConfig::BUFF_PIN_MAX, &innerTotal,
                                          [](unsigned st) { return party().status_seen(st); });
                 if (innerN > 64) innerN = 64;   // the band is one line ; the rest keeps the game's order
-                for (int i = 0; i < innerN; ++i) { slots[0] = 0; Run& r = runs[nRun++]; r.n = 1; r.ic[0] = inner[i]; r.grp = (unsigned char)g; r.hid = false; }
+                for (int i = 0; i < innerN; ++i) { slots[0] = 0; Run& r = runs[nRun++]; r.n = 1; r.ic[0] = inner[i]; r.grp = (unsigned char)g; r.hid = false; r.faint = false; }
             }
             if (bsSel_ >= nRun) bsSel_ = -1;
             if (bsDrag_ >= nRun) { bsDrag_ = -1; bsDrop_ = -1; }
@@ -286,7 +292,12 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 bx -= snap(12.0f);
                 if (atGroups) {
                     if (bsSel_ >= 0) {
-                        const bool hid = runs[bsSel_].hid;
+                        // An explicit way in. Clicking the selected block again also works, but a gesture nobody
+                        // can see is not a feature -- the button is what makes the second level discoverable.
+                        bx -= chipW2;
+                        if (push_btn(dev, fo, mo, click, CTRL_ID, bx, ty, chipW2, bh, tr("Open", "Ouvrir"), 0)) { bsInner_ = runs[bsSel_].grp; bsSel_ = -1; }
+                        bx -= snap(8.0f);
+                        const bool hid = (bsSel_ >= 0 && bsSel_ < nRun) ? runs[bsSel_].hid : false;
                         bx -= chipW2;
                         if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx, ty, chipW2, bh,
                                         hid ? tr("Hidden", "Masque") : tr("Shown", "Affiche"), !hid)) {
@@ -305,8 +316,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                                                        : tr("Drag a buff to move it", "Glisse un buff pour le deplacer"), sizeof(lb));
                 else if (atGroups) {
                     const int g = runs[bsSel_].grp;
-                    _snprintf(lb, sizeof(lb), "%s  -  %s", tr(BUFF_GROUP_EN[g], BUFF_GROUP_FR[g]),
-                              tr("click again to arrange inside", "clique encore pour ranger l'interieur")); lb[sizeof(lb) - 1] = 0;
+                    lstrcpynA(lb, tr(BUFF_GROUP_EN[g], BUFF_GROUP_FR[g]), sizeof(lb));   // the Open button says how to go deeper ; the label just names what is selected
                 } else { const char* n2 = buff_status_name(runs[bsSel_].ic[0]); lstrcpynA(lb, n2 ? n2 : "?", sizeof(lb)); }
                 fo->begin(dev);
                 fo->draw_lc(dev, coX + snap(4.0f), ty + bh * 0.5f, lb, snap(12.5f), fa(bsSel_ >= 0 ? C_TEXT : C_MUTE), fa(C_STROKE), 1.0f);
@@ -318,75 +328,117 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
               ROW_BAND(46.0f)
                 const float sy = ry + yo + (snap(40.0f) - bandH) * 0.5f;
                 const float iy = sy + snap(9.0f), uy = iy + ics + snap(5.0f);
-                // A drag we think we own but the LATCH no longer does : the page was closed, or the tab
-                // switched, mid-drag and ctrl_release_drag() freed it under us. Without this the run stays
-                // lifted and the `bsDrag_ < 0` gate below blocks every future grab -- one badly-timed close
-                // and the editor is dead for the session. Recover, do not latch a transient into a state.
+                // A drag we think we own but the LATCH no longer does : the page was closed, or the tab switched,
+                // mid-drag and ctrl_release_drag() freed it under us. Without this the run stays lifted and the
+                // `bsDrag_ < 0` gate below blocks every future grab -- one badly-timed close and the editor is dead
+                // for the session. Recover ; never latch a transient into a state.
                 if (bsDrag_ >= 0 && !ctrl_drag_active(dragUid)) { bsDrag_ = -1; bsDrop_ = -1; bsEnter_ = 0; }
+
+                // ---- grab : remember WHERE in the block you took hold of it ----
+                // The block then hangs off the pointer at the point you grabbed, like dragging a desktop icon,
+                // instead of snapping its corner to the cursor.
                 int hot = -1;
                 for (int i = 0; i < nRun; ++i) if (inrect(mo, runs[i].x, sy, runs[i].w, bandH)) { hot = i; break; }
-                // ---- grab ----
                 if (bsDrag_ < 0 && hot >= 0 && ctrl_drag_begin(dragUid, mo, true)) {
                     bsEnter_ = (bsSel_ == hot) ? 1 : 0;   // a press on the ALREADY selected run means "go inside", if it turns out not to be a drag
                     bsDrag_ = hot; bsDrop_ = hot; bsSel_ = hot;
+                    bsGrabDX_ = mo->x - runs[hot].x;
+                    bsGrabX_ = mo->x; bsMoved_ = 0;
                 }
-                // ---- hold : where would it land ? ----
-                // Re-target as soon as the pointer passes a neighbour's MIDPOINT, not on release -- the band has to
-                // answer "here" while you are still holding, or the drop is a guess. The band paints right-to-left,
-                // so a pointer LEFT of a run's middle means LATER in the order.
+
+                // ---- where would it land ? ----
+                // Walk the OTHER blocks right-to-left and count how many sit right of the pointer. Monotonic in
+                // the pointer's x, so it cannot oscillate the way a "compare against my own current slot" test
+                // does once the reflow has already moved things.
                 if (bsDrag_ >= 0 && ctrl_drag_active(dragUid) && mo) {
-                    int at = bsDrop_;
-                    for (int i = 0; i < nRun; ++i)
-                        if (mo->x >= runs[i].x && mo->x < runs[i].x + runs[i].w) { at = (mo->x < runs[i].x + runs[i].w * 0.5f) ? i + 1 : i; break; }
-                    if (mo->x >= rightX) at = 0;                                  // past the right edge -> first
-                    if (nRun > 0 && mo->x < runs[nRun - 1].x) at = nRun;          // past the left edge  -> last
-                    if (at != bsDrop_) bsEnter_ = 0;                              // it moved : this was a drag, not a second click
+                    float px2 = rightX; int at = 0;
+                    bool placed = false;
+                    for (int k = 0, seen2 = 0; k < nRun; ++k) {
+                        if (k == bsDrag_) continue;
+                        const float w = runs[k].w;
+                        if (mo->x >= px2 - w * 0.5f) { at = seen2; placed = true; break; }
+                        px2 -= w + gapR; ++seen2;
+                    }
+                    if (!placed) at = nRun - 1;          // left of everything -> last
                     bsDrop_ = at;
+                    // Click or drag is decided by how far the POINTER travelled, never by whether the computed
+                    // drop index changed : that index flips the moment the pointer sits in the left half of a
+                    // block, so a perfectly still click on that half was being read as a drag -- which is why
+                    // clicking a selected group again did nothing at all.
+                    const float dx = mo->x - bsGrabX_;
+                    if ((dx < 0 ? -dx : dx) > snap(4.0f)) bsMoved_ = 1;
                 }
+
+                // ---- the layout, with the gap already open ----
+                // The other blocks slide apart to show where it will land. That IS the drop indicator : a caret
+                // drawn over the band said the same thing in a language the band does not speak, and it read as
+                // debug output. The gap is the answer, and it is the thing that will actually be there.
+                int vis[64], nv = 0;
+                if (bsDrag_ >= 0 && bsDrop_ >= 0) {
+                    for (int k = 0; k < nRun; ++k) if (k != bsDrag_) { if (nv == bsDrop_) vis[nv++] = bsDrag_; vis[nv++] = k; }
+                    if (nv <= bsDrop_) vis[nv++] = bsDrag_;
+                } else for (int k = 0; k < nRun; ++k) vis[nv++] = k;
+
+                { float tx[64]; float x = rightX;
+                  for (int k = 0; k < nv; ++k) { x -= runs[vis[k]].w; tx[vis[k]] = x; x -= gapR; }
+                  // Smooth ONLY while dragging : the springs are keyed by run index, and the runs are rebuilt every
+                  // frame, so between frames where the list itself changes (entering a group, revealing the empties)
+                  // an index means a different block. Snapping when idle keeps the spring in step with reality and
+                  // costs nothing -- there is nothing to animate when nothing is being moved.
+                  const float sp = (bsDrag_ >= 0) ? 26.0f : 1000.0f;
+                  for (int k = 0; k < nRun; ++k) runs[k].x = ease(dragUid, 128 + k, tx[k], sp);
+                  // the dragged block leaves the layout and follows the pointer
+                  if (bsDrag_ >= 0 && mo) runs[bsDrag_].x = mo->x - bsGrabDX_;
+                }
+
                 // ---- release ----
                 if (bsDrag_ >= 0 && ctrl_drag_end(dragUid, mo)) {
-                    const int from = bsDrag_; int to = bsDrop_;
+                    const int from = bsDrag_, to = bsDrop_;
                     bsDrag_ = -1; bsDrop_ = -1;
-                    if (to >= 0 && to != from && to != from + 1) {
-                        if (to > from) --to;                    // removing `from` shifts everything after it down
-                        mvFrom = from; mvTo = to;
-                    } else if (bsEnter_ && atGroups) {          // a click on an already-selected group : go inside
-                        bsInner_ = runs[from].grp; bsSel_ = -1;
-                    }
-                    bsEnter_ = 0;
+                    if (bsMoved_ && to >= 0 && to != from) { mvFrom = from; mvTo = to; }
+                    else if (!bsMoved_ && bsEnter_ && atGroups) { bsInner_ = runs[from].grp; bsSel_ = -1; }   // a click on an already-selected group : go inside
+                    bsEnter_ = 0; bsMoved_ = 0;
                 }
-                // ---- PASS 1 : surfaces, selection, tint rules, the insertion caret (colour-quad state) ----
-                for (int i = 0; i < nRun; ++i) {
+
+                // ---- PASS 1 : surfaces (colour-quad state) ----
+                for (int k = 0; k < nv; ++k) {
+                    const int i = vis[k];
                     const bool lift = (i == bsDrag_);
-                    const float dy = lift ? -snap(4.0f) : 0.0f;
-                    if (lift) drop_shadow(dev, runs[i].x, sy + dy, runs[i].w, bandH, snap(4.0f), 70);
-                    if (i == bsSel_)   rrect_fill(dev, runs[i].x, sy + dy, runs[i].w, bandH, snap(7.0f), (C_ACCENT & 0x00FFFFFF) | 0x3C000000u, (C_ACCENT & 0x00FFFFFF) | 0x18000000u);
-                    else if (i == hot) rrect_fill(dev, runs[i].x, sy + dy, runs[i].w, bandH, snap(7.0f), 0x18FFFFFFu, 0x0CFFFFFFu);
-                    const int k = runs[i].hid ? 0 : (runs[i].n < capI ? runs[i].n : capI);
-                    const float uw = (k > 0) ? (k * ics + (k - 1) * gapI) : snap(6.0f);
+                    const float dy = lift ? -snap(5.0f) : 0.0f;
+                    if (lift) {
+                        // carried, not just highlighted : a shadow under it and a solid surface, so it reads as
+                        // something held ABOVE the band rather than a cell that changed colour.
+                        drop_shadow(dev, runs[i].x, sy + dy, runs[i].w, bandH, snap(6.0f), 110);
+                        rrect_fill(dev, runs[i].x, sy + dy, runs[i].w, bandH, snap(7.0f), 0xFF232C33u, 0xFF161C22u);
+                        rrect_top(dev, runs[i].x, sy + dy, runs[i].w, snap(2.0f), snap(7.0f), (C_ACCENTHI & 0x00FFFFFF) | 0x90000000u, (C_ACCENT & 0x00FFFFFF) | 0x00000000u);
+                    }
+                    else if (i == bsSel_) rrect_fill(dev, runs[i].x, sy, runs[i].w, bandH, snap(7.0f), (C_ACCENT & 0x00FFFFFF) | 0x3C000000u, (C_ACCENT & 0x00FFFFFF) | 0x18000000u);
+                    else if (i == hot && bsDrag_ < 0) rrect_fill(dev, runs[i].x, sy, runs[i].w, bandH, snap(7.0f), 0x18FFFFFFu, 0x0CFFFFFFu);
+                    const int kk = runs[i].hid ? 0 : (runs[i].n < capI ? runs[i].n : capI);
+                    const float uw = (kk > 0) ? (kk * ics + (kk - 1) * gapI) : snap(6.0f);
                     flat(dev, snap(runs[i].x + runs[i].w - padR - uw), snap(uy + dy), uw, snap(2.0f), fa(runs[i].hid ? C_MUTE : buff_group_tint(runs[i].grp)));
-                }
-                if (bsDrag_ >= 0 && bsDrop_ >= 0 && nRun > 0) {
-                    const float cx3 = (bsDrop_ >= nRun) ? (runs[nRun - 1].x - gapR * 0.5f)
-                                                        : (runs[bsDrop_].x + runs[bsDrop_].w + gapR * 0.5f);
-                    flat(dev, snap(cx3 - snap(1.5f)), sy + snap(4.0f), snap(3.0f), bandH - snap(8.0f), fa(C_ACCENTHI));
                 }
                 // ---- PASS 2 : every icon, under ONE texture bind for the whole band ----
                 if (bTex) {
                     dTexQuadState(dev, bTex, false);
                     for (int i = 0; i < nRun; ++i) {
                         if (runs[i].hid) continue;
-                        const float y0 = iy + ((i == bsDrag_) ? -snap(4.0f) : 0.0f);
-                        const int k = runs[i].n < capI ? runs[i].n : capI;
-                        for (int q = 0; q < k; ++q) {
+                        const float y0 = iy + ((i == bsDrag_) ? -snap(5.0f) : 0.0f);
+                        const int kk = runs[i].n < capI ? runs[i].n : capI;
+                        for (int q = 0; q < kk; ++q) {
                             // MIRRORED inside the run, like the band itself : rank 0 is the RIGHTMOST icon of its
                             // own block, not the leftmost. Drawing the preview left-to-right inside a band that
                             // reads right-to-left put Haste on the wrong side of Refresh -- the run contradicted
                             // the strip it lives in, and the config then disagreed with the HUD it is editing.
                             float au, av, u0, v0; buff_cell_uv(runs[i].ic[q], au, av, u0, v0);
                             const float ix = runs[i].x + runs[i].w - padR - (q + 1) * ics - q * gapI;
+                            // A group you have not met yet is previewed from its own catalogue and drawn
+                            // faint -- it says "this is what this group is" without pretending you carry it.
+                            // The fade is in the VERTEX colour, never the texture's alpha : a MANAGED
+                            // texture's alpha mis-samples as opaque while a zone loads (reference/d3d8-rendering.md).
+                            const u32 tc = runs[i].faint ? fa(0x70FFFFFFu) : 0xFFFFFFFFu;
                             tquad(dev, snap(ix), snap(y0), ics, ics,
-                                  u0, u0 + au, v0, v0 + av, 0xFFFFFFFFu, 0xFFFFFFFFu);
+                                  u0, u0 + au, v0, v0 + av, tc, tc);
                         }
                     }
                     dSetTex(dev, 0, 0); cs(dev);   // never leave a bound texture / textured state for the next control (rule 8)
@@ -401,15 +453,16 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             { ROW_BAND(24.0f)
                 char lb2[140];
                 if (!atGroups && innerTotal > innerN) { _snprintf(lb2, sizeof(lb2), tr("+%d more, in the game's order", "+%d autres, dans l'ordre du jeu"), innerTotal - innerN); lb2[sizeof(lb2) - 1] = 0; }
-                else if (atGroups && nEmpty > 0) { _snprintf(lb2, sizeof(lb2), tr("%d empty groups, position kept", "%d groupes vides, place conservee"), nEmpty); lb2[sizeof(lb2) - 1] = 0; }
+                else if (atGroups && nUnmet > 0) { _snprintf(lb2, sizeof(lb2), tr("%d groups not met yet, position kept", "%d groupes pas encore rencontres, place conservee"), nUnmet); lb2[sizeof(lb2) - 1] = 0; }
                 else lstrcpynA(lb2, tr("The rightmost block sits against the member row",
                                        "Le bloc le plus a droite est contre la ligne du membre"), sizeof(lb2));
                 fo->begin(dev);
                 fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(12.0f), lb2, snap(11.5f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-                if (atGroups && (nEmpty > 0 || bsShowEmpty_)) {
-                    const float cw3 = snap(74.0f), ch3 = snap(20.0f);
+                if (atGroups && (nUnmet > 0 || bsShowAll_)) {
+                    const float cw3 = snap(96.0f), ch3 = snap(20.0f);
                     if (toggle_chip(dev, fo, mo, click, CTRL_ID, coX + ctrlW - cw3, ry + yo + snap(2.0f), cw3, ch3,
-                                    tr("Empty", "Vides"), bsShowEmpty_)) { bsShowEmpty_ = !bsShowEmpty_; bsSel_ = -1; }
+                                    bsShowAll_ ? tr("All groups", "Tous groupes") : tr("Carried", "Portes"), bsShowAll_))
+                        { bsShowAll_ = !bsShowAll_; bsSel_ = -1; }
                 }
             }
             ROW_NEXT(24.0f)
