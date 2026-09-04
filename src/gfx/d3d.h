@@ -29,6 +29,9 @@ enum {
     D3DRS_WRAP0 = 128, D3DRS_BLENDOP = 171, D3DBLENDOP_ADD = 1,
     D3DTSS_TEXCOORDINDEX = 11, D3DTSS_TEXTURETRANSFORMFLAGS = 24, D3DTTFF_DISABLE = 0,
     D3DCULL_NONE = 1, D3DBLEND_ZERO = 1, D3DBLEND_ONE = 2, D3DBLEND_SRCALPHA = 5, D3DBLEND_INVSRCALPHA = 6,
+    // src * dst + dst = dst * (1 + src) : brighten by a FACTOR instead of by an amount, so light and dark
+    // keep their ratio and a lit surface keeps its modelling (config_page.cpp, the logo gleam).
+    D3DBLEND_DESTCOLOR = 9,
     D3DTSS_COLOROP = 1, D3DTSS_COLORARG1 = 2, D3DTSS_COLORARG2 = 3,
     D3DTSS_ALPHAOP = 4, D3DTSS_ALPHAARG1 = 5, D3DTSS_ALPHAARG2 = 7,
     D3DTSS_ADDRESSU = 13, D3DTSS_ADDRESSV = 14, D3DTSS_BORDERCOLOR = 15,
@@ -39,6 +42,9 @@ enum {
     // what makes a highlight that cannot clip -- add light proportional to the COMPLEMENT of the texel and a
     // texel already at 255 receives none (config_page.cpp, the logo gleam).
     D3DTA_COMPLEMENT = 0x00000010,
+    // ... and the other modifier : the stage receives the argument's ALPHA in all three colour channels.
+    // It is how a texture's alpha becomes a MASK for something that is not its own colour.
+    D3DTA_ALPHAREPLICATE = 0x00000020,
     D3DTADDRESS_WRAP = 1, D3DTADDRESS_CLAMP = 3, D3DTADDRESS_BORDER = 4,
 };
 

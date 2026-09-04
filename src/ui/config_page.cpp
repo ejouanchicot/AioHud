@@ -488,8 +488,14 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // Which needs a GRID, not a row of slices: tquad4 takes four independent corner colours, so a cell can
         // carry a 2D gradient. 20 x 6 cells over the quad is a cell every ~12px, and a cosine sampled that
         // finely and interpolated linearly between samples is smooth well past what the eye resolves.
+        // BISECT PROBE : the gleam is switched OFF. Every rewrite of it has come back "the same", and the
+        // last time that pattern held it was a different element entirely (a pulsing tent behind the logo).
+        // With the pass gone, one question answers what six rewrites could not: if the opaque effect is
+        // still there, it is not this code and tuning it further is wasted; if it is gone, it is this code
+        // and the argument is finally about a number. Flip GLEAM_ON back to true either way.
+        static const bool GLEAM_ON = true;
         { const float per = 7.0f; float lp = f.t / per; lp -= floorf(lp);
-          if (lp < 0.42f) {
+          if (GLEAM_ON && lp < 0.42f) {
               const float k = lp / 0.42f;
               const float rx = 0.46f, ry = 0.62f, tilt = 0.22f;   // ellipse radii in quad fractions ; tilt = lean
               const float c2 = -rx - 0.2f + (1.0f + 2.0f * rx + 0.4f) * k;
@@ -524,7 +530,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
               // nothing black left for the complement to find and the peak no longer has to hide.
               // The tint stays the METAL'S OWN HUE rather than white: gold's blue channel is a third of its red,
               // so nearly-white light raises blue the most in proportion and desaturates the letters to grey.
-              const float peakF = 74.0f;
+              const float peakF = 96.0f;
               const u32   tintG = 0x00FFC864u;                    // the metal's own hue : R high, G mid, B low
               struct G { static u32 at(float u, float v, float c3, float rx2, float ry2, float tl, float pk) {
                   const float ax = (u - (c3 + tl * (v - 0.5f))) / rx2;
@@ -532,11 +538,19 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                   float d = sqrtf(ax * ax + ay * ay); if (d > 1.0f) d = 1.0f;
                   const float w2 = 0.5f + 0.5f * cosf(3.14159265f * d);
                   return (u32)(pk * w2 * w2); } };
+              // MULTIPLY, do not add. Adding a constant is what kept reading as opaque : +74 on a bevel shadow
+              // near 40 is enormous and on a highlight near 255 it clips, so the letter's modelling compresses
+              // from both ends and a flat letter looks like a solid shape laid over the word. Light on metal is
+              // multiplicative -- dst * (1 + k) -- which leaves every ratio intact, so the relief survives being
+              // lit and the dark parts stay dark.
+              // SRCBLEND = DESTCOLOR with DESTBLEND = ONE gives exactly dst * (1 + src), and the source colour
+              // is the glyph alpha (D3DTA_ALPHAREPLICATE puts it in all three channels) times the diffuse, which
+              // carries the profile. Outside the letters the alpha is 0, so the factor is 1 and the plate is not
+              // touched at all -- the matte comes for free from the arithmetic.
               dTexQuadState(dev, logoTex_, true);
-              dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);         // ADD light to the gold, never replace it
-              dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG2);   // COLOUR = diffuse only : the light's own hue
-              // ALPHAOP stays MODULATE(TEXTURE, DIFFUSE) -- the glyph alpha is the matte, the vertex alpha is
-              // the profile, and their product is where and how strongly the light lands.
+              dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_DESTCOLOR);
+              dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+              dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE | D3DTA_ALPHAREPLICATE);
               const int NX = 32, NY = 8;
               for (int gy = 0; gy < NY; ++gy) {
                   const float v0 = (float)gy / (float)NY, v1 = (float)(gy + 1) / (float)NY;
@@ -545,14 +559,22 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                       const u32 aTL = G::at(u0, v0, c2, rx, ry, tilt, peakF), aTR = G::at(u1, v0, c2, rx, ry, tilt, peakF);
                       const u32 aBL = G::at(u0, v1, c2, rx, ry, tilt, peakF), aBR = G::at(u1, v1, c2, rx, ry, tilt, peakF);
                       if (!(aTL | aTR | aBL | aBR)) continue;     // wholly outside the ellipse -> nothing to draw
+                      // The profile now rides in the diffuse COLOUR, not its alpha : this blend never reads
+                      // source alpha, and the factor it multiplies by is the colour itself.
+                      struct C { static u32 mul(u32 lvl, u32 hue) {
+                          const float f2 = (float)lvl * (1.0f / 255.0f) * g_fade;
+                          return 0xFF000000u
+                               | ((u32)(((hue >> 16) & 0xFF) * f2) << 16)
+                               | ((u32)(((hue >>  8) & 0xFF) * f2) <<  8)
+                               |  (u32)(( hue        & 0xFF) * f2); } };
                       tquad4(dev, lkX + lkW * u0, lkY + lkH * v0, lkW * (u1 - u0), lkH * (v1 - v0),
                              u0, u1, v0, v1,
-                             fa((aTL << 24) | tintG), fa((aTR << 24) | tintG),
-                             fa((aBL << 24) | tintG), fa((aBR << 24) | tintG));
+                             C::mul(aTL, tintG), C::mul(aTR, tintG),
+                             C::mul(aBL, tintG), C::mul(aBR, tintG));
                   }
               }
           } }
-        dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE);   // put the stage back before anything else draws (rule 8)
+        dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_TEXTURE);   // put the stage back before anything else draws (rule 8)
         dSetTex(dev, 0, 0); cs(dev);   // reset the blend after the additive pass (rule 3) and unbind
         rgx = lkX + lkW * LOGO_ART_X1;
     } else {
