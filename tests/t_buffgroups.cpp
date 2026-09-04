@@ -153,7 +153,7 @@ void test_buff_groups() {
         unsigned short buf[UiConfig::BUFF_PIN_MAX];
         buff_group_members(c, BG_OTHER, buf, UiConfig::BUFF_PIN_MAX, &otherAll, [](unsigned) { return true; });
         buff_group_members(c, BG_OTHER, buf, UiConfig::BUFF_PIN_MAX, &otherCurated, 0);
-        CHECK(otherAll > 100);      // the universe really is that big, or this test proves nothing
+        CHECK(otherAll > 0);        // there is still an unclassified remainder to filter, or this proves nothing
         CHECK(otherCurated == 0);   // ... and none of it is offered until it actually turns up
         // A status becomes offerable the moment it is seen, and only that one.
         int otherOne = 0;
@@ -183,12 +183,14 @@ void test_buff_groups() {
         UiConfig& c = ui_config();
         for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) c.buffPinN[g] = 0;
         unsigned short m[UiConfig::BUFF_PIN_MAX];
-        // EVERY group except Other must fit whole -- that is the promise, so every one of them is named.
+        // EVERY group must fit whole -- Other included, since classifying the families the generator never
+        // sees emptied it enough to fit. That is the promise, so every one of the thirteen is named here.
         struct { int g; const char* n; } WHOLE[] = {
             { BG_ROLL, "Rolls" }, { BG_SONG, "Songs" }, { BG_GEO, "Geomancy" },
             { BG_RUNE, "Runes" }, { BG_DANCE, "Dances" }, { BG_STEALTH, "Stealth" },
             { BG_WATCH, "Watch" }, { BG_PROTECT, "Protection" }, { BG_PERM, "Permanent" },
             { BG_JA, "Abilities" }, { BG_ENHANCE, "Enhancing" }, { BG_DEBUFF, "Debuffs" },
+            { BG_OTHER, "Other" },
         };
         bool allFit = true;
         for (int i = 0; i < (int)(sizeof(WHOLE) / sizeof(WHOLE[0])); ++i) {
@@ -197,10 +199,9 @@ void test_buff_groups() {
             if (t > UiConfig::BUFF_PIN_MAX) { allFit = false; printf("   %s needs %d entries, cap is %d\n", WHOLE[i].n, t, UiConfig::BUFF_PIN_MAX); }
         }
         CHECK(allFit);
-        // ... and the open-ended ones genuinely do NOT fit, or the fallback would be dead code.
-        int tOther = 0;
-        buff_group_members(c, BG_OTHER, m, UiConfig::BUFF_PIN_MAX, &tOther, [](unsigned) { return true; });
-        CHECK(tOther > UiConfig::BUFF_PIN_MAX);
+        // Print the real sizes when something DOES overflow, so resizing the cap is a lookup and not a hunt.
+        // (The panel keeps a fallback to "what you have met" for a group that outgrows the cap. Nothing hits
+        //  it today -- this assert is what guarantees that, and what will say so the day it stops being true.)
     }
 
     SECTION("buff groups : the config preview can demonstrate every group");

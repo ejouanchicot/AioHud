@@ -128,12 +128,13 @@ struct UiConfig {
     // The cap is what the UI lets you arrange, and it is deliberate : the groups where order is meaningful
     // (Stealth 3, Watch 5, Protection 6, Songs 23) fit whole, while Abilities (134) and Other (~250) do not
     // pretend to be hand-orderable to the end.
-    // 160 covers the largest group there is except Other : Abilities holds 142 named statuses, Enhancing 59,
-    // Debuffs 49. Sized from the DATA, counted, not guessed -- and asserted in tests/t_buffgroups.cpp, so a
-    // generator that grows a group past it says so instead of quietly truncating the list.
-    // Other is 238 and deliberately stays out : it is the unclassified bin, and arranging it by hand is not a
-    // thing anyone does.
-    static const int BUFF_PIN_MAX = 160;
+    // 224 covers the largest group there is except Other -- Abilities, at 200 named statuses once the families
+    // the generator never sees (maneuvers, stratagems, finishing moves, the avatars' Favor...) are folded in.
+    // Sized from the DATA, counted, and asserted in tests/t_buffgroups.cpp : the assert is what caught this very
+    // number going from 142 to 200 the moment those families were classified, instead of the list silently
+    // truncating in game.
+    // Other stays out on purpose : it is the unclassified bin, and arranging it by hand is not a thing anyone does.
+    static const int BUFF_PIN_MAX = 224;
     unsigned short buffPin[BUFF_ORDER_N][BUFF_PIN_MAX] = {};
     unsigned char  buffPinN[BUFF_ORDER_N] = {};
     int buff_pin_rank(int g, unsigned status) const {   // position in this group's arranged prefix, or -1

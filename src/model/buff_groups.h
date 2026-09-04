@@ -138,6 +138,98 @@ inline unsigned char buff_group_of_cat(int cat) {
     }
 }
 
+// ---- the statuses BUFF_FAM never sees at all. ----
+// BUFF_FAM is generated from spells and job abilities that CARRY a status, so it only knows a status the game
+// grants through something castable. Everything else -- a shadow count, a stat penalty, a daze, an avatar's
+// favour, a stratagem, a maneuver -- lands in Other by default, and 238 named statuses ended up there. Most of
+// them plainly belong somewhere: Hide and Camouflage are stealth, Copy Image is what Utsusemi leaves behind,
+// Finishing Moves are DNC's, the Dazes are debuffs by any reading.
+//
+// Written as RANGES rather than 150 rows because that is what they are -- the game numbers a family
+// consecutively -- and because a range states the intent where a list of ids states nothing. Applied ONLY to a
+// status still unclassified, so it can never overrule the generated table or the debuff list; the priority
+// list above still wins over everything.
+struct BuffGroupRange { unsigned short lo, hi; unsigned char group; const char* what; };
+static const BuffGroupRange BUFF_GROUP_RANGE[] = {
+    {  76,  77, BG_STEALTH, "Hide, Camouflage" },
+    {  66,  66, BG_ENHANCE, "Copy Image (Utsusemi)" },
+    { 444, 446, BG_ENHANCE, "Copy Image 2/3/4+" },
+    {  80,  85, BG_ENHANCE, "STR..MND Boost" },
+    {  89,  90, BG_ENHANCE, "Max MP / Accuracy Boost" },
+    { 125, 125, BG_ENHANCE, "CHR Boost" },
+    { 611, 611, BG_ENHANCE, "Magic Evasion Boost" },
+    { 622, 622, BG_ENHANCE, "Guarding Rate Boost" },
+    { 615, 615, BG_ENHANCE, "Boost (MNK)" },
+    { 277, 282, BG_ENHANCE, "Enspell II" },
+    { 487, 488, BG_ENHANCE, "Endrain, Enaspir" },
+    { 589, 596, BG_ENHANCE, "the storms" },
+    { 153, 153, BG_ENHANCE, "Damage Spikes" },
+    { 573, 573, BG_ENHANCE, "Deluge Spikes" },
+    { 605, 607, BG_ENHANCE, "Gale / Clod / Glint Spikes" },
+    { 574, 574, BG_ENHANCE, "Fast Cast" },
+    { 188, 188, BG_ENHANCE, "Sublimation: Complete" },
+    { 161, 161, BG_ENHANCE, "Sprint" },
+    { 162, 162, BG_ENHANCE, "Enchantment" },
+    { 233, 234, BG_WATCH,   "Auto-Regen, Auto-Refresh" },
+    { 265, 265, BG_WATCH,   "Flurry (the second one)" },
+    { 151, 151, BG_PROTECT, "Arrow Shield" },
+    { 293, 297, BG_PROTECT, "Negate Petrify..Poison" },
+    { 608, 610, BG_PROTECT, "Negate Virus / Curse / Charm" },
+    { 626, 626, BG_PROTECT, "Negate Sleep" },
+    { 193, 193, BG_SONG,    "Lullaby" },
+    { 204, 204, BG_SONG,    "Hum" },
+    { 208, 208, BG_SONG,    "Serenade" },
+    { 211, 212, BG_SONG,    "Fugue, Rhapsody" },
+    { 299, 307, BG_JA,      "Overload + the eight maneuvers (PUP)" },
+    { 360, 367, BG_JA,      "Penury..Manifestation (SCH stratagems)" },
+    { 412, 415, BG_JA,      "Altruism..Equanimity (SCH)" },
+    { 469, 470, BG_JA,      "Perpetuance, Immanence (SCH)" },
+    { 516, 516, BG_JA,      "Ecliptic Attrition (SMN)" },
+    { 519, 519, BG_JA,      "Theurgic Focus (SCH)" },
+    { 381, 385, BG_JA,      "Finishing Moves 1-5 (DNC)" },
+    { 588, 588, BG_JA,      "Finishing Move 6+" },
+    { 308, 309, BG_JA,      "Double-Up Chance, Bust (COR)" },
+    { 422, 431, BG_JA,      "the avatars' Favor (SMN)" },
+    { 577, 577, BG_JA,      "Cait Sith's Favor" },
+    { 625, 625, BG_JA,      "Siren's Favor" },
+    { 408, 408, BG_JA,      "Sekkanoki (SAM)" },
+    { 456, 456, BG_JA,      "Spur" },
+    { 459, 459, BG_JA,      "Divine Caress (WHM)" },
+    { 463, 466, BG_JA,      "Sepulcher..Dragon Breaker" },
+    { 496, 496, BG_JA,      "Intervene (PLD)" },
+    { 506, 506, BG_JA,      "Grace" },
+    { 536, 536, BG_JA,      "Gambit (RUN)" },
+    { 538, 538, BG_JA,      "One For All (RUN)" },
+    { 571, 571, BG_JA,      "Rayke (RUN)" },
+    { 623, 623, BG_JA,      "Rampart (PLD)" },
+    { 273, 273, BG_PERM,    "Aftermath" },
+    { 489, 489, BG_PERM,    "Afterglow" },
+    { 249, 250, BG_PERM,    "Dedication, EF Badge" },
+    { 267, 267, BG_PERM,    "Allied Tags" },
+    { 269, 269, BG_PERM,    "Level Sync" },
+    { 602, 603, BG_PERM,    "Vorseal, Elvorseal" },
+    { 616, 616, BG_PERM,    "Artisanal Knowledge" },
+    { 136, 149, BG_DEBUFF,  "STR..CHR Down, Level Restriction, Max HP/MP Down, Accuracy Down" },
+    { 156, 160, BG_DEBUFF,  "Flash, SJ Restriction, Provoke, Penalty, Preparations" },
+    { 167, 167, BG_DEBUFF,  "Magic Def. Down" },
+    { 174, 175, BG_DEBUFF,  "Magic Acc. / Atk. Down" },
+    { 177, 177, BG_DEBUFF,  "Encumbrance" },
+    { 189, 189, BG_DEBUFF,  "Max TP Down" },
+    { 259, 264, BG_DEBUFF,  "Encumbrance..Pathos" },
+    { 291, 291, BG_DEBUFF,  "Enmity Down" },
+    { 298, 298, BG_DEBUFF,  "Critical Hit Evasion Down" },
+    { 378, 380, BG_DEBUFF,  "Drain / Aspir / Haste Daze" },
+    { 386, 400, BG_DEBUFF,  "Lethargic / Sluggish / Weakened Daze" },
+    { 448, 452, BG_DEBUFF,  "Bewildered Daze" },
+    { 473, 473, BG_DEBUFF,  "Muddle" },
+    { 509, 509, BG_DEBUFF,  "Odyllic Subterfuge" },
+    { 572, 572, BG_DEBUFF,  "Avoidance Down" },
+    { 576, 576, BG_DEBUFF,  "Doubt" },
+    { 630, 631, BG_DEBUFF,  "Taint, Haunt" },
+    {  11,  11, BG_DEBUFF,  "Bind" },
+};
+static const int BUFF_GROUP_RANGE_N = (int)(sizeof(BUFF_GROUP_RANGE) / sizeof(BUFF_GROUP_RANGE[0]));
+
 // Highest status id we resolve. Matches the buff atlas ceiling (32 cols x 20 rows = 640 cells) : an id past
 // that is not drawable anyway, and buffs_gen.h stops at 635.
 static const int BUFF_GROUP_MAX_ID = 640;
@@ -157,6 +249,9 @@ inline void buff_group_tables(const unsigned char*& grp, const unsigned char*& p
             if (BUFF_FAM[i].status < BUFF_GROUP_MAX_ID) tblG[BUFF_FAM[i].status] = buff_group_of_cat(BUFF_FAM[i].cat);
         for (int i = 0; i < BUFF_GROUP_MAX_ID; ++i)           // what neither table knows, but the game marks as a debuff
             if (tblG[i] == BG_OTHER && is_debuff_status((unsigned)i)) tblG[i] = BG_DEBUFF;
+        for (int r = 0; r < BUFF_GROUP_RANGE_N; ++r)          // the families the generator never sees ; ONLY over what is still unclassified
+            for (int i = BUFF_GROUP_RANGE[r].lo; i <= BUFF_GROUP_RANGE[r].hi && i < BUFF_GROUP_MAX_ID; ++i)
+                if (tblG[i] == BG_OTHER) tblG[i] = BUFF_GROUP_RANGE[r].group;
         unsigned char next[BG_COUNT] = { 0 };                 // running rank per group -> "listed order" becomes "draw order"
         for (int i = 0; i < BUFF_GROUP_FIX_N; ++i) {          // the priority list, last : it wins the group AND sets the rank
             const unsigned st = BUFF_GROUP_FIX[i].status, g = BUFF_GROUP_FIX[i].group;
