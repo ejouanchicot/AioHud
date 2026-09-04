@@ -763,6 +763,14 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 int hot = -1;
                 for (int i = 0; i < nRun; ++i) if (inrect(mo, runs[i].x, sy0 + tline[i] * lineH, runs[i].w, lineH)) { hot = i; break; }
                 bsHot_ = hot;   // for the hint line, which is drawn ABOVE the band and so runs a frame ahead of it
+                // The hover lift rides ONE spring, not one per tile : only one tile is hovered at a time, and a
+                // slot each would have cost 224 of the page's 1024 (never recycled) and left later controls
+                // snapping. bsLift_ remembers WHICH tile it belongs to, so leaving the band still fades out on
+                // the tile you left rather than cutting.
+                const bool liftable = (hot >= 0 && !carrying && bsDrag_ < 0);
+                if (liftable) bsLift_ = hot;
+                if (bsLift_ >= nRun) bsLift_ = -1;
+                const float liftAmt = ease(dragUid, 5000, liftable ? 1.0f : 0.0f, 16.0f);
                 if (bsDrag_ < 0 && hot >= 0 && ctrl_drag_begin(dragUid, mo, true)) {
                     bsEnter_ = (bsSel_ == hot) ? 1 : 0;   // a press on the ALREADY selected block means "go inside", if it turns out not to be a drag
                     bsDrag_ = hot; bsDrop_ = hot; bsSel_ = hot;
@@ -814,13 +822,25 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // Floating icons over a bare band left the eye to infer where one group ended and the next began,
                 // from a gap. A bordered tile states it. The BORDER carries the group's tint, which is why the
                 // separate tint rule underneath is gone : one identity mark per tile, not two.
+                // ---- the slot the carried tile came out of : drawn, not left as a hole. ----
+                // Lifting a tile opened a blank gap the width of a tile, and a blank gap in a band of bordered
+                // cells reads as something broken rather than as somewhere to drop. It is the one place the eye
+                // is looking during a drag, so it gets a cell of its own : recessed instead of raised, the
+                // group's tint on the edge at a fraction of the strength, no icons and no name. Its position is
+                // the carried tile's TARGET slot, so it is literally "here is where this lands".
+                if (carrying && bsDrag_ >= 0 && bsDrag_ < nRun) {
+                    const float px = tx[bsDrag_], py = sy0 + tline[bsDrag_] * lineH + snap(3.0f);
+                    const u32 pt = (buff_group_tint(runs[bsDrag_].grp) & 0x00FFFFFF) | 0x66000000u;
+                    rpanel(dev, px, py, runs[bsDrag_].w, lineH - snap(6.0f), snap(8.0f),
+                           0x30060809u, 0x300A0F13u, pt, snap(1.2f));
+                }
                 for (int k = 0; k < nv; ++k) {
                     const int i = vis[k];
                     const bool lift = carrying && (i == bsDrag_);
                     // HOVER LIFTS the tile a few pixels. Motion is the cheapest way to say "this one is loose" --
                     // it costs no pixels of a band that has none to spare, and it reads before any label does.
                     // Eased, because a tile that jumps on hover reads as a glitch rather than as an invitation.
-                    const float hov2 = ease(dragUid, 5000 + i, (i == hot && !carrying && bsDrag_ < 0) ? 1.0f : 0.0f, 16.0f);
+                    const float hov2 = (i == bsLift_) ? liftAmt : 0.0f;
                     const float by = lift ? ((mo ? mo->y : sy0) - lineH * 0.5f) : (runs[i].by - hov2 * snap(3.0f));   // carried : centred on the pointer ; the rest : their eased slot
                     const float ty2 = by + snap(3.0f), th2 = lineH - snap(6.0f);   // inset, so wrapped lines do not touch
                     runs[i].ly = by + snap(12.0f);
