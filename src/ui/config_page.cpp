@@ -615,11 +615,15 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
       const float vsz = snap(14.0f), vw = fo->measure(vs, vsz);
       const float vh = snap(24.0f), vx = rgx + snap(16.0f), vy = ty - vh * 0.5f, vpad = snap(9.0f);
       const u32 gold = lerpc(C_METAL, C_METAL_HI, pulse);
-      rpanel(dev, vx, vy, vw + vpad * 2.0f, vh, snap(5.0f), 0x66101820u, 0x66080C11u,
+      const float vbw = vw + vpad * 2.0f;
+      rpanel(dev, vx, vy, vbw, vh, snap(5.0f), 0x66101820u, 0x66080C11u,
              (gold & 0x00FFFFFFu) | 0x88000000u, snap(1.0f));
       fo->begin(dev);
-      fo->draw_lc(dev, vx + vpad, ty + snap(1.0f), vs, vsz, fa(gold), fa(C_STROKE), 1.1f);
-      verRight = vx + vw + vpad * 2.0f; }
+      // draw_c on the BOX's centre in both axes, not draw_lc from its left edge with a nudge. Left-anchoring
+      // makes the horizontal centring depend on measure() agreeing exactly with what is rasterised, and the
+      // hand-added pixel of vertical offset was simply wrong -- the plate's centre is ty by construction.
+      fo->draw_c(dev, vx + vbw * 0.5f, vy + vh * 0.5f, vs, vsz, fa(gold), fa(C_STROKE), 1.1f);
+      verRight = vx + vbw; }
 
     // A vertical gold rule after the lockup, fading out at both ends. The masthead's whole middle was empty and
     // unstructured : this closes the name off as a unit and gives the space to its right a left edge to start
