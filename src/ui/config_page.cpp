@@ -457,38 +457,36 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     const float wx = (logoTex_ ? (emX + emS + snap(14.0f)) : (ix + gemR * 2.0f + gemGap + snap(6.0f)));   // after the emblem, or where the lozenge used to be
     const float ty = iy + snap(23.0f);
     const float bandTop = ty - titleSz * 0.62f, bandBot = ty + titleSz * 0.54f;
-    // 4. the name again, three times the size, behind itself and bled off both edges of the plate. An editorial
-    //    device, and the cheapest depth there is : the eye reads a background it never quite resolves.
-    {
-        clip_rect_begin(dev, ix, mhTop, iw, mhH);
-        const float gs = titleSz * 2.9f;
-        fo->begin(dev);
-        fo->draw_lc(dev, wx - snap(10.0f), mhTop + mhH * 0.46f, "AIOHUD", gs, fa((0x0Eu << 24) | acc), 0, 0.0f);
-        clip_rect_end(dev);
-    }
     // warm torchlight glow behind the emblem
     cs_add(dev); soft_blob(dev, wx + tw * 0.5f, ty - snap(1.0f), tw * 0.64f, snap(28.0f), ((u32)(46.0f * (0.6f + 0.4f * pulse)) << 24) | acc); cs(dev);
     // gilded wordmark : bright top -> deep bottom = engraved gilt (accent-tinted), extruded for relief
     chrome_text(dev, fo, wx, ty, "AIOHUD", titleSz, tw, C_ACCENTHI, shade(C_ACCENT, -0.5f), bandTop, bandBot);
     shine(dev, wx - snap(4.0f), bandTop, tw + snap(8.0f), bandBot - bandTop, 0.32f, f.t * 0.6f);   // slow gilt gleam
-    // flanking heraldic lozenges : dark base (engraved edge) + gilt face + a tiny highlight facet
-    const float lgx = ix + gemR, rgx = wx + tw + gemGap - snap(2.0f);
-    for (int gi = 0; gi < 2; ++gi) {
-        const float gxo = gi ? rgx : lgx;
-        gem(dev, gxo, ty, gemR + snap(1.5f), shade(C_ACCENT, -0.6f));
-        gem(dev, gxo, ty, gemR, C_GOLD);
-        gem(dev, gxo - snap(1.0f), ty - snap(1.5f), gemR * 0.42f, C_ACCENTHI);
+    // The flanking lozenges are the EMBLEM's job now -- its ring carries two of its own, and a second pair
+    // beside the wordmark was the same word said twice in a different alphabet. They stand in only when the
+    // texture failed to load, which is the one case where the header would otherwise start with bare text.
+    const float rgx = logoTex_ ? (wx + tw) : (wx + tw + gemGap - snap(2.0f));
+    if (!logoTex_) {
+        const float lgx = ix + gemR;
+        for (int gi = 0; gi < 2; ++gi) {
+            const float gxo = gi ? rgx : lgx;
+            gem(dev, gxo, ty, gemR + snap(1.5f), shade(C_ACCENT, -0.6f));
+            gem(dev, gxo, ty, gemR, C_GOLD);
+            gem(dev, gxo - snap(1.0f), ty - snap(1.5f), gemR * 0.42f, C_ACCENTHI);
+        }
     }
-    // ornamental gilt rule beneath the wordmark, with lozenge terminals + a centre gem
-    { const float uy = bandBot + snap(1.0f), u0 = wx - snap(2.0f), u1 = wx + tw + snap(2.0f), umid = (u0 + u1) * 0.5f;
+    // One gilt rule beneath the lockup, and one gem on it. It runs the full width of wordmark AND version so the
+    // two read as a single object rather than as a title with something parked next to it ; its terminals are
+    // gone for the same reason the flanking pair is -- three sets of lozenges in one header is a pattern, not
+    // an ornament.
+    { const float uy = bandBot + snap(1.0f), u0 = wx - snap(2.0f);
+      const float u1 = u0 + tw + snap(4.0f) + (logoTex_ ? snap(14.0f) + fo->measure("V" AIOHUD_VERSION, snap(15.0f)) : 0.0f);
       cs(dev);
       flat(dev, u0, uy, u1 - u0, snap(1.0f), fa((0x99u << 24) | acc));
       flat(dev, u0 + snap(12.0f), uy + snap(2.0f), (u1 - u0) - snap(24.0f), snap(1.0f), fa((0x3Cu << 24) | acc));   // faint second rule
-      gem(dev, umid, uy + snap(1.0f), snap(3.5f), C_GOLDHI);
-      gem(dev, u0, uy + snap(0.5f), snap(2.5f), C_GOLD);
-      gem(dev, u1, uy + snap(0.5f), snap(2.5f), C_GOLD); }
+      gem(dev, wx + tw * 0.5f, uy + snap(1.0f), snap(3.5f), C_GOLDHI); }
     // subtitle : the AioHud VERSION (small-caps), to the right of the emblem -- shown on every tab.
-    fo->begin(dev); fo->draw_lc(dev, rgx + snap(14.0f), ty + snap(1.0f), "V" AIOHUD_VERSION, snap(15.0f), fa(lerpc(C_ACCENT, C_ACCENTHI, pulse)), fa(C_STROKE), 1.2f);
+    fo->begin(dev); fo->draw_lc(dev, rgx + snap(14.0f), ty + snap(2.0f), "V" AIOHUD_VERSION, snap(15.0f), fa(lerpc(C_ACCENT, C_ACCENTHI, pulse)), fa(C_STROKE), 1.2f);
 
     // close button (X), top-right -- eased red crossfade + a tiny size bump on hover
     const float cbS = snap(36.0f), cbX = ix + iw - cbS, cbY = iy + snap(2.0f);
