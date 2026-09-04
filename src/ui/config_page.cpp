@@ -478,24 +478,33 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // instead would have swept a visible box across the plate, which is the cheap version of this and looks
         // it. tquad's two colours are LEFT and RIGHT, which is exactly the axis a sweep needs.
         { const float per = 7.0f; float lp = f.t / per; lp -= floorf(lp);
-          if (lp < 0.32f) {
-              const float k = lp / 0.32f, bw = 0.20f;
+          if (lp < 0.34f) {
+              const float k = lp / 0.34f, bw = 0.26f;
               const float c2 = -bw + (1.0f + 2.0f * bw) * k;         // centre travels from off-left to off-right
-              const float peakF = 118.0f;
-              // alpha is linear in each half of the ramp, so sampling it at the CLAMPED endpoints is exact --
-              // no need to interpolate a clipped edge, and no hard block when the streak is half off the art.
+              const float peakF = 120.0f;
+              // The profile is a RAISED COSINE, squared, sampled across many slices. A triangle looked hard-edged
+              // and was: its slope breaks at the peak and again at both ends, and the eye reads a discontinuity
+              // in the DERIVATIVE as an edge even when the value itself is continuous (Mach bands). This curve is
+              // flat at the centre and flat where it reaches zero, so there is nothing for the eye to catch.
+              // Slices are NOT pixel-snapped either: snapping x while computing width in floats left a hairline
+              // seam between them, which was the other half of what read as "sharp limits". A glow is the one
+              // thing that gains nothing from the pixel grid.
               struct A { static u32 at(float t, float c3, float bw2, float pk) {
                   float d = fabsf(t - c3) / bw2; if (d > 1.0f) d = 1.0f;
-                  return (u32)(pk * (1.0f - d)); } };
+                  const float wgt = 0.5f + 0.5f * cosf(3.14159265f * d);
+                  return (u32)(pk * wgt * wgt); } };
               dTexQuadState(dev, logoTex_, true);
               dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);            // ADD light to the gold, never replace it
-              for (int hs = 0; hs < 2; ++hs) {
-                  float t0 = hs ? c2 : (c2 - bw), t1 = hs ? (c2 + bw) : c2;
+              const int NS = 14;
+              for (int i2 = 0; i2 < NS; ++i2) {
+                  float t0 = c2 - bw + (2.0f * bw) * (float)i2 / (float)NS;
+                  float t1 = c2 - bw + (2.0f * bw) * (float)(i2 + 1) / (float)NS;
+                  if (t1 <= 0.0f || t0 >= 1.0f) continue;
                   if (t0 < 0.0f) t0 = 0.0f;
                   if (t1 > 1.0f) t1 = 1.0f;
-                  if (t1 - t0 <= 0.001f) continue;
+                  if (t1 - t0 <= 0.0005f) continue;
                   const u32 a0 = A::at(t0, c2, bw, peakF), a1 = A::at(t1, c2, bw, peakF);
-                  tquad(dev, snap(lkX + lkW * t0), snap(lkY), lkW * (t1 - t0), lkH,
+                  tquad(dev, lkX + lkW * t0, lkY, lkW * (t1 - t0), lkH,
                         t0, t1, 0.0f, 1.0f, fa((a0 << 24) | 0x00FFFFFFu), fa((a1 << 24) | 0x00FFFFFFu));
               }
           } }
@@ -561,8 +570,32 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     flat(dev, 0.0f, divY - snap(1.0f), sw, 1, (0x30FFFFFFu));                  // inner top light on the rail
     { const u32 gl = lerpc(C_GOLD, C_GOLDHI, pulse), gr = C_ACCENT;
       const float rw = sw * e;                                                 // still wipes in with the page
-      q4(dev, 0.0f, divY, rw, snap(3.0f), gl, gr, shade(gl, -0.35f), shade(gr, -0.35f));
+      // The rail is not one uniform ribbon any more. A band of even weight from edge to edge is a RULE -- it
+      // divides, and that is all it does. This one carries its light where the content is: full strength under
+      // the logo, falling away to about a third at the far edge, hue travelling gold -> accent along the same
+      // run. Built in segments because a single quad can only ramp linearly, and the falloff wants a curve.
+      const int RS = 10;
+      for (int i3 = 0; i3 < RS; ++i3) {
+          const float f0 = (float)i3 / (float)RS, f1 = (float)(i3 + 1) / (float)RS;
+          if (sw * f0 >= rw) break;
+          const float x0 = sw * f0, x1 = (sw * f1 < rw) ? sw * f1 : rw;
+          struct R { static u32 at(float t, u32 a2, u32 b2) {
+              const u32 hue = lerpc(a2, b2, t);
+              const float w2 = 0.30f + 0.70f * powf(1.0f - t, 1.6f);
+              return (hue & 0x00FFFFFFu) | ((u32)(255.0f * w2) << 24); } };
+          const u32 cA = R::at(f0, gl, gr), cB = R::at(f1, gl, gr);
+          q4(dev, x0, divY, x1 - x0, snap(3.0f), cA, cB, shade(cA, -0.35f), shade(cB, -0.35f));
+      }
       cs_add(dev);
+      // ... and it BLEEDS onto the content below, following the same falloff. A line that emits light reads as
+      // an edge of something lit ; a line that does not reads as a border someone drew.
+      for (int i4 = 0; i4 < 8; ++i4) {
+          const float t = ((float)i4 + 0.5f) / 8.0f;
+          if (sw * t >= rw) break;
+          const float w2 = 0.30f + 0.70f * powf(1.0f - t, 1.6f);
+          soft_blob(dev, sw * t, divY + snap(3.0f), sw / 16.0f, snap(10.0f),
+                    ((u32)(52.0f * w2) << 24) | (lerpc(C_GOLDHI, C_ACCENT, t) & 0x00FFFFFFu));
+      }
       const float tt = f.t * 0.045f, ph = tt - floorf(tt);                     // one pass every ~22 s
       // A head and three fading lengths of tail behind it. One blob was a dot sliding along a line ; a comet
       // has a DIRECTION, which is the whole difference between something moving and something being moved.
