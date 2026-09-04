@@ -127,10 +127,11 @@ void test_buff_groups() {
         unsigned short mem[UiConfig::BUFF_PIN_MAX]; int total = 0;
         // seen = null : the CURATED list only. This is the state at first launch, and the groups that matter
         // must already be complete there -- Watch shows its ranked ones whether or not anything has turned
-        // up yet. The COUNT is not pinned to a number : Watch legitimately grew from five to seven when
-        // Auto-Regen and Auto-Refresh were classified out of Other, and an assertion that has to be edited
-        // every time the data improves is an assertion nobody trusts. What is asserted is the thing that
-        // must not drift : the arrangement drives the head of the list.
+        // up yet. The COUNT is not pinned to a number : which statuses a group holds moves as the data gets
+        // better -- Watch gained Auto-Regen and Auto-Refresh when they were classified out of Other, then
+        // lost them again to Permanent once it turned out they come from Signet and Sanction. An assertion
+        // that must be edited every time the data improves is one nobody trusts. What is asserted is the
+        // thing that must not drift : the arrangement drives the head of the list.
         int n = buff_group_members(c, BG_WATCH, mem, UiConfig::BUFF_PIN_MAX, &total, 0);
         CHECK(n >= 5);
         CHECK(mem[0] == 43);   // the arrangement drives the list the config shows

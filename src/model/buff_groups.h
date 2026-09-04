@@ -170,7 +170,10 @@ static const BuffGroupRange BUFF_GROUP_RANGE[] = {
     { 188, 188, BG_ENHANCE, "Sublimation: Complete" },
     { 161, 161, BG_ENHANCE, "Sprint" },
     { 162, 162, BG_ENHANCE, "Enchantment" },
-    { 233, 234, BG_WATCH,   "Auto-Regen, Auto-Refresh" },
+    // (233 Auto-Regen and 234 Auto-Refresh are deliberately NOT here. They are JOB TRAITS : the resource table
+    //  names them, but they never appear in anyone's buff list, so classifying them only put two rows in a
+    //  group that can never show them. Unclassified is the honest place for a status that never arrives --
+    //  a name in the data is not evidence that the game ever sends it.)
     { 265, 265, BG_WATCH,   "Flurry (the second one)" },
     { 151, 151, BG_PROTECT, "Arrow Shield" },
     { 293, 297, BG_PROTECT, "Negate Petrify..Poison" },
