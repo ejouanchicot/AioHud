@@ -222,7 +222,6 @@ private:
     bool  pcContentOpen_ = true;
     bool  pcBuffsOpen_   = true;    // Buffs : the strip's size/count/rows AND its order editor, one object in one place
     int   pcDistPick_    = -1;      // which distance zone's colour picker is open (-1 = none). Three open pickers was ~690px for a setting touched once.
-    bool  buffOrderOpen_ = false;   // Party panel : the "Buff order" collapsible sub-section (group ranking). Session-only UI state, like the other *Open_ flags.
     // ---- the buff STRIP editor (party panel). The strip itself is the control : one row of icon runs, dragged
     // to reorder. Session-only view state -- what is arranged lives in UiConfig. ----
     int   bsInner_ = -1;   // -1 = arranging GROUPS ; else the BuffGroup whose own buffs are being arranged

@@ -352,14 +352,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 bri = wrap(bri + d, 2); ui_config().buffRows = bri + 1; save_ui_config(); }
             ROW_NEXT(48.0f)
         }
-    }
-        // ---- sub-section : BUFF ORDER. The strip draws its icons RIGHT-TO-LEFT from index 0, so the group at
+        // ---- the ORDER : the band itself. The strip draws its icons RIGHT-TO-LEFT from index 0, so the group at
         // position 1 ends up nearest the member's row. Ordering by GROUP (13 rows) rather than by status (624 of
         // them) is what keeps this configurable at all -- and it makes Max Buffs deliberate : the cut now falls on
         // whatever the user parked last instead of on whichever buff the server happened to send late. ----
-        if (pcBuffsOpen_ && cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Order", "Ordre"), buffOrderOpen_)) buffOrderOpen_ = !buffOrderOpen_;
-        ROW_NEXT(42.0f)
-        if (pcBuffsOpen_ && buffOrderOpen_) {
+        {
             // ================= THE STRIP IS THE CONTROL =================
             // What is configured is a horizontal band of icons, so the editor IS that band : the real atlas, filling
             // right-to-left exactly like the HUD strip hugging a member row. You grab a run and slide it. "Where will
@@ -685,6 +682,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 bsSel_ = mvTo;   // the selection FOLLOWS what you moved, so a second press keeps moving the same thing
             }
         }
+    }   // end Buffs
 
     // ---- (Alliance and Text follow, unchanged : Text covers BOTH groups, so it stays last) ----
 
