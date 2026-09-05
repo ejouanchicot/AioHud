@@ -807,43 +807,54 @@ void cat_panel(u32 dev, float x, float y, float w, float h) {
                    (C_ACCENTHI & 0x00FFFFFF) | 0x70000000u, (C_ACCENT & 0x00FFFFFF) | 0x30000000u);
 }
 bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, float x, float y, float w, const char* label, bool open, const char* note) {
-    const float h = snap(32.0f);
+    // A SECTION HEADER IS A TITLE BAR, not a caret with a word after it.
+    // It used to be the quietest possible mark -- a small arrow, an uppercase label, a hairline running out to
+    // the right -- on the argument that a heading should not shout like the controls it introduces. That was
+    // right about the shouting and wrong about the object: with nothing but a hairline behind it, the header had
+    // no surface, so nothing said it could be pressed, and a page of collapsed ones read as a list of labels
+    // rather than as a stack of closed drawers.
+    // Now it is a band with a real surface, and it changes shape according to what it is doing. CLOSED it is a
+    // free-standing bar, rounded on all four corners, sitting on the page. OPEN, its bottom corners square off
+    // so it welds to the panel underneath and becomes that panel's title -- the shape itself says "this bar owns
+    // what is below it", which is the whole grammar of an accordion and costs no extra ink to say.
+    const float h = snap(34.0f), r = snap(8.0f);
     const bool hov = inrect(mo, x, y, w, h);
     const float t = ease(uid, hov ? 1.0f : 0.0f);
     const float o = open ? 1.0f : 0.0f;
 
-    // A HEADING IS TYPE, NOT A BUTTON. This was a filled teal pill that shouted as loudly as the controls it
-    // introduces, and half a dozen of them down a page read as half a dozen buttons -- the single thing that made
-    // the panel look assembled rather than composed. Now it is the oldest and quietest way to say "section": a
-    // caret, a small uppercase label, and a hairline running out to the right of it. Saturation goes back to being
-    // a signal -- the accent is spent on what is ON and what is selected, not on every heading.
-    // The click target is still the whole strip, and a faint wash appears under the pointer so it stays obviously
-    // live. Measure BEFORE drawing: the rule starts after the text, and quads and text are kept in separate passes.
+    const u32 baseT = open ? C_ROWON_T : C_CTL_T;
+    const u32 baseB = open ? C_ROWON_B : C_CTL_B;
+    const u32 fT = lerpc(baseT, shade(baseT, 0.22f), t);
+    const u32 fB = lerpc(baseB, shade(baseB, 0.22f), t);
+    if (open) rrect_top(dev, x, y, w, h, r, fT, fB);        // square feet -> it joins the panel below
+    else      rrect_fill(dev, x, y, w, h, r, fT, fB);
+    flat(dev, x + r, y + snap(1.0f), w - r * 2.0f, 1, ((u32)(0x18 + (u32)(0x12 * t)) << 24) | 0x00FFFFFFu);   // the light catches its top edge
+    if (open) flat(dev, x + snap(2.0f), y + snap(7.0f), snap(3.0f), h - snap(7.0f), (C_ACCENTHI & 0x00FFFFFFu) | 0xB0000000u);   // the rail starts in the title and runs on down the card
+
+    // The label in the heading's uppercase ; the note beside it in the ordinary case, because it is a value.
     const bool up0 = fo->upper();
     fo->set_upper(true);
-    const float tw = fo->measure(label, ts_section());
-    const float gy = y + h * 0.5f, tx = x + snap(27.0f), s = snap(4.0f), gx = x + snap(12.0f);
-
-    if (t > 0.01f) rrect_fill(dev, x, y, w, h, snap(7.0f),                                   // hover : a wash, not a surface
-                              ((u32)(0x14 * t) << 24) | 0x00FFFFFFu, ((u32)(0x09 * t) << 24) | 0x00FFFFFFu);
-    cs(dev);
-    const u32 caret = lerpc(C_MUTE, C_ACCENTHI, o > t ? o : t);
-    if (open) { const float d[6] = { gx - s, gy - s * 0.55f,  gx + s, gy - s * 0.55f,  gx, gy + s * 0.85f };   // down (AA)
-                fill_poly_aa(dev, d, 3, fa(caret)); }
-    else      { const float d[6] = { gx - s * 0.55f, gy - s,  gx - s * 0.55f, gy + s,  gx + s * 0.85f, gy };   // right (AA)
-                fill_poly_aa(dev, d, 3, fa(caret)); }
-    // The NOTE is measured in the ordinary case, not the heading's uppercase -- it is a value, not a title.
+    const float tx = x + (open ? snap(16.0f) : snap(14.0f)), gy = y + h * 0.5f;
     float noteW = 0.0f;
     if (note && *note) { fo->set_upper(false); noteW = fo->measure(note, ts_note()); fo->set_upper(true); }
-    { const float rx = tx + tw + snap(14.0f);                                                // the rule, out to the note
-      const float rw = (x + w) - rx - snap(8.0f) - (noteW > 0.0f ? noteW + snap(14.0f) : 0.0f);
-      if (rw > snap(12.0f)) flat(dev, rx, snap(gy), rw, 1, ((u32)(0x14 + (u32)(0x14 * t)) << 24) | 0x00FFFFFFu); }
+
+    // The chevron sits at the RIGHT end, which is where a disclosure control belongs when the label is on the
+    // left : the two ends of the bar are its two jobs, naming and opening. It points DOWN when open, at what it
+    // opened, and right when closed, at what would happen next.
+    // (Drawn as a filled AA triangle, not with chevron(): that primitive's `dir` is a multiplier on the apex's
+    //  X offset, so it can point left or right and nothing else -- and this one has to point DOWN.)
+    { const float cx2 = x + w - snap(16.0f), sTri = snap(4.5f);
+      const u32 cc = fa(lerpc(C_MUTE, C_ACCENTHI, o > t ? o : t));
+      if (open) { const float d[6] = { cx2 - sTri, gy - sTri * 0.55f,  cx2 + sTri, gy - sTri * 0.55f,  cx2, gy + sTri * 0.85f };
+                  fill_poly_aa(dev, d, 3, cc); }
+      else      { const float d[6] = { cx2 - sTri * 0.55f, gy - sTri,  cx2 - sTri * 0.55f, gy + sTri,  cx2 + sTri * 0.85f, gy };
+                  fill_poly_aa(dev, d, 3, cc); } }
 
     fo->begin(dev);
     fo->draw_lc(dev, tx, gy, label, ts_section(), fa(lerpc(C_DIM, C_TEXT, o > t ? o : t)), fa(C_STROKE), 1.2f);
     if (noteW > 0.0f) {
         fo->set_upper(false);
-        fo->draw_lc(dev, x + w - snap(8.0f) - noteW, gy, note, ts_note(),
+        fo->draw_lc(dev, x + w - snap(30.0f) - noteW, gy, note, ts_note(),
                     fa(lerpc(C_MUTE, C_DIM, o > t ? o : t)), fa(C_STROKE), 1.0f);
         fo->set_upper(true);
     }
