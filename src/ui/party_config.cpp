@@ -115,12 +115,20 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // Eased OPEN progress. The card grows with it, the content is revealed through a clip, and the rows
     // below follow -- so a section unfolds rather than appearing. ease() keeps its own state, keyed on
     // this call site, which is why no clock has to be threaded through this function.
-    const float aR0_ = ease(CTRL_ID, pcFrameOpen_ ? 1.0f : 0.0f, 15.0f);
+    const float aR0_ = ease(CTRL_ID, pcFrameOpen_ ? 1.0f : 0.0f, 7.5f);
     const float aS0_ = aR0_ * aR0_ * (3.0f - 2.0f * aR0_);   // smoothstep : no jerk at either end
     if (aS0_ > 0.001f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[0] * aS0_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_)) pcFrameOpen_ = !pcFrameOpen_;
     ROW_NEXT(42.0f)
     if (aS0_ > 0.001f) {
+        // The content FADES with the fold. Sliding rows out from under a clip while they stay fully
+        // opaque leaves them legible right up to the last pixel, so the eye keeps reading them while
+        // the sections below are already moving -- which is what made the two look out of step. Tied
+        // to the same progress, the content is gone by the time the gap it filled is gone.
+        // e is by value here, and ROW_BAND multiplies it into g_fade, so scaling it covers every row
+        // in the section without touching a single one of them.
+        const float eOuter_ = e;
+        e = eOuter_ * (0.25f + 0.75f * aS0_);
         const float cTop_ = ry;
         clip_rect_begin(dev, hdrX, cTop_, hdrW, pcFull_[0] * aS0_ + 1.0f);
         draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
@@ -131,6 +139,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         // measured for free, every frame, which is the height the reveal animates toward. Then ry is put
         // back to the REVEALED height, so everything below rides the fold instead of jumping when it ends.
         clip_rect_end(dev);
+        e = eOuter_;
         pcFull_[0] = ry - cTop_;
         ry = cTop_ + pcFull_[0] * aS0_;
     }   // end Frame
@@ -146,12 +155,20 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // Eased OPEN progress. The card grows with it, the content is revealed through a clip, and the rows
     // below follow -- so a section unfolds rather than appearing. ease() keeps its own state, keyed on
     // this call site, which is why no clock has to be threaded through this function.
-    const float aR1_ = ease(CTRL_ID, catOpen_[1] ? 1.0f : 0.0f, 15.0f);
+    const float aR1_ = ease(CTRL_ID, catOpen_[1] ? 1.0f : 0.0f, 7.5f);
     const float aS1_ = aR1_ * aR1_ * (3.0f - 2.0f * aR1_);   // smoothstep : no jerk at either end
     if (aS1_ > 0.001f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[1] * aS1_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
     ROW_NEXT(42.0f)
     if (aS1_ > 0.001f) {
+        // The content FADES with the fold. Sliding rows out from under a clip while they stay fully
+        // opaque leaves them legible right up to the last pixel, so the eye keeps reading them while
+        // the sections below are already moving -- which is what made the two look out of step. Tied
+        // to the same progress, the content is gone by the time the gap it filled is gone.
+        // e is by value here, and ROW_BAND multiplies it into g_fade, so scaling it covers every row
+        // in the section without touching a single one of them.
+        const float eOuter_ = e;
+        e = eOuter_ * (0.25f + 0.75f * aS1_);
         const float cTop_ = ry;
         clip_rect_begin(dev, hdrX, cTop_, hdrW, pcFull_[1] * aS1_ + 1.0f);
         // Show + Size : the two settings everyone touches, first, on one line.
@@ -282,6 +299,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         // measured for free, every frame, which is the height the reveal animates toward. Then ry is put
         // back to the REVEALED height, so everything below rides the fold instead of jumping when it ends.
         clip_rect_end(dev);
+        e = eOuter_;
         pcFull_[1] = ry - cTop_;
         ry = cTop_ + pcFull_[1] * aS1_;
     }   // end Party
@@ -296,12 +314,20 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // Eased OPEN progress. The card grows with it, the content is revealed through a clip, and the rows
     // below follow -- so a section unfolds rather than appearing. ease() keeps its own state, keyed on
     // this call site, which is why no clock has to be threaded through this function.
-    const float aR2_ = ease(CTRL_ID, catOpen_[7] ? 1.0f : 0.0f, 15.0f);
+    const float aR2_ = ease(CTRL_ID, catOpen_[7] ? 1.0f : 0.0f, 7.5f);
     const float aS2_ = aR2_ * aR2_ * (3.0f - 2.0f * aR2_);   // smoothstep : no jerk at either end
     if (aS2_ > 0.001f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[2] * aS2_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (aS2_ > 0.001f) {
+        // The content FADES with the fold. Sliding rows out from under a clip while they stay fully
+        // opaque leaves them legible right up to the last pixel, so the eye keeps reading them while
+        // the sections below are already moving -- which is what made the two look out of step. Tied
+        // to the same progress, the content is gone by the time the gap it filled is gone.
+        // e is by value here, and ROW_BAND multiplies it into g_fade, so scaling it covers every row
+        // in the section without touching a single one of them.
+        const float eOuter_ = e;
+        e = eOuter_ * (0.25f + 0.75f * aS2_);
         const float cTop_ = ry;
         clip_rect_begin(dev, hdrX, cTop_, hdrW, pcFull_[2] * aS2_ + 1.0f);
         // ---- General ----
@@ -387,6 +413,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         // measured for free, every frame, which is the height the reveal animates toward. Then ry is put
         // back to the REVEALED height, so everything below rides the fold instead of jumping when it ends.
         clip_rect_end(dev);
+        e = eOuter_;
         pcFull_[2] = ry - cTop_;
         ry = cTop_ + pcFull_[2] * aS2_;
     }   // end Alliance
@@ -397,12 +424,20 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // Eased OPEN progress. The card grows with it, the content is revealed through a clip, and the rows
     // below follow -- so a section unfolds rather than appearing. ease() keeps its own state, keyed on
     // this call site, which is why no clock has to be threaded through this function.
-    const float aR3_ = ease(CTRL_ID, catOpen_[0] ? 1.0f : 0.0f, 15.0f);
+    const float aR3_ = ease(CTRL_ID, catOpen_[0] ? 1.0f : 0.0f, 7.5f);
     const float aS3_ = aR3_ * aR3_ * (3.0f - 2.0f * aR3_);   // smoothstep : no jerk at either end
     if (aS3_ > 0.001f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[3] * aS3_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0])) catOpen_[0] = !catOpen_[0];
     ROW_NEXT(42.0f)
     if (aS3_ > 0.001f) {
+        // The content FADES with the fold. Sliding rows out from under a clip while they stay fully
+        // opaque leaves them legible right up to the last pixel, so the eye keeps reading them while
+        // the sections below are already moving -- which is what made the two look out of step. Tied
+        // to the same progress, the content is gone by the time the gap it filled is gone.
+        // e is by value here, and ROW_BAND multiplies it into g_fade, so scaling it covers every row
+        // in the section without touching a single one of them.
+        const float eOuter_ = e;
+        e = eOuter_ * (0.25f + 0.75f * aS3_);
         const float cTop_ = ry;
         clip_rect_begin(dev, hdrX, cTop_, hdrW, pcFull_[3] * aS3_ + 1.0f);
         { ROW_BAND(56.0f)   // which box's text : Party / Alliance
@@ -491,6 +526,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         // measured for free, every frame, which is the height the reveal animates toward. Then ry is put
         // back to the REVEALED height, so everything below rides the fold instead of jumping when it ends.
         clip_rect_end(dev);
+        e = eOuter_;
         pcFull_[3] = ry - cTop_;
         ry = cTop_ + pcFull_[3] * aS3_;
     }   // end Text
@@ -506,12 +542,20 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // Eased OPEN progress. The card grows with it, the content is revealed through a clip, and the rows
     // below follow -- so a section unfolds rather than appearing. ease() keeps its own state, keyed on
     // this call site, which is why no clock has to be threaded through this function.
-    const float aR4_ = ease(CTRL_ID, pcBuffsOpen_ ? 1.0f : 0.0f, 15.0f);
+    const float aR4_ = ease(CTRL_ID, pcBuffsOpen_ ? 1.0f : 0.0f, 7.5f);
     const float aS4_ = aR4_ * aR4_ * (3.0f - 2.0f * aR4_);   // smoothstep : no jerk at either end
     if (aS4_ > 0.001f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[4] * aS4_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_)) pcBuffsOpen_ = !pcBuffsOpen_;
     ROW_NEXT(42.0f)
     if (aS4_ > 0.001f) {
+        // The content FADES with the fold. Sliding rows out from under a clip while they stay fully
+        // opaque leaves them legible right up to the last pixel, so the eye keeps reading them while
+        // the sections below are already moving -- which is what made the two look out of step. Tied
+        // to the same progress, the content is gone by the time the gap it filled is gone.
+        // e is by value here, and ROW_BAND multiplies it into g_fade, so scaling it covers every row
+        // in the section without touching a single one of them.
+        const float eOuter_ = e;
+        e = eOuter_ * (0.25f + 0.75f * aS4_);
         const float cTop_ = ry;
         clip_rect_begin(dev, hdrX, cTop_, hdrW, pcFull_[4] * aS4_ + 1.0f);
         { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // how big, and how many
@@ -1026,6 +1070,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         // measured for free, every frame, which is the height the reveal animates toward. Then ry is put
         // back to the REVEALED height, so everything below rides the fold instead of jumping when it ends.
         clip_rect_end(dev);
+        e = eOuter_;
         pcFull_[4] = ry - cTop_;
         ry = cTop_ + pcFull_[4] * aS4_;
     }   // end Buffs
