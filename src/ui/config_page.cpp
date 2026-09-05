@@ -729,12 +729,15 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // Vertical gradient, not one flat colour: lit at the top, shadowed at the bottom, the same bevel the
         // masthead's rails use. Three pixels on the selected tab and two elsewhere -- a one-pixel line reads as
         // a hairline drawn on the tab, where an edging has to read as the tab's own edge.
-        // GOLD on the selected tab, STEEL on the rest -- which is what finally makes the strip read as a
-        // selection instead of as six outlined boxes. Equal gold on all six was a grid: the same colour marking
-        // the brand, the structure AND the choice cannot mark any of them.
+        // STEEL on all six. Tabs are structure, and the container they sit on is structure -- one alloy for
+        // the whole working area, gold reserved for the masthead. The selection does not need the border to say
+        // it: the chosen tab already has a lit fill, a gold label, a gold icon and a seat glow, and adding a
+        // fifth signal to a thing that is already unmistakable only spends the one colour that still means
+        // something. What the border still carries is a difference of STRENGTH -- brighter when chosen, dimmer
+        // when not, rising on hover.
         { const float bw2 = tabBw;   // one thickness for all six : the SELECTION is carried by ALLOY, not by weight
           const float w2  = active ? 1.0f : (0.34f + 0.40f * hov_[i]);
-          const u32 gc2 = ((active ? C_METAL : C_STEEL) & 0x00FFFFFFu) | ((u32)(235.0f * w2) << 24);
+          const u32 gc2 = (C_STEEL & 0x00FFFFFFu) | ((u32)(235.0f * w2) << 24);
           rrect_top(dev, tx - bw2, tabY - bw2, tabW + bw2 * 2.0f, tabH + bw2, tr + bw2, gc2, gc2); }
         if (active) {
             halo(dev, cxT - snap(2.0f), cyT, tabW * 0.5f, tabH * 0.5f, C_GOLD, 0.35f + 0.2f * pulse);      // accent seat glow
