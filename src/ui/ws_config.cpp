@@ -19,7 +19,7 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     UiConfig& c = ui_config();
 
     // ===== sub-section : DISPLAY =====
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], (catOpen_[6] ? 1.0f : 0.0f))) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (catOpen_[6]) {
         ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.wsShow)   // Show on weaponskill
@@ -34,9 +34,10 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         } ROW_NEXT(52.0f)
         ROW_TOGGLE(CTRL_ID, tr("Impact effects", "Effets d'impact"), c.wsFx)   // Impact effects
     }   // end Display
+    ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ===== sub-section : COLOURS =====
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Colours", "Couleurs"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Colours", "Couleurs"), catOpen_[7], (catOpen_[7] ? 1.0f : 0.0f))) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (catOpen_[7]) {
         struct ColRow { const char* en; const char* fr; unsigned* col; };
@@ -57,7 +58,7 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         }
     }   // end Colours
 
-    ry += snap(10.0f);
+    ry += snap(16.0f);
     #undef ROW_BAND
     #undef ROW_NEXT
 }

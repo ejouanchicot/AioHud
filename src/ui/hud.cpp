@@ -20,7 +20,8 @@
 #include "ui/edit_box.h"  // edit-mode drag for the WS popup (place it in //aio edit like the other boxes)
 #include "gfx/draw.h"     // rrect_glow / disc_glow for the WS popup burst
 #include "model/skillchain.h"         // Skillchains : Resonating fields -> names / colours / elements
-#include "gfx/texture.h"              // load_raw_texture / release_texture (coffer icon)
+#include "gfx/texture.h"
+#include "gfx/corner_mask.h"              // load_raw_texture / release_texture (coffer icon)
 #include "gfx/d3d.h"                  // textured-quad state for the coffer icon (dSet* + FVF)
 #include <windows.h>
 #include <math.h>
@@ -42,6 +43,13 @@ void treasure_help_forget();
 // those two now borrow the shared one, so only zonetracker / treasure still own a Help texture.
 void zonetracker_help_dispose();
 void treasure_help_dispose();
+// The presented display mode, captured once (see the note at the capture site). 0 until the first frame.
+static u32 s_dispFmt = 0, s_dispW = 0, s_dispH = 0;
+static const char* disp_fmt_name(u32 f) {
+    switch (f) { case 21: return "A8R8G8B8 (32-bit)"; case 22: return "X8R8G8B8 (32-bit)";
+                 case 23: return "R5G6B5 (16-bit)";   case 24: return "X1R5G5B5 (16-bit)";
+                 case 25: return "A1R5G5B5 (16-bit)"; default: return "?"; }
+}
 void box_skins_forget();    // per-box Custom->FFXI skins (box_style.cpp) : forget on a device change
 void box_skins_dispose();   // ... release at shutdown
 
@@ -205,6 +213,7 @@ void Hud::render(u32 dev) {
         // otherwise, so they used to survive a device recreate and hand a dead device's texture to SetTexture.
         zonetracker_help_forget(); treasure_help_forget();   // (the debuffs / timers Help samples borrow the shared atlas forgotten just above)
         box_skins_forget();        // per-box Custom->FFXI skins belong to the old device too
+        corner_mask_forget();      // the baked corner-mask atlas belongs to the old device (and this re-arms its retry)
         for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->on_device_lost();
     }
     fonts_.get(0, 0);          // register the default slot so ensure_all builds it this frame
@@ -263,6 +272,10 @@ void Hud::render(u32 dev) {
     // frames of grace on the inGame side absorb a 1-frame hiccup so the HUD never blinks mid-fight ; a zone hides
     // immediately (no grace) via the explicit flag.
     const bool zoning = party().is_zoning();
+    // The baked corner masks are TEXTURE ALPHA, which samples as ~255 while a zone loads (d3d8-rendering 3c) --
+    // every rounded corner would square off for the length of the load. Gate them off for those frames and the
+    // shapes fall back to the feathered geometry they used before the mask existed.
+    corner_mask_enable(!zoning);
     const bool ready = state_.inGame && !zoning;
     if (ready) { everInGame_ = true; notReadyFrames_ = 0; }
     else ++notReadyFrames_;
@@ -312,6 +325,10 @@ void Hud::render(u32 dev) {
     // (text/prims) are auto-rendered by Windower outside this block -- harmless here.
     u32 tok = dCreateSB(dev, D3DSBT_ALL);
     __try {
+        // Once per session : what are we presenting INTO ? A 16-bit back buffer bands every smooth gradient no
+        // matter how it is drawn, and that is a question about the game's settings, not about our geometry --
+        // so it is worth knowing before anyone tunes a gradient again. //aio doctor prints it.
+        if (!s_dispFmt) { D3DDISPLAYMODE8 dm; if (dGetDisplayMode(dev, dm) && dm.fmt) { s_dispFmt = dm.fmt; s_dispW = dm.w; s_dispH = dm.h; } }
         // PRE-BAKE the WS-popup font atlases off-screen ONCE, but only after the HUD has settled -> the big 58/34px
         // atlases never pile onto the load frames.
         // INSIDE the state block, and this is not cosmetic. Font::begin sets 11 render states + 13 texture-stage
@@ -422,6 +439,11 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
                          state_.inGame ? 1 : 0, party().self_id(), roster, state_.zone, party().self_main_job());
     windower::debug::log("  luacore  : root rva %06X (%s) live=%d",
                          lc_root_rva(), lc_root_how(), lc_root_live() ? 1 : 0);
+    windower::debug::log("  surface  : %ux%u fmt=%u %s", s_dispW, s_dispH, s_dispFmt, disp_fmt_name(s_dispFmt));
+    if (s_dispFmt >= 23 && s_dispFmt <= 25)
+        DOC("Le jeu presente en 16 bits (%s) : tout degrade doux affichera des bandes, chez nous comme dans le "
+            "jeu, et aucun reglage de notre cote n'y changera grand-chose. Passe FFXI en 32 bits dans son "
+            "config (Bit Depth / Profondeur) si les degrades te genent.", disp_fmt_name(s_dispFmt));
     if (!state_.inGame || !party().self_id()) {
         // Which of the two it is decides the remedy, so the check says which. A dead root means Windower
         // moved LuaCore's data root under us (4.7.9.3 did exactly that) and NOTHING can be read ; a live
@@ -652,6 +674,7 @@ void Hud::dispose() {
     if (grimDark_)  { release_texture(grimDark_);  grimDark_ = 0; }
     if (grimClosed_){ release_texture(grimClosed_);grimClosed_= 0; }   // grimoire : closed-book (no Arts) texture
     zonetracker_help_dispose(); treasure_help_dispose();   // the module-owned Help samples (file-static, not members) -- symmetric with the forget block in render()
+    corner_mask_dispose();   // the baked corner-mask atlas (the ONLY Release of it)
     config_.dispose();   // Release the ConfigPage's owned Help/preview textures (zone map, logo, atlases) -- else they leak per //unload
 }
 

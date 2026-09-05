@@ -19,7 +19,7 @@ void ConfigPage::draw_tp_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     UiConfig& c = ui_config();
 
     // ===== sub-section : DISPLAY =====
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], (catOpen_[6] ? 1.0f : 0.0f))) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (catOpen_[6]) {
         ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.tpShow)   // Show
@@ -40,9 +40,10 @@ void ConfigPage::draw_tp_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Appears when items are in the lottery pool.", "Appara\xC3\xAet quand des items sont dans le pool."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         } ROW_NEXT(40.0f)
     }   // end Display
+    ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ===== sub-section : TEXT (per-element typography, like the other modules) =====
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5])) catOpen_[5] = !catOpen_[5];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], (catOpen_[5] ? 1.0f : 0.0f))) catOpen_[5] = !catOpen_[5];
     ROW_NEXT(42.0f)
     if (catOpen_[5]) {
         { ROW_BAND(52.0f)   // element selector
@@ -55,7 +56,7 @@ void ConfigPage::draw_tp_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                         c.tpText[(cfgTpTextElem_ < 0 || cfgTpTextElem_ >= TP_TE_COUNT) ? 0 : cfgTpTextElem_]);
     }   // end Text
 
-    ry += snap(10.0f);
+    ry += snap(16.0f);
     #undef ROW_BAND
     #undef ROW_NEXT
 }

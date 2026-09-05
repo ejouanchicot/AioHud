@@ -71,6 +71,8 @@ void ConfigPage::dispose() {   // //unload : device is still alive -> RELEASE ou
     on_device_lost();   // zero the handles + retry flags
 }
 void ConfigPage::set_tab(int t)     { if (t >= 0 && t < NTABS) tab_ = t; }
+// (The tab lamp used to live here as `tab_crown`. It is ctl_crown in config_controls now -- buttons and chips
+// light the same way, and one construction cannot drift into two.)
 // a crisp little VECTOR icon for a tab/module, drawn in `col` with an optional soft accent glow behind.
 // kind 0 = gear (Configuration), 1 = person (Profile), 2 = "?" (Help). `s` = icon box size (px).
 static void tab_icon(u32 dev, int kind, float cx, float cy, float s, u32 col, Font* fo, u32 glowCol, float glow) {
@@ -228,8 +230,8 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
         // it, and catH_ now holds the CONTENT height rather than the card's -- the header slot is added
         // back here, which is the one place that knows about it.
         const float aF3_ = cat_fold(CTRL_ID, catOpen_[3]);
-        if (aF3_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + catH_[3] * aF3_);   // solid menu card behind the OPEN section (last frame's height)
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Interface", "Interface"), catOpen_[3])) catOpen_[3] = !catOpen_[3];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[3], aF3_));   // solid menu card behind the OPEN section (last frame's height)
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Interface", "Interface"), catOpen_[3], aF3_)) catOpen_[3] = !catOpen_[3];
         ROW_NEXT(42.0f)
         if (aF3_ > 0.0f) {
         const float top3_ = ry;
@@ -307,7 +309,7 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
         }
         cat_fold_end(dev, ry, top3_, catH_[3], aF3_);
         }   // end category Interface (catOpen_[3])
-        ry += snap(10.0f);                             // gap between category cards
+        ry += snap(16.0f);                             // gap between category cards
 }
 void ConfigPage::draw_layout_category(u32 dev, Font* fo, const MouseState* mo, bool click,
                                       float& ry, int& ri, float e,
@@ -318,8 +320,8 @@ void ConfigPage::draw_layout_category(u32 dev, Font* fo, const MouseState* mo, b
         // it, and catH_ now holds the CONTENT height rather than the card's -- the header slot is added
         // back here, which is the one place that knows about it.
         const float aF2_ = cat_fold(CTRL_ID, catOpen_[2]);
-        if (aF2_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + catH_[2] * aF2_);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Layout", "Disposition"), catOpen_[2])) catOpen_[2] = !catOpen_[2];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[2], aF2_));
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Layout", "Disposition"), catOpen_[2], aF2_)) catOpen_[2] = !catOpen_[2];
         ROW_NEXT(42.0f)
         if (aF2_ > 0.0f) {
         const float top2_ = ry;
@@ -693,8 +695,9 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             const bool hov = inrect(mo, sx, ly, segW, lh);
             if (on) rrect_fill(dev, sx + snap(2.0f), ly + snap(2.0f), segW - snap(4.0f), lh - snap(4.0f), snap(5.0f), lerpc(C_ACCENT, C_ACCENTHI, pulse), C_ACCENT);   // blue = interactive
             fo->begin(dev);
-            fo->draw_c(dev, sx + segW * 0.5f, ly + lh * 0.5f, seg[i], snap(13.0f),
-                       on ? fa(0xFFFFFFFF) : fa(lerpc(C_DIM, C_TEXT, hov ? 1.0f : 0.0f)), fa(C_STROKE), 1.0f);   // white on blue / dim on dark
+            u32 segStk = C_STROKE; const u32 segTxt = on ? text_on_fill(lerpc(lerpc(C_ACCENT, C_ACCENTHI, pulse), C_ACCENT, 0.5f), &segStk)
+                                                          : lerpc(C_DIM, C_TEXT, hov ? 1.0f : 0.0f);
+            fo->draw_c(dev, sx + segW * 0.5f, ly + lh * 0.5f, seg[i], snap(13.0f), fa(segTxt), fa(segStk), 1.0f);   // ON : legible on ANY accent, not always white
             if (hov && click && !on) { ui_config().lang = i; save_ui_config(); }
         }
     }
@@ -759,20 +762,34 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // fifth signal to a thing that is already unmistakable only spends the one colour that still means
         // something. What the border still carries is a difference of STRENGTH -- brighter when chosen, dimmer
         // when not, rising on hover.
+        // The tab keeps its own edging call : it is 3px where a button's is 2, and it must NOT round its bottom
+        // (it melts into the body). Same colour, same strength curve, same idea as ctl_edge.
         { const float bw2 = tabBw;   // one thickness for all six : the SELECTION is carried by ALLOY, not by weight
           const float w2  = active ? 1.0f : (0.34f + 0.40f * hov_[i]);
-          const u32 gc2 = (C_STEEL & 0x00FFFFFFu) | ((u32)(235.0f * w2) << 24);
+          // Tinted by the theme like every other control edge (ctl_edge_tint), and for the same reason it is
+          // NOT applied to the container rim or the masthead: those hold a baked gold logotype, a tab does not.
+          const u32 base2 = active ? C_TABON_T : lerpc(C_TABOFF_T, C_TABHOV_T, hov_[i]);
+          const u32 gc2 = (ctl_edge_tint(base2) & 0x00FFFFFFu) | ((u32)(235.0f * w2) << 24);
           rrect_top(dev, tx - bw2, tabY - bw2, tabW + bw2 * 2.0f, tabH + bw2, tr + bw2, gc2, gc2); }
+        // ONE strength per state, and the lamp below reads it. Selected = full, breathing gently ; hovered =
+        // a little over half of that, so the two can never be confused for each other.
+        const float lit = active ? (0.90f + 0.10f * pulse) : (0.55f * hov_[i]);
         if (active) {
-            halo(dev, cxT - snap(2.0f), cyT, tabW * 0.5f, tabH * 0.5f, C_GOLD, 0.35f + 0.2f * pulse);      // accent seat glow
             rrect_top(dev, tx, tabY, tabW, tabH + snap(2.0f), tr, C_TABON_T, C_TABON_B);                  // +2 : bleed into the body
-            rrect_top(dev, tx + snap(2.0f), tabY + snap(1.0f), tabW - snap(4.0f), tabH * 0.46f, snap(7.0f), 0x48FFFFFF, 0x06FFFFFF);   // glass top sheen
-            shine(dev, tx + snap(3.0f), tabY, tabW - snap(6.0f), tabH * 0.92f, 0.34f + 0.14f * pulse, f.t);// slow glass sweep (always, not just hover)
+            // No seat glow behind the tab any more, and no permanent glass sweep across it. The sweep was
+            // motion with nothing at the end of it, and the glow was a second, different way of saying the
+            // same thing the crown says -- the selection now speaks with ONE voice, louder.
         } else {
             rrect_top(dev, tx, tabY, tabW, tabH, tr, lerpc(C_TABOFF_T, C_TABHOV_T, hov_[i]), lerpc(C_TABOFF_B, C_TABHOV_B, hov_[i]));
-            rrect_top(dev, tx + snap(2.0f), tabY + snap(1.0f), tabW - snap(4.0f), tabH * 0.32f, snap(7.0f), ((u32)(0x22 * (0.35f + 0.65f * hov_[i])) << 24) | 0x00FFFFFF, 0x02FFFFFF);   // faint sheen (grows on hover)
-            if (hov_[i] > 0.01f) shine(dev, tx + snap(3.0f), tabY, tabW - snap(6.0f), tabH * 0.92f, hov_[i], f.t);
         }
+        // The tab's own glass, one line for both states -- it used to be two, at two heights and two alphas.
+        rrect_top(dev, tx + snap(2.0f), tabY + snap(1.0f), tabW - snap(4.0f), tabH * 0.40f, snap(7.0f),
+                  ((u32)(0x16 + 0x22 * lit) << 24) | 0x00FFFFFF, 0x02FFFFFF);
+        // Hover is a GHOST of the selected state: the SAME lamp, in STEEL and at roughly half strength. Gold
+        // is what selection means on this page and pointing at something is not choosing it -- so a hovered
+        // tab shows exactly what the click will do, in the alloy that says "not yet". (The chosen tab's own
+        // lamp is drawn after the loop, in gold, so no neighbour can paint over its bloom.)
+        if (!active) ctl_crown(dev, tx, tabY, tabW, tabH, tr, C_STEEL_HI, C_STEEL, lit);
         // icon + label drawn as ONE centred group
         const u32 fg = lerpc(C_DIM, active ? C_GOLDHI : C_TEXT, active ? 1.0f : hov_[i]);
         const float textW = fo->measure(tab_label(i), snap(15.0f));
@@ -782,14 +799,16 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         fo->begin(dev);
         fo->draw_c(dev, leftX + iconS + iconGap + textW * 0.5f, cyT, tab_label(i), snap(15.0f), fg, fa(C_STROKE), 1.0f);
     }
-    // sliding active-tab indicator (interpolates toward the active tab) + a soft accent glow and a
-    // travelling bright glint that rides the bar as it slides between modules.
-    if (tabSlide_ < 0.0f) tabSlide_ = activeX;
-    tabSlide_ += (activeX - tabSlide_) * clampf(dt * 16.0f, 0.0f, 1.0f);
-    const float barCx = tabSlide_ + tabW * 0.5f;
-    halo(dev, barCx, bodyY - snap(1.0f), tabW * 0.42f, snap(6.0f), C_GOLD, 0.5f + 0.3f * pulse);
-    rrect_fill(dev, tabSlide_ + snap(8.0f), bodyY - snap(3.0f), tabW - snap(16.0f), snap(3.0f), snap(1.5f), lerpc(C_GOLD, C_GOLDHI, pulse), lerpc(C_GOLD, C_GOLDHI, pulse));
-    cs_add(dev); soft_blob(dev, barCx, bodyY - snap(1.5f), snap(28.0f), snap(4.0f), (C_GOLDHI & 0x00FFFFFF) | ((u32)(120.0f * (0.5f + 0.5f * pulse) * g_fade) << 24));   // bright travelling glint
+    // ---- the CROWN : the selected tab is lit along its TOP edge. -------------------------------------------
+    // The indicator used to be a bar at the FOOT of the strip. That was right while the tabs floated above a
+    // separate body -- it told you which one owned the panel. The selected tab now bleeds into the content and
+    // is one surface with it, so a line across that junction was drawing a seam back in at exactly the place
+    // the design had just welded shut. The signal moved to the other end of the tab, where there is a real
+    // edge for it to sit on.
+    // It does NOT travel. The old bar slid, and sliding the light carried it ACROSS the tabs you did not
+    // choose -- for a fifth of a second the wrong tab is lit, which is the one thing an indicator must never
+    // say. It is lit where it belongs, on the frame the choice is made.
+    ctl_crown(dev, activeX, tabY, tabW, tabH, snap(10.0f), C_GOLDHI, C_GOLD, 0.90f + 0.10f * pulse);
 
     // ===== CONTENT BODY (the tab content surface) =====
     const float bodyH = pageBot - bodyY;
@@ -821,11 +840,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             const float ry = bodyY + snap(44.0f) + i * snap(42.0f), rh = snap(36.0f);
             const bool active = (sec == section_), hover = inrect(mo, rx, ry, rw, rh);
             if (hover && click) section_ = sec;
-            const float ht = ease(10 + i, (hover || active) ? 1.0f : 0.0f), af = active ? 1.0f : ht;
-            if (active)          rrect_fill(dev, rx, ry, rw, rh, snap(9.0f), C_ROWON_T, C_ROWON_B);
-            else if (ht > 0.01f) rrect_fill(dev, rx, ry, rw, rh, snap(9.0f), ((u32)(0x24 * ht) << 24) | 0x00FFFFFF, ((u32)(0x12 * ht) << 24) | 0x00FFFFFF);
-            if (af > 0.01f) rrect_fill(dev, rx + snap(2.0f), ry + rh * (1.0f - af) * 0.5f, snap(4.0f), rh * af, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse), lerpc(C_GOLD, C_GOLDHI, pulse));   // gold accent pill
-            fo->begin(dev); fo->draw_lc(dev, rx + snap(18.0f), ry + rh * 0.5f, module_label(sec), snap(15.0f), lerpc(C_DIM, C_TEXT, active ? 1.0f : ht), fa(C_STROKE), 1.0f);
+            const float ht = ease(10 + i, (hover || active) ? 1.0f : 0.0f);
+            nav_row(dev, fo, rx, ry, rw, rh, module_label(sec), active, ht, pulse);
         }
 
         const float coX = ix + sbW + snap(30.0f);
@@ -903,9 +919,15 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         clip_rect_begin(dev, bandX - snap(2.0f), cfgTop, bandW + snap(4.0f), cfgBot - cfgTop);
         const MouseState* moReal_ = mo;                               // gate the mouse to the viewport
         const bool moIn_ = moReal_ && moReal_->x >= bandX && moReal_->x <= bandX + bandW && moReal_->y >= cfgTop && moReal_->y <= cfgBot;
+        // ...EXCEPT while a drag holds the latch. A colour-picker / slider drag that wanders out of the column
+        // (off the SV square, past the panel edge) must keep getting the pointer until the button comes up :
+        // handing the latched row `mo == nullptr` sends it down its RELEASE branch, so the grab died the moment
+        // the cursor left the viewport and the user had to re-press. Only a PRESS is still confined to the
+        // viewport, so nothing outside can be click-through while dragging.
+        const bool moDrag_ = ctrl_drag_any();
         {
-        const MouseState* mo = moIn_ ? moReal_ : nullptr;             // SHADOWS the outer mo/click for the rows below
-        const bool click = mo && mo->clicked;
+        const MouseState* mo = (moIn_ || moDrag_) ? moReal_ : nullptr;   // SHADOWS the outer mo/click for the rows below
+        const bool click = mo && mo->clicked && moIn_;
         const float hdrX = coX - snap(12.0f), hdrW = ctrlW + snap(24.0f);
         // (draw_interface_category is NO LONGER drawn on every page -- it's now its own "Interface" sidebar entry below)
         // ===== category : PARTY / ALLIANCE (a MODULE page : shown only under the Party / Alliance module) =====
@@ -1058,13 +1080,30 @@ void ConfigPage::draw_profile_bar(u32 dev, Font* fo, const MouseState* mo, bool 
         const float t = ease(410, hov ? 1.0f : 0.0f);
         const float sr = snap(bH * 0.30f);
         if (dirty) {
-            cs_add(dev); rrect_glow(dev, bx, bY, saveW, bH, sr, (C_ACCENT & 0x00FFFFFF) | ((u32)(40.0f + 40.0f * pulse) << 24), snap(7.0f)); cs(dev);
-            rpanel(dev, bx, bY, saveW, bH, sr, lerpc(C_CHIP_ON_T, C_ACCENTHI, t), lerpc(C_CHIP_ON_B, C_ACCENT, t), C_ACCENTHI, snap(1.4f));
-            flat(dev, bx + sr, bY + snap(1.0f), saveW - 2.0f * sr, 1.0f, 0x40FFFFFF);
-            fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, tr("Save changes", "Enregistrer"), snap(14.0f), fa(C_ONACC), 0, 0.0f);
+            // The same four pieces as a tab, a chip and a push button : edging, fill, a sliver of glass, the
+            // lamp. It kept a stroked border and a flat hairline of its own until every other raised control
+            // had moved on -- the most important button on the page was the last one still speaking the old
+            // language. Its lamp PULSES, which is the one thing that stays particular to it: unsaved work.
+            const u32 sfT = lerpc(C_CHIP_ON_T, C_ACCENTHI, t), sfB = lerpc(C_CHIP_ON_B, C_ACCENT, t);
+            ctl_edge(dev, bx, bY, saveW, bH, sr, 0.70f + 0.30f * t, lerpc(sfT, sfB, 0.5f));
+            rrect_fill(dev, bx, bY, saveW, bH, sr, sfT, sfB);
+            rrect_top(dev, bx + snap(2.0f), bY + snap(1.0f), saveW - snap(4.0f), bH * 0.42f, snap(6.0f),
+                      ((u32)(0x16 + 0x1E * t) << 24) | 0x00FFFFFF, 0x02FFFFFF);
+            { const bool br2 = fill_is_bright(lerpc(sfT, sfB, 0.5f));
+              ctl_crown(dev, bx, bY, saveW, bH, sr, br2 ? 0xFFFFFFFFu : C_GOLDHI, br2 ? 0xFFE8F1F8u : C_GOLD,
+                        0.72f + 0.28f * pulse); }
+            // The label follows the FILL, like every other button (text_on_fill). It was hard-coded dark, which
+            // is right on a bright accent and unreadable on a dark one -- and the accent is the user's colour.
+            u32 svStk; const u32 svTxt = text_on_fill(lerpc(lerpc(C_CHIP_ON_T, C_ACCENTHI, t), lerpc(C_CHIP_ON_B, C_ACCENT, t), 0.5f), &svStk);
+            fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, tr("Save changes", "Enregistrer"), snap(14.0f), fa(svTxt), fa(svStk), 1.0f);
         } else {
-            if (canSave && t > 0.01f) { cs_add(dev); rrect_glow(dev, bx, bY, saveW, bH, sr, (C_ACCENT & 0x00FFFFFF) | ((u32)(44.0f * t) << 24), snap(6.0f)); cs(dev); }
-            rpanel(dev, bx, bY, saveW, bH, sr, canSave ? lerpc(0xFF1E252B, 0xFF27313A, t) : 0xFF1A2027, canSave ? lerpc(0xFF161C21, 0xFF1C232A, t) : 0xFF121820, lerpc(C_CTL_BR, C_ACCENTHI, t), snap(1.3f));
+            ctl_edge(dev, bx, bY, saveW, bH, sr, canSave ? (0.60f + 0.35f * t) : 0.34f, canSave ? lerpc(C_CTL_IDLE_T, C_CTL_HOV_T, t) : 0xFF232B33);
+            rrect_fill(dev, bx, bY, saveW, bH, sr,
+                       canSave ? lerpc(C_CTL_IDLE_T, C_CTL_HOV_T, t) : 0xFF232B33,   // disabled : one step BELOW the ramp,
+                       canSave ? lerpc(C_CTL_IDLE_B, C_CTL_HOV_B, t) : 0xFF1A2029);  // which is what "not raised" looks like
+            rrect_top(dev, bx + snap(2.0f), bY + snap(1.0f), saveW - snap(4.0f), bH * 0.42f, snap(6.0f),
+                      ((u32)(0x12 + 0x1C * t) << 24) | 0x00FFFFFF, 0x02FFFFFF);
+            if (canSave) ctl_crown(dev, bx, bY, saveW, bH, sr, C_STEEL_HI, C_STEEL, 0.60f * t);
             fo->begin(dev); fo->draw_c(dev, bx + saveW * 0.5f, barCy, tr("Saved", "Enregistré"), snap(14.0f), fa(canSave ? C_TEXT : C_MUTE), fa(C_STROKE), 1.0f);
         }
         if (canSave && dirty && hov && click) {
@@ -1706,12 +1745,7 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
             const bool active = (i == helpSel_), hover = inrect(mo, rx, ry, rw, rh);
             if (hover && click && i != helpSel_) { helpSel_ = i; helpScroll_ = 0.0f; }
             const float ht = ease(200 + i, (hover || active) ? 1.0f : 0.0f);
-            if (active) vg(dev, rx, ry, rw, rh, C_ROWON_T, C_ROWON_B);
-            else if (ht > 0.01f) flat(dev, rx, ry, rw, rh, (0x22FFFFFF & 0x00FFFFFF) | ((u32)(0x22 * ht) << 24));
-            flat(dev, rx, ry, snap(3.0f), rh * (active ? 1.0f : ht), lerpc(C_GOLD, C_GOLDHI, pulse));
-            fo->begin(dev);
-            fo->draw_lc(dev, rx + snap(16.0f), ry + rh * 0.5f, tr(HELP_MODULES[i].en, HELP_MODULES[i].fr), snap(15.0f),
-                        lerpc(C_DIM, C_TEXT, active ? 1.0f : ht), fa(C_STROKE), 1.0f);
+            nav_row(dev, fo, rx, ry, rw, rh, tr(HELP_MODULES[i].en, HELP_MODULES[i].fr), active, ht, pulse);
         }
 
         // content : the selected module's help, scrollable
@@ -2083,6 +2117,10 @@ void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseS
     //      when the release is big (D3D8 stencil clip + wheel, same pattern as the Configuration tab). ----
     const float clX = cx, clW = cw;
     const float clTop = cy + ch + snap(14.0f);
+    // The changelog sits IN a container, like the sections on a module page. It used to be a title and a list
+    // of bars on the bare page : the same content the Configuration tab puts on a card, with nothing under it.
+    { const float pT = clTop - snap(8.0f), pB = pageBot - snap(2.0f);
+      if (pB > pT + snap(24.0f)) cat_panel(dev, clX - snap(10.0f), pT, clW + snap(20.0f), pB - pT); }
     char wn[80]; _snprintf(wn, sizeof(wn), "%s V%s", tr("What's new in", "Nouveaut\xC3\xA9s de la"), cur); wn[sizeof(wn) - 1] = 0;
     fo->begin(dev); fo->draw_lc(dev, clX + snap(2.0f), clTop + snap(11.0f), wn, snap(15.0f), fa(C_GOLDHI), fa(C_STROKE), 1.2f);
     const float listTop = clTop + snap(30.0f), listBot = pageBot - snap(6.0f);
@@ -2094,8 +2132,8 @@ void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseS
             ui_config().wheel = 0;
         }
         clip_rect_begin(dev, clX - snap(2.0f), listTop, clW + snap(12.0f), listBot - listTop);
-        const float lh = snap(17.0f), tsz = snap(13.0f);
-        const float hdrH = snap(30.0f), hdrGap = snap(4.0f);
+        const float lh = snap(17.0f), tsz = snap(13.0f);   // (the old hdrH/hdrGap are gone : a group is a card now,
+                                                          //  and cat_card_h owns its arithmetic)
         float y = listTop - updScroll_;
         // grouped changelog : a clickable version header per release (newest first) ; its change lines show when open.
         // relOpen_ sized >= RELEASES_N in config_page.h -- keep them in sync.
@@ -2104,19 +2142,34 @@ void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseS
             // cat_header isn't line-clipped like the entries (draw_wrapped) and the stencil viewport clip can be a
             // no-op on a stencil-less backbuffer -> draw the version header ONLY when it's FULLY inside the viewport,
             // else a scrolled-up header spilled over the update card above (and the footer below).
-            const bool onScreen = (snap(y) >= listTop) && (snap(y) + hdrH <= listBot);
-            if (onScreen && cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, r), clX + snap(2.0f), snap(y), clW - snap(4.0f), vbuf, relOpen_[r]))
+            // A release is a SECTION, so it is drawn like one : its own card, its title bar inside it, its
+            // content in the card. It used to be a bare bar over the list -- the same object a module page
+            // puts on a card, with nothing under it.
+            const float cardTop = snap(y), cardW = clW - snap(4.0f), cardX = clX + snap(2.0f);
+            // A REAL fold, like a module's sections -- it was a hard 0-or-1, so these groups snapped open while
+            // every other section on the page unfolded. cat_fold owns the easing, keyed on this row's own uid.
+            const float aOpen = cat_fold(ctrl_uid_i(CTRL_ID, r), relOpen_[r]);
+            const bool onScreen = (cardTop >= listTop) && (cardTop + CAT_BAR_H <= listBot);
+            if (onScreen) cat_panel(dev, cardX, cardTop, cardW, cat_card_h(relFull_[r], aOpen));
+            if (onScreen && cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, r), cardX, cardTop, cardW, vbuf, relOpen_[r], aOpen))
                 relOpen_[r] = !relOpen_[r];
-            y += hdrH + hdrGap;
-            if (relOpen_[r]) {
+            if (aOpen > 0.0f) {
+                y = cardTop + CAT_HEADER_ADV;
+                const float cTop = y;
+                cat_fold_clip(dev, cardX, cTop, cardW, relFull_[r] * aOpen);   // laid out in FULL, revealed in part
                 for (int i = 0; i < RELEASES[r].n; ++i) {
-                    cs(dev); { const float by = snap(y + lh * 0.5f - 2.0f); if (by >= listTop && by + snap(4.0f) <= listBot) rrect_fill(dev, clX + snap(9.0f), by, snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI)); }   // gold bullet -- ONLY inside the viewport (the stencil clip can be a no-op on a stencil-less backbuffer, like the header onScreen check) else scrolled-off bullets spill out of the box
+                    cs(dev); { const float by = snap(y + lh * 0.5f - 2.0f); if (by >= listTop && by + snap(4.0f) <= listBot) rrect_fill(dev, clX + snap(13.0f), by, snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI)); }   // gold bullet -- ONLY inside the viewport (the stencil clip can be a no-op on a stencil-less backbuffer, like the header onScreen check) else scrolled-off bullets spill out of the box
                     const char* txt = (ui_config().lang == 1) ? RELEASES[r].lines[i].fr : RELEASES[r].lines[i].en;
-                    y = draw_wrapped(dev, fo, clX + snap(22.0f), y, clW - snap(30.0f), listTop, listBot, txt, tsz, C_TEXT, lh);
+                    y = draw_wrapped(dev, fo, clX + snap(26.0f), y, clW - snap(38.0f), listTop, listBot, txt, tsz, C_TEXT, lh);
                     y += snap(7.0f);                                         // gap between entries
                 }
-                y += snap(6.0f);                                            // extra gap after an open release
+                relFull_[r] = (y - cTop) + snap(10.0f);                      // measured, plus the card's bottom padding
+                clip_rect_end(dev);
+                y = cardTop + cat_card_h(relFull_[r], aOpen);                // ... and the cursor rides the reveal
+            } else {
+                y = cardTop + CAT_BAR_H;
             }
+            y += snap(10.0f);                                                // air before the next release
         }
         clip_rect_end(dev);
         // this frame's content extent -> the wheel clamp + a thin scrollbar when it overflows
@@ -2147,6 +2200,8 @@ void ConfigPage::draw_debug_tab(const Frame& f, u32 dev, Font* fo, const MouseSt
 
     const float listTop = titleY + snap(48.0f), listBot = pageBot - snap(6.0f);
     if (listBot <= listTop + snap(20.0f)) return;
+    // Same container as the Update changelog and as a module page's sections : the groups are bars ON something.
+    cat_panel(dev, clX - snap(10.0f), listTop - snap(10.0f), clW + snap(20.0f), (pageBot - snap(2.0f)) - (listTop - snap(10.0f)));
     if (ui_config().wheel != 0 && mo && mo->x >= clX && mo->x <= clX + clW && mo->y >= listTop && mo->y <= listBot) {
         dbgScroll_ -= (float)ui_config().wheel * snap(48.0f);
         if (dbgScroll_ < 0.0f) dbgScroll_ = 0.0f;
@@ -2154,23 +2209,33 @@ void ConfigPage::draw_debug_tab(const Frame& f, u32 dev, Font* fo, const MouseSt
         ui_config().wheel = 0;
     }
     clip_rect_begin(dev, clX - snap(2.0f), listTop, clW + snap(12.0f), listBot - listTop);
-    const float lh = snap(17.0f), tsz = snap(13.0f), hdrH = snap(30.0f), hdrGap = snap(4.0f);
+    const float lh = snap(17.0f), tsz = snap(13.0f);   // (hdrH/hdrGap dropped with the flat-bar layout)
     float y = listTop - dbgScroll_;
     for (int r = 0; r < DEBUG_SECTIONS_N && r < (int)(sizeof(dbgOpen_) / sizeof(dbgOpen_[0])); ++r) {
         const char* title = (ui_config().lang == 1) ? DEBUG_SECTIONS[r].titleFr : DEBUG_SECTIONS[r].titleEn;
-        const bool onScreen = (snap(y) >= listTop) && (snap(y) + hdrH <= listBot);
-        if (onScreen && cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, r), clX + snap(2.0f), snap(y), clW - snap(4.0f), title, dbgOpen_[r]))
+        const float cardTop = snap(y), cardW = clW - snap(4.0f), cardX = clX + snap(2.0f);
+        const float aOpen = cat_fold(ctrl_uid_i(CTRL_ID, r), dbgOpen_[r]);   // a real fold, as everywhere else
+        const bool onScreen = (cardTop >= listTop) && (cardTop + CAT_BAR_H <= listBot);
+        if (onScreen) cat_panel(dev, cardX, cardTop, cardW, cat_card_h(dbgFull_[r], aOpen));   // same section grammar as a module page
+        if (onScreen && cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, r), cardX, cardTop, cardW, title, dbgOpen_[r], aOpen))
             dbgOpen_[r] = !dbgOpen_[r];
-        y += hdrH + hdrGap;
-        if (dbgOpen_[r]) {
+        if (aOpen > 0.0f) {
+            y = cardTop + CAT_HEADER_ADV;
+            const float cTop = y;
+            cat_fold_clip(dev, cardX, cTop, cardW, dbgFull_[r] * aOpen);
             for (int i = 0; i < DEBUG_SECTIONS[r].n; ++i) {
-                cs(dev); { const float by = snap(y + lh * 0.5f - 2.0f); if (by >= listTop && by + snap(4.0f) <= listBot) rrect_fill(dev, clX + snap(9.0f), by, snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI)); }   // gold bullet -- ONLY inside the viewport (stencil clip may be a no-op), like the header onScreen check
+                cs(dev); { const float by = snap(y + lh * 0.5f - 2.0f); if (by >= listTop && by + snap(4.0f) <= listBot) rrect_fill(dev, clX + snap(13.0f), by, snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI)); }   // gold bullet -- ONLY inside the viewport (stencil clip may be a no-op), like the header onScreen check
                 const char* txt = (ui_config().lang == 1) ? DEBUG_SECTIONS[r].lines[i].fr : DEBUG_SECTIONS[r].lines[i].en;
-                y = draw_wrapped(dev, fo, clX + snap(22.0f), y, clW - snap(30.0f), listTop, listBot, txt, tsz, C_TEXT, lh);
+                y = draw_wrapped(dev, fo, clX + snap(26.0f), y, clW - snap(38.0f), listTop, listBot, txt, tsz, C_TEXT, lh);
                 y += snap(7.0f);
             }
-            y += snap(6.0f);
+            dbgFull_[r] = (y - cTop) + snap(10.0f);
+            clip_rect_end(dev);
+            y = cardTop + cat_card_h(dbgFull_[r], aOpen);
+        } else {
+            y = cardTop + CAT_BAR_H;
         }
+        y += snap(10.0f);
     }
     clip_rect_end(dev);
     const float viewH = listBot - listTop, contentH = (y + dbgScroll_) - listTop + snap(6.0f);

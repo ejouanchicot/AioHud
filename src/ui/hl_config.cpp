@@ -22,7 +22,8 @@ void ConfigPage::draw_hl_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     // ===== sub-section : DISPLAY =====
     // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
     const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (aF6_ > 0.0f) {
         const float top6_ = ry;
@@ -47,11 +48,13 @@ void ConfigPage::draw_hl_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         } ROW_NEXT(40.0f)
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
     }   // end Display
+    ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ===== sub-section : TEXT (per-element typography, like the other modules) =====
     // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
     const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5])) catOpen_[5] = !catOpen_[5];
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // the section IS a card, collapsed or not
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
     ROW_NEXT(42.0f)
     if (aF5_ > 0.0f) {
         const float top5_ = ry;
@@ -67,7 +70,7 @@ void ConfigPage::draw_hl_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
     }   // end Text
 
-    ry += snap(10.0f);
+    ry += snap(16.0f);
     #undef ROW_BAND
     #undef ROW_NEXT
 }

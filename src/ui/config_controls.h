@@ -18,12 +18,28 @@ namespace aio {
 
 // ---- graphite BASE palette (const : one copy per translation unit, never written) ----
 const u32 C_DIMBG    = 0xCC05080A;
-const u32 C_TABOFF_T = 0xC01A2228, C_TABOFF_B = 0xC012181D;
-const u32 C_TABHOV_T = 0xD0233C39, C_TABHOV_B = 0xD0182D2B;
-const u32 C_CONTENT_T= 0xD2161C22, C_CONTENT_B= 0xD20E1317;   // slightly translucent -> the dimmed game screen shows faintly behind the controls
+// ---- ELEVATION. Four surfaces, and each one is a REAL step above the last. ---------------------------------
+// Measured before this existed: page -> content 1.09:1, content -> card 1.12:1, card -> control 1.05:1. The
+// whole interface lived inside EIGHT levels of luma, so nothing separated from anything, and the shadows that
+// were supposed to do the separating turned out to draw ~1/255 at the edge (see drop_shadow). That is what
+// "pas assez contraste" was: not timid values, an absent model.
+//
+// And the model was INVERTED where it did exist: a chip at rest was 1B2228 on a card of 1E262E -- a RAISED
+// control painted DARKER than the surface holding it. It read as a hole, and no amount of shadow fixes a tone
+// that says the opposite. Each step is now ~1.3:1, and up means lighter, all the way up.
+const u32 C_CARD_T     = 0xF4232C35, C_CARD_B     = 0xF41A222A;   // a section card, on the content surface
+const u32 C_CTL_IDLE_T = 0xFF323D49, C_CTL_IDLE_B = 0xFF262F39;   // a control, raised off the card
+const u32 C_CTL_HOV_T  = 0xFF42505E, C_CTL_HOV_B  = 0xFF333E4A;   // ... under the pointer
+const u32 C_TABOFF_T = 0xC0272F38, C_TABOFF_B = 0xC01B222A;
+// The hovered tab LIFTS -- it does not change hue. These were a teal (0xD0233C39), which was a colour from no
+// system : on a gold masthead over steel furniture with the user's own accent, a green wash under the pointer
+// was the one thing on the page that answered to nothing. Same graphite, lifted -- onto the hover step of the
+// elevation ramp above, so a hovered tab and a hovered chip are lifted by the same amount.
+const u32 C_TABHOV_T = 0xD03B4753, C_TABHOV_B = 0xD02B353F;
+const u32 C_CONTENT_T= 0xD20F161D, C_CONTENT_B= 0xD2090E13;   // slightly translucent -> the dimmed game screen shows faintly behind the controls ; DEEPER than before, to leave room above it for the card and control steps
 const u32 C_SIDEBAR  = 0xF0171C22;
 const u32 C_BORDER   = 0x2EFFFFFF, C_BORDERHI = 0x58FFFFFF;
-const u32 C_TEXT     = 0xFFE7ECF0, C_DIM = 0xFF97A2AC, C_MUTE = 0xFF7E8894;
+const u32 C_TEXT     = 0xFFE7ECF0, C_DIM = 0xFF97A2AC, C_MUTE = 0xFF8A94A0;   // C_MUTE lifted a notch : on the (now lighter) card it measured 3.9:1, under the 4.5 AA floor. 4.6:1 now.
 const u32 C_STROKE   = 0xFF000000, C_CLOSEHOV = 0xFFE0555F;
 const u32 C_ONACC    = 0xFF08110E;   // dark text drawn ON a bright accent fill (chips / Save)
 // preview gauges (party brief : HP green / MP blue / TP magenta) -- semantic, not themed
@@ -77,6 +93,12 @@ inline bool  inrect(const MouseState* m, float x, float y, float w, float h) {
 // has to know where a section's CONTENT starts -- the card spans the header, so anything meant for the rows
 // alone must skip it.
 #define CAT_HEADER_ADV snap(42.0f)
+#define CAT_BAR_H      snap(34.0f)
+// The card's height, in the ONE place that knows the arithmetic. CLOSED it is exactly the title bar -- a
+// collapsed section is a bar and nothing else, so nothing sits under the title and the title is centred in
+// what you see. OPEN it is the bar, plus the padding that separates a title from content, plus the content.
+// The bar itself never changes size: what unfolds is the card under it.
+inline float cat_card_h(float full, float a) { return CAT_BAR_H + (CAT_HEADER_ADV - CAT_BAR_H + full) * a; }
 inline float ts_section() { return snap(13.5f); }   // a section header
 inline float ts_label()   { return snap(15.0f); }   // a control's label -- the workhorse
 inline float ts_value()   { return snap(14.0f); }   // the number or word a control reads out
@@ -95,6 +117,11 @@ void apply_ui_theme(int style, int color);      // rederive the C_ACCENT family 
 // ---- textured quad + colour helpers ----
 u32  fa(u32 c);                       // scale a colour's alpha by the global fade
 u32  lerpc(u32 a, u32 b, float t);    // linear blend of two ARGB colours
+// A label that stays legible ON a coloured fill : dark text on a bright fill, light text on a dark one, each
+// with the outline that contrasts with it. Pass the fill's MIDPOINT for a gradient. Every button uses this --
+// the accent is the user's colour, so a hard-coded label colour is only ever right for half the palette.
+bool fill_is_bright(u32 fill);
+u32  text_on_fill(u32 fill, u32* stroke = 0);
 
 // ---- animation springs + entrance stagger ----
 float ease(int id, int sub, float target, float speed = 18.0f);   // one 0..1 spring per (control id, sub-slot)
@@ -135,6 +162,11 @@ void ctrl_release_drag();   // drop the slider/picker drag latch and persist -- 
 bool ctrl_drag_begin(int id, const MouseState* mo, bool hot);   // true on the press that takes the latch
 bool ctrl_drag_active(int id);                                  // is this id the one currently holding it ?
 bool ctrl_drag_end(int id, const MouseState* mo);               // true on the frame the button comes up ; frees the latch
+// Is ANY drag (slider / colour picker / strip reorder) holding the latch right now ? The scrolling viewport
+// asks this before it nulls the mouse for rows outside its rect : a drag that wanders out of the column must
+// keep receiving the pointer until the button actually comes up, or the latched row sees `mo == nullptr`,
+// takes its release branch and drops the drag mid-gesture.
+bool ctrl_drag_any();
 void cs_add(u32 dev);    // ADDITIVE colour state (glow / bloom / shine)
 void q4(u32 dev, float x, float y, float w, float h, u32 tl, u32 tr, u32 bl, u32 br);
 void flat(u32 dev, float x, float y, float w, float h, u32 c);
@@ -155,7 +187,10 @@ void qfan(u32 dev, float cx, float cy, float r, float a0, float a1, u32 col);
 void rrect_fill(u32 dev, float x, float y, float w, float h, float r, u32 top, u32 bot);
 void rrect_top(u32 dev, float x, float y, float w, float h, float r, u32 top, u32 bot);
 void rpanel(u32 dev, float x, float y, float w, float h, float r, u32 top, u32 bot, u32 border, float bt);
-void drop_shadow(u32 dev, float x, float y, float w, float h, float spread, u32 alpha);
+// A REAL drop shadow : two feathered bands that hug the rounded silhouette and fall off OUTSIDE it, offset
+// downward. `r` is the element's corner radius (the shadow has to have its shape) ; `alpha` is calibrated
+// around 64 = a normal card.
+void drop_shadow(u32 dev, float x, float y, float w, float h, float spread, u32 alpha, float r = 9.0f);
 float badge(u32 dev, Font* fo, float x, float cy, const char* text, u32 accent);
 
 // ---- labeled controls (each keeps its own ease() uid namespace ; see the notes in the .cpp) ----
@@ -182,10 +217,12 @@ bool row_toggle(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,   
                 float rowH = 38.0f, float chipW = 112.0f);
 bool row_pct_slider(u32 dev, Font* fo, const MouseState* mo, int uid,
                     float coX, float y, float ctrlW, const char* label, float* field, float lo, float hi, float step = 0.05f);   // NN% slider ; persists on RELEASE (no per-frame save)
-// HSV colour picker : an SV square + a slim vertical hue strip + a live swatch (with hex) + a preset "nuancier"
-// grid (replaces the R/G/B slider triples). Two draggable zones share the slider latch -> give a UNIQUE
-// (uidSV, uidHue) pair. Edits *color in place (preserves its alpha byte) ; returns true the frames it changes.
-// `fo` draws the hex readout (may be null to skip it). Occupies color_picker_height() vertically.
+// HSV colour picker -- ONE CARD : an SV square with a VERTICAL hue strip beside it, the live swatch (hex written
+// ON it) and the FAVOURITES in the column to their right, and the NUANCIER underneath -- a 13x3 chart, one hue
+// per column, tint/base/shade down the rows, sharing its grammar with the theme chart in the Interface panel.
+// Two draggable zones share the slider latch -> give a UNIQUE (uidSV, uidHue) pair. Edits *color in place
+// (preserves its alpha byte) ; returns true the frames it changes. `fo` draws the hex + labels (may be null).
+// Occupies color_picker_height() vertically -- a CONSTANT, so saving a favourite never reflows the page.
 bool  color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue,
                    float x, float y, float w, u32* color);
 float color_picker_height();
@@ -193,6 +230,54 @@ bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                  float x, float y, float w, float h, const char* label, bool on);
 bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
               float x, float y, float w, float h, const char* label, int tone);
+// ---- THE CONTROL SURFACE : the two pieces every raised control shares with the TABS. ----------------------
+// The tabs were built first and ended up with a language of their own -- a steel edging drawn as the shape one
+// size larger, and a lamp along the top edge. Buttons and chips had neither, so the page read as two families
+// of control that happened to sit on the same screen. These are that language, hoisted, so there is ONE of
+// each rather than a copy per control (which is how the tab crown and its hover ghost drifted apart before).
+//
+// ctl_edge is also the `metal_edge()` the chrome audit left as pending item 3: the four hand-written edgings
+// (masthead, tabs, container, sidebar) were four spellings of one gesture, and could diverge silently.
+//
+// WHY AN EDGING AND NOT A BORDER. A stroke laid along a rounded rectangle cuts its corners (audit rule 8). The
+// shape drawn one size LARGER and then covered by the fill follows every curve by construction, and what is
+// left showing IS the edge.
+// The edge's COLOUR. Two decisions in it, and they are different questions:
+//   * WHICH colour -- a tint of the chosen accent, not a fixed grey. Steel was the right answer while the
+//     accent only ever appeared on selections, but then every rim, every chip and every bar on the working
+//     area stayed neutral whatever colour you picked, and the theme stopped at the furniture.
+//   * WHICH DIRECTION -- an edge exists to SEPARATE, so it takes its contrast from the surface it borders:
+//     LIGHTER on a dark fill, DARKER on a bright one. Same rule as the labels (text_on_fill), for the same
+//     reason, and it is what keeps an edge visible on an accent-filled chip as well as on a graphite one.
+// It lands half-way back toward the metal: the furniture is TINTED by the theme, not painted in it. A fully
+// saturated rim on every control turns a settings page into a colour swatch.
+// NOT for the masthead, the container rim or the sidebar divider: those sit against a BAKED gold logotype and
+// have to hold whatever the accent is (chrome audit, rule 7). They stay steel.
+// `from` is the colour the edge is a NUANCE OF -- the accent by default. A colour SWATCH passes its own
+// colour instead: the rim of a red chip should be a light red, not a light accent, or a grid of swatches ends
+// up wearing one borrowed colour around thirty-nine different ones.
+u32  ctl_edge_tint(u32 fill, u32 from = 0);
+void ctl_edge(u32 dev, float x, float y, float w, float h, float r, float strength, u32 fill = 0xFF101418, u32 from = 0);
+// Same edging for a surface that WELDS to what is under it -- an OPEN section bar and its card, a tab and the
+// body. Rounded on top, square at the feet, and no rim across the join: an edge drawn through a weld is a
+// seam, and the whole point of the shape is that there is not one.
+void ctl_edge_top(u32 dev, float x, float y, float w, float h, float r, float strength, u32 fill = 0xFF101418, u32 from = 0);
+// The lamp : two ramps of light running down into the surface, a wide faint haze, and a filament that
+// dissolves at both ends (gfx/draw.cpp hbar_soft / hglow_soft -- one cosine window for all three, so nothing
+// can end before anything else). `k` is the only dial ; the ALLOY is the caller's: steel says "under the
+// pointer", gold says "chosen".
+void ctl_crown(u32 dev, float x, float y, float w, float h, float r, u32 hiRGB, u32 loRGB, float k);
+// A NAVIGATION ROW in a left rail -- the module list on the Configuration tab, the index on the Help tab.
+// ONE implementation, because there were two and they had already drifted: the module list drew a rounded
+// fill and a rounded gold pill, the Help list drew a SQUARE fill and a flat 3px bar, at different alphas.
+// Nobody sees them side by side, which is exactly how that happens and why it never got noticed.
+// (Audit rule 13: the left rail is drawn by three tabs, so a change has to touch all of them. This is also
+// pending item 1 of that audit -- the rails' duplication -- closed for the two that list things.)
+//
+// Same elevation grammar as every other raised control on the page: NOTHING at rest, because a list of
+// destinations is a list and not fourteen buttons ; the control step with a steel edging and the lamp under
+// the pointer ; the card step, gold, with a shadow and the "you are here" rail when it is the one selected.
+void nav_row(u32 dev, Font* fo, float x, float y, float w, float h, const char* label, bool active, float t, float pulse);
 void cat_panel(u32 dev, float x, float y, float w, float h);
 
 // ---- COLLAPSIBLE SECTIONS THAT FOLD, in three calls. ----
@@ -224,7 +309,13 @@ void  cat_fold_end(u32 dev, float& ry, float top, float& full, float a);
 //  something to read ; once the header became a real title bar the bar itself carried that weight, and a
 //  value crowded against the disclosure triangle was two things competing for the same end of the same
 //  object. The emptiness it was answering is a LAYOUT problem, and a caption is not a layout.)
+// `a` is the FOLD'S OWN PROGRESS -- the same number the caller passes to cat_card_h, from the same cat_fold.
+// The bar needs it because two of its decisions are decisions ABOUT THE CARD: whether its feet are square (are
+// they welded to anything?) and how far its tint and lamp have crossed over. Deriving those from a second,
+// private spring inside the header only APPROXIMATED the fold -- and an approximation of an exponential decay
+// spends a long tail near zero, which is exactly the delay: the card had finished collapsing while the bar was
+// still drawing square feet. With the real number there is nothing to approximate and no threshold to tune.
 bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
-                float x, float y, float w, const char* label, bool open);
+                float x, float y, float w, const char* label, bool open, float a);
 
 } // namespace aio

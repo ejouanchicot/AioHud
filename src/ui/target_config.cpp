@@ -32,7 +32,8 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         //       into its sub-sections like every other module (the sidebar already names the module). =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
         ROW_NEXT(42.0f)
         if (aF6_ > 0.0f) {
             const float top6_ = ry;
@@ -123,7 +124,9 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
           ROW_NEXT(46.0f)
         }
         }   // end own-theme rows (!tgtThemeCopy)
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         }   // end theme rows (tgtBox on)
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         // Centre-lock hint : centring is done by DRAGGING the box to the screen centre in Edit Layout -- it snaps
         // and stays centred (so it survives a resolution change). No button ; edit-mode drag is the control.
         { ROW_BAND(34.0f)
@@ -136,10 +139,12 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         ROW_NEXT(34.0f)
             cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
         }   // end sub-section Box / Frame (catOpen_[6])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Bars ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Bars", "Barres"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Bars", "Barres"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
         ROW_NEXT(42.0f)
         if (aF7_ > 0.0f) {
             const float top7_ = ry;
@@ -171,10 +176,12 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
             cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
         }   // end sub-section Bars (catOpen_[7])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Detail ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF8_ = cat_fold(CTRL_ID, catOpen_[8]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Detail", "Détail"), catOpen_[8])) catOpen_[8] = !catOpen_[8];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[8], aF8_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Detail", "Détail"), catOpen_[8], aF8_)) catOpen_[8] = !catOpen_[8];
         ROW_NEXT(42.0f)
         if (aF8_ > 0.0f) {
             const float top8_ = ry;
@@ -249,10 +256,12 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         ROW_TOGGLE_G(CTRL_ID, tr("Cast placeholder", "Sort fictif"), ui_config().tgtCastDemo, 52.0f, 40.0f, 112.0f)
             cat_fold_end(dev, ry, top8_, catH_[8], aF8_);
         }   // end sub-section Detail (catOpen_[8])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Debuffs ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF9_ = cat_fold(CTRL_ID, catOpen_[9]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Debuffs", "Debuffs"), catOpen_[9])) catOpen_[9] = !catOpen_[9];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[9], aF9_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Debuffs", "Debuffs"), catOpen_[9], aF9_)) catOpen_[9] = !catOpen_[9];
         ROW_NEXT(42.0f)
         if (aF9_ > 0.0f) {
             const float top9_ = ry;
@@ -345,10 +354,12 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
             cat_fold_end(dev, ry, top9_, catH_[9], aF9_);
         }   // end sub-section Debuffs (catOpen_[9])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- Typography sub-section : per-element Font / Size / Outline / Style / Colour (Name / HP% / Timer) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5])) catOpen_[5] = !catOpen_[5];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
         ROW_NEXT(42.0f)
         if (aF5_ > 0.0f) {
             const float top5_ = ry;
@@ -379,7 +390,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, *items[te].ts, true);
             cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
         }   // end Text sub-section (catOpen_[5])
-        ry += snap(10.0f);
+        ry += snap(16.0f);
 
     #undef ROW_BAND
     #undef ROW_NEXT

@@ -76,15 +76,40 @@ u32 theme_accent(int style, int color) {
     return nuance(S.col[color % S.n], color / S.n);
 }
 // derive the whole accent family from the chosen style + colour (called once per frame, before drawing).
+// Make a CUSTOM accent usable on the black chrome without bleaching it.
+//
+// The rule here used to be: mix the colour toward WHITE until its luma reached 150. Two things were wrong with
+// that. Mixing toward white removes SATURATION -- that IS what washed out MEANS -- and by luma every saturated hue is
+// dark (a pure red is 104, a pure blue 29), so the rule fired on nearly every colour anyone would actually pick
+// and handed back a pastel of it: EF4444 became F37C7C, 8B5CF6 became A986F8. The whole menu then ran on that
+// pastel, and every surface derived from it (selected tab, selected row, chips) inherited the lost contrast.
+//
+// Two steps instead, in this order:
+//   1. lift the VALUE to a floor -- multiply the three channels by kVmin/max when max is below it. Hue and
+//      saturation are untouched by construction (V scales all three equally), so a deep blood red becomes a
+//      VIVID red, never a pink -- and a colour that was already bright comes back byte-for-byte unchanged.
+//   2. only if it is STILL too dark to read as a foreground -- the deep blues and violets, whose value was
+//      already at the top -- mix toward white, and only as far as luma 96. A real floor for text on graphite,
+//      not the 150 that was bleaching hues which had no legibility problem in the first place.
+// Presets stay untouched (they are designed legible, and their nuance chart NEEDS its deep row to stay deep --
+// normalising row 2 would hand back row 1 and collapse three choices into two).
+static u32 accent_normalise(u32 a) {
+    int r = (int)((a >> 16) & 0xFF), g = (int)((a >> 8) & 0xFF), b = (int)(a & 0xFF);
+    // Lift to a FLOOR, not to full. Full value would repaint a mid green as a neon one -- the accent has to
+    // stay the colour that was picked. 219 leaves every vivid choice byte-for-byte untouched (EF4444, 3B82F6,
+    // 8B5CF6 all have a channel above it) and only lifts what is genuinely too dim to carry the chrome.
+    const int kVmin = 219;
+    const int mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    if (mx > 0 && mx < kVmin) { r = r * kVmin / mx; g = g * kVmin / mx; b = b * kVmin / mx; }   // value -> the floor, ratios kept
+    u32 c = 0xFF000000u | ((u32)r << 16) | ((u32)g << 8) | (u32)b;
+    const int L = (r * 54 + g * 183 + b * 19) >> 8;
+    if (L < 96) { float f = (96.0f - (float)L) / (255.0f - (float)L); if (f > 0.5f) f = 0.5f; c = shade(c, f); }
+    return c;
+}
 void apply_ui_theme(int style, int color) {
     u32 a;
     if (ui_config().uiAccent & 0xFF000000u) {                            // custom accent wins over the style/colour preset
-        a = ui_config().uiAccent;
-        // A custom accent can be arbitrarily DARK -> it would vanish on the black chrome (tab icons/indicators,
-        // the AIOHUD title, glows, the Save fill, ...). Guarantee a MINIMUM luminance (keeping the hue) so every
-        // accent-as-foreground element stays visible. Presets are left untouched (they are designed legible).
-        const int L = (int)((((a >> 16) & 0xFF) * 54u + ((a >> 8) & 0xFF) * 183u + (a & 0xFF) * 19u) >> 8);
-        if (L < 150) { float f = (150.0f - (float)L) / (255.0f - (float)L); if (f > 0.85f) f = 0.85f; a = shade(a, f); }
+        a = accent_normalise(ui_config().uiAccent);
     } else {
         a = theme_accent(style, color);
     }
@@ -108,6 +133,21 @@ u32 lerpc(u32 a, u32 b, float t) {
     int ba = (b>>24)&0xFF, br = (b>>16)&0xFF, bg = (b>>8)&0xFF, bb = b&0xFF;
     return ((u32)(aa+(int)((ba-aa)*t))<<24) | ((u32)(ar+(int)((br-ar)*t))<<16)
          | ((u32)(ag+(int)((bg-ag)*t))<<8)  |  (u32)(ab+(int)((bb-ab)*t));
+}
+
+// ---- LABEL ON A COLOURED FILL ------------------------------------------------------------------------------
+// The accent is whatever colour the user picked, so any button that hard-codes its label colour is only right
+// for half the palette : dark text vanishes on a dark accent, white text vanishes on a bright one. One rule,
+// one place. `fill` is the fill the text sits on (for a gradient, pass its MIDPOINT -- that is what the eye
+// averages behind a glyph) ; `stroke` gets the matching outline, which is the other half of the contrast.
+bool fill_is_bright(u32 c) {
+    const int L = (int)((((c >> 16) & 0xFF) * 54u + ((c >> 8) & 0xFF) * 183u + (c & 0xFF) * 19u) >> 8);
+    return L > 135;
+}
+u32 text_on_fill(u32 fill, u32* stroke) {
+    const bool bright = fill_is_bright(fill);
+    if (stroke) *stroke = bright ? 0x66FFFFFFu : 0xFF000000u;   // light halo under dark text | black under light text
+    return bright ? C_ONACC : 0xFFF4F8F7u;
 }
 
 // COMPOSITE key (id, sub) : a control keys its N springs on (its unique CTRL_ID, 0..N-1) so no two controls can
@@ -161,6 +201,8 @@ float stagger(float anim, int i) {
 // stage bound, which would fade any quad drawn after text -> reset before every fill).
 void cs(u32 dev) {
     dSetVS(dev, FVF_XYZRHW_DIFFUSE);
+    dSetRS(dev, D3DRS_SHADEMODE, D3DSHADE_GOURAUD);   // vertex colours must INTERPOLATE : a stray FLAT from the
+    dSetRS(dev, D3DRS_DITHERENABLE, 1);               // game breaks every gradient along its quad's diagonal.
     dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
     dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
@@ -174,6 +216,8 @@ void cs(u32 dev) {
 // normal alpha, so additive only affects the glow draws issued right after this.
 void cs_add(u32 dev) {
     dSetVS(dev, FVF_XYZRHW_DIFFUSE);
+    dSetRS(dev, D3DRS_SHADEMODE, D3DSHADE_GOURAUD);   // same two as cs() : a glow IS a gradient, and the
+    dSetRS(dev, D3DRS_DITHERENABLE, 1);               // additive passes are where banding shows the most.
     dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
     dSetRS(dev, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
@@ -400,18 +444,14 @@ void rrect_fill(u32 dev, float x, float y, float w, float h, float r, u32 top, u
     cs(dev);
     rrect(dev, x, y, w, h, r, fa(top), fa(bot));   // fa() : honour the panel's global fade-in alpha
 }
-// round the TOP corners only (tabs : the bottom melts into the body).
+// round the TOP corners only (tabs : the bottom melts into the body). The SHAPE is gfx's rrect_topcaps --
+// this is the config-page wrapper that adds the two things every fill here needs: the colour-quad state and
+// the page's fade. It used to draw the shape itself out of four bands and two flat qfans, with no half-pixel
+// offset and a feather on the arcs but not on the straight edges. That is what the faceted, slightly soft
+// corners were -- four separate defects, all of them fixed by using the same recipe as every other shape.
 void rrect_top(u32 dev, float x, float y, float w, float h, float r, u32 top, u32 bot) {
-    if (w <= 0 || h <= 0) return;
-    if (r > w * 0.5f) r = w * 0.5f; if (r > h) r = h;
-    if (r < 1.0f) { vg(dev, x, y, w, h, top, bot); return; }
-    const u32 cT = lerpc(top, bot, r / h);
-    vg(dev, x + r,     y,     w - 2 * r, r,     top, cT);    // top band
-    vg(dev, x,         y + r, r,         h - r, cT,  bot);   // left band (down to bottom -> square corner)
-    vg(dev, x + w - r, y + r, r,         h - r, cT,  bot);   // right band
-    vg(dev, x + r,     y + r, w - 2 * r, h - r, cT,  bot);   // center
-    qfan(dev, x + r,     y + r, r, PI_,        1.5f * PI_, top);   // TL
-    qfan(dev, x + w - r, y + r, r, 1.5f * PI_, 2.0f * PI_, top);   // TR
+    cs(dev);
+    rrect_topcaps(dev, x, y, w, h, r, fa(top), fa(bot));
 }
 
 // a bordered rounded panel : border ring + inner gradient fill (opaque-friendly).
@@ -419,10 +459,29 @@ void rpanel(u32 dev, float x, float y, float w, float h, float r, u32 top, u32 b
     rrect_fill(dev, x, y, w, h, r, border, border);
     rrect_fill(dev, x + bt, y + bt, w - 2 * bt, h - 2 * bt, (r - bt > 0.0f ? r - bt : 0.0f), top, bot);
 }
-// a soft, feathered drop shadow under an element (draw BEFORE it) -> floats the card off the page.
-void drop_shadow(u32 dev, float x, float y, float w, float h, float spread, u32 alpha) {
+// A drop shadow under an element (draw BEFORE it) -> floats it off the page.
+//
+// The old one was a soft_blob : a bilinear TENT, peak at the CENTRE, falling linearly to zero at its own
+// edges. The peak therefore sat UNDER the opaque element and what escaped past the edge was the tail. The
+// arithmetic is brutal -- alpha_at_edge = alpha * spread / (w/2 + spread) -- so a 1000px section card with
+// alpha 64 and spread 5 put 0.6/255 on the screen, and a 140px button 2.2/255. Ten call sites, all of them
+// drawing nothing, and worse for bigger elements: exactly backwards. This was not a value that needed
+// raising ; the shape was wrong.
+//
+// rrect_glow is the right primitive and was already here: a feathered band from the silhouette outward, no
+// interior fill, so ALL of it lands outside the element where a shadow belongs. Two passes, because that is
+// what elevation looks like -- a tight CONTACT shadow just under the edge that says the thing is resting on
+// something, and a wide AMBIENT one further down that says how far above.
+void drop_shadow(u32 dev, float x, float y, float w, float h, float spread, u32 alpha, float r) {
+    if (w <= 0.0f || h <= 0.0f || alpha == 0) return;
+    if (r > w * 0.5f) r = w * 0.5f;
+    if (r > h * 0.5f) r = h * 0.5f;
+    if (r < 0.0f) r = 0.0f;
+    const float k = clampf((float)alpha / 64.0f, 0.0f, 2.0f) * g_fade;   // callers pass 30..110 ; 64 = a normal card
+    if (k <= 0.01f) return;
     cs(dev);
-    soft_blob(dev, x + w * 0.5f, y + h * 0.5f + snap(5.0f), w * 0.5f + spread, h * 0.5f + spread, (alpha << 24));
+    rrect_glow(dev, x, y + snap(4.0f), w, h, r, (u32)(44.0f * k) << 24, spread + snap(10.0f));   // ambient
+    rrect_glow(dev, x, y + snap(2.0f), w, h, r, (u32)(86.0f * k) << 24, spread * 0.6f + snap(2.0f));   // contact
 }
 // a tiny rounded status pill (ACTIVE / DEFAULT / a character name). Returns its width so they stack.
 // a small rounded tag. ONE accent colour drives it : a dark opaque pill + accent border + BRIGHT accent
@@ -528,6 +587,7 @@ bool ctrl_drag_begin(int id, const MouseState* mo, bool hot) {
     g_slider = id; return true;
 }
 bool ctrl_drag_active(int id) { return g_slider == id; }
+bool ctrl_drag_any() { return g_slider >= 0; }
 bool ctrl_drag_end(int id, const MouseState* mo) {
     if (g_slider != id) return false;
     if (mo && mo->down) return false;      // still held
@@ -540,7 +600,7 @@ bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
     fo->begin(dev);
     fo->draw_lc(dev, x + snap(4.0f), y + rowH * 0.5f, label, ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
 
-    const float valW = snap(56.0f), gap = snap(12.0f), trkW = snap(176.0f);
+    const float valW = snap(58.0f), gap = snap(12.0f), trkW = snap(196.0f);
     const float trkX = x + w - valW - gap - trkW;
     const float cy = y + rowH * 0.5f, trkH = snap(6.0f), trkY = cy - trkH * 0.5f, knobR = snap(8.0f);
 
@@ -557,19 +617,34 @@ bool row_slider(u32 dev, Font* fo, const MouseState* mo, int id,
 
     const float fillW = snap(trkW * clampf(*v01, 0.0f, 1.0f));
     const float tr = trkH * 0.5f;
-    rrect_fill(dev, trkX, trkY, trkW, trkH, tr, 0x66101416, 0x66090C0E);       // dark groove
-    if (fillW >= trkH) rrect_fill(dev, trkX, trkY, fillW, trkH, tr, C_ACCENTHI, C_ACCENT);   // accent fill
+    // The GROOVE reads recessed and the FILL reads lit -- one 1px hairline each, which is the whole difference
+    // between a track that looks cut into the panel and two stacked coloured pills.
+    rrect_fill(dev, trkX, trkY, trkW, trkH, tr, 0x77090C10, 0x77050709);
+    flat(dev, trkX + tr, trkY, trkW - 2.0f * tr, 1.0f, 0x55000000);                        // inner top shadow
+    if (fillW >= trkH) {
+        rrect_fill(dev, trkX, trkY, fillW, trkH, tr, C_ACCENTHI, C_ACCENT);                    // accent fill
+        flat(dev, trkX + tr, trkY + snap(1.0f), fillW - 2.0f * tr, 1.0f, 0x3AFFFFFF);      // lit top hairline
+    }
+    rrect_stroke(dev, trkX, trkY, trkW, trkH, tr, fa(0x2AFFFFFF), snap(1.0f));                 // a border that hugs the capsule
 
-    // clean round knob : eases bigger on hover/drag with a THIN accent ring + a soft shadow (no big halo, no gloss).
+    // clean round knob : a STEEL rim around a white face -- the rim is what stops it dissolving into a light
+    // accent fill -- easing bigger on hover/drag with a soft accent halo and a real shadow. No gloss.
     const float kt = ease(id, 0, (hot || act) ? 1.0f : 0.0f);
-    const float kr = knobR * (1.0f + 0.22f * kt);
+    const float kr = knobR * (1.0f + 0.18f * kt);
     const float kx = trkX + fillW;
-    if (kt > 0.01f) { cs_add(dev); disc_glow(dev, kx, cy, kr + snap(1.0f), (C_ACCENT & 0x00FFFFFF) | ((u32)(72.0f * kt) << 24), snap(6.0f)); }   // soft accent ring
+    if (kt > 0.01f) { cs_add(dev); disc_glow(dev, kx, cy, kr + snap(1.2f), (C_ACCENT & 0x00FFFFFF) | ((u32)(78.0f * kt) << 24), snap(7.0f)); }   // soft accent ring
     cs(dev);
-    disc(dev, kx, cy + snap(1.0f), kr + snap(1.0f), fa(0x55000000));           // subtle drop shadow under the knob
-    disc(dev, kx, cy, kr, fa(0xFFF6FAFA));                                     // clean white knob
+    disc(dev, kx, cy + snap(1.4f), kr + snap(1.2f), fa(0x5E000000));                           // drop shadow
+    disc(dev, kx, cy, kr + snap(1.1f), fa(lerpc(C_STEEL_DEEP, C_STEEL_HI, kt)));               // steel rim
+    disc(dev, kx, cy, kr, fa(0xFFF7FAFB));                                                     // face
+
+    // the value as a READOUT, not a floating number : the same dark plate + steel hairline as every other
+    // readout on the page, so a column of sliders lines up on something instead of on ragged text.
+    const float pw = valW, ph = snap(22.0f), px = trkX + trkW + gap, py = cy - ph * 0.5f;
+    rrect_fill(dev, px, py, pw, ph, snap(6.0f), 0x66101519, 0x660A0E11);
+    rrect_stroke(dev, px, py, pw, ph, snap(6.0f), fa((C_STEEL_DEEP & 0x00FFFFFF) | 0x70000000), snap(1.0f));
     fo->begin(dev);
-    fo->draw_c(dev, trkX + trkW + gap + valW * 0.5f, cy, valueText, ts_value(), fa(C_TEXT), fa(C_STROKE), 1.0f);
+    fo->draw_c(dev, px + pw * 0.5f, cy, valueText, ts_value(), fa(C_TEXT), fa(C_STROKE), 1.0f);
     return changed;
 }
 
@@ -620,12 +695,40 @@ bool row_pct_slider(u32 dev, Font* fo, const MouseState* mo, int uid,
     return false;
 }
 
-// ---- HSV colour picker (shared) : an SV square + a rainbow hue bar + a live swatch. Replaces the per-channel
-// R/G/B slider triples in every module. The two draggable zones (SV square, hue bar) share the g_slider latch.
-// HSV is CACHED per-uid so dragging Value to black or Saturation to 0 doesn't lose the hue (RGB can't encode it).
-float color_picker_height() {   // SV square (112) + hue slider + 2 preset rows + a "Favourites" label + 1-2 favourite rows
-    const int favRows = (ui_config().favColorN + 1) <= 8 ? 1 : 2;   // "+" button + up to 15 favourites -> at most 2 rows of 8
-    return 210.0f + 15.0f + (float)favRows * 24.0f;
+// ---- HSV colour picker (shared) -- ONE CARD, two halves. Top : the instruments (SV square + a VERTICAL hue
+// strip beside it, the arrangement every serious picker uses) with the live swatch and the favourites in the
+// column to their right. Bottom : the nuancier, a real chart. Replaces the per-channel R/G/B slider triples in
+// every module. The two draggable zones share the g_slider latch. HSV is CACHED per-uid so dragging Value to
+// black or Saturation to 0 doesn't lose the hue (RGB can't encode it).
+//
+// The pieces used to sit loose on the row band -- a 112 square, a full-width hue bar under it, a preset grid
+// under that, favourites under that -- four stacked strips with the whole right half of the row empty. They are
+// now one panel with its own padding and border, so the picker reads as a single instrument instead of four
+// things that happen to be adjacent.
+//
+// METRICS live here, ONCE : color_picker_height() and the body both derive from them and cannot drift. The one
+// coupling to respect is that the height depends on the chart's CHIP size, so the chip is fixed and the GAP
+// absorbs the available width -- not the other way round.
+namespace {
+const float CP_MAXW   = 420.0f;   // the card is a card : it never stretches across a 560+ wide control column
+const float CP_PAD    = 14.0f;    // card padding
+const float CP_SQ     = 124.0f;   // SV square -- and the height of the whole instrument row
+const float CP_HUEW   = 18.0f;    // vertical hue strip
+const float CP_GAP    = 10.0f;    // SV <-> hue strip
+const float CP_COLGAP = 18.0f;    // instruments <-> right column
+const float CP_SWH    = 44.0f;    // live swatch tile
+const float CP_ROWGAP = 16.0f;    // instrument row <-> nuancier
+const float CP_FCH    = 22.0f, CP_FGAP = 5.0f;   // favourite chip height + gap
+const int   CP_FAVC   = 8;                       // favourites per row ("+" takes slot 0 -> 16 slots -> 2 rows, always)
+const float CP_CH     = 24.0f, CP_CGAP = 6.0f;   // nuancier chip + gap
+const int   CP_COLS   = 13, CP_ROWS = 3;         // 12 hues + 1 neutral column, x tint/base/shade
+}
+float color_picker_height() {
+    // CONSTANT, and deliberately so : it used to grow a row the moment a 9th favourite was saved, which shifted
+    // every row below the picker under the user's cursor mid-click. The favourites now live in the right column
+    // beside the SV square, where both possible rows always fit.
+    return snap(CP_PAD) * 2.0f + snap(CP_SQ) + snap(CP_ROWGAP)
+         + (float)CP_ROWS * snap(CP_CH) + (float)(CP_ROWS - 1) * snap(CP_CGAP);
 }
 
 static void rgb2hsv(u32 c, float& h, float& s, float& v) {
@@ -665,13 +768,44 @@ static PickHSV* pick_slot(int uid, u32 col) {
     return 0;
 }
 
-// curated preset "nuancier" : one compact 5x3 mini-grid tucked to the RIGHT of the swatch (vivid hues then a
-// couple of neutrals). Clicking a chip sets the colour instantly (its alpha byte is preserved).
-static const u32 CP_PRESETS[15] = {
-    0xFFEF4444u, 0xFFF97316u, 0xFFF59E0Bu, 0xFFEAB308u, 0xFF84CC16u,
-    0xFF22C55Eu, 0xFF14B8A6u, 0xFF06B6D4u, 0xFF3B82F6u, 0xFF6366F1u,
-    0xFF8B5CF6u, 0xFFD946EFu, 0xFFEC4899u, 0xFFFFFFFFu, 0xFF0F172Au,
+// ---- the NUANCIER : a real chart -- one HUE per column, three LIGHTNESS rows (tint / base / shade), plus a
+// neutral column for white / steel / near-black. Deliberately the SAME grammar as the theme chart in the
+// Interface panel (config_page.cpp) : same chip, same three-row nuance idea, so the menu's two colour surfaces
+// read as one system. The old nuancier was 15 flat chips -- no light or deep variant of anything, so every
+// pastel or muted tone had to be hand-dialled in the SV square even though `nuance()` was right there.
+static const u32 CP_HUE[CP_COLS] = {
+    0xFFEF4444u, 0xFFF97316u, 0xFFF59E0Bu, 0xFFEAB308u, 0xFF84CC16u, 0xFF22C55Eu,
+    0xFF14B8A6u, 0xFF06B6D4u, 0xFF3B82F6u, 0xFF6366F1u, 0xFF8B5CF6u, 0xFFEC4899u,
+    0xFFFFFFFFu,   // last column = NEUTRAL : its three rows come from CP_NEUTRAL, not from nuance()
 };
+// The neutral column can't be a nuance ramp : shade(white, +0.42) is still white, so rows 0 and 1 would be the
+// same chip. Spelt out instead -- and these three (paper white, steel grey, near-black) are the neutrals people
+// actually pick for text and outlines.
+static const u32 CP_NEUTRAL[CP_ROWS] = { 0xFFFFFFFFu, 0xFF9AA5B1u, 0xFF0A0D10u };
+static u32 cp_chart(int col, int row) {
+    return (col == CP_COLS - 1) ? CP_NEUTRAL[row] : nuance(CP_HUE[col], row);
+}
+// A swatch chip, drawn the one way : rounded fill with its own darker underside, a border that hugs the round,
+// a white ring + a glow of its own colour when it IS the current colour, and a small lift under the pointer.
+static void cp_chip(u32 dev, float x, float y, float w, float h, u32 c, bool sel, float hov) {
+    const float r = snap(7.0f), lift = snap(1.5f) * hov;
+    const float X = x - lift, Y = y - lift, W = w + 2.0f * lift, H = h + 2.0f * lift;
+    if (sel) { cs_add(dev); rrect_glow(dev, X, Y, W, H, r, (c & 0x00FFFFFFu) | 0x88000000u, snap(7.0f)); cs(dev); }
+    // The same relief as a button, scaled down : an edging that is a NUANCE OF THE SWATCH ITSELF (light rim on
+    // a dark colour, dark rim on a bright one -- which is the only rule that works across a chart holding both
+    // white and near-black), the fill, a sliver of glass, and the lamp. It replaces a flat 1px stroke that was
+    // the same grey on all thirty-nine.
+    // NO GLASS AND NO LAMP ON A SWATCH. A chip like this one IS a colour -- it exists so you can read the
+    // colour off it -- and any highlight laid on top becomes part of what you read. A white sheen vanished on
+    // white and washed out everything in between ; the lamp had to be dark on a bright chip, which puts a
+    // SHADOW along the top edge and lights the swatch from underneath. Both were the reflex of treating a
+    // swatch as a button. It is not one: its relief lives entirely OUTSIDE the colour -- the shadow it casts,
+    // the rim around it (a nuance of the swatch itself), and the lift it takes under the pointer.
+    drop_shadow(dev, X, Y, W, H, snap(2.0f), sel ? 60 : (u32)(30.0f + 34.0f * hov), r);
+    ctl_edge(dev, X, Y, W, H, r, sel ? 1.0f : (0.62f + 0.34f * hov), c, c);
+    rrect_fill(dev, X, Y, W, H, r, c, shade(c, -0.28f));
+    if (sel) rrect_stroke(dev, X, Y, W, H, r, 0xFFFFFFFFu, snap(1.7f));   // the white ring says WHICH one
+}
 
 bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue,
                   float x, float y, float w, u32* color) {
@@ -680,104 +814,217 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
     if (!p) return false;
     const u32 alpha = *color & 0xFF000000u;
 
-    // ---- layout : big SV SQUARE on top (+ live swatch/hex to its right) | full-width horizontal HUE slider below |
-    //      full-width PRESET grid (2 rows of larger chips) at the bottom. Taller, properly proportioned. ----
-    const float gap = snap(8.0f);
-    const float W = (w > snap(360.0f)) ? snap(360.0f) : w;   // cap the working width : a compact CARD, never stretched across the whole panel
-    const float sqW = snap(112.0f), sqH = sqW;             // SV : a real SQUARE
-    const float rx  = x + sqW + gap;                       // live swatch + hex, right of the square
-    const float swW = snap(26.0f), swH = snap(18.0f);
-    const float hueY = y + sqH + gap, hbH = snap(18.0f);   // horizontal hue slider, FULL WIDTH
-    const float preY = hueY + hbH + gap;                   // preset grid top (full width, 2 rows)
-    const u32   hue = hsv2rgb(p->h, 1.0f, 1.0f, 0xFF000000u);
-    const int   PC = 8;                                    // preset columns (8 + 7 = 15)
-    const float cg = snap(4.0f);
-    const float cw = snap((W - (PC - 1) * cg) / (float)PC), ch = snap(20.0f);
-    const float favLabelY = preY + 2.0f * (ch + cg) + snap(4.0f);   // FAVOURITES : small label, then a "+" add button + the saved swatches
-    const float favY = favLabelY + snap(15.0f);
+    // ---- layout ----------------------------------------------------------------------------------------
+    const float W    = (w > snap(CP_MAXW)) ? snap(CP_MAXW) : w;
+    const float H    = color_picker_height();
+    const float pad  = snap(CP_PAD);
+    const float cx0  = x + pad, cy0 = y + pad, cw0 = W - 2.0f * pad;      // content box inside the card
+    const float sq   = snap(CP_SQ), hw = snap(CP_HUEW);
+    const float hueX = cx0 + sq + snap(CP_GAP);
+    const float rx   = hueX + hw + snap(CP_COLGAP), rw = cx0 + cw0 - rx;  // right column (swatch + favourites)
+    const float swH  = snap(CP_SWH);
+    const float favLabY = cy0 + swH + snap(12.0f), favY = favLabY + snap(15.0f);
+    const float fch  = snap(CP_FCH), fgap = snap(CP_FGAP);
+    const float fcw  = snap((rw - (float)(CP_FAVC - 1) * fgap) / (float)CP_FAVC);   // SNAPPED : every chip x is a multiple of it
+    const float cch  = snap(CP_CH);                                       // nuancier : chip FIXED (height() knows it)
+    // The gap absorbs the width, TRUNCATED not rounded : rounding it up widens the grid past the content box
+    // (13 chips multiply the error by twelve) and the chart then hangs over the card's padding on both sides.
+    const float ccg  = (float)(int)clampf((cw0 - (float)CP_COLS * cch) / (float)(CP_COLS - 1), 2.0f, 10.0f);
+    const float gridW = (float)CP_COLS * cch + (float)(CP_COLS - 1) * ccg;
+    const float gx   = snap(cx0 + (cw0 - gridW) * 0.5f), chartY = cy0 + sq + snap(CP_ROWGAP);
+    const u32   hue  = hsv2rgb(p->h, 1.0f, 1.0f, 0xFF000000u);
 
-    // ---- interaction : SV square + hue slider share the row_slider latch ; presets are one-shot clicks ----
-    const bool hotSV  = inrect(mo, x, y, sqW, sqH);
-    const bool hotHue = inrect(mo, x, hueY, W, hbH);
+    // ---- interaction : SV square + hue strip hold the row_slider latch ; chips are one-shot clicks --------
+    const bool hotSV  = inrect(mo, cx0, cy0, sq, sq);
+    const bool hotHue = inrect(mo, hueX, cy0, hw, sq);
     if (mo && mo->clicked && g_slider < 0) { if (hotSV) g_slider = uidSV; else if (hotHue) g_slider = uidHue; }
     bool changed = false;
     if (g_slider == uidSV) {
-        if (mo && mo->down) { p->s = clampf((mo->x - x) / sqW, 0.0f, 1.0f); p->v = clampf(1.0f - (mo->y - y) / sqH, 0.0f, 1.0f);
+        if (mo && mo->down) { p->s = clampf((mo->x - cx0) / sq, 0.0f, 1.0f); p->v = clampf(1.0f - (mo->y - cy0) / sq, 0.0f, 1.0f);
                               const u32 nc = hsv2rgb(p->h, p->s, p->v, alpha); if (nc != *color) { *color = nc; p->col = nc; changed = true; } }
         else { g_slider = -1; save_ui_config(); }
     } else if (g_slider == uidHue) {
-        if (mo && mo->down) { p->h = clampf((mo->x - x) / W, 0.0f, 1.0f) * 360.0f;   // horizontal -> map X to hue
+        if (mo && mo->down) { p->h = clampf((mo->y - cy0) / sq, 0.0f, 1.0f) * 360.0f;   // VERTICAL strip -> Y maps to hue
                               const u32 nc = hsv2rgb(p->h, p->s, p->v, alpha); if (nc != *color) { *color = nc; p->col = nc; changed = true; } }
         else { g_slider = -1; save_ui_config(); }
     }
-    if (mo && mo->clicked && g_slider < 0) {                                            // preset click (separate region)
-        for (int i = 0; i < 15; ++i) {
-            const float sx = x + (i % PC) * (cw + cg), sy = preY + (i / PC) * (ch + cg);
-            if (inrect(mo, sx, sy, cw, ch)) {
-                const u32 nc = (CP_PRESETS[i] & 0x00FFFFFFu) | alpha;
-                if (nc != *color) { *color = nc; rgb2hsv(nc, p->h, p->s, p->v); p->col = nc; changed = true; save_ui_config(); }
-                break;
-            }
+    if (mo && mo->clicked && g_slider < 0) {                                             // the nuancier
+        for (int k = 0; k < CP_COLS * CP_ROWS; ++k) {
+            const int col = k % CP_COLS, row = k / CP_COLS;
+            if (!inrect(mo, gx + col * (cch + ccg), chartY + row * (cch + ccg), cch, cch)) continue;
+            const u32 nc = (cp_chart(col, row) & 0x00FFFFFFu) | alpha;
+            if (nc != *color) { *color = nc; rgb2hsv(nc, p->h, p->s, p->v); p->col = nc; changed = true; save_ui_config(); }
+            break;
         }
     }
-    if (mo && mo->clicked && g_slider < 0) {                                            // FAVOURITES : "+" adds the current colour ; a swatch applies it (its top-right corner removes it)
-        if (inrect(mo, x, favY, cw, ch)) { if (ui_config().fav_color_add(*color)) save_ui_config(); }   // "+" button (slot 0)
+    if (mo && mo->clicked && g_slider < 0) {                                             // favourites : "+" adds, a chip applies, its corner badge removes
+        if (inrect(mo, rx, favY, fcw, fch)) { if (ui_config().fav_color_add(*color)) save_ui_config(); }
         else for (int i = 0; i < ui_config().favColorN; ++i) {
-            const int gp = i + 1; const float sx = x + (gp % PC) * (cw + cg), sy = favY + (gp / PC) * (ch + cg);
-            if (!inrect(mo, sx, sy, cw, ch)) continue;
-            if (inrect(mo, sx + cw - snap(11.0f), sy, snap(11.0f), snap(11.0f))) { ui_config().fav_color_remove(i); save_ui_config(); }   // top-right corner -> remove
+            const int gp = i + 1; const float sx = rx + (gp % CP_FAVC) * (fcw + fgap), sy = favY + (gp / CP_FAVC) * (fch + fgap);
+            if (!inrect(mo, sx, sy, fcw, fch)) continue;
+            if (inrect(mo, sx + fcw - snap(11.0f), sy, snap(11.0f), snap(11.0f))) { ui_config().fav_color_remove(i); save_ui_config(); }
             else { const u32 nc = (ui_config().favColors[i] & 0x00FFFFFFu) | alpha; if (nc != *color) { *color = nc; rgb2hsv(nc, p->h, p->s, p->v); p->col = nc; changed = true; save_ui_config(); } }
             break;
         }
     }
+    // ONE hover spring for the whole picker, not one per chip : 39 nuancier chips + 16 favourite slots would
+    // burn 55 of ease()'s 1024 springs PER PICKER, and entries are never recycled. Whichever chip is under the
+    // pointer reads this value ; moving between two chips hands it over instantly, which is what the eye wants.
+    const float hv = ease(uidSV, 2, inrect(mo, x, y, W, H) ? 1.0f : 0.0f, 22.0f);
 
-    // ---- SV square : white->pure-hue across the top, fading to black at the bottom (the standard picker) ----
-    q4(dev, x, y, sqW, sqH, 0xFFFFFFFFu, hue, 0xFF000000u, 0xFF000000u);
-    outline(dev, x, y, sqW, sqH, C_BORDER);
-    const float cxp = x + p->s * sqW, cyp = y + (1.0f - p->v) * sqH;                    // SV cursor (readable on any shade)
-    disc(dev, cxp, cyp, snap(5.0f), 0xCC000000u); disc(dev, cxp, cyp, snap(3.6f), 0xFFFFFFFFu); disc(dev, cxp, cyp, snap(2.0f), *color | 0xFF000000u);
+    // ---- the card --------------------------------------------------------------------------------------
+    drop_shadow(dev, x, y, W, H, snap(5.0f), 58, snap(12.0f));
+    rpanel(dev, x, y, W, H, snap(12.0f), 0xF02A343Eu, 0xF01F2831u,
+           (C_STEEL_DEEP & 0x00FFFFFFu) | 0x88000000u, snap(1.2f));                  // STEEL border : this is structure, not brand
+                                                                                     // (fill on the control step : the picker is a control sitting on a card)
+    flat(dev, x + snap(12.0f), y + snap(1.0f), W - snap(24.0f), 1.0f, 0x1AFFFFFFu);  // 1px lit top edge
 
-    // ---- live swatch (rounded) + hex readout, top-right of the square ----
-    rrect_bordered(dev, rx, y, swW, swH, snap(4.0f), *color | 0xFF000000u, *color | 0xFF000000u, C_BORDERHI, snap(1.2f));
-    if (fo) { char hb[10]; sprintf(hb, "#%06X", (unsigned)(*color & 0x00FFFFFFu));
-              fo->begin(dev); fo->draw_lc(dev, rx + swW + snap(8.0f), y + swH * 0.5f, hb, snap(12.0f), C_DIM, C_STROKE, 1.0f); }
+    // ---- SV square : white -> pure hue across the top, fading to black at the bottom --------------------
+    // TWO exact ramps, not one four-corner quad. A quad is two TRIANGLES and Gouraud interpolates per
+    // triangle, so a quad whose corners are not planar in colour space renders as two surfaces that disagree
+    // along the shared diagonal -- a CREASE straight across the square. These corners (white / hue / black /
+    // black) are non-planar for every hue but white, since white + black != hue + black. It was there from the
+    // first version, on the largest gradient of the page, and no render state can fix it: it is what the
+    // topology computes. This is also the ONLY four-corner gradient in the whole config UI -- every other one
+    // is a pure horizontal or vertical ramp, which two triangles agree on exactly.
+    //
+    // The decomposition is exact, because HSV is exactly this product : rgb(s,v) = v * lerp(white, hue, s).
+    //   pass 1 : white -> hue horizontally  (top pair == bottom pair -> a function of x alone -> exact)
+    //   pass 2 : black, alpha 0 -> 255 down (left pair == right pair -> a function of y alone -> exact)
+    //   and "over" composites them as dst*(1-a) = dst*v, which IS the value axis.
+    q4(dev, cx0, cy0, sq, sq, 0xFFFFFFFFu, hue,        0xFFFFFFFFu, hue);
+    q4(dev, cx0, cy0, sq, sq, 0x00000000u, 0x00000000u, 0xFF000000u, 0xFF000000u);
+    outline(dev, cx0 - 1.0f, cy0 - 1.0f, sq + 2.0f, sq + 2.0f, (C_STEEL_DEEP & 0x00FFFFFFu) | 0xAA000000u);
+    const float cxp = cx0 + p->s * sq, cyp = cy0 + (1.0f - p->v) * sq;                   // cursor : readable on ANY shade
+    const float ct = ease(uidSV, 3, (hotSV || g_slider == uidSV) ? 1.0f : 0.0f);
+    disc(dev, cxp, cyp + snap(1.0f), snap(6.2f) + snap(0.8f) * ct, 0x66000000u);
+    disc(dev, cxp, cyp, snap(5.6f) + snap(0.8f) * ct, 0xE60A0D10u);
+    disc(dev, cxp, cyp, snap(4.2f) + snap(0.8f) * ct, 0xFFF6FAFAu);
+    disc(dev, cxp, cyp, snap(2.4f) + snap(0.8f) * ct, *color | 0xFF000000u);
 
-    // ---- horizontal hue slider : 6 rainbow segments left->right, thin vertical cursor ----
+    // ---- hue strip : VERTICAL, beside the square (six segments top->bottom) + a handle that spans it ----
     static const u32 HUE6[7] = { 0xFFFF0000u, 0xFFFFFF00u, 0xFF00FF00u, 0xFF00FFFFu, 0xFF0000FFu, 0xFFFF00FFu, 0xFFFF0000u };
-    const float segW = W / 6.0f;
-    for (int i = 0; i < 6; ++i) { const float sx = x + i * segW; q4(dev, sx, hueY, segW + 1.0f, hbH, HUE6[i], HUE6[i + 1], HUE6[i], HUE6[i + 1]); }
-    outline(dev, x, hueY, W, hbH, C_BORDER);
-    const float hcx = x + (p->h / 360.0f) * W;
-    flat(dev, snap(hcx) - snap(2.0f), hueY - snap(2.0f), snap(4.0f), hbH + snap(4.0f), 0xFF000000u);
-    flat(dev, snap(hcx) - snap(1.0f), hueY - snap(2.0f), snap(2.0f), hbH + snap(4.0f), 0xFFFFFFFFu);
+    const float segH = sq / 6.0f;
+    for (int i = 0; i < 6; ++i) { const float sy = cy0 + i * segH; q4(dev, hueX, sy, hw, segH + 1.0f, HUE6[i], HUE6[i], HUE6[i + 1], HUE6[i + 1]); }
+    outline(dev, hueX - 1.0f, cy0 - 1.0f, hw + 2.0f, sq + 2.0f, (C_STEEL_DEEP & 0x00FFFFFFu) | 0xAA000000u);
+    const float hcy = snap(cy0 + (p->h / 360.0f) * sq);
+    rrect_bordered(dev, hueX - snap(4.0f), hcy - snap(4.0f), hw + snap(8.0f), snap(8.0f), snap(4.0f),
+                   0xFFF8FBFCu, 0xFFCED8E2u, 0xFF080B0Eu, snap(1.3f));
 
-    // ---- preset grid (the nuancier) : larger rounded chips, full width, 2 rows ; a white ring marks the active colour ----
-    for (int i = 0; i < 15; ++i) {
-        const float sx = x + (i % PC) * (cw + cg), sy = preY + (i / PC) * (ch + cg);
-        rrect_bordered(dev, sx, sy, cw, ch, snap(4.0f), CP_PRESETS[i], CP_PRESETS[i], C_BORDER, snap(1.0f));
-        if (((*color) & 0x00FFFFFFu) == (CP_PRESETS[i] & 0x00FFFFFFu))
-            rrect_stroke(dev, sx - snap(1.0f), sy - snap(1.0f), cw + snap(2.0f), ch + snap(2.0f), snap(5.0f), 0xFFFFFFFFu, snap(1.8f));
+    // ---- live swatch : the colour itself, big, with its hex ON it (dark or light text, by luminance) ----
+    const u32 cur = *color | 0xFF000000u;
+    const float swR = snap(10.0f);
+    // The big swatch is the same object as the little ones, only larger : it shows a colour, so nothing is
+    // drawn ON it. Relief by shadow and rim only -- and the gradient it keeps (+6% to -20%) is a property of
+    // the sample, not a light: it is what lets you judge a colour against a shaded version of itself.
+    drop_shadow(dev, rx, cy0, rw, swH, snap(3.0f), 58, swR);
+    ctl_edge(dev, rx, cy0, rw, swH, swR, 0.80f, cur, cur);          // a nuance of the colour it is showing
+    rrect_fill(dev, rx, cy0, rw, swH, swR, shade(cur, 0.06f), shade(cur, -0.20f));
+    if (fo) {
+        char hb[10]; sprintf(hb, "#%06X", (unsigned)(*color & 0x00FFFFFFu));
+        const int lum = (77 * (int)((cur >> 16) & 0xFF) + 150 * (int)((cur >> 8) & 0xFF) + 29 * (int)(cur & 0xFF)) >> 8;
+        const bool dark = lum > 140;   // a bright swatch takes dark text, and the outline flips with it
+        fo->begin(dev);
+        fo->draw_c(dev, rx + rw * 0.5f, cy0 + swH * 0.5f, hb, ts_value(),
+                   fa(dark ? 0xFF0B0F13u : 0xFFF2F6FAu), fa(dark ? 0x40FFFFFFu : 0xC0000000u), 1.0f);
     }
 
-    // ---- favourites : small label + a "+" add button (slot 0) + the saved swatches (hover a swatch shows a remove x) ----
-    if (fo) { fo->begin(dev); fo->draw_lc(dev, x, favLabelY + snap(7.0f), tr("Favourites", "Favoris"), snap(11.0f), C_DIM, C_STROKE, 1.0f); }
-    { const bool hov = inrect(mo, x, favY, cw, ch);                                     // "+" add button
-      rrect_bordered(dev, x, favY, cw, ch, snap(4.0f), hov ? 0xFF2A343Cu : 0xFF171D22u, hov ? 0xFF2A343Cu : 0xFF171D22u, C_BORDERHI, snap(1.0f));
-      const float pcx = x + cw * 0.5f, pcy = favY + ch * 0.5f, pr = snap(5.0f), pt = snap(1.6f);
-      flat(dev, pcx - pr, pcy - pt * 0.5f, pr * 2.0f, pt, 0xFFCDD6DEu); flat(dev, pcx - pt * 0.5f, pcy - pr, pt, pr * 2.0f, 0xFFCDD6DEu); }
+    // ---- favourites : a micro label, then the "+" slot and the saved colours as the same chip -----------
+    if (fo) { fo->begin(dev); fo->draw_lc(dev, rx, favLabY + snap(7.0f), tr("FAVOURITES", "FAVORIS"), ts_micro(), fa(C_MUTE), fa(C_STROKE), 1.0f); }
+    { const bool hov = inrect(mo, rx, favY, fcw, fch);                                    // "+" : slot 0, a chip-shaped BUTTON
+      const float t = hov ? hv : 0.0f;
+      const u32 pT = lerpc(C_CTL_IDLE_T, C_CTL_HOV_T, t), pB = lerpc(C_CTL_IDLE_B, C_CTL_HOV_B, t);
+      ctl_edge(dev, rx, favY, fcw, fch, snap(7.0f), 0.60f + 0.35f * t, lerpc(pT, pB, 0.5f));
+      rrect_fill(dev, rx, favY, fcw, fch, snap(7.0f), pT, pB);
+      ctl_crown(dev, rx, favY, fcw, fch, snap(7.0f), C_STEEL_HI, C_STEEL, 0.46f * t);
+      const float pcx = rx + fcw * 0.5f, pcy = favY + fch * 0.5f, pr = snap(5.0f), pt = snap(1.6f);
+      const u32 pc = lerpc(0xFFAEB9C4u, 0xFFEAF2F8u, t);
+      flat(dev, pcx - pr, pcy - pt * 0.5f, pr * 2.0f, pt, pc); flat(dev, pcx - pt * 0.5f, pcy - pr, pt, pr * 2.0f, pc); }
     for (int i = 0; i < ui_config().favColorN; ++i) {
-        const int gp = i + 1; const float sx = x + (gp % PC) * (cw + cg), sy = favY + (gp / PC) * (ch + cg);
+        const int gp = i + 1; const float sx = rx + (gp % CP_FAVC) * (fcw + fgap), sy = favY + (gp / CP_FAVC) * (fch + fgap);
         const u32 fc = ui_config().favColors[i] | 0xFF000000u;
-        rrect_bordered(dev, sx, sy, cw, ch, snap(4.0f), fc, fc, C_BORDER, snap(1.0f));
-        if (((*color) & 0x00FFFFFFu) == (fc & 0x00FFFFFFu))
-            rrect_stroke(dev, sx - snap(1.0f), sy - snap(1.0f), cw + snap(2.0f), ch + snap(2.0f), snap(5.0f), 0xFFFFFFFFu, snap(1.8f));
-        if (fo && inrect(mo, sx, sy, cw, ch)) {                                         // hover : a small remove "x" in the top-right corner
-            const float xr = sx + cw - snap(11.0f);
-            flat(dev, xr, sy, snap(11.0f), snap(11.0f), 0xE0101418u);
-            fo->begin(dev); fo->draw_c(dev, xr + snap(5.5f), sy + snap(5.5f), "x", snap(10.0f), 0xFFFFFFFFu, C_STROKE, 1.0f);
+        const bool hov = inrect(mo, sx, sy, fcw, fch);
+        cp_chip(dev, sx, sy, fcw, fch, fc, ((*color) & 0x00FFFFFFu) == (fc & 0x00FFFFFFu), hov ? hv : 0.0f);
+        if (fo && hov) {                                                                 // hover : a remove badge in the corner
+            const float br = snap(6.0f), bcx = sx + fcw - br, bcy = sy + br;
+            disc(dev, bcx, bcy, br, 0xEE12171Cu); disc(dev, bcx, bcy, br - snap(1.1f), 0xFF2A343Cu);
+            fo->begin(dev); fo->draw_c(dev, bcx, bcy, "x", ts_micro(), 0xFFE9EFF4u, C_STROKE, 1.0f);
         }
     }
+
+    // ---- the nuancier ----------------------------------------------------------------------------------
+    flat(dev, cx0, cy0 + sq + snap(CP_ROWGAP) * 0.5f, cw0, 1.0f, (C_STEEL_DEEP & 0x00FFFFFFu) | 0x66000000u);
+    for (int col = 0; col < CP_COLS; ++col) for (int row = 0; row < CP_ROWS; ++row) {
+        const float sx = gx + col * (cch + ccg), sy = chartY + row * (cch + ccg);
+        const u32 cc2 = cp_chart(col, row);
+        cp_chip(dev, sx, sy, cch, cch, cc2, ((*color) & 0x00FFFFFFu) == (cc2 & 0x00FFFFFFu),
+                inrect(mo, sx, sy, cch, cch) ? hv : 0.0f);
+    }
     return changed;
+}
+
+void nav_row(u32 dev, Font* fo, float x, float y, float w, float h, const char* label, bool active, float t, float pulse) {
+    const float r = snap(9.0f);
+    if (active) {
+        drop_shadow(dev, x, y, w, h, snap(3.0f), 52, r);
+        ctl_edge(dev, x, y, w, h, r, 0.55f, lerpc(C_CARD_T, C_ROWON_T, 0.72f));
+        rrect_fill(dev, x, y, w, h, r, lerpc(C_CARD_T, C_ROWON_T, 0.72f), lerpc(C_CARD_B, C_ROWON_B, 0.72f));
+        ctl_crown(dev, x, y, w, h, r, C_GOLDHI, C_GOLD, 0.80f + 0.20f * pulse);
+        // (No vertical rail down the left edge any more. The row now has a lifted surface, a shadow, an edging
+        //  and a gold lamp -- the rail was a fifth way of saying the one thing they already say together, and
+        //  the same argument that took the accent rail off cat_panel applies here.)
+    } else if (t > 0.01f) {
+        ctl_edge(dev, x, y, w, h, r, 0.80f * t, lerpc(C_CTL_IDLE_T, C_CTL_HOV_T, t));
+        const u32 fT = ((u32)(0xF0 * t) << 24) | (lerpc(C_CTL_IDLE_T, C_CTL_HOV_T, t) & 0x00FFFFFFu);
+        const u32 fB = ((u32)(0xF0 * t) << 24) | (lerpc(C_CTL_IDLE_B, C_CTL_HOV_B, t) & 0x00FFFFFFu);
+        rrect_fill(dev, x, y, w, h, r, fT, fB);                    // fades IN with the hover, so the rail stays a list
+        ctl_crown(dev, x, y, w, h, r, C_STEEL_HI, C_STEEL, 0.50f * t);
+    }
+    if (fo) { fo->begin(dev);
+              fo->draw_lc(dev, x + snap(18.0f), y + h * 0.5f, label, ts_label(),
+                          lerpc(C_DIM, C_TEXT, active ? 1.0f : t), fa(C_STROKE), 1.0f); }
+}
+
+u32 ctl_edge_tint(u32 fill, u32 from) {
+    const u32  base   = from ? from : C_ACCENT;
+    const bool bright = fill_is_bright(fill);
+    const u32  acc    = bright ? shade(base, -0.58f) : shade(base, 0.46f);
+    return lerpc(acc, bright ? C_STEEL_DEEP : C_STEEL_HI, 0.45f);
+}
+void ctl_edge(u32 dev, float x, float y, float w, float h, float r, float strength, u32 fill, u32 from) {
+    if (strength <= 0.01f) return;
+    if (strength > 1.0f) strength = 1.0f;
+    const float bw = snap(2.0f);
+    const u32 c = (ctl_edge_tint(fill, from) & 0x00FFFFFFu) | ((u32)(235.0f * strength) << 24);
+    rrect_fill(dev, x - bw, y - bw, w + 2.0f * bw, h + 2.0f * bw, r + bw, c, c);
+}
+void ctl_edge_top(u32 dev, float x, float y, float w, float h, float r, float strength, u32 fill, u32 from) {
+    if (strength <= 0.01f) return;
+    if (strength > 1.0f) strength = 1.0f;
+    const float bw = snap(2.0f);
+    const u32 c = (ctl_edge_tint(fill, from) & 0x00FFFFFFu) | ((u32)(235.0f * strength) << 24);
+    rrect_top(dev, x - bw, y - bw, w + 2.0f * bw, h + bw, r + bw, c, c);   // +bw on the top only : the feet stay open
+}
+void ctl_crown(u32 dev, float x, float y, float w, float h, float r, u32 hiRGB, u32 loRGB, float k) {
+    if (k <= 0.01f) return;
+    if (k > 1.0f) k = 1.0f;
+    const u32 hi = hiRGB & 0x00FFFFFFu, lo = loRGB & 0x00FFFFFFu;
+    // Two ramps, stacked : their sum keeps softening all the way down, where one linear ramp ends in a kink
+    // the eye reads as an edge. On the surface's OWN rect and radius, so they have no edge of their own.
+    rrect_top(dev, x, y, w, h * 0.60f, r, hi | ((u32)(26.0f * k) << 24), lo);
+    rrect_top(dev, x, y, w, h * 0.26f, r, hi | ((u32)(33.0f * k) << 24), lo);
+    rrect_top(dev, x, y, w, h * 0.12f, r, hi | ((u32)(30.0f * k) << 24), lo);   // a third, tight ramp : it does
+                                                                                // the job the upward bloom did
+    const float ins = r + snap(2.0f);            // a straight bar must clear the round corners
+    const float bx = x + ins, bw = w - 2.0f * ins;
+    if (bw < snap(10.0f)) return;                // too narrow to carry a filament : the ramps alone say it
+    // NO HAZE ABOVE THE FILAMENT. It used to be two hglow_soft passes centred on the bar, reaching 9px UP --
+    // straight over the top border and out past it, additively. That is what made the rim look washed out
+    // exactly where it should be sharpest: a border is the one line on a control that has to stay crisp, and
+    // light drawn across it erases it. The reflection is a separate thing and it belongs INSIDE -- which is
+    // what the ramps above already are, all of them falling downward from the top edge.
+    cs(dev);
+    hbar_soft(dev, bx, y + snap(2.0f), bw, snap(2.0f), hi, (u32)(235.0f * k * g_fade), 0.34f);
 }
 
 // A pill toggle chip. Modern: OFF = a neutral graphite pill ; ON = a SOLID teal fill with dark text.
@@ -788,22 +1035,26 @@ bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
     const float st = ease(uid, 0, on ? 1.0f : 0.0f, 14.0f);          // on/off crossfade (sub 0)
     const float ht = ease(uid, 1, hov ? 1.0f : 0.0f);               // hover lift    (sub 1)
     const float r  = h * 0.5f;                                       // full pill
-    // fill : neutral graphite (off) -> solid teal (on) ; hover lightens both a touch
-    u32 ft = lerpc(0xFF1B2228, C_CHIP_ON_T, st), fb = lerpc(0xFF141A1F, C_CHIP_ON_B, st);
-    ft = lerpc(ft, lerpc(0xFF2C363E, C_ACCENTHI, st), ht * 0.8f);        // hover clearly lifts the surface (visible on BOTH the dark OFF and the bright ON pill)
-    fb = lerpc(fb, lerpc(0xFF20292F, C_ACCENT, st), ht * 0.8f);
-    const u32 br = lerpc(lerpc(C_CTL_BR, C_ACCENTHI, st), 0xFFEAFBF9, ht);   // border -> near-white on hover : a clear cue even on the bright ON pill
-    rpanel(dev, x, y, w, h, r, ft, fb, br, snap(1.4f));
-    if (ht > 0.01f) { cs_add(dev); rrect_glow(dev, x, y, w, h, r, (C_ACCENTHI & 0x00FFFFFF) | ((u32)(70.0f * ht) << 24), snap(6.0f)); }   // clear accent ring on hover
+    // fill : neutral graphite (off) -> solid accent (on) ; hover lightens both a touch
+    u32 ft = lerpc(C_CTL_IDLE_T, C_CHIP_ON_T, st), fb = lerpc(C_CTL_IDLE_B, C_CHIP_ON_B, st);
+    ft = lerpc(ft, lerpc(C_CTL_HOV_T, C_ACCENTHI, st), ht * 0.8f);       // hover clearly lifts the surface (visible on BOTH the dark OFF and the bright ON pill)
+    fb = lerpc(fb, lerpc(C_CTL_HOV_B, C_ACCENT, st), ht * 0.8f);
+    // THE TAB LANGUAGE : a steel edging one size larger, the fill over it, a sliver of glass, and the lamp.
+    // The old chip had a 1.4px stroked border instead -- a hairline drawn ON the pill, where the tabs have an
+    // edge that IS the pill's own rim. That difference is most of why the two read as unrelated controls.
+    ctl_edge(dev, x, y, w, h, r, 0.58f + 0.28f * ht + 0.14f * st, lerpc(ft, fb, 0.5f));
+    rrect_fill(dev, x, y, w, h, r, ft, fb);
+    rrect_top(dev, x + snap(2.0f), y + snap(1.0f), w - snap(4.0f), h * 0.42f, r * 0.7f,
+              ((u32)(0x14 + 0x1C * (0.35f + 0.65f * ht)) << 24) | 0x00FFFFFF, 0x02FFFFFF);
+    // The lamp reads the fill it sits on : a bright ON pill takes a near-white filament (an accent one would
+    // vanish into its own colour), a dark pill takes the accent when ON and steel under the pointer.
+    { const bool bright = fill_is_bright(lerpc(ft, fb, 0.5f));
+      const u32 chi = bright ? 0xFFFFFFFFu : (st > 0.5f ? C_GOLDHI : C_STEEL_HI);
+      const u32 clo = bright ? 0xFFE8F1F8u : (st > 0.5f ? C_GOLD   : C_STEEL);
+      ctl_crown(dev, x, y, w, h, r, chi, clo, st > 0.5f ? (0.72f + 0.28f * ht) : (0.55f * ht)); }
     cs(dev);
-    // text : legible on ANY pill. The ON fill follows the accent, which can now be a CUSTOM colour (possibly
-    // DARK) -> pick dark text on a bright ON pill, light text on a dark one, each with a contrasting outline
-    // (was : always near-black text + no outline -> dark-on-dark "baveux" once the accent went dark).
-    const u32 onFill = lerpc(C_CHIP_ON_T, C_CHIP_ON_B, 0.5f);
-    const int onL = (int)((((onFill >> 16) & 0xFF) * 54u + ((onFill >> 8) & 0xFF) * 183u + (onFill & 0xFF) * 19u) >> 8);
-    const bool onBright = onL > 135;
-    const u32 onTxt = onBright ? C_ONACC     : 0xFFF4F8F7u;          // dark-on-bright  |  light-on-dark
-    const u32 onStk = onBright ? 0x66FFFFFFu : 0xFF000000u;          // contrasting outline in each case
+    // text : legible on ANY pill -- the shared rule, since the ON fill follows an accent the user chooses.
+    u32 onStk; const u32 onTxt = text_on_fill(lerpc(C_CHIP_ON_T, C_CHIP_ON_B, 0.5f), &onStk);
     const u32 txt = lerpc(C_TEXT,   onTxt, st);
     const u32 stk = lerpc(C_STROKE, onStk, st);
     fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, y + h * 0.5f, label, ts_chip(), fa(txt), fa(stk), 1.0f);
@@ -818,16 +1069,25 @@ bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
     const bool press = hov && mo && mo->down;
     const float t = ease(uid, hov ? 1.0f : 0.0f);
     const u32 accBr = tone ? 0xFFE0555F : C_ACCENT, accHi = tone ? 0xFFFF8A92 : C_ACCENTHI;
-    const u32 idleT = tone ? 0xFF241A1C : 0xFF1E252B, idleB = tone ? 0xFF1A1214 : 0xFF161C21;
-    const u32 hovT  = tone ? 0xFF39262A : 0xFF27313A, hovB  = tone ? 0xFF281A1C : 0xFF1C232A;
+    const u32 idleT = tone ? 0xFF3B2B2E : C_CTL_IDLE_T, idleB = tone ? 0xFF2D2023 : C_CTL_IDLE_B;   // the danger tone rides the same ramp, in red
+    const u32 hovT  = tone ? 0xFF4C363C : C_CTL_HOV_T,  hovB  = tone ? 0xFF3B292E : C_CTL_HOV_B;
     const float pin = press ? snap(1.0f) : 0.0f;                     // press : a small inward nudge
     const float bx = x + pin, by = y + pin, bw = w - 2 * pin, bh = h - 2 * pin, r = snap(9.0f);
     drop_shadow(dev, bx, by, bw, bh, snap(3.0f), press ? 30 : 54);
-    if (t > 0.01f) { cs_add(dev); rrect_glow(dev, bx, by, bw, bh, r, (accBr & 0x00FFFFFF) | ((u32)(46.0f * t) << 24), snap(6.0f)); }   // soft accent ring on hover
-    rpanel(dev, bx, by, bw, bh, r, lerpc(idleT, hovT, t), lerpc(idleB, hovB, t), lerpc(C_CTL_BR, accBr, t), snap(1.3f));
-    flat(dev, bx + r, by + snap(1.0f), bw - 2.0f * r, 1.0f, ((u32)(26.0f + 22.0f * t) << 24) | 0x00FFFFFF);   // crisp 1px top hairline (not a glossy gradient)
+    // Same three pieces as a tab and a chip : edging, fill, glass, then the lamp on hover. The 1px top
+    // hairline this replaces was a flat line drawn on the button ; the lamp is light falling on its edge.
+    ctl_edge(dev, bx, by, bw, bh, r, 0.60f + 0.35f * t, lerpc(lerpc(idleT, hovT, t), lerpc(idleB, hovB, t), 0.5f));
+    rrect_fill(dev, bx, by, bw, bh, r, lerpc(idleT, hovT, t), lerpc(idleB, hovB, t));
+    rrect_top(dev, bx + snap(2.0f), by + snap(1.0f), bw - snap(4.0f), bh * 0.42f, snap(6.0f),
+              ((u32)(0x14 + 0x1E * t) << 24) | 0x00FFFFFF, 0x02FFFFFF);
+    ctl_crown(dev, bx, by, bw, bh, r, tone ? 0xFFFFC9CDu : C_STEEL_HI, tone ? accBr : C_STEEL, press ? 0.30f * t : 0.62f * t);
     cs(dev);
-    fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, y + h * 0.5f, label, snap(13.0f), fa(lerpc(C_TEXT, accHi, t * 0.45f)), fa(C_STROKE), 1.0f);
+    // the label follows the fill (text_on_fill), then warms toward the accent on hover -- but only while the
+    // fill is DARK enough for a bright label. On a bright button the accent tint would erase the contrast the
+    // rule just bought.
+    u32 pbStk; const u32 pbTxt = text_on_fill(lerpc(lerpc(idleT, hovT, t), lerpc(idleB, hovB, t), 0.5f), &pbStk);
+    const u32 pbLbl = fill_is_bright(lerpc(idleT, hovT, t)) ? pbTxt : lerpc(pbTxt, accHi, t * 0.45f);
+    fo->begin(dev); fo->draw_c(dev, x + w * 0.5f, y + h * 0.5f, label, snap(13.0f), fa(pbLbl), fa(pbStk), 1.0f);
     return hov && click;
 }
 
@@ -849,8 +1109,12 @@ void cat_fold_clip(u32 dev, float x, float top, float w, float visH) {
 }
 void cat_fold_end(u32 dev, float& ry, float top, float& full, float a) {
     clip_rect_end(dev);
-    full = ry - top;              // measured from the FULL layout, which happened whether it was visible or not
-    ry   = top + full * a;        // ... and the cursor goes back to what was actually revealed
+    // The card's height is this `full`, so the last row used to land exactly ON the bottom border : the content
+    // had a 16px margin above the next section but ZERO inside its own panel, which reads as the content
+    // spilling out of the bottom of the card rather than sitting in it. The padding goes HERE, in the one place
+    // that measures a section, rather than in the thirty-odd call sites that would each have to remember it.
+    full = ry - top + snap(14.0f);   // measured from the FULL layout, plus the panel's bottom padding
+    ry   = top + full * a;           // ... and the cursor goes back to what was actually revealed
 }
 
 void cat_panel(u32 dev, float x, float y, float w, float h) {
@@ -862,13 +1126,17 @@ void cat_panel(u32 dev, float x, float y, float w, float h) {
     // A tier reads as a tier when it is a different TONE, not when it is fenced off. The card used to be darker
     // than the page and held together by a 1px white border -- an outline doing a job that a shade does better.
     // It is a step LIGHTER than the content surface now, and the border is barely there.
-    rpanel(dev, x, y, w, h, snap(9.0f), 0xF41E262E, 0xF4151C23, 0x1AFFFFFFu, snap(1.0f));
+    // A REAL border, in the theme's edge tint. It was 0x1AFFFFFF -- 10% white, described in this very comment
+    // as "barely there", which turned out to mean "not there": the card that holds every open section had no
+    // visible edge at all, so a page of settings floated with nothing saying where the panel ended.
+    rpanel(dev, x, y, w, h, snap(9.0f), C_CARD_T, C_CARD_B,
+           (ctl_edge_tint(C_CARD_T) & 0x00FFFFFFu) | 0xC0000000u, snap(2.0f));
     flat(dev, x + snap(9.0f), y + snap(1.0f), w - snap(18.0f), 1, 0x16FFFFFF);           // the light catches the top edge
     // (No accent rail down the left. It was meant to say WHERE you are without spending a label on it, and it
     //  said nothing the open title bar was not already saying by its shape -- one section is open, this is it.
     //  A mark that repeats what the structure already states is decoration, and it read as one.)
 }
-bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, float x, float y, float w, const char* label, bool open) {
+bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, float x, float y, float w, const char* label, bool open, float a) {
     // A SECTION HEADER IS A TITLE BAR, not a caret with a word after it.
     // It used to be the quietest possible mark -- a small arrow, an uppercase label, a hairline running out to
     // the right -- on the argument that a heading should not shout like the controls it introduces. That was
@@ -879,23 +1147,78 @@ bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, fl
     // free-standing bar, rounded on all four corners, sitting on the page. OPEN, its bottom corners square off
     // so it welds to the panel underneath and becomes that panel's title -- the shape itself says "this bar owns
     // what is below it", which is the whole grammar of an accordion and costs no extra ink to say.
-    const float h = snap(34.0f), r = snap(8.0f);
+    // The fold's progress, as measured by the fold itself. Everything that separates an open header from a
+    // closed one -- its tint, its lamp, the shape of its feet -- crosses over on exactly this number, so the
+    // bar and the card it titles can never be in two different states.
+    const float o = a < 0.0f ? 0.0f : (a > 1.0f ? 1.0f : a);
+    (void)open;   // `open` is still the CLICK's target state ; `a` is what is on screen
+    // ONE HEIGHT, ALWAYS. A title bar that grows when you collapse it is a bar that changed object. What
+    // changes is the CARD: closed it is exactly this bar (cat_card_h), open it is this bar plus the padding
+    // plus the content. So the title is centred in what you see, in both states, without the bar moving.
+    const float h = CAT_BAR_H, r = snap(8.0f);
     const bool hov = inrect(mo, x, y, w, h);
     const float t = ease(uid, hov ? 1.0f : 0.0f);
-    const float o = open ? 1.0f : 0.0f;
 
-    const u32 baseT = open ? C_ROWON_T : C_CTL_T;
-    const u32 baseB = open ? C_ROWON_B : C_CTL_B;
-    const u32 fT = lerpc(baseT, shade(baseT, 0.22f), t);
-    const u32 fB = lerpc(baseB, shade(baseB, 0.22f), t);
-    if (open) rrect_top(dev, x, y, w, h, r, fT, fB);        // square feet -> it joins the panel below
-    else      rrect_fill(dev, x, y, w, h, r, fT, fB);
-    flat(dev, x + r, y + snap(1.0f), w - r * 2.0f, 1, ((u32)(0x18 + (u32)(0x12 * t)) << 24) | 0x00FFFFFFu);   // the light catches its top edge
+    // The bar sits on the ELEVATION RAMP, and this is the surface that matters most on this page: with every
+    // section collapsed, the closed bars are the ONLY thing drawn in the whole controls column. The container
+    // behind them is fully transparent by design, and C_CONTENT is never painted anywhere at all -- so the
+    // screen you look at most of the time was a few translucent strips over the dimmed game, and whatever the
+    // cards, chips and shadows did, none of it was reachable from there.
+    // CLOSED = the control step, opaque. OPEN = accent-tinted, but floored on the CARD step, so a title bar can
+    // never come out darker than the card it is the title of.
+    const u32 baseT = lerpc(C_CTL_IDLE_T, lerpc(C_CARD_T, C_ROWON_T, 0.72f), o);
+    const u32 baseB = lerpc(C_CTL_IDLE_B, lerpc(C_CARD_B, C_ROWON_B, 0.72f), o);
+    const u32 fT = lerpc(lerpc(baseT, C_CTL_HOV_T, t), lerpc(baseT, shade(baseT, 0.22f), t), o);
+    const u32 fB = lerpc(lerpc(baseB, C_CTL_HOV_B, t), lerpc(baseB, shade(baseB, 0.22f), t), o);
+    // ONE SHAPE, OPEN OR CLOSED. It used to change: rounded on four corners when closed, square-footed when
+    // open. The idea was that the shape should say what the bar owns -- but the panel is drawn in BOTH states
+    // now (collapsed, it is simply a panel with no content in it), so the bar is always a title welded to
+    // something. A section that changes silhouette when you press it reads as two different objects, and what
+    // actually happens is one object whose CONTENT unfolds downward.
+    // The perimeter belongs to the CARD (cat_panel draws it, at the same rect), so the bar draws no edging of
+    // its own -- an edging is the shape one size LARGER, and it stuck two pixels out past the card on three
+    // sides. It sits INSIDE the card's border, inset by exactly that thickness, flush with nothing between.
+    const float bwC = snap(2.0f);                          // == cat_panel's border thickness
+    const float ir  = r > bwC ? r - bwC : 0.0f;
+    // Inset on ALL FOUR sides, not three. The fill used to run from y+bwC to y+h -- straight over the card's
+    // bottom border, which closed is exactly there (the card is bar-height), so the border came out truncated:
+    // present on three sides and painted over on the fourth. The bar sits inside the ring, never on it.
+    const float bh = h - 2.0f * bwC;
+    // The FEET. Square feet are right for an open section -- the bar welds to the content under it -- and
+    // wrong for a closed one, where the bar sits at the very bottom of the card and its square corners poke
+    // out through the card's rounded ones. So the feet round off exactly when there is nothing to weld to.
+    // THE FEET ARE ANIMATED, not switched. Rounded when the bar is closed, square when it is welded to an open
+    // card -- and in between the bottom radius simply interpolates on the fold's own progress, so there is no
+    // moment at which the shape jumps. A switch (at any threshold) pops ; a threshold near zero pops LATE,
+    // which is worse. The two END states go through the crisp masked paths, so nothing is lost at rest:
+    // motion is drawn by rrect_tb, and a fifth of a second of feathered corners is not what the eye is on.
+    // ONE call, in every state. rrect_tb picks the baked masks itself when the radii land on whole pixels, so
+    // there is no longer a moment where the bar changes RENDERER -- which is what flashed at the end of the
+    // fold: the silhouette went from feathered to crisp on the last frame, and that reads as the border
+    // brightening. The bottom radius is simply the top one, retracted by the fold.
+    cs(dev);
+    rrect_tb(dev, x + bwC, y + bwC, w - 2.0f * bwC, bh, ir, ir * (1.0f - o), fa(fT), fa(fB));
+    ctl_crown(dev, x + bwC, y + bwC, w - 2.0f * bwC, bh, ir,
+              lerpc(C_STEEL_HI, C_GOLDHI, o), lerpc(C_STEEL, C_GOLD, o),
+              (0.30f + 0.45f * t) + o * (0.25f - 0.20f * t));
+    // NO rim at the bar's foot. There is exactly ONE bottom border on a section and it belongs to the CARD --
+    // closed, the card is header-height so that border sits just under the title ; open, the same border
+    // travels down as the content unfolds. A rim here made a SECOND one, so a closed section had its border
+    // under the title and an open section had two: one under the title and one at the foot of the panel.
+    // The border does not change identity when the section opens ; it moves.
+    { const float ih = snap(2.0f);                                                                // the bar is inside the card in both states
+      flat(dev, x + r + ih, y + snap(1.0f) + ih, w - r * 2.0f - 2.0f * ih, 1,
+           ((u32)(0x18 + (u32)(0x12 * t)) << 24) | 0x00FFFFFFu); }                                // the light catches its top edge
+    if (!open && t > 0.01f) ctl_crown(dev, x, y, w, h, r, C_STEEL_HI, C_STEEL, 0.55f * t);
 
     // The label in the heading's uppercase ; the note beside it in the ordinary case, because it is a value.
     const bool up0 = fo->upper();
     fo->set_upper(true);
-    const float tx = x + (open ? snap(16.0f) : snap(14.0f)), gy = y + h * 0.5f;
+    // Centred in what is actually DRAWN : the fill starts at y+bwC and ends at y+h, so its middle is not y+h/2.
+    // The indent is CONSTANT. It used to be 14 closed and 16 open -- a leftover from when the open bar was not
+    // inset into the card and needed the extra two pixels to line up. Both states are inset by bwC now, so the
+    // two numbers describe the same position, and interpolating between them just made the title slide.
+    const float tx = x + bwC + snap(12.0f), gy = y + bwC + (h - 2.0f * bwC) * 0.5f;
 
     // The chevron sits at the RIGHT end, which is where a disclosure control belongs when the label is on the
     // left : the two ends of the bar are its two jobs, naming and opening. It points DOWN when open, at what it
@@ -910,7 +1233,13 @@ bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, fl
                   fill_poly_aa(dev, d, 3, cc); } }
 
     fo->begin(dev);
-    fo->draw_lc(dev, tx, gy, label, ts_section(), fa(lerpc(C_DIM, C_TEXT, o > t ? o : t)), fa(C_STROKE), 1.2f);
+    // The title is the THEME's colour, not a neutral grey -- the page names things in the accent everywhere
+    // else (the module title, the MODULES eyebrow, the chosen tab), and a section heading is a name.
+    // Closed it is the accent LIGHTENED and mixed back toward C_DIM : measured against the closed bar that
+    // holds 4.8:1 or better on every hue, where the raw accent fell to 3.1:1 on red and violet. Open it goes
+    // to the bright accent, which measures 6.9:1 or better on its own accent-tinted bar.
+    const u32 titleDim = lerpc(C_DIM, shade(C_ACCENT, 0.45f), 0.70f);
+    fo->draw_lc(dev, tx, gy, label, ts_section(), fa(lerpc(titleDim, C_GOLDHI, o > t ? o : t)), fa(C_STROKE), 1.2f);
     fo->set_upper(up0);                                                                      // put the font back as we found it
     return hov && click;
 }

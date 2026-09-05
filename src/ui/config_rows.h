@@ -56,9 +56,11 @@
 // SAME uid -- the pickers then share one drag/hover slot and dragging one moves the others (this shipped: the
 // Close / Normal / Far distance colours in party_config.cpp). Pass the loop index and each item gets its own
 // pair of uids, mixed through ctrl_uid_i so they scatter instead of landing on a neighbour's id.
+// The slot is the CARD plus a 6px margin above and below: the picker draws a bordered card now, so the slot
+// has to CONTAIN it -- with the old slot (the card height, entered 6px down) its bottom edge overhung the next row.
 #define CFG_COLOR_PICKER_I(FIELDPTR, IDX) \
-    { row_band(dev, bandX, ry, bandW, snap(color_picker_height()), (ri & 1) != 0, 0.0f); \
+    { row_band(dev, bandX, ry, bandW, snap(color_picker_height() + 12.0f), (ri & 1) != 0, 0.0f); \
       float ap_ = stagger(anim_, ri); g_fade = e * ap_; \
       color_picker(dev, fo, mo, ::aio::ctrl_uid_i(CTRL_ID, (IDX) * 2), ::aio::ctrl_uid_i(CTRL_ID, (IDX) * 2 + 1), \
                    coX, ry + (1.0f - ap_) * snap(14.0f) + snap(6.0f), ctrlW, FIELDPTR); } \
-    ROW_NEXT(color_picker_height())
+    ROW_NEXT(color_picker_height() + 12.0f)

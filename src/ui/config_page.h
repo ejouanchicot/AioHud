@@ -270,7 +270,6 @@ private:
     // animation state (driven by the frame clock)
     float anim_     = 0.0f;   // open progress 0..1 (eased) -> fade in
     float lastT_    = -1.0f;  // previous frame time, for dt
-    float tabSlide_ = -1.0f;  // interpolated x of the sliding active-tab indicator
     float hov_[6]   = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };   // eased hover amount per tab (Config / Profile / Edit Layout / Help / Update / Debug) -- MUST match NTABS (6) or the last tab reads OOB
     // ---- Profile tab state ----
     char  nameBuf_[32] = { 0 };   // profile name being typed
@@ -298,6 +297,11 @@ private:
     float dbgScroll_   = 0.0f;    // Debug tab vertical scroll
     float dbgMaxScroll_= 0.0f;
     bool  relOpen_[128] = { true };// Update tab : per-version collapse state (newest RELEASES[0] starts OPEN, rest closed). Size must be >= RELEASES_N (config_page.cpp). Was 16 and RELEASES_N reached 17 at v1.0.37 : the render loop clamps to this size, so the OLDEST releases silently stopped being listed. It clamped again silently at 48 (grown 48->128 at v1.0.62 era, RELEASES_N = 42) -- 128 = room for ~86 more releases. Not serialized (session-only UI state) and the render loop self-bounds via sizeof(relOpen_), so this size is free to raise -- but keep it >= RELEASES_N.
+    // The measured content height of each collapsible group, so its CARD can be drawn at the right size --
+    // the same job pcFull_/catH_ do for a module's sections. Measured on the frame it is drawn, used on the
+    // next: the card is drawn before the content that measures it, which is exactly how cat_fold_end works.
+    float relFull_[128] = { 0.0f };   // Update  : one per release   (same size rule as relOpen_)
+    float dbgFull_[8]   = { 0.0f };   // Debug   : one per section   (same size rule as dbgOpen_)
     bool  dbgOpen_[8] = { true, true };   // Debug tab : per-section collapse state (To fix + Planned open, Fixed closed). Size must be >= DEBUG_SECTIONS_N.
     float helpMaxScroll_ = 0.0f;  // last frame's scroll limit -> clamp the wheel BEFORE drawing (no overscroll bounce)
     // live-preview anchor published each frame for the HUD (Configuration tab only)

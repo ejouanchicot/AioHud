@@ -28,7 +28,8 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         // ===== sub-section : DISPLAY =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
         ROW_NEXT(42.0f)
         if (aF6_ > 0.0f) {
             const float top6_ = ry;
@@ -59,11 +60,13 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         ROW_NEXT(46.0f)
             cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
         }   // end Display
+        ry += snap(16.0f);                                 // air between this section and the next title bar
 
         // ===== sub-section : CLOCK (Vana'diel header) =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF9_ = cat_fold(CTRL_ID, catOpen_[9]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Clock", "Horloge"), catOpen_[9])) catOpen_[9] = !catOpen_[9];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[9], aF9_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Clock", "Horloge"), catOpen_[9], aF9_)) catOpen_[9] = !catOpen_[9];
         ROW_NEXT(42.0f)
         if (aF9_ > 0.0f) {
             const float top9_ = ry;
@@ -83,9 +86,10 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         }
             cat_fold_end(dev, ry, top9_, catH_[9], aF9_);
         }   // end Clock
+        ry += snap(16.0f);                                 // air between this section and the next title bar
 
         // ===== sub-section : TEXT (clock typography) =====
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5])) catOpen_[5] = !catOpen_[5];
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], (catOpen_[5] ? 1.0f : 0.0f))) catOpen_[5] = !catOpen_[5];
         ROW_NEXT(42.0f)
         if (catOpen_[5] && c.mmClock) {
         { ROW_BAND(52.0f)   // element selector
@@ -98,11 +102,13 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
                         c.mmText[(cfgMmTextElem_ < 0 || cfgMmTextElem_ >= MM_TE_COUNT) ? 0 : cfgMmTextElem_], true);
         }   // end Text
+        ry += snap(16.0f);                                 // air between this section and the next title bar
 
         // ===== sub-section : SHAPE & FRAME =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Shape & Frame", "Forme & Cadre"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Shape & Frame", "Forme & Cadre"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
         ROW_NEXT(42.0f)
         if (aF7_ > 0.0f) {
             const float top7_ = ry;
@@ -135,11 +141,13 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         }
             cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
         }   // end Shape & Frame
+        ry += snap(16.0f);                                 // air between this section and the next title bar
 
         // ===== sub-section : MARKERS =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF8_ = cat_fold(CTRL_ID, catOpen_[8]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Markers", "Marqueurs"), catOpen_[8])) catOpen_[8] = !catOpen_[8];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[8], aF8_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Markers", "Marqueurs"), catOpen_[8], aF8_)) catOpen_[8] = !catOpen_[8];
         ROW_NEXT(42.0f)
         if (aF8_ > 0.0f) {
             const float top8_ = ry;
@@ -167,7 +175,7 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
             cat_fold_end(dev, ry, top8_, catH_[8], aF8_);
         }   // end Markers
 
-        ry += snap(10.0f);
+        ry += snap(16.0f);
     #undef MM_PCT_SLIDER
     #undef ROW_BAND
     #undef ROW_NEXT

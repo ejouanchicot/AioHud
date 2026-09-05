@@ -112,8 +112,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // The same block every module gets, because it drives the same shared code. Drawn by draw_frame_section so
     // the party box and the alliance boxes cannot drift apart -- they used to be two ~90-line copies.
     const float aS0_ = cat_fold(CTRL_ID, pcFrameOpen_);   // eased 0..1 : the card, the clip and ry all ride this
-    if (aS0_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[0] * aS0_);
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_)) pcFrameOpen_ = !pcFrameOpen_;
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[0], aS0_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_, aS0_)) pcFrameOpen_ = !pcFrameOpen_;
     ROW_NEXT(42.0f)
     if (aS0_ > 0.0f) {
         const float cTop_ = ry;
@@ -121,9 +121,10 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
                            0, nullptr,                                   // the party box IS the master : nothing to follow
                            &ui_config().skinTheme, &ui_config().skinHue, &ui_config().skinLum, &ui_config().skinBoxAlpha,
-                           &ui_config().border[0], &ui_config().borderCost, tr("Cost box", "BoÃ®te coÃ»t"));
+                           &ui_config().border[0], &ui_config().borderCost, tr("Cost box", "Bo\xC3\xAEte co\xC3\xBBt"));
         cat_fold_end(dev, ry, cTop_, pcFull_[0], aS0_);
     }   // end Frame
+    ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ========================================================== PARTY ==========================================================
     // The party box itself : whether it shows, how big, and what a member row carries. Its FRAME is the section
@@ -132,8 +133,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // The only section that really differs between modules, so it gets the room. Grouped by the OBJECT each setting
     // acts on -- gauges, badge, buffs, cursor -- which is what turns three rows into one.
     const float aS1_ = cat_fold(CTRL_ID, catOpen_[1]);   // eased 0..1 : the card, the clip and ry all ride this
-    if (aS1_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[1] * aS1_);
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[1], aS1_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1], aS1_)) catOpen_[1] = !catOpen_[1];
     ROW_NEXT(42.0f)
     if (aS1_ > 0.0f) {
         const float cTop_ = ry;
@@ -264,6 +265,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         }
         cat_fold_end(dev, ry, cTop_, pcFull_[1], aS1_);
     }   // end Party
+    ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ==================================================== ALLIANCE ====================================================
     // The SAME three sections as the party box, in the same order, holding the same kinds of thing. That is the
@@ -271,8 +273,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // never sends alliance buffs) and no selection cursor, so those simply do not appear -- a missing row is not a
     // different layout.
     const float aS2_ = cat_fold(CTRL_ID, catOpen_[7]);   // eased 0..1 : the card, the clip and ry all ride this
-    if (aS2_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[2] * aS2_);
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[2], aS2_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7], aS2_)) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (aS2_ > 0.0f) {
         const float cTop_ = ry;
@@ -358,11 +360,12 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         }
         cat_fold_end(dev, ry, cTop_, pcFull_[2], aS2_);
     }   // end Alliance
+    ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // =========================================================== TEXT ===========================================================
     const float aS3_ = cat_fold(CTRL_ID, catOpen_[0]);   // eased 0..1 : the card, the clip and ry all ride this
-    if (aS3_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[3] * aS3_);
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0])) catOpen_[0] = !catOpen_[0];
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[3], aS3_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0], aS3_)) catOpen_[0] = !catOpen_[0];
     ROW_NEXT(42.0f)
     if (aS3_ > 0.0f) {
         const float cTop_ = ry;
@@ -451,6 +454,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         }
         cat_fold_end(dev, ry, cTop_, pcFull_[3], aS3_);
     }   // end Text
+    ry += snap(16.0f);                                 // air between this section and the next title bar
     // ======================================================= BUFFS =======================================================
     // Everything about the buff strip in ONE place -- how big, how many, over how many lines, and in what order.
     // Splitting them was a failure of the panel's own rule: Content groups by the OBJECT a setting acts on, and the
@@ -459,8 +463,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // It is also why this is a top-level section rather than a sub-section: the band is an EDITOR, and nesting it
     // one level deeper is exactly the third disclosure level the research says to avoid.
     const float aS4_ = cat_fold(CTRL_ID, pcBuffsOpen_);   // eased 0..1 : the card, the clip and ry all ride this
-    if (aS4_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[4] * aS4_);
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_)) pcBuffsOpen_ = !pcBuffsOpen_;
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[4], aS4_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_, aS4_)) pcBuffsOpen_ = !pcBuffsOpen_;
     ROW_NEXT(42.0f)
     if (aS4_ > 0.0f) {
         const float cTop_ = ry;
@@ -975,6 +979,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         }
         cat_fold_end(dev, ry, cTop_, pcFull_[4], aS4_);
     }   // end Buffs
+    ry += snap(16.0f);                                 // air between this section and the next title bar
 
     #undef ROW_BAND
     #undef ROW_NEXT

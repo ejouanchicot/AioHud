@@ -29,7 +29,8 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         //       sub-sections like every other module (the sidebar already names the module). =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
         ROW_NEXT(42.0f)
         if (aF6_ > 0.0f) {
             const float top6_ = ry;
@@ -117,13 +118,16 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
           ROW_NEXT(46.0f)
         }
         }   // end own-theme rows (!plrThemeCopy)
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         }
             cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
         }   // end sub-section Box (catOpen_[6])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Content (what the hub shows) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
         ROW_NEXT(42.0f)
         if (aF7_ > 0.0f) {
             const float top7_ = ry;
@@ -144,10 +148,12 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         if (!(ui_config().plrEquip && ui_config().plrEquipDetach)) { ROW_TOGGLE(CTRL_ID, tr("Gil", "Gil"), ui_config().plrGil) }
             cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
         }   // end sub-section Content (catOpen_[7])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Identity (the job emblem is an icon -> size only) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF11_ = cat_fold(CTRL_ID, catOpen_[11]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Identity", "Identité"), catOpen_[11])) catOpen_[11] = !catOpen_[11];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[11], aF11_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Identity", "Identité"), catOpen_[11], aF11_)) catOpen_[11] = !catOpen_[11];
         ROW_NEXT(42.0f)
         if (aF11_ > 0.0f) {
             const float top11_ = ry;
@@ -162,10 +168,12 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         ROW_NEXT(46.0f)
             cat_fold_end(dev, ry, top11_, catH_[11], aF11_);
         }   // end sub-section Identity (catOpen_[11])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- Typography sub-section : per-element Font / Size / Outline / Style / Colour (Name / Level) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5])) catOpen_[5] = !catOpen_[5];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
         ROW_NEXT(42.0f)
         if (aF5_ > 0.0f) {
             const float top5_ = ry;
@@ -181,10 +189,12 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
                         ui_config().plrText[(cfgPlrTextElem_ < 0 || cfgPlrTextElem_ >= PLR_TE_COUNT) ? 0 : cfgPlrTextElem_], true);
             cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
         }   // end Text sub-section (catOpen_[5])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Bars (fiole size) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF8_ = cat_fold(CTRL_ID, catOpen_[8]);
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Bars", "Barres"), catOpen_[8])) catOpen_[8] = !catOpen_[8];
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[8], aF8_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Bars", "Barres"), catOpen_[8], aF8_)) catOpen_[8] = !catOpen_[8];
         ROW_NEXT(42.0f)
         if (aF8_ > 0.0f) {
             const float top8_ = ry;
@@ -215,8 +225,9 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         ROW_NEXT(46.0f)
             cat_fold_end(dev, ry, top8_, catH_[8], aF8_);
         }   // end sub-section Bars (catOpen_[8])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Buffs (only meaningful when Buffs are shown) ----
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), catOpen_[9])) catOpen_[9] = !catOpen_[9];
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), catOpen_[9], (catOpen_[9] ? 1.0f : 0.0f))) catOpen_[9] = !catOpen_[9];
         ROW_NEXT(42.0f)
         if (catOpen_[9] && ui_config().plrBuffs) {
         // Max Buffs : how many status icons to show at most.
@@ -237,8 +248,9 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         ROW_NEXT(46.0f)
         }   // end sub-section Buffs (catOpen_[9])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Equipment (the gear grid) ----
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Equipment", "Équipement"), catOpen_[12])) catOpen_[12] = !catOpen_[12];
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Equipment", "Équipement"), catOpen_[12], (catOpen_[12] ? 1.0f : 0.0f))) catOpen_[12] = !catOpen_[12];
         ROW_NEXT(42.0f)
         if (catOpen_[12] && ui_config().plrEquip) {
         // Mode : the equipment lives INSIDE the Player Hub (docked, placement below) or as its OWN standalone
@@ -292,13 +304,14 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         if (!ui_config().plrEqThemeBorder) {
         CFG_COLOR_PICKER(&ui_config().plrEqColor)
         }   // end custom colour (!plrEqThemeBorder)
+        ry += snap(16.0f);                                 // air between this section and the next title bar
         // Cell background : the cell FILL colour -- Default dark, or a custom colour (filled slots stay a touch brighter).
         ROW_CHOICE_G(CTRL_ID, tr("Cell background", "Fond des cases"), ui_config().plrEqCellBgCustom, tr("Custom", "Perso"), tr("Default", "Défaut"), 52.0f, 40.0f, 150.0f)
         if (ui_config().plrEqCellBgCustom) {
         CFG_COLOR_PICKER(&ui_config().plrEqCellBg)
         }   // end custom cell background
         }   // end sub-section Equipment (catOpen_[12])
-        ry += snap(10.0f);
+        ry += snap(16.0f);
 
     #undef ROW_BAND
     #undef ROW_NEXT
