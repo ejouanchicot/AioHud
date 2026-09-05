@@ -772,21 +772,6 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // through the big frame. Only the frame edge (border + top inner highlight) is kept. The Live preview
     // draws its OWN opaque backdrop, and each control carries its own faint row band -> nothing floats
     // unreadably. (This used to read "the nebula shows through" -- that procedural backdrop was removed.)
-    // The container's edging : the same metal as the masthead and the tabs, and the same bevel logic. This
-    // frame has square corners, so here straight lines ARE the right tool -- what carries the relief is not the
-    // shape but the LIGHTING: the top edge lit, the left in the body tone, the right and the bottom in shadow,
-    // as though the light came from above and to the left. A frame of one flat colour on all four sides is a
-    // rectangle drawn around some content; this one is a rim standing up around it.
-    // Sides first, then the horizontals across the full width, so the lit top runs corner to corner instead of
-    // being interrupted by the vertical edges. The white inner highlight that used to sit under the top is gone
-    // for the same reason it went from the tabs -- a white line beside a gold one belongs to another design.
-    { const float bwF = snap(2.0f);
-      flat(dev, ix, bodyY, bwF, bodyH, C_METAL);                                  // left  : the body of the metal
-      flat(dev, ix + iw - bwF, bodyY, bwF, bodyH, C_METAL_DEEP);                  // right : shadowed
-      flat(dev, ix, bodyY, iw, bwF, C_METAL_HI);                                  // top   : the lit facet
-      flat(dev, ix, bodyY + bodyH - bwF, iw, bwF, C_METAL_DEEP);                  // bottom: shadowed
-      flat(dev, ix + bwF, bodyY + bwF, iw - bwF * 2.0f, 1, 0x50000000u);          // one dark row inside the rim, so it seats on the content
-      flat(dev, ix + bwF, bodyY + bwF, 1, bodyH - bwF * 2.0f, 0x40000000u); }
 
     if (tab_ == 0) {
         if (profDirty_) { profile_refresh(); profDirty_ = false; }
@@ -964,6 +949,26 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     } else {
         draw_help_tab(f, dev, fo, mo, click, ix, iw, bodyY, bodyH, pageBot, pulse);
     }
+
+    // The container's edging, drawn AFTER every tab's content -- which is the whole point. It used to be drawn
+    // before, and the sidebar starts at exactly ix and painted straight over the left rim ; the preview and the
+    // scrolling content clipped the others in the same way. A frame goes ON TOP of what it frames, always : any
+    // other order leaves it at the mercy of whatever is laid down next.
+    // Same metal as the masthead and the tabs, and the same bevel logic. This
+    // frame has square corners, so here straight lines ARE the right tool -- what carries the relief is not the
+    // shape but the LIGHTING: the top edge lit, the left in the body tone, the right and the bottom in shadow,
+    // as though the light came from above and to the left. A frame of one flat colour on all four sides is a
+    // rectangle drawn around some content; this one is a rim standing up around it.
+    // Sides first, then the horizontals across the full width, so the lit top runs corner to corner instead of
+    // being interrupted by the vertical edges. The white inner highlight that used to sit under the top is gone
+    // for the same reason it went from the tabs -- a white line beside a gold one belongs to another design.
+    { const float bwF = snap(2.0f);
+      flat(dev, ix, bodyY, bwF, bodyH, C_METAL);                                  // left  : the body of the metal
+      flat(dev, ix + iw - bwF, bodyY, bwF, bodyH, C_METAL_DEEP);                  // right : shadowed
+      flat(dev, ix, bodyY, iw, bwF, C_METAL_HI);                                  // top   : the lit facet
+      flat(dev, ix, bodyY + bodyH - bwF, iw, bwF, C_METAL_DEEP);                  // bottom: shadowed
+      flat(dev, ix + bwF, bodyY + bwF, iw - bwF * 2.0f, 1, 0x50000000u);          // one dark row inside the rim, so it seats on the content
+      flat(dev, ix + bwF, bodyY + bwF, 1, bodyH - bwF * 2.0f, 0x40000000u); }
 
     fo->set_upper(false);   // clear the Interface UPPERCASE so the shared font atlas doesn't stay forced elsewhere
     draw_ui_cursor(f.dev, mo);   // ALWAYS : the overlay suppresses the OS cursor over the client area, so ours is the only one
