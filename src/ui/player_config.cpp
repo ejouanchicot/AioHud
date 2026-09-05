@@ -227,9 +227,13 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         }   // end sub-section Bars (catOpen_[8])
         ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Buffs (only meaningful when Buffs are shown) ----
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), catOpen_[9], (catOpen_[9] ? 1.0f : 0.0f))) catOpen_[9] = !catOpen_[9];
+        const float aF9b_ = cat_fold(CTRL_ID, catOpen_[9] && ui_config().plrBuffs);   // the section FOLDS -- and with the feature off there is nothing to reveal
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[9], aF9b_));
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), catOpen_[9], aF9b_)) catOpen_[9] = !catOpen_[9];
         ROW_NEXT(42.0f)
-        if (catOpen_[9] && ui_config().plrBuffs) {
+        if (aF9b_ > 0.0f) {
+            const float top9b_ = ry;
+            cat_fold_clip(dev, hdrX, top9b_, hdrW, catH_[9] * aF9b_);
         // Max Buffs : how many status icons to show at most.
         { ROW_BAND(46.0f)
             const float lo = 1.0f, hi = 32.0f; int cur = ui_config().plrBuffMax; if (cur < 1) cur = 1; if (cur > 32) cur = 32;
@@ -247,12 +251,17 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().plrIconSz = v < lo ? lo : (v > hi ? hi : v); }
         }
         ROW_NEXT(46.0f)
+            cat_fold_end(dev, ry, top9b_, catH_[9], aF9b_);
         }   // end sub-section Buffs (catOpen_[9])
         ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Equipment (the gear grid) ----
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Equipment", "Équipement"), catOpen_[12], (catOpen_[12] ? 1.0f : 0.0f))) catOpen_[12] = !catOpen_[12];
+        const float aF12b_ = cat_fold(CTRL_ID, catOpen_[12] && ui_config().plrEquip);   // the section FOLDS -- and with the feature off there is nothing to reveal
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[12], aF12b_));
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Equipment", "Équipement"), catOpen_[12], aF12b_)) catOpen_[12] = !catOpen_[12];
         ROW_NEXT(42.0f)
-        if (catOpen_[12] && ui_config().plrEquip) {
+        if (aF12b_ > 0.0f) {
+            const float top12b_ = ry;
+            cat_fold_clip(dev, hdrX, top12b_, hdrW, catH_[12] * aF12b_);
         // Mode : the equipment lives INSIDE the Player Hub (docked, placement below) or as its OWN standalone
         // box with its own size, dragged in //aio edit.
         ROW_CHOICE_G(CTRL_ID, tr("Mode", "Mode"), ui_config().plrEquipDetach, tr("Standalone", "Autonome"), tr("In Player", "Dans Player"), 52.0f, 40.0f, 150.0f)
@@ -310,6 +319,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         if (ui_config().plrEqCellBgCustom) {
         CFG_COLOR_PICKER(&ui_config().plrEqCellBg)
         }   // end custom cell background
+            cat_fold_end(dev, ry, top12b_, catH_[12], aF12b_);
         }   // end sub-section Equipment (catOpen_[12])
         ry += snap(16.0f);
 

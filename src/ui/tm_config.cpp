@@ -135,9 +135,13 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ===== sub-section : BUFF FILTER (job-agnostic checklist of buffs to show, grouped by magic family) =====
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buff filter", "Filtre de buffs"), trkSecOpen_, (trkSecOpen_ ? 1.0f : 0.0f))) trkSecOpen_ = !trkSecOpen_;
+    const float aFtrk_ = cat_fold(CTRL_ID, trkSecOpen_);   // the section FOLDS -- and with the feature off there is nothing to reveal
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(trkSecFull_, aFtrk_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buff filter", "Filtre de buffs"), trkSecOpen_, aFtrk_)) trkSecOpen_ = !trkSecOpen_;
     ROW_NEXT(42.0f)
-    if (trkSecOpen_) {
+    if (aFtrk_ > 0.0f) {
+        const float topTrk_ = ry;
+        cat_fold_clip(dev, hdrX, topTrk_, hdrW, trkSecFull_ * aFtrk_);
         { ROW_BAND(58.0f)   // LEGEND : one click on a spell's dot cycles it through these 4 states (dots match the checklist below)
             const float ty = ry + yo, lx = coX + snap(6.0f), lr = snap(4.0f), colW = ctrlW * 0.5f;
             struct LG { int focus, off; const char* en; const char* fr; };
@@ -407,6 +411,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         #undef BF_FOFF
         #undef BF_SET
         #undef BF_FSET
+        cat_fold_end(dev, ry, topTrk_, trkSecFull_, aFtrk_);
     }   // end Buff filter
 
     ry += snap(16.0f);

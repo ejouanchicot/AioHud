@@ -19,9 +19,13 @@ void ConfigPage::draw_tp_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     UiConfig& c = ui_config();
 
     // ===== sub-section : DISPLAY =====
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], (catOpen_[6] ? 1.0f : 0.0f))) catOpen_[6] = !catOpen_[6];
+    const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);   // the section FOLDS, like every other module
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // ... and it IS a card, collapsed or not
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
-    if (catOpen_[6]) {
+    if (aF6_ > 0.0f) {
+        const float top6_ = ry;
+        cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
         ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.tpShow)   // Show
         { ROW_BAND(46.0f)   // Size
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tpScale * 100.0f + 0.5f));
@@ -39,13 +43,18 @@ void ConfigPage::draw_tp_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const float ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Appears when items are in the lottery pool.", "Appara\xC3\xAet quand des items sont dans le pool."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         } ROW_NEXT(40.0f)
+        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
     }   // end Display
     ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ===== sub-section : TEXT (per-element typography, like the other modules) =====
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], (catOpen_[5] ? 1.0f : 0.0f))) catOpen_[5] = !catOpen_[5];
+    const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);   // the section FOLDS, like every other module
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // ... and it IS a card, collapsed or not
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
     ROW_NEXT(42.0f)
-    if (catOpen_[5]) {
+    if (aF5_ > 0.0f) {
+        const float top5_ = ry;
+        cat_fold_clip(dev, hdrX, top5_, hdrW, catH_[5] * aF5_);
         { ROW_BAND(52.0f)   // element selector
             const char* TLBL[TP_TE_COUNT] = { tr("Index", "Index"), tr("Name", "Nom"), tr("Timer", "Timer"), tr("Winner", "Gagnant") };
             int te = (cfgTpTextElem_ < 0 || cfgTpTextElem_ >= TP_TE_COUNT) ? 0 : cfgTpTextElem_;
@@ -54,6 +63,7 @@ void ConfigPage::draw_tp_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         ROW_NEXT(52.0f)
         draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
                         c.tpText[(cfgTpTextElem_ < 0 || cfgTpTextElem_ >= TP_TE_COUNT) ? 0 : cfgTpTextElem_]);
+        cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
     }   // end Text
 
     ry += snap(16.0f);

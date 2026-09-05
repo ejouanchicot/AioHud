@@ -19,9 +19,13 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     UiConfig& c = ui_config();
 
     // ===== sub-section : DISPLAY =====
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], (catOpen_[6] ? 1.0f : 0.0f))) catOpen_[6] = !catOpen_[6];
+    const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);   // the section FOLDS, like every other module
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // ... and it IS a card, collapsed or not
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
-    if (catOpen_[6]) {
+    if (aF6_ > 0.0f) {
+        const float top6_ = ry;
+        cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
         ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.wsShow)   // Show on weaponskill
         { ROW_BAND(46.0f)   // Size
             const float lo = 0.50f, hi = 2.50f; char b[16]; sprintf(b, "%d%%", (int)(c.wsScale * 100.0f + 0.5f));
@@ -33,13 +37,18 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { c.wsFont = wrap(fc + d, ui_font_count()); save_ui_config(); }
         } ROW_NEXT(52.0f)
         ROW_TOGGLE(CTRL_ID, tr("Impact effects", "Effets d'impact"), c.wsFx)   // Impact effects
+        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
     }   // end Display
     ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ===== sub-section : COLOURS =====
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Colours", "Couleurs"), catOpen_[7], (catOpen_[7] ? 1.0f : 0.0f))) catOpen_[7] = !catOpen_[7];
+    const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);   // the section FOLDS, like every other module
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // ... and it IS a card, collapsed or not
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Colours", "Couleurs"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
-    if (catOpen_[7]) {
+    if (aF7_ > 0.0f) {
+        const float top7_ = ry;
+        cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
         struct ColRow { const char* en; const char* fr; unsigned* col; };
         ColRow cols[3] = {
             { "Name",     "Nom",       &c.wsNameCol },
@@ -56,6 +65,7 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             } ROW_NEXT(52.0f)
             CFG_COLOR_PICKER_I(&F, i)   // loop variant : distinct drag/hover uids per colour row
         }
+        cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
     }   // end Colours
 
     ry += snap(16.0f);
