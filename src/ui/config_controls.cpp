@@ -284,6 +284,7 @@ enum { SCL_ENABLE = 52, SCL_FAIL = 53, SCL_ZFAIL = 54, SCL_PASS = 55, SCL_FUNC =
 enum { STOP_KEEP = 1, STOP_REPLACE = 3, STOP_INCRSAT = 4, STOP_DECRSAT = 5, SCMP_EQUAL = 3, SCMP_ALWAYS = 8 };
 static struct ClipRect { float x, y, w, h; } g_clipStack[6];
 static int g_clipDepth = 0;
+static int g_clipSkipped = 0;   // begins refused for want of depth ; their end() must still be swallowed
 
 void clip_rect_begin(u32 dev, float x, float y, float w, float h) {
     if (g_clipDepth >= (int)(sizeof(g_clipStack) / sizeof(g_clipStack[0]))) {
@@ -291,6 +292,7 @@ void clip_rect_begin(u32 dev, float x, float y, float w, float h) {
         // somewhere else entirely, which is a long way from here.
         static bool full = false;
         if (!full) { full = true; windower::debug::log("clip_rect_begin(): nesting too deep (%d) -- this clip is a no-op", g_clipDepth); }
+        ++g_clipSkipped;   // its end() is coming regardless, and must NOT pop a level it never pushed
         return;
     }
     const int d = g_clipDepth;
@@ -321,6 +323,7 @@ void clip_rect_begin(u32 dev, float x, float y, float w, float h) {
     dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
 }
 void clip_rect_end(u32 dev) {
+    if (g_clipSkipped > 0) { --g_clipSkipped; return; }   // the matching begin was refused : leave the stencil alone
     if (g_clipDepth <= 0) { dSetRS(dev, SCL_ENABLE, 0); dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F); return; }
     const int d = --g_clipDepth;
     if (d == 0) {                                                  // outermost : just switch the test off

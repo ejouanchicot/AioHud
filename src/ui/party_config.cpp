@@ -111,7 +111,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // ========================================================== FRAME =========================================================
     // The same block every module gets, because it drives the same shared code. Drawn by draw_frame_section so
     // the party box and the alliance boxes cannot drift apart -- they used to be two ~90-line copies.
-    const float pcTop0 = ry;   // the card is drawn from LAST frame's height, behind this section
     const float aS0_ = cat_fold(CTRL_ID, pcFrameOpen_);   // eased 0..1 : the card, the clip and ry all ride this
     if (aS0_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[0] * aS0_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_)) pcFrameOpen_ = !pcFrameOpen_;
@@ -125,7 +124,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                            &ui_config().border[0], &ui_config().borderCost, tr("Cost box", "BoÃ®te coÃ»t"));
         cat_fold_end(dev, ry, cTop_, pcFull_[0], aS0_);
     }   // end Frame
-    pcH_[0] = (aS0_ > 0.0f) ? (ry - pcTop0) : 0.0f;   // measured -> next frame's card
 
     // ========================================================== PARTY ==========================================================
     // The party box itself : whether it shows, how big, and what a member row carries. Its FRAME is the section
@@ -133,7 +131,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // the strip is one object and its editor belongs with the settings that describe it.
     // The only section that really differs between modules, so it gets the room. Grouped by the OBJECT each setting
     // acts on -- gauges, badge, buffs, cursor -- which is what turns three rows into one.
-    const float pcTop1 = ry;   // the card is drawn from LAST frame's height, behind this section
     const float aS1_ = cat_fold(CTRL_ID, catOpen_[1]);   // eased 0..1 : the card, the clip and ry all ride this
     if (aS1_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[1] * aS1_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
@@ -267,14 +264,12 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         }
         cat_fold_end(dev, ry, cTop_, pcFull_[1], aS1_);
     }   // end Party
-    pcH_[1] = (aS1_ > 0.0f) ? (ry - pcTop1) : 0.0f;   // measured -> next frame's card
 
     // ==================================================== ALLIANCE ====================================================
     // The SAME three sections as the party box, in the same order, holding the same kinds of thing. That is the
     // point of a grammar : what you learned one category up still applies here. Alliance has no buff strip (the game
     // never sends alliance buffs) and no selection cursor, so those simply do not appear -- a missing row is not a
     // different layout.
-    const float pcTop2 = ry;   // the card is drawn from LAST frame's height, behind this section
     const float aS2_ = cat_fold(CTRL_ID, catOpen_[7]);   // eased 0..1 : the card, the clip and ry all ride this
     if (aS2_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[2] * aS2_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
@@ -363,10 +358,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         }
         cat_fold_end(dev, ry, cTop_, pcFull_[2], aS2_);
     }   // end Alliance
-    pcH_[2] = (aS2_ > 0.0f) ? (ry - pcTop2) : 0.0f;   // measured -> next frame's card
 
     // =========================================================== TEXT ===========================================================
-    const float pcTop3 = ry;   // the card is drawn from LAST frame's height, behind this section
     const float aS3_ = cat_fold(CTRL_ID, catOpen_[0]);   // eased 0..1 : the card, the clip and ry all ride this
     if (aS3_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[3] * aS3_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0])) catOpen_[0] = !catOpen_[0];
@@ -458,7 +451,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         }
         cat_fold_end(dev, ry, cTop_, pcFull_[3], aS3_);
     }   // end Text
-    pcH_[3] = (aS3_ > 0.0f) ? (ry - pcTop3) : 0.0f;   // measured -> next frame's card
     // ======================================================= BUFFS =======================================================
     // Everything about the buff strip in ONE place -- how big, how many, over how many lines, and in what order.
     // Splitting them was a failure of the panel's own rule: Content groups by the OBJECT a setting acts on, and the
@@ -466,7 +458,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // "how do my buffs show up" meant visiting two places.
     // It is also why this is a top-level section rather than a sub-section: the band is an EDITOR, and nesting it
     // one level deeper is exactly the third disclosure level the research says to avoid.
-    const float pcTop4 = ry;   // the card is drawn from LAST frame's height, behind this section
     const float aS4_ = cat_fold(CTRL_ID, pcBuffsOpen_);   // eased 0..1 : the card, the clip and ry all ride this
     if (aS4_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[4] * aS4_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_)) pcBuffsOpen_ = !pcBuffsOpen_;
@@ -984,7 +975,6 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         }
         cat_fold_end(dev, ry, cTop_, pcFull_[4], aS4_);
     }   // end Buffs
-    pcH_[4] = (aS4_ > 0.0f) ? (ry - pcTop4) : 0.0f;   // measured -> next frame's card
 
     #undef ROW_BAND
     #undef ROW_NEXT

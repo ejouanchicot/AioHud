@@ -234,11 +234,9 @@ private:
     // Each open section's measured height -> its card is drawn a frame later, the same one-frame-late trick the
     // Interface and Layout categories already use. Immediate mode cannot know a block's height before drawing it,
     // and a card drawn after its rows would cover them.
-    float pcH_[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };   // 0=Frame 1=Party 2=Alliance 3=Text 4=Buffs
-    // The party panel's five sections OPEN and CLOSE over time instead of appearing whole. pcA_ is the eased
-    // progress, pcFull_ the content's natural height -- which is free to measure, because the rows are always
-    // laid out in full and only the DRAWING is clipped. That is what makes an accordion animatable at all:
-    // you cannot reveal a height you have not measured, and you cannot measure one you have not laid out.
+    // The party panel's five sections. pcFull_ is each one's natural content height -- free to measure,
+    // because the rows are always laid out in full and only the DRAWING is clipped (cat_fold, which owns
+    // the progress). 0=Frame 1=Party 2=Alliance 3=Text 4=Buffs.
     float pcFull_[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
     bool  pcFrameOpen_   = false;
     bool  pcBuffsOpen_   = false;   // Buffs : the strip's size/count/rows AND its order editor, one object in one place
