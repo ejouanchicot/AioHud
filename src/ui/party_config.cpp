@@ -113,28 +113,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // the party box and the alliance boxes cannot drift apart -- they used to be two ~90-line copies.
     const float pcTop0 = ry;   // the card is drawn from LAST frame's height, behind this section
     if (pcFrameOpen_) cat_panel(dev, hdrX, ry, hdrW, pcH_[0]);
-    // Each header carries a live summary of what is inside it, in the state it is in. Five collapsed words down
-    // a 900px column is a page that says nothing until you open something ; the same five with their current
-    // values is a page you can read at a glance and open only when you mean to change something.
-    static char noteBuf[5][64];
-    { const UiConfig& c = ui_config();
-      _snprintf(noteBuf[0], sizeof(noteBuf[0]), "%s",
-                (c.partyShow && c.allyShow) ? tr("party + alliance", "party + alliance")
-              : c.partyShow                 ? tr("party only", "party seule")
-              : c.allyShow                  ? tr("alliance only", "alliance seule")
-                                            : tr("hidden", "masque"));
-      _snprintf(noteBuf[1], sizeof(noteBuf[1]), tr("scale %d%%, bars %d%%", "echelle %d%%, barres %d%%"),
-                (int)(c.box[0].scale * 100.0f + 0.5f), (int)(c.barWidth[0] * 100.0f + 0.5f));
-      _snprintf(noteBuf[2], sizeof(noteBuf[2]), "%s", c.allyShow ? tr("shown", "affichee") : tr("hidden", "masquee"));
-      _snprintf(noteBuf[3], sizeof(noteBuf[3]), tr("name %d%%, hp %d%%", "nom %d%%, pv %d%%"),
-                (int)(c.text[0][TE_NAME].size * 100.0f + 0.5f), (int)(c.text[0][TE_HP].size * 100.0f + 0.5f));
-      { int hid = 0; for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) if (c.buff_group_hidden(g)) ++hid;
-        if (hid) _snprintf(noteBuf[4], sizeof(noteBuf[4]), tr("%d groups, %d hidden", "%d groupes, %d masques"),
-                           UiConfig::BUFF_ORDER_N, hid);
-        else     _snprintf(noteBuf[4], sizeof(noteBuf[4]), tr("%d groups, max %d", "%d groupes, max %d"),
-                           UiConfig::BUFF_ORDER_N, c.buffMax); }
-      for (int k = 0; k < 5; ++k) noteBuf[k][sizeof(noteBuf[0]) - 1] = 0; }   // _snprintf does not terminate on truncation
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_, noteBuf[0])) pcFrameOpen_ = !pcFrameOpen_;
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_)) pcFrameOpen_ = !pcFrameOpen_;
     ROW_NEXT(42.0f)
     if (pcFrameOpen_) {
         draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
@@ -152,7 +131,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // acts on -- gauges, badge, buffs, cursor -- which is what turns three rows into one.
     const float pcTop1 = ry;   // the card is drawn from LAST frame's height, behind this section
     if (catOpen_[1]) cat_panel(dev, hdrX, ry, hdrW, pcH_[1]);
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1], noteBuf[1])) catOpen_[1] = !catOpen_[1];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
     ROW_NEXT(42.0f)
     if (catOpen_[1]) {
         // Show + Size : the two settings everyone touches, first, on one line.
@@ -289,7 +268,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // different layout.
     const float pcTop2 = ry;   // the card is drawn from LAST frame's height, behind this section
     if (catOpen_[7]) cat_panel(dev, hdrX, ry, hdrW, pcH_[2]);
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7], noteBuf[2])) catOpen_[7] = !catOpen_[7];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (catOpen_[7]) {
         // ---- General ----
@@ -377,7 +356,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // =========================================================== TEXT ===========================================================
     const float pcTop3 = ry;   // the card is drawn from LAST frame's height, behind this section
     if (catOpen_[0]) cat_panel(dev, hdrX, ry, hdrW, pcH_[3]);
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0], noteBuf[3])) catOpen_[0] = !catOpen_[0];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0])) catOpen_[0] = !catOpen_[0];
     ROW_NEXT(42.0f)
     if (catOpen_[0]) {
         { ROW_BAND(56.0f)   // which box's text : Party / Alliance
@@ -473,7 +452,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // one level deeper is exactly the third disclosure level the research says to avoid.
     const float pcTop4 = ry;   // the card is drawn from LAST frame's height, behind this section
     if (pcBuffsOpen_) cat_panel(dev, hdrX, ry, hdrW, pcH_[4]);
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_, noteBuf[4])) pcBuffsOpen_ = !pcBuffsOpen_;
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_)) pcBuffsOpen_ = !pcBuffsOpen_;
     ROW_NEXT(42.0f)
     if (pcBuffsOpen_) {
         { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // how big, and how many

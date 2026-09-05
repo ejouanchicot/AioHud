@@ -194,10 +194,11 @@ bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
 bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
               float x, float y, float w, float h, const char* label, int tone);
 void cat_panel(u32 dev, float x, float y, float w, float h);
-// `note` is a short live summary drawn right-aligned on the header : what the section CONTAINS, in the state
-// it is currently in. A page whose sections are all collapsed is otherwise a column of five words and a lot
-// of nothing -- the summary is what makes a closed section worth reading instead of merely worth opening.
+// (No summary parameter. One was added when the header was a caret and a word, to give a collapsed page
+//  something to read ; once the header became a real title bar the bar itself carried that weight, and a
+//  value crowded against the disclosure triangle was two things competing for the same end of the same
+//  object. The emptiness it was answering is a LAYOUT problem, and a caption is not a layout.)
 bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
-                float x, float y, float w, const char* label, bool open, const char* note = 0);
+                float x, float y, float w, const char* label, bool open);
 
 } // namespace aio

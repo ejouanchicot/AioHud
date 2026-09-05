@@ -796,17 +796,11 @@ void cat_panel(u32 dev, float x, float y, float w, float h) {
     // It is a step LIGHTER than the content surface now, and the border is barely there.
     rpanel(dev, x, y, w, h, snap(9.0f), 0xF41E262E, 0xF4151C23, 0x1AFFFFFFu, snap(1.0f));
     flat(dev, x + snap(9.0f), y + snap(1.0f), w - snap(18.0f), 1, 0x16FFFFFF);           // the light catches the top edge
-    // A slim accent rail down the open section : it says WHERE you are without spending another label on it.
-    // It starts BELOW the header. The card is drawn at the same y as the section's cat_header and therefore
-    // spans it -- a rail from the card's top ran straight through the title bar and out of its rounded left
-    // edge. CAT_HEADER_ADV is the row the callers advance by (cat_header is 32 tall inside a 42 slot), so the
-    // rail begins where the section's CONTENT begins, which is the thing it is pointing at.
-    const float railY = y + CAT_HEADER_ADV, railH = h - CAT_HEADER_ADV - snap(9.0f);
-    if (railH > snap(8.0f))
-        rrect_fill(dev, x + snap(2.0f), railY, snap(3.0f), railH, snap(1.5f),
-                   (C_ACCENTHI & 0x00FFFFFF) | 0x70000000u, (C_ACCENT & 0x00FFFFFF) | 0x30000000u);
+    // (No accent rail down the left. It was meant to say WHERE you are without spending a label on it, and it
+    //  said nothing the open title bar was not already saying by its shape -- one section is open, this is it.
+    //  A mark that repeats what the structure already states is decoration, and it read as one.)
 }
-bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, float x, float y, float w, const char* label, bool open, const char* note) {
+bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, float x, float y, float w, const char* label, bool open) {
     // A SECTION HEADER IS A TITLE BAR, not a caret with a word after it.
     // It used to be the quietest possible mark -- a small arrow, an uppercase label, a hairline running out to
     // the right -- on the argument that a heading should not shout like the controls it introduces. That was
@@ -829,14 +823,11 @@ bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, fl
     if (open) rrect_top(dev, x, y, w, h, r, fT, fB);        // square feet -> it joins the panel below
     else      rrect_fill(dev, x, y, w, h, r, fT, fB);
     flat(dev, x + r, y + snap(1.0f), w - r * 2.0f, 1, ((u32)(0x18 + (u32)(0x12 * t)) << 24) | 0x00FFFFFFu);   // the light catches its top edge
-    if (open) flat(dev, x + snap(2.0f), y + snap(7.0f), snap(3.0f), h - snap(7.0f), (C_ACCENTHI & 0x00FFFFFFu) | 0xB0000000u);   // the rail starts in the title and runs on down the card
 
     // The label in the heading's uppercase ; the note beside it in the ordinary case, because it is a value.
     const bool up0 = fo->upper();
     fo->set_upper(true);
     const float tx = x + (open ? snap(16.0f) : snap(14.0f)), gy = y + h * 0.5f;
-    float noteW = 0.0f;
-    if (note && *note) { fo->set_upper(false); noteW = fo->measure(note, ts_note()); fo->set_upper(true); }
 
     // The chevron sits at the RIGHT end, which is where a disclosure control belongs when the label is on the
     // left : the two ends of the bar are its two jobs, naming and opening. It points DOWN when open, at what it
@@ -852,12 +843,6 @@ bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, fl
 
     fo->begin(dev);
     fo->draw_lc(dev, tx, gy, label, ts_section(), fa(lerpc(C_DIM, C_TEXT, o > t ? o : t)), fa(C_STROKE), 1.2f);
-    if (noteW > 0.0f) {
-        fo->set_upper(false);
-        fo->draw_lc(dev, x + w - snap(30.0f) - noteW, gy, note, ts_note(),
-                    fa(lerpc(C_MUTE, C_DIM, o > t ? o : t)), fa(C_STROKE), 1.0f);
-        fo->set_upper(true);
-    }
     fo->set_upper(up0);                                                                      // put the font back as we found it
     return hov && click;
 }
