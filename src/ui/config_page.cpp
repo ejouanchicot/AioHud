@@ -735,10 +735,13 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // Vertical gradient, not one flat colour: lit at the top, shadowed at the bottom, the same bevel the
         // masthead's rails use. Three pixels on the selected tab and two elsewhere -- a one-pixel line reads as
         // a hairline drawn on the tab, where an edging has to read as the tab's own edge.
-        { const float bw2 = tabBw;   // one thickness for all six : the SELECTION is carried by tone, not by weight
-          const float w2  = active ? 1.0f : (0.28f + 0.42f * hov_[i]);
-          const u32 gTop = (C_METAL_HI   & 0x00FFFFFFu) | ((u32)(235.0f * w2) << 24);
-          const u32 gBot = (C_METAL_DEEP & 0x00FFFFFFu) | ((u32)(205.0f * w2) << 24);
+        // GOLD on the selected tab, STEEL on the rest -- which is what finally makes the strip read as a
+        // selection instead of as six outlined boxes. Equal gold on all six was a grid: the same colour marking
+        // the brand, the structure AND the choice cannot mark any of them.
+        { const float bw2 = tabBw;   // one thickness for all six : the SELECTION is carried by ALLOY, not by weight
+          const float w2  = active ? 1.0f : (0.34f + 0.40f * hov_[i]);
+          const u32 gTop = ((active ? C_METAL_HI   : C_STEEL_HI)   & 0x00FFFFFFu) | ((u32)(235.0f * w2) << 24);
+          const u32 gBot = ((active ? C_METAL_DEEP : C_STEEL_DEEP) & 0x00FFFFFFu) | ((u32)(205.0f * w2) << 24);
           rrect_top(dev, tx - bw2, tabY - bw2, tabW + bw2 * 2.0f, tabH + bw2, tr + bw2, gTop, gBot); }
         if (active) {
             halo(dev, cxT - snap(2.0f), cyT, tabW * 0.5f, tabH * 0.5f, C_GOLD, 0.35f + 0.2f * pulse);      // accent seat glow
@@ -844,7 +847,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             // subtle frame delineates the window.
             pvStageX_ = pvx; pvStageY_ = stageY; pvStageW_ = previewW; pvStageH_ = stageH;
             drop_shadow(dev, pvx, stageY, previewW, stageH, snap(6.0f), 70);
-            rrect_stroke(dev, pvx, stageY, previewW, stageH, snap(12.0f), 0x7AAEC4EEu, snap(1.5f));   // thin window frame
+            rrect_stroke(dev, pvx, stageY, previewW, stageH, snap(12.0f), (C_STEEL & 0x00FFFFFFu) | 0x9A000000u, snap(1.5f));   // structure -> steel, like the container it sits in
             pvRightX_  = pvx + previewW - snap(18.0f);
             pvBottomY_ = stageY + stageH - snap(14.0f);
             pvCX_      = pvx + previewW * 0.5f;
@@ -972,11 +975,14 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // Sides first, then the horizontals across the full width, so the lit top runs corner to corner instead of
     // being interrupted by the vertical edges. The white inner highlight that used to sit under the top is gone
     // for the same reason it went from the tabs -- a white line beside a gold one belongs to another design.
+    // STEEL, not gold. This frame is the largest field of metal on the page and it marks the least important
+    // thing on it -- that a box exists. In gold it out-shouted the logotype, which is the one thing that should
+    // be the brightest gold on screen. Same bevel, same lighting, a different alloy.
     { const float bwF = snap(3.0f);   // the tabs' rim thickness : the two edges meet with no step
-      flat(dev, ix, bodyY, bwF, bodyH, C_METAL);                                  // left  : the body of the metal
-      flat(dev, ix + iw - bwF, bodyY, bwF, bodyH, C_METAL_DEEP);                  // right : shadowed
-      flat(dev, ix, bodyY, iw, bwF, C_METAL_HI);                                  // top   : the lit facet
-      flat(dev, ix, bodyY + bodyH - bwF, iw, bwF, C_METAL_DEEP);                  // bottom: shadowed
+      flat(dev, ix, bodyY, bwF, bodyH, C_STEEL);                                  // left  : the body of the metal
+      flat(dev, ix + iw - bwF, bodyY, bwF, bodyH, C_STEEL_DEEP);                  // right : shadowed
+      flat(dev, ix, bodyY, iw, bwF, C_STEEL_HI);                                  // top   : the lit facet
+      flat(dev, ix, bodyY + bodyH - bwF, iw, bwF, C_STEEL_DEEP);                  // bottom: shadowed
       flat(dev, ix + bwF, bodyY + bwF, iw - bwF * 2.0f, 1, 0x50000000u);          // one dark row inside the rim, so it seats on the content
       flat(dev, ix + bwF, bodyY + bwF, 1, bodyH - bwF * 2.0f, 0x40000000u); }
 

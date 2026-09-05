@@ -41,6 +41,13 @@ extern u32 C_GOLD, C_GOLDHI, C_GOLD_DEEP;
 static const u32 C_METAL_HI   = 0xFFFFE9A8;   // polished top facet
 static const u32 C_METAL      = 0xFFE3B44E;   // the body of the metal
 static const u32 C_METAL_DEEP = 0xFF8A5F22;   // shadowed underside
+// The SECOND metal. Two metals, two jobs, and the split is the whole point: gold says "this is the brand"
+// or "this is selected", steel says "this is structure". When one colour said all three the page read as a
+// skin -- the biggest field of gold on screen was the container's perimeter, which is the least important
+// thing on it. Cool and slightly blue, so it sits with the dark UI instead of looking like dirty gold.
+static const u32 C_STEEL_HI   = 0xFFD8DEE6;
+static const u32 C_STEEL      = 0xFF8E9AA8;
+static const u32 C_STEEL_DEEP = 0xFF454E5C;
 extern u32 C_CTL_T, C_CTL_B, C_CTL_BR, C_ARROW;
 extern u32 C_TABON_T, C_TABON_B;
 extern u32 C_ROWON_T, C_ROWON_B;
