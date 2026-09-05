@@ -708,15 +708,17 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     const float iconS = snap(19.0f), iconGap = snap(9.0f);
     const float stripW = NTABS * tabW + (NTABS - 1) * tabGap;
     // a recessed graphite track the pills sit IN -> depth (the active one lifts out of it)
-    // The seat is FLUSH with the tabs, not 3px wider on each side. ix is the only vertical line this page
-    // has -- the sidebar, the section title and every control start on it -- and a track that overhung it by
-    // three pixels was the one element breaking it. A seat that frames its tabs exactly reads as deliberate ;
-    // one that misses the column edge by three reads as a mistake, which is what it was.
-    rrect_top(dev, ix, tabY - snap(2.0f), stripW, tabH + snap(2.0f), snap(13.0f), 0x66070B0E, 0x8804070A);
-    flat(dev, ix, tabY - snap(2.0f), stripW, 1, 0x10FFFFFF);   // track top hairline
+    // ix is the only vertical line this page has -- the sidebar, the section title, every control and now the
+    // container's left rim all start on it -- and what has to sit on it is the OUTER edge of the first tab's
+    // edging, not the tab's fill. So the tabs are inset by exactly one border width and the metal takes up the
+    // space: the first tab's rim and the container's rim are then one continuous vertical line down the page.
+    // Same thickness on both for the same reason -- 3px against 2px would meet with a one-pixel step.
+    const float tabBw = snap(3.0f);
+    rrect_top(dev, ix, tabY - snap(2.0f), stripW + tabBw * 2.0f, tabH + snap(2.0f), snap(13.0f), 0x66070B0E, 0x8804070A);
+    flat(dev, ix, tabY - snap(2.0f), stripW + tabBw * 2.0f, 1, 0x10FFFFFF);   // track top hairline
     float activeX = ix;
     for (int i = 0; i < NTABS; ++i) {
-        const float tx = ix + i * (tabW + tabGap);
+        const float tx = ix + tabBw + i * (tabW + tabGap);   // inset by the rim, so the rim itself lands on ix
         const float cxT = tx + tabW * 0.5f, cyT = tabY + tabH * 0.5f;
         const bool active = (i == tab_);
         const bool hover  = inrect(mo, tx, tabY, tabW, tabH);
@@ -733,7 +735,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // Vertical gradient, not one flat colour: lit at the top, shadowed at the bottom, the same bevel the
         // masthead's rails use. Three pixels on the selected tab and two elsewhere -- a one-pixel line reads as
         // a hairline drawn on the tab, where an edging has to read as the tab's own edge.
-        { const float bw2 = active ? snap(3.0f) : snap(2.0f);
+        { const float bw2 = tabBw;   // one thickness for all six : the SELECTION is carried by tone, not by weight
           const float w2  = active ? 1.0f : (0.28f + 0.42f * hov_[i]);
           const u32 gTop = (C_METAL_HI   & 0x00FFFFFFu) | ((u32)(235.0f * w2) << 24);
           const u32 gBot = (C_METAL_DEEP & 0x00FFFFFFu) | ((u32)(205.0f * w2) << 24);
@@ -962,7 +964,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // Sides first, then the horizontals across the full width, so the lit top runs corner to corner instead of
     // being interrupted by the vertical edges. The white inner highlight that used to sit under the top is gone
     // for the same reason it went from the tabs -- a white line beside a gold one belongs to another design.
-    { const float bwF = snap(2.0f);
+    { const float bwF = snap(3.0f);   // the tabs' rim thickness : the two edges meet with no step
       flat(dev, ix, bodyY, bwF, bodyH, C_METAL);                                  // left  : the body of the metal
       flat(dev, ix + iw - bwF, bodyY, bwF, bodyH, C_METAL_DEEP);                  // right : shadowed
       flat(dev, ix, bodyY, iw, bwF, C_METAL_HI);                                  // top   : the lit facet
