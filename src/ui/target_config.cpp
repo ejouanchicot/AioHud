@@ -30,9 +30,13 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
     // ROW_BAND / ROW_NEXT come from config_rows.h (dev/bandX/bandW/e/ry/ri/anim_ are all in scope here).
         // ===== sub-section : DISPLAY (box chrome + size + placement). No outer "Target" wrapper -- opens straight
         //       into its sub-sections like every other module (the sidebar already names the module). =====
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
         ROW_NEXT(42.0f)
-        if (catOpen_[6]) {
+        if (aF6_ > 0.0f) {
+            const float top6_ = ry;
+            cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
         // Show : master on/off for the WHOLE Target module (hidden everywhere when off ; other rows stay editable).
         ROW_TOGGLE_G(CTRL_ID, tr("Show", "Afficher"), ui_config().tgtShow, 52.0f, 40.0f, 150.0f)
         // Size : scale the whole target box (canonical : right after Show, before the Box chrome).
@@ -130,11 +134,16 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(14.0f), h, snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         }
         ROW_NEXT(34.0f)
+            cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
         }   // end sub-section Box / Frame (catOpen_[6])
         // ---- sub-section : Bars ----
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Bars", "Barres"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
         ROW_NEXT(42.0f)
-        if (catOpen_[7]) {
+        if (aF7_ > 0.0f) {
+            const float top7_ = ry;
+            cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
         // Bar Height : the HP fiole height.
         { ROW_BAND(46.0f)
             const float lo = 0.60f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().tgtBarH * 100.0f + 0.5f));
@@ -160,11 +169,16 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().tgtRangeH = v < lo ? lo : (v > hi ? hi : v); }
           ROW_NEXT(46.0f)
         }
+            cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
         }   // end sub-section Bars (catOpen_[7])
         // ---- sub-section : Detail ----
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF8_ = cat_fold(CTRL_ID, catOpen_[8]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Detail", "Détail"), catOpen_[8])) catOpen_[8] = !catOpen_[8];
         ROW_NEXT(42.0f)
-        if (catOpen_[8]) {
+        if (aF8_ > 0.0f) {
+            const float top8_ = ry;
+            cat_fold_clip(dev, hdrX, top8_, hdrW, catH_[8] * aF8_);
         // Name colour by hostility : red = claimed by another, orange = engaged/in combat.
         { ROW_BAND(52.0f)
             const float rowH = snap(40.0f), ty = ry + yo;
@@ -233,11 +247,16 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         ROW_TOGGLE_G(CTRL_ID, tr("Cast", "Sort"), ui_config().tgtCast, 52.0f, 40.0f, 112.0f)
         // Cast placeholder : a demo cast bar during normal play so it can be positioned even when not casting.
         ROW_TOGGLE_G(CTRL_ID, tr("Cast placeholder", "Sort fictif"), ui_config().tgtCastDemo, 52.0f, 40.0f, 112.0f)
+            cat_fold_end(dev, ry, top8_, catH_[8], aF8_);
         }   // end sub-section Detail (catOpen_[8])
         // ---- sub-section : Debuffs ----
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF9_ = cat_fold(CTRL_ID, catOpen_[9]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Debuffs", "Debuffs"), catOpen_[9])) catOpen_[9] = !catOpen_[9];
         ROW_NEXT(42.0f)
-        if (catOpen_[9]) {
+        if (aF9_ > 0.0f) {
+            const float top9_ = ry;
+            cat_fold_clip(dev, hdrX, top9_, hdrW, catH_[9] * aF9_);
         // Debuffs : show the tracked debuff icons under the HP bar (grows the box downward).
         { ROW_BAND(52.0f)
             const float rowH = snap(40.0f), ty = ry + yo;
@@ -324,11 +343,16 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             } ROW_NEXT(46.0f)
             draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.dbBox);   // detached-box frame / transparency / theme
         }
+            cat_fold_end(dev, ry, top9_, catH_[9], aF9_);
         }   // end sub-section Debuffs (catOpen_[9])
         // ---- Typography sub-section : per-element Font / Size / Outline / Style / Colour (Name / HP% / Timer) ----
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5])) catOpen_[5] = !catOpen_[5];
         ROW_NEXT(42.0f)
-        if (catOpen_[5]) {
+        if (aF5_ > 0.0f) {
+            const float top5_ = ry;
+            cat_fold_clip(dev, hdrX, top5_, hdrW, catH_[5] * aF5_);
         // The element list ADAPTS to the debuff mode : in-box shows the in-box debuff "Timer" (tgtText[TGT_TIMER]) ;
         // DETACHED drops it and instead exposes the standalone box's own text (dbText : header / name / timer), so
         // editing here modifies the right thing. (No dead controls, no cross-wiring.)
@@ -353,6 +377,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         ROW_NEXT(52.0f)
         draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, *items[te].ts, true);
+            cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
         }   // end Text sub-section (catOpen_[5])
         ry += snap(10.0f);
 

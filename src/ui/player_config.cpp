@@ -27,9 +27,13 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
                                     float hdrX, float hdrW) {
         // ===== sub-section : DISPLAY (box chrome + size). No outer "Player" wrapper -- opens straight into its
         //       sub-sections like every other module (the sidebar already names the module). =====
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
         ROW_NEXT(42.0f)
-        if (catOpen_[6]) {
+        if (aF6_ > 0.0f) {
+            const float top6_ = ry;
+            cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
         // Show : master on/off for the WHOLE Player Hub (hidden everywhere when off ; other rows stay editable).
         ROW_TOGGLE_G(CTRL_ID, tr("Show", "Afficher"), ui_config().plrShow, 52.0f, 40.0f, 150.0f)
         // Size : scale the whole hub box (canonical : right after Show, before the Box chrome).
@@ -114,11 +118,16 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         }
         }   // end own-theme rows (!plrThemeCopy)
         }
+            cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
         }   // end sub-section Box (catOpen_[6])
         // ---- sub-section : Content (what the hub shows) ----
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
         ROW_NEXT(42.0f)
-        if (catOpen_[7]) {
+        if (aF7_ > 0.0f) {
+            const float top7_ = ry;
+            cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
         ROW_TOGGLE(CTRL_ID, tr("Emblem", "Emblème"), ui_config().plrEmblem)
         ROW_TOGGLE(CTRL_ID, tr("Name", "Nom"),       ui_config().plrName)
         ROW_TOGGLE(CTRL_ID, tr("Level", "Niveau"),   ui_config().plrLvl)
@@ -133,11 +142,16 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         // Gil : lives in Content while the equipment is docked or off (gil then rides the header / hub) ; when the
         // equipment is DETACHED the gil goes with that box, so its toggle moves to the Equipment sub-section.
         if (!(ui_config().plrEquip && ui_config().plrEquipDetach)) { ROW_TOGGLE(CTRL_ID, tr("Gil", "Gil"), ui_config().plrGil) }
+            cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
         }   // end sub-section Content (catOpen_[7])
         // ---- sub-section : Identity (the job emblem is an icon -> size only) ----
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF11_ = cat_fold(CTRL_ID, catOpen_[11]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Identity", "Identité"), catOpen_[11])) catOpen_[11] = !catOpen_[11];
         ROW_NEXT(42.0f)
-        if (catOpen_[11]) {
+        if (aF11_ > 0.0f) {
+            const float top11_ = ry;
+            cat_fold_clip(dev, hdrX, top11_, hdrW, catH_[11] * aF11_);
         // Emblem Size
         { ROW_BAND(46.0f)
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().plrEmblemSz * 100.0f + 0.5f));
@@ -146,11 +160,16 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().plrEmblemSz = v < lo ? lo : (v > hi ? hi : v); }
         }
         ROW_NEXT(46.0f)
+            cat_fold_end(dev, ry, top11_, catH_[11], aF11_);
         }   // end sub-section Identity (catOpen_[11])
         // ---- Typography sub-section : per-element Font / Size / Outline / Style / Colour (Name / Level) ----
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5])) catOpen_[5] = !catOpen_[5];
         ROW_NEXT(42.0f)
-        if (catOpen_[5]) {
+        if (aF5_ > 0.0f) {
+            const float top5_ = ry;
+            cat_fold_clip(dev, hdrX, top5_, hdrW, catH_[5] * aF5_);
         { ROW_BAND(52.0f)   // element selector
             const char* TLBL[PLR_TE_COUNT] = { tr("Name", "Nom"), tr("Level", "Niveau"), tr("Gil", "Gil"), tr("Speed", "Vitesse"), "HP", "MP", "TP", tr("Cast", "Sort") };
             int te = (cfgPlrTextElem_ < 0 || cfgPlrTextElem_ >= PLR_TE_COUNT) ? 0 : cfgPlrTextElem_;
@@ -160,11 +179,16 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         ROW_NEXT(52.0f)
         draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
                         ui_config().plrText[(cfgPlrTextElem_ < 0 || cfgPlrTextElem_ >= PLR_TE_COUNT) ? 0 : cfgPlrTextElem_], true);
+            cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
         }   // end Text sub-section (catOpen_[5])
         // ---- sub-section : Bars (fiole size) ----
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF8_ = cat_fold(CTRL_ID, catOpen_[8]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Bars", "Barres"), catOpen_[8])) catOpen_[8] = !catOpen_[8];
         ROW_NEXT(42.0f)
-        if (catOpen_[8]) {
+        if (aF8_ > 0.0f) {
+            const float top8_ = ry;
+            cat_fold_clip(dev, hdrX, top8_, hdrW, catH_[8] * aF8_);
         // Bar Height : the fiole height.
         { ROW_BAND(46.0f)
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().plrBarH * 100.0f + 0.5f));
@@ -189,6 +213,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().plrBarGap = v < lo ? lo : (v > hi ? hi : v); }
         }
         ROW_NEXT(46.0f)
+            cat_fold_end(dev, ry, top8_, catH_[8], aF8_);
         }   // end sub-section Bars (catOpen_[8])
         // ---- sub-section : Buffs (only meaningful when Buffs are shown) ----
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), catOpen_[9])) catOpen_[9] = !catOpen_[9];

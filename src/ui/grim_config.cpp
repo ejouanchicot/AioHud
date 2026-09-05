@@ -19,9 +19,13 @@ void ConfigPage::draw_grim_config(u32 dev, Font* fo, const MouseState* mo, bool 
     UiConfig& c = ui_config();
 
     // ===== sub-section : DISPLAY =====
+    // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+    const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
-    if (catOpen_[6]) {
+    if (aF6_ > 0.0f) {
+        const float top6_ = ry;
+        cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
         ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.grimShow)   // Show
         { ROW_BAND(46.0f)   // Size
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.grimScale * 100.0f + 0.5f));
@@ -37,12 +41,17 @@ void ConfigPage::draw_grim_config(u32 dev, Font* fo, const MouseState* mo, bool 
             const float ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Only appears when SCH is your main or sub job.", "Appara\xC3\xAet seulement si SCH est en main ou sub."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         } ROW_NEXT(40.0f)
+        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
     }   // end Display
 
     // ===== sub-section : TEXT (the charge + timer numbers) =====
+    // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+    const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5])) catOpen_[5] = !catOpen_[5];
     ROW_NEXT(42.0f)
-    if (catOpen_[5]) {
+    if (aF5_ > 0.0f) {
+        const float top5_ = ry;
+        cat_fold_clip(dev, hdrX, top5_, hdrW, catH_[5] * aF5_);
         { ROW_BAND(52.0f)   // element selector
             const char* TLBL[GRIM_TE_COUNT] = { tr("Charge", "Charge"), tr("Timer", "Timer") };
             int te = (cfgGrimTextElem_ < 0 || cfgGrimTextElem_ >= GRIM_TE_COUNT) ? 0 : cfgGrimTextElem_;
@@ -51,6 +60,7 @@ void ConfigPage::draw_grim_config(u32 dev, Font* fo, const MouseState* mo, bool 
         ROW_NEXT(52.0f)
         draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
                         c.grimText[(cfgGrimTextElem_ < 0 || cfgGrimTextElem_ >= GRIM_TE_COUNT) ? 0 : cfgGrimTextElem_]);   // shared Font/Size/Outline/Style/Colour block (was an inline copy)
+        cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
     }   // end Text
 
     ry += snap(10.0f);

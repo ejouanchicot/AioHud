@@ -224,11 +224,16 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
                                          float bandX, float bandW, float coX, float ctrlW,
                                          float hdrX, float hdrW) {
         // ===== category : INTERFACE (this config menu's own look) =====
-        const float blk3 = ry;
-        if (catOpen_[3]) cat_panel(dev, hdrX, ry, hdrW, catH_[3]);   // solid menu card behind the OPEN section (last frame's height)
+        // The section FOLDS (config_controls.h) : cat_fold owns the eased progress, the card grows with
+        // it, and catH_ now holds the CONTENT height rather than the card's -- the header slot is added
+        // back here, which is the one place that knows about it.
+        const float aF3_ = cat_fold(CTRL_ID, catOpen_[3]);
+        if (aF3_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + catH_[3] * aF3_);   // solid menu card behind the OPEN section (last frame's height)
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Interface", "Interface"), catOpen_[3])) catOpen_[3] = !catOpen_[3];
         ROW_NEXT(42.0f)
-        if (catOpen_[3]) {
+        if (aF3_ > 0.0f) {
+        const float top3_ = ry;
+        cat_fold_clip(dev, hdrX, top3_, hdrW, catH_[3] * aF3_);
         // Font : the config-menu font (also the HUD's default text face ; per-element faces override it under Advanced > Typography)
         { ROW_BAND(52.0f)
           int gf = ui_config().text[0][TE_UI].face; if (gf < 0 || gf >= ui_font_count()) gf = 0;
@@ -300,8 +305,8 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
                 ROW_NEXT(slotH)
             }
         }
+        cat_fold_end(dev, ry, top3_, catH_[3], aF3_);
         }   // end category Interface (catOpen_[3])
-        catH_[3] = catOpen_[3] ? (ry - blk3) : 0.0f;   // measure Interface block -> next frame's card
         ry += snap(10.0f);                             // gap between category cards
 }
 void ConfigPage::draw_layout_category(u32 dev, Font* fo, const MouseState* mo, bool click,
@@ -309,11 +314,16 @@ void ConfigPage::draw_layout_category(u32 dev, Font* fo, const MouseState* mo, b
                                       float bandX, float bandW, float coX, float ctrlW,
                                       float hdrX, float hdrW) {
         // ===== category : LAYOUT (placement + the shared window skin) =====
-        const float blk2 = ry;
-        if (catOpen_[2]) cat_panel(dev, hdrX, ry, hdrW, catH_[2]);
+        // The section FOLDS (config_controls.h) : cat_fold owns the eased progress, the card grows with
+        // it, and catH_ now holds the CONTENT height rather than the card's -- the header slot is added
+        // back here, which is the one place that knows about it.
+        const float aF2_ = cat_fold(CTRL_ID, catOpen_[2]);
+        if (aF2_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + catH_[2] * aF2_);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Layout", "Disposition"), catOpen_[2])) catOpen_[2] = !catOpen_[2];
         ROW_NEXT(42.0f)
-        if (catOpen_[2]) {
+        if (aF2_ > 0.0f) {
+        const float top2_ = ry;
+        cat_fold_clip(dev, hdrX, top2_, hdrW, catH_[2] * aF2_);
         // Placement moved to the top-level "Edit Layout" tab (drag/resize + Zones/Rules) ; here : a pointer + global reset.
         { ROW_BAND(44.0f)
             const float ty = ry + yo; fo->begin(dev);
@@ -329,8 +339,8 @@ void ConfigPage::draw_layout_category(u32 dev, Font* fo, const MouseState* mo, b
             if (push_btn(dev, fo, mo, click, CTRL_ID, defX, ty, bw, bh, tr("Default (all)", "D\xC3\xA9""faut (tout)"), 1)) reset_ui_config();
         }
         ROW_NEXT(56.0f)
+        cat_fold_end(dev, ry, top2_, catH_[2], aF2_);
         }   // end category Layout
-        catH_[2] = catOpen_[2] ? (ry - blk2) : 0.0f;
 }
 
 void ConfigPage::draw(const Frame& f, float sw, float sh) {

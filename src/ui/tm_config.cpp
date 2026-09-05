@@ -29,9 +29,13 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     const char* SRC[4]  = { tr("Mine only", "Moi seul"), tr("Mine + players", "Moi + joueurs"), tr("Mine + trusts", "Moi + trusts"), tr("All", "Tout") };   // Duration buff-source filter (tmBuffSrc)
 
     // ===== sub-section : DISPLAY =====
+    // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+    const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
-    if (catOpen_[6]) {
+    if (aF6_ > 0.0f) {
+        const float top6_ = ry;
+        cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
         ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.tmShow)
         { ROW_BAND(46.0f)   // Size (canonical : right after Show, before the box appearance)
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tmScale * 100.0f + 0.5f));
@@ -71,12 +75,17 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const float bbw = snap(140.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.tmAllyGroup ? tr("Grouped", "Group\xC3\xA9s") : tr("Per person", "Par personne"), c.tmAllyGroup != 0)) { c.tmAllyGroup = !c.tmAllyGroup; save_ui_config(); }
         } ROW_NEXT(48.0f)
+        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
     }   // end Display
 
     // ===== sub-section : ALERTS (SP blink + focus-alert timings) =====
+    // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+    const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alerts", "Alertes"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
-    if (catOpen_[7]) {
+    if (aF7_ > 0.0f) {
+        const float top7_ = ry;
+        cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
         ROW_TOGGLE(CTRL_ID, tr("SP last-min alert", "Alerte SP derni\xC3\xA8re min"), c.tmSpAlert)   // SP alert : SP1/SP2 buffs (all jobs) blink hard in their last minute (Soul Voice -> Nitro window)
         { ROW_BAND(46.0f)   // Focus WARN : a "Hidden + focus" buff surfaces when it drops below this many seconds
             const float lo = 10.0f, hi = 300.0f; char b[16]; sprintf(b, "%ds", c.tmFocusWarn);
@@ -97,12 +106,17 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             fo->draw_lc(dev, coX + snap(4.0f), ty + bh * 0.5f, tr("Reset timers", "R\xC3\xA9initialiser timers"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
             if (push_btn(dev, fo, mo, click, CTRL_ID, coX + ctrlW - bw, ty, bw, bh, tr("Reset now", "R\xC3\xA9initialiser"), 1)) timers_reset();
         } ROW_NEXT(52.0f)
+        cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
     }   // end Alerts
 
     // ===== sub-section : TEXT =====
+    // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+    const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5])) catOpen_[5] = !catOpen_[5];
     ROW_NEXT(42.0f)
-    if (catOpen_[5]) {
+    if (aF5_ > 0.0f) {
+        const float top5_ = ry;
+        cat_fold_clip(dev, hdrX, top5_, hdrW, catH_[5] * aF5_);
         { ROW_BAND(52.0f)   // element selector
             const char* TLBL[TM_TE_COUNT] = { tr("Title", "Titre"), tr("Name", "Nom"), tr("Timer", "Timer") };
             int te = (cfgTmTextElem_ < 0 || cfgTmTextElem_ >= TM_TE_COUNT) ? 0 : cfgTmTextElem_;
@@ -111,6 +125,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         ROW_NEXT(52.0f)
         draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
                         c.tmText[(cfgTmTextElem_ < 0 || cfgTmTextElem_ >= TM_TE_COUNT) ? 0 : cfgTmTextElem_]);
+        cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
     }   // end Text
 
     // ===== sub-section : BUFF FILTER (job-agnostic checklist of buffs to show, grouped by magic family) =====

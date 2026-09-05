@@ -208,7 +208,13 @@ private:
     // that cannot happen, and if you ever need a 33rd, grow BOTH.
     static const int CFG_CAT_N = 32;
     bool  catOpen_[CFG_CAT_N] = { false, false, false, true, true, false, false, false, false, false, true, false, false };  // Config categories : sub-sections + the Party/Alliance category ([1]) START COLLAPSED ; open one to reveal its controls. ([3]Interface [4]Target [10]Player tops stay open so their collapsed sub-headers show.)
-    float catH_[CFG_CAT_N] = { 0.0f };  // each OPEN category's measured block height -> its SOLID menu-card panel is drawn a frame later (0 = closed ; [6..9,11,12] unused, sub-sections have no panel)
+    // Each section's measured CONTENT height -- what cat_fold reveals, and what the two categories that have
+    // a card behind them size it from (they add CAT_HEADER_ADV back themselves). It used to be the CARD
+    // height and to be zeroed when closed ; cat_fold_end owns it now and writes the natural height on every
+    // frame the section is drawn, including the frames where almost none of it is visible. Indices are
+    // shared between modules -- only one module is drawn at a time, and a stale value cannot show, because a
+    // fully-open section advances by the height measured this very frame.
+    float catH_[CFG_CAT_N] = { 0.0f };
     int   cfgTgtTextElem_ = 0;   // which Target text element the typography sub-section edits (TGT_NAME / TGT_HP / TGT_TIMER)
     int   cfgPlrTextElem_ = 0;   // which Player text element the typography sub-section edits (PLR_NAME / PLR_LVL)
     int   cfgMmTextElem_ = 0;    // which Minimap clock text element the typography sub-section edits (MM_TIME / MM_DAY / MM_MOON / MM_REAL)

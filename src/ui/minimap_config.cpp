@@ -26,9 +26,13 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         UiConfig& c = ui_config();
 
         // ===== sub-section : DISPLAY =====
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6])) catOpen_[6] = !catOpen_[6];
         ROW_NEXT(42.0f)
-        if (catOpen_[6]) {
+        if (aF6_ > 0.0f) {
+            const float top6_ = ry;
+            cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
         ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.mmShow)
         MM_PCT_SLIDER(CTRL_ID, tr("Size", "Taille"), c.mmScale, 0.50f, 2.00f)
         MM_PCT_SLIDER(CTRL_ID, tr("Map size", "Taille carte"), c.mmMapSize, 0.50f, 1.60f)
@@ -53,12 +57,17 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Map background", "Fond carte"), b, &v01)) c.mmBgAlpha = v01;
         }
         ROW_NEXT(46.0f)
+            cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
         }   // end Display
 
         // ===== sub-section : CLOCK (Vana'diel header) =====
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF9_ = cat_fold(CTRL_ID, catOpen_[9]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Clock", "Horloge"), catOpen_[9])) catOpen_[9] = !catOpen_[9];
         ROW_NEXT(42.0f)
-        if (catOpen_[9]) {
+        if (aF9_ > 0.0f) {
+            const float top9_ = ry;
+            cat_fold_clip(dev, hdrX, top9_, hdrW, catH_[9] * aF9_);
         ROW_TOGGLE(CTRL_ID, tr("Clock header", "En-t\xC3\xAAte horloge"), c.mmClock)
         if (c.mmClock) {
         ROW_TOGGLE(CTRL_ID, tr("Vana'diel time", "Heure Vana'diel"), c.mmClkTime)
@@ -72,6 +81,7 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         } ROW_NEXT(52.0f)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.mmBox);   // clock-box chrome : Box / Transparency / Theme / Hue / Luminosity
         }
+            cat_fold_end(dev, ry, top9_, catH_[9], aF9_);
         }   // end Clock
 
         // ===== sub-section : TEXT (clock typography) =====
@@ -90,9 +100,13 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         }   // end Text
 
         // ===== sub-section : SHAPE & FRAME =====
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Shape & Frame", "Forme & Cadre"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
         ROW_NEXT(42.0f)
-        if (catOpen_[7]) {
+        if (aF7_ > 0.0f) {
+            const float top7_ = ry;
+            cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
         // Shape : Square / Round
         { ROW_BAND(52.0f)
             static const char* SH_EN[2] = { "Square", "Round" }; static const char* SH_FR[2] = { "Carr\xC3\xA9", "Rond" };
@@ -119,12 +133,17 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         } else {                // SQUARE : frame/border thickness
             MM_PCT_SLIDER(CTRL_ID, tr("Border width", "Largeur bordure"), c.mmSqBorder, 0.50f, 2.00f)
         }
+            cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
         }   // end Shape & Frame
 
         // ===== sub-section : MARKERS =====
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF8_ = cat_fold(CTRL_ID, catOpen_[8]);
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Markers", "Marqueurs"), catOpen_[8])) catOpen_[8] = !catOpen_[8];
         ROW_NEXT(42.0f)
-        if (catOpen_[8]) {
+        if (aF8_ > 0.0f) {
+            const float top8_ = ry;
+            cat_fold_clip(dev, hdrX, top8_, hdrW, catH_[8] * aF8_);
         MM_PCT_SLIDER(CTRL_ID, tr("Marker Size", "Taille marqueurs"), c.mmMarkerScale, 0.50f, 2.00f)
         ROW_TOGGLE(CTRL_ID, tr("Players (PC)", "Joueurs (PC)"), c.mmPC)
         ROW_TOGGLE(CTRL_ID, tr("NPCs", "PNJ"),                  c.mmNPC)
@@ -145,6 +164,7 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
             ROW_NEXT(46.0f)
             CFG_COLOR_PICKER(&c.mmRingCol)
         }
+            cat_fold_end(dev, ry, top8_, catH_[8], aF8_);
         }   // end Markers
 
         ry += snap(10.0f);
