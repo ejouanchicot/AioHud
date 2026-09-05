@@ -1035,8 +1035,19 @@ static void aio_command_dispatch(const char* cmd)
         const int YEL = 50, GRN = 158, RED = 68, GRAY = 160, MODE = 1;
         auto chat = [](const char* s2) { g_host.ffxi().add_to_chat(MODE, s2); };
         char m[192];
+        // `list` is the one case the numbers on the rows cannot cover: a watched buff whose row is NOT drawn --
+        // clipped by Max per column, or hidden by a filter. No row means no number, and then nothing to type.
+        // It is opt-in for exactly that reason: on RDM the everyday list is twenty lines and helps nobody.
+        if (a1[0] == 'l' || a1[0] == 'L') {
+            char rows[24][64];
+            const int n = aio::timers_focus_list(rows, 24);
+            if (!n) { _snprintf(m, sizeof(m), "%c%c[Timers] %c%caucun buff suivi", 0x1F, YEL, 0x1F, GRAY); m[sizeof(m)-1] = 0; chat(m); return; }
+            _snprintf(m, sizeof(m), "%c%c[Timers] %c%cbuffs suivis", 0x1F, YEL, 0x1F, GRN); m[sizeof(m)-1] = 0; chat(m);
+            for (int i = 0; i < n; ++i) { _snprintf(m, sizeof(m), "%c%c  %s", 0x1F, GRN, rows[i]); m[sizeof(m)-1] = 0; chat(m); }
+            return;
+        }
         if (!a1[0]) {
-            _snprintf(m, sizeof(m), "%c%c[Timers] %c%c//aio out <numero> -- le numero est affiche devant la ligne", 0x1F, YEL, 0x1F, GRAY);
+            _snprintf(m, sizeof(m), "%c%c[Timers] %c%c//aio out <numero> (affiche devant la ligne), ou list / all", 0x1F, YEL, 0x1F, GRAY);
             m[sizeof(m) - 1] = 0; chat(m); return;
         }
         const int k = aio::timers_focus_forget(a1, a2);

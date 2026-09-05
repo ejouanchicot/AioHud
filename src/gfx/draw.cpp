@@ -453,25 +453,6 @@ void hbar_soft(u32 dev, float x, float y, float w, float h, u32 rgb, u32 peakAlp
     }
     dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * N, v, sizeof(VtxC));
 }
-void hglow_soft(u32 dev, float x, float cy, float w, float halfH, u32 rgb, u32 peakAlpha, float taper)
-{
-    if (w <= 0.0f || halfH <= 0.0f || peakAlpha == 0) return;
-    x -= 0.5f; cy -= 0.5f;
-    const int N = 40;
-    float k[41]; hwindow(k, N, taper);
-    const u32 c = rgb & 0x00FFFFFF;
-    VtxC v[2 * (N + 1)];
-    for (int half = 0; half < 2; ++half) {                   // upper half, then lower : peak on the centre line
-        const float ey = cy + (half ? halfH : -halfH);
-        for (int i = 0; i <= N; ++i) {
-            const float vx = x + w * ((float)i / (float)N);
-            const u32 col = c | ((u32)((float)peakAlpha * k[i] + 0.5f) << 24);
-            v[2 * i]     = { vx, ey, 0, 1, c };              // outer edge : alpha 0
-            v[2 * i + 1] = { vx, cy, 0, 1, col };            // centre line : the window
-        }
-        dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * N, v, sizeof(VtxC));
-    }
-}
 
 // The BAKED-MASK path for a top-capped rounded rect. Returns false if the mask is unavailable (no texture
 // yet, gated off during a zone load, or a radius outside the baked range) -- the caller then draws the

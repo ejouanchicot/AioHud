@@ -119,9 +119,15 @@ Tranché et clos :
 
 Rangements internes, aucun visible à l'écran, à faire quand l'occasion se présente :
 
-1. **Dédupliquer les trois copies de la barre latérale** (Configuration / Help / Debug).
+1. ~~**Dédupliquer les trois copies de la barre latérale**~~ — **FAIT à moitié** (2026-09-05 soir) : les deux
+   rails qui LISTENT quelque chose (modules, index de l'Aide) passent par un seul `nav_row()`. Ils avaient
+   déjà divergé — fond arrondi et pastille dorée d'un côté, fond CARRÉ et barre plate de l'autre, à des alphas
+   différents. Reste le rail de l'onglet Profil, qui ne liste rien et n'a donc pas de ligne à partager.
 2. **Discipline de `g_fade`** : le rendre non hérité — chaque bloc autonome le pose à son entrée plutôt que de
    dépendre de ce que le précédent a laissé. La règle 2 est un pansement sur un point d'emprunt ; il y en a
-   d'autres.
-3. **Un helper `metal_edge()`** pour que les liserés (fronton, onglets, conteneur, séparateur) ne puissent plus
-   diverger : ils sont aujourd'hui quatre écritures du même geste.
+   d'autres. **Toujours ouvert.**
+3. ~~**Un helper `metal_edge()`**~~ — **FAIT** (2026-09-05 soir) : c'est `ctl_edge()`, et il fait plus que
+   dédupliquer. Il prend sa DIRECTION de la surface qu'il borde (éclairci sur un fond sombre, assombri sur un
+   fond clair) et sa teinte de l'accent choisi, via `ctl_edge_tint()`. Le fronton, le cadre du conteneur et le
+   séparateur de la barre latérale restent en acier fixe : ils tiennent contre un logotype or **cuit**, et la
+   règle 7 de cet audit dit qu'une couleur qui doit s'accorder à une texture cuite ne peut pas suivre le thème.

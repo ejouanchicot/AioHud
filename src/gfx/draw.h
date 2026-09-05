@@ -89,13 +89,14 @@ void rrect_bordered(u32 dev, float x, float y, float w, float h, float r,
 void rrect_clip_begin(u32 dev, float x, float y, float w, float h, float r);
 void rrect_clip_end(u32 dev);
 
-// A bar of light, and the haze around it, sharing one COSINE window along their length (flat middle, tapered
-// ends, zero slope at every junction). Built for the tab crown. Use them together with the SAME `taper` --
-// mixing a windowed bar with a glow that ends somewhere else is what makes a lit edge look cut before its
-// tip. `peakAlpha` is the alpha at the flat part ; multiply it by g_fade yourself (these are raw gfx).
-// hglow_soft's alpha also falls linearly from the centre line to +/- halfH.
-void hbar_soft (u32 dev, float x, float y,  float w, float h,     u32 rgb, u32 peakAlpha, float taper);
-void hglow_soft(u32 dev, float x, float cy, float w, float halfH, u32 rgb, u32 peakAlpha, float taper);
+// A bar of light whose ALPHA follows a COSINE window along its length: flat in the middle, tapered at each
+// end, zero slope at every junction. A piecewise-LINEAR taper has a slope break where the ramp meets the
+// plateau, and the eye draws a line at a derivative break -- the bar then looks CUT before each end.
+// `peakAlpha` is the alpha of the flat part ; multiply it by g_fade yourself (this is raw gfx).
+// (A matching hglow_soft() haze existed beside it and is gone: an additive glow centred on the bar reached
+//  ABOVE the surface's top border and washed the border out, so the crown's light is drawn as downward ramps
+//  instead. It had no callers left.)
+void hbar_soft(u32 dev, float x, float y, float w, float h, u32 rgb, u32 peakAlpha, float taper);
 
 // AA rounded rect with only the TOP corners rounded -- a TAB. Same recipe (and therefore the same quality) as
 // rrect(): half-pixel offset, gradient-correct corner fans, a segment count that follows the radius, and ONE

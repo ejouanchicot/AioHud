@@ -263,8 +263,7 @@ void ctl_edge(u32 dev, float x, float y, float w, float h, float r, float streng
 // seam, and the whole point of the shape is that there is not one.
 void ctl_edge_top(u32 dev, float x, float y, float w, float h, float r, float strength, u32 fill = 0xFF101418, u32 from = 0);
 // The lamp : two ramps of light running down into the surface, a wide faint haze, and a filament that
-// dissolves at both ends (gfx/draw.cpp hbar_soft / hglow_soft -- one cosine window for all three, so nothing
-// can end before anything else). `k` is the only dial ; the ALLOY is the caller's: steel says "under the
+// dissolves at both ends (gfx/draw.cpp hbar_soft -- one cosine window, so nothing ends before anything else). `k` is the only dial ; the ALLOY is the caller's: steel says "under the
 // pointer", gold says "chosen".
 void ctl_crown(u32 dev, float x, float y, float w, float h, float r, u32 hiRGB, u32 loRGB, float k);
 // A NAVIGATION ROW in a left rail -- the module list on the Configuration tab, the index on the Help tab.
