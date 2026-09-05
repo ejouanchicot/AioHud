@@ -446,12 +446,11 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         cs(dev);
         clip_rect_end(dev);
         // The top edging, drawn HERE and not with the page chrome above -- the plate starts at y=0 and painted
-        // straight over it, so it had never once been visible. Bevelled rather than animated: metal reads as
-        // metal because it has a lit facet and a shadowed underside, which is three static rows in the order
-        // light falls, not movement.
-        flat(dev, 0.0f, 0.0f, sw, snap(1.0f), C_METAL_HI);
-        flat(dev, 0.0f, snap(1.0f), sw, snap(1.0f), C_METAL);
-        flat(dev, 0.0f, snap(2.0f), sw, snap(1.0f), (C_METAL_DEEP & 0x00FFFFFFu) | 0xCC000000u);
+        // straight over it, so it had never once been visible.
+        // ONE FLAT COLOUR. It was three rows -- lit facet, body, shadow -- which is how a bevel is built, and a
+        // bevel is a small piece of rendering: it invites the eye to look at the border itself. An edging is
+        // meant to bound something, not to be examined, and at two pixels the relief was more noise than metal.
+        flat(dev, 0.0f, 0.0f, sw, snap(2.0f), C_METAL);
     }
     // 4. the EMBLEM. Baked art, and only the crystal-and-ring half of it : the wordmark stays live text, so it
     //    keeps its edges at any size and follows the theme accent, which a bitmap of it could do neither.
@@ -641,14 +640,11 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // from. Two quads because a single one can only ramp between two colours, and this wants to arrive from
     // nothing and leave into nothing.
     { const float rx2 = snap(verRight + snap(20.0f)), rh = snap(30.0f), ry2 = ty - rh * 0.5f;
-      // Two columns, not one : the lit face and the shadow beside it. A single-colour line is a rule ; an edge
-      // with a light side and a dark side is a piece of metal standing up out of the plate. Both fade to nothing
-      // at top and bottom, which is why each takes two quads -- one can only ramp between two colours.
-      const u32 hi = (C_METAL_HI & 0x00FFFFFFu), dp = (C_METAL_DEEP & 0x00FFFFFFu);
-      q4(dev, rx2, ry2, snap(1.0f), rh * 0.5f, hi, hi, hi | 0x88000000u, hi | 0x88000000u);
-      q4(dev, rx2, ty,  snap(1.0f), rh * 0.5f, hi | 0x88000000u, hi | 0x88000000u, hi, hi);
-      q4(dev, rx2 + snap(1.0f), ry2, snap(1.0f), rh * 0.5f, dp, dp, dp | 0xAA000000u, dp | 0xAA000000u);
-      q4(dev, rx2 + snap(1.0f), ty,  snap(1.0f), rh * 0.5f, dp | 0xAA000000u, dp | 0xAA000000u, dp, dp); }
+      // One column, one colour. It still fades to nothing at both ends -- that is the rule ENDING, not a bevel
+      // -- which needs two quads, since one can only ramp between two colours.
+      const u32 g2 = (C_METAL & 0x00FFFFFFu);
+      q4(dev, rx2, ry2, snap(1.0f), rh * 0.5f, g2, g2, g2 | 0x80000000u, g2 | 0x80000000u);
+      q4(dev, rx2, ty,  snap(1.0f), rh * 0.5f, g2 | 0x80000000u, g2 | 0x80000000u, g2, g2); }
 
     // close button (X), top-right -- eased red crossfade + a tiny size bump on hover
     const float cbS = snap(36.0f), cbX = ix + iw - cbS, cbY = mhTop + (mhH - cbS) * 0.5f;   // centred in the plate, not pinned to its top
@@ -688,9 +684,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     const float divY = mhBot;
     shadow_down(dev, 0.0f, divY, sw, snap(16.0f), 0x66000000u);               // the plate still casts onto the content
     { const float rw = sw * e;                                                // the open WIPE stays : an entrance is not an animation
-      flat(dev, 0.0f, divY, rw, snap(1.0f), C_METAL_HI);
-      flat(dev, 0.0f, divY + snap(1.0f), rw, snap(1.0f), C_METAL);
-      flat(dev, 0.0f, divY + snap(2.0f), rw, snap(1.0f), (C_METAL_DEEP & 0x00FFFFFFu) | 0xE0000000u);
+      flat(dev, 0.0f, divY, rw, snap(2.0f), C_METAL);                          // one flat colour, like every other edging
       // One static glow under it, even along the width. A lit edge spills a little onto what is below ; that is
       // a property of the material, and unlike the comet it does not ask to be watched.
       cs_add(dev);
@@ -740,9 +734,8 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // the brand, the structure AND the choice cannot mark any of them.
         { const float bw2 = tabBw;   // one thickness for all six : the SELECTION is carried by ALLOY, not by weight
           const float w2  = active ? 1.0f : (0.34f + 0.40f * hov_[i]);
-          const u32 gTop = ((active ? C_METAL_HI   : C_STEEL_HI)   & 0x00FFFFFFu) | ((u32)(235.0f * w2) << 24);
-          const u32 gBot = ((active ? C_METAL_DEEP : C_STEEL_DEEP) & 0x00FFFFFFu) | ((u32)(205.0f * w2) << 24);
-          rrect_top(dev, tx - bw2, tabY - bw2, tabW + bw2 * 2.0f, tabH + bw2, tr + bw2, gTop, gBot); }
+          const u32 gc2 = ((active ? C_METAL : C_STEEL) & 0x00FFFFFFu) | ((u32)(235.0f * w2) << 24);
+          rrect_top(dev, tx - bw2, tabY - bw2, tabW + bw2 * 2.0f, tabH + bw2, tr + bw2, gc2, gc2); }
         if (active) {
             halo(dev, cxT - snap(2.0f), cyT, tabW * 0.5f, tabH * 0.5f, C_GOLD, 0.35f + 0.2f * pulse);      // accent seat glow
             rrect_top(dev, tx, tabY, tabW, tabH + snap(2.0f), tr, C_TABON_T, C_TABON_B);                  // +2 : bleed into the body
@@ -979,12 +972,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // thing on it -- that a box exists. In gold it out-shouted the logotype, which is the one thing that should
     // be the brightest gold on screen. Same bevel, same lighting, a different alloy.
     { const float bwF = snap(3.0f);   // the tabs' rim thickness : the two edges meet with no step
-      flat(dev, ix, bodyY, bwF, bodyH, C_STEEL);                                  // left  : the body of the metal
-      flat(dev, ix + iw - bwF, bodyY, bwF, bodyH, C_STEEL_DEEP);                  // right : shadowed
-      flat(dev, ix, bodyY, iw, bwF, C_STEEL_HI);                                  // top   : the lit facet
-      flat(dev, ix, bodyY + bodyH - bwF, iw, bwF, C_STEEL_DEEP);                  // bottom: shadowed
-      flat(dev, ix + bwF, bodyY + bwF, iw - bwF * 2.0f, 1, 0x50000000u);          // one dark row inside the rim, so it seats on the content
-      flat(dev, ix + bwF, bodyY + bwF, 1, bodyH - bwF * 2.0f, 0x40000000u); }
+      flat(dev, ix, bodyY, bwF, bodyH, C_STEEL);
+      flat(dev, ix + iw - bwF, bodyY, bwF, bodyH, C_STEEL);
+      flat(dev, ix, bodyY, iw, bwF, C_STEEL);
+      flat(dev, ix, bodyY + bodyH - bwF, iw, bwF, C_STEEL); }
 
     fo->set_upper(false);   // clear the Interface UPPERCASE so the shared font atlas doesn't stay forced elsewhere
     draw_ui_cursor(f.dev, mo);   // ALWAYS : the overlay suppresses the OS cursor over the client area, so ours is the only one
