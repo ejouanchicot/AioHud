@@ -708,8 +708,12 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     const float iconS = snap(19.0f), iconGap = snap(9.0f);
     const float stripW = NTABS * tabW + (NTABS - 1) * tabGap;
     // a recessed graphite track the pills sit IN -> depth (the active one lifts out of it)
-    rrect_top(dev, ix - snap(3.0f), tabY - snap(2.0f), stripW + snap(6.0f), tabH + snap(2.0f), snap(13.0f), 0x66070B0E, 0x8804070A);
-    flat(dev, ix - snap(3.0f), tabY - snap(2.0f), stripW + snap(6.0f), 1, 0x10FFFFFF);   // track top hairline
+    // The seat is FLUSH with the tabs, not 3px wider on each side. ix is the only vertical line this page
+    // has -- the sidebar, the section title and every control start on it -- and a track that overhung it by
+    // three pixels was the one element breaking it. A seat that frames its tabs exactly reads as deliberate ;
+    // one that misses the column edge by three reads as a mistake, which is what it was.
+    rrect_top(dev, ix, tabY - snap(2.0f), stripW, tabH + snap(2.0f), snap(13.0f), 0x66070B0E, 0x8804070A);
+    flat(dev, ix, tabY - snap(2.0f), stripW, 1, 0x10FFFFFF);   // track top hairline
     float activeX = ix;
     for (int i = 0; i < NTABS; ++i) {
         const float tx = ix + i * (tabW + tabGap);
