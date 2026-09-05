@@ -271,28 +271,75 @@ void row_band(u32 dev, float x, float y, float w, float h, bool alt, float hov) 
 // technique as the vial's rounded clip). Everything drawn between begin/end is masked to the rect.
 // If the back-buffer has no stencil the ops are ignored -> the column just overflows as before (no crash). ----
 enum { SCL_ENABLE = 52, SCL_FAIL = 53, SCL_ZFAIL = 54, SCL_PASS = 55, SCL_FUNC = 56, SCL_REF = 57, SCL_MASK = 58, SCL_WRITEMASK = 59 };
+// ---- NESTED stencil clipping. ----
+// This used to be a one-level scissor: begin() cleared its region to 0 and wrote 1 inside, end() switched the
+// stencil off. Fine while nothing nested -- and the moment something did, the INNER end() dropped the OUTER
+// clip for the rest of the frame. That is not hypothetical: the module content is drawn inside a scroll
+// viewport clip, and a folding section clips inside that, so a tall page's overflow stopped being contained
+// after the first section.
+// It counts DEPTH now. Level 1 clears and writes 1, as before. Each deeper level INCREMENTS the stencil inside
+// its own rect but only where the parent's value already stands -- so a child can only ever shrink its parent's
+// region, never escape it -- and the test is "equal to my depth". end() DECREMENTS the same rect back and
+// restores the parent's test, which is why the rects are kept: you cannot undo a region you have forgotten.
+enum { STOP_KEEP = 1, STOP_REPLACE = 3, STOP_INCRSAT = 4, STOP_DECRSAT = 5, SCMP_EQUAL = 3, SCMP_ALWAYS = 8 };
+static struct ClipRect { float x, y, w, h; } g_clipStack[6];
+static int g_clipDepth = 0;
+
 void clip_rect_begin(u32 dev, float x, float y, float w, float h) {
+    if (g_clipDepth >= (int)(sizeof(g_clipStack) / sizeof(g_clipStack[0]))) {
+        // Budget spent. SAY SO once (rule 10's corollary): silently not clipping looks like a layout bug
+        // somewhere else entirely, which is a long way from here.
+        static bool full = false;
+        if (!full) { full = true; windower::debug::log("clip_rect_begin(): nesting too deep (%d) -- this clip is a no-op", g_clipDepth); }
+        return;
+    }
+    const int d = g_clipDepth;
     dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
     dSetRS(dev, D3DRS_ALPHATESTENABLE, 0);
     dSetRS(dev, D3DRS_ALPHABLENDENABLE, 0);
     dSetRS(dev, SCL_ENABLE, 1);
     dSetRS(dev, SCL_MASK, 0xFF); dSetRS(dev, SCL_WRITEMASK, 0xFF);
     dSetRS(dev, D3DRS_COLORWRITEENABLE, 0);                        // mask pass : write stencil only, no colour
-    dSetRS(dev, SCL_FUNC, 8);                                      // ALWAYS
-    dSetRS(dev, SCL_FAIL, 3); dSetRS(dev, SCL_ZFAIL, 3); dSetRS(dev, SCL_PASS, 3);   // REPLACE
-    dSetRS(dev, SCL_REF, 0);
-    grad_quad(dev, x - 2.0f, y - 2.0f, w + 4.0f, h + 4.0f, 0, 0, 0, 0);              // clear the region -> 0
-    dSetRS(dev, SCL_REF, 1);
-    grad_quad(dev, x, y, w, h, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000);      // set 1 inside the rect
-    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);              // content : colour on, ONLY where stencil == 1
-    dSetRS(dev, SCL_FUNC, 3);                                      // EQUAL
-    dSetRS(dev, SCL_FAIL, 1); dSetRS(dev, SCL_ZFAIL, 1); dSetRS(dev, SCL_PASS, 1);   // KEEP (don't touch stencil while drawing)
+    if (d == 0) {
+        dSetRS(dev, SCL_FUNC, SCMP_ALWAYS);
+        dSetRS(dev, SCL_FAIL, STOP_REPLACE); dSetRS(dev, SCL_ZFAIL, STOP_REPLACE); dSetRS(dev, SCL_PASS, STOP_REPLACE);
+        dSetRS(dev, SCL_REF, 0);
+        grad_quad(dev, x - 2.0f, y - 2.0f, w + 4.0f, h + 4.0f, 0, 0, 0, 0);          // clear the region -> 0
+        dSetRS(dev, SCL_REF, 1);
+        grad_quad(dev, x, y, w, h, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000);  // set 1 inside the rect
+    } else {
+        dSetRS(dev, SCL_FUNC, SCMP_EQUAL); dSetRS(dev, SCL_REF, d);                  // only where the parent stands
+        dSetRS(dev, SCL_FAIL, STOP_KEEP); dSetRS(dev, SCL_ZFAIL, STOP_KEEP); dSetRS(dev, SCL_PASS, STOP_INCRSAT);
+        grad_quad(dev, x, y, w, h, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000);
+    }
+    g_clipStack[d].x = x; g_clipStack[d].y = y; g_clipStack[d].w = w; g_clipStack[d].h = h;
+    g_clipDepth = d + 1;
+
+    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);               // content : colour on, ONLY at my depth
+    dSetRS(dev, SCL_FUNC, SCMP_EQUAL); dSetRS(dev, SCL_REF, g_clipDepth);
+    dSetRS(dev, SCL_FAIL, STOP_KEEP); dSetRS(dev, SCL_ZFAIL, STOP_KEEP); dSetRS(dev, SCL_PASS, STOP_KEEP);
     dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
 }
 void clip_rect_end(u32 dev) {
-    dSetRS(dev, SCL_ENABLE, 0);
-    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);
-    dSetRS(dev, D3DRS_ALPHATESTENABLE, 0);   // restore what clip_rect_begin turned off (leave state as found)
+    if (g_clipDepth <= 0) { dSetRS(dev, SCL_ENABLE, 0); dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F); return; }
+    const int d = --g_clipDepth;
+    if (d == 0) {                                                  // outermost : just switch the test off
+        dSetRS(dev, SCL_ENABLE, 0);
+        dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);
+        dSetRS(dev, D3DRS_ALPHATESTENABLE, 0);                     // restore what begin() turned off
+        return;
+    }
+    const ClipRect r = g_clipStack[d];                             // undo exactly the region this level added
+    dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 0);
+    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0);
+    dSetRS(dev, SCL_FUNC, SCMP_EQUAL); dSetRS(dev, SCL_REF, d + 1);
+    dSetRS(dev, SCL_FAIL, STOP_KEEP); dSetRS(dev, SCL_ZFAIL, STOP_KEEP); dSetRS(dev, SCL_PASS, STOP_DECRSAT);
+    grad_quad(dev, r.x, r.y, r.w, r.h, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000);
+    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);               // ... and hand the parent's test back
+    dSetRS(dev, SCL_FUNC, SCMP_EQUAL); dSetRS(dev, SCL_REF, d);
+    dSetRS(dev, SCL_FAIL, STOP_KEEP); dSetRS(dev, SCL_ZFAIL, STOP_KEEP); dSetRS(dev, SCL_PASS, STOP_KEEP);
+    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
 }
 
 // a CHROME wordmark : a dark EXTRUDED shadow (offset passes -> depth) under a vertical METALLIC gradient
