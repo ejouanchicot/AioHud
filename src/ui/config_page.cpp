@@ -725,6 +725,19 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         if (active) activeX = tx;
 
         const float tr = snap(10.0f);
+        // ---- the gold edging, drawn as the SAME SHAPE one size larger, behind the tab. ----
+        // Straight lines laid along a rounded rectangle cut its corners off, which is exactly what they did
+        // here. A stroke that has to follow a radius is drawn as the shape itself, scaled out by the border
+        // width and with the radius grown to match, then covered by the fill -- what is left showing IS the
+        // border, and it follows every curve by construction.
+        // Vertical gradient, not one flat colour: lit at the top, shadowed at the bottom, the same bevel the
+        // masthead's rails use. Three pixels on the selected tab and two elsewhere -- a one-pixel line reads as
+        // a hairline drawn on the tab, where an edging has to read as the tab's own edge.
+        { const float bw2 = active ? snap(3.0f) : snap(2.0f);
+          const float w2  = active ? 1.0f : (0.28f + 0.42f * hov_[i]);
+          const u32 gTop = (C_METAL_HI   & 0x00FFFFFFu) | ((u32)(235.0f * w2) << 24);
+          const u32 gBot = (C_METAL_DEEP & 0x00FFFFFFu) | ((u32)(205.0f * w2) << 24);
+          rrect_top(dev, tx - bw2, tabY - bw2, tabW + bw2 * 2.0f, tabH + bw2, tr + bw2, gTop, gBot); }
         if (active) {
             halo(dev, cxT - snap(2.0f), cyT, tabW * 0.5f, tabH * 0.5f, C_GOLD, 0.35f + 0.2f * pulse);      // accent seat glow
             rrect_top(dev, tx, tabY, tabW, tabH + snap(2.0f), tr, C_TABON_T, C_TABON_B);                  // +2 : bleed into the body
@@ -735,21 +748,6 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             rrect_top(dev, tx + snap(2.0f), tabY + snap(1.0f), tabW - snap(4.0f), tabH * 0.32f, snap(7.0f), ((u32)(0x22 * (0.35f + 0.65f * hov_[i])) << 24) | 0x00FFFFFF, 0x02FFFFFF);   // faint sheen (grows on hover)
             if (hov_[i] > 0.01f) shine(dev, tx + snap(3.0f), tabY, tabW - snap(6.0f), tabH * 0.92f, hov_[i], f.t);
         }
-        // ---- the same gold edging as the masthead, on every tab. ----
-        // Same three parts in the same order -- lit facet, body, shadowed underside -- so the tabs read as cut
-        // from the plate above them rather than as glass sitting near it. The white rim light that used to sit
-        // here is gone: a white edge beside a gold one says the two were made by different people.
-        // The SELECTED tab carries it at full strength and the others at a fifth, rising with hover. An edging
-        // that is equally bright on all six is not an edging, it is a grid ; carrying the selection is the one
-        // job a border on a tab actually has.
-        { const float w2 = active ? 1.0f : (0.20f + 0.45f * hov_[i]);
-          const float rimX = tx + snap(10.0f), rimW = tabW - snap(20.0f);
-          flat(dev, rimX, tabY + snap(1.0f), rimW, 1, (C_METAL_HI & 0x00FFFFFFu) | ((u32)(210.0f * w2) << 24));
-          flat(dev, rimX, tabY + snap(2.0f), rimW, 1, (C_METAL    & 0x00FFFFFFu) | ((u32)(130.0f * w2) << 24));
-          // the sides start below the corner radius, so a straight line never crosses a round corner
-          const float sy2 = tabY + snap(9.0f), sh2 = tabH - snap(9.0f);
-          flat(dev, tx,                  sy2, 1, sh2, (C_METAL & 0x00FFFFFFu) | ((u32)(120.0f * w2) << 24));
-          flat(dev, tx + tabW - snap(1.0f), sy2, 1, sh2, (C_METAL_DEEP & 0x00FFFFFFu) | ((u32)(150.0f * w2) << 24)); }
         // icon + label drawn as ONE centred group
         const u32 fg = lerpc(C_DIM, active ? C_GOLDHI : C_TEXT, active ? 1.0f : hov_[i]);
         const float textW = fo->measure(tab_label(i), snap(15.0f));
