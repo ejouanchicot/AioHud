@@ -88,27 +88,6 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         }   // end Clock
         ry += snap(16.0f);                                 // air between this section and the next title bar
 
-        // ===== sub-section : TEXT (clock typography) =====
-        const float aF5b_ = cat_fold(CTRL_ID, catOpen_[5] && c.mmClock);   // the section FOLDS -- and with the feature off there is nothing to reveal
-        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5b_));
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5b_)) catOpen_[5] = !catOpen_[5];
-        ROW_NEXT(42.0f)
-        if (aF5b_ > 0.0f) {
-            const float top5b_ = ry;
-            cat_fold_clip(dev, hdrX, top5b_, hdrW, catH_[5] * aF5b_);
-        { ROW_BAND(52.0f)   // element selector
-            const char* TLBL[MM_TE_COUNT] = { tr("Time", "Heure"), tr("Day", "Jour"), tr("Moon", "Lune"), tr("Real / GMT", "R\xC3\xA9""el / GMT") };
-            int te = (cfgMmTextElem_ < 0 || cfgMmTextElem_ >= MM_TE_COUNT) ? 0 : cfgMmTextElem_;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "\xC3\x89l\xC3\xA9ment"), TLBL[te])) {
-                cfgMmTextElem_ = wrap(te + d, MM_TE_COUNT); }
-        }
-        ROW_NEXT(52.0f)
-        draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
-                        c.mmText[(cfgMmTextElem_ < 0 || cfgMmTextElem_ >= MM_TE_COUNT) ? 0 : cfgMmTextElem_], true);
-            cat_fold_end(dev, ry, top5b_, catH_[5], aF5b_);
-        }   // end Text
-        ry += snap(16.0f);                                 // air between this section and the next title bar
-
         // ===== sub-section : SHAPE & FRAME =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
@@ -182,6 +161,28 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
 
         ry += snap(16.0f);
     #undef MM_PCT_SLIDER
+
+
+        // ===== sub-section : TEXT (clock typography) =====
+        const float aF5b_ = cat_fold(CTRL_ID, catOpen_[5] && c.mmClock);   // the section FOLDS -- and with the feature off there is nothing to reveal
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5b_));
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5b_)) catOpen_[5] = !catOpen_[5];
+        ROW_NEXT(42.0f)
+        if (aF5b_ > 0.0f) {
+            const float top5b_ = ry;
+            cat_fold_clip(dev, hdrX, top5b_, hdrW, catH_[5] * aF5b_);
+        { ROW_BAND(52.0f)   // element selector
+            const char* TLBL[MM_TE_COUNT] = { tr("Time", "Heure"), tr("Day", "Jour"), tr("Moon", "Lune"), tr("Real / GMT", "R\xC3\xA9""el / GMT") };
+            int te = (cfgMmTextElem_ < 0 || cfgMmTextElem_ >= MM_TE_COUNT) ? 0 : cfgMmTextElem_;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "\xC3\x89l\xC3\xA9ment"), TLBL[te])) {
+                cfgMmTextElem_ = wrap(te + d, MM_TE_COUNT); }
+        }
+        ROW_NEXT(52.0f)
+        draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
+                        c.mmText[(cfgMmTextElem_ < 0 || cfgMmTextElem_ >= MM_TE_COUNT) ? 0 : cfgMmTextElem_], true);
+            cat_fold_end(dev, ry, top5b_, catH_[5], aF5b_);
+        }   // end Text
+        ry += snap(16.0f);                                 // air between this section and the next title bar
     #undef ROW_BAND
     #undef ROW_NEXT
 }

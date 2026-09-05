@@ -193,6 +193,21 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 ui_config().barWidth[0] = v < lo ? lo : (v > hi ? hi : v); } }
           ROW_NEXT(bh2)
         }
+        cat_fold_end(dev, ry, cTop_, pcFull_[1], aS1_);
+    }   // end Party
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+
+    // ================================================= PARTY ROWS =================================================
+    // Everything about a member ROW -- its job badge, its cursor, its casts, its distance and the zone colours
+    // that tint it -- as opposed to what the BOX is: size, gauge style, bar dimensions. Twelve controls
+    // answering two questions is exactly the drawer this panel was elsewhere told not to be.
+    const float aS1c_ = cat_fold(CTRL_ID, catOpen_[17]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[5], aS1c_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party rows", "Lignes party"), catOpen_[17], aS1c_)) catOpen_[17] = !catOpen_[17];
+    ROW_NEXT(42.0f)
+    if (aS1c_ > 0.0f) {
+        const float cTop1c_ = ry;
+        cat_fold_clip(dev, hdrX, cTop1c_, hdrW, pcFull_[5] * aS1c_);
         // --- badge : what it shows, and how big ---
         { const bool hasBadge = (ui_config().jobBadge[0] != 0);
           const float bh2 = (twoCol || !hasBadge) ? snap(48.0f) : snap(96.0f);
@@ -263,8 +278,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             }
             if (pcDistPick_ >= 0 && pcDistPick_ < 3) { CFG_COLOR_PICKER_I(dcol[pcDistPick_], pcDistPick_) }
         }
-        cat_fold_end(dev, ry, cTop_, pcFull_[1], aS1_);
-    }   // end Party
+        cat_fold_end(dev, ry, cTop1c_, pcFull_[5], aS1c_);
+    }   // end Party content
     ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ==================================================== ALLIANCE ====================================================
@@ -300,6 +315,24 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                            1, &ui_config().allyThemeCopy,                // may simply follow the party theme
                            &ui_config().allyTheme, &ui_config().allyHue, &ui_config().allyLum, &ui_config().allyBoxAlpha,
                            &ui_config().border[1], nullptr, nullptr);    // no Cost box on an alliance row
+        cat_fold_end(dev, ry, cTop_, pcFull_[2], aS2_);
+    }   // end Alliance
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+
+    // =============================================== ALLIANCE ROWS ===============================================
+    // Everything about an alliance ROW, as opposed to what the alliance BOX is. The file already marked the
+    // boundary with its own "---- Content ----" comment: the two halves were understood to be two subjects,
+    // they just shared one drawer.
+    // These rows are PAIRED two per line (Gauge Style beside Job Badge, Bar Height beside Bar Width) to save
+    // vertical space, so form and content share a physical line here and cannot be separated further without
+    // unpicking that pairing. "Rows" is what the section honestly holds -- everything a row is made of.
+    const float aS2c_ = cat_fold(CTRL_ID, catOpen_[18]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[6], aS2c_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance rows", "Lignes alliance"), catOpen_[18], aS2c_)) catOpen_[18] = !catOpen_[18];
+    ROW_NEXT(42.0f)
+    if (aS2c_ > 0.0f) {
+        const float cTop2c_ = ry;
+        cat_fold_clip(dev, hdrX, cTop2c_, hdrW, pcFull_[6] * aS2c_);
         // ---- Content ----
         { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // what the gauges are, and what the badge says
           ROW_BAND(bh2) (void)yo;
@@ -358,102 +391,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           }
           ROW_NEXT(bh2)
         }
-        cat_fold_end(dev, ry, cTop_, pcFull_[2], aS2_);
-    }   // end Alliance
-    ry += snap(16.0f);                                 // air between this section and the next title bar
-
-    // =========================================================== TEXT ===========================================================
-    const float aS3_ = cat_fold(CTRL_ID, catOpen_[0]);   // eased 0..1 : the card, the clip and ry all ride this
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[3], aS3_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0], aS3_)) catOpen_[0] = !catOpen_[0];
-    ROW_NEXT(42.0f)
-    if (aS3_ > 0.0f) {
-        const float cTop_ = ry;
-        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[3] * aS3_);
-        { ROW_BAND(56.0f)   // which box's text : Party / Alliance
-            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Box", "Boîte"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const char* tlbl[2] = { tr("Party", "Groupe"), tr("Alliance", "Alliance") };
-            const float bbw = snap(140.0f), bgap = snap(8.0f), bbh = snap(34.0f);
-            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
-            for (int i = 0; i < 2; ++i) if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, i), bx0 + i * (bbw + bgap), bty, bbw, bbh, tlbl[i], cfgTarget_ == i)) cfgTarget_ = i;
-        }
-        ROW_NEXT(56.0f)
-        const int T = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;
-        { ROW_BAND(52.0f)   // element selector -- Interface (TE_UI) is skipped : its font is Interface > Font
-            int el = (cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT || cfgTextElem_ == TE_UI) ? 0 : cfgTextElem_;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "Élément"), ui_text_elem_label(el))) {
-                int n = wrap(el + d, TE_COUNT); if (n == TE_UI) n = wrap(n + d, TE_COUNT); cfgTextElem_ = n; }
-        }
-        ROW_NEXT(52.0f)
-        {
-            TextStyle& ts = ui_config().text[T][(cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT) ? 0 : cfgTextElem_];
-            { ROW_BAND(52.0f)   // Font face (0 = default)
-                int fc = ts.face; if (fc < 0 || fc >= ui_font_count()) fc = 0;
-                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { ts.face = wrap(fc + d, ui_font_count()); save_ui_config(); }
-            }
-            ROW_NEXT(52.0f)
-            { ROW_BAND(46.0f)   // Size
-                const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ts.size * 100.0f + 0.5f));
-                float v01 = (ts.size - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ts.size = v < lo ? lo : (v > hi ? hi : v); }
-            }
-            ROW_NEXT(46.0f)
-            { ROW_BAND(46.0f)   // Outline width
-                const float lo = 0.00f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ts.outline * 100.0f + 0.5f));
-                float v01 = (ts.outline - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Outline", "Contour"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ts.outline = v < lo ? lo : (v > hi ? hi : v); }
-            }
-            ROW_NEXT(46.0f)
-            { ROW_BAND(52.0f)   // Bold / Italic / CAPS
-                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Style", "Style"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
-                const float bbw = snap(80.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, bx0 = coX + ctrlW - (3 * bbw + 2 * bgap);
-                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Bold", "Gras"), ts.bold)) { ts.bold = !ts.bold; save_ui_config(); }
-                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Italic", "Ital."), ts.italic)) { ts.italic = !ts.italic; save_ui_config(); }
-                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + 2 * (bbw + bgap), bty, bbw, bbh, tr("CAPS", "MAJ"), ts.upper)) { ts.upper = !ts.upper; save_ui_config(); }
-            }
-            ROW_NEXT(52.0f)
-            { ROW_BAND(52.0f)   // Colour : Default / Custom + a live swatch
-                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Colour", "Couleur"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
-                const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, tgw = snap(96.0f), onx = coX + ctrlW - tgw;
-                if (toggle_chip(dev, fo, mo, click, CTRL_ID, onx, bty, tgw, bbh, ts.colorOn ? tr("Custom", "Perso") : tr("Default", "Défaut"), ts.colorOn)) {
-                    ts.colorOn = !ts.colorOn; if (ts.colorOn && (ts.color >> 24) == 0) ts.color |= 0xFF000000u; save_ui_config(); }
-                if (ts.colorOn) {
-                    const float pw = snap(58.0f), pxs = onx - snap(12.0f) - pw;
-                    flat(dev, pxs, bty, pw * 0.5f, bbh, 0xFFFFFFFF); flat(dev, pxs + pw * 0.5f, bty, pw * 0.5f, bbh, 0xFF262A31);
-                    flat(dev, pxs, bty, pw, bbh, ts.color); outline(dev, pxs, bty, pw, bbh, C_BORDER);
-                }
-            }
-            ROW_NEXT(52.0f)
-            if (ts.colorOn) {
-                static const u32 PAL[] = {
-                    0xFFFFFFFF,0xFFC8CDD6,0xFF8A93A2,0xFF3A4150,0xFFFF5A5A,0xFFFF9A4A,0xFFFFDC78,0xFFF2F25A,0xFF9BE85A,0xFF5ADC5A,0xFF5ADCB0,0xFF5AC8FF,
-                    0xFF4F9DFF,0xFF6A7AF0,0xFFB07AF0,0xFFF07AE8,0xFFFF7AB0,0xFFE08585,0xFF86D36F,0xFFECC94A,0xFF7D9BF0,0xFFB58BF0,0xFF2C6AC4,0xFF141414 };
-                const int NPAL = (int)(sizeof(PAL) / sizeof(PAL[0])), COLS = 12;
-                { ROW_BAND(52.0f)
-                    const float sqw = snap(20.0f), sg = snap(6.0f), gx = coX + snap(4.0f), gy = ry + yo - snap(1.0f);
-                    for (int k = 0; k < NPAL; ++k) {
-                        const float x = gx + (k % COLS) * (sqw + sg), y = gy + (k / COLS) * (sqw + sg);
-                        const bool sel = ((ts.color & 0x00FFFFFF) == (PAL[k] & 0x00FFFFFF));
-                        flat(dev, x, y, sqw, sqw, PAL[k]); outline(dev, x, y, sqw, sqw, sel ? 0xFFFFFFFF : C_BORDER);
-                        if (inrect(mo, x, y, sqw, sqw) && click) { ts.color = (ts.color & 0xFF000000u) | (PAL[k] & 0x00FFFFFF); if ((ts.color >> 24) == 0) ts.color |= 0xFF000000u; save_ui_config(); }
-                    }
-                }
-                ROW_NEXT(52.0f)
-                CFG_COLOR_PICKER(&ts.color)
-                { ROW_BAND(40.0f)
-                    int a = (int)((ts.color >> 24) & 0xFFu); char vb[8]; sprintf(vb, "%d", a); float v01 = a / 255.0f;
-                    if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, "A", vb, &v01)) {
-                        int nv = (int)(v01 * 255.0f + 0.5f); if (nv < 0) nv = 0; if (nv > 255) nv = 255;
-                        ts.color = (ts.color & 0x00FFFFFFu) | ((u32)nv << 24); }
-                }
-                ROW_NEXT(40.0f)
-            }
-        }
-        cat_fold_end(dev, ry, cTop_, pcFull_[3], aS3_);
-    }   // end Text
+        cat_fold_end(dev, ry, cTop2c_, pcFull_[6], aS2c_);
+    }   // end Alliance content
     ry += snap(16.0f);                                 // air between this section and the next title bar
     // ======================================================= BUFFS =======================================================
     // Everything about the buff strip in ONE place -- how big, how many, over how many lines, and in what order.
@@ -887,7 +826,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                         bw2 = snap(1.0f);
                     } else {
                         ft = 0x2A141A1Fu; fb = 0x2A0E1317u;
-                        br = (tint & 0x00FFFFFF) | (runs[i].faint ? 0x38000000u : 0x70000000u);   // not met yet -> a fainter edge, same hue
+                        br = (tint & 0x00FFFFFF) | 0x70000000u;   // ONE border weight : a tile is on or off, never half
                         bw2 = snap(1.2f);
                     }
                     rpanel(dev, runs[i].x, ty2, runs[i].w, th2, snap(8.0f), ft, fb, br, bw2);
@@ -923,7 +862,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                             // removing it from the editor would be a one-way door. Faint = in the catalogue but
                             // not met yet. Both fade in the VERTEX colour -- a MANAGED texture's alpha
                             // mis-samples as opaque while a zone loads (reference/d3d8-rendering.md).
-                            const u32 tc = runs[i].faint ? fa(0x70FFFFFFu) : 0xFFFFFFFFu;   // hidden is handled by the scrim below, not here
+                            const u32 tc = 0xFFFFFFFFu;   // full icon in both states : "off" is the scrim + the slash, not a fade below, not here
                             tquad(dev, snap(ix), snap(runs[i].iy), ics, ics, u0, u0 + au, v0, v0 + av, tc, tc);
                         }
                     }
@@ -932,10 +871,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // ---- PASS 3 : the names, ONE font pass, each centred over its own block ----
                 fo->begin(dev);
                 for (int i = 0; i < nRun; ++i) {
-                    if (!runs[i].lbl) continue;
-                    const u32 c2 = runs[i].hid ? C_MUTE
-                                 : (i == bsSel_ || (carrying && i == bsDrag_)) ? C_ACCENTHI
-                                 : (runs[i].faint ? C_MUTE : C_DIM);
+                    if (!runs[i].lbl || runs[i].hid) continue;   // a hidden tile's name is drawn LAST, over the scrim
+                    const u32 c2 = (i == bsSel_ || (carrying && i == bsDrag_)) ? C_ACCENTHI : C_DIM;
                     fo->draw_c(dev, runs[i].x + runs[i].w * 0.5f, runs[i].ly, runs[i].lbl, lsz, fa(c2), fa(C_STROKE), 1.0f);
                 }
                 // ---- PASS 4 : HIDDEN -- a scrim over the whole finished tile, then the slash on top ----
@@ -948,13 +885,24 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 for (int i = 0; i < nRun; ++i) {
                     if (!runs[i].hid) continue;
                     const float by2 = runs[i].ly - snap(12.0f) + snap(3.0f), th3 = lineH - snap(6.0f);
-                    rrect_fill(dev, runs[i].x, by2, runs[i].w, th3, snap(8.0f), 0xC4070A0Du, 0xCC040608u);
+                    rrect_fill(dev, runs[i].x, by2, runs[i].w, th3, snap(8.0f), 0xA8070A0Du, 0xB0040608u);   // lighter : the slash carries the message, and the name is drawn back on top
                     const float in2 = snap(7.0f);
                     // RED and thick : the slash is the only mark that has to survive a glance across a band of
                     // thirty tiles, so it gets the one saturated colour the menu reserves for "no" (C_CLOSEHOV's
                     // family, the close button's red) and a stroke wide enough to read at icon scale.
                     seg_soft(dev, runs[i].x + in2, by2 + th3 - in2, runs[i].x + runs[i].w - in2, by2 + in2,
                              snap(3.4f), fa(0xE6E0555Fu));
+                }
+                // ---- PASS 5 : the hidden tiles' NAMES, on top of their own scrim ----
+                // You have to be able to read WHAT you turned off -- an editor is the only place to turn it back
+                // on, and a name you cannot read is a tile you cannot find. The scrim knocks the icon back and
+                // the slash says "no" ; the name is not part of that message and must not be dimmed by it. Drawn
+                // after the scrim, at the same weight as a live tile's name.
+                fo->begin(dev);
+                for (int i = 0; i < nRun; ++i) {
+                    if (!runs[i].lbl || !runs[i].hid) continue;
+                    const u32 c3 = (i == bsSel_ || (carrying && i == bsDrag_)) ? C_ACCENTHI : C_DIM;
+                    fo->draw_c(dev, runs[i].x + runs[i].w * 0.5f, runs[i].ly, runs[i].lbl, lsz, fa(c3), fa(C_STROKE), 1.0f);
                 }
                 ROW_NEXT(bandH)
             }
@@ -979,6 +927,101 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         }
         cat_fold_end(dev, ry, cTop_, pcFull_[4], aS4_);
     }   // end Buffs
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+
+
+    // =========================================================== TEXT ===========================================================
+    const float aS3_ = cat_fold(CTRL_ID, catOpen_[0]);   // eased 0..1 : the card, the clip and ry all ride this
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[3], aS3_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0], aS3_)) catOpen_[0] = !catOpen_[0];
+    ROW_NEXT(42.0f)
+    if (aS3_ > 0.0f) {
+        const float cTop_ = ry;
+        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[3] * aS3_);
+        { ROW_BAND(56.0f)   // which box's text : Party / Alliance
+            const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Box", "Boîte"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const char* tlbl[2] = { tr("Party", "Groupe"), tr("Alliance", "Alliance") };
+            const float bbw = snap(140.0f), bgap = snap(8.0f), bbh = snap(34.0f);
+            const float bx0 = coX + ctrlW - (2 * bbw + bgap), bty = ty + (rowH - bbh) * 0.5f;
+            for (int i = 0; i < 2; ++i) if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, i), bx0 + i * (bbw + bgap), bty, bbw, bbh, tlbl[i], cfgTarget_ == i)) cfgTarget_ = i;
+        }
+        ROW_NEXT(56.0f)
+        const int T = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;
+        { ROW_BAND(52.0f)   // element selector -- Interface (TE_UI) is skipped : its font is Interface > Font
+            int el = (cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT || cfgTextElem_ == TE_UI) ? 0 : cfgTextElem_;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "Élément"), ui_text_elem_label(el))) {
+                int n = wrap(el + d, TE_COUNT); if (n == TE_UI) n = wrap(n + d, TE_COUNT); cfgTextElem_ = n; }
+        }
+        ROW_NEXT(52.0f)
+        {
+            TextStyle& ts = ui_config().text[T][(cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT) ? 0 : cfgTextElem_];
+            { ROW_BAND(52.0f)   // Font face (0 = default)
+                int fc = ts.face; if (fc < 0 || fc >= ui_font_count()) fc = 0;
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { ts.face = wrap(fc + d, ui_font_count()); save_ui_config(); }
+            }
+            ROW_NEXT(52.0f)
+            { ROW_BAND(46.0f)   // Size
+                const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ts.size * 100.0f + 0.5f));
+                float v01 = (ts.size - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ts.size = v < lo ? lo : (v > hi ? hi : v); }
+            }
+            ROW_NEXT(46.0f)
+            { ROW_BAND(46.0f)   // Outline width
+                const float lo = 0.00f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ts.outline * 100.0f + 0.5f));
+                float v01 = (ts.outline - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Outline", "Contour"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ts.outline = v < lo ? lo : (v > hi ? hi : v); }
+            }
+            ROW_NEXT(46.0f)
+            { ROW_BAND(52.0f)   // Bold / Italic / CAPS
+                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Style", "Style"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                const float bbw = snap(80.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, bx0 = coX + ctrlW - (3 * bbw + 2 * bgap);
+                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Bold", "Gras"), ts.bold)) { ts.bold = !ts.bold; save_ui_config(); }
+                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Italic", "Ital."), ts.italic)) { ts.italic = !ts.italic; save_ui_config(); }
+                if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + 2 * (bbw + bgap), bty, bbw, bbh, tr("CAPS", "MAJ"), ts.upper)) { ts.upper = !ts.upper; save_ui_config(); }
+            }
+            ROW_NEXT(52.0f)
+            { ROW_BAND(52.0f)   // Colour : Default / Custom + a live swatch
+                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Colour", "Couleur"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, tgw = snap(96.0f), onx = coX + ctrlW - tgw;
+                if (toggle_chip(dev, fo, mo, click, CTRL_ID, onx, bty, tgw, bbh, ts.colorOn ? tr("Custom", "Perso") : tr("Default", "Défaut"), ts.colorOn)) {
+                    ts.colorOn = !ts.colorOn; if (ts.colorOn && (ts.color >> 24) == 0) ts.color |= 0xFF000000u; save_ui_config(); }
+                if (ts.colorOn) {
+                    const float pw = snap(58.0f), pxs = onx - snap(12.0f) - pw;
+                    flat(dev, pxs, bty, pw * 0.5f, bbh, 0xFFFFFFFF); flat(dev, pxs + pw * 0.5f, bty, pw * 0.5f, bbh, 0xFF262A31);
+                    flat(dev, pxs, bty, pw, bbh, ts.color); outline(dev, pxs, bty, pw, bbh, C_BORDER);
+                }
+            }
+            ROW_NEXT(52.0f)
+            if (ts.colorOn) {
+                static const u32 PAL[] = {
+                    0xFFFFFFFF,0xFFC8CDD6,0xFF8A93A2,0xFF3A4150,0xFFFF5A5A,0xFFFF9A4A,0xFFFFDC78,0xFFF2F25A,0xFF9BE85A,0xFF5ADC5A,0xFF5ADCB0,0xFF5AC8FF,
+                    0xFF4F9DFF,0xFF6A7AF0,0xFFB07AF0,0xFFF07AE8,0xFFFF7AB0,0xFFE08585,0xFF86D36F,0xFFECC94A,0xFF7D9BF0,0xFFB58BF0,0xFF2C6AC4,0xFF141414 };
+                const int NPAL = (int)(sizeof(PAL) / sizeof(PAL[0])), COLS = 12;
+                { ROW_BAND(52.0f)
+                    const float sqw = snap(20.0f), sg = snap(6.0f), gx = coX + snap(4.0f), gy = ry + yo - snap(1.0f);
+                    for (int k = 0; k < NPAL; ++k) {
+                        const float x = gx + (k % COLS) * (sqw + sg), y = gy + (k / COLS) * (sqw + sg);
+                        const bool sel = ((ts.color & 0x00FFFFFF) == (PAL[k] & 0x00FFFFFF));
+                        flat(dev, x, y, sqw, sqw, PAL[k]); outline(dev, x, y, sqw, sqw, sel ? 0xFFFFFFFF : C_BORDER);
+                        if (inrect(mo, x, y, sqw, sqw) && click) { ts.color = (ts.color & 0xFF000000u) | (PAL[k] & 0x00FFFFFF); if ((ts.color >> 24) == 0) ts.color |= 0xFF000000u; save_ui_config(); }
+                    }
+                }
+                ROW_NEXT(52.0f)
+                CFG_COLOR_PICKER(&ts.color)
+                { ROW_BAND(40.0f)
+                    int a = (int)((ts.color >> 24) & 0xFFu); char vb[8]; sprintf(vb, "%d", a); float v01 = a / 255.0f;
+                    if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, "A", vb, &v01)) {
+                        int nv = (int)(v01 * 255.0f + 0.5f); if (nv < 0) nv = 0; if (nv > 255) nv = 255;
+                        ts.color = (ts.color & 0x00FFFFFFu) | ((u32)nv << 24); }
+                }
+                ROW_NEXT(40.0f)
+            }
+        }
+        cat_fold_end(dev, ry, cTop_, pcFull_[3], aS3_);
+    }   // end Text
     ry += snap(16.0f);                                 // air between this section and the next title bar
 
     #undef ROW_BAND

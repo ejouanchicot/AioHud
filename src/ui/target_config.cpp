@@ -305,6 +305,24 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtTimers ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtTimers != 0)) { ui_config().tgtTimers = !ui_config().tgtTimers; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
+        cat_fold_end(dev, ry, top9_, catH_[9], aF9_);
+    }   // end Debuffs
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+
+    // ===== sub-section : DEBUFF BOX =====
+    // The STANDALONE debuff list is a second BOX -- its own size, its own row count, its own frame and theme --
+    // and it was living at the bottom of the section that configures the debuff icons drawn ON the target.
+    // Two objects, one section: you scrolled past six settings for one box to reach eight for another.
+    // It only exists in Standalone mode, so the section only exists then either -- an empty card would be a
+    // promise of settings that are not there.
+    if (ui_config().tgtDebuffs && ui_config().dbShow) {
+        const float aFd_ = cat_fold(CTRL_ID, catOpen_[16]);
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[16], aFd_));
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Debuff box", "Bo\xC3\xAEte debuffs"), catOpen_[16], aFd_)) catOpen_[16] = !catOpen_[16];
+        ROW_NEXT(42.0f)
+        if (aFd_ > 0.0f) {
+            const float topD_ = ry;
+            cat_fold_clip(dev, hdrX, topD_, hdrW, catH_[16] * aFd_);
         // ---- STANDALONE (detached) list : its own Timers-style appearance. Shown only in Standalone mode. ----
         if (ui_config().tgtDebuffs && ui_config().dbShow) {
             UiConfig& c = ui_config();
@@ -336,8 +354,10 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             } ROW_NEXT(46.0f)
             draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.dbBox);   // detached-box frame / transparency / theme
         }
-            cat_fold_end(dev, ry, top9_, catH_[9], aF9_);
-        }   // end sub-section Debuffs (catOpen_[9])
+            cat_fold_end(dev, ry, topD_, catH_[16], aFd_);
+        }   // end Debuff box
+        ry += snap(16.0f);
+    }
         ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- Typography sub-section : per-element Font / Size / Outline / Style / Colour (Name / HP% / Timer) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).

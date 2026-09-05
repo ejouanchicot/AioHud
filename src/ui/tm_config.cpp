@@ -45,6 +45,52 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         } ROW_NEXT(46.0f)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.tmBox);   // Box / Transparency / Theme / Hue / Luminosity
         ROW_TOGGLE(CTRL_ID, tr("Show titles", "Afficher les titres"), c.tmTitle)
+        ROW_CHOICE_G(CTRL_ID, tr("Layout", "Disposition"), c.tmMerged, tr("Fused", "Fusionn\xC3\xA9"), tr("Separate", "S\xC3\xA9par\xC3\xA9"), 48.0f, 38.0f, 128.0f)   // Layout : fused (one box) vs separate (two draggable boxes)
+        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
+    }   // end Display
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+
+    // ===== sub-section : CONTENT =====
+    // WHAT the box lists, as opposed to how it lists it. Display had grown to thirteen controls covering three
+    // different questions -- what the box IS, what it SHOWS, and how each ROW reads -- and a section that
+    // answers three questions is a section you have to read in full to find one setting. Split by subject, and
+    // named with the vocabulary the other panels already use (Player has a Content section too).
+    const float aFc_ = cat_fold(CTRL_ID, catOpen_[13]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[13], aFc_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[13], aFc_)) catOpen_[13] = !catOpen_[13];
+    ROW_NEXT(42.0f)
+    if (aFc_ > 0.0f) {
+        const float topC_ = ry;
+        cat_fold_clip(dev, hdrX, topC_, hdrW, catH_[13] * aFc_);
+        { ROW_BAND(52.0f)   // Buff source : whose buffs on YOU to show -- mine only / + other players / + trusts / all
+            int s = (c.tmBuffSrc < 0 || c.tmBuffSrc > 3) ? TMSRC_ALL : c.tmBuffSrc;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff source", "Source des buffs"), SRC[s])) { c.tmBuffSrc = wrap(s + d, 4); c.tmOthers = (c.tmBuffSrc != TMSRC_MINE); save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        ROW_TOGGLE(CTRL_ID, tr("My buffs on allies", "Mes buffs sur alli\xC3\xA9s"), c.tmMine)   // Buffs on allies : show a buff YOU cast on another player (person name + ESTIMATED timer)
+        if (c.tmMine) { ROW_BAND(48.0f)   // Ally-buff layout : GROUP same-spell into "(AoE N)" or one row PER ally (single-target
+            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);   //   Haste/Protect spread ; real AoE like Protectra / SCH Accession is grouped either way)
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Single-target on allies", "Monocible sur alli\xC3\xA9s"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(140.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.tmAllyGroup ? tr("Grouped", "Group\xC3\xA9s") : tr("Per person", "Par personne"), c.tmAllyGroup != 0)) { c.tmAllyGroup = !c.tmAllyGroup; save_ui_config(); }
+        } ROW_NEXT(48.0f)
+        cat_fold_end(dev, ry, topC_, catH_[13], aFc_);
+    }   // end Content
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+
+    // ===== sub-section : ROWS =====
+    // How a single line reads, and in what order the lines come. Everything here is about the LIST, not about
+    // the box that holds it and not about which buffs get in.
+    const float aFr_ = cat_fold(CTRL_ID, catOpen_[14]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[14], aFr_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Rows", "Lignes"), catOpen_[14], aFr_)) catOpen_[14] = !catOpen_[14];
+    ROW_NEXT(42.0f)
+    if (aFr_ > 0.0f) {
+        const float topR_ = ry;
+        cat_fold_clip(dev, hdrX, topR_, hdrW, catH_[14] * aFr_);
+        { ROW_BAND(52.0f)   // Duration display : Icon / Name / Both
+            int m = (c.tmDurMode < 0 || c.tmDurMode > 2) ? 0 : c.tmDurMode;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Duration: show", "Duration : afficher"), MODE[m])) { c.tmDurMode = wrap(m + d, 3); save_ui_config(); }
+        } ROW_NEXT(52.0f)
         { ROW_BAND(52.0f)   // Duration : what decides the row order
             const char* NM[2] = { tr("Person, then time", "Personne, puis temps"), tr("Shortest first", "Plus court d'abord") };
             const int m = (c.tmSortDur == 1) ? 1 : 0;
@@ -55,7 +101,6 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const int m = (c.tmSortRec == 1) ? 1 : 0;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Recast order", "Ordre Recast"), NM[m])) { c.tmSortRec = wrap(m + d, 2); save_ui_config(); }
         } ROW_NEXT(52.0f)
-        ROW_CHOICE_G(CTRL_ID, tr("Layout", "Disposition"), c.tmMerged, tr("Fused", "Fusionn\xC3\xA9"), tr("Separate", "S\xC3\xA9par\xC3\xA9"), 48.0f, 38.0f, 128.0f)   // Layout : fused (one box) vs separate (two draggable boxes)
         { ROW_BAND(46.0f)   // Max per column
             const float lo = 1.0f, hi = 50.0f; char b[16]; sprintf(b, "%d", c.tmMax);
             float v01 = ((float)c.tmMax - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
@@ -71,23 +116,8 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             float v01 = (c.tmRowGap - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Row spacing", "Espacement lignes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmRowGap = v < lo ? lo : (v > hi ? hi : v); }   // no save_ui_config() here : row_slider persists on RELEASE, saving per drag-frame rewrote the whole config file at 60 Hz
         } ROW_NEXT(46.0f)
-        { ROW_BAND(52.0f)   // Duration display : Icon / Name / Both
-            int m = (c.tmDurMode < 0 || c.tmDurMode > 2) ? 0 : c.tmDurMode;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Duration: show", "Duration : afficher"), MODE[m])) { c.tmDurMode = wrap(m + d, 3); save_ui_config(); }
-        } ROW_NEXT(52.0f)
-        { ROW_BAND(52.0f)   // Buff source : whose buffs on YOU to show -- mine only / + other players / + trusts / all
-            int s = (c.tmBuffSrc < 0 || c.tmBuffSrc > 3) ? TMSRC_ALL : c.tmBuffSrc;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff source", "Source des buffs"), SRC[s])) { c.tmBuffSrc = wrap(s + d, 4); c.tmOthers = (c.tmBuffSrc != TMSRC_MINE); save_ui_config(); }
-        } ROW_NEXT(52.0f)
-        ROW_TOGGLE(CTRL_ID, tr("My buffs on allies", "Mes buffs sur alli\xC3\xA9s"), c.tmMine)   // Buffs on allies : show a buff YOU cast on another player (person name + ESTIMATED timer)
-        if (c.tmMine) { ROW_BAND(48.0f)   // Ally-buff layout : GROUP same-spell into "(AoE N)" or one row PER ally (single-target
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);   //   Haste/Protect spread ; real AoE like Protectra / SCH Accession is grouped either way)
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Single-target on allies", "Monocible sur alli\xC3\xA9s"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(140.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.tmAllyGroup ? tr("Grouped", "Group\xC3\xA9s") : tr("Per person", "Par personne"), c.tmAllyGroup != 0)) { c.tmAllyGroup = !c.tmAllyGroup; save_ui_config(); }
-        } ROW_NEXT(48.0f)
-        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
-    }   // end Display
+        cat_fold_end(dev, ry, topR_, catH_[14], aFr_);
+    }   // end Rows
     ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ===== sub-section : ALERTS (SP blink + focus-alert timings) =====
@@ -121,27 +151,6 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         } ROW_NEXT(52.0f)
         cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
     }   // end Alerts
-    ry += snap(16.0f);                                 // air between this section and the next title bar
-
-    // ===== sub-section : TEXT =====
-    // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
-    const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // the section IS a card, collapsed or not
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
-    ROW_NEXT(42.0f)
-    if (aF5_ > 0.0f) {
-        const float top5_ = ry;
-        cat_fold_clip(dev, hdrX, top5_, hdrW, catH_[5] * aF5_);
-        { ROW_BAND(52.0f)   // element selector
-            const char* TLBL[TM_TE_COUNT] = { tr("Title", "Titre"), tr("Name", "Nom"), tr("Timer", "Timer") };
-            int te = (cfgTmTextElem_ < 0 || cfgTmTextElem_ >= TM_TE_COUNT) ? 0 : cfgTmTextElem_;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "\xC3\x89l\xC3\xA9ment"), TLBL[te])) { cfgTmTextElem_ = wrap(te + d, TM_TE_COUNT); }
-        }
-        ROW_NEXT(52.0f)
-        draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
-                        c.tmText[(cfgTmTextElem_ < 0 || cfgTmTextElem_ >= TM_TE_COUNT) ? 0 : cfgTmTextElem_]);
-        cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
-    }   // end Text
     ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ===== sub-section : BUFF FILTER (job-agnostic checklist of buffs to show, grouped by magic family) =====
@@ -425,6 +434,28 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     }   // end Buff filter
 
     ry += snap(16.0f);
+
+
+    // ===== sub-section : TEXT =====
+    // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+    const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // the section IS a card, collapsed or not
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
+    ROW_NEXT(42.0f)
+    if (aF5_ > 0.0f) {
+        const float top5_ = ry;
+        cat_fold_clip(dev, hdrX, top5_, hdrW, catH_[5] * aF5_);
+        { ROW_BAND(52.0f)   // element selector
+            const char* TLBL[TM_TE_COUNT] = { tr("Title", "Titre"), tr("Name", "Nom"), tr("Timer", "Timer") };
+            int te = (cfgTmTextElem_ < 0 || cfgTmTextElem_ >= TM_TE_COUNT) ? 0 : cfgTmTextElem_;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "\xC3\x89l\xC3\xA9ment"), TLBL[te])) { cfgTmTextElem_ = wrap(te + d, TM_TE_COUNT); }
+        }
+        ROW_NEXT(52.0f)
+        draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
+                        c.tmText[(cfgTmTextElem_ < 0 || cfgTmTextElem_ >= TM_TE_COUNT) ? 0 : cfgTmTextElem_]);
+        cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
+    }   // end Text
+    ry += snap(16.0f);                                 // air between this section and the next title bar
     #undef ROW_BAND
     #undef ROW_NEXT
 }

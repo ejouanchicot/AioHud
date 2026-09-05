@@ -153,27 +153,6 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, top11_, catH_[11], aF11_);
         }   // end sub-section Identity (catOpen_[11])
         ry += snap(16.0f);                                 // air between this section and the next title bar
-        // ---- Typography sub-section : per-element Font / Size / Outline / Style / Colour (Name / Level) ----
-        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
-        const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
-        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // the section IS a card, collapsed or not
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
-        ROW_NEXT(42.0f)
-        if (aF5_ > 0.0f) {
-            const float top5_ = ry;
-            cat_fold_clip(dev, hdrX, top5_, hdrW, catH_[5] * aF5_);
-        { ROW_BAND(52.0f)   // element selector
-            const char* TLBL[PLR_TE_COUNT] = { tr("Name", "Nom"), tr("Level", "Niveau"), tr("Gil", "Gil"), tr("Speed", "Vitesse"), "HP", "MP", "TP", tr("Cast", "Sort") };
-            int te = (cfgPlrTextElem_ < 0 || cfgPlrTextElem_ >= PLR_TE_COUNT) ? 0 : cfgPlrTextElem_;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "Élément"), TLBL[te])) {
-                cfgPlrTextElem_ = wrap(te + d, PLR_TE_COUNT); }
-        }
-        ROW_NEXT(52.0f)
-        draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
-                        ui_config().plrText[(cfgPlrTextElem_ < 0 || cfgPlrTextElem_ >= PLR_TE_COUNT) ? 0 : cfgPlrTextElem_], true);
-            cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
-        }   // end Text sub-section (catOpen_[5])
-        ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Bars (fiole size) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF8_ = cat_fold(CTRL_ID, catOpen_[8]);
@@ -306,6 +285,28 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, top12b_, catH_[12], aF12b_);
         }   // end sub-section Equipment (catOpen_[12])
         ry += snap(16.0f);
+
+        // ---- Typography sub-section : per-element Font / Size / Outline / Style / Colour (Name / Level) ----
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
+        ROW_NEXT(42.0f)
+        if (aF5_ > 0.0f) {
+            const float top5_ = ry;
+            cat_fold_clip(dev, hdrX, top5_, hdrW, catH_[5] * aF5_);
+        { ROW_BAND(52.0f)   // element selector
+            const char* TLBL[PLR_TE_COUNT] = { tr("Name", "Nom"), tr("Level", "Niveau"), tr("Gil", "Gil"), tr("Speed", "Vitesse"), "HP", "MP", "TP", tr("Cast", "Sort") };
+            int te = (cfgPlrTextElem_ < 0 || cfgPlrTextElem_ >= PLR_TE_COUNT) ? 0 : cfgPlrTextElem_;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "Élément"), TLBL[te])) {
+                cfgPlrTextElem_ = wrap(te + d, PLR_TE_COUNT); }
+        }
+        ROW_NEXT(52.0f)
+        draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
+                        ui_config().plrText[(cfgPlrTextElem_ < 0 || cfgPlrTextElem_ >= PLR_TE_COUNT) ? 0 : cfgPlrTextElem_], true);
+            cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
+        }   // end Text sub-section (catOpen_[5])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
 
     #undef ROW_BAND
     #undef ROW_NEXT

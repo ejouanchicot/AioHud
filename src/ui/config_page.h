@@ -243,7 +243,7 @@ private:
     // The party panel's five sections. pcFull_ is each one's natural content height -- free to measure,
     // because the rows are always laid out in full and only the DRAWING is clipped (cat_fold, which owns
     // the progress). 0=Frame 1=Party 2=Alliance 3=Text 4=Buffs.
-    float pcFull_[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+    float pcFull_[7] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };   // [5]/[6] = the Party / Alliance CONTENT sections, split out of the two box sections
     bool  pcFrameOpen_   = false;
     bool  pcBuffsOpen_   = false;   // Buffs : the strip's size/count/rows AND its order editor, one object in one place
     int   pcDistPick_    = -1;      // which distance zone's colour picker is open (-1 = none). Three open pickers was ~690px for a setting touched once.

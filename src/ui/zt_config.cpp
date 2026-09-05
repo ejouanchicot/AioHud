@@ -43,6 +43,21 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         } ROW_NEXT(46.0f)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.ztBox);   // Box / Transparency / Theme / Hue / Luminosity
         ROW_TOGGLE(CTRL_ID, tr("Show title", "Afficher le titre"), c.ztHeader)   // Show title row (Dynamis / Abyssea / Omen / Nyzul / Sheol)
+        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
+    }   // end Display
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+
+    // ===== sub-section : CONTENT =====
+    // WHAT the box lists, for the zone selected above -- and it is the bulk of this panel: six variants, each
+    // with its own switches. Display was carrying all of it plus the box's own settings, twenty-one controls
+    // answering two questions. Same split as Timers, same names.
+    const float aFz_ = cat_fold(CTRL_ID, catOpen_[15]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[15], aFz_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[15], aFz_)) catOpen_[15] = !catOpen_[15];
+    ROW_NEXT(42.0f)
+    if (aFz_ > 0.0f) {
+        const float topZ_ = ry;
+        cat_fold_clip(dev, hdrX, topZ_, hdrW, catH_[15] * aFz_);
         // ---- Sheol / Odyssey sub-options (only meaningful in Sheol ; harmless elsewhere) ----
         // Size factors (bar / dot / icon) as a percentage slider. Same shape as the Limbus gauge sliders below.
         // UID is passed IN (like ZT_SHEOL_TOGGLE) : CTRL_ID inside a multi-line macro body would give every
@@ -109,8 +124,8 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const float ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Only appears in a tracked zone (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus).", "Appara\xC3\xAet seulement en zone suivie (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus)."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         } ROW_NEXT(40.0f)
-        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
-    }   // end Display
+        cat_fold_end(dev, ry, topZ_, catH_[15], aFz_);
+    }   // end Content
     ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ===== sub-section : TEXT =====
