@@ -277,6 +277,16 @@ void ctl_crown(u32 dev, float x, float y, float w, float h, float r, u32 hiRGB, 
 // Same elevation grammar as every other raised control on the page: NOTHING at rest, because a list of
 // destinations is a list and not fourteen buttons ; the control step with a steel edging and the lamp under
 // the pointer ; the card step, gold, with a shadow and the "you are here" rail when it is the one selected.
+// THE BOX-THEME GRID : the FFXI window skins (named chips) or a procedural family's hues (colour swatches).
+// It returns the variant clicked, or -1. FOUR copies of it existed -- two in box_style.cpp and one each in
+// player_config and target_config -- and they had already started to differ. Worse, the FFXI half laid itself
+// out as ONE row of nine wide chips while the procedural half was a compact block of squares, so switching
+// families restructured the whole section: the label moved, the block changed shape, and the chips were drawn
+// in a style (a bare rpanel with an accent border) that no other control on the page still uses.
+// Same grid, same metrics, same chip grammar in both -- only the contents differ, which is the only thing that
+// should. Returns the height it occupies through `slotH` so the caller can advance its own cursor.
+int theme_grid(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
+               float coX, float ry, float ctrlW, int fam, int var, float& slotH);
 void nav_row(u32 dev, Font* fo, float x, float y, float w, float h, const char* label, bool active, float t, float pulse);
 void cat_panel(u32 dev, float x, float y, float w, float h);
 

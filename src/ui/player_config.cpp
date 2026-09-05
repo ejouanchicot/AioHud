@@ -80,31 +80,15 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         } else
         {   // variant grid : FFXI -> theme-number chips ; procedural family -> hue swatches (click to pick)
           const int fam = window_theme_family(ui_config().plrTheme), var = window_theme_variant(ui_config().plrTheme);
-          const bool isFFXI = (fam == 0);
-          const int nVar = isFFXI ? window_tex_theme_count() : box_hue_count();
-          const int COLS = isFFXI ? (nVar < 1 ? 1 : nVar) : 15;
-          const int nrows = (nVar + COLS - 1) / COLS;
-          const float cw = isFFXI ? snap(42.0f) : snap(22.0f), ch = isFFXI ? snap(26.0f) : snap(22.0f), cg = snap(7.0f);
-          const float gridH = nrows * ch + (nrows - 1) * cg, slotH = gridH + snap(20.0f);
+          float slotH = 0.0f;
+          {   // the height has to be known BEFORE ROW_BAND, so it is computed from the same rule the grid uses
+              const int nr = (box_hue_count() + 14) / 15;
+              slotH = (fam == 0) ? snap(52.0f)   // FFXI : a selector row, like every other setting
+                                : (float)nr * snap(22.0f) + (float)(nr - 1) * snap(7.0f) + snap(20.0f); }
           ROW_BAND(slotH) (void)yo;
-          fo->begin(dev);
-          fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, isFFXI ? tr("Theme", "Thème") : tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-          const float gridW = COLS * cw + (COLS - 1) * cg;
-          const float gx = coX + ctrlW - gridW, gy = ry + (slotH - gridH) * 0.5f;
-          for (int k = 0; k < nVar; ++k) {
-              const float xk = gx + (k % COLS) * (cw + cg), yk = gy + (k / COLS) * (ch + cg);
-              const bool sel = (var == k);
-              if (isFFXI) {
-                  rpanel(dev, xk, yk, cw, ch, snap(6.0f), sel ? C_ROWON_T : 0x66121A18, sel ? C_ROWON_B : 0x66090D0F, sel ? C_ACCENT : C_BORDER, snap(1.2f));
-                  fo->begin(dev); fo->draw_c(dev, xk + cw * 0.5f, yk + ch * 0.5f, window_theme_name(k), snap(13.0f), fa(sel ? C_ACCENTHI : C_TEXT), fa(C_STROKE), 1.0f);
-              } else {
-                  const u32 hc = box_hue_color(k);
-                  if (sel) { cs_add(dev); rrect_glow(dev, xk, yk, cw, ch, snap(6.0f), (hc & 0x00FFFFFF) | 0x80000000, snap(6.0f)); cs(dev); }
-                  rrect_fill(dev, xk, yk, cw, ch, snap(6.0f), hc, shade(hc, -0.28f));
-                  outline(dev, xk, yk, cw, ch, sel ? 0xFFFFFFFF : C_BORDER);
-              }
-              if (inrect(mo, xk, yk, cw, ch) && click) { ui_config().plrTheme = window_theme_index(fam, k); save_ui_config(); }
-          }
+          {   float sh_ = slotH;
+              const int pick = theme_grid(dev, fo, mo, click, CTRL_ID, coX, ry, ctrlW, fam, var, sh_);
+              if (pick >= 0) { ui_config().plrTheme = window_theme_index(fam, pick); save_ui_config(); } }
           ROW_NEXT(slotH)
         }
         // Luminosity : darken / lighten the chosen box-theme colour (procedural families only).

@@ -57,12 +57,13 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         };
         for (int i = 0; i < 3; ++i) {
             unsigned& F = *cols[i].col;
-            { ROW_BAND(52.0f)   // label + swatch
-                const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr(cols[i].en, cols[i].fr), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-                const float bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f, pw = snap(58.0f), pxs = coX + ctrlW - pw;
-                flat(dev, pxs, bty, pw, bbh, F | 0xFF000000u); outline(dev, pxs, bty, pw, bbh, C_BORDER);
-            } ROW_NEXT(52.0f)
+            // Just the NAME of the colour being edited. The preview square that used to sit at the right end
+            // of this row said exactly what the picker under it already says, larger and with its hex on it --
+            // and this was the only row in the program still drawing one. The band shrinks with it.
+            { ROW_BAND(34.0f)
+                const float rowH = snap(34.0f), ty = ry + yo; fo->begin(dev);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr(cols[i].en, cols[i].fr), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            } ROW_NEXT(34.0f)
             CFG_COLOR_PICKER_I(&F, i)   // loop variant : distinct drag/hover uids per colour row
         }
         cat_fold_end(dev, ry, top7_, catH_[7], aF7_);

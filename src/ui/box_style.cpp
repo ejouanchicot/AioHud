@@ -123,31 +123,15 @@ void ConfigPage::draw_box_appearance(u32 dev, Font* fo, const MouseState* mo, bo
             CFG_COLOR_PICKER(&bs.hue)
         } else {   // variant grid : FFXI theme chips / procedural hue swatches
             const int fam = window_theme_family(bs.theme), var = window_theme_variant(bs.theme);
-            const bool isFFXI = (fam == 0);
-            const int nVar = isFFXI ? window_tex_theme_count() : box_hue_count();
-            const int COLS = isFFXI ? (nVar < 1 ? 1 : nVar) : 15;
-            const int nrows = (nVar + COLS - 1) / COLS;
-            const float cw = isFFXI ? snap(42.0f) : snap(22.0f), ch = isFFXI ? snap(26.0f) : snap(22.0f), cg = snap(7.0f);
-            const float gridH = nrows * ch + (nrows - 1) * cg, slotH = gridH + snap(20.0f);
+            float slotH = 0.0f;
+            {   // the height has to be known BEFORE ROW_BAND, so it is computed from the same rule the grid uses
+                const int nr = (box_hue_count() + 14) / 15;
+                slotH = (fam == 0) ? snap(52.0f)   // FFXI : a selector row, like every other setting
+                                  : (float)nr * snap(22.0f) + (float)(nr - 1) * snap(7.0f) + snap(20.0f); }
             ROW_BAND(slotH) (void)yo;
-            fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, isFFXI ? tr("Theme", "Thème") : tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float gridW = COLS * cw + (COLS - 1) * cg;
-            const float gx = coX + ctrlW - gridW, gy = ry + (slotH - gridH) * 0.5f;
-            for (int k = 0; k < nVar; ++k) {
-                const float xk = gx + (k % COLS) * (cw + cg), yk = gy + (k / COLS) * (ch + cg);
-                const bool sel = (var == k);
-                if (isFFXI) {
-                    rpanel(dev, xk, yk, cw, ch, snap(6.0f), sel ? C_ROWON_T : 0x66121A18, sel ? C_ROWON_B : 0x66090D0F, sel ? C_ACCENT : C_BORDER, snap(1.2f));
-                    fo->begin(dev); fo->draw_c(dev, xk + cw * 0.5f, yk + ch * 0.5f, window_theme_name(k), snap(13.0f), fa(sel ? C_ACCENTHI : C_TEXT), fa(C_STROKE), 1.0f);
-                } else {
-                    const u32 col = box_hue_color(k);
-                    if (sel) { cs_add(dev); rrect_glow(dev, xk, yk, cw, ch, snap(6.0f), (col & 0x00FFFFFF) | 0x80000000, snap(6.0f)); cs(dev); }
-                    rrect_fill(dev, xk, yk, cw, ch, snap(6.0f), col, shade(col, -0.28f));
-                    outline(dev, xk, yk, cw, ch, sel ? 0xFFFFFFFF : C_BORDER);
-                }
-                if (inrect(mo, xk, yk, cw, ch) && click) { bs.theme = window_theme_index(fam, k); save_ui_config(); }
-            }
+            {   float sh_ = slotH;
+                const int pick = theme_grid(dev, fo, mo, click, CTRL_ID, coX, ry, ctrlW, fam, var, sh_);
+                if (pick >= 0) { bs.theme = window_theme_index(fam, pick); save_ui_config(); } }
             ROW_NEXT(slotH)
         }
         if (window_theme_family(bs.theme) != 0) { ROW_BAND(46.0f)   // Luminosity (procedural only)
@@ -203,15 +187,22 @@ void ConfigPage::draw_frame_section(u32 dev, Font* fo, const MouseState* mo, boo
     }
     const bool own = (!themeCopy || !*themeCopy);
     if (own) {
+        // THE ROW ALWAYS HAS TWO HALVES, and that is what stops anything moving. The family selector took
+        // HALF the width beside "Custom colour" and the FULL width without it -- so choosing FFXI, which has no
+        // hue to customise, widened the row and threw its `< name >` control across to the right edge. That is
+        // the jump: not the grid below, the selector itself.
+        // The second half is now the FFXI SKIN selector when the family is FFXI, exactly where "Custom colour"
+        // sits otherwise. Two rows of two controls, the same geometry whichever family is chosen -- and the
+        // skin is picked by the same kind of control as the family above it.
         { const bool proc = (window_theme_family(*theme) != 0);
-          const float bh2 = (twoCol || !proc) ? snap(48.0f) : snap(96.0f);
+          const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
           ROW_BAND(bh2) (void)yo;
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
           const float yB = twoCol ? yA : yA + snap(48.0f);
           const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, proc);   // an empty second half has no split to state
+          sepv(ry, bh2, true);   // both halves are always occupied now
           { const int fam = window_theme_family(*theme), var = window_theme_variant(*theme);
-            if (int d = row_selector(dev, fo, mo, click, ctrl_uid_i(uidBase, 2), coX, yA, proc ? halfW : ctrlW,
+            if (int d = row_selector(dev, fo, mo, click, ctrl_uid_i(uidBase, 2), coX, yA, halfW,
                                      tr("Box Theme", "Th\xC3\xA8me de cadre"), box_family_name(fam))) {
                 *theme = window_theme_index(wrap(fam + d, box_family_count()), var); save_ui_config(); } }
           if (proc) {   // FFXI skins have no hue of their own -- the switch would control nothing
@@ -222,40 +213,30 @@ void ConfigPage::draw_frame_section(u32 dev, Font* fo, const MouseState* mo, boo
               const bool on = (*hue != 0);
               if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(uidBase, 3), bx2, bty, bbw, bbh, on ? tr("On", "Oui") : tr("Off", "Non"), on)) {
                   *hue = on ? 0u : (box_hue_color(window_theme_variant(*theme)) | 0xFF000000u); save_ui_config(); }
+          } else {      // FFXI : the SKIN, in the half "Custom colour" would occupy
+              const int var = window_theme_variant(*theme), nV = window_tex_theme_count();
+              if (int d = row_selector(dev, fo, mo, click, ctrl_uid_i(uidBase, 3), xB, yB, halfW,
+                                       tr("Theme", "Th\xC3\xA8me"), window_theme_name(var))) {
+                  *theme = window_theme_index(0, wrap(var + d, nV < 1 ? 1 : nV)); save_ui_config(); }
           }
           ROW_NEXT(bh2)
         }
         // The picker / swatch grid keeps the full width : it is a grid, it cannot share a row with anything.
         if (window_theme_family(*theme) != 0 && *hue != 0) {
             CFG_COLOR_PICKER_I(hue, group)
-        } else
-        {   // variant grid : FFXI -> theme-number chips ; procedural family -> hue swatches (click to pick)
+        } else if (window_theme_family(*theme) != 0)
+        {   // the hue swatches (click to pick). FFXI has no row here at all : its skin is chosen in the half
+            // row above, so there is nothing left for this one to hold.
           const int fam = window_theme_family(*theme), var = window_theme_variant(*theme);
-          const bool isFFXI = (fam == 0);
-          const int nVar = isFFXI ? window_tex_theme_count() : box_hue_count();
-          const int COLS = isFFXI ? (nVar < 1 ? 1 : nVar) : 15;
-          const int nrows = (nVar + COLS - 1) / COLS;
-          const float cw = isFFXI ? snap(42.0f) : snap(22.0f), ch = isFFXI ? snap(26.0f) : snap(22.0f), cg = snap(7.0f);
-          const float gridH = nrows * ch + (nrows - 1) * cg, slotH = gridH + snap(20.0f);
+          float slotH = 0.0f;
+          {   // the height has to be known BEFORE ROW_BAND, so it is computed from the same rule the grid uses
+              const int nr = (box_hue_count() + 14) / 15;
+              slotH = (fam == 0) ? snap(52.0f)   // FFXI : a selector row, like every other setting
+                                : (float)nr * snap(22.0f) + (float)(nr - 1) * snap(7.0f) + snap(20.0f); }
           ROW_BAND(slotH) (void)yo;
-          fo->begin(dev);
-          fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, isFFXI ? tr("Theme", "Th\xC3\xA8me") : tr("Colour", "Couleur"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-          const float gridW = COLS * cw + (COLS - 1) * cg;
-          const float gx = coX + ctrlW - gridW, gy = ry + (slotH - gridH) * 0.5f;
-          for (int k = 0; k < nVar; ++k) {
-              const float xk = gx + (k % COLS) * (cw + cg), yk = gy + (k / COLS) * (ch + cg);
-              const bool sel = (var == k);
-              if (isFFXI) {
-                  rpanel(dev, xk, yk, cw, ch, snap(6.0f), sel ? C_ROWON_T : 0x66121A18, sel ? C_ROWON_B : 0x66090D0F, sel ? C_ACCENT : C_BORDER, snap(1.2f));
-                  fo->begin(dev); fo->draw_c(dev, xk + cw * 0.5f, yk + ch * 0.5f, window_theme_name(k), snap(13.0f), fa(sel ? C_ACCENTHI : C_TEXT), fa(C_STROKE), 1.0f);
-              } else {
-                  const u32 c = box_hue_color(k);
-                  if (sel) { cs_add(dev); rrect_glow(dev, xk, yk, cw, ch, snap(6.0f), (c & 0x00FFFFFF) | 0x80000000, snap(6.0f)); cs(dev); }
-                  rrect_fill(dev, xk, yk, cw, ch, snap(6.0f), c, shade(c, -0.28f));
-                  outline(dev, xk, yk, cw, ch, sel ? 0xFFFFFFFF : C_BORDER);
-              }
-              if (inrect(mo, xk, yk, cw, ch) && click) { *theme = window_theme_index(fam, k); save_ui_config(); }
-          }
+          {   float sh_ = slotH;
+              const int pick = theme_grid(dev, fo, mo, click, CTRL_ID, coX, ry, ctrlW, fam, var, sh_);
+              if (pick >= 0) { *theme = window_theme_index(fam, pick); save_ui_config(); } }
           ROW_NEXT(slotH)
         }
     }

@@ -2,6 +2,8 @@
 // (palette state + animation springs + AA primitives + the labeled controls), lifted out of
 // config_page.cpp so every module's *_config.cpp draws with the same controls and ease() namespaces.
 #include "ui/config_controls.h"
+#include "gfx/window.h"      // window_tex_theme_count / window_theme_name (the FFXI skins)
+#include "ui/box_style.h"       // box_hue_count / box_hue_color (the procedural families)
 #include "gfx/draw.h"          // grad_quad, rrect, soft_blob, rrect_glow, disc, disc_glow, seg_soft, fill_tri, tquad, dSet*
 #include "model/ui_config.h"   // ui_config(), save_ui_config() (row_slider persists on release)
 #include "windower_debug.h"    // debug::log : ease()'s spring table says so when it fills (rule 10 corollary)
@@ -787,7 +789,7 @@ static u32 cp_chart(int col, int row) {
 }
 // A swatch chip, drawn the one way : rounded fill with its own darker underside, a border that hugs the round,
 // a white ring + a glow of its own colour when it IS the current colour, and a small lift under the pointer.
-static void cp_chip(u32 dev, float x, float y, float w, float h, u32 c, bool sel, float hov) {
+void cp_swatch(u32 dev, float x, float y, float w, float h, u32 c, bool sel, float hov) {
     const float r = snap(7.0f), lift = snap(1.5f) * hov;
     const float X = x - lift, Y = y - lift, W = w + 2.0f * lift, H = h + 2.0f * lift;
     if (sel) { cs_add(dev); rrect_glow(dev, X, Y, W, H, r, (c & 0x00FFFFFFu) | 0x88000000u, snap(7.0f)); cs(dev); }
@@ -944,7 +946,7 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
         const int gp = i + 1; const float sx = rx + (gp % CP_FAVC) * (fcw + fgap), sy = favY + (gp / CP_FAVC) * (fch + fgap);
         const u32 fc = ui_config().favColors[i] | 0xFF000000u;
         const bool hov = inrect(mo, sx, sy, fcw, fch);
-        cp_chip(dev, sx, sy, fcw, fch, fc, ((*color) & 0x00FFFFFFu) == (fc & 0x00FFFFFFu), hov ? hv : 0.0f);
+        cp_swatch(dev, sx, sy, fcw, fch, fc, ((*color) & 0x00FFFFFFu) == (fc & 0x00FFFFFFu), hov ? hv : 0.0f);
         if (fo && hov) {                                                                 // hover : a remove badge in the corner
             const float br = snap(6.0f), bcx = sx + fcw - br, bcy = sy + br;
             disc(dev, bcx, bcy, br, 0xEE12171Cu); disc(dev, bcx, bcy, br - snap(1.1f), 0xFF2A343Cu);
@@ -957,10 +959,48 @@ bool color_picker(u32 dev, Font* fo, const MouseState* mo, int uidSV, int uidHue
     for (int col = 0; col < CP_COLS; ++col) for (int row = 0; row < CP_ROWS; ++row) {
         const float sx = gx + col * (cch + ccg), sy = chartY + row * (cch + ccg);
         const u32 cc2 = cp_chart(col, row);
-        cp_chip(dev, sx, sy, cch, cch, cc2, ((*color) & 0x00FFFFFFu) == (cc2 & 0x00FFFFFFu),
+        cp_swatch(dev, sx, sy, cch, cch, cc2, ((*color) & 0x00FFFFFFu) == (cc2 & 0x00FFFFFFu),
                 inrect(mo, sx, sy, cch, cch) ? hv : 0.0f);
     }
     return changed;
+}
+
+// ---- the box-theme grid (see the header) ------------------------------------------------------------------
+int theme_grid(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
+               float coX, float ry, float ctrlW, int fam, int var, float& slotH) {
+    const bool  isFFXI = (fam == 0);
+    const int   nVar   = isFFXI ? window_tex_theme_count() : box_hue_count();
+    if (isFFXI) {
+        // THE FFXI SKIN IS PICKED WITH A SELECTOR, not a grid -- the same `< name >` row as the family above
+        // it, and the same shape as every other setting on the page. A grid of named chips can only be as wide
+        // as its names, so right-aligned in its row it started at a different x than the hue swatches and the
+        // block jumped sideways whenever you changed family. Matching the two widths was treating a symptom:
+        // the two modes were never the same KIND of control. They are now, and this row sits exactly where the
+        // procedural family puts "Custom colour", so the section keeps its shape across the switch.
+        slotH = snap(52.0f);
+        const int d = row_selector(dev, fo, mo, click, uid, coX, ry + (slotH - snap(40.0f)) * 0.5f, ctrlW,
+                                   tr("Theme", "Th\xC3\xA8me"), window_theme_name(var));
+        return d ? wrap(var + d, nVar < 1 ? 1 : nVar) : -1;
+    }
+    const float cg = snap(7.0f);
+    const int   COLS = 15;
+    const float GRIDW = 15.0f * snap(22.0f) + 14.0f * cg;
+    const float cw = snap(22.0f), ch = snap(22.0f);
+    const int   nrows = (nVar + COLS - 1) / COLS;
+    const float gridH = (float)nrows * ch + (float)(nrows - 1) * cg;
+    slotH = gridH + snap(20.0f);
+    fo->begin(dev);
+    fo->draw_lc(dev, coX + snap(4.0f), ry + slotH * 0.5f, tr("Colour", "Couleur"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
+    const float gx = coX + ctrlW - GRIDW, gy = ry + (slotH - gridH) * 0.5f;   // anchored on the SHARED width
+    int picked = -1;
+    for (int k = 0; k < nVar; ++k) {
+        const float xk = gx + (k % COLS) * (cw + cg), yk = gy + (k / COLS) * (ch + cg);
+        const bool  sel = (var == k), hov = inrect(mo, xk, yk, cw, ch);
+        const float t = ease(ctrl_uid_i(uid, k), hov ? 1.0f : 0.0f);
+        cp_swatch(dev, xk, yk, cw, ch, box_hue_color(k), sel, t);   // the same swatch the picker draws
+        if (hov && click) picked = k;
+    }
+    return picked;
 }
 
 void nav_row(u32 dev, Font* fo, float x, float y, float w, float h, const char* label, bool active, float t, float pulse) {
