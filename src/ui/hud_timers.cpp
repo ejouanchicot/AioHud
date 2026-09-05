@@ -34,6 +34,105 @@ namespace aio {
 // the server re-sends them shortly), the buffs you cast on allies (estimates), and the FOCUS monitor's remembered
 // buffs (a bumped generation makes timers_draw wipe its static fm[]). Clears any stuck "OUT" alert / stale row.
 static unsigned g_tmResetGen = 0;
+static const char* abil_name_by_id(unsigned id);   // defined below (COR rolls name their ABILITY, not a spell)
+static int fm_tag_of(unsigned target, unsigned status, bool self);   // the number to print on a row, 0 = not monitored
+static bool fm_muted_for(unsigned target, unsigned status, bool self);   // ... and whether this row was removed by hand
+
+// ---- THE FOCUS MONITOR : which buffs we have promised to keep up, and on whom. ------------------------------
+// It lives at file scope rather than inside timers_draw because it is the one piece of timer state a PERSON has
+// to be able to correct. A monitored entry is born the moment a focus-flagged buff YOU cast is seen on a party
+// member -- and nothing at that instant distinguishes "I meant to Haste him" from "I clicked the wrong name".
+// The mistake only becomes visible later, as a red OUT for a buff you never intended to maintain.
+//
+// `muted` is the correction. Muting an entry stops the OUT, and the entry is DROPPED as soon as its buff is
+// gone -- so the mute lives exactly as long as the cast that caused it, and a deliberate re-cast on that same
+// person later starts a fresh, un-muted entry. That is why none of this needs to be saved to disk: there is no
+// lasting state, only "ignore the one that is currently up".
+// `tag` is the number you see on the row and type into //aio out. It is assigned once, at creation, and never
+// changes while the entry lives -- which is the whole point: the ROWS are sorted by remaining time and shuffle
+// as things tick, so a number that meant "third row from the top" would mean something else by the time you had
+// finished typing it. A number that belongs to the ENTRY is the same number whenever you read it.
+struct FocusMem { unsigned target; unsigned short status, spell; unsigned char isAbil, self, zoneCheck, muted, tag, seen; unsigned lostMs; char name[20]; };
+static FocusMem fm[24];
+static int fmN = 0;
+static unsigned char fm_free_tag() {   // lowest number not in use : the list stays 1,2,3... as entries come and go
+    for (unsigned char t = 1; t <= 24; ++t) {
+        bool used = false;
+        for (int q = 0; q < fmN; ++q) if (fm[q].tag == t) { used = true; break; }
+        if (!used) return t;
+    }
+    return 0;
+}
+
+// The tracked list, as text. NOT printed by default: the numbers are drawn on the rows themselves, and on a
+// job like RDM a printed list would be twenty lines of chat to find one of them. Kept because it is the only
+// way to see the monitor's contents when a row is NOT on screen -- clipped by Max per column, or hidden by a
+// filter -- which is exactly the case a diagnosis needs.
+int timers_focus_list(char out[][64], int max) {
+    int n = 0;
+    for (int q = 0; q < fmN && n < max; ++q) {
+        const char* sp = fm[q].isAbil ? abil_name_by_id(fm[q].spell)
+                                      : (spell_info(fm[q].spell) ? spell_info(fm[q].spell)->en : 0);
+        _snprintf(out[n], 64, "%u. %s - %s%s", (unsigned)fm[q].tag, fm[q].self ? "you" : (fm[q].name[0] ? fm[q].name : "?"),
+                  sp ? sp : buff_status_name(fm[q].status), fm[q].muted ? " (ignored)" : "");
+        out[n][63] = 0; ++n;
+    }
+    return n;
+}
+// Forget entries. `a` / `b` are free-form: an index (1-based, as listed), "all", or a case-insensitive PREFIX
+// of a person's name or of the spell's -- in either order, because the row on screen reads "Name - Spell" and
+// nobody should have to remember which half comes first. Returns how many were forgotten.
+static bool tf_pre(const char* hay, const char* pre) {
+    if (!hay || !pre || !*pre) return false;
+    for (int i = 0; pre[i]; ++i) {
+        const char h = hay[i], q = pre[i];
+        if (!h) return false;
+        const char H = (h >= 'A' && h <= 'Z') ? (char)(h + 32) : h;
+        const char Q = (q >= 'A' && q <= 'Z') ? (char)(q + 32) : q;
+        if (H != Q) return false;
+    }
+    return true;
+}
+int fm_tag_of(unsigned target, unsigned status, bool self) {
+    for (int q = 0; q < fmN; ++q)
+        if (fm[q].self == (self ? 1 : 0) && fm[q].status == status && (self || fm[q].target == target))
+            return fm[q].muted ? 0 : fm[q].tag;   // muted -> no number : the row is no longer watched, and it SHOWS
+    return 0;
+}
+// //aio out REMOVES THE LINE, it does not merely stop the alert. That is what the number is for -- a handle on
+// a row you did not want -- so a row you take off has to actually go, name, timer and all. The buff itself is
+// untouched (it is really on that person); what disappears is our decision to show it and to watch it.
+bool fm_muted_for(unsigned target, unsigned status, bool self) {
+    for (int q = 0; q < fmN; ++q)
+        if (fm[q].muted && fm[q].self == (self ? 1 : 0) && fm[q].status == status && (self || fm[q].target == target)) return true;
+    return false;
+}
+int timers_focus_forget(const char* a, const char* b) {
+    const bool all = (a && (tf_pre("all", a) || tf_pre("tout", a)));
+    int idx = -1;   // a NUMBER is the entry's tag -- the one drawn on its row -- not a position in this array
+    if (a && a[0] >= '0' && a[0] <= '9') { idx = 0; for (const char* c = a; *c >= '0' && *c <= '9'; ++c) idx = idx * 10 + (*c - '0'); }
+    int hit = 0;
+    for (int q = 0; q < fmN; ++q) {
+        const char* sp = fm[q].isAbil ? abil_name_by_id(fm[q].spell)
+                                      : (spell_info(fm[q].spell) ? spell_info(fm[q].spell)->en : 0);
+        const char* who = fm[q].self ? "you" : fm[q].name;
+        bool match = all || (idx > 0 && fm[q].tag == (unsigned char)idx);
+        if (!match && !all && idx < 0) {
+            const char* args[2] = { a, b };
+            int need = 0, got = 0;
+            for (int k = 0; k < 2; ++k) {
+                if (!args[k] || !args[k][0]) continue;
+                ++need;
+                if (tf_pre(who, args[k]) || tf_pre(sp, args[k]) || tf_pre(buff_status_name(fm[q].status), args[k])) ++got;
+            }
+            match = (need > 0 && got == need);
+        }
+        if (!match) continue;
+        fm[q].muted = 1; fm[q].lostMs = 0; ++hit;   // the emit skips it, and it is dropped when its buff ends
+    }
+    return hit;
+}
+
 void timers_reset() { party().buff_timers_clear(); party().other_buffs_clear(); ++g_tmResetGen; }
 
 // //aio oblog -- ONE-FRAME dump of the whole ally-buff pipeline, in the three stages it actually has :
@@ -214,7 +313,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // COR roll : name = "Chaos Roll", pip = the coloured pip number (0 = none), post = " (AoE 6)" suffix -> drawn as
     // "Chaos Roll [5] (AoE 6)" with ONLY the pip in pipCol (unlucky=red, lucky/11=green, else white). nameCol overrides
     // the whole-name colour (unused now that only the pip is tinted).
-    struct Row { int rem; int fine; int icon; const char* name; int both; int order; u32 nameCol; int pip; u32 pipCol; const char* post; u32 postCol; const char* tag; u32 tagCol; int src; };   // tag : BRD song modifiers "(SV)(T)" drawn in tagCol, between the name and the AoE suffix
+    struct Row { int rem; int fine; int icon; const char* name; int both; int order; u32 nameCol; int pip; u32 pipCol; const char* post; u32 postCol; const char* tag; u32 tagCol; int src; int mark; };   // mark : the focus-monitor number (0 = not monitored) -- what //aio out takes   // tag : BRD song modifiers "(SV)(T)" drawn in tagCol, between the name and the AoE suffix
     static const int TM_REM_MISSING = -1000000000;   // FOCUS alert row : an ally is MISSING a critical buff -> timer shows "OUT" in red, sorts to the very top
     // `fine` = the same remaining time as `rem` but in TICKS (1/60 s), used ONLY to sort. `rem` is ceil-ed to whole
     // seconds for display, so two timers a fraction of a second apart show the SAME number every other second --
@@ -228,7 +327,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // tick (the frozen demo/preview rows) are allowed to stay there.
     static const int TM_FINE_NONE = -2000000000;
     static Row bufs[50], recs[50]; int nb = 0, nr = 0;
-    for (int i = 0; i < 50; ++i) { bufs[i].nameCol = recs[i].nameCol = 0; bufs[i].pip = recs[i].pip = 0; bufs[i].post = recs[i].post = 0; bufs[i].postCol = recs[i].postCol = 0; bufs[i].tag = recs[i].tag = 0; bufs[i].src = recs[i].src = 0; bufs[i].fine = recs[i].fine = TM_FINE_NONE; }   // clear per-frame overrides (static arrays)
+    for (int i = 0; i < 50; ++i) { bufs[i].nameCol = recs[i].nameCol = 0; bufs[i].pip = recs[i].pip = 0; bufs[i].post = recs[i].post = 0; bufs[i].postCol = recs[i].postCol = 0; bufs[i].tag = recs[i].tag = 0; bufs[i].src = recs[i].src = 0; bufs[i].mark = recs[i].mark = 0; bufs[i].fine = recs[i].fine = TM_FINE_NONE; }   // clear per-frame overrides (static arrays)
     if (preview || editing) {
         static const struct { int id, rem; } SB[5] = { {43, 1490}, {57, 155}, {214, 309}, {40, 540}, {33, 28} };
         for (int i = 0; i < 5; ++i) { bufs[nb].rem = SB[i].rem; bufs[nb].icon = SB[i].id; bufs[nb].name = buff_status_name(SB[i].id); bufs[nb].both = 0; bufs[nb].order = 0; ++nb; }
@@ -609,7 +708,9 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (rowOwner && rowOwner[0] && stN < stMax) { _snprintf(selfTag[stN], sizeof(selfTag[0]) - 1, " (%s)", rowOwner); selfTag[stN][sizeof(selfTag[0]) - 1] = 0;
                     bufs[nb].post = selfTag[stN]; bufs[nb].postCol = 0xFF9AB0C8u; ++stN; }
             }
+            if (fm_muted_for(0, bt[i].id, true)) continue;   // taken off by //aio out : no row at all
             bufs[nb].src = 2;   // pass 2 : your OWN 0x063 buff timer
+            bufs[nb].mark = fm_tag_of(0, bt[i].id, true);
             ++nb;
         }
         {   // GEO : the single Indi- you carry -> a stable row at the COMPUTED aura lifetime (base+JP+gear), not the 3s pulse
@@ -731,9 +832,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     // so the row rides its estimate to the end -- the same trade the zone grace already makes.
                     const bool known = (bs != 0);   // do we hold this member's buff list at all ?
                     if (known && !has && !graceOB) continue;   // told about them, and the buff is not there -> gone
+                    if (fm_muted_for(ob[i].target, ob[i].status, false)) continue;   // taken off by //aio out : no row at all
                     if (en) { _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s - %s", ob[i].name, en); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0; bufs[nb].name = obLabel[nb]; }
                     else bufs[nb].name = ob[i].name;
-                    bufs[nb].rem = obRem(ob[i]); bufs[nb].fine = obFine(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].both = 1; bufs[nb].order = poBase + party().party_order(ob[i].target); bufs[nb].src = 5; ++nb;   // ally-cast rows GROUPED BY ally ; laggards form a named block after the fresh ones
+                    bufs[nb].rem = obRem(ob[i]); bufs[nb].fine = obFine(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].both = 1; bufs[nb].order = poBase + party().party_order(ob[i].target); bufs[nb].src = 5; bufs[nb].mark = fm_tag_of(ob[i].target, ob[i].status, false); ++nb;   // ally-cast rows GROUPED BY ally ; laggards form a named block after the fresh ones
                     OBLOG("  ROW  per-ally  \"%s\"  rem=%ds  order=%d   [group %d, %s]", bufs[nb-1].name ? bufs[nb-1].name : "?", bufs[nb-1].rem, bufs[nb-1].order, k, lag ? "laggard" : "fresh");
                 }
             }
@@ -746,8 +848,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         //      them once they're UP -- on YOU (Self) or on an ally (Allies you cast them on) -- and keep a RED row
         //      while the buff is MISSING, until it's re-applied. Pruned when the ally leaves the party or you zone. ----
         if (trkJob) {
-            static struct FocusMem { unsigned target; unsigned short status, spell; unsigned char isAbil, self, zoneCheck; unsigned lostMs; char name[20]; } fm[24];
-            static int fmN = 0; static unsigned fmZone = 0xFFFFFFFFu; static unsigned fmZoneGraceMs = 0; static unsigned fmGen = 0;
+            static unsigned fmZone = 0xFFFFFFFFu; static unsigned fmZoneGraceMs = 0; static unsigned fmGen = 0;
             if (fmGen != g_tmResetGen) { fmN = 0; fmGen = g_tmResetGen; }                       // //aio timers reset -> wipe the monitor
             const unsigned zone = f.game ? f.game->zone : 0;   // the SNAPSHOT, not a second read of the same offset (rules 6 & 7)
             // a focus buff PERSISTS across a zone : KEEP the monitor, just grace the "lost" alerts while the 0x063 / 0x076 buff
@@ -778,6 +879,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             if (party().self_main_job_changed()) { int wj = 0;
               for (int q = 0; q < fmN; ++q) if (fm[q].self) { if (wj != q) fm[wj] = fm[q]; ++wj; }
               fmN = wj; }
+            for (int q = 0; q < fmN; ++q) fm[q].seen = 0;                                      // ... cleared before the two seeding loops below
             { int n2 = 0; const BuffTimer* bt2 = party().buff_timers(n2);                      // remember FOCUS buffs currently up on YOU (Self focus key 0x8000|st)
               for (int i = 0; i < n2; ++i) { const unsigned st = bt2[i].id;
                 if (focus_trace_live() && st < 1024 && !is_debuff_status(st) && meHas((int)st)) {
@@ -795,8 +897,8 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 { const unsigned oc = party().buff_caster_for((unsigned short)st, bt2[i].expiry, i);
                   if (oc && oc != meId) continue; }
                 int s = -1; for (int q = 0; q < fmN; ++q) if (fm[q].self && fm[q].status == st) { s = q; break; }
-                if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].lostMs = 0; fm[s].zoneCheck = 0; fm[s].name[0] = 0; }
-                if (s >= 0) fm[s].spell = party().self_buff_spell_ranked((unsigned short)st, bt2[i].expiry, i);   // refresh the spell/tier each frame (a re-cast at a higher tier updates the OUT label)
+                if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].lostMs = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].name[0] = 0; }
+                if (s >= 0) { fm[s].seen = 1; fm[s].spell = party().self_buff_spell_ranked((unsigned short)st, bt2[i].expiry, i); }   // refresh the spell/tier each frame (a re-cast at a higher tier updates the OUT label)
               } }
             for (int i = 0; i < no; ++i) {                                                     // remember FOCUS buffs currently up on allies (Allies focus key 0xC000|st ; needs tmMine)
                 const unsigned st = ob[i].status;
@@ -806,11 +908,18 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // filled fm[] on an alliance run and starved your own rows.
                 if (party().party_order(ob[i].target) > 5) continue;
                 int s = -1; for (int q = 0; q < fmN; ++q) if (!fm[q].self && fm[q].target == ob[i].target && fm[q].status == st) { s = q; break; }
-                if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].lostMs = 0; fm[s].zoneCheck = 0; }
+                if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].lostMs = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; }
                 else if (s < 0) { static windower::debug::LogOnce<2> onceFull;   // SAY it. A silent refusal here is indistinguishable from "no buff to watch".
                     if (onceFull.first(0)) windower::debug::log("FOCUS monitor FULL (%d entries) -- new ally focus buffs are NOT tracked this session", 24); }
-                if (s >= 0) { fm[s].spell = ob[i].spell; fm[s].isAbil = ob[i].isAbil; int j = 0; for (; j < 19 && ob[i].name[j]; ++j) fm[s].name[j] = ob[i].name[j]; fm[s].name[j] = 0; }
+                if (s >= 0) { fm[s].seen = 1; fm[s].spell = ob[i].spell; fm[s].isAbil = ob[i].isAbil; int j = 0; for (; j < 19 && ob[i].name[j]; ++j) fm[s].name[j] = ob[i].name[j]; fm[s].name[j] = 0; }
             }
+            // A MUTED entry lives exactly as long as the thing that feeds it. Once no live source refreshed it
+            // this frame, it is gone for good -- and a later, deliberate cast on that person creates a fresh
+            // entry, un-muted and watched again, which is the whole intent: you silenced ONE mistake, not the
+            // spell. Only muted entries are pruned here ; a normal one must survive its buff to raise the OUT.
+            { int wj = 0;
+              for (int q = 0; q < fmN; ++q) { if (fm[q].muted && !fm[q].seen) continue; if (wj != q) fm[wj] = fm[q]; ++wj; }
+              fmN = wj; }
             if (zoneGrace) for (int q = 0; q < fmN; ++q) fm[q].zoneCheck = 1;                 // through the WHOLE settle : flag every entry (incl. ones just re-populated from a stale list) for post-grace validation
             // ---- BRD song "OUT" suppression : a song BEYOND your no-Clarion-Call maximum, once Clarion Call is spent,
             //      cannot be re-cast -- so a lost 5th (Clarion Call) song must NOT raise a permanent red OUT ("pour 4
@@ -965,6 +1074,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                                          (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].self, has ? 1 : 0,
                                          fm[q].lostMs, zoneGrace ? 1 : 0, okv, nb2, lst);
                 }
+                // Muted by hand (//aio out) : never alert, and never dropped from HERE. It used to be dropped as
+                // soon as `has` went false -- but `has` reads the 0x076 presence on the target, while the entry
+                // is FED by ob[] (your own cast estimate). The two disagree constantly: a buff missing from a
+                // 0x076 that has not arrived yet made the muted entry die and the seeding loop re-create it a
+                // frame later, brand new and UN-muted, with a new number. That is why the row kept changing
+                // number instead of going quiet. The drop now happens where the feeding does -- see `seen`.
+                if (fm[q].muted) { fm[q].lostMs = 0; continue; }
                 if (has) { fm[q].lostMs = 0; continue; }                                       // still up -> the normal row covers it, reset the loss timer
                 if (zoneGrace) { fm[q].lostMs = 0; continue; }                                 // just zoned : buff lists still arriving -> don't false-alert (persist across the zone)
                 if (!listReady(fm[q])) { fm[q].lostMs = 0; continue; }                         // NO DATA for this target (alliance member, or a party member out of zone : buffs_for()==0) -> "unknown", NOT "gone". The self path already fails open via meHas ; the ally path used to fire a permanent false red "OUT" here.
@@ -1006,7 +1122,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s - %s", fm[q].name, en ? en : "?");
                 }
                 obLabel[nb][sizeof(obLabel[nb]) - 1] = 0;
-                bufs[nb].name = obLabel[nb]; bufs[nb].nameCol = 0xFFFF3B3Bu; bufs[nb].rem = TM_REM_MISSING; bufs[nb].icon = fm[q].status; bufs[nb].both = 1; bufs[nb].order = 0; bufs[nb].src = 6; ++nb;   // ALL "OUT" alerts (self + ally) sort to order 0 : rem=MISSING pulls them to the very top so a small tmMax can't clip a critical alert
+                bufs[nb].name = obLabel[nb]; bufs[nb].nameCol = 0xFFFF3B3Bu; bufs[nb].rem = TM_REM_MISSING; bufs[nb].icon = fm[q].status; bufs[nb].both = 1; bufs[nb].order = 0; bufs[nb].src = 6; bufs[nb].mark = fm[q].tag; ++nb;   // ALL "OUT" alerts (self + ally) sort to order 0 : rem=MISSING pulls them to the very top so a small tmMax can't clip a critical alert
             }
         }
         if (g_obLog) {   // ---- every stage done, focus monitor included. Disarm : one frame is the whole point. ----
@@ -1052,16 +1168,35 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         if (r.rem > 30000000 || r.rem < -30000000) return r.rem;   // no sub-second source and out of multiply range (OUT sentinel, absurd timer)
         return r.rem * 60;                           // frozen demo rows : nothing to refine, they never tick
     };
-    auto after = [&fineOf](const Row& x, const Row& y) -> bool {   // does x sort AFTER y ?
-        if (x.order != y.order) return x.order > y.order;
+    // `mode` picks the PRIMARY key ; everything after it is unchanged, and that matters -- rem before fine is
+    // what stops the yoyo described above, so a new key may only ever go in FRONT of rem, never between them.
+    //   Duration 0 : band (person) then soonest      1 : soonest, everyone mixed -- but TRUSTS STILL LAST
+    //   Recast   0 : soonest                         1 : by name
+    // Trusts stay last in both duration modes on purpose: they are the rows you are least likely to act on,
+    // and tmMax cuts the tail, so mixing them in would let a trust's Protect push out one of your own timers.
+    auto after = [&fineOf](const Row& x, const Row& y, int mode, bool recast) -> bool {   // does x sort AFTER y ?
+        if (recast) {
+            if (mode == 1) { const int c = strcmp(x.name ? x.name : "", y.name ? y.name : ""); if (c) return c > 0; }
+        } else if (mode == 1) {
+            const int tx = (x.order >= 90) ? 1 : 0, ty = (y.order >= 90) ? 1 : 0;   // 90+ = a trust's buff on you
+            if (tx != ty) return tx > ty;
+        } else if (x.order != y.order) return x.order > y.order;
         if (x.rem != y.rem) return x.rem > y.rem;
         const int fx = fineOf(x), fy = fineOf(y);
         if (fx != fy) return fx > fy;
         if (x.icon != y.icon) return x.icon > y.icon;
         return strcmp(x.name ? x.name : "", y.name ? y.name : "") > 0;
     };
-    for (int a = 1; a < nb; ++a) { Row t = bufs[a]; int b = a - 1; while (b >= 0 && after(bufs[b], t)) { bufs[b + 1] = bufs[b]; --b; } bufs[b + 1] = t; }
-    for (int a = 1; a < nr; ++a) { Row t = recs[a]; int b = a - 1; while (b >= 0 && after(recs[b], t)) { recs[b + 1] = recs[b]; --b; } recs[b + 1] = t; }
+    { const int md = C.tmSortDur;
+      for (int a = 1; a < nb; ++a) { Row t = bufs[a]; int b = a - 1; while (b >= 0 && after(bufs[b], t, md, false)) { bufs[b + 1] = bufs[b]; --b; } bufs[b + 1] = t; } }
+    { const int md = C.tmSortRec;
+      for (int a = 1; a < nr; ++a) { Row t = recs[a]; int b = a - 1; while (b >= 0 && after(recs[b], t, md, true)) { recs[b + 1] = recs[b]; --b; } recs[b + 1] = t; } }
+    // THE HINT LIVES ON THE ROW THAT NEEDS IT. A red OUT for a buff you never meant to keep is a mistake, and
+    // the correction has to be reachable without remembering anything -- so the offending row carries the words
+    // that fix it, and they vanish with it. Only the FIRST one: repeated down a column of alerts a hint becomes
+    // noise. Placed after the sort (OUT rows carry rem = TM_REM_MISSING, so they are already on top) and before
+    // the tmMax clamp, so the row it lands on is always one that is actually drawn.
+    if (!preview && !editing) { for (int i = 0; i < nb; ++i) if (bufs[i].src == 6 && !bufs[i].post) { bufs[i].post = "  //aio out"; bufs[i].postCol = 0xFF7E8894u; break; } }
     if (nb > C.tmMax) nb = C.tmMax; if (nr > C.tmMax) nr = C.tmMax;
 
 #ifdef AIOHUD_PROBES
@@ -1142,7 +1277,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // draw ONE box holding `nc` columns at fractional (fx,fy) ; when ovS>0 (config preview) it centres on (ovcx,ovcy).
     // measureOnly returns the box width WITHOUT drawing (so the preview can lay two separate boxes side by side). Returns boxW.
     auto emit = [&](Col* cols, int nc, float fx, float fy, int editId, float* saveFx, float* saveFy, float ovcx, float ovcy, bool measureOnly) -> float {
-        float colW[2] = { 0.0f, 0.0f }; int rowsMax = 0;
+        // The monitor number sits in a GUTTER at the far LEFT of the column, before the icon -- not between the
+        // icon and the name, where it would read as part of the buff. The gutter is one width for the whole
+        // column (the widest number in it), so every icon in the column still lines up; a per-row width would
+        // ragged them by a digit. Zero when nothing in the column is monitored, so a column that has no numbers
+        // loses no space to them.
+        float colW[2] = { 0.0f, 0.0f }, markW[2] = { 0.0f, 0.0f }; int rowsMax = 0;
+        char mkb[8];
         for (int c = 0; c < nc; ++c) {
             const Col& CC = cols[c]; if (CC.n > rowsMax) rowsMax = CC.n;
             const bool wantIcon = (CC.mode == TMDISP_ICON || CC.mode == TMDISP_BOTH);
@@ -1153,7 +1294,11 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             for (int i = 0; i < CC.n; ++i) { const float w = fT->measure(fmt(CC.list[i].rem), zT); if (w > timeW) timeW = w;
                 const bool rowName = wantName || CC.list[i].both;   // only rows that actually render a name reserve width
                 if (rowName && CC.list[i].name) { const float nw = rowNameW(CC.list[i]); if (nw > nameW) nameW = nw; } }
-            float leftW = colIcon ? icon : 0.0f;
+            for (int i = 0; i < CC.n; ++i) if (CC.list[i].mark > 0) {
+                sprintf(mkb, "%d", CC.list[i].mark);
+                const float w2 = fN->measure(mkb, zN); if (w2 > markW[c]) markW[c] = w2; }
+            if (markW[c] > 0.0f) markW[c] += icgap;
+            float leftW = markW[c] + (colIcon ? icon : 0.0f);
             if (nameW > 0.0f) leftW += (colIcon ? icgap : 0.0f) + nameW;
             if (leftW <= 0.0f) leftW = icon;
             float w = leftW + gap + timeW;
@@ -1197,9 +1342,14 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 const bool rWantIcon = wantIcon || CC.list[i].both, rWantName = wantName || CC.list[i].both;
                 const bool haveIcon = (CC.tex && ic >= 0 && ic < CC.cells);
                 bool drewIcon = false;
-                if (rWantIcon && haveIcon) { const float u0 = (float)(ic % BUFF_COLS) * CC.au, v0 = (float)(ic / BUFF_COLS) * CC.av; draw_icon_cell(dev, CC.tex, cx, cyy + (rowH - icon) * 0.5f, icon, icon, u0, u0 + CC.au, v0, v0 + CC.av); drewIcon = true; }
+                const float gx0 = cx + markW[c];   // everything after the number gutter
+                if (CC.list[i].mark > 0) {         // the handle //aio out takes -- dim, it is not part of the buff
+                    char mb[8]; sprintf(mb, "%d", CC.list[i].mark);
+                    fN->begin(dev); fN->draw_lc(dev, cx, cyy + rowH * 0.5f, mb, zN, 0xFF6E7885u, strk, oN);
+                }
+                if (rWantIcon && haveIcon) { const float u0 = (float)(ic % BUFF_COLS) * CC.au, v0 = (float)(ic / BUFF_COLS) * CC.av; draw_icon_cell(dev, CC.tex, gx0, cyy + (rowH - icon) * 0.5f, icon, icon, u0, u0 + CC.au, v0, v0 + CC.av); drewIcon = true; }
                 if (nm && (rWantName || (rWantIcon && !haveIcon))) {   // name : requested, OR fallback when the wanted icon is missing
-                    const float nx = cx + (drewIcon ? icon + icgap : 0.0f);
+                    const float nx = gx0 + (drewIcon ? icon + icgap : 0.0f);
                     u32 baseNameCol = CC.list[i].nameCol ? CC.list[i].nameCol : tm_col(TM_NAME, dim);
                     if (CC.list[i].rem == TM_REM_MISSING) baseNameCol = flashStrong ? 0xFFFF6A6Au : 0xFFFF2020u;   // FOCUS alert : the whole "Ally - Buff" row blinks red
                     else if (C.tmSpAlert && CC.list[i].icon > 0 && CC.list[i].rem > 0 && CC.list[i].rem < 60 && is_sp_buff_status(CC.list[i].icon)) baseNameCol = flashStrong ? 0xFFFFF000u : 0xFFFF1010u;   // SP last-minute : the whole row blinks hard

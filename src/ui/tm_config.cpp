@@ -45,6 +45,16 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         } ROW_NEXT(46.0f)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.tmBox);   // Box / Transparency / Theme / Hue / Luminosity
         ROW_TOGGLE(CTRL_ID, tr("Show titles", "Afficher les titres"), c.tmTitle)
+        { ROW_BAND(52.0f)   // Duration : what decides the row order
+            const char* NM[2] = { tr("Person, then time", "Personne, puis temps"), tr("Shortest first", "Plus court d'abord") };
+            const int m = (c.tmSortDur == 1) ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Duration order", "Ordre Dur\xC3\xA9""e"), NM[m])) { c.tmSortDur = wrap(m + d, 2); save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        { ROW_BAND(52.0f)   // Recast : same question, different axes (every recast is yours -> no person to group by)
+            const char* NM[2] = { tr("Shortest first", "Plus court d'abord"), tr("By name", "Par nom") };
+            const int m = (c.tmSortRec == 1) ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Recast order", "Ordre Recast"), NM[m])) { c.tmSortRec = wrap(m + d, 2); save_ui_config(); }
+        } ROW_NEXT(52.0f)
         ROW_CHOICE_G(CTRL_ID, tr("Layout", "Disposition"), c.tmMerged, tr("Fused", "Fusionn\xC3\xA9"), tr("Separate", "S\xC3\xA9par\xC3\xA9"), 48.0f, 38.0f, 128.0f)   // Layout : fused (one box) vs separate (two draggable boxes)
         { ROW_BAND(46.0f)   // Max per column
             const float lo = 1.0f, hi = 50.0f; char b[16]; sprintf(b, "%d", c.tmMax);

@@ -40,7 +40,22 @@
 #define AIOHUD_VERSION "dev"
 #endif
 
+// A token match with WORD BOUNDARIES, unlike the plain strstr() every other command here uses. It exists
+// because "out" is a substring of "layout": tested with strstr, and tested EARLIER in this chain, //aio out
+// would have swallowed //aio edit layout whole -- silently, which is how the probe-command collision in
+// aiohud_probes.cpp went unnoticed for months. A short token needs boundaries; a long one gets away without.
+// Returns the text AFTER the token (possibly empty), or 0 when the token is not there as a word.
+static const char* aio_word(const char* buf, const char* tok) {
+    const size_t n = strlen(tok);
+    for (const char* p = buf; (p = strstr(p, tok)) != 0; p += n) {
+        const char b = (p == buf) ? ' ' : p[-1], a = p[n];
+        if ((b == ' ' || b == '\t') && (a == 0 || a == ' ' || a == '\t')) return p + n;
+    }
+    return 0;
+}
+
 namespace aio { void timers_reset(); }   // hud_timers.cpp : //aio timers reset -> flush live buff/recast timers + focus alerts
+namespace aio { int timers_focus_list(char out[][64], int max); int timers_focus_forget(const char* a, const char* b); }   // //aio out
 namespace aio { void timers_oblog_arm(); }   // hud_timers.cpp : //aio oblog -> one-frame dump of the ally-buff pipeline
 
 // NB: the reverse-engineering DIAGNOSTIC surface (mem_scan / scan_word_range / th_bits / thfx_walk /
@@ -989,6 +1004,45 @@ static void aio_command_dispatch(const char* cmd)
         aio::party().set_songdur_trace(sec);
         g_host.console().print(">>> AioHud : songdur ARME -- chante, puis envoie Windower\\plugins\\aiohud_debug.log (lignes SONGDUR = le modele, SONGREAL = le timer reel du jeu) <<<");
         g_host.console().print(">>> Test le plus net : Pianissimo la song SUR TOI -- meme calcul qu'un Pianissimo sur un allie, mais avec un vrai timer pour le verifier <<<");
+        return;
+    }
+    // //aio out -- forget a buff we are watching on someone. The case it exists for: you Haste the wrong name,
+    // and from then on AioHUD believes that person is supposed to have Haste, and says so in red when it ends.
+    // Nothing at cast time can tell a mistake from an intention, so the correction has to be a person's, and it
+    // has to be reachable WITHOUT remembering anything -- which is why the no-argument form LISTS what is being
+    // watched, numbered, instead of doing something. You read the names off that list (or off the row itself,
+    // which says "Name - Spell") and type as much as you like: an index, a prefix of the name, a prefix of the
+    // spell, or both in either order. "all" clears the lot. The mute lasts exactly as long as the buff that is
+    // up -- cast it on them again later and it is watched again, because that time you meant it.
+    if (const char* outRest = aio_word(buf, "out")) {
+        // The two words after the token, copied out. tok_arg() is deliberately NOT used: it lives in the
+        // untracked probes file, so a command leaning on it is silently absent from every release build
+        // (architecture/release-checklist.md -- this has bitten before).
+        char w1[32] = { 0 }, w2[32] = { 0 };
+        { const char* a = outRest;
+          for (int w = 0; w < 2; ++w) {
+              while (*a == ' ') ++a;
+              char* d = w ? w2 : w1; int i = 0;
+              while (*a && *a != ' ' && i < 31) d[i++] = *a++;
+              d[i] = 0;
+              if (!*a) break; } }
+        const char* a1 = w1; const char* a2 = w2;
+        // ONE line of feedback, and no listing. A list belongs in a console; the numbers belong on the rows,
+        // which is where they are drawn -- and on a job like RDM there are far too many watched buffs for a
+        // printed list to be a help. The real confirmation is visual: a row you stop watching loses its number.
+        // Colour is IN-BAND (0x1F + a palette index), written with %c -- never "\xNN", which would merge with a
+        // following hex digit. Same channel //aio ept uses.
+        const int YEL = 50, GRN = 158, RED = 68, GRAY = 160, MODE = 1;
+        auto chat = [](const char* s2) { g_host.ffxi().add_to_chat(MODE, s2); };
+        char m[192];
+        if (!a1[0]) {
+            _snprintf(m, sizeof(m), "%c%c[Timers] %c%c//aio out <numero> -- le numero est affiche devant la ligne", 0x1F, YEL, 0x1F, GRAY);
+            m[sizeof(m) - 1] = 0; chat(m); return;
+        }
+        const int k = aio::timers_focus_forget(a1, a2);
+        if (k) _snprintf(m, sizeof(m), "%c%c[Timers] %c%c%d ligne(s) retiree(s) du suivi", 0x1F, YEL, 0x1F, GRN, k);
+        else   _snprintf(m, sizeof(m), "%c%c[Timers] %c%crien ne correspond a \"%s\"", 0x1F, YEL, 0x1F, RED, a1);
+        m[sizeof(m) - 1] = 0; chat(m);
         return;
     }
     if (strstr(buf, "corners")) {   // //aio corners -> A/B the BAKED corner masks against the feathered geometry

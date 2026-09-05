@@ -374,6 +374,13 @@ struct UiConfig {
     float tmY     = 0.30f;
     int   tmMax   = 16;        // max timers shown
     int   tmTitle = 1;         // show the column titles (Duration / Recast)
+    // ---- ROW ORDER, one setting per column, because the two columns do not have the same axes. ----
+    // DURATION rows carry a PERSON (Row::order bands them: you, then buffs you cast on allies grouped by ally,
+    // then buffs a player put on you grouped by that player, then trusts). RECAST rows are all yours, so a
+    // person mode there would be inert -- its second mode is alphabetical instead, which is a real choice.
+    // 0 is the behaviour that shipped, in both, so an existing config sees nothing change.
+    int   tmSortDur = 0;       // Duration : 0 = person then soonest ; 1 = soonest first, everyone mixed (trusts still last)
+    int   tmSortRec = 0;       // Recast   : 0 = soonest first ; 1 = by name (A->Z)
     BoxStyle tmBox;            // box appearance (frame / transparency / theme) -- shared bundle
     int   tmMerged = 1;        // 1 = Duration + Recast fused in ONE box (side by side) ; 0 = two independent boxes
     float tmRX    = 0.86f;     // Recast box position when SEPARATE (tmX/tmY = the Duration / fused box)
