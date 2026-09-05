@@ -68,3 +68,9 @@ deploy.local.bat
 
 # personal editor workspace
 /aiohud.code-workspace
+
+# Exploratory design output that never shipped -- kept OUT of the repo rather than in it. Both were untracked
+# AND unignored, i.e. one `git add -A` away from being committed, and a partial move once put 34 of their PNGs
+# into a commit. Ignored now so the same slip cannot happen twice.
+/Claude outputs/
+/assets/rolls_src/
