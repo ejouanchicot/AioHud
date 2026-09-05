@@ -954,6 +954,11 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // ran in place before the content, and content clicks are gated to the viewport, so no double-processing).
         flat(dev, bandX - snap(2.0f), bodyY, bandW + snap(4.0f), cfgTop - bodyY, 0xFF0E131Cu);
         flat(dev, bandX - snap(2.0f), bodyY, bandW + snap(4.0f), snap(1.0f), C_BORDERHI);   // the repaint above erased the body frame's TOP border line -> redraw it
+        // g_fade is GLOBAL and ROW_BAND writes into it on every row, so this bar was inheriting whatever the
+        // last row of the module left behind. It never showed while e was always 1 -- the moment a folding
+        // section started scaling it, the bar flickered on every open and close. Restore before the call:
+        // a shared global has to be left clean by the code that borrowed it, and this is the borrow point.
+        g_fade = e;
         draw_profile_bar(dev, fo, mo, click, coX, coW, bodyY, pulse);
         fo->begin(dev); fo->draw_lc(dev, coX, coY, module_label(section_), snap(20.0f), fa(C_GOLD), fa(C_STROKE), 1.4f);
         flat(dev, coX, coY + snap(18.0f), fo->measure(module_label(section_), snap(20.0f)) * e, snap(2.0f), lerpc(C_GOLD, C_GOLDHI, pulse));
