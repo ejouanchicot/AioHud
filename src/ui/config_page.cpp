@@ -393,6 +393,21 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         flat(dev, 0, hy + hh, sw, sh - (hy + hh), BG);                // bottom strip below
         flat(dev, 0, hy, hx, hh, BG);                                 // left strip
         flat(dev, hx + hw, hy, sw - (hx + hw), hh, BG);               // right strip
+        // The hole is a RECTANGLE and the frame drawn over it is rounded, so each square corner of the hole
+        // stood outside its own frame -- a wedge of live game showing past the curve at all four corners.
+        // Fill the four wedges back in: for each row down the corner, the width still outside the circle is
+        // r - sqrt(r^2 - dy^2). Twelve one-pixel rows per corner, which is exact at this radius and costs
+        // nothing next to being visibly wrong.
+        { const float r = snap(12.0f);
+          for (int k = 0; k < (int)r; ++k) {
+              const float dy = r - (float)k - 0.5f;
+              const float wgt = r - sqrtf(r * r - dy * dy);
+              if (wgt <= 0.0f) continue;
+              flat(dev, hx,           hy + (float)k,               wgt, 1.0f, BG);   // top-left
+              flat(dev, hx + hw - wgt, hy + (float)k,              wgt, 1.0f, BG);   // top-right
+              flat(dev, hx,           hy + hh - 1.0f - (float)k,   wgt, 1.0f, BG);   // bottom-left
+              flat(dev, hx + hw - wgt, hy + hh - 1.0f - (float)k,  wgt, 1.0f, BG);   // bottom-right
+          } }
     } else {
         flat(dev, 0, 0, sw, sh, BG);                                  // no preview -> full opaque page
     }
