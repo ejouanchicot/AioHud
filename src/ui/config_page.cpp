@@ -772,8 +772,21 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // through the big frame. Only the frame edge (border + top inner highlight) is kept. The Live preview
     // draws its OWN opaque backdrop, and each control carries its own faint row band -> nothing floats
     // unreadably. (This used to read "the nebula shows through" -- that procedural backdrop was removed.)
-    flat(dev, ix + 1, bodyY + 1, iw - 2, 1, 0x16FFFFFF);                        // crisp top inner highlight
-    outline(dev, ix, bodyY, iw, bodyH, C_BORDERHI);
+    // The container's edging : the same metal as the masthead and the tabs, and the same bevel logic. This
+    // frame has square corners, so here straight lines ARE the right tool -- what carries the relief is not the
+    // shape but the LIGHTING: the top edge lit, the left in the body tone, the right and the bottom in shadow,
+    // as though the light came from above and to the left. A frame of one flat colour on all four sides is a
+    // rectangle drawn around some content; this one is a rim standing up around it.
+    // Sides first, then the horizontals across the full width, so the lit top runs corner to corner instead of
+    // being interrupted by the vertical edges. The white inner highlight that used to sit under the top is gone
+    // for the same reason it went from the tabs -- a white line beside a gold one belongs to another design.
+    { const float bwF = snap(2.0f);
+      flat(dev, ix, bodyY, bwF, bodyH, C_METAL);                                  // left  : the body of the metal
+      flat(dev, ix + iw - bwF, bodyY, bwF, bodyH, C_METAL_DEEP);                  // right : shadowed
+      flat(dev, ix, bodyY, iw, bwF, C_METAL_HI);                                  // top   : the lit facet
+      flat(dev, ix, bodyY + bodyH - bwF, iw, bwF, C_METAL_DEEP);                  // bottom: shadowed
+      flat(dev, ix + bwF, bodyY + bwF, iw - bwF * 2.0f, 1, 0x50000000u);          // one dark row inside the rim, so it seats on the content
+      flat(dev, ix + bwF, bodyY + bwF, 1, bodyH - bwF * 2.0f, 0x40000000u); }
 
     if (tab_ == 0) {
         if (profDirty_) { profile_refresh(); profDirty_ = false; }
