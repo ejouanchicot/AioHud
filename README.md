@@ -28,7 +28,7 @@ Each panel is independent — toggle it, theme it, and position it on its own.
 
 ## Customization
 
-Over 150 saved settings across 13 panels:
+Over 150 saved settings across 13 panels, each one organised the same way -- one subject per section, typography last:
 
 - **7 theme families** (FFXI window skin, Modern, Medieval, Heroic, Neon, Frost, Royal), each with a hue palette and luminosity.
 - **Per-box transparency**, or hide the box chrome and let the content float.
@@ -69,6 +69,7 @@ Type `//aio edit` to arrange the interface live over the game:
 |---|---|
 | `//aio config` | open the config window (themes, modules, fonts, colors) with a live preview |
 | `//aio edit` | move, resize and zone the boxes on screen |
+| `//aio out <n>` | drop a watched buff line from Timers -- the number is drawn on the row (a Haste on the wrong name stops nagging you) |
 | `//aioupdate` | update to the latest version in game, with no window (the HUD reloads for a moment) |
 
 Settings and profiles live in `plugins\AioHud\data\` and are kept across updates.

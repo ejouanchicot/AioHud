@@ -43,6 +43,8 @@ static const HelpItem HELP_GENERAL[] = {
     {2, "*//aio edit* moves and resizes the boxes on screen.", "*//aio edit* déplace et redimensionne les cadres."},
     {2, "*//aio profile* save, load, delete or list a named setup.", "*//aio profile* save, load, delete ou list un profil nommé."},
     {2, "*//aio party N* previews N members, 0 to 18 (you are always #1).", "*//aio party N* prévisualise N membres, de 0 à 18 (tu es toujours le #1)."},
+    {2, "*//aio out <number>* removes a watched buff line from Timers (the number is drawn on the row itself).",
+        "*//aio out <numero>* retire une ligne de buff suivie dans Timers (le numero est affiche sur la ligne)."},
     {2, "7-18 auto-fills the alliances ; *//aio party off* returns to live.", "7-18 remplit les alliances automatiquement ; *//aio party off* revient au réel."},
 };
 static const int HELP_GENERAL_N = (int)(sizeof(HELP_GENERAL) / sizeof(HELP_GENERAL[0]));
@@ -123,6 +125,8 @@ static const HelpItem HELP_PA[] = {
         "*Party Size* met le cadre *Party* à l'échelle de 100 à 200 pour cent. Il ne descend jamais sous 100 pour toujours couvrir la fenêtre native. *Ally 1* et *Ally 2* s'échelonnent seuls, de 50 à 200."},
     {2, "*Buff Size* sets how big the buff icons are, as a share of the row height.",
         "*Buff Size* règle la taille des icônes de buffs, en proportion de la hauteur de ligne."},
+    {2, "The *buff strip editor* under *Buffs* orders the groups and turns them off. Drag a tile to move it -- the leftmost group is drawn nearest the row -- and click one to switch it off : it keeps its place, dimmed under a red slash, with its name still readable so you can find it again. Off costs no width, so hiding a group really does buy room for the rest.",
+        "L'*editeur de bandeau de buffs* sous *Buffs* ordonne les groupes et les desactive. Glisse une tuile pour la deplacer -- le groupe le plus a gauche est dessine au plus pres de la ligne -- et clique dessus pour l'eteindre : elle garde sa place, assombrie sous un trait rouge, avec son nom toujours lisible pour la retrouver. Une tuile eteinte ne prend aucune largeur, donc masquer un groupe libere vraiment de la place pour les autres."},
     {2, "*Bar Height* and *Bar Width* size the HP, MP and TP gauges. The box grows to fit.",
         "*Bar Height* et *Bar Width* dimensionnent les jauges HP, MP et TP. Le cadre s'agrandit en conséquence."},
     {2, "*Job Badge* is Off, Main job only, Main plus Sub, or Icons.",
@@ -440,6 +444,8 @@ static const HelpItem HELP_TIMERS[] = {
         "Le module Timers dans //aio config règle le cadre, avec un aperçu en direct à droite qui suit tes changements."},
     {2, "*Layout* is Fused or Separate. *Duration: show* picks icon, name or both for the Duration column. *Box / Frame* sets the theme and can turn the frame off. *Size* scales the whole box.",
         "*Disposition* est Fusionné ou Séparé. *Duration : afficher* choisit icône, nom ou les deux pour la colonne Duration. *Box / Cadre* règle le thème et peut couper le cadre. *Taille* met tout le cadre à l'échelle."},
+    {2, "*Duration order* decides how the Duration column is sorted : *Person, then time* groups your buffs, then the ones you put on allies, then the ones others put on you -- or *Shortest first*, everyone mixed. Trusts stay last either way. *Recast order* is shortest-first or by name.",
+        "*Ordre Duree* decide du tri de la colonne Duree : *Personne, puis temps* groupe tes buffs, puis ceux que tu as poses sur des allies, puis ceux qu'on t'a poses -- ou *Plus court d'abord*, tout le monde melange. Les trusts restent derniers dans les deux cas. *Ordre Recast* est au plus court ou par nom."},
     {2, "*Text* styles the Header, Name and Timer on their own, with font, size, outline, bold / italic / caps and colour.",
         "*Texte* stylise l'En-tête, le Nom et le Minuteur séparément, avec police, taille, contour, gras / italique / capitales et couleur."},
 
@@ -466,6 +472,8 @@ static const HelpItem HELP_TIMERS[] = {
         "Les aptitudes de job n'entrent pas dans une famille de magie, alors elles ont leur propre liste *groupée par job* — ton *job actuel* en premier, en *doré* et déplié, chaque autre job sous son propre en-tête repliable. Le réglage reste global par buff : règle une aptitude une fois et elle s'applique partout où elle apparaît, quel que soit ton job."},
 
     {0, "Focus alerts, no false alarms", "Alertes focus, sans faux positif"},
+    {2, "*Cast a buff on the wrong person and you can take it back.* A watched row carries a small number on its left ; type *//aio out <number>* and that line disappears -- name, timer and its future red alert with it. The number never changes while the row exists, and casting that spell on that person again later starts watching it properly. *//aio out <name>* or *<spell>* works too, and *//aio out all* clears the lot.",
+        "*Un buff lance sur la mauvaise personne peut etre annule.* Une ligne suivie porte un petit numero a gauche ; tape *//aio out <numero>* et la ligne disparait -- nom, minuteur et sa future alerte rouge avec. Le numero ne change pas tant que la ligne existe, et relancer ce sort sur cette personne plus tard remet le suivi en place. *//aio out <nom>* ou *<sort>* marche aussi, et *//aio out all* efface tout."},
     {2, "An alert fires *only* for a buff the HUD actually saw active then lost, and it obeys the same *Buff source* filter as the rows — so a buff the column hides never alerts either.",
         "Une alerte se déclenche *uniquement* pour un buff que le HUD a réellement vu actif puis perdu, et elle suit le même filtre *Source des buffs* que les lignes — un buff que la colonne masque ne déclenche donc jamais d'alerte."},
     {2, "Change job (you or an ally) and the timers reset cleanly — except SP abilities, whose recast is shared across all jobs.",
