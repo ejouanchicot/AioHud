@@ -516,11 +516,10 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // Which needs a GRID, not a row of slices: tquad4 takes four independent corner colours, so a cell can
         // carry a 2D gradient. 20 x 6 cells over the quad is a cell every ~12px, and a cosine sampled that
         // finely and interpolated linearly between samples is smooth well past what the eye resolves.
-        // BISECT PROBE : the gleam is switched OFF. Every rewrite of it has come back "the same", and the
-        // last time that pattern held it was a different element entirely (a pulsing tent behind the logo).
-        // With the pass gone, one question answers what six rewrites could not: if the opaque effect is
-        // still there, it is not this code and tuning it further is wasted; if it is gone, it is this code
-        // and the argument is finally about a number. Flip GLEAM_ON back to true either way.
+        // A kill switch, kept deliberately. Switching this pass off is what finally identified it during six
+        // rounds of "it looks the same": when a change that large produces no change at all, the thing being
+        // described is not the thing being changed, and the cheapest way to find out is to remove the suspect
+        // entirely. Worth one line to keep that test one edit away.
         static const bool GLEAM_ON = true;
         { const float per = 7.0f; float lp = f.t / per; lp -= floorf(lp);
           if (GLEAM_ON && lp < 0.42f) {
@@ -624,9 +623,9 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         rgx = wx + tw + gemGap - snap(2.0f);
         for (int gi = 0; gi < 2; ++gi) {
             const float gxo = gi ? rgx : (ix + gemR);
-            gem(dev, gxo, ty, gemR + snap(1.5f), shade(C_ACCENT, -0.6f));
-            gem(dev, gxo, ty, gemR, C_GOLD);
-            gem(dev, gxo - snap(1.0f), ty - snap(1.5f), gemR * 0.42f, C_ACCENTHI);
+            gem(dev, gxo, ty, gemR + snap(1.5f), shade(C_METAL_DEEP, -0.3f));
+            gem(dev, gxo, ty, gemR, C_METAL);
+            gem(dev, gxo - snap(1.0f), ty - snap(1.5f), gemR * 0.42f, C_METAL_HI);   // the real metal, like the rest of the masthead -- C_GOLD here was the THEME accent
         }
     }
     // The VERSION, as a struck plate rather than a floating word -- gold hairline, dark bed, gold text. A

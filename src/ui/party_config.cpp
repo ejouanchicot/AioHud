@@ -112,29 +112,20 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // The same block every module gets, because it drives the same shared code. Drawn by draw_frame_section so
     // the party box and the alliance boxes cannot drift apart -- they used to be two ~90-line copies.
     const float pcTop0 = ry;   // the card is drawn from LAST frame's height, behind this section
-    // Eased OPEN progress. The card grows with it, the content is revealed through a clip, and the rows
-    // below follow -- so a section unfolds rather than appearing. ease() keeps its own state, keyed on
-    // this call site, which is why no clock has to be threaded through this function.
-    const float aR0_ = ease(CTRL_ID, pcFrameOpen_ ? 1.0f : 0.0f, 10.0f);
-    const float aS0_ = aR0_ * aR0_ * (3.0f - 2.0f * aR0_);   // smoothstep : no jerk at either end
-    if (aS0_ > 0.001f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[0] * aS0_);
+    const float aS0_ = cat_fold(CTRL_ID, pcFrameOpen_);   // eased 0..1 : the card, the clip and ry all ride this
+    if (aS0_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[0] * aS0_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_)) pcFrameOpen_ = !pcFrameOpen_;
     ROW_NEXT(42.0f)
-    if (aS0_ > 0.001f) {
+    if (aS0_ > 0.0f) {
         const float cTop_ = ry;
-        clip_rect_begin(dev, hdrX, cTop_, hdrW, pcFull_[0] * aS0_ + 1.0f);
+        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[0] * aS0_);
         draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
                            0, nullptr,                                   // the party box IS the master : nothing to follow
                            &ui_config().skinTheme, &ui_config().skinHue, &ui_config().skinLum, &ui_config().skinBoxAlpha,
                            &ui_config().border[0], &ui_config().borderCost, tr("Cost box", "BoÃ®te coÃ»t"));
-        // The rows were laid out in FULL and only clipped, so ry now holds the section's natural height --
-        // measured for free, every frame, which is the height the reveal animates toward. Then ry is put
-        // back to the REVEALED height, so everything below rides the fold instead of jumping when it ends.
-        clip_rect_end(dev);
-        pcFull_[0] = ry - cTop_;
-        ry = cTop_ + pcFull_[0] * aS0_;
+        cat_fold_end(dev, ry, cTop_, pcFull_[0], aS0_);
     }   // end Frame
-    pcH_[0] = (aS0_ > 0.001f) ? (ry - pcTop0) : 0.0f;   // measured -> next frame's card
+    pcH_[0] = (aS0_ > 0.0f) ? (ry - pcTop0) : 0.0f;   // measured -> next frame's card
 
     // ========================================================== PARTY ==========================================================
     // The party box itself : whether it shows, how big, and what a member row carries. Its FRAME is the section
@@ -143,17 +134,13 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // The only section that really differs between modules, so it gets the room. Grouped by the OBJECT each setting
     // acts on -- gauges, badge, buffs, cursor -- which is what turns three rows into one.
     const float pcTop1 = ry;   // the card is drawn from LAST frame's height, behind this section
-    // Eased OPEN progress. The card grows with it, the content is revealed through a clip, and the rows
-    // below follow -- so a section unfolds rather than appearing. ease() keeps its own state, keyed on
-    // this call site, which is why no clock has to be threaded through this function.
-    const float aR1_ = ease(CTRL_ID, catOpen_[1] ? 1.0f : 0.0f, 10.0f);
-    const float aS1_ = aR1_ * aR1_ * (3.0f - 2.0f * aR1_);   // smoothstep : no jerk at either end
-    if (aS1_ > 0.001f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[1] * aS1_);
+    const float aS1_ = cat_fold(CTRL_ID, catOpen_[1]);   // eased 0..1 : the card, the clip and ry all ride this
+    if (aS1_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[1] * aS1_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1])) catOpen_[1] = !catOpen_[1];
     ROW_NEXT(42.0f)
-    if (aS1_ > 0.001f) {
+    if (aS1_ > 0.0f) {
         const float cTop_ = ry;
-        clip_rect_begin(dev, hdrX, cTop_, hdrW, pcFull_[1] * aS1_ + 1.0f);
+        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[1] * aS1_);
         // Show + Size : the two settings everyone touches, first, on one line.
         { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
           ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
@@ -278,14 +265,9 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             }
             if (pcDistPick_ >= 0 && pcDistPick_ < 3) { CFG_COLOR_PICKER_I(dcol[pcDistPick_], pcDistPick_) }
         }
-        // The rows were laid out in FULL and only clipped, so ry now holds the section's natural height --
-        // measured for free, every frame, which is the height the reveal animates toward. Then ry is put
-        // back to the REVEALED height, so everything below rides the fold instead of jumping when it ends.
-        clip_rect_end(dev);
-        pcFull_[1] = ry - cTop_;
-        ry = cTop_ + pcFull_[1] * aS1_;
+        cat_fold_end(dev, ry, cTop_, pcFull_[1], aS1_);
     }   // end Party
-    pcH_[1] = (aS1_ > 0.001f) ? (ry - pcTop1) : 0.0f;   // measured -> next frame's card
+    pcH_[1] = (aS1_ > 0.0f) ? (ry - pcTop1) : 0.0f;   // measured -> next frame's card
 
     // ==================================================== ALLIANCE ====================================================
     // The SAME three sections as the party box, in the same order, holding the same kinds of thing. That is the
@@ -293,17 +275,13 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // never sends alliance buffs) and no selection cursor, so those simply do not appear -- a missing row is not a
     // different layout.
     const float pcTop2 = ry;   // the card is drawn from LAST frame's height, behind this section
-    // Eased OPEN progress. The card grows with it, the content is revealed through a clip, and the rows
-    // below follow -- so a section unfolds rather than appearing. ease() keeps its own state, keyed on
-    // this call site, which is why no clock has to be threaded through this function.
-    const float aR2_ = ease(CTRL_ID, catOpen_[7] ? 1.0f : 0.0f, 10.0f);
-    const float aS2_ = aR2_ * aR2_ * (3.0f - 2.0f * aR2_);   // smoothstep : no jerk at either end
-    if (aS2_ > 0.001f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[2] * aS2_);
+    const float aS2_ = cat_fold(CTRL_ID, catOpen_[7]);   // eased 0..1 : the card, the clip and ry all ride this
+    if (aS2_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[2] * aS2_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7])) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
-    if (aS2_ > 0.001f) {
+    if (aS2_ > 0.0f) {
         const float cTop_ = ry;
-        clip_rect_begin(dev, hdrX, cTop_, hdrW, pcFull_[2] * aS2_ + 1.0f);
+        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[2] * aS2_);
         // ---- General ----
         { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
           ROW_BAND(bh2) (void)yo;
@@ -383,28 +361,19 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           }
           ROW_NEXT(bh2)
         }
-        // The rows were laid out in FULL and only clipped, so ry now holds the section's natural height --
-        // measured for free, every frame, which is the height the reveal animates toward. Then ry is put
-        // back to the REVEALED height, so everything below rides the fold instead of jumping when it ends.
-        clip_rect_end(dev);
-        pcFull_[2] = ry - cTop_;
-        ry = cTop_ + pcFull_[2] * aS2_;
+        cat_fold_end(dev, ry, cTop_, pcFull_[2], aS2_);
     }   // end Alliance
-    pcH_[2] = (aS2_ > 0.001f) ? (ry - pcTop2) : 0.0f;   // measured -> next frame's card
+    pcH_[2] = (aS2_ > 0.0f) ? (ry - pcTop2) : 0.0f;   // measured -> next frame's card
 
     // =========================================================== TEXT ===========================================================
     const float pcTop3 = ry;   // the card is drawn from LAST frame's height, behind this section
-    // Eased OPEN progress. The card grows with it, the content is revealed through a clip, and the rows
-    // below follow -- so a section unfolds rather than appearing. ease() keeps its own state, keyed on
-    // this call site, which is why no clock has to be threaded through this function.
-    const float aR3_ = ease(CTRL_ID, catOpen_[0] ? 1.0f : 0.0f, 10.0f);
-    const float aS3_ = aR3_ * aR3_ * (3.0f - 2.0f * aR3_);   // smoothstep : no jerk at either end
-    if (aS3_ > 0.001f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[3] * aS3_);
+    const float aS3_ = cat_fold(CTRL_ID, catOpen_[0]);   // eased 0..1 : the card, the clip and ry all ride this
+    if (aS3_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[3] * aS3_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0])) catOpen_[0] = !catOpen_[0];
     ROW_NEXT(42.0f)
-    if (aS3_ > 0.001f) {
+    if (aS3_ > 0.0f) {
         const float cTop_ = ry;
-        clip_rect_begin(dev, hdrX, cTop_, hdrW, pcFull_[3] * aS3_ + 1.0f);
+        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[3] * aS3_);
         { ROW_BAND(56.0f)   // which box's text : Party / Alliance
             const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Box", "Boîte"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
@@ -487,14 +456,9 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 ROW_NEXT(40.0f)
             }
         }
-        // The rows were laid out in FULL and only clipped, so ry now holds the section's natural height --
-        // measured for free, every frame, which is the height the reveal animates toward. Then ry is put
-        // back to the REVEALED height, so everything below rides the fold instead of jumping when it ends.
-        clip_rect_end(dev);
-        pcFull_[3] = ry - cTop_;
-        ry = cTop_ + pcFull_[3] * aS3_;
+        cat_fold_end(dev, ry, cTop_, pcFull_[3], aS3_);
     }   // end Text
-    pcH_[3] = (aS3_ > 0.001f) ? (ry - pcTop3) : 0.0f;   // measured -> next frame's card
+    pcH_[3] = (aS3_ > 0.0f) ? (ry - pcTop3) : 0.0f;   // measured -> next frame's card
     // ======================================================= BUFFS =======================================================
     // Everything about the buff strip in ONE place -- how big, how many, over how many lines, and in what order.
     // Splitting them was a failure of the panel's own rule: Content groups by the OBJECT a setting acts on, and the
@@ -503,17 +467,13 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // It is also why this is a top-level section rather than a sub-section: the band is an EDITOR, and nesting it
     // one level deeper is exactly the third disclosure level the research says to avoid.
     const float pcTop4 = ry;   // the card is drawn from LAST frame's height, behind this section
-    // Eased OPEN progress. The card grows with it, the content is revealed through a clip, and the rows
-    // below follow -- so a section unfolds rather than appearing. ease() keeps its own state, keyed on
-    // this call site, which is why no clock has to be threaded through this function.
-    const float aR4_ = ease(CTRL_ID, pcBuffsOpen_ ? 1.0f : 0.0f, 10.0f);
-    const float aS4_ = aR4_ * aR4_ * (3.0f - 2.0f * aR4_);   // smoothstep : no jerk at either end
-    if (aS4_ > 0.001f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[4] * aS4_);
+    const float aS4_ = cat_fold(CTRL_ID, pcBuffsOpen_);   // eased 0..1 : the card, the clip and ry all ride this
+    if (aS4_ > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + pcFull_[4] * aS4_);
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_)) pcBuffsOpen_ = !pcBuffsOpen_;
     ROW_NEXT(42.0f)
-    if (aS4_ > 0.001f) {
+    if (aS4_ > 0.0f) {
         const float cTop_ = ry;
-        clip_rect_begin(dev, hdrX, cTop_, hdrW, pcFull_[4] * aS4_ + 1.0f);
+        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[4] * aS4_);
         { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // how big, and how many
           ROW_BAND(bh2) (void)yo;
           const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
@@ -1022,14 +982,9 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 bsSel_ = mvTo;   // the selection FOLLOWS what you moved, so a second press keeps moving the same thing
             }
         }
-        // The rows were laid out in FULL and only clipped, so ry now holds the section's natural height --
-        // measured for free, every frame, which is the height the reveal animates toward. Then ry is put
-        // back to the REVEALED height, so everything below rides the fold instead of jumping when it ends.
-        clip_rect_end(dev);
-        pcFull_[4] = ry - cTop_;
-        ry = cTop_ + pcFull_[4] * aS4_;
+        cat_fold_end(dev, ry, cTop_, pcFull_[4], aS4_);
     }   // end Buffs
-    pcH_[4] = (aS4_ > 0.001f) ? (ry - pcTop4) : 0.0f;   // measured -> next frame's card
+    pcH_[4] = (aS4_ > 0.0f) ? (ry - pcTop4) : 0.0f;   // measured -> next frame's card
 
     #undef ROW_BAND
     #undef ROW_NEXT

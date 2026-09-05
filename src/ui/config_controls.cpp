@@ -785,6 +785,24 @@ bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
 // label. Returns true on click (the caller toggles the open flag). uid = animation slot.
 // the SOLID background "card" behind an OPEN category (drawn BEFORE its header + rows). The tab body is
 // transparent, so THIS is what gives each menu a full, solid surface -- not the striped row bands.
+float cat_fold(int uid, bool open) {
+    // Smoothstepped, so the fold has no jerk at either end -- a linear ease starts and stops abruptly at exactly
+    // the two moments the eye is watching it. Speed 10 is deliberate: 15 read as a jump with a smear on it, 7.5
+    // dragged.
+    const float a = ease(uid, open ? 1.0f : 0.0f, 10.0f);
+    if (a < 0.001f) return 0.0f;
+    if (a > 0.999f) return 1.0f;
+    return a * a * (3.0f - 2.0f * a);
+}
+void cat_fold_clip(u32 dev, float x, float top, float w, float visH) {
+    clip_rect_begin(dev, x, top, w, visH + 1.0f);   // +1 : a zero-height scissor would drop the first row entirely
+}
+void cat_fold_end(u32 dev, float& ry, float top, float& full, float a) {
+    clip_rect_end(dev);
+    full = ry - top;              // measured from the FULL layout, which happened whether it was visible or not
+    ry   = top + full * a;        // ... and the cursor goes back to what was actually revealed
+}
+
 void cat_panel(u32 dev, float x, float y, float w, float h) {
     if (h < snap(4.0f)) return;
     // The card FLOATS : a shadow is what separates the tier you are working in from the page behind it, and

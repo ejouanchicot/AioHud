@@ -194,6 +194,32 @@ bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
 bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
               float x, float y, float w, float h, const char* label, int tone);
 void cat_panel(u32 dev, float x, float y, float w, float h);
+
+// ---- COLLAPSIBLE SECTIONS THAT FOLD, in three calls. ----
+// The pattern was written out five times in party_config.cpp and every module still to come would have copied
+// it again -- which is exactly how five copies drift into five behaviours. It is here once instead.
+//
+//   const float a = cat_fold(CTRL_ID, isOpen);                       // eased + smoothstepped 0..1
+//   if (a > 0.0f) cat_panel(dev, hdrX, ry, hdrW, CAT_HEADER_ADV + full * a);
+//   if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, "Label", isOpen)) isOpen = !isOpen;
+//   ROW_NEXT(42.0f)
+//   if (a > 0.0f) {
+//       const float top = ry;  cat_fold_clip(dev, hdrX, top, hdrW, full * a);
+//       ... the section's rows, laid out in FULL ...
+//       cat_fold_end(dev, ry, top, full, a);
+//   }
+//
+// WHY IT WORKS AT ALL: the rows are laid out completely and only the DRAWING is clipped, so `full` -- the
+// section's natural height -- is measured for free on every frame, including the frames where almost none of it
+// is visible. You cannot reveal a height you have not measured and you cannot measure one you have not laid
+// out; doing both in the same pass is the whole trick. cat_fold_end then puts ry back to the REVEALED height so
+// everything below rides the fold instead of waiting for it.
+//
+// The caller owns `full` (one float per section, persisted across frames) and the open flag. The progress is
+// keyed on the call site's CTRL_ID, so no extra state is needed for it.
+float cat_fold(int uid, bool open);
+void  cat_fold_clip(u32 dev, float x, float top, float w, float visH);
+void  cat_fold_end(u32 dev, float& ry, float top, float& full, float a);
 // (No summary parameter. One was added when the header was a caret and a word, to give a collapsed page
 //  something to read ; once the header became a real title bar the bar itself carried that weight, and a
 //  value crowded against the disclosure triangle was two things competing for the same end of the same
