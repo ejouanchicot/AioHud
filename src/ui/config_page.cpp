@@ -829,8 +829,16 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // here -- so the preview is exactly what ships in game (cost box space included).
         {
             const float pvx = coX + ctrlW + splitGap, pvy = coY - snap(2.0f);
-            fo->begin(dev); fo->draw_lc(dev, pvx, pvy + snap(7.0f), tr("LIVE PREVIEW", "APERÇU EN DIRECT"), snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
-            const float stageY = pvy + snap(22.0f), stageH = pageBot - stageY;
+            // No "LIVE PREVIEW" caption any more. A framed window showing the party boxes moving is not
+            // mistakable for anything else, and the label was costing 22px of the stage's height to say what the
+            // stage says by existing.
+            // With it gone the stage takes the WHOLE column and is CENTRED in it, keeping an equal margin off
+            // the container's rim at top and bottom -- it used to run down to pageBot and sit hard against the
+            // metal, which reads as a crop rather than as a window.
+            const float pvMar = snap(12.0f);
+            const float availTop = pvy, availBot = pageBot - pvMar;
+            const float stageH = availBot - availTop;
+            const float stageY = availTop + ((availBot - availTop) - stageH) * 0.5f;
             // TRANSPARENT stage : the opaque page bg leaves a HOLE here (recorded below -> punched next frame)
             // so the REAL game shows through and the demo boxes preview exactly as they look in play. Just a
             // subtle frame delineates the window.
@@ -838,11 +846,11 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             drop_shadow(dev, pvx, stageY, previewW, stageH, snap(6.0f), 70);
             rrect_stroke(dev, pvx, stageY, previewW, stageH, snap(12.0f), 0x7AAEC4EEu, snap(1.5f));   // thin window frame
             pvRightX_  = pvx + previewW - snap(18.0f);
-            pvBottomY_ = pageBot - snap(14.0f);
+            pvBottomY_ = stageY + stageH - snap(14.0f);
             pvCX_      = pvx + previewW * 0.5f;
-            pvCY_      = stageY + (pageBot - stageY) * 0.5f;
+            pvCY_      = stageY + stageH * 0.5f;
             { const float ins = snap(10.0f);                     // inset the mini-map rect a touch inside the stage frame
-              pvSX_ = pvx + ins; pvSY_ = stageY + ins; pvSW_ = previewW - 2.0f * ins; pvSH_ = (pageBot - stageY) - 2.0f * ins; }
+              pvSX_ = pvx + ins; pvSY_ = stageY + ins; pvSW_ = previewW - 2.0f * ins; pvSH_ = stageH - 2.0f * ins; }
             pvOn_ = true;
         }
 
