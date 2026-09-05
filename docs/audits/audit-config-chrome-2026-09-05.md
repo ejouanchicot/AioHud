@@ -96,13 +96,22 @@ d'une page longue n'était plus contenu. Corrigé par un comptage de profondeur 
 14. **Une capture d'écran tranche ce que quatre lectures du code ne tranchent pas.** Les bandes verticales et le
     rectangle glissant ont tous deux été identifiés sur image, pas par raisonnement.
 
+## Où reprendre
+
+**Le prochain sujet est le point 1 ci-dessous : le vide de la colonne de contrôles.** Tout le reste de la
+session est terminé, construit et testé (`build` 0 warning, 967 checks). L'état exact se relit dans
+`git log --oneline -40` : les commits partent de la lueur du logotype et finissent au déploiement de
+l'accordéon.
+
 ## Ce qui reste, par ordre d'importance
 
 1. **Le vide.** Cinq en-têtes repliés sur une colonne de 900 px : c'est le défaut le plus visible de l'écran, et
    aucune bordure ne le rattrape. Deux pistes — sections sur **deux colonnes**, ou **colonne de contrôles plus
    étroite** avec le preview qui prend la place. Arbitrage de goût, à trancher.
-2. **Déployer `cat_fold` aux treize autres modules.** Les helpers sont prêts et documentés, Party est le
-   modèle. Sans ça, un module se plie et les autres sautent.
+2. ~~Déployer `cat_fold` aux autres modules.~~ **FAIT** (commit `7cc3a1b`) : 30 sections dans 10 fichiers, par
+   transformation scriptée. Reste hors périmètre volontairement : le changelog de l'onglet Update et les groupes
+   de Debug, qui sont des éléments d'une liste défilante avec leur propre arithmétique en `y`, pas des panneaux
+   basés sur `ry`.
 3. **Dédupliquer les trois copies de la barre latérale** (Configuration / Help / Debug).
 4. **Discipline de `g_fade`** : le rendre non hérité — chaque bloc autonome le pose à son entrée plutôt que de
    dépendre de ce que le précédent a laissé. La règle 2 est un pansement sur un point d'emprunt ; il y en a
