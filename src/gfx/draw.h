@@ -89,6 +89,25 @@ void rrect_bordered(u32 dev, float x, float y, float w, float h, float r,
 void rrect_clip_begin(u32 dev, float x, float y, float w, float h, float r);
 void rrect_clip_end(u32 dev);
 
+// A bar of light, and the haze around it, sharing one COSINE window along their length (flat middle, tapered
+// ends, zero slope at every junction). Built for the tab crown. Use them together with the SAME `taper` --
+// mixing a windowed bar with a glow that ends somewhere else is what makes a lit edge look cut before its
+// tip. `peakAlpha` is the alpha at the flat part ; multiply it by g_fade yourself (these are raw gfx).
+// hglow_soft's alpha also falls linearly from the centre line to +/- halfH.
+void hbar_soft (u32 dev, float x, float y,  float w, float h,     u32 rgb, u32 peakAlpha, float taper);
+void hglow_soft(u32 dev, float x, float cy, float w, float halfH, u32 rgb, u32 peakAlpha, float taper);
+
+// AA rounded rect with only the TOP corners rounded -- a TAB. Same recipe (and therefore the same quality) as
+// rrect(): half-pixel offset, gradient-correct corner fans, a segment count that follows the radius, and ONE
+// feather width across the whole visible perimeter. The bottom edge stays crisp: it is a junction with the
+// surface the tab melts into, not a silhouette.
+void rrect_topcaps(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 cBot, float feather = 1.2f);
+
+// AA rounded rect with INDEPENDENT top and bottom radii. For a shape that has to MOVE between two silhouettes
+// -- a section's title bar, rounded when it is closed and square-footed when it is welded to an open card --
+// because interpolating the radius is the only way across that does not pop.
+void rrect_tb(u32 dev, float x, float y, float w, float h, float rT, float rB, u32 cTop, u32 cBot, float feather = 1.2f);
+
 // AA rounded rect with only the LEFT corners rounded (right edge FLAT / vertical) -> a bar fill whose left
 // end is a capsule cap while its right end stays a clean vertical level (aligns with a level marker).
 void rrect_left(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 cBot, float feather = 1.2f);

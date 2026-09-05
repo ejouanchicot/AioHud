@@ -27,13 +27,30 @@ enum {
     D3DRS_ALPHATESTENABLE = 15, D3DRS_FOGENABLE = 28, D3DRS_SPECULARENABLE = 29,
     D3DRS_COLORVERTEX = 141, D3DRS_COLORWRITEENABLE = 168, D3DRS_TEXTUREFACTOR = 60,
     D3DRS_WRAP0 = 128, D3DRS_BLENDOP = 171, D3DBLENDOP_ADD = 1,
+    // Two states nothing here ever set, so both were whatever FFXI happened to leave behind:
+    //   SHADEMODE -- FLAT shades a triangle with ONE vertex's colour. Every gradient we draw is a quad made of
+    //     two triangles, so a stray FLAT is a hard break along the diagonal, and it appears and disappears with
+    //     whatever the game drew last. GOURAUD is what interpolating vertex colours requires ; state we depend
+    //     on has to be state we set.
+    //   DITHERENABLE -- an ordered dither on the way to the framebuffer. It is the fixed-function answer to
+    //     8-bit banding, and the only one there is without shaders: a long slow ramp changes level less than
+    //     once per pixel, and the eye locks onto those steps as bands (Mach banding sharpens them further).
+    //     Dithering trades that for noise below the level of a single bit. It matters even more if the game is
+    //     running a 16-bit backbuffer, where a smooth ramp bands violently.
+    D3DRS_SHADEMODE = 9, D3DSHADE_GOURAUD = 2, D3DRS_DITHERENABLE = 26,
     D3DTSS_TEXCOORDINDEX = 11, D3DTSS_TEXTURETRANSFORMFLAGS = 24, D3DTTFF_DISABLE = 0,
     D3DCULL_NONE = 1, D3DBLEND_ZERO = 1, D3DBLEND_ONE = 2, D3DBLEND_SRCALPHA = 5, D3DBLEND_INVSRCALPHA = 6,
     // src * dst + dst = dst * (1 + src) : brighten by a FACTOR instead of by an amount, so light and dark
     // keep their ratio and a lit surface keeps its modelling (config_page.cpp, the logo gleam).
     D3DBLEND_DESTCOLOR = 9,
     D3DTSS_COLOROP = 1, D3DTSS_COLORARG1 = 2, D3DTSS_COLORARG2 = 3,
-    D3DTSS_ALPHAOP = 4, D3DTSS_ALPHAARG1 = 5, D3DTSS_ALPHAARG2 = 7,
+    // ALPHAARG2 is 6. It was 7 here, which is D3DTSS_BUMPENVMAT00 -- so every dSetTSS(..., ALPHAARG2, ...)
+    // in this program wrote a bump-mapping matrix cell and left the REAL alpha arg2 at whatever FFXI last set.
+    // It went unnoticed for the life of the project because the default is D3DTA_CURRENT (= DIFFUSE at stage 0)
+    // and because nothing textured had ever depended on a diffuse alpha below 255: losing the factor is
+    // invisible when the factor is 1. The baked corner masks were the first thing to need it -- the tab glass
+    // sheen asks for 22% white and got 100% white, a bright quarter-disc in every corner.
+    D3DTSS_ALPHAOP = 4, D3DTSS_ALPHAARG1 = 5, D3DTSS_ALPHAARG2 = 6,
     D3DTSS_ADDRESSU = 13, D3DTSS_ADDRESSV = 14, D3DTSS_BORDERCOLOR = 15,
     D3DTSS_MAGFILTER = 16, D3DTSS_MINFILTER = 17, D3DTSS_MIPFILTER = 18, D3DTSS_MIPMAPLODBIAS = 19,
     D3DTEXF_NONE = 0, D3DTEXF_LINEAR = 2,
@@ -62,6 +79,12 @@ inline void dSetTex(u32 d, u32 st, u32 tex)       { auto f = vmethod<long(__stdc
 inline void dSetVS (u32 d, u32 fvf)               { auto f = vmethod<long(__stdcall*)(u32,u32)>(d,76);          if(f) f(d,fvf); }
 inline void dDrawUP(u32 d, u32 pt, u32 n, const void* v, u32 st){ auto f = vmethod<long(__stdcall*)(u32,u32,u32,const void*,u32)>(d,72); if(f) f(d,pt,n,v,st); }
 inline u32  dCreateSB(u32 d, u32 type)            { auto f = vmethod<long(__stdcall*)(u32,u32,u32*)>(d,57); u32 t=0; if(f) f(d,type,&t); return t; }
+// The display mode, for ONE question we cannot answer by looking: how many bits per channel the game is
+// presenting into. A gradient that bands no matter what it is drawn with is banding because the destination
+// is 16-bit (R5G6B5 = 32 levels of green, 31 of red and blue), and no amount of care in our vertices changes
+// that -- only dithering softens it. Format: 21=A8R8G8B8 22=X8R8G8B8 23=R5G6B5 24=X1R5G5B5 25=A1R5G5B5.
+struct D3DDISPLAYMODE8 { u32 w, h, refresh, fmt; };
+inline bool dGetDisplayMode(u32 d, D3DDISPLAYMODE8& m) { auto f = vmethod<long(__stdcall*)(u32,void*)>(d,8); return f && f(d,&m) >= 0; }
 inline bool dGetViewport(u32 d, D3DVIEWPORT8& vp) { auto f = vmethod<long(__stdcall*)(u32,D3DVIEWPORT8*)>(d,41); return f && f(d,&vp) >= 0; }   // vtbl 41 : GetViewport (current viewport)
 inline void dSetViewport(u32 d, const D3DVIEWPORT8& vp) { auto f = vmethod<long(__stdcall*)(u32,const D3DVIEWPORT8*)>(d,40); if(f) f(d,&vp); }   // vtbl 40 : SetViewport -- a sub-rect acts as a hard scissor even for XYZRHW quads
 
@@ -101,6 +124,7 @@ inline void dColorQuadState(u32 d) {
     dSetRS(d, D3DRS_ALPHATESTENABLE, 0); dSetRS(d, D3DRS_FOGENABLE, 0); dSetRS(d, D3DRS_SPECULARENABLE, 0);
     dSetRS(d, D3DRS_ALPHABLENDENABLE, 1); dSetRS(d, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA); dSetRS(d, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
     dSetRS(d, D3DRS_BLENDOP, D3DBLENDOP_ADD); dSetTex(d, 0, 0);
+    dSetRS(d, D3DRS_SHADEMODE, D3DSHADE_GOURAUD); dSetRS(d, D3DRS_DITHERENABLE, 1);   // see the note on both, above
     dSetTSS(d, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(d, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);
     dSetTSS(d, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(d, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
     dSetTSS(d, 1, D3DTSS_COLOROP, D3DTOP_DISABLE); dSetTSS(d, 1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
@@ -118,6 +142,7 @@ inline void dColorQuadState(u32 d) {
 // atlas cells whose UVs touch 0 or 1.
 inline void dTexQuadState(u32 d, u32 tex, bool mipLinear = false, bool border = false) {
     dSetVS(d, FVF_XYZRHW_DIFFUSE_TEX1);
+    dSetRS(d, D3DRS_SHADEMODE, D3DSHADE_GOURAUD); dSetRS(d, D3DRS_DITHERENABLE, 1);   // textured quads carry vertex gradients too (the masthead gleam)
     dSetRS(d, D3DRS_ALPHABLENDENABLE, 1);
     dSetRS(d, D3DRS_SRCBLEND, D3DBLEND_SRCALPHA);
     dSetRS(d, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);

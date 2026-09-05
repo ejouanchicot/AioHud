@@ -17,6 +17,7 @@
 #include "aiohud_probes.h"          // dev-only diagnostic surface (present only in the local tree ; build.bat wires it in when the file exists)
 #endif
 #include "ui/hud.h"
+#include "gfx/corner_mask.h"
 #include "ui/player.h"   // set_gear_trace : //aio geartrace
 #include "model/layout.h"
 #include "model/party_state.h"
@@ -988,6 +989,13 @@ static void aio_command_dispatch(const char* cmd)
         aio::party().set_songdur_trace(sec);
         g_host.console().print(">>> AioHud : songdur ARME -- chante, puis envoie Windower\\plugins\\aiohud_debug.log (lignes SONGDUR = le modele, SONGREAL = le timer reel du jeu) <<<");
         g_host.console().print(">>> Test le plus net : Pianissimo la song SUR TOI -- meme calcul qu'un Pianissimo sur un allie, mais avec un vrai timer pour le verifier <<<");
+        return;
+    }
+    if (strstr(buf, "corners")) {   // //aio corners -> A/B the BAKED corner masks against the feathered geometry
+        const bool off = !aio::corner_mask_user_is_off();
+        aio::corner_mask_user_off(off);
+        g_host.console().print(off ? ">>> AioHud : coins = geometrie plumee (masque cuit DESACTIVE) -- //aio corners pour revenir <<<"
+                                   : ">>> AioHud : coins = masque cuit (couverture reelle, 1 texel par pixel) <<<");
         return;
     }
     if (strstr(buf, "doctor")) {   // //aio doctor -> run every RUNTIME check and print what to DO about each problem
