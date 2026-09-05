@@ -235,6 +235,11 @@ private:
     // Interface and Layout categories already use. Immediate mode cannot know a block's height before drawing it,
     // and a card drawn after its rows would cover them.
     float pcH_[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };   // 0=Frame 1=Party 2=Alliance 3=Text 4=Buffs
+    // The party panel's five sections OPEN and CLOSE over time instead of appearing whole. pcA_ is the eased
+    // progress, pcFull_ the content's natural height -- which is free to measure, because the rows are always
+    // laid out in full and only the DRAWING is clipped. That is what makes an accordion animatable at all:
+    // you cannot reveal a height you have not measured, and you cannot measure one you have not laid out.
+    float pcFull_[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
     bool  pcFrameOpen_   = false;
     bool  pcBuffsOpen_   = false;   // Buffs : the strip's size/count/rows AND its order editor, one object in one place
     int   pcDistPick_    = -1;      // which distance zone's colour picker is open (-1 = none). Three open pickers was ~690px for a setting touched once.
