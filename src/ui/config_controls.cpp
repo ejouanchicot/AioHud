@@ -806,7 +806,7 @@ void cat_panel(u32 dev, float x, float y, float w, float h) {
         rrect_fill(dev, x + snap(2.0f), railY, snap(3.0f), railH, snap(1.5f),
                    (C_ACCENTHI & 0x00FFFFFF) | 0x70000000u, (C_ACCENT & 0x00FFFFFF) | 0x30000000u);
 }
-bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, float x, float y, float w, const char* label, bool open) {
+bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, float x, float y, float w, const char* label, bool open, const char* note) {
     const float h = snap(32.0f);
     const bool hov = inrect(mo, x, y, w, h);
     const float t = ease(uid, hov ? 1.0f : 0.0f);
@@ -832,11 +832,21 @@ bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid, fl
                 fill_poly_aa(dev, d, 3, fa(caret)); }
     else      { const float d[6] = { gx - s * 0.55f, gy - s,  gx - s * 0.55f, gy + s,  gx + s * 0.85f, gy };   // right (AA)
                 fill_poly_aa(dev, d, 3, fa(caret)); }
-    { const float rx = tx + tw + snap(14.0f), rw = (x + w) - rx - snap(8.0f);                // the rule, out to the edge
+    // The NOTE is measured in the ordinary case, not the heading's uppercase -- it is a value, not a title.
+    float noteW = 0.0f;
+    if (note && *note) { fo->set_upper(false); noteW = fo->measure(note, ts_note()); fo->set_upper(true); }
+    { const float rx = tx + tw + snap(14.0f);                                                // the rule, out to the note
+      const float rw = (x + w) - rx - snap(8.0f) - (noteW > 0.0f ? noteW + snap(14.0f) : 0.0f);
       if (rw > snap(12.0f)) flat(dev, rx, snap(gy), rw, 1, ((u32)(0x14 + (u32)(0x14 * t)) << 24) | 0x00FFFFFFu); }
 
     fo->begin(dev);
     fo->draw_lc(dev, tx, gy, label, ts_section(), fa(lerpc(C_DIM, C_TEXT, o > t ? o : t)), fa(C_STROKE), 1.2f);
+    if (noteW > 0.0f) {
+        fo->set_upper(false);
+        fo->draw_lc(dev, x + w - snap(8.0f) - noteW, gy, note, ts_note(),
+                    fa(lerpc(C_MUTE, C_DIM, o > t ? o : t)), fa(C_STROKE), 1.0f);
+        fo->set_upper(true);
+    }
     fo->set_upper(up0);                                                                      // put the font back as we found it
     return hov && click;
 }

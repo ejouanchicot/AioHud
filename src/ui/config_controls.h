@@ -194,7 +194,10 @@ bool toggle_chip(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
 bool push_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
               float x, float y, float w, float h, const char* label, int tone);
 void cat_panel(u32 dev, float x, float y, float w, float h);
+// `note` is a short live summary drawn right-aligned on the header : what the section CONTAINS, in the state
+// it is currently in. A page whose sections are all collapsed is otherwise a column of five words and a lot
+// of nothing -- the summary is what makes a closed section worth reading instead of merely worth opening.
 bool cat_header(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
-                float x, float y, float w, const char* label, bool open);
+                float x, float y, float w, const char* label, bool open, const char* note = 0);
 
 } // namespace aio
