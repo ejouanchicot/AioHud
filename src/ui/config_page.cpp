@@ -396,12 +396,6 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     } else {
         flat(dev, 0, 0, sw, sh, BG);                                  // no preview -> full opaque page
     }
-    // The top edging, and it is BEVELLED rather than animated. A pulsing line reads as an effect ; metal reads
-    // as metal because it has a lit facet and a shadowed underside, and that is a matter of three static rows,
-    // not of movement. Bright, body, dark -- the order light falls in.
-    flat(dev, 0, 0, sw, snap(1.0f), C_METAL_HI);
-    flat(dev, 0, snap(1.0f), sw, snap(1.0f), C_METAL);
-    flat(dev, 0, snap(2.0f), sw, snap(1.0f), (C_METAL_DEEP & 0x00FFFFFFu) | 0xCC000000u);
     outline(dev, 0, 0, sw, sh, C_BORDERHI);
 
     // (the page rect and the hole are computed above : the background needs them)
@@ -451,6 +445,13 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         //  drifting lights below already carry the movement.)
         cs(dev);
         clip_rect_end(dev);
+        // The top edging, drawn HERE and not with the page chrome above -- the plate starts at y=0 and painted
+        // straight over it, so it had never once been visible. Bevelled rather than animated: metal reads as
+        // metal because it has a lit facet and a shadowed underside, which is three static rows in the order
+        // light falls, not movement.
+        flat(dev, 0.0f, 0.0f, sw, snap(1.0f), C_METAL_HI);
+        flat(dev, 0.0f, snap(1.0f), sw, snap(1.0f), C_METAL);
+        flat(dev, 0.0f, snap(2.0f), sw, snap(1.0f), (C_METAL_DEEP & 0x00FFFFFFu) | 0xCC000000u);
     }
     // 4. the EMBLEM. Baked art, and only the crystal-and-ring half of it : the wordmark stays live text, so it
     //    keeps its edges at any size and follows the theme accent, which a bitmap of it could do neither.
@@ -678,56 +679,25 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         }
     }
 
-    // 5. the plate's own edge : a rail that CHANGES HUE along its length (gold at the emblem, accent at the far
-    //    end) with a single light travelling it. A flat divider under a lit band reads as a line someone forgot
-    //    to finish. The travel is slow enough -- one pass every twenty-odd seconds -- that it is never a
-    //    progress bar, and it is the one thing on the page that says the overlay is live rather than a picture.
+    // 5. the plate's bottom edging -- the same piece of metal as the top one, and made the same way.
+    //    It used to change hue along its length, fade to a third at the far edge, and carry a comet travelling
+    //    it every twenty seconds. All of that was design ON a border instead of a border: an edge that dims,
+    //    changes colour and has something running along it is not an edge, it is a strip of animation. A real
+    //    gold edging is uniform along its whole length, the same at both ends, and it does not move. What makes
+    //    it read as gold is the BEVEL -- lit facet, body, shadowed underside -- exactly as at the top.
     const float divY = mhBot;
-    shadow_down(dev, 0.0f, divY, sw, snap(16.0f), 0x66000000u);               // the plate casts onto the content
-    flat(dev, 0.0f, divY - snap(1.0f), sw, 1, (0x30FFFFFFu));                  // inner top light on the rail
-    { const u32 gl = C_METAL_HI, gr = C_ACCENT;   // metal at the logo end, the theme accent at the far one
-      const float rw = sw * e;                                                 // still wipes in with the page
-      // The rail is not one uniform ribbon any more. A band of even weight from edge to edge is a RULE -- it
-      // divides, and that is all it does. This one carries its light where the content is: full strength under
-      // the logo, falling away to about a third at the far edge, hue travelling gold -> accent along the same
-      // run. Built in segments because a single quad can only ramp linearly, and the falloff wants a curve.
-      const int RS = 10;
-      for (int i3 = 0; i3 < RS; ++i3) {
-          const float f0 = (float)i3 / (float)RS, f1 = (float)(i3 + 1) / (float)RS;
-          if (sw * f0 >= rw) break;
-          const float x0 = sw * f0, x1 = (sw * f1 < rw) ? sw * f1 : rw;
-          struct R { static u32 at(float t, u32 a2, u32 b2) {
-              const u32 hue = lerpc(a2, b2, t);
-              const float w2 = 0.30f + 0.70f * powf(1.0f - t, 1.6f);
-              return (hue & 0x00FFFFFFu) | ((u32)(255.0f * w2) << 24); } };
-          const u32 cA = R::at(f0, gl, gr), cB = R::at(f1, gl, gr);
-          // ONE crisp pixel of light with two of shadow under it, not a three-pixel slab. A thick coloured band
-          // is what a divider looked like fifteen years ago ; weight now comes from the light a thin edge
-          // throws, which is the bloom below. The dark line beneath is what makes the bright one sit ON the
-          // content rather than float over it.
-          q4(dev, x0, divY, x1 - x0, snap(1.0f), cA, cB, cA, cB);
-          q4(dev, x0, divY + snap(1.0f), x1 - x0, snap(2.0f),
-             shade(cA, -0.72f), shade(cB, -0.72f), shade(cA, -0.88f), shade(cB, -0.88f));
-      }
+    shadow_down(dev, 0.0f, divY, sw, snap(16.0f), 0x66000000u);               // the plate still casts onto the content
+    { const float rw = sw * e;                                                // the open WIPE stays : an entrance is not an animation
+      flat(dev, 0.0f, divY, rw, snap(1.0f), C_METAL_HI);
+      flat(dev, 0.0f, divY + snap(1.0f), rw, snap(1.0f), C_METAL);
+      flat(dev, 0.0f, divY + snap(2.0f), rw, snap(1.0f), (C_METAL_DEEP & 0x00FFFFFFu) | 0xE0000000u);
+      // One static glow under it, even along the width. A lit edge spills a little onto what is below ; that is
+      // a property of the material, and unlike the comet it does not ask to be watched.
       cs_add(dev);
-      // ... and it BLEEDS onto the content below, following the same falloff. A line that emits light reads as
-      // an edge of something lit ; a line that does not reads as a border someone drew.
-      for (int i4 = 0; i4 < 8; ++i4) {
-          const float t = ((float)i4 + 0.5f) / 8.0f;
+      for (int i4 = 0; i4 < 10; ++i4) {
+          const float t = ((float)i4 + 0.5f) / 10.0f;
           if (sw * t >= rw) break;
-          const float w2 = 0.30f + 0.70f * powf(1.0f - t, 1.6f);
-          soft_blob(dev, sw * t, divY + snap(3.0f), sw / 16.0f, snap(10.0f),
-                    ((u32)(52.0f * w2) << 24) | (lerpc(C_METAL_HI, C_ACCENT, t) & 0x00FFFFFFu));
-      }
-      const float tt = f.t * 0.045f, ph = tt - floorf(tt);                     // one pass every ~22 s
-      // A head and three fading lengths of tail behind it. One blob was a dot sliding along a line ; a comet
-      // has a DIRECTION, which is the whole difference between something moving and something being moved.
-      for (int tl = 3; tl >= 0; --tl) {
-          const float back = (float)tl * snap(52.0f);
-          const float bx2 = rw * ph - back;
-          if (bx2 < -snap(90.0f)) continue;
-          const u32 al2 = (u32)(70.0f / (1.0f + 1.5f * (float)tl));
-          soft_blob(dev, bx2, divY + snap(1.5f), snap(90.0f) + back * 0.35f, snap(4.0f), (al2 << 24) | (C_METAL_HI & 0x00FFFFFF));
+          soft_blob(dev, sw * t, divY + snap(4.0f), sw / 20.0f, snap(9.0f), (30u << 24) | (C_METAL & 0x00FFFFFFu));
       }
       cs(dev); }
     flat(dev, 0.0f, divY + snap(3.0f), sw, 1, C_BORDER);
