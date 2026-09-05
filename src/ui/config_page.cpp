@@ -796,8 +796,13 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         const float sbW = snap(220.0f);
         vg(dev, ix, bodyY, sbW, bodyH, C_SIDEBAR, 0xF0121A27);
         cs_add(dev); soft_blob(dev, ix + sbW * 0.5f, bodyY + snap(2.0f), sbW * 0.62f, bodyH * 0.16f, 0x0A2A4E84);   // faint top glow
-        q4(dev, ix + sbW, bodyY, snap(22.0f), bodyH, 0x30000000, 0x00000000, 0x30000000, 0x00000000);              // recessed shadow on the content side
-        flat(dev, ix + sbW, bodyY, 1, bodyH, C_BORDER);
+        // The module list's right edge is a DIVIDER, and a divider inside a steel frame is the same steel at the
+        // same weight -- one pixel of C_BORDER beside a three-pixel rim was two unrelated ideas about where a
+        // panel ends. The recessed shadow starts after the metal instead of under it, so the edging stays one
+        // flat colour like every other one on the page.
+        { const float bwS = snap(3.0f);
+          flat(dev, ix + sbW, bodyY, bwS, bodyH, C_STEEL);
+          q4(dev, ix + sbW + bwS, bodyY, snap(22.0f), bodyH, 0x30000000, 0x00000000, 0x30000000, 0x00000000); }
         fo->begin(dev);
         fo->draw_lc(dev, ix + snap(20.0f), bodyY + snap(24.0f), "MODULES", snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
         if (section_ < 0 || section_ >= MODULE_N) section_ = 0;
@@ -1490,8 +1495,13 @@ void ConfigPage::draw_profile_tab(const Frame& f, u32 dev, Font* fo, const Mouse
         const float sbW = snap(290.0f);
         vg(dev, ix, bodyY, sbW, bodyH, C_SIDEBAR, 0xF0121A27);
         cs_add(dev); soft_blob(dev, ix + sbW * 0.5f, bodyY + snap(2.0f), sbW * 0.62f, bodyH * 0.16f, 0x0A2A4E84);   // faint top glow
-        q4(dev, ix + sbW, bodyY, snap(22.0f), bodyH, 0x30000000, 0x00000000, 0x30000000, 0x00000000);              // recessed shadow on the content side
-        flat(dev, ix + sbW, bodyY, 1, bodyH, C_BORDER);
+        // The module list's right edge is a DIVIDER, and a divider inside a steel frame is the same steel at the
+        // same weight -- one pixel of C_BORDER beside a three-pixel rim was two unrelated ideas about where a
+        // panel ends. The recessed shadow starts after the metal instead of under it, so the edging stays one
+        // flat colour like every other one on the page.
+        { const float bwS = snap(3.0f);
+          flat(dev, ix + sbW, bodyY, bwS, bodyH, C_STEEL);
+          q4(dev, ix + sbW + bwS, bodyY, snap(22.0f), bodyH, 0x30000000, 0x00000000, 0x30000000, 0x00000000); }
         const float cx0 = ix + snap(20.0f), cw0 = sbW - snap(40.0f);
         fo->begin(dev); fo->draw_lc(dev, cx0, bodyY + snap(24.0f), tr("CHARACTER", "PERSONNAGE"), snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
 
@@ -1667,8 +1677,13 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
         const float sbW = snap(220.0f);
         vg(dev, ix, bodyY, sbW, bodyH, C_SIDEBAR, 0xF0121A27);
         cs_add(dev); soft_blob(dev, ix + sbW * 0.5f, bodyY + snap(2.0f), sbW * 0.62f, bodyH * 0.16f, 0x0A2A4E84);   // faint top glow
-        q4(dev, ix + sbW, bodyY, snap(22.0f), bodyH, 0x30000000, 0x00000000, 0x30000000, 0x00000000);              // recessed shadow on the content side
-        flat(dev, ix + sbW, bodyY, 1, bodyH, C_BORDER);
+        // The module list's right edge is a DIVIDER, and a divider inside a steel frame is the same steel at the
+        // same weight -- one pixel of C_BORDER beside a three-pixel rim was two unrelated ideas about where a
+        // panel ends. The recessed shadow starts after the metal instead of under it, so the edging stays one
+        // flat colour like every other one on the page.
+        { const float bwS = snap(3.0f);
+          flat(dev, ix + sbW, bodyY, bwS, bodyH, C_STEEL);
+          q4(dev, ix + sbW + bwS, bodyY, snap(22.0f), bodyH, 0x30000000, 0x00000000, 0x30000000, 0x00000000); }
         fo->begin(dev);
         fo->draw_lc(dev, ix + snap(20.0f), bodyY + snap(24.0f), "MODULES", snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
         for (int i = 0; i < HELP_MODULE_N; ++i) {
