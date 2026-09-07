@@ -39,6 +39,10 @@ REM 5) the default box layout (positions/toggles) the plugin reads at startup.
 mkdir "%DATA%\design\exports" 2>nul
 copy /Y "%ROOT%design\exports\layout.json" "%DATA%\design\exports\layout.json" >nul
 
+REM 5b) the status-icon tool (extract the game's icons to PNG / install your own). Ships next to the data
+REM     folder it writes into, so its Windower-root auto-detection works with no arguments.
+copy /Y "%ROOT%tools\aioicons.ps1" "%DATA%\aioicons.ps1" >nul
+
 REM 6) third-party licence notice. The EmpyPop NM table (src\model\nms_gen.h) is BSD-3 data (c) 2020 Dean
 REM    James (Xurion of Bismarck) ; clause 2 REQUIRES the copyright notice be reproduced in binary
 REM    distributions -- so this ships with every zip. Do not drop it.

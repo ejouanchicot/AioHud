@@ -577,6 +577,18 @@ struct PartyState {
     // //aio songlog : how many entries of the recent-cast ring match this status. The ring holds YOUR casts ONLY, so
     // when two timers share one status but the ring has a single entry, the ranked lookup necessarily collapses them
     // onto one spell -- that gap is the suspected trust-song bug, and this is the number that proves it.
+    // The tick of the newest cast of `status` that YOU landed on YOURSELF (0 = none recorded). It is the IDENTITY of
+    // the cast the self row currently stands for: when it changes, you cast that buff again -- which is what lifts a
+    // hand-mute (//aio out) on a buff still up. Only YOUR casts count: a trust re-Hasting you is not you changing
+    // your mind. Signed tick compare, like every other clock here.
+    unsigned self_cast_tick(unsigned short status) const {
+        unsigned t = 0;
+        for (int i = 0; i < 64; ++i) {
+            const SelfCast& e = selfCasts_[i];
+            if (e.status == status && e.spell && e.caster == selfId_ && (!t || (int)(e.tick - t) > 0)) t = e.tick;
+        }
+        return t;
+    }
     int self_cast_ring_count(unsigned short status) const {
         int n = 0; for (int i = 0; i < 64; ++i) if (selfCasts_[i].status == status && selfCasts_[i].spell) ++n; return n;
     }
@@ -620,7 +632,7 @@ struct PartyState {
     // --- Timers module : BUFFS YOU cast on OTHER players (person name + ESTIMATED timer). The client sends
     //     NO per-buff timer for other players, so on_action estimates from tb_buff_gen's base duration when a
     //     buff spell (0x028 cat 4) you cast lands on an ally. Keyed by (target id, status) ; refreshed on recast.
-    struct OtherBuff { unsigned target = 0; unsigned short status = 0; unsigned short spell = 0; unsigned startMs = 0; unsigned durMs = 0; unsigned expTick = 0; unsigned char seen = 0; unsigned char mirrorSelf = 0; unsigned char isAbil = 0; unsigned char aoe = 0; char name[20] = {0}; };   // isAbil : `spell` holds an ABILITY id (COR roll) ; aoe : the cast hit >=2 targets (Protectra / a spell under SCH Accession) -> a REAL AoE, group it
+    struct OtherBuff { unsigned target = 0; unsigned short status = 0; unsigned short spell = 0; unsigned castMs = 0; unsigned startMs = 0; unsigned durMs = 0; unsigned expTick = 0; unsigned char seen = 0; unsigned char mirrorSelf = 0; unsigned char isAbil = 0; unsigned char aoe = 0; char name[20] = {0}; };   // isAbil : `spell` holds an ABILITY id (COR roll) ; aoe : the cast hit >=2 targets (Protectra / a spell under SCH Accession) -> a REAL AoE, group it   // castMs : the tick of the CAST this entry stands for -- the IDENTITY of that cast, never shifted afterwards (startMs is, by the zone-in bump) ; the focus monitor compares it to lift a hand-mute when a NEW cast lands (see FocusMem::muteRef)
     OtherBuff otherBuffs_[32]; int otherBuffN_ = 0;
     unsigned obZone_ = 0xFFFFFFFFu, obZoneGraceMs_ = 0;   // zoning grace : after a zone change the 0x076 buff lists re-populate over a
                                                           //   few seconds ; during the grace we KEEP ally buffs on their estimate (they

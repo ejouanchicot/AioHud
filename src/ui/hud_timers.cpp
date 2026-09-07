@@ -48,13 +48,35 @@ static bool fm_muted_for(unsigned target, unsigned status, bool self);   // ... 
 // gone -- so the mute lives exactly as long as the cast that caused it, and a deliberate re-cast on that same
 // person later starts a fresh, un-muted entry. That is why none of this needs to be saved to disk: there is no
 // lasting state, only "ignore the one that is currently up".
+// `muteRef` is what makes that second half TRUE. "Dropped when the buff is gone" only ends the mute for a buff
+// that ENDS -- and the usual correction is the opposite: you Haste the wrong name, //aio out it, then Haste the
+// RIGHT person, or that same person again on purpose. Haste overwrites itself, so the buff never lapses, the
+// entry is fed without interruption, and the row stayed hidden for as long as it was maintained. So the mute
+// also remembers WHICH CAST it silenced (fm_cast_ref) and lifts itself the moment a newer one lands.
 // `tag` is the number you see on the row and type into //aio out. It is assigned once, at creation, and never
 // changes while the entry lives -- which is the whole point: the ROWS are sorted by remaining time and shuffle
 // as things tick, so a number that meant "third row from the top" would mean something else by the time you had
 // finished typing it. A number that belongs to the ENTRY is the same number whenever you read it.
-struct FocusMem { unsigned target; unsigned short status, spell; unsigned char isAbil, self, zoneCheck, muted, tag, seen; unsigned lostMs; char name[20]; };
+struct FocusMem { unsigned target; unsigned short status, spell; unsigned char isAbil, self, zoneCheck, muted, tag, seen, alerting; unsigned lostMs, muteRef; char name[20]; };
+// `alerting` = this entry drew its red OUT row on the LAST frame. It is set where the row is emitted and nowhere
+// else, so it means exactly "what you can see in red right now" -- which is what //aio out alerts takes off. The
+// alternative (re-deriving the condition in the command) would be a second copy of a decision that already has
+// six suppression branches (song replaced, unrecoverable 5th song, Indi- swapped, hold expired, muted, no data),
+// and the day one of them moved the two copies would disagree in silence.
 static FocusMem fm[24];
 static int fmN = 0;
+// The IDENTITY of the cast an entry currently stands for -- the tick of the cast that put the buff there.
+// Ally : the ob[] entry's castMs (the NEWEST of them, because two same-status songs are two entries and one of
+// them can be pruned without any new cast having happened). Self : the self-cast ring, YOUR casts only.
+// The two clocks differ (GetTickCount vs the FFXI tick) and are never compared to each other -- only an entry's
+// own ref, of its own kind, to itself over time.
+static unsigned fm_cast_ref(const FocusMem& e) {
+    if (e.self) return party().self_cast_tick(e.status);
+    int n = 0; const PartyState::OtherBuff* ob = party().other_buffs(n); unsigned t = 0;
+    for (int i = 0; i < n; ++i)
+        if (ob[i].target == e.target && ob[i].status == e.status && (!t || (int)(ob[i].castMs - t) > 0)) t = ob[i].castMs;
+    return t;
+}
 static unsigned char fm_free_tag() {   // lowest number not in use : the list stays 1,2,3... as entries come and go
     for (unsigned char t = 1; t <= 24; ++t) {
         bool used = false;
@@ -107,28 +129,58 @@ bool fm_muted_for(unsigned target, unsigned status, bool self) {
         if (fm[q].muted && fm[q].self == (self ? 1 : 0) && fm[q].status == status && (self || fm[q].target == target)) return true;
     return false;
 }
-int timers_focus_forget(const char* a, const char* b) {
-    const bool all = (a && (tf_pre("all", a) || tf_pre("tout", a)));
+// Does this entry answer to the argument pair? Shared by //aio out and //aio in, because a correction and its
+// undo have to accept EXACTLY the same words -- anything you can type to take a row off, you can type to put it
+// back, without learning a second vocabulary.
+static bool fm_matches(const FocusMem& e, const char* a, const char* b) {
+    if (a && (tf_pre("all", a) || tf_pre("tout", a))) return true;
     int idx = -1;   // a NUMBER is the entry's tag -- the one drawn on its row -- not a position in this array
     if (a && a[0] >= '0' && a[0] <= '9') { idx = 0; for (const char* c = a; *c >= '0' && *c <= '9'; ++c) idx = idx * 10 + (*c - '0'); }
+    if (idx >= 0) return idx > 0 && e.tag == (unsigned char)idx;
+    const char* sp = e.isAbil ? abil_name_by_id(e.spell)
+                              : (spell_info(e.spell) ? spell_info(e.spell)->en : 0);
+    const char* who = e.self ? "you" : e.name;
+    const char* args[2] = { a, b };
+    int need = 0, got = 0;
+    for (int k = 0; k < 2; ++k) {
+        if (!args[k] || !args[k][0]) continue;
+        ++need;
+        if (tf_pre(who, args[k]) || tf_pre(sp, args[k]) || tf_pre(buff_status_name(e.status), args[k])) ++got;
+    }
+    return (need > 0 && got == need);
+}
+// "alerts" is a THIRD thing to name, next to a number and a person : the rows that are shouting at you right
+// now. //aio out all is the blunt instrument -- it takes off everything, including the timers that were doing
+// their job -- and after a wipe or a long fight the only rows you actually want gone are the red ones.
+// Checked BEFORE "all" and only from three letters, so "a" and "al" still mean all ("all" itself cannot match
+// "alert" : the third letter differs). FR spelling accepted, like "tout".
+static bool tf_alert_word(const char* a) {
+    if (!a || !a[0] || !a[1] || !a[2]) return false;   // 1-2 letters stay "all" -- see above
+    return tf_pre("alerts", a) || tf_pre("alertes", a);
+}
+int timers_focus_forget(const char* a, const char* b) {
+    const bool alertsOnly = tf_alert_word(a);
     int hit = 0;
     for (int q = 0; q < fmN; ++q) {
-        const char* sp = fm[q].isAbil ? abil_name_by_id(fm[q].spell)
-                                      : (spell_info(fm[q].spell) ? spell_info(fm[q].spell)->en : 0);
-        const char* who = fm[q].self ? "you" : fm[q].name;
-        bool match = all || (idx > 0 && fm[q].tag == (unsigned char)idx);
-        if (!match && !all && idx < 0) {
-            const char* args[2] = { a, b };
-            int need = 0, got = 0;
-            for (int k = 0; k < 2; ++k) {
-                if (!args[k] || !args[k][0]) continue;
-                ++need;
-                if (tf_pre(who, args[k]) || tf_pre(sp, args[k]) || tf_pre(buff_status_name(fm[q].status), args[k])) ++got;
-            }
-            match = (need > 0 && got == need);
-        }
-        if (!match) continue;
-        fm[q].muted = 1; fm[q].lostMs = 0; ++hit;   // the emit skips it, and it is dropped when its buff ends
+        if (alertsOnly) { if (!fm[q].alerting) continue; }
+        else if (!fm_matches(fm[q], a, b)) continue;
+        fm[q].muted = 1; fm[q].lostMs = 0; fm[q].muteRef = fm_cast_ref(fm[q]); ++hit;   // the emit skips it ; it is dropped when its buff ends, or un-muted by a NEWER cast (muteRef)
+    }
+    return hit;
+}
+// //aio in -- THE UNDO. Everything above ends a mute on its own terms (the buff ends, or you cast it again), and
+// both can be a long wait: a Haste you keep up on the wrong person never lapses, and a spell that will not
+// overwrite what is already there records no new cast to lift it. This is the way back that costs nothing.
+// The NO-ARGUMENT form means ALL, which `out` deliberately refuses -- and the asymmetry is the point: a muted
+// entry draws no row, so it shows no number, and "everything I took off" is the only thing you can name from
+// the screen. (`//aio out list` still prints them, marked "(ignored)", when you want just one of them back.)
+// Only entries that were really muted are counted, so "nothing to put back" stays a distinct, honest answer.
+int timers_focus_restore(const char* a, const char* b) {
+    int hit = 0;
+    for (int q = 0; q < fmN; ++q) {
+        if (!fm[q].muted) continue;
+        if (a && a[0] && !fm_matches(fm[q], a, b)) continue;
+        fm[q].muted = 0; fm[q].lostMs = 0; fm[q].muteRef = 0; ++hit;   // watched again, with the number it already had
     }
     return hit;
 }
@@ -313,7 +365,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // COR roll : name = "Chaos Roll", pip = the coloured pip number (0 = none), post = " (AoE 6)" suffix -> drawn as
     // "Chaos Roll [5] (AoE 6)" with ONLY the pip in pipCol (unlucky=red, lucky/11=green, else white). nameCol overrides
     // the whole-name colour (unused now that only the pip is tinted).
-    struct Row { int rem; int fine; int icon; const char* name; int both; int order; u32 nameCol; int pip; u32 pipCol; const char* post; u32 postCol; const char* tag; u32 tagCol; int src; int mark; };   // mark : the focus-monitor number (0 = not monitored) -- what //aio out takes   // tag : BRD song modifiers "(SV)(T)" drawn in tagCol, between the name and the AoE suffix
+    struct Row { int rem; int fine; int icon; const char* name; const char* who; int order; u32 nameCol; int pip; u32 pipCol; const char* post; u32 postCol; const char* tag; u32 tagCol; int src; int mark; };   // who : the PERSON this row is about (0 = you) -- kept SEPARATE from `name` (the spell) because the display mode governs the icon and the spell name, never the person : "Icon" = icon + who, "Name" = who + spell, "Both" = the three. Rows used to carry one "Aeryn - Haste" string and a `both` flag that forced icon+name on them, so an ally row ignored the mode outright -- and the same buff switched between the grouped form (which obeyed it) and the per-person form (which did not) as you re-cast, which is what "it does not follow" was.   // mark : the focus-monitor number (0 = not monitored) -- what //aio out takes   // tag : BRD song modifiers "(SV)(T)" drawn in tagCol, between the name and the AoE suffix
     static const int TM_REM_MISSING = -1000000000;   // FOCUS alert row : an ally is MISSING a critical buff -> timer shows "OUT" in red, sorts to the very top
     // `fine` = the same remaining time as `rem` but in TICKS (1/60 s), used ONLY to sort. `rem` is ceil-ed to whole
     // seconds for display, so two timers a fraction of a second apart show the SAME number every other second --
@@ -327,18 +379,18 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // tick (the frozen demo/preview rows) are allowed to stay there.
     static const int TM_FINE_NONE = -2000000000;
     static Row bufs[50], recs[50]; int nb = 0, nr = 0;
-    for (int i = 0; i < 50; ++i) { bufs[i].nameCol = recs[i].nameCol = 0; bufs[i].pip = recs[i].pip = 0; bufs[i].post = recs[i].post = 0; bufs[i].postCol = recs[i].postCol = 0; bufs[i].tag = recs[i].tag = 0; bufs[i].src = recs[i].src = 0; bufs[i].mark = recs[i].mark = 0; bufs[i].fine = recs[i].fine = TM_FINE_NONE; }   // clear per-frame overrides (static arrays)
+    for (int i = 0; i < 50; ++i) { bufs[i].nameCol = recs[i].nameCol = 0; bufs[i].pip = recs[i].pip = 0; bufs[i].post = recs[i].post = 0; bufs[i].postCol = recs[i].postCol = 0; bufs[i].tag = recs[i].tag = 0; bufs[i].src = recs[i].src = 0; bufs[i].mark = recs[i].mark = 0; bufs[i].who = recs[i].who = 0; bufs[i].fine = recs[i].fine = TM_FINE_NONE; }   // clear per-frame overrides (static arrays)
     if (preview || editing) {
         static const struct { int id, rem; } SB[5] = { {43, 1490}, {57, 155}, {214, 309}, {40, 540}, {33, 28} };
-        for (int i = 0; i < 5; ++i) { bufs[nb].rem = SB[i].rem; bufs[nb].icon = SB[i].id; bufs[nb].name = buff_status_name(SB[i].id); bufs[nb].both = 0; bufs[nb].order = 0; ++nb; }
+        for (int i = 0; i < 5; ++i) { bufs[nb].rem = SB[i].rem; bufs[nb].icon = SB[i].id; bufs[nb].name = buff_status_name(SB[i].id); bufs[nb].order = 0; ++nb; }
         if (C.tmMine) {   // demo : an AoE song grouped for the whole party (you included) + a COR roll pip + a single-target buff on one ally
-            bufs[nb].rem = 168;  bufs[nb].icon = 198; bufs[nb].name = "Minuet V"; bufs[nb].tag = " (SV NT)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (AoE 6)"; bufs[nb].both = 0; bufs[nb].order = 0; ++nb;   // 198 = Minuet (was 43 = Refresh -- wrong icon)
-            bufs[nb].rem = 280;  bufs[nb].icon = 313; bufs[nb].name = "Chaos Roll"; bufs[nb].pip = 11; bufs[nb].pipCol = 0xFF74D074u; bufs[nb].tag = " (CC)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (AoE 6)"; bufs[nb].both = 0; bufs[nb].order = 0; ++nb;   // pip 11 = green, under Crooked Cards
+            bufs[nb].rem = 168;  bufs[nb].icon = 198; bufs[nb].name = "Minuet V"; bufs[nb].tag = " (SV NT)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (AoE 6)"; bufs[nb].order = 0; ++nb;   // 198 = Minuet (was 43 = Refresh -- wrong icon)
+            bufs[nb].rem = 280;  bufs[nb].icon = 313; bufs[nb].name = "Chaos Roll"; bufs[nb].pip = 11; bufs[nb].pipCol = 0xFF74D074u; bufs[nb].tag = " (CC)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (AoE 6)"; bufs[nb].order = 0; ++nb;   // pip 11 = green, under Crooked Cards
             // Preview the display tiers : your ally-cast (11) sits above a player's buff on you (40) which sits above
             // a trust's (90), so the sample shows the "mine -> my ally-casts -> players grouped -> trusts last" order.
-            bufs[nb].rem = 1200; bufs[nb].icon = 33;  bufs[nb].name = "Aeryn - Haste";     bufs[nb].both = 1; bufs[nb].order = 11; ++nb;   // a buff YOU put on an ally (your ally-casts tier) ; 33 = Haste
-            bufs[nb].rem = 540;  bufs[nb].icon = 33;  bufs[nb].name = "Haste"; bufs[nb].post = " (Aeryn)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 40; ++nb;   // a real PLAYER's buff on you -> grouped by that player
-            bufs[nb].rem = 62;   bufs[nb].icon = 41;  bufs[nb].name = "Shell V"; bufs[nb].tag = " (SV)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (Monberaux)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].both = 0; bufs[nb].order = 90; ++nb;   // a TRUST's buff on you -> last
+            bufs[nb].rem = 1200; bufs[nb].icon = 33;  bufs[nb].who = "Aeryn"; bufs[nb].name = "Haste"; bufs[nb].order = 11; ++nb;   // a buff YOU put on an ally (your ally-casts tier) ; 33 = Haste
+            bufs[nb].rem = 540;  bufs[nb].icon = 33;  bufs[nb].name = "Haste"; bufs[nb].post = " (Aeryn)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].order = 40; ++nb;   // a real PLAYER's buff on you -> grouped by that player
+            bufs[nb].rem = 62;   bufs[nb].icon = 41;  bufs[nb].name = "Shell V"; bufs[nb].tag = " (SV)"; bufs[nb].tagCol = 0xFFE8C55Au; bufs[nb].post = " (Monberaux)"; bufs[nb].postCol = 0xFF9AB0C8u; bufs[nb].order = 90; ++nb;   // a TRUST's buff on you -> last
         }
         // Reflect the live BUFF FILTER in the preview : drop a demo buff the family filter HIDES, unless it's Hidden+focus
         // AND "low" (rem < warn) -- exactly what the real HUD does, so hiding a family empties it here too. (Recasts unfiltered.)
@@ -353,7 +405,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
           nb = w;
         }
         static const struct { int icon, rem; const char* nm; } SR[4] = { {66, 8, "Mighty Strikes"}, {143, 22, "Haste"}, {160, 3, "Provoke"}, {56, 45, "Berserk"} };
-        for (int i = 0; i < 4; ++i) { recs[nr].rem = SR[i].rem; recs[nr].icon = SR[i].icon; recs[nr].name = SR[i].nm; recs[nr].both = 0; recs[nr].order = 0; ++nr; }
+        for (int i = 0; i < 4; ++i) { recs[nr].rem = SR[i].rem; recs[nr].icon = SR[i].icon; recs[nr].name = SR[i].nm; recs[nr].order = 0; ++nr; }
     } else {
         const unsigned now = ffxi_now_tick(), nowMs = GetTickCount();
         // the player's REAL current buffs (status ids read from memory ; the same list the Player Hub shows). Authoritative
@@ -636,7 +688,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             }
             if (folds) { grp[gi].selfHas = 1; grp[gi].rem = rem; grp[gi].fine = fine; continue; }
             const SpellRow* ssp = spell_info(ssid);
-            bufs[nb].rem = rem; bufs[nb].fine = fine; bufs[nb].icon = bt[i].id; bufs[nb].name = (ssp && ssp->en) ? ssp->en : buff_status_name(bt[i].id); bufs[nb].both = 0;
+            bufs[nb].rem = rem; bufs[nb].fine = fine; bufs[nb].icon = bt[i].id; bufs[nb].name = (ssp && ssp->en) ? ssp->en : buff_status_name(bt[i].id);
             // BAND : what YOU cast (0), then what real PLAYERS put on you (1), then TRUSTS (2). Each band is still
             // sorted soonest-first by the comparator below. "Yours" is the per-timer caster, not "it is on me".
             const unsigned rowCaster = party().buff_caster_for(bt[i].id, bt[i].expiry, i);
@@ -719,7 +771,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             if (gr > 0 && nb < 50) {
                 const SpellRow* gsp = spell_info(ga.spell);
                 if (ga.expTick) bufs[nb].fine = (int)(ga.expTick - now);   // same instant as geo_aura_remaining, un-ceil-ed -> sort key
-                bufs[nb].rem = gr; bufs[nb].icon = ga.status; bufs[nb].name = (gsp && gsp->en) ? gsp->en : buff_status_name(ga.status); bufs[nb].both = 0; bufs[nb].order = 0; bufs[nb].src = 3; ++nb;   // GEO aura
+                bufs[nb].rem = gr; bufs[nb].icon = ga.status; bufs[nb].name = (gsp && gsp->en) ? gsp->en : buff_status_name(ga.status); bufs[nb].order = 0; bufs[nb].src = 3; ++nb;   // GEO aura
             }
         }
 
@@ -791,7 +843,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             }
             if (group) {   // AoE : one grouped row (Minuet V (AoE 6))
                 PartyState::RollInfo ri = grp[k].isAbil ? party().roll_info(grp[k].status) : PartyState::RollInfo{ 0, 0 };   // COR roll -> pip value (double-up included)
-                bufs[nb].rem = rem; bufs[nb].fine = fine; bufs[nb].icon = grp[k].status; bufs[nb].both = (meHas(grp[k].status) || grp[k].selfCast) ? 0 : 1;   // selfCast : render as YOUR-buff styling (icon only) from the first frame too -- match the tier at line below, else the icon/name presentation flips ~1s in (same flicker class)
+                bufs[nb].rem = rem; bufs[nb].fine = fine; bufs[nb].icon = grp[k].status;   // no `who` : a group is about SEVERAL people, so it renders like your own buffs and follows the display mode (it used to force icon+name whenever you did not hold the buff yourself, which is half of why the presentation flipped as you re-cast)
                 // A group whose SELF copy folded in (grp[].selfHas) is YOUR OWN buff -> stays in the top tier (0).
                 // One you only put on allies goes to the "your ally-casts" tier (10), above the players-on-you tier (40+).
                 bufs[nb].order = (grp[k].selfHas || grp[k].selfCast) ? 0 : 10;   // selfCast : keep it in YOUR tier from the first frame too (else the row jumps tier 10 -> 0 when the fold lands ~1s later)
@@ -833,10 +885,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     const bool known = (bs != 0);   // do we hold this member's buff list at all ?
                     if (known && !has && !graceOB) continue;   // told about them, and the buff is not there -> gone
                     if (fm_muted_for(ob[i].target, ob[i].status, false)) continue;   // taken off by //aio out : no row at all
-                    if (en) { _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s - %s", ob[i].name, en); obLabel[nb][sizeof(obLabel[nb]) - 1] = 0; bufs[nb].name = obLabel[nb]; }
-                    else bufs[nb].name = ob[i].name;
-                    bufs[nb].rem = obRem(ob[i]); bufs[nb].fine = obFine(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].both = 1; bufs[nb].order = poBase + party().party_order(ob[i].target); bufs[nb].src = 5; bufs[nb].mark = fm_tag_of(ob[i].target, ob[i].status, false); ++nb;   // ally-cast rows GROUPED BY ally ; laggards form a named block after the fresh ones
-                    OBLOG("  ROW  per-ally  \"%s\"  rem=%ds  order=%d   [group %d, %s]", bufs[nb-1].name ? bufs[nb-1].name : "?", bufs[nb-1].rem, bufs[nb-1].order, k, lag ? "laggard" : "fresh");
+                    bufs[nb].who = ob[i].name;   // the person always shows ; the spell only when the mode asks for a name
+                    bufs[nb].name = en;          // 0 = spell unknown -> the person alone carries the row
+                    bufs[nb].rem = obRem(ob[i]); bufs[nb].fine = obFine(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].order = poBase + party().party_order(ob[i].target); bufs[nb].src = 5; bufs[nb].mark = fm_tag_of(ob[i].target, ob[i].status, false); ++nb;   // ally-cast rows GROUPED BY ally ; laggards form a named block after the fresh ones
+                    OBLOG("  ROW  per-ally  \"%s - %s\"  rem=%ds  order=%d   [group %d, %s]", bufs[nb-1].who ? bufs[nb-1].who : "?", bufs[nb-1].name ? bufs[nb-1].name : "?", bufs[nb-1].rem, bufs[nb-1].order, k, lag ? "laggard" : "fresh");
                 }
             }
         }
@@ -879,7 +931,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             if (party().self_main_job_changed()) { int wj = 0;
               for (int q = 0; q < fmN; ++q) if (fm[q].self) { if (wj != q) fm[wj] = fm[q]; ++wj; }
               fmN = wj; }
-            for (int q = 0; q < fmN; ++q) fm[q].seen = 0;                                      // ... cleared before the two seeding loops below
+            for (int q = 0; q < fmN; ++q) { fm[q].seen = 0; fm[q].alerting = 0; }              // ... cleared before the two seeding loops below (alerting is re-set by the OUT emit at the end of this block)
             { int n2 = 0; const BuffTimer* bt2 = party().buff_timers(n2);                      // remember FOCUS buffs currently up on YOU (Self focus key 0x8000|st)
               for (int i = 0; i < n2; ++i) { const unsigned st = bt2[i].id;
                 if (focus_trace_live() && st < 1024 && !is_debuff_status(st) && meHas((int)st)) {
@@ -897,7 +949,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 { const unsigned oc = party().buff_caster_for((unsigned short)st, bt2[i].expiry, i);
                   if (oc && oc != meId) continue; }
                 int s = -1; for (int q = 0; q < fmN; ++q) if (fm[q].self && fm[q].status == st) { s = q; break; }
-                if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].lostMs = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].name[0] = 0; }
+                if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].name[0] = 0; }
                 if (s >= 0) { fm[s].seen = 1; fm[s].spell = party().self_buff_spell_ranked((unsigned short)st, bt2[i].expiry, i); }   // refresh the spell/tier each frame (a re-cast at a higher tier updates the OUT label)
               } }
             for (int i = 0; i < no; ++i) {                                                     // remember FOCUS buffs currently up on allies (Allies focus key 0xC000|st ; needs tmMine)
@@ -908,10 +960,21 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // filled fm[] on an alliance run and starved your own rows.
                 if (party().party_order(ob[i].target) > 5) continue;
                 int s = -1; for (int q = 0; q < fmN; ++q) if (!fm[q].self && fm[q].target == ob[i].target && fm[q].status == st) { s = q; break; }
-                if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].lostMs = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; }
+                if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; }
                 else if (s < 0) { static windower::debug::LogOnce<2> onceFull;   // SAY it. A silent refusal here is indistinguishable from "no buff to watch".
                     if (onceFull.first(0)) windower::debug::log("FOCUS monitor FULL (%d entries) -- new ally focus buffs are NOT tracked this session", 24); }
                 if (s >= 0) { fm[s].seen = 1; fm[s].spell = ob[i].spell; fm[s].isAbil = ob[i].isAbil; int j = 0; for (; j < 19 && ob[i].name[j]; ++j) fm[s].name[j] = ob[i].name[j]; fm[s].name[j] = 0; }
+            }
+            // A NEWER CAST LIFTS THE MUTE. //aio out silences ONE cast, not the spell -- and the correction that
+            // follows it is almost always another cast of the same buff, often on the very person you took off
+            // (you Hasted him by mistake, then decided he should have it after all). That cast overwrites the
+            // buff instead of ending it, so the entry is never starved and the prune below never fires : without
+            // this the row would stay hidden for the whole time you kept the buff up. Strictly NEWER, never just
+            // "different" -- an ob[] entry dropped from a same-status pair lowers the max, and that is not a cast.
+            for (int q = 0; q < fmN; ++q) {
+                if (!fm[q].muted || !fm[q].seen) continue;
+                const unsigned r = fm_cast_ref(fm[q]);
+                if (r && (int)(r - fm[q].muteRef) > 0) { fm[q].muted = 0; fm[q].lostMs = 0; fm[q].muteRef = 0; }   // watched again, with the number it already had
             }
             // A MUTED entry lives exactly as long as the thing that feeds it. Once no live source refreshed it
             // this frame, it is gone for good -- and a later, deliberate cast on that person creates a fresh
@@ -1119,10 +1182,11 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s", (sp && sp->en) ? sp->en : buff_status_name(fm[q].status));
                 } else {
                     const char* en = fm[q].isAbil ? abil_name_by_id(fm[q].spell) : (spell_info(fm[q].spell) ? spell_info(fm[q].spell)->en : 0);
-                    _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s - %s", fm[q].name, en ? en : "?");
+                    bufs[nb].who = fm[q].name;   // WHO lost it : the one thing an alert must never drop, whatever the mode
+                    _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s", en ? en : "?");
                 }
                 obLabel[nb][sizeof(obLabel[nb]) - 1] = 0;
-                bufs[nb].name = obLabel[nb]; bufs[nb].nameCol = 0xFFFF3B3Bu; bufs[nb].rem = TM_REM_MISSING; bufs[nb].icon = fm[q].status; bufs[nb].both = 1; bufs[nb].order = 0; bufs[nb].src = 6; bufs[nb].mark = fm[q].tag; ++nb;   // ALL "OUT" alerts (self + ally) sort to order 0 : rem=MISSING pulls them to the very top so a small tmMax can't clip a critical alert
+                bufs[nb].name = obLabel[nb]; bufs[nb].nameCol = 0xFFFF3B3Bu; bufs[nb].rem = TM_REM_MISSING; bufs[nb].icon = fm[q].status; bufs[nb].order = 0; bufs[nb].src = 6; bufs[nb].mark = fm[q].tag; fm[q].alerting = 1; ++nb;   // ALL "OUT" alerts (self + ally) sort to order 0 : rem=MISSING pulls them to the very top so a small tmMax can't clip a critical alert
             }
         }
         if (g_obLog) {   // ---- every stage done, focus monitor included. Disarm : one frame is the whole point. ----
@@ -1134,7 +1198,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             const char* nm = (re.kind == 0) ? abil_name_by_recast(re.recastId, jaBits, jaOk) : spell_name_by_recast(re.recastId);
             if (!nm) continue;
             // recasts are ALWAYS shown now (the family filter is buff-only ; recasts are your own cooldowns).
-            recs[nr].rem = re.sec; recs[nr].icon = 0; recs[nr].name = nm; recs[nr].both = 0; recs[nr].order = 0;
+            recs[nr].rem = re.sec; recs[nr].icon = 0; recs[nr].name = nm; recs[nr].order = 0;
             if (re.ticks > 0) recs[nr].fine = re.ticks;   // the raw 1/60 s counter `sec` was ceil-ed from -> two recasts one second apart keep a stable order (Row::fine)
             // SCH stratagems : the raw recast 231 is the FULL charge-bar time, meaningless as a cooldown. The grimoire
             // poller already turns it into (charges available now, seconds to the NEXT charge) using the level/JP
@@ -1185,6 +1249,12 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         const int fx = fineOf(x), fy = fineOf(y);
         if (fx != fy) return fx > fy;
         if (x.icon != y.icon) return x.icon > y.icon;
+        // The PERSON is part of the deterministic tiebreak, not just the spell : two allies carrying the same
+        // buff at the same second used to differ by their "Aeryn - Haste" / "Gab - Haste" string, and since the
+        // split they share one name. Tying here would leave their order to the BUILD order, which moves whenever
+        // the model list is compacted -- the yoyo, in its other clothes. (The sort itself is insertion, hence
+        // stable ; this only removes the last way two rows can compare equal.)
+        { const int cw = strcmp(x.who ? x.who : "", y.who ? y.who : ""); if (cw) return cw > 0; }
         return strcmp(x.name ? x.name : "", y.name ? y.name : "") > 0;
     };
     { const int md = C.tmSortDur;
@@ -1209,6 +1279,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         for (int i = 0; i < nb; ++i) {
             sig = (sig ^ (unsigned)bufs[i].icon) * 16777619u;
             sig = (sig ^ (unsigned)bufs[i].src)  * 16777619u;
+            for (const char* c = bufs[i].who;  c && *c; ++c) sig = (sig ^ (unsigned char)*c) * 16777619u;   // the PERSON is part of a row's identity : without it two allies carrying the same buff hash the same
             for (const char* c = bufs[i].name; c && *c; ++c) sig = (sig ^ (unsigned char)*c) * 16777619u;
             for (const char* c = bufs[i].tag;  c && *c; ++c) sig = (sig ^ (unsigned char)*c) * 16777619u;
         }
@@ -1222,9 +1293,9 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 bool inMem = false;   // (meHas is scoped to the build block above -- read the same source directly)
                 if (f.game) for (int k = 0; k < f.game->nbuff; ++k) if ((int)f.game->buffs[k] == bufs[i].icon) { inMem = true; break; }
                 const bool ghost = (bufs[i].icon > 0 && bufs[i].src != 6 && !inMem);
-                sr_push("  [%-14s] st=%-4d rem=%-6d \"%s\"%s%s%s",
+                sr_push("  [%-14s] st=%-4d rem=%-6d \"%s%s%s\"%s%s%s",
                         SRC[(bufs[i].src >= 0 && bufs[i].src < 7) ? bufs[i].src : 0],
-                        bufs[i].icon, bufs[i].rem, bufs[i].name ? bufs[i].name : "?",
+                        bufs[i].icon, bufs[i].rem, bufs[i].who ? bufs[i].who : "", bufs[i].who ? " - " : "", bufs[i].name ? bufs[i].name : "?",
                         bufs[i].tag ? bufs[i].tag : "", bufs[i].post ? bufs[i].post : "",
                         ghost ? "   <<< GHOST : not in the game's own buff list" : "");
             }
@@ -1253,16 +1324,26 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // a row name may carry a COR roll pip drawn "Name [5] (AoE 6)" with ONLY the [5] tinted. These keep the width
     // measurement and the draw in exact sync (name -> " [" -> pip(colour) -> "]" -> post).
     char pbuf[8];
-    auto rowNameW = [&](const Row& R) -> float {
-        if (!R.name) return 0.0f;
-        float w = fN->measure(R.name, zN);
+    // The PERSON is outside the display mode : "Icon" is icon + who, "Name" is who + spell, "Both" is all three.
+    // A row that names someone always names them -- an ally row reduced to an anonymous icon would not say whose
+    // Haste is running out, which is the only thing that row is for. `wantSpell` carries the mode's half.
+    auto rowNameW = [&](const Row& R, bool wantSpell) -> float {
+        float w = 0.0f;
+        if (R.who) { w += fN->measure(R.who, zN); if (wantSpell && R.name) w += fN->measure(" - ", zN); }
+        if (!wantSpell || !R.name) return w;
+        w += fN->measure(R.name, zN);
         if (R.pip > 0) { sprintf(pbuf, "%d", R.pip); w += fN->measure(" [", zN) + fN->measure(pbuf, zN) + fN->measure("]", zN); }
         if (R.tag) w += fN->measure(R.tag, zN);
         if (R.post) w += fN->measure(R.post, zN);
         return w;
     };
-    auto drawRowName = [&](const Row& R, float nx, float cy, u32 baseCol) {   // name -> [pip] -> (tag) -> post, each its own colour
+    auto drawRowName = [&](const Row& R, float nx, float cy, u32 baseCol, bool wantSpell) {   // who -> name -> [pip] -> (tag) -> post, each its own colour
         float xx = nx;
+        if (R.who) {   // the person, always
+            fN->draw_lc(dev, xx, cy, R.who, zN, baseCol, strk, oN); xx += fN->measure(R.who, zN);
+            if (wantSpell && R.name) { fN->draw_lc(dev, xx, cy, " - ", zN, baseCol, strk, oN); xx += fN->measure(" - ", zN); }
+        }
+        if (!wantSpell || !R.name) return;   // Icon mode : the person carried the row, the spell is the icon
         fN->draw_lc(dev, xx, cy, R.name, zN, baseCol, strk, oN); xx += fN->measure(R.name, zN);
         if (R.pip > 0) { char pb[8]; sprintf(pb, "%d", R.pip);
             fN->draw_lc(dev, xx, cy, " [", zN, baseCol, strk, oN); xx += fN->measure(" [", zN);
@@ -1288,12 +1369,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             const Col& CC = cols[c]; if (CC.n > rowsMax) rowsMax = CC.n;
             const bool wantIcon = (CC.mode == TMDISP_ICON || CC.mode == TMDISP_BOTH);
             const bool wantName = (CC.mode == TMDISP_NAME || CC.mode == TMDISP_BOTH);
-            bool anyBoth = false; for (int i = 0; i < CC.n; ++i) if (CC.list[i].both) anyBoth = true;   // "buff on ally" rows force icon+name
-            const bool colIcon = wantIcon || anyBoth;
+            const bool colIcon = wantIcon;   // the mode alone decides the icon column now : no row forces one any more
             float timeW = 0.0f, nameW = 0.0f;
             for (int i = 0; i < CC.n; ++i) { const float w = fT->measure(fmt(CC.list[i].rem), zT); if (w > timeW) timeW = w;
-                const bool rowName = wantName || CC.list[i].both;   // only rows that actually render a name reserve width
-                if (rowName && CC.list[i].name) { const float nw = rowNameW(CC.list[i]); if (nw > nameW) nameW = nw; } }
+                const float nw = rowNameW(CC.list[i], wantName); if (nw > nameW) nameW = nw; }   // a row with a person is measured in every mode -- it prints one
             for (int i = 0; i < CC.n; ++i) if (CC.list[i].mark > 0) {
                 sprintf(mkb, "%d", CC.list[i].mark);
                 const float w2 = fN->measure(mkb, zN); if (w2 > markW[c]) markW[c] = w2; }
@@ -1339,7 +1418,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // a Tracked+focus row was already visible, so it never warned before its normal <10s red flash.
                 const bool focusWarn = !CC.recast && ic > 0 && r > 0 && r < C.tmFocusWarn
                                        && C.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)ic);
-                const bool rWantIcon = wantIcon || CC.list[i].both, rWantName = wantName || CC.list[i].both;
+                const bool rWantIcon = wantIcon;
                 const bool haveIcon = (CC.tex && ic >= 0 && ic < CC.cells);
                 bool drewIcon = false;
                 const float gx0 = cx + markW[c];   // everything after the number gutter
@@ -1348,13 +1427,17 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     fN->begin(dev); fN->draw_lc(dev, cx, cyy + rowH * 0.5f, mb, zN, 0xFF6E7885u, strk, oN);
                 }
                 if (rWantIcon && haveIcon) { const float u0 = (float)(ic % BUFF_COLS) * CC.au, v0 = (float)(ic / BUFF_COLS) * CC.av; draw_icon_cell(dev, CC.tex, gx0, cyy + (rowH - icon) * 0.5f, icon, icon, u0, u0 + CC.au, v0, v0 + CC.av); drewIcon = true; }
-                if (nm && (rWantName || (rWantIcon && !haveIcon))) {   // name : requested, OR fallback when the wanted icon is missing
+                // The spell name : asked for by the mode, OR as a fallback when the icon we wanted has no art (an
+                // icon-only row with no icon would be blank). The person is drawn either way, so a row that has one
+                // still prints in Icon mode.
+                const bool rWantSpell = wantName || (rWantIcon && !haveIcon);
+                if ((nm && rWantSpell) || CC.list[i].who) {
                     const float nx = gx0 + (drewIcon ? icon + icgap : 0.0f);
                     u32 baseNameCol = CC.list[i].nameCol ? CC.list[i].nameCol : tm_col(TM_NAME, dim);
                     if (CC.list[i].rem == TM_REM_MISSING) baseNameCol = flashStrong ? 0xFFFF6A6Au : 0xFFFF2020u;   // FOCUS alert : the whole "Ally - Buff" row blinks red
                     else if (C.tmSpAlert && CC.list[i].icon > 0 && CC.list[i].rem > 0 && CC.list[i].rem < 60 && is_sp_buff_status(CC.list[i].icon)) baseNameCol = flashStrong ? 0xFFFFF000u : 0xFFFF1010u;   // SP last-minute : the whole row blinks hard
                     else if (focusWarn) baseNameCol = flash ? 0xFFFF6A6Au : baseNameCol;   // +focus under the warn threshold : name blinks red
-                    fN->begin(dev); drawRowName(CC.list[i], nx, cyy + rowH * 0.5f, baseNameCol);   // name + optional coloured roll pip / song tag
+                    fN->begin(dev); drawRowName(CC.list[i], nx, cyy + rowH * 0.5f, baseNameCol, rWantSpell);   // person + name + optional coloured roll pip / song tag
                 }
                 fmt(r);
                 u32 tc;

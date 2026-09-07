@@ -67,6 +67,9 @@ bool write_gear_icon_bmp(const char* out_bmp_path, const u32* px, int* out_err =
 const char* ffxi_rom_dir_probe(const char** out_regkey);
 
 // create an A8R8G8B8 texture from an in-memory ARGB buffer (W*H DWORDs, row-major).
+// NO mip chain -- the in-memory twin of load_raw_texture, for a sheet decoded at runtime (the status-icon
+// atlas built from the game's own DAT) that must look byte-identical to the same sheet loaded from an .raw.
+u32 make_texture_argb(u32 dev, int W, int H, const u32* pixels);
 
 // same, but with a full MIP CHAIN (box-filtered) -> clean minification (crisp scaled text).
 u32 make_texture_argb_mip(u32 dev, int W, int H, const u32* pixels);

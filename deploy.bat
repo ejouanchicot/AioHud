@@ -26,6 +26,9 @@ REM    robocopy is INCREMENTAL (skips unchanged -> near-instant when only code c
 robocopy "%ROOT%assets" "%DATA%\assets" /E /XD *_src /NFL /NDL /NJH /NJS /NP >nul
 mkdir "%DATA%\design\exports" 2>nul
 copy /Y "%ROOT%design\exports\layout.json" "%DATA%\design\exports\layout.json" >nul
+REM    the status-icon tool ships NEXT TO the data folder it writes into (icons\status_atlas.raw), so the
+REM    player runs it where their icons live -- and its Windower-root auto-detection just works from there.
+copy /Y "%ROOT%tools\aioicons.ps1" "%DATA%\aioicons.ps1" >nul
 
 REM 3) the updater companion addon -> addons\aioupdate\  (package.bat ships it ; deploy did NOT, so the dev box
 REM    kept running whatever the last RELEASE installed). That left the most exposed file in the whole chain

@@ -38,6 +38,14 @@ namespace aio {
 // group preserve everything above it -- the built-in order and the stored one can never then disagree
 // about what the user was looking at. Beyond BUFF_PIN_MAX there is nothing to store, so the move is a
 // no-op rather than a silent partial one.
+// "The whole catalogue" -- but a GHOST still has to have been seen. buff_group_members uses the caller's
+// `seen` predicate for BOTH "has this turned up" and "does this ghost exist after all", so the catalogue
+// views were passing `true` for everything and quietly resurrecting all nine ghosts: four of them are songs
+// no player can carry (Chocobo Hum, Devotee Serenade, Cactuar Fugue, Rhapsody), and the Songs group listed
+// them as if they were arrangeable. Silence is why a ghost is hidden ; only a sighting overrides it, never
+// a caller asking for a full list.
+static bool bs_catalogue(unsigned st) { return !buff_status_ghost(st) || party().status_seen(st); }
+
 static void strip_apply_move(bool atGroups, int innerG, int from, int to,
                              const unsigned short* mem, int nmem,
                              const int* slots, int nslots) {
@@ -473,7 +481,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                     // POSITION : the instant one of its buffs turns up, it lands where it was put.
                     bool faint = false;
                     if (k == 0) {   // not met yet -> preview it from its own catalogue, faint
-                        k = buff_group_members(ui_config(), g, m, 4, &t, [](unsigned) { return true; });
+                        k = buff_group_members(ui_config(), g, m, 4, &t, bs_catalogue);
                         faint = true;
                         if (k == 0) continue;   // a group the catalogue itself cannot fill has nothing to say
                     }
@@ -507,12 +515,12 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
                 // screen whose whole job is arranging them.
                 (void)icsProbe;
                 const int capN = UiConfig::BUFF_PIN_MAX;
-                innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, [](unsigned) { return true; });
+                innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, bs_catalogue);
                 if (innerTotal > capN) {   // does not fit whole -> the ones you have met
                     innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal,
                                                 [](unsigned st) { return party().status_seen(st); });
                     if (innerN == 0)       // ... and never met either -> its catalogue, capped, so it is not a dead end
-                        innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, [](unsigned) { return true; });
+                        innerN = buff_group_members(ui_config(), g, inner, capN, &innerTotal, bs_catalogue);
                 }
                 for (int i = 0; i < innerN && nRun < 64; ++i) {
                     slots[0] = 0;

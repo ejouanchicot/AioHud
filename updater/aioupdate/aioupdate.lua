@@ -44,6 +44,20 @@ local function log(s) if DEBUG then windower.add_to_chat(207, 'AioUpdate: ' .. s
 -- the one line that named the cause. Anything the player must act on goes to chat.
 local function warn(s) windower.add_to_chat(167, 'AioUpdate: ' .. s) end
 
+-- The plugin speaks the language picked in its config, and so does this addon : the same setting, not a second
+-- one. config.txt is a plain key=value file in the data folder we already know about. Read on demand (a handful
+-- of messages a session, all of them failures) and default to English whenever it cannot be read -- which
+-- includes the very case this addon exists for, a data folder that is no longer there.
+-- No accents in the French strings : the Windower chat log is not UTF-8 and would print garbage.
+local function ui_lang()
+    local f = io.open(data_dir .. '\\config.txt', 'r'); if not f then return 0 end
+    local v = 0
+    for line in f:lines() do local n = line:match('^lang=(%d)'); if n then v = tonumber(n) end end
+    f:close()
+    return v
+end
+local function tr(en, fr) if ui_lang() == 1 then return fr end return en end
+
 local function file_exists(p) local f = io.open(p, 'rb'); if f then f:close(); return true end return false end
 
 local function read_status()
@@ -86,8 +100,10 @@ local function reload_plugin()
     if not unloaded then return end
     unloaded = false
     if file_exists(dll) then windower.send_command('load AioHud'); return end
-    warn('AioHud.dll is missing -- the update did not complete. Download the zip from')
-    warn('https://github.com/ejouanchicot/AioHud/releases and extract it into your Windower folder.')
+    warn(tr('AioHud.dll is missing -- the update did not complete. Download the zip from',
+            "AioHud.dll est absent -- la mise a jour n'est pas allee au bout. Telecharge le zip depuis"))
+    warn(tr('https://github.com/ejouanchicot/AioHud/releases and extract it into your Windower folder.',
+            'https://github.com/ejouanchicot/AioHud/releases et extrais-le dans ton dossier Windower.'))
 end
 
 local function watch_done()
@@ -103,7 +119,7 @@ local function watch_done()
             log('updated to v' .. (s:match('OK%s+(%S+)') or '?') .. '.')
         elseif s:find('^ERROR') then
             -- VISIBLE : this is the only place the reason ever reaches the player.
-            warn('update failed -- ' .. (s:gsub('^ERROR%s*', '')))
+            warn(tr('update failed -- ', 'mise a jour echouee -- ') .. (s:gsub('^ERROR%s*', '')))
             reload_plugin()
         elseif s:find('^UPTODATE') then
             log('already up to date.')
@@ -143,8 +159,10 @@ local function self_uninstall_if_orphaned()
     if file_exists(dll) then return end             -- plugin present -> nothing to do, ever
 
     if file_exists(plug_dir .. '\\assets\\aioupdate.ps1') then       -- runtime folder still there -> broken, not removed
-        warn('AioHud.dll is missing but its data folder is still here -- the plugin is not installed, not removed.')
-        warn('Download the zip from https://github.com/ejouanchicot/AioHud/releases and extract it into your Windower folder.')
+        warn(tr('AioHud.dll is missing but its data folder is still here -- the plugin is not installed, not removed.',
+                "AioHud.dll est absent mais son dossier data est toujours la -- le plugin n'est pas installe, il n'est pas desinstalle."))
+        warn(tr('Download the zip from https://github.com/ejouanchicot/AioHud/releases and extract it into your Windower folder.',
+                'Telecharge le zip depuis https://github.com/ejouanchicot/AioHud/releases et extrais-le dans ton dossier Windower.'))
         return
     end
 
@@ -166,7 +184,8 @@ local function self_uninstall_if_orphaned()
     if not ok then os.remove(tmp); return end
     os.remove(ini)
     if not os.rename(tmp, ini) then os.remove(tmp); return end
-    windower.add_to_chat(207, 'AioUpdate: AioHud is gone -- removed its autoload line from init.txt. You can //lua unload aioupdate and delete this addon.')
+    windower.add_to_chat(207, 'AioUpdate: ' .. tr('AioHud is gone -- removed its autoload line from init.txt. You can //lua unload aioupdate and delete this addon.',
+                                                   "AioHud a disparu -- sa ligne d'autoload a ete retiree de init.txt. Tu peux faire //lua unload aioupdate et supprimer cet addon."))
 end
 coroutine.schedule(self_uninstall_if_orphaned, 5)
 

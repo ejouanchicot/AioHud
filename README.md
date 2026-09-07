@@ -37,6 +37,13 @@ Over 150 saved settings across 13 panels, each one organised the same way -- one
 - Every module toggles, and so do the pieces inside them (speed, TH, range, sub-target, equipment, clock parts, animations).
 - Full **English / French** interface.
 - **Character-bound profiles** that capture settings, layout and zones together, and auto-load on login and job change.
+- **Status icons follow your game.** Running an icon pack -- through XIPivot, or copied over the game's own
+  files -- means the HUD shows those icons everywhere (party, player, target, timers, debuffs) with nothing to
+  set up: it reads the game's icon file itself. Plain installs keep the bundled set, which is a cleaner redraw
+  of the client's original art. To draw your own, the
+  [FFXI Icon Editor](https://github.com/ejouanchicot/FFXI-Icon-Editor) sends any folder of PNGs or any icon
+  file straight to the HUD (`AioHudIcons.exe` does just that one job), and `aioicons.ps1` in the plugin folder
+  does the same from PowerShell. `//aio doctor` names which set is live.
 
 ## Layout
 
@@ -70,6 +77,8 @@ Type `//aio edit` to arrange the interface live over the game:
 | `//aio config` | open the config window (themes, modules, fonts, colors) with a live preview |
 | `//aio edit` | move, resize and zone the boxes on screen |
 | `//aio out <n>` | drop a watched buff line from Timers -- the number is drawn on the row (a Haste on the wrong name stops nagging you) |
+| `//aio out alerts` | drop only the rows in red (the buffs that just ran out), leaving every running timer alone |
+| `//aio in` | put those lines back -- all of them, or just the one you name |
 | `//aioupdate` | update to the latest version in game, with no window (the HUD reloads for a moment) |
 
 Settings and profiles live in `plugins\AioHud\data\` and are kept across updates.

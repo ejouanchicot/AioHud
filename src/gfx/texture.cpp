@@ -223,6 +223,24 @@ u32 load_raw_texture(u32 dev, const char* path, int W, int H)
     return tex;
 }
 
+// The in-memory twin of load_raw_texture (same single-level surface, same straight copy) -- for pixels that
+// were decoded rather than read from an .raw. Kept mip-free ON PURPOSE : it backs the status-icon atlas, which
+// has always been a single level, and a sheet that silently changed filtering when its SOURCE changed would be
+// a visual regression disguised as a data change.
+u32 make_texture_argb(u32 dev, int W, int H, const u32* pixels)
+{
+    if (!pixels || W <= 0 || H <= 0) return 0;
+    LR lr; u32 tex = create_locked(dev, W, H, &lr);
+    if (!tex) return 0;
+    for (int y = 0; y < H; ++y) {
+        u32* dpix = (u32*)((char*)lr.pBits + y * lr.Pitch);
+        const u32* spix = pixels + (unsigned)y * (unsigned)W;
+        for (int x = 0; x < W; ++x) dpix[x] = spix[x];
+    }
+    unlock(tex);
+    return tex;
+}
+
 // same as load_raw_texture but with a full MIP CHAIN -> clean minification (icons drawn much smaller than
 // their native size stay crisp instead of aliasing).
 u32 load_raw_texture_mip(u32 dev, const char* path, int W, int H)

@@ -1793,7 +1793,10 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 y += rh2 + snap(10.0f);
             } else if (it.kind == 11) {               // LIVE sample : the three leader / QM dots with their game terms
                 const u32 dcol[3] = { 0xFFFFFFFF, 0xFFFFEF3F, 0xFF42D98A };
-                const char* dlab[3] = { "Alliance Leader", "Party Leader", "Quartermaster" };
+                // the game's own terms, in the reader's language : this legend sits inside an otherwise fully
+                // translated Help page, and three English words in the middle of it read as an oversight.
+                const char* dlab[3] = { tr("Alliance Leader", "Chef d'alliance"), tr("Party Leader", "Chef de groupe"),
+                                        tr("Quartermaster", "Responsable du butin") };
                 const float rh2 = snap(22.0f);
                 for (int k = 0; k < 3; ++k) {
                     if (y >= top && y + rh2 <= bot) {

@@ -27,4 +27,14 @@ struct MapLoadDiag {
 bool load_zone_map(unsigned fileId, u32*& outPixels, int& outW, int& outH, MapLoadDiag* diag = 0);
 void free_map_image(u32* pixels);
 
+// ---- the DAT filesystem, shared (the ONE resolver -- see the header comment above) --------------------------
+// Resolve a ROM file-id to a real path : the XIPivot overlays first, in the user's configured priority order,
+// then the vanilla ROM. `out` takes at least MAX_PATH bytes. false = no FFXI install, or no table entry for the
+// id (both transient-tolerant : the VTABLE/FTABLE and overlay readers behind this retry on their own budget).
+// This is what makes the plugin follow whatever DAT pack the player actually has installed.
+bool dat_resolve_path(unsigned fileId, char* out, unsigned cap);
+// Read a whole DAT into a heap buffer (<= 64 MB). Free with dat_free_file. null on any IO failure.
+unsigned char* dat_read_file(const char* path, unsigned& sizeOut);
+void dat_free_file(unsigned char* buf);
+
 } // namespace aio

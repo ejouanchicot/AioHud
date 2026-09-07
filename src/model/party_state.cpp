@@ -1308,7 +1308,7 @@ void PartyState::on_action(const unsigned char* p) {
                     else { int o = 0; for (int k = 1; k < 32; ++k) if (otherBuffs_[k].startMs < otherBuffs_[o].startMs) o = k; slot = o; }
                 }
                 otherBuffs_[slot].target = tid; otherBuffs_[slot].status = (unsigned short)b->effect; otherBuffs_[slot].spell = (unsigned short)sid;
-                otherBuffs_[slot].startMs = nowMs;
+                otherBuffs_[slot].startMs = nowMs; otherBuffs_[slot].castMs = nowMs;   // castMs names THIS cast and is never bumped afterwards -> the focus monitor can tell a re-cast from a re-timed estimate
                 otherBuffs_[slot].mirrorSelf = aoeSelf ? 1 : 0;   // AoE-on-self -> the drawer uses your exact self timer (expTick set below, after the duration is known)
                 otherBuffs_[slot].aoe = (tc >= 2) ? 1 : 0;        // the cast hit >=2 targets -> a REAL AoE (Protectra / a spell under SCH Accession) ; 1-target = single-cast, don't force-group it
                 unsigned long long ms;
@@ -1421,7 +1421,7 @@ void PartyState::on_action(const unsigned char* p) {
                     else { int o = 0; for (int k = 1; k < 32; ++k) if (otherBuffs_[k].startMs < otherBuffs_[o].startMs) o = k; slot = o; }
                 }
                 otherBuffs_[slot].target = tid; otherBuffs_[slot].status = (unsigned short)st; otherBuffs_[slot].spell = (unsigned short)aid;
-                otherBuffs_[slot].startMs = nowMs; otherBuffs_[slot].expTick = 0; otherBuffs_[slot].mirrorSelf = aoeSelf ? 1 : 0;
+                otherBuffs_[slot].startMs = nowMs; otherBuffs_[slot].castMs = nowMs; otherBuffs_[slot].expTick = 0; otherBuffs_[slot].mirrorSelf = aoeSelf ? 1 : 0;
                 otherBuffs_[slot].durMs = 300000u;                        // fallback only ; the mirror uses your exact self timer
                 otherBuffs_[slot].isAbil = 1;                             // `spell` holds an ABILITY id -> name via ABILS, not SPELLS
                 otherBuffs_[slot].aoe = 1;                                // a Phantom Roll is party-wide -> a real AoE, always group it

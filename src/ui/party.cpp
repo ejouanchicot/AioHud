@@ -74,6 +74,16 @@ struct Row { const char* name; const char* job; const char* sub; unsigned role; 
              int mlvl = 0;      // main-job level -> shown in the job badge (text modes) ; 0 = unknown (no level drawn)
              int slvl = 0; };   // sub-job level (self only : memory @pl+0xA0) -> appended to the sub abbr ; 0 = unknown (abbr only)
 
+// The job-badge label for one row : abbr + level ("WHM 99"), abbr alone when the level is unknown (0 -- a party
+// member's SUB level isn't in memory, and a trust carries no level at all). ONE builder, so the string that gets
+// MEASURED for the column-wide fit is byte-for-byte the string that gets DRAWN.
+static const char* badge_label(const char* abbr, int lvl, char* buf, int cap) {
+    if (!abbr) abbr = "";
+    if (lvl <= 0) return abbr;
+    _snprintf(buf, cap, "%s %d", abbr, lvl); buf[cap - 1] = 0;
+    return buf;
+}
+
 // Cast-range thresholds (yalms), from the FFXI distance reference. "max is exclusive" -> a spell
 // FAILS at the max. Player-targeted single-target magic reaches ~21.8' on a PC (base ~20.9 + the
 // target's model). 20.8' = the Cure reference (comfortable range). So:
@@ -991,6 +1001,39 @@ void Party::draw(const Frame& f) {
     // name/cast left, shifted RIGHT by the outline width (+1px AA) so the black STROKE -- drawn in 8
     // passes at x +/- nOWf -- doesn't poke out to the LEFT of nx (it was, and the config preview clipped it).
     const float nxt = snap(nx + nOWf + 1.0f);
+
+    // ---- ONE text size for the whole job-badge column, and one for the whole distance column ----------------
+    // Both used to be shrink-to-fit PER ROW, so each row landed on its OWN size : a short label kept the full size
+    // while a wide one was squeezed, and the column read as a jumble. The widest labels are the ones that diverged
+    // the most -- a trust has no sub job and usually no level, so "WHM" was drawn big next to a squeezed "WAR 99".
+    // The fit is measured ONCE against the widest label the column can hold (not against the current roster), so the
+    // size is identical on every row, identical between the party and the alliance boxes, and never moves when a
+    // member joins / levels / zones. The live rows are still measured on top of that reference, purely as a floor :
+    // anything wider than the reference (a 3-digit level) still shrinks instead of overflowing the box.
+    const float bInnerW = bw - snap(4.0f * S);   // FIXED box interior : the label is fitted to this, so a level ("WHM 99") never overflows the box
+    float badgeFit = 1.0f;                       // <= 1 : shared main+sub scale (their size RATIO stays put)
+    const int badgeMode = ui_config().jobBadge[tcfg()];   // 0 = off, 1 = main only, 2 = main + sub, 3 = icon (drawn earlier)
+    if ((badgeMode == 1 || badgeMode == 2) && fBadge->ready() && bInnerW > 0.0f) {
+        const float mszBase = te_sz(TE_BADGE, badgeSz_ * S), sszBase = te_sz(TE_BADGE, subSz() * S);
+        float widest = fBadge->measure("WWW 99", mszBase);   // reference : 3 of the widest cap + the widest level
+        for (int i = 0; i < n; ++i) {
+            const Row& r = rows[i];
+            if (r.offzone) continue;                          // out of zone : no badge TEXT is drawn
+            char tb[16];
+            float w = fBadge->measure(badge_label(r.job, r.mlvl, tb, sizeof(tb)), mszBase);
+            if (w > widest) widest = w;
+            if (badgeMode == 2 && r.sub && r.sub[0]) {
+                w = fBadge->measure(badge_label(r.sub, r.slvl, tb, sizeof(tb)), sszBase);
+                if (w > widest) widest = w;
+            }
+        }
+        if (widest > bInnerW && widest > 0.0f) badgeFit = bInnerW / widest;
+    }
+    float distFit = 1.0f;                        // same idea : "50+" must not be drawn bigger than "12.34"
+    if (distOn() && fDist->ready()) {
+        const float dRef = fDist->measure("00.00", te_sz(TE_DIST, badgeSz_ * S * 1.20f));   // the widest form of the 00.00 format
+        if (dRef > mw * 0.98f && dRef > 0.0f) distFit = (mw * 0.98f) / dRef;
+    }
     char buf[24];
     for (int i = 0; i < n; ++i) {
         const Row& r = rows[i];
@@ -1015,9 +1058,7 @@ void Party::draw(const Frame& f) {
         if (distOn() && (r.dist >= 0.0f || r.distFar) && fDist->ready()) {
             float d = r.dist; if (d > 99.99f) d = 99.99f;
             char db[12]; if (r.distFar) strcpy(db, "50+"); else sprintf(db, "%05.2f", d);
-            float dsz = te_sz(TE_DIST, badgeSz_ * S * 1.20f);                 // as big as fits the marks column width
-            const float dw = fDist->measure(db, dsz);
-            if (dw > mw * 0.98f && dw > 0.0f) dsz *= (mw * 0.98f) / dw;
+            const float dsz = te_sz(TE_DIST, badgeSz_ * S * 1.20f) * distFit;   // as big as fits the marks column width -- ONE size for every row (see distFit)
             const u32 dcol = (r.distFar || r.dist >= kCastRange) ? ui_config().distColFar :   // red  : out of cast range (or past the client's tracking range)
                              r.dist >= kCastSafe  ? ui_config().distColNormal :   // yellow : marginal (still casts)
                                                     ui_config().distColClose;     // blue : comfortably in range
@@ -1027,28 +1068,23 @@ void Party::draw(const Frame& f) {
             fDist->draw_cc(dev, cx + mw * 0.5f, markTop + markBlockH - dsz * 0.62f, db, dsz, te_col(TE_DIST, dcol), bSTK, dOWf);
         }
 
-        const int badgeMode = ui_config().jobBadge[tcfg()];    // 0 = off, 1 = main only, 2 = main + sub, 3 = icon (drawn earlier)
         if (!offz && badgeMode != 0 && badgeMode != 3 && fBadge->ready()) {   // out of zone / icon mode : no job badge TEXT
             fBadge->begin(dev);
             bool hasSub = badgeMode == 2 && r.sub && r.sub[0];   // mode 1 -> ignore the sub job
             const float mfrac = hasSub ? 0.34f : 0.52f;
             char jb[10], sb2[10];
-            const float bInnerW = bw - snap(4.0f * S);   // FIXED box interior : text is fitted to this, so the level ("WHM 99") never grows/overflows the box
             // append the main-job LEVEL to the job abbr (e.g. "WHM 99"). Sub keeps its floor(main/2) level too (FFXI
             // subjob cap) -> "WHM 99 / BLM 49". mlvl == 0 (unknown) -> just the abbr, no number.
-            char mtxt[16]; const char* mj = r.job ? r.job : "";
-            if (r.mlvl > 0) { sprintf(mtxt, "%s %d", mj, r.mlvl); mj = mtxt; }
-            const char* mtext = te_up(TE_BADGE, mj, jb, 10);
-            float msz = te_sz(TE_BADGE, badgeSz_ * S);
-            { const float mmw = fBadge->measure(mtext, msz); if (mmw > bInnerW && mmw > 0.0f) msz *= bInnerW / mmw; }   // shrink-to-fit the fixed box
+            // Sizes come from the column-wide badgeFit computed above -> every row, sub or no sub, matches.
+            char mtxt[16];
+            const char* mtext = te_up(TE_BADGE, badge_label(r.job, r.mlvl, mtxt, sizeof(mtxt)), jb, 10);
+            const float msz = te_sz(TE_BADGE, badgeSz_ * S) * badgeFit;
             fBadge->draw_cc(dev, bcx, bcy + (mfrac - 0.5f) * bh, mtext, msz, te_col(TE_BADGE, r.role), bSTK, bOWf);
             if (hasSub) {   // sub : abbr + REAL sub level when known (self, memory @pl+0xA0 -> already the displayed
                             // capped value, e.g. "DNC 54" with Master levels). slvl == 0 (party members : not in memory) -> abbr only.
-                char stxt[16]; const char* sj = r.sub ? r.sub : "";
-                if (r.slvl > 0) { sprintf(stxt, "%s %d", sj, r.slvl); sj = stxt; }
-                const char* stext = te_up(TE_BADGE, sj, sb2, 10);
-                float ssz = te_sz(TE_BADGE, subSz() * S);
-                { const float smw = fBadge->measure(stext, ssz); if (smw > bInnerW && smw > 0.0f) ssz *= bInnerW / smw; }
+                char stxt[16];
+                const char* stext = te_up(TE_BADGE, badge_label(r.sub, r.slvl, stxt, sizeof(stxt)), sb2, 10);
+                const float ssz = te_sz(TE_BADGE, subSz() * S) * badgeFit;
                 fBadge->draw_cc(dev, bcx, bcy + 0.20f * bh, stext, ssz, te_col(TE_BADGE, C_DIM), bSTK, bOWf);
             }
         }

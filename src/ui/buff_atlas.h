@@ -22,6 +22,10 @@ static const int BUFF_ATLAS_W = 1024, BUFF_ATLAS_H = 640, BUFF_CELL = 32, BUFF_C
 static const int BUFF_ATLAS_ROWS = BUFF_ATLAS_H / BUFF_CELL;         // 20 -> highest mappable id = COLS*ROWS - 1 (639)
 
 inline const char* buff_atlas_path() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\buff_atlas.raw"); return b; }
+// The player's OWN sheet, if they built one with tools/aioicons.ps1 (from their PNGs, or from any icon DAT).
+// It lives OUTSIDE assets\ on purpose : deploy.bat and the updater rewrite that folder wholesale, and a
+// customisation a routine update silently deleted would be worse than no customisation at all.
+inline const char* buff_custom_path() { static char b[260]; if (!b[0]) plugin_path(b, 260, "icons\\status_atlas.raw"); return b; }
 
 // ---- the ONE shared texture (buff_atlas.cpp). Consumers call buff_atlas_tex() and must NEVER release it. ----
 u32  buff_atlas_tex(u32 dev);      // lazily loads with the bounded retry ; returns 0 while it is unavailable
@@ -29,6 +33,8 @@ void buff_atlas_forget();          // device LOST : forget the handle (old devic
                                    //   budget. Never Releases -- CLAUDE.md rule 4.
 void buff_atlas_dispose();         // device ALIVE (//unload) : Release once, then forget.
 unsigned buff_atlas_tries();       // failed attempts so far -- for //aio selfcheck (0 = loaded or never needed)
+const char* buff_atlas_source();   // which sheet is actually live : "game DAT (pack)" / "game DAT" / "bundled" / "none yet"
+                                   //   -- //aio doctor. "the icons look wrong" is a SOURCE question first.
 
 // UV of status-icon `id`'s cell : cell size (au,av) + top-left (u0,v0). id must be in [0, COLS*ROWS).
 inline void buff_cell_uv(int id, float& au, float& av, float& u0, float& v0) {

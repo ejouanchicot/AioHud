@@ -18,6 +18,7 @@
 #include "model/ui_config.h"
 #include "windower_debug.h"
 #include "ui/edit_box.h"  // edit-mode drag for the WS popup (place it in //aio edit like the other boxes)
+#include "ui/config_controls.h"   // tr() : //aio doctor speaks the language picked in the config, like every other message
 #include "gfx/draw.h"     // rrect_glow / disc_glow for the WS popup burst
 #include "model/skillchain.h"         // Skillchains : Resonating fields -> names / colours / elements
 #include "gfx/texture.h"
@@ -441,20 +442,28 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
                          lc_root_rva(), lc_root_how(), lc_root_live() ? 1 : 0);
     windower::debug::log("  surface  : %ux%u fmt=%u %s", s_dispW, s_dispH, s_dispFmt, disp_fmt_name(s_dispFmt));
     if (s_dispFmt >= 23 && s_dispFmt <= 25)
-        DOC("Le jeu presente en 16 bits (%s) : tout degrade doux affichera des bandes, chez nous comme dans le "
+        DOC(tr("The game is presenting in 16-bit (%s) : every soft gradient will band, in our boxes as in the game, "
+            "and nothing on our side will change that much. Switch FFXI to 32-bit in its own config "
+            "(Bit Depth) if the banding bothers you.",
+            "Le jeu presente en 16 bits (%s) : tout degrade doux affichera des bandes, chez nous comme dans le "
             "jeu, et aucun reglage de notre cote n'y changera grand-chose. Passe FFXI en 32 bits dans son "
-            "config (Bit Depth / Profondeur) si les degrades te genent.", disp_fmt_name(s_dispFmt));
+            "config (Bit Depth / Profondeur) si les degrades te genent."), disp_fmt_name(s_dispFmt));
     if (!state_.inGame || !party().self_id()) {
         // Which of the two it is decides the remedy, so the check says which. A dead root means Windower
         // moved LuaCore's data root under us (4.7.9.3 did exactly that) and NOTHING can be read ; a live
         // root with no character just means you are at the login screen.
         if (!lc_root_live())
-            DOC("AioHUD ne trouve plus la memoire du jeu : la racine LuaCore (rva %06X, %s) ne repond pas. "
+            DOC(tr("AioHUD can no longer find the game's memory : the LuaCore root (rva %06X, %s) does not answer. "
+                "That is what happens when Windower updates and moves that address -- update AioHUD "
+                "(Update tab). If you are simply at the login screen, this is normal.",
+                "AioHUD ne trouve plus la memoire du jeu : la racine LuaCore (rva %06X, %s) ne repond pas. "
                 "C'est ce qui arrive quand Windower se met a jour et deplace cette adresse -- mets AioHUD a "
-                "jour (onglet Update). Si tu es juste a l'ecran de login, c'est normal.",
+                "jour (onglet Update). Si tu es juste a l'ecran de login, c'est normal."),
                 lc_root_rva(), lc_root_how());
-        DOC("Le plugin ne voit pas ton personnage (inGame=%d, selfId=%08X). Rien d'autre ne peut fonctionner. "
-            "Si tu es bien en jeu : la DLL ne correspond pas a ta version de Windower -- redeploie, puis //aio doctor.",
+        DOC(tr("The plugin cannot see your character (inGame=%d, selfId=%08X). Nothing else can work. "
+            "If you really are in game : the DLL does not match your Windower build -- redeploy, then //aio doctor.",
+            "Le plugin ne voit pas ton personnage (inGame=%d, selfId=%08X). Rien d'autre ne peut fonctionner. "
+            "Si tu es bien en jeu : la DLL ne correspond pas a ta version de Windower -- redeploie, puis //aio doctor."),
             state_.inGame ? 1 : 0, party().self_id());
         windower::debug::log("=== AIO DOCTOR : stopped -- no game link ===");
         return n;   // (no #undef here : the preprocessor knows nothing of control flow, it would kill DOC below)
@@ -464,11 +473,15 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     windower::debug::log("  reads    : buffsOk=%d nbuff=%d equipValid=%d mapEnt=%d",
                          state_.buffsOk ? 1 : 0, state_.nbuff, state_.equipValid ? 1 : 0, state_.mapEntN);
     if (!state_.buffsOk)
-        DOC("Tes propres buffs ne se lisent pas (buffsOk=0) : la boite Timers et le filtre resteront vides. "
-            "Normal pendant un chargement de zone -- relance //aio doctor une fois arrive%s", "");
+        DOC(tr("Your own buffs do not read (buffsOk=0) : the Timers box and its filter will stay empty. "
+            "Normal during a zone load -- run //aio doctor again once you have arrived%s",
+            "Tes propres buffs ne se lisent pas (buffsOk=0) : la boite Timers et le filtre resteront vides. "
+            "Normal pendant un chargement de zone -- relance //aio doctor une fois arrive%s"), "");
     if (!state_.equipValid)
-        DOC("L'equipement ne se lit pas (equipValid=0) : les icones de gear gardent le cache precedent. "
-            "Normal en zoning ; persistant = les conteneurs d'objets ne sont pas prets%s", "");
+        DOC(tr("Equipment does not read (equipValid=0) : the gear icons keep the previous cache. "
+            "Normal while zoning ; persistent = the item containers are not ready%s",
+            "L'equipement ne se lit pas (equipValid=0) : les icones de gear gardent le cache precedent. "
+            "Normal en zoning ; persistant = les conteneurs d'objets ne sont pas prets%s"), "");
 
     // ---- 2b. the FFXiMain statics. Every OTHER read hangs off LuaCore, which a game patch does not touch --
     //          so when the client updates, THESE are what break, alone, and the symptom is a single feature
@@ -487,24 +500,34 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
           for (int i = 0; i < sn; ++i) windower::debug::log("  crosscheck : %s", sl[i]); }
         for (int i = 0; i < SEN_N; ++i)
             if (sentinel_diverged((SentinelPair)i))
-                DOC("Le serveur et la memoire du jeu ne racontent plus la meme chose (%s). Ce n'est PAS une "
+                DOC(tr("The server and the game's memory no longer tell the same story (%s). This is NOT a moved "
+                    "address -- it does not repair itself : a field moved inside a structure or a packet. What is "
+                    "drawn from here on can be wrong WITHOUT looking wrong. Detail in aiohud_debug.log, SENTINEL line",
+                    "Le serveur et la memoire du jeu ne racontent plus la meme chose (%s). Ce n'est PAS une "
                     "adresse deplacee -- ca ne se repare pas tout seul : un champ a bouge dans une structure "
                     "ou dans un paquet. Ce qui s'affiche a partir de la peut etre faux SANS avoir l'air faux. "
-                    "Detail dans aiohud_debug.log, ligne SENTINEL", sentinel_report_name((SentinelPair)i));
+                    "Detail dans aiohud_debug.log, ligne SENTINEL"), sentinel_report_name((SentinelPair)i));
         // A CONTRADICTION, which is the only kind of static worth alarming on : the game says a menu is open
         // (menuType != 0, so the box is on screen) while the cache that fills it reads nothing usable. That
         // is the "box pops but stays empty" report, named at its cause instead of left to be re-diagnosed.
         if (state_.menuType != 0 && state_.menuAction == 0 &&
             !fm_confirmed((state_.menuType == 1) ? FM_EXAM_SPELL : FM_EXAM_ABIL))
-            DOC("La boite cout/Next s'affiche mais reste VIDE : le jeu a bien un menu ouvert (type %d) et "
+            DOC(tr("The cost/Next box is drawn but stays EMPTY : the game does have a menu open (type %d) and "
+                "the address carrying the highlighted action has not proven itself. Move the cursor over a "
+                "few spells/abilities : it re-locks itself by following the highlight%s",
+                "La boite cout/Next s'affiche mais reste VIDE : le jeu a bien un menu ouvert (type %d) et "
                 "l'adresse qui porte l'action surlignee n'a pas fait ses preuves. Bouge le curseur sur "
-                "quelques sorts/abilites : elle se recale toute seule en suivant le surlignage%s",
+                "quelques sorts/abilites : elle se recale toute seule en suivant le surlignage%s"),
                 state_.menuType, "");
         if (!troot)
-            DOC("La chaine de CIBLE est morte (target_t introuvable) : le curseur de selection ne suivra plus "
+            DOC(tr("The TARGET chain is dead (target_t not found) : the selection cursor will no longer follow "
+                "anyone in the party, and the Target box will stay empty. That is the signature of an FFXI "
+                "UPDATE that moved the addresses. Target a member then run //aio rva : it finds the new "
+                "address by itself%s",
+                "La chaine de CIBLE est morte (target_t introuvable) : le curseur de selection ne suivra plus "
                 "personne dans la party, et la boite Target restera vide. C'est la signature d'une MISE A JOUR "
                 "de FFXI qui a deplace les adresses. Cible un membre puis lance //aio rva : il retrouve la "
-                "nouvelle adresse tout seul%s", "");
+                "nouvelle adresse tout seul%s"), "");
     }
 
     // ---- 3. packet flow. A box that shows nothing because NO PACKET ARRIVES looks exactly like a broken
@@ -538,8 +561,10 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
         const unsigned nsup = party().ws_suppressed(sid, smsg, sname);
         windower::debug::log("  wspopup  : suppressed=%u last id=%u msg=%u '%s'", nsup, sid, smsg, sname ? sname : "-");
         if (nsup)
-            DOC("Le popup de weaponskill a ete supprime %u fois (dernier : '%s', id %u, message %u). Si c'ETAIT bien un "
-                "weaponskill, le message %u doit rejoindre la liste blanche -- signale-le avec cette ligne.",
+            DOC(tr("The weaponskill popup was suppressed %u times (last : '%s', id %u, message %u). If that "
+                "really WAS a weaponskill, message %u must join the whitelist -- report it with this line.",
+                "Le popup de weaponskill a ete supprime %u fois (dernier : '%s', id %u, message %u). Si c'ETAIT bien un "
+                "weaponskill, le message %u doit rejoindre la liste blanche -- signale-le avec cette ligne."),
                 nsup, sname && sname[0] ? sname : "?", (unsigned)sid, (unsigned)smsg, (unsigned)smsg);
     }
 
@@ -559,33 +584,45 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
             windower::debug::log("  msgid    : %s msg=%u %s seen=%d traffic=%d", WHO[which], mid,
                                  prov ? "(DERIVED)" : "(seed)", seen, traf);
             if (!prov && seen == 0 && traf >= 6)
-                DOC("Le compteur %s est muet alors que la zone parle (%d messages, aucun avec l'id %u) : la mise a "
+                DOC(tr("The %s counter is silent while the zone is talking (%d messages, none carrying id %u) : a "
+                    "client update renumbered the message. It re-locks BY ITSELF on the second gain -- carry on, "
+                    "and if it is still 0 after two gains, send aiohud_debug.log",
+                    "Le compteur %s est muet alors que la zone parle (%d messages, aucun avec l'id %u) : la mise a "
                     "jour du client a renumerote le message. Il se recale TOUT SEUL au deuxieme gain -- continue, et "
-                    "s'il reste a 0 apres deux gains, envoie aiohud_debug.log", WHO[which], traf, mid);
+                    "s'il reste a 0 apres deux gains, envoie aiohud_debug.log"), WHO[which], traf, mid);
         }
         if (ztm == 2) {   // Abyssea : matched by an OFFSET from a per-zone base, which already drifted +23 once
             int am = 0, au = 0; zt_aby_msg_state(am, au);
             windower::debug::log("  msgid    : Abyssea base=%d matched=%d unmatched=%d", party().zone_tracker().abyOffset, am, au);
             if (am == 0 && au >= 12)
-                DOC("Aucun message d'Abyssea n'est reconnu (%d recus, 0 exploite) : la base des ids a bouge avec une "
+                DOC(tr("No Abyssea message is recognised (%d received, 0 used) : the id base moved with a client "
+                    "update. Unlike Odyssey, this one CANNOT be guessed -- do /heal then send aiohud_debug.log, "
+                    "the new base reads out of the capture",
+                    "Aucun message d'Abyssea n'est reconnu (%d recus, 0 exploite) : la base des ids a bouge avec une "
                     "mise a jour du client. Contrairement a Odyssey, celle-ci ne peut PAS se deviner -- fais /heal "
-                    "puis envoie aiohud_debug.log, la nouvelle base se lit dans la capture", au);
+                    "puis envoie aiohud_debug.log, la nouvelle base se lit dans la capture"), au);
         }
     }
 
     // ---- 4. textures : a missing handle whose retry budget is SPENT is permanent for this session ----
     int texMiss = 0;
-    if (!buffAtlas_)  { ++texMiss; DOC("L'atlas d'icones de statut n'est pas charge (%u essais) : les icones de buff manquent partout. "
-                                       "Verifie que plugins\\AioHud\\assets\\buff_atlas.raw existe, puis //unload + //load", buff_atlas_tries()); }
+    if (!buffAtlas_)  { ++texMiss; DOC(tr("The status-icon atlas is not loaded (%u tries) : buff icons are missing everywhere. "
+        "The icons come from an XIPivot pack or from the game's own DAT, otherwise from "
+        "plugins\\AioHud\\assets\\buff_atlas.raw -- check that file exists, then //unload + //load",
+        "L'atlas d'icones de statut n'est pas charge (%u essais) : les icones de buff manquent partout. "
+                                       "Les icones viennent d'un pack XIPivot ou du DAT du jeu, sinon de "
+                                       "plugins\\AioHud\\assets\\buff_atlas.raw -- verifie que ce fichier existe, puis //unload + //load"), buff_atlas_tries()); }
     if (!weaponIcons_) ++texMiss;
     if (!tpCoffer_)    ++texMiss;
-    windower::debug::log("  textures : atlas=%d(t%u) weapon=%d coffer=%d grim=%d/%d/%d  (missing=%d)",
-                         buffAtlas_ ? 1 : 0, buff_atlas_tries(), weaponIcons_ ? 1 : 0, tpCoffer_ ? 1 : 0,
+    windower::debug::log("  textures : atlas=%d(t%u,%s) weapon=%d coffer=%d grim=%d/%d/%d  (missing=%d)",
+                         buffAtlas_ ? 1 : 0, buff_atlas_tries(), buff_atlas_source(), weaponIcons_ ? 1 : 0, tpCoffer_ ? 1 : 0,
                          grimLight_ ? 1 : 0, grimDark_ ? 1 : 0, grimClosed_ ? 1 : 0, texMiss);
     const char* rk = 0; const char* rom = ffxi_rom_dir_probe(&rk);
     windower::debug::log("  romdir   : %s (key %s)", rom ? rom : "<unresolved>", rk ? rk : "<none>");
-    if (!rom) DOC("Le dossier ROM de FFXI est introuvable : les icones d'equipement s'afficheront en texte. "
-                  "Installation hors registre standard -- c'est le cas connu des installs sous Program Files%s", "");
+    if (!rom) DOC(tr("FFXI's ROM folder cannot be found : equipment icons will show as text. Install outside the "
+        "standard registry entry -- the known case is an install under Program Files%s",
+        "Le dossier ROM de FFXI est introuvable : les icones d'equipement s'afficheront en texte. "
+                  "Installation hors registre standard -- c'est le cas connu des installs sous Program Files%s"), "");
 
     // ---- 5. model state : what the boxes are actually holding right now ----
     int nob = 0; party().other_buffs(nob);
@@ -613,9 +650,12 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     // Only PLAYERS are worth reporting : the server sends no 0x076 for a trust at all, so an unconfirmed
     // trust row is the normal state, not a fault -- it rides its estimate by design.
     if (unconfirmedPlayers > 0)
-        DOC("%d buff(s) que tu as poses sur des JOUEURS ne sont pas confirmes par leur liste de buffs (0x076) : "
+        DOC(tr("%d buff(s) you put on PLAYERS are not confirmed by their own buff list (0x076) : an early "
+            "end (dispel, overwrite, death) will not be detected and the row will run to the end of its "
+            "estimate. Trusts are normal : the server does not broadcast their buffs.",
+            "%d buff(s) que tu as poses sur des JOUEURS ne sont pas confirmes par leur liste de buffs (0x076) : "
             "leur fin anticipee (dispel, ecrasement, mort) ne sera pas detectee et la ligne tiendra jusqu'au "
-            "bout de son estimation. Les trusts, eux, sont normaux : le serveur ne diffuse pas leurs buffs.", unconfirmedPlayers);
+            "bout de son estimation. Les trusts, eux, sont normaux : le serveur ne diffuse pas leurs buffs."), unconfirmedPlayers);
 
     // ---- 6. the current target's debuffs, and whether we know the TIER of each ----
     if (state_.target.valid && state_.target.id) {
@@ -633,8 +673,10 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
                          active_profile_name(), profile_dirty() ? 1 : 0,
                          have_layout_ ? layout_path_.c_str() : "<default, no file loaded>");
     if (!have_layout_)
-        DOC("Aucun layout charge : les boites sont a leur position par defaut. "
-            "design\\exports\\layout.json est absent ou illisible%s", "");
+        DOC(tr("No layout loaded : the boxes are at their default positions. "
+            "design\\exports\\layout.json is missing or unreadable%s",
+            "Aucun layout charge : les boites sont a leur position par defaut. "
+            "design\\exports\\layout.json est absent ou illisible%s"), "");
     if (profile_dirty())
         windower::debug::log("  note     : the live config differs from the saved profile (unsaved changes)");
 
@@ -645,11 +687,12 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
 
 void Hud::self_check() {
     windower::debug::log("=== AIO SELFCHECK : texture-load health (1 = handle set ; tN = retry misses so far) ===");
-    windower::debug::log("  hud      : buffAtlas=%d(t%u) skin=%s  grim L=%d D=%d C=%d  weapon=%d coffer=%d",
+    windower::debug::log("  hud      : buffAtlas=%d(t%u,%s) skin=%s  grim L=%d D=%d C=%d  weapon=%d coffer=%d",
                          // three states, not two : loaded / this theme has no textures by design / its textures
                          // will not load. The last two used to print the same string, so a broken install read as
                          // normal to the one person running the diagnostic.
-                         buffAtlas_ ? 1 : 0, buff_atlas_tries(), skin_.ready() ? "ready" : (skin_.failed() ? "MISSING (texture theme, files unreadable)" : "(none/proc)"),
+                         buffAtlas_ ? 1 : 0, buff_atlas_tries(), buff_atlas_source(),   // WHICH sheet is live : a custom one, an icon pack, the bundle, or the vanilla ROM
+                         skin_.ready() ? "ready" : (skin_.failed() ? "MISSING (texture theme, files unreadable)" : "(none/proc)"),
                          grimLight_ ? 1 : 0, grimDark_ ? 1 : 0, grimClosed_ ? 1 : 0, weaponIcons_ ? 1 : 0, tpCoffer_ ? 1 : 0);
     const char* rk = 0; const char* rom = ffxi_rom_dir_probe(&rk);   // gear-icon ROM path (EquipViewer id-vs-icon)
     windower::debug::log("  romdir   : %s   (key: %s)", rom ? rom : "<UNRESOLVED : gear icons will be id-text>", rk ? rk : "<none>");

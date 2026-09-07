@@ -276,4 +276,14 @@ bool load_zone_map(unsigned fileId, u32*& outPixels, int& outW, int& outH, MapLo
 
 void free_map_image(u32* pixels) { if (pixels) HeapFree(GetProcessHeap(), 0, pixels); }
 
+// ---- the DAT filesystem, published for the other DAT readers (see map_dat.h) --------------------------------
+// Thin wrappers, deliberately: resolve_path / read_file stay exactly as the minimap has always used them, and
+// every DAT the plugin reads goes through this ONE install+overlay resolution instead of growing its own copy.
+bool dat_resolve_path(unsigned fileId, char* out, unsigned cap) {
+    if (!out || cap < MAX_PATH) return false;   // resolve_path writes MAX_PATH -- refuse a short buffer rather than smash it
+    return resolve_path(fileId, out);
+}
+unsigned char* dat_read_file(const char* path, unsigned& sizeOut) { sizeOut = 0; return path ? read_file(path, sizeOut) : 0; }
+void dat_free_file(unsigned char* buf) { if (buf) HeapFree(GetProcessHeap(), 0, buf); }
+
 } // namespace aio
