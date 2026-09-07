@@ -143,7 +143,7 @@ static void load_tables() {
 }
 
 // resolve a file-id to its ROM path : pick the highest volume v whose VTABLE_v[fileId]==v, then FTABLE_v.
-static bool resolve_path(unsigned fileId, char* out) {
+static bool resolve_path(unsigned fileId, char* out, bool allowOverlay = true) {
     load_tables();
     const char* root = ffxi_root(); if (!root) return false;
     for (int v = g_maxVol; v >= 1; --v) {
@@ -154,7 +154,7 @@ static bool resolve_path(unsigned fileId, char* out) {
         int subdir = (entry >> 7) & 0x1FF, file = entry & 0x7F;
         char rom[8]; if (v == 1) lstrcpyA(rom, "ROM"); else wsprintfA(rom, "ROM%d", v);
         // XIPivot overlays FIRST (custom maps : Remapster / Maps / ...), in the configured priority order
-        const char* wr = windower_root();
+        const char* wr = allowOverlay ? windower_root() : 0;
         if (wr) {
             load_overlays();
             for (int i = 0; i < g_ovlN; ++i) {
@@ -283,6 +283,11 @@ bool dat_resolve_path(unsigned fileId, char* out, unsigned cap) {
     if (!out || cap < MAX_PATH) return false;   // resolve_path writes MAX_PATH -- refuse a short buffer rather than smash it
     return resolve_path(fileId, out);
 }
+bool dat_resolve_vanilla(unsigned fileId, char* out, unsigned cap) {
+    if (!out || cap < MAX_PATH) return false;
+    return resolve_path(fileId, out, false);
+}
+const char* dat_windower_root() { return windower_root(); }
 unsigned char* dat_read_file(const char* path, unsigned& sizeOut) { sizeOut = 0; return path ? read_file(path, sizeOut) : 0; }
 void dat_free_file(unsigned char* buf) { if (buf) HeapFree(GetProcessHeap(), 0, buf); }
 

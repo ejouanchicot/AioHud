@@ -25,7 +25,7 @@
 
 _addon.name     = 'AioUpdate'
 _addon.author   = 'ejouanchicot'
-_addon.version  = '2.3'
+_addon.version  = '2.4'
 _addon.commands = { 'aioupdate', 'aioup' }
 
 local base     = windower.windower_path
@@ -69,9 +69,14 @@ local function read_status()
 end
 
 -- ask the plugin to spawn the no-window updater. The plugin de-dupes (button + this may both fire within a
--- second), so calling it is always safe. Clearing done.txt first drops any stale phase from a previous run.
+-- second), so calling it is always safe.
 local function trigger()
-    os.remove(done)
+    -- We do NOT clear done.txt here any more. In dual-box both addons watch the ONE file, and this
+    -- removal could land between the winner writing OK and the other client's next poll -- deleting that
+    -- client's only reload signal. The losing updater exits on the mutex without rewriting anything, so
+    -- the phase was gone for good and that character sat unloaded until a manual //load. Reproduced on
+    -- this file. The clear was redundant anyway: aioupdate.ps1 removes done.txt itself, right after it
+    -- takes the mutex, so a real run always starts from an empty file.
     log('triggering update...')
     windower.send_command('aio update')
 end
@@ -115,7 +120,24 @@ local function watch_done()
             if not unloaded then windower.send_command('unload AioHud') end   -- release the DLL so the (still-running) updater can install over it
             unloaded = true
         elseif s:find('^OK') then
-            reload_plugin()
+            -- OK means the FILES ON DISK CHANGED. That, not "did I unload", is the reason to reload -- and
+            -- tying it to our own unload left the second client of a dual-box running its PRE-update build.
+            -- Two ways to get there, both reproduced against this file: our 1 s poll can land after done.txt
+            -- has already moved READY -> OK (we never saw READY, so we never unloaded), and our addon can
+            -- have LOADED while READY was already on disk, which primes `acted` on it so it never reads as
+            -- a change. In both cases reload_plugin() returned early and nothing ever brought this client
+            -- up to date: the plugin reads its assets ONCE per load -- the status-icon atlas among them --
+            -- so it kept the OLD icons with a fully installed update sitting on disk, until the player
+            -- unloaded and loaded it by hand. Which is exactly what was reported. So: if we are still
+            -- running, take the plugin down ourselves and put it back a beat later (the unload has to be
+            -- through before the load).
+            if not unloaded then
+                windower.send_command('unload AioHud')
+                unloaded = true
+                coroutine.schedule(reload_plugin, 1)
+            else
+                reload_plugin()
+            end
             log('updated to v' .. (s:match('OK%s+(%S+)') or '?') .. '.')
         elseif s:find('^ERROR') then
             -- VISIBLE : this is the only place the reason ever reaches the player.

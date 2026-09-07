@@ -226,7 +226,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
           sepv(ry, bh2, hasBadge);   // an empty second half has no split to state
           { int m = ui_config().jobBadge[0]; if (m < 0 || m > 3) m = 0;
             const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Ic\xC3\xB4nes") };
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, hasBadge ? halfW : ctrlW, tr("Job Badge", "Badge de job"), jb[m])) {
+            // halfW even when Badge Size is gone. row_selector pins its value and arrows to the RIGHT
+            // edge of the width it is given, so widening this to ctrlW on Off threw the control across
+            // the panel -- the row appeared to MOVE as a side effect of switching the badge off. A
+            // control keeps its column ; only its neighbour disappears.
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Job Badge", "Badge de job"), jb[m])) {
                 ui_config().jobBadge[0] = wrap(m + d, 4); save_ui_config(); } }
           if (hasBadge) {   // no badge, nothing to size
               const float lo = 0.60f, hi = 1.80f; char gb[16]; sprintf(gb, "%d%%", (int)(ui_config().badgeScale[0] * 100.0f + 0.5f));

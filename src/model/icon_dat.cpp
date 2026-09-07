@@ -6,6 +6,7 @@
 #include "model/map_dat.h"   // dat_resolve_path / dat_read_file / dat_free_file -- the ONE install+overlay resolver
 #include <windows.h>
 #include <string.h>
+#include <stdio.h>   // _snprintf (the pack scan builds paths)
 
 namespace aio {
 
@@ -32,17 +33,17 @@ static bool record_ok(const unsigned char* r) {
     return biSize == 40 && W == ICON_SIDE && H == ICON_SIDE && planes == 1 && (bpp == 32 || bpp == 8);
 }
 
-bool load_status_icons(u32* out, int atlasW, int atlasH, int cell, int cols, IconLoadDiag* diag)
+// The decode itself, from a path already chosen. Split out of load_status_icons so the pack chooser can name a
+// file the resolver would never return -- same validation, same diagnostics, one implementation.
+bool load_status_icons_at(const char* path, u32* out, int atlasW, int atlasH, int cell, int cols, IconLoadDiag* diag)
 {
     IconLoadDiag scratch; if (!diag) diag = &scratch;
     diag->step = ILS_NO_PATH; diag->path[0] = 0; diag->overlay = false;
     diag->fileSize = 0; diag->badRecord = -1; diag->records = 0; diag->halfAlpha = 0;
-    if (!out || cell != ICON_SIDE || cols <= 0) return false;
+    if (!out || cell != ICON_SIDE || cols <= 0 || !path || !path[0]) return false;
     const int rows = (int)((ICON_RECORDS + (unsigned)cols - 1) / (unsigned)cols);
     if (atlasW < cols * cell || atlasH < rows * cell) return false;   // the grid must hold all 640
 
-    char path[MAX_PATH];
-    if (!dat_resolve_path(ICONDAT_STATUS_FILEID, path, MAX_PATH)) return false;
     lstrcpynA(diag->path, path, sizeof(diag->path));
     for (const char* c = path; *c; ++c)                               // case-insensitive "XIPivot" scan (no shlwapi dependency)
         if ((c[0]|32)=='x' && (c[1]|32)=='i' && (c[2]|32)=='p' && (c[3]|32)=='i' &&
@@ -98,6 +99,83 @@ bool load_status_icons(u32* out, int atlasW, int atlasH, int cell, int cols, Ico
     dat_free_file(d);
     diag->step = ILS_OK;
     return true;
+}
+
+bool load_status_icons(u32* out, int atlasW, int atlasH, int cell, int cols, IconLoadDiag* diag)
+{
+    char path[MAX_PATH];
+    if (!dat_resolve_path(ICONDAT_STATUS_FILEID, path, MAX_PATH)) {
+        if (diag) { diag->step = ILS_NO_PATH; diag->path[0] = 0; diag->overlay = false;
+                    diag->fileSize = 0; diag->badRecord = -1; diag->records = 0; diag->halfAlpha = 0; }
+        return false;
+    }
+    return load_status_icons_at(path, out, atlasW, atlasH, cell, cols, diag);
+}
+
+// ---- the pack list ------------------------------------------------------------------------------------------
+// An entry is added only after its file has been STATTED, so the chooser cannot offer a sheet that is not there.
+// The XIPivot scan walks the DATs folder rather than settings.xml on purpose: a pack the player has installed
+// but not enabled is still a pack they may want the HUD to use, and picking one here is not the same act as
+// turning it on for the whole client.
+static IconPack g_packs[ICON_PACK_MAX];
+static int      g_packN = 0;   // 0 = not scanned yet ; a scan always yields >= 1 (Auto), so this is unambiguous
+
+static bool file_here(const char* p) {
+    const DWORD a = GetFileAttributesA(p);
+    return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
+}
+static void pack_add(int kind, const char* name, const char* path) {
+    if (g_packN >= ICON_PACK_MAX) return;
+    IconPack& e = g_packs[g_packN];
+    e.kind = kind;
+    lstrcpynA(e.name, name, sizeof(e.name));
+    lstrcpynA(e.path, path ? path : "", sizeof(e.path));
+    ++g_packN;
+}
+
+void icon_pack_forget() { g_packN = 0; }
+
+int icon_pack_count(const char* customPath, const char* bundledPath) {
+    if (!g_packN) {
+        pack_add(IPK_AUTO, "Auto", "");
+        if (bundledPath && file_here(bundledPath)) pack_add(IPK_BUNDLED, "AioHUD", bundledPath);
+        if (customPath  && file_here(customPath))  pack_add(IPK_CUSTOM,  "My sheet", customPath);
+
+        // Every XIPivot folder that actually carries the status sheet, in folder order.
+        const char* wr = dat_windower_root();
+        if (wr) {
+            char pat[MAX_PATH];
+            _snprintf(pat, MAX_PATH, "%s\\addons\\XIPivot\\data\\DATs\\*", wr); pat[MAX_PATH - 1] = 0;
+            WIN32_FIND_DATAA fd;
+            HANDLE h = FindFirstFileA(pat, &fd);
+            if (h != INVALID_HANDLE_VALUE) {
+                do {
+                    if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+                    if (fd.cFileName[0] == '.') continue;
+                    char p[MAX_PATH];
+                    _snprintf(p, MAX_PATH, "%s\\addons\\XIPivot\\data\\DATs\\%s\\ROM\\119\\57.DAT", wr, fd.cFileName);
+                    p[MAX_PATH - 1] = 0;
+                    if (file_here(p)) pack_add(IPK_OVERLAY, fd.cFileName, p);
+                } while (FindNextFileA(h, &fd) && g_packN < ICON_PACK_MAX);
+                FindClose(h);
+            }
+        }
+        // The client's own art, LAST : it is the least likely pick, and resolving it needs the tables loaded.
+        char rom[MAX_PATH];
+        if (dat_resolve_vanilla(ICONDAT_STATUS_FILEID, rom, MAX_PATH) && file_here(rom))
+            pack_add(IPK_GAME, "Game", rom);
+    }
+    return g_packN;
+}
+
+const IconPack* icon_pack_at(int i) { return (i >= 0 && i < g_packN) ? &g_packs[i] : 0; }
+
+const IconPack* icon_pack_find(const char* name, const char* customPath, const char* bundledPath) {
+    if (!name || !name[0]) return 0;
+    icon_pack_count(customPath, bundledPath);
+    for (int i = 0; i < g_packN; ++i)
+        if (lstrcmpiA(g_packs[i].name, name) == 0) return &g_packs[i];
+    return 0;   // the pack named in the config is gone -> the caller falls back to Auto
 }
 
 } // namespace aio

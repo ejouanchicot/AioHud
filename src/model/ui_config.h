@@ -550,6 +550,12 @@ struct UiConfig {
     float      zonePanelX = -1.0f, zonePanelY = -1.0f;   // draggable Zones panel top-left (fraction ; -1 = default top-right)
     // ---- Global ----
     int   lang = 0;            // config UI language : 0 = English, 1 = French (toggle in the config header)
+    // Which status-icon sheet the WHOLE HUD draws (party buffs, player, target, timers, debuffs -- they all
+    // read the one atlas). Empty or "Auto" = the built-in precedence in ui/buff_atlas.cpp ; otherwise the NAME
+    // of a pack from icon_pack_scan() (model/icon_dat.h). A name, not an index: XIPivot folders come and go,
+    // and an index would quietly re-point at a different pack the day one is added or removed. A name that no
+    // longer matches anything falls back to Auto, which always draws something.
+    char  iconPack[48] = "";
 };
 
 UiConfig& ui_config();         // the singleton

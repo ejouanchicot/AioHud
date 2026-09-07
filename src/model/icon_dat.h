@@ -37,6 +37,45 @@ struct IconLoadDiag {
 // leaves `out` untouched if anything about the file is not the icon sheet -- a partial decode is NOT a success.
 bool load_status_icons(u32* out, int atlasW, int atlasH, int cell, int cols, IconLoadDiag* diag = 0);
 
+// The same decode from an EXPLICIT file, bypassing the resolver -- what the config's pack chooser needs, since
+// picking a pack means naming a file the resolver would not have returned (an overlay the player has disabled,
+// or the vanilla ROM under one they have enabled). `path` is reported back in the diag exactly as passed.
+bool load_status_icons_at(const char* path, u32* out, int atlasW, int atlasH, int cell, int cols,
+                          IconLoadDiag* diag = 0);
+
+// ---- WHICH sheet to draw : the packs this install can actually offer (config > Interface > Status icons) ----
+// Enumerated rather than typed in : an entry exists only because its file was found on disk this scan, so the
+// list can never offer a pack that is gone, and a pack added while the game runs shows up on the next open.
+enum IconPackKind {
+    IPK_AUTO = 0,   // the built-in precedence (custom sheet > a pack the player installed > bundled > vanilla)
+    IPK_BUNDLED,    // plugins\AioHud\assets\buff_atlas.raw -- what ships with the plugin
+    IPK_CUSTOM,     // plugins\AioHud\icons\status_atlas.raw -- a sheet the player built with aioicons.ps1
+    IPK_GAME,       // the client's own ROM file, overlays ignored
+    IPK_OVERLAY     // one XIPivot pack, named by its folder (IconsHD, VisionMaster, ...) -- enabled or not
+};
+struct IconPack {
+    char name[48];    // what the config row shows, and what the config FILE stores (see below)
+    char path[260];   // the file to read ("" for IPK_AUTO)
+    int  kind;        // IconPackKind
+};
+static const int ICON_PACK_MAX = 24;
+
+// How many sheets this install can offer, Auto first, scanning once and caching. `customPath` / `bundledPath`
+// come from ui/buff_atlas.h -- passed IN rather than included, because model must not depend on ui (CLAUDE.md
+// dependency rule). Always >= 1. Read the entries with icon_pack_at(): the config row that walks this list runs
+// every frame, so it must not copy a 7 KB table (nor allocate) to draw one label.
+int  icon_pack_count(const char* customPath, const char* bundledPath);
+const IconPack* icon_pack_at(int i);   // 0 when i is out of range ; valid until the next icon_pack_forget()
+// Drop that cache, so the next scan looks at the disk again. Called when the config page OPENS: a scan that
+// found nothing (XIPivot mid-rewrite, a locked folder) must not be the answer for the rest of the session.
+void icon_pack_forget();
+
+// The pack SELECTED in the config, resolved against a fresh scan, or 0 when the name matches nothing on this
+// install any more (a pack the player deleted) -- in which case the caller falls back to Auto, which always
+// draws something. Stored by NAME, never by index: an index would silently point at a different pack the day
+// XIPivot gains or loses a folder.
+const IconPack* icon_pack_find(const char* name, const char* customPath, const char* bundledPath);
+
 // Does this DAT still hold the game's ORIGINAL art? Square Enix's own sheet is uniformly 7-bit alpha (0..0x80,
 // verified on an untouched copy: 640 records of 640), while anything drawn in an image editor uses the full
 // range. So `halfAlpha == records` means nobody has replaced these icons -- which is what lets the HUD prefer

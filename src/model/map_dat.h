@@ -33,6 +33,13 @@ void free_map_image(u32* pixels);
 // id (both transient-tolerant : the VTABLE/FTABLE and overlay readers behind this retry on their own budget).
 // This is what makes the plugin follow whatever DAT pack the player actually has installed.
 bool dat_resolve_path(unsigned fileId, char* out, unsigned cap);
+// The SAME resolution with every XIPivot overlay skipped -- the client's own file, whatever the player has
+// layered on top. Only a chooser needs this: it has to be able to offer "the game's own art" as one entry
+// BESIDE the packs, which the overlay-first resolver above can never return once a pack covers that id.
+bool dat_resolve_vanilla(unsigned fileId, char* out, unsigned cap);
+// The Windower root (<root>\plugins\AioHud.dll, two components up), or 0 if it cannot be derived. Published
+// for the one caller that must ENUMERATE what is installed rather than resolve one id: the icon-pack list.
+const char* dat_windower_root();
 // Read a whole DAT into a heap buffer (<= 64 MB). Free with dat_free_file. null on any IO failure.
 unsigned char* dat_read_file(const char* path, unsigned& sizeOut);
 void dat_free_file(unsigned char* buf);

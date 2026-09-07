@@ -275,6 +275,8 @@ static bool save_config_to(const char* path) {
     fprintf(f, "ep=%d,%.3f,%.4f,%.4f,%d\n", c.epShow, c.epScale, c.epX, c.epY, c.epColl);   // EmpyPop box (+ collectable row)
     fprintf(f, "eptrack=%s\n", c.epTrack);   // the tracked NM KEY -- its OWN line : keys contain spaces
                                              // ("arch dynamis lord"), so it must never share a CSV line.
+    fprintf(f, "iconpack=%s\n", c.iconPack); // the chosen status-icon sheet, by NAME -- own line for
+                                             // the same reason (an XIPivot folder may contain spaces).
     save_text_styles(f, "epText", c.epText, EP_TE_COUNT);   // EmpyPop : per-element typography
     save_text_styles(f, "ztText", c.ztText, ZT_TE_COUNT);   // zone tracker : per-element typography
     save_text_styles(f, "tmText", c.tmText, TM_TE_COUNT);   // Timers : per-element typography
@@ -383,6 +385,12 @@ static bool parse_ep_line(const char* line, UiConfig& c) {
         int sh = 0, cl = 1; float scl = 1.0f, x = 0.80f, y = 0.25f;
         const int n = sscanf(line + 3, "%d,%f,%f,%f,%d", &sh, &scl, &x, &y, &cl);
         if (n >= 1) { c.epShow = sh; if (n >= 2) c.epScale = scl; if (n >= 3) c.epX = x; if (n >= 4) c.epY = y; if (n >= 5) c.epColl = cl; }
+        return true;
+    }
+    if (strncmp(line, "iconpack=", 9) == 0) {   // rest-of-line for the same reason as eptrack just below :
+        lstrcpynA(c.iconPack, line + 9, sizeof(c.iconPack));   // an XIPivot folder may contain spaces
+        size_t n = strlen(c.iconPack);
+        while (n && (c.iconPack[n-1] == '\n' || c.iconPack[n-1] == '\r')) c.iconPack[--n] = 0;
         return true;
     }
     if (strncmp(line, "eptrack=", 8) == 0) {
@@ -1360,6 +1368,7 @@ void reset_ui_config() {   // general Default : everything
     c.zonePanelX = d.zonePanelX; c.zonePanelY = d.zonePanelY;
     c.epShow = d.epShow; c.epScale = d.epScale; c.epX = d.epX; c.epY = d.epY; c.epColl = d.epColl;
     lstrcpynA(c.epTrack, d.epTrack, sizeof(c.epTrack));   // char[] : copy the CONTENT (plain '=' won't compile)
+    lstrcpynA(c.iconPack, d.iconPack, sizeof(c.iconPack));   // back to "" = Auto (the built-in precedence)
     c.scBox = d.scBox; c.tpBox = d.tpBox; c.hlBox = d.hlBox; c.pwBox = d.pwBox; c.ztBox = d.ztBox; c.mmBox = d.mmBox; c.epBox = d.epBox; c.dbBox = d.dbBox; c.plrEqBox = d.plrEqBox;
     c.dbShow = d.dbShow; c.dbScale = d.dbScale; c.dbX = d.dbX; c.dbY = d.dbY; c.dbMax = d.dbMax; c.dbHeader = d.dbHeader; c.dbDisp = d.dbDisp; c.dbIconScale = d.dbIconScale; c.dbRowGap = d.dbRowGap;
     c.tgtSubPos = d.tgtSubPos; c.mmClockPos = d.mmClockPos; c.scNearby = d.scNearby;

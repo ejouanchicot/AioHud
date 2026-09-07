@@ -8,6 +8,7 @@
 #pragma once
 #include "ui/widget.h"   // Frame
 #include "ui/tex_retry.h"   // TexRetry : the Help TH-icon load is a BOUNDED retry, not a one-shot latch (rule 10)
+#include "model/icon_dat.h"   // icon_pack_forget() : the pack list is re-scanned each time the page opens
 
 namespace aio {
 
@@ -18,7 +19,7 @@ public:
     void toggle()         { set_open(!open_); }
     // Closing (or switching tab) while a slider is held strands the drag latch in config_controls and loses
     // the edit -- the row that would release it stops being drawn. Release it here instead.
-    void set_open(bool o) { if (o && !open_) { anim_ = 0.0f; profDirty_ = true; } if (!o && open_) ctrl_release_drag(); open_ = o; }
+    void set_open(bool o) { if (o && !open_) { anim_ = 0.0f; profDirty_ = true; icon_pack_forget(); } if (!o && open_) ctrl_release_drag(); open_ = o; }
     bool is_open() const  { return open_; }
     void set_tab(int t);
 

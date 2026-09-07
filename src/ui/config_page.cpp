@@ -15,6 +15,8 @@
 #include "model/ui_config.h"
 #include "model/gamestate.h"   // GameState::me (character name) for the Profile page
 #include "model/map_dat.h"     // load_zone_map : the Help owns its own copy of the live zone map (radar sample)
+#include "model/icon_dat.h"    // icon_pack_* : the status-icon sheets this install can offer (Interface row)
+#include "ui/buff_atlas.h"     // the two atlas paths the scan needs, + dispose() to reload on a new pick
 #include "ui/edit_box.h"       // edit_drag_busy() : hide the edit-layout toolbar while a box is being dragged
 #include "ui/party.h"          // party_gauge() : the REAL HP/MP/TP liquid gauge, for the Help live samples
 #include "ui/target.h"         // target_help_* : the REAL Target element samples (HP+trail, range, debuffs, TH)
@@ -34,6 +36,20 @@ namespace aio {
 // game never sees them. No per-frame Win32 polling here.
 
 static const char* TABS[]     = { "Configuration", "Profile", "Edit Layout", "Help", "Update", "Debug" };
+
+// What the Status-icons row SHOWS for a pack. Only the four built-in entries are translated -- an XIPivot pack
+// is shown under its folder name, which is how the player recognises it and what they see in XIPivot itself.
+// The stored name (ui_config().iconPack) is always the English one : a config written in French must still
+// load in English, and a folder name is not ours to translate anyway.
+static const char* icon_pack_label(const IconPack& p) {
+    switch (p.kind) {
+        case IPK_AUTO:    return tr("Auto", "Auto");
+        case IPK_BUNDLED: return tr("AioHUD", "AioHUD");
+        case IPK_CUSTOM:  return tr("My sheet", "Ma feuille");
+        case IPK_GAME:    return tr("Game", "Jeu");
+        default:          return p.name;
+    }
+}
 static const char* LOGO_PATH() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\aiohud_logo.raw"); return b; }
 static const int   NTABS      = 6;
 static const char* tab_label(int i) {
@@ -244,6 +260,38 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
               ui_config().text[0][TE_UI].face = gf;   // the config menu font (changes live)
               ui_config().fontFace = gf;              // and the HUD default text face
               save_ui_config(); } }
+        ROW_NEXT(52.0f)
+        // Status icons : WHICH sheet the whole HUD draws its buff/debuff icons from -- party, player, target,
+        // Timers and Debuffs all read the one atlas. The list is what was found on disk when this page opened
+        // (icon_dat.cpp) : Auto, the bundled sheet, your own sheet if you built one with aioicons.ps1, every
+        // XIPivot pack that carries the status DAT, and the client's own art. Auto is the built-in precedence
+        // and stays the default -- this row exists for the case it gets wrong, which is a linkshell wanting the
+        // SAME icons as each other rather than each their own installed pack.
+        { ROW_BAND(52.0f)
+          const int pn = icon_pack_count(buff_custom_path(), buff_atlas_path());
+          int cur = 0;   // an unknown / deleted pack shows as Auto, which is also what gets drawn
+          for (int i = 1; i < pn; ++i) {
+              const IconPack* p = icon_pack_at(i);
+              if (p && lstrcmpiA(p->name, ui_config().iconPack) == 0) { cur = i; break; }
+          }
+          const IconPack* sel = icon_pack_at(cur);
+          if (sel) {
+              if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW,
+                                       tr("Status icons", "Icones de statut"), icon_pack_label(*sel))) {
+                  cur = wrap(cur + d, pn);
+                  const IconPack* nx = icon_pack_at(cur);
+                  // Auto is stored as "" so a config predating this row, and one reset to defaults, mean the
+                  // same thing as picking Auto -- one state, not two that behave alike.
+                  lstrcpynA(ui_config().iconPack, (nx && nx->kind != IPK_AUTO) ? nx->name : "",
+                            sizeof(ui_config().iconPack));
+                  save_ui_config();
+                  // The device is ALIVE here (we are drawing), so this is a real Release, not a forget --
+                  // and it is safe mid-frame for one reason worth writing down: the config overlay draws
+                  // LAST (hud.cpp, after every widget), so nothing else has this handle left to use
+                  // today. The next frame reloads from the newly chosen source.
+                  buff_atlas_dispose();
+              }
+          } }
         ROW_NEXT(52.0f)
         // (The old "Cursor" toggle was removed : the config/edit overlay now fully captures the mouse, so AioHud's
         //  own pointer is always drawn and the game's native cursor no longer competes -- the option did nothing.)

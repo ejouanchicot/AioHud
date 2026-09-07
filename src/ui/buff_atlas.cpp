@@ -42,6 +42,7 @@
 #include "ui/tex_retry.h"
 #include "gfx/texture.h"
 #include "model/icon_dat.h"
+#include "model/ui_config.h"   // iconPack : the sheet the player PICKED
 #include "windower_debug.h"
 
 namespace aio {
@@ -50,7 +51,10 @@ static u32         s_tex = 0;
 static TexRetry    s_retry;
 static bool        s_gaveUpLogged = false;   // log the dead budget ONCE per budget, not once per frame
 static const char* s_src = "none yet";       // which source actually produced the live texture (//aio doctor)
+static char        s_srcBuf[64] = { 0 };     // a CHOSEN pack is named by the scan ; that array can be re-scanned
+                                             // under us, so its name is COPIED here before s_src points at it
 static bool        s_datLogged = false;      // the "game DAT unusable" line : once per budget, not once per retry
+static bool        s_pickLogged = false;     // ditto for "the pack you chose is not there" -- see buff_atlas_tex
 
 // Decode the game's own icon sheet into a texture. Returns 0 (and says why, once) if this install has no
 // readable icon DAT -- the caller then uses the bundled sheet IN THE SAME FRAME, so a missing DAT never costs
@@ -58,6 +62,40 @@ static bool        s_datLogged = false;      // the "game DAT unusable" line : o
 // reset/zone-in, which is exactly when a "not ready yet" miss resolves itself (rule 10).
 u32 buff_atlas_tex(u32 dev) {
     if (!tex_retry_due(s_tex, s_retry)) return s_tex;
+
+    // 0) AN EXPLICIT PICK (config > Interface > Status icons) OUTRANKS THE WHOLE ORDER BELOW. It is the one
+    // thing the player has actually said out loud about their icons, so it beats even a pack installed in the
+    // client. It is deliberately NOT a hard override, though: if the file is gone or will not decode, we fall
+    // straight through to the automatic order rather than draw nothing -- a chosen pack that has been deleted
+    // must cost you the pack, never every status icon in the interface (rule 10).
+    const char* want = ui_config().iconPack;
+    if (want[0] && lstrcmpiA(want, "Auto") != 0) {
+        const IconPack* p = icon_pack_find(want, buff_custom_path(), buff_atlas_path());
+        if (p && p->path[0]) {
+            if (p->kind == IPK_BUNDLED || p->kind == IPK_CUSTOM) {
+                s_tex = load_raw_texture(dev, p->path, BUFF_ATLAS_W, BUFF_ATLAS_H);   // already atlas-shaped
+            } else {                                                                   // a DAT : decode it here
+                u32* px = (u32*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (SIZE_T)BUFF_ATLAS_W * BUFF_ATLAS_H * 4);
+                if (px) {
+                    if (load_status_icons_at(p->path, px, BUFF_ATLAS_W, BUFF_ATLAS_H, BUFF_CELL, BUFF_COLS))
+                        s_tex = make_texture_argb(dev, BUFF_ATLAS_W, BUFF_ATLAS_H, px);
+                    HeapFree(GetProcessHeap(), 0, px);
+                }
+            }
+        }
+        if (s_tex) {
+            lstrcpynA(s_srcBuf, p->name, sizeof(s_srcBuf)); s_src = s_srcBuf;
+            windower::debug::log("buff atlas: chosen pack '%s' -- %s", p->name, p->path);
+            tex_retry_note(s_tex, s_retry); return s_tex;
+        }
+        // Say so, ONCE per budget. A pack silently ignored is exactly the report this whole feature exists to
+        // answer ("I picked it and nothing changed"), and the automatic order below draws something either way.
+        if (!s_pickLogged) {
+            s_pickLogged = true;
+            windower::debug::log("buff atlas: the chosen pack '%s' %s -- falling back to the automatic order",
+                                 want, p ? "would not load" : "is not installed any more");
+        }
+    }
 
     s_tex = load_raw_texture(dev, buff_custom_path(), BUFF_ATLAS_W, BUFF_ATLAS_H);   // 1) built by the player
     if (s_tex) { s_src = "custom"; tex_retry_note(s_tex, s_retry); return s_tex; }
@@ -105,7 +143,7 @@ u32 buff_atlas_tex(u32 dev) {
     return s_tex;
 }
 
-void buff_atlas_forget() { s_tex = 0; s_retry = TexRetry{}; s_gaveUpLogged = false; s_datLogged = false; s_src = "none yet"; }   // FORGET only -- never Release (the old device may be dead)
+void buff_atlas_forget() { s_tex = 0; s_retry = TexRetry{}; s_gaveUpLogged = false; s_datLogged = false; s_pickLogged = false; s_src = "none yet"; }   // FORGET only -- never Release (the old device may be dead)
 
 void buff_atlas_dispose() { if (s_tex) release_texture(s_tex); buff_atlas_forget(); }   // the ONLY Release of this texture
 
