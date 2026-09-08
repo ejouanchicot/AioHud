@@ -43,11 +43,16 @@ static const char* TABS[]     = { "Configuration", "Profile", "Edit Layout", "He
 // load in English, and a folder name is not ours to translate anyway.
 static const char* icon_pack_label(const IconPack& p) {
     switch (p.kind) {
-        case IPK_AUTO:    return tr("Auto", "Auto");
-        case IPK_BUNDLED: return tr("AioHUD", "AioHUD");
+        case IPK_BUNDLED: return tr("AioPack", "AioPack");
         case IPK_CUSTOM:  return tr("My sheet", "Ma feuille");
         case IPK_GAME:    return tr("Game", "Jeu");
-        default:          return p.name;
+        // Auto stays a bare word on purpose. It is a MODE -- "follow whatever icons this install has" -- and
+        // it necessarily resolves to one of the sources listed below it, so naming that source here only makes
+        // the row look like it holds the same pack twice. It was tried the other way round: spelling out
+        // "Auto (AioPack)" read as a duplicate entry rather than as an explanation. What it settled on is in
+        // the log (//aio selfcheck), which is where you look when the icons are not the ones you expected.
+        case IPK_AUTO:    return tr("Auto", "Auto");
+        default: return p.name;
     }
 }
 static const char* LOGO_PATH() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\aiohud_logo.raw"); return b; }

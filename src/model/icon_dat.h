@@ -51,12 +51,30 @@ enum IconPackKind {
     IPK_BUNDLED,    // plugins\AioHud\assets\buff_atlas.raw -- what ships with the plugin
     IPK_CUSTOM,     // plugins\AioHud\icons\status_atlas.raw -- a sheet the player built with aioicons.ps1
     IPK_GAME,       // the client's own ROM file, overlays ignored
-    IPK_OVERLAY     // one XIPivot pack, named by its folder (IconsHD, VisionMaster, ...) -- enabled or not
+    IPK_OVERLAY,    // one XIPivot pack, named by its folder (IconsHD, VisionMaster, ...) -- enabled or not
+    IPK_PACK        // a folder the player dropped in icons\\packs\\ -- see ICON_PACKS_DIR below
 };
+
+// THE PACKS FOLDER : plugins\\AioHud\\icons\\packs\\<name>\\, one subfolder per pack, and the FOLDER NAME is what
+// the config row shows -- so the player names their own packs instead of living with whatever a download was
+// called. Inside, the first of these that exists wins:
+//     <name>\\57.DAT                the status-icon DAT on its own
+//     <name>\\ROM\\119\\57.DAT      the same with the pack's own tree left intact (unzip it as it came)
+//     <name>\\status_atlas.raw      an already-built sheet (what AioHudIcons / aioicons.ps1 produce)
+// It lives under icons\\, never under assets\\, for the reason buff_custom_path() gives: deploy.bat and the
+// updater rewrite assets\\ wholesale, and a pack a routine update silently deleted would be worse than no
+// pack at all. Nothing in the release ever writes here.
 struct IconPack {
     char name[48];    // what the config row shows, and what the config FILE stores (see below)
     char path[260];   // the file to read ("" for IPK_AUTO)
     int  kind;        // IconPackKind
+    // Other sources that produce THE SAME PIXELS, comma-separated ("" when this entry stands alone). One pack
+    // installed twice -- as an XIPivot overlay AND as your own sheet, say -- is ONE look, and listing it twice
+    // turns the row into a list of file locations rather than a list of icon sets. Measured rather than
+    // guessed: the fingerprint is taken on what each source DECODES to, so a .raw and a .DAT carrying the same
+    // art merge, which comparing files could never do. Kept so a config naming a merged source still resolves.
+    char alias[96];
+    unsigned long long fp;   // fingerprint of the produced atlas (0 = unreadable, and never merged)
 };
 static const int ICON_PACK_MAX = 24;
 
