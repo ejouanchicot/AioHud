@@ -904,7 +904,7 @@ void Party::draw(const Frame& f) {
         const u32 rb = (r.role & 0x00FFFFFF) | 0xD0000000;
         rrect_bordered(dev, pbx, pby, pbw, pbh, snap(3.0f), 0xF0161D33, 0xF00A0E1C, rb, 1.0f);   // framed box : dark bg + role-colour border (same for TEXT and ICON)
         if (ui_config().jobBadge[tcfg()] == 3) {          // ICONS : the job emblem INSIDE that box, tinted by role
-            const int cell = job_id_from_abbr(r.job) - 1;   // WAR=0 .. RUN=21 ; -1 (unknown/SPC) = skip
+            const int cell = job_id_from_abbr(r.job) - 1;   // WAR=0 .. RUN=21, SPC=22 ; only an UNKNOWN job gives -1 and skips
             const float bt2  = snap(1.0f);                  // just clear the 1px border ring (the emblem art already has its own transparent margin -> no extra pad)
             const float isz  = (pbw < pbh ? pbw : pbh) - 2.0f * bt2;
             const float ix   = snap(pbx + (pbw - isz) * 0.5f), iy = snap(pby + (pbh - isz) * 0.5f);   // CENTRED in the box (box may be non-square)
