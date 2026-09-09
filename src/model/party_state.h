@@ -888,6 +888,9 @@ void zt_msg_state(int which, unsigned& id, bool& proven, int& seen, int& traffic
 // Abyssea has no arithmetic to prove its message base with, so it is watched instead : how many 0x02A landed
 // on a known offset this run, and how many did not. All traffic and no match = the base moved.
 void zt_aby_msg_state(int& matched, int& unmatched);
+// The distinct 0x02A ids this Abyssea sent that landed on no known offset, with the offset each WOULD have
+// had under the current base -- what tells a wholesale base shift from a message we simply never mapped.
+void zt_aby_misses(unsigned short* mid, short* rel, int* p1, int cap, int& n, int& total);
 // //aio sheoltest : drives that same decision through a healthy / patched / noisy sequence on scratch healers.
 // The healing fires about once a year -- this is how it stays tested.
 bool sheol_selftest(char* out, int cap);

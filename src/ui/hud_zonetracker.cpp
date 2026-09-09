@@ -526,7 +526,22 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             for (int i = 0; i < 5; ++i) ki[i] = zt.ki[i];
         } else {
             for (int i = 0; i < 7; ++i) lights[i] = zt.lights[i];
-            visRemainSec = zt.visitantMin * 60 - (int)((now - zt.visitantMs) / 1000u); if (visRemainSec < 0) visRemainSec = 0;
+            // THE VISITANT TIME COMES FROM THE STATUS, NOT FROM THE CHAT. "Visitant" is status 285 -- an ordinary
+            // effect the client itself carries, with its own server expiry in the 0x063 timer list we already read
+            // for every other buff. So the countdown is exact, continuous, survives a plugin reload, and owes
+            // nothing to message ids.
+            //
+            // It used to be derived ONLY from the 0x02A chat messages, which is why a client update could break it
+            // outright: those are matched by an offset from a per-zone base, the base drifted by one (measured
+            // 2026-09-09), nothing was recognised, and the box sat on the 5-minute expulsion grace posted at entry --
+            // then on 0:00 once that ran out, with nothing able to correct it until the next message happened to
+            // arrive. The status has no such dependency: it is the server's own countdown.
+            //
+            // The message path is KEPT as the fallback, because entering with no visitant status yet is a real
+            // state -- the grace before you take it -- and there is no status to read in it.
+            const int visStatusSec = party().self_buff_remaining(285);
+            if (visStatusSec > 0) visRemainSec = visStatusSec;
+            else { visRemainSec = zt.visitantMin * 60 - (int)((now - zt.visitantMs) / 1000u); if (visRemainSec < 0) visRemainSec = 0; }
         }
     }
 

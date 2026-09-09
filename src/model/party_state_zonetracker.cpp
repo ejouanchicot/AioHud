@@ -422,10 +422,47 @@ static MsgHealer lbHeal_[2] = { { "LIMBUS/Apollyon", 7247 },     // [0] = zone 3
 // arriving and not one message ever lands on a known offset is the signature of a base that moved (it already
 // drifted +23 once). Provable across SEVERAL messages though -- see the TODO(abyssea) at the light switch.
 static int abyMatched_ = 0, abyUnmatched_ = 0;
+// The last few 0x02A ids this zone sent that matched NO known offset. Counting them was enough to notice a base
+// that had moved wholesale (doctor fires at matched==0), but not to see a PARTIAL miss: lights landing while the
+// visitant messages do not leaves matched>0, doctor silent, and the timer stuck on its 5-minute entry grace --
+// which is the shape of the report that prompted this. The ids themselves say which, and cost 40 bytes.
+struct AbyMiss { unsigned short mid; short rel; int p1, p2; };
+static AbyMiss abyMiss_[10]; static int abyMissN_ = 0, abyMissSeen_ = 0;
+void zt_aby_misses(unsigned short* mid, short* rel, int* p1, int cap, int& n, int& total) {
+    n = abyMissN_ < cap ? abyMissN_ : cap; total = abyMissSeen_;
+    for (int i = 0; i < n; ++i) { mid[i] = abyMiss_[i].mid; rel[i] = abyMiss_[i].rel; p1[i] = abyMiss_[i].p1; }
+
+}
+
+// The 0x02A message base for an Abyssea, BY ZONE. A code constant keyed on the zone -- never user state.
+//
+// Derived at every use, not read from the stored copy, and that distinction is the whole point: zt_.abyOffset
+// is saved into the zone-tracker file, so a player already INSIDE an Abyssea keeps whatever base was current
+// when the file was written. Correcting the constant then reaches nobody until they leave and come back --
+// which is exactly what happened on 2026-09-09: the base was fixed, the plugin reloaded on the spot, and the
+// trace still read "base 7338" because the entry branch is the only writer. It also makes a wrong value
+// persisted by an older build harmless, which matters here since one build auto-adopted bases and saved them.
+static int aby_base_for_zone(int zone) { return (zone == 215 || zone == 253) ? 7238 : 7339; }
+
+// ---- THE BASE IS NOT SOLVABLE THE WAY I TRIED (2026-09-09) --------------------------------------------------
+// A solver lived here for one build. It took every unmatched 0x02A id and looked for the base that put ALL of
+// them on a mapped offset, on the reasoning that a wrong base could not satisfy several at once. It adopted
+// 7343 from two ids, then 7339 from the next two, and never converged -- because its premise is false: an
+// Abyssea sends plenty of 0x02A messages that belong to NO offset we map, and forcing those into the
+// constellation invents a base for them. The evidence, from one session: ids 7349, 7353, 7355 and 7384 were all
+// seen, and NO base in any window puts all four on known offsets (the gaps 0,4,6,35 match no four of
+// 0,1,9,10,12,45,183..189). At least one of them is simply a message nobody has mapped.
+//
+// What the constellation argument actually needs is the pair the TODO below already names: cases 0 and 1, the
+// two /heal bulk reports, which arrive as CONSECUTIVE ids carrying 4 then 3 values all within the light caps.
+// That is self-verifying -- the payload proves what the message is, so the offset is not assumed. Two arbitrary
+// ids are not evidence, and this build proved it by adopting three different bases in one session.
+//
+// So: OBSERVE ONLY, and keep the observations. Nothing here changes the base any more.
 
 static void zt_msg_reset_run() {                 // fresh run -> forget this run's counters
     sgHeal_.reset_run(); lbHeal_[0].reset_run(); lbHeal_[1].reset_run();
-    abyMatched_ = 0; abyUnmatched_ = 0;
+    abyMatched_ = 0; abyUnmatched_ = 0; abyMissN_ = 0; abyMissSeen_ = 0;
 }
 
 // //aio doctor : what each healed counter is listening to, and on what grounds. 0 = Odyssey, 1 = Apollyon,
@@ -576,7 +613,21 @@ void PartyState::zt_set_zone(int zone, const char* name) {
         if (zt_.mode != 2) { for (int i = 0; i < 7; ++i) zt_.lights[i] = 0; zt_.visitantMin = 5; zt_.visitantMs = GetTickCount(); }
         // client message base drifted +23 from the addon's old message_ids (7315 -> 7338), confirmed live via
         // //aio abylog : the two /heal bulk reports landed at rel 0/1 (mid 7338/7339) and visitant at rel 9/10 (7348).
-        zt_.mode = 2; zt_.abyOffset = (zone == 215 || zone == 253) ? 7238 : 7338;
+        // BASE 7339, MEASURED 2026-09-09 (was 7338). Proven by the /heal pair, which is the one signature that
+        // verifies itself: a /heal sends the two bulk light reports as two CONSECUTIVE ids, which must land on
+        // offsets 0 and 1. They arrived as 7339 and 7340 -- so the base IS 7339, read off, not searched for.
+        // Cross-checked independently: under 7339 the id 7349 becomes offset 10 (visitant gain) carrying p1=116,
+        // and it had read 120 four minutes earlier -- a minutes countdown, so that message is the visitant one.
+        //
+        // What the old +1 cost: the FIRST light report landed on offset 1 and was written into azure/ruby/amber
+        // instead of pearl/ebon/gold/silver, the second fell off the map entirely, and the visitant message was
+        // ignored -- leaving the box on the 5-minute expulsion grace posted at entry. That was the report.
+        //
+        // 7238 for zones 215/253 is NOT changed: nothing has been measured there, and this drift may or may not
+        // apply to them. If it does, their messages will match nothing and the trace below will say so.
+        zt_.mode = 2; zt_.abyOffset = aby_base_for_zone(zone);   // ALWAYS re-seeded on entry :
+        // one build (2026-09-09) auto-adopted a solved base and persisted it, so a wrong value can be sitting
+        // in someone's zonetracker file. Entry overwrites it, which is what makes that mistake self-clearing.
     } else if (mode == 4) {
         // A reload mid-run was already handled by zt_load() above ; reaching here means a genuine NEW entry -> clear it.
         if (prevMode != 4) { ny_reset_run(zt_); zt_.nyPartySize = (count > 0) ? count : 1; }
@@ -820,9 +871,20 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
         return;
     }
     if (zt_.mode != 2) return;
+    zt_.abyOffset = aby_base_for_zone(zt_.curZone);   // authoritative, every message : see aby_base_for_zone
     const int rel = (int)(pkt_u16(p, 0x1A) & 0x3FFF) - zt_.abyOffset;
     const int p1 = (int)pkt_u32(p, 0x08), p2 = (int)pkt_u32(p, 0x0C), p3 = (int)pkt_u32(p, 0x10), p4 = (int)pkt_u32(p, 0x14);
     auto addL = [&](int idx, int add, int cap) { int v = zt_.lights[idx] + add; if (v > cap) v = cap; zt_.lights[idx] = v; };
+    // TRACE, but only while NOTHING has matched yet -- which is precisely when the base is in doubt, and it
+    // goes quiet by itself the moment one message lands. That self-limiting shape is what makes it shippable:
+    // it costs nothing on a healthy install and it is already armed on a broken one, with no command to
+    // remember and nothing for a player to enable while the evidence is being produced.
+    // It logs BEFORE the switch on purpose: a matched message must be as visible as an unmatched one, or the
+    // /heal pair can never be seen together -- one half of it lands on a mapped offset under a wrong base and
+    // is consumed in silence. That blind spot is what made the first two attempts at this guess wrong.
+    if (abyMatched_ == 0)
+        windower::debug::log("abyssea: 0x02A id %u -> offset %d (base %d) p1=%d p2=%d p3=%d p4=%d",
+                             (unsigned)(pkt_u16(p, 0x1A) & 0x3FFF), rel, zt_.abyOffset, p1, p2, p3, p4);
     bool ch = true;                                        // a matched case changed lights/visitant -> persist (default: no)
     switch (rel) {
         case 0:   zt_.lights[0] = p1; zt_.lights[6] = p2; zt_.lights[4] = p3; zt_.lights[5] = p4; break;   // /heal : pearl,ebon,gold,silver (exact)
@@ -846,7 +908,25 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
     // known offsets. A wrong base aligning four or five of them is as improbable as noise satisfying the payout
     // arithmetic, which is the same proof in another form. Strongest signature : cases 0 and 1 arrive as two
     // CONSECUTIVE ids right after a /heal, carrying 4 then 3 values all within the light caps.
-    if (ch) ++abyMatched_; else ++abyUnmatched_;
+    if (ch) ++abyMatched_;
+    else {
+        ++abyUnmatched_; ++abyMissSeen_;
+        // Keep the FIRST few distinct ones. First, not last: the interesting message is the one that fires when
+        // you do the thing that does not work, and the tail of a run is chatter that would push it out.
+        const unsigned short mid = (unsigned short)(pkt_u16(p, 0x1A) & 0x3FFF);
+        bool known = false; for (int i = 0; i < abyMissN_; ++i) if (abyMiss_[i].mid == mid) { known = true; break; }
+
+        if (!known && abyMissN_ < (int)(sizeof(abyMiss_) / sizeof(abyMiss_[0]))) {
+            abyMiss_[abyMissN_].mid = mid; abyMiss_[abyMissN_].rel = (short)rel;
+            abyMiss_[abyMissN_].p1 = p1; abyMiss_[abyMissN_].p2 = p2; ++abyMissN_;
+            // LOG IT AS IT ARRIVES, with its payload. The parameters are what tells a visitant message (minutes:
+            // a small plausible number) from a light or from something else entirely -- and the previous build
+            // threw exactly this away by clearing the list after "solving", which left the doctor with a count
+            // and nothing to look at. Never wiped now, except on a fresh run.
+            windower::debug::log("abyssea: unmapped id %u (offset %d under base %d) p1=%d p2=%d",
+                                 (unsigned)mid, (int)rel, zt_.abyOffset, p1, p2);
+        }
+    }
     if (ch) zt_save();
 }
 
