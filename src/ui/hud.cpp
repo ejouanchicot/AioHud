@@ -182,6 +182,21 @@ void Hud::update_screen(u32 dev) {
 void Hud::render(u32 dev) {
     if (!valid_ptr(dev)) return;
 
+    // THE SAFETY HARNESS. Registered here, on the first frame, rather than at static-init: the registry is a
+    // plain array with no order dependency, and doing it where the module is known to be alive avoids a
+    // static-init-order question for no benefit. Idempotent, so it costs one comparison per frame.
+    static bool s_checksRegistered = false;   // rule10-ok: appending to an array cannot fail transiently
+    if (!s_checksRegistered) { s_checksRegistered = true; timers_register_checks(); }
+
+    // The watcher decides for itself whether it is armed and whether it is due ; on the overwhelming majority
+    // of frames this returns 0 having touched nothing. When a check has held long enough to be believed, the
+    // CONTEXT half of the report is ours -- version, character, zone, paths -- because that lives here.
+    {
+        CheckFail hits[SELFTEST_FAILS_MAX];
+        const int nh = selftest_tick(GetTickCount(), hits, SELFTEST_FAILS_MAX);
+        if (nh > 0) write_bug_report(hits, nh, true);   // the watcher : these held
+    }
+
     // Process a deferred //aio layout hot-reload HERE (render thread) so the widget delete/
     // rebuild never races the draw loop (doing it from the command thread crashes the game).
     if (reload_pending_) {
@@ -594,6 +609,11 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
         if (ztm == 2) {   // Abyssea : matched by an OFFSET from a per-zone base, which already drifted +23 once
             int am = 0, au = 0; zt_aby_msg_state(am, au);
             windower::debug::log("  msgid    : Abyssea base=%d matched=%d unmatched=%d", party().zone_tracker().abyOffset, am, au);
+            { unsigned short mid[10]; short rel[10]; int pp[10]; int nm = 0, tot = 0;
+              zt_aby_misses(mid, rel, pp, 10, nm, tot);
+              for (int i = 0; i < nm; ++i)
+                  windower::debug::log("             unmatched id %u -> offset %d, p1=%d (nothing is mapped there)", (unsigned)mid[i], (int)rel[i], pp[i]);
+              if (nm) windower::debug::log("             %d distinct unmatched id(s) of %d message(s) -- compare these offsets with 0,1,9,10,12,45,183..189", nm, tot); }
             if (am == 0 && au >= 12)
                 DOC(tr("No Abyssea message is recognised (%d received, 0 used) : the id base moved with a client "
                     "update. Unlike Odyssey, this one CANNOT be guessed -- do /heal then send aiohud_debug.log, "
@@ -683,6 +703,26 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     windower::debug::log("=== AIO DOCTOR : %d problem(s) ===", n);
     #undef DOC
     return n;
+}
+
+// The CONTEXT half of a bug report. Every line answers a question I would otherwise have to ask, and each
+// has cost a round trip before now: which build is this, where is it installed, what was on screen. The
+// settings are attached by selftest_write_report itself, which copies config.txt in whole.
+void Hud::write_bug_report(const CheckFail* hits, int n, bool watched) {
+    char hdr[1024]; int L = 0;
+    #define H(...) do { if (L < (int)sizeof(hdr) - 1) { const int w2 = _snprintf(hdr + L, sizeof(hdr) - L, __VA_ARGS__); \
+                        if (w2 > 0) L += w2; } } while (0)
+    H("build      : %s\r\n", aio_version_string());
+    H("character  : %s   job %d/%d   zone %d\r\n", state_.me.name[0] ? state_.me.name : "(unknown)",
+      (int)state_.me.mjob, (int)state_.me.sjob, (int)state_.zone);
+    { int nob = 0; party().other_buffs(nob);
+      H("party      : %d member(s), %d ally buff(s) tracked\r\n", party().count, nob); }
+    { const char* rk = 0; const char* rom = ffxi_rom_dir_probe(&rk);
+      H("rom dir    : %s\r\n", rom ? rom : "<UNRESOLVED -- gear icons show as text>"); }
+    H("icon sheet : %s\r\n", buff_atlas_source());
+    #undef H
+    hdr[sizeof(hdr) - 1] = 0;
+    selftest_write_report(hdr, hits, n, watched);
 }
 
 void Hud::self_check() {

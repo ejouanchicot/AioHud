@@ -27,6 +27,7 @@
 
 #include "ui/buff_atlas.h"
 #include "ui/tex_retry.h"   // bounded lazy texture load (Help atlas) -- rule 10
+#include "model/selftest.h"   // this module's own checks, run by the in-game watcher
 
 namespace aio {
 
@@ -57,7 +58,10 @@ static bool fm_muted_for(unsigned target, unsigned status, bool self);   // ... 
 // changes while the entry lives -- which is the whole point: the ROWS are sorted by remaining time and shuffle
 // as things tick, so a number that meant "third row from the top" would mean something else by the time you had
 // finished typing it. A number that belongs to the ENTRY is the same number whenever you read it.
-struct FocusMem { unsigned target; unsigned short status, spell; unsigned char isAbil, self, zoneCheck, muted, tag, seen, alerting; unsigned lostMs, muteRef; char name[20]; };
+struct FocusMem { unsigned target; unsigned short status, spell; unsigned char isAbil, self, zoneCheck, muted, tag, seen, alerting; unsigned lostMs, muteRef, bornMs; char name[20]; };
+// bornMs : when this entry was created. Read by NOTHING that decides anything -- it exists so the harness
+// can say "this entry has been alive 4 h", which is the only way an immortal entry (the purge that never
+// runs, audit S2-6) is visible from outside. A field a decision depends on could not be added this cheaply.
 // `alerting` = this entry drew its red OUT row on the LAST frame. It is set where the row is emitted and nowhere
 // else, so it means exactly "what you can see in red right now" -- which is what //aio out alerts takes off. The
 // alternative (re-deriving the condition in the command) would be a second copy of a decision that already has
@@ -65,6 +69,7 @@ struct FocusMem { unsigned target; unsigned short status, spell; unsigned char i
 // and the day one of them moved the two copies would disagree in silence.
 static FocusMem fm[24];
 static int fmN = 0;
+static int g_lastRowN = 0;   // rows the last build produced (harness only)
 // The IDENTITY of the cast an entry currently stands for -- the tick of the cast that put the buff there.
 // Ally : the ob[] entry's castMs (the NEWEST of them, because two same-status songs are two entries and one of
 // them can be pruned without any new cast having happened). Self : the self-cast ring, YOUR casts only.
@@ -949,7 +954,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 { const unsigned oc = party().buff_caster_for((unsigned short)st, bt2[i].expiry, i);
                   if (oc && oc != meId) continue; }
                 int s = -1; for (int q = 0; q < fmN; ++q) if (fm[q].self && fm[q].status == st) { s = q; break; }
-                if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].name[0] = 0; }
+                if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = GetTickCount(); fm[s].name[0] = 0; }
                 if (s >= 0) { fm[s].seen = 1; fm[s].spell = party().self_buff_spell_ranked((unsigned short)st, bt2[i].expiry, i); }   // refresh the spell/tier each frame (a re-cast at a higher tier updates the OUT label)
               } }
             for (int i = 0; i < no; ++i) {                                                     // remember FOCUS buffs currently up on allies (Allies focus key 0xC000|st ; needs tmMine)
@@ -960,7 +965,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // filled fm[] on an alliance run and starved your own rows.
                 if (party().party_order(ob[i].target) > 5) continue;
                 int s = -1; for (int q = 0; q < fmN; ++q) if (!fm[q].self && fm[q].target == ob[i].target && fm[q].status == st) { s = q; break; }
-                if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; }
+                if (s < 0 && fmN < 24) { s = fmN++; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = GetTickCount(); }
                 else if (s < 0) { static windower::debug::LogOnce<2> onceFull;   // SAY it. A silent refusal here is indistinguishable from "no buff to watch".
                     if (onceFull.first(0)) windower::debug::log("FOCUS monitor FULL (%d entries) -- new ally focus buffs are NOT tracked this session", 24); }
                 if (s >= 0) { fm[s].seen = 1; fm[s].spell = ob[i].spell; fm[s].isAbil = ob[i].isAbil; int j = 0; for (; j < 19 && ob[i].name[j]; ++j) fm[s].name[j] = ob[i].name[j]; fm[s].name[j] = 0; }
@@ -1257,6 +1262,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         { const int cw = strcmp(x.who ? x.who : "", y.who ? y.who : ""); if (cw) return cw > 0; }
         return strcmp(x.name ? x.name : "", y.name ? y.name : "") > 0;
     };
+    g_lastRowN = nb;   // the harness reads this : hitting the 50 cap means rows are being dropped in silence
     { const int md = C.tmSortDur;
       for (int a = 1; a < nb; ++a) { Row t = bufs[a]; int b = a - 1; while (b >= 0 && after(bufs[b], t, md, false)) { bufs[b + 1] = bufs[b]; --b; } bufs[b + 1] = t; } }
     { const int md = C.tmSortRec;
@@ -1516,6 +1522,71 @@ void timers_help_box(const Frame& f, float cx, float cy, float s) {
 }
 
 // Help scale-to-fit : measure at scale 1 (linear in S), pick the largest scale that fits availW (capped at maxScale).
+// ---- THIS MODULE'S CHECKS (model/selftest.h) ----------------------------------------------------------------
+// Each one has a source the module does not control -- a cap, a domain, or the clock -- so none of them can be
+// satisfied by the code simply agreeing with itself. Ids are stable: they are what a bug report names.
+static int timers_checks(CheckFail* out, int cap) {
+    int n = 0;
+    const unsigned nowMs = GetTickCount();
+    #define FAIL(ID, SEV, ...) do { if (n < cap) { lstrcpynA(out[n].id, ID, sizeof(out[n].id)); out[n].sev = (SEV); \
+        _snprintf(out[n].detail, sizeof(out[n].detail), __VA_ARGS__); out[n].detail[sizeof(out[n].detail)-1] = 0; ++n; } } while (0)
+
+    // 1. The focus monitor is full. Structural: 24 is the array, and past it new entries are refused with no
+    //    sign -- and since the SAME list drives your OUT alerts, they stop appearing for anything new.
+    if (fmN >= 24)
+        FAIL("TM.FOCUS_FULL", CHK_WARN, "%d of 24 focus slots used -- new monitored buffs are refused and their OUT alerts will not appear", fmN);
+
+    // 2. An entry that has outlived any buff. No buff in the game is maintained for four hours by one cast, so
+    //    an entry that old is one the purge never reached (audit S2-6: an alliance target kept lostMs at 0
+    //    every frame, and the only purge branch requires lostMs != 0).
+    for (int q = 0; q < fmN; ++q) {
+        const unsigned age = nowMs - fm[q].bornMs;
+        if (fm[q].bornMs && age > 4u * 3600u * 1000u)
+            FAIL("TM.FOCUS_STALE", CHK_WARN, "focus entry #%u (%s status %u) has been alive %u min -- it is never being purged",
+                 (unsigned)fm[q].tag, fm[q].name[0] ? fm[q].name : "you", (unsigned)fm[q].status, age / 60000u);
+    }
+
+    // 3. The row builder hit its cap. Domain: bufs[50] is the array, and beyond it rows are dropped by arrival
+    //    order rather than by importance -- so what you stop seeing is arbitrary.
+    if (g_lastRowN >= 50)
+        FAIL("TM.ROWS_CAP", CHK_WARN, "the last build produced %d rows and the cap is 50 -- rows are being dropped", g_lastRowN);
+
+    // 4. The ally-buff cache is full. Same shape, different array (otherBuffs_[32]): once full, a buff you cast
+    //    on someone new is simply not tracked.
+    { int no = 0; party().other_buffs(no);
+      if (no >= 32) FAIL("TM.OB_FULL", CHK_WARN, "%d of 32 ally-buff slots used -- new buffs you cast are no longer tracked", no); }
+
+    // 5. Expired timers are not being pruned. The clock is the independent source: a timer whose expiry passed
+    //    ten minutes ago has no business still being in the list.
+    //    THIS CHECK WAS WRONG WHEN FIRST WRITTEN, and its own first report is what showed it -- twice, on two
+    //    characters, claiming a timer had expired 1 651 684 393 seconds ago. Two defects, both here:
+    //      - a PERMANENT buff (Signet, Sanction, ...) carries the sentinel expiry 0x7FFFFFFF, and subtracting it
+    //        from the current tick produces exactly that nonsense. It is not late; it never expires.
+    //      - a tick is 1/60 s (ticks_to_sec_ceil), so the old threshold of 600 meant TEN SECONDS, not ten
+    //        minutes -- it would have fired on any timer a few seconds past its end, mid-prune.
+    //    Kept rather than deleted because the CONCEPT is sound and the failure was arithmetic. A check whose
+    //    idea is noisy gets deleted; one with a bug gets fixed, once the bug is understood.
+    { int nb2 = 0; const BuffTimer* bt = party().buff_timers(nb2);
+      const unsigned tick = ffxi_now_tick(); int stuck = 0; int worstSec = 0;
+      for (int i = 0; i < nb2; ++i) {
+          if (!bt[i].expiry || bt[i].expiry == FFXI_EXPIRY_PERMANENT) continue;   // no countdown to be late for
+          const int lateTicks = (int)(tick - bt[i].expiry);                       // signed : u32 wrap is the intended maths
+          if (lateTicks > 60 * 600) { ++stuck; const int s = lateTicks / 60; if (s > worstSec) worstSec = s; } }
+      if (stuck) FAIL("TM.EXPIRED_STUCK", CHK_WARN, "%d self timer(s) expired up to %d s ago are still listed -- pruning has stopped", stuck, worstSec); }
+
+    // 6. A status id outside the icon grid. Domain: the atlas is 640 cells and the cell index IS the status id,
+    //    so anything past it draws from outside the sheet (or nothing) and means the source was misread.
+    { int nb2 = 0; const BuffTimer* bt = party().buff_timers(nb2);
+      for (int i = 0; i < nb2; ++i) if (bt[i].id >= 640) { FAIL("TM.STATUS_RANGE", CHK_WARN, "self timer carries status id %u, outside the 0..639 the icon sheet holds", (unsigned)bt[i].id); break; }
+      int no = 0; const PartyState::OtherBuff* ob = party().other_buffs(no);
+      for (int i = 0; i < no; ++i) if (ob[i].status >= 640) { FAIL("TM.STATUS_RANGE_ALLY", CHK_WARN, "an ally buff carries status id %u, outside the 0..639 the icon sheet holds", (unsigned)ob[i].status); break; } }
+
+    #undef FAIL
+    return n;
+}
+
+void timers_register_checks() { selftest_add("timers", timers_checks); }
+
 void timers_help_fit(const Frame& f, float availW, float maxScale, float& outScale, float& outH) {
     float bw = 0.0f, bh = 0.0f;
     timers_draw(f, true, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, timers_help_atlas(f.dev), true, &bw, &bh);

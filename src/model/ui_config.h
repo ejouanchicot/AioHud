@@ -550,6 +550,11 @@ struct UiConfig {
     float      zonePanelX = -1.0f, zonePanelY = -1.0f;   // draggable Zones panel top-left (fraction ; -1 = default top-right)
     // ---- Global ----
     int   lang = 0;            // config UI language : 0 = English, 1 = French (toggle in the config header)
+    // The in-game safety harness (model/selftest.h). OFF by default and shipped that way: it costs a pass
+    // over the registered checks every 30 s, which is nothing, but a watcher nobody armed writing files
+    // into someone's plugins folder is not a default anyone asked for. `//aio selftest on` arms it, and it
+    // persists -- the bugs worth catching this way are the ones that appear an hour into a session.
+    int   selfTest = 0;
     // Which status-icon sheet the WHOLE HUD draws (party buffs, player, target, timers, debuffs -- they all
     // read the one atlas). Empty or "Auto" = the built-in precedence in ui/buff_atlas.cpp ; otherwise the NAME
     // of a pack from icon_pack_scan() (model/icon_dat.h). A name, not an index: XIPivot folders come and go,

@@ -12,6 +12,7 @@
 #include <vector>
 #include <string>
 #include "gfx/d3d.h"
+#include "model/selftest.h"   // CheckFail : Hud::write_bug_report carries the harness's findings
 #include "gfx/font.h"
 #include "gfx/window.h"
 #include "ui/tex_retry.h"   // TexRetry : bounded-retry lazy texture load
@@ -31,6 +32,7 @@ public:
     void render(u32 dev);   // one game frame (slot-6 hook)
     void dispose();         // release all resources (at //unload)
     void self_check();      // //aio selfcheck : log the health of every texture-load subsystem (stuck latches, missing icons)
+    void write_bug_report(const CheckFail* hits, int n, bool watched);   // assemble the context and write the file
     // //aio doctor : run every runtime check we cannot make offline (game link, packet flow, texture health,
     // model state) and fill `out` with ONE LINE PER PROBLEM, each ending in what to do about it. Returns the
     // number of lines written ; 0 means everything checked is healthy. The full detail always goes to the log.
@@ -123,5 +125,9 @@ void songrow_ring_dump();
 // could not explain a Hidden+Focus buff staying visible; this says which lookup misses.
 void timers_focus_trace(int seconds);   // armed for a DURATION : a per-row countdown burns out in seconds at 60 Hz
 bool timers_focus_trace_armed();
+
+// Hand this module's checks to the in-game watcher (model/selftest.h). Called once on the first frame ; the
+// registry is idempotent, so a //load after an unload re-registers without doubling anything.
+void timers_register_checks();
 
 } // namespace aio

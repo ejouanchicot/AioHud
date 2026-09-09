@@ -28,6 +28,8 @@ pol_*.png
 aio_active.txt
 *_debug.txt
 aiohud_debug.log
+# Bug reports written by the in-game harness (model/selftest.cpp), next to the DLL -- copied here to be read.
+aiohud_bugreport_*.txt
 aiohud_*.bin
 
 # Design concept deliverables — heavy binaries kept locally (the folder README is tracked)

@@ -321,6 +321,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "dist=%d,%d,%d\n", c.dist[0] ? 1 : 0, c.dist[1] ? 1 : 0, c.dist[2] ? 1 : 0);
     fprintf(f, "distcol=%08X,%08X,%08X\n", c.distColClose, c.distColNormal, c.distColFar);   // distance-zone colours : Close / Normal / Far
     fprintf(f, "lang=%d\n", c.lang);
+    fprintf(f, "selftest=%d\n", c.selfTest);   // the watcher survives a reload : a harness you must re-arm is one you forget to arm
     fprintf(f, "partyRef=%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n", c.partyRef[0], c.partyRef[1], c.partyRef[2], c.partyRef[3], c.partyRef[4], c.partyRef[5]);
     fprintf(f, "partyBottom=%.5f\n", c.partyBottomY);
     fprintf(f, "partyRefX=%.5f,%.5f\n", c.partyRefX[0], c.partyRefX[1]);
@@ -387,6 +388,9 @@ static bool parse_ep_line(const char* line, UiConfig& c) {
         if (n >= 1) { c.epShow = sh; if (n >= 2) c.epScale = scl; if (n >= 3) c.epX = x; if (n >= 4) c.epY = y; if (n >= 5) c.epColl = cl; }
         return true;
     }
+    // The safety harness (model/selftest.h). Parsed HERE and not in the chain below : the comment above this
+    // function says adding a branch there blows C1061, and it was right -- doing it cost one build.
+    { int st = 0; if (sscanf(line, "selftest=%d", &st) == 1) { c.selfTest = st ? 1 : 0; return true; } }
     if (strncmp(line, "iconpack=", 9) == 0) {   // rest-of-line for the same reason as eptrack just below :
         lstrcpynA(c.iconPack, line + 9, sizeof(c.iconPack));   // an XIPivot folder may contain spaces
         size_t n = strlen(c.iconPack);

@@ -17,6 +17,7 @@
 #include "aiohud_probes.h"          // dev-only diagnostic surface (present only in the local tree ; build.bat wires it in when the file exists)
 #endif
 #include "ui/hud.h"
+#include "model/selftest.h"   // //aio selftest + the chat notice the watcher leaves behind
 #include "gfx/corner_mask.h"
 #include "ui/player.h"   // set_gear_trace : //aio geartrace
 #include "model/layout.h"
@@ -278,6 +279,16 @@ void aio_plugin_render6()
     if (valid_ptr(dev)) g_gameHwnd = aio::dFocusWindow(dev);
     if (g_gameHwnd) aio_subclass_install((HWND)g_gameHwnd);   // once the device gives us the window
     g_hud.render(dev);
+
+    // THE HARNESS SPEAKS HERE, and only here : ui/ and model/ must not reach into the host, so the watcher
+    // leaves the file name behind and this drains it. Once per report -- taking the notice clears it.
+    if (const char* leaf = aio::selftest_take_notice()) {
+        char m[220];
+        _snprintf(m, sizeof(m), aio::tr("AioHud noticed a problem and wrote %s next to AioHud.dll -- send it to the author.",
+                                        "AioHud a repere un probleme et a ecrit %s a cote de AioHud.dll -- envoie-le a l'auteur."), leaf);
+        m[sizeof(m) - 1] = 0;
+        g_host.ffxi().add_to_chat(163, m);
+    }
     // Config/edit overlay up + game focused : force-hide the OS cursor each frame (last SetCursor of the frame ->
     // wins). The game re-shows its NATIVE cursor on WM_SETCURSOR (e.g. when the mouse RE-ENTERS the window), a
     // WINDOW message our DirectInput mouse hook can't swallow -> without this it reappears on top of AioHud's own
@@ -1123,6 +1134,52 @@ static void aio_command_dispatch(const char* cmd)
             g_host.console().print(hdr);
             for (int i = 0; i < n; ++i) g_host.console().print(lines[i]);
             g_host.console().print(aio::tr(">>> full detail : Windower\\plugins\\aiohud_debug.log (AIO DOCTOR block) <<<", ">>> detail complet : Windower\\plugins\\aiohud_debug.log (bloc AIO DOCTOR) <<<"));
+        }
+        return;
+    }
+    // //aio selftest [on|off|report] -- the in-game safety harness (model/selftest.h).
+    //   (no argument) run every registered check RIGHT NOW and say what is failing. No debounce: this is the
+    //                 command you use while looking at the bug, so "it is failing this instant" is the answer.
+    //   on / off      arm the watcher, which then runs by itself and writes a report when a check HOLDS.
+    //   report        write a report now from whatever is failing -- and if nothing is, write one anyway with a
+    //                 synthetic finding. That last case is the point: it proves the file can be created, named
+    //                 and filled on THIS machine, before the day a real bug depends on it. A reporter nobody
+    //                 ever exercised is a reporter that discovers its own permissions problem at the worst
+    //                 possible moment (the Program Files install, silently unwritable -- a bug this project has
+    //                 already paid for once with the log file).
+    if (strstr(buf, "selftest")) {
+        const bool on  = strstr(buf, " on")  != 0;
+        const bool off = strstr(buf, " off") != 0;
+        const bool rep = strstr(buf, "report") != 0;
+        if (on || off) {
+            aio::selftest_arm(on && !off);
+            aio::save_ui_config();
+            g_host.console().print(aio::selftest_armed()
+                ? aio::tr(">>> AioHud : self-test watcher ARMED -- it checks every 30 s and writes a bug report next to AioHud.dll <<<",
+                          ">>> AioHud : veilleur d'auto-test ARME -- il verifie toutes les 30 s et ecrit un rapport a cote de AioHud.dll <<<")
+                : aio::tr(">>> AioHud : self-test watcher off <<<", ">>> AioHud : veilleur d'auto-test desactive <<<"));
+            return;
+        }
+        aio::CheckFail hits[aio::SELFTEST_FAILS_MAX];
+        int n = aio::selftest_run_now(hits, aio::SELFTEST_FAILS_MAX);
+        char m[220];
+        _snprintf(m, sizeof(m), aio::tr(">>> AioHud : %d module(s) checked, %d finding(s)%s <<<",
+                                        ">>> AioHud : %d module(s) verifie(s), %d constat(s)%s <<<"),
+                  aio::selftest_module_count(), n, aio::selftest_armed() ? "" : aio::tr(" (watcher off)", " (veilleur eteint)"));
+        m[sizeof(m) - 1] = 0; g_host.console().print(m);
+        for (int i = 0; i < n; ++i) {
+            _snprintf(m, sizeof(m), "    %s : %s", hits[i].id, hits[i].detail); m[sizeof(m) - 1] = 0;
+            g_host.console().print(m);
+        }
+        if (rep) {
+            if (n == 0) {   // nothing wrong -> prove the WRITER, which is the thing being tested here
+                lstrcpynA(hits[0].id, "SELFTEST.PROOF", sizeof(hits[0].id));
+                hits[0].sev = aio::CHK_INFO;
+                lstrcpynA(hits[0].detail, "written on request with nothing failing -- this file proves the reporter works on this install",
+                          sizeof(hits[0].detail));
+                n = 1;
+            }
+            g_hud.write_bug_report(hits, n, false);   // asked for by hand : one instant, no debounce
         }
         return;
     }
