@@ -355,7 +355,8 @@ static void heal_pw_merit() {
 // The focused-menu slot. Detection is the interesting half : 0 is the NORMAL value (no menu open), so
 // "not a pointer" cannot be the test. What the broken state actually looked like on 2026-08-12 was a
 // small integer (14, 15) -- a different variable entirely. That IS the test.
-static bool g_adoptedTag = false;   // the tag shortcut speaks once, then leaves the floor to real evidence
+static bool g_adoptedTag = false;
+static int  g_decoyRun  = 0;      // consecutive frames a CONFIRMED menu slot has read a decoy name   // the tag shortcut speaks once, then leaves the floor to real evidence
 static void heal_menu_ptr() {
     static u32 cand[16]; static int nCand = 0;
     static u32 lastName[16];
@@ -370,12 +371,19 @@ static void heal_menu_ptr() {
         if (safe_read(fm_addr(FM_MENU_PTR), &p) && valid_ptr(p) && safe_read(p + 0x04, &d) && valid_ptr(d)
             && safe_read(d + 0x4E, &nm)
             && (nm == 0x696C6E69u /* "inli" */ || nm == 0x77676F6Cu /* "logw" */)) {
-            windower::debug::log("fm: live-menu ptr was PROVEN on a decoy ('%c%c%c%c') -- reopening the search",
+            // MEASURED, AND IT COSTS A COUNTER : the CORRECT slot reads 'inline' now and then -- an inline
+            // sub-window takes the focus for a moment -- so one sighting is not proof of a decoy. Un-confirming
+            // on a single frame would throw away a right answer and restart the search, which is the same
+            // oscillation two competing healers produce. A wrong address reads a decoy CONSTANTLY; a right one
+            // reads it in passing. Sixty consecutive checks is about a second of it never being anything else.
+            if (++g_decoyRun < 60) return;
+            g_decoyRun = 0;
+            windower::debug::log("fm: live-menu ptr was PROVEN on a decoy ('%c%c%c%c') for a full second -- reopening the search",
                                  (char)(nm & 0xFF), (char)((nm >> 8) & 0xFF), (char)((nm >> 16) & 0xFF), (char)((nm >> 24) & 0xFF));
             g_confirmed[FM_MENU_PTR] = false;
             g_adoptedTag = false;
         }
-        else return;
+        else { g_decoyRun = 0; return; }
     }
 
     const u32 a = fm_addr(FM_MENU_PTR);
