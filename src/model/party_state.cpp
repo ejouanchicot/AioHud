@@ -1153,10 +1153,11 @@ void PartyState::on_action(const unsigned char* p) {
             // catch it (the same reasoning the MAP FAIL log is built on). Nothing is CHANGED on this path yet --
             // whether to skip the snapshot or keep the stale one is a decision to make with the capture in hand,
             // not by guessing which failure it was.
-            bool buffsOk = false;
+            bool buffsOk = false; bool tenuto = false, clarion = false;
             { unsigned short mb[32]; int mn = read_player_buffs(mb, 32, &buffsOk); for (int k = 0; k < mn; ++k) {
                 switch (mb[k]) { case 419: composure = true; break; case 469: perpetuance = true; break; case 348: troubadour = true; break;
-                                 case 52: soulvoice = true; break; case 231: marcato = true; break; case 347: nightingale = true; break; } } }   // 499 Clarion Call / 455 Tenuto : no duration effect, deliberately not read
+                                 case 52: soulvoice = true; break; case 231: marcato = true; break; case 347: nightingale = true; break;
+                                 case 455: tenuto = true; break; case 499: clarion = true; break; } } }
             PlayerInfo me; const bool haveMe = read_player(me);
             const int    flatSec  = (haveMe && me.mjob == 5) ? (read_jp_gift_rank(338) + read_merit_level(2320) * 6) : 0;   // RDM main only
             const double setMult  = (composure && setPct > 0) ? (1.0 + setPct / 100.0) : 1.0;                              // RDM set, needs Composure
@@ -1192,11 +1193,35 @@ void PartyState::on_action(const unsigned char* p) {
             const double songM1   = 1.0 + (song_dur_m1_pct(eids, songFam) + songJp) / 100.0;
             const double songM2   = troubadour ? 2.0 : 1.0;
             const double songM3   = ((soulvoice || marcato) && (songFam == 11 || songFam == 12 || songFam == 14)) ? 1.5 : 1.0;
-            // flat seconds. Marcato ONLY : neither Clarion Call nor Tenuto touches song duration (confirmed by the
-            // player, who mains the job) -- Clarion Call adds a song SLOT, Tenuto protects a song on you from being
-            // overwritten. Both used to feed a bogus duration bonus here, and the exclusive ternary also let either of
-            // them SUPPRESS Marcato's real one.
-            const int    songA3   = marcato ? read_jp_u8(0x148) : 0;
+            // flat seconds, and a SUM -- not a choice. Each JA that carries a flat term adds its own :
+            //   Marcato          -> job point "Marcato Effect", +1 s per rank  (0x148)  -- MEASURED +20 alone
+            //   Tenuto OR Clarion -> job point "Tenuto Effect",  +2 s per rank  (0x142)  -- MEASURED +40 alone
+            //
+            // Tenuto and Clarion Call read the SAME byte, so they are ONE term reached by two paths, counted once --
+            // not two bonuses that stack. That is how the RE writes it (three plain assignments to a3, never a sum).
+            //
+            // This was removed in 2026-07 on the belief that "neither Clarion Call nor Tenuto touches song duration".
+            // MEASURED FALSE for Tenuto on 2026-09-10 : Honor March under Tenuto, model 355.2 s, the server's own
+            // 0x063 says 395 s -- exactly +40 s, i.e. 20 ranks x 2 s (the player is Master, every job point full).
+            //
+            // The 2026-07 change was fixing a REAL bug -- the exclusive ternary let Tenuto SUPPRESS Marcato's own
+            // term -- but the remedy was too broad: the fix is to ADD the terms, not to drop them. Same shape as
+            // several defects that day: a correct diagnosis treated by removing more than the fault.
+            //
+            // CLARION CALL was measured on 2026-09-10 and it DOES carry the term : Honor March with only CC up,
+            // model 355.2 s, server 394 s -- +39 s, the same 20 ranks x 2 s. An earlier deduction had concluded the
+            // opposite from indirect values; it was retracted, and the measurement says the RE was right.
+            //
+            // THE `+=` IS MEASURED, not assumed : Marcato AND Tenuto together, 2026-09-10, a3 = 60 s and the
+            // server's own 0x063 agreed to the second (413 s predicted, 413 s real). "Last one wins" -- which the
+            // disassembly's three plain assignments would also have allowed -- is ruled out.
+            //
+            // Still inferred, and cheap to be wrong about : that Tenuto AND Clarion Call together count ONCE rather
+            // than twice. They read the same byte, so one term is the honest reading, but the pair has never been
+            // cast (Clarion Call is an hour of recast). If a capture ever shows +80, this is the line to revisit.
+            int songA3 = 0;
+            if (marcato)             songA3 += read_jp_u8(0x148);
+            if (tenuto || clarion)   songA3 += read_jp_u8(0x142) * 2;
             const bool   miracle  = has_miracle_cheer(eids);
             u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
             unsigned tgtIds[16], tgtMsg[16]; const unsigned nTgt = action_target_ids(p, size, tc, tgtIds, 16, tgtMsg);

@@ -1019,8 +1019,11 @@ int read_jp_gift_rank(unsigned gid) {
     u32 v = 0; if (!safe_read(base + (gid >> 1), &v)) return 0;
     return (int)(v & 0xFF);
 }
-// raw u8 at *(g+0x48)+off (the JP/merit block). Used for BRD merit levels +0x142 (Clarion/Tenuto song-duration
-// seconds) / +0x148 (Marcato seconds). Timers reads these off the same stat block.
+// raw u8 at *(g+0x48)+off (the job-point block). Used for BRD JOB POINT ranks -- NOT merits, and the distinction
+// cost a real misunderstanding: Marcato and Tenuto have no merit category at all, they are job-point categories
+// (20 ranks each, bought with capacity points at 99). +0x142 = "Tenuto Effect" (+2 s of song duration per rank,
+// measured +40 s at 20/20) ; +0x148 = "Marcato Effect" (+1 s per rank, measured +20 s at 20/20).
+// Timers.dll reads these off the same stat block.
 int read_jp_u8(unsigned off) {
     u32 g = data_root(); if (!g) return 0;
     u32 base = 0; if (!safe_read(g + 0x48, &base) || !valid_ptr(base)) return 0;
