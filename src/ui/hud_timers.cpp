@@ -82,6 +82,27 @@ static FocusMem fm[FOCUS_MAX];
 // reads the instantaneous count looks every 30 s and sees nothing wrong; the ally table overflowed for two
 // hours of hunting on 2026-09-10 with TM.OB_FULL never once firing. A peak, unlike a sample, cannot be missed.
 static int g_fmPeak = 0, g_obPeak = 0;
+
+#ifdef AIOHUD_PROBES
+// ---- WHY a row took the shape it did -----------------------------------------------------------------
+// The row recorder logs what was DRAWN. Six hours went into a shimmer that could not be explained from
+// that alone, because the drawn row never says which input produced it -- fresh or laggard, grouped or
+// per person, present or missing. Every explanation had to be guessed from the effect, and four in a row
+// fitted one observation and failed the next.
+//
+// So the INPUTS are captured too, and captured the cheap way: raw numbers assigned during the frame,
+// formatted only when the row set actually changes. Formatting every frame is what the ring's own note
+// warns about -- writing per event once slowed the frame enough to make a bug disappear while watched.
+struct WhyOb  { unsigned target; unsigned short spell; unsigned expTick, selfExp, castMs, stamp;
+                unsigned char fresh, mirrorSelf, aoe, evicted; };
+struct WhyGrp { unsigned short spell; int allies, countHas, effN;
+                unsigned char fresh, aoe, meHas, selfCast, hasLag, group, drop; };
+struct WhyFm  { unsigned target; unsigned short spell, status; int copies, newer;
+                unsigned char self, has, listReady, lost; };
+static WhyOb  g_whyOb[64];  static int g_whyObN  = 0;
+static WhyGrp g_whyGrp[32]; static int g_whyGrpN = 0;
+static WhyFm  g_whyFm[64];  static int g_whyFmN  = 0;
+#endif
 static int fmN = 0;
 static int g_lastRowN = 0;   // rows the last build produced (harness only)
 // The IDENTITY of the cast an entry currently stands for -- the tick of the cast that put the buff there.
@@ -292,17 +313,17 @@ static const char* abil_name_by_id(unsigned id) {   // for buffs-on-allies rows 
 // ---- //aio songdump : in-RAM record of the Timers rows (see hud.h). Fixed ring, no heap, no file I/O. ----
 // 512 entries, because a row set that changes every frame burns them fast : one change costs 1 + nb lines,
 // so 256 held barely twenty changes -- less than one second of the churn we are trying to watch.
-static char  g_srRing[512][160];
+static char  g_srRing[1024][200];   // the WHY lines are long, and one change now costs rows + groups + entries + focus
 static int   g_srHead = 0, g_srCount = 0;
 static void sr_push(const char* fmt, ...) {
     va_list ap; va_start(ap, fmt);
     _vsnprintf(g_srRing[g_srHead], sizeof(g_srRing[0]) - 1, fmt, ap);
     va_end(ap);
     g_srRing[g_srHead][sizeof(g_srRing[0]) - 1] = 0;
-    g_srHead = (g_srHead + 1) % 512; if (g_srCount < 512) ++g_srCount;
+    g_srHead = (g_srHead + 1) % 1024; if (g_srCount < 1024) ++g_srCount;
 }
 void songrow_ring_dump() {
-    const int start = (g_srHead - g_srCount + 512) % 512;
+    const int start = (g_srHead - g_srCount + 1024) % 1024;
     windower::debug::log("SONGROW ======== %d recorded row-set change(s), oldest first ========", g_srCount);
     for (int i = 0; i < g_srCount; ++i) windower::debug::log("SONGROW %s", g_srRing[(start + i) % 256]);
     g_srHead = 0; g_srCount = 0;
@@ -563,7 +584,15 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             for (int i = 0; i < no; ++i) {
                 const int r = obRem(ob[i]);
                 if (r <= 0) continue;
-                const unsigned char fb = obFresh(ob[i]) ? 1 : 0;   // FRESH (your current cast) vs LAGGARD (an older cast a re-sing missed) -- see obFresh
+                const unsigned char fb = obFresh(ob[i]) ? 1 : 0;
+#ifdef AIOHUD_PROBES
+                if (g_whyObN < 64) { WhyOb& w = g_whyOb[g_whyObN++];
+                    w.target = ob[i].target; w.spell = ob[i].spell; w.expTick = ob[i].expTick;
+                    w.selfExp = party().self_buff_expiry_for(ob[i].status, ob[i].spell);
+                    w.castMs = ob[i].castMs; w.stamp = party().buff_timers_stamp();
+                    w.fresh = fb; w.mirrorSelf = ob[i].mirrorSelf; w.aoe = ob[i].aoe;
+                    w.evicted = party().song_was_evicted(party().self_id(), ob[i].spell, 6000u) ? 1 : 0; }
+#endif   // FRESH (your current cast) vs LAGGARD (an older cast a re-sing missed) -- see obFresh
                 // Key on (spell, freshness, AND delivery). A single-target re-cast is a DIFFERENT cast from the
                 // AoE that preceded it : it has its own, longer timer. Keyed only by (spell, fresh) the two
                 // merged, because refreshing an ally's slot clears its `aoe` flag and obFresh() calls any
@@ -880,6 +909,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // A LAGGARD group NEVER groups : it lists each un-refreshed person by NAME (Kaories, Gab, ...) on their own
             // timer in the per-ally branch below -- that named-per-person listing is the whole point of the split.
             const bool group = gout.group;
+#ifdef AIOHUD_PROBES
+            if (g_whyGrpN < 32) { WhyGrp& w = g_whyGrp[g_whyGrpN++];
+                w.spell = grp[k].spell; w.allies = gin.allies; w.countHas = gin.countHas; w.effN = gout.effN;
+                w.fresh = gin.fresh ? 1 : 0; w.aoe = gin.aoe ? 1 : 0; w.meHas = gin.meHas ? 1 : 0;
+                w.selfCast = gin.selfCast ? 1 : 0; w.hasLag = gin.hasLagSameSpell ? 1 : 0;
+                w.group = group ? 1 : 0; w.drop = gout.drop ? 1 : 0; }
+#endif
             if (party().bcapt_armed()) {   // //aio bcaptlog OBGRP : the group-vs-per-ally verdict + its inputs -- WHY an Accession buff draws (AoE N) or a named per-ally row. Throttled to CHANGE (else 60 Hz flood).
                 static unsigned short olS[32]; static unsigned char olF[32]; static short olN[32], olG[32]; static bool olInit = false;
                 if (!olInit) { olInit = true; for (int q = 0; q < 32; ++q) { olS[q] = 0xFFFF; olF[q] = 0xFF; olN[q] = -1; olG[q] = -1; } }
@@ -1187,6 +1223,18 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // song lost. The verdict travels with its entry through the pass, and the emit reads the same one.
             static bool fmHas[24];
             for (int q = 0; q < fmN; ++q) fmHas[q] = focusHas(fm[q]);
+#ifdef AIOHUD_PROBES
+            g_whyFmN = 0;
+            for (int q = 0; q < fmN && g_whyFmN < 64; ++q) { WhyFm& w = g_whyFm[g_whyFmN++];
+                w.target = fm[q].target; w.spell = fm[q].spell; w.status = fm[q].status;
+                w.copies = focusCopies(fm[q]);
+                int nw = 0; for (int q2 = 0; q2 < fmN; ++q2) { const FocusMem& o = fm[q2];
+                    if (o.self != fm[q].self || o.status != fm[q].status) continue;
+                    if (!fm[q].self && o.target != fm[q].target) continue;
+                    if (focus_newer_sibling(fm[q].rank, fm[q].spell, o.rank, o.spell)) ++nw; }
+                w.newer = nw; w.self = fm[q].self; w.has = fmHas[q] ? 1 : 0;
+                w.listReady = listReady(fm[q]) ? 1 : 0; w.lost = fm[q].lostMs ? 1 : 0; }
+#endif
             int w = 0;                                                                        // prune : ally left the party/alliance, or the focus flag was turned off
             for (int q = 0; q < fmN; ++q) {
                 // <= 5, NOT <= 17. The 0x076 that feeds listReady/focusHas carries YOUR PARTY ONLY, so a monitor
@@ -1512,6 +1560,9 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // was enough to make the ghost-song bug stop reproducing. Observation must be free, so the file write is deferred
     // to //aio songdump. Only a CHANGE in the row set (status / name / pass / tag -- not the ticking countdown) is kept.
     if (!preview) {
+#ifdef AIOHUD_PROBES
+        g_whyObN = 0; g_whyGrpN = 0;   // refilled each frame by the passes above -- reset before the next one
+#endif
         unsigned sig = 2166136261u;   // FNV-1a over what identifies the rows, deliberately excluding `rem`
         for (int i = 0; i < nb; ++i) {
             sig = (sig ^ (unsigned)bufs[i].icon) * 16777619u;
@@ -1528,6 +1579,22 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // question is whether a row set flickers every frame or flips once a second -- two different defects
             // with two different remedies. Absolute ticks: the differences are what matter.
             sr_push("---- t=%u : Timers built %d row(s) ----", (unsigned)GetTickCount(), nb);
+            for (int w = 0; w < g_whyGrpN; ++w) { const WhyGrp& g = g_whyGrp[w];
+                const SpellRow* sp = spell_info(g.spell);
+                sr_push("    WHY group  %-18s fresh=%d aoe=%d meHas=%d selfCast=%d lag=%d | allies=%d countHas=%d -> effN=%d %s",
+                        (sp && sp->en) ? sp->en : "?", g.fresh, g.aoe, g.meHas, g.selfCast, g.hasLag,
+                        g.allies, g.countHas, g.effN, g.drop ? "DROP" : (g.group ? "GROUPED" : "per-person")); }
+            for (int w = 0; w < g_whyObN; ++w) { const WhyOb& o = g_whyOb[w];
+                const SpellRow* sp = spell_info(o.spell);
+                sr_push("    WHY entry  %-18s tgt=%08X %s | mirror=%d aoe=%d evicted=%d expTick=%u selfExp=%u dTick=%d castMs-stamp=%d",
+                        (sp && sp->en) ? sp->en : "?", o.target, o.fresh ? "FRESH " : "LAGGARD",
+                        o.mirrorSelf, o.aoe, o.evicted, o.expTick, o.selfExp,
+                        o.selfExp ? (int)(o.expTick - o.selfExp) : 0, (int)(o.castMs - o.stamp)); }
+            for (int w = 0; w < g_whyFmN; ++w) { const WhyFm& f2 = g_whyFm[w];
+                const SpellRow* sp = spell_info(f2.spell);
+                sr_push("    WHY focus  %-18s tgt=%08X self=%d st=%u | copies=%d newer=%d -> %s  listReady=%d lost=%d",
+                        (sp && sp->en) ? sp->en : "?", f2.target, f2.self, f2.status,
+                        f2.copies, f2.newer, f2.has ? "up" : "MISSING", f2.listReady, f2.lost); }
             for (int i = 0; i < nb; ++i) {
                 // flag a row the game itself no longer carries : that is precisely what a ghost is.
                 bool inMem = false;   // (meHas is scoped to the build block above -- read the same source directly)
