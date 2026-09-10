@@ -69,7 +69,14 @@ struct FocusMem { unsigned target; unsigned short status, spell; unsigned char i
 // alternative (re-deriving the condition in the command) would be a second copy of a decision that already has
 // six suppression branches (song replaced, unrecoverable 5th song, Indi- swapped, hold expired, muted, no data),
 // and the day one of them moved the two copies would disagree in silence.
-static FocusMem fm[24];
+// FOCUS_MAX -- how many buffs the monitor can watch at once. It was 24, and 24 is not a number that means
+// anything: a full party is SIX people, and a bard holds up to five songs on each, which is thirty before a
+// single Haste or Refresh is counted. The harness reported it itself on 2026-09-10 -- TM.FOCUS_FULL, held over
+// three consecutive checks -- and a refused entry is silent by nature: the buff is simply never watched, so its
+// OUT alert cannot happen and nothing says why.
+// 64 covers six people at five songs plus a full set of other focus buffs, and the array is a few kilobytes.
+static const int FOCUS_MAX = 64;
+static FocusMem fm[FOCUS_MAX];
 static int fmN = 0;
 static int g_lastRowN = 0;   // rows the last build produced (harness only)
 // The IDENTITY of the cast an entry currently stands for -- the tick of the cast that put the buff there.
@@ -1025,7 +1032,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // single entry for them meant the second was watched by nobody at all.
                 const unsigned short selfSp = (unsigned short)party().self_buff_spell_ranked((unsigned short)st, bt2[i].expiry, i);
                 int s = -1; for (int q = 0; q < fmN; ++q) if (fm[q].self && fm[q].status == st && fm[q].spell == selfSp) { s = q; break; }
-                if (s < 0 && fmN < 24) { s = fmN++; fm[s].spell = selfSp; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = GetTickCount(); fm[s].name[0] = 0; }
+                if (s < 0 && fmN < FOCUS_MAX) { s = fmN++; fm[s].spell = selfSp; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = GetTickCount(); fm[s].name[0] = 0; }
                 if (s >= 0) { fm[s].seen = 1; fm[s].spell = selfSp; fm[s].rank = bt2[i].expiry; }   // the spell/tier is part of the key now, so this only re-affirms it ; rank refreshed every frame
               } }
             for (int i = 0; i < no; ++i) {                                                     // remember FOCUS buffs currently up on allies (Allies focus key 0xC000|st ; needs tmMine)
@@ -1045,9 +1052,9 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // Reported 2026-09-10, "je viens de zone et une song reste en out".
                 { const BuffSet* bs0 = party().buffs_for(ob[i].target);
                   const unsigned char pending = (!bs0 || bs0->n <= 0) ? 1 : 0;
-                if (s < 0 && fmN < 24) { s = fmN++; fm[s].spell = ob[i].spell; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = pending; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = GetTickCount(); }
+                if (s < 0 && fmN < FOCUS_MAX) { s = fmN++; fm[s].spell = ob[i].spell; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = pending; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = GetTickCount(); }
                 else if (s < 0) { static windower::debug::LogOnce<2> onceFull;   // SAY it. A silent refusal here is indistinguishable from "no buff to watch".
-                    if (onceFull.first(0)) windower::debug::log("FOCUS monitor FULL (%d entries) -- new ally focus buffs are NOT tracked this session", 24); }
+                    if (onceFull.first(0)) windower::debug::log("FOCUS monitor FULL (%d entries) -- new ally focus buffs are NOT tracked this session", FOCUS_MAX); }
                 if (s >= 0) { fm[s].seen = 1; fm[s].spell = ob[i].spell; fm[s].rank = ob[i].startMs; fm[s].isAbil = ob[i].isAbil; int j = 0; for (; j < 19 && ob[i].name[j]; ++j) fm[s].name[j] = ob[i].name[j]; fm[s].name[j] = 0; } }
             }
             // A NEWER CAST LIFTS THE MUTE. //aio out silences ONE cast, not the spell -- and the correction that
@@ -1203,7 +1210,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     else continue;                                                            //   grace over + list stable + ABSENT -> the game dropped it on zoning -> depop, NO alert
                 }                                                                             //   (deciding DURING the grace read the stale pre-zone buff list -> false survivors -> OUT)
                 // a "Hidden+focus" alert that has held its full tmFocusHold with the buff still gone -> FREE the slot
-                // (the emit stops drawing it at that point ; without this it lingers forever and can fill fm[24]).
+                // (the emit stops drawing it at that point ; without this it lingers forever and can fill the monitor).
                 if (!fm[q].zoneCheck && fm[q].lostMs && !fmHas[q]) {
                     const bool dkOn = C.tm_buff_off((unsigned)fm[q].status);   // self & ally share ONE global hidden state
                     // THE SLOT IT IS ASKING FOR HAS BEEN FILLED. An OUT says "you lost this, sing it again". Once
@@ -1228,7 +1235,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // and the group/row stages show nothing about why. Songs share statuses across spells (both Marches are
             // 214), so `has` answering for the family and `spell` naming one member of it is exactly where an "it IS
             // up, you re-cast it in AoE" symptom lives. Dumped for every monitored entry, kept or not.
-            int alertQ[24]; int nAlert = 0;   // entries that survived every suppression gate -- drawn after the loop
+            int alertQ[FOCUS_MAX]; int nAlert = 0;   // entries that survived every suppression gate -- drawn after the loop
             OBLOG("=== OBLOG : %d focus monitor entr(ies) ===", fmN);
             // The bard song-slot state, in one line. It is here rather than behind its own command because the
             // thing it answers -- "did the base stay honest?" -- can only be seen after a Clarion Call, and CC is
@@ -1311,7 +1318,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                                              fm[q].self, (unsigned)party().self_geo().status);
                     continue;
                 }
-                if (nAlert < 24) alertQ[nAlert++] = q;   // decided : drawn below, once the whole picture is known
+                if (nAlert < FOCUS_MAX) alertQ[nAlert++] = q;   // decided : drawn below, once the whole picture is known
             }
             // ---- draw the alerts, GROUPED the way the healthy rows are ------------------------------------------
             // An AoE song is ONE row while it is up ("Valor Minuet V (AoE 3)") and used to become one red row PER
@@ -1725,8 +1732,8 @@ static int timers_checks(CheckFail* out, int cap) {
 
     // 1. The focus monitor is full. Structural: 24 is the array, and past it new entries are refused with no
     //    sign -- and since the SAME list drives your OUT alerts, they stop appearing for anything new.
-    if (fmN >= 24)
-        FAIL("TM.FOCUS_FULL", CHK_WARN, "%d of 24 focus slots used -- new monitored buffs are refused and their OUT alerts will not appear", fmN);
+    if (fmN >= FOCUS_MAX)
+        FAIL("TM.FOCUS_FULL", CHK_WARN, "%d of %d focus slots used -- new monitored buffs are refused and their OUT alerts will not appear", fmN, FOCUS_MAX);
 
     // 2. An entry that has outlived any buff. No buff in the game is maintained for four hours by one cast, so
     //    an entry that old is one the purge never reached (audit S2-6: an alliance target kept lostMs at 0
