@@ -1277,7 +1277,6 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     //
                     // A real dispel does NOT hit this: losing a song drops the count BELOW the cap, so the alert
                     // stands until you either sing it back (present again) or fill the slot with another song.
-                    if (songCap.valid && party().song_slot_count(fm[q].target) >= songCap.cap) continue;
                     if (songUnrecoverable(fm[q])) continue;   // un-refillable 5th Clarion-Call song -> free the slot (no OUT will ever draw ; without this the un-drawn entry lingers and fills fm[24])
                     if (songReplaced(fm[q])) continue;        // deliberately swapped out by a new song on the same ally (Pianissimo) -> free the slot, never an OUT
                     if (geoReplaced(fm[q])) continue;         // a previous Indi- you replaced by casting another one -> free the slot, never an OUT
@@ -1354,6 +1353,19 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                                          (unsigned)(nowMs - fm[q].lostMs), C.tmFocusHold, dkOn ? 1 : 0,
                                          (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) ? "DROP (hold expired)" : "DRAW red OUT row");
                 if (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
+                // THE SLOT IT IS ASKING FOR HAS BEEN FILLED. An OUT says "you lost this, sing it again"; once that
+                // person's slots are full of your songs again the room it wants is gone, and you are the one who
+                // used it. Say nothing -- but KEEP the entry.
+                //
+                // Freeing it here is what made the box shimmer. The model still holds the row, so the seeding loop
+                // re-creates the entry on the very next frame, brand new, with lostMs = 0 -- and an entry with no
+                // lostMs cannot be freed by the prune, so it survives to here and DRAWS. Then it has a lostMs, is
+                // freed, and vanishes. On, off, on, off, at 60 Hz. Measured 2026-09-11: the same focus verdict on
+                // both frames, `lost` alternating 0/1, the red row appearing with it.
+                //
+                // The lesson generalises past this line: never FREE a monitor entry for a condition that outlives
+                // one frame, because whatever created it will create it again.
+                if (songCap.valid && party().song_slot_count(fm[q].target) >= songCap.cap) continue;
                 if (songUnrecoverable(fm[q])) {   // a lost 5th Clarion-Call song can't be refilled -> suppress the OUT entirely (never even a one-frame flash before the prune frees it)
                     if (focus_trace_live())
                         windower::debug::log("SONGOUT st=%u '%s' SUPPRESSED : that person now holds %d, the cap is %d (ccUsable=%d) -> no OUT (the fifth slot is gone)",
