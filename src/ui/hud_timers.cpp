@@ -1355,6 +1355,32 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // and that is exactly where the yoyo lived : two timers a fraction of a second apart read the same number
     // every other second, and the icon/name tie-break then ordered them the opposite way from the second
     // before, so the two rows swapped places once a second forever. Ranking a tie by the exact tick pins them.
+    // TWO ROWS WITHIN A SECOND OF EACH OTHER KEEP THE ORDER THEY HAD. Nothing about a countdown is stable
+    // at that distance: `rem` is re-rounded every frame, so a pair whose real times differ by a fraction of a
+    // second spends half its life tied and half its life apart -- and if the tiebreak disagrees with the time
+    // order, which it does as often as not, the rows trade places twice a second. Reported 2026-09-10, "Ballad
+    // et Minuet V se battent encore".
+    //
+    // Sub-second refinement cannot fix this and made it worse in both directions: comparing across clocks
+    // follows drift, and refusing to compare falls back on the name. The honest answer is that under a second
+    // there IS no order to compute, so we stop computing one and remember the last.
+    //
+    // Identity is what a person recognises the row by -- its icon, its person, its text -- never its index,
+    // which shifts whenever the model list is compacted.
+    static unsigned lastSig[64]; static int lastN = 0;
+    auto sigOf = [](const Row& x) -> unsigned {
+        unsigned h = 2166136261u;
+        h = (h ^ (unsigned)x.icon) * 16777619u;
+        h = (h ^ (unsigned)x.src) * 16777619u;
+        for (const char* c = x.name; c && *c; ++c) h = (h ^ (unsigned char)*c) * 16777619u;
+        for (const char* c = x.who;  c && *c; ++c) h = (h ^ (unsigned char)*c) * 16777619u;
+        return h ? h : 1u;
+    };
+    auto lastPos = [&](const Row& x) -> int {
+        const unsigned s = sigOf(x);
+        for (int i = 0; i < lastN; ++i) if (lastSig[i] == s) return i;
+        return -1;   // not on screen last frame -> nothing to hold on to
+    };
     auto fineOf = [](const Row& r) -> int {
         if (r.fine != TM_FINE_NONE) return r.fine;   // exact remaining, in ticks (server expiry / raw recast counter)
         if (r.rem > 30000000 || r.rem < -30000000) return r.rem;   // no sub-second source and out of multiply range (OUT sentinel, absurd timer)
@@ -1366,13 +1392,22 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     //   Recast   0 : soonest                         1 : by name
     // Trusts stay last in both duration modes on purpose: they are the rows you are least likely to act on,
     // and tmMax cuts the tail, so mixing them in would let a trust's Protect push out one of your own timers.
-    auto after = [&fineOf](const Row& x, const Row& y, int mode, bool recast) -> bool {   // does x sort AFTER y ?
+    auto after = [&fineOf, &lastPos](const Row& x, const Row& y, int mode, bool recast) -> bool {   // does x sort AFTER y ?
         if (recast) {
             if (mode == 1) { const int c = strcmp(x.name ? x.name : "", y.name ? y.name : ""); if (c) return c > 0; }
         } else if (mode == 1) {
             const int tx = (x.order >= 90) ? 1 : 0, ty = (y.order >= 90) ? 1 : 0;   // 90+ = a trust's buff on you
             if (tx != ty) return tx > ty;
         } else if (x.order != y.order) return x.order > y.order;
+        // Under a second apart : hold the order they already had. Only when BOTH were on screen last frame --
+        // a row that has just appeared has no order to preserve and takes the computed one.
+        if (x.rem > -1000000 && y.rem > -1000000) {
+            const int d = x.rem - y.rem;
+            if (d >= -1 && d <= 1) {
+                const int px = lastPos(x), py = lastPos(y);
+                if (px >= 0 && py >= 0 && px != py) return px > py;
+            }
+        }
         if (x.rem != y.rem) return x.rem > y.rem;
         // Refine by the sub-second ONLY between rows read from the same clock. Across clocks the difference
         // is drift, not order, and following it makes two rows on the same timer trade places for as long as
@@ -1393,6 +1428,8 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     g_lastRowN = nb;   // the harness reads this : hitting the 50 cap means rows are being dropped in silence
     { const int md = C.tmSortDur;
       for (int a = 1; a < nb; ++a) { Row t = bufs[a]; int b = a - 1; while (b >= 0 && after(bufs[b], t, md, false)) { bufs[b + 1] = bufs[b]; --b; } bufs[b + 1] = t; } }
+    { lastN = nb < 64 ? nb : 64;   // what this frame settled on, so the next one can hold it
+      for (int a = 0; a < lastN; ++a) lastSig[a] = sigOf(bufs[a]); }
     { const int md = C.tmSortRec;
       for (int a = 1; a < nr; ++a) { Row t = recs[a]; int b = a - 1; while (b >= 0 && after(recs[b], t, md, true)) { recs[b + 1] = recs[b]; --b; } recs[b + 1] = t; } }
     // THE HINT LIVES ON THE ROW THAT NEEDS IT. A red OUT for a buff you never meant to keep is a mistake, and
