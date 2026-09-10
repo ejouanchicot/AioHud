@@ -673,7 +673,21 @@ struct PartyState {
                        // not. Six bytes a row to make that answerable instead of arguable.
                        unsigned short m1pct = 0; unsigned char m2x = 0, m3x = 0; unsigned short a3s = 0;
                        unsigned char tenuto = 0; };   // sung under Tenuto -> the game will not overwrite it, by anything (not even a re-cast of the same song)   // isAbil : `spell` holds an ABILITY id (COR roll) ; aoe : the cast hit >=2 targets (Protectra / a spell under SCH Accession) -> a REAL AoE, group it   // castMs : the tick of the CAST this entry stands for -- the IDENTITY of that cast, never shifted afterwards (startMs is, by the zone-in bump) ; the focus monitor compares it to lift a hand-mute when a NEW cast lands (see FocusMem::muteRef)
-    OtherBuff otherBuffs_[32]; int otherBuffN_ = 0;
+    // OB_MAX -- how many ally buffs of YOURS the model can hold. It was 32, and 32 does not cover a bard.
+    // A full party is five allies; a bard holds up to five songs on each, which is TWENTY-FIVE before a single
+    // Haste, Refresh or Protect is counted -- and a rotation change carries the old set and the new one at once,
+    // briefly doubling it. Past the cap the oldest row is EVICTED to make room, so songs start stealing slots
+    // from each other: groups lose members, re-form, and rows scatter and regroup on screen.
+    //
+    // Measured 2026-09-10, and the arithmetic matches the symptom exactly: four songs on five allies is 20, and
+    // the third and fourth Paeon of a replacement rotation pushed past 32 -- "ca l'a fait pour les deux derniers
+    // paeon", with the threshold moving as the number of songs held changed. Two hours went into looking for a
+    // logic error where there was an array overflowing.
+    //
+    // 128 covers a full party at five songs plus a full set of other buffs, with room for a rotation change on
+    // top. An OtherBuff is about 64 bytes, so the whole table is 8 KB.
+    static const int OB_MAX = 128;
+    OtherBuff otherBuffs_[OB_MAX]; int otherBuffN_ = 0;
     // WHICH song the game pushed out, decided AT CAST TIME -- the only moment the set is still intact.
     // By the time the monitor notices the loss the row is already gone from otherBuffs_, so the verdict
     // has to be taken while it can be, and remembered. Eight slots is a rotation's worth.

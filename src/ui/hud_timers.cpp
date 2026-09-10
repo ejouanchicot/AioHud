@@ -77,6 +77,11 @@ struct FocusMem { unsigned target; unsigned short status, spell; unsigned char i
 // 64 covers six people at five songs plus a full set of other focus buffs, and the array is a few kilobytes.
 static const int FOCUS_MAX = 64;
 static FocusMem fm[FOCUS_MAX];
+// HIGH-WATER MARKS, because the watcher SAMPLES. Both tables fill during a rotation change and drain again
+// within a second or two -- and while full they evict rows, which is what scrambles the display. A check that
+// reads the instantaneous count looks every 30 s and sees nothing wrong; the ally table overflowed for two
+// hours of hunting on 2026-09-10 with TM.OB_FULL never once firing. A peak, unlike a sample, cannot be missed.
+static int g_fmPeak = 0, g_obPeak = 0;
 static int fmN = 0;
 static int g_lastRowN = 0;   // rows the last build produced (harness only)
 // The IDENTITY of the cast an entry currently stands for -- the tick of the cast that put the buff there.
@@ -536,6 +541,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         };
         if (C.tmMine) {
             ob = party().other_buffs(no);   // (prune_other_buffs_worn now runs once per frame from the model tick, not from here)
+            if (no > g_obPeak) g_obPeak = no;   // the peak is what the watcher can act on -- see g_fmPeak/g_obPeak
             if (g_obLog) {   // ---- stage 1 : the MODEL, before any grouping decision touches it ----
                 windower::debug::log("=== OBLOG : %d ally entr(ies) in the model ===", no);
                 for (int i = 0; i < no; ++i) {
@@ -1732,8 +1738,9 @@ static int timers_checks(CheckFail* out, int cap) {
 
     // 1. The focus monitor is full. Structural: 24 is the array, and past it new entries are refused with no
     //    sign -- and since the SAME list drives your OUT alerts, they stop appearing for anything new.
-    if (fmN >= FOCUS_MAX)
-        FAIL("TM.FOCUS_FULL", CHK_WARN, "%d of %d focus slots used -- new monitored buffs are refused and their OUT alerts will not appear", fmN, FOCUS_MAX);
+    if (fmN > g_fmPeak) g_fmPeak = fmN;
+    if (g_fmPeak >= FOCUS_MAX)
+        FAIL("TM.FOCUS_FULL", CHK_WARN, "the focus monitor PEAKED at %d of %d -- refused entries are never watched, so their OUT alerts cannot happen", g_fmPeak, FOCUS_MAX);
 
     // 2. An entry that has outlived any buff. No buff in the game is maintained for four hours by one cast, so
     //    an entry that old is one the purge never reached (audit S2-6: an alliance target kept lostMs at 0
@@ -1752,8 +1759,8 @@ static int timers_checks(CheckFail* out, int cap) {
 
     // 4. The ally-buff cache is full. Same shape, different array (otherBuffs_[32]): once full, a buff you cast
     //    on someone new is simply not tracked.
-    { int no = 0; party().other_buffs(no);
-      if (no >= 32) FAIL("TM.OB_FULL", CHK_WARN, "%d of 32 ally-buff slots used -- new buffs you cast are no longer tracked", no); }
+    if (g_obPeak >= PartyState::OB_MAX)
+        FAIL("TM.OB_FULL", CHK_WARN, "the ally-buff table PEAKED at %d of %d -- past the cap the oldest row is evicted, so groups lose members and rows scatter", g_obPeak, PartyState::OB_MAX);
 
     // 5. Expired timers are not being pruned. The clock is the independent source: a timer whose expiry passed
     //    ten minutes ago has no business still being in the list.

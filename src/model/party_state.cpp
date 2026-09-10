@@ -1489,8 +1489,8 @@ void PartyState::on_action(const unsigned char* p) {
                 int slot = -1;   // key by (target, SPELL) so two tiers of the same song (Minuet V + IV, same status) are two rows
                 for (int k = 0; k < otherBuffN_; ++k) if (otherBuffs_[k].target == tid && otherBuffs_[k].spell == (unsigned short)sid) { slot = k; break; }
                 if (slot < 0) {                                 // new entry : append, else steal the oldest slot
-                    if (otherBuffN_ < 32) slot = otherBuffN_++;
-                    else { int o = 0; for (int k = 1; k < 32; ++k) if (otherBuffs_[k].startMs < otherBuffs_[o].startMs) o = k; slot = o; }
+                    if (otherBuffN_ < OB_MAX) slot = otherBuffN_++;
+                    else { int o = 0; for (int k = 1; k < OB_MAX; ++k) if (otherBuffs_[k].startMs < otherBuffs_[o].startMs) o = k; slot = o; }
                 }
                 otherBuffs_[slot].target = tid; otherBuffs_[slot].status = (unsigned short)b->effect; otherBuffs_[slot].spell = (unsigned short)sid;
                 otherBuffs_[slot].startMs = nowMs; otherBuffs_[slot].castMs = nowMs;   // castMs names THIS cast and is never bumped afterwards -> the focus monitor can tell a re-cast from a re-timed estimate
@@ -1614,8 +1614,8 @@ void PartyState::on_action(const unsigned char* p) {
                 int slot = -1;                                            // key by (target, ABILITY) -- one row per roll type per member
                 for (int k = 0; k < otherBuffN_; ++k) if (otherBuffs_[k].target == tid && otherBuffs_[k].spell == (unsigned short)aid) { slot = k; break; }
                 if (slot < 0) {
-                    if (otherBuffN_ < 32) slot = otherBuffN_++;
-                    else { int o = 0; for (int k = 1; k < 32; ++k) if (otherBuffs_[k].startMs < otherBuffs_[o].startMs) o = k; slot = o; }
+                    if (otherBuffN_ < OB_MAX) slot = otherBuffN_++;
+                    else { int o = 0; for (int k = 1; k < OB_MAX; ++k) if (otherBuffs_[k].startMs < otherBuffs_[o].startMs) o = k; slot = o; }
                 }
                 otherBuffs_[slot].target = tid; otherBuffs_[slot].status = (unsigned short)st; otherBuffs_[slot].spell = (unsigned short)aid;
                 otherBuffs_[slot].startMs = nowMs; otherBuffs_[slot].castMs = nowMs; otherBuffs_[slot].expTick = 0; otherBuffs_[slot].mirrorSelf = aoeSelf ? 1 : 0;
