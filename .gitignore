@@ -77,3 +77,6 @@ deploy.local.bat
 # into a commit. Ignored now so the same slip cannot happen twice.
 /Claude outputs/
 /assets/rolls_src/
+
+# scratch buffer for the wiki/AI question exchanges (docs/songs/ holds what is worth keeping)
+/prompt.txt
