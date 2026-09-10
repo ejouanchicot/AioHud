@@ -1285,7 +1285,6 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     continue;
                 }
                 if (nAlert < 24) alertQ[nAlert++] = q;   // decided : drawn below, once the whole picture is known
-                fm[q].alerting = 1;
             }
             // ---- draw the alerts, GROUPED the way the healthy rows are ------------------------------------------
             // An AoE song is ONE row while it is up ("Valor Minuet V (AoE 3)") and used to become one red row PER
@@ -1315,7 +1314,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     _snprintf(obLabel[nb], sizeof(obLabel[nb]), "%s", en ? en : "?");
                 }
                 obLabel[nb][sizeof(obLabel[nb]) - 1] = 0;
-                bufs[nb].name = obLabel[nb]; bufs[nb].nameCol = 0xFFFF3B3Bu; bufs[nb].rem = TM_REM_MISSING; bufs[nb].icon = fm[q].status; bufs[nb].order = 0; bufs[nb].src = 6; bufs[nb].mark = (same >= 2) ? 0 : fm[q].tag; ++nb;   // ALL "OUT" alerts (self + ally) sort to order 0 : rem=MISSING pulls them to the very top so a small tmMax can't clip a critical alert
+                bufs[nb].name = obLabel[nb]; bufs[nb].nameCol = 0xFFFF3B3Bu; bufs[nb].rem = TM_REM_MISSING; bufs[nb].icon = fm[q].status; bufs[nb].order = 0; bufs[nb].src = 6; bufs[nb].mark = (same >= 2) ? 0 : fm[q].tag; fm[q].alerting = 1; ++nb;   // set HERE and nowhere else : it means "this entry drew its red row", and an entry folded into a grouped alert draws none   // ALL "OUT" alerts (self + ally) sort to order 0 : rem=MISSING pulls them to the very top so a small tmMax can't clip a critical alert
             }
         }
         if (g_obLog) {   // ---- every stage done, focus monitor included. Disarm : one frame is the whole point. ----
