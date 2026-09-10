@@ -1459,11 +1459,17 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             const int tx = (x.order >= 90) ? 1 : 0, ty = (y.order >= 90) ? 1 : 0;   // 90+ = a trust's buff on you
             if (tx != ty) return tx > ty;
         } else if (x.order != y.order) return x.order > y.order;
-        // Under a second apart : hold the order they already had. Only when BOTH were on screen last frame --
-        // a row that has just appeared has no order to preserve and takes the computed one.
+        // CLOSE ROWS HOLD THE ORDER THEY HAD. Only when BOTH were on screen last frame -- a row that has just
+        // appeared has no order to preserve and takes the computed one.
+        //
+        // The band is 2, not 1, and the reason is the whole bug. Two songs 1.8 s apart show a DISPLAYED gap that
+        // alternates between 1 and 2, because each crosses its own second at its own moment. A band of 1 pinned
+        // them at a gap of 1 and re-sorted them by time at 2 -- so the oscillation landed exactly on the
+        // threshold and flipped the pair twice a second. The guard was doing nothing at all where it mattered.
+        // Reported 2026-09-10, "le ballad de kaories continue de faire yoyo".
         if (x.rem > -1000000 && y.rem > -1000000) {
             const int d = x.rem - y.rem;
-            if (d >= -1 && d <= 1) {
+            if (d >= -2 && d <= 2) {
                 const int px = lastPos(x), py = lastPos(y);
                 if (px >= 0 && py >= 0 && px != py) return px > py;
             }
