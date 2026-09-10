@@ -2045,7 +2045,7 @@ void PartyState::prune_other_buffs_worn() {
         SlotEvidence mine; mine.present = true; mine.ids = selfIds; mine.n = selfCap; mine.stampMs = buffTimersMs_;
 
         const char* verdictWhy = "kept";
-        const SlotVerdict v = song_slot_verdict(se, seN, seIdx, member, mine, &verdictWhy);
+        const SlotVerdict v = song_slot_verdict(se, seN, seIdx, member, mine, (unsigned)GetTickCount(), &verdictWhy);
         why[k] = verdictWhy;
         if (v != SLOT_KEEP) {
             drop[k] = true;

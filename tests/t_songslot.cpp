@@ -32,18 +32,18 @@ void test_songslot() {
         const unsigned short ids[] = { 214, 214, 198, 199 };
         const SlotEvidence ev = list(ids, 4, 3000);
         SECTION("two Marches, both listed -> the older survives"); CHECK_EQ((int)SLOT_KEEP,
-                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), &why));
+                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), 0u, &why));
         SECTION("two Marches, both listed -> the newer survives"); CHECK_EQ((int)SLOT_KEEP,
-                 (int)song_slot_verdict(r.e, r.n, 1, ev, none(), &why));
+                 (int)song_slot_verdict(r.e, r.n, 1, ev, none(), 0u, &why));
     }
     {   // The same two rows when the server reports the status ONCE : the older one really has been replaced.
         Rows r; r.song(1000, 198).song(2000, 198);
         const unsigned short ids[] = { 198 };
         const SlotEvidence ev = list(ids, 1, 3000);
         SECTION("one Minuet listed -> the older is gone"); CHECK_EQ((int)SLOT_DROP_MEMBER,
-                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), &why));
+                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), 0u, &why));
         SECTION("one Minuet listed -> the newer stays"); CHECK_EQ((int)SLOT_KEEP,
-                 (int)song_slot_verdict(r.e, r.n, 1, ev, none(), &why));
+                 (int)song_slot_verdict(r.e, r.n, 1, ev, none(), 0u, &why));
     }
 
     // ---- DEFECT 1 : evidence older than the row it judges ---------------------------------------------------
@@ -54,7 +54,7 @@ void test_songslot() {
         const unsigned short ids[] = { 199 };                 // the list predates the cast : no 198 in it yet
         const SlotEvidence ev = list(ids, 1, 4000);
         SECTION("a list older than the cast cannot drop it"); CHECK_EQ((int)SLOT_KEEP,
-                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), &why));
+                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), 0u, &why));
     }
 
     // ---- DEFECT 2 : evidence older than the row invoked AGAINST it ------------------------------------------
@@ -65,14 +65,14 @@ void test_songslot() {
         const unsigned short ids[] = { 198 };                 // list recorded between the two casts
         const SlotEvidence ev = list(ids, 1, 25000);
         SECTION("a newer row the list has not seen cannot evict the older"); CHECK_EQ((int)SLOT_KEEP,
-                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), &why));
+                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), 0u, &why));
     }
     {   // ...and once the list HAS seen both, the verdict is allowed again.
         Rows r; r.song(20000, 198).song(27797, 198);
         const unsigned short ids[] = { 198 };
         const SlotEvidence ev = list(ids, 1, 30000);
         SECTION("once the list has seen both, the older is evicted"); CHECK_EQ((int)SLOT_DROP_MEMBER,
-                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), &why));
+                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), 0u, &why));
     }
 
     // ---- DEFECT 3 : a trust nothing could contradict ---------------------------------------------------------
@@ -83,16 +83,16 @@ void test_songslot() {
         const unsigned short mineIds[] = { 214 };             // the Capriccio (207) is gone from your own list
         const SlotEvidence mine = list(mineIds, 1, 3000);
         SECTION("a trust's AoE song your timers no longer carry is dropped"); CHECK_EQ((int)SLOT_DROP_SELF,
-                 (int)song_slot_verdict(r.e, r.n, 0, none(), mine, &why));
+                 (int)song_slot_verdict(r.e, r.n, 0, none(), mine, 0u, &why));
         SECTION("a trust's AoE song your timers still carry is kept"); CHECK_EQ((int)SLOT_KEEP,
-                 (int)song_slot_verdict(r.e, r.n, 1, none(), mine, &why));
+                 (int)song_slot_verdict(r.e, r.n, 1, none(), mine, 0u, &why));
     }
     {   // A Pianissimo song never touched you : your statuses know nothing about it, so it must survive.
         Rows r; r.song(1000, 196, /*aoe*/false);
         const unsigned short mineIds[] = { 214 };
         const SlotEvidence mine = list(mineIds, 1, 3000);
         SECTION("a single-target song is never judged by YOUR timers"); CHECK_EQ((int)SLOT_KEEP,
-                 (int)song_slot_verdict(r.e, r.n, 0, none(), mine, &why));
+                 (int)song_slot_verdict(r.e, r.n, 0, none(), mine, 0u, &why));
     }
 
     // ---- the rule-10 shapes ---------------------------------------------------------------------------------
@@ -100,19 +100,19 @@ void test_songslot() {
         Rows r; r.song(1000, 198);
         const SlotEvidence ev = list(0, 0, 3000);
         SECTION("an empty list drops nothing"); CHECK_EQ((int)SLOT_KEEP,
-                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), &why));
+                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), 0u, &why));
     }
     {   // No list at all, and no self stand-in : unverifiable, so the row stays visible.
         Rows r; r.song(1000, 198);
         SECTION("no evidence at all drops nothing"); CHECK_EQ((int)SLOT_KEEP,
-                 (int)song_slot_verdict(r.e, r.n, 0, none(), none(), &why));
+                 (int)song_slot_verdict(r.e, r.n, 0, none(), none(), 0u, &why));
     }
     {   // A roll is decided by its own rule, never by song slots.
         Rows r; r.roll(1000, 308);
         const unsigned short ids[] = { 199 };
         const SlotEvidence ev = list(ids, 1, 3000);
         SECTION("a roll is not judged here"); CHECK_EQ((int)SLOT_KEEP,
-                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), &why));
+                 (int)song_slot_verdict(r.e, r.n, 0, ev, none(), 0u, &why));
     }
 
     // ---- the reason strings are part of the contract ---------------------------------------------------------
@@ -121,12 +121,42 @@ void test_songslot() {
         Rows r; r.song(1000, 198).song(2000, 198);
         const unsigned short ids[] = { 198 };
         const SlotEvidence ev = list(ids, 1, 3000);
-        song_slot_verdict(r.e, r.n, 0, ev, none(), &why);
+        song_slot_verdict(r.e, r.n, 0, ev, none(), 0u, &why);
         SECTION("a member drop names the member's list"); CHECK(why && why[0] && strstr(why, "buff list") != 0);
         const unsigned short mineIds[] = { 199 };
         const SlotEvidence mine = list(mineIds, 1, 3000);
         Rows t; t.song(1000, 198);
-        song_slot_verdict(t.e, t.n, 0, none(), mine, &why);
+        song_slot_verdict(t.e, t.n, 0, none(), mine, 0u, &why);
         SECTION("a self-evidence drop names your timers"); CHECK(why && strstr(why, "your own timers") != 0);
+    }
+
+    SECTION("waiting for evidence is right; waiting for ever is a ghost");
+    {   // MEASURED 2026-09-11. A member's buff list arrives when their buffs CHANGE, so a list older than a cast
+        // is normally superseded within a second -- and until then it cannot rule on that cast, which is why the
+        // wait exists. But when the song did NOT land on that person, nothing about them changes, no fresher list
+        // ever comes, and the row is never judged: an Army's Paeon drawn for an ally whose buff list held no
+        // trace of it, sitting beside the monitor's red OUT for the same song, the display flipping between them.
+        //
+        // Rule 10, exactly: a transient uncertainty became a permanent state, in silence.
+        Rows r; r.n = 1;
+        r.e[0].startMs = 10000; r.e[0].status = 195; r.e[0].aoe = 1; r.e[0].isAbil = 0;
+        const unsigned short otherIds[] = { 214, 198 };          // her list, and no 195 anywhere in it
+        SlotEvidence ev; ev.present = true; ev.ids = otherIds; ev.n = 2; ev.stampMs = 9000;   // older than the cast
+        const char* why = 0;
+
+        // Inside the wait : still undecidable, and it must stay undecided.
+        CHECK_EQ((int)SLOT_KEEP, (int)song_slot_verdict(r.e, r.n, 0, ev, none(), 12000u, &why));
+        CHECK(strstr(why, "predates") != 0);
+
+        // Past it : no fresher list is coming, so judge on what there is.
+        CHECK_EQ((int)SLOT_DROP_MEMBER, (int)song_slot_verdict(r.e, r.n, 0, ev, none(), 25000u, &why));
+    }
+    {   // A fresher list still ends the wait immediately -- the bound is a floor under the honest case, not a delay.
+        Rows r; r.n = 1;
+        r.e[0].startMs = 10000; r.e[0].status = 195; r.e[0].aoe = 1; r.e[0].isAbil = 0;
+        const unsigned short otherIds[] = { 214 };
+        SlotEvidence ev; ev.present = true; ev.ids = otherIds; ev.n = 1; ev.stampMs = 11000;   // NEWER than the cast
+        const char* why = 0;
+        CHECK_EQ((int)SLOT_DROP_MEMBER, (int)song_slot_verdict(r.e, r.n, 0, ev, none(), 11500u, &why));
     }
 }
