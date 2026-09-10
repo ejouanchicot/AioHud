@@ -1059,33 +1059,38 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             //                ZERO gear reads. Gating learning on "recast ready" excludes the post-CC window, so the
             //                transient extra-song count right after CC drops can never poison the base upward.
             //      Clarion Call : buff = status 499 ; recast = the SP2 shared recast id 254 (a BRD's SP2 IS Clarion Call).
-            int songCount = 0;
-            { unsigned short seenSp[24]; int nSeen = 0;
-              for (int i = 0; i < no; ++i) { if (song_family(ob[i].spell) <= 0 || obRem(ob[i]) <= 0) continue;
-                  bool dup = false; for (int s = 0; s < nSeen; ++s) if (seenSp[s] == ob[i].spell) { dup = true; break; }
-                  if (!dup && nSeen < 24) seenSp[nSeen++] = ob[i].spell; }
-              songCount = nSeen; }
             bool ccUp = false, ccOnRecast = false;
             if (f.game) {
                 for (int i = 0; i < f.game->nbuff; ++i) if (f.game->buffs[i] == 499) { ccUp = true; break; }
                 for (int i = 0; i < f.game->nRecast; ++i) if (f.game->recasts[i].kind == 0 && f.game->recasts[i].recastId == 254 && f.game->recasts[i].sec > 0) { ccOnRecast = true; break; }
             }
-            static ClarionBase songCC = { 0, false, false }; static int songBaseJob = 0;
-            if (songBaseJob != trkJob) { songCC.base = 0; songCC.valid = false; songCC.slotOpen = false; songBaseJob = trkJob; }   // learned per main job -> reset on a job change
-            songCC = clarion_learn(songCC, songCount, ccUp, ccOnRecast);
-            const int songBase = songCC.base; const bool songBaseValid = songCC.valid; (void)songBase; (void)songBaseValid;
-            // a MISSING ally song is unrecoverable (-> suppress the OUT) only when : base is known, you are STILL at/above
-            // it (the lost song was the extra), Clarion Call's buff is down AND its recast is not ready (slot can't come
-            // back), AND YOU HAVE LOST THE SONG TOO. Refillable songs (below base, CC available, or still on you) keep
-            // their normal permanent OUT -- exactly as wanted.
-            //   The last term is the one that took a measurement to find. songCount counts distinct song SPELLS across
-            //   ALL allies, so one ally being dispelled while another still carries the song leaves it untouched : the
-            //   other four conditions all hold for as long as Clarion Call's recast runs, and EVERY ally song loss was
-            //   suppressed for that whole hour, silently (measured 2026-09-10 : six live songs, six unrecov=1). Your own
-            //   0x063 list is the honest witness -- when the Clarion Call slot goes, the song goes from you as well.
+            // THE CAP IS NOT LEARNED HERE ANY MORE. It came from a high-water mark of song counts, which is
+            // structurally wrong -- the limit follows the equipped INSTRUMENT, so the mark keeps the maximum
+            // reached under a Daurdabla long after the swap, and a plugin reload or a job change reset it to 1,
+            // silencing every song loss until a rotation rebuilt it (measured 2026-09-10).
+            // The model learns it from an EVICTION instead: the game only makes room when there is none left,
+            // so the count at that moment is the limit, exactly. See model/song_slots.h.
+            const SlotCap songCap = party().song_cap();
+            // A MISSING ALLY SONG IS UNRECOVERABLE -- and so goes quietly -- only when the cap is known from an
+            // eviction, the song is on an ALLY, Clarion Call cannot be used, that person now holds EXACTLY the
+            // cap, and you have lost the song too. Everything else keeps its permanent red OUT.
+            //
+            // The rule that stood here compared a count across ALL allies at once. Two things were wrong with it,
+            // and either alone was fatal: that count skipped the FAKE songs -- the ones sung purely to hold a slot
+            // -- and it was global, where the game counts per (singer, target). Measured 2026-09-10: one ally
+            // dispelled while another still carried the song never moved it, so the rule stayed true for a whole
+            // Clarion Call recast and swallowed EVERY ally song loss, silently. Six live songs, six flagged.
+            // Clarion Call is USABLE when its buff is up or its recast is ready -- either way the fifth slot
+            // can be refilled, so a song lost from it keeps its normal alert.
+            const bool ccUsable = ccUp || !ccOnRecast;
             auto songUnrecoverable = [&](const FocusMem& e) -> bool {
                 const bool stillOnYou = party().self_buff_remaining_for(e.status, e.spell) >= 0;
-                return song_unrecoverable(songCC, e.self != 0, song_family(e.spell) > 0, ccUp, ccOnRecast, songCount, stillOnYou);
+                // The count is the one the GAME keeps : your songs on THAT person, fake songs included.
+                // The old one skipped the fake songs -- the very ones sung to hold a slot -- and was global,
+                // a number that exists nowhere in the game.
+                if (stillOnYou) return false;   // you still hold it, so it is re-singable : this is not the lost fifth
+                return song_unrecoverable(songCap, e.self != 0, song_family(e.spell) > 0,
+                                          ccUsable, party().song_slot_count(e.target));
             };
             // A song you cast on an ally that vanished because YOU just SINGLE-TARGETed a DIFFERENT song onto that SAME
             // ally (Pianissimo) is a DELIBERATE slot swap, not a loss -> no red OUT, just depop. Signal : a newer,
@@ -1196,8 +1201,8 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // an HOUR of recast: nobody is going to sit through a dedicated test for it. Printed in every capture,
             // the answer instead falls out of an ordinary fight. slot=1 means the extra slot is treated as possibly
             // occupied, so nothing is being learned; base is what //aio out's song suppression measures against.
-            OBLOG("  SONGSLOT  count=%d  base=%d valid=%d slot=%d  ccUp=%d ccRecast=%d   (base must stay at your no-CC maximum)",
-                  songCount, songCC.base, songCC.valid ? 1 : 0, songCC.slotOpen ? 1 : 0, ccUp ? 1 : 0, ccOnRecast ? 1 : 0);
+            OBLOG("  SONGSLOT  cap=%d valid=%d (learned from an eviction)  ccUp=%d ccRecast=%d ccUsable=%d  -- counts are PER PERSON, see the FOCUS lines",
+                  songCap.cap, songCap.valid ? 1 : 0, ccUp ? 1 : 0, ccOnRecast ? 1 : 0, ccUsable ? 1 : 0);
             for (int q = 0; q < fmN && nb < 50; ++q) {                                         // emit a RED row for each MISSING focus buff (self or ally)
                 // Honour "My buffs on allies" here too. Turning it off stops ob[] being built, so no NEW ally entry
                 // is created -- but the ones already in fm[] kept emitting, leaving a red blinking "Name - Haste OUT"
@@ -1254,8 +1259,9 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
                 if (songUnrecoverable(fm[q])) {   // a lost 5th Clarion-Call song can't be refilled -> suppress the OUT entirely (never even a one-frame flash before the prune frees it)
                     if (focus_trace_live())
-                        windower::debug::log("SONGOUT st=%u '%s' SUPPRESSED count=%d base=%d ccUp=%d ccRc=%d -> no OUT (unrecoverable extra song)",
-                                             (unsigned)fm[q].status, buff_status_name(fm[q].status), songCount, songBase, ccUp ? 1 : 0, ccOnRecast ? 1 : 0);
+                        windower::debug::log("SONGOUT st=%u '%s' SUPPRESSED : that person now holds %d, the cap is %d (ccUsable=%d) -> no OUT (the fifth slot is gone)",
+                                             (unsigned)fm[q].status, buff_status_name(fm[q].status),
+                                             party().song_slot_count(fm[q].target), songCap.cap, ccUsable ? 1 : 0);
                     continue;
                 }
                 if (songReplaced(fm[q])) {   // deliberately swapped out by a new song on the same ally (Pianissimo Ballad) -> no OUT, not even a one-frame flash (prune frees the slot next frame)

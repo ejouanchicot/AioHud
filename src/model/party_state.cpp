@@ -2004,7 +2004,24 @@ void PartyState::prune_other_buffs_worn() {
         const char* verdictWhy = "kept";
         const SlotVerdict v = song_slot_verdict(se, seN, seIdx, member, mine, &verdictWhy);
         why[k] = verdictWhy;
-        if (v != SLOT_KEEP) drop[k] = true;
+        if (v != SLOT_KEEP) {
+            drop[k] = true;
+            // THE CAP, LEARNED FROM THE GAME ADMITTING IT. If this row is the one the eviction rule named
+            // at cast time and it has now really gone, the set WAS full -- so the number of songs left on
+            // that person is the limit, exactly. One event, no window, no high-water mark.
+            //
+            // A maximum-ever-seen cannot work here, and used to be what we had: the limit follows the
+            // INSTRUMENT, so it learns the count reached under a Daurdabla and keeps it after the swap,
+            // and a plugin reload or a job change reset it to 1 -- from where it silenced every song loss
+            // until a full rotation rebuilt it. An eviction re-teaches itself the moment the setup changes.
+            if (song_was_evicted(ob.target, ob.spell, 6000u)) {
+                const int after = song_slot_count(ob.target) - 1;   // this row still counts here, it goes below
+                const SlotCap was = songCap_;
+                songCap_ = song_cap_learn(songCap_, after, true);
+                if (ptr && (songCap_.cap != was.cap || songCap_.valid != was.valid))
+                    windower::debug::log("  SONGCAP learned from an eviction on %08X : cap = %d", ob.target, songCap_.cap);
+            }
+        }
         if (ptr) windower::debug::log("  SLOT  k=%-2d %-18s tgt=%08X st=%-4u spell=%-5u  0x076=%s yours=%d -> %s : %s",
                                       k, ob.name, ob.target, ob.status, ob.spell, bs ? "yes" : "no", selfCap,
                                       drop[k] ? "DROP" : "keep", why[k]);

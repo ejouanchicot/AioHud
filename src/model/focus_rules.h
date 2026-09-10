@@ -28,74 +28,18 @@ inline FocusMute focus_mute_verdict(bool muted, bool seenThisFrame, unsigned cas
     return FOCUS_KEEP;
 }
 
-// ---- 2. how many songs you can hold, learned rather than read ------------------------------------------------
+// ---- 2 and 3 : the learned cap and the unrecoverable fifth song -- MOVED to model/song_slots.h -------
 //
-// A bard's song maximum is not in memory (both the count and the cap are server-side), so it is reconstructed:
-// the high-water mark of the songs you maintain WHILE Clarion Call is fully available -- its buff down and its
-// recast ready. That window carries no Clarion Call bonus, so the count observed in it IS your no-CC maximum,
-// and it learns the instrument and merit setup with no gear reads at all.
+// clarion_learn() took the cap as a high-water mark of observed song counts. That is structurally wrong:
+// the limit follows the equipped INSTRUMENT, so the mark keeps the maximum reached under a Daurdabla long
+// after the swap -- and a plugin reload or a job change reset it to 1, from where it silenced every song
+// loss until a full rotation rebuilt it (measured 2026-09-10).
 //
-// Gating on "recast ready" is not enough on its own, and believing it was cost us the rule below. CLARION CALL
-// OPENS THE SLOT; IT DOES NOT HOLD IT OPEN. Once the fifth song is up it SURVIVES the buff ending, and you may
-// re-sing it over itself for as long as you like without Clarion Call -- the slot closes only when that song is
-// actually LOST (dispelled or run out) with the recast still running. So a bard who keeps refreshing a fifth song
-// through the whole recast arrives at "Clarion Call ready again, five songs up", which the old gate read as an
-// honest window: it learned base = 5, permanently, and from then on a genuinely lost fifth song raised exactly
-// the un-clearable red alert this whole rule exists to prevent.
+// The count both rules compared against was wrong twice over: it SKIPPED the fake songs, the very ones
+// sung to occupy a slot, and it was global where the game counts per (singer, target).
 //
-// Hence the latch. Clarion Call being up -- or merely on recast, which is how a mid-session plugin load sees a
-// slot that was opened before we were watching -- marks the extra slot as possibly OCCUPIED, and only a song set
-// that has emptied out proves it is not: with zero songs there is nothing left occupying anything. Nothing is
-// learned while that latch is set, so the high-water mark can only ever be taken from a set we know is unaided.
-struct ClarionBase { int base; bool valid; bool slotOpen; };
-
-inline ClarionBase clarion_learn(ClarionBase cur, int songCount, bool ccUp, bool ccOnRecast) {
-    if (ccUp || ccOnRecast) cur.slotOpen = true;   // an extra song may be alive -- learning here would poison the base
-    if (songCount == 0) cur.slotOpen = false;      // nothing is up at all, so nothing occupies the extra slot
-    if (!cur.slotOpen && songCount > 0) {
-        if (songCount > cur.base) cur.base = songCount;
-        cur.valid = true;
-    }
-    return cur;
-}
-
-// ---- 3. a lost song that cannot be brought back ---------------------------------------------------------------
-//
-// A song sung BEYOND the no-Clarion-Call maximum lives in a slot that disappears when Clarion Call is spent.
-// Losing it is not a mistake to shout about -- "pour 4 songs c'est ok" -- so it must not raise a permanent red
-// OUT. Every condition below is required, and each one narrows a way of being wrong:
-//   - the base must be KNOWN (an unlearned base would silence everything);
-//   - the song must be on an ALLY, not yourself;
-//   - you must be EXACTLY AT the base, so the song that went is the extra one and nothing else;
-//   - Clarion Call must be down AND on recast: with it available the slot is refillable, and a refillable song
-//     keeps its normal alert, which is the point of having one;
-//   - AND YOU MUST HAVE LOST THE SONG TOO. This last one was missing, and without it the rule silenced every
-//     ally song loss for a full Clarion Call recast -- an hour of silence bought by one use of an SP2.
-//
-// AND THE COUNT MUST LAND EXACTLY ON THE BASE, not merely reach it. "At or above" reads as true for any count
-// once the base is low, and the base IS low every time it has not been learned yet -- it resets on a job change
-// and on a plugin reload, then climbs back one rotation at a time. Measured 2026-09-10: a reload left base = 1,
-// and from that moment losing any one of four songs satisfied "3 >= 1" and was silenced. Landing exactly on the
-// base is what "the extra song, and only the extra song, went" actually means: you held base + 1, you lost one,
-// you are at base. Four songs on a base of one is not that shape, and now says so.
-//
-// That last condition is the one that separates the two situations, and the count alone never could. `songCount`
-// is the number of distinct song SPELLS alive across ALL your allies, so one person being dispelled does not move
-// it while anybody else still carries that song: the rule stayed true forever and the alert was suppressed
-// (hud_timers.cpp) AND its entry freed, with nothing said. Measured 2026-09-10 with two allies -- six live,
-// perfectly re-singable songs, all six flagged unrecoverable.
-//
-// Losing it FROM YOURSELF is what closes the slot -- not Clarion Call ending, which the fifth song outlives. So
-// "gone from you too" is not a proxy for the slot closing, it IS the slot closing; and while you still hold the
-// song, an ally missing it is simply someone to sing to again. Your own list is 0x063 -- server-exact, and never
-// the "unverifiable" a trust's missing 0x076 leaves us with -- so it is the one signal here that cannot lie. A
-// Pianissimo song you never held yourself is covered by the count instead: losing it drops `songCount` below the
-// base, which reopens the alert.
-inline bool song_unrecoverable(const ClarionBase& b, bool onSelf, bool isSong,
-                               bool ccUp, bool ccOnRecast, int songCount, bool stillOnYou) {
-    return b.valid && !onSelf && isSong && !ccUp && ccOnRecast && songCount == b.base && !stillOnYou;
-}
-
+// song_slots.h learns the cap from an EVICTION instead -- the game only makes room when there is none
+// left, so the count at that moment is the limit, exactly -- and counts per person.
 
 // ---- 4. two songs, one status --------------------------------------------------------------------------------
 //
