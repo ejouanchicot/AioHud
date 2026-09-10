@@ -403,33 +403,15 @@ static void heal_menu_ptr() {
             }
         }
     }
-    // BORROW A SHIFT THE CLIENT HAS ALREADY ADMITTED, before spending anything on searching. A recompile
-    // moves whole regions by one delta, and any static that has PROVEN its own move names that delta -- this
-    // is the same reasoning heal_exam() uses, and the menu pointer was the only entry with no path to it.
+    // NO BORROWED SHIFT HERE, AND THAT IS DELIBERATE. A version of this function proposed the menu pointer
+    // from any other static that had proven a move. It is wrong for the same reason it is right for the
+    // examine caches: a recompile moves REGIONS. On 2026-09-11 target_t moved -0x40 while the menu region
+    // moved +0x32B20, so the borrowed delta threw the search 207 KB away from a slot that was FOUR BYTES from
+    // where it already stood -- and the +/-32 KB sweep below could no longer reach back.
     //
-    // It matters because the sweep below only looks +/- 32 KB around the seed. Measured 2026-09-11: the client
-    // moved by +0x32AE4, which is 207 KB -- six times outside the window. The healer swept the wrong ground
-    // for as long as the player kept playing, found two decoys, and waited for them to prove something they
-    // never could. The log said so plainly, every three seconds, and nothing was watching it.
-    //
-    // The proposal is not adoption: it is written in unconfirmed, and the "def carries the menu tag" test at
-    // the top of this function accepts or rejects it the next time a menu is open. A wrong guess costs one
-    // more pass; a right one ends the search instantly.
-    {
-        static bool tried = false;
-        if (!tried) {
-            for (int k = 0; k < (int)FM_N; ++k) {
-                if (k == (int)FM_MENU_PTR || !g_confirmed[k]) continue;
-                const u32 delta = g_rva[k] - ENTRIES[k].seed;
-                if (!delta) continue;                       // that static did not move : it proposes nothing here
-                const u32 proposed = ENTRIES[FM_MENU_PTR].seed + delta;
-                if (proposed == g_rva[FM_MENU_PTR]) break;  // already where the shift would put it
-                tried = true;
-                fm_adopt(FM_MENU_PTR, proposed, "proposed from a shift another static proved", false);
-                return;                                     // let the tag test judge it on the next pass
-            }
-        }
-    }
+    // A shift is only transferable between statics known to travel together (see heal_exam, where the two
+    // examine caches sit 0x998 apart and always move as one). Nothing travels with this pointer, so it looks
+    // for itself.
     // Deliberately NOT keyed on what the dead slot reads. The 2026-08-12 failure happened to leave a small
     // integer there, but 0 is also the value of a HEALTHY closed menu -- keying on the symptom we happened
     // to see would build a healer that only ever fixes the bug we already fixed. So : if the slot has not
