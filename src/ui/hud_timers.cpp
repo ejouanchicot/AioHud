@@ -1206,6 +1206,15 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // (the emit stops drawing it at that point ; without this it lingers forever and can fill fm[24]).
                 if (!fm[q].zoneCheck && fm[q].lostMs && !fmHas[q]) {
                     const bool dkOn = C.tm_buff_off((unsigned)fm[q].status);   // self & ally share ONE global hidden state
+                    // THE SLOT IT IS ASKING FOR HAS BEEN FILLED. An OUT says "you lost this, sing it again". Once
+                    // that person's song slots are full again -- with something else, because this one is still
+                    // missing -- the alert is asking for room that no longer exists, and you are the one who used
+                    // it. Reported 2026-09-10: songs left in OUT, a fresh rotation sung over them, and the old
+                    // alerts stayed. Forgetting them is not hiding a loss; it is noticing you replaced it.
+                    //
+                    // A real dispel does NOT hit this: losing a song drops the count BELOW the cap, so the alert
+                    // stands until you either sing it back (present again) or fill the slot with another song.
+                    if (songCap.valid && party().song_slot_count(fm[q].target) >= songCap.cap) continue;
                     if (songUnrecoverable(fm[q])) continue;   // un-refillable 5th Clarion-Call song -> free the slot (no OUT will ever draw ; without this the un-drawn entry lingers and fills fm[24])
                     if (songReplaced(fm[q])) continue;        // deliberately swapped out by a new song on the same ally (Pianissimo) -> free the slot, never an OUT
                     if (geoReplaced(fm[q])) continue;         // a previous Indi- you replaced by casting another one -> free the slot, never an OUT

@@ -359,6 +359,18 @@ int PartyState::ob_remaining_sec(const OtherBuff& o) const {
 // which is 0 for exactly those. That is why every cap rule built on it was wrong.
 int PartyState::song_slot_count(unsigned target) const {
     int n = 0;
+    // YOUR own set is not in otherBuffs_ -- it is the 0x063, and it is the exact one. Same question, other
+    // source: the slots are per person, and you are a person.
+    if (target == selfId_) {
+        for (int i = 0; i < buffTimerN_; ++i) {
+            const unsigned short sp = (unsigned short)self_buff_spell_ranked(buffTimers_[i].id, buffTimers_[i].expiry, i);
+            if (!sp) continue;
+            const SpellBuff* sb = spell_buff(sp);
+            if (!sb || sb->skill != 40) continue;                    // songs only, fake ones included
+            if ((int)(buffTimers_[i].expiry - ffxi_now_tick()) > 0) ++n;
+        }
+        return n;
+    }
     for (int k = 0; k < otherBuffN_; ++k) {
         const OtherBuff& o = otherBuffs_[k];
         if (o.target != target || o.isAbil) continue;
