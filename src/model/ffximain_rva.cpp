@@ -355,11 +355,28 @@ static void heal_pw_merit() {
 // The focused-menu slot. Detection is the interesting half : 0 is the NORMAL value (no menu open), so
 // "not a pointer" cannot be the test. What the broken state actually looked like on 2026-08-12 was a
 // small integer (14, 15) -- a different variable entirely. That IS the test.
+static bool g_adoptedTag = false;   // the tag shortcut speaks once, then leaves the floor to real evidence
 static void heal_menu_ptr() {
     static u32 cand[16]; static int nCand = 0;
     static u32 lastName[16];
     static int fullSweeps = 0, sampleIn = 0, sweepIn = 0, grace = 600;
-    if (g_confirmed[FM_MENU_PTR]) return;
+    // A CONFIRMATION THAT READS A DECOY IS REVISABLE. The tag test used to confirm on "this is a menu object",
+    // which every slot satisfies, and the verdict was then cached to disk against the client fingerprint --
+    // so a wrong answer survived reloads and updates alike, reporting PROVEN while nothing was detected.
+    // 'inline' and 'logwindo' are always themselves; the focused slot never reads either. Seeing one of them
+    // here is proof the confirmation was wrong, and proof is allowed to change a verdict.
+    if (g_confirmed[FM_MENU_PTR]) {
+        u32 p = 0, d = 0, nm = 0;
+        if (safe_read(fm_addr(FM_MENU_PTR), &p) && valid_ptr(p) && safe_read(p + 0x04, &d) && valid_ptr(d)
+            && safe_read(d + 0x4E, &nm)
+            && (nm == 0x696C6E69u /* "inli" */ || nm == 0x77676F6Cu /* "logw" */)) {
+            windower::debug::log("fm: live-menu ptr was PROVEN on a decoy ('%c%c%c%c') -- reopening the search",
+                                 (char)(nm & 0xFF), (char)((nm >> 8) & 0xFF), (char)((nm >> 16) & 0xFF), (char)((nm >> 24) & 0xFF));
+            g_confirmed[FM_MENU_PTR] = false;
+            g_adoptedTag = false;
+        }
+        else return;
+    }
 
     const u32 a = fm_addr(FM_MENU_PTR);
     if (!a) return;
@@ -367,8 +384,23 @@ static void heal_menu_ptr() {
     if (valid_ptr(v)) {                                  // a plausible object : is it actually a menu ?
         u32 def = 0, tag = 0;
         if (safe_read(v + 0x04, &def) && valid_ptr(def) && safe_read(def + 0x46, &tag) && tag == 0x756E656Du) {
-            fm_adopt(FM_MENU_PTR, fm_rva(FM_MENU_PTR), "def carries the \"menu\" tag");
-            return;
+            // THE TAG PROVES "A MENU", NOT "THE FOCUSED MENU", and this test used to CONFIRM on it. Every
+            // menu-shaped slot carries the tag -- the 'inline' and 'logwindo' decoys included -- so the first
+            // one the seed happened to land on was adopted and the search stopped for good.
+            //
+            // Measured 2026-09-11: the seed sat on 0x621890, reading 'inline', while the focused slot was four
+            // bytes earlier at 0x62188C reading 'magic'. read_action_menu then matched no menu name at all, so
+            // NOTHING was detected -- no cost box, and the party menu invisible -- with every address in
+            // //aio rva reporting PROVEN.
+            //
+            // The file's own definition already said what the evidence is: a slot whose def carries the tag AND
+            // whose NAME CHANGES as menus open and close. This half was missing. So the tag now buys a working
+            // address, not a verdict: adopted UNCONFIRMED, which keeps the two-different-names sweep running
+            // until something actually proves itself.
+            if (fm_rva(FM_MENU_PTR) != g_rva[FM_MENU_PTR] || !g_adoptedTag) {
+                g_adoptedTag = true;
+                fm_adopt(FM_MENU_PTR, fm_rva(FM_MENU_PTR), "def carries the \"menu\" tag (usable, not yet proven)", false);
+            }
         }
     }
     // BORROW A SHIFT THE CLIENT HAS ALREADY ADMITTED, before spending anything on searching. A recompile
