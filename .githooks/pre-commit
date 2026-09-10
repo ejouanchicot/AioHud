@@ -1,0 +1,40 @@
+#!/bin/sh
+# Runs the offline suite before every commit. Versioned here rather than in .git/hooks, which git does not
+# track -- a hook nobody can clone is a hook that protects one machine.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+# Skip deliberately:       git commit --no-verify      (a WIP commit on a branch, nothing more)
+#
+# WHY A HOOK WHEN CI ALREADY RUNS THIS. CI answers after a push, which is after the commit that broke something
+# is already in the history and, on a tag, already published. The hook answers before it exists. They are not
+# redundant: CI is the authority (it builds on a clean machine with the same toolchain), the hook is the fast
+# feedback that stops the obvious.
+#
+# It runs the TESTS only, not the plugin build: the suite compiles what it needs itself and takes seconds, while
+# a full build.bat is ~50 s and would push people to --no-verify, which is worse than no hook at all.
+
+root=$(git rev-parse --show-toplevel)
+cd "$root" || exit 1
+
+if [ ! -f tests.bat ]; then
+    echo "pre-commit: tests.bat not found -- skipping (nothing to run)"
+    exit 0
+fi
+
+echo "pre-commit: running the offline suite..."
+# An ABSOLUTE Windows path, not "tests.bat": cmd does not resolve a relative name handed to it from this
+# shell, and the failure reads as a failing test suite rather than as a path problem. Cost one confused
+# minute the day the hook was written.
+win_root=$(pwd -W 2>/dev/null || pwd)
+out=$(cmd //c "$(echo "$win_root" | tr "/" "\\\\")\tests.bat" 2>&1)
+rc=$?
+if [ $rc -ne 0 ]; then
+    echo "$out" | tail -30
+    echo ""
+    echo "pre-commit: TESTS FAILED -- commit refused."
+    echo "            Fix them, or commit with --no-verify if you know why this one is allowed through."
+    exit 1
+fi
+
+echo "$out" | grep -E "checks|\[tests\]" | tail -2
+exit 0
