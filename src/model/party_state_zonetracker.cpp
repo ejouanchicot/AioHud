@@ -659,9 +659,9 @@ void PartyState::zt_set_zone(int zone, const char* name) {
     } else {
         // Sheol -> Rabao (247) : FREEZE the run total as "N (last run)" (addon's conserve) + clear A/B/C for the next
         // run. Any other exit resets everything.
-        if (prevMode == 5 && zone == 247) { zt_.mode = 5; zt_.segLastRun = 1; zt_.sheolzone = 0; }
+        if (prevMode == 5 && zone == 247) { zt_.mode = 5; zt_.segLastRun = 1; zt_.sheolzone = 0; zt_.gaolSec = -1; }
         else {
-            if (prevMode == 5) { zt_.segments = 0; zt_.segLastRun = 0; zt_.segBase = -1; zt_.sheolzone = 0; }
+            if (prevMode == 5) { zt_.segments = 0; zt_.segLastRun = 0; zt_.segBase = -1; zt_.sheolzone = 0; zt_.gaolSec = -1; }
             // Nyzul -> staging (77 -> 72) : addon keeps the run but zeroes the timer + armband ; any other exit resets it.
             if (oldZone == 77 && zone == 72) { zt_.nyTimerSec = 0; zt_.nyTimerMs = 0; zt_.nyArmband = 0; }
             else if (prevMode == 4) ny_reset_run(zt_);
@@ -676,7 +676,12 @@ void PartyState::on_034(const unsigned char* p) {           // 0x034 NPC interac
     if (pkt_u16(p, 0x2C) != 173) return;                   // Menu ID 173 = the Odyssey conflux
     if (pkt_u32(p, 0x04) != selfId_) return;               // ...interacting with US
     const int i = (int)pkt_u32(p, 0x08);                   // Menu Parameters[0] = 1/2/3 = Sheol A/B/C
-    if (i > 0 && i < 4) { zt_.sheolzone = i; zt_save(); }  // set now (in Rabao) ; kept through the zone-in
+    // LOG IT WHATEVER IT IS. Only 1/2/3 are known, and Sheol GAOL goes through this same conflux -- so its
+    // parameter is one of the values this line has always discarded, and nobody could name it. Reported
+    // 2026-09-09: entering Gaol leaves sheolzone at 0 while mode 5 is set anyway, so the box draws its Sheol
+    // A/B/C header over content that has neither A/B/C nor segments.
+    windower::debug::log("sheol: conflux menu 173 param0=%d (1/2/3 = Sheol A/B/C ; anything else is unmapped -- Gaol?)", i);
+    if (i > 0 && i < 5) { zt_.sheolzone = i; zt_save(); }  // 1/2/3 = A/B/C, 4 = Gaol ; set in Rabao, kept through the zone-in
 }
 void PartyState::on_00e(const unsigned char* p) {          // 0x00E NPC update : fallback A/B/C from a mob's instance bits (menu missed)
     if (zt_.mode != 5 || zt_.sheolzone) return;            // only inside a Sheol run, and only while still unknown
@@ -684,11 +689,54 @@ void PartyState::on_00e(const unsigned char* p) {          // 0x00E NPC update :
     const unsigned id = pkt_u32(p, 0x04);                  // the entity's server id
     if (id < 0x01000000u) return;
     const unsigned instance = (id >> 12) & 0xFFFu;         // unique instance bits (addon : bit.band(bit.rshift(id,12),0xFFF))
-    static const unsigned INST[3][2] = { {1019, 1020}, {1021, 1022}, {1023, 1024} };   // Sheol A / B / C
-    for (int k = 0; k < 3; ++k)
-        if (instance == INST[k][0] || instance == INST[k][1]) { zt_.sheolzone = k + 1; zt_save(); break; }
+    static const unsigned INST[4][2] = { {1019, 1020}, {1021, 1022}, {1023, 1024}, {1025, 1025} };   // A / B / C / GAOL
+    for (int k = 0; k < 4; ++k)
+        if (instance == INST[k][0] || instance == INST[k][1]) { zt_.sheolzone = k + 1; zt_save(); return; }
+    // Nothing matched : report each distinct value ONCE. Gaol's instance bits are in no table anywhere, and
+    // this is where they can be read off, from a single visit, instead of guessed.
+    // Report an unknown value ONCE, and only if it could plausibly BE an Odyssey instance. Without that range
+    // this logged things like 298 -- a zone id, from an entity whose bits mean something else entirely -- which
+    // is the sort of noise that teaches people to stop reading a diagnostic.
+    if (instance >= 1000 && instance <= 1099) {
+        static unsigned seen[8]; static int nSeen = 0;
+        for (int k = 0; k < nSeen; ++k) if (seen[k] == instance) return;
+        if (nSeen < 8) seen[nSeen++] = instance;
+        windower::debug::log("sheol: instance %u matches no known Sheol (A=1019/1020 B=1021/1022 C=1023/1024 Gaol=1025)", instance);
+    }
 }
 void PartyState::on_limbus_075(const unsigned char* p) {    // 0x075 : battlefield timer/BARS -> Limbus area/level + floor + gauge
+    // SHEOL PROBE, decoding NOTHING. 0x075 is the BATTLEFIELD packet -- it is what carries Limbus's floor and
+    // gauge -- so it is the first place a Gaol lobby/fight countdown would be. This dumps its header words for
+    // one visit so the fields can be identified before any of them is believed. Bounded to 12 lines: 0x075 is
+    // multiplexed and arrives often, and an unbounded dump would bury the rest of the capture.
+    // SHEOL GAOL : the battlefield countdown. MEASURED 2026-09-09 in a live Gaol -- @04 carries the
+    // battlefield/instance id (1025, the same bits its entities show) and @0C is a countdown in SECONDS: two
+    // samples one second apart read 898 then 897. @08 moved by 1 in that same second, so it is an absolute
+    // clock and not the remaining time; nothing here reads it.
+    //
+    // SELF-FILTERED, because 0x075 is multiplexed and other senders put unrelated words in these bytes: the id
+    // must be a Sheol instance and the value must look like a countdown. A packet failing either is ignored
+    // rather than believed -- the Limbus reader on this same packet filters on its bar labels for that reason.
+    if (zt_.mode == 5 && pkt_bytes(p) >= 0x10) {
+        const unsigned inst = pkt_u32(p, 0x04);
+        const int      sec  = (int)pkt_u32(p, 0x0C);
+        if (inst >= 1019 && inst <= 1025 && sec > 0 && sec <= 7200) {
+            // TRACE THE PHASE CHANGE, not the ticking. A countdown only ever goes down, so a value that JUMPS UP
+            // is the server starting a new clock -- which is exactly the lobby -> fight transition still to be
+            // identified. Logging every packet would be a line a second and would bury it; logging only the
+            // jumps (plus the first few, to see where a run starts) costs nothing and cannot miss it.
+            static int lastSec = -1; static int nLog = 0;
+            if (nLog < 4 || sec > lastSec + 2) {
+                if (nLog < 4) ++nLog;
+                windower::debug::log("sheol: battlefield clock inst=%u  %d s (%d:%02d)%s",
+                                     inst, sec, sec / 60, sec % 60,
+                                     (lastSec >= 0 && sec > lastSec + 2) ? "  <-- JUMPED UP : a new phase started" : "");
+            }
+            lastSec = sec;
+            zt_.gaolSec = sec; zt_.gaolMs = GetTickCount();
+            if (zt_.sheolzone == 0 && inst == 1025) zt_.sheolzone = 4;   // a Gaol packet identifies Gaol too
+        }
+    }
     if (zt_.mode != 6) return;                             // only while standing in a Limbus zone (38 Apollyon / 37 Temenos)
     if (pkt_bytes(p) < 0x9C) return;                       // 0x075 is MULTIPLEXED (other senders put position floats here) and can be short -> don't read the 6 bars (up to p[0x9B]) past the end
     // bar[i] = { s32 progress ; char label[16] } at +0x28 + i*0x14, six of them (Windower's fields.lua documents
@@ -753,7 +801,15 @@ void PartyState::on_55(const unsigned char* p) {            // 0x055 : key items
     zt_save();                                             // KIs / time-extensions changed -> persist
 }
 void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol segments (mode 5) + Abyssea zone messages (mode 2)
-    if (pkt_bytes(p) < 0x1C) return;                        // truncated -> the params/message id (up to the u16 @0x1A) aren't there ; covers all mode branches
+    if (pkt_bytes(p) < 0x1C) return;                        // truncated -> the params/message id (up to the u16 @0x1A) aren't there ; cover
+    // //aio songtape : EVERY message, id and params. The game announces a song being replaced or wearing off in
+    // the chat log, and that announcement is an OBSERVATION where the ally-buff model currently makes an
+    // INFERENCE -- crossing three lists that arrive at different times, which is what produced every song defect
+    // chased on 2026-09-09. None of these ids is known yet; this is how they get identified, from one rotation.
+    if (song_tape_on())
+        windower::debug::log("TAPE %6u  MSG    id=%-6u p1=%-10d p2=%-10d p3=%-10d p4=%d",
+                             tape_ms(), (unsigned)(pkt_u16(p, 0x1A) & 0x3FFF),
+                             (int)pkt_u32(p, 0x08), (int)pkt_u32(p, 0x0C), (int)pkt_u32(p, 0x10), (int)pkt_u32(p, 0x14));
     // SHEOL / ODYSSEY segments : the per-kill message (seeded at 40016, masked 0x7FFF = 7248) carries p1 = segments
     // THIS kill, p2 = the RUNNING banked total. segments = p2 - baseline (baseline = p2-p1 at the first message) ->
     // IDEMPOTENT (a duplicate chunk shares p2 so it can't double-count) and packet-loss-proof (p2 is authoritative).

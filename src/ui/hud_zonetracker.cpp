@@ -220,9 +220,11 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     // ===== SHEOL / ODYSSEY (mode 5) : Sheol A/B/C header + segment counter + the target's resistances (weapons /
     // elements / Cruel Joke), ported from the SheolHelper addon. =====
     if ((preview || editing) ? (vz == 4) : (party().zone_tracker().mode == 5)) {
-        int segs = 0, sheol = 0; bool lastRun = false;
+        int segs = 0, sheol = 0; bool lastRun = false; int gaolSec = -1;
         if (preview || editing) { segs = 1234; sheol = 2; }
-        else { const ZoneTracker& zt = party().zone_tracker(); segs = zt.segments; sheol = zt.sheolzone; lastRun = (zt.segLastRun != 0); }
+        else { const ZoneTracker& zt = party().zone_tracker(); segs = zt.segments; sheol = zt.sheolzone; lastRun = (zt.segLastRun != 0);
+               // Gaol's battlefield countdown, ticked down from the last 0x075 rather than held still between them.
+               if (zt.gaolSec >= 0) { gaolSec = zt.gaolSec - (int)((GetTickCount() - zt.gaolMs) / 1000u); if (gaolSec < 0) gaolSec = 0; } }
         const bool showSeg = (C.ztSheolSeg != 0);
         // ---- resistances of the current target (cached by name ; recomputed only when the target changes) ----
         static ResData rd; static char rdName[24] = {0};
@@ -258,8 +260,19 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         float dtF = C.ztShDot;  if (dtF < 0.50f) dtF = 0.50f; if (dtF > 2.50f) dtF = 2.50f;
         const float iconSz = 15.0f * S * icF;
         #define RESCOL(c) ((c) == 1 ? green : (c) == 2 ? red : white)
-        char hdr[16]; if (sheol >= 1 && sheol <= 3) sprintf(hdr, "Sheol %c", (char)('A' + sheol - 1)); else sprintf(hdr, "Odyssey");
-        char sb[40]; sprintf(sb, "Segments: %d%s", segs, lastRun ? " (last run)" : "");
+        // GAOL IS NOT A FOURTH SHEOL. It has no segments and no A/B/C -- what matters there is the battlefield
+        // clock -- so the row under the header carries the countdown instead of a segment count that would
+        // always read 0. Reported 2026-09-09: entering Gaol drew the Sheol A/B/C box, which belongs to another
+        // content entirely.
+        char hdr[16];
+        if      (sheol == 4)                sprintf(hdr, "Sheol Gaol");
+        else if (sheol >= 1 && sheol <= 3)  sprintf(hdr, "Sheol %c", (char)('A' + sheol - 1));
+        else                                sprintf(hdr, "Odyssey");
+        char sb[40];
+        if (sheol == 4) {
+            if (gaolSec >= 0) sprintf(sb, "Time: %d:%02d", gaolSec / 60, gaolSec % 60);
+            else              sprintf(sb, "Time: --:--");   // in Gaol, before the first battlefield packet
+        } else sprintf(sb, "Segments: %d%s", segs, lastRun ? " (last run)" : "");
         // measure : header, segments, then (weapons / element 2-col / joke)
         float contentW = fH->measure(hdr, zH); if (showSeg && fSg->measure(sb, zSg) > contentW) contentW = fSg->measure(sb, zSg);
         char wl[24], vb[12];
