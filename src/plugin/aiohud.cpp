@@ -1027,6 +1027,25 @@ static void aio_command_dispatch(const char* cmd)
     // NB : NOT "songlog" -- aiohud_probes.cpp already owns that name, and probes::command() runs FIRST (above),
     // so a colliding name is silently unreachable : the probe answers, this never runs, and the capture comes back
     // looking like the trace simply produced nothing. Checked against all 93 command patterns in both files.
+    // //aio songtape [sec] -> record the whole song sequence as it happens (default 120 s, 0 = off).
+    if (strstr(buf, "songtape")) {
+        int sec = 120; { const char* a = strstr(buf, "songtape") + 8; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
+        if (sec > 600) sec = 600;
+        aio::party().set_song_tape(sec);
+        char m[220];
+        _snprintf(m, sizeof(m), aio::tr(">>> AioHud : song tape %s -- sing your rotation, then send aiohud_debug.log (TAPE lines) <<<",
+                                        ">>> AioHud : enregistrement des songs %s -- chante ta rotation, puis envoie aiohud_debug.log (lignes TAPE) <<<"),
+                  sec > 0 ? aio::tr("ON", "ACTIF") : aio::tr("off", "arrete"));
+        m[sizeof(m) - 1] = 0; g_host.console().print(m);
+        return;
+    }
+    // //aio songrow -> dump every ally song row with the numbers behind it (aiohud_debug.log). Read-only.
+    if (strstr(buf, "songrow")) {
+        aio::party().songrow_dump();
+        g_host.console().print(aio::tr(">>> AioHud : songrow written to Windower\\plugins\\aiohud_debug.log (look for AIO SONGROW) <<<",
+                                       ">>> AioHud : songrow ecrit dans Windower\\plugins\\aiohud_debug.log (cherche AIO SONGROW) <<<"));
+        return;
+    }
     if (strstr(buf, "songdur")) {   // //aio songdur [sec] -> the BRD song-duration MODEL, inputs included, checked against the game's own 0x063
         int sec = 120; { const char* a = strstr(buf, "songdur") + 7; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
         if (sec < 10) sec = 10; if (sec > 900) sec = 900;

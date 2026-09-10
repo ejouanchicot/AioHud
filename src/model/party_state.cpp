@@ -12,6 +12,8 @@
 #include "model/tb_buff_gen.h"          // spell_buff : buff spell id -> { status, base duration } (Timers "buff on ally")
 #include "model/enh_dur.h"              // enh_dur_table / composure_set_pct / perpetuance_mult : "Enhancing Magic eff. dur. +%" from live gear + augments
 #include "model/regen_dur.h"           // regen_dur_gear_sec : REGEN-only "+N s" duration gear (Bolelabunga...) added to Regen's base
+#include "model/cast_match.h"           // which cast produced a timer : pure and tested (tests/t_castmatch.cpp)
+#include "model/song_slot.h"            // the ally-song slot verdict, pure and tested (tests/t_songslot.cpp)
 #include "model/song_dur.h"            // BRD song duration : per-item flat song-duration gear + Troubadour
 #include "model/geo_dur.h"             // GEO Indi- duration : base + JP 1362 + flat Indicolure-duration gear
 #include "model/action_status_gen.h"   // spell_buff_status / abil_buff_status : action id -> status (self-cast filter)
@@ -432,32 +434,79 @@ int PartyState::match_cast(unsigned short status, unsigned expiry, int timerIdx)
     // (accurate) and a foreign cast ~= its base, so the cast whose predExp is NEAREST the real timer is the one that
     // made it. Songs KEEP the rank path below : they run several concurrent timers and their predictions are too loose
     // (Troubadour) for a closeness test -- exactly the case the DURATION-SANITY note was written for.
-    { int nTimers = 0; for (int j = 0; j < buffTimerN_; ++j) if (buffTimers_[j].id == status) ++nTimers;
-      if (nTimers <= 1 && nc > 1) {
-          int best = idx[0], bestD = 0x7FFFFFFF;
-          for (int a = 0; a < nc; ++a) { int d = (int)(selfCasts_[idx[a]].predExp - expiry); if (d < 0) d = -d; if (d < bestD) { bestD = d; best = idx[a]; } }
-          const SelfCast& mm = selfCasts_[best];
-          if (mm.caster != selfId_ && is_trust(mm.caster) && (int)(expiry - mm.predExp) > 90 * 60) return -1;   // keep the trust-overshoot guard
-          return best;
-      } }
-    // DURATION SANITY, and it is deliberately asymmetric. The real buff list is the authority: a trust's cast cannot
-    // produce a buff that outlives its own base duration by minutes, so if the live timer runs far past what this
-    // FOREIGN cast predicted, the pairing is wrong and the row is almost certainly ours. Returning "unknown" keeps the
-    // row visible; attributing it to a trust HIDES it under the buff-source filter. When unsure, never blame a trust.
-    // TRUSTS only. A trust has no Troubadour / Marcato, so its cast genuinely cannot outlive its base duration and a
-    // big overshoot proves a mis-pairing. A real PLAYER can: MEASURED 2026-07-20 on a second client, Tetsouo's
-    // Troubadour'd songs (~600 s) were predicted at the 120 s base and this guard rejected every one of them, so the
-    // row resolved to no spell at all -- generic status name, no tier, no JA tags. Guarding against players cost more
-    // than it protected.
-    const SelfCast& sc = selfCasts_[idx[rank]];
-    if (sc.caster != selfId_ && is_trust(sc.caster) && (int)(expiry - sc.predExp) > 90 * 60) return -1;
-    return idx[rank];
+    // THE PAIRING RULE LIVES IN model/cast_match.h -- pure, and covered by tests/t_castmatch.cpp, whose cases
+    // were each verified to FAIL against the branch they protect before being kept. The two shapes it decides
+    // between (rank for several live timers, closeness for one) and the never-blame-a-trust guard are written
+    // up there, with the symptom each of them answers. Here we only gather the candidates.
+    int nTimers = 0; for (int j = 0; j < buffTimerN_; ++j) if (buffTimers_[j].id == status) ++nTimers;
+    CastCand cc[16]; const int ncc = nc < 16 ? nc : 16;
+    for (int a = 0; a < ncc; ++a) {
+        const SelfCast& s = selfCasts_[idx[a]];
+        cc[a].predExp = s.predExp;
+        cc[a].isTrust = (s.caster != selfId_) && is_trust(s.caster);
+    }
+    const char* mwhy = "";
+    const int hit = cast_match(cc, ncc, expiry, nTimers, rank, &mwhy);
+    return hit < 0 ? -1 : idx[hit];
 }
 // Per-timer caster, with a CO-EXPIRY fallback for statuses the action packet never names.
 // MEASURED 2026-07-20 : Monberaux's move 4255 grants Protect AND Shell, but the 0x028 reports ONLY status 40 --
 // status 41 exists solely in the 0x063 timer list. There is no field to read, so the attribution has to come from
 // the one thing the two share: an IDENTICAL expiry tick means they were granted by the same event. Exact equality
 // only (the server stamps them from one action) -- no tolerance, or unrelated buffs would borrow a caster.
+// //aio songrow -- see party_state.h. One block per ally song row, and every line exists to separate two
+// explanations that look identical on screen:
+//   - the ESTIMATE is wrong (the duration model did not get Troubadour), or
+//   - the estimate is right but the row is not USING it (an AoE row borrows your own server timer, and a row
+//     that fails to group falls back to the estimate).
+// The implied multiplier is the quick read: a song's base is 120 s, so 300 s means the model applied m1 alone
+// and 600 s means it also applied the x2. Your own timer for the same song sits beside it, because that is the
+// number a grouped row shows -- when the two disagree, which one the player sees is the whole question.
+void PartyState::songrow_dump() const {
+    const unsigned nowMs = GetTickCount();
+    int n = 0;
+    windower::debug::log("=== AIO SONGROW : ally song rows, %d ally buff(s) tracked ===", otherBuffN_);
+    for (int k = 0; k < otherBuffN_; ++k) {
+        const OtherBuff& o = otherBuffs_[k];
+        const int fam = o.isAbil ? 0 : song_family(o.spell);
+        if (fam <= 0) continue;                      // songs only : a roll or an enhancing spell answers another question
+        ++n;
+        const int elapsed = (int)((nowMs - o.startMs) / 1000u);
+        const int est     = (int)((int)(o.startMs + o.durMs - nowMs) / 1000);
+        const int durSec  = (int)(o.durMs / 1000u);
+        const int selfSec = self_buff_remaining_for(o.status, o.spell);
+        const unsigned char mods = song_mods(o.spell);
+        windower::debug::log("  %-16s id=%08X trust=%d | spell=%u fam=%d status=%u",
+                             o.name[0] ? o.name : "?", o.target, is_trust(o.target) ? 1 : 0,
+                             (unsigned)o.spell, fam, (unsigned)o.status);
+        windower::debug::log("      estimate  dur=%d s  elapsed=%d s  remaining=%d s   implied multiplier x%d.%02d of the 120 s base",
+                             durSec, elapsed, est, durSec / 120, ((durSec * 100) / 120) % 100);
+        windower::debug::log("      row       aoe=%d mirrorSelf=%d expTick=%s   <- aoe+mirror is what borrows YOUR timer",
+                             (int)o.aoe, (int)o.mirrorSelf, o.expTick ? "frozen" : "free");
+        windower::debug::log("      factors   m1=%d.%02d  m2=x%d  m3=x%d.%d  a3=%d s   -> 120 x m1 x m2 x m3 + a3 = %d s",
+                             o.m1pct / 100, o.m1pct % 100, (int)o.m2x, (int)o.m3x / 10, (int)o.m3x % 10, (int)o.a3s,
+                             (int)((120.0 * (o.m1pct / 100.0) * (double)o.m2x * ((double)o.m3x / 10.0)) + o.a3s));
+        windower::debug::log("      tags      SV=%d N=%d T=%d M=%d   (recorded at cast time, per spell)",
+                             (mods & 1) ? 1 : 0, (mods & 2) ? 1 : 0, (mods & 4) ? 1 : 0, (mods & 8) ? 1 : 0);
+        windower::debug::log("      yours     your own timer for this song = %d s   <- what a grouped AoE row draws",
+                             selfSec);
+    }
+    if (!n) windower::debug::log("  (no ally song row tracked right now -- sing one and run this again)");
+    windower::debug::log("=== end songrow : compare 'implied multiplier' (x2.50 = no Troubadour, x5.00 = with it) against 'yours' ===");
+}
+
+// //aio songtape -- see party_state.h.
+static unsigned g_tapeUntil = 0, g_tapeT0 = 0;
+void PartyState::set_song_tape(int sec) {
+    const unsigned now = GetTickCount();
+    g_tapeUntil = sec > 0 ? now + (unsigned)sec * 1000u : 0;
+    g_tapeT0 = now;
+    windower::debug::log("=== SONGTAPE %s : casts, your timer list, party buff lists, drops and drawn rows -- timestamped ===",
+                         sec > 0 ? "ON" : "off");
+}
+bool     PartyState::song_tape_on() const { return g_tapeUntil && (int)(GetTickCount() - g_tapeUntil) < 0; }
+unsigned PartyState::tape_ms()     const { return GetTickCount() - g_tapeT0; }
+
 unsigned PartyState::buff_caster_for(unsigned short status, unsigned expiry, int timerIdx) const {
     // SELF-ONLY statuses : the game gives no one else any way to put these on you, so "unknown" is never the honest
     // answer -- they are yours by construction. Aftermath (270-273) comes from YOUR OWN weaponskill under a mythic /
@@ -1370,7 +1419,18 @@ void PartyState::on_action(const unsigned char* p) {
                 const unsigned long long MAX_ALLY_MS = 2ull * 60ull * 60ull * 1000ull;   // 2 h
                 if (ms > MAX_ALLY_MS) ms = MAX_ALLY_MS;
                 if (ms == 0) ms = 1000ull;   // a zero-duration row would draw as instantly-expired instead of unknown
+                if (song_tape_on())
+                    windower::debug::log("TAPE %6u  CAST   %-18s on %-16s spell=%-5u st=%-4u dur=%3us  m1=%d.%02d m2=x%d a3=%d",
+                                         tape_ms(), (spell_info(sid) && spell_info(sid)->en) ? spell_info(sid)->en : "?",
+                                         nm, (unsigned)sid, (unsigned)b->effect, (unsigned)(ms / 1000ull),
+                                         (int)(songM1 * 100) / 100, (int)(songM1 * 100) % 100, (int)songM2, songA3);
                 otherBuffs_[slot].durMs = (unsigned)ms;
+                // The terms behind that number, for //aio songrow. Written for EVERY ally buff, not only songs:
+                // a non-song leaves them at the neutral values, which is itself readable.
+                otherBuffs_[slot].m1pct = (unsigned short)(int)(songM1 * 100.0 + 0.5);
+                otherBuffs_[slot].m2x   = (unsigned char)(songM2 > 1.5 ? 2 : 1);
+                otherBuffs_[slot].m3x   = (unsigned char)(songM3 > 1.0 ? 15 : 10);   // tenths : 15 = x1.5
+                otherBuffs_[slot].a3s   = (unsigned short)(songA3 > 0 ? songA3 : 0);
                 otherBuffs_[slot].expTick = 0;   // AoE-on-self : frozen from your exact self 0x063 timer later (prune). Single-target : wall-clock estimate (startMs+durMs). Overwrites a recycled slot's stale expTick.
                 otherBuffs_[slot].isAbil = 0;
                 int j = 0; for (; j < 19 && nm[j]; ++j) otherBuffs_[slot].name[j] = nm[j]; otherBuffs_[slot].name[j] = 0;
@@ -1711,7 +1771,9 @@ void PartyState::on_076(const unsigned char* p) {
             else { slot = 0; for (int s = 1; s < 18; ++s) if (buffs_[s].seen < buffs_[slot].seen) slot = s; }
         }
         BuffSet& bs = buffs_[slot];
-        bs.id = mid; bs.n = 0; bs.seen = clk;
+        bs.id = mid; bs.n = 0; bs.seen = clk; bs.stampMs = GetTickCount();
+        const int tapeBefore = bs.n; unsigned short tapePrev[32];
+        for (int i = 0; i < 32 && i < tapeBefore; ++i) tapePrev[i] = bs.ids[i];
         for (int i = 0; i < 32; ++i) {
             unsigned low = p[base + 20 + i];
             unsigned hi2 = (p[base + 12 + (i >> 2)] >> (2 * (i & 3))) & 3;
@@ -1719,6 +1781,21 @@ void PartyState::on_076(const unsigned char* p) {
             if (buff == 255) continue;                         // empty buff
             bs.ids[bs.n++] = (unsigned short)buff;
             note_status_seen(buff);   // remember that this status really occurs -> the config lists what you meet, not the whole universe
+        }
+        // //aio songtape : the member's list, but ONLY when its CONTENT changed. The 0x076 arrives constantly;
+        // what carries information is the moment a status appears or disappears on somebody -- that is the
+        // server stating what they carry, which is the evidence the whole slot rule turns on. A drop the model
+        // makes 16 ms after this line is explained by it; a drop with no such line before it is not.
+        if (song_tape_on()) {
+            bool changed = (bs.n != tapeBefore);
+            for (int i = 0; !changed && i < bs.n && i < tapeBefore; ++i) if (bs.ids[i] != tapePrev[i]) changed = true;
+            if (changed) {
+                char ids[160]; int o = 0; ids[0] = 0;
+                for (int i = 0; i < bs.n && i < 32 && o < 150; ++i) o += _snprintf(ids + o, sizeof(ids) - o, "%u ", (unsigned)bs.ids[i]);
+                ids[sizeof(ids) - 1] = 0;
+                const char* who = pc_name_by_id(mid);
+                windower::debug::log("TAPE %6u  0x076  %-16s n=%d : %s", tape_ms(), who && who[0] ? who : "?", bs.n, ids);
+            }
         }
         if (s_b076Until && (int)(s_b076Until - GetTickCount()) > 0) {   // //aio ftrace : one line per member per 0x076 -> the arrival cadence around a zone. Sentinel-guard s_b076Until!=0 FIRST : (int)(0-GetTickCount()) reads POSITIVE once uptime passes ~25 days, which would self-arm a disarmed probe and spam a shipped log.
             char ids[160]; int o = 0; ids[0] = 0;
@@ -1828,14 +1905,40 @@ void PartyState::prune_other_buffs_worn() {
         else if ((int)((ob.startMs + ob.durMs) - now) <= 0) { drop[k] = true; why[k] = "estimate elapsed"; continue; }                 // estimate elapsed
         if ((int)(now - ob.startMs) <= 3000) { why[k] = "kept (fresh <3s : 0x076 not caught up)"; continue; }             // grace : let the 0x076 reflect a fresh cast
         if (zoneGrace) { why[k] = "kept (zone grace)"; continue; }                                   // just zoned : the buff persists, the 0x076 cache is still refilling -> keep
+        // ---- THE DECISION ITSELF LIVES IN model/song_slot.h ----------------------------------------------
+        // Extracted so it can be exercised without the game: it produced three user-visible defects in one day
+        // (2026-09-09) and not one of them was reproducible on a desk. tests/t_songslot.cpp now holds each of
+        // them as a case, and those cases were verified to FAIL against the old logic before being kept -- a
+        // test that has never failed proves only that it compiles.
+        //
+        // Everything below is plumbing: gather this target's rows, name the two possible authorities, and
+        // record the verdict. No rule is decided here any more.
         const BuffSet* bs = buffs_for(ob.target);
-        if (!bs) { why[k] = "kept (no 0x076 cache for this member -> unverifiable)"; continue; }   // member buffs not cached (alliance/out of zone) -> keep
-        int has = 0; for (int i = 0; i < bs->n; ++i) if (bs->ids[i] == ob.status) ++has;   // active copies of this status
-        int newer = 0;                                             // fresher entries of the same status on this member
-        for (int j = 0; j < otherBuffN_; ++j) if (j != k && otherBuffs_[j].target == ob.target && otherBuffs_[j].status == ob.status && otherBuffs_[j].startMs > ob.startMs) ++newer;
-        if (newer >= has) { drop[k] = true; why[k] = "slot rule : newer >= has"; }   // beyond the member's active slot count -> replaced/worn
-        if (ptr) windower::debug::log("  SLOT  k=%-2d %-18s tgt=%08X st=%-4u spell=%-5u  has(0x076)=%d newer=%d -> %s",
-                                      k, ob.name, ob.target, ob.status, ob.spell, has, newer, drop[k] ? "DROP" : "keep");
+        SlotEntry se[32]; int seN = 0, seIdx = 0;
+        for (int j = 0; j < otherBuffN_ && seN < 32; ++j) {
+            if (otherBuffs_[j].target != ob.target) continue;
+            if (j == k) seIdx = seN;
+            se[seN].startMs = otherBuffs_[j].startMs;
+            se[seN].status  = otherBuffs_[j].status;
+            se[seN].aoe     = otherBuffs_[j].aoe;
+            se[seN].isAbil  = otherBuffs_[j].isAbil;
+            ++seN;
+        }
+        SlotEvidence member; member.present = (bs != 0);
+        member.ids = bs ? bs->ids : 0; member.n = bs ? bs->n : 0; member.stampMs = bs ? bs->stampMs : 0;
+
+        int selfN = 0; const BuffTimer* selfT = buff_timers(selfN);
+        unsigned short selfIds[32]; const int selfCap = selfN < 32 ? selfN : 32;
+        for (int i = 0; i < selfCap; ++i) selfIds[i] = selfT[i].id;
+        SlotEvidence mine; mine.present = true; mine.ids = selfIds; mine.n = selfCap; mine.stampMs = buffTimersMs_;
+
+        const char* verdictWhy = "kept";
+        const SlotVerdict v = song_slot_verdict(se, seN, seIdx, member, mine, &verdictWhy);
+        why[k] = verdictWhy;
+        if (v != SLOT_KEEP) drop[k] = true;
+        if (ptr) windower::debug::log("  SLOT  k=%-2d %-18s tgt=%08X st=%-4u spell=%-5u  0x076=%s yours=%d -> %s : %s",
+                                      k, ob.name, ob.target, ob.status, ob.spell, bs ? "yes" : "no", selfCap,
+                                      drop[k] ? "DROP" : "keep", why[k]);
     }
     if (ptr) {
         for (int k = 0; k < otherBuffN_; ++k)
@@ -1844,6 +1947,14 @@ void PartyState::prune_other_buffs_worn() {
                                  otherBuffs_[k].aoe, otherBuffs_[k].mirrorSelf, otherBuffs_[k].expTick,
                                  (int)(now - otherBuffs_[k].startMs), otherBuffs_[k].durMs, drop[k] ? "DROP" : "KEEP", why[k]);
     }
+    // THE TAPE records a drop the moment it happens, with the reason -- the one prune event worth a line, as
+    // opposed to the sixty identical passes a second that change nothing.
+    if (song_tape_on())
+        for (int k = 0; k < otherBuffN_; ++k)
+            if (drop[k] && !otherBuffs_[k].isAbil)
+                windower::debug::log("TAPE %6u  DROP   %-18s st=%-4u spell=%-5u age=%dms : %s",
+                                     tape_ms(), otherBuffs_[k].name, otherBuffs_[k].status, otherBuffs_[k].spell,
+                                     (int)(now - otherBuffs_[k].startMs), why[k]);
     int w = 0;
     for (int k = 0; k < otherBuffN_; ++k) if (!drop[k]) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; }
     otherBuffN_ = w;

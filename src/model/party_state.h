@@ -97,7 +97,12 @@ struct HateRow  { unsigned id = 0; char mob[24] = {0}; char pc[20] = {0}; int hp
 // `seen` is the eviction clock, NOT a timestamp : bumped every time the 0x076 refreshes this member. It exists
 // because the 18 slots were never freed -- trust ids change on every re-summon, so a long session filled the
 // table and every later member collapsed onto slot 0. Same failure, same fix, as JobShadow (see note there).
-struct BuffSet { unsigned id = 0; int n = 0; unsigned seen = 0; unsigned short ids[32] = {}; };
+struct BuffSet { unsigned id = 0; int n = 0; unsigned seen = 0; unsigned short ids[32] = {};
+    // WHEN this set arrived (GetTickCount), which `seen` cannot answer -- that one is a monotonic sequence
+    // counter used to pick the oldest slot to recycle, on no clock at all. The slot rule needs a real time to
+    // compare against an ally-buff entry's startMs: evidence recorded BEFORE a cast cannot say anything about
+    // it. See prune_other_buffs_worn.
+    unsigned stampMs = 0; };
 
 // Debuffs ON A TARGET (mob), inferred from the 0x028 action packet : FFXI does NOT store a
 // readable per-mob status list (see docs target-substruct.md), so we TRACK the debuffs the local
@@ -180,7 +185,12 @@ struct ZoneTracker {
     // from-Rabao gate). segments earned THIS run = the banked 'Mog Segments' currency (0x118 @byte 0x8C) minus the
     // baseline captured at entry. Ported from addons/sheolhelper + AioHUD modules/sheolhelper.lua. sheolzone (A/B/C)
     // + resistances = Phase 2.
-    int      sheolzone = 0;         // 0 = unknown, 1/2/3 = Sheol A/B/C
+    int      sheolzone = 0;         // 0 = unknown, 1/2/3 = Sheol A/B/C, 4 = GAOL (measured 2026-09-09 : the Rabao
+                                    //   conflux menu 173 sends param0=4 for it, and its entities carry instance
+                                    //   bits 1025 where A/B/C use 1019..1024). Gaol is NOT a fourth Sheol: it has
+                                    //   no segments and no A/B/C, so the box must not draw that header for it.
+    int      gaolSec = -1;          // Gaol battlefield countdown, SECONDS, from 0x075 (-1 = none seen)
+    unsigned gaolMs = 0;            // GetTickCount when gaolSec was set -> the display ticks down between packets
     int      segBank = -1;          // latest banked Mog Segments (from ANY 0x118) ; -1 = never seen -> next read baselines
     int      segBase = -1;          // baseline banked total at run entry ; segments = segBank - segBase
     int      segments = 0;          // segments earned this run
@@ -475,6 +485,10 @@ struct PartyState {
 
     // --- Timers module : self buff timers (exact durations, from 0x063 type-9) ---
     BuffTimer buffTimers_[32]; int buffTimerN_ = 0;
+    // When that list last ARRIVED. Needed for the same reason as BuffSet::stampMs : evidence recorded before
+    // a cast cannot rule on it, and the ally-buff prune now reads these timers as the authority for targets
+    // the server sends no buff list for (trusts).
+    unsigned buffTimersMs_ = 0;
     // ---- statuses this SESSION has actually seen on somebody (self 0x063 + party 0x076). ----
     // Not game state : it exists so the config can list the statuses a group really contains for YOU instead of
     // every one it could ever contain. "Other" holds ~238 named statuses ; a menu that lists all of them to be
@@ -485,6 +499,20 @@ struct PartyState {
     void note_status_seen(unsigned st) { if (st < 640u) statusSeen_[st >> 3] |= (unsigned char)(1u << (st & 7)); }
     bool status_seen(unsigned st) const { return st < 640u && (statusSeen_[st >> 3] & (1u << (st & 7))) != 0; }
     const BuffTimer* buff_timers(int& n) const { n = buffTimerN_; return buffTimers_; }
+    unsigned buff_timers_stamp() const { return buffTimersMs_; }   // when the 0x063 list last arrived (GetTickCount)
+    // //aio songtape : record everything that touches a song, TIMESTAMPED, for a window of seconds.
+    //
+    // The snapshot commands (//aio songrow, //aio oblog) answer what the state IS. They cannot show the ORDER
+    // events happened in -- and every song defect chased on 2026-09-09 turned on ordering: a 0x076 that arrived
+    // BEFORE a cast and was used to judge it, a row dropped by a pass that ran between two packets. Those were
+    // reconstructed from successive photographs, which is slow and twice led to a wrong conclusion.
+    //
+    // EVENTS ONLY, never state on a loop: a cast, a change in your own timer list, a change in a member's buff
+    // list, a row dropped, a row drawn differently. The prune alone runs 60 times a second -- dumping it per
+    // frame would bury the five lines that matter under thousands that repeat.
+    void set_song_tape(int sec);
+    bool song_tape_on() const;
+    unsigned tape_ms() const;   // ms since the tape started : the gaps are the point, not the absolute tick
     void buff_timers_clear() { buffTimerN_ = 0; }
     // Timers "self-cast only" filter : who last applied each status ON YOU (server id ; 0 = unknown). Filled by
     // on_action from the 0x028 caster when a buff spell/JA lands on selfId_ ; queried by the Timers box.
@@ -632,7 +660,12 @@ struct PartyState {
     // --- Timers module : BUFFS YOU cast on OTHER players (person name + ESTIMATED timer). The client sends
     //     NO per-buff timer for other players, so on_action estimates from tb_buff_gen's base duration when a
     //     buff spell (0x028 cat 4) you cast lands on an ally. Keyed by (target id, status) ; refreshed on recast.
-    struct OtherBuff { unsigned target = 0; unsigned short status = 0; unsigned short spell = 0; unsigned castMs = 0; unsigned startMs = 0; unsigned durMs = 0; unsigned expTick = 0; unsigned char seen = 0; unsigned char mirrorSelf = 0; unsigned char isAbil = 0; unsigned char aoe = 0; char name[20] = {0}; };   // isAbil : `spell` holds an ABILITY id (COR roll) ; aoe : the cast hit >=2 targets (Protectra / a spell under SCH Accession) -> a REAL AoE, group it   // castMs : the tick of the CAST this entry stands for -- the IDENTITY of that cast, never shifted afterwards (startMs is, by the zone-in bump) ; the focus monitor compares it to lift a hand-mute when a NEW cast lands (see FocusMem::muteRef)
+    struct OtherBuff { unsigned target = 0; unsigned short status = 0; unsigned short spell = 0; unsigned castMs = 0; unsigned startMs = 0; unsigned durMs = 0; unsigned expTick = 0; unsigned char seen = 0; unsigned char mirrorSelf = 0; unsigned char isAbil = 0; unsigned char aoe = 0; char name[20] = {0};
+                       // The FACTORS this row's estimate was built from, kept for //aio songrow only. durMs
+                       // alone says the answer is wrong; it never says which term produced it -- and two
+                       // songs cast nine seconds apart, both tagged Troubadour, came out one doubled and one
+                       // not. Six bytes a row to make that answerable instead of arguable.
+                       unsigned short m1pct = 0; unsigned char m2x = 0, m3x = 0; unsigned short a3s = 0; };   // isAbil : `spell` holds an ABILITY id (COR roll) ; aoe : the cast hit >=2 targets (Protectra / a spell under SCH Accession) -> a REAL AoE, group it   // castMs : the tick of the CAST this entry stands for -- the IDENTITY of that cast, never shifted afterwards (startMs is, by the zone-in bump) ; the focus monitor compares it to lift a hand-mute when a NEW cast lands (see FocusMem::muteRef)
     OtherBuff otherBuffs_[32]; int otherBuffN_ = 0;
     unsigned obZone_ = 0xFFFFFFFFu, obZoneGraceMs_ = 0;   // zoning grace : after a zone change the 0x076 buff lists re-populate over a
                                                           //   few seconds ; during the grace we KEEP ally buffs on their estimate (they
@@ -700,6 +733,11 @@ struct PartyState {
     // doesn't update -- it shows Honor March's"). Resolve each 214 timer to its spell (the same ranking the row LABEL
     // uses) and return the one matching `spell`, so label and countdown always agree. -1 if none resolves to it.
     int self_buff_remaining_for(unsigned short status, unsigned short spell) const;
+    // //aio songrow : dump every BRD song row currently tracked on an ally, with the numbers that decide what
+    // the Timers box draws for it. Written because reading the code could not say why a song on a TRUST showed
+    // 5:00 while the same cast on a player showed 11 minutes, and BRD is the most intricate part of Timers --
+    // the wrong place to change anything on a hunch. It reads state and writes nothing.
+    void songrow_dump() const;
     unsigned self_buff_expiry(unsigned short status) const;   // the caster's own 0x063 expiry (FFXI ticks) for `status`, 0 if none
     // Same, per SPELL : two same-status songs run two timers, and freezing an AoE/mirror row on the FIRST one made
     // the longer song's row die when the SHORTER one expired (~1 min early -- "the AoE rows depop with time left").

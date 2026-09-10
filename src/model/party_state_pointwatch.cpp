@@ -6,6 +6,7 @@
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared packet readers)
 #include "model/ffximain_rva.h"           // fm_pw_expect : these packets are what re-pins the static block
 #include "model/sentinel.h"                // the same packets are the ground truth the cross-check compares against
+#include "windower_debug.h"   // //aio songtape : the self-status diff is logged from here
 
 namespace aio {
 
@@ -40,7 +41,14 @@ void PartyState::on_set_update(const unsigned char* p) {   // 0x063 Set Update
         pw_.cpJp  = (int)pkt_u16(p, e + 2);
     } else if (order == 9) {                                // Order 9 : SELF BUFF TIMERS -- Buffs u16[32] @0x08, expiry
         if (pkt_bytes(p) < 0xC8) return;                    // reads Time u32[31] up to p[0xC7] -> a runt would clear then refill from garbage
-        buffTimerN_ = 0;                                    //   Time u32[32] @0x48 (absolute FFXI 1/60s ticks). Full refresh.
+        // THE TAPE DIFFS THIS LIST rather than dumping it. What matters is the INSTANT a status appears or
+        // disappears on you: that is the game stating, authoritatively, that a song landed or was replaced --
+        // the observation the ally-buff model currently replaces with an inference over three lists that
+        // arrive at different times.
+        const bool tape = song_tape_on();
+        unsigned short wasIds[32]; int wasN = 0;
+        if (tape) { wasN = buffTimerN_ < 32 ? buffTimerN_ : 32; for (int i = 0; i < wasN; ++i) wasIds[i] = buffTimers_[i].id; }
+        buffTimerN_ = 0; buffTimersMs_ = GetTickCount();                                    //   Time u32[32] @0x48 (absolute FFXI 1/60s ticks). Full refresh.
         for (int i = 0; i < 32; ++i) {
             const unsigned bid = pkt_u16(p, 0x08 + i * 2);
             if (bid == 0xFFFF || bid == 0xFF || bid == 0) continue;   // empty slot
@@ -48,6 +56,25 @@ void PartyState::on_set_update(const unsigned char* p) {   // 0x063 Set Update
             buffTimers_[buffTimerN_].id = (unsigned short)bid;
             buffTimers_[buffTimerN_].expiry = pkt_u32(p, 0x48 + i * 4);
             ++buffTimerN_;
+        }
+        if (tape) {
+            // Counted, not just present/absent: two songs can share one status (two Marches), so "198 x2 -> x1"
+            // is the fact, and a plain set difference would show nothing at all.
+            for (int pass = 0; pass < 2; ++pass) {
+                const unsigned short* a = pass ? wasIds : 0;
+                for (int i = 0; i < (pass ? wasN : buffTimerN_); ++i) {
+                    const unsigned short id = pass ? a[i] : buffTimers_[i].id;
+                    bool dup = false;
+                    for (int q = 0; q < i; ++q) if ((pass ? a[q] : buffTimers_[q].id) == id) { dup = true; break; }
+                    if (dup) continue;
+                    int nowC = 0, wasC = 0;
+                    for (int q = 0; q < buffTimerN_; ++q) if (buffTimers_[q].id == id) ++nowC;
+                    for (int q = 0; q < wasN; ++q)        if (wasIds[q] == id)          ++wasC;
+                    if (nowC != wasC && (pass ? nowC == 0 : true))
+                        windower::debug::log("TAPE %6u  SELF   status %-4u  %d -> %d   (your own 0x063 : the server's own word)",
+                                             tape_ms(), (unsigned)id, wasC, nowC);
+                }
+            }
         }
         latch_co_expiry_casters();
         // The server just named every buff you are carrying. Memory holds the same list by an entirely
