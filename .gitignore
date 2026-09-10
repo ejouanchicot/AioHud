@@ -52,6 +52,7 @@ CLAUDE.md
 !/docs/game-data/
 # Measured audit findings (what was wrong, how it was proven). Same argument: the proof is the expensive part.
 !/docs/audits/
+!/docs/songs/
 /research/
 /re/
 # loose dev notes / feature docs (the analyses/audits now live under /docs/, already ignored above)
