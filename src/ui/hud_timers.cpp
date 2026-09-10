@@ -290,17 +290,19 @@ static const char* abil_name_by_id(unsigned id) {   // for buffs-on-allies rows 
 
 #ifdef AIOHUD_PROBES
 // ---- //aio songdump : in-RAM record of the Timers rows (see hud.h). Fixed ring, no heap, no file I/O. ----
-static char  g_srRing[256][160];
+// 512 entries, because a row set that changes every frame burns them fast : one change costs 1 + nb lines,
+// so 256 held barely twenty changes -- less than one second of the churn we are trying to watch.
+static char  g_srRing[512][160];
 static int   g_srHead = 0, g_srCount = 0;
 static void sr_push(const char* fmt, ...) {
     va_list ap; va_start(ap, fmt);
     _vsnprintf(g_srRing[g_srHead], sizeof(g_srRing[0]) - 1, fmt, ap);
     va_end(ap);
     g_srRing[g_srHead][sizeof(g_srRing[0]) - 1] = 0;
-    g_srHead = (g_srHead + 1) % 256; if (g_srCount < 256) ++g_srCount;
+    g_srHead = (g_srHead + 1) % 512; if (g_srCount < 512) ++g_srCount;
 }
 void songrow_ring_dump() {
-    const int start = (g_srHead - g_srCount + 256) % 256;
+    const int start = (g_srHead - g_srCount + 512) % 512;
     windower::debug::log("SONGROW ======== %d recorded row-set change(s), oldest first ========", g_srCount);
     for (int i = 0; i < g_srCount; ++i) windower::debug::log("SONGROW %s", g_srRing[(start + i) % 256]);
     g_srHead = 0; g_srCount = 0;
@@ -1342,6 +1344,24 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     for (int b = 0; b < a; ++b) if (fm[alertQ[b]].spell == fm[q].spell) { drawn = true; break; }
                     if (drawn) continue;                                      // an earlier row already speaks for this loss
                 }
+                // ONE SONG, ONE STATEMENT PER FRAME. A row already drawn from YOUR timer says you hold this
+                // song; an OUT saying you lost it cannot be true in the same image. When the two disagreed the
+                // red row appeared and vanished on alternate frames -- measured 2026-09-10 with four Army's
+                // Paeons sharing status 195: "Army's Paeon V (AoE 6)" and "Army's Paeon V OUT", together, at
+                // 60 Hz. Attributing four same-status timers to four spells is fragile by nature, and this
+                // makes the display immune to it instead of hoping the attribution never slips.
+                //
+                // SELF alerts only. An ally alert must still fire while a group row shows the song up on the
+                // others -- that is the whole point of naming the one person who lost it.
+                if (fm[q].self) {
+                    const char* an = fm[q].isAbil ? abil_name_by_id(fm[q].spell)
+                                                  : (fm[q].spell && spell_info(fm[q].spell) ? spell_info(fm[q].spell)->en : 0);
+                    bool drawnUp = false;
+                    for (int d = 0; d < nb && !drawnUp; ++d)
+                        if (bufs[d].src != 6 && bufs[d].icon == (int)fm[q].status
+                            && an && bufs[d].name && strcmp(bufs[d].name, an) == 0) drawnUp = true;
+                    if (drawnUp) { fm[q].lostMs = 0; continue; }   // it is on screen as yours : say one thing, not two
+                }
                 int same = 0;
                 for (int b = 0; b < nAlert; ++b) if (fm[q].spell && fm[alertQ[b]].spell == fm[q].spell) ++same;
                 const char* en = fm[q].isAbil ? abil_name_by_id(fm[q].spell)
@@ -1498,7 +1518,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         if (sig != lastSig) {
             lastSig = sig;
             static const char* const SRC[7] = { "?", "?", "SELF-timer", "GEO-aura", "ALLY-AoE-group", "ALLY-single", "FOCUS-missing" };
-            sr_push("---- Timers built %d row(s) ----", nb);
+            // STAMPED. Without a time this records the ORDER of changes but not their rhythm, and the whole
+            // question is whether a row set flickers every frame or flips once a second -- two different defects
+            // with two different remedies. Absolute ticks: the differences are what matter.
+            sr_push("---- t=%u : Timers built %d row(s) ----", (unsigned)GetTickCount(), nb);
             for (int i = 0; i < nb; ++i) {
                 // flag a row the game itself no longer carries : that is precisely what a ghost is.
                 bool inMem = false;   // (meHas is scoped to the build block above -- read the same source directly)
