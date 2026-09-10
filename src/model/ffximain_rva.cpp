@@ -356,6 +356,7 @@ static void heal_pw_merit() {
 // "not a pointer" cannot be the test. What the broken state actually looked like on 2026-08-12 was a
 // small integer (14, 15) -- a different variable entirely. That IS the test.
 static bool g_adoptedTag = false;
+static bool g_sibSaid[2] = { false, false };   // the sibling arithmetic proposes once per static, then yields to the scan
 static int  g_decoyRun  = 0;      // consecutive frames a CONFIRMED menu slot has read a decoy name   // the tag shortcut speaks once, then leaves the floor to real evidence
 static void heal_menu_ptr() {
     static u32 cand[16]; static int nCand = 0;
@@ -533,10 +534,19 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
     // empty and the log filled at 60 Hz. Two healers with equal standing over one value will always do this.
     {
         const FmStatic sib = (s == FM_EXAM_SPELL) ? FM_EXAM_ABIL : FM_EXAM_SPELL;
-        if (g_confirmed[sib]) {
+        bool& said = g_sibSaid[(s == FM_EXAM_SPELL) ? 0 : 1];
+        if (!said && g_confirmed[sib]) {
+            // ONCE, THEN OUT OF THE WAY. A first cut returned here unconditionally, to stop this branch and the
+            // menu-pointer one from re-proposing over each other every frame. It stopped more than that: the
+            // differential scan lives BELOW, and the decode test that was supposed to "judge unchallenged" lives
+            // ABOVE -- so the only mechanism that can actually FIND the address was never reached. The cache sat
+            // on an arithmetic guess reading zero, for as long as the sibling stayed confirmed.
+            //
+            // A guess is worth one pass. It speaks once; if the decode test has not confirmed it by the next
+            // one, the scan takes over and looks for the address that follows the cursor.
+            said = true;
             const u32 proposed = ENTRIES[s].seed + (g_rva[sib] - ENTRIES[sib].seed);
-            if (proposed != g_rva[s]) fm_adopt(s, proposed, "proposed from the sibling examine cache", false);
-            return;   // right or wrong, this is the answer : let the decode test judge it, unchallenged
+            if (proposed != g_rva[s]) { fm_adopt(s, proposed, "proposed from the sibling examine cache", false); return; }
         }
     }
     if (g_confirmed[anchor]) {
