@@ -356,6 +356,7 @@ static void heal_pw_merit() {
 // "not a pointer" cannot be the test. What the broken state actually looked like on 2026-08-12 was a
 // small integer (14, 15) -- a different variable entirely. That IS the test.
 static bool g_adoptedTag = false;
+static int  g_examDead[2] = { 0, 0 };          // consecutive frames a CONFIRMED cache has failed to decode with its menu open
 static bool g_sibSaid[2] = { false, false };   // the sibling arithmetic proposes once per static, then yields to the scan
 static int  g_decoyRun  = 0;      // consecutive frames a CONFIRMED menu slot has read a decoy name   // the tag shortcut speaks once, then leaves the floor to real evidence
 static void heal_menu_ptr() {
@@ -498,9 +499,30 @@ static u32 open_menu_tag() {
 }
 
 static void heal_exam(FmStatic s, FmStatic anchor) {
-    if (g_confirmed[s]) return;
     const u32 base = ffximain_base();
     if (!base) return;
+    // A CONFIRMED CACHE THAT NEVER DECODES IS REVISABLE. `if (g_confirmed) return;` used to be the first
+    // line, so a verdict -- once cached to disk against the client fingerprint -- could never be revisited.
+    // The ability cache came back PROVEN on 0x6323C8 reading 3, and no amount of opening the ability menu
+    // could dislodge it: the healer returned before looking. Measured 2026-09-11, and it is the same trap the
+    // menu pointer was in an hour earlier, in the same file.
+    //
+    // The refutation is precise: its own menu is open and the value does NOT decode to a real action. One
+    // frame of that proves nothing -- the cursor can sit somewhere odd -- so it takes a full second of the
+    // menu being up and the value never once meaning anything.
+    if (g_confirmed[s]) {
+        const int slot = (s == FM_EXAM_SPELL) ? 0 : 1;
+        const u32 t0 = open_menu_tag();
+        const bool mine = (s == FM_EXAM_SPELL) ? (t0 == 0x6967616Du) : (t0 == 0x6C696261u);
+        if (!mine) { g_examDead[slot] = 0; return; }
+        u32 cv = 0; safe_read(base + fm_rva(s), &cv);
+        if (exam_decodes(s, cv)) { g_examDead[slot] = 0; return; }
+        if (++g_examDead[slot] < 60) return;
+        g_examDead[slot] = 0; g_sibSaid[slot] = false;
+        windower::debug::log("fm: %s was PROVEN but never decodes with its own menu open -- reopening the search",
+                             fm_name(s));
+        g_confirmed[s] = false;
+    }
     // Decoding alone is NOT proof : plenty of stray integers fall in the spell-id range and would decode
     // to some name, which would confirm a wrong address -- the one outcome worse than a dead box. The
     // proof is the CORRELATION : the value decodes *while the matching menu is open*. A cache that holds
