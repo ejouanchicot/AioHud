@@ -1315,6 +1315,37 @@ void PartyState::on_action(const unsigned char* p) {
             // report the NO-ACTOR echo of the same verdict (283 = "No effect on <target>.") -- the same widening
             // the debuff path needed for resists.
             for (unsigned i = 0; i < nTgt; ++i) if (tgtIds[i] == selfId_ && !is_no_land_msg(tgtMsg[i])) { aoeSelf = true; break; }
+            // WHO WOULD BE PUSHED OUT OF **YOUR** SET. The per-ally prediction below reasons over otherBuffs_,
+            // and your own songs are not in it -- they live in the 0x063. So a song landing on you evicted one
+            // of yours and nothing named it, which is why replacing a whole rotation put every old song of
+            // YOURS in alert while the allies' copies stayed quiet (measured 2026-09-10, four Paeons).
+            //
+            // Read here, before the new song lands: at 0x028 time the timer list is still the OLD set, which is
+            // exactly the one the game chose its victim from. Remaining comes from the 0x063 -- server-exact.
+            if (aoeSelf && b->skill == 40) {
+                SlotSong mine[32]; int nm = 0; bool selfAlready = false;
+                for (int i = 0; i < buffTimerN_ && nm < 32; ++i) {
+                    const unsigned short st2 = buffTimers_[i].id;
+                    const unsigned short sp2 = (unsigned short)self_buff_spell_ranked(st2, buffTimers_[i].expiry, i);
+                    if (!sp2) continue;
+                    const SpellBuff* mb = spell_buff(sp2);
+                    if (!mb || mb->skill != 40) continue;
+                    if (sp2 == (unsigned short)sid) { selfAlready = true; break; }   // a re-cast replaces itself : it displaces nobody
+                    const int rem = ticks_to_sec_ceil((int)(buffTimers_[i].expiry - ffxi_now_tick()));
+                    if (rem <= 0) continue;
+                    mine[nm].spell = sp2; mine[nm].remSec = rem; mine[nm].tenuto = song_tenuto(sp2) ? 1 : 0; ++nm;
+                }
+                const int mv = selfAlready ? -1 : song_eviction_victim(mine, nm);
+                if (mv >= 0) {
+                    evicted_[evictW_].target = selfId_;
+                    evicted_[evictW_].spell  = mine[mv].spell;
+                    evicted_[evictW_].ms     = (unsigned)GetTickCount();
+                    evictW_ = (evictW_ + 1) & 7;
+                    if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0)
+                        windower::debug::log("SONGEVICT self : new spell=%u, you hold %d song(s), the one to go would be spell=%u (%ds left)",
+                                             sid, nm, mine[mv].spell, mine[mv].remSec);
+                }
+            }
             // //aio songlog : the song-duration model, with the INPUTS -- durMs alone only says the answer is wrong,
             // not which factor produced it. The equipped ids are dumped too : the whole m1 term is read out of the
             // gear AT PACKET TIME, so a Gearswap aftercast that beat us back to the idle set would silently erase it.
@@ -1369,7 +1400,7 @@ void PartyState::on_action(const unsigned char* p) {
             if (b->skill == 40 && sid < 1024) {   // BRD song : snapshot the song-enhancing JAs UP at cast, keyed by SPELL id
                 if (!buffsOk)   // the snapshot behind this tag was NOT readable -> say so, once, with what it cost
                     windower::debug::log("SONGMOD UNREADABLE spell=%u : the player buff list could not be read at cast time, so SV/NT/TR/M all read as DOWN. Tag will be missing AND this cast's predicted duration lost its Troubadour/Marcato multipliers.", sid);
-                songMod_[sid] = (unsigned char)((soulvoice ? 1 : 0) | (nightingale ? 2 : 0) | (troubadour ? 4 : 0) | (marcato ? 8 : 0));   // by spell (not status) so two same-family songs (Advancing + Victory March) keep separate tags
+                songMod_[sid] = (unsigned char)((soulvoice ? 1 : 0) | (nightingale ? 2 : 0) | (troubadour ? 4 : 0) | (marcato ? 8 : 0) | (tenuto ? SONGMOD_TENUTO : 0));   // by spell (not status) so two same-family songs (Advancing + Victory March) keep separate tags
             }
             // GEO Indi- (skill 44) is an AURA (the pulse refreshes the effect every ~3s) : normally we make NO per-ally
             // rows. Two exceptions : (1) it landed on YOU -> record the aura you carry with its COMPUTED lifetime (drawn

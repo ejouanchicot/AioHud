@@ -547,6 +547,11 @@ struct PartyState {
     // bit2 Troubadour, bit3 Marcato. Shown as compact tags (SV)(N)(T)(M) on the song's Timers row.
     unsigned char songMod_[1024] = { 0 };
     unsigned char song_mods(unsigned spellId) const { return spellId < 1024 ? songMod_[spellId] : 0; }
+    // bit 4 of the same byte : the song was sung under TENUTO, so the game will not overwrite it -- not by
+    // another song, and not by a re-cast of itself. Kept here rather than on the ally row because YOUR own
+    // songs have no row: they live in the 0x063, and the eviction rule has to reason about them too.
+    static const unsigned char SONGMOD_TENUTO = 0x10;
+    bool song_tenuto(unsigned spellId) const { return spellId < 1024 && (songMod_[spellId] & SONGMOD_TENUTO) != 0; }
     struct RollInfo { unsigned char value, luck, cc; };
     RollInfo roll_info(unsigned status) const { RollInfo r{ 0, 0, 0 }; if (status < 1024) { r.value = rollVal_[status]; r.luck = rollLuck_[status] & 3; r.cc = (rollLuck_[status] >> 2) & 1; } return r; }
     // true if your CURRENT main/sub job (or a usable job ability) could itself grant `status` -- i.e. this buff
