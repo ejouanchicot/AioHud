@@ -380,7 +380,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // COR roll : name = "Chaos Roll", pip = the coloured pip number (0 = none), post = " (AoE 6)" suffix -> drawn as
     // "Chaos Roll [5] (AoE 6)" with ONLY the pip in pipCol (unlucky=red, lucky/11=green, else white). nameCol overrides
     // the whole-name colour (unused now that only the pip is tinted).
-    struct Row { int rem; int fine; int icon; const char* name; const char* who; int order; u32 nameCol; int pip; u32 pipCol; const char* post; u32 postCol; const char* tag; u32 tagCol; int src; int mark; };   // who : the PERSON this row is about (0 = you) -- kept SEPARATE from `name` (the spell) because the display mode governs the icon and the spell name, never the person : "Icon" = icon + who, "Name" = who + spell, "Both" = the three. Rows used to carry one "Aeryn - Haste" string and a `both` flag that forced icon+name on them, so an ally row ignored the mode outright -- and the same buff switched between the grouped form (which obeyed it) and the per-person form (which did not) as you re-cast, which is what "it does not follow" was.   // mark : the focus-monitor number (0 = not monitored) -- what //aio out takes   // tag : BRD song modifiers "(SV)(T)" drawn in tagCol, between the name and the AoE suffix
+    struct Row { int rem; int fine; unsigned char fineClk; int icon; const char* name; const char* who; int order; u32 nameCol; int pip; u32 pipCol; const char* post; u32 postCol; const char* tag; u32 tagCol; int src; int mark; };   // who : the PERSON this row is about (0 = you) -- kept SEPARATE from `name` (the spell) because the display mode governs the icon and the spell name, never the person : "Icon" = icon + who, "Name" = who + spell, "Both" = the three. Rows used to carry one "Aeryn - Haste" string and a `both` flag that forced icon+name on them, so an ally row ignored the mode outright -- and the same buff switched between the grouped form (which obeyed it) and the per-person form (which did not) as you re-cast, which is what "it does not follow" was.   // mark : the focus-monitor number (0 = not monitored) -- what //aio out takes   // tag : BRD song modifiers "(SV)(T)" drawn in tagCol, between the name and the AoE suffix
     static const int TM_REM_MISSING = -1000000000;   // FOCUS alert row : an ally is MISSING a critical buff -> timer shows "OUT" in red, sorts to the very top
     // `fine` = the same remaining time as `rem` but in TICKS (1/60 s), used ONLY to sort. `rem` is ceil-ed to whole
     // seconds for display, so two timers a fraction of a second apart show the SAME number every other second --
@@ -393,8 +393,15 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // the other. TM_FINE_NONE = "no sub-second source" -> fall back to rem (see fineOf) ; only rows that never
     // tick (the frozen demo/preview rows) are allowed to stay there.
     static const int TM_FINE_NONE = -2000000000;
+    // WHICH CLOCK a row's `fine` was read from. Sub-second ordering only means something between rows
+    // measured the SAME way: your 0x063 expiry is absolute server ticks, an ally estimate is GetTickCount
+    // arithmetic, and the two drift past each other. Comparing them is comparing noise -- reported
+    // 2026-09-10 as two songs on the same timer "qui n'arretent pas de passer l'une en dessous de l'autre":
+    // an AoE Minuet (your own expiry) beside a Pianissimo Ballad on an ally (its estimate), whose fine
+    // values crossed and re-crossed for as long as both were up.
+    static const unsigned char FCLK_NONE = 0, FCLK_SELF = 1, FCLK_EST = 2;
     static Row bufs[50], recs[50]; int nb = 0, nr = 0;
-    for (int i = 0; i < 50; ++i) { bufs[i].nameCol = recs[i].nameCol = 0; bufs[i].pip = recs[i].pip = 0; bufs[i].post = recs[i].post = 0; bufs[i].postCol = recs[i].postCol = 0; bufs[i].tag = recs[i].tag = 0; bufs[i].src = recs[i].src = 0; bufs[i].mark = recs[i].mark = 0; bufs[i].who = recs[i].who = 0; bufs[i].fine = recs[i].fine = TM_FINE_NONE; }   // clear per-frame overrides (static arrays)
+    for (int i = 0; i < 50; ++i) { bufs[i].fineClk = recs[i].fineClk = FCLK_NONE; bufs[i].nameCol = recs[i].nameCol = 0; bufs[i].pip = recs[i].pip = 0; bufs[i].post = recs[i].post = 0; bufs[i].postCol = recs[i].postCol = 0; bufs[i].tag = recs[i].tag = 0; bufs[i].src = recs[i].src = 0; bufs[i].mark = recs[i].mark = 0; bufs[i].who = recs[i].who = 0; bufs[i].fine = recs[i].fine = TM_FINE_NONE; }   // clear per-frame overrides (static arrays)
     if (preview || editing) {
         static const struct { int id, rem; } SB[5] = { {43, 1490}, {57, 155}, {214, 309}, {40, 540}, {33, 28} };
         for (int i = 0; i < 5; ++i) { bufs[nb].rem = SB[i].rem; bufs[nb].icon = SB[i].id; bufs[nb].name = buff_status_name(SB[i].id); bufs[nb].order = 0; ++nb; }
@@ -703,7 +710,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             }
             if (folds) { grp[gi].selfHas = 1; grp[gi].rem = rem; grp[gi].fine = fine; continue; }
             const SpellRow* ssp = spell_info(ssid);
-            bufs[nb].rem = rem; bufs[nb].fine = fine; bufs[nb].icon = bt[i].id; bufs[nb].name = (ssp && ssp->en) ? ssp->en : buff_status_name(bt[i].id);
+            bufs[nb].rem = rem; bufs[nb].fine = fine; bufs[nb].fineClk = FCLK_SELF; bufs[nb].icon = bt[i].id; bufs[nb].name = (ssp && ssp->en) ? ssp->en : buff_status_name(bt[i].id);
             // BAND : what YOU cast (0), then what real PLAYERS put on you (1), then TRUSTS (2). Each band is still
             // sorted soonest-first by the comparator below. "Yours" is the per-timer caster, not "it is on me".
             const unsigned rowCaster = party().buff_caster_for(bt[i].id, bt[i].expiry, i);
@@ -785,7 +792,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             int gr = ga.status ? party().geo_aura_remaining(ga.status) : -1;
             if (gr > 0 && nb < 50) {
                 const SpellRow* gsp = spell_info(ga.spell);
-                if (ga.expTick) bufs[nb].fine = (int)(ga.expTick - now);   // same instant as geo_aura_remaining, un-ceil-ed -> sort key
+                if (ga.expTick) { bufs[nb].fine = (int)(ga.expTick - now); bufs[nb].fineClk = FCLK_SELF; }   // same instant as geo_aura_remaining, un-ceil-ed -> sort key
                 bufs[nb].rem = gr; bufs[nb].icon = ga.status; bufs[nb].name = (gsp && gsp->en) ? gsp->en : buff_status_name(ga.status); bufs[nb].order = 0; bufs[nb].src = 3; ++nb;   // GEO aura
             }
         }
@@ -832,9 +839,9 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (!(C.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)grp[k].status) && grp[k].rem < C.tmFocusWarn)) continue;
             }
             const char* en = grp[k].isAbil ? abil_name_by_id(grp[k].spell) : (spell_info(grp[k].spell) ? spell_info(grp[k].spell)->en : 0);   // rolls -> ability name ; spells -> spell name
-            int fine = grp[k].fine;   // sort key, kept in lock-step with `rem` just below
+            int fine = grp[k].fine; unsigned char fclk = FCLK_EST;   // sort key, kept in lock-step with `rem` just below -- and with the clock it was read from
             int rem = grp[k].rem;   // used by the GROUP branch only (fresh) ; the per-ally branch reads each member's own obRem
-            if (grp[k].aoe) { int sr = party().self_buff_remaining_for(grp[k].status, grp[k].spell); if (sr > 0) { rem = sr; const unsigned se = party().self_buff_expiry_for(grp[k].status, grp[k].spell); if (se) fine = (int)(se - now); } }   // a REAL AoE shares your exact self 0x063 timer -- for the SPECIFIC song (two Marches run two 214 timers ; borrowing the first showed Victory March with Honor's countdown). A single-target buff you ALSO have on yourself keeps the ally estimate (else Haste on an ally shows YOUR self-Haste duration)
+            if (grp[k].aoe) { int sr = party().self_buff_remaining_for(grp[k].status, grp[k].spell); if (sr > 0) { rem = sr; const unsigned se = party().self_buff_expiry_for(grp[k].status, grp[k].spell); if (se) { fine = (int)(se - now); fclk = FCLK_SELF; } } }   // a REAL AoE shares your exact self 0x063 timer -- for the SPECIFIC song (two Marches run two 214 timers ; borrowing the first showed Victory March with Honor's countdown). A single-target buff you ALSO have on yourself keeps the ally estimate (else Haste on an ally shows YOUR self-Haste duration)
             // GROUP into one "(AoE N)" row when : it was a REAL AoE cast (Protectra / a spell under SCH Accession /
             // a roll) OR the user keeps "group ally buffs" on. Otherwise (single-target spread) -> one row PER ally.
             // A LAGGARD group NEVER groups : it lists each un-refreshed person by NAME (Kaories, Gab, ...) on their own
@@ -852,7 +859,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             }
             if (group) {   // AoE : one grouped row (Minuet V (AoE 6))
                 PartyState::RollInfo ri = grp[k].isAbil ? party().roll_info(grp[k].status) : PartyState::RollInfo{ 0, 0 };   // COR roll -> pip value (double-up included)
-                bufs[nb].rem = rem; bufs[nb].fine = fine; bufs[nb].icon = grp[k].status;   // no `who` : a group is about SEVERAL people, so it renders like your own buffs and follows the display mode (it used to force icon+name whenever you did not hold the buff yourself, which is half of why the presentation flipped as you re-cast)
+                bufs[nb].rem = rem; bufs[nb].fine = fine; bufs[nb].fineClk = fclk; bufs[nb].icon = grp[k].status;   // no `who` : a group is about SEVERAL people, so it renders like your own buffs and follows the display mode (it used to force icon+name whenever you did not hold the buff yourself, which is half of why the presentation flipped as you re-cast)
                 // A group whose SELF copy folded in (grp[].selfHas) is YOUR OWN buff -> stays in the top tier (0).
                 // One you only put on allies goes to the "your ally-casts" tier (10), above the players-on-you tier (40+).
                 bufs[nb].order = (grp[k].selfHas || grp[k].selfCast) ? 0 : 10;   // selfCast : keep it in YOUR tier from the first frame too (else the row jumps tier 10 -> 0 when the fold lands ~1s later)
@@ -902,7 +909,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     if (fm_muted_for(ob[i].target, ob[i].status, ob[i].spell, false)) continue;   // taken off by //aio out : no row at all
                     bufs[nb].who = ob[i].name;   // the person always shows ; the spell only when the mode asks for a name
                     bufs[nb].name = en;          // 0 = spell unknown -> the person alone carries the row
-                    bufs[nb].rem = obRem(ob[i]); bufs[nb].fine = obFine(ob[i]); bufs[nb].icon = ob[i].status; bufs[nb].order = poBase + party().party_order(ob[i].target); bufs[nb].src = 5; bufs[nb].mark = fm_tag_of(ob[i].target, ob[i].status, ob[i].spell, false); ++nb;   // ally-cast rows GROUPED BY ally ; laggards form a named block after the fresh ones
+                    bufs[nb].rem = obRem(ob[i]); bufs[nb].fine = obFine(ob[i]); bufs[nb].fineClk = FCLK_EST; bufs[nb].icon = ob[i].status; bufs[nb].order = poBase + party().party_order(ob[i].target); bufs[nb].src = 5; bufs[nb].mark = fm_tag_of(ob[i].target, ob[i].status, ob[i].spell, false); ++nb;   // ally-cast rows GROUPED BY ally ; laggards form a named block after the fresh ones
                     OBLOG("  ROW  per-ally  \"%s - %s\"  rem=%ds  order=%d   [group %d, %s]", bufs[nb-1].who ? bufs[nb-1].who : "?", bufs[nb-1].name ? bufs[nb-1].name : "?", bufs[nb-1].rem, bufs[nb-1].order, k, lag ? "laggard" : "fresh");
                 }
             }
@@ -1368,8 +1375,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             if (tx != ty) return tx > ty;
         } else if (x.order != y.order) return x.order > y.order;
         if (x.rem != y.rem) return x.rem > y.rem;
-        const int fx = fineOf(x), fy = fineOf(y);
-        if (fx != fy) return fx > fy;
+        // Refine by the sub-second ONLY between rows read from the same clock. Across clocks the difference
+        // is drift, not order, and following it makes two rows on the same timer trade places for as long as
+        // they both live. Rows that disagree fall straight through to the stable tiebreaks below.
+        if (x.fineClk == y.fineClk && x.fineClk != FCLK_NONE) {
+            const int fx = fineOf(x), fy = fineOf(y);
+            if (fx != fy) return fx > fy;
+        }
         if (x.icon != y.icon) return x.icon > y.icon;
         // The PERSON is part of the deterministic tiebreak, not just the spell : two allies carrying the same
         // buff at the same second used to differ by their "Aeryn - Haste" / "Gab - Haste" string, and since the
