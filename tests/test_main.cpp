@@ -19,6 +19,7 @@ void test_limbus();
 void test_omen();
 void test_buff_groups();
 void test_songslot();
+void test_song_slots();
 void test_ally_group();
 void test_focus_rules();
 void test_cast_match();
@@ -32,6 +33,7 @@ int main() {
     test_omen();
     test_buff_groups();
     test_songslot();
+    test_song_slots();
     test_ally_group();
     test_focus_rules();
     test_cast_match();

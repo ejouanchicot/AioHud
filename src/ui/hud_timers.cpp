@@ -1102,13 +1102,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                     for (int i = 0; i < no; ++i)
                         if (ob[i].target == e.target && ob[i].spell != e.spell && song_family(ob[i].spell) > 0 && !ob[i].aoe
                             && (unsigned)(nowMs - ob[i].startMs) < 6000u) return true;   // single-target replacer only ; 6s covers the 0x076 cadence, short enough a real later dispel still OUTs
-                // (b) AT THE CAP, ANY new song displaces one -- including an AoE one, which lands on you as well, so
-                //     this arm covers self rows too. The count is what keeps it honest (model/focus_rules.h rule 5):
-                //     an eviction leaves you exactly at the cap, a dispel leaves you one short and still alerts.
-                bool landed = false;
-                for (int i = 0; i < no; ++i)
-                    if (ob[i].spell != e.spell && song_family(ob[i].spell) > 0 && (unsigned)(nowMs - ob[i].startMs) < 6000u) { landed = true; break; }
-                return song_evicted(songCC, true, landed, songCount);
+                // (b) THE GAME PUSHED IT OUT to fit a new song. Not decided here: the model named the victim at
+                //     CAST time, while the set was still intact (PartyState::song_was_evicted, model/song_slots.h).
+                //     By the time we notice a loss the row has already left ob[], so this could never have been
+                //     answered from here -- which is why the rule that lived here asked "am I at the cap?" of a
+                //     count that skipped the very songs sung to fill slots, and silenced real dispels for a whole
+                //     Clarion Call recast. Now: it went, and it was the one the game had to drop. Nothing else.
+                return party().song_was_evicted(e.target, e.spell, 6000u);
             };
             // GEO Indi- : you carry exactly ONE aura (`selfGeo_`, party_state.h -- a single slot, not a list), so casting
             // a DIFFERENT Indi- REPLACES the previous one. Its status leaving the buff list is that SWAP, not a loss :

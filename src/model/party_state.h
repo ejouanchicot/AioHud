@@ -4,6 +4,7 @@
 // (incl. name + jobs), 0x0DF = frequent vitals update (HP/MP/TP). The HUD's Party
 // widget reads this when it holds members, else it falls back to demo data.
 #pragma once
+#include "model/song_slots.h"          // per-person song slots : the eviction victim, the learned cap
 #include "model/omen_objectives.h"   // OmenObj + the pure Omen objective-text rules (ZoneTracker holds the slots)
 
 namespace aio {
@@ -665,8 +666,15 @@ struct PartyState {
                        // alone says the answer is wrong; it never says which term produced it -- and two
                        // songs cast nine seconds apart, both tagged Troubadour, came out one doubled and one
                        // not. Six bytes a row to make that answerable instead of arguable.
-                       unsigned short m1pct = 0; unsigned char m2x = 0, m3x = 0; unsigned short a3s = 0; };   // isAbil : `spell` holds an ABILITY id (COR roll) ; aoe : the cast hit >=2 targets (Protectra / a spell under SCH Accession) -> a REAL AoE, group it   // castMs : the tick of the CAST this entry stands for -- the IDENTITY of that cast, never shifted afterwards (startMs is, by the zone-in bump) ; the focus monitor compares it to lift a hand-mute when a NEW cast lands (see FocusMem::muteRef)
+                       unsigned short m1pct = 0; unsigned char m2x = 0, m3x = 0; unsigned short a3s = 0;
+                       unsigned char tenuto = 0; };   // sung under Tenuto -> the game will not overwrite it, by anything (not even a re-cast of the same song)   // isAbil : `spell` holds an ABILITY id (COR roll) ; aoe : the cast hit >=2 targets (Protectra / a spell under SCH Accession) -> a REAL AoE, group it   // castMs : the tick of the CAST this entry stands for -- the IDENTITY of that cast, never shifted afterwards (startMs is, by the zone-in bump) ; the focus monitor compares it to lift a hand-mute when a NEW cast lands (see FocusMem::muteRef)
     OtherBuff otherBuffs_[32]; int otherBuffN_ = 0;
+    // WHICH song the game pushed out, decided AT CAST TIME -- the only moment the set is still intact.
+    // By the time the monitor notices the loss the row is already gone from otherBuffs_, so the verdict
+    // has to be taken while it can be, and remembered. Eight slots is a rotation's worth.
+    struct EvictRec { unsigned target = 0; unsigned short spell = 0; unsigned ms = 0; };
+    EvictRec evicted_[8]; int evictW_ = 0;
+    SlotCap songCap_ = { 0, false };   // learned from evictions, never from a high-water mark (song_slots.h)
     unsigned obZone_ = 0xFFFFFFFFu, obZoneGraceMs_ = 0;   // zoning grace : after a zone change the 0x076 buff lists re-populate over a
                                                           //   few seconds ; during the grace we KEEP ally buffs on their estimate (they
                                                           //   persist across a zone) instead of dropping them as "worn" on an empty cache.
@@ -674,6 +682,11 @@ struct PartyState {
                                                           //   ally / AoE rows from the estimate without the (empty) real-buff cross-check.
     bool in_zone_grace() const { return obZoneGrace_; }
     const OtherBuff* other_buffs(int& n) const { n = otherBuffN_; return otherBuffs_; }
+    // Did the game push THIS song off that person to make room, rather than it being taken away?
+    bool    song_was_evicted(unsigned target, unsigned short spell, unsigned withinMs) const;
+    int     song_slot_count(unsigned target) const;   // how many of YOUR songs that person carries right now
+    SlotCap song_cap() const { return songCap_; }     // valid only once an eviction has taught it
+    int     ob_remaining_sec(const OtherBuff& o) const;
     void other_buffs_clear() { otherBuffN_ = 0; }
     unsigned char obPruneTrace_ = 0;   // //aio oblog : dump the next prune pass (see arm_ob_prune_trace)
     void clear_other_buffs_for(unsigned id) { int w = 0; for (int k = 0; k < otherBuffN_; ++k) if (otherBuffs_[k].target != id) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; } otherBuffN_ = w; }

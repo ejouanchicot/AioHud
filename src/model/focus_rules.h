@@ -131,24 +131,12 @@ inline bool focus_copies_cover(int newerSiblings, int copiesPresent) {
 }
 
 
-// ---- 5. a song pushed out of its slot by another song ---------------------------------------------------------
+// ---- 5. a song pushed out of its slot -- MOVED to model/song_slots.h on 2026-09-10 ------------------
 //
-// At your song maximum, singing a NEW song displaces one -- the game drops whichever has least time left. That is
-// a choice you made, not a loss to shout about, and it must not raise a red OUT. Reported 2026-09-10: "j'ai
-// remplace Minuet V par Victory March et Minuet V est en alerte".
-//
-// The existing Pianissimo suppression could not cover it. That one requires a SINGLE-TARGET replacer, deliberately:
-// an AoE song re-stamps every member on each cast, so accepting AoE there would hold a 6 s window open across the
-// whole rotation and swallow a real dispel on anyone you sing to.
-//
-// THE COUNT IS THE DISCRIMINATOR, NOT THE TIMING. An eviction leaves you exactly AT the cap -- one out, one in.
-// A dispel drops you BELOW it. So a song that vanished while another was landing, with the count still sitting on
-// the cap, was displaced; the same shape one short of the cap was taken from you, and still alerts. This also
-// makes an unlearned base harmless, the way rule 3 does: with base 1 and four songs up, 4 != 1, so the alert stands.
-inline bool song_evicted(const ClarionBase& b, bool isSong, bool anotherSongJustLanded, int songCount) {
-    if (!isSong || !anotherSongJustLanded || !b.valid) return false;
-    const int cap = b.base + (b.slotOpen ? 1 : 0);   // Clarion Call's slot counts when it is open
-    return songCount == cap;
-}
+// It lived here as song_evicted(), and it compared a song count to a learned cap. Both were wrong:
+// the count skipped the FAKE songs sung for the sole purpose of holding a slot, and it was global
+// while the game counts per (singer, target). The replacement needs no cap at all -- the model names
+// the victim at CAST time, while the set is still intact, and the monitor only asks whether the song
+// that went is the one that was named.
 
 } // namespace aio

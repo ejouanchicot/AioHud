@@ -164,31 +164,4 @@ void test_focus_rules() {
         CHECK(!focus_newer_sibling(castNew, 397, castOld, 398));
         CHECK(focus_newer_sibling(bornOld, 397, bornNew, 398));   // ranked by BIRTH it would have been the other way
     }
-
-    SECTION("a song pushed out of its slot is not a song lost");
-    {   // MEASURED 2026-09-10: four songs up on a base of four, Victory March sung, the game dropped Valor Minuet V
-        // (least time left) -- and it went red. "j'ai remplace Minuet V par Victory March et Minuet V est en alerte".
-        // The loss and the new cast share the same instant (lostAgo 15500ms, the new entry 15516ms old).
-        ClarionBase b; b.base = 4; b.valid = true; b.slotOpen = false;
-        CHECK(song_evicted(b, /*isSong*/true, /*anotherSongJustLanded*/true, /*songCount*/4));
-    }
-    {   // The count is the discriminator, not the timing. One SHORT of the cap means something was taken from you
-        // on top of what you displaced -- that still alerts, which is the whole point of having an alert.
-        ClarionBase b; b.base = 4; b.valid = true; b.slotOpen = false;
-        CHECK(!song_evicted(b, true, true,  /*songCount*/3));
-        CHECK(!song_evicted(b, true, false, /*songCount*/4));   // nothing landed : a plain dispel at the cap
-        CHECK(!song_evicted(b, false, true, /*songCount*/4));   // not a song at all
-    }
-    {   // Clarion Call's slot counts while it is open : the cap is five, and displacing at five is still a choice.
-        ClarionBase cc; cc.base = 4; cc.valid = true; cc.slotOpen = true;
-        CHECK(song_evicted(cc, true, true, /*songCount*/5));
-        CHECK(!song_evicted(cc, true, true, /*songCount*/4));   // one short of the open cap -> a real loss
-    }
-    {   // ...and an unlearned base stays harmless, the same way rule 3 was made harmless: a reload leaves base = 1
-        // while four songs are up, and 4 != 1, so nothing is silenced.
-        ClarionBase low; low.base = 1; low.valid = true; low.slotOpen = false;
-        CHECK(!song_evicted(low, true, true, /*songCount*/4));
-        ClarionBase unlearned; unlearned.base = 0; unlearned.valid = false; unlearned.slotOpen = false;
-        CHECK(!song_evicted(unlearned, true, true, /*songCount*/0));
-    }
 }

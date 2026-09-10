@@ -346,6 +346,37 @@ unsigned PartyState::self_buff_expiry_for(unsigned short status, unsigned short 
     }
     return 0;   // no self timer resolves to `spell`
 }
+// ---- per-person song slots (model/song_slots.h) ---------------------------------------------------------
+// Seconds left on an ally row : the frozen self-timer when we have one (exact), else its own estimate.
+int PartyState::ob_remaining_sec(const OtherBuff& o) const {
+    if (o.expTick) return ticks_to_sec_ceil((int)(o.expTick - ffxi_now_tick()));
+    const unsigned age = (unsigned)GetTickCount() - o.startMs;
+    return o.durMs > age ? (int)((o.durMs - age) / 1000u) : 0;
+}
+
+// How many of YOUR songs that person carries. Counts the FAKE songs too -- Gold Capriccio and Goblin
+// Gavotte are sung for the sole purpose of occupying a slot, and the old count filtered on song_family(),
+// which is 0 for exactly those. That is why every cap rule built on it was wrong.
+int PartyState::song_slot_count(unsigned target) const {
+    int n = 0;
+    for (int k = 0; k < otherBuffN_; ++k) {
+        const OtherBuff& o = otherBuffs_[k];
+        if (o.target != target || o.isAbil) continue;
+        const SpellBuff* sb = spell_buff(o.spell);
+        if (!sb || sb->skill != 40) continue;             // skill 40 = Singing : a song, fake ones included
+        if (ob_remaining_sec(o) > 0) ++n;
+    }
+    return n;
+}
+
+bool PartyState::song_was_evicted(unsigned target, unsigned short spell, unsigned withinMs) const {
+    const unsigned now = (unsigned)GetTickCount();
+    for (int i = 0; i < 8; ++i)
+        if (evicted_[i].ms && evicted_[i].target == target && evicted_[i].spell == spell
+            && (unsigned)(now - evicted_[i].ms) <= withinMs) return true;
+    return false;
+}
+
 bool PartyState::ob_self_alive(const OtherBuff& o) const {
     if (o.expTick) return (int)(o.expTick - ffxi_now_tick()) > 0;   // frozen on the real self timer
     if (o.mirrorSelf) { const int r = o.isAbil ? self_buff_remaining(o.status) : self_buff_remaining_for(o.status, o.spell); return r >= 0; }
@@ -1375,6 +1406,43 @@ void PartyState::on_action(const unsigned char* p) {
                     }
                     otherBuffN_ = w;
                 }
+                // WHO WOULD BE PUSHED OUT, decided here because here is the only place the set is still
+                // intact. The monitor learns of a loss long after the row has left otherBuffs_, so it could
+                // never answer "was that the one the game had to drop?" -- it asked "am I at the cap?" of a
+                // count that could not answer, and silenced real dispels for a whole rotation.
+                //
+                // NO CAP IS NEEDED, and that is what makes this honest. We simply name the song the eviction
+                // rule points at (shortest remaining, Tenuto excluded -- model/song_slots.h) and remember it
+                // for a few seconds. If that exact song then vanishes, the game made room. If it does not,
+                // the note expires and nothing was claimed. A re-cast of a song already up replaces itself,
+                // so it displaces nobody and is skipped.
+                if (b->skill == 40) {
+                    bool already = false;
+                    for (int k = 0; k < otherBuffN_; ++k)
+                        if (otherBuffs_[k].target == tid && otherBuffs_[k].spell == (unsigned short)sid) { already = true; break; }
+                    if (!already) {
+                        SlotSong held[32]; int nh = 0;
+                        for (int k = 0; k < otherBuffN_ && nh < 32; ++k) {
+                            const OtherBuff& o = otherBuffs_[k];
+                            if (o.target != tid || o.isAbil) continue;
+                            const SpellBuff* hb = spell_buff(o.spell);
+                            if (!hb || hb->skill != 40) continue;          // songs only -- the FAKE ones included, they hold a slot like any other
+                            const int rem = ob_remaining_sec(o);
+                            if (rem <= 0) continue;
+                            held[nh].spell = o.spell; held[nh].remSec = rem; held[nh].tenuto = o.tenuto; ++nh;
+                        }
+                        const int v = song_eviction_victim(held, nh);
+                        if (v >= 0) {
+                            evicted_[evictW_].target = tid;
+                            evicted_[evictW_].spell  = held[v].spell;
+                            evicted_[evictW_].ms     = (unsigned)GetTickCount();
+                            evictW_ = (evictW_ + 1) & 7;
+                            if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0)
+                                windower::debug::log("SONGEVICT tid=%08X new spell=%u : %d song(s) held, the one to go would be spell=%u (%ds left)",
+                                                     tid, sid, nh, held[v].spell, held[v].remSec);
+                        }
+                    }
+                }
                 int slot = -1;   // key by (target, SPELL) so two tiers of the same song (Minuet V + IV, same status) are two rows
                 for (int k = 0; k < otherBuffN_; ++k) if (otherBuffs_[k].target == tid && otherBuffs_[k].spell == (unsigned short)sid) { slot = k; break; }
                 if (slot < 0) {                                 // new entry : append, else steal the oldest slot
@@ -1384,6 +1452,7 @@ void PartyState::on_action(const unsigned char* p) {
                 otherBuffs_[slot].target = tid; otherBuffs_[slot].status = (unsigned short)b->effect; otherBuffs_[slot].spell = (unsigned short)sid;
                 otherBuffs_[slot].startMs = nowMs; otherBuffs_[slot].castMs = nowMs;   // castMs names THIS cast and is never bumped afterwards -> the focus monitor can tell a re-cast from a re-timed estimate
                 otherBuffs_[slot].mirrorSelf = aoeSelf ? 1 : 0;   // AoE-on-self -> the drawer uses your exact self timer (expTick set below, after the duration is known)
+                otherBuffs_[slot].tenuto = (b->skill == 40 && tenuto) ? 1 : 0;   // a Tenuto'd song is not evictable, and cannot be re-sung either
                 otherBuffs_[slot].aoe = (tc >= 2) ? 1 : 0;        // the cast hit >=2 targets -> a REAL AoE (Protectra / a spell under SCH Accession) ; 1-target = single-cast, don't force-group it
                 unsigned long long ms;
                 if (b->skill == 34) {   // Enhancing Magic (Regen status 42 : regenSec added to the base before the multipliers ; cap 30 min)
