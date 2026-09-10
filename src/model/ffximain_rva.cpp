@@ -492,6 +492,22 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
     // (1) Borrow the shift from a static that PROVED one. A shift of ZERO is a legitimate answer -- it says
     // "this static did not move", which is still information, and refusing to act on it left the caches
     // stranded whenever the anchor came back to its own seed (the poison test hit exactly that).
+    // THE BEST ANCHOR IS THE SIBLING CACHE, and it is tried first. A recompile moves REGIONS, not the whole
+    // image by one delta: measured 2026-09-11, the live-menu pointer moved +0x32AE4 while the two examine
+    // caches moved -0x2208. Anchoring the spell cache on the menu pointer therefore proposed 0x667A4C, which
+    // read 02D38C98 -- no spell id is above 0x4000 -- and the cost box stayed empty for as long as the
+    // proposal was never confirmed and never re-proposed.
+    //
+    // The caches sit 0x998 apart and travel together, so whichever of the two has PROVEN itself names the
+    // other's address exactly. The menu pointer stays as the fallback: it is the right anchor when neither
+    // cache is known yet, just not when one of them is.
+    {
+        const FmStatic sib = (s == FM_EXAM_SPELL) ? FM_EXAM_ABIL : FM_EXAM_SPELL;
+        if (g_confirmed[sib]) {
+            const u32 proposed = ENTRIES[s].seed + (g_rva[sib] - ENTRIES[sib].seed);
+            if (proposed != g_rva[s]) { fm_adopt(s, proposed, "proposed from the sibling examine cache", false); return; }
+        }
+    }
     if (g_confirmed[anchor]) {
         const u32 proposed = ENTRIES[s].seed + (g_rva[anchor] - ENTRIES[anchor].seed);
         if (proposed != g_rva[s]) { fm_adopt(s, proposed, "proposed from a proven shift", false); return; }
