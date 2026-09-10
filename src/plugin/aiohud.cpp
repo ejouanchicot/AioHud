@@ -328,7 +328,13 @@ static void feed_packet(int id, const unsigned char* b)
         else if (id == 0x0D3) aio::party().on_treasure_lot(b);   // treasure pool : lot info / won
         else if (id == 0x067) aio::party().on_pet_info(b);       // hate list : learn friendly pet ids (Pet Info)
         else if (id == 0x068) aio::party().on_pet_status(b);     // hate list : friendly pet id + its target mob (Pet Status)
-        else if (id == 0x00B) { if (aio::party().treasure_trace_active()) windower::debug::log("TPOOL zone-OUT (0x00B) tick=%u -> pool cleared", (unsigned)GetTickCount()); if (aio::party().buff076_trace_active()) windower::debug::log("B076 ZONE-OUT (0x00B) t=%u", (unsigned)GetTickCount()); aio::party().set_zoning(true); aio::party().mark_zone_out((unsigned)GetTickCount()); aio::party().treasure_clear(); aio::party().hate_clear(); aio::party().pets_clear(); aio::party().buff_timers_clear(); }   // zone-OUT (loading) -> hide HUD + reset pool/hate/pets/self buff timers (0x063 re-sends). Ally buffs (estimates) PERSIST across a zone : the prune drops them on real wear-off / disband / death, not here.
+        else if (id == 0x00B) { if (aio::party().treasure_trace_active()) windower::debug::log("TPOOL zone-OUT (0x00B) tick=%u -> pool cleared", (unsigned)GetTickCount()); if (aio::party().buff076_trace_active()) windower::debug::log("B076 ZONE-OUT (0x00B) t=%u", (unsigned)GetTickCount()); aio::party().set_zoning(true); aio::party().mark_zone_out((unsigned)GetTickCount()); aio::party().treasure_clear(); aio::party().hate_clear(); aio::party().pets_clear(); aio::party().buff_timers_clear(); aio::party().other_buffs_clear(); }   // zone-OUT (loading) -> hide HUD + reset pool/hate/pets/self buff timers (0x063 re-sends) AND the ally song/buff estimates.
+        // ALLY BUFFS ARE DROPPED ON A ZONE NOW, and that is a decision rather than a defect. They used to be kept
+        // and re-aligned, because a song really does survive a zone -- but our rows are a memory of OUR casts, not
+        // knowledge of what the other person carries, and the 0x076 that could confirm them arrives in pieces over
+        // several seconds. During that window the rows scatter into per-person lines and pull back together, which
+        // is what a zone looked like from the box. Asked for directly 2026-09-11: "si on zone on veut tout delete".
+        // Nothing is really lost -- an ally row was an estimate, and the next cast rebuilds it from a fact.
         else if (id == 0x00A) { if (aio::party().treasure_trace_active()) windower::debug::log("TPOOL zone-IN (0x00A) tick=%u", (unsigned)GetTickCount()); if (aio::party().buff076_trace_active()) windower::debug::log("B076 ZONE-IN (0x00A) t=%u", (unsigned)GetTickCount()); aio::party().set_zoning(false); }   // zone-IN : the new zone is ready -> show the HUD again
     } __except (EXCEPTION_EXECUTE_HANDLER) { /* short/malformed packet -> ignore, never crash the game */ }
 }

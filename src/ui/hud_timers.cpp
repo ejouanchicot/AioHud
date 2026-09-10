@@ -997,7 +997,16 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // a focus buff PERSISTS across a zone : KEEP the monitor, just grace the "lost" alerts while the 0x063 / 0x076 buff
             // lists re-populate. Every entry is flagged for post-zone re-validation (below) : one still MISSING once the lists
             // are back was removed BY THE GAME on zoning (not a real loss) -> it depops silently, no OUT alert.
-            if (zone != fmZone) { fmZone = zone; fmZoneAtMs = nowMs; fmZoneGraceMs = nowMs + 8000; }
+            if (zone != fmZone) {
+                fmZone = zone; fmZoneAtMs = nowMs; fmZoneGraceMs = nowMs + 8000;
+                // A ZONE FORGETS EVERY ALLY. The model drops its rows on the zone-out packet, so the entries that
+                // watched them have nothing left to watch -- and keeping them means alerting on songs whose fate we
+                // cannot know for several seconds, which is exactly the post-zone noise this removes. Your OWN
+                // entries stay: the 0x063 comes back whole, and your songs really do survive the trip.
+                int w2 = 0;
+                for (int q = 0; q < fmN; ++q) if (fm[q].self) { if (w2 != q) fm[w2] = fm[q]; ++w2; }
+                fmN = w2;
+            }
             if (party().is_zoning()) { fmZoneAtMs = nowMs; fmZoneGraceMs = nowMs + 8000; }       // keep the grace armed through the whole loading screen
             const bool zoneGrace = (party().is_zoning() || (int)(fmZoneGraceMs - nowMs) > 0);
             const unsigned meId = party().self_id();
