@@ -512,6 +512,17 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // Reported 2026-09-10, replacing a rotation with Paeons. The model named that victim at cast time,
             // so we can simply ask: on its way out, and it stays ONE row until the prune takes it.
             if (!selfExp && party().song_was_evicted(party().self_id(), o.spell, 6000u)) return true;
+            // YOUR LIST HAS NOT SPOKEN ABOUT THIS CAST YET. selfExp == 0 normally means "you do not hold it",
+            // but right after a cast it only means the 0x063 has not landed. Treating that silence as an answer
+            // is what made a freshly sung AoE song scatter into one row per member for a moment before pulling
+            // back into its group -- reported 2026-09-10, singing Paeons over a rotation.
+            //
+            // mirrorSelf covers the same window and was meant to prevent exactly this, but it lapses at 2 s
+            // whether or not your timer list has arrived. So ask the question that has an answer: is this cast
+            // NEWER than anything the 0x063 has told us? Then it has said nothing about it. Same rule the prune
+            // and the post-zone check already obey -- evidence older than the event cannot rule on it -- and no
+            // new delay to tune, which is what every previous attempt at this class of bug reached for.
+            if (!selfExp && (int)(o.castMs - party().buff_timers_stamp()) > 0) return true;
             if (!selfExp) return party().in_zone_grace() && song_family(o.spell) <= 0;   // normally selfExp==0 -> you don't hold this -> laggard. EXCEPT the post-zone repop window : your 0x063 self timer reads 0 for a few seconds while it repopulates, but an ENHANCING buff PERSISTS across a zone -> hold it FRESH (grouped, on the pre-zone estimate) during the grace so it never flashes per-person ; the re-align snaps it to the real self timer the instant it lands. Songs (lost on zone) stay laggard.
             int d = (int)(o.expTick - selfExp); if (d < 0) d = -d;
             return d <= 600;                 // 600 ticks = 10s : casts more than 10s apart are distinct generations
