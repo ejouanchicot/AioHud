@@ -501,11 +501,20 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
     // The caches sit 0x998 apart and travel together, so whichever of the two has PROVEN itself names the
     // other's address exactly. The menu pointer stays as the fallback: it is the right anchor when neither
     // cache is known yet, just not when one of them is.
+    //
+    // A CONFIRMED SIBLING IS THE AUTHORITY, not merely the first to speak. The first cut of this proposed
+    // from the sibling and then FELL THROUGH to the menu-pointer branch when the proposal already matched --
+    // which re-proposed the other region's delta, every frame, for ever:
+    //     SPELL id moved -- 0x632D60 -> 0x667A4C (+0x32AE4) [proposed from a proven shift]
+    //     SPELL id moved -- 0x667A4C -> 0x632D60 (-0x2208)  [proposed from the sibling examine cache]
+    // The address never held still long enough for the decode test to confirm it, so the cost box stayed
+    // empty and the log filled at 60 Hz. Two healers with equal standing over one value will always do this.
     {
         const FmStatic sib = (s == FM_EXAM_SPELL) ? FM_EXAM_ABIL : FM_EXAM_SPELL;
         if (g_confirmed[sib]) {
             const u32 proposed = ENTRIES[s].seed + (g_rva[sib] - ENTRIES[sib].seed);
-            if (proposed != g_rva[s]) { fm_adopt(s, proposed, "proposed from the sibling examine cache", false); return; }
+            if (proposed != g_rva[s]) fm_adopt(s, proposed, "proposed from the sibling examine cache", false);
+            return;   // right or wrong, this is the answer : let the decode test judge it, unchallenged
         }
     }
     if (g_confirmed[anchor]) {
