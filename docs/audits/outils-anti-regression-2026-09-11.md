@@ -119,10 +119,31 @@ honnetes — se poser efface le compte ; une nouvelle paire gagne ses six toute 
 pendant un zone-in n'est pas une saturation ; le pic est retenu apres que la table se vide — ont ete **verifies
 par mutation** : source mutee, le test tombe ; source restauree, il passe.
 
+## Ce qu'ils ont trouve le jour meme
+
+Le premier `//aio why` en jeu a servi a autre chose que ce pour quoi il avait ete ecrit : le log contenait une
+oscillation, **et `flipwatch` l'avait ratee**. Je lui donnais `g_rva[i]` — or l'adresse n'a jamais bouge. Ce
+qui oscillait, c'etait **si on y croit**. Corrige : il surveille l'adresse ET le verdict.
+
+En dessous il y avait un vrai bug, a moi aussi. La regle anti-leurre disait « le bon slot lit `inline` de temps
+en temps, un mauvais le lit constamment ». C'est faux : **le bon pointeur lit `inli` tant que la saisie du chat
+a le focus**. Donc rester une seconde sans rien faire refutait la bonne adresse, et la cost box mourait dans
+chaque trou. Voir un nom de leurre ne prouve rien ; ne jamais voir autre chose, si.
+
+La correction n'est pas un seuil, c'est la forme : **plus rien n'est demoli.** Une adresse prouvee par un vrai
+nom de menu est definitive ; une adresse non prouvee **reste en service** pendant que la recherche tourne
+dessous ; un slot qui fait ses preuves prend la place. Il n'y a plus d'instant ou rien n'est en service, donc
+l'oscillation est impossible et pas seulement improbable.
+
+Deux lecons a garder :
+- **une refutation doit peser plus lourd que la preuve qu'elle renverse** (deja note hier, refait aujourd'hui) ;
+- **un veilleur branche sur le mauvais nombre est pire qu'aucun veilleur** : il donne l'impression d'etre
+  couvert. Quand un outil reste muet, verifier ce qu'on lui donne avant de conclure que tout va bien.
+
 ## Ce qui reste ouvert
 
-- Aucun des trois nouveaux points de `dec_record` n'a encore tourne en jeu. Le premier `//aio why` apres une
-  zone dira s'ils sont poses au bon endroit.
+- `dec_record` a tourne : le point « zone » sort la bonne ligne (`zone 241 'Windurst Woods' (from -1) -> mode 0`).
+  Les deux autres (Abyssea, debuffs) n'ont pas encore eu l'occasion de se declencher.
 - `capwatch` n'est branche que sur deux tables. Il y en a une quinzaine d'autres (`ANIM_MAX`, `MAP_ENT_MAX`,
   `BUFF_PIN_MAX`, `TM_TRACK_MAX`...) ; celles-ci sont les deux qui ont deja deborde.
 - La question posee trois fois et toujours sans reponse : **« on veut les recast »** — le temps de
