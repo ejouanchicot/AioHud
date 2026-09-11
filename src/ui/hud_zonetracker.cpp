@@ -547,9 +547,20 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             // hour" is true whatever the extensions were.
             isDiv = zt_is_divergence(zt.dynZone);
             if (isDiv) {
-                elapsedSec = (int)((now - zt.dynEntryMs) / 1000u);
-                remainSec  = limitSec - elapsedSec;          // NOT clamped : negative = running on extension time
                 for (int i = 0; i < 5; ++i) ki[i] = 0;
+                if (zt.divDurSec > 0) {
+                    // THE SERVER'S OWN CLOCK. 0x075 gives the fight's start and duration, so this is the same
+                    // number the game draws on screen -- extensions included, since the server re-sends the
+                    // packet when the time changes. No message id, nothing to keep repairing.
+                    remainSec = (int)((zt.divEndMs - now) / 1000u);
+                    if ((int)(zt.divEndMs - now) < 0) remainSec = 0;
+                    limitSec = zt.divDurSec;
+                } else {
+                    // Before the first battlefield packet : the 60-minute base, not clamped, so past the hour it
+                    // shows the overtime rather than a zero we cannot vouch for.
+                    elapsedSec = (int)((now - zt.dynEntryMs) / 1000u);
+                    remainSec  = limitSec - elapsedSec;
+                }
             }
         } else {
             for (int i = 0; i < 7; ++i) lights[i] = zt.lights[i];

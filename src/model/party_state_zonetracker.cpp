@@ -805,6 +805,28 @@ void PartyState::on_limbus_075(const unsigned char* p) {    // 0x075 : battlefie
         // CHANGE, with a stamp and the seconds since entry beside it. A field that ticks shows itself in two lines ;
         // one that never moves is out of the running just as fast. 0x075 is multiplexed, so this may well be some
         // other sender entirely -- @04=65535 is not an instance id, and Gaol's was.
+        // THE FIELDS, from Windower's own packet definitions (fields.lua, incoming 0x075) :
+        //   @04 Fight Designation -- anything but 0 means a timer exists ; 0 deletes it
+        //   @08 Timestamp Offset  -- seconds since 15:00 GMT 31/12/2002 = 0x3C307D70 = 1009810800, which is the
+        //                           SAME epoch ffxi_now_tick counts in (it returns those seconds times 60)
+        //   @0C Fight Duration    -- seconds. NOT the remaining time : that is start + duration - now.
+        // Self-filtered like every other reader of this packet, because 0x075 is multiplexed : a designation of
+        // zero, a duration outside a possible run, or an end time far in the past means this one is not ours.
+        {   const unsigned desig = pkt_u32(p, 0x04), start = pkt_u32(p, 0x08), dur = pkt_u32(p, 0x0C);
+            const unsigned nowSec = ffxi_now_tick() / 60u;
+            const int remain = (int)(start + dur) - (int)nowSec;
+            if (desig && dur >= 60u && dur <= 14400u && remain > -600 && remain <= 14400) {
+                const int r = remain > 0 ? remain : 0;
+                zt_.divEndMs = GetTickCount() + (unsigned)r * 1000u;
+                zt_.divDurSec = (int)dur;
+                static int nAnchor = 0;
+                if (nAnchor < 6) { ++nAnchor;
+                    windower::debug::log("DIV clock : start+dur = %u+%u -> %d s left (%d:%02d) of a %d:%02d fight%s",
+                                         start, dur, r, r / 60, r % 60, (int)dur / 60, (int)dur % 60,
+                                         nAnchor == 6 ? "  [last of 6 -- it re-anchors silently from here]" : "");
+                }
+            }
+        }
         static unsigned lastW[8] = {0}; static int nDiv75 = 0; static unsigned firstMs = 0;
         unsigned w[8]; for (int k = 0; k < 8; ++k) w[k] = pkt_u32(p, 0x04 + k * 4);
         bool changed = false; for (int k = 0; k < 8; ++k) if (w[k] != lastW[k]) { changed = true; break; }

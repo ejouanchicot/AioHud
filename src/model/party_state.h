@@ -163,6 +163,15 @@ struct ZoneTracker {
     unsigned dynEntryMs = 0;      // GetTickCount when we entered (timer origin)
     int      dynLimitSec = 3600;  // total run seconds (3600 + KI time-extensions)
     int      dynZone = 0;
+    // DIVERGENCE'S REAL CLOCK, from the server. The 0x075 battlefield packet carries the fight's START (@08,
+    // seconds since the FFXI epoch -- the same one ffxi_now_tick counts in) and its DURATION (@0C). End = start
+    // + duration, so the remaining time is exact, extensions included : the server re-sends the packet whenever
+    // the fight's time changes, which is how the game's own on-screen timer stays right.
+    // MEASURED 2026-09-11 : start 17:27:46 + 1878 s -> 17:59:04, against a player who read "1:05 left" at
+    // 17:58 on the game's clock. The first reading of this packet compared @0C (the duration) to the remaining
+    // time, saw 31:18 against 1:05, and wrote the lead off. The fields had names all along.
+    unsigned divEndMs = 0;        // GetTickCount when the run ends (0 = no battlefield packet seen yet)
+    int      divDurSec = 0;       // the fight duration the server last announced -> the bar's full scale
     unsigned char ki[5] = {0};    // Crimson / Azure / Amber / Alabaster / Obsidian granules owned (ORIGINAL Dynamis only : none of them exists in Divergence)
     // Abyssea
     int      abyOffset = 7315;    // 0x02A message base (7215 for zones 215/253, else 7315)

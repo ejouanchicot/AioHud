@@ -29,32 +29,49 @@ demi-heure, c'est exactement le bug du timer visitant d'Abyssea.
 
 La vraie limite. Deux sondes tournent en Divergence, bornées, sans rien à armer :
 
-### Ce qui est déjà éliminé — mesuré, pas supposé
+### Le temps restant : RÉSOLU, lu dans le `0x075`
 
-**`0x075` ne porte pas le temps restant.** Capture live du 2026-09-11, pendant une run à qui il restait
-**1:05** : huit paquets consécutifs, tous identiques.
+Le paquet battlefield porte bien l'horloge — la première lecture avait comparé le mauvais champ. Les noms
+viennent des définitions de paquets de Windower (`addons/libs/packets/fields.lua`, incoming `0x075`) :
 
-```
-DIV 075 @04=65535 @08=779329666 @0C=1878 @10=0
-```
-
-`@0C = 1878` (31:18) ne correspond pas au temps restant, et n'a pas bougé. C'était pourtant la meilleure piste
-— c'est exactement là que vit l'horloge de Sheol Gaol. Éliminée en une run.
-
-La sonde `0x075` est **gardée mais resserrée** : elle ne journalise plus que sur un **changement** d'octets,
-avec un horodatage et les secondes depuis l'entrée. Huit échantillons pris dans la même seconde ne distinguent
-pas un décompte d'une constante — c'est ce qui a failli faire croire à une piste.
-
-### Les sondes en place
-
-| Sonde | Ce qu'elle cherche | Borne |
+| Offset | Champ | Sens |
 |---|---|---|
-| `DIVTEXT mode=… \| …` | **la piste principale** : les annonces du chat (« votre séjour prendra fin dans N minutes », l'annonce d'extension). Seules les lignes contenant un chiffre | 40 lignes |
-| `DIV msg id=… p1=…` | les messages d'action `0x02A` de la run — aucun n'est encore apparu | 24 ids |
-| `DIV 075 …` | un champ qui **change** dans le paquet battlefield | 40 changements |
+| `@04` | Fight Designation | ≠ 0 = un timer existe ; 0 le supprime |
+| `@08` | Timestamp Offset | secondes depuis le **31/12/2002 15:00 GMT** = `0x3C307D70` = 1009810800 → **début** |
+| `@0C` | Fight Duration | **durée** en secondes — *pas* le temps restant |
 
-Aucune n'est à armer. Une run suffit pour lire la formulation exacte, puis on écrit le parseur et les sondes
-disparaissent.
+```
+temps restant = (@08 + @0C) - maintenant
+```
+
+et `maintenant` est déjà à notre disposition : `ffxi_now_tick() / 60` compte dans **exactement la même
+époque** (elle avait été reversée pour les timers de buffs).
+
+**Vérification (2026-09-11, run réelle) :**
+
+```
+DIV 075 @04=65535 @08=779329666 @0C=1878
+        -> début 17:27:46 + 31:18 = fin 17:59:04
+```
+
+Le joueur lisait **« il reste 1:05 »** sur l'horloge du jeu à 17:58. Concordance à la seconde.
+
+**Ce que ça règle d'un coup :** les extensions. Le serveur renvoie un `0x075` chaque fois que la durée change
+— c'est comme ça que le timer du jeu lui-même reste juste — donc notre décompte se ré-ancre tout seul, sans
+connaître les règles d'extension ni un seul id de message.
+
+**L'erreur à ne pas refaire** : la première capture a été jugée sur huit paquets identiques pris dans la même
+seconde, et `@0C` comparé au temps restant. 31:18 contre 1:05 : « ça ne correspond pas, piste morte ». Les
+champs avaient un nom depuis toujours, dans un fichier présent sur le disque. **Lire la définition du paquet
+avant de conclure qu'un champ ne veut rien dire.**
+
+### Sondes restantes
+
+| Sonde | Rôle | Borne |
+|---|---|---|
+| `DIV clock : start+dur -> N s left` | confirme l'ancrage à chaque run | 6 lignes |
+| `DIVTEXT` | le vocabulaire du chat — devenu secondaire, gardé le temps de vérifier une run extensionnée | 40 lignes |
+| `DIV 075` / `DIV msg` | bruts, sur changement uniquement | 40 / 24 |
 
 ## Historique
 
