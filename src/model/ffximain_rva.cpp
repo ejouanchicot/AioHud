@@ -488,8 +488,16 @@ static void heal_menu_ptr() {
             if (!known) { cand[n] = fresh[i]; lastName[n] = 0xFFFFFFFFu; ++n; }
         }
         if (n != nCand) {
-            windower::debug::log("fm: menu ptr unproven (reads %08X) -- watching %d menu-shaped slot(s). Open a "
-                                 "couple of DIFFERENT menus : only the focused one ever shows two names.", v, n);
+            // SAY WHICH OF THE TWO IT IS. Since the sweep now runs UNDERNEATH a pointer that is confirmed and
+            // in use, this line fires in two very different situations, and the old wording ("unproven") made
+            // the healthy one read like a failure -- which is how a log stops being worth reading.
+            if (g_confirmed[FM_MENU_PTR])
+                windower::debug::log("fm: menu ptr IN USE at FFXiMain+0x%X but not yet proven by a real menu name "
+                                     "-- watching %d slot(s) underneath, without touching the one in service. "
+                                     "Open any menu and this stops for good.", g_rva[FM_MENU_PTR], n);
+            else
+                windower::debug::log("fm: menu ptr unproven (reads %08X) -- watching %d menu-shaped slot(s). Open a "
+                                     "couple of DIFFERENT menus : only the focused one ever shows two names.", v, n);
             nCand = n;
         }
     }
