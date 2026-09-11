@@ -159,6 +159,7 @@ void PartyState::on_character_changed(unsigned newId) {
     selfGeo_ = GeoAura{};
     trustSeenN_ = 0; trustSeenHead_ = 0;             // remembered trust ids belong to the previous character's party
     for (int i = 0; i < 256; ++i) learnedMs_[i] = 0;
+    for (int i = 0; i < 1024; ++i) learnedSpellMs_[i] = 0;   // durations learned for the PREVIOUS character : his merits and job points are not this one's
     pw_.xpReg = RateReg{}; pw_.cpReg = RateReg{}; pw_.epReg = RateReg{};   // else the new character's X/h is blended with the old one's samples
 
     // The roster cache belongs to the previous character too : drop it and re-arm the load for the new one.

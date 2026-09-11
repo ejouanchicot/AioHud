@@ -806,8 +806,13 @@ struct PartyState {
     unsigned  curTarget_ = 0, selfId_ = 0;   // context for on_action : the mob you're on + your own id
     float     selfX_ = 0.0f, selfZ_ = 0.0f;  // the player's own horizontal position (entity X@+0x04 / Z@+0x0C) -> target distance
     unsigned  encumber_ = 0;              // 0x01B 'Encumbrance Flags' (bit sid = equip slot sid is locked) -> equipment viewer cross
-    unsigned  learnedMs_[256] = {0};      // LEARNED real debuff durations per status id : recorded on the 0x029 wear-off
-                                          // (the actual lifetime), reused for the timer next time -> the countdown self-tunes as you fight
+    unsigned  learnedMs_[256] = {0};      // LEARNED real debuff durations per STATUS id -- only for an entry whose casting spell is
+                                          // unknown (an ability, a mob skill). Kept as the fallback it always was.
+    unsigned  learnedSpellMs_[1024] = {0};   // LEARNED real durations per SPELL id, which is the one that can be right : Dia I, II and III
+                                          // are all status 134, so a table keyed by status held ONE number for the three tiers -- and it
+                                          // won over the per-cast base, so a Dia I drawn after a Dia III expired counted down from 180 s.
+                                          // Fed by your own 0x029 wear-offs, so it measures YOUR merits, job points and gear without a
+                                          // model of any of them. Session-only, reset per character (party_state_roster.cpp).
 
     // Live alliance roster (parties 2 & 3 = member-array slots 6..11 and 12..17), filled by
     // load_from_memory each frame. alli_[0..5] = alliance party 2, alli_[6..11] = party 3.

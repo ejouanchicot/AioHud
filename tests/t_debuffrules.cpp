@@ -142,6 +142,16 @@ void test_debuffrules() {
         CHECK(!debuff_ladder_proven(DIA3, 278));        // and never across families
     }
 
+    SECTION("WHICH DURATION WINS : a measurement only outranks the table when it measured the same thing");
+    {   // The bug this order fixes : Dia I, II and III are all status 134. One Dia III expiring taught
+        // "status 134 lasts 180 s", that beat the per-cast base, and every later Dia I counted down from 180
+        // instead of 60. Per-SPELL measurement first, per-status only for an entry with no spell.
+        CHECK_EQ(195000u, debuff_display_ms(195000, 180000, 180000, 90000));  // measured for this tier -> wins
+        CHECK_EQ( 60000u, debuff_display_ms(0, 0, 60000, 90000));             // Dia I, nothing learned : its own base
+        CHECK_EQ(180000u, debuff_display_ms(0, 180000, 0, 90000));            // no spell known -> the status measure
+        CHECK_EQ( 90000u, debuff_display_ms(0, 0, 0, 90000));                 // nothing at all -> the coarse guess
+    }
+
     SECTION("the tick counter wrapping does not resurrect a ghost");
     {   // GetTickCount wraps every 49.7 days and the subtraction is unsigned on purpose : an entry started just
         // before the wrap must still age normally across it.

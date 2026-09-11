@@ -113,4 +113,20 @@ inline bool debuff_ladder_proven(unsigned a, unsigned b) {
     return (aDia && bDia) || (aHlx && bHlx);
 }
 
+// Which number to DISPLAY as a debuff's lifetime, in order of how much it is worth :
+//   1. what we measured for THIS SPELL (its own 0x029 wear-off -- carries your merits, job points and gear) ;
+//   2. what we measured for the status, for an entry whose casting spell is unknown (ability, mob skill) ;
+//   3. the spell table's base duration, stored when the cast was recorded ;
+//   4. the coarse per-status guess, for a spell the table does not know at all.
+// The order is the whole point and it was wrong: the status measurement used to outrank the per-cast base, and
+// Dia I, II and III share status 134 -- so one Dia III expiring taught "134 lasts 180 s" and every later Dia I
+// counted down from 180 instead of 60. A measurement is only worth more than the table when it is a
+// measurement OF THE SAME THING.
+inline unsigned debuff_display_ms(unsigned learnedSpell, unsigned learnedStatus, unsigned baseMs, unsigned fallback) {
+    if (learnedSpell)  return learnedSpell;
+    if (learnedStatus) return learnedStatus;
+    if (baseMs)        return baseMs;
+    return fallback;
+}
+
 } // namespace aio

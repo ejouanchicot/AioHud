@@ -1823,8 +1823,35 @@ void PartyState::on_029(const unsigned char* p) {
             // asleep" (msg 204, param 2, reversed via //aio dbflog) -- EVERY sleep variant : a Lullaby'd mob wakes
             // with param 2 though we track it as 193, so an exact match missed it (coup / DoT / natural wake alike).
             if (cur == st || (is_sleep_status(st) && is_sleep_status(cur))) {
-                const unsigned life = GetTickCount() - d.startMs[i];       // LEARN the real duration (keep the longest = the unresisted full duration)
-                if (cur < 256 && life >= 2000 && life <= 1800000 && life > learnedMs_[cur]) learnedMs_[cur] = life;
+                // LEARN THE REAL DURATION -- this is the only place the game ever tells us one. It sends this
+                // packet for the debuffs YOU cast, so the number measured here already carries your merits,
+                // your job points and your gear, with no model of any of them to get wrong.
+                // Keyed by SPELL, not by status : Dia I/II/III are all status 134, so one number served the
+                // three tiers and, since it wins over the per-cast base, a Dia I drawn after a Dia III had
+                // expired counted down from 180 s. Only an entry with no known spell falls back to the
+                // per-status table it used to share.
+                // Keep the LONGEST : a resisted enfeeble lands at half duration, and that is not the number
+                // to teach. Never learn from a SLEEP ending -- a hit, a DoT tick or a mate's nuke wakes a mob
+                // early and that is a wake, not a lifetime. Never learn from the generic wake either (cur != st).
+                const unsigned life = GetTickCount() - d.startMs[i];
+                const unsigned short lsp = d.spell[i];
+                const bool teachable = (cur == st) && !is_sleep_status(cur) && life >= 2000 && life <= 1800000;
+                if (teachable && lsp && lsp < 1024) {
+                    if (life > learnedSpellMs_[lsp]) {
+                        learnedSpellMs_[lsp] = life;
+                        // Say it ONCE per spell, always on : a countdown that is quietly wrong is exactly the
+                        // shape this codebase keeps paying for, and the table it corrects is a decade old.
+                        const SpellDebuff* tb = spell_debuff(lsp);
+                        const unsigned base = tb ? tb->durSec * 1000u : 0u;
+                        if (base && (life > base + base / 10 || life + base / 10 < base)) {
+                            static windower::debug::LogOnce<48> onceDur;
+                            if (onceDur.first(lsp))
+                                windower::debug::log("DBF duration : %s measured %u.%us, table says %us (%s) -- the measured one is used from now on",
+                                                     debuff_spell_name(lsp), life / 1000u, (life % 1000u) / 100u, base / 1000u,
+                                                     life > base ? "longer : merits / job points / gear" : "shorter : resisted, or the table is too generous");
+                        }
+                    }
+                } else if (teachable && cur < 256 && life > learnedMs_[cur]) learnedMs_[cur] = life;   // no casting spell known (ability / mob skill)
                 DBFTRACE("DBF 029-remove tid=%08X st=%u (msg=%u param=%u)", tid, cur, msg, st);
                 // The armed trace above answers this only if somebody armed it BEFORE the icon vanished, which
                 // nobody ever does -- you notice the icon is gone and then it is too late. The ring answers it
@@ -2243,7 +2270,15 @@ int PartyState::target_debuffs(unsigned id, unsigned short* out, int* remainSec,
         if (self && el > SAFETY_MS) continue;                          // YOURS : a safety cap clears a MISSED wear-off. OTHERS : never auto-removed (no wear-off packet).
         // countdown duration : a LEARNED real lifetime (from your 0x029 wear-offs) wins ; else this cast's base
         // duration (the spell table value stored when recorded) ; else the coarse per-status fallback.
-        unsigned dur = (st < 256 && learnedMs_[st]) ? learnedMs_[st] : (d->baseMs[i] ? d->baseMs[i] : debuff_dur_ms(st));
+        // What we MEASURED for this exact spell wins ; then what we measured for the status (an entry with no
+        // spell) ; then this cast's base duration ; then the coarse per-status guess. NOTE the refusal rule in
+        // debuff_rules.h deliberately does NOT use the learned value : the longest ever seen is the right
+        // number to DISPLAY, and the wrong one to refuse a cast on -- a Helix learned at 168 s under Dark Arts
+        // would then block a later one cast without it. Displaying long costs a countdown ; refusing long costs
+        // a debuff that never appears.
+        const unsigned short lsp = d->spell[i];
+        const unsigned dur = debuff_display_ms((lsp && lsp < 1024) ? learnedSpellMs_[lsp] : 0u,
+                                               (st < 256) ? learnedMs_[st] : 0u, d->baseMs[i], debuff_dur_ms(st));
         if (remainSec) remainSec[n] = (el < dur) ? (int)((dur - el + 999) / 1000) : -(int)((el - dur + 999) / 1000);   // countdown ; past the estimate -> NEGATIVE (-0:30 = 30 s over the estimate), icon kept
         if (isSelf) isSelf[n] = self ? 1 : 0;
         if (spellOut) spellOut[n] = d->spell[i];           // the landing spell -> the caller can name the TIER
