@@ -563,6 +563,13 @@ static const ChangeLine CL_80[] = {
       "Correctif : les libelles de boutons restent lisibles sur n'importe quelle couleur d'accent (texte sombre sur bouton clair, texte clair sur bouton sombre), les elements textures apparaissent maintenant en fondu avec le menu au lieu de surgir d'un coup, et le libelle \"Boite cout\" de Party n'est plus corrompu." },
 };
 
+static const ChangeLine CL_87[] = {
+    { "*A buff row no longer claims to be an area spell when it was not.* Haste or Phalanx cast on three people one at a time was folded into a single \"(AoE 3)\" line -- a claim about what the cast did, made by three casts that each hit one person. That came from a setting, and the setting was ON by default, so it was the normal behaviour for anyone who had never gone looking for it. It is gone: a row groups only when the spell really did reach several people -- a song, Protectra, a Corsair roll, or a spell made area-wide by Scholar's Accession or Manifestation. Everything else is listed one row per person, which is also the only form that can tell you WHO is missing one.",
+      "*Une ligne de buff ne pretend plus etre un sort de zone quand elle ne l'est pas.* Un Haste ou un Phalanx lance sur trois personnes une par une etait replie en une seule ligne \"(AoE 3)\" -- une affirmation sur ce qu'a fait le cast, produite par trois casts qui ont touche une personne chacun. Cela venait d'un reglage, et ce reglage etait ACTIVE par defaut : c'etait donc le comportement normal pour quiconque n'etait jamais alle le chercher. Il est supprime : une ligne ne se groupe que si le sort a reellement atteint plusieurs personnes -- une song, un Protectra, un roll de Corsaire, ou un sort passe en zone par Accession ou Manifestation de Scholar. Tout le reste est liste une ligne par personne, la seule forme qui peut aussi te dire QUI n'en a pas." },
+    { "*Zoning no longer throws away the buffs you put on your party.* The Haste, the Refresh and the Phalanx you had just spread over everyone vanished from the box on a zone change and could only come back by casting them again -- while in the game they were still running. Only the songs are forgotten on a zone now, and that on purpose: a song is re-sung in six seconds, and its rows were scattering while the game re-sent the party's buffs piece by piece.",
+      "*Changer de zone ne jette plus les buffs que tu as poses sur ton groupe.* Le Haste, le Refresh et le Phalanx que tu venais d'etaler sur tout le monde disparaissaient de la boite au changement de zone et ne revenaient qu'en les relancant -- alors que dans le jeu ils tournaient toujours. Seules les songs sont desormais oubliees en zonant, et c'est volontaire : une song se re-chante en six secondes, et ses lignes s'eparpillaient pendant que le jeu renvoyait les buffs du groupe morceau par morceau." },
+};
+
 static const ChangeLine CL_86[] = {
     { "*A weaker Dia no longer replaces a stronger one.* Cast Dia III, then Dia II on the same target, and the row became Dia II with its shorter timer -- the game keeps the Dia III. It was not an obvious one to see: the game answers a refused Dia the way it answers one that worked, with its damage, and says nothing at all about the effect, so this is now worked out rather than waited for. Same for Bio, and for the Scholar Helix spells, where a tier I used to take over a tier II you had just burst with.",
       "*Un Dia plus faible ne remplace plus un Dia plus fort.* Lance Dia III, puis Dia II sur la meme cible, et la ligne passait a Dia II avec son timer plus court -- alors que le jeu garde le Dia III. Ce n'etait pas simple a voir : le jeu repond a un Dia refuse exactement comme a un Dia qui a pris, avec ses degats, et ne dit rien de l'effet. C'est donc deduit desormais, au lieu d'etre attendu. Pareil pour Bio, et pour les Helix de Scholar, ou un tier I reprenait la place d'un tier II fraichement pose pour le burst." },
@@ -636,6 +643,7 @@ static const ChangeLine CL_81[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.87", CL_87, (int)(sizeof(CL_87) / sizeof(CL_87[0])) },
     { "1.0.86", CL_86, (int)(sizeof(CL_86) / sizeof(CL_86[0])) },
     { "1.0.85", CL_85, (int)(sizeof(CL_85) / sizeof(CL_85[0])) },
     { "1.0.84", CL_84, (int)(sizeof(CL_84) / sizeof(CL_84[0])) },
