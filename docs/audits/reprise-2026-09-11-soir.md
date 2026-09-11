@@ -1,6 +1,6 @@
 # Reprise — 11 septembre 2026, apres les veilleurs
 
-Etat du depot : **`main` propre, tout pousse**, dernier commit `a1b0549`.
+Etat du depot : **`main` propre, tout pousse**, dernier commit `e96fa0b` — **v1.0.85 publiee**.
 Build OK, suite offline **1088 checks, 0 failed**, hook pre-commit actif.
 
 Le document de fond est [`outils-anti-regression-2026-09-11.md`](outils-anti-regression-2026-09-11.md) —
@@ -84,9 +84,11 @@ Les trois `aiohud_bugreport_*.txt` du 11/09 sont **a jeter** — aucun ne decriv
 2. **`capwatch` n'est branche que sur deux tables** (`FOCUS_MAX`, `OB_MAX`) — celles qui ont deja deborde. Il
    en reste une quinzaine (`ANIM_MAX`, `MAP_ENT_MAX`, `BUFF_PIN_MAX`, `TM_TRACK_MAX`...). A brancher au fur
    et a mesure, pas en bloc.
-3. **Pas de release depuis la v1.0.84.** Tout ce qui est ci-dessus est sur `main` et n'a pas ete publie. Si on
-   fait une v1.0.85 : `CL_85` + une ligne `RELEASES` dans `ui/config_changelog.h`, verifier `relOpen_[]`, et
-   `//lua reload aioupdate` apres.
+3. ~~Pas de release depuis la v1.0.84.~~ **Publiee le 11/09 a 15h02 : v1.0.85** (`e96fa0b`, tag `v1.0.85`,
+   CI verte, `AioHud-1.0.85.zip` + `AioHudIcons.exe`, marquee Latest). Trois lignes de changelog : la boite de
+   cout qui clignote, le rapport de bug non merite, et les quatre veilleurs avec `//aio watch off`.
+   `RELEASES_N` = 65 contre `relOpen_[128]`. L'addon n'a pas bouge, donc **pas** de `//lua reload aioupdate`
+   a faire cette fois.
 4. **Questions BRD jamais mesurees** : Tenuto + Clarion Call ensemble, un terme plat ou deux ? Et un ecrasement
    volontaire emet-il un `0x029` ? (`docs/songs/03-protocole-captures.md`, capture 2.)
 
