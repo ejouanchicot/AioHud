@@ -5,6 +5,7 @@
 #include "model/spells_gen.h"      // spell_info  : an examine cache proves itself by DECODING
 #include "model/abilities_gen.h"   // abil_info
 #include "model/weapon_skills_gen.h" // ws_info : the ability cache carries weapon skills too (raw id, no +0x200)
+#include "model/selftest.h"      // the in-game watcher : these addresses now report when they are lost
 #include "model/sentinel.h"        // a packet that matches NOWHERE is a layout change, not a moved address
 #include "windower.h"
 #include "windower_debug.h"
@@ -365,6 +366,8 @@ static void heal_pw_merit() {
 // "not a pointer" cannot be the test. What the broken state actually looked like on 2026-08-12 was a
 // small integer (14, 15) -- a different variable entirely. That IS the test.
 static bool g_adoptedTag = false;
+static unsigned g_menuOpenSeen  = 0;   // frames with SOMETHING open on the proven menu slot
+static unsigned g_menuNamesSeen = 0;   // ...of which showed a name read_action_menu actually knows
 static u32  g_examBan[2]  = { 0, 0 };          // an RVA refuted for not following the cursor : never re-adopt it
 static u32  g_examCur[2]  = { 0, 0 };          // the menu highlight index we last saw, per cache
 static u32  g_examVal[2]  = { 0, 0 };          // ...and what the cache read at that moment
@@ -651,9 +654,79 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
     if (bestAddr) { fm_adopt(s, bestAddr - base, "tracks the highlighted action"); w.n = 0; }
 }
 
+// ---- the watcher's eyes on this file ----------------------------------------------------------------
+// WHY THIS EXISTS. A client update on 2026-09-11 moved two memory regions by different deltas. The
+// live-menu pointer healed onto a DECOY four bytes from the real slot, and because every other healer
+// here needs that pointer confirmed before it can act, ONE wrong address silently killed three separate
+// features -- the party-selection cursor, the Magic cost box and the Ability one. The log said so every
+// three seconds for days. Nobody was reading the log.
+//
+// That is the gap this closes. The healers already know when they are lost; they just had no way to say
+// it to the person playing. A check that names the ONE action that would fix it is worth more than any
+// amount of self-repair that waits to be noticed.
+static int rva_checks(CheckFail* out, int cap) {
+    int n = 0;
+    #define RFAIL(ID, SEV, ...) do { if (n < cap) { lstrcpynA(out[n].id, ID, sizeof(out[n].id)); out[n].sev = (SEV); \
+        _snprintf(out[n].detail, sizeof(out[n].detail), __VA_ARGS__); out[n].detail[sizeof(out[n].detail)-1] = 0; ++n; } } while (0)
+
+    if (!ffximain_base()) return n;   // not loaded yet : nothing to say, and saying it would be noise
+
+    // 1. THE POINTER EVERYTHING ELSE DEPENDS ON. Unproven here means open_menu_tag() answers nothing, which
+    //    means neither examine cache can ever confirm: the whole chain is stalled on this one line.
+    if (!g_confirmed[FM_MENU_PTR])
+        RFAIL("RVA.MENU_PTR", CHK_BLOCK,
+              "the live-menu pointer is not proven -- the cost box and every menu-driven feature are dead. "
+              "Open the Magic menu, then the Ability menu : only the focused slot ever shows two names");
+
+    // 2. THE TWO CACHES. Each needs its own menu opened once, with the cursor MOVED -- a value that merely
+    //    sits there proves nothing, as a stale ability cache reading a plausible weapon-skill id showed.
+    if (g_confirmed[FM_MENU_PTR] && !g_confirmed[FM_EXAM_SPELL])
+        RFAIL("RVA.EXAM_SPELL", CHK_WARN,
+              "the examined-spell address is not proven -- the Magic cost box will stay empty. "
+              "Open the Magic menu and move the cursor over a few spells");
+    if (g_confirmed[FM_MENU_PTR] && !g_confirmed[FM_EXAM_ABIL])
+        RFAIL("RVA.EXAM_ABIL", CHK_WARN,
+              "the examined-ability address is not proven -- the Ability box will stay empty. "
+              "Open Ability > Job Ability and move the cursor over a few abilities");
+
+    // 3. THE TARGET CHAIN. Proven but reading nothing usable is the shape a patch leaves behind, and it is
+    //    invisible: the party cursor simply stops highlighting, with no error anywhere.
+    if (g_confirmed[FM_TARGET_T]) {
+        u32 p = 0, t0 = 0;
+        if (!safe_read(fm_addr(FM_TARGET_T), &p) || !valid_ptr(p) || !safe_read(p + 0x04, &t0))
+            RFAIL("RVA.TARGET_T", CHK_WARN,
+                  "the target pointer is proven but its chain no longer reads -- the party selection cursor "
+                  "will not follow you. //aio rva break forces a re-derivation");
+    }
+
+    // 4. AND THE ONE THAT WOULD HAVE CAUGHT TONIGHT'S BUG ON ITS FIRST DAY. A pointer can be confirmed and
+    //    still be the wrong object: the decoys carry the same "menu" tag and read a name that never changes.
+    //    If the slot in use has never once shown a name we recognise, it is not the focused menu.
+    if (g_confirmed[FM_MENU_PTR] && g_menuNamesSeen == 0 && g_menuOpenSeen > 600)
+        RFAIL("RVA.MENU_DECOY", CHK_BLOCK,
+              "the proven menu slot has never shown a menu name we know, over %u frames with a menu open -- "
+              "it is almost certainly a decoy. //aio rva break forces a re-derivation", g_menuOpenSeen);
+
+    #undef RFAIL
+    return n;
+}
+
+void rva_register_checks() { selftest_add("statics", rva_checks); }
+
 void fm_tick() {
     ensure_loaded();
     if (!ffximain_base()) return;
+    // Evidence for RVA.MENU_DECOY, gathered where the pointer is read anyway. A decoy is not silent -- it
+    // reads 'inline' or 'logwindo' forever -- so counting how often the slot shows a name we RECOGNISE
+    // separates "no menu is open" from "this is not the menu".
+    if (g_confirmed[FM_MENU_PTR]) {
+        const u32 t = open_menu_tag();
+        if (t) {
+            if (g_menuOpenSeen < 0xFFFFFFFFu) ++g_menuOpenSeen;
+            if (t == 0x6967616Du || t == 0x6C696261u || t == 0x73696261u)   // 'magi' 'abil' 'abis'
+                if (g_menuNamesSeen < 0xFFFFFFFFu) ++g_menuNamesSeen;
+        }
+    }
     heal_pw_block();
     heal_pw_merit();
     heal_menu_ptr();

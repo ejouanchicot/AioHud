@@ -60,6 +60,7 @@ void fm_pw_merit_expect(unsigned lp, unsigned merits, unsigned maxMerits);
 // Once per frame, from the poller. Runs whatever healing is currently due -- nothing when everything is
 // healthy, which is the normal case and costs a handful of reads.
 void fm_tick();
+void rva_register_checks();   // the in-game watcher's checks for these addresses (see rva_checks)
 
 // One report line per static, for //aio doctor : address, state, and how it got there.
 int  fm_report(char out[][160], int maxOut);

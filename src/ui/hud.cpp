@@ -186,7 +186,7 @@ void Hud::render(u32 dev) {
     // plain array with no order dependency, and doing it where the module is known to be alive avoids a
     // static-init-order question for no benefit. Idempotent, so it costs one comparison per frame.
     static bool s_checksRegistered = false;   // rule10-ok: appending to an array cannot fail transiently
-    if (!s_checksRegistered) { s_checksRegistered = true; timers_register_checks(); }
+    if (!s_checksRegistered) { s_checksRegistered = true; timers_register_checks(); rva_register_checks(); }
 
     // The watcher decides for itself whether it is armed and whether it is due ; on the overwhelming majority
     // of frames this returns 0 having touched nothing. When a check has held long enough to be believed, the
