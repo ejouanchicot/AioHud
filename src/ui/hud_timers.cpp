@@ -1,4 +1,5 @@
 // hud_timers.cpp -- split out of hud.cpp (pure move). Timers box renderer.
+#include "model/flipwatch.h"   // notice a row set that cannot settle
 #include "ui/hud.h"
 #include "ui/hud_internal.h"
 #include "model/ui_config.h"
@@ -1592,6 +1593,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             for (const char* c = bufs[i].name; c && *c; ++c) sig = (sig ^ (unsigned char)*c) * 16777619u;
             for (const char* c = bufs[i].tag;  c && *c; ++c) sig = (sig ^ (unsigned char)*c) * 16777619u;
         }
+        // Two rules deciding one row set is what made songs trade places and a red row blink at 60 Hz. The
+        // signature IS the decision, so it is the right thing to watch: if it alternates between two values
+        // without ever settling, something is arguing (model/flipwatch.h).
+        flipwatch("timers.rowset", sig, (unsigned)GetTickCount());
         static unsigned lastSig = 0;
         if (sig != lastSig) {
             lastSig = sig;

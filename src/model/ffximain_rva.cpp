@@ -1,4 +1,5 @@
 // ffximain_rva.cpp -- see ffximain_rva.h for WHY the addresses are data.
+#include "model/flipwatch.h"   // an address that keeps changing back is two healers arguing
 #include "model/ffximain_rva.h"
 #include "model/game_mem.h"        // ffximain_base / entity_array
 #include "model/paths.h"           // the data dir for the cache file
@@ -716,6 +717,13 @@ void rva_register_checks() { selftest_add("statics", rva_checks); }
 void fm_tick() {
     ensure_loaded();
     if (!ffximain_base()) return;
+    // Two healers with equal standing over one address re-proposed to each other every frame, twice on
+    // 2026-09-11 -- and both times the only evidence was a log line repeating at 60 Hz. Watch the addresses
+    // themselves: an RVA that keeps changing back is an argument, not a repair.
+    { static const char* const IDS[FM_N] = { "rva.target_t", "rva.menu_ptr", "rva.exam_spell",
+                                             "rva.exam_abil", "rva.pw_block", "rva.pw_merit" };
+      const unsigned nowMs = (unsigned)GetTickCount();
+      for (int i = 0; i < (int)FM_N; ++i) flipwatch(IDS[i], g_rva[i], nowMs); }
     // Evidence for RVA.MENU_DECOY, gathered where the pointer is read anyway. A decoy is not silent -- it
     // reads 'inline' or 'logwindo' forever -- so counting how often the slot shows a name we RECOGNISE
     // separates "no menu is open" from "this is not the menu".
