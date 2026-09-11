@@ -22,14 +22,23 @@ struct Entry {
     u32         seed;      // last known-good address (the value shipped in this build)
     const char* name;
 };
-// Seeds = the 2026-08-12 post-patch addresses. They are a starting point, not a promise.
+// Seeds = the 2026-09-11 post-patch addresses, replacing the 2026-08-12 set. A starting point, not a
+// promise -- but a current one, and that matters more than it sounds: every healer in this file needs the
+// live-menu pointer CONFIRMED before it can do anything (open_menu_tag() gates both examine caches), so a
+// stale menu seed does not degrade one feature, it stops the whole chain. Re-deriving what we already know
+// on every login is how a whole evening went.
+//
+// Measured on this client (fingerprint 6A580428). Two different regions moved, which is why no single delta
+// repairs them all:
+//   target_t and both PointWatch blocks   -0x40
+//   the menu pointer and both examine caches   +0x32AE0
 static const Entry ENTRIES[FM_N] = {
-    { 0x5787AC, "target_t ptr  (party selection cursor)" },
-    { 0x5EEDAC, "live-menu ptr (cost/Next box)"          },
-    { 0x634F68, "examined SPELL id"                      },
-    { 0x6345D0, "examined ABILITY id"                    },
-    { 0x485684, "PointWatch block (EXP / ML / exemplar)" },
-    { 0x485866, "PointWatch merits (LP / merit count)"   },
+    { 0x57876C, "target_t ptr  (party selection cursor)" },   // proven, chain alive
+    { 0x62188C, "live-menu ptr (cost/Next box)"          },   // proven : the slot reading 'magic', NOT the 'inline' decoy 4 bytes on
+    { 0x667A48, "examined SPELL id"                      },   // proven : decoded 0x189 with the Magic menu open
+    { 0x6670B0, "examined ABILITY id"                    },   // its sibling's shift : unverified, the decode test and the scan judge it
+    { 0x485644, "PointWatch block (EXP / ML / exemplar)" },   // proven
+    { 0x485826, "PointWatch merits (LP / merit count)"   },   // proven
 };
 
 static u32   g_rva[FM_N];
