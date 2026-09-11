@@ -36,7 +36,7 @@ static const Entry ENTRIES[FM_N] = {
     { 0x57876C, "target_t ptr  (party selection cursor)" },   // proven, chain alive
     { 0x62188C, "live-menu ptr (cost/Next box)"          },   // proven : the slot reading 'magic', NOT the 'inline' decoy 4 bytes on
     { 0x667A48, "examined SPELL id"                      },   // proven : decoded 0x189 with the Magic menu open
-    { 0x6670B0, "examined ABILITY id"                    },   // its sibling's shift : unverified, the decode test and the scan judge it
+    { 0x6670B0, "examined ABILITY id"                    },   // proven : the scan adopted exactly this, after the cursor test refused the stale one
     { 0x485644, "PointWatch block (EXP / ML / exemplar)" },   // proven
     { 0x485826, "PointWatch merits (LP / merit count)"   },   // proven
 };
