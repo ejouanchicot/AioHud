@@ -725,6 +725,14 @@ struct PartyState {
     SlotCap song_cap() const { return songCap_; }     // valid only once an eviction has taught it
     int     ob_remaining_sec(const OtherBuff& o) const;
     void other_buffs_clear() { otherBuffN_ = 0; }
+    // ZONE-OUT drops the SONGS only. "Si on zone on veut tout delete" was said about the song rows scattering
+    // and regrouping while the 0x076 arrived in pieces -- and it was applied to every ally buff, which threw
+    // away the Haste, the Phalanx and the Refresh you had just put on the party. Those come back on the other
+    // side in the game, and our rows are the only place they were written down: a song can be re-sung in six
+    // seconds, an ally Haste cannot be recovered at all.
+    // Right diagnosis, remedy too wide. The scattering was the fresh-vs-laggard re-decision, which only songs
+    // go through.
+    void other_buffs_clear_songs();   // (party_state.cpp : needs the generated song-family table)
     unsigned char obPruneTrace_ = 0;   // //aio oblog : dump the next prune pass (see arm_ob_prune_trace)
     void clear_other_buffs_for(unsigned id) { int w = 0; for (int k = 0; k < otherBuffN_; ++k) if (otherBuffs_[k].target != id) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; } otherBuffN_ = w; }
     // --- JOB-CHANGE detection (Timers) : a member (self or ally) that swaps main/sub drops ALL buffs and resets

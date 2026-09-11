@@ -1993,6 +1993,17 @@ const BuffSet* PartyState::buffs_for(unsigned id) const {
 // as many entries as the member actually shows -- newest first. This drops buffs that ended early (dispel /
 // wear-off) AND songs pushed out of the BRD song slots when the limit is hit (incl. same-status tiers). A short
 // grace period lets a fresh cast register in the 0x076 before it can be pruned.
+// ZONE-OUT : forget the ally SONGS, keep every other ally buff. See the note at the call site (aiohud.cpp,
+// packet 0x00B) for why the two are not the same thing.
+void PartyState::other_buffs_clear_songs() {
+    int w = 0;
+    for (int i = 0; i < otherBuffN_; ++i) {
+        if (song_family(otherBuffs_[i].spell) > 0) continue;   // a song : forget it, the next cast rebuilds it
+        if (w != i) otherBuffs_[w] = otherBuffs_[i];
+        ++w;
+    }
+    otherBuffN_ = w;
+}
 void PartyState::prune_other_buffs_worn() {
     songdur_check();   // learn ally song durations from the server 0x063, off the same model tick
     // This table does not merely stop accepting when it is full -- it EVICTS THE OLDEST entry (see the two

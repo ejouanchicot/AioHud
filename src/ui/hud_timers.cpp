@@ -1001,12 +1001,18 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // are back was removed BY THE GAME on zoning (not a real loss) -> it depops silently, no OUT alert.
             if (zone != fmZone) {
                 fmZone = zone; fmZoneAtMs = nowMs; fmZoneGraceMs = nowMs + 8000;
-                // A ZONE FORGETS EVERY ALLY. The model drops its rows on the zone-out packet, so the entries that
-                // watched them have nothing left to watch -- and keeping them means alerting on songs whose fate we
-                // cannot know for several seconds, which is exactly the post-zone noise this removes. Your OWN
-                // entries stay: the 0x063 comes back whole, and your songs really do survive the trip.
+                // A ZONE FORGETS AN ALLY SONG -- and nothing else. The model drops exactly those rows on the
+                // zone-out packet, so the entries that watched them have nothing left to watch, and keeping them
+                // would alert on songs whose fate we cannot know for several seconds. Every other ally entry
+                // stays, because its row stays: dropping them here is how a zone lost the Haste you had just put
+                // on the party (reported 2026-09-12). Your OWN entries stay too -- the 0x063 comes back whole.
                 int w2 = 0;
-                for (int q = 0; q < fmN; ++q) if (fm[q].self) { if (w2 != q) fm[w2] = fm[q]; ++w2; }
+                for (int q = 0; q < fmN; ++q) {
+                    const bool allySong = !fm[q].self && song_family(fm[q].spell) > 0;
+                    if (allySong) continue;
+                    if (w2 != q) fm[w2] = fm[q];
+                    ++w2;
+                }
                 fmN = w2;
             }
             if (party().is_zoning()) { fmZoneAtMs = nowMs; fmZoneGraceMs = nowMs + 8000; }       // keep the grace armed through the whole loading screen
