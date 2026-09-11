@@ -538,11 +538,19 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             limitSec = zt.dynLimitSec > 0 ? zt.dynLimitSec : 1;
             remainSec = limitSec - (int)((now - zt.dynEntryMs) / 1000u); if (remainSec < 0) remainSec = 0;
             for (int i = 0; i < 5; ++i) ki[i] = zt.ki[i];
-            // DIVERGENCE : same mode, another content. It counts UP. A 60-minute countdown would be right only
-            // until the first statue dies -- extensions there are automatic and reach 120 min -- and a timer that
-            // says 0:00 while half an hour remains is the bug we just took out of Abyssea. Elapsed cannot lie.
+            // DIVERGENCE : same mode, another content. What you want to read in there is the time LEFT, so it
+            // counts down from the 60-minute base like any Dynamis run. The base is not the whole story -- a
+            // statue adds a minute, a wave boss thirty, up to 120 -- and we cannot yet see those (two probes are
+            // learning where they are announced). So the one thing not done here is to CLAMP at zero and sit on
+            // 0:00 while an extended run is still going: past the hour the row shows the overtime as +M:SS. A
+            // countdown that lies flat is the Abyssea visitant bug ; one that says "you are 3:20 past the base
+            // hour" is true whatever the extensions were.
             isDiv = zt_is_divergence(zt.dynZone);
-            if (isDiv) { elapsedSec = (int)((now - zt.dynEntryMs) / 1000u); for (int i = 0; i < 5; ++i) ki[i] = 0; }
+            if (isDiv) {
+                elapsedSec = (int)((now - zt.dynEntryMs) / 1000u);
+                remainSec  = limitSec - elapsedSec;          // NOT clamped : negative = running on extension time
+                for (int i = 0; i < 5; ++i) ki[i] = 0;
+            }
         } else {
             for (int i = 0; i < 7; ++i) lights[i] = zt.lights[i];
             // THE VISITANT TIME COMES FROM THE STATUS, NOT FROM THE CHAT. "Visitant" is status 285 -- an ordinary
@@ -629,20 +637,23 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     if (showHdr) { fH->begin(dev); fH->draw_c(dev, cx, cy + headH * 0.5f, title, zH, zt_col(ZT_HEADER, orange), strk, oH); cy += headH + gap; }
     // time bar (run timer / visitant timer) -- width + height configurable, centred
     if (hasTimer) {
-        // Divergence counts UP toward the 120-minute ceiling nobody can pass, because its 60-minute base is not
-        // the run : a statue adds a minute, a wave boss thirty. So the bar FILLS instead of draining, and the
-        // colour is fed the inverse so it still greens at the start and reddens at the end. The number under it
-        // is the elapsed time, which is the only thing we can state without a message id to lean on.
-        const int tsec = isDiv ? elapsedSec : (isDyn ? remainSec : visRemainSec);
-        const int tmax = isDiv ? 7200 : (isDyn ? limitSec : (visMax > 0 ? visMax : 1));
+        // Divergence drains like any Dynamis run, from the 60-minute base. Its extensions (a minute a statue,
+        // thirty a wave boss, up to 120) are not visible to us yet, so the number is allowed to go NEGATIVE and
+        // is drawn as +M:SS past the hour -- overtime, not a zero we cannot vouch for. The bar clamps empty.
+        const int tsec = isDyn ? remainSec : visRemainSec;
+        const int tmax = isDyn ? limitSec : (visMax > 0 ? visMax : 1);
         const float frac = (float)tsec / (float)tmax;
         const float br = barH * 0.5f, bW = contentW * bwF, bX = cx - bW * 0.5f;
         rrect(dev, bX, cy, bW, barH, br, 0xFF20222Cu, 0xFF16181Fu, 1.0f);
         const float fw = (bW - 2.0f * S) * (frac < 0.0f ? 0.0f : (frac > 1.0f ? 1.0f : frac));
-        const u32 tc = zt_time_col(isDiv ? (1.0f - frac) : frac);
+        const u32 tc = zt_time_col(frac);
         if (fw > 1.0f) { if (fw >= bW - 2.0f * S - 0.5f) rrect(dev, bX + 1.0f * S, cy + 1.0f * S, fw, barH - 2.0f * S, br - 1.0f * S, tc, tc, 1.0f);
                          else rrect_left(dev, bX + 1.0f * S, cy + 1.0f * S, fw, barH - 2.0f * S, br - 1.0f * S, tc, tc, 1.0f); }
-        char tb[12]; sprintf(tb, "%d:%02d", tsec / 60, tsec % 60);
+        // Past the base hour in Divergence the run is on extension time we cannot yet measure : show how far past
+        // it is, rather than a zero that would be a statement about the remaining time -- and we have none to make.
+        char tb[12];
+        if (tsec < 0) sprintf(tb, "+%d:%02d", (-tsec) / 60, (-tsec) % 60);
+        else          sprintf(tb, "%d:%02d", tsec / 60, tsec % 60);
         fT->begin(dev); fT->draw_c(dev, cx, cy + barH * 0.5f, tb, zT, zt_col(eTimer, white), strk, oT);
         cy += barH + gap;
     }

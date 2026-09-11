@@ -777,6 +777,19 @@ void PartyState::on_limbus_075(const unsigned char* p) {    // 0x075 : battlefie
     // SELF-FILTERED, because 0x075 is multiplexed and other senders put unrelated words in these bytes: the id
     // must be a Sheol instance and the value must look like a countdown. A packet failing either is ignored
     // rather than believed -- the Limbus reader on this same packet filters on its bar labels for that reason.
+    // DIVERGENCE, same question as Gaol a day earlier : 0x075 is the battlefield packet, and it is where Gaol's
+    // lobby/fight countdown turned out to live (@0C, seconds). If Divergence sends one too, its remaining time is
+    // there -- server-exact, immune to the message-id drift that had to be repaired twice in Abyssea. Dump the
+    // header words for 8 packets of one run ; decode nothing until the fields are identified.
+    if (zt_.mode == 1 && zt_is_divergence(zt_.dynZone) && pkt_bytes(p) >= 0x14) {
+        static int nDiv75 = 0;
+        if (nDiv75 < 8) {
+            ++nDiv75;
+            windower::debug::log("DIV 075 @04=%u @08=%u @0C=%u @10=%u  (Gaol carried its countdown in SECONDS at @0C)",
+                                 pkt_u32(p, 0x04), pkt_u32(p, 0x08), pkt_u32(p, 0x0C), pkt_u32(p, 0x10));
+            if (nDiv75 == 8) windower::debug::log("DIV 075 : 8 packets shown, enough to compare -- nothing more will be printed this session");
+        }
+    }
     if (zt_.mode == 5 && pkt_bytes(p) >= 0x10) {
         const unsigned inst = pkt_u32(p, 0x04);
         const int      sec  = (int)pkt_u32(p, 0x0C);
@@ -880,6 +893,20 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
     // client patch (40005 -> 40015 -> 40016 -> ...), so it is no longer matched as a constant : see the resolver
     // above -- while the id in use stays silent, the one whose p2 tracks its own p1 is adopted, with no capture and
     // no release.
+    // DIVERGENCE : learn the message vocabulary of one run, unprompted. The box counts down from the 60-minute
+    // base because that is what a run starts with, but the real limit grows -- a statue adds a minute, a wave
+    // boss thirty -- and the server announces each of those in the chat. We do not know the ids. This prints
+    // each DISTINCT id once, with its params, so a single run names them instead of us guessing : the id whose
+    // params look like minutes is the extension, and it is the one thing missing for an exact countdown.
+    // Bounded to 24 distinct ids and only inside Divergence, a zone nobody is in by accident, so it cannot
+    // become noise. Identified ids get read here later ; nothing is believed from this line alone.
+    if (zt_.mode == 1 && zt_is_divergence(zt_.dynZone)) {
+        static windower::debug::LogOnce<24> onceDiv;
+        const unsigned dmsg = pkt_u16(p, 0x1A) & 0x7FFFu;
+        if (onceDiv.first(dmsg))
+            windower::debug::log("DIV msg id=%u p1=%d p2=%d p3=%d p4=%d  (first time this run-set ; an extension should carry MINUTES)",
+                                 dmsg, (int)pkt_u32(p, 0x08), (int)pkt_u32(p, 0x0C), (int)pkt_u32(p, 0x10), (int)pkt_u32(p, 0x14));
+    }
     if (zt_.mode == 5) {
         if (zt_.segLastRun) return;                            // back in Rabao : the frozen "N (last run)" total
         const unsigned msg = pkt_u16(p, 0x1A) & 0x7FFFu;
