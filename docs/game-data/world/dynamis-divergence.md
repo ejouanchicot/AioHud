@@ -29,13 +29,32 @@ demi-heure, c'est exactement le bug du timer visitant d'Abyssea.
 
 La vraie limite. Deux sondes tournent en Divergence, bornées, sans rien à armer :
 
+### Ce qui est déjà éliminé — mesuré, pas supposé
+
+**`0x075` ne porte pas le temps restant.** Capture live du 2026-09-11, pendant une run à qui il restait
+**1:05** : huit paquets consécutifs, tous identiques.
+
+```
+DIV 075 @04=65535 @08=779329666 @0C=1878 @10=0
+```
+
+`@0C = 1878` (31:18) ne correspond pas au temps restant, et n'a pas bougé. C'était pourtant la meilleure piste
+— c'est exactement là que vit l'horloge de Sheol Gaol. Éliminée en une run.
+
+La sonde `0x075` est **gardée mais resserrée** : elle ne journalise plus que sur un **changement** d'octets,
+avec un horodatage et les secondes depuis l'entrée. Huit échantillons pris dans la même seconde ne distinguent
+pas un décompte d'une constante — c'est ce qui a failli faire croire à une piste.
+
+### Les sondes en place
+
 | Sonde | Ce qu'elle cherche | Borne |
 |---|---|---|
-| `DIV msg id=… p1=… p2=…` | le vocabulaire des messages `0x02A` d'une run : celui dont les params ressemblent à des **minutes** est l'annonce d'extension | 24 ids distincts |
-| `DIV 075 @04=… @0C=…` | un compteur dans le paquet `0x075` — c'est là que vivait l'horloge de Sheol Gaol (`@0C`, en secondes) | 8 paquets |
+| `DIVTEXT mode=… \| …` | **la piste principale** : les annonces du chat (« votre séjour prendra fin dans N minutes », l'annonce d'extension). Seules les lignes contenant un chiffre | 40 lignes |
+| `DIV msg id=… p1=…` | les messages d'action `0x02A` de la run — aucun n'est encore apparu | 24 ids |
+| `DIV 075 …` | un champ qui **change** dans le paquet battlefield | 40 changements |
 
-Le `0x075` est la piste à privilégier : il vient du serveur et il est **insensible au renumérotage des
-messages**, qui a dû être réparé deux fois en Abyssea avant qu'on lise le statut à la place.
+Aucune n'est à armer. Une run suffit pour lire la formulation exacte, puis on écrit le parseur et les sondes
+disparaissent.
 
 ## Historique
 

@@ -481,6 +481,28 @@ void aio_plugin_text_in(const char* original, char* modified, int* mode)
                 if (!g_omenRaw) windower::debug::log("=== OMENRAW : other-mode sample spent -- mode 161 KEEPS logging ===");
             }
         }
+        // DIVERGENCE : the run's real time limit is announced in the chat and nowhere else we have found. The
+        // 0x075 battlefield packet -- where Sheol Gaol's countdown lives -- was checked first and RULED OUT by a
+        // live capture on 2026-09-11: eight samples during a run that had 1:05 left all read @0C=1878, a number
+        // that is not the remaining time and does not move. So the announcements are the remaining candidate.
+        //
+        // Log the lines that could carry one, ALWAYS ON, no arming: a run is an hour long and nobody types a
+        // command before the sentence they did not know was coming. Only lines containing a DIGIT (an extension
+        // or a warning names minutes; ordinary party chat mostly does not), capped at 40 a session, and only
+        // inside Divergence -- a zone nobody enters by accident. Enough to read the exact wording and its mode
+        // once, then this gets replaced by a parser and deleted.
+        if (aio::zt_divergence_published()) {
+            static int nDivText = 0;
+            if (nDivText < 40) {
+                bool hasDigit = false;
+                for (const char* q = original; *q && !hasDigit; ++q) if (*q >= '0' && *q <= '9') hasDigit = true;
+                if (hasDigit) {
+                    ++nDivText;
+                    windower::debug::log("DIVTEXT mode=%d (masked %d) | %.180s", m, mm, original);
+                    if (nDivText == 40) windower::debug::log("=== DIVTEXT : 40 lines captured, that is the whole vocabulary -- nothing more this session ===");
+                }
+            }
+        }
         // QUEUE, don't process here. MEASURED 2026-07-20: text_in runs on its OWN thread (tid 34944) while
         // render6 / packet_in / mouse / key / wndproc all share the game main loop (tid 11880). Calling
         // on_omen_text / on_nyzul_text directly mutated zt_ -- which the render thread reads every frame and the

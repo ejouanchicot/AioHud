@@ -957,6 +957,7 @@ void drain_game_text();
 // harmless on x86; the hazard is the precedent, because the next person following it reaches for zt_.floorObj or
 // an omen slot and gets a torn read with nothing to signal it. One scalar, published in one place, read in one.
 int zt_mode_published();
+int zt_divergence_published();   // 1 while standing in a Dynamis - Divergence zone (read from the TEXT thread)
 // //aio omenlog : true while the Omen parse trace is armed. The text callback consults it to dump the RAW line and
 // its UNMASKED mode for every incoming line -- including the modes we filter out, which is the only way to tell
 // "the parser mishandled it" from "the line never reached the parser".

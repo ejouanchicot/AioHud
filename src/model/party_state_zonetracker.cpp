@@ -781,13 +781,25 @@ void PartyState::on_limbus_075(const unsigned char* p) {    // 0x075 : battlefie
     // lobby/fight countdown turned out to live (@0C, seconds). If Divergence sends one too, its remaining time is
     // there -- server-exact, immune to the message-id drift that had to be repaired twice in Abyssea. Dump the
     // header words for 8 packets of one run ; decode nothing until the fields are identified.
-    if (zt_.mode == 1 && zt_is_divergence(zt_.dynZone) && pkt_bytes(p) >= 0x14) {
-        static int nDiv75 = 0;
-        if (nDiv75 < 8) {
+    if (zt_.mode == 1 && zt_is_divergence(zt_.dynZone) && pkt_bytes(p) >= 0x1C) {
+        // FIRST CAPTURE (2026-09-11, live) : eight packets in one burst, all identical -- @04=65535, @08=779329666,
+        // @0C=1878, @10=0. Identical is the one thing a burst cannot tell apart : a countdown and a constant look
+        // exactly the same in eight samples taken the same second. So this pass logs a line only when the bytes
+        // CHANGE, with a stamp and the seconds since entry beside it. A field that ticks shows itself in two lines ;
+        // one that never moves is out of the running just as fast. 0x075 is multiplexed, so this may well be some
+        // other sender entirely -- @04=65535 is not an instance id, and Gaol's was.
+        static unsigned lastW[8] = {0}; static int nDiv75 = 0; static unsigned firstMs = 0;
+        unsigned w[8]; for (int k = 0; k < 8; ++k) w[k] = pkt_u32(p, 0x04 + k * 4);
+        bool changed = false; for (int k = 0; k < 8; ++k) if (w[k] != lastW[k]) { changed = true; break; }
+        if (changed && nDiv75 < 40) {
+            if (!firstMs) firstMs = GetTickCount();
             ++nDiv75;
-            windower::debug::log("DIV 075 @04=%u @08=%u @0C=%u @10=%u  (Gaol carried its countdown in SECONDS at @0C)",
-                                 pkt_u32(p, 0x04), pkt_u32(p, 0x08), pkt_u32(p, 0x0C), pkt_u32(p, 0x10));
-            if (nDiv75 == 8) windower::debug::log("DIV 075 : 8 packets shown, enough to compare -- nothing more will be printed this session");
+            const unsigned sinceEntry = (GetTickCount() - zt_.dynEntryMs) / 1000u;
+            windower::debug::log("DIV 075 +%u.%us  in=%us  sz=%d  @04=%u @08=%u @0C=%u @10=%u @14=%u @18=%u @1C=%u @20=%u",
+                                 (GetTickCount() - firstMs) / 1000u, ((GetTickCount() - firstMs) % 1000u) / 100u,
+                                 sinceEntry, pkt_bytes(p), w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]);
+            for (int k = 0; k < 8; ++k) lastW[k] = w[k];
+            if (nDiv75 == 40) windower::debug::log("DIV 075 : 40 changes shown -- compare @0C between two lines, a countdown drops by the seconds elapsed");
         }
     }
     if (zt_.mode == 5 && pkt_bytes(p) >= 0x10) {
@@ -1094,6 +1106,10 @@ static volatile long g_gtTail = 0;   // written by the MAIN thread only
 // so no tearing ; `volatile` just stops the compiler from caching it across the text callback.
 static volatile int g_ztModePub = 0;
 int zt_mode_published() { return g_ztModePub; }
+// Same contract for "are we in Dynamis - Divergence", because the one thing still missing there -- how long the
+// run really has -- is announced in the CHAT, and chat arrives on its own thread (see aiohud.cpp text_in).
+static volatile int g_ztDivPub = 0;
+int zt_divergence_published() { return g_ztDivPub; }
 
 void queue_game_text(const char* s, int mode) {
     if (!s) return;
@@ -1123,6 +1139,7 @@ void drain_game_text() {
     // lines now costs one save instead of one per line.
     party().zt_flush_save();
     g_ztModePub = party().zone_tracker().mode;   // publish for the text thread (see zt_mode_published)
+    g_ztDivPub  = (party().zone_tracker().mode == 1 && zt_is_divergence(party().zone_tracker().dynZone)) ? 1 : 0;
 }
 
 // Runs left THIS week. The stored count is only meaningful inside the week it was observed in : past the
