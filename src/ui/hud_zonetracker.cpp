@@ -524,6 +524,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     }
 
     int mode; int remainSec = 0, limitSec = 1; unsigned char ki[5] = {0}; int lights[7] = {0}; int visRemainSec = 0, visMax = 7200;
+    bool isDiv = false; int elapsedSec = 0;   // Dynamis - Divergence : its own zones, and none of the Dynamis box applies
     if (preview || editing) {
         mode = (vz == 0) ? 1 : 2;
         if (mode == 1) { limitSec = 3600; remainSec = 3510; unsigned char k[5] = {1,1,0,0,1}; for (int i = 0; i < 5; ++i) ki[i] = k[i]; }
@@ -537,6 +538,11 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             limitSec = zt.dynLimitSec > 0 ? zt.dynLimitSec : 1;
             remainSec = limitSec - (int)((now - zt.dynEntryMs) / 1000u); if (remainSec < 0) remainSec = 0;
             for (int i = 0; i < 5; ++i) ki[i] = zt.ki[i];
+            // DIVERGENCE : same mode, another content. It counts UP. A 60-minute countdown would be right only
+            // until the first statue dies -- extensions there are automatic and reach 120 min -- and a timer that
+            // says 0:00 while half an hour remains is the bug we just took out of Abyssea. Elapsed cannot lie.
+            isDiv = zt_is_divergence(zt.dynZone);
+            if (isDiv) { elapsedSec = (int)((now - zt.dynEntryMs) / 1000u); for (int i = 0; i < 5; ++i) ki[i] = 0; }
         } else {
             for (int i = 0; i < 7; ++i) lights[i] = zt.lights[i];
             // THE VISITANT TIME COMES FROM THE STATUS, NOT FROM THE CHAT. "Visitant" is status 285 -- an ordinary
@@ -581,7 +587,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     static const char* LT_AB[7] = { "Pe", "Az", "Ru", "Am", "Go", "Si", "Eb" };
     static const u32    LT_CO[7] = { 0xFFEBEBF5u, 0xFF5096FFu, 0xFFE63C3Cu, 0xFFE6B43Cu, 0xFFFFD764u, 0xFFB4BEC8u, 0xFF8C78AAu };
     static const int    LT_CAP[7] = { 230, 255, 255, 255, 200, 200, 200 };
-    const char* title = isDyn ? "Dynamis" : "Abyssea";
+    const char* title = isDiv ? "Dynamis [D]" : (isDyn ? "Dynamis" : "Abyssea");
     // Dynamis : key-item rows (dot + name).  Abyssea : the 7 light columns (label / bar / value).
     Font* fK = zt_font(f, ZT_DY_KI);    const float zK = zt_sz(ZT_DY_KI, 12.0f) * S,   oK = zt_ow(ZT_DY_KI, 1.0f) * S;
     Font* fL = zt_font(f, ZT_AB_LIGHT); const float zL = zt_sz(ZT_AB_LIGHT, 12.0f) * S, oL = zt_ow(ZT_AB_LIGHT, 1.0f) * S;
@@ -594,7 +600,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     float kiRowH = zK + 5.0f * S; if (dotD + 2.0f * S > kiRowH) kiRowH = dotD + 2.0f * S;   // row clears a grown dot
     float contentW;
     if (isDyn) {
-        float w = fK->measure("Alabaster", zK) + gap + dotD;   // widest KI row
+        float w = isDiv ? 0.0f : fK->measure("Alabaster", zK) + gap + dotD;   // widest KI row (none in Divergence)
         if (fH->measure(title, zH) > w) w = fH->measure(title, zH);
         if (w < 96.0f * S) w = 96.0f * S;
         contentW = w;
@@ -602,7 +608,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         contentW = 7.0f * colW + 6.0f * (gap * 0.5f);
         if (fH->measure(title, zH) > contentW) contentW = fH->measure(title, zH);
     }
-    const float bodyH = isDyn ? (5.0f * kiRowH) : (lightH + zL + 4.0f * S);
+    const float bodyH = isDiv ? 0.0f : (isDyn ? (5.0f * kiRowH) : (lightH + zL + 4.0f * S));   // Divergence has no granule rows -> the box shrinks to header + clock
     const float boxW = contentW + 2.0f * pad;
     const float boxH = pad + (showHdr ? headH + gap : 0.0f) + (hasTimer ? barH + gap : 0.0f) + (hasBody ? bodyH : 0.0f) + pad;
     if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }
@@ -623,13 +629,17 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     if (showHdr) { fH->begin(dev); fH->draw_c(dev, cx, cy + headH * 0.5f, title, zH, zt_col(ZT_HEADER, orange), strk, oH); cy += headH + gap; }
     // time bar (run timer / visitant timer) -- width + height configurable, centred
     if (hasTimer) {
-        const int tsec = isDyn ? remainSec : visRemainSec;
-        const int tmax = isDyn ? limitSec : (visMax > 0 ? visMax : 1);
+        // Divergence counts UP toward the 120-minute ceiling nobody can pass, because its 60-minute base is not
+        // the run : a statue adds a minute, a wave boss thirty. So the bar FILLS instead of draining, and the
+        // colour is fed the inverse so it still greens at the start and reddens at the end. The number under it
+        // is the elapsed time, which is the only thing we can state without a message id to lean on.
+        const int tsec = isDiv ? elapsedSec : (isDyn ? remainSec : visRemainSec);
+        const int tmax = isDiv ? 7200 : (isDyn ? limitSec : (visMax > 0 ? visMax : 1));
         const float frac = (float)tsec / (float)tmax;
         const float br = barH * 0.5f, bW = contentW * bwF, bX = cx - bW * 0.5f;
         rrect(dev, bX, cy, bW, barH, br, 0xFF20222Cu, 0xFF16181Fu, 1.0f);
         const float fw = (bW - 2.0f * S) * (frac < 0.0f ? 0.0f : (frac > 1.0f ? 1.0f : frac));
-        const u32 tc = zt_time_col(frac);
+        const u32 tc = zt_time_col(isDiv ? (1.0f - frac) : frac);
         if (fw > 1.0f) { if (fw >= bW - 2.0f * S - 0.5f) rrect(dev, bX + 1.0f * S, cy + 1.0f * S, fw, barH - 2.0f * S, br - 1.0f * S, tc, tc, 1.0f);
                          else rrect_left(dev, bX + 1.0f * S, cy + 1.0f * S, fw, barH - 2.0f * S, br - 1.0f * S, tc, tc, 1.0f); }
         char tb[12]; sprintf(tb, "%d:%02d", tsec / 60, tsec % 60);
@@ -637,7 +647,8 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         cy += barH + gap;
     }
     // body
-    if (hasBody && isDyn) {   // 5 Key-Item rows : coloured dot (green owned / red missing) + name
+    if (hasBody && isDiv) {   // nothing : the five granules of time do not exist in Divergence, and five red dots for a whole run is exactly the box that belongs to another content
+    } else if (hasBody && isDyn) {   // 5 Key-Item rows : coloured dot (green owned / red missing) + name
         char nb[16];
         for (int i = 0; i < 5; ++i) {
             const float ry = cy + kiRowH * 0.5f;

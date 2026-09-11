@@ -605,6 +605,10 @@ void PartyState::zt_recompute_dyn_limit() {
     const int z = zt_.dynZone;
     const bool city  = (z == 185 || z == 186 || z == 187 || z == 188);
     const bool other = (z == 134 || z == 135 || z == 39 || z == 40 || z == 41 || z == 42);
+    // Divergence (294-297) matches neither on purpose : its extensions are automatic (a minute per statue, thirty
+    // per wave boss, capped at 30 a wave) and owe nothing to a key item, so there is nothing here to add up. The
+    // box does not draw a countdown there for the same reason -- 60 min flat would read 0:00 while an extended
+    // run still had half an hour, which is the exact shape of the Abyssea visitant bug.
     int lim = 3600;
     if (city || other) { const int* TE = city ? ZT_CITY_TE : ZT_OTHER_TE; for (int i = 0; i < 5; ++i) if (zt_.ki[i]) lim += TE[i] * 60; }
     zt_.dynLimitSec = lim;
@@ -851,6 +855,8 @@ void PartyState::on_55(const unsigned char* p) {            // 0x055 : key items
     if (pkt_bytes(p) < 0x88) return;                        // truncated -> the KI table @0x84 (and the bitfield ny_has_ki reads) isn't there
     if (zt_.curZone == 72 && ny_has_ki(p, 797)) zt_.nyArmband = 1;   // Nyzul assault armband, captured in the staging point
     if (zt_.mode != 1) return;
+    if (zt_is_divergence(zt_.dynZone)) return;   // Divergence has no granules of time : reading bits 9..13 there would
+                                                 // only ever confirm zeroes, and the row that displays them is gone too
     if (pkt_u32(p, 0x84) != 3) return;
     for (int i = 0; i < 5; ++i) { const int bit = 9 + i; zt_.ki[i] = (unsigned char)((p[0x04 + bit / 8] >> (bit % 8)) & 1); }
     zt_recompute_dyn_limit();

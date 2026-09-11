@@ -147,6 +147,15 @@ struct PointWatch {
 // key items + a run timer) and Abyssea (7 lights + visitant time), both 100% packet-fed (0x055 KI / 0x02A zone
 // messages). Lights index/order + caps : [0]Pearl 230 [1]Azure 255 [2]Ruby 255 [3]Amber 255 [4]Gold 200 [5]Silver
 // 200 [6]Ebon 200 (matches the mockup zoneTracker display). Reset on zone change.
+// DYNAMIS - DIVERGENCE IS NOT DYNAMIS. Its four zones have their OWN ids -- 294-297, named "Dynamis - X [D]"
+// in res/zones.lua and in our own zones.cpp -- so this is decided, not guessed. Everything the Dynamis box
+// shows is wrong there : the five granules of time (key items 1545-1549) do not drop in Divergence at all, so
+// their row sits at five red dots for the whole run, and the time extensions are not key-item driven either --
+// a statue adds a minute and a wave boss thirty, automatically, capped at 30 per wave over waves 1 and 2
+// (60 min base, 120 max). Same shape as Sheol Gaol drawing the A/B/C window : a box that belongs to another
+// content. docs/game-data/ -- measured from res ids, extension rules from the published wiki.
+inline bool zt_is_divergence(int zone) { return zone >= 294 && zone <= 297; }
+
 struct ZoneTracker {
     int mode = 0;                 // 0 none, 1 Dynamis, 2 Abyssea, 3 Omen, 4 Nyzul, 5 Sheol, 6 Limbus
     int curZone = -1;             // last zone id seen (transition detection)
@@ -154,7 +163,7 @@ struct ZoneTracker {
     unsigned dynEntryMs = 0;      // GetTickCount when we entered (timer origin)
     int      dynLimitSec = 3600;  // total run seconds (3600 + KI time-extensions)
     int      dynZone = 0;
-    unsigned char ki[5] = {0};    // Crimson / Azure / Amber / Alabaster / Obsidian granules owned
+    unsigned char ki[5] = {0};    // Crimson / Azure / Amber / Alabaster / Obsidian granules owned (ORIGINAL Dynamis only : none of them exists in Divergence)
     // Abyssea
     int      abyOffset = 7315;    // 0x02A message base (7215 for zones 215/253, else 7315)
     int      lights[7] = {0};     // Pearl/Azure/Ruby/Amber/Gold/Silver/Ebon
