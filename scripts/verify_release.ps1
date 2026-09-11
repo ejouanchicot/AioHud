@@ -90,9 +90,19 @@ if ($shaA) {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $ar = [IO.Compression.ZipFile]::OpenRead($zip)
         try {
-            foreach ($need in @('plugins/AioHud.dll', 'plugins/AioHud/assets/aioupdate.ps1', 'addons/aioupdate/aioupdate.lua')) {
+            foreach ($need in @('plugins/AioHud.dll', 'plugins/AioHud/assets/aioupdate.ps1', 'addons/aioupdate/aioupdate.lua',
+                                'plugins/AioHud/assets/buff_atlas.raw', 'plugins/AioHud/assets/job_icons.raw')) {
                 if ($ar.Entries | Where-Object { $_.FullName -eq $need }) { Ok "contains $need" } else { Bad "MISSING $need" }
             }
+            # THE ICONS, counted on the REAL artifact. package.bat compares the payload to the repo before
+            # zipping, but that runs on a dev machine ; this runs on what a player will actually download, which
+            # is the only copy that matters. A release whose gear icons were dropped installs perfectly and shows
+            # nothing where an icon belongs -- silent, and permanent until the next release.
+            $gear = @($ar.Entries | Where-Object { $_.FullName -like 'plugins/AioHud/assets/gearicons/*' }).Count
+            if ($gear -ge 1000) { Ok "gear icons present : $gear" } else { Bad "only $gear gear icon(s) in the payload" }
+            $atlasE = $ar.Entries | Where-Object { $_.FullName -eq 'plugins/AioHud/assets/buff_atlas.raw' }
+            if ($atlasE -and $atlasE.Length -ge 1048576) { Ok ("status-icon sheet : {0:N1} MB" -f ($atlasE.Length / 1MB)) }
+            else { Bad 'buff_atlas.raw missing or too small -- every status icon would be blank' }
             $e = $ar.Entries | Where-Object { $_.FullName -eq 'plugins/AioHud/assets/aioupdate.ps1' }
             if ($e) {
                 $sr = New-Object IO.StreamReader($e.Open()); $txt = $sr.ReadToEnd(); $sr.Close()

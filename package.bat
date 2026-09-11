@@ -53,6 +53,17 @@ REM 7) the updater companion addon  ->  addons\aioupdate\
 mkdir "%ADD%\aioupdate" 2>nul
 copy /Y "%ROOT%updater\aioupdate\aioupdate.lua" "%ADD%\aioupdate\aioupdate.lua" >nul
 
+REM 8) THE PAYLOAD IS CHECKED BEFORE IT IS CALLED A PAYLOAD. Every copy above can ship less than it should
+REM    without failing : an exclusion pattern that matches too much, a source that moved, a truncated file.
+REM    Nothing downstream notices -- the DLL loads and the HUD draws, and the first to find out is a player
+REM    with no status icons and no gear icons. The script compares dist\ against assets\ in the repo (same
+REM    files, same sizes) rather than against a hardcoded list, so it needs no upkeep when an asset is added.
+REM    The checker must itself be present : `powershell -File <missing path>` prints an error and returns
+REM    ZERO, so a vanished script would have read as a clean payload. A check that cannot run must fail.
+if not exist "%ROOT%scripts\verify_payload.ps1" ( echo [package] scripts\verify_payload.ps1 is missing -- the payload cannot be verified & exit /b 1 )
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\verify_payload.ps1" -Root "%ROOT%." -Dist "%DIST%"
+if errorlevel 1 ( echo [package] payload verification failed -- aborting & exit /b 1 )
+
 echo.
 echo [package] OK -^> %DIST%   (extract the zip into your Windower root)
 echo   dist\plugins\AioHud.dll      (-^> ^<windower^>\plugins\)
