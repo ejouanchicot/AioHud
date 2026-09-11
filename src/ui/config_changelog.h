@@ -563,6 +563,21 @@ static const ChangeLine CL_80[] = {
       "Correctif : les libelles de boutons restent lisibles sur n'importe quelle couleur d'accent (texte sombre sur bouton clair, texte clair sur bouton sombre), les elements textures apparaissent maintenant en fondu avec le menu au lieu de surgir d'un coup, et le libelle \"Boite cout\" de Party n'est plus corrompu." },
 };
 
+static const ChangeLine CL_84[] = {
+    { "*The menus work again after the game update.* A patch moved the client's data and the spell/ability cost box, along with the cursor that shows who you are selecting when you set a leader or a quartermaster, quietly stopped appearing. AioHUD finds those addresses by itself, but it had settled on the wrong one -- four bytes off, onto something that looks exactly like a menu and never is one. It now checks that what it found actually follows your cursor, and refuses anything that merely looks plausible.",
+      "*Les menus refonctionnent apres la mise a jour du jeu.* Un patch a deplace les donnees du client, et la boite de cout des sorts et abilites, ainsi que le curseur qui montre qui tu selectionnes pour passer leader ou quartermaster, ont cesse d'apparaitre sans un mot. AioHUD retrouve ces adresses tout seul, mais il s'etait fixe sur la mauvaise -- quatre octets a cote, sur quelque chose qui ressemble a un menu sans jamais en etre un. Il verifie desormais que ce qu'il a trouve suit reellement ton curseur, et refuse ce qui a seulement l'air plausible." },
+    { "*And it tells you when it is lost.* If a future update breaks the same thing, AioHUD writes a report naming the one action that repairs it -- open the Magic menu and move the cursor, and so on. No more feature that stops working without a word: the diagnosis was in the log all along, and nobody reads the log.",
+      "*Et il te previent quand il est perdu.* Si une prochaine mise a jour casse la meme chose, AioHUD ecrit un rapport qui nomme l'action unique qui repare -- ouvrir le menu Magie et bouger le curseur, par exemple. Fini la fonction qui s'arrete sans rien dire : le diagnostic etait dans le log depuis le debut, et personne ne lit le log." },
+    { "*Songs sung under Tenuto or Clarion Call were shown 40 seconds short.* Both abilities add a flat bonus the duration model had stopped reading, since July. Checked against the game's own timer on seven casts: the durations are now exact to the second.",
+      "*Les songs chantees sous Tenuto ou Clarion Call etaient affichees 40 secondes trop courtes.* Les deux abilites ajoutent un bonus fixe que le modele de duree ne lisait plus, depuis juillet. Verifie contre le timer du jeu sur sept casts : les durees sont maintenant justes a la seconde." },
+    { "*The Timers box stops shaking when you replace your songs.* A song could be drawn as active and reported as lost in the same image, and the red line appeared and vanished thirty times a second. A replaced song no longer scatters into one line per member either, and a song you pushed out yourself to make room no longer raises an alert -- you did that on purpose.",
+      "*La boite Timers ne tremble plus quand tu remplaces tes songs.* Une song pouvait etre dessinee comme active et signalee comme perdue dans la meme image, et la ligne rouge apparaissait et disparaissait trente fois par seconde. Une song remplacee ne s'eparpille plus non plus en une ligne par membre, et une song que tu as poussee dehors toi-meme pour faire de la place ne declenche plus d'alerte -- tu l'as fait expres." },
+    { "*Two songs on the same countdown stop trading places.* When two are within a second of each other, the order they already had is kept instead of being recomputed from a number that rounds differently every frame.",
+      "*Deux songs sur le meme decompte n'echangent plus leur place.* Quand elles sont a moins d'une seconde l'une de l'autre, l'ordre qu'elles avaient deja est conserve au lieu d'etre recalcule depuis un nombre qui s'arrondit differemment a chaque image." },
+    { "*Odyssey Sheol Gaol is no longer shown as Sheol A/B/C*, and the Abyssea visitant timer is read from your own status instead of a chat message whose number changes with every patch -- so it survives the next one.",
+      "*Sheol Gaol dans Odyssey n'est plus affiche comme Sheol A/B/C*, et le timer de visitant en Abyssea est lu depuis ton propre statut au lieu d'un message de chat dont le numero change a chaque patch -- il survivra donc au prochain." },
+};
+
 static const ChangeLine CL_83[] = {
     { "*The status icons that ship with AioHUD are the current set.* The sheet in the last version was an older revision of the same pack : 60 icons behind, among them all 31 Corsair rolls, drawn smaller than the rest, plus the Bar-spells, the stat boosts and penalties, Aquaveil and Phalanx. Nothing to do -- update and they are right.",
       "*Les icones de statut livrees avec AioHUD sont celles a jour.* La planche de la version precedente etait une revision plus ancienne du meme pack : 60 icones de retard, dont les 31 rolls de Corsaire, dessines plus petits que le reste, plus les Bar-sorts, les boosts et malus de stats, Aquaveil et Phalanx. Rien a faire -- mets a jour et c'est correct." },
@@ -599,6 +614,7 @@ static const ChangeLine CL_81[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.84", CL_84, (int)(sizeof(CL_84) / sizeof(CL_84[0])) },
     { "1.0.83", CL_83, (int)(sizeof(CL_83) / sizeof(CL_83[0])) },
     { "1.0.82", CL_82, (int)(sizeof(CL_82) / sizeof(CL_82[0])) },
     { "1.0.81", CL_81, (int)(sizeof(CL_81) / sizeof(CL_81[0])) },
