@@ -219,11 +219,13 @@ static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsig
             // was armed BEFORE it happened -- and nobody arms a trace before a bug. One pair of this rule is
             // measured (Dia III / Dia II) ; the rest come from res/spells.lua untested, and a wrong one reads
             // exactly like "I cast it and it never showed". This makes it name itself in the log instead.
+            const bool proven = debuff_ladder_proven(d.spell[by], spell);
             static windower::debug::LogOnce<32> onceRefuse;
             if (onceRefuse.first(((unsigned)d.spell[by] << 16) | (unsigned)spell))
-                windower::debug::log("DBF refuse : %s (already up) blocks %s -- spell %u outranks %u. If that cast DID land in game, this pair is wrong : say so and it is removed.",
+                windower::debug::log(proven ? "DBF refuse : %s (already up) blocks %s -- spell %u outranks %u, proven ladder. If that cast DID land in game, this pair is wrong : say so and it is removed."
+                                            : "DBF would-refuse (NOT APPLIED) : %s (already up) would block %s -- spell %u outranks %u per res, never verified. Recorded as usual. If the game really refused that cast, this family can be promoted.",
                                      debuff_spell_name(d.spell[by]), debuff_spell_name(spell), d.spell[by], spell);
-            return; } }
+            if (proven) return; } }
     // DoT <-> sleep are mutually exclusive on a mob : a DoT tick wakes the sleep. Our OWN wakes come through the
     // game's "no longer asleep" message (on_029) exactly, but we do NOT receive that message when ANOTHER player's
     // DoT/hit wakes the mob -> enforce it from what we DO track (every caster's debuffs) : any DoT drops any sleep,

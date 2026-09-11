@@ -70,4 +70,31 @@ inline int debuff_refused_by(const unsigned short* spell, const unsigned* startM
     return -1;
 }
 
+// WHERE THE LADDER IS PROVEN, AND WHERE IT IS ONLY WRITTEN DOWN.
+//
+// res/spells.lua gives ~340 asymmetric pairs and we verified two families of them. That is not a detail : this
+// rule CONTRADICTS the game when a pair is wrong, and the symptom -- "I cast it and it never showed" -- is the
+// same silence the whole codebase is built against. So it acts only where the ladder is backed by evidence,
+// and everywhere else it reports what it WOULD have done without doing it. A pair gets promoted here when a
+// capture says so, never because the table looks reasonable.
+//
+//   Dia / Bio  -- measured here on 2026-09-11 (the capture above) AND the published ladder agrees :
+//                 Dia -> Bio -> Dia II -> Bio II -> Dia III -> Bio III, "regardless of when it was cast".
+//   Helix      -- not measured by us : two independent sources say tier II is never removed by tier I, and
+//                 same-tier helixes overwrite each other whatever the element (which this table leaves to the
+//                 same-status refresh, not to a refusal). Same shape as Dia : damage message, invisible rider.
+//
+// Everything else -- Poison, Slow/Hojo, Blind/Kurayami, Paralyze/Jubaku, Requiem, Elegy, Lullaby, Threnody,
+// Distract/Frazzle/Addle -- is a pure enfeeble whose message NAMES the status, so the server already decides it
+// and this rule is not even consulted. If one of them ever reaches here, that is itself the discovery, and the
+// log line at the call site is how it arrives.
+inline bool debuff_ladder_proven(unsigned a, unsigned b) {
+    a = ow_canonical(a); b = ow_canonical(b);
+    const bool aDia = (a >= 23 && a <= 27) || (a >= 230 && a <= 234);   // Dia I-V / Bio I-V (-ga canonicalised above)
+    const bool bDia = (b >= 23 && b <= 27) || (b >= 230 && b <= 234);
+    const bool aHlx = (a >= 278 && a <= 285) || (a >= 885 && a <= 892); // Helix I / Helix II
+    const bool bHlx = (b >= 278 && b <= 285) || (b >= 885 && b <= 892);
+    return (aDia && bDia) || (aHlx && bHlx);
+}
+
 } // namespace aio

@@ -126,6 +126,20 @@ void test_debuffrules() {
         CHECK_EQ(-1, anon.refused(DIA2, 1000 + 5000));
     }
 
+    SECTION("PROVEN vs MERELY WRITTEN DOWN : only two families may actually refuse");
+    {   // The table answers for ~340 pairs ; two families are backed by evidence. The rest still produce an
+        // answer here -- that is what the call site logs -- but it does not act on it, because a wrong pair
+        // contradicts the game and shows up as a debuff that simply never appears.
+        CHECK(debuff_ladder_proven(DIA3, DIA2));        // measured on the live client
+        CHECK(debuff_ladder_proven(DIA3, BIO2));        // same ladder, crosses the two statuses
+        CHECK(debuff_ladder_proven(DIA3, DIAGA2));      // the -ga form is the same spell
+        CHECK(debuff_ladder_proven(885, 278));          // Geohelix II over a Helix I
+        CHECK(!debuff_ladder_proven(SLOW2, HOJO_SAN));  // res says so, nobody measured it
+        CHECK(!debuff_ladder_proven(POISON2, POISON));
+        CHECK(!debuff_ladder_proven(THREN_FIRE2, THREN_ICE2));
+        CHECK(!debuff_ladder_proven(DIA3, 278));        // two proven families, but not across them
+    }
+
     SECTION("the tick counter wrapping does not resurrect a ghost");
     {   // GetTickCount wraps every 49.7 days and the subtraction is unsigned on purpose : an entry started just
         // before the wrap must still age normally across it.
