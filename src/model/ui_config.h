@@ -399,8 +399,6 @@ struct UiConfig {
                                      //   (Soul Voice -> Nitro window, etc.) ; 0 = off
     int   tmMine    = 1;             // Duration : show BUFFS YOU cast on OTHER players (person name + ESTIMATED timer,
                                      //            base duration from tb_buff_gen -- no server timer exists for allies)
-    int   tmAllyGroup = 1;           // buffs on allies : 1 = GROUP same-spell into one "Spell (AoE N)" row ;
-                                     //            0 = one "Person - Spell" row PER ally (single-target Haste/Protect/... spread)
     int   tmFocusWarn = 60;          // FOCUS alerts : a "Hidden + focus" buff surfaces (red) when its remaining time drops
                                      //   below this many SECONDS (also fires immediately when it drops / is dispelled). 10..300.
     int   tmFocusHold = 60;          // FOCUS alerts : once a "Hidden + focus" buff is LOST, the red "OUT" row holds this many

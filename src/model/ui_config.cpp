@@ -281,7 +281,6 @@ static bool save_config_to(const char* path) {
     save_text_styles(f, "ztText", c.ztText, ZT_TE_COUNT);   // zone tracker : per-element typography
     save_text_styles(f, "tmText", c.tmText, TM_TE_COUNT);   // Timers : per-element typography
     save_text_styles(f, "dbText", c.dbText, DB_TE_COUNT);   // Debuffs : per-element typography
-    fprintf(f, "tmAllyGroup=%d\n", c.tmAllyGroup);   // buffs on allies : group same-spell into (AoE N) vs one row per ally
     fprintf(f, "tmFocus=%d,%d\n", c.tmFocusWarn, c.tmFocusHold);   // focus alert : warn-threshold + hold-after-loss (seconds)
     fprintf(f, "tmPreset=%d\n", c.tmPreset);         // track-preset seed version (see apply_rdm_uff_preset)
     for (int j = 1; j <= 23; ++j) if (c.tmTrackOffN[j] > 0) {                     // Timers "track per job" : disabled keys (blacklist ; only non-empty jobs written)
@@ -703,7 +702,7 @@ static bool load_config_from(const char* path) {
         else if (strncmp(line, "tm=", 3) == 0) { int sh = 1, mx = 16, ti = 1, bx = 1, mg = 1, dm = 0, rm = 0, ot = 1, mn = 1, bs = -1, sp = 1, sd = 0, sr = 0; float scl = 1.0f, x = 0.86f, y = 0.30f, rx = 0.86f, ry2 = 0.44f, isc = 1.0f, rg = 1.0f; int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d,%d,%d,%f,%f,%d,%d,%d,%f,%d,%d,%d,%f,%d,%d", &sh, &scl, &x, &y, &mx, &ti, &bx, &mg, &rx, &ry2, &dm, &rm, &ot, &isc, &mn, &bs, &sp, &rg, &sd, &sr); if (n >= 1) { c.tmShow = sh; if (n >= 2) c.tmScale = scl; if (n >= 3) c.tmX = x; if (n >= 4) c.tmY = y; if (n >= 5) c.tmMax = mx; if (n >= 6) c.tmTitle = ti; if (n >= 7) c.tmBox.on = bx; if (n >= 8) c.tmMerged = mg; if (n >= 9) c.tmRX = rx; if (n >= 10) c.tmRY = ry2; if (n >= 11) c.tmDurMode = dm; if (n >= 12) c.tmRecMode = rm; if (n >= 13) c.tmOthers = ot; if (n >= 14) c.tmIconScale = isc; if (n >= 15) c.tmMine = mn; c.tmBuffSrc = (n >= 16 && bs >= 0) ? bs : (ot ? 3 : 0); if (n >= 17) c.tmSpAlert = sp; if (n >= 18) c.tmRowGap = rg; if (n >= 19) c.tmSortDur = sd; if (n >= 20) c.tmSortRec = sr; } }   // sort modes absent (older config) -> 0 = the order that shipped   // tmBuffSrc absent (old config) -> migrate from tmOthers
         else if (parse_text_style(line, "ztText", c.ztText, ZT_TE_COUNT)) {}
         else if (parse_text_style(line, "tmText", c.tmText, TM_TE_COUNT)) {}
-        else if (sscanf(line, "tmAllyGroup=%d", &v) == 1) c.tmAllyGroup = v;
+        else if (strncmp(line, "tmAllyGroup=", 12) == 0) { /* retired 2026-09-12 : grouping follows the cast, not a setting. Swallowed so an old file does not fall through to the unknown-key path. */ }
         else if (sscanf(line, "tmFocus=%d,%d", &v, &v1) == 2) { c.tmFocusWarn = v; c.tmFocusHold = v1; }
         else if (sscanf(line, "tmPreset=%d", &v) == 1) c.tmPreset = v;
         else if (!strncmp(line, "tmTrkOff", 8)) {                                 // Timers "track per job" : disabled keys
@@ -1216,7 +1215,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     // per-module box appearance (shared BoxStyle)
     if (!box_eq(a.scBox, b.scBox) || !box_eq(a.tpBox, b.tpBox) || !box_eq(a.hlBox, b.hlBox) || !box_eq(a.pwBox, b.pwBox) || !box_eq(a.ztBox, b.ztBox) || !box_eq(a.tmBox, b.tmBox) || !box_eq(a.mmBox, b.mmBox) || !box_eq(a.epBox, b.epBox)) return false;
     if (a.tmDurMode != b.tmDurMode || a.tmRecMode != b.tmRecMode || a.tmOthers != b.tmOthers || a.tmMine != b.tmMine || a.tmBuffSrc != b.tmBuffSrc || a.tmSpAlert != b.tmSpAlert) return false;
-    if (a.tmAllyGroup != b.tmAllyGroup || a.tmPreset != b.tmPreset) return false;
+    if (a.tmPreset != b.tmPreset) return false;
     if (a.tmFocusWarn != b.tmFocusWarn || a.tmFocusHold != b.tmFocusHold) return false;
     for (int j = 1; j <= 23; ++j) {                                          // Timers "track per job" blacklist -> part of the profile (so Save picks it up)
         if (a.tmTrackOffN[j] != b.tmTrackOffN[j]) return false;
@@ -1362,7 +1361,7 @@ void reset_ui_config() {   // general Default : everything
     c.tmSortDur = d.tmSortDur; c.tmSortRec = d.tmSortRec;
     c.tmMerged = d.tmMerged; c.tmRX = d.tmRX; c.tmRY = d.tmRY; c.tmDurMode = d.tmDurMode; c.tmRecMode = d.tmRecMode;
     c.tmIconScale = d.tmIconScale; c.tmRowGap = d.tmRowGap; c.tmOthers = d.tmOthers; c.tmBuffSrc = d.tmBuffSrc;
-    c.tmSpAlert = d.tmSpAlert; c.tmMine = d.tmMine; c.tmAllyGroup = d.tmAllyGroup;
+    c.tmSpAlert = d.tmSpAlert; c.tmMine = d.tmMine;
     c.tmFocusWarn = d.tmFocusWarn; c.tmFocusHold = d.tmFocusHold; c.tmPreset = d.tmPreset; c.tmBox = d.tmBox;
     for (int k = 0; k < TM_TE_COUNT; ++k) c.tmText[k] = TextStyle();
     for (int j = 0; j < 24; ++j) c.tmTrackOffN[j] = 0;   // clearing the COUNT empties each job's blacklist

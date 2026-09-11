@@ -38,7 +38,6 @@ struct GroupIn {
     bool meHas;             // you currently carry this status
     int  countHas;          // party members the server says carry this status (status-scoped, no spell id)
     bool hasLagSameSpell;   // another group of the SAME spell is a laggard
-    bool userGroupPref;     // config: group ally buffs even when the cast was not an AoE
 };
 
 struct GroupOut {
@@ -67,7 +66,15 @@ inline GroupOut ally_group_verdict(const GroupIn& in) {
     }
 
     if (out.effN < 1) { out.drop = true; return out; }
-    out.group = in.fresh && (in.aoe || in.userGroupPref) && out.effN >= 2;
+    // ONLY A REAL AoE GROUPS. There used to be a setting that folded single-target casts into one row too,
+    // and it was the DEFAULT, so a fresh install drew three Phalanx cast one by one as "Phalanx (AoE 3)" -- a
+    // claim that an area spell had been used when none had. Reported 2026-09-12 by a player who had never
+    // touched Accession. The row was not merely compact, it was false: "(AoE N)" is a statement about what the
+    // cast did, and a group of single-target casts cannot make it.
+    // So grouping follows the cast, never a preference: a song, a Protectra, a roll, or a spell made area-wide
+    // by SCH Accession / Manifestation -- anything the 0x028 shows hitting 2+ people. Everything else is listed
+    // by person, which is also the only form that can say WHO is missing one.
+    out.group = in.fresh && in.aoe && out.effN >= 2;
     return out;
 }
 

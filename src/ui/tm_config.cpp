@@ -67,12 +67,10 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff source", "Source des buffs"), SRC[s])) { c.tmBuffSrc = wrap(s + d, 4); c.tmOthers = (c.tmBuffSrc != TMSRC_MINE); save_ui_config(); }
         } ROW_NEXT(52.0f)
         ROW_TOGGLE(CTRL_ID, tr("My buffs on allies", "Mes buffs sur alli\xC3\xA9s"), c.tmMine)   // Buffs on allies : show a buff YOU cast on another player (person name + ESTIMATED timer)
-        if (c.tmMine) { ROW_BAND(48.0f)   // Ally-buff layout : GROUP same-spell into "(AoE N)" or one row PER ally (single-target
-            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);   //   Haste/Protect spread ; real AoE like Protectra / SCH Accession is grouped either way)
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Single-target on allies", "Monocible sur alli\xC3\xA9s"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(140.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, c.tmAllyGroup ? tr("Grouped", "Group\xC3\xA9s") : tr("Per person", "Par personne"), c.tmAllyGroup != 0)) { c.tmAllyGroup = !c.tmAllyGroup; save_ui_config(); }
-        } ROW_NEXT(48.0f)
+        // The "Single-target on allies : Grouped / Per person" chip lived here and is gone. Grouping now follows
+        // the CAST -- a row reads "(AoE N)" only when the spell actually hit N people -- so the setting could only
+        // ever make that line false. It was the default, too: a fresh install drew three Phalanx cast one by one
+        // as "Phalanx (AoE 3)". A control whose every "on" state is a lie is removed, not defaulted off.
         cat_fold_end(dev, ry, topC_, catH_[13], aFc_);
     }   // end Content
     ry += snap(16.0f);                                 // air between this section and the next title bar

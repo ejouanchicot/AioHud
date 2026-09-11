@@ -600,7 +600,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // merged, because refreshing an ally's slot clears its `aoe` flag and obFresh() calls any
                 // single-target entry fresh -- so an AoE Protect on the party followed by a Protect on one ally
                 // drew ONE "(AoE 3)" row carrying the SELF timer, and the ally's newer duration was invisible.
-                // Single-target casts still group with each other under "Grouped" ; they simply never merge
+                // Single-target casts form their own bucket ; they simply never merge
                 // with an AoE generation again.
                 int gi = -1; for (int k = 0; k < ng; ++k) if (grp[k].spell == ob[i].spell && grp[k].fresh == fb && grp[k].aoe == ob[i].aoe) { gi = k; break; }
                 if (gi < 0 && ng < 32) { gi = ng++; grp[gi].spell = ob[i].spell; grp[gi].status = ob[i].status; grp[gi].allies = 0; grp[gi].rem = r; grp[gi].fine = obFine(ob[i]); grp[gi].isAbil = ob[i].isAbil; grp[gi].selfHas = 0; grp[gi].aoe = ob[i].aoe; grp[gi].expTick = ob[i].expTick; grp[gi].fresh = fb; grp[gi].selfCast = 0; }
@@ -757,7 +757,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             int effHas;
             if (hasLag) { effHas = (gi >= 0 ? grp[gi].allies : 0) + (meHas(bt[i].id) ? 1 : 0); }   // split : fresh members only (you + allies you re-hit) ; solo re-sing -> 1 -> no fold, own row
             else { effHas = countHas(bt[i].id); if (gi >= 0) { const int est = grp[gi].allies + (meHas(bt[i].id) ? 1 : 0); if (est > effHas) effHas = est; } }
-            const bool folds = (gi >= 0 && effHas >= 2 && (grp[gi].aoe || C.tmAllyGroup != 0) && !allyHides);
+            const bool folds = (gi >= 0 && effHas >= 2 && grp[gi].aoe && !allyHides);   // your own row folds into a group only when that group is a REAL AoE
             // THROTTLE : this runs per timer per FRAME. Unthrottled it is 60 Hz x the whole window -- the log would be
             // useless and huge. Log a status only when its verdict or its whole-second countdown actually changed.
             static unsigned sfKey[32] = { 0 }; static int sfRem[32] = { 0 }; static int sfFold[32] = { 0 };
@@ -769,7 +769,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 windower::debug::log("SONGFOLD st=%-4u exp=%u rem=%-5d ssid=%-5u \"%s\" sameSt=%d ringN=%d gi=%d countHas=%d aoe=%d allyGroup=%d allyHides=%d -> %s",
                                      bt[i].id, bt[i].expiry, rem, ssid, (dsp && dsp->en) ? dsp->en : "?",
                                      sameSt, party().self_cast_ring_count(bt[i].id), gi, countHas(bt[i].id),
-                                     (gi >= 0) ? grp[gi].aoe : -1, C.tmAllyGroup, allyHides ? 1 : 0,
+                                     (gi >= 0) ? grp[gi].aoe : -1, 0, allyHides ? 1 : 0,
                                      folds ? "FOLDED (self row suppressed)" : "OWN ROW");
             }
             if (folds) { grp[gi].selfHas = 1; grp[gi].rem = rem; grp[gi].fine = fine; continue; }
@@ -893,7 +893,6 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             gin.selfCast        = grp[k].selfCast != 0;
             gin.meHas           = meHas(grp[k].status);
             gin.countHas        = countHas(grp[k].status);
-            gin.userGroupPref   = C.tmAllyGroup != 0;
             gin.hasLagSameSpell = false;
             for (int j = 0; j < ng; ++j) if (grp[j].spell == grp[k].spell && !grp[j].fresh) { gin.hasLagSameSpell = true; break; }
             const GroupOut gout = ally_group_verdict(gin);
@@ -925,7 +924,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 if (olS[oidx] != grp[k].spell || olF[oidx] != grp[k].fresh || olN[oidx] != (short)effN || olG[oidx] != (short)(group ? 1 : 0)) {
                     olS[oidx] = grp[k].spell; olF[oidx] = grp[k].fresh; olN[oidx] = (short)effN; olG[oidx] = (short)(group ? 1 : 0);
                     windower::debug::log("OBGRP spell=%u \"%s\" st=%u fresh=%d aoe=%d allies=%d effN=%d selfHas=%d allyGroup=%d -> %s",
-                                         grp[k].spell, en ? en : "?", grp[k].status, grp[k].fresh, grp[k].aoe, grp[k].allies, effN, grp[k].selfHas, C.tmAllyGroup, group ? "GROUPED (AoE N)" : "PER-ALLY");
+                                         grp[k].spell, en ? en : "?", grp[k].status, grp[k].fresh, grp[k].aoe, grp[k].allies, effN, grp[k].selfHas, 0, group ? "GROUPED (AoE N)" : "PER-ALLY");
                 }
             }
             if (group) {   // AoE : one grouped row (Minuet V (AoE 6))

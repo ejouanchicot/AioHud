@@ -12,7 +12,7 @@ using namespace aio;
 static GroupIn base() {
     GroupIn g;
     g.fresh = true; g.allies = 5; g.aoe = true; g.selfCast = true; g.meHas = true;
-    g.countHas = 6; g.hasLagSameSpell = false; g.userGroupPref = false;
+    g.countHas = 6; g.hasLagSameSpell = false;
     return g;
 }
 
@@ -34,13 +34,21 @@ void test_ally_group() {
         CHECK_EQ(1, o.effN);
         CHECK(!o.group);
     }
-    {   // ...and it stays ungrouped even with the user's "group ally buffs" preference on, because one person
-        // is not a group whatever the setting says.
-        GroupIn g = base(); g.aoe = false; g.allies = 1; g.selfCast = false; g.meHas = false;
-        g.countHas = 6; g.userGroupPref = true;
+    {   // SEVERAL single-target casts do not become an AoE by being several. Shipped defect, reported
+        // 2026-09-12 : a setting folded them into one row anyway -- and it was the DEFAULT -- so three Phalanx
+        // cast one by one drew "Phalanx (AoE 3)" for a player who had never used Accession. "(AoE N)" says what
+        // the cast did, and no number of single-target casts can make it true. The setting is gone.
+        GroupIn g = base(); g.aoe = false; g.allies = 3; g.selfCast = false; g.meHas = false; g.countHas = 6;
         const GroupOut o = ally_group_verdict(g);
-        CHECK_EQ(1, o.effN);
-        CHECK(!o.group);
+        CHECK_EQ(3, o.effN);        // it still speaks for three people
+        CHECK(!o.group);            // ...listed by name, one row each
+        CHECK(!o.drop);
+    }
+    {   // ...and those same three under Accession, which is what makes it a real area cast, DO group.
+        GroupIn g = base(); g.aoe = true; g.allies = 3; g.selfCast = true; g.meHas = true; g.countHas = 4;
+        const GroupOut o = ally_group_verdict(g);
+        CHECK_EQ(4, o.effN);
+        CHECK(o.group);
     }
 
     SECTION("a laggard is listed by name, never merged");
