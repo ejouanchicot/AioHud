@@ -324,7 +324,24 @@ bool PartyState::zt_load(int zone) {
         // stored stamps in the "future" (> now) -> reject as stale.
         const unsigned now = GetTickCount();
         const bool freshTimers = (c.dynEntryMs <= now && c.visitantMs <= now && c.omenBonusMs <= now && c.nyTimerMs <= now);
-        if (c.curZone == zone && c.mode != 0 && freshTimers) { zt_ = c; ok = true; }
+        // A RUN THAT CANNOT STILL BE RUNNING IS NOT A RUN. The file keeps the last state seen INSIDE a tracked
+        // zone (zt_save returns early outside one), so re-entering the same zone hours later and reloading the
+        // plugin restored an entry stamp from this morning. The countdown then started already expired, and the
+        // box showed the overtime -- a number climbing by the second, which reads exactly like "time spent
+        // inside", the opposite of what it is. Reported 2026-09-11 in Divergence.
+        // The ceiling is the run's own maximum plus ten minutes of slack : Divergence tops out at 120 min (60
+        // base + 30 a wave over two waves), an original Dynamis at whatever its key items bought it.
+        bool liveRun = true;
+        if (c.mode == 1) {
+            const unsigned cap = (zt_is_divergence(c.dynZone) ? 7200u : (unsigned)(c.dynLimitSec > 0 ? c.dynLimitSec : 3600)) + 600u;
+            if ((unsigned)(now - c.dynEntryMs) / 1000u > cap) {
+                liveRun = false;
+                windower::debug::log("zt: cached %s run is %u min old, past its %u min ceiling -- treated as a new entry, not restored",
+                                     zt_is_divergence(c.dynZone) ? "Divergence" : "Dynamis",
+                                     (unsigned)(now - c.dynEntryMs) / 60000u, cap / 60u);
+            }
+        }
+        if (c.curZone == zone && c.mode != 0 && freshTimers && liveRun) { zt_ = c; ok = true; }
     }
     CloseHandle(h);
     return ok;
