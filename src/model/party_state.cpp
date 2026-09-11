@@ -11,6 +11,7 @@
 #include "model/mobskills_gen.h"       // mobskill_info : MOB TP-move names (cat 7, ids >= 257)
 #include "model/tb_debuff_gen.h"
 #include "model/overwrites_gen.h"       // spell_overwrites_spell : res `overwrites` -> which debuff replaces which (Dia III over Dia I / Bio I-II)
+#include "model/debuff_rules.h"          // debuff_refused_by : a LIVE, strictly stronger debuff makes the cast a no-op (measured : Dia II over Dia III came back as msg 2, not 75)
 #include "model/tb_buff_gen.h"          // spell_buff : buff spell id -> { status, base duration } (Timers "buff on ally")
 #include "model/enh_dur.h"              // enh_dur_table / composure_set_pct / perpetuance_mult : "Enhancing Magic eff. dur. +%" from live gear + augments
 #include "model/regen_dur.h"           // regen_dur_gear_sec : REGEN-only "+N s" duration gear (Bolelabunga...) added to Regen's base
@@ -194,7 +195,7 @@ static inline void debuff_erase(DebuffSet& d, int i) {
     --d.n;
 }
 
-static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsigned baseMs, bool bySelf, unsigned short spell) {
+static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsigned baseMs, bool bySelf, unsigned short spell, bool statusNamed) {
     const unsigned now = GetTickCount();
     const unsigned char sf = bySelf ? 1 : 0;
     if (!baseMs) baseMs = debuff_fallback_ms(st);
@@ -204,6 +205,25 @@ static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsig
     DebuffSet& d = tds[slot];
     if (d.id != tid) { if (d.n > 0) DBFTRACE("DBF rec-RESET slot id=%08X (n=%d) -> new tid=%08X st=%u", d.id, d.n, tid, st); d.id = tid; d.n = 0; d.th = 0; d.lastHpp = 0; }    // switched onto a new mob in this slot -> reset (incl. TH + HP watermark, else the recycle check inherits the old mob's HP)
     d.touchMs = now;
+    // REFUSED : the game keeps the stronger debuff and our cast changed nothing on that mob. The server does
+    // NOT say so -- the Dia II that downgraded a Dia III arrived as message 2, with its damage, exactly like a
+    // cast that took (capture in model/debuff_rules.h). So this one verdict is predicted, under the two
+    // conditions that killed the refuse-path deleted before it : a STRICT edge only (never a cycle), and the
+    // stronger entry must still be LIVE. Placed before everything else because a cast that did not happen
+    // replaced nothing, dropped nothing, and woke nothing.
+    {   const int by = debuff_refused_by(d.spell, d.startMs, d.baseMs, d.n, spell, now, statusNamed);
+        if (by >= 0) {
+            DBFTRACE("DBF refused tid=%08X spell=%u st=%u : %u is stronger and still live (%u ms in) -- nothing recorded",
+                     tid, spell, st, d.spell[by], (unsigned)(now - d.startMs[by]));
+            // ALWAYS ON, one line per PAIR, never repeated. A refusal is otherwise invisible unless //aio dbflog
+            // was armed BEFORE it happened -- and nobody arms a trace before a bug. One pair of this rule is
+            // measured (Dia III / Dia II) ; the rest come from res/spells.lua untested, and a wrong one reads
+            // exactly like "I cast it and it never showed". This makes it name itself in the log instead.
+            static windower::debug::LogOnce<32> onceRefuse;
+            if (onceRefuse.first(((unsigned)d.spell[by] << 16) | (unsigned)spell))
+                windower::debug::log("DBF refuse : %s (already up) blocks %s -- spell %u outranks %u. If that cast DID land in game, this pair is wrong : say so and it is removed.",
+                                     debuff_spell_name(d.spell[by]), debuff_spell_name(spell), d.spell[by], spell);
+            return; } }
     // DoT <-> sleep are mutually exclusive on a mob : a DoT tick wakes the sleep. Our OWN wakes come through the
     // game's "no longer asleep" message (on_029) exactly, but we do NOT receive that message when ANOTHER player's
     // DoT/hit wakes the mob -> enforce it from what we DO track (every caster's debuffs) : any DoT drops any sleep,
@@ -1696,7 +1716,7 @@ void PartyState::on_action(const unsigned char* p) {
                         windower::debug::log("DBF spell %u : action message %u is in NEITHER land set (param=%u, table status=%u) -- recorded anyway. If that cast did NOT land, msg %u must join is_no_land_msg",
                                              spellId, amsg, aparam, de->effect, amsg);
                 }
-                record_debuff(tdebuffs_, tid, de->effect, de->durSec * 1000u, bySelf, (unsigned short)spellId);
+                record_debuff(tdebuffs_, tid, de->effect, de->durSec * 1000u, bySelf, (unsigned short)spellId, is_status_land_msg(amsg));
             }
         }
         return;
