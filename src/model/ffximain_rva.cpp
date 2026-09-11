@@ -365,6 +365,8 @@ static void heal_pw_merit() {
 // "not a pointer" cannot be the test. What the broken state actually looked like on 2026-08-12 was a
 // small integer (14, 15) -- a different variable entirely. That IS the test.
 static bool g_adoptedTag = false;
+static u32  g_examCur[2]  = { 0, 0 };          // the menu highlight index we last saw, per cache
+static u32  g_examVal[2]  = { 0, 0 };          // ...and what the cache read at that moment
 static int  g_examDead[2] = { 0, 0 };          // consecutive frames a CONFIRMED cache has failed to decode with its menu open
 static bool g_sibSaid[2] = { false, false };   // the sibling arithmetic proposes once per static, then yields to the scan
 static int  g_decoyRun  = 0;      // consecutive frames a CONFIRMED menu slot has read a decoy name   // the tag shortcut speaks once, then leaves the floor to real evidence
@@ -507,6 +509,16 @@ static u32 open_menu_tag() {
     return nm;
 }
 
+// The focused menu's own highlight index (mptr+0x4C, 1-based). 0 when no menu is open or the pointer is
+// not trusted yet. It is the only thing that says "the player just moved" -- which is what turns a value
+// that merely looks right into one that is actually being written.
+static u32 open_menu_cursor() {
+    if (!g_confirmed[FM_MENU_PTR]) return 0;
+    u32 p = 0, c = 0;
+    if (!safe_read(fm_addr(FM_MENU_PTR), &p) || !valid_ptr(p)) return 0;
+    return safe_read(p + 0x4C, &c) ? c : 0;
+}
+
 static void heal_exam(FmStatic s, FmStatic anchor) {
     const u32 base = ffximain_base();
     if (!base) return;
@@ -524,12 +536,25 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
         const u32 t0 = open_menu_tag();
         const bool mine = (s == FM_EXAM_SPELL) ? (t0 == 0x6967616Du) : (t0 == 0x6C696261u);
         if (!mine) { g_examDead[slot] = 0; return; }
+        // DECODING IS NOT THE TEST -- FOLLOWING THE CURSOR IS. The stale ability cache held 3, and 3 is a
+        // perfectly plausible raw weapon-skill id, so exam_decodes() said yes and this refutation concluded all
+        // was well. The value decoded; it simply never changed. Measured 2026-09-11, and it is why the first
+        // version of this guard sat there doing nothing while the player walked the whole ability list.
+        //
+        // The menu's own highlight index says when the player MOVED. A live cache changes with it; a dead one
+        // sits still while the cursor walks the list. Three moves with no change is the refutation -- the same
+        // evidence the scan below ADOPTS on, which is how it should be: what proves an address must be what
+        // disproves it.
         u32 cv = 0; safe_read(base + fm_rva(s), &cv);
-        if (exam_decodes(s, cv)) { g_examDead[slot] = 0; return; }
-        if (++g_examDead[slot] < 60) return;
+        const u32 cur = open_menu_cursor();
+        if (!cur) { g_examDead[slot] = 0; return; }
+        if (cur == g_examCur[slot]) return;                  // the player has not moved : nothing is being said
+        g_examCur[slot] = cur;
+        if (cv != g_examVal[slot]) { g_examVal[slot] = cv; g_examDead[slot] = 0; return; }   // it followed : alive
+        if (++g_examDead[slot] < 3) return;
         g_examDead[slot] = 0; g_sibSaid[slot] = false;
-        windower::debug::log("fm: %s was PROVEN but never decodes with its own menu open -- reopening the search",
-                             fm_name(s));
+        windower::debug::log("fm: %s was PROVEN but does not follow the cursor (stuck on %u over 3 moves) -- reopening the search",
+                             fm_name(s), cv);
         g_confirmed[s] = false;
     }
     // Decoding alone is NOT proof : plenty of stray integers fall in the spell-id range and would decode
