@@ -367,8 +367,6 @@ static void heal_pw_merit() {
 // "not a pointer" cannot be the test. What the broken state actually looked like on 2026-08-12 was a
 // small integer (14, 15) -- a different variable entirely. That IS the test.
 static bool g_adoptedTag = false;
-static unsigned g_menuOpenSeen  = 0;   // frames with SOMETHING open on the proven menu slot
-static unsigned g_menuNamesSeen = 0;   // ...of which showed a name read_action_menu actually knows
 static unsigned g_menuRealName  = 0;   // ...of which showed ANY name that is not one of the two decoys. That is
                                        // the evidence that vindicates a slot for good: a decoy is always itself,
                                        // so one real name proves this is the focused menu and no amount of idle
@@ -728,13 +726,17 @@ static int rva_checks(CheckFail* out, int cap) {
                   "will not follow you. //aio rva break forces a re-derivation");
     }
 
-    // 4. AND THE ONE THAT WOULD HAVE CAUGHT TONIGHT'S BUG ON ITS FIRST DAY. A pointer can be confirmed and
-    //    still be the wrong object: the decoys carry the same "menu" tag and read a name that never changes.
-    //    If the slot in use has never once shown a name we recognise, it is not the focused menu.
-    if (g_confirmed[FM_MENU_PTR] && g_menuNamesSeen == 0 && g_menuOpenSeen > 600)
-        RFAIL("RVA.MENU_DECOY", CHK_BLOCK,
-              "the proven menu slot has never shown a menu name we know, over %u frames with a menu open -- "
-              "it is almost certainly a decoy. //aio rva break forces a re-derivation", g_menuOpenSeen);
+    // THERE WAS A FOURTH CHECK HERE, RVA.MENU_DECOY, AND IT IS DELETED ON PURPOSE. It read "the slot in use has
+    // never shown a menu name we recognise, over N frames WITH A MENU OPEN" -- and it counted 'inline' as a menu
+    // being open. So logging in on a second character and leaving the chat input focused for ninety seconds
+    // raised a BLOCK about a pointer that was perfectly fine (measured 2026-09-11, the watcher's first real
+    // firing). It was the same false equivalence as the runtime rule written beside it: a decoy name is not a
+    // menu, and seeing one says nothing whatsoever about the slot.
+    //
+    // Deleted rather than tuned, per selftest.h -- a check that fires wrongly buries the ones that do not. And
+    // it is no longer needed: heal_menu_ptr now keeps the two-different-names sweep running UNDERNEATH an
+    // unproven pointer and swaps it out the moment a better slot proves itself, so the case this was watching
+    // for now repairs itself instead of asking somebody to go and look.
 
     #undef RFAIL
     return n;
@@ -756,18 +758,13 @@ void fm_tick() {
       // was oscillating was whether we BELIEVED it, which is the decision two healers actually argue over.
       for (int i = 0; i < (int)FM_N; ++i)
           flipwatch(IDS[i], g_rva[i] ^ (g_confirmed[i] ? 0x80000000u : 0u), nowMs); }
-    // Evidence for RVA.MENU_DECOY, gathered where the pointer is read anyway. A decoy is not silent -- it
-    // reads 'inline' or 'logwindo' forever -- so counting how often the slot shows a name we RECOGNISE
-    // separates "no menu is open" from "this is not the menu".
-    if (g_confirmed[FM_MENU_PTR]) {
+    // A REAL MENU NAME VINDICATES THE SLOT FOR GOOD. 'inline' and 'logwindo' are always themselves, so a slot
+    // that ever shows anything else IS the focused menu and cannot be a decoy. That one bit is what lets
+    // heal_menu_ptr stop searching for ever -- and what stops it tearing a right answer down over an idle
+    // 'inline', which is the bug this replaced.
+    if (g_confirmed[FM_MENU_PTR] && g_menuRealName == 0) {
         const u32 t = open_menu_tag();
-        if (t) {
-            if (g_menuOpenSeen < 0xFFFFFFFFu) ++g_menuOpenSeen;
-            if (t == 0x6967616Du || t == 0x6C696261u || t == 0x73696261u)   // 'magi' 'abil' 'abis'
-                if (g_menuNamesSeen < 0xFFFFFFFFu) ++g_menuNamesSeen;
-            if (t != 0x696C6E69u && t != 0x77676F6Cu)                       // anything that is not 'inli'/'logw'
-                if (g_menuRealName < 0xFFFFFFFFu) ++g_menuRealName;
-        }
+        if (t && t != 0x696C6E69u && t != 0x77676F6Cu) g_menuRealName = 1;
     }
     heal_pw_block();
     heal_pw_merit();
