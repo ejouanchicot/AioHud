@@ -14,7 +14,7 @@ static int      g_n = 0;
 FlipSlot* flip_slots(int& n) { n = g_n; return g_slots; }
 
 bool flipwatch(const char* id, unsigned value, unsigned nowMs) {
-    if (!id) return false;
+    if (!id || !watch_enabled()) return false;
     FlipSlot* s = 0;
     for (int i = 0; i < g_n; ++i) if (g_slots[i].id == id) { s = &g_slots[i]; break; }
     if (!s) {

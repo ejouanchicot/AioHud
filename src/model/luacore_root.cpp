@@ -2,6 +2,8 @@
 #include "model/luacore_root.h"
 #include "windower.h"
 #include "windower_debug.h"
+#include "model/selftest.h"     // the in-game watcher : a root that stops answering says so by itself
+#include "model/party_state.h"  // self_id() : the one signal that separates "lost" from "login screen"
 #include <windows.h>
 #include <cstdio>
 
@@ -213,6 +215,32 @@ unsigned lc_root_addr()
 unsigned    lc_root_rva()  { lc_root_addr(); return g_rva; }
 const char* lc_root_how()  { lc_root_addr(); return g_how; }
 bool        lc_root_live() { const u32 slot = lc_root_addr(); return slot && root_alive(slot); }
+
+// ---- the watcher's eyes on the one pointer everything hangs off -----------------------------------------
+// WHY A CHECK AND NOT JUST THE DOCTOR. A dead root and the login screen look identical from here -- the
+// doctor can say "if you are at the login screen this is normal" because a person is reading it. A watcher
+// firing on its own cannot hedge, so it waits for the one state that is NOT ambiguous: we have a character
+// id, therefore we are in game, and the root still does not answer. That contradiction cannot be the login
+// screen, and it is exactly the shape a Windower update leaves behind (4.7.9.3 moved this address).
+static int lc_checks(CheckFail* out, int cap) {
+    int n = 0;
+    if (n >= cap) return n;
+    // Reads memory, like rva_checks does, and for the same reason : the question IS whether a pointer chain
+    // still answers, and that cannot be asked of a cached copy. Both reads are SEH-guarded (root_alive).
+    if (party().self_id() != 0 && !lc_root_live()) {
+        lstrcpynA(out[n].id, "LC.ROOT_LOST", sizeof(out[n].id));
+        out[n].sev = CHK_BLOCK;
+        _snprintf(out[n].detail, sizeof(out[n].detail),
+                  "the LuaCore root (rva %06X, %s) stopped answering while a character is logged in -- nothing "
+                  "can be read from the game at all. A Windower update moves this address : update AioHUD "
+                  "(Update tab)", lc_root_rva(), lc_root_how());
+        out[n].detail[sizeof(out[n].detail) - 1] = 0;
+        ++n;
+    }
+    return n;
+}
+
+void lc_register_checks() { selftest_add("luacore", lc_checks); }
 
 // ---------------------------------------------------------------- the recast block ----
 

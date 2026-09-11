@@ -31,6 +31,7 @@ unsigned    lc_root_addr();
 unsigned    lc_root_rva();    // its RVA inside LuaCore.dll, for logs / //aio doctor
 const char* lc_root_how();    // "code scan" / "seed" / "unresolved" -- an address with no stated origin is a guess
 bool        lc_root_live();   // the root currently reads back as a real pointer chain (false at the login screen)
+void        lc_register_checks();   // the watcher : a root that stops answering mid-session, unambiguously
 
 // ---- the recast block : three CONTIGUOUS pointers off the root, 4 bytes apart ----
 //

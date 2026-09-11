@@ -18,6 +18,7 @@
 // on ordinary change -- a countdown, a growing list, a cursor moving -- because those never come back to the
 // value they just left, over and over, without ever settling.
 #pragma once
+#include "model/watchdogs.h"   // every threshold below lives there, with the master switch
 
 namespace aio {
 
@@ -61,9 +62,8 @@ inline bool flip_feed(FlipState& s, unsigned v, int trip, int steadyClear) {
 // ---- the registry --------------------------------------------------------------------------------------
 // Fixed slots, keyed by the literal's ADDRESS -- callers pass string literals, so the comparison is a
 // pointer test and the hot path is a handful of integer operations. No allocation, nothing per frame.
-static const int FLIP_SLOTS = 16;
-static const int FLIP_TRIP  = 6;     // six alternations with never a pause : an argument, not a countdown
-static const int FLIP_STEADY = 120;  // ~2 s of holding still forgets the history
+// FLIP_SLOTS / FLIP_TRIP / FLIP_STEADY are in watchdogs.h, with the other watchers' knobs and the reasoning
+// for each number -- one file to open when one of these turns out to be wrong.
 
 struct FlipSlot { const char* id; FlipState st; unsigned atMs; };
 

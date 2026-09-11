@@ -1,6 +1,7 @@
 // hud_timers.cpp -- split out of hud.cpp (pure move). Timers box renderer.
-#include "model/flipwatch.h"   // notice a row set that cannot settle
 #include "ui/hud.h"
+#include "model/flipwatch.h"   // notice a row set that cannot settle
+#include "model/capwatch.h"   // notice a fixed table that has quietly run out of room
 #include "ui/hud_internal.h"
 #include "model/ui_config.h"
 #include "ui/text_style.h"
@@ -1597,6 +1598,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         // signature IS the decision, so it is the right thing to watch: if it alternates between two values
         // without ever settling, something is arguing (model/flipwatch.h).
         flipwatch("timers.rowset", sig, (unsigned)GetTickCount());
+        // The monitor simply stops accepting when it is full (`if (s < 0 && fmN < FOCUS_MAX)`), so past the cap
+        // a buff is never watched and its loss is never alerted -- the feature degrades into silence. It held
+        // 24 until 2026-09-11, and a bard's own songs plus an alliance's buffs went past that every fight.
+        capwatch("timers.focus", fmN, FOCUS_MAX);
         static unsigned lastSig = 0;
         if (sig != lastSig) {
             lastSig = sig;

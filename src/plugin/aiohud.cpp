@@ -18,6 +18,10 @@
 #endif
 #include "ui/hud.h"
 #include "model/selftest.h"   // //aio selftest + the chat notice the watcher leaves behind
+#include "model/watchdogs.h"   // //aio watch : the master switch for the passive watchers
+#include "model/decisions.h"   // //aio why  : the always-recording decision ring
+#include "model/flipwatch.h"   // its slot table, for the //aio watch summary
+#include "model/capwatch.h"
 #include "gfx/corner_mask.h"
 #include "ui/player.h"   // set_gear_trace : //aio geartrace
 #include "model/layout.h"
@@ -1206,6 +1210,45 @@ static void aio_command_dispatch(const char* cmd)
             }
             g_hud.write_bug_report(hits, n, false);   // asked for by hand : one instant, no debounce
         }
+        return;
+    }
+    // //aio why [topic] -- dump the decision ring (model/decisions.h). The armed traces (dbflog, ftrace, tpool,
+    // songlog) all need arming BEFORE the thing happens ; this one is always recording, so it answers the
+    // question in the order it actually gets asked : you saw something odd, and NOW you want to know why.
+    if (strstr(buf, "why")) {
+        // THE TOPIC WORDS ARE DELIBERATELY NOT "zone" AND "debuff". aiohud_probes.cpp is consulted BEFORE this
+        // file and owns a //aio zone command, so "//aio why zone" would never reach here on a dev build while
+        // working fine on a release one -- the worst kind of difference. "zt" and "dbf" collide with nothing.
+        const char* topic = 0;
+        if (strstr(buf, "zt"))  topic = "zone";
+        if (strstr(buf, "dbf")) topic = "debuff";
+        const int n = aio::dec_dump(topic);
+        char msg[200];
+        _snprintf(msg, sizeof(msg),
+                  aio::tr(">>> AioHud : %d decision(s) written to aiohud_debug.log (block AIO DECISIONS) <<<",
+                          ">>> AioHud : %d decision(s) ecrites dans aiohud_debug.log (bloc AIO DECISIONS) <<<"), n);
+        msg[sizeof(msg) - 1] = 0;
+        g_host.console().print(msg);
+        return;
+    }
+    // //aio watch [on|off] -- the master switch for the passive watchers (model/watchdogs.h). They only ever
+    // OBSERVE, so turning them off changes nothing the HUD draws -- it is here so that a watcher suspected of
+    // being wrong can be ruled out in one command, with no rebuild and no reload, instead of being argued with.
+    if (strstr(buf, "watch")) {
+        if (strstr(buf, "on"))       aio::watch_enable(true);
+        else if (strstr(buf, "off")) aio::watch_enable(false);
+        int fn = 0, cn = 0, tripped = 0, full = 0;
+        aio::FlipSlot* fs = aio::flip_slots(fn);
+        aio::CapSlot*  cs = aio::cap_slots(cn);
+        for (int i = 0; i < fn; ++i) if (fs[i].st.tripped) ++tripped;
+        for (int i = 0; i < cn; ++i) if (cs[i].st.saidFull) ++full;
+        char msg[220];
+        _snprintf(msg, sizeof(msg),
+                  aio::tr(">>> AioHud watchers : %s -- %d decision(s) watched (%d oscillating), %d table(s) watched (%d saturated) <<<",
+                          ">>> AioHud watchers : %s -- %d decision(s) surveillee(s) (%d qui oscillent), %d table(s) surveillee(s) (%d saturee(s)) <<<"),
+                  aio::watch_enabled() ? aio::tr("ON", "ON") : aio::tr("OFF", "OFF"), fn, tripped, cn, full);
+        msg[sizeof(msg) - 1] = 0;
+        g_host.console().print(msg);
         return;
     }
     if (strstr(buf, "selfcheck")) {   // //aio selfcheck -> dump texture-load health to aiohud_debug.log (verify the rule-10 latch fixes held : no stuck give-up, no permanently-missing icon)

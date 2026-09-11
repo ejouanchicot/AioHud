@@ -1,5 +1,7 @@
 // party_state.cpp -- see party_state.h.
 #include "model/party_state.h"
+#include "model/capwatch.h"   // notice a fixed table that has quietly run out of room
+#include "model/decisions.h"   // record the WHY, so it can be asked for after the fact
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared with party_state_zonetracker.cpp)
 #include "model/game_mem.h"
 #include "model/paths.h"
@@ -1802,6 +1804,12 @@ void PartyState::on_029(const unsigned char* p) {
                 const unsigned life = GetTickCount() - d.startMs[i];       // LEARN the real duration (keep the longest = the unresisted full duration)
                 if (cur < 256 && life >= 2000 && life <= 1800000 && life > learnedMs_[cur]) learnedMs_[cur] = life;
                 DBFTRACE("DBF 029-remove tid=%08X st=%u (msg=%u param=%u)", tid, cur, msg, st);
+                // The armed trace above answers this only if somebody armed it BEFORE the icon vanished, which
+                // nobody ever does -- you notice the icon is gone and then it is too late. The ring answers it
+                // afterwards, which is the order these questions actually arrive in. The generic wake is the
+                // interesting one : st=2 clearing a status we track as 193 looks like a bug until you see it.
+                dec_record("debuff", "cleared status %u on %08X : msg %u said status %u%s", cur, tid, msg, st,
+                           (cur != st) ? " (generic sleep wake, not an exact match)" : "");
                 debuff_erase(d, i);                        // remove the entry (compact)
             } else ++i;
         }
@@ -1938,6 +1946,10 @@ const BuffSet* PartyState::buffs_for(unsigned id) const {
 // grace period lets a fresh cast register in the 0x076 before it can be pruned.
 void PartyState::prune_other_buffs_worn() {
     songdur_check();   // learn ally song durations from the server 0x063, off the same model tick
+    // This table does not merely stop accepting when it is full -- it EVICTS THE OLDEST entry (see the two
+    // insert sites above), so an alliance with more buffs than slots quietly loses the ones that have been up
+    // longest, and nothing anywhere says so. It held 32 until 2026-09-11, which does not cover one bard.
+    capwatch("model.allybuffs", otherBuffN_, OB_MAX);
     const unsigned now = GetTickCount();
     const unsigned z = zone_id();                                 // ZONING grace : a zone change (or the loading screen) blanks the
     // ZONE-IN BUMP for SINGLE-TARGET ally estimates (no self timer to mirror). Across the load the server preserves

@@ -1,5 +1,6 @@
 // hud.cpp -- see hud.h.
 #include "model/flipwatch.h"   // oscillating decisions report to the watcher too
+#include "model/capwatch.h"    // saturated tables report to the watcher too
 #include "hud.h"
 #include "ui/hud_internal.h"   // box_edit / draw_icon_cell : shared with the per-module hud_*.cpp split TUs
 #include "ui/factory.h"
@@ -187,7 +188,10 @@ void Hud::render(u32 dev) {
     // plain array with no order dependency, and doing it where the module is known to be alive avoids a
     // static-init-order question for no benefit. Idempotent, so it costs one comparison per frame.
     static bool s_checksRegistered = false;   // rule10-ok: appending to an array cannot fail transiently
-    if (!s_checksRegistered) { s_checksRegistered = true; timers_register_checks(); rva_register_checks(); flip_register_checks(); }
+    if (!s_checksRegistered) { s_checksRegistered = true;
+        timers_register_checks(); rva_register_checks();      // the modules that own state worth doubting
+        flip_register_checks();   cap_register_checks();      // the watchers (model/watchdogs.h : all knobs, one switch)
+        zt_register_checks();     lc_register_checks(); }
 
     // The watcher decides for itself whether it is armed and whether it is due ; on the overwhelming majority
     // of frames this returns 0 having touched nothing. When a check has held long enough to be believed, the

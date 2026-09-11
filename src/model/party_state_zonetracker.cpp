@@ -7,6 +7,8 @@
 #include <time.h>              // time() : UTC epoch stamp on the weekly allowance
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared packet readers)
 #include "model/paths.h"                  // plugin_path (the zone-cache path)
+#include "model/selftest.h"           // the in-game watcher : a renumbered message id announces itself
+#include "model/decisions.h"   // record the WHY, so it can be asked for after the fact
 #include "model/game_mem.h"               // key_items_base (Limbus run baseline : the run's KIs) + entity_name_by_index
 #include "windower_debug.h"               // warn when a >=1k award's source entity is not recognised as a coffer
 #include <stdio.h>                        // snprintf (floor tags)
@@ -473,6 +475,56 @@ void zt_msg_state(int which, unsigned& id, bool& proven, int& seen, int& traffic
 }
 void zt_aby_msg_state(int& matched, int& unmatched) { matched = abyMatched_; unmatched = abyUnmatched_; }
 
+// ---- the watcher's eyes on the healed message ids -------------------------------------------------------
+// WHY THIS IS HERE AND NOT ONLY IN //aio doctor. Everything below is already diagnosed, in words, by the
+// doctor -- and that is exactly the problem the 2026-08-12 patch exposed: the doctor only speaks when
+// somebody already SUSPECTS something and types a command. The Odyssey counter sat at 0 for a whole run of
+// 105 payouts with the diagnosis available the entire time and nobody asking for it.
+//
+// The watcher is the other half: it runs on its own while you play, so a message family that a client update
+// renumbered announces ITSELF, during the run, instead of waiting to be suspected after it. Same findings,
+// same remedies, no command to remember.
+static int zt_checks(CheckFail* out, int cap) {
+    int n = 0;
+    #define ZFAIL(ID, SEV, ...) do { if (n < cap) { lstrcpynA(out[n].id, ID, sizeof(out[n].id)); out[n].sev = (SEV); \
+        _snprintf(out[n].detail, sizeof(out[n].detail), __VA_ARGS__); out[n].detail[sizeof(out[n].detail)-1] = 0; ++n; } } while (0)
+
+    const ZoneTracker& zt = party().zone_tracker();
+
+    // 1. THE ZONE IS TALKING AND OUR ID IS SILENT. That contradiction is the whole finding: traffic proves the
+    //    packets arrive and the parser runs, so "nothing matches" can only be the id. Traffic without a single
+    //    hit is not a quiet zone, it is a renumbered message.
+    {   const int which = (zt.mode == 5) ? 0 : (zt.curZone == 38) ? 1 : (zt.curZone == 37) ? 2 : -1;
+        if (which >= 0) {
+            static const char* WHO[3] = { "Odyssey segments", "Apollyon units", "Temenos units" };
+            unsigned mid = 0; bool prov = false; int seen = 0, traf = 0;
+            zt_msg_state(which, mid, prov, seen, traf);
+            if (!prov && seen == 0 && traf >= 6)
+                ZFAIL("ZT.MSGID_SILENT", CHK_WARN,
+                      "%s : %d messages arrived this run and not one carried id %u -- a client update renumbered "
+                      "it. It re-locks by itself on the second gain ; if the counter is still 0 after two, the "
+                      "capture is in aiohud_debug.log", WHO[which], traf, mid);
+        }
+    }
+
+    // 2. ABYSSEA, WHICH CANNOT HEAL ITSELF. Its lights are matched by an offset from a per-zone base and no
+    //    single message proves a base, so this one is only ever WATCHED. Nothing recognised across a dozen
+    //    messages is the signature of a base that moved -- it already drifted +23 once.
+    if (zt.mode == 2) {
+        int am = 0, au = 0; zt_aby_msg_state(am, au);
+        if (am == 0 && au >= 12)
+            ZFAIL("ZT.ABYSSEA_BASE", CHK_WARN,
+                  "Abyssea base %d : %d messages received, none recognised -- the id base moved with a client "
+                  "update, and unlike Odyssey this one cannot be guessed. Do /heal, then send aiohud_debug.log : "
+                  "the new base reads out of the capture", zt.abyOffset, au);
+    }
+
+    #undef ZFAIL
+    return n;
+}
+
+void zt_register_checks() { selftest_add("zones", zt_checks); }
+
 // ---- //aio sheoltest : the scripted invariant ------------------------------------------------------------
 // The healing runs about once a year, inside a run you get one of per day (and Limbus's is weekly). Without a
 // way to exercise it on demand it would go untested until the day everything depends on it -- the same argument
@@ -601,6 +653,10 @@ void PartyState::zt_set_zone(int zone, const char* name) {
     if (zone == 77)  mode = 4;                                                            // Nyzul Isle (Uncharted Area)
     if ((zone == 298 || zone == 279) && oldZone == 247) mode = 5;                         // Sheol A/B/C -- ONLY from Rabao (298/279 are also Selbina HTMBs)
     if (zone == 38 || zone == 37) mode = 6;                                               // Limbus : Apollyon (38) / Temenos (37)
+    // THE decision of this file, and the first question of every "why is the box empty" : which tracker did a
+    // zone turn on, and on what. The inputs matter as much as the answer -- mode 5 needs to have come FROM
+    // Rabao, so "zone 298, from 0" and "zone 298, from 247" are two different worlds with one zone id.
+    dec_record("zone", "zone %d '%s' (from %d) -> mode %d (was %d)", zone, name ? name : "?", oldZone, mode, prevMode);
     if (mode == 3) {
         if (zt_.mode != 3) { omen_reset_objs(zt_); zt_.omens = 0; zt_.omenBonusSec = 0; zt_.omenCleared = 0; omen_set_floor(zt_, "Waiting for objectives..."); }
         zt_.mode = 3;
@@ -971,6 +1027,9 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
         // you do the thing that does not work, and the tail of a run is chatter that would push it out.
         const unsigned short mid = (unsigned short)(pkt_u16(p, 0x1A) & 0x3FFF);
         bool known = false; for (int i = 0; i < abyMissN_; ++i) if (abyMiss_[i].mid == mid) { known = true; break; }
+        // Abyssea cannot prove its base, so a moved base shows up ONLY as messages landing nowhere. The ring
+        // keeps the offsets themselves : a base that shifted by a constant is read straight off them.
+        dec_record("zone", "Abyssea msg %u -> offset %d (base %d) matches nothing", (unsigned)mid, (int)rel, zt_.abyOffset);
 
         if (!known && abyMissN_ < (int)(sizeof(abyMiss_) / sizeof(abyMiss_[0]))) {
             abyMiss_[abyMissN_].mid = mid; abyMiss_[abyMissN_].rel = (short)rel;

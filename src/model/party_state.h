@@ -961,6 +961,7 @@ void zt_aby_msg_state(int& matched, int& unmatched);
 // The distinct 0x02A ids this Abyssea sent that landed on no known offset, with the offset each WOULD have
 // had under the current base -- what tells a wholesale base shift from a message we simply never mapped.
 void zt_aby_misses(unsigned short* mid, short* rel, int* p1, int cap, int& n, int& total);
+void zt_register_checks();   // the watcher's copy of the doctor's msgid findings, fired without being asked
 // //aio sheoltest : drives that same decision through a healthy / patched / noisy sequence on scratch healers.
 // The healing fires about once a year -- this is how it stays tested.
 bool sheol_selftest(char* out, int cap);
