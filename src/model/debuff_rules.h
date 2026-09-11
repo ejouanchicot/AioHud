@@ -80,9 +80,14 @@ inline int debuff_refused_by(const unsigned short* spell, const unsigned* startM
 //
 //   Dia / Bio  -- measured here on 2026-09-11 (the capture above) AND the published ladder agrees :
 //                 Dia -> Bio -> Dia II -> Bio II -> Dia III -> Bio III, "regardless of when it was cast".
-//   Helix      -- not measured by us : two independent sources say tier II is never removed by tier I, and
-//                 same-tier helixes overwrite each other whatever the element (which this table leaves to the
-//                 same-status refresh, not to a refusal). Same shape as Dia : damage message, invisible rider.
+//                 Its durations (60/120/180/240/300 s) are the standard ones and match tb_debuff_gen.h.
+//
+// HELIX WAS IN THIS LIST FOR ONE COMMIT, AND THAT WAS INCOHERENT. Its ladder is fine -- two sources say tier II
+// is never removed by tier I -- but a ladder is not enough HERE, because a refusal also needs the duration :
+// the stronger entry must still be live. And tb_debuff_gen.h has Helix I at 230 s and Helix II at 90 s, the
+// upper tier expiring FIRST, which cannot be right. With a duration that short we would stop refusing after
+// 90 s and let a Helix I take over a running Helix II -- the very bug this file exists to stop, merely delayed.
+// So a family needs BOTH halves measured : who outranks whom, and how long it lasts. Helix has one of the two.
 //
 // Everything else -- Poison, Slow/Hojo, Blind/Kurayami, Paralyze/Jubaku, Requiem, Elegy, Lullaby, Threnody,
 // Distract/Frazzle/Addle -- is a pure enfeeble whose message NAMES the status, so the server already decides it
@@ -92,9 +97,7 @@ inline bool debuff_ladder_proven(unsigned a, unsigned b) {
     a = ow_canonical(a); b = ow_canonical(b);
     const bool aDia = (a >= 23 && a <= 27) || (a >= 230 && a <= 234);   // Dia I-V / Bio I-V (-ga canonicalised above)
     const bool bDia = (b >= 23 && b <= 27) || (b >= 230 && b <= 234);
-    const bool aHlx = (a >= 278 && a <= 285) || (a >= 885 && a <= 892); // Helix I / Helix II
-    const bool bHlx = (b >= 278 && b <= 285) || (b >= 885 && b <= 892);
-    return (aDia && bDia) || (aHlx && bHlx);
+    return aDia && bDia;
 }
 
 } // namespace aio
