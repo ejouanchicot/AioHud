@@ -365,6 +365,7 @@ static void heal_pw_merit() {
 // "not a pointer" cannot be the test. What the broken state actually looked like on 2026-08-12 was a
 // small integer (14, 15) -- a different variable entirely. That IS the test.
 static bool g_adoptedTag = false;
+static u32  g_examBan[2]  = { 0, 0 };          // an RVA refuted for not following the cursor : never re-adopt it
 static u32  g_examCur[2]  = { 0, 0 };          // the menu highlight index we last saw, per cache
 static u32  g_examVal[2]  = { 0, 0 };          // ...and what the cache read at that moment
 static int  g_examDead[2] = { 0, 0 };          // consecutive frames a CONFIRMED cache has failed to decode with its menu open
@@ -553,6 +554,7 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
         if (cv != g_examVal[slot]) { g_examVal[slot] = cv; g_examDead[slot] = 0; return; }   // it followed : alive
         if (++g_examDead[slot] < 3) return;
         g_examDead[slot] = 0; g_sibSaid[slot] = false;
+        g_examBan[slot] = fm_rva(s);   // and it stays refuted : see the decode test below
         windower::debug::log("fm: %s was PROVEN but does not follow the cursor (stuck on %u over 3 moves) -- reopening the search",
                              fm_name(s), cv);
         g_confirmed[s] = false;
@@ -565,7 +567,14 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
     const bool rightMenu = (s == FM_EXAM_SPELL) ? (tag == 0x6967616Du)     // "magi"
                                                 : (tag == 0x6C696261u);    // "abil"
     u32 v = 0; safe_read(base + fm_rva(s), &v);
-    const bool ok = rightMenu && exam_decodes(s, v);
+    // "Decodes while its own menu is open" is the WEAK proof, and it is enough only while nothing contradicts
+    // it. An address already refuted for standing still under a moving cursor is contradicted: re-confirming it
+    // here undid the refutation on the very next tick, and the two rules traded the slot at 60 Hz --
+    //     ... does not follow the cursor (stuck on 3 over 3 moves) -- reopening the search
+    //     ... CONFIRMED at FFXiMain+0x6323C8 [decodes while its own menu is open]
+    // -- the third time tonight that two rules of equal standing over one value have oscillated. A refutation
+    // has to outrank the weaker evidence it overturned, or it is not a refutation.
+    const bool ok = rightMenu && exam_decodes(s, v) && fm_rva(s) != g_examBan[(s == FM_EXAM_SPELL) ? 0 : 1];
     if (ok) { fm_adopt(s, fm_rva(s), "decodes while its own menu is open"); return; }
 
     // (1) Borrow the shift from a static that PROVED one. A shift of ZERO is a legitimate answer -- it says
