@@ -147,9 +147,9 @@ static bool is_status_land_msg(unsigned m) {
 static bool is_damage_land_msg(unsigned m) {
     switch (m) { case 2: case 252: case 264: case 265: return true; default: return false; }   // cast / Magic Burst / their no-actor echoes
 }
-static bool is_no_land_msg(unsigned m) {
-    switch (m) { case 75: case 283: case 85: case 284: case 653: case 654: case 655: case 656: return true; default: return false; }
-}
+// Lives in model/debuff_rules.h so the suite can pin it : the set grew from a live capture (msg 31 and 84,
+// recorded as lands when nothing had landed) and it will grow again the next time the probe below names an id.
+static bool is_no_land_msg(unsigned m) { return debuff_no_land_msg(m); }
 // //aio dbflog : a countdown of target-debuff mutations still to trace to aiohud_debug.log (0 = off). File-scope
 // so the static record_* helpers can log too. Each traced line decrements it, so a capture self-limits.
 static int s_dbfTrace = 0;

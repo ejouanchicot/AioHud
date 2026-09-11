@@ -152,6 +152,23 @@ void test_debuffrules() {
         CHECK_EQ( 90000u, debuff_display_ms(0, 0, 0, 90000));                 // nothing at all -> the coarse guess
     }
 
+    SECTION("A CAST THAT DID NOT LAND : the two ids a live log named");
+    {   // Measured 2026-09-11 on Dia III casts. Both were being recorded as debuffs that had landed, so the mob
+        // carried a phantom Dia counting down from 180 s with nothing on it.
+        CHECK(debuff_no_land_msg(31));    // "N of <target>'s shadows absorbs the damage and disappears"
+        CHECK(debuff_no_land_msg(84));    // "<actor> is paralyzed" -- the cast never happened
+        // the set as it already was, kept from silently shrinking
+        CHECK(debuff_no_land_msg(75));  CHECK(debuff_no_land_msg(283));
+        CHECK(debuff_no_land_msg(85));  CHECK(debuff_no_land_msg(284));
+        CHECK(debuff_no_land_msg(653)); CHECK(debuff_no_land_msg(656));
+        // and what must NOT join it : the ordinary land forms, plus the one seen in the same log and left out
+        CHECK(!debuff_no_land_msg(2));    // "<target> takes N points of damage" -- how a Dia lands
+        CHECK(!debuff_no_land_msg(236));  // "<target> is <status>"
+        CHECK(!debuff_no_land_msg(82));
+        CHECK(!debuff_no_land_msg(7));    // "<target> recovers N HP" : a light-absorbing mob, outcome never observed
+        CHECK(!debuff_no_land_msg(0));
+    }
+
     SECTION("the tick counter wrapping does not resurrect a ghost");
     {   // GetTickCount wraps every 49.7 days and the subtraction is unsigned on purpose : an entry started just
         // before the wrap must still age normally across it.

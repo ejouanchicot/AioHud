@@ -129,4 +129,34 @@ inline unsigned debuff_display_ms(unsigned learnedSpell, unsigned learnedStatus,
     return fallback;
 }
 
+// DID THIS CAST APPLY ANYTHING AT ALL ? The server answers, in the action message, and this is the set that
+// means no. Every text here is unambiguous -- widening to an unambiguous text cannot lose a real land, which
+// is why the set is read from the wording rather than guessed from behaviour.
+//
+//   75 / 283   "<actor>'s <spell> has no effect on <target>." / "No effect on <target>."
+//   85 / 284   "<target> resists the spell."
+//   653-656    resisted + "Immunobreak!", and "completely resists"
+//   31         "N of <target>'s shadows absorbs the damage and disappears."  <- the spell was eaten by Utsusemi
+//   84         "<actor> is paralyzed."                                       <- the cast never happened
+//
+// The last two were MEASURED on 2026-09-11, in a live log, on Dia III casts (spell 25) -- both were recorded
+// as debuffs that had landed, so the mob carried a phantom Dia with a full countdown. They were found by the
+// always-on probe at the call site, which reports an action message belonging to NEITHER land set : it exists
+// precisely so this set can be completed from observation instead of from a list somebody remembered to write.
+//
+// NOT included, and deliberately: 7, "<target> recovers N HP" -- a Dia healing a light-absorbing mob. Seen in
+// the same log, but whether the status still applies there has never been observed, and a wrong entry here
+// costs a debuff that never shows. An unambiguous text is not the same thing as an unambiguous outcome.
+inline bool debuff_no_land_msg(unsigned m) {
+    switch (m) {
+        case 75: case 283:                          // no effect
+        case 85: case 284:                          // resists the spell
+        case 653: case 654: case 655: case 656:     // resists + Immunobreak / completely resists
+        case 31:                                    // absorbed by a shadow
+        case 84:                                    // the caster is paralyzed -- nothing was cast
+            return true;
+        default: return false;
+    }
+}
+
 } // namespace aio
