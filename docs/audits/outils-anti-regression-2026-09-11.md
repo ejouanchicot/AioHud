@@ -146,5 +146,9 @@ Deux lecons a garder :
   Les deux autres (Abyssea, debuffs) n'ont pas encore eu l'occasion de se declencher.
 - `capwatch` n'est branche que sur deux tables. Il y en a une quinzaine d'autres (`ANIM_MAX`, `MAP_ENT_MAX`,
   `BUFF_PIN_MAX`, `TM_TRACK_MAX`...) ; celles-ci sont les deux qui ont deja deborde.
-- La question posee trois fois et toujours sans reponse : **« on veut les recast »** — le temps de
-  rechargement du sort, ou un rappel avant qu'une song tombe ?
+- ~~« on veut les recast »~~ — **fausse question, close le 2026-09-11.** Les recasts sont dans Timers depuis
+  longtemps : les lignes de cooldown resolvent leur nom depuis le `recast_id` (`hud_timers.cpp`), et le filtre
+  par job les range sous `TM_KEY_RECAST` a cote des buffs (`ui_config.h`, avec un `static_assert` qui garde les
+  deux bandes de cles separees). La phrase etait un constat, pas une demande — et je l'ai re-posee trois fois
+  au lieu d'aller lire le code. **Avant de ranger quelque chose dans les questions ouvertes, verifier que ce
+  n'est pas deja fait.**
