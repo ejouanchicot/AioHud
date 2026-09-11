@@ -133,9 +133,9 @@ void test_debuffrules() {
         CHECK(debuff_ladder_proven(DIA3, DIA2));        // measured on the live client
         CHECK(debuff_ladder_proven(DIA3, BIO2));        // same ladder, crosses the two statuses
         CHECK(debuff_ladder_proven(DIA3, DIAGA2));      // the -ga form is the same spell
-        CHECK(!debuff_ladder_proven(885, 278));         // Helix : the ladder holds, the DURATIONS do not
-                                                        // (tb_debuff has tier II at 90 s and tier I at 230 s),
-                                                        // and a refusal needs both -- so it stays advisory.
+        CHECK(debuff_ladder_proven(885, 278));          // Helix II over a Helix I : ladder published, and the
+                                                        // duration corrected to the measured 90 s base (both
+                                                        // tables said 230, which nothing measures).
         CHECK(!debuff_ladder_proven(SLOW2, HOJO_SAN));  // res says so, nobody measured it
         CHECK(!debuff_ladder_proven(POISON2, POISON));
         CHECK(!debuff_ladder_proven(THREN_FIRE2, THREN_ICE2));

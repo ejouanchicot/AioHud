@@ -82,12 +82,23 @@ inline int debuff_refused_by(const unsigned short* spell, const unsigned* startM
 //                 Dia -> Bio -> Dia II -> Bio II -> Dia III -> Bio III, "regardless of when it was cast".
 //                 Its durations (60/120/180/240/300 s) are the standard ones and match tb_debuff_gen.h.
 //
-// HELIX WAS IN THIS LIST FOR ONE COMMIT, AND THAT WAS INCOHERENT. Its ladder is fine -- two sources say tier II
-// is never removed by tier I -- but a ladder is not enough HERE, because a refusal also needs the duration :
-// the stronger entry must still be live. And tb_debuff_gen.h has Helix I at 230 s and Helix II at 90 s, the
-// upper tier expiring FIRST, which cannot be right. With a duration that short we would stop refusing after
-// 90 s and let a Helix I take over a running Helix II -- the very bug this file exists to stop, merely delayed.
-// So a family needs BOTH halves measured : who outranks whom, and how long it lasts. Helix has one of the two.
+//   Helix      -- ladder published and unambiguous (tier I overwrites a tier I, never a tier II ; tier II
+//                 overwrites both), and the same shape as Dia : the impact damage lands, the rider does not
+//                 show in the packet. It is REACHED by ordinary play rather than by accident -- the SCH
+//                 pattern is Helix I to open the skillchain and Helix II to burst, so the next Helix I lands
+//                 on a live tier II every rotation.
+//                 Its duration took a correction to get here : both res and tb_spells carried 230 s, a number
+//                 nothing measures. The real base is 90 s at SCH 60-99 (30/60 below), lengthened to 168 s by
+//                 Dark Arts. The base we keep is the SHORT end on purpose -- see the note below.
+//                 docs/game-data/reference-sheets/helix.md
+//
+// WHICH WAY AN ERROR IN THE DURATION HURTS. Too LONG refuses a cast the game accepts : the debuff never shows,
+// the silent failure this whole file is written against. Too SHORT only stops protecting early, which is the
+// behaviour that shipped in 1.0.85. So every base here is the short end, and Dark Arts / Tabula Rasa running
+// past what we claim costs nothing. The one thing that goes the other way is MODUS VERITAS -- it halves the
+// remaining time in place, so a Helix II can genuinely end before our 90 s. That window is not modelled : it
+// is visible (a Helix I refused while the mob has nothing), it is detectable (the ability is in the action
+// packet, like a Quick Draw shot), and it is the next thing to do here rather than a reason to do nothing.
 //
 // Everything else -- Poison, Slow/Hojo, Blind/Kurayami, Paralyze/Jubaku, Requiem, Elegy, Lullaby, Threnody,
 // Distract/Frazzle/Addle -- is a pure enfeeble whose message NAMES the status, so the server already decides it
@@ -97,7 +108,9 @@ inline bool debuff_ladder_proven(unsigned a, unsigned b) {
     a = ow_canonical(a); b = ow_canonical(b);
     const bool aDia = (a >= 23 && a <= 27) || (a >= 230 && a <= 234);   // Dia I-V / Bio I-V (-ga canonicalised above)
     const bool bDia = (b >= 23 && b <= 27) || (b >= 230 && b <= 234);
-    return aDia && bDia;
+    const bool aHlx = (a >= 278 && a <= 285) || (a >= 885 && a <= 892); // Helix I / Helix II, both tiers
+    const bool bHlx = (b >= 278 && b <= 285) || (b >= 885 && b <= 892);
+    return (aDia && bDia) || (aHlx && bHlx);
 }
 
 } // namespace aio
