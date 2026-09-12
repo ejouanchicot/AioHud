@@ -363,9 +363,15 @@ struct UiConfig {
                                // widens, so the top-right corner stays put. epY = its TOP (grows down).
     float epY     = 0.25f;
     int   epColl  = 1;         // show the collectable counter row (23 of the 28 NMs have one)
-    char  epTrack[32] = "briareus";   // tracked NM : the nms_gen.h KEY ("arch dynamis lord" -- spaces are real),
-                                      // NOT an index. NMS[] is sorted by key, so an index would silently
-                                      // re-point at a different NM the day the generated table gains an entry.
+    // tracked NM : the nms_gen.h KEY ("arch dynamis lord" -- spaces are real), NOT an index. NMS[] is sorted by
+    // key, so an index would silently re-point at a different NM the day the generated table gains an entry.
+    // WRITTEN AS AN ELEMENT LIST, and it has to be. MEASURED 2026-09-12 on this toolchain (MSVC, /std:c++17) :
+    // `char s[32] = "briareus";` as a default member initialiser is applied to a LOCAL object and DROPPED on an
+    // object of STATIC storage duration -- `static const UiConfig d{}` came out with s = "" while every other
+    // default was right. reset_ui_config() built its reference exactly that way, so "Reset all settings" has
+    // been clearing the tracked NM instead of restoring it. The element list survives both (probe kept in the
+    // session notes: struct A = "..." -> static empty ; struct B = {'b','r',...} -> static correct).
+    char  epTrack[32] = { 'b','r','i','a','r','e','u','s', 0 };
     TextStyle epText[EP_TE_COUNT];   // per-element typography : [EP_TITLE] [EP_POP] [EP_FROM] [EP_COLL]
     // ---- Timers module : self buff timers (exact durations from 0x063 type-9 ; same buff-icon atlas as Player/Party) ----
     int   tmShow  = 1;         // show the buff-timers box

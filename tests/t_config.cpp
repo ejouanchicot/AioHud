@@ -16,6 +16,7 @@
 // This asks one question only -- does a config survive a trip to disk and back, field for field.
 #include "check.h"
 #include "model/ui_config.h"
+#include "model/config_rules.h"   // the two pure decisions under test
 #include "model/paths.h"
 #include "model/game_mem.h"
 #include <windows.h>
@@ -117,6 +118,27 @@ static void scribble(UiConfig& c, int seed) {
         t.bold = ((k + seed) & 1) != 0; t.italic = ((k + seed) & 2) != 0;
         t.upper = ((k + seed) & 4) != 0; t.colorOn = ((k + seed) & 8) != 0;
     }
+}
+
+// ---- EVERY persisted byte, not just the ones a test remembered to name.
+// `scribble` above is hand-written, so it covers the fields someone thought of -- and the field the reset
+// actually forgot in production (scTP) was precisely one nobody had thought of. A reset invariant built on
+// scribble is therefore blind in exactly the place the defect lives: proved by mutation on 2026-09-12, a
+// reset that deliberately kept one field passed the test.
+// So fill the WHOLE struct with a byte pattern and repair only what must stay structurally legal for
+// persist_eq to be able to walk it -- the counts that bound its loops, and the two strings it strcmp's.
+// Anything the reset then leaves untouched keeps 0x5A garbage and fails, whatever its name.
+static void dirty_every_field(UiConfig& c) {
+    memset(&c, 0x5A, sizeof(c));
+    for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = (unsigned char)i;
+    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) c.buffPinN[g] = 3;            // <= BUFF_PIN_MAX
+    for (int j = 0; j < 24; ++j) c.tmTrackOffN[j] = 4;                             // <= TM_TRACK_MAX
+    c.tmBuffOffN = 4;
+    c.favColorN = 2;                                                               // (not part of persist_eq)
+    c.guideGroupCount = 2;
+    for (int i = 0; i < c.guideGroupCount; ++i) c.guideGroup[i].name[19] = 0;
+    c.epTrack[sizeof(c.epTrack) - 1] = 0;                                          // strcmp'd by persist_eq
+    c.iconPack[sizeof(c.iconPack) - 1] = 0;
 }
 
 void test_config() {
@@ -225,6 +247,159 @@ void test_config() {
             CHECK(c.buffPinN[0] <= UiConfig::BUFF_PIN_MAX);
         }
         profile_delete("t_evil");
+    }
+
+
+    // ------------------------------------------------------------------------------------------------------
+    // A CONFIG FILE IS A COMPLETE CONFIG. The loader used to OVERLAY : it cleared four dynamic lists by hand
+    // and left every other field holding the previous profile's value, so a key the file does not carry was
+    // answered by whatever happened to be loaded before -- and the next save wrote that answer into the file.
+    // Two profiles quietly mixed, with nothing on screen to explain it.
+    //
+    // This is not hypothetical and it is not only about old files : MEASURED 2026-09-12, the SHIPPED
+    // assets/default_profile.txt carries 106 keys where the writer emits 130 (missing partyShow, allyShow,
+    // tgtShow, plrShow, hidePeekMode, iconpack, the whole Debuffs and EmpyPop blocks, mm5, distcol, the five
+    // zone-tracker row blocks...). So loading "Default" kept the user's current answer for all of those, and
+    // then re-saved it into Default.
+    SECTION("config : a profile load REPLACES, it does not overlay the previous one");
+    {
+        char dir[MAX_PATH];
+        plugin_path(dir, sizeof(dir), "data"); CreateDirectoryA(dir, NULL);
+        plugin_path(dir, sizeof(dir), "data\\profiles"); CreateDirectoryA(dir, NULL);
+        char pe[MAX_PATH], pp[MAX_PATH];
+        plugin_path(pe, sizeof(pe), "data\\profiles\\t_empty.txt");
+        plugin_path(pp, sizeof(pp), "data\\profiles\\t_partial.txt");
+        // The REFERENCE is measured through the production path, not asserted from the struct : loading a file
+        // that says nothing is by definition "what a load starts from" (the defaults, plus the once-per-file
+        // RDM preset load_config_from seeds -- which is why comparing against a bare UiConfig{} would be wrong
+        // here). Two files, identical but for ONE key, so the difference is that key and nothing else.
+        FILE* f = fopen(pe, "w"); if (f) { fputs("# nothing at all\n", f); fclose(f); }
+        f = fopen(pp, "w");       if (f) { fputs("# nothing but one setting\ntgtScale=1.4500\n", f); fclose(f); }
+        profile_refresh();
+
+        scribble(ui_config(), 4);                          // a config sharing no field with the defaults
+        CHECK(profile_load("t_empty"));
+        const UiConfig base = ui_config();                 // what a load starts from
+
+        scribble(ui_config(), 5);                          // dirty EVERY persisted field again, differently
+        CHECK(!ui_config_persist_eq(base, ui_config()));   // sanity : the scribble really did change something
+        CHECK(profile_load("t_partial"));
+
+        // Every field except the one key must be back at the base. A field the loader carried over from the
+        // scribble fails HERE -- and it fails for the WHOLE struct, not just for the handful a test remembered
+        // to name, which is the only way this stays true as fields are added.
+        UiConfig got = ui_config();
+        CHECK(got.tgtScale >= 1.449f && got.tgtScale <= 1.451f);   // the one key the file does carry
+        got.tgtScale = base.tgtScale;                              // ... neutralise it, everything else must match
+        got.lang = base.lang;   // `lang` is CARRIED on purpose, not reset -- the next section is what proves it
+        CHECK(ui_config_persist_eq(base, got));
+
+        profile_delete("t_empty");
+        profile_delete("t_partial");
+    }
+
+    // The two things a load must NOT reset, each for a reason (config_rules.h carries them) :
+    //   - lang : a profile written before the setting existed carries no lang= line, and resetting it leaves
+    //     the user reading a UI they may not understand, with the control to fix it in that same language.
+    //   - favColors : the personal swatch palette. It is written into every profile file but it is NOT part of
+    //     persist_eq -- the project already treats it as global -- so a load must not throw it away.
+    SECTION("config : a load keeps the language and the personal palette it was not given");
+    {
+        char p[MAX_PATH]; plugin_path(p, sizeof(p), "data\\profiles\\t_nolang.txt");
+        FILE* f = fopen(p, "w"); if (f) { fputs("tgtScale=1.2000\n", f); fclose(f); }   // no lang=, no favColors=
+        profile_refresh();
+        UiConfig& live = ui_config();
+        live.lang = 1;                                     // FR
+        live.favColorN = 2; live.favColors[0] = 0xFF112233u; live.favColors[1] = 0xFF445566u;
+        CHECK(profile_load("t_nolang"));
+        CHECK_EQ(ui_config().lang, 1);
+        CHECK_EQ(ui_config().favColorN, 2);
+        CHECK_EQ((long long)ui_config().favColors[1], (long long)0xFF445566u);
+        profile_delete("t_nolang");
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // "Reset all settings" was a hand-written list of ~300 assignments. It missed exactly one field -- scTP,
+    // appended to the sc2= line late -- and a hidden TP line therefore survived a full reset with nothing to
+    // explain why. The defect is not the field, it is the FORM : a list maintained by hand beside 300 fields
+    // will be wrong again at the next addition. This test is the invariant that makes the form safe.
+    SECTION("config : Reset all settings leaves no persisted field behind");
+    {
+        UiConfig& live = ui_config();
+        dirty_every_field(live);                           // all ~300 of them, not a hand-picked subset
+        live.lang = 1;                                     // deliberately NOT reset (see config_rules.h)
+        live.guideGroupCount = 2;                          // edit-mode zones : deliberately KEPT by a reset
+        live.guideGroup[0] = GuideGroup(); live.guideGroup[0].x = 0.11f; live.guideGroup[0].role = 7;
+        live.guideGroup[1] = GuideGroup(); live.guideGroup[1].y = 0.22f;
+        const GuideGroup keptZ0 = live.guideGroup[0];
+
+        reset_ui_config();
+
+        UiConfig want{};                                   // the defaults, plus the two documented exceptions
+        want.lang = 1;
+        want.guideGroupCount = 2; want.guideGroup[0] = keptZ0;
+        want.guideGroup[1] = GuideGroup(); want.guideGroup[1].y = 0.22f;
+        CHECK(ui_config_persist_eq(want, ui_config()));
+        CHECK_EQ(ui_config().lang, 1);                     // the language survived
+        CHECK_EQ(ui_config().guideGroupCount, 2);          // and so did the zones the user drew
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // THE VALUES. mmZoom was the 2026-07-26 S0 : 1e30 out of a hand-edited file printed 35 bytes into a
+    // char[16] and killed the client. It was clamped -- and it was ONE field of the hundred-odd the file
+    // carries, clamped only because it had already done the damage. config_sanitise is that defence for all
+    // of them, and being a pure function it can be asked directly instead of through a file.
+    SECTION("config : an absurd value never reaches a draw loop");
+    {
+        UiConfig c{};
+        float qnan; { const unsigned u = 0x7FC00000u; memcpy(&qnan, &u, sizeof(qnan)); }   // a quiet NaN
+        c.text[0][0].size = 0.0f;          // "my text disappeared", and no reset explains it
+        c.text[0][1].size = 1e30f;
+        c.text[1][0].outline = -4.0f;
+        c.tgtText[0].size = qnan;
+        c.tgtScale = 0.0f; c.tmScale = 1e30f; c.dbIconScale = -2.0f;
+        c.plrBarGap = -1.0f;               // a gap of 0 is legal, a negative one is not
+        c.tgtBoxAlpha = 5.0f; c.mmBgAlpha = qnan; c.scBox.alpha = -3.0f;
+        c.plrLum = -9.0f; c.tmBox.lum = 4.0f;
+        c.mmX = -3.0f; c.tmY = 7.5f; c.hlX = qnan;
+        c.tmMax = 99999; c.dbMax = -5; c.tpCount = 1000; c.buffMax = -1;
+        c.mmZoom = 1e30f; c.mmRingR = -20.0f;
+        c.partyRef[0] = -1.0f; c.partyBottomY = -1.0f; c.zonePanelX = -1.0f;   // -1 = "unset", not a bad value
+        config_sanitise(c);
+
+        CHECK(c.text[0][0].size >= 0.10f && c.text[0][0].size <= 4.0f);
+        CHECK(c.text[0][1].size <= 4.0f);
+        CHECK(c.text[1][0].outline >= 0.0f);
+        CHECK(c.tgtText[0].size == c.tgtText[0].size && c.tgtText[0].size >= 0.10f);   // a NaN fails the self-compare
+        CHECK(c.tgtScale >= 0.10f && c.tmScale <= 4.0f && c.dbIconScale >= 0.10f);
+        CHECK(c.plrBarGap >= 0.0f);
+        CHECK(c.tgtBoxAlpha <= 1.0f && c.scBox.alpha >= 0.0f);
+        CHECK(c.mmBgAlpha == c.mmBgAlpha);                                             // NaN -> the default, not the floor
+        CHECK(c.plrLum >= -1.0f && c.tmBox.lum <= 1.0f);
+        CHECK(c.mmX >= 0.0f && c.mmX <= 1.0f && c.tmY <= 1.0f && c.hlX == c.hlX);
+        CHECK(c.tmMax <= 50 && c.dbMax >= 0 && c.tpCount <= 10 && c.buffMax >= 0);
+        CHECK(c.mmZoom >= 1.0f && c.mmZoom <= 24.0f && c.mmRingR >= 0.0f);
+        // the unset sentinels are left exactly as they are : clamping them to [0,1] would turn every unset
+        // reference line into a real one pinned at the screen edge.
+        CHECK(c.partyRef[0] == -1.0f && c.partyBottomY == -1.0f && c.zonePanelX == -1.0f);
+    }
+
+    // The other half of a sanitiser, and the half that gets forgotten : it must never MOVE a value a user set.
+    // The Size slider is 0.50..2.00 today, so a bound of 0.50 would silently edit a 0.45 stored by some past
+    // build. These bounds are the ones no UI has ever been able to exceed, and this is the test that says so.
+    SECTION("config : the sanitiser is a no-op on anything the UI can produce");
+    {
+        UiConfig d{}, e{};
+        config_sanitise(e);
+        CHECK(ui_config_persist_eq(d, e));                 // the defaults themselves are untouched
+
+        UiConfig u{}; scribble(u, 2);                      // every field non-default, all within the UI ranges
+        UiConfig v = u;
+        config_sanitise(v);
+        CHECK(ui_config_persist_eq(u, v));
+
+        config_sanitise(v);                                // and it settles : sanitise(sanitise(x)) == sanitise(x)
+        CHECK(ui_config_persist_eq(u, v));
     }
 
     profile_delete("t_roundtrip");

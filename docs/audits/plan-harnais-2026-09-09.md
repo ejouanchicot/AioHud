@@ -50,7 +50,7 @@ Compté sur l'audit complet du 2026-08-06 (41 constats), par fichier incriminé.
 | 2 | Groupement AoE et éclatement en retard | `model/ally_group.h` | 20 | **fait** (23 cas, 10 mordent) -- verifie en jeu |
 | 3 | Modèle de durée d'un song / buff allié | `model/song_dur.h` | — | partiel (`t_durations`) -- **confirmé en jeu** (m1 potence, m2 Troubadour x2, a3 Marcato +20) |
 | 4 | Moniteur FOCUS : mute, oubli, 5e song, songs jumelles | `model/focus_rules.h` | 20 | **fait** (41 cas, 11 mordent) -- verifie en jeu, **6 defauts trouves** |
-| 5 | Aller-retour config et profils | `model/ui_config.cpp` | 14 | partiel (`t_config`) |
+| 5 | Aller-retour config et profils | `model/config_rules.h` | 14 | **fait** (28 cas, 10 mordent) -- verifie en jeu |
 | 6 | Attribution d'un buff à son lanceur | `model/cast_match.h` | 8 | **fait** (13 cas, 3 mordent) -- verifie en jeu |
 | 7 | Zone tracker : Limbus, Omen, Abyssea, Gaol | `model/party_state_zonetracker.cpp` | 5 | partiel (`t_limbus`, `t_omen`) |
 | 8 | Roster : ordre, trusts, hors-zone | `model/party_state_roster.cpp` | 3 | à faire |
@@ -173,3 +173,76 @@ tu es EXACTEMENT a la base. C'est desormais `== base`, ce qui rend une base sous
 Note utile pour la relecture : il n'existe **aucun** chemin qui credite retroactivement un membre arrive apres un
 cast -- les entrees ne naissent que de la liste de cibles du paquet d'action (`party_state.cpp:1330-1360`). Un
 membre qui porte une song la portait deja au moment ou elle a ete chantee.
+
+---
+
+## 7. Element 5 -- l'aller-retour config et profils (2026-09-12)
+
+La decision extraite dans **`src/model/config_rules.h`** (pure : ni fichier, ni device, ni memoire jeu), en deux
+fonctions. **28 cas ajoutes a `tests/t_config.cpp`, 10 mutations verifiees**, source mutee -> le test tombe,
+source restauree -> il passe.
+
+### Ce que l'element a corrige
+
+1. **Un chargement de profil SUPERPOSAIT au lieu de remplacer.** Une cle absente du fichier gardait la reponse du
+   profil precedent, et la sauvegarde suivante l'ecrivait dans le fichier -- deux profils melanges, sans rien
+   pour l'expliquer. **Mesure** : `assets/default_profile.txt` porte 106 cles la ou l'ecrivain en emet 130
+   (`partyShow`, `allyShow`, `iconpack`, tout le bloc Debuffs, `mm5`, les cinq blocs zone-tracker...). Charger
+   « Default » gardait donc le reglage courant pour toutes celles-la. Desormais : **un fichier de config EST une
+   config complete**, ce qu'il ne dit pas vaut le defaut.
+2. **Le parse construit un brouillon, valide en une seule affectation.** Un chargement qui n'aboutit pas laisse
+   la config vivante intacte au lieu d'un etat a moitie par defaut.
+3. **« Reset all settings » n'est plus une liste ecrite a la main.** C'etaient ~300 affectations, et le seul champ
+   qu'elle avait oublie (`scTP`) a suffi a laisser une ligne TP cachee survivre a une reinitialisation complete.
+   **Mesure avant echange** : les 137 litteraux de l'ancienne liste etaient *tous* identiques aux defauts de la
+   structure -- l'echange ne change donc rien de visible. Les deux exceptions volontaires sont conservees et
+   documentees : `lang` (jamais reinitialise) et les zones du mode edition (un trace de l'utilisateur).
+4. **La sanitisation couvre maintenant tous les champs numeriques**, pas 16 sur 101 : styles de texte
+   (`size`/`outline` n'etaient bornes nulle part), multiplicateurs, opacites, luminosites, positions, compteurs.
+   Les bornes sont **deliberement plus larges que les sliders** : un chargeur ne doit pas *deplacer* une valeur
+   qu'un build passe autorisait. Un test dit exactement cela (`sanitise(x) == x` sur tout ce que l'UI produit).
+5. **NaN.** `v < lo` et `v > hi` sont tous deux faux pour un NaN : le clamp min/max classique le laisse passer,
+   et `sscanf("%f")` lit « nan » depuis un fichier edite a la main. Il repart au **defaut** du champ, pas au
+   plancher -- un plancher d'opacite a 0, c'est une boite invisible.
+
+### Ce que le test a trouve des sa premiere execution
+
+**`char epTrack[32] = "briareus"` perdait sa valeur.** MESURE sur cette chaine d'outils (MSVC, `/std:c++17`) :
+un initialiseur de membre par defaut sur un **tableau de char** est applique a un objet **local** et **abandonne**
+sur un objet de duree de stockage **statique**. `static const UiConfig d{}` sortait avec `epTrack = ""` alors que
+tous les autres defauts etaient justes. L'ancien `reset_ui_config` construisait sa reference exactement comme ca :
+**« Reset all settings » effacait le NM suivi au lieu de le remettre a son defaut**, depuis toujours. Ecrit sous
+forme de liste d'elements (`{ 'b','r',... }`), il survit aux deux. La mutation M9 remet le litteral et le test
+tombe.
+
+### Le piege de methode, a garder
+
+La premiere version de l'invariant de reset se servait de `scribble` (ecrit a la main) pour salir la config.
+**La mutation M4 -- un reset qui garde volontairement UN champ -- passait.** Normal : `scribble` ne couvre que
+les champs auxquels quelqu'un a pense, et le champ que la production avait reellement oublie (`scTP`) etait
+justement un de ceux-la. Un invariant bati sur un echantillon ecrit a la main est aveugle exactement la ou le
+defaut vit. Corrige par `dirty_every_field()` : on remplit **toute** la structure d'un motif d'octets et on ne
+repare que ce qui doit rester structurellement legal pour que `persist_eq` puisse la parcourir (les compteurs
+qui bornent ses boucles, les deux chaines qu'elle compare). Ce qui reste intouche garde son 0x5A et tombe,
+quel que soit son nom.
+
+### Le seul changement de comportement a annoncer
+
+Au demarrage, `load_ui_config()` charge `config.txt` **puis** re-applique le profil actif. Avec le remplacement,
+le profil actif gagne en entier : un reglage change dans l'UI mais **jamais sauve dans le profil** repart au
+defaut au prochain lancement, au lieu de survivre. L'ancien comportement ne le preservait de toute facon que
+pour les cles que le profil ne portait pas encore -- c'est-a-dire un sous-ensemble arbitraire et inexplicable.
+A dire dans les notes de release.
+
+### Verifie en jeu (2026-09-12)
+
+Changement de profil dans les deux sens, « Reset all settings », et une relecture des panneaux : aucun ecart.
+
+Mesure faite sur les profils REELS de la machine de dev avant le test, parce que le remplacement les concerne :
+quatre profils portent la totalite des cles, quatre en manquent deux (`buffOrder`, `buffGroupOff`) et
+`Tetsouo THF-WAR` en manque quinze (tout le bloc Debuffs, `distcol`, `mm5`, `plreqbox`, `ztaby`...). Ceux-la
+repartent donc au defaut pour ces reglages au lieu d'heriter du profil precedent -- c'est le correctif, et le
+remede tient en une action : charger le profil puis « Save changes » une fois, il se reecrit complet.
+
+### Reste du a l'element 5 Les entiers de **mode / theme / variante** (~60 champs) restent hors du sanitiseur, volontairement :
+chacun demande la lecture de son panneau pour etre borne honnetement, et ils sont gardes a leur site de dessin.

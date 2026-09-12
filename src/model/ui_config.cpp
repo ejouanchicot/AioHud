@@ -1,5 +1,6 @@
 // ui_config.cpp -- see ui_config.h.
 #include "model/ui_config.h"
+#include "model/config_rules.h"   // config_defaults / config_sanitise : the two PURE decisions of this file (tests/t_config.cpp)
 #include "retry_clock.h"   // retry_due / retry_arm : the 0-sentinel-safe "try again later" (see the header for the 24.8 d trap)
 #include "model/paths.h"
 #include "model/job_track_gen.h"
@@ -594,16 +595,25 @@ static bool parse_mm_line(const char* line, UiConfig& c) {
     return false;
 }
 
+// A config FILE IS A COMPLETE CONFIG : what it does not say is the DEFAULT, not "whatever was loaded before".
+// This used to overlay -- the four dynamic lists below were cleared by hand and everything else kept its
+// current value -- so loading a profile that predates a setting (or the shipped Default, which carries 106 of
+// the 130 keys the writer emits) silently kept the PREVIOUS profile's answer for the rest, and the next save
+// wrote it into the file. Two profiles quietly mixed, with nothing to explain it. config_defaults() is now
+// the one list, and it is structural instead of hand-maintained.
+//
+// And the parse builds a SCRATCH config, committed in one assignment at the end : a load that cannot be
+// finished leaves the live config exactly as it was, instead of a half-default one. (Single-threaded by
+// construction -- every //aio command is queued onto the main thread, see aiohud.cpp's command hand-off --
+// so one static scratch is enough and no reentrancy is possible.)
+static UiConfig g_loadScratch;
+
 static bool load_config_from(const char* path) {
     CNumLoc _cnl;   // dot decimals regardless of the OS locale
     FILE* f = fopen(path, "r"); if (!f) return false;
-    UiConfig& c = ui_config();
-    c.guideGroupCount = 0;   // dynamic list -> rebuilt from the file (a full-config load)
-    for (int j = 1; j <= 23; ++j) c.tmTrackOffN[j] = 0;   // per-job track blacklists are REBUILT from the file : a job with no tmTrkOff line
-    c.tmBuffOffN = 0;                                     // job-agnostic buff-family filter : rebuilt from the file too
-    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) c.buffPinN[g] = 0;   // party buff-strip in-group order : REBUILT from the file. A group with no buffPin line means "built-in order" -> it must not inherit the previous config's prefix (same trap as the per-job track lists above).
-                                                          //   means "track everything" -> must not inherit the previous config's keys (else a profile that cleared a job stays stale + re-saves polluted).
-    c.tmPreset = 0;          // reflect THIS file's value (fields overlay ; reset so an un-seeded file re-seeds even if a prior config was seeded)
+    UiConfig& c = g_loadScratch;
+    c = ui_config();                        // keep the live values the base does not reset (lang, the palette)
+    config_defaults(c, /*keepZones=*/false);   // zones are written as `zone=` lines -> the file rebuilds them
     static char line[8192];  // BIG : a "tmTrkOff<job>=" line can hold up to TM_TRACK_MAX (512) comma-separated keys ~= 3 KB.
                              // A small buffer truncated it mid-line, so most tracked-spell keys were dropped on reload.
     while (fgets(line, sizeof(line), f)) {
@@ -806,36 +816,13 @@ static bool load_config_from(const char* path) {
         }
     }
     fclose(f);
-    // sanitise numeric loads : a hand-edited / corrupt file must never feed out-of-range multipliers or
-    // counts into the draw loops (the config UI already enforces these ranges ; this is pure defense).
-    #define CLF(x, lo, hi) do { if (x < (lo)) x = (lo); else if (x > (hi)) x = (hi); } while (0)
-    CLF(c.buffScale, 0.10f, 4.0f); CLF(c.cursorScale, 0.10f, 4.0f);
-    // mmZoom was the ONLY float reaching a raw sprintf into a short buffer (minimap_config.cpp) -- a value of
-    // 1e30 from a hand-edited file printed 35 bytes into char[16] and killed the client. The print is bounded
-    // now, but clamp at the SOURCE too : the widget only ever clamped into a local, so an absurd value survived
-    // every load and was re-serialised by every save. Same range the config UI enforces.
-    CLF(c.mmZoom, 1.0f, 24.0f);
-    if (c.buffMax < 0) c.buffMax = 0; else if (c.buffMax > 32) c.buffMax = 32;   // 0 = no party/alliance buffs
-    if (c.buffRows < 1) c.buffRows = 1; else if (c.buffRows > 2) c.buffRows = 2;
     repair_buff_order(c);   // a corrupt / short / outdated buffOrder line must never leave a group undrawn
-    if (c.tmFocusWarn < 10) c.tmFocusWarn = 10; else if (c.tmFocusWarn > 300) c.tmFocusWarn = 300;
-    if (c.tmFocusHold < 5)  c.tmFocusHold = 5;  else if (c.tmFocusHold > 300) c.tmFocusHold = 300;
-    if (c.uiStyle < 0) c.uiStyle = 0; else if (c.uiStyle > 15) c.uiStyle = 15;
-    if (c.uiColor < 0) c.uiColor = 0; else if (c.uiColor > 35) c.uiColor = 35;   // 12 hues x 3 lightness rows = 36 swatches (0..35)
-    CLF(c.skinLum, -1.0f, 1.0f);
-    CLF(c.skinBoxAlpha, 0.0f, 1.0f);
-    for (int k = 0; k < 3; ++k) {
-        CLF(c.barHeight[k], 0.10f, 4.0f); CLF(c.barWidth[k], 0.10f, 4.0f); CLF(c.badgeScale[k], 0.10f, 4.0f);
-        // box[].scale belongs here too. The box line sanitises x and y right where it is parsed ("a corrupt
-        // position must never brick the box off-screen") and then assigns scale untouched -- so a 0 from a
-        // truncated or hand-edited file multiplies the whole box to nothing, and only the Party box (index 0)
-        // has a floor at the draw site. Same range the edit-mode wheel and the Size slider already enforce.
-        CLF(c.box[k].scale, 0.50f, 2.0f);
-        if (c.gaugeStyle[k] < 0 || c.gaugeStyle[k] > 7) c.gaugeStyle[k] = 0;
-        if (c.jobBadge[k]   < 0 || c.jobBadge[k]   > 3) c.jobBadge[k]   = 2;
-    }
-    #undef CLF
+    // Every numeric bound now lives in ONE pure place (model/config_rules.h), covered by tests/t_config.cpp.
+    // It used to be sixteen fields clamped here out of the hundred-odd the file carries -- the mmZoom S0 was
+    // one of the sixteen only because it had already killed a client.
+    config_sanitise(c);
     if (c.tmPreset < 1) { apply_rdm_uff_preset(c); c.tmPreset = 1; }   // seed the RDM default once per file
+    ui_config() = c;        // COMMIT, in one assignment : nothing ever observes a half-read config
     return true;
 }
 
@@ -1317,74 +1304,18 @@ void guide_push_out(int perm, float sw, float sh, float& ex, float& ey, float ew
 
 void reset_ui_config() {   // general Default : everything
     UiConfig& c = ui_config();
-    c.partyShow = 1; c.allyShow = 1; c.tgtShow = 1; c.plrShow = 1;
-    c.skinTheme = 0; c.skinLum = 0.0f; c.skinHue = 0; c.skinBoxAlpha = 1.0f; c.fontFace = 0; c.buffScale = 0.92f; c.buffMax = 20; c.buffRows = 2; c.uiStyle = 0; c.uiColor = 0; c.uiAccent = 0; c.hidePeekMode = 0; c.cursorScale = 1.0f;
-    c.allyThemeCopy = 1; c.allyTheme = 0; c.allyLum = 0.0f; c.allyHue = 0; c.allyBoxAlpha = 1.0f;
-    for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = (unsigned char)i;   // buff groups back to their declared order
-    c.buffGroupOff = 0;                                                                  // ... and all of them visible
-    for (int i = 0; i < 80; ++i) c.buffStatusOff[i] = 0;                                 // ... and no individual buff hidden either
-    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) c.buffPinN[g] = 0;                  // ... and back to the built-in order inside each group
-    for (int k = 0; k < 3; ++k) { c.barHeight[k] = 1.0f; c.barWidth[k] = 1.0f; c.badgeScale[k] = 1.0f; c.gaugeStyle[k] = 0; c.jobBadge[k] = 2; c.cast[k] = true; }
-    c.dist[0] = c.dist[1] = c.dist[2] = true;
-    c.distColClose = 0xFF8FC6FF; c.distColNormal = 0xFFE7C95A; c.distColFar = 0xFFE76C6C;   // distance-zone colours back to defaults
-    c.border[0] = c.border[1] = c.border[2] = c.borderCost = true;   // all borders back on
-    c.animHP = c.animTP = true;
-    for (int g = 0; g < 2; ++g) for (int k = 0; k < TE_COUNT; ++k) c.text[g][k] = TextStyle();   // typography back to defaults
-    // Target module back to defaults (theme / sizes / typography / placement)
-    c.tgtBox = 1; c.tgtBoxAlpha = 1.0f; c.tgtThemeCopy = 0; c.tgtTheme = 0; c.tgtLum = 0.0f; c.tgtHue = 0; c.tgtScale = 1.0f; c.tgtNameHostile = 1; c.tgtSpeed = 1; c.tgtSpeedIcon = 0; c.tgtTH = 1; c.tgtThIcon = 0; c.tgtRange = 1; c.tgtCast = 1; c.tgtCastDemo = 0; c.tgtSub = 1; c.tgtDebuffs = 1; c.tgtBuffMax = 20; c.tgtBuffPos = 0; c.tgtTimers = 1;
-    c.tgtBarH = 1.0f; c.tgtBarW = 1.0f; c.tgtIconSz = 1.0f; c.tgtDetailIconSz = 1.6f; c.tgtRangeH = 1.0f; c.tgtRangeMin = 0;
-    c.tgtPosSet = false; c.tgtX = 0.0f; c.tgtY = 0.0f; c.tgtCenterH = 0; c.tgtCenterV = 0;
-    for (int k = 0; k < TGT_TE_COUNT; ++k) c.tgtText[k] = TextStyle();
-    // Player Hub module back to defaults
-    c.plrBox = 1; c.plrBoxAlpha = 1.0f; c.plrThemeCopy = 1; c.plrTheme = 0; c.plrLum = 0.0f; c.plrHue = 0; c.plrScale = 1.0f; c.plrEmblem = 1; c.plrName = 1; c.plrLvl = 1; c.plrHp = 1; c.plrMp = 1; c.plrTp = 1; c.plrGil = 1; c.plrSpeed = 1; c.plrCast = 1; c.plrCastDemo = 0; c.plrEquip = 1; c.plrEqCell = 1.0f; c.plrEqThemeBorder = 1; c.plrEqColor = 0xFF6699BBu; c.plrEqPlace = 0; c.plrEqCellBgCustom = 0; c.plrEqCellBg = 0xE0121620u; c.plrEquipDetach = 0; c.plrEquipPosSet = false; c.plrEquipX = 0.0f; c.plrEquipY = 0.0f; c.plrEquipScale = 1.0f; c.plrEqGilPlace = 0; c.mmShow = 1; c.mmPosSet = false; c.mmX = 0.0f; c.mmY = 0.0f; c.mmScale = 1.0f; c.mmZoom = 2.0f; c.mmShape = 0; c.mmFrame = 1; c.mmFrameColor = 0xFF6699BBu; c.mmBgAlpha = 0.0f; c.mmMarkerScale = 1.0f; c.mmPC = 1; c.mmNPC = 1; c.mmMob = 1; c.mmTgtLine = 1; c.mmTgtLineCol = 0xFFFF6A6Au; c.mmRing = 0; c.mmRingR = 20.0f; c.mmRingCol = 0xFF66E0FFu; c.mmClock = 1; c.mmClkTime = 1; c.mmClkDay = 1; c.mmClkMoon = 1; c.mmClkReal = 1; c.mmMapSize = 1.0f; c.mmBezelW = 1.0f; c.mmCardSz = 1.0f; c.mmBezel = 1; c.mmSqBorder = 1.0f; c.wsShow = 1; c.wsScale = 1.0f; c.wsX = 0.5f; c.wsY = 0.36f; c.wsFont = 0; c.wsFx = 1; c.wsNameCol = 0xFFFFA518u; c.wsDmgCol1 = 0xFFFFF024u; c.wsDmgCol2 = 0xFFFF5A0Au; c.scShow = 1; c.scScale = 1.0f; c.scX = 0.78f; c.scY = 0.06f; c.scTitle = 1; c.scTimer = 1; c.scStep = 1; c.scProps = 1; c.scList = 1; c.scListGap = 1.0f; for (int k = 0; k < SC_TE_COUNT; ++k) c.scText[k] = TextStyle(); c.tpShow = 1; c.tpScale = 1.0f; c.tpX = 0.72f; c.tpY = 0.30f; c.tpCount = 10; c.tpIcon = 1; for (int k = 0; k < TP_TE_COUNT; ++k) c.tpText[k] = TextStyle(); c.plrBuffs = 1; c.plrBuffMax = 24; c.plrBarH = 1.0f; c.plrBarW = 1.0f; c.plrIconSz = 1.0f;
-    c.plrBarGap = 1.0f; c.plrEmblemSz = 1.0f; c.plrPosSet = false; c.plrX = 0.0f; c.plrY = 0.0f; c.plrCenterH = 0; c.plrCenterV = 0;
-    for (int k = 0; k < PLR_TE_COUNT; ++k) c.plrText[k] = TextStyle();
-    for (int k = 0; k < MM_TE_COUNT; ++k) c.mmText[k] = TextStyle();
-    // Modules that were MISSING from the reset above -> restore from fresh defaults so "Reset all" truly resets every
-    // profile field : Hate List / PointWatch / Grimoire / Zone Tracker, the per-module box appearances, and stragglers.
-    static const UiConfig d{};   // default-constructed once ; source of every default value below ({} : newer MSVC needs a const object value-initialised)
-    c.hlShow = d.hlShow; c.hlScale = d.hlScale; c.hlX = d.hlX; c.hlY = d.hlY; c.hlCount = d.hlCount; c.hlDist = d.hlDist; c.hlTgt = d.hlTgt;
-    c.pwShow = d.pwShow; c.pwScale = d.pwScale; c.pwX = d.pwX; c.pwY = d.pwY; c.pwMode = d.pwMode; c.pwLayout = d.pwLayout; c.pwDisplay = d.pwDisplay; c.pwRate = d.pwRate;
-    c.grimShow = d.grimShow; c.grimScale = d.grimScale; c.grimX = d.grimX; c.grimY = d.grimY; c.grimArt = d.grimArt;
-    c.ztShow = d.ztShow; c.ztScale = d.ztScale; c.ztX = d.ztX; c.ztY = d.ztY; c.ztVariant = d.ztVariant; c.ztHeader = d.ztHeader; c.ztSheolSeg = d.ztSheolSeg; c.ztSheolRes = d.ztSheolRes; c.ztSheolJoke = d.ztSheolJoke;
-    c.ztLbFloor = d.ztLbFloor; c.ztLbCur = d.ztLbCur; c.ztLbRun = d.ztLbRun; c.ztLbChips = d.ztLbChips;
-    c.ztLbName = d.ztLbName; c.ztLbBarW = d.ztLbBarW; c.ztLbBarH = d.ztLbBarH;
-    c.ztDyTimer = d.ztDyTimer; c.ztDyKi = d.ztDyKi; c.ztDyBarW = d.ztDyBarW; c.ztDyBarH = d.ztDyBarH; c.ztDyDot = d.ztDyDot;
-    c.ztAbTimer = d.ztAbTimer; c.ztAbLights = d.ztAbLights; c.ztAbBarW = d.ztAbBarW; c.ztAbBarH = d.ztAbBarH; c.ztAbLightW = d.ztAbLightW; c.ztAbLightH = d.ztAbLightH;
-    c.ztOmObj = d.ztOmObj; c.ztOmCount = d.ztOmCount; c.ztOmRows = d.ztOmRows;
-    c.ztNyFloor = d.ztNyFloor; c.ztNyTime = d.ztNyTime; c.ztNyObj = d.ztNyObj; c.ztNyRestr = d.ztNyRestr; c.ztNyComp = d.ztNyComp; c.ztNyRate = d.ztNyRate; c.ztNyTok = d.ztNyTok;
-    c.ztShFam = d.ztShFam; c.ztShIcon = d.ztShIcon; c.ztShDot = d.ztShDot;
-    // TIMERS -- the whole module was missing from this reset : "Reset all" left the box position, scale, fused
-    // mode, typography AND the per-job tracking blacklist standing. That last one is the painful part : a job
-    // preset can hold ~200 keys, so a user resetting to escape a bad tracking config could not.
-    c.tmShow = d.tmShow; c.tmScale = d.tmScale; c.tmX = d.tmX; c.tmY = d.tmY; c.tmMax = d.tmMax; c.tmTitle = d.tmTitle;
-    c.tmSortDur = d.tmSortDur; c.tmSortRec = d.tmSortRec;
-    c.tmMerged = d.tmMerged; c.tmRX = d.tmRX; c.tmRY = d.tmRY; c.tmDurMode = d.tmDurMode; c.tmRecMode = d.tmRecMode;
-    c.tmIconScale = d.tmIconScale; c.tmRowGap = d.tmRowGap; c.tmOthers = d.tmOthers; c.tmBuffSrc = d.tmBuffSrc;
-    c.tmSpAlert = d.tmSpAlert; c.tmMine = d.tmMine;
-    c.tmFocusWarn = d.tmFocusWarn; c.tmFocusHold = d.tmFocusHold; c.tmPreset = d.tmPreset; c.tmBox = d.tmBox;
-    for (int k = 0; k < TM_TE_COUNT; ++k) c.tmText[k] = TextStyle();
-    for (int j = 0; j < 24; ++j) c.tmTrackOffN[j] = 0;   // clearing the COUNT empties each job's blacklist
-    c.tmBuffOffN = 0;                                     // and the job-agnostic buff-family filter
-    // Stragglers : the draggable Zones-panel corner. `lang` is deliberately NOT reset -- a language reset would
-    // leave the user reading a UI they may not understand, with the setting to fix it also in that language.
-    c.zonePanelX = d.zonePanelX; c.zonePanelY = d.zonePanelY;
-    c.epShow = d.epShow; c.epScale = d.epScale; c.epX = d.epX; c.epY = d.epY; c.epColl = d.epColl;
-    lstrcpynA(c.epTrack, d.epTrack, sizeof(c.epTrack));   // char[] : copy the CONTENT (plain '=' won't compile)
-    lstrcpynA(c.iconPack, d.iconPack, sizeof(c.iconPack));   // back to "" = Auto (the built-in precedence)
-    c.scBox = d.scBox; c.tpBox = d.tpBox; c.hlBox = d.hlBox; c.pwBox = d.pwBox; c.ztBox = d.ztBox; c.mmBox = d.mmBox; c.epBox = d.epBox; c.dbBox = d.dbBox; c.plrEqBox = d.plrEqBox;
-    c.dbShow = d.dbShow; c.dbScale = d.dbScale; c.dbX = d.dbX; c.dbY = d.dbY; c.dbMax = d.dbMax; c.dbHeader = d.dbHeader; c.dbDisp = d.dbDisp; c.dbIconScale = d.dbIconScale; c.dbRowGap = d.dbRowGap;
-    c.tgtSubPos = d.tgtSubPos; c.mmClockPos = d.mmClockPos; c.scNearby = d.scNearby;
-    c.scTP = d.scTP;   // was MISSING : the only field of 302 that "Reset all settings" left alone, so a hidden
-                       // TP line stayed hidden through a full reset with nothing to explain why (it was appended
-                       // to the sc2= line late, and this function did not follow).
-    for (int k = 0; k < HL_TE_COUNT; ++k)   c.hlText[k]   = TextStyle();
-    for (int k = 0; k < PW_TE_COUNT; ++k)   c.pwText[k]   = TextStyle();
-    for (int k = 0; k < GRIM_TE_COUNT; ++k) c.grimText[k] = TextStyle();
-    for (int k = 0; k < ZT_TE_COUNT; ++k)   c.ztText[k]   = TextStyle();
-    for (int k = 0; k < EP_TE_COUNT; ++k)   c.epText[k]   = TextStyle();
-    for (int k = 0; k < DB_TE_COUNT; ++k)   c.dbText[k]   = TextStyle();
-    reset_boxes();   // (also saves)
+    // This was a hand-written list of ~300 assignments, and the only field it ever missed -- scTP, appended to
+    // the sc2= line late -- stayed hidden through a full "Reset all settings" with nothing to explain why. A
+    // list that has to be edited every time a field is added is a list that will be wrong again, so the reset
+    // IS the defaults now : one assignment, structurally complete, and tests/t_config.cpp holds it to
+    // persist_eq so a new field cannot slip out of it.
+    // MEASURED before the swap (2026-09-12) : all 137 literals the old list wrote were value-identical to the
+    // struct's own in-class defaults, so nothing the user can see changed. The two exceptions it made on
+    // purpose are made by config_defaults() for the same reasons -- `lang` (a language reset would leave the
+    // user reading a UI they cannot read, with the control to fix it in that language) and the edit-mode zones
+    // (a layout the user DREW ; its own Default lives in edit mode).
+    config_defaults(c, /*keepZones=*/true);
+    reset_boxes();   // (also saves, and re-baselines the scales)
 }
 
 // index 0 = Default (keep the layout face). The rest are common, readable Windows GDI faces (a face that
