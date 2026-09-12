@@ -34,14 +34,20 @@ namespace aio {
 //   - `favColors` : the personal swatch palette, shared by every colour picker. It is written into each
 //     profile file but it is NOT part of persist_eq -- i.e. the project already treats it as global, not as
 //     something a profile owns. Wiping it on a load would throw away work no profile claims.
+//   - `selfTest` : whether the in-game watchers are armed. A session/machine flag, not an appearance a
+//     profile owns -- `//aio selftest on` must survive a relaunch, which is the whole promise written at its
+//     writer ("a harness you must re-arm is one you forget to arm"). It is deliberately NOT added to
+//     persist_eq instead: that would make the profile show "unsaved changes" every time a watcher is armed.
+//     (Both holes found by the config audit of 2026-09-12 -- the favColors test, applied to its peers.)
 //   - the edit-mode zones, when `keepZones` : "Reset all settings" has never cleared them (measured -- they
 //     are the only persisted field the old hand-written reset left standing on purpose), because they are a
 //     layout the user DREW and their own Default button lives in edit mode. A profile load does clear them:
 //     zones are written to profile files as `zone=` lines and have always been rebuilt from the file.
 inline void config_defaults(UiConfig& c, bool keepZones) {
-    static const UiConfig DEF{};   // value-initialised ({} matters : tmTrackOff / tmBuffOff / guideGroup have
+    static const UiConfig DEF{};   // value-initialised ({} matters : tmBuffOff / guideGroup have
                                    // no in-class initialiser, so a plain `UiConfig d;` would copy garbage)
     const int lang = c.lang;
+    const int selfTest = c.selfTest;
     const int favN = (c.favColorN < 0) ? 0 : (c.favColorN > UiConfig::FAV_COLOR_MAX ? UiConfig::FAV_COLOR_MAX : c.favColorN);
     unsigned fav[UiConfig::FAV_COLOR_MAX];
     for (int i = 0; i < favN; ++i) fav[i] = c.favColors[i];
@@ -53,6 +59,7 @@ inline void config_defaults(UiConfig& c, bool keepZones) {
     c = DEF;
 
     c.lang = lang;
+    c.selfTest = selfTest;
     c.favColorN = favN;
     for (int i = 0; i < favN; ++i) c.favColors[i] = fav[i];
     c.guideGroupCount = zn;

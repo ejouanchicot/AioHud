@@ -708,6 +708,26 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     if (profile_dirty())
         windower::debug::log("  note     : the live config differs from the saved profile (unsaved changes)");
 
+    // ---- the PASSIVE registry. Everything above is a check doctor performs itself ; these are the checks the
+    // modules registered with selftest_add() -- the RVA sweeps, the saturated tables, the oscillating decisions,
+    // the silent zone msgid. They were built to run on their own every 30 s, and MEASURED on 2026-09-12 they ran
+    // for nobody: the periodic watcher is opt-in (`selfTest` defaults to 0) and doctor -- the one command a
+    // tester is told to type -- never consulted the registry at all. So it does now, unconditionally, because a
+    // diagnostic you have to arm before the bug arrives is a diagnostic you do not have.
+    {
+        CheckFail hits[SELFTEST_FAILS_MAX];
+        const int nh = selftest_run_now(hits, SELFTEST_FAILS_MAX);
+        windower::debug::log("  registry : %d module(s) checked, %d finding(s), periodic watcher %s",
+                             selftest_module_count(), nh, selftest_armed() ? "ARMED" : "off");
+        for (int i = 0; i < nh; ++i) {
+            windower::debug::log("  %s : %s", hits[i].id, hits[i].detail);
+            if (hits[i].sev == CHK_BLOCK) DOC("%s : %s", hits[i].id, hits[i].detail);   // a blocker belongs in the chat summary
+        }
+        if (nh > 0 && !selftest_armed())
+            windower::debug::log("  note     : those findings were only seen because you typed doctor. "
+                                 "`//aio selftest on` makes the same checks run every 30 s and write a report.");
+    }
+
     windower::debug::log("=== AIO DOCTOR : %d problem(s) ===", n);
     #undef DOC
     return n;

@@ -132,8 +132,7 @@ static void dirty_every_field(UiConfig& c) {
     memset(&c, 0x5A, sizeof(c));
     for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = (unsigned char)i;
     for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) c.buffPinN[g] = 3;            // <= BUFF_PIN_MAX
-    for (int j = 0; j < 24; ++j) c.tmTrackOffN[j] = 4;                             // <= TM_TRACK_MAX
-    c.tmBuffOffN = 4;
+    c.tmBuffOffN = 4;                                                              // <= TM_TRACK_MAX
     c.favColorN = 2;                                                               // (not part of persist_eq)
     c.guideGroupCount = 2;
     for (int i = 0; i < c.guideGroupCount; ++i) c.guideGroup[i].name[19] = 0;
@@ -270,9 +269,10 @@ void test_config() {
         plugin_path(pe, sizeof(pe), "data\\profiles\\t_empty.txt");
         plugin_path(pp, sizeof(pp), "data\\profiles\\t_partial.txt");
         // The REFERENCE is measured through the production path, not asserted from the struct : loading a file
-        // that says nothing is by definition "what a load starts from" (the defaults, plus the once-per-file
-        // RDM preset load_config_from seeds -- which is why comparing against a bare UiConfig{} would be wrong
-        // here). Two files, identical but for ONE key, so the difference is that key and nothing else.
+        // that says nothing IS "what a load starts from", whatever that happens to include. (It used to include
+        // a once-per-file RDM preset ; that preset seeded a table with no readers and was retired 2026-09-12.
+        // Measuring it instead of asserting it is why this test did not have to change with it.)
+        // Two files, identical but for ONE key, so the difference is that key and nothing else.
         FILE* f = fopen(pe, "w"); if (f) { fputs("# nothing at all\n", f); fclose(f); }
         f = fopen(pp, "w");       if (f) { fputs("# nothing but one setting\ntgtScale=1.4500\n", f); fclose(f); }
         profile_refresh();
@@ -400,6 +400,90 @@ void test_config() {
 
         config_sanitise(v);                                // and it settles : sanitise(sanitise(x)) == sanitise(x)
         CHECK(ui_config_persist_eq(u, v));
+    }
+
+
+    // A RETIRED KEY MUST NOT SHADOW A LIVE ONE. Two keys were retired from the config : `tmAllyGroup=` (v1.0.87,
+    // a setting whose every enabled state drew a false row) and `tmTrkOff<job>=` + `tmPreset=` (2026-09-12, the
+    // per-job Timers filter -- measured to have no reader in the program, and a seeding preset that wrote into
+    // it, i.e. into nothing). Every profile on disk still carries them, so the loader swallows them.
+    //
+    // The danger of retiring a key is not the key : it is the PREFIX. `mm3=` once collided with another `mm3=`
+    // and a whole block of minimap settings silently stopped loading -- the scar this file exists for. A
+    // swallow written one character too greedy does exactly that, and the only way to see it is to put a LIVE
+    // key behind the retired ones and check it still arrives.
+    SECTION("config : an old profile's retired keys are swallowed, and shadow nothing");
+    {
+        char p[MAX_PATH]; plugin_path(p, sizeof(p), "data\\profiles\\t_retired.txt");
+        FILE* f = fopen(p, "w");
+        if (f) { fputs("tmPreset=1\n"
+                       "tmTrkOff5=33,43,116,581,1069,1070\n"      // the RDM list a real profile carries
+                       "tmTrkOff20=104,105,106\n"
+                       "tmAllyGroup=1\n"
+                       "tmBuffOff=57,109,1057\n"                   // LIVE : the job-agnostic filter, same prefix
+                       "tmText0=2,1.1500,0.2000,3,FF00FF00\n"     // LIVE : a tm* key BEHIND the retired ones
+                       "tmbox=1,0.5000,0,2,0.1000,FF334455\n"      // LIVE : the LAST tm* key in the chain
+                       "tgtScale=1.3000\n", f); fclose(f); }
+        profile_refresh();
+        CHECK(profile_load("t_retired"));
+        const UiConfig& c = ui_config();
+        CHECK_EQ(c.tmBuffOffN, 3);                                 // the live filter loaded ...
+        CHECK(c.tm_buff_off(57) && c.tm_buff_off(109));            // ... with its real keys
+        CHECK_EQ(c.tmText[0].face, 2);                             // and the live tm* key behind them all
+        CHECK(c.tmText[0].size >= 1.149f && c.tmText[0].size <= 1.151f);
+        CHECK_EQ(c.tmBox.theme, 2);                                // ... including the one parsed LAST
+        CHECK(c.tmBox.alpha >= 0.499f && c.tmBox.alpha <= 0.501f);
+        CHECK(c.tgtScale >= 1.299f && c.tgtScale <= 1.301f);
+        profile_delete("t_retired");
+    }
+
+
+    // ------------------------------------------------------------------------------------------------------
+    // THE ORACLE ABOVE IS persist_eq, AND persist_eq IS HAND-MAINTAINED. Every check in this file that
+    // compares two configs is therefore blind to exactly one thing: a field the writer WRITES and persist_eq
+    // FORGETS. That is not a theoretical hole -- the config audit of 2026-09-12 found four of them
+    // (`iconPack`, `selfTest`, `tmSortDur`, `tmSortRec`), and one was an S1: the icon sheet went back to the
+    // default at every relaunch because the "unsaved changes" dot could never light for it, so the profile
+    // never got the key, so the replacing load reset it and the startup re-save destroyed the choice on disk.
+    //
+    // So this section uses a DIFFERENT oracle: the BYTES. Two configs that both came off the same file must be
+    // byte-identical, whatever persist_eq happens to know about. It is a fixed-point comparison (both sides
+    // have been through a load), so a field that is not persisted at all sits at its default on both sides and
+    // does not fire; what fires is a field that survives one trip and not the next.
+    SECTION("config : the round-trip is byte-identical, not merely persist_eq-identical");
+    {
+        char p[MAX_PATH]; plugin_path(p, sizeof(p), "data\\profiles\\t_bytes.txt");
+        (void)p;
+        scribble(ui_config(), 9);
+        CHECK(profile_save("t_bytes"));
+        CHECK(profile_load("t_bytes"));
+        const UiConfig a = ui_config();      // normalised by one trip through the file
+        scribble(ui_config(), 10);           // dirty everything again, differently
+        CHECK(profile_load("t_bytes"));
+        const UiConfig b = ui_config();
+
+        // TRANSIENTS are not persisted and must be excluded by NAME, one line each, so that adding a field to
+        // this list is a decision someone has to write down rather than a silent exemption.
+        UiConfig na = a, nb = b;
+        na.wheel = nb.wheel = 0;                       // per-frame mouse wheel delta
+        na.editLayout = nb.editLayout = 0;             // edit mode is a live toggle, not a saved setting
+        na.mmHitX = nb.mmHitX = 0.0f; na.mmHitY = nb.mmHitY = 0.0f;   // the minimap's live hit rect
+        na.mmHitW = nb.mmHitW = 0.0f; na.mmHitH = nb.mmHitH = 0.0f;
+
+        const unsigned char* pa = (const unsigned char*)&na;
+        const unsigned char* pb = (const unsigned char*)&nb;
+        int firstDiff = -1;
+        for (size_t i = 0; i < sizeof(UiConfig); ++i) if (pa[i] != pb[i]) { firstDiff = (int)i; break; }
+        CHECK_EQ(firstDiff, -1);
+        if (firstDiff >= 0) {
+            // The offset is enough to act on : map it with offsetof in a scratch program (that is how the
+            // 2026-09-12 epTrack defect was located in five minutes), or read the window below.
+            printf("   first differing byte at offset %d of %d\n", firstDiff, (int)sizeof(UiConfig));
+            printf("   a:"); for (int k = firstDiff; k < firstDiff + 8 && k < (int)sizeof(UiConfig); ++k) printf(" %02X", pa[k]);
+            printf("\n   b:"); for (int k = firstDiff; k < firstDiff + 8 && k < (int)sizeof(UiConfig); ++k) printf(" %02X", pb[k]);
+            printf("\n");
+        }
+        profile_delete("t_bytes");
     }
 
     profile_delete("t_roundtrip");

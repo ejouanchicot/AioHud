@@ -367,7 +367,10 @@ static const char* song_mod_tag(unsigned char m, char* buf, int cap) {
 // per buff family, shared across every job). HIDDEN = tm_buff_off(status) ; FOCUS = tm_buff_off(TM_KEY_FOCUS|status).
 // No recast / ally / status-mirror keys anymore, and recasts are no longer filtered (always shown). The `job` params
 // are kept only so the many call sites don't all have to change their arguments.
-static bool tm_self_focus_on(const UiConfig& C, int /*job*/, unsigned status) {
+// The `job` parameter is gone with the per-job track list it used to index (retired 2026-09-12, ui_config.h):
+// an ignored parameter named `job` sitting in a focus test is an invitation to spend an hour looking for
+// per-job behaviour that has not existed for months.
+static bool tm_self_focus_on(const UiConfig& C, unsigned status) {
     return C.tm_buff_off(UiConfig::TM_KEY_FOCUS | status);
 }
 // SELF-CARRIED buffs : Food / Aftermath / conquest (Signet, Sanction, Sigil, Ionis) / synthesis Imagery. NO job
@@ -653,7 +656,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             if (C.tmBuffSrc == TMSRC_TRUSTS  && ph && !th) return false;
             return true;
         };
-        const int trkJob = party().self_main_job();   // "track per job" filter : a buff/recast whose key is in C.tmTrackOff[trkJob] is hidden
+        const int trkJob = party().self_main_job();   // 0 = not logged in yet ; the FOCUS monitor below is gated on it
         // ---- pass 2 : your OWN self buffs (exact server timers). A self buff that matches an AoE group you cast folds
         //      INTO that group (you count, your exact timer drives it) instead of getting its own row. ----
         int n = 0; const BuffTimer* bt = party().buff_timers(n);
@@ -706,7 +709,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // Buff filter : JOB-AGNOSTIC, keyed by STATUS (the family filter). Hidden -> drop the row, UNLESS it is
             // Hidden+Focus and expiring (surface it under the warn threshold as the alert).
             if (C.tm_buff_off((unsigned)bt[i].id)) {
-                if (!(tm_self_focus_on(C, trkJob, bt[i].id) && rem < C.tmFocusWarn)) continue;
+                if (!(tm_self_focus_on(C, bt[i].id) && rem < C.tmFocusWarn)) continue;
             }
             // GEO aura noise : the geomancy effect status (542-556 Boosts) and "Colure Active" (612) pulse every ~3s
             // in 0x063 ; hide them (the Indi- YOU carry is redrawn as a stable computed row below).
@@ -1076,10 +1079,10 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
               for (int i = 0; i < n2; ++i) { const unsigned st = bt2[i].id;
                 if (focus_trace_live() && st < 1024 && !is_debuff_status(st) && meHas((int)st)) {
                     windower::debug::log("FOCUSMON remember? st=%u '%s' meHas=%d focusOn=%d (focusKey off=%d)",
-                                         st, buff_status_name(st), meHas((int)st) ? 1 : 0, tm_self_focus_on(C, trkJob, st) ? 1 : 0,
+                                         st, buff_status_name(st), meHas((int)st) ? 1 : 0, tm_self_focus_on(C, st) ? 1 : 0,
                                          C.tm_buff_off(UiConfig::TM_KEY_FOCUS | st) ? 1 : 0);
                 }
-                if (st >= 1024 || is_debuff_status(st) || !meHas((int)st) || !tm_self_focus_on(C, trkJob, st)) continue;
+                if (st >= 1024 || is_debuff_status(st) || !meHas((int)st) || !tm_self_focus_on(C, st)) continue;
                 if (!srcKeeps((unsigned short)st, bt2[i].expiry, i)) continue;   // the source filter hides this row -> it must not alert either   // gate on meHas (same source as the emit check) -> no false alert while it's up ; per-SPELL focus key (see tm_self_keys)
                 // OUT alerts fire ONLY for buffs YOU cast : a buff someone ELSE put on YOU (a box-mate's Corsair roll,
                 // a trust's Protect) is not yours to keep up -- losing it (the roller re-rolls and replaces it) is
@@ -1582,11 +1585,13 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     if (!preview && !editing) { for (int i = 0; i < nb; ++i) if (bufs[i].src == 6 && !bufs[i].post) { bufs[i].post = "  //aio out"; bufs[i].postCol = 0xFF7E8894u; break; } }
     if (nb > C.tmMax) nb = C.tmMax; if (nr > C.tmMax) nr = C.tmMax;
 
-#ifdef AIOHUD_PROBES
-    // //aio songdump layer 4 -- the rows as BUILT, each labelled with the pass that emitted it.
-    // Recorded into a RAM ring, never to disk : an earlier version wrote a line per change and the extra frame time
-    // was enough to make the ghost-song bug stop reproducing. Observation must be free, so the file write is deferred
-    // to //aio songdump. Only a CHANGE in the row set (status / name / pass / tag -- not the ticking countdown) is kept.
+    // THE WATCHERS BELOW ARE NOT GUARDED, and that is the point of this block's shape. They used to sit inside
+    // `#ifdef AIOHUD_PROBES` with the songdump ring, so they existed on the dev box and NOWHERE ELSE : a release
+    // had no row-set flipwatch and two fewer capwatch tables, which is precisely backwards -- a witness for a
+    // silent defect is worth nothing on the one machine where the defect is already being watched by hand.
+    // (`//aio watch` reported 12 tables here and would have reported 10 to a tester. Found by the audit of
+    // 2026-09-12, axes A and H, independently.) The cost in a release is the FNV hash below over at most 50 rows
+    // once a frame ; the songdump RING, which writes, stays guarded.
     if (!preview) {
 #ifdef AIOHUD_PROBES
         g_whyObN = 0; g_whyGrpN = 0;   // refilled each frame by the passes above -- reset before the next one
@@ -1612,6 +1617,11 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         // nothing at all. Sampled from here rather than from the panel because the filter is read every frame
         // in play, and a saturated filter is a problem long before the user next opens the config.
         capwatch("config.tmbuffoff", ui_config().tmBuffOffN, UiConfig::TM_TRACK_MAX);
+#ifdef AIOHUD_PROBES
+        // //aio songdump layer 4 -- the rows as BUILT, each labelled with the pass that emitted it.
+        // Recorded into a RAM ring, never to disk : an earlier version wrote a line per change and the extra frame
+        // time was enough to make the ghost-song bug stop reproducing. Observation must be free, so the file write is
+        // deferred to //aio songdump. Only a CHANGE in the row set (status / name / pass / tag) is kept.
         static unsigned lastSig = 0;
         if (sig != lastSig) {
             lastSig = sig;
@@ -1648,8 +1658,8 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                         ghost ? "   <<< GHOST : not in the game's own buff list" : "");
             }
         }
-    }
 #endif
+    }
 
     float sscl = C.tmScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
     const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;

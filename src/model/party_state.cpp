@@ -759,8 +759,27 @@ bool PartyState::load_cache(unsigned selfId) {
     // treat it as a C string (hud_timers passes it to _snprintf "%s" and straight to the font drawer), and %s
     // walks the SOURCE to a NUL regardless of the destination bound -- so an unterminated name reads into the
     // neighbouring entries and, at the end of the array, off it, in the RENDER path. Force-terminate on load.
+    // THE CAP HERE IS THE WHOLE STREAM'S PROBLEM, not just this section's. The writer above emits
+    // `otherBuffN_` entries with NO cap (up to OB_MAX = 128 since 42212c2 raised it on 2026-09-10 -- a bard's
+    // rotation needs far more than 32), and this read guard was left at the old 32. It is not a bounded loss of
+    // 96 rows: the sections that follow are POSITIONAL, with no length tag and nothing to resynchronise on, so
+    // a rejected section leaves the cursor at the start of otherBuffs_[0] and every later field is read from
+    // bytes that do not belong to it -- `btn` and then `selfBuffSpell_` out of an OtherBuff's target/name. The
+    // symptom is wrong labels, phantom rows and a corrupted cast ring after a //reload, until the next full
+    // 0x063. CACHE_VER could not save us either: it encodes sizeof(OtherBuff), which that commit did not change.
+    // Found by the audit of 2026-09-12 (axis K, confirmed by an adversarial pass which is also what named the
+    // fseek below).
     unsigned short obn = 0;
-    if (fread(&obn, 2, 1, f) == 1 && obn <= 32) {
+    const bool obnOk = (fread(&obn, 2, 1, f) == 1);
+    if (obnOk && obn > OB_MAX) {
+        // A count this build cannot hold -- a file written by a FUTURE build with a larger OB_MAX, or a
+        // corrupt one. SKIP the section rather than leave the cursor inside it : everything after is
+        // positional, so not-skipping is the very desync this guard exists to prevent. If the skip itself
+        // fails the file is shorter than it claims, and nothing after it can be trusted either.
+        windower::debug::log("state cache : %u ally buffs is more than this build holds (%d) -- section skipped", (unsigned)obn, OB_MAX);
+        if (fseek(f, (long)obn * (long)sizeof(OtherBuff), SEEK_CUR) != 0) { fclose(f); return true; }
+    }
+    else if (obnOk) {
         if (fread(otherBuffs_, sizeof(OtherBuff), obn, f) == obn) {
             // RESTORE the ally rows so a //reload KEEPS your "(AoE N)" groups without a recast. They were discarded
             // before for a real reason: back then hud_timers only trusted these estimates during the ~8 s post-load
@@ -2020,11 +2039,8 @@ void PartyState::other_buffs_clear_songs() {
 //   - buffPin[g][224] : the arranged prefix of a buff group. It is filled from the group's OWN member list
 //     (`while (n < need && n < nmem)`), so it cannot exceed the number of statuses in that group -- a few
 //     dozen against a cap of 224. Not reachable by any amount of dragging.
-//   - tmTrackOff[24][512] : the per-JOB track list. Measured 2026-09-12 : since the Timers filter became
-//     job-agnostic, `tm_track_set` has exactly one caller left (the RDM preset in ui_config.cpp) and
-//     `tm_track_off` has NO reader outside its own header. Nothing can fill it, so there is nothing to watch
-//     -- but 24 KB of the config struct is still written, compared and serialised for it. Reported, not
-//     touched here: deleting a persisted field is a migration, not a watcher.
+//   - the per-JOB track list is gone : measured dead on 2026-09-12 (no reader anywhere, one writer -- a
+//     preset seeding a table nobody read) and retired the same day, with its 24 KB. See ui_config.h.
 //   - favColors[15] : a recency palette that shifts the oldest out on purpose.
 void PartyState::watch_tables() {
     int n;

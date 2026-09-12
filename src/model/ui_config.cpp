@@ -3,7 +3,6 @@
 #include "model/config_rules.h"   // config_defaults / config_sanitise : the two PURE decisions of this file (tests/t_config.cpp)
 #include "retry_clock.h"   // retry_due / retry_arm : the 0-sentinel-safe "try again later" (see the header for the 24.8 d trap)
 #include "model/paths.h"
-#include "model/job_track_gen.h"
 #include "model/game_mem.h"   // read_player : current character name + main/sub job -> default profile name + auto-load
 #include "windower_debug.h"   // debug::log : this file persists EVERYTHING and used to fail in total silence
 
@@ -119,7 +118,7 @@ static const char* last_char_profile(const char* charName) {
 // API and the single live-config file both go through these, so they always share one format. ----
 // ATOMIC : temp + rename. A plain fopen(path,"w") truncates and then dribbles ~200 fprintf's, and every client on
 // this Windower shares data\profiles\ -- so another client's profile_sync_poll could read a HALF-WRITTEN file.
-// load_config_from clears guideGroupCount and all 23 tmTrackOffN[] blacklists BEFORE parsing, so a short read does
+// load_config_from starts from the code defaults (config_rules.h) BEFORE parsing, so a short read does
 // not fail: it succeeds with everything after the truncation point missing, profile_mark_clean() blesses that as
 // the truth, and the loss is written back to disk on that client's next save. Same rule as the gear-icon cache
 // and charprofiles.txt. (An earlier comment in profile_sync_poll claimed this write was already MoveFileEx-based.
@@ -283,12 +282,6 @@ static bool save_config_to(const char* path) {
     save_text_styles(f, "tmText", c.tmText, TM_TE_COUNT);   // Timers : per-element typography
     save_text_styles(f, "dbText", c.dbText, DB_TE_COUNT);   // Debuffs : per-element typography
     fprintf(f, "tmFocus=%d,%d\n", c.tmFocusWarn, c.tmFocusHold);   // focus alert : warn-threshold + hold-after-loss (seconds)
-    fprintf(f, "tmPreset=%d\n", c.tmPreset);         // track-preset seed version (see apply_rdm_uff_preset)
-    for (int j = 1; j <= 23; ++j) if (c.tmTrackOffN[j] > 0) {                     // Timers "track per job" : disabled keys (blacklist ; only non-empty jobs written)
-        fprintf(f, "tmTrkOff%d=", j);
-        for (int i = 0; i < c.tmTrackOffN[j]; ++i) fprintf(f, "%s%u", i ? "," : "", (unsigned)c.tmTrackOff[j][i]);
-        fprintf(f, "\n");
-    }
     if (c.tmBuffOffN > 0) {                                                       // Timers BUFF-FAMILY filter : job-agnostic disabled keys (per profile)
         fprintf(f, "tmBuffOff=");
         for (int i = 0; i < c.tmBuffOffN; ++i) fprintf(f, "%s%u", i ? "," : "", (unsigned)c.tmBuffOff[i]);
@@ -354,27 +347,6 @@ static void parse_box(const char* s, BoxStyle& b) {   // "on,alpha,themeCopy,the
     if (n >= 1) { b.on = on; b.alpha = al; b.themeCopy = tc; b.theme = th; b.lum = lm; b.hue = hu; if (n >= 7) b.border = bd; }   // border absent (old config) -> keep default (1)
 }
 
-// One-time seed : RDM (job 5) starts every spell EXCEPT Haste/Refresh/Flurry/Phalanx in "Unfollow-Focus"
-// (hidden from the list, but a RED alert pops when it drops or has < 1 min left, on both Self and Allies).
-// Applied per config/profile file, gated by tmPreset so a saved profile keeps the user's later manual edits.
-static void apply_rdm_uff_preset(UiConfig& c) {
-    const int RDM = 5;
-    int n = 0; const JobBuff* jb = job_track(RDM, n);
-    for (int i = 0; i < n; ++i) {
-        const unsigned st = jb[i].status;
-        if (!st) continue;                                              // recast-only entry (nukes/cures) : nothing to "focus" on -> leave it Follow
-        const unsigned char cat = jb[i].cat;
-        if (!(cat <= TC_DEFENSE || cat == TC_ENHANCE)) continue;        // only self/ally buffs (Refresh..Defensive + Enhancing) ; enfeebles/nukes/dark aren't tracked buffs
-        if (st == 33 || st == 43 || st == 581 || st == 116) continue;   // Haste / Refresh / Flurry / Phalanx : the ones we DO want followed
-        // Unfollow-Focus = hidden key + focus key, for both scopes (self keys : raw status + its recast ; ally keys : TM_KEY_ALLY | ...)
-        c.tm_track_set(RDM, st, true);                                                                 // self : hidden
-        if (jb[i].recast) c.tm_track_set(RDM, UiConfig::TM_KEY_RECAST + jb[i].recast, true);           // self : hide its recast row too
-        c.tm_track_set(RDM, UiConfig::TM_KEY_FOCUS | st, true);                                        // self : focus (status mirror the hud reads)
-        if (jb[i].recast) c.tm_track_set(RDM, UiConfig::TM_KEY_FOCUS | (UiConfig::TM_KEY_RECAST + jb[i].recast), true);   // self : focus (per-entry key the config UI reads)
-        c.tm_track_set(RDM, UiConfig::TM_KEY_ALLY | st, true);                                         // allies : hidden
-        c.tm_track_set(RDM, UiConfig::TM_KEY_FOCUS | UiConfig::TM_KEY_ALLY | st, true);                // allies : focus
-    }
-}
 
 // EmpyPop's config lines, parsed OUT-OF-LINE. Not a style choice : load_config_from's else-if chain is one
 // expression whose nesting depth is its length, and it already sits AT MSVC's limit -- adding four branches
@@ -614,8 +586,9 @@ static bool load_config_from(const char* path) {
     UiConfig& c = g_loadScratch;
     c = ui_config();                        // keep the live values the base does not reset (lang, the palette)
     config_defaults(c, /*keepZones=*/false);   // zones are written as `zone=` lines -> the file rebuilds them
-    static char line[8192];  // BIG : a "tmTrkOff<job>=" line can hold up to TM_TRACK_MAX (512) comma-separated keys ~= 3 KB.
-                             // A small buffer truncated it mid-line, so most tracked-spell keys were dropped on reload.
+    static char line[8192];  // BIG : a "tmBuffOff=" line can hold up to TM_TRACK_MAX (512) comma-separated keys ~= 3 KB.
+                             // A small buffer truncated it mid-line, so most filter keys were dropped on reload. (The
+                             // retired per-job "tmTrkOff<job>=" lines were the same size and are still swallowed below.)
     while (fgets(line, sizeof(line), f)) {
         // Shared parse scratch. The four position/scale names are gx / gy / gsc / gps, NOT x / y / s / ps, and
         // that is the whole point: NINE of the per-key branches below correctly declare their own `float x, y`
@@ -714,19 +687,8 @@ static bool load_config_from(const char* path) {
         else if (parse_text_style(line, "tmText", c.tmText, TM_TE_COUNT)) {}
         else if (strncmp(line, "tmAllyGroup=", 12) == 0) { /* retired 2026-09-12 : grouping follows the cast, not a setting. Swallowed so an old file does not fall through to the unknown-key path. */ }
         else if (sscanf(line, "tmFocus=%d,%d", &v, &v1) == 2) { c.tmFocusWarn = v; c.tmFocusHold = v1; }
-        else if (sscanf(line, "tmPreset=%d", &v) == 1) c.tmPreset = v;
-        else if (!strncmp(line, "tmTrkOff", 8)) {                                 // Timers "track per job" : disabled keys
-            int j = atoi(line + 8); const char* p = strchr(line, '=');
-            if (p && j >= 1 && j <= 23) {
-                c.tmTrackOffN[j] = 0;
-                for (++p; *p && c.tmTrackOffN[j] < UiConfig::TM_TRACK_MAX; ) {
-                    while (*p == ',' || *p == ' ') ++p;
-                    if (*p < '0' || *p > '9') break;
-                    unsigned k = (unsigned)strtoul(p, (char**)&p, 10);
-                    if (k) c.tmTrackOff[j][c.tmTrackOffN[j]++] = (unsigned short)k;
-                }
-            }
-        }
+        else if (!strncmp(line, "tmPreset=", 9)) { /* retired 2026-09-12 with the per-job track list : it gated a preset that wrote into a table nothing read. Swallowed so an old profile still loads. */ }
+        else if (!strncmp(line, "tmTrkOff", 8)) { /* retired 2026-09-12 : the per-JOB track list had no reader left (see ui_config.h). Swallowed so an old profile still loads. */ }
         else if (!strncmp(line, "tmBuffOff=", 10)) {                              // Timers BUFF-FAMILY filter : job-agnostic disabled keys
             c.tmBuffOffN = 0;
             for (const char* p = line + 10; *p && c.tmBuffOffN < UiConfig::TM_TRACK_MAX; ) {
@@ -821,7 +783,6 @@ static bool load_config_from(const char* path) {
     // It used to be sixteen fields clamped here out of the hundred-odd the file carries -- the mmZoom S0 was
     // one of the sixteen only because it had already killed a client.
     config_sanitise(c);
-    if (c.tmPreset < 1) { apply_rdm_uff_preset(c); c.tmPreset = 1; }   // seed the RDM default once per file
     ui_config() = c;        // COMMIT, in one assignment : nothing ever observes a half-read config
     return true;
 }
@@ -1202,12 +1163,17 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     // per-module box appearance (shared BoxStyle)
     if (!box_eq(a.scBox, b.scBox) || !box_eq(a.tpBox, b.tpBox) || !box_eq(a.hlBox, b.hlBox) || !box_eq(a.pwBox, b.pwBox) || !box_eq(a.ztBox, b.ztBox) || !box_eq(a.tmBox, b.tmBox) || !box_eq(a.mmBox, b.mmBox) || !box_eq(a.epBox, b.epBox)) return false;
     if (a.tmDurMode != b.tmDurMode || a.tmRecMode != b.tmRecMode || a.tmOthers != b.tmOthers || a.tmMine != b.tmMine || a.tmBuffSrc != b.tmBuffSrc || a.tmSpAlert != b.tmSpAlert) return false;
-    if (a.tmPreset != b.tmPreset) return false;
     if (a.tmFocusWarn != b.tmFocusWarn || a.tmFocusHold != b.tmFocusHold) return false;
-    for (int j = 1; j <= 23; ++j) {                                          // Timers "track per job" blacklist -> part of the profile (so Save picks it up)
-        if (a.tmTrackOffN[j] != b.tmTrackOffN[j]) return false;
-        for (int i = 0; i < a.tmTrackOffN[j]; ++i) if (a.tmTrackOff[j][i] != b.tmTrackOff[j][i]) return false;
-    }
+    // THE SORT MODES AND THE ICON SHEET WERE MISSING HERE, and persist_eq is the definition of "what a
+    // profile carries" : a field the writer writes but this does not compare can never light the "unsaved
+    // changes" dot, so the user is never told to save it -- and since 5164129 made a load REPLACE, the next
+    // load resets it and load_ui_config re-writes config.txt with the default, destroying the choice on disk.
+    // Found by the config audit of 2026-09-12, which applied to every field the test this file had applied to
+    // favColors alone. iconPack is the visible one : every status icon in the HUD (party, player, target,
+    // Timers, Debuffs -- one atlas) went back to the default sheet at every relaunch, with nothing to explain
+    // it. The sort modes are the same defect on the tm= line, whose 19th and 20th fields they are.
+    if (a.tmSortDur != b.tmSortDur || a.tmSortRec != b.tmSortRec) return false;
+    if (strcmp(a.iconPack, b.iconPack) != 0) return false;   // char[] : compare CONTENT (same as epTrack above)
     if (a.tmBuffOffN != b.tmBuffOffN) return false;                          // job-agnostic buff-family filter -> part of the profile too
     for (int i = 0; i < a.tmBuffOffN; ++i) if (a.tmBuffOff[i] != b.tmBuffOff[i]) return false;
     if (!text_styles_eq(a.tmText, b.tmText, TM_TE_COUNT)) return false;

@@ -435,24 +435,22 @@ struct UiConfig {
     static const int TM_TRACK_MAX = 512;          // max disabled keys per job (~ entries x2 ; full spellbooks are large)
     // the whole key scheme relies on the buff-status band (runtime-gated < 1024) staying BELOW the recast band, so a
     // status key can never collide with a TM_KEY_RECAST+recast key. If a buff status id >= 2000 is ever added this breaks.
-    static_assert(1024 <= TM_KEY_RECAST, "buff status band must stay below the recast band (else tmTrackOff key collision)");
-    unsigned short tmTrackOff[24][TM_TRACK_MAX];
-    unsigned short tmTrackOffN[24] = { 0 };   // count per job (short : a full "default UFF" job preset is ~200 keys, over the old 255 byte cap)
-    int   tmPreset = 0;              // migration version : 0 = never seeded ; 1 = RDM "Unfollow-Focus by default (except Haste/Refresh/Flurry/Phalanx)" preset applied. Bumped in load_config_from ; per-file so a saved profile keeps its manual edits.
-    bool tm_track_off(int job, unsigned key) const {
-        if (job < 1 || job > 23 || !key) return false;
-        for (int i = 0; i < tmTrackOffN[job]; ++i) if (tmTrackOff[job][i] == key) return true;
-        return false;
-    }
-    void tm_track_set(int job, unsigned key, bool off) {
-        if (job < 1 || job > 23 || !key) return;
-        int idx = -1; for (int i = 0; i < tmTrackOffN[job]; ++i) if (tmTrackOff[job][i] == key) { idx = i; break; }
-        if (off) { if (idx < 0 && tmTrackOffN[job] < TM_TRACK_MAX) tmTrackOff[job][tmTrackOffN[job]++] = (unsigned short)key; }
-        else if (idx >= 0) tmTrackOff[job][idx] = tmTrackOff[job][--tmTrackOffN[job]];
-    }
+    static_assert(1024 <= TM_KEY_RECAST, "buff status band must stay below the recast band (else tmBuffOff key collision)");
+    // RETIRED 2026-09-12 : the PER-JOB track list -- tmTrackOff[24][512], tmTrackOffN[24], tmPreset, and the
+    // accessors tm_track_off / tm_track_set. The Timers filter became JOB-AGNOSTIC (tmBuffOff, just below: one
+    // state per buff family, shared by every job, and the Job-Ability rows go through it too), and this table
+    // was left behind. MEASURED before removing it: tm_track_off had NO reader anywhere in the program, and
+    // tm_track_set had exactly ONE caller -- the RDM seeding preset. So that preset was writing 40 hidden/focus
+    // flags into a table nobody read: it has done nothing since the filter changed, which is why deleting it
+    // changes nothing anyone can see. What it did cost was real: 24 KB of this struct, written into every
+    // profile file, compared field by field on every "modified" check, and cleared on every load.
+    // `tmTrkOff<job>=` and `tmPreset=` are SWALLOWED on load (ui_config.cpp) so existing profiles still load;
+    // they simply stop being written. If a default filter is ever wanted again it belongs in tmBuffOff -- but
+    // note that one is global, so a default chosen for one job reaches every job.
     // ---- Timers BUFF-FAMILY filter : JOB-AGNOSTIC (one state per buff STATUS, shared across every job, per profile).
     //      This is the family-organised filter (see BUFF_FAM in job_track_gen.h) : a buff is HIDDEN if its status key
-    //      is present, FOCUSED if TM_KEY_FOCUS|status is. Job Abilities keep the per-job list above ; this covers the
+    //      is present, FOCUSED if TM_KEY_FOCUS|status is. Job Abilities go through THIS filter too (tm_config.cpp
+    //      writes every row, JA rows included, via tm_buff_set) -- the per-job list it used to name is retired ; this covers the
     //      cross-job buffs a support can put on ANYONE (Protect/Shell/Haste/Bar/Songs/Rolls/Geo...). Keyed by status
     //      only (no ALLY / RECAST band -> a raw status < 1024, or TM_KEY_FOCUS|status). ----
     unsigned short tmBuffOff[TM_TRACK_MAX];
