@@ -13,6 +13,7 @@ int g_run = 0, g_fail = 0;
 
 void test_json();
 void test_clip();
+void test_retry();
 void test_skillchain();
 void test_durations();
 void test_config();
@@ -31,6 +32,7 @@ void test_debuffrules();
 int main() {
     test_json();
     test_clip();
+    test_retry();
     test_skillchain();
     test_durations();
     test_config();

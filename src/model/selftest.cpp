@@ -3,6 +3,7 @@
 #include "model/ui_config.h"
 #include "model/paths.h"   // plugin_path : the config lives beside the report
 #include "windower_debug.h"
+#include "retry_clock.h"   // retry_due_at / retry_arm_at : the INJECTED-clock pair, so this throttle keeps its seam
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
@@ -60,9 +61,15 @@ static Seen* seen_for(const char* id) {
 int selftest_tick(unsigned nowMs, CheckFail* out, int cap) {
     if (!selftest_armed() || !out || cap <= 0) return 0;
 
+    // retry_clock.h's INJECTED-CLOCK pair, not the wall-clock one. This function throttles on the timestamp it
+    // is GIVEN, and that seam is what lets the decision be driven from a test -- the shape every extracted
+    // decision in this project uses. The audit of 2026-09-12 counted this site as a fourth hand-rolled copy of
+    // the idiom ; the answer was not to convert it and lose the parameter, it was to give the header the form
+    // this site needs. It also gains the `| 1` the hand-rolled version lacked (a deadline landing exactly on
+    // tick 0 used to read as "never scheduled" and fire one poll early, once every 49.7 days).
     static unsigned nextMs = 0;
-    if (nextMs && (int)(nowMs - nextMs) < 0) return 0;
-    nextMs = nowMs + SELFTEST_POLL_MS;
+    if (!retry_due_at(nextMs, nowMs)) return 0;
+    retry_arm_at(nextMs, nowMs, SELFTEST_POLL_MS);
 
     CheckFail now[SELFTEST_FAILS_MAX];
     const int nf = selftest_run_now(now, SELFTEST_FAILS_MAX);

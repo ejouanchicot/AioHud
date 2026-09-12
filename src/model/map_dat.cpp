@@ -75,16 +75,19 @@ static void load_overlays() {
     // window -- and giving up on one locked read left every custom/HD map silently disabled for the session, UNDER
     // the minimap's own retry budget. Mirrors load_tables() below : bounded, spaced retry, then stop. (rule 10)
     if (g_ovlTried) return;
+    // retry_clock.h, like its twin load_tables() 45 lines below -- this was the one site of the pair still
+    // hand-rolling the compare. It was CORRECT (it guarded the 0 sentinel), so this is de-duplication, not a
+    // bug fix : two implementations of one rule that can drift, and the copy in this very file is the proof
+    // that they do. Audit of 2026-09-12.
     static unsigned nextTryMs = 0; static int tries = 0;
-    const unsigned now = GetTickCount();
-    if (nextTryMs && (int)(now - nextTryMs) < 0) return;   // between attempts
+    if (!retry_due(nextTryMs)) return;   // between attempts
     const char* wr = windower_root();
     // BOUNDED. wsprintfA is limited by its OWN 1 KB internal buffer, not by the destination -- a deep Windower
     // root overflows a char[MAX_PATH] and smashes the caller's stack frame. Same class the project already paid
     // for in gfx/window.cpp, and this is the path most likely to differ on a Program Files install.
     char p[MAX_PATH]; unsigned n = 0; unsigned char* d = 0;
     if (wr) { _snprintf(p, MAX_PATH, "%s\\addons\\XIPivot\\data\\settings.xml", wr); p[MAX_PATH - 1] = 0; d = read_file(p, n); }
-    if (!d) { nextTryMs = now + 3000; if (++tries >= 8) g_ovlTried = true; return; }   // locked/absent -> retry, then give up   (rule10-ok: this IS the bounded budget)
+    if (!d) { retry_arm(nextTryMs, 3000); if (++tries >= 8) g_ovlTried = true; return; }   // locked/absent -> retry, then give up   (rule10-ok: this IS the bounded budget)
     g_ovlTried = true;   // opened -> authoritative (even if it has no <overlays>)     (rule10-ok: latched on SUCCESS, not on the attempt)
     char* txt = (char*)HeapAlloc(GetProcessHeap(), 0, n + 1);
     if (txt) {

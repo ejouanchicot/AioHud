@@ -29,16 +29,29 @@
 
 namespace aio {
 
+// ---- the decision, with the clock INJECTED : pure, and therefore testable (tests/t_retry.cpp) -----------
+// The two functions below are these two with GetTickCount() filled in. A caller that already HAS a timestamp
+// -- one handed to it by its own caller, which is the shape every extracted decision in this project uses --
+// should call these and keep its seam: selftest_tick(nowMs, ...) throttles on the clock it is GIVEN, and that
+// is what lets a test drive it. Before this pair existed, such a caller had only two choices, hand-rolling
+// the compare (the mistake this file exists to remove) or losing the injected clock.
+inline bool retry_due_at(unsigned nextMs, unsigned nowMs) {
+    return !nextMs || (int)(nowMs - nextMs) >= 0;
+}
+inline void retry_arm_at(unsigned& nextMs, unsigned nowMs, unsigned delayMs) {
+    nextMs = (nowMs + delayMs) | 1u;
+}
+
 // Is a retry allowed now ? True when never scheduled (nextMs == 0) or when the deadline has passed.
 // The `!nextMs` test comes FIRST : that is the whole point, it removes the 0-sentinel from the arithmetic.
 inline bool retry_due(unsigned nextMs) {
-    return !nextMs || (int)(GetTickCount() - nextMs) >= 0;
+    return retry_due_at(nextMs, GetTickCount());
 }
 
 // Schedule the next attempt `delayMs` from now. `| 1` keeps the stamp off the 0 "try now" sentinel, so a
 // deadline that legitimately lands on tick 0 is not read as "never scheduled".
 inline void retry_arm(unsigned& nextMs, unsigned delayMs) {
-    nextMs = (GetTickCount() + delayMs) | 1u;
+    retry_arm_at(nextMs, GetTickCount(), delayMs);
 }
 
 } // namespace aio

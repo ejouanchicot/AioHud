@@ -345,10 +345,16 @@ static void draw_brass_bezel(u32 dev, const Frame& f, float cx, float cy, float 
 // "black until you zone again".
 static const int      MAP_SLOW_AFTER = 12;      // attempts before dropping to the slow lane
 static const unsigned MAP_SLOW_MS    = 15000;   // slow-lane spacing
-static void map_retry_later(int& tries, unsigned& retryAt, unsigned nowMs) {
+// The SCHEDULE stays here -- three immediate attempts, then a fast lane, then a 15 s slow lane that never
+// stops -- but the arming goes through retry_clock.h, which owns the 0-sentinel rule this used to spell out by
+// hand (`if (retryAt == 0) retryAt = 1`). One implementation of "try again later" in the project, not five :
+// the four hand-rolled copies were the audit's semantic-duplication finding of 2026-09-12, and the one in
+// map_dat.cpp that HAD diverged blocked every retry past 24.8 days of uptime.
+// The first attempts ask for 1 ms rather than 0 : with a 16 ms frame it is the same "next frame", and it keeps
+// the stamp off the sentinel, which is the whole reason retry_arm exists.
+static void map_retry_later(int& tries, unsigned& retryAt) {
     ++tries;
-    retryAt = nowMs + (tries < 3 ? 0u : (tries < MAP_SLOW_AFTER ? 300u : MAP_SLOW_MS));
-    if (retryAt == 0) retryAt = 1;   // 0 is the "try now" sentinel -- never land back on it
+    retry_arm(retryAt, tries < 3 ? 1u : (tries < MAP_SLOW_AFTER ? 300u : MAP_SLOW_MS));
 }
 
 void Minimap::on_device_lost() { mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
@@ -499,8 +505,7 @@ void Minimap::draw(const Frame& f) {
         mapTries_ = 0; mapRetryAt_ = 0;                        // new zone -> fresh schedule, try immediately
     }
     if (mapTex_ == 0 && g.map.fileId) {                        // not loaded yet -> (re)try, throttled. NO terminating budget : see minimap.h
-        const unsigned nowMs = GetTickCount();
-        if (!mapRetryAt_ || (int)(nowMs - mapRetryAt_) >= 0) {   // !mapRetryAt_ : the 0 sentinel (set on every zone change, line ~460) must fire even past 24.8d uptime, when (int)(nowMs-0) is negative -> else the map stays black
+        if (retry_due(mapRetryAt_)) {   // retry_clock.h owns the 0-sentinel case (set on every zone change) : without it the map stays black past 24.8 d of uptime
             u32* pixels = 0; int mw = 0, mh = 0; MapLoadDiag md;
             // Only STOP retrying when the texture actually exists. This used to clear the budget as soon as the DAT
             // DECODED, without checking make_texture_argb_mip -- so a decode that succeeded followed by a failed
@@ -519,14 +524,14 @@ void Minimap::draw(const Frame& f) {
                     mapTries_ = 0;
                 }
                 else {
-                    map_retry_later(mapTries_, mapRetryAt_, nowMs);
+                    map_retry_later(mapTries_, mapRetryAt_);
                     if (mapTries_ == MAP_SLOW_AFTER)
                         windower::debug::log("MAP FAIL zone=%u fileId=0x%04X : DAT decoded fine (%dx%d) but CreateTexture failed -- image too large for the device, or out of video memory. Slowing to one attempt every %d s (NOT giving up)",
                                              g.map.zone, g.map.fileId, mw, mh, MAP_SLOW_MS / 1000);
                 }
             }
             else {
-                map_retry_later(mapTries_, mapRetryAt_, nowMs);   // fast lane then a 15 s slow lane -- never a permanent stop
+                map_retry_later(mapTries_, mapRetryAt_);   // fast lane then a 15 s slow lane -- never a permanent stop
                 // ALWAYS-ON failure log (not behind a command) : a black minimap is rare and unpredictable, so
                 // a probe you must remember to arm would miss the occurrence. Fired ONCE, on the attempt that
                 // drops into the slow lane -- by then it is a real failure, not the normal not-ready-yet right
