@@ -62,7 +62,7 @@ static bool fm_muted_for(unsigned target, unsigned status, unsigned short spell,
 // changes while the entry lives -- which is the whole point: the ROWS are sorted by remaining time and shuffle
 // as things tick, so a number that meant "third row from the top" would mean something else by the time you had
 // finished typing it. A number that belongs to the ENTRY is the same number whenever you read it.
-struct FocusMem { unsigned target; unsigned short status, spell; unsigned char isAbil, self, zoneCheck, muted, tag, seen, alerting; unsigned lostMs, muteRef, bornMs, rank; char name[20]; };   // rank : which of two same-status songs survives -- the ally cast's startMs, or your own copy's expiry. NOT bornMs : an entry is reused across re-casts, so its birth says nothing about which cast is fresher.
+struct FocusMem { unsigned target; unsigned short status, spell; unsigned char isAbil, self, zoneCheck, muted, tag, seen, alerting, aoe; unsigned lostMs, muteRef, bornMs, rank; char name[20]; };   // rank : which of two same-status songs survives -- the ally cast's startMs, or your own copy's expiry. NOT bornMs : an entry is reused across re-casts, so its birth says nothing about which cast is fresher.
 // bornMs : when this entry was created. Read by NOTHING that decides anything -- it exists so the harness
 // can say "this entry has been alive 4 h", which is the only way an immortal entry (the purge that never
 // runs, audit S2-6) is visible from outside. A field a decision depends on could not be added this cheaply.
@@ -1095,7 +1095,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // single entry for them meant the second was watched by nobody at all.
                 const unsigned short selfSp = (unsigned short)party().self_buff_spell_ranked((unsigned short)st, bt2[i].expiry, i);
                 int s = -1; for (int q = 0; q < fmN; ++q) if (fm[q].self && fm[q].status == st && fm[q].spell == selfSp) { s = q; break; }
-                if (s < 0 && fmN < FOCUS_MAX) { s = fmN++; fm[s].spell = selfSp; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = GetTickCount(); fm[s].name[0] = 0; }
+                if (s < 0 && fmN < FOCUS_MAX) { s = fmN++; fm[s].spell = selfSp; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].aoe = 0; /* there is one of you : a self alert never groups */ fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = GetTickCount(); fm[s].name[0] = 0; }
                 if (s >= 0) { fm[s].seen = 1; fm[s].spell = selfSp; fm[s].rank = bt2[i].expiry; }   // the spell/tier is part of the key now, so this only re-affirms it ; rank refreshed every frame
               } }
             for (int i = 0; i < no; ++i) {                                                     // remember FOCUS buffs currently up on allies (Allies focus key 0xC000|st ; needs tmMine)
@@ -1115,7 +1115,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 // Reported 2026-09-10, "je viens de zone et une song reste en out".
                 { const BuffSet* bs0 = party().buffs_for(ob[i].target);
                   const unsigned char pending = (!bs0 || bs0->n <= 0) ? 1 : 0;
-                if (s < 0 && fmN < FOCUS_MAX) { s = fmN++; fm[s].spell = ob[i].spell; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = pending; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = GetTickCount(); }
+                if (s < 0 && fmN < FOCUS_MAX) { s = fmN++; fm[s].spell = ob[i].spell; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].aoe = ob[i].aoe; /* the CAST's own fact (0x028 target count) : it decides whether losing it is one event or three */ fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = pending; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = GetTickCount(); }
                 else if (s < 0) { static windower::debug::LogOnce<2> onceFull;   // SAY it. A silent refusal here is indistinguishable from "no buff to watch".
                     if (onceFull.first(0)) windower::debug::log("FOCUS monitor FULL (%d entries) -- new ally focus buffs are NOT tracked this session", FOCUS_MAX); }
                 if (s >= 0) { fm[s].seen = 1; fm[s].spell = ob[i].spell; fm[s].rank = ob[i].startMs; fm[s].isAbil = ob[i].isAbil; int j = 0; for (; j < 19 && ob[i].name[j]; ++j) fm[s].name[j] = ob[i].name[j]; fm[s].name[j] = 0; } }
@@ -1416,13 +1416,16 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             // A grouped alert carries no number, for the same reason a grouped healthy row carries none: it stands
             // for several monitored entries and one number could not say which to silence. A lone alert keeps its
             // number, which is exactly the case where aiming at somebody makes sense.
+            // ONLY A REAL AoE MAY GROUP -- the rule lives in model/focus_rules.h and is tested there. It used to
+            // count nothing but "these alerts share a spell id", so three Phalanx placed one by one on three
+            // people, all lost, came out as a single nameless "Phalanx (AoE 3)" and the two other alerts were
+            // dropped as already-spoken-for. Reported from play 2026-09-12. It is the twin of the healthy-row
+            // defect fixed the same morning in ally_group.h : one path was corrected, this one was not.
+            AlertEntry ae[FOCUS_MAX];
+            for (int a = 0; a < nAlert; ++a) { ae[a].spell = fm[alertQ[a]].spell; ae[a].aoe = fm[alertQ[a]].aoe; }
             for (int a = 0; a < nAlert && nb < 50; ++a) {
                 const int q = alertQ[a];
-                if (fm[q].spell) {   // could this be part of a group? (a spell-less entry -- food, gear -- never is)
-                    bool drawn = false;
-                    for (int b = 0; b < a; ++b) if (fm[alertQ[b]].spell == fm[q].spell) { drawn = true; break; }
-                    if (drawn) continue;                                      // an earlier row already speaks for this loss
-                }
+                if (focus_alert_covered(ae, nAlert, a)) continue;              // an earlier GROUPED row speaks for this loss
                 // ONE SONG, ONE STATEMENT PER FRAME. A row already drawn from YOUR timer says you hold this
                 // song; an OUT saying you lost it cannot be true in the same image. When the two disagreed the
                 // red row appeared and vanished on alternate frames -- measured 2026-09-10 with four Army's
@@ -1441,8 +1444,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                             && an && bufs[d].name && strcmp(bufs[d].name, an) == 0) drawnUp = true;
                     if (drawnUp) { fm[q].lostMs = 0; continue; }   // it is on screen as yours : say one thing, not two
                 }
-                int same = 0;
-                for (int b = 0; b < nAlert; ++b) if (fm[q].spell && fm[alertQ[b]].spell == fm[q].spell) ++same;
+                const int same = focus_alert_speaks_for(ae, nAlert, a);
                 const char* en = fm[q].isAbil ? abil_name_by_id(fm[q].spell)
                                               : (fm[q].spell && spell_info(fm[q].spell) ? spell_info(fm[q].spell)->en : 0);
                 if (!en) en = buff_status_name(fm[q].status);

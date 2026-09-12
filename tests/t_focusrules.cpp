@@ -67,4 +67,75 @@ void test_focus_rules() {
         CHECK(!focus_newer_sibling(castNew, 397, castOld, 398));
         CHECK(focus_newer_sibling(bornOld, 397, bornNew, 398));   // ranked by BIRTH it would have been the other way
     }
+
+    SECTION("focus : a GROUPED red alert is a statement about the cast, not about a shared spell id");
+    // REPORTED FROM PLAY, 2026-09-12 : "plusieurs personnes ont perdu Phalanx, ca les groupe alors qu'on ne
+    // veut pas". The rule shipped counting only "these alerts share a spell id", so three Phalanx placed one by
+    // one on three people came out as ONE nameless "Phalanx (AoE 3)" -- and the two other alerts were dropped
+    // as already-spoken-for, which is how the names disappeared. The per-person layout exists precisely to say
+    // WHO is missing one.
+    // It is the twin of the healthy-row defect fixed the same morning (ally_group.h : group only when
+    // `fresh && aoe && effN >= 2`). One path was corrected, this one was left -- so the fix produced a report
+    // instead of closing one, and that is the case these tests pin.
+    {
+        // three single-target casts : three facts, three named lines, nobody folded
+        const AlertEntry single3[3] = { {116, 0}, {116, 0}, {116, 0} };   // 116 = Phalanx
+        CHECK_EQ(focus_alert_speaks_for(single3, 3, 0), 1);
+        CHECK_EQ(focus_alert_speaks_for(single3, 3, 1), 1);
+        CHECK_EQ(focus_alert_speaks_for(single3, 3, 2), 1);
+        CHECK(!focus_alert_covered(single3, 3, 1));   // the SECOND one must still be drawn
+        CHECK(!focus_alert_covered(single3, 3, 2));   // ... and the third
+    }
+    {
+        // one AoE cast (Accession / Protectra / a COR roll) reaching three people : ONE fact, one line
+        const AlertEntry aoe3[3] = { {116, 1}, {116, 1}, {116, 1} };
+        CHECK_EQ(focus_alert_speaks_for(aoe3, 3, 0), 3);
+        CHECK(!focus_alert_covered(aoe3, 3, 0));      // the first speaks for them
+        CHECK(focus_alert_covered(aoe3, 3, 1));       // the others fold into it
+        CHECK(focus_alert_covered(aoe3, 3, 2));
+    }
+    {
+        // MIXED, which is the case that tells the two rules apart : an Accession Phalanx on two people plus one
+        // placed by hand on a third. Two facts : one grouped line for the pair, one NAMED line for the single.
+        const AlertEntry mixed[3] = { {116, 1}, {116, 1}, {116, 0} };
+        CHECK_EQ(focus_alert_speaks_for(mixed, 3, 0), 2);
+        CHECK(focus_alert_covered(mixed, 3, 1));
+        CHECK_EQ(focus_alert_speaks_for(mixed, 3, 2), 1);   // the hand-placed one keeps its own line ...
+        CHECK(!focus_alert_covered(mixed, 3, 2));           // ... and its name
+    }
+    {
+        // THE SECOND REPORT, same evening : "il avait pareil sur regen qui groupait aussi quand plusieurs
+        // etaient out". Confirming it is spell-AGNOSTIC is the point -- the defect was never about Phalanx, it
+        // was about counting a shared spell id as a shared event, so the rule must be checked on a spell whose
+        // AoE form is reached differently (Regen goes AoE under SCH Accession, Phalanx too, but a Regen is far
+        // more often placed one at a time). Regen II = 110.
+        const AlertEntry regen3[3] = { {110, 0}, {110, 0}, {110, 0} };
+        CHECK_EQ(focus_alert_speaks_for(regen3, 3, 0), 1);
+        CHECK(!focus_alert_covered(regen3, 3, 1));
+        CHECK(!focus_alert_covered(regen3, 3, 2));
+        // ... and different TIERS were never the problem : they carry different spell ids, so they could not
+        // fold even under the shipped rule. Pinned so nobody "fixes" that into existence.
+        const AlertEntry tiers[3] = { {108, 1}, {110, 1}, {111, 1} };   // Regen, Regen II, Regen III
+        CHECK_EQ(focus_alert_speaks_for(tiers, 3, 0), 1);
+        CHECK_EQ(focus_alert_speaks_for(tiers, 3, 1), 1);
+        CHECK(!focus_alert_covered(tiers, 3, 2));
+    }
+    {
+        // different spells never fold together, whatever their AoE-ness
+        const AlertEntry two[2] = { {116, 1}, {43, 1} };     // Phalanx + Refresh
+        CHECK_EQ(focus_alert_speaks_for(two, 2, 0), 1);
+        CHECK_EQ(focus_alert_speaks_for(two, 2, 1), 1);
+        CHECK(!focus_alert_covered(two, 2, 1));
+    }
+    {
+        // a spell-less entry (food, gear, a self-cast whose 0x028 was never seen) stands alone, always
+        const AlertEntry nospell[2] = { {0, 1}, {0, 1} };
+        CHECK_EQ(focus_alert_speaks_for(nospell, 2, 0), 1);
+        CHECK_EQ(focus_alert_speaks_for(nospell, 2, 1), 1);
+        CHECK(!focus_alert_covered(nospell, 2, 1));
+        // and the out-of-range answers are defined, because the caller indexes with a loop variable
+        CHECK_EQ(focus_alert_speaks_for(nospell, 2, 5), 0);
+        CHECK(!focus_alert_covered(nospell, 2, 0));
+    }
+
 }

@@ -83,4 +83,48 @@ inline bool focus_copies_cover(int newerSiblings, int copiesPresent) {
 // the victim at CAST time, while the set is still intact, and the monitor only asks whether the song
 // that went is the one that was named.
 
+
+// ---- 6. a GROUPED red alert is a statement about the cast, exactly like "(AoE N)" on a healthy row ---------
+//
+// When a monitored buff goes missing the box draws a red OUT row. Several people losing the SAME buff can be
+// one event or several, and the two want opposite things :
+//   * one AoE cast (Protectra, a spell under SCH Accession, a COR roll) expires for everybody at once. That is
+//     ONE fact, and six red lines for it is noise -- so it folds into "Phalanx (AoE 3)".
+//   * three casts placed one by one on three people are THREE facts, and the NAME of each person is the whole
+//     reason the per-person layout exists. Folding them drops exactly the information the alert is for.
+//
+// The rule shipped counting only "these alerts share a spell id", so three single-target Phalanx lost together
+// came out as one nameless "Phalanx (AoE 3)". Reported from play on 2026-09-12 ("plusieurs personnes ont perdu
+// Phalanx, ca les groupe alors qu'on ne veut pas"). It is the TWIN of the healthy-row defect fixed the same day
+// in ally_group.h (`out.group = in.fresh && in.aoe && effN >= 2`) -- one of the two paths was corrected and the
+// other was left, which is how a fix creates a report instead of closing one.
+//
+// So the cast decides here too: only entries whose cast actually named 2+ targets may group, and they group
+// only with each other. `aoe` comes from the model (OtherBuff::aoe, set from the 0x028 target count).
+struct AlertEntry {
+    unsigned short spell;   // 0 = no known cast (food, gear) : never groupable
+    unsigned char  aoe;     // the cast named 2+ targets
+};
+
+// How many alerts does entry `q` speak for ? 1 = draw it alone, WITH the name of whoever lost it.
+// >= 2 = draw one grouped line for them all. Entries other than `q` that fold into it are found by the same
+// rule, so the caller can skip any entry an earlier one already speaks for.
+inline int focus_alert_speaks_for(const AlertEntry* a, int n, int q) {
+    if (!a || q < 0 || q >= n) return 0;
+    if (!a[q].spell || !a[q].aoe) return 1;          // a single-target cast (or none) stands alone, always
+    int same = 0;
+    for (int i = 0; i < n; ++i)
+        if (a[i].spell == a[q].spell && a[i].aoe) ++same;   // only AoE entries fold, and only into an AoE entry
+    return same < 1 ? 1 : same;
+}
+
+// Is `q` already covered by an earlier grouped alert ? Same rule, read from the other end.
+inline bool focus_alert_covered(const AlertEntry* a, int n, int q) {
+    if (!a || q <= 0 || q >= n) return false;
+    if (!a[q].spell || !a[q].aoe) return false;      // a lone alert is never spoken for by anybody
+    for (int i = 0; i < q; ++i)
+        if (a[i].spell == a[q].spell && a[i].aoe) return true;
+    return false;
+}
+
 } // namespace aio
