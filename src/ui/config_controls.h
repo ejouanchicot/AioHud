@@ -180,6 +180,7 @@ void chevron(u32 dev, float cx, float cy, float s, int dir, u32 col);
 void row_band(u32 dev, float x, float y, float w, float h, bool alt, float hov);
 void clip_rect_begin(u32 dev, float x, float y, float w, float h);   // stencil scissor (viewport clip)
 void clip_rect_end(u32 dev);
+void clip_rect_reset(u32 dev);   // panic restore : an unbalanced clip must not narrow the rest of the frame
 void chrome_text(u32 dev, Font* fo, float x, float y, const char* s, float size, float w,
                  u32 top, u32 bot, float bandTop, float bandBot);
 void gem(u32 dev, float cx, float cy, float r, u32 col);

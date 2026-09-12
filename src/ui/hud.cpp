@@ -415,6 +415,7 @@ void Hud::render(u32 dev) {
         }
         }   // end worldReady : boxes hidden until logged in
         config_.draw(f, screenW_, screenH_);   // full-screen config overlay, on top of everything (the Help owns + loads its own zone map)
+        clip_rect_reset(f.dev);                // a clip left open would narrow everything drawn after it
         draw_config_preview(f);                // real party+alliance demo boxes inside the config preview stage
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         // RATE-LIMITED, not once-per-session. A `static bool logged` meant a widget faulting on EVERY frame
@@ -425,6 +426,8 @@ void Hud::render(u32 dev) {
         // frame would otherwise append behind them and submit this frame's leftovers -- old positions, old UVs,
         // whatever atlas is bound by then -- as a stray line of ghost text.
         font_reset_batch();
+        clip_rect_reset(dev);   // ... and the same for a clip the unwind never closed : the viewport is state too
+
         static unsigned faults = 0, nextLogMs = 0;
         const unsigned nowMs = GetTickCount();
         ++faults;

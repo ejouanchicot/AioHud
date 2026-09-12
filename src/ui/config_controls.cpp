@@ -4,6 +4,7 @@
 #include "ui/config_controls.h"
 #include "gfx/window.h"      // window_tex_theme_count / window_theme_name (the FFXI skins)
 #include "ui/box_style.h"       // box_hue_count / box_hue_color (the procedural families)
+#include "gfx/clip_rect.h"    // clip_box_of / clip_intersect : the pure rect decision of the nested clip below
 #include "gfx/draw.h"          // grad_quad, rrect, soft_blob, rrect_glow, disc, disc_glow, seg_soft, fill_tri, tquad, dSet*
 #include "model/ui_config.h"   // ui_config(), save_ui_config() (row_slider persists on release)
 #include "windower_debug.h"    // debug::log : ease()'s spring table says so when it fills (rule 10 corollary)
@@ -317,78 +318,91 @@ void row_band(u32 dev, float x, float y, float w, float h, bool alt, float hov) 
 // technique as the vial's rounded clip). Everything drawn between begin/end is masked to the rect.
 // If the back-buffer has no stencil the ops are ignored -> the column just overflows as before (no crash). ----
 enum { SCL_ENABLE = 52, SCL_FAIL = 53, SCL_ZFAIL = 54, SCL_PASS = 55, SCL_FUNC = 56, SCL_REF = 57, SCL_MASK = 58, SCL_WRITEMASK = 59 };
-// ---- NESTED stencil clipping. ----
-// This used to be a one-level scissor: begin() cleared its region to 0 and wrote 1 inside, end() switched the
-// stencil off. Fine while nothing nested -- and the moment something did, the INNER end() dropped the OUTER
-// clip for the rest of the frame. That is not hypothetical: the module content is drawn inside a scroll
-// viewport clip, and a folding section clips inside that, so a tall page's overflow stopped being contained
-// after the first section.
-// It counts DEPTH now. Level 1 clears and writes 1, as before. Each deeper level INCREMENTS the stencil inside
-// its own rect but only where the parent's value already stands -- so a child can only ever shrink its parent's
-// region, never escape it -- and the test is "equal to my depth". end() DECREMENTS the same rect back and
-// restores the parent's test, which is why the rects are kept: you cannot undo a region you have forgotten.
-enum { STOP_KEEP = 1, STOP_REPLACE = 3, STOP_INCRSAT = 4, STOP_DECRSAT = 5, SCMP_EQUAL = 3, SCMP_ALWAYS = 8 };
-static struct ClipRect { float x, y, w, h; } g_clipStack[6];
-static int g_clipDepth = 0;
-static int g_clipSkipped = 0;   // begins refused for want of depth ; their end() must still be swallowed
+// ---- NESTED clipping, by SUB-VIEWPORT. ----
+// This was a stencil mask, and the stencil is the one mechanism that cannot work here. minimap.cpp:680 carries
+// the measurement: at HUD-draw time NO depth-stencil surface is bound, so every stencil op is a no-op even on a
+// device created with one, and the mask never clips. So this clipped NOTHING, in every tab, for as long as it
+// existed. Three consequences, all of them things someone had to look at and explain away:
+//   - scrolled module options were drawn straight over the masthead (reported 2026-09-12 : "quand on scroll les
+//     menu vont dans le header, le header devait les cacher") ;
+//   - a folding section revealed its rows unmasked instead of growing into its card ;
+//   - chrome_text draws its wordmark NINE times, each pass meant to be cut to one horizontal band -- with no
+//     clip each pass drew the whole glyph, so the title came out FLAT in the last band's colour.
+// The depth-counting nesting logic was correct and is kept; it was simply counting on a masking mechanism that
+// was never there. (The two tabs that visibly did not spill -- Help, Edit Layout -- are the two that cull per
+// item instead of clipping, which reads in hindsight like someone hitting this and working around it locally.)
+//
+// A sub-VIEWPORT is a hard rasterizer scissor: it needs no stencil, it cuts even pre-transformed (XYZRHW)
+// geometry, and it does NOT move it -- which is exactly how the minimap already clips its blips to a square
+// map. Nesting is then an INTERSECTION of rectangles (gfx/clip_rect.h, covered by tests/t_clip.cpp): a child
+// can only shrink its parent, and end() restores the parent's rectangle. The rects are kept for that reason --
+// you cannot restore a region you have forgotten.
+//
+// The state left behind on entry and exit is unchanged from the stencil version (FVF, no bound texture, alpha
+// test off, blending on, full colour write), because callers have been drawing against it for a year.
+static ClipBox g_clipStack[6];
+static D3DVIEWPORT8 g_vpSave;                  // the viewport as it stood before the OUTERMOST clip
+static bool g_vpOk = false;
+static int  g_clipDepth = 0;                   // counts EVERY begin, past the stack too, so end() always pairs
 
-void clip_rect_begin(u32 dev, float x, float y, float w, float h) {
-    if (g_clipDepth >= (int)(sizeof(g_clipStack) / sizeof(g_clipStack[0]))) {
-        // Budget spent. SAY SO once (rule 10's corollary): silently not clipping looks like a layout bug
-        // somewhere else entirely, which is a long way from here.
-        static bool full = false;
-        if (!full) { full = true; windower::debug::log("clip_rect_begin(): nesting too deep (%d) -- this clip is a no-op", g_clipDepth); }
-        ++g_clipSkipped;   // its end() is coming regardless, and must NOT pop a level it never pushed
-        return;
-    }
-    const int d = g_clipDepth;
+static void clip_set(u32 dev, const ClipBox& c) {
+    D3DVIEWPORT8 vp = g_vpSave;
+    vp.X = (u32)c.l; vp.Y = (u32)c.t;
+    vp.Width = (u32)(c.r - c.l); vp.Height = (u32)(c.b - c.t);
+    dSetViewport(dev, vp);
+}
+static void clip_state(u32 dev) {              // what the old mask passes happened to leave set
     dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
+    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);
     dSetRS(dev, D3DRS_ALPHATESTENABLE, 0);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 0);
-    dSetRS(dev, SCL_ENABLE, 1);
-    dSetRS(dev, SCL_MASK, 0xFF); dSetRS(dev, SCL_WRITEMASK, 0xFF);
-    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0);                        // mask pass : write stencil only, no colour
-    if (d == 0) {
-        dSetRS(dev, SCL_FUNC, SCMP_ALWAYS);
-        dSetRS(dev, SCL_FAIL, STOP_REPLACE); dSetRS(dev, SCL_ZFAIL, STOP_REPLACE); dSetRS(dev, SCL_PASS, STOP_REPLACE);
-        dSetRS(dev, SCL_REF, 0);
-        grad_quad(dev, x - 2.0f, y - 2.0f, w + 4.0f, h + 4.0f, 0, 0, 0, 0);          // clear the region -> 0
-        dSetRS(dev, SCL_REF, 1);
-        grad_quad(dev, x, y, w, h, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000);  // set 1 inside the rect
-    } else {
-        dSetRS(dev, SCL_FUNC, SCMP_EQUAL); dSetRS(dev, SCL_REF, d);                  // only where the parent stands
-        dSetRS(dev, SCL_FAIL, STOP_KEEP); dSetRS(dev, SCL_ZFAIL, STOP_KEEP); dSetRS(dev, SCL_PASS, STOP_INCRSAT);
-        grad_quad(dev, x, y, w, h, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000);
-    }
-    g_clipStack[d].x = x; g_clipStack[d].y = y; g_clipStack[d].w = w; g_clipStack[d].h = h;
-    g_clipDepth = d + 1;
-
-    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);               // content : colour on, ONLY at my depth
-    dSetRS(dev, SCL_FUNC, SCMP_EQUAL); dSetRS(dev, SCL_REF, g_clipDepth);
-    dSetRS(dev, SCL_FAIL, STOP_KEEP); dSetRS(dev, SCL_ZFAIL, STOP_KEEP); dSetRS(dev, SCL_PASS, STOP_KEEP);
     dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
 }
-void clip_rect_end(u32 dev) {
-    if (g_clipSkipped > 0) { --g_clipSkipped; return; }   // the matching begin was refused : leave the stencil alone
-    if (g_clipDepth <= 0) { dSetRS(dev, SCL_ENABLE, 0); dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F); return; }
-    const int d = --g_clipDepth;
-    if (d == 0) {                                                  // outermost : just switch the test off
-        dSetRS(dev, SCL_ENABLE, 0);
-        dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);
-        dSetRS(dev, D3DRS_ALPHATESTENABLE, 0);                     // restore what begin() turned off
+
+void clip_rect_begin(u32 dev, float x, float y, float w, float h) {
+    const int d = g_clipDepth++;               // ALWAYS : a begin that cannot narrow still owes its end() a level
+    const int MAXD = (int)(sizeof(g_clipStack) / sizeof(g_clipStack[0]));
+    if (d >= MAXD) {
+        // Budget spent. SAY SO once (rule 10's corollary): silently not narrowing looks like a layout bug
+        // somewhere else entirely. The parent's clip still holds, so this is a missed narrowing, not a leak.
+        static bool full = false;
+        if (!full) { full = true; windower::debug::log("clip_rect_begin(): nesting too deep (%d) -- this clip does not narrow", d); }
         return;
     }
-    const ClipRect r = g_clipStack[d];                             // undo exactly the region this level added
-    dSetVS(dev, FVF_XYZRHW_DIFFUSE); dSetTex(dev, 0, 0);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 0);
-    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0);
-    dSetRS(dev, SCL_FUNC, SCMP_EQUAL); dSetRS(dev, SCL_REF, d + 1);
-    dSetRS(dev, SCL_FAIL, STOP_KEEP); dSetRS(dev, SCL_ZFAIL, STOP_KEEP); dSetRS(dev, SCL_PASS, STOP_DECRSAT);
-    grad_quad(dev, r.x, r.y, r.w, r.h, 0xFF000000, 0xFF000000, 0xFF000000, 0xFF000000);
-    dSetRS(dev, D3DRS_COLORWRITEENABLE, 0x0000000F);               // ... and hand the parent's test back
-    dSetRS(dev, SCL_FUNC, SCMP_EQUAL); dSetRS(dev, SCL_REF, d);
-    dSetRS(dev, SCL_FAIL, STOP_KEEP); dSetRS(dev, SCL_ZFAIL, STOP_KEEP); dSetRS(dev, SCL_PASS, STOP_KEEP);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
+    if (d == 0) {
+        g_vpOk = dGetViewport(dev, g_vpSave);
+        if (!g_vpOk) { windower::debug::log("clip_rect_begin(): GetViewport failed -- no clipping this frame"); return; }
+    }
+    if (!g_vpOk) return;                       // outermost failed : every level below it is a no-op, not a crash
+    const ClipBox page = { (long)g_vpSave.X, (long)g_vpSave.Y,
+                           (long)(g_vpSave.X + g_vpSave.Width), (long)(g_vpSave.Y + g_vpSave.Height) };
+    const ClipBox parent = (d == 0) ? page : g_clipStack[d - 1];
+    g_clipStack[d] = clip_intersect(parent, clip_box_of(x, y, w, h));
+    clip_set(dev, g_clipStack[d]);
+    clip_state(dev);
+}
+void clip_rect_end(u32 dev) {
+    if (g_clipDepth <= 0) return;              // unpaired end : nothing to restore, and nothing to break
+    const int d = --g_clipDepth;
+    const int MAXD = (int)(sizeof(g_clipStack) / sizeof(g_clipStack[0]));
+    if (d >= MAXD || !g_vpOk) return;          // this level never narrowed anything
+    if (d == 0) { dSetViewport(dev, g_vpSave); g_vpOk = false; }   // back to the whole page
+    else          clip_set(dev, g_clipStack[d - 1]);               // ... or to the parent's rectangle
+    clip_state(dev);
+}
+
+// PANIC RESTORE. While the clip was a dead stencil mask, a begin() whose end() never ran was harmless -- it
+// masked nothing either way. With a real scissor it is not: the viewport would stay narrowed for the whole
+// rest of the frame, and everything drawn after it would vanish outside a band. The two ways that happens are
+// an early return between a begin and its end, and the HUD's SEH handler unwinding a faulting widget -- so the
+// frame ENDS by asking, the way it already drops the half-built glyph batch. It says so once, because a clip
+// leak is a code defect, not a condition to live with.
+void clip_rect_reset(u32 dev) {
+    if (g_clipDepth == 0) return;
+    static bool said = false;
+    if (!said) { said = true; windower::debug::log("clip_rect_reset(): %d clip(s) left open -- viewport restored", g_clipDepth); }
+    g_clipDepth = 0;
+    if (g_vpOk) { dSetViewport(dev, g_vpSave); g_vpOk = false; }
+    clip_state(dev);
 }
 
 // a CHROME wordmark : a dark EXTRUDED shadow (offset passes -> depth) under a vertical METALLIC gradient
