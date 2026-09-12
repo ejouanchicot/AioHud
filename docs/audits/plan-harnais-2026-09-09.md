@@ -246,3 +246,76 @@ remede tient en une action : charger le profil puis « Save changes » une fois,
 
 ### Reste du a l'element 5 Les entiers de **mode / theme / variante** (~60 champs) restent hors du sanitiseur, volontairement :
 chacun demande la lecture de son panneau pour etre borne honnetement, et ils sont gardes a leur site de dessin.
+
+---
+
+## 8. Le pont en jeu — l'autre moitié du harnais (2026-09-12)
+
+Ce document affirmait, §1 et §7, que la moitié « en jeu » est **séparée et le restera** : aucun test ne peut
+prouver que `*(g+0x40)+0x02` est la zone, donc rendu, offsets et variance de région étaient laissés à
+`//aio doctor` et à un œil devant l'écran.
+
+**C'était vrai tant que le seul témoin était le plugin.** Windower lit les mêmes faits par un chemin
+totalement différent — sa propre couche mémoire, ses propres handlers de paquets. C'est donc un **oracle
+indépendant**, et là où deux témoins indépendants peuvent être confrontés, un test existe.
+
+### Ce que c'est
+
+| | |
+|---|---|
+| `scripts/aiotest/aiotest.lua` | un addon Windower **de développement** (jamais livré : `package.bat` exclut `scripts\`). Il lit un fichier de requête, exécute les commandes qu'il nomme, attend, et écrit un instantané de la vision de **Windower**. Il n'affirme rien. |
+| `scripts/igtest.py` | le côté qui pose les questions **et qui juge**. Les assertions vivent ici pour être modifiables et rejouables sans recharger l'addon ni le jeu. |
+
+Installation : copier `scripts/aiotest/` dans `<windower>\addons\aiotest\`, puis `//lua load aiotest`.
+Les chemins sont dérivés de `deploy.local.bat` — une seule source de vérité avec `deploy.bat`.
+
+**Transport par fichiers, pas socket** : aucun port, aucun pare-feu, ça marche client minimisé ou joueur AFK,
+ça survit à un crash des deux côtés, et les deux moitiés se lisent dans un éditeur quand ça tourne mal.
+LuaSocket EST disponible (CurePlease et XivParty s'en servent) et pourrait porter une version interactive
+plus tard ; le batch n'en a pas besoin.
+
+**Format `clé=valeur` à plat** : la lib json livrée par Windower ne sait que *parser*, pas encoder, et un
+encodeur écrit à la main est exactement le genre de code faux pendant une semaine sans que personne le voie.
+
+### Les commandes
+
+```
+python scripts/igtest.py ping          le pont répond-il
+python scripts/igtest.py snap          tout ce que Windower voit (options : --want, --cmd)
+python scripts/igtest.py crosscheck    LA confrontation
+python scripts/igtest.py selftest      prouve que chaque contrôle sait ÉCHOUER
+python scripts/igtest.py watch         crosscheck en boucle, pour une soirée de jeu
+```
+
+### Les cinq premières confrontations, et pourquoi celles-là
+
+| Contrôle | Ce qu'aucun test hors ligne ne pouvait dire |
+|---|---|
+| **zone** | l'offset que le plan citait comme l'exemple même de l'inprouvable, et qu'un patch client déplace |
+| **self id** | la clé de tous les filtres « à moi / pas à moi » et du nom du fichier de cache |
+| **main job** | pilote la liste de buffs suivis et le profil automatique |
+| **taille du roster** | nous parcourons un tableau de membres ; eux interrogent leur propre structure de party |
+| **nombre de buffs** | notre `u16[32]` terminé par `0xFF` contre leur liste |
+
+Première exécution, 2026-09-12 : **5 passés, 0 échoué**, et la zone a bougé (248 → 230) entre deux mesures —
+ce qui prouve que la comparaison porte sur du frais et non sur un cache.
+
+### `selftest` : l'étape 3 appliquée au pont lui-même
+
+Un test vert qui n'est jamais passé au rouge ne prouve que son exécution. `igtest.py selftest` prend **une**
+mesure réelle, puis casse chaque comparaison à son tour et exige un `FAIL`. Un contrôle qui reste vert avec une
+valeur qui ne peut pas correspondre est **décoratif** — et c'est pire qu'absent, puisqu'il est compté comme de
+la couverture. Résultat du 2026-09-12 : **5 contrôles sur 5 mordent.**
+
+### Ce que le pont ne fera jamais
+
+Juger un pixel (un flou, une ligne noire, un glow qui bave) et fabriquer une situation qui demande d'être
+quelque part (Abyssea, Odyssée, un vrai combat). Ce soir a montré que cette moitié compte : aucun test hors
+ligne n'aurait vu des bouts de barre devenus carrés — seul un œil l'a vu, en une minute.
+
+### Ce qu'il rend possible ensuite
+
+L'addon peut **agir** (`windower.send_command`), donc la forme suivante est un scénario rejouable : lancer un
+sort, attendre, et confronter la durée que le HUD affiche à celle que le serveur a réellement donnée. C'est le
+module qui a coûté le plus de bugs au projet (timers de buffs alliés, songs), et il se teste aujourd'hui en
+jouant une soirée.

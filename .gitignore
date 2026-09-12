@@ -80,3 +80,7 @@ deploy.local.bat
 
 # scratch buffer for the wiki/AI question exchanges (docs/songs/ holds what is worth keeping)
 /prompt.txt
+
+# Python bytecode from the dev-side test drivers (scripts/igtest.py)
+__pycache__/
+*.pyc
