@@ -10,6 +10,12 @@
 #include "model/map_dat.h"           // load_zone_map (ROM DAT extraction)
 #include "model/game_mem.h"          // current_submap : logged when a map load fails (black-minimap diagnosis)
 #include "windower_debug.h"          // MAP FAIL log (always on -- the bug is rare and can't be armed for)
+#include "retry_clock.h"             // retry_due / retry_arm : bounded retry with a delay, the project's one idiom
+
+// The marker/element retry budget. 12 attempts over 2.4 s was the old value and it was too short to survive a
+// slow zone-in ; these give about a minute, which is the order of the project's other budgets.
+static const int      MK_TRIES    = 24;
+static const unsigned MK_RETRY_MS = 2500;
 #include "gfx/draw.h"
 #include "gfx/font.h"
 #include "gfx/texture.h"             // make_texture_argb_mip / release_texture
@@ -362,13 +368,32 @@ void Minimap::draw(const Frame& f) {
     // BOUNDED retry, not a one-shot : this used to latch after a single attempt, so one transient miss (the updater
     // replacing the asset, a device not ready right after a zone-in) meant NO markers on the minimap and NO element
     // icons in the clock header for the whole device generation. Each texture is retried on its own.
-    if ((!mkPlayer_ || !mkMob_ || !elemTex_) && mkTries_ < 12) {
-        const unsigned nowMs = GetTickCount();
-        if (!mkNextMs_ || (int)(nowMs - mkNextMs_) >= 0) {   // !mkNextMs_ : the 0 sentinel (init / device-lost) must fire even past 24.8d uptime, when (int)(nowMs-0) is negative (cf. player.cpp / hud_timers.cpp)
+    //
+    // ... AND THE BUDGET WAS 12 ATTEMPTS OVER 2.4 SECONDS, WHICH IS NOT A PLATEAU. Past that the feature was dead
+    // for the device generation with NOT ONE LINE anywhere -- the exact shape the comment above says it exists to
+    // prevent, and the audit of 2026-09-12 caught the contradiction (the other budgets in this project run ~27x
+    // longer). A zone-in that takes more than two seconds to hand us a usable device was enough to lose the
+    // markers for good. Now: a minute of trying, spaced, and it SAYS SO at both ends -- when it finally loads
+    // (instrument the success path too) and when it gives up, with the paths, because "my minimap has no blips"
+    // is otherwise indistinguishable from an empty zone.
+    // Uses retry_clock.h rather than the hand-rolled sentinel this carried : retry_due() IS that 0-sentinel
+    // check, and the project has one correct implementation of it on purpose.
+    if ((!mkPlayer_ || !mkMob_ || !elemTex_) && mkTries_ < MK_TRIES) {
+        if (retry_due(mkNextMs_)) {
+            retry_arm(mkNextMs_, mkTries_ < 4 ? 1u : MK_RETRY_MS);   // the first few immediately (a device just becoming ready), then spaced
+            ++mkTries_;
             if (!mkPlayer_) mkPlayer_ = load_raw_texture_mip(dev, MK_PLAYER_PATH(), 64, 64);
             if (!mkMob_)    mkMob_    = load_raw_texture_mip(dev, MK_MOB_PATH(),    64, 64);
             if (!elemTex_)  elemTex_  = load_raw_texture_mip(dev, ELEM_ATLAS_PATH(), 256, 32);
-            if (!mkPlayer_ || !mkMob_ || !elemTex_) { ++mkTries_; mkNextMs_ = nowMs + (mkTries_ < 4 ? 0u : 300u); }
+            if (mkPlayer_ && mkMob_ && elemTex_) {
+                if (mkTries_ > 1) windower::debug::log("minimap: marker + element textures loaded after %d attempt(s)", mkTries_);
+                mkTries_ = 0;
+            } else if (mkTries_ >= MK_TRIES) {
+                windower::debug::log("minimap: gave up after %d attempts -- player=%d mob=%d elements=%d. No blips and no "
+                                     "element icons until a device reset. Expected files : %s | %s | %s",
+                                     mkTries_, mkPlayer_ ? 1 : 0, mkMob_ ? 1 : 0, elemTex_ ? 1 : 0,
+                                     MK_PLAYER_PATH(), MK_MOB_PATH(), ELEM_ATLAS_PATH());
+            }
         }
     }
 
@@ -924,16 +949,40 @@ float minimap_help_legend(u32 dev, Font* fo, u32 mkPlayer, u32 mkMob, float x, f
 // the current bucket via UV + tints by the day colour + mirrors for a waning moon. No per-frame texture create.
 static const int MOON_F = 25;
 const char* minimap_help_moon(u32 dev, u32& moonTex, int& moonKey, float cx, float cy, float r, float t, int lang) {
-    if (moonTex == 0 || moonKey != -2) {                             // bake the phase STRIP once (moonKey == -2 = baked)
-        if (moonTex) { release_texture(moonTex); moonTex = 0; }
-        static u32 strip[64 * (MOON_F * 64)];                        // 64 tall x (25*64) wide, baked once
-        static u32 tmp[64 * 64];
-        for (int fi = 0; fi < MOON_F; ++fi) {
-            build_moon_argb(tmp, 64, 0xFFFFFFFFu, (float)fi / (float)(MOON_F - 1), false);   // WHITE, waxing -> tint/mirror at draw
-            for (int yy = 0; yy < 64; ++yy) for (int xx = 0; xx < 64; ++xx) strip[yy * (MOON_F * 64) + fi * 64 + xx] = tmp[yy * 64 + xx];
+    // THE KEY IS THE PRODUCT, NOT THE ATTEMPT. This used to set moonKey = -2 ("baked") immediately after the
+    // create call, without looking at what came back. A refused CreateTexture therefore left moonTex = 0 with
+    // the key claiming success, so the very next frame re-entered and baked all 25 frames again: 102 400 pixels
+    // of build_moon_argb, every frame, for as long as the refusal lasted, with nothing in the log. That is rule
+    // 10 form C -- a partial success is not a success -- and a 1600-wide non-power-of-two texture is exactly the
+    // kind of thing a driver refuses. Now: the key is only set when the handle EXISTS, the retry is bounded and
+    // spaced, and the budget is re-armed by the caller's device-lost reset (it sets moonKey = -1, not -3).
+    static const int      MOON_TRIES    = 6;
+    static const unsigned MOON_RETRY_MS = 3000;
+    static unsigned nextMs = 0;
+    static int      tries  = 0;
+    if (moonTex == 0) {
+        if (moonKey != -3) { tries = 0; nextMs = 0; moonKey = -3; }   // fresh request, or the owner forgot the handle
+        if (tries < MOON_TRIES && retry_due(nextMs)) {
+            retry_arm(nextMs, MOON_RETRY_MS);
+            ++tries;
+            static u32 strip[64 * (MOON_F * 64)];                        // 64 tall x (25*64) wide, baked once
+            static u32 tmp[64 * 64];
+            for (int fi = 0; fi < MOON_F; ++fi) {
+                build_moon_argb(tmp, 64, 0xFFFFFFFFu, (float)fi / (float)(MOON_F - 1), false);   // WHITE, waxing -> tint/mirror at draw
+                for (int yy = 0; yy < 64; ++yy) for (int xx = 0; xx < 64; ++xx) strip[yy * (MOON_F * 64) + fi * 64 + xx] = tmp[yy * 64 + xx];
+            }
+            moonTex = make_texture_argb_mip(dev, MOON_F * 64, 64, strip);
+            if (moonTex) {
+                moonKey = -2;                                            // baked, and the handle is real
+                if (tries > 1) windower::debug::log("minimap help: moon strip baked after %d attempt(s)", tries);
+                tries = 0;
+            } else if (tries >= MOON_TRIES) {
+                windower::debug::log("minimap help: the %dx64 moon strip could not be created after %d attempts -- "
+                                     "the Help tab's moon will not draw. A non-power-of-two %d-wide texture is the "
+                                     "likely refusal ; everything else on that page is unaffected.",
+                                     MOON_F * 64, tries, MOON_F * 64);
+            }
         }
-        moonTex = make_texture_argb_mip(dev, MOON_F * 64, 64, strip);
-        moonKey = -2;
     }
     const float ph   = fmodf(t * 0.30f, 6.2831853f);
     const float frac = 0.5f - 0.5f * cosf(ph);                        // 0 (new) .. 1 (full) .. 0

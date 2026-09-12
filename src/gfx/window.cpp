@@ -4,6 +4,11 @@
 #include "gfx/texture.h"   // load_raw_texture, release_texture
 #include "model/paths.h"   // plugin_path : runtime-derived asset base (gfx infra exception to the layering rule)
 #include "windower_debug.h"   // debug::log -- a skin that never loads must not be silent
+#include "retry_clock.h"      // retry_due / retry_arm : the project's ONE "try again later" (see its header)
+
+// 2 s between two failed skin loads. The callers ask every frame ; this is what turns 60 attempts a second
+// into one every two seconds without ever giving up (a missing folder can be fixed while the game runs).
+static const unsigned SKIN_RETRY_MS = 2000;
 #include <cstdio>
 #include <cstdlib>
 
@@ -80,6 +85,13 @@ const char* window_theme_name(int i) {
 
 bool WindowSkin::load(u32 dev, const char* themeName) {
     if (!valid_ptr(dev) || !themeName) return false;
+    // BACK OFF BETWEEN FAILURES. Every caller retries on `!ready()`, which means EVERY FRAME (hud.cpp,
+    // player.cpp, target.cpp, box_style.cpp), and each attempt is four CreateFileA. With the skins the HUD
+    // holds, an unreadable assets\window\<theme>\ meant 20 to 32 failed file opens a frame for the whole
+    // session -- measured by the audit of 2026-09-12. The log line below already existed and fired once; what
+    // was missing was the delay. It still retries forever (a transient must not become permanent), just at
+    // 0.5 Hz instead of 60. A device loss / dispose clears failN, so recovery is immediate where it matters.
+    if (failN > 0 && !retry_due(nextTryMs)) return false;
     // ASSET_BASE() can legitimately return 259 chars (plugin_path caps at 260), and each build appends ~12 more.
     // sprintf here was unbounded -> a deep install path (Program Files + a long user folder, the exact shape that
     // has bitten the NA tester before) would smash this stack buffer at load time and on every theme change.
@@ -101,18 +113,19 @@ bool WindowSkin::load(u32 dev, const char* themeName) {
         // and //aio self_check reported it as "(none/proc)" -- the same string it prints for a genuinely
         // procedural theme, so the one diagnostic available said "working as intended".
         ++failN;
+        retry_arm(nextTryMs, SKIN_RETRY_MS);
         if (failN == 1)
             windower::debug::log("SKIN '%s' FAILED to load (corner=%d hframe=%d vframe=%d bg=%d) -- base '%s'. Boxes draw with NO skin ; retrying.",
                                  themeName, c ? 1 : 0, hf ? 1 : 0, vf ? 1 : 0, b ? 1 : 0, ASSET_BASE());
         return false;
     }
-    if (failN) { windower::debug::log("SKIN '%s' loaded after %d failed attempt(s)", themeName, failN); failN = 0; }
+    if (failN) { windower::debug::log("SKIN '%s' loaded after %d failed attempt(s)", themeName, failN); failN = 0; nextTryMs = 0; }
     release_texture(corner); release_texture(hframe); release_texture(vframe); release_texture(bg);   // swap in atomically
     corner = c; hframe = hf; vframe = vf; bg = b;
     borderColor = border_from_bg(p);     // derive the border colour from this theme's bg
     return true;
 }
-void WindowSkin::on_device_lost() { corner = hframe = vframe = bg = 0; }
+void WindowSkin::on_device_lost() { corner = hframe = vframe = bg = 0; failN = 0; nextTryMs = 0; }   // a new device deserves an immediate attempt
 void WindowSkin::dispose() {
     release_texture(corner); release_texture(hframe); release_texture(vframe); release_texture(bg);
     corner = hframe = vframe = bg = 0;
@@ -293,16 +306,44 @@ static void plate_frame(u32 dev, float x, float y, float w, float h, u32 mat, fl
 
 // ---- material texture cache (procedural, generated once, forgotten on device loss like the skin) ----
 static u32 g_matWood = 0, g_matFrost = 0, g_matVelvet = 0, g_matMetal = 0;
+// A FAILED BAKE USED TO BE RETRIED EVERY FRAME. Each `make_*` is a 256x256 procedural fill -- 65 536 pixels,
+// several fbm evaluations each -- and there are four of them, so a CreateTexture that keeps refusing cost
+// millions of operations a frame for as long as it refused, with nothing in the log. Bounded retry with a
+// delay (retry_clock.h, the project's one idiom for this) and it SAYS SO when the budget is spent: a family
+// drawing untextured is a "why is my box flat" that no diagnostic explained.
+// The budget is re-armed by window_materials_reset() / _dispose(), so a device recreate starts over -- a
+// transient refusal must not become a permanent state (rule 10), and a zone-in is exactly when it happens.
+// NOT changed: all four are baked even if only one family is on screen. That is a ONE-TIME cost (they are
+// cached for the session), not a per-frame one, so restructuring draw_box_family's switch to bake on demand
+// would be a wider remedy than the fault. Noted, deliberately left.
+static const int      MAT_TRIES    = 8;      // ~8 attempts over ~16 s : past that, the device is not going to change its mind
+static const unsigned MAT_RETRY_MS = 2000;   // 2 s between attempts : 120x cheaper than every frame, still recovers by itself
+static unsigned g_matNextMs = 0;
+static int      g_matTries  = 0;
 static void ensure_materials(u32 dev) {
+    if (g_matWood && g_matFrost && g_matVelvet && g_matMetal) return;   // the overwhelming majority of calls
+    if (g_matTries >= MAT_TRIES || !retry_due(g_matNextMs)) return;
+    retry_arm(g_matNextMs, MAT_RETRY_MS);
+    ++g_matTries;
     if (!g_matWood)   g_matWood   = make_wood(dev, 256, 256);
     if (!g_matFrost)  g_matFrost  = make_frost(dev, 256, 256);
     if (!g_matVelvet) g_matVelvet = make_velvet(dev, 256, 256);
     if (!g_matMetal)  g_matMetal  = make_metal(dev, 256, 256);
+    if (g_matWood && g_matFrost && g_matVelvet && g_matMetal) {
+        if (g_matTries > 1) windower::debug::log("window materials: all 4 procedural textures baked after %d attempt(s)", g_matTries);
+        g_matTries = 0;   // instrument the SUCCESS path too, and give the next device loss a full budget
+        return;
+    }
+    if (g_matTries >= MAT_TRIES)
+        windower::debug::log("window materials: gave up after %d attempts -- wood=%d frost=%d velvet=%d metal=%d. "
+                             "The material box families will draw untextured (flat) until a device reset.",
+                             g_matTries, g_matWood ? 1 : 0, g_matFrost ? 1 : 0, g_matVelvet ? 1 : 0, g_matMetal ? 1 : 0);
 }
-void window_materials_reset() { g_matWood = g_matFrost = g_matVelvet = g_matMetal = 0; }   // forget (device loss ; recreated lazily)
+void window_materials_reset() { g_matWood = g_matFrost = g_matVelvet = g_matMetal = 0; g_matTries = 0; g_matNextMs = 0; }   // forget (device loss ; recreated lazily, budget re-armed)
 void window_materials_dispose() {   // RELEASE (device still alive -> //unload) : else the 4 256^2 textures leak per load cycle
     release_texture(g_matWood); release_texture(g_matFrost); release_texture(g_matVelvet); release_texture(g_matMetal);
     g_matWood = g_matFrost = g_matVelvet = g_matMetal = 0;
+    g_matTries = 0; g_matNextMs = 0;   // a reload starts with a full budget
 }
 
 // draw a MATERIAL texture TILED (WRAP) at native `scale` px, coloured by `tint` (MODULATE ; opaque).

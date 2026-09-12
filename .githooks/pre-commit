@@ -12,6 +12,14 @@
 #
 # It runs the TESTS only, not the plugin build: the suite compiles what it needs itself and takes seconds, while
 # a full build.bat is ~50 s and would push people to --no-verify, which is worse than no hook at all.
+#
+# WHAT RUNS WHERE, so nobody adds a 50 s step here by mistake :
+#   pre-commit (this file)  the offline suite  +  the in-game cross-check when the game can answer
+#   push / CI               the offline suite again on a clean machine, AND the RELEASE shape -- CI has no
+#                           src/plugin/aiohud_probes.cpp (untracked), so build.bat there compiles without
+#                           AIOHUD_PROBES. That configuration is therefore covered on every push and does not
+#                           need to be repeated here.
+#   tag / CI                the release verification (zip, sidecar, addon parse, payload contents)
 
 root=$(git rev-parse --show-toplevel)
 cd "$root" || exit 1
@@ -37,4 +45,48 @@ if [ $rc -ne 0 ]; then
 fi
 
 echo "$out" | grep -E "checks|\[tests\]" | tail -2
+
+# ---- 2. THE IN-GAME CROSS-CHECK, when the game can answer -------------------------------------------------
+# The offline suite cannot say whether our memory offsets are still right -- the harness plan named that as the
+# half no test could reach. It can now: Windower reads the same facts by a completely different path, so the
+# bridge (scripts/igtest.py, addon in scripts/aiotest/) confronts the two witnesses. Five checks: zone, self
+# id, main job, roster size, buff count.
+#
+# THE RULES THIS OBEYS, because a hook that blocks for the wrong reason is worse than no hook:
+#   * the game NOT running, or the addon not loaded, is NOT a failure -- it is skipped, out loud.
+#   * a real mismatch IS a failure, and it blocks : our zone disagreeing with Windower's is exactly the
+#     regression no other gate in this project can see.
+#   * a zone transition can make one check disagree for a second, so a failure is retried ONCE before it
+#     blocks. `--no-verify` remains the documented escape.
+if [ -f scripts/igtest.py ]; then
+    py=$(command -v python 2>/dev/null || command -v py 2>/dev/null)
+    if [ -z "$py" ]; then
+        echo "pre-commit: python not found -- in-game cross-check skipped"
+    else
+        ig=$("$py" scripts/igtest.py crosscheck 2>&1)
+        igrc=$?
+        case "$ig" in
+            *"no answer for request"*)
+                echo "pre-commit: in-game cross-check SKIPPED (game not running, or //lua load aiotest not done)" ;;
+            *"no AIO DOCTOR block"*|*"no log at"*)
+                echo "pre-commit: in-game cross-check SKIPPED (no doctor block in the log yet)" ;;
+            *)
+                if [ $igrc -ne 0 ]; then
+                    sleep 3                              # a zone transition can disagree for a second
+                    ig=$("$py" scripts/igtest.py crosscheck 2>&1)
+                    igrc=$?
+                fi
+                echo "$ig" | grep -E "^\s+\[(PASS|FAIL)\]|passed," | sed 's/^/           /'
+                if [ $igrc -ne 0 ]; then
+                    echo ""
+                    echo "pre-commit: IN-GAME CROSS-CHECK FAILED -- commit refused."
+                    echo "            AioHUD and Windower disagree about a fact one of them is reading wrong."
+                    echo "            That is a real regression, or a client patch moved an offset."
+                    echo "            --no-verify if you know why this one is allowed through."
+                    exit 1
+                fi ;;
+        esac
+    fi
+fi
+
 exit 0
