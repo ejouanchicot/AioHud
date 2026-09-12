@@ -45,16 +45,28 @@ relu). **Trois d'entre eux portaient un défaut**, et c'est le meilleur argument
 
 ## 3. Les grappes — une cause, plusieurs symptômes
 
-### 3.1 Le stencil mort (B, A, J)
-`minimap.cpp:679` mesure qu'aucun depth-stencil n'est lié au moment du dessin. Le clip de la config a été
-porté sur un sous-viewport le 2026-09-12 ; **`rrect_clip_begin/end` ne l'a pas été** et garde 9 sites vivants
-(`target.cpp` ×6, `liquid_bars.cpp:609`) : masque inopérant **et** 8 `DrawPrimitiveUP` gaspillés par appel,
-≈ 430 par frame en alliance avec le style Vial. Trois conséquences supplémentaires :
-- les contournements écrits pour le clip mort subsistent (`config_page.cpp:1036`, `:2203`, `:2288`) et sont
-  devenus nuisibles : dans l'onglet Update, un release ouvert perd sa carte et son titre au premier cran de
-  molette, le texte flotte ;
-- `docs/tech-stack/stencil.md` et `d3d8-rendering.md` documentent le mécanisme comme fonctionnel ;
-- le clip viewport de la minimap est hors pile, sans restauration panique, avec une règle d'arrondi différente.
+### 3.1 Le clip stencil (et la correction de cette section, le soir même)
+
+**Ce que cette section affirmait, et qui est FAUX** : que le clip stencil n'avait jamais rien coupé, parce que
+`minimap.cpp:679` écrit qu'aucun depth-stencil n'est lié au moment du dessin. Les huit auditeurs l'ont pris
+pour un fait mesuré, moi aussi. Agissant sur cette base, les passes de masque de `rrect_clip_begin` ont été
+retirées — **et les barres HP/MP/TP sont devenues à bouts carrés en jeu, dans la minute**. Reverti le soir même,
+sur le seul rapport qui compte : un œil devant l'écran.
+
+**Le modèle corrigé.** Le stencil FONCTIONNE ici. Ce qu'il ne fait pas, c'est agir comme un ciseau **en dehors
+du rectangle que sa passe de masque a effacé** : `rrect_clip_begin` efface `x-2,y-2,w+4,h+4` à 0 puis écrit 1
+dans la forme, donc dans ce rectangle nous décidons (coins à 0 → liquide coupé → bouts ronds), tandis que
+dehors le stencil contient ce que le JEU y a laissé et notre test `EQUAL 1` passe partout où ça vaut 1. C'est
+l'hypothèse de travail qui réconcilie les deux observations, et elle explique pourquoi le clip **rectangulaire**
+de la config ne retenait pas les lignes défilant vers le masthead : elles atterrissent hors de ce rectangle.
+D'où la règle : *donner une forme à ce qui est dessiné dans son rectangle* → stencil ; *couper ce qui peut
+atterrir dehors* → sous-viewport (`gfx/clip_rect.h`).
+
+**Ce qui tient de cette grappe** : le portage du clip de la config sur le viewport (un vrai ciseau, il a réglé
+un vrai bug rapporté en jeu) ; et la suppression des cinq contournements écrits pour ce clip défaillant — dans
+l'onglet Update, un release ouvert perdait sa carte et son titre au premier cran de molette et son texte
+flottait. **Ce qui ne tient pas** : les « ~430 appels de dessin gaspillés par frame ». Ils ne sont pas
+gaspillés, ils font le masque.
 
 ### 3.2 Le harnais en jeu, trois trous en série (A, H+I, E)
 Compilé hors des releases (S1-2) · jamais consulté par `doctor` (S1-3) · et l'anti-doublon du registre
@@ -95,13 +107,22 @@ Aucune n'a de plateau, alors que le projet applique ce motif ailleurs (`tex_retr
 
 ---
 
-## 6. Catégorie de défaut à ajouter au protocole (§9.4)
+## 6. Catégories de défaut à ajouter au protocole (§9.4)
 
-**« Un contournement écrit pour un mécanisme cassé devient un défaut le jour où le mécanisme est réparé. »**
-Trois instances ici, toutes nées du clip stencil mort, toutes devenues fausses le même jour. Corollaire pour
-l'auditeur : quand un correctif rétablit un mécanisme, chercher les contournements qui le supposaient mort —
-ils ne sont pas signalés par le compilateur et leurs commentaires affirment désormais le contraire du vrai.
+**1. « Une affirmation du dépôt n'est pas une mesure. »** C'est la leçon de la journée, et elle a coûté une
+régression visible. `minimap.cpp:679` affirmait un fait matériel — « aucun depth-stencil n'est lié, les ops
+stencil ne font rien » — avec la précision et la date d'une mesure. Huit auditeurs l'ont citée comme telle, et
+moi j'ai supprimé du code sur cette base. Un œil devant le jeu l'a réfutée en une minute. Le protocole interdit
+déjà de recopier un commentaire comme une découverte (§2) ; il faut y ajouter l'inverse : **ne jamais traiter
+une affirmation du dépôt sur le matériel ou sur le client comme établie**, surtout quand la vérifier coûte un
+coup d'œil. Corollaire pour l'auditeur : si un constat conclut « ce mécanisme ne fait rien », la seule preuve
+recevable est de l'avoir désactivé et d'avoir regardé.
 
-**Seconde catégorie : le plafond asymétrique.** Un cap relevé aux sites de production et oublié au garde de
-lecture d'un cache (`OB_MAX` 32 → 128 le 2026-09-10, garde de lecture inchangé). Le tag de version du cache
-n'a pas protégé, parce qu'il n'encode que `sizeof(struct)`, que le changement ne touchait pas.
+**2. « Un contournement écrit pour un mécanisme cassé devient un défaut le jour où le mécanisme est réparé. »**
+Cinq instances ici, toutes nées du clip de la config qui ne coupait pas, toutes devenues nuisibles le jour où il
+a coupé. Elles ne sont signalées par aucun compilateur et leurs commentaires affirment désormais le contraire
+du vrai.
+
+**3. Le plafond asymétrique.** Un cap relevé aux sites de production et oublié au garde de lecture d'un cache
+(`OB_MAX` 32 → 128 le 2026-09-10, garde inchangé). Le tag de version du cache n'a pas protégé : il n'encode que
+`sizeof(struct)`, que le changement ne touchait pas.

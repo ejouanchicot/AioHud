@@ -678,7 +678,13 @@ void Minimap::draw(const Frame& f) {
     // ---- clip the entity blips to the map so a blip crossing the rim is CUT at the frame instead of popping off
     //      whole. NB the stencil mask (rrect_clip) is NOT used here : Windower renders the overlay with no
     //      depth-stencil bound, so stencil ops no-op even when the device was created with one -> the mask never
-    //      clips. Instead :
+    //      clips.
+    //      CORRECTION 2026-09-12 : that sentence is FALSE as written, and it cost a regression. The audit of
+    //      that day trusted it, removed the rounded stencil mask in gfx/draw.cpp as dead weight, and the
+    //      HP/MP/TP bars went square-ended in game within the minute (reverted the same evening). The stencil
+    //      DOES work ; what it does not do is govern pixels OUTSIDE the rect its mask pass cleared -- see the
+    //      note over rrect_clip_begin in gfx/draw.h. Whatever was measured here, it was not "ops are ignored".
+    //      Instead :
     //        SQUARE -> a sub-VIEWPORT is a hard rasterizer scissor (works with no stencil, clips even XYZRHW).
     //                  Blips may cross the rim ; the viewport cuts the overhang -> true slide-out.
     //        ROUND  -> no rectangle can be a circle, so keep the WHOLE blip inside the disc (it stops AT the rim,

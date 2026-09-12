@@ -1033,10 +1033,11 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         }   // end mouse-clip block (restores the outer mo/click)
 
         clip_rect_end(dev);
-        // Scroll-overflow guard : the viewport clip needs a stencil buffer ; on backbuffers that have none, a tall
-        // page's rows overflow UP into the header. Re-paint the opaque page bg over the whole strip between the tab
-        // strip and the content, then redraw the PROFILE BAR + section title on top (their click handlers already
-        // ran in place before the content, and content clicks are gated to the viewport, so no double-processing).
+        // THE PROFILE BAR AND THE SECTION TITLE ARE DRAWN HERE, after the content, and that is the point: they sit
+        // on top. (Their click handlers already ran in place before the content, and content clicks are gated to the
+        // viewport, so nothing is processed twice.) The strip is re-painted first -- which USED to be the whole
+        // reason for this block, back when the clip was a dead stencil mask and a tall page's rows overflowed UP
+        // into the header. The clip cuts for real since e1501d6, so the re-paint is now just the bar's backdrop.
         flat(dev, bandX - snap(2.0f), bodyY, bandW + snap(4.0f), cfgTop - bodyY, 0xFF0E131Cu);
         flat(dev, bandX - snap(2.0f), bodyY, bandW + snap(4.0f), snap(1.0f), C_BORDERHI);   // the repaint above erased the body frame's TOP border line -> redraw it
         // g_fade is GLOBAL and ROW_BAND writes into it on every row, so this bar was inheriting whatever the
@@ -2210,16 +2211,20 @@ void ConfigPage::draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseS
             // A REAL fold, like a module's sections -- it was a hard 0-or-1, so these groups snapped open while
             // every other section on the page unfolded. cat_fold owns the easing, keyed on this row's own uid.
             const float aOpen = cat_fold(ctrl_uid_i(CTRL_ID, r), relOpen_[r]);
-            const bool onScreen = (cardTop >= listTop) && (cardTop + CAT_BAR_H <= listBot);
-            if (onScreen) cat_panel(dev, cardX, cardTop, cardW, cat_card_h(relFull_[r], aOpen));
-            if (onScreen && cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, r), cardX, cardTop, cardW, vbuf, relOpen_[r], aOpen))
+            // NO onScreen GATE ANY MORE. It was a workaround for the clip that never clipped (the stencil mask, dead
+            // on a backbuffer with no depth-stencil bound), and it culled the card and its title AS A BLOCK -- fully
+            // inside the viewport or not drawn at all -- while the CONTENT below kept drawing under the real clip. So
+            // one wheel notch made an open release lose its card and its header and leave its text floating. Now that
+            // the clip is a sub-viewport and actually cuts (e1501d6), the card is simply clipped like everything else.
+            cat_panel(dev, cardX, cardTop, cardW, cat_card_h(relFull_[r], aOpen));
+            if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, r), cardX, cardTop, cardW, vbuf, relOpen_[r], aOpen))
                 relOpen_[r] = !relOpen_[r];
             if (aOpen > 0.0f) {
                 y = cardTop + CAT_HEADER_ADV;
                 const float cTop = y;
                 cat_fold_clip(dev, cardX, cTop, cardW, relFull_[r] * aOpen);   // laid out in FULL, revealed in part
                 for (int i = 0; i < RELEASES[r].n; ++i) {
-                    cs(dev); { const float by = snap(y + lh * 0.5f - 2.0f); if (by >= listTop && by + snap(4.0f) <= listBot) rrect_fill(dev, clX + snap(13.0f), by, snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI)); }   // gold bullet -- ONLY inside the viewport (the stencil clip can be a no-op on a stencil-less backbuffer, like the header onScreen check) else scrolled-off bullets spill out of the box
+                    cs(dev); rrect_fill(dev, clX + snap(13.0f), snap(y + lh * 0.5f - 2.0f), snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI));   // gold bullet : cut by the clip like the text beside it (the per-bullet test was the same dead-stencil workaround, and it made bullets pop instead of being cut)
                     const char* txt = (ui_config().lang == 1) ? RELEASES[r].lines[i].fr : RELEASES[r].lines[i].en;
                     y = draw_wrapped(dev, fo, clX + snap(26.0f), y, clW - snap(38.0f), listTop, listBot, txt, tsz, C_TEXT, lh);
                     y += snap(7.0f);                                         // gap between entries
@@ -2276,16 +2281,16 @@ void ConfigPage::draw_debug_tab(const Frame& f, u32 dev, Font* fo, const MouseSt
         const char* title = (ui_config().lang == 1) ? DEBUG_SECTIONS[r].titleFr : DEBUG_SECTIONS[r].titleEn;
         const float cardTop = snap(y), cardW = clW - snap(4.0f), cardX = clX + snap(2.0f);
         const float aOpen = cat_fold(ctrl_uid_i(CTRL_ID, r), dbgOpen_[r]);   // a real fold, as everywhere else
-        const bool onScreen = (cardTop >= listTop) && (cardTop + CAT_BAR_H <= listBot);
-        if (onScreen) cat_panel(dev, cardX, cardTop, cardW, cat_card_h(dbgFull_[r], aOpen));   // same section grammar as a module page
-        if (onScreen && cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, r), cardX, cardTop, cardW, title, dbgOpen_[r], aOpen))
+        // (the onScreen gate is gone here for the same reason as in the Update tab above -- the clip cuts now)
+        cat_panel(dev, cardX, cardTop, cardW, cat_card_h(dbgFull_[r], aOpen));   // same section grammar as a module page
+        if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, r), cardX, cardTop, cardW, title, dbgOpen_[r], aOpen))
             dbgOpen_[r] = !dbgOpen_[r];
         if (aOpen > 0.0f) {
             y = cardTop + CAT_HEADER_ADV;
             const float cTop = y;
             cat_fold_clip(dev, cardX, cTop, cardW, dbgFull_[r] * aOpen);
             for (int i = 0; i < DEBUG_SECTIONS[r].n; ++i) {
-                cs(dev); { const float by = snap(y + lh * 0.5f - 2.0f); if (by >= listTop && by + snap(4.0f) <= listBot) rrect_fill(dev, clX + snap(13.0f), by, snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI)); }   // gold bullet -- ONLY inside the viewport (stencil clip may be a no-op), like the header onScreen check
+                cs(dev); rrect_fill(dev, clX + snap(13.0f), snap(y + lh * 0.5f - 2.0f), snap(4.0f), snap(4.0f), snap(2.0f), fa(C_GOLDHI), fa(C_GOLDHI));   // gold bullet : cut by the clip, like the text beside it
                 const char* txt = (ui_config().lang == 1) ? DEBUG_SECTIONS[r].lines[i].fr : DEBUG_SECTIONS[r].lines[i].en;
                 y = draw_wrapped(dev, fo, clX + snap(26.0f), y, clW - snap(38.0f), listTop, listBot, txt, tsz, C_TEXT, lh);
                 y += snap(7.0f);

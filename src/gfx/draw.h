@@ -85,7 +85,25 @@ void rrect_bordered(u32 dev, float x, float y, float w, float h, float r,
 
 // Rounded CLIP via the stencil buffer : write a rounded-rect mask (feather 0), then everything drawn until
 // rrect_clip_end() is limited to that shape -> genuinely ROUND ends with TRANSPARENT corners (the vial liquid,
-// the target HP track). No stencil in the back-buffer -> ops ignored, falls back to square (never black).
+// the target HP track).
+//
+// IT WORKS, AND I BROKE IT ONCE BY BELIEVING IT DID NOT (2026-09-12, reverted the same evening). The audit of
+// that day took minimap.cpp's note -- "no depth-stencil is bound, so stencil ops no-op even on a device created
+// with one" -- as measured fact, concluded these mask passes were dead weight, and removed them. The bars went
+// SQUARE-ENDED immediately, in game, which is proof by eye that the stencil does work here.
+//
+// The two observations that look contradictory, and the model that reconciles them : a stencil clip only
+// governs the pixels its MASK PASS touched. begin() clears x-2,y-2,w+4,h+4 to 0 and writes 1 in the shape, so
+// inside that rect we decide -- the box corners are 0, the liquid is cut, the caps are round. OUTSIDE it we
+// inherit whatever the GAME left in the stencil, and our content test (EQUAL 1) passes wherever that happens to
+// be 1. Which is why the CONFIG page's rectangular clip did not stop scrolled rows from reaching the masthead
+// (they land outside the rect the mask cleared) while this one shapes a fill drawn INSIDE its rect. Treat that
+// as the working hypothesis, not as measured: what IS measured is that this mask shapes the bars, and that a
+// sub-viewport (clip_rect.h) is a real scissor where a scissor is what you need.
+//
+// So: use THIS to shape something drawn inside its own rect. Use clip_rect_begin (a sub-viewport) to cut
+// content that may land outside it. Do not "optimise" either of them away without putting the game in front
+// of you first.
 void rrect_clip_begin(u32 dev, float x, float y, float w, float h, float r);
 void rrect_clip_end(u32 dev);
 
