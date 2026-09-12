@@ -36,7 +36,11 @@ static const int FLIP_STEADY = 120;  // ~2 s at 60 fps of holding still forgets 
                                      // module legitimately alternates a few times a minute and gets accused.
 
 // ---- capwatch : a fixed table that silently drops what does not fit (capwatch.h) ------------------------
-static const int CAP_SLOTS   = 16;   // distinct tables watched at once.
+static const int CAP_SLOTS   = 32;   // distinct tables watched at once. It was 16 while two tables were wired ;
+                                     // the model alone now samples six, plus the config and the UI. A watcher for
+                                     // silent overflows that overflows itself is the joke it exists to prevent --
+                                     // it does SAY SO (capwatch.cpp), but the tables past the 16th would not have
+                                     // been watched at all. Raise this before adding the 33rd.
 static const int CAP_HOLD    = 180;  // ~3 s at its cap before it counts as saturated. A table that touches its
                                      // cap for one frame during a zone-in is normal ; one that sits there is
                                      // dropping data every frame and nobody will ever see what was dropped.

@@ -2004,6 +2004,53 @@ void PartyState::other_buffs_clear_songs() {
     }
     otherBuffN_ = w;
 }
+// ---- the fixed tables of the model, sampled once a frame ------------------------------------------------
+// capwatch was wired to the two tables that had ALREADY overflowed (the Timers focus list, the ally buffs),
+// which is the worst possible selection rule: it means every table is watched the day after it costs an
+// evening. These are the rest of the model's runtime tables, with the SAME test applied to each -- is the cap
+// a measured guess rather than a number the game imposes, and is losing an entry invisible?
+//
+// Deliberately NOT watched, and each for a reason -- a watcher on the wrong number is worse than none:
+//   - buffTimers_[32] : FFXI's own buff list is 32 long, so a full table is a fully buffed player, not a loss.
+//   - treasure_[10], omen[10], buffs_[18], jobShadow_[24], alli_[12] : the game's own shapes. They cannot
+//     overflow without the game changing.
+//   - selfCasts_[64], evicted_[8] : RINGS by design (a write head, oldest overwritten). Full is their normal
+//     working state, and the discarded entry is deliberately discarded.
+//   - hateRows_[24] : a display top-N, already cut further by the user's row count.
+//   - buffPin[g][224] : the arranged prefix of a buff group. It is filled from the group's OWN member list
+//     (`while (n < need && n < nmem)`), so it cannot exceed the number of statuses in that group -- a few
+//     dozen against a cap of 224. Not reachable by any amount of dragging.
+//   - tmTrackOff[24][512] : the per-JOB track list. Measured 2026-09-12 : since the Timers filter became
+//     job-agnostic, `tm_track_set` has exactly one caller left (the RDM preset in ui_config.cpp) and
+//     `tm_track_off` has NO reader outside its own header. Nothing can fill it, so there is nothing to watch
+//     -- but 24 KB of the config struct is still written, compared and serialised for it. Reported, not
+//     touched here: deleting a persisted field is a migration, not a watcher.
+//   - favColors[15] : a recency palette that shifts the oldest out on purpose.
+void PartyState::watch_tables() {
+    int n;
+    // hate_ : the tracked-aggro table. Membership is sticky (a mob stays until it dies or times out), and a
+    // full table simply stops tracking new mobs -- in a zerg that is exactly when the list matters.
+    n = 0; for (int i = 0; i < 128; ++i) if (hate_[i].mob) ++n;
+    capwatch("model.hate", n, 128);
+    // tdebuffs_ : one debuff set per tracked target id. Like the ally buffs, this one EVICTS THE OLDEST when
+    // full (the two insert sites pick `oldest` by touchMs), so it loses the mob you stopped looking at -- which
+    // is right up until the moment you look back at it.
+    n = 0; for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id) ++n;
+    capwatch("model.tdebuffs", n, DEBUFF_SLOTS);
+    // reson_ : one skillchain window per tracked target. Eight is a guess about how many mobs are being chained
+    // at once, and a missing window is a missing skillchain prompt.
+    n = 0; for (int i = 0; i < 8; ++i) if (reson_[i].target) ++n;
+    capwatch("model.skillchain", n, 8);
+    // songPred_ : casts waiting for their real 0x063 expiry. Eight against five song slots -- plus the fifth
+    // under Clarion Call, plus whatever is in flight -- is thinner than it looks, and the cost of losing one is
+    // a song whose timer stays an estimate for its whole life.
+    capwatch("model.songpred", songPredN_, 8);
+    // EmpyPop : both caps are written down as MEASURED maxima ("measured max 5", "measured max 15"), which is
+    // the honest way to size a table and also the way that quietly breaks when a patch adds a pop step.
+    capwatch("model.empypop.groups", ep_.nGroups, EmpyPop::MAX_GROUPS);
+    capwatch("model.empypop.nodes",  ep_.nNodes,  EmpyPop::MAX_NODES);
+}
+
 void PartyState::prune_other_buffs_worn() {
     songdur_check();   // learn ally song durations from the server 0x063, off the same model tick
     // This table does not merely stop accepting when it is full -- it EVICTS THE OLDEST entry (see the two

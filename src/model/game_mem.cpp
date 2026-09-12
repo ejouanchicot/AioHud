@@ -4,6 +4,7 @@
 #include "model/ffximain_rva.h"   // the FFXiMain statics : addresses as data, re-derived after a client patch
 #include "model/luacore_root.h"   // where LuaCore keeps `g` : a WINDOWER update moves it, so it is derived too
 #include "model/sentinel.h"       // packet-vs-memory cross-check, run once the snapshot is complete
+#include "model/capwatch.h"       // notice a fixed table that has quietly run out of room
 #include "model/ui_config.h"   // mmShow : skip the entity-array sweep entirely when the minimap is off (model->model, no layering issue)
 #include "windower.h"   // safe_read / valid_ptr (guarded game-memory reads)
 #include <windows.h>
@@ -1109,6 +1110,10 @@ void poll_game_state(GameState& gs) {
     // slot, EVERY frame -- in a crowded city that is thousands of guarded reads for data nobody draws when the
     // module is switched off (Minimap::draw returns on !mmShow long after the work is already paid for).
     gs.mapEntN = ui_config().mmShow ? read_map_entities(gs.mapEnts, MAP_ENT_MAX) : 0;   // PC/NPC/mob markers
+    // 400 slots against a zone that can hold more entities than that -- a city at prime time, Escha with two
+    // alliances up. What does not fit is simply not on the map, and a minimap missing blips looks exactly like
+    // a quiet zone. (Sampled only while the minimap is ON : with it off the count is 0 by construction.)
+    if (ui_config().mmShow) capwatch("model.mapents", gs.mapEntN, MAP_ENT_MAX);
     gs.vana = vana_clock_now();                                // Vana'diel clock (computed, no memory read)
 
     TargetInfo tg;

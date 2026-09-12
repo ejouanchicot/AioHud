@@ -453,6 +453,8 @@ void PartyState::load_from_memory() {
     jobChangedN_ = 0; selfMainJobChanged_ = 0;
     for (int i = 0; i < count; ++i) note_member_job(m[i]);
     for (int ap = 0; ap < 2; ++ap) for (int i = 0; i < alliN_[ap]; ++i) note_member_job(alli_[ap * 6 + i]);
+
+    watch_tables();   // the model's fixed tables, sampled here because this is the one thing that runs exactly once a frame
 }
 
 int PartyState::alliance_count(int tier) const {

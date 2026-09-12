@@ -4,6 +4,7 @@
 #include "ui/config_controls.h"
 #include "gfx/window.h"      // window_tex_theme_count / window_theme_name (the FFXI skins)
 #include "ui/box_style.h"       // box_hue_count / box_hue_color (the procedural families)
+#include "model/capwatch.h"       // notice a fixed table that has quietly run out of room
 #include "gfx/clip_rect.h"    // clip_box_of / clip_intersect : the pure rect decision of the nested clip below
 #include "gfx/draw.h"          // grad_quad, rrect, soft_blob, rrect_glow, disc, disc_glow, seg_soft, fill_tri, tquad, dSet*
 #include "model/ui_config.h"   // ui_config(), save_ui_config() (row_slider persists on release)
@@ -173,6 +174,11 @@ float ease(int id, int sub, float target, float speed) {
         }
         s = &g_anim[g_animN++]; s->id = id; s->sub = sub; s->v = target; s->vel = 0.0f;
     }
+    // The FULL line above arrives when it is already too late to act. capwatch adds the two things that make
+    // a cap raisable in advance : a "nearly full" with the high-water mark, and a line in //aio doctor.
+    // Sampled from ease() rather than from the page : every config frame passes through here many times, and
+    // the count only ever grows, so any of those calls is the same sample.
+    capwatch("ui.anim", g_animN, ANIM_MAX);
     s->v += (target - s->v) * clampf(g_dt * speed, 0.0f, 1.0f);
     return s->v;
 }

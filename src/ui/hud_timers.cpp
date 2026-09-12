@@ -1607,6 +1607,11 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
         // a buff is never watched and its loss is never alerted -- the feature degrades into silence. It held
         // 24 until 2026-09-11, and a bard's own songs plus an alliance's buffs went past that every fight.
         capwatch("timers.focus", fmN, FOCUS_MAX);
+        // The buff FILTER : one key per buff family the user has hidden or put on focus, job-agnostic, and it
+        // simply stops accepting when full -- so past the cap a checkbox in the Timers panel silently does
+        // nothing at all. Sampled from here rather than from the panel because the filter is read every frame
+        // in play, and a saturated filter is a problem long before the user next opens the config.
+        capwatch("config.tmbuffoff", ui_config().tmBuffOffN, UiConfig::TM_TRACK_MAX);
         static unsigned lastSig = 0;
         if (sig != lastSig) {
             lastSig = sig;

@@ -18,6 +18,7 @@
 #include "model/icon_dat.h"    // icon_pack_* : the status-icon sheets this install can offer (Interface row)
 #include "ui/buff_atlas.h"     // the two atlas paths the scan needs, + dispose() to reload on a new pick
 #include "ui/edit_box.h"       // edit_drag_busy() : hide the edit-layout toolbar while a box is being dragged
+#include "model/capwatch.h"   // notice a fixed table that has quietly run out of room
 #include "ui/party.h"          // party_gauge() : the REAL HP/MP/TP liquid gauge, for the Help live samples
 #include "ui/target.h"         // target_help_* : the REAL Target element samples (HP+trail, range, debuffs, TH)
 #include "ui/minimap.h"        // minimap_help_* : the REAL Minimap element samples (round disc, legend, moon, day)
@@ -1176,6 +1177,10 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
             static const u32 ZC[8] = { 0xFFFF6E6E,0xFFFF9E50,0xFFEFD24A,0xFF7ED86A,0xFF4AC8E0,0xFF6E8CFF,0xFFC090FF,0xFFFF8AD8 };
             float zx[GUIDE_GROUPS_MAX], zy[GUIDE_GROUPS_MAX], zw[GUIDE_GROUPS_MAX], zh[GUIDE_GROUPS_MAX]; int zg[GUIDE_GROUPS_MAX];
             const int nz = guide_zones(sw, sh, zx, zy, zw, zh, zg, GUIDE_GROUPS_MAX);
+            // The zone list stops accepting at its cap (`if (C.guideGroupCount < GUIDE_GROUPS_MAX)` at the
+            // creation site), so a full list turns "New zone" into a button that does nothing and says nothing.
+            // This is the only place the zones are read, so it is the only place they can be sampled.
+            capwatch("config.zones", ui_config().guideGroupCount, GUIDE_GROUPS_MAX);
             for (int i = 0; i < nz; ++i) {
                 const GuideGroup& g = ui_config().guideGroup[zg[i]];
                 const bool openZone = g.allow[ZPERM_PARTY] || g.allow[ZPERM_ALLIANCE] || g.allow[ZPERM_HUB] || g.allow[ZPERM_TARGET];

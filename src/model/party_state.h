@@ -804,6 +804,7 @@ struct PartyState {
     // ob[] list ; an estimate-only test dropped sibling songs whose BASE estimate had lapsed but whose real
     // (Troubadour-extended) timer had ~1 min left -- so recasting one song made every other song lose its "(AoE N)".
     bool ob_self_alive(const OtherBuff& o) const;
+    void watch_tables();             // once/frame : sample every fixed model table for capwatch (see the impl for what is NOT watched)
     void prune_other_buffs_worn();   // drop entries whose target no longer shows the status (0x076) -> early wear-off
     // //aio oblog stage 0 : trace the NEXT prune pass. An entry that never reaches the drawer is invisible to the
     // other three stages -- they can only show what survived, so "the row is missing" reads identically whether
