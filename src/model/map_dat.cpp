@@ -216,7 +216,7 @@ bool load_zone_map(unsigned fileId, u32*& outPixels, int& outW, int& outH, MapLo
     outPixels = 0; outW = outH = 0;
     MapLoadDiag scratch; if (!diag) diag = &scratch;
     diag->step = MLS_NO_PATH; diag->path[0] = 0; diag->overlay = false;
-    diag->fileSize = 0; diag->chunkTypes = 0; diag->W = diag->H = 0; diag->fmtFlags = 0;
+    diag->fileSize = 0; diag->chunkTypes = 0; diag->W = diag->H = 0; diag->fmtFlags = 0; diag->biSize = diag->bpp = 0;
     char path[MAX_PATH];
     if (!ffxi_root()) { diag->step = MLS_NO_ROOT; return false; }
     if (!resolve_path(fileId, path)) return false;
@@ -244,8 +244,15 @@ bool load_zone_map(unsigned fileId, u32*& outPixels, int& outW, int& outH, MapLo
                 const unsigned char* H = d + hbase;
                 const unsigned char flags = H[0x00];
                 const int W = *(const int*)(H + 0x15), Ht = *(const int*)(H + 0x19);
+                // The palettised branch below is an 8-bpp decoder with the palette right after a 40-byte header. Both were
+                // TRUSTED, never read : a patch (or an overlay) shipping a 4-bpp map, or a longer header, would decode to
+                // noise and be DRAWN. Measured 2026-09-13 : all 209 palettised maps of the zone-id ranges read biSize 40,
+                // bpp 8 -- so requiring them rejects nothing that works, and turns that silent case into FORMAT REJECTED.
+                const unsigned biSize = *(const unsigned*)(H + 0x11);
+                const unsigned bpp    = *(const unsigned short*)(H + 0x1F);
                 diag->step = MLS_BAD_FMT; diag->W = W; diag->H = Ht; diag->fmtFlags = flags;   // reached the graphic chunk
-                if ((flags & 0x10) && W > 0 && Ht > 0 && W <= 2048 && Ht <= 2048) {
+                diag->biSize = biSize; diag->bpp = bpp;
+                if ((flags & 0x10) && biSize == 40 && bpp == 8 && W > 0 && Ht > 0 && W <= 2048 && Ht <= 2048) {
                     const unsigned need = (unsigned)(W * Ht);
                     if (idxOff + need <= n) {
                         u32* px = (u32*)HeapAlloc(GetProcessHeap(), 0, (SIZE_T)W * Ht * 4);

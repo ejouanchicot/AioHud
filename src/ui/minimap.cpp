@@ -11,6 +11,7 @@
 #include "model/game_mem.h"          // current_submap : logged when a map load fails (black-minimap diagnosis)
 #include "windower_debug.h"          // MAP FAIL log (always on -- the bug is rare and can't be armed for)
 #include "retry_clock.h"             // retry_due / retry_arm : bounded retry with a delay, the project's one idiom
+#include "model/selftest.h"          // MAP.LOAD_FAILED : a map that will not load reaches doctor and the watcher
 
 // The marker/element retry budget. 12 attempts over 2.4 s was the old value and it was too short to survive a
 // slow zone-in ; these give about a minute, which is the order of the project's other budgets.
@@ -29,6 +30,36 @@ static const unsigned MK_RETRY_MS = 2500;
 #include <time.h>
 
 namespace aio {
+
+// ---- the harness : a map that will not load, said where someone looks ----------------------------------------
+// A zone whose map fails to load used to leave one MAP FAIL line in aiohud_debug.log and an empty panel -- nothing
+// in //aio doctor, nothing in the watcher. The failure is recorded here when the load drops into the slow lane (a
+// real failure by then, not the normal not-ready-yet after a zone-in) and cleared the moment a map texture exists.
+static struct MapFailNote {
+    bool     on;
+    unsigned zone, fileId, fileSize, biSize, bpp;
+    int      step, W, H;
+    bool     overlay, texFailed;
+} s_mapFail;
+
+static int minimap_checks(CheckFail* out, int cap) {
+    if (!s_mapFail.on || cap <= 0) return 0;
+    static const char* STEP[8] = { "OK", "NO FFXI ROOT", "PATH UNRESOLVED", "FILE UNREADABLE", "NO GRAPHIC CHUNK", "FORMAT REJECTED", "?", "?" };
+    lstrcpynA(out[0].id, "MAP.LOAD_FAILED", sizeof(out[0].id));
+    out[0].sev = CHK_WARN;
+    if (s_mapFail.texFailed)
+        _snprintf(out[0].detail, sizeof(out[0].detail),
+                  "zone %u map 0x%04X decoded (%dx%d) but CreateTexture failed -- the minimap is empty ; still retried every 15 s",
+                  s_mapFail.zone, s_mapFail.fileId, s_mapFail.W, s_mapFail.H);
+    else
+        _snprintf(out[0].detail, sizeof(out[0].detail),
+                  "zone %u map 0x%04X : %s (%u bytes, %dx%d, header %u / %u bpp, overlay=%d) -- the minimap is empty ; MAP FAIL in aiohud_debug.log",
+                  s_mapFail.zone, s_mapFail.fileId, STEP[s_mapFail.step & 7], s_mapFail.fileSize, s_mapFail.W, s_mapFail.H,
+                  s_mapFail.biSize, s_mapFail.bpp, s_mapFail.overlay ? 1 : 0);
+    out[0].detail[sizeof(out[0].detail) - 1] = 0;
+    return 1;
+}
+void minimap_register_checks() { selftest_add("minimap", minimap_checks); }
 
 static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 // darken a colour toward black by fraction f (0..1), keeping its alpha -> a crisp AA outline for the round rim.
@@ -503,6 +534,7 @@ void Minimap::draw(const Frame& f) {
         mapFileId_ = g.map.fileId;
         mobAngN_ = 0;                                           // new zone -> drop the eased-angle cache
         mapTries_ = 0; mapRetryAt_ = 0;                        // new zone -> fresh schedule, try immediately
+        s_mapFail.on = false;                                  // a finding about the zone we left is not about this one
     }
     if (mapTex_ == 0 && g.map.fileId) {                        // not loaded yet -> (re)try, throttled. NO terminating budget : see minimap.h
         if (retry_due(mapRetryAt_)) {   // retry_clock.h owns the 0-sentinel case (set on every zone change) : without it the map stays black past 24.8 d of uptime
@@ -514,6 +546,7 @@ void Minimap::draw(const Frame& f) {
             if (load_zone_map(g.map.fileId, pixels, mw, mh, &md)) {
                 mapTex_ = make_texture_argb_mip(dev, mw, mh, pixels); mapW_ = mw; mapH_ = mh; free_map_image(pixels);
                 if (mapTex_) {
+                    s_mapFail.on = false;
                     // INSTRUMENT THE SUCCESS PATH (rule 10 corollary) : a recovery in the slow lane is the proof
                     // that the failure was transient. Without this line a fixed black map and a map that was never
                     // broken read exactly the same in the log.
@@ -525,6 +558,10 @@ void Minimap::draw(const Frame& f) {
                 }
                 else {
                     map_retry_later(mapTries_, mapRetryAt_);
+                    if (mapTries_ == MAP_SLOW_AFTER) {
+                        s_mapFail.on = true; s_mapFail.texFailed = true; s_mapFail.zone = g.map.zone; s_mapFail.fileId = g.map.fileId;
+                        s_mapFail.W = mw; s_mapFail.H = mh;
+                    }
                     if (mapTries_ == MAP_SLOW_AFTER)
                         windower::debug::log("MAP FAIL zone=%u fileId=0x%04X : DAT decoded fine (%dx%d) but CreateTexture failed -- image too large for the device, or out of video memory. Slowing to one attempt every %d s (NOT giving up)",
                                              g.map.zone, g.map.fileId, mw, mh, MAP_SLOW_MS / 1000);
@@ -538,12 +575,15 @@ void Minimap::draw(const Frame& f) {
                 // after a zone-in, and `step` names WHICH stage failed (this is the line that answers "is it the
                 // path, or a file briefly unreadable" -- PATH UNRESOLVED vs FILE UNREADABLE).
                 if (mapTries_ == MAP_SLOW_AFTER) {
-                    static const char* STEP[] = { "OK", "NO FFXI ROOT", "PATH UNRESOLVED", "FILE UNREADABLE", "NO GRAPHIC CHUNK", "FORMAT REJECTED" };
+                    s_mapFail.on = true; s_mapFail.texFailed = false; s_mapFail.zone = g.map.zone; s_mapFail.fileId = g.map.fileId;
+                    s_mapFail.step = md.step; s_mapFail.fileSize = md.fileSize; s_mapFail.W = md.W; s_mapFail.H = md.H;
+                    s_mapFail.biSize = md.biSize; s_mapFail.bpp = md.bpp; s_mapFail.overlay = md.overlay;
+                    static const char* STEP[8] = { "OK", "NO FFXI ROOT", "PATH UNRESOLVED", "FILE UNREADABLE", "NO GRAPHIC CHUNK", "FORMAT REJECTED", "?", "?" };
                     windower::debug::log("MAP FAIL zone=%u submap=%d valid=%d flags=0x%04X fileIdx=%u fileId=0x%04X scale=%d off=(%d,%d)",
                                          g.map.zone, current_submap(), g.map.valid ? 1 : 0, g.map.flags,
                                          g.map.fileIdx, g.map.fileId, g.map.scale, g.map.offX, g.map.offY);
-                    windower::debug::log("MAP   step=%s  overlay=%d  size=%u  chunkTypes=0x%08X  dims=%dx%d  fmtFlags=0x%02X",
-                                         STEP[md.step & 7], md.overlay ? 1 : 0, md.fileSize, md.chunkTypes, md.W, md.H, md.fmtFlags);
+                    windower::debug::log("MAP   step=%s  overlay=%d  size=%u  chunkTypes=0x%08X  dims=%dx%d  fmtFlags=0x%02X  biSize=%u bpp=%u",
+                                         STEP[md.step & 7], md.overlay ? 1 : 0, md.fileSize, md.chunkTypes, md.W, md.H, md.fmtFlags, md.biSize, md.bpp);
                     windower::debug::log("MAP   path='%s'", md.path[0] ? md.path : "<unresolved>");
                 }
             }

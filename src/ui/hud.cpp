@@ -8,6 +8,7 @@
 #include "ui/party.h"
 #include "ui/target.h"
 #include "ui/minimap.h"
+#include "ui/gear_canary.h"  // the gear-icon canary : ticks every frame, reports to the harness and to doctor
 #include "ui/buff_atlas.h"   // buff_atlas_forget / buff_atlas_dispose : the ONE owner of the shared status-icon atlas
 #include "model/layout.h"
 #include "model/game_mem.h"
@@ -191,7 +192,9 @@ void Hud::render(u32 dev) {
     if (!s_checksRegistered) { s_checksRegistered = true;
         timers_register_checks(); rva_register_checks();      // the modules that own state worth doubting
         flip_register_checks();   cap_register_checks();      // the watchers (model/watchdogs.h : all knobs, one switch)
-        zt_register_checks();     lc_register_checks(); }
+        zt_register_checks();     lc_register_checks();
+        gear_register_checks();   minimap_register_checks(); }   // game-file readers : a patch that changes a DAT format
+    gear_canary_tick(GetTickCount());   // one DAT probe per frame at session start, then nothing
 
     // The watcher decides for itself whether it is armed and whether it is due ; on the overwhelming majority
     // of frames this returns 0 having touched nothing. When a check has held long enough to be believed, the
@@ -647,6 +650,7 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
                          grimLight_ ? 1 : 0, grimDark_ ? 1 : 0, grimClosed_ ? 1 : 0, texMiss);
     const char* rk = 0; const char* rom = ffxi_rom_dir_probe(&rk);
     windower::debug::log("  romdir   : %s (key %s)", rom ? rom : "<unresolved>", rk ? rk : "<none>");
+    { char cs[256]; gear_canary_summary(cs, sizeof(cs)); windower::debug::log("  gearcan  : %s", cs); }
     if (!rom) DOC(tr("FFXI's ROM folder cannot be found : equipment icons will show as text. Install outside the "
         "standard registry entry -- the known case is an install under Program Files%s",
         "Le dossier ROM de FFXI est introuvable : les icones d'equipement s'afficheront en texte. "

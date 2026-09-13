@@ -129,5 +129,6 @@ bool timers_focus_trace_armed();
 // Hand this module's checks to the in-game watcher (model/selftest.h). Called once on the first frame ; the
 // registry is idempotent, so a //load after an unload re-registers without doubling anything.
 void timers_register_checks();
+void minimap_register_checks();   // MAP.LOAD_FAILED (minimap.cpp)
 
 } // namespace aio

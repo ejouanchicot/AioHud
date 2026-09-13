@@ -28,6 +28,7 @@ void test_ally_group();
 void test_focus_rules();
 void test_cast_match();
 void test_debuffrules();
+void test_gear_dat();
 
 int main() {
     test_json();
@@ -47,6 +48,7 @@ int main() {
     test_focus_rules();
     test_cast_match();
     test_debuffrules();
+    test_gear_dat();
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail;
 }

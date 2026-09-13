@@ -21,6 +21,8 @@
 #include <stdio.h>
 
 #include "ui/buff_atlas.h"
+#include "ui/gear_canary.h"      // the ROM is trusted to rewrite the icon cache only while the canary says OK
+#include "gfx/gear_dat.h"        // gear_cache_direct / _stale / _rewrite / gear_vouch_after : the cache decisions, tested
 
 namespace aio {
 
@@ -56,6 +58,8 @@ void set_gear_trace(int n) {
     const char* key = 0; const char* rom = ffxi_rom_dir_probe(&key);
     windower::debug::log("    icon dir : %s", GEARICON_DIR());
     windower::debug::log("    ROM dir  : %s   (registry key: %s)", rom ? rom : "<NOT FOUND>", key ? key : "<none matched>");
+    char cs[256]; gear_canary_summary(cs, sizeof(cs));
+    windower::debug::log("    canary   : %s", cs);
 }
 // Announce the budget running out. A probe that just goes quiet reads EXACTLY like a bug that stopped
 // reproducing -- that cost three round-trips on the Timers hunt before //aio ftrace started saying so.
@@ -594,6 +598,10 @@ void Player::draw(const Frame& f) {
         const unsigned GEAR_SLOW_MS = 30000;
         const int MAX_GEAR_DECODES = 2;
         int decodes = 0;
+        // The canary settles within a few frames of the session start. Until it has, a slot does not load at all : a
+        // cache hit drawn in that window would never be re-checked, and a poisoned icon would stay up all session.
+        const int canary = gear_canary_verdict_now();
+        const bool romTrusted = (canary == GCV_OK);
         if (equipReady) for (int s = 0; s < 16; ++s) {
             const unsigned short want = (eq.id[s] != 0 && eq.id[s] != 0xFFFF) ? eq.id[s] : 0;
             // (Re)load when the slot's item changed OR the load hasn't succeeded yet (gearTex_ still 0 for a
@@ -602,18 +610,19 @@ void Player::draw(const Frame& f) {
             if (needLoad) {
                 if (gearId_[s] != want) { if (gearTex_[s]) { release_texture(gearTex_[s]); gearTex_[s] = 0; } gearTry_[s] = 0; gearNextMs_[s] = 0; }   // new item -> drop the old + reset retries + back-off
                 if (!want) { gearId_[s] = want; }
-                else if (decodes < MAX_GEAR_DECODES && (!gearNextMs_[s] || (int)(GetTickCount() - gearNextMs_[s]) >= 0)) {   // back-off : retry a transient ROM failure after a delay. `!gearNextMs_` FIRST : 0 is the "try now" sentinel, and a raw GetTickCount() compare against it goes NEGATIVE past 24.8 days uptime -> the first decode would never fire (same bug the buff atlas had ; reintroduced here in 1.0.46).
+                else if (canary != GCV_PENDING && decodes < MAX_GEAR_DECODES && (!gearNextMs_[s] || (int)(GetTickCount() - gearNextMs_[s]) >= 0)) {   // back-off : retry a transient ROM failure after a delay. `!gearNextMs_` FIRST : 0 is the "try now" sentinel, and a raw GetTickCount() compare against it goes NEGATIVE past 24.8 days uptime -> the first decode would never fire (same bug the buff atlas had ; reintroduced here in 1.0.46).
                     char p[300]; _snprintf(p, sizeof(p), "%s%u.bmp", GEARICON_DIR(), want); p[sizeof(p) - 1] = 0;
                     const bool tr = gear_trace_armed();
                     if (tr) { --s_gearTrace; gear_trace("slot %d  id=%u (0x%04X) '%s'", s, want, want, item_name(want) ? item_name(want) : "?"); }
                     // The cached BMP is read as PIXELS and drawn straight away only once the ROM has vouched for this id
-                    // this session (gear_vouched). Otherwise it goes through the decode below and is compared : a
-                    // poisoned file from the 2026-09-10 stride bug is replaced, a good one costs one small DAT read.
+                    // this session (gear_vouched) -- or when the canary doubts the ROM, in which case the file on disk is
+                    // the better witness. Otherwise it goes through the decode below and is compared : a poisoned file
+                    // from the 2026-09-10 stride bug is replaced, a good one costs one small DAT read.
                     u32 cpx[32 * 32];
                     const bool bmp = read_gear_icon_bmp(p, cpx);
-                    u32 tex = (bmp && gear_vouched(want, false)) ? make_texture_argb_mip(dev, 32, 32, cpx) : 0;
+                    u32 tex = gear_cache_direct(bmp, bmp && gear_vouched(want, false), romTrusted) ? make_texture_argb_mip(dev, 32, 32, cpx) : 0;
                     if (tr) gear_trace("  BMP    %s -> %s", p,
-                                       tex ? "OK (cache hit, vouched)"
+                                       tex ? (romTrusted ? "OK (cache hit, vouched)" : "OK (cache hit, UNVERIFIED : the canary doubts the ROM)")
                                            : bmp ? "PRESENT, not vouched yet -> compare with the ROM"
                                                  : (GetFileAttributesA(p) == INVALID_FILE_ATTRIBUTES ? "ABSENT" : "PRESENT but UNREADABLE (corrupt)"));
                     if (!tex) {
@@ -634,13 +643,13 @@ void Player::draw(const Frame& f) {
                             if (gi.err) gear_trace("         errno=%d", gi.err);
                         }
                         if (dec) {
-                            const bool stale = !bmp || memcmp(cpx, px, sizeof(px)) != 0;
+                            const bool stale = gear_cache_stale(bmp, bmp && memcmp(cpx, px, sizeof(px)) == 0);
                             tex = make_texture_argb_mip(dev, 32, 32, px);
                             int werr = 0;
-                            const bool wrote = stale && write_gear_icon_bmp(p, px, &werr);   // best-effort ; a stale/corrupt BMP is overwritten
-                            // Vouch only for what is ON DISK now. Marking a stale file whose rewrite failed (read-only folder)
-                            // would make the next load serve the poisoned BMP as a trusted hit ; unvouched, it re-decodes.
-                            if (!stale || wrote) gear_vouched(want, true);
+                            // best-effort ; a stale/corrupt BMP is overwritten -- but only from a ROM the canary trusts
+                            const bool wrote = gear_cache_rewrite(stale, romTrusted) && write_gear_icon_bmp(p, px, &werr);
+                            // Vouch only for what is ON DISK now (a failed rewrite leaves the poisoned file unvouched).
+                            if (gear_vouch_after(stale, wrote)) gear_vouched(want, true);
                             const bool cached = tex && (!stale || wrote);
                             if (bmp && stale)   // SHIPPED log : a tester's capture must show the repair, not only a trace
                                 windower::debug::log("GEARICON cache repaired id=%u (0x%04X) [%s] -- the cached BMP did not match the ROM (written by the pre-fix stride) : %s",
@@ -877,8 +886,10 @@ void Player::draw(const Frame& f) {
         Font* ef = f.font;
         if (ef) {
             bool begun = false;
-            // id-text fallback for occupied slots whose BMP is missing (un-bundled / brand-new item)
-            for (int s = 0; s < 16; ++s) {
+            // id-text fallback for occupied slots whose BMP is missing (un-bundled / brand-new item). Not while the gear
+            // canary is still probing : the slots are deliberately not loaded yet, and 16 raw ids would flash at login.
+            const bool canaryPending = gear_canary_verdict_now() == GCV_PENDING;
+            for (int s = 0; s < 16 && !canaryPending; ++s) {
                 if (gearTex_[s] || eq.id[s] == 0 || eq.id[s] == 0xFFFF) continue;
                 const int dp = EQ_DPOS[s];
                 const float cx = snap(gx0 + (dp % 4) * eqCell), cy = snap(gy0 + (dp / 4) * eqCell);

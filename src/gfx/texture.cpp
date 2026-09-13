@@ -1,5 +1,6 @@
 // texture.cpp -- see texture.h.
 #include "texture.h"
+#include "gear_dat.h"   // the gear-icon decode DECISIONS (pure, tested) -- this file only does the I/O
 #include "noise.h"
 #include "model/paths.h"   // plugin_path_r : runtime-derived asset paths (gfx infra exception to the layering rule)
 #include <windows.h>
@@ -416,37 +417,22 @@ const char* ffxi_rom_dir_probe(const char** out_regkey)
     return r;
 }
 
-// id-range -> (ROM DAT relative path, id offset). Straight from EquipViewer's item_dat_map.
-struct GearDat { unsigned lo, hi; const char* dat; int off; };
-static const GearDat GEAR_DAT[] = {
-    { 0x0001, 0x0FFF, "118/106", -1 },   // General Items
-    { 0x1000, 0x1FFF, "118/107",  0 },   // Usable Items
-    { 0x2000, 0x21FF, "118/110",  0 },   // Automaton Items
-    { 0x2200, 0x27FF, "301/115",  0 },   // General Items 2
-    { 0x2800, 0x3FFF, "118/109",  0 },   // Armor Items
-    { 0x4000, 0x59FF, "118/108",  0 },   // Weapon Items
-    { 0x5A00, 0x6FFF, "286/73",   0 },   // Armor Items 2
-    { 0x7000, 0x73FF, "217/21",   0 },   // Maze / Basic Items
-    { 0x7400, 0x77FF, "288/80",   0 },   // Instinct Items
-    { 0xF000, 0xF1FF, "288/67",   0 },   // Monipulator Items
-    { 0xFFFF, 0xFFFF, "174/48",   0 },   // Gil
-};
-
-// FFXI's palette bytes are bit-rotated : the decoded value is a rotate-left-by-3 of the encoded byte.
-static inline unsigned char rotl3(unsigned char x) { return (unsigned char)(((x & 0x1F) << 3) | (x >> 5)); }
+// The decisions (id-range table, stride proof, record proof, icon decode) live in gear_dat.h, pure and covered by
+// tests/t_geardat.cpp ; this is only the file I/O around them.
+static bool gear_fread_at(void* ctx, long off, unsigned char* buf, long n) {
+    FILE* fp = (FILE*)ctx;
+    return fseek(fp, off, SEEK_SET) == 0 && fread(buf, 1, (size_t)n, fp) == (size_t)n;
+}
 
 bool decode_gear_icon_from_rom(unsigned id, u32* out_px, GearInfo* info)
 {
     GearInfo scratch; if (!info) info = &scratch;
-    info->step = GS_NO_RANGE; info->dat = 0; info->romdir = 0; info->regkey = 0; info->index = -1; info->err = 0; info->stride = 0;
+    info->step = GS_NO_RANGE; info->dat = 0; info->romdir = 0; info->regkey = 0; info->index = -1; info->err = 0; info->stride = 0; info->fileSize = 0;
     if (!out_px) return false;
-    const GearDat* d = nullptr;
-    for (int i = 0; i < (int)(sizeof(GEAR_DAT) / sizeof(GEAR_DAT[0])); ++i)
-        if (id >= GEAR_DAT[i].lo && id <= GEAR_DAT[i].hi) { d = &GEAR_DAT[i]; break; }
+    const GearDat* d = gear_dat_for(id);
     if (!d) return false;
     info->dat = d->dat;
-    const long idOff = (long)d->lo + d->off;
-    info->index = (long)id - idOff;
+    info->index = (long)id - gear_dat_first(*d);
 
     info->step = GS_NO_ROMDIR;
     const char* rom = ffxi_rom_dir_probe(&info->regkey);
@@ -454,62 +440,31 @@ bool decode_gear_icon_from_rom(unsigned id, u32* out_px, GearInfo* info)
     info->romdir = rom;
 
     char path[340]; _snprintf(path, sizeof(path), "%s\\%s.DAT", rom, d->dat); path[sizeof(path) - 1] = 0;
-    for (char* c = path; *c; ++c) if (*c == '/') *c = '\\';   // GEAR_DAT paths use '/'
+    for (char* c = path; *c; ++c) if (*c == '/') *c = '\\';   // table paths use '/'
 
     info->step = GS_NO_DAT;
     FILE* fp = fopen(path, "rb");
     if (!fp) { info->err = errno; return false; }
 
-    // RECORD SIZE : measured, never assumed. The 2026-09-10 client patch grew every item record from 0xC00 to
-    // 0x1400 bytes (same layout, icon still at +0x2BD, just more padding). A hard-coded 0xC00 -- EquipViewer's
-    // stride, ported verbatim -- then seeks into the WRONG record for every id past 0 and the decode "succeeds"
-    // on garbage : a blank icon (the tester's Quicksilver) or another item's art, drawn AND cached to disk.
-    // Each record starts with its own item id (u32, rotl3-encoded like the rest), so the stride is proven by
-    // reading that id back rather than trusted : the size-derived candidate first (file size / records in the
-    // range -- survives the next resize too), then the two known strides. Verified over every id of all 11
-    // DATs : 0x1400 matches 100 % after the patch, 0xC00 matches none.
+    // RECORD SIZE and RECORD IDENTITY : proven, never assumed. The 2026-09-10 client patch grew every item record
+    // from 0xC00 to 0x1400 bytes, and a hard-coded 0xC00 -- EquipViewer's, ported verbatim -- read the WRONG record
+    // for every id and "succeeded" : blank icons (the tester's Quicksilver), other items' art, garbage, all drawn
+    // AND cached. gear_find_stride keeps only a size whose record names this id and carries a 32x32 8-bpp header.
     info->step = GS_BAD_READ;
     long fsz = -1;
     if (fseek(fp, 0, SEEK_END) == 0) fsz = ftell(fp);
     if (fsz <= 0) { fclose(fp); return false; }
-    const long records = (long)d->hi - idOff + 1;
-    const long derived = (fsz % records == 0) ? fsz / records : 0;
-    const long cand[3] = { derived, 0x1400, 0xC00 };
-    long stride = 0;
-    for (int k = 0; k < 3 && !stride; ++k) {
-        const long s = cand[k];
-        if (s < 0xC00 || (s & 0x3FF) || (k > 0 && s == derived)) continue;   // not a plausible record size / already tried
-        if (info->index * s + s > fsz) continue;
-        unsigned char rid[4];
-        if (fseek(fp, info->index * s, SEEK_SET) != 0 || fread(rid, 1, 4, fp) != 4) continue;
-        const unsigned got = (unsigned)rotl3(rid[0]) | ((unsigned)rotl3(rid[1]) << 8) | ((unsigned)rotl3(rid[2]) << 16) | ((unsigned)rotl3(rid[3]) << 24);
-        if (got == id) stride = s;
-    }
+    info->fileSize = fsz;
+    const long stride = gear_find_stride(fsz, *d, id, gear_fread_at, fp);
     info->stride = stride;
-    if (!stride) { fclose(fp); info->step = GS_BAD_LAYOUT; return false; }   // no candidate holds this id : an unknown layout, never a guess
+    if (!stride) { fclose(fp); info->step = GS_BAD_LAYOUT; return false; }   // no size proves this record : refuse, never guess
 
-    unsigned char data[0x800];
-    bool ok = (fseek(fp, info->index * stride + 0x2BD, SEEK_SET) == 0) && (fread(data, 1, sizeof(data), fp) == sizeof(data));
+    unsigned char data[GEAR_ICON];
+    const bool ok = gear_fread_at(fp, info->index * stride + GEAR_HEAD, data, GEAR_ICON);
     fclose(fp);
     if (!ok) return false;
     info->step = GS_OK;
-
-    // palette : 256 BGRA entries, each byte rotl3-decoded ; the alpha byte is additionally doubled + clamped.
-    unsigned char pal[256][4];
-    for (int g = 0; g < 256; ++g) {
-        pal[g][0] = rotl3(data[g * 4 + 0]);   // B
-        pal[g][1] = rotl3(data[g * 4 + 1]);   // G
-        pal[g][2] = rotl3(data[g * 4 + 2]);   // R
-        int a = rotl3(data[g * 4 + 3]) * 2; pal[g][3] = (unsigned char)(a < 256 ? a : 255);   // A (doubled)
-    }
-    // 32x32 pixel indices : each encoded byte e maps to palette entry rotl3(e). The palette is BGRA and the
-    // DAT rows are BOTTOM-UP, so pack to 0xAARRGGBB and flip vertically -- that lands the caller's buffer in
-    // exactly the orientation load_bmp_texture used to hand back after its own bottom-up flip (the icons must
-    // look identical whether they came from the bundled BMP or straight from the DAT).
-    for (int y = 0; y < 32; ++y) for (int x = 0; x < 32; ++x) {
-        const unsigned char* c = pal[rotl3(data[0x400 + (31 - y) * 32 + x])];
-        out_px[y * 32 + x] = ((u32)c[3] << 24) | ((u32)c[2] << 16) | ((u32)c[1] << 8) | (u32)c[0];
-    }
+    gear_decode_icon(data, out_px);   // top-down, 0xAARRGGBB : the orientation read_gear_icon_bmp returns too
     return true;
 }
 

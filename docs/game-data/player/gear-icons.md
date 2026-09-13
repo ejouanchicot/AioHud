@@ -125,6 +125,29 @@ opaque pixels where the 0xC00 read gave 0; and **1739/1739** poisoned caches fab
 are flagged stale, their rewrite round-tripping 1739/1739. `//aio geartrace` prints the proven record size
 (`record=0x1400`) and the `VOUCH` verdict per slot.
 
+### What would catch the next one: tests, a record proof, and a canary
+
+The patch went unnoticed for three days because nothing could see it: the offline suite never covered the decoder,
+`//aio doctor` only checked that the ROM folder resolved, and every wrong read was a success from the inside.
+
+- **The decisions are pure and tested** — `src/gfx/gear_dat.h` (id-range table, stride candidates, record proof,
+  icon decode, cache decisions, canary verdict), `tests/t_geardat.cpp`. The record proof is now **id + icon header**
+  (biSize 40, 32x32, 1 plane, 8 bpp — true for 100 % of records, measured): the id proves the stride, the header
+  proves the icon offset and format. Mutations that bite: stride back to 0xC00 (16 failures), id-only proof (4),
+  cache hit always drawn (1), vouch regardless of the rewrite (1), rewrite from a doubted ROM (1).
+- **The canary** — `src/ui/gear_canary.cpp`, registered with the harness as `gearicons`. At session start, one probe
+  per frame: the first id of each of the 11 DATs must prove its record, and 10 bundled icons (two per DAT the
+  bundle covers) must decode to their **compiled-in** fingerprints (`gear_refs`; pinned against the repo BMPs by the
+  test). Not the disk cache as reference: the repair rewrites it from the ROM, so it cannot be a second witness.
+  Findings: `GEAR.DAT_LAYOUT` (block), `GEAR.REF_MISMATCH`, `GEAR.DAT_IO` (warn); `//aio doctor` prints
+  `gearcan : verdict=...` either way, and the log gets one `GEARCANARY` line per verdict change.
+- **The canary gates the cache.** Cached icons are rewritten from the ROM only while the verdict is OK; otherwise
+  the file on disk is drawn unverified. A decoder the canary doubts must not overwrite good icons — that is exactly
+  how this bug poisoned them. Slots wait for the verdict (a few frames at session start).
+
+Simulated against the patched install: today `11/11 DATs proved, 10/10 references identical -> OK`; with the old
+0xC00 decoder, 9 of the 10 references differ -> `GEAR.REF_MISMATCH` on the first frames after login.
+
 ### Why frozen 2021 code still finds new items' icons
 
 The ROM DATs are **patched by Square Enix every game update** (verified: the icon DATs on disk

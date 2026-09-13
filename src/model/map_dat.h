@@ -22,6 +22,7 @@ struct MapLoadDiag {
     unsigned    chunkTypes;  // bitmask of chunk types seen (bit n = type n & 31) -> was it even a map DAT?
     int         W, H;        // dims from the graphic sub-header (0 if never reached)
     unsigned    fmtFlags;    // the graphic sub-header's flags byte (bit 4 = the one we require)
+    unsigned    biSize, bpp; // the palettised image's header size + depth (must be 40 / 8 ; 0 if never reached)
 };
 
 bool load_zone_map(unsigned fileId, u32*& outPixels, int& outW, int& outH, MapLoadDiag* diag = 0);

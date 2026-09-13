@@ -161,9 +161,18 @@ relative to that header base H:
 
     H+0x00 u8   flags   ; (flags & 0x10) != 0  => 8-bit palette   ; == 0 => DXT3
     H+0x09      char[8] name    ; must match regex ^m_[0-9]+_[0-9]+$  (m_<zone>_<submap>); gates decode
+    H+0x11 u32  biSize          ; 40 -- REQUIRED by AioHUD's 8-bit branch since 2026-09-13
     H+0x15 s32  width
     H+0x19 s32  height
+    H+0x1F u16  bpp             ; 8  -- REQUIRED likewise
     H+0x25 u32  dataSize        ; if 0 -> use width*height
+
+`biSize`/`bpp` used to be trusted : the palettised branch is an 8-bpp decoder with the palette right after a 40-byte
+header, so anything else decodes to noise and is drawn without a word. Measured 2026-09-13 (after the 2026-09-10
+patch) : all 209 palettised maps in the zone-id ranges read 40 / 8, so requiring them rejects nothing that works and
+turns that case into `FORMAT REJECTED`, which now also reaches `//aio doctor` as `MAP.LOAD_FAILED`. The `m_` name
+gate FFXIDB applies is **not** enforced : it holds for 672 of 673 vanilla files, but no XIPivot HD overlay has been
+measured, and a gate that blanks a working custom map is worse than the case it guards.
 
 **BOTH branches are used by real maps** (CONFIRMED 2026-07-05, decoding live install DATs) :
 - **OUTDOOR** zones (fields, Selbina, Valkurm) = **8-bit palette** (flags 0xB1, bit4 set), 512x512.

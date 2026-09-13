@@ -56,6 +56,15 @@ Compté sur l'audit complet du 2026-08-06 (41 constats), par fichier incriminé.
 | 8 | Roster : ordre, trusts, hors-zone | `model/party_state_roster.cpp` | 3 | à faire |
 | 9 | Skillchains et fenêtres | `model/skillchain.cpp` | — | fait (`t_skillchain`) |
 | 10 | Groupes de buffs et ordre du bandeau | `model/buff_groups.h` | — | fait (`t_buffgroups`) |
+| 11 | Icônes d'équipement : lecture des DAT + cache | `gfx/gear_dat.h` | patch 2026-09-10 | **fait** (`t_geardat`, 161 cas, 5 mutations mordent : 16/4/1/1/1) + **canari en jeu** (`ui/gear_canary.cpp`) -- vérif en jeu à faire |
+
+**Élément 11 : ajouté parce qu'un patch du client a cassé ce que ce harnais excluait par principe.** Le plan
+rangeait « les fichiers du jeu » avec les offsets mémoire, dans la moitié que seul le jeu peut juger. Le 2026-09-10
+les DAT d'objets sont passés à des enregistrements de 0x1400 octets ; le décodeur supposait 0xC00 et « réussissait »
+sur de mauvais enregistrements. Trois jours sans un mot. Deux leçons pour la suite du chantier : une lecture de
+fichier du jeu doit **se prouver elle-même** (id et en-tête dans l'enregistrement), et la moitié « en jeu » a besoin
+d'un **second témoin** qui ne passe pas par le code testé (empreintes d'icônes compilées, pas le cache disque que la
+réparation réécrit). La minimap y gagne `MAP.LOAD_FAILED` et la vérification biSize/bpp de sa branche 8 bits.
 
 La colonne d'état donne le nombre de cas et, après « mordent », combien tombent quand on remet le
 défaut d'origine — c'est cette seconde valeur qui dit si le test protège quelque chose.

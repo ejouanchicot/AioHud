@@ -48,8 +48,9 @@ u32 load_bmp_texture(u32 dev, const char* path);
 // and take a perfectly good decode down with it, which is what showed raw item IDs on locked-down installs.
 // //aio geartrace : where a decode actually stopped. The old single "ROM decode failed" conflated no-registry,
 // no-DAT and no-write-permission -- three different bugs with three different fixes.
-// GS_BAD_LAYOUT : the DAT opened but no record size puts this item's own id where it belongs -- a client patch
-// changed the file layout again. Refusing is the point : decoding at a guessed offset draws blank/wrong icons.
+// GS_BAD_LAYOUT : the DAT opened but no record size yields a record that names this id AND carries a 32x32 8-bpp
+// icon header (gear_dat.h) -- a client patch changed the layout again. Refusing is the point : decoding at a guessed
+// offset draws blank or wrong icons, and caches them.
 enum GearStep { GS_OK = 0, GS_NO_RANGE, GS_NO_ROMDIR, GS_NO_DAT, GS_BAD_READ, GS_BAD_LAYOUT };
 struct GearInfo {
     int         step;     // GearStep
@@ -59,6 +60,7 @@ struct GearInfo {
     long        index;    // record index inside the DAT
     int         err;      // errno from the failing fopen (0 if none)
     long        stride;   // record size the embedded id proved (0x1400 since the 2026-09-10 patch ; 0 if none)
+    long        fileSize; // bytes in the DAT (0 if never opened) : what a layout report must quote
 };
 bool decode_gear_icon_from_rom(unsigned id, u32* out_px, GearInfo* info = 0);
 
