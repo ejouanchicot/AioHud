@@ -944,6 +944,9 @@ struct FrameInput {
     char epTrack[32] = {0};
 };
 void model_feed_packet(int id, const unsigned char* b);   // one tracked incoming packet -> its handler (SEH-guarded)
+// One 0x028 action as the model's parser reads it : header, then per target its id and FIRST action's message and param.
+struct ActionDecode { unsigned actor = 0, category = 0, param = 0, n = 0; unsigned ids[16] = {}, msgs[16] = {}, params[16] = {}; };
+bool model_decode_action(const unsigned char* p, ActionDecode& out);
 void model_frame_upkeep(const FrameInput& in);             // roster refresh + every per-frame prune/reconcile
 
 PartyState& party();                      // global live party

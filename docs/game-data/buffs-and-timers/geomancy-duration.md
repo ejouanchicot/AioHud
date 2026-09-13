@@ -1,6 +1,6 @@
 ---
 title: Geomancy duration (GEO Indi-) — computed aura lifetime
-summary: GEO Indi- (skill 44) is an AURA whose 0x063 status is refreshed every ~3s by the pulse, so its duration is COMPUTED (Base + JP1362×2 + flat Indicolure gear), the three self/normal/Entrust cases, the 542-556/612 noise filter, and the rule that only the Indi- you carry NOW can raise a red OUT.
+summary: GEO Indi- (skill 44) is an AURA whose 0x063 status is refreshed every ~3s by the pulse, so its duration is COMPUTED ((Base + JP1362×2 + flat Indicolure gear) × (1 + "Indi. eff. dur." augment %), measured 2026-09-13), the three self/normal/Entrust cases, the 542-556/612 noise filter, and the rule that only the Indi- you carry NOW can raise a red OUT.
 source: model/geo_dur.h, model/geo_dur_gen.h (gen_geo_dur.py), party_state.cpp (on_action skill-44 branch, record_geo_aura, selfGeo_, entrustTick_), ui/hud_timers.cpp (the self aura row, the noise filter, geoReplaced)
 ---
 # Geomancy duration (GEO Indi-)
@@ -11,13 +11,12 @@ pulse, so it never shows the real aura lifetime (you'd see a useless 3 s countdo
 duration is **COMPUTED, not read**. This is the skill-44 special case of
 [buffs you cast on allies](buffs-on-allies.md).
 
-## Additive model — `geo_dur.h`
+## Model — `geo_dur.h` (measured 2026-09-13)
 
-Unlike enhancing (% multipliers) or songs (multipliers), Geomancy duration is purely **ADDITIVE flat
-seconds**:
+Flat seconds add first, then ONE percent term multiplies the sum:
 
 ```
-dur = Base + JP(1362)×2 + Σ(equipped "Indicolure ... duration +N" seconds)
+dur = (Base + JP(1362)×2 + Σ(equipped "Indicolure ... duration +N" seconds)) × (1 + Σ "Indi. eff. dur. +N%" augments)
 ```
 
 - **Base** = res/spells.lua duration (`tb_buff_gen`, skill 44). Indi- base is **180 s** (the `//aio geodbg`
@@ -28,8 +27,18 @@ dur = Base + JP(1362)×2 + Σ(equipped "Indicolure ... duration +N" seconds)
   equipped ids. The table `GEO_DUR_LISTED` is **generated** by `scripts/gen_geo_dur.py` from res
   item_descriptions.lua (`geo_dur_gen.h`) — universal / future-proof.
 
-**NO %, NO set bonus, NO merit.** GEO's only duration levers are JP + gear; the GEO **group-1 merits are
-Indi/Geo POTENCY**, not duration.
+- **augments** = "Indi. eff. dur. +N%" (augment **1250 = 0x4E2**, a percent in `res/augments.lua`), read from the
+  equipped items' extdata with the same system-1 decoder as the Enhancing augment (`geo_dur_augment_pct`).
+
+**This page used to say "NO %".** It was wrong, and a measurement showed it: an Indi- **entrusted** to an ally in a set
+with Gada "Indi. eff. dur. +11" and Lifestream Cape "Indi. eff. dur. +20" lasted **355-356 s** on the ally's own
+"Colure Active" (612) timer, where the flat model said 271 s ; (180 + 40 JP + 51 flat) × 1.31 = **355.0**. The same GEO's
+self aura, cast in a set WITHOUT those two pieces, was already exact (240 / 240 — which is why the percent had never
+shown). Still no set bonus and no merit: the GEO group-1 merits are Indi/Geo POTENCY, not duration.
+
+**Where the real duration is.** The effect status (539 Regen, 541 Refresh, ...) is re-applied by every pulse and reads
+2-3 s. The aura's lifetime is the **"Colure Active" (612)** timer, on the GEO for her own aura and on the ally for an
+entrusted one — the ground truth the measurement used.
 
 Geo- (**luopan**) spells are a different spell-id range and are **NOT modelled** — a luopan puts no bearer
 status on an ally, so it never reaches the buffs-on-allies path.
@@ -52,8 +61,9 @@ Detected when `spell_buff(sid)->skill == 44`:
    count. The ally loop is skipped (`if (b->skill == 44 && !geoEntrust) {} else …`, party_state.cpp:1157).
 3. **ENTRUST'd Indi- on an ally** → **a FIXED buff on that ally** (Entrust makes the Indi- stay on the
    target instead of following you). We DO record the ally row with the computed duration. Entrust is JA
-   **386** (`entrustTick_ = GetTickCount()`, party_state.cpp:1097); the next skill-44 cast within a **15 s**
-   window (`geoEntrust`) runs the ally loop and records `durMs = (base + JP + gear)×1000`. Any skill-44
+   **386** (`entrustTick_`); the next skill-44 cast within **60 s** (`geoEntrust`) runs the ally loop and records the
+   computed duration. **60, not 15** : measured, Entrust grants status **584 for 60 s**, and an Indi- cast 19 s after
+   Entrust was entrusted by the game while the 15 s window drew no row at all. Any skill-44
    cast consumes the Entrust window (`entrustTick_ = 0`).
 
 ## The self-buff noise filter (hud_timers.cpp, pass 2)

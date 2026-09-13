@@ -10,6 +10,7 @@
 #include "model/enh_dur.h"
 #include "model/regen_dur.h"
 #include "model/song_dur.h"
+#include "model/geo_dur.h"
 
 using namespace aio;
 
@@ -122,5 +123,40 @@ void test_durations() {
         CHECK_EQ(enh_dur_listed_pct(g), 0);
         CHECK_EQ(regen_dur_gear_sec(g), 0);
         CHECK_EQ(song_dur_m1_pct(g, 4), 0);
+    }
+
+    SECTION("durations : Composure on YOURSELF triples the duration, up to 30 minutes, and never shortens it");
+    {   // MEASURED 2026-09-13 in game, Kaories RDM99 casting on herself, the server's own 0x063 timer against the
+        // duration without Composure (dev/fixtures/measures/durations.csv). Before this rule the model predicted
+        // the no-Composure duration (plus the set bonus, which the server does not apply on yourself).
+        CHECK_EQ((int)composure_self_sec(272.0, true), 816);     // Refresh III : 272 s -> server 817
+        CHECK_EQ((int)composure_self_sec(147.0, true), 441);     // Regen II    : 147 s -> server 442
+        CHECK_EQ((int)composure_self_sec(637.0, true), 1800);    // Haste II    : 637 s -> server 1800 (the cap)
+        CHECK_EQ((int)composure_self_sec(1593.0, true), 1800);   // Barfira     : 1593 s -> server 1801
+        CHECK_EQ((int)composure_self_sec(794.0, true), 1800);    // Aquaveil in idle gear : 794 s -> server 1800
+        // A duration ALREADY past 30 minutes is left alone, not cut to the cap : Aquaveil in its duration set
+        // (1975 s) and Protect IV (5797 s) read the same with and without Composure.
+        CHECK_EQ((int)composure_self_sec(1975.0, true), 1975);
+        CHECK_EQ((int)composure_self_sec(5795.0, true), 5795);
+        CHECK_EQ((int)composure_self_sec(637.0, false), 637);    // no Composure : nothing changes
+    }
+
+    SECTION("durations : an Indi- lasts (base + job points + gear seconds) x (1 + Indi. eff. dur. %)");
+    {   // MEASURED 2026-09-13 in game (Kaories GEO99) : an Indi- entrusted to Tetsouo lasted 355-356 s where the model said
+        // 271 s. The Entrust set carries Gada "Indi. eff. dur. +11" and Lifestream Cape "Indi. eff. dur. +20" -- augment
+        // 1250 (0x4E2), a PERCENT in the game's own resources -- which the model did not read : (180 + 40 JP + 51 flat) x
+        // 1.31 = 355.0. Her self aura, cast in a set without those two pieces, was already exact (240 / 240).
+        // The extdata bytes below are the REAL ones, read from her items by Windower that evening.
+        static const unsigned char GADA[24]      = { 0x02,0x03,0xE2,0x54,0x05,0x0A,0x23,0x80,0x85,0x68,0x2D,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+        static const unsigned char LIFESTREAM[24] = { 0x02,0x03,0x2C,0x49,0xE2,0x9C,0x70,0x10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+        unsigned short ids[16] = { 0 }; unsigned char ext[16][24] = { { 0 } };
+        ids[0] = 21072; memcpy(ext[0], GADA, 24);          // main : Gada
+        ids[15] = 28637; memcpy(ext[15], LIFESTREAM, 24);  // back : Lifestream Cape
+        ids[7] = 23619; ids[8] = 23708;                    // Bagua Pants +3 (21 s), Azimuth Gaiters +3 (30 s)
+        CHECK_EQ(geo_dur_augment_pct(ids, ext), 31);
+        CHECK_EQ(geo_dur_gear_sec(ids), 51);
+        CHECK_EQ((int)geo_dur_sec(180, 40, 51, 31), 355);  // server : 355 and 356
+        CHECK_EQ((int)geo_dur_sec(180, 40, 20, 0), 240);   // her self aura set : server 240
+        CHECK_EQ(enh_dur_augment_pct(ids, ext), 0);        // and the Enhancing decoder still ignores it (0x4E0 only)
     }
 }

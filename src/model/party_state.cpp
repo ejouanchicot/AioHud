@@ -80,25 +80,38 @@ static unsigned getbits(const unsigned char* p, int bitoff, int width, int nbyte
 // it is the only way to know a cast did nothing : predicting it from a spell table is what broke the debuff
 // arbitration, and the ally-buff path never looked at it at all.
 static unsigned action_target_ids(const unsigned char* p, int size, unsigned tc, unsigned* out, unsigned cap,
-                                  unsigned* msgOut = 0) {
+                                  unsigned* msgOut = 0, unsigned* paramOut = 0) {
     unsigned n = 0; int off = 150;
     for (unsigned i = 0; i < tc && n < cap; ++i) {
         if (off + 36 > size * 8) break;
         const unsigned id = getbits(p, off, 32, size);
         unsigned ac = getbits(p, off + 32, 4, size); off += 36;
-        unsigned amsg = 0;
+        unsigned amsg = 0, aparam = 0;
         for (unsigned a = 0; a < ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound
             if (off + 86 > size * 8) { off = size * 8; break; }
-            if (a == 0) amsg = getbits(p, off + 44, 10, size);         // this target's main message
+            if (a == 0) { amsg = getbits(p, off + 44, 10, size); aparam = getbits(p, off + 27, 17, size); }   // this target's main message and param
             const unsigned hasAdd = getbits(p, off + 85, 1, size);
             off += 86;
             if (hasAdd) off += 37;                                     // add-effect body (anim 6 / param 17 / msg 10)
             if (getbits(p, off, 1, size)) off += 35; else off += 1;    // spike block : +1 flag, +34 body
         }
-        out[n] = id; if (msgOut) msgOut[n] = amsg;
+        out[n] = id; if (msgOut) msgOut[n] = amsg; if (paramOut) paramOut[n] = aparam;
         ++n;
     }
     return n;
+}
+
+// The same walk, exposed : the header and every target of one 0x028 as on_action reads them. Used by the in-game
+// packet witness (dev) to compare the model's decode with Windower's own action parser, and by the tests.
+bool model_decode_action(const unsigned char* p, ActionDecode& o) {
+    o = ActionDecode{};
+    if (!p) return false;
+    const int size = (int)((((unsigned)p[0] | ((unsigned)p[1] << 8)) >> 9) & 0x7F) * 4;
+    if (size < 30) return false;
+    o.actor = getbits(p, 40, 32, size); o.category = getbits(p, 82, 4, size); o.param = getbits(p, 86, 16, size);
+    unsigned tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
+    o.n = action_target_ids(p, size, tc, o.ids, 16, o.msgs, o.params);
+    return true;
 }
 
 // TARGET DEBUFFS (icons + learned countdown). The client stores NO per-mob status list and the 0x028 action
@@ -1187,7 +1200,12 @@ void PartyState::on_action(const unsigned char* p) {
                     // docs/game-data/actions/action-packet.md), so a status-keyed map can hold exactly one caster -- the
                     // only correct rule is that a live self-cast wins over a later foreign cast on the same status.
                     if (st && st < 1024) {
-                        const bool mineAndLive = (buffCaster_[st] == selfId_) && (self_buff_expiry((unsigned short)st) != 0);
+                        // ...and ONLY for SONGS, the one kind of buff that runs several copies on one status. A buff with a
+                        // single instance (Protect, Haste, Phalanx) is REPLACED by the later cast, whoever cast it : MEASURED
+                        // 2026-09-13, Tetsouo's Protect IV replaced Kaories' own (5790 s -> 1957 s left) while this guard
+                        // kept the latch on her, so the timer stayed "hers" under "Mine only" (tests/t_timers.cpp).
+                        const bool severalCopies = (cat == 4) && song_family(aid) > 0;
+                        const bool mineAndLive = severalCopies && (buffCaster_[st] == selfId_) && (self_buff_expiry((unsigned short)st) != 0);
                         if (!mineAndLive || actor == selfId_) buffCaster_[st] = actor;
                         // A FOREIGN cast landing on us : record it too, with the spell's BASE duration (a trust has no
                         // Troubadour/Marcato). Without this the ring held only our own casts, so a trust's song took a
@@ -1270,7 +1288,8 @@ void PartyState::on_action(const unsigned char* p) {
             //   Composure to party members). - Perpetuance : SCH (status 469) x2..x2.65 by Arbatel bracers.
             unsigned short eids[16]; unsigned char eext[16][24];
             int setPct = 0, listedPct = 0, augPct = 0;
-            if (read_equipment_ext(eids, eext)) { setPct = composure_set_pct(eids); listedPct = enh_dur_listed_pct(eids); augPct = enh_dur_augment_pct(eids, eext); }
+            int geoAugPct = 0;   // "Indi. eff. dur. +N%" (geo_dur.h) -- only from a read that succeeded, like the three above
+            if (read_equipment_ext(eids, eext)) { setPct = composure_set_pct(eids); listedPct = enh_dur_listed_pct(eids); augPct = enh_dur_augment_pct(eids, eext); geoAugPct = geo_dur_augment_pct(eids, eext); }
             else {
                 // REPORT it, same reasoning as the buff read just below. There is no `else` recovery on purpose --
                 // what to do instead (reuse the last good snapshot? skip the cast?) is a decision to make with a
@@ -1305,7 +1324,7 @@ void PartyState::on_action(const unsigned char* p) {
             const double gearMult = (1.0 + listedPct / 100.0) * (1.0 + augPct / 100.0);                                   // gear : ALL jobs
             // Enhancing Magic duration on an ally = MULTIPLICATIVE (composure.md, validated in-game incl. Haste) :
             //   (base + flatSec + regenSec) x (1+set) x (1+listed) x (1+augment). No cap -- see enh_sec below.
-            auto enh_sec = [&](unsigned base, unsigned short status) -> double {
+            auto enh_sec = [&](unsigned base, unsigned short status, bool withSet = true) -> double {   // withSet=false : the duration on YOURSELF, where the set bonus does not apply (enh_dur.h, composure_self_sec)
                 // Multiplicative model (validated accurate to 1-3s in-game, incl. Haste). REGEN (status 42) alone read
                 // short because Regen-SPECIFIC duration gear (flat seconds : Bolelabunga +12, Ebers/Orison Mitts...)
                 // adds to the base and multiplies through, but AioHUD wasn't reading it. Now added universally from
@@ -1321,7 +1340,7 @@ void PartyState::on_action(const unsigned char* p) {
                 // was borrowing the truth and hiding the error underneath.
                 // Nothing here is unbounded : every multiplier comes from an equipment table and defaults to
                 // 1.0 when the read fails, so the worst case degrades to the base duration.
-                return ((double)base + (double)flatSec + (double)regenSec) * setMult * gearMult * perpMult;
+                return ((double)base + (double)flatSec + (double)regenSec) * (withSet ? setMult : 1.0) * gearMult * perpMult;
             };
             // --- BRD song (skill 40) : dur = 120 x m1 x m2 x m3 + a3 (Miracle Cheer -> flat 900). m1 = flat + per-
             // family gear + JP(+5% BRD main) ; m2 = x2 Troubadour ; m3/a3 : Soul Voice/Marcato/Clarion/Tenuto. ---
@@ -1431,8 +1450,8 @@ void PartyState::on_action(const unsigned char* p) {
                 // is what lets match_cast tell our long song from a trust's short one on the SAME status.
                 double selfSec = (double)b->durSec;
                 if (b->skill == 40) selfSec = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
-                else if (b->skill == 34) selfSec = enh_sec(b->durSec, b->effect);   // Enhancing Magic (Regen special-cased inside)
-                else if (b->skill == 44) selfSec = (double)((int)b->durSec + geoJpSec + geoGear);
+                else if (b->skill == 34) selfSec = composure_self_sec(enh_sec(b->durSec, b->effect, false), composure);   // Enhancing Magic on YOURSELF : no set bonus, Composure x3 up to 30 min (measured, enh_dur.h)
+                else if (b->skill == 44) selfSec = geo_dur_sec((int)b->durSec, geoJpSec, geoGear, geoAugPct);
                 const unsigned predExp = ffxi_now_tick() + (unsigned)(selfSec * 60.0);
                 record_cast((unsigned short)b->effect, (unsigned short)sid, selfId_, predExp);
                 // A song cast that ALSO landed on you has a 0x063 ground truth coming. File it so songdur_check()
@@ -1466,9 +1485,11 @@ void PartyState::on_action(const unsigned char* p) {
             // rows. Two exceptions : (1) it landed on YOU -> record the aura you carry with its COMPUTED lifetime (drawn
             // instead of the 3s-looping 0x063 status) ; (2) ENTRUST (JA 386) just used -> the Indi- is a FIXED buff on
             // one ally, so we DO record that ally row. A skill-44 cast consumes the Entrust window either way.
-            const bool geoEntrust = (b->skill == 44) && ((unsigned)(nowMs - entrustTick_) < 15000u);
+            // 60 s, not 15 : MEASURED 2026-09-13, Entrust grants status 584 for 60 s and the game entrusts the next Indi-
+            // cast inside it (an Indi- cast 19 s after Entrust landed on the ally, and this row was missing).
+            const bool geoEntrust = (b->skill == 44) && ((unsigned)(nowMs - entrustTick_) < 60000u);
             if (b->skill == 44) {
-                if (aoeSelf) record_geo_aura((unsigned short)b->effect, (unsigned short)sid, ffxi_now_tick() + (unsigned)((int)b->durSec + geoJpSec + geoGear) * 60u);
+                if (aoeSelf) record_geo_aura((unsigned short)b->effect, (unsigned short)sid, ffxi_now_tick() + (unsigned)(geo_dur_sec((int)b->durSec, geoJpSec, geoGear, geoAugPct) * 60.0));
                 entrustTick_ = 0;
             }
             if (b->skill == 44 && !geoEntrust) {} else   // normal Indi- (aura) -> skip the ally loop ; entrusted -> run it
@@ -1567,7 +1588,7 @@ void PartyState::on_action(const unsigned char* p) {
                                              sid, songFam, (int)songM1, (int)(songM1 * 1000) % 1000,
                                              (int)songM2, (songM3 > 1.0) ? "1.5" : "1", songA3, (int)sec);
                 } else if (b->skill == 44) {   // GEO Entrust'd Indi- on an ally : additive Base + JP 1362 + Indicolure gear
-                    ms = (unsigned long long)((int)b->durSec + geoJpSec + geoGear) * 1000ull;
+                    ms = (unsigned long long)(geo_dur_sec((int)b->durSec, geoJpSec, geoGear, geoAugPct) * 1000.0);   // (base + JP + gear s) x (1 + augment %) -- measured, geo_dur.h
                 } else {
                     ms = (unsigned long long)b->durSec * 1000ull;
                 }

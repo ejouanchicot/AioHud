@@ -7,7 +7,8 @@
 //        x (1 + setBonus)         // Estoqueur's/Lethargy piece count : 2/3/4/5 -> +10/20/35/50%
 //        x (1 + listedGear%)      // native "Enhancing magic duration +N%" item stats (ADD within category)
 //        x (1 + augmentGear%)     // augment "Enh. Mag. eff. dur. +N%" (extdata + path augments ; ADD within)
-//        , capped at 1800s (30 min).
+//        -- NO cap on an ally (measured 2026-09-13 : Protect IV on an ally 5795 s). The 30 min cap is
+//        Composure's, on YOURSELF only : composure_self_sec() below.
 //
 // The three multipliers are SEPARATE (native x augment multiply ; within a category the % add). Validated :
 // Haste (180) + 20 JP, 4pc set, listed 88%, augment 49% -> (180+20)*1.35*1.88*1.49 = 756.3s == Timers.
@@ -91,7 +92,7 @@ inline double perpetuance_mult(const unsigned short ids[16]) {
 
 // decode augment id 0x4E0 ("Enh. Mag. eff. dur.") from one item's 24-byte extdata (system-1 packing, see
 // docs/game-data/player/player-equipment.md + extdata.lua). % = value + 1. Non-augmented / other systems -> 0.
-inline int enh_dur_augment_ext(const unsigned char ext[24]) {
+inline int ext_augment_sum(const unsigned char ext[24], unsigned augId) {   // value+1 summed over the system-1 augments with id augId
     const unsigned flag2 = ext[1];
     if (flag2 & 0x08) return 0;                 // crafting shield
     if (flag2 & 0x20) return 0;                 // system 2 (Delve path stat augments live elsewhere)
@@ -102,10 +103,11 @@ inline int enh_dur_augment_ext(const unsigned char ext[24]) {
     int pct = 0;
     for (int i = 2; i + 1 <= last; i += 2) {
         const unsigned id = ext[i] + (ext[i + 1] & 7u) * 256u, val = ext[i + 1] >> 3;
-        if (id == 0x4E0u) pct += (int)val + 1;
+        if (id == augId) pct += (int)val + 1;
     }
     return pct;
 }
+inline int enh_dur_augment_ext(const unsigned char ext[24]) { return ext_augment_sum(ext, 0x4E0u); }   // "Enh. Mag. eff. dur. +N%"
 
 // total NATIVE listed duration % over the 16 equipped ids (m2 = 1 + this/100). Generated table (res
 // descriptions) + the hidden-stat supplement ; each item is in at most one, so summing both is safe.
@@ -120,6 +122,25 @@ inline int enh_dur_augment_pct(const unsigned short ids[16], const unsigned char
     int p = 0;
     for (int s = 0; s < 16; ++s) { if (!ids[s]) continue; p += enh_dur_augment_ext(ext[s]); p += enh_dur_table(ENH_DUR_PATH, ENH_DUR_PATH_N, ids[s]); }
     return p;
+}
+
+// --- COMPOSURE ON YOURSELF -------------------------------------------------------------------------------------
+// MEASURED 2026-09-13 in game (Kaories RDM99, 30 casts on herself and on an ally, the SERVER's own 0x063 timer on the
+// receiver's client against the model ; dev/fixtures/measures/durations.csv). Three facts, each one tested :
+//   * on YOURSELF, Composure TRIPLES the duration, up to 30 minutes : Refresh III 272 -> 817 s, Regen II 147 -> 442 s,
+//     Haste II / Phalanx / Temper II / Enfire II / Gain-DEX / Blink / Stoneskin / Barfira -> 1800 s ;
+//   * a duration ALREADY over 30 minutes is not touched (not cut to 30 either) : Protect IV 5797 s and Aquaveil in its
+//     duration set 1975 s read the same with Composure -- while the SAME Aquaveil in idle gear (794 s) goes to 1800 s,
+//     which is what rules out "Aquaveil is excluded" ;
+//   * the Estoqueur's / Lethargy "Augments Composure" set bonus is for ALLIES : on yourself the triple applies to the
+//     duration WITHOUT it (Refresh III with set pieces worn : model with set 299 s, server 817 = 272 x 3).
+// On an ally, the multiplicative model above (set bonus included) matched the server to 2 s on 14 casts, with and
+// without Composure. `sec` = the duration WITHOUT the set bonus.
+inline double composure_self_sec(double sec, bool composure) {
+    if (!composure) return sec;
+    double t = sec * 3.0;
+    if (t > 1800.0) t = 1800.0;
+    return t > sec ? t : sec;
 }
 
 } // namespace aio
