@@ -20,6 +20,9 @@ set "DATA=%PLG%\AioHud"
 set "ADD=%DIST%\addons"
 
 REM 1) build first -- a bad build aborts the package (never ship a stale DLL).
+REM    ALWAYS the release shape : the dev tools (dev/, igstate, pcap, the doctor's health dump) are for the developer's
+REM    machine only. CI has no dev/ anyway ; this keeps a package made on a dev machine identical to a release.
+set "AIOHUD_NO_DEVTOOLS=1"
 call "%ROOT%build.bat"
 if errorlevel 1 ( echo [package] build failed -- aborting & exit /b 1 )
 
