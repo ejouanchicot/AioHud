@@ -70,7 +70,7 @@ if [ -f dev/scripts/igtest.py ]; then
             *"no answer for request"*)
                 echo "pre-commit: in-game cross-check SKIPPED (game not running, or //lua load aiotest not done)" ;;
             *"did not answer //aio igstate"*)
-                echo "pre-commit: in-game cross-check SKIPPED (the loaded AioHud predates //aio igstate -- deploy + //load)" ;;
+                echo "pre-commit: in-game cross-check SKIPPED (the loaded AioHud has no //aio igstate : an old or RELEASE-shape DLL -- build.bat, deploy.bat, //load)" ;;
             *)
                 if [ $igrc -ne 0 ]; then
                     sleep 3                              # a zone transition can disagree for a second

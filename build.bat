@@ -1,5 +1,7 @@
 @echo off
 REM Build the AioHUD plugin (clean layered src\ tree) -> build\AioHud.dll  (32-bit, MSVC).
+REM AIOHUD_OUT=<dir> writes the DLL and its objects there instead (package.bat : build\release, so a package never
+REM overwrites the dev DLL that deploy.bat copies).
 REM Layers:  src\gfx (D3D backend)  src\ui (widgets + HUD)  src\model  src\plugin (IPlugin glue)
 REM Iterate:  //unload AioHud  ->  deploy.bat  ->  //load AioHud
 setlocal
@@ -29,7 +31,9 @@ set "DEVDEF="
 if not defined AIOHUD_NO_DEVTOOLS if exist "%ROOT%dev\src\aiohud_devtools.cpp" set DEVSRC="%ROOT%dev\src\aiohud_devtools.cpp" "%ROOT%dev\src\tape_recorder.cpp" "%ROOT%dev\src\igstate.cpp" "%ROOT%dev\src\timers_legacy.cpp" "%ROOT%dev\src\timers_shadow.cpp"
 if defined DEVSRC set DEVDEF=/DAIOHUD_DEVTOOLS /I"%ROOT%dev\src"
 
-if not exist "%ROOT%build" mkdir "%ROOT%build"
+set "OUT=%ROOT%build"
+if defined AIOHUD_OUT set "OUT=%AIOHUD_OUT%"
+if not exist "%OUT%" mkdir "%OUT%"
 
 REM --- version resource : parse AIOHUD_VERSION ("MAJ.MIN.PAT") and compile aiohud.rc so the DLL carries a REAL
 REM     file version (Windower prints it at load, instead of 0.0.0.0). Non-numeric ("dev") -> 0.0.0. Skipped
@@ -42,10 +46,10 @@ REM the version of whatever was built last, which is the single most misleading 
 REM (a tester reports against v1.0.70 while running v1.0.68). It is the same lesson stated twenty lines below
 REM for cl, where the exit code is trusted precisely so a stale DLL cannot mask a failed compile.
 set "AIORES="
-del /q "%ROOT%build\aiohud.res" 2>nul
+del /q "%OUT%\aiohud.res" 2>nul
 where rc.exe >nul 2>nul && (
-    rc /nologo /fo "%ROOT%build\aiohud.res" /dAIO_VMAJ=%VMAJ% /dAIO_VMIN=%VMIN% /dAIO_VPAT=%VPAT% "%ROOT%src\plugin\aiohud.rc" >nul
-    if errorlevel 1 ( echo [build] WARNING: rc.exe failed -- DLL will carry version 0.0.0.0 ) else ( set AIORES="%ROOT%build\aiohud.res" )
+    rc /nologo /fo "%OUT%\aiohud.res" /dAIO_VMAJ=%VMAJ% /dAIO_VMIN=%VMIN% /dAIO_VPAT=%VPAT% "%ROOT%src\plugin\aiohud.rc" >nul
+    if errorlevel 1 ( echo [build] WARNING: rc.exe failed -- DLL will carry version 0.0.0.0 ) else ( set AIORES="%OUT%\aiohud.res" )
 )
 
 REM /W4 /permissive- : high warnings + strict conformance (catches shadowing, dead code, bad conversions).
@@ -76,10 +80,10 @@ cl /nologo /LD /O2 /MT /EHsc- /utf-8 /W4 /WX /permissive- /std:c++17 /wd4456 /D_
    "%ROOT%src\ui\buff_atlas.cpp" "%ROOT%src\ui\palette.cpp" "%ROOT%src\ui\edit_box.cpp" "%ROOT%src\ui\liquid_bars.cpp" "%ROOT%src\ui\player.cpp" "%ROOT%src\ui\gear_canary.cpp" "%ROOT%src\ui\party.cpp" "%ROOT%src\ui\party_gauges.cpp" "%ROOT%src\ui\target.cpp" "%ROOT%src\ui\minimap.cpp" "%ROOT%src\ui\factory.cpp" "%ROOT%src\ui\config_controls.cpp" "%ROOT%src\ui\party_config.cpp" "%ROOT%src\ui\target_config.cpp" "%ROOT%src\ui\player_config.cpp" "%ROOT%src\ui\minimap_config.cpp" "%ROOT%src\ui\ws_config.cpp" "%ROOT%src\ui\sc_config.cpp" "%ROOT%src\ui\tp_config.cpp" "%ROOT%src\ui\hl_config.cpp" "%ROOT%src\ui\pw_config.cpp" "%ROOT%src\ui\grim_config.cpp" "%ROOT%src\ui\zt_config.cpp" "%ROOT%src\ui\tm_config.cpp" "%ROOT%src\ui\ep_config.cpp" "%ROOT%src\ui\box_style.cpp" "%ROOT%src\ui\config_page.cpp" "%ROOT%src\ui\hud.cpp" "%ROOT%src\ui\hud_preview.cpp" ^
    "%ROOT%src\ui\hud_skillchains.cpp" "%ROOT%src\ui\hud_treasure.cpp" "%ROOT%src\ui\hud_hatelist.cpp" "%ROOT%src\ui\hud_pointwatch.cpp" "%ROOT%src\ui\hud_grimoire.cpp" "%ROOT%src\ui\hud_zonetracker.cpp" "%ROOT%src\ui\hud_empypop.cpp" "%ROOT%src\ui\hud_debuffs.cpp" "%ROOT%src\ui\hud_timers.cpp" ^
    "%ROOT%src\plugin\aiohud.cpp" %PROBES% %DEVSRC% %AIORES% ^
-   /Fo"%ROOT%build\\" /Fe"%ROOT%build\AioHud.dll" ^
-   /link /DEF:"%ROOT%src\plugin\aiohud.def" user32.lib kernel32.lib gdi32.lib /OUT:"%ROOT%build\AioHud.dll"
+   /Fo"%OUT%\\" /Fe"%OUT%\AioHud.dll" ^
+   /link /DEF:"%ROOT%src\plugin\aiohud.def" user32.lib kernel32.lib gdi32.lib /OUT:"%OUT%\AioHud.dll"
 
 REM cl returns nonzero on ANY compile/link error -> trust the exit code, NOT just the DLL's
 REM existence (a stale DLL from a previous build would otherwise mask a failed compile).
 if errorlevel 1 ( echo [build] FAILED -- compile/link error above ^(DLL NOT updated^) & exit /b 1 )
-if exist "%ROOT%build\AioHud.dll" ( echo [build] OK -^> %ROOT%build\AioHud.dll ) else ( echo [build] FAILED & exit /b 1 )
+if exist "%OUT%\AioHud.dll" ( echo [build] OK -^> %OUT%\AioHud.dll ) else ( echo [build] FAILED & exit /b 1 )

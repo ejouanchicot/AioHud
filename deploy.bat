@@ -18,6 +18,18 @@ REM    would create a fresh empty AioHud\ and orphan the old config/profiles sti
 if not exist "%DATA%\" if exist "%WP%\_aiohud_re\" ren "%WP%\_aiohud_re" "AioHud"
 
 REM 1) the DLL
+REM    ON A DEV MACHINE IT MUST BE THE DEV SHAPE. A release-shape DLL (package.bat before it built into build\release,
+REM    or a build run with AIOHUD_NO_DEVTOOLS=1) has no //aio igstate : the doctor then reports "the plugin did not
+REM    answer" on every poll and the pre-commit in-game check skips itself -- with nothing saying why (2026-09-13).
+REM    AIOHUD_DEPLOY_RELEASE=1 deploys it anyway, on purpose.
+if exist "%ROOT%dev\src\aiohud_devtools.cpp" if not defined AIOHUD_DEPLOY_RELEASE (
+    findstr /m /c:"igstate" "%ROOT%build\AioHud.dll" >nul 2>nul
+    if errorlevel 1 (
+        echo [deploy] REFUSED -- build\AioHud.dll is a RELEASE-shape build ^(no dev tools, no //aio igstate^).
+        echo          Run build.bat first. To deploy a release shape on purpose : set AIOHUD_DEPLOY_RELEASE=1
+        exit /b 1
+    )
+)
 copy /Y "%ROOT%build\AioHud.dll" "%WP%\AioHud.dll" >nul
 if errorlevel 1 ( echo [deploy] FAILED -- is AioHud still loaded? do //unload AioHud first & exit /b 1 )
 

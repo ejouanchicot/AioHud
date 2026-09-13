@@ -22,7 +22,11 @@ set "ADD=%DIST%\addons"
 REM 1) build first -- a bad build aborts the package (never ship a stale DLL).
 REM    ALWAYS the release shape : the dev tools (dev/, igstate, pcap, the doctor's health dump) are for the developer's
 REM    machine only. CI has no dev/ anyway ; this keeps a package made on a dev machine identical to a release.
+REM    And in its OWN folder : it used to overwrite build\AioHud.dll, the dev DLL deploy.bat copies, so the next deploy
+REM    shipped a DLL without //aio igstate to the dev machine -- the doctor then reported "no answer" on every poll
+REM    and the in-game pre-commit check skipped itself with the wrong reason (2026-09-13).
 set "AIOHUD_NO_DEVTOOLS=1"
+set "AIOHUD_OUT=%ROOT%build\release"
 call "%ROOT%build.bat"
 if errorlevel 1 ( echo [package] build failed -- aborting & exit /b 1 )
 
@@ -31,7 +35,8 @@ if exist "%DIST%" rmdir /S /Q "%DIST%"
 mkdir "%DATA%"
 
 REM 3) the DLL  ->  plugins\AioHud.dll
-copy /Y "%ROOT%build\AioHud.dll" "%PLG%\AioHud.dll" >nul
+copy /Y "%ROOT%build\release\AioHud.dll" "%PLG%\AioHud.dll" >nul
+if errorlevel 1 ( echo [package] build\release\AioHud.dll could not be copied & exit /b 1 )
 
 REM 4) runtime assets : the whole assets\ tree EXCEPT any *_src\ (job/window/icon regeneration sources).
 REM    robocopy exit codes 0-7 = success ; 8+ = real error (don't treat <8 as failure).
