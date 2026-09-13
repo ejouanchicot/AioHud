@@ -37,6 +37,9 @@ void advance_ms(unsigned ms);
 unsigned now_ms();
 unsigned now_tick();            // what the model's ffxi_now_tick() must read -- checked by selfcheck()
 
+// What you have equipped, item ids and their 24-byte extdata, as read_equipment_ext serves them. Not called = no read.
+void equip(const unsigned short ids[16], const unsigned char ext[16][24]);
+
 // YOUR buffs as the game's memory lists them (player+0x1C) : what read_player_buffs and GameState::buffs report.
 void self_buffs(std::initializer_list<unsigned short> ids);
 void self_buffs_unreadable();   // the read FAILS (ok=false) -- not the same thing as an empty list
@@ -51,6 +54,14 @@ void packet(int id, const unsigned char* bytes);
 void frame();
 // Build the Timers rows from the current world, bracketed as model event 'T' (the renderer's call, minus drawing).
 bool build(aio::TimersRows& out);
+
+// //aio out / //aio in, as the command dispatcher applies them (to the frozen copy too, in a dev build).
+int out(const char* a, const char* b);
+int in(const char* a, const char* b);
+
+// Dev build only (0 elsewhere) : frames the frozen Timers builder was compared on, and how many differed.
+unsigned shadow_frames();
+unsigned shadow_mismatch();
 
 // frame() + build() -- what one rendered frame does.
 bool step(aio::TimersRows& out);

@@ -18,6 +18,8 @@
 #include "model/action_status_gen.h"   // is_debuff_status : keep enfeebles (Blind/Poison/Slow) out of the buff list
 #include "model/focus_rules.h"   // the FOCUS monitor's three judgements, pure and tested
 #include "model/ally_group.h"   // the (AoE N) count and the group-or-name decision, pure and tested
+#include "model/timers_sort.h"   // the row order : pure, tested in tests/t_timersrules.cpp
+#include "model/timers_rules.h"   // one row's source decisions : pure, tested in tests/t_timersrules.cpp
 #include "model/selftest.h"   // this module's own checks, run by the in-game watcher
 #include "windower_debug.h"
 #include <windows.h>
@@ -355,17 +357,7 @@ static const char* song_mod_tag(unsigned char m, char* buf, int cap) {
 static bool tm_self_focus_on(const UiConfig& C, unsigned status) {
     return C.tm_buff_off(UiConfig::TM_KEY_FOCUS | status);
 }
-// SELF-CARRIED buffs : Food / Aftermath / conquest (Signet, Sanction, Sigil, Ionis) / synthesis Imagery. NO job
-// CASTS these, so buff_caster_for can't attribute them and self_can_produce_buff says no -> the "buff source" filter
-// (srcKeeps) would classify them as "not yours" and hide them under anything but "All". But they ARE yours (you
-// carry them), not someone's buff cast ON you, so they must be exempt from the source filter -- their family-filter
-// toggle is their only control. Status ids mirror the EXTRA_FAM list in scripts/gen_job_track.py (keep in sync).
-static inline bool tm_self_carried(unsigned st) {
-    return st == 251                                            // Food
-        || (st >= 270 && st <= 272)                            // Aftermath: Lv.1 / Lv.2 / Lv.3 (3 tiers ; 273 generic is legacy)
-        || st == 253 || st == 256 || st == 268 || st == 512    // Signet / Sanction / Sigil / Ionis
-        || (st >= 235 && st <= 243);                           // synthesis Imagery (Fishing .. Cooking)
-}
+// SELF-CARRIED buffs (Food / Aftermath / conquest / Imagery) : model/timers_rules.h, timers_self_carried().
 
 // //aio ftrace : armed for a DURATION, not a row count. A per-row countdown burned out in seconds -- it decrements
 // once per buff PER FRAME (~60 Hz), so it never survived long enough to observe the one moment that matters, the
@@ -489,43 +481,22 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
             if (o.expTick) return (int)(o.expTick - now);
             return (int)((o.startMs + o.durMs) - nowMs) * 3 / 50;
         };
-        // FRESH vs LAGGARD. A song copy on an ally is FRESH only when it tracks YOUR CURRENT cast of THIS SPELL : still
-        // mirroring your live self timer (just re-sung), or its frozen expTick matches your current self expiry for this
-        // spell. Otherwise it is a LAGGARD -> a named per-ally row on its own timer, never folded into a self AoE :
-        //   - a re-sing MISSED the member : it keeps the OLD expTick (older/shorter cast).
-        //   - you no longer hold THIS SPELL yourself (selfExp==0) : e.g. Victory March was pushed off you by 4 new songs
-        //     but is still on Kaories. This case is why selfExp==0 must be LAGGARD, not fresh : status ids family-collapse
-        //     (Honor March + Victory March are BOTH 214), so countHas(214) would count YOUR Honor March into Victory
-        //     March's group and draw a phantom "(AoE 2)". Songs are self-centred -- a real current AoE song is always on
-        //     you (selfExp!=0) -- so selfExp==0 reliably means "not a self AoE, list the ally who still carries it".
-        // Only REAL AoE spells split (rolls/single-target keep their existing one-row-per-ally path). Shared by the
-        // pass-1 grouping and the pass-3 per-ally emit so the two ALWAYS agree on which members are laggards.
-        auto obFresh = [&](const PartyState::OtherBuff& o) -> bool {
-            if (o.isAbil || !o.aoe) return true;
-            if (o.mirrorSelf) return true;   // just cast (< 2s, still mirroring your live self timer) -> fresh, even before your 0x063 self timer has landed (no post-cast flicker)
-            const unsigned selfExp = party().self_buff_expiry_for(o.status, o.spell);
-            // A SONG THE GAME JUST PUSHED OUT OF YOUR SET IS NOT A LAGGARD. When a new song lands at the cap,
-            // your own 0x063 drops the victim FIRST -- the allies keep their copy for another moment -- and
-            // "you hold it, they do not" is exactly the shape of a re-cast that missed people. So an evicted
-            // song exploded into one named row per member for a second, then vanished as the 0x076 caught up.
-            // Reported 2026-09-10, replacing a rotation with Paeons. The model named that victim at cast time,
-            // so we can simply ask: on its way out, and it stays ONE row until the prune takes it.
-            if (!selfExp && party().song_was_evicted(party().self_id(), o.spell, 6000u)) return true;
-            // YOUR LIST HAS NOT SPOKEN ABOUT THIS CAST YET. selfExp == 0 normally means "you do not hold it",
-            // but right after a cast it only means the 0x063 has not landed. Treating that silence as an answer
-            // is what made a freshly sung AoE song scatter into one row per member for a moment before pulling
-            // back into its group -- reported 2026-09-10, singing Paeons over a rotation.
-            //
-            // mirrorSelf covers the same window and was meant to prevent exactly this, but it lapses at 2 s
-            // whether or not your timer list has arrived. So ask the question that has an answer: is this cast
-            // NEWER than anything the 0x063 has told us? Then it has said nothing about it. Same rule the prune
-            // and the post-zone check already obey -- evidence older than the event cannot rule on it -- and no
-            // new delay to tune, which is what every previous attempt at this class of bug reached for.
-            if (!selfExp && (int)(o.castMs - party().buff_timers_stamp()) > 0) return true;
-            if (!selfExp) return party().in_zone_grace() && song_family(o.spell) <= 0;   // normally selfExp==0 -> you don't hold this -> laggard. EXCEPT the post-zone repop window : your 0x063 self timer reads 0 for a few seconds while it repopulates, but an ENHANCING buff PERSISTS across a zone -> hold it FRESH (grouped, on the pre-zone estimate) during the grace so it never flashes per-person ; the re-align snaps it to the real self timer the instant it lands. Songs (lost on zone) stay laggard.
-            int d = (int)(o.expTick - selfExp); if (d < 0) d = -d;
-            return d <= 600;                 // 600 ticks = 10s : casts more than 10s apart are distinct generations
+        // FRESH vs LAGGARD : model/timers_rules.h (ally_copy_fresh). The adapter below answers its questions from the
+        // model, each only when the rule asks it -- the same evaluation order the inline code had.
+        struct FreshSrc {
+            const PartyState::OtherBuff& e;
+            bool isAbil() const { return e.isAbil != 0; }
+            bool aoe() const { return e.aoe != 0; }
+            bool mirrorSelf() const { return e.mirrorSelf != 0; }
+            unsigned expTick() const { return e.expTick; }
+            unsigned castMs() const { return e.castMs; }
+            unsigned selfExp() const { return party().self_buff_expiry_for(e.status, e.spell); }
+            bool evictedRecently() const { return party().song_was_evicted(party().self_id(), e.spell, 6000u); }
+            unsigned timersStamp() const { return party().buff_timers_stamp(); }
+            bool zoneGrace() const { return party().in_zone_grace(); }
+            bool isSong() const { return song_family(e.spell) > 0; }
         };
+        auto obFresh = [](const PartyState::OtherBuff& o) -> bool { return ally_copy_fresh(FreshSrc{ o }); };
         if (C.tmMine) {
             ob = party().other_buffs(no);   // (prune_other_buffs_worn now runs once per frame from the model tick, not from here)
             if (no > g_obPeak) g_obPeak = no;   // the peak is what the watcher can act on -- see g_fmPeak/g_obPeak
@@ -587,52 +558,40 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
         static const unsigned char JA_NONE[128] = {};
         const unsigned char* jaBits = f.game ? f.game->jaBits : JA_NONE;
         const bool jaOk = f.game ? f.game->jaOk : false;
-        // ONE definition of "does the buff-source filter keep this timer", shared by the row emit AND by the FOCUS
-        // monitor. They used to disagree: the emit applied the filter, the monitor did not -- so under "Mine only" a
-        // party WHM's Haste never warned you it was about to expire, then screamed HASTE OUT in red the moment it did.
-        // Half a feature reachable, half not. Same verdict for both, so they are reachable or unreachable together.
+        // THE BUFF-SOURCE FILTER : model/timers_rules.h (buff_source_keeps) -- one verdict for the row emit AND the FOCUS
+        // monitor. The adapter answers the rule's questions from the model, each only when asked.
+        struct SrcAdapter {
+            const UiConfig& C; unsigned short status; unsigned expiry; int timerIdx; const unsigned char* jaBits; bool jaOk;
+            int filter() const { return C.tmBuffSrc; }
+            bool selfCarried() const { return timers_self_carried(status); }
+            bool foreignStatMix() const { return party().is_foreign_stat_mix(status, expiry, timerIdx); }
+            unsigned caster() const { return party().buff_caster_for(status, expiry, timerIdx); }
+            unsigned me() const { return party().self_id(); }
+            bool isTrust(unsigned id) const { return party().is_trust(id); }
+            bool selfCanProduce() const { return party().self_can_produce_buff(status, jaBits, jaOk); }
+            void sourceJobs(bool& players, bool& trusts) const { party().buff_source_jobs(status, players, trusts); }
+        };
         auto srcKeeps = [&](unsigned short status, unsigned expiry, int timerIdx) -> bool {
-            if (C.tmBuffSrc == TMSRC_ALL) return true;
-            if (tm_self_carried(status)) return true;   // Food/Signet/Craft/Aftermath : self-carried, no external caster -> always yours ; the family-filter toggle is their sole control (else "Mine only" hides them despite being set to Show)
-            // A trust/chemist multi-stat MIX boost (a STR..CHR you did NOT cast, co-expiring with a sibling boost) is
-            // decided FIRST -- ahead of the caster lookup -- because a stale buffCaster_ can still name YOU on it (the
-            // attribution is never cleared when the buff wears off), which would otherwise keep it as "your own".
-            if (party().is_foreign_stat_mix(status, expiry, timerIdx))
-                return (C.tmBuffSrc == TMSRC_TRUSTS);                           //   "me+trusts" keeps it ; "mine"/"players" hide it
-            const unsigned caster = party().buff_caster_for(status, expiry, timerIdx), me = party().self_id();
-            if (caster != 0 && caster == me) return true;                       // your own -> always kept
-            if (caster != 0) {
-                const bool trust = party().is_trust(caster);
-                if (C.tmBuffSrc == TMSRC_MINE) return false;
-                if (C.tmBuffSrc == TMSRC_PLAYERS && trust)  return false;
-                if (C.tmBuffSrc == TMSRC_TRUSTS  && !trust) return false;
-                return true;
-            }
-            if (party().self_can_produce_buff(status, jaBits, jaOk)) return true;   // unknown but your job can make it
-            if (C.tmBuffSrc == TMSRC_MINE) return false;
-            bool ph = false, th = false; party().buff_source_jobs(status, ph, th);
-            if (C.tmBuffSrc == TMSRC_PLAYERS && !ph) return false;
-            if (C.tmBuffSrc == TMSRC_TRUSTS  && ph && !th) return false;
-            return true;
+            return buff_source_keeps(SrcAdapter{ C, status, expiry, timerIdx, jaBits, jaOk });
         };
         const int trkJob = party().self_main_job();   // 0 = not logged in yet ; the FOCUS monitor below is gated on it
         // ---- pass 2 : your OWN self buffs (exact server timers). A self buff that matches an AoE group you cast folds
         //      INTO that group (you count, your exact timer drives it) instead of getting its own row. ----
         int n = 0; const BuffTimer* bt = party().buff_timers(n);
         for (int i = 0; i < n && nb < 50; ++i) {
-            if (bt[i].expiry == FFXI_EXPIRY_PERMANENT) continue;   // client's "permanent" sentinel -> it draws no countdown, nor do we
+            // THE COUNTDOWN : model/timers_rules.h (self_timer_countdown) -- permanent, absurd, held at 0:00, debuff.
             int fine = (int)(bt[i].expiry - now); if (fine < 0) fine = 0;   // the same instant, un-ceil-ed -> sort key (Row::fine)
-            int rem = ticks_to_sec_ceil((int)(bt[i].expiry - now));   // CEIL, like the client (see ticks_to_sec_ceil) ; not const : clamped to 0 below
-            // Our timer runs ~2s AHEAD of the client (measured): at rem 0 the game still shows the icon for about
-            // two more seconds. Dropping the row at 0 while the red OUT alert only fires once the buff really
-            // leaves the list left a visible HOLE between the two. Hold the row at 0:00 for as long as the buff is
-            // genuinely still on you, so the hand-off row -> alert is seamless. Only for a buff we still hold:
-            // meHas is authoritative now that an empty list is distinguished from no data.
-            if (rem > 6 * 3600 && !tm_self_carried(bt[i].id)) continue;   // 6h cap drops garbage/absurd timers -- EXCEPT self-carried area buffs, which legitimately run for many hours (San d'Oria base Signet = 13h). fmt() already renders them H:MM:SS ; the family toggle stays their control
-            if (rem <= 0) { if (!meHas((int)bt[i].id)) continue; rem = 0; }
-            // DEBUFFS (Blind / Poison / Slow / Dia / Bio...) leak into the 0x063 self-buff list -- they are NOT buffs,
-            // so never in the Duration column (they'll get their own detachable column). Dropped for everyone.
-            if (is_debuff_status(bt[i].id)) continue;
+            using SelfMeHasFn = decltype(meHas); using SelfSrcKeepsFn = decltype(srcKeeps);   // aliases : a member named like the lambda cannot also use its name
+            struct CountdownSrc {
+                const BuffTimer& t; unsigned now; const SelfMeHasFn* me;
+                bool permanent() const { return t.expiry == FFXI_EXPIRY_PERMANENT; }
+                int remSec() const { return ticks_to_sec_ceil((int)(t.expiry - now)); }
+                bool selfCarried() const { return timers_self_carried(t.id); }
+                bool meHas() const { return (*me)((int)t.id); }
+                bool isDebuff() const { return is_debuff_status(t.id); }
+            };
+            int rem = self_timer_countdown(CountdownSrc{ bt[i], now, &meHas });
+            if (rem < 0) continue;
             if (party().bcapt_armed() && bt[i].id < 1024) {   // //aio bcaptlog ATTR : the FULL ownership decision per self-buff (logged on CHANGE only)
                 const unsigned owner = party().buff_caster_for(bt[i].id, bt[i].expiry, i);   // what buff_caster_for resolves (ring -> direct -> co-expiry)
                 const unsigned direct = party().buff_caster(bt[i].id);                        // raw buffCaster_[status]
@@ -665,61 +624,41 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                                      C.tm_buff_off((unsigned)bt[i].id) ? 1 : 0,
                                      C.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)bt[i].id) ? 1 : 0, C.tmFocusWarn);
             }
-            // Buff filter : JOB-AGNOSTIC, keyed by STATUS (the family filter). Hidden -> drop the row, UNLESS it is
-            // Hidden+Focus and expiring (surface it under the warn threshold as the alert).
-            if (C.tm_buff_off((unsigned)bt[i].id)) {
-                if (!(tm_self_focus_on(C, bt[i].id) && rem < C.tmFocusWarn)) continue;
-            }
-            // GEO aura noise : the geomancy effect status (542-556 Boosts) and "Colure Active" (612) pulse every ~3s
-            // in 0x063 ; hide them (the Indi- YOU carry is redrawn as a stable computed row below).
-            if (party().geo_aura_remaining(bt[i].id) >= 0) continue;
-            if ((bt[i].id >= 542 && bt[i].id <= 556) || bt[i].id == 612) continue;
-            if (!srcKeeps(bt[i].id, bt[i].expiry, i)) continue;   // buff-SOURCE filter (shared with the FOCUS monitor)
-            if (!meHas(bt[i].id)) continue;   // cross-check the REAL buffs : drop a stale 0x063 entry (e.g. a replaced Corsair roll the game already removed). meHas already returns true when the list is unavailable, so a zone cannot wipe the rows here.
-            // WHICH ally group does this self buff belong to ? Groups are built per SPELL, so matching them by STATUS
-            // collapsed two different songs that share one status -- Minuet IV + Minuet V (both status 198), Honor March
-            // + Victory March (both 214) -- into the FIRST group found. Both folded there, one row was emitted for two
-            // songs, and grp[].rem then overwrote the survivor's countdown (captured : 4 songs in game, 3 rows drawn).
-            // So resolve the SPELL first and match on it ; fall back to the status only when this status carries a
-            // single timer, where the ambiguity cannot arise.
+            // SHOWN OR FILTERED : model/timers_rules.h (self_timer_shown) -- family filter, GEO aura noise, source, stale 0x063.
+            struct ShownSrc {
+                const BuffTimer& t; int idx; int rem; const UiConfig& cfg; const SelfSrcKeepsFn* src; const SelfMeHasFn* me;
+                unsigned status() const { return t.id; }
+                int remSec() const { return rem; }
+                bool hidden() const { return cfg.tm_buff_off((unsigned)t.id); }
+                bool focusOn() const { return tm_self_focus_on(cfg, t.id); }
+                int warnSec() const { return cfg.tmFocusWarn; }
+                bool geoAuraTracked() const { return party().geo_aura_remaining(t.id) >= 0; }
+                bool sourceKeeps() const { return (*src)(t.id, t.expiry, idx); }
+                bool meHas() const { return (*me)((int)t.id); }
+            };
+            if (!self_timer_shown(ShownSrc{ bt[i], i, rem, C, &srcKeeps, &meHas })) continue;
             const unsigned ssid = party().self_buff_spell_ranked(bt[i].id, bt[i].expiry, i);   // spell/tier (Valor Minuet V), disambiguating same-status buffs by expiry rank
             int sameSt = 0; for (int k = 0; k < n; ++k) if (bt[k].id == bt[i].id) ++sameSt;
-            int gi = -1;
-            // Fold ONLY into a FRESH group : your self buff IS the current cast, never a laggard row.
-            // Since groups are keyed by delivery too, one spell can now have TWO fresh groups -- an AoE
-            // generation and a single-target one. Your own copy belongs to the AoE : that is the cast that also
-            // hit you and whose exact 0x063 timer the group displays. Prefer it ; fall back to a single-target
-            // group only when no AoE one exists (you re-cast on one ally without touching yourself).
-            for (int k = 0; k < ng; ++k) if (grp[k].spell == ssid && grp[k].fresh && grp[k].aoe) { gi = k; break; }
-            if (gi < 0) for (int k = 0; k < ng; ++k) if (grp[k].spell == ssid && grp[k].fresh) { gi = k; break; }
-            if (gi < 0 && sameSt < 2) for (int k = 0; k < ng; ++k) if (grp[k].status == bt[i].id && grp[k].fresh && grp[k].aoe) { gi = k; break; }
-            if (gi < 0 && sameSt < 2) for (int k = 0; k < ng; ++k) if (grp[k].status == bt[i].id && grp[k].fresh) { gi = k; break; }
-            // no fresh group (you re-sang on yourself only, the ally is a laggard) -> gi stays -1 : your buff emits as its
-            // own row and the laggard group draws separately, which is exactly the split.
-            // Fold your own copy into the ally row ONLY when that row will actually be a grouped "(AoE N)" line (real AoE
-            // or "group ally buffs" on). In per-person mode a single-target spell you also put on yourself must stay a
-            // SELF row -- pass 3's per-ally branch only emits allies, so folding here would make your own buff vanish.
-            // Likewise if the ALLY scope hides this status (and it's not an expiring focus), pass 3 drops the group -> don't
-            // fold, or a self-Tracked buff would vanish behind an ally-Hidden setting.
+            // WHICH GROUP, AND WHETHER YOUR ROW FOLDS INTO IT : model/timers_rules.h (self_timer_group, self_timer_folds).
+            struct GroupsView { const AoeGrp* g;
+                unsigned spell(int k) const { return g[k].spell; } unsigned status(int k) const { return g[k].status; }
+                bool fresh(int k) const { return g[k].fresh != 0; } bool aoe(int k) const { return g[k].aoe != 0; } };
+            const int gi = self_timer_group(GroupsView{ grp }, ng, ssid, bt[i].id, sameSt);
             const bool allyHides = C.tm_buff_off((unsigned)bt[i].id)   // one state per buff : the ally copy honours the same family filter
                                    && !(C.tm_buff_off(UiConfig::TM_KEY_FOCUS | (unsigned)bt[i].id) && rem < C.tmFocusWarn);
-            // NB : expTick canNOT be used here as a "same cast" test. Captured : two March groups (Honor + Victory)
-            // both carried expTick 682 while the Victory March self timer read 712 -- the frozen expiry is shared
-            // between same-status songs, not per cast. Gating the fold on it made the fold never fire for the second
-            // song, so every March was drawn TWICE (own row + group row).
-            // Count = 0x076 real carriers (countHas), FLOORED by the allies you just sang to (grp[].allies, from ob[]).
-            // After a //reload the 0x076 ally-buff cache is empty -- the server won't re-send it until a member's buffs
-            // change -- so countHas saw only YOU and the "(AoE N)" group never re-formed even after a recast (captured :
-            // countHas=1 while gi=0/aoe=1). ob[] holds your OWN fresh casts (restored rows are discarded on load), so it
-            // is an authoritative floor ; prune_other_buffs_worn drops it once 0x076 flows again and shows a real loss.
-            // When a LAGGARD sibling exists for this spell, the fresh count MUST come from ob[]'s per-cast buckets, not
-            // countHas : 0x076 (countHas) sees the status on the laggard member too and can't tell it from a fresh copy,
-            // so it would re-inflate the fresh "(AoE N)" back to including the laggard -- the exact merge we're undoing.
             bool hasLag = false; for (int k = 0; k < ng; ++k) if (grp[k].spell == ssid && !grp[k].fresh) { hasLag = true; break; }
-            int effHas;
-            if (hasLag) { effHas = (gi >= 0 ? grp[gi].allies : 0) + (meHas(bt[i].id) ? 1 : 0); }   // split : fresh members only (you + allies you re-hit) ; solo re-sing -> 1 -> no fold, own row
-            else { effHas = countHas(bt[i].id); if (gi >= 0) { const int est = grp[gi].allies + (meHas(bt[i].id) ? 1 : 0); if (est > effHas) effHas = est; } }
-            const bool folds = (gi >= 0 && effHas >= 2 && grp[gi].aoe && !allyHides);   // your own row folds into a group only when that group is a REAL AoE
+            using CountHasFn = decltype(countHas); using MeHasFn = decltype(meHas);
+            struct FoldSrc {
+                const AoeGrp* g; int gi; bool lag; bool hides; unsigned st; const CountHasFn* cnt; const MeHasFn* me;
+                bool haveGroup() const { return gi >= 0; }
+                int groupAllies() const { return g[gi].allies; }
+                bool groupAoe() const { return g[gi].aoe != 0; }
+                bool hasLaggard() const { return lag; }
+                bool meHas() const { return (*me)((int)st); }
+                int countHas() const { return (*cnt)((int)st); }
+                bool allyHides() const { return hides; }
+            };
+            const bool folds = self_timer_folds(FoldSrc{ grp, gi, hasLag, allyHides, bt[i].id, &countHas, &meHas });
             // THROTTLE : this runs per timer per FRAME. Unthrottled it is 60 Hz x the whole window -- the log would be
             // useless and huge. Log a status only when its verdict or its whole-second countdown actually changed.
             static unsigned sfKey[32] = { 0 }; static int sfRem[32] = { 0 }; static int sfFold[32] = { 0 };
@@ -769,15 +708,8 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                 }
             }
             const bool rowMine = (rowCaster == 0 || rowCaster == party().self_id());   // for TAGS: unknown is probably ours
-            // For BANDING, unknown is its own thing. The source filter already treats caster==0 as "infer", but the
-            // sort treated it as "mine", so every unattributed row -- food, gear, a 3000-TP boost we failed to parse --
-            // sorted ABOVE your own live songs, which is the exact complaint this banding was added to fix.
-            // Display tiers (top -> bottom) : (1) YOUR buffs 0-1, (3) buffs YOU cast on allies 10-28, (2) buffs a
-            // PLAYER put on you -- GROUPED BY that player (party position) 40-57, (4) TRUSTS last 90-107.
-            bufs[nb].order = (rowCaster == party().self_id()) ? 0                                        // your own buffs -> very top
-                           : (rowCaster == 0)                 ? 1                                        // unknown caster (food/gear) = probably yours
-                           : party().is_trust(rowCaster)      ? (90 + party().party_order(rowCaster))    // a trust's buff on you -> LAST, grouped by trust
-                                                              : (40 + party().party_order(rowCaster));   // a real player's buff on you (Kaories' rolls...) -> grouped BY that player
+            // THE BAND : model/timers_rules.h (self_row_band) -- yours, unknown, a player's (by player), a trust's (last).
+            bufs[nb].order = self_row_band(rowCaster, party().self_id(), rowCaster ? party().is_trust(rowCaster) : false, party().party_order(rowCaster));
             // Owner name for anything you did not cast -- rolls included. This used to live only in the song branch,
             // so a party COR's roll on you showed its pips with no idea whose roll it was.
             const char* rowOwner = rowMine ? 0 : party().pc_name_by_id(rowCaster);
@@ -1146,56 +1078,26 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                 return song_unrecoverable(songCap, e.self != 0, song_family(e.spell) > 0,
                                           ccUsable, party().song_slot_count(e.target));
             };
-            // A song you cast on an ally that vanished because YOU just SINGLE-TARGETed a DIFFERENT song onto that SAME
-            // ally (Pianissimo) is a DELIBERATE slot swap, not a loss -> no red OUT, just depop. Signal : a newer,
-            // different, SINGLE-TARGET song on the same target, cast in the last few seconds (the slot casualty leaves in
-            // the same 0x076 update the replacement lands in). The `!ob[i].aoe` gate is load-bearing : an AoE song
-            // re-stamps startMs on EVERY member each cast, so without it the 6s window would sit open across your whole
-            // rotation and mask a real dispel on anyone you're singing to. Pianissimo is the only way to single-target a
-            // song, so `!aoe` isolates the deliberate swap. Ally songs only : your own re-song is handled elsewhere.
-            auto songReplaced = [&](const FocusMem& e) -> bool {
-                if (song_family(e.spell) <= 0) return false;
-                // (a) Pianissimo : a SINGLE-TARGET song landed on this same ally and took the slot. Ally rows only --
-                //     a Pianissimo song never lands on you, so a self row can never be its casualty.
-                if (!e.self)
-                    for (int i = 0; i < no; ++i)
-                        if (ob[i].target == e.target && ob[i].spell != e.spell && song_family(ob[i].spell) > 0 && !ob[i].aoe
-                            && (unsigned)(nowMs - ob[i].startMs) < 6000u) return true;   // single-target replacer only ; 6s covers the 0x076 cadence, short enough a real later dispel still OUTs
-                // (b) THE GAME PUSHED IT OUT to fit a new song. Not decided here: the model named the victim at
-                //     CAST time, while the set was still intact (PartyState::song_was_evicted, model/song_slots.h).
-                //     By the time we notice a loss the row has already left ob[], so this could never have been
-                //     answered from here -- which is why the rule that lived here asked "am I at the cap?" of a
-                //     count that skipped the very songs sung to fill slots, and silenced real dispels for a whole
-                //     Clarion Call recast. Now: it went, and it was the one the game had to drop. Nothing else.
-                return party().song_was_evicted(e.target, e.spell, 6000u);
+            // A DELIBERATE SWAP, NOT A LOSS : model/focus_rules.h section 9 (Pianissimo, an eviction, an Indi- replaced).
+            struct SwapSrc {
+                const FocusMem& e; const PartyState::OtherBuff* ob; int no; unsigned now;
+                bool self() const { return e.self != 0; }
+                unsigned target() const { return e.target; }
+                unsigned spell() const { return e.spell; }
+                unsigned status() const { return e.status; }
+                unsigned nowMs() const { return now; }
+                int others() const { return no; }
+                unsigned otherTarget(int i) const { return ob[i].target; }
+                unsigned otherSpell(int i) const { return ob[i].spell; }
+                unsigned otherStartMs(int i) const { return ob[i].startMs; }
+                bool otherAoe(int i) const { return ob[i].aoe != 0; }
+                bool isSong(unsigned sp) const { return song_family(sp) > 0; }
+                bool isIndi(unsigned sp) const { const SpellBuff* sb = sp ? spell_buff(sp) : 0; return sb && sb->skill == 44; }
+                bool evicted() const { return party().song_was_evicted(e.target, e.spell, 6000u); }
+                unsigned carriedAura() const { return party().self_geo().status; }
             };
-            // GEO Indi- : you carry exactly ONE aura (`selfGeo_`, party_state.h -- a single slot, not a list), so casting
-            // a DIFFERENT Indi- REPLACES the previous one. Its status leaving the buff list is that SWAP, not a loss :
-            // you cannot "put it back" without dropping the one you deliberately chose, so a red OUT is permanent and
-            // wrong. Reported : Indi-Fury -> Indi-Refresh -> Indi-Regen left Fury and Refresh stuck OUT ; only the Indi-
-            // you carry NOW may alert. Same shape as songReplaced above.
-            // Identifying a geomancy entry : the SPELL when we attributed the cast (skill 44 = Indicolure, tb_buff_gen),
-            // else the GEO-ONLY statuses -- Boosts 542-556 and "Colure Active" 612, which no other spell grants. The
-            // status alone can NOT decide for the shared ones (539 Regen / 541 Refresh / 580 Haste), hence the spell
-            // first : a real Refresh must keep its normal OUT.
-            auto geoEntry = [&](const FocusMem& e) -> bool {
-                const SpellBuff* sb = e.spell ? spell_buff(e.spell) : 0;
-                return (sb && sb->skill == 44) || (e.status >= 542 && e.status <= 556) || e.status == 612;
-            };
-            auto geoReplaced = [&](const FocusMem& e) -> bool {
-                if (!geoEntry(e)) return false;
-                if (e.self) { const PartyState::GeoAura& ga = party().self_geo();
-                              return ga.status && ga.status != e.status; }   // the aura you carry now is a DIFFERENT Indi- -> this one was swapped out
-                // ENTRUST'd Indi- on an ally : same rule, but the model keeps no per-ally aura slot -- so require the
-                // EVIDENCE, a newer Indi- cast we actually saw land on that same ally (the 6 s window mirrors the song
-                // rule : long enough for the 0x076 update the swap arrives in, short enough that a later dispel OUTs).
-                for (int i = 0; i < no; ++i) {
-                    if (ob[i].target != e.target || ob[i].spell == e.spell) continue;
-                    const SpellBuff* sb2 = spell_buff(ob[i].spell);
-                    if (sb2 && sb2->skill == 44 && (unsigned)(nowMs - ob[i].startMs) < 6000u) return true;
-                }
-                return false;
-            };
+            auto songReplaced = [&](const FocusMem& e) -> bool { return focus_song_replaced(SwapSrc{ e, ob, no, nowMs }); };
+            auto geoReplaced = [&](const FocusMem& e) -> bool { return focus_geo_replaced(SwapSrc{ e, ob, no, nowMs }); };
             // Settled BEFORE the compaction below, because focusHas() counts an entry's siblings and the compaction
             // leaves stale copies behind it -- counting mid-pass would see the same sibling twice and call a live
             // song lost. The verdict travels with its entry through the pass, and the emit reads the same one.
@@ -1213,53 +1115,44 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                 w.newer = nw; w.self = fm[q].self; w.has = fmHas[q] ? 1 : 0;
                 w.listReady = listReady(fm[q]) ? 1 : 0; w.lost = fm[q].lostMs ? 1 : 0; }
 #endif
-            int w = 0;                                                                        // prune : ally left the party/alliance, or the focus flag was turned off
+            // WHICH ENTRIES ARE FORGOTTEN : model/focus_rules.h section 8 (focus_prune_verdict). The adapter answers
+            // from the frame, lazily ; the traces below name the branch that decided, as before.
+            using ReadyFn = decltype(listReady); using UnrecFn = decltype(songUnrecoverable);
+            using ReplFn = decltype(songReplaced); using GeoFn = decltype(geoReplaced);
+            struct PruneSrc {
+                const FocusMem& e; bool hasNow; bool grace; unsigned now; const UiConfig& cfg;
+                const ReadyFn* ready; const UnrecFn* unrec; const ReplFn* repl; const GeoFn* geo;
+                bool self() const { return e.self != 0; }
+                bool zoneGrace() const { return grace; }
+                int partyOrder() const { return party().party_order(e.target); }
+                bool focusOn() const { return cfg.tm_buff_off(UiConfig::TM_KEY_FOCUS | e.status); }   // self & ally share ONE global focus state
+                bool isSong() const { return song_family(e.spell) > 0; }
+                bool offzone() const { return party().member_offzone(e.target); }
+                bool zoneCheck() const { return e.zoneCheck != 0; }
+                bool listReady() const { return (*ready)(e); }
+                bool has() const { return hasNow; }
+                unsigned lostMs() const { return e.lostMs; }
+                unsigned nowMs() const { return now; }
+                bool hidden() const { return cfg.tm_buff_off((unsigned)e.status); }   // self & ally share ONE global hidden state
+                int holdSec() const { return cfg.tmFocusHold; }
+                bool unrecoverable() const { return (*unrec)(e); }
+                bool replaced() const { return (*repl)(e); }
+                bool geoReplaced() const { return (*geo)(e); }
+            };
+            int w = 0;
             for (int q = 0; q < fmN; ++q) {
-                // <= 5, NOT <= 17. The 0x076 that feeds listReady/focusHas carries YOUR PARTY ONLY, so a monitor
-                // entry on an alliance member can never be decided: listReady stays false forever, the emit below
-                // resets lostMs every frame, and the only prune path here needs lostMs != 0 -- the entry became
-                // IMMORTAL. It also never drew anything, so it was pure dead weight that filled the 24 slots and
-                // then silently blocked new entries, including your own. Alliance targets are dropped here, and
-                // refused at creation below.
-                const bool live = fm[q].self ? true : (zoneGrace || party().party_order(fm[q].target) <= 5);   // 0..5 party ; 6..17 alliance and 99 = gone (roster is unstable mid-zone -> keep during grace)
-                const bool fkOn = C.tm_buff_off(UiConfig::TM_KEY_FOCUS | fm[q].status);   // self & ally share ONE global focus state
-                if (focus_trace_live() && !(live && fkOn))
+                const FocusPrune pv = focus_prune_verdict(PruneSrc{ fm[q], fmHas[q], zoneGrace, nowMs, C, &listReady, &songUnrecoverable, &songReplaced, &geoReplaced });
+                if (pv == FP_DROP_GONE_OR_OFF && focus_trace_live()) {
+                    const bool live = fm[q].self ? true : (zoneGrace || party().party_order(fm[q].target) <= 5);
+                    const bool fkOn = C.tm_buff_off(UiConfig::TM_KEY_FOCUS | fm[q].status);
                     windower::debug::log("FOCUSPRUNE st=%u '%s' DROPPED (live=%d focusOn=%d) -> no OUT row possible",
                                          (unsigned)fm[q].status, buff_status_name(fm[q].status), live ? 1 : 0, fkOn ? 1 : 0);
-                if (!(live && fkOn)) continue;                                                 // gone / focus off -> drop
-                // SONG on an ally who is no longer in YOUR zone (they stayed behind, or YOU zoned away) : their 0x076
-                // stops refreshing, so the buff set FREEZES -- the row would either linger on a drifting estimate or
-                // fire a wrong OUT off the stale list. User rule : CLEAN ally song rows the moment the target is
-                // out-of-zone. Songs only (song_family, spell-keyed) -- ally RDM/enh buffs behave and are left alone.
-                // Gated past the zone grace so the roster's per-member zone id has settled first (no false clean).
-                if (!fm[q].self && !zoneGrace && song_family(fm[q].spell) > 0 && party().member_offzone(fm[q].target)) {
-                    if (focus_trace_live())
-                        windower::debug::log("SONGOFFZONE st=%u '%s' target=%08X out-of-zone -> CLEAN (no OUT, no stale row)",
-                                             (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].target);
-                    continue;
                 }
-                if (fm[q].zoneCheck) {                                                         // pending post-zone check : decide ONLY after the grace ends AND the list is back.
-                    if (zoneGrace || !listReady(fm[q])) { /* still settling : keep, no decision, no alert */ }
-                    else if (fmHas[q]) fm[q].zoneCheck = 0;                                    //   grace over + list stable + present -> survived the zone, track normally
-                    else continue;                                                            //   grace over + list stable + ABSENT -> the game dropped it on zoning -> depop, NO alert
-                }                                                                             //   (deciding DURING the grace read the stale pre-zone buff list -> false survivors -> OUT)
-                // a "Hidden+focus" alert that has held its full tmFocusHold with the buff still gone -> FREE the slot
-                // (the emit stops drawing it at that point ; without this it lingers forever and can fill the monitor).
-                if (!fm[q].zoneCheck && fm[q].lostMs && !fmHas[q]) {
-                    const bool dkOn = C.tm_buff_off((unsigned)fm[q].status);   // self & ally share ONE global hidden state
-                    // THE SLOT IT IS ASKING FOR HAS BEEN FILLED. An OUT says "you lost this, sing it again". Once
-                    // that person's song slots are full again -- with something else, because this one is still
-                    // missing -- the alert is asking for room that no longer exists, and you are the one who used
-                    // it. Reported 2026-09-10: songs left in OUT, a fresh rotation sung over them, and the old
-                    // alerts stayed. Forgetting them is not hiding a loss; it is noticing you replaced it.
-                    //
-                    // A real dispel does NOT hit this: losing a song drops the count BELOW the cap, so the alert
-                    // stands until you either sing it back (present again) or fill the slot with another song.
-                    if (songUnrecoverable(fm[q])) continue;   // un-refillable 5th Clarion-Call song -> free the slot (no OUT will ever draw ; without this the un-drawn entry lingers and fills fm[24])
-                    if (songReplaced(fm[q])) continue;        // deliberately swapped out by a new song on the same ally (Pianissimo) -> free the slot, never an OUT
-                    if (geoReplaced(fm[q])) continue;         // a previous Indi- you replaced by casting another one -> free the slot, never an OUT
-                    if (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
-                }
+                if (pv == FP_DROP_SONG_OFFZONE && focus_trace_live())
+                    windower::debug::log("SONGOFFZONE st=%u '%s' target=%08X out-of-zone -> CLEAN (no OUT, no stale row)",
+                                         (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].target);
+                if (focus_prune_drops(pv)) continue;
+                if (pv == FP_KEEP_SURVIVED_ZONE) fm[q].zoneCheck = 0;
                 if (w != q) { fm[w] = fm[q]; fmHas[w] = fmHas[q]; } ++w;
             }
             fmN = w;
@@ -1277,17 +1170,32 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
             // occupied, so nothing is being learned; base is what //aio out's song suppression measures against.
             OBLOG("  SONGSLOT  cap=%d valid=%d (learned from an eviction)  ccUp=%d ccRecast=%d ccUsable=%d  -- counts are PER PERSON, see the FOCUS lines",
                   songCap.cap, songCap.valid ? 1 : 0, ccUp ? 1 : 0, ccOnRecast ? 1 : 0, ccUsable ? 1 : 0);
+            // RED OUT, OR SILENCE -- AND WHY : model/focus_rules.h section 7 (focus_alert_verdict). The adapter answers
+            // from the frame, lazily ; the loss stamp and the //aio ftrace lines stay here, keyed on the reason.
+            struct AlertSrc {
+                const FocusMem& e; bool hasNow; bool grace; unsigned now; const UiConfig& cfg; SlotCap cap;
+                const ReadyFn* ready; const UnrecFn* unrec; const ReplFn* repl; const GeoFn* geo;
+                bool allyRowsOff() const { return !e.self && !cfg.tmMine; }
+                bool muted() const { return e.muted != 0; }
+                bool up() const { return hasNow; }
+                bool zoneGrace() const { return grace; }
+                bool listReady() const { return (*ready)(e); }
+                unsigned lostMs() const { return e.lostMs; }
+                unsigned nowMs() const { return now; }
+                bool hidden() const { return cfg.tm_buff_off((unsigned)e.status); }   // self & ally share ONE global hidden state
+                int holdSec() const { return cfg.tmFocusHold; }
+                bool slotsFilled() const { return cap.valid && party().song_slot_count(e.target) >= cap.cap; }
+                bool unrecoverable() const { return (*unrec)(e); }
+                bool replaced() const { return (*repl)(e); }
+                bool geoReplaced() const { return (*geo)(e); }
+            };
             for (int q = 0; q < fmN && nb < 50; ++q) {                                         // emit a RED row for each MISSING focus buff (self or ally)
-                // Honour "My buffs on allies" here too. Turning it off stops ob[] being built, so no NEW ally entry
-                // is created -- but the ones already in fm[] kept emitting, leaving a red blinking "Name - Haste OUT"
-                // at the top of the box for a category the user had just switched off, until they re-cast it. Worse,
-                // with ob[] empty the three deliberate-swap suppressors below (song replaced / unrecoverable / geo
-                // replaced) iterate over nothing, so a Pianissimo swap would raise an OUT that is normally silenced.
-                if (!fm[q].self && !C.tmMine) { fm[q].lostMs = 0; continue; }
                 // The same verdict the prune used -- this used to be a third, presence-only copy of the rule, which
                 // is how one of two same-status songs could be dropped by one stage and reported up by the other.
                 // meHas() fails open on a FAILED read; that job now belongs to listReady() below, which gates the alert.
                 const bool has = fm[q].self ? (!f.game || !f.game->buffsOk || fmHas[q]) : fmHas[q];
+                const FocusAlert av = focus_alert_verdict(AlertSrc{ fm[q], has, zoneGrace, nowMs, C, songCap, &listReady, &songUnrecoverable, &songReplaced, &geoReplaced });
+                if (av == FA_CATEGORY_OFF) { fm[q].lostMs = 0; continue; }
                 if (g_obLog) {
                     const char* fen = fm[q].isAbil ? abil_name_by_id(fm[q].spell) : (spell_info(fm[q].spell) ? spell_info(fm[q].spell)->en : 0);
                     OBLOG("  FOCUS q=%-2d %-16s tgt=%08X st=%-4u spell=%-5u \"%s\" self=%d  has(0x076)=%d listReady=%d lostAgo=%dms  replaced=%d unrecov=%d geoRepl=%d (aura st=%u)",
@@ -1310,60 +1218,27 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                                          (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].self, has ? 1 : 0,
                                          fm[q].lostMs, zoneGrace ? 1 : 0, okv, nb2, lst);
                 }
-                // Muted by hand (//aio out) : never alert, and never dropped from HERE. It used to be dropped as
-                // soon as `has` went false -- but `has` reads the 0x076 presence on the target, while the entry
-                // is FED by ob[] (your own cast estimate). The two disagree constantly: a buff missing from a
-                // 0x076 that has not arrived yet made the muted entry die and the seeding loop re-create it a
-                // frame later, brand new and UN-muted, with a new number. That is why the row kept changing
-                // number instead of going quiet. The drop now happens where the feeding does -- see `seen`.
-                if (fm[q].muted) { fm[q].lostMs = 0; continue; }
-                if (has) { fm[q].lostMs = 0; continue; }                                       // still up -> the normal row covers it, reset the loss timer
-                if (zoneGrace) { fm[q].lostMs = 0; continue; }                                 // just zoned : buff lists still arriving -> don't false-alert (persist across the zone)
-                if (!listReady(fm[q])) { fm[q].lostMs = 0; continue; }                         // NO DATA for this target (alliance member, or a party member out of zone : buffs_for()==0) -> "unknown", NOT "gone". The self path already fails open via meHas ; the ally path used to fire a permanent false red "OUT" here.
+                if (focus_alert_clears_loss(av)) { fm[q].lostMs = 0; continue; }
                 if (fm[q].lostMs == 0) fm[q].lostMs = nowMs;                                   // just went missing -> stamp it
-                // Unfollow-Focus = hidden + focus -> the alert holds tmFocusHold seconds then depops (Focus alone =
-                // permanent until re-cast). Per-SPELL hide key : keyed on the shared STATUS this never matched for a
-                // buff two spells can grant, so the "hold 15s then depop" branch was unreachable for Cocoon.
-                const bool dkOn = C.tm_buff_off((unsigned)fm[q].status);   // self & ally share ONE global hidden state
-                if (focus_trace_live())
+                if (focus_trace_live()) {
+                    const bool dkOn = C.tm_buff_off((unsigned)fm[q].status);
                     windower::debug::log("FOCUSHOLD st=%u '%s' self=%d has=0 lostAgo=%ums hold=%ds dkOn=%d -> %s",
                                          (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].self,
                                          (unsigned)(nowMs - fm[q].lostMs), C.tmFocusHold, dkOn ? 1 : 0,
-                                         (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) ? "DROP (hold expired)" : "DRAW red OUT row");
-                if (dkOn && (unsigned)(nowMs - fm[q].lostMs) > (unsigned)C.tmFocusHold * 1000u) continue;
-                // THE SLOT IT IS ASKING FOR HAS BEEN FILLED. An OUT says "you lost this, sing it again"; once that
-                // person's slots are full of your songs again the room it wants is gone, and you are the one who
-                // used it. Say nothing -- but KEEP the entry.
-                //
-                // Freeing it here is what made the box shimmer. The model still holds the row, so the seeding loop
-                // re-creates the entry on the very next frame, brand new, with lostMs = 0 -- and an entry with no
-                // lostMs cannot be freed by the prune, so it survives to here and DRAWS. Then it has a lostMs, is
-                // freed, and vanishes. On, off, on, off, at 60 Hz. Measured 2026-09-11: the same focus verdict on
-                // both frames, `lost` alternating 0/1, the red row appearing with it.
-                //
-                // The lesson generalises past this line: never FREE a monitor entry for a condition that outlives
-                // one frame, because whatever created it will create it again.
-                if (songCap.valid && party().song_slot_count(fm[q].target) >= songCap.cap) continue;
-                if (songUnrecoverable(fm[q])) {   // a lost 5th Clarion-Call song can't be refilled -> suppress the OUT entirely (never even a one-frame flash before the prune frees it)
-                    if (focus_trace_live())
+                                         av == FA_HOLD_EXPIRED ? "DROP (hold expired)" : "DRAW red OUT row");
+                    if (av == FA_UNRECOVERABLE)
                         windower::debug::log("SONGOUT st=%u '%s' SUPPRESSED : that person now holds %d, the cap is %d (ccUsable=%d) -> no OUT (the fifth slot is gone)",
                                              (unsigned)fm[q].status, buff_status_name(fm[q].status),
                                              party().song_slot_count(fm[q].target), songCap.cap, ccUsable ? 1 : 0);
-                    continue;
-                }
-                if (songReplaced(fm[q])) {   // deliberately swapped out by a new song on the same ally (Pianissimo Ballad) -> no OUT, not even a one-frame flash (prune frees the slot next frame)
-                    if (focus_trace_live())
+                    if (av == FA_REPLACED)
                         windower::debug::log("SONGOUT st=%u '%s' target=%08X SUPPRESSED -> no OUT (song deliberately replaced on this ally)",
                                              (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].target);
-                    continue;
-                }
-                if (geoReplaced(fm[q])) {   // an Indi- you replaced with another Indi- -> no OUT, not even a one-frame flash (the prune frees the slot next frame)
-                    if (focus_trace_live())
+                    if (av == FA_GEO_REPLACED)
                         windower::debug::log("GEOOUT st=%u '%s' spell=%u self=%d SUPPRESSED (carrying st=%u now) -> no OUT (Indi- deliberately replaced)",
                                              (unsigned)fm[q].status, buff_status_name(fm[q].status), (unsigned)fm[q].spell,
                                              fm[q].self, (unsigned)party().self_geo().status);
-                    continue;
                 }
+                if (av != FA_ALERT) continue;
                 if (nAlert < FOCUS_MAX) alertQ[nAlert++] = q;   // decided : drawn below, once the whole picture is known
             }
             // ---- draw the alerts, GROUPED the way the healthy rows are ------------------------------------------
@@ -1446,96 +1321,20 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
         }
     }
     if (nb == 0 && nr == 0 && !editing) { rowsOut.nb = 0; rowsOut.nr = 0; return false; }   // was : return (nothing to draw)
-    // GROUP by `order` first, then soonest-first, then a DETERMINISTIC tiebreak (icon, name) so rows with equal
-    // remaining are stable. Tiers, top->bottom : OUT alerts + YOUR buffs (0-1) ; buffs YOU cast on allies, grouped by
-    // ally (10-28) ; buffs a PLAYER put on you, grouped by that player (40-57) ; TRUSTS last (90+).
-    // The DISPLAYED second still decides first -- the sort must never contradict what the row reads, and the row
-    // sources do not all round the same way (a self buff ceils its tick, an ally estimate floors its ms), so a
-    // tick-first sort could put a visible 4:05 above a visible 4:04. `fine` only breaks the EQUAL-second ties,
-    // and that is exactly where the yoyo lived : two timers a fraction of a second apart read the same number
-    // every other second, and the icon/name tie-break then ordered them the opposite way from the second
-    // before, so the two rows swapped places once a second forever. Ranking a tie by the exact tick pins them.
-    // TWO ROWS WITHIN A SECOND OF EACH OTHER KEEP THE ORDER THEY HAD. Nothing about a countdown is stable
-    // at that distance: `rem` is re-rounded every frame, so a pair whose real times differ by a fraction of a
-    // second spends half its life tied and half its life apart -- and if the tiebreak disagrees with the time
-    // order, which it does as often as not, the rows trade places twice a second. Reported 2026-09-10, "Ballad
-    // et Minuet V se battent encore".
-    //
-    // Sub-second refinement cannot fix this and made it worse in both directions: comparing across clocks
-    // follows drift, and refusing to compare falls back on the name. The honest answer is that under a second
-    // there IS no order to compute, so we stop computing one and remember the last.
-    //
-    // Identity is what a person recognises the row by -- its icon, its person, its text -- never its index,
-    // which shifts whenever the model list is compacted.
+    // THE ORDER OF THE ROWS : model/timers_sort.h (the rule, its history, and why close rows hold their place).
+    // What stays here is the memory it needs -- where each row stood last frame.
     static unsigned lastSig[64]; static int lastN = 0;
-    auto sigOf = [](const Row& x) -> unsigned {
-        unsigned h = 2166136261u;
-        h = (h ^ (unsigned)x.icon) * 16777619u;
-        h = (h ^ (unsigned)x.src) * 16777619u;
-        for (const char* c = x.name; c && *c; ++c) h = (h ^ (unsigned char)*c) * 16777619u;
-        for (const char* c = x.who;  c && *c; ++c) h = (h ^ (unsigned char)*c) * 16777619u;
-        return h ? h : 1u;
-    };
     auto lastPos = [&](const Row& x) -> int {
-        const unsigned s = sigOf(x);
+        const unsigned s = timers_row_sig(x);
         for (int i = 0; i < lastN; ++i) if (lastSig[i] == s) return i;
         return -1;   // not on screen last frame -> nothing to hold on to
     };
-    auto fineOf = [](const Row& r) -> int {
-        if (r.fine != TM_FINE_NONE) return r.fine;   // exact remaining, in ticks (server expiry / raw recast counter)
-        if (r.rem > 30000000 || r.rem < -30000000) return r.rem;   // no sub-second source and out of multiply range (OUT sentinel, absurd timer)
-        return r.rem * 60;                           // frozen demo rows : nothing to refine, they never tick
-    };
-    // `mode` picks the PRIMARY key ; everything after it is unchanged, and that matters -- rem before fine is
-    // what stops the yoyo described above, so a new key may only ever go in FRONT of rem, never between them.
-    //   Duration 0 : band (person) then soonest      1 : soonest, everyone mixed -- but TRUSTS STILL LAST
-    //   Recast   0 : soonest                         1 : by name
-    // Trusts stay last in both duration modes on purpose: they are the rows you are least likely to act on,
-    // and tmMax cuts the tail, so mixing them in would let a trust's Protect push out one of your own timers.
-    auto after = [&fineOf, &lastPos](const Row& x, const Row& y, int mode, bool recast) -> bool {   // does x sort AFTER y ?
-        if (recast) {
-            if (mode == 1) { const int c = strcmp(x.name ? x.name : "", y.name ? y.name : ""); if (c) return c > 0; }
-        } else if (mode == 1) {
-            const int tx = (x.order >= 90) ? 1 : 0, ty = (y.order >= 90) ? 1 : 0;   // 90+ = a trust's buff on you
-            if (tx != ty) return tx > ty;
-        } else if (x.order != y.order) return x.order > y.order;
-        // CLOSE ROWS HOLD THE ORDER THEY HAD. Only when BOTH were on screen last frame -- a row that has just
-        // appeared has no order to preserve and takes the computed one.
-        //
-        // The band is 2, not 1, and the reason is the whole bug. Two songs 1.8 s apart show a DISPLAYED gap that
-        // alternates between 1 and 2, because each crosses its own second at its own moment. A band of 1 pinned
-        // them at a gap of 1 and re-sorted them by time at 2 -- so the oscillation landed exactly on the
-        // threshold and flipped the pair twice a second. The guard was doing nothing at all where it mattered.
-        // Reported 2026-09-10, "le ballad de kaories continue de faire yoyo".
-        if (x.rem > -1000000 && y.rem > -1000000) {
-            const int d = x.rem - y.rem;
-            if (d >= -2 && d <= 2) {
-                const int px = lastPos(x), py = lastPos(y);
-                if (px >= 0 && py >= 0 && px != py) return px > py;
-            }
-        }
-        if (x.rem != y.rem) return x.rem > y.rem;
-        // Refine by the sub-second ONLY between rows read from the same clock. Across clocks the difference
-        // is drift, not order, and following it makes two rows on the same timer trade places for as long as
-        // they both live. Rows that disagree fall straight through to the stable tiebreaks below.
-        if (x.fineClk == y.fineClk && x.fineClk != FCLK_NONE) {
-            const int fx = fineOf(x), fy = fineOf(y);
-            if (fx != fy) return fx > fy;
-        }
-        if (x.icon != y.icon) return x.icon > y.icon;
-        // The PERSON is part of the deterministic tiebreak, not just the spell : two allies carrying the same
-        // buff at the same second used to differ by their "Aeryn - Haste" / "Gab - Haste" string, and since the
-        // split they share one name. Tying here would leave their order to the BUILD order, which moves whenever
-        // the model list is compacted -- the yoyo, in its other clothes. (The sort itself is insertion, hence
-        // stable ; this only removes the last way two rows can compare equal.)
-        { const int cw = strcmp(x.who ? x.who : "", y.who ? y.who : ""); if (cw) return cw > 0; }
-        return strcmp(x.name ? x.name : "", y.name ? y.name : "") > 0;
-    };
+    auto after = [&lastPos](const Row& x, const Row& y, int mode, bool recast) -> bool { return timers_row_after(x, y, mode, recast, lastPos); };
     g_lastRowN = nb;   // the harness reads this : hitting the 50 cap means rows are being dropped in silence
     { const int md = C.tmSortDur;
       for (int a = 1; a < nb; ++a) { Row t = bufs[a]; int b = a - 1; while (b >= 0 && after(bufs[b], t, md, false)) { bufs[b + 1] = bufs[b]; --b; } bufs[b + 1] = t; } }
     { lastN = nb < 64 ? nb : 64;   // what this frame settled on, so the next one can hold it
-      for (int a = 0; a < lastN; ++a) lastSig[a] = sigOf(bufs[a]); }
+      for (int a = 0; a < lastN; ++a) lastSig[a] = timers_row_sig(bufs[a]); }
     { const int md = C.tmSortRec;
       for (int a = 1; a < nr; ++a) { Row t = recs[a]; int b = a - 1; while (b >= 0 && after(recs[b], t, md, true)) { recs[b + 1] = recs[b]; --b; } recs[b + 1] = t; } }
     // THE HINT LIVES ON THE ROW THAT NEEDS IT. A red OUT for a buff you never meant to keep is a mistake, and

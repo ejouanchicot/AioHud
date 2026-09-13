@@ -11,6 +11,9 @@
 #include <windows.h>
 #include <cstring>
 #include <new>
+#ifdef AIOHUD_DEVTOOLS
+#include "aiohud_devtools.h"   // dev/src : the frozen Timers builder, compared on every build() below
+#endif
 
 using namespace aio;
 
@@ -34,6 +37,7 @@ struct World {
     PlayerInfo    me;
     unsigned      zone;
     unsigned short buffs[32]; int nbuff; bool buffsOk;
+    unsigned short equipIds[16]; unsigned char equipExt[16][24]; bool equipOk;
     int           n;
 };
 World* W = 0;
@@ -111,6 +115,9 @@ void world(std::initializer_list<Member> members) {
     ps.~PartyState();
     new (&ps) PartyState();
     timers_reset();
+#ifdef AIOHUD_DEVTOOLS
+    devtools::timers_mirror_reset();
+#endif
     advance_ms(1);   // a fresh instant : ffxi_now_tick caches per model ms
 }
 
@@ -119,6 +126,7 @@ void self_buffs(std::initializer_list<unsigned short> ids) {
     for (unsigned short s : ids) if (W->nbuff < 32) W->buffs[W->nbuff++] = s;
 }
 void self_buffs_unreadable() { W->nbuff = 0; W->buffsOk = false; }
+void equip(const unsigned short ids[16], const unsigned char ext[16][24]) { memcpy(W->equipIds, ids, sizeof(W->equipIds)); memcpy(W->equipExt, ext, sizeof(W->equipExt)); W->equipOk = true; }
 
 void packet(int id, const unsigned char* bytes) {
     model_event_begin('P');
@@ -157,11 +165,36 @@ bool build(TimersRows& out) {
     for (int i = 0; i < W->nbuff; ++i) gs.buffs[i] = W->buffs[i];
     model_event_begin('T');
     const bool built = timers_build_rows(&gs, false, false, out);
+#ifdef AIOHUD_DEVTOOLS
+    devtools::timers_shadow(&gs, false, false, out, built);
+#endif
     model_event_end();
     return built;
 }
 
 bool step(TimersRows& out) { frame(); return build(out); }
+
+int out(const char* a, const char* b) {
+    const int k = timers_focus_forget(a, b);
+#ifdef AIOHUD_DEVTOOLS
+    devtools::timers_mirror_forget(a, b);
+#endif
+    return k;
+}
+int in(const char* a, const char* b) {
+    const int k = timers_focus_restore(a, b);
+#ifdef AIOHUD_DEVTOOLS
+    devtools::timers_mirror_restore(a, b);
+#endif
+    return k;
+}
+#ifdef AIOHUD_DEVTOOLS
+unsigned shadow_frames()   { return devtools::timers_shadow_frames(); }
+unsigned shadow_mismatch() { return devtools::timers_shadow_mismatch(); }
+#else
+unsigned shadow_frames()   { return 0; }
+unsigned shadow_mismatch() { return 0; }
+#endif
 
 void settle() {
     static TimersRows scratch;
@@ -250,7 +283,10 @@ bool entity_name_by_index(unsigned, char* out, int sz) { if (out && sz > 0) out[
 bool entity_pos_verified(unsigned, unsigned, float&, float&, float&, bool* despawned) { if (despawned) *despawned = false; return false; }
 bool read_capacity_points(unsigned, unsigned&, unsigned&) { return false; }
 int  read_entities_by_id(const unsigned*, int, EntityVitals*) { return 0; }
-bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]) { memset(ids, 0, 32); memset(ext, 0, 16 * 24); return false; }
+bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]) {
+    if (!W || !W->equipOk) { memset(ids, 0, 32); memset(ext, 0, 16 * 24); return false; }
+    memcpy(ids, W->equipIds, 32); memcpy(ext, W->equipExt, 16 * 24); return true;
+}
 bool read_player(PlayerInfo& o)      { if (!W || !W->me.id) return false; o = W->me; return true; }
 int  read_player_buffs(unsigned short* out, int maxN, bool* ok) {
     if (ok) *ok = W && W->buffsOk;

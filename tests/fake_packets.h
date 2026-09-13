@@ -73,7 +73,7 @@ inline Packet pkt_party_buffs(std::initializer_list<MemberBuffs> members) {
 // ---- 0x028 : an action. Actor @bit 40 (32), target count @72 (6), category @82 (4), param @86 (16) ; target blocks
 //      from bit 150 : id (32) + action count (4), then per action 86 bits -- param @+27 (17), message @+44 (10),
 //      add-effect flag @+85 -- and a 1-bit spike flag. No add-effect, no spike : 123 bits a target. ----
-struct Target { unsigned id; unsigned message; };
+struct Target { unsigned id; unsigned message; unsigned param = 0; };   // param : the result's value -- the STATUS for a "gains the effect" message (230)
 inline Packet pkt_action(unsigned actor, unsigned category, unsigned param, std::initializer_list<Target> targets) {
     Packet p;
     const int nt = (int)targets.size();
@@ -88,6 +88,7 @@ inline Packet pkt_action(unsigned actor, unsigned category, unsigned param, std:
         put_bits(p, off, 32, t.id);
         put_bits(p, off + 32, 4, 1);          // one action on this target
         off += 36;
+        put_bits(p, off + 27, 17, t.param);
         put_bits(p, off + 44, 10, t.message);
         off += 86;                              // add-effect flag left 0
         off += 1;                               // spike flag 0

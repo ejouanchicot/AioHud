@@ -56,6 +56,18 @@ void test_timers() {
         if (no == 1) { CHECK_EQ(ob[0].target, KAO); CHECK_EQ(ob[0].status, ST_HASTE); CHECK_EQ(ob[0].spell, SP_HASTE); CHECK_EQ(ob[0].aoe, 0); CHECK_STR(ob[0].name, "Kaories"); }
     }
 
+    SECTION("actions : the model's 0x028 decode returns what was written, target by target");
+    {   // model_decode_action is what the in-game packet witness compares with Windower's own parser ; this pins it to
+        // the bit layout first. Three targets, each with its own message and param.
+        const Packet p = pkt_cast(ME, 57, { { KAO, 230, 33 }, { GAB, 75, 0 }, { MONB, 236, 1234 } });
+        ActionDecode d;
+        CHECK(model_decode_action(p.b, d));
+        CHECK_EQ(d.actor, ME); CHECK_EQ(d.category, 4u); CHECK_EQ(d.param, 57u); CHECK_EQ(d.n, 3u);
+        CHECK_EQ(d.ids[0], KAO); CHECK_EQ(d.msgs[0], 230u); CHECK_EQ(d.params[0], 33u);
+        CHECK_EQ(d.ids[1], GAB); CHECK_EQ(d.msgs[1], 75u);
+        CHECK_EQ(d.ids[2], MONB); CHECK_EQ(d.msgs[2], 236u); CHECK_EQ(d.params[2], 1234u);
+    }
+
     SECTION("timers : a Haste you cast on one ally is that ally's row");
     {
         rdm_party();
@@ -168,7 +180,7 @@ void test_timers() {
         const int number = i >= 0 ? r.bufs[i].mark : 0;
         CHECK(number > 0);
         char num[8]; _snprintf(num, sizeof(num), "%d", number); num[7] = 0;
-        CHECK_EQ(timers_focus_forget(num, 0), 1);
+        CHECK_EQ(out(num, 0), 1);
         advance_ms(16); step(r);
         CHECK_EQ(find_row(r, ST_HASTE, "Kaories"), -1);
         advance_ms(20000);
@@ -178,13 +190,13 @@ void test_timers() {
         i = find_row(r, ST_HASTE, "Kaories");
         CHECK(i >= 0);
         if (i >= 0) CHECK_EQ(r.bufs[i].mark, number);             // same entry, same number
-        CHECK_EQ(timers_focus_forget("kao", "haste"), 1);          // by name prefix, either order
+        CHECK_EQ(out("kao", "haste"), 1);          // by name prefix, either order
         advance_ms(16); step(r);
         CHECK_EQ(find_row(r, ST_HASTE, "Kaories"), -1);
-        CHECK_EQ(timers_focus_restore(0, 0), 1);
+        CHECK_EQ(in(0, 0), 1);
         advance_ms(16); step(r);
         CHECK(find_row(r, ST_HASTE, "Kaories") >= 0);
-        CHECK_EQ(timers_focus_restore(0, 0), 0);                   // nothing left to put back : an honest zero
+        CHECK_EQ(in(0, 0), 0);                   // nothing left to put back : an honest zero
     }
 
     SECTION("timers : Phalanx cast one by one on three people is three people, up and lost");
@@ -267,7 +279,7 @@ void test_timers() {
         TimersRows r;
         for (int f = 0; f < 3; ++f) { advance_ms(1000); step(r); }
         CHECK(find_row(r, ST_HASTE, "Kaories") >= 0);
-        CHECK_EQ(timers_focus_forget("gab", "haste"), 1);               // the Haste on Gab was a mistake : taken off
+        CHECK_EQ(out("gab", "haste"), 1);               // the Haste on Gab was a mistake : taken off
         zone_to(231);
         self_buffs({});
         settle();
@@ -370,5 +382,115 @@ void test_timers() {
         if (g >= 0 && lag >= 0) CHECK(r.bufs[lag].rem < r.bufs[g].rem - 60);   // Gab's copy is the OLD cast, ~90 s shorter
         CHECK_EQ(find_row(r, ST_MARCH, "Kaories"), -1);                  // Kaories is in the fresh group, not named
         if (g < 0 || lag < 0) dump(r, "re-sing missed Gab");
+    }
+
+    SECTION("timers : a player's Protect that REPLACES yours is theirs, not yours");
+    {   // MEASURED 2026-09-13 in game : Kaories (RDM) held her own Protect IV (5790 s left) ; Tetsouo cast Protect IV on
+        // her ; the server replaced it (1957 s left). Her model still credited HER : the cast ring paired the live timer
+        // with Tetsouo's cast (closest predicted expiry), but the "a later cast re-applied it" check then preferred the
+        // status latch -- and the latch had REFUSED Tetsouo's landing, because a guard written for SONGS ("your live song
+        // is not stolen by a trust singing another march on the same status") also covered a buff that has ONE instance.
+        // Consequence : under "Mine only" another player's Protect showed as yours ; its loss would alert as yours.
+        // Mutation : the song-only scope of the guard removed.
+        world({ { ME, "Kaories", 5, false }, { GAB, "Tetsouo", 7, false } });
+        config_defaults();
+        settle();
+        const unsigned MSG_GAINS = 230;   // "<target> gains the effect of <status>"
+        deliver(pkt_cast(ME, 46 /* Protect IV */, { { ME, MSG_GAINS, ST_PROTECT } }));
+        deliver(pkt_self_timers({ { ST_PROTECT, 5795 } }));
+        self_buffs({ ST_PROTECT });
+        TimersRows r; advance_ms(1000); step(r);
+        { int n = 0; const BuffTimer* bt = party().buff_timers(n);
+          CHECK_EQ(n, 1);
+          if (n == 1) CHECK_EQ(party().buff_caster_for(ST_PROTECT, bt[0].expiry, 0), ME); }
+        advance_ms(60000);
+        deliver(pkt_cast(GAB, 46, { { ME, MSG_GAINS, ST_PROTECT } }));
+        deliver(pkt_self_timers({ { ST_PROTECT, 1962 } }));
+        advance_ms(1000); step(r);
+        { int n = 0; const BuffTimer* bt = party().buff_timers(n);
+          CHECK_EQ(n, 1);
+          if (n == 1) CHECK_EQ(party().buff_caster_for(ST_PROTECT, bt[0].expiry, 0), GAB); }
+        ui_config().tmBuffSrc = TMSRC_MINE;
+        advance_ms(16); step(r);
+        CHECK_EQ(count_rows(r, ST_PROTECT), 0);                          // "Mine only" : Tetsouo's Protect is not yours
+        ui_config().tmBuffSrc = TMSRC_ALL;
+    }
+
+    SECTION("timers : a trust singing ANOTHER march does not take yours -- the songs keep their guard");
+    {   // The case the guard was written for (MEASURED 2026-07-20) : marches share status 214, so a trust's Victory March
+        // landing on you while your Honor March is live must not re-credit YOUR timer to the trust.
+        world({ { ME, "Tetsouo", 10, false }, { MONB, "Ulmia", 0, true } });
+        config_defaults();
+        settle();
+        const unsigned MSG_GAINS = 230;
+        deliver(pkt_cast(ME, SP_HONOR_MARCH, { { ME, MSG_GAINS, ST_MARCH } }));
+        deliver(pkt_self_timers({ { ST_MARCH, 300 } }));
+        self_buffs({ ST_MARCH });
+        TimersRows r; advance_ms(1000); step(r);
+        advance_ms(20000);
+        deliver(pkt_cast(MONB, 420 /* Victory March */, { { ME, MSG_GAINS, ST_MARCH } }));
+        deliver(pkt_self_timers({ { ST_MARCH, 279 }, { ST_MARCH, 120 } }));
+        self_buffs({ ST_MARCH, ST_MARCH });
+        advance_ms(1000); step(r);
+        int n = 0; const BuffTimer* bt = party().buff_timers(n);
+        CHECK_EQ(n, 2);
+        if (n == 2) CHECK_EQ(party().buff_caster_for(ST_MARCH, bt[0].expiry, 0), ME);   // the longer timer : your Honor March
+    }
+
+    SECTION("timers : an Indi- entrusted 20 s after Entrust is still an entrusted Indi-");
+    {   // MEASURED 2026-09-13 in game : Entrust grants status 584 for 60 s (58 s left 2.5 s after the JA), and the game
+        // entrusts the next Indi- cast inside that minute. The model armed Entrust for 15 s : an Indi- cast 19 s later
+        // landed on Tetsouo (Colure Active 356 s) while the GEO's model drew no row for him at all.
+        // Mutation : the Entrust window back to 15000 ms.
+        world({ { ME, "Kaories", 21, false }, { GAB, "Tetsouo", 10, false } });
+        config_defaults();
+        settle();
+        deliver(pkt_action(ME, 6, 386 /* Entrust */, { { ME, 100 } }));
+        advance_ms(20000);
+        deliver(pkt_cast(ME, 770 /* Indi-Refresh */, { { GAB, 230, 541 } }));
+        TimersRows r; advance_ms(1000); step(r);
+        int no = 0; const PartyState::OtherBuff* ob = party().other_buffs(no);
+        int onGab = 0; for (int i = 0; i < no; ++i) if (ob[i].target == GAB && ob[i].spell == 770) ++onGab;
+        CHECK_EQ(onGab, 1);
+        CHECK(find_row(r, 541, "Tetsouo") >= 0);
+        // ...and a normal Indi- (no Entrust in the last minute) is an aura, never an ally row.
+        advance_ms(70000);
+        deliver(pkt_cast(ME, 768 /* Indi-Regen */, { { GAB, 230, 539 } }));
+        party().other_buffs(no);
+        int regenOnGab = 0; ob = party().other_buffs(no); for (int i = 0; i < no; ++i) if (ob[i].target == GAB && ob[i].spell == 768) ++regenOnGab;
+        CHECK_EQ(regenOnGab, 0);
+    }
+
+    SECTION("timers : an entrusted Indi- is estimated with its percent augments (the measured 355 s)");
+    {   // The same measurement as t_durations, through on_action : the GEO's Entrust set, Entrust, then Indi-Refresh on the
+        // ally. Mutation : the percent term dropped from the entrusted duration.
+        world({ { ME, "Kaories", 21, false }, { GAB, "Tetsouo", 10, false } });
+        config_defaults();
+        settle();
+        static const unsigned char GADA[24]      = { 0x02,0x03,0xE2,0x54,0x05,0x0A,0x23,0x80,0x85,0x68,0x2D,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+        static const unsigned char LIFESTREAM[24] = { 0x02,0x03,0x2C,0x49,0xE2,0x9C,0x70,0x10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+        unsigned short ids[16] = { 0 }; unsigned char ext[16][24] = { { 0 } };
+        ids[0] = 21072; memcpy(ext[0], GADA, 24); ids[15] = 28637; memcpy(ext[15], LIFESTREAM, 24);
+        ids[7] = 23619; ids[8] = 23708;
+        equip(ids, ext);
+        deliver(pkt_action(ME, 6, 386 /* Entrust */, { { ME, 100 } }));
+        advance_ms(5000);
+        deliver(pkt_cast(ME, 770 /* Indi-Refresh */, { { GAB, 230, 541 } }));
+        int no = 0; const PartyState::OtherBuff* ob = party().other_buffs(no);
+        int dur = -1; for (int i = 0; i < no; ++i) if (ob[i].target == GAB && ob[i].spell == 770) dur = (int)(ob[i].durMs / 1000u);
+        // 180 base + 51 gear s ; this fake has no job points (read_jp_gift_rank = 0) : (180 + 51) x 1.31 = 302
+        CHECK_EQ(dur, 302);
+    }
+
+    SECTION("timers : the frozen builder agrees with the real one on every frame above (dev build only)");
+    {   // Lot D, step 4 : the builder is being cut into small rules, and each cut must leave every row EXACTLY as it
+        // was. dev/src/timers_legacy.cpp is the builder as it stood before the cuts ; it ran beside the real one on
+        // every build() of every case above. A public clone has no dev/ tree : nothing ran, nothing is claimed.
+        if (shadow_frames() == 0) printf("  (no dev tree : the equivalence witness did not run)\n");
+        else {
+            printf("  compared %u frames, %u differed\n", shadow_frames(), shadow_mismatch());
+            CHECK(shadow_frames() > 100);
+            CHECK_EQ(shadow_mismatch(), 0u);   // the first differences are in aiohud_debug.log next to tests.exe (TIMERSHADOW)
+        }
     }
 }
