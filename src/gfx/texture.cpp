@@ -438,7 +438,7 @@ static inline unsigned char rotl3(unsigned char x) { return (unsigned char)(((x 
 bool decode_gear_icon_from_rom(unsigned id, u32* out_px, GearInfo* info)
 {
     GearInfo scratch; if (!info) info = &scratch;
-    info->step = GS_NO_RANGE; info->dat = 0; info->romdir = 0; info->regkey = 0; info->index = -1; info->err = 0;
+    info->step = GS_NO_RANGE; info->dat = 0; info->romdir = 0; info->regkey = 0; info->index = -1; info->err = 0; info->stride = 0;
     if (!out_px) return false;
     const GearDat* d = nullptr;
     for (int i = 0; i < (int)(sizeof(GEAR_DAT) / sizeof(GEAR_DAT[0])); ++i)
@@ -459,10 +459,38 @@ bool decode_gear_icon_from_rom(unsigned id, u32* out_px, GearInfo* info)
     info->step = GS_NO_DAT;
     FILE* fp = fopen(path, "rb");
     if (!fp) { info->err = errno; return false; }
-    unsigned char data[0x800];
-    bool ok = (fseek(fp, info->index * 0xC00 + 0x2BD, SEEK_SET) == 0) && (fread(data, 1, sizeof(data), fp) == sizeof(data));
-    fclose(fp);
+
+    // RECORD SIZE : measured, never assumed. The 2026-09-10 client patch grew every item record from 0xC00 to
+    // 0x1400 bytes (same layout, icon still at +0x2BD, just more padding). A hard-coded 0xC00 -- EquipViewer's
+    // stride, ported verbatim -- then seeks into the WRONG record for every id past 0 and the decode "succeeds"
+    // on garbage : a blank icon (the tester's Quicksilver) or another item's art, drawn AND cached to disk.
+    // Each record starts with its own item id (u32, rotl3-encoded like the rest), so the stride is proven by
+    // reading that id back rather than trusted : the size-derived candidate first (file size / records in the
+    // range -- survives the next resize too), then the two known strides. Verified over every id of all 11
+    // DATs : 0x1400 matches 100 % after the patch, 0xC00 matches none.
     info->step = GS_BAD_READ;
+    long fsz = -1;
+    if (fseek(fp, 0, SEEK_END) == 0) fsz = ftell(fp);
+    if (fsz <= 0) { fclose(fp); return false; }
+    const long records = (long)d->hi - idOff + 1;
+    const long derived = (fsz % records == 0) ? fsz / records : 0;
+    const long cand[3] = { derived, 0x1400, 0xC00 };
+    long stride = 0;
+    for (int k = 0; k < 3 && !stride; ++k) {
+        const long s = cand[k];
+        if (s < 0xC00 || (s & 0x3FF) || (k > 0 && s == derived)) continue;   // not a plausible record size / already tried
+        if (info->index * s + s > fsz) continue;
+        unsigned char rid[4];
+        if (fseek(fp, info->index * s, SEEK_SET) != 0 || fread(rid, 1, 4, fp) != 4) continue;
+        const unsigned got = (unsigned)rotl3(rid[0]) | ((unsigned)rotl3(rid[1]) << 8) | ((unsigned)rotl3(rid[2]) << 16) | ((unsigned)rotl3(rid[3]) << 24);
+        if (got == id) stride = s;
+    }
+    info->stride = stride;
+    if (!stride) { fclose(fp); info->step = GS_BAD_LAYOUT; return false; }   // no candidate holds this id : an unknown layout, never a guess
+
+    unsigned char data[0x800];
+    bool ok = (fseek(fp, info->index * stride + 0x2BD, SEEK_SET) == 0) && (fread(data, 1, sizeof(data), fp) == sizeof(data));
+    fclose(fp);
     if (!ok) return false;
     info->step = GS_OK;
 
@@ -521,6 +549,24 @@ bool write_gear_icon_bmp(const char* out_bmp_path, const u32* px, int* out_err)
         if (out_err) *out_err = -(int)GetLastError();            // negative = Win32, positive = errno
         DeleteFileA(tmp); return false;
     }
+    return true;
+}
+
+bool read_gear_icon_bmp(const char* bmp_path, u32* out_px)
+{
+    if (!bmp_path || !out_px) return false;
+    HANDLE hf = CreateFileA(bmp_path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+    if (hf == INVALID_HANDLE_VALUE) return false;
+    unsigned char file[0x200 + 32 * 32 * 4];                     // header (0x7A in practice) + one 32x32 32bpp body
+    DWORD got = 0; const BOOL ok = ReadFile(hf, file, sizeof(file), &got, 0); CloseHandle(hf);
+    if (!ok || got < 54 || file[0] != 'B' || file[1] != 'M') return false;
+    const u32 off = *(const u32*)(file + 10);
+    const int W = *(const int*)(file + 18), Hs = *(const int*)(file + 22);
+    const unsigned short bpp = *(const unsigned short*)(file + 28);
+    if (W != 32 || (Hs != 32 && Hs != -32) || bpp != 32 || (unsigned long long)off + 32 * 32 * 4 > got) return false;
+    const u32* src = (const u32*)(file + off);
+    for (int y = 0; y < 32; ++y) for (int x = 0; x < 32; ++x)
+        out_px[y * 32 + x] = src[(Hs < 0 ? y : 31 - y) * 32 + x];   // BMP rows are bottom-up unless the height is negative
     return true;
 }
 

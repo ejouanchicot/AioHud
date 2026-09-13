@@ -42,12 +42,15 @@ u32 load_bmp_texture(u32 dev, const char* path);
 // EquipViewer's icon_extractor) INTO MEMORY -- `out_px` takes 32*32 ARGB DWORDs, top-down, ready for
 // make_texture_argb_mip. Lets ANY item resolve even when it isn't in the bundled assets/gearicons/ seed
 // (only 1323 of ~23500 items are seeded, so this is the NORMAL path, not an edge case).
-// Returns false only when the icon is genuinely unreachable : no game install, or an id outside every DAT range.
+// Returns false only when the icon is genuinely unreachable : no game install, an id outside every DAT range, or a
+// DAT whose records do not carry the requested id at any known size (GS_BAD_LAYOUT -- never decode at a guess).
 // It deliberately does NOT touch the disk -- writing the cache used to be able to fail (read-only plugin folder)
 // and take a perfectly good decode down with it, which is what showed raw item IDs on locked-down installs.
 // //aio geartrace : where a decode actually stopped. The old single "ROM decode failed" conflated no-registry,
 // no-DAT and no-write-permission -- three different bugs with three different fixes.
-enum GearStep { GS_OK = 0, GS_NO_RANGE, GS_NO_ROMDIR, GS_NO_DAT, GS_BAD_READ };
+// GS_BAD_LAYOUT : the DAT opened but no record size puts this item's own id where it belongs -- a client patch
+// changed the file layout again. Refusing is the point : decoding at a guessed offset draws blank/wrong icons.
+enum GearStep { GS_OK = 0, GS_NO_RANGE, GS_NO_ROMDIR, GS_NO_DAT, GS_BAD_READ, GS_BAD_LAYOUT };
 struct GearInfo {
     int         step;     // GearStep
     const char* dat;      // "118/109" (0 if unresolved)
@@ -55,6 +58,7 @@ struct GearInfo {
     const char* regkey;   // which PlayOnline* key answered (0 if none)
     long        index;    // record index inside the DAT
     int         err;      // errno from the failing fopen (0 if none)
+    long        stride;   // record size the embedded id proved (0x1400 since the 2026-09-10 patch ; 0 if none)
 };
 bool decode_gear_icon_from_rom(unsigned id, u32* out_px, GearInfo* info = 0);
 
@@ -62,6 +66,11 @@ bool decode_gear_icon_from_rom(unsigned id, u32* out_px, GearInfo* info = 0);
 // fully checked, so a failed/partial write can never leave a corrupt BMP behind. Returns false if it couldn't
 // be written -- callers should IGNORE that : the icon is already in hand, only the next-session shortcut is lost.
 bool write_gear_icon_bmp(const char* out_bmp_path, const u32* px, int* out_err = 0);
+
+// The reverse : a cached/bundled 32x32 gear-icon BMP -> 32*32 ARGB DWORDs, top-down (the orientation the decode
+// returns, so the two compare with memcmp). Pixels, not a texture : the caller verifies them against the ROM
+// before trusting them. False on any IO/format mismatch.
+bool read_gear_icon_bmp(const char* bmp_path, u32* out_px);
 
 // which registry key resolved the FFXI install, and to what (0 = none found). //aio geartrace reporting.
 const char* ffxi_rom_dir_probe(const char** out_regkey);

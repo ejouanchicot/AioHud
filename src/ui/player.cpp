@@ -72,6 +72,22 @@ void gear_trace(const char* fmt, ...) {
     windower::debug::log("GEAR %s", buf);
 }
 
+// Item ids whose cached BMP the ROM decode has vouched for THIS session (fixed capacity, no heap ; open addressing).
+// Why a cache needs vouching at all : from the 2026-09-10 client patch until the stride fix, every ROM decode read
+// the wrong record and cached the result. Measured over the weapon DAT, what it cached was blank (52 %), another
+// item's art (20 %) or visible garbage (28 %) -- so "reject blank BMPs" would repair only half, and the cache file
+// carries nothing that tells a poisoned icon from a good one. The DAT does : compare once, rewrite if they differ.
+// Full table -> ids just stay unvouched and get re-checked on their next load : slower, never wrong.
+static unsigned short s_gearOk[1024];
+static bool gear_vouched(unsigned short id, bool mark) {
+    unsigned h = (id * 40503u) & 1023u;
+    for (int n = 0; n < 1024; ++n, h = (h + 1) & 1023u) {
+        if (s_gearOk[h] == id) return true;
+        if (s_gearOk[h] == 0) { if (mark) s_gearOk[h] = id; return mark; }
+    }
+    return false;
+}
+
 // thousands-separated gil (e.g. 1234567 -> "1,234,567"), into `out` (>= 16 bytes for a u32).
 static void format_gil(char* out, unsigned v) {
     char tmp[12]; int n = 0;
@@ -590,36 +606,58 @@ void Player::draw(const Frame& f) {
                     char p[300]; _snprintf(p, sizeof(p), "%s%u.bmp", GEARICON_DIR(), want); p[sizeof(p) - 1] = 0;
                     const bool tr = gear_trace_armed();
                     if (tr) { --s_gearTrace; gear_trace("slot %d  id=%u (0x%04X) '%s'", s, want, want, item_name(want) ? item_name(want) : "?"); }
-                    u32 tex = load_bmp_texture(dev, p);
+                    // The cached BMP is read as PIXELS and drawn straight away only once the ROM has vouched for this id
+                    // this session (gear_vouched). Otherwise it goes through the decode below and is compared : a
+                    // poisoned file from the 2026-09-10 stride bug is replaced, a good one costs one small DAT read.
+                    u32 cpx[32 * 32];
+                    const bool bmp = read_gear_icon_bmp(p, cpx);
+                    u32 tex = (bmp && gear_vouched(want, false)) ? make_texture_argb_mip(dev, 32, 32, cpx) : 0;
                     if (tr) gear_trace("  BMP    %s -> %s", p,
-                                       tex ? "OK (cache hit)"
-                                           : (GetFileAttributesA(p) == INVALID_FILE_ATTRIBUTES ? "ABSENT" : "PRESENT but UNREADABLE (corrupt)"));
+                                       tex ? "OK (cache hit, vouched)"
+                                           : bmp ? "PRESENT, not vouched yet -> compare with the ROM"
+                                                 : (GetFileAttributesA(p) == INVALID_FILE_ATTRIBUTES ? "ABSENT" : "PRESENT but UNREADABLE (corrupt)"));
                     if (!tex) {
-                        // No usable BMP -- ABSENT or CORRUPT, we no longer distinguish. Only 1323 of ~23500 items are
+                        // No vouched BMP -- ABSENT, CORRUPT, or present but not yet checked this session. Only 1323 of ~23500 items are
                         // seeded, so this is the normal path. Decode straight to a texture ; the disk cache is written
                         // afterwards and its failure is ignored, so a read-only plugin folder (Program Files without
                         // elevation, Controlled Folder Access, an AV hold) costs a re-decode next session, not the icon.
-                        ++decodes;
+                        if (!bmp) ++decodes;   // a vouching read costs what the old cache hit did (one file + one mip build) -> outside the decode budget
                         u32 px[32 * 32];
                         GearInfo gi;
                         const bool dec = decode_gear_icon_from_rom(want, px, &gi);
                         if (tr) {
-                            static const char* STEP[] = { "OK", "NO ID RANGE", "NO ROM DIR (registry)", "DAT NOT OPENABLE", "DAT READ SHORT" };
-                            gear_trace("  RANGE  %s.DAT  idx=%d", gi.dat ? gi.dat : "-", (int)gi.index);
+                            static const char* STEP[8] = { "OK", "NO ID RANGE", "NO ROM DIR (registry)", "DAT NOT OPENABLE", "DAT READ SHORT",
+                                                           "DAT LAYOUT UNKNOWN (no record size holds this id)", "?", "?" };   // [8] : `& 7` must never index past the table
+                            gear_trace("  RANGE  %s.DAT  idx=%d  record=0x%X", gi.dat ? gi.dat : "-", (int)gi.index, (unsigned)gi.stride);
                             gear_trace("  ROMDIR %s   (key: %s)", gi.romdir ? gi.romdir : "<none>", gi.regkey ? gi.regkey : "<none>");
                             gear_trace("  DECODE %s%s", STEP[gi.step & 7], gi.err ? " errno set" : "");
                             if (gi.err) gear_trace("         errno=%d", gi.err);
                         }
                         if (dec) {
+                            const bool stale = !bmp || memcmp(cpx, px, sizeof(px)) != 0;
                             tex = make_texture_argb_mip(dev, 32, 32, px);
                             int werr = 0;
-                            const bool cached = tex && write_gear_icon_bmp(p, px, &werr);   // best-effort ; also overwrites a corrupt cached BMP
+                            const bool wrote = stale && write_gear_icon_bmp(p, px, &werr);   // best-effort ; a stale/corrupt BMP is overwritten
+                            // Vouch only for what is ON DISK now. Marking a stale file whose rewrite failed (read-only folder)
+                            // would make the next load serve the poisoned BMP as a trusted hit ; unvouched, it re-decodes.
+                            if (!stale || wrote) gear_vouched(want, true);
+                            const bool cached = tex && (!stale || wrote);
+                            if (bmp && stale)   // SHIPPED log : a tester's capture must show the repair, not only a trace
+                                windower::debug::log("GEARICON cache repaired id=%u (0x%04X) [%s] -- the cached BMP did not match the ROM (written by the pre-fix stride) : %s",
+                                                     want, want, item_name(want) ? item_name(want) : "?", cached ? "rewritten" : "NOT rewritten (icon still correct this session)");
                             if (tr) {
+                                if (bmp) gear_trace("  VOUCH  %s", stale ? "cached BMP DIFFERED from the ROM -> replaced" : "cached BMP matches the ROM");
                                 gear_trace("  TEX    %s", tex ? "OK" : "FAILED (D3D CreateTexture)");
-                                if (tex) gear_trace("  CACHE  %s%s", cached ? "written" : "FAILED (icon still shows -- cache only)",
+                                if (tex) gear_trace("  CACHE  %s%s", cached ? (stale ? "written" : "already correct") : "FAILED (icon still shows -- cache only)",
                                                     cached ? "" : (werr == 13 ? "  errno=13 EACCES : folder is READ-ONLY" : ""));
                                 if (tex && !cached && werr != 13) gear_trace("         err=%d (negative = Win32 GetLastError)", werr);
                             }
+                        } else if (bmp) {
+                            // The ROM cannot vouch (no install found, DAT locked, unknown layout) but a cached icon exists :
+                            // draw it, unvouched, exactly what a cache hit did before the vouching existed. It is re-checked
+                            // the next time this item is loaded.
+                            tex = make_texture_argb_mip(dev, 32, 32, cpx);
+                            if (tr) gear_trace("  VOUCH  impossible (step %d) -> cached BMP drawn unverified", gi.step);
                         } else {   // DECODE FAILED. Permanent vs TRANSIENT is the whole point (rule 10).
                             gearId_[s] = want;
                             // GS_NO_RANGE (id in no DAT) / GS_NO_ROMDIR (no PlayOnline install found) are static for the
@@ -628,7 +666,8 @@ void Player::draw(const Frame& f) {
                             // touch by AV / Controlled Folder Access, then opens. Giving up on the same frame froze a
                             // handful of icons as raw ids for the whole session on a tester's NA/Program Files box
                             // (e.g. Atrophy Chapeau). Retry, spaced ~1 s, bounded, then say so.
-                            const bool permanent = (gi.step == GS_NO_RANGE || gi.step == GS_NO_ROMDIR);
+                            // GS_BAD_LAYOUT joins them : the DAT on disk cannot change while the client that reads it runs.
+                            const bool permanent = (gi.step == GS_NO_RANGE || gi.step == GS_NO_ROMDIR || gi.step == GS_BAD_LAYOUT);
                             if (permanent) {
                                 gearTry_[s] = 255;
                                 // SHIPPED, not probe-only. This used to sit behind AIOHUD_PROBES, so on a RELEASE
@@ -640,7 +679,9 @@ void Player::draw(const Frame& f) {
                                 // Fires once per item (gearTry_ latches at 255 immediately after), so it cannot spam.
                                 windower::debug::log("GEARICON permanent id=%u (0x%04X) [%s] -- ROM decode unreachable (step=%d : %s). Not retried : this cannot change during the session",
                                                      want, want, item_name(want) ? item_name(want) : "?", gi.step,
-                                                     gi.step == GS_NO_ROMDIR ? "no PlayOnline/FFXI install found" : "id outside every DAT range");
+                                                     gi.step == GS_NO_ROMDIR ? "no PlayOnline/FFXI install found"
+                                                   : gi.step == GS_BAD_LAYOUT ? "DAT layout not recognised -- a client patch changed the item record size again"
+                                                                              : "id outside every DAT range");
                                 if (tr) gear_trace("  RESULT id-text fallback (permanent : step %d)", gi.step);
                             } else {
                                 // TRANSIENT I/O -> back off and try again, on a schedule that PLATEAUS instead of

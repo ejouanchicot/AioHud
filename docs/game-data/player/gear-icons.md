@@ -62,7 +62,7 @@ DAT files on disk:
 
 1. **item id -> DAT** by id-range, e.g. general `118/106`, usable `118/107`, weapons `118/108`,
    armor `118/109`, general2 `301/115`, armor2 `286/73`, ...
-2. `seek((id - id_offset) * 0xC00 + 0x2BD)`, read `0x800` bytes = one 256-colour palettized
+2. `seek((id - id_offset) * 0xC00 + 0x2BD)` (0x1400 since the 2026-09-10 patch, see below), read `0x800` bytes = one 256-colour palettized
    32x32 icon: `0x400` bit-rotated BGRA palette + `0x400` pixel indices (alpha channel is
    **doubled + clamped**).
 3. **Cache** the decoded icon to `assets/gearicons/<id>.bmp` (32x32 BITMAPV4, straight BGRA);
@@ -91,6 +91,39 @@ text), or are the JP/DE/FR language variants of the files already used.
 
 **So an item rendering as a raw id is never a gap in this table** — look at the decode's environment
 (registry, ROM dir, folder writability) via `//aio geartrace` instead.
+
+### The 2026-09-10 patch grew every record to 0x1400 — the stride is now measured
+
+The 0xC00 above was true on 2026-07-19 and is **false since the 2026-09-10 client update** (it rewrote
+`FFXiMain.dll`, `VTABLE`/`FTABLE` and all 11 item DATs the same morning). Records are now **0x1400** bytes:
+same layout, id still at +0, icon still at +0x2BD, the extra 0x800 is padding (last byte 0xFF). Measured over
+every id of all 11 DATs: 0x1400 puts the right id in **100 %** of records, 0xC00 in none past index 0.
+
+EquipViewer still seeks at 0xC00, and so did AioHUD. The seek then lands inside **another** record, and the
+decode does not fail: it produces a blank icon (or another item's art), draws it, and **caches it to disk**.
+That matches the NA tester's report (2026-09-13): "Quicksilver (a gun) doesn't show, everything else does".
+Everything else was a bundled or pre-patch cached BMP; items not in the bundle and first decoded after the
+patch are the ones hit.
+
+The fix does not swap one constant for another. `decode_gear_icon_from_rom` tries the size-derived stride
+(file size / records in the range), then 0x1400, then 0xC00, and keeps **the one whose record carries the
+requested id**. When none does it refuses with `GS_BAD_LAYOUT` (logged, id-text) instead of drawing garbage.
+
+**The poison already on disk is not only blank.** Measured over the weapon DAT, what the 0xC00 read cached for
+items that have art was blank **52 %**, another item's art **20 %**, visible garbage **28 %** — so "refuse blank
+BMPs" would repair half, and a BMP carries nothing that tells a bad icon from a good one. Hence **vouching**
+(`src/ui/player.cpp`, `gear_vouched`): a cached BMP is read as pixels (`read_gear_icon_bmp`) and drawn directly
+only once the ROM decode has matched it this session; otherwise it is compared with the decode, and a mismatch
+is drawn from the ROM, rewritten, and logged (`GEARICON cache repaired id=...`, shipped, not trace-only). An id is
+vouched only when the file on disk now matches — a failed rewrite (read-only folder) leaves it unvouched, so it
+keeps being decoded. When the ROM cannot vouch (no install, locked DAT, unknown layout) the cached BMP is drawn
+unverified, as before.
+
+Verified offline against the patched install, with the real functions: the decoder reproduces **1323/1323
+bundled icons pixel-for-pixel** (read back through `read_gear_icon_bmp`); Quicksilver (18720) decodes to 390
+opaque pixels where the 0xC00 read gave 0; and **1739/1739** poisoned caches fabricated with the old stride
+are flagged stale, their rewrite round-tripping 1739/1739. `//aio geartrace` prints the proven record size
+(`record=0x1400`) and the `VOUCH` verdict per slot.
 
 ### Why frozen 2021 code still finds new items' icons
 
