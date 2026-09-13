@@ -328,11 +328,12 @@ static void heal_pw_block() {
     safe_read(a, &xw); safe_read(a + 0x58, &ec); safe_read(a + 0x5C, &et);
     if ((xw & 0xFFFF) == xpCur && ((xw >> 16) & 0xFFFF) == xpTnl && ec == epCur && et == epTnml) {
         if (!g_confirmed[FM_PW_BLOCK]) fm_adopt(FM_PW_BLOCK, fm_rva(FM_PW_BLOCK), "packet 0x061");
+        sentinel_note_matched(SEN_POINTWATCH);           // say it : this pair had no "agrees" path, so it read "not checked yet" forever
         return;                                          // healthy : the static agrees with the packet
     }
     const u32 args[5] = { xpCur, xpTnl, ml, epCur, epTnml };
     const u32 hit = image_scan(1, args, 0, 0, 0);
-    if (hit) { fm_adopt(FM_PW_BLOCK, hit - ffximain_base(), "packet 0x061"); return; }
+    if (hit) { fm_adopt(FM_PW_BLOCK, hit - ffximain_base(), "packet 0x061"); sentinel_note_matched(SEN_POINTWATCH); return; }
     // No address in the whole image holds what the server just sent. That is not an address that slid --
     // it is the block's layout, or the packet's, having changed. Nothing re-pins that, so it goes to the
     // sentinel, which is where "we are now reading something we no longer understand" belongs.
@@ -352,6 +353,7 @@ static void heal_pw_merit() {
     safe_read(a, &v0); safe_read(a + 4, &v4);
     if ((v0 & 0xFFFF) == lp && ((v0 >> 16) & 0x7F) == mc && (v4 & 0xFF) == mx) {
         if (!g_confirmed[FM_PW_MERIT]) fm_adopt(FM_PW_MERIT, fm_rva(FM_PW_MERIT), "packet 0x063 order 2");
+        sentinel_note_matched(SEN_POINTWATCH);
         return;
     }
     // Search around where the 0x061 block sits : the disassembly puts the two side by side, and this

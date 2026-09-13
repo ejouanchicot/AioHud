@@ -102,32 +102,39 @@ int PartyState::find(unsigned id) const {
 }
 
 void PartyState::on_dd(const unsigned char* p) {
-    if (pkt_bytes(p) < 0x3B) return;                       // reads name up to p[0x3A]
+    // SIZE, MEASURED 2026-09-13 on two raw packets : 52 bytes declared (0x34), the name ending the packet. This used to
+    // require 0x3B -- more than the packet ever is -- so on_dd returned on EVERY real 0x0DD since the first commit, and
+    // the sentinel fed below never armed. Require what is read up to the jobs ; the name is bounded by the size.
+    const int size = pkt_bytes(p);
+    if (size < 0x2C) return;                               // through the jobs (0x25) and the first name bytes
     unsigned id = pkt_u32(p, 0x04);
     if (!id) return;
-    int i = find(id);
-    bool added = false;
-    if (i < 0) { if (count >= 6) return; i = count++; m[i] = PMember(); m[i].id = id; added = true; }
+    const int i = find(id);
+    // A member ALREADY in the roster only. The roster is read from memory every frame ; the server sends a 0x0DD for all
+    // 18 alliance members too, and the old "add while there is room" (dead with the size bug, wrong once alive) put
+    // them in the party list between two frames and rewrote the roster cache on disk for each.
+    if (i < 0) return;
     m[i].hp    = (int)pkt_u32(p, 0x08);
     m[i].mp    = (int)pkt_u32(p, 0x0C);
     m[i].tp    = (int)pkt_u32(p, 0x10);
     m[i].flags = pkt_u32(p, 0x14);
-    m[i].mpp = p[0x1D];
-    m[i].hpp = p[0x1E];
+    m[i].hpp = p[0x1D];    // MEASURED 2026-09-13 on real packets : 0x1D = 91 with 2243/2464 HP, 0x1E = 76 with 412/542 MP.
+    m[i].mpp = p[0x1E];    // They were read swapped -- hidden by the memory refresh that overwrites the row the same frame.
     m[i].maxHp = m[i].hpp > 0 ? m[i].hp * 100 / m[i].hpp : m[i].hp;   // derive max -> 0x0DF can refresh %
     m[i].maxMp = m[i].mpp > 0 ? m[i].mp * 100 / m[i].mpp : m[i].mp;
-    m[i].mjob = p[0x22];
-    m[i].mlvl = p[0x23];   // main-job level (between main @0x22 and sub @0x24)
-    m[i].sjob = p[0x24];
-    m[i].slvl = p[0x25];   // sub-job level (by symmetry, right after sub @0x24 ; matches the memory-block +0x74 finding)
+    if (p[0x22]) {         // a TRUST's packet carries no job (0) : keep the one the roster resolved from the trust table
+        m[i].mjob = p[0x22];
+        m[i].mlvl = p[0x23];   // main-job level (between main @0x22 and sub @0x24)
+        m[i].sjob = p[0x24];
+        m[i].slvl = p[0x25];   // sub-job level (by symmetry, right after sub @0x24 ; matches the memory-block +0x74 finding)
+    }
     m[i].zone = (int)p[0x20] | ((int)p[0x21] << 8);   // member zone id (set when out of our zone)
-    int j = 0; for (; j < 19 && p[0x28 + j]; ++j) m[i].name[j] = (char)p[0x28 + j];
+    const int nameMax = size - 0x28 < 19 ? size - 0x28 : 19;   // never past the declared end
+    int j = 0; for (; j < nameMax && p[0x28 + j]; ++j) m[i].name[j] = (char)p[0x28 + j];
     m[i].name[j] = 0;
     // The packet and the member block in memory carry the same identity by two independent paths. Hand the
     // packet's version over BEFORE memory overwrites this row, so the two can be made to disagree out loud.
     sentinel_packet_member(id, m[i].name, (unsigned)m[i].mjob, (unsigned)m[i].mlvl);
-    if (added) save();   // only when the roster SET actually grows (name/jobs are set in this same call) --
-                         // NOT on every vitals-carrying 0x0DD (was a full disk write per packet, packet thread)
 }
 
 void PartyState::on_df(const unsigned char* p) {

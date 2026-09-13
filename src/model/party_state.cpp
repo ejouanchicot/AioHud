@@ -2392,6 +2392,13 @@ int PartyState::target_debuffs(unsigned id, unsigned short* out, int* remainSec,
 // ---- TREASURE POOL (module) : 0x0D2 item added/removed, 0x0D3 lot info / won ----------------------------------
 // 0x0D2 : Item @0x10 (u16), Index @0x14 (u8, slot 0..9), Timestamp @0x18 (u32 unix). Item 0xFFFF = "no change",
 // 0 = slot cleared. Each item drops out of the pool ~5 min after its drop timestamp.
+// A pool item's end of lottery : 5 minutes from its drop time when that window is still running, else a fresh 5 minutes
+// (an old item seen late -- a packet after a zone, or memory after a reload). ONE rule for the packet and the adoption.
+static unsigned treasure_expiry(unsigned dropUnix, unsigned nowUnix) {
+    const unsigned natural = dropUnix + 300;
+    return (natural >= nowUnix && natural - nowUnix <= 300) ? natural : nowUnix + 300;
+}
+
 void PartyState::on_treasure_add(const unsigned char* p) {
     if (pkt_bytes(p) < 0x1C) return;          // floor on the highest field read (timestamp @0x18..0x1B) -- see the note in
                                               // party_state_internal.h : a truncated packet still lands in the decode buffer,
@@ -2400,13 +2407,13 @@ void PartyState::on_treasure_add(const unsigned char* p) {
     const unsigned idx  = p[0x14];
     if (idx >= 10) { TPTRACE("TPOOL 0x0D2 BAD idx=%u item=0x%04X", idx, item); return; }
     if (item == 0xFFFF) { TPTRACE("TPOOL 0x0D2 slot=%u no-change (0xFFFF)", idx); return; }              // marker : nothing changed
-    if (item == 0) { TPTRACE("TPOOL 0x0D2 slot=%u EMPTIED (item=0)", idx); treasure_[idx] = TreasureItem{}; return; }   // slot emptied
+    if (item == 0) { TPTRACE("TPOOL 0x0D2 slot=%u EMPTIED (item=0)", idx); treasure_[idx] = TreasureItem{}; treasureGoneMs_[idx] = model_now_ms(); return; }   // slot emptied
     const unsigned ts = (unsigned)p[0x18] | ((unsigned)p[0x19] << 8) | ((unsigned)p[0x1A] << 16) | ((unsigned)p[0x1B] << 24);
     if (treasure_[idx].itemId == (unsigned short)item && treasure_[idx].timestamp == ts) { TPTRACE("TPOOL 0x0D2 slot=%u item=0x%04X DUP (kept)", idx, item); return; }   // already have it -> keep its lot info
     const unsigned now = (unsigned)model_now_unix();
     const unsigned natural = ts + 300;                            // 5-min lottery window
     const bool freshWindow = (natural >= now && natural - now <= 300);
-    const unsigned exp = freshWindow ? natural : (now + 300);   // fresh drop -> real window ; old item -> give it a fresh 5 min
+    const unsigned exp = treasure_expiry(ts, now);              // fresh drop -> real window ; old item -> give it a fresh 5 min
     TPTRACE("TPOOL 0x0D2 slot=%u item=0x%04X ts=%u now=%u ts-now=%d natural=%u exp=%u branch=%s residual=%ds tick=%u",
             idx, item, ts, now, (int)(ts - now), natural, exp, freshWindow ? "natural" : "fallback+300", (int)(exp - now), model_now_ms());
     treasure_[idx] = TreasureItem{};
@@ -2422,15 +2429,38 @@ void PartyState::on_treasure_add(const unsigned char* p) {
 // its ~5-min expiry (a ~1-min phantom for a mature drop). The memory struct is what the in-game Treasure menu
 // renders, so a slot it reports empty is authoritatively gone -> prune it. Rule 10 : a FAILED read (view unmapped
 // while zoning) returns false and is treated as UNKNOWN -- we keep the packet pool rather than wipe a live one.
+//
+// And the other direction : an item memory HOLDS that the packets never gave us is ADOPTED. Found 2026-09-13 by the
+// doctor : the plugin was reloaded with two items in the pool -- memory had them, Windower showed them, the box stayed
+// empty, because their 0x0D2 had arrived before the load (a missed packet does the same). Two guards keep this from
+// being the phantom bug inverted : nothing is adopted while zoning, nor within 3 s of a packet saying the slot emptied
+// (won / floored / zone-out) -- the client's copy can lag the packet by a frame or two.
+void PartyState::treasure_clear() {
+    const unsigned t = model_now_ms();
+    for (int i = 0; i < 10; ++i) { treasure_[i] = TreasureItem{}; treasureGoneMs_[i] = t; }
+}
+
 void PartyState::reconcile_treasure() {
-    bool any = false;
-    for (int i = 0; i < 10; ++i) if (treasure_[i].itemId) { any = true; break; }
-    if (!any) return;                                        // nothing to check -> skip the memory read
     TreasureSlot mem[10];
     if (!read_treasure_pool(mem)) return;                    // view not mapped (zoning) -> UNKNOWN, keep the packet pool (rule 10)
     const unsigned now = model_now_ms();
     for (int i = 0; i < 10; ++i) {
-        if (!treasure_[i].itemId) continue;
+        if (!treasure_[i].itemId) {
+            if (!mem[i].occupied || !mem[i].item_id || mem[i].item_id == 0xFFFF || zoning_) continue;
+            if (treasureGoneMs_[i] && (unsigned)(now - treasureGoneMs_[i]) < 3000u) continue;   // just emptied by a packet : memory lags
+            treasure_[i] = TreasureItem{};
+            treasure_[i].itemId = mem[i].item_id;
+            treasure_[i].timestamp = mem[i].timestamp;
+            treasure_[i].expireUnix = treasure_expiry(mem[i].timestamp, (unsigned)model_now_unix());
+            if (mem[i].lot_id) {
+                treasure_[i].lot = mem[i].lot;
+                lstrcpynA(treasure_[i].lotter, mem[i].lot_name, sizeof(treasure_[i].lotter));
+            }
+            treasure_[i].seenMs = now;
+            TPTRACE("TPOOL RECONCILE slot=%u ADOPTED from memory item=0x%04X ts=%u lot=%u (no packet had it)",
+                    (unsigned)i, (unsigned)mem[i].item_id, mem[i].timestamp, (unsigned)mem[i].lot);
+            continue;
+        }
         if (mem[i].occupied && mem[i].item_id == treasure_[i].itemId) continue;   // corroborated by memory -> real, keep
         if ((unsigned)(now - treasure_[i].seenMs) < 2000u) continue;              // fresh add : give the client memory time to reflect it before trusting "empty"
         TPTRACE("TPOOL RECONCILE slot=%u pruned (packet item=0x%04X, mem occupied=%d id=0x%04X) -- phantom cleared",
@@ -2444,7 +2474,7 @@ void PartyState::on_treasure_lot(const unsigned char* p) {
     if (pkt_bytes(p) < 0x26) return;          // floor : the lotter name runs p[0x16]..p[0x25]
     const unsigned idx = p[0x14];
     if (idx >= 10) { TPTRACE("TPOOL 0x0D3 BAD idx=%u", idx); return; }
-    if (p[0x15] != 0) { TPTRACE("TPOOL 0x0D3 slot=%u DROP=%u -> cleared (had item=0x%04X)", idx, (unsigned)p[0x15], (unsigned)treasure_[idx].itemId); treasure_[idx] = TreasureItem{}; return; }   // item left the pool (won or dropped to floor)
+    if (p[0x15] != 0) { TPTRACE("TPOOL 0x0D3 slot=%u DROP=%u -> cleared (had item=0x%04X)", idx, (unsigned)p[0x15], (unsigned)treasure_[idx].itemId); treasure_[idx] = TreasureItem{}; treasureGoneMs_[idx] = model_now_ms(); return; }   // item left the pool (won or dropped to floor)
     if (!treasure_[idx].itemId) { TPTRACE("TPOOL 0x0D3 slot=%u lot-info but NO cached item (ignored)", idx); return; }
     treasure_[idx].lot = (unsigned short)((unsigned)p[0x0E] | ((unsigned)p[0x0F] << 8));
     int i = 0; for (; i < 16 && p[0x16 + i]; ++i) treasure_[idx].lotter[i] = (char)p[0x16 + i];

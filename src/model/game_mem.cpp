@@ -34,6 +34,8 @@
 #include "model/luacore_root.h"   // where LuaCore keeps `g` : a WINDOWER update moves it, so it is derived too
 #include "model/sentinel.h"       // packet-vs-memory cross-check, run once the snapshot is complete
 #include "model/capwatch.h"       // notice a fixed table that has quietly run out of room
+#include "model/battle_target.h"  // <bt> : the game's resolver rule, walked over the entity array here
+#include "model/party_state.h"    // the party ids <bt> is claimed by (the roster)
 #include "model/ui_config.h"   // mmShow : skip the entity-array sweep entirely when the minimap is off (model->model, no layering issue)
 #include "windower.h"   // safe_read / valid_ptr (guarded game-memory reads)
 #include <windows.h>
@@ -193,6 +195,42 @@ int read_map_entities(MapEntity* out, int maxN) {
     return n;
 }
 
+// <bt> as the GAME resolves it (model/battle_target.h has the rule and why). ENT_ACTOR_OFF : the game's resolver
+// skips an entity whose +0xA0 is null -- read as "actor loaded" (Ashita's ActorPointer), not measured in game yet.
+static const u32 ENT_ACTOR_OFF = 0xA0;
+static bool copy_entity_ptrs(u32 ent, u32* ptrs, unsigned n) {
+    bool ok = false;
+    __try { memcpy(ptrs, (const void*)(uintptr_t)ent, n * sizeof(u32)); ok = true; }
+    __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+    return ok;
+}
+bool read_battle_target(const unsigned* partyIds, int n, unsigned& out) {
+    out = 0;
+    if (!partyIds || n <= 0 || !self_entity()) return false;   // no roster or no player entity yet : unavailable
+    const u32 ent = entity_array();
+    if (!ent) return false;
+    static u32 ptrs[0x900];
+    if (!copy_entity_ptrs(ent, ptrs, 0x900)) return false;
+    struct Src {
+        const u32* p;
+        int bt_count() const { return 0x900; }
+        bool bt_read(int i, BtEntity& e) const {
+            const u32 q = p[i];
+            if (!valid_ptr(q)) return false;
+            u32 cl = 0;
+            if (!safe_read(q + ENT_CLAIM_OFF, &cl)) return false;
+            e.claim = cl;
+            if (!cl) return true;                                // unclaimed : nothing else to read
+            u32 actor = 0, st = 0, id = 0;
+            if (!safe_read(q + ENT_ACTOR_OFF, &actor) || !safe_read(q + ENT_STATUS_OFF, &st) || !safe_read(q + ENT_ID_OFF, &id)) return false;
+            e.actor = actor != 0; e.status = st; e.id = id;
+            return true;
+        }
+    } src = { ptrs };
+    out = battle_target_pick(partyIds, n, src);
+    return true;                                                  // read fine : out = 0 means genuinely no <bt>
+}
+
 // Resolve a set of entity ids -> live vitals in one entity-array block-copy (shared ENT_*_OFF offsets).
 // Used by the hate list : for each tracked mob id, fetch name / HP% / world pos / claim / status without
 // re-copying the array per id. out[i] stays valid=false unless a matching entity is found.
@@ -253,13 +291,11 @@ bool read_pointwatch(PwMem& out) {
     out = PwMem{};
     const u32 blk = fm_addr(FM_PW_BLOCK), mer = fm_addr(FM_PW_MERIT);
     if (blk) {
-        u32 xw = 0;
-        if (safe_read(blk, &xw)) { out.xpCur = xw & 0xFFFF; out.xpTnl = (xw >> 16) & 0xFFFF; out.xpOk = (out.xpTnl != 0); }
-        u32 ep = 0, et = 0;
-        if (safe_read(blk + PW_EXEMPLAR_OFF, &ep) && safe_read(blk + PW_EXEMPLAR_OFF + 4, &et)) {
-            out.epCur = ep; out.epTnml = et; out.epOk = (et != 0);
-        }
-        u32 v = 0; if (safe_read(blk + PW_MLVL_OFF, &v)) { out.masterLevel = (int)(v & 0xFF); out.mlOk = true; }
+        u32 xw = 0, ep = 0, et = 0, ml = 0;
+        const bool xwRead = safe_read(blk, &xw);
+        const bool epRead = safe_read(blk + PW_EXEMPLAR_OFF, &ep) && safe_read(blk + PW_EXEMPLAR_OFF + 4, &et);
+        const bool mlRead = safe_read(blk + PW_MLVL_OFF, &ml);
+        pw_decode_block(xwRead, xw, epRead, ep, et, mlRead, ml, out);   // a zeroed block (zoning) is NOT "ML 0" : see game_mem.h
     }
     if (mer) {
         u32 lp = 0, mx = 0;
@@ -737,12 +773,9 @@ static const u32 T0_EPTR_OFF = 0x08;      // Targets[0].EntityPointer (reticle =
                                           //  check below needs it, and rule 7 wants one declaration, not a second literal 0x08.)
 static const u32 T1_EPTR_OFF = 0x30;      // Targets[1].EntityPointer (the LOCKED main, valid while a <st> cursor is up).
                                           // Targets stride = T1_ID(0x2C) - T0_ID(0x04) = 0x28 ; so T1_EPTR = T0_EPTR(0x08) + 0x28.
-// BT_ID_OFF : the BATTLE-TARGET ServerId (the mob you're engaged with). Unlike the reticle T0, this stays set
-// when you drop the cursor <t> off the mob while still fighting it, and CLEARS to 0 on disengage. Reversed
-// 2026-07-10 via //aio bt (self-calibrating id/index scan across the 3 states) : off the Targets[] grid at
-// 0x04 + 3*0x28. Mirrors Windower's <bt>, used so the Skillchains box shows a party member's chain when your
-// reticle is off the mob (the "SC from others doesn't always trigger" fix).
-static const u32 BT_ID_OFF = 0x7C;
+// <bt> is NOT read here any more. target_t+0x7C was taken for the battle target on 2026-07-10 ; measured in combat on
+// 2026-09-13 it follows the RETICLE target, and the game's own <bt> is not stored at all -- it is recomputed from the
+// entities' claims (read_battle_target below, rule in model/battle_target.h).
 static const u32 SUB_CURSOR_BIT = 0x00010000;
 static const u32 NO_TARGET = 0x04000000;
 // LOCK_OFF : the LOCK-ON flag is BIT 0 of the byte at +0x5C (the upper bits carry other target flags -- on a
@@ -808,18 +841,16 @@ u32 target_root() {
 }
 
 bool read_target(TargetInfo& o) {
-    o.id = o.sid = o.bt = 0; o.locked = false;
+    o.id = o.sid = 0; o.locked = false;
     u32 tp = target_root();
     if (!tp) return true;                               // target system not ready (or the static moved -- see target_root)
-    u32 t0 = 0, t1 = 0, bt = 0, flags = 0, lk = 0;
+    u32 t0 = 0, t1 = 0, flags = 0, lk = 0;
     safe_read(tp + T0_ID_OFF, &t0);                     // active reticle
     safe_read(tp + T1_ID_OFF, &t1);                     // locked main (valid during sub-target)
-    safe_read(tp + BT_ID_OFF, &bt);                     // battle target (engaged mob, held when the reticle is off)
     safe_read(tp + FLAGS_OFF, &flags);
     safe_read(tp + LOCK_OFF,  &lk);                     // lock-on flag (1 = locked)
     if (flags & SUB_CURSOR_BIT) { o.sid = t0; o.id = t1; }   // <st> cursor open : sub = reticle, main = locked
     else                        { o.id = t0; }               // normal : main = reticle, no sub
-    if (bt != NO_TARGET) o.bt = bt;                     // only a real id ; the 0x04000000 "nothing" sentinel -> 0
     if (o.id  == NO_TARGET) o.id  = 0;
     if (o.sid == NO_TARGET) o.sid = 0;
     o.locked = (lk & 0x01) != 0 && (o.id != 0);         // locked ON the main target : bit 0 of +0x5C (the upper bits carry OTHER flags on friendly/PC targets -- a bare !=0 false-locked on party members)
@@ -1146,8 +1177,15 @@ void poll_game_state(GameState& gs) {
     gs.vana = vana_clock_now();                                // Vana'diel clock (computed, no memory read)
 
     TargetInfo tg;
-    if (read_target(tg)) { gs.targetId = tg.id; gs.subTargetId = tg.sid; gs.targetLocked = tg.locked; gs.battleTargetId = tg.bt; }
-    else                 { gs.targetId = gs.subTargetId = 0; gs.targetLocked = false; gs.battleTargetId = 0; }
+    if (read_target(tg)) { gs.targetId = tg.id; gs.subTargetId = tg.sid; gs.targetLocked = tg.locked; }
+    else                 { gs.targetId = gs.subTargetId = 0; gs.targetLocked = false; }
+    // <bt> : YOU and your PARTY, from the roster (last frame's refresh : the poll runs before the model upkeep).
+    { const PartyState& ps = party();
+      unsigned ids[6]; int n = 0;
+      for (int i = 0; i < ps.count && n < 6; ++i) if (ps.m[i].id) ids[n++] = ps.m[i].id;
+      unsigned bt = 0;
+      gs.battleTargetOk = read_battle_target(ids, n, bt);   // false = could not be read : NOT the same as "no <bt>"
+      gs.battleTargetId = gs.battleTargetOk ? bt : 0; }
 
     { TargetEntity te, se; bool hasSub = false;
       read_target_entity(te, se, hasSub);

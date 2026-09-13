@@ -427,8 +427,9 @@ struct PartyState {
     const TreasureItem* treasure_slots() const { return treasure_; }   // the TreasurePool widget reads this
     void on_treasure_add(const unsigned char* p);   // 0x0D2 : item added / removed
     void on_treasure_lot(const unsigned char* p);   // 0x0D3 : lot info / won-dropped
-    void reconcile_treasure();                      // once/frame : prune packet slots the in-game memory (*(g+0x5C)) says are empty -> kills "box with no pool" phantoms
-    void treasure_clear() { for (int i = 0; i < 10; ++i) treasure_[i] = TreasureItem{}; }   // on zone change
+    unsigned treasureGoneMs_[10] = {};    // when a packet last EMPTIED each slot (won / floored / zone-out) : memory is not trusted to re-add it for 3 s
+    void reconcile_treasure();                      // once/frame : prune packet slots the in-game memory (*(g+0x5C)) says are empty (phantoms), ADOPT the items it holds that no packet gave us (a reload / a missed 0x0D2)
+    void treasure_clear();                          // on zone change : empties the pool and stamps every slot as just emptied
 
     HateEntry hate_[128];                 // tracked aggro (0x028-fed, sticky) : mob -> PC + last-seen ms. Sole membership
                                           // source for the hate list ; sized for a Crawlers' Nest [S] pull (no ring thrash)

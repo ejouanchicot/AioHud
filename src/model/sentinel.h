@@ -45,6 +45,12 @@ void sentinel_tick(const GameState& gs);
 
 bool        sentinel_diverged(SentinelPair p);
 const char* sentinel_report_name(SentinelPair p);   // the pair's label, for a user-facing message
-int  sentinel_report(char out[][160], int maxOut);   // one line per pair, for //aio doctor
+int  sentinel_report(char out[][160], int maxOut);
+// The pair's counters : comparisons that agreed, that disagreed, and packets that could NOT be compared at all (the
+// memory side stayed unreadable past the retry budget). For the tests and the doctor ; nothing decides on them.
+// The memory side AGREED with the packet, for a pair checked outside this file (PointWatch : the re-pinner). Without it
+// that pair could only ever say "not checked yet", even after a thousand good comparisons.
+void sentinel_note_matched(SentinelPair p);
+void sentinel_counts(SentinelPair p, int& agree, int& disagree, int& unreadable);   // one line per pair, for //aio doctor
 
 } // namespace aio

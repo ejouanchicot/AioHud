@@ -10,7 +10,7 @@ namespace aio {
 
 // ---------------------------------------------------------------- tuning ----
 //
-// These three numbers ARE the difference between an alarm that gets read and one that gets muted. A
+// These numbers ARE the difference between an alarm that gets read and one that gets muted. A
 // cross-check compares two samples taken at different instants, so a single disagreement means nothing.
 //   DELAY   : frames between the packet and the comparison -- the client has to have written its own copy
 //             first, and our hook runs before it does.
@@ -19,17 +19,21 @@ namespace aio {
 //   noise does, which is exactly the distinction being made here.
 static const int CMP_DELAY  = 120;   // ~2 s
 static const int CMP_STREAK = 4;
+//   RETRIES : comparisons a packet gets when the memory side is not readable yet, CMP_DELAY apart -- 15 x 2 s covers
+//             a slow zone-in. Past that the packet is counted as "could not be compared", never silently dropped.
+static const int CMP_RETRIES = 15;
 
 struct Pair {
     const char* name;
     int   agree, disagree, streak;
+    int   unreadable;
     bool  diverged;
     char  evidence[120];
 };
 static Pair g_pair[SEN_N] = {
-    { "party member (0x0DD vs member block)", 0, 0, 0, false, {0} },
-    { "self buffs (0x063 order 9 vs buff array)", 0, 0, 0, false, {0} },
-    { "PointWatch (0x061/0x063 vs static block)", 0, 0, 0, false, {0} },
+    { "party member (0x0DD vs member block)", 0, 0, 0, 0, false, {0} },
+    { "self buffs (0x063 order 9 vs buff array)", 0, 0, 0, 0, false, {0} },
+    { "PointWatch (0x061/0x063 vs static block)", 0, 0, 0, 0, false, {0} },
 };
 
 // Latched once, loudly, with BOTH values. Whoever reads the log has to be able to see which side is
@@ -58,8 +62,8 @@ static void agree(SentinelPair p) { ++g_pair[p].agree; g_pair[p].streak = 0; }
 // Values arrive on the packet thread and are compared on the render thread. `due` is written last, and a
 // stale or torn sample can only ever cost one comparison -- which the streak rule absorbs by design.
 
-struct MemberSample { unsigned id, mjob, mlvl; char name[20]; int due; bool armed; };
-static MemberSample g_mem = { 0, 0, 0, {0}, 0, false };
+struct MemberSample { unsigned id, mjob, mlvl; char name[20]; int due, tries; bool armed; };
+static MemberSample g_mem = { 0, 0, 0, {0}, 0, 0, false };
 
 struct BuffSample { unsigned short ids[32]; int n, due; bool armed; };
 static BuffSample g_buf = { {0}, 0, 0, false };
@@ -69,6 +73,7 @@ void sentinel_packet_member(unsigned id, const char* name, unsigned mjob, unsign
     g_mem.id = id; g_mem.mjob = mjob; g_mem.mlvl = mlvl;
     strncpy(g_mem.name, name, sizeof(g_mem.name) - 1); g_mem.name[sizeof(g_mem.name) - 1] = 0;
     g_mem.due = CMP_DELAY;
+    g_mem.tries = 0;
     g_mem.armed = true;
 }
 
@@ -79,6 +84,11 @@ void sentinel_packet_buffs(const unsigned short* ids, int n) {
     g_buf.n = n;
     g_buf.due = CMP_DELAY;
     g_buf.armed = true;
+}
+
+void sentinel_note_matched(SentinelPair p) {
+    if (p < 0 || p >= SEN_N) return;
+    agree(p);
 }
 
 void sentinel_note_unmatched(SentinelPair p, const char* detail) {
@@ -95,7 +105,15 @@ static void cmp_member() {
     g_mem.armed = false;
 
     PMember pm;
-    if (!member_identity_from_memory(id, pm)) return;      // left the party / block not ready : silence, not suspicion
+    if (!member_identity_from_memory(id, pm)) {
+        // Not ready is not suspicion -- but it is not a reason to drop the packet either (rule 10). Real players' 0x0DD
+        // come at a zone-in, exactly when the member array is still unreadable 2 s later ; giving up there meant the
+        // pair was never compared at all (the doctor, 2026-09-13 : 42 packets, "not checked yet"). So retry on a
+        // budget, and when the budget runs out, COUNT it : the report then says why nothing was compared.
+        if (++g_mem.tries < CMP_RETRIES) { g_mem.due = CMP_DELAY; g_mem.armed = true; }
+        else ++g_pair[SEN_MEMBER].unreadable;
+        return;
+    }
     // NAME and JOB only. HP was the obvious thing to compare and would have been the mistake : it changes
     // between the two samples every time you are in combat, so it would disagree constantly and this alarm
     // would be noise within a minute. Identity does not drift.
@@ -138,6 +156,11 @@ void sentinel_tick(const GameState& gs) {
 // ---------------------------------------------------------------- reporting ----
 
 bool        sentinel_diverged(SentinelPair p)    { return (p >= 0 && p < SEN_N) && g_pair[p].diverged; }
+void sentinel_counts(SentinelPair p, int& agree, int& disagree, int& unreadable) {
+    agree = disagree = unreadable = 0;
+    if (p < 0 || p >= SEN_N) return;
+    agree = g_pair[p].agree; disagree = g_pair[p].disagree; unreadable = g_pair[p].unreadable;
+}
 const char* sentinel_report_name(SentinelPair p) { return (p >= 0 && p < SEN_N) ? g_pair[p].name : "?"; }
 
 int sentinel_report(char out[][160], int maxOut) {
@@ -148,6 +171,8 @@ int sentinel_report(char out[][160], int maxOut) {
             _snprintf(out[n], 160, "%-42s DIVERGED (%d vs %d ok) -- %s", q.name, q.disagree, q.agree, q.evidence);
         else if (q.agree)
             _snprintf(out[n], 160, "%-42s agrees (%d checks)", q.name, q.agree);
+        else if (q.unreadable)
+            _snprintf(out[n], 160, "%-42s not checked : %d packet(s) arrived while memory stayed unreadable", q.name, q.unreadable);
         else
             // Said explicitly : "never checked" and "checked and fine" look identical if you only print the
             // good news, and a cross-check that never ran is not reassurance.

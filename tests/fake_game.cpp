@@ -39,6 +39,8 @@ struct World {
     unsigned short buffs[32]; int nbuff; bool buffsOk;
     unsigned short equipIds[16]; unsigned char equipExt[16][24]; bool equipOk;
     int           n;
+    bool          partyUnreadable;   // party_memory_unreadable()
+    TreasureSlot  pool[10]; bool poolMapped;   // treasure_memory()
 };
 World* W = 0;
 
@@ -126,6 +128,17 @@ void self_buffs(std::initializer_list<unsigned short> ids) {
     for (unsigned short s : ids) if (W->nbuff < 32) W->buffs[W->nbuff++] = s;
 }
 void self_buffs_unreadable() { W->nbuff = 0; W->buffsOk = false; }
+void party_memory_unreadable(bool on) { W->partyUnreadable = on; }
+void treasure_memory(std::initializer_list<PoolSlot> slots) {
+    for (int i = 0; i < 10; ++i) W->pool[i] = TreasureSlot{};
+    for (const PoolSlot& s : slots) {
+        if (s.slot < 0 || s.slot >= 10) continue;
+        TreasureSlot& t = W->pool[s.slot];
+        t.occupied = true; t.item_id = s.item; t.timestamp = s.timestamp; t.lot = s.lot; t.lot_id = s.lotId;
+        lstrcpynA(t.lot_name, s.lotter ? s.lotter : "", sizeof(t.lot_name));
+    }
+    W->poolMapped = true;
+}
 void equip(const unsigned short ids[16], const unsigned char ext[16][24]) { memcpy(W->equipIds, ids, sizeof(W->equipIds)); memcpy(W->equipExt, ext, sizeof(W->equipExt)); W->equipOk = true; }
 
 void packet(int id, const unsigned char* bytes) {
@@ -249,6 +262,7 @@ namespace aio {
 
 bool model_read_u32(u32 addr, u32* out) { u32 v = 0; const bool ok = windower::safe_read(addr, &v); if (out) *out = ok ? v : 0; return ok; }
 bool model_copy(u32 addr, void* out, unsigned n) {
+    if (W && W->partyUnreadable && addr >= (u32)(uintptr_t)W->party && addr < (u32)(uintptr_t)W->party + sizeof(W->party)) return false;
     bool ok = false;
     __try { memcpy(out, (const void*)(uintptr_t)addr, n); ok = true; } __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
     return ok;
@@ -296,7 +310,12 @@ int  read_player_buffs(unsigned short* out, int maxN, bool* ok) {
     return n;
 }
 bool read_pointwatch(PwMem&)         { return false; }
-bool read_treasure_pool(TreasureSlot[10]) { return false; }
+bool read_treasure_pool(TreasureSlot out[10]) {
+    for (int i = 0; i < 10; ++i) out[i] = TreasureSlot{};
+    if (!W || !W->poolMapped) return false;   // not mapped : UNKNOWN, the model must not read it as empty
+    for (int i = 0; i < 10; ++i) out[i] = W->pool[i];
+    return true;
+}
 
 // plugin_dir / plugin_path : tests/t_config.cpp (a scratch folder per test process). world() empties its model
 // caches, so no case inherits the roster, casters or song tags another case saved there.
@@ -305,8 +324,6 @@ bool read_treasure_pool(TreasureSlot[10]) { return false; }
 void selftest_add(const char*, CheckFn) {}
 bool watch_enabled() { return false; }   // //aio watch : the flip/cap watchers observe the rows, they never shape them
 void dec_record(const char*, const char*, ...) {}
-void sentinel_packet_buffs(const unsigned short*, int) {}
-void sentinel_packet_member(unsigned, const char*, unsigned, unsigned) {}
 void fm_pw_expect(unsigned, unsigned, unsigned, unsigned, unsigned) {}
 void fm_pw_merit_expect(unsigned, unsigned, unsigned) {}
 

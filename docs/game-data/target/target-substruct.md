@@ -176,6 +176,27 @@ when nothing is targeted. Re-run it to re-locate offsets after a client patch.
 as the single source of truth (`T0_EPTR_OFF` / `ENT_*_OFF`). It fills `GameState::target` (`TargetEntity`
 { id, index, name, hpp, valid }) once per frame in `poll_game_state`.
 
+## `<bt>` is not stored : the game recomputes it (reversed 2026-09-13)
+
+`target_t+0x7C` was taken for the battle target on 2026-07-10. Measured in combat on 2026-09-13 it follows the
+**reticle** : Windower's `<bt>` was a Sand Hare claimed by Tetsouo while `+0x7C` held the Goblin Mugger under his
+cursor, and it read Kaories' own id while she targeted herself. No field replaces it, because `<bt>` is not stored.
+
+**The game** (static analysis of the FFXiMain dump, pre-2026-08-12 patch, decompile and disassembly agreeing) :
+the target-token parser (dump RVA `0x7A0F0`) sends `"<bt>"` to a resolver (dump RVA `0x77CB0`) that gathers the ids of
+the player and the party members of the same group (6 max, **not** the alliance), walks the entity array in **index
+order** and returns the **first** entity with `+0xA0 != 0` (actor), claim `+0x188` among those ids, and status
+`+0x170` not 2 or 3 (dead).
+
+**Windower** (`LuaCore.dll`, `get_mob_by_target` branch `"bt"`) recomputes it too, with three differences : the whole
+alliance in zone counts as claimers, dead claimed mobs are still returned, and only entities within 50 yalms qualify.
+
+**AioHUD** copies the game's rule : `model/battle_target.h` (pure, `tests/t_battletarget.cpp`) walked over memory by
+`read_battle_target` (`game_mem.cpp`), with the party ids from the roster. The in-game witness (`igtest.py`, rule
+`<bt> id`) accepts a disagreement with Windower only in one of the three shapes above, each checked on the data.
+Still to measure in game : the meaning of `entity+0xA0`, and the two cases that tell the game's rule from Windower's
+(a claimed mob that dies ; a mob claimed by another party of the alliance).
+
 ## Does the client store a mob's DEBUFF list? — investigation (probe added 2026-07-03)
 
 The Target module currently packet-tracks debuffs (0x028 action packets) with *approximate* durations.

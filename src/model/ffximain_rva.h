@@ -31,7 +31,7 @@
 namespace aio {
 
 enum FmStatic {
-    FM_TARGET_T = 0,   // -> target_t (heap). T0 id @+0x04, T0 entity @+0x08, flags @+0x50, bt @+0x7C
+    FM_TARGET_T = 0,   // -> target_t (heap). T0 id @+0x04, T0 entity @+0x08, flags @+0x50 (+0x7C follows the reticle : it is NOT <bt>, measured 2026-09-13)
     FM_MENU_PTR,       // -> the focused menu object. 0 = no menu open ; *(ptr+0x04) = the menu def
     FM_EXAM_SPELL,     // u32 : the Magic menu's highlighted spell id
     FM_EXAM_ABIL,      // u32 : the ability menu's highlighted action, id + 0x200 (JA) or raw (WS)

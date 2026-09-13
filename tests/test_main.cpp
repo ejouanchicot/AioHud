@@ -30,6 +30,10 @@ void test_cast_match();
 void test_debuffrules();
 void test_gear_dat();
 void test_timers();
+void test_roster();
+void test_battle_target();
+void test_treasure();
+void test_pointwatch();
 void test_timers_rules();
 
 int main() {
@@ -53,6 +57,10 @@ int main() {
     test_gear_dat();
     test_timers_rules();
     test_timers();
+    test_roster();
+    test_battle_target();
+    test_treasure();
+    test_pointwatch();
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail;
 }

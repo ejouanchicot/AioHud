@@ -42,7 +42,14 @@ void equip(const unsigned short ids[16], const unsigned char ext[16][24]);
 
 // YOUR buffs as the game's memory lists them (player+0x1C) : what read_player_buffs and GameState::buffs report.
 void self_buffs(std::initializer_list<unsigned short> ids);
-void self_buffs_unreadable();   // the read FAILS (ok=false) -- not the same thing as an empty list
+void self_buffs_unreadable();
+// The party member array cannot be read (every model_copy into it FAILS) : what the game's memory looks like for a few
+// seconds around a zone-in, when the server's 0x0DD has already arrived. false = readable again.
+void party_memory_unreadable(bool on);
+// The game's own TREASURE POOL memory (*(g+0x5C), what the in-game Treasure menu draws). Not called = the view is not
+// mapped (read fails). An empty list = mapped and empty.
+struct PoolSlot { int slot; unsigned short item; unsigned timestamp; unsigned short lot = 0; unsigned lotId = 0; const char* lotter = 0; };
+void treasure_memory(std::initializer_list<PoolSlot> slots);   // the read FAILS (ok=false) -- not the same thing as an empty list
 
 // Leave the zone and arrive in `zone` : the zone-out packet (0x00B), a loading screen of `loadMs`, every party member
 // moved with you, then the zone-in packet (0x00A). What the game sends and what its memory says, in that order.

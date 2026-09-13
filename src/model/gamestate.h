@@ -68,7 +68,8 @@ struct GameState {
 
     // --- selection (the party cursor) : server-ids of <t> (main) and <st> (sub) ---
     unsigned targetId = 0, subTargetId = 0;
-    unsigned battleTargetId = 0;     // <bt> : the engaged mob (target_t+0x7C), held even when the reticle <t> is off it, 0 on disengage
+    unsigned battleTargetId = 0;     // <bt> : the first mob claimed by you or your party, as the game resolves it (read_battle_target) ; 0 = none
+    bool     battleTargetOk = false;  // the <bt> walk could be done this frame (false = unknown, not "none" -- rule 10)
     bool     targetLocked = false;   // the main target <t> is LOCKED on (target_t+0x5C bit 0) -> lock symbol
 
     // --- the ACTIVE target's entity (Target HUD module) : name + HP% + id/index. valid=false when

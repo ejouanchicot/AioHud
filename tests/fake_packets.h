@@ -98,6 +98,38 @@ inline Packet pkt_action(unsigned actor, unsigned category, unsigned param, std:
 // A spell YOU finish casting (category 4). 236 = "the effect landed" ; 75 = "no effect".
 inline Packet pkt_cast(unsigned actor, unsigned spell, std::initializer_list<Target> targets) { return pkt_action(actor, 4, spell, targets); }
 
+// ---- 0x0DD : a party member update. id u32 @0x04, HP @0x08, MP @0x0C, TP @0x10, HP% @0x1D, MP% @0x1E, zone u16 @0x20,
+//      main job @0x22, main level @0x23, sub job @0x24, sub level @0x25, name @0x28. The two percentages are laid out as
+//      MEASURED on real packets (2026-09-13 : byte 0x1D = 91 with 2243/2464 HP, byte 0x1E = 76 with 412/542 MP), which
+//      is also Windower's layout -- NOT the model's own parser, which read them swapped. ----
+//      SIZE : 52 bytes (0x34) declared, measured on two real packets (Tetsouo, Kaories) -- the name field ends at 0x33.
+//      The model's parser demanded 0x3B and so rejected EVERY real 0x0DD since the first commit.
+struct MemberUpdate { unsigned id; const char* name; unsigned hp, mp, tp, hpp, mpp, mjob, mlvl, sjob, slvl, zone; };
+inline Packet pkt_member_update(const MemberUpdate& m) {
+    Packet p; pkt_header(p, 0x0DD, 0x34);
+    put_u32(p, 0x04, m.id); put_u32(p, 0x08, m.hp); put_u32(p, 0x0C, m.mp); put_u32(p, 0x10, m.tp);
+    p.b[0x1D] = (unsigned char)m.hpp; p.b[0x1E] = (unsigned char)m.mpp;
+    put_u16(p, 0x20, m.zone);
+    p.b[0x22] = (unsigned char)m.mjob; p.b[0x23] = (unsigned char)m.mlvl; p.b[0x24] = (unsigned char)m.sjob; p.b[0x25] = (unsigned char)m.slvl;
+    for (int i = 0; m.name && m.name[i] && i < 11; ++i) p.b[0x28 + i] = (unsigned char)m.name[i];   // 12 bytes, NUL-terminated
+    return p;
+}
+
+// ---- 0x0D2 : an item enters (or leaves) the treasure pool. item u16 @0x10, slot @0x14, drop time (unix) u32 @0x18. ----
+inline Packet pkt_pool_item(int slot, unsigned item, unsigned dropUnix) {
+    Packet p; pkt_header(p, 0x0D2, 0x20);
+    put_u16(p, 0x10, item); p.b[0x14] = (unsigned char)slot; put_u32(p, 0x18, dropUnix);
+    return p;
+}
+// ---- 0x0D3 : lot info for a slot. highest lot u16 @0x0E, slot @0x14, drop flag @0x15 (!=0 : won or floored, gone),
+//      highest lotter name @0x16 (16 chars). ----
+inline Packet pkt_pool_lot(int slot, unsigned lot, const char* lotter, bool gone) {
+    Packet p; pkt_header(p, 0x0D3, 0x28);
+    put_u16(p, 0x0E, lot); p.b[0x14] = (unsigned char)slot; p.b[0x15] = gone ? 1 : 0;
+    for (int i = 0; lotter && lotter[i] && i < 15; ++i) p.b[0x16 + i] = (unsigned char)lotter[i];
+    return p;
+}
+
 inline void deliver(const Packet& p) { packet(p.id, p.b); }
 
 } // namespace fake

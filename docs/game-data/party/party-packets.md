@@ -17,8 +17,8 @@ fully-populated buffer). `id = *(u16*)b & 0x1FF`; size = `((hdr>>9)&0x7F)*4`.
 | `+0x0C` | u32 | MP |
 | `+0x10` | u32 | TP |
 | `+0x14` | u32 | flags (party/alliance leader, quarter-master bits) |
-| `+0x1D` | byte | MP % |
-| `+0x1E` | byte | HP % |
+| `+0x1D` | byte | HP % (measured 2026-09-13 : 91 with 2243/2464 HP ; this table said MP % until then) |
+| `+0x1E` | byte | MP % (measured : 76 with 412/542 MP) |
 | `+0x20` | u16 | member zone id (set when out of our zone) |
 | `+0x22` | byte | main job |
 | `+0x23` | byte | main job level |

@@ -85,6 +85,17 @@ bool read_capacity_points(unsigned mainJob, unsigned& cp, unsigned& jp);
 struct PwMem { unsigned xpCur = 0, xpTnl = 0, epCur = 0, epTnml = 0, lpCur = 0; int merits = 0, maxMerits = 0, masterLevel = 0;
                bool xpOk = false, epOk = false, merOk = false, mlOk = false; };
 bool read_pointwatch(PwMem& out);
+// The 0x061 mirror block's fields, decoded -- pure, so the validity rule is testable (tests/t_pointwatch.cpp).
+// The client ZEROES the whole block across a zone until the next 0x061 arrives (measured 2026-09-13 : XP, Exemplar and
+// Master Level all read 0 in zones 245 / 246 / 230, while every 0x061 said ML 48). XP and Exemplar were already guarded
+// by their "required" value ; Master Level was taken as read, so each zone dropped PointWatch to "ML 0" for minutes.
+// A byte of 0 is a Master Level only in a LIVE block : one whose XP or Exemplar requirement is non-zero.
+inline void pw_decode_block(bool xwRead, unsigned xw, bool epRead, unsigned ep, unsigned et, bool mlRead, unsigned ml, PwMem& out) {
+    if (xwRead) { out.xpCur = xw & 0xFFFF; out.xpTnl = (xw >> 16) & 0xFFFF; out.xpOk = (out.xpTnl != 0); }
+    if (epRead) { out.epCur = ep; out.epTnml = et; out.epOk = (et != 0); }
+    const bool live = out.xpOk || out.epOk;
+    if (mlRead && live) { out.masterLevel = (int)(ml & 0xFF); out.mlOk = true; }
+}
 u32 key_items_base();  // *(g + 0x4C) -- u8[0x2000] : ONE BYTE per key-item id (non-zero = owned), NOT a bitfield.
                        // Sits immediately before items_root (base + 0x2000 == items_root). See game-data/key-items.md.
 bool owns_key_item(unsigned id);   // ki_base[id] != 0. false for id >= 0x2000 or an unmapped base. Prefer this
@@ -210,7 +221,10 @@ bool read_party_leaders(PartyLeaders& out);
 // the player's current selection: server-id of the main target <t> and the subtarget <st>
 // (0 = none). Used to draw the party selection cursor (cf. XivParty get_mob_by_target).
 // returns false if the target structure isn't located/ready.
-struct TargetInfo { unsigned id, sid, bt; bool locked; };   // locked = the main target is LOCK-ON'd (target_t+0x5C) ; bt = battle target (target_t+0x7C : the engaged mob, held even when the reticle <t> is off ; 0 when disengaged)
+struct TargetInfo { unsigned id, sid; bool locked; };   // locked = the main target is LOCK-ON'd (target_t+0x5C). <bt> is not here : see read_battle_target
+// <bt>, resolved the way the game resolves it (model/battle_target.h) : the first entity by index, claimed by YOU or a
+// PARTY member, with an actor, not dead. partyIds = you + your party. false = could not be read (NOT "no <bt>").
+bool read_battle_target(const unsigned* partyIds, int n, unsigned& out);
 bool read_target(TargetInfo& out);
 
 // the heap target_t itself (0 = not ready). ONE resolution point for every target reader AND for the
