@@ -43,6 +43,8 @@ void equip(const unsigned short ids[16], const unsigned char ext[16][24]);
 // YOUR buffs as the game's memory lists them (player+0x1C) : what read_player_buffs and GameState::buffs report.
 void self_buffs(std::initializer_list<unsigned short> ids);
 void self_buffs_unreadable();
+// YOUR jobs and levels as read_player reports them (world() makes slot 0 a level 99 main with a level 49 sub, no sub job).
+void self_jobs(int mjob, int mlvl, int sjob, int slvl);
 // The party member array cannot be read (every model_copy into it FAILS) : what the game's memory looks like for a few
 // seconds around a zone-in, when the server's 0x0DD has already arrived. false = readable again.
 void party_memory_unreadable(bool on);

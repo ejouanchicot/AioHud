@@ -143,10 +143,10 @@ inline bool focus_alert_covered(const AlertEntry* a, int n, int q) {
 //   lostMs() nowMs() when the loss was first seen (0 = not yet) ; now
 //   hidden() holdSec()  "Hidden + focus" (the alert holds tmFocusHold seconds, then departs)
 //   slotsFilled()   that person's song slots are full again (a learned cap, model/song_slots.h)
-//   unrecoverable() replaced() geoReplaced()   the three deliberate-swap suppressors
+//   unrecoverable() replaced() geoReplaced() runeReplaced()   the four deliberate-swap suppressors
 enum FocusAlert {
     FA_CATEGORY_OFF = 0, FA_MUTED, FA_UP, FA_ZONE_GRACE, FA_NO_DATA,   // no loss is running : clear the stamp
-    FA_HOLD_EXPIRED, FA_SLOTS_FILLED, FA_UNRECOVERABLE, FA_REPLACED, FA_GEO_REPLACED,   // lost, and silent on purpose
+    FA_HOLD_EXPIRED, FA_SLOTS_FILLED, FA_UNRECOVERABLE, FA_REPLACED, FA_GEO_REPLACED, FA_RUNE_REPLACED,   // lost, and silent on purpose
     FA_ALERT                                                           // draw the red OUT row
 };
 inline bool focus_alert_clears_loss(FocusAlert v) { return v <= FA_NO_DATA; }
@@ -190,6 +190,7 @@ inline FocusAlert focus_alert_verdict(const Src& e) {
     if (e.unrecoverable()) return FA_UNRECOVERABLE;          // a lost 5th Clarion-Call song can't be refilled -> suppress the OUT entirely (never even a one-frame flash before the prune frees it)
     if (e.replaced()) return FA_REPLACED;                    // deliberately swapped out by a new song on the same ally (Pianissimo Ballad) -> no OUT, not even a one-frame flash (prune frees the slot next frame)
     if (e.geoReplaced()) return FA_GEO_REPLACED;             // an Indi- you replaced with another Indi- -> no OUT, not even a one-frame flash (the prune frees the slot next frame)
+    if (e.runeReplaced()) return FA_RUNE_REPLACED;           // a rune pushed out by a newer rune -> no OUT (section 10)
     return FA_ALERT;
 }
 
@@ -199,11 +200,11 @@ inline FocusAlert focus_alert_verdict(const Src& e) {
 // is settled" : the caller clears the entry's zoneCheck.
 //
 // Source (lazy) : self() zoneGrace() partyOrder() focusOn() isSong() offzone() zoneCheck() listReady() has()
-//                 lostMs() nowMs() hidden() holdSec() unrecoverable() replaced() geoReplaced()
+//                 lostMs() nowMs() hidden() holdSec() unrecoverable() replaced() geoReplaced() runeReplaced()
 enum FocusPrune {
     FP_KEEP = 0, FP_KEEP_SURVIVED_ZONE,
     FP_DROP_GONE_OR_OFF, FP_DROP_SONG_OFFZONE, FP_DROP_ZONE_CASUALTY,
-    FP_DROP_UNRECOVERABLE, FP_DROP_REPLACED, FP_DROP_GEO_REPLACED, FP_DROP_HOLD_EXPIRED
+    FP_DROP_UNRECOVERABLE, FP_DROP_REPLACED, FP_DROP_GEO_REPLACED, FP_DROP_HOLD_EXPIRED, FP_DROP_RUNE_REPLACED
 };
 inline bool focus_prune_drops(FocusPrune v) { return v >= FP_DROP_GONE_OR_OFF; }
 
@@ -242,6 +243,7 @@ inline FocusPrune focus_prune_verdict(const Src& e) {
         if (e.unrecoverable()) return FP_DROP_UNRECOVERABLE;   // un-refillable 5th Clarion-Call song -> free the slot (no OUT will ever draw ; without this the un-drawn entry lingers and fills the monitor)
         if (e.replaced()) return FP_DROP_REPLACED;             // deliberately swapped out by a new song on the same ally (Pianissimo) -> free the slot, never an OUT
         if (e.geoReplaced()) return FP_DROP_GEO_REPLACED;      // a previous Indi- you replaced by casting another one -> free the slot, never an OUT
+        if (e.runeReplaced()) return FP_DROP_RUNE_REPLACED;    // a rune a newer rune pushed out -> free the slot, never an OUT (not re-seeded : it is no longer on you)
         if (e.hidden() && (unsigned)(e.nowMs() - e.lostMs()) > (unsigned)e.holdSec() * 1000u) return FP_DROP_HOLD_EXPIRED;
     }
     return FP_KEEP;
@@ -309,6 +311,69 @@ inline bool focus_geo_replaced(const Src& s) {
         if (s.isIndi(s.otherSpell(i)) && (unsigned)(s.nowMs() - s.otherStartMs(i)) < 6000u) return true;
     }
     return false;
+}
+
+// ---- 10. a rune pushed out by a newer rune : a swap, never a red OUT ----------------------------------------------
+//
+// A Rune Fencer changes runes constantly (Ignis -> Flabra -> Tenebrae, on the mob's weakness), and the game holds a
+// fixed number of them : placing one more when every slot is full drops the OLDEST. Every rune pushed out that way
+// used to raise a permanent red OUT -- reported from play 2026-09-14 on PLD/RUN and RUN ("il passe tous en out quand
+// on change de rune ce qu'on fait tout le temps") -- although you replaced it on purpose and cannot put it back
+// without dropping the one you just chose. Only the runes you placed LAST may alert : 2 on a RUN sub, 3 on a RUN main.
+//
+// ONE ENTRY PER RUNE PLACED, not per element. Two Ignis are two runes, and losing both must say so twice -- the first
+// cut watched the status, so a PLD/RUN whose two Ignis ran out saw a single "Ignis" OUT (reported the same night).
+// A rune has no spell to tell two copies apart, but each copy carries its own expiry in the 0x063, and every rune
+// lasts the same time : the expiry IS the placement, and the entry's rank is it (focus_rune_match).
+//
+// No placement history is needed beyond that. The runes you placed last are the ones on you now plus the most
+// recent of the ones you lost -- as many of those as there are FREE slots. So a lost rune stays silent when at least
+// (cap - runes on you) lost runes are newer than it : with every slot full that is all of them (pushed out by a new
+// rune), with Ignis x2 run out on a free board it is neither (two OUT), and once a new rune takes one of the two
+// slots the older Ignis goes quiet. Consumed runes (Lunge, Gambit...) free their slots, so they keep their OUT.
+//
+// The cap follows the RUN level that is in effect -- main, or sub under another main -- through Rune Enchantment :
+// 1 rune from level 5, 2 from 35, 3 from 65. Rune statuses : Ignis 523 ... Tenebrae 530 (buffs_gen.h), YOUR list only.
+inline bool focus_rune_status(unsigned st) { return st >= 523 && st <= 530; }
+
+inline int focus_rune_cap(int mjob, int mlvl, int sjob, int slvl) {
+    const int RUN = 22;
+    const int lv = mjob == RUN ? mlvl : (sjob == RUN ? slvl : 0);
+    return lv >= 65 ? 3 : lv >= 35 ? 2 : lv >= 5 ? 1 : 0;
+}
+
+// newerLost : YOUR rune entries, of any element, that are lost too and were placed after this one (focus_rune_newer_lost).
+inline bool focus_rune_replaced(bool self, unsigned status, int cap, int runesUp, int newerLost) {
+    return self && focus_rune_status(status) && cap > 0 && newerLost >= cap - runesUp;
+}
+
+// Which monitor entry is THIS copy of a rune ? The unclaimed entry of that status whose rank (the expiry it was seen
+// with) is nearest `expiry`, within a second -- two runes are never placed that close, and a re-sent 0x063 may move
+// a timer by a tick. -1 = a rune placed just now : the caller creates its entry. `Mem` : self status rank seen.
+template <class Mem>
+inline int focus_rune_match(const Mem* fm, int n, unsigned status, unsigned expiry) {
+    int best = -1; unsigned bestD = 61;
+    for (int q = 0; q < n; ++q) {
+        if (!fm[q].self || fm[q].status != status || fm[q].seen) continue;
+        const unsigned d = fm[q].rank > expiry ? fm[q].rank - expiry : expiry - fm[q].rank;
+        if (d < bestD) { bestD = d; best = q; }
+    }
+    return best;
+}
+
+// How many of YOUR other rune entries are lost as well AND newer than entry q. lost[i] : the entry's buff is gone
+// (for your own list, only when that list was READ). Same rank on two entries : the later index counts as newer, so
+// nobody is counted twice.
+template <class Mem>
+inline int focus_rune_newer_lost(const Mem* fm, const bool* lost, int n, int q) {
+    if (q < 0 || q >= n || !fm[q].self || !focus_rune_status(fm[q].status)) return 0;
+    int c = 0;
+    for (int i = 0; i < n; ++i) {
+        if (i == q || !lost[i] || !fm[i].self || !focus_rune_status(fm[i].status)) continue;
+        const int d = (int)(fm[i].rank - fm[q].rank);
+        if (d > 0 || (d == 0 && i > q)) ++c;
+    }
+    return c;
 }
 
 } // namespace aio

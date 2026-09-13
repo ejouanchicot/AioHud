@@ -128,6 +128,7 @@ void self_buffs(std::initializer_list<unsigned short> ids) {
     for (unsigned short s : ids) if (W->nbuff < 32) W->buffs[W->nbuff++] = s;
 }
 void self_buffs_unreadable() { W->nbuff = 0; W->buffsOk = false; }
+void self_jobs(int mjob, int mlvl, int sjob, int slvl) { W->me.mjob = mjob; W->me.mlvl = mlvl; W->me.sjob = sjob; W->me.slvl = slvl; }
 void party_memory_unreadable(bool on) { W->partyUnreadable = on; }
 void treasure_memory(std::initializer_list<PoolSlot> slots) {
     for (int i = 0; i < 10; ++i) W->pool[i] = TreasureSlot{};

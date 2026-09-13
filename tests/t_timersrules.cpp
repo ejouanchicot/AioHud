@@ -46,7 +46,7 @@ struct Timer {
 // never seen lost before, Focus (not Hidden+Focus), nothing that would excuse the loss.
 struct Watched {
     bool isSelf = false, rowsOff = false, isMuted = false, present = false, grace = false, ready = true, hid = false;
-    bool filled = false, unrec = false, repl = false, geo = false, focus = true, song = false, away = false, check = false;
+    bool filled = false, unrec = false, repl = false, geo = false, rune = false, focus = true, song = false, away = false, check = false;
     unsigned lost = 0, now = 100000; int hold = 60; int order = 1;
     bool allyRowsOff() const { return rowsOff; }
     bool muted() const { return isMuted; }
@@ -62,6 +62,7 @@ struct Watched {
     bool unrecoverable() const { return unrec; }
     bool replaced() const { return repl; }
     bool geoReplaced() const { return geo; }
+    bool runeReplaced() const { return rune; }
     bool self() const { return isSelf; }
     int partyOrder() const { return order; }
     bool focusOn() const { return focus; }
@@ -391,6 +392,7 @@ void test_timers_rules() {
         Watched u; u.unrec = true; u.repl = true; CHECK_EQ(focus_alert_verdict(u), FA_UNRECOVERABLE);
         Watched r; r.repl = true; r.geo = true;   CHECK_EQ(focus_alert_verdict(r), FA_REPLACED);
         Watched g; g.geo = true;                  CHECK_EQ(focus_alert_verdict(g), FA_GEO_REPLACED);
+        Watched rn; rn.rune = true;               CHECK_EQ(focus_alert_verdict(rn), FA_RUNE_REPLACED);
     }
 
     SECTION("focus prune : an alliance member cannot be judged, so it is not watched");
@@ -429,6 +431,47 @@ void test_timers_rules() {
         Watched f; f.lost = 10000;                                   // Focus alone : lost ninety seconds ago, still watched
         CHECK_EQ(focus_prune_verdict(f), FP_KEEP);
         f.hid = true; CHECK_EQ(focus_prune_verdict(f), FP_DROP_HOLD_EXPIRED);
+        Watched rn; rn.rune = true; CHECK_EQ(focus_prune_verdict(rn), FP_KEEP);      // lost this frame : the emit decides first
+        rn.lost = 1; CHECK_EQ(focus_prune_verdict(rn), FP_DROP_RUNE_REPLACED);
+    }
+
+    SECTION("focus swap : a rune a newer rune pushed out is not a loss ; one that ran out with a slot free is");
+    {   // Reported 2026-09-14 on PLD/RUN and RUN : every rune changed raised a permanent red OUT.
+        // Mutations : `runesUp >= cap` -> `runesUp > 0` ; the cap's `mjob == RUN ? mlvl` branch dropped ; `st <= 530` -> `st < 530`.
+        CHECK_EQ(focus_rune_cap(22, 99, 7, 49), 3);                  // RUN main
+        CHECK_EQ(focus_rune_cap(7, 99, 22, 49), 2);                  // RUN sub under PLD
+        CHECK_EQ(focus_rune_cap(7, 99, 22, 59), 2);                  // Master Level sub : still 2
+        CHECK_EQ(focus_rune_cap(22, 40, 7, 20), 2);                  // level-synced RUN main
+        CHECK_EQ(focus_rune_cap(22, 4, 7, 2), 0);
+        CHECK_EQ(focus_rune_cap(7, 99, 3, 49), 0);                   // no RUN at all
+        CHECK(focus_rune_status(523) && focus_rune_status(530) && !focus_rune_status(522) && !focus_rune_status(531));
+        CHECK(focus_rune_replaced(true, 523, 2, 2, 0));              // PLD/RUN, two runes still on you : Ignis was pushed out
+        CHECK(!focus_rune_replaced(true, 523, 2, 1, 0));             // a slot is free : it expired, keep the OUT
+        CHECK(focus_rune_replaced(true, 523, 2, 1, 1));              // ...unless a NEWER lost rune is the one that slot speaks for
+        CHECK(!focus_rune_replaced(true, 523, 2, 0, 1));             // Ignis x2 both run out : the older is still one of the last two
+        CHECK(focus_rune_replaced(true, 523, 2, 0, 2));
+        CHECK(!focus_rune_replaced(true, 523, 3, 2, 0));             // RUN main, third slot free : keep the OUT
+        CHECK(focus_rune_replaced(true, 530, 3, 3, 0));
+        CHECK(!focus_rune_replaced(true, 523, 0, 3, 5));             // cap unknown (not a RUN) : never silence
+        CHECK(!focus_rune_replaced(false, 523, 2, 2, 0));            // an ally entry is never a rune of yours
+        CHECK(!focus_rune_replaced(true, 33, 2, 2, 0));              // Haste is not a rune
+    }
+
+    SECTION("focus rune copies : each rune placed is its own entry, matched by its expiry ; newer losses counted once");
+    {   // Reported 2026-09-14 : two Ignis ran out and ONE Ignis OUT was drawn. Mutations : focus_rune_match without the
+        // `seen` test (both copies claim the same entry) ; `d == 0 && i > q` -> `d >= 0`.
+        struct M { unsigned char self, seen; unsigned short status; unsigned rank; };
+        M fm[] = { { 1, 0, 523, 1000 }, { 1, 0, 523, 1600 }, { 1, 0, 525, 2200 }, { 0, 0, 523, 1600 } };
+        CHECK_EQ(focus_rune_match(fm, 4, 523, 1000), 0);
+        CHECK_EQ(focus_rune_match(fm, 4, 523, 1601), 1);             // a tick of drift still finds its own copy
+        CHECK_EQ(focus_rune_match(fm, 4, 523, 5000), -1);            // a new placement
+        fm[1].seen = 1; CHECK_EQ(focus_rune_match(fm, 4, 523, 1601), -1);   // already claimed this frame : the other copy is too far
+        fm[1].seen = 0;
+        bool lost[] = { true, true, false, true };
+        CHECK_EQ(focus_rune_newer_lost(fm, lost, 4, 0), 1);          // the later Ignis ; the ally entry never counts
+        CHECK_EQ(focus_rune_newer_lost(fm, lost, 4, 1), 0);
+        M tie[] = { { 1, 0, 523, 700 }, { 1, 0, 524, 700 } }; bool both[] = { true, true };
+        CHECK_EQ(focus_rune_newer_lost(tie, both, 2, 0) + focus_rune_newer_lost(tie, both, 2, 1), 1);
     }
 
     SECTION("self timer group : two songs on one status fold by SPELL, never by the first status match");

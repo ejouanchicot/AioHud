@@ -985,7 +985,9 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                 // Keyed by SPELL as well as status: two Marches are two songs on one status id, and holding a
                 // single entry for them meant the second was watched by nobody at all.
                 const unsigned short selfSp = (unsigned short)party().self_buff_spell_ranked((unsigned short)st, bt2[i].expiry, i);
-                int s = -1; for (int q = 0; q < fmN; ++q) if (fm[q].self && fm[q].status == st && fm[q].spell == selfSp) { s = q; break; }
+                int s = -1;
+                if (focus_rune_status(st)) s = focus_rune_match(fm, fmN, st, bt2[i].expiry);   // one entry per rune PLACED : two Ignis are two (focus_rules.h section 10)
+                else for (int q = 0; q < fmN; ++q) if (fm[q].self && fm[q].status == st && fm[q].spell == selfSp) { s = q; break; }
                 if (s < 0 && fmN < FOCUS_MAX) { s = fmN++; fm[s].spell = selfSp; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].aoe = 0; /* there is one of you : a self alert never groups */ fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = model_now_ms(); fm[s].name[0] = 0; }
                 if (s >= 0) { fm[s].seen = 1; fm[s].spell = selfSp; fm[s].rank = bt2[i].expiry; }   // the spell/tier is part of the key now, so this only re-affirms it ; rank refreshed every frame
               } }
@@ -1098,11 +1100,20 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
             };
             auto songReplaced = [&](const FocusMem& e) -> bool { return focus_song_replaced(SwapSrc{ e, ob, no, nowMs }); };
             auto geoReplaced = [&](const FocusMem& e) -> bool { return focus_geo_replaced(SwapSrc{ e, ob, no, nowMs }); };
+            // RUNES : model/focus_rules.h section 10. The runes on you now against the slots your RUN level gives.
+            const int runeCap = f.game ? focus_rune_cap(f.game->me.mjob, f.game->me.mlvl, f.game->me.sjob, f.game->me.slvl) : 0;
+            int runesUp = 0;
+            if (f.game && f.game->buffsOk) for (int i = 0; i < f.game->nbuff; ++i) if (focus_rune_status(f.game->buffs[i])) ++runesUp;
             // Settled BEFORE the compaction below, because focusHas() counts an entry's siblings and the compaction
             // leaves stale copies behind it -- counting mid-pass would see the same sibling twice and call a live
             // song lost. The verdict travels with its entry through the pass, and the emit reads the same one.
             static bool fmHas[FOCUS_MAX];   // ONE PER MONITOR ENTRY. It stayed [24] when FOCUS_MAX went to 64 (2026-09-11) : past 24 watched buffs every frame wrote beyond it (tests/t_timers.cpp, caught by the address sanitizer)
             for (int q = 0; q < fmN; ++q) fmHas[q] = focusHas(fm[q]);
+            // ...and the rune count travels with it, for the same reason (focus_rules.h section 10).
+            static int fmRuneNewer[FOCUS_MAX];
+            { bool lost[FOCUS_MAX];
+              for (int q = 0; q < fmN; ++q) lost[q] = fm[q].self ? (f.game && f.game->buffsOk && !fmHas[q]) : !fmHas[q];
+              for (int q = 0; q < fmN; ++q) fmRuneNewer[q] = focus_rune_newer_lost(fm, lost, fmN, q); }
 #ifdef AIOHUD_PROBES
             g_whyFmN = 0;
             for (int q = 0; q < fmN && g_whyFmN < 64; ++q) { WhyFm& w = g_whyFm[g_whyFmN++];
@@ -1138,10 +1149,13 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                 bool unrecoverable() const { return (*unrec)(e); }
                 bool replaced() const { return (*repl)(e); }
                 bool geoReplaced() const { return (*geo)(e); }
+                int rcap; int rup;
+                int rnew;
+                bool runeReplaced() const { return focus_rune_replaced(e.self != 0, e.status, rcap, rup, rnew); }
             };
             int w = 0;
             for (int q = 0; q < fmN; ++q) {
-                const FocusPrune pv = focus_prune_verdict(PruneSrc{ fm[q], fmHas[q], zoneGrace, nowMs, C, &listReady, &songUnrecoverable, &songReplaced, &geoReplaced });
+                const FocusPrune pv = focus_prune_verdict(PruneSrc{ fm[q], fmHas[q], zoneGrace, nowMs, C, &listReady, &songUnrecoverable, &songReplaced, &geoReplaced, runeCap, runesUp, fmRuneNewer[q] });
                 if (pv == FP_DROP_GONE_OR_OFF && focus_trace_live()) {
                     const bool live = fm[q].self ? true : (zoneGrace || party().party_order(fm[q].target) <= 5);
                     const bool fkOn = C.tm_buff_off(UiConfig::TM_KEY_FOCUS | fm[q].status);
@@ -1153,7 +1167,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                                          (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].target);
                 if (focus_prune_drops(pv)) continue;
                 if (pv == FP_KEEP_SURVIVED_ZONE) fm[q].zoneCheck = 0;
-                if (w != q) { fm[w] = fm[q]; fmHas[w] = fmHas[q]; } ++w;
+                if (w != q) { fm[w] = fm[q]; fmHas[w] = fmHas[q]; fmRuneNewer[w] = fmRuneNewer[q]; } ++w;
             }
             fmN = w;
             // //aio oblog stage 4 : the FOCUS monitor. It decides "OUT" from a SEPARATE input (0x076 presence of the
@@ -1188,13 +1202,16 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                 bool unrecoverable() const { return (*unrec)(e); }
                 bool replaced() const { return (*repl)(e); }
                 bool geoReplaced() const { return (*geo)(e); }
+                int rcap; int rup;
+                int rnew;
+                bool runeReplaced() const { return focus_rune_replaced(e.self != 0, e.status, rcap, rup, rnew); }
             };
             for (int q = 0; q < fmN && nb < 50; ++q) {                                         // emit a RED row for each MISSING focus buff (self or ally)
                 // The same verdict the prune used -- this used to be a third, presence-only copy of the rule, which
                 // is how one of two same-status songs could be dropped by one stage and reported up by the other.
                 // meHas() fails open on a FAILED read; that job now belongs to listReady() below, which gates the alert.
                 const bool has = fm[q].self ? (!f.game || !f.game->buffsOk || fmHas[q]) : fmHas[q];
-                const FocusAlert av = focus_alert_verdict(AlertSrc{ fm[q], has, zoneGrace, nowMs, C, songCap, &listReady, &songUnrecoverable, &songReplaced, &geoReplaced });
+                const FocusAlert av = focus_alert_verdict(AlertSrc{ fm[q], has, zoneGrace, nowMs, C, songCap, &listReady, &songUnrecoverable, &songReplaced, &geoReplaced, runeCap, runesUp, fmRuneNewer[q] });
                 if (av == FA_CATEGORY_OFF) { fm[q].lostMs = 0; continue; }
                 if (g_obLog) {
                     const char* fen = fm[q].isAbil ? abil_name_by_id(fm[q].spell) : (spell_info(fm[q].spell) ? spell_info(fm[q].spell)->en : 0);
@@ -1204,6 +1221,11 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                           fm[q].lostMs ? (int)(nowMs - fm[q].lostMs) : -1,
                           songReplaced(fm[q]) ? 1 : 0, songUnrecoverable(fm[q]) ? 1 : 0,
                           geoReplaced(fm[q]) ? 1 : 0, (unsigned)party().self_geo().status);
+                    if (focus_rune_status(fm[q].status))
+                        OBLOG("    RUNE st=%u rank=%u runesUp=%d cap=%d newerLost=%d (jobs %d/%d lv %d/%d) -> runeReplaced=%d",
+                              (unsigned)fm[q].status, fm[q].rank, runesUp, runeCap, fmRuneNewer[q], f.game ? f.game->me.mjob : -1, f.game ? f.game->me.sjob : -1,
+                              f.game ? f.game->me.mlvl : -1, f.game ? f.game->me.slvl : -1,
+                              focus_rune_replaced(fm[q].self != 0, fm[q].status, runeCap, runesUp, fmRuneNewer[q]) ? 1 : 0);
                 }
                 if (focus_trace_live()) {
                     // nbuff is the crux : meHas() FAILS OPEN (returns true for everything) when the live buff list is
@@ -1237,6 +1259,9 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                         windower::debug::log("GEOOUT st=%u '%s' spell=%u self=%d SUPPRESSED (carrying st=%u now) -> no OUT (Indi- deliberately replaced)",
                                              (unsigned)fm[q].status, buff_status_name(fm[q].status), (unsigned)fm[q].spell,
                                              fm[q].self, (unsigned)party().self_geo().status);
+                    if (av == FA_RUNE_REPLACED)
+                        windower::debug::log("RUNEOUT st=%u '%s' SUPPRESSED : %d rune(s) on you + %d newer lost >= %d slot(s) -> no OUT (not among the runes placed last)",
+                                             (unsigned)fm[q].status, buff_status_name(fm[q].status), runesUp, fmRuneNewer[q], runeCap);
                 }
                 if (av != FA_ALERT) continue;
                 if (nAlert < FOCUS_MAX) alertQ[nAlert++] = q;   // decided : drawn below, once the whole picture is known

@@ -349,6 +349,65 @@ void test_timers() {
         if (alerts != 1) dump(r, "self Haste lost, empty list");
     }
 
+    SECTION("timers : PLD/RUN changing runes -- only the two runes placed last may go OUT");
+    {   // Reported 2026-09-14 : every rune changed raised a permanent red OUT. The game holds 2 runes on a RUN sub and
+        // drops the OLDEST for a new one. Mutation : the prune/alert without `runeReplaced()` (focus_rules.h section 10).
+        const unsigned short IGNIS = 523, FLABRA = 525, TENEBRAE = 530;
+        world({ { ME, "Tetsouo", 7, false }, { KAO, "Kaories", 17, false } });
+        config_defaults();
+        self_jobs(7, 99, 22, 49);
+        settle();
+        focus_on(IGNIS); focus_on(FLABRA); focus_on(TENEBRAE);
+        auto outs = [](const TimersRows& r, unsigned short st) { int n = 0; for (int i = 0; i < r.nb; ++i) if (r.bufs[i].src == 6 && r.bufs[i].icon == st) ++n; return n; };
+        TimersRows r;
+        auto runes = [&](std::initializer_list<unsigned short> on) {
+            Packet p = pkt_self_timers({});                               // the 0x063 timers and the memory list, together
+            if (on.size() == 1) p = pkt_self_timers({ { on.begin()[0], 300 } });
+            if (on.size() == 2) p = pkt_self_timers({ { on.begin()[0], 300 }, { on.begin()[1], 300 } });
+            deliver(p); self_buffs(on);
+            for (int f = 0; f < 3; ++f) { advance_ms(16); step(r); } };
+        runes({ IGNIS, FLABRA });
+        runes({ FLABRA, TENEBRAE });                                      // Ignis pushed out by Tenebrae : a swap, not a loss
+        CHECK_EQ(outs(r, IGNIS), 0);
+        if (outs(r, IGNIS)) dump(r, "PLD/RUN Ignis pushed out by Tenebrae");
+        runes({ TENEBRAE });                                              // Flabra ran out with a slot free : that is a loss
+        CHECK_EQ(outs(r, FLABRA), 1);
+        CHECK_EQ(outs(r, IGNIS), 0);                                      // the Ignis swapped out earlier stays forgotten
+        runes({ TENEBRAE, IGNIS });                                       // a NEW rune fills the slot Flabra wanted : its OUT goes
+        CHECK_EQ(outs(r, FLABRA), 0);
+        runes({});                                                        // everything consumed (Lunge) : the last two placed go OUT
+        CHECK_EQ(outs(r, TENEBRAE), 1);
+        CHECK_EQ(outs(r, IGNIS), 1);
+        CHECK_EQ(outs(r, FLABRA), 0);
+    }
+
+    SECTION("timers : PLD/RUN, two Ignis run out -- two Ignis OUT, and a new rune quiets the older one");
+    {   // Reported 2026-09-14 : "les deux ignis il reste que un avec out au lieu des deux". Each rune placed is watched on
+        // its own (matched by its expiry). Mutation : the seeding by status (`fm[q].spell == selfSp`) for runes too.
+        const unsigned short IGNIS = 523, FLABRA = 525;
+        world({ { ME, "Tetsouo", 7, false }, { KAO, "Kaories", 17, false } });
+        config_defaults();
+        self_jobs(7, 99, 22, 49);
+        settle();
+        focus_on(IGNIS); focus_on(FLABRA);
+        auto outs = [](const TimersRows& r, unsigned short st) { int n = 0; for (int i = 0; i < r.nb; ++i) if (r.bufs[i].src == 6 && r.bufs[i].icon == st) ++n; return n; };
+        TimersRows r;
+        auto frames = [&]() { for (int f = 0; f < 3; ++f) { advance_ms(16); step(r); } };
+        deliver(pkt_self_timers({ { IGNIS, 300 } })); self_buffs({ IGNIS }); frames();
+        advance_ms(6000);                                                  // the second Ignis, six seconds later
+        deliver(pkt_self_timers({ { IGNIS, 294 }, { IGNIS, 300 } })); self_buffs({ IGNIS, IGNIS }); frames();
+        CHECK_EQ(outs(r, IGNIS), 0);
+        deliver(pkt_self_timers({ { IGNIS, 300 } })); self_buffs({ IGNIS }); frames();   // the first runs out, a slot is free
+        CHECK_EQ(outs(r, IGNIS), 1);
+        deliver(pkt_self_timers({})); self_buffs({}); frames();            // the second too
+        CHECK_EQ(outs(r, IGNIS), 2);
+        if (outs(r, IGNIS) != 2) dump(r, "PLD/RUN two Ignis run out");
+        deliver(pkt_self_timers({ { FLABRA, 300 } })); self_buffs({ FLABRA }); frames();   // a new rune takes one slot
+        CHECK_EQ(outs(r, IGNIS), 1);                                       // the last two placed : the newer Ignis and Flabra
+        deliver(pkt_self_timers({ { FLABRA, 294 }, { FLABRA, 300 } })); self_buffs({ FLABRA, FLABRA }); frames();
+        CHECK_EQ(outs(r, IGNIS), 0);
+    }
+
     SECTION("timers : a song on the party is one row ; the member a re-sing missed is named on the old timer");
     {   // The fresh / laggard split. A song copy on an ally is FRESH only while it tracks your CURRENT cast ; one a
         // re-sing missed keeps the older, shorter timer and must be listed by name, never folded into the new group.
