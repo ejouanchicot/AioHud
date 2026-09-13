@@ -2115,7 +2115,7 @@ void PartyState::prune_other_buffs_worn() {
             windower::debug::log("  0x076  %-16s id=%08X  n=%d : %s", m[mi].name, m[mi].id, bs->n, ln);
         }
     }
-    bool drop[32]; const char* why[32];
+    bool drop[OB_MAX]; const char* why[OB_MAX];   // ONE PER TABLE ROW. They stayed [32] when the table grew to 128 (42212c2) : past 32 ally buffs every frame wrote past both, on the stack (tests/t_timers.cpp, caught by the address sanitizer)
     for (int k = 0; k < otherBuffN_; ++k) { drop[k] = false; why[k] = "kept"; }
     for (int k = 0; k < otherBuffN_; ++k) {
         OtherBuff& ob = otherBuffs_[k];

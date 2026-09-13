@@ -1108,8 +1108,8 @@ static void aio_command_dispatch(const char* cmd)
               for (size_t i = 0; i < ln; ++i) { char c = a1[i]; if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
                   if (c != "list"[i]) { wantList = false; break; } } } }
         if (wantList) {
-            char rows[24][64];
-            const int n = aio::timers_focus_list(rows, 24);
+            char rows[aio::TM_FOCUS_MAX][64];
+            const int n = aio::timers_focus_list(rows, aio::TM_FOCUS_MAX);
             if (!n) { _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cno watched buff", "%c%c[Timers] %c%caucun buff suivi"), 0x1F, YEL, 0x1F, GRAY); m[sizeof(m)-1] = 0; chat(m); return; }
             _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cwatched buffs", "%c%c[Timers] %c%cbuffs suivis"), 0x1F, YEL, 0x1F, GRN); m[sizeof(m)-1] = 0; chat(m);
             for (int i = 0; i < n; ++i) { _snprintf(m, sizeof(m), "%c%c  %s", 0x1F, GRN, rows[i]); m[sizeof(m)-1] = 0; chat(m); }

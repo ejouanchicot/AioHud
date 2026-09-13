@@ -69,7 +69,7 @@ struct FocusMem { unsigned target; unsigned short status, spell; unsigned char i
 // three consecutive checks -- and a refused entry is silent by nature: the buff is simply never watched, so its
 // OUT alert cannot happen and nothing says why.
 // 64 covers six people at five songs plus a full set of other focus buffs, and the array is a few kilobytes.
-static const int FOCUS_MAX = 64;
+static const int FOCUS_MAX = TM_FOCUS_MAX;   // timers_build.h
 static FocusMem fm[FOCUS_MAX];
 // HIGH-WATER MARKS, because the watcher SAMPLES. Both tables fill during a rotation change and drain again
 // within a second or two -- and while full they evict rows, which is what scrambles the display. A check that
@@ -112,7 +112,7 @@ static unsigned fm_cast_ref(const FocusMem& e) {
     return t;
 }
 static unsigned char fm_free_tag() {   // lowest number not in use : the list stays 1,2,3... as entries come and go
-    for (unsigned char t = 1; t <= 24; ++t) {
+    for (unsigned char t = 1; t <= FOCUS_MAX; ++t) {   // one number per entry the monitor can hold : it stopped at 24 when the monitor grew to 64, so entries 25+ drew no number and no //aio out could name them
         bool used = false;
         for (int q = 0; q < fmN; ++q) if (fm[q].tag == t) { used = true; break; }
         if (!used) return t;
@@ -1199,7 +1199,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
             // Settled BEFORE the compaction below, because focusHas() counts an entry's siblings and the compaction
             // leaves stale copies behind it -- counting mid-pass would see the same sibling twice and call a live
             // song lost. The verdict travels with its entry through the pass, and the emit reads the same one.
-            static bool fmHas[24];
+            static bool fmHas[FOCUS_MAX];   // ONE PER MONITOR ENTRY. It stayed [24] when FOCUS_MAX went to 64 (2026-09-11) : past 24 watched buffs every frame wrote beyond it (tests/t_timers.cpp, caught by the address sanitizer)
             for (int q = 0; q < fmN; ++q) fmHas[q] = focusHas(fm[q]);
 #ifdef AIOHUD_PROBES
             g_whyFmN = 0;
@@ -1634,7 +1634,7 @@ static int timers_checks(CheckFail* out, int cap) {
     #define FAIL(ID, SEV, ...) do { if (n < cap) { lstrcpynA(out[n].id, ID, sizeof(out[n].id)); out[n].sev = (SEV); \
         _snprintf(out[n].detail, sizeof(out[n].detail), __VA_ARGS__); out[n].detail[sizeof(out[n].detail)-1] = 0; ++n; } } while (0)
 
-    // 1. The focus monitor is full. Structural: 24 is the array, and past it new entries are refused with no
+    // 1. The focus monitor is full. Structural: FOCUS_MAX is the array, and past it new entries are refused with no
     //    sign -- and since the SAME list drives your OUT alerts, they stop appearing for anything new.
     if (fmN > g_fmPeak) g_fmPeak = fmN;
     if (g_fmPeak >= FOCUS_MAX)

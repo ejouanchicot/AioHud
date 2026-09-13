@@ -50,6 +50,10 @@ struct TimersRows {
 bool timers_build_rows(const GameState* game, bool preview, bool editing, TimersRows& out);
 
 // ---- the FOCUS monitor, as people reach it ----
+// How many buffs it can watch at once -- and therefore how many numbers //aio out can take and how many lines
+// //aio out list can print. ONE constant, because the rise from 24 to 64 (2026-09-11) replaced the literal where it
+// sized the monitor and missed three other places that meant the same thing (tests/t_timers.cpp).
+static const int TM_FOCUS_MAX = 64;
 int  timers_focus_list(char out[][64], int max);               // //aio out list
 int  timers_focus_forget(const char* a, const char* b);         // //aio out <n|name|spell|all|alerts>
 int  timers_focus_restore(const char* a, const char* b);        // //aio in
