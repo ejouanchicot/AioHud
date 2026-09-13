@@ -642,7 +642,25 @@ static const ChangeLine CL_81[] = {
       "*Les icones de statut suivent les icones que tu as vraiment.* Si tu utilises un pack d'icones -- XIPivot, ou des fichiers copies par-dessus ceux du jeu -- le HUD lit la planche d'icones du jeu et affiche exactement ce que ton jeu affiche, sans rien a regler. Sans pack, il utilise sa planche integree, renouvelee dans cette version. Et *aioicons.ps1*, a cote de ton dossier de donnees AioHud, extrait ces icones en PNG ou installe les tiennes." },
 };
 
+static const ChangeLine CL_88[] = {
+    { "*Gear icons are right again after the 10 September game update.* The update enlarged every item record in the game's icon files, and the plugin kept reading them at the old size -- so an icon could be another item's, or missing (Quicksilver was the first report). Icons are read at the new size, and a wrong icon already saved on your machine repairs itself.",
+      "*Les icones d'equipement sont de nouveau justes apres la mise a jour du jeu du 10 septembre.* La mise a jour a agrandi chaque fiche d'objet dans les fichiers d'icones du jeu, et le plugin les lisait encore a l'ancienne taille -- une icone pouvait etre celle d'un autre objet, ou manquer (Quicksilver a ete le premier signalement). Les icones sont lues a la nouvelle taille, et une icone fausse deja enregistree sur ta machine se repare d'elle-meme." },
+    { "*The Treasure Pool box shows what is already in the pool.* Items that dropped before the plugin loaded -- after an update, a reload, or a missed packet -- stayed invisible until they expired. The box now takes them from the game's own pool, with their remaining time, the highest lot and who holds it.",
+      "*La boite Treasure Pool affiche ce qui est deja dans le pool.* Les objets tombes avant le chargement du plugin -- apres une mise a jour, un rechargement ou un paquet manque -- restaient invisibles jusqu'a leur expiration. La boite les reprend maintenant du pool du jeu lui-meme, avec leur temps restant, le meilleur lot et qui le detient." },
+    { "*PointWatch keeps your Master Level when you change zone.* After every zone it fell back to Master Level 0 -- and switched to the experience row -- for as long as it took the game to send the value again, often minutes.",
+      "*PointWatch garde ton Master Level quand tu changes de zone.* Apres chaque zone il retombait a Master Level 0 -- et passait sur la ligne d'experience -- le temps que le jeu renvoie la valeur, souvent plusieurs minutes." },
+    { "*Skillchains : the fallback to your battle target is your party's real battle target.* When your cursor is not on a mob, the box looks at <bt>. What it read was in fact the last thing your cursor was on. It now works <bt> out the way the game does : the mob claimed by you or your party.",
+      "*Skillchains : le repli sur ta cible de combat est la vraie cible de combat du groupe.* Quand ton curseur n'est pas sur un monstre, la boite regarde <bt>. Ce qu'elle lisait etait en fait la derniere chose sous ton curseur. <bt> est maintenant calcule comme le fait le jeu : le monstre reclame par toi ou ton groupe." },
+    { "*Timers : buff durations measured against the game, and corrected where they were wrong.* Composure on your own enhancing spells is now counted. An Indi- aura counts its \"Indi. eff. dur. +%\" gear. An Entrust stays recognised for its full minute instead of 15 seconds. And a buff someone else cast on you is no longer credited to you.",
+      "*Timers : durees de buffs mesurees contre le jeu, et corrigees la ou elles etaient fausses.* Composure sur tes propres sorts d'amelioration est maintenant pris en compte. Une aura Indi- compte l'equipement \"Indi. eff. dur. +%\". Un Entrust reste reconnu pendant toute sa minute au lieu de 15 secondes. Et un buff lance sur toi par quelqu'un d'autre ne t'est plus attribue." },
+    { "Stability : with more than 24 buffs watched in Timers (an RDM keeping five buffs on five allies), or many buffs on the party, two internal tables were written past their end every frame. Fixed.",
+      "Stabilite : avec plus de 24 buffs suivis dans Timers (un RDM qui garde cinq buffs sur cinq allies), ou beaucoup de buffs sur le groupe, deux tables internes etaient ecrites au-dela de leur fin a chaque image. Corrige." },
+    { "//aio doctor now also reports a minimap that cannot load and gear icons that do not match the game's files, instead of only writing it to the log.",
+      "//aio doctor signale aussi une minimap qui ne se charge pas et des icones d'equipement qui ne correspondent pas aux fichiers du jeu, au lieu de l'ecrire seulement dans le journal." },
+};
+
 static const Release RELEASES[] = {
+    { "1.0.88", CL_88, (int)(sizeof(CL_88) / sizeof(CL_88[0])) },
     { "1.0.87", CL_87, (int)(sizeof(CL_87) / sizeof(CL_87[0])) },
     { "1.0.86", CL_86, (int)(sizeof(CL_86) / sizeof(CL_86[0])) },
     { "1.0.85", CL_85, (int)(sizeof(CL_85) / sizeof(CL_85[0])) },
