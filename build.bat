@@ -21,6 +21,14 @@ set "PROBES="
 set "PROBEDEF="
 if exist "%ROOT%src\plugin\aiohud_probes.cpp" ( set "PROBES=%ROOT%src\plugin\aiohud_probes.cpp" & set "PROBEDEF=/DAIOHUD_PROBES" )
 
+REM Dev-only TOOLS (session recorder, whole-model dump for the in-game bridge) : compiled in ONLY when the local dev\
+REM tree exists -- it is not in the public repository, so CI and every release build without them. Set
+REM AIOHUD_NO_DEVTOOLS=1 to build the release shape on a dev machine.
+set "DEVSRC="
+set "DEVDEF="
+if not defined AIOHUD_NO_DEVTOOLS if exist "%ROOT%dev\src\aiohud_devtools.cpp" set DEVSRC="%ROOT%dev\src\aiohud_devtools.cpp" "%ROOT%dev\src\tape_recorder.cpp" "%ROOT%dev\src\igstate.cpp"
+if defined DEVSRC set DEVDEF=/DAIOHUD_DEVTOOLS /I"%ROOT%dev\src"
+
 if not exist "%ROOT%build" mkdir "%ROOT%build"
 
 REM --- version resource : parse AIOHUD_VERSION ("MAJ.MIN.PAT") and compile aiohud.rc so the DLL carries a REAL
@@ -62,12 +70,12 @@ REM     which ARE the immediate-mode idiom : each is confined to one small per-b
 REM Those 20 stay suppressed deliberately. Renaming them buys no correctness and carries a real hazard: if one
 REM use inside the block is missed, it silently resolves to the OUTER variable and still compiles -- the
 REM compiler cannot catch it. C4457 (shadows a PARAMETER) is the dangerous half and is kept ON.
-cl /nologo /LD /O2 /MT /EHsc- /utf-8 /W4 /WX /permissive- /std:c++17 /wd4456 /D_CRT_SECURE_NO_WARNINGS /DAIOHUD_VERSION=\"%AIOHUD_VERSION%\" %PROBEDEF% /I"%ROOT%include" /I"%ROOT%src" ^
+cl /nologo /LD /O2 /MT /EHsc- /utf-8 /W4 /WX /permissive- /std:c++17 /wd4456 /D_CRT_SECURE_NO_WARNINGS /DAIOHUD_VERSION=\"%AIOHUD_VERSION%\" %PROBEDEF% %DEVDEF% /I"%ROOT%include" /I"%ROOT%src" ^
    "%ROOT%src\gfx\noise.cpp" "%ROOT%src\gfx\draw.cpp" "%ROOT%src\gfx\corner_mask.cpp" "%ROOT%src\gfx\texture.cpp" "%ROOT%src\gfx\font.cpp" "%ROOT%src\gfx\window.cpp" ^
-   "%ROOT%src\model\layout.cpp" "%ROOT%src\model\party_state.cpp" "%ROOT%src\model\party_state_zonetracker.cpp" "%ROOT%src\model\party_state_pointwatch.cpp" "%ROOT%src\model\party_state_hate.cpp" "%ROOT%src\model\party_state_skillchain.cpp" "%ROOT%src\model\party_state_roster.cpp" "%ROOT%src\model\party_state_empypop.cpp" "%ROOT%src\model\game_mem.cpp" "%ROOT%src\model\ffximain_rva.cpp" "%ROOT%src\model\luacore_root.cpp" "%ROOT%src\model\sentinel.cpp" "%ROOT%src\model\selftest.cpp" "%ROOT%src\model\flipwatch.cpp" "%ROOT%src\model\capwatch.cpp" "%ROOT%src\model\watchdogs.cpp" "%ROOT%src\model\decisions.cpp" "%ROOT%src\model\map_dat.cpp" "%ROOT%src\model\icon_dat.cpp" "%ROOT%src\model\zones.cpp" "%ROOT%src\model\vana_clock.cpp" "%ROOT%src\model\paths.cpp" "%ROOT%src\model\ui_config.cpp" "%ROOT%src\model\skillchain.cpp" "%ROOT%src\model\resistances.cpp" ^
+   "%ROOT%src\model\layout.cpp" "%ROOT%src\model\model_clock.cpp" "%ROOT%src\model\model_io.cpp" "%ROOT%src\model\party_state.cpp" "%ROOT%src\model\party_state_zonetracker.cpp" "%ROOT%src\model\party_state_pointwatch.cpp" "%ROOT%src\model\party_state_hate.cpp" "%ROOT%src\model\party_state_skillchain.cpp" "%ROOT%src\model\party_state_roster.cpp" "%ROOT%src\model\party_state_empypop.cpp" "%ROOT%src\model\game_mem.cpp" "%ROOT%src\model\ffximain_rva.cpp" "%ROOT%src\model\luacore_root.cpp" "%ROOT%src\model\sentinel.cpp" "%ROOT%src\model\selftest.cpp" "%ROOT%src\model\flipwatch.cpp" "%ROOT%src\model\capwatch.cpp" "%ROOT%src\model\watchdogs.cpp" "%ROOT%src\model\decisions.cpp" "%ROOT%src\model\map_dat.cpp" "%ROOT%src\model\icon_dat.cpp" "%ROOT%src\model\zones.cpp" "%ROOT%src\model\vana_clock.cpp" "%ROOT%src\model\paths.cpp" "%ROOT%src\model\ui_config.cpp" "%ROOT%src\model\skillchain.cpp" "%ROOT%src\model\resistances.cpp" ^
    "%ROOT%src\ui\buff_atlas.cpp" "%ROOT%src\ui\palette.cpp" "%ROOT%src\ui\edit_box.cpp" "%ROOT%src\ui\liquid_bars.cpp" "%ROOT%src\ui\player.cpp" "%ROOT%src\ui\gear_canary.cpp" "%ROOT%src\ui\party.cpp" "%ROOT%src\ui\party_gauges.cpp" "%ROOT%src\ui\target.cpp" "%ROOT%src\ui\minimap.cpp" "%ROOT%src\ui\factory.cpp" "%ROOT%src\ui\config_controls.cpp" "%ROOT%src\ui\party_config.cpp" "%ROOT%src\ui\target_config.cpp" "%ROOT%src\ui\player_config.cpp" "%ROOT%src\ui\minimap_config.cpp" "%ROOT%src\ui\ws_config.cpp" "%ROOT%src\ui\sc_config.cpp" "%ROOT%src\ui\tp_config.cpp" "%ROOT%src\ui\hl_config.cpp" "%ROOT%src\ui\pw_config.cpp" "%ROOT%src\ui\grim_config.cpp" "%ROOT%src\ui\zt_config.cpp" "%ROOT%src\ui\tm_config.cpp" "%ROOT%src\ui\ep_config.cpp" "%ROOT%src\ui\box_style.cpp" "%ROOT%src\ui\config_page.cpp" "%ROOT%src\ui\hud.cpp" "%ROOT%src\ui\hud_preview.cpp" ^
    "%ROOT%src\ui\hud_skillchains.cpp" "%ROOT%src\ui\hud_treasure.cpp" "%ROOT%src\ui\hud_hatelist.cpp" "%ROOT%src\ui\hud_pointwatch.cpp" "%ROOT%src\ui\hud_grimoire.cpp" "%ROOT%src\ui\hud_zonetracker.cpp" "%ROOT%src\ui\hud_empypop.cpp" "%ROOT%src\ui\hud_debuffs.cpp" "%ROOT%src\ui\hud_timers.cpp" ^
-   "%ROOT%src\plugin\aiohud.cpp" %PROBES% %AIORES% ^
+   "%ROOT%src\plugin\aiohud.cpp" %PROBES% %DEVSRC% %AIORES% ^
    /Fo"%ROOT%build\\" /Fe"%ROOT%build\AioHud.dll" ^
    /link /DEF:"%ROOT%src\plugin\aiohud.def" user32.lib kernel32.lib gdi32.lib /OUT:"%ROOT%build\AioHud.dll"
 

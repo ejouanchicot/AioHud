@@ -8,7 +8,10 @@
 #include "ui/party.h"
 #include "ui/target.h"
 #include "ui/minimap.h"
-#include "ui/gear_canary.h"  // the gear-icon canary : ticks every frame, reports to the harness and to doctor
+#include "ui/gear_canary.h"
+#ifdef AIOHUD_DEVTOOLS
+#include "aiohud_devtools.h"   // dev-only tools (dev/src, never in a release)
+#endif  // the gear-icon canary : ticks every frame, reports to the harness and to doctor
 #include "ui/buff_atlas.h"   // buff_atlas_forget / buff_atlas_dispose : the ONE owner of the shared status-icon atlas
 #include "model/layout.h"
 #include "model/game_mem.h"
@@ -17,6 +20,7 @@
 #include "model/sentinel.h"       // //aio doctor : the packet-vs-memory cross-checks
 #include "model/gamestate.h"
 #include "model/party_state.h"
+#include "model/model_clock.h"   // the per-frame upkeep is one model event
 #include "model/zones.h"   // zone_name -> Zone Tracker (Dynamis/Abyssea) detection
 #include "model/ui_config.h"
 #include "windower_debug.h"
@@ -305,26 +309,25 @@ void Hud::render(u32 dev) {
     else ++notReadyFrames_;
     const bool worldReady = ready || (everInGame_ && !zoning && notReadyFrames_ <= 5);
 
-    // the party ROSTER (party + alliance, member-array slots 0..17) is the one big table ->
-    // also refreshed once per frame, into the party() singleton. Mirrors XivParty's per-tick
-    // get_party(); a freshly-summoned trust / new alliance member appears at once.
-    party().load_from_memory();
-    // Ally-buff upkeep : early wear-off (dispel / overwrite / death) from the member's 0x076 icons, the zone-in
-    // estimate bump, and the zone grace window that in_zone_grace() reports. This used to be called from inside
-    // timers_draw, BELOW its `if (!tmShow) return` and inside `if (tmMine)` -- so hiding the Timers box, or just
-    // unticking Mine, froze all three. Ally buffs then survived on their estimate long after they were gone, and
-    // were written to the cache file ; reopening the box showed buffs dispelled minutes earlier. It is model
-    // upkeep, not drawing, and a draw() must never be the only thing keeping the model honest.
-    party().prune_other_buffs_worn();
-    party().set_target_ctx(state_.target.id, state_.me.id);   // context for the debuff tracker (on_action attributes YOUR debuffs to the current target)
-    if (state_.target.valid && state_.target.spawnType == 0x10) party().note_mob_hp(state_.target.id, state_.target.hpp);   // debuff tracker : drop a mob's debuffs on death / when its server id gets recycled (Apex farming)
-    if (state_.hasSubTarget && state_.subTarget.valid && state_.subTarget.spawnType == 0x10) party().note_mob_hp(state_.subTarget.id, state_.subTarget.hpp);
-    party().refresh_hate();   // hate list : resolve tracked aggro mobs -> display rows (needs the fresh self pos + <t>)
-    party().prune_skillchains();   // skillchains : drop resonance windows whose mob has died (so the box doesn't linger)
-    party().reconcile_treasure();  // treasure pool : prune packet slots the game's own treasure memory says are empty (kills the "box with no pool" phantom)
-    party().zt_set_zone((int)state_.zone, zone_name((int)state_.zone));   // zone tracker : detect Dynamis/Abyssea + reset on change
-    party().ep_refresh(ui_config().epTrack);   // EmpyPop : resolve the tracked NM's pop chain (self-throttled 2 Hz ; rebuilds instantly on a key change)
+    // The model upkeep (roster refresh, ally-buff wear-off, debuff/hate/skillchain/treasure prunes, zone tracker,
+    // EmpyPop) is ONE model event, run by the model itself from what this frame's snapshot says -- the offline replay
+    // drives the same function from a tape (model_frame_upkeep, party_state.cpp).
+    {
+        FrameInput in;
+        in.targetId = state_.target.id; in.meId = state_.me.id;
+        in.targetValid = state_.target.valid ? 1 : 0; in.targetSpawn = state_.target.spawnType; in.targetHpp = state_.target.hpp;
+        in.subPresent = state_.hasSubTarget ? 1 : 0; in.subValid = state_.subTarget.valid ? 1 : 0;
+        in.subId = state_.subTarget.id; in.subSpawn = state_.subTarget.spawnType; in.subHpp = state_.subTarget.hpp;
+        in.zone = state_.zone;
+        lstrcpynA(in.epTrack, ui_config().epTrack, sizeof(in.epTrack));
+        model_event_begin('F');
+        model_frame_upkeep(in);
+        model_event_end();
+    }
     profile_autoload_tick();   // auto-switch profile when the character's Name/Main/Sub changes (login / job change)
+#ifdef AIOHUD_DEVTOOLS
+    devtools::after_upkeep(state_);   // dev-only (dev/src) : the in-game test bridge's whole-model dump, after this frame's poll and upkeep
+#endif
 
     for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->ensure(dev);
 

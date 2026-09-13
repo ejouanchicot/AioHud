@@ -48,9 +48,10 @@ echo "$out" | grep -E "checks|\[tests\]" | tail -2
 
 # ---- 2. THE IN-GAME CROSS-CHECK, when the game can answer -------------------------------------------------
 # The offline suite cannot say whether our memory offsets are still right -- the harness plan named that as the
-# half no test could reach. It can now: Windower reads the same facts by a completely different path, so the
-# bridge (scripts/igtest.py, addon in scripts/aiotest/) confronts the two witnesses. Five checks: zone, self
-# id, main job, roster size, buff count.
+# half no test could reach. On a development machine it can: Windower reads the same facts by a completely
+# different path, and the local dev/ tools (not in this repository) confront the two witnesses. It judges the
+# DEPLOYED plugin, not the staged code : deploy before committing if the commit changes what the game reads.
+# Without dev/ this step is skipped.
 #
 # THE RULES THIS OBEYS, because a hook that blocks for the wrong reason is worse than no hook:
 #   * the game NOT running, or the addon not loaded, is NOT a failure -- it is skipped, out loud.
@@ -58,25 +59,25 @@ echo "$out" | grep -E "checks|\[tests\]" | tail -2
 #     regression no other gate in this project can see.
 #   * a zone transition can make one check disagree for a second, so a failure is retried ONCE before it
 #     blocks. `--no-verify` remains the documented escape.
-if [ -f scripts/igtest.py ]; then
+if [ -f dev/scripts/igtest.py ]; then
     py=$(command -v python 2>/dev/null || command -v py 2>/dev/null)
     if [ -z "$py" ]; then
         echo "pre-commit: python not found -- in-game cross-check skipped"
     else
-        ig=$("$py" scripts/igtest.py crosscheck 2>&1)
+        ig=$("$py" dev/scripts/igtest.py check --quiet 2>&1)
         igrc=$?
         case "$ig" in
             *"no answer for request"*)
                 echo "pre-commit: in-game cross-check SKIPPED (game not running, or //lua load aiotest not done)" ;;
-            *"no AIO DOCTOR block"*|*"no log at"*)
-                echo "pre-commit: in-game cross-check SKIPPED (no doctor block in the log yet)" ;;
+            *"did not answer //aio igstate"*)
+                echo "pre-commit: in-game cross-check SKIPPED (the loaded AioHud predates //aio igstate -- deploy + //load)" ;;
             *)
                 if [ $igrc -ne 0 ]; then
                     sleep 3                              # a zone transition can disagree for a second
-                    ig=$("$py" scripts/igtest.py crosscheck 2>&1)
+                    ig=$("$py" dev/scripts/igtest.py check --quiet 2>&1)
                     igrc=$?
                 fi
-                echo "$ig" | grep -E "^\s+\[(PASS|FAIL)\]|passed," | sed 's/^/           /'
+                echo "$ig" | grep -E "^\s+\[FAIL\]|UNCHECKED|passed,|evidence" | sed 's/^/           /'
                 if [ $igrc -ne 0 ]; then
                     echo ""
                     echo "pre-commit: IN-GAME CROSS-CHECK FAILED -- commit refused."

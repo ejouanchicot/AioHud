@@ -84,3 +84,8 @@ deploy.local.bat
 # Python bytecode from the dev-side test drivers (scripts/igtest.py)
 __pycache__/
 *.pyc
+
+# Development tools (in-game test bridge, session recorder + replayer, their recorded tapes and notes) : local only,
+# never published and never compiled into a release. build.bat / tests.bat / deploy.bat / the pre-commit hook use
+# them when the folder exists and skip them, out loud, when it does not.
+/dev/

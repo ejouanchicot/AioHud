@@ -2,6 +2,7 @@
 // the packet-fed roster (on_dd 0x0DD / on_df 0x0DF + find + save/load disk cache) AND the live
 // memory roster (load_from_memory + read_member / entity_xyz), the job-abbreviation + trust-job
 // tables, and the DEMO/SIM harness (//aio party N). The g_party singleton stays in party_state.cpp.
+#include "model/model_clock.h"   // model_now_ms / model_now_unix : one frozen clock per model event
 #include "model/party_state.h"
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 / pkt_bytes (shared packet readers)
 #include "model/game_mem.h"               // party_ptr / self_party_base / entity_array / read_player / read_member helpers
@@ -14,9 +15,13 @@
 #include <math.h>                          // sqrtf
 #include <stdio.h>                         // _snprintf (per-character cache filename)
 
+#include "model/model_io.h"                    // model_read_u32 / model_copy : the model's game-read seams
+
 namespace aio {
 
-using windower::safe_read;
+// Every raw game read in this file goes through the tape seam (model/model_io.h) : in game it IS safe_read, and a
+// development build can observe the exact values this code saw. Declared here so no call site changes.
+static inline bool safe_read(u32 p, u32* out) { return model_read_u32(p, out); }
 using windower::valid_ptr;
 
 static int g_demoLevel = 0;
@@ -246,8 +251,7 @@ static unsigned char entity_spawn(u32 ent, u32 idx) {
 
 static bool read_member(u32 mb, PMember& pm, u32 ent, float px, float pz, bool selfPosOk) {
     unsigned char b[0x7C];
-    __try { memcpy(b, (const void*)mb, sizeof(b)); }
-    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    if (!model_copy(mb, b, sizeof(b))) return false;        // one guarded block copy, through the tape seam
     const u32 id = *(const u32*)(b + 0x1C);
     if (!id) return false;                                  // empty slot
     pm = PMember();
@@ -346,7 +350,7 @@ void PartyState::load_from_memory() {
     //   (2) a DEAD member is shown as out-of-zone -> print hp/hpp/maxHp/zone so we see which field cleanly
     //       separates "dead in our zone" from "in another zone" (maxHp==0 conflates them).
     if (bcapt_armed()) {
-        static unsigned s_ptLogMs = 0; const unsigned nowMs = GetTickCount();
+        static unsigned s_ptLogMs = 0; const unsigned nowMs = model_now_ms();
         if ((int)(nowMs - s_ptLogMs) >= 1000) { s_ptLogMs = nowMs;
             // debug::log has NO %f (MEASURED : it printed "dist=f") -> everything as scaled INTEGERS. dist*10, pos*10.
             windower::debug::log("PARTY zone=%u self=(%d,%d) n=%d", zone_id(), (int)(px * 10), (int)(pz * 10), n);
@@ -370,9 +374,9 @@ void PartyState::load_from_memory() {
             // tags / buff casters for the whole session. Retry a bounded number of frames, then give up. (rule 10)
             static unsigned char s_cacheTries = 0;
             if (cacheChar_ != me.id) s_cacheTries = 0;   // new character -> fresh retry budget
-            if (load_cache(me.id) || ++s_cacheTries >= 120) { cacheLoaded_ = true; cacheChar_ = me.id; lastCacheSaveMs_ = GetTickCount(); s_cacheTries = 0; }   // rule10-ok: bounded retry (120 polls) before giving up
+            if (load_cache(me.id) || ++s_cacheTries >= 120) { cacheLoaded_ = true; cacheChar_ = me.id; lastCacheSaveMs_ = model_now_ms(); s_cacheTries = 0; }   // rule10-ok: bounded retry (120 polls) before giving up
         }
-        const unsigned nowc = GetTickCount();
+        const unsigned nowc = model_now_ms();
         if ((unsigned)(nowc - lastCacheSaveMs_) > 4000u) { save_cache(me.id); lastCacheSaveMs_ = nowc; }
     }
 
@@ -413,7 +417,7 @@ void PartyState::load_from_memory() {
     // alliance parties -- an alliance spread over several zones is exactly where (1) is expected to show.
     // No %f anywhere: windower::debug::log goes through wvsprintfA, which prints "f" for a float. x10 integers.
     if (dist_armed()) {
-        static unsigned s_distLogMs = 0; const unsigned nowMs = GetTickCount();
+        static unsigned s_distLogMs = 0; const unsigned nowMs = model_now_ms();
         if ((int)(nowMs - s_distLogMs) >= 1000) { s_distLogMs = nowMs;
             u32 pidx = 0; safe_read(base + 0x20, &pidx); pidx &= 0xFFFF;
             float sx = 0.0f, sy = 0.0f, sz = 0.0f;

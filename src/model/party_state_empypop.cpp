@@ -6,6 +6,7 @@
 // Two deliberate departures from the Lua :
 //   1. It emits DATA, not pre-coloured text lines -- model must not know about rendering (layering rule).
 //   2. The recursion is bounded and CLAMPED : fixed-capacity arrays, no heap, no unbounded descent.
+#include "model/model_clock.h"   // model_now_ms / model_now_unix : one frozen clock per model event
 #include "model/party_state.h"
 #include "model/game_mem.h"       // owns_key_item / count_item / count_items / refresh_items
 #include "model/nms_gen.h"        // NMS / POPS / nm_by_key  (generated)
@@ -119,7 +120,7 @@ void ep_build_sample(EmpyPop& out) {
 void PartyState::ep_refresh(const char* nmKey) {
     if (!nmKey) nmKey = "";
     const bool keyChanged = strcmp(nmKey, ep_.key) != 0;
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
     static unsigned s_lastMs = 0;
     // Rebuild NOW on a key change (the user just picked an NM -- a stale box for half a second reads as a bug),
     // otherwise obey the throttle. Throttle on TIME, not on ep_.valid : an unknown key leaves valid false, and

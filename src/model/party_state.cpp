@@ -1,4 +1,7 @@
 // party_state.cpp -- see party_state.h.
+#include "model/model_clock.h"   // model_now_ms / model_now_unix : one frozen clock per model event
+#include "model/model_io.h"      // model_read_u32 / model_module_base : the model's game-read seams
+#include "model/zones.h"         // zone_name : the zone tracker upkeep (model_frame_upkeep)
 #include "model/party_state.h"
 #include "model/capwatch.h"   // notice a fixed table that has quietly run out of room
 #include "model/decisions.h"   // record the WHY, so it can be asked for after the fact
@@ -33,7 +36,9 @@
 
 namespace aio {
 
-using windower::safe_read;
+// Every raw game read in this file goes through the tape seam (model/model_io.h) : in game it IS safe_read, and a
+// development build can observe the exact values this code saw. Declared here so no call site changes.
+static inline bool safe_read(u32 p, u32* out) { return model_read_u32(p, out); }
 using windower::valid_ptr;
 
 static PartyState g_party;
@@ -196,7 +201,7 @@ static inline void debuff_erase(DebuffSet& d, int i) {
 }
 
 static void record_debuff(DebuffSet* tds, unsigned tid, unsigned short st, unsigned baseMs, bool bySelf, unsigned short spell, bool statusNamed) {
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
     const unsigned char sf = bySelf ? 1 : 0;
     if (!baseMs) baseMs = debuff_fallback_ms(st);
     int slot = -1, freeS = -1, oldest = 0;
@@ -283,19 +288,19 @@ static void record_th(DebuffSet* tds, unsigned tid, unsigned char lvl) {
     if (slot < 0) slot = (freeS >= 0) ? freeS : oldest;
     DebuffSet& d = tds[slot];
     if (d.id != tid) { d.id = tid; d.n = 0; d.th = 0; d.lastHpp = 0; }
-    d.touchMs = GetTickCount();
+    d.touchMs = model_now_ms();
     if (lvl > d.th) d.th = lvl;
 }
 
 // POINTWATCH : the X/h rate ring (recent gains) -> points/hour over the last <=600 s (mirrors pwcore's
 // analyze_points_table : sum of gains / span * 3600, 0 until ~30 s of data so a single kill doesn't spike it).
 void RateReg::add(int val) {
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
     if (n < 128) { t[n] = now; v[n] = val; ++n; }
     else { for (int i = 1; i < 128; ++i) { t[i - 1] = t[i]; v[i - 1] = v[i]; } t[127] = now; v[127] = val; }
 }
 int RateReg::rate() const {
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
     long total = 0; unsigned maxAge = 29000u;
     for (int i = 0; i < n; ++i) { const unsigned age = now - t[i]; if (age <= 600000u) { total += v[i]; if (age > maxAge) maxAge = age; } }
     if (maxAge <= 29000u) return 0;
@@ -308,7 +313,7 @@ int RateReg::rate() const {
 // REVERSED 2026-07-20 (FFXiMain 0x05D63910): the client computes now_seconds = clock->sec + serverOffset, where
 // the clock struct is re-synced from the server on EVERY 0x00A zone-in packet (local sec := Timestamp1,
 // offset := Timestamp2 - Timestamp1) and free-runs off timeGetTime in between. It never touches the wall clock.
-// We did: `time(0)` at whole-second granularity. So any skew between the PC clock and the server -- plus up to a
+// We did: `model_now_unix()` at whole-second granularity. So any skew between the PC clock and the server -- plus up to a
 // second of quantisation -- landed on every countdown we drew. The user measured a steady 2-3 s gap against the
 // game's own display; a CONSTANT offset is the signature of a different time reference, not of jitter.
 //
@@ -322,20 +327,20 @@ static const u32 CLK_SEC_OFF = 0x0C;       // u32 unix seconds
 static const u32 CLK_OFF_RVA = 0x4E0AF8;   // i32 server offset (Timestamp2 - Timestamp1)
 unsigned ffxi_now_tick() {
     static unsigned s_lastMs = 0xFFFFFFFFu; static unsigned s_cached = 0;
-    const unsigned nowMs = GetTickCount();
+    const unsigned nowMs = model_now_ms();
     if (nowMs == s_lastMs) return s_cached;   // called per row per frame -- one guarded read per ms is plenty
     unsigned out = 0;
-    HMODULE h = GetModuleHandleA("FFXiMain.dll");
-    if (h) {
-        const u32 base = (u32)h; u32 clk = 0, sec = 0, off = 0;
-        if (safe_read(base + CLK_PTR_RVA, &clk) && valid_ptr(clk) &&
-            safe_read(clk + CLK_SEC_OFF, &sec) && safe_read(base + CLK_OFF_RVA, &off) &&
+    const u32 base = model_module_base("FFXiMain.dll");   // tape seams (model/model_io.h) : a recorded session replays this clock
+    if (base) {
+        u32 clk = 0, sec = 0, off = 0;
+        if (model_read_u32(base + CLK_PTR_RVA, &clk) && valid_ptr(clk) &&
+            model_read_u32(clk + CLK_SEC_OFF, &sec) && model_read_u32(base + CLK_OFF_RVA, &off) &&
             !(sec == 0 && off == 0))                        // still zero = not yet seeded by a 0x00A
             out = (sec + off) * 60u;                        // off is negative (-EPOCH) ; u32 wrap is the intended maths
     }
     if (!out) {   // fallback : the original wall-clock derivation
         const double EPOCH = 1009810800.0, ERA = (4294967296.0 / 60.0) * 10.0;
-        out = (unsigned)(((double)time(0) - EPOCH - ERA) * 60.0);
+        out = (unsigned)(((double)model_now_unix() - EPOCH - ERA) * 60.0);
     }
     s_lastMs = nowMs; s_cached = out;
     return out;
@@ -374,7 +379,7 @@ unsigned PartyState::self_buff_expiry_for(unsigned short status, unsigned short 
 // Seconds left on an ally row : the frozen self-timer when we have one (exact), else its own estimate.
 int PartyState::ob_remaining_sec(const OtherBuff& o) const {
     if (o.expTick) return ticks_to_sec_ceil((int)(o.expTick - ffxi_now_tick()));
-    const unsigned age = (unsigned)GetTickCount() - o.startMs;
+    const unsigned age = model_now_ms() - o.startMs;
     return o.durMs > age ? (int)((o.durMs - age) / 1000u) : 0;
 }
 
@@ -406,7 +411,7 @@ int PartyState::song_slot_count(unsigned target) const {
 }
 
 bool PartyState::song_was_evicted(unsigned target, unsigned short spell, unsigned withinMs) const {
-    const unsigned now = (unsigned)GetTickCount();
+    const unsigned now = model_now_ms();
     for (int i = 0; i < 8; ++i)
         if (evicted_[i].ms && evicted_[i].target == target && evicted_[i].spell == spell
             && (unsigned)(now - evicted_[i].ms) <= withinMs) return true;
@@ -530,7 +535,7 @@ int PartyState::match_cast(unsigned short status, unsigned expiry, int timerIdx)
 // and 600 s means it also applied the x2. Your own timer for the same song sits beside it, because that is the
 // number a grouped row shows -- when the two disagree, which one the player sees is the whole question.
 void PartyState::songrow_dump() const {
-    const unsigned nowMs = GetTickCount();
+    const unsigned nowMs = model_now_ms();
     int n = 0;
     windower::debug::log("=== AIO SONGROW : ally song rows, %d ally buff(s) tracked ===", otherBuffN_);
     for (int k = 0; k < otherBuffN_; ++k) {
@@ -565,14 +570,14 @@ void PartyState::songrow_dump() const {
 // //aio songtape -- see party_state.h.
 static unsigned g_tapeUntil = 0, g_tapeT0 = 0;
 void PartyState::set_song_tape(int sec) {
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
     g_tapeUntil = sec > 0 ? now + (unsigned)sec * 1000u : 0;
     g_tapeT0 = now;
     windower::debug::log("=== SONGTAPE %s : casts, your timer list, party buff lists, drops and drawn rows -- timestamped ===",
                          sec > 0 ? "ON" : "off");
 }
-bool     PartyState::song_tape_on() const { return g_tapeUntil && (int)(GetTickCount() - g_tapeUntil) < 0; }
-unsigned PartyState::tape_ms()     const { return GetTickCount() - g_tapeT0; }
+bool     PartyState::song_tape_on() const { return g_tapeUntil && (int)(model_now_ms() - g_tapeUntil) < 0; }
+unsigned PartyState::tape_ms()     const { return model_now_ms() - g_tapeT0; }
 
 unsigned PartyState::buff_caster_for(unsigned short status, unsigned expiry, int timerIdx) const {
     // SELF-ONLY statuses : the game gives no one else any way to put these on you, so "unknown" is never the honest
@@ -706,7 +711,7 @@ void PartyState::save_cache(unsigned selfId) const {
     if (!selfId) return;
     char rel[48]; cache_name(rel, sizeof(rel), selfId);
     FILE* f = fopen(plugin_path_r(rel), "wb"); if (!f) return;
-    unsigned ver = CACHE_VER; unsigned long long wt = (unsigned long long)time(0);
+    unsigned ver = CACHE_VER; unsigned long long wt = (unsigned long long)model_now_unix();
     fwrite(&CACHE_MAGIC, 4, 1, f); fwrite(&ver, 4, 1, f); fwrite(&wt, 8, 1, f);
     unsigned short cnt;
     cnt = 0; for (int i = 0; i < 1024; ++i) if (rollVal_[i]) ++cnt; fwrite(&cnt, 2, 1, f);   // roll pips
@@ -747,7 +752,7 @@ bool PartyState::load_cache(unsigned selfId) {
     // entries are dropped on load anyway. The old blanket 120 s gate meant that unloading, applying an update and
     // loading again emptied the whole Duration column until the next zone, which is indistinguishable from a bug.
     // Ally rows are the one estimate-based section (GetTickCount deltas), so they keep the tight window.
-    const unsigned long long age = (unsigned long long)time(0) - wt;
+    const unsigned long long age = (unsigned long long)model_now_unix() - wt;
     if (age > 7200ull) { fclose(f); return true; }   // >2 h : not our session, but the file opened -> resolved
     const bool freshEstimates = (age <= 120ull);
     (void)freshEstimates;
@@ -821,13 +826,13 @@ bool PartyState::load_cache(unsigned selfId) {
     return true;
 }
 void PartyState::arm_bcapt_log(int seconds) {
-    bcaptUntilMs_ = GetTickCount() + (unsigned)(seconds > 0 ? seconds : 60) * 1000u;
+    bcaptUntilMs_ = model_now_ms() + (unsigned)(seconds > 0 ? seconds : 60) * 1000u;
     bcaptClosed_  = false;
     windower::debug::log("BCAPT window OPEN for %ds -- every cat 4/6/11 action will be logged (any caster, any target)", seconds);
 }
 bool PartyState::bcapt_armed() {
     if (bcaptClosed_) return false;
-    if ((int)(GetTickCount() - bcaptUntilMs_) >= 0) {   // SAY SO when the window dies -- silence is indistinguishable from "no bug"
+    if ((int)(model_now_ms() - bcaptUntilMs_) >= 0) {   // SAY SO when the window dies -- silence is indistinguishable from "no bug"
         bcaptClosed_ = true;
         windower::debug::log("BCAPT window CLOSED (expired) -- re-arm with //aio bcaptlog if you need more");
         return false;
@@ -835,14 +840,14 @@ bool PartyState::bcapt_armed() {
     return true;
 }
 void PartyState::arm_dist_log(int seconds) {
-    distUntilMs_ = GetTickCount() + (unsigned)(seconds > 0 ? seconds : 120) * 1000u;
+    distUntilMs_ = model_now_ms() + (unsigned)(seconds > 0 ? seconds : 120) * 1000u;
     distClosed_  = false;
     windower::debug::log("DIST window OPEN for %ds -- one block per second : party + both alliance parties.", seconds > 0 ? seconds : 120);
     windower::debug::log("DIST   read MATCH/STALE to settle the stale-index question, and dh vs d3 for the height question.");
 }
 bool PartyState::dist_armed() {
     if (distClosed_) return false;
-    if ((int)(GetTickCount() - distUntilMs_) >= 0) {   // the window ANNOUNCES its own end : a probe that goes quiet reads exactly like a bug that stopped happening
+    if ((int)(model_now_ms() - distUntilMs_) >= 0) {   // the window ANNOUNCES its own end : a probe that goes quiet reads exactly like a bug that stopped happening
         distClosed_ = true;
         windower::debug::log("DIST window CLOSED (expired) -- re-arm with //aio rangelog [seconds]");
         return false;
@@ -1083,7 +1088,7 @@ void PartyState::on_action(const unsigned char* p) {
         const u32 dmg  = getbits(p, 213, 17, size);        //   damage = target[0].param @bit 213 (target base 150 + 63)
         const WSRow* w = ws_info(wsid); const char* nm = w ? w->en : "Weapon Skill";
         int i = 0; for (; nm[i] && i < 39; ++i) wsPop_.name[i] = nm[i]; wsPop_.name[i] = 0;
-        wsPop_.dmg = (int)dmg; wsPop_.startMs = GetTickCount();
+        wsPop_.dmg = (int)dmg; wsPop_.startMs = model_now_ms();
         return;
     }
     // ---- BUFF CASTER ATTRIBUTION (Timers "self-cast only" filter) : a buff spell (cat 4) / job ability (cat 6) /
@@ -1243,7 +1248,7 @@ void PartyState::on_action(const unsigned char* p) {
     }
     // ---- GEO Entrust (JA 386) : arms the NEXT Indi- to be a FIXED buff on an ally (the effect does not move/pulse),
     //      so unlike a normal Indi- aura we DO want to show it on that ally. Remember when it was used. ----
-    if (cat == 6 && actor == selfId_ && getbits(p, 86, 16, size) == 386) entrustTick_ = GetTickCount();
+    if (cat == 6 && actor == selfId_ && getbits(p, 86, 16, size) == 386) entrustTick_ = model_now_ms();
     // ---- BUFFS YOU cast on OTHER players (Timers "buff on ally" rows) : a buff spell (cat 4) YOU cast that lands
     //      on a party/alliance member (not yourself) -> record { person, status, ESTIMATED timer } from tb_buff_gen.
     //      The client sends no per-buff timer for other players, so the base duration is an estimate (it ignores
@@ -1252,7 +1257,7 @@ void PartyState::on_action(const unsigned char* p) {
         const u32 sid = getbits(p, 86, 16, size);              // actor.param = the cast spell id
         const SpellBuff* b = spell_buff(sid);
         if (b) {
-            const unsigned nowMs = GetTickCount();
+            const unsigned nowMs = model_now_ms();
             int w = 0;                                          // prune expired before (re)recording -> keep the list tight
             for (int k = 0; k < otherBuffN_; ++k) if ((int)((otherBuffs_[k].startMs + otherBuffs_[k].durMs) - nowMs) > 0 || ob_self_alive(otherBuffs_[k])) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; }   // keep while EITHER the estimate OR the real self timer runs -> recasting one song no longer prunes siblings whose estimate lapsed early (Troubadour)
             otherBuffN_ = w;
@@ -1394,9 +1399,9 @@ void PartyState::on_action(const unsigned char* p) {
                 if (mv >= 0) {
                     evicted_[evictW_].target = selfId_;
                     evicted_[evictW_].spell  = mine[mv].spell;
-                    evicted_[evictW_].ms     = (unsigned)GetTickCount();
+                    evicted_[evictW_].ms     = model_now_ms();
                     evictW_ = (evictW_ + 1) & 7;
-                    if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0)
+                    if (s_songUntil && (int)(s_songUntil - model_now_ms()) > 0)
                         windower::debug::log("SONGEVICT self : new spell=%u, you hold %d song(s), the one to go would be spell=%u (%ds left)",
                                              sid, nm, mine[mv].spell, mine[mv].remSec);
                 }
@@ -1404,7 +1409,7 @@ void PartyState::on_action(const unsigned char* p) {
             // //aio songlog : the song-duration model, with the INPUTS -- durMs alone only says the answer is wrong,
             // not which factor produced it. The equipped ids are dumped too : the whole m1 term is read out of the
             // gear AT PACKET TIME, so a Gearswap aftercast that beat us back to the idle set would silently erase it.
-            if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0 && b->skill == 40) {
+            if (s_songUntil && (int)(s_songUntil - model_now_ms()) > 0 && b->skill == 40) {
                 char gl[220]; int go = 0; gl[0] = 0;
                 for (int gi2 = 0; gi2 < 16 && go < 200; ++gi2) go += _snprintf(gl + go, sizeof(gl) - 1 - go, "%u ", eids[gi2]);
                 gl[sizeof(gl) - 1] = 0;   // _snprintf returns -1 and does NOT terminate on truncation : unreachable at "%u " (6 bytes into a 19-byte margin), but the day this format widens, `go` would step BACK and this buffer would reach debug::log("%s") unterminated. Every sibling site force-terminates ; these three did not.
@@ -1440,7 +1445,7 @@ void PartyState::on_action(const unsigned char* p) {
                     if (sl < 0 && songPredN_ < 8) sl = songPredN_++;
                     if (sl >= 0) { songPred_[sl].status = (unsigned short)b->effect; songPred_[sl].spell = (unsigned short)sid;
                                    songPred_[sl].predExp = predExp; songPred_[sl].castTick = ffxi_now_tick();
-                                   songPred_[sl].wallMs = GetTickCount(); songPred_[sl].done = 0;
+                                   songPred_[sl].wallMs = model_now_ms(); songPred_[sl].done = 0;
                                    // the terms active at THIS cast -- divided back out of the measurement below
                                    songPred_[sl].base = b->durSec;
                                    songPred_[sl].knownX100 = (unsigned short)(songM2 * songM3 * 100.0 + 0.5);
@@ -1521,9 +1526,9 @@ void PartyState::on_action(const unsigned char* p) {
                         if (v >= 0) {
                             evicted_[evictW_].target = tid;
                             evicted_[evictW_].spell  = held[v].spell;
-                            evicted_[evictW_].ms     = (unsigned)GetTickCount();
+                            evicted_[evictW_].ms     = model_now_ms();
                             evictW_ = (evictW_ + 1) & 7;
-                            if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0)
+                            if (s_songUntil && (int)(s_songUntil - model_now_ms()) > 0)
                                 windower::debug::log("SONGEVICT tid=%08X new spell=%u : %d song(s) held, the one to go would be spell=%u (%ds left)",
                                                      tid, sid, nh, held[v].spell, held[v].remSec);
                         }
@@ -1557,7 +1562,7 @@ void PartyState::on_action(const unsigned char* p) {
                     // so there is nothing left for a learned correction to add. m2/m3/a3 stay live-read.
                     double sec = miracle ? 900.0 : ((double)b->durSec * songM1 * songM2 * songM3 + songA3);
                     ms = (unsigned long long)(sec * 1000.0);
-                    if (s_songUntil && (int)(s_songUntil - GetTickCount()) > 0)
+                    if (s_songUntil && (int)(s_songUntil - model_now_ms()) > 0)
                         windower::debug::log("SONGUSE spell=%u fam=%d : m1 %d.%03d x m2 %d x m3 %s + a3 %d -> %d s",
                                              sid, songFam, (int)songM1, (int)(songM1 * 1000) % 1000,
                                              (int)songM2, (songM3 > 1.0) ? "1.5" : "1", songA3, (int)sec);
@@ -1640,7 +1645,7 @@ void PartyState::on_action(const unsigned char* p) {
         const u32 aid = getbits(p, 86, 16, size);                          // actor.param = the roll's ability id
         const unsigned st = abil_buff_status(aid);
         if (st >= 310 && (st <= 339 || st == 600)) {                       // a Phantom Roll status (310-339 + Runeist's Roll 600)
-            const unsigned nowMs = GetTickCount();
+            const unsigned nowMs = model_now_ms();
             int w = 0;                                                     // prune expired before (re)recording -> keep the list tight
             for (int k = 0; k < otherBuffN_; ++k) if ((int)((otherBuffs_[k].startMs + otherBuffs_[k].durMs) - nowMs) > 0 || ob_self_alive(otherBuffs_[k])) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; }   // keep while EITHER the estimate OR the real self timer runs -> recasting one song no longer prunes siblings whose estimate lapsed early (Troubadour)
             otherBuffN_ = w;
@@ -1809,7 +1814,7 @@ void PartyState::on_action(const unsigned char* p) {
         if (casts_[k].startMs < casts_[oldest].startMs) oldest = k;
     }
     if (slot < 0) slot = oldest;
-    casts_[slot].id = actor; casts_[slot].spell = aid; casts_[slot].startMs = GetTickCount();
+    casts_[slot].id = actor; casts_[slot].spell = aid; casts_[slot].startMs = model_now_ms();
     if      (cat == 8) { const SpellRow* sp = spell_info(aid); casts_[slot].kind = 0; casts_[slot].durMs = sp ? sp->cast_ms : 0; }
     else if (cat == 7) { casts_[slot].kind = 1; casts_[slot].durMs = 3000; }   // readies (mob TP / WS) : no reliable duration field -> estimate ~3s
     else               { casts_[slot].kind = 2; casts_[slot].durMs = 1500; }   // cat 6 job ability : instant -> a brief 1.5s flash of its name
@@ -1852,7 +1857,7 @@ void PartyState::on_029(const unsigned char* p) {
                 // Keep the LONGEST : a resisted enfeeble lands at half duration, and that is not the number
                 // to teach. Never learn from a SLEEP ending -- a hit, a DoT tick or a mate's nuke wakes a mob
                 // early and that is a wake, not a lifetime. Never learn from the generic wake either (cur != st).
-                const unsigned life = GetTickCount() - d.startMs[i];
+                const unsigned life = model_now_ms() - d.startMs[i];
                 const unsigned short lsp = d.spell[i];
                 const bool teachable = (cur == st) && !is_sleep_status(cur) && life >= 2000 && life <= 1800000;
                 if (teachable && lsp && lsp < 1024) {
@@ -1900,7 +1905,7 @@ const char* PartyState::cast_label(unsigned id, float& pctOut, float& alphaOut, 
     for (int k = 0; k < 18; ++k) if (casts_[k].id == id && casts_[k].spell) { c = &casts_[k]; break; }
     if (!c) return 0;
     unsigned dur = c->durMs ? c->durMs : 1;
-    unsigned el  = GetTickCount() - c->startMs;
+    unsigned el  = model_now_ms() - c->startMs;
     const unsigned FADE = 350;                             // pop-in / depop window (ms)
     if (el > dur + FADE) return 0;                         // fully gone
     pctOut = el >= dur ? 1.0f : (float)el / (float)dur;
@@ -1959,7 +1964,7 @@ void PartyState::on_076(const unsigned char* p) {
             else { slot = 0; for (int s = 1; s < 18; ++s) if (buffs_[s].seen < buffs_[slot].seen) slot = s; }
         }
         BuffSet& bs = buffs_[slot];
-        bs.id = mid; bs.n = 0; bs.seen = clk; bs.stampMs = GetTickCount();
+        bs.id = mid; bs.n = 0; bs.seen = clk; bs.stampMs = model_now_ms();
         const int tapeBefore = bs.n; unsigned short tapePrev[32];
         for (int i = 0; i < 32 && i < tapeBefore; ++i) tapePrev[i] = bs.ids[i];
         for (int i = 0; i < 32; ++i) {
@@ -1985,11 +1990,11 @@ void PartyState::on_076(const unsigned char* p) {
                 windower::debug::log("TAPE %6u  0x076  %-16s n=%d : %s", tape_ms(), who && who[0] ? who : "?", bs.n, ids);
             }
         }
-        if (s_b076Until && (int)(s_b076Until - GetTickCount()) > 0) {   // //aio ftrace : one line per member per 0x076 -> the arrival cadence around a zone. Sentinel-guard s_b076Until!=0 FIRST : (int)(0-GetTickCount()) reads POSITIVE once uptime passes ~25 days, which would self-arm a disarmed probe and spam a shipped log.
+        if (s_b076Until && (int)(s_b076Until - model_now_ms()) > 0) {   // //aio ftrace : one line per member per 0x076 -> the arrival cadence around a zone. Sentinel-guard s_b076Until!=0 FIRST : (int)(0-model_now_ms()) reads POSITIVE once uptime passes ~25 days, which would self-arm a disarmed probe and spam a shipped log.
             char ids[160]; int o = 0; ids[0] = 0;
             for (int i = 0; i < bs.n && i < 32 && o < 150; ++i) o += _snprintf(ids + o, sizeof(ids) - o, "%u ", (unsigned)bs.ids[i]);
             ids[sizeof(ids) - 1] = 0;   // force-terminate : _snprintf does not, on truncation (see the note at the songdur dump)
-            windower::debug::log("B076 mem=%08X slot=%d n=%d t=%u ids=[%s]", mid, slot, bs.n, (unsigned)GetTickCount(), ids);
+            windower::debug::log("B076 mem=%08X slot=%d n=%d t=%u ids=[%s]", mid, slot, bs.n, model_now_ms(), ids);
         }
     }
 }
@@ -2073,7 +2078,7 @@ void PartyState::prune_other_buffs_worn() {
     // insert sites above), so an alliance with more buffs than slots quietly loses the ones that have been up
     // longest, and nothing anywhere says so. It held 32 until 2026-09-11, which does not cover one bard.
     capwatch("model.allybuffs", otherBuffN_, OB_MAX);
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
     const unsigned z = zone_id();                                 // ZONING grace : a zone change (or the loading screen) blanks the
     // ZONE-IN BUMP for SINGLE-TARGET ally estimates (no self timer to mirror). Across the load the server preserves
     // every real buff (re-syncs the FFXI clock + bumps expiries), but our wall-clock estimate keeps counting -> it reads
@@ -2180,7 +2185,7 @@ void PartyState::prune_other_buffs_worn() {
         SlotEvidence mine; mine.present = true; mine.ids = selfIds; mine.n = selfCap; mine.stampMs = buffTimersMs_;
 
         const char* verdictWhy = "kept";
-        const SlotVerdict v = song_slot_verdict(se, seN, seIdx, member, mine, (unsigned)GetTickCount(), &verdictWhy);
+        const SlotVerdict v = song_slot_verdict(se, seN, seIdx, member, mine, model_now_ms(), &verdictWhy);
         why[k] = verdictWhy;
         if (v != SLOT_KEEP) {
             drop[k] = true;
@@ -2232,7 +2237,7 @@ int PartyState::target_th(unsigned id) const {
 
 void PartyState::set_debuff_trace(int n) { s_dbfTrace = n; }   // //aio dbflog
 void PartyState::set_songdur_trace(int seconds) {
-    s_songUntil = GetTickCount() + (unsigned)seconds * 1000u;
+    s_songUntil = model_now_ms() + (unsigned)seconds * 1000u;
     songPredN_ = 0;
     windower::debug::log("=== SONGDUR trace armed for %ds -- sing, then compare SONGDUR (model) with SONGREAL (the game's own 0x063) ===", seconds);
 }
@@ -2243,8 +2248,8 @@ void PartyState::set_songdur_trace(int seconds) {
 // keep filed unconditionally ; only the printing is gated on //aio songlog.
 void PartyState::songdur_check() {
     if (songPredN_ == 0) return;
-    const bool trace = s_songUntil && (int)(s_songUntil - GetTickCount()) > 0;
-    const unsigned now = GetTickCount();
+    const bool trace = s_songUntil && (int)(s_songUntil - model_now_ms()) > 0;
+    const unsigned now = model_now_ms();
     for (int q = 0; q < songPredN_; ++q) {
         SongPred& sp = songPred_[q];
         if (sp.done || (int)(now - sp.wallMs) < 2500) continue;
@@ -2272,8 +2277,8 @@ void PartyState::songdur_check() {
         sp.done = 1;
     }
 }
-void PartyState::set_buff076_trace(int seconds) { s_b076Until = GetTickCount() + (unsigned)seconds * 1000u; windower::debug::log("=== B076 trace armed for %ds ===", seconds); }   // //aio ftrace (model-side twin)
-bool PartyState::buff076_trace_active() const { return s_b076Until && (int)(s_b076Until - GetTickCount()) > 0; }   // sentinel-guard : 0 = off ; (int)(0-GetTickCount()) would read positive past ~25 days uptime and self-arm the probe
+void PartyState::set_buff076_trace(int seconds) { s_b076Until = model_now_ms() + (unsigned)seconds * 1000u; windower::debug::log("=== B076 trace armed for %ds ===", seconds); }   // //aio ftrace (model-side twin)
+bool PartyState::buff076_trace_active() const { return s_b076Until && (int)(s_b076Until - model_now_ms()) > 0; }   // sentinel-guard : 0 = off ; (int)(0-model_now_ms()) would read positive past ~25 days uptime and self-arm the probe
 void PartyState::set_treasure_trace(int n) { s_tpoolTrace = n; }        // //aio tpool
 bool PartyState::treasure_trace_active() const { return s_tpoolTrace > 0; }   // //aio tpool : gate the zone-in/out markers in the packet dispatch
 
@@ -2335,7 +2340,7 @@ int PartyState::target_debuffs(unsigned id, unsigned short* out, int* remainSec,
     const DebuffSet* d = 0;
     for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id == id) { d = &tdebuffs_[s]; break; }
     if (!d) return 0;
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
     static const unsigned SAFETY_MS = 1200000;                            // 20 min : YOUR debuff self-clears on this cap only if its wear-off packet was missed (out of range)
     int n = 0;
     for (int i = 0; i < d->n && n < maxN; ++i) {
@@ -2377,17 +2382,17 @@ void PartyState::on_treasure_add(const unsigned char* p) {
     if (item == 0) { TPTRACE("TPOOL 0x0D2 slot=%u EMPTIED (item=0)", idx); treasure_[idx] = TreasureItem{}; return; }   // slot emptied
     const unsigned ts = (unsigned)p[0x18] | ((unsigned)p[0x19] << 8) | ((unsigned)p[0x1A] << 16) | ((unsigned)p[0x1B] << 24);
     if (treasure_[idx].itemId == (unsigned short)item && treasure_[idx].timestamp == ts) { TPTRACE("TPOOL 0x0D2 slot=%u item=0x%04X DUP (kept)", idx, item); return; }   // already have it -> keep its lot info
-    const unsigned now = (unsigned)time(0);
+    const unsigned now = (unsigned)model_now_unix();
     const unsigned natural = ts + 300;                            // 5-min lottery window
     const bool freshWindow = (natural >= now && natural - now <= 300);
     const unsigned exp = freshWindow ? natural : (now + 300);   // fresh drop -> real window ; old item -> give it a fresh 5 min
     TPTRACE("TPOOL 0x0D2 slot=%u item=0x%04X ts=%u now=%u ts-now=%d natural=%u exp=%u branch=%s residual=%ds tick=%u",
-            idx, item, ts, now, (int)(ts - now), natural, exp, freshWindow ? "natural" : "fallback+300", (int)(exp - now), (unsigned)GetTickCount());
+            idx, item, ts, now, (int)(ts - now), natural, exp, freshWindow ? "natural" : "fallback+300", (int)(exp - now), model_now_ms());
     treasure_[idx] = TreasureItem{};
     treasure_[idx].itemId = (unsigned short)item;
     treasure_[idx].timestamp = ts;
     treasure_[idx].expireUnix = exp;
-    treasure_[idx].seenMs = GetTickCount();          // reconcile_treasure() grace : don't let a 1-frame memory lag wipe this fresh add
+    treasure_[idx].seenMs = model_now_ms();          // reconcile_treasure() grace : don't let a 1-frame memory lag wipe this fresh add
 }
 
 // Once per frame : reconcile the packet-fed pool against the game's OWN treasure memory (*(g+0x5C), read via
@@ -2402,7 +2407,7 @@ void PartyState::reconcile_treasure() {
     if (!any) return;                                        // nothing to check -> skip the memory read
     TreasureSlot mem[10];
     if (!read_treasure_pool(mem)) return;                    // view not mapped (zoning) -> UNKNOWN, keep the packet pool (rule 10)
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
     for (int i = 0; i < 10; ++i) {
         if (!treasure_[i].itemId) continue;
         if (mem[i].occupied && mem[i].item_id == treasure_[i].itemId) continue;   // corroborated by memory -> real, keep
@@ -2424,6 +2429,75 @@ void PartyState::on_treasure_lot(const unsigned char* p) {
     int i = 0; for (; i < 16 && p[0x16 + i]; ++i) treasure_[idx].lotter[i] = (char)p[0x16 + i];
     treasure_[idx].lotter[i] = 0;
     TPTRACE("TPOOL 0x0D3 slot=%u lot=%u lotter=\"%s\" (item=0x%04X)", idx, (unsigned)treasure_[idx].lot, treasure_[idx].lotter, (unsigned)treasure_[idx].itemId);
+}
+
+// ================================ MODEL EVENTS : the model's two entry points ================================
+// Moved here from src/plugin/aiohud.cpp (packets) and src/ui/hud.cpp (upkeep) on 2026-09-13, so that anything that
+// drives the model -- the game, or an offline test harness -- runs the SAME routing and the SAME upkeep : a copy of
+// either would drift, and a test of a copy proves nothing about the original.
+
+// SEH-guarded packet dispatch. The parsers read FIXED offsets off `b` ; a SHORT/truncated packet would fault, and the
+// plugin callback is not exception-wrapped -> the fault would propagate into the game. No C++ object in this function,
+// so the __except has no unwinding to fight. The caller brackets it as a model event.
+void model_feed_packet(int id, const unsigned char* b)
+{
+    tape_packet(id, b);   // recorded BEFORE the handler : the replay needs the bytes before it can run it
+    __try {
+        party().note_packet(id, model_now_ms());   // flow counters for //aio doctor (tracked ids only)
+        if      (id == 0xDD)  party().on_dd(b);
+        else if (id == 0xDF)  party().on_df(b);
+        else if (id == 0x028) party().on_action(b);   // cast bar + landed target debuffs
+        else if (id == 0x029) { party().on_029(b); party().on_exp_msg(b, 0x029); }   // action message -> status wear-off + PointWatch exp gains (Abyssea)
+        else if (id == 0x02D) party().on_exp_msg(b, 0x02D);   // PointWatch : XP/CP/merit/EP gain messages -> live + X/h rate
+        else if (id == 0x061) party().on_char_stats(b);       // PointWatch : level / EXP / Master Level / Exemplar Points
+        else if (id == 0x063) party().on_set_update(b);       // PointWatch : merits (Order 2) + Capacity/Job Points (Order 5)
+        else if (id == 0x02A) party().on_2a(b);               // Zone Tracker : Abyssea zone messages (lights + visitant)
+        else if (id == 0x055) party().on_55(b);               // Zone Tracker : key items (Dynamis granules)
+        else if (id == 0x118) party().on_118(b);              // Zone Tracker : currency2 -> Mog Segments (Sheol/Odyssey run delta)
+        else if (id == 0x034) party().on_034(b);              // Zone Tracker : Rabao conflux menu -> Sheol A/B/C
+        else if (id == 0x00E) party().on_00e(b);              // Zone Tracker : NPC update -> Sheol A/B/C fallback (instance bits)
+        else if (id == 0x075) party().on_limbus_075(b);       // Zone Tracker : Limbus menu -> Apollyon/Temenos level (handler self-filters by the string)
+        else if (id == 0x076) party().on_076(b);      // party-member buffs
+        else if (id == 0x01B) party().on_01b(b);      // job info -> encumbrance flags (locked equip slots)
+        else if (id == 0x0D2) party().on_treasure_add(b);   // treasure pool : item dropped / removed
+        else if (id == 0x0D3) party().on_treasure_lot(b);   // treasure pool : lot info / won
+        else if (id == 0x067) party().on_pet_info(b);       // hate list : learn friendly pet ids (Pet Info)
+        else if (id == 0x068) party().on_pet_status(b);     // hate list : friendly pet id + its target mob (Pet Status)
+        else if (id == 0x00B) { if (party().treasure_trace_active()) windower::debug::log("TPOOL zone-OUT (0x00B) tick=%u -> pool cleared", model_now_ms()); if (party().buff076_trace_active()) windower::debug::log("B076 ZONE-OUT (0x00B) t=%u", model_now_ms()); party().set_zoning(true); party().mark_zone_out(model_now_ms()); party().treasure_clear(); party().hate_clear(); party().pets_clear(); party().buff_timers_clear(); party().other_buffs_clear_songs(); }   // zone-OUT (loading) -> hide HUD + reset pool/hate/pets/self buff timers (0x063 re-sends) AND the ally SONG estimates (only the songs : see below).
+        // ALLY SONGS are dropped on a zone, and only the songs. They used to be kept and re-aligned, because a
+        // song really does survive a zone -- but our rows are a memory of OUR casts, not knowledge of what the
+        // other person carries, and the 0x076 that could confirm them arrives in pieces over several seconds.
+        // During that window the rows scatter into per-person lines and pull back together, which is what a zone
+        // looked like from the box. Asked for directly 2026-09-11: "si on zone on veut tout delete".
+        //
+        // THAT WAS FIRST APPLIED TO EVERY ALLY BUFF, and it was too wide -- reported the next day: zoning threw
+        // away the Haste, Refresh and Phalanx put on the party. The difference is not cosmetic. A song is re-sung
+        // in six seconds and its row rebuilt from a fact ; an ally Haste is thirty minutes of buff whose only
+        // written record was that row, and nothing brings it back but casting it again. And the scattering being
+        // fixed here is the fresh-vs-laggard split, which only songs ever go through.
+        else if (id == 0x00A) { if (party().treasure_trace_active()) windower::debug::log("TPOOL zone-IN (0x00A) tick=%u", model_now_ms()); if (party().buff076_trace_active()) windower::debug::log("B076 ZONE-IN (0x00A) t=%u", model_now_ms()); party().set_zoning(false); }   // zone-IN : the new zone is ready -> show the HUD again
+    } __except (EXCEPTION_EXECUTE_HANDLER) { /* short/malformed packet -> ignore, never crash the game */ }
+}
+
+// The per-frame model upkeep, from the inputs the HUD snapshot hands it. The caller brackets it as a model event.
+void model_frame_upkeep(const FrameInput& in)
+{
+    tape_frame(&in, sizeof(in));
+    PartyState& ps = party();
+    // the party ROSTER (party + alliance, member-array slots 0..17) is the one big table -> refreshed once per frame.
+    ps.load_from_memory();
+    // Ally-buff upkeep : early wear-off (dispel / overwrite / death) from the member's 0x076 icons, the zone-in
+    // estimate bump, and the zone grace window. It used to be called from inside timers_draw, below `if (!tmShow)`,
+    // so hiding the Timers box froze it : a draw() must never be the only thing keeping the model honest.
+    ps.prune_other_buffs_worn();
+    ps.set_target_ctx(in.targetId, in.meId);   // context for the debuff tracker (on_action attributes YOUR debuffs to the current target)
+    if (in.targetValid && in.targetSpawn == 0x10) ps.note_mob_hp(in.targetId, in.targetHpp);   // drop a mob's debuffs on death / id recycle
+    if (in.subPresent && in.subValid && in.subSpawn == 0x10) ps.note_mob_hp(in.subId, in.subHpp);
+    ps.refresh_hate();          // hate list : resolve tracked aggro mobs -> display rows
+    ps.prune_skillchains();     // skillchains : drop resonance windows whose mob has died
+    ps.reconcile_treasure();    // treasure pool : prune packet slots the game's own treasure memory says are empty
+    ps.zt_set_zone((int)in.zone, zone_name((int)in.zone));   // zone tracker : detect Dynamis/Abyssea + reset on change
+    ps.ep_refresh(in.epTrack);  // EmpyPop : resolve the tracked NM's pop chain (self-throttled 2 Hz)
 }
 
 } // namespace aio

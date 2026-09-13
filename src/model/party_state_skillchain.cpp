@@ -2,6 +2,7 @@
 // split out of party_state.cpp. PURE MOVE : the sc_open / sc_close (opened/closed by on_action's
 // 0x028 finish parse in party_state.cpp), prune_skillchains, skillchain_newest_live methods, plus
 // the file-static resonance helpers sc_reson_slot / sc_set_timing (used only by sc_open/sc_close).
+#include "model/model_clock.h"   // model_now_ms / model_now_unix : one frozen clock per model event
 #include "model/party_state.h"
 #include "model/skillchain.h"   // sc_info / SCP_N (Resonating property tables)
 #include "model/game_mem.h"     // EntityVitals / read_entities_by_id
@@ -23,7 +24,7 @@ static Resonating* sc_reson_slot(Resonating* r8, unsigned tid) {
 // burst-window timing (abs ms) : [openMs,delayMs)=Wait, [delayMs,endMs)=Go!/Burst. endMs = delayMs + (8-step)s
 // (higher steps -> shorter continue window), mirroring the reference addon's clock+delay+8-step.
 static void sc_set_timing(Resonating* r, int delay, int step) {
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
     r->openMs = now;
     r->delayMs = now + (unsigned)((delay > 0 ? delay : 3) * 1000);
     int win = 8 - step; if (win < 1) win = 1;
@@ -68,7 +69,7 @@ bool PartyState::has_immanence(unsigned actor) const {
     return false;
 }
 const Resonating* PartyState::skillchain_newest_live() const {
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
     const Resonating* best = 0;
     for (int i = 0; i < 8; ++i) {
         const Resonating& r = reson_[i];
@@ -79,7 +80,7 @@ const Resonating* PartyState::skillchain_newest_live() const {
     return best;
 }
 void PartyState::sc_close(unsigned tid, unsigned aid, int res, int prop, int delay) {
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
     Resonating* r = sc_reson_slot(reson_, tid);
     const bool recent = (r->endMs && now < r->endMs + 3000u && r->step >= 1 && r->nProp > 0);
     const int prevStep = recent ? r->step : 1;

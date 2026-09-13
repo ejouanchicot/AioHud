@@ -20,6 +20,10 @@
 #include "model/selftest.h"   // //aio selftest + the chat notice the watcher leaves behind
 #include "model/watchdogs.h"   // //aio watch : the master switch for the passive watchers
 #include "model/decisions.h"   // //aio why  : the always-recording decision ring
+#include "model/model_clock.h"   // model events : one packet = one frozen-clock event (replayable)
+#ifdef AIOHUD_DEVTOOLS
+#include "aiohud_devtools.h"        // dev-only tools (dev/src : local tree only, build.bat wires them in when present)
+#endif
 #include "model/flipwatch.h"   // its slot table, for the //aio watch summary
 #include "model/capwatch.h"
 #include "gfx/corner_mask.h"
@@ -215,7 +219,12 @@ void aio_plugin_init(PluginManager host)
     // NOT party().load() here : the roster cache is per character now, and nothing is logged in at init -- loading
     // blind is exactly what drew another character's party on your screen at the character-select screen. The load
     // is driven from load_from_memory() on the first frame where read_player succeeds.
+#ifdef AIOHUD_DEVTOOLS
+    aio::devtools::init();             // dev-only : a session recording armed for THIS load starts before the model is touched
+#endif
+    aio::model_event_begin('L');       // the load-time roster read is a model event too : a boot recording replays it
     aio::party().load_from_memory();   // LIVE roster+vitals from FFXI memory -> correct party at load
+    aio::model_event_end();
     debug::log("party at load: %d member(s)", aio::party().count);
     for (int i = 0; i < aio::party().count; ++i)
         debug::log("  m%d '%s' hp=%d/%d mp=%d/%d hpp=%d zone=%d", i, aio::party().m[i].name,
@@ -306,46 +315,14 @@ void aio_plugin_render6()
     }
 }
 
-// SEH-guarded packet dispatch. The parsers read FIXED offsets off `b` ; a SHORT/truncated packet would
-// fault, and neither this callback nor the m11 ABI thunk is exception-wrapped -> the fault would propagate
-// into the game (hard crash). Kept in its OWN function so the __except has no C++ object unwinding to fight.
+// Packet dispatch : SEH-guarded inside model_feed_packet (a short packet must never fault into the game).
 static void feed_packet(int id, const unsigned char* b)
 {
-    __try {
-        aio::party().note_packet(id, (unsigned)GetTickCount());   // flow counters for //aio doctor (tracked ids only)
-        if      (id == 0xDD)  aio::party().on_dd(b);
-        else if (id == 0xDF)  aio::party().on_df(b);
-        else if (id == 0x028) aio::party().on_action(b);   // cast bar + landed target debuffs
-        else if (id == 0x029) { aio::party().on_029(b); aio::party().on_exp_msg(b, 0x029); }   // action message -> status wear-off + PointWatch exp gains (Abyssea)
-        else if (id == 0x02D) aio::party().on_exp_msg(b, 0x02D);   // PointWatch : XP/CP/merit/EP gain messages -> live + X/h rate
-        else if (id == 0x061) aio::party().on_char_stats(b);       // PointWatch : level / EXP / Master Level / Exemplar Points
-        else if (id == 0x063) aio::party().on_set_update(b);       // PointWatch : merits (Order 2) + Capacity/Job Points (Order 5)
-        else if (id == 0x02A) aio::party().on_2a(b);               // Zone Tracker : Abyssea zone messages (lights + visitant)
-        else if (id == 0x055) aio::party().on_55(b);               // Zone Tracker : key items (Dynamis granules)
-        else if (id == 0x118) aio::party().on_118(b);              // Zone Tracker : currency2 -> Mog Segments (Sheol/Odyssey run delta)
-        else if (id == 0x034) aio::party().on_034(b);              // Zone Tracker : Rabao conflux menu -> Sheol A/B/C
-        else if (id == 0x00E) aio::party().on_00e(b);              // Zone Tracker : NPC update -> Sheol A/B/C fallback (instance bits)
-        else if (id == 0x075) aio::party().on_limbus_075(b);       // Zone Tracker : Limbus menu -> Apollyon/Temenos level (handler self-filters by the string)
-        else if (id == 0x076) aio::party().on_076(b);      // party-member buffs
-        else if (id == 0x01B) aio::party().on_01b(b);      // job info -> encumbrance flags (locked equip slots)
-        else if (id == 0x0D2) aio::party().on_treasure_add(b);   // treasure pool : item dropped / removed
-        else if (id == 0x0D3) aio::party().on_treasure_lot(b);   // treasure pool : lot info / won
-        else if (id == 0x067) aio::party().on_pet_info(b);       // hate list : learn friendly pet ids (Pet Info)
-        else if (id == 0x068) aio::party().on_pet_status(b);     // hate list : friendly pet id + its target mob (Pet Status)
-        else if (id == 0x00B) { if (aio::party().treasure_trace_active()) windower::debug::log("TPOOL zone-OUT (0x00B) tick=%u -> pool cleared", (unsigned)GetTickCount()); if (aio::party().buff076_trace_active()) windower::debug::log("B076 ZONE-OUT (0x00B) t=%u", (unsigned)GetTickCount()); aio::party().set_zoning(true); aio::party().mark_zone_out((unsigned)GetTickCount()); aio::party().treasure_clear(); aio::party().hate_clear(); aio::party().pets_clear(); aio::party().buff_timers_clear(); aio::party().other_buffs_clear_songs(); }   // zone-OUT (loading) -> hide HUD + reset pool/hate/pets/self buff timers (0x063 re-sends) AND the ally SONG estimates (only the songs : see below).
-        // ALLY SONGS are dropped on a zone, and only the songs. They used to be kept and re-aligned, because a
-        // song really does survive a zone -- but our rows are a memory of OUR casts, not knowledge of what the
-        // other person carries, and the 0x076 that could confirm them arrives in pieces over several seconds.
-        // During that window the rows scatter into per-person lines and pull back together, which is what a zone
-        // looked like from the box. Asked for directly 2026-09-11: "si on zone on veut tout delete".
-        //
-        // THAT WAS FIRST APPLIED TO EVERY ALLY BUFF, and it was too wide -- reported the next day: zoning threw
-        // away the Haste, Refresh and Phalanx put on the party. The difference is not cosmetic. A song is re-sung
-        // in six seconds and its row rebuilt from a fact ; an ally Haste is thirty minutes of buff whose only
-        // written record was that row, and nothing brings it back but casting it again. And the scattering being
-        // fixed here is the fresh-vs-laggard split, which only songs ever go through.
-        else if (id == 0x00A) { if (aio::party().treasure_trace_active()) windower::debug::log("TPOOL zone-IN (0x00A) tick=%u", (unsigned)GetTickCount()); if (aio::party().buff076_trace_active()) windower::debug::log("B076 ZONE-IN (0x00A) t=%u", (unsigned)GetTickCount()); aio::party().set_zoning(false); }   // zone-IN : the new zone is ready -> show the HUD again
-    } __except (EXCEPTION_EXECUTE_HANDLER) { /* short/malformed packet -> ignore, never crash the game */ }
+    // The routing lives in the MODEL now (model_feed_packet, party_state.cpp) : anything that drives the model outside
+    // the game must go through the very same if-chain, not a copy of it. One packet = one model event (model_clock.h).
+    aio::model_event_begin('P');
+    aio::model_feed_packet(id, b);
+    aio::model_event_end();
 }
 
 // //aio omenparse : how many NON-161 chat lines are still to be sampled from the text callback. Separate from the
@@ -1180,6 +1157,9 @@ static void aio_command_dispatch(const char* cmd)
                                    : aio::tr(">>> AioHud : corners = baked mask (real coverage, one texel per pixel) <<<", ">>> AioHud : coins = masque cuit (couverture reelle, 1 texel par pixel) <<<"));
         return;
     }
+#ifdef AIOHUD_DEVTOOLS
+    if (aio::devtools::command(buf)) return;   // dev-only tools (dev/src, never in a release) : pcap, igstate
+#endif
     if (strstr(buf, "doctor")) {   // //aio doctor -> run every RUNTIME check and print what to DO about each problem
         char lines[12][aio::Hud::DOC_LINE];
         const int n = g_hud.doctor(lines, 12);

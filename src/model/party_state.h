@@ -933,6 +933,19 @@ struct PartyState {
     void load_from_memory();              // seed the LIVE roster+vitals from FFXI memory (instant, accurate)
 };
 
+// ---- model events (model/model_clock.h) : the two entry points both the game and the offline replay drive ----
+// What the HUD snapshot hands the per-frame upkeep. Fixed layout, no pointers : it can be recorded.
+struct FrameInput {
+    unsigned targetId = 0, meId = 0;
+    unsigned char targetValid = 0, subPresent = 0, subValid = 0, pad0 = 0;
+    unsigned targetSpawn = 0; int targetHpp = 0;
+    unsigned subId = 0, subSpawn = 0; int subHpp = 0;
+    unsigned zone = 0;
+    char epTrack[32] = {0};
+};
+void model_feed_packet(int id, const unsigned char* b);   // one tracked incoming packet -> its handler (SEH-guarded)
+void model_frame_upkeep(const FrameInput& in);             // roster refresh + every per-frame prune/reconcile
+
 PartyState& party();                      // global live party
 const char* job_abbr(int id);             // job id -> "WAR".."RUN" ("" if unknown)
 int         job_id_from_abbr(const char* a);   // "WAR" -> 1 .. "RUN" -> 22 (0 if unknown) ; job-icon atlas cell = id-1

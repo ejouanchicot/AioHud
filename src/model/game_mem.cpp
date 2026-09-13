@@ -1,4 +1,33 @@
 // game_mem.cpp -- see game_mem.h.
+//
+// OBSERVED READS (model/model_io.h). The functions the MODEL calls are defined below under a `__real` name, and the
+// public name at the bottom of this file is a thin wrapper : the real read, then the observer hook (a no-op in a
+// release build). Calls made INSIDE this file resolve to the real functions (the macros below apply to them too),
+// so only what the model and the HUD ask for is observed.
+#define count_item count_item__real
+#define count_items count_items__real
+#define data_root data_root__real
+#define entity_array entity_array__real
+#define entity_id_by_index entity_id_by_index__real
+#define entity_name_by_index entity_name_by_index__real
+#define entity_pos_verified entity_pos_verified__real
+#define key_items_base key_items_base__real
+#define owns_key_item owns_key_item__real
+#define party_ptr party_ptr__real
+#define read_capacity_points read_capacity_points__real
+#define read_entities_by_id read_entities_by_id__real
+#define read_equipment_ext read_equipment_ext__real
+#define read_jp_gift_rank read_jp_gift_rank__real
+#define read_jp_u8 read_jp_u8__real
+#define read_merit_level read_merit_level__real
+#define read_player read_player__real
+#define read_player_buffs read_player_buffs__real
+#define read_pointwatch read_pointwatch__real
+#define read_treasure_pool read_treasure_pool__real
+#define refresh_items refresh_items__real
+#define self_party_base self_party_base__real
+#define zone_id zone_id__real
+
 #include "model/game_mem.h"
 #include "model/gamestate.h"
 #include "model/ffximain_rva.h"   // the FFXiMain statics : addresses as data, re-derived after a client patch
@@ -1159,6 +1188,113 @@ void poll_game_state(GameState& gs) {
     // repairs nothing -- it exists so the day a struct or packet field shifts, we hear about it that day
     // instead of noticing three weeks later that a number has quietly been wrong.
     sentinel_tick(gs);
+}
+
+} // namespace aio
+
+// ================================ TAPE WRAPPERS (see the note at the top) ================================
+#undef count_item
+#undef count_items
+#undef data_root
+#undef entity_array
+#undef entity_id_by_index
+#undef entity_name_by_index
+#undef entity_pos_verified
+#undef key_items_base
+#undef owns_key_item
+#undef party_ptr
+#undef read_capacity_points
+#undef read_entities_by_id
+#undef read_equipment_ext
+#undef read_jp_gift_rank
+#undef read_jp_u8
+#undef read_merit_level
+#undef read_player
+#undef read_player_buffs
+#undef read_pointwatch
+#undef read_treasure_pool
+#undef refresh_items
+#undef self_party_base
+#undef zone_id
+#include "model/model_io.h"
+
+namespace aio {
+
+static inline void tap_u32(uint16_t fn, u32 a, u32 b, u32 v) { if (tape_recording()) tape_note(fn, a, b, v ? 1 : 0, &v, 4); }
+
+u32 data_root()                       { const u32 r = data_root__real();        tap_u32(TF_DATA_ROOT, 0, 0, r); return r; }
+u32 entity_array()                    { const u32 r = entity_array__real();     tap_u32(TF_ENTITY_ARRAY, 0, 0, r); return r; }
+u32 party_ptr()                       { const u32 r = party_ptr__real();        tap_u32(TF_PARTY_PTR, 0, 0, r); return r; }
+u32 key_items_base()                  { const u32 r = key_items_base__real();   tap_u32(TF_KEY_ITEMS_BASE, 0, 0, r); return r; }
+u32 self_party_base(unsigned selfId)  { const u32 r = self_party_base__real(selfId); tap_u32(TF_SELF_PARTY_BASE, selfId, 0, r); return r; }
+unsigned zone_id()                    { const unsigned r = zone_id__real();     tap_u32(TF_ZONE_ID, 0, 0, r); return r; }
+unsigned count_item(unsigned id)      { const unsigned r = count_item__real(id); tap_u32(TF_COUNT_ITEM, id, 0, r); return r; }
+unsigned entity_id_by_index(unsigned index) { const unsigned r = entity_id_by_index__real(index); tap_u32(TF_ENTITY_ID_BY_INDEX, index, 0, r); return r; }
+bool owns_key_item(unsigned id)       { const bool r = owns_key_item__real(id); if (tape_recording()) tape_note(TF_OWNS_KEY_ITEM, id, 0, r ? 1 : 0, 0, 0); return r; }
+bool refresh_items()                  { const bool r = refresh_items__real();   if (tape_recording()) tape_note(TF_REFRESH_ITEMS, 0, 0, r ? 1 : 0, 0, 0); return r; }
+int read_jp_gift_rank(unsigned gid)   { const int r = read_jp_gift_rank__real(gid); if (tape_recording()) tape_note(TF_READ_JP_GIFT_RANK, gid, 0, r, 0, 0); return r; }
+int read_jp_u8(unsigned off)          { const int r = read_jp_u8__real(off);     if (tape_recording()) tape_note(TF_READ_JP_U8, off, 0, r, 0, 0); return r; }
+int read_merit_level(unsigned mid)    { const int r = read_merit_level__real(mid); if (tape_recording()) tape_note(TF_READ_MERIT_LEVEL, mid, 0, r, 0, 0); return r; }
+
+int count_items(const unsigned* ids, int n, unsigned* out) {
+    const int r = count_items__real(ids, n, out);
+    if (tape_recording() && n > 0 && ids && out) tape_note(TF_COUNT_ITEMS, tape_hash(ids, (unsigned)n * 4), (u32)n, r, out, (unsigned)n * 4);
+    return r;
+}
+bool entity_name_by_index(unsigned index, char* out, int sz) {
+    const bool r = entity_name_by_index__real(index, out, sz);
+    if (tape_recording() && out && sz > 0) tape_note(TF_ENTITY_NAME_BY_INDEX, index, (u32)sz, r ? 1 : 0, out, (unsigned)sz);
+    return r;
+}
+bool entity_pos_verified(unsigned index, unsigned expectId, float& x, float& y, float& z, bool* despawned) {
+    bool ghost = false;
+    const bool r = entity_pos_verified__real(index, expectId, x, y, z, &ghost);
+    if (despawned) *despawned = ghost;
+    if (tape_recording()) { struct { float x, y, z; unsigned char g; } d = { x, y, z, (unsigned char)(ghost ? 1 : 0) };
+                            tape_note(TF_ENTITY_POS_VERIFIED, index, expectId, r ? 1 : 0, &d, sizeof(d)); }
+    return r;
+}
+bool read_capacity_points(unsigned mainJob, unsigned& cp, unsigned& jp) {
+    const bool r = read_capacity_points__real(mainJob, cp, jp);
+    if (tape_recording()) { unsigned d[2] = { cp, jp }; tape_note(TF_READ_CAPACITY_POINTS, mainJob, 0, r ? 1 : 0, d, sizeof(d)); }
+    return r;
+}
+int read_entities_by_id(const unsigned* ids, int n, EntityVitals* out) {
+    const int r = read_entities_by_id__real(ids, n, out);
+    if (tape_recording() && n > 0 && ids && out) tape_note(TF_READ_ENTITIES_BY_ID, tape_hash(ids, (unsigned)n * 4), (u32)n, r, out, (unsigned)(sizeof(EntityVitals) * n));
+    return r;
+}
+bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]) {
+    const bool r = read_equipment_ext__real(ids, ext);
+    if (tape_recording()) { unsigned char d[16 * 2 + 16 * 24]; memcpy(d, ids, 32); memcpy(d + 32, ext, 16 * 24);
+                            tape_note(TF_READ_EQUIPMENT_EXT, 0, 0, r ? 1 : 0, d, sizeof(d)); }
+    return r;
+}
+bool read_player(PlayerInfo& o) {
+    const bool r = read_player__real(o);
+    if (tape_recording()) tape_note(TF_READ_PLAYER, 0, 0, r ? 1 : 0, &o, sizeof(o));
+    return r;
+}
+int read_player_buffs(unsigned short* out, int maxN, bool* ok) {
+    bool okv = false;
+    const int r = read_player_buffs__real(out, maxN, &okv);
+    if (ok) *ok = okv;
+    if (tape_recording() && out && maxN > 0) {
+        unsigned char d[1 + 2 * 64]; const int n = maxN < 64 ? maxN : 64;
+        d[0] = okv ? 1 : 0; memcpy(d + 1, out, (size_t)n * 2);
+        tape_note(TF_READ_PLAYER_BUFFS, (u32)maxN, 0, r, d, 1u + (unsigned)n * 2);
+    }
+    return r;
+}
+bool read_pointwatch(PwMem& out) {
+    const bool r = read_pointwatch__real(out);
+    if (tape_recording()) tape_note(TF_READ_POINTWATCH, 0, 0, r ? 1 : 0, &out, sizeof(out));
+    return r;
+}
+bool read_treasure_pool(TreasureSlot out[10]) {
+    const bool r = read_treasure_pool__real(out);
+    if (tape_recording()) tape_note(TF_READ_TREASURE_POOL, 0, 0, r ? 1 : 0, out, sizeof(TreasureSlot) * 10);
+    return r;
 }
 
 } // namespace aio

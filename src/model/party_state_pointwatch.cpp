@@ -2,6 +2,7 @@
 // split out of party_state.cpp. PURE MOVE : the three packet handlers that feed PointWatch --
 // on_char_stats (0x061), on_set_update (0x063 Order 2/5/9), on_exp_msg (0x029/0x02D live gains).
 // The RateReg X/h ring + ffxi_now_tick stay in party_state.cpp (shared / used by other modules).
+#include "model/model_clock.h"   // model_now_ms / model_now_unix : one frozen clock per model event
 #include "model/party_state.h"
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared packet readers)
 #include "model/ffximain_rva.h"           // fm_pw_expect : these packets are what re-pins the static block
@@ -48,7 +49,7 @@ void PartyState::on_set_update(const unsigned char* p) {   // 0x063 Set Update
         const bool tape = song_tape_on();
         unsigned short wasIds[32]; int wasN = 0;
         if (tape) { wasN = buffTimerN_ < 32 ? buffTimerN_ : 32; for (int i = 0; i < wasN; ++i) wasIds[i] = buffTimers_[i].id; }
-        buffTimerN_ = 0; buffTimersMs_ = GetTickCount();                                    //   Time u32[32] @0x48 (absolute FFXI 1/60s ticks). Full refresh.
+        buffTimerN_ = 0; buffTimersMs_ = model_now_ms();                                    //   Time u32[32] @0x48 (absolute FFXI 1/60s ticks). Full refresh.
         for (int i = 0; i < 32; ++i) {
             const unsigned bid = pkt_u16(p, 0x08 + i * 2);
             if (bid == 0xFFFF || bid == 0xFF || bid == 0) continue;   // empty slot

@@ -2,6 +2,7 @@
 // split out of party_state.cpp. PURE MOVE : refresh_hate (per-frame row build), the friendly-pet
 // registry (is_party_or_pet / pet_owner / on_pet_info 0x067 / on_pet_status 0x068 + register_pet),
 // and the record_hate enmity tracker (now external : on_action in party_state.cpp also calls it).
+#include "model/model_clock.h"   // model_now_ms / model_now_unix : one frozen clock per model event
 #include "model/party_state.h"
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 + record_hate declaration
 #include "model/game_mem.h"               // read_entities_by_id / entity_id_by_index / entity_array / EntityVitals
@@ -18,7 +19,7 @@ namespace aio {
 // prune). Rows are reduced to the LOWEST-HP mobs, sorted HP-ascending (id tie-broken -> deterministic).
 // Uses selfX_/selfZ_ (load_from_memory) + curTarget_ (set_target_ctx) -> call AFTER both, each frame.
 void PartyState::refresh_hate() {
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
 
     auto add_row = [&](const EntityVitals& v, unsigned pcId) {
         HateRow r{};
@@ -115,7 +116,7 @@ void PartyState::on_pet_status(const unsigned char* p) {   // 0x068 Pet Status :
 // HATE LIST : record/refresh the mob->PC enmity pair (find its slot / a free one / the oldest). lastMs drives
 // the staleness prune in refresh_hate. Mirrors the reference addon's tracked[] table (fed from the 0x028).
 void record_hate(HateEntry* h, unsigned mob, unsigned pc) {
-    const unsigned now = GetTickCount();
+    const unsigned now = model_now_ms();
     int freeS = -1, oldest = 0;
     for (int i = 0; i < 128; ++i) {
         if (h[i].mob == mob) { h[i].pc = pc; h[i].lastMs = now; return; }

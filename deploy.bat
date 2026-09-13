@@ -37,4 +37,11 @@ REM    has ALREADY failed. Same three lines package.bat uses.
 mkdir "%WP%\..\addons\aioupdate" 2>nul
 copy /Y "%ROOT%updater\aioupdate\aioupdate.lua" "%WP%\..\addons\aioupdate\aioupdate.lua" >nul
 
+REM 4) dev only : the in-game test bridge addon, when the local dev\ tree exists (it is not in the public repository).
+REM    A stale copy answers with an older field set. After a deploy that changed it : //lua reload aiotest.
+if exist "%ROOT%dev\aiotest\aiotest.lua" (
+    mkdir "%WP%\..\addons\aiotest" 2>nul
+    copy /Y "%ROOT%dev\aiotest\aiotest.lua" "%WP%\..\addons\aiotest\aiotest.lua" >nul
+)
+
 echo [deploy] OK -^> %WP%\AioHud.dll  (+ assets synced to AioHud\, addon synced to addons\aioupdate\)   (now //load AioHud in game)

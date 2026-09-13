@@ -2,6 +2,7 @@
 // split out of party_state.cpp. PURE MOVE : the PartyState::zt_*/on_omen_text/on_nyzul_text/
 // nyzul_remaining/omen_short methods + their packet handlers (on_2a/on_55/on_118/on_034/on_00e)
 // and the file-static helpers used only by them. See party_state.h for the ZoneTracker struct.
+#include "model/model_clock.h"   // model_now_ms / model_now_unix : one frozen clock per model event
 #include "model/party_state.h"
 #include "model/limbus_week.h"   // limbus_week_rolled : the Sunday 15:00 UTC allowance rollover
 #include <time.h>              // time() : UTC epoch stamp on the weekly allowance
@@ -147,7 +148,7 @@ bool omen_trace_active() { return s_omenTrace > 0; }
 void PartyState::omen_state_dump(const char* why) {
     if (s_omenTrace <= 0) return;                       // only while a capture is running
     const bool known = (zt_.omenBonusMs != 0);
-    int left = zt_.omenBonusSec - (int)((GetTickCount() - zt_.omenBonusMs) / 1000u);
+    int left = zt_.omenBonusSec - (int)((model_now_ms() - zt_.omenBonusMs) / 1000u);
     if (left < 0) left = 0;
     windower::debug::log("OMENSTATE [%s] floor='%s' bonusFloor=%d omens=%d window=%s cleared=%d",
                          why ? why : "?", zt_.floorObj, (int)omen_floor_has_bonus(zt_.floorObj), zt_.omens,
@@ -213,7 +214,7 @@ void PartyState::on_omen_text(const char* s) {
     }
     if (omen_is_timer_line(s)) {
         const int n = omen_first_num(s);
-        if (n >= 0) { zt_.omenBonusSec = n; zt_.omenBonusMs = GetTickCount(); }
+        if (n >= 0) { zt_.omenBonusSec = n; zt_.omenBonusMs = model_now_ms(); }
         zt_save_soon();
         OTRACE("OMEN bonus timer=%d newFloor=%d | %s", n, (int)wiped, s);
         return;
@@ -242,7 +243,7 @@ void PartyState::on_omen_text(const char* s) {
 // ---- NYZUL ISLE : token estimator + floor/timer/objective tracker, ported 1:1 from the NyzulHelper addon (Glarin
 // of Asura). All values are derived from the run's incoming-text lines ; token math mirrors the addon exactly. ----
 static int  ny_round(double x) { return (int)floor(x + 0.5); }
-static void ny_set_timer(ZoneTracker& z, int remaining) { z.nyTimerSec = remaining; z.nyTimerMs = GetTickCount(); }
+static void ny_set_timer(ZoneTracker& z, int remaining) { z.nyTimerSec = remaining; z.nyTimerMs = model_now_ms(); }
 static int  ny_relative_floor(const ZoneTracker& z) { return (z.nyFloor < z.nyStartFloor) ? z.nyFloor + 100 : z.nyFloor; }
 static double ny_token_rate(const ZoneTracker& z) {                    // +10% armband ; -10% per party member over 3
     double r = 1.0;
@@ -293,7 +294,7 @@ static void ny_copy_text(char* dst, int cap, const char* s, int skip) {
 
 int PartyState::nyzul_remaining() const {
     if (zt_.nyTimerMs == 0) return 0;
-    return zt_.nyTimerSec - (int)((GetTickCount() - zt_.nyTimerMs) / 1000u);
+    return zt_.nyTimerSec - (int)((model_now_ms() - zt_.nyTimerMs) / 1000u);
 }
 
 // ---- ZONE-TRACKER cache : the reference addons lose everything on reload ; we don't. Every tracked mode's timer is a
@@ -322,7 +323,7 @@ bool PartyState::zt_load(int zone) {
         ReadFile(h, &c, sizeof(c), &got, 0) && got == sizeof(c)) {
         // must be the SAME zone we're re-entering + a real tracked mode ; a reboot resets GetTickCount, leaving the
         // stored stamps in the "future" (> now) -> reject as stale.
-        const unsigned now = GetTickCount();
+        const unsigned now = model_now_ms();
         const bool freshTimers = (c.dynEntryMs <= now && c.visitantMs <= now && c.omenBonusMs <= now && c.nyTimerMs <= now);
         // A RUN THAT CANNOT STILL BE RUNNING IS NOT A RUN. The file keeps the last state seen INSIDE a tracked
         // zone (zt_save returns early outside one), so re-entering the same zone hours later and reloading the
@@ -683,11 +684,11 @@ void PartyState::zt_set_zone(int zone, const char* name) {
         zt_.mode = 3;
     } else if (mode == 1) {
         if (zt_.mode != 1) for (int i = 0; i < 5; ++i) zt_.ki[i] = 0;                     // fresh run
-        zt_.mode = 1; zt_.dynZone = zone; zt_.dynEntryMs = GetTickCount();
+        zt_.mode = 1; zt_.dynZone = zone; zt_.dynEntryMs = model_now_ms();
         zt_recompute_dyn_limit();
     } else if (mode == 2) {
         // fresh entry : no visitant status yet -> the 5-minute EXPULSION grace timer (a visitant message overwrites it)
-        if (zt_.mode != 2) { for (int i = 0; i < 7; ++i) zt_.lights[i] = 0; zt_.visitantMin = 5; zt_.visitantMs = GetTickCount(); }
+        if (zt_.mode != 2) { for (int i = 0; i < 7; ++i) zt_.lights[i] = 0; zt_.visitantMin = 5; zt_.visitantMs = model_now_ms(); }
         // client message base drifted +23 from the addon's old message_ids (7315 -> 7338), confirmed live via
         // //aio abylog : the two /heal bulk reports landed at rel 0/1 (mid 7338/7339) and visitant at rel 9/10 (7348).
         // BASE 7339, MEASURED 2026-09-09 (was 7338). Proven by the /heal pair, which is the one signature that
@@ -817,7 +818,7 @@ void PartyState::on_limbus_075(const unsigned char* p) {    // 0x075 : battlefie
             const int remain = (int)(start + dur) - (int)nowSec;
             if (desig && dur >= 60u && dur <= 14400u && remain > -600 && remain <= 14400) {
                 const int r = remain > 0 ? remain : 0;
-                zt_.divEndMs = GetTickCount() + (unsigned)r * 1000u;
+                zt_.divEndMs = model_now_ms() + (unsigned)r * 1000u;
                 zt_.divDurSec = (int)dur;
                 static int nAnchor = 0;
                 if (nAnchor < 6) { ++nAnchor;
@@ -831,11 +832,11 @@ void PartyState::on_limbus_075(const unsigned char* p) {    // 0x075 : battlefie
         unsigned w[8]; for (int k = 0; k < 8; ++k) w[k] = pkt_u32(p, 0x04 + k * 4);
         bool changed = false; for (int k = 0; k < 8; ++k) if (w[k] != lastW[k]) { changed = true; break; }
         if (changed && nDiv75 < 40) {
-            if (!firstMs) firstMs = GetTickCount();
+            if (!firstMs) firstMs = model_now_ms();
             ++nDiv75;
-            const unsigned sinceEntry = (GetTickCount() - zt_.dynEntryMs) / 1000u;
+            const unsigned sinceEntry = (model_now_ms() - zt_.dynEntryMs) / 1000u;
             windower::debug::log("DIV 075 +%u.%us  in=%us  sz=%d  @04=%u @08=%u @0C=%u @10=%u @14=%u @18=%u @1C=%u @20=%u",
-                                 (GetTickCount() - firstMs) / 1000u, ((GetTickCount() - firstMs) % 1000u) / 100u,
+                                 (model_now_ms() - firstMs) / 1000u, ((model_now_ms() - firstMs) % 1000u) / 100u,
                                  sinceEntry, pkt_bytes(p), w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]);
             for (int k = 0; k < 8; ++k) lastW[k] = w[k];
             if (nDiv75 == 40) windower::debug::log("DIV 075 : 40 changes shown -- compare @0C between two lines, a countdown drops by the seconds elapsed");
@@ -857,7 +858,7 @@ void PartyState::on_limbus_075(const unsigned char* p) {    // 0x075 : battlefie
                                      (lastSec >= 0 && sec > lastSec + 2) ? "  <-- JUMPED UP : a new phase started" : "");
             }
             lastSec = sec;
-            zt_.gaolSec = sec; zt_.gaolMs = GetTickCount();
+            zt_.gaolSec = sec; zt_.gaolMs = model_now_ms();
             if (zt_.sheolzone == 0 && inst == 1025) zt_.sheolzone = 4;   // a Gaol packet identifies Gaol too
         }
     }
@@ -1053,7 +1054,7 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
             // 2026-07-27. Stamped with the wall clock so a count from LAST week can be told apart from this
             // week's (limbus_week.h), instead of being shown forever as if it were current.
             lw_.left = p1;
-            lw_.stampUtc = (long long)time(0);
+            lw_.stampUtc = (long long)model_now_unix();
             // NOTE: no weekly wipe. The row is not a per-week checklist -- it is the last known payout of each
             // quadrant, and it self-corrects because reopening a coffer overwrites its slot (a 5k slot reopened
             // for 3k goes back to red). Only finding a 5k clears the reds. Wiping on a new week would destroy
@@ -1092,8 +1093,8 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
         case 187: addL(1, 8, 255); break;                                                                 // azure
         case 188: addL(2, 8, 255); break;                                                                 // ruby
         case 189: addL(3, 8, 255); break;                                                                 // amber
-        case 9: case 10: case 45: zt_.visitantMin = p1; zt_.visitantMs = GetTickCount(); break;           // update / wears / gain
-        case 12:  zt_.visitantMin += p1; zt_.visitantMs = GetTickCount(); break;                          // extend
+        case 9: case 10: case 45: zt_.visitantMin = p1; zt_.visitantMs = model_now_ms(); break;           // update / wears / gain
+        case 12:  zt_.visitantMin += p1; zt_.visitantMs = model_now_ms(); break;                          // extend
         default: ch = false; break;
     }
     // No SINGLE light message can prove the base (nothing in it identifies which light it is -- only the offset
@@ -1193,7 +1194,7 @@ int PartyState::limbus_runs_left() const {
     if (lw_.left < 0) return -1;
     // A REAL observation from an earlier week, though, does justify a full allowance : the game grants five at
     // the Sunday 15:00 UTC reset (limbus_week.h), so this is derived, not assumed.
-    if (limbus_week_rolled(lw_.stampUtc, (long long)time(0))) return LIMBUS_WEEK_RUNS;
+    if (limbus_week_rolled(lw_.stampUtc, (long long)model_now_unix())) return LIMBUS_WEEK_RUNS;
     return lw_.left > LIMBUS_WEEK_RUNS ? LIMBUS_WEEK_RUNS : lw_.left;           // clamp : a bad read must not print "9 runs left"
 }
 

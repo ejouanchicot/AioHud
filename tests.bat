@@ -37,5 +37,24 @@ REM 0xC0000005 access violation) reads as negative and slips through as success.
 REM suite was proved -- neutralising the JSON depth bound crashed the runner and the script printed OK.
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" ( echo [tests] FAILED ^(exit code %RC%^) & exit /b 1 )
+
+REM ---- DEV ONLY : session replays. The replayer and the recorded tapes live in the local dev\ tree, which is not in
+REM      the public repository ; a clone without it skips this step and SAYS so.
+if not exist "%ROOT%dev\fixtures\tapes\*.aiotape" (
+    echo [tests] session replays : skipped ^(no local dev\fixtures\tapes^)
+    goto :done
+)
+call "%ROOT%dev\replay\build_replay.bat" >nul
+if errorlevel 1 ( echo [tests] replay BUILD FAILED -- run dev\replay\build_replay.bat & exit /b 1 )
+set "NREPLAY=0"
+for %%T in ("%ROOT%dev\fixtures\tapes\*.aiotape") do (
+    if not exist "%%~dpnT.golden.txt" ( echo [tests] %%~nxT has no golden -- keep it with dev\scripts\tape.py keep & exit /b 1 )
+    "%ROOT%build\replay\replay.exe" "%%T" --mask "%ROOT%build\replay\partystate_mask.bin" --fields "%ROOT%build\replay\partystate_fields.txt" --golden "%%~dpnT.golden.txt" > "%ROOT%build\replay\last_run.txt"
+    if errorlevel 1 ( type "%ROOT%build\replay\last_run.txt" & echo [tests] session replay FAILED : %%~nxT & exit /b 1 )
+    set /a NREPLAY+=1
+)
+echo [tests] session replays : %NREPLAY% tape(s) reproduce their golden
+
+:done
 echo [tests] OK
 exit /b 0
