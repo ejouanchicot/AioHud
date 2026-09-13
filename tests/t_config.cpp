@@ -44,7 +44,8 @@ void plugin_path(char* out, int cap, const char* rel) { _snprintf(out, cap, "%s\
 const char* plugin_path_r(const char* rel) { static char b[8][MAX_PATH]; static int k = 0; k = (k + 1) & 7; plugin_path(b[k], MAX_PATH, rel); return b[k]; }
 void plugin_path_w(wchar_t* out, int cap, const wchar_t* rel) { (void)rel; if (cap > 0) out[0] = 0; }
 
-bool read_player(PlayerInfo& o) { o = PlayerInfo{}; return false; }   // offline : no character logged in
+// read_player : tests/fake_game.cpp. It answers "no character" until a Timers case builds a fake world, which runs
+// after this file's cases -- the offline state the config layer is tested in.
 
 } // namespace aio
 

@@ -23,10 +23,17 @@ if errorlevel 1 ( echo [tests] vcvars failed & exit /b 1 )
 if not exist "%ROOT%build\t" mkdir "%ROOT%build\t"
 
 REM /Od : these are logic tests, not benchmarks -- build speed matters more than the generated code.
-cl /nologo /EHsc /W4 /WX /permissive- /std:c++17 /Od /wd4456 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS ^
-   /I"%ROOT%include" /I"%ROOT%src" ^
+REM /fsanitize=address : the suite runs the REAL model (tests\fake_game.cpp), whose tables are fixed arrays walked
+REM by counts. Twice on 2026-09-13 a capacity was raised and an array beside it was not, and neither showed as a
+REM wrong row -- they wrote past their end, on a static and on the stack. Only the sanitizer turns that into a
+REM failure, so it is on for every run, not a mode someone has to remember. /MP : the model is large.
+cl /nologo /MP /EHsc /W4 /WX /permissive- /std:c++17 /Od /Zi /fsanitize=address /wd4456 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS ^
+   /I"%ROOT%include" /I"%ROOT%src" /I"%ROOT%tests" ^
    "%ROOT%tests\test_main.cpp" "%ROOT%tests\t_json.cpp" "%ROOT%tests\t_clip.cpp" "%ROOT%tests\t_retry.cpp" "%ROOT%tests\t_skillchain.cpp" "%ROOT%tests\t_durations.cpp" "%ROOT%tests\t_config.cpp" "%ROOT%tests\t_limbus.cpp" "%ROOT%tests\t_omen.cpp" "%ROOT%tests\t_buffgroups.cpp" "%ROOT%tests\t_songslot.cpp" "%ROOT%tests\t_songslots.cpp" "%ROOT%tests\t_flipwatch.cpp" "%ROOT%tests\t_capwatch.cpp" "%ROOT%tests\t_allygroup.cpp" "%ROOT%tests\t_focusrules.cpp" "%ROOT%tests\t_castmatch.cpp" "%ROOT%tests\t_debuffrules.cpp" "%ROOT%tests\t_geardat.cpp" ^
+   "%ROOT%tests\t_timers.cpp" "%ROOT%tests\fake_game.cpp" ^
    "%ROOT%src\model\skillchain.cpp" "%ROOT%src\model\ui_config.cpp" ^
+   "%ROOT%src\model\timers_build.cpp" "%ROOT%src\model\model_clock.cpp" "%ROOT%src\model\flipwatch.cpp" "%ROOT%src\model\capwatch.cpp" "%ROOT%src\model\zones.cpp" ^
+   "%ROOT%src\model\party_state.cpp" "%ROOT%src\model\party_state_roster.cpp" "%ROOT%src\model\party_state_zonetracker.cpp" "%ROOT%src\model\party_state_pointwatch.cpp" "%ROOT%src\model\party_state_hate.cpp" "%ROOT%src\model\party_state_skillchain.cpp" "%ROOT%src\model\party_state_empypop.cpp" ^
    user32.lib kernel32.lib ^
    /Fo"%ROOT%build\t\\" /Fe"%ROOT%build\tests.exe"
 if errorlevel 1 ( echo [tests] BUILD FAILED & exit /b 1 )

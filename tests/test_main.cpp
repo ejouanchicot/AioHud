@@ -29,6 +29,7 @@ void test_focus_rules();
 void test_cast_match();
 void test_debuffrules();
 void test_gear_dat();
+void test_timers();
 
 int main() {
     test_json();
@@ -49,6 +50,7 @@ int main() {
     test_cast_match();
     test_debuffrules();
     test_gear_dat();
+    test_timers();
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail;
 }
