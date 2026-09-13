@@ -17,6 +17,7 @@
 #include "gfx/window.h"
 #include "ui/tex_retry.h"   // TexRetry : bounded-retry lazy texture load
 #include "model/gamestate.h"
+#include "model/timers_build.h"   // songrow_ring_dump / timers_focus_trace / timers_register_checks (the Timers model)
 #include "model/layout.h"
 #include "ui/widget.h"
 #include "ui/liquid_bars.h"
@@ -113,22 +114,9 @@ private:
     int   notReadyFrames_ = 0;    // consecutive frames the player poll failed -> a SUSTAINED run = logout (re-hide)
 };
 
-// //aio songdump : the Timers row log records into RAM, NEVER to disk. Writing a line per event slowed the frame
-// just enough to make the ghost-song bug DISAPPEAR while observed -- a textbook heisenbug. Recording is therefore
-// always-on and allocation-free (a fixed ring of formatted lines), and the file write happens only on command.
-#ifdef AIOHUD_PROBES
-void songrow_ring_dump();
-#endif
-
-// //aio focustrace : log, for the next N self-buff rows, which "track per job" key was tested and what the
-// config actually holds -- job, source spell, hide key, focus key, and each lookup's result. Reading the code
-// could not explain a Hidden+Focus buff staying visible; this says which lookup misses.
-void timers_focus_trace(int seconds);   // armed for a DURATION : a per-row countdown burns out in seconds at 60 Hz
-bool timers_focus_trace_armed();
-
-// Hand this module's checks to the in-game watcher (model/selftest.h). Called once on the first frame ; the
-// registry is idempotent, so a //load after an unload re-registers without doubling anything.
-void timers_register_checks();
+// The Timers rows, their FOCUS monitor, //aio songdump / ftrace and the module's checks : model/timers_build.h
+// (moved out of the renderer on 2026-09-13). The //aio songdump ring records into RAM, never to disk -- writing a
+// line per event once made the ghost-song bug disappear while observed.
 void minimap_register_checks();   // MAP.LOAD_FAILED (minimap.cpp)
 
 } // namespace aio

@@ -3,6 +3,10 @@
 // Each control is keyed by CTRL_ID (file:line hash, see config_controls.h) -- no hand-numbered uids.
 // Reuses catOpen_ [6] (Display) / [5] (Text) -- fine, module sections are mutually exclusive.
 #include "ui/config_page.h"
+#ifdef AIOHUD_DEVTOOLS
+#include "aiohud_devtools.h"   // dev-only : the Timers equivalence witness mirrors the reset
+#endif
+#include "model/timers_build.h"   // timers_reset : flush live buff/recast timers + focus alerts (also //aio timers reset)
 #include "ui/config_controls.h"
 #include "ui/config_rows.h"
 #include "model/ui_config.h"
@@ -15,7 +19,6 @@
 
 namespace aio {
 
-void timers_reset();   // hud_timers.cpp : flush live buff/recast timers + focus alerts (also //aio timers reset)
 
 void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool click,
                                 float& ry, int& ri, float e,
@@ -145,7 +148,11 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         { ROW_BAND(52.0f)   // Reset : flush live buff/recast timers + focus "OUT" alerts (clears a stuck row). Same as //aio timers reset.
             const float bh = snap(34.0f), bw = snap(150.0f), ty = ry + yo + (snap(40.0f) - bh) * 0.5f; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + bh * 0.5f, tr("Reset timers", "R\xC3\xA9initialiser timers"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            if (push_btn(dev, fo, mo, click, CTRL_ID, coX + ctrlW - bw, ty, bw, bh, tr("Reset now", "R\xC3\xA9initialiser"), 1)) timers_reset();
+            if (push_btn(dev, fo, mo, click, CTRL_ID, coX + ctrlW - bw, ty, bw, bh, tr("Reset now", "R\xC3\xA9initialiser"), 1)) { timers_reset();
+#ifdef AIOHUD_DEVTOOLS
+                devtools::timers_mirror_reset();
+#endif
+            }
         } ROW_NEXT(52.0f)
         cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
     }   // end Alerts

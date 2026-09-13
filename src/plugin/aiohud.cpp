@@ -63,9 +63,7 @@ static const char* aio_word(const char* buf, const char* tok) {
     return 0;
 }
 
-namespace aio { void timers_reset(); }   // hud_timers.cpp : //aio timers reset -> flush live buff/recast timers + focus alerts
-namespace aio { int timers_focus_list(char out[][64], int max); int timers_focus_forget(const char* a, const char* b); int timers_focus_restore(const char* a, const char* b); }   // //aio out / //aio in
-namespace aio { void timers_oblog_arm(); }   // hud_timers.cpp : //aio oblog -> one-frame dump of the ally-buff pipeline
+#include "model/timers_build.h"   // //aio timers reset / out / in / oblog / ftrace : the Timers rows and their FOCUS monitor
 // EVERY line this file prints is read by a PERSON, so it comes out in the language they picked in the config --
 // the same ui_config().lang the config window uses. One setting, not two: a separate "chat language" would be a
 // second thing to set and a second thing to forget. tr() is the ui toolkit's translator (config_controls.cpp),
@@ -1123,6 +1121,9 @@ static void aio_command_dispatch(const char* cmd)
             m[sizeof(m) - 1] = 0; chat(m); return;
         }
         const int k = aio::timers_focus_forget(a1, a2);
+#ifdef AIOHUD_DEVTOOLS
+        aio::devtools::timers_mirror_forget(a1, a2);
+#endif
         if (k) _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%c%d line(s) no longer watched", "%c%c[Timers] %c%c%d ligne(s) retiree(s) du suivi"), 0x1F, YEL, 0x1F, GRN, k);
         else   _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cnothing matches \"%s\"", "%c%c[Timers] %c%crien ne correspond a \"%s\""), 0x1F, YEL, 0x1F, RED, a1);
         m[sizeof(m) - 1] = 0; chat(m);
@@ -1145,6 +1146,9 @@ static void aio_command_dispatch(const char* cmd)
         const int YEL = 50, GRN = 158, GRAY = 160, MODE = 1;
         char m[192];
         const int k = aio::timers_focus_restore(w1, w2);
+#ifdef AIOHUD_DEVTOOLS
+        aio::devtools::timers_mirror_restore(w1, w2);
+#endif
         if (k) _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%c%d line(s) watched again", "%c%c[Timers] %c%c%d ligne(s) remise(s) sous suivi"), 0x1F, YEL, 0x1F, GRN, k);
         else   _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cnothing to put back (no line was removed)", "%c%c[Timers] %c%crien a remettre (aucune ligne retiree)"), 0x1F, YEL, 0x1F, GRAY);
         m[sizeof(m) - 1] = 0; g_host.ffxi().add_to_chat(MODE, m);
@@ -1353,7 +1357,11 @@ static void aio_command_dispatch(const char* cmd)
         return;
     }
     if (strstr(buf, "timers")) {                          // //aio timers reset -> flush live buff/recast timers + focus "OUT" alerts
-        if (strstr(buf, "reset")) { aio::timers_reset(); g_host.console().print(aio::tr(">>> AioHud : timers reset <<<", ">>> AioHud : timers remis a zero <<<")); }
+        if (strstr(buf, "reset")) { aio::timers_reset();
+#ifdef AIOHUD_DEVTOOLS
+            aio::devtools::timers_mirror_reset();
+#endif
+            g_host.console().print(aio::tr(">>> AioHud : timers reset <<<", ">>> AioHud : timers remis a zero <<<")); }
         return;
     }
     if (strstr(buf, "edit")) {                            // toggle layout edit mode (drag/resize boxes on the live game)
