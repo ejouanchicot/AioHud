@@ -811,6 +811,12 @@ static bool target_sig_ok(u32 v) {
     return ent && safe_read(ent + eidx * 4, &back) && back == e0;
 }
 
+int target_root_rescan(unsigned* rvaOut, int cap) {
+    const int n = fm_image_find(target_sig_ok, rvaOut, cap);
+    if (n == 1) fm_adopt(FM_TARGET_T, rvaOut[0], "//aio rva whole-image signature");
+    return n;
+}
+
 u32 target_root() {
     static int s_frames = 0, s_tries = 0;
     const u32 ffm = ffximain_base();

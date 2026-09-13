@@ -31,6 +31,7 @@
 #include "model/layout.h"
 #include "model/party_state.h"
 #include "model/game_mem.h"
+#include "model/ffximain_rva.h"     // //aio rva : the FFXiMain addresses, their whole-image search, the break test
 #include "model/ui_config.h"
 #include "model/nms_gen.h"          // NMS / NMS_N : the //aio pop <nm> selector
 #include "model/paths.h"
@@ -49,18 +50,20 @@
 #define AIOHUD_VERSION "dev"
 #endif
 
-// A token match with WORD BOUNDARIES, unlike the plain strstr() every other command here uses. It exists
-// because "out" is a substring of "layout": tested with strstr, and tested EARLIER in this chain, //aio out
-// would have swallowed //aio edit layout whole -- silently, which is how the probe-command collision in
-// aiohud_probes.cpp went unnoticed for months. A short token needs boundaries; a long one gets away without.
-// Returns the text AFTER the token (possibly empty), or 0 when the token is not there as a word.
-static const char* aio_word(const char* buf, const char* tok) {
+// The COMMAND WORD itself : the first word after an optional leading "aio". out / in / rva take a free-text
+// argument (a name, a spell), and the branches above them in the old order matched by substring over the WHOLE
+// buffer -- so "//aio out Poppy" changed the EmpyPop NM ("pop"), and "//aio in Simon" added a fake party member
+// ("sim"). Found by the 2026-09-14 audit. A verb is matched where a verb is, and dispatched before anything
+// that searches the buffer. It replaces aio_word, a word-boundary match ANYWHERE in the buffer that existed because
+// "out" is a substring of "layout" -- boundaries fixed that collision, but not a name argument that contains another
+// command's token. Returns the text AFTER the verb (possibly empty), or 0.
+static const char* aio_verb(const char* buf, const char* tok) {
+    const char* p = buf;
+    while (*p == ' ' || *p == '\t' || *p == '/') ++p;
+    if (!strncmp(p, "aio", 3) && (p[3] == ' ' || p[3] == '\t')) { p += 3; while (*p == ' ' || *p == '\t') ++p; }
     const size_t n = strlen(tok);
-    for (const char* p = buf; (p = strstr(p, tok)) != 0; p += n) {
-        const char b = (p == buf) ? ' ' : p[-1], a = p[n];
-        if ((b == ' ' || b == '\t') && (a == 0 || a == ' ' || a == '\t')) return p + n;
-    }
-    return 0;
+    if (strncmp(p, tok, n) || (p[n] && p[n] != ' ' && p[n] != '\t')) return 0;
+    return p + n;
 }
 
 #include "model/timers_build.h"   // //aio timers reset / out / in / oblog / ftrace : the Timers rows and their FOCUS monitor
@@ -616,7 +619,14 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
 // through the OS keyboard LAYOUT (ToAsciiEx) so AZERTY / accents / Shift / AltGr / every symbol come
 // out right -- NOT a hard-coded QWERTY table. While a config text field is focused we feed the char
 // and CONSUME the key (return 1) so the game never sees it ; otherwise the key passes straight through.
-static bool g_keyLog = false;   // //aio keylog -> dump every key event to aiohud_debug.log for diagnosing input bugs
+// //aio keylog -> dump key events to aiohud_debug.log for diagnosing input bugs. BOUNDED, and blind to what you type
+// outside the config : it used to be a bare toggle that recorded every key -- chat and /tell included, as characters --
+// for as long as nobody remembered to turn it off (2026-09-14 audit). Now a time window and an event budget, the
+// translated character only while a config text field has the keys (the case it exists for : AZERTY, dead keys),
+// and it says when it closes.
+static bool     g_keyLog = false;
+static unsigned g_keyLogUntil = 0;   // GetTickCount deadline
+static int      g_keyLogLeft = 0;    // events left in the budget
 unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
     tid_once("key");
     // Press/release lives in bit 0x40 of b's LOW BYTE (b's low byte = the key-state flags Windower passes ;
@@ -655,10 +665,19 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
     // OEM/punctuation VKs, which made ToUnicode fail (the missing , ; : ! ? . / etc.).
     if (pressed && vk)
         nc = ToUnicodeEx(vk, (UINT)dik, ks, wbuf, 8, 0x4, layout);   // 0x4 = don't mutate kernel dead-key state
-    if (g_keyLog) debug::log("KEY key=%08X b=%08X c=%08X dik=%02X vk=%02X pr=%d nc=%d ch=U+%04X ch1=U+%04X sh=%d ct=%d al=%d want=%d",
-                             (unsigned)key, (unsigned)b, (unsigned)c, dik, vk, (int)pressed, nc, (unsigned)wbuf[0], (unsigned)wbuf[1],
-                             (ks[VK_SHIFT] & 0x80) != 0, (ks[VK_CONTROL] & 0x80) != 0, (ks[VK_MENU] & 0x80) != 0,
-                             (int)g_hud.config().wants_keys());
+    if (g_keyLog) {
+        if (g_keyLogLeft <= 0 || (int)(GetTickCount() - g_keyLogUntil) >= 0) {
+            g_keyLog = false;
+            debug::log("KEY window closed (%s)", g_keyLogLeft <= 0 ? "event budget spent" : "time window over");
+        } else {
+            --g_keyLogLeft;
+            const bool typing = g_hud.config().wants_keys();   // only a config text field : never the chat line
+            debug::log("KEY key=%08X b=%08X c=%08X dik=%02X vk=%02X pr=%d nc=%d ch=U+%04X ch1=U+%04X sh=%d ct=%d al=%d want=%d",
+                       typing ? (unsigned)key : 0u, (unsigned)b, (unsigned)c, typing ? dik : 0, typing ? vk : 0, (int)pressed, nc,   // outside a field the scan code alone would spell the chat line
+                       typing ? (unsigned)wbuf[0] : 0u, typing ? (unsigned)wbuf[1] : 0u,
+                       (ks[VK_SHIFT] & 0x80) != 0, (ks[VK_CONTROL] & 0x80) != 0, (ks[VK_MENU] & 0x80) != 0, (int)typing);
+        }
+    }
 
     // End (HELD) = "peek" : hide the ENTIRE HUD while End is down, restore it on release. Only when NOT typing
     // (inside a text field End = cursor-to-end, handled below). ONLY the dedicated End (DIK 0xCF, above the arrows) --
@@ -832,6 +851,151 @@ static void aio_command_dispatch(const char* cmd)
     char buf[256]; int i = 0;
     for (; cmd[i] && i < 255; i++) { char c = cmd[i]; buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; }
     buf[i] = 0;
+
+    // ---- VERBS FIRST. Commands whose argument is free text (a name, a spell), matched on the command word itself,
+    //      before any branch below searches the whole buffer for a substring (see aio_verb).
+    // //aio out <n|name|spell|alerts|all|list> -- forget a buff we are watching on someone. The case it exists for: you Haste the wrong name,
+    // and from then on AioHUD believes that person is supposed to have Haste, and says so in red when it ends.
+    // Nothing at cast time can tell a mistake from an intention, so the correction has to be a person's, and it
+    // has to be reachable WITHOUT remembering anything -- which is why the no-argument form LISTS what is being
+    // watched, numbered, instead of doing something. You read the names off that list (or off the row itself,
+    // which says "Name - Spell") and type as much as you like: an index, a prefix of the name, a prefix of the
+    // spell, or both in either order. "all" clears the lot. The mute lasts exactly as long as the buff that is
+    // up -- cast it on them again later and it is watched again, because that time you meant it.
+    if (const char* outRest = aio_verb(buf, "out")) {
+        // The two words after the token, copied out. tok_arg() is deliberately NOT used: it lives in the
+        // untracked probes file, so a command leaning on it is silently absent from every release build
+        // (architecture/release-checklist.md -- this has bitten before).
+        char w1[32] = { 0 }, w2[32] = { 0 };
+        { const char* a = outRest;
+          for (int w = 0; w < 2; ++w) {
+              while (*a == ' ') ++a;
+              char* d = w ? w2 : w1; int i = 0;
+              while (*a && *a != ' ' && i < 31) d[i++] = *a++;
+              d[i] = 0;
+              if (!*a) break; } }
+        const char* a1 = w1; const char* a2 = w2;
+        // ONE line of feedback, and no listing. A list belongs in a console; the numbers belong on the rows,
+        // which is where they are drawn -- and on a job like RDM there are far too many watched buffs for a
+        // printed list to be a help. The real confirmation is visual: a row you stop watching loses its number.
+        // Colour is IN-BAND (0x1F + a palette index), written with %c -- never "\xNN", which would merge with a
+        // following hex digit. Same channel //aio ept uses.
+        const int YEL = 50, GRN = 158, RED = 68, GRAY = 160, MODE = 1;
+        auto chat = [](const char* s2) { g_host.ffxi().add_to_chat(MODE, s2); };
+        char m[192];
+        // `list` is the one case the numbers on the rows cannot cover: a watched buff whose row is NOT drawn --
+        // clipped by Max per column, or hidden by a filter. No row means no number, and then nothing to type.
+        // It is opt-in for exactly that reason: on RDM the everyday list is twenty lines and helps nobody.
+        // A PREFIX OF "list", from two letters -- not any word starting with l, and not any word starting with
+        // li. A single letter made every ally whose name begins with an L (Lyra, Lucius) print the list instead
+        // of losing their row ; two letters still swallowed Lily and Linus. The name form is the one people
+        // actually type, so it wins every collision that is not literally the start of the word "list".
+        bool wantList = false;
+        { const size_t ln = strlen(a1);
+          if (ln >= 2 && ln <= 4) { wantList = true;
+              for (size_t i = 0; i < ln; ++i) { char c = a1[i]; if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
+                  if (c != "list"[i]) { wantList = false; break; } } } }
+        if (wantList) {
+            char rows[aio::TM_FOCUS_MAX][64];
+            const int n = aio::timers_focus_list(rows, aio::TM_FOCUS_MAX);
+            if (!n) { _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cno watched buff", "%c%c[Timers] %c%caucun buff suivi"), 0x1F, YEL, 0x1F, GRAY); m[sizeof(m)-1] = 0; chat(m); return; }
+            _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cwatched buffs", "%c%c[Timers] %c%cbuffs suivis"), 0x1F, YEL, 0x1F, GRN); m[sizeof(m)-1] = 0; chat(m);
+            for (int i = 0; i < n; ++i) { _snprintf(m, sizeof(m), "%c%c  %s", 0x1F, GRN, rows[i]); m[sizeof(m)-1] = 0; chat(m); }
+            return;
+        }
+        if (!a1[0]) {
+            _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%c//aio out <number> (drawn on the row), or list / alerts (the red ones) / all -- //aio in puts it back",
+                                            "%c%c[Timers] %c%c//aio out <numero> (affiche sur la ligne), ou list / alertes (les rouges) / all -- //aio in remet"), 0x1F, YEL, 0x1F, GRAY);
+            m[sizeof(m) - 1] = 0; chat(m); return;
+        }
+        const int k = aio::timers_focus_forget(a1, a2);
+#ifdef AIOHUD_DEVTOOLS
+        aio::devtools::timers_mirror_forget(a1, a2);
+#endif
+        if (k) _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%c%d line(s) no longer watched", "%c%c[Timers] %c%c%d ligne(s) retiree(s) du suivi"), 0x1F, YEL, 0x1F, GRN, k);
+        else   _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cnothing matches \"%s\"", "%c%c[Timers] %c%crien ne correspond a \"%s\""), 0x1F, YEL, 0x1F, RED, a1);
+        m[sizeof(m) - 1] = 0; chat(m);
+        return;
+    }
+    // //aio in -- the undo of //aio out, and the no-argument form puts back EVERYTHING that is off. A row you
+    // took off shows no number any more (that is how you know it is off), so a bare "in" is the only form that
+    // can be typed from what is on screen ; a number or a name still works, off //aio out list.
+    // The FIRST word, like "out" : "in" hides inside a dozen words ("inv", "minimap"), and this chain matches
+    // by substring everywhere else.
+    if (const char* inRest = aio_verb(buf, "in")) {
+        char w1[32] = { 0 }, w2[32] = { 0 };
+        { const char* a = inRest;
+          for (int w = 0; w < 2; ++w) {
+              while (*a == ' ') ++a;
+              char* d = w ? w2 : w1; int i = 0;
+              while (*a && *a != ' ' && i < 31) d[i++] = *a++;
+              d[i] = 0;
+              if (!*a) break; } }
+        const int YEL = 50, GRN = 158, GRAY = 160, MODE = 1;
+        char m[192];
+        const int k = aio::timers_focus_restore(w1, w2);
+#ifdef AIOHUD_DEVTOOLS
+        aio::devtools::timers_mirror_restore(w1, w2);
+#endif
+        if (k) _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%c%d line(s) watched again", "%c%c[Timers] %c%c%d ligne(s) remise(s) sous suivi"), 0x1F, YEL, 0x1F, GRN, k);
+        else   _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cnothing to put back (no line was removed)", "%c%c[Timers] %c%crien a remettre (aucune ligne retiree)"), 0x1F, YEL, 0x1F, GRAY);
+        m[sizeof(m) - 1] = 0; g_host.ffxi().add_to_chat(MODE, m);
+        return;
+    }
+    // //aio rva [break [delta]] -- the FFXiMain addresses after a client patch. //aio doctor sends a tester here when
+    // the target chain is dead, and two healers log "run //aio rva" when their budget closes : it has to exist in a
+    // RELEASE, which it did not -- it lived in the untracked probes file, so the remedy the doctor named answered
+    // "unknown command" (2026-09-14 audit). This is the shipped half : the addresses in use, a whole-image search
+    // for the target pointer (adopted when unique) and for the menu slots, and a block ready to paste over the
+    // seeds. `break` poisons them in memory to watch the healers work ; a reload undoes it.
+    if (const char* rvaRest = aio_verb(buf, "rva")) {
+        while (*rvaRest == ' ') ++rvaRest;
+        if (!strncmp(rvaRest, "break", 5)) {
+            unsigned d = 0x100; { const char* q = rvaRest + 5; while (*q == ' ') ++q; if (*q) d = (unsigned)strtoul(q, 0, 0); }
+            aio::fm_poison(d);
+            g_host.console().print(aio::tr(">>> AioHud rva break : the addresses are broken ON PURPOSE (in memory only). Target someone, change zone, open a menu -- then //aio doctor. Reload the plugin to undo <<<",
+                                           ">>> AioHud rva break : adresses cassees VOLONTAIREMENT (en memoire seulement). Cible quelqu'un, change de zone, ouvre un menu -- puis //aio doctor. Recharge le plugin pour annuler <<<"));
+            return;
+        }
+        if (!aio::ffximain_base()) { g_host.console().print(aio::tr(">>> AioHud rva : FFXiMain is not loaded -- be in game <<<", ">>> AioHud rva : FFXiMain n'est pas charge -- sois en jeu <<<")); return; }
+        windower::debug::log("=== AIO RVA : FFXiMain fingerprint %08X ===", aio::fm_fingerprint());
+        { char fl[aio::FM_N][160]; const int fn = aio::fm_report(fl, aio::FM_N);
+          for (int k = 0; k < fn; ++k) windower::debug::log("  in use : %s", fl[k]); }
+        int nT = 0, nM = 0;
+        { unsigned hits[8]; nT = aio::target_root_rescan(hits, 8);
+          for (int k = 0; k < nT; ++k) windower::debug::log("  [TARGET_T] FFXiMain+0x%X", hits[k]);
+          windower::debug::log("  target scan : %d hit(s)%s", nT,
+                               nT == 0 ? "  <- none : TARGET a party member and run it again"
+                             : nT == 1 ? "  -> adopted" : "  <- several : none adopted, send this log"); }
+        { unsigned slots[16]; char names[16][9]; nM = aio::fm_menu_slots(slots, names, 16);
+          for (int k = 0; k < nM; ++k) windower::debug::log("  [MENU_PTR] FFXiMain+0x%X name='%s'", slots[k], names[k]);
+          windower::debug::log("  menu scan : %d slot(s)%s", nM, nM ? "  (the focused one follows the menu you open : run it again with another menu to tell)"
+                                                                     : "  <- none : OPEN a menu (Magic) and run it again"); }
+        windower::debug::log("  --- paste over ENTRIES[] in src/model/ffximain_rva.cpp (only the PROVEN lines are trustworthy) ---");
+        for (int k = 0; k < (int)aio::FM_N; ++k)
+            windower::debug::log("    { 0x%06X, \"%s\" },   // %s", aio::fm_rva((aio::FmStatic)k), aio::fm_name((aio::FmStatic)k),
+                                 aio::fm_confirmed((aio::FmStatic)k) ? "proven on this client" : "NOT proven -- do not paste this one");
+        windower::debug::log("=== AIO RVA end ===");
+        char m[240];
+        _snprintf(m, sizeof(m), aio::tr(">>> AioHud rva : target %d hit(s), menu %d slot(s) -- report in Windower\\plugins\\aiohud_debug.log (target a party member and open the Magic menu first for a complete one) <<<",
+                                        ">>> AioHud rva : cible %d resultat(s), menu %d emplacement(s) -- rapport dans Windower\\plugins\\aiohud_debug.log (cible un membre et ouvre le menu Magie avant, pour un rapport complet) <<<"), nT, nM);
+        m[sizeof(m) - 1] = 0; g_host.console().print(m);
+        return;
+    }
+    // //aio bcaptlog [sec] -> the buff-action capture (every cat 4/6/11 action : who cast what on whom, message id,
+    // the caster attributed to that status). The capture is compiled into every build (party_state.cpp) and its
+    // own log line says "re-arm with //aio bcaptlog" -- but the only way to ARM it lived in the untracked probes
+    // file, so in a release the capture was dead code (2026-09-14 audit). Time-windowed, 10..900 s.
+    if (const char* bc = aio_verb(buf, "bcaptlog")) {
+        int sec = 180; while (*bc == ' ') ++bc; if (*bc >= '0' && *bc <= '9') sec = atoi(bc);
+        if (sec < 10) sec = 10; if (sec > 900) sec = 900;
+        aio::party().arm_bcapt_log(sec);
+        char m[240];
+        _snprintf(m, sizeof(m), aio::tr(">>> AioHud : bcaptlog ARMED for %d s -- cast / let the others cast, then send Windower\\plugins\\aiohud_debug.log (BCAPT lines) <<<",
+                                        ">>> AioHud : bcaptlog ARME pour %d s -- lance tes buffs / laisse les autres lancer, puis envoie Windower\\plugins\\aiohud_debug.log (lignes BCAPT) <<<"), sec);
+        m[sizeof(m) - 1] = 0; g_host.console().print(m);
+        return;
+    }
 
     // //aio profile save|load|delete <name> | profile list -> named snapshots of the whole config.
     // Dispatched FIRST : the free-text <name> can contain other command keywords ("mydemo", "sim1",
@@ -1015,10 +1179,20 @@ static void aio_command_dispatch(const char* cmd)
         spawn_updater(false);      // silent on purpose : //aioupdate must produce no console output
         return;
     }
-    if (strstr(buf, "keylog")) {   // //aio keylog -> toggle dumping every key event to aiohud_debug.log (input diagnosis)
-        g_keyLog = !g_keyLog;
-        g_host.console().print(g_keyLog ? aio::tr(">>> AioHud : key log ON (type in the profile name field, then send aiohud_debug.log) <<<", ">>> AioHud : log clavier ON (tape dans le champ nom de profil, puis envoie aiohud_debug.log) <<<")
-                                        : aio::tr(">>> AioHud : key log OFF <<<", ">>> AioHud : log clavier OFF <<<"));
+    if (strstr(buf, "keylog")) {   // //aio keylog [sec] -> key events to aiohud_debug.log for [sec] (default 60, 10..300) or 400 events ; again = off
+        if (g_keyLog) {
+            g_keyLog = false; debug::log("KEY window closed (turned off)");
+            g_host.console().print(aio::tr(">>> AioHud : key log OFF <<<", ">>> AioHud : log clavier OFF <<<"));
+            return;
+        }
+        int sec = 60; { const char* a = strstr(buf, "keylog") + 6; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
+        if (sec < 10) sec = 10; if (sec > 300) sec = 300;
+        g_keyLogUntil = GetTickCount() + (unsigned)sec * 1000u; g_keyLogLeft = 400; g_keyLog = true;
+        debug::log("KEY window open : %d s or 400 events (characters recorded only inside a config text field)", sec);
+        char m[240];
+        _snprintf(m, sizeof(m), aio::tr(">>> AioHud : key log ON for %d s (type in the profile name field, then send aiohud_debug.log -- chat keys are NOT recorded as characters) <<<",
+                                        ">>> AioHud : log clavier ON pour %d s (tape dans le champ nom de profil, puis envoie aiohud_debug.log -- les touches du chat ne sont PAS enregistrees en caracteres) <<<"), sec);
+        m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
     }
     // NB the name: NOT "focustrace". Command dispatch is a chain of strstr(), and the pre-existing `//aio focus`
@@ -1064,94 +1238,6 @@ static void aio_command_dispatch(const char* cmd)
         aio::party().set_songdur_trace(sec);
         g_host.console().print(aio::tr(">>> AioHud : songdur ARMED -- sing, then send Windower\\plugins\\aiohud_debug.log (SONGDUR lines = the model, SONGREAL = the game's own timer) <<<", ">>> AioHud : songdur ARME -- chante, puis envoie Windower\\plugins\\aiohud_debug.log (lignes SONGDUR = le modele, SONGREAL = le timer reel du jeu) <<<"));
         g_host.console().print(aio::tr(">>> Cleanest test : Pianissimo the song ON YOURSELF -- same math as on an ally, but with a real timer to check it against <<<", ">>> Test le plus net : Pianissimo la song SUR TOI -- meme calcul qu'un Pianissimo sur un allie, mais avec un vrai timer pour le verifier <<<"));
-        return;
-    }
-    // //aio out <n|name|spell|alerts|all|list> -- forget a buff we are watching on someone. The case it exists for: you Haste the wrong name,
-    // and from then on AioHUD believes that person is supposed to have Haste, and says so in red when it ends.
-    // Nothing at cast time can tell a mistake from an intention, so the correction has to be a person's, and it
-    // has to be reachable WITHOUT remembering anything -- which is why the no-argument form LISTS what is being
-    // watched, numbered, instead of doing something. You read the names off that list (or off the row itself,
-    // which says "Name - Spell") and type as much as you like: an index, a prefix of the name, a prefix of the
-    // spell, or both in either order. "all" clears the lot. The mute lasts exactly as long as the buff that is
-    // up -- cast it on them again later and it is watched again, because that time you meant it.
-    if (const char* outRest = aio_word(buf, "out")) {
-        // The two words after the token, copied out. tok_arg() is deliberately NOT used: it lives in the
-        // untracked probes file, so a command leaning on it is silently absent from every release build
-        // (architecture/release-checklist.md -- this has bitten before).
-        char w1[32] = { 0 }, w2[32] = { 0 };
-        { const char* a = outRest;
-          for (int w = 0; w < 2; ++w) {
-              while (*a == ' ') ++a;
-              char* d = w ? w2 : w1; int i = 0;
-              while (*a && *a != ' ' && i < 31) d[i++] = *a++;
-              d[i] = 0;
-              if (!*a) break; } }
-        const char* a1 = w1; const char* a2 = w2;
-        // ONE line of feedback, and no listing. A list belongs in a console; the numbers belong on the rows,
-        // which is where they are drawn -- and on a job like RDM there are far too many watched buffs for a
-        // printed list to be a help. The real confirmation is visual: a row you stop watching loses its number.
-        // Colour is IN-BAND (0x1F + a palette index), written with %c -- never "\xNN", which would merge with a
-        // following hex digit. Same channel //aio ept uses.
-        const int YEL = 50, GRN = 158, RED = 68, GRAY = 160, MODE = 1;
-        auto chat = [](const char* s2) { g_host.ffxi().add_to_chat(MODE, s2); };
-        char m[192];
-        // `list` is the one case the numbers on the rows cannot cover: a watched buff whose row is NOT drawn --
-        // clipped by Max per column, or hidden by a filter. No row means no number, and then nothing to type.
-        // It is opt-in for exactly that reason: on RDM the everyday list is twenty lines and helps nobody.
-        // A PREFIX OF "list", from two letters -- not any word starting with l, and not any word starting with
-        // li. A single letter made every ally whose name begins with an L (Lyra, Lucius) print the list instead
-        // of losing their row ; two letters still swallowed Lily and Linus. The name form is the one people
-        // actually type, so it wins every collision that is not literally the start of the word "list".
-        bool wantList = false;
-        { const size_t ln = strlen(a1);
-          if (ln >= 2 && ln <= 4) { wantList = true;
-              for (size_t i = 0; i < ln; ++i) { char c = a1[i]; if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
-                  if (c != "list"[i]) { wantList = false; break; } } } }
-        if (wantList) {
-            char rows[aio::TM_FOCUS_MAX][64];
-            const int n = aio::timers_focus_list(rows, aio::TM_FOCUS_MAX);
-            if (!n) { _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cno watched buff", "%c%c[Timers] %c%caucun buff suivi"), 0x1F, YEL, 0x1F, GRAY); m[sizeof(m)-1] = 0; chat(m); return; }
-            _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cwatched buffs", "%c%c[Timers] %c%cbuffs suivis"), 0x1F, YEL, 0x1F, GRN); m[sizeof(m)-1] = 0; chat(m);
-            for (int i = 0; i < n; ++i) { _snprintf(m, sizeof(m), "%c%c  %s", 0x1F, GRN, rows[i]); m[sizeof(m)-1] = 0; chat(m); }
-            return;
-        }
-        if (!a1[0]) {
-            _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%c//aio out <number> (drawn on the row), or list / alerts (the red ones) / all -- //aio in puts it back",
-                                            "%c%c[Timers] %c%c//aio out <numero> (affiche sur la ligne), ou list / alertes (les rouges) / all -- //aio in remet"), 0x1F, YEL, 0x1F, GRAY);
-            m[sizeof(m) - 1] = 0; chat(m); return;
-        }
-        const int k = aio::timers_focus_forget(a1, a2);
-#ifdef AIOHUD_DEVTOOLS
-        aio::devtools::timers_mirror_forget(a1, a2);
-#endif
-        if (k) _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%c%d line(s) no longer watched", "%c%c[Timers] %c%c%d ligne(s) retiree(s) du suivi"), 0x1F, YEL, 0x1F, GRN, k);
-        else   _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cnothing matches \"%s\"", "%c%c[Timers] %c%crien ne correspond a \"%s\""), 0x1F, YEL, 0x1F, RED, a1);
-        m[sizeof(m) - 1] = 0; chat(m);
-        return;
-    }
-    // //aio in -- the undo of //aio out, and the no-argument form puts back EVERYTHING that is off. A row you
-    // took off shows no number any more (that is how you know it is off), so a bare "in" is the only form that
-    // can be typed from what is on screen ; a number or a name still works, off //aio out list.
-    // Word boundaries, like "out" : "in" hides inside a dozen words ("inv", "minimap"), and this chain matches
-    // by substring everywhere else.
-    if (const char* inRest = aio_word(buf, "in")) {
-        char w1[32] = { 0 }, w2[32] = { 0 };
-        { const char* a = inRest;
-          for (int w = 0; w < 2; ++w) {
-              while (*a == ' ') ++a;
-              char* d = w ? w2 : w1; int i = 0;
-              while (*a && *a != ' ' && i < 31) d[i++] = *a++;
-              d[i] = 0;
-              if (!*a) break; } }
-        const int YEL = 50, GRN = 158, GRAY = 160, MODE = 1;
-        char m[192];
-        const int k = aio::timers_focus_restore(w1, w2);
-#ifdef AIOHUD_DEVTOOLS
-        aio::devtools::timers_mirror_restore(w1, w2);
-#endif
-        if (k) _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%c%d line(s) watched again", "%c%c[Timers] %c%c%d ligne(s) remise(s) sous suivi"), 0x1F, YEL, 0x1F, GRN, k);
-        else   _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cnothing to put back (no line was removed)", "%c%c[Timers] %c%crien a remettre (aucune ligne retiree)"), 0x1F, YEL, 0x1F, GRAY);
-        m[sizeof(m) - 1] = 0; g_host.ffxi().add_to_chat(MODE, m);
         return;
     }
     if (strstr(buf, "corners")) {   // //aio corners -> A/B the BAKED corner masks against the feathered geometry

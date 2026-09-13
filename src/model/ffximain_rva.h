@@ -65,6 +65,14 @@ void rva_register_checks();   // the in-game watcher's checks for these addresse
 // One report line per static, for //aio doctor : address, state, and how it got there.
 int  fm_report(char out[][160], int maxOut);
 
+// //aio rva : ONE walk of FFXiMain's whole readable image, on a person's command -- never per frame. The runtime
+// healers only search a window around each seed ; a patch that moved an address further than that window is
+// what a tester is asked to run this for (//aio doctor says so). fm_image_find returns the RVAs whose u32 value
+// `sig` accepts (up to `cap`) ; fm_menu_slots the menu-shaped slots with each one's 8-char def name (a menu must
+// be OPEN for the focused slot to be among them). Both return the number found, 0 when FFXiMain is not loaded.
+int  fm_image_find(bool (*sig)(unsigned v), unsigned* rvaOut, int cap);
+int  fm_menu_slots(unsigned* rvaOut, char names[][9], int cap);
+
 // SizeOfImage ^ TimeDateStamp of the loaded FFXiMain : changes when, and only when, the client is patched.
 unsigned fm_fingerprint();
 

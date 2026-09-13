@@ -69,7 +69,7 @@ if [ -f dev/scripts/igtest.py ]; then
         case "$ig" in
             *"no answer for request"*)
                 echo "pre-commit: in-game cross-check SKIPPED (game not running, or //lua load aiotest not done)" ;;
-            *"did not answer //aio igstate"*)
+            *"did not answer //aio igstate"*|*"RELEASE-shape build"*|*"did not dump for this request"*|*"newer than the deployed one"*)
                 echo "pre-commit: in-game cross-check SKIPPED (the loaded AioHud has no //aio igstate : an old or RELEASE-shape DLL -- build.bat, deploy.bat, //load)" ;;
             *)
                 if [ $igrc -ne 0 ]; then

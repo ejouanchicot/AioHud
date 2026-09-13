@@ -269,6 +269,17 @@ static int scan_region_menu(u32 rl, u32 rh, u32* out, int cap, int n) {
     return n;
 }
 
+// //aio rva's generic finder : every 4-byte slot whose value `s_findSig` accepts. The predicate does its own
+// guarded reads ; the __try covers the slot reads here.
+static bool (*s_findSig)(unsigned) = 0;
+static int scan_region_sig(u32 rl, u32 rh, u32* out, int cap, int n) {
+    __try {
+        for (u32 a = rl; a + 4 <= rh && n < cap; a += 4)
+            if (s_findSig(*(const unsigned*)a)) out[n++] = a;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    return n;
+}
+
 // Walk the image's readable regions, feeding one scanner. `kind` picks it (keeps the region walk single).
 static u32 image_scan(int kind, const u32* args, u32* menuOut, int menuCap, int* menuN) {
     u32 lo = 0, hi = 0, best = 0; image_range(lo, hi);
@@ -289,6 +300,7 @@ static u32 image_scan(int kind, const u32* args, u32* menuOut, int menuCap, int*
                 if (rh > rl + 8) best = scan_region_merit(rl, rh, args[2], args[3], args[4], args[5], best);
             }
             if (kind == 3 && rh > rl + 4) *menuN = scan_region_menu(rl, rh, menuOut, menuCap, *menuN);
+            if (kind == 4 && rh > rl + 4) *menuN = scan_region_sig(rl, rh, menuOut, menuCap, *menuN);
         }
         a = base + sz;
     }
@@ -804,6 +816,30 @@ void fm_poison(unsigned delta) {
 }
 
 // ---------------------------------------------------------------- reporting ----
+
+int fm_image_find(bool (*sig)(unsigned v), unsigned* rvaOut, int cap) {
+    u32 lo = 0, hi = 0; image_range(lo, hi);
+    if (!lo || !sig || !rvaOut || cap <= 0) return 0;
+    s_findSig = sig;
+    int n = 0; image_scan(4, 0, rvaOut, cap, &n);
+    s_findSig = 0;
+    for (int i = 0; i < n; ++i) rvaOut[i] -= lo;
+    return n;
+}
+
+int fm_menu_slots(unsigned* rvaOut, char names[][9], int cap) {
+    u32 lo = 0, hi = 0; image_range(lo, hi);
+    if (!lo || !rvaOut || cap <= 0) return 0;
+    int n = 0; image_scan(3, 0, rvaOut, cap, &n);
+    for (int i = 0; i < n; ++i) {
+        u32 v = 0, def = 0, n0 = 0, n1 = 0;
+        safe_read(rvaOut[i], &v); safe_read(v + 0x04, &def); safe_read(def + 0x4E, &n0); safe_read(def + 0x52, &n1);
+        memcpy(names[i], &n0, 4); memcpy(names[i] + 4, &n1, 4); names[i][8] = 0;
+        for (int k = 0; k < 8; ++k) if (names[i][k] < 32 || names[i][k] > 126) names[i][k] = '.';
+        rvaOut[i] -= lo;
+    }
+    return n;
+}
 
 int fm_report(char out[][160], int maxOut) {
     ensure_loaded();
