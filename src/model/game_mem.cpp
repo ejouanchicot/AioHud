@@ -150,7 +150,7 @@ static const u32 ENT_RENDER_OFF  = 0x120;   // u32 render/valid flag : &0x4000 =
 static const u32 ENT_PFLAGS_OFF  = 0x124;   // u32 render flags : bit 0x00800000 (byte 0x126 & 0x80) = PC IN A PARTY
 static const u32 ENT_STATUS_OFF  = 0x170;   // u32 : 0 = idle, 1 = engaged/in-combat
 static const u32 ENT_CLAIM_OFF   = 0x188;   // u32 : claiming player's server id (0 = unclaimed)
-static const u32 ENT_SPAWN_OFF   = 0x1D0;   // u32 SpawnType : 0x01 PC, 0x02 NPC, 0x10 Mob
+static const u32 ENT_SPAWN_OFF   = 0x1D0;   // u8 SpawnType (read as a dword -> mask 0xFF) : 0x01 PC, 0x02 NPC, 0x10 Mob
 
 // Nearby entities for the minimap. The entity array (*(g+0x24)) is 0x900 pointers ; block-copy it once
 // (one SEH frame) then read each live entity's type (spawnType), render flag (& 0x4000 = hidden) and
@@ -852,7 +852,7 @@ static void read_entity_fields(u32 ep, TargetEntity& o) {
     o.hpp = (int)(hpp & 0xFF); if (o.hpp > 100) o.hpp = 100;
     { u32 st = 0, cl = 0, sp = 0, pf = 0; safe_read(ep + ENT_STATUS_OFF, &st); safe_read(ep + ENT_CLAIM_OFF, &cl);
       safe_read(ep + ENT_SPAWN_OFF, &sp); safe_read(ep + ENT_PFLAGS_OFF, &pf);
-      o.status = st; o.claimId = cl; o.spawnType = sp; o.pflags = pf; }
+      o.status = st; o.claimId = cl; o.spawnType = sp & 0xFF; o.pflags = pf; }   // the type is ONE byte : the next one is set on self (0x20D read whole)
     { u32 ms = 0, xx = 0, zz = 0, hh = 0;  // floats read as raw dwords (safe_read is u32-typed), then bit-copied
       safe_read(ep + ENT_SPEED_OFF, &ms); safe_read(ep + ENT_X_OFF, &xx); safe_read(ep + ENT_Z_OFF, &zz); safe_read(ep + ENT_HEADING_OFF, &hh);
       memcpy(&o.moveSpeed, &ms, 4); memcpy(&o.posX, &xx, 4); memcpy(&o.posZ, &zz, 4); memcpy(&o.heading, &hh, 4); }   // movement speed + position + facing (radians)

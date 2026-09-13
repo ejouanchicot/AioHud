@@ -551,7 +551,7 @@ void Target::draw(const Frame& f) {
             //  - MOB : the field is its real speed while IDLE (tiger 6.8=+36%, normal mob 4.0=-20%) but SPIKES to a
             //    bogus 10-17 while it CHASES you. -> use it when PLAUSIBLE (<=8.0), FREEZE the last good value otherwise.
             //  - MOUNTED (status 5 chocobo / 85 mount) : field = mount speed -> 100*(ms/4).
-            const bool isPlayer = (g.target.spawnType & 0x01) != 0;    // 0x01 bit : self reads 0x20D, other PCs 0x01
+            const bool isPlayer = (g.target.spawnType & 0x01) != 0;    // 0x01 bit : self reads 0x0D, other PCs 0x01
             const bool mounted  = (g.target.status == 5 || g.target.status == 85);
             const float ms = g.target.moveSpeed;
             float raw;
