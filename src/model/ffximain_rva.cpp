@@ -1,6 +1,7 @@
 // ffximain_rva.cpp -- see ffximain_rva.h for WHY the addresses are data.
 #include "model/flipwatch.h"   // an address that keeps changing back is two healers arguing
 #include "model/ffximain_rva.h"
+#include "model/rva_rules.h"         // the decisions below, pure and tested (tests/t_rvarules.cpp)
 #include "model/game_mem.h"        // ffximain_base / entity_array
 #include "model/paths.h"           // the data dir for the cache file
 #include "model/spells_gen.h"      // spell_info  : an examine cache proves itself by DECODING
@@ -102,16 +103,21 @@ static const char* cache_path() {
 // which is exactly what happened when the first menu healer adopted the log-window slot.
 static const int CACHE_FORMAT = 2;
 
+// What rva_cache_write reads the registry through.
+struct CacheSrc {
+    unsigned    rva(int i) const       { return g_rva[i]; }
+    bool        confirmed(int i) const { return g_confirmed[i]; }
+    const char* name(int i) const      { return ENTRIES[i].name; }
+    const char* how(int i) const       { return g_how[i]; }
+};
+
 static void cache_save() {
     FILE* f = fopen(cache_path(), "w");
     if (!f) return;
-    fprintf(f, "# AioHUD -- FFXiMain static addresses re-derived at runtime.\n"
-               "# Tied to one client build : a different fingerprint discards the whole file.\n"
-               "format=%d\nfingerprint=%08X\n", CACHE_FORMAT, fm_fingerprint());
-    // Only PROVEN addresses are written. A proposal (an address borrowed from another static's shift) is
-    // a working hypothesis : persisting it would promote it to fact on the next login, unexamined.
-    for (int i = 0; i < FM_N; ++i)
-        if (g_confirmed[i]) fprintf(f, "rva%d=%X  # %s (%s)\n", i, g_rva[i], ENTRIES[i].name, g_how[i]);
+    // Only PROVEN addresses are written -- see rva_cache_write.
+    char buf[2048];
+    rva_cache_write(buf, sizeof(buf), CACHE_FORMAT, fm_fingerprint(), CacheSrc());
+    fputs(buf, f);
     fclose(f);
 }
 
@@ -124,34 +130,24 @@ static void cache_load() {
     g_loaded = true;   // rule10-ok: reached only with FFXiMain mapped (ensure_loaded gates it), and a re-read would only re-parse the same file -- the retry that matters is the per-static healing, which is bounded and never latches
     FILE* f = fopen(cache_path(), "r");
     if (!f) return;
-    char line[256]; u32 fp = 0; bool fpOk = false, fmtOk = false; int n = 0;
-    while (fgets(line, sizeof(line), f)) {
-        if (line[0] == '#') continue;
-        u32 v = 0; int idx = 0, fmt = 0;
-        if (sscanf(line, "format=%d", &fmt) == 1) {
-            fmtOk = (fmt == CACHE_FORMAT);
-            if (!fmtOk) { windower::debug::log("fm: cache is format %d, this build wants %d -- discarding it and "
-                                               "re-deriving (a healer's notion of proof changed)", fmt, CACHE_FORMAT); break; }
-            continue;
-        }
-        if (sscanf(line, "fingerprint=%X", &v) == 1) {
-            fp = v; fpOk = (v == fm_fingerprint());
-            if (!fpOk) {
-                windower::debug::log("fm: cached addresses are for client %08X, this one is %08X -- "
-                                     "the game was patched, discarding the cache and re-deriving", v, fm_fingerprint());
-                break;                                   // seeds stay ; healing will re-derive what moved
-            }
-            continue;
-        }
-        if (!fpOk || !fmtOk) continue;                   // a file with no format= line is pre-versioned : ignore its addresses
-        if (sscanf(line, "rva%d=%X", &idx, &v) == 2 && idx >= 0 && idx < FM_N && v) {
-            g_rva[idx] = v; g_healed[idx] = true; g_confirmed[idx] = true;
-            strncpy(g_how[idx], "restored from cache", sizeof(g_how[0]) - 1);
-            ++n;
-        }
-    }
+    char text[4096];                                     // written by cache_save : a header and at most FM_N lines
+    const size_t len = fread(text, 1, sizeof(text) - 1, f);
     fclose(f);
-    if (n) windower::debug::log("fm: %d address(es) restored from the cache for client %08X", n, fp);
+    text[len] = 0;
+    RvaCacheResult r;
+    rva_cache_parse(text, CACHE_FORMAT, fm_fingerprint(), r);   // seeds stay for whatever it does not accept
+    if (r.status == RVA_CACHE_BAD_FORMAT)
+        windower::debug::log("fm: cache is format %d, this build wants %d -- discarding it and "
+                             "re-deriving (a healer's notion of proof changed)", r.fmt, CACHE_FORMAT);
+    if (r.status == RVA_CACHE_BAD_CLIENT)
+        windower::debug::log("fm: cached addresses are for client %08X, this one is %08X -- "
+                             "the game was patched, discarding the cache and re-deriving", r.fp, fm_fingerprint());
+    for (int idx = 0; idx < FM_N; ++idx) {
+        if (!r.got[idx]) continue;
+        g_rva[idx] = r.rva[idx]; g_healed[idx] = true; g_confirmed[idx] = true;
+        strncpy(g_how[idx], "restored from cache", sizeof(g_how[0]) - 1);
+    }
+    if (r.n) windower::debug::log("fm: %d address(es) restored from the cache for client %08X", r.n, r.fp);
 }
 
 // The cache is only READABLE once the fingerprint can be computed, i.e. once FFXiMain is mapped. Before
@@ -179,9 +175,9 @@ unsigned fm_addr(FmStatic s) {
 void fm_adopt(FmStatic s, unsigned rva, const char* how, bool confirmed) {
     ensure_loaded();
     if (s < 0 || s >= FM_N || !rva) return;
-    const bool moved = (g_rva[s] != rva);
-    if (!moved && g_healed[s] && (g_confirmed[s] || !confirmed)) return;   // nothing new to say
-    if (moved)
+    const int verdict = rva_adopt_verdict(g_rva[s], rva, g_healed[s], g_confirmed[s], confirmed);
+    if (verdict == RVA_ADOPT_NOOP) return;               // nothing new to say
+    if (verdict == RVA_ADOPT_MOVE)
         windower::debug::log("fm: %s moved -- FFXiMain+0x%X -> +0x%X (%c0x%X from the seed) [%s]",
                              ENTRIES[s].name, g_rva[s], rva,
                              (rva > ENTRIES[s].seed) ? '+' : '-',
@@ -224,9 +220,7 @@ static u32 scan_region_merit(u32 rl, u32 rh, u32 lp, u32 merits, u32 maxMerits, 
             if (*(const unsigned short*)a != (unsigned short)lp)                     continue;
             if ((*(const unsigned char*)(a + 2) & 0x7F) != (unsigned char)merits)    continue;
             if (*(const unsigned char*)(a + 4) != (unsigned char)maxMerits)          continue;
-            const u32 d    = (a > anchor) ? (a - anchor) : (anchor - a);
-            const u32 dBest = !best ? 0xFFFFFFFFu : ((best > anchor) ? (best - anchor) : (anchor - best));
-            if (d < dBest) best = a;
+            if (rva_closer(a, anchor, best)) best = a;
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
     return best;
@@ -234,14 +228,14 @@ static u32 scan_region_merit(u32 rl, u32 rh, u32 lp, u32 merits, u32 maxMerits, 
 
 // Does this raw value decode to a real action for that cache ? The ONLY test either cache ever gets to
 // pass -- kept in one place so the healer and the confirmation can never drift apart.
-static bool exam_decodes(FmStatic s, u32 v) {
-    if (s == FM_EXAM_SPELL) return v != 0 && v <= 0x4000 && spell_info(v) != 0;
-    // The ability cache serves BOTH lists : job abilities carry id+0x200, weapon skills the raw id (that
-    // is how read_action_menu tells them apart). Accepting only the job-ability half would leave the cache
-    // unprovable for anyone who opens the WS menu and never the JA one.
-    if (v >= 0x200) return v <= 0x4200 && abil_info(v - 0x200) != 0;
-    return v >= 1 && ws_info(v) != 0;
-}
+// The generated tables, as rva_exam_value_decodes asks for them (JA = id+0x200, WS = raw id : that is how
+// read_action_menu tells them apart).
+struct ActionTables {
+    bool spell(unsigned id) const { return spell_info(id) != 0; }
+    bool abil(unsigned id) const  { return abil_info(id) != 0; }
+    bool ws(unsigned id) const    { return ws_info(id) != 0; }
+};
+static bool exam_decodes(FmStatic s, u32 v) { return rva_exam_value_decodes(s == FM_EXAM_SPELL, v, ActionTables()); }
 
 // Addresses in [rl,rh) currently holding something that decodes. A wide net on purpose : which of them
 // actually TRACKS the highlight is decided by watching, not by this pass.
@@ -262,7 +256,7 @@ static int scan_region_menu(u32 rl, u32 rh, u32* out, int cap, int n) {
             const u32 v = *(const unsigned*)a;
             if (!valid_ptr(v)) continue;
             u32 def = 0; if (!safe_read(v + 0x04, &def) || !valid_ptr(def)) continue;
-            u32 tag = 0; if (!safe_read(def + 0x46, &tag) || tag != 0x756E656Du) continue;   // "menu"
+            u32 tag = 0; if (!safe_read(def + 0x46, &tag) || tag != RVA_TAG_MENU) continue;
             out[n++] = a;
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {}
@@ -310,14 +304,14 @@ static u32 image_scan(int kind, const u32* args, u32* menuOut, int menuCap, int*
 // ---------------------------------------------------------------- packet ground truth ----
 
 void fm_pw_expect(unsigned xpCur, unsigned xpTnl, unsigned ml, unsigned epCur, unsigned epTnml) {
-    if (!epTnml && !xpTnl) return;                       // an all-zero payload proves nothing
+    if (!rva_pw_payload_proves(xpTnl, epTnml)) return;   // an all-zero payload proves nothing
     g_pw.xpCur = xpCur; g_pw.xpTnl = xpTnl; g_pw.ml = ml; g_pw.epCur = epCur; g_pw.epTnml = epTnml;
     g_pw.due = 30;                                       // ~half a second : let the client write its own copy first
     g_pw.armed = true;                                   // set LAST : the reader takes the fields only once this flips
 }
 
 void fm_pw_merit_expect(unsigned lp, unsigned merits, unsigned maxMerits) {
-    if (!maxMerits) return;
+    if (!rva_merit_payload_proves(maxMerits)) return;
     g_merit.lp = lp; g_merit.merits = merits; g_merit.maxMerits = maxMerits;
     g_merit.due = 30;
     g_merit.armed = true;
@@ -338,7 +332,7 @@ static void heal_pw_block() {
     if (!a) return;
     u32 xw = 0, ec = 0, et = 0;
     safe_read(a, &xw); safe_read(a + 0x58, &ec); safe_read(a + 0x5C, &et);
-    if ((xw & 0xFFFF) == xpCur && ((xw >> 16) & 0xFFFF) == xpTnl && ec == epCur && et == epTnml) {
+    if (rva_pw_block_agrees(xw, ec, et, xpCur, xpTnl, epCur, epTnml)) {
         if (!g_confirmed[FM_PW_BLOCK]) fm_adopt(FM_PW_BLOCK, fm_rva(FM_PW_BLOCK), "packet 0x061");
         sentinel_note_matched(SEN_POINTWATCH);           // say it : this pair had no "agrees" path, so it read "not checked yet" forever
         return;                                          // healthy : the static agrees with the packet
@@ -363,7 +357,7 @@ static void heal_pw_merit() {
     if (!a) return;
     u32 v0 = 0, v4 = 0;
     safe_read(a, &v0); safe_read(a + 4, &v4);
-    if ((v0 & 0xFFFF) == lp && ((v0 >> 16) & 0x7F) == mc && (v4 & 0xFF) == mx) {
+    if (rva_merit_agrees(v0, v4, lp, mc, mx)) {
         if (!g_confirmed[FM_PW_MERIT]) fm_adopt(FM_PW_MERIT, fm_rva(FM_PW_MERIT), "packet 0x063 order 2");
         sentinel_note_matched(SEN_POINTWATCH);
         return;
@@ -371,8 +365,8 @@ static void heal_pw_merit() {
     // Search around where the 0x061 block sits : the disassembly puts the two side by side, and this
     // signature is too short to be searched image-wide without collecting collisions.
     const u32 ffm = ffximain_base();
-    const u32 anchor = ffm + fm_rva(FM_PW_BLOCK) + 0x1E2;
-    const u32 args[6] = { anchor - 0x4000, anchor + 0x4000, lp, mc, mx, anchor };
+    const u32 anchor = ffm + fm_rva(FM_PW_BLOCK) + RVA_MERIT_FROM_BLOCK;
+    const u32 args[6] = { anchor - RVA_MERIT_WINDOW, anchor + RVA_MERIT_WINDOW, lp, mc, mx, anchor };
     const u32 hit = image_scan(2, args, 0, 0, 0);
     if (hit) fm_adopt(FM_PW_MERIT, hit - ffm, "packet 0x063 order 2");
 }
@@ -386,9 +380,7 @@ static unsigned g_menuRealName  = 0;   // ...of which showed ANY name that is no
                                        // so one real name proves this is the focused menu and no amount of idle
                                        // 'inline' can un-prove it (see the refutation in menu_heal).
 static u32  g_examBan[2]  = { 0, 0 };          // an RVA refuted for not following the cursor : never re-adopt it
-static u32  g_examCur[2]  = { 0, 0 };          // the menu highlight index we last saw, per cache
-static u32  g_examVal[2]  = { 0, 0 };          // ...and what the cache read at that moment
-static int  g_examDead[2] = { 0, 0 };          // consecutive frames a CONFIRMED cache has failed to decode with its menu open
+static RvaCursorWatch g_examWatch[2] = { { 0, 0, 0 }, { 0, 0, 0 } };   // per cache : last highlight index, what the cache read then, moves it stood still
 static bool g_sibSaid[2] = { false, false };   // the sibling arithmetic proposes once per static, then yields to the scan
 static int  g_decoyRun  = 0;      // consecutive frames a CONFIRMED menu slot has read a decoy name   // the tag shortcut speaks once, then leaves the floor to real evidence
 static void heal_menu_ptr() {
@@ -413,10 +405,9 @@ static void heal_menu_ptr() {
     // below keeps running underneath it. When a slot genuinely proves itself, it is adopted and replaces this
     // one. There is no moment in between where nothing is trusted, which is what makes the flicker impossible
     // rather than merely unlikely.
-    if (!g_confirmed[FM_MENU_PTR]) g_menuRealName = 0;   // an unconfirmed slot carries no vindication : //aio
-                                                        // rva break must not let the next candidate inherit one
+    // (an unconfirmed slot carries no vindication : //aio rva break must not let the next candidate inherit one)
+    if (!rva_menu_keeps_searching(g_confirmed[FM_MENU_PTR], g_menuRealName)) return;   // proven by a real menu name -- final
     if (g_confirmed[FM_MENU_PTR]) {
-        if (g_menuRealName > 0) return;                 // proven by a real menu name -- final, stop looking
         u32 p = 0, d = 0, nm = 0;
         const bool ok = safe_read(fm_addr(FM_MENU_PTR), &p) && valid_ptr(p) && safe_read(p + 0x04, &d)
                      && valid_ptr(d) && safe_read(d + 0x4E, &nm);
@@ -426,7 +417,7 @@ static void heal_menu_ptr() {
         // unsearched for a whole session on the strength of reading nothing at the wrong moments.
         //
         // The decoy sighting is now worth exactly one sentence in the log, to say WHY the search is running.
-        const bool decoy = ok && (nm == 0x696C6E69u /* "inli" */ || nm == 0x77676F6Cu /* "logw" */);
+        const bool decoy = ok && rva_menu_is_decoy(nm);
         if (decoy && ++g_decoyRun == 60)                // about a second of it, said ONCE
             windower::debug::log("fm: live-menu ptr reads only a decoy ('%c%c%c%c') so far -- keeping it in use "
                                  "and leaving the search running underneath. Open the Magic menu, then Ability : "
@@ -440,7 +431,7 @@ static void heal_menu_ptr() {
     u32 v = 0; safe_read(a, &v);
     if (valid_ptr(v)) {                                  // a plausible object : is it actually a menu ?
         u32 def = 0, tag = 0;
-        if (safe_read(v + 0x04, &def) && valid_ptr(def) && safe_read(def + 0x46, &tag) && tag == 0x756E656Du) {
+        if (safe_read(v + 0x04, &def) && valid_ptr(def) && safe_read(def + 0x46, &tag) && tag == RVA_TAG_MENU) {
             // THE TAG PROVES "A MENU", NOT "THE FOCUSED MENU", and this test used to CONFIRM on it. Every
             // menu-shaped slot carries the tag -- the 'inline' and 'logwindo' decoys included -- so the first
             // one the seed happened to land on was adopted and the search stopped for good.
@@ -457,9 +448,10 @@ static void heal_menu_ptr() {
             // ...and it must never PULL A CONFIRMED SLOT BACK DOWN. We now fall through to here while still
             // confirmed (see the top of this function), and re-adopting unconfirmed would recreate by the back
             // door the very gap that was just removed.
-            if (!g_confirmed[FM_MENU_PTR] && (fm_rva(FM_MENU_PTR) != g_rva[FM_MENU_PTR] || !g_adoptedTag)) {
+            const int proof = rva_menu_tag_proof(g_confirmed[FM_MENU_PTR], g_adoptedTag);
+            if (proof != RVA_PROOF_NONE) {
                 g_adoptedTag = true;
-                fm_adopt(FM_MENU_PTR, fm_rva(FM_MENU_PTR), "def carries the \"menu\" tag (usable, not yet proven)", false);
+                fm_adopt(FM_MENU_PTR, fm_rva(FM_MENU_PTR), "def carries the \"menu\" tag (usable, not yet proven)", proof == RVA_PROOF_PROVEN);
             }
         }
     }
@@ -488,19 +480,14 @@ static void heal_menu_ptr() {
         // it would stutter the game for as long as no menu had ever been opened.
         u32 fresh[16];
         int nf = scan_region_menu(a - 0x8000, a + 0x8000, fresh, 16, 0);
-        if (!nf && !nCand && fullSweeps < 2) {
+        if (rva_full_sweep_due(nf, nCand, fullSweeps)) {
             ++fullSweeps;
             image_scan(3, 0, fresh, 16, &nf);
-            if (!nf && fullSweeps == 2)
+            if (rva_full_sweep_spent(nf, fullSweeps))
                 windower::debug::log("fm: no menu-shaped slot anywhere in FFXiMain -- the cost/Next box stays "
                                      "off ; run //aio rva with a menu open and send the log");
         }
-        int n = nCand;
-        for (int i = 0; i < nf && n < 16; ++i) {           // union : never drop a slot we already watch
-            bool known = false;
-            for (int k = 0; k < n; ++k) if (cand[k] == fresh[i]) { known = true; break; }
-            if (!known) { cand[n] = fresh[i]; lastName[n] = 0xFFFFFFFFu; ++n; }
-        }
+        const int n = rva_merge_candidates(cand, lastName, nCand, 16, fresh, nf, 0xFFFFFFFFu);   // union : never drop a slot we already watch
         if (n != nCand) {
             // SAY WHICH OF THE TWO IT IS. Since the sweep now runs UNDERNEATH a pointer that is confirmed and
             // in use, this line fires in two very different situations, and the old wording ("unproven") made
@@ -518,7 +505,7 @@ static void heal_menu_ptr() {
     if (!nCand) return;
     if (--sampleIn > 0) return;
     sampleIn = 15;                                       // ~4 samples/second : fast enough to catch a menu opening
-    u32 bestAddr = 0, bestDist = 0xFFFFFFFFu;
+    u32 bestAddr = 0;
     const u32 seedAddr = ffximain_base() + ENTRIES[FM_MENU_PTR].seed;
     for (int i = 0; i < nCand; ++i) {
         u32 pv = 0, def = 0, nm = 0;
@@ -530,11 +517,8 @@ static void heal_menu_ptr() {
         // 'logwindo' and 'inline' are always themselves, so they can never qualify, while the focused
         // slot reads 'magic' then 'ability' as you move around. This is the manual two-run differential,
         // exactly, and nothing weaker is evidence.
-        if (!nm) continue;
-        if (lastName[i] == 0xFFFFFFFFu) { lastName[i] = nm; continue; }
-        if (lastName[i] == nm) continue;
-        const u32 d = (cand[i] > seedAddr) ? (cand[i] - seedAddr) : (seedAddr - cand[i]);
-        if (d < bestDist) { bestDist = d; bestAddr = cand[i]; }   // tie-break : a patch shifts by bytes
+        if (!rva_second_different(lastName[i], nm, 0xFFFFFFFFu)) continue;
+        if (rva_closer(cand[i], seedAddr, bestAddr)) bestAddr = cand[i];   // tie-break : a patch shifts by bytes
     }
     if (bestAddr) {
         fm_adopt(FM_MENU_PTR, bestAddr - ffximain_base(), "two different menu names on one slot");
@@ -586,9 +570,7 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
     // menu being up and the value never once meaning anything.
     if (g_confirmed[s]) {
         const int slot = (s == FM_EXAM_SPELL) ? 0 : 1;
-        const u32 t0 = open_menu_tag();
-        const bool mine = (s == FM_EXAM_SPELL) ? (t0 == 0x6967616Du) : (t0 == 0x6C696261u);
-        if (!mine) { g_examDead[slot] = 0; return; }
+        const bool mine = rva_exam_menu_mine(s == FM_EXAM_SPELL, open_menu_tag());
         // DECODING IS NOT THE TEST -- FOLLOWING THE CURSOR IS. The stale ability cache held 3, and 3 is a
         // perfectly plausible raw weapon-skill id, so exam_decodes() said yes and this refutation concluded all
         // was well. The value decoded; it simply never changed. Measured 2026-09-11, and it is why the first
@@ -598,14 +580,9 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
         // sits still while the cursor walks the list. Three moves with no change is the refutation -- the same
         // evidence the scan below ADOPTS on, which is how it should be: what proves an address must be what
         // disproves it.
-        u32 cv = 0; safe_read(base + fm_rva(s), &cv);
-        const u32 cur = open_menu_cursor();
-        if (!cur) { g_examDead[slot] = 0; return; }
-        if (cur == g_examCur[slot]) return;                  // the player has not moved : nothing is being said
-        g_examCur[slot] = cur;
-        if (cv != g_examVal[slot]) { g_examVal[slot] = cv; g_examDead[slot] = 0; return; }   // it followed : alive
-        if (++g_examDead[slot] < 3) return;
-        g_examDead[slot] = 0; g_sibSaid[slot] = false;
+        u32 cv = 0; if (mine) safe_read(base + fm_rva(s), &cv);
+        if (!rva_exam_cursor_refutes(g_examWatch[slot], mine, mine ? open_menu_cursor() : 0, cv, 3)) return;
+        g_sibSaid[slot] = false;
         g_examBan[slot] = fm_rva(s);   // and it stays refuted : see the decode test below
         windower::debug::log("fm: %s was PROVEN but does not follow the cursor (stuck on %u over 3 moves) -- reopening the search",
                              fm_name(s), cv);
@@ -616,8 +593,7 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
     // proof is the CORRELATION : the value decodes *while the matching menu is open*. A cache that holds
     // a real spell id exactly when the Magic menu is up is the spell cache.
     const u32 tag = open_menu_tag();
-    const bool rightMenu = (s == FM_EXAM_SPELL) ? (tag == 0x6967616Du)     // "magi"
-                                                : (tag == 0x6C696261u);    // "abil"
+    const bool rightMenu = rva_exam_menu_mine(s == FM_EXAM_SPELL, tag);
     u32 v = 0; safe_read(base + fm_rva(s), &v);
     // "Decodes while its own menu is open" is the WEAK proof, and it is enough only while nothing contradicts
     // it. An address already refuted for standing still under a moving cursor is contradicted: re-confirming it
@@ -626,7 +602,7 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
     //     ... CONFIRMED at FFXiMain+0x6323C8 [decodes while its own menu is open]
     // -- the third time tonight that two rules of equal standing over one value have oscillated. A refutation
     // has to outrank the weaker evidence it overturned, or it is not a refutation.
-    const bool ok = rightMenu && exam_decodes(s, v) && fm_rva(s) != g_examBan[(s == FM_EXAM_SPELL) ? 0 : 1];
+    const bool ok = rva_exam_weak_proof(rightMenu, exam_decodes(s, v), fm_rva(s), g_examBan[(s == FM_EXAM_SPELL) ? 0 : 1]);
     if (ok) { fm_adopt(s, fm_rva(s), "decodes while its own menu is open"); return; }
 
     // (1) Borrow the shift from a static that PROVED one. A shift of ZERO is a legitimate answer -- it says
@@ -652,7 +628,9 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
     {
         const FmStatic sib = (s == FM_EXAM_SPELL) ? FM_EXAM_ABIL : FM_EXAM_SPELL;
         bool& said = g_sibSaid[(s == FM_EXAM_SPELL) ? 0 : 1];
-        if (!said && g_confirmed[sib]) {
+        const u32 fromSib    = rva_shift_proposal(ENTRIES[s].seed, ENTRIES[sib].seed, g_rva[sib]);
+        const u32 fromAnchor = rva_shift_proposal(ENTRIES[s].seed, ENTRIES[anchor].seed, g_rva[anchor]);
+        const int guess = rva_exam_guess(said, g_confirmed[sib], fromSib != g_rva[s], g_confirmed[anchor], fromAnchor != g_rva[s]);
             // ONCE, THEN OUT OF THE WAY. A first cut returned here unconditionally, to stop this branch and the
             // menu-pointer one from re-proposing over each other every frame. It stopped more than that: the
             // differential scan lives BELOW, and the decode test that was supposed to "judge unchallenged" lives
@@ -661,14 +639,8 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
             //
             // A guess is worth one pass. It speaks once; if the decode test has not confirmed it by the next
             // one, the scan takes over and looks for the address that follows the cursor.
-            said = true;
-            const u32 proposed = ENTRIES[s].seed + (g_rva[sib] - ENTRIES[sib].seed);
-            if (proposed != g_rva[s]) { fm_adopt(s, proposed, "proposed from the sibling examine cache", false); return; }
-        }
-    }
-    if (g_confirmed[anchor]) {
-        const u32 proposed = ENTRIES[s].seed + (g_rva[anchor] - ENTRIES[anchor].seed);
-        if (proposed != g_rva[s]) { fm_adopt(s, proposed, "proposed from a proven shift", false); return; }
+        if (guess == RVA_GUESS_SIBLING) { fm_adopt(s, fromSib, "proposed from the sibling examine cache", false); return; }
+        if (guess == RVA_GUESS_ANCHOR)  { fm_adopt(s, fromAnchor, "proposed from a proven shift", false); return; }
     }
 
     // (2) Prove it independently. Borrowing only works when the two statics moved TOGETHER ; nothing
@@ -682,23 +654,17 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
         w.sweepIn = 120;
         const u32 seedAddr = base + ENTRIES[s].seed;
         u32 fresh[12]; const int nf = scan_region_exam(seedAddr - 0x8000, seedAddr + 0x8000, s, fresh, 12);
-        for (int i = 0; i < nf && w.n < 12; ++i) {
-            bool known = false;
-            for (int k = 0; k < w.n; ++k) if (w.addr[k] == fresh[i]) { known = true; break; }
-            if (!known) { w.addr[w.n] = fresh[i]; w.first[w.n] = 0; ++w.n; }
-        }
+        w.n = rva_merge_candidates(w.addr, w.first, w.n, 12, fresh, nf, 0);
     }
     if (--w.sampleIn > 0) return;
     w.sampleIn = 10;
     const u32 seedAddr = base + ENTRIES[s].seed;
-    u32 bestAddr = 0, bestDist = 0xFFFFFFFFu;
+    u32 bestAddr = 0;
     for (int i = 0; i < w.n; ++i) {
         u32 cv = 0; safe_read(w.addr[i], &cv);
         if (!exam_decodes(s, cv)) continue;               // only real actions count, here as everywhere
-        if (!w.first[i]) { w.first[i] = cv; continue; }
-        if (w.first[i] == cv) continue;
-        const u32 d = (w.addr[i] > seedAddr) ? (w.addr[i] - seedAddr) : (seedAddr - w.addr[i]);
-        if (d < bestDist) { bestDist = d; bestAddr = w.addr[i]; }
+        if (!rva_second_different(w.first[i], cv, 0)) continue;
+        if (rva_closer(w.addr[i], seedAddr, bestAddr)) bestAddr = w.addr[i];
     }
     if (bestAddr) { fm_adopt(s, bestAddr - base, "tracks the highlighted action"); w.n = 0; }
 }
@@ -729,11 +695,11 @@ static int rva_checks(CheckFail* out, int cap) {
 
     // 2. THE TWO CACHES. Each needs its own menu opened once, with the cursor MOVED -- a value that merely
     //    sits there proves nothing, as a stale ability cache reading a plausible weapon-skill id showed.
-    if (g_confirmed[FM_MENU_PTR] && !g_confirmed[FM_EXAM_SPELL])
+    if (rva_exam_check_due(g_confirmed[FM_MENU_PTR], g_confirmed[FM_EXAM_SPELL]))
         RFAIL("RVA.EXAM_SPELL", CHK_WARN,
               "the examined-spell address is not proven -- the Magic cost box will stay empty. "
               "Open the Magic menu and move the cursor over a few spells");
-    if (g_confirmed[FM_MENU_PTR] && !g_confirmed[FM_EXAM_ABIL])
+    if (rva_exam_check_due(g_confirmed[FM_MENU_PTR], g_confirmed[FM_EXAM_ABIL]))
         RFAIL("RVA.EXAM_ABIL", CHK_WARN,
               "the examined-ability address is not proven -- the Ability box will stay empty. "
               "Open Ability > Job Ability and move the cursor over a few abilities");
@@ -779,14 +745,14 @@ void fm_tick() {
       // through four full CONFIRMED/un-confirmed cycles on 2026-09-11 -- because the address never moved. What
       // was oscillating was whether we BELIEVED it, which is the decision two healers actually argue over.
       for (int i = 0; i < (int)FM_N; ++i)
-          flipwatch(IDS[i], g_rva[i] ^ (g_confirmed[i] ? 0x80000000u : 0u), nowMs); }
+          flipwatch(IDS[i], rva_flip_key(g_rva[i], g_confirmed[i]), nowMs); }
     // A REAL MENU NAME VINDICATES THE SLOT FOR GOOD. 'inline' and 'logwindo' are always themselves, so a slot
     // that ever shows anything else IS the focused menu and cannot be a decoy. That one bit is what lets
     // heal_menu_ptr stop searching for ever -- and what stops it tearing a right answer down over an idle
     // 'inline', which is the bug this replaced.
     if (g_confirmed[FM_MENU_PTR] && g_menuRealName == 0) {
         const u32 t = open_menu_tag();
-        if (t && t != 0x696C6E69u && t != 0x77676F6Cu) g_menuRealName = 1;
+        if (rva_menu_real_name(t)) g_menuRealName = 1;
     }
     heal_pw_block();
     heal_pw_merit();
