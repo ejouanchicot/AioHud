@@ -273,7 +273,7 @@ indépendant**, et là où deux témoins indépendants peuvent être confrontés
 | | |
 |---|---|
 | `scripts/aiotest/aiotest.lua` | un addon Windower **de développement** (jamais livré : `package.bat` exclut `scripts\`). Il lit un fichier de requête, exécute les commandes qu'il nomme, attend, et écrit un instantané de la vision de **Windower**. Il n'affirme rien. |
-| `scripts/igtest.py` | le côté qui pose les questions **et qui juge**. Les assertions vivent ici pour être modifiables et rejouables sans recharger l'addon ni le jeu. |
+| `dev/scripts/igtest.py` (outil de dev privé, hors dépôt public depuis 2026-09-13) | le côté qui pose les questions **et qui juge**. Les assertions vivent ici pour être modifiables et rejouables sans recharger l'addon ni le jeu. |
 
 Installation : copier `scripts/aiotest/` dans `<windower>\addons\aiotest\`, puis `//lua load aiotest`.
 Les chemins sont dérivés de `deploy.local.bat` — une seule source de vérité avec `deploy.bat`.
@@ -289,11 +289,11 @@ encodeur écrit à la main est exactement le genre de code faux pendant une sema
 ### Les commandes
 
 ```
-python scripts/igtest.py ping          le pont répond-il
-python scripts/igtest.py snap          tout ce que Windower voit (options : --want, --cmd)
-python scripts/igtest.py crosscheck    LA confrontation
-python scripts/igtest.py selftest      prouve que chaque contrôle sait ÉCHOUER
-python scripts/igtest.py watch         crosscheck en boucle, pour une soirée de jeu
+python dev/scripts/igtest.py ping          le pont répond-il
+python dev/scripts/igtest.py snap          tout ce que Windower voit (options : --want, --cmd)
+python dev/scripts/igtest.py crosscheck    LA confrontation
+python dev/scripts/igtest.py selftest      prouve que chaque contrôle sait ÉCHOUER
+python dev/scripts/igtest.py watch         crosscheck en boucle, pour une soirée de jeu
 ```
 
 ### Les cinq premières confrontations, et pourquoi celles-là
