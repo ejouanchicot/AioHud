@@ -29,6 +29,8 @@ struct World {
     u32           partyPtr;                   // what party_ptr() points at (holds &alliHdr)
     u32           entities[0x900];            // entity_array() : index -> entity struct
     unsigned char ent[18][0x200];             // one entity struct per party slot (+0x1D0 = spawn type)
+    unsigned char npc[16][0x200];             // entity(): NPCs, pets and mobs, at the entity offsets below
+    int           nnpc;
     unsigned char clockStruct[0x10];          // *(FFXiMain + CLK_PTR_RVA) -> +0x0C = unix seconds
     // what the rest of the game_mem surface answers
     PlayerInfo    me;
@@ -38,8 +40,13 @@ struct World {
     int           n;
     bool          partyUnreadable;   // party_memory_unreadable()
     TreasureSlot  pool[10]; bool poolMapped;   // treasure_memory()
+    PwMem         pw; bool pwMapped;              // pointwatch_memory()
 };
 World* W = 0;
+
+// The entity struct fields the model's entity readers walk (game_mem.cpp ENT_*_OFF). A COPY, like the clock RVAs
+// above : the model's own readers are replaced below by ones that read these same offsets out of these buffers.
+const u32 ENT_ID_OFF = 0x78, ENT_NAME_OFF = 0x7C, ENT_HPP_OFF = 0xEC, ENT_STATUS_OFF = 0x170, ENT_CLAIM_OFF = 0x188, ENT_SPAWN_OFF = 0x1D0;
 
 // The model clock and the game tick, one monotonic source. Starts well away from zero so no subtraction in the model
 // ever wraps on the first frames, as it never does in game.
@@ -89,6 +96,8 @@ void world(std::initializer_list<Member> members) {
         memcpy(b + 0x28, &hp, 4); memcpy(b + 0x2C, &mp, 4); memcpy(b + 0x30, &tp, 4); memcpy(b + 0x34, &pk, 4);
         b[0x71] = (unsigned char)(m.trust ? 0 : m.mjob); b[0x72] = 99; b[0x73] = 0; b[0x74] = 49;
         W->ent[i][0x1D0] = m.trust ? 0x0E : 0x0D;   // measured in game : players 0x0D, trusts 0x0E (party_state_roster.cpp)
+        memcpy(W->ent[i] + ENT_ID_OFF, &m.id, 4);
+        memcpy(W->ent[i] + ENT_NAME_OFF, m.name, nl < 23 ? nl : 23);
         W->entities[idx] = (u32)(uintptr_t)W->ent[i];
         if (i == 0) {
             W->me.id = m.id; lstrcpynA(W->me.name, m.name, sizeof(W->me.name));
@@ -133,6 +142,26 @@ void treasure_memory(std::initializer_list<PoolSlot> slots) {
         lstrcpynA(t.lot_name, s.lotter ? s.lotter : "", sizeof(t.lot_name));
     }
     W->poolMapped = true;
+}
+void entity(unsigned index, unsigned id, const char* name, unsigned spawnType, int hpp, unsigned status, unsigned claimId) {
+    if (!W || index == 0 || index >= 0x900 || W->nnpc >= 16) return;
+    unsigned char* e = W->npc[W->nnpc++];
+    memset(e, 0, 0x200);
+    memcpy(e + ENT_ID_OFF, &id, 4);
+    const int nl = name ? (int)strlen(name) : 0;
+    if (nl) memcpy(e + ENT_NAME_OFF, name, nl < 23 ? nl : 23);
+    e[ENT_HPP_OFF] = (unsigned char)hpp;
+    memcpy(e + ENT_STATUS_OFF, &status, 4);
+    memcpy(e + ENT_CLAIM_OFF, &claimId, 4);
+    e[ENT_SPAWN_OFF] = (unsigned char)spawnType;
+    W->entities[index] = (u32)(uintptr_t)e;
+}
+void pointwatch_memory(unsigned xpCur, unsigned xpTnl, unsigned epCur, unsigned epTnml, unsigned lpCur, int merits, int maxMerits) {
+    W->pw = PwMem{};
+    pw_decode_block(true, (xpCur & 0xFFFF) | ((xpTnl & 0xFFFF) << 16), true, epCur, epTnml, false, 0, W->pw);
+    W->pw.lpCur = lpCur; W->pw.merits = merits; W->pw.maxMerits = maxMerits;
+    W->pw.merOk = (maxMerits > 0);                // game_mem.cpp read_pointwatch : valid once the max merit byte is non-zero
+    W->pwMapped = true;
 }
 void equip(const unsigned short ids[16], const unsigned char ext[16][24]) { memcpy(W->equipIds, ids, sizeof(W->equipIds)); memcpy(W->equipExt, ext, sizeof(W->equipExt)); W->equipOk = true; }
 
@@ -256,9 +285,8 @@ u32 self_party_base(unsigned selfId) { return (W && selfId && selfId == W->me.id
 unsigned zone_id()                   { return W ? W->zone : 0; }
 unsigned count_item(unsigned)        { return 0; }
 unsigned entity_id_by_index(unsigned index) {
-    if (!W || index >= 0x900 || !W->entities[index]) return 0;
-    for (int i = 0; i < W->n; ++i) if (W->entities[index] == (u32)(uintptr_t)W->ent[i]) { u32 id = 0; memcpy(&id, W->party + i * 0x7C + 0x1C, 4); return id; }
-    return 0;
+    if (!W || index == 0 || index >= 0x900 || !W->entities[index]) return 0;
+    u32 id = 0; memcpy(&id, (const void*)(uintptr_t)(W->entities[index] + ENT_ID_OFF), 4); return id;
 }
 bool owns_key_item(unsigned)         { return false; }
 bool refresh_items()                 { return false; }
@@ -266,10 +294,38 @@ int  read_jp_gift_rank(unsigned)     { return 0; }
 int  read_jp_u8(unsigned)            { return 0; }
 int  read_merit_level(unsigned)      { return 0; }
 int  count_items(const unsigned*, int, unsigned*) { return 0; }
-bool entity_name_by_index(unsigned, char* out, int sz) { if (out && sz > 0) out[0] = 0; return false; }
+bool entity_name_by_index(unsigned index, char* out, int sz) {
+    if (out && sz > 0) out[0] = 0;
+    if (!W || !out || sz <= 0 || index == 0 || index >= 0x900 || !W->entities[index]) return false;
+    const char* nm = (const char*)(uintptr_t)(W->entities[index] + ENT_NAME_OFF);
+    int j = 0; for (; j < sz - 1 && j < 24 && nm[j]; ++j) out[j] = nm[j];
+    out[j] = 0;
+    return j > 0;
+}
 bool entity_pos_verified(unsigned, unsigned, float&, float&, float&, bool* despawned) { if (despawned) *despawned = false; return false; }
 bool read_capacity_points(unsigned, unsigned&, unsigned&) { return false; }
-int  read_entities_by_id(const unsigned*, int, EntityVitals*) { return 0; }
+int  read_entities_by_id(const unsigned* ids, int n, EntityVitals* out) {   // game_mem.cpp's walk, over the fake's array
+    if (!ids || !out || n <= 0) return 0;
+    for (int i = 0; i < n; ++i) { out[i] = EntityVitals{}; out[i].id = ids[i]; }
+    if (!W) return 0;
+    int found = 0;
+    for (unsigned i = 0; i < 0x900 && found < n; ++i) {
+        const u32 p = W->entities[i];
+        if (!p) continue;
+        u32 id = 0; memcpy(&id, (const void*)(uintptr_t)(p + ENT_ID_OFF), 4);
+        if (!id) continue;
+        int slot = -1;
+        for (int k = 0; k < n; ++k) if (!out[k].valid && ids[k] == id) { slot = k; break; }
+        if (slot < 0) continue;
+        EntityVitals& v = out[slot];
+        const unsigned char* e = (const unsigned char*)(uintptr_t)p;
+        v.hpp = e[ENT_HPP_OFF]; memcpy(&v.status, e + ENT_STATUS_OFF, 4); memcpy(&v.claimId, e + ENT_CLAIM_OFF, 4);
+        v.spawnType = e[ENT_SPAWN_OFF]; memcpy(&v.x, e + 0x04, 4); memcpy(&v.z, e + 0x0C, 4);
+        int j = 0; for (; j < 23 && e[ENT_NAME_OFF + j]; ++j) v.name[j] = (char)e[ENT_NAME_OFF + j]; v.name[j] = 0;
+        v.valid = true; ++found;
+    }
+    return found;
+}
 bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]) {
     if (!W || !W->equipOk) { memset(ids, 0, 32); memset(ext, 0, 16 * 24); return false; }
     memcpy(ids, W->equipIds, 32); memcpy(ext, W->equipExt, 16 * 24); return true;
@@ -282,7 +338,7 @@ int  read_player_buffs(unsigned short* out, int maxN, bool* ok) {
     for (int i = 0; i < n; ++i) out[i] = W->buffs[i];
     return n;
 }
-bool read_pointwatch(PwMem&)         { return false; }
+bool read_pointwatch(PwMem& o)       { if (!W || !W->pwMapped) return false; o = W->pw; return o.xpOk || o.epOk || o.merOk || o.mlOk; }
 bool read_treasure_pool(TreasureSlot out[10]) {
     for (int i = 0; i < 10; ++i) out[i] = TreasureSlot{};
     if (!W || !W->poolMapped) return false;   // not mapped : UNKNOWN, the model must not read it as empty

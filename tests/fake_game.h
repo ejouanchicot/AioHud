@@ -53,6 +53,15 @@ void party_memory_unreadable(bool on);
 struct PoolSlot { int slot; unsigned short item; unsigned timestamp; unsigned short lot = 0; unsigned lotId = 0; const char* lotter = 0; };
 void treasure_memory(std::initializer_list<PoolSlot> slots);   // the read FAILS (ok=false) -- not the same thing as an empty list
 
+// An entity that is not a party member -- an NPC, a pet, a mob -- at entity-array `index` : server id, name, spawn type
+// (0x02 NPC, 0x10 mob), HP%, status (0 idle, 1 engaged) and claim, at the entity-struct offsets the model's readers use.
+// What entity_id_by_index / entity_name_by_index / read_entities_by_id then serve. Party members get theirs from world().
+void entity(unsigned index, unsigned id, const char* name, unsigned spawnType = 0x02, int hpp = 100, unsigned status = 0, unsigned claimId = 0);
+// The game's PointWatch memory block (the 0x061 mirror read_pointwatch decodes, game_mem.h pw_decode_block). Not called
+// = not mapped (the read fails). The model copies it into PartyState::pointwatch() on every frame().
+void pointwatch_memory(unsigned xpCur, unsigned xpTnl, unsigned epCur = 0, unsigned epTnml = 0,
+                       unsigned lpCur = 0, int merits = 0, int maxMerits = 0);
+
 // Leave the zone and arrive in `zone` : the zone-out packet (0x00B), a loading screen of `loadMs`, every party member
 // moved with you, then the zone-in packet (0x00A). What the game sends and what its memory says, in that order.
 void zone_to(unsigned zone, unsigned loadMs = 3000);

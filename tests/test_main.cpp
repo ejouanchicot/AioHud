@@ -35,6 +35,7 @@ void test_battle_target();
 void test_treasure();
 void test_pointwatch();
 void test_timers_rules();
+void test_packets();
 
 int main() {
     test_json();
@@ -61,6 +62,7 @@ int main() {
     test_battle_target();
     test_treasure();
     test_pointwatch();
+    test_packets();
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail;
 }

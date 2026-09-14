@@ -130,6 +130,97 @@ inline Packet pkt_pool_lot(int slot, unsigned lot, const char* lotter, bool gone
     return p;
 }
 
+// ================= the zone tracker, PointWatch gains, job info and pets (tests/t_packets.cpp) =================
+// Same contract as above : each layout is the one the model's handler reads (party_state_zonetracker.cpp,
+// party_state_pointwatch.cpp, party_state.cpp on_01b, party_state_hate.cpp), and t_packets.cpp's first section
+// feeds every builder to its handler before any scenario relies on it.
+
+// Shrinks the DECLARED size (header dwords) and nothing else : the bytes past it stay in the buffer, as they do in the
+// client's decode buffer for a truncated packet. A handler that ignores its size floor then reads them and is caught.
+inline void pkt_truncate(Packet& p, int bytes) {
+    const unsigned hdr = (unsigned)p.id | ((unsigned)((bytes + 3) / 4) << 9);
+    p.b[0] = (unsigned char)(hdr & 0xFF); p.b[1] = (unsigned char)(hdr >> 8);
+}
+
+// ---- 0x02A : a zone message. Params p1..p4 u32 @0x08/0x0C/0x10/0x14, target entity INDEX u16 @0x18, message id
+//      u16 @0x1A (the handler masks it : 0x3FFF Abyssea/Limbus, 0x7FFF Sheol). 32 bytes. ----
+inline Packet pkt_zone_msg(unsigned msg, int p1, int p2 = 0, int p3 = 0, int p4 = 0, unsigned targetIndex = 0) {
+    Packet p; pkt_header(p, 0x02A, 0x20);
+    put_u32(p, 0x08, (unsigned)p1); put_u32(p, 0x0C, (unsigned)p2); put_u32(p, 0x10, (unsigned)p3); put_u32(p, 0x14, (unsigned)p4);
+    put_u16(p, 0x18, targetIndex); put_u16(p, 0x1A, msg);
+    return p;
+}
+
+// ---- 0x055 : one key-item TABLE. Owned bits u8[0x40] @0x04 (bit = id - table*512), table number u32 @0x84. The
+//      Dynamis granules 1545..1549 are table 3, bits 9..13 ; the Nyzul armband 797 is table 1, bit 285. 136 bytes. ----
+inline Packet pkt_key_items(unsigned table, std::initializer_list<unsigned> ids) {
+    Packet p; pkt_header(p, 0x055, 0x88);
+    for (unsigned id : ids) {
+        if (id / 512 != table) continue;
+        const unsigned bit = id % 512;
+        p.b[0x04 + bit / 8] |= (unsigned char)(1u << (bit % 8));
+    }
+    put_u32(p, 0x84, table);
+    return p;
+}
+
+// ---- 0x118 : currency2. Mog Segments u32 @0x8C, Temenos Units u32 @0x98, Apollyon Units u32 @0x9C. 160 bytes. ----
+inline Packet pkt_currency2(unsigned mogSegments, unsigned temenosUnits, unsigned apollyonUnits) {
+    Packet p; pkt_header(p, 0x118, 0xA0);
+    put_u32(p, 0x8C, mogSegments); put_u32(p, 0x98, temenosUnits); put_u32(p, 0x9C, apollyonUnits);
+    return p;
+}
+
+// ---- 0x034 : an NPC menu opens. Actor id u32 @0x04 (the handler compares it with YOUR id), menu parameter[0] u32
+//      @0x08, menu id u16 @0x2C (173 = the Rabao Odyssey conflux). 52 bytes. ----
+inline Packet pkt_npc_menu(unsigned actorId, unsigned menuId, unsigned param0) {
+    Packet p; pkt_header(p, 0x034, 0x34);
+    put_u32(p, 0x04, actorId); put_u32(p, 0x08, param0); put_u16(p, 0x2C, menuId);
+    return p;
+}
+
+// ---- 0x075 : battlefield bars. Designation u32 @0x04, start u32 @0x08, duration/countdown u32 @0x0C ; six bars at
+//      0x28 + i*0x14, each { s32 progress ; char label[16] }. An unused bar : progress 0x7FFFFFFF, empty label. ----
+struct Bar { int progress; const char* label; };
+inline Packet pkt_battlefield(std::initializer_list<Bar> bars, unsigned desig = 0, unsigned start = 0, unsigned seconds = 0) {
+    Packet p; pkt_header(p, 0x075, 0xA0);
+    put_u32(p, 0x04, desig); put_u32(p, 0x08, start); put_u32(p, 0x0C, seconds);
+    for (int i = 0; i < 6; ++i) put_u32(p, 0x28 + i * 0x14, 0x7FFFFFFFu);
+    int i = 0;
+    for (const Bar& b : bars) {
+        if (i >= 6) break;
+        const int off = 0x28 + i * 0x14;
+        put_u32(p, off, (unsigned)b.progress);
+        for (int k = 0; b.label && b.label[k] && k < 16; ++k) p.b[off + 4 + k] = (unsigned char)b.label[k];   // 16 bytes, NOT terminated when full
+        ++i;
+    }
+    return p;
+}
+
+// ---- 0x02D : a point gain message. Param1 (the gain) u32 @0x10, message id u16 @0x18. 28 bytes. (0x029 carries its
+//      Param1 @0x0C instead ; the handler picks by id.) 8/105 XP, 718/735 CP, 371/372 Limit Points, 809/810 EP. ----
+inline Packet pkt_exp_msg(unsigned msg, unsigned value, unsigned param2 = 0) {
+    Packet p; pkt_header(p, 0x02D, 0x1C);
+    put_u16(p, 0x0C, 0x0400);            // YOUR entity index sits here (the target's @0x0E) : NOT the gain
+    put_u32(p, 0x10, value); put_u32(p, 0x14, param2); put_u16(p, 0x18, msg);
+    return p;
+}
+
+// ---- 0x01B : job info. Encumbrance flags u32 @0x60 (bit sid = equip slot sid locked). 104 bytes. ----
+inline Packet pkt_job_info(unsigned encumbrance) {
+    Packet p; pkt_header(p, 0x01B, 0x68);
+    put_u32(p, 0x60, encumbrance);
+    return p;
+}
+
+// ---- 0x068 : pet status. Owner id u32 @0x08, pet entity INDEX u16 @0x0C, pet's target id u32 @0x14. 24 bytes is the
+//      handler's floor ; the real packet goes on with the pet's HP/MP/TP and name. ----
+inline Packet pkt_pet_status(unsigned ownerId, unsigned petIndex, unsigned targetId) {
+    Packet p; pkt_header(p, 0x068, 0x30);
+    put_u32(p, 0x08, ownerId); put_u16(p, 0x0C, petIndex); put_u32(p, 0x14, targetId);
+    return p;
+}
+
 inline void deliver(const Packet& p) { packet(p.id, p.b); }
 
 } // namespace fake
