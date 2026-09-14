@@ -1,7 +1,0 @@
-{
-  "_README": "Job principal / sub courant (conditionne l'affichage de certaines box).",
-  "job": {
-    "main": "SCH",
-    "sub": "RDM"
-  }
-}

@@ -37,7 +37,7 @@ namespace aio {
 // round to the nearest whole pixel -> crisp 1px borders (see draw(): every coord is snapped so
 // each row sits at an identical pixel phase).
 
-// ---- baked party (DEMO mode, when no live data ; matches design/src/panels/party.js) ----
+// ---- baked party (DEMO mode, when no live data ; first matched the web mock-up design/src/panels/party.js, removed 2026-09-14 -- in git history) ----
 struct Member { const char* name; const char* job; const char* sub; unsigned role; int maxHp; int maxMp; const char* cast; int mlvl = 99; };   // mlvl : demo default (endgame party) -> the badge level preview
 // 18 baked members = main party (0..5) + alliance party 1 (6..11) + alliance party 2 (12..17).
 // A box of tier T reads DEMO[T*6 + i]. Each alliance group gets its own names/jobs so the demo

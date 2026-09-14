@@ -5,7 +5,7 @@
 // gauge values) is drawn through Frame::fonts -- each element (name / bars / badge) picks its
 // OWN face+weight atlas so they can be styled independently. Rows are LIVE: self from game
 // memory + the other members (incl. trusts) from the live party array, with demo data as a
-// fallback when out of game. Look mirrors design/src/panels/party.css.
+// fallback when out of game. Look first mirrored the web mock-up (design/src/panels/party.css, removed 2026-09-14 -- in git history).
 #pragma once
 #include <string>
 #include "ui/widget.h"
