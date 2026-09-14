@@ -54,6 +54,10 @@ void test_focus_rules() {
         // decide they are the one that went, and two live songs alert at once.
         CHECK(focus_newer_sibling(/*rank*/5000, /*spell*/397, /*otherRank*/5000, /*otherSpell*/398));
         CHECK(!focus_newer_sibling(5000, 398, 5000, 397));
+        // ...and an entry is never newer than ITSELF : the builder compares every entry with every entry, itself
+        // included, so a tie that counted would make every watched buff one copy short -- all of them OUT at once.
+        // Found 2026-09-14 : the mutation `otherSpell >= spell` failed five builder scenarios and not this section.
+        CHECK(!focus_newer_sibling(5000, 397, 5000, 397));
     }
     {   // RANK IS THE CAST, NEVER THE MONITOR ENTRY. Measured in game 2026-09-10: ranked by entry birth, the model
         // kept Valor Minuet V while the monitor kept Minuet IV and called V lost for 22 s -- because an entry is
