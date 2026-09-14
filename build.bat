@@ -19,9 +19,11 @@ if not defined AIOHUD_VERSION set "AIOHUD_VERSION=dev"
 
 REM Dev-only diagnostic probes : compiled in ONLY when the (git-ignored, local) file is present. Public / CI builds
 REM (no aiohud_probes.cpp) compile without them -- the call sites in aiohud.cpp are #ifdef AIOHUD_PROBES.
+REM AIOHUD_NO_DEVTOOLS=1 (the release shape, package.bat) leaves them out too : it used to drop only dev\, so a
+REM package made on a dev machine still carried every probe string and command -- not the release CI builds (2026-09-14).
 set "PROBES="
 set "PROBEDEF="
-if exist "%ROOT%src\plugin\aiohud_probes.cpp" ( set "PROBES=src\plugin\aiohud_probes.cpp" & set "PROBEDEF=/DAIOHUD_PROBES" )
+if not defined AIOHUD_NO_DEVTOOLS if exist "%ROOT%src\plugin\aiohud_probes.cpp" ( set "PROBES=src\plugin\aiohud_probes.cpp" & set "PROBEDEF=/DAIOHUD_PROBES" )
 
 REM Dev-only TOOLS (session recorder, whole-model dump for the in-game bridge) : compiled in ONLY when the local dev\
 REM tree exists -- it is not in the public repository, so CI and every release build without them. Set
