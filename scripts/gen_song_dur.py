@@ -69,6 +69,12 @@ EXPLICIT = re.compile(r'Song effect duration \+(\d+)%')
 ALL_SONGS = re.compile(r'All songs \+(\d+)')
 ONE_SONG = re.compile(r'\\"([A-Za-z\' ]+)\\"\+(\d+)')
 VAGUE = re.compile(r'Increases song effect duration')
+# The JAPANESE text, read only when the English one is DAMAGED. The 2026-09-10 res ships Miracle Cheer (22249) with
+# en="7" while ja still says 歌数+1 全歌+3 : read from English alone, the item silently lost its +30 % (found by
+# scripts/check_gen_drift.py the same week). A damaged English text is reported, never passed over.
+JA = re.compile(r'\[(\d+)\] = \{id=\d+,en="(?:[^"\\]|\\.)*",ja="((?:[^"\\]|\\.)*)"')
+JA_ALL_SONGS = re.compile(r'全歌\+(\d+)')
+DAMAGED = lambda text: not re.search(r'[A-Za-z]{3}', text)
 
 def read(fn):
     p = RES / fn
@@ -82,8 +88,9 @@ def main():
     desc  = dict((int(m.group(1)), m.group(2)) for m in ENTRY.finditer(ditems))
     name  = dict((int(m.group(1)), m.group(2)) for m in ENTRY.finditer(nitems))
     level = dict((int(m.group(1)), int(m.group(2))) for m in LEVEL.finditer(nitems))
+    ja    = dict((int(m.group(1)), m.group(2)) for m in JA.finditer(ditems))
 
-    rows, vague_unresolved, mismatches = [], [], []
+    rows, vague_unresolved, mismatches, damaged = [], [], [], []
     for iid, d in sorted(desc.items()):
         flat, fams = 0, []
         key = (name.get(iid, ""), level.get(iid, 0))
@@ -102,6 +109,10 @@ def main():
             elif VAGUE.search(d):
                 vague_unresolved.append((iid, name.get(iid, "?"), level.get(iid, 0)))
         m = ALL_SONGS.search(d)
+        if not m and DAMAGED(d):
+            m = JA_ALL_SONGS.search(ja.get(iid, ""))
+            if m:
+                damaged.append((iid, name.get(iid, "?"), d))
         if m:
             flat += 10 * int(m.group(1))     # a point of potency on every song = +10% duration on every song
         for mm in ONE_SONG.finditer(d):
@@ -111,6 +122,11 @@ def main():
         if flat or fams:
             rows.append((iid, flat, fams, name.get(iid, "?")))
 
+    if damaged:
+        print("WARNING: %d item(s) have a damaged English description ; their 'All songs +N' was read from the Japanese text:"
+              % len(damaged))
+        for iid, n, d in damaged:
+            print("   %-28s id=%-6d en=%r" % (n, iid, d))
     if mismatches:
         print("WARNING: sheet and item text disagree on %d item(s):" % len(mismatches))
         for iid, n, sh, it in mismatches:
