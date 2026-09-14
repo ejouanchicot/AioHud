@@ -217,6 +217,14 @@ handler `FFXiMain+0x98DC0`**, which decodes the packet exactly as Windower's
 `test byte [esi+0x24],2` (bars flag) -> `lea ecx,[esi+0x28]; call FFXiMain+0x87860`,
 which does `rep movsd` of **0x20 dwords** from packet+0x28 into a static global.
 
+**Size (disassembled 2026-09-14).** The dispatcher (`FFXiMain+0xFA67F..0xFA777`) derives the size from the header
+(`(hdr >> 9) << 2`) only to step to the next packet and rejects a size of 0 ; it has **no per-id minimum**, and
+the handler never reads the size field. The highest byte the handler touches is **+0xAB** (`mov dx,[esi+0xAA]`,
+flag bit 2) ; with the bars flag alone the copy reads +0x28..+0xA7. So a bars packet the client can display is
+at least **0xA8** bytes ; the server size (0xAC or 0xB0 -- fields.lua's 135-byte junk suggests 0xB0) is still
+UNMEASURED : the dev build logs `PKTSIZE 0x075` the first time one arrives. `on_limbus_075` floors at **0xA0**
+(its sixth label ends at +0x9F ; it was 0x9C, a 4-byte over-read).
+
 ### CONFIRMED (static): the battlefield block at `FFXiMain.dll+0x480800`
 
 | RVA | type | field |

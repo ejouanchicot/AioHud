@@ -863,7 +863,11 @@ void PartyState::on_limbus_075(const unsigned char* p) {    // 0x075 : battlefie
         }
     }
     if (zt_.mode != 6) return;                             // only while standing in a Limbus zone (38 Apollyon / 37 Temenos)
-    if (pkt_bytes(p) < 0x9C) return;                       // 0x075 is MULTIPLEXED (other senders put position floats here) and can be short -> don't read the 6 bars (up to p[0x9B]) past the end
+    // SIZE FLOOR 0xA0 : the sixth bar's label ends at p[0x9F]. It was 0x9C ("up to p[0x9B]"), which let a 0x9C-byte
+    // packet be read 4 bytes past its declared end. Raising it cannot reject a real bars packet : FFXiMain's own 0x075
+    // handler (FFXiMain+0x98DC0, disassembled 2026-09-14) copies +0x28..+0xA7 when the bars flag is set and reads
+    // +0xA8/+0xAA, with NO size check of its own -- a bars packet the client can display is at least 0xA8 bytes.
+    if (pkt_bytes(p) < 0xA0) return;                       // the six bars end at p[0x9F]
     // bar[i] = { s32 progress ; char label[16] } at +0x28 + i*0x14, six of them (Windower's fields.lua documents
     // five). 0x075 is multiplexed -- other senders put position floats here -- so we self-filter on the LABEL of
     // each bar and only write a field whose label actually matched. A bar the server left empty reads label[0]==0

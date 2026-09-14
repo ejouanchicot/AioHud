@@ -322,7 +322,9 @@ void test_packets() {
     SECTION("zone tracker 0x075 : outside Limbus, a short packet, or unlabelled bars are not adopted");
     {   // Mutation : the mode gate dropped (`if (zt_.mode != 6) return;`) -- 0x075 is multiplexed, any battlefield anywhere
         // would write a Limbus floor.
-        // Mutation : the size floor lowered (`< 0x9C` -> `< 0x98`).
+        // Mutation : the size floor back to what it was (`< 0xA0` -> `< 0x9C`) -- a 0x9C-byte packet was accepted while the
+        // sixth label is read up to p[0x9F].
+        // Mutation : the size floor lowered further (`< 0xA0` -> `< 0x98`).
         // (Lowering the label-length floor `n < 3` to `n < 1` is an EQUIVALENT mutant : no label under 3 characters can
         // hold "_Lv", "Floor" or "Tower", so nothing observable depends on it.)
         fresh();
@@ -332,6 +334,10 @@ void test_packets() {
         Packet p = pkt_battlefield({ { -1, "Apollyon_Lv119" }, { 96, "SW_Floor_#3" } });
         pkt_truncate(p, 0x98);
         deliver(p);
+        CHECK_STR(zt().limbusArea, ""); CHECK_EQ(zt().limbusFloor, -1);
+        Packet p9c = pkt_battlefield({ { -1, "Apollyon_Lv119" }, { 96, "SW_Floor_#3" } });
+        pkt_truncate(p9c, 0x9C);                                          // the size the old floor let through
+        deliver(p9c);
         CHECK_STR(zt().limbusArea, ""); CHECK_EQ(zt().limbusFloor, -1);
         deliver(pkt_battlefield({ { 50, "" }, { 60, "\x01\x02" }, { 70, "ab" } }));   // position floats, not bars
         CHECK_EQ(zt().limbusFloor, -1); CHECK_EQ(zt().limbusProgress, -1); CHECK_STR(zt().limbusQuad, "");
