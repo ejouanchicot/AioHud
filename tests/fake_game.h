@@ -64,13 +64,9 @@ void frame();
 // Build the Timers rows from the current world, bracketed as model event 'T' (the renderer's call, minus drawing).
 bool build(aio::TimersRows& out);
 
-// //aio out / //aio in, as the command dispatcher applies them (to the frozen copy too, in a dev build).
+// //aio out / //aio in, as the command dispatcher applies them.
 int out(const char* a, const char* b);
 int in(const char* a, const char* b);
-
-// Dev build only (0 elsewhere) : frames the frozen Timers builder was compared on, and how many differed.
-unsigned shadow_frames();
-unsigned shadow_mismatch();
 
 // frame() + build() -- what one rendered frame does.
 bool step(aio::TimersRows& out);

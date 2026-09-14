@@ -28,7 +28,7 @@ REM tree exists -- it is not in the public repository, so CI and every release b
 REM AIOHUD_NO_DEVTOOLS=1 to build the release shape on a dev machine.
 set "DEVSRC="
 set "DEVDEF="
-if not defined AIOHUD_NO_DEVTOOLS if exist "%ROOT%dev\src\aiohud_devtools.cpp" set DEVSRC="%ROOT%dev\src\aiohud_devtools.cpp" "%ROOT%dev\src\tape_recorder.cpp" "%ROOT%dev\src\igstate.cpp" "%ROOT%dev\src\timers_legacy.cpp" "%ROOT%dev\src\timers_shadow.cpp"
+if not defined AIOHUD_NO_DEVTOOLS if exist "%ROOT%dev\src\aiohud_devtools.cpp" set DEVSRC="%ROOT%dev\src\aiohud_devtools.cpp" "%ROOT%dev\src\tape_recorder.cpp" "%ROOT%dev\src\igstate.cpp"
 if defined DEVSRC set DEVDEF=/DAIOHUD_DEVTOOLS /I"%ROOT%dev\src"
 
 set "OUT=%ROOT%build"

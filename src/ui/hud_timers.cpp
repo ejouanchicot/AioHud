@@ -2,9 +2,6 @@
 #include "ui/hud.h"
 #include "model/timers_build.h"   // the rows this file draws (and the FOCUS monitor behind them) are built there
 #include "model/model_clock.h"    // the build is one model event
-#ifdef AIOHUD_DEVTOOLS
-#include "aiohud_devtools.h"        // dev-only (dev/src, never in a release)
-#endif
 #include "model/flipwatch.h"   // notice a row set that cannot settle
 #include "model/capwatch.h"   // notice a fixed table that has quietly run out of room
 #include "ui/hud_internal.h"
@@ -67,9 +64,6 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
     // cannot be timed a millisecond apart from the one sorted next to it.
     model_event_begin('T');
     const bool built = timers_build_rows(f.game, preview, editing, rowsBuilt);
-#ifdef AIOHUD_DEVTOOLS
-    devtools::timers_shadow(f.game, preview, editing, rowsBuilt, built);   // dev-only : the refactor's equivalence witness, same instant, same inputs
-#endif
     model_event_end();
     if (!built) return;
     Row* bufs = rowsBuilt.bufs; Row* recs = rowsBuilt.recs; int nb = rowsBuilt.nb, nr = rowsBuilt.nr;

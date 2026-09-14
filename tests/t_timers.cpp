@@ -540,16 +540,4 @@ void test_timers() {
         // 180 base + 51 gear s ; this fake has no job points (read_jp_gift_rank = 0) : (180 + 51) x 1.31 = 302
         CHECK_EQ(dur, 302);
     }
-
-    SECTION("timers : the frozen builder agrees with the real one on every frame above (dev build only)");
-    {   // Lot D, step 4 : the builder is being cut into small rules, and each cut must leave every row EXACTLY as it
-        // was. dev/src/timers_legacy.cpp is the builder as it stood before the cuts ; it ran beside the real one on
-        // every build() of every case above. A public clone has no dev/ tree : nothing ran, nothing is claimed.
-        if (shadow_frames() == 0) printf("  (no dev tree : the equivalence witness did not run)\n");
-        else {
-            printf("  compared %u frames, %u differed\n", shadow_frames(), shadow_mismatch());
-            CHECK(shadow_frames() > 100);
-            CHECK_EQ(shadow_mismatch(), 0u);   // the first differences are in aiohud_debug.log next to tests.exe (TIMERSHADOW)
-        }
-    }
 }

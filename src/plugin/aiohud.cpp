@@ -914,9 +914,6 @@ static void aio_command_dispatch(const char* cmd)
             m[sizeof(m) - 1] = 0; chat(m); return;
         }
         const int k = aio::timers_focus_forget(a1, a2);
-#ifdef AIOHUD_DEVTOOLS
-        aio::devtools::timers_mirror_forget(a1, a2);
-#endif
         if (k) _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%c%d line(s) no longer watched", "%c%c[Timers] %c%c%d ligne(s) retiree(s) du suivi"), 0x1F, YEL, 0x1F, GRN, k);
         else   _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cnothing matches \"%s\"", "%c%c[Timers] %c%crien ne correspond a \"%s\""), 0x1F, YEL, 0x1F, RED, a1);
         m[sizeof(m) - 1] = 0; chat(m);
@@ -939,9 +936,6 @@ static void aio_command_dispatch(const char* cmd)
         const int YEL = 50, GRN = 158, GRAY = 160, MODE = 1;
         char m[192];
         const int k = aio::timers_focus_restore(w1, w2);
-#ifdef AIOHUD_DEVTOOLS
-        aio::devtools::timers_mirror_restore(w1, w2);
-#endif
         if (k) _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%c%d line(s) watched again", "%c%c[Timers] %c%c%d ligne(s) remise(s) sous suivi"), 0x1F, YEL, 0x1F, GRN, k);
         else   _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cnothing to put back (no line was removed)", "%c%c[Timers] %c%crien a remettre (aucune ligne retiree)"), 0x1F, YEL, 0x1F, GRAY);
         m[sizeof(m) - 1] = 0; g_host.ffxi().add_to_chat(MODE, m);
@@ -1449,9 +1443,6 @@ static void aio_command_dispatch(const char* cmd)
     }
     if (strstr(buf, "timers")) {                          // //aio timers reset -> flush live buff/recast timers + focus "OUT" alerts
         if (strstr(buf, "reset")) { aio::timers_reset();
-#ifdef AIOHUD_DEVTOOLS
-            aio::devtools::timers_mirror_reset();
-#endif
             g_host.console().print(aio::tr(">>> AioHud : timers reset <<<", ">>> AioHud : timers remis a zero <<<")); }
         return;
     }

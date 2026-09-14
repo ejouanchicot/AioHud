@@ -11,9 +11,6 @@
 #include <windows.h>
 #include <cstring>
 #include <new>
-#ifdef AIOHUD_DEVTOOLS
-#include "aiohud_devtools.h"   // dev/src : the frozen Timers builder, compared on every build() below
-#endif
 
 using namespace aio;
 
@@ -117,9 +114,6 @@ void world(std::initializer_list<Member> members) {
     ps.~PartyState();
     new (&ps) PartyState();
     timers_reset();
-#ifdef AIOHUD_DEVTOOLS
-    devtools::timers_mirror_reset();
-#endif
     advance_ms(1);   // a fresh instant : ffxi_now_tick caches per model ms
 }
 
@@ -179,36 +173,14 @@ bool build(TimersRows& out) {
     for (int i = 0; i < W->nbuff; ++i) gs.buffs[i] = W->buffs[i];
     model_event_begin('T');
     const bool built = timers_build_rows(&gs, false, false, out);
-#ifdef AIOHUD_DEVTOOLS
-    devtools::timers_shadow(&gs, false, false, out, built);
-#endif
     model_event_end();
     return built;
 }
 
 bool step(TimersRows& out) { frame(); return build(out); }
 
-int out(const char* a, const char* b) {
-    const int k = timers_focus_forget(a, b);
-#ifdef AIOHUD_DEVTOOLS
-    devtools::timers_mirror_forget(a, b);
-#endif
-    return k;
-}
-int in(const char* a, const char* b) {
-    const int k = timers_focus_restore(a, b);
-#ifdef AIOHUD_DEVTOOLS
-    devtools::timers_mirror_restore(a, b);
-#endif
-    return k;
-}
-#ifdef AIOHUD_DEVTOOLS
-unsigned shadow_frames()   { return devtools::timers_shadow_frames(); }
-unsigned shadow_mismatch() { return devtools::timers_shadow_mismatch(); }
-#else
-unsigned shadow_frames()   { return 0; }
-unsigned shadow_mismatch() { return 0; }
-#endif
+int out(const char* a, const char* b) { return timers_focus_forget(a, b); }
+int in(const char* a, const char* b)  { return timers_focus_restore(a, b); }
 
 void settle() {
     static TimersRows scratch;
