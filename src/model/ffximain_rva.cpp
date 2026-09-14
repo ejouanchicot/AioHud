@@ -111,7 +111,14 @@ struct CacheSrc {
     const char* how(int i) const       { return g_how[i]; }
 };
 
+// Set by fm_poison. A //aio rva break test must leave the disk alone : every healer adoption during the test called
+// cache_save, which writes only what is PROVEN at that instant -- so unloading before all six were re-proven left
+// the cache holding 1 or 2 addresses, and the next session started unproven (measured 2026-09-14 : a release test
+// after two breaks restored 1 address instead of 6, and //aio doctor reported the menu pointer unproven).
+static bool g_poisoned = false;
+
 static void cache_save() {
+    if (g_poisoned) return;                              // a test in progress : the file keeps the last real state
     FILE* f = fopen(cache_path(), "w");
     if (!f) return;
     // Only PROVEN addresses are written -- see rva_cache_write.
@@ -783,6 +790,7 @@ void fm_tick() {
 // watched doing their job. In memory only : the cache on disk is untouched, so a reload restores sanity.
 void fm_poison(unsigned delta) {
     ensure_loaded();
+    g_poisoned = true;   // until the plugin is reloaded : nothing found during the test is written to disk
     for (int i = 0; i < FM_N; ++i) {
         g_rva[i] = ENTRIES[i].seed + delta;
         g_healed[i] = g_confirmed[i] = false;
@@ -790,7 +798,8 @@ void fm_poison(unsigned delta) {
     }
     windower::debug::log("fm: POISONED every static by +0x%X -- this is a TEST. Expect : target_t back within "
                          "a few seconds of targeting someone ; PointWatch on the next 0x061 (change zone or "
-                         "open the Status menu) ; the menu ptr after you open a menu. Reload the plugin to undo.", delta);
+                         "open the Status menu) ; the menu ptr after you open a menu. Reload the plugin to undo -- the cache on "
+                         "disk is not written until then.", delta);
 }
 
 // ---------------------------------------------------------------- reporting ----
