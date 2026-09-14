@@ -360,6 +360,23 @@ void test_rva_rules() {
         CHECK(!fresh);
     }
 
+    SECTION("rva exam guess : a confirmed sibling is the authority -- the menu-pointer delta never overrides it");
+    {   // dd8b70d : the sibling's proposal already matched, the code fell through to the menu pointer, and the other
+        // region's delta was proposed over it ("+0x32AE4 [proven shift]" / "-0x2208 [sibling]"). The menu pointer is
+        // the fallback for when NEITHER cache is known.
+        // Mutation : if (!siblingConfirmed && anchorConfirmed && anchorMoves) return RVA_GUESS_ANCHOR; -> if (anchorConfirmed && anchorMoves) return RVA_GUESS_ANCHOR;
+        bool said = false;
+        CHECK_EQ(RVA_GUESS_NONE, rva_exam_guess(said, true, false, true, true));    // already on the sibling's answer
+        CHECK(said);
+        CHECK_EQ(RVA_GUESS_NONE, rva_exam_guess(said, true, false, true, true));    // ...and on every frame after
+        said = false;
+        CHECK_EQ(RVA_GUESS_SIBLING, rva_exam_guess(said, true, true, true, true));
+        CHECK_EQ(RVA_GUESS_NONE, rva_exam_guess(said, true, true, true, true));     // the sibling spoke : the scan, not the menu delta
+        bool none = false;
+        CHECK_EQ(RVA_GUESS_ANCHOR, rva_exam_guess(none, false, false, true, true)); // the fallback still works
+        CHECK_EQ(RVA_GUESS_NONE, rva_exam_guess(none, false, false, true, false));
+    }
+
     // ---------------------------------------------------------------- PointWatch ----
 
     SECTION("rva PointWatch : an all-zero payload proves nothing");

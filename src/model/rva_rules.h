@@ -225,13 +225,19 @@ inline unsigned rva_shift_proposal(unsigned seed, unsigned anchorSeed, unsigned 
 // region's delta every frame. And a guess is worth ONE pass : a sibling branch that returned unconditionally kept
 // the differential scan (below it) unreachable for ever. The menu pointer is the fallback for when neither cache
 // is known. `said` is the per-cache "the sibling has spoken" latch.
+//
+// ...and "the fallback" means ONLY then. The once-then-yield latch reopened the very fall-through above : with the
+// sibling confirmed, a pass whose sibling proposal already matched (or any pass after it spoke) went on to the
+// menu-pointer branch, which replaced the sibling's exact answer with the other region's delta -- with no menu
+// open to confirm it first, and the scan only reaching +/-32 KB of the SEED. So a confirmed sibling silences the
+// anchor for good ; if its answer is wrong, the scan is what finds the right one.
 enum RvaGuess { RVA_GUESS_NONE = 0, RVA_GUESS_SIBLING, RVA_GUESS_ANCHOR };
 inline int rva_exam_guess(bool& said, bool siblingConfirmed, bool siblingMoves, bool anchorConfirmed, bool anchorMoves) {
     if (!said && siblingConfirmed) {
         said = true;
         if (siblingMoves) return RVA_GUESS_SIBLING;
     }
-    if (anchorConfirmed && anchorMoves) return RVA_GUESS_ANCHOR;
+    if (!siblingConfirmed && anchorConfirmed && anchorMoves) return RVA_GUESS_ANCHOR;
     return RVA_GUESS_NONE;
 }
 
