@@ -985,6 +985,12 @@ static void aio_command_dispatch(const char* cmd)
         m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
     }
+#ifdef AIOHUD_DEVTOOLS
+    // The dev tools own their command words, dispatched BEFORE the probes file : "pcap dump <name>" contains "dump",
+    // which a probe matches anywhere in the buffer -- the first black box dump went to the hexdump probe, read its
+    // name as an address and wrote nothing (2026-09-14).
+    if (aio_verb(buf, "pcap") || aio_verb(buf, "igstate")) { if (aio::devtools::command(buf)) return; }
+#endif
     // //aio help -- what exists. Without it the only answer to a mistyped or forgotten command was "unknown command",
     // and a tester had to be told each name one message at a time (2026-09-14 audit). The list is the everyday
     // commands, then the diagnostics a tester can be asked for ; the per-feature captures are named by //aio doctor
