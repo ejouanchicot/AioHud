@@ -673,10 +673,11 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
             --g_keyLogLeft;
             const bool typing = g_hud.config().wants_keys();   // only a config text field : never the chat line
             debug::log("KEY key=%08X b=%08X c=%08X dik=%02X vk=%02X pr=%d nc=%d ch=U+%04X ch1=U+%04X sh=%d ct=%d al=%d want=%d",
-                       // Outside a field every value that names the key is blanked : key, dik, vk, and c's scan-code byte
-                       // (bits 16-23 -- the first cut kept c whole, and 001C/0039/0135... spelled the chat line, measured in
-                       // game 2026-09-14). c keeps its transition bits (0xC0000000), which is what the press/release study reads.
-                       typing ? (unsigned)key : 0u, (unsigned)b, typing ? (unsigned)c : ((unsigned)c & 0xC0000000u),
+                       // Outside a field every value that names the key is blanked : key, dik, vk, c's scan-code byte (bits
+                       // 16-23 -- the first cut kept c whole, and 001C/0039/0135... spelled the chat line) and b above its low
+                       // byte (the second cut kept b whole, and b=00170060 carried the 'i' key). Both measured in game on
+                       // 2026-09-14. What the press/release study reads survives : b's flag byte, c's transition bits.
+                       typing ? (unsigned)key : 0u, typing ? (unsigned)b : ((unsigned)b & 0xFFu), typing ? (unsigned)c : ((unsigned)c & 0xC0000000u),
                        typing ? dik : 0, typing ? vk : 0, (int)pressed, typing ? nc : 0,
                        typing ? (unsigned)wbuf[0] : 0u, typing ? (unsigned)wbuf[1] : 0u,
                        (ks[VK_SHIFT] & 0x80) != 0, (ks[VK_CONTROL] & 0x80) != 0, (ks[VK_MENU] & 0x80) != 0, (int)typing);
