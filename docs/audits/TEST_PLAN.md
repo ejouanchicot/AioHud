@@ -43,9 +43,9 @@ Si `//load` crashe ou n'affiche rien → problème de base (SEH/init) : stoppe e
 - [O] `//aio profile save myconfig` puis `//aio profile load myconfig` → charge bien (nom contenant "config").
 - [O] `//aio profile list` avec **plusieurs profils aux noms longs** → s'affiche sans crash (pas d'overflow).
 - [O] `//aio xyzblabla` (bidon, **sans chiffre**) → affiche `unknown command`, **ne touche PAS** HP/MP/TP.
-- [X] `//aio hp 50` et `//aio 100 50 30` → remplissent toujours HP/MP/TP.
+- [X] `//aio hp 50` et `//aio 100 50 30` → remplissent toujours HP/MP/TP. **Depuis le 2026-09-14 : build de dev seulement** (un jouet de dev ; une faute de frappe contenant « mp » réécrivait les jauges d'un joueur).
 Ici ce n'est que pour les grosse fiole qu'on affiche plus.
-- [O] `//aio party demo`, `//aio alliance1 demo`, `//aio sim 2` → marchent comme avant.
+- [O] `//aio party demo`, `//aio alliance1 demo`, `//aio sim 2` → marchent comme avant. **Depuis le 2026-09-14 : `sim` est en build de dev seulement** ; `party N` et `alliance1|2 demo` restent livrés.
 `//aio party demo`, `//aio alliance1 demo`, //aio sim 2 ne fait rien
 
 ## 5. Édition de layout + zones

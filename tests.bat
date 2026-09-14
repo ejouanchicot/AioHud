@@ -1,11 +1,10 @@
 @echo off
 REM Offline test suite -> build\tests.exe. Exit code = number of failed checks (0 = all green).
 REM
-REM Only the PURE core is linked here : no D3D8 device, no game memory, no Windower host. That is not a
-REM limitation to work around -- it is the boundary of what a test can honestly decide. Rendering needs a live
-REM device, and no test can prove a memory offset is right. What this DOES cover is the logic that has shipped
-REM broken more than once : the layout parser (both blocking defects of the 2026-07-25 audit lived there),
-REM skillchain resolution, and the duration model.
+REM No D3D8 device, no real game memory, no Windower host : rendering needs a live device, and no test can prove a
+REM memory offset is right. What this DOES run : the pure rules (Timers, focus, the FFXiMain address healers,
+REM durations, skillchains, the layout parser...) and the REAL model and Timers builder against a fake game
+REM (testsake_game.*) fed bit-exact packets for every handled packet id (testsake_packets.h).
 REM
 REM Same toolchain resolution as build.bat, on purpose : a suite that builds with a different compiler than the
 REM product proves less than it appears to.
@@ -27,16 +26,21 @@ REM /fsanitize=address : the suite runs the REAL model (tests\fake_game.cpp), wh
 REM by counts. Twice on 2026-09-13 a capacity was raised and an array beside it was not, and neither showed as a
 REM wrong row -- they wrote past their end, on a static and on the stack. Only the sanitizer turns that into a
 REM failure, so it is on for every run, not a mode someone has to remember. /MP : the model is large.
+REM Relative inputs from the repository root (see build.bat : the spelled-out paths passed cmd's line limit in a deep
+REM checkout). /Fd : the compiler PDB beside the objects -- without it vc140.pdb landed in the repository root.
+pushd "%ROOT%"
 cl /nologo /MP /EHsc /W4 /WX /permissive- /std:c++17 /Od /Zi /fsanitize=address /wd4456 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS ^
-   /I"%ROOT%include" /I"%ROOT%src" /I"%ROOT%tests" ^
-   "%ROOT%tests\test_main.cpp" "%ROOT%tests\t_json.cpp" "%ROOT%tests\t_clip.cpp" "%ROOT%tests\t_retry.cpp" "%ROOT%tests\t_skillchain.cpp" "%ROOT%tests\t_durations.cpp" "%ROOT%tests\t_config.cpp" "%ROOT%tests\t_limbus.cpp" "%ROOT%tests\t_omen.cpp" "%ROOT%tests\t_buffgroups.cpp" "%ROOT%tests\t_songslot.cpp" "%ROOT%tests\t_songslots.cpp" "%ROOT%tests\t_flipwatch.cpp" "%ROOT%tests\t_capwatch.cpp" "%ROOT%tests\t_allygroup.cpp" "%ROOT%tests\t_focusrules.cpp" "%ROOT%tests\t_castmatch.cpp" "%ROOT%tests\t_debuffrules.cpp" "%ROOT%tests\t_geardat.cpp" ^
-   "%ROOT%tests\t_timers.cpp" "%ROOT%tests\t_timersrules.cpp" "%ROOT%tests\t_roster.cpp" "%ROOT%tests\t_battletarget.cpp" "%ROOT%tests\t_treasure.cpp" "%ROOT%tests\t_pointwatch.cpp" "%ROOT%tests\t_packets.cpp" "%ROOT%tests\t_rvarules.cpp" "%ROOT%tests\fake_game.cpp" ^
-   "%ROOT%src\model\skillchain.cpp" "%ROOT%src\model\ui_config.cpp" ^
-   "%ROOT%src\model\timers_build.cpp" "%ROOT%src\model\model_clock.cpp" "%ROOT%src\model\flipwatch.cpp" "%ROOT%src\model\capwatch.cpp" "%ROOT%src\model\zones.cpp" "%ROOT%src\model\sentinel.cpp" ^
-   "%ROOT%src\model\party_state.cpp" "%ROOT%src\model\party_state_roster.cpp" "%ROOT%src\model\party_state_zonetracker.cpp" "%ROOT%src\model\party_state_pointwatch.cpp" "%ROOT%src\model\party_state_hate.cpp" "%ROOT%src\model\party_state_skillchain.cpp" "%ROOT%src\model\party_state_empypop.cpp" ^
+   /I"include" /I"src" /I"tests" ^
+   "tests\test_main.cpp" "tests\t_json.cpp" "tests\t_clip.cpp" "tests\t_retry.cpp" "tests\t_skillchain.cpp" "tests\t_durations.cpp" "tests\t_config.cpp" "tests\t_limbus.cpp" "tests\t_omen.cpp" "tests\t_buffgroups.cpp" "tests\t_songslot.cpp" "tests\t_songslots.cpp" "tests\t_flipwatch.cpp" "tests\t_capwatch.cpp" "tests\t_allygroup.cpp" "tests\t_focusrules.cpp" "tests\t_castmatch.cpp" "tests\t_debuffrules.cpp" "tests\t_geardat.cpp" ^
+   "tests\t_timers.cpp" "tests\t_timersrules.cpp" "tests\t_roster.cpp" "tests\t_battletarget.cpp" "tests\t_treasure.cpp" "tests\t_pointwatch.cpp" "tests\t_packets.cpp" "tests\t_rvarules.cpp" "tests\fake_game.cpp" ^
+   "src\model\skillchain.cpp" "src\model\ui_config.cpp" ^
+   "src\model\timers_build.cpp" "src\model\model_clock.cpp" "src\model\flipwatch.cpp" "src\model\capwatch.cpp" "src\model\zones.cpp" "src\model\sentinel.cpp" ^
+   "src\model\party_state.cpp" "src\model\party_state_roster.cpp" "src\model\party_state_zonetracker.cpp" "src\model\party_state_pointwatch.cpp" "src\model\party_state_hate.cpp" "src\model\party_state_skillchain.cpp" "src\model\party_state_empypop.cpp" ^
    user32.lib kernel32.lib ^
-   /Fo"%ROOT%build\t\\" /Fe"%ROOT%build\tests.exe"
-if errorlevel 1 ( echo [tests] BUILD FAILED & exit /b 1 )
+   /Fo"%ROOT%build\t\\" /Fd"%ROOT%build\t\\" /Fe"%ROOT%build\tests.exe"
+set "CLRC=%errorlevel%"
+popd
+if not "%CLRC%"=="0" ( echo [tests] BUILD FAILED & exit /b 1 )
 
 "%ROOT%build\tests.exe"
 REM NOT `if errorlevel 1` : cmd compares that as a SIGNED value, so a crash (0xC00000FD stack overflow,

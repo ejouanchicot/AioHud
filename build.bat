@@ -6,7 +6,7 @@ REM Layers:  src\gfx (D3D backend)  src\ui (widgets + HUD)  src\model  src\plugi
 REM Iterate:  //unload AioHud  ->  deploy.bat  ->  //load AioHud
 setlocal
 set "ROOT=%~dp0"
-REM --- x86 MSVC toolchain. CI (msvc-dev-cmd) already puts cl on PATH -> skip. Else locate VS with vswhere
+REM --- x86 MSVC toolchain. If cl is already on PATH (a developer prompt) -> skip. Else locate VS with vswhere
 REM     (any installed VS, no hardcoded version), falling back to the pinned local VS2017 BuildTools path.
 where cl.exe >nul 2>nul && goto :have_cl
 set "VCVARS=C:\Program Files (x86)\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvarsall.bat"
@@ -21,15 +21,15 @@ REM Dev-only diagnostic probes : compiled in ONLY when the (git-ignored, local) 
 REM (no aiohud_probes.cpp) compile without them -- the call sites in aiohud.cpp are #ifdef AIOHUD_PROBES.
 set "PROBES="
 set "PROBEDEF="
-if exist "%ROOT%src\plugin\aiohud_probes.cpp" ( set "PROBES=%ROOT%src\plugin\aiohud_probes.cpp" & set "PROBEDEF=/DAIOHUD_PROBES" )
+if exist "%ROOT%src\plugin\aiohud_probes.cpp" ( set "PROBES=src\plugin\aiohud_probes.cpp" & set "PROBEDEF=/DAIOHUD_PROBES" )
 
 REM Dev-only TOOLS (session recorder, whole-model dump for the in-game bridge) : compiled in ONLY when the local dev\
 REM tree exists -- it is not in the public repository, so CI and every release build without them. Set
 REM AIOHUD_NO_DEVTOOLS=1 to build the release shape on a dev machine.
 set "DEVSRC="
 set "DEVDEF="
-if not defined AIOHUD_NO_DEVTOOLS if exist "%ROOT%dev\src\aiohud_devtools.cpp" set DEVSRC="%ROOT%dev\src\aiohud_devtools.cpp" "%ROOT%dev\src\tape_recorder.cpp" "%ROOT%dev\src\igstate.cpp"
-if defined DEVSRC set DEVDEF=/DAIOHUD_DEVTOOLS /I"%ROOT%dev\src"
+if not defined AIOHUD_NO_DEVTOOLS if exist "%ROOT%dev\src\aiohud_devtools.cpp" set DEVSRC="dev\src\aiohud_devtools.cpp" "dev\src\tape_recorder.cpp" "dev\src\igstate.cpp"
+if defined DEVSRC set DEVDEF=/DAIOHUD_DEVTOOLS /I"dev\src"
 
 set "OUT=%ROOT%build"
 if defined AIOHUD_OUT set "OUT=%AIOHUD_OUT%"
@@ -74,16 +74,24 @@ REM     which ARE the immediate-mode idiom : each is confined to one small per-b
 REM Those 20 stay suppressed deliberately. Renaming them buys no correctness and carries a real hazard: if one
 REM use inside the block is missed, it silently resolves to the OUTER variable and still compiles -- the
 REM compiler cannot catch it. C4457 (shadows a PARAMETER) is the dangerous half and is kept ON.
-cl /nologo /LD /O2 /MT /EHsc- /utf-8 /W4 /WX /permissive- /std:c++17 /wd4456 /D_CRT_SECURE_NO_WARNINGS /DAIOHUD_VERSION=\"%AIOHUD_VERSION%\" %PROBEDEF% %DEVDEF% /I"%ROOT%include" /I"%ROOT%src" ^
-   "%ROOT%src\gfx\noise.cpp" "%ROOT%src\gfx\draw.cpp" "%ROOT%src\gfx\corner_mask.cpp" "%ROOT%src\gfx\texture.cpp" "%ROOT%src\gfx\font.cpp" "%ROOT%src\gfx\window.cpp" ^
-   "%ROOT%src\model\layout.cpp" "%ROOT%src\model\model_clock.cpp" "%ROOT%src\model\model_io.cpp" "%ROOT%src\model\timers_build.cpp" "%ROOT%src\model\party_state.cpp" "%ROOT%src\model\party_state_zonetracker.cpp" "%ROOT%src\model\party_state_pointwatch.cpp" "%ROOT%src\model\party_state_hate.cpp" "%ROOT%src\model\party_state_skillchain.cpp" "%ROOT%src\model\party_state_roster.cpp" "%ROOT%src\model\party_state_empypop.cpp" "%ROOT%src\model\game_mem.cpp" "%ROOT%src\model\ffximain_rva.cpp" "%ROOT%src\model\luacore_root.cpp" "%ROOT%src\model\sentinel.cpp" "%ROOT%src\model\selftest.cpp" "%ROOT%src\model\flipwatch.cpp" "%ROOT%src\model\capwatch.cpp" "%ROOT%src\model\watchdogs.cpp" "%ROOT%src\model\decisions.cpp" "%ROOT%src\model\map_dat.cpp" "%ROOT%src\model\icon_dat.cpp" "%ROOT%src\model\zones.cpp" "%ROOT%src\model\vana_clock.cpp" "%ROOT%src\model\paths.cpp" "%ROOT%src\model\ui_config.cpp" "%ROOT%src\model\skillchain.cpp" "%ROOT%src\model\resistances.cpp" ^
-   "%ROOT%src\ui\buff_atlas.cpp" "%ROOT%src\ui\palette.cpp" "%ROOT%src\ui\edit_box.cpp" "%ROOT%src\ui\liquid_bars.cpp" "%ROOT%src\ui\player.cpp" "%ROOT%src\ui\gear_canary.cpp" "%ROOT%src\ui\party.cpp" "%ROOT%src\ui\party_gauges.cpp" "%ROOT%src\ui\target.cpp" "%ROOT%src\ui\minimap.cpp" "%ROOT%src\ui\factory.cpp" "%ROOT%src\ui\config_controls.cpp" "%ROOT%src\ui\party_config.cpp" "%ROOT%src\ui\target_config.cpp" "%ROOT%src\ui\player_config.cpp" "%ROOT%src\ui\minimap_config.cpp" "%ROOT%src\ui\ws_config.cpp" "%ROOT%src\ui\sc_config.cpp" "%ROOT%src\ui\tp_config.cpp" "%ROOT%src\ui\hl_config.cpp" "%ROOT%src\ui\pw_config.cpp" "%ROOT%src\ui\grim_config.cpp" "%ROOT%src\ui\zt_config.cpp" "%ROOT%src\ui\tm_config.cpp" "%ROOT%src\ui\ep_config.cpp" "%ROOT%src\ui\box_style.cpp" "%ROOT%src\ui\config_page.cpp" "%ROOT%src\ui\hud.cpp" "%ROOT%src\ui\hud_preview.cpp" ^
-   "%ROOT%src\ui\hud_skillchains.cpp" "%ROOT%src\ui\hud_treasure.cpp" "%ROOT%src\ui\hud_hatelist.cpp" "%ROOT%src\ui\hud_pointwatch.cpp" "%ROOT%src\ui\hud_grimoire.cpp" "%ROOT%src\ui\hud_zonetracker.cpp" "%ROOT%src\ui\hud_empypop.cpp" "%ROOT%src\ui\hud_debuffs.cpp" "%ROOT%src\ui\hud_timers.cpp" ^
-   "%ROOT%src\plugin\aiohud.cpp" %PROBES% %DEVSRC% %AIORES% ^
+REM RELATIVE source paths, from the repository root. With %ROOT% spelled out on every file the expanded command passed
+REM cmd's 8191-character limit as soon as the checkout sat in a deep folder (an agent worktree, 2026-09-14) and cl
+REM failed with the cryptic "cannot open '^.obj'" : the line was cut mid-continuation. Relative paths also keep the
+REM developer's folder out of __FILE__ in the shipped DLL. Outputs stay absolute (%OUT%).
+pushd "%ROOT%"
+cl /nologo /LD /O2 /MT /EHsc- /utf-8 /W4 /WX /permissive- /std:c++17 /wd4456 /D_CRT_SECURE_NO_WARNINGS /DAIOHUD_VERSION=\"%AIOHUD_VERSION%\" %PROBEDEF% %DEVDEF% /I"include" /I"src" ^
+   "src\gfx\noise.cpp" "src\gfx\draw.cpp" "src\gfx\corner_mask.cpp" "src\gfx\texture.cpp" "src\gfx\font.cpp" "src\gfx\window.cpp" ^
+   "src\model\layout.cpp" "src\model\model_clock.cpp" "src\model\model_io.cpp" "src\model\timers_build.cpp" "src\model\party_state.cpp" "src\model\party_state_zonetracker.cpp" "src\model\party_state_pointwatch.cpp" "src\model\party_state_hate.cpp" "src\model\party_state_skillchain.cpp" "src\model\party_state_roster.cpp" "src\model\party_state_empypop.cpp" "src\model\game_mem.cpp" "src\model\ffximain_rva.cpp" "src\model\luacore_root.cpp" "src\model\sentinel.cpp" "src\model\selftest.cpp" "src\model\flipwatch.cpp" "src\model\capwatch.cpp" "src\model\watchdogs.cpp" "src\model\decisions.cpp" "src\model\map_dat.cpp" "src\model\icon_dat.cpp" "src\model\zones.cpp" "src\model\vana_clock.cpp" "src\model\paths.cpp" "src\model\ui_config.cpp" "src\model\skillchain.cpp" "src\model\resistances.cpp" ^
+   "src\ui\buff_atlas.cpp" "src\ui\palette.cpp" "src\ui\edit_box.cpp" "src\ui\liquid_bars.cpp" "src\ui\player.cpp" "src\ui\gear_canary.cpp" "src\ui\party.cpp" "src\ui\party_gauges.cpp" "src\ui\target.cpp" "src\ui\minimap.cpp" "src\ui\factory.cpp" "src\ui\config_controls.cpp" "src\ui\party_config.cpp" "src\ui\target_config.cpp" "src\ui\player_config.cpp" "src\ui\minimap_config.cpp" "src\ui\ws_config.cpp" "src\ui\sc_config.cpp" "src\ui\tp_config.cpp" "src\ui\hl_config.cpp" "src\ui\pw_config.cpp" "src\ui\grim_config.cpp" "src\ui\zt_config.cpp" "src\ui\tm_config.cpp" "src\ui\ep_config.cpp" "src\ui\box_style.cpp" "src\ui\config_page.cpp" "src\ui\hud.cpp" "src\ui\hud_preview.cpp" ^
+   "src\ui\hud_skillchains.cpp" "src\ui\hud_treasure.cpp" "src\ui\hud_hatelist.cpp" "src\ui\hud_pointwatch.cpp" "src\ui\hud_grimoire.cpp" "src\ui\hud_zonetracker.cpp" "src\ui\hud_empypop.cpp" "src\ui\hud_debuffs.cpp" "src\ui\hud_timers.cpp" ^
+   "src\plugin\aiohud.cpp" %PROBES% %DEVSRC% %AIORES% ^
    /Fo"%OUT%\\" /Fe"%OUT%\AioHud.dll" ^
-   /link /DEF:"%ROOT%src\plugin\aiohud.def" user32.lib kernel32.lib gdi32.lib /OUT:"%OUT%\AioHud.dll"
+   /link /DEF:"src\plugin\aiohud.def" user32.lib kernel32.lib gdi32.lib /OUT:"%OUT%\AioHud.dll"
+set "CLRC=%errorlevel%"
+popd
+
 
 REM cl returns nonzero on ANY compile/link error -> trust the exit code, NOT just the DLL's
 REM existence (a stale DLL from a previous build would otherwise mask a failed compile).
-if errorlevel 1 ( echo [build] FAILED -- compile/link error above ^(DLL NOT updated^) & exit /b 1 )
+if not "%CLRC%"=="0" ( echo [build] FAILED -- compile/link error above ^(DLL NOT updated^) & exit /b 1 )
 if exist "%OUT%\AioHud.dll" ( echo [build] OK -^> %OUT%\AioHud.dll ) else ( echo [build] FAILED & exit /b 1 )

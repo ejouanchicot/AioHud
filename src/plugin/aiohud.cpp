@@ -1320,6 +1320,7 @@ static void aio_command_dispatch(const char* cmd)
     if (strstr(buf, "doctor")) {   // //aio doctor -> run every RUNTIME check and print what to DO about each problem
         char lines[12][aio::Hud::DOC_LINE];
         const int n = g_hud.doctor(lines, 12);
+        g_hud.self_check();   // ...and the per-widget texture health //aio selfcheck logs : one command to ask a tester for, not two
         if (!n) {
             g_host.console().print(aio::tr(">>> AioHud doctor : all healthy -- detail in Windower\\plugins\\aiohud_debug.log <<<", ">>> AioHud doctor : tout est sain -- detail dans Windower\\plugins\\aiohud_debug.log <<<"));
         } else {
@@ -1415,7 +1416,7 @@ static void aio_command_dispatch(const char* cmd)
         g_host.console().print(msg);
         return;
     }
-    if (strstr(buf, "selfcheck")) {   // //aio selfcheck -> dump texture-load health to aiohud_debug.log (verify the rule-10 latch fixes held : no stuck give-up, no permanently-missing icon)
+    if (strstr(buf, "selfcheck")) {   // //aio selfcheck (kept as an alias : //aio doctor now logs this block too) -> dump texture-load health to aiohud_debug.log (verify the rule-10 latch fixes held : no stuck give-up, no permanently-missing icon)
         g_hud.self_check();
         g_host.console().print(aio::tr(">>> AioHud : selfcheck written to Windower\\plugins\\aiohud_debug.log (look for the AIO SELFCHECK block) <<<", ">>> AioHud : selfcheck ecrit dans Windower\\plugins\\aiohud_debug.log (cherche le bloc AIO SELFCHECK) <<<"));
         return;
