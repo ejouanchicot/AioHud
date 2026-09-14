@@ -8,9 +8,11 @@
 # duration", "Indicolure duration" ; all mean the same additive seconds on Indi- spells.
 #
 #   python scripts/gen_geo_dur.py [path-to-res/item_descriptions.lua] > src/model/geo_dur_gen.h
-import re, sys
+#   (no argument : res\ from $WINDOWER_RES, else the dev install -- genpaths.py)
+import os, re, sys
+import genpaths
 
-src = sys.argv[1] if len(sys.argv) > 1 else r"D:\Windower Tetsouo\res\item_descriptions.lua"
+src = sys.argv[1] if len(sys.argv) > 1 else os.path.join(genpaths.res_dir(), "item_descriptions.lua")
 
 # "Indicolure" spell duration +15  /  Indicolure effect duration +25  /  "Indicolure" duration +21
 # (the item text quotes Indicolure as escaped \" in the lua -> absorb any [" \] between the words)

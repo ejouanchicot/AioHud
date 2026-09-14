@@ -8,14 +8,14 @@ import os, pathlib
 # `D:\Windower Tetsouo\plugins\_aiohud_re\src\model\` -- a runtime folder that was renamed to `AioHud`
 # and that never held `src/` anyway, so this generator wrote into a phantom path and the table it produces
 # was effectively un-regenerable. Windower's res/ stays absolute (it lives outside the repo) but is
-# overridable with WINDOWER_RES so another machine can run this without editing the script.
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-RES  = pathlib.Path(os.environ.get('WINDOWER_RES', r'D:\Windower Tetsouo\res'))
+# overridable with WINDOWER_RES so another machine can run this without editing the script (genpaths.py).
+import genpaths
+RES  = pathlib.Path(genpaths.res_dir())
 
 import re, io
 
 RES = str(RES / "weapon_skills.lua")
-OUT = str(ROOT / "src" / "model" / "weapon_skills_gen.h")
+OUT = genpaths.out_path("weapon_skills_gen.h")
 
 rows = []
 with io.open(RES, "r", encoding="utf-8") as f:

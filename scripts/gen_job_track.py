@@ -10,20 +10,19 @@
 #       type->job pass -- not in this generator yet (pure-melee jobs get an empty spell list for now).
 # Source : res/spells.lua.  Output : src/model/job_track_gen.h.
 import re, os
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-def find_res():
-    for c in [os.path.join(ROOT, '..', '..', 'res'), os.path.join(ROOT, 'res'), r'D:\Windower Tetsouo\res']:
-        if os.path.isfile(os.path.join(c, 'spells.lua')):
-            return c
-    raise SystemExit('res/spells.lua not found')
-RES = find_res()
-OUT = os.path.join(ROOT, 'src', 'model', 'job_track_gen.h')
+import genpaths
+# res\ : $WINDOWER_RES, else the dev install ; addons\ : $WINDOWER_ADDONS, else the dev install (genpaths.py).
+RES = genpaths.res_dir()
+if not os.path.isfile(os.path.join(RES, 'spells.lua')):
+    raise SystemExit('res/spells.lua not found in %s -- set WINDOWER_RES to your Windower res folder' % RES)
+ADDONS = genpaths.addons_dir()
+OUT = genpaths.out_path('job_track_gen.h')
 ENEMY = 32   # windower target bitflag : Self=1 Player=2 Party=4 Ally=8 NPC=16 Enemy=32
 
-# Blue Magic sub-type metadata from the bluguide addon (id -> (hasSCA=physical, isNuke=magical)). Optional.
+# Blue Magic sub-type metadata from the bluguide addon (id -> (hasSCA=physical, isNuke=magical)). Optional --
+# but NOT neutral : without it every Blue spell falls to 'Blue: Debuff', so a run without the addon changes the table.
 BLU_META = {}
-for c in [r'D:\Windower Tetsouo\addons\bluguide\res\spellinfo.lua',
-          os.path.join(ROOT, '..', '..', 'addons', 'bluguide', 'res', 'spellinfo.lua')]:
+for c in [os.path.join(ADDONS, 'bluguide', 'res', 'spellinfo.lua')]:
     if os.path.isfile(c):
         for ln in open(c, encoding='utf-8', errors='ignore'):
             mm = re.match(r'\s*\[(\d+)\]', ln)
@@ -189,7 +188,7 @@ GAPFILL = {'Apogee':'SMN','Astral Conduit':'SMN','Astral Flow':'SMN','Mana Cede'
 # parse GearSwap per-job modules : name -> {job abbrev : level}
 gs_map = {}
 GS = None
-for c in [r'D:\Windower Tetsouo\addons\GearSwap\data\shared\data\job_abilities',
+for c in [os.path.join(ADDONS, 'GearSwap', 'data', 'shared', 'data', 'job_abilities'),
           os.path.join(RES, '..', 'addons', 'GearSwap', 'data', 'shared', 'data', 'job_abilities')]:
     if os.path.isdir(c):
         GS = c; break

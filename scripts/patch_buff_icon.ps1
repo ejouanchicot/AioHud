@@ -7,9 +7,12 @@
 # Target : assets/buff_atlas.raw  (1024 x 640 straight-alpha BGRA ; cell = 32x32, 32 cols)
 #          cell <Id> -> col = Id%32, row = Id/32 -> atlas px (col*32, row*32).
 
+#          XivParty is found under $env:WINDOWER_ADDONS, else the dev install (the scripts/genpaths.py order).
+# !! The shipped atlas is the AioPack sheet since c6fb52e, not XivParty's : a patched cell will not match its neighbours.
+
 param(
     [Parameter(Mandatory=$true)][int]$Id,
-    [string]$Src = (Join-Path (Split-Path $PSScriptRoot -Parent) ('..\..\addons\XivParty\assets\buffIcons\{0}.png' -f $Id)),
+    [string]$Src = (Join-Path $(if ($env:WINDOWER_ADDONS) { $env:WINDOWER_ADDONS } else { 'D:\Windower Tetsouo\addons' }) ('XivParty\assets\buffIcons\{0}.png' -f $Id)),
     [string]$Atlas = (Join-Path (Split-Path $PSScriptRoot -Parent) 'assets\buff_atlas.raw')
 )
 

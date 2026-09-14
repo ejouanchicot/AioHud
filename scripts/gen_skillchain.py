@@ -8,16 +8,17 @@
 #
 # Run:  python scripts/gen_skillchain.py   (from the repo root)
 import re, os, sys
+import genpaths
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = genpaths.ROOT
 def _find_lua():   # the repo copy is authoritative + versioned ; fall back to the runtime addon(s) if it's missing
     for c in [os.path.join(ROOT, 'scripts', 'skills.lua'),
-              os.path.join(ROOT, '..', '..', 'addons', 'AioHUD', 'data', 'tables', 'skills.lua'),
-              r'D:\Windower Tetsouo\addons\Skillchains\skills.lua']:
+              os.path.join(genpaths.addons_dir(), 'AioHUD', 'data', 'tables', 'skills.lua'),
+              os.path.join(genpaths.addons_dir(), 'Skillchains', 'skills.lua')]:
         if os.path.isfile(c): return c
     sys.exit('skills.lua not found (put it at scripts/skills.lua)')
 LUA  = _find_lua()
-OUT  = os.path.join(ROOT, 'src', 'model', 'skillchain_gen.h')
+OUT  = genpaths.out_path('skillchain_gen.h')
 
 # SCProp enum order -- MUST match src/model/skillchain.h.
 PROPS = ['Transfixion','Compression','Liquefaction','Scission','Reverberation','Detonation',
@@ -113,7 +114,7 @@ def main():
         if nm and nm not in mob_by_name:
             mob_by_name[nm] = row
     ja_ids = set(r[0] for r in res_rows['job_abilities'])
-    abil_h = os.path.join(ROOT, 'src', 'model', 'abilities_gen.h')
+    abil_h = genpaths.model_path('abilities_gen.h')     # the TRACKED table : an input, never the redirected output
     added = 0
     if os.path.exists(abil_h):
         atext = open(abil_h, encoding='utf-8', errors='replace').read()

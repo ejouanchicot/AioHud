@@ -5,8 +5,10 @@
 # 11 Hymnus / 12 Mazurka / 14 Scherzo). Family ids match Timers.dll (RE'd) : 1 Paeon .. 15 Operetta/misc.
 #
 #   python scripts/gen_song_family.py [path-to-res/spells.lua] > src/model/song_family_gen.h
-import re, sys
-src = sys.argv[1] if len(sys.argv) > 1 else r"D:\Windower Tetsouo\res\spells.lua"
+#   (no argument : res\ from $WINDOWER_RES, else the dev install -- genpaths.py)
+import os, re, sys
+import genpaths
+src = sys.argv[1] if len(sys.argv) > 1 else os.path.join(genpaths.res_dir(), "spells.lua")
 
 FAM = {  # family word (in the song's English name) -> Timers family id
     "Paeon":1, "Ballad":2, "Minne":3, "Minuet":4, "Madrigal":5, "Prelude":6,

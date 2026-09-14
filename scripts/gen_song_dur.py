@@ -31,12 +31,12 @@ March 355 vs 352, Gavotte 162 vs 159, Capriccio 162 vs 158.
 Run:  python scripts/gen_song_dur.py
 """
 import re, io, os, pathlib, sys
+import genpaths
 
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT  = ROOT / "src" / "model" / "song_dur_gen.h"
+OUT  = pathlib.Path(genpaths.out_path("song_dur_gen.h"))
 
-# Windower's resource folder. Overridable for a machine that installed it elsewhere.
-RES = pathlib.Path(os.environ.get("WINDOWER_RES", r"D:\Windower Tetsouo\res"))
+# Windower's resource folder. Overridable for a machine that installed it elsewhere ($WINDOWER_RES, genpaths.py).
+RES = pathlib.Path(genpaths.res_dir())
 
 FAMILIES = {1: "Paeon", 2: "Ballad", 3: "Minne", 4: "Minuet", 5: "Madrigal", 6: "Prelude", 7: "Mambo",
             8: "March", 9: "Etude", 10: "Carol", 11: "Hymnus", 12: "Mazurka", 13: "Sirvente",

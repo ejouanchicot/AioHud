@@ -10,9 +10,10 @@
 #
 # NOTE : items whose text is QUALITATIVE ("Increases \"Regen\" effect duration", no number) carry no value to
 # extract and are skipped -- add those to a REGEN_DUR_EXTRA supplement in regen_dur.h if their seconds are known.
-import re, sys
+import os, re, sys
+import genpaths   # no argument : res\ from $WINDOWER_RES, else the dev install
 
-src = sys.argv[1] if len(sys.argv) > 1 else r"D:\Windower Tetsouo\res\item_descriptions.lua"
+src = sys.argv[1] if len(sys.argv) > 1 else os.path.join(genpaths.res_dir(), "item_descriptions.lua")
 
 # '"Regen" duration +12' / '"Regen" effect duration +24' -- REQUIRE the word 'duration' (so '"Regen"+4' potency
 # and '"Regen" potency +20%' never match) and a +N with NO trailing % (Regen duration is flat seconds).

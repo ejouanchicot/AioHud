@@ -8,12 +8,20 @@
 #          Atlas size = 1024 x (ceil((maxId+1)/32) * 32).  Empty cells stay transparent.
 #
 # Re-run whenever XivParty's icon set changes. Pure asset tooling -- no game/RE involved.
+#
+# !! The SHIPPED atlas is no longer XivParty's : since c6fb52e (2026-09-08) it is the AioPack sheet. Re-running
+# !! this REPLACES 458 of its 640 cells (measured 2026-09-14). Only for a deliberate return to XivParty's art.
 
 Add-Type -AssemblyName System.Drawing
 
 $root    = Split-Path $PSScriptRoot -Parent
-$srcDir  = Join-Path $root '..\..\addons\XivParty\assets\buffIcons'
+# XivParty lives in Windower's addons\ : $env:WINDOWER_ADDONS, else the dev install (the same order as
+# scripts/genpaths.py). It used to be <repo>\..\..\addons -- right while the repo sat inside Windower\, gone since.
+$addons  = if ($env:WINDOWER_ADDONS) { $env:WINDOWER_ADDONS } else { 'D:\Windower Tetsouo\addons' }
+$srcDir  = Join-Path $addons 'XivParty\assets\buffIcons'
 $outPath = Join-Path $root 'assets\buff_atlas.raw'
+# Refuse loudly : without this, a missing folder errored per-cmdlet and the script still WROTE an empty atlas.
+if (-not (Test-Path $srcDir)) { throw "XivParty buff icons not found: $srcDir -- set WINDOWER_ADDONS" }
 
 $CELL = 32
 $COLS = 32

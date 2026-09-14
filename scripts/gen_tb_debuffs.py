@@ -10,10 +10,12 @@
 #   python scripts/gen_tb_debuffs.py <path-to-tb_spells.lua> > src/model/tb_debuff_gen.h
 #
 # Nested (multi-effect) spell entries -> the FIRST effect is emitted (the primary debuff).
-import re, sys
+#   (no argument : addons\ from $WINDOWER_ADDONS, else the dev install -- genpaths.py)
+import os, re, sys
+import genpaths
 
 src = sys.argv[1] if len(sys.argv) > 1 else \
-    r"D:\Windower Tetsouo\addons\AioHUD\vendor\targetbar\tb_spells.lua"
+    os.path.join(genpaths.addons_dir(), "AioHUD", "vendor", "targetbar", "tb_spells.lua")
 
 # DEBUFF status ids -- the section AFTER the -1 separator in tb_engine.lua's Settings.EffectEnabled.
 # Only spells whose landed effect is one of these is a TARGET debuff (excludes Protect/Haste/etc buffs,

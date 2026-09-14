@@ -2,24 +2,16 @@
 # gen_buff_names.py -- status-id -> display name for the Timers "Duration" column name mode.
 # Source res/buffs.lua ({id=.., en="..."}). Output src/model/buffs_gen.h : sorted {id,en} + buff_status_name(id).
 import re, os
-ROOT=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# res/ lookup with a fallback + env override, the same shape gen_trusts / gen_job_track / gen_overwrites use.
+import genpaths
+# res/ lookup : $WINDOWER_RES, else the dev install -- the one order every generator shares (genpaths.py).
 # This was a bare '../../res', which assumed the repo lived inside Windower\plugins\ -- true when it was
 # written, false since the repo moved out. The script then died on FileNotFoundError, so buffs_gen.h could not
 # be refreshed at all : the next game patch that adds a status id would ship a nameless buff in the Timers
 # Duration column, with no working way to regenerate the table.
-def find_res():
-    cands = []
-    env = os.environ.get('WINDOWER_RES')
-    if env: cands.append(env)
-    cands.append(os.path.join(ROOT, '..', '..', 'res'))
-    cands.append(os.path.join(ROOT, 'res'))
-    cands.append(os.path.join('D:' + os.sep, 'Windower Tetsouo', 'res'))
-    for c in cands:
-        if os.path.isfile(os.path.join(c, 'buffs.lua')): return c
-    raise SystemExit('res/buffs.lua not found -- set WINDOWER_RES to your Windower res folder')
-SRC=os.path.join(find_res(),'buffs.lua')
-OUT=os.path.join(ROOT,'src','model','buffs_gen.h')
+SRC=os.path.join(genpaths.res_dir(),'buffs.lua')
+if not os.path.isfile(SRC):
+    raise SystemExit('%s not found -- set WINDOWER_RES to your Windower res folder' % SRC)
+OUT=genpaths.out_path('buffs_gen.h')
 def cap(s):  # res names are lower-case ("haste") -> Title Case for display
     return ' '.join(w[:1].upper()+w[1:] for w in s.split(' '))
 rows={}

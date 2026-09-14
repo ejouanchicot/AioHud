@@ -11,23 +11,14 @@
 # (wrong tier shown AND a 60 s timer instead of 180 s).
 #
 #   python scripts/gen_overwrites.py [path-to-res-folder]
+#   (no argument : $WINDOWER_RES, then the legacy $FFXI_RES, else the dev install -- genpaths.py)
 import os, re, sys
+import genpaths
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-def find_res():
-    cands = ([sys.argv[1]] if len(sys.argv) > 1 else []) + [
-        os.environ.get('FFXI_RES', ''),
-        os.path.join(ROOT, '..', '..', 'res'),
-        os.path.join(ROOT, 'res'),
-        r'D:\Windower Tetsouo\res']
-    for c in cands:
-        if c and os.path.isfile(os.path.join(c, 'spells.lua')):
-            return c
-    raise SystemExit('res/spells.lua not found -- pass its folder as argv[1] or set FFXI_RES')
-
-RES = find_res()
-OUT = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, 'src', 'model', 'overwrites_gen.h')
+RES = genpaths.res_dir(sys.argv[1] if len(sys.argv) > 1 else None, legacy=('FFXI_RES',))
+if not os.path.isfile(os.path.join(RES, 'spells.lua')):
+    raise SystemExit('res/spells.lua not found in %s -- pass its folder as argv[1] or set WINDOWER_RES' % RES)
+OUT = sys.argv[2] if len(sys.argv) > 2 else genpaths.out_path('overwrites_gen.h')
 
 rows = []
 names = {}

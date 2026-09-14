@@ -8,9 +8,11 @@
 # lives in the item's extdata (decoded live in enh_dur.h), NOT here.
 #
 #   python scripts/gen_enh_dur.py [path-to-res/item_descriptions.lua] > src/model/enh_dur_listed_gen.h
-import re, sys
+#   (no argument : res\ from $WINDOWER_RES, else the dev install -- genpaths.py)
+import os, re, sys
+import genpaths
 
-src = sys.argv[1] if len(sys.argv) > 1 else r"D:\Windower Tetsouo\res\item_descriptions.lua"
+src = sys.argv[1] if len(sys.argv) > 1 else os.path.join(genpaths.res_dir(), "item_descriptions.lua")
 
 # match (CASE-INSENSITIVE : some items write "Duration" capitalised, e.g. Sroda Necklace -50%) :
 #   Enhancing magic duration +10%  /  Enhancing Magic effect duration +20%  /  ...duration+18%  /  ...Duration -50%

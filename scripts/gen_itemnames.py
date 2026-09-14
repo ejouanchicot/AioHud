@@ -8,22 +8,24 @@
 #
 # res\ resolution (the dev repo lives OUTSIDE Windower, so it cannot be derived from __file__) :
 #   1. --res PATH
-#   2. $AIOHUD_RES
+#   2. $WINDOWER_RES (the name every generator shares, genpaths.py), then the legacy $AIOHUD_RES
 #   3. the sibling res\ of WINDOWER_PLUGINS parsed out of deploy.local.bat (the repo's existing
 #      untracked per-machine config -- same source deploy.bat uses)
-#   4. D:\Windower\res   (deploy.bat's own default)
+#   4. the dev install, genpaths.DEV_RES
 import re, os, sys
+import genpaths
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT  = os.path.join(ROOT, 'src', 'model', 'itemnames_gen.h')
+ROOT = genpaths.ROOT
+OUT  = genpaths.out_path('itemnames_gen.h')
 
 
 def res_dir():
     argv = sys.argv[1:]
     if '--res' in argv:
         return argv[argv.index('--res') + 1]
-    if os.environ.get('AIOHUD_RES'):
-        return os.environ['AIOHUD_RES']
+    for name in ('WINDOWER_RES', 'AIOHUD_RES'):
+        if os.environ.get(name):
+            return os.environ[name]
     # deploy.local.bat :  set "WINDOWER_PLUGINS=D:\Windower Tetsouo\plugins"  ->  ..\res
     local = os.path.join(ROOT, 'deploy.local.bat')
     if os.path.isfile(local):
@@ -31,7 +33,7 @@ def res_dir():
             m = re.search(r'set\s+"?WINDOWER_PLUGINS=([^"\r\n]+)"?', f.read(), re.I)
         if m:
             return os.path.join(os.path.dirname(m.group(1).rstrip('\\/')), 'res')
-    return r'D:\Windower\res'
+    return genpaths.DEV_RES
 
 def cstr(s):
     # Work on UTF-8 BYTES so a multi-byte char keeps its exact bytes (the font's utf8_next decodes 2-byte
@@ -50,7 +52,7 @@ def main():
     lua = os.path.join(rd, 'items.lua')
     if not os.path.isfile(lua):
         sys.exit('[gen_itemnames] res\\items.lua not found at "%s"\n'
-                 '                pass --res PATH, set AIOHUD_RES, or create deploy.local.bat' % lua)
+                 '                pass --res PATH, set WINDOWER_RES, or create deploy.local.bat' % lua)
 
     with open(lua, 'r', encoding='utf-8', errors='replace') as f:
         text = f.read()

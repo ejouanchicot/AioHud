@@ -20,9 +20,12 @@ import sys
 import numpy as np
 from PIL import Image
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# the HD book art lives with the addon, not under assets/*_src/ (large shared source).
-SRC_DIR = os.path.join(os.path.dirname(os.path.dirname(ROOT)), 'addons', 'AioHUD', 'assets')
+import genpaths
+
+ROOT = genpaths.ROOT
+# the HD book art lives with the addon, not under assets/*_src/ (large shared source) : $WINDOWER_ADDONS, else the
+# dev install. It used to be <repo>\..\..\addons -- right while the repo sat inside Windower\, a missing folder since.
+SRC_DIR = os.path.join(genpaths.addons_dir(), 'AioHUD', 'assets')
 OUT_DIR = os.path.join(ROOT, 'assets')
 
 W, H = 512, 342                                # 3:2 book, 1536x1024 divided by 3
@@ -56,10 +59,12 @@ def convert(src_path):
 
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
+    # ALL sources first : checking inside the loop wrote two books and then died on the third, a half-updated set.
+    missing = [os.path.join(SRC_DIR, s) for s, _ in BOOKS if not os.path.isfile(os.path.join(SRC_DIR, s))]
+    if missing:
+        sys.exit('source not found: %s -- set WINDOWER_ADDONS to your Windower addons folder' % '; '.join(missing))
     for src_name, out_name in BOOKS:
         src_path = os.path.join(SRC_DIR, src_name)
-        if not os.path.isfile(src_path):
-            sys.exit('source not found: %s' % src_path)
         rgba = convert(src_path)
         bgra = rgba[..., [2, 1, 0, 3]].tobytes()        # straight-alpha BGRA (B,G,R,A)
         out_path = os.path.join(OUT_DIR, out_name)

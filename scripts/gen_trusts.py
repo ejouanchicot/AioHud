@@ -13,20 +13,19 @@
 # Output : src/model/trusts_gen.h.  Run : python scripts/gen_trusts.py
 
 import os, re, sys
+import genpaths
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-def find_res():
-    for c in [os.path.join(ROOT, '..', '..', 'res'), os.path.join(ROOT, 'res'), r'D:\Windower Tetsouo\res']:
-        if os.path.isfile(os.path.join(c, 'spells.lua')): return c
-    raise SystemExit('res/spells.lua not found')
-RES = find_res()
-OUT = os.path.join(ROOT, '..', 'src', 'model', 'trusts_gen.h')
+RES = genpaths.res_dir()   # $WINDOWER_RES, else the dev install (genpaths.py)
+if not os.path.isfile(os.path.join(RES, 'spells.lua')):
+    raise SystemExit('res/spells.lua not found in %s -- set WINDOWER_RES to your Windower res folder' % RES)
+OUT = genpaths.out_path('trusts_gen.h')
 # The curated jobs are re-read from THIS GENERATOR'S OWN OUTPUT, which is where the TRUSTS[] table lives.
 # It used to point at party_state_roster.cpp, where the table was defined LONG AGO; after the move, the regex
 # below matched nothing, `jobs` stayed empty, and a re-run silently rewrote all 106 rows as {"Name", 0, 0} --
 # wiping every hand-reversed job and blanking the trust job badges. That is a generator that destroys its own
 # data when you follow the instruction in CLAUDE.md to regenerate rather than hand-edit.
-PREV = OUT
+# Always the TRACKED header, even when $AIOHUD_GEN_OUT redirects the output : an empty temp folder has no jobs.
+PREV = genpaths.model_path('trusts_gen.h')
 
 # --- curated jobs : parse the CURRENT table so hand-reversed jobs survive. Keyed by name AS WRITTEN there. ---
 jobs = {}
@@ -71,6 +70,6 @@ prev_known = sum(1 for v in jobs.values() if v != ('0', '0'))
 if have_jobs < prev_known:
     sys.exit('gen_trusts: REFUSING to write -- would drop %d known job(s) (%d on disk, %d now). '
              'The jobs are hand-reversed and unrecoverable. Check that the TRUSTS[] regex still matches %s.'
-             % (prev_known - have_jobs, prev_known, have_jobs, os.path.relpath(PREV, os.path.join(ROOT, '..'))))
+             % (prev_known - have_jobs, prev_known, have_jobs, genpaths.rel(PREV)))
 open(OUT, 'w', encoding='utf-8', newline='\n').write('\n'.join(L) + '\n')
-print('gen_trusts: %d trusts -> %s  (%d with a known job, %d job-unknown)' % (len(trusts), os.path.relpath(OUT, os.path.join(ROOT, '..')), have_jobs, len(trusts) - have_jobs))
+print('gen_trusts: %d trusts -> %s  (%d with a known job, %d job-unknown)' % (len(trusts), genpaths.rel(OUT), have_jobs, len(trusts) - have_jobs))

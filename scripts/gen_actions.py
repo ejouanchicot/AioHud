@@ -14,16 +14,16 @@ import os, pathlib
 # `D:\Windower Tetsouo\plugins\_aiohud_re\src\model\` -- a runtime folder that was renamed to `AioHud`
 # and that never held `src/` anyway, so this generator wrote into a phantom path and the table it produces
 # was effectively un-regenerable. Windower's res/ stays absolute (it lives outside the repo) but is
-# overridable with WINDOWER_RES so another machine can run this without editing the script.
-ROOT = pathlib.Path(__file__).resolve().parent.parent
-RES  = pathlib.Path(os.environ.get('WINDOWER_RES', r'D:\Windower Tetsouo\res'))
+# overridable with WINDOWER_RES so another machine can run this without editing the script (genpaths.py).
+import genpaths
+RES  = pathlib.Path(genpaths.res_dir())
 
 import re, io
 
 SPELLS_RES = str(RES / "spells.lua")
 ABILS_RES  = str(RES / "job_abilities.lua")
-SPELLS_OUT = str(ROOT / "src" / "model" / "spells_gen.h")
-ABILS_OUT  = str(ROOT / "src" / "model" / "abilities_gen.h")
+SPELLS_OUT = genpaths.out_path("spells_gen.h")
+ABILS_OUT  = genpaths.out_path("abilities_gen.h")
 
 LINE = re.compile(r'\[(\d+)\]\s*=\s*\{.*?\bid=(\d+)\b.*?\ben="((?:[^"\\]|\\.)*)"', re.S)
 
@@ -60,8 +60,8 @@ def parse(path):
 
 def emit(out, res, struct, arrname, nname, rowfmt, accessor):
     with io.open(out, "w", encoding="utf-8", newline="\n") as o:
-        base = out.split('\\')[-1]
-        src  = res.split('\\')[-1]
+        base = os.path.basename(out)   # not split('\\') : a '/'-separated path put the WHOLE path in the banner
+        src  = os.path.basename(res)
         o.write("// %s -- AUTO-GENERATED from Windower res/%s (do not edit).\n" % (base, src))
         o.write("// Regenerate: python scripts/gen_actions.py\n")
         o.write("#pragma once\n\nnamespace aio {\n\n")

@@ -11,9 +11,11 @@
 # Duration+" gear is applied separately at runtime (Timers reads it live from equipment).
 #
 #   python scripts/gen_tb_buffs.py [path-to-res/spells.lua] > src/model/tb_buff_gen.h
-import re, sys
+#   (no argument : res\ from $WINDOWER_RES, else the dev install -- genpaths.py)
+import os, re, sys
+import genpaths
 
-src = sys.argv[1] if len(sys.argv) > 1 else r"D:\Windower Tetsouo\res\spells.lua"
+src = sys.argv[1] if len(sys.argv) > 1 else os.path.join(genpaths.res_dir(), "spells.lua")
 
 # FFXI `targets` bitmask flags. A buff you can put on an ally must be castable on Self/Party/Ally.
 T_SELF, T_PARTY, T_ALLY, T_ENEMY = 0x01, 0x04, 0x08, 0x20

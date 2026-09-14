@@ -17,13 +17,15 @@
 # vendor\nms\ resolution (the dev repo lives OUTSIDE Windower, so it cannot be derived from __file__) :
 #   1. --nms PATH
 #   2. $AIOHUD_NMS
-#   3. the addons\AioHUD\vendor\nms of the WINDOWER root parsed out of WINDOWER_PLUGINS in deploy.local.bat
+#   3. $WINDOWER_ADDONS\AioHUD\vendor\nms (the addons variable every generator shares, genpaths.py)
+#   4. the addons\AioHUD\vendor\nms of the WINDOWER root parsed out of WINDOWER_PLUGINS in deploy.local.bat
 #      (the repo's existing untracked per-machine config -- same source deploy.bat uses)
-#   4. D:\Windower\addons\AioHUD\vendor\nms
+#   5. the dev install, genpaths.DEV_ADDONS\AioHUD\vendor\nms
 import re, os, sys
+import genpaths
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT  = os.path.join(ROOT, 'src', 'model', 'nms_gen.h')
+ROOT = genpaths.ROOT
+OUT  = genpaths.out_path('nms_gen.h')
 
 
 def nms_dir():
@@ -32,6 +34,8 @@ def nms_dir():
         return argv[argv.index('--nms') + 1]
     if os.environ.get('AIOHUD_NMS'):
         return os.environ['AIOHUD_NMS']
+    if os.environ.get('WINDOWER_ADDONS'):
+        return os.path.join(os.environ['WINDOWER_ADDONS'], 'AioHUD', 'vendor', 'nms')
     # deploy.local.bat :  set "WINDOWER_PLUGINS=D:\Windower Tetsouo\plugins"  ->  ..\addons\AioHUD\vendor\nms
     local = os.path.join(ROOT, 'deploy.local.bat')
     if os.path.isfile(local):
@@ -40,7 +44,7 @@ def nms_dir():
         if m:
             win = os.path.dirname(m.group(1).rstrip('\\/'))
             return os.path.join(win, 'addons', 'AioHUD', 'vendor', 'nms')
-    return r'D:\Windower\addons\AioHUD\vendor\nms'
+    return os.path.join(genpaths.DEV_ADDONS, 'AioHUD', 'vendor', 'nms')
 
 
 def cstr(s):
@@ -159,7 +163,7 @@ def load_index(nd):
     p = os.path.join(nd, 'index.lua')
     if not os.path.isfile(p):
         sys.exit('[gen_nms] vendor\\nms\\index.lua not found at "%s"\n'
-                 '          pass --nms PATH, set AIOHUD_NMS, or create deploy.local.bat' % p)
+                 '          pass --nms PATH, set AIOHUD_NMS or WINDOWER_ADDONS, or create deploy.local.bat' % p)
     with open(p, 'r', encoding='utf-8', errors='replace') as f:
         text = f.read()
     m = re.search(r'local\s+nms\s*=\s*\{(.*?)\}', text, re.S)
@@ -252,8 +256,8 @@ def main():
             txt = f.read()
         m = re.search(re.escape(arr) + r'\[\]\s*=\s*\{(.*?)\n\};', txt, re.S)
         return set(int(x) for x in re.findall(r'\{(\d+),', m.group(1))) if m else set()
-    kis    = table_ids(os.path.join(ROOT, 'src', 'model', 'keyitems_gen.h'),  'KEY_ITEMS')
-    items  = table_ids(os.path.join(ROOT, 'src', 'model', 'itemnames_gen.h'), 'ITEM_NAMES')
+    kis    = table_ids(genpaths.model_path('keyitems_gen.h'),  'KEY_ITEMS')     # the TRACKED tables (inputs)
+    items  = table_ids(genpaths.model_path('itemnames_gen.h'), 'ITEM_NAMES')
     unres  = []
     for (pid, ki, nm, _cf, _cc) in pool:
         if pid not in (kis if ki else items):

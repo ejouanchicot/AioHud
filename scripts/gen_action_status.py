@@ -9,17 +9,12 @@
 #       ALSO a real self/party buff. Lets the box drop Blind / Poison / Slow / Dia / Bio that leak via 0x063.
 # Source : res/{spells,job_abilities}.lua. Output : src/model/action_status_gen.h.
 import re, os
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-# res lives beside the Windower install ; try a few known roots so this runs on any machine.
-def find_res():
-    for c in [os.path.join(ROOT, '..', '..', 'res'),
-              os.path.join(ROOT, 'res'),
-              r'D:\Windower Tetsouo\res']:
-        if os.path.isfile(os.path.join(c, 'spells.lua')):
-            return c
-    raise SystemExit('res/spells.lua not found')
-RES = find_res()
-OUT = os.path.join(ROOT, 'src', 'model', 'action_status_gen.h')
+import genpaths
+# res lives beside the Windower install : $WINDOWER_RES, else the dev install (genpaths.py).
+RES = genpaths.res_dir()
+if not os.path.isfile(os.path.join(RES, 'spells.lua')):
+    raise SystemExit('res/spells.lua not found in %s -- set WINDOWER_RES to your Windower res folder' % RES)
+OUT = genpaths.out_path('action_status_gen.h')
 
 ENEMY = 32   # windower target bitflag : Self=1 Player=2 Party=4 Ally=8 NPC=16 Enemy=32
 

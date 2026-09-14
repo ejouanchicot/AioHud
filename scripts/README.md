@@ -10,6 +10,7 @@ Two very different toolchains used to sit side by side; the Ghidra ones moved do
 | `*.py` (23) | **Generators** — turn Windower resources or a reference sheet into a `*_gen.h` table or a `.raw` atlas | `python scripts/<name>.py` |
 | `*.ps1` / `*.sh` (7) | Asset baking (window skin, icons, capitalisation pass) | run directly |
 | `tidy.ps1` | **clang-tidy**, avec les drapeaux qui le font marcher sur ce projet — outil LOCAL, pas une etape de CI | `.\scripts	idy.ps1 [fichier]` |
+| `check_gen_drift.py` | Runs every `*_gen.h` generator into a temp folder and diffs it with the tree : SAME / DRIFT / CANNOT RUN / CRASH, exit 1 on DRIFT or CRASH. Paths come from `genpaths.py` (`WINDOWER_RES`, `WINDOWER_ADDONS`, `AIOHUD_GEN_OUT`) | `python scripts/check_gen_drift.py [--keep] [name...]` |
 | `verify_release.ps1` | Verifie une release **publiee** comme la voit l'updater d'un joueur. Branche en CI apres la publication | `.\scripts\verify_release.ps1 [-Tag v1.0.71]` |
 | [`ghidra/`](ghidra/README.md) (32 `.java`) | **Ghidra headless scripts** — static analysis of `FFXiMain`. Different tool, different workflow | `analyzeHeadless ... -scriptPath scripts/ghidra -postScript <Script>.java` |
 
@@ -38,8 +39,8 @@ un fichier qu'on vient d'ecrire merite un regard. Le lancer apres avoir ajoute u
 - **`src/model/*_gen.h` are GENERATED — never hand-edit them.** Regenerate instead. A hand edit survives
   until the next run of the generator, then vanishes silently.
 - **Windower's `res/` is an input, and it lives outside the repo.** Generators that read it take the path from
-  the `WINDOWER_RES` environment variable, defaulting to this machine's install. Set it on another machine
-  rather than editing the script.
+  the `WINDOWER_RES` environment variable (addons: `WINDOWER_ADDONS`), defaulting to this machine's install —
+  one order for all of them, in `genpaths.py`. Set it on another machine rather than editing the script.
 - **Output paths are resolved from the script's own location.** Three generators used to write to an absolute
   `…\plugins\_aiohud_re\src\model\` — a runtime folder renamed long ago that never held `src/` — so their
   tables were silently un-regenerable. Fixed 2026-07-25; keep the `ROOT = Path(__file__)…` pattern.
