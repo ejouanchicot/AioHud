@@ -117,6 +117,15 @@ void Hud::add_default() {
     widgets_.push_back(b);
 }
 
+// The per-widget "placed" lines are only worth reading right after a layout is (re)loaded -- at plugin load and on
+// //aio layout. Logged on every placement pass they were 11 % of aiohud_debug.log (2026-09-14 audit) : a re-place
+// follows every party-size footprint change and every resolution correction, and each one repeated ~14 lines that
+// said nothing new. apply_layout ARMS the detail ; the first placement made at a size READ FROM THE DEVICE logs it
+// and disarms. Not the placement inside apply_layout itself at load : that one still uses the guessed default
+// resolution, and its px would be corrected a frame later -- the lines worth keeping are the real ones.
+static bool s_placeDetailArmed = false;   // a layout was (re)loaded : log the next real placement widget by widget
+static bool s_screenFromDevice = false;   // screenW_/screenH_ have been read from the device at least once
+
 void Hud::apply_layout(const char* path) {
     Layout lay;
     if (!load_layout(path, lay)) {
@@ -126,6 +135,7 @@ void Hud::apply_layout(const char* path) {
     layout_ = lay;                              // keep the descriptor so we can re-place on a resolution change
     have_layout_ = true;
     layout_path_ = path;                        // remember for hot-reload (//aio layout)
+    s_placeDetailArmed = true;
     place_widgets();
 }
 
@@ -141,8 +151,11 @@ void Hud::place_widgets() {
     ui_scale_ = (layout_.vpW > 1.0) ? screenW_ / (float)layout_.vpW : 1.0f;
     if (ui_scale_ < 0.5f) ui_scale_ = 0.5f; if (ui_scale_ > 3.0f) ui_scale_ = 3.0f;
     fonts_.set_default(layout_.font.c_str(), layout_.fontWeight);   // global HUD face (per-text faces resolve through the cache)
-    windower::debug::log("place_widgets: %d widgets (screen %dx%d, scale %d%%)",
-                         (int)layout_.widgets.size(), (int)screenW_, (int)screenH_, (int)(ui_scale_ * 100));
+    const bool logEach = s_placeDetailArmed && s_screenFromDevice;
+    if (logEach) s_placeDetailArmed = false;
+    windower::debug::log("place_widgets: %d widgets (screen %dx%d, scale %d%%)%s",
+                         (int)layout_.widgets.size(), (int)screenW_, (int)screenH_, (int)(ui_scale_ * 100),
+                         logEach ? "" : " -- per-widget detail only after a layout (re)load");
     clear_widgets();
     for (size_t i = 0; i < layout_.widgets.size(); ++i) {
         const LWidget& lw = layout_.widgets[i];
@@ -158,8 +171,9 @@ void Hud::place_widgets() {
         PxRect r = widget_px(lw, screenW_, screenH_, effW, ch);
         w->set_place(r.x, r.y, lw.z, lw.visible, lw.bare);
         widgets_.push_back(w);
-        windower::debug::log("  placed %-10s %-12s -> px(%d,%d) z=%d vis=%d",
-                             lw.id.c_str(), lw.type.c_str(), (int)r.x, (int)r.y, lw.z, (int)lw.visible);
+        if (logEach)
+            windower::debug::log("  placed %-10s %-12s -> px(%d,%d) z=%d vis=%d",
+                                 lw.id.c_str(), lw.type.c_str(), (int)r.x, (int)r.y, lw.z, (int)lw.visible);
     }
     if (widgets_.empty()) add_default();        // nothing implementable -> keep the fioles visible
     std::sort(widgets_.begin(), widgets_.end(),
@@ -179,6 +193,7 @@ void Hud::update_screen(u32 dev) {
         if (!dGetViewport(dev, vp) || vp.Width < 640 || vp.Height < 480) return;
         bw = vp.Width; bh = vp.Height;
     }
+    s_screenFromDevice = true;
     if ((float)bw == screenW_ && (float)bh == screenH_) return;
     windower::debug::log("screen resolution %dx%d -> %ux%u (re-placing widgets)",
                          (int)screenW_, (int)screenH_, bw, bh);

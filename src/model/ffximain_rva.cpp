@@ -172,18 +172,30 @@ unsigned fm_addr(FmStatic s) {
     return ffm ? (ffm + fm_rva(s)) : 0;
 }
 
+// BOUNDED LOGGING. A flip between two healers that disagree adopts on every frame, and each adoption logged one
+// line with no cap : one such flip once wrote 9 909 lines. The first adoptions of each address are the ones that
+// explain a heal, so they stay logged ; past the cap the adoption still HAPPENS, and the log says once that it
+// stopped reporting them (a probe that goes quiet must say so -- rule 10).
+static const int FM_ADOPT_LOG_MAX = 12;                 // per address, per session
+static int       g_adoptLogged[FM_N];
+
 void fm_adopt(FmStatic s, unsigned rva, const char* how, bool confirmed) {
     ensure_loaded();
     if (s < 0 || s >= FM_N || !rva) return;
     const int verdict = rva_adopt_verdict(g_rva[s], rva, g_healed[s], g_confirmed[s], confirmed);
     if (verdict == RVA_ADOPT_NOOP) return;               // nothing new to say
-    if (verdict == RVA_ADOPT_MOVE)
-        windower::debug::log("fm: %s moved -- FFXiMain+0x%X -> +0x%X (%c0x%X from the seed) [%s]",
-                             ENTRIES[s].name, g_rva[s], rva,
-                             (rva > ENTRIES[s].seed) ? '+' : '-',
-                             (rva > ENTRIES[s].seed) ? (rva - ENTRIES[s].seed) : (ENTRIES[s].seed - rva), how);
-    else
-        windower::debug::log("fm: %s CONFIRMED at FFXiMain+0x%X [%s]", ENTRIES[s].name, rva, how);
+    if (g_adoptLogged[s] < FM_ADOPT_LOG_MAX) {
+        if (verdict == RVA_ADOPT_MOVE)
+            windower::debug::log("fm: %s moved -- FFXiMain+0x%X -> +0x%X (%c0x%X from the seed) [%s]",
+                                 ENTRIES[s].name, g_rva[s], rva,
+                                 (rva > ENTRIES[s].seed) ? '+' : '-',
+                                 (rva > ENTRIES[s].seed) ? (rva - ENTRIES[s].seed) : (ENTRIES[s].seed - rva), how);
+        else
+            windower::debug::log("fm: %s CONFIRMED at FFXiMain+0x%X [%s]", ENTRIES[s].name, rva, how);
+        if (++g_adoptLogged[s] == FM_ADOPT_LOG_MAX)
+            windower::debug::log("fm: %s adopted %d times this session -- further adoptions of it are NOT logged "
+                                 "(two healers flipping it would look like this ; see //aio rva)", ENTRIES[s].name, FM_ADOPT_LOG_MAX);
+    }
     g_rva[s] = rva; g_healed[s] = true;
     if (confirmed) g_confirmed[s] = true;
     strncpy(g_how[s], how, sizeof(g_how[0]) - 1); g_how[s][sizeof(g_how[0]) - 1] = 0;

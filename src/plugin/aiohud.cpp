@@ -5,12 +5,14 @@
 // per-frame draw hook to Hud::render, and turns the //aio console command into
 // GameState / effect updates. Everything else lives in gfx/ ui/ model/.
 //
-// Command (today the data source -- a native plugin cannot receive // commands by
-// name, so the alias IS GetDescription() lowercased = "aio"):
+// Command (a native plugin cannot receive // commands by name, so the alias IS GetDescription()
+// lowercased = "aio"). The early developer toys below exist ONLY in a dev build (#ifdef AIOHUD_DEVTOOLS,
+// set by build.bat when the local dev\ tree is present) -- a release never carries them:
 //   //aio hp 50            HP to 50%
 //   //aio mp 30 tp 1500    MP 30%, TP 1500/3000
 //   //aio 50 30 1500       positional HP MP TP
 //   //aio lay 1            effect layers (1 = liquid only, >=4 = full effects)
+//   //aio sim [N]          fake members appended to the live party       //aio corners   baked-mask A/B
 #include "windower_plugin.h"
 #include "windower_debug.h"
 #ifdef AIOHUD_PROBES
@@ -77,9 +79,8 @@ static const char* aio_verb(const char* buf, const char* tok) {
 // doctor or //aio dbflog is usually a tester on the other side of the world, on a NA client, reading English.
 namespace aio { const char* tr(const char* en, const char* fr); }
 
-// NB: the reverse-engineering DIAGNOSTIC surface (mem_scan / scan_word_range / th_bits / thfx_walk /
-// bt_scan / pw_scan_* / collect_ptr_hits / f2s_probe + every g_*log ring + the //aio debug/dump/scan
-// commands + the armed packet/text handlers) lives in aiohud_probes.cpp now, reachable via
+// NB: the reverse-engineering DIAGNOSTIC surface (mem_scan / memsnap-memdiff / f2s_probe + the //aio
+// dump/find/scan/songlog/sp... commands + the armed packet/text handlers) lives in aiohud_probes.cpp, reachable via
 // aio::probes::command / packet_in / text_in ; this file keeps only the shipping glue.
 // It is compiled in ONLY when that file exists (build.bat sets /DAIOHUD_PROBES then, and the include below is
 // #ifdef'd), and aiohud_probes.* is NOT tracked by git -- so NO probe is present in a CI-built release. The one
@@ -97,7 +98,9 @@ static aio::Hud      g_hud;
 windower::PluginManager& aio_host() { return g_host; }
 
 // ---- input parsing: //aio fills GameState (later replaced by the ffxi poller) ----
-
+// DEV BUILD ONLY. Shipped to players, the catch-all that calls this rewrote the HP/MP/TP gauges on any typo that
+// merely CONTAINED "hp", "mp" or "tp" (2026-09-14 audit) -- a developer toy has no business in a release.
+#ifdef AIOHUD_DEVTOOLS
 static void set_fill(int idx, int v)
 {
     aio::GameState& st = g_hud.state();
@@ -135,6 +138,7 @@ static void parse_fill_string(const char* s)
         }
     }
 }
+#endif   // AIOHUD_DEVTOOLS
 
 // A plugin can't //lua load an addon itself (the host interface exposes no command executor), but Windower runs
 // <Windower>\scripts\init.txt at every launch. So we register "lua load aioupdate" there (idempotent) : the
@@ -1225,6 +1229,7 @@ static void aio_command_dispatch(const char* cmd)
     if (aio::probes::command(buf)) return;
 #endif
 
+#ifdef AIOHUD_DEVTOOLS   // developer toy : not in a release (the //aio party N demo does not use it)
     // //aio sim [N] -> append N (0-5) FAKE members to the LIVE party, so the box grows and the alliances
     // react to the main-party size for testing. //aio sim 0 (or sim off) -> back to the real size.
     if (strstr(buf, "sim")) {
@@ -1233,6 +1238,7 @@ static void aio_command_dispatch(const char* cmd)
         aio::set_party_sim_extra(v);
         return;
     }
+#endif
 
     // //aio config -> toggle the full-screen configuration overlay. "config N" = select tab N (1..3).
     if (strstr(buf, "update")) {   // //aio update -> spawn the no-window updater (the AioUpdate Lua addon drives the unload/load)
@@ -1301,6 +1307,7 @@ static void aio_command_dispatch(const char* cmd)
         g_host.console().print(aio::tr(">>> Cleanest test : Pianissimo the song ON YOURSELF -- same math as on an ally, but with a real timer to check it against <<<", ">>> Test le plus net : Pianissimo la song SUR TOI -- meme calcul qu'un Pianissimo sur un allie, mais avec un vrai timer pour le verifier <<<"));
         return;
     }
+#ifdef AIOHUD_DEVTOOLS   // developer toy : not in a release
     if (strstr(buf, "corners")) {   // //aio corners -> A/B the BAKED corner masks against the feathered geometry
         const bool off = !aio::corner_mask_user_is_off();
         aio::corner_mask_user_off(off);
@@ -1308,7 +1315,6 @@ static void aio_command_dispatch(const char* cmd)
                                    : aio::tr(">>> AioHud : corners = baked mask (real coverage, one texel per pixel) <<<", ">>> AioHud : coins = masque cuit (couverture reelle, 1 texel par pixel) <<<"));
         return;
     }
-#ifdef AIOHUD_DEVTOOLS
     if (aio::devtools::command(buf)) return;   // dev-only tools (dev/src, never in a release) : pcap, igstate
 #endif
     if (strstr(buf, "doctor")) {   // //aio doctor -> run every RUNTIME check and print what to DO about each problem
@@ -1563,6 +1569,7 @@ static void aio_command_dispatch(const char* cmd)
         return;
     }
 
+#ifdef AIOHUD_DEVTOOLS   // developer toys : not in a release, where anything unmatched is simply "unknown command"
     const char* lp = strstr(buf, "lay");                 // //aio lay N -> effect layers
     if (lp) {
         const char* p = lp + 3; while (*p && (*p < '0' || *p > '9')) p++;
@@ -1575,6 +1582,9 @@ static void aio_command_dispatch(const char* cmd)
     { const char* p = buf; while (*p == ' ' || *p == '\t') ++p;
       if (strstr(buf, "hp") || strstr(buf, "mp") || strstr(buf, "tp") || (*p >= '0' && *p <= '9')) parse_fill_string(buf);
       else g_host.console().print(aio::tr(">>> aio: unknown command <<<", ">>> aio : commande inconnue <<<")); }
+#else
+    g_host.console().print(aio::tr(">>> aio: unknown command <<<", ">>> aio : commande inconnue <<<"));
+#endif
 }
 
 // ---- COMMAND HAND-OFF : slot 7 runs on its OWN thread ------------------------------------------------------
