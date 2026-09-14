@@ -23,6 +23,7 @@
 #include "model/model_clock.h"   // the per-frame upkeep is one model event
 #include "model/zones.h"   // zone_name -> Zone Tracker (Dynamis/Abyssea) detection
 #include "model/ui_config.h"
+#include "model/paths.h"          // //aio doctor : where this install lives and whether it can write there
 #include "windower_debug.h"
 #include "ui/edit_box.h"  // edit-mode drag for the WS popup (place it in //aio edit like the other boxes)
 #include "ui/config_controls.h"   // tr() : //aio doctor speaks the language picked in the config, like every other message
@@ -462,6 +463,52 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
                                                  windower::debug::log("  PROBLEM : %s", out[n]); ++n; } } while (0)
     const unsigned nowMs = GetTickCount();
     windower::debug::log("=== AIO DOCTOR : %s ===", aio_version_string());
+
+    // ---- 0. the install. A remote tester's bugs are mostly HERE, and the least visible : a Program Files install
+    //         that silently cannot write (config, profiles, reports, the log itself -- all lost without a word), or
+    //         another Windower build. None of it was in the doctor, so a NA tester's report had to be asked for twice.
+    //         Writing is TESTED, not assumed : the log cannot report that the log is unwritable. ----
+    {
+        const char* dir = plugin_dir();
+        char low[MAX_PATH]; int k = 0;
+        for (; dir && dir[k] && k < MAX_PATH - 1; ++k) low[k] = (dir[k] >= 'A' && dir[k] <= 'Z') ? (char)(dir[k] + 32) : dir[k];
+        low[k] = 0;
+        const bool progFiles = strstr(low, "program files") != 0;
+        // data\ holds config + profiles ; before the first save it may not exist yet, then the folder itself is the test
+        char probe[MAX_PATH]; plugin_path(probe, sizeof(probe), "data");
+        const DWORD da = GetFileAttributesA(probe);
+        plugin_path(probe, sizeof(probe), (da != INVALID_FILE_ATTRIBUTES && (da & FILE_ATTRIBUTE_DIRECTORY)) ? "data\\doctor_write_test.tmp" : "doctor_write_test.tmp");
+        HANDLE h = CreateFileA(probe, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, 0);
+        const bool canWrite = h != INVALID_HANDLE_VALUE; const DWORD werr = canWrite ? 0 : GetLastError();
+        if (canWrite) CloseHandle(h);   // FILE_FLAG_DELETE_ON_CLOSE : nothing is left behind
+        HANDLE lh = CreateFileA(windower::debug::log_path(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+        const bool logOk = lh != INVALID_HANDLE_VALUE;
+        if (logOk) CloseHandle(lh);
+        windower::debug::log("  install  : dir=%s  programFiles=%d  write=%s  log=%s (%s)", dir && *dir ? dir : "<unresolved>",
+                             progFiles ? 1 : 0, canWrite ? "ok" : "FAILED", logOk ? "ok" : "FAILED", windower::debug::log_path());
+        // Which Windower : size and date of its two modules are a fingerprint two testers can compare line by line
+        // (the keyboard lParam differs between the EU and NA builds, reference/keyboard-input.md).
+        static const char* const MODS[2] = { "LuaCore.dll", "Hook.dll" };
+        for (int m = 0; m < 2; ++m) {
+            char mp[MAX_PATH] = { 0 }; WIN32_FILE_ATTRIBUTE_DATA fa = {}; SYSTEMTIME st = {};
+            HMODULE hm = GetModuleHandleA(MODS[m]);
+            const bool have = hm && GetModuleFileNameA(hm, mp, MAX_PATH) && GetFileAttributesExA(mp, GetFileExInfoStandard, &fa);
+            if (have) FileTimeToSystemTime(&fa.ftLastWriteTime, &st);
+            windower::debug::log("  windower : %-11s %s", MODS[m], have ? mp : "<not loaded>");
+            if (have) windower::debug::log("             %lu bytes, %04u-%02u-%02u", fa.nFileSizeLow, st.wYear, st.wMonth, st.wDay);
+        }
+        if (!canWrite)
+            DOC(tr("AioHUD cannot write in its folder (%s, error %lu) : settings, profiles and reports are LOST at every "
+                "reload. %sMove Windower out of Program Files, or give your user write access to that folder",
+                "AioHUD ne peut pas ecrire dans son dossier (%s, erreur %lu) : reglages, profils et rapports sont PERDUS a "
+                "chaque rechargement. %sSors Windower de Program Files, ou donne a ton compte le droit d'ecrire dans ce dossier"),
+                dir && *dir ? dir : "?", werr, progFiles ? tr("This is the known Program Files case. ", "C'est le cas connu de Program Files. ") : "");
+        if (!logOk)
+            DOC(tr("The diagnostic log cannot be written (%s) : every capture command will produce an empty file. "
+                "Same remedy as above : write access to the plugins folder",
+                "Le journal de diagnostic ne peut pas etre ecrit (%s) : chaque commande de capture produira un fichier vide. "
+                "Meme remede : droit d'ecriture sur le dossier plugins"), windower::debug::log_path());
+    }
 
     // ---- 1. the game link. Everything else is meaningless if this fails, so it reports first and alone. ----
     const int roster = party().count;

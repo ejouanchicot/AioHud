@@ -981,6 +981,68 @@ static void aio_command_dispatch(const char* cmd)
         m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
     }
+    // //aio help -- what exists. Without it the only answer to a mistyped or forgotten command was "unknown command",
+    // and a tester had to be told each name one message at a time (2026-09-14 audit). The list is the everyday
+    // commands, then the diagnostics a tester can be asked for ; the per-feature captures are named by //aio doctor
+    // and by the messages that need them.
+    if (aio_verb(buf, "help")) {
+        static const char* const EN[] = {
+            ">>> AioHud commands <<<",
+            "  //aio config [1-3]      settings (optionally a tab)      //aio edit          move / resize boxes",
+            "  //aio profile save|load|delete <name> | list             //aio party <0-18>  demo rows",
+            "  //aio pop <nm>|list|off  EmpyPop tracker                 //aio timers reset  clear stuck timers",
+            "  //aio out <n>|list|alerts|all   stop watching a buff row ; //aio in puts it back",
+            "  //aio update            install the latest release",
+            ">>> Something wrong ? <<<",
+            "  //aio doctor            checks everything and says what to do     //aio report   one file to send",
+            "  //aio why               the last decisions        //aio selftest     the internal checks",
+            "  //aio rva               game addresses after an FFXI update       //aio watch on|off  passive watchers",
+        };
+        static const char* const FR[] = {
+            ">>> Commandes AioHud <<<",
+            "  //aio config [1-3]      reglages (un onglet au choix)   //aio edit          deplacer / redimensionner",
+            "  //aio profile save|load|delete <nom> | list             //aio party <0-18>  lignes de demo",
+            "  //aio pop <nm>|list|off  suivi EmpyPop                  //aio timers reset  vider les timers bloques",
+            "  //aio out <n>|list|alerts|all   ne plus suivre une ligne de buff ; //aio in la remet",
+            "  //aio update            installer la derniere version",
+            ">>> Un probleme ? <<<",
+            "  //aio doctor            verifie tout et dit quoi faire           //aio report   un fichier a envoyer",
+            "  //aio why               les dernieres decisions   //aio selftest     les verifications internes",
+            "  //aio rva               adresses du jeu apres une maj FFXI       //aio watch on|off  veilleurs passifs",
+        };
+        const bool fr = aio::tr("en", "fr")[0] == 'f';
+        for (int k = 0; k < (int)(sizeof(EN) / sizeof(EN[0])); ++k) g_host.console().print(fr ? FR[k] : EN[k]);
+        return;
+    }
+    // //aio report -- ONE file a tester can send : the doctor's problems and the internal checks, written by the same
+    // reporter the watcher uses (next to AioHud.dll), with the decision ring and the doctor's detail in the log. It
+    // used to take four commands and two files, asked for one at a time. With nothing failing it still writes the
+    // file, which proves the reporter can write on THAT install (the Program Files case).
+    if (aio_verb(buf, "report")) {
+        char lines[12][aio::Hud::DOC_LINE];
+        const int nd = g_hud.doctor(lines, 12);
+        aio::CheckFail hits[aio::SELFTEST_FAILS_MAX];
+        int n = aio::selftest_run_now(hits, aio::SELFTEST_FAILS_MAX);
+        for (int k = 0; k < nd && n < aio::SELFTEST_FAILS_MAX; ++k, ++n) {
+            _snprintf(hits[n].id, sizeof(hits[n].id), "DOCTOR.%d", k + 1); hits[n].id[sizeof(hits[n].id) - 1] = 0;
+            hits[n].sev = aio::CHK_WARN;
+            lstrcpynA(hits[n].detail, lines[k], sizeof(hits[n].detail));
+        }
+        if (n == 0) {
+            lstrcpynA(hits[0].id, "REPORT.HEALTHY", sizeof(hits[0].id));
+            hits[0].sev = aio::CHK_INFO;
+            lstrcpynA(hits[0].detail, "written on request with nothing failing -- the doctor and every internal check are healthy", sizeof(hits[0].detail));
+            n = 1;
+        }
+        const int nw = aio::dec_dump(0);
+        g_hud.write_bug_report(hits, n, false);
+        char m[240];
+        _snprintf(m, sizeof(m), aio::tr(">>> AioHud report : %d doctor problem(s), %d finding(s) in all, %d decision(s) logged -- send the report file next to AioHud.dll AND Windower\\plugins\\aiohud_debug.log <<<",
+                                        ">>> AioHud report : %d probleme(s) doctor, %d constat(s) en tout, %d decision(s) journalisee(s) -- envoie le fichier de rapport a cote de AioHud.dll ET Windower\\plugins\\aiohud_debug.log <<<"),
+                  nd, n, nw);
+        m[sizeof(m) - 1] = 0; g_host.console().print(m);
+        return;
+    }
     // //aio bcaptlog [sec] -> the buff-action capture (every cat 4/6/11 action : who cast what on whom, message id,
     // the caster attributed to that status). The capture is compiled into every build (party_state.cpp) and its
     // own log line says "re-arm with //aio bcaptlog" -- but the only way to ARM it lived in the untracked probes
