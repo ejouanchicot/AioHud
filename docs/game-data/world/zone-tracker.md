@@ -43,7 +43,7 @@ abyOffset = 7238 for zones 215/253, else 7338
 ```
 > The client message base drifted **+23** from the addon's old ids (7315 → 7338),
 > CALIBRATED LIVE via `//aio abylog` (the two /heal bulk reports landed at rel 0/1 =
-> mid 7338/7339, visitant at rel 9/10 = mid 7348). Re-run `//aio abylog` (kill a mob
+> mid 7338/7339, visitant at rel 9/10 = mid 7348). Re-run `//aio abylog` (**retiree le 2026-09-14** -- code dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire la capture) (kill a mob
 > + /heal + get visitant) to re-pin after a client patch. CONFIRMED LIVE: gaining 8
 > ruby fired mid 7526 = rel 188 → +8. ✓
 
@@ -146,7 +146,7 @@ slides every entry after it, and a counter pinned to a number reads a different 
 phenomenon as the Abyssea base drifting **+23** (7315 → 7338), just one zone at a time. Nothing about
 Odyssey itself changed on 2026-08-12; the segment counter was collateral.
 
-Re-pinning it by hand costs a capture (`//aio sheollog`) **inside a run you get one of per day**, with a
+Re-pinning it by hand costs a capture (`//aio sheollog` -- **retiree le 2026-09-14**, code dans `dev/archive/aiohud_probes_2026-09-14.cpp`) **inside a run you get one of per day**, with a
 command that does **not exist in a release build** — so a tester cannot even produce the evidence. The id
 is therefore **derived**, in `party_state_zonetracker.cpp`:
 
