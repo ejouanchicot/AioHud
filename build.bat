@@ -80,15 +80,28 @@ REM RELATIVE source paths, from the repository root. With %ROOT% spelled out on 
 REM cmd's 8191-character limit as soon as the checkout sat in a deep folder (an agent worktree, 2026-09-14) and cl
 REM failed with the cryptic "cannot open '^.obj'" : the line was cut mid-continuation. Relative paths also keep the
 REM developer's folder out of __FILE__ in the shipped DLL. Outputs stay absolute (%OUT%).
+REM ---- DEBUG SYMBOLS (/Zi + /DEBUG) : a crash dump from a tester is unreadable without them -------------------
+REM The shipped DLL had NO PDB at all, anywhere, so no minidump could ever be symbolised -- and a crash report is
+REM exactly the case where reading the code is not enough. /Zi produces them ; the DLL keeps its /O2 /MT release
+REM shape, and the PDB is archived beside it, never inside the payload (package.bat ships plugins\AioHud.dll only,
+REM and *.pdb is gitignored).
+REM /OPT:REF /OPT:ICF ARE LOAD-BEARING HERE. The linker enables both by DEFAULT in a release link, and /DEBUG turns
+REM that default OFF -- so adding /DEBUG alone would silently stop folding identical code and stripping unreferenced
+REM functions : a bigger, different binary than the one that was tested. Re-stating them keeps the output what it was.
+REM /PDBALTPATH:%%_PDB%% writes just "AioHud.pdb" into the DLL debug directory instead of this machine full path --
+REM same reason the sources are passed relative (keep the developer folder out of the shipped file).
+REM MATCHING A DUMP TO ITS PDB IS BY SIGNATURE (GUID + age), never by name or version : a PDB from another build
+REM with the same file name is silently refused by the debugger, which is the correct behaviour.
 pushd "%ROOT%"
-cl /nologo /LD /O2 /MT /EHsc- /utf-8 /W4 /WX /permissive- /std:c++17 /wd4456 /D_CRT_SECURE_NO_WARNINGS /DAIOHUD_VERSION=\"%AIOHUD_VERSION%\" %PROBEDEF% %DEVDEF% /I"include" /I"src" ^
+cl /nologo /LD /O2 /MT /EHsc- /utf-8 /W4 /WX /permissive- /std:c++17 /wd4456 /Zi /Fd"%OUT%\AioHud.compiler.pdb" /D_CRT_SECURE_NO_WARNINGS /DAIOHUD_VERSION=\"%AIOHUD_VERSION%\" %PROBEDEF% %DEVDEF% /I"include" /I"src" ^
    "src\gfx\noise.cpp" "src\gfx\draw.cpp" "src\gfx\corner_mask.cpp" "src\gfx\texture.cpp" "src\gfx\font.cpp" "src\gfx\window.cpp" ^
    "src\model\layout.cpp" "src\model\model_clock.cpp" "src\model\model_io.cpp" "src\model\timers_build.cpp" "src\model\party_state.cpp" "src\model\party_state_zonetracker.cpp" "src\model\party_state_pointwatch.cpp" "src\model\party_state_hate.cpp" "src\model\party_state_skillchain.cpp" "src\model\party_state_roster.cpp" "src\model\party_state_empypop.cpp" "src\model\game_mem.cpp" "src\model\ffximain_rva.cpp" "src\model\luacore_root.cpp" "src\model\sentinel.cpp" "src\model\selftest.cpp" "src\model\flipwatch.cpp" "src\model\capwatch.cpp" "src\model\watchdogs.cpp" "src\model\decisions.cpp" "src\model\map_dat.cpp" "src\model\icon_dat.cpp" "src\model\zones.cpp" "src\model\vana_clock.cpp" "src\model\paths.cpp" "src\model\ui_config.cpp" "src\model\skillchain.cpp" "src\model\resistances.cpp" ^
    "src\ui\buff_atlas.cpp" "src\ui\palette.cpp" "src\ui\edit_box.cpp" "src\ui\liquid_bars.cpp" "src\ui\player.cpp" "src\ui\gear_canary.cpp" "src\ui\party.cpp" "src\ui\party_gauges.cpp" "src\ui\target.cpp" "src\ui\minimap.cpp" "src\ui\factory.cpp" "src\ui\config_controls.cpp" "src\ui\party_config.cpp" "src\ui\target_config.cpp" "src\ui\player_config.cpp" "src\ui\minimap_config.cpp" "src\ui\ws_config.cpp" "src\ui\sc_config.cpp" "src\ui\tp_config.cpp" "src\ui\hl_config.cpp" "src\ui\pw_config.cpp" "src\ui\grim_config.cpp" "src\ui\zt_config.cpp" "src\ui\tm_config.cpp" "src\ui\ep_config.cpp" "src\ui\box_style.cpp" "src\ui\config_page.cpp" "src\ui\hud.cpp" "src\ui\hud_preview.cpp" ^
    "src\ui\hud_skillchains.cpp" "src\ui\hud_treasure.cpp" "src\ui\hud_hatelist.cpp" "src\ui\hud_pointwatch.cpp" "src\ui\hud_grimoire.cpp" "src\ui\hud_zonetracker.cpp" "src\ui\hud_empypop.cpp" "src\ui\hud_debuffs.cpp" "src\ui\hud_timers.cpp" ^
    "src\plugin\aiohud.cpp" %PROBES% %DEVSRC% %AIORES% ^
    /Fo"%OUT%\\" /Fe"%OUT%\AioHud.dll" ^
-   /link /DEF:"src\plugin\aiohud.def" user32.lib kernel32.lib gdi32.lib /OUT:"%OUT%\AioHud.dll"
+   /link /DEF:"src\plugin\aiohud.def" user32.lib kernel32.lib gdi32.lib /OUT:"%OUT%\AioHud.dll" ^
+   /DEBUG /OPT:REF /OPT:ICF /PDB:"%OUT%\AioHud.pdb" /PDBALTPATH:%%_PDB%%
 set "CLRC=%errorlevel%"
 popd
 
@@ -97,3 +110,5 @@ REM cl returns nonzero on ANY compile/link error -> trust the exit code, NOT jus
 REM existence (a stale DLL from a previous build would otherwise mask a failed compile).
 if not "%CLRC%"=="0" ( echo [build] FAILED -- compile/link error above ^(DLL NOT updated^) & exit /b 1 )
 if exist "%OUT%\AioHud.dll" ( echo [build] OK -^> %OUT%\AioHud.dll ) else ( echo [build] FAILED & exit /b 1 )
+REM A missing PDB is not a build failure, but it must not pass unnoticed : producing it is the point of /Zi above.
+if exist "%OUT%\AioHud.pdb" ( echo [build] symbols -^> %OUT%\AioHud.pdb ) else ( echo [build] WARNING: no AioHud.pdb -- a crash dump from this build cannot be symbolised )

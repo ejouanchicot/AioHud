@@ -148,6 +148,17 @@ jobs:
         run: |
           $zip = "AioHud-${{ steps.ver.outputs.version }}.zip"
           Compress-Archive -Path dist/* -DestinationPath $zip -Force
+          # THE SYMBOLS TRAVEL WITH THE BINARY, BESIDE THE PAYLOAD -- never inside it. A dump sent by a player
+          # can only be read with the PDB of the EXACT build they ran, and this workflow is the only place that
+          # build exists. Published as its own asset (the updater matches 'AioHud-*.zip', so it cannot pick it
+          # up), named for the version so nobody has to guess which build it belongs to -- though the debugger
+          # matches on the signature (GUID + age), not on the name.
+          if (Test-Path build/release/AioHud.pdb) {
+            Copy-Item build/release/AioHud.pdb "AioHud-${{ steps.ver.outputs.version }}.pdb" -Force
+            Write-Host "symbols staged: AioHud-${{ steps.ver.outputs.version }}.pdb"
+          } else {
+            Write-Host "::warning::build/release/AioHud.pdb is missing -- this release ships without symbols, a crash dump from it cannot be read"
+          }
           (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower() | Set-Content -NoNewline -Encoding ascii "$zip.sha256"
           Write-Host "sha256 $(Get-Content "$zip.sha256")  $zip"
 
@@ -223,7 +234,10 @@ jobs:
             || { echo "::error::payload has no .sha256 sidecar -- every client on v1.0.71+ would refuse this release"; exit 1; }
           # --latest is NOT the default : GitHub marks whichever release was PUBLISHED last, which is publish
           # time, not semver. v1.0.61 published 24 s after v1.0.62 once, and the updater queries /releases/latest.
-          gh release create "$TAG" AioHud-*.zip AioHud-*.zip.sha256 --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --latest
+          # The PDB rides along when it exists. NOT a gate like the sidecar above : symbols missing costs us a
+          # readable dump later, while refusing to publish costs every player the fix now.
+          SYMS=""; ls AioHud-*.pdb >/dev/null 2>&1 && SYMS="$(ls AioHud-*.pdb)"             || echo "::warning::no PDB asset -- a crash dump from this release will not be symbolisable"
+          gh release create "$TAG" AioHud-*.zip AioHud-*.zip.sha256 $SYMS --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --latest
 
       # THE ICON APPLICATION, fetched from the repository that builds it. AioHudIcons.exe converts a folder of
       # PNGs or an icon DAT into the sheet the HUD reads ; it is written in C# and lives in FFXI-Icon-Editor, so
