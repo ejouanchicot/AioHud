@@ -45,6 +45,10 @@ void self_buffs(std::initializer_list<unsigned short> ids);
 void self_buffs_unreadable();
 // YOUR jobs and levels as read_player reports them (world() makes slot 0 a level 99 main with a level 49 sub, no sub job).
 void self_jobs(int mjob, int mlvl, int sjob, int slvl);
+// Change ONE member's main/sub job where the model actually reads them (the party member array). The job-change
+// detection is roster-driven, so this is the only honest way to stage one : re-calling world() would also wipe
+// the buffs and the zone, and the case would stop being about a job change.
+void member_job(unsigned id, int mjob, int sjob);
 // The party member array cannot be read (every model_copy into it FAILS) : what the game's memory looks like for a few
 // seconds around a zone-in, when the server's 0x0DD has already arrived. false = readable again.
 void party_memory_unreadable(bool on);

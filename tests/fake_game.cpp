@@ -131,6 +131,21 @@ void self_buffs(std::initializer_list<unsigned short> ids) {
     for (unsigned short s : ids) if (W->nbuff < 32) W->buffs[W->nbuff++] = s;
 }
 void self_buffs_unreadable() { W->nbuff = 0; W->buffsOk = false; }
+// CHANGE ONE MEMBER'S JOBS IN PLACE. The model detects a job change from the ROSTER (party_state_roster.cpp
+// shadows every member's main/sub each frame), not from a packet -- so a case about job changes has to move
+// the same two bytes world() writes, and nothing else. Re-calling world() would do it too, and would also
+// wipe the buffs, the zone and the entity table : the scenario would no longer be a job change.
+void member_job(unsigned id, int mjob, int sjob) {
+    if (!W) return;
+    for (int i = 0; i < W->n; ++i) {
+        unsigned char* b = W->party + i * 0x7C;
+        unsigned mid = 0; memcpy(&mid, b + 0x1C, 4);
+        if (mid != id) continue;
+        b[0x71] = (unsigned char)mjob; b[0x73] = (unsigned char)sjob;
+        if (i == 0) W->me.mjob = mjob;
+        return;
+    }
+}
 void self_jobs(int mjob, int mlvl, int sjob, int slvl) { W->me.mjob = mjob; W->me.mlvl = mlvl; W->me.sjob = sjob; W->me.slvl = slvl; }
 void party_memory_unreadable(bool on) { W->partyUnreadable = on; }
 void treasure_memory(std::initializer_list<PoolSlot> slots) {

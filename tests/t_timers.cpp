@@ -357,6 +357,96 @@ void test_timers() {
         if (out < 0) dump(r, "Haste lost after a zone");
     }
 
+    SECTION("timers : an ally changing job is not a buff LOST -- and your own main-job change clears their rows");
+    {   // A job change strips the buffs of whoever changed -- so the rows and the watch that fed them are about a
+        // state that no longer exists, and re-reading them as a LOSS is a red alert for something nobody can fix.
+        // The model clears an ally's tracked buffs on the spot (party_state_roster.cpp, note_member_job) and the
+        // Timers monitor drops that member's focus entries (job_changes()) ; a change of YOUR OWN MAIN job drops
+        // the ally rows too -- their buffs are really still up, but on another job you will not recast them, so
+        // the remaining time is noise. A SUB job swap does not: you can still recast, so those rows stay.
+        // Mutations : the `job_changes()` prune loop removed (Kaories raises a red OUT she cannot answer) ;
+        //             `else if (mainChanged)` -> `else` (a mere sub-job swap wipes rows you can still maintain).
+        rdm_party();
+        focus_on(ST_HASTE);
+        deliver(pkt_cast(ME, SP_HASTE, { { KAO, MSG_LANDED } }));
+        deliver(pkt_cast(ME, SP_HASTE, { { GAB, MSG_LANDED } }));
+        deliver(pkt_party_buffs({ { KAO, { ST_HASTE } }, { GAB, { ST_HASTE } } }));
+        TimersRows r;
+        for (int f = 0; f < 3; ++f) { advance_ms(1000); step(r); }
+        CHECK(find_row(r, ST_HASTE, "Kaories") >= 0);
+        CHECK(find_row(r, ST_HASTE, "Gab") >= 0);
+
+        // Kaories changes job : her buffs are gone WITH the job, and the box must simply forget her row.
+        member_job(KAO, 5 /* THF */, 1);
+        deliver(pkt_party_buffs({ { KAO, {} }, { GAB, { ST_HASTE } } }));   // her list comes back empty, as in game
+        for (int f = 0; f < 3; ++f) { advance_ms(1000); step(r); }
+        CHECK_EQ(find_row(r, ST_HASTE, "Kaories"), -1);          // no row...
+        int outs = 0;
+        for (int k = 0; k < r.nb; ++k) if (r.bufs[k].src == 6 && r.bufs[k].icon == ST_HASTE) ++outs;
+        CHECK_EQ(outs, 0);                                        // ...and above all NO red OUT : it was not lost
+        CHECK(find_row(r, ST_HASTE, "Gab") >= 0);                 // and the ally who did NOT change keeps his
+        if (outs) dump(r, "Kaories changed job");
+
+        // A SUB job swap on YOU changes nothing : you can still recast, so Gab's row stays.
+        member_job(ME, 5 /* RDM */, 3 /* WHM -> another sub */);
+        for (int f = 0; f < 2; ++f) { advance_ms(1000); step(r); }
+        CHECK(find_row(r, ST_HASTE, "Gab") >= 0);
+
+        // YOUR MAIN job changes : the buffs are still on him in game, but you are a Bard now. The rows go, and
+        // still without an alert -- an OUT would be asking you to recast a spell you no longer have.
+        member_job(ME, 10 /* BRD */, 3);
+        for (int f = 0; f < 3; ++f) { advance_ms(1000); step(r); }
+        CHECK_EQ(find_row(r, ST_HASTE, "Gab"), -1);
+        int outs2 = 0;
+        for (int k = 0; k < r.nb; ++k) if (r.bufs[k].src == 6 && r.bufs[k].icon == ST_HASTE) ++outs2;
+        CHECK_EQ(outs2, 0);
+        if (outs2) dump(r, "you changed main job");
+    }
+
+    SECTION("timers : hiding the box does not freeze the model behind it");
+    {   // A SHIPPED DEFECT, and the comment on the fix is the specification : prune_other_buffs_worn() used to be
+        // called from inside timers_draw, BELOW `if (!C.tmShow) return;` -- so hiding the Timers box froze the
+        // ally-buff upkeep, and turning it back on showed timers that had gone on counting for buffs long gone.
+        // "A draw() must never be the only thing keeping the model honest" (party_state.cpp, model_frame_upkeep).
+        //
+        // WHAT THIS CASE CAN AND CANNOT PROVE. It drives model_frame_upkeep -- the real one, the same function
+        // Hud::render calls and the offline replay drives from a tape -- with the box switched OFF, and checks
+        // the model still moved. It does NOT prove that Hud::render calls it (no D3D8 device offline) ; what it
+        // forbids is the regression that actually happened: upkeep living under a visibility test.
+        // Mutation, MEASURED : prune_other_buffs_worn() taken out of model_frame_upkeep -- which is what "moved
+        // back under the draw gate" amounts to -- and this case fails (Kaories' row survives its own dispel).
+        // The OTHER shape of the mutation cannot even be written : `if (!ui_config().tmShow)` in
+        // model_frame_upkeep does not COMPILE, because party_state.cpp does not include ui_config.h at all.
+        // The layering rule (model knows nothing of ui) is a stronger guarantee than any test could be here.
+        rdm_party();
+        focus_on(ST_HASTE);
+        deliver(pkt_cast(ME, SP_HASTE, { { KAO, MSG_LANDED } }));
+        deliver(pkt_party_buffs({ { KAO, { ST_HASTE } } }));
+        TimersRows r;
+        for (int f = 0; f < 3; ++f) { advance_ms(1000); step(r); }
+        CHECK(find_row(r, ST_HASTE, "Kaories") >= 0);
+        { int no = 0; party().other_buffs(no); CHECK_EQ(no, 1); }
+
+        ui_config().tmShow = 0;                                   // the player hides the box
+        // DISPELLED, said the way the game says it : her list comes back carrying ANOTHER buff. An EMPTY list is
+        // deliberately not proof of a loss here -- "empty" and "not readable yet" are the same bytes, and the
+        // model refuses to guess between them (the rule that cost six bugs in one day).
+        deliver(pkt_party_buffs({ { KAO, { ST_REFRESH } } }));    // ...and it is dispelled while hidden
+        for (int f = 0; f < 4; ++f) { advance_ms(1000); frame(); }   // frames WITHOUT a build : the box is not drawn
+        { int no = 0; party().other_buffs(no);
+          CHECK_EQ(no, 0);                                        // the model noticed, with nothing drawing
+          if (no) printf("    the ally-buff upkeep did not run while the box was hidden\n"); }
+
+        // Show it again. What comes back is the TRUTH -- a red OUT saying she lost it -- and not the timer that
+        // would still be counting down if the model had been asleep behind the hidden box.
+        ui_config().tmShow = 1;
+        for (int f = 0; f < 2; ++f) { advance_ms(1000); step(r); }
+        const int k = find_row(r, ST_HASTE, "Kaories");
+        CHECK(k >= 0);
+        if (k >= 0) { CHECK_EQ(r.bufs[k].src, 6); CHECK_EQ(r.bufs[k].rem, TM_REM_MISSING); }   // the OUT alert, not a live timer
+        if (k >= 0 && r.bufs[k].rem != TM_REM_MISSING) dump(r, "Haste after the box was hidden");
+    }
+
     SECTION("timers : turning 'my buffs on allies' off silences their alerts too");
     {   // An already-watched ally entry kept drawing a red "Kaories - Haste OUT" for a category just switched off.
         // Mutation : focus emit `if (!fm[q].self && !C.tmMine) { ... continue; }` removed.
