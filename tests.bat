@@ -49,6 +49,29 @@ REM suite was proved -- neutralising the JSON depth bound crashed the runner and
 set "RC=%ERRORLEVEL%"
 if not "%RC%"=="0" ( echo [tests] FAILED ^(exit code %RC%^) & exit /b 1 )
 
+REM ---- DEV ONLY : the vigie PAGE. Two self-contained node tests, run here because nothing ran them at all --
+REM      they were invoked by hand, which is how a test rots. test_vigie_render.js is NOT here : it needs a
+REM      saved /api/state, so it stays a manual step (curl .../api/state > state.json && node ... state.json).
+REM      THE EXIT IS AT TOP LEVEL, not inside the else-block : `exit /b 1` from inside a parenthesised block
+REM      does not reach the caller, and the first draft printed FAILED while still exiting 0 -- the very same
+REM      defect this file was fixed for an hour earlier, in the replay loop. Latch, then exit outside.
+set "JSFAIL="
+where node >nul 2>nul
+if errorlevel 1 echo [tests] vigie page tests : skipped ^(no node^)
+if not errorlevel 1 for %%J in (test_vigie_logic.js test_vigie_sweepstates.js) do (
+    node "%ROOT%dev\scripts\%%J" >"%ROOT%build\vigie_%%~nJ.txt" 2>&1
+    if errorlevel 1 (
+        type "%ROOT%build\vigie_%%~nJ.txt"
+        echo [tests] vigie page test FAILED : %%J
+        set "JSFAIL=%%J"
+    )
+)
+if defined JSFAIL (
+    echo [tests] FAILED -- vigie page : %JSFAIL%
+    exit /b 1
+)
+if not defined JSFAIL where node >nul 2>nul && echo [tests] vigie page : 2 test^(s^) ok
+
 REM ---- DEV ONLY : session replays. The replayer and the recorded tapes live in the local dev\ tree, which is not in
 REM      the public repository ; a clone without it skips this step and SAYS so.
 if not exist "%ROOT%dev\fixtures\tapes\*.aiotape" (
@@ -57,12 +80,30 @@ if not exist "%ROOT%dev\fixtures\tapes\*.aiotape" (
 )
 call "%ROOT%dev\replay\build_replay.bat" >nul
 if errorlevel 1 ( echo [tests] replay BUILD FAILED -- run dev\replay\build_replay.bat & exit /b 1 )
+REM `exit /b 1` FROM INSIDE THIS FOR LOOP DOES NOT REACH THE CALLER. Measured 2026-09-15 : a golden was corrupted
+REM on purpose, the replay printed "session replay FAILED" and stopped the script -- and tests.bat still exited 0,
+REM so every caller (and CI) read a broken replay as a pass. The failure is latched in a variable instead and the
+REM script exits AFTER the loop, at top level, where the code is known to propagate. Proved by the same mutation.
 set "NREPLAY=0"
+set "REPLAYFAIL="
 for %%T in ("%ROOT%dev\fixtures\tapes\*.aiotape") do (
-    if not exist "%%~dpnT.golden.txt" ( echo [tests] %%~nxT has no golden -- keep it with dev\scripts\tape.py keep & exit /b 1 )
-    "%ROOT%build\replay\replay.exe" "%%T" --mask "%ROOT%build\replay\partystate_mask.bin" --fields "%ROOT%build\replay\partystate_fields.txt" --golden "%%~dpnT.golden.txt" > "%ROOT%build\replay\last_run.txt"
-    if errorlevel 1 ( type "%ROOT%build\replay\last_run.txt" & echo [tests] session replay FAILED : %%~nxT & exit /b 1 )
-    set /a NREPLAY+=1
+    if not exist "%%~dpnT.golden.txt" (
+        echo [tests] %%~nxT has no golden -- keep it with dev\scripts\tape.py keep
+        set "REPLAYFAIL=%%~nxT"
+    ) else (
+        "%ROOT%build\replay\replay.exe" "%%T" --mask "%ROOT%build\replay\partystate_mask.bin" --fields "%ROOT%build\replay\partystate_fields.txt" --golden "%%~dpnT.golden.txt" > "%ROOT%build\replay\last_run.txt"
+        if errorlevel 1 (
+            type "%ROOT%build\replay\last_run.txt"
+            echo [tests] session replay FAILED : %%~nxT
+            set "REPLAYFAIL=%%~nxT"
+        ) else (
+            set /a NREPLAY+=1
+        )
+    )
+)
+if defined REPLAYFAIL (
+    echo [tests] FAILED -- session replay
+    exit /b 1
 )
 echo [tests] session replays : %NREPLAY% tape(s) reproduce their golden
 
