@@ -12,7 +12,7 @@
 namespace aio {
 
 void PartyState::on_char_stats(const unsigned char* p) {   // 0x061 Char Stats
-    if (pkt_bytes(p) < 0x70) return;                        // truncated -> don't read garbage (reads the EP-to-next u32 @0x6C)
+    if (pkt_short(p, 0x70)) return;                        // truncated -> don't read garbage (reads the EP-to-next u32 @0x6C)
     pwMainJob_    = p[0x0C];
     pw_.jobLevel  = p[0x0D];
     pw_.xpCur     = pkt_u16(p, 0x10);
@@ -27,21 +27,21 @@ void PartyState::on_char_stats(const unsigned char* p) {   // 0x061 Char Stats
     fm_pw_expect(pw_.xpCur, pw_.xpTnl, pw_.masterLevel, pw_.epCur, pw_.epTnml);
 }
 void PartyState::on_set_update(const unsigned char* p) {   // 0x063 Set Update
-    if (pkt_bytes(p) < 0x06) return;                        // need the order field @0x04 ; each order then floors on its OWN fields (their sizes differ wildly -- 0x0D vs 0xC8 -- so a single top floor would wrongly drop the small orders)
+    if (pkt_short(p, 0x06)) return;                        // need the order field @0x04 ; each order then floors on its OWN fields (their sizes differ wildly -- 0x0D vs 0xC8 -- so a single top floor would wrongly drop the small orders)
     const unsigned order = pkt_u16(p, 0x04);
     if (order == 2) {                                       // Order 2 : merits
-        if (pkt_bytes(p) < 0x0D) return;                    // reads up to maxMerits @0x0C
+        if (pkt_short(p, 0x0D)) return;                    // reads up to maxMerits @0x0C
         pw_.lpCur     = pkt_u16(p, 0x08);
         pw_.merits    = p[0x0A] & 0x7F;                     // bit[7]
         pw_.maxMerits = p[0x0C];
         fm_pw_merit_expect(pw_.lpCur, pw_.merits, pw_.maxMerits);   // ground truth for the merit block's address
     } else if (order == 5 && pwMainJob_ >= 1 && pwMainJob_ <= 23) {   // Order 5 : per-job Capacity / Job Points
         const int e = 0x0C + (int)pwMainJob_ * 6;           // job_point_info[jobId] (6 bytes each)
-        if (pkt_bytes(p) < e + 4) return;                   // reads the u16 @e and @e+2 (up to e+3 ; e grows with the job id)
+        if (pkt_short(p, e + 4)) return;                     // reads the u16 @e and @e+2 (up to e+3 ; e grows with the job id)
         pw_.cpCur = pkt_u16(p, e);
         pw_.cpJp  = (int)pkt_u16(p, e + 2);
     } else if (order == 9) {                                // Order 9 : SELF BUFF TIMERS -- Buffs u16[32] @0x08, expiry
-        if (pkt_bytes(p) < 0xC8) return;                    // reads Time u32[31] up to p[0xC7] -> a runt would clear then refill from garbage
+        if (pkt_short(p, 0xC8)) return;                    // reads Time u32[31] up to p[0xC7] -> a runt would clear then refill from garbage
         // THE TAPE DIFFS THIS LIST rather than dumping it. What matters is the INSTANT a status appears or
         // disappears on you: that is the game stating, authoritatively, that a song landed or was replaced --
         // the observation the ally-buff model currently replaces with an inference over three lists that
@@ -112,7 +112,7 @@ void PartyState::latch_co_expiry_casters() {
     }
 }
 void PartyState::on_exp_msg(const unsigned char* p, unsigned id) {   // 0x029 (Param1 @0x0C) / 0x02D (Param1 @0x10)
-    if (pkt_bytes(p) < 0x1A) return;                        // reads the msg id u16 @0x18 (the val @0x0C/0x10 sits below it)
+    if (pkt_short(p, 0x1A)) return;                        // reads the msg id u16 @0x18 (the val @0x0C/0x10 sits below it)
     const unsigned val = pkt_u32(p, id == 0x029 ? 0x0C : 0x10);
     const unsigned msg = pkt_u16(p, 0x18);
     if (!val) return;

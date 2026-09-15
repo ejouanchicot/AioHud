@@ -896,7 +896,7 @@ static unsigned char roll_luck_of(unsigned aid, unsigned pip) {
 void PartyState::on_action(const unsigned char* p) {
     u32 hdr = (u32)p[0] | ((u32)p[1] << 8);
     int size = (int)((hdr >> 9) & 0x7F) * 4;               // packet size in bytes
-    if (size < 30) return;                                 // begin-cast needs the action block (bit 213 -> byte 26..)
+    if (size < 30) { pkt_note_reject(PKTREJ_SHORT, 30, size); return; }   // begin-cast needs the action block (bit 213 -> byte 26..)
     u32 cat = getbits(p, 82, 4, size);
     u32 actor = getbits(p, 40, 32, size);
 
@@ -1849,7 +1849,7 @@ void PartyState::on_action(const unsigned char* p) {
 void PartyState::on_029(const unsigned char* p) {
     u32 hdr = (u32)p[0] | ((u32)p[1] << 8);
     int size = (int)((hdr >> 9) & 0x7F) * 4;
-    if (size < 0x1C) return;                               // need up to the message id @0x18
+    if (size < 0x1C) { pkt_note_reject(PKTREJ_SHORT, 0x1C, size); return; }   // need up to the message id @0x18
     u32 msg = ((u32)p[0x18] | ((u32)p[0x19] << 8)) & 0x7FFF;
     if (s_dbfTrace > 0) {                                  // DIAGNOSTIC : log EVERY 0x029 landing on a mob we track -> catch the "<mob> is no longer asleep" message id (any wake cause)
         u32 dt = pkt_u32(p, 0x08);
@@ -1956,7 +1956,7 @@ void PartyState::on_076(const unsigned char* p) {
     // The 0x076 layout gives 32 status ids per member and the loop below writes all 32 -- the link between the
     // packet's fixed 32 and BuffSet::ids was implicit in a literal. Make it a compile error instead.
     static_assert(32 <= (int)(sizeof(((BuffSet*)0)->ids) / sizeof(((BuffSet*)0)->ids[0])), "BuffSet::ids must hold the 32 status ids a 0x076 slot carries");
-    if (pkt_bytes(p) < 0xF4) return;                           // 5 slots x 48 : reads up to p[4*48+20+31] = p[0xF3]
+    if (pkt_short(p, 0xF4)) return;                           // 5 slots x 48 : reads up to p[4*48+20+31] = p[0xF3]
     // DROP the sets we can no longer refresh. The 0x076 carries YOUR party only (party_order 0..5), so a member who
     // moved to an alliance party -- or left -- keeps a set that is frozen at whatever they wore back then. That third
     // state, STALE, is invisible to every caller : they test `buffs_for(id) != 0` and read a frozen list as authority,
@@ -2024,7 +2024,7 @@ void PartyState::on_076(const unsigned char* p) {
 // The bit order matches our equip-slot ids exactly (main=0 .. back=15) -> the equipment viewer indexes it
 // directly. Resent by the game on job change / zone / encumbrance change, so caching stays current.
 void PartyState::on_01b(const unsigned char* p) {
-    if (pkt_bytes(p) < 0x64) return;          // reads the encumbrance flags @0x60..0x63
+    if (pkt_short(p, 0x64)) return;          // reads the encumbrance flags @0x60..0x63
     encumber_ = pkt_u32(p, 0x60);
 }
 
@@ -2400,7 +2400,7 @@ static unsigned treasure_expiry(unsigned dropUnix, unsigned nowUnix) {
 }
 
 void PartyState::on_treasure_add(const unsigned char* p) {
-    if (pkt_bytes(p) < 0x1C) return;          // floor on the highest field read (timestamp @0x18..0x1B) -- see the note in
+    if (pkt_short(p, 0x1C)) return;          // floor on the highest field read (timestamp @0x18..0x1B) -- see the note in
                                               // party_state_internal.h : a truncated packet still lands in the decode buffer,
                                               // so SEH alone won't stop us parsing the PREVIOUS packet's residue into a slot.
     const unsigned item = (unsigned)p[0x10] | ((unsigned)p[0x11] << 8);
@@ -2471,7 +2471,7 @@ void PartyState::reconcile_treasure() {
 // 0x0D3 : Index @0x14 (u8), Drop @0x15 (u8 ; !=0 -> won/floored -> gone), Highest Lot @0x0E (u16),
 // Highest Lotter Name @0x16 (char[16]).
 void PartyState::on_treasure_lot(const unsigned char* p) {
-    if (pkt_bytes(p) < 0x26) return;          // floor : the lotter name runs p[0x16]..p[0x25]
+    if (pkt_short(p, 0x26)) return;          // floor : the lotter name runs p[0x16]..p[0x25]
     const unsigned idx = p[0x14];
     if (idx >= 10) { TPTRACE("TPOOL 0x0D3 BAD idx=%u", idx); return; }
     if (p[0x15] != 0) { TPTRACE("TPOOL 0x0D3 slot=%u DROP=%u -> cleared (had item=0x%04X)", idx, (unsigned)p[0x15], (unsigned)treasure_[idx].itemId); treasure_[idx] = TreasureItem{}; treasureGoneMs_[idx] = model_now_ms(); return; }   // item left the pool (won or dropped to floor)
@@ -2490,9 +2490,38 @@ void PartyState::on_treasure_lot(const unsigned char* p) {
 // SEH-guarded packet dispatch. The parsers read FIXED offsets off `b` ; a SHORT/truncated packet would fault, and the
 // plugin callback is not exception-wrapped -> the fault would propagate into the game. No C++ object in this function,
 // so the __except has no unwinding to fight. The caller brackets it as a model event.
+// WHICH PACKET IS BEING DISPATCHED, for the reject counter. Stamped here rather than passed to each floor:
+// a literal typed 19 times is a literal that will be wrong once, and a mis-attributed reject is worse than no
+// reject at all. Packets are fed INLINE on the game's main loop -- measured in every capture (aiohud.cpp) --
+// so a single current id is exact, not a compromise.
+static int g_pktDispatchId = 0;
+void pkt_note_reject(int cause, int need, int got) {
+    party().note_reject(g_pktDispatchId, cause, need, got, model_now_ms());
+}
+// A REFUSAL IS A FACT, NOT A NON-EVENT : keep it, per id, with the worst case seen.
+void PartyState::note_reject(int id, int cause, int need, int got, unsigned nowMs) {
+    int slot = -1;
+    for (int i = 0; i < pktRejN_; ++i) if (pktRej_[i].id == (unsigned short)id) { slot = i; break; }
+    if (slot < 0) {
+        // The LAST slot is the catch-all. Without it a thirteenth refusing id would be dropped in silence --
+        // the exact shape this counter exists to remove (id 0 = "and others").
+        if (pktRejN_ < PKT_REJ_MAX - 1) { slot = pktRejN_++; pktRej_[slot] = PktReject{ (unsigned short)id, 0, 0, 0, 0, 0 }; }
+        else { slot = PKT_REJ_MAX - 1; if (pktRejN_ < PKT_REJ_MAX) pktRejN_ = PKT_REJ_MAX; pktRej_[slot].id = 0; }
+    }
+    PktReject& r = pktRej_[slot];
+    if (cause == PKTREJ_SECTION) ++r.nSection; else ++r.nShort;
+    // The WORST shortfall, not the last one : a single 4-byte miss among a hundred 60-byte ones is the
+    // interesting number, and a sample would hide it (same reason the table watchers keep peaks).
+    if (r.worstNeed == 0 || (need - got) > (int)(r.worstNeed - r.worstGot)) {
+        r.worstNeed = (unsigned short)need; r.worstGot = (unsigned short)got;
+    }
+    r.lastMs = nowMs;
+}
+
 void model_feed_packet(int id, const unsigned char* b)
 {
     tape_packet(id, b);   // recorded BEFORE the handler : the replay needs the bytes before it can run it
+    g_pktDispatchId = id;
     __try {
         party().note_packet(id, model_now_ms());   // flow counters for //aio doctor (tracked ids only)
         if      (id == 0xDD)  party().on_dd(b);

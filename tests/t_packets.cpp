@@ -34,13 +34,101 @@ const unsigned Z_DYN_SANDORIA = 185; // "Dynamis - San d'Oria" : a CITY Dynamis 
 const unsigned Z_RABAO = 247;
 const unsigned Z_DIV_SANDORIA = 294; // "Dynamis - San d'Oria [D]" : Divergence, no granules
 const unsigned Z_SHEOL = 298;
+const unsigned Z_KAMIHR = 267, Z_SORTIE = 133;   // Kamihr Drifts / Outer Ra'Kaznar [U2]
 const int ABY = 7339;                // the Abyssea message base for every zone but 215/253 (measured 2026-09-09)
 
+// Deliver a recorded Sortie run, the ids shifted by `shift` (a client update renumbering the table), on its own clock.
+void play_sortie(int shift) {
+    int prev = 0;
+    for (int i = 0; i < SORTIE_RUN_20260914_N; ++i) {
+        const SortieMsg& m = SORTIE_RUN_20260914[i];
+        if (m.t > prev) { advance_ms((unsigned)(m.t - prev) * 1000u); prev = m.t; }
+        deliver(pkt_zone_msg((unsigned)((int)(m.msg & 0x7FFF) + shift), m.p1, m.p2, m.p3, m.p4, m.tidx));
+    }
+}
+int sortie_loot(unsigned item) { for (int i = 0; i < 8; ++i) if (zt().soLoot[i].item == item) return zt().soLoot[i].n; return 0; }
 int lights_sum() { int s = 0; for (int i = 0; i < 7; ++i) s += zt().lights[i]; return s; }
 }  // namespace
 
 void test_packets() {
     if (selfcheck()) { printf("  the fake game does not reach the model -- the packet cases would prove nothing, skipped\n"); return; }
+
+    SECTION("packets : a packet too short is REFUSED, COUNTED by its cause, and changes nothing");
+    {   // The 19 handlers each floor on the highest field they read -- that protection was already there. What was
+        // missing is that the refusal was SILENT: from any box, a packet thrown away for being four bytes short
+        // looks exactly like a packet the server never sent, which is the first question //aio doctor exists to
+        // answer. The counter is the fix, and these are its four properties.
+        // Mutations : `if (pkt_short(p, N)) return;` back to `if (pkt_bytes(p) < N) return;` (the reject stops
+        // being counted while the packet is still refused -- the state this case exists to forbid) ; and the
+        // floor removed entirely (the truncated packet is then adopted and the first CHECK of each pair fails).
+        fresh();
+        // DELTAS, never absolutes : the model is a singleton that world() does not reset, so an earlier case in
+        // the suite may already have refused something. What this case owns is what IT causes.
+        const unsigned base = party().pkt_reject_total();
+
+        // --- 0x0D2 treasure pool : the floor covers the timestamp @0x18..0x1B
+        { Packet p = pkt_pool_item(0, 4096, 1700000000u);
+          pkt_truncate(p, 0x18);                          // one field short
+          deliver(p);
+          CHECK_EQ((int)party().treasure_slots()[0].itemId, 0);   // nothing adopted
+          CHECK_EQ(party().pkt_reject_total(), base + 1); }
+
+        // --- 0x067 pet info : the floor covers the owner index @0x0C..0x0D
+        { Packet p = pkt_pet_status(0x01000002u, 7, 0x02000001u);
+          p.id = 0x067; pkt_header(p, 0x067, 0x0E); pkt_truncate(p, 0x0C);
+          deliver(p);
+          CHECK_EQ(party().pkt_reject_total(), base + 2); }
+
+        // --- 0x02A zone message : the floor covers the message id @0x1A
+        { Packet p = pkt_zone_msg(7248, 13, 947498);
+          pkt_truncate(p, 0x18);
+          deliver(p);
+          CHECK_EQ(party().pkt_reject_total(), base + 3); }
+
+        // --- 0x0D3 treasure lot : the floor covers the lotter name, p[0x16]..p[0x25]
+        { Packet p = pkt_pool_lot(0, 950, "Kaories", false);
+          pkt_truncate(p, 0x20);
+          deliver(p);
+          CHECK_EQ(party().pkt_reject_total(), base + 4); }
+
+        // --- 0x076 party buffs : 5 slots of 48 bytes, read up to p[0xF3]
+        { Packet p = pkt_party_buffs({ { 0x01000002u, { 33, 43 } } });
+          pkt_truncate(p, 0xF0);
+          deliver(p);
+          CHECK_EQ(party().pkt_reject_total(), base + 5); }
+
+        // THE CAUSE IS RECORDED, NOT JUST THE COUNT -- and the WORST shortfall, never the last one. A single
+        // 4-byte miss among a hundred 60-byte ones is the interesting number, and a sample would hide it.
+        { int nr = 0; const PartyState::PktReject* rj = party().pkt_rejects(nr);
+          CHECK(nr >= 5);
+          int totalShort = 0, totalSection = 0;
+          for (int i = 0; i < nr; ++i) { totalShort += (int)rj[i].nShort; totalSection += (int)rj[i].nSection;
+              if (rj[i].nShort) CHECK(rj[i].worstNeed > rj[i].worstGot); }
+          CHECK_EQ((unsigned)totalShort, base + 5);       // every one of them was a length floor...
+          CHECK_EQ(totalSection, 0); }                    // ...and none was mis-filed as a malformed section
+
+        // A NORMAL FILTERING RETURN IS NOT A REJECT. This is the property that keeps the counter worth reading:
+        // most handlers refuse most packets for perfectly good reasons -- wrong message, wrong zone, a stranger's
+        // pet -- and counting those would bury the five above under thousands. A whole, valid 0x02A carrying a
+        // message id this build maps to nothing must move the counter by ZERO.
+        { const unsigned before = party().pkt_reject_total();
+          deliver(pkt_zone_msg(31337, 1, 2));             // well-formed, simply not ours
+          CHECK_EQ(party().pkt_reject_total(), before); }
+
+        // ...AND NEITHER IS A TRUNCATED PACKET THAT A FILTER REFUSED BEFORE THE FLOOR WAS EVEN REACHED. on_034
+        // returns on the zone (Rabao only) BEFORE it measures the packet, so a short 0x034 anywhere else is not
+        // a malformed packet we threw away -- it is a packet we were never going to read. The counter must say
+        // so, or every zone in the game would report rejects for a menu it has no business parsing.
+        { const unsigned before = party().pkt_reject_total();
+          Packet p = pkt_npc_menu(0x01000005u, 1001, 0);
+          pkt_truncate(p, 0x2C);
+          deliver(p);
+          CHECK_EQ(party().pkt_reject_total(), before); }
+
+        // AND THE NEXT VALID PACKET IS STILL PROCESSED -- a rejection must not poison what follows it.
+        { deliver(pkt_currency2(947485, 12000, 34000));
+          CHECK_EQ(zt().segBank, 947485); }
+    }
 
     SECTION("packets : the zone-tracker, pointwatch, job-info and pet builders speak their parsers' layout");
     {

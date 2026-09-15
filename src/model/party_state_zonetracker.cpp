@@ -750,7 +750,7 @@ void PartyState::zt_set_zone(int zone, const char* name) {
 }
 void PartyState::on_034(const unsigned char* p) {           // 0x034 NPC interaction : the Rabao conflux entry menu -> which Sheol (A/B/C)
     if (zt_.curZone != 247) return;                        // only the Rabao (247) entry menu
-    if (pkt_bytes(p) < 0x2E) return;                       // truncated -> don't read garbage past the real end (reads the u16 @0x2C)
+    if (pkt_short(p, 0x2E)) return;                       // truncated -> don't read garbage past the real end (reads the u16 @0x2C)
     if (pkt_u16(p, 0x2C) != 173) return;                   // Menu ID 173 = the Odyssey conflux
     if (pkt_u32(p, 0x04) != selfId_) return;               // ...interacting with US
     const int i = (int)pkt_u32(p, 0x08);                   // Menu Parameters[0] = 1/2/3 = Sheol A/B/C
@@ -763,7 +763,7 @@ void PartyState::on_034(const unsigned char* p) {           // 0x034 NPC interac
 }
 void PartyState::on_00e(const unsigned char* p) {          // 0x00E NPC update : fallback A/B/C from a mob's instance bits (menu missed)
     if (zt_.mode != 5 || zt_.sheolzone) return;            // only inside a Sheol run, and only while still unknown
-    if (pkt_bytes(p) < 0x08) return;                       // truncated -> the entity id @0x04 isn't there
+    if (pkt_short(p, 0x08)) return;                       // truncated -> the entity id @0x04 isn't there
     const unsigned id = pkt_u32(p, 0x04);                  // the entity's server id
     if (id < 0x01000000u) return;
     const unsigned instance = (id >> 12) & 0xFFFu;         // unique instance bits (addon : bit.band(bit.rshift(id,12),0xFFF))
@@ -867,7 +867,7 @@ void PartyState::on_limbus_075(const unsigned char* p) {    // 0x075 : battlefie
     // packet be read 4 bytes past its declared end. Raising it cannot reject a real bars packet : FFXiMain's own 0x075
     // handler (FFXiMain+0x98DC0, disassembled 2026-09-14) copies +0x28..+0xA7 when the bars flag is set and reads
     // +0xA8/+0xAA, with NO size check of its own -- a bars packet the client can display is at least 0xA8 bytes.
-    if (pkt_bytes(p) < 0xA0) return;                       // the six bars end at p[0x9F]
+    if (pkt_short(p, 0xA0)) return;                       // the six bars end at p[0x9F]
     // bar[i] = { s32 progress ; char label[16] } at +0x28 + i*0x14, six of them (Windower's fields.lua documents
     // five). 0x075 is multiplexed -- other senders put position floats here -- so we self-filter on the LABEL of
     // each bar and only write a field whose label actually matched. A bar the server left empty reads label[0]==0
@@ -913,7 +913,7 @@ void PartyState::on_limbus_075(const unsigned char* p) {    // 0x075 : battlefie
     if (hit) zt_save();
 }
 void PartyState::on_118(const unsigned char* p) {           // 0x118 currency2 : Mog Segments @byte 0x8C (reference total)
-    if (pkt_bytes(p) < 0xA0) return;                        // truncated -> reads the currencies up to p[0x9F]
+    if (pkt_short(p, 0xA0)) return;                        // truncated -> reads the currencies up to p[0x9F]
     // The banked total is NOT pushed live during a run (no 0x118 fires per kill) -> the run counter is driven by the
     // 0x02A msg-40016 per-kill message (on_2a). We only keep segBank here for reference (e.g. the Rabao "(last run)").
     zt_.segBank = (int)pkt_u32(p, 0x8C);
@@ -921,7 +921,7 @@ void PartyState::on_118(const unsigned char* p) {           // 0x118 currency2 :
     zt_.limbusApollyon = (int)pkt_u32(p, 0x9C);      // (fields.lua incoming[0x118] : 'Temenos Units' / 'Apollyon Units')
 }
 void PartyState::on_55(const unsigned char* p) {            // 0x055 : key items ; granules are Type 3, bits 9..13
-    if (pkt_bytes(p) < 0x88) return;                        // truncated -> the KI table @0x84 (and the bitfield ny_has_ki reads) isn't there
+    if (pkt_short(p, 0x88)) return;                        // truncated -> the KI table @0x84 (and the bitfield ny_has_ki reads) isn't there
     if (zt_.curZone == 72 && ny_has_ki(p, 797)) zt_.nyArmband = 1;   // Nyzul assault armband, captured in the staging point
     if (zt_.mode != 1) return;
     if (zt_is_divergence(zt_.dynZone)) return;   // Divergence has no granules of time : reading bits 9..13 there would
@@ -932,7 +932,7 @@ void PartyState::on_55(const unsigned char* p) {            // 0x055 : key items
     zt_save();                                             // KIs / time-extensions changed -> persist
 }
 void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol segments (mode 5) + Abyssea zone messages (mode 2)
-    if (pkt_bytes(p) < 0x1C) return;                        // truncated -> the params/message id (up to the u16 @0x1A) aren't there ; cover
+    if (pkt_short(p, 0x1C)) return;                        // truncated -> the params/message id (up to the u16 @0x1A) aren't there ; cover
     // //aio songtape : EVERY message, id and params. The game announces a song being replaced or wearing off in
     // the chat log, and that announcement is an OBSERVATION where the ally-buff model currently makes an
     // INFERENCE -- crossing three lists that arrive at different times, which is what produced every song defect

@@ -106,7 +106,7 @@ void PartyState::on_dd(const unsigned char* p) {
     // require 0x3B -- more than the packet ever is -- so on_dd returned on EVERY real 0x0DD since the first commit, and
     // the sentinel fed below never armed. Require what is read up to the jobs ; the name is bounded by the size.
     const int size = pkt_bytes(p);
-    if (size < 0x2C) return;                               // through the jobs (0x25) and the first name bytes
+    if (size < 0x2C) { pkt_note_reject(PKTREJ_SHORT, 0x2C, size); return; }   // through the jobs (0x25) and the first name bytes
     unsigned id = pkt_u32(p, 0x04);
     if (!id) return;
     const int i = find(id);
@@ -138,7 +138,7 @@ void PartyState::on_dd(const unsigned char* p) {
 }
 
 void PartyState::on_df(const unsigned char* p) {
-    if (pkt_bytes(p) < 0x14) return;          // reads tp @0x10..0x13
+    if (pkt_short(p, 0x14)) return;          // reads tp @0x10..0x13
     int i = find(pkt_u32(p, 0x04));
     if (i < 0) return;                        // only vitals for a member we already know
     m[i].hp = (int)pkt_u32(p, 0x08);

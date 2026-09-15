@@ -332,6 +332,9 @@ static void feed_packet(int id, const unsigned char* b)
 
 // //aio omenparse : how many NON-161 chat lines are still to be sampled from the text callback. Separate from the
 // parser-side budget in party_state_zonetracker.cpp because this one fires on every line, filtered or not.
+// Commands refused because the queue was full. Declared HERE, far above the queue itself, because //aio doctor
+// reports it and the doctor is dispatched earlier in this file -- the counter has to be visible to both.
+static volatile long g_cmdDropped = 0;
 static int g_omenRaw = 0;
 // Which packet ids arrive while inside Omen, counted rather than dumped. The open question the text capture
 // cannot answer is whether the floors are ALSO described by a structured packet (Limbus's 0x075 carries floor +
@@ -1327,6 +1330,27 @@ static void aio_command_dispatch(const char* cmd)
         char lines[12][aio::Hud::DOC_LINE];
         const int n = g_hud.doctor(lines, 12);
         g_hud.self_check();   // ...and the per-widget texture health //aio selfcheck logs : one command to ask a tester for, not two
+        // WHAT WAS THROWN AWAY. The flow counters above say what ARRIVED ; these say what arrived and was
+        // REFUSED -- a packet too short for the field it feeds, or a command dropped by a full queue. Both
+        // used to be perfectly silent, which reads exactly like a server that sent nothing and a command that
+        // did nothing. Printed on the healthy path too (a counter that only speaks when it is angry cannot be
+        // told from one that stopped counting).
+        { int nr = 0; const aio::PartyState::PktReject* rj = aio::party().pkt_rejects(nr);
+          const unsigned drops = (unsigned)g_cmdDropped;
+          if (!nr && !drops) windower::debug::log("  refused  : none -- no packet was rejected and no command was dropped this session");
+          for (int i = 0; i < nr; ++i)
+              windower::debug::log("  refused  : packet 0x%03X  short=%u section=%u  worst short by %d byte(s) (needed %u, had %u)  last=%us ago",
+                                   rj[i].id, rj[i].nShort, rj[i].nSection,
+                                   (int)rj[i].worstNeed - (int)rj[i].worstGot, rj[i].worstNeed, rj[i].worstGot,
+                                   rj[i].lastMs ? (aio::model_now_ms() - rj[i].lastMs) / 1000u : 0u);
+          if (drops) windower::debug::log("  refused  : %u command(s) dropped -- the queue was full (typed faster than the game draws)", drops);
+          if (nr || drops) {
+              char rm[200];
+              _snprintf(rm, sizeof(rm), aio::tr(">>> AioHud doctor : %u packet(s) refused as malformed, %u command(s) dropped -- detail in the log <<<",
+                                                ">>> AioHud doctor : %u paquet(s) refuses car malformes, %u commande(s) perdue(s) -- detail dans le journal <<<"),
+                        aio::party().pkt_reject_total(), drops);
+              rm[sizeof(rm) - 1] = 0; g_host.console().print(rm);
+          } }
         if (!n) {
             g_host.console().print(aio::tr(">>> AioHud doctor : all healthy -- detail in Windower\\plugins\\aiohud_debug.log <<<", ">>> AioHud doctor : tout est sain -- detail dans Windower\\plugins\\aiohud_debug.log <<<"));
         } else {
@@ -1614,7 +1638,9 @@ void aio_plugin_command(const char* cmd)
     tid_once("command");
     if (!cmd) return;
     const long head = g_cmdHead;
-    if (head - g_cmdTail >= CMDQ_N) return;              // full (spamming faster than we draw) -> drop
+    // FULL -> dropped. COUNTED, because a swallowed command is indistinguishable from one that ran and did
+    // nothing -- and the player's next move is to type it again, which makes it worse. //aio doctor reads it.
+    if (head - g_cmdTail >= CMDQ_N) { ++g_cmdDropped; return; }
     const int slot = (int)(head & (CMDQ_N - 1));
     int i = 0; for (; i < (int)sizeof(g_cmdQ[0]) - 1 && cmd[i]; ++i) g_cmdQ[slot][i] = cmd[i];
     g_cmdQ[slot][i] = 0;

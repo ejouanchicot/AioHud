@@ -859,6 +859,20 @@ struct PartyState {
     }
     const PktFlow* pkt_flow(int& n) const { n = PKT_TRACKED; return pkt_; }
 
+    // --- packets REFUSED, for //aio doctor (party_state_internal.h : pkt_short) --------------------------
+    // The flow counter above answers "does it arrive ?". This one answers the question right behind it:
+    // "does it arrive and get THROWN AWAY ?". Without it the two are indistinguishable from any box, and a
+    // floor raised one byte too high would be a feature that silently stops working, forever, with the log
+    // saying nothing at all. Counted ONLY for a length floor or a malformed section -- never for a handler
+    // that legitimately ignores a packet (see the contract in party_state_internal.h).
+    struct PktReject { unsigned short id; unsigned nShort, nSection; unsigned short worstNeed, worstGot; unsigned lastMs; };
+    static const int PKT_REJ_MAX = 12;   // ids are 19 ; a session realistically refuses one or two kinds. The last slot is the OTHER bucket, so nothing is ever lost silently.
+    void note_reject(int id, int cause, int need, int got, unsigned nowMs);
+    const PktReject* pkt_rejects(int& n) const { n = pktRejN_; return pktRej_; }
+    unsigned pkt_reject_total() const { unsigned t = 0; for (int i = 0; i < pktRejN_; ++i) t += pktRej_[i].nShort + pktRej_[i].nSection; return t; }
+    PktReject pktRej_[PKT_REJ_MAX] = {};
+    int       pktRejN_ = 0;
+
     void on_dd(const unsigned char* p);   // 0x0DD : member update (name/jobs/HP/MP/TP/%) -> also caches
     void on_df(const unsigned char* p);   // 0x0DF : vitals update (HP/MP/TP, refresh %)
     void on_action(const unsigned char* p); // 0x028 : begin/finish casting -> cast bar + landed target debuffs

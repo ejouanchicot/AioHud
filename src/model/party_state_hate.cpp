@@ -97,14 +97,14 @@ unsigned PartyState::pet_owner(unsigned id) const {
     return id;
 }
 void PartyState::on_pet_info(const unsigned char* p) {     // 0x067 Pet Info : Pet ID @+0x08, Owner Index @+0x0C
-    if (pkt_bytes(p) < 0x0E) return;                       // floor on the highest field read (owner index @0x0C..0x0D)
+    if (pkt_short(p, 0x0E)) return;                       // floor on the highest field read (owner index @0x0C..0x0D)
     const unsigned petId = pkt_u32(p, 0x08), ownerIdx = pkt_u16(p, 0x0C);
     if (!petId || !ownerIdx) return;
     const unsigned ownerId = entity_id_by_index(ownerIdx);
     if (ownerId && is_party_or_pet(ownerId)) register_pet(petId_, petOwner_, petId, ownerId);
 }
 void PartyState::on_pet_status(const unsigned char* p) {   // 0x068 Pet Status : Owner ID @+0x08, Pet Index @+0x0C, Target ID @+0x14
-    if (pkt_bytes(p) < 0x18) return;                       // floor on the highest field read (target id @0x14..0x17)
+    if (pkt_short(p, 0x18)) return;                       // floor on the highest field read (target id @0x14..0x17)
     const unsigned ownerId = pkt_u32(p, 0x08);
     if (!ownerId || !is_party_or_pet(ownerId)) return;
     const unsigned petIdx = pkt_u16(p, 0x0C);
