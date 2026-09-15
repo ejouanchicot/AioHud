@@ -65,7 +65,7 @@ if not exist "%ROOT%dev\scripts\test_vigie_logic.js" (
 )
 where node >nul 2>nul
 if errorlevel 1 echo [tests] vigie page tests : skipped ^(no node^)
-if not errorlevel 1 for %%J in (test_vigie_logic.js test_vigie_sweepstates.js) do (
+if not errorlevel 1 for %%J in (test_vigie_logic.js test_vigie_sweepstates.js test_vigie_redraw.js) do (
     node "%ROOT%dev\scripts\%%J" >"%ROOT%build\vigie_%%~nJ.txt" 2>&1
     if errorlevel 1 (
         type "%ROOT%build\vigie_%%~nJ.txt"
@@ -77,7 +77,7 @@ if defined JSFAIL (
     echo [tests] FAILED -- vigie page : %JSFAIL%
     exit /b 1
 )
-if not defined JSFAIL where node >nul 2>nul && echo [tests] vigie page : 2 test^(s^) ok
+if not defined JSFAIL where node >nul 2>nul && echo [tests] vigie page : 3 test^(s^) ok
 :vigiedone
 
 REM ---- DEV ONLY : session replays. The replayer and the recorded tapes live in the local dev\ tree, which is not in
