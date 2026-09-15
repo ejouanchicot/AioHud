@@ -34,19 +34,8 @@ const unsigned Z_DYN_SANDORIA = 185; // "Dynamis - San d'Oria" : a CITY Dynamis 
 const unsigned Z_RABAO = 247;
 const unsigned Z_DIV_SANDORIA = 294; // "Dynamis - San d'Oria [D]" : Divergence, no granules
 const unsigned Z_SHEOL = 298;
-const unsigned Z_KAMIHR = 267, Z_SORTIE = 133;   // Kamihr Drifts / Outer Ra'Kaznar [U2]
 const int ABY = 7339;                // the Abyssea message base for every zone but 215/253 (measured 2026-09-09)
 
-// Deliver a recorded Sortie run, the ids shifted by `shift` (a client update renumbering the table), on its own clock.
-void play_sortie(int shift) {
-    int prev = 0;
-    for (int i = 0; i < SORTIE_RUN_20260914_N; ++i) {
-        const SortieMsg& m = SORTIE_RUN_20260914[i];
-        if (m.t > prev) { advance_ms((unsigned)(m.t - prev) * 1000u); prev = m.t; }
-        deliver(pkt_zone_msg((unsigned)((int)(m.msg & 0x7FFF) + shift), m.p1, m.p2, m.p3, m.p4, m.tidx));
-    }
-}
-int sortie_loot(unsigned item) { for (int i = 0; i < 8; ++i) if (zt().soLoot[i].item == item) return zt().soLoot[i].n; return 0; }
 int lights_sum() { int s = 0; for (int i = 0; i < 7; ++i) s += zt().lights[i]; return s; }
 }  // namespace
 
