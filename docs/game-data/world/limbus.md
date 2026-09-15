@@ -150,6 +150,8 @@ its totals are kept. A KI store that is not reachable yet reads -1 = *unknown* a
 
 ## Probes
 
+> **Ces sondes ont ete retirees le 2026-09-14** (elagage de `aiohud_probes.cpp`). Elles ne repondent plus en jeu : leur code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, d'ou il peut etre remis dans `src/plugin/aiohud_probes.cpp` si une capture doit etre refaite.
+
 | command | what it does |
 |---|---|
 | `//aio limbusmem` | decodes the memory mirror at `FFXiMain+0x480800` (flags + 6 bars) |
