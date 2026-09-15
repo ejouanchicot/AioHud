@@ -2045,11 +2045,11 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 }
                 y += rh2 + snap(8.0f);
             } else if (it.kind == 45) {               // LIVE sample : ONE small example of EACH content variant, side by side (each box carries its own title header)
-                static const int ZV[6] = { 0, 1, 2, 3, 4, 5 };   // Dynamis / Abyssea / Omen / Nyzul / Odyssey / Limbus
+                static const int ZV[7] = { 0, 1, 2, 3, 4, 5, 6 };   // Dynamis / Abyssea / Omen / Nyzul / Odyssey / Limbus / Sortie
                 const float sc = 1.05f, colGap = snap(16.0f);   // small : several fit per row (scale factor, not a pixel value)
                 float gx = hx, rowTop = y, rowMaxH = 0.0f;
                 const float gw = hwWide;   // sample grid : the panel's real width, not the prose cap
-                for (int zi = 0; zi < 6; ++zi) {
+                for (int zi = 0; zi < 7; ++zi) {
                     float bw1 = 0.0f, bh1 = 0.0f; zonetracker_help_measure(f, ZV[zi], bw1, bh1);
                     const float bw = bw1 * sc, bh = bh1 * sc;
                     const bool wrapped = (gx > hx && gx + bw > hx + gw);

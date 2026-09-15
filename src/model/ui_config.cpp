@@ -260,7 +260,8 @@ static bool save_config_to(const char* path) {
     save_text_styles(f, "grimText", c.grimText, GRIM_TE_COUNT);   // grimoire : per-element typography
     fprintf(f, "zt=%d,%.3f,%.4f,%.4f,%d,%d\n", c.ztShow, c.ztScale, c.ztX, c.ztY, c.ztVariant, c.ztHeader);   // zone tracker box (+ title toggle)
     fprintf(f, "ztsheol=%d,%d,%d\n", c.ztSheolSeg, c.ztSheolRes, c.ztSheolJoke);   // Sheol : segments / resistances / cruel joke
-    fprintf(f, "ztlimbus=%d,%d,%d,%d,%d,%.2f,%.2f\n", c.ztLbFloor, c.ztLbCur, c.ztLbRun, c.ztLbChips, c.ztLbName, c.ztLbBarW, c.ztLbBarH);   // Limbus : floor-on-gauge / currencies / run / coffer dots / name row / gauge W / gauge H
+    fprintf(f, "ztlimbus=%d,%d,%d,%d,%d,%.2f,%.2f\n", c.ztLbFloor, c.ztLbCur, c.ztLbRun, c.ztLbChips, c.ztLbName, c.ztLbBarW, c.ztLbBarH);
+    fprintf(f, "ztsortie=%d,%d,%d,%d\n", c.ztSoGal, c.ztSoBoss, c.ztSoCof, c.ztSoLoot);   // Sortie : gallimaufry / bosses / coffers / items   // Limbus : floor-on-gauge / currencies / run / coffer dots / name row / gauge W / gauge H
     fprintf(f, "ztdyn=%d,%d,%.2f,%.2f,%.2f\n", c.ztDyTimer, c.ztDyKi, c.ztDyBarW, c.ztDyBarH, c.ztDyDot);   // Dynamis : timer / key items / bar W / bar H / dot size
     fprintf(f, "ztaby=%d,%d,%.2f,%.2f,%.2f,%.2f\n", c.ztAbTimer, c.ztAbLights, c.ztAbBarW, c.ztAbBarH, c.ztAbLightW, c.ztAbLightH);   // Abyssea : timer / lights / bar W / bar H / light W / light H
     fprintf(f, "ztomen=%d,%d,%d\n", c.ztOmObj, c.ztOmCount, c.ztOmRows);   // Omen : floor objective / omen+bonus / objective rows
@@ -514,6 +515,12 @@ static void repair_buff_order(UiConfig& c) {
 // Limbus row toggles (floor-on-gauge / currencies / run total / coffer dots), parsed OUT-OF-LINE for the same
 // C1061 reason as parse_mm_line. Missing key keeps the defaults, so an older config loads with every row shown.
 static bool parse_zt_line(const char* line, UiConfig& c) {
+    if (strncmp(line, "ztsortie=", 9) == 0) {
+        int ga = 1, bo = 1, co = 1, lo = 1;
+        const int n = sscanf(line + 9, "%d,%d,%d,%d", &ga, &bo, &co, &lo);
+        if (n >= 1) { c.ztSoGal = ga; if (n >= 2) c.ztSoBoss = bo; if (n >= 3) c.ztSoCof = co; if (n >= 4) c.ztSoLoot = lo; }
+        return true;
+    }
     if (strncmp(line, "ztlimbus=", 9) == 0) {
         int fl = 1, cu = 1, rn = 1, ch = 1, nm = 1; float bw = 1.0f, bh = 1.0f;
         const int n = sscanf(line + 9, "%d,%d,%d,%d,%d,%f,%f", &fl, &cu, &rn, &ch, &nm, &bw, &bh);
@@ -1133,6 +1140,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.ztSheolSeg != b.ztSheolSeg || a.ztSheolRes != b.ztSheolRes || a.ztSheolJoke != b.ztSheolJoke) return false;
     if (a.ztLbFloor != b.ztLbFloor || a.ztLbCur != b.ztLbCur || a.ztLbRun != b.ztLbRun || a.ztLbChips != b.ztLbChips) return false;
     if (a.ztLbName != b.ztLbName || a.ztLbBarW != b.ztLbBarW || a.ztLbBarH != b.ztLbBarH) return false;
+    if (a.ztSoGal != b.ztSoGal || a.ztSoBoss != b.ztSoBoss || a.ztSoCof != b.ztSoCof || a.ztSoLoot != b.ztSoLoot) return false;
     if (a.ztDyTimer != b.ztDyTimer || a.ztDyKi != b.ztDyKi || a.ztDyBarW != b.ztDyBarW || a.ztDyBarH != b.ztDyBarH || a.ztDyDot != b.ztDyDot) return false;
     if (a.ztAbTimer != b.ztAbTimer || a.ztAbLights != b.ztAbLights || a.ztAbBarW != b.ztAbBarW || a.ztAbBarH != b.ztAbBarH
         || a.ztAbLightW != b.ztAbLightW || a.ztAbLightH != b.ztAbLightH) return false;

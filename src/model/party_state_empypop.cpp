@@ -141,4 +141,6 @@ void PartyState::ep_refresh(const char* nmKey) {
     ep_build(ep_, nm, treasure_, false);
 }
 
+const char* model_item_name(unsigned id) { return item_name(id); }   // declared in party_state.h
+
 } // namespace aio

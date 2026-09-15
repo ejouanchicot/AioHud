@@ -82,6 +82,7 @@ static void scribble(UiConfig& c, int seed) {
     c.pwShow = i1 & 1; c.pwScale = 0.9f + 0.1f * seed; c.pwMode = i1 % 3;
     c.grimShow = i1 & 1; c.grimScale = 0.9f + 0.1f * seed;
     c.ztShow = i1 & 1; c.ztScale = 0.9f + 0.1f * seed;
+    c.ztSoGal = !(i1 & 1); c.ztSoBoss = i1 & 1; c.ztSoCof = !(i1 & 1); c.ztSoLoot = i1 & 1;
     c.tmShow = i1 & 1; c.tmScale = 0.9f + 0.1f * seed; c.tmMax = 8 + seed; c.tmMerged = i1 & 1;
     c.dbShow = i1 & 1; c.dbScale = 0.9f + 0.1f * seed; c.dbMax = 6 + seed;
     c.epShow = i1 & 1; c.epScale = 0.9f + 0.1f * seed;

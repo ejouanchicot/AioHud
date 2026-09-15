@@ -528,6 +528,35 @@ void test_timers() {
         CHECK_EQ(outs(r, FLABRA), 0);
     }
 
+    SECTION("timers : RUN wards (category 15) are yours -- Vallation, Pflug, Liement under 'Mine only'");
+    {   // MEASURED 2026-09-14 by the job sweep (dev/scripts/jobsweep.py) : the server sends Vallation, Pflug, Valiance and
+        // Liement as action CATEGORY 15, not 6, each with its own "gains" message (668 / 671 / 669 / 670) carrying the
+        // status. The caster latch read categories 4, 6 and 11 only, so the three timers were credited to NOBODY
+        // (bufftimers.casters 00000000) while every rune and Swordplay, category 6, was yours. Mutation : cat 15 out of
+        // the latch again.
+        const unsigned short VALLATION = 531, PFLUG = 533, LIEMENT = 537;
+        world({ { ME, "Tetsouo", 22, false }, { KAO, "Kaories", 17, false } });
+        config_defaults();
+        self_jobs(22, 99, 7, 49);
+        settle();
+        deliver(pkt_action(ME, 15, 366, { { ME, 668, VALLATION } }));
+        deliver(pkt_action(ME, 15, 369, { { ME, 671, PFLUG } }));
+        deliver(pkt_action(ME, 15, 373, { { ME, 670, LIEMENT } }));
+        deliver(pkt_self_timers({ { VALLATION, 120 }, { PFLUG, 120 }, { LIEMENT, 10 } }));
+        self_buffs({ VALLATION, PFLUG, LIEMENT });
+        TimersRows r; advance_ms(1000); step(r);
+        { int n = 0; const BuffTimer* bt = party().buff_timers(n);
+          CHECK_EQ(n, 3);
+          for (int i = 0; i < n; ++i) CHECK_EQ(party().buff_caster_for(bt[i].id, bt[i].expiry, i), ME); }
+        ui_config().tmBuffSrc = TMSRC_MINE;
+        advance_ms(16); step(r);
+        CHECK_EQ(count_rows(r, VALLATION), 1);
+        CHECK_EQ(count_rows(r, PFLUG), 1);
+        CHECK_EQ(count_rows(r, LIEMENT), 1);
+        if (count_rows(r, VALLATION) != 1) dump(r, "RUN wards under Mine only");
+        ui_config().tmBuffSrc = TMSRC_ALL;
+    }
+
     SECTION("timers : PLD/RUN, two Ignis run out -- two Ignis OUT, and a new rune quiets the older one");
     {   // Reported 2026-09-14 : "les deux ignis il reste que un avec out au lieu des deux". Each rune placed is watched on
         // its own (matched by its expiry). Mutation : the seeding by status (`fm[q].spell == selfSp`) for runes too.

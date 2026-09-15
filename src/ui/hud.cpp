@@ -667,8 +667,8 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
     //          is talking and our id is not". Abyssea cannot prove a base, so it is counted, not healed. ----
     {
         const int ztm = party().zone_tracker().mode;
-        static const char* WHO[3] = { "Odyssey (segments)", "Apollyon (unites)", "Temenos (unites)" };
-        const int which = (ztm == 5) ? 0 : (party().zone_tracker().curZone == 38) ? 1 : (party().zone_tracker().curZone == 37) ? 2 : -1;
+        static const char* WHO[4] = { "Odyssey (segments)", "Apollyon (unites)", "Temenos (unites)", "Sortie (gallimaufry)" };
+        const int which = (ztm == 5) ? 0 : (ztm == 7 && !party().zone_tracker().soLastRun) ? 3 : (party().zone_tracker().curZone == 38) ? 1 : (party().zone_tracker().curZone == 37) ? 2 : -1;
         if (which >= 0) {
             unsigned mid = 0; bool prov = false; int seen = 0, traf = 0;
             zt_msg_state(which, mid, prov, seen, traf);

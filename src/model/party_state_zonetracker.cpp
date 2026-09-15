@@ -437,6 +437,19 @@ static MsgHealer sgHeal_ = { "SHEOL",  7249 };   // 40017 masked -- //aio sheoll
                                                  // p2 tracked its own p1 throughout. Was 40016 until the 08-12 patch.
 static MsgHealer lbHeal_[2] = { { "LIMBUS/Apollyon", 7247 },     // [0] = zone 38, [1] = zone 37 (2026-07-19 capture)
                                 { "LIMBUS/Temenos",  7239 } };
+// SORTIE : the gallimaufry payout carries [gain, new total] like Odyssey's, so it proves a moved id the same way. The
+// three other Sortie messages have no arithmetic of their own ; they are read at FIXED OFFSETS from the gallimaufry
+// id, measured on one run (2026-09-14) -- a client update renumbers a zone's dialog table as a block (Odyssey went
+// 40005 -> 40015 -> 40016 -> 40017, whole table), so the payout that re-proves itself carries the others with it.
+static MsgHealer soHeal_ = { "SORTIE", 7238 };
+void zt_sortie_msg_new_session() { soHeal_ = MsgHealer{ "SORTIE", 7238 }; }
+static const int SORTIE_SHARD_GOT = -2, SORTIE_SHARD_GIVEN = -1, SORTIE_ITEM_GOT = -843;   // from the gallimaufry id
+static const int SORTIE_SHARD_FIRST = 9906, SORTIE_SHARD_LAST = 9913;                     // Ra'Kaznar Shard #A..#H
+static const int SORTIE_ZONE = 133, SORTIE_EXIT_ZONE = 267;                                 // Outer Ra'Kaznar [U2] / Kamihr Drifts
+// The item message arrives twice, like every Sortie message, but unlike the others it is not idempotent : it COUNTS.
+// Two drops of the same item in the same second are indistinguishable from the duplicate, and are counted once.
+struct SortieSeen { int item, p2, p3; unsigned ms; };
+static SortieSeen soSeen_[8]; static int soSeenHead_ = 0;
 // Abyssea has no such arithmetic IN ONE MESSAGE -- its lights are matched by an OFFSET from a per-zone base, and
 // no single light message proves that base. So today it is not healed, it is WATCHED : a run where 0x02A keeps
 // arriving and not one message ever lands on a known offset is the signature of a base that moved (it already
@@ -481,14 +494,15 @@ static int aby_base_for_zone(int zone) { return (zone == 215 || zone == 253) ? 7
 // So: OBSERVE ONLY, and keep the observations. Nothing here changes the base any more.
 
 static void zt_msg_reset_run() {                 // fresh run -> forget this run's counters
-    sgHeal_.reset_run(); lbHeal_[0].reset_run(); lbHeal_[1].reset_run();
+    sgHeal_.reset_run(); lbHeal_[0].reset_run(); lbHeal_[1].reset_run(); soHeal_.reset_run();
+    for (int i = 0; i < 8; ++i) soSeen_[i] = SortieSeen{}; soSeenHead_ = 0;
     abyMatched_ = 0; abyUnmatched_ = 0; abyMissN_ = 0; abyMissSeen_ = 0;
 }
 
 // //aio doctor : what each healed counter is listening to, and on what grounds. 0 = Odyssey, 1 = Apollyon,
-// 2 = Temenos ; the Abyssea watch reports through zt_aby_msg_state instead, having nothing to prove.
+// 2 = Temenos, 3 = Sortie ; the Abyssea watch reports through zt_aby_msg_state instead, having nothing to prove.
 void zt_msg_state(int which, unsigned& id, bool& proven, int& seen, int& traffic) {
-    const MsgHealer& h = (which == 0) ? sgHeal_ : lbHeal_[(which == 1) ? 0 : 1];
+    const MsgHealer& h = (which == 0) ? sgHeal_ : (which == 3) ? soHeal_ : lbHeal_[(which == 1) ? 0 : 1];
     id = h.id; proven = h.proven; seen = h.seen; traffic = h.traffic;
 }
 void zt_aby_msg_state(int& matched, int& unmatched) { matched = abyMatched_; unmatched = abyUnmatched_; }
@@ -512,9 +526,9 @@ static int zt_checks(CheckFail* out, int cap) {
     // 1. THE ZONE IS TALKING AND OUR ID IS SILENT. That contradiction is the whole finding: traffic proves the
     //    packets arrive and the parser runs, so "nothing matches" can only be the id. Traffic without a single
     //    hit is not a quiet zone, it is a renumbered message.
-    {   const int which = (zt.mode == 5) ? 0 : (zt.curZone == 38) ? 1 : (zt.curZone == 37) ? 2 : -1;
+    {   const int which = (zt.mode == 5) ? 0 : (zt.mode == 7 && !zt.soLastRun) ? 3 : (zt.curZone == 38) ? 1 : (zt.curZone == 37) ? 2 : -1;
         if (which >= 0) {
-            static const char* WHO[3] = { "Odyssey segments", "Apollyon units", "Temenos units" };
+            static const char* WHO[4] = { "Odyssey segments", "Apollyon units", "Temenos units", "Sortie gallimaufry" };
             unsigned mid = 0; bool prov = false; int seen = 0, traf = 0;
             zt_msg_state(which, mid, prov, seen, traf);
             if (!prov && seen == 0 && traf >= 6)
@@ -675,6 +689,7 @@ void PartyState::zt_set_zone(int zone, const char* name) {
     if (zone == 77)  mode = 4;                                                            // Nyzul Isle (Uncharted Area)
     if ((zone == 298 || zone == 279) && oldZone == 247) mode = 5;                         // Sheol A/B/C -- ONLY from Rabao (298/279 are also Selbina HTMBs)
     if (zone == 38 || zone == 37) mode = 6;                                               // Limbus : Apollyon (38) / Temenos (37)
+    if (zone == SORTIE_ZONE) mode = 7;                                                    // Sortie : Outer Ra'Kaznar [U2] (the only zone measured)
     // THE decision of this file, and the first question of every "why is the box empty" : which tracker did a
     // zone turn on, and on what. The inputs matter as much as the answer -- mode 5 needs to have come FROM
     // Rabao, so "zone 298, from 0" and "zone 298, from 247" are two different worlds with one zone id.
@@ -734,7 +749,19 @@ void PartyState::zt_set_zone(int zone, const char* name) {
             }
         }
         zt_.mode = 6;
+    } else if (mode == 7) {
+        // A new run : from Kamihr Drifts, or from anywhere after a frozen last run. The baseline comes off the first
+        // payout (soGalBase = its total - gain), so it starts unset. A reload INSIDE the run never reaches here --
+        // zt_load above restored it.
+        if (prevMode != 7 || zt_.soLastRun) {
+            zt_.soGalBase = -1; zt_.soGalTotal = -1; zt_.soGalRun = 0; zt_.soShards = 0; zt_.soBosses = 0;
+            zt_.soCofUp = zt_.soCofDown = zt_.soNm = 0; zt_.soLastRun = 0;
+            for (int i = 0; i < 8; ++i) zt_.soLoot[i] = ZoneTracker::SortieLoot{};
+        }
+        zt_.mode = 7;
     } else {
+        // Sortie -> Kamihr Drifts : FREEZE the run as "last run", the way Odyssey keeps its total back in Rabao.
+        if (prevMode == 7 && zone == SORTIE_EXIT_ZONE && !zt_.soLastRun) { zt_.mode = 7; zt_.soLastRun = 1; zt_.soShards = 0; zt_save(); return; }
         // Sheol -> Rabao (247) : FREEZE the run total as "N (last run)" (addon's conserve) + clear A/B/C for the next
         // run. Any other exit resets everything.
         if (prevMode == 5 && zone == 247) { zt_.mode = 5; zt_.segLastRun = 1; zt_.sheolzone = 0; zt_.gaolSec = -1; }
@@ -974,6 +1001,53 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
         if (zt_.segBase < 0) zt_.segBase = (base >= 0) ? base : (total - gain);
         zt_.segments = (total > zt_.segBase) ? (total - zt_.segBase) : 0;
         zt_save();
+        return;
+    }
+    // SORTIE (mode 7) : gallimaufry, shards, bosses, coffers and items -- the message map is the field block in
+    // party_state.h. Nothing is believed from an id alone : the payout proves its id, and the rest ride on it.
+    if (zt_.mode == 7) {
+        if (zt_.soLastRun) return;                             // back in Kamihr Drifts : the frozen summary
+        const unsigned msg = pkt_u16(p, 0x1A) & 0x7FFFu;
+        const int p1 = (int)pkt_u32(p, 0x08), p2 = (int)pkt_u32(p, 0x0C), p3 = (int)pkt_u32(p, 0x10);
+        int base = -1;
+        if (soHeal_.accept(msg, p1, p2, &base)) {
+            const bool fresh = (p2 != zt_.soGalTotal);         // the duplicate carries the same total : count it once
+            if (zt_.soGalBase < 0) zt_.soGalBase = (base >= 0) ? base : (p2 - p1);
+            // The owner's key (2026-09-15). The bosses are NOT counted here : their shard message names which one.
+            if (fresh) {
+                if      (p1 == 100) { if (zt_.soCofUp   < 255) ++zt_.soCofUp; }
+                else if (p1 == 300) { if (zt_.soCofDown < 255) ++zt_.soCofDown; }
+                else if (p1 == 480) { if (zt_.soNm      < 255) ++zt_.soNm; }
+            }
+            zt_.soGalTotal = p2;
+            zt_.soGalRun = (p2 > zt_.soGalBase) ? (p2 - zt_.soGalBase) : 0;
+            zt_save();
+            return;
+        }
+        const int rel = (int)msg - (int)soHeal_.id;
+        if ((rel == SORTIE_SHARD_GOT || rel == SORTIE_SHARD_GIVEN) && p1 >= SORTIE_SHARD_FIRST && p1 <= SORTIE_SHARD_LAST) {
+            const unsigned char bit = (unsigned char)(1u << (p1 - SORTIE_SHARD_FIRST));
+            if (rel == SORTIE_SHARD_GOT) zt_.soShards |= bit;
+            else { zt_.soShards &= (unsigned char)~bit; zt_.soBosses |= bit; }   // handed over = its boss is down
+            zt_save();
+            return;
+        }
+        if (rel == SORTIE_ITEM_GOT && p1 > 0 && p1 < 65536) {
+            const unsigned now = model_now_ms();
+            for (int i = 0; i < 8; ++i)
+                if (soSeen_[i].ms && soSeen_[i].item == p1 && soSeen_[i].p2 == p2 && soSeen_[i].p3 == p3 && now - soSeen_[i].ms < 3000u) return;   // its duplicate
+            soSeen_[soSeenHead_] = SortieSeen{ p1, p2, p3, now ? now : 1u }; soSeenHead_ = (soSeenHead_ + 1) % 8;
+            int k = 0;
+            while (k < 8 && zt_.soLoot[k].item && zt_.soLoot[k].item != (unsigned short)p1) ++k;
+            if (k == 8) {                                      // nine distinct items in one run : say so, drop the ninth
+                static windower::debug::LogOnce<4> onceFull;
+                if (onceFull.first((unsigned)p1)) windower::debug::log("SORTIE: item %d not listed -- the run already holds 8 distinct items", p1);
+                return;
+            }
+            zt_.soLoot[k].item = (unsigned short)p1;
+            if (zt_.soLoot[k].n < 65535) ++zt_.soLoot[k].n;
+            zt_save();
+        }
         return;
     }
     // LIMBUS (mode 6) : the run economy. See the field block in party_state.h for the message map. Everything is

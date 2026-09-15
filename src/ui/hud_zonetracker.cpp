@@ -523,6 +523,101 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         return;
     }
 
+    // ===== SORTIE (mode 7, Outer Ra'Kaznar [U2]) : gallimaufry earned + the banked total, the eight bosses (A-D
+    // upstairs, E-H in the basement) as letters -- green = down, orange = its shard in hand, dim = not yet --, the
+    // coffers and mid NMs, and the items obtained. All from four 0x02A messages (party_state.h, the Sortie block). =====
+    if ((preview || editing) ? (vz == 6) : (party().zone_tracker().mode == 7)) {
+        int galRun = 0, galTotal = -1; unsigned char shards = 0, bosses = 0, cofUp = 0, cofDown = 0, nm = 0; bool lastRun = false;
+        ZoneTracker::SortieLoot loot[8];
+        if (preview || editing) {
+            galRun = 23480; galTotal = 2816200; bosses = 0x0B; shards = 0x04 | 0x10 | 0x20 | 0x80; cofUp = 6;
+            loot[0].item = 6614; loot[0].n = 3; loot[1].item = 9927; loot[1].n = 1;
+        } else {
+            const ZoneTracker& zt = party().zone_tracker();
+            galRun = zt.soGalRun; galTotal = zt.soGalTotal; shards = zt.soShards; bosses = zt.soBosses;
+            cofUp = zt.soCofUp; cofDown = zt.soCofDown; nm = zt.soNm; lastRun = (zt.soLastRun != 0);
+            for (int i = 0; i < 8; ++i) loot[i] = zt.soLoot[i];
+        }
+        float sscl = C.ztScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
+        const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
+        const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S, gap = 5.0f * S;
+        const u32 white = 0xFFEAF0FFu, strk = 0xFF000000u, orange = 0xFFEB9660u, green = 0xFF6BE06Bu, dim = 0xFFB4B9C8u;
+        Font* fH = zt_font(f, ZT_HEADER); Font* fG = zt_font(f, ZT_SO_GAL); Font* fB = zt_font(f, ZT_SO_BOSS); Font* fL = zt_font(f, ZT_SO_LINE);
+        const float zH = zt_sz(ZT_HEADER, 15.0f) * S, zG = zt_sz(ZT_SO_GAL, 12.0f) * S, zB = zt_sz(ZT_SO_BOSS, 13.0f) * S, zL = zt_sz(ZT_SO_LINE, 11.0f) * S;
+        const float oH = zt_ow(ZT_HEADER, 1.1f) * S, oG = zt_ow(ZT_SO_GAL, 1.0f) * S, oB = zt_ow(ZT_SO_BOSS, 1.0f) * S, oL = zt_ow(ZT_SO_LINE, 1.0f) * S;
+        const float headH = zH + 6.0f * S, galH = zG + 5.0f * S, bossH = zB + 6.0f * S, lineH = zL + 4.0f * S;
+        // thousands separated : a six-digit gain and a seven-digit total are read at a glance, not counted
+        auto thousands = [](int v, char* out, int cap) {
+            char raw[16]; snprintf(raw, sizeof(raw), "%d", v < 0 ? 0 : v);
+            const int n = (int)strlen(raw); int k = 0;
+            for (int i = 0; i < n && k < cap - 1; ++i) { if (i && (n - i) % 3 == 0 && k < cap - 2) out[k++] = ','; out[k++] = raw[i]; }
+            out[k] = 0; };
+        char gRun[20], gTot[20]; thousands(galRun, gRun, sizeof(gRun)); thousands(galTotal, gTot, sizeof(gTot));
+        char galA[40], galB[40];
+        snprintf(galA, sizeof(galA), "Gallimaufry +%s", gRun);
+        if (galTotal >= 0) snprintf(galB, sizeof(galB), "  \xC2\xB7  %s%s", gTot, lastRun ? " (last run)" : "");
+        else               snprintf(galB, sizeof(galB), "%s", lastRun ? "  (last run)" : "");
+        const bool showGal = (C.ztSoGal != 0), showBoss = (C.ztSoBoss != 0), showCof = (C.ztSoCof != 0), showLoot = (C.ztSoLoot != 0);
+        char cofLine[64];
+        snprintf(cofLine, sizeof(cofLine), "Coffers %d up  \xC2\xB7  %d down%s", (int)cofUp, (int)cofDown, nm ? "" : "");
+        if (nm) { const int w = (int)strlen(cofLine); snprintf(cofLine + w, sizeof(cofLine) - w, "  \xC2\xB7  NM %d", (int)nm); }
+        char lootLine[8][48]; int nLoot = 0;
+        for (int i = 0; i < 8; ++i) {
+            if (!loot[i].item) continue;
+            const char* nmI = model_item_name(loot[i].item);
+            if (nmI) snprintf(lootLine[nLoot], sizeof(lootLine[nLoot]), "%s x%d", nmI, (int)loot[i].n);
+            else     snprintf(lootLine[nLoot], sizeof(lootLine[nLoot]), "item %d x%d", (int)loot[i].item, (int)loot[i].n);
+            ++nLoot;
+        }
+        // the boss row : eight letters, a wider gap between the two floors
+        const float letterW = fB->measure("W", zB), letterGap = 6.0f * S, floorGap = 16.0f * S;
+        const float bossRowW = 8.0f * letterW + 6.0f * letterGap + floorGap;
+        float contentW = fH->measure("Sortie", zH);
+        const float galW = fG->measure(galA, zG) + fL->measure(galB, zL);
+        if (showGal && galW > contentW) contentW = galW;
+        if (showBoss && bossRowW > contentW) contentW = bossRowW;
+        if (showCof && fL->measure(cofLine, zL) > contentW) contentW = fL->measure(cofLine, zL);
+        if (showLoot) for (int i = 0; i < nLoot; ++i) if (fL->measure(lootLine[i], zL) > contentW) contentW = fL->measure(lootLine[i], zL);
+        if (contentW < 130.0f * S) contentW = 130.0f * S;
+        const float boxW = contentW + 2.0f * pad;
+        const float boxH = pad + (showHdr ? headH + gap : 0.0f) + (showGal ? galH : 0.0f) + (showBoss ? bossH : 0.0f)
+                         + (showCof ? lineH : 0.0f) + (showLoot ? (float)nLoot * lineH : 0.0f) + pad;
+        if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }
+        float px, py;
+        if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
+        else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
+        if (editing) { static EditBox g_ztEditSo; box_edit(f, g_ztEditSo, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
+        dColorQuadState(dev);
+        draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);
+        const float cx = px + boxW * 0.5f;
+        float cy = py + pad;
+        if (showHdr) { fH->begin(dev); fH->draw_c(dev, cx, cy + headH * 0.5f, "Sortie", zH, zt_col(ZT_HEADER, orange), strk, oH); cy += headH + gap; }
+        if (showGal) {   // the gain carries the weight ; the banked total rides after it, smaller and dimmer
+            float nx = cx - galW * 0.5f; const float gcy = cy + galH * 0.5f;
+            fG->begin(dev); nx += fG->draw_lv(dev, nx, gcy, galA, zG, zt_col(ZT_SO_GAL, white), strk, oG);
+            if (galB[0]) { fL->begin(dev); fL->draw_lv(dev, nx, gcy, galB, zL, zt_col(ZT_SO_LINE, dim), strk, oL); }
+            cy += galH;
+        }
+        if (showBoss) {
+            fB->begin(dev);
+            float bx = cx - bossRowW * 0.5f;
+            const u32 cDown = zt_col(ZT_SO_BOSS, green), cShard = orange, cWait = (zt_col(ZT_SO_BOSS, dim) & 0x00FFFFFFu) | 0x70000000u;
+            for (int i = 0; i < 8; ++i) {
+                const char L[2] = { (char)('A' + i), 0 };
+                const u32 col = (bosses >> i & 1) ? cDown : (shards >> i & 1) ? cShard : cWait;
+                fB->draw_c(dev, bx + letterW * 0.5f, cy + bossH * 0.5f, L, zB, col, strk, oB);
+                bx += letterW + (i == 3 ? floorGap : letterGap);
+            }
+            cy += bossH;
+        }
+        if (showCof) { fL->begin(dev); fL->draw_c(dev, cx, cy + lineH * 0.5f, cofLine, zL, zt_col(ZT_SO_LINE, dim), strk, oL); cy += lineH; }
+        if (showLoot && nLoot) {
+            fL->begin(dev);
+            for (int i = 0; i < nLoot; ++i) { fL->draw_c(dev, cx, cy + lineH * 0.5f, lootLine[i], zL, zt_col(ZT_SO_LINE, white), strk, oL); cy += lineH; }
+        }
+        return;
+    }
+
     int mode; int remainSec = 0, limitSec = 1; unsigned char ki[5] = {0}; int lights[7] = {0}; int visRemainSec = 0, visMax = 7200;
     bool isDiv = false; int elapsedSec = 0;   // Dynamis - Divergence : its own zones, and none of the Dynamis box applies
     if (preview || editing) {

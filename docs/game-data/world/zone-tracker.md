@@ -18,10 +18,11 @@ two by zone **name**, the rest by zone **id**. Transitions reset the relevant st
 | **4** Nyzul Isle | 77 | id |
 | **5** Sheol / Odyssey | 298 / 279 | id **and** `oldZone == 247` (Rabao) — 298/279 are also Selbina HTMBs |
 | **6** Limbus | 38 Apollyon / 37 Temenos | id |
+| **7** Sortie | 133 Outer Ra'Kaznar [U2] | id ; back in 267 Kamihr Drifts = frozen last run ([sortie.md](sortie.md)) |
 
-The config's `Content` selector writes **`ztVariant` 0..5** (0 Dynamis, 1 Abyssea, 2 Omen,
-3 Nyzul, 4 Sheol, 5 Limbus — default 1). It selects the **edit/preview zone** and filters which
-options the panel shows; **it is off by one from `zt_.mode`** (1..6) and must not be conflated
+The config's `Content` selector writes **`ztVariant` 0..6** (0 Dynamis, 1 Abyssea, 2 Omen,
+3 Nyzul, 4 Sheol, 5 Limbus, 6 Sortie — default 1). It selects the **edit/preview zone** and filters which
+options the panel shows; **it is off by one from `zt_.mode`** (1..7) and must not be conflated
 with it. The Help tab can force a variant via `variantOverride` in `hud_zonetracker.cpp`.
 
 ## Dynamis (mode 1) — run timer + 5 granule Key Items
@@ -402,6 +403,7 @@ element — so a user who had customised "Body" sees those rows fall back to def
 incoming-text lines with mode).
 
 ## See also
+- [Sortie tracker](sortie.md) — mode 7 : gallimaufry, bosses from the shards, coffers and items, four 0x02A at fixed offsets.
 - [Limbus tracker](limbus.md) — mode 6 in full: the per-wing 0x075 labels, the 0x02A run economy, the towers and the coffer row.
 - [Limbus currencies have no static](limbus-currency-no-static.md) — the negative Ghidra result behind "0x118 is the only seed".
 - [Per-character caches](../../architecture/per-character-caches.md) — how `zone_%08X.bin` / `limbus_%08X.bin` are keyed and when they are (not) written.

@@ -53,6 +53,7 @@ enum { ZT_HEADER = 0, ZT_BODY, ZT_LB_GAUGE, ZT_LB_CUR, ZT_LB_RUN, ZT_LB_CHIP,
        ZT_OM_OBJ, ZT_OM_COUNT, ZT_OM_ROW,                  // Omen    : floor objective / omen+bonus line / objective rows
        ZT_NY_FLOOR, ZT_NY_TIME, ZT_NY_OBJ, ZT_NY_RESTR, ZT_NY_STATS,   // Nyzul : floor / timer / objective / restriction / completed+rate+tokens
        ZT_SH_SEG, ZT_SH_FAM, ZT_SH_RES, ZT_SH_JOKE,        // Sheol   : segments / mob family / resistance values / Cruel Joke
+       ZT_SO_GAL, ZT_SO_BOSS, ZT_SO_LINE,                  // Sortie  : gallimaufry / boss letters / coffer + item rows
        ZT_TE_COUNT };
 enum { EP_TITLE = 0, EP_POP, EP_FROM, EP_COLL, EP_TE_COUNT };  // EmpyPop text elements (NM title / pop name / "from <mob>" / collectable)
 enum { TM_HEADER = 0, TM_NAME, TM_TIMER, TM_TE_COUNT };        // Timers text elements (column titles / buff+recast name / MM:SS)
@@ -316,7 +317,7 @@ struct UiConfig {
     float ztScale   = 1.0f;    // size multiplier (0.5 .. 2.0)
     float ztX       = 0.145f;  // horizontal CENTRE (screen fraction) ; ztY = its TOP
     float ztY       = 0.33f;
-    int   ztVariant = 1;       // EDIT-preview zone : 0 Dynamis, 1 Abyssea, 2 Omen, 3 Nyzul, 4 Sheol, 5 Limbus
+    int   ztVariant = 1;       // EDIT-preview zone : 0 Dynamis, 1 Abyssea, 2 Omen, 3 Nyzul, 4 Sheol, 5 Limbus, 6 Sortie
     int   ztHeader  = 1;       // show the box TITLE row (Dynamis / Abyssea / Omen / Nyzul Isle / Sheol X)
     // Every variant's rows are individually hideable and its bars/icons individually sizeable. Every toggle
     // defaults to 1 and every size factor to 1.00, so an old config (missing keys) renders exactly as before.
@@ -354,6 +355,10 @@ struct UiConfig {
     int   ztLbCur     = 1;     // Limbus : show the Temenos / Apollyon unit totals
     int   ztLbRun     = 1;     // Limbus : show "Run +N  .  N runs left"
     int   ztLbChips   = 1;     // Limbus : show the four quadrant coffer dots + their labels
+    int   ztSoGal     = 1;     // Sortie : show the gallimaufry earned this run (+ the banked total)
+    int   ztSoBoss    = 1;     // Sortie : show the eight boss letters (A-D upstairs, E-H basement : down / shard in hand / not yet)
+    int   ztSoCof     = 1;     // Sortie : show the coffers opened (upstairs / basement) and the mid NMs
+    int   ztSoLoot    = 1;     // Sortie : show the items obtained this run
     TextStyle ztText[ZT_TE_COUNT];   // per-element typography : [ZT_HEADER] [ZT_BODY] then the Limbus rows
     // ---- EmpyPop module : the pop items / key items needed to spawn an Abyssea empyrean NM ----
     int   epShow  = 0;         // show the EmpyPop box. OFF by default : a niche tracker only useful while

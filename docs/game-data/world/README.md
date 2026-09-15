@@ -12,6 +12,7 @@ Zones, maps, and the instanced content the Zone Tracker follows.
 | [map-system.md](map-system.md) | The minimap: live zone id, the world→map-pixel transform, DAT decoding |
 | [zone-tracker.md](zone-tracker.md) | The six zone providers (Dynamis granules, Abyssea lights, Odyssey, Limbus…) |
 | [limbus.md](limbus.md) | 0x075 battlefield bars (floor + gauge) and the 0x02A run economy |
+| [sortie.md](sortie.md) | Sortie : gallimaufry, bosses from the shards, coffers and items -- four 0x02A at fixed offsets from a self-proving payout |
 | [limbus-currency-no-static.md](limbus-currency-no-static.md) | Ghidra proof that the unit totals exist ONLY in the Currency menu rows — a documented dead end |
 | [empypop.md](empypop.md) | Resolving a tracked NM's pop item / key-item chain against live inventory |
 | [treasure-pool.md](treasure-pool.md) | 0x0D2 item-added / 0x0D3 lot-info offsets, the 5-min expiry, and the memory ground truth |

@@ -18,7 +18,7 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                                 float hdrX, float hdrW) {
     UiConfig& c = ui_config();
     // The panel follows the "Content" selector : sub-options and text elements are those of THAT zone.
-    const int zvSel = (c.ztVariant < 0 || c.ztVariant > 5) ? 1 : c.ztVariant;
+    const int zvSel = (c.ztVariant < 0 || c.ztVariant > 6) ? 1 : c.ztVariant;
 
     // ===== sub-section : DISPLAY =====
     const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);   // the section FOLDS, like every other module
@@ -32,9 +32,9 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         { ROW_BAND(52.0f)   // Content -- placed right under Show : it drives BOTH the preview and which options
                             // appear below, so it has to be read before anything else on this panel. This is the
                             // one panel where Size is not the row after Show (the canonical order elsewhere).
-            const char* ZLBL[6] = { tr("Dynamis", "Dynamis"), tr("Abyssea", "Abyssea"), tr("Omen", "Omen"), tr("Nyzul", "Nyzul"), tr("Sheol", "Sheol"), tr("Limbus", "Limbus") };
+            const char* ZLBL[7] = { tr("Dynamis", "Dynamis"), tr("Abyssea", "Abyssea"), tr("Omen", "Omen"), tr("Nyzul", "Nyzul"), tr("Sheol", "Sheol"), tr("Limbus", "Limbus"), tr("Sortie", "Sortie") };
             int zv = zvSel;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Content", "Contenu"), ZLBL[zv])) { c.ztVariant = wrap(zv + d, 6); save_ui_config(); }
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Content", "Contenu"), ZLBL[zv])) { c.ztVariant = wrap(zv + d, 7); save_ui_config(); }
         } ROW_NEXT(52.0f)
         { ROW_BAND(46.0f)   // Size
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.ztScale * 100.0f + 0.5f));
@@ -119,10 +119,16 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             ROW_TOGGLE(CTRL_ID, tr("Run total", "Total du run"),                    c.ztLbRun)
             ROW_TOGGLE(CTRL_ID, tr("Coffer dots", "Pastilles coffres"),             c.ztLbChips)
         }
+        if (zvSel == 6) {   // Sortie
+            ROW_TOGGLE(CTRL_ID, tr("Gallimaufry", "Gallimaufry"),                   c.ztSoGal)
+            ROW_TOGGLE(CTRL_ID, tr("Bosses and shards", "Boss et shards"),          c.ztSoBoss)
+            ROW_TOGGLE(CTRL_ID, tr("Coffers and NM", "Coffres et NM"),              c.ztSoCof)
+            ROW_TOGGLE(CTRL_ID, tr("Items obtained", "Objets obtenus"),             c.ztSoLoot)
+        }
         #undef ZT_SIZE_SLIDER
         { ROW_BAND(40.0f)   // note
             const float ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Only appears in a tracked zone (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus).", "Appara\xC3\xAet seulement en zone suivie (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus)."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Only appears in a tracked zone (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus, Sortie).", "Appara\xC3\xAet seulement en zone suivie (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus, Sortie)."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         } ROW_NEXT(40.0f)
         cat_fold_end(dev, ry, topZ_, catH_[15], aFz_);
     }   // end Content
@@ -173,6 +179,11 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             elems[nEl] = ZT_LB_CUR;   elbl[nEl++] = tr("Currencies", "Monnaies");
             elems[nEl] = ZT_LB_RUN;   elbl[nEl++] = tr("Run total", "Total du run");
             elems[nEl] = ZT_LB_CHIP;  elbl[nEl++] = tr("Dot labels", "Labels pastilles");
+        }
+        if (zvSel == 6) {
+            elems[nEl] = ZT_SO_GAL;  elbl[nEl++] = tr("Gallimaufry", "Gallimaufry");
+            elems[nEl] = ZT_SO_BOSS; elbl[nEl++] = tr("Boss letters", "Lettres des boss");
+            elems[nEl] = ZT_SO_LINE; elbl[nEl++] = tr("Coffers and items", "Coffres et objets");
         }
         { ROW_BAND(52.0f)   // element selector
             int te = (cfgZtTextElem_ < 0 || cfgZtTextElem_ >= nEl) ? 0 : cfgZtTextElem_;

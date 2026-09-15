@@ -12,6 +12,7 @@
 #include "fake_game.h"
 #include "fake_packets.h"
 #include "model/party_state.h"
+#include "fixtures_sortie_run.h"   // every 0x02A of a real Sortie run (2026-09-14), generated from its tape
 #include <cstring>
 
 using namespace aio;
@@ -34,8 +35,19 @@ const unsigned Z_DYN_SANDORIA = 185; // "Dynamis - San d'Oria" : a CITY Dynamis 
 const unsigned Z_RABAO = 247;
 const unsigned Z_DIV_SANDORIA = 294; // "Dynamis - San d'Oria [D]" : Divergence, no granules
 const unsigned Z_SHEOL = 298;
+const unsigned Z_KAMIHR = 267, Z_SORTIE = 133;   // Kamihr Drifts / Outer Ra'Kaznar [U2]
 const int ABY = 7339;                // the Abyssea message base for every zone but 215/253 (measured 2026-09-09)
 
+// Deliver a recorded Sortie run, the ids shifted by `shift` (a client update renumbering the table), on its own clock.
+void play_sortie(int shift) {
+    int prev = 0;
+    for (int i = 0; i < SORTIE_RUN_20260914_N; ++i) {
+        const SortieMsg& m = SORTIE_RUN_20260914[i];
+        if (m.t > prev) { advance_ms((unsigned)(m.t - prev) * 1000u); prev = m.t; }
+        deliver(pkt_zone_msg((unsigned)((int)(m.msg & 0x7FFF) + shift), m.p1, m.p2, m.p3, m.p4, m.tidx));
+    }
+}
+int sortie_loot(unsigned item) { for (int i = 0; i < 8; ++i) if (zt().soLoot[i].item == item) return zt().soLoot[i].n; return 0; }
 int lights_sum() { int s = 0; for (int i = 0; i < 7; ++i) s += zt().lights[i]; return s; }
 }  // namespace
 
@@ -272,6 +284,64 @@ void test_packets() {
         CHECK_EQ(zt().limbusUnits, 9000);
         CHECK_EQ(party().limbus_coffers(1).slotK[1], 3);                 // W = Temenos slot 1
         CHECK_EQ(party().limbus_coffers(0).slotK[1], 0);                 // Apollyon's row untouched
+    }
+
+    SECTION("zone tracker 0x02A sortie : a real run is read back exactly -- gallimaufry, bosses, coffers, items");
+    {   // The run of 2026-09-14 (Tetsouo), every 0x02A of it, duplicates included. The answers are the game's own : the
+        // gallimaufry total climbed 2,793,526 -> 2,844,743 ; the inventory stacks went Old Case 0 -> 7 and Ra'Kaz.
+        // Sapphire 0 -> 2 ; the owner named the payouts (10000 / 2000 bosses, 300 / 100 coffers, 480 the mid NM).
+        // Mutation : the item duplicate kept (`now - soSeen_[i].ms < 3000u` -> `false`) -- Old Case 12, Sapphire 3.
+        // Mutation : a coffer counted on every copy (`if (fresh)` -> `if (true)`) -- 20 coffers upstairs.
+        // Mutation : the run counted by summing gains (`p2 - zt_.soGalBase` -> `zt_.soGalRun + p1`) -- duplicates double it.
+        fresh(); enter(Z_KAMIHR); enter(Z_SORTIE);
+        CHECK_EQ(zt().mode, 7);
+        play_sortie(0);
+        CHECK_EQ(zt().soGalRun, 51217);
+        CHECK_EQ(zt().soGalTotal, 2844743);
+        CHECK_EQ((int)zt().soBosses, 0xFF);                              // A-D upstairs, E-H in the basement : all eight
+        CHECK_EQ((int)zt().soShards, 0);                                 // every shard handed over
+        CHECK_EQ((int)zt().soCofUp, 10); CHECK_EQ((int)zt().soCofDown, 2); CHECK_EQ((int)zt().soNm, 1);
+        CHECK_EQ(sortie_loot(6614), 7);                                  // Old Case
+        CHECK_EQ(sortie_loot(9927), 2);                                  // Ra'Kaz. Sapphire
+        CHECK_EQ(sortie_loot(9931), 1);                                  // Hexahedrite
+    }
+
+    SECTION("zone tracker 0x02A sortie : the shards follow the run, and back in Kamihr Drifts the summary freezes");
+    {   // Mutation : the freeze dropped (`if (zt_.soLastRun) return;`) -- a payout heard in town moves the last run.
+        // Mutation : a handed-over shard kept in hand (`zt_.soShards &= ~bit` removed) -- #D still held after its boss.
+        fresh(); enter(Z_KAMIHR); enter(Z_SORTIE);
+        deliver(pkt_zone_msg(7236, 9909, 0, 0, 1));                      // Ra'Kaznar Shard #D obtained
+        deliver(pkt_zone_msg(7236, 9909, 0, 0, 1));                      // ...and its duplicate
+        CHECK_EQ((int)zt().soShards, 0x08);
+        deliver(pkt_zone_msg(7237, 9909, 0, 0, 1));                      // handed over : boss D is down
+        deliver(pkt_zone_msg(7236, 9913, 0, 0, 1));                      // the basement shard #H it gave
+        CHECK_EQ((int)zt().soBosses, 0x08); CHECK_EQ((int)zt().soShards, 0x80);
+        deliver(pkt_zone_msg(7238, 2000, 5000));
+        CHECK_EQ(zt().soGalRun, 2000);
+        enter(Z_KAMIHR);
+        CHECK_EQ(zt().mode, 7); CHECK_EQ((int)zt().soLastRun, 1);
+        deliver(pkt_zone_msg(7238, 100, 5100));
+        CHECK_EQ(zt().soGalRun, 2000);
+        enter(Z_SORTIE);                                                 // the next run starts clean
+        CHECK_EQ((int)zt().soLastRun, 0); CHECK_EQ(zt().soGalRun, 0); CHECK_EQ((int)zt().soBosses, 0);
+        enter(Z_KONSCHTAT);
+        CHECK(zt().mode != 7);
+    }
+
+    SECTION("zone tracker 0x02A sortie : a renumbered table re-locks on the payout, and the other messages follow it");
+    {   // The whole run replayed with every id +10 (what a client update does to a zone's table). The payout proves
+        // 7248 on its second message ; the shard and item messages are then read at the same offsets from it.
+        // Mutation : the offsets taken from the seed instead of the id in use (`soHeal_.id` -> `7238u`) -- no boss, no item.
+        zt_sortie_msg_new_session();                                     // a new client : the seed has not been seen yet
+        fresh(); enter(Z_KAMIHR); enter(Z_SORTIE);
+        play_sortie(10);
+        unsigned mid = 0; bool prov = false; int seen = 0, traf = 0;
+        zt_msg_state(3, mid, prov, seen, traf);
+        CHECK_EQ(mid, 7248u); CHECK(prov);
+        CHECK_EQ(zt().soGalRun, 51217);                                  // the payout that opened the proving pair still counts
+        CHECK_EQ(sortie_loot(6614), 7);
+        CHECK(zt().soBosses != 0);
+        zt_sortie_msg_new_session();                                     // leave the seed for whatever runs next
     }
 
     // ================================================ 0x055 ================================================
