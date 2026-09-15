@@ -945,15 +945,21 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                 int c = 0;
                 if (e.self) { if (!f.game) return 0; for (int i = 0; i < f.game->nbuff; ++i) if ((int)f.game->buffs[i] == (int)e.status) ++c; return c; }
                 const BuffSet* bs = party().buffs_for(e.target); if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == e.status) ++c; return c; };
+            // ONE STATUS, ONE BUFF -- except for the two kinds that really run several copies at once: a bard's
+            // songs (focus_rules.h section 4) and a Rune Fencer's runes (section 10). Everything else holds a
+            // single instance whatever the TIER, so Phalanx and Phalanx II are one buff and its presence answers
+            // for both. Asking the copy arithmetic about them read a tier change as a loss (section 11).
+            auto focusSeveral = [&](const FocusMem& e) -> bool { return song_family(e.spell) > 0 || focus_rune_status(e.status); };
             auto focusHas = [&](const FocusMem& e) -> bool {                                    // is THIS song still up (list assumed ready)
+                const bool several = focusSeveral(e);
                 int newer = 0;
-                for (int q2 = 0; q2 < fmN; ++q2) {
+                if (several) for (int q2 = 0; q2 < fmN; ++q2) {
                     const FocusMem& o = fm[q2];
                     if (o.self != e.self || o.status != e.status) continue;
                     if (!e.self && o.target != e.target) continue;
                     if (focus_newer_sibling(e.rank, e.spell, o.rank, o.spell)) ++newer;
                 }
-                return focus_copies_cover(newer, focusCopies(e)); };
+                return focus_entry_up(several, newer, focusCopies(e)); };
             { unsigned jc[24]; const int jcn = party().job_changes(jc, 24);                    // a member (self or ally) changed job -> its buffs reset -> drop its focus rows (not a real "loss")
               for (int c = 0; c < jcn; ++c) { int wj = 0;
                 for (int q = 0; q < fmN; ++q) { const bool drop = fm[q].self ? (jc[c] == meId) : (fm[q].target == jc[c]); if (!drop) { if (wj != q) fm[wj] = fm[q]; ++wj; } }
@@ -1109,6 +1115,12 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
             // song lost. The verdict travels with its entry through the pass, and the emit reads the same one.
             static bool fmHas[FOCUS_MAX];   // ONE PER MONITOR ENTRY. It stayed [24] when FOCUS_MAX went to 64 (2026-09-11) : past 24 watched buffs every frame wrote beyond it (tests/t_timers.cpp, caught by the address sanitizer)
             for (int q = 0; q < fmN; ++q) fmHas[q] = focusHas(fm[q]);
+            // ...and WHICH ENTRIES A NEWER TIER REPLACED, for the same reason again (focus_rules.h section 11).
+            // `several` is the gate the copy arithmetic always needed: songs and runes really run several copies
+            // on one status, nothing else does.
+            static bool fmSeveral[FOCUS_MAX]; static bool fmTierRepl[FOCUS_MAX];
+            for (int q = 0; q < fmN; ++q) fmSeveral[q] = focusSeveral(fm[q]);
+            for (int q = 0; q < fmN; ++q) fmTierRepl[q] = focus_tier_replaced(fm, fmSeveral, fmN, q);
             // ...and the rune count travels with it, for the same reason (focus_rules.h section 10).
             static int fmRuneNewer[FOCUS_MAX];
             { bool lost[FOCUS_MAX];
@@ -1133,6 +1145,8 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
             struct PruneSrc {
                 const FocusMem& e; bool hasNow; bool grace; unsigned now; const UiConfig& cfg;
                 const ReadyFn* ready; const UnrecFn* unrec; const ReplFn* repl; const GeoFn* geo;
+                bool tierRepl;
+                bool tierReplaced() const { return tierRepl; }
                 bool self() const { return e.self != 0; }
                 bool zoneGrace() const { return grace; }
                 int partyOrder() const { return party().party_order(e.target); }
@@ -1155,13 +1169,16 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
             };
             int w = 0;
             for (int q = 0; q < fmN; ++q) {
-                const FocusPrune pv = focus_prune_verdict(PruneSrc{ fm[q], fmHas[q], zoneGrace, nowMs, C, &listReady, &songUnrecoverable, &songReplaced, &geoReplaced, runeCap, runesUp, fmRuneNewer[q] });
+                const FocusPrune pv = focus_prune_verdict(PruneSrc{ fm[q], fmHas[q], zoneGrace, nowMs, C, &listReady, &songUnrecoverable, &songReplaced, &geoReplaced, fmTierRepl[q], runeCap, runesUp, fmRuneNewer[q] });
                 if (pv == FP_DROP_GONE_OR_OFF && focus_trace_live()) {
                     const bool live = fm[q].self ? true : (zoneGrace || party().party_order(fm[q].target) <= 5);
                     const bool fkOn = C.tm_buff_off(UiConfig::TM_KEY_FOCUS | fm[q].status);
                     windower::debug::log("FOCUSPRUNE st=%u '%s' DROPPED (live=%d focusOn=%d) -> no OUT row possible",
                                          (unsigned)fm[q].status, buff_status_name(fm[q].status), live ? 1 : 0, fkOn ? 1 : 0);
                 }
+                if (pv == FP_DROP_TIER_REPLACED && focus_trace_live())
+                    windower::debug::log("TIERREPL st=%u '%s' spell=%u target=%08X self=%d DROPPED -> no OUT (another tier of the same buff took its place)",
+                                         (unsigned)fm[q].status, buff_status_name(fm[q].status), (unsigned)fm[q].spell, fm[q].target, fm[q].self);
                 if (pv == FP_DROP_SONG_OFFZONE && focus_trace_live())
                     windower::debug::log("SONGOFFZONE st=%u '%s' target=%08X out-of-zone -> CLEAN (no OUT, no stale row)",
                                          (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].target);

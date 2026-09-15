@@ -72,6 +72,60 @@ void test_focus_rules() {
         CHECK(focus_newer_sibling(bornOld, 397, bornNew, 398));   // ranked by BIRTH it would have been the other way
     }
 
+    SECTION("focus : one status, one buff -- a newer TIER replaced it, and a replacement is not a loss");
+    {   // Reported from play 2026-09-15 : Phalanx II on the party, then Accession Phalanx as RDM/SCH, and every
+        // Phalanx II sat in a permanent red OUT while everyone plainly had Phalanx. Both tiers are status 116 and
+        // the game holds one of them, so the second cast replaced the first -- but the monitor is keyed by SPELL
+        // (the songs need it to be) and section 4's copy arithmetic read the survivor as "the newer of two copies",
+        // which makes the other one lost. Tiers 106 / 107 here ; any tier change does it.
+        // THE ARITHMETIC OF SECTION 4 IS FOR THE BUFFS THAT HAVE COPIES, AND NOTHING ELSE. One live Phalanx with
+        // an entry for each tier: the copy count says one, the tier you replaced counts the live one as a newer
+        // sibling, and `focus_copies_cover` then calls a buff everybody can see LOST. Presence is the whole answer
+        // for a single-instance buff -- it is up, whichever tier put it there.
+        // Mutation : focusHas calling focus_copies_cover() again instead of focus_entry_up().
+        CHECK(focus_entry_up(/*several*/false, /*newerSiblings*/1, /*copies*/1));    // Phalanx II + Phalanx, one live Phalanx
+        CHECK(focus_entry_up(false, 0, 1));
+        CHECK(!focus_entry_up(false, 0, 0));                                          // ...and gone is still gone
+        CHECK(!focus_entry_up(false, 1, 0));
+        CHECK(!focus_entry_up(/*several*/true, 1, 1));                                // two Marches, one left : the older one IS the one that went
+        CHECK(focus_entry_up(true, 1, 2));
+
+        struct Mem { unsigned char self; unsigned target; unsigned short status, spell; unsigned char seen; };
+        const bool no2[2] = { false, false };
+        {   // the old tier is unfed, the new one is fed : replaced (drop it, silently)
+            const Mem m[2] = { { 0, 0x02u, 116, 107, 0 }, { 0, 0x02u, 116, 106, 1 } };
+            CHECK(focus_tier_replaced(m, no2, 2, 0));
+            CHECK(!focus_tier_replaced(m, no2, 2, 1));   // ...and the live one is never the replaced one
+        }
+        {   // ANOTHER PERSON's Phalanx says nothing about this one -- she is still on the tier you gave her
+            const Mem m[2] = { { 0, 0x02u, 116, 107, 0 }, { 0, 0x03u, 116, 106, 1 } };
+            CHECK(!focus_tier_replaced(m, no2, 2, 0));
+        }
+        {   // nor does a DIFFERENT status, and nor does your own copy answer for an ally's
+            const Mem a[2] = { { 0, 0x02u, 116, 107, 0 }, { 0, 0x02u,  43, 109, 1 } };
+            CHECK(!focus_tier_replaced(a, no2, 2, 0));
+            const Mem b[2] = { { 0, 0x02u, 116, 107, 0 }, { 1, 0x01u, 116, 106, 1 } };
+            CHECK(!focus_tier_replaced(b, no2, 2, 0));
+        }
+        {   // A REAL LOSS IS NOT A REPLACEMENT. Nothing is feeding either entry -- the buff went -- so the alert
+            // this monitor exists for must still fire. This is the case that keeps the rule from swallowing them all.
+            const Mem m[2] = { { 0, 0x02u, 116, 107, 0 }, { 0, 0x02u, 116, 106, 0 } };
+            CHECK(!focus_tier_replaced(m, no2, 2, 0));
+            CHECK(!focus_tier_replaced(m, no2, 2, 1));
+        }
+        {   // TWO SONGS ARE TWO BUFFS (section 4), and two runes are two runes (section 10) : those really do run
+            // several copies on one status, so a fed sibling there proves nothing and must never drop the other.
+            const bool song2[2] = { true, true };
+            const Mem m[2] = { { 0, 0x02u, 214, 419, 0 }, { 0, 0x02u, 214, 420, 1 } };   // two Marches
+            CHECK(!focus_tier_replaced(m, song2, 2, 0));
+        }
+        {   // out-of-range is defined : the caller indexes with a loop variable
+            const Mem m[1] = { { 0, 0x02u, 116, 107, 0 } };
+            CHECK(!focus_tier_replaced(m, no2, 1, 3));
+            CHECK(!focus_tier_replaced(m, no2, 1, -1));
+        }
+    }
+
     SECTION("focus : a GROUPED red alert is a statement about the cast, not about a shared spell id");
     // REPORTED FROM PLAY, 2026-09-12 : "plusieurs personnes ont perdu Phalanx, ca les groupe alors qu'on ne
     // veut pas". The rule shipped counting only "these alerts share a spell id", so three Phalanx placed one by

@@ -16,7 +16,7 @@ using namespace fake;
 namespace {
 const unsigned ME = 0x00010001u, KAO = 0x00010002u, GAB = 0x00010003u, MONB = 0x00010004u;
 const unsigned short ST_HASTE = 33, ST_REFRESH = 43, ST_PHALANX = 116, ST_PROTECT = 40, ST_MARCH = 214;
-const unsigned SP_HASTE = 57, SP_REFRESH = 109, SP_PHALANX2 = 107, SP_PROTECTRA5 = 129, SP_HONOR_MARCH = 417;
+const unsigned SP_HASTE = 57, SP_PHALANX = 106, SP_REFRESH = 109, SP_PHALANX2 = 107, SP_PROTECTRA5 = 129, SP_HONOR_MARCH = 417;
 const unsigned MSG_LANDED = 236;
 
 // Default config for every case, set explicitly : a test must not depend on what the previous one left behind.
@@ -230,6 +230,63 @@ void test_timers() {
         // Mutation : the hint loop's `break` removed.
         CHECK_EQ(hints, 1);
         if (alerts != 3) dump(r, "three Phalanx lost");
+    }
+
+    SECTION("timers : Phalanx II then Accession Phalanx -- one buff at another tier, no red OUT");
+    {   // Reported from play 2026-09-15 : "il fait Phalanx II sur tout le monde puis en RDM/SCH il fait Accession
+        // Phalanx, les Phalanx II sont indiques en OUT alors que tout le monde a bien Phalanx". Both tiers are
+        // status 116 and the game holds ONE of them, so the second cast REPLACED the first -- the model says so
+        // (it drops that target's other rows on the same status) but the monitor, keyed by spell for the songs'
+        // sake, kept the old entry, counted the new one as a newer sibling over a single live copy and called the
+        // replacement a loss. Permanent red OUT for a buff everybody had.
+        // Mutation, MEASURED : put the shipped shape back -- focusHas counting siblings for every buff instead of
+        // `focus_entry_up(several, ...)`, AND the prune's `if (e.tierReplaced()) return FP_DROP_TIER_REPLACED;`
+        // removed. The box then draws exactly the report, side by side:
+        //     0. icon=116 src=6  "Phalanx II (AoE 2)"  <- red OUT
+        //     1. icon=116 src=4  "Phalanx (AoE 3)" 176s <- everybody has it
+        // Removing only the prune drop is a different, later defect the second half of this case pins: the old
+        // tier says nothing while the buff is up, then doubles EVERY alert the day it really goes (four rows, two
+        // of them for a spell last cast half an hour ago). The `several` gate itself is held by t_focusrules
+        // (focus_entry_up) -- with the drop in place its effect here is one frame wide.
+        rdm_party();
+        focus_on(ST_PHALANX);
+        deliver(pkt_cast(ME, SP_PHALANX2, { { ME, MSG_LANDED }, { KAO, MSG_LANDED }, { GAB, MSG_LANDED } }));   // Phalanx II on everyone, yourself included
+        deliver(pkt_self_timers({ { ST_PHALANX, 240 } }));
+        self_buffs({ ST_PHALANX });
+        deliver(pkt_party_buffs({ { KAO, { ST_PHALANX } }, { GAB, { ST_PHALANX } } }));
+        TimersRows r;
+        for (int f = 0; f < 3; ++f) { advance_ms(1000); step(r); }
+        CHECK_EQ(count_rows(r, ST_PHALANX), 1);                      // the AoE : one row, you included
+        advance_ms(30000);
+        deliver(pkt_cast(ME, SP_PHALANX, { { ME, MSG_LANDED }, { KAO, MSG_LANDED }, { GAB, MSG_LANDED } }));   // Accession Phalanx : the OTHER tier, on all three
+        deliver(pkt_self_timers({ { ST_PHALANX, 180 } }));                                                     // ...and it is SHORTER than what is left of the old one
+        self_buffs({ ST_PHALANX });
+        deliver(pkt_party_buffs({ { KAO, { ST_PHALANX } }, { GAB, { ST_PHALANX } } }));                        // everybody still has Phalanx
+        // COUNTED ON EVERY FRAME, never once at the end : the self entry ranks by EXPIRY, so the shorter new tier
+        // ranks BELOW the corpse of the longer old one and the copy arithmetic calls the LIVE one the missing copy.
+        // That is a one-frame red flash the frame the replacement lands -- invisible to a check that looks later,
+        // and the reason the rule reads presence for a single-instance buff instead of counting siblings.
+        int outs = 0;
+        for (int f = 0; f < 4; ++f) { advance_ms(1000); step(r);
+            for (int k = 0; k < r.nb; ++k) if (r.bufs[k].src == 6 && r.bufs[k].icon == ST_PHALANX) ++outs; }
+        CHECK_EQ(outs, 0);                                            // THE REPORT : not one red OUT, not on one frame
+        const int g = find_row(r, ST_PHALANX, 0);                     // and the live buff is drawn once, as the AoE it was
+        CHECK(g >= 0);
+        if (g >= 0) CHECK_STR(r.bufs[g].post, " (AoE 3)");
+        if (g >= 0) CHECK_STR(r.bufs[g].name, "Phalanx");              // named for the tier that is UP, not the one it replaced
+        CHECK_EQ(count_rows(r, ST_PHALANX), 1);                       // the replaced tier left no second row either
+        if (outs) dump(r, "Phalanx II replaced by Accession Phalanx");
+        // ...AND THE MONITOR STILL WATCHES WHAT IT KEPT. Forgetting the replaced tier must not forget the buff:
+        // when the new one really goes, the red OUT it exists for fires -- once, not once per tier ever cast.
+        deliver(pkt_party_buffs({ { KAO, {} }, { GAB, {} } }));
+        self_buffs({});
+        deliver(pkt_self_timers({}));
+        for (int f = 0; f < 3; ++f) { advance_ms(1000); step(r); }
+        int outs2 = 0, oldTier = 0; for (int k = 0; k < r.nb; ++k) if (r.bufs[k].src == 6 && r.bufs[k].icon == ST_PHALANX) {
+            ++outs2; if (r.bufs[k].name && strcmp(r.bufs[k].name, "Phalanx II") == 0) ++oldTier; }
+        CHECK_EQ(outs2, 2);             // yours, and one grouped line for the two allies the AoE reached
+        CHECK_EQ(oldTier, 0);           // ...and not one of them speaks for the tier that was replaced half an hour ago
+        if (outs2 != 2 || oldTier) dump(r, "Phalanx really lost after the tier change");
     }
 
     SECTION("timers : Protect V on the party (Accession) then on one ally -- two casts, two timers");

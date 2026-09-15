@@ -47,6 +47,7 @@ struct Timer {
 struct Watched {
     bool isSelf = false, rowsOff = false, isMuted = false, present = false, grace = false, ready = true, hid = false;
     bool filled = false, unrec = false, repl = false, geo = false, rune = false, focus = true, song = false, away = false, check = false;
+    bool tier = false;   // another TIER of the same buff took its place (focus_rules.h section 11)
     unsigned lost = 0, now = 100000; int hold = 60; int order = 1;
     bool allyRowsOff() const { return rowsOff; }
     bool muted() const { return isMuted; }
@@ -69,6 +70,7 @@ struct Watched {
     bool isSong() const { return song; }
     bool offzone() const { return away; }
     bool zoneCheck() const { return check; }
+    bool tierReplaced() const { return tier; }
 };
 
 // The pass-1 groups as the self-timer rules see them.
@@ -433,6 +435,19 @@ void test_timers_rules() {
         f.hid = true; CHECK_EQ(focus_prune_verdict(f), FP_DROP_HOLD_EXPIRED);
         Watched rn; rn.rune = true; CHECK_EQ(focus_prune_verdict(rn), FP_KEEP);      // lost this frame : the emit decides first
         rn.lost = 1; CHECK_EQ(focus_prune_verdict(rn), FP_DROP_RUNE_REPLACED);
+    }
+
+    SECTION("focus prune : another TIER of the same buff took its place -- forgotten, up or not");
+    {   // Reported 2026-09-15 : Phalanx II on the party, then Accession Phalanx, and the Phalanx II entries all sat
+        // in a red OUT. Dropped BEFORE the loss stamp and whether the buff is present or not -- the two other ways
+        // to write this are both defects the entry would outlive. Behind `lostMs && !has` the old tier would wait,
+        // silent but alive, until the NEW tier wore off, and then both entries would alert for one buff.
+        // Mutation : the `if (e.tierReplaced())` line removed, or moved inside the `lostMs && !has` block.
+        Watched w; w.tier = true;
+        CHECK_EQ(focus_prune_verdict(w), FP_DROP_TIER_REPLACED);                  // lost this frame, no stamp yet
+        w.present = true; CHECK_EQ(focus_prune_verdict(w), FP_DROP_TIER_REPLACED);   // the status IS up : it is up for the OTHER tier
+        w.grace = true;   CHECK_EQ(focus_prune_verdict(w), FP_DROP_TIER_REPLACED);   // a zone does not un-replace it
+        Watched keep; keep.present = true; CHECK_EQ(focus_prune_verdict(keep), FP_KEEP);
     }
 
     SECTION("focus swap : a rune a newer rune pushed out is not a loss ; one that ran out with a slot free is");

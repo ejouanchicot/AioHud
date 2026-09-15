@@ -73,6 +73,14 @@ inline bool focus_newer_sibling(unsigned rank, unsigned short spell,
 inline bool focus_copies_cover(int newerSiblings, int copiesPresent) {
     return newerSiblings < copiesPresent;
 }
+// ...AND IT IS ONLY EVER ASKED OF A BUFF THAT CAN RUN SEVERAL COPIES -- a song, a rune (section 11). Asked of a
+// single-instance buff it turns a TIER CHANGE into a loss: two entries for status 116, one live Phalanx, and the
+// tier you replaced reads as the copy that went. `several` is that gate, and it is a rule rather than a line in
+// the caller so that a test can hold it: one status is one buff unless the game really runs several of it.
+inline bool focus_entry_up(bool several, int newerSiblings, int copiesPresent) {
+    return several ? focus_copies_cover(newerSiblings, copiesPresent) : copiesPresent > 0;
+}
+
 
 
 // ---- 5. a song pushed out of its slot -- MOVED to model/song_slots.h on 2026-09-10 ------------------
@@ -204,7 +212,8 @@ inline FocusAlert focus_alert_verdict(const Src& e) {
 enum FocusPrune {
     FP_KEEP = 0, FP_KEEP_SURVIVED_ZONE,
     FP_DROP_GONE_OR_OFF, FP_DROP_SONG_OFFZONE, FP_DROP_ZONE_CASUALTY,
-    FP_DROP_UNRECOVERABLE, FP_DROP_REPLACED, FP_DROP_GEO_REPLACED, FP_DROP_HOLD_EXPIRED, FP_DROP_RUNE_REPLACED
+    FP_DROP_UNRECOVERABLE, FP_DROP_REPLACED, FP_DROP_GEO_REPLACED, FP_DROP_HOLD_EXPIRED, FP_DROP_RUNE_REPLACED,
+    FP_DROP_TIER_REPLACED
 };
 inline bool focus_prune_drops(FocusPrune v) { return v >= FP_DROP_GONE_OR_OFF; }
 
@@ -224,6 +233,11 @@ inline FocusPrune focus_prune_verdict(const Src& e) {
     // out-of-zone. Songs only (song_family, spell-keyed) -- ally RDM/enh buffs behave and are left alone.
     // Gated past the zone grace so the roster's per-member zone id has settled first (no false clean).
     if (!e.self() && !e.zoneGrace() && e.isSong() && e.offzone()) return FP_DROP_SONG_OFFZONE;
+    // THE SAME BUFF AT ANOTHER TIER TOOK ITS PLACE (section 11). Dropped whether the buff is up or not, and
+    // BEFORE the loss stamp can be read : the replacement is not a loss, and leaving the old entry to be
+    // decided later is how it became a permanent red OUT. It cannot be put back either -- putting it back
+    // IS the other tier -- so there is nothing for an alert to ask for.
+    if (e.tierReplaced()) return FP_DROP_TIER_REPLACED;
     if (e.zoneCheck()) {                                                            // pending post-zone check : decide ONLY after the grace ends AND the list is back.
         if (e.zoneGrace() || !e.listReady()) return FP_KEEP;                        //   still settling : keep, no decision, no alert
         if (e.has()) return FP_KEEP_SURVIVED_ZONE;                                  //   grace over + list stable + present -> survived the zone, track normally
@@ -374,6 +388,41 @@ inline int focus_rune_newer_lost(const Mem* fm, const bool* lost, int n, int q) 
         if (d > 0 || (d == 0 && i > q)) ++c;
     }
     return c;
+}
+
+// ---- 11. one status, ONE buff : a newer TIER is a replacement, never a loss ---------------------------------------
+//
+// Phalanx and Phalanx II are the SAME buff -- status 116 -- and the game holds exactly one of it: cast either tier
+// over the other and the first is simply gone, replaced. The model already knows that (a landed non-song cast drops
+// that target's other rows on the same status, party_state.cpp "OB replace"), but the monitor is a SEPARATE table,
+// keyed by (person, status, SPELL) because section 4 needs it to be, and nothing told it. So the entry for the old
+// tier stayed behind, stopped being fed, counted the surviving entry as a newer sibling over one live copy -- and
+// read the replacement as a loss. Reported from play 2026-09-15: Phalanx II on the party, then Accession Phalanx as
+// RDM/SCH, and every Phalanx II sat in a permanent red OUT while everyone plainly had Phalanx. ANY tier change does
+// it: Haste -> Haste II, Regen II -> Regen III, Protect IV -> Protect V.
+//
+// Section 4's copy arithmetic only ever made sense for the buffs that really do run several copies at once -- a
+// bard's two Marches, a Rune Fencer's runes. `several[i]` marks those two kinds; everywhere else one status is one
+// buff, whatever the tier. This rule reads the rest: an entry NOTHING fed this frame, whose (person, status) another
+// entry IS feeding under a different spell, was replaced by it.
+//
+// `seen` is the signal, not the rank. Rank would be the natural-looking test and it is wrong: an entry that stopped
+// being fed keeps the rank it last saw, so a SHORTER new tier over a longer old one (Phalanx over the remains of
+// Phalanx II) ranks BELOW the corpse, and the rule would drop the live one instead. What is fed this frame is not
+// a comparison at all -- it is the model's own verdict, arriving from the same place that dropped the row.
+// `Mem` : self target status spell seen.
+template <class Mem>
+inline bool focus_tier_replaced(const Mem* fm, const bool* several, int n, int q) {
+    if (!fm || !several || q < 0 || q >= n) return false;
+    if (several[q] || fm[q].seen) return false;            // still fed -> this IS the tier that is up
+    for (int i = 0; i < n; ++i) {
+        if (i == q || several[i] || !fm[i].seen) continue;
+        if (fm[i].self != fm[q].self || fm[i].status != fm[q].status) continue;
+        if (!fm[q].self && fm[i].target != fm[q].target) continue;
+        if (fm[i].spell == fm[q].spell) continue;          // the same cast re-affirmed, not another tier
+        return true;
+    }
+    return false;
 }
 
 } // namespace aio
