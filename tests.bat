@@ -56,6 +56,13 @@ REM      THE EXIT IS AT TOP LEVEL, not inside the else-block : `exit /b 1` from 
 REM      does not reach the caller, and the first draft printed FAILED while still exiting 0 -- the very same
 REM      defect this file was fixed for an hour earlier, in the replay loop. Latch, then exit outside.
 set "JSFAIL="
+REM      ...and they live in the PRIVATE dev tree, which a clone does not have. A clean worktree caught this:
+REM      the step ran, node could not find the file, and the suite failed on a machine that had done nothing
+REM      wrong. The replay step above already guards this way ; this one has to as well.
+if not exist "%ROOT%dev\scripts\test_vigie_logic.js" (
+    echo [tests] vigie page tests : skipped ^(no local dev\scripts^)
+    goto :vigiedone
+)
 where node >nul 2>nul
 if errorlevel 1 echo [tests] vigie page tests : skipped ^(no node^)
 if not errorlevel 1 for %%J in (test_vigie_logic.js test_vigie_sweepstates.js) do (
@@ -71,6 +78,7 @@ if defined JSFAIL (
     exit /b 1
 )
 if not defined JSFAIL where node >nul 2>nul && echo [tests] vigie page : 2 test^(s^) ok
+:vigiedone
 
 REM ---- DEV ONLY : session replays. The replayer and the recorded tapes live in the local dev\ tree, which is not in
 REM      the public repository ; a clone without it skips this step and SAYS so.
