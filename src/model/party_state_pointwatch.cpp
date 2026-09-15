@@ -25,6 +25,10 @@ void PartyState::on_char_stats(const unsigned char* p) {   // 0x061 Char Stats
     // ground truth that lets that block be FOUND AGAIN after a client patch moves it, with nothing asked
     // of the player. (Checked a few frames later -- our hook runs before the client writes its own copy.)
     fm_pw_expect(pw_.xpCur, pw_.xpTnl, pw_.masterLevel, pw_.epCur, pw_.epTnml);
+    // ...and the two thirds of this packet nobody was reading : the attributes with what the gear adds, Attack,
+    // Defense, the eight resistances, the title and the rank (model/charsheet.h). Its own floor, so a change
+    // there can never silently drop the PointWatch fields above.
+    if (cs_read_061(p, pkt_bytes(p), sheet_)) sheet_.fromPacket = true;   // the packet answers for maxHP/maxMP ; the mirror cannot
 }
 void PartyState::on_set_update(const unsigned char* p) {   // 0x063 Set Update
     if (pkt_short(p, 0x06)) return;                        // need the order field @0x04 ; each order then floors on its OWN fields (their sizes differ wildly -- 0x0D vs 0xC8 -- so a single top floor would wrongly drop the small orders)
@@ -40,6 +44,7 @@ void PartyState::on_set_update(const unsigned char* p) {   // 0x063 Set Update
         if (pkt_short(p, e + 4)) return;                     // reads the u16 @e and @e+2 (up to e+3 ; e grows with the job id)
         pw_.cpCur = pkt_u16(p, e);
         pw_.cpJp  = (int)pkt_u16(p, e + 2);
+        cs_read_063_jobpoints(p, pkt_bytes(p), sheet_);   // ...and the same table for EVERY job, not just this one
     } else if (order == 9) {                                // Order 9 : SELF BUFF TIMERS -- Buffs u16[32] @0x08, expiry
         if (pkt_short(p, 0xC8)) return;                    // reads Time u32[31] up to p[0xC7] -> a runt would clear then refill from garbage
         // THE TAPE DIFFS THIS LIST rather than dumping it. What matters is the INSTANT a status appears or

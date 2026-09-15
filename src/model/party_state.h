@@ -7,6 +7,8 @@
 #include "model/song_slots.h"          // per-person song slots : the eviction victim, the learned cap
 #include "model/omen_objectives.h"   // OmenObj + the pure Omen objective-text rules (ZoneTracker holds the slots)
 
+#include "model/charsheet.h"   // the decoded character sheet this state carries
+
 namespace aio {
 
 struct PMember {
@@ -157,7 +159,7 @@ struct PointWatch {
 inline bool zt_is_divergence(int zone) { return zone >= 294 && zone <= 297; }
 
 struct ZoneTracker {
-    int mode = 0;                 // 0 none, 1 Dynamis, 2 Abyssea, 3 Omen, 4 Nyzul, 5 Sheol, 6 Limbus
+    int mode = 0;                 // 0 none, 1 Dynamis, 2 Abyssea, 3 Omen, 4 Nyzul, 5 Sheol, 6 Limbus, 7 Sortie
     int curZone = -1;             // last zone id seen (transition detection)
     // Dynamis
     unsigned dynEntryMs = 0;      // GetTickCount when we entered (timer origin)
@@ -255,6 +257,25 @@ struct ZoneTracker {
                                     // and it is wiped by zt_set_zone on every zone change besides. Kept only
                                     // because it sits inside the on-disk ZoneTracker image: removing it would
                                     // change ZT_CACHE_VER and invalidate every player's zone cache for nothing.
+    // Sortie (mode 7, Outer Ra'Kaznar [U2] = zone 133). MEASURED on two full runs (both clients, 2026-09-14, tapes
+    // sortie_*_20260914) -- every value below comes from four 0x02A messages, ids relative to the gallimaufry one :
+    //   G     (7238) : [gain, NEW gallimaufry TOTAL]  -> the run count = total - baseline (never a sum of gains :
+    //                   one +45 of that run had no message of its own, the next total covered it)
+    //   G - 2 (7236) : [item] a Ra'Kaznar Shard obtained (items 9906..9913 = #A..#H)
+    //   G - 1 (7237) : [item] a shard handed over = its boss defeated (#A-#D upstairs, #E-#H in the basement ; the
+    //                   upstairs boss hands out the matching basement shard in the same second, as a G - 2)
+    //   G - 843 (6395) : [item, total] an item obtained (Old Case 6614, Ra'Kaz. Sapphire 9927, Hexahedrite 9931...)
+    // Every one arrives TWICE. The owner's key for the payouts (2026-09-15) : 10000 basement boss, 2000 upstairs boss,
+    // 300 basement coffer, 480 basement mid NM, 100 upstairs coffer, the rest are kills.
+    struct SortieLoot { unsigned short item = 0; unsigned short n = 0; };
+    int      soGalBase = -1;        // gallimaufry banked BEFORE the run's first payout ; -1 = not baselined yet
+    int      soGalTotal = -1;       // latest banked total (G p2) ; -1 = none seen this run
+    int      soGalRun = 0;          // earned this run = soGalTotal - soGalBase
+    unsigned char soShards = 0;     // bit i = Ra'Kaznar Shard #(A+i) in hand
+    unsigned char soBosses = 0;     // bit i = the boss of shard #(A+i) defeated
+    unsigned char soCofUp = 0, soCofDown = 0, soNm = 0;   // coffers upstairs / in the basement, mid NMs (payout amounts)
+    unsigned char soLastRun = 0;    // 1 = back in Kamihr Drifts : the frozen "last run" summary
+    SortieLoot soLoot[8];           // items obtained this run, first-seen order
 };
 
 // LIMBUS coffer history -- ONE per area (0 = Apollyon, 1 = Temenos), deliberately OUTSIDE ZoneTracker. The zone
@@ -870,8 +891,15 @@ struct PartyState {
     void note_reject(int id, int cause, int need, int got, unsigned nowMs);
     const PktReject* pkt_rejects(int& n) const { n = pktRejN_; return pktRej_; }
     unsigned pkt_reject_total() const { unsigned t = 0; for (int i = 0; i < pktRejN_; ++i) t += pktRej_[i].nShort + pktRej_[i].nSection; return t; }
+    CharSheet sheet_;
     PktReject pktRej_[PKT_REJ_MAX] = {};
     int       pktRejN_ = 0;
+
+    // --- the character sheet : everything 0x061 / 0x01B / 0x063-order-5 carry (model/charsheet.h) ------
+    // Those three packets were already decoded for six fields ; the attributes, resistances, all 22 job levels
+    // and every job's Capacity/Job Points sat in the same bytes, unread. Filled by the same handlers.
+    const CharSheet& charsheet() const { return sheet_; }
+    CharSheet& charsheet_mut() { return sheet_; }   // the per-frame memory fill (game_mem.cpp) writes here
 
     void on_dd(const unsigned char* p);   // 0x0DD : member update (name/jobs/HP/MP/TP/%) -> also caches
     void on_df(const unsigned char* p);   // 0x0DF : vitals update (HP/MP/TP, refresh %)
@@ -1015,10 +1043,17 @@ bool omen_trace_active();
 // only queues ; this executes the queued lines on the main thread. Defined in plugin/aiohud.cpp.
 void drain_commands();
 // //aio doctor : which 0x02A message a healed counter listens to (0 = Odyssey segments, 1 = Apollyon units,
-// 2 = Temenos units), whether that id was DERIVED (the client renumbers these at every patch) or inherited
+// 2 = Temenos units, 3 = Sortie gallimaufry), whether that id was DERIVED (the client renumbers these at every patch) or inherited
 // from the seed, how many messages carried it, and how much traffic the run produced -- the last two are what
 // separate "the id moved" from "nothing has happened yet".
 void zt_msg_state(int which, unsigned& id, bool& proven, int& seen, int& traffic);
+// A NEW CLIENT SESSION for the Sortie healer : back to its seed, nothing seen, nothing proven. In game that only happens
+// with a new process (a client update needs one) ; the offline suite calls it to replay a renumbered run after a
+// normal one in the same process, where the seed's `seen` would otherwise freeze the search.
+void zt_sortie_msg_new_session();
+// The short English name of an item id, or 0. One definition for the whole plugin : itemnames_gen.h holds 23 536 names
+// in a static table, and every translation unit including it would carry its own copy.
+const char* model_item_name(unsigned id);
 // Abyssea has no arithmetic to prove its message base with, so it is watched instead : how many 0x02A landed
 // on a known offset this run, and how many did not. All traffic and no match = the base moved.
 void zt_aby_msg_state(int& matched, int& unmatched);

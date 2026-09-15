@@ -35,6 +35,7 @@
 #include "model/sentinel.h"       // packet-vs-memory cross-check, run once the snapshot is complete
 #include "model/capwatch.h"       // notice a fixed table that has quietly run out of room
 #include "model/battle_target.h"  // <bt> : the game's resolver rule, walked over the entity array here
+#include "model/charsheet.h"   // the sheet decoder, shared with the packet path
 #include "model/party_state.h"    // the party ids <bt> is claimed by (the roster)
 #include "model/ui_config.h"   // mmShow : skip the entity-array sweep entirely when the minimap is off (model->model, no layering issue)
 #include "windower.h"   // safe_read / valid_ptr (guarded game-memory reads)
@@ -307,6 +308,78 @@ bool read_pointwatch(PwMem& out) {
         }
     }
     return out.epOk || out.merOk || out.mlOk;
+}
+
+// THE CHARACTER SHEET, READ FROM THE CLIENT'S OWN MIRROR OF THE 0x061 BODY.
+//
+// The packet only comes on a login, a job change or a zone -- so after a plugin reload the sheet stayed empty
+// until the player happened to zone, which reads to them as a feature that does not work. The client keeps the
+// packet body in a FFXiMain static (that is what PointWatch already reads, and what fm_pw_expect finds again
+// after a patch), starting at the packet's own offset 0x10 -- proven by the fields already taken from it:
+// Master Level at packet 0x65 sits at block +0x55, Exemplar at packet 0x68 at block +0x58.
+//
+// So the mirror is copied back into a buffer AT THAT OFFSET and handed to the SAME decoder the packet path
+// uses (model/charsheet.h). One decoder, two sources : the two can never drift apart, which is the whole
+// reason not to write a second reader here.
+bool model_copy(u32 addr, void* out, unsigned n);   // model_io.h is included at the FOOT of this file (it
+                                                   // renames the observed reads) : declare the one helper used here.
+// THE 22 JOB LEVELS, FROM THE CLIENT'S OWN TABLE. Packet 0x01B carries them, but it arrives only on a login or
+// a JOB CHANGE -- not on a zone -- so after a plugin reload the sheet had no job table for as long as the player
+// kept the same job, and the page showed nothing where twenty-two numbers belong.
+//
+// MEASURED 2026-09-15 with `//aio jobtab` (dev/src/jobscan.cpp), which is given the real table from the outside
+// and asked to find where it is written, rather than told an offset and asked whether it looks plausible:
+//   - levels        : *(g+0x48) + 0x3C6D, 22 bytes, job id 1..22
+//   - master levels : *(g+0x48) + 0x3C91, the same 22 in the same order (levels + 0x24)
+// Confirmed on TWO characters in two client processes with different allocation bases and different values
+// (Tetsouo, every job 99 ; Kaories, 1/99/72 mixed), and the bytes read back were IDENTICAL to what Windower's
+// own packet parser decoded from 0x01B -- which is what makes this a measurement and not a lucky offset.
+// The region is a private (heap) allocation, NOT an FFXiMain image, so there is no RVA to self-heal: the only
+// stable route is this pointer chain, the same *(g+0x48) read_job_spent already uses for the Job Points.
+bool read_job_table_mem(CharSheet& cs, unsigned mainJob, unsigned mainLvl) {
+    u32 g = data_root(); if (!g) return false;
+    u32 base = 0; if (!safe_read(g + 0x48, &base) || !valid_ptr(base)) return false;
+    unsigned char lv[22] = {0}, ml[22] = {0};
+    if (!model_copy(base + 0x3C6D, lv, sizeof(lv))) return false;
+    if (!model_copy(base + 0x3C91, ml, sizeof(ml))) return false;
+    // VALIDATE BEFORE ADOPTING. A pointer that has moved, or a block the client is rewriting, must read as
+    // "no data" and leave the packet's table alone -- never as a character with impossible jobs.
+    for (int i = 0; i < 22; ++i) {
+        if (lv[i] > 99) return false;      // a job level is 0..99
+        if (ml[i] > 50) return false;      // a master level is 0..50
+    }
+    // The strongest check available for free : we already know the main job and its level from another reader.
+    // If this table disagrees about the job the player is standing in, it is not this player's table.
+    if (mainJob >= 1 && mainJob <= 22 && mainLvl && lv[mainJob - 1] != (unsigned char)mainLvl) return false;
+    bool anyLevel = false;
+    for (int i = 0; i < 22; ++i) if (lv[i]) { anyLevel = true; break; }
+    if (!anyLevel) return false;           // all zero is the blanked state during a zone, not a character
+    for (int j = 1; j < CS_JOB_N && j <= 22; ++j) { cs.jobLvl[j] = lv[j - 1]; cs.masterLvl[j] = ml[j - 1]; }
+    cs.jobsOk = true;                      // the LEVELS are now usable ; `mastered` stays whatever the packet said
+    return true;
+}
+
+bool read_charsheet_mem(CharSheet& cs) {
+    const u32 blk = fm_addr(FM_PW_BLOCK);
+    if (!blk) return false;
+    unsigned char buf[0x4C];
+    memset(buf, 0, sizeof(buf));
+    // 0x3A bytes from the mirror cover packet 0x10..0x49 : EXP, the attributes, what the gear adds, Attack,
+    // Defense, the eight resistances, the title and the rank. maxHP/maxMP and the jobs live BEFORE 0x10 and are
+    // therefore not in this block -- they are left to the packet path, and to the fields the roster already has.
+    if (!model_copy(blk, buf + 0x10, 0x3A)) return false;
+    CharSheet tmp = cs;                      // keep whatever the packet path already proved
+    if (!cs_read_061(buf, 0x4A, tmp)) return false;
+    // A ZEROED BLOCK IS NOT A CHARACTER. During a zone the client blanks it, and a sheet of zeroes would read
+    // as a measurement -- the same trap pw_decode_block was written for. One attribute at zero is impossible
+    // on a real character, so that is the test.
+    bool allZero = true;
+    for (int a = 0; a < CS_ATTR_N; ++a) if (tmp.base[a]) { allZero = false; break; }
+    if (allZero) return false;
+    tmp.maxHp = cs.maxHp; tmp.maxMp = cs.maxMp;   // not in this block : never overwrite what the packet gave
+    tmp.mjob = cs.mjob; tmp.mlvl = cs.mlvl; tmp.sjob = cs.sjob; tmp.slvl = cs.slvl;
+    cs = tmp;
+    return true;
 }
 
 // entity_array[index] -> server id (+0x78). One indexed read (not a scan). 0 if empty/invalid.
@@ -1225,6 +1298,22 @@ void poll_game_state(GameState& gs) {
             }
         }
     }
+
+    // THE CHARACTER SHEET, while the packet has not spoken. 0x061 comes on a login, a job change or a zone, so
+    // after a plugin reload the sheet would sit empty until the player happened to walk through a zone line --
+    // a feature that looks broken for a reason nobody could guess. The client's own mirror answers immediately.
+    // EVERY FRAME, not every fourth. It used to run on a quarter cadence -- 58 bytes, nothing needs 60 Hz --
+    // and that "harmless" optimisation put the sheet OUT OF PHASE with the equipment, which IS read every
+    // frame. For up to three frames after a gear swap the sixteen item ids were the new set while the gear
+    // column still held the old one, and any reader sampling in that window saw a character whose stats did
+    // not match their gear. Measured 2026-09-15 on a Holy Circle swap (11 slots) : the in-game harness read
+    // "the set moved and the column did not" on 13 of 16 actions, and the column had moved -- one frame later.
+    // A snapshot is supposed to be ONE instant ; skewing part of it to save a 58-byte copy is not a saving.
+    { CharSheet& cs_ = party().charsheet_mut();
+      read_charsheet_mem(cs_);
+      // The job table is a SEPARATE read : the 0x061 mirror does not carry it, and it is the one
+      // block whose packet may not come back for hours (0x01B needs a job change, not a zone).
+      read_job_table_mem(cs_, gs.me.mjob, gs.me.mlvl); }
 
     compute_grimoire(gs);   // SCH grimoire (book + charges + timer) from buffs / jobs / stratagem recast
 

@@ -19,6 +19,7 @@
 #include "aiohud_probes.h"          // dev-only diagnostic surface (present only in the local tree ; build.bat wires it in when the file exists)
 #endif
 #include "ui/hud.h"
+#include "ui/doctor_html.h"   // //aio doctor also writes the sheet as a page
 #include "model/selftest.h"   // //aio selftest + the chat notice the watcher leaves behind
 #include "model/watchdogs.h"   // //aio watch : the master switch for the passive watchers
 #include "model/decisions.h"   // //aio why  : the always-recording decision ring
@@ -992,7 +993,7 @@ static void aio_command_dispatch(const char* cmd)
     // The dev tools own their command words, dispatched BEFORE the probes file : "pcap dump <name>" contains "dump",
     // which a probe matches anywhere in the buffer -- the first black box dump went to the hexdump probe, read its
     // name as an address and wrote nothing (2026-09-14).
-    if (aio_verb(buf, "pcap") || aio_verb(buf, "igstate")) { if (aio::devtools::command(buf)) return; }
+    if (aio_verb(buf, "pcap") || aio_verb(buf, "igstate") || aio_verb(buf, "jobtab") || aio_verb(buf, "gearskew")) { if (aio::devtools::command(buf)) return; }
 #endif
     // //aio help -- what exists. Without it the only answer to a mistyped or forgotten command was "unknown command",
     // and a tester had to be told each name one message at a time (2026-09-14 audit). The list is the everyday
@@ -1330,6 +1331,17 @@ static void aio_command_dispatch(const char* cmd)
         char lines[12][aio::Hud::DOC_LINE];
         const int n = g_hud.doctor(lines, 12);
         g_hud.self_check();   // ...and the per-widget texture health //aio selfcheck logs : one command to ask a tester for, not two
+        // ...and the SAME findings as a page you can look at, with the character sheet beside them : the text
+        // report says what is wrong, the page says what the plugin believes about you, which is the question
+        // right behind it. Written per character, so a dual-box produces one each.
+        { const char* lp[12]; for (int k = 0; k < n && k < 12; ++k) lp[k] = lines[k];
+          const char* htm = aio::write_doctor_html(g_hud.state(), lp, n < 12 ? n : 12);
+          if (htm) { const char* base = strrchr(htm, '\\'); base = base ? base + 1 : htm;
+              char hm[220];
+              _snprintf(hm, sizeof(hm), aio::tr(">>> AioHud doctor : the sheet is also written as %s -- open it in a browser <<<",
+                                                ">>> AioHud doctor : la fiche est aussi ecrite dans %s -- ouvre-la dans un navigateur <<<"), base);
+              hm[sizeof(hm) - 1] = 0; g_host.console().print(hm); }
+          else windower::debug::log("doctor: the HTML sheet could not be written (read-only folder?)"); }
         // WHAT WAS THROWN AWAY. The flow counters above say what ARRIVED ; these say what arrived and was
         // REFUSED -- a packet too short for the field it feeds, or a command dropped by a full queue. Both
         // used to be perfectly silent, which reads exactly like a server that sent nothing and a command that

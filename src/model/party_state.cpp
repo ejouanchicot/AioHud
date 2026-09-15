@@ -1112,9 +1112,12 @@ void PartyState::on_action(const unsigned char* p) {
     //      normal spells/JAs -- Trust moves and anything unmapped fall through to the per-target result : when that
     //      block's MESSAGE is a "... gains the effect of X" message (battlemod target.gains set), its param field
     //      holds the granted status id. That single mechanism catches Trust buffs no table has. ----
-    if ((cat == 4 || cat == 6 || cat == 11) && selfId_) {
-        const u32 aid = getbits(p, 86, 16, size);          // actor.param = spell id (cat 4) / ability id (cat 6)
-        const unsigned bstTab = (cat == 4) ? spell_buff_status(aid) : (cat == 6) ? abil_buff_status(aid) : 0;
+    //      CATEGORY 15 is a job ability too : the server sends RUN's Vallation / Valiance / Pflug / Liement that way
+    //      (MEASURED 2026-09-14, jobsweep tapes : msg 668/669/670/671, param = the status). Left out, those timers had
+    //      no caster and vanished under "Mine only" (tests/t_timers.cpp "RUN wards").
+    if ((cat == 4 || cat == 6 || cat == 11 || cat == 15) && selfId_) {
+        const u32 aid = getbits(p, 86, 16, size);          // actor.param = spell id (cat 4) / ability id (cat 6, 15)
+        const unsigned bstTab = (cat == 4) ? spell_buff_status(aid) : (cat == 6 || cat == 15) ? abil_buff_status(aid) : 0;
         // Walk the targets with the SAME variable stride as the TH block above (id 32 + action_count 4, then per
         // action : 86-bit main block + optional 37-bit add-effect + optional 35-bit spike). The old fixed 150+i*123
         // stride misaligned the moment ANY earlier target carried an add-effect, so an AoE party buff (Protectra/
@@ -2026,6 +2029,9 @@ void PartyState::on_076(const unsigned char* p) {
 void PartyState::on_01b(const unsigned char* p) {
     if (pkt_short(p, 0x64)) return;          // reads the encumbrance flags @0x60..0x63
     encumber_ = pkt_u32(p, 0x60);
+    // The same packet carries the level of all 22 jobs, which are unlocked and which are mastered -- read on
+    // its OWN floor (0x7E) so a shorter 0x01B still delivers the encumbrance above instead of being refused.
+    cs_read_01b(p, pkt_bytes(p), sheet_);
 }
 
 const BuffSet* PartyState::buffs_for(unsigned id) const {

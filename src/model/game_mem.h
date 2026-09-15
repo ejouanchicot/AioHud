@@ -199,6 +199,13 @@ int count_items(const unsigned* ids, int n, unsigned* out);
 // used at cast time to read the caster's live "Enhancing Magic eff. dur." gear/augments (see enh_dur.h).
 // ids[s] = 0 for an empty slot. Returns false if the item container isn't ready.
 bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]);
+// The character sheet from the client's own mirror of the 0x061 body (game_mem.cpp). Lets the sheet fill on
+// LOAD instead of waiting for the next login / job change / zone, which is the only time the packet comes.
+struct CharSheet;
+bool read_charsheet_mem(CharSheet& cs);
+// The 22 job levels + master levels from the client's own table (see game_mem.cpp).
+// mainJob/mainLvl are the cross-check that the table belongs to this character.
+bool read_job_table_mem(CharSheet& cs, unsigned mainJob, unsigned mainLvl);
 
 // Merit level (0..5) for merit id `mid` / Job-Point gift rank for gift id `gid`, from the LuaCore-mirrored
 // arrays (indexed by id>>1). Used for the caster's "Enhancing Magic Duration" merit (2320) + JP gift (338)
