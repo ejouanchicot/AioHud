@@ -101,7 +101,10 @@ static const char* cache_path() {
 // `format` is bumped whenever a HEALER changes its mind about what counts as proof. Without it, a wrong
 // address adopted by an older, weaker rule comes back from disk marked "confirmed" and outlives the fix --
 // which is exactly what happened when the first menu healer adopted the log-window slot.
-static const int CACHE_FORMAT = 2;
+static const int CACHE_FORMAT = 3;   // 3 : a menu "name" must now be SHAPED like one (rva_menu_name_shaped) -- every
+                                     //     format-2 file may hold a slot adopted on two different pieces of binary junk,
+                                     //     marked PROVEN, and a proven line is never re-examined. Discarding them is what
+                                     //     takes the poisoned address off the disk of everyone who already has one.
 
 // What rva_cache_write reads the registry through.
 struct CacheSrc {
@@ -524,7 +527,7 @@ static void heal_menu_ptr() {
     if (!nCand) return;
     if (--sampleIn > 0) return;
     sampleIn = 15;                                       // ~4 samples/second : fast enough to catch a menu opening
-    u32 bestAddr = 0;
+    u32 bestAddr = 0, bestFirst = 0, bestNow = 0;
     const u32 seedAddr = ffximain_base() + ENTRIES[FM_MENU_PTR].seed;
     for (int i = 0; i < nCand; ++i) {
         u32 pv = 0, def = 0, nm = 0;
@@ -536,10 +539,25 @@ static void heal_menu_ptr() {
         // 'logwindo' and 'inline' are always themselves, so they can never qualify, while the focused
         // slot reads 'magic' then 'ability' as you move around. This is the manual two-run differential,
         // exactly, and nothing weaker is evidence.
+        // JUNK IS NOT A NAME (rva_menu_name_shaped). Zeroed here rather than skipped, so the candidate's memory
+        // is not poisoned by it either : the differential already ignores 0 as "nothing open".
+        if (!rva_menu_name_shaped(nm)) nm = 0;
+        const u32 firstName = lastName[i];
         if (!rva_second_different(lastName[i], nm, 0xFFFFFFFFu)) continue;
-        if (rva_closer(cand[i], seedAddr, bestAddr)) bestAddr = cand[i];   // tie-break : a patch shifts by bytes
+        if (rva_closer(cand[i], seedAddr, bestAddr)) { bestAddr = cand[i]; bestFirst = firstName; bestNow = nm; }   // tie-break : a patch shifts by bytes
     }
     if (bestAddr) {
+        // INSTRUMENT THE DECISION (2026-09-14). Tetsouo moved from the seed +0x62188C to +0x621CF0 during an Odyssey
+        // entry while Kaories moved the other way ; //aio rva then showed 'partywin' on the seed and nothing on
+        // +0x621CF0, with the party picker cursor dead. The log said only "two different menu names" -- not WHICH
+        // names, nor what the slot in service read at that instant, which is what tells the two slots apart.
+        u32 sp = 0, sd = 0, snm = 0;
+        if (safe_read(fm_addr(FM_MENU_PTR), &sp) && valid_ptr(sp) && safe_read(sp + 0x04, &sd) && valid_ptr(sd)) safe_read(sd + 0x4E, &snm);
+        auto c = [](u32 v, int k) { const char ch = (char)((v >> (8 * k)) & 0xFF); return (ch >= 32 && ch < 127) ? ch : '.'; };
+        windower::debug::log("fm: menu candidate FFXiMain+0x%X read '%c%c%c%c' then '%c%c%c%c' ; the slot in service (+0x%X) reads '%c%c%c%c'",
+                             bestAddr - ffximain_base(), c(bestFirst, 0), c(bestFirst, 1), c(bestFirst, 2), c(bestFirst, 3),
+                             c(bestNow, 0), c(bestNow, 1), c(bestNow, 2), c(bestNow, 3),
+                             g_rva[FM_MENU_PTR], c(snm, 0), c(snm, 1), c(snm, 2), c(snm, 3));
         fm_adopt(FM_MENU_PTR, bestAddr - ffximain_base(), "two different menu names on one slot");
         // THE CONFIRMATION IS ITSELF THE PROOF OF A REAL NAME -- this branch is only reached because the slot
         // showed two DIFFERENT real names, which is the one thing a decoy can never do. Recording it here, and

@@ -149,6 +149,29 @@ void test_rva_rules() {
         CHECK(rva_menu_real_name(tag4("party")));          // ANY other name : the leader / quartermaster menus too
     }
 
+    SECTION("rva menu : a name has to be SHAPED like a name -- binary that merely changes is not one");
+    {   // MEASURED IN GAME 2026-09-15, off the line the previous incident added for it :
+        //     fm: menu candidate FFXiMain+0x621C14 read 'wind' then '.8..' ; the slot in service (+0x62188C) reads '....'
+        // The differential adopts a slot that shows two DIFFERENT non-empty values, and nothing required them to
+        // look like names -- so four bytes of binary took the pointer off a slot reading 'partywin' and the
+        // Quartermaster / Distribution cursor went dead. It then went to disk marked PROVEN and came back at
+        // every load, which is why it read as "I lose it every time I redeploy".
+        // Mutation : the `if (!rva_menu_name_shaped(nm)) nm = 0;` line in the menu differential removed.
+        CHECK(rva_menu_name_shaped(tag4("partywin")));
+        CHECK(rva_menu_name_shaped(tag4("magic")) && rva_menu_name_shaped(tag4("ability")));
+        CHECK(rva_menu_name_shaped(tag4("inline")) && rva_menu_name_shaped(tag4("logwindo")));   // decoys ARE names ; being a decoy is a separate fact
+        CHECK(rva_menu_name_shaped(tag4("map2")));                                                // digits after the first letter are fine
+        CHECK(!rva_menu_name_shaped(0xC4003808u));         // the '.8..' of the capture : one '8', the rest is not text
+        CHECK(!rva_menu_name_shaped(0xC4A53808u));         // ...and the same with no zero byte in it : high bytes are not text either
+        CHECK(!rva_menu_name_shaped(0));                   // nothing open
+        CHECK(!rva_menu_name_shaped(0x69746E41u));         // 'Anti' -- a capital is not how the game writes these tags
+        CHECK(!rva_menu_name_shaped(0x33323130u));         // '0123' -- a name never starts with a digit
+        // ...and the vindication obeys the same shape : junk must not make a slot final, which is the state
+        // nothing can revise. A real name still does.
+        CHECK(!rva_menu_real_name(0xC4003808u));
+        CHECK(rva_menu_real_name(tag4("partywin")));
+    }
+
     SECTION("rva menu : a confirmed slot that read only decoys keeps searching, and is never torn down");
     {   // ce67b32 : a sixty-consecutive-decoys gate kept resetting on 0 and left a wrong cached address unsearched ;
         // un-confirming first made the cost box flicker. Unproven keeps the slot AND the search ; a real name ends it.

@@ -105,8 +105,29 @@ inline int rva_adopt_verdict(unsigned current, unsigned rva, bool healed, bool c
 // 'inline' (flickering the cost box), and a watcher check that raised a BLOCK after ninety idle seconds.
 inline bool rva_menu_is_decoy(unsigned nm) { return nm == RVA_NAME_INLINE || nm == RVA_NAME_LOGWIN; }
 
+// A NAME HAS TO BE SHAPED LIKE A NAME. The differential below adopts the slot that shows two DIFFERENT non-empty
+// values, and nothing ever said those values had to look like menu names. MEASURED 2026-09-15, from the line the
+// previous incident added for exactly this purpose :
+//     fm: menu candidate FFXiMain+0x621C14 read 'wind' then '.8..' ; the slot in service (+0x62188C) reads '....'
+// Four bytes of binary that merely changed took the pointer away from a slot that reads 'partywin'. The party
+// picker recognises its menu BY NAME, so the Quartermaster / Distribution cursor went dead -- and the wrong
+// address was written to the cache as PROVEN, so it came back at every load : a redeploy looked like the cause.
+// The game's def names are inline lowercase ASCII tags -- 'partywin', 'inline  ', 'logwindo', 'magic', 'ability'.
+// So: four bytes, the first a lowercase letter, the rest lowercase / digit / space / '_'. It costs nothing to be
+// strict here : it takes two DIFFERENT names to adopt, and the focused slot shows a dozen over a session.
+inline bool rva_menu_name_shaped(unsigned nm) {
+    for (int i = 0; i < 4; ++i) {
+        const unsigned c = (nm >> (8 * i)) & 0xFFu;
+        const bool low = c >= 'a' && c <= 'z';
+        if (i == 0) { if (!low) return false; continue; }
+        if (!(low || (c >= '0' && c <= '9') || c == ' ' || c == '_')) return false;
+    }
+    return true;
+}
+
 // A REAL MENU NAME VINDICATES THE SLOT FOR GOOD : a slot that ever shows anything else IS the focused menu.
-inline bool rva_menu_real_name(unsigned nm) { return nm != 0 && !rva_menu_is_decoy(nm); }
+// Junk vindicates nothing -- it is not a name, it is a slot that happens to hold changing bytes.
+inline bool rva_menu_real_name(unsigned nm) { return nm != 0 && rva_menu_name_shaped(nm) && !rva_menu_is_decoy(nm); }
 
 // A CONFIRMATION THAT READS ONLY DECOYS IS REVISABLE -- BUT IT IS NEVER TORN DOWN FIRST. A slot vindicated by a real
 // name is final. A confirmed one that is not is merely UNPROVEN : it stays in use while the two-different-names
