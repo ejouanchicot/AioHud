@@ -90,4 +90,15 @@ if [ -f dev/scripts/igtest.py ]; then
     fi
 fi
 
+# ---- The instruction file has no history of its own : say when its backup has drifted ----------------------
+# CLAUDE.md is gitignored here ON PURPOSE (it names machine paths and the AI tooling), so until 2026-09-15 it
+# was a file with no version control at all -- one bad edit lost it, and two of mine damaged it that morning.
+# The PRIVATE dev/ repository keeps a copy. A copy drifts, and a backup that drifts in silence is worse than
+# none, because it is trusted. So this says so, once, and never blocks : the sync is a one-line copy and it is
+# nobody's emergency.
+if [ -f CLAUDE.md ] && [ -f dev/docs/CLAUDE.md ] && ! cmp -s CLAUDE.md dev/docs/CLAUDE.md; then
+    echo "pre-commit: CLAUDE.md has changed since its backup in dev/ -- refresh it when convenient:"
+    echo "            cp CLAUDE.md dev/docs/CLAUDE.md && git -C dev commit -am 'docs: CLAUDE.md'"
+fi
+
 exit 0
