@@ -117,4 +117,16 @@ if [ -f CLAUDE.md ] && [ -f dev/docs/CLAUDE.md ] && ! cmp -s CLAUDE.md dev/docs/
     echo "            cp CLAUDE.md dev/docs/CLAUDE.md && git -C dev commit -am 'docs: CLAUDE.md'"
 fi
 
+# SAME ARGUMENT, 89 more files. /docs/* is gitignored except game-data/, audits/ and songs/ because this
+# repository is PUBLIC -- architecture/, tech-stack/, reference/, design/, formats/, reverse-engineering/
+# and the working notes are not meant to be published. That is a choice about publishing, and it had the
+# side effect of leaving the pages CLAUDE.md sends you to first with no version control anywhere. dev/ is
+# private and local, so it can hold them. Reports, never blocks -- same reason as above.
+if [ -f dev/scripts/mirror_docs.py ]; then
+    py=$(command -v python 2>/dev/null || command -v py 2>/dev/null)
+    if [ -n "$py" ] && ! out=$("$py" dev/scripts/mirror_docs.py --check 2>&1); then
+        echo "pre-commit: $out"
+    fi
+fi
+
 exit 0
