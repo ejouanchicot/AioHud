@@ -38,6 +38,7 @@ void test_timers_rules();
 void test_packets();
 void test_charsheet();
 void test_rva_rules();
+void test_render();
 
 int main() {
     test_json();
@@ -67,6 +68,7 @@ int main() {
     test_packets();
     test_charsheet();
     test_rva_rules();
+    test_render();
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail;
 }

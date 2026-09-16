@@ -1105,7 +1105,29 @@ bool PartyState::act_skillchain(const unsigned char* p, int size, unsigned cat, 
     }
     if (cat == 3 && actor == selfId_ && wsMsgIsReal) {
         const u32 wsid = getbits(p, 86, 16, size);         //   WS id = actor.param @bit 86 (like cat 4/6)
-        const u32 dmg  = getbits(p, 213, 17, size);        //   damage = target[0].param @bit 213 (target base 150 + 63)
+        // DAMAGE = the sum over EVERY target, not target[0]. An AoE weaponskill hits several mobs and the
+        // popup was showing only the first one : Aeolian Edge on three mobs read 6503 where the round did
+        // 14341 (caught by the in-game cross-check, 2026-09-16 -- it compares against what Windower's own
+        // action parse totals). Walk the VARIABLE stride, the same walk the hate list and the TH block use:
+        // an earlier target's add-effect / spike / extra action shifts every later target, so a fixed stride
+        // reads garbage exactly on the busy rounds this number is for.
+        u32 dmg = 0;
+        {
+            u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
+            int off = 150;
+            for (u32 t = 0; t < tc; ++t) {
+                if (off + 36 > size * 8) break;
+                unsigned ac = getbits(p, off + 32, 4, size); off += 36;
+                for (unsigned a = 0; a < ac; ++a) {
+                    if (off + 86 > size * 8) { off = size * 8; break; }
+                    dmg += getbits(p, off + 27, 17, size);          // this action's param = its damage
+                    const unsigned hasAdd = getbits(p, off + 85, 1, size);
+                    off += 86;
+                    if (hasAdd) off += 37;                          // add-effect body
+                    if (getbits(p, off, 1, size)) off += 35; else off += 1;   // spike block
+                }
+            }
+        }
         const WSRow* w = ws_info(wsid); const char* nm = w ? w->en : "Weapon Skill";
         int i = 0; for (; nm[i] && i < 39; ++i) wsPop_.name[i] = nm[i]; wsPop_.name[i] = 0;
         wsPop_.dmg = (int)dmg; wsPop_.startMs = model_now_ms();

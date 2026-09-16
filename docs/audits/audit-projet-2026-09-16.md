@@ -117,8 +117,16 @@ la liste des consommateurs du paquet, plus grosse fonction du projet ramenee de 
 (`act_ally_buffs`). Verifie par 2308 controles / 0 echec et les **2 rejeux de session conformes a leur
 golden** — ce sont de vrais paquets 0x028 rejoues a travers cette fonction.
 
-**Les `draw()` restent a laisser** tant qu'aucun test de rendu n'existe : les couper a l'aveugle, c'est
-echanger de la lisibilite contre un risque visuel que rien ne rattrape.
+**Les `draw()` restent a laisser pour l'instant** — mais la raison a change. Il existe desormais un test
+de rendu (`tests/fake_device.*` + `tests/t_render.cpp`) : un faux device D3D8, fait d'une vtable de
+fonctions qui ENREGISTRENT au lieu de dessiner. Il couvre la couche `gfx` (les primitives de `draw.cpp`
+et les etats de `d3d.h`) et tient trois des dix regles non negociables — le snap au demi-pixel (1), le
+feather symetrique (2), le blend remis et la texture deliee (3 et 8) — plus un `trace()` qui serialise
+appels et sommets : **l'oracle qui manquait** pour prouver qu'un decoupage ne change rien.
+
+Ce qui reste a couvrir, c'est le niveau au-dessus : un widget (`Party::draw`…) demande un `Frame`, des
+polices et des textures. Le faux device existe, donc le chemin est trace ; c'est le prochain palier, et
+c'est lui qui debloquera les sept `draw()`.
 
 ### Duplication — 13 groupes d'au moins 9 lignes identiques
 Le gros est entre panneaux de config : `ep_config` / `grim_config` / `hl_config` / `minimap_config` /
