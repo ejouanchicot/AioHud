@@ -1180,10 +1180,12 @@ int read_jp_u8(unsigned off) {
 // being FULL again, never to the next charge. Charges come from the SCHOLAR LEVEL in play (10/30/50/70/90
 // -> 1/2/3/4/5) and the pool always refills in 240 s, so one charge = 240 / charges (240/120/80/60/48 s).
 // The Job-Point GIFT "Stratagem Recast Time" (SCH, 550 JP SPENT) takes 15 s off that interval : 48 -> 33 s.
-// GIFTS ARE MAIN-JOB ONLY. The ported sch.lua applied the gift FIRST and then clamped a subjob to
-// "3 charges / 80 s" -- a state the game cannot produce : a subjob caps at level 49, which is 2 charges
-// every 120 s. That clamp is what made a /SCH read one charge too many with a 40 s-short timer, and the
-// same ordering took a level-restricted SCH main (mlvl under 90, gift bought) to the wrong row.
+// GIFTS ARE MAIN-JOB ONLY. The ported sch.lua applied the gift FIRST and then clamped a subjob to a flat
+// "3 charges / 80 s". Read gs.me.slvl instead and the clamp is not needed : MASTER LEVELS raise the subjob
+// level past the old 49 cap (measured : PLD ML 48 -> sub level 58), so a /SCH on a mastered character is
+// over 50 and the table gives it 3 charges / 80 s by itself -- while a character with little or no Master
+// Level gets the 2 charges / 120 s that ARE right for a level-49 subjob, which the flat clamp got wrong.
+// The same ordering also took a level-restricted SCH main (mlvl under 90, gift bought) to the wrong row.
 static void sch_recast_info(int level, int jpSpent, bool isMain, int& interval, int& charges) {
     if      (level >= 90) charges = 5;
     else if (level >= 70) charges = 4;

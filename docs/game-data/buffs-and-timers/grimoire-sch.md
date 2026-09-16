@@ -44,8 +44,12 @@ never to the next charge. So both numbers on the book are derived:
 The pool always refills in **240 s**, so one charge is simply `240 / charges`.
 The Job-Point **gift** “Stratagem Recast Time” (**550 JP spent** on SCH) takes
 15 s off that interval: 48 → **33 s**. A gift only counts on the **main job**, so
-a job subbing /SCH never gets it — and a subjob caps at level 49, which is
-**2 charges every 120 s**. (`read_job_spent(20)` = `job_point_info + 0x04`, see
+a job subbing /SCH never gets it. The subjob level is **read from the game**
+(`gs.me.slvl`), never assumed: **Master Levels raise it past the old 49 cap**
+(measured: PLD ML 48 → sub level **58**), so a /SCH on a mastered character is over
+50 and gets **3 charges / 80 s**, while one with little Master Level sits at 49 and
+gets **2 / 120 s**. The addon's flat “clamp a subjob to 3 charges” was right only
+for the first case. (`read_job_spent(20)` = `job_point_info + 0x04`, see
 [PointWatch load-time seed](../player/pointwatch.md); it is not even read for a /SCH.)
 
 Given `ticks` = the raw 1/60 s pool counter (`GameState::recasts`, entry 231):
