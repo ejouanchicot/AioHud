@@ -25,6 +25,8 @@ struct GrimoireState {
     bool closed = false;      // NO Arts / Addendum at all -> show the CLOSED-book texture, no charge/recast pastilles
     int  charges = 0;         // 0..5 stratagems available
     int  timerSec = -1;       // seconds to the next charge (-1 = full, no timer)
+    int  interval = 0;        // seconds per charge -- LEARNED off a spend when one has been seen, else the level/JP table
+    int  maxCharges = 0;      // the pool size the level in play grants (charges + the ones still recharging)
 };
 
 struct GameState {

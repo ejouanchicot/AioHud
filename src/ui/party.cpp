@@ -1296,8 +1296,20 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
             info2Col = rs ? 0xFFFFB454 : 0xFF8FA0B8; } }                                              // amber while on recast, dim grey-blue when ready
         else if (menuType_ == 2) { const AbilRow* a = abil_info(menuSpell_); if (a) { nm = a->en;             // Job Ability : "Next m:ss" (always shown, 0:00 when ready)
             unsigned rs = ability_recast_sec(a->recast_id);                                                  // per-id lookup in the live recast table
+            // SCH STRATAGEMS share ONE recast slot (231) that counts down to the pool being FULL, so the raw
+            // "Next" reads 2:30 while three charges sit there ready to spend -- the opposite of what the box
+            // is for. The grimoire poller already turned that counter into (charges now, wait for the NEXT
+            // one) : show those instead, with the charge count on the second line.
+            if (a->recast_id == 231 && f.game && f.game->grimoire.visible) {
+                const int t = f.game->grimoire.timerSec;
+                const unsigned n = (t > 0) ? (unsigned)t : 0;
+                sprintf(infobuf, "Next %u:%02u", n / 60, n % 60); info = infobuf;
+                infoCol = n ? 0xFFFFB454 : 0xFF8FA0B8;
+                sprintf(info2buf, "Charges %d", f.game->grimoire.charges); info2 = info2buf;
+                info2Col = (f.game->grimoire.charges > 0) ? 0xFF74D074 : 0xFF9AB0C8;                          // green while you have some, grey at zero
+            } else {
             sprintf(infobuf, "Next %u:%02u", rs / 60, rs % 60); info = infobuf;
-            infoCol = rs ? 0xFFFFB454 : 0xFF8FA0B8; } }                                                      // amber while on recast, dim grey-blue when ready
+            infoCol = rs ? 0xFFFFB454 : 0xFF8FA0B8; } } }                                                    // amber while on recast, dim grey-blue when ready
         else if (menuType_ == 3) { const WSRow* ws = ws_info(menuSpell_); if (ws) { nm = ws->en;             // Weapon Skill : show live TP
             if (f.game) { int tp = f.game->me.tp; sprintf(infobuf, "TP %d", tp); info = infobuf; infoCol = (tp >= 1000) ? 0xFF7CFF8A : 0xFFB0B0B0; } } }  // green when usable (>=1000)
     }

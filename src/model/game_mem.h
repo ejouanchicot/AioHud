@@ -261,7 +261,7 @@ bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid
 // remaining recast (seconds, 0 = ready) for a job-ability recast_id, read from the client's 32-slot
 // recast table (lc_recast_ja_timers() / lc_recast_ja_ids()) -- the menu's exact "Next". The offsets are
 // derived, not constants : Windower 4.7.9.3 slid the whole block by +4. recast_id from abilities_gen.h.
-unsigned ability_recast_sec(unsigned recast_id);
+unsigned ability_recast_sec(unsigned recast_id, unsigned* ticksOut = 0);   // ticksOut (optional) : the raw 1/60 s counter the seconds were ceil-ed from -- a CHARGE POOL (SCH stratagems) needs it, a ceil-ed second lands on the wrong side of a charge boundary
 
 // remaining recast (seconds, 0 = ready) for a SPELL recast_id, read from the client's ushort[1024]
 // recast array (*(g + lc_recast_spells()), one dword past the ability ids) -- the menu's exact "Next".
@@ -272,5 +272,10 @@ unsigned spell_recast_sec(unsigned recast_id);
 // sec[] (remaining seconds). Returns the count. SEH-guarded (block-reads the 1024-entry spell array). Kept separate
 // from poll_game_state (which hosts C++ objects and so can't use __try). Names resolved caller-side via the gen tables.
 int read_recasts(unsigned short* recastId, unsigned char* kind, int* sec, int maxN, int* ticks = 0);   // ticks (optional) : the raw 1/60 s value `sec` was ceil-ed from -- sub-second ordering, see GameState::RecastEntry
+
+// //aio schlog [sec] -- log the SCH stratagem pool while it moves : the inputs the charge count is decided
+// from (level, spent JP, interval, max charges) and, on every spend, the interval MEASURED off the jump in
+// the pool timer. The one capture that can prove or disprove the table in sch_recast_info.
+void sch_log_arm(int seconds);
 
 } // namespace aio

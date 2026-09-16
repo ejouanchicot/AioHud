@@ -1317,6 +1317,16 @@ static void aio_command_dispatch(const char* cmd)
         g_host.console().print(aio::tr(">>> Cleanest test : Pianissimo the song ON YOURSELF -- same math as on an ally, but with a real timer to check it against <<<", ">>> Test le plus net : Pianissimo la song SUR TOI -- meme calcul qu'un Pianissimo sur un allie, mais avec un vrai timer pour le verifier <<<"));
         return;
     }
+    if (strstr(buf, "schlog")) {   // //aio schlog [sec] -> the SCH stratagem pool : the inputs the charge count is decided from, and the interval MEASURED off each spend
+        int sec = 180; { const char* a = strstr(buf, "schlog") + 6; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
+        if (sec < 10) sec = 10; if (sec > 900) sec = 900;
+        aio::sch_log_arm(sec);
+        g_host.console().print(aio::tr(">>> AioHud : schlog ARMED -- spend a few stratagems, then send Windower\\plugins\\aiohud_debug.log (SCHLOG lines) <<<",
+                                       ">>> AioHud : schlog ARME -- depense quelques stratagems, puis envoie Windower\\plugins\\aiohud_debug.log (lignes SCHLOG) <<<"));
+        g_host.console().print(aio::tr(">>> Do it on SCH main AND on a job subbing /SCH : each spend prints the interval the game really uses <<<",
+                                       ">>> A faire en SCH main ET en /SCH : chaque depense affiche l'intervalle reellement utilise par le jeu <<<"));
+        return;
+    }
 #ifdef AIOHUD_DEVTOOLS   // developer toy : not in a release
     if (strstr(buf, "corners")) {   // //aio corners -> A/B the BAKED corner masks against the feathered geometry
         const bool off = !aio::corner_mask_user_is_off();

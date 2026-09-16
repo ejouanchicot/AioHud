@@ -38,6 +38,7 @@
 #include "model/charsheet.h"   // the sheet decoder, shared with the packet path
 #include "model/party_state.h"    // the party ids <bt> is claimed by (the roster)
 #include "model/ui_config.h"   // mmShow : skip the entity-array sweep entirely when the minimap is off (model->model, no layering issue)
+#include "model/model_clock.h"    // //aio schlog : the model's one source of "now" (replayable offline)
 #include "windower.h"   // safe_read / valid_ptr (guarded game-memory reads)
 #include <windows.h>
 #include <cstring>
@@ -1075,7 +1076,8 @@ bool read_action_menu(int& type, unsigned& id, unsigned& cursor, bool& examValid
 // Windower builds recasts[id] = timer/60. We do the inverse : given the highlighted JA's recast_id,
 // scan the 32 slots for an ACTIVE one (timer>0) whose id matches -> its remaining seconds (0 = ready).
 // recast_id comes from abilities_gen.h (caller side). This is the menu's exact "Next".
-unsigned ability_recast_sec(unsigned recast_id) {
+unsigned ability_recast_sec(unsigned recast_id, unsigned* ticksOut) {
+    if (ticksOut) *ticksOut = 0;
     u32 g = data_root(); if (!g) return 0;
     u32 idsP = 0, timersP = 0;
     safe_read(g + lc_recast_ja_ids(), &idsP); safe_read(g + lc_recast_ja_timers(), &timersP);
@@ -1084,7 +1086,10 @@ unsigned ability_recast_sec(unsigned recast_id) {
         u32 t = 0; safe_read(timersP + s * 4, &t);
         if ((int)t <= 0 || t > 60u * 7200u) continue;          // empty/ready slot, or garbage (>2h)
         u32 idb = 0; safe_read(idsP + s * 8, &idb);
-        if ((idb & 0xFF) == recast_id) return (t + 59) / 60;   // ceil to whole seconds (the "Next")
+        if ((idb & 0xFF) == recast_id) {
+            if (ticksOut) *ticksOut = t;                       // the RAW 1/60 s counter : a charge pool needs it
+            return (t + 59) / 60;                              // ceil to whole seconds (the "Next")
+        }
     }
     return 0;                                                  // not on recast
 }
@@ -1170,13 +1175,68 @@ int read_jp_u8(unsigned off) {
     u32 v = 0; if (!safe_read(base + off, &v)) return 0;
     return (int)(v & 0xFF);
 }
-static void sch_recast_info(int level, int jp, int& interval, int& charges) {   // stratagem interval (s) + max charges
-    if (jp >= 550)       { interval = 33;  charges = 5; }
-    else if (level >= 90){ interval = 48;  charges = 5; }
-    else if (level >= 70){ interval = 60;  charges = 4; }
-    else if (level >= 50){ interval = 80;  charges = 3; }
-    else if (level >= 30){ interval = 120; charges = 2; }
-    else                 { interval = 240; charges = 1; }
+// STRATAGEM CHARGES -- the rule the client implements, not a table of magic numbers.
+// The client keeps ONE recast slot (id 231) for the WHOLE stratagem pool, and it counts down to the pool
+// being FULL again, never to the next charge. Charges come from the SCHOLAR LEVEL in play (10/30/50/70/90
+// -> 1/2/3/4/5) and the pool always refills in 240 s, so one charge = 240 / charges (240/120/80/60/48 s).
+// The Job-Point GIFT "Stratagem Recast Time" (SCH, 550 JP SPENT) takes 15 s off that interval : 48 -> 33 s.
+// GIFTS ARE MAIN-JOB ONLY. The ported sch.lua applied the gift FIRST and then clamped a subjob to
+// "3 charges / 80 s" -- a state the game cannot produce : a subjob caps at level 49, which is 2 charges
+// every 120 s. That clamp is what made a /SCH read one charge too many with a 40 s-short timer, and the
+// same ordering took a level-restricted SCH main (mlvl under 90, gift bought) to the wrong row.
+static void sch_recast_info(int level, int jpSpent, bool isMain, int& interval, int& charges) {
+    if      (level >= 90) charges = 5;
+    else if (level >= 70) charges = 4;
+    else if (level >= 50) charges = 3;
+    else if (level >= 30) charges = 2;
+    else if (level >= 10) charges = 1;
+    else                  charges = 0;                        // below 10 there is no stratagem at all
+    interval = charges ? 240 / charges : 240;
+    if (isMain && level >= 90 && jpSpent >= 550) interval -= 15;   // the 550 JP gift : 48 -> 33 s per charge
+}
+
+// //aio schlog -- the stratagem pool, every time it MOVES. It logs the DECISION (level, spent JP, and the
+// interval / max charges they produce) next to the raw 1/60 s counter, and it MEASURES the interval the
+// client actually uses : spending a charge adds exactly ONE interval to the pool timer, so the jump between
+// two frames is that interval minus the frame that elapsed. A measured value that disagrees with the table
+// is the whole point of the capture -- the line says so.
+static unsigned g_schLogUntil = 0;
+static int      g_schPrevTicks = -1;    // raw pool counter last frame (-1 = nothing seen yet)
+static unsigned g_schPrevLogMs = 0;     // when that sample was taken : a jump has to be corrected for the frame that passed
+static int      g_schPrevSec   = -1;    // last whole second logged (one line per second, not per frame)
+static int      g_schPrevCount = -1;
+void sch_log_arm(int seconds) {
+    const int sec = (seconds > 0) ? seconds : 180;
+    g_schLogUntil = model_now_ms() + (unsigned)sec * 1000u;
+    g_schPrevTicks = -1; g_schPrevSec = -1; g_schPrevCount = -1;
+    windower::debug::log("SCHLOG armed for %d s -- spend stratagems (main AND /SCH) so the jumps measure the interval", sec);
+}
+static void sch_log_tick(int ticks, int interval, int tableInt, bool learned, int maxCharges, int jpSpent,
+                         int level, bool isMain, int count, int nextSec) {
+    if (!g_schLogUntil) return;
+    if ((int)(model_now_ms() - g_schLogUntil) >= 0) {   // window over : SAY SO. A probe that dies quietly
+        windower::debug::log("SCHLOG window closed");   // reads exactly like a bug that is not happening.
+        g_schLogUntil = 0; return;
+    }
+    const int jump = (g_schPrevTicks >= 0 && ticks > g_schPrevTicks) ? (ticks - g_schPrevTicks) : 0;
+    if (jump > 0) {   // a charge was just spent : jump + what the pool lost between the two samples IS one interval
+        unsigned dms = model_now_ms() - g_schPrevLogMs; if (dms > 2000u) dms = 2000u;
+        const int elapsed = (int)(dms * 60u / 1000u);
+        const int meas = (jump + elapsed + 30) / 60;   // nearest second -- debug::log takes no %f
+        windower::debug::log("SCHLOG SPENT : pool %d -> %d ticks (+%d, +%d elapsed) => measured interval %d s -- table says %d s%s",
+                             g_schPrevTicks, ticks, jump, elapsed, meas, tableInt,
+                             (meas == tableInt) ? " OK" : "  <<< the table is not what the client uses -- the learned value wins");
+    }
+    const int sec = ticks / 60;
+    if (jump > 0 || sec != g_schPrevSec || count != g_schPrevCount) {
+        windower::debug::log("SCHLOG %s SCH lvl=%d jpSpent=%d -> interval=%ds (%s, table %ds) max=%d | pool=%d ticks (%d s) charges=%d next=%ds%s",
+                             isMain ? "main" : "sub", level, jpSpent, interval,
+                             learned ? "LEARNED off a spend" : "table", tableInt, maxCharges,
+                             ticks, sec, count, nextSec,
+                             (maxCharges > 0 && ticks > maxCharges * interval * 60)
+                                 ? "  <<< pool LONGER than max*interval : the interval is wrong" : "");
+    }
+    g_schPrevTicks = ticks; g_schPrevSec = sec; g_schPrevCount = count; g_schPrevLogMs = model_now_ms();
 }
 static void compute_grimoire(GameState& gs) {
     // buffsOk false = the buff list is UNAVAILABLE this frame (a transient read miss), NOT "no buffs". Recomputing
@@ -1200,21 +1260,55 @@ static void compute_grimoire(GameState& gs) {
     else if (hasBuff(359)) { g.book = 1; }                      // Dark Arts
     else                   { g.book = 0; g.dim = true; g.closed = true; }   // no Arts / Addendum at all -> the CLOSED book (no charges / recast)
     const int level = isMain ? gs.me.mlvl : gs.me.slvl;
-    unsigned spent = 0; read_job_spent(SCH, spent);
-    int interval = 240, charges = 1; sch_recast_info(level, (int)spent, interval, charges);
-    if (!isMain) { if (charges > 3) charges = 3; if (interval < 80) interval = 80; }   // sub SCH : capped
-    const int recast = (int)ability_recast_sec(231);           // Stratagems recast
-    int count = charges;
-    if      (recast == 0)             count = charges;
-    else if (recast < interval)       count = charges - 1;
-    else if (recast < 2 * interval)   count = charges - 2;
-    else if (recast < 3 * interval)   count = charges - 3;
-    else if (recast < 4 * interval)   count = charges - 4;
-    else                              count = 0;
-    if (count < 0) count = 0;
+    unsigned spent = 0; if (isMain) read_job_spent(SCH, spent);   // a gift only counts on the MAIN job -- do not even read it for a /SCH
+    int interval = 240, maxCharges = 0; sch_recast_info(level, (int)spent, isMain, interval, maxCharges);
+    const int tableInt = interval;   // what the level/JP table says, kept for the log : the learned value overwrites `interval`
+    // The pool timer in RAW 1/60 s, not the ceil-ed seconds every other reader gets. Spending one charge sets
+    // the pool to EXACTLY one interval, and a ceil-ed "33" against a 33 s interval falls on the wrong side of
+    // every `<` in a charge ladder -- one stratagem out of a full book used to read as two spent, for a second.
+    // Read the slot DIRECTLY rather than looking it up in gs.recasts : that snapshot stops at 40 entries, and a
+    // pool silently truncated away would read as "every charge available".
+    unsigned rawTicks = 0; ability_recast_sec(231, &rawTicks);
+    const int ticks = (int)rawTicks;                           // 0 = the slot is not on recast at all = pool full
+    // LEARN the interval instead of trusting the table. Spending a stratagem adds EXACTLY one interval to the
+    // pool, so the client states its own number every time you use one. Two corrections make that jump usable :
+    //  * the pool ALSO fell between the two polls, by however long the frame took -- add that back, or a hitch
+    //    of half a second reads as one second less. Measured : a first pass took the SMALLEST jump seen and
+    //    learned 47 s on a client whose four clean spends had all said 48 (//aio schlog, 2026-09-16). The
+    //    minimum is not the truth : double spends push a jump UP, slow frames push it DOWN.
+    //  * a jump can never be LONGER than the table (the 550 JP gift only shortens it), which is exactly what
+    //    two stratagems inside one frame would produce -- so reject those, and keep the LARGEST of what is
+    //    left. Slow frames can then only lose to a cleaner measurement, and a first bad value self-repairs.
+    // The table stays the answer before the first spend of a session.
+    static unsigned g_schKey = 0, g_schPrevMs = 0;             // what the learned value belongs to / when it was last sampled
+    static int g_schLearned = 0, g_schLastTicks = -1;          // seconds (0 = nothing learned yet)
+    const unsigned nowMs = model_now_ms();
+    const unsigned key = (unsigned)(isMain ? 1 : 0) | ((unsigned)level << 1) | ((unsigned)maxCharges << 9);
+    if (key != g_schKey) { g_schKey = key; g_schLearned = 0; g_schLastTicks = -1; }   // job / level changed : forget
+    if (hasBuff(377)) { g_schLearned = 0; g_schLastTicks = -1; }   // Tabula Rasa refills the pool and moves its pace : never learn from it
+    else {
+        if (g_schLastTicks >= 0 && ticks > g_schLastTicks) {
+            unsigned dms = nowMs - g_schPrevMs; if (dms > 2000u) dms = 2000u;          // a zone-in is not a frame
+            const int elapsed = (int)(dms * 60u / 1000u);                              // what the pool lost while we were away
+            const int meas = (ticks - g_schLastTicks + elapsed + 30) / 60;             // one interval, to the nearest second
+            if (meas >= 15 && meas <= tableInt && meas > g_schLearned) g_schLearned = meas;
+        }
+        g_schLastTicks = ticks; g_schPrevMs = nowMs;
+    }
+    if (g_schLearned > 0) interval = g_schLearned;
+    // Last resort, table or learned : the pool can never run LONGER than maxCharges intervals. A pool that does
+    // proves the interval is too short -- fall back to the ungifted 240/charges rather than report zero charges
+    // to a Scholar holding three. (The gifted 33 s row is the one value no capture has confirmed : the Scholar
+    // measured on 2026-09-16 did not own the gift, so it rests on GearInfo's Gifts.lua alone.)
+    if (maxCharges > 0 && ticks > maxCharges * interval * 60) { interval = 240 / maxCharges; g_schLearned = 0; }
+    const int per = interval * 60;                             // one charge, in 1/60 s
+    const int recharging = (ticks > 0 && per > 0) ? (ticks + per - 1) / per : 0;   // ceil : charges still coming back
+    int count = maxCharges - recharging; if (count < 0) count = 0;
     g.charges  = count;
-    g.timerSec = (recast > 0) ? (recast % interval) : -1;
+    g.timerSec = (ticks > 0) ? ((ticks - (recharging - 1) * per + 59) / 60) : -1;   // to the NEXT charge (ceil), -1 = pool full
+    g.interval = interval; g.maxCharges = maxCharges;   // what the count was decided from : the harness judges THESE, not a table it re-derives
     gs.grimoire = g;
+    sch_log_tick(ticks, interval, tableInt, g_schLearned > 0, maxCharges, (int)spent, level, isMain, count, g.timerSec);
 }
 
 void poll_game_state(GameState& gs) {
