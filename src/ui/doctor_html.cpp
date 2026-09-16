@@ -223,7 +223,7 @@ const char* write_doctor_html(const GameState& gs, const char* const* lines, int
     esc(f, who);
     fputs("</h1>", f);
     fprintf(f, "<p class='sub'>%s %s%d / %s%d &middot; zone %d</p>",
-            fr ? "Job" : "Job",
+            "Job",                                    // same word in both languages -- no ternary to maintain
             (gs.me.mjob > 0 && gs.me.mjob < CS_JOB_N) ? JOB_ABBR[gs.me.mjob] : "?", (int)gs.me.mlvl,
             (gs.me.sjob > 0 && gs.me.sjob < CS_JOB_N) ? JOB_ABBR[gs.me.sjob] : "?", (int)gs.me.slvl,
             (int)gs.zone);

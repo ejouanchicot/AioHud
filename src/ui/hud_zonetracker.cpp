@@ -559,7 +559,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         else               snprintf(galB, sizeof(galB), "%s", lastRun ? "  (last run)" : "");
         const bool showGal = (C.ztSoGal != 0), showBoss = (C.ztSoBoss != 0), showCof = (C.ztSoCof != 0), showLoot = (C.ztSoLoot != 0);
         char cofLine[64];
-        snprintf(cofLine, sizeof(cofLine), "Coffers %d up  \xC2\xB7  %d down%s", (int)cofUp, (int)cofDown, nm ? "" : "");
+        snprintf(cofLine, sizeof(cofLine), "Coffers %d up  \xC2\xB7  %d down", (int)cofUp, (int)cofDown);   // the NM count is appended just below, not here
         if (nm) { const int w = (int)strlen(cofLine); snprintf(cofLine + w, sizeof(cofLine) - w, "  \xC2\xB7  NM %d", (int)nm); }
         char lootLine[8][48]; int nLoot = 0;
         for (int i = 0; i < 8; ++i) {

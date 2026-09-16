@@ -13,7 +13,12 @@ namespace aio {
 // 1px edge if the coordinate handed in is already ON the pixel grid -- see CLAUDE.md rule 1. This lived as
 // SEVEN byte-identical copies across the ui/ TUs ; one drifting copy would mean one silently blurry widget,
 // so it is defined once, here, next to the code whose contract depends on it.
-inline float snap(float v) { return (float)(int)(v + 0.5f); }
+// Round to the nearest whole pixel. AWAY FROM ZERO on both sides : `(int)(v + 0.5f)` alone truncates
+// toward zero, so it rounds a NEGATIVE coordinate the wrong way -- snap(-3.4) gave -2, a whole pixel off,
+// and rule 1 of this project is that a mis-snapped edge blurs. Positive values are unchanged (every
+// existing call site keeps its exact result); the ternary is the same idiom the widgets already use for
+// signed percentages. Found by clang-tidy (bugprone-incorrect-roundings), which had never been run here.
+inline float snap(float v) { return (float)(int)(v + (v >= 0.0f ? 0.5f : -0.5f)); }
 
 // --- textured (FVF 0x144) ---
 
