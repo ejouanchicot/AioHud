@@ -904,6 +904,18 @@ struct PartyState {
     void on_dd(const unsigned char* p);   // 0x0DD : member update (name/jobs/HP/MP/TP/%) -> also caches
     void on_df(const unsigned char* p);   // 0x0DF : vitals update (HP/MP/TP, refresh %)
     void on_action(const unsigned char* p); // 0x028 : begin/finish casting -> cast bar + landed target debuffs
+    // The ten stages 0x028 feeds, in walk order. They were one 950-line on_action; the two returning
+    // bool CONSUME the packet (true = handled, stop) -- which is what their early `return` always did.
+    void act_sleep_wake(unsigned cat, unsigned actor);   // a slept mob that ACTS has woken -- drop its sleep
+    void act_treasure_hunter(const unsigned char* p, int size, unsigned cat, unsigned actor);   // TH proc = add-effect anim 7 msg 603 (msg 608 on a weaponskill)
+    void act_hate_list(const unsigned char* p, int size, unsigned actor);   // any friendly-vs-mob pairing records that mob as aggroing
+    bool act_skillchain(const unsigned char* p, int size, unsigned cat, unsigned actor);   // opens/closes a resonance, and fires the weaponskill popup (which consumes the packet)
+    void act_buff_attribution(const unsigned char* p, int size, unsigned cat, unsigned actor);   // a buff landing on ME -> remember WHO cast it (the self-cast-only filter)
+    void act_song_tags(const unsigned char* p, int size, unsigned cat, unsigned actor);   // SV/NT/TR/M tags for a song someone else cast
+    void act_ally_buffs(const unsigned char* p, int size, unsigned cat, unsigned actor);   // buffs YOU cast on other players -> the Timers ally rows
+    void act_cor_rolls(const unsigned char* p, int size, unsigned cat, unsigned actor);   // Corsair rolls on other players, and the pip total on the roll itself
+    bool act_target_debuffs(const unsigned char* p, int size, unsigned cat, unsigned actor);   // debuffs landing on the target (spell finish / JA / melee) -- consumes the packet
+    void act_cast_bar(const unsigned char* p, int size, unsigned cat, unsigned actor);   // begin-cast / readies -> the cast bar slots
     void on_029(const unsigned char* p);  // 0x029 : action message -> msg 204 = a status wore off a target (remove its icon)
     void on_076(const unsigned char* p);  // 0x076 : party-member status icons (buffs) -> buffs_[]
     void on_01b(const unsigned char* p);  // 0x01B : job info -> caches the 'Encumbrance Flags' bitfield (locked equip slots)

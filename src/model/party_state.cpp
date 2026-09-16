@@ -893,13 +893,8 @@ static unsigned char roll_luck_of(unsigned aid, unsigned pip) {
         return (pip == RL[r].lucky) ? 1 : (pip == RL[r].unlucky) ? 2 : 0;
     return 0;
 }
-void PartyState::on_action(const unsigned char* p) {
-    u32 hdr = (u32)p[0] | ((u32)p[1] << 8);
-    int size = (int)((hdr >> 9) & 0x7F) * 4;               // packet size in bytes
-    if (size < 30) { pkt_note_reject(PKTREJ_SHORT, 30, size); return; }   // begin-cast needs the action block (bit 213 -> byte 26..)
-    u32 cat = getbits(p, 82, 4, size);
-    u32 actor = getbits(p, 40, 32, size);
-
+// a slept mob that ACTS has woken -- drop its sleep
+void PartyState::act_sleep_wake(unsigned cat, unsigned actor) {
     // ---- SLEEP WAKE BY ACTION : a slept mob that ACTS (it's the ACTOR of an action -- melee / readies a TP move /
     // begins or finishes a spell or job ability) has clearly woken -> drop its sleep. Catches wakes we get no
     // "no longer asleep" message for (someone else woke it), from the mob's OWN broadcast action ; the actor id
@@ -919,6 +914,10 @@ void PartyState::on_action(const unsigned char* p) {
         }
     }
 
+}
+
+// TH proc = add-effect anim 7 msg 603 (msg 608 on a weaponskill)
+void PartyState::act_treasure_hunter(const unsigned char* p, int size, unsigned cat, unsigned actor) {
     // ---- TREASURE HUNTER : detected EXACTLY like the reference addons on RETAIL (Krizz's THTracker + Ariel's easyTH,
     // web-verified 2026-07-10) : a TH proc is an ADD-EFFECT with **animation 7** and **message 603**, and the tier is
     // that add-effect's **param**. On a weaponskill (cat 3) it lands as the action's MAIN message 608, tier = main
@@ -954,6 +953,10 @@ void PartyState::on_action(const unsigned char* p) {
         }
     }
 
+}
+
+// any friendly-vs-mob pairing records that mob as aggroing
+void PartyState::act_hate_list(const unsigned char* p, int size, unsigned actor) {
     // ---- HATE LIST (module) : any action pairing one of our PCs (you / a party/alliance member) with a non-PC
     // entity records that entity as an aggroing mob (hate_[]) -- this is now the SOLE membership source for the hate
     // list (refresh_hate no longer scans claims ; it only reads these tracked mobs' vitals). We DON'T classify
@@ -990,6 +993,10 @@ void PartyState::on_action(const unsigned char* p) {
         }
     }
 
+}
+
+// opens/closes a resonance, and fires the weaponskill popup (which consumes the packet)
+bool PartyState::act_skillchain(const unsigned char* p, int size, unsigned cat, unsigned actor) {
     // ---- SKILLCHAINS (module) : a WS (cat 3) / spell (cat 4) FINISH either OPENS a step-1 resonance (its own
     // skillchain property, from skillchain_gen) or, when the hit carries a skillchain ADDED EFFECT, CLOSES one
     // (step+1). Pure 0x028 bit-reads (offsets in skillchain.h). GATED to a FRIENDLY actor (you / a party or
@@ -1102,8 +1109,13 @@ void PartyState::on_action(const unsigned char* p) {
         const WSRow* w = ws_info(wsid); const char* nm = w ? w->en : "Weapon Skill";
         int i = 0; for (; nm[i] && i < 39; ++i) wsPop_.name[i] = nm[i]; wsPop_.name[i] = 0;
         wsPop_.dmg = (int)dmg; wsPop_.startMs = model_now_ms();
-        return;
+        return true;
     }
+    return false;
+}
+
+// a buff landing on ME -> remember WHO cast it (the self-cast-only filter)
+void PartyState::act_buff_attribution(const unsigned char* p, int size, unsigned cat, unsigned actor) {
     // ---- BUFF CASTER ATTRIBUTION (Timers "self-cast only" filter) : a buff spell (cat 4) / job ability (cat 6) /
     //      Trust or mob TP move (cat 11) landing on ME -> remember WHO cast it, keyed by the status it grants. Lets
     //      the box hide buffs others put on you (Haste / songs / rolls / Trust stat boosts) while keeping your
@@ -1238,6 +1250,10 @@ void PartyState::on_action(const unsigned char* p) {
             }
         }
     }
+}
+
+// SV/NT/TR/M tags for a song someone else cast
+void PartyState::act_song_tags(const unsigned char* p, int size, unsigned cat, unsigned actor) {
     // ---- SONG JA TAGS FOR SOMEONE ELSE'S CAST. The block below reads OUR OWN memory buff list, so SV/NT/TR/M
     //      only ever tagged what WE cast. MEASURED 2026-07-20 on a second client: the 0x076 party-buff cache DOES
     //      carry the caster's Nightingale (347) and Troubadour (348) at the moment we process their 0x028, and
@@ -1267,9 +1283,10 @@ void PartyState::on_action(const unsigned char* p) {
                                  actor, fsid, fb ? 1 : 0, fb ? (int)fb->skill : -1, cb ? cb->n : -1,
                                  fsid, (fsid < 1024) ? songMod_[fsid] : 0);
     }
-    // ---- GEO Entrust (JA 386) : arms the NEXT Indi- to be a FIXED buff on an ally (the effect does not move/pulse),
-    //      so unlike a normal Indi- aura we DO want to show it on that ally. Remember when it was used. ----
-    if (cat == 6 && actor == selfId_ && getbits(p, 86, 16, size) == 386) entrustTick_ = model_now_ms();
+}
+
+// buffs YOU cast on other players -> the Timers ally rows
+void PartyState::act_ally_buffs(const unsigned char* p, int size, unsigned cat, unsigned actor) {
     // ---- BUFFS YOU cast on OTHER players (Timers "buff on ally" rows) : a buff spell (cat 4) YOU cast that lands
     //      on a party/alliance member (not yourself) -> record { person, status, ESTIMATED timer } from tb_buff_gen.
     //      The client sends no per-buff timer for other players, so the base duration is an estimate (it ignores
@@ -1621,6 +1638,10 @@ void PartyState::on_action(const unsigned char* p) {
             }
         }
     }
+}
+
+// Corsair rolls on other players, and the pip total on the roll itself
+void PartyState::act_cor_rolls(const unsigned char* p, int size, unsigned cat, unsigned actor) {
     // ---- ROLLS YOU cast on OTHER players (Corsair Phantom Roll family : cat 6 job ability, NOT cat 4). A roll ALSO
     //      lands on YOU, so every ally row mirrors your EXACT 0x063 self timer (no roll-duration model needed, exactly
     //      like an AoE song). Keyed by (target, ability) ; a re-roll refreshes ; pruned when the ally loses it. ----
@@ -1698,6 +1719,10 @@ void PartyState::on_action(const unsigned char* p) {
             }
         }
     }
+}
+
+// debuffs landing on the target (spell finish / JA / melee) -- consumes the packet
+bool PartyState::act_target_debuffs(const unsigned char* p, int size, unsigned cat, unsigned actor) {
     if (cat == 4) {                                        // FINISH : a spell resolved -> record the debuff it lands on each target.
         // Reversed via //aio act (bit-level scan) : target[0].id @ bit 150 (32b), per-target STRIDE = 123 bits,
         // The RELIABLE spell id is the ACTOR-level param @ bit 86 (16b) -- this is what parse_action calls
@@ -1712,7 +1737,7 @@ void PartyState::on_action(const unsigned char* p) {
         const u32 spellId = getbits(p, 86, 16, size);                // actor.param = the cast spell id (258=Bind, 59=Silence)
         const SpellDebuff* de = spell_debuff(spellId);
         DBFTRACE("DBF cast cat4 actor=%08X spell=%u self=%u -> effect=%d", actor, spellId, bySelf ? 1u : 0u, de ? (int)de->effect : -1);
-        if (!de) return;                                             // spell lands no trackable debuff (nuke / cure / buff)
+        if (!de) return true;                                             // spell lands no trackable debuff (nuke / cure / buff)
         u32 tcount = getbits(p, 72, 6, size);
         if (tcount < 1) tcount = 1; if (tcount > 16) tcount = 16;
         // VARIABLE stride, same walk as the TH / buff-caster blocks above. The old fixed `150 + i*123` was
@@ -1769,7 +1794,7 @@ void PartyState::on_action(const unsigned char* p) {
                 record_debuff(tdebuffs_, tid, de->effect, de->durSec * 1000u, bySelf, (unsigned short)spellId, is_status_land_msg(amsg));
             }
         }
-        return;
+        return true;
     }
     // COR Quick Draw : Light Shot (131) REINFORCES an existing Dia, Dark Shot (132) an existing Bio -- +2.73%
     // Def/Att down and a DoT tick, capping after ONE shot. It does NOT cast the debuff and it does NOT raise its
@@ -1821,8 +1846,13 @@ void PartyState::on_action(const unsigned char* p) {
             }
         }
         // (Treasure Hunter is detected by the dedicated add-effect walk at the top of on_action -- not here.)
-        return;
+        return true;
     }
+    return false;
+}
+
+// begin-cast / readies -> the cast bar slots
+void PartyState::act_cast_bar(const unsigned char* p, int size, unsigned cat, unsigned actor) {
     if (cat != 8 && cat != 7 && cat != 6) return;          // begin casting a spell (8) ; readies a weaponskill / mob TP
                                                            // move (7) ; a JOB ABILITY (6, instant -> brief flash). cat 4
                                                            // (finish) handled above ; we DON'T clear the bar on it.
@@ -1842,6 +1872,32 @@ void PartyState::on_action(const unsigned char* p) {
     if      (cat == 8) { const SpellRow* sp = spell_info(aid); casts_[slot].kind = 0; casts_[slot].durMs = sp ? sp->cast_ms : 0; }
     else if (cat == 7) { casts_[slot].kind = 1; casts_[slot].durMs = 3000; }   // readies (mob TP / WS) : no reliable duration field -> estimate ~3s
     else               { casts_[slot].kind = 2; casts_[slot].durMs = 1500; }   // cat 6 job ability : instant -> a brief 1.5s flash of its name
+}
+
+void PartyState::on_action(const unsigned char* p) {
+    // 0x028 feeds TEN independent consumers. They used to be one 950-line function; each is now its own
+    // stage, in the order the packet has to be walked. Two of them CONSUME the packet (the weaponskill
+    // popup, and a debuff resolution): they return true and nothing after them runs -- that early `return`
+    // was always the behaviour, it is just visible now. Each signature lists what that stage reads.
+    u32 hdr = (u32)p[0] | ((u32)p[1] << 8);
+    int size = (int)((hdr >> 9) & 0x7F) * 4;               // packet size in bytes
+    if (size < 30) { pkt_note_reject(PKTREJ_SHORT, 30, size); return; }   // begin-cast needs the action block (bit 213 -> byte 26..)
+    const unsigned cat   = getbits(p, 82, 4, size);
+    const unsigned actor = getbits(p, 40, 32, size);
+
+    act_sleep_wake(cat, actor);
+    act_treasure_hunter(p, size, cat, actor);
+    act_hate_list(p, size, actor);
+    if (act_skillchain(p, size, cat, actor)) return;       // the weaponskill popup took this packet
+    act_buff_attribution(p, size, cat, actor);
+    act_song_tags(p, size, cat, actor);
+    // GEO Entrust (JA 386) : arms the NEXT Indi- to be a FIXED buff on an ally (the effect does not move or
+    // pulse), so unlike a normal Indi- aura we DO want to show it on that ally.
+    if (cat == 6 && actor == selfId_ && getbits(p, 86, 16, size) == 386) entrustTick_ = model_now_ms();
+    act_ally_buffs(p, size, cat, actor);
+    act_cor_rolls(p, size, cat, actor);
+    if (act_target_debuffs(p, size, cat, actor)) return;   // a debuff resolution ends the walk
+    act_cast_bar(p, size, cat, actor);
 }
 
 // 0x029 action-message : a "wore off / recovered from" message (is_wearoff_msg : 64/204/206/321/322/350/531,

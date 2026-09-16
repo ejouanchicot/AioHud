@@ -91,11 +91,13 @@ re-instruire a chaque audit :
 
 ## Dette qui RESTE (chiffree, non traitee)
 
-### Fonctions surdimensionnees — 23 au-dessus de 120 lignes, 8 au-dessus de 400
+### Fonctions surdimensionnees — 23 au-dessus de 120 lignes avant le decoupage, 8 au-dessus de 400
+*(apres le decoupage d'`on_action` : 25 au-dessus de 120 — ses trois plus gros etages entrent dans le
+compte — et 7 au-dessus de 400. Le nombre total de lignes ne bouge pas ; la plus grosse fonction, si.)*
 
 | lignes | fonction |
 |---|---|
-| 950 | `PartyState::on_action` (`party_state.cpp:896`) |
+| ~~950~~ **24** | `PartyState::on_action` — **decoupee** en 10 etages (voir plus bas) |
 | 717 | `Party::draw` (`party.cpp:535`) |
 | 695 | `ConfigPage::draw` (`config_page.cpp:402`) |
 | 657 | `Player::draw` (`player.cpp:255`) |
@@ -104,12 +106,19 @@ re-instruire a chaque audit :
 | 434 | `Minimap::draw` (`minimap.cpp:398`) |
 | 423 | `ConfigPage::draw_edit_layout` (`config_page.cpp:1172`) |
 
-**Recommandation, par ordre de risque.** `on_action` est le bon premier chantier et le seul a faible
-risque : il est deja decoupe *visuellement* en une douzaine de sections independantes (`---- TREASURE
-HUNTER ----`, `---- HATE LIST ----`, `---- SKILLCHAINS ----`…), et il est couvert par la suite +
-les deux rejeux de session, donc un decoupage se **verifie**. Les `draw()` sont a laisser tant qu'aucun
-test de rendu n'existe : les couper a l'aveugle, c'est echanger de la lisibilite contre un risque
-visuel que rien ne rattrape.
+**`on_action` : FAIT** (meme journee). Elle etait deja decoupee *visuellement* en sections
+independantes (`---- TREASURE HUNTER ----`, `---- HATE LIST ----`, `---- SKILLCHAINS ----`…) et
+couverte par la suite + les deux rejeux, donc le decoupage se **verifiait**. Dix etages, corps repris
+ligne pour ligne, signature reduite a ce que chaque etage lit vraiment (`/W4 /WX` refuse un parametre
+inutile — il a d'ailleurs attrape mes deux premieres signatures trop larges). Deux etages rendent un
+`bool` : le popup de weaponskill et la resolution de debuff **consomment** le paquet, ce que leur
+`return` faisait deja sans que ca se voie. Resultat : `on_action` = **24 lignes** qui se lisent comme
+la liste des consommateurs du paquet, plus grosse fonction du projet ramenee de 950 a **353**
+(`act_ally_buffs`). Verifie par 2308 controles / 0 echec et les **2 rejeux de session conformes a leur
+golden** — ce sont de vrais paquets 0x028 rejoues a travers cette fonction.
+
+**Les `draw()` restent a laisser** tant qu'aucun test de rendu n'existe : les couper a l'aveugle, c'est
+echanger de la lisibilite contre un risque visuel que rien ne rattrape.
 
 ### Duplication — 13 groupes d'au moins 9 lignes identiques
 Le gros est entre panneaux de config : `ep_config` / `grim_config` / `hl_config` / `minimap_config` /
