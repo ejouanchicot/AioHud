@@ -5,6 +5,10 @@ source: REFERENCE.md §9a
 ---
 # Local player struct — read from memory
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `dump` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release**.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 Pointer chain (this install, `LuaCore.dll 2.6.8.2`):
 ```
 G      = aio::data_root()               // data root -- *(LuaCore.dll + a DERIVED rva), see luacore-data-root.md

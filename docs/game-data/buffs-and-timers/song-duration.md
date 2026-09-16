@@ -1,8 +1,12 @@
 # Song duration (BRD) — the model, and why it was wrong for months
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `songlog` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release**.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 *Measured against the server on 2026-07-25 (`//aio songlog`, two sessions). This is the reference for
 `src/model/song_dur.h` + `song_dur_gen.h`; the per-item table is **generated**, see
-[`scripts/gen_song_dur.py`](../../scripts/gen_song_dur.py).*
+[`scripts/gen_song_dur.py`](../../../scripts/gen_song_dur.py).*
 
 ---
 
@@ -69,7 +73,7 @@ Server `0x063` vs the model, same equipped ids, captured with `//aio songlog`:
 | Gold Capriccio | 126 s | **162 s** | 158 s |
 
 The small overshoot is the truncation the reference sheet documents (*"les décimales sont tronquées après
-totalisation"*). All five are locked into [`tests/t_durations.cpp`](../../tests/t_durations.cpp) — the table
+totalisation"*). All five are locked into [`tests/t_durations.cpp`](../../../tests/t_durations.cpp) — the table
 is generated, so a bad regeneration would otherwise stay invisible until somebody sang.
 
 The **family term is load-bearing**, and this is the proof: Madrigal and Minuet were cast on the *same sixteen

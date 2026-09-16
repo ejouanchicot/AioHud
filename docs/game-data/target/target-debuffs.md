@@ -5,6 +5,10 @@ source: split from cast-bar.md (REFERENCE.md §9f)
 ---
 # Target debuffs — detection, wear-off, and mob-behaviour inference
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `act`, `wear` : **plus aucun code nulle part** — la recette ci-dessous decrit une capture qui ne peut plus etre rejouee telle quelle.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 The Target module tracks debuffs **ON a mob** entirely from inbound action packets — FFXI keeps no
 readable per-mob status list (see the investigation in [target-substruct.md](target-substruct.md)).
 Native parse in `party_state.cpp` (`on_action` / `on_029` + the `record_debuff` / `record_th` helpers).

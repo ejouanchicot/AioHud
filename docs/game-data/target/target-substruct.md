@@ -5,6 +5,10 @@ source: REFERENCE.md §9e
 ---
 # Target & SUB-target struct  (REVERSED & WORKING, 2026-06-27, retail)
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `tlock` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release** ; `pcur`, `sub`, `tdbg`, `tent`, `tgt`, `tgt2` : **plus aucun code nulle part** — la recette ci-dessous decrit une capture qui ne peut plus etre rejouee telle quelle.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 This drives the gold "loupe" bar (main target `<t>`) **and** the ocean-blue bar (sub-target
 `<st>`/`<stpc>`). Layout matches **Ashita's `target_t`** (`plugins/sdk/ffxi/target.h`):
 two `targetentry_t` (40 bytes / `0x28` each) + a sub-active flag.

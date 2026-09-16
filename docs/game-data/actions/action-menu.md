@@ -5,6 +5,10 @@ source: REFERENCE.md §9g
 ---
 # Action-menu info box — Magic / Job Ability / Weapon Skill  (WORKING, ZERO-TAP, 2026-06-27)
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `grabmod` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release** ; `sfind` : **plus aucun code nulle part** — la recette ci-dessous decrit une capture qui ne peut plus etre rejouee telle quelle.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 A small box, right-aligned, ABOVE the native party, that mirrors the game's MP-Cost/Next dialog
 while you hover an action in the **Magic**, **Job Ability** or **Weapon Skill** menu. Drawn in
 `party.cpp` (end of `render()`), fed by `read_action_menu(int& type, unsigned& id)` in

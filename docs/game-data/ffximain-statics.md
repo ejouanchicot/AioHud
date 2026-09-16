@@ -5,6 +5,10 @@ summary: The six FFXiMain RVAs AioHUD reads, why a game update breaks exactly th
 
 # FFXiMain statics, and how they repair themselves
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `mbox` : **retiree(s) le 2026-09-14** — le code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire une capture.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 Everything AioHUD reads hangs off one of two anchors:
 
 - **LuaCore's data root** `g = *(LuaCore + <rva>)` — Windower's own DLL. A **game** patch does not touch it…

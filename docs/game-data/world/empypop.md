@@ -5,6 +5,10 @@ source: model/party_state_empypop.cpp, model/nms_gen.h, ui/hud_empypop.cpp, ui/e
 ---
 # EmpyPop — Abyssea empyrean NM pop-chain tracker
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `ep`, `eplist` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release**.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 A C++ rewrite of the upstream **Empy Pop Tracker** (Xurion of Bismarck, `modules/empypop.lua`).
 For a chosen Abyssea empyrean NM it resolves the whole **pop chain** — which trigger items and key
 items you need, which sub-NM drops each of them, and how many of each you already hold — and shows

@@ -5,6 +5,10 @@ source: model/party_state_zonetracker.cpp (zt_set_zone/on_55/on_2a/on_omen_text/
 ---
 # Zone Tracker — Dynamis / Abyssea / Omen / Nyzul / Sheol / Limbus providers
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `memdiff`, `memsnap`, `textlog` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release** ; `abylog`, `limbusmem`, `omenlog`, `pktall`, `sheollog` : **retiree(s) le 2026-09-14** — le code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire une capture.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 A dedicated box = the PointWatch **zone providers** ported from `pwcore.lua`. State
 lives in `PartyState::zt_`. `zt_set_zone(zone, zone_name(zone))` is called each
 frame from hud.cpp (after `refresh_hate`) and picks one of **six** modes — the first

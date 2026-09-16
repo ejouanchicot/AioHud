@@ -4,6 +4,10 @@ summary: The item container at *(G+0x50) holds 18 bags x 81 entries (stride 0xCA
 ---
 # Inventory — read from memory
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `inv` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release**.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 **Verdict: located and validated (2026-07-17).** Counting "how many of item id X do I own, across all
 bags?" needs no packets — the whole container is resident and can be snapshotted in one block copy.
 

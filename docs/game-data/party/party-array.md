@@ -5,6 +5,10 @@ source: REFERENCE.md §9d
 ---
 # The party member ARRAY in memory — instant full party at load (the real table)
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `mjlvl` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release** ; `chain` : **retiree(s) le 2026-09-14** — le code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire une capture.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 The packet path only fills members the game *sends*; loading mid-party shows nothing
 until packets arrive. The fix is to read the game's own **party member array** at load.
 On **retail** this is the documented **Ashita `partymember_t`** (stride **`0x7C`**, **18

@@ -1,5 +1,9 @@
 # Captures a faire — ce que seul un log peut trancher
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `sp` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release**.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 **Regle du jeu de ces captures : une capture = un cas.** Melanger deux cas dans une fenetre
 rend le log inexploitable, parce qu'on ne peut plus rattacher un message a un evenement.
 

@@ -5,6 +5,10 @@ source: model/party_state.cpp (on_set_update order 9 / on_action buff-caster / f
 ---
 # Timers — self buff durations + ability/spell recasts
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `songlog` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release**.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 Two columns, both **exact server-sourced** — no estimation. The **Duration** column is your
 own buff timers (server-sent absolute expiry); the **Recast** column is your job-ability and
 spell cooldowns read from the client recast tables. Sorted soonest-first, coloured by urgency

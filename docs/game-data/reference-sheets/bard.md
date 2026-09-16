@@ -427,4 +427,4 @@ Accessoires : Aoidos' Belt (80), Aoidos' Matinee (84), Aoidos' Earring (90), **F
 ## Fichiers liés
 
 - `fili-attire-set.md` — set Empyrean BRD, stats et set bonus
-- `red-mage.md` · `composure.md` · `lethargy-armor-set.md` · `enhancing-magic.md`
+- `composure.md` · `lethargy-armor-set.md` · `enhancing-magic.md`

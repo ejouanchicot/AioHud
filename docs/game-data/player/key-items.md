@@ -4,6 +4,10 @@ summary: The client keeps key items DECODED as a flat u8[8192] (one byte per key
 ---
 # Key items — read from memory
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `ki` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release**.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 **Verdict: located and validated (2026-07-17).** The 0x055 packet is *not* needed to know the
 player's key items — the client decodes it into a persistent flat array we can read directly.
 

@@ -5,6 +5,10 @@ source: REFERENCE.md §9b
 ---
 # Party member packets
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `chain` : **retiree(s) le 2026-09-14** — le code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire une capture.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 `packet_in` (IPlugin slot 11) gives `b` = the **decoded** inbound packet (a safe,
 fully-populated buffer). `id = *(u16*)b & 0x1FF`; size = `((hdr>>9)&0x7F)*4`.
 

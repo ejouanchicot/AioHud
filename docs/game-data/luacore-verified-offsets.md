@@ -5,6 +5,10 @@ source: Ghidra headless on LuaCore.dll (base 0x10000000) + ffximain_dump.bin (ba
 ---
 # Core offsets - verified against LuaCore
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `tent` : **plus aucun code nulle part** — la recette ci-dessous decrit une capture qui ne peut plus etre rejouee telle quelle.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 Method: `docs/architecture/ghidra-setup.md`. The registration function **`FUN_1007BEF0`** pushes every
 `windower.ffxi.*` closure next to its name, so each binding pairs with the code that implements it.
 `g` = `DAT_101C8400` = `*(LuaCore+0x1C8400)`.

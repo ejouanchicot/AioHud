@@ -5,6 +5,10 @@ source: REFERENCE.md §9c
 ---
 # Two traps that cost real time (don't repeat them)
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `dump`, `find`, `mjlvl` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release** ; `chain`, `vit` : **retiree(s) le 2026-09-14** — le code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire une capture.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 1. **Self name renders as `~??????` — dangling pointer, not a bad offset.**
    `Party::build_rows()` had `PlayerInfo me;` as a **stack local** and
    `fill_self()` stored `row.name = me.name`. The rows are consumed by the

@@ -91,7 +91,7 @@ These bake binaries the plugin loads at runtime, from sources kept in `assets/*_
 | `gen_window_skin.sh` | `assets/window_src/0/<theme>/*.dds` | `assets/window/<theme>/{corner,hframe,vframe,bg}.raw` (12 themes × 4) | python + ImageMagick |
 | `conv_caps.ps1` | `research/art_src/out3_capuchon/*.png` | `assets/cap_{front,back}.bin` (the fiole caps, `ui/liquid_bars.cpp`) | — |
 | `gen_buff_atlas.ps1` · `gen_gil_icon.ps1` · `gen_th_icon.ps1` · `patch_buff_icon.ps1` | icon sources | `assets/*.raw` | — |
-| `gen_flow.ps1` | *(32 `Flow0_*.png`, **not in this repo**)* | `research/art_src/FlowX_00..95.png` | — |
+| `gen_flow.ps1` *(script retire du depot)* | *(32 `Flow0_*.png`, **not in this repo**)* | `research/art_src/FlowX_00..95.png` | — |
 
 `gen_flow.ps1` is a **historical** art tool: nothing loads its frames today (the fiole liquid is drawn
 procedurally), and its 32 input frames lived in an old Windower addon folder that no longer exists. It is kept

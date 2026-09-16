@@ -729,7 +729,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // close button (X), top-right -- eased red crossfade + a tiny size bump on hover
     const float cbS = snap(36.0f), cbX = ix + iw - cbS, cbY = mhTop + (mhH - cbS) * 0.5f;   // centred in the plate, not pinned to its top
     const bool cbHov = inrect(mo, cbX, cbY, cbS, cbS);
-    const float ct = ease(1, cbHov ? 1.0f : 0.0f);
+    const float ct = ease(CTRL_ID, cbHov ? 1.0f : 0.0f);
     halo(dev, cbX, cbY, cbS, cbS, C_CLOSEHOV, ct * 0.9f);
     rpanel(dev, cbX, cbY, cbS, cbS, snap(cbS * 0.30f), lerpc(C_CTL_T, C_CLOSEHOV, ct), lerpc(C_CTL_B, 0xFFA0303A, ct), lerpc(C_CTL_BR, 0xFFE57078, ct), snap(1.5f));
     fo->begin(dev);
@@ -894,7 +894,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             const float ry = bodyY + snap(44.0f) + i * snap(42.0f), rh = snap(36.0f);
             const bool active = (sec == section_), hover = inrect(mo, rx, ry, rw, rh);
             if (hover && click) section_ = sec;
-            const float ht = ease(10 + i, (hover || active) ? 1.0f : 0.0f);
+            const float ht = ease(ctrl_uid_i(CTRL_ID, i), (hover || active) ? 1.0f : 0.0f);
             nav_row(dev, fo, rx, ry, rw, rh, module_label(sec), active, ht, pulse);
         }
 
@@ -1132,7 +1132,7 @@ void ConfigPage::draw_profile_bar(u32 dev, Font* fo, const MouseState* mo, bool 
     {
         const bool canSave = activeProf_[0] != 0;
         const bool hov = canSave && inrect(mo, bx, bY, saveW, bH);
-        const float t = ease(410, hov ? 1.0f : 0.0f);
+        const float t = ease(CTRL_ID, hov ? 1.0f : 0.0f);
         const float sr = snap(bH * 0.30f);
         if (dirty) {
             // The same four pieces as a tab, a chip and a push button : edging, fill, a sliver of glass, the
@@ -1512,7 +1512,7 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
         // dragged up there) -> it reappears the moment the click is released.
         if (!edit_drag_busy()) {
         const float bw = snap(820.0f), bh = snap(62.0f), bx = snap((sw - bw) * 0.5f), by = snap(22.0f);
-        const float pop = ease(900, 1.0f, 16.0f);                                   // subtle slide-in
+        const float pop = ease(CTRL_ID, 1.0f, 16.0f);                                   // subtle slide-in
         const float byA = by - (1.0f - pop) * snap(10.0f);
         edit_set_ui_blocker(bx - snap(4.0f), byA - snap(2.0f), bw + snap(8.0f), bh + snap(12.0f), f.t);   // TOP priority : boxes under the toolbar don't grab (so Done/Default/Rules always click)
         shadow_down(dev, bx - snap(4.0f), byA + bh, bw + snap(8.0f), snap(10.0f), 0x55000000);
@@ -1537,7 +1537,7 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
         // go back to dragging/resizing the boxes.
         {
             const bool hov = inrect(mo, lbx, dby, lb, bh2);
-            const float t = ease(904, (editShowLines_ || hov) ? 1.0f : 0.0f);
+            const float t = ease(CTRL_ID, (editShowLines_ || hov) ? 1.0f : 0.0f);
             halo_rect(dev, lbx, dby, lb, bh2, C_ACCENT, t * 0.8f);
             vg(dev, lbx, dby, lb, bh2, lerpc(0xFF2A3548, 0xFF3A82E0, t), lerpc(0xFF1D2738, 0xFF2A61B6, t));
             outline(dev, lbx, dby, lb, bh2, lerpc(C_BORDERHI, C_ACCENTHI, t));
@@ -1552,7 +1552,7 @@ void ConfigPage::draw_edit_layout(const Frame& f, u32 dev, Font* fo, const Mouse
         for (int i = 0; i < 4; ++i) if (ui_config().allyRefY[i] >= 0.0f) refSet = true;
         {
             const bool shv = inrect(mo, sbx, dby, sb, bh2) && refSet;
-            const float t = ease(901, shv ? 1.0f : 0.0f);
+            const float t = ease(CTRL_ID, shv ? 1.0f : 0.0f);
             halo_rect(dev, sbx, dby, sb, bh2, C_ACCENT, t * 0.8f);
             vg(dev, sbx, dby, sb, bh2, lerpc(0xFF2A3548, 0xFF3A82E0, t), lerpc(0xFF1D2738, 0xFF2A61B6, t));
             outline(dev, sbx, dby, sb, bh2, lerpc(C_BORDERHI, C_ACCENTHI, t));
@@ -1679,7 +1679,7 @@ void ConfigPage::draw_profile_tab(const Frame& f, u32 dev, Font* fo, const Mouse
         const float fH = snap(42.0f), btnW = snap(148.0f), fGap = snap(12.0f), fW = pW - btnW - fGap;
         const bool fldHov = inrect(mo, pX, py, fW, fH);
         if (click) { const bool was = nameFocus_; nameFocus_ = fldHov; if (fldHov && !was) nameCur_ = nameLen_; }
-        const float ft = ease(700, nameFocus_ ? 1.0f : 0.0f);
+        const float ft = ease(CTRL_ID, nameFocus_ ? 1.0f : 0.0f);
         halo_rect(dev, pX, py, fW, fH, C_ACCENT, ft * 0.6f);
         rpanel(dev, pX, py, fW, fH, snap(8.0f), 0xE6080C14, 0xE605080F, lerpc(C_CTL_BR, C_ACCENT, ft), snap(1.5f));
         const float txY = py + fH * 0.5f, txX = pX + snap(15.0f);
@@ -1737,7 +1737,7 @@ void ConfigPage::draw_profile_tab(const Frame& f, u32 dev, Font* fo, const Mouse
             const float ap = stagger(anim_, i); g_fade = e * ap;
             const float ry = py + i * (rowH + rGap) + (1.0f - ap) * snap(12.0f);
             const bool rowHov = inrect(mo, pX, ry, pW, rowH);
-            const float rt = ease(320 + i, rowHov ? 1.0f : 0.0f);
+            const float rt = ease(ctrl_uid_i(CTRL_ID, i), rowHov ? 1.0f : 0.0f);
             rpanel(dev, pX, ry, pW, rowH, snap(11.0f),
                    lerpc(active ? 0x55203A66 : 0x26141C28, active ? 0x55295082 : 0x33223A5C, rt),
                    lerpc(active ? 0x55172C4E : 0x260E141E, active ? 0x55203F6E : 0x331A2A44, rt),
@@ -1803,7 +1803,7 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
             const float ry = bodyY + snap(44.0f) + i * snap(42.0f), rh = snap(36.0f);
             const bool active = (i == helpSel_), hover = inrect(mo, rx, ry, rw, rh);
             if (hover && click && i != helpSel_) { helpSel_ = i; helpScroll_ = 0.0f; }
-            const float ht = ease(200 + i, (hover || active) ? 1.0f : 0.0f);
+            const float ht = ease(ctrl_uid_i(CTRL_ID, i), (hover || active) ? 1.0f : 0.0f);
             nav_row(dev, fo, rx, ry, rw, rh, tr(HELP_MODULES[i].en, HELP_MODULES[i].fr), active, ht, pulse);
         }
 

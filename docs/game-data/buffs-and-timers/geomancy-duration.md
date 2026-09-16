@@ -5,6 +5,10 @@ source: model/geo_dur.h, model/geo_dur_gen.h (gen_geo_dur.py), party_state.cpp (
 ---
 # Geomancy duration (GEO Indi-)
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `geodbg` : **retiree(s) le 2026-09-14** — le code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire une capture.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 GEO **Indicolure** (Indi-) spells put a bearer status on the target, but Indi- is an **AURA**: a luopan-less
 Colure that **pulses** — the effect status in the 0x063 buff block is **REFRESHED every ~3 s** by the
 pulse, so it never shows the real aura lifetime (you'd see a useless 3 s countdown looping). Therefore the

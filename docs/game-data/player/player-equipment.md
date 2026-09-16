@@ -5,6 +5,10 @@ source: reverse-engineering/recipe.md §5a (Ghidra LuaCore decompile)
 ---
 # Player equipment — read from memory
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `jlvl` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release** ; `equip`, `gil` : **retiree(s) le 2026-09-14** — le code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire une capture.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 The 16 equipped slots do NOT store item ids directly. The client keeps, per equip slot,
 an `{inventory_index, bag_id}` pair; the item id is resolved by indexing the item container
 (same `items_root = *(g+0x50)` as gil). Reversed 2026-07-05 by decompiling LuaCore's

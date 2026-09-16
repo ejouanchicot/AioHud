@@ -5,6 +5,10 @@ source: docs/game-data/zone-tracker.md (Limbus sections, split out 2026-07-19) +
 ---
 # Limbus — Apollyon / Temenos tracker
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `limbuschip`, `limbuslog`, `limbusmem`, `limbusrun` : **retiree(s) le 2026-09-14** — le code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire une capture.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 Zone Tracker **mode 6**, entered by zone id: **38 = Apollyon**, **37 = Temenos**
 (`zt_set_zone`, `party_state_zonetracker.cpp:327`). Two channels feed it and nothing is read
 from memory except the entity name of an award's source:

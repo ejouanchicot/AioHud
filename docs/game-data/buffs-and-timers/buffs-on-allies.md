@@ -5,6 +5,10 @@ source: model/party_state.cpp (on_action cat==4/cat==6 actor==selfId_), model/en
 ---
 # Buffs you cast on ALLIES — estimated durations
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `enhdur` : **retiree(s) le 2026-09-14** — le code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire une capture.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 The Timers box has an optional block (config `tmMine`, `hud.cpp:1853`) that shows **buffs YOU cast
 on other players** — one row per (person, spell), `"Person - Spell"`, with a countdown. The catch: **the
 client sends you NO per-buff timer for anyone but yourself** (your own buffs come exact from the 0x063

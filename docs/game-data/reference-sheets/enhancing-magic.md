@@ -350,6 +350,5 @@ RDM apprend les **Bar-<élément>** (mono-cible), WHM les **Bar-<élément>ra** 
 
 ## Fichiers liés
 
-- `red-mage.md` — job RDM complet
 - `composure.md` — ability Composure
 - `lethargy-armor-set.md` — set bonus Augments Composure

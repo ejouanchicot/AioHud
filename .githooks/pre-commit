@@ -52,6 +52,22 @@ echo "$out" | grep -E "checks|\[tests\]" | tail -2
 # different path, and the local dev/ tools (not in this repository) confront the two witnesses. It judges the
 # DEPLOYED plugin, not the staged code : deploy before committing if the commit changes what the game reads.
 # Without dev/ this step is skipped.
+# STATIC CHECKS on the repository itself (scripts/check_repo.py, ~1 s, no game and no toolchain needed):
+# dead markdown links, docs telling the reader to run a //aio command a release does not carry, and
+# hand-picked ease() spring uids. All three had drifted in silence -- see the script's own header.
+if [ -f scripts/check_repo.py ]; then
+    py=$(command -v python 2>/dev/null || command -v py 2>/dev/null)
+    if [ -n "$py" ]; then
+        if ! out=$("$py" scripts/check_repo.py 2>&1); then
+            echo "$out"
+            echo "pre-commit: REPOSITORY CHECK FAILED -- commit refused."
+            echo "            Fix the lines above, or --no-verify if you know why this one is allowed through."
+            exit 1
+        fi
+        echo "pre-commit: $(echo "$out" | tail -n 1)"
+    fi
+fi
+
 #
 # THE RULES THIS OBEYS, because a hook that blocks for the wrong reason is worse than no hook:
 #   * the game NOT running, or the addon not loaded, is NOT a failure -- it is skipped, out loud.

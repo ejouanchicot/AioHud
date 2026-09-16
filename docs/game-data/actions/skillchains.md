@@ -5,6 +5,10 @@ source: model/party_state.cpp (on_action skillchain block), model/skillchain.{h,
 ---
 # Skillchains — resonance detection from 0x028
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `bt` : **retiree(s) le 2026-09-14** — le code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire une capture.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 Detects an active skillchain window on the target and predicts which of your moves
 continue it. **Pure 0x028 bit-reads** — no memory reverse for detection (the
 continuation *prediction* reads usable-move bitmaps, below). Runs for ANY actor

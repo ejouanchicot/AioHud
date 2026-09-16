@@ -5,6 +5,10 @@ source: LuaCore get_info (FUN_10070120) + FFXIDB.dll marker/transform/map-DAT de
 ---
 # Map system (minimap) - reversed 2026-07-05
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `maprec` : sonde de developpement (`src/plugin/aiohud_probes.cpp`, non suivi par git) — cela repond sur la machine de dev, **jamais dans une release** ; `head`, `zone` : **retiree(s) le 2026-09-14** — le code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire une capture.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 Phase-0 research to place the player dot on a zone map. Reversed from LuaCore get_info (zone id), the
 FFXIDB minimap plugin (plugins/FFXIDB.dll, imported in the Ghidra project - it reads the CLIENT own
 map subsystem), and FFXiMain.dll (the map-info table static). Every read is SEH-guarded off

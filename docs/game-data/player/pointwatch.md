@@ -5,6 +5,10 @@ source: model/party_state.cpp (on_char_stats/on_set_update/on_exp_msg), model/ga
 ---
 # PointWatch — XP / CP / Master Level + Merits
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `pwscan` : **retiree(s) le 2026-09-14** — le code est garde dans `dev/archive/aiohud_probes_2026-09-14.cpp`, a remettre dans `aiohud_probes.cpp` pour refaire une capture.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
 One progression bar chosen by **job stage** + a Merits row. It is **packet-fed live**
 and **memory-seeded on load** (packets 0x061/0x063 are infrequent — the box would be
 empty until the game happens to send one). Ported from Byrthnoth's `pwcore.lua`.

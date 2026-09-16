@@ -23,7 +23,7 @@ target[0].action[0].param @ bit 213,    17 bits    -> SPELL ID (on a category-8 
   own **duration** (`cast_time` from the spell table) + a short fade, and self-expires.
 
 **Spell table:** `src/model/spells_gen.h` (957 spells, id→en+cast_ms) is AUTO-GENERATED from
-Windower `res/spells.lua` by `scratchpad/gen_spells.py` — regenerate if the client adds spells.
+Windower `res/spells.lua` by `scripts/gen_actions.py` — regenerate if the client adds spells.
 
 ⚠️ **Gotcha that cost an hour:** the cast state must NOT live in `PMember` — `hud.cpp` calls
 `party().load_from_memory()` EVERY frame, which does `pm = PMember()` and would wipe a
