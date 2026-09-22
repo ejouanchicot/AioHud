@@ -436,7 +436,15 @@ struct MsgHealer {
 static MsgHealer sgHeal_ = { "SHEOL",  7249 };   // 40017 masked -- //aio sheollog, run of 2026-08-14 : 105 payouts,
                                                  // p2 tracked its own p1 throughout. Was 40016 until the 08-12 patch.
 static MsgHealer lbHeal_[2] = { { "LIMBUS/Apollyon", 7247 },     // [0] = zone 38, [1] = zone 37 (2026-07-19 capture)
-                                { "LIMBUS/Temenos",  7239 } };
+                                { "LIMBUS/Temenos",  7240 } };   // 7239 until a patch before 2026-09-20 : the healer adopted
+                                                                 // 7240 in game, and the 2026-09-22 tape (temenos_20260922)
+                                                                 // shows the whole table +1 (KI 7070/7071, allowance 7281).
+                                                                 // Apollyon NOT re-measured since : it heals on its 2nd payout.
+// The weekly allowance ("you may collect data N more times") sits a FIXED 41 above its wing's award id : Temenos
+// 7239/7280 (2026-07-19) and 7240/7281 (2026-09-22), both measured. Apollyon's 7288 (= 7247 + 41) is NOT : it is the
+// old assumed id, consistent with the offset but never captured. The id is read
+// off the healed id and moves with it -- a constant 7280 went dead at the patch (this character's count was last written 2026-07-28).
+static const unsigned LIMBUS_WEEK_FROM_AWARD = 41;
 // SORTIE : the gallimaufry payout carries [gain, new total] like Odyssey's, so it proves a moved id the same way. The
 // three other Sortie messages have no arithmetic of their own ; they are read at FIXED OFFSETS from the gallimaufry
 // id, measured on one run (2026-09-14) -- a client update renumbers a zone's dialog table as a block (Odyssey went
@@ -1122,10 +1130,8 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
                 lc_save();
             }
             zt_save();
-        } else if (msg == 7280 || msg == 7288) {               // weekly allowance : "you may collect data N more times"
-            // 7280 is the CAPTURED id (2026-07-19, from the 'Temenos Operator' entity, p1 = the count). 7288 was the
-            // previously assumed value and never matched anything, so this counter was simply never filled. Both are
-            // kept : these ids are zone-relative and drift across patches, and the payload shape is identical.
+        } else if (msg == lbHeal_[area].id + LIMBUS_WEEK_FROM_AWARD) {   // weekly allowance : "you may collect data N more times"
+            // p1 = the count ; on 2026-09-22 it came at the run's end, right after the coffer -- see LIMBUS_WEEK_FROM_AWARD.
             zt_.limbusWeekLeft = p1;
             // ...and to the store that SURVIVES A ZONE. zt_ is wiped by zt_set_zone, so this number used to
             // vanish the moment you stepped out of Limbus and was blank when you came back -- reported

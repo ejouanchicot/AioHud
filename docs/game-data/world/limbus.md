@@ -64,9 +64,9 @@ Message ids are zone-relative and drift across patches, so they are matched mask
 | masked | meaning | fields |
 |---|---|---|
 | **7247** | *"Acquired Apollyon units: N…"* | `p1` gained, `p2` zone pool left, `p3` **your total**, `p4` **your cap** |
-| **7239** | *"Acquired Temenos units: N…"* | same four |
-| **7280** | *"You may collect data N more times"* | `p1` = weekly allowance left |
-| 7069 / 7070 | key item gained / lost (bulk) — a floor validated / the run ended | `p1` = KI id |
+| **7240** | *"Acquired Temenos units: N…"* | same four — was **7239** before a 2026-09 patch |
+| **award + 41** | *"You may collect data N more times"* | `p1` = weekly allowance left — Temenos 7280, **7281** since the patch |
+| 7069 / 7070 | key item gained / lost (bulk) — a floor validated / the run ended | `p1` = KI id — Temenos **7070 / 7071** since the patch |
 | 6394 | item obtained (the coffer's item) | `p1` = item id |
 
 ### The award id keys on the WING — settled 2026-07-19
@@ -109,11 +109,25 @@ point-of-interest award no longer records a false chip.
 `limbusRunUnits` is derived as `total - baseline`, **never** by summing `p1`: a duplicated packet
 cannot double-count and a dropped one cannot under-count (`:509-510`).
 
-### Weekly allowance = id 7280
+### Weekly allowance = award id + 41
 
-Captured 2026-07-19 from the **`Temenos Operator`** entity, `p1` = the count. The previously assumed
-**7288** never matched anything, so the counter was simply never filled. Both are accepted now — the
-ids drift and the payload shape is identical (`:534-537`).
+Captured 2026-07-19 from the **`Temenos Operator`** entity as 7280, `p1` = the count. A 2026-09 patch
+shifted Temenos's whole table by +1 (tape `temenos_20260922_172633` : award 7240 every floor, KI 7070 per
+floor, bulk 7071 at the end, then 7281 `p1=3` right after the final coffer). The constant 7280 went dead
+with it, silently. The allowance is therefore read at `LIMBUS_WEEK_FROM_AWARD` (41) above the wing's
+**healed** award id, so it moves when the healer re-proves the award. Apollyon's 7288 (= 7247 + 41) is
+consistent with that offset but has **never been captured**.
+
+### Temenos run, 2026-09-22 (tape) — what the packets said
+
+- 0x075 bars : `Temenos_Lv119`, then `<Side>_Tower_F<N>` with the gauge in 20 % steps (5 kills) on
+  N/W/E towers and 13/26/40/53/66/80/93 (≈7.5 kills) on Center ; between floors bar1 is simply absent
+  for 2-3 s. `Uniq_Data0` stayed 0 all run. ~9 unrelated 0x075 per second, all rejected by the label filter.
+- Floor clear : 7240 `p1=60` (Center : 120), always paired with 7070 = the next floor's KI.
+- `p2 + p3` stayed constant (260015) all run : `p2` is a pool that shrinks as `p3` (your total) grows.
+- The final coffer paid 3000 and moved the cap `p4` 204000 → 207000.
+- Second run (North F1-F4, tape `temenos2_20260922_190659`) : no 7281 at entry, none without a coffer. The Operator's `Temenos units` option answers with a 0x05C carrying `p2 / p3 / p4` of the last 7240 exactly (129680 / 130335 / 207000) -- a ground truth for the total.
+- **The weekly allowance is spent on OPENING THE COFFER, not on entering.** The coffer of 2026-09-22 20:21 paid 3000 and 7281 came with it carrying `p1 = 2` ; the player states the count was still 3 through the whole run before it. So the `2` that menu 1032 and 0x05C `1,1,2` carried at 19:30, while the true count was 3, is NOT the runs left -- it looked like a match only because the coffer had since spent one. Nothing reads it. A count seen at entry would need its own measurement, on a run whose two numbers differ.
 
 ## Towers, quadrants and the coffer row
 

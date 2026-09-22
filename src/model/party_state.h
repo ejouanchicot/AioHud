@@ -236,9 +236,11 @@ struct ZoneTracker {
     // the payout arithmetic rather than declaring one -- note the patch REUSED the old number for an unrelated
     // message rather than retiring it, so "the id still arrives" proves nothing), so they are matched MASKED :
     //   7247 : "Acquired Apollyon units: <p1>. Remaining: <p2>. Total: <p3>/<p4>"   -> live currency, no 0x118 needed
-    //   7288 : "You may collect data <p1> more times"                               -> unique-data allowance
+    //   award + 41 : "You may collect data <p1> more times"                         -> unique-data allowance
+    //                (Apollyon 7288 ; Temenos 7280, 7281 since the 2026-09 patch -- LIMBUS_WEEK_FROM_AWARD)
     //   7069 / 7070 : key item gained / lost -- ids 9956..9998, and the NAME carries the floor ("Apollyon SW #4",
     //                 which cross-checks bar1's "SW_Floor_#4" label from the 0x075 block). Bulk 7070 = run over.
+    //                 Temenos : 7070 / 7071 since the 2026-09 patch (tape 2026-09-22 : 7070 per floor, bulk 7071 at the end).
     int      limbusUnits = -1;      // your running total (7247 p3) ; -1 = not seen this session
     int      limbusUnitsCap = 0;    // your cap (7247 p4)
     int      limbusUnitBase = -1;   // total BEFORE this run's first payout ; -1 = not baselined yet
@@ -251,7 +253,7 @@ struct ZoneTracker {
     int      limbusBigAmt = 0;      // last BIG payout (>= 5000) -- kept separately, it is the one worth remembering
     char     limbusBigAt[12] = {0};
     int      limbusWeekLeft = -1;   // HISTORICAL -- WRITTEN, NEVER READ. DO NOT USE IT AS A SOURCE.
-                                    // "You may collect data N more times" (7288 p1) = the weekly allowance left.
+                                    // "You may collect data N more times" (award id + 41, p1) = the weekly allowance left.
                                     // Superseded by LimbusWeek (lw_), which stamps the count with the wall clock so
                                     // LAST week's number can be told apart from this week's -- this field cannot,
                                     // and it is wiped by zt_set_zone on every zone change besides. Kept only

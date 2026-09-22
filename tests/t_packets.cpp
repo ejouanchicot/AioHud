@@ -260,18 +260,27 @@ void test_packets() {
         CHECK_EQ(party().limbus_coffers(0).slotK[1], 3);
     }
 
-    SECTION("zone tracker 0x02A limbus : the weekly allowance (id 7280) is kept, and a bad count is clamped");
-    {   // Mutation : only the assumed id 7288 accepted (`msg == 7280 || msg == 7288` -> `msg == 7288`) -- the counter that
-        // was never filled until the 2026-07-19 capture.
-        fresh(); enter(Z_APOLLYON);
+    SECTION("zone tracker 0x02A limbus : the weekly allowance rides 41 above the wing's award id, and a bad count is clamped");
+    {   // Temenos, 2026-09-22 tape : award 7240, allowance 7281 p1=3 from the Operator at the run's end. The 7280 it had
+        // before the patch must no longer count -- a constant 7280 is what froze the counter from 2026-07-28 on.
+        // Mutation : the offset off by one (`LIMBUS_WEEK_FROM_AWARD = 41` -> `40`) -- 7281 unheard, 7280 believed.
+        // Mutation : the wing ignored (`lbHeal_[area].id` -> `lbHeal_[1].id`) -- Apollyon listens on Temenos's 7281.
+        fresh(); enter(Z_TEMENOS);
         CHECK_EQ(party().limbus_runs_left(), -1);                        // never observed : unknown, not five
-        deliver(pkt_zone_msg(7280, 3));
+        deliver(pkt_zone_msg(7280, 2));                                  // the pre-patch id : something else now
+        CHECK_EQ(party().limbus_runs_left(), -1);
+        deliver(pkt_zone_msg(7281, 3));
         CHECK_EQ(party().limbus_runs_left(), 3);
-        deliver(pkt_zone_msg(7280, 9));
+        deliver(pkt_zone_msg(7281, 9));
         CHECK_EQ(party().limbus_runs_left(), 5);
+        fresh(); enter(Z_APOLLYON);
+        deliver(pkt_zone_msg(7281, 3));                                  // Temenos's id, heard in Apollyon
+        CHECK_EQ(party().limbus_runs_left(), -1);
+        deliver(pkt_zone_msg(7288, 4));                                  // Apollyon's : its award 7247 + 41
+        CHECK_EQ(party().limbus_runs_left(), 4);
     }
 
-    SECTION("zone tracker 0x02A limbus : Temenos pays on its own id (7239), not on Apollyon's");
+    SECTION("zone tracker 0x02A limbus : Temenos pays on its own id (7240 since the 2026-09 patch), not on Apollyon's");
     {   // Mutation : the wings swapped (`(zt_.curZone == 37) ? 1 : 0` -> `(zt_.curZone == 38) ? 1 : 0`) -- a Temenos run
         // then listens for Apollyon's id and records nothing.
         fresh();
@@ -280,7 +289,7 @@ void test_packets() {
         deliver(pkt_battlefield({ { -1, "Temenos_Lv135" }, { 20, "West_Tower_F4" } }));
         deliver(pkt_zone_msg(7247, 3000, 0, 9000, 100000, 0x130));       // Apollyon's award id, heard in Temenos
         CHECK_EQ(zt().limbusUnits, -1);
-        deliver(pkt_zone_msg(7239, 3000, 0, 9000, 100000, 0x130));
+        deliver(pkt_zone_msg(7240, 3000, 0, 9000, 100000, 0x130));
         CHECK_EQ(zt().limbusUnits, 9000);
         CHECK_EQ(party().limbus_coffers(1).slotK[1], 3);                 // W = Temenos slot 1
         CHECK_EQ(party().limbus_coffers(0).slotK[1], 0);                 // Apollyon's row untouched
