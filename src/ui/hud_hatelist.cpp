@@ -141,8 +141,9 @@ void hatelist_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
     // ---- position (+ edit drag) : hlX = horizontal centre, hlY = top ----
     float px, py;
     if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
-    else            { px = snap(C.hlX * screenW - boxW * 0.5f); py = snap(C.hlY * screenH); }
-    if (editing) { static EditBox g_hlEdit; box_edit(f, g_hlEdit, EDITBOX_HATE, px, py, boxW, boxH, ui_config().hlScale, ui_config().hlX, ui_config().hlY, 1); }
+    else            { px = box_grow_x(screenW, UiConfig::GB_HL, 0, C.hlX, boxW); py = snap(C.hlY * screenH); }
+    if (editing) { static EditBox g_hlEdit; box_edit(f, g_hlEdit, EDITBOX_HATE, px, py, boxW, boxH, ui_config().hlScale, ui_config().hlX, ui_config().hlY, C.boxGrow[UiConfig::GB_HL]); }
+    if (!editing && ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);   // grown past an edge -> slide back into view (draw only)
 
     // ---- box chrome ----
     dColorQuadState(dev);

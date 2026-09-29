@@ -261,6 +261,15 @@ struct UiConfig {
     unsigned wsNameCol = 0xFFFFA518u;   // WS-name colour
     unsigned wsDmgCol1 = 0xFFFFF024u;   // damage colour A (the flash cycles A<->B)
     unsigned wsDmgCol2 = 0xFFFF5A0Au;   // damage colour B
+    // ---- GROW DIRECTION of each movable module box : which point of the box its stored X pins ----
+    // 0 = the LEFT edge (the box grows RIGHTward), 1 = the CENTRE (both sides), 2 = the RIGHT edge (grows LEFTward).
+    // The stored X of that box (scX, tpX, ... -- tmX AND tmRX for the Timers) IS that point, so changing a direction
+    // must move the stored X with it (ui/box_grow.h, box_grow_set) or the box would jump. The defaults are the anchor
+    // each box was hard-coded to before this setting existed : an update moves nothing. Asked for 2026-09-29 --
+    // no automatic rule suits everyone (grow toward the middle covers the character, grow away from it slides a
+    // left-hand Timers list at every new spell), so the player picks.
+    enum GrowBox { GB_TP, GB_SC, GB_HL, GB_GRIM, GB_ZT, GB_PW, GB_EP, GB_TM, GB_DB, GB_AW, GB_COUNT };   // APPEND only : grow= is positional
+    int   boxGrow[GB_COUNT] = { 1, 1, 1, 1, 1, 2, 2, 0, 0, 0 };
     // ---- Skillchains module : a box on your target's active skillchain (step / property / burst window) ----
     int   scShow  = 1;         // show the skillchains box
     float scScale = 1.0f;      // size multiplier (0.5 .. 2.0)
@@ -295,6 +304,19 @@ struct UiConfig {
     int   hlDist  = 1;         // show the Distance column (left)
     int   hlTgt   = 1;         // show the Target column (who each mob is on, right)
     TextStyle hlText[HL_TE_COUNT];   // per-element typography : [HL_DIST] [HL_NAME] [HL_PCT] [HL_TARGET]
+
+    // ---- Absorb-TP box (ui/hud_absorb.cpp) : who in the party cast Absorb-TP, what it drained, when ----
+    int   awShow   = 1;        // show the Absorb-TP box (it only appears once someone has cast one)
+    float awScale  = 1.0f;     // size multiplier (0.5 .. 2.0)
+    float awX      = 0.30f;    // stored X : the point UiConfig::boxGrow[GB_AW] pins (left edge by default) ; awY = its TOP
+    float awY      = 0.55f;
+    int   awScreen = 90;       // ALERT after : seconds without a new Absorb-TP before that caster's row turns RED (10..600).
+                               // Asked 2026-09-29 : a row that just vanished hid exactly the thing to notice -- someone
+                               // who drained TP once and stopped. 90 by default : the spell's own recast is 60 s.
+    int   awMemory = 900;      // seconds of casts the [count] remembers (60..3600) -- and how long a row stays at all
+    int   awColors = 1;        // colour the TP by amount (white / green / yellow / orange / red ; blue = drained nothing)
+    int   awCount  = 1;        // show how many Absorb-TP that caster landed in the memory window
+    int   awTimer  = 1;        // show the time since their last one
 
     int   pwShow  = 1;         // show the PointWatch box (XP / CP / ML + Merits)
     float pwScale = 1.0f;      // size multiplier (0.5 .. 2.0)
@@ -358,6 +380,10 @@ struct UiConfig {
     int   ztSoGal     = 1;     // Sortie : show the gallimaufry earned this run (+ the banked total)
     int   ztSoBoss    = 1;     // Sortie : show the eight boss letters (A-D upstairs, E-H basement : down / shard in hand / not yet)
     int   ztSoCof     = 1;     // Sortie : show the coffers opened (upstairs / basement) and the mid NMs
+    int   ztSoNav     = 1;     // Sortie : the wing's NM (distance / direction / down) and, in the basement, its bitzer
+    int   ztSoTrack   = 0;     // Sortie : AUTO Widescan track of the wing's NM, SENT by the aioupdate addon (it reads this
+                               // off the ztsortie= line). OFF by default : it is the one thing in AioHud that asks the
+                               // server for something -- one track per wing entered, the cadence measured in the recordings.
     int   ztSoLoot    = 1;     // Sortie : show the items obtained this run
     TextStyle ztText[ZT_TE_COUNT];   // per-element typography : [ZT_HEADER] [ZT_BODY] then the Limbus rows
     // ---- EmpyPop module : the pop items / key items needed to spawn an Abyssea empyrean NM ----
@@ -410,6 +436,9 @@ struct UiConfig {
                                      //   (Soul Voice -> Nitro window, etc.) ; 0 = off
     int   tmMine    = 1;             // Duration : show BUFFS YOU cast on OTHER players (person name + ESTIMATED timer,
                                      //            base duration from tb_buff_gen -- no server timer exists for allies)
+    int   tmMarks = 0;               // 1 = draw the small //aio out number left of each monitored row. OFF by default
+                                     // (2026-09-29) : it read as clutter beside the spells, and //aio out takes a name
+                                     // ("Aeryn Haste"), "alerts" or "list" (which prints the numbers in the chat) anyway.
     int   tmFocusWarn = 60;          // FOCUS alerts : a "Hidden + focus" buff surfaces (red) when its remaining time drops
                                      //   below this many SECONDS (also fires immediately when it drops / is dispelled). 10..300.
     int   tmFocusHold = 60;          // FOCUS alerts : once a "Hidden + focus" buff is LOST, the red "OUT" row holds this many
@@ -489,7 +518,7 @@ struct UiConfig {
         --favColorN;
     }
     // Per-module box appearance (shared bundle ; Target/Player inline their own). Default = follow Party theme.
-    BoxStyle scBox, tpBox, hlBox, pwBox, ztBox, mmBox, epBox;   // mmBox = the Minimap CLOCK box (day / moon header), not the map
+    BoxStyle scBox, tpBox, hlBox, pwBox, ztBox, mmBox, epBox, awBox;   // awBox = the Absorb-TP box   // mmBox = the Minimap CLOCK box (day / moon header), not the map
     TextStyle mmText[MM_TE_COUNT];   // clock per-element typography : [MM_TIME] time, [MM_DAY] day, [MM_MOON] moon, [MM_REAL] real/GMT
     bool  mmPosSet = false;    // user-placed position (edit mode) ; else the layout default
     float mmX = 0.0f, mmY = 0.0f;   // top-left as a screen fraction when mmPosSet

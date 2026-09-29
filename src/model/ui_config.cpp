@@ -249,6 +249,10 @@ static bool save_config_to(const char* path) {
     fprintf(f, "mm3=%d,%d,%d,%d,%d,%.3f,%d\n", c.mmClock, c.mmClkTime, c.mmClkDay, c.mmClkMoon, c.mmClkReal, c.mmMapSize, c.mmClockPos);   // clock : on/time/day/moon/real + independent map size + header placement
     fprintf(f, "mm5=%.3f,%.3f,%d,%.3f\n", c.mmBezelW, c.mmCardSz, c.mmBezel, c.mmSqBorder);   // round bezel width / round cardinal size / round bezel on / square border width
     fprintf(f, "ws=%d,%.3f,%.3f,%.3f,%d,%d\n", c.wsShow, c.wsScale, c.wsX, c.wsY, c.wsFont, c.wsFx);   // arcade WS popup
+    fprintf(f, "aw=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d\n", c.awShow, c.awScale, c.awX, c.awY, c.awScreen, c.awMemory, c.awColors, c.awCount, c.awTimer);   // Absorb-TP box
+    { fprintf(f, "grow=");   // the grow direction of each module box (UiConfig::boxGrow, GrowBox order)
+      for (int i = 0; i < UiConfig::GB_COUNT; ++i) fprintf(f, i ? ",%d" : "%d", c.boxGrow[i]);
+      fprintf(f, "\n"); }
     fprintf(f, "sc=%d,%.3f,%.4f,%.4f,%d\n", c.scShow, c.scScale, c.scX, c.scY, c.scNearby);   // skillchains box (+ display scope)
     fprintf(f, "tp=%d,%.3f,%.4f,%.4f,%d,%d\n", c.tpShow, c.tpScale, c.tpX, c.tpY, c.tpCount, c.tpIcon);   // treasure pool box
     save_text_styles(f, "tpText", c.tpText, TP_TE_COUNT);   // treasure pool : per-element typography
@@ -261,7 +265,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "zt=%d,%.3f,%.4f,%.4f,%d,%d\n", c.ztShow, c.ztScale, c.ztX, c.ztY, c.ztVariant, c.ztHeader);   // zone tracker box (+ title toggle)
     fprintf(f, "ztsheol=%d,%d,%d\n", c.ztSheolSeg, c.ztSheolRes, c.ztSheolJoke);   // Sheol : segments / resistances / cruel joke
     fprintf(f, "ztlimbus=%d,%d,%d,%d,%d,%.2f,%.2f\n", c.ztLbFloor, c.ztLbCur, c.ztLbRun, c.ztLbChips, c.ztLbName, c.ztLbBarW, c.ztLbBarH);
-    fprintf(f, "ztsortie=%d,%d,%d,%d\n", c.ztSoGal, c.ztSoBoss, c.ztSoCof, c.ztSoLoot);   // Sortie : gallimaufry / bosses / coffers / items   // Limbus : floor-on-gauge / currencies / run / coffer dots / name row / gauge W / gauge H
+    fprintf(f, "ztsortie=%d,%d,%d,%d,%d,%d\n", c.ztSoGal, c.ztSoBoss, c.ztSoCof, c.ztSoLoot, c.ztSoNav, c.ztSoTrack);   // 6th = auto track : aioupdate.lua parses THIS line, keep the order   // Sortie : gallimaufry / bosses / coffers / items   // Limbus : floor-on-gauge / currencies / run / coffer dots / name row / gauge W / gauge H
     fprintf(f, "ztdyn=%d,%d,%.2f,%.2f,%.2f\n", c.ztDyTimer, c.ztDyKi, c.ztDyBarW, c.ztDyBarH, c.ztDyDot);   // Dynamis : timer / key items / bar W / bar H / dot size
     fprintf(f, "ztaby=%d,%d,%.2f,%.2f,%.2f,%.2f\n", c.ztAbTimer, c.ztAbLights, c.ztAbBarW, c.ztAbBarH, c.ztAbLightW, c.ztAbLightH);   // Abyssea : timer / lights / bar W / bar H / light W / light H
     fprintf(f, "ztomen=%d,%d,%d\n", c.ztOmObj, c.ztOmCount, c.ztOmRows);   // Omen : floor objective / omen+bonus / objective rows
@@ -271,7 +275,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "db=%d,%.3f,%.4f,%.4f,%d,%d,%d,%.3f,%.3f\n", c.dbShow, c.dbScale, c.dbX, c.dbY, c.dbMax, c.dbHeader, c.dbDisp, c.dbIconScale, c.dbRowGap);   // Debuffs module (detached target debuffs)
     {   // per-module box appearance (shared BoxStyle : frame / transparency / theme / hue / luminosity)
         auto sb = [&](const char* k, const BoxStyle& b) { fprintf(f, "%s=%d,%.4f,%d,%d,%.4f,%08X,%d\n", k, b.on, b.alpha, b.themeCopy, b.theme, b.lum, b.hue, b.border); };   // border = trailing field (old 6-field configs load with border=default)
-        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox); sb("dbbox", c.dbBox); sb("plreqbox", c.plrEqBox);
+        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("awbox", c.awBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox); sb("dbbox", c.dbBox); sb("plreqbox", c.plrEqBox);
     }
     fprintf(f, "ep=%d,%.3f,%.4f,%.4f,%d\n", c.epShow, c.epScale, c.epX, c.epY, c.epColl);   // EmpyPop box (+ collectable row)
     fprintf(f, "eptrack=%s\n", c.epTrack);   // the tracked NM KEY -- its OWN line : keys contain spaces
@@ -282,7 +286,7 @@ static bool save_config_to(const char* path) {
     save_text_styles(f, "ztText", c.ztText, ZT_TE_COUNT);   // zone tracker : per-element typography
     save_text_styles(f, "tmText", c.tmText, TM_TE_COUNT);   // Timers : per-element typography
     save_text_styles(f, "dbText", c.dbText, DB_TE_COUNT);   // Debuffs : per-element typography
-    fprintf(f, "tmFocus=%d,%d\n", c.tmFocusWarn, c.tmFocusHold);   // focus alert : warn-threshold + hold-after-loss (seconds)
+    fprintf(f, "tmFocus=%d,%d,%d\n", c.tmFocusWarn, c.tmFocusHold, c.tmMarks);   // focus alert : warn-threshold + hold-after-loss (seconds)
     if (c.tmBuffOffN > 0) {                                                       // Timers BUFF-FAMILY filter : job-agnostic disabled keys (per profile)
         fprintf(f, "tmBuffOff=");
         for (int i = 0; i < c.tmBuffOffN; ++i) fprintf(f, "%s%u", i ? "," : "", (unsigned)c.tmBuffOff[i]);
@@ -348,6 +352,30 @@ static void parse_box(const char* s, BoxStyle& b) {   // "on,alpha,themeCopy,the
     if (n >= 1) { b.on = on; b.alpha = al; b.themeCopy = tc; b.theme = th; b.lum = lm; b.hue = hu; if (n >= 7) b.border = bd; }   // border absent (old config) -> keep default (1)
 }
 
+
+// The grow direction of every module box (UiConfig::boxGrow), OUT-OF-LINE for the same C1061 reason as
+// parse_ep_line. Absent in an old file -> every box keeps the anchor it always had.
+// The Absorb-TP box (aw= and awbox=), OUT-OF-LINE for the C1061 reason above. Absent keys keep the defaults.
+static bool parse_aw_line(const char* line, UiConfig& c) {
+    if (strncmp(line, "awbox=", 6) == 0) { parse_box(line + 6, c.awBox); return true; }
+    if (strncmp(line, "aw=", 3) != 0) return false;
+    int sh = 1, scr = 90, mem = 900, col = 1, cnt = 1, tim = 1; float scl = 1.0f, x = 0.30f, y = 0.55f;
+    const int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d,%d,%d,%d", &sh, &scl, &x, &y, &scr, &mem, &col, &cnt, &tim);
+    if (n >= 1) c.awShow = sh; if (n >= 2) c.awScale = scl; if (n >= 3) c.awX = x; if (n >= 4) c.awY = y;
+    if (n >= 5) c.awScreen = scr; if (n >= 6) c.awMemory = mem; if (n >= 7) c.awColors = col; if (n >= 8) c.awCount = cnt; if (n >= 9) c.awTimer = tim;
+    return true;
+}
+static bool parse_grow_line(const char* line, UiConfig& c) {
+    if (strncmp(line, "grow=", 5) != 0) return false;
+    const char* p = line + 5;
+    for (int i = 0; i < UiConfig::GB_COUNT && *p; ++i) {
+        char* e = 0; const long v = strtol(p, &e, 10);
+        if (e == p) break;
+        c.boxGrow[i] = (int)v;
+        p = (*e == ',') ? e + 1 : e;
+    }
+    return true;
+}
 
 // EmpyPop's config lines, parsed OUT-OF-LINE. Not a style choice : load_config_from's else-if chain is one
 // expression whose nesting depth is its length, and it already sits AT MSVC's limit -- adding four branches
@@ -516,9 +544,9 @@ static void repair_buff_order(UiConfig& c) {
 // C1061 reason as parse_mm_line. Missing key keeps the defaults, so an older config loads with every row shown.
 static bool parse_zt_line(const char* line, UiConfig& c) {
     if (strncmp(line, "ztsortie=", 9) == 0) {
-        int ga = 1, bo = 1, co = 1, lo = 1;
-        const int n = sscanf(line + 9, "%d,%d,%d,%d", &ga, &bo, &co, &lo);
-        if (n >= 1) { c.ztSoGal = ga; if (n >= 2) c.ztSoBoss = bo; if (n >= 3) c.ztSoCof = co; if (n >= 4) c.ztSoLoot = lo; }
+        int ga = 1, bo = 1, co = 1, lo = 1, nv = 1, tk = 0;
+        const int n = sscanf(line + 9, "%d,%d,%d,%d,%d,%d", &ga, &bo, &co, &lo, &nv, &tk);
+        if (n >= 1) { c.ztSoGal = ga; if (n >= 2) c.ztSoBoss = bo; if (n >= 3) c.ztSoCof = co; if (n >= 4) c.ztSoLoot = lo; if (n >= 5) c.ztSoNav = nv; if (n >= 6) c.ztSoTrack = tk; }
         return true;
     }
     if (strncmp(line, "ztlimbus=", 9) == 0) {
@@ -605,6 +633,8 @@ static bool load_config_from(const char* path) {
         // another's. Renaming the SHARED names (only four sites use them: partyRefX, zonePanel, guide, box)
         // leaves the well-behaved branches untouched and removes the collision instead of muting it.
         int v, v1, v2, gps, idx, b0, b1, b2, bc; float gx, gy, gsc, fv, f1, f2; unsigned uc;
+        if (parse_aw_line(line, c)) continue;     // out-of-line : the Absorb-TP box (same nesting-limit reason)
+        if (parse_grow_line(line, c)) continue;   // out-of-line : box grow directions (same nesting-limit reason)
         if (parse_ep_line(line, c)) continue;   // out-of-line : keeps the chain below off MSVC's nesting limit
         if (parse_cast_line(line, c)) continue; // out-of-line : cast-placeholder toggles (same nesting-limit reason)
         if (parse_db_line(line, c)) continue;   // out-of-line : Debuffs module (same nesting-limit reason)
@@ -693,7 +723,7 @@ static bool load_config_from(const char* path) {
         else if (parse_text_style(line, "ztText", c.ztText, ZT_TE_COUNT)) {}
         else if (parse_text_style(line, "tmText", c.tmText, TM_TE_COUNT)) {}
         else if (strncmp(line, "tmAllyGroup=", 12) == 0) { /* retired 2026-09-12 : grouping follows the cast, not a setting. Swallowed so an old file does not fall through to the unknown-key path. */ }
-        else if (sscanf(line, "tmFocus=%d,%d", &v, &v1) == 2) { c.tmFocusWarn = v; c.tmFocusHold = v1; }
+        else if (strncmp(line, "tmFocus=", 8) == 0) { int w = 60, h = 60, m = 0; const int n = sscanf(line + 8, "%d,%d,%d", &w, &h, &m); if (n >= 2) { c.tmFocusWarn = w; c.tmFocusHold = h; } if (n >= 3) c.tmMarks = m; }   // 3rd value absent (older file) -> numbers stay hidden
         else if (!strncmp(line, "tmPreset=", 9)) { /* retired 2026-09-12 with the per-job track list : it gated a preset that wrote into a table nothing read. Swallowed so an old profile still loads. */ }
         else if (!strncmp(line, "tmTrkOff", 8)) { /* retired 2026-09-12 : the per-JOB track list had no reader left (see ui_config.h). Swallowed so an old profile still loads. */ }
         else if (!strncmp(line, "tmBuffOff=", 10)) {                              // Timers BUFF-FAMILY filter : job-agnostic disabled keys
@@ -1127,6 +1157,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.mmClock != b.mmClock || a.mmClkTime != b.mmClkTime || a.mmClkDay != b.mmClkDay || a.mmClkMoon != b.mmClkMoon || a.mmClkReal != b.mmClkReal || a.mmMapSize != b.mmMapSize || a.mmClockPos != b.mmClockPos) return false;
     if (a.mmBezelW != b.mmBezelW || a.mmCardSz != b.mmCardSz || a.mmBezel != b.mmBezel || a.mmSqBorder != b.mmSqBorder) return false;
     if (a.wsShow != b.wsShow || a.wsScale != b.wsScale || a.wsX != b.wsX || a.wsY != b.wsY || a.wsFont != b.wsFont || a.wsFx != b.wsFx || a.wsNameCol != b.wsNameCol || a.wsDmgCol1 != b.wsDmgCol1 || a.wsDmgCol2 != b.wsDmgCol2) return false;
+    for (int i = 0; i < UiConfig::GB_COUNT; ++i) if (a.boxGrow[i] != b.boxGrow[i]) return false;
     if (a.scShow != b.scShow || a.scScale != b.scScale || a.scX != b.scX || a.scY != b.scY || a.scNearby != b.scNearby) return false;
     if (a.tpShow != b.tpShow || a.tpScale != b.tpScale || a.tpX != b.tpX || a.tpY != b.tpY || a.tpCount != b.tpCount || a.tpIcon != b.tpIcon) return false;
     if (!text_styles_eq(a.tpText, b.tpText, TP_TE_COUNT)) return false;
@@ -1141,6 +1172,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.ztLbFloor != b.ztLbFloor || a.ztLbCur != b.ztLbCur || a.ztLbRun != b.ztLbRun || a.ztLbChips != b.ztLbChips) return false;
     if (a.ztLbName != b.ztLbName || a.ztLbBarW != b.ztLbBarW || a.ztLbBarH != b.ztLbBarH) return false;
     if (a.ztSoGal != b.ztSoGal || a.ztSoBoss != b.ztSoBoss || a.ztSoCof != b.ztSoCof || a.ztSoLoot != b.ztSoLoot) return false;
+    if (a.ztSoNav != b.ztSoNav || a.ztSoTrack != b.ztSoTrack) return false;
     if (a.ztDyTimer != b.ztDyTimer || a.ztDyKi != b.ztDyKi || a.ztDyBarW != b.ztDyBarW || a.ztDyBarH != b.ztDyBarH || a.ztDyDot != b.ztDyDot) return false;
     if (a.ztAbTimer != b.ztAbTimer || a.ztAbLights != b.ztAbLights || a.ztAbBarW != b.ztAbBarW || a.ztAbBarH != b.ztAbBarH
         || a.ztAbLightW != b.ztAbLightW || a.ztAbLightH != b.ztAbLightH) return false;
@@ -1169,9 +1201,11 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.tmShow != b.tmShow || a.tmScale != b.tmScale || a.tmX != b.tmX || a.tmY != b.tmY || a.tmMax != b.tmMax || a.tmTitle != b.tmTitle) return false;
     if (a.tmMerged != b.tmMerged || a.tmRX != b.tmRX || a.tmRY != b.tmRY || a.tmIconScale != b.tmIconScale || a.tmRowGap != b.tmRowGap) return false;
     // per-module box appearance (shared BoxStyle)
+    if (a.awShow != b.awShow || a.awScale != b.awScale || a.awX != b.awX || a.awY != b.awY || a.awScreen != b.awScreen || a.awMemory != b.awMemory) return false;
+    if (a.awColors != b.awColors || a.awCount != b.awCount || a.awTimer != b.awTimer || !box_eq(a.awBox, b.awBox)) return false;
     if (!box_eq(a.scBox, b.scBox) || !box_eq(a.tpBox, b.tpBox) || !box_eq(a.hlBox, b.hlBox) || !box_eq(a.pwBox, b.pwBox) || !box_eq(a.ztBox, b.ztBox) || !box_eq(a.tmBox, b.tmBox) || !box_eq(a.mmBox, b.mmBox) || !box_eq(a.epBox, b.epBox)) return false;
     if (a.tmDurMode != b.tmDurMode || a.tmRecMode != b.tmRecMode || a.tmOthers != b.tmOthers || a.tmMine != b.tmMine || a.tmBuffSrc != b.tmBuffSrc || a.tmSpAlert != b.tmSpAlert) return false;
-    if (a.tmFocusWarn != b.tmFocusWarn || a.tmFocusHold != b.tmFocusHold) return false;
+    if (a.tmFocusWarn != b.tmFocusWarn || a.tmFocusHold != b.tmFocusHold || a.tmMarks != b.tmMarks) return false;
     // THE SORT MODES AND THE ICON SHEET WERE MISSING HERE, and persist_eq is the definition of "what a
     // profile carries" : a field the writer writes but this does not compare can never light the "unsaved
     // changes" dot, so the user is never told to save it -- and since 5164129 made a load REPLACE, the next

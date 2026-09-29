@@ -131,6 +131,10 @@ private:
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW,
                             float hdrX, float hdrW);
+    void draw_aw_config(u32 dev, Font* fo, const MouseState* mo, bool click,   // aw_config.cpp : the Absorb-TP box
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW,
+                            float hdrX, float hdrW);
     void draw_hl_config(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW,

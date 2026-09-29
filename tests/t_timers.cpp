@@ -114,6 +114,43 @@ void test_timers() {
         if (out < 0) dump(r, "30 focused ally buffs, Cid lost Regen");
     }
 
+    SECTION("timers : a Sortie RDM's rows all get built, and the OUT is not the one cut (TM_ROWS_MAX, not 50)");
+    {   // REPORTED 2026-09-29 (Gab, RDM, buffing a full party several times a Sortie run). The row builder held 50 rows and
+        // cut the rest in BUILD order, before the sort -- your own buffs are built first, the ally rows next, and the red
+        // OUT rows last of all. So a full-party RDM lost exactly the rows that say someone is missing a buff.
+        // Ten buffs on five allies is 50 ally rows ; three of your own push it past the old cap.
+        world({ { ME, "Tetsouo", 5, false }, { KAO, "Kaories", 17, false }, { GAB, "Gab", 1, false },
+                { 0x00010005u, "Aeryn", 3, false }, { 0x00010006u, "Byrth", 4, false }, { 0x00010007u, "Cid", 6, false } });
+        config_defaults();
+        ui_config().tmMax = TM_ROWS_MAX;   // see every row the builder produced : the display cap is a separate, later cut
+        static const unsigned spells[10] = { SP_HASTE, SP_REFRESH, SP_PHALANX2, 47 /* Protect V */, 52 /* Shell V */, 108 /* Regen */,
+                                              53 /* Blink */, 54 /* Stoneskin */, 55 /* Aquaveil */, 845 /* Flurry */ };
+        focus_on(42);   // Regen : the buff Cid will lose
+        const unsigned allies[5] = { KAO, GAB, 0x00010005u, 0x00010006u, 0x00010007u };
+        self_buffs({ 94, 432, 119 });
+        settle();
+        deliver(pkt_self_timers({ { 94, 170 }, { 432, 160 }, { 119, 150 } }));
+        for (int a = 0; a < 5; ++a) for (int s = 0; s < 10; ++s) { deliver(pkt_cast(ME, spells[s], { { allies[a], MSG_LANDED } })); advance_ms(10); }
+        auto party_buffs = [&](bool cidHasRegen) {
+            deliver(pkt_party_buffs({ { KAO, { 33, 43, 116, 40, 41, 42, 36, 37, 39, 581 } }, { GAB, { 33, 43, 116, 40, 41, 42, 36, 37, 39, 581 } },
+                                      { 0x00010005u, { 33, 43, 116, 40, 41, 42, 36, 37, 39, 581 } }, { 0x00010006u, { 33, 43, 116, 40, 41, 42, 36, 37, 39, 581 } },
+                                      cidHasRegen ? MemberBuffs{ 0x00010007u, { 33, 43, 116, 40, 41, 42, 36, 37, 39, 581 } }
+                                                  : MemberBuffs{ 0x00010007u, { 33, 43, 116, 40, 41, 36, 37, 39, 581 } } }));
+        };
+        party_buffs(true);
+        TimersRows r;
+        for (int f = 0; f < 3; ++f) { advance_ms(16); step(r); }
+        int perAlly = 0; for (int i = 0; i < r.nb; ++i) if (r.bufs[i].src == 5) ++perAlly;
+        CHECK_EQ(perAlly, 50);
+        CHECK(r.nb > 50);                  // the three of your own are there too : the old cap held exactly 50
+        party_buffs(false);                // Cid loses Regen
+        advance_ms(16); step(r);
+        int out = -1; for (int i = 0; i < r.nb; ++i) if (r.bufs[i].src == 6 && r.bufs[i].icon == 42) out = i;
+        CHECK(out >= 0);
+        if (out >= 0) CHECK_STR(r.bufs[out].who, "Cid");
+        if (out < 0) dump(r, "full-party RDM, Cid lost Regen");
+    }
+
     SECTION("timers : more ally buffs than the old table held (OB_MAX 128, not the 32 it once was)");
     {   // FOUND BY READING, 2026-09-13 -- the twin of the defect above, one layer down. The ally-buff table grew from 32 to
         // 128 rows (42212c2), but the model's per-frame prune kept `bool drop[32]; const char* why[32]` on the STACK and

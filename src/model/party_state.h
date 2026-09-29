@@ -474,6 +474,38 @@ struct PartyState {
 
     ZoneTracker zt_;                             // Dynamis / Abyssea zone providers (Zone Tracker module)
     const ZoneTracker& zone_tracker() const { return zt_; }
+    // SORTIE NAVIGATION (model/sortie_nav.h) : the wing you are in, and what the server last said about each wing's
+    // NM. Deliberately OUTSIDE ZoneTracker : that struct is written to disk as-is (ZT_CACHE_VER), and none of this
+    // is worth keeping across a reload -- the next 0x065 / 0x0F5 rebuilds it in a second. Cleared on a zone change.
+    struct SortieNav {
+        int wing = -1;                           // 0..7 = A..H, SORTIE_BOSS_ROOM = an arena, -1 = not known yet
+        struct Nm { float x = 0.0f, y = 0.0f; unsigned ms = 0; unsigned char state = 0, lvl = 0; } nm[8];   // state : 0 no news, 1 alive (x/y valid, ms = when), 2 dead
+    };
+    SortieNav soNav_;
+    const SortieNav& sortie_nav() const { return soNav_; }
+    // ABSORB-TP WATCH (the Absorb-TP box, ui/hud_absorb.cpp) : who in the party / alliance cast Absorb-TP (spell 275),
+    // what the last one drained, and when. Read off the 0x028 the server sends anyway -- the same source as the
+    // AbsorbWatch addon it replaces, plus the true resist (msg 85) that addon missed. Fixed table : one row per
+    // caster, the least recent evicted when an 19th arrives ; each keeps its last 32 cast times (the box counts
+    // those inside its memory window). Session-only : nothing here is worth a file.
+    struct AbsorbTp {
+        unsigned actor = 0; char name[20] = "";
+        unsigned lastMs = 0;                     // model_now_ms() of the last one (0 = unused slot)
+        int lastTp = -1;                         // TP drained by the last one ; 0 = resisted / no effect
+        unsigned stamps[32] = {}; unsigned char head = 0, n = 0;   // ring of cast times
+    };
+    static const int AW_MAX = 18;
+    AbsorbTp aw_[AW_MAX];
+    const AbsorbTp* absorb_tp(int& n) const { n = AW_MAX; return aw_; }
+    void absorb_tp_clear() { for (int i = 0; i < AW_MAX; ++i) aw_[i] = AbsorbTp{}; }
+    // how many of `e`'s casts fall inside the last `windowMs`
+    static int absorb_tp_count(const AbsorbTp& e, unsigned windowMs, unsigned now) {
+        int c = 0; for (int i = 0; i < e.n; ++i) if (now - e.stamps[i] <= windowMs) ++c; return c;
+    }
+    void act_absorb_tp(const unsigned char* p, int size, unsigned cat, unsigned actor);
+    void on_065(const unsigned char* p);            // 0x065 repositioning : the Sortie wing you just arrived in
+    void on_0f5(const unsigned char* p);            // 0x0F5 Widescan track reply : a Sortie NM's position / death
+    void sortie_00e(const unsigned char* p);        // 0x00E for a Sortie NM in range : its position / HP 0
     LimbusCoffers lc_[2];                        // [0] Apollyon (zone 38), [1] Temenos (zone 37) -- own file, see lc_save
     const LimbusCoffers& limbus_coffers(int area) const { return lc_[(area == 1) ? 1 : 0]; }
     LimbusWeek    lw_;                           // account-wide weekly allowance, persisted in the same file

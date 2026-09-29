@@ -158,6 +158,28 @@ enum FocusAlert {
     FA_ALERT                                                           // draw the red OUT row
 };
 inline bool focus_alert_clears_loss(FocusAlert v) { return v <= FA_NO_DATA; }
+// The verdict IN WORDS, for the traces. Written because the one trace that prints it used to say
+// "DRAW red OUT row" for everything that was not FA_HOLD_EXPIRED -- including the four verdicts whose entire
+// purpose is to stay silent. A capture then showed a red OUT being drawn where the code was suppressing it
+// correctly, and a real diagnosis was built on it for a full exchange. A trace that names a branch must name
+// the branch the code took, not one the reader has to reconstruct.
+inline const char* focus_alert_name(FocusAlert v) {
+    switch (v) {
+        case FA_CATEGORY_OFF:  return "CLEAR (ally rows off)";
+        case FA_MUTED:         return "CLEAR (muted by hand)";
+        case FA_UP:            return "CLEAR (still up)";
+        case FA_ZONE_GRACE:    return "CLEAR (zone grace)";
+        case FA_NO_DATA:       return "CLEAR (no buff list for this target)";
+        case FA_HOLD_EXPIRED:  return "DROP (hold expired)";
+        case FA_SLOTS_FILLED:  return "SILENT (their song slots are full again)";
+        case FA_UNRECOVERABLE: return "SILENT (un-refillable 5th song)";
+        case FA_REPLACED:      return "SILENT (song deliberately replaced)";
+        case FA_GEO_REPLACED:  return "SILENT (Indi- deliberately replaced)";
+        case FA_RUNE_REPLACED: return "SILENT (pushed out by a newer rune)";
+        case FA_ALERT:         return "DRAW red OUT row";
+    }
+    return "?";
+}
 
 template <class Src>
 inline FocusAlert focus_alert_verdict(const Src& e) {

@@ -12,6 +12,8 @@
 #include "model/zones.h"
 #include "model/resistances.h"
 #include "model/gamestate.h"
+#include "model/sortie_nav.h"   // Sortie navigation : wing / NM / bitzer
+#include "ui/config_controls.h"  // tr() : the compass letters follow the config language
 #include <windows.h>
 #include <math.h>
 #include <stdio.h>
@@ -110,8 +112,9 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }
         float px, py;
         if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
-        else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
-        if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
+        else            { px = box_grow_x(screenW, UiConfig::GB_ZT, 0, C.ztX, boxW); py = snap(C.ztY * screenH); }
+        if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, C.boxGrow[UiConfig::GB_ZT]); }
+        if (!editing && ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);   // grown past an edge -> slide back into view (draw only)
         dColorQuadState(dev);
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
         const float cx = px + boxW * 0.5f, x0 = px + pad;
@@ -191,8 +194,9 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }
         float px, py;
         if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
-        else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
-        if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
+        else            { px = box_grow_x(screenW, UiConfig::GB_ZT, 0, C.ztX, boxW); py = snap(C.ztY * screenH); }
+        if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, C.boxGrow[UiConfig::GB_ZT]); }
+        if (!editing && ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);   // grown past an edge -> slide back into view (draw only)
         dColorQuadState(dev);
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
         const float cx = px + boxW * 0.5f, x0 = px + pad;
@@ -303,8 +307,9 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }
         float px, py;
         if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
-        else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
-        if (editing) { static EditBox g_ztEditS; box_edit(f, g_ztEditS, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
+        else            { px = box_grow_x(screenW, UiConfig::GB_ZT, 0, C.ztX, boxW); py = snap(C.ztY * screenH); }
+        if (editing) { static EditBox g_ztEditS; box_edit(f, g_ztEditS, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, C.boxGrow[UiConfig::GB_ZT]); }
+        if (!editing && ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);   // grown past an edge -> slide back into view (draw only)
         dColorQuadState(dev);
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
         const float cx = px + boxW * 0.5f;
@@ -459,8 +464,9 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }
         float px, py;
         if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
-        else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
-        if (editing) { static EditBox g_ztEditL; box_edit(f, g_ztEditL, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
+        else            { px = box_grow_x(screenW, UiConfig::GB_ZT, 0, C.ztX, boxW); py = snap(C.ztY * screenH); }
+        if (editing) { static EditBox g_ztEditL; box_edit(f, g_ztEditL, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, C.boxGrow[UiConfig::GB_ZT]); }
+        if (!editing && ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);   // grown past an edge -> slide back into view (draw only)
         dColorQuadState(dev);
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
         const float cx = px + boxW * 0.5f;
@@ -569,6 +575,53 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             else     snprintf(lootLine[nLoot], sizeof(lootLine[nLoot]), "item %d x%d", (int)loot[i].item, (int)loot[i].n);
             ++nLoot;
         }
+        // NAVIGATION : the wing you are in (ringed in the boss row), its NM and, in the basement, its bitzer -- each on
+        // its own small card, readable at a glance : a coloured tag, the name, then the distance in big (coloured by how
+        // close) and an arrow pointing at it (north up, like the map) with the compass point. The NM's position is the
+        // server's (0x0F5 track replies / its own 0x00E in range) ; with no news yet the card shows a dash, never an
+        // invented distance. Nothing in a boss arena, nothing on the frozen last-run summary.
+        struct NavRow { bool on = false; char tag[8] = ""; const char* name = 0; int state = 0; int dist = 0; float ang = 0.0f; int card = 0; };
+        NavRow nmRow, bzRow; int navWing = -1;
+        static const char* CARD_EN[8] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
+        static const char* CARD_FR[8] = { "N", "NE", "E", "SE", "S", "SO", "O", "NO" };
+        auto bearing = [](float fx, float fy, float tx, float ty) { float d = atan2f(tx - fx, ty - fy) * 57.29578f; return d < 0.0f ? d + 360.0f : d; };
+        if (C.ztSoNav && !lastRun) {
+            if (preview || editing) {
+                navWing = 4;
+                nmRow.on = true; nmRow.tag[0] = 'E'; nmRow.name = "Esurient Botulus"; nmRow.state = 1; nmRow.dist = 87; nmRow.ang = 45.0f; nmRow.card = 1;
+                bzRow.on = true; strcpy(bzRow.tag, "BZ"); bzRow.name = "Bitzer"; bzRow.state = 1; bzRow.dist = 42; bzRow.ang = 225.0f; bzRow.card = 5;
+            } else {
+                const PartyState::SortieNav& nv = party().sortie_nav();
+                if (nv.wing >= 0 && nv.wing < SORTIE_WINGS && f.game) {
+                    navWing = nv.wing;
+                    const SortieWing& sw = SORTIE_WING[nv.wing];
+                    const PartyState::SortieNav::Nm& n = nv.nm[nv.wing];
+                    const float mx = f.game->meX, my = f.game->meZ;   // entity +0x04 / +0x0C = the packets' X / Y
+                    nmRow.on = true; nmRow.tag[0] = sw.letter; nmRow.name = sw.nm; nmRow.state = n.state;
+                    if (n.state == 1) { nmRow.dist = (int)(sortie_dist(mx, my, n.x, n.y) + 0.5f); nmRow.ang = bearing(mx, my, n.x, n.y); nmRow.card = sortie_cardinal(mx, my, n.x, n.y); }
+                    if (sw.basement) {
+                        bzRow.on = true; strcpy(bzRow.tag, "BZ"); bzRow.name = "Bitzer"; bzRow.state = 1;
+                        bzRow.dist = (int)(sortie_dist(mx, my, sw.bzX, sw.bzY) + 0.5f); bzRow.ang = bearing(mx, my, sw.bzX, sw.bzY); bzRow.card = sortie_cardinal(mx, my, sw.bzX, sw.bzY);
+                    }
+                }
+            }
+        }
+        const int navN = (nmRow.on ? 1 : 0) + (bzRow.on ? 1 : 0);
+        // card geometry : tag pill | name .......... distance  arrow  compass
+        const float cardH = zB + 12.0f * S, cardGap = 4.0f * S, cardPad = 6.0f * S;
+        const float tagH = cardH - 10.0f * S, arrowR = zB * 0.45f;
+        auto rightText = [&](const NavRow& r, char* dbuf, int cap) -> const char* {   // what sits right of the name
+            if (r.state == 2) return tr("DOWN", "VAINCU");
+            if (r.state != 1) return "-";   // no track reply yet (a plain dash : the glyph atlas is not sure to hold an em dash)
+            snprintf(dbuf, cap, "%d y", r.dist); return dbuf;
+        };
+        auto cardW = [&](const NavRow& r) -> float {
+            char db[16]; const char* rt = rightText(r, db, sizeof(db));
+            const float tagW = fL->measure(r.tag, zL) + 10.0f * S;
+            float w = cardPad + tagW + 6.0f * S + fB->measure(r.name, zB) + 14.0f * S + fG->measure(rt, zG) + cardPad;
+            if (r.state == 1) w += 6.0f * S + arrowR * 2.0f + 4.0f * S + fL->measure(tr(CARD_EN[r.card & 7], CARD_FR[r.card & 7]), zL);
+            return w;
+        };
         // the boss row : eight letters, a wider gap between the two floors
         const float letterW = fB->measure("W", zB), letterGap = 6.0f * S, floorGap = 16.0f * S;
         const float bossRowW = 8.0f * letterW + 6.0f * letterGap + floorGap;
@@ -578,15 +631,18 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         if (showBoss && bossRowW > contentW) contentW = bossRowW;
         if (showCof && fL->measure(cofLine, zL) > contentW) contentW = fL->measure(cofLine, zL);
         if (showLoot) for (int i = 0; i < nLoot; ++i) if (fL->measure(lootLine[i], zL) > contentW) contentW = fL->measure(lootLine[i], zL);
+        if (nmRow.on && cardW(nmRow) > contentW) contentW = cardW(nmRow);
+        if (bzRow.on && cardW(bzRow) > contentW) contentW = cardW(bzRow);
         if (contentW < 130.0f * S) contentW = 130.0f * S;
         const float boxW = contentW + 2.0f * pad;
         const float boxH = pad + (showHdr ? headH + gap : 0.0f) + (showGal ? galH : 0.0f) + (showBoss ? bossH : 0.0f)
-                         + (showCof ? lineH : 0.0f) + (showLoot ? (float)nLoot * lineH : 0.0f) + pad;
+                         + (navN ? gap + (float)navN * (cardH + cardGap) : 0.0f) + (showCof ? lineH : 0.0f) + (showLoot ? (float)nLoot * lineH : 0.0f) + pad;
         if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }
         float px, py;
         if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
-        else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
-        if (editing) { static EditBox g_ztEditSo; box_edit(f, g_ztEditSo, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
+        else            { px = box_grow_x(screenW, UiConfig::GB_ZT, 0, C.ztX, boxW); py = snap(C.ztY * screenH); }
+        if (editing) { static EditBox g_ztEditSo; box_edit(f, g_ztEditSo, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, C.boxGrow[UiConfig::GB_ZT]); }
+        if (!editing && ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);   // grown past an edge -> slide back into view (draw only)
         dColorQuadState(dev);
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().ztBox, 1.0f, S);
         const float cx = px + boxW * 0.5f;
@@ -605,10 +661,58 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             for (int i = 0; i < 8; ++i) {
                 const char L[2] = { (char)('A' + i), 0 };
                 const u32 col = (bosses >> i & 1) ? cDown : (shards >> i & 1) ? cShard : cWait;
-                fB->draw_c(dev, bx + letterW * 0.5f, cy + bossH * 0.5f, L, zB, col, strk, oB);
+                if (i == navWing) {   // YOU ARE HERE : a bright ring round the letter of the wing you stand in
+                    const float rw = letterW + 8.0f * S, rh = bossH - 2.0f * S;
+                    dColorQuadState(dev);
+                    rrect(dev, bx + letterW * 0.5f - rw * 0.5f, cy + 1.0f * S, rw, rh, 4.0f * S, 0x40FFFFFFu, 0x20FFFFFFu, 1.0f);
+                    rrect_stroke(dev, bx + letterW * 0.5f - rw * 0.5f, cy + 1.0f * S, rw, rh, 4.0f * S, 0xFFF2C85Bu, 1.5f * S);
+                    fB->begin(dev);
+                }
+                fB->draw_c(dev, bx + letterW * 0.5f, cy + bossH * 0.5f, L, zB, (i == navWing && !(bosses >> i & 1)) ? 0xFFFFFFFFu : col, strk, oB);
                 bx += letterW + (i == 3 ? floorGap : letterGap);
             }
             cy += bossH;
+        }
+        if (navN) {
+            cy += gap;
+            const float x0 = px + pad, w0 = contentW;
+            auto drawCard = [&](const NavRow& r, u32 tagCol) {
+                const float ccy = cy + cardH * 0.5f;
+                const bool dead = (r.state == 2), live = (r.state == 1);
+                const u32 accent = dead ? green : tagCol;
+                dColorQuadState(dev);
+                rrect(dev, x0, cy, w0, cardH, 5.0f * S, 0x50000000u, 0x68000000u, 1.0f);                       // the card
+                rrect_left(dev, x0, cy, 3.0f * S, cardH, 2.0f * S, accent, accent, 1.0f);                         // its accent edge
+                const float tagW = fL->measure(r.tag, zL) + 10.0f * S;
+                float x = x0 + cardPad;
+                rrect(dev, x, ccy - tagH * 0.5f, tagW, tagH, tagH * 0.5f, accent, (accent & 0x00FFFFFFu) | 0xC0000000u, 1.0f);   // the tag pill
+                fL->begin(dev); fL->draw_c(dev, x + tagW * 0.5f, ccy, r.tag, zL, 0xFF14161Cu, 0, 0.0f);
+                x += tagW + 6.0f * S;
+                fB->begin(dev); fB->draw_lv(dev, x, ccy, r.name, zB, dead ? (zt_col(ZT_SO_BOSS, dim) & 0x00FFFFFFu) | 0xB0000000u : zt_col(ZT_SO_BOSS, white), strk, oB);
+                // right side, laid out from the right edge inwards : compass, arrow, distance
+                float rx = x0 + w0 - cardPad;
+                if (live) {
+                    const char* cp = tr(CARD_EN[r.card & 7], CARD_FR[r.card & 7]);
+                    rx -= fL->measure(cp, zL);
+                    fL->begin(dev); fL->draw_lv(dev, rx, ccy, cp, zL, 0xFFF2C85Bu, strk, oL);
+                    rx -= 4.0f * S + arrowR;
+                    const float a = r.ang * 0.0174533f, sa = sinf(a), ca = cosf(a);                                // screen : up = north
+                    const float tx = rx + sa * arrowR, ty = ccy - ca * arrowR;
+                    const float b1 = a + 2.45f, b2 = a - 2.45f;
+                    dColorQuadState(dev);
+                    disc(dev, rx, ccy, arrowR + 2.0f * S, 0x60000000u);
+                    fill_tri(dev, tx, ty, rx + sinf(b1) * arrowR * 0.8f, ccy - cosf(b1) * arrowR * 0.8f,
+                             rx + sinf(b2) * arrowR * 0.8f, ccy - cosf(b2) * arrowR * 0.8f, 0xFFF2C85Bu);
+                    rx -= arrowR + 6.0f * S;
+                }
+                char db[16]; const char* rt = rightText(r, db, sizeof(db));
+                const u32 dcol = dead ? green : !live ? dim : r.dist <= 25 ? green : r.dist <= 75 ? 0xFFF2C85Bu : white;   // near = green, mid = gold
+                rx -= fG->measure(rt, zG);
+                fG->begin(dev); fG->draw_lv(dev, rx, ccy, rt, zG, dcol, strk, oG);
+                cy += cardH + cardGap;
+            };
+            if (nmRow.on) drawCard(nmRow, orange);
+            if (bzRow.on) drawCard(bzRow, 0xFF4FC3C7u);   // the bitzer : teal, a landmark rather than a target
         }
         if (showCof) { fL->begin(dev); fL->draw_c(dev, cx, cy + lineH * 0.5f, cofLine, zL, zt_col(ZT_SO_LINE, dim), strk, oL); cy += lineH; }
         if (showLoot && nLoot) {
@@ -730,8 +834,9 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     // ---- position (+ edit drag) ----
     float px, py;
     if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
-    else            { px = snap(C.ztX * screenW - boxW * 0.5f); py = snap(C.ztY * screenH); }
-    if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, 1); }
+    else            { px = box_grow_x(screenW, UiConfig::GB_ZT, 0, C.ztX, boxW); py = snap(C.ztY * screenH); }
+    if (editing) { static EditBox g_ztEdit; box_edit(f, g_ztEdit, EDITBOX_ZONETRACKER, px, py, boxW, boxH, ui_config().ztScale, ui_config().ztX, ui_config().ztY, C.boxGrow[UiConfig::GB_ZT]); }
+    if (!editing && ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);   // grown past an edge -> slide back into view (draw only)
 
     // ---- chrome ----
     dColorQuadState(dev);

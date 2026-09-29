@@ -76,6 +76,10 @@ static void scribble(UiConfig& c, int seed) {
     c.mmScale = 0.8f + 0.1f * seed; c.mmZoom = 2.0f + 1.0f * seed;   // the field whose unclamped load was the 2026-07-26 S0
     c.mmShape = i1 & 1; c.mmFrameColor = x1 + 13; c.mmBgAlpha = f1 * 0.5f;
 
+    for (int i = 0; i < UiConfig::GB_COUNT; ++i) c.boxGrow[i] = (i + seed) % 3;
+    c.awShow = !(seed & 1); c.awScale = 0.9f + 0.1f * seed; c.awX = 0.11f * seed; c.awY = 0.13f * seed;
+    c.awScreen = 20 + 10 * seed; c.awMemory = 300 + 60 * seed; c.awColors = !(seed & 1); c.awCount = !(seed & 1); c.awTimer = !(seed & 1);
+    c.tmMarks = seed & 1; c.tmFocusWarn = 30 + 5 * seed; c.tmFocusHold = 20 + 5 * seed;   // every box, every direction (0..2)
     c.scShow = i1 & 1; c.scScale = 0.9f + 0.1f * seed; c.scX = 0.29f * seed; c.scY = 0.31f * seed;
     c.tpShow = i1 & 1; c.tpScale = 0.9f + 0.1f * seed; c.tpCount = 3 + seed;
     c.hlShow = i1 & 1; c.hlScale = 0.9f + 0.1f * seed; c.hlCount = 4 + seed;
@@ -83,6 +87,7 @@ static void scribble(UiConfig& c, int seed) {
     c.grimShow = i1 & 1; c.grimScale = 0.9f + 0.1f * seed;
     c.ztShow = i1 & 1; c.ztScale = 0.9f + 0.1f * seed;
     c.ztSoGal = !(i1 & 1); c.ztSoBoss = i1 & 1; c.ztSoCof = !(i1 & 1); c.ztSoLoot = i1 & 1;
+    c.ztSoNav = !(i1 & 1); c.ztSoTrack = i1 & 1;
     c.tmShow = i1 & 1; c.tmScale = 0.9f + 0.1f * seed; c.tmMax = 8 + seed; c.tmMerged = i1 & 1;
     c.dbShow = i1 & 1; c.dbScale = 0.9f + 0.1f * seed; c.dbMax = 6 + seed;
     c.epShow = i1 & 1; c.epScale = 0.9f + 0.1f * seed;
@@ -167,6 +172,25 @@ void test_config() {
     CHECK(profile_save("t_roundtrip"));
     CHECK(profile_load("t_roundtrip"));
     const UiConfig stored = ui_config();                // the reference : what the file actually represents
+
+    // 1b) A key the WRITER emits and the READER ignores is invisible to every comparison below : profile_load starts
+    // from the defaults, so an ignored key comes back as its DEFAULT on both sides of each compare, and they agree.
+    // Found 2026-09-29 by mutation -- the grow= line could be dropped from the reader and this whole section still
+    // passed. So check it directly : every 4-byte word scribble moved away from the defaults must still be away
+    // from them after the load. Word-granular on purpose (the floats and ints are 4-byte fields ; a float that
+    // only rounded through the file still differs from its default) -- it cannot see a lost char whose neighbour
+    // in the same word survived, but it sees every ignored key made of whole words.
+    {
+        static const UiConfig DEF{};
+        static UiConfig want; want = DEF; scribble(want, 1);   // the values the file was written from
+        const unsigned* w = (const unsigned*)&want;
+        const unsigned* d = (const unsigned*)&DEF;
+        const unsigned* s = (const unsigned*)&stored;
+        int lost = -1;
+        for (size_t i = 0; i < sizeof(UiConfig) / 4; ++i) if (w[i] != d[i] && s[i] == d[i]) { lost = (int)(i * 4); break; }
+        CHECK_EQ(lost, -1);
+        if (lost >= 0) printf("   a scribbled value came back as its DEFAULT at byte offset %d of %d -- a key the reader ignores\n", lost, (int)sizeof(UiConfig));
+    }
 
     // 2) overwrite every one of those fields with a DIFFERENT non-default value.
     scribble(live, 2);

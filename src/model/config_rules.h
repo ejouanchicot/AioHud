@@ -164,6 +164,8 @@ inline void config_sanitise(UiConfig& c) {
     MUL(wsScale);   FRAC(wsX);   FRAC(wsY);
     MUL(scScale);   FRAC(scX);   FRAC(scY);   GAP(scListGap);   cfg_text(c.scText, SC_TE_COUNT);   cfg_box(c.scBox);
     MUL(tpScale);   FRAC(tpX);   FRAC(tpY);                     cfg_text(c.tpText, TP_TE_COUNT);   cfg_box(c.tpBox);
+    MUL(awScale);   FRAC(awX);   FRAC(awY);   cfg_box(c.awBox);
+    c.awScreen = cfg_int(c.awScreen, 10, 600); c.awMemory = cfg_int(c.awMemory, 60, 3600);
     MUL(hlScale);   FRAC(hlX);   FRAC(hlY);                     cfg_text(c.hlText, HL_TE_COUNT);   cfg_box(c.hlBox);
     MUL(pwScale);   FRAC(pwX);   FRAC(pwY);                     cfg_text(c.pwText, PW_TE_COUNT);   cfg_box(c.pwBox);
     MUL(grimScale); FRAC(grimX); FRAC(grimY);                   cfg_text(c.grimText, GRIM_TE_COUNT);
@@ -179,9 +181,12 @@ inline void config_sanitise(UiConfig& c) {
     cfg_text(c.ztText, ZT_TE_COUNT); cfg_box(c.ztBox);
 
     // ---- Timers / Debuffs
+    for (int i = 0; i < UiConfig::GB_COUNT; ++i) c.boxGrow[i] = cfg_int(c.boxGrow[i], 0, 2);   // 0 grows right, 1 both sides, 2 left
     MUL(tmScale); FRAC(tmX); FRAC(tmY); FRAC(tmRX); FRAC(tmRY); MUL(tmIconScale); GAP(tmRowGap);
     c.tmMax = cfg_int(c.tmMax, 0, 50);
     c.tmFocusWarn = cfg_int(c.tmFocusWarn, 10, 300);
+    c.tmMarks = cfg_int(c.tmMarks, 0, 1);
+    c.ztSoNav = cfg_int(c.ztSoNav, 0, 1); c.ztSoTrack = cfg_int(c.ztSoTrack, 0, 1);   // ztSoTrack is read by a Lua addon : keep it a clean 0/1
     c.tmFocusHold = cfg_int(c.tmFocusHold, 5, 300);
     cfg_text(c.tmText, TM_TE_COUNT); cfg_box(c.tmBox);
     MUL(dbScale); FRAC(dbX); FRAC(dbY); MUL(dbIconScale); GAP(dbRowGap);

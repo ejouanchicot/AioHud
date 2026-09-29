@@ -68,8 +68,32 @@ test replays the recorded run with every id +10 and expects the same box. `//aio
 
 Header "Sortie" ; `Gallimaufry +N · total` ("(last run)" once frozen) ; the eight boss letters A B C D   E F G H
 (green = down, orange = its shard in hand, dim = not yet) ; `Coffers N up · N down · NM N` ; one row per item obtained.
-Toggles `ztsortie=gallimaufry,bosses,coffers,items` ; text elements `ZT_SO_GAL`, `ZT_SO_BOSS`, `ZT_SO_LINE` ;
+Toggles `ztsortie=gallimaufry,bosses,coffers,items,nav,track` ; text elements `ZT_SO_GAL`, `ZT_SO_BOSS`, `ZT_SO_LINE` ;
 preview variant 6.
+
+## Navigation : the wing, its NM, its bitzer (2026-09-29)
+
+Two lines under the boss letters : the wing's NM with its distance and compass point (`vaincu`/`down` once killed,
+its name alone while nothing is known -- never an invented distance), and in the basement the wing's bitzer. Nothing
+in a boss arena. Tables and arithmetic in `model/sortie_nav.h` ; state in `PartyState::soNav_` (runtime only, cleared
+on every zone change) ; handlers `on_065` / `on_0f5` / `sortie_00e` (party_state_zonetracker.cpp). Every value
+below appears in BOTH 2026-09-14 tapes.
+
+| Source | What it gives | Measured |
+|---|---|---|
+| 0x065 repositioning (X @0x04, Y @0x0C) | the wing : 22 fixed arrival points + the 2 arenas (624,-620 / 184,-660) | every arrival of both runs, to the tenth |
+| 0x0F5 Widescan track reply (index @0x12, status @0x14) | the NM anywhere in the zone : 1 = position, 2 = the track ended (its kill), 3 = stopped | ~every 0.44 s after ONE request (711 replies) |
+| 0x00E for the NM in range | position (mask bit 0), HP 0 = killed (bit 2) ; bit 5 alone is only "out of range" | Haughty Tulittia HP 0 in the tape |
+| fixed | the basement bitzers 837-840 (E 338.6,147.4 · F 773.2,306.8 · G 881.4,-1.6 · H 707.3,-372.6) | same position on every pass |
+
+NM indices A..H : 144, 223, 285, 373, 427, 498, 552, 622 (levels 122..141 in the replies). Only zone 133 (U2) measured.
+
+**AioHud never asks.** The plugin has no way to send a packet ; it reads the 0x0F5 replies whoever requested them
+(the player's own Widescan, or the addon). The optional request lives in `updater/aioupdate/aioupdate.lua`
+(section SORTIE), gated by the 6th `ztsortie=` value (OFF by default) and at the cadence measured in the recordings : one 0x0F5 per
+wing entered, a retry every 2 s for 8 s only on a "not found" (0,0) reply, one 0x0F6 two seconds into an arena. No
+0x016 polling, nothing on a zone change. Its two tables duplicate `sortie_nav.h` : keep them in
+step.
 
 ## Tests
 
@@ -78,6 +102,10 @@ preview variant 6.
 run, then replays it renumbered. Six mutations in `dev/scripts/unit_mutate.py` (the item duplicate kept, a coffer
 counted per copy, the run summed, a shard kept after its boss, the freeze dropped, the offsets taken from the seed)
 each fail the section they target.
+
+Navigation : four `sortie nav` sections in `tests/t_packets.cpp` (arrival points, track replies, 0x00E in range,
+compass/distance), with the tapes' own values. The addon's request cadence was run offline under Lua 5.1 with Windower
+stubbed (21 checks : off by default, one track per wing, bounded retry, arena stop and its cancellation, silent).
 
 ## See also
 - [Zone tracker](zone-tracker.md) — the six other modes and the shared message healer.

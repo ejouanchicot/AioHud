@@ -4,6 +4,7 @@
 // and the file-static helpers used only by them. See party_state.h for the ZoneTracker struct.
 #include "model/model_clock.h"   // model_now_ms / model_now_unix : one frozen clock per model event
 #include "model/party_state.h"
+#include "model/sortie_nav.h"   // Sortie navigation : wing / NM / bitzer tables
 #include "model/limbus_week.h"   // limbus_week_rolled : the Sunday 15:00 UTC allowance rollover
 #include <time.h>              // time() : UTC epoch stamp on the weekly allowance
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared packet readers)
@@ -690,6 +691,7 @@ void PartyState::zt_set_zone(int zone, const char* name) {
         if (zt_load(zone)) { lc_load(); zt_.curZone = zone; return; }
     }
     zt_.curZone = zone;
+    soNav_ = SortieNav{};                                   // Sortie navigation is per visit : a new zone starts with no wing and no NM news
     int mode = 0;
     if (name) { if (name[0] == 'D' && name[1] == 'y' && name[2] == 'n') mode = 1;         // "Dynamis..."
                 else if (name[0] == 'A' && name[1] == 'b' && name[2] == 'y') mode = 2; }  // "Abyssea..."
@@ -796,7 +798,37 @@ void PartyState::on_034(const unsigned char* p) {           // 0x034 NPC interac
     windower::debug::log("sheol: conflux menu 173 param0=%d (1/2/3 = Sheol A/B/C ; anything else is unmapped -- Gaol?)", i);
     if (i > 0 && i < 5) { zt_.sheolzone = i; zt_save(); }  // 1/2/3 = A/B/C, 4 = Gaol ; set in Rabao, kept through the zone-in
 }
+// ---- SORTIE NAVIGATION (model/sortie_nav.h) : all three read what the server sends anyway. AioHUD never asks. ----
+static float pkt_f32(const unsigned char* p, int o) { float v; memcpy(&v, p + o, 4); return v; }
+void PartyState::on_065(const unsigned char* p) {          // 0x065 repositioning : you took a bitzer / a gate
+    if (zt_.curZone != SORTIE_NAV_ZONE) return;
+    if (pkt_short(p, 0x10)) return;
+    const int w = sortie_wing_for_arrival(pkt_f32(p, 0x04), pkt_f32(p, 0x0C));   // X @0x04, Y @0x0C (0x08 = height)
+    if (w >= 0) soNav_.wing = w;                           // an unknown arrival keeps the wing you had
+}
+void PartyState::on_0f5(const unsigned char* p) {          // 0x0F5 Widescan track reply (~every 0.44 s while a track runs)
+    if (zt_.curZone != SORTIE_NAV_ZONE) return;
+    if (pkt_short(p, 0x18)) return;
+    const int w = sortie_wing_for_nm(pkt_u16(p, 0x12));
+    if (w < 0) return;                                     // someone is tracking something else : not ours to show
+    const float x = pkt_f32(p, 0x04), y = pkt_f32(p, 0x0C);
+    const unsigned status = pkt_u32(p, 0x14);              // 1 = tracking (position valid), 2 = the track ENDED (measured : the NM's kill), 3 = stopped
+    SortieNav::Nm& n = soNav_.nm[w];
+    if (status == 1 && (x != 0.0f || y != 0.0f)) { n.x = x; n.y = y; n.ms = model_now_ms(); n.state = 1; n.lvl = p[0x10]; }
+    else if (status == 2) n.state = 2;
+}
+void PartyState::sortie_00e(const unsigned char* p) {       // 0x00E for a Sortie NM that is in range
+    if (pkt_short(p, 0x20)) return;
+    const int w = sortie_wing_for_nm(pkt_u16(p, 0x08));
+    if (w < 0) return;
+    const unsigned mask = p[0x0A];
+    SortieNav::Nm& n = soNav_.nm[w];
+    if (mask & 0x01) { n.x = pkt_f32(p, 0x0C); n.y = pkt_f32(p, 0x14); n.ms = model_now_ms(); if (n.state != 2) n.state = 1; }   // position (X @0x0C, Y @0x14)
+    if (mask & 0x04) n.state = (p[0x1E] == 0) ? 2 : 1;     // HP% : 0 = killed (mask bit 5 is only "out of range", never death)
+}
+
 void PartyState::on_00e(const unsigned char* p) {          // 0x00E NPC update : fallback A/B/C from a mob's instance bits (menu missed)
+    if (zt_.curZone == SORTIE_NAV_ZONE) { sortie_00e(p); return; }
     if (zt_.mode != 5 || zt_.sheolzone) return;            // only inside a Sheol run, and only while still unknown
     if (pkt_short(p, 0x08)) return;                       // truncated -> the entity id @0x04 isn't there
     const unsigned id = pkt_u32(p, 0x04);                  // the entity's server id

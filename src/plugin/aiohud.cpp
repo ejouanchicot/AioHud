@@ -917,8 +917,8 @@ static void aio_command_dispatch(const char* cmd)
             return;
         }
         if (!a1[0]) {
-            _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%c//aio out <number> (drawn on the row), or list / alerts (the red ones) / all -- //aio in puts it back",
-                                            "%c%c[Timers] %c%c//aio out <numero> (affiche sur la ligne), ou list / alertes (les rouges) / all -- //aio in remet"), 0x1F, YEL, 0x1F, GRAY);
+            _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%c//aio out <name> <spell>, or <number> (see list), alerts (the red ones) / all -- //aio in puts it back",
+                                            "%c%c[Timers] %c%c//aio out <nom> <sort>, ou <numero> (voir list), alertes (les rouges) / all -- //aio in remet"), 0x1F, YEL, 0x1F, GRAY);
             m[sizeof(m) - 1] = 0; chat(m); return;
         }
         const int k = aio::timers_focus_forget(a1, a2);

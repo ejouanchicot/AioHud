@@ -43,6 +43,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             float v01 = (c.tmScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
+        ROW_GROW(CTRL_ID, UiConfig::GB_TM)   // which way the box grows as its content widens (ui/box_grow.h)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.tmBox);   // Box / Transparency / Theme / Hue / Luminosity
         ROW_TOGGLE(CTRL_ID, tr("Show titles", "Afficher les titres"), c.tmTitle)
         ROW_CHOICE_G(CTRL_ID, tr("Layout", "Disposition"), c.tmMerged, tr("Fused", "Fusionn\xC3\xA9"), tr("Separate", "S\xC3\xA9par\xC3\xA9"), 48.0f, 38.0f, 128.0f)   // Layout : fused (one box) vs separate (two draggable boxes)
@@ -127,6 +128,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (aF7_ > 0.0f) {
         const float top7_ = ry;
         cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
+        ROW_TOGGLE(CTRL_ID, tr("//aio out numbers", "Num\xC3\xA9ros //aio out"), c.tmMarks)   // the small number left of each monitored row (off : //aio out takes a name, "alerts" or "list")
         ROW_TOGGLE(CTRL_ID, tr("SP last-min alert", "Alerte SP derni\xC3\xA8re min"), c.tmSpAlert)   // SP alert : SP1/SP2 buffs (all jobs) blink hard in their last minute (Soul Voice -> Nitro window)
         { ROW_BAND(46.0f)   // Focus WARN : a "Hidden + focus" buff surfaces when it drops below this many seconds
             const float lo = 10.0f, hi = 300.0f; char b[16]; sprintf(b, "%ds", c.tmFocusWarn);

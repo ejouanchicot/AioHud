@@ -36,6 +36,7 @@ void ConfigPage::draw_ep_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             float v01 = (c.epScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.epScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
+        ROW_GROW(CTRL_ID, UiConfig::GB_EP)   // which way the box grows as its content widens (ui/box_grow.h)
         // ---- Tracked-NM picker : a grid of NAME buttons (same two-pass pattern as the job picker in
         //      tm_config). Selected = lit panel + white ring ; clicking one stores its KEY (not an index --
         //      that would re-point if the table grows) into epTrack AND turns the box ON, like //aio ept. ----

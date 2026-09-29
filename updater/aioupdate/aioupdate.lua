@@ -25,7 +25,7 @@
 
 _addon.name     = 'AioUpdate'
 _addon.author   = 'ejouanchicot'
-_addon.version  = '2.4'
+_addon.version  = '2.5'
 _addon.commands = { 'aioupdate', 'aioup' }
 
 local base     = windower.windower_path
@@ -229,3 +229,98 @@ local function watch_request()
     coroutine.schedule(watch_request, 1)
 end
 coroutine.schedule(watch_request, 1)
+
+--[[ ===== SORTIE : AUTO WIDESCAN TRACK of the wing's NM -- OPT-IN, OFF BY DEFAULT =====================================
+     The plugin cannot send a packet (its Windower interface has none), so this is the ONE place AioHud asks the server
+     for anything, and only when the player ticked "Auto Widescan track" in the Zone Tracker > Sortie settings (the 6th
+     value of the ztsortie= line of config.txt, re-read at every wing change).
+
+     What it sends is what the game's own Widescan "Track" button sends (0x0F5 with the NM's index ; every job has
+     Widescan), at the cadence measured on the 2026-09-14 recordings : ONE request when you arrive in a wing --
+     the server then streams the position by itself, ~every 0.44 s (711 replies for one request) --, a retry every 2 s
+     for at most 8 s ONLY while the server answers "not found" (0,0), and a stop (0x0F6) 2 s into a boss arena. On a
+     zone change nothing is sent : the server ends the track itself. Nothing else -- no 0x016 polling, no position.
+
+     The plugin reads the replies (0x0F5) whoever asked for them -- this, or the player by hand. The two tables
+     below are the SAME as model/sortie_nav.h (SORTIE_ARRIVAL / SORTIE_WING) : keep them in step. Every handler is in a
+     pcall : a fault here must never reach the update watcher above, which is what this addon exists for. ]]
+do
+    local ok_pk, packets = pcall(require, 'packets')
+    local SORTIE_ZONE = 133                          -- Outer Ra'Kaznar [U2], the only Sortie zone measured
+    local ARRIVAL = {                                -- 0x065 arrival point (X, Y @0x0C) -> wing 1..8 (A..H) or 'boss'
+        {-836, -20, 1}, {-460, 96, 1}, {-900, 416, 1}, {-460, 35.5, 1},
+        {-344, -20, 2}, {-24, 420, 2}, {-404.5, -20, 2},
+        {-460, -136, 3}, {-20, -456, 3}, {-460, -75.5, 3},
+        {-576, -20, 4}, {-896, -460, 4}, {-515.5, -20, 4},
+        {580, 31.5, 5}, {280, 276, 5}, {186.5, -20, 5},
+        {631.5, -20, 6}, {876, 280, 6},
+        {580, -71.5, 7}, {880, -316, 7},
+        {528.5, -20, 8}, {284, -320, 8},
+        {624, -620, 'boss'}, {184, -660, 'boss'},
+    }
+    local NM = { 144, 223, 285, 373, 427, 498, 552, 622 }   -- the wing's NM entity index, A..H
+
+    local tracking, req_at, last_try, arena_gen = nil, 0, 0, 0
+
+    local function enabled()                         -- the player's choice, read where the plugin writes it
+        local f = io.open(data_dir .. '\\config.txt', 'r'); if not f then return false end
+        local on = false
+        for line in f:lines() do
+            local v = line:match('^ztsortie=%-?%d+,%-?%d+,%-?%d+,%-?%d+,%-?%d+,(%d)')
+            if v then on = (v == '1') end
+        end
+        f:close()
+        return on
+    end
+    local function send_track(idx)
+        packets.inject(packets.new('outgoing', 0x0F5, { ['Index'] = idx, ['_junk1'] = 0 }))
+        log('sortie : track NM ' .. idx)
+    end
+    local function stop()
+        if not tracking then return end
+        tracking = nil
+        packets.inject(packets.new('outgoing', 0x0F6, { ['_junk1'] = 0 }))
+        log('sortie : track stopped')
+    end
+    local function on_reposition(p)
+        local w
+        for _, a in ipairs(ARRIVAL) do
+            if math.abs(a[1] - p.X) < 0.6 and math.abs(a[2] - p.Y) < 0.6 then w = a[3]; break end
+        end
+        if not w then return end                     -- not a known arrival point : leave things as they are
+        arena_gen = arena_gen + 1
+        if w == 'boss' then                          -- the track stops 2 s into the arena ; a wing entered meanwhile wins
+            local gen = arena_gen
+            coroutine.schedule(function() if gen == arena_gen then pcall(stop) end end, 2)
+            return
+        end
+        if not enabled() then stop(); return end     -- switched off mid-run : end OUR track, send nothing else
+        if tracking == NM[w] then return end         -- already on it : the server is still streaming
+        tracking = NM[w]; req_at = os.clock(); last_try = req_at
+        send_track(tracking)
+    end
+    local function on_track_reply(p)
+        if not tracking then return end
+        if p.Status == 3 and p.Index == 0 then tracking = nil; return end   -- stopped by someone else (the player, another addon)
+        if p.Index ~= tracking then return end
+        if p.Status == 2 then tracking = nil; return end                     -- the NM is down : the server ended the track
+        if p.X == 0 and p.Y == 0 then                                        -- "not found" : retry, bounded
+            local now = os.clock()
+            if now - req_at < 8 and now - last_try >= 2 then last_try = now; send_track(tracking) end
+        end
+    end
+
+    if ok_pk then
+        windower.register_event('incoming chunk', function(id, data)
+            if id ~= 0x065 and id ~= 0x0F5 then return end
+            pcall(function()
+                local info = windower.ffxi.get_info()
+                if not info or info.zone ~= SORTIE_ZONE then return end
+                local p = packets.parse('incoming', data)
+                if not p then return end
+                if id == 0x065 then on_reposition(p) else on_track_reply(p) end
+            end)
+        end)
+        windower.register_event('zone change', function() tracking = nil end)   -- the server ends the track itself
+    end
+end

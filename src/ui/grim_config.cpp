@@ -33,6 +33,7 @@ void ConfigPage::draw_grim_config(u32 dev, Font* fo, const MouseState* mo, bool 
             float v01 = (c.grimScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.grimScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
+        ROW_GROW(CTRL_ID, UiConfig::GB_GRIM)   // which way the box grows as its content widens (ui/box_grow.h)
         { ROW_BAND(52.0f)   // Preview art (edit only)
             const char* ALBL[4] = { tr("Light Arts", "Light Arts"), tr("Dark Arts", "Dark Arts"), tr("Addendum: White", "Addendum: White"), tr("Addendum: Black", "Addendum: Black") };
             int ar = (c.grimArt < 0 || c.grimArt > 3) ? 2 : c.grimArt;

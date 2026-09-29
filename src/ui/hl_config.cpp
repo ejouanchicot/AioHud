@@ -34,6 +34,7 @@ void ConfigPage::draw_hl_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             float v01 = (c.hlScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.hlScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
+        ROW_GROW(CTRL_ID, UiConfig::GB_HL)   // which way the box grows as its content widens (ui/box_grow.h)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.hlBox);   // Box / Transparency / Theme / Hue / Luminosity
         { ROW_BAND(46.0f)   // Max mobs shown
             const float lo = 1.0f, hi = 20.0f; char b[16]; sprintf(b, "%d", c.hlCount);

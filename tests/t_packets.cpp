@@ -12,6 +12,8 @@
 #include "fake_game.h"
 #include "fake_packets.h"
 #include "model/party_state.h"
+#include "model/model_clock.h"       // model_now_ms (absorb-tp count window)
+#include "model/sortie_nav.h"        // sortie navigation tables (SORTIE_BOSS_ROOM, sortie_cardinal...)
 #include "fixtures_sortie_run.h"   // every 0x02A of a real Sortie run (2026-09-14), generated from its tape
 #include <cstring>
 
@@ -49,6 +51,19 @@ void play_sortie(int shift) {
 }
 int sortie_loot(unsigned item) { for (int i = 0; i < 8; ++i) if (zt().soLoot[i].item == item) return zt().soLoot[i].n; return 0; }
 int lights_sum() { int s = 0; for (int i = 0; i < 7; ++i) s += zt().lights[i]; return s; }
+// ---- Sortie navigation packets (model/sortie_nav.h), laid out as fields.lua has them ----
+void put_f(Packet& p, int o, float v) { unsigned u; memcpy(&u, &v, 4); put_u32(p, o, u); }
+Packet pkt_reposition(float x, float y, float h) {   // 0x065 : X @0x04, height @0x08, Y @0x0C
+    Packet p; pkt_header(p, 0x065, 0x20); put_f(p, 0x04, x); put_f(p, 0x08, h); put_f(p, 0x0C, y); return p;
+}
+Packet pkt_track(unsigned index, float x, float y, unsigned status, unsigned lvl) {   // 0x0F5 Widescan track reply
+    Packet p; pkt_header(p, 0x0F5, 0x18); put_f(p, 0x04, x); put_f(p, 0x0C, y); p.b[0x10] = (unsigned char)lvl;
+    put_u16(p, 0x12, index); put_u32(p, 0x14, status); return p;
+}
+Packet pkt_npc(unsigned index, unsigned mask, float x, float y, unsigned hpp) {       // 0x00E NPC update
+    Packet p; pkt_header(p, 0x00E, 0x38); put_u16(p, 0x08, index); p.b[0x0A] = (unsigned char)mask;
+    put_f(p, 0x0C, x); put_f(p, 0x14, y); p.b[0x1E] = (unsigned char)hpp; return p;
+}
 }  // namespace
 
 void test_packets() {
@@ -606,5 +621,94 @@ void test_packets() {
         CHECK_EQ(n, 0);
         int tracked = 0; for (int i = 0; i < 128; ++i) if (party().hate_[i].mob) ++tracked;
         CHECK_EQ(tracked, 0);
+    }
+    SECTION("sortie nav : the 0x065 arrival points name the wing, the arenas are no wing, a stray point changes nothing");
+    {   // Every point below is from the 2026-09-14 tapes (X, Y @0x0C ; the height is ignored). Mutation : swap two rows
+        // of SORTIE_ARRIVAL, or drop the Y compare, and the letters below stop matching.
+        fresh(); enter(Z_KAMIHR); enter(Z_SORTIE);
+        CHECK_EQ(party().sortie_nav().wing, -1);                                  // nothing known on entry
+        deliver(pkt_reposition(-460.0f, 96.0f, -150.0f));   CHECK_EQ(party().sortie_nav().wing, 0);   // A bitzer
+        deliver(pkt_reposition(-24.0f, 420.0f, -200.0f));   CHECK_EQ(party().sortie_nav().wing, 1);   // B, from its arena
+        deliver(pkt_reposition(-460.0f, -75.5f, -140.0f));  CHECK_EQ(party().sortie_nav().wing, 2);   // C, back up from G
+        deliver(pkt_reposition(580.0f, 31.5f, 100.0f));     CHECK_EQ(party().sortie_nav().wing, 4);   // E, basement entrance
+        deliver(pkt_reposition(528.5f, -20.0f, 100.0f));    CHECK_EQ(party().sortie_nav().wing, 7);   // H
+        deliver(pkt_reposition(10.0f, 10.0f, 0.0f));        CHECK_EQ(party().sortie_nav().wing, 7);   // unknown point : keep H
+        deliver(pkt_reposition(624.0f, -620.0f, 100.0f));   CHECK_EQ(party().sortie_nav().wing, SORTIE_BOSS_ROOM);
+        enter(Z_KAMIHR);                                    CHECK_EQ(party().sortie_nav().wing, -1);   // a zone change clears it
+        deliver(pkt_reposition(-460.0f, 96.0f, -150.0f));   CHECK_EQ(party().sortie_nav().wing, -1);   // and outside Sortie it reads nothing
+    }
+
+    SECTION("sortie nav : a track reply places the wing NM, its end marks it down, a stranger's track is ignored");
+    {
+        fresh(); enter(Z_KAMIHR); enter(Z_SORTIE);
+        deliver(pkt_track(373, -546.1f, -102.4f, 1, 134));   // Demisang Deleterious, the first reply of the D track in the tape
+        const PartyState::SortieNav::Nm& d = party().sortie_nav().nm[3];
+        CHECK_EQ((int)d.state, 1); CHECK_EQ((int)d.lvl, 134);
+        CHECK(d.x < -546.0f && d.x > -546.2f); CHECK(d.y < -102.3f && d.y > -102.5f);
+        deliver(pkt_track(373, 0.0f, 0.0f, 1, 0));          CHECK_EQ((int)d.state, 1);   // "not found" : no news, not a death
+        CHECK(d.x < -546.0f);                                                            //   and the last position is kept
+        deliver(pkt_track(373, 0.0f, 0.0f, 2, 0));          CHECK_EQ((int)d.state, 2);   // the track ENDED = killed (measured on H)
+        deliver(pkt_track(0, 0.0f, 0.0f, 3, 0));                                         // "stopped" names no NM : changes nothing
+        CHECK_EQ((int)party().sortie_nav().nm[0].state, 0);
+        deliver(pkt_track(1234, 5.0f, 5.0f, 1, 99));                                     // someone tracking another mob
+        for (int w = 0; w < SORTIE_WINGS; ++w) if (w != 3) CHECK_EQ((int)party().sortie_nav().nm[w].state, 0);
+    }
+
+    SECTION("sortie nav : an NM in range updates from its own 0x00E ; HP 0 is down, 'out of range' is not");
+    {
+        fresh(); enter(Z_KAMIHR); enter(Z_SORTIE);
+        deliver(pkt_npc(622, 0x01 | 0x04, 371.3f, -265.3f, 100));   // Haughty Tulittia (H), first sighting in the tape
+        const PartyState::SortieNav::Nm& h = party().sortie_nav().nm[7];
+        CHECK_EQ((int)h.state, 1); CHECK(h.x > 371.2f && h.x < 371.4f);
+        deliver(pkt_npc(622, 0x20, 0.0f, 0.0f, 0));                   // bit 5 alone : the client stops drawing it -- not a death
+        CHECK_EQ((int)h.state, 1); CHECK(h.x > 371.2f);
+        deliver(pkt_npc(622, 0x04, 0.0f, 0.0f, 0));                   // HP 0
+        CHECK_EQ((int)h.state, 2);
+        deliver(pkt_npc(622, 0x01, 380.0f, -290.0f, 0));              // a late position update does not raise it again
+        CHECK_EQ((int)h.state, 2);
+    }
+
+    SECTION("sortie nav : distance and compass point from the player to a target");
+    {
+        CHECK_EQ(sortie_cardinal(0, 0, 0, 10), 0);    // north (+Y)
+        CHECK_EQ(sortie_cardinal(0, 0, 10, 10), 1);   // NE
+        CHECK_EQ(sortie_cardinal(0, 0, 10, 0), 2);    // east (+X)
+        CHECK_EQ(sortie_cardinal(0, 0, 0, -10), 4);   // south
+        CHECK_EQ(sortie_cardinal(0, 0, -10, -10), 5); // SW
+        CHECK_EQ(sortie_cardinal(0, 0, -10, 0), 6);   // west
+        CHECK_EQ(sortie_cardinal(0, 0, -10, 10), 7);  // NW
+        CHECK_EQ((int)(sortie_dist(0, 0, 3, 4) + 0.5f), 5);
+        CHECK_EQ(sortie_wing_for_nm(144), 0); CHECK_EQ(sortie_wing_for_nm(622), 7); CHECK_EQ(sortie_wing_for_nm(837), -1);
+    }
+    SECTION("absorb-tp : a party member's drain is recorded, a resist or no-effect counts as 0, a stranger's is not");
+    {   // Messages from res/action_messages.lua : 454 "N TP drained", 85 "resists the spell", 114 "fails to take effect".
+        // Mutations : drop the spell-id check (the Dia below lands a row), drop party_order (the stranger lands one),
+        // or read msg 85 as "not ours" (the second cast leaves lastTp at 312 and the count at 1).
+        fresh();
+        party().absorb_tp_clear();
+        const unsigned MOB = 0x0100A0B0u, STRANGER = 0x00049999u;
+        auto row = [&](unsigned actor) -> const PartyState::AbsorbTp* {
+            int n = 0; const PartyState::AbsorbTp* a = party().absorb_tp(n);
+            for (int i = 0; i < n; ++i) if (a[i].lastMs && a[i].actor == actor) return &a[i];
+            return nullptr;
+        };
+        deliver(pkt_cast(KAO, 275, { { MOB, 454, 312 } }));
+        const PartyState::AbsorbTp* k = row(KAO);
+        CHECK(k != nullptr);
+        if (k) { CHECK_EQ(k->lastTp, 312); CHECK_STR(k->name, "Kaories"); CHECK_EQ(PartyState::absorb_tp_count(*k, 900000u, k->lastMs), 1); }
+        advance_ms(30000);
+        deliver(pkt_cast(KAO, 275, { { MOB, 85, 0 } }));             // resisted
+        k = row(KAO);
+        if (k) { CHECK_EQ(k->lastTp, 0); CHECK_EQ(PartyState::absorb_tp_count(*k, 900000u, k->lastMs), 2); }
+        advance_ms(30000);
+        deliver(pkt_cast(ME, 275, { { MOB, 114, 0 } }));             // no effect -- and you count too
+        const PartyState::AbsorbTp* me = row(ME);
+        CHECK(me != nullptr);
+        if (me) CHECK_EQ(me->lastTp, 0);
+        if (k) CHECK_EQ(PartyState::absorb_tp_count(*k, 20000u, model_now_ms()), 0);   // a short window forgets both
+        deliver(pkt_cast(STRANGER, 275, { { MOB, 454, 150 } }));    // not in the party
+        CHECK(row(STRANGER) == nullptr);
+        deliver(pkt_cast(GAB, 23, { { MOB, 454, 150 } }));          // another spell (Dia) with the same message id
+        CHECK(row(GAB) == nullptr);
     }
 }

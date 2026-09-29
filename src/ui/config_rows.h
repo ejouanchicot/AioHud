@@ -14,6 +14,8 @@
 //   ROW_NEXT(adv)   : advance the running cursor ry by the slot height and bump the stagger index ri.
 #pragma once
 #include "ui/config_controls.h"   // row_band, stagger, snap, g_fade
+#include "ui/box_grow.h"          // box_grow_set : ROW_GROW
+#include "model/ui_config.h"      // ui_config() : ROW_GROW
 
 #define ROW_BAND(slotH)   row_band(dev, bandX, ry, bandW, snap(slotH), (ri & 1) != 0, 0.0f); \
     float ap = stagger(anim_, ri); g_fade = e * ap; \
@@ -42,6 +44,16 @@
     { ROW_BAND(48.0f) row_toggle(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD)); } ROW_NEXT(48.0f)
 #define ROW_TOGGLE_G(UID, LABEL, FIELD, BAND, ROWH, CHIPW) \
     { ROW_BAND(BAND) row_toggle(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD), (ROWH), (CHIPW)); } ROW_NEXT(BAND)
+
+// The GROW DIRECTION row of a module box (UiConfig::boxGrow, ui/box_grow.h) : Right / Both sides / Left, cycled with
+// the arrows. box_grow_set moves the box's stored X with the new pinned point, so changing it never moves the box.
+#define ROW_GROW(UID, BOX) \
+    { ROW_BAND(52.0f) \
+        const int g_ = ui_config().boxGrow[BOX]; \
+        const char* GL_[3] = { tr("Right", "Droite"), tr("Both sides", "Des deux c\xC3\xB4t\xC3\xA9s"), tr("Left", "Gauche") }; \
+        if (int d_ = row_selector(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, tr("Grows toward", "Grandit vers"), GL_[(g_ >= 0 && g_ < 3) ? g_ : 0])) \
+            box_grow_set(BOX, wrap(g_ + d_, 3)); \
+    } ROW_NEXT(52.0f)
 
 // Two-state chip rows whose labels are NOT On/Off ("Fused"/"Separate", "Standalone"/"In Player", ...).
 #define ROW_CHOICE(UID, LABEL, FIELD, ON, OFF)     { ROW_BAND(48.0f) row_choice(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD), (ON), (OFF)); } ROW_NEXT(48.0f)

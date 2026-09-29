@@ -41,6 +41,7 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             float v01 = (c.ztScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.ztScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
+        ROW_GROW(CTRL_ID, UiConfig::GB_ZT)   // which way the box grows as its content widens (ui/box_grow.h)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.ztBox);   // Box / Transparency / Theme / Hue / Luminosity
         ROW_TOGGLE(CTRL_ID, tr("Show title", "Afficher le titre"), c.ztHeader)   // Show title row (Dynamis / Abyssea / Omen / Nyzul / Sheol)
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
@@ -124,6 +125,8 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             ROW_TOGGLE(CTRL_ID, tr("Bosses and shards", "Boss et shards"),          c.ztSoBoss)
             ROW_TOGGLE(CTRL_ID, tr("Coffers and NM", "Coffres et NM"),              c.ztSoCof)
             ROW_TOGGLE(CTRL_ID, tr("Items obtained", "Objets obtenus"),             c.ztSoLoot)
+            ROW_TOGGLE(CTRL_ID, tr("Wing NM / bitzer", "NM / bitzer de l'aile"),     c.ztSoNav)
+            ROW_TOGGLE(CTRL_ID, tr("Auto Widescan track", "Track Widescan auto"),    c.ztSoTrack)   // sent by the aioupdate addon, one track per wing (see ui_config.h)
         }
         #undef ZT_SIZE_SLIDER
         { ROW_BAND(40.0f)   // note

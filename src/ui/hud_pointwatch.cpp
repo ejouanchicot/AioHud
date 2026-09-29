@@ -155,8 +155,9 @@ void pointwatch_draw(const Frame& f, bool preview, float ovX, float ovY, float o
     // ---- position (+ edit drag) : pwX = horizontal centre, pwY = top ----
     float px, py;
     if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }        // preview/override : centred in the stage
-    else            { px = snap(C.pwX * screenW - boxW); py = snap(C.pwY * screenH); }      // live : RIGHT-anchored (pwX = right edge) -> width changes move the LEFT edge only
-    if (editing) { static EditBox g_pwEdit; box_edit(f, g_pwEdit, EDITBOX_POINTWATCH, px, py, boxW, boxH, ui_config().pwScale, ui_config().pwX, ui_config().pwY, 2); }   // anchorX=2 (RIGHT) : grows left, right edge stays put when the width changes (e.g. XP/CP value width at zone-in)
+    else            { px = box_grow_x(screenW, UiConfig::GB_PW, 0, C.pwX, boxW); py = snap(C.pwY * screenH); }      // live : RIGHT-anchored (pwX = right edge) -> width changes move the LEFT edge only
+    if (editing) { static EditBox g_pwEdit; box_edit(f, g_pwEdit, EDITBOX_POINTWATCH, px, py, boxW, boxH, ui_config().pwScale, ui_config().pwX, ui_config().pwY, C.boxGrow[UiConfig::GB_PW]); }   // anchorX=2 (RIGHT) : grows left, right edge stays put when the width changes (e.g. XP/CP value width at zone-in)
+    if (!editing && ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);   // grown past an edge -> slide back into view (draw only)
 
     // ---- box chrome ----
     dColorQuadState(dev);

@@ -82,6 +82,7 @@ void Hud::draw_config_preview(const Frame& f) {
           case 7:  off = !CC.hlShow;   break;  case 8:  off = !CC.pwShow;   break;
           case 9:  off = !CC.grimShow; break;  case 10: off = !CC.ztShow;   break;
           case 11: off = !CC.tmShow;   break;  case 12: off = !CC.epShow;   break;
+          case 13: off = !CC.awShow;   break;
           default: break; }
       if (off) { draw_hidden_note(); return; }
     }
@@ -221,6 +222,13 @@ void Hud::draw_config_preview(const Frame& f) {
         float scl = ui_config().hlScale; if (scl < 0.5f) scl = 0.5f; if (scl > 2.0f) scl = 2.0f;
         const float liveS = (screenH_ / 1000.0f) * scl;
         draw_hate_list(f, true, sx + sw * 0.5f, sy + sh * 0.5f, liveS);
+        return;
+    }
+    // Absorb-TP module -> the sample rows at their TRUE in-game size (WYSIWYG), centred in the preview stage.
+    if (config_.section() == 13) {
+        float sx = 0, sy = 0, sw = 0, sh = 0; config_.preview_rect(sx, sy, sw, sh);
+        float scl = ui_config().awScale; if (scl < 0.5f) scl = 0.5f; if (scl > 2.0f) scl = 2.0f;
+        draw_absorb(f, true, sx + sw * 0.5f, sy + sh * 0.5f, (screenH_ / 1000.0f) * scl);
         return;
     }
     // PointWatch module -> the sample bars at their TRUE in-game size (WYSIWYG), centred in the preview stage.

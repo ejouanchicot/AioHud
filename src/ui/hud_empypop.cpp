@@ -192,8 +192,9 @@ void empypop_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
     // ---- position (+ edit drag) : epX = the LEFT edge (anchorX 0, unlike the centred boxes), epY = the top ----
     float px, py;
     if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }   // preview / Help : centred on the stage
-    else            { px = snap(C.epX * screenW - boxW); py = snap(C.epY * screenH); }   // epX = the RIGHT edge : the box grows LEFT (and down) as content widens, so the top-RIGHT corner stays where it was dropped
-    if (editing) { static EditBox g_epEdit; box_edit(f, g_epEdit, EDITBOX_EMPYPOP, px, py, boxW, boxH, ui_config().epScale, ui_config().epX, ui_config().epY, 2); }   // anchorX 2 = right edge -> box_edit stores epX as the right edge
+    else            { px = box_grow_x(screenW, UiConfig::GB_EP, 0, C.epX, boxW); py = snap(C.epY * screenH); }   // epX = the RIGHT edge : the box grows LEFT (and down) as content widens, so the top-RIGHT corner stays where it was dropped
+    if (editing) { static EditBox g_epEdit; box_edit(f, g_epEdit, EDITBOX_EMPYPOP, px, py, boxW, boxH, ui_config().epScale, ui_config().epX, ui_config().epY, C.boxGrow[UiConfig::GB_EP]); }   // anchorX 2 = right edge -> box_edit stores epX as the right edge
+    if (!editing && ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);   // grown past an edge -> slide back into view (draw only)
 
     // ---- chrome : ONE themed container, then the per-box semantics on top ----
     draw_themed_box(dev, f.skin, px, py, boxW, boxH, ui_config().epBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)

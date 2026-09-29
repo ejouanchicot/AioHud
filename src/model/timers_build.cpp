@@ -307,21 +307,27 @@ static const char* abil_name_by_id(unsigned id) {   // for buffs-on-allies rows 
 
 #ifdef AIOHUD_PROBES
 // ---- //aio songdump : in-RAM record of the Timers rows (see hud.h). Fixed ring, no heap, no file I/O. ----
-// 512 entries, because a row set that changes every frame burns them fast : one change costs 1 + nb lines,
-// so 256 held barely twenty changes -- less than one second of the churn we are trying to watch.
-static char  g_srRing[1024][200];   // the WHY lines are long, and one change now costs rows + groups + entries + focus
+// A row set that changes every frame burns entries fast : one change costs 1 + nb lines, so 256 held barely
+// twenty changes -- less than one second of the churn we are trying to watch. Hence 1024.
+//
+// ONE CONSTANT, NOT THREE. The capacity used to be spelled out at each of the four places that index this ring,
+// and when it grew from 256 the DUMP was left behind (`% 256`) : every entry past the 256th replayed the wrong
+// slot, so a capture of the long churn -- exactly what this tool exists for -- came back full of duplicated
+// lines that read like real repeated frames. A probe that lies is worse than one that is missing.
+static const int SR_N = 1024;
+static char  g_srRing[SR_N][200];   // the WHY lines are long, and one change now costs rows + groups + entries + focus
 static int   g_srHead = 0, g_srCount = 0;
 static void sr_push(const char* fmt, ...) {
     va_list ap; va_start(ap, fmt);
     _vsnprintf(g_srRing[g_srHead], sizeof(g_srRing[0]) - 1, fmt, ap);
     va_end(ap);
     g_srRing[g_srHead][sizeof(g_srRing[0]) - 1] = 0;
-    g_srHead = (g_srHead + 1) % 1024; if (g_srCount < 1024) ++g_srCount;
+    g_srHead = (g_srHead + 1) % SR_N; if (g_srCount < SR_N) ++g_srCount;
 }
 void songrow_ring_dump() {
-    const int start = (g_srHead - g_srCount + 1024) % 1024;
+    const int start = (g_srHead - g_srCount + SR_N) % SR_N;
     windower::debug::log("SONGROW ======== %d recorded row-set change(s), oldest first ========", g_srCount);
-    for (int i = 0; i < g_srCount; ++i) windower::debug::log("SONGROW %s", g_srRing[(start + i) % 256]);
+    for (int i = 0; i < g_srCount; ++i) windower::debug::log("SONGROW %s", g_srRing[(start + i) % SR_N]);
     g_srHead = 0; g_srCount = 0;
 }
 #endif
@@ -392,7 +398,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
     // "Chaos Roll [5] (AoE 6)" with ONLY the pip in pipCol (unlucky=red, lucky/11=green, else white). nameCol overrides
     // the whole-name colour (unused now that only the pip is tinted).
     Row* const bufs = rowsOut.bufs; Row* const recs = rowsOut.recs; int nb = 0, nr = 0;   // was : static Row bufs[50], recs[50] (the caller owns the storage now)
-    for (int i = 0; i < 50; ++i) { bufs[i].fineClk = recs[i].fineClk = FCLK_NONE; bufs[i].nameCol = recs[i].nameCol = 0; bufs[i].pip = recs[i].pip = 0; bufs[i].post = recs[i].post = 0; bufs[i].postCol = recs[i].postCol = 0; bufs[i].tag = recs[i].tag = 0; bufs[i].src = recs[i].src = 0; bufs[i].mark = recs[i].mark = 0; bufs[i].who = recs[i].who = 0; bufs[i].fine = recs[i].fine = TM_FINE_NONE; }   // clear per-frame overrides (static arrays)
+    for (int i = 0; i < TM_ROWS_MAX; ++i) { bufs[i].fineClk = recs[i].fineClk = FCLK_NONE; bufs[i].nameCol = recs[i].nameCol = 0; bufs[i].pip = recs[i].pip = 0; bufs[i].post = recs[i].post = 0; bufs[i].postCol = recs[i].postCol = 0; bufs[i].tag = recs[i].tag = 0; bufs[i].src = recs[i].src = 0; bufs[i].mark = recs[i].mark = 0; bufs[i].who = recs[i].who = 0; bufs[i].fine = recs[i].fine = TM_FINE_NONE; }   // clear per-frame overrides (static arrays)
     if (preview || editing) {
         static const struct { int id, rem; } SB[5] = { {43, 1490}, {57, 155}, {214, 309}, {40, 540}, {33, 28} };
         for (int i = 0; i < 5; ++i) { bufs[nb].rem = SB[i].rem; bufs[nb].icon = SB[i].id; bufs[nb].name = buff_status_name(SB[i].id); bufs[nb].order = 0; ++nb; }
@@ -548,8 +554,8 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
         // 32 chars holds the JA tag AND the owner: " (SV NT) (Fifteencharname)" + NUL.
         // Sized to bufs[] capacity ON PURPOSE : this pool must never be the thing that runs out. It was 8 (song
         // modifier tags only), and when it also became the "(caster name)" tag it silently dropped the owner off
-        // most rows. Raising it to 32 only moved the cliff -- 50 is the row cap, so the tag can always be written.
-        static char selfTag[50][32]; int stN = 0;
+        // most rows. Raising it to 32 only moved the cliff -- TM_ROWS_MAX is the row cap, so the tag can always be written.
+        static char selfTag[TM_ROWS_MAX][32]; int stN = 0;
         const int stMax = (int)(sizeof(selfTag) / sizeof(selfTag[0]));
         // Which JAs THIS job can use (self-cast filter + shared recast_id disambiguation). Taken from the frame
         // SNAPSHOT: read_usable_ja_bits makes two indirect calls into the client's own resource manager, and doing
@@ -578,7 +584,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
         // ---- pass 2 : your OWN self buffs (exact server timers). A self buff that matches an AoE group you cast folds
         //      INTO that group (you count, your exact timer drives it) instead of getting its own row. ----
         int n = 0; const BuffTimer* bt = party().buff_timers(n);
-        for (int i = 0; i < n && nb < 50; ++i) {
+        for (int i = 0; i < n && nb < TM_ROWS_MAX; ++i) {
             // THE COUNTDOWN : model/timers_rules.h (self_timer_countdown) -- permanent, absurd, held at 0:00, debuff.
             int fine = (int)(bt[i].expiry - now); if (fine < 0) fine = 0;   // the same instant, un-ceil-ed -> sort key (Row::fine)
             using SelfMeHasFn = decltype(meHas); using SelfSrcKeepsFn = decltype(srcKeeps);   // aliases : a member named like the lambda cannot also use its name
@@ -748,7 +754,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
         {   // GEO : the single Indi- you carry -> a stable row at the COMPUTED aura lifetime (base+JP+gear), not the 3s pulse
             const PartyState::GeoAura& ga = party().self_geo();
             int gr = ga.status ? party().geo_aura_remaining(ga.status) : -1;
-            if (gr > 0 && nb < 50) {
+            if (gr > 0 && nb < TM_ROWS_MAX) {
                 const SpellRow* gsp = spell_info(ga.spell);
                 if (ga.expTick) { bufs[nb].fine = (int)(ga.expTick - now); bufs[nb].fineClk = FCLK_SELF; }   // same instant as geo_aura_remaining, un-ceil-ed -> sort key
                 bufs[nb].rem = gr; bufs[nb].icon = ga.status; bufs[nb].name = (gsp && gsp->en) ? gsp->en : buff_status_name(ga.status); bufs[nb].order = 0; bufs[nb].src = 3; ++nb;   // GEO aura
@@ -769,9 +775,9 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                                      grp[k].rem, selfRem, (grp[k].aoe && selfRem > 0) ? selfRem : grp[k].rem);
             }
         }
-        static char obLabel[64][44], tagBuf[64][16];
+        static char obLabel[TM_ROWS_MAX][44], tagBuf[TM_ROWS_MAX][16];   // indexed by the ROW (nb) : they follow the row cap
         const bool graceOB = party().in_zone_grace();   // just zoned : the real 0x076 caches are still refilling -> trust the estimate, don't validate
-        if (C.tmMine) for (int k = 0; k < ng && nb < 50; ++k) {
+        if (C.tmMine) for (int k = 0; k < ng && nb < TM_ROWS_MAX; ++k) {
             const bool lag = !grp[k].fresh;   // LAGGARD group : members left on an older/shorter cast a re-sing missed
             // Count. For a FRESH group the "(AoE N)" number comes from its own ob[] bucket when a laggard sibling exists
             // (countHas / 0x076 can't tell an old copy from a fresh one, so it would re-absorb the laggard back into the
@@ -857,7 +863,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                 // while it was part of the key made the single-target group re-emit every AoE member as well :
                 // //aio oblog showed one per-ally row per ally all tagged [group 0], next to the correct
                 // "(AoE 4)" from group 1. Whenever the key gains a field, this line gains it too.
-                for (int i = 0; i < no && nb < 50; ++i) if (ob[i].spell == grp[k].spell && (obFresh(ob[i]) ? 1 : 0) == grp[k].fresh && ob[i].aoe == grp[k].aoe && obRem(ob[i]) > 0) {   // ONLY this generation's members -> a laggard row lists exactly the people the re-sing missed
+                for (int i = 0; i < no && nb < TM_ROWS_MAX; ++i) if (ob[i].spell == grp[k].spell && (obFresh(ob[i]) ? 1 : 0) == grp[k].fresh && ob[i].aoe == grp[k].aoe && obRem(ob[i]) > 0) {   // ONLY this generation's members -> a laggard row lists exactly the people the re-sing missed
                     const BuffSet* bs = party().buffs_for(ob[i].target); bool has = false; if (bs) for (int j = 0; j < bs->n; ++j) if (bs->ids[j] == grp[k].status) { has = true; break; }
                     // Drop the row ONLY on positive evidence that the ally lost the buff : we hold that member's
                     // 0x076 list AND the status is not in it. buffs_for() returning null is "we have never been
@@ -994,6 +1000,50 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                 int s = -1;
                 if (focus_rune_status(st)) s = focus_rune_match(fm, fmN, st, bt2[i].expiry);   // one entry per rune PLACED : two Ignis are two (focus_rules.h section 10)
                 else for (int q = 0; q < fmN; ++q) if (fm[q].self && fm[q].status == st && fm[q].spell == selfSp) { s = q; break; }
+                // SAME BUFF, NEW LABEL -- not a new buff. `selfSp` is a rank-based attribution (match_cast), and it
+                // legitimately moves: a cast is filed at 0x028 time with a PREDICTED expiry while buffTimers_ still
+                // holds the old set, so for the few frames until the 0x063 lands, the pairing of timers to spells
+                // shifts and a timer already being watched is handed a different tier. Creating a second entry for
+                // it is what produced the report: the monitor then held MORE entries for a status than the game has
+                // copies, and `newer < copies` (focus_rules.h:82) turns the oldest into a red OUT. MEASURED
+                // 2026-09-17 over a BRD rotation -- self entries reading MISSING while the player's own list still
+                // carried 2-3 copies of that status, in PAIRS, for 0.4 s (March, Minuet) and 0.7 s (Minne): two red
+                // OUT lines and a box that changes height, half a second at a time, on every re-sing.
+                //
+                // The 0x063 expiry IS the instance identity -- it is what `rank` was set to the last time this
+                // entry was fed -- so an entry of this status that is NOT fed this frame and carries exactly this
+                // expiry is this very buff, wearing another label. Re-key it; never duplicate it. A genuine re-cast
+                // changes the expiry, so it cannot be swallowed by this: it matches on (status, spell) above, or is
+                // born below, exactly as before.
+                if (s < 0 && !focus_rune_status(st))
+                    for (int q = 0; q < fmN; ++q)
+                        if (fm[q].self && fm[q].status == st && !fm[q].seen && fm[q].rank == bt2[i].expiry) {
+                            if (focus_trace_live())
+                                windower::debug::log("FOCUSREKEY st=%u '%s' spell %u -> %u (same 0x063 timer, expiry=%u) -- re-labelled, NOT duplicated",
+                                                     st, buff_status_name(st), (unsigned)fm[q].spell, (unsigned)selfSp, bt2[i].expiry);
+                            s = q; break;
+                        }
+                // INSTRUMENTING THE DECISION, not the symptom. `selfSp` comes from a RANK-BASED attribution
+                // (PartyState::match_cast) that pairs same-status timers to recorded casts by ordering, and the
+                // emit below already calls that "fragile by nature". The moment it hands a DIFFERENT spell to a
+                // timer it named a second ago -- which is what the window between the 0x028 (the new cast is
+                // filed with its predicted expiry at once) and the 0x063 (the real timer list) invites -- the
+                // lookup above finds nothing and a SECOND entry is born for a status that has one more copy.
+                // Nothing then removes the orphan: `seen` is read only by the mute verdict, which forgets MUTED
+                // entries only. And a surplus entry poisons the copy arithmetic (focusHas counts every sibling
+                // of the status, whatever its spell), so `newer < copies` turns the oldest REAL entry into a red
+                // OUT. This line is how that shows up in a capture instead of being argued about.
+                if (s < 0 && focus_trace_live()) {
+                    char sib[160]; int so = 0; sib[0] = 0;
+                    for (int q = 0; q < fmN && so < 130; ++q)
+                        if (fm[q].self && fm[q].status == st)
+                            so += _snprintf(sib + so, sizeof(sib) - 1 - so, "%u%s ", (unsigned)fm[q].spell, fm[q].seen ? "" : "*");
+                    sib[sizeof(sib) - 1] = 0;
+                    int cps = 0;   // how many copies of this status the game itself reports on you, right now
+                    if (f.game) for (int k = 0; k < f.game->nbuff; ++k) if ((int)f.game->buffs[k] == (int)st) ++cps;
+                    windower::debug::log("FOCUSNEW st=%u '%s' spell=%u NEW self entry -- entries already held for this status: [%s] (* = not fed this frame), copies the game reports=%d",
+                                         st, buff_status_name(st), (unsigned)selfSp, sib, cps);
+                }
                 if (s < 0 && fmN < FOCUS_MAX) { s = fmN++; fm[s].spell = selfSp; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].aoe = 0; /* there is one of you : a self alert never groups */ fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = model_now_ms(); fm[s].name[0] = 0; }
                 if (s >= 0) { fm[s].seen = 1; fm[s].spell = selfSp; fm[s].rank = bt2[i].expiry; }   // the spell/tier is part of the key now, so this only re-affirms it ; rank refreshed every frame
               } }
@@ -1223,7 +1273,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                 int rnew;
                 bool runeReplaced() const { return focus_rune_replaced(e.self != 0, e.status, rcap, rup, rnew); }
             };
-            for (int q = 0; q < fmN && nb < 50; ++q) {                                         // emit a RED row for each MISSING focus buff (self or ally)
+            for (int q = 0; q < fmN && nb < TM_ROWS_MAX; ++q) {                                         // emit a RED row for each MISSING focus buff (self or ally)
                 // The same verdict the prune used -- this used to be a third, presence-only copy of the rule, which
                 // is how one of two same-status songs could be dropped by one stage and reported up by the other.
                 // meHas() fails open on a FAILED read; that job now belongs to listReady() below, which gates the alert.
@@ -1261,10 +1311,22 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                 if (fm[q].lostMs == 0) fm[q].lostMs = nowMs;                                   // just went missing -> stamp it
                 if (focus_trace_live()) {
                     const bool dkOn = C.tm_buff_off((unsigned)fm[q].status);
-                    windower::debug::log("FOCUSHOLD st=%u '%s' self=%d has=0 lostAgo=%ums hold=%ds dkOn=%d -> %s",
-                                         (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].self,
+                    // WHICH of the two ways a song reaches this line. They want opposite fixes and the trace used to
+                    // print neither: (a) the monitor holds MORE entries for this status than the game has copies,
+                    // so the copy arithmetic condemned the oldest -- sibs/copies says so outright; (b) the game
+                    // really evicted it to fit a new song and the suppression did not catch it -- evicted/replaced
+                    // says so. Guessing between them is how a correct diagnosis still produces the wrong patch.
+                    int cps2 = 0, sibs = 0;
+                    if (fm[q].self && f.game) for (int k = 0; k < f.game->nbuff; ++k) if ((int)f.game->buffs[k] == (int)fm[q].status) ++cps2;
+                    for (int q2 = 0; q2 < fmN; ++q2) if (fm[q2].self == fm[q].self && fm[q2].status == fm[q].status
+                                                         && (fm[q].self || fm[q2].target == fm[q].target)) ++sibs;
+                    windower::debug::log("FOCUSHOLD st=%u '%s' self=%d spell=%u has=0 lostAgo=%ums hold=%ds dkOn=%d | entries=%d copies=%d evicted=%d replaced=%d unrecov=%d -> %s",
+                                         (unsigned)fm[q].status, buff_status_name(fm[q].status), fm[q].self, (unsigned)fm[q].spell,
                                          (unsigned)(nowMs - fm[q].lostMs), C.tmFocusHold, dkOn ? 1 : 0,
-                                         av == FA_HOLD_EXPIRED ? "DROP (hold expired)" : "DRAW red OUT row");
+                                         sibs, cps2,
+                                         party().song_was_evicted(fm[q].target, fm[q].spell, 6000u) ? 1 : 0,
+                                         songReplaced(fm[q]) ? 1 : 0, songUnrecoverable(fm[q]) ? 1 : 0,
+                                         focus_alert_name(av));
                     if (av == FA_UNRECOVERABLE)
                         windower::debug::log("SONGOUT st=%u '%s' SUPPRESSED : that person now holds %d, the cap is %d (ccUsable=%d) -> no OUT (the fifth slot is gone)",
                                              (unsigned)fm[q].status, buff_status_name(fm[q].status),
@@ -1299,7 +1361,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
             // defect fixed the same morning in ally_group.h : one path was corrected, this one was not.
             AlertEntry ae[FOCUS_MAX];
             for (int a = 0; a < nAlert; ++a) { ae[a].spell = fm[alertQ[a]].spell; ae[a].aoe = fm[alertQ[a]].aoe; }
-            for (int a = 0; a < nAlert && nb < 50; ++a) {
+            for (int a = 0; a < nAlert && nb < TM_ROWS_MAX; ++a) {
                 const int q = alertQ[a];
                 if (focus_alert_covered(ae, nAlert, a)) continue;              // an earlier GROUPED row speaks for this loss
                 // ONE SONG, ONE STATEMENT PER FRAME. A row already drawn from YOUR timer says you hold this
@@ -1338,7 +1400,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
             windower::debug::log("=== OBLOG : end (%d row(s) total this frame) ===", nb);
             g_obLog = 0;
         }
-        if (f.game) for (int i = 0; i < f.game->nRecast && nr < 50; ++i) {   // recasts are TEXT-only (no menu-icon set exists)
+        if (f.game) for (int i = 0; i < f.game->nRecast && nr < TM_ROWS_MAX; ++i) {   // recasts are TEXT-only (no menu-icon set exists)
             const GameState::RecastEntry& re = f.game->recasts[i];
             const char* nm = (re.kind == 0) ? abil_name_by_recast(re.recastId, jaBits, jaOk) : spell_name_by_recast(re.recastId);
             if (!nm) continue;
@@ -1365,17 +1427,17 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
     if (nb == 0 && nr == 0 && !editing) { rowsOut.nb = 0; rowsOut.nr = 0; return false; }   // was : return (nothing to draw)
     // THE ORDER OF THE ROWS : model/timers_sort.h (the rule, its history, and why close rows hold their place).
     // What stays here is the memory it needs -- where each row stood last frame.
-    static unsigned lastSig[64]; static int lastN = 0;
+    static unsigned lastSig[TM_ROWS_MAX]; static int lastN = 0;
     auto lastPos = [&](const Row& x) -> int {
         const unsigned s = timers_row_sig(x);
         for (int i = 0; i < lastN; ++i) if (lastSig[i] == s) return i;
         return -1;   // not on screen last frame -> nothing to hold on to
     };
     auto after = [&lastPos](const Row& x, const Row& y, int mode, bool recast) -> bool { return timers_row_after(x, y, mode, recast, lastPos); };
-    g_lastRowN = nb;   // the harness reads this : hitting the 50 cap means rows are being dropped in silence
+    g_lastRowN = nb;   // the harness reads this : hitting TM_ROWS_MAX means rows are being dropped in silence
     { const int md = C.tmSortDur;
       for (int a = 1; a < nb; ++a) { Row t = bufs[a]; int b = a - 1; while (b >= 0 && after(bufs[b], t, md, false)) { bufs[b + 1] = bufs[b]; --b; } bufs[b + 1] = t; } }
-    { lastN = nb < 64 ? nb : 64;   // what this frame settled on, so the next one can hold it
+    { lastN = nb < TM_ROWS_MAX ? nb : TM_ROWS_MAX;   // what this frame settled on, so the next one can hold it
       for (int a = 0; a < lastN; ++a) lastSig[a] = timers_row_sig(bufs[a]); }
     { const int md = C.tmSortRec;
       for (int a = 1; a < nr; ++a) { Row t = recs[a]; int b = a - 1; while (b >= 0 && after(recs[b], t, md, true)) { recs[b + 1] = recs[b]; --b; } recs[b + 1] = t; } }
@@ -1392,7 +1454,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
     // had no row-set flipwatch and two fewer capwatch tables, which is precisely backwards -- a witness for a
     // silent defect is worth nothing on the one machine where the defect is already being watched by hand.
     // (`//aio watch` reported 12 tables here and would have reported 10 to a tester. Found by the audit of
-    // 2026-09-12, axes A and H, independently.) The cost in a release is the FNV hash below over at most 50 rows
+    // 2026-09-12, axes A and H, independently.) The cost in a release is the FNV hash below over at most TM_ROWS_MAX rows
     // once a frame ; the songdump RING, which writes, stays guarded.
     if (!preview) {
 #ifdef AIOHUD_PROBES
@@ -1414,6 +1476,9 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
         // a buff is never watched and its loss is never alerted -- the feature degrades into silence. It held
         // 24 until 2026-09-11, and a bard's own songs plus an alliance's buffs went past that every fight.
         capwatch("timers.focus", fmN, FOCUS_MAX);
+        // The ROW cap had no watcher at all -- only the selftest, which sees the last frame and only when someone runs
+        // it. A RDM buffing a full Sortie party went past the old 50, and the rows cut were the ally rows and the OUTs.
+        capwatch("timers.rows", nb, TM_ROWS_MAX);
         // The buff FILTER : one key per buff family the user has hidden or put on focus, job-agnostic, and it
         // simply stops accepting when full -- so past the cap a checkbox in the Timers panel silently does
         // nothing at all. Sampled from here rather than from the panel because the filter is read every frame
@@ -1491,10 +1556,10 @@ static int timers_checks(CheckFail* out, int cap) {
                  (unsigned)fm[q].tag, fm[q].name[0] ? fm[q].name : "you", (unsigned)fm[q].status, age / 60000u);
     }
 
-    // 3. The row builder hit its cap. Domain: bufs[50] is the array, and beyond it rows are dropped by arrival
+    // 3. The row builder hit its cap. Domain: bufs[TM_ROWS_MAX] is the array, and beyond it rows are dropped by arrival
     //    order rather than by importance -- so what you stop seeing is arbitrary.
-    if (g_lastRowN >= 50)
-        FAIL("TM.ROWS_CAP", CHK_WARN, "the last build produced %d rows and the cap is 50 -- rows are being dropped", g_lastRowN);
+    if (g_lastRowN >= TM_ROWS_MAX)
+        FAIL("TM.ROWS_CAP", CHK_WARN, "the last build produced %d rows and the cap is %d -- rows are being dropped", g_lastRowN, TM_ROWS_MAX);
 
     // 4. The ally-buff cache is full. Same shape, different array (otherBuffs_[32]): once full, a buff you cast
     //    on someone new is simply not tracked.

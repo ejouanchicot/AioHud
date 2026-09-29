@@ -267,8 +267,9 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     // content width changes -> the anchor point stays put), scY = its TOP (it grows downward as the list grows). ----
     float px, py;
     if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }        // preview : centre on the given point
-    else            { px = snap(C.scX * screenW - boxW * 0.5f); py = snap(C.scY * screenH); }
-    if (editing) { static EditBox g_scEdit; box_edit(f, g_scEdit, EDITBOX_SKILLCHAIN, px, py, boxW, boxH, ui_config().scScale, ui_config().scX, ui_config().scY, 1); }
+    else            { px = box_grow_x(screenW, UiConfig::GB_SC, 0, C.scX, boxW); py = snap(C.scY * screenH); }
+    if (editing) { static EditBox g_scEdit; box_edit(f, g_scEdit, EDITBOX_SKILLCHAIN, px, py, boxW, boxH, ui_config().scScale, ui_config().scX, ui_config().scY, C.boxGrow[UiConfig::GB_SC]); }
+    if (!editing && ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);   // grown past an edge -> slide back into view (draw only)
 
     // ---- box chrome : dark rounded panel + gold border (Help-box look) ----
     dColorQuadState(dev);

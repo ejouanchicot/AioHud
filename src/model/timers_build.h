@@ -40,9 +40,15 @@ static const int TM_FINE_NONE = -2000000000;
 // values crossed and re-crossed for as long as both were up.
 static const unsigned char FCLK_NONE = 0, FCLK_SELF = 1, FCLK_EST = 2;
 
+// ONE constant for the row cap, read by every loop that fills or indexes a row. It was a literal 50 in ten places, and
+// 50 does not hold a RDM who buffs a full party in Sortie : ~8 buffs x 5 allies + ~20 of his own. Past the cap the
+// rows were cut in BUILD order -- ally rows next, and the red OUT rows first of all, since they are built last. It
+// matches the ally-buff table (PartyState::OB_MAX), which the ally rows are one-to-one with.
+static const int TM_ROWS_MAX = 128;
+
 struct TimersRows {
-    TimersRow bufs[50];   // the Duration column
-    TimersRow recs[50];   // the Recast column
+    TimersRow bufs[TM_ROWS_MAX];   // the Duration column
+    TimersRow recs[TM_ROWS_MAX];   // the Recast column
     int nb = 0, nr = 0;
 };
 

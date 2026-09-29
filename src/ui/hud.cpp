@@ -420,6 +420,7 @@ void Hud::render(u32 dev) {
             draw_skillchains(f);                    // skillchains box (target's active chain) -- placed via //aio edit
             draw_treasure_pool(f);                  // treasure pool box (lottery items) -- placed via //aio edit
             draw_hate_list(f);                      // hate list box (mobs aggro'd on the party) -- placed via //aio edit
+            draw_absorb(f);                         // Absorb-TP box (party casts of Absorb-TP) -- placed via //aio edit
             draw_pointwatch(f);                     // PointWatch box (XP/CP/ML + Merits) -- placed via //aio edit
             draw_grimoire(f);                       // Scholar grimoire (SCH only) -- placed via //aio edit
             draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit
@@ -999,6 +1000,56 @@ void box_edit(const Frame& f, EditBox& eb, int editId, float& px, float& py, flo
     // persist on a drag-drop OR a wheel-resize (the latter has no drag, so the old drop-only save missed it ->
     // box_edit boxes appeared not to resize at all : the scale was written to a by-VALUE copy and discarded).
     if ((wasDrag && !eb.dragging) || scale != scale0) save_ui_config();
+}
+
+// Keep a module box ON SCREEN. Only where it is DRAWN moves, never the stored position : a box that grew past an edge
+// (a Treasure Pool filling up, a centred Skillchains box widening near the side) slides back just enough to stay
+// visible, and returns to its own place by itself when it shrinks. A box larger than the screen pins top-left.
+void box_on_screen(const Frame& f, float& px, float& py, float boxW, float boxH) {
+    if (f.screenW <= 0.0f || f.screenH <= 0.0f) return;   // screen size not known yet -> leave the box where it is
+    keep_on_screen(f.screenW, f.screenH, px, py, boxW, boxH);
+}
+
+// ---- grow direction (ui/box_grow.h) ----
+// The last live width of each box, as a SCREEN FRACTION (the unit its stored X is in). 0 = never drawn this session :
+// a direction change then leaves the stored X where it is, and the box shifts once when it first appears -- it was
+// not on screen to be kept in place.
+static float g_growW[UiConfig::GB_COUNT][2] = {};
+
+float box_grow_x(float screenW, int box, int sub, float cfgX, float boxW) {
+    const int b = (box >= 0 && box < UiConfig::GB_COUNT) ? box : 0, s = sub ? 1 : 0;
+    if (screenW > 0.0f) g_growW[b][s] = boxW / screenW;
+    return snap(cfgX * screenW - box_grow_k(ui_config().boxGrow[b]) * boxW);
+}
+
+static float* grow_field(UiConfig& c, int box, int sub) {   // the stored X that box's grow direction pins
+    switch (box) {
+        case UiConfig::GB_TP:   return &c.tpX;
+        case UiConfig::GB_SC:   return &c.scX;
+        case UiConfig::GB_HL:   return &c.hlX;
+        case UiConfig::GB_GRIM: return &c.grimX;
+        case UiConfig::GB_ZT:   return &c.ztX;
+        case UiConfig::GB_PW:   return &c.pwX;
+        case UiConfig::GB_EP:   return &c.epX;
+        case UiConfig::GB_TM:   return sub ? &c.tmRX : &c.tmX;
+        case UiConfig::GB_DB:   return &c.dbX;
+        case UiConfig::GB_AW:   return &c.awX;
+    }
+    return 0;
+}
+
+void box_grow_set(int box, int grow) {
+    if (box < 0 || box >= UiConfig::GB_COUNT || grow < 0 || grow > 2) return;
+    UiConfig& c = ui_config();
+    const float dk = box_grow_k(grow) - box_grow_k(c.boxGrow[box]);
+    for (int s = 0; s < 2; ++s) {
+        float* x = grow_field(c, box, s);
+        if (!x || (s && box != UiConfig::GB_TM)) continue;
+        float v = *x + dk * g_growW[box][s];   // same box, new pinned point
+        *x = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);   // the sanitiser's FRAC range : never hand it a value it would clamp later
+    }
+    c.boxGrow[box] = grow;
+    save_ui_config();
 }
 
 // draw an atlas sub-cell [u0..u1]x[v0..v1] at (x,y,w,h) -- Sheol weapon strip (v 0..1) or the 2D buff atlas.

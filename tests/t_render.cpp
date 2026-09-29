@@ -77,6 +77,21 @@ void test_render() {
         CHECK_EQ((int)snap(0.0f), 0);
     }
 
+    SECTION("render : a box that grew past an edge slides back on screen, and only then");
+    {   // REPORTED 2026-09-29 : a centred Treasure Pool / Skillchains box placed near the side lost half of itself off
+        // screen as its content widened it. 1920 x 1080 screen throughout.
+        float x = 1800.0f, y = 100.0f; keep_on_screen(1920.0f, 1080.0f, x, y, 300.0f, 200.0f);   // past the RIGHT edge
+        CHECK_EQ((int)x, 1620); CHECK_EQ((int)y, 100);
+        x = -40.0f; y = 100.0f;        keep_on_screen(1920.0f, 1080.0f, x, y, 300.0f, 200.0f);   // past the LEFT edge
+        CHECK_EQ((int)x, 0);
+        x = 500.0f; y = 1000.0f;       keep_on_screen(1920.0f, 1080.0f, x, y, 300.0f, 200.0f);   // past the BOTTOM
+        CHECK_EQ((int)y, 880);
+        x = 500.0f; y = 300.0f;        keep_on_screen(1920.0f, 1080.0f, x, y, 300.0f, 200.0f);   // inside : not touched
+        CHECK_EQ((int)x, 500); CHECK_EQ((int)y, 300);
+        x = 100.0f; y = 100.0f;        keep_on_screen(1920.0f, 1080.0f, x, y, 2500.0f, 1500.0f); // bigger than the screen
+        CHECK_EQ((int)x, 0); CHECK_EQ((int)y, 0);                                               //   -> its top-left shows
+    }
+
     SECTION("render : an additive pass is put back before the next draw (rule 3)");
     {
         reset();

@@ -20,6 +20,17 @@ namespace aio {
 // signed percentages. Found by clang-tidy (bugprone-incorrect-roundings), which had never been run here.
 inline float snap(float v) { return (float)(int)(v + (v >= 0.0f ? 0.5f : -0.5f)); }
 
+// Slide a w x h rect at (x,y) back inside a sw x sh screen, then snap it. The far edges are checked first so a rect
+// LARGER than the screen ends pinned at 0,0 (its top-left, where a box's title and first rows are) rather than off
+// the top. The HUD boxes call it through box_on_screen (ui/hud.cpp) : a box whose content grew it past an edge.
+inline void keep_on_screen(float sw, float sh, float& x, float& y, float w, float h) {
+    if (x + w > sw) x = sw - w;
+    if (y + h > sh) y = sh - h;
+    if (x < 0.0f) x = 0.0f;
+    if (y < 0.0f) y = 0.0f;
+    x = snap(x); y = snap(y);
+}
+
 // --- textured (FVF 0x144) ---
 
 // textured quad, explicit UVs, left/right vertex colours (horizontal gradient).

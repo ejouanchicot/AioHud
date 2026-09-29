@@ -4,6 +4,7 @@
 #pragma once
 #include "ui/widget.h"     // Frame
 #include "ui/edit_box.h"   // EditBox
+#include "ui/box_grow.h"   // box_grow_x / box_grow_k : every box is placed by its grow direction
 #include "gfx/d3d.h"       // u32
 #include "gfx/draw.h"     // snap() : the ONE definition
 
@@ -16,6 +17,11 @@ namespace aio {
 // Used by ALL module renderers ; the caller derives px from cfgX with the matching anchor.
 void box_edit(const Frame& f, EditBox& eb, int editId, float& px, float& py, float boxW, float boxH,
               float& scale, float& cfgX, float& cfgY, int anchorX);   // scale BY REF : the wheel-resize writes it back
+
+// Keep a box fully on screen (draw position only ; the stored position is untouched). Called by every module box
+// OUTSIDE edit mode and preview, right after its position is computed -- in edit mode the drag handle must sit
+// exactly where the stored position says.
+void box_on_screen(const Frame& f, float& px, float& py, float boxW, float boxH);
 
 // draw an atlas sub-cell [u0..u1]x[v0..v1] at (x,y,w,h) -- Sheol weapon strip (v 0..1) or the 2D buff atlas.
 // Used by draw_zonetracker (weapon-type strip) and draw_timers (buff status atlas). Defaults on this DECLARATION only.

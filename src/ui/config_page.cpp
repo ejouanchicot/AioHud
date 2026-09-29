@@ -73,11 +73,11 @@ void aio_update_clear();                            // forget the in-progress st
 const char* aio_version_string();
 // Settings modules (the Configuration sidebar). Add a module here = a new settings page ; the profile
 // is GLOBAL (a profile snapshots every module), so it lives in the profile bar, not per-module.
-static const char* MODULES[]  = { "Party / Alliance", "Target", "Player", "Minimap", "Arcade WS", "Skillchains", "Treasure Pool", "Hate List", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "EmpyPop", "Interface" };
+static const char* MODULES[]  = { "Party / Alliance", "Target", "Player", "Minimap", "Arcade WS", "Skillchains", "Treasure Pool", "Hate List", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "EmpyPop", "Absorb-TP", "Interface" };   // Interface stays LAST (SEC_INTERFACE)
 static const int   MODULE_N   = (int)(sizeof(MODULES) / sizeof(MODULES[0]));
 static const int   SEC_INTERFACE = MODULE_N - 1;               // "Interface" = the config MENU's own look (font + accent) ; last sidebar entry, not a HUD module
 static const char* module_label(int i) {                       // Configuration sidebar module name (localized)
-    static const char* fr[] = { "Groupe / Alliance", "Cible", "Joueur", "Minicarte", "Arcade WS", "Skillchains", "Tr\xC3\xA9sor", "Liste de haine", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "EmpyPop", "Interface" };
+    static const char* fr[] = { "Groupe / Alliance", "Cible", "Joueur", "Minicarte", "Arcade WS", "Skillchains", "Tr\xC3\xA9sor", "Liste de haine", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "EmpyPop", "Absorb-TP", "Interface" };
     return (ui_config().lang == 1 && i >= 0 && i < (int)(sizeof(fr) / sizeof(fr[0]))) ? fr[i] : MODULES[i];
 }
 
@@ -1020,6 +1020,9 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
                            bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 12) {
             draw_ep_config(dev, fo, mo, click, ry, ri, e,
+                           bandX, bandW, coX, ctrlW, hdrX, hdrW);
+        } else if (section_ == 13) {
+            draw_aw_config(dev, fo, mo, click, ry, ri, e,
                            bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == SEC_INTERFACE) {
             draw_interface_category(dev, fo, mo, click, ry, ri, e,   // the config MENU's own font + accent colour

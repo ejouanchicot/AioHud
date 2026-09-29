@@ -138,7 +138,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
             float timeW = 0.0f, nameW = 0.0f;
             for (int i = 0; i < CC.n; ++i) { const float w = fT->measure(fmt(CC.list[i].rem), zT); if (w > timeW) timeW = w;
                 const float nw = rowNameW(CC.list[i], wantName); if (nw > nameW) nameW = nw; }   // a row with a person is measured in every mode -- it prints one
-            for (int i = 0; i < CC.n; ++i) if (CC.list[i].mark > 0) {
+            if (C.tmMarks) for (int i = 0; i < CC.n; ++i) if (CC.list[i].mark > 0) {   // the gutter exists only when the numbers are shown
                 sprintf(mkb, "%d", CC.list[i].mark);
                 const float w2 = fN->measure(mkb, zN); if (w2 > markW[c]) markW[c] = w2; }
             if (markW[c] > 0.0f) markW[c] += icgap;
@@ -158,13 +158,14 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
 
         float px, py;
         if (ovS > 0.0f) { px = snap(ovcx - boxW * 0.5f); py = snap(ovcy - boxH * 0.5f); }
-        else            { px = snap(fx * screenW); py = snap(fy * screenH); }
+        else            { px = box_grow_x(screenW, UiConfig::GB_TM, editId == EDITBOX_TIMERS ? 0 : 1, fx, boxW); py = snap(fy * screenH); }   // fx = the point the Timers grow direction pins (tmX, or tmRX for the separate Recast box)
         if (editing && saveFx) {
             static EditBox eb[2]; EditBox& g = eb[editId == EDITBOX_TIMERS ? 0 : 1];
             float tfx = px / screenW, tfy = py / screenH; bool ps = true; int ch = 0, cv = 0; const bool wasDrag = g.dragging;
             if (edit_box_drag(g, editId, f, px, py, boxW, boxH, ZPERM_HUB, ps, tfx, tfy, ch, cv, ui_config().tmScale)) edit_box_grid(dev, f, g, px, py, boxW, boxH, ch != 0, cv != 0);
-            *saveFx = px / screenW; *saveFy = py / screenH; if (wasDrag && !g.dragging) save_ui_config();
+            *saveFx = (px + box_grow_k(C.boxGrow[UiConfig::GB_TM]) * boxW) / screenW; *saveFy = py / screenH; if (wasDrag && !g.dragging) save_ui_config();
         }
+        if (!editing && ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);   // grown past an edge -> slide back into view (draw only)
 
         dColorQuadState(dev);
         draw_themed_box(dev, f.skin, px, py, boxW, boxH, C.tmBox, 1.0f, S);   // shared themed chrome (frame/transp/theme)
@@ -187,7 +188,7 @@ void timers_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, 
                 const bool haveIcon = (CC.tex && ic >= 0 && ic < CC.cells);
                 bool drewIcon = false;
                 const float gx0 = cx + markW[c];   // everything after the number gutter
-                if (CC.list[i].mark > 0) {         // the handle //aio out takes -- dim, it is not part of the buff
+                if (C.tmMarks && CC.list[i].mark > 0) {   // the handle //aio out takes -- dim, it is not part of the buff ; off by default (tmMarks)
                     char mb[8]; sprintf(mb, "%d", CC.list[i].mark);
                     fN->begin(dev); fN->draw_lc(dev, cx, cyy + rowH * 0.5f, mb, zN, 0xFF6E7885u, strk, oN);
                 }

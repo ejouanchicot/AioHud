@@ -114,6 +114,36 @@ bool model_decode_action(const unsigned char* p, ActionDecode& o) {
     return true;
 }
 
+// ABSORB-TP WATCH : a party / alliance member's Absorb-TP (spell 275, a category-4 spell finish) and what it drained.
+// 454 "N TP drained from <target>" = N ; 85 "resists the spell" and 114 "fails to take effect" = 0 (drawn in blue as
+// "nothing"). The AbsorbWatch addon read 454 and 114 only, so a real resist never showed there. Messages : res/
+// action_messages.lua. The first target's first action is the one that counts -- Absorb-TP is single-target.
+void PartyState::act_absorb_tp(const unsigned char* p, int size, unsigned cat, unsigned actor) {
+    if (cat != 4 || getbits(p, 86, 16, size) != 275) return;       // not an Absorb-TP finishing
+    if (party_order(actor) > 17) return;                             // a stranger's : not ours to show
+    unsigned tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
+    unsigned ids[16], msgs[16] = {}, params[16] = {};
+    if (action_target_ids(p, size, tc, ids, 16, msgs, params) < 1) return;
+    int tp;
+    if (msgs[0] == 454) tp = (int)params[0];
+    else if (msgs[0] == 85 || msgs[0] == 114) tp = 0;
+    else return;
+    const unsigned now = model_now_ms();
+    int slot = -1;
+    for (int i = 0; i < AW_MAX; ++i) if (aw_[i].lastMs && aw_[i].actor == actor) { slot = i; break; }
+    if (slot < 0) {                                                  // a new caster : a free row, else the least recent
+        for (int i = 0; i < AW_MAX; ++i) if (!aw_[i].lastMs) { slot = i; break; }
+        if (slot < 0) { slot = 0; for (int i = 1; i < AW_MAX; ++i) if (aw_[i].lastMs < aw_[slot].lastMs) slot = i; }
+        aw_[slot] = AbsorbTp{};
+        aw_[slot].actor = actor;
+    }
+    AbsorbTp& e = aw_[slot];
+    const char* nm = pc_name_by_id(actor);                           // refreshed each time : a name can arrive late
+    if (nm && nm[0]) { int j = 0; for (; j < 19 && nm[j]; ++j) e.name[j] = nm[j]; e.name[j] = 0; }
+    e.lastMs = now ? now : 1u; e.lastTp = tp;
+    e.stamps[e.head] = e.lastMs; e.head = (unsigned char)((e.head + 1) % 32); if (e.n < 32) ++e.n;
+}
+
 // TARGET DEBUFFS (icons + learned countdown). The client stores NO per-mob status list and the 0x028 action
 // packet carries NO remaining-time, so we IDENTIFY the debuff a cast lands by mapping the SPELL id (the 0x028
 // animation field) -> { status effect, base duration } via tb_debuff_gen.h (generated from the old AioHUD
@@ -1910,6 +1940,7 @@ void PartyState::on_action(const unsigned char* p) {
     act_sleep_wake(cat, actor);
     act_treasure_hunter(p, size, cat, actor);
     act_hate_list(p, size, actor);
+    act_absorb_tp(p, size, cat, actor);   // the Absorb-TP box : before the skillchain early return, which can end the walk
     if (act_skillchain(p, size, cat, actor)) return;       // the weaponskill popup took this packet
     act_buff_attribution(p, size, cat, actor);
     act_song_tags(p, size, cat, actor);
@@ -2619,6 +2650,8 @@ void model_feed_packet(int id, const unsigned char* b)
         else if (id == 0x055) party().on_55(b);               // Zone Tracker : key items (Dynamis granules)
         else if (id == 0x118) party().on_118(b);              // Zone Tracker : currency2 -> Mog Segments (Sheol/Odyssey run delta)
         else if (id == 0x034) party().on_034(b);              // Zone Tracker : Rabao conflux menu -> Sheol A/B/C
+        else if (id == 0x065) party().on_065(b);              // Sortie navigation : repositioning -> the wing you arrived in
+        else if (id == 0x0F5) party().on_0f5(b);              // Sortie navigation : Widescan track reply -> the wing NM's position / death
         else if (id == 0x00E) party().on_00e(b);              // Zone Tracker : NPC update -> Sheol A/B/C fallback (instance bits)
         else if (id == 0x075) party().on_limbus_075(b);       // Zone Tracker : Limbus menu -> Apollyon/Temenos level (handler self-filters by the string)
         else if (id == 0x076) party().on_076(b);      // party-member buffs

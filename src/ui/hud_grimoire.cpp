@@ -84,8 +84,9 @@ void Hud::draw_grimoire(const Frame& f, bool preview, float ovX, float ovY, floa
 
     float px, py;
     if (ovS > 0.0f) { px = snap((ovX - boxW * 0.5f)); py = snap((ovY - boxH * 0.5f)); }
-    else            { px = snap(C.grimX * screenW_ - boxW * 0.5f); py = snap(C.grimY * screenH_); }
-    if (editing) { static EditBox g_grimEdit; box_edit(f, g_grimEdit, EDITBOX_GRIMOIRE, px, py, boxW, boxH, ui_config().grimScale, ui_config().grimX, ui_config().grimY, 1); }
+    else            { px = box_grow_x(screenW_, UiConfig::GB_GRIM, 0, C.grimX, boxW); py = snap(C.grimY * screenH_); }
+    if (editing) { static EditBox g_grimEdit; box_edit(f, g_grimEdit, EDITBOX_GRIMOIRE, px, py, boxW, boxH, ui_config().grimScale, ui_config().grimX, ui_config().grimY, C.boxGrow[UiConfig::GB_GRIM]); }
+    if (!editing && ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);   // grown past an edge -> slide back into view (draw only)
 
     const float bx = px + auraPad, by = py + auraPad;      // book quad
     const u32 artCol = book ? 0xFFB98CFFu : 0xFFFFD766u;   // Dark=purple / Light=gold
