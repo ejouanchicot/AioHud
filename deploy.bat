@@ -31,7 +31,20 @@ if exist "%ROOT%dev\src\aiohud_devtools.cpp" if not defined AIOHUD_DEPLOY_RELEAS
     )
 )
 copy /Y "%ROOT%build\AioHud.dll" "%WP%\AioHud.dll" >nul
-if errorlevel 1 ( echo [deploy] FAILED -- is AioHud still loaded? do //unload AioHud first & exit /b 1 )
+if errorlevel 1 (
+    REM A REFUSED COPY IS NOT A FAILED DEPLOY. Two clients share this folder: unload one, run deploy, and the
+    REM other re-locks the DLL a moment later -- or the right bytes are already there from a run that worked.
+    REM Saying FAILED on the copy's word alone sent the reader chasing a deploy that had actually happened, four
+    REM times in one evening, and it also SKIPPED steps 2-3 silently. Ask the destination what it holds instead.
+    set "DLLSAME="
+    fc /b "%ROOT%build\AioHud.dll" "%WP%\AioHud.dll" >nul 2>nul
+    if not errorlevel 1 set "DLLSAME=1"
+)
+REM Checked OUTSIDE the block on purpose. `exit /b 1` from inside a nested parenthesised block returned 0 to the
+REM caller here -- a script that prints FAILED and reports success is the same lie as one that prints FAILED when
+REM it worked, and it would let a CI step or a scripted check sail past a deploy that never happened.
+if errorlevel 1 if not defined DLLSAME goto :dllfail
+if errorlevel 1 echo [deploy] DLL already identical to the build ^(copy refused: still loaded somewhere^) -- continuing.
 
 REM 2) runtime assets + default layout -> the plugin's data folder.
 REM    robocopy is INCREMENTAL (skips unchanged -> near-instant when only code changed) ; *_src\ regen sources excluded.
@@ -57,3 +70,9 @@ if exist "%ROOT%dev\aiotest\aiotest.lua" (
 )
 
 echo [deploy] OK -^> %WP%\AioHud.dll  (+ assets synced to AioHud\, addon synced to addons\aioupdate\)   (now //load AioHud in game)
+
+goto :eof
+:dllfail
+echo [deploy] FAILED -- the DLL is locked and the copy on disk is NOT the one just built.
+echo          Do //unload AioHud in EVERY client, then run deploy again.
+exit /b 1

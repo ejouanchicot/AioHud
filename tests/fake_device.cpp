@@ -138,6 +138,6 @@ void trace(char* out, int cap) {
 // what makes rrect() take its GEOMETRIC path -- the feathered triangle fan the assertions describe.
 // The masked path is a texture blit whose correctness is a pixel question, not a geometry one.
 namespace aio {
-unsigned make_texture_argb_mip(unsigned, int, int, const unsigned*) { return 0; }
+unsigned make_texture_argb_mip(unsigned, int, int, const unsigned*, long* out_why) { if (out_why) *out_why = 0; return 0; }
 void     release_texture(unsigned) {}
 }

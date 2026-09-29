@@ -24,6 +24,10 @@ struct EnhDurItem { unsigned short id; signed char pct; };   // pct may be NEGAT
 // (item ids extracted from Timers.dll ; the feet/Houseaux pieces are also in ENH_DUR_LISTED for their native %.)
 static const unsigned short COMPOSURE_SET_IDS[] = {
     0x2b3c, 0x2b50, 0x2b64, 0x2b78,                          // Estoqueur's +2 : head/body/hands/legs
+    0x5a31,                                                  // Leth. Chappel +2 -- MISSING from Timers.dll's own list, and so
+                                                             // from this copy of it : a RDM in full +2 was counted 4 pieces
+                                                             // (+35%) instead of 5 (+50%), every ally estimate 10% short (~75 s
+                                                             // on a Haste II). Checked against res/items.lua 2026-09-29.
     0x5a74, 0x5ab7, 0x5afa, 0x5b80, 0x5bc3, 0x5c06, 0x5c49,  // Lethargy +2/+3 : body/hands/legs/head...
     0x687c, 0x687d, 0x691a, 0x691b, 0x69b4, 0x69b5, 0x6a6d, 0x6a6e,   // Lethargy / +1 : head/body/hands/legs
     0x2b8c, 0x2bf0, 0x5c8c, 0x5b3d, 0x6b1b, 0x6b1c,          // feet (Houseaux) : Estq +2/+1, Leth +3/+2/base/+1

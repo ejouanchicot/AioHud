@@ -51,9 +51,11 @@ static const char* GEARICON_DIR() { static char b[260]; if (!b[0]) plugin_path(b
 // WHOLE chain per slot -- bundled BMP hit/miss, id-range -> DAT, registry -> ROM dir, decode, texture, cache write
 // -- because "ROM decode failed" alone conflated no-registry / no-DAT / no-write-permission. NOT gated on
 // AIOHUD_PROBES : the whole point is that a TESTER's release build can produce the capture.
-static int s_gearTrace = 0;
+static int  s_gearTrace = 0;
+static bool s_gearTraceArmed = false;   // has anyone EVER armed one? -> see gear_trace_armed()
 void set_gear_trace(int n) {
     s_gearTrace = n;
+    s_gearTraceArmed = true;
     windower::debug::log("=== GEARTRACE armed (%d slot resolutions) ===", n);
     const char* key = 0; const char* rom = ffxi_rom_dir_probe(&key);
     windower::debug::log("    icon dir : %s", GEARICON_DIR());
@@ -65,7 +67,10 @@ void set_gear_trace(int n) {
 // reproducing -- that cost three round-trips on the Timers hunt before //aio ftrace started saying so.
 bool gear_trace_armed() {
     if (s_gearTrace > 0) return true;
-    if (s_gearTrace == 0) { s_gearTrace = -1; windower::debug::log("=== GEARTRACE budget spent -- re-arm with //aio geartrace ==="); }
+    // ...but only for a trace that WAS armed. s_gearTrace starts at 0, which this read as "just ran out", so every
+    // session announced a spent budget on its first frame -- ten such lines sat in the log with no trace before any
+    // of them. A diagnostic that reports an event that did not happen is worse than one that says nothing.
+    if (s_gearTrace == 0 && s_gearTraceArmed) { s_gearTrace = -1; windower::debug::log("=== GEARTRACE budget spent -- re-arm with //aio geartrace ==="); }
     return false;
 }
 void gear_trace(const char* fmt, ...) {
@@ -74,6 +79,24 @@ void gear_trace(const char* fmt, ...) {
     int n = wvsprintfA(buf, fmt, ap); va_end(ap);   // NB: wvsprintfA has no %f
     if (n < 0) n = 0; buf[n] = 0;
     windower::debug::log("GEAR %s", buf);
+}
+
+// What make_texture_argb_mip's `out_why` means, in words. Named because "CreateTexture failed" is four different
+// bugs -- out of video memory is a budget problem, a lost device is a timing one, INVALIDCALL is ours, and a heap
+// failure is not D3D at all -- and a log that does not separate them sends the next reader guessing.
+static const char* tex_why_name(long why) {
+    switch ((unsigned long)why) {
+        case 0x8876017Cul: return "D3DERR_OUTOFVIDEOMEMORY";
+        case 0x88760868ul: return "D3DERR_DEVICELOST";
+        case 0x8876086Cul: return "D3DERR_INVALIDCALL";
+        case 0x88760870ul: return "D3DERR_DRIVERINTERNALERROR";
+        case 0x8007000Eul: return "E_OUTOFMEMORY";
+        case 1ul: return "no CreateTexture in the device vtable";
+        case 2ul: return "CreateTexture said OK but handed back a bad pointer";
+        case 3ul: return "host heap staging buffer refused";
+        case 0ul: return "no D3D error reported";
+    }
+    return "an unlisted CreateTexture HRESULT";
 }
 
 // Item ids whose cached BMP the ROM decode has vouched for THIS session (fixed capacity, no heap ; open addressing).
@@ -223,12 +246,49 @@ void Player::ensure(u32 dev) {
     ensure_raw_tex(dev, gil_tex_,     gil_r_,     GIL_ICON_PATH(),   GIL_ICON_W, GIL_ICON_H);
 }
 
+// ---- the gear-icon texture cache, keyed by ITEM ID (see player.h for why it is not keyed by slot) ----------
+u32 Player::gear_cache_get(unsigned short id) {
+    if (!id) return 0;
+    for (int i = 0; i < GEARCACHE_N; ++i)
+        if (gearCache_[i].id == id && gearCache_[i].tex) { gearCache_[i].used = ++gearClock_; return gearCache_[i].tex; }
+    return 0;
+}
+
+void Player::gear_cache_put(unsigned short id, u32 tex) {
+    if (!id || !tex) return;
+    int slot = -1;
+    for (int i = 0; i < GEARCACHE_N && slot < 0; ++i)
+        if (!gearCache_[i].tex || gearCache_[i].id == id) slot = i;      // a free entry, or this id re-decoded
+    if (slot < 0) {                                                      // full -> evict the least recently used
+        slot = 0;
+        for (int i = 1; i < GEARCACHE_N; ++i) if (gearCache_[i].used < gearCache_[slot].used) slot = i;
+    }
+    if (gearCache_[slot].tex) {
+        // A drawn slot may still be pointing at the evicted texture. Cut that reference BEFORE releasing it,
+        // or the next frame draws a freed handle. (With 64 entries and 16 live slots the 16 are always the most
+        // recently used, so this cannot fire in practice -- but "cannot in practice" is not a guarantee.)
+        for (int s = 0; s < 16; ++s) if (gearTex_[s] == gearCache_[slot].tex) { gearTex_[s] = 0; gearId_[s] = 0; }
+        release_texture(gearCache_[slot].tex);
+    }
+    gearCache_[slot].id = id; gearCache_[slot].tex = tex; gearCache_[slot].used = ++gearClock_;
+}
+
+// release = dispose (the device is alive) ; !release = device lost, FORGET the handles (rule 4).
+void Player::gear_cache_drop(bool release) {
+    for (int i = 0; i < GEARCACHE_N; ++i) {
+        if (release) release_texture(gearCache_[i].tex);
+        gearCache_[i].id = 0; gearCache_[i].tex = 0; gearCache_[i].used = 0;
+    }
+    gearClock_ = 0;
+    for (int s = 0; s < 16; ++s) { gearTex_[s] = 0; gearId_[s] = 0; gearTry_[s] = 0; gearNextMs_[s] = 0; gearZeroId_[s] = 0; gearZeroMs_[s] = 0; }
+}
+
 void Player::on_device_lost() {   // FORGET handles (dead device) -> reload next ensure. Do NOT Release.
     vials_->on_device_lost();
     jobicon_tex_ = 0; jobicon_r_ = {};
     buff_tex_ = 0;                     // borrowed : drop the reference (the shared owner re-arms its own retry)
     gil_tex_ = 0; gil_r_ = {};
-    for (int s = 0; s < 16; ++s) { gearTex_[s] = 0; gearId_[s] = 0; gearTry_[s] = 0; gearNextMs_[s] = 0; }   // FORGET handles + force reload
+    gear_cache_drop(false);            // FORGET handles + force reload
     plrSkin_.on_device_lost(); plrSkinVar_ = -1;
 }
 
@@ -237,7 +297,7 @@ void Player::dispose() {
     release_texture(jobicon_tex_); jobicon_tex_ = 0; jobicon_r_ = {};
     buff_tex_ = 0;                                   // BORROWED from buff_atlas.cpp -- never Release it here
     release_texture(gil_tex_);     gil_tex_ = 0;     gil_r_ = {};
-    for (int s = 0; s < 16; ++s) { release_texture(gearTex_[s]); gearTex_[s] = 0; gearId_[s] = 0; gearTry_[s] = 0; gearNextMs_[s] = 0; }
+    gear_cache_drop(true);
     plrSkin_.dispose(); plrSkinVar_ = -1;
 }
 void Player::self_check() const {
@@ -247,9 +307,13 @@ void Player::self_check() const {
     const bool copy = c.plrThemeCopy != 0; const int th = copy ? c.skinTheme : c.plrTheme;
     const char* skin = copy ? "copy-party (no own tex)" : window_theme_is_proc(th) ? "procedural (no tex)"
                                                         : (plrSkin_.ready() ? "ready" : "FALLBACK - load FAILED");
-    windower::debug::log("  player   : buff=%d(t%u) job=%d(t%u) gil=%d(t%u) skin=%s  gear=%d/%d icons, %d gave-up",
+    int cached = 0;
+    for (int i = 0; i < GEARCACHE_N; ++i) if (gearCache_[i].tex) ++cached;
+    windower::debug::log("  player   : buff=%d(t%u) job=%d(t%u) gil=%d(t%u) skin=%s  gear=%d/%d icons, %d gave-up"
+                         "  (cache %d/%d items, %u read-blip(s) absorbed, %u texture refusal(s))",
                          buff_tex_ ? 1 : 0, buff_atlas_tries(), jobicon_tex_ ? 1 : 0, jobicon_r_.tries,
-                         gil_tex_ ? 1 : 0, gil_r_.tries, skin, drawn, slots, gaveup);
+                         gil_tex_ ? 1 : 0, gil_r_.tries, skin, drawn, slots, gaveup,
+                         cached, (int)GEARCACHE_N, (unsigned)gearBlips_, (unsigned)gearTexFails_);
 }
 
 void Player::draw(const Frame& f) {
@@ -608,8 +672,23 @@ void Player::draw(const Frame& f) {
             // non-empty slot whose BMP exists -> a transient create failure ; keep retrying until it sticks).
             const bool needLoad = (gearId_[s] != want) || (want != 0 && gearTex_[s] == 0 && gearTry_[s] != 255);
             if (needLoad) {
-                if (gearId_[s] != want) { if (gearTex_[s]) { release_texture(gearTex_[s]); gearTex_[s] = 0; } gearTry_[s] = 0; gearNextMs_[s] = 0; }   // new item -> drop the old + reset retries + back-off
-                if (!want) { gearId_[s] = want; }
+                // The slot lets go of what it was drawing -- it does NOT Release it : gearCache_ owns every gear
+                // texture and keeps it alive across the swap, so coming back to this piece is free.
+                if (gearId_[s] != want) { gearTex_[s] = 0; gearTry_[s] = 0; gearNextMs_[s] = 0; }
+                if (!want) { if (gearId_[s]) { gearZeroId_[s] = gearId_[s]; gearZeroMs_[s] = GetTickCount() | 1u; } gearId_[s] = want; }
+                else if (u32 hit = gear_cache_get(want)) {   // already decoded this session -> instant, no file, no D3D
+                    // A blip : the read said "empty", and the SAME piece is back within a second. That was never an
+                    // unequip, it was the equip read caught mid-swap -- the event that used to cost this icon.
+                    if (gearZeroId_[s] == want && gearZeroMs_[s] && (unsigned)(GetTickCount() - gearZeroMs_[s]) < 1000u) {
+                        if (++gearBlips_ <= 10)
+                            windower::debug::log("GEARBLIP slot=%d id=%u (0x%04X) [%s] -- the equip read reported this slot EMPTY for %u ms and the SAME item came back : a read blip mid-swap, not an unequip (blip #%u ; the icon is kept)",
+                                                 s, want, want, item_name(want) ? item_name(want) : "?",
+                                                 (unsigned)(GetTickCount() - gearZeroMs_[s]), (unsigned)gearBlips_);
+                    }
+                    gearZeroId_[s] = 0; gearZeroMs_[s] = 0;
+                    gearTex_[s] = hit; gearId_[s] = want; gearTry_[s] = 0;
+                    if (gear_trace_armed()) { --s_gearTrace; gear_trace("slot %d  id=%u (0x%04X) '%s'  -> CACHE (texture already live)", s, want, want, item_name(want) ? item_name(want) : "?"); }
+                }
                 else if (canary != GCV_PENDING && decodes < MAX_GEAR_DECODES && (!gearNextMs_[s] || (int)(GetTickCount() - gearNextMs_[s]) >= 0)) {   // back-off : retry a transient ROM failure after a delay. `!gearNextMs_` FIRST : 0 is the "try now" sentinel, and a raw GetTickCount() compare against it goes NEGATIVE past 24.8 days uptime -> the first decode would never fire (same bug the buff atlas had ; reintroduced here in 1.0.46).
                     char p[300]; _snprintf(p, sizeof(p), "%s%u.bmp", GEARICON_DIR(), want); p[sizeof(p) - 1] = 0;
                     const bool tr = gear_trace_armed();
@@ -620,7 +699,8 @@ void Player::draw(const Frame& f) {
                     // from the 2026-09-10 stride bug is replaced, a good one costs one small DAT read.
                     u32 cpx[32 * 32];
                     const bool bmp = read_gear_icon_bmp(p, cpx);
-                    u32 tex = gear_cache_direct(bmp, bmp && gear_vouched(want, false), romTrusted) ? make_texture_argb_mip(dev, 32, 32, cpx) : 0;
+                    long texWhy = 0;   // why a texture create came back 0 (see gfx/texture.h) -- the REFUSED log below names it
+                    u32 tex = gear_cache_direct(bmp, bmp && gear_vouched(want, false), romTrusted) ? make_texture_argb_mip(dev, 32, 32, cpx, &texWhy) : 0;
                     if (tr) gear_trace("  BMP    %s -> %s", p,
                                        tex ? (romTrusted ? "OK (cache hit, vouched)" : "OK (cache hit, UNVERIFIED : the canary doubts the ROM)")
                                            : bmp ? "PRESENT, not vouched yet -> compare with the ROM"
@@ -644,7 +724,7 @@ void Player::draw(const Frame& f) {
                         }
                         if (dec) {
                             const bool stale = gear_cache_stale(bmp, bmp && memcmp(cpx, px, sizeof(px)) == 0);
-                            tex = make_texture_argb_mip(dev, 32, 32, px);
+                            tex = make_texture_argb_mip(dev, 32, 32, px, &texWhy);
                             int werr = 0;
                             // best-effort ; a stale/corrupt BMP is overwritten -- but only from a ROM the canary trusts
                             const bool wrote = gear_cache_rewrite(stale, romTrusted) && write_gear_icon_bmp(p, px, &werr);
@@ -665,7 +745,7 @@ void Player::draw(const Frame& f) {
                             // The ROM cannot vouch (no install found, DAT locked, unknown layout) but a cached icon exists :
                             // draw it, unvouched, exactly what a cache hit did before the vouching existed. It is re-checked
                             // the next time this item is loaded.
-                            tex = make_texture_argb_mip(dev, 32, 32, cpx);
+                            tex = make_texture_argb_mip(dev, 32, 32, cpx, &texWhy);
                             if (tr) gear_trace("  VOUCH  impossible (step %d) -> cached BMP drawn unverified", gi.step);
                         } else {   // DECODE FAILED. Permanent vs TRANSIENT is the whole point (rule 10).
                             gearId_[s] = want;
@@ -713,13 +793,24 @@ void Player::draw(const Frame& f) {
                         }
                     }
                     if (tr) gear_trace("  RESULT %s", tex ? "ICON DRAWN" : "id-text fallback (will retry next frame)");
-                    if (tex) { gearTex_[s] = tex; gearId_[s] = want; gearTry_[s] = 0; }   // loaded -> cache it
+                    if (tex) { gear_cache_put(want, tex); gearTex_[s] = tex; gearId_[s] = want; gearTry_[s] = 0;
+                               gearZeroId_[s] = 0; gearZeroMs_[s] = 0; }   // owned by gearCache_ from here on
                     // Decoded but the texture create failed (VRAM pressure, a device in a bad state) -> same
                     // plateau. The concern that made this stop dead was cost: retrying every frame is ~120 file
                     // operations a second on the render thread, sustained. The slow lane answers that without
                     // going permanently blind -- 8 quick attempts, then one every 30 s, id-text in between.
                     else { gearId_[s] = want; if (gearTry_[s] < 200) ++gearTry_[s];
-                           gearNextMs_[s] = (GetTickCount() + (gearTry_[s] < 8 ? 0u : GEAR_SLOW_MS)) | 1u; }
+                           gearNextMs_[s] = (GetTickCount() + (gearTry_[s] < 8 ? 0u : GEAR_SLOW_MS)) | 1u;
+                           // SAY SO on the transition into the slow lane. This was the ONE branch in the whole
+                           // chain that failed in complete silence -- a raw id on screen and not a word in the
+                           // log, which is exactly how a real report ("des ids par moments") arrived with a
+                           // capture that proved nothing (rule 10 corollary).
+                           if (gearTry_[s] == 1 && gearTexFails_ < 40)   // the FIRST refusal carries the cause ; by the 8th the conditions may have moved
+                               windower::debug::log("GEARICON texture create refused id=%u (0x%04X) [%s] -- %s (why=0x%08lX)",
+                                                    want, want, item_name(want) ? item_name(want) : "?", tex_why_name(texWhy), (unsigned long)texWhy);
+                           if (gearTry_[s] == 8) { ++gearTexFails_;
+                               windower::debug::log("GEARICON texture create REFUSED id=%u (0x%04X) [%s] -- %s (why=0x%08lX). 8 attempts, retrying every %d s, id-text meanwhile",
+                                                    want, want, item_name(want) ? item_name(want) : "?", tex_why_name(texWhy), (unsigned long)texWhy, GEAR_SLOW_MS / 1000); } }
                 }
             }
         }

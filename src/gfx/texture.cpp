@@ -298,18 +298,23 @@ static int mip_count(int w, int h) {
     int n = 1; while (w > 1 || h > 1) { w >>= 1; if (!w) w = 1; h >>= 1; if (!h) h = 1; n++; } return n;
 }
 
-u32 make_texture_argb_mip(u32 dev, int W, int H, const u32* pixels)
+u32 make_texture_argb_mip(u32 dev, int W, int H, const u32* pixels, long* out_why)
 {
+    if (out_why) *out_why = 0;
     int levels = mip_count(W, H);
     auto fCreate = vmethod<long(__stdcall*)(u32,u32,u32,u32,u32,u32,u32,u32*)>(dev, 20);
     u32 tex = 0;
-    if (!fCreate || fCreate(dev, W, H, levels, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &tex) < 0 || !valid_ptr(tex))
-        return 0;
+    if (!fCreate) { if (out_why) *out_why = 1; return 0; }
+    const long hr = fCreate(dev, W, H, levels, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &tex);
+    if (hr < 0)            { if (out_why) *out_why = hr; return 0; }
+    // A texture the runtime says it created but whose handle we refuse must still be RELEASED -- returning 0 on
+    // it used to leak the object outright (and it fired for real : see valid_ptr in include/windower.h).
+    if (!valid_ptr(tex))   { if (out_why) *out_why = 2;  release_texture(tex); return 0; }
     auto fLock   = vmethod<long(__stdcall*)(u32,u32,void*,void*,u32)>(tex, 16);
     auto fUnlock = vmethod<long(__stdcall*)(u32,u32)>(tex, 17);
 
     u32* cur = (u32*)HeapAlloc(GetProcessHeap(), 0, W * H * 4);
-    if (!cur) { release_texture(tex); return 0; }   // fail CLOSED (else a live but never-filled texture = garbage pixels)
+    if (!cur) { if (out_why) *out_why = 3; release_texture(tex); return 0; }   // fail CLOSED (else a live but never-filled texture = garbage pixels)
     for (int i = 0; i < W * H; ++i) cur[i] = pixels[i];
 
     int lw = W, lh = H;
@@ -325,7 +330,7 @@ u32 make_texture_argb_mip(u32 dev, int W, int H, const u32* pixels)
         if (lvl + 1 >= levels) break;
         int nw = lw > 1 ? lw / 2 : 1, nh = lh > 1 ? lh / 2 : 1;
         u32* nxt = (u32*)HeapAlloc(GetProcessHeap(), 0, nw * nh * 4);
-        if (!nxt) { HeapFree(GetProcessHeap(), 0, cur); release_texture(tex); return 0; }   // fail CLOSED like the initial alloc : a partially-filled texture would leave garbage in the upper (unlocked) MANAGED mips
+        if (!nxt) { if (out_why) *out_why = 3; HeapFree(GetProcessHeap(), 0, cur); release_texture(tex); return 0; }   // fail CLOSED like the initial alloc : a partially-filled texture would leave garbage in the upper (unlocked) MANAGED mips
         for (int y = 0; y < nh; ++y) for (int x = 0; x < nw; ++x) {
             int x0 = x * 2, y0 = y * 2, x1 = (x0 + 1 < lw) ? x0 + 1 : x0, y1 = (y0 + 1 < lh) ? y0 + 1 : y0;
             u32 a = cur[y0 * lw + x0], b = cur[y0 * lw + x1], c = cur[y1 * lw + x0], e = cur[y1 * lw + x1];

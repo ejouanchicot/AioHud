@@ -31,7 +31,7 @@ REM checkout). /Fd : the compiler PDB beside the objects -- without it vc140.pdb
 pushd "%ROOT%"
 cl /nologo /MP /EHsc /W4 /WX /permissive- /std:c++17 /Od /Zi /fsanitize=address /wd4456 /DNOMINMAX /D_CRT_SECURE_NO_WARNINGS ^
    /I"include" /I"src" /I"tests" ^
-   "tests\test_main.cpp" "tests\t_json.cpp" "tests\t_clip.cpp" "tests\t_retry.cpp" "tests\t_skillchain.cpp" "tests\t_durations.cpp" "tests\t_config.cpp" "tests\t_limbus.cpp" "tests\t_omen.cpp" "tests\t_buffgroups.cpp" "tests\t_songslot.cpp" "tests\t_songslots.cpp" "tests\t_flipwatch.cpp" "tests\t_capwatch.cpp" "tests\t_allygroup.cpp" "tests\t_focusrules.cpp" "tests\t_castmatch.cpp" "tests\t_debuffrules.cpp" "tests\t_geardat.cpp" ^
+   "tests\test_main.cpp" "tests\t_json.cpp" "tests\t_clip.cpp" "tests\t_retry.cpp" "tests\t_validptr.cpp" "tests\t_skillchain.cpp" "tests\t_durations.cpp" "tests\t_config.cpp" "tests\t_limbus.cpp" "tests\t_omen.cpp" "tests\t_buffgroups.cpp" "tests\t_songslot.cpp" "tests\t_songslots.cpp" "tests\t_flipwatch.cpp" "tests\t_capwatch.cpp" "tests\t_allygroup.cpp" "tests\t_focusrules.cpp" "tests\t_castmatch.cpp" "tests\t_debuffrules.cpp" "tests\t_geardat.cpp" ^
    "tests\t_timers.cpp" "tests\t_timersrules.cpp" "tests\t_roster.cpp" "tests\t_battletarget.cpp" "tests\t_treasure.cpp" "tests\t_pointwatch.cpp" "tests\t_packets.cpp" "tests\t_charsheet.cpp" "tests\t_rvarules.cpp" "tests\t_render.cpp" "tests\fake_game.cpp" "tests\fake_device.cpp" ^
    "src\gfx\draw.cpp" "src\gfx\corner_mask.cpp" "src\gfx\noise.cpp" ^
    "src\model\skillchain.cpp" "src\model\ui_config.cpp" ^

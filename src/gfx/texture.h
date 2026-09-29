@@ -83,7 +83,11 @@ const char* ffxi_rom_dir_probe(const char** out_regkey);
 u32 make_texture_argb(u32 dev, int W, int H, const u32* pixels);
 
 // same, but with a full MIP CHAIN (box-filtered) -> clean minification (crisp scaled text).
-u32 make_texture_argb_mip(u32 dev, int W, int H, const u32* pixels);
+// `out_why` (optional) says WHY a 0 came back, because "the texture create failed" alone conflates four very
+// different worlds and the caller can only retry blindly: < 0 = the HRESULT CreateTexture returned (so
+// D3DERR_OUTOFVIDEOMEMORY / _DEVICELOST / _INVALIDCALL are told apart), 1 = no CreateTexture in the vtable,
+// 2 = it reported success but handed back a bad pointer, 3 = the host-heap staging buffer could not be had.
+u32 make_texture_argb_mip(u32 dev, int W, int H, const u32* pixels, long* out_why = 0);
 
 // party marker icons (procedural pixel-art, 32x32 A8R8G8B8 + mips, straight alpha):
 // gold crown = party leader, gold star = alliance leader, green coin = quartermaster.

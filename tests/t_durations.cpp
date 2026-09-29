@@ -33,6 +33,21 @@ void test_durations() {
         gear(g, ESTQ, 4); CHECK_EQ(composure_set_pct(g), 35);   // the value the worked example uses
     }
 
+    SECTION("durations : EVERY reforged Lethargy tier is a full five-piece set");
+    {
+        // The table was copied from Timers.dll, which skips Leth. Chappel +2 : a RDM in full +2 got +35%, not +50%,
+        // and every buff put on an ally vanished from the Timers box ~1 min early. One row per tier, ids from
+        // res/items.lua (head, body, hands, legs, feet).
+        const unsigned short TIERS[4][5] = {
+            { 0x687c, 0x691a, 0x69b4, 0x6a6d, 0x6b1b },   // Lethargy
+            { 0x687d, 0x691b, 0x69b5, 0x6a6e, 0x6b1c },   // +1
+            { 0x5a31, 0x5a74, 0x5ab7, 0x5afa, 0x5b3d },   // +2
+            { 0x5b80, 0x5bc3, 0x5c06, 0x5c49, 0x5c8c },   // +3
+        };
+        unsigned short g[16];
+        for (int t = 0; t < 4; ++t) { gear(g, TIERS[t], 5); CHECK_EQ(composure_set_pct(g), 50); }
+    }
+
     SECTION("durations : a set piece is recognised, an unrelated item is not");
     {
         CHECK(is_composure_set_piece(0x2b3c));

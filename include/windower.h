@@ -20,7 +20,24 @@ namespace windower {
 using u32 = uint32_t;
 static const u32 PLUGIN_INTERFACE_VERSION = 0x04070300u;   // GetInterfaceVersion() must return this
 
-inline bool valid_ptr(u32 v) { return v >= 0x10000 && v < 0x80000000; }
+// Is `v` an address this process could legally hold ? The upper bound is asked of the OS, never assumed.
+//
+// It used to be the literal 0x80000000 -- the 2 GB a 32-bit process gets by default. But pol.exe is built
+// LARGE_ADDRESS_AWARE (characteristics 0x0123), so on 64-bit Windows this process owns nearly 4 GB, and every
+// pointer the upper half hands out was being called invalid. Measured 2026-09-17 : dgVoodoo's D3D8 wrapper
+// allocates its COM objects up there, so CreateTexture returned S_OK and the plugin THREW THE TEXTURE AWAY --
+// gear icons falling back to the raw item id, intermittently, depending only on where the allocator landed.
+// The same bound guards every SEH-guarded game-memory read (rule 5), so any game structure above 2 GB read as
+// "bad pointer" and the feature behind it went quietly dark.
+//
+// lpMaximumApplicationAddress is the authoritative answer and costs one call per session : 0x7FFEFFFF without
+// the flag, 0xFFFEFFFF with it -- so this stays exactly as strict as before on a process that really is limited
+// to 2 GB, and stops lying on one that is not.
+inline bool valid_ptr(u32 v) {
+    static u32 hi = 0;   // benign race : every thread computes the same constant
+    if (!hi) { SYSTEM_INFO si; GetSystemInfo(&si); hi = (u32)(uintptr_t)si.lpMaximumApplicationAddress; }
+    return v >= 0x10000 && v <= hi;
+}
 
 inline bool safe_read(u32 p, u32* out) {
     __try { *out = *(volatile u32*)p; return true; }

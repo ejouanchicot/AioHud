@@ -56,13 +56,34 @@ private:
     u32   buff_tex_    = 0;   // BORROWED from buff_atlas.cpp (shared) : never Released here, no own retry state
     u32   gil_tex_     = 0; TexRetry gil_r_;           // gil coin icon (icon_gil.raw) for the gil/speed band
 
-    // equipment viewer : one gear-icon texture per equip slot, loaded from gearicons/<id>.bmp on demand.
-    // gearId_[s] is the item id currently loaded in slot s (0 = none) -> reload only when the slot changes.
-    u32            gearTex_[16] = { 0 };
+    // equipment viewer : gear-icon textures, owned BY ITEM ID -- NOT by slot.
+    //
+    // WHY. The cache used to be slot-keyed : a slot whose item changed Released its texture and built a new one.
+    // GearSwap re-equips the SAME pieces dozens of times a fight (precast -> midcast -> idle, back and forth), and
+    // the equip read also blips a slot to "empty" for a frame or two mid-swap -- so a PLD saw 16 textures destroyed
+    // and rebuilt over and over, and any rebuild that was deferred (2-decode frame budget) or refused (CreateTexture)
+    // showed the RAW ITEM ID until the next attempt. Intermittently, and often. Keyed by id, re-equipping a piece
+    // already seen this session costs nothing at all : the slot just points at the texture that is still alive.
+    static const int GEARCACHE_N = 64;                 // >> the 16 live slots, so the working set of a swap-heavy job fits
+    struct GearIcon { unsigned short id; u32 tex; unsigned used; };   // used = LRU stamp (gearClock_)
+    GearIcon       gearCache_[GEARCACHE_N] = {};
+    unsigned       gearClock_ = 0;
+    u32            gearTex_[16] = { 0 };   // BORROWED from gearCache_ : a slot NEVER Releases what it draws
     unsigned short gearId_[16]  = { 0 };
     unsigned char  gearTry_[16] = { 0 };   // failed-load retry counter per slot (bounded) -> recover from a transient texture-create failure
     unsigned       gearNextMs_[16] = { 0 };   // per-slot back-off : earliest GetTickCount to RETRY a transient ROM-decode failure (0 = now). A DAT held by AV / Controlled Folder Access on a Program Files install fails the first touch, then opens -- so the failure must be re-tried over SECONDS, not given up on the same frame (rule 10).
     bool           eqReadyPrev_ = false;   // //aio geartrace : last equipValid, so only its TRANSITIONS are logged
+    // Instrumenting the DECISION, not the result : when a slot reads EMPTY and the SAME item is back a moment
+    // later, the equip read blipped -- it was never an unequip. That is the event that used to cost the icon, and
+    // it is worth seeing even now that it costs nothing (it also tells a read problem from a D3D one).
+    unsigned short gearZeroId_[16] = { 0 };   // id the slot held when it last read empty (0 = it wasn't holding one)
+    unsigned       gearZeroMs_[16] = { 0 };   // when that happened
+    unsigned short gearBlips_ = 0;            // how many such blips this session
+    unsigned short gearTexFails_ = 0;         // CreateTexture refusals (the branch that used to be silent)
+
+    u32  gear_cache_get(unsigned short id);            // live texture for this item, or 0 (bumps its LRU stamp)
+    void gear_cache_put(unsigned short id, u32 tex);   // adopt `tex` ; evicts the least-recently-used entry when full
+    void gear_cache_drop(bool release);                // device lost -> forget handles ; dispose -> Release them
 
     WindowSkin plrSkin_;             // own FFXI window skin (for a custom FFXI-family box theme, independent of party)
     int        plrSkinVar_ = -1;     // currently loaded theme index (-1 = none) -> reload only on change
