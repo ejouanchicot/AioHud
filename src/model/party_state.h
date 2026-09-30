@@ -480,6 +480,7 @@ struct PartyState {
     struct SortieNav {
         int wing = -1;                           // 0..7 = A..H, SORTIE_BOSS_ROOM = an arena, -1 = not known yet
         struct Nm { float x = 0.0f, y = 0.0f; unsigned ms = 0; unsigned char state = 0, lvl = 0; } nm[8];   // state : 0 no news, 1 alive (x/y valid, ms = when), 2 dead
+        struct Bz { float x = 0.0f, y = 0.0f; unsigned ms = 0; } bz[8];   // the wing's bitzer, LEARNED this visit (ms = 0 : not seen yet) -- they move every run
     };
     SortieNav soNav_;
     const SortieNav& sortie_nav() const { return soNav_; }
@@ -505,7 +506,13 @@ struct PartyState {
     void act_absorb_tp(const unsigned char* p, int size, unsigned cat, unsigned actor);
     void on_065(const unsigned char* p);            // 0x065 repositioning : the Sortie wing you just arrived in
     void on_0f5(const unsigned char* p);            // 0x0F5 Widescan track reply : a Sortie NM's position / death
-    void sortie_00e(const unsigned char* p);        // 0x00E for a Sortie NM in range : its position / HP 0
+    void sortie_00e(const unsigned char* p);        // 0x00E for a Sortie NM in range : its position / HP 0 ; for a basement bitzer : its position
+    // //aio sortielog : one line per wing arrival, track reply (throttled), bitzer / NM update, plus the box's own
+    // distance / compass every 5 s. SHIPPED on purpose : the only way to compare the box with another tool line by
+    // line on a real run. 0 = off ; else the model_now_ms() deadline.
+    unsigned soTraceUntil_ = 0;
+    bool sortie_trace_on() const;                   // party_state_zonetracker.cpp
+    void set_sortie_trace(int seconds);             // //aio sortielog [sec] ; 0 = off
     LimbusCoffers lc_[2];                        // [0] Apollyon (zone 38), [1] Temenos (zone 37) -- own file, see lc_save
     const LimbusCoffers& limbus_coffers(int area) const { return lc_[(area == 1) ? 1 : 0]; }
     LimbusWeek    lw_;                           // account-wide weekly allowance, persisted in the same file

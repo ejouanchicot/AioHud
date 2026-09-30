@@ -287,7 +287,10 @@ SAME entity field:
 
 Reach the self entity as read_self_speed does: pp=*(g+0x248), base=pp-4, self entity index at
 base+0x20, entity = entity_array[idx] (entity_array = *(g+0x24)), then +0x18. Draw the arrow rotated
-by this angle (sign / zero-direction to be confirmed against the in-game compass).
+by this angle. CONFIRMED 2026-09-30 in game : heading 0 = east, clockwise seen from above, so the compass bearing
+you face = heading + 90 deg (north = 0). Measured twice : straight runs whose displacement bearing matched
+heading + 90 within 5 deg (N, S and a WSW diagonal, so neither axis is mirrored), and the dev-only `//aio facing`
+box held against the game compass on all four cardinal points. The Sortie arrow and the minimap pin use this.
 
 The same decomp confirmed the rest of the entity struct we rely on: +0x04 X, +0x08 Y, +0x0C Z,
 +0x18 heading, +0x74 index, +0x78 id, +0x7C name, +0x98 movement_speed, +0xD8 distance, +0xEC HP%,

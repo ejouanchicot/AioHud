@@ -668,6 +668,24 @@ void test_packets() {
         CHECK_EQ((int)h.state, 2);
     }
 
+    SECTION("sortie nav : a bitzer's position is LEARNED from its own 0x00E each visit -- they move every run");
+    {   // The fixed table this replaced was read off ONE recorded run and drew every later run wrong (reported
+        // 2026-09-29). Mutation : put a constant back, or accept a (0,0) position, and the checks below fail.
+        fresh(); enter(Z_KAMIHR); enter(Z_SORTIE);
+        CHECK_EQ(party().sortie_nav().bz[4].ms, 0u);                   // nothing known on entry
+        deliver(pkt_npc(837, 0x01, 0.0f, 0.0f, 100));                   // a (0,0) position is not a position
+        CHECK_EQ(party().sortie_nav().bz[4].ms, 0u);
+        deliver(pkt_npc(837, 0x01, 412.3f, 88.1f, 100));                 // Diaphanous Bitzer (E), wherever it is this run
+        const PartyState::SortieNav::Bz& e = party().sortie_nav().bz[4];
+        CHECK(e.ms != 0u); CHECK(e.x > 412.2f && e.x < 412.4f); CHECK(e.y > 88.0f && e.y < 88.2f);
+        deliver(pkt_npc(840, 0x04, 700.0f, -300.0f, 100));                // no position bit : H stays unknown
+        CHECK_EQ(party().sortie_nav().bz[7].ms, 0u);
+        CHECK_EQ((int)party().sortie_nav().nm[4].state, 0);             // a bitzer is not an NM
+        enter(Z_KAMIHR); enter(Z_SORTIE);                               // the next run starts blank
+        CHECK_EQ(party().sortie_nav().bz[4].ms, 0u);
+        CHECK_EQ(sortie_wing_for_bitzer(839), 6); CHECK_EQ(sortie_wing_for_bitzer(223), -1);
+    }
+
     SECTION("sortie nav : distance and compass point from the player to a target");
     {
         CHECK_EQ(sortie_cardinal(0, 0, 0, 10), 0);    // north (+Y)

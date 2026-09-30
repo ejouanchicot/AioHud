@@ -800,31 +800,65 @@ void PartyState::on_034(const unsigned char* p) {           // 0x034 NPC interac
 }
 // ---- SORTIE NAVIGATION (model/sortie_nav.h) : all three read what the server sends anyway. AioHUD never asks. ----
 static float pkt_f32(const unsigned char* p, int o) { float v; memcpy(&v, p + o, 4); return v; }
+static int yalm(float v) { return (int)floorf(v + 0.5f); }   // debug::log has no %f : positions go out rounded to the yalm
+bool PartyState::sortie_trace_on() const { return soTraceUntil_ && (int)(soTraceUntil_ - model_now_ms()) > 0; }
+void PartyState::set_sortie_trace(int seconds) {
+    soTraceUntil_ = seconds > 0 ? model_now_ms() + (unsigned)seconds * 1000u : 0u;
+    if (seconds > 0) windower::debug::log("SORTIELOG armed for %d s (zone %d, wing %d)", seconds, zt_.curZone, soNav_.wing);
+    else             windower::debug::log("SORTIELOG off (zone %d, wing %d)", zt_.curZone, soNav_.wing);
+}
 void PartyState::on_065(const unsigned char* p) {          // 0x065 repositioning : you took a bitzer / a gate
     if (zt_.curZone != SORTIE_NAV_ZONE) return;
     if (pkt_short(p, 0x10)) return;
-    const int w = sortie_wing_for_arrival(pkt_f32(p, 0x04), pkt_f32(p, 0x0C));   // X @0x04, Y @0x0C (0x08 = height)
+    const float x = pkt_f32(p, 0x04), y = pkt_f32(p, 0x0C);   // X @0x04, Y @0x0C (0x08 = height)
+    const int w = sortie_wing_for_arrival(x, y);
+    if (sortie_trace_on())
+        windower::debug::log("SORTIELOG ARRIVE x=%d y=%d h=%d -> %s (wing was %d)", yalm(x), yalm(y), yalm(pkt_f32(p, 0x08)),
+                             w < 0 ? "UNKNOWN point, wing kept" : (w == SORTIE_BOSS_ROOM ? "boss arena" : "a wing"), soNav_.wing);
     if (w >= 0) soNav_.wing = w;                           // an unknown arrival keeps the wing you had
+    if (w >= 0 && w < SORTIE_WINGS && sortie_trace_on()) windower::debug::log("SORTIELOG WING %c", SORTIE_WING[w].letter);
 }
 void PartyState::on_0f5(const unsigned char* p) {          // 0x0F5 Widescan track reply (~every 0.44 s while a track runs)
     if (zt_.curZone != SORTIE_NAV_ZONE) return;
     if (pkt_short(p, 0x18)) return;
-    const int w = sortie_wing_for_nm(pkt_u16(p, 0x12));
-    if (w < 0) return;                                     // someone is tracking something else : not ours to show
+    const unsigned idx = pkt_u16(p, 0x12);
     const float x = pkt_f32(p, 0x04), y = pkt_f32(p, 0x0C);
     const unsigned status = pkt_u32(p, 0x14);              // 1 = tracking (position valid), 2 = the track ENDED (measured : the NM's kill), 3 = stopped
-    SortieNav::Nm& n = soNav_.nm[w];
-    if (status == 1 && (x != 0.0f || y != 0.0f)) { n.x = x; n.y = y; n.ms = model_now_ms(); n.state = 1; n.lvl = p[0x10]; }
-    else if (status == 2) n.state = 2;
+    if (sortie_trace_on()) {                               // throttled : the server streams ~2 a second
+        static unsigned lastIdx = 0, n = 0;
+        if (idx != lastIdx) { lastIdx = idx; n = 0; }
+        if (n++ % 25 == 0 || status != 1)
+            windower::debug::log("SORTIELOG TRACK idx=%u status=%u x=%d y=%d lvl=%u (reply #%u) -> wing %d", idx, status, yalm(x), yalm(y), (unsigned)p[0x10], n, sortie_wing_for_nm(idx));
+    }
+    const int w = sortie_wing_for_nm(idx);
+    if (w < 0) return;                                     // someone is tracking something else : not ours to show
+    SortieNav::Nm& nm = soNav_.nm[w];
+    if (status == 1 && (x != 0.0f || y != 0.0f)) { nm.x = x; nm.y = y; nm.ms = model_now_ms(); nm.state = 1; nm.lvl = p[0x10]; }
+    else if (status == 2) nm.state = 2;
 }
-void PartyState::sortie_00e(const unsigned char* p) {       // 0x00E for a Sortie NM that is in range
+void PartyState::sortie_00e(const unsigned char* p) {       // 0x00E for a Sortie NM or a basement bitzer
     if (pkt_short(p, 0x20)) return;
-    const int w = sortie_wing_for_nm(pkt_u16(p, 0x08));
+    const unsigned idx = pkt_u16(p, 0x08), mask = p[0x0A];
+    const float x = pkt_f32(p, 0x0C), y = pkt_f32(p, 0x14);    // X @0x0C, Y @0x14 (0x10 = height)
+    const int bw = sortie_wing_for_bitzer(idx);
+    if (bw >= 0) {                                         // a bitzer : they move every run, so this IS the position
+        if ((mask & 0x01) && (x != 0.0f || y != 0.0f)) {
+            SortieNav::Bz& b = soNav_.bz[bw];
+            const bool changed = !b.ms || b.x != x || b.y != y;
+            b.x = x; b.y = y; b.ms = model_now_ms() ? model_now_ms() : 1u;
+            if (changed && sortie_trace_on()) windower::debug::log("SORTIELOG BITZER %c idx=%u x=%d y=%d", SORTIE_WING[bw].letter, idx, yalm(x), yalm(y));
+        }
+        return;
+    }
+    const int w = sortie_wing_for_nm(idx);
     if (w < 0) return;
-    const unsigned mask = p[0x0A];
     SortieNav::Nm& n = soNav_.nm[w];
-    if (mask & 0x01) { n.x = pkt_f32(p, 0x0C); n.y = pkt_f32(p, 0x14); n.ms = model_now_ms(); if (n.state != 2) n.state = 1; }   // position (X @0x0C, Y @0x14)
-    if (mask & 0x04) n.state = (p[0x1E] == 0) ? 2 : 1;     // HP% : 0 = killed (mask bit 5 is only "out of range", never death)
+    if (mask & 0x01) { n.x = x; n.y = y; n.ms = model_now_ms(); if (n.state != 2) n.state = 1; }   // position (X @0x0C, Y @0x14)
+    if (mask & 0x04) {                                     // HP% : 0 = killed (mask bit 5 is only "out of range", never death)
+        const unsigned char was = n.state;
+        n.state = (p[0x1E] == 0) ? 2 : 1;
+        if (n.state != was && sortie_trace_on()) windower::debug::log("SORTIELOG NM %c idx=%u hp=%u -> %s", SORTIE_WING[w].letter, idx, (unsigned)p[0x1E], n.state == 2 ? "DOWN" : "alive");
+    }
 }
 
 void PartyState::on_00e(const unsigned char* p) {          // 0x00E NPC update : fallback A/B/C from a mob's instance bits (menu missed)

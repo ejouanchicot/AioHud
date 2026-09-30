@@ -12,7 +12,8 @@
 #include "model/zones.h"
 #include "model/resistances.h"
 #include "model/gamestate.h"
-#include "model/sortie_nav.h"   // Sortie navigation : wing / NM / bitzer
+#include "model/sortie_nav.h"
+#include "windower_debug.h"   // //aio sortielog lines   // Sortie navigation : wing / NM / bitzer
 #include "ui/config_controls.h"  // tr() : the compass letters follow the config language
 #include <windows.h>
 #include <math.h>
@@ -580,6 +581,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         // close) and an arrow pointing at it (north up, like the map) with the compass point. The NM's position is the
         // server's (0x0F5 track replies / its own 0x00E in range) ; with no news yet the card shows a dash, never an
         // invented distance. Nothing in a boss arena, nothing on the frozen last-run summary.
+        auto b_known = [](const PartyState::SortieNav& v, int w) { return v.bz[w].ms != 0; };
         struct NavRow { bool on = false; char tag[8] = ""; const char* name = 0; int state = 0; int dist = 0; float ang = 0.0f; int card = 0; };
         NavRow nmRow, bzRow; int navWing = -1;
         static const char* CARD_EN[8] = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
@@ -597,15 +599,35 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
                     const SortieWing& sw = SORTIE_WING[nv.wing];
                     const PartyState::SortieNav::Nm& n = nv.nm[nv.wing];
                     const float mx = f.game->meX, my = f.game->meZ;   // entity +0x04 / +0x0C = the packets' X / Y
+                    // The ARROW is relative to where YOU FACE, like the game's own radar : up = straight ahead, right =
+                    // turn right. (A north-up arrow, as first shipped, disagreed with the radar the moment you were not
+                    // facing north -- reported 2026-09-30.) Your compass heading = entity heading + 90 deg : Windower's
+                    // convention (0 = east, clockwise), the same one the minimap rotates the player pin by. The
+                    // compass TEXT (N / NE / SO...) stays the true direction on the map.
+                    float faceDeg = f.game->meHeading * 57.29578f + 90.0f;
+                    auto relDeg = [&](float brg) { float d = brg - faceDeg; while (d < 0.0f) d += 360.0f; while (d >= 360.0f) d -= 360.0f; return d; };
                     nmRow.on = true; nmRow.tag[0] = sw.letter; nmRow.name = sw.nm; nmRow.state = n.state;
-                    if (n.state == 1) { nmRow.dist = (int)(sortie_dist(mx, my, n.x, n.y) + 0.5f); nmRow.ang = bearing(mx, my, n.x, n.y); nmRow.card = sortie_cardinal(mx, my, n.x, n.y); }
-                    if (sw.basement) {
-                        bzRow.on = true; strcpy(bzRow.tag, "BZ"); bzRow.name = "Bitzer"; bzRow.state = 1;
-                        bzRow.dist = (int)(sortie_dist(mx, my, sw.bzX, sw.bzY) + 0.5f); bzRow.ang = bearing(mx, my, sw.bzX, sw.bzY); bzRow.card = sortie_cardinal(mx, my, sw.bzX, sw.bzY);
+                    if (n.state == 1) { nmRow.dist = (int)(sortie_dist(mx, my, n.x, n.y) + 0.5f); nmRow.ang = relDeg(bearing(mx, my, n.x, n.y)); nmRow.card = sortie_cardinal(mx, my, n.x, n.y); }
+                    if (sw.bzIndex) {   // the bitzer MOVES every run : only its position learned this visit is drawn
+                        const PartyState::SortieNav::Bz& b = nv.bz[nv.wing];
+                        bzRow.on = true; strcpy(bzRow.tag, "BZ"); bzRow.name = "Bitzer"; bzRow.state = b.ms ? 1 : 0;
+                        if (b.ms) { bzRow.dist = (int)(sortie_dist(mx, my, b.x, b.y) + 0.5f); bzRow.ang = relDeg(bearing(mx, my, b.x, b.y)); bzRow.card = sortie_cardinal(mx, my, b.x, b.y); }
+                    }
+                    // //aio sortielog : what the box SHOWS, every 5 s -- the line to hold against another tool's readout
+                    static unsigned lastTrace = 0;
+                    if (party().sortie_trace_on() && (GetTickCount() - lastTrace) >= 5000u) {
+                        lastTrace = GetTickCount();
+                        windower::debug::log("SORTIELOG BOX me=(%d,%d) facing=%d deg wing=%c | NM %s state=%d pos=(%d,%d) -> %d y %s | BZ %s -> %d y %s",
+                            (int)floorf(mx + 0.5f), (int)floorf(my + 0.5f), ((int)floorf(faceDeg + 0.5f) % 360 + 360) % 360, sw.letter, sw.nm, n.state,
+                            (int)floorf(n.x + 0.5f), (int)floorf(n.y + 0.5f), nmRow.dist, CARD_EN[nmRow.card & 7],
+                            sw.bzIndex ? (b_known(nv, nv.wing) ? "known" : "unknown") : "none", bzRow.dist, CARD_EN[bzRow.card & 7]);
                     }
                 }
             }
         }
+        { static bool traceWas = false; const bool on = party().sortie_trace_on();   // a probe that dies quietly reads like a bug that isn't happening
+          if (traceWas && !on) windower::debug::log("SORTIELOG window closed");
+          traceWas = on; }
         const int navN = (nmRow.on ? 1 : 0) + (bzRow.on ? 1 : 0);
         // card geometry : tag pill | name .......... distance  arrow  compass
         const float cardH = zB + 12.0f * S, cardGap = 4.0f * S, cardPad = 6.0f * S;

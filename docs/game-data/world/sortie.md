@@ -84,16 +84,21 @@ below appears in BOTH 2026-09-14 tapes.
 | 0x065 repositioning (X @0x04, Y @0x0C) | the wing : 22 fixed arrival points + the 2 arenas (624,-620 / 184,-660) | every arrival of both runs, to the tenth |
 | 0x0F5 Widescan track reply (index @0x12, status @0x14) | the NM anywhere in the zone : 1 = position, 2 = the track ended (its kill), 3 = stopped | ~every 0.44 s after ONE request (711 replies) |
 | 0x00E for the NM in range | position (mask bit 0), HP 0 = killed (bit 2) ; bit 5 alone is only "out of range" | Haughty Tulittia HP 0 in the tape |
-| fixed | the basement bitzers 837-840 (E 338.6,147.4 · F 773.2,306.8 · G 881.4,-1.6 · H 707.3,-372.6) | same position on every pass |
+| 0x00E of entities 837-840 (X @0x0C, Y @0x14, mask bit 0) | the basement bitzers E..H, LEARNED each visit | they MOVE every run (players, 2026-09-29) : a table read off the one recorded run drew every later run wrong |
 
 NM indices A..H : 144, 223, 285, 373, 427, 498, 552, 622 (levels 122..141 in the replies). Only zone 133 (U2) measured.
 
 **AioHud never asks.** The plugin has no way to send a packet ; it reads the 0x0F5 replies whoever requested them
 (the player's own Widescan, or the addon). The optional request lives in `updater/aioupdate/aioupdate.lua`
-(section SORTIE), gated by the 6th `ztsortie=` value (OFF by default) and at the cadence measured in the recordings : one 0x0F5 per
+(section SORTIE), gated by the 6th `ztsortie=` value (OFF by default) and at the cadence measured in the recordings. On entering a
+basement wing it also requests the bitzer's update (0x016), 2 s and 4 s after arrival, only until its 0x00E arrives. One 0x0F5 per
 wing entered, a retry every 2 s for 8 s only on a "not found" (0,0) reply, one 0x0F6 two seconds into an arena. No
-0x016 polling, nothing on a zone change. Its two tables duplicate `sortie_nav.h` : keep them in
+0x016 beyond those two, nothing on a zone change. Its two tables duplicate `sortie_nav.h` : keep them in
 step.
+
+**Tracing a run** : `//aio sortielog [sec|off]` (default one hour) writes to `aiohud_debug.log` every arrival (point, wing
+recognised or not), the track replies (throttled), each bitzer learned, NM deaths, and every 5 s what the box shows
+(your position, NM and bitzer distance / direction), then `SORTIELOG window closed`.
 
 ## Tests
 

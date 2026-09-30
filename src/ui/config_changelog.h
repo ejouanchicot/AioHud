@@ -682,6 +682,16 @@ static const ChangeLine CL_88[] = {
       "*Timers : les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lance un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne." },
 };
 
+static const ChangeLine CL_93[] = {
+    { "*Sortie : the bitzer is found where it really is.* The basement bitzers move from one run to the next, and 1.0.92 used positions from a single earlier run, so the bitzer line pointed at the wrong place. Its position is now read from the game on every run ; until it is known the line shows a dash instead of a wrong distance. With *Auto Widescan track* ticked, the bitzer's position is also requested when you enter a basement wing (twice at most, and never once it is known).",
+      "*Sortie : le bitzer est trouve la ou il est vraiment.* Les bitzers du sous-sol changent de place d'un run a l'autre, et la 1.0.92 utilisait les positions d'un seul run precedent, donc la ligne Bitzer pointait au mauvais endroit. Sa position est maintenant lue dans le jeu a chaque run ; tant qu'elle n'est pas connue, la ligne affiche un tiret au lieu d'une fausse distance. Avec *Track Widescan auto* coche, la position du bitzer est aussi demandee en entrant dans une aile du sous-sol (deux fois au plus, et jamais une fois connue)." },
+    { "*Sortie : the arrow now turns with you.* It pointed north-up like a map, so it only matched the screen when you faced north. It is now relative to where your character faces, like the game's radar : up = straight ahead, right = turn right. The compass letters (N, NE, SW...) still give the true direction.",
+      "*Sortie : la fleche tourne maintenant avec toi.* Elle pointait nord en haut comme une carte, donc elle ne correspondait a l'ecran que si tu regardais le nord. Elle est maintenant relative a la direction de ton personnage, comme le radar du jeu : en haut = droit devant, a droite = tourne a droite. Les lettres (N, NE, SO...) donnent toujours la vraie direction." },
+    { "*New command : //aio sortielog.* Type it at the start of a Sortie : for an hour, it writes to Windower\\plugins\\aiohud_debug.log each wing you arrive in, each NM and bitzer position, and every 5 s what the box shows. //aio sortielog off stops it. Send that file if the box ever disagrees with what you see.",
+      "*Nouvelle commande : //aio sortielog.* Tape-la au debut d'une Sortie : pendant une heure, elle ecrit dans Windower\\plugins\\aiohud_debug.log chaque aile ou tu arrives, chaque position de NM et de bitzer, et toutes les 5 s ce qu'affiche la boite. //aio sortielog off l'arrete. Envoie ce fichier si la boite ne correspond pas a ce que tu vois." },
+    { "*After this update, type //lua reload aioupdate once* (in each client) : the bitzer request lives in the updater addon, and Windower keeps the old one in memory until it is reloaded.",
+      "*Apres cette mise a jour, tape //lua reload aioupdate une fois* (dans chaque client) : la demande de position du bitzer vit dans l'addon de mise a jour, et Windower garde l'ancien en memoire tant qu'il n'est pas recharge." },
+};
 static const ChangeLine CL_92[] = {
     { "*New box : Absorb-TP.* Every Absorb-TP cast by your party or alliance, you included : the TP it drained in big (white, green, yellow, orange, red as it climbs ; blue when it drained nothing -- resisted or no effect), the time since, and how many that player landed. The line and its timer go from green to red as time passes, and the whole line turns red when that player has not cast one for too long (90 s by default, in its settings). Place it with //aio edit like the other boxes.",
       "*Nouvelle boite : Absorb-TP.* Chaque Absorb-TP lance par ton groupe ou ton alliance, toi compris : les TP voles en grand (blanc, vert, jaune, orange, rouge selon le montant ; bleu quand rien n'a ete vole -- resiste ou sans effet), le temps ecoule, et combien ce joueur en a places. Le trait et le chrono passent du vert au rouge avec le temps, et la ligne entiere passe en rouge quand ce joueur n'en a plus lance depuis trop longtemps (90 s par defaut, dans ses reglages). Elle se place avec //aio edit comme les autres boites." },
@@ -721,6 +731,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.93", CL_93, (int)(sizeof(CL_93) / sizeof(CL_93[0])) },
     { "1.0.92", CL_92, (int)(sizeof(CL_92) / sizeof(CL_92[0])) },
     { "1.0.91", CL_91, (int)(sizeof(CL_91) / sizeof(CL_91[0])) },
     { "1.0.90", CL_90, (int)(sizeof(CL_90) / sizeof(CL_90[0])) },

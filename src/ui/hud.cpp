@@ -3,6 +3,7 @@
 #include "model/capwatch.h"    // saturated tables report to the watcher too
 #include "hud.h"
 #include "ui/hud_internal.h"   // box_edit / draw_icon_cell : shared with the per-module hud_*.cpp split TUs
+#include "ui/text_style.h"     // te_font : the dev-only //aio facing box
 #include "ui/factory.h"
 #include "ui/player.h"
 #include "ui/party.h"
@@ -421,6 +422,9 @@ void Hud::render(u32 dev) {
             draw_treasure_pool(f);                  // treasure pool box (lottery items) -- placed via //aio edit
             draw_hate_list(f);                      // hate list box (mobs aggro'd on the party) -- placed via //aio edit
             draw_absorb(f);                         // Absorb-TP box (party casts of Absorb-TP) -- placed via //aio edit
+#ifdef AIOHUD_DEVTOOLS
+            draw_facing_probe(f);                   // DEV ONLY : //aio facing
+#endif
             draw_pointwatch(f);                     // PointWatch box (XP/CP/ML + Merits) -- placed via //aio edit
             draw_grimoire(f);                       // Scholar grimoire (SCH only) -- placed via //aio edit
             draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit
@@ -1009,6 +1013,38 @@ void box_on_screen(const Frame& f, float& px, float& py, float boxW, float boxH)
     if (f.screenW <= 0.0f || f.screenH <= 0.0f) return;   // screen size not known yet -> leave the box where it is
     keep_on_screen(f.screenW, f.screenH, px, py, boxW, boxH);
 }
+
+#ifdef AIOHUD_DEVTOOLS
+// ---- DEV ONLY : //aio facing -- a check box for the Sortie arrow's heading maths, held against the game's own
+// compass. Shows the compass bearing you face (entity heading + 90 deg, the Sortie code's formula) and a needle to
+// where NORTH is relative to that facing (up = straight ahead). Never in a release (AIOHUD_DEVTOOLS). ----
+bool g_facingProbe = false;
+void Hud::draw_facing_probe(const Frame& f) {
+    if (!g_facingProbe || !f.game) return;
+    static const TextStyle TS{};
+    Font* fo = te_font(f, TS); if (!fo) return;
+    const float S = (float)screenH_ / 1000.0f;
+    float face = f.game->meHeading * 57.29578f + 90.0f; while (face < 0.0f) face += 360.0f; while (face >= 360.0f) face -= 360.0f;
+    static const char* CARD[8] = { "N", "NE", "E", "SE", "S", "SO", "O", "NO" };
+    const int k = ((int)((face + 22.5f) / 45.0f)) & 7;
+    char line[48]; _snprintf(line, sizeof(line), "%s  %d deg", CARD[k], (int)(face + 0.5f) % 360); line[sizeof(line) - 1] = 0;
+    char raw[48]; _snprintf(raw, sizeof(raw), "heading %d mrad", (int)(f.game->meHeading * 1000.0f)); raw[sizeof(raw) - 1] = 0;
+    const float w = 200.0f * S, h = 120.0f * S, x = snap((float)screenW_ * 0.5f - w * 0.5f), y = snap(80.0f * S);
+    dColorQuadState(f.dev);
+    rrect(f.dev, x, y, w, h, 8.0f * S, 0xD0101420u, 0xD0181C28u, 1.2f);
+    rrect_stroke(f.dev, x, y, w, h, 8.0f * S, 0xFFF2C85Bu, 1.5f * S);
+    // the needle : NORTH relative to where you face (screen angle = -face, clockwise positive ; up = ahead)
+    const float cx = x + 42.0f * S, cy = y + h * 0.5f + 8.0f * S, r = 26.0f * S, a = -face * 0.0174533f;
+    disc(f.dev, cx, cy, r + 3.0f * S, 0x60000000u);
+    const float tx = cx + sinf(a) * r, ty = cy - cosf(a) * r, b1 = a + 2.6f, b2 = a - 2.6f;
+    fill_tri(f.dev, tx, ty, cx + sinf(b1) * r * 0.6f, cy - cosf(b1) * r * 0.6f, cx + sinf(b2) * r * 0.6f, cy - cosf(b2) * r * 0.6f, 0xFFFF5A5Au);
+    fo->begin(f.dev);
+    fo->draw_c(f.dev, x + w * 0.5f, y + 14.0f * S, "TU REGARDES", 11.0f * S, 0xFFB4B9C8u, 0xFF000000u, 1.0f * S);
+    fo->draw_c(f.dev, tx, ty - 9.0f * S, "N", 10.0f * S, 0xFFFF5A5Au, 0xFF000000u, 1.0f * S);
+    fo->draw_lv(f.dev, x + 84.0f * S, cy - 8.0f * S, line, 22.0f * S, 0xFFFFFFFFu, 0xFF000000u, 1.5f * S);
+    fo->draw_lv(f.dev, x + 84.0f * S, cy + 18.0f * S, raw, 10.0f * S, 0xFF8890A0u, 0xFF000000u, 1.0f * S);
+}
+#endif
 
 // ---- grow direction (ui/box_grow.h) ----
 // The last live width of each box, as a SCREEN FRACTION (the unit its stored X is in). 0 = never drawn this session :

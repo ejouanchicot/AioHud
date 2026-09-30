@@ -9,7 +9,10 @@
 //   * NM : one tracked NM per wing, at a fixed entity index. Its position comes from the server's Widescan track
 //     replies (0x0F5, every ~0.44 s while a track runs -- 711 replies for ONE request in the tape) and, when it is in
 //     range, from its own 0x00E updates. AioHUD never ASKS : the request is the aioupdate addon's job, opt-in.
-//   * BITZER : the four basement bitzers never move (same position on every pass, both clients).
+//   * BITZER : the four basement bitzers are entities 837..840 -- and they MOVE FROM RUN TO RUN (confirmed by the
+//     players 2026-09-29 ; the one recorded run had fooled us into a fixed table, which drew every later run wrong).
+//     Their position is LEARNED each visit from their own 0x00E, which the server sends when one is in range or when
+//     its update is requested (the optional aioupdate auto mode asks, bounded, on entering a basement wing).
 //
 // Coordinates are the packets' : X @0x04 (east +), Y @0x0C (north +), the height @0x08 is ignored. The player's own
 // X / Y are GameState::meX / meZ (entity +0x04 / +0x0C) -- the same two axes.
@@ -22,16 +25,16 @@ static const int SORTIE_NAV_ZONE = 133;   // Outer Ra'Kaznar [U2] -- the only So
 static const int SORTIE_WINGS = 8;         // A..H
 static const int SORTIE_BOSS_ROOM = 8;     // sortie_wing_for_arrival : a boss arena, not a wing
 
-struct SortieWing { char letter; unsigned short nmIndex; const char* nm; bool basement; float bzX, bzY; };
+struct SortieWing { char letter; unsigned short nmIndex; const char* nm; unsigned short bzIndex; };   // bzIndex 0 = no bitzer (upstairs)
 static const SortieWing SORTIE_WING[SORTIE_WINGS] = {
-    { 'A', 144, "Abject Obdella",       false, 0.0f,   0.0f   },
-    { 'B', 223, "Biune Porxie",         false, 0.0f,   0.0f   },
-    { 'C', 285, "Cachaemic Bhoot",      false, 0.0f,   0.0f   },
-    { 'D', 373, "Demisang Deleterious", false, 0.0f,   0.0f   },
-    { 'E', 427, "Esurient Botulus",     true,  338.6f, 147.4f },   // Diaphanous Bitzer (E), entity 837
-    { 'F', 498, "Fetid Ixion",          true,  773.2f, 306.8f },   // (F) 838
-    { 'G', 552, "Gyvewrapped Naraka",   true,  881.4f, -1.6f  },   // (G) 839
-    { 'H', 622, "Haughty Tulittia",     true,  707.3f, -372.6f },  // (H) 840
+    { 'A', 144, "Abject Obdella",       0   },
+    { 'B', 223, "Biune Porxie",         0   },
+    { 'C', 285, "Cachaemic Bhoot",      0   },
+    { 'D', 373, "Demisang Deleterious", 0   },
+    { 'E', 427, "Esurient Botulus",     837 },   // Diaphanous Bitzer (E)
+    { 'F', 498, "Fetid Ixion",          838 },   // (F)
+    { 'G', 552, "Gyvewrapped Naraka",   839 },   // (G)
+    { 'H', 622, "Haughty Tulittia",     840 },   // (H)
 };
 
 // 0x065 arrival point -> wing 0..7, SORTIE_BOSS_ROOM, or -1 (not a known arrival : keep the wing you had).
@@ -50,6 +53,10 @@ static const SortieArrival SORTIE_ARRIVAL[] = {
 inline int sortie_wing_for_arrival(float x, float y) {
     for (const SortieArrival& a : SORTIE_ARRIVAL)
         if (fabsf(a.x - x) < 0.6f && fabsf(a.y - y) < 0.6f) return a.wing;   // the server sends these to the tenth
+    return -1;
+}
+inline int sortie_wing_for_bitzer(unsigned index) {
+    for (int w = 0; w < SORTIE_WINGS; ++w) if (SORTIE_WING[w].bzIndex && SORTIE_WING[w].bzIndex == index) return w;
     return -1;
 }
 inline int sortie_wing_for_nm(unsigned index) {

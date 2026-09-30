@@ -25,7 +25,7 @@
 
 _addon.name     = 'AioUpdate'
 _addon.author   = 'ejouanchicot'
-_addon.version  = '2.5'
+_addon.version  = '2.6'
 _addon.commands = { 'aioupdate', 'aioup' }
 
 local base     = windower.windower_path
@@ -239,7 +239,10 @@ coroutine.schedule(watch_request, 1)
      Widescan), at the cadence measured on the 2026-09-14 recordings : ONE request when you arrive in a wing --
      the server then streams the position by itself, ~every 0.44 s (711 replies for one request) --, a retry every 2 s
      for at most 8 s ONLY while the server answers "not found" (0,0), and a stop (0x0F6) 2 s into a boss arena. On a
-     zone change nothing is sent : the server ends the track itself. Nothing else -- no 0x016 polling, no position.
+     zone change nothing is sent : the server ends the track itself.
+     BASEMENT BITZER : they move every run, and their position only comes with their own 0x00E. Arriving through a
+     basement ENTRANCE (not back from an arena), the bitzer's update is requested (0x016, the client's ordinary
+     "update this entity"), 2 s and 4 s after arrival and ONLY until the position has arrived -- two requests at most.
 
      The plugin reads the replies (0x0F5) whoever asked for them -- this, or the player by hand. The two tables
      below are the SAME as model/sortie_nav.h (SORTIE_ARRIVAL / SORTIE_WING) : keep them in step. Every handler is in a
@@ -252,15 +255,17 @@ do
         {-344, -20, 2}, {-24, 420, 2}, {-404.5, -20, 2},
         {-460, -136, 3}, {-20, -456, 3}, {-460, -75.5, 3},
         {-576, -20, 4}, {-896, -460, 4}, {-515.5, -20, 4},
-        {580, 31.5, 5}, {280, 276, 5}, {186.5, -20, 5},
-        {631.5, -20, 6}, {876, 280, 6},
-        {580, -71.5, 7}, {880, -316, 7},
-        {528.5, -20, 8}, {284, -320, 8},
+        {580, 31.5, 5, 'enter'}, {280, 276, 5}, {186.5, -20, 5},    -- 'enter' : a basement entrance (the bitzer is asked for)
+        {631.5, -20, 6, 'enter'}, {876, 280, 6},
+        {580, -71.5, 7, 'enter'}, {880, -316, 7},
+        {528.5, -20, 8, 'enter'}, {284, -320, 8},
         {624, -620, 'boss'}, {184, -660, 'boss'},
     }
     local NM = { 144, 223, 285, 373, 427, 498, 552, 622 }   -- the wing's NM entity index, A..H
+    local BZ = { [5] = 837, [6] = 838, [7] = 839, [8] = 840 } -- the basement wings' bitzer entity index, E..H
 
     local tracking, req_at, last_try, arena_gen = nil, 0, 0, 0
+    local bz_want = nil                                       -- the bitzer whose position is still awaited
 
     local function enabled()                         -- the player's choice, read where the plugin writes it
         local f = io.open(data_dir .. '\\config.txt', 'r'); if not f then return false end
@@ -283,18 +288,30 @@ do
         log('sortie : track stopped')
     end
     local function on_reposition(p)
-        local w
+        local w, entrance
         for _, a in ipairs(ARRIVAL) do
-            if math.abs(a[1] - p.X) < 0.6 and math.abs(a[2] - p.Y) < 0.6 then w = a[3]; break end
+            if math.abs(a[1] - p.X) < 0.6 and math.abs(a[2] - p.Y) < 0.6 then w = a[3]; entrance = (a[4] == 'enter'); break end
         end
         if not w then return end                     -- not a known arrival point : leave things as they are
         arena_gen = arena_gen + 1
+        bz_want = nil                                -- any new arrival cancels a bitzer still awaited
         if w == 'boss' then                          -- the track stops 2 s into the arena ; a wing entered meanwhile wins
             local gen = arena_gen
             coroutine.schedule(function() if gen == arena_gen then pcall(stop) end end, 2)
             return
         end
         if not enabled() then stop(); return end     -- switched off mid-run : end OUR track, send nothing else
+        if BZ[w] and entrance then                   -- through a basement ENTRANCE : ask where its bitzer is this run, twice at most
+            bz_want = BZ[w]
+            local gen = arena_gen
+            for _, t in ipairs({ 2, 4 }) do
+                coroutine.schedule(function() pcall(function()
+                    if gen ~= arena_gen or bz_want ~= BZ[w] then return end   -- moved on, or already answered
+                    packets.inject(packets.new('outgoing', 0x016, { ['Target Index'] = BZ[w], ['_junk1'] = 0 }))
+                    log('sortie : bitzer update ' .. BZ[w])
+                end) end, t)
+            end
+        end
         if tracking == NM[w] then return end         -- already on it : the server is still streaming
         tracking = NM[w]; req_at = os.clock(); last_try = req_at
         send_track(tracking)
@@ -312,6 +329,14 @@ do
 
     if ok_pk then
         windower.register_event('incoming chunk', function(id, data)
+            if id == 0x00E then                                  -- constant traffic : only looked at while a bitzer is awaited
+                if not bz_want then return end
+                pcall(function()
+                    local p = packets.parse('incoming', data)
+                    if p and p.Index == bz_want and (p.X ~= 0 or p.Y ~= 0) then bz_want = nil end   -- got it : no more requests
+                end)
+                return
+            end
             if id ~= 0x065 and id ~= 0x0F5 then return end
             pcall(function()
                 local info = windower.ffxi.get_info()
@@ -321,6 +346,6 @@ do
                 if id == 0x065 then on_reposition(p) else on_track_reply(p) end
             end)
         end)
-        windower.register_event('zone change', function() tracking = nil end)   -- the server ends the track itself
+        windower.register_event('zone change', function() tracking = nil; bz_want = nil end)   -- the server ends the track itself
     end
 end

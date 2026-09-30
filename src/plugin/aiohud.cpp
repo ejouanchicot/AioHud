@@ -25,6 +25,7 @@
 #include "model/decisions.h"   // //aio why  : the always-recording decision ring
 #include "model/model_clock.h"   // model events : one packet = one frozen-clock event (replayable)
 #ifdef AIOHUD_DEVTOOLS
+namespace aio { extern bool g_facingProbe; }   // ui/hud.cpp : the //aio facing check box (dev only)
 #include "aiohud_devtools.h"        // dev-only tools (dev/src : local tree only, build.bat wires them in when present)
 #endif
 #include "model/flipwatch.h"   // its slot table, for the //aio watch summary
@@ -1501,6 +1502,27 @@ static void aio_command_dispatch(const char* cmd)
         g_host.console().print(aio::tr(">>> AioHud : rangelog ARMED -- one capture per second, party + alliances, to Windower\\plugins\\aiohud_debug.log <<<", ">>> AioHud : rangelog ARME -- une capture par seconde, party + alliances, dans Windower\\plugins\\aiohud_debug.log <<<"));
         g_host.console().print(aio::tr(">>> (1) stale index : look for STALE on the line of a member who is OUT OF ZONE (off=1) <<<", ">>> (1) index perime : cherche STALE sur une ligne d'un membre HORS ZONE (off=1) <<<"));
         g_host.console().print(aio::tr(">>> (2) height : stand ABOVE a member, compare dh and d3, then try a Cure <<<", ">>> (2) hauteur : place-toi AU-DESSUS d'un membre, compare dh et d3, puis tente un Cure <<<"));
+        return;
+    }
+    // //aio sortielog [sec|off] -> the Sortie navigation, line by line : each wing arrival (and whether the point was
+    // recognised), the Widescan track replies, each bitzer position learned, and every 5 s what the box SHOWS
+    // (your position, the NM and bitzer distance / direction). Shipped, for the same reason as rangelog : it is how a
+    // run is compared with another tool's readout. No token of an earlier command is a substring of it (checked).
+#ifdef AIOHUD_DEVTOOLS
+    if (strstr(buf, "facing")) {   // DEV ONLY : toggle the facing check box (ui/hud.cpp draw_facing_probe)
+        aio::g_facingProbe = !aio::g_facingProbe;
+        g_host.console().print(aio::g_facingProbe ? ">>> AioHud : facing box ON (//aio facing to hide) <<<" : ">>> AioHud : facing box OFF <<<");
+        return;
+    }
+#endif
+    if (strstr(buf, "sortielog")) {
+        const char* a = strstr(buf, "sortielog") + 9; while (*a == ' ') ++a;
+        int sec = 3600; if (*a >= '0' && *a <= '9') sec = atoi(a); else if (*a == 'o') sec = 0;   // "off"
+        if (sec != 0 && sec < 60) sec = 60; if (sec > 7200) sec = 7200;
+        aio::party().set_sortie_trace(sec);
+        g_host.console().print(sec ? aio::tr(">>> AioHud : sortielog ARMED -- Sortie wing / NM / bitzer lines to Windower\\plugins\\aiohud_debug.log (//aio sortielog off to stop) <<<",
+                                             ">>> AioHud : sortielog ARME -- lignes aile / NM / bitzer de la Sortie dans Windower\\plugins\\aiohud_debug.log (//aio sortielog off pour arreter) <<<")
+                                   : aio::tr(">>> AioHud : sortielog off <<<", ">>> AioHud : sortielog arrete <<<"));
         return;
     }
     if (strstr(buf, "dbflog")) {   // //aio dbflog -> trace the next N target-debuff mutations to aiohud_debug.log (debuff-box diagnosis)
