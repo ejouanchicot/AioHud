@@ -2192,11 +2192,19 @@ void PartyState::watch_tables() {
     // tdebuffs_ : one debuff set per tracked target id. Like the ally buffs, this one EVICTS THE OLDEST when
     // full (the two insert sites pick `oldest` by touchMs), so it loses the mob you stopped looking at -- which
     // is right up until the moment you look back at it.
-    n = 0; for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id) ++n;
+    // Only the sets debuffed within WATCH_LIVE_MS are counted. A set leaves the table on a death that was SEEN
+    // and on a zone ; a mob that died out of sight, or was left alive, keeps its slot until it is the oldest. So
+    // "32 of 32 occupied" is this table's resting state after an hour of play, not a loss (bug reports of
+    // 2026-09-22 to 2026-10-08, the last one written while idle in a town) : the loss is evicting a set that was
+    // still in use, which takes 32 targets debuffed inside the same window.
+    const unsigned now = model_now_ms();
+    static const unsigned WATCH_LIVE_MS = 600000;   // 10 min : longer than any debuff another player keeps up without recasting
+    n = 0; for (int s = 0; s < DEBUFF_SLOTS; ++s) if (tdebuffs_[s].id && now - tdebuffs_[s].touchMs < WATCH_LIVE_MS) ++n;
     capwatch("model.tdebuffs", n, DEBUFF_SLOTS);
     // reson_ : one skillchain window per tracked target. Eight is a guess about how many mobs are being chained
-    // at once, and a missing window is a missing skillchain prompt.
-    n = 0; for (int i = 0; i < 8; ++i) if (reson_[i].target) ++n;
+    // at once, and a missing window is a missing skillchain prompt. A window past its endMs is over and stays in
+    // its slot until the slot is reused (sc_reson_slot takes the oldest) : only the open ones are counted.
+    n = 0; for (int i = 0; i < 8; ++i) if (reson_[i].target && (int)(reson_[i].endMs - now) > 0) ++n;
     capwatch("model.skillchain", n, 8);
     // songPred_ : casts waiting for their real 0x063 expiry. Eight against five song slots -- plus the fifth
     // under Clarion Call, plus whatever is in flight -- is thinner than it looks, and the cost of losing one is
@@ -2660,7 +2668,7 @@ void model_feed_packet(int id, const unsigned char* b)
         else if (id == 0x0D3) party().on_treasure_lot(b);   // treasure pool : lot info / won
         else if (id == 0x067) party().on_pet_info(b);       // hate list : learn friendly pet ids (Pet Info)
         else if (id == 0x068) party().on_pet_status(b);     // hate list : friendly pet id + its target mob (Pet Status)
-        else if (id == 0x00B) { if (party().treasure_trace_active()) windower::debug::log("TPOOL zone-OUT (0x00B) tick=%u -> pool cleared", model_now_ms()); if (party().buff076_trace_active()) windower::debug::log("B076 ZONE-OUT (0x00B) t=%u", model_now_ms()); party().set_zoning(true); party().mark_zone_out(model_now_ms()); party().treasure_clear(); party().hate_clear(); party().pets_clear(); party().buff_timers_clear(); party().other_buffs_clear_songs(); }   // zone-OUT (loading) -> hide HUD + reset pool/hate/pets/self buff timers (0x063 re-sends) AND the ally SONG estimates (only the songs : see below).
+        else if (id == 0x00B) { if (party().treasure_trace_active()) windower::debug::log("TPOOL zone-OUT (0x00B) tick=%u -> pool cleared", model_now_ms()); if (party().buff076_trace_active()) windower::debug::log("B076 ZONE-OUT (0x00B) t=%u", model_now_ms()); party().set_zoning(true); party().mark_zone_out(model_now_ms()); party().treasure_clear(); party().hate_clear(); party().pets_clear(); party().targets_clear(); party().buff_timers_clear(); party().other_buffs_clear_songs(); }   // zone-OUT (loading) -> hide HUD + reset pool/hate/pets/self buff timers (0x063 re-sends) AND the ally SONG estimates (only the songs : see below).
         // ALLY SONGS are dropped on a zone, and only the songs. They used to be kept and re-aligned, because a
         // song really does survive a zone -- but our rows are a memory of OUR casts, not knowledge of what the
         // other person carries, and the 0x076 that could confirm them arrives in pieces over several seconds.

@@ -468,6 +468,7 @@ struct PartyState {
     unsigned petOwner_[16] = {0};         // the owning PC (roster id) -> shown as the Target column, and the red-claim test
     void on_pet_info(const unsigned char* p);    // 0x067 : Pet ID @+0x08, Owner Index @+0x0C
     void on_pet_status(const unsigned char* p);  // 0x068 : Owner ID @+0x08, Pet Index @+0x0C, Target ID @+0x14
+    void targets_clear() { for (int s = 0; s < DEBUFF_SLOTS; ++s) tdebuffs_[s] = DebuffSet{}; for (int i = 0; i < 8; ++i) reson_[i] = Resonating{}; }   // on zone change : a mob id of the zone left names nothing here, its debuffs and skillchain window with it
     void pets_clear() { for (int i = 0; i < 16; ++i) { petId_[i] = 0; petOwner_[i] = 0; } }   // on zone change / logout
     bool is_party_or_pet(unsigned id) const;     // self / a roster PC / a tracked friendly pet
     unsigned pet_owner(unsigned id) const;       // if id is a tracked pet -> its owner PC ; else id unchanged
