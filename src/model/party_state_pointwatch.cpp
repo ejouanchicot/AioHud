@@ -1,6 +1,6 @@
 // party_state_pointwatch.cpp -- PointWatch module (XP / CP / ML + Merits progression),
 // split out of party_state.cpp. PURE MOVE : the three packet handlers that feed PointWatch --
-// on_char_stats (0x061), on_set_update (0x063 Order 2/5/9), on_exp_msg (0x029/0x02D live gains).
+// on_char_stats (0x061), on_set_update (0x063 Order 2/5/9), on_exp_msg (0x029/0x02D live gains, merit total).
 // The RateReg X/h ring + ffxi_now_tick stay in party_state.cpp (shared / used by other modules).
 #include "model/model_clock.h"   // model_now_ms / model_now_unix : one frozen clock per model event
 #include "model/party_state.h"
@@ -133,6 +133,12 @@ void PartyState::on_exp_msg(const unsigned char* p, unsigned id) {   // 0x029 (P
         pw_.lpCur += val;
         if (pw_.lpCur >= 10000u && pw_.merits != pw_.maxMerits) { pw_.merits += (int)(pw_.lpCur / 10000u); if (pw_.maxMerits && pw_.merits > pw_.maxMerits) pw_.merits = pw_.maxMerits; pw_.lpCur %= 10000u; }
         else if (pw_.lpCur > 9999u) pw_.lpCur = 9999u;
+    } else if (msg == 50 || msg == 368) {                   // "<player> earns a merit point! (Total: N)"
+        // The server's own count, sent to the whole party : only YOUR line counts (the player id @0x04 ; MEASURED
+        // 2026-10-09, each of two characters in a party received both lines). It corrects a count started from a
+        // stale memory block (a plugin loaded mid-zone read 34 merits while the server said 70).
+        const unsigned who = pkt_u32(p, 0x04);
+        if (who && who == selfId_) pw_.merits = (pw_.maxMerits && (int)val > pw_.maxMerits) ? pw_.maxMerits : (int)val;
     } else if (msg == 809 || msg == 810) {                  // Exemplar Points gained (Master Level)
         pw_.epReg.add((int)val);
         pw_.epCur += val;

@@ -552,6 +552,41 @@ void test_packets() {
         CHECK_EQ(party().pointwatch().merits, 4); CHECK_EQ(party().pointwatch().lpCur, 300u);
     }
 
+    SECTION("pointwatch 0x02D : a Limit Points gain survives the next frames, until the memory block itself changes");
+    {   // Mutation : the merit block taken every frame again (`if (word != merMemWord_)` -> `if (true)`) -- the client
+        // only rewrites it on a 0x063 order 2, so each frame put the Limit Points back to their zone-in value.
+        fresh();
+        pointwatch_memory(1000, 8000, 5000, 100000, 9400, 2, 30);
+        frame();
+        CHECK_EQ(party().pointwatch().lpCur, 9400u); CHECK_EQ(party().pointwatch().merits, 2);
+        deliver(pkt_exp_msg(371, 800));                                  // 10200 : a third merit, 200 left
+        frame(); frame();                                                // the block still says 9400 / 2
+        CHECK_EQ(party().pointwatch().lpCur, 200u); CHECK_EQ(party().pointwatch().merits, 3);
+        pointwatch_memory(1000, 8000, 5000, 100000, 450, 3, 30);         // a zone : the client rewrites the block
+        frame();
+        CHECK_EQ(party().pointwatch().lpCur, 450u); CHECK_EQ(party().pointwatch().merits, 3);
+    }
+
+    SECTION("pointwatch 0x02D : 'earns a merit point (Total: N)' sets YOUR merit count, never from a party member's line");
+    {   // Mutation : the player id not checked (`who == selfId_` dropped) -- the party hears every member's line, so the
+        // row would show the last member's total.
+        // Mutation : the total not clamped to the maximum (`> pw_.maxMerits` -> never).
+        fresh();
+        pointwatch_memory(1000, 8000, 5000, 100000, 7541, 34, 75);      // a block gone stale : the server says 70
+        frame();
+        CHECK_EQ(party().pointwatch().merits, 34);
+        deliver(pkt_exp_msg(50, 60, 0, KAO));                            // Kaories' line, heard by the whole party
+        CHECK_EQ(party().pointwatch().merits, 34);
+        deliver(pkt_exp_msg(50, 71, 0, ME));
+        CHECK_EQ(party().pointwatch().merits, 71);
+        deliver(pkt_exp_msg(368, 72, 0, ME));
+        CHECK_EQ(party().pointwatch().merits, 72);
+        frame(); frame();                                                // the stale block does not take it back
+        CHECK_EQ(party().pointwatch().merits, 72);
+        deliver(pkt_exp_msg(50, 99, 0, ME));                             // more than the maximum : clamped
+        CHECK_EQ(party().pointwatch().merits, 75);
+    }
+
     SECTION("pointwatch 0x02D : an unrelated message, a zero gain or a truncated packet moves nothing");
     {   // Mutation : the size floor lowered (`< 0x1A` -> `< 0x18`) -- the message id would be read past the end.
         // Mutation : an unrelated message counted as XP (`msg == 8 || msg == 105` -> `... || msg == 6`).

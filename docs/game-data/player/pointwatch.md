@@ -49,6 +49,7 @@ ring → the **X/h rate**.
 | 718 / 735 | Capacity Points |
 | 371 / 372 | Limit Points (merits) |
 | 809 / 810 | Exemplar Points (Master Level) |
+| 50 / 368 | not a gain: your merit TOTAL (only the line whose player id @0x04 is yours) |
 
 > **NOTE:** 0x029 is *also* routed to `on_029` (debuff wear-off) — `feed_packet`
 > calls **both** handlers for that id.
@@ -67,6 +68,22 @@ The reference addon uses Windower's `packets.last_incoming()` cache, which the
 **plugin ABI does not expose** (slot 11 is a NEW-packet callback only — no cache).
 So the box is seeded from client memory every frame in `poll_game_state` /
 `load_from_memory`.
+
+**Merits are the exception: the block is taken only when it changes**
+(`PartyState::merMemWord_`). The client rewrites the merit block on a 0x063
+order 2 (a zone, a job change), never on a kill, so reading it every frame put
+the Limit Points back to their zone-in value right after each 0x02D gain and the
+Merits row stood still for a whole zone (reported 2026-10-09). Between two
+changes of the block, the 0x02D gains (messages 371 / 372) are the only writer.
+
+**The merit count also comes from the server's own line**: message **50 / 368**
+("<player> earns a merit point! (Total: N)", 0x02D, Param1 = the total). The
+whole party receives every member's line, so only the one whose player id
+(u32 @0x04) is yours is taken. Measured 2026-10-09 with a plugin loaded mid-zone:
+the block said 34 merits, the server said 70 -- 36 kills since the last zone.
+What cannot be corrected after such a mid-zone load is the Limit Points
+remainder: it stays the block's until the next 0x063 order 2 (a zone, or opening
+the Status menu).
 
 ### CP / Job Points — CONFIRMED (`read_capacity_points`, game_mem.cpp)
 From the LuaCore `g` root (reversed via LuaCore `FUN_10091110`):

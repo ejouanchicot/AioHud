@@ -198,9 +198,11 @@ inline Packet pkt_battlefield(std::initializer_list<Bar> bars, unsigned desig = 
 }
 
 // ---- 0x02D : a point gain message. Param1 (the gain) u32 @0x10, message id u16 @0x18. 28 bytes. (0x029 carries its
-//      Param1 @0x0C instead ; the handler picks by id.) 8/105 XP, 718/735 CP, 371/372 Limit Points, 809/810 EP. ----
-inline Packet pkt_exp_msg(unsigned msg, unsigned value, unsigned param2 = 0) {
+//      Param1 @0x0C instead ; the handler picks by id.) 8/105 XP, 718/735 CP, 371/372 Limit Points, 809/810 EP,
+//      50/368 the merit total. `who` : the player the line is about, u32 @0x04. ----
+inline Packet pkt_exp_msg(unsigned msg, unsigned value, unsigned param2 = 0, unsigned who = 0) {
     Packet p; pkt_header(p, 0x02D, 0x1C);
+    put_u32(p, 0x04, who);
     put_u16(p, 0x0C, 0x0400);            // YOUR entity index sits here (the target's @0x0E) : NOT the gain
     put_u32(p, 0x10, value); put_u32(p, 0x14, param2); put_u16(p, 0x18, msg);
     return p;

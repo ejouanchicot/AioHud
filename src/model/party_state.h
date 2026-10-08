@@ -562,6 +562,7 @@ struct PartyState {
 
     PointWatch pw_;                              // XP / CP / ML + Merits (PointWatch module)
     unsigned char pwMainJob_ = 0;                // 0x061 Main Job id -> indexes the 0x063 Order-5 job-point array
+    unsigned merMemWord_ = 0xFFFFFFFFu;          // the merit block as last read from memory (LP | merits<<16 | max<<24) : taken again only when it changes
     const PointWatch& pointwatch() const { return pw_; }   // the PointWatch widget reads this
     void on_char_stats(const unsigned char* p);  // 0x061 : level / EXP / Master Level / Exemplar Points
     void on_set_update(const unsigned char* p);  // 0x063 : Order 2 (merits) / Order 5 (Capacity Points + Job Points) / Order 9 (buff timers)

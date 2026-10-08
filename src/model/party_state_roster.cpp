@@ -168,6 +168,7 @@ void PartyState::on_character_changed(unsigned newId) {
     otherBuffN_ = 0;
     jobShadowN_ = 0;                                // else the 24 slots fill with two characters' alliances and new members stop being tracked
     buffTimerN_ = 0;                                // refilled by the 0x063 order-9 full refresh at login
+    merMemWord_ = 0xFFFFFFFFu;                      // the merit block is taken again, even if this character's reads the same
     selfGeo_ = GeoAura{};
     trustSeenN_ = 0; trustSeenHead_ = 0;             // remembered trust ids belong to the previous character's party
     for (int i = 0; i < 256; ++i) learnedMs_[i] = 0;
@@ -315,7 +316,14 @@ void PartyState::load_from_memory() {
         if (pm.mlOk)  pw_.masterLevel = pm.masterLevel;
         if (pm.xpOk)  { pw_.xpCur = pm.xpCur; pw_.xpTnl = pm.xpTnl; pw_.xpMem = true; }
         if (pm.epOk)  { pw_.epCur = pm.epCur; pw_.epTnml = pm.epTnml; pw_.epMem = true; }
-        if (pm.merOk) { pw_.lpCur = pm.lpCur; pw_.merits = pm.merits; pw_.maxMerits = pm.maxMerits; pw_.merMem = true; }
+        // Merits : taken only when the block CHANGED. The client rewrites it on a 0x063 order 2 (a zone, a job
+        // change), never on a kill : read every frame it put the Limit Points back to their zone-in value right
+        // after each 0x02D gain (on_exp_msg), so the row stood still for a whole zone (reported 2026-10-09).
+        if (pm.merOk) {
+            const unsigned word = pm.lpCur | ((unsigned)pm.merits << 16) | ((unsigned)pm.maxMerits << 24);
+            if (word != merMemWord_) { merMemWord_ = word; pw_.lpCur = pm.lpCur; pw_.merits = pm.merits; pw_.maxMerits = pm.maxMerits; }
+            pw_.merMem = true;
+        }
     } }
     u32 base = self_party_base(me.id);                    // id-validated self anchor (one source of truth : game_mem)
     if (!base) return;                                     // unrecognised -> don't trust it
