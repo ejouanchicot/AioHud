@@ -682,6 +682,14 @@ static const ChangeLine CL_88[] = {
       "*Timers : les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lance un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne." },
 };
 
+static const ChangeLine CL_94[] = {
+    { "*PointWatch : the Merits row now follows your kills.* It only moved when you changed zone or opened the Status menu : between the two, each kill's limit points were counted and then put back to their old value. It now moves with every kill, and the number of merits takes the game's own total each time you earn one.",
+      "*PointWatch : la ligne Merits suit maintenant tes kills.* Elle ne bougeait que quand tu changeais de zone ou ouvrais le menu Status : entre les deux, les limit points de chaque kill etaient comptes puis remis a leur ancienne valeur. Elle avance maintenant a chaque kill, et le nombre de merits reprend le total du jeu a chaque merit gagne." },
+    { "Loaded in the middle of a zone, the limit points shown may be off until your next zone change or the Status menu ; the number of merits corrects itself at the next merit you earn.",
+      "Charge en pleine zone, le nombre de limit points affiche peut etre decale jusqu'a ton prochain changement de zone ou l'ouverture du menu Status ; le nombre de merits se corrige au prochain merit gagne." },
+    { "*No more false bug reports after a long session.* The self test wrote a report saying a table was full when it was only holding old targets, sometimes while you stood idle in town. It now counts only what is really in use, and those tables are emptied when you change zone.",
+      "*Plus de faux rapports de bug apres une longue session.* L'auto-test ecrivait un rapport disant qu'une table etait pleine alors qu'elle ne gardait que d'anciennes cibles, parfois quand tu etais a l'arret en ville. Il ne compte plus que ce qui sert vraiment, et ces tables sont videes quand tu changes de zone." },
+};
 static const ChangeLine CL_93[] = {
     { "*Sortie : the bitzer is found where it really is.* The basement bitzers move from one run to the next, and 1.0.92 used positions from a single earlier run, so the bitzer line pointed at the wrong place. Its position is now read from the game on every run ; until it is known the line shows a dash instead of a wrong distance. With *Auto Widescan track* ticked, the bitzer's position is also requested when you enter a basement wing (twice at most, and never once it is known).",
       "*Sortie : le bitzer est trouve la ou il est vraiment.* Les bitzers du sous-sol changent de place d'un run a l'autre, et la 1.0.92 utilisait les positions d'un seul run precedent, donc la ligne Bitzer pointait au mauvais endroit. Sa position est maintenant lue dans le jeu a chaque run ; tant qu'elle n'est pas connue, la ligne affiche un tiret au lieu d'une fausse distance. Avec *Track Widescan auto* coche, la position du bitzer est aussi demandee en entrant dans une aile du sous-sol (deux fois au plus, et jamais une fois connue)." },
@@ -731,6 +739,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.94", CL_94, (int)(sizeof(CL_94) / sizeof(CL_94[0])) },
     { "1.0.93", CL_93, (int)(sizeof(CL_93) / sizeof(CL_93[0])) },
     { "1.0.92", CL_92, (int)(sizeof(CL_92) / sizeof(CL_92[0])) },
     { "1.0.91", CL_91, (int)(sizeof(CL_91) / sizeof(CL_91[0])) },
