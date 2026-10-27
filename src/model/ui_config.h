@@ -345,6 +345,7 @@ struct UiConfig {
     int   bstImage = 1, bstName = 1, bstHp = 1, bstTp = 1, bstDist = 1, bstCharges = 1, bstMoves = 1;   // each element on / off
     int   bstIcons = 1;        // a move's kind as the weapon / element icon (else a colour tick)
     int   bstDemo  = 0;        // EDIT / config preview : which jug pet the sample shows (bst_pets_gen.h index)
+    int   bstArtMode = 0;      // with bstImage on : 0 the pet's art, 1 its correlation as text, 2 both (text under the art)
     TextStyle bstText[BST_TE_COUNT];   // per-element typography : [BST_NAME] [BST_VALUE] [BST_CHARGE] [BST_MOVE]
 
     int   ztShow    = 1;       // show the Zone Tracker (only appears in a Dynamis / Abyssea zone)

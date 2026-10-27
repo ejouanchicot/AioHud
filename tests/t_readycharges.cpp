@@ -7,6 +7,7 @@
 #include "model/ready_charges.h"
 #include "model/bst_state.h"
 #include "model/ready_moves_gen.h"
+#include "model/bst_correlation.h"
 #include <string.h>
 
 using namespace aio;
@@ -108,6 +109,19 @@ void test_ready_charges() {
     CHECK_STR(ready_move_row("Sweeping Gouge")->kind, "blunt");      // as BST-HUD gives it
     CHECK_EQ(ready_move_row("Sweeping Gouge")->status, 0);
     CHECK(ready_move_row("Not A Move") == 0);
+
+    SECTION("ready : monster correlation (BG-Wiki's Killer pages, 2026-10-27)");
+    {   const struct { const char* eco; const char* strong; const char* weak; } C[] = {
+            {"Beast", "Lizard", "Plantoid"}, {"Lizard", "Vermin", "Beast"}, {"Vermin", "Plantoid", "Lizard"}, {"Plantoid", "Beast", "Vermin"},
+            {"Bird", "Aquan", "Amorph"}, {"Aquan", "Amorph", "Bird"}, {"Amorph", "Bird", "Aquan"},
+            {"Undead", "Arcana", "Arcana"}, {"Demon", "Dragon", "Dragon"} };
+        for (const auto& c : C) { const BstCorrelation* r = bst_correlation(c.eco); CHECK(r != 0);
+            if (r) { CHECK_STR(r->strong, c.strong); CHECK_STR(r->weak, c.weak); } }
+        // each family is the one its prey is weak to : the cycles close
+        for (const BstCorrelation& r : BST_CORRELATION) { const BstCorrelation* prey = bst_correlation(r.strong); CHECK(prey && strcmp(prey->weak, r.eco) == 0); }
+        CHECK(bst_correlation("Luminian") == 0);
+        CHECK(bst_correlation("") == 0);
+    }
 
     SECTION("ready : our pet from the 0x068, another player's ignored");
     {   unsigned char p[0x20];

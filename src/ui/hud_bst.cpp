@@ -17,6 +17,7 @@
 #include "model/ready_moves_gen.h"  // the preview pet's moves : their kind and status icon
 #include "model/bst_pets_gen.h"     // the preview pets (every jug pet and its Ready moves)
 #include "model/bst_state.h"        // bst_ready_cost
+#include "model/bst_correlation.h"  // the correlation line
 #include "model/paths.h"
 #include "gfx/draw.h"
 #include "gfx/d3d.h"
@@ -105,7 +106,10 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
 
     // ---- the pet art (one texture, the current pet's ; reloaded when the pet changes) ----
     u32 art = 0;
-    if (C.bstImage && b.hasPet) {
+    // the art's place : the art, the pet's correlation as text, or both (UiConfig::bstArtMode)
+    const int artMode = (C.bstArtMode < 0 || C.bstArtMode > 2) ? 0 : C.bstArtMode;
+    const bool showArt = C.bstImage && artMode != 1, showCorr = C.bstImage && artMode != 0;
+    if (showArt && b.hasPet) {
         char key[32]; art_key(b.name, key, sizeof(key));
         if (strcmp(key, bstArtKey_) != 0) {
             if (bstArt_) { release_texture(bstArt_); bstArt_ = 0; }
@@ -123,18 +127,19 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
     //      alone, a box set against the bottom of the screen stopped short of it with a pet of fewer moves. ----
     static const int MOVE_ROWS = 7;
     const float pad = snap((C.bstBox.on ? 8.0f : 2.0f) * S), W = snap(250.0f * S), rowH = snap(17.0f * S);
-    const bool petRow = C.bstImage || C.bstName || C.bstHp || C.bstTp || C.bstDist;
-    const float artSz = C.bstImage ? snap(58.0f * S) : 0.0f;
+    const bool petRow = showArt || C.bstName || C.bstHp || C.bstTp || C.bstDist;
+    const float artSz = showArt ? snap(58.0f * S) : 0.0f;
     float petH = 0.0f;
     if (petRow) { float rh = (C.bstName || C.bstDist ? rowH : 0.0f) + (C.bstHp ? rowH * 0.8f : 0.0f) + (C.bstTp ? rowH * 0.8f : 0.0f);
                   petH = rh > artSz ? rh : artSz; }
     const float chgH = C.bstCharges ? rowH : 0.0f;
+    const float corrH = showCorr ? rowH : 0.0f;   // its row is kept, filled or not (a pet the database does not know)
     const float gap = snap(5.0f * S);
     // a box's height for `rows` rows of moves
     auto heightFor = [&](int rows) -> float {
         const float mh = C.bstMoves ? rowH * (float)rows : 0.0f;
-        const int blocks = (petH > 0) + (chgH > 0) + (mh > 0);
-        return blocks ? pad * 2.0f + petH + chgH + mh + gap * (float)(blocks - 1) : 0.0f;
+        const int blocks = (petH > 0) + (corrH > 0) + (chgH > 0) + (mh > 0);
+        return blocks ? pad * 2.0f + petH + corrH + chgH + mh + gap * (float)(blocks - 1) : 0.0f;
     };
     const float frameH = heightFor(b.nmoves > MOVE_ROWS ? b.nmoves : MOVE_ROWS);
     if (frameH <= 0.0f) return;
@@ -201,6 +206,27 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
         }
     }
     if (petH > 0) y += petH + gap;   // the pet rows' room is kept even with no pet out
+
+    // ---- the pet's correlation : its family, the one it is strong against (green), the one it is weak to (red) ;
+    //      its family from the jug database (bst_pets_gen.h), the cycles from bst_correlation.h ----
+    if (corrH > 0) {
+        const char* eco = 0;
+        if (b.hasPet) for (int i = 0; i < BST_PETS_N; ++i) if (strcmp(BST_PETS[i].name, b.name) == 0) { eco = BST_PETS[i].eco; break; }
+        const BstCorrelation* cr = bst_correlation(eco);
+        if (cr) {
+            Font* fv = bst_font(f, BST_VALUE);
+            const float zv = bst_sz(BST_VALUE, 11.0f) * S, ov = bst_ow(BST_VALUE, 1.0f) * S, cy = y + rowH * 0.5f;
+            const bool fr = ui_config().lang == 1;
+            fv->begin(dev);
+            float x = px + pad;
+            x += fv->draw_lc(dev, x, cy, cr->eco, zv, bst_col(BST_VALUE, 0xFFFFC864u), 0xC0000000u, ov) + snap(8.0f * S);
+            x += fv->draw_lc(dev, x, cy, fr ? "fort :" : "strong:", zv, 0xFF8C94A0u, 0xC0000000u, ov) + snap(4.0f * S);
+            x += fv->draw_lc(dev, x, cy, cr->strong, zv, 0xFF74D074u, 0xC0000000u, ov) + snap(8.0f * S);
+            x += fv->draw_lc(dev, x, cy, fr ? "faible :" : "weak:", zv, 0xFF8C94A0u, 0xC0000000u, ov) + snap(4.0f * S);
+            fv->draw_lc(dev, x, cy, cr->weak, zv, 0xFFFF6A5Au, 0xC0000000u, ov);
+        }
+        y += corrH + gap;
+    }
 
     // ---- the Ready charges : three pips and the next one's timer ----
     if (chgH > 0) {

@@ -262,8 +262,8 @@ static bool save_config_to(const char* path) {
     save_text_styles(f, "pwText", c.pwText, PW_TE_COUNT);   // pointwatch : per-element typography
     fprintf(f, "grim=%d,%.3f,%.4f,%.4f,%d\n", c.grimShow, c.grimScale, c.grimX, c.grimY, c.grimArt);   // grimoire box
     save_text_styles(f, "grimText", c.grimText, GRIM_TE_COUNT);   // grimoire : per-element typography
-    fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
-            c.bstImage, c.bstName, c.bstHp, c.bstTp, c.bstDist, c.bstCharges, c.bstMoves, c.bstIcons, c.bstDemo);   // BST box + its elements
+    fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
+            c.bstImage, c.bstName, c.bstHp, c.bstTp, c.bstDist, c.bstCharges, c.bstMoves, c.bstIcons, c.bstDemo, c.bstArtMode);   // BST box + its elements
     save_text_styles(f, "bstText", c.bstText, BST_TE_COUNT);   // BST box : per-element typography
     fprintf(f, "zt=%d,%.3f,%.4f,%.4f,%d,%d\n", c.ztShow, c.ztScale, c.ztX, c.ztY, c.ztVariant, c.ztHeader);   // zone tracker box (+ title toggle)
     fprintf(f, "ztsheol=%d,%d,%d\n", c.ztSheolSeg, c.ztSheolRes, c.ztSheolJoke);   // Sheol : segments / resistances / cruel joke
@@ -373,12 +373,12 @@ static bool parse_bst_line(const char* line, UiConfig& c) {
     if (parse_text_style(line, "bstText", c.bstText, BST_TE_COUNT)) return true;
     if (strncmp(line, "bstbox=", 7) == 0) { parse_box(line + 7, c.bstBox); return true; }
     if (strncmp(line, "bst=", 4) != 0) return false;
-    int v[11] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0 }; float scl = 1.0f, x = 0.72f, y = 0.55f;
-    const int n = sscanf(line + 4, "%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &v[0], &scl, &x, &y, &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10]);
+    int v[12] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 }; float scl = 1.0f, x = 0.72f, y = 0.55f;
+    const int n = sscanf(line + 4, "%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &v[0], &scl, &x, &y, &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10], &v[11]);
     if (n >= 1) c.bstShow = v[0]; if (n >= 2) c.bstScale = scl; if (n >= 3) c.bstX = x; if (n >= 4) c.bstY = y;
     if (n >= 5) c.bstOnlyPet = v[1]; if (n >= 6) c.bstImage = v[2]; if (n >= 7) c.bstName = v[3]; if (n >= 8) c.bstHp = v[4];
     if (n >= 9) c.bstTp = v[5]; if (n >= 10) c.bstDist = v[6]; if (n >= 11) c.bstCharges = v[7]; if (n >= 12) c.bstMoves = v[8];
-    if (n >= 13) c.bstIcons = v[9]; if (n >= 14) c.bstDemo = v[10];
+    if (n >= 13) c.bstIcons = v[9]; if (n >= 14) c.bstDemo = v[10]; if (n >= 15) c.bstArtMode = v[11];
     return true;
 }
 static bool parse_grow_line(const char* line, UiConfig& c) {
@@ -1185,7 +1185,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.grimShow != b.grimShow || a.grimScale != b.grimScale || a.grimX != b.grimX || a.grimY != b.grimY || a.grimArt != b.grimArt) return false;
     if (!text_styles_eq(a.grimText, b.grimText, GRIM_TE_COUNT)) return false;
     if (a.bstShow != b.bstShow || a.bstScale != b.bstScale || a.bstX != b.bstX || a.bstY != b.bstY || a.bstOnlyPet != b.bstOnlyPet) return false;
-    if (a.bstImage != b.bstImage || a.bstName != b.bstName || a.bstHp != b.bstHp || a.bstTp != b.bstTp || a.bstDist != b.bstDist || a.bstCharges != b.bstCharges || a.bstMoves != b.bstMoves || a.bstIcons != b.bstIcons || a.bstDemo != b.bstDemo) return false;
+    if (a.bstImage != b.bstImage || a.bstName != b.bstName || a.bstHp != b.bstHp || a.bstTp != b.bstTp || a.bstDist != b.bstDist || a.bstCharges != b.bstCharges || a.bstMoves != b.bstMoves || a.bstIcons != b.bstIcons || a.bstDemo != b.bstDemo || a.bstArtMode != b.bstArtMode) return false;
     if (!text_styles_eq(a.bstText, b.bstText, BST_TE_COUNT) || !box_eq(a.bstBox, b.bstBox)) return false;
     if (a.ztShow != b.ztShow || a.ztScale != b.ztScale || a.ztX != b.ztX || a.ztY != b.ztY || a.ztVariant != b.ztVariant || a.ztHeader != b.ztHeader) return false;
     if (a.ztSheolSeg != b.ztSheolSeg || a.ztSheolRes != b.ztSheolRes || a.ztSheolJoke != b.ztSheolJoke) return false;

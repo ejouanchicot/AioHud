@@ -42,6 +42,11 @@ void ConfigPage::draw_bst_config(u32 dev, Font* fo, const MouseState* mo, bool c
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Preview pet", "Pet (aper\xC3\xA7u)"), BST_PETS[pi].name)) { c.bstDemo = wrap(pi + d, BST_PETS_N); save_ui_config(); }
         } ROW_NEXT(52.0f)
         ROW_TOGGLE(CTRL_ID, tr("Pet image", "Image du pet"), c.bstImage)
+        { ROW_BAND(52.0f)   // what that place shows : the art, the pet's correlation as text, or both
+            const char* ML[3] = { tr("Image", "Image"), tr("Correlation", "Corr\xC3\xA9lation"), tr("Both", "Les deux") };
+            const int am = (c.bstArtMode < 0 || c.bstArtMode > 2) ? 0 : c.bstArtMode;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Shows", "Affiche"), ML[am])) { c.bstArtMode = wrap(am + d, 3); save_ui_config(); }
+        } ROW_NEXT(52.0f)
         ROW_TOGGLE(CTRL_ID, tr("Pet name", "Nom du pet"), c.bstName)
         ROW_TOGGLE(CTRL_ID, tr("HP", "HP"), c.bstHp)
         ROW_TOGGLE(CTRL_ID, tr("TP", "TP"), c.bstTp)

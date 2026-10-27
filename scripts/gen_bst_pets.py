@@ -22,10 +22,13 @@ for line in io.open(SRC, encoding='utf-8'):
         title = h.group(1)
         names = None if ('Sommaire' in title) else [re.sub(r'\s*\(HQ\)\s*$', '', n).strip() for n in title.split(' / ')]
         inmoves = False
-        if names: pets.append([names, []])
+        if names: pets.append([names, [], ''])
         continue
     if line.startswith('# '): names = None; inmoves = False; continue
     if names is None: continue
+    # its correlation family : "- **Espèce :** Tiger (Beast) · **Job :** WAR ..."
+    sp = re.search(r'\*\*Esp\S*ce :\*\*\s*[^(]*\((\w+)\)', line)
+    if sp: pets[-1][2] = sp.group(1); continue
     if line.startswith('**Ready Moves'): inmoves = True; continue
     if inmoves:
         if line.startswith('|'):
@@ -36,21 +39,22 @@ for line in io.open(SRC, encoding='utf-8'):
         elif line.strip() == '---': inmoves = False
 
 rows = []
-for names_, moves in pets:
+for names_, moves, eco in pets:
     if not moves: continue
     for n in names_:
         # in the game's order (ability id), the order GearSwap numbers them in for //gs c rdymove N
-        rows.append((n, sorted(moves, key=lambda m: known[m])[:MAXM]))
+        rows.append((n, eco, sorted(moves, key=lambda m: known[m])[:MAXM]))
 rows.sort(key=lambda r: r[0])
 
 with io.open(OUT, 'w', encoding='utf-8', newline='\n') as o:
     o.write('// bst_pets_gen.h -- AUTO-GENERATED from addons/BST_JUG_PETS_DATABASE.md (do not edit).\n')
     o.write('// Regenerate: python scripts/gen_bst_pets.py -- the BST box PREVIEW only (each jug pet and its Ready moves).\n')
     o.write('#pragma once\n\nnamespace aio {\n\n')
-    o.write('struct BstPetRow { const char* name; const char* moves[%d]; };   // moves : 0-terminated\n' % MAXM)
+    o.write('// eco : the pet\'s correlation family (the database\'s "Espece : Tiger (Beast)") ; moves : 0-terminated\n')
+    o.write('struct BstPetRow { const char* name; const char* eco; const char* moves[%d]; };\n' % MAXM)
     o.write('static const BstPetRow BST_PETS[] = {\n')
-    for n, ms in rows:
-        o.write('    {"%s", {%s}},\n' % (n, ', '.join('"%s"' % m for m in ms) + (', 0' if len(ms) < MAXM else '')))
+    for n, eco, ms in rows:
+        o.write('    {"%s", "%s", {%s}},\n' % (n, eco, ', '.join('"%s"' % m for m in ms) + (', 0' if len(ms) < MAXM else '')))
     o.write('};\nstatic const int BST_PETS_N = %d;\n\n} // namespace aio\n' % len(rows))
 
 print('wrote %d pets -> %s' % (len(rows), genpaths.rel(OUT)))
