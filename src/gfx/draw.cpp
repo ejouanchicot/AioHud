@@ -894,4 +894,24 @@ void soft_blob(u32 dev, float cx, float cy, float hw, float hh, u32 col)
     grad_quad(dev, cx,      cy,      hw, hh, col, c0, c0, c0);   // BR (bright at TL)
 }
 
+// an ANTI-ALIASED annulus sector (rIn..rOut, a0..a1 radians, 0 = 3 o'clock, clockwise on screen) : the party
+// gauges' ring and the BST box's Ready dial
+void ring_sector(u32 dev, float cx, float cy, float rIn, float rOut, float a0, float a1, u32 c) {
+    cx -= 0.5f; cy -= 0.5f;
+    const int M = 56; const float fth = 1.1f; const u32 c0 = c & 0x00FFFFFF;
+    VtxC body[2 * (M + 1)], of[2 * (M + 1)], nf[2 * (M + 1)];
+    for (int i = 0; i <= M; ++i) {
+        float a = a0 + (a1 - a0) * (float)i / M, ca = cosf(a), sa = sinf(a);
+        body[2*i]   = { cx + rOut*ca,          cy + rOut*sa,          0,1, c };
+        body[2*i+1] = { cx + rIn*ca,           cy + rIn*sa,           0,1, c };
+        of[2*i]     = { cx + rOut*ca,          cy + rOut*sa,          0,1, c };
+        of[2*i+1]   = { cx + (rOut + fth)*ca,  cy + (rOut + fth)*sa,  0,1, c0 };   // outer feather -> transparent
+        nf[2*i]     = { cx + rIn*ca,           cy + rIn*sa,           0,1, c };
+        nf[2*i+1]   = { cx + (rIn - fth)*ca,   cy + (rIn - fth)*sa,   0,1, c0 };   // inner feather -> transparent
+    }
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2*M, body, sizeof(VtxC));
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2*M, of,   sizeof(VtxC));
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2*M, nf,   sizeof(VtxC));
+}
+
 } // namespace aio

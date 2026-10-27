@@ -3,6 +3,7 @@
 
     python scripts/gen_bst_pet_art.py                     # the BST-HUD addon's art (test art, Eiffel's)
     python scripts/gen_bst_pet_art.py --src <folder>      # your own : <PetNameWithoutSpaces>.png in that folder
+    python scripts/gen_bst_pet_art.py --src <folder> --map scripts/bst_pet_art_map.txt   # your own, any file names
 
 Each pet becomes plugins\\AioHud\\assets\\bstpets\\<Key>.raw : 120 x 120, BGRA, top-down, no header (what
 load_raw_texture reads). <Key> is the pet's name without spaces nor punctuation ("Blackbeard Randy" ->
@@ -31,13 +32,22 @@ def to_raw(png, out):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", help="a folder of <Key>.png (your own art) ; default : the BST-HUD addon's")
+    ap.add_argument("--map", help="with --src : a file of '<picture> = <key> <key> ...' lines (scripts/bst_pet_art_map.txt) ; "
+                    "only the pets it names are written, the others keep their art")
     ap.add_argument("--out", help="default : <Windower>\\plugins\\AioHud\\assets\\bstpets")
     a = ap.parse_args()
     windower = os.path.dirname(genpaths.addons_dir())
     out = a.out or os.path.join(windower, "plugins", "AioHud", "assets", "bstpets")
     os.makedirs(out, exist_ok=True)
     pairs = []   # (key, png)
-    if a.src:
+    if a.src and a.map:
+        for line in io.open(a.map, encoding="utf-8"):
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line: continue
+            pic, keys = (x.strip() for x in line.rsplit("=", 1))
+            for key in keys.split():
+                pairs.append((key, os.path.join(a.src, pic)))
+    elif a.src:
         for f in sorted(os.listdir(a.src)):
             if f.lower().endswith(".png"):
                 pairs.append((os.path.splitext(f)[0], os.path.join(a.src, f)))

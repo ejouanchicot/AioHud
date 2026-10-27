@@ -121,6 +121,14 @@ void test_ready_charges() {
         for (const BstCorrelation& r : BST_CORRELATION) { const BstCorrelation* prey = bst_correlation(r.strong); CHECK(prey && strcmp(prey->weak, r.eco) == 0); }
         CHECK(bst_correlation("Luminian") == 0);
         CHECK(bst_correlation("") == 0);
+        // the pet's family by the name the game gives it : no spaces, its dots and dashes kept (the box found none, 2026-10-27)
+        CHECK_STR(bst_pet_eco("BlackbeardRandy"), "Beast");
+        CHECK_STR(bst_pet_eco("Blackbeard Randy"), "Beast");
+        CHECK_STR(bst_pet_eco("Hip.Familiar"), "Bird");
+        CHECK_STR(bst_pet_eco("Left-HandedYoko"), "Vermin");
+        CHECK_STR(bst_pet_eco("P.CrabFamiliar"), "Aquan");
+        CHECK(bst_pet_eco("BlackbeardRand") == 0);
+        CHECK(bst_pet_eco("") == 0);
     }
 
     SECTION("ready : our pet from the 0x068, another player's ignored");

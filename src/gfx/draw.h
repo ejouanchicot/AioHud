@@ -156,6 +156,10 @@ void rrect_glow(u32 dev, float x, float y, float w, float h, float r, u32 col, f
 // Draw under ADDITIVE blend for a clean circular halo (e.g. behind a slider knob). No banding.
 void disc_glow(u32 dev, float cx, float cy, float r, u32 col, float glowW);
 
+// an ANTI-ALIASED annulus sector : the ring between rIn and rOut, from angle a0 to a1 (radians, 0 = 3 o'clock,
+// growing clockwise on screen), feathered on both rims. Call in the colour-quad state.
+void ring_sector(u32 dev, float cx, float cy, float rIn, float rOut, float a0, float a1, u32 c);
+
 // stroke the OUTLINE of a rounded rect : a `bt`-px border in `col` that hugs the capsule shape (feathered
 // outer arc = AA corners), WITHOUT filling the interior. A border that follows the fluid form. Draw on top.
 void rrect_stroke(u32 dev, float x, float y, float w, float h, float r, u32 col, float bt);

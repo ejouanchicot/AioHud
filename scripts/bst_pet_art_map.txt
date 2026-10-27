@@ -1,0 +1,40 @@
+# The player's own pet art (2026-10-27) : which picture each jug pet of the BST box shows.
+#   python scripts/gen_bst_pet_art.py --src "F:\Telechargement Divers\Pet" --map scripts/bst_pet_art_map.txt
+# One line a picture : <file in --src> = <key> <key> ... ; a key is the pet's name without spaces nor punctuation (the
+# name hud_bst.cpp art_key looks for : "P. Crab Familiar" -> PCrabFamiliar). The pets of one picture are the ones the
+# BST-HUD addon's art gave the same image (pet_image_mappings.lua), each picture matched to its pose there.
+# A pet not listed keeps the art already in the runtime folder (BST-HUD's test art).
+Acuex manga et petite chauve-souris violette-19.png = AcuexFamiliar FluffyBredo
+Adamantoise et scarabée armuré.png = CrudeRaphie
+Antlion géant et minuscule Mandragora en fuite.png = CursedAnnabelle AntlionFamiliar ChopsueyChucky
+Araignée géante et petite Mandragora-12.png = GussyHachirobe SpiderFamiliar
+Avatar manga _ crabe et limace.png = AgedAngus SunburstMalfik
+Cactuar géant et lapin bondissant.png = AmigoSabotender
+Chapuli poursuit la Mandragora.png = BouncingBertha ScissorlegXerin
+Colibri prédateur et crabe bleu doré.png = ChoralLeera ColibriFamiliar
+Coléoptère géant et Mandragore-10.png = HurlerPercival BeetleFamiliar PanzerGalahad
+Crabe bleu face à une limace orange-7.png = HeraldHenry CrabFamiliar CourierCarrie
+Crabe bleu, prédateur géant et limace orange-9.png = JovialEdwin
+Crabe porteur et limace orange-8.png = PCrabFamiliar
+Diremite chasseur, mandragore en fuite.png = AnklebiterJedd LifedrinkerLars MiteFamiliar
+Fly ailé et minuscule Mandragora-13.png = HeadbreakerKen
+Funguar géant et lapin bondissant.png = BrainyWaluis DiscreetLouise
+Funguar pastel et lapin brun-4.png = FunguarFamiliar
+Hippogriffe prédateur et crabe bleu-doré-15.png = DaringRoland FaithfulFalcor HipFamiliar
+Lapin Lucky Lulush et petit lézard-2.png = LuckyLulush
+Lapin bondissant près de la plante.png = AlluringHoney RedolentCandi
+Lapin prédateur et petit lézard-1.png = PonderingPeter DroopyDortwin HareFamiliar KeenearedSteffi
+Limace orange et chauve-souris violette-18.png = GenerousArthur GooeyGerard
+Lynx doré traquant un lézard bipède.png = CraftyClyvonne
+Lynx écarlate et petit lézard.png = BloodclawShasra
+Mandragore en marche et lapin bondissant-5.png = FlowerpotBen FlowerpotBill FlowerpotMerle
+Moustique géant et petite Mandragora-14.png = LeftHandedYoko MosquitoFamiliar
+Presto Julio penché vers le petit lapin-6.png = PrestoJulio FlytrapFamiliar VoraciousAudrey
+Pugil poursuivant une limace.png = AmiableRoche TurbidToloi
+Raaz et le petit lézard.png = CaringKiyomaro VivaciousVickie
+Raptor Reinhard traque un scarabée-16.png = FleetReinhard SwiftSieghard
+Sangsue géante et chauve-souris violette-17.png = FatsoFargann
+Scarabbée doré énergisé et Mandragora-11.png = EnergizedSefina YBeetleFamiliar
+Tigre roux à dents de sabre-3.png = GorefangHobs
+Tigre à dents de sabre et lézard.png = BlackbeardRandy SaberSiravarde TigerFamiliar
+Tulfaire magenta et crabe en fuite.png = AttentiveIbuki SwoopingZhivago
