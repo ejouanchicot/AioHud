@@ -267,7 +267,18 @@ do
     local tracking, req_at, last_try, arena_gen = nil, 0, 0, 0
     local bz_want = nil                                       -- the bitzer whose position is still awaited
 
-    local function enabled()                         -- the player's choice, read where the plugin writes it
+    -- The player's choice IN EFFECT for this character : the plugin writes it per character, whenever it or the
+    -- character changes (data\cache\sortietrack_<id %08X>.txt, "0" / "1" ; game_mem.cpp publish_sortie_track).
+    -- config.txt is ONE file for the whole install and every client writes it : read there, a profile with the option
+    -- on, saved once by any character, kept the track going for a character whose own panel said Off (reported
+    -- 2026-10-27 : the bitzers showed from afar with the option off). config.txt stays the answer for a plugin too old
+    -- to write the file.
+    local function enabled()
+        local me = windower.ffxi.get_player and windower.ffxi.get_player()
+        if me and me.id then
+            local pf = io.open(data_dir .. string.format('\\cache\\sortietrack_%08X.txt', me.id), 'r')
+            if pf then local v = pf:read(1); pf:close(); return v == '1' end
+        end
         local f = io.open(data_dir .. '\\config.txt', 'r'); if not f then return false end
         local on = false
         for line in f:lines() do

@@ -90,7 +90,12 @@ NM indices A..H : 144, 223, 285, 373, 427, 498, 552, 622 (levels 122..141 in the
 
 **AioHud never asks.** The plugin has no way to send a packet ; it reads the 0x0F5 replies whoever requested them
 (the player's own Widescan, or the addon). The optional request lives in `updater/aioupdate/aioupdate.lua`
-(section SORTIE), gated by the 6th `ztsortie=` value (OFF by default) and at the cadence measured in the recordings. On entering a
+(section SORTIE), gated by the 6th `ztsortie=` value (OFF by default) and at the cadence measured in the recordings.
+The addon reads that choice **per character** : the plugin writes the value in effect to
+`data\cache\sortietrack_%08X.txt` ("0" / "1", `game_mem.cpp` `publish_sortie_track`) whenever it or the character
+changes. It used to read the shared `config.txt`, one file for the whole install that every client writes : a profile
+with the option on, saved once by any character, kept the track going for a character whose own panel said Off
+(reported 2026-10-27). `config.txt` stays the answer for a plugin too old to write the file. On entering a
 basement wing it also requests the bitzer's update (0x016), 2 s and 4 s after arrival, only until its 0x00E arrives. One 0x0F5 per
 wing entered, a retry every 2 s for 8 s only on a "not found" (0,0) reply, one 0x0F6 two seconds into an arena. No
 0x016 beyond those two, nothing on a zone change. Its two tables duplicate `sortie_nav.h` : keep them in
