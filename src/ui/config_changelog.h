@@ -682,6 +682,16 @@ static const ChangeLine CL_88[] = {
       "*Timers : les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lance un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne." },
 };
 
+static const ChangeLine CL_95[] = {
+    { "*New BST module (//aio config -> BST).* Your pet's name, HP, TP and distance, your Ready charges with the time to the next one, and the Ready moves your pet has : each with its number (the N of a rdymove N macro), an icon for its kind (weapon, element, or the status it gives or inflicts) and its cost in charges. Every element can be switched on or off, and the box takes the same look options as the others.",
+      "*Nouveau module BST (//aio config -> BST).* Le nom, les HP, le TP et la distance de ton pet, tes charges Ready avec le temps avant la prochaine, et les Ready moves de ton pet : chacun avec son numero (le N d'une macro rdymove N), une icone pour son type (arme, element, ou le statut qu'il donne ou inflige) et son cout en charges. Chaque element s'active ou se coupe, et la boite a les memes options d'apparence que les autres." },
+    { "The time a charge takes is measured on your own Ready moves (merits, job points and gear included) and remembered for each character. Until your first Ready move it is worked out from your merits and job points.",
+      "La duree d'une charge est mesuree sur tes propres Ready moves (merits, job points et gear compris) et gardee pour chaque personnage. Avant ton premier Ready move, elle est calculee depuis tes merits et job points." },
+    { "Placed against the bottom of the screen, the box stays against it whatever the number of moves of your pet. The preview in the settings shows every jug pet with its own moves. Pet pictures are not included yet : the box shows them once their files are added.",
+      "Placee contre le bas de l'ecran, la boite y reste quel que soit le nombre de moves de ton pet. L'apercu dans les reglages montre chaque jug pet avec ses propres moves. Les images des pets ne sont pas encore fournies : la boite les affichera quand leurs fichiers seront ajoutes." },
+    { "*Sortie : the Auto Widescan track option now follows the character you play.* It was read from a file shared by every character of the install, so the track could keep running with the option shown Off. Your choice per character is respected.",
+      "*Sortie : l'option Track Widescan auto suit maintenant le personnage que tu joues.* Elle etait lue dans un fichier partage par tous les personnages de l'installation, donc le track pouvait continuer avec l'option affichee Off. Ton choix par personnage est respecte." },
+};
 static const ChangeLine CL_94[] = {
     { "*PointWatch : the Merits row now follows your kills.* It only moved when you changed zone or opened the Status menu : between the two, each kill's limit points were counted and then put back to their old value. It now moves with every kill, and the number of merits takes the game's own total each time you earn one.",
       "*PointWatch : la ligne Merits suit maintenant tes kills.* Elle ne bougeait que quand tu changeais de zone ou ouvrais le menu Status : entre les deux, les limit points de chaque kill etaient comptes puis remis a leur ancienne valeur. Elle avance maintenant a chaque kill, et le nombre de merits reprend le total du jeu a chaque merit gagne." },
@@ -739,6 +749,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.95", CL_95, (int)(sizeof(CL_95) / sizeof(CL_95[0])) },
     { "1.0.94", CL_94, (int)(sizeof(CL_94) / sizeof(CL_94[0])) },
     { "1.0.93", CL_93, (int)(sizeof(CL_93) / sizeof(CL_93[0])) },
     { "1.0.92", CL_92, (int)(sizeof(CL_92) / sizeof(CL_92[0])) },
