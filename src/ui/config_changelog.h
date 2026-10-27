@@ -682,6 +682,14 @@ static const ChangeLine CL_88[] = {
       "*Timers : les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lance un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne." },
 };
 
+static const ChangeLine CL_96[] = {
+    { "*BST : a new layout built around Ready.* A dial on the left shows your three Ready charges : a full charge is lit, the one recharging fills like a clock, and the centre gives the seconds to the next one (MAX when all three are there). Your pet sits on its right, and its moves are listed below in smaller text.",
+      "*BST : une nouvelle disposition construite autour de Ready.* Un cadran a gauche montre tes trois charges Ready : une charge pleine est allumee, celle qui recharge se remplit comme une horloge, et le centre donne les secondes avant la prochaine (MAX quand les trois sont la). Ton pet est a sa droite, et ses moves sont listes dessous en plus petit." },
+    { "Each move short of charges now shows how many seconds it still waits. The box uses warmer colours (amber, moss, bark) ; the text colours you set yourself are kept.",
+      "Chaque move qui manque de charges montre maintenant combien de secondes il attend encore. La boite prend des couleurs plus chaudes (ambre, mousse, ecorce) ; les couleurs de texte que tu as reglees toi-meme sont gardees." },
+    { "*BST : your pet's correlation.* Its family, the family it is strong against and the one it is weak to. In //aio config -> BST, Shows picks the pet's picture, its correlation, or both.",
+      "*BST : la correlation de ton pet.* Sa famille, celle contre qui il est fort et celle qui le bat. Dans //aio config -> BST, Affiche choisit l'image du pet, sa correlation, ou les deux." },
+};
 static const ChangeLine CL_95[] = {
     { "*New BST module (//aio config -> BST).* Your pet's name, HP, TP and distance, your Ready charges with the time to the next one, and the Ready moves your pet has : each with its number (the N of a rdymove N macro), an icon for its kind (weapon, element, or the status it gives or inflicts) and its cost in charges. Every element can be switched on or off, and the box takes the same look options as the others.",
       "*Nouveau module BST (//aio config -> BST).* Le nom, les HP, le TP et la distance de ton pet, tes charges Ready avec le temps avant la prochaine, et les Ready moves de ton pet : chacun avec son numero (le N d'une macro rdymove N), une icone pour son type (arme, element, ou le statut qu'il donne ou inflige) et son cout en charges. Chaque element s'active ou se coupe, et la boite a les memes options d'apparence que les autres." },
@@ -749,6 +757,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.96", CL_96, (int)(sizeof(CL_96) / sizeof(CL_96[0])) },
     { "1.0.95", CL_95, (int)(sizeof(CL_95) / sizeof(CL_95[0])) },
     { "1.0.94", CL_94, (int)(sizeof(CL_94) / sizeof(CL_94[0])) },
     { "1.0.93", CL_93, (int)(sizeof(CL_93) / sizeof(CL_93[0])) },
