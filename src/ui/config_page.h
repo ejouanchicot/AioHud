@@ -143,6 +143,10 @@ private:
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW,
                             float hdrX, float hdrW);
+    void draw_bst_config(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW,
+                            float hdrX, float hdrW);
     void draw_grim_config(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW,
@@ -228,6 +232,7 @@ private:
     int   cfgHlTextElem_ = 0;    // which Hate List text element the typography sub-section edits (HL_DIST / HL_NAME / HL_PCT / HL_TARGET)
     int   cfgPwTextElem_ = 0;    // which PointWatch text element the typography sub-section edits (PW_LABEL / PW_VALUE / PW_RATE)
     int   cfgGrimTextElem_ = 0;  // which Grimoire text element the typography sub-section edits (GRIM_CHARGE / GRIM_TIMER)
+    int   cfgBstTextElem_ = 0;   // which BST text element the typography sub-section edits (BST_NAME / BST_VALUE / BST_CHARGE / BST_MOVE)
     int   cfgZtTextElem_ = 0;    // which Zone Tracker text element the typography sub-section edits (ZT_HEADER / ZT_BODY)
     int   cfgEpTextElem_ = 0;    // which EmpyPop text element the typography sub-section edits (EP_TITLE / EP_POP / EP_FROM / EP_COLL)
     int   cfgTmTextElem_ = 0;    // which Timers text element the typography sub-section edits (TM_HEADER / TM_BODY)

@@ -97,7 +97,7 @@ party1/2/3 count. Matches `load_from_memory` exactly.
 | `in_party` | **`*(u8 *)(e+0x1D0) >> 2 & 1`** | contradicts AioHUD's `+0x124 & 0x00800000` |
 | `in_alliance` | `*(u8 *)(e+0x1D0) >> 3 & 1` | new |
 | `charmed` | `*(u32 *)(e+0x12C) >> 13 & 1` | new |
-| `target_index` / `pet_index` / `fellow_index` | `+0x1F8` / `+0x1FA` / `+0x2A0` | new (u16) |
+| `target_index` / `pet_index` / `fellow_index` | `+0x1F8` / `+0x1FA` / `+0x2A0` | new (u16) ; `pet_index` read by the BST module (`compute_bst`, 2026-10-26) on the self entity, to find a pet already out when the plugin loads -- not yet confirmed live |
 
 **SpawnType is a BITFIELD, and Windower proves it.** `in_party` and `in_alliance` are bits 2 and 3 of the very
 byte AioHUD compares with `==`. So a party PC really is `0x0D` (`0x01|0x04|0x08`) and a party trust `0x0E` -

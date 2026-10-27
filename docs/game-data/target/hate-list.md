@@ -62,6 +62,11 @@ registered only if its owner `is_party_or_pet`; cleared on zone):
 - **0x068 Pet Status** (`on_pet_status`): Owner ID @**0x08** (u32), Pet **Index**
   @**0x0C** (u16), **Target ID @**0x14** (u32)** = the mob the pet fights →
   `record_hate` directly.
+  The same packet also carries the pet's vitals, read by the BST module (`model/bst_state.cpp`
+  `on_pet_status`, only when the owner id is the local player) : **HP% @0x0E** (u8), **MP% @0x0F**
+  (u8), **TP @0x10** (u32, 0-3000), **name @0x18** (chars to the end of the packet). Pet index 0 = the
+  pet is gone. Source : Windower `addons/libs/packets/fields.lua` (incoming 0x068), the same fields the
+  BST-HUD addon reads ; not yet checked against a capture of our own (2026-10-26).
 
 `pet_owner(id)` maps a pet → its owner so the Target column shows the OWNER, not the
 pet.

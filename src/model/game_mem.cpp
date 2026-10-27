@@ -38,6 +38,12 @@
 #include "model/charsheet.h"   // the sheet decoder, shared with the packet path
 #include "model/party_state.h"    // the party ids <bt> is claimed by (the roster)
 #include "model/ui_config.h"   // mmShow : skip the entity-array sweep entirely when the minimap is off (model->model, no layering issue)
+#include "model/abilities_gen.h"     // compute_bst : the Ready moves (recast 102) and their cost
+#include "model/ready_moves_gen.h"   // compute_bst : each move's kind
+#include <math.h>                    // compute_bst : sqrtf (pet distance)
+#include "model/paths.h"             // publish_sortie_track : plugin_path
+#include <stdio.h>                   // publish_sortie_track : the per-character file for the aioupdate addon
+#include "model/bst_state.h"      // compute_bst : the BST module's snapshot part
 #include "model/model_clock.h"    // //aio schlog : the model's one source of "now" (replayable offline)
 #include "windower.h"   // safe_read / valid_ptr (guarded game-memory reads)
 #include <windows.h>
@@ -1142,7 +1148,7 @@ unsigned spell_recast_sec(unsigned recast_id) {
 // Per-frame snapshot : read each pointer-chain ONCE so widgets never touch memory in draw().
 // See gamestate.h. read_player gates "in game" (vitals populate before names after a zone).
 // SCHOLAR GRIMOIRE : compute the book/charges/timer once/frame (ported from AioHUD targetbar/sch.lua).
-static bool read_job_spent(unsigned job, unsigned& spent) {   // Spent Job Points for `job` (job_point_info +0x04)
+bool read_job_spent(unsigned job, unsigned& spent) {   // Spent Job Points for `job` (job_point_info +0x04)
     if (job < 1 || job > 23) return false;
     u32 g = data_root(); if (!g) return false;
     u32 base = 0; if (!safe_read(g + 0x48, &base) || !valid_ptr(base)) return false;
@@ -1313,6 +1319,87 @@ static void compute_grimoire(GameState& gs) {
     sch_log_tick(ticks, interval, tableInt, g_schLearned > 0, maxCharges, (int)spent, level, isMain, count, g.timerSec);
 }
 
+// BEASTMASTER : the pet (0x068, model/bst_state.cpp), the Ready charge pool and the moves the job can use now, once
+// a frame (docs/design/bst-module-spec.md). The pool is recast 102 in RAW 1/60 s, like the stratagems above ; the
+// charge length is learned off a use (ReadyLearner), kept per character, and until then worked out from the Sic
+// Recast merit (id 902, 2 s a level), the 100 JP gift and the "-5" pieces worn now (only a guess : the piece that
+// counts is the one worn when the move goes off, which GearSwap swaps in for that instant).
+void compute_bst(GameState& gs) {
+    BstState b{};
+    const int BST = 9;
+    bst_set_me(gs.me.id);
+    if (gs.me.mjob != BST) { gs.bst = b; bst_learner().lastTicks = -1; return; }   // back on BST later : no jump from a stale sample
+    b.visible = true;
+    // the learned length belongs to one character : read it again when the character changes
+    static unsigned g_bstChar = 0;
+    if (gs.me.id != g_bstChar) { g_bstChar = gs.me.id; bst_learner().reset(); bst_learner().learned = bst_cache_load(gs.me.id); }
+
+    // The pet the player's own entity names (pet_index, self entity +0x1FA, docs/game-data/luacore-verified-offsets.md) :
+    // the 0x068 only comes when the pet acts or its vitals move, so a plugin (re)loaded with a pet resting at full HP
+    // would never see it. Taken only while no 0x068 has given one, and only an entity that exists.
+    const BstPet& pet = bst_pet();
+    if (!pet.index) { const u32 se = self_entity(); u32 w = 0;
+        if (se && safe_read(se + 0x1FA, &w)) { const unsigned idx = w & 0xFFFF; if (idx && entity_id_by_index(idx)) bst_pet_seed(idx); } }
+    if (pet.index) {
+        const unsigned id = entity_id_by_index(pet.index);
+        if (id && !pet.id) bst_pet_adopt(id);                  // the entity came after its 0x068
+        if (pet.id && id != pet.id) bst_pet_clear();           // despawned, or the slot went to someone else
+        else if (!id) { if (model_now_ms() - pet.seenMs > 5000u) bst_pet_clear(); }   // not spawned yet : wait 5 s for it
+        else {
+            b.hasPet = true;
+            memcpy(b.name, pet.name, sizeof(b.name)); b.name[sizeof(b.name) - 1] = 0;
+            b.hpp = pet.hpp; b.mpp = pet.mpp; b.tp = pet.tp;
+            if (!b.name[0]) { EntityVitals ev; if (read_entities_by_id(&id, 1, &ev) > 0 && ev.valid) {   // seeded from memory : no 0x068 yet
+                bst_pet_fill(ev.name, ev.hpp); memcpy(b.name, pet.name, sizeof(b.name)); b.name[sizeof(b.name) - 1] = 0; b.hpp = pet.hpp; } }
+            float x = 0, y = 0, z = 0;
+            if (entity_pos_verified(pet.index, id, x, y, z)) { const float dx = x - gs.meX, dz = z - gs.meZ; b.dist = sqrtf(dx * dx + dz * dz); }
+        }
+    }
+
+    unsigned rawTicks = 0; ability_recast_sec(102, &rawTicks);
+    const int ticks = (int)rawTicks;
+    if (bst_learner().frame(ticks, model_now_ms()) && bst_learner().learned) bst_cache_save(gs.me.id, bst_learner().learned);
+    int len = bst_learner().learned;
+    b.learned = len > 0;
+    if (!len) {
+        unsigned spent = 0; read_job_spent(BST, spent);
+        int pieces = 0;
+        if (gs.equipValid) for (int i = 0; i < 16; ++i) { const unsigned it = gs.equip.id[i];
+            if (it == 23777 || it == 18534 || it == 16370) ++pieces; }   // Gleti's Breeches, Charmer's Merlin, Desultor Tassets
+        len = ready_len_fallback(read_merit_level(902), (int)spent, pieces);
+    }
+    ReadyView v;
+    if (!ready_view(ticks, len, v)) { len = READY_LEN_MAX; b.learned = false; ready_view(ticks, len, v); }   // a pool longer than 3 charges : that length was wrong
+    b.charges = v.charges; b.nextSec = v.nextSec; b.chargeLen = len;
+
+    if (gs.jaOk && b.hasPet) for (int i = 0; i < ABILS_N && b.nmoves < BstState::MOVES_MAX; ++i) {
+        const AbilRow& r = ABILS[i];
+        if (r.recast_id != 102 || r.id == 72 || r.id >= 1024 || !(gs.jaBits[r.id >> 3] & (1u << (r.id & 7)))) continue;
+        BstMove& m = b.moves[b.nmoves++];
+        const ReadyMoveRow* rr = ready_move_row(r.en);
+        m.id = (unsigned short)r.id; m.en = r.en; m.kind = rr ? rr->kind : 0; m.status = rr ? rr->status : 0; m.cost = (int)r.mp;
+        m.waitSec = ready_wait_sec(ticks, len, m.cost);
+    }
+    gs.bst = b;
+}
+
+// The Sortie "Auto Widescan track" choice IN EFFECT for this character, for the aioupdate addon that sends the track
+// (updater/aioupdate/aioupdate.lua, section SORTIE) : data\cache\sortietrack_%08X.txt = "0" / "1". config.txt is one
+// file for the whole install that every client writes, so the addon reading it there tracked while the panel of the
+// character in front of you said Off (reported 2026-10-27). Written when the value or the character changes ; a
+// failed write is retried on the next frame (rule 10), the value kept only once it is on disk.
+static void publish_sortie_track(unsigned meId) {
+    static unsigned g_id = 0; static int g_val = -1;
+    if (!meId) return;
+    const int v = ui_config().ztSoTrack ? 1 : 0;
+    if (meId == g_id && v == g_val) return;
+    char rel[80]; _snprintf(rel, sizeof(rel), "data\\cache\\sortietrack_%08X.txt", meId); rel[sizeof(rel) - 1] = 0;
+    char path[300]; plugin_path(path, sizeof(path), rel); if (!path[0]) return;
+    FILE* f = fopen(path, "w"); if (!f) return;
+    fputc(v ? '1' : '0', f);
+    if (fclose(f) == 0) { g_id = meId; g_val = v; }
+}
+
 void poll_game_state(GameState& gs) {
     fm_tick();                                               // FFXiMain statics : validate / re-derive whatever is due
     PlayerCacheScope _plc;                                   // cache read_player for this whole poll cycle (hit ~5x below)
@@ -1412,6 +1499,8 @@ void poll_game_state(GameState& gs) {
       read_job_table_mem(cs_, gs.me.mjob, gs.me.mlvl); }
 
     compute_grimoire(gs);   // SCH grimoire (book + charges + timer) from buffs / jobs / stratagem recast
+    compute_bst(gs);        // BST pet + Ready charges + its moves (model/bst_state.cpp)
+    publish_sortie_track(gs.me.id);   // the Sortie auto-track choice of THIS character, for the aioupdate addon
 
     // Last, with the snapshot complete : cross-check what the server said against what memory says. It
     // repairs nothing -- it exists so the day a struct or packet field shifts, we hear about it that day

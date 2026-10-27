@@ -7,6 +7,7 @@
 #include "model/decisions.h"   // record the WHY, so it can be asked for after the fact
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared with party_state_zonetracker.cpp)
 #include "model/game_mem.h"
+#include "model/bst_state.h"   // bst_on_packet
 #include "model/paths.h"
 #include "model/spells_gen.h"
 #include "model/weapon_skills_gen.h"   // ws_info : WS/ability names for the target action bar (cat 7 "readies")
@@ -2647,6 +2648,7 @@ void model_feed_packet(int id, const unsigned char* b)
     g_pktDispatchId = id;
     __try {
         party().note_packet(id, model_now_ms());   // flow counters for //aio doctor (tracked ids only)
+        bst_on_packet(id, b);                      // BST module : our pet (0x068), its Ready moves (0x028), zone-out (model/bst_state.cpp)
         if      (id == 0xDD)  party().on_dd(b);
         else if (id == 0xDF)  party().on_df(b);
         else if (id == 0x028) party().on_action(b);   // cast bar + landed target debuffs

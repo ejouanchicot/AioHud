@@ -43,6 +43,7 @@ enum { TP_IDX = 0, TP_NAME, TP_TIMER, TP_LOOT, TP_TE_COUNT };   // Treasure Pool
 enum { HL_DIST = 0, HL_NAME, HL_PCT, HL_TARGET, HL_TE_COUNT };  // Hate List text elements (Distance / Name / HP% / Target)
 enum { PW_LABEL = 0, PW_VALUE, PW_RATE, PW_TE_COUNT };          // PointWatch text elements (Label / Value / Rate)
 enum { GRIM_CHARGE = 0, GRIM_TIMER, GRIM_TE_COUNT };           // Grimoire text elements (Charge count / Recast timer)
+enum { BST_NAME = 0, BST_VALUE, BST_CHARGE, BST_MOVE, BST_TE_COUNT };   // BST box text elements (pet name / HP-TP-distance / Ready charges / moves)
 // Zone Tracker text elements. Header/Body are shared by every variant ; the four after them are the Limbus
 // rows, split out so each can be sized/coloured on its own (the gauge caption, the currencies, the run line
 // and the coffer-dot labels). The per-variant elements that follow are APPENDED (never reordered) : the saved
@@ -268,8 +269,8 @@ struct UiConfig {
     // each box was hard-coded to before this setting existed : an update moves nothing. Asked for 2026-09-29 --
     // no automatic rule suits everyone (grow toward the middle covers the character, grow away from it slides a
     // left-hand Timers list at every new spell), so the player picks.
-    enum GrowBox { GB_TP, GB_SC, GB_HL, GB_GRIM, GB_ZT, GB_PW, GB_EP, GB_TM, GB_DB, GB_AW, GB_COUNT };   // APPEND only : grow= is positional
-    int   boxGrow[GB_COUNT] = { 1, 1, 1, 1, 1, 2, 2, 0, 0, 0 };
+    enum GrowBox { GB_TP, GB_SC, GB_HL, GB_GRIM, GB_ZT, GB_PW, GB_EP, GB_TM, GB_DB, GB_AW, GB_BST, GB_COUNT };   // APPEND only : grow= is positional
+    int   boxGrow[GB_COUNT] = { 1, 1, 1, 1, 1, 2, 2, 0, 0, 0, 1 };
     // ---- Skillchains module : a box on your target's active skillchain (step / property / burst window) ----
     int   scShow  = 1;         // show the skillchains box
     float scScale = 1.0f;      // size multiplier (0.5 .. 2.0)
@@ -334,6 +335,17 @@ struct UiConfig {
     float grimY     = 0.58f;
     int   grimArt   = 2;       // EDIT-preview art : 0 Light, 1 Dark, 2 Addendum White, 3 Addendum Black
     TextStyle grimText[GRIM_TE_COUNT];   // per-element typography : [GRIM_CHARGE] [GRIM_TIMER]
+
+    // ---- BST module : the pet, the Ready charges and moves (hud_bst.cpp ; docs/design/bst-module-spec.md) ----
+    int   bstShow    = 1;      // show the box (only appears on a BST main)
+    float bstScale   = 1.0f;   // size multiplier (0.5 .. 2.0)
+    float bstX       = 0.72f;  // horizontal CENTRE (screen fraction) ; bstY = its TOP
+    float bstY       = 0.55f;
+    int   bstOnlyPet = 1;      // only while a pet is out
+    int   bstImage = 1, bstName = 1, bstHp = 1, bstTp = 1, bstDist = 1, bstCharges = 1, bstMoves = 1;   // each element on / off
+    int   bstIcons = 1;        // a move's kind as the weapon / element icon (else a colour tick)
+    int   bstDemo  = 0;        // EDIT / config preview : which jug pet the sample shows (bst_pets_gen.h index)
+    TextStyle bstText[BST_TE_COUNT];   // per-element typography : [BST_NAME] [BST_VALUE] [BST_CHARGE] [BST_MOVE]
 
     int   ztShow    = 1;       // show the Zone Tracker (only appears in a Dynamis / Abyssea zone)
     float ztScale   = 1.0f;    // size multiplier (0.5 .. 2.0)
@@ -518,7 +530,7 @@ struct UiConfig {
         --favColorN;
     }
     // Per-module box appearance (shared bundle ; Target/Player inline their own). Default = follow Party theme.
-    BoxStyle scBox, tpBox, hlBox, pwBox, ztBox, mmBox, epBox, awBox;   // awBox = the Absorb-TP box   // mmBox = the Minimap CLOCK box (day / moon header), not the map
+    BoxStyle scBox, tpBox, hlBox, pwBox, ztBox, mmBox, epBox, awBox, bstBox;   // bstBox = the BST box   // awBox = the Absorb-TP box   // mmBox = the Minimap CLOCK box (day / moon header), not the map
     TextStyle mmText[MM_TE_COUNT];   // clock per-element typography : [MM_TIME] time, [MM_DAY] day, [MM_MOON] moon, [MM_REAL] real/GMT
     bool  mmPosSet = false;    // user-placed position (edit mode) ; else the layout default
     float mmX = 0.0f, mmY = 0.0f;   // top-left as a screen fraction when mmPosSet

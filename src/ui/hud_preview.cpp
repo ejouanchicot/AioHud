@@ -82,7 +82,7 @@ void Hud::draw_config_preview(const Frame& f) {
           case 7:  off = !CC.hlShow;   break;  case 8:  off = !CC.pwShow;   break;
           case 9:  off = !CC.grimShow; break;  case 10: off = !CC.ztShow;   break;
           case 11: off = !CC.tmShow;   break;  case 12: off = !CC.epShow;   break;
-          case 13: off = !CC.awShow;   break;
+          case 13: off = !CC.awShow;   break;  case 14: off = !CC.bstShow;  break;
           default: break; }
       if (off) { draw_hidden_note(); return; }
     }
@@ -237,6 +237,13 @@ void Hud::draw_config_preview(const Frame& f) {
         float scl = ui_config().pwScale; if (scl < 0.5f) scl = 0.5f; if (scl > 2.0f) scl = 2.0f;
         const float liveS = (screenH_ / 1000.0f) * scl;
         draw_pointwatch(f, true, sx + sw * 0.5f, sy + sh * 0.5f, liveS);
+        return;
+    }
+    // BST module -> the sample pet box at TRUE in-game size, centred in the preview stage.
+    if (config_.section() == 14) {
+        float sx = 0, sy = 0, sw = 0, sh = 0; config_.preview_rect(sx, sy, sw, sh);
+        float scl = ui_config().bstScale; if (scl < 0.5f) scl = 0.5f; if (scl > 2.0f) scl = 2.0f;
+        draw_bst(f, true, sx + sw * 0.5f, sy + sh * 0.5f, (screenH_ / 1000.0f) * scl);
         return;
     }
     // Grimoire module -> the book (Addendum White by default) at TRUE in-game size, centred in the preview stage.

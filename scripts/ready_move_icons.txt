@@ -1,0 +1,56 @@
+# ready_move_icons.txt -- the icon of each BST Ready move the BST-HUD table gives no weapon / element icon to, read by
+# scripts/gen_ready_moves.py into src/model/ready_moves_gen.h (the BST box, src/ui/hud_bst.cpp).
+#   <move> | status <id>   the status icon (assets/buff_atlas.raw cell, the status id of Windower res/buffs.lua)
+#   <move> | <kind>        slashing / piercing / blunt or an element (fire earth water wind ice lightning light dark)
+# Every row checked on BG-Wiki's Jug Pet page on 2026-10-27 (its effect text), except Snow Cloud : not on BG-Wiki,
+# its element is the game's (res/job_abilities.lua element=1, ice).
+
+# debuffs : the status the move inflicts
+Sheep Song      | status 2      # "Puts all enemies to sleep within range"
+Soporific       | status 2      # sleep (BG-Wiki Soporific)
+Toxic Spit      | status 3      # "Poisons (23 damage/tic) an enemy"
+Venom Spray     | status 3      # "Poisons (31 damage/tic) enemies within a fan-shaped area"
+Blaster         | status 4      # "Paralyzes an enemy within range"
+Roar            | status 4      # "Paralyzes all enemies within range"
+Spore           | status 4      # "Paralyzes an enemy"
+Palsy Pollen    | status 4      # "Paralyzes an enemy within range"
+Sandblast       | status 5      # "Blinds (-40 Accuracy) all enemies within range"
+Chaotic Eye     | status 6      # "Silences an enemy within range"
+Numbing Noise   | status 10     # "Stuns enemies within a fan-shaped area"
+Predatory Glare | status 10     # "Stuns all enemies in a fan-shaped area in front of pet"
+Sandpit         | status 11     # "Binds an enemy"
+Filamented Hold | status 13     # "50% Slow for enemies within a fan-shaped area"
+Spider Web      | status 13     # "50% Slow for enemies within range"
+Intimidate      | status 13     # "% Slow for an enemy"
+Gloeosuccus     | status 13     # "% Slow for enemies within a fan-shaped area"
+Jettatura       | status 28     # "Terrorizes enemies within a fan-shaped area"
+Infected Leech  | status 31     # "Additional effect: Plague (-50 TP/tic)"
+Spoil           | status 136    # "-20% Strength to an enemy which decays over time"
+Scream          | status 141    # "-20% Mind for enemies within range which decays over time"
+Noisome Powder  | status 147    # "-15% Attack for enemies within range"
+Hi-Freq Field   | status 148    # "-40 Evasion for enemies within a fan-shaped area"
+Infrasonics     | status 148    # "-40 Evasion for 3 Min for enemies within a fan-shaped area"
+
+# buffs : the status the move grants
+Zealous Snort   | status 33     # "+25% Haste, +25 MDB, ..."
+Metallic Body   | status 37     # "~200 HP Stoneskin for pet and Beastmaster"
+Bubble Curtain  | status 41     # "-50% MDT for pet and Beastmaster" (Shell's icon)
+Rage            | status 56     # "+50% Attack & -50% Defense" (Berserk's icon)
+Frenzied Rage   | status 91     # "Increases attack of pet and master +25%"
+Fantod          | status 91     # "+200% (4x) Attack to the next attack"
+Rhino Guard     | status 92     # "+25% Evasion"
+Secretion       | status 92     # "+25 Evasion for pet and Beastmaster"
+Scissor Guard   | status 93     # "+100% Defense for pet and Beastmaster"
+Water Wall      | status 93     # "+100% Defense for pet and Beastmaster"
+Harden Shell    | status 93     # Defense Boost (BG-Wiki Harden Shell)
+
+# no status : the element
+Geist Wall      | dark          # "Removes one beneficial magic effect" ; game element dark
+Nihility Song   | dark          # the same ; game element dark
+Digest          | dark          # "Absorbs HP from an enemy" ; game element dark
+Cursed Sphere   | dark          # "Deals dark elemental damage" (the game's element field says light)
+Wild Carrot     | light         # "Restores HP of all party members" ; game element light
+
+# missing from the BST-HUD table
+Needleshot      | piercing      # "Damage varies with TP", physical (Amigo Sabotender)
+Snow Cloud      | ice           # not on BG-Wiki ; game element ice

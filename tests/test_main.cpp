@@ -14,6 +14,7 @@ int g_run = 0, g_fail = 0;
 void test_json();
 void test_clip();
 void test_retry();
+void test_ready_charges();
 void test_validptr();
 void test_skillchain();
 void test_durations();
@@ -45,6 +46,7 @@ int main() {
     test_json();
     test_clip();
     test_retry();
+    test_ready_charges();
     test_validptr();
     test_skillchain();
     test_durations();

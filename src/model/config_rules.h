@@ -169,6 +169,7 @@ inline void config_sanitise(UiConfig& c) {
     MUL(hlScale);   FRAC(hlX);   FRAC(hlY);                     cfg_text(c.hlText, HL_TE_COUNT);   cfg_box(c.hlBox);
     MUL(pwScale);   FRAC(pwX);   FRAC(pwY);                     cfg_text(c.pwText, PW_TE_COUNT);   cfg_box(c.pwBox);
     MUL(grimScale); FRAC(grimX); FRAC(grimY);                   cfg_text(c.grimText, GRIM_TE_COUNT);
+    MUL(bstScale);  FRAC(bstX);  FRAC(bstY);                    cfg_text(c.bstText, BST_TE_COUNT);   cfg_box(c.bstBox);
     MUL(epScale);   FRAC(epX);   FRAC(epY);                     cfg_text(c.epText, EP_TE_COUNT);   cfg_box(c.epBox);
     c.tpCount = cfg_int(c.tpCount, 0, 10);
     c.hlCount = cfg_int(c.hlCount, 0, 20);

@@ -254,6 +254,8 @@ void Hud::render(u32 dev) {
                                                // budget. This is the re-arm the shared budget depends on (buff_atlas.cpp) -- it fires on every
                                                // device recreate, i.e. every zone-in, which is exactly when a "device not ready" miss happens.
         grimLight_ = 0; grimDark_ = 0; grimClosed_ = 0; grimLight_r_ = {}; grimDark_r_ = {}; grimClosed_r_ = {};   // forget the grimoire book textures (belong to the old device)
+        bstArt_ = 0; bstArtR_ = {}; bstArtKey_[0] = 0;   // forget the BST pet art (belongs to the old device)
+        bstElem_ = 0; bstElemR_ = {};                     // and its element icon strip
         // The Help SAMPLES keep their own lazy copies at file scope in their hud_*.cpp -- unreachable from here
         // otherwise, so they used to survive a device recreate and hand a dead device's texture to SetTexture.
         zonetracker_help_forget(); treasure_help_forget();   // (the debuffs / timers Help samples borrow the shared atlas forgotten just above)
@@ -427,6 +429,7 @@ void Hud::render(u32 dev) {
 #endif
             draw_pointwatch(f);                     // PointWatch box (XP/CP/ML + Merits) -- placed via //aio edit
             draw_grimoire(f);                       // Scholar grimoire (SCH only) -- placed via //aio edit
+            draw_bst(f);                            // Beastmaster box (BST only) -- placed via //aio edit
             draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit
             // EmpyPop -- placed via //aio edit. SKIP the live draw while its own config section is being previewed :
             // unlike ZoneTracker (zone-gated) / Timers (buff-gated), EmpyPop draws whenever epShow is on, so without
@@ -858,6 +861,8 @@ void Hud::dispose() {
     if (grimLight_) { release_texture(grimLight_); grimLight_ = 0; }   // grimoire books
     if (grimDark_)  { release_texture(grimDark_);  grimDark_ = 0; }
     if (grimClosed_){ release_texture(grimClosed_);grimClosed_= 0; }   // grimoire : closed-book (no Arts) texture
+    if (bstArt_)    { release_texture(bstArt_);    bstArt_ = 0; }      // BST box : the pet art
+    if (bstElem_)   { release_texture(bstElem_);   bstElem_ = 0; }     // BST box : the element icon strip
     zonetracker_help_dispose(); treasure_help_dispose();   // the module-owned Help samples (file-static, not members) -- symmetric with the forget block in render()
     corner_mask_dispose();   // the baked corner-mask atlas (the ONLY Release of it)
     config_.dispose();   // Release the ConfigPage's owned Help/preview textures (zone map, logo, atlases) -- else they leak per //unload
@@ -1070,6 +1075,7 @@ static float* grow_field(UiConfig& c, int box, int sub) {   // the stored X that
         case UiConfig::GB_TM:   return sub ? &c.tmRX : &c.tmX;
         case UiConfig::GB_DB:   return &c.dbX;
         case UiConfig::GB_AW:   return &c.awX;
+        case UiConfig::GB_BST:  return &c.bstX;
     }
     return 0;
 }

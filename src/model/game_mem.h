@@ -211,6 +211,7 @@ bool read_job_table_mem(CharSheet& cs, unsigned mainJob, unsigned mainLvl);
 // arrays (indexed by id>>1). Used for the caster's "Enhancing Magic Duration" merit (2320) + JP gift (338)
 // -> flat seconds on buffs cast on allies. 0 if not readable.
 int read_merit_level(unsigned mid);
+bool read_job_spent(unsigned job, unsigned& spent);   // job points SPENT on `job` (1..23) ; false when unavailable
 int read_jp_gift_rank(unsigned gid);
 int read_jp_u8(unsigned off);   // raw u8 at *(g+0x48)+off (BRD song-duration merits @+0x142 / Marcato @+0x148)
 

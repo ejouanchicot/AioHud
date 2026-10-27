@@ -29,6 +29,25 @@ struct GrimoireState {
     int  maxCharges = 0;      // the pool size the level in play grants (charges + the ones still recharging)
 };
 
+// BEASTMASTER (module : BST). Computed once/frame in the poller (model/bst_state.cpp) : the pet the 0x068 packets
+// describe, the Ready charge pool (recast 102, its charge length LEARNED off a use : model/ready_charges.h) and the
+// Ready moves the job can use now, each with its cost and wait. SPEC docs/design/bst-module-spec.md.
+struct BstMove { unsigned short id = 0; const char* en = ""; const char* kind = 0; unsigned short status = 0; int cost = 0; int waitSec = 0; };   // status : the status icon of a buff / debuff (ready_moves_gen.h), 0 = none
+struct BstState {
+    static const int MOVES_MAX = 16;
+    bool visible = false;     // BST main job
+    bool hasPet = false;      // a pet of ours is out (0x068 + its entity still there)
+    char name[24] = {};       // the pet's name (0x068 +0x18)
+    int  hpp = 0, mpp = 0;    // 0..100 (0x068 +0x0E / +0x0F)
+    int  tp = 0;              // 0..3000 (0x068 +0x10)
+    float dist = -1.0f;       // master <-> pet, yalms (horizontal) ; < 0 = unknown
+    int  charges = 3;         // Ready charges available
+    int  nextSec = -1;        // to the next charge (ceil), -1 = pool full
+    int  chargeLen = 0;       // seconds a charge the count was decided from
+    bool learned = false;     // chargeLen measured off a use (this session or cached for the character), not the formula
+    BstMove moves[MOVES_MAX]; int nmoves = 0;
+};
+
 struct GameState {
     bool  inGame = false;     // poll succeeded (player struct populated) ; false = use demo/last-good
 
@@ -97,6 +116,7 @@ struct GameState {
                                // RE-OPEN of the same item, where the frozen-examine-value test cannot.
 
     GrimoireState grimoire;   // SCH grimoire (book + charges + timer), computed once/frame
+    BstState      bst;        // BST pet + Ready charges + moves, computed once/frame
 
     // --- party-window picker (Menu>Party>Distribution>Quartermaster/Lottery, remove member, ...) :
     //     the focused menu "partywin" carries a 1-based cursor index at +0x4C -> the hovered member

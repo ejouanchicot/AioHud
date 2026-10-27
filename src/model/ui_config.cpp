@@ -262,6 +262,9 @@ static bool save_config_to(const char* path) {
     save_text_styles(f, "pwText", c.pwText, PW_TE_COUNT);   // pointwatch : per-element typography
     fprintf(f, "grim=%d,%.3f,%.4f,%.4f,%d\n", c.grimShow, c.grimScale, c.grimX, c.grimY, c.grimArt);   // grimoire box
     save_text_styles(f, "grimText", c.grimText, GRIM_TE_COUNT);   // grimoire : per-element typography
+    fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
+            c.bstImage, c.bstName, c.bstHp, c.bstTp, c.bstDist, c.bstCharges, c.bstMoves, c.bstIcons, c.bstDemo);   // BST box + its elements
+    save_text_styles(f, "bstText", c.bstText, BST_TE_COUNT);   // BST box : per-element typography
     fprintf(f, "zt=%d,%.3f,%.4f,%.4f,%d,%d\n", c.ztShow, c.ztScale, c.ztX, c.ztY, c.ztVariant, c.ztHeader);   // zone tracker box (+ title toggle)
     fprintf(f, "ztsheol=%d,%d,%d\n", c.ztSheolSeg, c.ztSheolRes, c.ztSheolJoke);   // Sheol : segments / resistances / cruel joke
     fprintf(f, "ztlimbus=%d,%d,%d,%d,%d,%.2f,%.2f\n", c.ztLbFloor, c.ztLbCur, c.ztLbRun, c.ztLbChips, c.ztLbName, c.ztLbBarW, c.ztLbBarH);
@@ -275,7 +278,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "db=%d,%.3f,%.4f,%.4f,%d,%d,%d,%.3f,%.3f\n", c.dbShow, c.dbScale, c.dbX, c.dbY, c.dbMax, c.dbHeader, c.dbDisp, c.dbIconScale, c.dbRowGap);   // Debuffs module (detached target debuffs)
     {   // per-module box appearance (shared BoxStyle : frame / transparency / theme / hue / luminosity)
         auto sb = [&](const char* k, const BoxStyle& b) { fprintf(f, "%s=%d,%.4f,%d,%d,%.4f,%08X,%d\n", k, b.on, b.alpha, b.themeCopy, b.theme, b.lum, b.hue, b.border); };   // border = trailing field (old 6-field configs load with border=default)
-        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("awbox", c.awBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox); sb("dbbox", c.dbBox); sb("plreqbox", c.plrEqBox);
+        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("awbox", c.awBox); sb("bstbox", c.bstBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox); sb("dbbox", c.dbBox); sb("plreqbox", c.plrEqBox);
     }
     fprintf(f, "ep=%d,%.3f,%.4f,%.4f,%d\n", c.epShow, c.epScale, c.epX, c.epY, c.epColl);   // EmpyPop box (+ collectable row)
     fprintf(f, "eptrack=%s\n", c.epTrack);   // the tracked NM KEY -- its OWN line : keys contain spaces
@@ -363,6 +366,19 @@ static bool parse_aw_line(const char* line, UiConfig& c) {
     const int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d,%d,%d,%d", &sh, &scl, &x, &y, &scr, &mem, &col, &cnt, &tim);
     if (n >= 1) c.awShow = sh; if (n >= 2) c.awScale = scl; if (n >= 3) c.awX = x; if (n >= 4) c.awY = y;
     if (n >= 5) c.awScreen = scr; if (n >= 6) c.awMemory = mem; if (n >= 7) c.awColors = col; if (n >= 8) c.awCount = cnt; if (n >= 9) c.awTimer = tim;
+    return true;
+}
+// BST-module config lines, parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line).
+static bool parse_bst_line(const char* line, UiConfig& c) {
+    if (parse_text_style(line, "bstText", c.bstText, BST_TE_COUNT)) return true;
+    if (strncmp(line, "bstbox=", 7) == 0) { parse_box(line + 7, c.bstBox); return true; }
+    if (strncmp(line, "bst=", 4) != 0) return false;
+    int v[11] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0 }; float scl = 1.0f, x = 0.72f, y = 0.55f;
+    const int n = sscanf(line + 4, "%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &v[0], &scl, &x, &y, &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10]);
+    if (n >= 1) c.bstShow = v[0]; if (n >= 2) c.bstScale = scl; if (n >= 3) c.bstX = x; if (n >= 4) c.bstY = y;
+    if (n >= 5) c.bstOnlyPet = v[1]; if (n >= 6) c.bstImage = v[2]; if (n >= 7) c.bstName = v[3]; if (n >= 8) c.bstHp = v[4];
+    if (n >= 9) c.bstTp = v[5]; if (n >= 10) c.bstDist = v[6]; if (n >= 11) c.bstCharges = v[7]; if (n >= 12) c.bstMoves = v[8];
+    if (n >= 13) c.bstIcons = v[9]; if (n >= 14) c.bstDemo = v[10];
     return true;
 }
 static bool parse_grow_line(const char* line, UiConfig& c) {
@@ -634,6 +650,7 @@ static bool load_config_from(const char* path) {
         // leaves the well-behaved branches untouched and removes the collision instead of muting it.
         int v, v1, v2, gps, idx, b0, b1, b2, bc; float gx, gy, gsc, fv, f1, f2; unsigned uc;
         if (parse_aw_line(line, c)) continue;     // out-of-line : the Absorb-TP box (same nesting-limit reason)
+        if (parse_bst_line(line, c)) continue;    // out-of-line : the BST box (same nesting-limit reason)
         if (parse_grow_line(line, c)) continue;   // out-of-line : box grow directions (same nesting-limit reason)
         if (parse_ep_line(line, c)) continue;   // out-of-line : keeps the chain below off MSVC's nesting limit
         if (parse_cast_line(line, c)) continue; // out-of-line : cast-placeholder toggles (same nesting-limit reason)
@@ -1167,6 +1184,9 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (!text_styles_eq(a.pwText, b.pwText, PW_TE_COUNT)) return false;
     if (a.grimShow != b.grimShow || a.grimScale != b.grimScale || a.grimX != b.grimX || a.grimY != b.grimY || a.grimArt != b.grimArt) return false;
     if (!text_styles_eq(a.grimText, b.grimText, GRIM_TE_COUNT)) return false;
+    if (a.bstShow != b.bstShow || a.bstScale != b.bstScale || a.bstX != b.bstX || a.bstY != b.bstY || a.bstOnlyPet != b.bstOnlyPet) return false;
+    if (a.bstImage != b.bstImage || a.bstName != b.bstName || a.bstHp != b.bstHp || a.bstTp != b.bstTp || a.bstDist != b.bstDist || a.bstCharges != b.bstCharges || a.bstMoves != b.bstMoves || a.bstIcons != b.bstIcons || a.bstDemo != b.bstDemo) return false;
+    if (!text_styles_eq(a.bstText, b.bstText, BST_TE_COUNT) || !box_eq(a.bstBox, b.bstBox)) return false;
     if (a.ztShow != b.ztShow || a.ztScale != b.ztScale || a.ztX != b.ztX || a.ztY != b.ztY || a.ztVariant != b.ztVariant || a.ztHeader != b.ztHeader) return false;
     if (a.ztSheolSeg != b.ztSheolSeg || a.ztSheolRes != b.ztSheolRes || a.ztSheolJoke != b.ztSheolJoke) return false;
     if (a.ztLbFloor != b.ztLbFloor || a.ztLbCur != b.ztLbCur || a.ztLbRun != b.ztLbRun || a.ztLbChips != b.ztLbChips) return false;
