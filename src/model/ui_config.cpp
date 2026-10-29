@@ -263,9 +263,9 @@ static bool save_config_to(const char* path) {
     fprintf(f, "grim=%d,%.3f,%.4f,%.4f,%d\n", c.grimShow, c.grimScale, c.grimX, c.grimY, c.grimArt);   // grimoire box
     save_text_styles(f, "grimText", c.grimText, GRIM_TE_COUNT);   // grimoire : per-element typography
     fprintf(f, "pet=%d,%.3f,%.4f,%.4f,%d\n", c.petShow, c.petScale, c.petX, c.petY, c.petTab);   // the Pet box : show, size, place, config tab
-    fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
+    fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
             c.bstImage, c.bstName, c.bstHp, c.bstTp, c.bstDist, c.bstCharges, c.bstMoves, c.bstIcons, c.bstDemo, c.bstArtMode,
-            c.bstArtSz, c.bstPawSz, c.bstEcoSz, c.bstChargeStyle);   // BST box + its elements
+            c.bstArtSz, c.bstPawSz, c.bstEcoSz, c.bstChargeStyle, c.bstLayout);   // BST box + its elements
     save_text_styles(f, "bstText", c.bstText, BST_TE_COUNT);   // BST box : per-element typography
     fprintf(f, "geo=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%d,%d,%d,%d,%d,%d\n", c.geoShow, c.geoScale, c.geoX, c.geoY, c.geoOnlyLuopan,
             c.geoBubble, c.geoHp, c.geoDist, c.geoAura, c.geoEntrust, c.geoMp, c.geoJa, c.geoIconSz, c.geoCompass,
@@ -392,8 +392,8 @@ static bool parse_bst_line(const char* line, UiConfig& c) {
     if (parse_text_style(line, "bstText", c.bstText, BST_TE_COUNT)) return true;
     if (strncmp(line, "bstbox=", 7) == 0) { parse_box(line + 7, c.bstBox); return true; }
     if (strncmp(line, "bst=", 4) != 0) return false;
-    int v[12] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 }; float scl = 1.0f, x = 0.72f, y = 0.55f, sz[3] = { 1.0f, 1.0f, 1.0f }; int cs = 0;
-    const int n = sscanf(line + 4, "%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%d", &v[0], &scl, &x, &y, &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10], &v[11], &sz[0], &sz[1], &sz[2], &cs);
+    int v[12] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 }; float scl = 1.0f, x = 0.72f, y = 0.55f, sz[3] = { 1.0f, 1.0f, 1.0f }; int cs = 0, lay = 0;
+    const int n = sscanf(line + 4, "%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%d,%d", &v[0], &scl, &x, &y, &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10], &v[11], &sz[0], &sz[1], &sz[2], &cs, &lay);
     if (n >= 1) c.bstShow = v[0]; if (n >= 2) c.bstScale = scl; if (n >= 3) c.bstX = x; if (n >= 4) c.bstY = y;
     if (n >= 5) c.bstOnlyPet = v[1]; if (n >= 6) c.bstImage = v[2]; if (n >= 7) c.bstName = v[3]; if (n >= 8) c.bstHp = v[4];
     if (n >= 9) c.bstTp = v[5]; if (n >= 10) c.bstDist = v[6]; if (n >= 11) c.bstCharges = v[7]; if (n >= 12) c.bstMoves = v[8];
@@ -402,6 +402,7 @@ static bool parse_bst_line(const char* line, UiConfig& c) {
     for (int i = 0; i < 3; ++i) if (!(sz[i] >= 0.5f && sz[i] <= 2.0f)) sz[i] = 1.0f;   // (written so a "nan" fails too)
     if (n >= 16) c.bstArtSz = sz[0]; if (n >= 17) c.bstPawSz = sz[1]; if (n >= 18) c.bstEcoSz = sz[2];
     if (n >= 19 && cs >= 0 && cs <= 2) c.bstChargeStyle = cs;
+    if (n >= 20 && lay >= 0 && lay <= 2) c.bstLayout = lay;
     return true;
 }
 // GEO-module config lines, parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line). Tolerant : a shorter line
@@ -1235,7 +1236,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.bstShow != b.bstShow || a.bstScale != b.bstScale || a.bstX != b.bstX || a.bstY != b.bstY || a.bstOnlyPet != b.bstOnlyPet) return false;
     if (a.bstImage != b.bstImage || a.bstName != b.bstName || a.bstHp != b.bstHp || a.bstTp != b.bstTp || a.bstDist != b.bstDist || a.bstCharges != b.bstCharges || a.bstMoves != b.bstMoves || a.bstIcons != b.bstIcons || a.bstDemo != b.bstDemo || a.bstArtMode != b.bstArtMode
         || a.bstArtSz != b.bstArtSz || a.bstPawSz != b.bstPawSz || a.bstEcoSz != b.bstEcoSz
-        || a.bstChargeStyle != b.bstChargeStyle) return false;
+        || a.bstChargeStyle != b.bstChargeStyle || a.bstLayout != b.bstLayout) return false;
     if (!text_styles_eq(a.bstText, b.bstText, BST_TE_COUNT) || !box_eq(a.bstBox, b.bstBox)) return false;
     if (a.geoShow != b.geoShow || a.geoScale != b.geoScale || a.geoX != b.geoX || a.geoY != b.geoY || a.geoOnlyLuopan != b.geoOnlyLuopan) return false;
     if (a.geoBubble != b.geoBubble || a.geoHp != b.geoHp || a.geoDist != b.geoDist || a.geoAura != b.geoAura || a.geoEntrust != b.geoEntrust

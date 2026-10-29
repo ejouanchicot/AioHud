@@ -85,7 +85,7 @@ static void scribble(UiConfig& c, int seed) {
     c.hlShow = i1 & 1; c.hlScale = 0.9f + 0.1f * seed; c.hlCount = 4 + seed;
     c.pwShow = i1 & 1; c.pwScale = 0.9f + 0.1f * seed; c.pwMode = i1 % 3;
     c.grimShow = i1 & 1; c.grimScale = 0.9f + 0.1f * seed;
-    c.petShow = !(i1 & 1); c.petScale = 0.9f + 0.1f * seed; c.petX = 0.13f * seed; c.petY = 0.19f * seed; c.petTab = seed & 1;
+    c.petShow = !(i1 & 1); c.petScale = 0.9f + 0.1f * seed; c.petX = 0.13f * seed; c.petY = 0.19f * seed; c.petTab = seed & 1; c.bstLayout = seed % 3;
     c.geoShow = !(i1 & 1); c.geoScale = 0.9f + 0.1f * seed; c.geoX = 0.11f * seed; c.geoY = 0.17f * seed; c.geoOnlyLuopan = i1 & 1;
     c.geoBubble = !(i1 & 1); c.geoHp = !(i1 & 1); c.geoDist = !(i1 & 1); c.geoAura = !(i1 & 1); c.geoEntrust = !(i1 & 1);
     c.geoMp = !(i1 & 1); c.geoJa = !(i1 & 1); c.geoIconSz = 0.8f + 0.1f * seed; c.geoCompass = i1 & 1; c.geoJaStyle = seed % 3; c.geoJaIcons = c.geoJaStyle != 2; c.geoLayout = (seed + 1) % 3; c.geoCardText = !(i1 & 1); c.geoTime = !(i1 & 1);

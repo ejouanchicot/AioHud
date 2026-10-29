@@ -21,6 +21,11 @@ void ConfigPage::draw_bst_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
                                float bandX, float bandW, float coX, float ctrlW) {
     UiConfig& c = ui_config();
     ROW_TOGGLE(CTRL_ID, tr("Show on BST", "Afficher en BST"), c.bstShow)
+    { ROW_BAND(52.0f)   // where the pet goes : beside the Ready dial in the box, on top of the box, on top of its moves only
+        const char* LL[3] = { tr("Side by side", "C\xC3\xB4te \xC3\xA0 c\xC3\xB4te"), tr("Pet on top", "Pet au-dessus"), tr("Pet + moves", "Pet + moves") };
+        const int l = (c.bstLayout < 0 || c.bstLayout > 2) ? 0 : c.bstLayout;
+        if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Layout", "Disposition"), LL[l])) { c.bstLayout = wrap(l + d, 3); save_ui_config(); }
+    } ROW_NEXT(52.0f)
     ROW_TOGGLE(CTRL_ID, tr("Only with a pet out", "Seulement avec un pet sorti"), c.bstOnlyPet)
     { ROW_BAND(52.0f)   // Preview pet (edit / this page only) : every jug pet, its art and its moves
         const int pi = (c.bstDemo < 0 || c.bstDemo >= BST_PETS_N) ? 0 : c.bstDemo;

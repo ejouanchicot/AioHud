@@ -368,6 +368,8 @@ struct UiConfig {
     float bstPawSz = 1.0f;     // the Ready paws (and the ring dial), x 0.5 .. 2
     float bstEcoSz = 1.0f;     // the correlation's family icons, x 0.5 .. 2
     int   bstChargeStyle = 0;  // the Ready charges : 0 paws (the ring when the paw icon is missing), 1 the ring, 2 bars
+    int   bstLayout = 0;       // 0 side by side (the Ready dial beside the pet) ; 1 the pet on top of the box, no box round
+                               // it ; 2 the pet on top of its numbered moves only (maquettes B / C, 2026-10-29)
     TextStyle bstText[BST_TE_COUNT];   // per-element typography : [BST_NAME] [BST_VALUE] [BST_CHARGE] [BST_MOVE]
 
     // ---- GEO content of the Pet box : the luopan's bubble, the Indi- aura, Entrust, MP and the job abilities

@@ -143,6 +143,12 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
 
     float sscl = C.petScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
     const float S = (ovS > 0.0f) ? ovS : (screenH_ / 1000.0f) * sscl;
+    // the layout (UiConfig::bstLayout) : 0 side by side (the Ready dial beside the pet, in the box), 1 the pet ON TOP of
+    // the box with no box round it, 2 the pet on top of its numbered moves only (the player's pick 2026-10-29, maquettes B
+    // and C ; C keeps the moves : "on ne va pas savoir combien de TP moves [...] qu'elle macro" -- the numbers are
+    // GearSwap's //gs c rdymove N)
+    const int layout = (C.bstLayout < 0 || C.bstLayout > 2) ? 0 : C.bstLayout;
+    const bool stacked = layout != 0;
 
     // ---- the pet art (one texture, the current pet's ; reloaded when the pet changes) ----
     u32 art = 0;
@@ -156,7 +162,7 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
         // with the correlation line on too, the pet alone (<key>_solo.raw : its prey is on that line ; the player's ask,
         // 2026-10-29), the plain picture when that file is not there ; the file looked for once per pet and mode
         static char s_soloFor[40] = {}; static bool s_solo = false;
-        if (showCorr && key[0]) {
+        if (showCorr && layout != 2 && key[0]) {   // layout 2 shows no correlation line : the whole picture
             char want[40]; _snprintf(want, sizeof(want), "%s_solo", key); want[sizeof(want) - 1] = 0;
             if (strcmp(s_soloFor, want) != 0) {
                 char rel[64]; _snprintf(rel, sizeof(rel), "assets\\bstpets\\%s.raw", want); rel[sizeof(rel) - 1] = 0;
@@ -183,7 +189,7 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
     //      sits against the side of that frame nearer to its screen edge : a frame in the lower half keeps its BOTTOM
     //      (the box grows upward), one in the upper half keeps its TOP. ----
     static const int MOVE_ROWS = 7;
-    const float pad = snap((C.petBox.on ? 8.0f : 2.0f) * S), W = snap(270.0f * S);
+    const float pad = snap((C.petBox.on ? 8.0f : 2.0f) * S);
     const float rowH = snap(15.0f * S), lineH = snap(16.0f * S), smallH = snap(14.0f * S), gap = snap(6.0f * S);
     // the Ready charges : three paws in a triangle when the icon is there (narrower), the ring dial otherwise
     // the style of //aio config -> BST (the player's ask, 2026-10-29) : paws, the ring, bars ; paws without their icon
@@ -210,154 +216,241 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
     const u32 midTex = art ? art : ecoTex[0];
     const bool ecoIcons = midTex || ecoTex[1] || ecoTex[2];
     const float iconSz = snap(22.0f * S * kEco), iconBig = snap(34.0f * S * kEco), nameH = snap(12.0f * S);
-    const float corrH = showCorr ? (ecoIcons ? iconBig + nameH + snap(2.0f * S) : smallH) : 0.0f;
+    const float corrH = (showCorr && layout != 2) ? (ecoIcons ? iconBig + nameH + snap(2.0f * S) : smallH) : 0.0f;
     const float cntH = C.bstCharges ? smallH : 0.0f;
     const float rightH = petBlock + cntH;
     const float topH = rightH > dialD ? rightH : dialD;
+    // ---- the stacked layouts : on top a disc with the pet's art, its HP as a ring and its TP as an inner arc, the Ready
+    //      charges in a row under it ; in the box below (layout 1) a line with its name and distance, a line HP / TP /
+    //      READY, then the correlation and the moves as in the side layout ----
+    const float discD = snap(96.0f * S * kArt), pipSz = snap(20.0f * S * kPaw);
+    const float pipsH = C.bstCharges ? pipSz + snap(4.0f * S) : 0.0f, topSide = discD + pipsH, topGap = snap(6.0f * S);
+    const float infoH = (C.bstName || C.bstDist ? lineH : 0.0f) + (C.bstHp || C.bstTp || C.bstCharges ? lineH : 0.0f);
+    const float blockH = layout == 2 ? 0.0f : (stacked ? infoH : topH);   // what sits above the correlation in the box
     // a box's height for `rows` rows of moves
-    auto heightFor = [&](int rows) -> float {
+    auto boxHFor = [&](int rows) -> float {
         const float mh = C.bstMoves ? rowH * (float)rows : 0.0f;
-        const int blocks = (topH > 0.0f ? 1 : 0) + (corrH > 0.0f ? 1 : 0) + (mh > 0.0f ? 1 : 0);
-        return blocks ? pad * 2.0f + topH + corrH + mh + gap * (float)(blocks - 1) : 0.0f;
+        const int blocks = (blockH > 0.0f ? 1 : 0) + (corrH > 0.0f ? 1 : 0) + (mh > 0.0f ? 1 : 0);
+        return blocks ? pad * 2.0f + blockH + corrH + mh + gap * (float)(blocks - 1) : 0.0f;
+    };
+    // the whole height : the pet above the box when stacked (layout 2 : a box of moves only)
+    auto heightFor = [&](int rows) -> float {
+        const float bh = boxHFor(rows);
+        return stacked ? topSide + (bh > 0.0f ? topGap + bh : 0.0f) : bh;
     };
     const float frameH = heightFor(b.nmoves > MOVE_ROWS ? b.nmoves : MOVE_ROWS);
     if (frameH <= 0.0f) return;
     const bool frame = editing;   // //aio edit drags the frame ; the config preview and play show the box itself
-    const float boxW = W, boxH = frame ? frameH : heightFor(b.nmoves);
-    if (boxH <= 0.0f) return;
+    const float boxW = snap((stacked ? 230.0f : 270.0f) * S);
+    const float totW = (stacked && topSide > boxW) ? topSide : boxW, totH = frame ? frameH : heightFor(b.nmoves);
+    if (totH <= 0.0f) return;
     const float movH = (C.bstMoves && b.nmoves) ? rowH * (float)b.nmoves : 0.0f;   // the rows drawn below
 
     float px, py;
-    if (ovS > 0.0f) { px = snap(ovX - boxW * 0.5f); py = snap(ovY - boxH * 0.5f); }
-    else            { px = box_grow_x(screenW_, UiConfig::GB_PET, 0, C.petX, boxW); py = snap(C.petY * screenH_); }
-    if (editing) box_edit(f, pet_edit_box(), EDITBOX_PET, px, py, boxW, boxH, ui_config().petScale, ui_config().petX, ui_config().petY, C.boxGrow[UiConfig::GB_PET]);
+    if (ovS > 0.0f) { px = snap(ovX - totW * 0.5f); py = snap(ovY - totH * 0.5f); }
+    else            { px = box_grow_x(screenW_, UiConfig::GB_PET, 0, C.petX, totW); py = snap(C.petY * screenH_); }
+    if (editing) box_edit(f, pet_edit_box(), EDITBOX_PET, px, py, totW, totH, ui_config().petScale, ui_config().petX, ui_config().petY, C.boxGrow[UiConfig::GB_PET]);
     if (!editing && ovS <= 0.0f) {
-        if (py + frameH * 0.5f > screenH_ * 0.5f) py = snap(py + frameH - boxH);   // lower half : the frame's bottom
-        box_on_screen(f, px, py, boxW, boxH);
+        if (py + frameH * 0.5f > screenH_ * 0.5f) py = snap(py + frameH - totH);   // lower half : the frame's bottom
+        box_on_screen(f, px, py, totW, totH);
     }
 
-    draw_themed_box(dev, f.skin, px, py, boxW, boxH, C.petBox, 1.0f, S);   // shared themed chrome (frame / transparency / theme, Same-as-Party by default)
+    // the box : under the pet when stacked, the whole of it side by side
+    const float bx = snap(px + (totW - boxW) * 0.5f), by = stacked ? snap(py + topSide + topGap) : py;
+    const float bh = stacked ? totH - topSide - topGap : totH;
+    if (bh > 0.0f) draw_themed_box(dev, f.skin, bx, by, boxW, bh, C.petBox, 1.0f, S);   // shared themed chrome (frame / transparency / theme, Same-as-Party by default)
 
-    const float top = py + pad;
+    const float top = by + pad, xr = bx + boxW - pad;
     Font* fv = bst_font(f, BST_VALUE);
     const float zv = bst_sz(BST_VALUE, 11.0f) * S, ov = bst_ow(BST_VALUE, 1.0f) * S;
 
-    // ---- the Ready dial : a dark face, three segments (a gap between them), full ones gold with a glow, the one
-    //      recharging filled by the share of its length gone ; in the centre the seconds to the next one, MAX when
-    //      the pool is full ----
-    if (dialD > 0.0f) {
-        const float cx = snap(px + pad + dialD * 0.5f), cy = snap(top + topH * 0.5f);
-        const float rOut = dialD * 0.5f - snap(2.0f * S), rIn = rOut - snap(7.0f * S), glow = snap(2.5f * S);
-        const float segA = BST_TAU / (float)READY_CHARGES, gapA = 0.12f;
-        const float frac = (b.nextSec >= 0 && b.chargeLen > 0) ? 1.0f - (float)b.nextSec / (float)b.chargeLen : 0.0f;
-        char cb[12];
-        if (b.nextSec >= 0) sprintf(cb, "%ds", b.nextSec); else strcpy(cb, "MAX");
-        Font* fc = bst_font(f, BST_CHARGE);
-        const float oc = bst_ow(BST_CHARGE, 1.2f) * S;
-        const u32 tc = b.nextSec >= 0 ? bst_col(BST_CHARGE, 0xFFFFF4D6u) : 0xFFFFC864u;
-        // three paw prints in an arc (the player's pick 2026-10-28 : the elements "nature", the box AioHUD's) : a full
-        // charge gold, an empty one dim, the one recharging filling up from the bottom ; the seconds under them
-        if (paw) {
-            // a triangle (the player's pick 2026-10-28) : the first charge on top, the second bottom left, the third
-            // bottom right, close together ; the seconds under them
-            const float k = S * kPaw, ps = snap(24.0f * k), dx = snap(13.0f * k), topY = cy - snap(20.0f * k), botY = cy + snap(3.0f * k);
-            const float PX[3] = { 0.0f, -1.0f, 1.0f }, PY[3] = { topY, botY, botY };
-            for (int i = 0; i < READY_CHARGES; ++i) {
-                const float x = snap(cx + dx * PX[i] - ps * 0.5f), y = snap(PY[i] - ps * 0.5f);
-                pet_tex_quad(dev, paw, x, y, ps, ps, 0.0f, 1.0f, 0x50FFFFFFu);
-                if (i < b.charges) pet_tex_quad(dev, paw, x, y, ps, ps, 0.0f, 1.0f, 0xFFFFC864u);
-                else if (i == b.charges && frac > 0.0f) {
-                    const float fr = frac > 1.0f ? 1.0f : frac;
-                    pet_tex_quad(dev, paw, x, y + ps * (1.0f - fr), ps, ps * fr, 1.0f - fr, 1.0f, 0xFFA8853Cu);
+    const float zs = bst_sz(BST_VALUE, 10.0f) * S;
+    if (!stacked) {
+        // ---- the Ready dial : a dark face, three segments (a gap between them), full ones gold with a glow, the one
+        //      recharging filled by the share of its length gone ; in the centre the seconds to the next one, MAX when
+        //      the pool is full ----
+        if (dialD > 0.0f) {
+            const float cx = snap(bx + pad + dialD * 0.5f), cy = snap(top + topH * 0.5f);
+            const float rOut = dialD * 0.5f - snap(2.0f * S), rIn = rOut - snap(7.0f * S), glow = snap(2.5f * S);
+            const float segA = BST_TAU / (float)READY_CHARGES, gapA = 0.12f;
+            const float frac = (b.nextSec >= 0 && b.chargeLen > 0) ? 1.0f - (float)b.nextSec / (float)b.chargeLen : 0.0f;
+            char cb[12];
+            if (b.nextSec >= 0) sprintf(cb, "%ds", b.nextSec); else strcpy(cb, "MAX");
+            Font* fc = bst_font(f, BST_CHARGE);
+            const float oc = bst_ow(BST_CHARGE, 1.2f) * S;
+            const u32 tc = b.nextSec >= 0 ? bst_col(BST_CHARGE, 0xFFFFF4D6u) : 0xFFFFC864u;
+            // three paw prints in an arc (the player's pick 2026-10-28 : the elements "nature", the box AioHUD's) : a full
+            // charge gold, an empty one dim, the one recharging filling up from the bottom ; the seconds under them
+            if (paw) {
+                // a triangle (the player's pick 2026-10-28) : the first charge on top, the second bottom left, the third
+                // bottom right, close together ; the seconds under them
+                const float k = S * kPaw, ps = snap(24.0f * k), dx = snap(13.0f * k), topY = cy - snap(20.0f * k), botY = cy + snap(3.0f * k);
+                const float PX[3] = { 0.0f, -1.0f, 1.0f }, PY[3] = { topY, botY, botY };
+                for (int i = 0; i < READY_CHARGES; ++i) {
+                    const float x = snap(cx + dx * PX[i] - ps * 0.5f), y = snap(PY[i] - ps * 0.5f);
+                    pet_tex_quad(dev, paw, x, y, ps, ps, 0.0f, 1.0f, 0x50FFFFFFu);
+                    if (i < b.charges) pet_tex_quad(dev, paw, x, y, ps, ps, 0.0f, 1.0f, 0xFFFFC864u);
+                    else if (i == b.charges && frac > 0.0f) {
+                        const float fr = frac > 1.0f ? 1.0f : frac;
+                        pet_tex_quad(dev, paw, x, y + ps * (1.0f - fr), ps, ps * fr, 1.0f - fr, 1.0f, 0xFFA8853Cu);
+                    }
                 }
-            }
-            fc->begin(dev);
-            fc->draw_cc(dev, cx, snap(cy + snap(25.0f * k)), cb, bst_sz(BST_CHARGE, 15.0f) * S, tc, 0xC0000000u, oc);
-        } else if (chargeBars) {
-            // three upright bars side by side : a full charge gold, the one recharging filling up from the bottom, an empty
-            // one the dark track ; the seconds under them
-            const float k = S * kPaw, bw = snap(11.0f * k), bh = snap(36.0f * k), bg = snap(5.0f * k);
-            const float x0b = snap(cx - (3.0f * bw + 2.0f * bg) * 0.5f), y0b = snap(cy - snap(8.0f * k) - bh * 0.5f), r = snap(2.5f * k);
+                fc->begin(dev);
+                fc->draw_cc(dev, cx, snap(cy + snap(25.0f * k)), cb, bst_sz(BST_CHARGE, 15.0f) * S, tc, 0xC0000000u, oc);
+            } else if (chargeBars) {
+                // three upright bars side by side : a full charge gold, the one recharging filling up from the bottom, an empty
+                // one the dark track ; the seconds under them
+                const float k = S * kPaw, bw = snap(11.0f * k), bh = snap(36.0f * k), bg = snap(5.0f * k);
+                const float x0b = snap(cx - (3.0f * bw + 2.0f * bg) * 0.5f), y0b = snap(cy - snap(8.0f * k) - bh * 0.5f), r = snap(2.5f * k);
+                dColorQuadState(dev);
+                for (int i = 0; i < READY_CHARGES; ++i) {
+                    const float x = x0b + (bw + bg) * (float)i;
+                    rrect(dev, x, y0b, bw, bh, r, 0xFF262C38u, 0xFF1C212Bu, 1.0f);
+                    if (i < b.charges) rrect(dev, x, y0b, bw, bh, r, 0xFFFFC864u, 0xFFD9A440u, 1.0f);
+                    else if (i == b.charges && frac > 0.0f) {
+                        const float h = snap(bh * (frac > 1.0f ? 1.0f : frac));
+                        if (h > 0.0f) rrect(dev, x, y0b + bh - h, bw, h, r, 0xFFA8853Cu, 0xFF8A6C30u, 1.0f);
+                    }
+                }
+                fc->begin(dev);
+                fc->draw_cc(dev, cx, snap(cy + snap(25.0f * k)), cb, bst_sz(BST_CHARGE, 15.0f) * S, tc, 0xC0000000u, oc);
+            } else {
             dColorQuadState(dev);
+            disc(dev, cx, cy, rIn - snap(3.0f * S), 0xC00A0E16u);
             for (int i = 0; i < READY_CHARGES; ++i) {
-                const float x = x0b + (bw + bg) * (float)i;
-                rrect(dev, x, y0b, bw, bh, r, 0xFF262C38u, 0xFF1C212Bu, 1.0f);
-                if (i < b.charges) rrect(dev, x, y0b, bw, bh, r, 0xFFFFC864u, 0xFFD9A440u, 1.0f);
-                else if (i == b.charges && frac > 0.0f) {
-                    const float h = snap(bh * (frac > 1.0f ? 1.0f : frac));
-                    if (h > 0.0f) rrect(dev, x, y0b + bh - h, bw, h, r, 0xFFA8853Cu, 0xFF8A6C30u, 1.0f);
+                const float a0 = -BST_TAU * 0.25f + segA * (float)i + gapA * 0.5f, a1 = a0 + segA - gapA;
+                ring_sector(dev, cx, cy, rIn, rOut, a0, a1, 0xFF262C38u);
+                if (i < b.charges) {
+                    ring_sector(dev, cx, cy, rIn - glow, rOut + glow, a0, a1, 0x40FFC864u);
+                    ring_sector(dev, cx, cy, rIn, rOut, a0, a1, 0xFFFFC864u);
+                } else if (i == b.charges && frac > 0.0f) {
+                    const float af = a0 + (a1 - a0) * (frac > 1.0f ? 1.0f : frac);
+                    ring_sector(dev, cx, cy, rIn, rOut, a0, af, 0xFFA8853Cu);
                 }
             }
             fc->begin(dev);
-            fc->draw_cc(dev, cx, snap(cy + snap(25.0f * k)), cb, bst_sz(BST_CHARGE, 15.0f) * S, tc, 0xC0000000u, oc);
-        } else {
-        dColorQuadState(dev);
-        disc(dev, cx, cy, rIn - snap(3.0f * S), 0xC00A0E16u);
-        for (int i = 0; i < READY_CHARGES; ++i) {
-            const float a0 = -BST_TAU * 0.25f + segA * (float)i + gapA * 0.5f, a1 = a0 + segA - gapA;
-            ring_sector(dev, cx, cy, rIn, rOut, a0, a1, 0xFF262C38u);
-            if (i < b.charges) {
-                ring_sector(dev, cx, cy, rIn - glow, rOut + glow, a0, a1, 0x40FFC864u);
-                ring_sector(dev, cx, cy, rIn, rOut, a0, a1, 0xFFFFC864u);
-            } else if (i == b.charges && frac > 0.0f) {
-                const float af = a0 + (a1 - a0) * (frac > 1.0f ? 1.0f : frac);
-                ring_sector(dev, cx, cy, rIn, rOut, a0, af, 0xFFA8853Cu);
+            fc->draw_cc(dev, cx, cy, cb, bst_sz(BST_CHARGE, 20.0f) * S, tc, 0xC0000000u, oc);
             }
         }
-        fc->begin(dev);
-        fc->draw_cc(dev, cx, cy, cb, bst_sz(BST_CHARGE, 20.0f) * S, tc, 0xC0000000u, oc);
-        }
-    }
 
-    // ---- the right column, centred on the dial : the pet (art beside name / HP / TP), the count ----
-    const float x0 = px + pad + (dialD > 0.0f ? dialD + pad : 0.0f), xr = px + boxW - pad;
-    float ry = snap(top + (topH - rightH) * 0.5f);
-    if (b.hasPet) {
-        if (art && showArt) pet_tex_quad(dev, art, x0, ry + (petBlock - artSz) * 0.5f, artSz, artSz, 0.0f, 1.0f, 0xFFFFFFFFu);
-        const float tx = x0 + (artSz > 0.0f ? artSz + snap(6.0f * S) : 0.0f), tw = xr - tx;   // the art's square stays, drawn or not
-        float ly = ry + (petBlock - lineH * (float)petLines) * 0.5f;
-        if (C.bstName || C.bstDist) {
+        // ---- the right column, centred on the dial : the pet (art beside name / HP / TP), the count ----
+        const float x0 = bx + pad + (dialD > 0.0f ? dialD + pad : 0.0f);
+        float ry = snap(top + (topH - rightH) * 0.5f);
+        if (b.hasPet) {
+            if (art && showArt) pet_tex_quad(dev, art, x0, ry + (petBlock - artSz) * 0.5f, artSz, artSz, 0.0f, 1.0f, 0xFFFFFFFFu);
+            const float tx = x0 + (artSz > 0.0f ? artSz + snap(6.0f * S) : 0.0f), tw = xr - tx;   // the art's square stays, drawn or not
+            float ly = ry + (petBlock - lineH * (float)petLines) * 0.5f;
+            if (C.bstName || C.bstDist) {
+                float distW = 0.0f;
+                if (C.bstDist && b.dist >= 0.0f) {
+                    char db[16]; _snprintf(db, sizeof(db), "%.1fy", b.dist > 999.0f ? 999.0f : b.dist); db[sizeof(db) - 1] = 0;
+                    distW = fv->measure(db, zv) + snap(6.0f * S);
+                    fv->begin(dev);
+                    fv->draw_lc(dev, xr - fv->measure(db, zv), ly + lineH * 0.5f, db, zv, bst_col(BST_VALUE, b.dist > 20.0f ? 0xFFFF8A6Au : 0xFFB8C0C8u), 0xC0000000u, ov);
+                }
+                if (C.bstName) {
+                    Font* fn = bst_font(f, BST_NAME);
+                    const float zn = bst_sz(BST_NAME, 12.5f) * S, on = bst_ow(BST_NAME, 1.0f) * S;
+                    // the name as the jug database spells it ("Blackbeard Randy"), the game's has no spaces
+                    const char* shown = bst_pet_display(b.name);
+                    // "Y. Beetle Familiar" and "Acuex Familiar" lost their end beside the art and the distance (the player, 2026-10-28)
+                    char nm[32]; const float zf = pet_fit_text(fn, shown, zn, tw - distW, nm, sizeof(nm));
+                    fn->begin(dev);
+                    fn->draw_lc(dev, tx, ly + lineH * 0.5f, nm, zf, bst_col(BST_NAME, 0xFFFFF4D6u), 0xC0000000u, on);
+                }
+                ly += lineH;
+            }
+            const float gh = snap(7.0f * S), gw = tw - snap(38.0f * S);
+            if (C.bstHp) {
+                char hb[12]; sprintf(hb, "%d%%", b.hpp);
+                const u32 hc = b.hpp > 50 ? 0xFF6BD07Au : (b.hpp > 25 ? 0xFFE8C45Au : 0xFFFF6A5Au);
+                bst_gauge(dev, fv, tx, ly + (lineH - gh) * 0.5f, gw, gh, b.hpp / 100.0f, hc, hb, zv, ov, bst_col(BST_VALUE, 0xFFE8EEF2u));
+                ly += lineH;
+            }
+            if (C.bstTp) {
+                char tb[12]; sprintf(tb, "%d", b.tp);
+                bst_gauge(dev, fv, tx, ly + (lineH - gh) * 0.5f, gw, gh, b.tp / 3000.0f, b.tp >= 1000 ? 0xFF7FC4FFu : 0xFF5A86B8u, tb, zv, ov, bst_col(BST_VALUE, 0xFFE8EEF2u));
+            }
+        }
+        ry += petBlock;   // the pet's room is kept even with no pet out
+
+        // ---- the charge count beside the dial's seconds : READY 2/3 ----
+        if (cntH > 0.0f) {
+            const float cy = ry + cntH * 0.5f;
+            char cb[12]; sprintf(cb, "%d/%d", b.charges, READY_CHARGES);
+            fv->begin(dev);
+            const float lw = fv->draw_lc(dev, x0, cy, "READY", zs, 0xFF8C94A0u, 0xC0000000u, ov);
+            fv->draw_lc(dev, x0 + lw + snap(5.0f * S), cy, cb, zs, b.charges > 0 ? 0xFFFFC864u : 0xFF8C94A0u, 0xC0000000u, ov);
+        }
+
+    } else {
+        // ---- stacked : the disc on top -- a dark face (it sits on the game with no box), the pet's art, its HP as a
+        //      ring from the top, its TP as a thin inner arc ; the Ready charges in a row under it, the seconds after ----
+        const float cx = snap(px + totW * 0.5f), cy = snap(py + discD * 0.5f), r = discD * 0.5f;
+        dColorQuadState(dev);
+        disc(dev, cx, cy, r, 0xA00A0E16u);
+        if (b.hasPet && C.bstHp) {
+            const u32 hc = b.hpp > 50 ? 0xFF6BD07Au : (b.hpp > 25 ? 0xFFE8C45Au : 0xFFFF6A5Au);
+            const float hr = r - snap(3.0f * S), hw = snap(4.0f * S);
+            ring_sector(dev, cx, cy, hr - hw * 0.5f, hr + hw * 0.5f, 0.0f, BST_TAU, 0xC0262C38u);
+            if (b.hpp > 0) ring_sector(dev, cx, cy, hr - hw * 0.5f, hr + hw * 0.5f, -BST_TAU * 0.25f, -BST_TAU * 0.25f + BST_TAU * (b.hpp > 100 ? 1.0f : b.hpp / 100.0f), hc);
+        }
+        if (b.hasPet && C.bstTp && b.tp > 0) {
+            const float tr = r - snap(9.0f * S), tw2 = snap(2.5f * S), tf = b.tp > 3000 ? 1.0f : b.tp / 3000.0f;
+            ring_sector(dev, cx, cy, tr - tw2 * 0.5f, tr + tw2 * 0.5f, -BST_TAU * 0.25f, -BST_TAU * 0.25f + BST_TAU * tf, b.tp >= 1000 ? 0xFF7FC4FFu : 0xFF5A86B8u);
+        }
+        if (art && b.hasPet && C.bstImage) { const float as = snap(discD * 0.78f); pet_tex_quad(dev, art, cx - as * 0.5f, cy - as * 0.5f, as, as, 0.0f, 1.0f, 0xFFFFFFFFu); }
+        if (C.bstCharges) {   // three charges in a row : the paw when its icon is there and chosen, a bar otherwise
+            const float frac = (b.nextSec >= 0 && b.chargeLen > 0) ? 1.0f - (float)b.nextSec / (float)b.chargeLen : 0.0f;
+            const float py2 = snap(py + discD + snap(2.0f * S) + pipSz * 0.5f), step = snap(pipSz * 1.1f);
+            for (int i = 0; i < READY_CHARGES; ++i) {
+                const float x = snap(cx + step * ((float)i - 1.0f) - snap(8.0f * S) - pipSz * 0.5f), y = snap(py2 - pipSz * 0.5f);
+                const float fr = (i < b.charges) ? 1.0f : (i == b.charges ? (frac > 1.0f ? 1.0f : frac) : 0.0f);
+                if (paw) {
+                    pet_tex_quad(dev, paw, x, y, pipSz, pipSz, 0.0f, 1.0f, 0x50FFFFFFu);
+                    if (i < b.charges) pet_tex_quad(dev, paw, x, y, pipSz, pipSz, 0.0f, 1.0f, 0xFFFFC864u);
+                    else if (fr > 0.0f) pet_tex_quad(dev, paw, x, y + pipSz * (1.0f - fr), pipSz, pipSz * fr, 1.0f - fr, 1.0f, 0xFFA8853Cu);
+                } else {
+                    const float bw = snap(pipSz * 0.45f), bxx = snap(x + (pipSz - bw) * 0.5f), rr = snap(2.0f * S);
+                    dColorQuadState(dev);
+                    rrect(dev, bxx, y, bw, pipSz, rr, 0xFF262C38u, 0xFF1C212Bu, 1.0f);
+                    if (fr > 0.0f) { const float h = snap(pipSz * fr); rrect(dev, bxx, y + pipSz - h, bw, h, rr, i < b.charges ? 0xFFFFC864u : 0xFFA8853Cu, i < b.charges ? 0xFFD9A440u : 0xFF8A6C30u, 1.0f); }
+                }
+            }
+            char cb[12]; if (b.nextSec >= 0) sprintf(cb, "%ds", b.nextSec); else strcpy(cb, "MAX");
+            Font* fc = bst_font(f, BST_CHARGE);
+            fc->begin(dev);
+            fc->draw_lc(dev, snap(cx + step * 2.0f - snap(8.0f * S)), py2, cb, bst_sz(BST_CHARGE, 13.0f) * S,
+                        b.nextSec >= 0 ? bst_col(BST_CHARGE, 0xFFFFF4D6u) : 0xFFFFC864u, 0xC0000000u, bst_ow(BST_CHARGE, 1.2f) * S);
+        }
+        // ---- the box's first lines (layout 1 ; layout 2 has the moves only) : the name (and the distance on the
+        //      right), then HP / TP / READY ----
+        float ly = top;
+        if (layout == 1 && (C.bstName || C.bstDist)) {
             float distW = 0.0f;
-            if (C.bstDist && b.dist >= 0.0f) {
+            if (C.bstDist && b.hasPet && b.dist >= 0.0f) {
                 char db[16]; _snprintf(db, sizeof(db), "%.1fy", b.dist > 999.0f ? 999.0f : b.dist); db[sizeof(db) - 1] = 0;
                 distW = fv->measure(db, zv) + snap(6.0f * S);
                 fv->begin(dev);
                 fv->draw_lc(dev, xr - fv->measure(db, zv), ly + lineH * 0.5f, db, zv, bst_col(BST_VALUE, b.dist > 20.0f ? 0xFFFF8A6Au : 0xFFB8C0C8u), 0xC0000000u, ov);
             }
-            if (C.bstName) {
+            if (C.bstName && b.hasPet) {
                 Font* fn = bst_font(f, BST_NAME);
                 const float zn = bst_sz(BST_NAME, 12.5f) * S, on = bst_ow(BST_NAME, 1.0f) * S;
-                // the name as the jug database spells it ("Blackbeard Randy"), the game's has no spaces
-                const char* shown = bst_pet_display(b.name);
-                // "Y. Beetle Familiar" and "Acuex Familiar" lost their end beside the art and the distance (the player, 2026-10-28)
-                char nm[32]; const float zf = pet_fit_text(fn, shown, zn, tw - distW, nm, sizeof(nm));
+                char nm[32]; const float zf = pet_fit_text(fn, bst_pet_display(b.name), zn, xr - (bx + pad) - distW, nm, sizeof(nm));
                 fn->begin(dev);
-                fn->draw_lc(dev, tx, ly + lineH * 0.5f, nm, zf, bst_col(BST_NAME, 0xFFFFF4D6u), 0xC0000000u, on);
+                fn->draw_lc(dev, bx + pad, ly + lineH * 0.5f, nm, zf, bst_col(BST_NAME, 0xFFFFF4D6u), 0xC0000000u, on);
             }
             ly += lineH;
         }
-        const float gh = snap(7.0f * S), gw = tw - snap(38.0f * S);
-        if (C.bstHp) {
-            char hb[12]; sprintf(hb, "%d%%", b.hpp);
-            const u32 hc = b.hpp > 50 ? 0xFF6BD07Au : (b.hpp > 25 ? 0xFFE8C45Au : 0xFFFF6A5Au);
-            bst_gauge(dev, fv, tx, ly + (lineH - gh) * 0.5f, gw, gh, b.hpp / 100.0f, hc, hb, zv, ov, bst_col(BST_VALUE, 0xFFE8EEF2u));
-            ly += lineH;
+        if (layout == 1 && (C.bstHp || C.bstTp || C.bstCharges)) {
+            const float cy2 = ly + lineH * 0.5f, sp = snap(14.0f * S);
+            float x = bx + pad;
+            fv->begin(dev);
+            if (C.bstHp && b.hasPet) { char t[16]; sprintf(t, "HP %d%%", b.hpp); x += fv->draw_lc(dev, x, cy2, t, zv, b.hpp > 50 ? 0xFF6BD07Au : (b.hpp > 25 ? 0xFFE8C45Au : 0xFFFF6A5Au), 0xC0000000u, ov) + sp; }
+            if (C.bstTp && b.hasPet) { char t[16]; sprintf(t, "TP %d", b.tp); x += fv->draw_lc(dev, x, cy2, t, zv, b.tp >= 1000 ? 0xFF7FC4FFu : 0xFF5A86B8u, 0xC0000000u, ov) + sp; }
+            if (C.bstCharges) { char t[20]; sprintf(t, "READY %d/%d", b.charges, READY_CHARGES); fv->draw_lc(dev, x, cy2, t, zv, b.charges > 0 ? 0xFFFFC864u : 0xFF8C94A0u, 0xC0000000u, ov); }
         }
-        if (C.bstTp) {
-            char tb[12]; sprintf(tb, "%d", b.tp);
-            bst_gauge(dev, fv, tx, ly + (lineH - gh) * 0.5f, gw, gh, b.tp / 3000.0f, b.tp >= 1000 ? 0xFF7FC4FFu : 0xFF5A86B8u, tb, zv, ov, bst_col(BST_VALUE, 0xFFE8EEF2u));
-        }
-    }
-    ry += petBlock;   // the pet's room is kept even with no pet out
-
-    const float zs = bst_sz(BST_VALUE, 10.0f) * S;
-    // ---- the charge count beside the dial's seconds : READY 2/3 ----
-    if (cntH > 0.0f) {
-        const float cy = ry + cntH * 0.5f;
-        char cb[12]; sprintf(cb, "%d/%d", b.charges, READY_CHARGES);
-        fv->begin(dev);
-        const float lw = fv->draw_lc(dev, x0, cy, "READY", zs, 0xFF8C94A0u, 0xC0000000u, ov);
-        fv->draw_lc(dev, x0 + lw + snap(5.0f * S), cy, cb, zs, b.charges > 0 ? 0xFFFFC864u : 0xFF8C94A0u, 0xC0000000u, ov);
     }
 
     // ---- the correlation, a food chain across the box under the pet : its predator on the left, the pet in the
@@ -366,7 +459,7 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
     //      database (the game's name has no spaces, "BlackbeardRandy" : bst_pet_eco compares letters and digits
     //      only), the cycles from bst_correlation.h, the icons the player's own drawings (bst_eco_icon) ----
     if (corrH > 0.0f && cr) {
-        const float y0 = top + topH + gap, t = snap(4.0f * S * (kEco < 1.0f ? 1.0f : kEco));
+        const float y0 = top + blockH + gap, t = snap(4.0f * S * (kEco < 1.0f ? 1.0f : kEco));
         const u32 cWeak = 0xFFFF9A8Au, cEco = bst_col(BST_VALUE, 0xFFFFC864u), cStrong = 0xFF9BE89Bu;
         // a right-pointing arrow centred on (ax, ay)
         auto arrow = [&](float ax, float ay, u32 col) {
@@ -375,7 +468,7 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
             fill_poly_aa(dev, tri, 3, col);
         };
         if (ecoIcons) {
-            const float w = boxW - 2.0f * pad, cxL = px + pad + w / 6.0f, cxM = px + boxW * 0.5f, cxR = px + boxW - pad - w / 6.0f;
+            const float w = boxW - 2.0f * pad, cxL = bx + pad + w / 6.0f, cxM = bx + boxW * 0.5f, cxR = bx + boxW - pad - w / 6.0f;
             const float iy = y0 + iconBig * 0.5f, ny = y0 + iconBig + snap(2.0f * S) + nameH * 0.5f;
             const float X[3] = { cxL, cxM, cxR }, SZ[3] = { iconSz, iconBig, iconSz };
             const int SLOT[3] = { 2, 0, 1 };   // ecoTex : 0 the pet's family, 1 the one it beats, 2 the one that beats it
@@ -392,7 +485,7 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
             // Plantoid > Beast > Lizard, centred
             const float cy = y0 + corrH * 0.5f, sp = snap(6.0f * S), aw = 2.0f * t;
             const float wl = fv->measure(cr->weak, zs), we = fv->measure(cr->eco, zs), ws = fv->measure(cr->strong, zs);
-            float x = snap(px + (boxW - (wl + we + ws + 2.0f * (aw + 2.0f * sp))) * 0.5f);
+            float x = snap(bx + (boxW - (wl + we + ws + 2.0f * (aw + 2.0f * sp))) * 0.5f);
             fv->begin(dev);
             x += fv->draw_lc(dev, x, cy, cr->weak, zs, cWeak, 0xC0000000u, ov) + sp;
             arrow(x + t, cy, 0xFFFF6A5Au); x += aw + sp;
@@ -407,9 +500,9 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
     // ---- the Ready moves, small : number, kind icon (or a colour tick), name (green when it can go, grey while
     //      charges are short), its wait when it has one, its cost ----
     if (movH > 0.0f) {
-        float y = top + topH + (corrH > 0.0f ? gap + corrH : 0.0f) + gap;
+        float y = top + blockH + (corrH > 0.0f ? gap + corrH : 0.0f) + ((blockH > 0.0f || corrH > 0.0f) ? gap : 0.0f);
         dColorQuadState(dev);
-        rrect(dev, px + pad, snap(y - gap * 0.5f), boxW - 2.0f * pad, 1.0f, 0.0f, 0x30FFFFFFu, 0x30FFFFFFu, 0.0f);   // the line between the parts
+        if (blockH > 0.0f || corrH > 0.0f) rrect(dev, bx + pad, snap(y - gap * 0.5f), boxW - 2.0f * pad, 1.0f, 0.0f, 0x30FFFFFFu, 0x30FFFFFFu, 0.0f);   // the line between the parts
         Font* fm = bst_font(f, BST_MOVE);
         const float zm = bst_sz(BST_MOVE, 10.5f) * S, om = bst_ow(BST_MOVE, 1.0f) * S, isz = snap(12.0f * S);
         u32 wtex = 0, etex = 0, stex = 0;
@@ -422,9 +515,9 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
             const BstMove& m = b.moves[i];
             // its number first : the N of GearSwap's //gs c rdymove N, which sorts the moves by ability id as this list
             // does (shared/jobs/bst/functions/logic/pet_manager.lua) ; the column reserved for one digit
-            const float numW = fm->measure("8", zm) + snap(6.0f * S), cy = y + rowH * (i + 0.5f), ix = px + pad + numW;
+            const float numW = fm->measure("8", zm) + snap(6.0f * S), cy = y + rowH * (i + 0.5f), ix = bx + pad + numW;
             { char nb[4]; sprintf(nb, "%d", i + 1); fm->begin(dev);
-              fm->draw_lc(dev, px + pad, cy, nb, zm, bst_col(BST_MOVE, 0xFFB89650u), 0xC0000000u, om); }
+              fm->draw_lc(dev, bx + pad, cy, nb, zm, bst_col(BST_MOVE, 0xFFB89650u), 0xC0000000u, om); }
             const int wi = kind_weapon(m.kind), ei = kind_element(m.kind);
             const int si = (int)m.status;
             if (si > 0 && si < BUFF_COLS * BUFF_ATLAS_ROWS && stex) {   // a buff / debuff : the status it gives
