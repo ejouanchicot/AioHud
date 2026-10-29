@@ -16,6 +16,7 @@ static const BstPetRow BST_PETS[] = {
     {"Blackbeard Randy", "Beast", {"Roar", "Razor Fang", "Claw Cyclone", "Crossthrash", "Predatory Glare", 0}},
     {"Bouncing Bertha", "Vermin", {"Sensilla Blades", "Tegmina Buffet", 0}},
     {"Brainy Waluis", "Plantoid", {"Frogkick", "Spore", "Queasyshroom", "Numbshroom", "Shakeshroom", "Silence Gas", "Dark Spore", 0}},
+    {"Brave Hero Glenn", "Aquan", {0}},
     {"Caring Kiyomaro", "Beast", {"Sweeping Gouge", "Zealous Snort", 0}},
     {"Choral Leera", "Bird", {"Pecking Flurry", 0}},
     {"Colibri Familiar", "Bird", {"Pecking Flurry", 0}},
@@ -28,6 +29,7 @@ static const BstPetRow BST_PETS[] = {
     {"Generous Arthur", "Amorph", {"Purulent Ooze", "Corrosive Ooze", 0}},
     {"Gussy Hachirobe", "Vermin", {"Sickle Slash", "Acid Spray", "Spider Web", 0}},
     {"Headbreaker Ken", "Vermin", {"Cursed Sphere", "Venom", "Somersault", 0}},
+    {"Herald Henry", "Aquan", {"Bubble Shower", "Bubble Curtain", "Big Scissors", "Scissor Guard", "Metallic Body", 0}},
     {"Hip. Familiar", "Bird", {"Back Heel", "Jettatura", "Choke Breath", "Fantod", "Hoof Volley", "Nihility Song", 0}},
     {"Hurler Percival", "Vermin", {"Power Attack", "Hi-Freq Field", "Rhino Attack", "Rhino Guard", "Spoil", 0}},
     {"Jovial Edwin", "Aquan", {"Bubble Curtain", "Scissor Guard", "Metallic Body", "Venom Shower", "Mega Scissors", 0}},
@@ -48,6 +50,7 @@ static const BstPetRow BST_PETS[] = {
     {"Sunburst Malfik", "Aquan", {"Bubble Shower", "Bubble Curtain", "Big Scissors", "Scissor Guard", "Metallic Body", 0}},
     {"Surging Storm", "Bird", {"Wing Slap", "Beak Lunge", 0}},
     {"Suspicious Alice", "Lizard", {"Geist Wall", "Numbing Noise", "Nimble Snap", "Cyclotail", "Toxic Spit", 0}},
+    {"Sweet Caroline", "Plantoid", {"Head Butt", "Wild Oats", "Leaf Dagger", "Scream", 0}},
     {"Swooping Zhivago", "Bird", {"Molting Plumage", "Swooping Frenzy", "Pentapeck", 0}},
     {"Threestar Lynn", "Vermin", {"Sudden Lunge", "Spiral Spin", "Noisome Powder", 0}},
     {"Vivacious Gaston", "Beast", {"Chaotic Eye", "Blaster", "Charged Whisker", "Frenzied Rage", 0}},
@@ -56,6 +59,6 @@ static const BstPetRow BST_PETS[] = {
     {"Weevil Familiar", "Vermin", {"Disembowel", "Extirpating Salvo", 0}},
     {"Y. Beetle Familiar", "Vermin", {"Power Attack", "Hi-Freq Field", "Rhino Attack", "Rhino Guard", "Spoil", "Rhinowrecker", 0}},
 };
-static const int BST_PETS_N = 48;
+static const int BST_PETS_N = 51;
 
 } // namespace aio
