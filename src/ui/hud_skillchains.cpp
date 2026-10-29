@@ -12,6 +12,7 @@
 #include "model/spells_gen.h"
 #include "model/abilities_gen.h"
 #include "model/mobskills_gen.h"
+#include "windower_debug.h"
 #include <windows.h>
 #include <math.h>
 #include <stdio.h>
@@ -169,11 +170,39 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             unsigned short ws[128]; const int nws = read_usable_weapon_skills(ws, 128);                 // everyone : weapon skills
             for (int i = 0; i < nws; ++i) { const WSRow* w = ws_info(ws[i]); tryAdd(SCR_WS, ws[i], w ? w->en : 0); }
             unsigned short ja[256]; const int nja = read_usable_job_abilities(ja, 256);                 // BST/SMN : pet ready moves (self-gated on the pet being out) + any skillchaining JA
-            for (int i = 0; i < nja; ++i) { const AbilRow* a = abil_info(ja[i]); tryAdd(SCR_JA, ja[i], a ? a->en : 0); }
+            for (int i = 0; i < nja; ++i) {
+                const AbilRow* a = abil_info(ja[i]);
+                // a Blood Pact (recast 173 Rage / 174 Ward) only on a SMN main : the game also marks Cait Sith's Regal Gash
+                // (id 780, filed among the Ready moves) usable on BST -- seen in the SCLIST capture of 2026-10-29
+                if (a && (a->recast_id == 173 || a->recast_id == 174) && mjob != 15) continue;
+                tryAdd(SCR_JA, ja[i], a ? a->en : 0);
+            }
+            // //aio sclog : every job ability the game marks usable (id, name, recast id), to tell why a move that cannot be
+            // used is offered (2026-10-29 : Regal Gash, a Cait Sith Blood Pact, listed on BST after Sensilla Blades)
+            if (party().scapt_armed()) {
+                // debug::log stops at 1023 characters : flushed as numbered lines well before that
+                char b[960]; int o = _snprintf(b, sizeof(b), "SCLIST mjob=%d props=%d,%d,%d step=%d usable JA (%d):", mjob, props[0], props[1], props[2], step, nja);
+                int part = 1;
+                for (int i = 0; i < nja && o > 0; ++i) {
+                    if (o > (int)sizeof(b) - 48) { windower::debug::log("%s", b); o = _snprintf(b, sizeof(b), "SCLIST usable JA (cont %d):", ++part); }
+                    const AbilRow* a = abil_info(ja[i]);
+                    const int w = _snprintf(b + o, sizeof(b) - o, " %u=%s/rc%u", ja[i], a ? a->en : "?", a ? a->recast_id : 0u);
+                    if (w < 0) break; o += w;
+                }
+                windower::debug::log("%s", b);
+            }
             if (mjob == 16) { unsigned short bs[24]; const int nbs = read_blu_spells(bs, 24);            // BLU : your currently-SET blue magic
                 for (int i = 0; i < nbs; ++i) { const SpellRow* s = spell_info(bs[i]); tryAdd(SCR_SPELL, bs[i], s ? s->en : 0); } }
             if (mjob == 20) for (int el = 0; el < 8; ++el) tryAdd(SCR_ELEM, el, scelem_name(el));        // SCH : the 8 elemental magics are always castable
             for (int i = 1; i < listN; ++i) { ScLine t = list[i]; int j = i - 1; while (j >= 0 && list[j].lvl < t.lvl) { list[j + 1] = list[j]; --j; } list[j + 1] = t; }   // highest level first
+            if (party().scapt_armed()) {   // what the box then offers
+                char b[700]; int o = _snprintf(b, sizeof(b), "SCLIST offered (%d):", listN);
+                for (int i = 0; i < listN && o > 0 && o < (int)sizeof(b) - 40; ++i) {
+                    const int w = _snprintf(b + o, sizeof(b) - o, " %s(lv%d)", list[i].name, list[i].lvl);
+                    if (w < 0) break; o += w;
+                }
+                windower::debug::log("%s", b);
+            }
         }
     }
 
