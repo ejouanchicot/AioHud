@@ -15,6 +15,7 @@ void test_json();
 void test_clip();
 void test_retry();
 void test_ready_charges();
+void test_geo();
 void test_validptr();
 void test_skillchain();
 void test_durations();
@@ -47,6 +48,7 @@ int main() {
     test_clip();
     test_retry();
     test_ready_charges();
+    test_geo();
     test_validptr();
     test_skillchain();
     test_durations();

@@ -51,6 +51,7 @@ GENERATORS = [
     ('gen_buff_names.py',    ['buffs_gen.h'], 'file', [('res', 'buffs.lua')]),
     ('gen_enh_dur.py',       ['enh_dur_listed_gen.h'], 'stdout', [('res', 'item_descriptions.lua')]),
     ('gen_geo_dur.py',       ['geo_dur_gen.h'], 'stdout', [('res', 'item_descriptions.lua')]),
+    ('gen_geo_spells.py',    ['geo_spells_gen.h'], 'file', [('res', 'spells.lua')]),
     ('gen_itemnames.py',     ['itemnames_gen.h'], 'file', [('res', 'items.lua')]),
     ('gen_job_track.py',     ['job_track_gen.h'], 'file',
         [('res', 'spells.lua'), ('res', 'job_abilities.lua'), ('addons', 'bluguide/res/spellinfo.lua'),

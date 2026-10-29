@@ -92,6 +92,11 @@ bool PartyState::is_party_or_pet(unsigned id) const {
     for (int t = 0; t < 2; ++t) for (int i = 0; i < alliN_[t]; ++i) if (alli_[t * 6 + i].id == id) return true;
     return false;
 }
+bool PartyState::is_skillchain_actor(unsigned id) const {
+    if (is_party_or_pet(id)) return true;
+    if (id >= 0x01000000u) for (int i = 0; i < count; ++i) if (m[i].id == id && m[i].isTrust) return true;   // a party Trust
+    return false;
+}
 unsigned PartyState::pet_owner(unsigned id) const {
     for (int i = 0; i < 16; ++i) if (petId_[i] == id) return petOwner_[i] ? petOwner_[i] : id;
     return id;

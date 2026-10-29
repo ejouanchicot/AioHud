@@ -67,6 +67,9 @@ registered only if its owner `is_party_or_pet`; cleared on zone):
   (u8), **TP @0x10** (u32, 0-3000), **name @0x18** (chars to the end of the packet). Pet index 0 = the
   pet is gone. Source : Windower `addons/libs/packets/fields.lua` (incoming 0x068), the same fields the
   BST-HUD addon reads ; not yet checked against a capture of our own (2026-10-26).
+  The GEO module reads the same pet for its luopan (`game_mem.cpp` `resolve_pet`, shared with BST) ; the
+  luopan's HP there comes from its entity first, this packet's HP% only while the entity says nothing, and the
+  Geo- it carries from our own cast (`model/geo_state.cpp`), never from this packet (2026-10-29, not yet seen in game).
 
 `pet_owner(id)` maps a pet → its owner so the Target column shows the OWNER, not the
 pet.

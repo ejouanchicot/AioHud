@@ -75,7 +75,9 @@ private:
 #endif   // Absorb-TP box (hud_absorb.cpp) : who drained how much TP ; preview shows a sample   // hate list box (mobs aggro'd on the party, HP bars) ; preview shows a sample
     void draw_pointwatch(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // PointWatch box (XP/CP/ML progress + Merits) ; preview shows a sample
     void draw_grimoire(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);
-    void draw_bst(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // Beastmaster box (pet + Ready charges + moves, hud_bst.cpp) ; preview shows a sample   // Scholar grimoire (book + charges/timer + Addendum aura) ; preview shows a sample
+    void draw_pet(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // Pet box (hud_pet.cpp) : the main job's content below, one place for all ; preview shows the config tab's sample
+    void draw_geo(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // the Pet box's Geomancer content (luopan bubble + aura + Entrust + MP + job abilities, hud_geo.cpp) ; only draw_pet calls it
+    void draw_bst(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // the Pet box's Beastmaster content (pet + Ready charges + moves, hud_bst.cpp) ; only draw_pet calls it   // Scholar grimoire (book + charges/timer + Addendum aura) ; preview shows a sample
     void draw_zonetracker(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // Zone Tracker (Dynamis KIs+timer / Abyssea lights+visitant) ; preview shows a sample
     void draw_empypop(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // EmpyPop (the tracked Abyssea NM's pop chain) ; preview shows the chloris demo chain
     void draw_timers(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // Timers box (self buff timers, exact from 0x063 type-9 ; same buff-icon atlas) ; preview shows a sample
@@ -99,8 +101,18 @@ private:
     TexRetry             grimLight_r_, grimDark_r_, grimClosed_r_;
     u32                  bstArt_ = 0;              // BST box : the current pet's art (assets\bstpets\<key>.raw) ; forgotten on device change
     TexRetry             bstArtR_;
-    char                 bstArtKey_[32] = {};      // which pet bstArt_ is ; a new pet releases it and loads its own
+    char                 bstArtKey_[40] = {};      // which pet bstArt_ is (<key> or <key>_solo) ; a new pet releases it and loads its own
     u32                  bstElem_ = 0;             // BST box : the 8-element icon strip (assets\element_icons.raw, 256x32) ; the weapon icons share weaponIcons_
+    u32                  bstPaw_ = 0;              // BST box : the Ready charge's paw (assets\bstpets\charge.raw, white, tinted) ; none -> the ring dial
+    TexRetry             bstPawR_;
+    u32                  bstEco_[3] = {};          // BST box : the correlation's three family icons (assets\bstpets\eco_<Family>.raw)
+    TexRetry             bstEcoR_[3];
+    char                 bstEcoKey_[3][16] = {};   // which family each slot holds ; another family releases it and loads its own
+    u32 bst_eco_icon(u32 dev, int slot, const char* family);   // hud_bst.cpp
+    static const int GEO_TEX_N = 14;   // the GEO content's images (assets\geo\, scripts/gen_geo_icons.py) : hud_geo.cpp GEO_TEX
+    u32                  geoTex_[GEO_TEX_N] = {};
+    TexRetry             geoTexR_[GEO_TEX_N];
+    u32 geo_tex(u32 dev, int slot);    // hud_geo.cpp ; 0 while the file is not there
     TexRetry             bstElemR_;   // PER-TEXTURE retry : one shared flag left a partial load (2 of 3) dead-ending the third for the session
     u32                  weaponIcons_ = 0;         // Sheol resistances : Slashing/Piercing/Blunt icon atlas (96x32, 3 cells)
     TexRetry             weaponIcons_r_;

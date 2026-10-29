@@ -7,6 +7,7 @@
 #include "model/skillchain.h"   // sc_info / SCP_N (Resonating property tables)
 #include "model/game_mem.h"     // EntityVitals / read_entities_by_id
 #include <windows.h>            // GetTickCount
+#include <stdio.h>              // _snprintf : sc_window_text (//aio sclog)
 
 namespace aio {
 
@@ -23,14 +24,14 @@ static Resonating* sc_reson_slot(Resonating* r8, unsigned tid) {
 }
 // burst-window timing (abs ms) : [openMs,delayMs)=Wait, [delayMs,endMs)=Go!/Burst. endMs = delayMs + (8-step)s
 // (higher steps -> shorter continue window), mirroring the reference addon's clock+delay+8-step.
-static void sc_set_timing(Resonating* r, int delay, int step) {
+static void sc_set_timing(Resonating* r, int delay, int step, int delayMs = -1) {
     const unsigned now = model_now_ms();
     r->openMs = now;
-    r->delayMs = now + (unsigned)((delay > 0 ? delay : 3) * 1000);
+    r->delayMs = now + (unsigned)(delayMs >= 0 ? delayMs : (delay > 0 ? delay : 3) * 1000);
     int win = 8 - step; if (win < 1) win = 1;
     r->endMs = r->delayMs + (unsigned)(win * 1000);
 }
-void PartyState::sc_open(unsigned tid, unsigned aid, int res, const unsigned char* props, int delay) {
+void PartyState::sc_open(unsigned tid, unsigned aid, int res, const unsigned char* props, int delay, int delayMs) {
     // an OPENING (non-chaining) WS always (re)starts a step-1 window -- like the addon. A WS that CONTINUES the
     // chain arrives via the CLOSE branch (it carries the skillchain add-effect), so it never lands here : no guard
     // needed, and guarding here (the old "don't clobber for 3s" check) wrongly blocked the box from RE-popping.
@@ -40,7 +41,7 @@ void PartyState::sc_open(unsigned tid, unsigned aid, int res, const unsigned cha
     for (int i = 0; i < 3 && props[i] < SCP_N; ++i) r->prop[r->nProp++] = props[i];
     if (!r->nProp) { r->prop[0] = props[0]; r->nProp = 1; }
     r->step = 1; r->lvl = (unsigned char)sc_info(r->prop[0]).lvl; r->closed = 0; r->formed = 0;
-    sc_set_timing(r, delay, 1);
+    sc_set_timing(r, delay, 1, delayMs);
 }
 // Once/frame : drop any resonance window whose mob has DIED (hpp 0) or is no longer a mob, so the box (and the
 // nearby-fallback) don't linger on a dead target. A read that can't find the entity (valid=false) is left to the
@@ -68,6 +69,23 @@ bool PartyState::has_immanence(unsigned actor) const {
     if (bs) for (int i = 0; i < bs->n; ++i) if (bs->ids[i] == 470) return true;
     return false;
 }
+// //aio sclog : the target's window as the capture writes it -- step, active properties, and where "now" sits in it
+// (still in the Wait, open for the next action, or how long ago it ended)
+void PartyState::sc_window_text(unsigned tid, char* out, int cap) const {
+    out[0] = 0;
+    const Resonating* r = 0;
+    for (int i = 0; i < 8; ++i) if (tid && reson_[i].target == tid && reson_[i].nProp) { r = &reson_[i]; break; }
+    if (!r) return;
+    const unsigned now = model_now_ms();
+    char when[40];
+    if (now < r->delayMs)    _snprintf(when, sizeof(when), "WAIT %ums more", r->delayMs - now);
+    else if (now < r->endMs) _snprintf(when, sizeof(when), "OPEN %ums left", r->endMs - now);
+    else                     _snprintf(when, sizeof(when), "ENDED %ums ago", now - r->endMs);
+    when[sizeof(when) - 1] = 0;
+    _snprintf(out, cap, "step %u %s%s%s %s", (unsigned)r->step, scprop_name(r->prop[0]),
+              r->nProp > 1 ? "/" : "", r->nProp > 1 ? scprop_name(r->prop[1]) : "", when);
+    out[cap - 1] = 0;
+}
 const Resonating* PartyState::skillchain_newest_live() const {
     const unsigned now = model_now_ms();
     const Resonating* best = 0;
@@ -79,7 +97,7 @@ const Resonating* PartyState::skillchain_newest_live() const {
     }
     return best;
 }
-void PartyState::sc_close(unsigned tid, unsigned aid, int res, int prop, int delay) {
+void PartyState::sc_close(unsigned tid, unsigned aid, int res, int prop, int delay, int delayMs) {
     const unsigned now = model_now_ms();
     Resonating* r = sc_reson_slot(reson_, tid);
     const bool recent = (r->endMs && now < r->endMs + 3000u && r->step >= 1 && r->nProp > 0);
@@ -103,7 +121,7 @@ void PartyState::sc_close(unsigned tid, unsigned aid, int res, int prop, int del
     r->lvl = (unsigned char)lvl;
     r->closed = (r->step > 5 || r->lvl == 4) ? 1 : 0;   // Lv.4 (incl. Light+Light) or step>5 -> closed : burst only, no more continuation
     r->formed = 1;
-    sc_set_timing(r, delay, (int)r->step);
+    sc_set_timing(r, delay, (int)r->step, delayMs);
 }
 
 } // namespace aio

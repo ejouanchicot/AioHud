@@ -44,6 +44,10 @@
 #include "model/paths.h"             // publish_sortie_track : plugin_path
 #include <stdio.h>                   // publish_sortie_track : the per-character file for the aioupdate addon
 #include "model/bst_state.h"      // compute_bst : the BST module's snapshot part
+#include "model/geo_state.h"      // compute_geo : the GEO module's snapshot part
+#include "model/geo_spells_gen.h" // compute_geo : the Geo- / Indi- spells (radius rule, aura from its status)
+#include "model/geo_dur.h"        // compute_geo : an Entrust whose ally row is missing (base + JP + gear)
+#include "model/tb_buff_gen.h"    // compute_geo : that Indi-'s base duration
 #include "model/model_clock.h"    // //aio schlog : the model's one source of "now" (replayable offline)
 #include "windower.h"   // safe_read / valid_ptr (guarded game-memory reads)
 #include <windows.h>
@@ -1319,6 +1323,32 @@ static void compute_grimoire(GameState& gs) {
     sch_log_tick(ticks, interval, tableInt, g_schLearned > 0, maxCharges, (int)spent, level, isMain, count, g.timerSec);
 }
 
+// OUR PET's entity, reconciled with what the 0x068 packets said (model/bst_state.cpp) -- shared by the BST box and the
+// GEO box (a luopan is a pet : 0x068 owner = us, and the self entity's pet_index names it). Called by ONE of them a
+// frame (they need different main jobs). The pet the player's own entity names (pet_index, self entity +0x1FA,
+// docs/game-data/luacore-verified-offsets.md) : the 0x068 only comes when the pet acts or its vitals move, so a plugin
+// (re)loaded with a pet resting at full HP would never see it. Taken only while no 0x068 has given one, and only an
+// entity that exists.
+struct PetView { bool has = false; unsigned id = 0; float dist = -1.0f; };
+static PetView resolve_pet(const GameState& gs) {
+    PetView v;
+    const BstPet& pet = bst_pet();
+    if (!pet.index) { const u32 se = self_entity(); u32 w = 0;
+        if (se && safe_read(se + 0x1FA, &w)) { const unsigned idx = w & 0xFFFF; if (idx && entity_id_by_index(idx)) bst_pet_seed(idx); } }
+    if (!pet.index) return v;
+    const unsigned id = entity_id_by_index(pet.index);
+    if (id && !pet.id) bst_pet_adopt(id);                  // the entity came after its 0x068
+    if (pet.id && id != pet.id) bst_pet_clear();           // despawned, or the slot went to someone else
+    else if (!id) { if (model_now_ms() - pet.seenMs > 5000u) bst_pet_clear(); }   // not spawned yet : wait 5 s for it
+    else {
+        v.has = true; v.id = id;
+        if (!pet.name[0]) { EntityVitals ev; if (read_entities_by_id(&id, 1, &ev) > 0 && ev.valid) bst_pet_fill(ev.name, ev.hpp); }   // seeded from memory : no 0x068 yet
+        float x = 0, y = 0, z = 0;
+        if (entity_pos_verified(pet.index, id, x, y, z)) { const float dx = x - gs.meX, dz = z - gs.meZ; v.dist = sqrtf(dx * dx + dz * dz); }
+    }
+    return v;
+}
+
 // BEASTMASTER : the pet (0x068, model/bst_state.cpp), the Ready charge pool and the moves the job can use now, once
 // a frame (docs/design/bst-module-spec.md). The pool is recast 102 in RAW 1/60 s, like the stratagems above ; the
 // charge length is learned off a use (ReadyLearner), kept per character, and until then worked out from the Sic
@@ -1334,26 +1364,13 @@ void compute_bst(GameState& gs) {
     static unsigned g_bstChar = 0;
     if (gs.me.id != g_bstChar) { g_bstChar = gs.me.id; bst_learner().reset(); bst_learner().learned = bst_cache_load(gs.me.id); }
 
-    // The pet the player's own entity names (pet_index, self entity +0x1FA, docs/game-data/luacore-verified-offsets.md) :
-    // the 0x068 only comes when the pet acts or its vitals move, so a plugin (re)loaded with a pet resting at full HP
-    // would never see it. Taken only while no 0x068 has given one, and only an entity that exists.
-    const BstPet& pet = bst_pet();
-    if (!pet.index) { const u32 se = self_entity(); u32 w = 0;
-        if (se && safe_read(se + 0x1FA, &w)) { const unsigned idx = w & 0xFFFF; if (idx && entity_id_by_index(idx)) bst_pet_seed(idx); } }
-    if (pet.index) {
-        const unsigned id = entity_id_by_index(pet.index);
-        if (id && !pet.id) bst_pet_adopt(id);                  // the entity came after its 0x068
-        if (pet.id && id != pet.id) bst_pet_clear();           // despawned, or the slot went to someone else
-        else if (!id) { if (model_now_ms() - pet.seenMs > 5000u) bst_pet_clear(); }   // not spawned yet : wait 5 s for it
-        else {
-            b.hasPet = true;
-            memcpy(b.name, pet.name, sizeof(b.name)); b.name[sizeof(b.name) - 1] = 0;
-            b.hpp = pet.hpp; b.mpp = pet.mpp; b.tp = pet.tp;
-            if (!b.name[0]) { EntityVitals ev; if (read_entities_by_id(&id, 1, &ev) > 0 && ev.valid) {   // seeded from memory : no 0x068 yet
-                bst_pet_fill(ev.name, ev.hpp); memcpy(b.name, pet.name, sizeof(b.name)); b.name[sizeof(b.name) - 1] = 0; b.hpp = pet.hpp; } }
-            float x = 0, y = 0, z = 0;
-            if (entity_pos_verified(pet.index, id, x, y, z)) { const float dx = x - gs.meX, dz = z - gs.meZ; b.dist = sqrtf(dx * dx + dz * dz); }
-        }
+    const PetView pv = resolve_pet(gs);
+    if (pv.has) {
+        const BstPet& pet = bst_pet();
+        b.hasPet = true;
+        memcpy(b.name, pet.name, sizeof(b.name)); b.name[sizeof(b.name) - 1] = 0;
+        b.hpp = pet.hpp; b.mpp = pet.mpp; b.tp = pet.tp;
+        b.dist = pv.dist;
     }
 
     unsigned rawTicks = 0; ability_recast_sec(102, &rawTicks);
@@ -1381,6 +1398,113 @@ void compute_bst(GameState& gs) {
         m.waitSec = ready_wait_sec(ticks, len, m.cost);
     }
     gs.bst = b;
+}
+
+// GEOMANCER : the luopan (our pet, resolve_pet), the Geo- it carries and its HP slope (model/geo_state.cpp), the Indi-
+// we carry (party_state's computed aura), the Indi- we entrusted, MP and the GEO job abilities, once a frame
+// (docs/design/geo-module-spec.md).
+// BG-Wiki "Geomancy" (read 2026-10-29) : "In both cases, the base radius is 6 yalms" -- Indicolures centred on the
+// caster, Geocolures on the luopan. Widened Compass (status 508) widens it by an amount that page does not give, so
+// no warning at all while it is up rather than a wrong one.
+static const float GEO_RADIUS = 6.0f;
+// The GEO job abilities the box lists. Ability and recast ids from res/job_abilities.lua, statuses from res/buffs.lua
+// (never guessed) : Full Circle 345 / recast 243 ; Lasting Emanation 346 and Ecliptic Attrition 347 SHARE recast 244
+// (one entry) ; Life Cycle 349 / 246 ; Blaze of Glory 350 / 247, status 569 ; Dematerialize 351 / 248 ; Entrust 386 /
+// 93, status 584 ; Bolster 343 / recast 0 (the shared one-hour slot), status 513.
+struct GeoJaDef { unsigned short abil, alt, recast, status; const char* label; };
+static const GeoJaDef GEO_JAS[] = {
+    {345, 0, 243, 0, "FC"}, {346, 347, 244, 0, "LE/EA"}, {349, 0, 246, 0, "LC"}, {350, 0, 247, 569, "BoG"},
+    {351, 0, 248, 0, "Demat"}, {386, 0, 93, 584, "Entrust"}, {343, 0, 0, 513, "Bolster"},
+};
+// the end of the Indi- we entrusted : the ally row party_state recorded off the same 0x028 (geo_dur.h with the gear
+// worn at the cast), else -- that row needs the ally's name, which a stranger outside the alliance does not have --
+// the same formula with the gear worn now, after waiting a moment for the row
+static void geo_entrust_end(const GeoTrack& t, unsigned now, const GameState& gs) {
+    int n = 0; const PartyState::OtherBuff* ob = party().other_buffs(n);
+    for (int k = 0; k < n; ++k)
+        if (!ob[k].isAbil && ob[k].target == t.entrustTarget && ob[k].spell == t.entrustSpell && ob[k].durMs && ob[k].castMs - t.entrustCastMs < 2000u) {
+            geo_entrust_set_end(ob[k].startMs + ob[k].durMs); return; }
+    if (now - t.entrustCastMs < 2000u) return;
+    const SpellBuff* sb = spell_buff(t.entrustSpell);
+    const int jp = read_jp_gift_rank(1362) * 2;   // GEO main : this box only shows on one
+    unsigned short ids[16] = {}; if (gs.equipValid) for (int i = 0; i < 16; ++i) ids[i] = (unsigned short)gs.equip.id[i];
+    geo_entrust_set_end(t.entrustCastMs + (unsigned)(geo_dur_sec(sb ? (int)sb->durSec : 0, jp, geo_dur_gear_sec(ids), 0) * 1000.0));
+}
+void compute_geo(GameState& gs) {
+    GeoState g{};
+    const int GEO = 21;
+    geo_set_me(gs.me.id);
+    static unsigned g_geoChar = 0;
+    if (gs.me.id != g_geoChar) { g_geoChar = gs.me.id; geo_reset(); }   // another character : nothing of the last one's
+    if (gs.me.mjob != GEO) { gs.geo = g; return; }
+    g.visible = true;
+    const unsigned now = model_now_ms();
+    auto hasBuff = [&](int id) { for (int i = 0; i < gs.nbuff; ++i) if (gs.buffs[i] == (unsigned short)id) return true; return false; };
+
+    // ---- the luopan : its HP from its entity (memory, every frame), the 0x068 figure while the entity says nothing ----
+    const PetView pv = resolve_pet(gs);
+    int hpp = -1;
+    if (pv.has) { EntityVitals ev; hpp = (read_entities_by_id(&pv.id, 1, &ev) > 0 && ev.valid) ? ev.hpp : bst_pet().hpp; }
+    geo_frame(pv.has ? pv.id : 0, hpp, now);
+    const GeoTrack& t = geo_track();
+    if (pv.has) {
+        g.hasLuopan = true; g.luopanHpp = hpp < 0 ? 0 : (hpp > 100 ? 100 : hpp);
+        g.bubbleSpell = t.bubbleSpell; g.bubbleLeftSec = geo_bubble_left_sec(now);
+        // the distance only matters for a bubble on us / the party : one placed on a mob has no reason to be near us
+        const GeoSpellRow* s = geo_spell(t.bubbleSpell);
+        if (!(s && s->offensive)) {
+            g.dist = pv.dist;
+            g.outOfRange = s && g.dist >= 0.0f && !(gs.buffsOk && hasBuff(508)) && g.dist > GEO_RADIUS;
+        }
+    }
+
+    // ---- the Indi- we carry : its life computed at the cast (party_state record_geo_aura) ; loaded mid-aura, the buff
+    //      list still names a supportive one by its status (an offensive aura puts nothing on us) ----
+    const PartyState::GeoAura& ga = party().self_geo();
+    if (ga.status && ga.spell) { const int left = party().geo_aura_remaining(ga.status); if (left >= 0) { g.auraSpell = ga.spell; g.auraLeftSec = left; } }
+    if (!g.auraSpell && gs.buffsOk) for (int i = 0; i < gs.nbuff && !g.auraSpell; ++i) if (const GeoSpellRow* r = geo_spell_by_status(gs.buffs[i])) g.auraSpell = r->id;
+
+    // ---- the Indi- we entrusted ----
+    if (t.entrustSpell) {
+        if (!t.entrustEndMs) geo_entrust_end(t, now, gs);
+        if (t.entrustEndMs) {
+            const int left = (int)(t.entrustEndMs - now);
+            if (left <= 0) geo_entrust_clear();
+            else g.entrustLeftSec = (left + 999) / 1000;
+        }
+        if (t.entrustSpell) {
+            g.entrustSpell = t.entrustSpell;
+            const char* nm = party().pc_name_by_id(t.entrustTarget);
+            strncpy(g.entrustTarget, nm ? nm : "?", sizeof(g.entrustTarget) - 1); g.entrustTarget[sizeof(g.entrustTarget) - 1] = 0;
+        }
+    }
+
+    g.mp = gs.me.mp; g.mpp = gs.me.mpp;
+
+    // ---- Cardinal Chant : where the mob we target stands from us (world axes : +X East, +Z North, as the minimap
+    //      reads them) ; nothing for a player or an NPC target, or one exactly on us ----
+    g.cardRank = geo_cardinal_rank(gs.me.mlvl);
+    if (gs.target.valid && (gs.target.spawnType & 0x10)) {
+        const float dx = gs.target.posX - gs.meX, dz = gs.target.posZ - gs.meZ;
+        if (dx * dx + dz * dz > 0.01f) {
+            float deg = atan2f(dx, dz) * 57.2957795f;
+            if (deg < 0.0f) deg += 360.0f;
+            g.cardValid = true; g.cardDeg = deg;
+        }
+    }
+
+    // ---- the job abilities this GEO has (jaBits ; all of them while that bitmap is unread), each one's recast from
+    //      the snapshot (abilities come first in it, all 32 slots fit its 40) ----
+    for (const GeoJaDef& d : GEO_JAS) {
+        if (g.nja >= GeoState::JA_MAX) break;
+        auto has = [&](unsigned a) { return a && a < 1024 && (gs.jaBits[a >> 3] & (1u << (a & 7))); };
+        if (gs.jaOk && !has(d.abil) && !has(d.alt)) continue;
+        GeoJa& j = g.jas[g.nja++];
+        j.abil = d.abil; j.label = d.label;
+        for (int i = 0; i < gs.nRecast; ++i) if (gs.recasts[i].kind == 0 && gs.recasts[i].recastId == d.recast) { j.recastSec = gs.recasts[i].sec; break; }
+        j.active = d.status && gs.buffsOk && hasBuff(d.status);
+    }
+    gs.geo = g;
 }
 
 // The Sortie "Auto Widescan track" choice IN EFFECT for this character, for the aioupdate addon that sends the track
@@ -1500,6 +1624,7 @@ void poll_game_state(GameState& gs) {
 
     compute_grimoire(gs);   // SCH grimoire (book + charges + timer) from buffs / jobs / stratagem recast
     compute_bst(gs);        // BST pet + Ready charges + its moves (model/bst_state.cpp)
+    compute_geo(gs);        // GEO luopan + aura + Entrust + MP + job abilities (model/geo_state.cpp)
     publish_sortie_track(gs.me.id);   // the Sortie auto-track choice of THIS character, for the aioupdate addon
 
     // Last, with the snapshot complete : cross-check what the server said against what memory says. It

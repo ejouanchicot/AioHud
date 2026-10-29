@@ -51,5 +51,12 @@ inline const char* bst_pet_eco(const char* name) {
     for (int i = 0; i < BST_PETS_N; ++i) if (bst_same_name(BST_PETS[i].name, name)) return BST_PETS[i].eco;
     return 0;
 }
+// the name to show : the database's spelling with its spaces ("BlackbeardRandy" -> "Blackbeard Randy"), else the
+// name as given (a pet the database does not know)
+inline const char* bst_pet_display(const char* name) {
+    if (!name) return "";
+    for (int i = 0; i < BST_PETS_N; ++i) if (bst_same_name(BST_PETS[i].name, name)) return BST_PETS[i].name;
+    return name;
+}
 
 } // namespace aio

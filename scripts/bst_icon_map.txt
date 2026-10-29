@@ -1,0 +1,15 @@
+# The BST box's icons (2026-10-28): the Ready charge's paw (a white silhouette the box tints with the theme) and the
+# seven jug pet families of the correlation line (the player's own pet drawings, in colour: their big creature kept,
+# the small prey of the corner taken out).
+#   python scripts/gen_bst_icons.py --src "F:\Telechargement Divers\Pet" --map scripts/bst_icon_map.txt
+# <key> = <picture> ; a picture with a drive letter is read where it is, else in --src. Keys: charge, then eco_<Family>
+# as the correlation names them (src/model/bst_correlation.h). Only the seven families a jug pet has are needed: they
+# only beat one another, so Undead / Arcana / Demon / Dragon never show.
+charge = D:\Windower Tetsouo\addons\GearSwap\data\Empreinte de bête, cœur de feuille.png
+eco_Beast = Tigre roux à dents de sabre-3.png
+eco_Lizard = Lézard prédateur et scarabée minuscule.png
+eco_Vermin = Scarabée manga et petite Mandragora.png
+eco_Plantoid = SharpwitHermes.png
+eco_Bird = Tulfaire magenta et crabe en fuite.png
+eco_Aquan = Crabe bleu face à une limace orange-7.png
+eco_Amorph = Limace orange et chauve-souris violette-18.png

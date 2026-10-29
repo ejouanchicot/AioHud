@@ -48,8 +48,34 @@ struct BstState {
     BstMove moves[MOVES_MAX]; int nmoves = 0;
 };
 
+// GEOMANCER (module : GEO). Computed once/frame in the poller (game_mem.cpp compute_geo, model/geo_state.cpp) : the
+// luopan (our pet, read as BST reads its pet) with the Geo- it carries (our last Geo- that finished), its HP and the
+// time its HP slope leaves it, the Indi- aura we carry, the Indi- we entrusted, MP, and the GEO job abilities.
+// Spells are geo_spells_gen.h ids (the UI looks their name / element / icon up). SPEC docs/design/geo-module-spec.md.
+struct GeoJa { unsigned short abil = 0; const char* label = ""; int recastSec = 0; bool active = false; };   // recastSec 0 = ready ; active : its effect is on us (Bolster 513, Blaze of Glory 569, a pending Entrust 584)
+struct GeoState {
+    static const int JA_MAX = 8;
+    bool  visible = false;         // GEO main job
+    bool  hasLuopan = false;       // a luopan of ours is out (its entity is there)
+    unsigned short bubbleSpell = 0;   // the Geo- it carries ; 0 = not known (the plugin loaded with a luopan out)
+    int   luopanHpp = 0;           // 0..100
+    int   bubbleLeftSec = -1;      // estimated from the HP slope ; -1 = not measured long enough yet
+    float dist = -1.0f;            // player <-> luopan, yalms (horizontal) ; < 0 = unknown
+    bool  outOfRange = false;      // a bubble for us / the party and the player beyond its radius
+    unsigned short auraSpell = 0;  // the Indi- we carry (its spell) ; 0 = none
+    int   auraLeftSec = -1;        // its computed life (party_state geo_aura_remaining) ; -1 = unknown
+    unsigned short entrustSpell = 0;   // the Indi- we entrusted ; 0 = none
+    char  entrustTarget[20] = {};  // who carries it
+    int   entrustLeftSec = -1;     // -1 = unknown
+    int   mp = 0, mpp = 0;         // the player's MP and MP%
+    GeoJa jas[JA_MAX]; int nja = 0;
+    bool  cardValid = false;       // a mob targeted : Cardinal Chant has a direction (geo_state.h geo_cardinal)
+    float cardDeg = 0.0f;          // the target's direction from us, degrees, 0 North (+Z), 90 East (+X), clockwise
+    int   cardRank = 0;            // the trait's rank at our GEO level (0 : none under 25)
+};
+
 struct GameState {
-    bool  inGame = false;     // poll succeeded (player struct populated) ; false = use demo/last-good
+    bool  inGame = false;    // poll succeeded (player struct populated) ; false = use demo/last-good
 
     // --- local player (the liquid bars use the fractions ; the party self-row uses `me`) ---
     float hp = 0.50f;         // 0..1  (fraction of max HP)
@@ -117,6 +143,7 @@ struct GameState {
 
     GrimoireState grimoire;   // SCH grimoire (book + charges + timer), computed once/frame
     BstState      bst;        // BST pet + Ready charges + moves, computed once/frame
+    GeoState      geo;        // GEO luopan + aura + Entrust + MP + job abilities, computed once/frame
 
     // --- party-window picker (Menu>Party>Distribution>Quartermaster/Lottery, remove member, ...) :
     //     the focused menu "partywin" carries a 1-based cursor index at +0x4C -> the hovered member

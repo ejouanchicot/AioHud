@@ -16,7 +16,59 @@ static bool chain(unsigned char oldp, unsigned char newp, int& lvl, int& res) {
     return sc_check_props(o, 1, n, 1, lvl, res);
 }
 
+#include "model/abilities_gen.h"     // the Ready moves' ids (recast 102)
+#include "model/ready_moves_gen.h"   // their kind : a physical one carries a skillchain property
+#include "model/mobskills_gen.h"     // every monster ability id of a move's name
+#include <string.h>
+
 void test_skillchain() {
+    SECTION("skillchain : every physical Ready move has its properties (BG-Wiki Category:Jug_Pets)");
+    {
+        // the three mushrooms are physical with no property (BG-Wiki : None) ; Choke Breath is magical (Earth) with
+        // none on BG-Wiki, though the kind table from BST-HUD calls it physical ; any other physical move without a row
+        // is a hole the box would show as "no chain" (Fluid Toss and seven more were, until 2026-10-29)
+        static const char* NONE[] = { "Queasyshroom", "Numbshroom", "Shakeshroom", "Choke Breath" };
+        int holes = 0;
+        for (const ReadyMoveRow& r : READY_MOVES) {
+            if (strcmp(r.kind, "slashing") && strcmp(r.kind, "piercing") && strcmp(r.kind, "blunt")) continue;
+            bool skip = false; for (const char* n : NONE) if (!strcmp(n, r.en)) skip = true;
+            if (skip) continue;
+            for (int i = 0; i < ABILS_N; ++i)
+                if (ABILS[i].recast_id == 102 && !strcmp(ABILS[i].en, r.en) && !sc_skill_lookup(SCR_JA, ABILS[i].id)) {
+                    printf("   no skillchain property for the Ready move %s (%u)\n", r.en, ABILS[i].id); ++holes; }
+        }
+        CHECK_EQ(holes, 0);
+        // the pet's finish arrives as a MONSTER ability (0x028 category 11) : the jug pet ids of the eight BG-Wiki moves
+        // (mobskills_gen.h 3950..3961) must resolve too -- the first fix put them in the ability table only, and
+        // Fluid Spread opening a chain still showed nothing (the player, 2026-10-29)
+        static const unsigned PET_MOB_IDS[] = { 3950, 3951, 3953, 3955, 3956, 3957, 3959, 3961 };
+        for (unsigned id : PET_MOB_IDS) { const SkillRow* r = sc_skill_lookup(SCR_MOB, id); CHECK(r != 0); if (!r) printf("   monster ability %u : no row\n", id); }
+        // every Ready move with a property, under every monster ability id of its name : a charmed pet uses the wild
+        // monster's (a charmed tiger's Claw Cyclone is 273), a jug pet the 38xx-39xx one (the player, 2026-10-29)
+        int mobHoles = 0;
+        for (int i = 0; i < ABILS_N; ++i) {
+            if (ABILS[i].recast_id != 102) continue;
+            const SkillRow* ja = sc_skill_lookup(SCR_JA, ABILS[i].id);
+            if (!ja) continue;
+            for (const MobSkillRow& m : MOB_SKILLS) {
+                if (strcmp(m.en, ABILS[i].en)) continue;
+                const SkillRow* mr = sc_skill_lookup(SCR_MOB, m.id);
+                if (!mr) { printf("   %s : monster ability %u has no row\n", m.en, m.id); ++mobHoles; }
+                else if (mr->prop[0] != ja->prop[0] || mr->prop[1] != ja->prop[1]) { printf("   %s : monster ability %u has other properties\n", m.en, m.id); ++mobHoles; }
+            }
+        }
+        CHECK_EQ(mobHoles, 0);
+        const SkillRow* fs = sc_skill_lookup(SCR_MOB, 3957);   // Fluid Spread (pet) : Fragmentation / Transfixion
+        if (fs) { CHECK_EQ(fs->prop[0], SCP_Fragmentation); CHECK_EQ(fs->prop[1], SCP_Transfixion); }
+        // Bora Axe (Scission / Detonation) > Fluid Toss (Reverberation) = Reverberation, seen in game 2026-10-29
+        const SkillRow* ft = sc_skill_lookup(SCR_JA, 792);
+        CHECK(ft != 0);
+        if (ft) CHECK_EQ(ft->prop[0], SCP_Reverberation);
+        int lvl = 0, res = 0;
+        CHECK(chain(SCP_Scission, SCP_Reverberation, lvl, res));
+        CHECK_EQ(res, SCP_Reverberation);
+    }
+
     SECTION("skillchain : the level-4 closers");
     {
         int lvl = 0, res = 0;

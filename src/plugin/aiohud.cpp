@@ -1073,6 +1073,39 @@ static void aio_command_dispatch(const char* cmd)
         return;
     }
 
+    // //aio sclog [sec] -> the skillchain capture (party_state.cpp act_skillchain, SCAPT lines) : every WS / spell /
+    // ability / pet move finish, the game's skillchain messages and what the box decided. Time-windowed, 10..900 s.
+    if (const char* sc = aio_verb(buf, "sclog")) {
+        int sec = 300; while (*sc == ' ') ++sc; if (*sc >= '0' && *sc <= '9') sec = atoi(sc);
+        if (sec < 10) sec = 10; if (sec > 900) sec = 900;
+        aio::party().arm_scapt_log(sec);
+        char m[240];
+        _snprintf(m, sizeof(m), aio::tr(">>> AioHud : sclog ARMED for %d s -- do your skillchains, then send Windower\\plugins\\aiohud_debug.log (SCAPT lines) <<<",
+                                        ">>> AioHud : sclog ARME pour %d s -- fais tes skillchains, puis envoie Windower\\plugins\\aiohud_debug.log (lignes SCAPT) <<<"), sec);
+        m[sizeof(m) - 1] = 0; g_host.console().print(m);
+        return;
+    }
+
+    // //aio scdelay [s] -> the Wait of a pet's move window (UiConfig::scReadyDelay, tenths of a second) : "4.5" or "45".
+    // Set while the true threshold is searched with //aio sclog (each try logs its delay and whether it chained).
+    if (const char* sd = aio_verb(buf, "scdelay")) {
+        while (*sd == ' ') ++sd;
+        aio::UiConfig& c = aio::ui_config();
+        if (*sd >= '0' && *sd <= '9') {
+            // read by hand, not atof : the client's C locale may want a decimal COMMA, and "4.3" would read 4
+            int whole = 0; while (*sd >= '0' && *sd <= '9' && whole < 1000) whole = whole * 10 + (*sd++ - '0');
+            int tenth = -1; if ((*sd == '.' || *sd == ',') && sd[1] >= '0' && sd[1] <= '9') tenth = sd[1] - '0';
+            int t = tenth >= 0 ? whole * 10 + tenth : (whole < 10 ? whole * 10 : whole);   // "4.5" / "4,5" / "4" seconds, "45" tenths
+            if (t < 30) t = 30; if (t > 80) t = 80;
+            c.scReadyDelay = t; aio::save_ui_config();
+        }
+        char m[200];
+        _snprintf(m, sizeof(m), aio::tr(">>> AioHud : pet move skillchain Wait = %d.%d s <<<", ">>> AioHud : attente skillchain des moves de pet = %d.%d s <<<"),
+                  c.scReadyDelay / 10, c.scReadyDelay % 10);
+        m[sizeof(m) - 1] = 0; g_host.console().print(m);
+        return;
+    }
+
     // //aio profile save|load|delete <name> | profile list -> named snapshots of the whole config.
     // Dispatched FIRST : the free-text <name> can contain other command keywords ("mydemo", "sim1",
     // "myconfig", ...) that the substring-matched branches below (strstr over the whole buffer) would

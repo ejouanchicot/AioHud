@@ -253,7 +253,7 @@ static bool save_config_to(const char* path) {
     { fprintf(f, "grow=");   // the grow direction of each module box (UiConfig::boxGrow, GrowBox order)
       for (int i = 0; i < UiConfig::GB_COUNT; ++i) fprintf(f, i ? ",%d" : "%d", c.boxGrow[i]);
       fprintf(f, "\n"); }
-    fprintf(f, "sc=%d,%.3f,%.4f,%.4f,%d\n", c.scShow, c.scScale, c.scX, c.scY, c.scNearby);   // skillchains box (+ display scope)
+    fprintf(f, "sc=%d,%.3f,%.4f,%.4f,%d,%d\n", c.scShow, c.scScale, c.scX, c.scY, c.scNearby, c.scReadyDelay);   // skillchains box (+ display scope, pet move Wait in tenths)
     fprintf(f, "tp=%d,%.3f,%.4f,%.4f,%d,%d\n", c.tpShow, c.tpScale, c.tpX, c.tpY, c.tpCount, c.tpIcon);   // treasure pool box
     save_text_styles(f, "tpText", c.tpText, TP_TE_COUNT);   // treasure pool : per-element typography
     fprintf(f, "hl=%d,%.3f,%.4f,%.4f,%d,%d,%d\n", c.hlShow, c.hlScale, c.hlX, c.hlY, c.hlCount, c.hlDist, c.hlTgt);   // hate list box
@@ -262,9 +262,15 @@ static bool save_config_to(const char* path) {
     save_text_styles(f, "pwText", c.pwText, PW_TE_COUNT);   // pointwatch : per-element typography
     fprintf(f, "grim=%d,%.3f,%.4f,%.4f,%d\n", c.grimShow, c.grimScale, c.grimX, c.grimY, c.grimArt);   // grimoire box
     save_text_styles(f, "grimText", c.grimText, GRIM_TE_COUNT);   // grimoire : per-element typography
-    fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
-            c.bstImage, c.bstName, c.bstHp, c.bstTp, c.bstDist, c.bstCharges, c.bstMoves, c.bstIcons, c.bstDemo, c.bstArtMode);   // BST box + its elements
+    fprintf(f, "pet=%d,%.3f,%.4f,%.4f,%d\n", c.petShow, c.petScale, c.petX, c.petY, c.petTab);   // the Pet box : show, size, place, config tab
+    fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
+            c.bstImage, c.bstName, c.bstHp, c.bstTp, c.bstDist, c.bstCharges, c.bstMoves, c.bstIcons, c.bstDemo, c.bstArtMode,
+            c.bstArtSz, c.bstPawSz, c.bstEcoSz, c.bstChargeStyle);   // BST box + its elements
     save_text_styles(f, "bstText", c.bstText, BST_TE_COUNT);   // BST box : per-element typography
+    fprintf(f, "geo=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%d,%d,%d,%d,%d,%d\n", c.geoShow, c.geoScale, c.geoX, c.geoY, c.geoOnlyLuopan,
+            c.geoBubble, c.geoHp, c.geoDist, c.geoAura, c.geoEntrust, c.geoMp, c.geoJa, c.geoIconSz, c.geoCompass,
+            c.geoJaStyle != 2 ? 1 : 0, c.geoLayout, c.geoJaStyle, c.geoCardText, c.geoTime);   // field 15 : what an older build reads   // GEO box + its elements
+    save_text_styles(f, "geoText", c.geoText, GEO_TE_COUNT);   // GEO box : per-element typography
     fprintf(f, "zt=%d,%.3f,%.4f,%.4f,%d,%d\n", c.ztShow, c.ztScale, c.ztX, c.ztY, c.ztVariant, c.ztHeader);   // zone tracker box (+ title toggle)
     fprintf(f, "ztsheol=%d,%d,%d\n", c.ztSheolSeg, c.ztSheolRes, c.ztSheolJoke);   // Sheol : segments / resistances / cruel joke
     fprintf(f, "ztlimbus=%d,%d,%d,%d,%d,%.2f,%.2f\n", c.ztLbFloor, c.ztLbCur, c.ztLbRun, c.ztLbChips, c.ztLbName, c.ztLbBarW, c.ztLbBarH);
@@ -278,7 +284,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "db=%d,%.3f,%.4f,%.4f,%d,%d,%d,%.3f,%.3f\n", c.dbShow, c.dbScale, c.dbX, c.dbY, c.dbMax, c.dbHeader, c.dbDisp, c.dbIconScale, c.dbRowGap);   // Debuffs module (detached target debuffs)
     {   // per-module box appearance (shared BoxStyle : frame / transparency / theme / hue / luminosity)
         auto sb = [&](const char* k, const BoxStyle& b) { fprintf(f, "%s=%d,%.4f,%d,%d,%.4f,%08X,%d\n", k, b.on, b.alpha, b.themeCopy, b.theme, b.lum, b.hue, b.border); };   // border = trailing field (old 6-field configs load with border=default)
-        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("awbox", c.awBox); sb("bstbox", c.bstBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox); sb("dbbox", c.dbBox); sb("plreqbox", c.plrEqBox);
+        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("awbox", c.awBox); sb("petbox", c.petBox); sb("bstbox", c.bstBox); sb("geobox", c.geoBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox); sb("dbbox", c.dbBox); sb("plreqbox", c.plrEqBox);
     }
     fprintf(f, "ep=%d,%.3f,%.4f,%.4f,%d\n", c.epShow, c.epScale, c.epX, c.epY, c.epColl);   // EmpyPop box (+ collectable row)
     fprintf(f, "eptrack=%s\n", c.epTrack);   // the tracked NM KEY -- its OWN line : keys contain spaces
@@ -368,17 +374,52 @@ static bool parse_aw_line(const char* line, UiConfig& c) {
     if (n >= 5) c.awScreen = scr; if (n >= 6) c.awMemory = mem; if (n >= 7) c.awColors = col; if (n >= 8) c.awCount = cnt; if (n >= 9) c.awTimer = tim;
     return true;
 }
+// Pet-module config lines, parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line). g_petSeen : the file had a
+// pet= line ; without one (a file from before the Pet module) load_config_from gives the Pet box the BST box's place.
+static bool g_petSeen = false;
+static bool parse_pet_line(const char* line, UiConfig& c) {
+    if (strncmp(line, "petbox=", 7) == 0) { parse_box(line + 7, c.petBox); return true; }
+    if (strncmp(line, "pet=", 4) != 0) return false;
+    int sh = 1, tab = 0; float scl = 1.0f, x = 0.72f, y = 0.55f;
+    const int n = sscanf(line + 4, "%d,%f,%f,%f,%d", &sh, &scl, &x, &y, &tab);
+    if (n >= 1) c.petShow = sh; if (n >= 2) c.petScale = scl; if (n >= 3) c.petX = x; if (n >= 4) c.petY = y;
+    if (n >= 5) c.petTab = tab;
+    g_petSeen = true;
+    return true;
+}
 // BST-module config lines, parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line).
 static bool parse_bst_line(const char* line, UiConfig& c) {
     if (parse_text_style(line, "bstText", c.bstText, BST_TE_COUNT)) return true;
     if (strncmp(line, "bstbox=", 7) == 0) { parse_box(line + 7, c.bstBox); return true; }
     if (strncmp(line, "bst=", 4) != 0) return false;
-    int v[12] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 }; float scl = 1.0f, x = 0.72f, y = 0.55f;
-    const int n = sscanf(line + 4, "%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", &v[0], &scl, &x, &y, &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10], &v[11]);
+    int v[12] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 }; float scl = 1.0f, x = 0.72f, y = 0.55f, sz[3] = { 1.0f, 1.0f, 1.0f }; int cs = 0;
+    const int n = sscanf(line + 4, "%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%d", &v[0], &scl, &x, &y, &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10], &v[11], &sz[0], &sz[1], &sz[2], &cs);
     if (n >= 1) c.bstShow = v[0]; if (n >= 2) c.bstScale = scl; if (n >= 3) c.bstX = x; if (n >= 4) c.bstY = y;
     if (n >= 5) c.bstOnlyPet = v[1]; if (n >= 6) c.bstImage = v[2]; if (n >= 7) c.bstName = v[3]; if (n >= 8) c.bstHp = v[4];
     if (n >= 9) c.bstTp = v[5]; if (n >= 10) c.bstDist = v[6]; if (n >= 11) c.bstCharges = v[7]; if (n >= 12) c.bstMoves = v[8];
     if (n >= 13) c.bstIcons = v[9]; if (n >= 14) c.bstDemo = v[10]; if (n >= 15) c.bstArtMode = v[11];
+    // the element sizes, kept within 0.5 .. 2 whatever the file says
+    for (int i = 0; i < 3; ++i) if (!(sz[i] >= 0.5f && sz[i] <= 2.0f)) sz[i] = 1.0f;   // (written so a "nan" fails too)
+    if (n >= 16) c.bstArtSz = sz[0]; if (n >= 17) c.bstPawSz = sz[1]; if (n >= 18) c.bstEcoSz = sz[2];
+    if (n >= 19 && cs >= 0 && cs <= 2) c.bstChargeStyle = cs;
+    return true;
+}
+// GEO-module config lines, parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line). Tolerant : a shorter line
+// (an older build's) keeps the defaults of the fields it does not carry, and an icon size outside 0.5 .. 2 is not taken.
+static bool parse_geo_line(const char* line, UiConfig& c) {
+    if (parse_text_style(line, "geoText", c.geoText, GEO_TE_COUNT)) return true;
+    if (strncmp(line, "geobox=", 7) == 0) { parse_box(line + 7, c.geoBox); return true; }
+    if (strncmp(line, "geo=", 4) != 0) return false;
+    int v[9] = { 1, 0, 1, 1, 1, 1, 1, 1, 1 }; float scl = 1.0f, x = 0.72f, y = 0.30f, isz = 1.0f; int cmp = 1, jai = 1, lay = 0, jst = 0, ctx = 1, tim = 0;
+    const int n = sscanf(line + 4, "%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d,%d,%d,%d,%d", &v[0], &scl, &x, &y, &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &isz, &cmp, &jai, &lay, &jst, &ctx, &tim);
+    if (n >= 1) c.geoShow = v[0]; if (n >= 2) c.geoScale = scl; if (n >= 3) c.geoX = x; if (n >= 4) c.geoY = y;
+    if (n >= 5) c.geoOnlyLuopan = v[1]; if (n >= 6) c.geoBubble = v[2]; if (n >= 7) c.geoHp = v[3]; if (n >= 8) c.geoDist = v[4];
+    if (n >= 9) c.geoAura = v[5]; if (n >= 10) c.geoEntrust = v[6]; if (n >= 11) c.geoMp = v[7]; if (n >= 12) c.geoJa = v[8];
+    if (n >= 13 && isz >= 0.5f && isz <= 2.0f) c.geoIconSz = isz;
+    if (n >= 14) c.geoCompass = cmp; if (n >= 15) c.geoJaIcons = jai; if (n >= 16 && lay >= 0 && lay <= 2) c.geoLayout = lay;
+    // the abilities' style : its own field, else what the older on / off said (icons, or the names)
+    if (n >= 17 && jst >= 0 && jst <= 2) c.geoJaStyle = jst; else if (n >= 15) c.geoJaStyle = jai ? 0 : 2;
+    if (n >= 18) c.geoCardText = ctx; if (n >= 19) c.geoTime = tim;
     return true;
 }
 static bool parse_grow_line(const char* line, UiConfig& c) {
@@ -637,6 +678,7 @@ static bool load_config_from(const char* path) {
     UiConfig& c = g_loadScratch;
     c = ui_config();                        // keep the live values the base does not reset (lang, the palette)
     config_defaults(c, /*keepZones=*/false);   // zones are written as `zone=` lines -> the file rebuilds them
+    g_petSeen = false;
     static char line[8192];  // BIG : a "tmBuffOff=" line can hold up to TM_TRACK_MAX (512) comma-separated keys ~= 3 KB.
                              // A small buffer truncated it mid-line, so most filter keys were dropped on reload. (The
                              // retired per-job "tmTrkOff<job>=" lines were the same size and are still swallowed below.)
@@ -650,7 +692,9 @@ static bool load_config_from(const char* path) {
         // leaves the well-behaved branches untouched and removes the collision instead of muting it.
         int v, v1, v2, gps, idx, b0, b1, b2, bc; float gx, gy, gsc, fv, f1, f2; unsigned uc;
         if (parse_aw_line(line, c)) continue;     // out-of-line : the Absorb-TP box (same nesting-limit reason)
+        if (parse_pet_line(line, c)) continue;    // out-of-line : the Pet box (same nesting-limit reason)
         if (parse_bst_line(line, c)) continue;    // out-of-line : the BST box (same nesting-limit reason)
+        if (parse_geo_line(line, c)) continue;    // out-of-line : the GEO box (same nesting-limit reason)
         if (parse_grow_line(line, c)) continue;   // out-of-line : box grow directions (same nesting-limit reason)
         if (parse_ep_line(line, c)) continue;   // out-of-line : keeps the chain below off MSVC's nesting limit
         if (parse_cast_line(line, c)) continue; // out-of-line : cast-placeholder toggles (same nesting-limit reason)
@@ -725,7 +769,7 @@ static bool load_config_from(const char* path) {
         else if (strncmp(line, "ws=", 3) == 0) { int sh = 1, ft = 0, fx = 1; float sc = 1.0f, x = 0.5f, y = 0.36f; int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d", &sh, &sc, &x, &y, &ft, &fx); if (n >= 1) { c.wsShow = sh; if (n >= 2) c.wsScale = sc; if (n >= 3) c.wsX = x; if (n >= 4) c.wsY = y; if (n >= 5) c.wsFont = ft; if (n >= 6) c.wsFx = fx; } }
         else if (strncmp(line, "sc2=", 4) == 0) { int tm = 1, st = 1, pr = 1, ls = 1, ti = 1, tp = 1; float lg = 1.0f; int n = sscanf(line + 4, "%d,%d,%d,%d,%d,%f,%d", &tm, &st, &pr, &ls, &ti, &lg, &tp); if (n >= 1) { c.scTimer = tm; c.scStep = st; c.scProps = pr; c.scList = ls; if (n >= 5) c.scTitle = ti; if (n >= 6) c.scListGap = lg; if (n >= 7) c.scTP = tp; } }
         else if (parse_text_style(line, "scText", c.scText, SC_TE_COUNT)) {}
-        else if (strncmp(line, "sc=", 3) == 0) { int sh = 1; float scl = 1.0f, x = 0.78f, y = 0.06f; int nb = 1; int n = sscanf(line + 3, "%d,%f,%f,%f,%d", &sh, &scl, &x, &y, &nb); if (n >= 1) { c.scShow = sh; if (n >= 2) c.scScale = scl; if (n >= 3) c.scX = x; if (n >= 4) c.scY = y; if (n >= 5) c.scNearby = nb; } }
+        else if (strncmp(line, "sc=", 3) == 0) { int sh = 1; float scl = 1.0f, x = 0.78f, y = 0.06f; int nb = 1, rd = 40; int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d", &sh, &scl, &x, &y, &nb, &rd); if (n >= 1) { c.scShow = sh; if (n >= 2) c.scScale = scl; if (n >= 3) c.scX = x; if (n >= 4) c.scY = y; if (n >= 5) c.scNearby = nb; if (n >= 6) c.scReadyDelay = rd; } }
         else if (strncmp(line, "tp=", 3) == 0) { int sh = 1, cnt = 10, ic = 1; float scl = 1.0f, x = 0.72f, y = 0.30f; int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d", &sh, &scl, &x, &y, &cnt, &ic); if (n >= 1) { c.tpShow = sh; if (n >= 2) c.tpScale = scl; if (n >= 3) c.tpX = x; if (n >= 4) c.tpY = y; if (n >= 5) c.tpCount = cnt; if (n >= 6) c.tpIcon = ic; } }
         else if (parse_text_style(line, "tpText", c.tpText, TP_TE_COUNT)) {}
         else if (strncmp(line, "hl=", 3) == 0) { int sh = 1, cnt = 8, sd = 1, st = 1; float scl = 1.0f, x = 0.22f, y = 0.32f; int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d,%d", &sh, &scl, &x, &y, &cnt, &sd, &st); if (n >= 1) { c.hlShow = sh; if (n >= 2) c.hlScale = scl; if (n >= 3) c.hlX = x; if (n >= 4) c.hlY = y; if (n >= 5) c.hlCount = cnt; if (n >= 6) c.hlDist = sd; if (n >= 7) c.hlTgt = st; } }
@@ -832,6 +876,9 @@ static bool load_config_from(const char* path) {
         }
     }
     fclose(f);
+    // a file from before the Pet module : the box takes the BST box's place, size and frame (the BST box was used in
+    // game ; the GEO box never was, so its place is dropped -- one place now). The bst= values stay, written back.
+    if (!g_petSeen) { c.petScale = c.bstScale; c.petX = c.bstX; c.petY = c.bstY; c.petBox = c.bstBox; }
     repair_buff_order(c);   // a corrupt / short / outdated buffOrder line must never leave a group undrawn
     // Every numeric bound now lives in ONE pure place (model/config_rules.h), covered by tests/t_config.cpp.
     // It used to be sixteen fields clamped here out of the hundred-odd the file carries -- the mmZoom S0 was
@@ -1175,7 +1222,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.mmBezelW != b.mmBezelW || a.mmCardSz != b.mmCardSz || a.mmBezel != b.mmBezel || a.mmSqBorder != b.mmSqBorder) return false;
     if (a.wsShow != b.wsShow || a.wsScale != b.wsScale || a.wsX != b.wsX || a.wsY != b.wsY || a.wsFont != b.wsFont || a.wsFx != b.wsFx || a.wsNameCol != b.wsNameCol || a.wsDmgCol1 != b.wsDmgCol1 || a.wsDmgCol2 != b.wsDmgCol2) return false;
     for (int i = 0; i < UiConfig::GB_COUNT; ++i) if (a.boxGrow[i] != b.boxGrow[i]) return false;
-    if (a.scShow != b.scShow || a.scScale != b.scScale || a.scX != b.scX || a.scY != b.scY || a.scNearby != b.scNearby) return false;
+    if (a.scShow != b.scShow || a.scScale != b.scScale || a.scX != b.scX || a.scY != b.scY || a.scNearby != b.scNearby || a.scReadyDelay != b.scReadyDelay) return false;
     if (a.tpShow != b.tpShow || a.tpScale != b.tpScale || a.tpX != b.tpX || a.tpY != b.tpY || a.tpCount != b.tpCount || a.tpIcon != b.tpIcon) return false;
     if (!text_styles_eq(a.tpText, b.tpText, TP_TE_COUNT)) return false;
     if (a.hlShow != b.hlShow || a.hlScale != b.hlScale || a.hlX != b.hlX || a.hlY != b.hlY || a.hlCount != b.hlCount || a.hlDist != b.hlDist || a.hlTgt != b.hlTgt) return false;
@@ -1184,9 +1231,16 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (!text_styles_eq(a.pwText, b.pwText, PW_TE_COUNT)) return false;
     if (a.grimShow != b.grimShow || a.grimScale != b.grimScale || a.grimX != b.grimX || a.grimY != b.grimY || a.grimArt != b.grimArt) return false;
     if (!text_styles_eq(a.grimText, b.grimText, GRIM_TE_COUNT)) return false;
+    if (a.petShow != b.petShow || a.petScale != b.petScale || a.petX != b.petX || a.petY != b.petY || a.petTab != b.petTab || !box_eq(a.petBox, b.petBox)) return false;
     if (a.bstShow != b.bstShow || a.bstScale != b.bstScale || a.bstX != b.bstX || a.bstY != b.bstY || a.bstOnlyPet != b.bstOnlyPet) return false;
-    if (a.bstImage != b.bstImage || a.bstName != b.bstName || a.bstHp != b.bstHp || a.bstTp != b.bstTp || a.bstDist != b.bstDist || a.bstCharges != b.bstCharges || a.bstMoves != b.bstMoves || a.bstIcons != b.bstIcons || a.bstDemo != b.bstDemo || a.bstArtMode != b.bstArtMode) return false;
+    if (a.bstImage != b.bstImage || a.bstName != b.bstName || a.bstHp != b.bstHp || a.bstTp != b.bstTp || a.bstDist != b.bstDist || a.bstCharges != b.bstCharges || a.bstMoves != b.bstMoves || a.bstIcons != b.bstIcons || a.bstDemo != b.bstDemo || a.bstArtMode != b.bstArtMode
+        || a.bstArtSz != b.bstArtSz || a.bstPawSz != b.bstPawSz || a.bstEcoSz != b.bstEcoSz
+        || a.bstChargeStyle != b.bstChargeStyle) return false;
     if (!text_styles_eq(a.bstText, b.bstText, BST_TE_COUNT) || !box_eq(a.bstBox, b.bstBox)) return false;
+    if (a.geoShow != b.geoShow || a.geoScale != b.geoScale || a.geoX != b.geoX || a.geoY != b.geoY || a.geoOnlyLuopan != b.geoOnlyLuopan) return false;
+    if (a.geoBubble != b.geoBubble || a.geoHp != b.geoHp || a.geoDist != b.geoDist || a.geoAura != b.geoAura || a.geoEntrust != b.geoEntrust
+        || a.geoMp != b.geoMp || a.geoJa != b.geoJa || a.geoIconSz != b.geoIconSz || a.geoCompass != b.geoCompass || a.geoJaStyle != b.geoJaStyle || a.geoLayout != b.geoLayout || a.geoCardText != b.geoCardText || a.geoTime != b.geoTime) return false;
+    if (!text_styles_eq(a.geoText, b.geoText, GEO_TE_COUNT) || !box_eq(a.geoBox, b.geoBox)) return false;
     if (a.ztShow != b.ztShow || a.ztScale != b.ztScale || a.ztX != b.ztX || a.ztY != b.ztY || a.ztVariant != b.ztVariant || a.ztHeader != b.ztHeader) return false;
     if (a.ztSheolSeg != b.ztSheolSeg || a.ztSheolRes != b.ztSheolRes || a.ztSheolJoke != b.ztSheolJoke) return false;
     if (a.ztLbFloor != b.ztLbFloor || a.ztLbCur != b.ztLbCur || a.ztLbRun != b.ztLbRun || a.ztLbChips != b.ztLbChips) return false;

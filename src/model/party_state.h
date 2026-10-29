@@ -442,8 +442,17 @@ struct PartyState {
     // Skillchains box's last fallback (config scNearby) so a party member's chain shows when your <t>/<bt> has none.
     const Resonating* skillchain_newest_live() const;
     void prune_skillchains();             // once/frame : drop resonance windows whose mob has died (call near refresh_hate)
-    void sc_open(unsigned tid, unsigned aid, int res, const unsigned char* props, int delay);   // WS/spell finish -> step-1 resonance (its opening properties)
-    void sc_close(unsigned tid, unsigned aid, int res, int prop, int delay);                    // add-effect skillchain -> step+1 (the 1 resulting property)
+    // delayMs >= 0 : the Wait in ms instead of `delay` seconds (a pet's move : UiConfig::scReadyDelay)
+    void sc_open(unsigned tid, unsigned aid, int res, const unsigned char* props, int delay, int delayMs = -1);   // WS/spell finish -> step-1 resonance (its opening properties)
+    void sc_close(unsigned tid, unsigned aid, int res, int prop, int delay, int delayMs = -1);                    // add-effect skillchain -> step+1 (the 1 resulting property)
+    // a skillchain can come from : us, the party / alliance, our pets, AND the party's Trusts (their ids are in the
+    // monster range, which is_party_or_pet refuses ; the hate list relies on that, so it is not widened there)
+    bool is_skillchain_actor(unsigned id) const;
+    // the Wait of a pet's move window, ms : UiConfig::scReadyDelay, handed in once a frame by the HUD (hud.cpp) -- the
+    // model never reads the config itself (the offline replay links it without the config layer)
+    int  petMoveDelayMs_ = 4000;
+    void set_pet_move_delay_ms(int ms) { petMoveDelayMs_ = (ms >= 3000 && ms <= 8000) ? ms : 4000; }
+    bool is_our_pet(unsigned id) const { if (id) for (int i = 0; i < 16; ++i) if (petId_[i] == id) return true; return false; }
     bool has_immanence(unsigned actor) const;   // SCH Immanence (buff 470) up on `actor` -> its next elemental spell opens a skillchain (self : memory buff list ; ally : 0x076)
 
     TreasureItem treasure_[10];           // the lottery pool, indexed by packet slot 0..9
@@ -612,6 +621,16 @@ struct PartyState {
     bool     bcaptClosed_  = true;
     void arm_bcapt_log(int seconds);
     bool bcapt_armed();                 // true while the window is open ; logs "window closed" once on expiry
+    // //aio sclog : the skillchain capture (2026-10-29 : "ça SC pas toujours et je ne sais pas pourquoi"). Every finish
+    // that could open or close a resonance (0x028 categories 3 / 4 / 6 / 11 / 13 / 14 / 15), from ANY actor : who, which
+    // action, which target, the game's messages (finish, skillchain add-effect and its animation), what the box decided
+    // (opened with these properties / closed with this chain / ignored and why), and the target's window before it.
+    // Tells "the game did not chain" (the window's timing, a move that missed) from "the box did not see it".
+    unsigned scaptUntilMs_ = 0;
+    bool     scaptClosed_  = true;
+    void arm_scapt_log(int seconds);
+    bool scapt_armed();
+    void sc_window_text(unsigned tid, char* out, int cap) const;   // the target's resonance window, for the capture
     // //aio rangelog : party + alliance distance capture. Settles two open questions at once -- whether the entity
     // index at member+0x20 goes STALE (the "distance is sometimes garbage" note of 2026-07-21), and whether the
     // game's range check is horizontal or 3D (both distances are printed side by side). See the dump in

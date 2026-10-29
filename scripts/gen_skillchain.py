@@ -41,6 +41,25 @@ WEAPON_IX = { _wnorm(name): i for i, (name, ids) in enumerate(AEONIC) }
 
 RESOURCES = ['weapon_skills', 'spells', 'monster_abilities', 'job_abilities', 'elements']
 
+# Ready moves newer than skills.lua (Ivaar, May 2025), absent from its job_abilities AND its monster_abilities, so the
+# name match below cannot find them : their properties from BG-Wiki "Category:Jug_Pets" (read 2026-10-29 ; the 44
+# Ready moves skills.lua does have match that page exactly). Keyed by NAME. Two id spaces : the ability id
+# (abilities_gen.h, recast 102 : the Ready MENU, for the next-step hint) and the monster ability ids
+# (mobskills_gen.h : what the pet's FINISH arrives as, 0x028 category 11 -- every id of that name, a jug pet's being
+# the 39xx one ; only a party member's or a pet's action is ever read, so a wild mob's never counts). Without both a
+# chain opened or closed by one of these moves was never shown (Fluid Spread opening, Bora Axe > Fluid Toss =
+# Reverberation, the player, 2026-10-29). tests/t_skillchain.cpp checks every physical Ready move has its rows.
+EXTRA_READY = {
+    'Fluid Toss':        ['Reverberation'],
+    'Fluid Spread':      ['Fragmentation', 'Transfixion'],
+    'Hoof Volley':       ['Fragmentation'],
+    'Crossthrash':       ['Distortion', 'Detonation'],
+    'Rhinowrecker':      ['Fusion', 'Transfixion'],
+    'Disembowel':        ['Impaction'],
+    'Extirpating Salvo': ['Fusion', 'Impaction'],
+    'Mega Scissors':     ['Gravitation', 'Scission'],
+}
+
 def parse_resource(text, name):
     # isolate  skills.<name> = { ... }  up to the next  skills.<other> =  or  return skills
     m = re.search(r'skills\.' + name + r'\s*=\s*\{', text)
@@ -126,8 +145,39 @@ def main():
             if mob:
                 res_rows['job_abilities'].append((aid, mob[1], mob[2], mob[3], mob[4], 255, 255, m.group(2)))
                 ja_ids.add(aid); added += 1
+        # the Ready moves skills.lua does not know at all (EXTRA_READY), by their ability id
+        extra = 0
+        for m in re.finditer(r'\{\s*(\d+)\s*,\s*"([^"]*)"\s*,\s*\d+\s*,\s*102\s*\}', atext):
+            aid, anm = int(m.group(1)), m.group(2)
+            if anm in EXTRA_READY and aid not in ja_ids:
+                ix = ([PROP_IX[p] for p in EXTRA_READY[anm]] + [255, 255, 255])[:3]
+                res_rows['job_abilities'].append((aid, ix[0], ix[1], ix[2], 3, 255, 255, anm))
+                ja_ids.add(aid); extra += 1
+        missing = sorted(set(EXTRA_READY) - set(r[7] for r in res_rows['job_abilities']))
+        if missing: sys.exit('EXTRA_READY moves not found in abilities_gen.h : %s' % ', '.join(missing))
+        # ... and every monster ability id of the same name : the pet's finish (0x028 category 11) carries that one
+        mob_h = genpaths.model_path('mobskills_gen.h')
+        mob_ids = set(r[0] for r in res_rows['monster_abilities'])
+        mtext = open(mob_h, encoding='utf-8', errors='replace').read()
+        # every Ready move with a property (its ability row, BG-Wiki's or skills.lua's) under EVERY monster ability id
+        # of its name : skills.lua has the jug pet's id (38xx-39xx) but not the wild monster's, which a CHARMED pet
+        # uses (a charmed tiger's Claw Cyclone is 273) -- the player, 2026-10-29 : "pense à tous les JA de pet qui
+        # peuvent ouvrir". Only a party member's or a pet's finish is read, so a wild mob's own move never counts.
+        ready_props = {}
+        for m in re.finditer(r'\{\s*(\d+)\s*,\s*"([^"]*)"\s*,\s*\d+\s*,\s*102\s*\}', atext):
+            row = next((r for r in res_rows['job_abilities'] if r[0] == int(m.group(1))), None)
+            if row: ready_props[m.group(2)] = row[1:4]
+        mextra = 0
+        for m in re.finditer(r'\{\s*(\d+)\s*,\s*"([^"]*)"\s*\}', mtext):
+            mid, mnm = int(m.group(1)), m.group(2)
+            if mnm in ready_props and mid not in mob_ids:
+                p0, p1, p2 = ready_props[mnm]
+                res_rows['monster_abilities'].append((mid, p0, p1, p2, 3, 255, 255, mnm))
+                mob_ids.add(mid); mextra += 1
+        res_rows['monster_abilities'].sort(key=lambda r: r[0])
+        print('[gen_skillchain] %d monster ability ids added for the Ready moves (all ids of each name)' % mextra)
         res_rows['job_abilities'].sort(key=lambda r: r[0])
-    print('[gen_skillchain] augmented job_abilities with %d name-matched pet ready moves' % added)
+    print('[gen_skillchain] augmented job_abilities with %d name-matched pet ready moves + %d from BG-Wiki' % (added, extra))
 
     total = 0
     for r in RESOURCES:

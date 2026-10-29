@@ -128,6 +128,9 @@ void test_ready_charges() {
         CHECK_STR(bst_pet_eco("Left-HandedYoko"), "Vermin");
         CHECK_STR(bst_pet_eco("P.CrabFamiliar"), "Aquan");
         CHECK(bst_pet_eco("BlackbeardRand") == 0);
+        CHECK_STR(bst_pet_display("BlackbeardRandy"), "Blackbeard Randy");   // shown with its spaces
+        CHECK_STR(bst_pet_display("Y.BeetleFamiliar"), "Y. Beetle Familiar");
+        CHECK_STR(bst_pet_display("Unknown Pet"), "Unknown Pet");
         CHECK(bst_pet_eco("") == 0);
     }
 

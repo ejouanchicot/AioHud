@@ -8,6 +8,7 @@
 #include "model/party_state_internal.h"   // pkt_u16 / pkt_u32 (shared with party_state_zonetracker.cpp)
 #include "model/game_mem.h"
 #include "model/bst_state.h"   // bst_on_packet
+#include "model/geo_state.h"   // geo_on_packet
 #include "model/paths.h"
 #include "model/spells_gen.h"
 #include "model/weapon_skills_gen.h"   // ws_info : WS/ability names for the target action bar (cat 7 "readies")
@@ -883,6 +884,20 @@ bool PartyState::bcapt_armed() {
     }
     return true;
 }
+void PartyState::arm_scapt_log(int seconds) {
+    scaptUntilMs_ = model_now_ms() + (unsigned)(seconds > 0 ? seconds : 180) * 1000u;
+    scaptClosed_  = false;
+    windower::debug::log("SCAPT window OPEN for %ds -- every WS / spell / ability / pet move finish is logged (any actor) with the box's decision", seconds);
+}
+bool PartyState::scapt_armed() {
+    if (scaptClosed_) return false;
+    if ((int)(model_now_ms() - scaptUntilMs_) >= 0) {   // said when it dies : a quiet capture reads like "no bug"
+        scaptClosed_ = true;
+        windower::debug::log("SCAPT window CLOSED (expired) -- re-arm with //aio sclog if you need more");
+        return false;
+    }
+    return true;
+}
 void PartyState::arm_dist_log(int seconds) {
     distUntilMs_ = model_now_ms() + (unsigned)(seconds > 0 ? seconds : 120) * 1000u;
     distClosed_  = false;
@@ -1037,13 +1052,27 @@ bool PartyState::act_skillchain(const unsigned char* p, int size, unsigned cat, 
     else if (cat == 4)  scRes = SCR_SPELL;                 // spell_finish (SCH/BLU/nukes)
     else if (cat == 11) scRes = SCR_MOB;                   // mob_tp_finish : BST charmed/jug PET ready moves
     else if (cat == 6 || cat == 13 || cat == 14 || cat == 15) scRes = SCR_JA;   // job_ability / avatar blood pact / *_run
-    if (scRes >= 0 && is_party_or_pet(actor) && (size * 8) >= 309) {
+    // //aio sclog : what came in and what the box did with it (the decision filled along the branches below)
+    const bool scapt = scRes >= 0 && (size * 8) >= 309 && scapt_armed();
+    char scWhy[96] = "ignored : not a friendly actor (party / alliance / pet / trust)";
+    char scWin[96] = "";
+    if (scapt) sc_window_text(getbits(p, 150, 32, size), scWin, sizeof(scWin));
+    // a PET's move (cat 11 from one of our pets, no delay of its own in the table) opens its window later than a WS :
+    // the animation (a WS landing 3.6 to 4.2 s after Fluid Spread missed, 4.44 to 5.3 s chained ; //aio sclog
+    // 2026-10-29) -- the Wait is UiConfig::scReadyDelay (4.0 s : a WS launched then lands ~0.45 s later)
+    const bool petMove = (cat == 11 && is_our_pet(actor));
+    if (scRes >= 0 && is_skillchain_actor(actor) && (size * 8) >= 309) {
         const u32 tid = getbits(p, 150, 32, size);         // target[0].id
+        strcpy(scWhy, "ignored : the target is not a monster");
         if (tid && (tid >> 24) == 0x01) {
             const u32 aid = getbits(p, 86, 16, size);      // action id (actor.param, all finish categories)
             if (getbits(p, 271, 1, size) && sc_is_skillchain_msg(getbits(p, 299, 10, size))) {   // CLOSE
                 const int prop = sc_from_add_effect_anim(getbits(p, 272, 6, size));
-                if (prop >= 0) { const SkillRow* sk = sc_skill_lookup(scRes, aid); sc_close(tid, aid, scRes, prop, sk ? sk->delay : 3); }
+                if (prop >= 0) { const SkillRow* sk = sc_skill_lookup(scRes, aid);
+                                 const int dms = (petMove && (!sk || sk->delay == 3)) ? petMoveDelayMs_ : -1;
+                                 sc_close(tid, aid, scRes, prop, sk ? sk->delay : 3, dms);
+                                 _snprintf(scWhy, sizeof(scWhy), "CLOSED : %s", scprop_name(prop)); }
+                else _snprintf(scWhy, sizeof(scWhy), "ignored : skillchain message, unknown animation %u", (unsigned)getbits(p, 272, 6, size));
             } else {
                 const unsigned amsg = getbits(p, 230, 10, size);
                 // OPEN : a WS/ability FINISH message, OR a SCH ELEMENTAL SPELL cast while Immanence (470) is up (the
@@ -1059,10 +1088,23 @@ bool PartyState::act_skillchain(const unsigned char* p, int size, unsigned cat, 
                 const bool opens = (scRes == SCR_WS) ? sc_is_weaponskill_msg(amsg) : sc_is_finish_msg(amsg);
                 if (opens || immanence) {
                     const SkillRow* sk = sc_skill_lookup(scRes, aid);
-                    if (sk) sc_open(tid, aid, scRes, sk->prop, sk->delay);
-                }
+                    if (sk) { sc_open(tid, aid, scRes, sk->prop, sk->delay, (petMove && sk->delay == 3) ? petMoveDelayMs_ : -1);
+                              _snprintf(scWhy, sizeof(scWhy), "OPENED : %s%s%s%s%s", scprop_name(sk->prop[0]),
+                                        sk->prop[1] < SCP_N ? " / " : "", sk->prop[1] < SCP_N ? scprop_name(sk->prop[1]) : "",
+                                        sk->prop[2] < SCP_N ? " / " : "", sk->prop[2] < SCP_N ? scprop_name(sk->prop[2]) : ""); }
+                    else _snprintf(scWhy, sizeof(scWhy), "ignored : no skillchain property known for id %u (resource %d)", (unsigned)aid, scRes);
+                } else _snprintf(scWhy, sizeof(scWhy), "ignored : message %u is not a finish (missed / interrupted / resisted ?)", amsg);
             }
         }
+    }
+    if (scapt) {
+        scWhy[sizeof(scWhy) - 1] = 0; scWin[sizeof(scWin) - 1] = 0;
+        const char* who = actor == selfId_ ? "you" : pc_name_by_id(actor);
+        windower::debug::log("SCAPT t=%u cat=%u actor=%08X(%s%s%s) id=%u tgt=%08X msg=%u add=%u anim=%u addmsg=%u | before: %s | %s",
+            model_now_ms(), cat, actor, who && who[0] ? who : "?", is_skillchain_actor(actor) ? ",friendly" : "", petMove ? ",pet" : "",
+            (unsigned)getbits(p, 86, 16, size), (unsigned)getbits(p, 150, 32, size), (unsigned)getbits(p, 230, 10, size),
+            (unsigned)getbits(p, 271, 1, size), (unsigned)getbits(p, 272, 6, size), (unsigned)getbits(p, 299, 10, size),
+            scWin[0] ? scWin : "no window", scWhy);
     }
     // MY WEAPONSKILL finish -> arcade "ULTRA COMBO" popup. GATE on a genuine weaponskill-finish MESSAGE (the same
     // sc_is_finish_msg the skillchain block trusts) : some THF damage abilities (Mug id45, Despoil id228) also arrive
@@ -2649,6 +2691,7 @@ void model_feed_packet(int id, const unsigned char* b)
     __try {
         party().note_packet(id, model_now_ms());   // flow counters for //aio doctor (tracked ids only)
         bst_on_packet(id, b);                      // BST module : our pet (0x068), its Ready moves (0x028), zone-out (model/bst_state.cpp)
+        geo_on_packet(id, b);                      // GEO module : our Geo- (names the luopan) and Entrust (0x028), zone-out (model/geo_state.cpp)
         if      (id == 0xDD)  party().on_dd(b);
         else if (id == 0xDF)  party().on_df(b);
         else if (id == 0x028) party().on_action(b);   // cast bar + landed target debuffs

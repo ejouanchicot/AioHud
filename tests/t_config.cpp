@@ -80,11 +80,15 @@ static void scribble(UiConfig& c, int seed) {
     c.awShow = !(seed & 1); c.awScale = 0.9f + 0.1f * seed; c.awX = 0.11f * seed; c.awY = 0.13f * seed;
     c.awScreen = 20 + 10 * seed; c.awMemory = 300 + 60 * seed; c.awColors = !(seed & 1); c.awCount = !(seed & 1); c.awTimer = !(seed & 1);
     c.tmMarks = seed & 1; c.tmFocusWarn = 30 + 5 * seed; c.tmFocusHold = 20 + 5 * seed;   // every box, every direction (0..2)
-    c.scShow = i1 & 1; c.scScale = 0.9f + 0.1f * seed; c.scX = 0.29f * seed; c.scY = 0.31f * seed;
+    c.scShow = i1 & 1; c.scScale = 0.9f + 0.1f * seed; c.scX = 0.29f * seed; c.scY = 0.31f * seed; c.scReadyDelay = 40 + seed;
     c.tpShow = i1 & 1; c.tpScale = 0.9f + 0.1f * seed; c.tpCount = 3 + seed;
     c.hlShow = i1 & 1; c.hlScale = 0.9f + 0.1f * seed; c.hlCount = 4 + seed;
     c.pwShow = i1 & 1; c.pwScale = 0.9f + 0.1f * seed; c.pwMode = i1 % 3;
     c.grimShow = i1 & 1; c.grimScale = 0.9f + 0.1f * seed;
+    c.petShow = !(i1 & 1); c.petScale = 0.9f + 0.1f * seed; c.petX = 0.13f * seed; c.petY = 0.19f * seed; c.petTab = seed & 1;
+    c.geoShow = !(i1 & 1); c.geoScale = 0.9f + 0.1f * seed; c.geoX = 0.11f * seed; c.geoY = 0.17f * seed; c.geoOnlyLuopan = i1 & 1;
+    c.geoBubble = !(i1 & 1); c.geoHp = !(i1 & 1); c.geoDist = !(i1 & 1); c.geoAura = !(i1 & 1); c.geoEntrust = !(i1 & 1);
+    c.geoMp = !(i1 & 1); c.geoJa = !(i1 & 1); c.geoIconSz = 0.8f + 0.1f * seed; c.geoCompass = i1 & 1; c.geoJaStyle = seed % 3; c.geoJaIcons = c.geoJaStyle != 2; c.geoLayout = (seed + 1) % 3; c.geoCardText = !(i1 & 1); c.geoTime = !(i1 & 1);
     c.ztShow = i1 & 1; c.ztScale = 0.9f + 0.1f * seed;
     c.ztSoGal = !(i1 & 1); c.ztSoBoss = i1 & 1; c.ztSoCof = !(i1 & 1); c.ztSoLoot = i1 & 1;
     c.ztSoNav = !(i1 & 1); c.ztSoTrack = i1 & 1;
@@ -228,6 +232,38 @@ void test_config() {
             printf("   got ");
             for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) printf("%u ", (unsigned)c.buffOrder[i]);
             printf("\n");
+        }
+    }
+
+    SECTION("config : the Pet box takes the BST box's place from a file written before it");
+    // docs/design/pet-module-spec.md §2.3 : a file without pet= gives the Pet box the BST box's size, place and frame
+    // (the GEO box's place, never seen in game, is dropped) ; a file with pet= keeps its own, whatever bst= says.
+    {
+        char dir[MAX_PATH]; plugin_path(dir, sizeof(dir), "data"); CreateDirectoryA(dir, NULL);
+        plugin_path(dir, sizeof(dir), "data\\profiles"); CreateDirectoryA(dir, NULL);
+        char p[MAX_PATH]; plugin_path(p, sizeof(p), "data\\profiles\\t_prepet.txt");
+        FILE* f = fopen(p, "w");
+        if (f) { fputs("bst=1,1.250,0.3000,0.4000,1\ngeo=1,0.800,0.9000,0.1000,0\nbstbox=0,0.5000,1,2,1.0000,00000000,1\n", f); fclose(f); }
+        plugin_path(p, sizeof(p), "data\\profiles\\t_withpet.txt");
+        f = fopen(p, "w");
+        if (f) { fputs("pet=1,0.700,0.2000,0.6000,1\nbst=1,1.250,0.3000,0.4000,1\n", f); fclose(f); }
+        profile_refresh();
+        CHECK(profile_load("t_prepet"));
+        {
+            const UiConfig& c = ui_config();
+            CHECK(c.petScale > 1.24f && c.petScale < 1.26f);
+            CHECK(c.petX > 0.29f && c.petX < 0.31f);
+            CHECK(c.petY > 0.39f && c.petY < 0.41f);
+            CHECK_EQ(c.petBox.on, 0);   // the BST box's frame came along
+            CHECK(c.bstX > 0.29f && c.bstX < 0.31f);   // bst= itself left as it was
+        }
+        CHECK(profile_load("t_withpet"));
+        {
+            const UiConfig& c = ui_config();
+            CHECK(c.petScale > 0.69f && c.petScale < 0.71f);
+            CHECK(c.petX > 0.19f && c.petX < 0.21f);
+            CHECK(c.petY > 0.59f && c.petY < 0.61f);
+            CHECK_EQ(c.petTab, 1);
         }
     }
 

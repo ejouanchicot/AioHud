@@ -256,6 +256,9 @@ void Hud::render(u32 dev) {
         grimLight_ = 0; grimDark_ = 0; grimClosed_ = 0; grimLight_r_ = {}; grimDark_r_ = {}; grimClosed_r_ = {};   // forget the grimoire book textures (belong to the old device)
         bstArt_ = 0; bstArtR_ = {}; bstArtKey_[0] = 0;   // forget the BST pet art (belongs to the old device)
         bstElem_ = 0; bstElemR_ = {};                     // and its element icon strip
+        bstPaw_ = 0; bstPawR_ = {};                       // its Ready paw
+        for (int i = 0; i < 3; ++i) { bstEco_[i] = 0; bstEcoR_[i] = {}; bstEcoKey_[i][0] = 0; }   // its family icons
+        for (int i = 0; i < GEO_TEX_N; ++i) { geoTex_[i] = 0; geoTexR_[i] = {}; }               // the GEO content's images
         // The Help SAMPLES keep their own lazy copies at file scope in their hud_*.cpp -- unreachable from here
         // otherwise, so they used to survive a device recreate and hand a dead device's texture to SetTexture.
         zonetracker_help_forget(); treasure_help_forget();   // (the debuffs / timers Help samples borrow the shared atlas forgotten just above)
@@ -266,6 +269,7 @@ void Hud::render(u32 dev) {
     fonts_.get(0, 0);          // register the default slot so ensure_all builds it this frame
     fonts_.ensure_all(dev);
     if (ui_config().skinTheme != skinIdx_) set_skin(ui_config().skinTheme);   // config page changed the theme
+    party().set_pet_move_delay_ms(ui_config().scReadyDelay * 100);           // the Skillchains model's pet move Wait (//aio scdelay)
     if (ui_config().box[0].scale < 1.0f) ui_config().box[0].scale = 1.0f;   // PARTY floor = 100% : below that its footprint can't cover the native party block (it may still grow)
     {   // Re-anchor any box whose FOOTPRINT changed -- scale, bar height/width, job-badge mode, casts on/off,
         // anything. measure() captures every dimension setting (right = x+w, bottom = y+h ; exact for the
@@ -429,7 +433,7 @@ void Hud::render(u32 dev) {
 #endif
             draw_pointwatch(f);                     // PointWatch box (XP/CP/ML + Merits) -- placed via //aio edit
             draw_grimoire(f);                       // Scholar grimoire (SCH only) -- placed via //aio edit
-            draw_bst(f);                            // Beastmaster box (BST only) -- placed via //aio edit
+            draw_pet(f);                            // Pet box (BST / GEO main : its content) -- placed via //aio edit
             draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit
             // EmpyPop -- placed via //aio edit. SKIP the live draw while its own config section is being previewed :
             // unlike ZoneTracker (zone-gated) / Timers (buff-gated), EmpyPop draws whenever epShow is on, so without
@@ -863,6 +867,9 @@ void Hud::dispose() {
     if (grimClosed_){ release_texture(grimClosed_);grimClosed_= 0; }   // grimoire : closed-book (no Arts) texture
     if (bstArt_)    { release_texture(bstArt_);    bstArt_ = 0; }      // BST box : the pet art
     if (bstElem_)   { release_texture(bstElem_);   bstElem_ = 0; }     // BST box : the element icon strip
+    if (bstPaw_)    { release_texture(bstPaw_);    bstPaw_ = 0; }      // BST box : the Ready paw
+    for (int i = 0; i < 3; ++i) if (bstEco_[i]) { release_texture(bstEco_[i]); bstEco_[i] = 0; }   // BST box : the family icons
+    for (int i = 0; i < GEO_TEX_N; ++i) if (geoTex_[i]) { release_texture(geoTex_[i]); geoTex_[i] = 0; }   // GEO content : its images
     zonetracker_help_dispose(); treasure_help_dispose();   // the module-owned Help samples (file-static, not members) -- symmetric with the forget block in render()
     corner_mask_dispose();   // the baked corner-mask atlas (the ONLY Release of it)
     config_.dispose();   // Release the ConfigPage's owned Help/preview textures (zone map, logo, atlases) -- else they leak per //unload
@@ -1075,7 +1082,8 @@ static float* grow_field(UiConfig& c, int box, int sub) {   // the stored X that
         case UiConfig::GB_TM:   return sub ? &c.tmRX : &c.tmX;
         case UiConfig::GB_DB:   return &c.dbX;
         case UiConfig::GB_AW:   return &c.awX;
-        case UiConfig::GB_BST:  return &c.bstX;
+        case UiConfig::GB_BST:  return &c.petX;   // GB_PET : the Pet box took the BST box's slot
+        case UiConfig::GB_GEO:  return &c.geoX;
     }
     return 0;
 }

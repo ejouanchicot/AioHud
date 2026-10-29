@@ -44,6 +44,7 @@ enum { HL_DIST = 0, HL_NAME, HL_PCT, HL_TARGET, HL_TE_COUNT };  // Hate List tex
 enum { PW_LABEL = 0, PW_VALUE, PW_RATE, PW_TE_COUNT };          // PointWatch text elements (Label / Value / Rate)
 enum { GRIM_CHARGE = 0, GRIM_TIMER, GRIM_TE_COUNT };           // Grimoire text elements (Charge count / Recast timer)
 enum { BST_NAME = 0, BST_VALUE, BST_CHARGE, BST_MOVE, BST_TE_COUNT };   // BST box text elements (pet name / HP-TP-distance / Ready charges / moves)
+enum { GEO_NAME = 0, GEO_VALUE, GEO_JA, GEO_TE_COUNT };   // GEO box text elements (bubble / aura / Entrust names ; HP-MP-times-distance ; job abilities)
 // Zone Tracker text elements. Header/Body are shared by every variant ; the four after them are the Limbus
 // rows, split out so each can be sized/coloured on its own (the gauge caption, the currencies, the run line
 // and the coffer-dot labels). The per-variant elements that follow are APPENDED (never reordered) : the saved
@@ -269,8 +270,9 @@ struct UiConfig {
     // each box was hard-coded to before this setting existed : an update moves nothing. Asked for 2026-09-29 --
     // no automatic rule suits everyone (grow toward the middle covers the character, grow away from it slides a
     // left-hand Timers list at every new spell), so the player picks.
-    enum GrowBox { GB_TP, GB_SC, GB_HL, GB_GRIM, GB_ZT, GB_PW, GB_EP, GB_TM, GB_DB, GB_AW, GB_BST, GB_COUNT };   // APPEND only : grow= is positional
-    int   boxGrow[GB_COUNT] = { 1, 1, 1, 1, 1, 2, 2, 0, 0, 0, 1 };
+    enum GrowBox { GB_TP, GB_SC, GB_HL, GB_GRIM, GB_ZT, GB_PW, GB_EP, GB_TM, GB_DB, GB_AW, GB_BST, GB_GEO, GB_COUNT };   // APPEND only : grow= is positional
+    static const int GB_PET = GB_BST;   // the Pet box grows as the BST box did (its slot of grow=) ; GB_GEO is left unused
+    int   boxGrow[GB_COUNT] = { 1, 1, 1, 1, 1, 2, 2, 0, 0, 0, 1, 1 };
     // ---- Skillchains module : a box on your target's active skillchain (step / property / burst window) ----
     int   scShow  = 1;         // show the skillchains box
     float scScale = 1.0f;      // size multiplier (0.5 .. 2.0)
@@ -284,6 +286,11 @@ struct UiConfig {
     int   scTP    = 1;         // show the TP indicator line at the bottom (green >= 1000, dim otherwise)
     float scListGap = 1.0f;    // vertical spacing multiplier between each WS in the continuation list (0.6 .. 3.0)
     int   scNearby = 1;        // display scope : 1 = beyond your cursor target <t>, ALSO show your battle-target <bt>
+    int   scReadyDelay = 40;   // tenths of a second a PET's move (BST Ready...) waits before its window opens (the box's
+                               // "Go!"). Measured with //aio sclog, 2026-10-29 : a WS LANDING 3.64 / 3.86 / 4.09 / 4.14 /
+                               // 4.19 s after Fluid Spread missed, 4.44 to 5.28 s (8 tries) chained -- the game's
+                               // threshold is between 4.2 and 4.44 s ; a WS lands ~0.45 s after it is launched, so a
+                               // 4.0 s "Go!" lands it past the threshold (every try at 4.0 chained). //aio scdelay sets it
                                //   (engaged, reticle off) then the newest LIVE chain on a nearby mob (party members'
                                //   SCs) ; 0 = STRICT, only your current cursor target <t>'s chain (nothing while you
                                //   target nothing / an ally, even if engaged)
@@ -336,17 +343,52 @@ struct UiConfig {
     int   grimArt   = 2;       // EDIT-preview art : 0 Light, 1 Dark, 2 Addendum White, 3 Addendum Black
     TextStyle grimText[GRIM_TE_COUNT];   // per-element typography : [GRIM_CHARGE] [GRIM_TIMER]
 
-    // ---- BST module : the pet, the Ready charges and moves (hud_bst.cpp ; docs/design/bst-module-spec.md) ----
-    int   bstShow    = 1;      // show the box (only appears on a BST main)
-    float bstScale   = 1.0f;   // size multiplier (0.5 .. 2.0)
-    float bstX       = 0.72f;  // horizontal CENTRE (screen fraction) ; bstY = its TOP
+    // ---- Pet module : ONE box for the pet jobs, its content the main job's (BST, GEO ; SMN and PUP later), one place,
+    //      one size, one frame (hud_pet.cpp ; docs/design/pet-module-spec.md). A file from before it (no pet= line)
+    //      takes the BST box's place, size and frame (load_config_from) ----
+    int   petShow    = 1;      // show the box (on a pet job only)
+    float petScale   = 1.0f;   // size multiplier (0.5 .. 2.0)
+    float petX       = 0.72f;  // horizontal CENTRE (screen fraction) ; petY = its TOP
+    float petY       = 0.55f;
+    int   petTab     = 0;      // the job tab of //aio config -> Pet (0 BST, 1 GEO) : what the preview, and //aio edit on
+                               // another job, show
+
+    // ---- BST content of the Pet box : the pet, the Ready charges and moves (pet_bst.cpp ;
+    //      docs/design/bst-module-spec.md) ----
+    int   bstShow    = 1;      // show the box on a BST main
+    float bstScale   = 1.0f;   // the BST box's own size, place and frame before the Pet module : read from an old file
+    float bstX       = 0.72f;  // for the Pet box to take them (pet= absent), written back unchanged, used for nothing else
     float bstY       = 0.55f;
     int   bstOnlyPet = 1;      // only while a pet is out
     int   bstImage = 1, bstName = 1, bstHp = 1, bstTp = 1, bstDist = 1, bstCharges = 1, bstMoves = 1;   // each element on / off
     int   bstIcons = 1;        // a move's kind as the weapon / element icon (else a colour tick)
     int   bstDemo  = 0;        // EDIT / config preview : which jug pet the sample shows (bst_pets_gen.h index)
     int   bstArtMode = 0;      // with bstImage on : 0 the pet's art, 1 its correlation as text, 2 both (text under the art)
+    float bstArtSz = 1.0f;     // the pet's art, x 0.5 .. 2 of its size (the player's ask, 2026-10-29)
+    float bstPawSz = 1.0f;     // the Ready paws (and the ring dial), x 0.5 .. 2
+    float bstEcoSz = 1.0f;     // the correlation's family icons, x 0.5 .. 2
+    int   bstChargeStyle = 0;  // the Ready charges : 0 paws (the ring when the paw icon is missing), 1 the ring, 2 bars
     TextStyle bstText[BST_TE_COUNT];   // per-element typography : [BST_NAME] [BST_VALUE] [BST_CHARGE] [BST_MOVE]
+
+    // ---- GEO content of the Pet box : the luopan's bubble, the Indi- aura, Entrust, MP and the job abilities
+    //      (pet_geo.cpp ; docs/design/geo-module-spec.md) ----
+    int   geoShow    = 1;      // show the box on a GEO main
+    float geoScale   = 1.0f;   // the GEO box's own size and place before the Pet module : never used in game, so not
+    float geoX       = 0.72f;  // taken by the Pet box ; read and written back unchanged, used for nothing
+    float geoY       = 0.30f;
+    int   geoOnlyLuopan = 0;   // only while a luopan is out (off : the aura, MP and abilities are worth seeing without one)
+    int   geoBubble = 1, geoHp = 1, geoDist = 1, geoAura = 1, geoEntrust = 1, geoMp = 1, geoJa = 1;   // each element on / off
+    float geoIconSz = 1.0f;    // the effect icons (and the luopan, the compass, the JA icons), x 0.5 .. 2
+    int   geoCompass = 1;      // the Cardinal Chant compass round the luopan (pet-module-spec.md §3.1 bis)
+    int   geoJaIcons = 1;      // the abilities' style before geoJaStyle (1 icons, 0 names) : read from an older file
+    int   geoJaStyle = 0;      // the job abilities : 0 a row of icons that fill as their recast runs, 1 a grid of icon +
+                               // name + recast, 2 a grid of name + recast
+    int   geoLayout  = 0;      // 0 the compass on top of the box, with no box round it ; 1 the compass beside its text ;
+                               // 2 the compass (or the bubble) alone, no box
+    int   geoCardText = 1;     // the Cardinal Chant bonus as text (MAB +12 ...) under the compass
+    int   geoTime     = 0;     // the luopan's time left estimated from its HP slope : off by default (it never settles
+                               // while its HP keep going back up, the player 2026-10-29)
+    TextStyle geoText[GEO_TE_COUNT];   // per-element typography : [GEO_NAME] [GEO_VALUE] [GEO_JA]
 
     int   ztShow    = 1;       // show the Zone Tracker (only appears in a Dynamis / Abyssea zone)
     float ztScale   = 1.0f;    // size multiplier (0.5 .. 2.0)
@@ -531,7 +573,8 @@ struct UiConfig {
         --favColorN;
     }
     // Per-module box appearance (shared bundle ; Target/Player inline their own). Default = follow Party theme.
-    BoxStyle scBox, tpBox, hlBox, pwBox, ztBox, mmBox, epBox, awBox, bstBox;   // bstBox = the BST box   // awBox = the Absorb-TP box   // mmBox = the Minimap CLOCK box (day / moon header), not the map
+    BoxStyle petBox;                    // the Pet box (BST / GEO content) ; bstBox / geoBox below : read and written back only
+    BoxStyle scBox, tpBox, hlBox, pwBox, ztBox, mmBox, epBox, awBox, bstBox, geoBox;   // geoBox = the GEO box   // bstBox = the BST box   // awBox = the Absorb-TP box   // mmBox = the Minimap CLOCK box (day / moon header), not the map
     TextStyle mmText[MM_TE_COUNT];   // clock per-element typography : [MM_TIME] time, [MM_DAY] day, [MM_MOON] moon, [MM_REAL] real/GMT
     bool  mmPosSet = false;    // user-placed position (edit mode) ; else the layout default
     float mmX = 0.0f, mmY = 0.0f;   // top-left as a screen fraction when mmPosSet
