@@ -356,10 +356,23 @@ static void aio_subclass_remove()
     InterlockedExchange(&relay_data(g_relay)->target, 0);
     // still on top: the window goes back to the previous WndProc and the relay is never called again.
     // Not on top: someone chained after us holds the relay, which stays as a pass-through
-    bool top = IsWindow(g_subclassed) && GetWindowLongA(g_subclassed, GWL_WNDPROC) == (LONG)(LONG_PTR)g_relay;
+    LONG cur = IsWindow(g_subclassed) ? GetWindowLongA(g_subclassed, GWL_WNDPROC) : 0;
+    bool top = cur == (LONG)(LONG_PTR)g_relay;
     if (top) SetWindowLongA(g_subclassed, GWL_WNDPROC, (LONG)(LONG_PTR)g_oldWndProc);
-    windower::debug::log("cursor: unsubclassed (%s), relay %08X left as a pass-through",
-                         top ? "WndProc restored" : "another proc chained after us", (unsigned)(DWORD_PTR)g_relay);
+    // who chained after us: the module the window's proc now lives in. The crash of 2026-11-09 came right after a
+    // PlayOnline update (new pol.exe and polhook.dll), so this names the suspect the next time it happens
+    char who[MAX_PATH] = "?";
+    HMODULE m = NULL;
+    if (!top && cur && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                          (LPCSTR)(LONG_PTR)cur, &m) && m) {
+        char path[MAX_PATH];
+        DWORD n = GetModuleFileNameA(m, path, MAX_PATH);
+        if (n) { const char* b = strrchr(path, '\\'); lstrcpynA(who, b ? b + 1 : path, MAX_PATH); }
+    }
+    if (top) windower::debug::log("cursor: unsubclassed (WndProc restored), relay %08X left as a pass-through",
+                                  (unsigned)(DWORD_PTR)g_relay);
+    else windower::debug::log("cursor: unsubclassed (another proc chained after us: %08X in %s), relay %08X left as a pass-through",
+                              (unsigned)cur, who, (unsigned)(DWORD_PTR)g_relay);
     g_subclassed = NULL; g_relay = NULL;
 }
 

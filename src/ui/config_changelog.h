@@ -682,6 +682,21 @@ static const ChangeLine CL_88[] = {
       "*Timers : les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lance un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne." },
 };
 
+static const ChangeLine CL_97[] = {
+    { "*Fixed : //unload AioHud could close the game.* Since the PlayOnline update of November 2026, unloading AioHud (an update does it too) could crash the game a moment later, after a long session. AioHud now leaves the game window in a state that stays safe whatever else is hooked on it. The update TO this version still runs the old unload : close the game and extract the zip by hand, or update right after logging in.",
+      "*Corrige : //unload AioHud pouvait fermer le jeu.* Depuis la mise a jour PlayOnline de novembre 2026, decharger AioHud (une mise a jour le fait aussi) pouvait faire planter le jeu un instant apres, au bout d'une longue session. AioHud laisse maintenant la fenetre du jeu dans un etat sur, quoi qu'il y ait d'autre de branche dessus. La mise a jour VERS cette version passe encore par l'ancien unload : ferme le jeu et extrais le zip a la main, ou mets a jour juste apres t'etre connecte." },
+    { "*New Pet box, for BST and GEO (//aio config -> Pet).* One box, at one place, shows your pet ; what it holds follows your main job. Your BST box's place, size and frame carry over.",
+      "*Nouvelle boite Pet, pour BST et GEO (//aio config -> Pet).* Une seule boite, a un seul endroit, montre ton pet ; son contenu suit ton job principal. La place, la taille et le cadre de ta boite BST sont gardes." },
+    { "*GEO : your luopan.* Its bubble tinted with its element, its HP as a ring with the %, its distance, your Indi- aura, Entrust, your MP and your job abilities (each icon fills back as its recast runs). A Cardinal Chant compass shows where your target stands and the bonus a -ra gets right now. Layouts : compass on top, side by side, or the bubble only.",
+      "*GEO : ta luopan.* Sa bulle teintee de son element, ses HP en anneau avec le %, sa distance, ton aura Indi-, Entrust, tes MP et tes job abilities (chaque icone se remplit pendant son recast). Une boussole Cardinal Chant montre ou est ta cible et le bonus qu'un -ra a en ce moment. Dispositions : boussole au-dessus, cote a cote, ou la bulle seule." },
+    { "*BST : two more layouts.* Your pet on top in a disc (its picture, HP as a ring, TP as an inner arc, the three Ready charges below it) with its box underneath ; or your pet on top of its numbered moves only.",
+      "*BST : deux dispositions de plus.* Ton pet en haut dans un disque (son image, ses HP en anneau, son TP en arc interieur, les trois charges Ready dessous) avec sa boite en dessous ; ou ton pet au-dessus de ses moves numerotes seulement." },
+    { "*Skillchains with your pet's Ready moves.* Every Ready move now opens its skillchains (eight were missing, Fluid Spread among them). The \"Go!\" after a pet's move waits 4 s, as its window opens later than a weapon skill's (//aio scdelay to change it). Trusts in your party count too. A Blood Pact is offered on SMN only.",
+      "*Skillchains avec les Ready moves de ton pet.* Chaque Ready move ouvre maintenant ses skillchains (il en manquait huit, dont Fluid Spread). Le \"Go!\" apres le move d'un pet attend 4 s, car sa fenetre s'ouvre plus tard que celle d'un weapon skill (//aio scdelay pour le changer). Les Trusts de ton groupe comptent aussi. Un Blood Pact n'est propose qu'en SMN." },
+    { "BST : Sweet Caroline, Herald Henry and Brave Hero Glenn show their family and correlation.",
+      "BST : Sweet Caroline, Herald Henry et Brave Hero Glenn montrent leur famille et leur correlation." },
+};
+
 static const ChangeLine CL_96[] = {
     { "*BST : a new layout built around Ready.* A dial on the left shows your three Ready charges : a full charge is lit, the one recharging fills like a clock, and the centre gives the seconds to the next one (MAX when all three are there). Your pet sits on its right, and its moves are listed below in smaller text.",
       "*BST : une nouvelle disposition construite autour de Ready.* Un cadran a gauche montre tes trois charges Ready : une charge pleine est allumee, celle qui recharge se remplit comme une horloge, et le centre donne les secondes avant la prochaine (MAX quand les trois sont la). Ton pet est a sa droite, et ses moves sont listes dessous en plus petit." },
@@ -757,6 +772,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.97", CL_97, (int)(sizeof(CL_97) / sizeof(CL_97[0])) },
     { "1.0.96", CL_96, (int)(sizeof(CL_96) / sizeof(CL_96[0])) },
     { "1.0.95", CL_95, (int)(sizeof(CL_95) / sizeof(CL_95[0])) },
     { "1.0.94", CL_94, (int)(sizeof(CL_94) / sizeof(CL_94[0])) },
