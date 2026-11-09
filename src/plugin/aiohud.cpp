@@ -262,8 +262,53 @@ static u32 g_gameHwnd = 0;
 // test lives INSIDE the proc, so while the config is closed we are a pure pass-through.
 // It MUST be removed on unload -- leaving a WndProc pointing into a freed DLL crashes the client on the next
 // message.
+//
+// Putting the old WndProc back is NOT enough: whoever subclassed the window AFTER us holds our proc as its "previous"
+// one and keeps calling it after the DLL is gone. Both clients died that way on //unload AioHud, 2026-11-09 23:58
+// (WER: an abort() attributed to FFXI's ImeUiDll.dll, then LuaCore.dll fast-failing 0xC0000409). And the unload
+// does not run on the window's thread (init does not either: THREAD lines of aiohud_debug.log), so
+// RemoveWindowSubclass, which only works from that thread, is no way out. So the window never gets an address
+// inside this DLL: it gets a few bytes of code VirtualAlloc'd once and never freed (the relay, below), which jump
+// to aio_wndproc while the DLL is loaded and straight to the previous WndProc once it is unloaded. A component
+// chained after us then keeps a relay that stays valid for the life of the process. Each load leaves one
+// pass-through relay behind (64 bytes).
 static WNDPROC g_oldWndProc = NULL;
 static HWND    g_subclassed = NULL;
+
+struct WndRelay {            // lives in the relay's own block, after its code ; read by that code
+    volatile LONG target;    // aio_wndproc while loaded, 0 once unloaded
+    volatile LONG prev;      // the WndProc we replaced
+    volatile LONG cwp;       // &CallWindowProcA (user32 never unloads)
+};
+static unsigned char* g_relay = NULL;
+static WndRelay* relay_data(unsigned char* p) { return (WndRelay*)(p + 32); }
+
+// x86 stdcall WndProc(h, msg, wp, lp):
+//   mov eax,[target] / test eax,eax / jz pass / jmp eax
+//   pass: pop eax (return address) / push [prev] / push eax / jmp [cwp]   -> CallWindowProcA(prev, h, msg, wp, lp)
+// VirtualAlloc'd executable memory is a valid Control Flow Guard target as a whole, so a guarded caller accepts it.
+static unsigned char* relay_create(WNDPROC target)
+{
+    unsigned char* p = (unsigned char*)VirtualAlloc(NULL, 64, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!p) return NULL;
+    WndRelay* d = relay_data(p);
+    d->target = (LONG)(LONG_PTR)target;
+    d->prev = 0;
+    d->cwp = (LONG)(LONG_PTR)GetProcAddress(GetModuleHandleA("user32.dll"), "CallWindowProcA");
+    if (!d->cwp) { VirtualFree(p, 0, MEM_RELEASE); return NULL; }
+    unsigned char* c = p;
+    auto addr = [&c](volatile LONG* field) { DWORD a = (DWORD)(DWORD_PTR)field; memcpy(c, &a, 4); c += 4; };
+    *c++ = 0xA1; addr(&d->target);                  // mov eax, [target]
+    *c++ = 0x85; *c++ = 0xC0;                       // test eax, eax
+    *c++ = 0x74; *c++ = 0x02;                       // jz pass (skips the 2-byte jmp eax)
+    *c++ = 0xFF; *c++ = 0xE0;                       // jmp eax
+    *c++ = 0x58;                                    // pass: pop eax
+    *c++ = 0xFF; *c++ = 0x35; addr(&d->prev);       // push dword [prev]
+    *c++ = 0x50;                                    // push eax
+    *c++ = 0xFF; *c++ = 0x25; addr(&d->cwp);        // jmp dword [cwp]
+    FlushInstructionCache(GetCurrentProcess(), p, 64);
+    return p;
+}
 
 static LRESULT CALLBACK aio_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -280,16 +325,42 @@ static LRESULT CALLBACK aio_wndproc(HWND h, UINT msg, WPARAM wp, LPARAM lp)
 
 static void aio_subclass_install(HWND hw)
 {
-    if (g_oldWndProc || !hw || !IsWindow(hw)) return;
-    g_oldWndProc = (WNDPROC)(LONG_PTR)SetWindowLongA(hw, GWL_WNDPROC, (LONG)(LONG_PTR)aio_wndproc);
-    if (g_oldWndProc) { g_subclassed = hw; windower::debug::log("cursor: WndProc subclassed on %08X", (unsigned)(LONG_PTR)hw); }
+    if (g_subclassed || !hw || !IsWindow(hw)) return;
+    // render6 calls this every frame until it succeeds: a failure is retried every 2 s, 5 times, then given up
+    // (said once) -- never a log line per frame (rule 10: bounded retry, and say when the window closes)
+    static int tries = 0; static DWORD lastTry = 0;
+    if (tries >= 5) return;
+    if (tries && GetTickCount() - lastTry < 2000) return;
+    ++tries; lastTry = GetTickCount();
+    if (tries == 5) windower::debug::log("cursor: last try to subclass the window (cursor fix off if it fails)");
+    if (!g_relay) g_relay = relay_create(aio_wndproc);
+    if (!g_relay) { windower::debug::log("cursor: relay allocation FAILED, WndProc not subclassed (cursor fix off)"); return; }
+    // the relay's prev and aio_wndproc's g_oldWndProc are set BEFORE it goes live: its first message may come at once
+    WndRelay* d = relay_data(g_relay);
+    g_oldWndProc = (WNDPROC)(LONG_PTR)GetWindowLongA(hw, GWL_WNDPROC);
+    InterlockedExchange(&d->prev, (LONG)(LONG_PTR)g_oldWndProc);
+    WNDPROC replaced = (WNDPROC)(LONG_PTR)SetWindowLongA(hw, GWL_WNDPROC, (LONG)(LONG_PTR)g_relay);
+    if (!replaced) { windower::debug::log("cursor: SetWindowLong FAILED on %08X (cursor fix off)", (unsigned)(LONG_PTR)hw); return; }
+    g_oldWndProc = replaced;   // what SetWindowLong really replaced (same thread as the window: no one in between)
+    InterlockedExchange(&d->prev, (LONG)(LONG_PTR)replaced);
+    g_subclassed = hw;
+    windower::debug::log("cursor: WndProc subclassed on %08X through relay %08X", (unsigned)(LONG_PTR)hw, (unsigned)(DWORD_PTR)g_relay);
 }
 
+// Any thread (the unload's is not the window's). g_oldWndProc is left as it is: a message already inside
+// aio_wndproc on the game thread still needs it for its CallWindowProcA.
 static void aio_subclass_remove()
 {
-    if (!g_oldWndProc || !g_subclassed) return;
-    if (IsWindow(g_subclassed)) SetWindowLongA(g_subclassed, GWL_WNDPROC, (LONG)(LONG_PTR)g_oldWndProc);
-    g_oldWndProc = NULL; g_subclassed = NULL;
+    if (!g_relay || !g_subclassed) return;
+    // from now on the relay passes every message on without entering this DLL, wherever it sits in the chain
+    InterlockedExchange(&relay_data(g_relay)->target, 0);
+    // still on top: the window goes back to the previous WndProc and the relay is never called again.
+    // Not on top: someone chained after us holds the relay, which stays as a pass-through
+    bool top = IsWindow(g_subclassed) && GetWindowLongA(g_subclassed, GWL_WNDPROC) == (LONG)(LONG_PTR)g_relay;
+    if (top) SetWindowLongA(g_subclassed, GWL_WNDPROC, (LONG)(LONG_PTR)g_oldWndProc);
+    windower::debug::log("cursor: unsubclassed (%s), relay %08X left as a pass-through",
+                         top ? "WndProc restored" : "another proc chained after us", (unsigned)(DWORD_PTR)g_relay);
+    g_subclassed = NULL; g_relay = NULL;
 }
 
 void aio_plugin_render6()
@@ -741,6 +812,7 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
 
 void aio_plugin_unload()
 {
+    tid_once("unload");   // the thread the relay's removal really runs on (aio_subclass_remove assumes: any)
     aio_subclass_remove();   // MUST come first : a WndProc pointing into a freed DLL crashes the client
 
     // Flush the derived-state cache NOW. The only other writer is a 4 s throttle in the poller, so a buff cast in the
