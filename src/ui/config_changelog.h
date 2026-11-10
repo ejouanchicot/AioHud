@@ -682,6 +682,10 @@ static const ChangeLine CL_88[] = {
       "*Timers : les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lance un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne." },
 };
 
+static const ChangeLine CL_100[] = {
+    { "*Fixed : the party selection cursor could stay off after a game update.* AioHud looks for it again by itself, but it can only prove it while you have something targeted, and it used to give up two minutes after loading. Loaded in a Mog House or in town with nothing targeted, the cursor stayed off for the whole session. It now keeps looking until you target someone : target a party member, or yourself, and the cursor comes back.",
+      "*Corrige : le curseur de selection de party pouvait rester eteint apres une mise a jour du jeu.* AioHud le recherche tout seul, mais il ne peut le prouver que pendant que tu as une cible, et il abandonnait deux minutes apres le chargement. Charge en Mog House ou en ville sans cible, le curseur restait eteint toute la session. Il cherche maintenant jusqu'a ce que tu cibles quelqu'un : cible un membre de ta party, ou toi-meme, et le curseur revient." },
+};
 static const ChangeLine CL_99[] = {
     { "*New : the Pet box for SMN (//aio config -> Pet -> SMN).* Your avatar or spirit in a disc, its HP as a ring and its TP as an inner arc, its name in its element's colour and its distance ; Blood Pact Rage and Ward and your SMN job abilities with their recast ; your MP ; and the pacts of that avatar you know, Rage then Ward, with their MP cost (red when you are short) and the skillchain a Rage opens. A spirit shows the spells it casts. The portrait goes on top of the box or beside it.",
       "*Nouveau : la boite Pet pour SMN (//aio config -> Pet -> SMN).* Ton avatar ou ton esprit dans un disque, ses HP en anneau et son TP en arc interieur, son nom a la couleur de son element et sa distance ; Blood Pact Rage et Ward et tes job abilities SMN avec leur recast ; tes MP ; et les pacts de cet avatar que tu connais, Rage puis Ward, avec leur cout en MP (en rouge s'il t'en manque) et la skillchain qu'ouvre un Rage. Un esprit montre les sorts qu'il lance. Le portrait se place au-dessus de la boite ou a cote." },
@@ -786,6 +790,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.100", CL_100, (int)(sizeof(CL_100) / sizeof(CL_100[0])) },
     { "1.0.99", CL_99, (int)(sizeof(CL_99) / sizeof(CL_99[0])) },
     { "1.0.98", CL_98, (int)(sizeof(CL_98) / sizeof(CL_98[0])) },
     { "1.0.97", CL_97, (int)(sizeof(CL_97) / sizeof(CL_97[0])) },
