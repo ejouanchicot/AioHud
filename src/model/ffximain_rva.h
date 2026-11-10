@@ -65,13 +65,19 @@ void rva_register_checks();   // the in-game watcher's checks for these addresse
 // One report line per static, for //aio doctor : address, state, and how it got there.
 int  fm_report(char out[][160], int maxOut);
 
-// //aio rva : ONE walk of FFXiMain's whole readable image, on a person's command -- never per frame. The runtime
-// healers only search a window around each seed ; a patch that moved an address further than that window is
-// what a tester is asked to run this for (//aio doctor says so). fm_image_find returns the RVAs whose u32 value
-// `sig` accepts (up to `cap`) ; fm_menu_slots the menu-shaped slots with each one's 8-char def name (a menu must
-// be OPEN for the focused slot to be among them). Both return the number found, 0 when FFXiMain is not loaded.
-int  fm_image_find(bool (*sig)(unsigned v), unsigned* rvaOut, int cap);
-int  fm_menu_slots(unsigned* rvaOut, char names[][9], int cap);
+// //aio rva's searches, on a person's command. NEAR : the RVAs within `half` bytes of `centerRva` whose u32 value
+// `sig` accepts (up to `cap`), in the frame it is called -- a window of a few hundred KB, a patch moves these by
+// bytes. BACKGROUND : the whole readable image, ~2 ms of it per frame (fm_tick), `done` called at the end with every
+// hit's RVA (at most 16), `what` handed back, and `partial` when a part was skipped on a fault or more hits were
+// found than kept ; one at a time (false while one runs, or FFXiMain not loaded). The one-frame whole-image walk
+// froze the game for tens of seconds (2026-11-10).
+typedef void (*FmBgDone)(const unsigned* rvas, int n, int what, bool partial);
+int  fm_near_find(bool (*sig)(unsigned v), unsigned centerRva, unsigned half, unsigned* rvaOut, int cap);
+bool fm_bg_find(bool (*sig)(unsigned v), int what, FmBgDone done);
+bool fm_bg_busy();
+// a menu-shaped slot value (an object whose def carries the inline "menu" tag), and that slot's 8-char def name
+bool fm_menu_shaped(unsigned v);
+void fm_menu_slot_name(unsigned rva, char out[9]);
 
 // SizeOfImage ^ TimeDateStamp of the loaded FFXiMain : changes when, and only when, the client is patched.
 unsigned fm_fingerprint();

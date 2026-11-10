@@ -943,6 +943,33 @@ const char* aio_version_string() { return AIOHUD_VERSION; }
 }   // namespace aio
 
 // The dispatch itself. Runs on the MAIN thread only -- see aio_plugin_command below for why.
+// //aio rva's whole-image searches run in the background (ffximain_rva.cpp fm_bg_find, a slice a frame) : these say
+// what they found when they end. The target one first ; the menu one, when asked for, after it.
+static bool g_rvaMenuNext = false;
+static void rva_menu_done(const unsigned* rvas, int n, int, bool partial) {
+    for (int k = 0; k < n; ++k) { char nm[9]; aio::fm_menu_slot_name(rvas[k], nm); windower::debug::log("  [MENU_PTR] FFXiMain+0x%X name='%s' (whole image)", rvas[k], nm); }
+    windower::debug::log("  menu scan, whole image : %d slot(s)%s", n, n ? "" : "  <- none : OPEN a menu (Magic) and run it again");
+    char m[200];
+    _snprintf(m, sizeof(m), aio::tr(">>> AioHud rva : whole-image menu search done, %d slot(s)%s -- report in Windower\\plugins\\aiohud_debug.log <<<",
+                                    ">>> AioHud rva : recherche des menus dans toute la memoire finie, %d emplacement(s)%s -- rapport dans Windower\\plugins\\aiohud_debug.log <<<"), n,
+              partial ? aio::tr(" (INCOMPLETE)", " (INCOMPLETE)") : "");
+    m[sizeof(m) - 1] = 0; g_host.console().print(m);
+}
+static void rva_target_done(const unsigned* rvas, int n, int, bool partial) {
+    for (int k = 0; k < n; ++k) windower::debug::log("  [TARGET_T] FFXiMain+0x%X (whole image)", rvas[k]);
+    if (n == 1 && !partial) aio::fm_adopt(aio::FM_TARGET_T, rvas[0], "//aio rva whole-image signature");   // a partial walk could have missed a second hit
+    windower::debug::log("  target scan, whole image : %d hit(s)%s", n,
+                         n == 0 ? "  <- none : TARGET a party member and run it again" : n == 1 ? "  -> adopted" : "  <- several : none adopted, send this log");
+    char m[220];
+    _snprintf(m, sizeof(m), aio::tr(">>> AioHud rva : whole-image target search done, %d hit(s)%s%s <<<",
+                                    ">>> AioHud rva : recherche de la cible dans toute la memoire finie, %d resultat(s)%s%s <<<"), n,
+              (n == 1 && !partial) ? aio::tr(" -- the selection cursor is back", " -- le curseur de selection est revenu")
+                     : n == 0 ? aio::tr(" -- target someone and run it again", " -- cible quelqu'un et relance") : "",
+              partial ? aio::tr(" (INCOMPLETE : part of the memory could not be read, nothing adopted -- run it again)", " (INCOMPLETE : une partie de la memoire illisible, rien adopte -- relance)") : "");
+    m[sizeof(m) - 1] = 0; g_host.console().print(m);
+    if (g_rvaMenuNext) { g_rvaMenuNext = false; aio::fm_bg_find(aio::fm_menu_shaped, 1, rva_menu_done); }
+}
+
 static void aio_command_dispatch(const char* cmd)
 {
     if (!cmd) return;
@@ -1054,24 +1081,30 @@ static void aio_command_dispatch(const char* cmd)
         windower::debug::log("=== AIO RVA : FFXiMain fingerprint %08X ===", aio::fm_fingerprint());
         { char fl[aio::FM_N][160]; const int fn = aio::fm_report(fl, aio::FM_N);
           for (int k = 0; k < fn; ++k) windower::debug::log("  in use : %s", fl[k]); }
+        // NEAR first (a patch moves these by bytes), in this frame ; the WHOLE image only in the background, a slice
+        // a frame -- the one-frame walk of ~12 MB froze the game for tens of seconds (the player, 2026-11-10)
+        const bool full = !strncmp(rvaRest, "full", 4);
         int nT = 0, nM = 0;
-        { unsigned hits[8]; nT = aio::target_root_rescan(hits, 8);
+        { unsigned hits[8]; nT = aio::target_root_near(hits, 8);
           for (int k = 0; k < nT; ++k) windower::debug::log("  [TARGET_T] FFXiMain+0x%X", hits[k]);
-          windower::debug::log("  target scan : %d hit(s)%s", nT,
-                               nT == 0 ? "  <- none : TARGET a party member and run it again"
-                             : nT == 1 ? "  -> adopted" : "  <- several : none adopted, send this log"); }
-        { unsigned slots[16]; char names[16][9]; nM = aio::fm_menu_slots(slots, names, 16);
-          for (int k = 0; k < nM; ++k) windower::debug::log("  [MENU_PTR] FFXiMain+0x%X name='%s'", slots[k], names[k]);
-          windower::debug::log("  menu scan : %d slot(s)%s", nM, nM ? "  (the focused one follows the menu you open : run it again with another menu to tell)"
-                                                                     : "  <- none : OPEN a menu (Magic) and run it again"); }
+          windower::debug::log("  target scan, near the seed : %d hit(s)%s", nT,
+                               nT == 0 ? "  <- none nearby" : nT == 1 ? "  -> adopted" : "  <- several : none adopted, send this log"); }
+        { unsigned slots[16]; nM = aio::fm_near_find(aio::fm_menu_shaped, aio::fm_rva(aio::FM_MENU_PTR), 0x4000, slots, 16);   // +/-16 KB in this frame
+          for (int k = 0; k < nM; ++k) { char nm[9]; aio::fm_menu_slot_name(slots[k], nm); windower::debug::log("  [MENU_PTR] FFXiMain+0x%X name='%s'", slots[k], nm); }
+          windower::debug::log("  menu scan, near the seed : %d slot(s)%s", nM, nM ? "  (the focused one follows the menu you open : run it again with another menu to tell)"
+                                                                                   : "  <- none nearby"); }
+        bool bg = false;
+        if ((full || nT == 0) && !aio::fm_bg_busy()) { bg = aio::fm_bg_find(aio::target_signature, 0, rva_target_done); g_rvaMenuNext = bg && full; }
         windower::debug::log("  --- paste over ENTRIES[] in src/model/ffximain_rva.cpp (only the PROVEN lines are trustworthy) ---");
         for (int k = 0; k < (int)aio::FM_N; ++k)
             windower::debug::log("    { 0x%06X, \"%s\" },   // %s", aio::fm_rva((aio::FmStatic)k), aio::fm_name((aio::FmStatic)k),
                                  aio::fm_confirmed((aio::FmStatic)k) ? "proven on this client" : "NOT proven -- do not paste this one");
         windower::debug::log("=== AIO RVA end ===");
-        char m[240];
-        _snprintf(m, sizeof(m), aio::tr(">>> AioHud rva : target %d hit(s), menu %d slot(s) -- report in Windower\\plugins\\aiohud_debug.log (target a party member and open the Magic menu first for a complete one) <<<",
-                                        ">>> AioHud rva : cible %d resultat(s), menu %d emplacement(s) -- rapport dans Windower\\plugins\\aiohud_debug.log (cible un membre et ouvre le menu Magie avant, pour un rapport complet) <<<"), nT, nM);
+        char m[300];
+        _snprintf(m, sizeof(m), aio::tr(">>> AioHud rva : target %d hit(s), menu %d slot(s) nearby%s -- report in Windower\\plugins\\aiohud_debug.log (target a party member and open the Magic menu first for a complete one) <<<",
+                                        ">>> AioHud rva : cible %d resultat(s), menu %d emplacement(s) a proximite%s -- rapport dans Windower\\plugins\\aiohud_debug.log (cible un membre et ouvre le menu Magie avant, pour un rapport complet) <<<"), nT, nM,
+                  bg ? aio::tr(" ; searching the whole memory in the background (a few seconds, the game keeps running)", " ; recherche dans toute la memoire en fond (quelques secondes, le jeu continue)")
+                     : aio::fm_bg_busy() ? aio::tr(" ; a whole-memory search is already running", " ; une recherche dans toute la memoire tourne deja") : "");
         m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
     }

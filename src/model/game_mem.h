@@ -240,10 +240,13 @@ bool read_target(TargetInfo& out);
 // shifted it by 0x40 and killed the selection cursor). target_root re-derives it structurally when the
 // static goes dead -- see the comment block in the .cpp. Anything reading target_t must go through here.
 u32 target_root();
-// //aio rva : the target_t signature searched over the WHOLE FFXiMain image (target_root only searches a window
-// around the seed). Needs someone targeted. Exactly one hit is adopted ; several are reported, never guessed
-// between. Returns the hit count, their RVAs in rvaOut.
-int target_root_rescan(unsigned* rvaOut, int cap);
+// //aio rva : the target_t signature searched within +/-16 KB of the address in use, in the frame it is called
+// (the same window the runtime healer reads every 2 s). Needs someone targeted. Exactly one hit is adopted ; several are reported,
+// never guessed between. Returns the hit count, their RVAs in rvaOut.
+int target_root_near(unsigned* rvaOut, int cap);
+// the same signature, as fm_near_find / fm_bg_find predicates take it (//aio rva full : the whole image, in the
+// background)
+bool target_signature(unsigned v);
 
 // the ACTIVE target's entity : name + HP% + id/index, for the Target HUD module. The reticle's
 // entity struct is reached DIRECTLY via target_t+0x08 (Targets[0].EntityPointer -- no id->index

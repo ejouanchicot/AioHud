@@ -899,11 +899,15 @@ static bool target_sig_ok(u32 v) {
     return ent && safe_read(ent + eidx * 4, &back) && back == e0;
 }
 
-int target_root_rescan(unsigned* rvaOut, int cap) {
-    const int n = fm_image_find(target_sig_ok, rvaOut, cap);
-    if (n == 1) fm_adopt(FM_TARGET_T, rvaOut[0], "//aio rva whole-image signature");
+int target_root_near(unsigned* rvaOut, int cap) {
+    // +/-16 KB : what the runtime healer already reads every 2 s (HEAL_WINDOW) ; anything wider goes to the
+    // background search, which spends at most ~2 ms a frame
+    const int n = fm_near_find(target_sig_ok, fm_rva(FM_TARGET_T), HEAL_WINDOW, rvaOut, cap);
+    if (n == 1) fm_adopt(FM_TARGET_T, rvaOut[0], "//aio rva signature near the seed");
     return n;
 }
+
+bool target_signature(unsigned v) { return target_sig_ok(v); }
 
 u32 target_root() {
     static int s_frames = 0, s_tries = 0;

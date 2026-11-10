@@ -293,17 +293,6 @@ static int scan_region_menu(u32 rl, u32 rh, u32* out, int cap, int n) {
     return n;
 }
 
-// //aio rva's generic finder : every 4-byte slot whose value `s_findSig` accepts. The predicate does its own
-// guarded reads ; the __try covers the slot reads here.
-static bool (*s_findSig)(unsigned) = 0;
-static int scan_region_sig(u32 rl, u32 rh, u32* out, int cap, int n) {
-    __try {
-        for (u32 a = rl; a + 4 <= rh && n < cap; a += 4)
-            if (s_findSig(*(const unsigned*)a)) out[n++] = a;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    return n;
-}
-
 // Walk the image's readable regions, feeding one scanner. `kind` picks it (keeps the region walk single).
 static u32 image_scan(int kind, const u32* args, u32* menuOut, int menuCap, int* menuN) {
     u32 lo = 0, hi = 0, best = 0; image_range(lo, hi);
@@ -324,7 +313,6 @@ static u32 image_scan(int kind, const u32* args, u32* menuOut, int menuCap, int*
                 if (rh > rl + 8) best = scan_region_merit(rl, rh, args[2], args[3], args[4], args[5], best);
             }
             if (kind == 3 && rh > rl + 4) *menuN = scan_region_menu(rl, rh, menuOut, menuCap, *menuN);
-            if (kind == 4 && rh > rl + 4) *menuN = scan_region_sig(rl, rh, menuOut, menuCap, *menuN);
         }
         a = base + sz;
     }
@@ -778,9 +766,11 @@ static int rva_checks(CheckFail* out, int cap) {
 
 void rva_register_checks() { selftest_add("statics", rva_checks); }
 
+static void bg_tick();   // //aio rva's background search (below, beside fm_bg_find)
 void fm_tick() {
     ensure_loaded();
     if (!ffximain_base()) return;
+    bg_tick();                                        // //aio rva's whole-image search, a slice a frame
     // Two healers with equal standing over one address re-proposed to each other every frame, twice on
     // 2026-09-11 -- and both times the only evidence was a log line repeating at 60 Hz. Watch the addresses
     // themselves: an RVA that keeps changing back is an argument, not a repair.
@@ -831,28 +821,131 @@ void fm_poison(unsigned delta) {
 
 // ---------------------------------------------------------------- reporting ----
 
-int fm_image_find(bool (*sig)(unsigned v), unsigned* rvaOut, int cap) {
+// ---------------------------------------------------------------- //aio rva's searches ----
+//
+// //aio rva used to walk the WHOLE image (~12 MB, ~3 million slots, each pointer-shaped one followed) twice, in the
+// frame the command arrived : the game froze for tens of seconds (the player, 2026-11-10 : "ça aurait pu me faire
+// crash"). Now it searches NEAR the seed first -- a patch moves these statics by bytes (0x40, 0x11B8), so a window of
+// a few hundred KB holds them -- and only a search that finds nothing nearby walks the whole image, a slice per frame
+// in the background (fm_bg_find, ~64 KB a frame : the image in ~3 s at 60 fps, never a frame held up).
+
+int fm_near_find(bool (*sig)(unsigned v), unsigned centerRva, unsigned half, unsigned* rvaOut, int cap) {
     u32 lo = 0, hi = 0; image_range(lo, hi);
     if (!lo || !sig || !rvaOut || cap <= 0) return 0;
-    s_findSig = sig;
-    int n = 0; image_scan(4, 0, rvaOut, cap, &n);
-    s_findSig = 0;
-    for (int i = 0; i < n; ++i) rvaOut[i] -= lo;
+    u32 a0 = lo + (centerRva > half ? centerRva - half : 0), a1 = lo + centerRva + half;
+    if (a0 < lo) a0 = lo;
+    if (a1 > hi) a1 = hi;
+    int n = 0;
+    for (u32 a = a0 & ~3u; a + 4 <= a1 && n < cap; a += 4) { u32 v = 0; if (safe_read(a, &v) && sig(v)) rvaOut[n++] = a - lo; }
     return n;
 }
 
-int fm_menu_slots(unsigned* rvaOut, char names[][9], int cap) {
-    u32 lo = 0, hi = 0; image_range(lo, hi);
-    if (!lo || !rvaOut || cap <= 0) return 0;
-    int n = 0; image_scan(3, 0, rvaOut, cap, &n);
-    for (int i = 0; i < n; ++i) {
-        u32 v = 0, def = 0, n0 = 0, n1 = 0;
-        safe_read(rvaOut[i], &v); safe_read(v + 0x04, &def); safe_read(def + 0x4E, &n0); safe_read(def + 0x52, &n1);
-        memcpy(names[i], &n0, 4); memcpy(names[i] + 4, &n1, 4); names[i][8] = 0;
-        for (int k = 0; k < 8; ++k) if (names[i][k] < 32 || names[i][k] > 126) names[i][k] = '.';
-        rvaOut[i] -= lo;
+bool fm_menu_shaped(unsigned v) {
+    if (!valid_ptr(v)) return false;
+    u32 def = 0, tag = 0;
+    return safe_read(v + 0x04, &def) && valid_ptr(def) && safe_read(def + 0x46, &tag) && tag == RVA_TAG_MENU;
+}
+
+void fm_menu_slot_name(unsigned rva, char out[9]) {
+    u32 v = 0, def = 0, n0 = 0, n1 = 0;
+    safe_read(ffximain_base() + rva, &v); safe_read(v + 0x04, &def); safe_read(def + 0x4E, &n0); safe_read(def + 0x52, &n1);
+    memcpy(out, &n0, 4); memcpy(out + 4, &n1, 4); out[8] = 0;
+    for (int k = 0; k < 8; ++k) if (out[k] < 32 || out[k] > 126) out[k] = '.';
+}
+
+// the background walk : ONE at a time, a slice of the readable image per frame (fm_tick), the caller told at the end.
+// The slice is measured in TIME, not bytes : a slot whose value looks like a pointer but is not one makes the
+// signature's read fault, and a fault costs microseconds -- a 64 KB slice of code could take tens of ms (the review
+// of 2026-11-10, before anything shipped). So a frame stops at BG_BUDGET_MS, the clock read every 64 slots.
+static const double BG_BUDGET_MS = 2.0;
+static const int BG_CAP = 16;
+struct BgFind {
+    bool (*sig)(unsigned); FmBgDone done; int what; u32 lo, hi, cur;
+    unsigned hits[BG_CAP]; int n, over, skipped, frames; double totalMs, maxMs;
+};
+static BgFind g_bg = {};
+
+static double bg_now_ms() {
+    static LARGE_INTEGER f = {};
+    if (!f.QuadPart) QueryPerformanceFrequency(&f);
+    LARGE_INTEGER c; QueryPerformanceCounter(&c);
+    return (double)c.QuadPart * 1000.0 / (double)f.QuadPart;
+}
+
+bool fm_bg_busy() { return g_bg.sig != 0; }
+
+// WHICH PAGES CAN BE READ, learned once per search. Nearly every slot of the image holds a number in valid_ptr's range
+// (code, floats, flags), and following one into unmapped memory costs a fault -- measured 2026-11-10 : the whole image
+// took 3934 frames of 2 ms, ~760 slots a frame. A value whose page is not readable cannot be any pointer we look for,
+// so it is skipped before the signature follows it. One byte per 4 KB page of the 32-bit space (0 not asked yet,
+// 1 readable, 2 not), each VirtualQuery filling its whole region at once ; cleared at each search's start, the map of
+// the process being the game's and not ours to assume.
+static unsigned char g_rd[1u << 20];
+static bool bg_readable(u32 v) {
+    const u32 pg = v >> 12;
+    if (!g_rd[pg]) {
+        MEMORY_BASIC_INFORMATION mbi;
+        if (!VirtualQuery((void*)v, &mbi, sizeof(mbi))) { g_rd[pg] = 2; return false; }
+        const u32 MASK_RD = PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY;
+        const bool rd = (mbi.State == MEM_COMMIT) && (mbi.Protect & MASK_RD) && !(mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS));
+        const u32 first = (u32)mbi.BaseAddress >> 12;
+        u32 pages = (u32)(mbi.RegionSize >> 12); if (!pages) pages = 1;
+        if (first + pages > (1u << 20) || first + pages < first) pages = (1u << 20) - first;   // the top of the space
+        memset(g_rd + first, rd ? 1 : 2, pages);
+        if (pg < first || pg >= first + pages) g_rd[pg] = rd ? 1 : 2;
     }
-    return n;
+    return g_rd[pg] == 1;
+}
+
+bool fm_bg_find(bool (*sig)(unsigned v), int what, FmBgDone done) {
+    if (g_bg.sig || !sig) return false;
+    u32 lo = 0, hi = 0; image_range(lo, hi);
+    if (!lo) return false;
+    g_bg = BgFind{}; g_bg.sig = sig; g_bg.done = done; g_bg.what = what; g_bg.lo = lo; g_bg.hi = hi; g_bg.cur = lo;
+    memset(g_rd, 0, sizeof(g_rd));                   // the process's memory map is learned afresh for each search
+    return true;
+}
+
+// [a0, a1) until `deadline` ; returns where it stopped (a1 : done). A fault (a page gone under us) skips the rest of
+// the range and is COUNTED, so the end can say its answer is partial (CLAUDE.md rule 10) ; so is a hit past BG_CAP.
+static u32 bg_scan(u32 a0, u32 a1, double deadline) {
+    u32 a = a0;
+    __try {
+        for (; a + 4 <= a1; a += 4) {
+            if (a != a0 && ((a - a0) & 0xFF) == 0 && bg_now_ms() >= deadline) return a;
+            const unsigned v = *(const unsigned*)a;
+            if (!valid_ptr(v) || !bg_readable(v)) continue;   // no pointer we look for lives in unreadable memory
+            if (g_bg.sig(v)) { if (g_bg.n < BG_CAP) g_bg.hits[g_bg.n++] = a; else ++g_bg.over; }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { ++g_bg.skipped; }
+    return a1;
+}
+
+static void bg_tick() {
+    if (!g_bg.sig) return;
+    const u32 MASK_RD = PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY;
+    const double t0 = bg_now_ms(), deadline = t0 + BG_BUDGET_MS;
+    for (int regions = 0; g_bg.cur < g_bg.hi && regions < 64; ++regions) {   // at most 64 regions looked at a frame
+        MEMORY_BASIC_INFORMATION mbi;
+        if (!VirtualQuery((void*)g_bg.cur, &mbi, sizeof(mbi))) { g_bg.cur = g_bg.hi; ++g_bg.skipped; break; }
+        const u32 rEnd = (u32)mbi.BaseAddress + (u32)mbi.RegionSize;
+        if (rEnd <= g_bg.cur) { g_bg.cur = g_bg.hi; ++g_bg.skipped; break; }
+        const bool rd = (mbi.State == MEM_COMMIT) && (mbi.Protect & MASK_RD) && !(mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS));
+        if (!rd) { g_bg.cur = rEnd; continue; }       // an unreadable region costs nothing
+        const u32 end = rEnd < g_bg.hi ? rEnd : g_bg.hi;
+        g_bg.cur = bg_scan(g_bg.cur, end, deadline);
+        if (g_bg.cur < end || bg_now_ms() >= deadline) break;   // this frame's time is spent
+    }
+    const double dt = bg_now_ms() - t0;
+    g_bg.totalMs += dt; if (dt > g_bg.maxMs) g_bg.maxMs = dt; ++g_bg.frames;
+    if (g_bg.cur < g_bg.hi) return;
+    BgFind f = g_bg; g_bg = BgFind{};                  // cleared BEFORE the callback : it may start the next search
+    for (int i = 0; i < f.n; ++i) f.hits[i] -= f.lo;
+    const bool partial = f.skipped > 0 || f.over > 0;
+    // whole microseconds : the debug log formats no floating point (a %f printed "f" and shifted every number after it)
+    windower::debug::log("rva: whole-image search %d done -- %d hit(s)%s, %d frame(s), %u us in all, %u us at most in a frame, %d part(s) skipped on a fault",
+                         f.what, f.n + f.over, f.over ? " (more than were kept)" : "", f.frames, (unsigned)(f.totalMs * 1000.0), (unsigned)(f.maxMs * 1000.0), f.skipped);
+    if (f.done) f.done(f.hits, f.n, f.what, partial);
 }
 
 int fm_report(char out[][160], int maxOut) {
