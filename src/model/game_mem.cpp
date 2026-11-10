@@ -876,13 +876,16 @@ static const u32 NO_TARGET = 0x04000000;
 // of the entity at +0x08, that entity being the one entity_array holds at its own index (+0x74). Three
 // mutually-confirming facts : nothing else in the image satisfies them, so a hit is the answer, not a guess.
 //
-// Bounded, and it says so both ways (rule 10) : a scan needs SOMETHING TARGETED to prove itself, so it retries
-// on a timer -- window around the seed only (a patch shifts by bytes, this one by 0x40), at most HEAL_MAX
-// times. When the budget runs out it logs that it closed, because a healer that dies quietly reads exactly
-// like an RVA that was fine all along.
+// A scan needs SOMETHING TARGETED to prove itself, so it retries on a timer -- window around the seed only (a patch
+// shifts by bytes : 0x40 on 2026-08-12, 0x11B8 on 2026-11-10). It KEEPS retrying until a target proves the address :
+// it used to stop after HEAL_MAX tries (~2 min), and a player who loaded the plugin and did not target anything in
+// those two minutes (a Mog House, an update applied in town) lost the selection cursor for the whole session -- the
+// player, 2026-11-10, after the 1.0.98 cache reset : every reload in the Mog House ended with the cursor off
+// (CLAUDE.md rule 10 : give up once, give up forever). It says so once, when HEAL_MAX tries have found nothing, and
+// what it is waiting for.
 static const u32 HEAL_WINDOW = 0x4000;   // +/- around the seed : covers a patch-sized shift, ~8k candidates
-static const int HEAL_EVERY  = 120;      // frames between attempts (~2 s)
-static const int HEAL_MAX    = 60;       // ~2 min of play -- long enough that the player targets something
+static const int HEAL_EVERY  = 120;      // frames between attempts (~2 s) ; one attempt = ~8k guarded reads
+static const int HEAL_MAX    = 60;       // ~2 min of play : after that many empty attempts, the log says what it waits for
 
 static bool target_sig_ok(u32 v) {
     if (!valid_ptr(v)) return false;
@@ -914,9 +917,8 @@ u32 target_root() {
         if (!fm_confirmed(FM_TARGET_T) && target_sig_ok(tp)) fm_adopt(FM_TARGET_T, rva, "structural signature");
         return tp;
     }
-    if (s_tries >= HEAL_MAX) return 0;                  // budget spent -- already logged, stay quiet
     if (++s_frames < HEAL_EVERY) return 0;
-    s_frames = 0; ++s_tries;
+    s_frames = 0; if (s_tries <= HEAL_MAX) ++s_tries;   // counted only up to the one log line
     const u32 lo = (rva > HEAL_WINDOW) ? (rva - HEAL_WINDOW) : 0;
     for (u32 r = lo; r <= rva + HEAL_WINDOW; r += 4) {
         u32 v = 0;
@@ -925,8 +927,9 @@ u32 target_root() {
         return v;
     }
     if (s_tries == HEAL_MAX)
-        windower::debug::log("target_root: FFXiMain+0x%X still dead after %d tries -- selection cursor stays off. "
-                             "Target a party member and run //aio rva (the shift is bigger than the 0x%X window).",
+        windower::debug::log("target_root: FFXiMain+0x%X dead, nothing proven in %d tries within +/-0x%X -- still looking "
+                             "every ~2 s : target anyone (a party member, yourself) and the selection cursor comes back. "
+                             "//aio rva searches the whole image if it never does.",
                              rva, s_tries, HEAL_WINDOW);
     return 0;
 }
