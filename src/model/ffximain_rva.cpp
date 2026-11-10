@@ -102,10 +102,14 @@ static const char* cache_path() {
 // `format` is bumped whenever a HEALER changes its mind about what counts as proof. Without it, a wrong
 // address adopted by an older, weaker rule comes back from disk marked "confirmed" and outlives the fix --
 // which is exactly what happened when the first menu healer adopted the log-window slot.
-static const int CACHE_FORMAT = 3;   // 3 : a menu "name" must now be SHAPED like one (rva_menu_name_shaped) -- every
+static const int CACHE_FORMAT = 4;   // 3 : a menu "name" must now be SHAPED like one (rva_menu_name_shaped) -- every
                                      //     format-2 file may hold a slot adopted on two different pieces of binary junk,
                                      //     marked PROVEN, and a proven line is never re-examined. Discarding them is what
                                      //     takes the poisoned address off the disk of everyone who already has one.
+                                     // 4 : an examine cache must move with the cursor and then HOLD (rva_exam_tracks).
+                                     //     A format-3 file written after the 2026-11-10 patch may hold a frame counter
+                                     //     as the PROVEN spell cache ; the cursor refutation never fires on it (a counter
+                                     //     is never stuck), so only discarding the file takes it off the player's disk.
 
 // What rva_cache_write reads the registry through.
 struct CacheSrc {
