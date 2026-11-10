@@ -260,6 +260,37 @@ void test_rva_rules() {
         CHECK_EQ(4, n);                                    // capacity holds
     }
 
+    SECTION("rva exam scan : a running counter is never adopted, a highlighted id that moves then holds is");
+    {   // 2026-11-10 patch : the scan adopted FFXiMain+0x664C88, a frame counter (~60 per second, menu open or not),
+        // because it read a different "spell" on every sample. The cursor walk is the real cache's values that day,
+        // sampled every 10 frames while the player walked the White Magic list.
+        // Mutation : return still && t.moves * 2 <= t.samples; -> return t.moves * 2 <= t.samples * 100;
+        RvaExamTrack clock = RvaExamTrack(), cursor = RvaExamTrack();
+        bool clockAdopted = false;
+        for (unsigned v = 1100; v < 1100 + 6 * 200; v += 6) if (rva_exam_tracks(clock, v, true)) clockAdopted = true;
+        CHECK(!clockAdopted);
+        const unsigned walk[14] = { 17, 17, 17, 17, 17, 17, 18, 18, 18, 18, 18, 18, 19, 19 };
+        int adoptedAt = -1;
+        for (int i = 0; i < 14; ++i) if (adoptedAt < 0 && rva_exam_tracks(cursor, walk[i], true)) adoptedAt = i;
+        CHECK_EQ(7, adoptedAt);                            // the sample after the first move : it held
+    }
+
+    SECTION("rva exam scan : held still is not enough when it mostly moves, nor when it does not decode");
+    {   // A slower clock can read the same twice in a row now and then ; one that changes on most samples is still
+        // a clock. And a value that names no action is never adopted, however it behaves.
+        // Mutation : const bool still = t.samples > 0 && v == t.prev; -> const bool still = t.samples > 0;
+        RvaExamTrack slow = RvaExamTrack();
+        const unsigned tick[10] = { 40, 41, 42, 43, 44, 45, 46, 47, 47, 48 };
+        bool slowAdopted = false;
+        for (int i = 0; i < 10; ++i) if (rva_exam_tracks(slow, tick[i], true)) slowAdopted = true;
+        CHECK(!slowAdopted);
+        RvaExamTrack junk = RvaExamTrack();
+        const unsigned seq[6] = { 17, 17, 18, 18, 18, 18 };
+        bool junkAdopted = false;
+        for (int i = 0; i < 6; ++i) if (rva_exam_tracks(junk, seq[i], false)) junkAdopted = true;
+        CHECK(!junkAdopted);
+    }
+
     SECTION("rva full sweep : the budget is bounded and closes LOUDLY, exactly once");
     {   // CLAUDE.md rule 10 : a budget that expires must say so, or it reads exactly like nothing happening.
         // Mutation : return !nFresh && sweepsDone == RVA_FULL_SWEEPS; -> return !nFresh && sweepsDone > RVA_FULL_SWEEPS;

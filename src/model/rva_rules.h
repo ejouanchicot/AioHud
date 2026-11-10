@@ -173,14 +173,39 @@ inline bool rva_closer(unsigned a, unsigned anchor, unsigned best) {
 // RE-SWEEP, not sweep-once. A slot only looks like a menu WHILE a menu is open, so a pass taken with everything
 // closed sees only the always-present decoys. The candidate set GROWS : a union that never drops a slot already
 // watched (nor its differential memory). Returns the new count.
-inline int rva_merge_candidates(unsigned* addr, unsigned* first, int n, int cap, const unsigned* fresh, int nf, unsigned unset) {
+// `mem` is whatever the caller remembers per slot : the first name for the menu scan, a whole RvaExamTrack for the
+// examine scan.
+template <class Mem>
+inline int rva_merge_candidates(unsigned* addr, Mem* mem, int n, int cap, const unsigned* fresh, int nf, const Mem& unset) {
     for (int i = 0; i < nf && n < cap; ++i) {
         bool known = false;
         for (int k = 0; k < n; ++k) if (addr[k] == fresh[i]) { known = true; break; }
-        if (!known) { addr[n] = fresh[i]; first[n] = unset; ++n; }
+        if (!known) { addr[n] = fresh[i]; mem[n] = unset; ++n; }
     }
     return n;
 }
+
+// A CLOCK IS NOT A CURSOR. The examine scan used to adopt the first slot whose decoded value differed from the one
+// it first saw. A running counter does that on every sample, cursor or no cursor : after the 2026-11-10 patch it
+// adopted FFXiMain+0x664C88, a frame counter that happened to sit under 0x4000 at that moment, and the Magic cost
+// box went dead (the ability cache, anchored on it, followed). A highlighted id changes when the player moves and
+// then HOLDS : it is adopted only on a sample where it reads the same as the previous one, and only if it held
+// still on at least half the samples watched. A counter never holds, so it can never be adopted.
+// `decodes` : whether `v` names a real action. A value that does not still counts as a change.
+struct RvaExamTrack { unsigned first, prev; int samples, moves; };
+inline bool rva_exam_tracks(RvaExamTrack& t, unsigned v, bool decodes) {
+    const bool still = t.samples > 0 && v == t.prev;
+    if (t.samples > 0 && !still) ++t.moves;
+    ++t.samples;
+    t.prev = v;
+    if (!decodes || !rva_second_different(t.first, v, 0)) return false;
+    return still && t.moves * 2 <= t.samples;
+}
+
+// How many slots the examine scan watches, nearest the seed first. Twelve was the old capacity, taken from the
+// LOW end of the window : on 2026-11-10 the spell window held 400 slots that decode, and the real cache was the 41st
+// from the bottom (the 31st by distance) -- never watched, so no rule could ever have found it.
+const int RVA_EXAM_CAND = 512;
 
 // The 12 MB whole-image sweep is the rare fallback, and a BOUNDED one : it would stutter the game for as long as no
 // menu had ever been opened. When the budget is spent with nothing found it must SAY SO, exactly once (rule 10).

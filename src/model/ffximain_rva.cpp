@@ -56,10 +56,11 @@ struct MeritExpect { u32 lp, merits, maxMerits; int due; bool armed; };
 static PwExpect    g_pw    = { 0, 0, 0, 0, 0, 0, false };
 static MeritExpect g_merit = { 0, 0, 0, 0, false };
 
-// Per-cache watch state (index 0 = spell, 1 = ability) : the addresses whose value decodes, and the first
-// decoded value each one showed. Adoption needs a SECOND, different one -- see heal_exam.
-struct ExamWatch { u32 addr[12], first[12]; int n, sweepIn, sampleIn; };
-static ExamWatch g_exam[2] = { { {0}, {0}, 0, 0, 0 }, { {0}, {0}, 0, 0, 0 } };
+// Per-cache watch state (index 0 = spell, 1 = ability) : the addresses whose value decodes, nearest the seed
+// first, and what each one has done since (rva_exam_tracks). Adoption needs a SECOND, different value that then
+// holds still -- see heal_exam.
+struct ExamWatch { u32 addr[RVA_EXAM_CAND]; RvaExamTrack trk[RVA_EXAM_CAND]; int n, sweepIn, sampleIn; };
+static ExamWatch g_exam[2] = {};
 
 // ---------------------------------------------------------------- client fingerprint ----
 
@@ -259,14 +260,17 @@ struct ActionTables {
 };
 static bool exam_decodes(FmStatic s, u32 v) { return rva_exam_value_decodes(s == FM_EXAM_SPELL, v, ActionTables()); }
 
-// Addresses in [rl,rh) currently holding something that decodes. A wide net on purpose : which of them
-// actually TRACKS the highlight is decided by watching, not by this pass.
-static int scan_region_exam(u32 rl, u32 rh, FmStatic s, u32* out, int cap) {
+// Addresses within `half` bytes of `seed` currently holding something that decodes, NEAREST FIRST : when the
+// window holds more than `cap` of them, the ones dropped are the far ones, not whichever sat lowest. A wide net on
+// purpose : which of them actually TRACKS the highlight is decided by watching, not by this pass. Each slot is
+// read under its own guard, so one unmapped page ends only its own probe, not the whole sweep.
+static int scan_region_exam(u32 seed, u32 half, FmStatic s, u32* out, int cap) {
     int n = 0;
-    __try {
-        for (u32 a = rl; a + 4 < rh && n < cap; a += 4)
-            if (exam_decodes(s, *(const unsigned*)a)) out[n++] = a;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    for (u32 d = 0; d < half && n < cap; d += 4) {
+        u32 v = 0;
+        if (safe_read(seed + d, &v) && exam_decodes(s, v)) out[n++] = seed + d;
+        if (d && n < cap && safe_read(seed - d, &v) && exam_decodes(s, v)) out[n++] = seed - d;
+    }
     return n;
 }
 
@@ -690,8 +694,9 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
     if (--w.sweepIn <= 0) {
         w.sweepIn = 120;
         const u32 seedAddr = base + ENTRIES[s].seed;
-        u32 fresh[12]; const int nf = scan_region_exam(seedAddr - 0x8000, seedAddr + 0x8000, s, fresh, 12);
-        w.n = rva_merge_candidates(w.addr, w.first, w.n, 12, fresh, nf, 0);
+        static u32 fresh[RVA_EXAM_CAND];                  // static : 2 KB is too much for one healer's stack frame
+        const int nf = scan_region_exam(seedAddr, 0x8000, s, fresh, RVA_EXAM_CAND);
+        w.n = rva_merge_candidates(w.addr, w.trk, w.n, RVA_EXAM_CAND, fresh, nf, RvaExamTrack());
     }
     if (--w.sampleIn > 0) return;
     w.sampleIn = 10;
@@ -699,8 +704,8 @@ static void heal_exam(FmStatic s, FmStatic anchor) {
     u32 bestAddr = 0;
     for (int i = 0; i < w.n; ++i) {
         u32 cv = 0; safe_read(w.addr[i], &cv);
-        if (!exam_decodes(s, cv)) continue;               // only real actions count, here as everywhere
-        if (!rva_second_different(w.first[i], cv, 0)) continue;
+        // only real actions count, here as everywhere ; and only one that moved and then HELD (rva_exam_tracks)
+        if (!rva_exam_tracks(w.trk[i], cv, exam_decodes(s, cv))) continue;
         if (rva_closer(w.addr[i], seedAddr, bestAddr)) bestAddr = w.addr[i];
     }
     if (bestAddr) { fm_adopt(s, bestAddr - base, "tracks the highlighted action"); w.n = 0; }
