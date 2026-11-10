@@ -259,6 +259,7 @@ void Hud::render(u32 dev) {
         bstPaw_ = 0; bstPawR_ = {};                       // its Ready paw
         for (int i = 0; i < 3; ++i) { bstEco_[i] = 0; bstEcoR_[i] = {}; bstEcoKey_[i][0] = 0; }   // its family icons
         for (int i = 0; i < GEO_TEX_N; ++i) { geoTex_[i] = 0; geoTexR_[i] = {}; }               // the GEO content's images
+        smnArt_ = 0; smnArtR_ = {}; smnArtKey_[0] = 0;                                        // the SMN content's avatar picture
         // The Help SAMPLES keep their own lazy copies at file scope in their hud_*.cpp -- unreachable from here
         // otherwise, so they used to survive a device recreate and hand a dead device's texture to SetTexture.
         zonetracker_help_forget(); treasure_help_forget();   // (the debuffs / timers Help samples borrow the shared atlas forgotten just above)
@@ -870,6 +871,7 @@ void Hud::dispose() {
     if (bstPaw_)    { release_texture(bstPaw_);    bstPaw_ = 0; }      // BST box : the Ready paw
     for (int i = 0; i < 3; ++i) if (bstEco_[i]) { release_texture(bstEco_[i]); bstEco_[i] = 0; }   // BST box : the family icons
     for (int i = 0; i < GEO_TEX_N; ++i) if (geoTex_[i]) { release_texture(geoTex_[i]); geoTex_[i] = 0; }   // GEO content : its images
+    if (smnArt_)    { release_texture(smnArt_);    smnArt_ = 0; }      // SMN content : the avatar picture
     zonetracker_help_dispose(); treasure_help_dispose();   // the module-owned Help samples (file-static, not members) -- symmetric with the forget block in render()
     corner_mask_dispose();   // the baked corner-mask atlas (the ONLY Release of it)
     config_.dispose();   // Release the ConfigPage's owned Help/preview textures (zone map, logo, atlases) -- else they leak per //unload

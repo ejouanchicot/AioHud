@@ -77,6 +77,7 @@ private:
     void draw_grimoire(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);
     void draw_pet(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // Pet box (hud_pet.cpp) : the main job's content below, one place for all ; preview shows the config tab's sample
     void draw_geo(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // the Pet box's Geomancer content (luopan bubble + aura + Entrust + MP + job abilities, hud_geo.cpp) ; only draw_pet calls it
+    void draw_smn(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // the Pet box's Summoner content (avatar + Blood Pact recasts + job abilities + MP + pacts, hud_smn.cpp) ; only draw_pet calls it
     void draw_bst(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // the Pet box's Beastmaster content (pet + Ready charges + moves, hud_bst.cpp) ; only draw_pet calls it   // Scholar grimoire (book + charges/timer + Addendum aura) ; preview shows a sample
     void draw_zonetracker(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // Zone Tracker (Dynamis KIs+timer / Abyssea lights+visitant) ; preview shows a sample
     void draw_empypop(const Frame& f, bool preview = false, float ovX = 0.0f, float ovY = 0.0f, float ovS = 0.0f);   // EmpyPop (the tracked Abyssea NM's pop chain) ; preview shows the chloris demo chain
@@ -113,6 +114,9 @@ private:
     u32                  geoTex_[GEO_TEX_N] = {};
     TexRetry             geoTexR_[GEO_TEX_N];
     u32 geo_tex(u32 dev, int slot);    // hud_geo.cpp ; 0 while the file is not there
+    u32                  smnArt_ = 0;              // SMN content : the current avatar's picture (assets\smn\<img>.raw) ; forgotten on device change
+    TexRetry             smnArtR_;
+    char                 smnArtKey_[24] = {};      // which picture smnArt_ is ; another avatar releases it and loads its own
     TexRetry             bstElemR_;   // PER-TEXTURE retry : one shared flag left a partial load (2 of 3) dead-ending the third for the session
     u32                  weaponIcons_ = 0;         // Sheol resistances : Slashing/Piercing/Blunt icon atlas (96x32, 3 cells)
     TexRetry             weaponIcons_r_;

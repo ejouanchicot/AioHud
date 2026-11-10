@@ -63,6 +63,8 @@ void ConfigPage::draw_bst_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
         if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Ready size", "Taille Ready"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.bstPawSz = v < lo ? lo : (v > hi ? hi : v); }
     } ROW_NEXT(46.0f)
     ROW_TOGGLE(CTRL_ID, tr("Ready moves", "Ready moves"), c.bstMoves)
+    ROW_TOGGLE(CTRL_ID, tr("Moves' skillchain", "Skillchain des moves"), c.bstSc)   // Compression... after each move's name
+    ROW_TOGGLE(CTRL_ID, tr("Job abilities", "Job abilities"), c.bstJa)   // the grid at the bottom of the box
     ROW_TOGGLE(CTRL_ID, tr("Move type icons", "Ic\xC3\xB4nes de type"), c.bstIcons)   // weapon / element icon, else a colour tick
     { ROW_BAND(40.0f)   // note
         const float ty = ry + yo; fo->begin(dev);

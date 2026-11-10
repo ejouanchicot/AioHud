@@ -32,9 +32,12 @@ struct GrimoireState {
 // BEASTMASTER (module : BST). Computed once/frame in the poller (model/bst_state.cpp) : the pet the 0x068 packets
 // describe, the Ready charge pool (recast 102, its charge length LEARNED off a use : model/ready_charges.h) and the
 // Ready moves the job can use now, each with its cost and wait. SPEC docs/design/bst-module-spec.md.
+// a pet job's ability in the Pet box's grid (BST, SMN) : status = the buff atlas icon (0 = shown as text) ; recastSec
+// 0 = ready ; active : its effect is on the player
+struct PetJa { unsigned short abil = 0; const char* label = ""; unsigned short status = 0; int recastSec = 0; bool active = false; };
 struct BstMove { unsigned short id = 0; const char* en = ""; const char* kind = 0; unsigned short status = 0; int cost = 0; int waitSec = 0; };   // status : the status icon of a buff / debuff (ready_moves_gen.h), 0 = none
 struct BstState {
-    static const int MOVES_MAX = 16;
+    static const int MOVES_MAX = 16, JA_MAX = 12;
     bool visible = false;     // BST main job
     bool hasPet = false;      // a pet of ours is out (0x068 + its entity still there)
     char name[24] = {};       // the pet's name (0x068 +0x18)
@@ -46,6 +49,7 @@ struct BstState {
     int  chargeLen = 0;       // seconds a charge the count was decided from
     bool learned = false;     // chargeLen measured off a use (this session or cached for the character), not the formula
     BstMove moves[MOVES_MAX]; int nmoves = 0;
+    PetJa jas[JA_MAX]; int nja = 0;   // the BST job abilities the player has (game_mem.cpp BST_JAS)
 };
 
 // GEOMANCER (module : GEO). Computed once/frame in the poller (game_mem.cpp compute_geo, model/geo_state.cpp) : the
@@ -72,6 +76,25 @@ struct GeoState {
     bool  cardValid = false;       // a mob targeted : Cardinal Chant has a direction (geo_state.h geo_cardinal)
     float cardDeg = 0.0f;          // the target's direction from us, degrees, 0 North (+Z), 90 East (+X), clockwise
     int   cardRank = 0;            // the trait's rank at our GEO level (0 : none under 25)
+};
+
+// SUMMONER (module : SMN content of the Pet box). Computed once/frame in the poller (game_mem.cpp compute_smn) : the
+// avatar or spirit out (our pet, read as BST and GEO read theirs ; which one it is : smn_avatars_gen.h by its name), the
+// Blood Pact Rage / Ward recasts, the SMN job abilities, MP, and the pacts of that avatar the player knows (jaBits).
+// SPEC docs/design/smn-module-spec.md.
+typedef PetJa SmnJa;
+struct SmnPact { unsigned short abil = 0; const char* en = ""; int mp = 0; bool ward = false; };
+struct SmnState {
+    static const int JA_MAX = 8, PACTS_MAX = 16;
+    bool  visible = false;         // SMN main job
+    bool  hasPet = false;          // an avatar or a spirit of ours is out (its entity is there)
+    char  name[24] = {};           // its name
+    int   avatar = -1;             // its SMN_AVATARS row (smn_avatars_gen.h) ; -1 = a name the table does not know
+    int   hpp = 0, tp = 0;         // 0..100, 0..3000
+    float dist = -1.0f;            // player <-> pet, yalms (horizontal) ; < 0 = unknown
+    int   mp = 0, mpp = 0;         // the player's MP and MP%
+    SmnJa jas[JA_MAX]; int nja = 0;            // Rage, Ward, then the job abilities the player has
+    SmnPact pacts[PACTS_MAX]; int npacts = 0;  // the avatar's pacts the player knows, Rage first, in the grimoire's order
 };
 
 struct GameState {
@@ -144,6 +167,7 @@ struct GameState {
     GrimoireState grimoire;   // SCH grimoire (book + charges + timer), computed once/frame
     BstState      bst;        // BST pet + Ready charges + moves, computed once/frame
     GeoState      geo;        // GEO luopan + aura + Entrust + MP + job abilities, computed once/frame
+    SmnState      smn;        // SMN avatar + Blood Pact recasts + job abilities + known pacts + MP, computed once/frame
 
     // --- party-window picker (Menu>Party>Distribution>Quartermaster/Lottery, remove member, ...) :
     //     the focused menu "partywin" carries a 1-based cursor index at +0x4C -> the hovered member

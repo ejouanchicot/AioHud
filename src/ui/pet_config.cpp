@@ -1,6 +1,6 @@
 // pet_config.cpp -- the Pet module's settings page (//aio config -> "Pet") : what is common to the box (show, size,
-// grow direction, frame), the job tab (BST, GEO ; SMN and PUP later), then that job's rows (bst_config.cpp,
-// geo_config.cpp). The tab also picks the sample the preview shows (UiConfig::petTab, hud_pet.cpp).
+// grow direction, frame), the job tab (BST, GEO, SMN ; PUP later), then that job's rows (bst_config.cpp,
+// geo_config.cpp, smn_config.cpp). The tab also picks the sample the preview shows (UiConfig::petTab, hud_pet.cpp).
 //
 // Each control is keyed by CTRL_ID (file:line hash, see config_controls.h) -- no hand-numbered uids.
 // Reuses the shared sub-section catOpen_ slots [6] (Display) / [5] (Text), like the other modules.
@@ -20,7 +20,7 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
                                  float bandX, float bandW, float coX, float ctrlW,
                                  float hdrX, float hdrW) {
     UiConfig& c = ui_config();
-    const int tab = (c.petTab == 1) ? 1 : 0;
+    const int tab = (c.petTab == 1 || c.petTab == 2) ? c.petTab : 0;
 
     // ===== sub-section : DISPLAY =====
     const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
@@ -39,15 +39,16 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
         ROW_GROW(CTRL_ID, UiConfig::GB_PET)   // which way the box grows as its content widens (ui/box_grow.h)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.petBox);   // Box / Transparency / Theme / Hue / Luminosity
         { ROW_BAND(52.0f)   // the job tab : the rows below and the preview are that job's
-            const char* JL[2] = { "BST", "GEO" };
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Job", "Job"), JL[tab])) { c.petTab = wrap(tab + d, 2); save_ui_config(); }
+            const char* JL[3] = { "BST", "GEO", "SMN" };
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Job", "Job"), JL[tab])) { c.petTab = wrap(tab + d, 3); save_ui_config(); }
         } ROW_NEXT(52.0f)
         { ROW_BAND(40.0f)   // note : the jobs to come
             const float ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("SMN and PUP : later.", "SMN et PUP : plus tard."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("PUP : later.", "PUP : plus tard."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         } ROW_NEXT(40.0f)
-        if (tab == 1) draw_geo_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
-        else          draw_bst_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
+        if (tab == 2)      draw_smn_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
+        else if (tab == 1) draw_geo_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
+        else               draw_bst_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
     }   // end Display
     ry += snap(16.0f);
@@ -60,8 +61,9 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
     if (aF5_ > 0.0f) {
         const float top5_ = ry;
         cat_fold_clip(dev, hdrX, top5_, hdrW, catH_[5] * aF5_);
-        if (tab == 1) draw_geo_text_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
-        else          draw_bst_text_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
+        if (tab == 2)      draw_smn_text_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
+        else if (tab == 1) draw_geo_text_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
+        else               draw_bst_text_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
         cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
     }   // end Text
 

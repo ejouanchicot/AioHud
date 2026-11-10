@@ -263,14 +263,17 @@ static bool save_config_to(const char* path) {
     fprintf(f, "grim=%d,%.3f,%.4f,%.4f,%d\n", c.grimShow, c.grimScale, c.grimX, c.grimY, c.grimArt);   // grimoire box
     save_text_styles(f, "grimText", c.grimText, GRIM_TE_COUNT);   // grimoire : per-element typography
     fprintf(f, "pet=%d,%.3f,%.4f,%.4f,%d\n", c.petShow, c.petScale, c.petX, c.petY, c.petTab);   // the Pet box : show, size, place, config tab
-    fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
+    fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d,%d,%d,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
             c.bstImage, c.bstName, c.bstHp, c.bstTp, c.bstDist, c.bstCharges, c.bstMoves, c.bstIcons, c.bstDemo, c.bstArtMode,
-            c.bstArtSz, c.bstPawSz, c.bstEcoSz, c.bstChargeStyle, c.bstLayout);   // BST box + its elements
+            c.bstArtSz, c.bstPawSz, c.bstEcoSz, c.bstChargeStyle, c.bstLayout, c.bstJa, c.bstSc);   // BST box + its elements
     save_text_styles(f, "bstText", c.bstText, BST_TE_COUNT);   // BST box : per-element typography
     fprintf(f, "geo=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%d,%d,%d,%d,%d,%d\n", c.geoShow, c.geoScale, c.geoX, c.geoY, c.geoOnlyLuopan,
             c.geoBubble, c.geoHp, c.geoDist, c.geoAura, c.geoEntrust, c.geoMp, c.geoJa, c.geoIconSz, c.geoCompass,
             c.geoJaStyle != 2 ? 1 : 0, c.geoLayout, c.geoJaStyle, c.geoCardText, c.geoTime);   // field 15 : what an older build reads   // GEO box + its elements
     save_text_styles(f, "geoText", c.geoText, GEO_TE_COUNT);   // GEO box : per-element typography
+    fprintf(f, "smn=%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%d,%d\n", c.smnShow, c.smnOnlyPet, c.smnPortrait, c.smnName, c.smnHp, c.smnTp,
+            c.smnDist, c.smnBp, c.smnJa, c.smnMp, c.smnPacts, c.smnIconSz, c.smnLayout, c.smnDemo);   // SMN content + its elements
+    save_text_styles(f, "smnText", c.smnText, SMN_TE_COUNT);   // SMN content : per-element typography
     fprintf(f, "zt=%d,%.3f,%.4f,%.4f,%d,%d\n", c.ztShow, c.ztScale, c.ztX, c.ztY, c.ztVariant, c.ztHeader);   // zone tracker box (+ title toggle)
     fprintf(f, "ztsheol=%d,%d,%d\n", c.ztSheolSeg, c.ztSheolRes, c.ztSheolJoke);   // Sheol : segments / resistances / cruel joke
     fprintf(f, "ztlimbus=%d,%d,%d,%d,%d,%.2f,%.2f\n", c.ztLbFloor, c.ztLbCur, c.ztLbRun, c.ztLbChips, c.ztLbName, c.ztLbBarW, c.ztLbBarH);
@@ -392,8 +395,8 @@ static bool parse_bst_line(const char* line, UiConfig& c) {
     if (parse_text_style(line, "bstText", c.bstText, BST_TE_COUNT)) return true;
     if (strncmp(line, "bstbox=", 7) == 0) { parse_box(line + 7, c.bstBox); return true; }
     if (strncmp(line, "bst=", 4) != 0) return false;
-    int v[12] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 }; float scl = 1.0f, x = 0.72f, y = 0.55f, sz[3] = { 1.0f, 1.0f, 1.0f }; int cs = 0, lay = 0;
-    const int n = sscanf(line + 4, "%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%d,%d", &v[0], &scl, &x, &y, &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10], &v[11], &sz[0], &sz[1], &sz[2], &cs, &lay);
+    int v[12] = { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0 }; float scl = 1.0f, x = 0.72f, y = 0.55f, sz[3] = { 1.0f, 1.0f, 1.0f }; int cs = 0, lay = 0, ja = 1, sc = 1;
+    const int n = sscanf(line + 4, "%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%f,%f,%d,%d,%d,%d", &v[0], &scl, &x, &y, &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10], &v[11], &sz[0], &sz[1], &sz[2], &cs, &lay, &ja, &sc);
     if (n >= 1) c.bstShow = v[0]; if (n >= 2) c.bstScale = scl; if (n >= 3) c.bstX = x; if (n >= 4) c.bstY = y;
     if (n >= 5) c.bstOnlyPet = v[1]; if (n >= 6) c.bstImage = v[2]; if (n >= 7) c.bstName = v[3]; if (n >= 8) c.bstHp = v[4];
     if (n >= 9) c.bstTp = v[5]; if (n >= 10) c.bstDist = v[6]; if (n >= 11) c.bstCharges = v[7]; if (n >= 12) c.bstMoves = v[8];
@@ -403,6 +406,7 @@ static bool parse_bst_line(const char* line, UiConfig& c) {
     if (n >= 16) c.bstArtSz = sz[0]; if (n >= 17) c.bstPawSz = sz[1]; if (n >= 18) c.bstEcoSz = sz[2];
     if (n >= 19 && cs >= 0 && cs <= 2) c.bstChargeStyle = cs;
     if (n >= 20 && lay >= 0 && lay <= 2) c.bstLayout = lay;
+    if (n >= 21) c.bstJa = ja; if (n >= 22) c.bstSc = sc;   // added 2026-11-10 : an older line keeps them on
     return true;
 }
 // GEO-module config lines, parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line). Tolerant : a shorter line
@@ -421,6 +425,21 @@ static bool parse_geo_line(const char* line, UiConfig& c) {
     // the abilities' style : its own field, else what the older on / off said (icons, or the names)
     if (n >= 17 && jst >= 0 && jst <= 2) c.geoJaStyle = jst; else if (n >= 15) c.geoJaStyle = jai ? 0 : 2;
     if (n >= 18) c.geoCardText = ctx; if (n >= 19) c.geoTime = tim;
+    return true;
+}
+// SMN-content config lines, parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line). Tolerant : a shorter line
+// keeps the defaults of the fields it does not carry ; a file from before the SMN content has no smn= line at all and
+// keeps every default.
+static bool parse_smn_line(const char* line, UiConfig& c) {
+    if (parse_text_style(line, "smnText", c.smnText, SMN_TE_COUNT)) return true;
+    if (strncmp(line, "smn=", 4) != 0) return false;
+    int v[11] = { 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1 }; float isz = 1.0f; int lay = 0, demo = 0;
+    const int n = sscanf(line + 4, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%d", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8], &v[9], &v[10], &isz, &lay, &demo);
+    int* const dst[11] = { &c.smnShow, &c.smnOnlyPet, &c.smnPortrait, &c.smnName, &c.smnHp, &c.smnTp, &c.smnDist, &c.smnBp, &c.smnJa, &c.smnMp, &c.smnPacts };
+    for (int i = 0; i < 11 && i < n; ++i) *dst[i] = v[i];
+    if (n >= 12 && isz >= 0.5f && isz <= 2.0f) c.smnIconSz = isz;
+    if (n >= 13 && lay >= 0 && lay <= 1) c.smnLayout = lay;
+    if (n >= 14 && demo >= 0) c.smnDemo = demo;   // past the table's end : the users (hud_smn.cpp, smn_config.cpp) take the first row
     return true;
 }
 static bool parse_grow_line(const char* line, UiConfig& c) {
@@ -696,6 +715,7 @@ static bool load_config_from(const char* path) {
         if (parse_pet_line(line, c)) continue;    // out-of-line : the Pet box (same nesting-limit reason)
         if (parse_bst_line(line, c)) continue;    // out-of-line : the BST box (same nesting-limit reason)
         if (parse_geo_line(line, c)) continue;    // out-of-line : the GEO box (same nesting-limit reason)
+        if (parse_smn_line(line, c)) continue;    // out-of-line : the SMN content (same nesting-limit reason)
         if (parse_grow_line(line, c)) continue;   // out-of-line : box grow directions (same nesting-limit reason)
         if (parse_ep_line(line, c)) continue;   // out-of-line : keeps the chain below off MSVC's nesting limit
         if (parse_cast_line(line, c)) continue; // out-of-line : cast-placeholder toggles (same nesting-limit reason)
@@ -1236,12 +1256,16 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.bstShow != b.bstShow || a.bstScale != b.bstScale || a.bstX != b.bstX || a.bstY != b.bstY || a.bstOnlyPet != b.bstOnlyPet) return false;
     if (a.bstImage != b.bstImage || a.bstName != b.bstName || a.bstHp != b.bstHp || a.bstTp != b.bstTp || a.bstDist != b.bstDist || a.bstCharges != b.bstCharges || a.bstMoves != b.bstMoves || a.bstIcons != b.bstIcons || a.bstDemo != b.bstDemo || a.bstArtMode != b.bstArtMode
         || a.bstArtSz != b.bstArtSz || a.bstPawSz != b.bstPawSz || a.bstEcoSz != b.bstEcoSz
-        || a.bstChargeStyle != b.bstChargeStyle || a.bstLayout != b.bstLayout) return false;
+        || a.bstChargeStyle != b.bstChargeStyle || a.bstLayout != b.bstLayout || a.bstJa != b.bstJa || a.bstSc != b.bstSc) return false;
     if (!text_styles_eq(a.bstText, b.bstText, BST_TE_COUNT) || !box_eq(a.bstBox, b.bstBox)) return false;
     if (a.geoShow != b.geoShow || a.geoScale != b.geoScale || a.geoX != b.geoX || a.geoY != b.geoY || a.geoOnlyLuopan != b.geoOnlyLuopan) return false;
     if (a.geoBubble != b.geoBubble || a.geoHp != b.geoHp || a.geoDist != b.geoDist || a.geoAura != b.geoAura || a.geoEntrust != b.geoEntrust
         || a.geoMp != b.geoMp || a.geoJa != b.geoJa || a.geoIconSz != b.geoIconSz || a.geoCompass != b.geoCompass || a.geoJaStyle != b.geoJaStyle || a.geoLayout != b.geoLayout || a.geoCardText != b.geoCardText || a.geoTime != b.geoTime) return false;
     if (!text_styles_eq(a.geoText, b.geoText, GEO_TE_COUNT) || !box_eq(a.geoBox, b.geoBox)) return false;
+    if (a.smnShow != b.smnShow || a.smnOnlyPet != b.smnOnlyPet || a.smnPortrait != b.smnPortrait || a.smnName != b.smnName || a.smnHp != b.smnHp
+        || a.smnTp != b.smnTp || a.smnDist != b.smnDist || a.smnBp != b.smnBp || a.smnJa != b.smnJa || a.smnMp != b.smnMp || a.smnPacts != b.smnPacts
+        || a.smnIconSz != b.smnIconSz || a.smnLayout != b.smnLayout || a.smnDemo != b.smnDemo) return false;
+    if (!text_styles_eq(a.smnText, b.smnText, SMN_TE_COUNT)) return false;
     if (a.ztShow != b.ztShow || a.ztScale != b.ztScale || a.ztX != b.ztX || a.ztY != b.ztY || a.ztVariant != b.ztVariant || a.ztHeader != b.ztHeader) return false;
     if (a.ztSheolSeg != b.ztSheolSeg || a.ztSheolRes != b.ztSheolRes || a.ztSheolJoke != b.ztSheolJoke) return false;
     if (a.ztLbFloor != b.ztLbFloor || a.ztLbCur != b.ztLbCur || a.ztLbRun != b.ztLbRun || a.ztLbChips != b.ztLbChips) return false;

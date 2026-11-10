@@ -160,6 +160,12 @@ private:
     void draw_geo_text_rows(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW);
+    void draw_smn_rows(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW);   // smn_config.cpp : the SMN tab of //aio config -> Pet
+    void draw_smn_text_rows(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW);
     void draw_grim_config(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW,
@@ -246,6 +252,7 @@ private:
     int   cfgPwTextElem_ = 0;    // which PointWatch text element the typography sub-section edits (PW_LABEL / PW_VALUE / PW_RATE)
     int   cfgGrimTextElem_ = 0;  // which Grimoire text element the typography sub-section edits (GRIM_CHARGE / GRIM_TIMER)
     int   cfgGeoTextElem_ = 0;   // which GEO text element the typography sub-section edits (GEO_NAME / GEO_VALUE / GEO_JA)
+    int   cfgSmnTextElem_ = 0;   // which SMN text element the typography sub-section edits (SMN_NAME / SMN_VALUE / SMN_JA / SMN_PACT)
     int   cfgBstTextElem_ = 0;   // which BST text element the typography sub-section edits (BST_NAME / BST_VALUE / BST_CHARGE / BST_MOVE)
     int   cfgZtTextElem_ = 0;    // which Zone Tracker text element the typography sub-section edits (ZT_HEADER / ZT_BODY)
     int   cfgEpTextElem_ = 0;    // which EmpyPop text element the typography sub-section edits (EP_TITLE / EP_POP / EP_FROM / EP_COLL)

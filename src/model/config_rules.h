@@ -170,9 +170,10 @@ inline void config_sanitise(UiConfig& c) {
     MUL(hlScale);   FRAC(hlX);   FRAC(hlY);                     cfg_text(c.hlText, HL_TE_COUNT);   cfg_box(c.hlBox);
     MUL(pwScale);   FRAC(pwX);   FRAC(pwY);                     cfg_text(c.pwText, PW_TE_COUNT);   cfg_box(c.pwBox);
     MUL(grimScale); FRAC(grimX); FRAC(grimY);                   cfg_text(c.grimText, GRIM_TE_COUNT);
-    MUL(petScale);  FRAC(petX);  FRAC(petY);                    cfg_box(c.petBox);   c.petTab = cfg_int(c.petTab, 0, 1);
+    MUL(petScale);  FRAC(petX);  FRAC(petY);                    cfg_box(c.petBox);   c.petTab = cfg_int(c.petTab, 0, 2);
     MUL(bstScale);  FRAC(bstX);  FRAC(bstY);                    cfg_text(c.bstText, BST_TE_COUNT);   cfg_box(c.bstBox);
     MUL(geoScale);  FRAC(geoX);  FRAC(geoY);   MUL(geoIconSz);  cfg_text(c.geoText, GEO_TE_COUNT);   cfg_box(c.geoBox);
+    MUL(smnIconSz); cfg_text(c.smnText, SMN_TE_COUNT);   c.smnLayout = cfg_int(c.smnLayout, 0, 1);   c.smnDemo = cfg_int(c.smnDemo, 0, 63);
     MUL(epScale);   FRAC(epX);   FRAC(epY);                     cfg_text(c.epText, EP_TE_COUNT);   cfg_box(c.epBox);
     c.tpCount = cfg_int(c.tpCount, 0, 10);
     c.hlCount = cfg_int(c.hlCount, 0, 20);

@@ -20,6 +20,8 @@
 #include "model/ready_charges.h"   // READY_CHARGES
 #include "model/ready_moves_gen.h"  // the preview pet's moves : their kind and status icon
 #include "model/bst_pets_gen.h"     // the preview pets (every jug pet and its Ready moves)
+#include "model/abilities_gen.h"    // a Ready move's ability id from its name (the preview's moves have none)
+#include "model/skillchain.h"       // a Ready move's skillchain opening
 #include "model/bst_state.h"        // bst_ready_cost
 #include "model/bst_correlation.h"  // the correlation line
 #include "model/paths.h"
@@ -126,6 +128,24 @@ static void bst_gauge(u32 dev, Font* fo, float x, float y, float w, float h, flo
     fo->begin(dev); fo->draw_lc(dev, x + w + snap(6.0f * (h / 9.0f)), y + h * 0.5f, txt, z, tcol, 0xC0000000u, ow);
 }
 
+// a Ready move's first skillchain opening (Frogkick : Compression), -1 for none. The preview's moves carry a name and
+// no id : the id is the Ready move of that name (recast 102)
+static int move_sc(const BstMove& m) {
+    unsigned id = m.id;
+    if (!id && m.en) for (int i = 0; i < ABILS_N; ++i) if (ABILS[i].recast_id == 102 && strcmp(ABILS[i].en, m.en) == 0) { id = ABILS[i].id; break; }
+    const SkillRow* r = id ? sc_skill_lookup(SCR_JA, id) : 0;
+    return (r && r->prop[0] < SCP_N) ? (int)r->prop[0] : -1;
+}
+
+// the sample's job abilities : a few on recast, Killer Instinct up
+static void bst_sample_jas(BstState& b) {
+    static const struct { unsigned short abil; const char* label; unsigned short status; int sec; bool active; } J[] = {
+        {78, "Reward", 0, 54, false}, {85, "Call Beast", 0, 0, false}, {387, "Bestial Loyalty", 0, 0, false}, {69, "Fight", 0, 0, false},
+        {225, "Snarl", 0, 12, false}, {281, "Spur", 0, 0, false}, {282, "Run Wild", 0, 245, false}, {162, "Killer Instinct", 349, 0, true},
+        {161, "Feral Howl", 0, 0, false}, {24, "Familiar", 0, 3960, false}, {331, "Unleash", 498, 0, false} };
+    for (const auto& j : J) { if (b.nja >= BstState::JA_MAX) break; PetJa& d = b.jas[b.nja++]; d.abil = j.abil; d.label = j.label; d.status = j.status; d.recastSec = j.sec; d.active = j.active; }
+}
+
 void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS) {
     const UiConfig& C = ui_config();
     if (!C.bstShow) return;
@@ -134,7 +154,7 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
     if (!f.font && !f.fonts) return;
 
     BstState b;
-    if (preview || editing) bst_sample(b);
+    if (preview || editing) { bst_sample(b); bst_sample_jas(b); }
     else {
         if (!f.game) return;
         b = f.game->bst;
@@ -227,22 +247,27 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
     const float pipsH = C.bstCharges ? pipSz + snap(4.0f * S) : 0.0f, topSide = discD + pipsH, topGap = snap(6.0f * S);
     const float infoH = (C.bstName || C.bstDist ? lineH : 0.0f) + (C.bstHp || C.bstTp || C.bstCharges ? lineH : 0.0f);
     const float blockH = layout == 2 ? 0.0f : (stacked ? infoH : topH);   // what sits above the correlation in the box
-    // a box's height for `rows` rows of moves
-    auto boxHFor = [&](int rows) -> float {
+    // the job abilities' grid at the bottom of the box (UiConfig::bstJa, the player's ask 2026-11-10 : the SMN one)
+    static const int JA_COLS = 2;
+    const float cellH = snap(18.0f * S);
+    const float jaH = (C.bstJa && b.nja > 0) ? cellH * (float)((b.nja + JA_COLS - 1) / JA_COLS) : 0.0f;
+    const float jaFrameH = C.bstJa ? cellH * (float)((BstState::JA_MAX - 1 + JA_COLS - 1) / JA_COLS) : 0.0f;   // //aio edit : the 11 abilities
+    // a box's height for `rows` rows of moves and `ja` of abilities
+    auto boxHFor = [&](int rows, float ja) -> float {
         const float mh = C.bstMoves ? rowH * (float)rows : 0.0f;
-        const int blocks = (blockH > 0.0f ? 1 : 0) + (corrH > 0.0f ? 1 : 0) + (mh > 0.0f ? 1 : 0);
-        return blocks ? pad * 2.0f + blockH + corrH + mh + gap * (float)(blocks - 1) : 0.0f;
+        const int blocks = (blockH > 0.0f ? 1 : 0) + (corrH > 0.0f ? 1 : 0) + (mh > 0.0f ? 1 : 0) + (ja > 0.0f ? 1 : 0);
+        return blocks ? pad * 2.0f + blockH + corrH + mh + ja + gap * (float)(blocks - 1) : 0.0f;
     };
     // the whole height : the pet above the box when stacked (layout 2 : a box of moves only)
-    auto heightFor = [&](int rows) -> float {
-        const float bh = boxHFor(rows);
+    auto heightFor = [&](int rows, float ja) -> float {
+        const float bh = boxHFor(rows, ja);
         return stacked ? topSide + (bh > 0.0f ? topGap + bh : 0.0f) : bh;
     };
-    const float frameH = heightFor(b.nmoves > MOVE_ROWS ? b.nmoves : MOVE_ROWS);
+    const float frameH = heightFor(b.nmoves > MOVE_ROWS ? b.nmoves : MOVE_ROWS, jaFrameH > jaH ? jaFrameH : jaH);
     if (frameH <= 0.0f) return;
     const bool frame = editing;   // //aio edit drags the frame ; the config preview and play show the box itself
     const float boxW = snap((stacked ? 230.0f : 270.0f) * S);
-    const float totW = (stacked && topSide > boxW) ? topSide : boxW, totH = frame ? frameH : heightFor(b.nmoves);
+    const float totW = (stacked && topSide > boxW) ? topSide : boxW, totH = frame ? frameH : heightFor(b.nmoves, jaH);
     if (totH <= 0.0f) return;
     const float movH = (C.bstMoves && b.nmoves) ? rowH * (float)b.nmoves : 0.0f;   // the rows drawn below
 
@@ -369,7 +394,7 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
             }
             if (C.bstTp) {
                 char tb[12]; sprintf(tb, "%d", b.tp);
-                bst_gauge(dev, fv, tx, ly + (lineH - gh) * 0.5f, gw, gh, b.tp / 3000.0f, b.tp >= 1000 ? 0xFF7FC4FFu : 0xFF5A86B8u, tb, zv, ov, bst_col(BST_VALUE, 0xFFE8EEF2u));
+                bst_gauge(dev, fv, tx, ly + (lineH - gh) * 0.5f, gw, gh, b.tp / 3000.0f, pet_tp_col(b.tp), tb, zv, ov, bst_col(BST_VALUE, 0xFFE8EEF2u));
             }
         }
         ry += petBlock;   // the pet's room is kept even with no pet out
@@ -397,7 +422,7 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
         }
         if (b.hasPet && C.bstTp && b.tp > 0) {
             const float tr = r - snap(9.0f * S), tw2 = snap(2.5f * S), tf = b.tp > 3000 ? 1.0f : b.tp / 3000.0f;
-            ring_sector(dev, cx, cy, tr - tw2 * 0.5f, tr + tw2 * 0.5f, -BST_TAU * 0.25f, -BST_TAU * 0.25f + BST_TAU * tf, b.tp >= 1000 ? 0xFF7FC4FFu : 0xFF5A86B8u);
+            ring_sector(dev, cx, cy, tr - tw2 * 0.5f, tr + tw2 * 0.5f, -BST_TAU * 0.25f, -BST_TAU * 0.25f + BST_TAU * tf, pet_tp_col(b.tp));
         }
         if (art && b.hasPet && C.bstImage) { const float as = snap(discD * 0.78f); pet_tex_quad(dev, art, cx - as * 0.5f, cy - as * 0.5f, as, as, 0.0f, 1.0f, 0xFFFFFFFFu); }
         if (C.bstCharges) {   // three charges in a row : the paw when its icon is there and chosen, a bar otherwise
@@ -448,7 +473,7 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
             float x = bx + pad;
             fv->begin(dev);
             if (C.bstHp && b.hasPet) { char t[16]; sprintf(t, "HP %d%%", b.hpp); x += fv->draw_lc(dev, x, cy2, t, zv, b.hpp > 50 ? 0xFF6BD07Au : (b.hpp > 25 ? 0xFFE8C45Au : 0xFFFF6A5Au), 0xC0000000u, ov) + sp; }
-            if (C.bstTp && b.hasPet) { char t[16]; sprintf(t, "TP %d", b.tp); x += fv->draw_lc(dev, x, cy2, t, zv, b.tp >= 1000 ? 0xFF7FC4FFu : 0xFF5A86B8u, 0xC0000000u, ov) + sp; }
+            if (C.bstTp && b.hasPet) { char t[16]; sprintf(t, "TP %d", b.tp); x += fv->draw_lc(dev, x, cy2, t, zv, pet_tp_col(b.tp), 0xC0000000u, ov) + sp; }
             if (C.bstCharges) { char t[20]; sprintf(t, "READY %d/%d", b.charges, READY_CHARGES); fv->draw_lc(dev, x, cy2, t, zv, b.charges > 0 ? 0xFFFFC864u : 0xFF8C94A0u, 0xC0000000u, ov); }
         }
     }
@@ -511,6 +536,20 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
             etex = ensure_raw_tex(dev, bstElem_, bstElemR_, plugin_path_r("assets\\element_icons.raw"), 256, 32);
             stex = buff_atlas_tex(dev);   // shared, never released here (buff_atlas.h)
         }
+        // three columns lined up from row to row (the player, 2026-11-10) : the names, the skillchain openings starting
+        // just past the longest name, then on the right the wait (its room kept on every row) and the cost pill
+        float scX = 0.0f, scRight = 0.0f;
+        if (C.bstSc) {
+            float longest = 0.0f;
+            for (int i = 0; i < b.nmoves; ++i) { const float w = fm->measure(b.moves[i].en, zm); if (w > longest) longest = w; }
+            scX = snap(bx + pad + fm->measure("8", zm) + snap(6.0f * S) + isz + snap(5.0f * S) + longest + snap(10.0f * S));
+            scRight = xr - (snap(7.0f * S) + snap(6.5f * S) * 3.0f) - snap(5.0f * S) - fm->measure("00s", zm) - snap(8.0f * S);
+            // the column itself centred in the room between the names and the right-hand column (the player, 2026-11-10),
+            // its openings left-aligned inside it
+            float colW = 0.0f;
+            for (int i = 0; i < b.nmoves; ++i) { const int sc = move_sc(b.moves[i]); if (sc >= 0) { const float w = fm->measure(scprop_name(sc), zm * 0.85f); if (w > colW) colW = w; } }
+            if (colW < scRight - scX) scX = snap(scX + (scRight - scX - colW) * 0.5f);
+        }
         for (int i = 0; i < b.nmoves; ++i) {
             const BstMove& m = b.moves[i];
             // its number first : the N of GearSwap's //gs c rdymove N, which sorts the moves by ability id as this list
@@ -534,6 +573,14 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
             const bool ready = m.waitSec <= 0;
             fm->begin(dev);
             fm->draw_lc(dev, ix + isz + snap(5.0f * S), cy, m.en, zm, ready ? bst_col(BST_MOVE, 0xFF9BE89Bu) : 0xFF8C94A0u, 0xC0000000u, om);
+            // its skillchain opening, small, in its colour, after the name (UiConfig::bstSc ; the SMN pacts show theirs)
+            if (C.bstSc) {
+                const int sc = move_sc(m);
+                if (sc >= 0 && scRight - scX > fm->measure("Co.", zm * 0.85f)) {   // in its column, cut to the room before the wait
+                    char sb[20]; pet_fit_cut(fm, scprop_name(sc), zm * 0.85f, scRight - scX, sb, sizeof(sb));
+                    fm->begin(dev); fm->draw_lc(dev, scX, cy, sb, zm * 0.85f, scprop_color(sc), 0xC0000000u, om);
+                }
+            }
             // its cost as 1..3 dots in a pill, the same gold as the dial's charges when they are there, grey when short.
             // No green / orange / red per cost : the player's call (2026-10-27), red reads as "unavailable" and green
             // as "ready", which a cost is not -- the name's colour already says that
@@ -552,6 +599,17 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
             const float d0 = pillX + pillW * 0.5f - dstep * (nd - 1) * 0.5f;   // centred in the pill (it is sized for 3)
             for (int k = 0; k < nd; ++k) rrect(dev, snap(d0 + dstep * k) - dr, cy - dr, 2.0f * dr, 2.0f * dr, dr, dc, dc, 1.0f);
         }
+    }
+
+    // ---- the job abilities, at the bottom : the grid the SMN content draws too (pet_common.cpp pet_ja_grid) ----
+    if (jaH > 0.0f) {
+        const float above = blockH + (corrH > 0.0f ? (blockH > 0.0f ? gap : 0.0f) + corrH : 0.0f) + (movH > 0.0f ? ((blockH > 0.0f || corrH > 0.0f) ? gap : 0.0f) + movH : 0.0f);
+        const float y = top + above + (above > 0.0f ? gap : 0.0f);
+        if (above > 0.0f) { dColorQuadState(dev); rrect(dev, bx + pad, snap(y - gap * 0.5f), boxW - 2.0f * pad, 1.0f, 0.0f, 0x30FFFFFFu, 0x30FFFFFFu, 0.0f); }
+        const PetJa* cells[BstState::JA_MAX]; for (int i = 0; i < b.nja; ++i) cells[i] = &b.jas[i];
+        Font* fj = bst_font(f, BST_MOVE);
+        pet_ja_grid(dev, fj, bst_sz(BST_MOVE, 10.0f) * S, bst_ow(BST_MOVE, 1.0f) * S, bst_col(BST_MOVE, 0xFFE8EEF2u), bx + pad, y, boxW - 2.0f * pad,
+                    cellH, 14.0f * S, S, cells, b.nja, JA_COLS, preview || editing);
     }
 }
 

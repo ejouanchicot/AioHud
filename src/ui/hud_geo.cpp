@@ -42,18 +42,9 @@ static inline u32   geo_col(int e, u32 base)  { return te_col(ui_config().geoTex
 
 // an element's colour, res numbering (0 Fire 1 Ice 2 Wind 3 Earth 4 Lightning 5 Water 6 Light 7 Dark) : the same tints
 // the BST box gives a move's element, so one element reads the same in both boxes
-static u32 elem_col(int e) {
-    static const u32 C[8] = { 0xFFFF7A5Cu, 0xFF9BE7FFu, 0xFF7CE08Au, 0xFFD8B25Au, 0xFFC79BFFu, 0xFF6FB6FFu, 0xFFFFF4C0u, 0xFF9C7BD9u };
-    return (e >= 0 && e < 8) ? C[e] : 0xFFE8EEF2u;
-}
+static u32 elem_col(int e) { return pet_elem_col(e); }   // pet_common.cpp
 // a time left : 1:45 from a minute up, 42s under, "--" while it is not known (the slope needs ~6 s ; SPEC §2)
-static void fmt_left(int sec, char* out, int cap) {
-    if (sec < 0)          _snprintf(out, cap, "--");
-    else if (sec >= 3600) _snprintf(out, cap, "%dh%02d", sec / 3600, (sec / 60) % 60);
-    else if (sec >= 60)   _snprintf(out, cap, "%d:%02d", sec / 60, sec % 60);
-    else                  _snprintf(out, cap, "%ds", sec);
-    out[cap - 1] = 0;
-}
+static void fmt_left(int sec, char* out, int cap) { pet_fmt_left(sec, out, cap); }   // pet_common.cpp
 
 // The images of assets\geo\ (scripts/gen_geo_icons.py) : slot -> file and side
 enum { GT_LUOPAN = 0, GT_RING, GT_CARD, GT_JA = GT_CARD + 4 };   // GT_CARD + CARD_N/E/S/W ; GT_JA + the order below
@@ -85,16 +76,7 @@ u32 Hud::geo_tex(u32 dev, int slot) {
 // the longest recast seen for each ability this session : the share of its recast left, for the fill (the game
 // gives the time left, not the length, which merits and gear shorten). The sample of //aio edit and the preview
 // learns nothing : half filled for each ability on recast
-static float ja_recast_share(unsigned short abil, int sec, bool sample) {
-    if (sample) return sec > 0 ? 0.5f : 0.0f;
-    static unsigned short ids[GeoState::JA_MAX] = {}; static int longest[GeoState::JA_MAX] = {};
-    int k = 0;
-    while (k < GeoState::JA_MAX && ids[k] && ids[k] != abil) ++k;
-    if (k == GeoState::JA_MAX) return sec > 0 ? 1.0f : 0.0f;
-    ids[k] = abil;
-    if (sec > longest[k]) longest[k] = sec;
-    return (sec > 0 && longest[k] > 0) ? (float)sec / (float)longest[k] : 0.0f;
-}
+static float ja_recast_share(unsigned short abil, int sec, bool sample) { return pet_recast_share(abil, sec, sample); }   // pet_common.cpp
 
 // the sample shown in //aio edit and in the config preview : a Geo-Fury for the party (a supportive bubble, so its
 // distance shows), an Indi-Haste aura, an Indi-Fury entrusted to Kaories, Bolster up, a few abilities on recast, a mob

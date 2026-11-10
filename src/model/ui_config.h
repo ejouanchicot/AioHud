@@ -45,6 +45,7 @@ enum { PW_LABEL = 0, PW_VALUE, PW_RATE, PW_TE_COUNT };          // PointWatch te
 enum { GRIM_CHARGE = 0, GRIM_TIMER, GRIM_TE_COUNT };           // Grimoire text elements (Charge count / Recast timer)
 enum { BST_NAME = 0, BST_VALUE, BST_CHARGE, BST_MOVE, BST_TE_COUNT };   // BST box text elements (pet name / HP-TP-distance / Ready charges / moves)
 enum { GEO_NAME = 0, GEO_VALUE, GEO_JA, GEO_TE_COUNT };   // GEO box text elements (bubble / aura / Entrust names ; HP-MP-times-distance ; job abilities)
+enum { SMN_NAME = 0, SMN_VALUE, SMN_JA, SMN_PACT, SMN_TE_COUNT };   // SMN content text elements (avatar name ; HP-TP-MP-distance ; job abilities and recasts ; the pacts)
 // Zone Tracker text elements. Header/Body are shared by every variant ; the four after them are the Limbus
 // rows, split out so each can be sized/coloured on its own (the gauge caption, the currencies, the run line
 // and the coffer-dot labels). The per-variant elements that follow are APPENDED (never reordered) : the saved
@@ -350,7 +351,7 @@ struct UiConfig {
     float petScale   = 1.0f;   // size multiplier (0.5 .. 2.0)
     float petX       = 0.72f;  // horizontal CENTRE (screen fraction) ; petY = its TOP
     float petY       = 0.55f;
-    int   petTab     = 0;      // the job tab of //aio config -> Pet (0 BST, 1 GEO) : what the preview, and //aio edit on
+    int   petTab     = 0;      // the job tab of //aio config -> Pet (0 BST, 1 GEO, 2 SMN) : what the preview, and //aio edit on
                                // another job, show
 
     // ---- BST content of the Pet box : the pet, the Ready charges and moves (pet_bst.cpp ;
@@ -368,6 +369,8 @@ struct UiConfig {
     float bstPawSz = 1.0f;     // the Ready paws (and the ring dial), x 0.5 .. 2
     float bstEcoSz = 1.0f;     // the correlation's family icons, x 0.5 .. 2
     int   bstChargeStyle = 0;  // the Ready charges : 0 paws (the ring when the paw icon is missing), 1 the ring, 2 bars
+    int   bstJa = 1;           // the BST job abilities' grid (Reward, Call Beast, Spur...) at the bottom of the box
+    int   bstSc = 1;           // each Ready move's skillchain opening (Compression...) on its row
     int   bstLayout = 0;       // 0 side by side (the Ready dial beside the pet) ; 1 the pet on top of the box, no box round
                                // it ; 2 the pet on top of its numbered moves only (maquettes B / C, 2026-10-29)
     TextStyle bstText[BST_TE_COUNT];   // per-element typography : [BST_NAME] [BST_VALUE] [BST_CHARGE] [BST_MOVE]
@@ -391,6 +394,17 @@ struct UiConfig {
     int   geoTime     = 0;     // the luopan's time left estimated from its HP slope : off by default (it never settles
                                // while its HP keep going back up, the player 2026-10-29)
     TextStyle geoText[GEO_TE_COUNT];   // per-element typography : [GEO_NAME] [GEO_VALUE] [GEO_JA]
+
+    // ---- SMN content of the Pet box : the avatar or spirit out, the Blood Pact recasts, the SMN job abilities, MP and
+    //      the avatar's pacts (hud_smn.cpp ; docs/design/smn-module-spec.md) ----
+    int   smnShow    = 1;      // show the box on a SMN main
+    int   smnOnlyPet = 0;      // only while an avatar or a spirit is out (off : the recasts and MP are worth seeing without one)
+    int   smnPortrait = 1, smnName = 1, smnHp = 1, smnTp = 1, smnDist = 1;   // the pet : its picture, name, HP ring, TP arc, distance
+    int   smnBp = 1, smnJa = 1, smnMp = 1, smnPacts = 1;                     // Rage / Ward, the job abilities, MP, the pacts
+    float smnIconSz = 1.0f;    // the portrait and the ability icons, x 0.5 .. 2
+    int   smnLayout  = 0;      // 0 the portrait on top of the box, with no box round it ; 1 the portrait beside its text, in the box
+    int   smnDemo    = 0;      // EDIT / config preview : which avatar or spirit the sample shows (smn_avatars_gen.h index)
+    TextStyle smnText[SMN_TE_COUNT];   // per-element typography : [SMN_NAME] [SMN_VALUE] [SMN_JA] [SMN_PACT]
 
     int   ztShow    = 1;       // show the Zone Tracker (only appears in a Dynamis / Abyssea zone)
     float ztScale   = 1.0f;    // size multiplier (0.5 .. 2.0)

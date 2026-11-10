@@ -45,6 +45,7 @@
 #include <stdio.h>                   // publish_sortie_track : the per-character file for the aioupdate addon
 #include "model/bst_state.h"      // compute_bst : the BST module's snapshot part
 #include "model/geo_state.h"      // compute_geo : the GEO module's snapshot part
+#include "model/smn_avatars_gen.h" // compute_smn : which avatar is out, its pacts (the player's grimoire)
 #include "model/geo_spells_gen.h" // compute_geo : the Geo- / Indi- spells (radius rule, aura from its status)
 #include "model/geo_dur.h"        // compute_geo : an Entrust whose ally row is missing (base + JP + gear)
 #include "model/tb_buff_gen.h"    // compute_geo : that Indi-'s base duration
@@ -1354,6 +1355,18 @@ static PetView resolve_pet(const GameState& gs) {
 // charge length is learned off a use (ReadyLearner), kept per character, and until then worked out from the Sic
 // Recast merit (id 902, 2 s a level), the 100 JP gift and the "-5" pieces worn now (only a guess : the piece that
 // counts is the one worn when the move goes off, which GearSwap swaps in for that instant).
+// The BST job abilities the Pet box lists (the player's ask, 2026-11-10 : the same grid as SMN's). Ability, recast and
+// status ids from res/job_abilities.lua (never guessed) : Reward 78 / 103 ; Call Beast 85 / 104 ; Bestial Loyalty 387
+// / 94 ; Fight 69 / 100 ; Snarl 225 / 107 ; Spur 281 / 45 ; Run Wild 282 / 46 ; Killer Instinct 162 / 106, status
+// 349 ; Feral Howl 161 / 105 ; Familiar 24 / 0 (the shared one-hour slot) ; Unleash 331 / 254, status 498. Sic and
+// Ready are the charges ; Heel, Leave and Stay share recast 101 and say nothing worth a cell.
+struct PetJaDef { unsigned short abil, recast, status; const char* label; };
+static const PetJaDef BST_JAS[] = {
+    {78, 103, 0, "Reward"}, {85, 104, 0, "Call Beast"}, {387, 94, 0, "Bestial Loyalty"}, {69, 100, 0, "Fight"},
+    {225, 107, 0, "Snarl"}, {281, 45, 0, "Spur"}, {282, 46, 0, "Run Wild"}, {162, 106, 349, "Killer Instinct"},
+    {161, 105, 0, "Feral Howl"}, {24, 0, 0, "Familiar"}, {331, 254, 498, "Unleash"},
+};
+static_assert(sizeof(BST_JAS) / sizeof(BST_JAS[0]) <= BstState::JA_MAX, "every BST ability fits BstState::jas");
 void compute_bst(GameState& gs) {
     BstState b{};
     const int BST = 9;
@@ -1396,6 +1409,17 @@ void compute_bst(GameState& gs) {
         const ReadyMoveRow* rr = ready_move_row(r.en);
         m.id = (unsigned short)r.id; m.en = r.en; m.kind = rr ? rr->kind : 0; m.status = rr ? rr->status : 0; m.cost = (int)r.mp;
         m.waitSec = ready_wait_sec(ticks, len, m.cost);
+    }
+
+    // ---- the job abilities this BST has (jaBits ; all of them while that bitmap is unread), each one's recast from
+    //      the snapshot ----
+    for (const PetJaDef& d : BST_JAS) {
+        if (b.nja >= BstState::JA_MAX) break;
+        if (gs.jaOk && !(d.abil < 1024 && (gs.jaBits[d.abil >> 3] & (1u << (d.abil & 7))))) continue;
+        PetJa& j = b.jas[b.nja++];
+        j.abil = d.abil; j.label = d.label; j.status = d.status;
+        for (int i = 0; i < gs.nRecast; ++i) if (gs.recasts[i].kind == 0 && gs.recasts[i].recastId == d.recast) { j.recastSec = gs.recasts[i].sec; break; }
+        if (d.status && gs.buffsOk) for (int i = 0; i < gs.nbuff; ++i) if (gs.buffs[i] == d.status) { j.active = true; break; }
     }
     gs.bst = b;
 }
@@ -1505,6 +1529,64 @@ void compute_geo(GameState& gs) {
         j.active = d.status && gs.buffsOk && hasBuff(d.status);
     }
     gs.geo = g;
+}
+
+// SUMMONER : the avatar or spirit out (our pet, resolve_pet : the same 0x068 / entity reading as BST and GEO), which one
+// it is (smn_avatars_gen.h, by its name), the Blood Pact recasts, the SMN job abilities, MP, and the pacts of that
+// avatar the player knows, once a frame (docs/design/smn-module-spec.md).
+// Ability, recast and status ids from res/job_abilities.lua and res/buffs.lua (never guessed) : Blood Pact: Rage 91 /
+// recast 173 ; Blood Pact: Ward 172 / 174 ; Astral Flow 30 / 0 (the shared one-hour slot), status 55 ; Apogee 385 /
+// 108, status 583 ; Astral Conduit 337 / 254, status 504 ; Avatar's Favor 250 / 176, status 431 ; Elemental Siphon
+// 232 / 175 ; Mana Cede 296 / 71. A status is also the icon the box draws (the buff atlas) ; Rage, Ward, Elemental
+// Siphon and Mana Cede have none and show as text.
+struct SmnJaDef { unsigned short abil, recast, status; const char* label; };
+static const SmnJaDef SMN_JAS[] = {
+    {91, 173, 0, "Rage"}, {172, 174, 0, "Ward"}, {30, 0, 55, "Astral Flow"}, {385, 108, 583, "Apogee"},
+    {337, 254, 504, "Astral Conduit"}, {250, 176, 431, "Avatar's Favor"}, {232, 175, 0, "Siphon"}, {296, 71, 0, "Mana Cede"},
+};
+static_assert(sizeof(SMN_JAS) / sizeof(SMN_JAS[0]) <= SmnState::JA_MAX, "every SMN ability fits SmnState::jas");
+static void compute_smn(GameState& gs) {
+    SmnState s{};
+    const int SMN = 15;
+    if (gs.me.mjob != SMN) { gs.smn = s; return; }
+    s.visible = true;
+    auto hasBuff = [&](int id) { for (int i = 0; i < gs.nbuff; ++i) if (gs.buffs[i] == (unsigned short)id) return true; return false; };
+    auto has = [&](unsigned a) { return a && a < 1024 && (gs.jaBits[a >> 3] & (1u << (a & 7))); };
+
+    // ---- the pet : its HP from its entity (memory, every frame), the 0x068 figure while the entity says nothing ----
+    const PetView pv = resolve_pet(gs);
+    if (pv.has) {
+        const BstPet& pet = bst_pet();
+        s.hasPet = true;
+        memcpy(s.name, pet.name, sizeof(s.name)); s.name[sizeof(s.name) - 1] = 0;
+        EntityVitals ev; const int hpp = (read_entities_by_id(&pv.id, 1, &ev) > 0 && ev.valid) ? ev.hpp : pet.hpp;
+        s.hpp = hpp < 0 ? 0 : (hpp > 100 ? 100 : hpp);
+        s.tp = pet.tp; s.dist = pv.dist;
+        s.avatar = smn_avatar_index(s.name);
+    }
+    s.mp = gs.me.mp; s.mpp = gs.me.mpp;
+
+    // ---- Rage, Ward and the job abilities this SMN has (jaBits ; all of them while that bitmap is unread), each one's
+    //      recast from the snapshot ----
+    for (const SmnJaDef& d : SMN_JAS) {
+        if (gs.jaOk && !has(d.abil)) continue;
+        SmnJa& j = s.jas[s.nja++];
+        j.abil = d.abil; j.label = d.label; j.status = d.status;
+        for (int i = 0; i < gs.nRecast; ++i) if (gs.recasts[i].kind == 0 && gs.recasts[i].recastId == d.recast) { j.recastSec = gs.recasts[i].sec; break; }
+        j.active = d.status && gs.buffsOk && hasBuff(d.status);
+    }
+
+    // ---- the pacts of the avatar out that the player knows (jaBits follows level and merits ; all of them while that
+    //      bitmap is unread), their MP cost from res ----
+    if (s.avatar >= 0 && !SMN_AVATARS[s.avatar].spirit)
+        for (int i = 0; i < SMN_PACTS_N && s.npacts < SmnState::PACTS_MAX; ++i) {
+            const SmnPactRow& p = SMN_PACTS[i];
+            if (p.avatar != s.avatar || (gs.jaOk && !has(p.abil))) continue;
+            SmnPact& d = s.pacts[s.npacts++];
+            d.abil = p.abil; d.ward = p.ward != 0;
+            if (const AbilRow* r = abil_info(p.abil)) { d.en = r->en; d.mp = (int)r->mp; }
+        }
+    gs.smn = s;
 }
 
 // The Sortie "Auto Widescan track" choice IN EFFECT for this character, for the aioupdate addon that sends the track
@@ -1625,6 +1707,7 @@ void poll_game_state(GameState& gs) {
     compute_grimoire(gs);   // SCH grimoire (book + charges + timer) from buffs / jobs / stratagem recast
     compute_bst(gs);        // BST pet + Ready charges + its moves (model/bst_state.cpp)
     compute_geo(gs);        // GEO luopan + aura + Entrust + MP + job abilities (model/geo_state.cpp)
+    compute_smn(gs);        // SMN avatar + Blood Pact recasts + job abilities + known pacts (smn_avatars_gen.h)
     publish_sortie_track(gs.me.id);   // the Sortie auto-track choice of THIS character, for the aioupdate addon
 
     // Last, with the snapshot complete : cross-check what the server said against what memory says. It
