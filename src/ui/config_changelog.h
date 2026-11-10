@@ -682,6 +682,10 @@ static const ChangeLine CL_88[] = {
       "*Timers : les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lance un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne." },
 };
 
+static const ChangeLine CL_98[] = {
+    { "*Fixed : the Magic and Ability cost boxes could stay empty after a game update.* After the FFXI update of November 10, 2026, AioHud looked for them again in the game's memory and took a counter that ticks on its own for the spell under your cursor, and the Ability box followed it. It now keeps only a value that changes when you move the cursor and then stays put, and it looks through many more places, nearest first. This version forgets the game addresses it had found and looks for them again : after updating, open Magic, then Abilities, and move the cursor over a few entries in each.",
+      "*Corrige : les boites de cout Magie et Ability pouvaient rester vides apres une mise a jour du jeu.* Apres la mise a jour FFXI du 10 novembre 2026, AioHud les a recherchees dans la memoire du jeu et a pris un compteur qui avance tout seul pour le sort sous ton curseur, et la boite Ability l'a suivi. Il ne garde plus qu'une valeur qui change quand tu bouges le curseur puis reste fixe, et il cherche a beaucoup plus d'endroits, les plus proches d'abord. Cette version oublie les adresses du jeu qu'elle avait trouvees et les recherche : apres la mise a jour, ouvre Magie, puis Abilities, et passe le curseur sur quelques lignes dans chacun." },
+};
 static const ChangeLine CL_97[] = {
     { "*Fixed : //unload AioHud could close the game.* Since the PlayOnline update of November 2026, unloading AioHud (an update does it too) could crash the game a moment later, after a long session. AioHud now leaves the game window in a state that stays safe whatever else is hooked on it. The update TO this version still runs the old unload : close the game and extract the zip by hand, or update right after logging in.",
       "*Corrige : //unload AioHud pouvait fermer le jeu.* Depuis la mise a jour PlayOnline de novembre 2026, decharger AioHud (une mise a jour le fait aussi) pouvait faire planter le jeu un instant apres, au bout d'une longue session. AioHud laisse maintenant la fenetre du jeu dans un etat sur, quoi qu'il y ait d'autre de branche dessus. La mise a jour VERS cette version passe encore par l'ancien unload : ferme le jeu et extrais le zip a la main, ou mets a jour juste apres t'etre connecte." },
@@ -772,6 +776,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.98", CL_98, (int)(sizeof(CL_98) / sizeof(CL_98[0])) },
     { "1.0.97", CL_97, (int)(sizeof(CL_97) / sizeof(CL_97[0])) },
     { "1.0.96", CL_96, (int)(sizeof(CL_96) / sizeof(CL_96[0])) },
     { "1.0.95", CL_95, (int)(sizeof(CL_95) / sizeof(CL_95[0])) },
