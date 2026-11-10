@@ -682,6 +682,16 @@ static const ChangeLine CL_88[] = {
       "*Timers : les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lance un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne." },
 };
 
+static const ChangeLine CL_99[] = {
+    { "*New : the Pet box for SMN (//aio config -> Pet -> SMN).* Your avatar or spirit in a disc, its HP as a ring and its TP as an inner arc, its name in its element's colour and its distance ; Blood Pact Rage and Ward and your SMN job abilities with their recast ; your MP ; and the pacts of that avatar you know, Rage then Ward, with their MP cost (red when you are short) and the skillchain a Rage opens. A spirit shows the spells it casts. The portrait goes on top of the box or beside it.",
+      "*Nouveau : la boite Pet pour SMN (//aio config -> Pet -> SMN).* Ton avatar ou ton esprit dans un disque, ses HP en anneau et son TP en arc interieur, son nom a la couleur de son element et sa distance ; Blood Pact Rage et Ward et tes job abilities SMN avec leur recast ; tes MP ; et les pacts de cet avatar que tu connais, Rage puis Ward, avec leur cout en MP (en rouge s'il t'en manque) et la skillchain qu'ouvre un Rage. Un esprit montre les sorts qu'il lance. Le portrait se place au-dessus de la boite ou a cote." },
+    { "*The preview's avatar is yours to pick*, to check every one of the 14 avatars and 8 spirits before you summon it.",
+      "*L'avatar de l'apercu se choisit*, pour verifier chacun des 14 avatars et 8 esprits avant de l'invoquer." },
+    { "*BST : your job abilities* (Reward, Call Beast, Spur, Killer Instinct, Unleash...) at the bottom of the box, with their recast, and *each Ready move's skillchain* in its own column between the move and its charges. Both can be turned off in the BST tab.",
+      "*BST : tes job abilities* (Reward, Call Beast, Spur, Killer Instinct, Unleash...) en bas de la boite, avec leur recast, et *la skillchain de chaque Ready move* dans sa propre colonne entre le move et ses charges. Les deux se coupent dans l'onglet BST." },
+    { "A pet's TP is now in the violet of your own TP bar : blue is MP's colour everywhere else.",
+      "Le TP d'un pet est maintenant du violet de ta propre barre de TP : le bleu est la couleur des MP partout ailleurs." },
+};
 static const ChangeLine CL_98[] = {
     { "*Fixed : the Magic and Ability cost boxes could stay empty after a game update.* After the FFXI update of November 10, 2026, AioHud looked for them again in the game's memory and took a counter that ticks on its own for the spell under your cursor, and the Ability box followed it. It now keeps only a value that changes when you move the cursor and then stays put, and it looks through many more places, nearest first. This version forgets the game addresses it had found and looks for them again : after updating, open Magic, then Abilities, and move the cursor over a few entries in each.",
       "*Corrige : les boites de cout Magie et Ability pouvaient rester vides apres une mise a jour du jeu.* Apres la mise a jour FFXI du 10 novembre 2026, AioHud les a recherchees dans la memoire du jeu et a pris un compteur qui avance tout seul pour le sort sous ton curseur, et la boite Ability l'a suivi. Il ne garde plus qu'une valeur qui change quand tu bouges le curseur puis reste fixe, et il cherche a beaucoup plus d'endroits, les plus proches d'abord. Cette version oublie les adresses du jeu qu'elle avait trouvees et les recherche : apres la mise a jour, ouvre Magie, puis Abilities, et passe le curseur sur quelques lignes dans chacun." },
@@ -776,6 +786,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.99", CL_99, (int)(sizeof(CL_99) / sizeof(CL_99[0])) },
     { "1.0.98", CL_98, (int)(sizeof(CL_98) / sizeof(CL_98[0])) },
     { "1.0.97", CL_97, (int)(sizeof(CL_97) / sizeof(CL_97[0])) },
     { "1.0.96", CL_96, (int)(sizeof(CL_96) / sizeof(CL_96[0])) },
