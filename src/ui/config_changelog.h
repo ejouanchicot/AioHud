@@ -682,6 +682,10 @@ static const ChangeLine CL_88[] = {
       "*Timers : les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lance un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne." },
 };
 
+static const ChangeLine CL_101[] = {
+    { "*Fixed : //aio rva no longer freezes the game.* It searched the whole game memory in one go and could freeze it for tens of seconds. It now looks near the addresses it knew first (instant), and only if that finds nothing does it search the whole memory in the background, a little each frame (about 20 seconds, the game keeps running). //aio rva full searches everything, in the background too.",
+      "*Corrige : //aio rva ne fige plus le jeu.* Il fouillait toute la memoire du jeu d'un coup et pouvait le figer plusieurs dizaines de secondes. Il cherche maintenant d'abord pres des adresses qu'il connaissait (instantane), et seulement si rien n'y est, il fouille toute la memoire en fond, un peu a chaque image (une vingtaine de secondes, le jeu continue). //aio rva full fouille tout, en fond aussi." },
+};
 static const ChangeLine CL_100[] = {
     { "*Fixed : the party selection cursor could stay off after a game update.* AioHud looks for it again by itself, but it can only prove it while you have something targeted, and it used to give up two minutes after loading. Loaded in a Mog House or in town with nothing targeted, the cursor stayed off for the whole session. It now keeps looking until you target someone : target a party member, or yourself, and the cursor comes back.",
       "*Corrige : le curseur de selection de party pouvait rester eteint apres une mise a jour du jeu.* AioHud le recherche tout seul, mais il ne peut le prouver que pendant que tu as une cible, et il abandonnait deux minutes apres le chargement. Charge en Mog House ou en ville sans cible, le curseur restait eteint toute la session. Il cherche maintenant jusqu'a ce que tu cibles quelqu'un : cible un membre de ta party, ou toi-meme, et le curseur revient." },
@@ -790,6 +794,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.101", CL_101, (int)(sizeof(CL_101) / sizeof(CL_101[0])) },
     { "1.0.100", CL_100, (int)(sizeof(CL_100) / sizeof(CL_100[0])) },
     { "1.0.99", CL_99, (int)(sizeof(CL_99) / sizeof(CL_99[0])) },
     { "1.0.98", CL_98, (int)(sizeof(CL_98) / sizeof(CL_98[0])) },
