@@ -317,6 +317,12 @@ struct LimbusWeek {
     int       pad = 0;        // keep the 8-byte member below aligned in the on-disk image
     long long stampUtc = 0;   // when it was observed (UTC epoch seconds) ; 0 = never
 };
+// Your units CAP per area (0 = Apollyon, 1 = Temenos), persisted after LimbusWeek in limbus.dat. The game only states
+// the cap of the area you stand in (an award's p4, or the Apollyon Operator's answer), and it grows with each cleared
+// run, so the last one heard is kept per area : the box shows both areas, each on its line with its cap (2026-11-11).
+struct LimbusCaps {
+    int cap[2] = { 0, 0 };    // 0 = never heard
+};
 // Quadrant labels per area, in slot order. Index 0 = Apollyon, 1 = Temenos.
 inline const char* limbus_slot_label(int area, int slot) {
     static const char* A[4] = { "NW5", "SW4", "NE5", "SE4" };
@@ -526,6 +532,7 @@ struct PartyState {
     void set_sortie_trace(int seconds);             // //aio sortielog [sec] ; 0 = off
     LimbusCoffers lc_[2];                        // [0] Apollyon (zone 38), [1] Temenos (zone 37) -- own file, see lc_save
     const LimbusCoffers& limbus_coffers(int area) const { return lc_[(area == 1) ? 1 : 0]; }
+    LimbusCaps    lcap_;                         // units cap per area, persisted after lw_ (read optionally)
     LimbusWeek    lw_;                           // account-wide weekly allowance, persisted in the same file
     // Runs left THIS week. -1 = NEVER OBSERVED, which the display must show as "?" rather than as a number :
     // the count only exists once the game has stated it, and inventing a plausible 5 there is indistinguishable
@@ -533,6 +540,8 @@ struct PartyState {
     // report LIMBUS_WEEK_RUNS -- that is derived from the Sunday-15:00-UTC reset, not assumed. Reads the wall
     // clock, so it is a query, not cached state.
     int limbus_runs_left() const;
+    int limbus_cap(int area) const { return (area == 0 || area == 1) ? lcap_.cap[area] : 0; }
+    void limbus_set_cap(int area, int cap);
     void zt_set_zone(int zone, const char* name);   // called each frame ; detects the Dynamis/Abyssea zone + resets on change
     void zt_recompute_dyn_limit();                  // 3600 + owned-KI time-extensions for the current Dynamis zone
     void on_2a(const unsigned char* p);             // 0x02A : Abyssea zone messages (lights + visitant time)

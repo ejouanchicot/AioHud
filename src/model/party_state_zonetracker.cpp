@@ -87,6 +87,11 @@ static bool char_cache_path(const char* leaf, char* out, int cap) {
     return true;
 }
 
+void PartyState::limbus_set_cap(int area, int cap) {
+    if ((area != 0 && area != 1) || cap <= 0 || cap > 10000000 || lcap_.cap[area] == cap) return;
+    lcap_.cap[area] = cap;
+    lc_save();
+}
 bool PartyState::limbus_add_chip(int area, const char* quad, int amtK) {
     const int a = (area == 1) ? 1 : 0, slot = limbus_slot_of(a, quad);
     if (slot < 0 || amtK <= 0) return false;
@@ -109,6 +114,7 @@ void PartyState::lc_save() const {
     WriteFile(h, &ver, sizeof(ver), &w, 0);
     WriteFile(h, lc_, sizeof(lc_), &w, 0);
     WriteFile(h, &lw_, sizeof(lw_), &w, 0);
+    WriteFile(h, &lcap_, sizeof(lcap_), &w, 0);   // appended, read optionally : LC_VER untouched (rule above)
     CloseHandle(h);
 }
 void PartyState::lc_load() {
@@ -121,7 +127,11 @@ void PartyState::lc_load() {
         lc_[0] = c[0]; lc_[1] = c[1];
         // The allowance is OPTIONAL on read : a file written by the previous layout stops here, and losing the
         // count is harmless (it re-reports as a full week until the game says otherwise).
-        if (ReadFile(h, &w, sizeof(w), &got, 0) && got == sizeof(w)) lw_ = w;
+        if (ReadFile(h, &w, sizeof(w), &got, 0) && got == sizeof(w)) {
+            lw_ = w;
+            LimbusCaps k{};                                  // optional too : files written before 1.0.102 stop at lw_
+            if (ReadFile(h, &k, sizeof(k), &got, 0) && got == sizeof(k)) lcap_ = k;
+        }
     }
     CloseHandle(h);
 }
@@ -664,6 +674,7 @@ void PartyState::zt_recompute_dyn_limit() {
 void PartyState::zt_on_character_changed() {
     zt_ = ZoneTracker{};
     lc_[0] = LimbusCoffers{}; lc_[1] = LimbusCoffers{};
+    lcap_ = LimbusCaps{};                   // so are the caps
     lw_ = LimbusWeek{};                     // the weekly allowance is per CHARACTER too -- lc_load() refills it from that character's file
     zt_.curZone = -1;                       // -1 -> the one-shot restore in zt_set_zone re-runs for this character
     for (int i = 0; i < 10; ++i) treasure_[i] = TreasureItem{};   // the pool is the previous character's too
@@ -788,35 +799,41 @@ void PartyState::zt_set_zone(int zone, const char* name) {
     }
     if (zt_.mode != 0) zt_save();                            // snapshot on entry into any tracked zone (Dynamis/Abyssea/Omen/Nyzul)
 }
-// THE APOLLYON OPERATOR. Units SPENT (an upgrade bought with them) come with no award message and no 0x118, so the
+// THE LIMBUS OPERATORS. Units SPENT (an upgrade bought with them) come with no award message and no 0x118, so the
 // box kept the last coffer's total (reported 2026-11-11). Asking the Operator for your units opens its dialog (0x034,
 // menu 130 in zone 38) and the server answers with a 0x05C whose parameters are [remaining, your units, your cap] -- captured
 // 2026-11-11 with //aio unitslog : 140000 / 120252 / 192000, the Operator said 120252 and 192000 is the current cap.
 // The first value is what the Operator calls "Remaining Apollyon units" -- most likely the same pool as the award's
-// p2 ("Remaining: <p2>") ; the box does not show it, so it is not read. Temenos's Operator has not been captured : there
-// the answer is only logged, until a capture says it has the same shape.
-static const int      LB_OPERATOR_MENU = 130;
+// p2 ("Remaining: <p2>") ; the box does not show it, so it is not read. Temenos's Operator (menu 1032 in zone 37)
+// answers with the same shape, captured 2026-11-12 : 123840 / 62545 / 267000, the Operator said 62545 / 267000.
+static const int      LB_OPERATOR_MENU = 130;            // Apollyon (zone 38)
+static const int      LB_OPERATOR_MENU_TEM = 1032;       // Temenos (zone 37)
 static const unsigned LB_OPERATOR_MS = 60000;
 void PartyState::on_05c(const unsigned char* p) {
-    if (!lbOperatorMs_ || model_now_ms() - lbOperatorMs_ > LB_OPERATOR_MS) return;
+    // The stamp is forced odd so 0 can mean "no dialog" : compare from its even floor, or an even clock reads it as
+    // one ms in the FUTURE and the unsigned age wraps -- half of all answers were dropped that way (2026-11-12).
+    if (!lbOperatorMs_ || model_now_ms() - (lbOperatorMs_ & ~1u) > LB_OPERATOR_MS) return;
     if (pkt_short(p, 0x10)) return;                        // reads params[0..2] = 0x04..0x0F
     const int units = (int)pkt_u32(p, 0x08), cap = (int)pkt_u32(p, 0x0C);
-    if (zt_.curZone != 38) {
+    if (zt_.curZone != 37 && zt_.curZone != 38) {
         windower::debug::log("LIMBUS operator answer in zone %d (not read) : %d / %d / %d", zt_.curZone, (int)pkt_u32(p, 0x04), units, cap);
         return;
     }
+    const bool tem = (zt_.curZone == 37);
     if (cap <= 0 || cap > 10000000 || units < 0 || units > cap) {
         windower::debug::log("LIMBUS operator answer not a balance : %d / %d / %d", (int)pkt_u32(p, 0x04), units, cap);
         return;
     }
     lbOperatorMs_ = 0;
-    zt_.limbusApollyon = units; zt_.limbusUnitsCap = cap;
+    if (tem) zt_.limbusTemenos = units; else zt_.limbusApollyon = units;
+    zt_.limbusUnitsCap = cap;
+    limbus_set_cap(tem ? 1 : 0, cap);
     zt_.limbusUnits = -1;                                  // the Operator's answer is the balance NOW (as a 0x118 would be)
-    windower::debug::log("LIMBUS Apollyon Operator : %d units, cap %d", units, cap);
+    windower::debug::log("LIMBUS %s Operator : %d units, cap %d", tem ? "Temenos" : "Apollyon", units, cap);
 }
 void PartyState::on_034(const unsigned char* p) {           // 0x034 NPC interaction : the Rabao conflux entry menu -> which Sheol (A/B/C)
-    if (zt_.curZone == 38 && !pkt_short(p, 0x2E) && pkt_u16(p, 0x2C) == LB_OPERATOR_MENU) { lbOperatorMs_ = model_now_ms() | 1u; return; }
-    if (zt_.curZone == 37 && !pkt_short(p, 0x2E)) windower::debug::log("LIMBUS Temenos NPC menu %u", (unsigned)pkt_u16(p, 0x2C));
+    if ((zt_.curZone == 37 || zt_.curZone == 38) && !pkt_short(p, 0x2E) &&      // zone FIRST : a short 0x034 elsewhere is not a reject
+        (int)pkt_u16(p, 0x2C) == ((zt_.curZone == 38) ? LB_OPERATOR_MENU : LB_OPERATOR_MENU_TEM)) { lbOperatorMs_ = model_now_ms() | 1u; return; }
     if (zt_.curZone != 247) return;                        // only the Rabao (247) entry menu
     if (pkt_short(p, 0x2E)) return;                       // truncated -> don't read garbage past the real end (reads the u16 @0x2C)
     if (pkt_u16(p, 0x2C) != 173) return;                   // Menu ID 173 = the Odyssey conflux
@@ -1205,6 +1222,7 @@ void PartyState::on_2a(const unsigned char* p) {            // 0x02A : Sheol seg
                     isCoffer = true;   // "Coffer" (EN) / "Coffre" (FR)
             }
             zt_.limbusUnits = p3; zt_.limbusUnitsCap = p4;
+            limbus_set_cap((zt_.curZone == 37) ? 1 : 0, p4);
             // total BEFORE this (first-seen) payout -- or before the one that opened the pair that proved a
             // moved id, so the payout spent proving it is still banked in the run total.
             if (zt_.limbusUnitBase < 0) zt_.limbusUnitBase = (ubase >= 0) ? ubase : (p3 - p1);

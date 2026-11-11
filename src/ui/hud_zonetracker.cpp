@@ -351,10 +351,10 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     // Floor line + gauge come from the 0x075 bar array (game-data/zone-tracker.md) ; each is drawn only when known. =====
     if ((preview || editing) ? (vz == 5) : (party().zone_tracker().mode == 6)) {
         char area[16] = {0}, quad[8] = {0};
-        int level = 0, progress = -1, floor = -1, tem = -1, apo = -1, runUnits = 0, weekLeft = -1;
+        int level = 0, progress = -1, floor = -1, tem = -1, apo = -1, runUnits = 0, weekLeft = -1, capT = 0, capA = 0;   // caps : 0 = never heard
         int areaIdx = 0; unsigned char slotK[4] = {0};      // 0 = Apollyon, 1 = Temenos ; slotK = payout in k per quadrant
         if (preview || editing) { const char* a = "Apollyon"; int k = 0; for (; a[k] && k < 15; ++k) area[k] = a[k]; area[k] = 0;
-                                  level = 119; quad[0] = 'S'; quad[1] = 'W'; floor = 3; progress = 62; tem = 1200; apo = 103380;
+                                  level = 119; quad[0] = 'S'; quad[1] = 'W'; floor = 3; progress = 62; tem = 1200; apo = 103380; capT = 150000; capA = 192000;
                                   runUnits = 3450; weekLeft = 2;
                                   slotK[0] = 3; slotK[1] = 3; }                          // NW5 + SW4 done at 3k
         else {
@@ -370,6 +370,10 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             // no matter how much Temenos was run. Route it by zone : 37 = Temenos, 38 = Apollyon.
             if (zt.limbusUnits >= 0) { if (zt.curZone == 37) tem = zt.limbusUnits; else apo = zt.limbusUnits; }
             runUnits = zt.limbusRunUnits;
+            // Your cap per area : the last award's p4 in that area, or the Apollyon Operator's answer, remembered in
+            // limbus.dat because the game only states the cap of the area you stand in (asked 2026-11-11 : both
+            // areas, each on its line, "so we know if we are close to capped").
+            capT = party().limbus_cap(1); capA = party().limbus_cap(0);
             // NOT zt.limbusWeekLeft : zt_ is wiped on every zone change, so leaving Limbus and coming back
             // showed no count at all until the game happened to announce it again. limbus_runs_left() reads the
             // value persisted in limbus.dat and applies the Sunday-15:00-UTC rollover, so it is ALWAYS a true
@@ -412,16 +416,24 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             else if (C.ztLbFloor && floor >= 0)            snprintf(pctLine, sizeof(pctLine), "#%d  \xC2\xB7  %d%%", floor, progress);
             else                                           snprintf(pctLine, sizeof(pctLine), "%d%%", progress);
         }
-        // Kept as THREE pieces so the currency of the zone you stand in carries the accent while the other stays
-        // faded. Sized for the worst case and written with snprintf : the totals run to 6 digits and each
-        // "\xC2\xB7" costs TWO bytes, which overflowed a 32-byte buffer here (103464 rendered as "1034").
-        char curTv[24] = {0}, curSep[8] = {0}, curAv[24] = {0};
+        // ONE LINE PER AREA ("Temenos 12000/150000", "Apollyon 120252/192000"), the area you stand in carrying the
+        // accent while the other stays faded. Sized for the worst case and written with snprintf : the totals run
+        // to 7 digits each side of the slash (a 32-byte buffer once cut 103464 to "1034").
+        char curTv[32] = {0}, curAv[32] = {0};
         const bool hasCur = C.ztLbCur && (tem >= 0 || apo >= 0);
         // Show ONLY what is known. A currency we have never received (no 0x118 since load -- it fires on zoning,
         // never mid-run) must not be rendered as "0" : that reads as a real balance of zero.
-        if (tem >= 0) snprintf(curTv, sizeof(curTv), " %d", tem);
-        if (apo >= 0) snprintf(curAv, sizeof(curAv), " %d", apo);
-        if (curTv[0] && curAv[0]) snprintf(curSep, sizeof(curSep), "  \xC2\xB7  ");
+        if (tem >= 0) { if (capT > 0) snprintf(curTv, sizeof(curTv), " %d/%d", tem, capT); else snprintf(curTv, sizeof(curTv), " %d", tem); }
+        if (apo >= 0) { if (capA > 0) snprintf(curAv, sizeof(curAv), " %d/%d", apo, capA); else snprintf(curAv, sizeof(curAv), " %d", apo); }
+        // Close to the cap : the amount turns orange from 90 %, red at the cap -- units past it are lost. Shown in
+        // full colour even on the faded line : a warning about the other area is still a warning.
+        auto cap_col = [&](int v, int c) -> u32 {
+            if (c <= 0 || v < 0) return 0u;
+            if (v >= c) return 0xFFEF5350u;
+            return ((long long)v * 10 >= (long long)c * 9) ? orange : 0u;
+        };
+        const u32 capColT = cap_col(tem, capT), capColA = cap_col(apo, capA);
+        const int nCur = (curTv[0] ? 1 : 0) + (curAv[0] ? 1 : 0);
         // ALWAYS shown, zero included : "+0" is a real answer (nothing banked yet this run), unlike the currencies
         // where a missing 0x118 means UNKNOWN and must not be printed as a balance.
         char runLine[64] = {0};
@@ -448,8 +460,9 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         const float chipBlockH = dotD + 4.0f * S + chipLblZ + 3.0f * S;
         float contentW = fH->measure("Limbus", zH);
         if (fB->measure(nameLine, zB) > contentW) contentW = fB->measure(nameLine, zB);
-        const float curW = hasCur ? (fC->measure(curTv[0] ? "Temenos" : "", zC) + fC->measure(curTv, zC) + fC->measure(curSep, zC)
-                                   + fC->measure(curAv[0] ? "Apollyon" : "", zC) + fC->measure(curAv, zC)) : 0.0f;
+        const float curWT = curTv[0] ? fC->measure("Temenos", zC) + fC->measure(curTv, zC) : 0.0f;
+        const float curWA = curAv[0] ? fC->measure("Apollyon", zC) + fC->measure(curAv, zC) : 0.0f;
+        const float curW = hasCur ? (curWT > curWA ? curWT : curWA) : 0.0f;
         if (curW > contentW) contentW = curW;
         if (hasRun && fR->measure(runLine, zR) > contentW) contentW = fR->measure(runLine, zR);
         if (hasChip && chipRowW > contentW) contentW = chipRowW;
@@ -460,7 +473,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         const float boxW = contentW + 2.0f * pad;
         const float boxH = pad + (showHdr ? headH + gap : 0.0f) + (hasName ? lineH : 0.0f)
                          + (progress >= 0 ? barH + gap : 0.0f)
-                         + (hasCur ? curLineH : 0.0f) + (hasRun ? runLineH : 0.0f)
+                         + (hasCur ? curLineH * (float)nCur : 0.0f) + (hasRun ? runLineH : 0.0f)
                          + (hasChip ? chipBlockH : 0.0f) + pad;
         if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }
         float px, py;
@@ -492,18 +505,18 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             const u32 cVal = zt_col(ZT_LB_CUR, white), cHere = zt_col(ZT_HEADER, orange);
             const u32 cFade = (zt_col(ZT_LB_CUR, dim) & 0x00FFFFFFu) | 0x66000000u;
             const bool inTem = (areaIdx == 1);
-            const float ccy = cy + curLineH * 0.5f;
-            float nx = cx - curW * 0.5f;
-            if (curTv[0]) {
+            if (curTv[0]) {                                     // each line centred on its own width
+                float nx = cx - curWT * 0.5f; const float ccy = cy + curLineH * 0.5f;
                 nx += fC->draw_lv(dev, nx, ccy, "Temenos", zC, inTem ? cHere : cFade, strk, oC);
-                nx += fC->draw_lv(dev, nx, ccy, curTv, zC, inTem ? cVal : cFade, strk, oC);
+                fC->draw_lv(dev, nx, ccy, curTv, zC, capColT ? capColT : (inTem ? cVal : cFade), strk, oC);
+                cy += curLineH;
             }
-            if (curSep[0]) nx += fC->draw_lv(dev, nx, ccy, curSep, zC, cFade, strk, oC);
             if (curAv[0]) {
+                float nx = cx - curWA * 0.5f; const float ccy = cy + curLineH * 0.5f;
                 nx += fC->draw_lv(dev, nx, ccy, "Apollyon", zC, inTem ? cFade : cHere, strk, oC);
-                fC->draw_lv(dev, nx, ccy, curAv, zC, inTem ? cFade : cVal, strk, oC);
+                fC->draw_lv(dev, nx, ccy, curAv, zC, capColA ? capColA : (inTem ? cFade : cVal), strk, oC);
+                cy += curLineH;
             }
-            cy += curLineH;
         }
         if (hasRun) { fR->begin(dev); fR->draw_c(dev, cx, cy + runLineH * 0.5f, runLine, zR, zt_col(ZT_LB_RUN, white), strk, oR); cy += runLineH; }
         if (hasChip) {                                     // the four quadrant coffers : round dot + fixed label

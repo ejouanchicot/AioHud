@@ -446,6 +446,33 @@ void test_packets() {
         CHECK_EQ(zt().limbusApollyon, 120252);
         CHECK_EQ(zt().limbusUnitsCap, 192000);
         CHECK_EQ(zt().limbusUnits, -1);                                  // the box now shows the Operator's balance
+        CHECK_EQ(party().limbus_cap(0), 192000);                         // remembered for the Apollyon line
+    }
+
+    SECTION("zone tracker limbus : the Temenos Operator's answer gives your Temenos units and cap (2026-11-12 capture)");
+    {   // Mutation : the answer filed under Apollyon (`limbus_set_cap(tem ? 1 : 0` -> `limbus_set_cap(0`).
+        // Mutation : the Temenos menu not armed (`LB_OPERATOR_MENU_TEM` check dropped) -- nothing read.
+        fresh(); enter(Z_TEMENOS);
+        Packet ev; pkt_header(ev, 0x034, 0x34);
+        put_u32(ev, 0x04, 0x010251FFu); put_u16(ev, 0x28, 0x1FF); put_u16(ev, 0x2A, 37); put_u16(ev, 0x2C, 1032);
+        deliver(ev);
+        Packet ans; pkt_header(ans, 0x05C, 0x24);
+        put_u32(ans, 0x04, 123840); put_u32(ans, 0x08, 62545); put_u32(ans, 0x0C, 267000);
+        deliver(ans);
+        CHECK_EQ(zt().limbusTemenos, 62545);
+        CHECK_EQ(party().limbus_cap(1), 267000);
+        CHECK_EQ(party().limbus_cap(0), 0);                              // Apollyon's cap untouched
+    }
+
+    SECTION("zone tracker limbus : each area keeps its own cap, from that area's award, across a zone change");
+    {   // Mutation : the cap filed under the wrong area (`(zt_.curZone == 37) ? 1 : 0` -> `? 0 : 1`).
+        // Mutation : the cap kept in zt_ only (wiped on zoning) -- the other area's line lost its cap.
+        fresh(); enter(Z_TEMENOS);
+        deliver(pkt_zone_msg(7240, 3000, 0, 12000, 150000));
+        enter(Z_APOLLYON);
+        deliver(pkt_zone_msg(7248, 3000, 0, 120252, 192000));
+        CHECK_EQ(party().limbus_cap(1), 150000);
+        CHECK_EQ(party().limbus_cap(0), 192000);
     }
 
     SECTION("zone tracker 0x118 : a truncated currency2 gives nothing (still 'never seen', not a number)");

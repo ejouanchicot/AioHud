@@ -682,6 +682,12 @@ static const ChangeLine CL_88[] = {
       "*Timers : les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lance un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne." },
 };
 
+static const ChangeLine CL_102[] = {
+    { "*Fixed : no more bug report files every session.* Three checks wrote one each time you played : the Apollyon units message changed number with a game update (AioHud found it again, but only at the second payout of each run), the table of debuffs on mobs was too small for Limbus, where dozens of mobs get debuffed at once (32 -> 64), and a buff you keep up for hours by recasting it, like a COR's roll, was taken for an entry that is never cleaned up.",
+      "*Corrige : plus de fichiers bug report a chaque session.* Trois controles en ecrivaient un a chaque fois que tu jouais : le message des units d'Apollyon a change de numero avec une mise a jour du jeu (AioHud le retrouvait, mais seulement au deuxieme gain de chaque run), la table des debuffs sur les mobs etait trop petite pour Limbus, ou des dizaines de mobs sont debuffes a la fois (32 -> 64), et un buff que tu gardes des heures en le relancant, comme un roll de COR, etait pris pour une entree jamais nettoyee." },
+    { "*Limbus box : your units after an upgrade.* Units spent on an upgrade did not leave the box, which kept the total of the last coffer. Ask the Operator for your units (Apollyon or Temenos) : the box takes your balance and your cap from its answer at once. Temenos and Apollyon now each have their line with your cap (Temenos 62545/267000), remembered between sessions : the amount turns orange from 90 % and red at the cap, where units are lost.",
+      "*Box Limbus : tes units apres un upgrade.* Les units depensees pour un upgrade ne sortaient pas de la box, qui gardait le total du dernier coffre. Demande tes units a l'Operator (Apollyon ou Temenos) : la box prend aussitot ton solde et ton plafond dans sa reponse. Temenos et Apollyon ont maintenant chacun leur ligne avec ton plafond (Temenos 62545/267000), garde d'une session a l'autre : le chiffre passe en orange a partir de 90 % et en rouge au plafond, ou les units sont perdues." },
+};
 static const ChangeLine CL_101[] = {
     { "*Fixed : //aio rva no longer freezes the game.* It searched the whole game memory in one go and could freeze it for tens of seconds. It now looks near the addresses it knew first (instant), and only if that finds nothing does it search the whole memory in the background, a little each frame (about 20 seconds, the game keeps running). //aio rva full searches everything, in the background too.",
       "*Corrige : //aio rva ne fige plus le jeu.* Il fouillait toute la memoire du jeu d'un coup et pouvait le figer plusieurs dizaines de secondes. Il cherche maintenant d'abord pres des adresses qu'il connaissait (instantane), et seulement si rien n'y est, il fouille toute la memoire en fond, un peu a chaque image (une vingtaine de secondes, le jeu continue). //aio rva full fouille tout, en fond aussi." },
@@ -794,6 +800,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.102", CL_102, (int)(sizeof(CL_102) / sizeof(CL_102[0])) },
     { "1.0.101", CL_101, (int)(sizeof(CL_101) / sizeof(CL_101[0])) },
     { "1.0.100", CL_100, (int)(sizeof(CL_100) / sizeof(CL_100[0])) },
     { "1.0.99", CL_99, (int)(sizeof(CL_99) / sizeof(CL_99[0])) },
