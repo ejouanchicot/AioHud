@@ -262,13 +262,13 @@ void test_packets() {
         enter(Z_APOLLYON);
         CHECK_EQ(zt().mode, 6);
         deliver(pkt_battlefield({ { -1, "Apollyon_Lv119" }, { 50, "SW_Floor_#4" } }));
-        deliver(pkt_zone_msg(7247, 3000, 0, 15000, 100000, 0x123));      // "Acquired Apollyon units: 3000 ... Total: 15000/100000"
+        deliver(pkt_zone_msg(7248, 3000, 0, 15000, 100000, 0x123));      // "Acquired Apollyon units: 3000 ... Total: 15000/100000"
         CHECK_EQ(zt().limbusUnits, 15000); CHECK_EQ(zt().limbusUnitsCap, 100000);
         CHECK_EQ(zt().limbusRunUnits, 3000);
         CHECK_EQ(zt().limbusCofferAmt, 3000); CHECK_STR(zt().limbusCofferAt, "SW #4");
         CHECK_EQ(party().limbus_coffers(0).slotK[1], 3);                 // SW = slot 1 : a red 3k
         deliver(pkt_battlefield({ { -1, "Apollyon_Lv119" }, { 10, "NW_Floor_#5" } }));
-        deliver(pkt_zone_msg(7247, 1000, 0, 16000, 100000, 0x124));      // the same id, from '???'
+        deliver(pkt_zone_msg(7248, 1000, 0, 16000, 100000, 0x124));      // the same id, from '???'
         CHECK_EQ(zt().limbusRunUnits, 4000);                             // units are units, whoever paid them
         CHECK_EQ(zt().limbusCofferAmt, 3000);                            // ...but no coffer
         CHECK_EQ(party().limbus_coffers(0).slotK[0], 0);                 // NW stays unopened
@@ -291,7 +291,7 @@ void test_packets() {
         fresh(); enter(Z_APOLLYON);
         deliver(pkt_zone_msg(7281, 3));                                  // Temenos's id, heard in Apollyon
         CHECK_EQ(party().limbus_runs_left(), -1);
-        deliver(pkt_zone_msg(7288, 4));                                  // Apollyon's : its award 7247 + 41
+        deliver(pkt_zone_msg(7289, 4));                                  // Apollyon's : its award 7248 + 41
         CHECK_EQ(party().limbus_runs_left(), 4);
     }
 
@@ -302,7 +302,7 @@ void test_packets() {
         entity(0x130, 0x0100F130u, "Temenos Coffer #2");
         enter(Z_TEMENOS);
         deliver(pkt_battlefield({ { -1, "Temenos_Lv135" }, { 20, "West_Tower_F4" } }));
-        deliver(pkt_zone_msg(7247, 3000, 0, 9000, 100000, 0x130));       // Apollyon's award id, heard in Temenos
+        deliver(pkt_zone_msg(7248, 3000, 0, 9000, 100000, 0x130));       // Apollyon's award id, heard in Temenos
         CHECK_EQ(zt().limbusUnits, -1);
         deliver(pkt_zone_msg(7240, 3000, 0, 9000, 100000, 0x130));
         CHECK_EQ(zt().limbusUnits, 9000);
@@ -415,6 +415,37 @@ void test_packets() {
         CHECK_EQ(zt().segBank, 947485);
         CHECK_EQ(zt().limbusTemenos, 12000);
         CHECK_EQ(zt().limbusApollyon, 34000);
+    }
+
+    SECTION("zone tracker 0x118 : a currency2 after an award replaces the award's total (units spent show)");
+    {   // Mutation : the award total kept over a newer 0x118 (`zt_.limbusUnits = -1;` dropped from on_118) -- units spent
+        // on an upgrade never left the box, which showed the total of the last coffer.
+        fresh(); enter(Z_APOLLYON);
+        deliver(pkt_zone_msg(7248, 3000, 0, 15000, 100000));
+        CHECK_EQ(zt().limbusUnits, 15000);
+        deliver(pkt_currency2(947485, 12000, 9000));                     // 6000 spent : the server's balance now
+        CHECK_EQ(zt().limbusUnits, -1);
+        CHECK_EQ(zt().limbusApollyon, 9000);
+        deliver(pkt_zone_msg(7248, 3000, 0, 12000, 100000));             // the next award takes over again
+        CHECK_EQ(zt().limbusUnits, 12000);
+    }
+
+    SECTION("zone tracker limbus : the Apollyon Operator's answer gives your units and your cap (2026-11-11 capture)");
+    {   // Mutation : the units read from the first parameter (`pkt_u32(p, 0x08)` -> `0x04`) -- 140000, not your 120252.
+        // Mutation : the answer read without the Operator's dialog (`if (!lbOperatorMs_ ...) return;` dropped).
+        fresh(); enter(Z_APOLLYON);
+        deliver(pkt_zone_msg(7248, 3000, 0, 150000, 192000));            // the last coffer's total, before an upgrade
+        Packet ans; pkt_header(ans, 0x05C, 0x24);
+        put_u32(ans, 0x04, 140000); put_u32(ans, 0x08, 120252); put_u32(ans, 0x0C, 192000);
+        deliver(ans);                                                    // no dialog open : not ours
+        CHECK_EQ(zt().limbusApollyon, -1);
+        Packet ev; pkt_header(ev, 0x034, 0x34);
+        put_u32(ev, 0x04, 0x010262BFu); put_u16(ev, 0x28, 0x2BF); put_u16(ev, 0x2A, 38); put_u16(ev, 0x2C, 130);
+        deliver(ev);
+        deliver(ans);
+        CHECK_EQ(zt().limbusApollyon, 120252);
+        CHECK_EQ(zt().limbusUnitsCap, 192000);
+        CHECK_EQ(zt().limbusUnits, -1);                                  // the box now shows the Operator's balance
     }
 
     SECTION("zone tracker 0x118 : a truncated currency2 gives nothing (still 'never seen', not a number)");

@@ -428,6 +428,25 @@ static int g_omenRaw = 0;
 // packet bodies would burn its budget in seconds and still miss the floor change.
 static unsigned g_omenPkt[512] = {0};
 static bool     g_omenPktOn = false;
+// //aio unitslog [sec] : every packet that could carry a currency balance or an NPC's answer, raw, for a while. Made for
+// the Limbus box (2026-11-11) : after units are SPENT no award message follows, and which packet then carries the new
+// balance -- the 0x118 currency packet, or the Apollyon Operator's own dialog -- has never been captured.
+static unsigned g_unitsLogUntil = 0;
+static void units_log_packet(int id, const unsigned char* pkt) {
+    if (!g_unitsLogUntil) return;
+    if ((int)(GetTickCount() - g_unitsLogUntil) >= 0) {
+        g_unitsLogUntil = 0;
+        windower::debug::log("UNITS capture ended");
+        return;
+    }
+    if (id != 0x02A && id != 0x032 && id != 0x033 && id != 0x034 && id != 0x036 && id != 0x05C && id != 0x065 && id != 0x113 && id != 0x118) return;
+    unsigned hdr = 0; __try { hdr = (unsigned)pkt[0] | ((unsigned)pkt[1] << 8); } __except (EXCEPTION_EXECUTE_HANDLER) { return; }
+    int len = (int)((hdr >> 9) & 0x7F) * 4; if (len < 4) len = 4; if (len > 256) len = 256;
+    char hex[256 * 3 + 1]; int o = 0;
+    __try { for (int i = 0; i < len; ++i) o += _snprintf(hex + o, sizeof(hex) - o, "%02X ", pkt[i]); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    hex[sizeof(hex) - 1] = 0;
+    windower::debug::log("UNITS in 0x%03X len=%d : %s", id, len, hex);
+}
 // The zone-tracker mode the census last saw, so that LEAVING Omen can dump itself. The 2026-07-30 capture lost
 // the histogram outright because the run ended and nobody typed //aio omenstate -- a probe whose only output
 // depends on a human remembering a second command is a probe that reports nothing.
@@ -473,6 +492,7 @@ void aio_plugin_packet_in(u32 a, u32 b, u32 c, u32 d)
     // If it is ever revisited: copy a fixed 512 bytes rather than the declared length, and re-measure slot 11
     // first -- the thread identity varies per session, so one capture proves nothing on its own.
     feed_packet(id, pkt);
+    units_log_packet(id, pkt);
 
     // //aio omenparse : count, don't dump. Only inside Omen (mode 3), so the histogram is about THIS content and
     // not about standing in a city. Read back by //aio omenstate -- or, since 2026-07-30, by simply leaving.
@@ -1437,6 +1457,19 @@ static void aio_command_dispatch(const char* cmd)
     if (strstr(buf, "oblog")) {   // //aio oblog -> ONE-frame dump of the ally-buff pipeline : prune -> model -> groups -> rows -> focus
         aio::timers_oblog_arm();
         g_host.console().print(aio::tr(">>> AioHud : oblog ARMED -- the next frame dumps the ally-buff pipeline to Windower\\plugins\\aiohud_debug.log (OBPRUNE + OBLOG blocks) <<<", ">>> AioHud : oblog ARME -- la prochaine frame dumpe le pipeline des buffs allies dans Windower\\plugins\\aiohud_debug.log (blocs OBPRUNE + OBLOG) <<<"));
+        return;
+    }
+    // //aio unitslog [sec] -> raw currency / NPC-dialog packets for sec seconds (default 180, 0 = off).
+    if (strstr(buf, "unitslog")) {
+        int sec = 180; { const char* a = strstr(buf, "unitslog") + 8; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
+        if (sec > 600) sec = 600;
+        g_unitsLogUntil = sec > 0 ? ((GetTickCount() + (unsigned)sec * 1000u) | 1u) : 0;
+        windower::debug::log("UNITS capture %s (%d s)", sec > 0 ? "ON" : "off", sec);
+        char m[220];
+        _snprintf(m, sizeof(m), aio::tr(">>> AioHud : units capture %s -- talk to the Operator, then send aiohud_debug.log (UNITS lines) <<<",
+                                        ">>> AioHud : capture des units %s -- parle a l'Operator, puis envoie aiohud_debug.log (lignes UNITS) <<<"),
+                  sec > 0 ? aio::tr("ON", "ACTIVE") : aio::tr("off", "arretee"));
+        m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
     }
     // NB : NOT "songlog" -- aiohud_probes.cpp already owns that name, and probes::command() runs FIRST (above),

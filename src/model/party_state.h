@@ -117,7 +117,7 @@ struct BuffSet { unsigned id = 0; int n = 0; unsigned seen = 0; unsigned short i
 // debuff a whole same-name pack in one cast, and each mob needs its OWN slot ; too few slots made packs collapse
 // into slot 0, so two mobs "shared" it and each recast wiped the other (the ping-pong depop). touchMs = last time
 // this set was updated -> on overflow we evict the OLDEST set, never an actively-debuffed target.
-static const int DEBUFF_SLOTS = 32;
+static const int DEBUFF_SLOTS = 64;   // was 32 : saturated in Limbus (CAP.SATURATED, 2026-11-10/11, Temenos and Apollyon), where AoE debuffs dozens of mobs inside ten minutes
 struct DebuffSet { unsigned id = 0; int n = 0; unsigned short ids[16] = {}; unsigned startMs[16] = {}; unsigned baseMs[16] = {}; unsigned char self[16] = {}; unsigned short spell[16] = {}; unsigned char shot[16] = {}; unsigned char th = 0; unsigned char lastHpp = 100; unsigned touchMs = 0; };   // lastHpp : last seen HP% of this mob -> detect death (0) / a fresh mob that RECYCLED this server id (near-dead -> near-full = new spawn) so Apex mobs never inherit a dead mob's debuffs   // baseMs[i] : the casting spell's base duration (tb_debuff_gen) ; self[i] : 1 = YOU cast it (exact wear-off + real timer), 0 = another caster (no wear-off -> kept as "???") ; spell[i] : the SPELL that landed it, kept because the status alone loses the tier (Dia I..V all report status 134) -- shot[i] : a COR Quick Draw shot has REINFORCED this debuff (Light Shot on Dia / Dark Shot on Bio : +2.73% Def/Att down, caps after ONE shot -- it does NOT raise the tier, contrary to a widespread shorthand) ; th : Treasure Hunter level applied to this mob (0 = none)
 
 // POINTWATCH (module) : the XP / CP / ML progression bar + Merits, ported from AioHUD's pointwatch engine
@@ -235,14 +235,14 @@ struct ZoneTracker {
     // (the Sheol handler documents 40005 -> 40015 -> 40016 -> 40017 on 2026-08-12, and now DERIVES its id from
     // the payout arithmetic rather than declaring one -- note the patch REUSED the old number for an unrelated
     // message rather than retiring it, so "the id still arrives" proves nothing), so they are matched MASKED :
-    //   7247 : "Acquired Apollyon units: <p1>. Remaining: <p2>. Total: <p3>/<p4>"   -> live currency, no 0x118 needed
+    //   7248 : "Acquired Apollyon units: <p1>. Remaining: <p2>. Total: <p3>/<p4>"   -> live currency, no 0x118 needed
     //   award + 41 : "You may collect data <p1> more times"                         -> unique-data allowance
-    //                (Apollyon 7288 ; Temenos 7280, 7281 since the 2026-09 patch -- LIMBUS_WEEK_FROM_AWARD)
+    //                (Apollyon 7289 ; Temenos 7280, 7281 since the 2026-09 patch -- LIMBUS_WEEK_FROM_AWARD)
     //   7069 / 7070 : key item gained / lost -- ids 9956..9998, and the NAME carries the floor ("Apollyon SW #4",
     //                 which cross-checks bar1's "SW_Floor_#4" label from the 0x075 block). Bulk 7070 = run over.
     //                 Temenos : 7070 / 7071 since the 2026-09 patch (tape 2026-09-22 : 7070 per floor, bulk 7071 at the end).
-    int      limbusUnits = -1;      // your running total (7247 p3) ; -1 = not seen this session
-    int      limbusUnitsCap = 0;    // your cap (7247 p4)
+    int      limbusUnits = -1;      // your running total (7248 p3) ; -1 = not seen this session
+    int      limbusUnitsCap = 0;    // your cap (7248 p4)
     int      limbusUnitBase = -1;   // total BEFORE this run's first payout ; -1 = not baselined yet
     int      limbusRunUnits = 0;    // units banked THIS run = limbusUnits - limbusUnitBase. Derived from the
                                     // AUTHORITATIVE running total (p3), never accumulated from the per-event p1 --
@@ -521,6 +521,7 @@ struct PartyState {
     // distance / compass every 5 s. SHIPPED on purpose : the only way to compare the box with another tool line by
     // line on a real run. 0 = off ; else the model_now_ms() deadline.
     unsigned soTraceUntil_ = 0;
+    unsigned lbOperatorMs_ = 0;   // when the Apollyon Operator's dialog opened (0x034) ; its 0x05C answer is read within LB_OPERATOR_MS
     bool sortie_trace_on() const;                   // party_state_zonetracker.cpp
     void set_sortie_trace(int seconds);             // //aio sortielog [sec] ; 0 = off
     LimbusCoffers lc_[2];                        // [0] Apollyon (zone 38), [1] Temenos (zone 37) -- own file, see lc_save
@@ -537,7 +538,8 @@ struct PartyState {
     void on_2a(const unsigned char* p);             // 0x02A : Abyssea zone messages (lights + visitant time)
     void on_55(const unsigned char* p);             // 0x055 : key items -> the Dynamis granules
     void on_118(const unsigned char* p);            // 0x118 currency2 : Mog Segments (@0x8C) -> Odyssey segment run delta (mode 5)
-    void on_034(const unsigned char* p);            // 0x034 NPC interaction : Rabao conflux menu -> Sheol A/B/C (sheolzone)
+    void on_034(const unsigned char* p);
+    void on_05c(const unsigned char* p);            // 0x05C event update : the Apollyon Operator's answer -> your units and cap            // 0x034 NPC interaction : Rabao conflux menu -> Sheol A/B/C (sheolzone)
     void on_00e(const unsigned char* p);            // 0x00E NPC update : fallback Sheol A/B/C from a mob's instance bits
     void on_limbus_075(const unsigned char* p);     // 0x075 : Limbus menu -> <Area>_Lv<NNN> @+0x2C (mode 6)
     void on_omen_text(const char* s);               // mode-161 Omen objective text (via the incoming-text callback)

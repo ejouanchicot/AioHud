@@ -436,13 +436,16 @@ struct MsgHealer {
 // The seeds : last known-good, and still correct on a client that has not been patched since.
 static MsgHealer sgHeal_ = { "SHEOL",  7249 };   // 40017 masked -- //aio sheollog, run of 2026-08-14 : 105 payouts,
                                                  // p2 tracked its own p1 throughout. Was 40016 until the 08-12 patch.
-static MsgHealer lbHeal_[2] = { { "LIMBUS/Apollyon", 7247 },     // [0] = zone 38, [1] = zone 37 (2026-07-19 capture)
+static MsgHealer lbHeal_[2] = { { "LIMBUS/Apollyon", 7248 },     // [0] = zone 38, [1] = zone 37. Apollyon was 7247 (2026-07-19
+                                                                 // capture) ; the healer adopted 7248 on every run of 2026-11-11,
+                                                                 // both characters -- the same +1 as Temenos. Seeded at 7247 the
+                                                                 // watcher wrote ZT.MSGID_SILENT before each run's second payout.
                                 { "LIMBUS/Temenos",  7240 } };   // 7239 until a patch before 2026-09-20 : the healer adopted
                                                                  // 7240 in game, and the 2026-09-22 tape (temenos_20260922)
                                                                  // shows the whole table +1 (KI 7070/7071, allowance 7281).
                                                                  // Apollyon NOT re-measured since : it heals on its 2nd payout.
 // The weekly allowance ("you may collect data N more times") sits a FIXED 41 above its wing's award id : Temenos
-// 7239/7280 (2026-07-19) and 7240/7281 (2026-09-22), both measured. Apollyon's 7288 (= 7247 + 41) is NOT : it is the
+// 7239/7280 (2026-07-19) and 7240/7281 (2026-09-22), both measured. Apollyon's 7289 (= 7248 + 41) is NOT : it is the
 // old assumed id, consistent with the offset but never captured. The id is read
 // off the healed id and moves with it -- a constant 7280 went dead at the patch (this character's count was last written 2026-07-28).
 static const unsigned LIMBUS_WEEK_FROM_AWARD = 41;
@@ -785,7 +788,35 @@ void PartyState::zt_set_zone(int zone, const char* name) {
     }
     if (zt_.mode != 0) zt_save();                            // snapshot on entry into any tracked zone (Dynamis/Abyssea/Omen/Nyzul)
 }
+// THE APOLLYON OPERATOR. Units SPENT (an upgrade bought with them) come with no award message and no 0x118, so the
+// box kept the last coffer's total (reported 2026-11-11). Asking the Operator for your units opens its dialog (0x034,
+// menu 130 in zone 38) and the server answers with a 0x05C whose parameters are [remaining, your units, your cap] -- captured
+// 2026-11-11 with //aio unitslog : 140000 / 120252 / 192000, the Operator said 120252 and 192000 is the current cap.
+// The first value is what the Operator calls "Remaining Apollyon units" -- most likely the same pool as the award's
+// p2 ("Remaining: <p2>") ; the box does not show it, so it is not read. Temenos's Operator has not been captured : there
+// the answer is only logged, until a capture says it has the same shape.
+static const int      LB_OPERATOR_MENU = 130;
+static const unsigned LB_OPERATOR_MS = 60000;
+void PartyState::on_05c(const unsigned char* p) {
+    if (!lbOperatorMs_ || model_now_ms() - lbOperatorMs_ > LB_OPERATOR_MS) return;
+    if (pkt_short(p, 0x10)) return;                        // reads params[0..2] = 0x04..0x0F
+    const int units = (int)pkt_u32(p, 0x08), cap = (int)pkt_u32(p, 0x0C);
+    if (zt_.curZone != 38) {
+        windower::debug::log("LIMBUS operator answer in zone %d (not read) : %d / %d / %d", zt_.curZone, (int)pkt_u32(p, 0x04), units, cap);
+        return;
+    }
+    if (cap <= 0 || cap > 10000000 || units < 0 || units > cap) {
+        windower::debug::log("LIMBUS operator answer not a balance : %d / %d / %d", (int)pkt_u32(p, 0x04), units, cap);
+        return;
+    }
+    lbOperatorMs_ = 0;
+    zt_.limbusApollyon = units; zt_.limbusUnitsCap = cap;
+    zt_.limbusUnits = -1;                                  // the Operator's answer is the balance NOW (as a 0x118 would be)
+    windower::debug::log("LIMBUS Apollyon Operator : %d units, cap %d", units, cap);
+}
 void PartyState::on_034(const unsigned char* p) {           // 0x034 NPC interaction : the Rabao conflux entry menu -> which Sheol (A/B/C)
+    if (zt_.curZone == 38 && !pkt_short(p, 0x2E) && pkt_u16(p, 0x2C) == LB_OPERATOR_MENU) { lbOperatorMs_ = model_now_ms() | 1u; return; }
+    if (zt_.curZone == 37 && !pkt_short(p, 0x2E)) windower::debug::log("LIMBUS Temenos NPC menu %u", (unsigned)pkt_u16(p, 0x2C));
     if (zt_.curZone != 247) return;                        // only the Rabao (247) entry menu
     if (pkt_short(p, 0x2E)) return;                       // truncated -> don't read garbage past the real end (reads the u16 @0x2C)
     if (pkt_u16(p, 0x2C) != 173) return;                   // Menu ID 173 = the Odyssey conflux
@@ -1020,6 +1051,10 @@ void PartyState::on_118(const unsigned char* p) {           // 0x118 currency2 :
     zt_.segBank = (int)pkt_u32(p, 0x8C);
     zt_.limbusTemenos  = (int)pkt_u32(p, 0x98);      // Limbus currencies ride the same currency2 packet
     zt_.limbusApollyon = (int)pkt_u32(p, 0x9C);      // (fields.lua incoming[0x118] : 'Temenos Units' / 'Apollyon Units')
+    // The last award's total (0x02A p3) is shown in preference to these while you stand in the wing. A 0x118 is the
+    // server's balance NOW, so from here on it wins : units SPENT (an upgrade bought with them) come with no award,
+    // and the box kept the pre-purchase total (reported 2026-11-11). The next award takes over again.
+    zt_.limbusUnits = -1;
 }
 void PartyState::on_55(const unsigned char* p) {            // 0x055 : key items ; granules are Type 3, bits 9..13
     if (pkt_short(p, 0x88)) return;                        // truncated -> the KI table @0x84 (and the bitfield ny_has_ki reads) isn't there

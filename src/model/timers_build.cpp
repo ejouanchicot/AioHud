@@ -57,9 +57,12 @@ static bool fm_muted_for(unsigned target, unsigned status, unsigned short spell,
 // as things tick, so a number that meant "third row from the top" would mean something else by the time you had
 // finished typing it. A number that belongs to the ENTRY is the same number whenever you read it.
 struct FocusMem { unsigned target; unsigned short status, spell; unsigned char isAbil, self, zoneCheck, muted, tag, seen, alerting, aoe; unsigned lostMs, muteRef, bornMs, rank; char name[20]; };   // rank : which of two same-status songs survives -- the ally cast's startMs, or your own copy's expiry. NOT bornMs : an entry is reused across re-casts, so its birth says nothing about which cast is fresher.
-// bornMs : when this entry was created. Read by NOTHING that decides anything -- it exists so the harness
+// bornMs : when this entry's CURRENT cast began -- set at creation and again whenever `rank` moves (a re-cast
+// renews the expiry, or the ally cast's start). Read by NOTHING that decides anything -- it exists so the harness
 // can say "this entry has been alive 4 h", which is the only way an immortal entry (the purge that never
-// runs, audit S2-6) is visible from outside. A field a decision depends on could not be added this cheaply.
+// runs, audit S2-6) is visible from outside. It used to be the creation time only, and an entry is REUSED
+// across re-casts : a COR re-rolling Bolter's Roll for four hours tripped TM.FOCUS_STALE (2026-11-11, Kaories)
+// although every roll was a new cast. A stale entry is one no cast has renewed, and that still reads 4 h. A field a decision depends on could not be added this cheaply.
 // `alerting` = this entry drew its red OUT row on the LAST frame. It is set where the row is emitted and nowhere
 // else, so it means exactly "what you can see in red right now" -- which is what //aio out alerts takes off. The
 // alternative (re-deriving the condition in the command) would be a second copy of a decision that already has
@@ -1045,7 +1048,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                                          st, buff_status_name(st), (unsigned)selfSp, sib, cps);
                 }
                 if (s < 0 && fmN < FOCUS_MAX) { s = fmN++; fm[s].spell = selfSp; fm[s].target = meId; fm[s].status = (unsigned short)st; fm[s].self = 1; fm[s].isAbil = 0; fm[s].aoe = 0; /* there is one of you : a self alert never groups */ fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = 0; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = model_now_ms(); fm[s].name[0] = 0; }
-                if (s >= 0) { fm[s].seen = 1; fm[s].spell = selfSp; fm[s].rank = bt2[i].expiry; }   // the spell/tier is part of the key now, so this only re-affirms it ; rank refreshed every frame
+                if (s >= 0) { if (fm[s].rank != bt2[i].expiry) fm[s].bornMs = model_now_ms(); fm[s].seen = 1; fm[s].spell = selfSp; fm[s].rank = bt2[i].expiry; }   // the spell/tier is part of the key now, so this only re-affirms it ; rank refreshed every frame
               } }
             for (int i = 0; i < no; ++i) {                                                     // remember FOCUS buffs currently up on allies (Allies focus key 0xC000|st ; needs tmMine)
                 const unsigned st = ob[i].status;
@@ -1067,7 +1070,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
                 if (s < 0 && fmN < FOCUS_MAX) { s = fmN++; fm[s].spell = ob[i].spell; fm[s].target = ob[i].target; fm[s].status = (unsigned short)st; fm[s].self = 0; fm[s].aoe = ob[i].aoe; /* the CAST's own fact (0x028 target count) : it decides whether losing it is one event or three */ fm[s].lostMs = 0; fm[s].muteRef = 0; fm[s].zoneCheck = pending; fm[s].muted = 0; fm[s].alerting = 0; fm[s].tag = fm_free_tag(); fm[s].seen = 1; fm[s].bornMs = model_now_ms(); }
                 else if (s < 0) { static windower::debug::LogOnce<2> onceFull;   // SAY it. A silent refusal here is indistinguishable from "no buff to watch".
                     if (onceFull.first(0)) windower::debug::log("FOCUS monitor FULL (%d entries) -- new ally focus buffs are NOT tracked this session", FOCUS_MAX); }
-                if (s >= 0) { fm[s].seen = 1; fm[s].spell = ob[i].spell; fm[s].rank = ob[i].startMs; fm[s].isAbil = ob[i].isAbil; int j = 0; for (; j < 19 && ob[i].name[j]; ++j) fm[s].name[j] = ob[i].name[j]; fm[s].name[j] = 0; } }
+                if (s >= 0) { if (fm[s].rank != ob[i].startMs) fm[s].bornMs = model_now_ms(); fm[s].seen = 1; fm[s].spell = ob[i].spell; fm[s].rank = ob[i].startMs; fm[s].isAbil = ob[i].isAbil; int j = 0; for (; j < 19 && ob[i].name[j]; ++j) fm[s].name[j] = ob[i].name[j]; fm[s].name[j] = 0; } }
             }
             // A NEWER CAST LIFTS THE MUTE. //aio out silences ONE cast, not the spell -- and the correction that
             // follows it is almost always another cast of the same buff, often on the very person you took off

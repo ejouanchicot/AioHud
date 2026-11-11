@@ -2702,7 +2702,8 @@ void model_feed_packet(int id, const unsigned char* b)
         else if (id == 0x02A) party().on_2a(b);               // Zone Tracker : Abyssea zone messages (lights + visitant)
         else if (id == 0x055) party().on_55(b);               // Zone Tracker : key items (Dynamis granules)
         else if (id == 0x118) party().on_118(b);              // Zone Tracker : currency2 -> Mog Segments (Sheol/Odyssey run delta)
-        else if (id == 0x034) party().on_034(b);              // Zone Tracker : Rabao conflux menu -> Sheol A/B/C
+        else if (id == 0x034) party().on_034(b);              // Zone Tracker : Rabao conflux menu -> Sheol A/B/C ; Apollyon Operator
+        else if (id == 0x05C) party().on_05c(b);              // Zone Tracker : the Apollyon Operator's answer -> units + cap
         else if (id == 0x065) party().on_065(b);              // Sortie navigation : repositioning -> the wing you arrived in
         else if (id == 0x0F5) party().on_0f5(b);              // Sortie navigation : Widescan track reply -> the wing NM's position / death
         else if (id == 0x00E) party().on_00e(b);              // Zone Tracker : NPC update -> Sheol A/B/C fallback (instance bits)

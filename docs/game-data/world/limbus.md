@@ -63,7 +63,7 @@ Message ids are zone-relative and drift across patches, so they are matched mask
 
 | masked | meaning | fields |
 |---|---|---|
-| **7247** | *"Acquired Apollyon units: N…"* | `p1` gained, `p2` zone pool left, `p3` **your total**, `p4` **your cap** |
+| **7248** | *"Acquired Apollyon units: N…"* | `p1` gained, `p2` zone pool left, `p3` **your total**, `p4` **your cap** — was **7247**, the healer adopted 7248 on every run of 2026-11-11 |
 | **7240** | *"Acquired Temenos units: N…"* | same four — was **7239** before a 2026-09 patch |
 | **award + 41** | *"You may collect data N more times"* | `p1` = weekly allowance left — Temenos 7280, **7281** since the patch |
 | 7069 / 7070 | key item gained / lost (bulk) — a floor validated / the run ended | `p1` = KI id — Temenos **7070 / 7071** since the patch |
