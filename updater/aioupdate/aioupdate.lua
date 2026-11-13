@@ -21,11 +21,17 @@
                "lua load aioupdate" in scripts\init.txt, so it loads with Windower -- no manual //lua load.
      Silent by default : it prints NOTHING to chat (a real update is visible as the HUD reloading).
                          Flip DEBUG=true below to trace each phase.
+
+     v2.7 -- NO COROUTINE AT ALL. Every wait goes through one 'prerender' handler (see after() below). The two
+     1 s watchers used to re-arm themselves with coroutine.schedule forever, and a full crash dump of a GearSwap
+     unload (2026-11-13) found one of them -- watch_done -- filed in GEARSWAP's list of pending coroutines, a
+     different Lua state. Windower closes that list when the addon unloads, wrote below GearSwap's main stack and
+     corrupted the heap: the game died on `//lua unload gearswap`. An event handler stays in this addon's state.
 ]]
 
 _addon.name     = 'AioUpdate'
 _addon.author   = 'ejouanchicot'
-_addon.version  = '2.6'
+_addon.version  = '2.7'
 _addon.commands = { 'aioupdate', 'aioup' }
 
 local base     = windower.windower_path
@@ -59,6 +65,20 @@ end
 local function tr(en, fr) if ui_lang() == 1 then return fr end return en end
 
 local function file_exists(p) local f = io.open(p, 'rb'); if f then f:close(); return true end return false end
+
+-- after(seconds, fn) : run fn once, that many seconds from now, from the 'prerender' handler at the bottom of the
+-- update watcher -- never coroutine.schedule (the header's v2.7 note says why). Each run is pcall'd : one failing
+-- callback must not stop the others, nor the watchers that share the handler.
+local timers = {}
+local function after(seconds, fn) timers[#timers + 1] = { at = os.clock() + seconds, fn = fn } end
+local function run_due(now)
+    if #timers == 0 then return end
+    local due = {}
+    for i = #timers, 1, -1 do
+        if timers[i].at <= now then due[#due + 1] = table.remove(timers, i) end
+    end
+    for i = #due, 1, -1 do pcall(due[i].fn) end
+end
 
 local function read_status()
     local f = io.open(done, 'r')
@@ -134,7 +154,7 @@ local function watch_done()
             if not unloaded then
                 windower.send_command('unload AioHud')
                 unloaded = true
-                coroutine.schedule(reload_plugin, 1)
+                after(1, reload_plugin)
             else
                 reload_plugin()
             end
@@ -154,9 +174,7 @@ local function watch_done()
         -- until the player typed one by hand. What we took down, we put back -- whatever happens to the file.
         acted = nil
     end
-    coroutine.schedule(watch_done, 1)
 end
-coroutine.schedule(watch_done, 1)
 
 -- Prime the handled phase at load : a done.txt left over from a previous session must not be replayed as a
 -- fresh reload. A real update always rewrites the file, which reads as a change from this baseline.
@@ -209,7 +227,7 @@ local function self_uninstall_if_orphaned()
     windower.add_to_chat(207, 'AioUpdate: ' .. tr('AioHud is gone -- removed its autoload line from init.txt. You can //lua unload aioupdate and delete this addon.',
                                                    "AioHud a disparu -- sa ligne d'autoload a ete retiree de init.txt. Tu peux faire //lua unload aioupdate et supprimer cet addon."))
 end
-coroutine.schedule(self_uninstall_if_orphaned, 5)
+after(5, self_uninstall_if_orphaned)
 
 -- typed //aioupdate : just ask the plugin to spawn (the watcher above handles the unload/load).
 windower.register_event('addon command', trigger)
@@ -226,9 +244,19 @@ windower.register_event('addon command', trigger)
 local function watch_request()
     local f = io.open(request, 'r')
     if f then f:close(); os.remove(request); trigger() end
-    coroutine.schedule(watch_request, 1)
 end
-coroutine.schedule(watch_request, 1)
+
+-- The one clock of this addon : the two watchers once a second, and whatever after() is holding. 'prerender' runs
+-- every frame, so the cost of a frame with nothing due is one os.clock() and two comparisons.
+local next_poll = os.clock() + 1
+windower.register_event('prerender', function()
+    local now = os.clock()
+    run_due(now)
+    if now < next_poll then return end
+    next_poll = now + 1
+    pcall(watch_done)
+    pcall(watch_request)
+end)
 
 --[[ ===== SORTIE : AUTO WIDESCAN TRACK of the wing's NM -- OPT-IN, OFF BY DEFAULT =====================================
      The plugin cannot send a packet (its Windower interface has none), so this is the ONE place AioHud asks the server
@@ -308,7 +336,7 @@ do
         bz_want = nil                                -- any new arrival cancels a bitzer still awaited
         if w == 'boss' then                          -- the track stops 2 s into the arena ; a wing entered meanwhile wins
             local gen = arena_gen
-            coroutine.schedule(function() if gen == arena_gen then pcall(stop) end end, 2)
+            after(2, function() if gen == arena_gen then pcall(stop) end end)
             return
         end
         if not enabled() then stop(); return end     -- switched off mid-run : end OUR track, send nothing else
@@ -316,11 +344,11 @@ do
             bz_want = BZ[w]
             local gen = arena_gen
             for _, t in ipairs({ 2, 4 }) do
-                coroutine.schedule(function() pcall(function()
+                after(t, function() pcall(function()
                     if gen ~= arena_gen or bz_want ~= BZ[w] then return end   -- moved on, or already answered
                     packets.inject(packets.new('outgoing', 0x016, { ['Target Index'] = BZ[w], ['_junk1'] = 0 }))
                     log('sortie : bitzer update ' .. BZ[w])
-                end) end, t)
+                end) end)
             end
         end
         if tracking == NM[w] then return end         -- already on it : the server is still streaming
