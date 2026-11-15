@@ -682,6 +682,12 @@ static const ChangeLine CL_88[] = {
       "*Timers : les alertes OUT rouges gardent le nom de qui a perdu le buff.* Quand plusieurs personnes perdaient un buff que tu leur avais lance un par un -- Haste, Phalanx, Regen -- les alertes se repliaient en une seule ligne \"(AoE N)\" sans nom. Seul un vrai sort de zone (une chanson, Protectra, un sort sous Accession) se regroupe maintenant ; tout le reste garde une alerte par personne." },
 };
 
+static const ChangeLine CL_103[] = {
+    { "*Fixed : the game could crash when GearSwap was unloaded or reloaded.* The updater (aioupdate) kept two background checks running in a way that Windower filed under GearSwap ; unloading GearSwap then damaged the game's memory. The updater now runs them once a second without that mechanism (aioupdate 2.7).",
+      "*Corrige : le jeu pouvait planter quand GearSwap etait decharge ou recharge.* Le programme de mise a jour (aioupdate) gardait deux controles en fond d'une facon que Windower rangeait sous GearSwap ; decharger GearSwap abimait alors la memoire du jeu. Il les fait maintenant une fois par seconde sans ce mecanisme (aioupdate 2.7)." },
+    { "*Timers : a shared recast shows the ability you used.* Some abilities share one recast -- Ecliptic Attrition and Lasting Emanation, the Phantom Rolls, the SP abilities. The line took the first name of its list : an Ecliptic Attrition read \"Lasting Emanation\". It now shows the one you last used.",
+      "*Timers : un recast partage affiche la capacite que tu as utilisee.* Certaines capacites partagent un recast -- Ecliptic Attrition et Lasting Emanation, les Phantom Rolls, les SP. La ligne prenait le premier nom de sa liste : un Ecliptic Attrition affichait \"Lasting Emanation\". Elle affiche maintenant celle que tu as utilisee en dernier." },
+};
 static const ChangeLine CL_102[] = {
     { "*Fixed : no more bug report files every session.* Three checks wrote one each time you played : the Apollyon units message changed number with a game update (AioHud found it again, but only at the second payout of each run), the table of debuffs on mobs was too small for Limbus, where dozens of mobs get debuffed at once (32 -> 64), and a buff you keep up for hours by recasting it, like a COR's roll, was taken for an entry that is never cleaned up.",
       "*Corrige : plus de fichiers bug report a chaque session.* Trois controles en ecrivaient un a chaque fois que tu jouais : le message des units d'Apollyon a change de numero avec une mise a jour du jeu (AioHud le retrouvait, mais seulement au deuxieme gain de chaque run), la table des debuffs sur les mobs etait trop petite pour Limbus, ou des dizaines de mobs sont debuffes a la fois (32 -> 64), et un buff que tu gardes des heures en le relancant, comme un roll de COR, etait pris pour une entree jamais nettoyee." },
@@ -800,6 +806,7 @@ static const ChangeLine CL_90[] = {
 };
 
 static const Release RELEASES[] = {
+    { "1.0.103", CL_103, (int)(sizeof(CL_103) / sizeof(CL_103[0])) },
     { "1.0.102", CL_102, (int)(sizeof(CL_102) / sizeof(CL_102[0])) },
     { "1.0.101", CL_101, (int)(sizeof(CL_101) / sizeof(CL_101[0])) },
     { "1.0.100", CL_100, (int)(sizeof(CL_100) / sizeof(CL_100[0])) },
