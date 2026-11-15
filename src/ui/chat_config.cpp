@@ -48,25 +48,85 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
             float v01 = clampf((c.chScale[b] - lo) / (hi - lo), 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), s, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.chScale[b] = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
+        { ROW_BAND(52.0f)   // how the tabs show
+            const char* TL[4] = { tr("Auto", "Auto"), tr("Icon + name", "Ic\xC3\xB4ne + nom"), tr("Icon", "Ic\xC3\xB4ne"), tr("Name", "Nom") };
+            const int v = (c.chTabStyle[b] >= 0 && c.chTabStyle[b] <= 3) ? c.chTabStyle[b] : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Tabs", "Onglets"), TL[v])) c.chTabStyle[b] = wrap(v + d, 4);
+        } ROW_NEXT(52.0f)
+        { ROW_BAND(46.0f)   // the header's size
+            const float lo = 0.60f, hi = 1.60f; char sb[16]; sprintf(sb, "%d%%", (int)(c.chHeadScale[b] * 100.0f + 0.5f));
+            float v01 = clampf((c.chHeadScale[b] - lo) / (hi - lo), 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Header size", "Taille de l'en-t\xC3\xAAte"), sb, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.chHeadScale[b] = v < lo ? lo : (v > hi ? hi : v); }
+        } ROW_NEXT(46.0f)
+        { ROW_BAND(52.0f)   // density : how much air around the text
+            const char* DL[3] = { tr("Compact", "Compacte"), tr("Normal", "Normale"), tr("Airy", "A\xC3\xA9r\xC3\xA9""e") };
+            const int v = (c.chDensity[b] >= 0 && c.chDensity[b] <= 2) ? c.chDensity[b] : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Density", "Densit\xC3\xA9"), DL[v])) c.chDensity[b] = wrap(v + d, 3);
+        } ROW_NEXT(52.0f)
+        { ROW_BAND(52.0f)   // fixed size, or grows with its content
+            const char* FL[2] = { tr("Fixed", "Fixe"), tr("Follows the content", "Suit le contenu") };
+            const int v = c.chFit[b] == 1 ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Box height", "Hauteur de la box"), FL[v])) c.chFit[b] = wrap(v + d, 2);
+        } ROW_NEXT(52.0f)
+        { ROW_BAND(52.0f)   // which edge stays put
+            const char* GL[2] = { tr("Up (bottom stays)", "Le haut (bas fixe)"), tr("Down (top stays)", "Le bas (haut fixe)") };
+            const int v = c.chGrow[b] == 1 ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Grows toward", "Grandit vers"), GL[v])) {
+                const int nv = wrap(v + d, 2);
+                if (nv != v && c.chEdge[b][1] > c.chEdge[b][0]) c.chY[b] = nv == 0 ? c.chEdge[b][1] : c.chEdge[b][0];   // the box does not move
+                c.chGrow[b] = nv;
+            }
+        } ROW_NEXT(52.0f)
         { ROW_BAND(46.0f)   // Width
             const float lo = 200.0f, hi = 1600.0f; char s[16]; sprintf(s, "%d", c.chW[b]);
             float v01 = clampf(((float)c.chW[b] - lo) / (hi - lo), 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Width", "Largeur"), s, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 10) * 10; c.chW[b] = v < 200 ? 200 : (v > 1600 ? 1600 : v); }
         } ROW_NEXT(46.0f)
-        { ROW_BAND(46.0f)   // Lines
-            const float lo = 3.0f, hi = 40.0f; char s[16]; sprintf(s, "%d", c.chLines[b]);
-            float v01 = clampf(((float)c.chLines[b] - lo) / (hi - lo), 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Lines", "Lignes"), s, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.chLines[b] = v < 3 ? 3 : (v > 40 ? 40 : v); }
+        if (c.chMaxLines[b] == 0) { ROW_BAND(46.0f)   // Height (only when "Max lines" is "all")
+            const float lo = 80.0f, hi = 1000.0f; char s[16]; sprintf(s, "%d", c.chH[b] > 0 ? c.chH[b] : 260);
+            float v01 = clampf(((float)(c.chH[b] > 0 ? c.chH[b] : 260) - lo) / (hi - lo), 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Height", "Hauteur"), s, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 10) * 10; c.chH[b] = v < 80 ? 80 : (v > 1000 ? 1000 : v); }
+        } if (c.chMaxLines[b] == 0) { ROW_NEXT(46.0f) }
+        { ROW_BAND(46.0f)   // lines shown normally
+            const float lo = 0.0f, hi = 40.0f; char sb[24];
+            if (c.chMaxLines[b] > 0) sprintf(sb, "%d", c.chMaxLines[b]); else lstrcpynA(sb, tr("all", "tout"), sizeof(sb));
+            float v01 = clampf(((float)c.chMaxLines[b] - lo) / (hi - lo), 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Max lines", "Lignes max"), sb, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.chMaxLines[b] = v < 0 ? 0 : (v > 40 ? 40 : v); }
         } ROW_NEXT(46.0f)
         ROW_TOGGLE(CTRL_ID, tr("Time stamps", "Horodatage"), c.chStamp[b])
+        // ---- when nothing happens : collapse and / or fade, each on its own delay ----
+        { int on = (c.chBehave[b] & 2) ? 1 : 0;
+          { ROW_BAND(48.0f) if (row_toggle(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Collapse when idle", "Repli au repos"), &on)) c.chBehave[b] = on ? (c.chBehave[b] | 2) : (c.chBehave[b] & ~2); } ROW_NEXT(48.0f) }
+        if (c.chBehave[b] & 2) { ROW_BAND(46.0f)   // collapse delay
+            const float lo = 3.0f, hi = 120.0f; char sb[16]; sprintf(sb, "%d s", c.chIdle[b]);
+            float v01 = clampf(((float)c.chIdle[b] - lo) / (hi - lo), 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("  each line stays", "  chaque ligne reste"), sb, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.chIdle[b] = v < 3 ? 3 : (v > 120 ? 120 : v); }
+        } if (c.chBehave[b] & 2) { ROW_NEXT(46.0f) }
+        if (c.chBehave[b] & 2) { ROW_BAND(46.0f)   // lines kept when collapsed
+            const float lo = 1.0f, hi = 20.0f; char sb[16]; sprintf(sb, "%d", c.chFoldLines[b]);
+            float v01 = clampf(((float)c.chFoldLines[b] - lo) / (hi - lo), 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("  lines kept", "  lignes gard\xC3\xA9""es"), sb, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.chFoldLines[b] = v < 1 ? 1 : (v > 20 ? 20 : v); }
+        } if (c.chBehave[b] & 2) { ROW_NEXT(46.0f) }
+        { int on = (c.chBehave[b] & 1) ? 1 : 0;
+          { ROW_BAND(48.0f) if (row_toggle(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Fade when idle", "Fondu au repos"), &on)) c.chBehave[b] = on ? (c.chBehave[b] | 1) : (c.chBehave[b] & ~1); } ROW_NEXT(48.0f) }
+        if (c.chBehave[b] & 1) { ROW_BAND(46.0f)   // fade delay
+            const float lo = 3.0f, hi = 120.0f; char sb[16]; sprintf(sb, "%d s", c.chFadeIdle[b]);
+            float v01 = clampf(((float)c.chFadeIdle[b] - lo) / (hi - lo), 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("  fade after", "  fondu apr\xC3\xA8s"), sb, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.chFadeIdle[b] = v < 3 ? 3 : (v > 120 ? 120 : v); }
+        } if (c.chBehave[b] & 1) { ROW_NEXT(46.0f) }
+        if (c.chBehave[b] & 1) { ROW_BAND(46.0f)   // opacity kept when faded
+            const float lo = 0.0f, hi = 80.0f; char sb[16]; sprintf(sb, "%d%%", c.chFadeTo[b]);
+            float v01 = clampf(((float)c.chFadeTo[b] - lo) / (hi - lo), 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("  faded opacity", "  opacit\xC3\xA9 au repos"), sb, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.chFadeTo[b] = v < 0 ? 0 : (v > 80 ? 80 : v); }
+        } if (c.chBehave[b] & 1) { ROW_NEXT(46.0f) }
         if (b == 0) { ROW_BAND(52.0f)   // where you TYPE : the game's own line, docked under the box, or inside it
             const char* IL[3] = { tr("Game's place", "Place du jeu"), tr("Under the box", "Sous la box"), tr("In the box", "Dans la box") };
             const int v = (c.chDock >= 0 && c.chDock <= 2) ? c.chDock : 2;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Input line", "Barre de saisie"), IL[v])) c.chDock = wrap(v + d, 3);
         } if (b == 0) { ROW_NEXT(52.0f) }
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.chBox[b]);
-        CHAT_NOTE(tr("Move it in Edit layout ; the corner grip sets its width and lines.",
-                     "D\xC3\xA9place-la dans \xC3\x89""diter dispo ; la poign\xC3\xA9""e du coin r\xC3\xA8gle largeur et lignes."))
+        CHAT_NOTE(tr("Move it in Edit layout ; the corner grip sets its width and height.",
+                     "D\xC3\xA9place-la dans \xC3\x89""diter dispo ; la poign\xC3\xA9""e du coin r\xC3\xA8gle largeur et hauteur."))
         CHAT_NOTE(tr("Wheel over a box = scroll back. Hide the game's own log in Game UI.",
                      "Molette sur une box = remonter. Cache le journal du jeu dans Interface du jeu."))
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);

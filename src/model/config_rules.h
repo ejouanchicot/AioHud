@@ -168,7 +168,12 @@ inline void config_sanitise(UiConfig& c) {
     for (int b = 0; b < 2; ++b) {   // Chat module : [0] chat, [1] battle
         MUL(chScale[b]); FRAC(chX[b]); FRAC(chY[b]);
         c.chW[b] = cfg_int(c.chW[b], 200, 1600); c.chLines[b] = cfg_int(c.chLines[b], 3, 40);
+        if (c.chH[b] != 0) c.chH[b] = cfg_int(c.chH[b], 80, 1400);   // 0 = not set yet (derived from chLines once)
+        c.chFoldLines[b] = cfg_int(c.chFoldLines[b], 1, 20); c.chMaxLines[b] = cfg_int(c.chMaxLines[b], 0, 40);
         c.chTab[b] = cfg_int(c.chTab[b], 0, 7); cfg_box(c.chBox[b]);
+        c.chBehave[b] = cfg_int(c.chBehave[b], 0, 3); c.chIdle[b] = cfg_int(c.chIdle[b], 3, 120); c.chFadeTo[b] = cfg_int(c.chFadeTo[b], 0, 80);
+        c.chFadeIdle[b] = cfg_int(c.chFadeIdle[b], 3, 120); c.chGrow[b] = cfg_int(c.chGrow[b], -1, 1); c.chDensity[b] = cfg_int(c.chDensity[b], 0, 2); c.chTabStyle[b] = cfg_int(c.chTabStyle[b], 0, 3);
+        if (!(c.chHeadScale[b] >= 0.6f && c.chHeadScale[b] <= 1.6f)) c.chHeadScale[b] = c.chHeadScale[b] < 0.6f ? 0.6f : (c.chHeadScale[b] > 1.6f ? 1.6f : 1.0f);   // NaN -> 1
     }
     cfg_text(c.chText, 2);
     MUL(awScale);   FRAC(awX);   FRAC(awY);   cfg_box(c.awBox);

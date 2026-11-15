@@ -63,21 +63,22 @@ static inline u32 mix(u32 a, u32 b, float t) {    // RGB blend, alpha of a
 }
 
 // ---- tabs : a mask of channels (+ "mentions me" for the battle log) ----
-struct ChatTab { const char* en; const char* fr; unsigned mask; bool me; };
+enum TabIcon { TI_ALL, TI_PARTY, TI_LS, TI_TELL, TI_SAY, TI_SYS, TI_SWORDS, TI_ME };
+struct ChatTab { const char* en; const char* fr; unsigned mask; bool me; int icon; };
 #define CB(c) (1u << (c))
 static const unsigned ALL_TALK = CB(CH_SAY) | CB(CH_SHOUT) | CB(CH_YELL) | CB(CH_TELL) | CB(CH_PARTY) | CB(CH_LS1) | CB(CH_LS2) |
                                  CB(CH_UNITY) | CB(CH_EMOTE) | CB(CH_ASSIST) | CB(CH_SYSTEM) | CB(CH_NPC) | CB(CH_OTHER);
 static const ChatTab TABS_CHAT[] = {
-    { "All",    "Tout",              ALL_TALK, false },
-    { "Party",  "Groupe",            CB(CH_PARTY) | CB(CH_ASSIST), false },
-    { "LS",     "LS",                CB(CH_LS1) | CB(CH_LS2), false },
-    { "Tell",   "Tell",              CB(CH_TELL), false },
-    { "Say",    "Dire",              CB(CH_SAY) | CB(CH_SHOUT) | CB(CH_YELL) | CB(CH_EMOTE) | CB(CH_UNITY), false },
-    { "System", "Syst\xC3\xA8me",    CB(CH_SYSTEM) | CB(CH_NPC) | CB(CH_OTHER), false },
+    { "Chat",   "Discussion",        ALL_TALK, false, TI_ALL },   // the "all" tab carries the box's name (no title beside it)
+    { "Party",  "Groupe",            CB(CH_PARTY) | CB(CH_ASSIST), false, TI_PARTY },
+    { "Linkshell", "Linkshell",      CB(CH_LS1) | CB(CH_LS2), false, TI_LS },
+    { "Tell",   "Tell",              CB(CH_TELL), false, TI_TELL },
+    { "Say",    "Dire",              CB(CH_SAY) | CB(CH_SHOUT) | CB(CH_YELL) | CB(CH_EMOTE) | CB(CH_UNITY), false, TI_SAY },
+    { "System", "Syst\xC3\xA8me",    CB(CH_SYSTEM) | CB(CH_NPC) | CB(CH_OTHER), false, TI_SYS },
 };
 static const ChatTab TABS_BATTLE[] = {
-    { "All", "Tout", CB(CH_BATTLE), false },
-    { "Me",  "Moi",  CB(CH_BATTLE), true  },
+    { "Battle", "Combat", CB(CH_BATTLE), false, TI_SWORDS },
+    { "Me",     "Moi",    CB(CH_BATTLE), true,  TI_ME },
 };
 #undef CB
 static const int TAB_N[2] = { (int)(sizeof(TABS_CHAT) / sizeof(TABS_CHAT[0])), (int)(sizeof(TABS_BATTLE) / sizeof(TABS_BATTLE[0])) };
@@ -101,6 +102,13 @@ struct ChatBoxState {
     float    inA = 0.0f;            // the input field's open amount (eased 0..1)
     float    inScroll = 0.0f;       // its horizontal scroll (px) -- keeps the caret in view
     int      inFail = 0;            // consecutive unreadable frames (3 -> fall back to the docked client line)
+    // behaviour (fade / collapse when idle)
+    unsigned lastAct = 0;           // GetTickCount of the last line for THIS box
+    unsigned actSeq = 0;            // newest seq already checked for activity
+    float    vis = 1.0f;            // drawn opacity (eased)
+    float    fold = 0.0f;           // 0 = open .. 1 = collapsed to its header + one line (eased)
+    float    rx = 0, ry = 0, rw = 0, rh = 0;   // last frame's rect : the hover test
+    float    bodyEase = -1.0f;      // the body height drawn (eased toward what the content needs ; -1 = first frame)
     const Font* advFont = 0; float advSize = 0.0f; float adv[256];   // per-byte advance cache (face + size) ; >= 0xC0 = Latin-1
     int      grip = 0;              // token for the shared drag lock
 };
@@ -134,6 +142,7 @@ static void sample_add(int box, int chan, const char* s, unsigned short hhmm, co
     ChatLine& L = g_sample[box][g_sampleN[box]++];
     memset(&L, 0, sizeof(L)); L.seq = (unsigned)g_sampleN[box]; L.chan = (unsigned char)chan; L.hhmm = hhmm;
     int n = 0; for (; s[n] && n < CHAT_TEXT - 1; ++n) L.text[n] = s[n]; L.text[n] = 0; L.len = (unsigned char)n;
+    chat_parse_speaker(L);                                                   // the same badge + name as a live line
     if (hl) {   // one highlighted run, in a fixed sample colour
         static const u32 SAMPLE_COL[3] = { 0xFF8EE88Eu, 0xFFFFE08Au, 0xFFFF9C8Cu };
         L.pal[0] = SAMPLE_COL[hlCol % 3];
@@ -167,14 +176,34 @@ void chat_hit_clear() {
 }
 
 // Word-wrap one history line into spans [sa, sb) that fit `avail` px (a word longer than a row breaks where it must).
-static int wrap_line(const ChatLine& L, const float* adv, float avail, short* sa, short* sb, int cap) {
-    int ns = 0, a = 0;
+// ---- the line's PREFIX : a channel badge, then the speaker's name (the client's "(Name)" "<Name>" "Name>>" are gone) ----
+static const char* chan_badge(const ChatLine& L) {
+    switch (L.chan) {
+        case CH_PARTY: return tr("PARTY", "GROUPE");  case CH_SAY: return tr("SAY", "DIRE");      case CH_SHOUT: return tr("SHOUT", "CRIER");
+        case CH_YELL: return tr("YELL", "HURLER");    case CH_UNITY: return "UNITY";              case CH_ASSIST: return "ASSIST";
+        case CH_NPC: return tr("NPC", "PNJ");         case CH_EMOTE: return "EMOTE";
+        case CH_TELL: return L.chTellOut ? tr("TELL TO", "TELL \xC3\x80") : "TELL";
+        case CH_LS1: case CH_LS2: return L.chLsIdx == 2 ? "LS2" : "LS1";
+        default: return 0;                                                  // system, battle : no badge
+    }
+}
+struct LinePrefix { const char* badge; float badgeW, nameW, w; };
+static void line_prefix(const ChatLine& L, Font* fo, float bz, const float* adv, float S, LinePrefix& p) {
+    p.badge = L.cont ? 0 : chan_badge(L); p.badgeW = 0.0f; p.nameW = 0.0f; p.w = 0.0f;
+    if (p.badge) { p.badgeW = snap(fo->measure(p.badge, bz) + 10.0f * S); p.w += p.badgeW + 6.0f * S; }
+    if (!L.cont && L.chSpeaker[0]) { for (const char* c = L.chSpeaker; *c; ++c) p.nameW += adv[(unsigned char)*c]; p.w += p.nameW + 7.0f * S; }
+}
+
+static int wrap_line(const ChatLine& L, const float* adv, float avail, short* sa, short* sb, int cap, float firstCut = 0.0f) {
+    int ns = 0, a = L.cont ? 0 : L.chBodyAt; if (a > L.len) a = L.len;
+    if (a >= L.len) { sa[0] = (short)a; sb[0] = (short)a; return 1; }    // a speaker with an empty message : one row
     while (a < L.len && ns < cap) {
         float w = 0.0f; int b = a, lastSp = -1;
+        const float av = ns == 0 ? avail - firstCut : avail;
         while (b < L.len) {
             const unsigned char ch = (unsigned char)L.text[b];
             const float cw = adv[ch];
-            if (w + cw > avail && b > a) break;
+            if (w + cw > av && b > a) break;
             if (ch == ' ') lastSp = b;
             w += cw; ++b;
         }
@@ -252,6 +281,93 @@ static const char* chan_label(int ch) {
 // one wrapped row of a history line : chars [a, b), `first` = the message's first row (carries the time stamp)
 struct ChatRow { const ChatLine* L; short a, b; bool first; };
 
+// ---- tab icons, drawn with the HUD's own primitives (no texture) : one glyph per channel family ----
+static u32 icon_col(int icon) {
+    switch (icon) {
+        case TI_PARTY: return CHAN_COL[CH_PARTY]; case TI_LS: return CHAN_COL[CH_LS1]; case TI_TELL: return CHAN_COL[CH_TELL];
+        case TI_SAY: return CHAN_COL[CH_SAY];     case TI_SYS: return CHAN_COL[CH_SYSTEM]; case TI_SWORDS: return 0xFFFF9C6Eu;
+        case TI_ME: return 0xFF9FD8FFu;           default: return 0xFFDDE4EDu;
+    }
+}
+static void ring(u32 dev, float cx, float cy, float r, float bt, u32 c) { rrect_stroke(dev, cx - r, cy - r, 2.0f * r, 2.0f * r, r, c, bt); }
+// one little person : a head and rounded shoulders (party icon)
+static void person(u32 dev, float cx, float cy, float h, u32 c) {
+    const float hr = h * 0.20f;                                              // head radius
+    disc(dev, cx, cy - h * 0.22f, hr, c);
+    const float bw = h * 0.62f, bh = h * 0.34f;                             // shoulders : a rounded top, flat bottom
+    rrect_tb(dev, cx - bw * 0.5f, cy + h * 0.04f, bw, bh, bw * 0.48f, h * 0.06f, c, c, 1.0f);
+}
+static void draw_tab_icon(u32 dev, int icon, float cx, float cy, float z, float S, u32 c) {
+    const float t = 1.5f * S;                                                // stroke
+    const u32 ink = (c & 0xFF000000u) | 0x000000u;                           // a dark cut-out, same opacity as the icon
+    switch (icon) {
+    case TI_ALL:     // a stack of lines : everything
+        rrect(dev, cx - z * 0.42f, cy - z * 0.30f, z * 0.84f, t, t * 0.5f, c, c, 1.0f);
+        rrect(dev, cx - z * 0.42f, cy - t * 0.5f,  z * 0.60f, t, t * 0.5f, c, c, 1.0f);
+        rrect(dev, cx - z * 0.42f, cy + z * 0.30f - t, z * 0.74f, t, t * 0.5f, c, c, 1.0f);
+        break;
+    case TI_PARTY: { // three people : the two behind, smaller and dimmer ; the one in front cut out from them
+        const u32 back = (((c >> 24) * 3 / 5) << 24) | (c & 0x00FFFFFFu);
+        person(dev, cx - z * 0.30f, cy + z * 0.02f, z * 0.78f, back);
+        person(dev, cx + z * 0.30f, cy + z * 0.02f, z * 0.78f, back);
+        person(dev, cx, cy + z * 0.06f, z * 1.04f, (((ink >> 24) * 3 / 4) << 24));   // outline : the front one stands out
+        person(dev, cx, cy + z * 0.06f, z * 0.92f, c);
+        break; }
+    case TI_LS: {    // a linkpearl : halo, a darker rim, the lit body, a highlight and a glint
+        const float r = z * 0.36f;
+        const u32 a = c & 0xFF000000u, rgb = c & 0x00FFFFFFu;
+        const u32 rim = a | ((((rgb >> 16) & 255) * 11 / 20) << 16) | ((((rgb >> 8) & 255) * 11 / 20) << 8) | ((rgb & 255) * 11 / 20);
+        disc_glow(dev, cx, cy, r * 0.95f, (((a >> 24) / 4) << 24) | rgb, 3.0f * S);
+        disc(dev, cx, cy, r, rim);
+        disc(dev, cx - r * 0.10f, cy - r * 0.10f, r * 0.80f, c);
+        disc(dev, cx - r * 0.34f, cy - r * 0.36f, r * 0.24f, (((a >> 24) * 7 / 8) << 24) | 0xFFFFFFu);
+        disc(dev, cx + r * 0.32f, cy + r * 0.30f, r * 0.09f, (((a >> 24) / 2) << 24) | 0xFFFFFFu);
+        break; }
+    case TI_TELL: {  // a sealed letter, filled, with its flap
+        const float w = z * 0.88f, h = z * 0.62f, x = cx - w * 0.5f, y = cy - h * 0.5f;
+        rrect(dev, x, y, w, h, 2.0f * S, c, c, 1.0f);
+        const float fl[6] = { x + 1.0f * S, y + 1.0f * S, x + w - 1.0f * S, y + 1.0f * S, cx, cy + h * 0.12f };
+        fill_poly_aa(dev, fl, 3, (((ink >> 24) * 3 / 5) << 24));               // the flap, as a shadow
+        seg_soft(dev, x + 1.5f * S, y + 1.5f * S, cx, cy + h * 0.10f, t, (c & 0x00FFFFFFu) | (c & 0xFF000000u));
+        seg_soft(dev, x + w - 1.5f * S, y + 1.5f * S, cx, cy + h * 0.10f, t, (c & 0x00FFFFFFu) | (c & 0xFF000000u));
+        break; }
+    case TI_SAY: {   // a speech bubble with three dots : someone talking nearby
+        const float w = z * 0.90f, h = z * 0.60f, x = cx - w * 0.5f, y = cy - z * 0.40f;
+        rrect_stroke(dev, x, y, w, h, h * 0.45f, c, t);
+        const float xy[6] = { x + w * 0.22f, y + h - t * 0.5f, x + w * 0.46f, y + h - t * 0.5f, x + w * 0.14f, y + h + z * 0.24f };
+        fill_poly_aa(dev, xy, 3, c);
+        for (int k = -1; k <= 1; ++k) disc(dev, cx + k * w * 0.22f, y + h * 0.5f, z * 0.055f, c);
+        break; }
+    case TI_SYS: {   // a cog : the game itself
+        const float ro = z * 0.42f, ri = z * 0.30f;
+        for (int k = 0; k < 8; ++k) {                                       // eight teeth
+            const float a0 = 6.2831853f * (float)k / 8.0f, hw = 0.20f;
+            const float ca = cosf(a0), sa = sinf(a0), ca1 = cosf(a0 - hw), sa1 = sinf(a0 - hw), ca2 = cosf(a0 + hw), sa2 = sinf(a0 + hw);
+            const float xy[8] = { cx + ca1 * ri, cy + sa1 * ri, cx + ca1 * ro, cy + sa1 * ro, cx + ca2 * ro, cy + sa2 * ro, cx + ca2 * ri, cy + sa2 * ri };
+            (void)ca; (void)sa;
+            fill_poly_aa(dev, xy, 4, c);
+        }
+        disc(dev, cx, cy, ri, c);
+        disc(dev, cx, cy, ri * 0.42f, (((ink >> 24) * 4 / 5) << 24));         // the hub
+        break; }
+    case TI_SWORDS:  // crossed blades : the fight
+        seg_soft(dev, cx - z * 0.36f, cy + z * 0.36f, cx + z * 0.36f, cy - z * 0.36f, t * 1.4f, c);
+        seg_soft(dev, cx + z * 0.36f, cy + z * 0.36f, cx - z * 0.36f, cy - z * 0.36f, t * 1.4f, c);
+        seg_soft(dev, cx - z * 0.38f, cy + z * 0.14f, cx - z * 0.14f, cy + z * 0.38f, t * 1.4f, c);   // guards
+        seg_soft(dev, cx + z * 0.38f, cy + z * 0.14f, cx + z * 0.14f, cy + z * 0.38f, t * 1.4f, c);
+        break;
+    case TI_ME:      // a reticle : what concerns you
+        ring(dev, cx, cy, z * 0.28f, t, c);
+        disc(dev, cx, cy, z * 0.07f, c);
+        rrect(dev, cx - t * 0.5f, cy - z * 0.48f, t, z * 0.14f, 0.0f, c, c, 1.0f);
+        rrect(dev, cx - t * 0.5f, cy + z * 0.34f, t, z * 0.14f, 0.0f, c, c, 1.0f);
+        rrect(dev, cx - z * 0.48f, cy - t * 0.5f, z * 0.14f, t, 0.0f, c, c, 1.0f);
+        rrect(dev, cx + z * 0.34f, cy - t * 0.5f, z * 0.14f, t, 0.0f, c, c, 1.0f);
+        break;
+    default: break;
+    }
+}
+
 void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, float ovX, float ovY, float ovS) {
     UiConfig& C = ui_config();
     if (box < 0 || box > 1 || !C.chShow[box]) return;
@@ -275,10 +391,21 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     const TextStyle& TS = C.chText[box];
     Font* fo = te_font(f, TS); if (!fo) return;
     const float tz = te_sz(TS, 15.0f) * S, tow = te_ow(TS, 1.1f) * S;
-    const float rowH = snap(tz * 1.38f);
-    const float pad = snap(10.0f * S), headH = snap(26.0f * S), headGap = snap(6.0f * S);
-    const float tabZ = 13.5f * S, titleZ = 11.0f * S, badgeZ = 9.5f * S;
-    int lines = C.chLines[box]; if (lines < 3) lines = 3; if (lines > 40) lines = 40;
+    // DENSITY (compact / normal / airy) : the padding, the header's height, the gap under it, the line spacing
+    static const float D_PAD[3] = { 7.0f, 10.0f, 13.0f }, D_HEAD[3] = { 24.0f, 28.0f, 32.0f }, D_GAP[3] = { 3.0f, 6.0f, 8.0f }, D_ROW[3] = { 1.30f, 1.40f, 1.50f };
+    const int dn = (C.chDensity[box] >= 0 && C.chDensity[box] <= 2) ? C.chDensity[box] : 0;
+    const float rowH = snap(tz * D_ROW[dn]);
+    float hsc = C.chHeadScale[box]; if (hsc < 0.6f) hsc = 0.6f; if (hsc > 1.6f) hsc = 1.6f;   // the header's own size
+    const float pad = snap(D_PAD[dn] * S), headH = snap(D_HEAD[dn] * S * hsc), headGap = snap(D_GAP[dn] * S);
+    const float tabZ = 13.5f * S * hsc, titleZ = 11.0f * S, badgeZ = 9.5f * S * hsc;
+    const float bz = tz * 0.62f;                                             // the channel badge's text size
+    // HEIGHT is the box's own (px at S) : the font decides how many lines fit, never the box size. A config from before
+    // carries a line count only -> its height is taken ONCE from it, with today's metrics, so nothing moves.
+    if (C.chH[box] <= 0) {
+        int ln = C.chLines[box]; if (ln < 3) ln = 3; if (ln > 40) ln = 40;
+        C.chH[box] = (int)((pad + headH + headGap + ln * rowH + pad * 0.8f) / S + 0.5f);
+        if (!preview) save_ui_config();
+    }
     const float boxW = snap((float)C.chW[box] * S);
     const float bodyY0 = pad + headH + headGap;
     // ---- the client's input line, drawn HERE (UiConfig::chDock == 2) : read it the way the client's draw does ----
@@ -293,31 +420,133 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     const bool typing = inN >= 0;
     st.inA += ((typing ? 1.0f : 0.0f) - st.inA) * kSoft; if (st.inA < 0.003f) st.inA = 0.0f; if (st.inA > 0.997f) st.inA = 1.0f;
     const float inH = snap(rowH + 12.0f * S);
-    const float boxH = snap(bodyY0 + lines * rowH + pad * 0.8f + inH * st.inA);
+
+    // ---- behaviour : always shown / fades when idle / collapses when idle ----
+    // Idle = no new line for THIS box for chIdle seconds, nobody hovering it, not typing, not scrolled back. The
+    // fade-out is slow and the wake-up quick. A collapsed box keeps its BOTTOM edge (the chat lives low on screen).
+    const int beh = (preview || editing) ? 0 : C.chBehave[box];
+    if (!src.sample) {
+        const unsigned nw = chat_newest_seq();
+        if (nw != st.actSeq) {
+            for (int i = src.n() - 1; i >= 0; --i) {
+                const ChatLine* L = src.at(i); if (!L || L->seq <= st.actSeq) break;
+                if ((box == 1) == chat_is_battle(L->chan)) { st.lastAct = nowMs; break; }
+            }
+            st.actSeq = nw;
+        }
+    }
+    if (!st.lastAct) st.lastAct = nowMs;
+    const MouseState* mh = f.mouse;
+    const bool hoverBox = mh && mh->focused && st.rw > 0.0f && mh->x >= st.rx && mh->x < st.rx + st.rw && mh->y >= st.ry && mh->y < st.ry + st.rh;
+    // fade and collapse are independent, each on its own delay (e.g. collapse after 8 s, fade out after 20 s)
+    const bool awake = typing || hoverBox || st.scroll > 0;
+    const int idleMs = (int)(nowMs - st.lastAct);
+    const bool folded = (beh & 2) && !awake && idleMs >= C.chIdle[box] * 1000;
+    const bool faded  = (beh & 1) && !awake && idleMs >= C.chFadeIdle[box] * 1000;
+    const float tVis = faded ? (float)C.chFadeTo[box] / 100.0f : 1.0f;
+    const float tFold = folded ? 1.0f : 0.0f;
+    const float kSlow = 1.0f - expf(-dt * 3.5f);
+    st.vis += (tVis - st.vis) * (tVis < st.vis ? kSlow : kFast);
+    if (fabsf(tVis - st.vis) < 0.004f) st.vis = tVis;
+    st.fold += (tFold - st.fold) * kSoft;
+    if (fabsf(tFold - st.fold) < 0.004f) st.fold = tFold;
+    const float A = st.vis;                                                  // every colour below is multiplied by it
+    // HEIGHT : chMaxLines lines (the text size scales it), or the fixed chH when chMaxLines is 0 ("all")
+    float bodyPx = (float)C.chH[box] * S - bodyY0 - pad * 0.8f; if (bodyPx < rowH) bodyPx = rowH;
+    const float bodyMax = C.chMaxLines[box] > 0 ? (float)C.chMaxLines[box] * rowH : bodyPx;
+    // The box GROWS WITH ITS CONTENT : as many rows as the open tab has (wrapped), up to the max -- one line, one row.
+    // Counted from the newest back, stopping at the max (cheap). Edit layout and the preview show the full size.
+    float bodyOpen = bodyMax;
+    bool overflow = true;                                                    // more history than the box shows -> fade its top edge
+    // COLLAPSE, line by line : a line stays chIdle seconds after it ARRIVED, then leaves -- down to chFoldLines rows.
+    // FIXED box (default) : the box keeps its size and the old lines FADE OUT in place. Fitting box : it shrinks.
+    // Hover, typing or scrolling back shows everything again.
+    const bool collapsing = (beh & 2) && !awake;
+    const unsigned keepMs = (unsigned)C.chIdle[box] * 1000u;
+    const bool fitBox = C.chFit[box] == 1;
+    if (!editing && !preview && fitBox) {
+        if (st.advFont != fo || st.advSize != tz) {                           // the same per-char advance cache as below
+            st.advFont = fo; st.advSize = tz;
+            char u[4] = { 0, 0, 0, 0 };
+            for (int ch = 0; ch < 256; ++ch) {
+                if (ch < 0x80) { u[0] = (char)(ch < 32 ? ' ' : ch); u[1] = 0; }
+                else if (ch >= 0xC0) { u[0] = (char)(0xC0 | (ch >> 6)); u[1] = (char)(0x80 | (ch & 0x3F)); u[2] = 0; }
+                else { u[0] = '?'; u[1] = 0; }
+                st.adv[ch] = fo->measure(u, tz);
+            }
+        }
+        int tb = C.chTab[box]; if (tb < 0 || tb >= TAB_N[box]) tb = 0;
+        const ChatTab& TP = tab_def(box, tb);
+        const char* meP = (f.game && f.game->me.name[0]) ? f.game->me.name : "";
+        const float stampP = C.chStamp[box] ? fo->measure("00:00", tz * 0.86f) + 9.0f * S : 0.0f;
+        const float availP = (float)C.chW[box] * S - 2.0f * pad - 2.0f * S - stampP;
+        const int cap = (int)(bodyMax / rowH + 0.999f);
+        int have = 0, fresh = 0; bool aged = false; short sa[24], sb[24];
+        for (int i = src.n() - 1; i >= 0 && have < cap; --i) {
+            const ChatLine* L = src.at(i); if (!L || !line_in_tab(*L, TP, meP)) continue;
+            LinePrefix lp; line_prefix(*L, fo, tz * 0.62f, st.adv, S, lp);
+            const int rws = wrap_line(*L, st.adv, availP, sa, sb, 24, lp.w);
+            have += rws;
+            if (!aged && nowMs - L->arrivedTick < keepMs) fresh += rws; else aged = true;   // newest first : the fresh ones are on top of the list
+        }
+        int rowsShown = have;
+        if (collapsing) { int keep = C.chFoldLines[box]; if (fresh > keep) keep = fresh; if (keep < rowsShown) rowsShown = keep; }
+        float want = (float)(rowsShown < 1 ? 1 : rowsShown) * rowH; if (want > bodyMax) want = bodyMax;
+        overflow = (float)have * rowH > bodyMax + 0.5f || st.scroll > 0;
+        if (st.bodyEase < 0.0f) st.bodyEase = want;
+        st.bodyEase += (want - st.bodyEase) * kSoft;
+        if (fabsf(want - st.bodyEase) < 0.3f) st.bodyEase = want;
+        bodyOpen = st.bodyEase;
+    }
+    const float lines = bodyOpen / rowH;                                     // how many lines fit (fractional : the top one fades)
+    float bodyFold = (float)C.chFoldLines[box] * rowH; if (bodyFold > bodyOpen) bodyFold = bodyOpen; if (bodyFold < rowH) bodyFold = rowH;
+    (void)bodyFold;
+    const float bodyNow = bodyOpen;                                          // (collapse is per line now : in bodyOpen)
+    const float linesVis = bodyNow / rowH;
+    const float boxH = snap(bodyY0 + bodyNow + pad * 0.8f + inH * st.inA);
+    // WHICH EDGE STAYS : chY is that edge (0 = bottom : the box grows upward ; 1 = top : it grows downward). A config
+    // from before kept chY as the top of a chH-high frame whose bottom the box sat on : take that bottom, once.
+    if (C.chGrow[box] < 0 && !preview && f.screenH > 0.0f) {
+        C.chY[box] = (C.chY[box] * f.screenH + bodyY0 + bodyPx + pad * 0.8f) / f.screenH;
+        C.chGrow[box] = 0; save_ui_config();
+    }
+    const bool growUp = C.chGrow[box] != 1;
 
     // ---- position ----
     float px, py;
     if (ovS > 0.0f) { px = snap(ovX - boxW * 0.5f); py = snap(ovY - boxH * 0.5f); }
-    else            { px = snap(C.chX[box] * f.screenW); py = snap(C.chY[box] * f.screenH); }
+    else            { px = snap(C.chX[box] * f.screenW); py = snap(C.chY[box] * f.screenH - (growUp ? boxH : 0.0f)); }
     const MouseState* m = f.mouse;
     if (editing) {
         // the CORNER GRIP first : it takes the shared drag lock, so box_edit cannot grab the same click
-        const float g = 16.0f * S, gx = px + boxW - g, gy = py + boxH - g;
-        const bool overGrip = m && m->x >= gx && m->x < px + boxW && m->y >= gy && m->y < py + boxH;
+        // the CORNER GRIP sits on the MOVING edge (top-right when the box grows upward) : width + lines (or height)
+        const float g = 16.0f * S, gx = px + boxW - g, gy = growUp ? py : py + boxH - g;
+        const bool overGrip = m && m->x >= gx && m->x < px + boxW && m->y >= gy && m->y < gy + g;
         if (m && m->clicked && overGrip && !st.resizing && edit_drag_grab(&st.grip)) st.resizing = true;
         if (st.resizing) {
             if (m && m->down) {
                 int w = (int)((m->x - px) / S + 0.5f); C.chW[box] = w < 200 ? 200 : (w > 1600 ? 1600 : w);
-                int ln = (int)((m->y - py - bodyY0 - pad * 0.8f) / rowH + 0.5f); C.chLines[box] = ln < 3 ? 3 : (ln > 40 ? 40 : ln);
+                const float span = growUp ? (py + boxH - m->y) : (m->y - py);    // the new box height, from the fixed edge
+                if (C.chMaxLines[box] > 0) { int ln = (int)((span - bodyY0 - pad * 0.8f) / rowH + 0.5f); C.chMaxLines[box] = ln < 1 ? 1 : (ln > 40 ? 40 : ln); }
+                else { int hh = (int)(span / S + 0.5f); C.chH[box] = hh < 80 ? 80 : (hh > 1400 ? 1400 : hh); }
             } else { st.resizing = false; edit_drag_release(&st.grip); save_ui_config(); }
         }
-        if (!st.resizing) box_edit(f, st.eb, EDITBOX_CHAT + box, px, py, boxW, boxH, C.chScale[box], C.chX[box], C.chY[box], 0);
+        if (!st.resizing) {   // box_edit stores the TOP : turn it back into the fixed edge (and save once the drop is done)
+            float topY = py / (f.screenH > 0.0f ? f.screenH : 1.0f); const float y0 = C.chY[box];
+            box_edit(f, st.eb, EDITBOX_CHAT + box, px, py, boxW, boxH, C.chScale[box], C.chX[box], topY, 0);
+            C.chY[box] = growUp ? topY + boxH / f.screenH : topY;
+            if (C.chY[box] != y0 && !st.eb.dragging) save_ui_config();
+        }
     } else if (ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);
 
-    // the rect the mouse callback tests (live boxes only)
-    if (!preview && f.screenW > 0.0f && f.screenH > 0.0f) {
+    st.rx = px; st.ry = py; st.rw = boxW; st.rh = boxH;                    // next frame's hover test
+    if (!preview && f.screenH > 0.0f) { C.chEdge[box][0] = py / f.screenH; C.chEdge[box][1] = (py + boxH) / f.screenH; }
+    // the rect the mouse callback tests (live boxes only) -- a box faded near nothing no longer eats clicks
+    if (!preview && f.screenW > 0.0f && f.screenH > 0.0f && A > 0.5f) {
         C.chHit[box][0] = px / f.screenW; C.chHit[box][1] = py / f.screenH;
         C.chHit[box][2] = boxW / f.screenW; C.chHit[box][3] = boxH / f.screenH;
+    }
+    if (!preview && f.screenW > 0.0f && f.screenH > 0.0f) {
         if (box == 0 && !editing) {   // the game's input line docks under this box (native_ui.cpp) ; not while dragging
             C.chDockRect[0] = px; C.chDockRect[1] = py; C.chDockRect[2] = boxW; C.chDockRect[3] = boxH;
             C.chDockRect[4] = f.screenW; C.chDockRect[5] = f.screenH;
@@ -326,7 +555,8 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
 
     // ---- chrome ----
     dColorQuadState(dev);
-    draw_themed_box(dev, f.skin, px, py, boxW, boxH, C.chBox[box], 1.0f, S);
+    if (A <= 0.003f && !editing) return;                                  // fully faded : nothing to draw
+    draw_themed_box(dev, f.skin, px, py, boxW, boxH, C.chBox[box], A, S);
     const u32 accent = box_style_border_color(dev, f.skin, C.chBox[box]) | 0xFF000000u;
     const u32 accentLite = mix(accent, 0xFFFFFFFFu, 0.35f);
 
@@ -350,60 +580,83 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         }
     }
 
-    // ---- header : category on the right ----
+    // ---- header : the tabs only -- the first one ("Chat" / "Battle") IS the box's name ----
     const float headY = py + pad, headCY = headY + headH * 0.5f;
-    const char* title = (box == 0) ? tr("CHAT", "DISCUSSION") : tr("BATTLE", "COMBAT");
-    const float titleW = fo->measure(title, titleZ);
-    {   // just the word, quiet : no ornament beside it
-        const float tx = px + boxW - pad - titleW;
-        fo->begin(dev);
-        fo->draw_lc(dev, tx, headCY - 1.0f * S, title, titleZ, 0xFF7C889Au, 0xC0000000u, tow * 0.8f);
-    }
+    (void)titleZ;
 
     // ---- header : tabs (text + sliding underline + count badge) ----
-    const float tabsRight = px + boxW - pad - titleW - 20.0f * S;
-    float tx = px + pad;
+    // the tabs start INSIDE the header band, with room for the open tab's pill (+ its glow) on either side
+    const float pillPad = 6.0f * S, bandX = px + pad * 0.5f, bandW = boxW - pad;
+    const float tabsRight = bandX + bandW - pillPad - 3.0f * S;
+    float tx = bandX + pillPad + 3.0f * S;
     float actX = -1.0f, actW = 0.0f;
+    const float iz = snap((dn == 0 ? 16.0f : (dn == 1 ? 18.0f : 19.0f)) * S * hsc);   // icon box
+    // The header is a BAND a shade lighter than the body (no rule line) ; the open tab sits on a pill that slides to it,
+    // drawn first with last frame's eased place so the icons and the label sit on top.
+    dColorQuadState(dev);
+    {   const float bx = px + pad * 0.5f, by = py + pad * 0.45f, bw = boxW - pad, bh = headH + pad * 0.55f + headGap * 0.4f;
+        rrect(dev, snap(bx), snap(by), snap(bw), snap(bh), 7.0f * S, with_alpha(0x16FFFFFFu, A), with_alpha(0x08FFFFFFu, A)); }
+    if (st.ulX >= 0.0f) {
+        const float ph = snap(headH - 6.0f * S), pyy = snap(headCY - 1.0f * S - ph * 0.5f);
+        float pxl = px + st.ulX - pillPad, pw = st.ulW + 2.0f * pillPad;
+        if (pxl < bandX + 1.0f * S) { pw -= bandX + 1.0f * S - pxl; pxl = bandX + 1.0f * S; }                 // never past the band
+        if (pxl + pw > bandX + bandW - 1.0f * S) pw = bandX + bandW - 1.0f * S - pxl;
+        pxl = snap(pxl); pw = snap(pw);
+        rrect_glow(dev, pxl, pyy, pw, ph, ph * 0.5f, with_alpha((accent & 0x00FFFFFFu) | 0x30000000u, A), 3.0f * S);
+        rrect(dev, pxl, pyy, pw, ph, ph * 0.5f, with_alpha((accent & 0x00FFFFFFu) | 0x3C000000u, A), with_alpha((accent & 0x00FFFFFFu) | 0x22000000u, A));
+        rrect_stroke(dev, pxl, pyy, pw, ph, ph * 0.5f, with_alpha((accent & 0x00FFFFFFu) | 0x80000000u, A), 1.0f);
+    }
+    // FIXED SLOTS : every tab keeps its place whatever is open -- only the pill moves. With room, every tab shows its
+    // icon AND name, plus a reserved spot for its unread count (so a count appearing shifts nothing) ; too narrow,
+    // every tab is an icon only. The count sits AFTER the name, never under the pill of a neighbour.
+    const float gapT = (dn == 0 ? 12.0f : 15.0f) * S, cntSlot = snap(fo->measure("99", badgeZ) + 12.0f * S);
+    float lws[8]; float need = 0.0f;
+    for (int t = 0; t < nTabs; ++t) { lws[t] = fo->measure(tr(tab_def(box, t).en, tab_def(box, t).fr), tabZ); need += iz + 6.0f * S + lws[t] + cntSlot + (t ? gapT : 0.0f); }
+    const int tst = C.chTabStyle[box];                                       // 0 auto, 1 icon + name, 2 icon, 3 name
+    const bool named = tst == 1 || tst == 3 || (tst == 0 && need <= tabsRight - tx);
+    const bool iconed = tst != 3;
+    const float izU = iconed ? iz : 0.0f, icGap = (iconed && named) ? 6.0f * S : 0.0f;
     for (int t = 0; t < nTabs; ++t) {
         const ChatTab& T = tab_def(box, t);
-        const char* lbl = tr(T.en, T.fr);
-        const float lw = fo->measure(lbl, tabZ);
-        char bt[8] = ""; float bw = 0.0f; const float bh = snap(14.0f * S);
-        if (t != tab && st.unread[t] > 0) {
-            if (st.unread[t] > 99) lstrcpynA(bt, "99+", sizeof(bt)); else _snprintf(bt, sizeof(bt), "%d", st.unread[t]);
-            bt[sizeof(bt) - 1] = 0;
-            bw = snap(fo->measure(bt, badgeZ) + 8.0f * S); if (bw < bh) bw = bh;
-        }
-        const float tw = lw + (bw > 0.0f ? bw + 5.0f * S : 0.0f);
-        if (tx + tw > tabsRight) break;                                     // a narrow box shows the tabs that fit
         const bool active = t == tab;
-        const bool hover = canClick && m->x >= tx - 6.0f * S && m->x < tx + tw + 6.0f * S && m->y >= headY && m->y < headY + headH;
+        const char* lbl = tr(T.en, T.fr);
+        const float tw = named ? izU + icGap + lws[t] : izU;                 // the part the pill covers
+        const float slot = named ? tw + cntSlot : izU + 8.0f * S;              // the tab's whole fixed place
+        if (tx + tw > tabsRight) break;                                     // a narrow box shows the tabs that fit
+        const bool hover = canClick && m->x >= tx - 5.0f * S && m->x < tx + slot && m->y >= headY && m->y < headY + headH;
         if (hover && m->clicked && !active) { C.chTab[box] = t; tab = t; st.unread[t] = 0; save_ui_config(); }
         st.hov[t] += ((hover ? 1.0f : 0.0f) - st.hov[t]) * kFast;
-        const u32 txt = (t == tab) ? 0xFFFFFFFFu : mix(0xFF8794A8u, 0xFFDDE3EBu, st.hov[t]);
-        fo->begin(dev);
-        fo->draw_lc(dev, tx, headCY - 1.0f * S, lbl, tabZ, txt, 0xD0000000u, tow);
-        if (bw > 0.0f) {                                                    // the count badge
-            const float bx = snap(tx + lw + 5.0f * S), by = snap(headCY - 1.0f * S - bh * 0.5f);
-            dColorQuadState(dev);
-            rrect_glow(dev, bx, by, bw, bh, bh * 0.5f, (accent & 0x00FFFFFFu) | 0x50000000u, 3.0f * S);
-            rrect(dev, bx, by, bw, bh, bh * 0.5f, accentLite, accent);
-            fo->begin(dev);
-            fo->draw_cc(dev, bx + bw * 0.5f, by + bh * 0.5f, bt, badgeZ, 0xFFFFFFFFu, 0x90000000u, tow * 0.7f);
+        const u32 ic = icon_col(T.icon);
+        const u32 icc = active ? ic : mix(mix(ic, 0xFF6A7586u, 0.55f), ic, st.hov[t]);   // idle tabs : the colour, muted
+        dColorQuadState(dev);
+        if (iconed) {
+            if (active) disc_glow(dev, tx + iz * 0.5f, headCY - 1.0f * S, iz * 0.30f, with_alpha((ic & 0x00FFFFFFu) | 0x30000000u, A), 6.0f * S);
+            draw_tab_icon(dev, T.icon, tx + iz * 0.5f, headCY - 1.0f * S, iz, S, with_alpha(icc, A));
         }
-        if (t == tab) { actX = tx - px; actW = lw; }
-        tx += tw + 16.0f * S;
+        if (named) {
+            const u32 lc = active ? 0xFFFFFFFFu : mix(0xFF8794A8u, 0xFFDDE3EBu, st.hov[t]);
+            fo->begin(dev);
+            fo->draw_lc(dev, tx + izU + icGap, headCY - 1.0f * S, lbl, tabZ, with_alpha(lc, A), with_alpha(0xD0000000u, A), tow);
+        }
+        if (!active && st.unread[t] > 0) {                                  // the count : after the name (or on the icon, icons-only)
+            char bt[8]; if (st.unread[t] > 99) lstrcpynA(bt, "99+", sizeof(bt)); else _snprintf(bt, sizeof(bt), "%d", st.unread[t]);
+            bt[sizeof(bt) - 1] = 0;
+            const float bh = snap(13.0f * S); float bw = snap(fo->measure(bt, badgeZ) + 8.0f * S); if (bw < bh) bw = bh;
+            const float bx = named ? snap(tx + tw + 5.0f * S) : snap(tx + iz - bw * 0.45f);
+            const float by = named ? snap(headCY - 1.0f * S - bh * 0.5f) : snap(headCY - 1.0f * S - iz * 0.5f - bh * 0.35f);
+            dColorQuadState(dev);
+            rrect_glow(dev, bx, by, bw, bh, bh * 0.5f, with_alpha((accent & 0x00FFFFFFu) | 0x50000000u, A), 3.0f * S);
+            rrect(dev, bx, by, bw, bh, bh * 0.5f, with_alpha(accentLite, A), with_alpha(accent, A));
+            fo->begin(dev);
+            fo->draw_cc(dev, bx + bw * 0.5f, by + bh * 0.5f, bt, badgeZ, with_alpha(0xFFFFFFFFu, A), with_alpha(0x90000000u, A), tow * 0.7f);
+        }
+        if (active) { actX = tx - px; actW = tw; }
+        tx += slot + gapT;
     }
-    // the light line under the header, and the active tab's underline sliding to it
-    const float lineY = snap(headY + headH + headGap * 0.5f);
-    dColorQuadState(dev);
-    hbar_soft(dev, px + pad, lineY, boxW - 2.0f * pad, 1.0f, accent, 0x60, 0.18f);
+    // the pill slides to the open tab (eased ; drawn next frame, under the icons)
     if (actX >= 0.0f) {
         if (st.ulX < 0.0f) { st.ulX = actX; st.ulW = actW; }
         st.ulX += (actX - st.ulX) * kSoft; st.ulW += (actW - st.ulW) * kSoft;
-        const float ux = snap(px + st.ulX), uw = snap(st.ulW), uh = snap(2.0f * S) < 2.0f ? 2.0f : snap(2.0f * S);
-        rrect_glow(dev, ux, lineY - uh * 0.5f, uw, uh, uh * 0.5f, (accent & 0x00FFFFFFu) | 0x70000000u, 4.0f * S);
-        rrect(dev, ux, lineY - uh * 0.5f, uw, uh, uh * 0.5f, accentLite, accent, 1.0f);
     }
     if (!src.sample) st.unread[tab] = 0;
 
@@ -431,14 +684,14 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         int add = 0, msgs = 0; short sa[24], sb[24];
         for (int i = src.n() - 1; i >= 0; --i) {
             const ChatLine* L = src.at(i); if (!L || L->seq <= st.lastSeq) break;
-            if (line_in_tab(*L, T, me)) { add += wrap_line(*L, adv, avail, sa, sb, 24); if (!L->cont) ++msgs; }
+            if (line_in_tab(*L, T, me)) { LinePrefix lp; line_prefix(*L, fo, bz, adv, S, lp); add += wrap_line(*L, adv, avail, sa, sb, 24, lp.w); if (!L->cont) ++msgs; }
         }
         st.lastSeq = newest;
         if (add > 0) {
             st.vpos += (float)add;
             if (st.scroll > 0) { st.scroll += add; st.newBelow += msgs; }
         }
-        if (st.vpos > (float)(st.scroll + lines * 2)) st.vpos = (float)(st.scroll + lines * 2);   // a burst : don't crawl
+        if (st.vpos > (float)st.scroll + lines * 2.0f) st.vpos = (float)st.scroll + lines * 2.0f;   // a burst : don't crawl
     }
     if (!preview) {
         if (C.chWheel[box] != 0) { st.scroll += C.chWheel[box] * 3; C.chWheel[box] = 0; }
@@ -449,13 +702,14 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     if (fabsf((float)st.scroll - st.vpos) < 0.01f) st.vpos = (float)st.scroll;
 
     // ---- collect the visible rows, newest first (one extra : the row sliding through the top) ----
-    const int want = lines + 1;
+    int want = (int)linesVis + 2; if (want > 41) want = 41;
     ChatRow rows[48]; int nr = 0;
     int skip = (int)st.vpos; const float frac = st.vpos - (float)skip;
     int skipLeft = st.scroll;                                               // to clamp the TARGET to the history
     for (int i = src.n() - 1; i >= 0 && (nr < want || skipLeft > 0); --i) {
         const ChatLine* L = src.at(i); if (!L || !line_in_tab(*L, T, me)) continue;
-        short sa[24], sb[24]; const int ns = wrap_line(*L, adv, avail, sa, sb, 24);
+        LinePrefix lp; line_prefix(*L, fo, bz, adv, S, lp);
+        short sa[24], sb[24]; const int ns = wrap_line(*L, adv, avail, sa, sb, 24, lp.w);
         for (int k = ns - 1; k >= 0; --k) {
             if (skipLeft > 0) --skipLeft;
             if (skip > 0) { --skip; continue; }
@@ -465,32 +719,63 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     if (skipLeft > 0 && !preview) { st.scroll -= skipLeft; if (st.scroll < 0) st.scroll = 0; }   // past the oldest line
 
     // ---- draw the rows, bottom up : ONE baseline for every coloured run, top edge fading, clipped to the body ----
-    const float bodyTop = py + bodyY0, bodyH = lines * rowH, bodyBot = bodyTop + bodyH;
+    const float bodyTop = py + bodyY0, bodyH = bodyNow, bodyBot = bodyTop + bodyH;
     const float x0 = px + pad + 1.0f * S;
     float refT = 0.0f, refB = 0.0f; fo->ink_v("Hg", tz, refT, refB);
     const float yOff = (refT + refB) * 0.5f;                                // cell top -> visual centre, the same for every run
+    // where the EYE puts the middle of a line : the middle of its capitals (descenders don't count). A badge is centred
+    // there, not on cy -- centred on cy it sat visibly low against the text (2026-11-15).
+    float capT = 0.0f, capB = 0.0f; fo->ink_v("H", tz, capT, capB);
+    const float capMid = (capT + capB) * 0.5f - yOff;                       // offset from cy to the capitals' middle
     float sT = 0.0f, sB = 0.0f; fo->ink_v("00:00", tz * 0.86f, sT, sB);
     const float sOff = (sT + sB) * 0.5f;
-    float cy = bodyTop + (lines - 0.5f) * rowH + frac * rowH;
+    float cy = bodyBot - 0.5f * rowH + frac * rowH;
     const float fadeH = rowH * 1.1f;
     char buf[CHAT_TEXT * 2 + 1];
     clip_rect_begin(dev, px + 2.0f * S, bodyTop, boxW - 4.0f * S, bodyH);
     fo->begin(dev);
     if (nr == 0)
-        fo->draw_cc(dev, px + boxW * 0.5f, bodyTop + bodyH * 0.5f, tr("No messages yet", "Aucun message pour l'instant"), tz * 0.92f, 0xFF6E7A8Cu, 0xC0000000u, tow);
+        fo->draw_cc(dev, px + boxW * 0.5f, bodyTop + bodyH * 0.5f, tr("No messages yet", "Aucun message pour l'instant"), tz * 0.92f, with_alpha(0xFF6E7A8Cu, A), with_alpha(0xC0000000u, A), tow);
     for (int r = 0; r < nr; ++r, cy -= rowH) {
         const ChatRow& R = rows[r]; const ChatLine& L = *R.L;
         const float rTop = cy - rowH * 0.5f;
-        float a = (rTop - bodyTop) / fadeH + 0.35f; if (a > 1.0f) a = 1.0f;   // the top edge fades out
+        float a = overflow ? (rTop - bodyTop) / fadeH + 0.35f : 1.0f; if (a > 1.0f) a = 1.0f;   // the top edge fades out (only when more is above)
         const float aBot = (bodyBot - rTop) / rowH; if (aBot < a) a = aBot;    // a row sliding in fades in
+        if (collapsing && !fitBox && r >= C.chFoldLines[box]) {            // fixed box : an old line fades out in place
+            const unsigned age = nowMs - L.arrivedTick;
+            if (age > keepMs) { float k = 1.0f - (float)(age - keepMs) / 900.0f; if (k < 0.0f) k = 0.0f; a *= k; }
+        }
+        a *= A;
         if (a <= 0.02f) continue;
-        const u32 base = te_col(TS, L.modeArgb ? (L.modeArgb | 0xFF000000u) : CHAN_COL[L.chan < CH_COUNT ? L.chan : CH_OTHER]);
+        // talk lines : the name carries the channel colour, the message a light tint of it (easier to read) ;
+        // system / battle / NPC lines keep the colour the client gives their mode
+        const bool talk = L.chan != CH_SYSTEM && L.chan != CH_BATTLE && L.chan != CH_NPC && L.chan != CH_OTHER;
+        const u32 base = te_col(TS, talk ? mix(CHAN_COL[L.chan], 0xFFFFFFFFu, 0.55f)
+                                         : (L.modeArgb ? (L.modeArgb | 0xFF000000u) : CHAN_COL[L.chan < CH_COUNT ? L.chan : CH_OTHER]));
         const u32 stroke = with_alpha(0xE0000000u, a);
         if (C.chStamp[box] && R.first) {
             _snprintf(stampFmt, sizeof(stampFmt), "%02u:%02u", L.hhmm / 100, L.hhmm % 100); stampFmt[sizeof(stampFmt) - 1] = 0;
             fo->draw(dev, x0, cy - sOff, stampFmt, tz * 0.86f, with_alpha(0xFF5F6B7Eu, a), stroke, tow * 0.8f);
         }
         float x = x0 + stampW;
+        const u32 chanC = CHAN_COL[L.chan < CH_COUNT ? L.chan : CH_OTHER];
+        if (R.first) {                                                      // the badge, then the speaker's name
+            LinePrefix lp; line_prefix(L, fo, bz, adv, S, lp);
+            if (lp.badge) {
+                const float bh = snap(rowH * 0.70f), by = snap(cy + capMid - bh * 0.5f), bx = snap(x);
+                dColorQuadState(dev);
+                rrect(dev, bx, by, lp.badgeW, bh, 3.0f * S, with_alpha((chanC & 0x00FFFFFFu) | 0x3A000000u, a), with_alpha((chanC & 0x00FFFFFFu) | 0x22000000u, a));
+                rrect_stroke(dev, bx, by, lp.badgeW, bh, 3.0f * S, with_alpha((chanC & 0x00FFFFFFu) | 0x8C000000u, a), 1.0f);
+                fo->begin(dev);
+                fo->draw_cc(dev, bx + lp.badgeW * 0.5f, by + bh * 0.5f, lp.badge, bz, with_alpha(chanC, a), with_alpha(0xB0000000u, a), tow * 0.7f);
+                x += lp.badgeW + 6.0f * S;
+            }
+            if (L.chSpeaker[0]) {
+                fo->begin(dev);
+                fo->draw(dev, x, cy - yOff, L.chSpeaker, tz, with_alpha(chanC, a), stroke, tow);
+                x += lp.nameW + 7.0f * S;
+            }
+        }
         int i = R.a;                                                        // runs of one colour, placed by the advance sum
         while (i < R.b) {
             const unsigned char cc = L.col[i]; int j = i, n = 0; float w = 0.0f;
@@ -508,7 +793,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
 
     // ---- the input field (the client's text, live) ----
     if (st.inA > 0.0f) {
-        const float a = st.inA;
+        const float a = st.inA * A;
         const float fx = px + pad, fw = boxW - 2.0f * pad, fh = inH - 6.0f * S;
         const float fy = bodyBot + 3.0f * S + (1.0f - a) * 6.0f * S;
         dColorQuadState(dev);
@@ -519,7 +804,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         float chipW = 0.0f;
         if (chLbl) {
             const float cz = 11.5f * S, chh = snap(fh - 8.0f * S); chipW = snap(fo->measure(chLbl, cz) + 14.0f * S);
-            const float cxp = snap(fx + 5.0f * S), cyp = snap(fy + (fh - chh) * 0.5f);
+            const float cxp = snap(fx + 5.0f * S), cyp = snap(fy + fh * 0.5f + capMid - chh * 0.5f);   // on the text's capitals
             const u32 cc = CHAN_COL[inCh];
             dColorQuadState(dev);
             rrect(dev, cxp, cyp, chipW, chh, chh * 0.5f, with_alpha((cc & 0x00FFFFFFu) | 0x38000000u, a), with_alpha((cc & 0x00FFFFFFu) | 0x24000000u, a));
@@ -537,7 +822,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         clip_rect_begin(dev, tx0 - 1.0f * S, fy, tw + 2.0f * S, fh);
         fo->begin(dev);
         if (typing && L.n == 0)
-            fo->draw(dev, tx0, tcy - yOff, tr("Type a message...", "Ã""cris un message..."), tz, with_alpha(0xFF5F6B7Eu, a), with_alpha(0xC0000000u, a), tow);
+            fo->draw(dev, tx0, tcy - yOff, tr("Type a message...", "\xC3\x89""cris un message..."), tz, with_alpha(0xFF5F6B7Eu, a), with_alpha(0xC0000000u, a), tow);
         float x = tx0 - st.inScroll;
         char ub[0x170 * 2 + 1];
         for (int i = 0; i < L.n; ) {                                        // runs of one colour, Latin-1 -> UTF-8
@@ -568,21 +853,22 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         const bool hov = canClick && m->x >= pxx && m->x < pxx + pw && m->y >= pyy && m->y < pyy + ph;
         if (hov && m->clicked) { st.scroll = 0; st.newBelow = 0; }
         dColorQuadState(dev);
-        rrect_glow(dev, pxx, pyy, pw, ph, ph * 0.5f, (accent & 0x00FFFFFFu) | (hov ? 0x90000000u : 0x60000000u), 6.0f * S);
-        rrect(dev, pxx, pyy, pw, ph, ph * 0.5f, hov ? accentLite : mix(accent, 0xFFFFFFFFu, 0.15f), mix(accent, 0xFF000000u, 0.25f));
+        rrect_glow(dev, pxx, pyy, pw, ph, ph * 0.5f, with_alpha((accent & 0x00FFFFFFu) | (hov ? 0x90000000u : 0x60000000u), A), 6.0f * S);
+        rrect(dev, pxx, pyy, pw, ph, ph * 0.5f, with_alpha(hov ? accentLite : mix(accent, 0xFFFFFFFFu, 0.15f), A), with_alpha(mix(accent, 0xFF000000u, 0.25f), A));
         const float cx0 = pxx + 12.0f * S, ccy = pyy + ph * 0.5f + 1.0f * S;   // the chevron : pointing down
-        fill_tri(dev, cx0, ccy - chev * 0.35f, cx0 + chev, ccy - chev * 0.35f, cx0 + chev * 0.5f, ccy + chev * 0.35f, 0xFFFFFFFFu);
+        { const float xy[6] = { cx0, ccy - chev * 0.35f, cx0 + chev, ccy - chev * 0.35f, cx0 + chev * 0.5f, ccy + chev * 0.35f };
+          fill_poly_aa(dev, xy, 3, with_alpha(0xFFFFFFFFu, A)); }
         fo->begin(dev);
         fo->draw_lc(dev, cx0 + chev + 7.0f * S, pyy + ph * 0.5f, lb, pz, 0xFFFFFFFFu, 0x90000000u, tow * 0.8f);
     }
 
     // ---- //aio edit : the corner grip (three diagonal strokes) ----
     if (editing) {
-        const float ex = px + boxW - 5.0f * S, ey = py + boxH - 5.0f * S;
+        const float ex = px + boxW - 5.0f * S, ey = growUp ? py + 5.0f * S : py + boxH - 5.0f * S, dy = growUp ? 1.0f : -1.0f;
         dColorQuadState(dev);
         for (int k = 1; k <= 3; ++k) {
             const float o = (float)k * 4.0f * S;
-            seg_soft(dev, ex - o, ey, ex, ey - o, 1.4f * S, st.resizing ? accentLite : accent);
+            seg_soft(dev, ex - o, ey, ex, ey + dy * o, 1.4f * S, st.resizing ? accentLite : accent);
         }
     }
 }

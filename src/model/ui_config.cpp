@@ -265,7 +265,8 @@ static bool save_config_to(const char* path) {
     fprintf(f, "pet=%d,%.3f,%.4f,%.4f,%d\n", c.petShow, c.petScale, c.petX, c.petY, c.petTab);   // the Pet box : show, size, place, config tab
     fprintf(f, "nativeui=%d,%d,%d\n", c.nuHide, c.nuMenuDx, c.nuMenuDy);   // Game UI : hidden client windows + menus offset
     for (int b = 0; b < 2; ++b) {   // Chat module : [0] chat, [1] battle -- box, chrome
-        fprintf(f, "chat%d=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d\n", b, c.chShow[b], c.chScale[b], c.chX[b], c.chY[b], c.chW[b], c.chLines[b], c.chStamp[b], c.chTab[b]);
+        fprintf(f, "chat%d=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.2f,%d\n", b, c.chShow[b], c.chScale[b], c.chX[b], c.chY[b], c.chW[b], c.chLines[b], c.chStamp[b], c.chTab[b],
+                c.chBehave[b], c.chIdle[b], c.chFadeTo[b], c.chH[b], c.chFoldLines[b], c.chMaxLines[b], c.chFadeIdle[b], c.chGrow[b], c.chFit[b], c.chDensity[b], c.chHeadScale[b], c.chTabStyle[b]);
         const BoxStyle& x = c.chBox[b];
         fprintf(f, "chbox%d=%d,%.4f,%d,%d,%.4f,%08X,%d\n", b, x.on, x.alpha, x.themeCopy, x.theme, x.lum, x.hue, x.border);
     }
@@ -405,10 +406,18 @@ static bool parse_chat_line(const char* line, UiConfig& c) {
     if (!strncmp(line, "chbox", 5) && (line[5] == '0' || line[5] == '1') && line[6] == '=') { parse_box(line + 7, c.chBox[line[5] - '0']); return true; }
     if (strncmp(line, "chat", 4) || (line[4] != '0' && line[4] != '1') || line[5] != '=') return false;
     const int b = line[4] - '0';
-    int sh = c.chShow[b], w = c.chW[b], ln = c.chLines[b], st = c.chStamp[b], tb = c.chTab[b]; float scl = c.chScale[b], x = c.chX[b], y = c.chY[b];
-    const int n = sscanf(line + 6, "%d,%f,%f,%f,%d,%d,%d,%d", &sh, &scl, &x, &y, &w, &ln, &st, &tb);
+    int sh = c.chShow[b], w = c.chW[b], ln = c.chLines[b], st = c.chStamp[b], tb = c.chTab[b], be = c.chBehave[b], id = c.chIdle[b], ft = c.chFadeTo[b], hh = c.chH[b], fl = c.chFoldLines[b], ml = c.chMaxLines[b], fi = c.chFadeIdle[b], gr = c.chGrow[b], fz = c.chFit[b], dn = c.chDensity[b]; float hs = c.chHeadScale[b]; int ts = c.chTabStyle[b];
+    float scl = c.chScale[b], x = c.chX[b], y = c.chY[b];
+    const int n = sscanf(line + 6, "%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%d", &sh, &scl, &x, &y, &w, &ln, &st, &tb, &be, &id, &ft, &hh, &fl, &ml, &fi, &gr, &fz, &dn, &hs, &ts);
     if (n >= 1) c.chShow[b] = sh ? 1 : 0; if (n >= 2) c.chScale[b] = scl; if (n >= 3) c.chX[b] = x; if (n >= 4) c.chY[b] = y;
     if (n >= 5) c.chW[b] = w; if (n >= 6) c.chLines[b] = ln; if (n >= 7) c.chStamp[b] = st ? 1 : 0; if (n >= 8) c.chTab[b] = tb;
+    if (n >= 9) c.chBehave[b] = be; if (n >= 10) c.chIdle[b] = id; if (n >= 11) c.chFadeTo[b] = ft; if (n >= 12) c.chH[b] = hh; if (n >= 13) c.chFoldLines[b] = fl; if (n >= 14) c.chMaxLines[b] = ml;
+    if (n >= 15) c.chFadeIdle[b] = fi; else if (n >= 10) c.chFadeIdle[b] = id;   // before : one delay for both
+    if (n >= 16) c.chGrow[b] = gr;                                                  // absent : -1, chY is still the top
+    if (n >= 17) c.chFit[b] = fz ? 1 : 0;
+    if (n >= 18) c.chDensity[b] = dn;
+    if (n >= 19) c.chHeadScale[b] = hs;
+    if (n >= 20) c.chTabStyle[b] = ts;
     return true;
 }
 
@@ -1285,7 +1294,8 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.nuHide != b.nuHide || a.nuMenuDx != b.nuMenuDx || a.nuMenuDy != b.nuMenuDy) return false;
     for (int k = 0; k < 2; ++k) {   // Chat module
         if (a.chShow[k] != b.chShow[k] || a.chScale[k] != b.chScale[k] || a.chX[k] != b.chX[k] || a.chY[k] != b.chY[k] || a.chW[k] != b.chW[k]
-            || a.chLines[k] != b.chLines[k] || a.chStamp[k] != b.chStamp[k] || a.chTab[k] != b.chTab[k] || !box_eq(a.chBox[k], b.chBox[k])) return false;
+            || a.chLines[k] != b.chLines[k] || a.chStamp[k] != b.chStamp[k] || a.chTab[k] != b.chTab[k] || !box_eq(a.chBox[k], b.chBox[k])
+            || a.chBehave[k] != b.chBehave[k] || a.chIdle[k] != b.chIdle[k] || a.chFadeTo[k] != b.chFadeTo[k] || a.chH[k] != b.chH[k] || a.chFoldLines[k] != b.chFoldLines[k] || a.chMaxLines[k] != b.chMaxLines[k] || a.chFadeIdle[k] != b.chFadeIdle[k] || a.chGrow[k] != b.chGrow[k] || a.chFit[k] != b.chFit[k] || a.chDensity[k] != b.chDensity[k] || a.chHeadScale[k] != b.chHeadScale[k] || a.chTabStyle[k] != b.chTabStyle[k]) return false;
     }
     if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock) return false;   // Game UI
     if (!text_styles_eq(a.tpText, b.tpText, TP_TE_COUNT)) return false;

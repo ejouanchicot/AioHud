@@ -77,6 +77,21 @@ void test_chat() {
     CHECK(chat_is_battle(chat_classify(20)));
     CHECK(!chat_is_battle(chat_classify(121)));
 
+    SECTION("chat : the speaker, from the client's own line formats (fictional names)");
+    {   ChatLine h; memset(&h, 0, sizeof(h));
+        auto P = [&](int chan, const char* txt) { memset(&h, 0, sizeof(h)); h.chan = (unsigned char)chan; int k = 0; for (; txt[k]; ++k) h.text[k] = txt[k]; h.len = (unsigned char)k; chat_parse_speaker(h); };
+        P(CH_PARTY, "(PlayerName1) ready");            CHECK_STR(h.chSpeaker, "PlayerName1"); CHECK_STR(h.text + h.chBodyAt, "ready");
+        P(CH_LS1, "[1]<PlayerName2> run tonight ?");   CHECK_STR(h.chSpeaker, "PlayerName2"); CHECK_EQ(h.chLsIdx, 1); CHECK_STR(h.text + h.chBodyAt, "run tonight ?");
+        P(CH_LS2, "[2]<PlayerName3> hi");              CHECK_EQ(h.chLsIdx, 2); CHECK_STR(h.chSpeaker, "PlayerName3");
+        P(CH_TELL, "PlayerName4>> thanks");            CHECK_STR(h.chSpeaker, "PlayerName4"); CHECK_EQ(h.chTellOut, 0); CHECK_STR(h.text + h.chBodyAt, "thanks");
+        P(CH_TELL, ">>PlayerName5 : on my way");       CHECK_STR(h.chSpeaker, "PlayerName5"); CHECK_EQ(h.chTellOut, 1); CHECK_STR(h.text + h.chBodyAt, "on my way");
+        P(CH_UNITY, "{PlayerName6} gg");               CHECK_STR(h.chSpeaker, "PlayerName6"); CHECK_STR(h.text + h.chBodyAt, "gg");
+        P(CH_NPC, "Shop Clerk : Welcome!");            CHECK_STR(h.chSpeaker, "Shop Clerk"); CHECK_STR(h.text + h.chBodyAt, "Welcome!");
+        P(CH_SAY, "PlayerName7 : hello");              CHECK_STR(h.chSpeaker, "PlayerName7");
+        P(CH_SYSTEM, "You obtain a Riftcinder.");      CHECK_STR(h.chSpeaker, ""); CHECK_EQ(h.chBodyAt, 0);
+        P(CH_PARTY, "(no closing paren here");         CHECK_STR(h.chSpeaker, ""); CHECK_EQ(h.chBodyAt, 0);
+    }
+
     SECTION("chat : text thread -> ring -> drain -> history, one history line per decoded line, in order");
     {   const int n0 = chat_count(); const unsigned s0 = chat_newest_seq();
         chat_queue("(PlayerName1) Ready.", 13);

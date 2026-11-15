@@ -347,6 +347,8 @@ void chat_drain() {
             ChatLine& h = g_hist[g_histHead];
             h.seq = ++g_seq; h.mode = (unsigned short)mode; h.chan = (unsigned char)chan; h.cont = L > 0 ? 1 : 0;
             h.hhmm = (unsigned short)(st.wHour * 100 + st.wMinute);
+            h.arrivedTick = GetTickCount();
+            h.chSpeaker[0] = 0; h.chBodyAt = 0; h.chLsIdx = 0; h.chTellOut = 0;
             int len = dl[L]; if (len < 0) len = 0; if (len > CHAT_TEXT - 1) len = CHAT_TEXT - 1;
             memcpy(h.text, dt[L], len); h.text[len] = 0; h.len = (unsigned char)len;
             // the line's colours as the CLIENT gives them : each distinct code once into pal[], col[] = its index
@@ -362,9 +364,56 @@ void chat_drain() {
             }
             for (int k = nc; k < 8; ++k) h.pal[k] = 0;
             h.modeArgb = (chan == CH_SYSTEM || chan == CH_BATTLE || chan == CH_NPC || chan == CH_OTHER) ? chat_game_color((unsigned short)(0x200 | (mode & 0xFF))) : 0;
+            if (L == 0) chat_parse_speaker(h);                // the speaker sits on the message's FIRST line only
             g_histHead = (g_histHead + 1) & (CHAT_HIST - 1);
             if (g_histN < CHAT_HIST) ++g_histN;
         }
+    }
+}
+
+void chat_parse_speaker(ChatLine& h) {
+    h.chSpeaker[0] = 0; h.chBodyAt = 0; h.chLsIdx = 0; h.chTellOut = 0;
+    const char* t = h.text; const int n = h.len;
+    if (h.chan == CH_LS1) h.chLsIdx = 1; else if (h.chan == CH_LS2) h.chLsIdx = 2;
+    auto take = [&](int a, int b, int body) {              // speaker = text[a, b) ; the message starts at `body`
+        if (b <= a || b - a > 19) return;
+        int k = 0; for (int j = a; j < b; ++j) h.chSpeaker[k++] = t[j]; h.chSpeaker[k] = 0;
+        while (body < n && t[body] == ' ') ++body;
+        h.chBodyAt = (unsigned char)(body > 239 ? 239 : body);
+    };
+    auto find = [&](const char* needle, int from, int limit) -> int {   // first index of needle in [from, limit)
+        const int ln = (int)strlen(needle);
+        for (int i = from; i + ln <= n && i < limit; ++i) if (!memcmp(t + i, needle, ln)) return i;
+        return -1;
+    };
+    switch (h.chan) {
+        case CH_PARTY:
+            if (t[0] == '(') { const int e = find(")", 1, 21); if (e > 0) take(1, e, e + 1); }
+            break;
+        case CH_LS1: case CH_LS2: {
+            int s0 = 0;
+            if (t[0] == '[' && (t[1] == '1' || t[1] == '2') && t[2] == ']') { h.chLsIdx = (unsigned char)(t[1] - '0'); s0 = 3; }
+            if (t[s0] == '<') { const int e = find(">", s0 + 1, s0 + 21); if (e > 0) take(s0 + 1, e, e + 1); }
+            break; }
+        case CH_TELL:
+            if (t[0] == '>' && t[1] == '>') {                  // you sent it : ">>Name : msg"
+                h.chTellOut = 1; int e = 2; while (e < n && t[e] != ' ' && t[e] != ':') ++e;
+                int b = e; while (b < n && (t[b] == ' ' || t[b] == ':')) ++b;
+                take(2, e, b);
+            } else {                                           // you received it : "Name>> msg"
+                const int g = find(">>", 1, 21);
+                if (g > 0) { bool sp = false; for (int j = 0; j < g; ++j) if (t[j] == ' ') sp = true; if (!sp) take(0, g, g + 2); }
+            }
+            break;
+        case CH_UNITY: case CH_ASSIST:
+            if (t[0] == '{') { const int e = find("}", 1, 21); if (e > 0) take(1, e, e + 1); }
+            break;
+        case CH_SAY: case CH_SHOUT: case CH_YELL: case CH_NPC: {
+            const int c = find(" : ", 1, 30);
+            if (c > 0) { int e = c; if (h.chan == CH_YELL) { const int br = find("[", 1, c); if (br > 0) e = br; } take(0, e, c + 3); }
+            else if (h.chan == CH_YELL) { const int br = find("[", 1, 21), cl = find("]:", 1, 60); if (br > 0 && cl > br) take(0, br, cl + 2); }
+            break; }
+        default: break;
     }
 }
 

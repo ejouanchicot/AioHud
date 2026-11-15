@@ -307,9 +307,26 @@ struct UiConfig {
     float chX[2]     = { 0.012f, 0.40f };  // LEFT edge (screen fraction)
     float chY[2]     = { 0.66f, 0.66f };   // TOP (screen fraction)
     int   chW[2]     = { 560, 460 };       // width in px at 1000-px-high screen, size 100 %
-    int   chLines[2] = { 10, 10 };         // text lines shown
+    int   chLines[2] = { 10, 10 };         // (legacy) text lines : only seeds chH the first time
+    int   chH[2]     = { 0, 0 };           // HEIGHT in px at 1000-px-high screen, size 100 % (0 = not set yet : derived
+                                           // once from chLines). The font no longer sizes the box : it decides how many lines fit.
     int   chStamp[2] = { 1, 1 };           // [hh:mm] in front of each message (both boxes)
     int   chTab[2]   = { 0, 0 };           // the selected tab (kept across sessions)
+    int   chBehave[2] = { 0, 0 };          // bits : 1 = fades when idle, 2 = collapses when idle (3 = both, each on its own delay)
+    int   chIdle[2]   = { 8, 8 };          // seconds without a new line before it COLLAPSES
+    int   chFadeIdle[2] = { 15, 15 };      // seconds without a new line before it FADES
+    int   chFadeTo[2] = { 0, 0 };          // opacity kept when faded (percent, 0 = gone until something happens)
+    int   chFoldLines[2] = { 5, 5 };       // lines kept when collapsed (the box shrinks to its header + these)
+    int   chMaxLines[2]  = { 10, 10 };     // lines shown normally = the box's HEIGHT (0 = the fixed height chH instead)
+    float chHeadScale[2] = { 1.0f, 1.0f }; // the header's size (band, icons, tab names, counts) : 0.6 .. 1.6
+    int   chTabStyle[2]  = { 0, 0 };       // tabs : 0 = auto (icon + name when it fits), 1 = icon + name, 2 = icon, 3 = name
+    int   chDensity[2] = { 0, 0 };         // 0 = compact, 1 = normal, 2 = airy : padding, header height, line spacing
+    int   chFit[2]   = { 0, 0 };           // 0 = FIXED size (chMaxLines rows, always : old lines fade out instead) ; 1 = the box
+                                           // grows / shrinks with its content
+    int   chGrow[2]  = { -1, -1 };         // which edge stays put : 0 = the BOTTOM (grows upward), 1 = the TOP (grows downward).
+                                           // chY IS that edge. -1 = a config from before : chY was the top, converted once.
+    float chEdge[2][2] = { { 0, 0 }, { 0, 0 } };   // transient : the box's last top / bottom (screen fractions) -- the
+                                                   // config flips chY between them when the grow side changes
     TextStyle chText[2];                   // typography per box
     BoxStyle  chBox[2];                    // chrome per box (frame / transparency / theme)
     // transient (not saved) : each box's rect as screen fractions + its pending wheel, for the mouse callback

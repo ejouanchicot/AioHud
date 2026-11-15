@@ -33,6 +33,12 @@ struct ChatLine {
     unsigned char  chan;             // ChatChan
     unsigned char  cont;             // 1 = continues the previous line's message (after a 0x07 break)
     unsigned short hhmm;             // local time hour*100 + minute when it arrived
+    unsigned       arrivedTick;      // GetTickCount when it arrived (the box's collapse ages each line from it)
+    // the SPEAKER, read from the client's own line format (first line of a message only ; see chat_parse_speaker) :
+    char           chSpeaker[20];    // "" = no speaker (system, battle, emote, a continuation)
+    unsigned char  chBodyAt;         // index in text where the MESSAGE starts (after "(Name) ", "[1]<Name> ", "Name>> " ...)
+    unsigned char  chLsIdx;          // 1 / 2 = which linkshell ; 0 = not a linkshell line
+    unsigned char  chTellOut;        // 1 = a tell YOU sent (">>Name ...")
     unsigned char  len;              // chars in text
     char           text[CHAT_TEXT];  // decoded : printable ASCII + Latin-1 letters 0xC0..0xFF (the client's accents)
     unsigned char  col[CHAT_TEXT];   // per char : 0 = the line's colour, k = pal[k - 1]
@@ -54,6 +60,12 @@ unsigned        chat_newest_seq();
 // the channel a Windower mode belongs to (CH_BATTLE for the combat log)
 int  chat_classify(int mode);
 bool chat_is_battle(int chan);
+
+// Fill chSpeaker / chBodyAt / chLsIdx / chTellOut from the client's line format for the line's channel :
+//   party "(Name) msg"   linkshell "[1]<Name> msg" / "<Name> msg"   tell in "Name>> msg", out ">>Name : msg"
+//   unity / assist "{Name} msg"   say / shout / NPC "Name : msg"   yell "Name[Zone]: msg"
+// Anything else (or a format it does not recognise) leaves no speaker and the whole text as the message.
+void chat_parse_speaker(ChatLine& h);
 
 // //aio chatmodes (dev) : log every mode seen since load with its count, channel and one sample line
 void chat_mode_report();
