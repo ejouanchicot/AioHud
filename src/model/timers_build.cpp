@@ -265,6 +265,12 @@ static const char* abil_name_by_recast(unsigned rid, const unsigned char* jaBits
     // honest label is the family name. (Blood Pacts / Steps / Rolls work by the first-row rule because their first
     // row genuinely IS the family header.)
     if (rid == 231) return "Stratagem";
+    // The one YOU used last on this timer, while your job can still use it : Ecliptic Attrition and Lasting Emanation
+    // share recast 244, and an Ecliptic Attrition read "Lasting Emanation", the first row (reported 2026-11-14). Same
+    // for every shared recast (rolls, SP abilities...). No note (the plugin loaded mid-recast) : the rule below.
+    if (const unsigned used = last_ability_label(party().last_ability_on(rid), jaBits, jaOk)) {
+        if (const AbilRow* a = abil_info(used)) return a->en;
+    }
     // INDEXED, like spell_name_by_recast below -- this used to walk all ABILS_N (626) rows for EVERY active recast,
     // EVERY frame: up to 40 x 626 row tests a frame. The answer is not a pure function of rid (it depends on the
     // job's usable-ability bitmap), but that bitmap only changes on a job change -- so cache the whole table and

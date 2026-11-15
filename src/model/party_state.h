@@ -8,6 +8,7 @@
 #include "model/omen_objectives.h"   // OmenObj + the pure Omen objective-text rules (ZoneTracker holds the slots)
 
 #include "model/charsheet.h"   // the decoded character sheet this state carries
+#include "model/last_ability.h"   // the ability you last used on each recast (a shared recast's Timers row)
 
 namespace aio {
 
@@ -655,6 +656,9 @@ struct PartyState {
     unsigned char rollVal_[1024]  = { 0 };
     unsigned char rollLuck_[1024] = { 0 };   // bits0-1 : 0 normal / 1 lucky / 2 unlucky ; bit2 (0x04) : cast under Crooked Cards
     unsigned short lastRollStatus_ = 0, lastRollAid_ = 0;   // the roll being built -> Double-Up (abil 123, no status) updates ITS pip
+    // The job ability you last used on each recast timer (on_action, 0x028 category 6 by you) : a shared recast's
+    // Timers row names it -- Ecliptic Attrition, not the table's first Lasting Emanation (model/last_ability.h).
+    LastAbility lastAbil_;
     // BRD song : which song-enhancing JAs were UP when you cast it, keyed by SPELL id (NOT status -- two same-family
     // songs like Advancing + Victory March share a status but differ by spell). bit0 Soul Voice, bit1 Nightingale,
     // bit2 Troubadour, bit3 Marcato. Shown as compact tags (SV)(N)(T)(M) on the song's Timers row.
@@ -740,6 +744,7 @@ struct PartyState {
         int n = 0; for (int i = 0; i < 64; ++i) if (selfCasts_[i].status == status && selfCasts_[i].spell) ++n; return n;
     }
     unsigned self_id() const { return selfId_; }
+    unsigned last_ability_on(unsigned recastId) const { return lastAbil_.get(recastId); }   // 0 : none noted (model/last_ability.h)
     int self_main_job() const { for (int i = 0; i < count; ++i) if (m[i].id == selfId_) return m[i].mjob; return 0; }   // current MAIN job id (Timers "track per job" filter) ; 0 if unknown
     // A caster id -> is it a Trust NPC ? (Timers buff-source filter, and the sort banding.)
     // The ROSTER answers first and is authoritative. The remembered set below is the fallback for an id the roster

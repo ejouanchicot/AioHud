@@ -7,6 +7,7 @@
 #include "model/timers_sort.h"
 #include "model/timers_rules.h"
 #include "model/focus_rules.h"
+#include "model/last_ability.h"
 #include <cstring>
 
 using namespace aio;
@@ -152,6 +153,25 @@ struct Copy {
 }  // namespace
 
 void test_timers_rules() {
+    SECTION("shared recast : the row names the ability you used, while your job can use it");
+    {   // Reported 2026-11-14 : Ecliptic Attrition (347) read "Lasting Emanation" (346), both on recast 244.
+        LastAbility la;
+        CHECK_EQ(la.get(244), 0);                      // nothing noted : the old rule names the row
+        la.note(244, 347); CHECK_EQ(la.get(244), 347);
+        la.note(244, 346); CHECK_EQ(la.get(244), 346); // the last one used wins
+        la.note(193, 105); CHECK_EQ(la.get(193), 105); CHECK_EQ(la.get(244), 346);
+        la.note(5000, 1); CHECK_EQ(la.get(5000), 0);   // out of range : ignored
+        for (unsigned r = 1; r <= 40; ++r) la.note(r + 300, 1);
+        CHECK_EQ(la.n, LastAbility::N); CHECK_EQ(la.get(244), 0);   // full : the oldest notes went first
+        CHECK_EQ(la.get(340), 1);
+        unsigned char bits[128] = { 0 };
+        CHECK_EQ(last_ability_label(347, bits, false), 347);   // bitmap unknown : the note is kept
+        CHECK_EQ(last_ability_label(347, bits, true), 0);      // your job cannot use it (another job's note)
+        bits[347 >> 3] |= (unsigned char)(1u << (347 & 7));
+        CHECK_EQ(last_ability_label(347, bits, true), 347);
+        CHECK_EQ(last_ability_label(0, bits, true), 0);
+    }
+
     SECTION("timers sort : the band comes first, then the displayed second");
     {
         const TimersRow mine = row(33, 900, "Haste", 0, 0), ally = row(33, 10, "Haste", "Kaories", 11);

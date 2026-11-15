@@ -1781,6 +1781,10 @@ void PartyState::act_cor_rolls(const unsigned char* p, int size, unsigned cat, u
             }
         }
     }
+    if (cat == 6 && actor == selfId_) {   // the ability you used, kept per recast : a shared recast's Timers row names it
+        const u32 used = getbits(p, 86, 16, size);
+        if (const AbilRow* a = abil_info(used)) lastAbil_.note(a->recast_id, used);
+    }
     if (cat == 6 && actor == selfId_) {
         const u32 aid = getbits(p, 86, 16, size);                          // actor.param = the roll's ability id
         const unsigned st = abil_buff_status(aid);
