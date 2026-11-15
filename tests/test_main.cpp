@@ -37,6 +37,7 @@ void test_timers();
 void test_roster();
 void test_battle_target();
 void test_treasure();
+void test_chat();
 void test_pointwatch();
 void test_timers_rules();
 void test_packets();
@@ -72,6 +73,7 @@ int main() {
     test_roster();
     test_battle_target();
     test_treasure();
+    test_chat();
     test_pointwatch();
     test_packets();
     test_charsheet();

@@ -20,6 +20,8 @@
 #endif
 #include "ui/hud.h"
 #include "ui/doctor_html.h"   // //aio doctor also writes the sheet as a page
+#include "model/chat_log.h"   // the Chat module : every log line is queued from text_in
+#include "model/native_ui.h"   // Game UI : the client's own windows (tick + unload restore)
 #include "model/selftest.h"   // //aio selftest + the chat notice the watcher leaves behind
 #include "model/watchdogs.h"   // //aio watch : the master switch for the passive watchers
 #include "model/decisions.h"   // //aio why  : the always-recording decision ring
@@ -242,7 +244,11 @@ void aio_plugin_init(PluginManager host)
     host.console().print(banner);   // user-facing load line : credits the author + points at the config (the //aio hp/mp/tp fill commands still work, just no longer advertised here)
 }
 
-void aio_plugin_render() {}   // slot 5 : unused (we draw on slot 6, like FFXIDB)
+void aio_plugin_render()      // slot 5 : unused by the HUD (we draw on slot 6, like FFXIDB)
+{
+    // (2026-11-15 : tried as a pre-draw hook for the native-window probes -- it runs on the same thread, after the
+    // game's draw, like slot 6, so it removed nothing. Left empty.)
+}
 
 
 // the game's window handle, cached each frame from the D3D device (the mouse hook runs without a
@@ -382,6 +388,10 @@ void aio_plugin_render6()
     u32 dev = g_host.service_raw(2);   // host vtbl[2] = D3D8 device
     if (valid_ptr(dev)) g_gameHwnd = aio::dFocusWindow(dev);
     if (g_gameHwnd) aio_subclass_install((HWND)g_gameHwnd);   // once the device gives us the window
+#ifdef AIOHUD_PROBES
+    __try { aio::probes::frame(); } __except (EXCEPTION_EXECUTE_HANDLER) {}   // dev-only per-frame probes (native-window RE)
+#endif
+    __try { aio::native_ui_tick(g_hud.logged_in()); } __except (EXCEPTION_EXECUTE_HANDLER) {}   // Game UI : hide / move the client's own windows
     g_hud.render(dev);
 
     // THE HARNESS SPEAKS HERE, and only here : ui/ and model/ must not reach into the host, so the watcher
@@ -606,12 +616,34 @@ void aio_plugin_text_in(const char* original, char* modified, int* mode)
         // memory) onto that foreign thread. Copy the line into a ring here; the main thread drains it in
         // poll_game_state. Single producer, single consumer, fixed capacity, no allocation.
         if (mm == 161 || mm == 123 || mm == 146 || mm == 148) aio::queue_game_text(original, mm);
+        // The Chat module : EVERY line, as the log will show it (`modified` = after the plugins before us ; empty =
+        // a plugin blocked it -> the log will not show it either). Copied only -- decoded on the main thread.
+        if (modified && valid_ptr((u32)modified)) { if (modified[0]) aio::chat_queue(modified, mm); }
+        else aio::chat_queue(original, mm);
     } __except (EXCEPTION_EXECUTE_HANDLER) { /* malformed text pointer -> ignore, never crash the game */ }
 }
 
 // slot 13 : MOUSE (eventtype, x, y, delta, blocked). eventtype 0=move 1=Ldown 2=Lup (Windower).
 // Returns the "blocked" flag : 1 swallows the event so the GAME doesn't react to it. We block ALL
 // mouse while the config overlay is up (cursor is read separately via Win32 GetCursorPos).
+// Is the pointer over one of the Chat module's boxes ? (their rects, as screen fractions, published by hud_chat.cpp
+// every frame they draw ; render and this callback share the main thread.) `which` = 0 chat / 1 battle.
+static bool chat_over(int& which) {
+    if (!g_gameHwnd) return false;
+    const aio::UiConfig& c = aio::ui_config();
+    POINT p; if (!GetCursorPos(&p)) return false;
+    HWND fg = (HWND)g_gameHwnd; ScreenToClient(fg, &p);
+    RECT rc; if (!GetClientRect(fg, &rc)) return false;
+    const float ww = (float)(rc.right - rc.left), wh = (float)(rc.bottom - rc.top);
+    if (ww <= 1.0f || wh <= 1.0f) return false;
+    const float fx = (float)p.x / ww, fy = (float)p.y / wh;
+    for (int b = 1; b >= 0; --b) {   // battle first : drawn after the chat, so it is on top where they overlap
+        const float* h = c.chHit[b];
+        if (h[2] > 0.0f && fx >= h[0] && fx < h[0] + h[2] && fy >= h[1] && fy < h[1] + h[3]) { which = b; return true; }
+    }
+    return false;
+}
+
 unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u32 blocked)   // x/y unused : cursor read via GetCursorPos
 {
     tid_once("mouse");
@@ -656,6 +688,7 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
         // Windows still activates a clicked window on its own (WM_MOUSEACTIVATE), independently of this hook ;
         // we nudge it explicitly as a belt-and-braces so a swallowed click cannot leave the window inactive.
         blockGest = overlay && (overGame || focused);
+        { int cb = 0; if (!overlay && focused && chat_over(cb)) blockGest = true; }   // a click on a Chat box is OURS (tabs, pill)
         if (blockGest && !focused && g_gameHwnd) SetForegroundWindow((HWND)g_gameHwnd);
         return blockGest ? 1u : blocked;
     }
@@ -702,6 +735,7 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
         // (that input belongs to whatever window has focus) yet do not hand it to the game either.
         if (overlay && overGame) return 1u;
         aio::UiConfig& c = aio::ui_config();
+        { int cb = 0; if (focused && chat_over(cb)) { c.chWheel[cb] += ((int)delta > 0) ? 1 : -1; return 1u; } }   // wheel over a Chat box : its history
         if (c.mmVisible && focused && g_gameHwnd) {
             POINT p;
             if (GetCursorPos(&p)) {
@@ -847,6 +881,11 @@ void aio_plugin_unload()
 {
     tid_once("unload");   // the thread the relay's removal really runs on (aio_subclass_remove assumes: any)
     aio_subclass_remove();   // MUST come first : a WndProc pointing into a freed DLL crashes the client
+    // the same for our JMP into the client's move-to function -- and every native window goes back where it was
+    __try { aio::native_ui_shutdown(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+#ifdef AIOHUD_PROBES
+    __try { aio::probes::shutdown(); } __except (EXCEPTION_EXECUTE_HANDLER) {}   // dev probes : unhook the menu setter, restore native windows
+#endif
 
     // Flush the derived-state cache NOW. The only other writer is a 4 s throttle in the poller, so a buff cast in the
     // last few seconds before //unload was never persisted -- its caster, tier name and song-JA tags were simply gone

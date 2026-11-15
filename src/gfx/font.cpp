@@ -401,6 +401,21 @@ float Font::draw_lc(u32 dev, float x, float cy, const char* s, float size, u32 c
     return draw(dev, x, cy - (top + bot) * 0.5f, s, size, color, outline, ow);
 }
 
+void Font::ink_v(const char* s, float size, float& top, float& bot) const {
+    top = 0.0f; bot = 0.0f;
+    if (!s) return;
+    int si = pickC(size); if (si < 0) return;
+    const Slot& S = slot_[si];
+    float scale = size / S.base, t = 1e9f, b = -1e9f;
+    for (const char* p = s; *p; ) {
+        int c = upcase(utf8_next(p)); if (c < FIRST || c > LAST) c = '?';
+        const G& g = S.g[c - FIRST];
+        if (c != ' ') { float a = g.it * scale, z = g.ib * scale; if (a < t) t = a; if (z > b) b = z; }
+    }
+    if (b < t) { t = 0.0f; b = S.cap_h * scale; }
+    top = t; bot = b;
+}
+
 // centre on the REAL ink bbox of `s` (both axes) -> visually centred for ANY face/size.
 float Font::draw_cc(u32 dev, float cx, float cy, const char* s, float size, u32 color, u32 outline, float ow) {
     int si = pick(dev, size); if (si < 0) return 0.0f;

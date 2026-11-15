@@ -31,6 +31,9 @@ public:
     ~Hud();
 
     void render(u32 dev);   // one game frame (slot-6 hook)
+    // a character is LOGGED IN and in the world : false at the title / char-select screens and ~2 s after a logout.
+    // A zone keeps it true (the player poll keeps succeeding through most of a load). Game UI gates on it.
+    bool logged_in() const { return everInGame_ && notInGameFrames_ <= 120; }
     void dispose();         // release all resources (at //unload)
     void self_check();      // //aio selfcheck : log the health of every texture-load subsystem (stuck latches, missing icons)
     void write_bug_report(const CheckFail* hits, int n, bool watched);   // assemble the context and write the file
@@ -138,6 +141,7 @@ private:
     u32   last_dev_ = 0;
     bool  everInGame_ = false;    // latched true on the first successful player poll -> gate ALL boxes on "logged in"
     int   notReadyFrames_ = 0;    // consecutive frames the player poll failed -> a SUSTAINED run = logout (re-hide)
+    int   notInGameFrames_ = 0;   // the same WITHOUT the zoning flag : a zone must not read as a logout (logged_in)
 };
 
 // The Timers rows, their FOCUS monitor, //aio songdump / ftrace and the module's checks : model/timers_build.h

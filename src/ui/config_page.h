@@ -143,6 +143,15 @@ private:
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW,
                             float hdrX, float hdrW);
+    // the Game UI page (nui_config.cpp) : hide the client's own windows, move its menus (model/native_ui.h)
+    void draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW,
+                            float hdrX, float hdrW);
+    void draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool click,   // the Chat module (chat_config.cpp)
+                          float& ry, int& ri, float e,
+                          float bandX, float bandW, float coX, float ctrlW,
+                          float hdrX, float hdrW);
     // the Pet module's page (pet_config.cpp) and its job tabs' rows (bst_config.cpp, geo_config.cpp)
     void draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,

@@ -165,6 +165,12 @@ inline void config_sanitise(UiConfig& c) {
     c.scReadyDelay = cfg_int(c.scReadyDelay, 30, 80);   // 3.0 .. 8.0 s
     MUL(scScale);   FRAC(scX);   FRAC(scY);   GAP(scListGap);   cfg_text(c.scText, SC_TE_COUNT);   cfg_box(c.scBox);
     MUL(tpScale);   FRAC(tpX);   FRAC(tpY);                     cfg_text(c.tpText, TP_TE_COUNT);   cfg_box(c.tpBox);
+    for (int b = 0; b < 2; ++b) {   // Chat module : [0] chat, [1] battle
+        MUL(chScale[b]); FRAC(chX[b]); FRAC(chY[b]);
+        c.chW[b] = cfg_int(c.chW[b], 200, 1600); c.chLines[b] = cfg_int(c.chLines[b], 3, 40);
+        c.chTab[b] = cfg_int(c.chTab[b], 0, 7); cfg_box(c.chBox[b]);
+    }
+    cfg_text(c.chText, 2);
     MUL(awScale);   FRAC(awX);   FRAC(awY);   cfg_box(c.awBox);
     c.awScreen = cfg_int(c.awScreen, 10, 600); c.awMemory = cfg_int(c.awMemory, 60, 3600);
     MUL(hlScale);   FRAC(hlX);   FRAC(hlY);                     cfg_text(c.hlText, HL_TE_COUNT);   cfg_box(c.hlBox);

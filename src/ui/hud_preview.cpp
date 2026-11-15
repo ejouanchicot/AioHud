@@ -83,6 +83,7 @@ void Hud::draw_config_preview(const Frame& f) {
           case 9:  off = !CC.grimShow; break;  case 10: off = !CC.ztShow;   break;
           case 11: off = !CC.tmShow;   break;  case 12: off = !CC.epShow;   break;
           case 13: off = !CC.awShow;   break;  case 14: off = !CC.petShow;  break;   // 14 : the Pet module (BST / GEO)
+          case 16: off = !CC.chShow[0] && !CC.chShow[1]; break;                       // 16 : the Chat module
           default: break; }
       if (off) { draw_hidden_note(); return; }
     }
@@ -241,6 +242,24 @@ void Hud::draw_config_preview(const Frame& f) {
     }
     // Pet module -> the sample box of the job tab chosen on that page (a jug pet for BST ; a bubble, an aura, an Entrust
     // for GEO) at TRUE in-game size, centred in the preview stage.
+    // Chat module -> both boxes (the ones shown) on sample lines, side by side, scaled to fit the stage.
+    if (config_.section() == 16) {
+        float sx = 0, sy = 0, sw = 0, sh = 0; config_.preview_rect(sx, sy, sw, sh);
+        const UiConfig& CC = ui_config();
+        const int n = (CC.chShow[0] ? 1 : 0) + (CC.chShow[1] ? 1 : 0); if (!n) return;
+        float tot = 0.0f; for (int b = 0; b < 2; ++b) if (CC.chShow[b]) tot += (float)CC.chW[b] * CC.chScale[b];
+        const float gapU = 24.0f;
+        float s = (screenH_ / 1000.0f); const float fitW = (tot + gapU * (n - 1)) * s;
+        if (fitW > sw * 0.94f && fitW > 0.0f) s *= (sw * 0.94f) / fitW;
+        float x = sx + (sw - (tot + gapU * (n - 1)) * s) * 0.5f;
+        for (int b = 0; b < 2; ++b) {
+            if (!CC.chShow[b]) continue;
+            const float w = (float)CC.chW[b] * CC.chScale[b] * s;
+            chat_box_draw(f, b, true, false, x + w * 0.5f, sy + sh * 0.5f, s * CC.chScale[b]);
+            x += w + gapU * s;
+        }
+        return;
+    }
     if (config_.section() == 14) {
         float sx = 0, sy = 0, sw = 0, sh = 0; config_.preview_rect(sx, sy, sw, sh);
         float scl = ui_config().petScale; if (scl < 0.5f) scl = 0.5f; if (scl > 2.0f) scl = 2.0f;

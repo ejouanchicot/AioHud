@@ -25,6 +25,12 @@ void box_on_screen(const Frame& f, float& px, float& py, float boxW, float boxH)
 
 // draw an atlas sub-cell [u0..u1]x[v0..v1] at (x,y,w,h) -- Sheol weapon strip (v 0..1) or the 2D buff atlas.
 // Used by draw_zonetracker (weapon-type strip) and draw_timers (buff status atlas). Defaults on this DECLARATION only.
+// The Chat module (hud_chat.cpp) : box 0 = chat, 1 = battle. `interactive` = tabs / pill take clicks (config closed).
+// ovS > 0 = preview at (ovX, ovY) centre and that scale. chat_hit_clear() once per frame BEFORE the boxes draw, so a
+// box that is not drawn this frame no longer swallows clicks.
+void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, float ovX, float ovY, float ovS);
+void chat_hit_clear();
+
 void draw_icon_cell(u32 dev, u32 tex, float x, float y, float w, float h, float u0, float u1, float v0 = 0.0f, float v1 = 1.0f);
 
 }

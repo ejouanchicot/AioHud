@@ -296,6 +296,30 @@ struct UiConfig {
                                //   SCs) ; 0 = STRICT, only your current cursor target <t>'s chain (nothing while you
                                //   target nothing / an ally, even if engaged)
     TextStyle scText[SC_TE_COUNT];   // per-element typography : [SC_TITLE] [SC_TIMER] [SC_STEP] [SC_PROP] [SC_LIST]
+    // ---- Game UI : the CLIENT's own windows (model/native_ui.h). Everything off = the client untouched. ----
+    int   nuHide   = 0;        // NativeUiBits mask : party, alliance, chat, help bar, MP-cost case parked off-screen
+    int   nuMenuDx = 0;        // the client's MENUS (main menu, sub-menus, lists, panels) moved by this many screen px
+    int   nuMenuDy = 0;
+    // ---- Chat module : AioHUD's own log boxes (ui/hud_chat.cpp, model/chat_log.h). [0] = CHAT (talk, NPC, system),
+    //      [1] = BATTLE (the combat log). Placed via //aio edit (X = left edge, Y = top), resized by the corner grip.
+    int   chShow[2]  = { 0, 0 };           // off by default : most players keep the client's own log
+    float chScale[2] = { 1.0f, 1.0f };     // overall size (text, tabs, padding) -- the wheel in //aio edit
+    float chX[2]     = { 0.012f, 0.40f };  // LEFT edge (screen fraction)
+    float chY[2]     = { 0.66f, 0.66f };   // TOP (screen fraction)
+    int   chW[2]     = { 560, 460 };       // width in px at 1000-px-high screen, size 100 %
+    int   chLines[2] = { 10, 10 };         // text lines shown
+    int   chStamp[2] = { 1, 1 };           // [hh:mm] in front of each message (both boxes)
+    int   chTab[2]   = { 0, 0 };           // the selected tab (kept across sessions)
+    TextStyle chText[2];                   // typography per box
+    BoxStyle  chBox[2];                    // chrome per box (frame / transparency / theme)
+    // transient (not saved) : each box's rect as screen fractions + its pending wheel, for the mouse callback
+    // (clicks on a chat box never reach the game ; the wheel scrolls its history). Written every frame it draws.
+    float chHit[2][4] = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 } };
+    int   chDock = 2;                      // the GAME's input line : 0 = its own place, 1 = docked under the chat box,
+                                           // 2 = INSIDE the chat box (the client's line hidden, its text drawn by AioHUD)
+    int   chInputOk = -1;                  // transient : reading the client's input text works (1) / failed (0) / not tried (-1)
+    float chDockRect[6] = { 0, 0, 0, 0, 0, 0 };   // transient : chat box x, y, w, h + backbuffer w, h (px) -- 0 = not drawn
+    int   chWheel[2]  = { 0, 0 };
     // ---- Treasure Pool module : the lottery pool (coffer icon + idx / name / timer / lotter columns) ----
     int   tpShow  = 1;         // show the treasure-pool box
     float tpScale = 1.0f;      // size multiplier (0.5 .. 2.0)

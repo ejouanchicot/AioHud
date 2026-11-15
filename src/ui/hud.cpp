@@ -17,6 +17,8 @@
 #include "model/layout.h"
 #include "model/game_mem.h"
 #include "model/ffximain_rva.h"   // //aio doctor : report every FFXiMain static + the client fingerprint
+#include "model/native_ui.h"      // //aio doctor : the Game UI state (hidden / moved client windows)
+#include "model/chat_log.h"       // chat_drain : the Chat module's history (text thread -> main thread)
 #include "model/luacore_root.h"   // //aio doctor : the LuaCore data root -- a WINDOWER update moves it
 #include "model/sentinel.h"       // //aio doctor : the packet-vs-memory cross-checks
 #include "model/gamestate.h"
@@ -316,6 +318,8 @@ void Hud::render(u32 dev) {
     poll_game_state(state_);
     profile_sync_poll();   // another client on this Windower saved the profile we are on -> re-apply it (throttled 1/s)
     drain_game_text();     // Omen / Nyzul chat lines queued by the TEXT thread -> dispatched here, on the main thread
+    chat_drain();          // every log line queued by the TEXT thread -> decoded into the Chat module's history
+    chat_hit_clear();      // the Chat boxes re-publish their click rect only if they draw this frame
     drain_commands();      // //aio commands queued by the COMMAND thread (tid differs) -> executed here, on the main thread
 
     // GATE the whole HUD on "logged in / in the world". read_player STILL succeeds while zoning, so it alone can't
@@ -331,6 +335,7 @@ void Hud::render(u32 dev) {
     const bool ready = state_.inGame && !zoning;
     if (ready) { everInGame_ = true; notReadyFrames_ = 0; }
     else ++notReadyFrames_;
+    notInGameFrames_ = state_.inGame ? 0 : (notInGameFrames_ < 100000 ? notInGameFrames_ + 1 : notInGameFrames_);
     const bool worldReady = ready || (everInGame_ && !zoning && notReadyFrames_ <= 5);
 
     // The model upkeep (roster refresh, ally-buff wear-off, debuff/hate/skillchain/treasure prunes, zone tracker,
@@ -435,6 +440,8 @@ void Hud::render(u32 dev) {
             draw_pointwatch(f);                     // PointWatch box (XP/CP/ML + Merits) -- placed via //aio edit
             draw_grimoire(f);                       // Scholar grimoire (SCH only) -- placed via //aio edit
             draw_pet(f);                            // Pet box (BST / GEO main : its content) -- placed via //aio edit
+            chat_box_draw(f, 0, false, !config_.is_open(), 0.0f, 0.0f, 0.0f);   // Chat module : talk / NPC / system
+            chat_box_draw(f, 1, false, !config_.is_open(), 0.0f, 0.0f, 0.0f);   // Chat module : the combat log
             draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit
             // EmpyPop -- placed via //aio edit. SKIP the live draw while its own config section is being previewed :
             // unlike ZoneTracker (zone-gated) / Timers (buff-gated), EmpyPop draws whenever epShow is on, so without
@@ -598,6 +605,8 @@ int Hud::doctor(char out[][DOC_LINE], int maxOut) {
                              fm_fingerprint(), troot, state_.targetId, state_.menuType);
         { char fl[FM_N][160]; const int fn = fm_report(fl, FM_N);
           for (int i = 0; i < fn; ++i) windower::debug::log("             %s", fl[i]); }
+        { char nl[4][160]; const int nn = native_ui_report(nl, 4);   // Game UI : hidden / moved client windows
+          for (int i = 0; i < nn; ++i) windower::debug::log("  gameui   : %s", nl[i]); }
         // The cross-checks. A DIVERGED pair is the loudest thing this command can say : the plugin is
         // still drawing numbers, and one of the two sources feeding them no longer means what it did.
         { char sl[SEN_N][160]; const int sn = sentinel_report(sl, SEN_N);

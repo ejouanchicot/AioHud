@@ -699,6 +699,36 @@ static const HelpItem HELP_UPDATE[] = {
 };
 static const int HELP_UPDATE_N = (int)(sizeof(HELP_UPDATE) / sizeof(HELP_UPDATE[0]));
 
+static const HelpItem HELP_NUI[] = {
+    {0, "The game's own windows", "Les fen\xC3\xAAtres du jeu"},
+    {1, "AioHUD can take the game's own windows out of the way, so its boxes no longer have to cover them. Open //aio config, *Game UI*.",
+        "AioHUD peut retirer les fen\xC3\xAAtres du jeu, pour que ses box n'aient plus \xC3\xA0 les recouvrir. Ouvre //aio config, *Interface du jeu*."},
+    {1, "*Hide* parks a window off-screen : the *party* window (with the game's target bar on it), the *alliance* windows, the *chat log*, the *help bar* with the menu name, the *MP cost* case, and the *connection* and *POL* icons in the top-right corner. A hidden window keeps working, you just no longer see it.",
+        "*Cacher* gare une fen\xC3\xAAtre hors de l'\xC3\xA9""cran : la fen\xC3\xAAtre du *groupe* (avec la barre de cible du jeu), les fen\xC3\xAAtres d'*alliance*, le *journal du chat*, la *barre d'aide* avec le nom du menu, la case *co\xC3\xBBt MP*, et les ic\xC3\xB4nes *connexion* et *POL* en haut \xC3\xA0 droite. Une fen\xC3\xAAtre cach\xC3\xA9""e fonctionne toujours, tu ne la vois juste plus."},
+    {2, "NPC dialogue is written in the chat log. Keep the chat while AioHUD has no chat box of its own.",
+        "Les dialogues des PNJ sont \xC3\xA9""crits dans le journal du chat. Garde-le tant qu'AioHUD n'a pas sa propre box de chat."},
+    {1, "*Move the game's menus* shifts every menu at once -- the main menu, its sub-menus, the lists and the panels, even the ones you never opened. They open straight at the new place.",
+        "*D\xC3\xA9placer les menus du jeu* d\xC3\xA9place tous les menus d'un coup -- le menu principal, ses sous-menus, les listes et les panneaux, m\xC3\xAAme ceux jamais ouverts. Ils s'ouvrent directement \xC3\xA0 la nouvelle place."},
+    {2, "Nothing is permanent : turning an option off, or unloading AioHUD, puts every window back where the game had it.",
+        "Rien n'est d\xC3\xA9""finitif : d\xC3\xA9sactiver une option, ou d\xC3\xA9""charger AioHUD, remet chaque fen\xC3\xAAtre o\xC3\xB9 le jeu l'avait mise."},
+};
+static const int HELP_NUI_N = (int)(sizeof(HELP_NUI) / sizeof(HELP_NUI[0]));
+
+static const HelpItem HELP_CHAT[] = {
+    {0, "AioHUD's own chat", "Le chat d'AioHUD"},
+    {1, "Two boxes on your theme : *Chat* (talk, NPC, system) and *Battle* (the combat log). Turn them on in //aio config, *Chat*.",
+        "Deux box sur ton th\xC3\xA8me : *Discussion* (conversations, PNJ, syst\xC3\xA8me) et *Combat* (le journal de combat). Active-les dans //aio config, *Chat*."},
+    {1, "Click a *tab* to filter : All / Party / LS / Tell / Say / System, or All / Me in the battle box. A dot marks a tab with new lines.",
+        "Clique un *onglet* pour filtrer : Tout / Groupe / LS / Tell / Dire / Syst\xC3\xA8me, ou Tout / Moi dans la box combat. Un point marque un onglet avec de nouvelles lignes."},
+    {1, "The *wheel* over a box scrolls back through the history ; the pill at the bottom brings it back to the newest line. Clicks on a box never reach the game.",
+        "La *molette* sur une box remonte l'historique ; la pastille en bas revient aux derni\xC3\xA8res lignes. Un clic sur une box n'atteint jamais le jeu."},
+    {1, "In *Edit layout*, drag a box to move it, the wheel sets its size, and the corner grip its width and number of lines.",
+        "Dans *\xC3\x89""diter dispo*, glisse une box pour la d\xC3\xA9placer, la molette r\xC3\xA8gle sa taille, et la poign\xC3\xA9""e du coin sa largeur et son nombre de lignes."},
+    {2, "To replace the game's log, hide it in *Game UI*. Its lines keep arriving here.",
+        "Pour remplacer le journal du jeu, cache-le dans *Interface du jeu*. Ses lignes continuent d'arriver ici."},
+};
+static const int HELP_CHAT_N = (int)(sizeof(HELP_CHAT) / sizeof(HELP_CHAT[0]));
+
 // One help page per module (the Help tab's left menu lists these ; add a module = add a row here).
 struct HelpModule { const char* en; const char* fr; const HelpItem* items; int count; };
 static const HelpModule HELP_MODULES[] = {
@@ -714,6 +744,8 @@ static const HelpModule HELP_MODULES[] = {
     { "Treasure Pool",    "Pool de trésor",     HELP_TREASURE, HELP_TREASURE_N },
     { "Zone Tracker",     "Suivi de zone",      HELP_ZONETRACKER, HELP_ZONETRACKER_N },
     { "EmpyPop",          "EmpyPop",            HELP_EMPYPOP, HELP_EMPYPOP_N },
+    { "Game UI",          "Interface du jeu",   HELP_NUI,     HELP_NUI_N },
+    { "Chat",             "Chat",               HELP_CHAT,    HELP_CHAT_N },
     { "Update",           "Mise à jour",        HELP_UPDATE,  HELP_UPDATE_N },
 };
 static const int HELP_MODULE_N = (int)(sizeof(HELP_MODULES) / sizeof(HELP_MODULES[0]));

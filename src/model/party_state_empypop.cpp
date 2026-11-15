@@ -143,4 +143,7 @@ void PartyState::ep_refresh(const char* nmKey) {
 
 const char* model_item_name(unsigned id) { return item_name(id); }   // declared in party_state.h
 
+// the Chat module's auto-translate items (chat_log.cpp) use THIS copy of the generated table rather than a new one
+const char* chat_item_name(unsigned id) { return item_name(id); }
+
 } // namespace aio

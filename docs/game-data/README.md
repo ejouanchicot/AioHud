@@ -33,6 +33,11 @@ AioHUD sources live data two ways: the **local player** from memory (always pres
 - [**FFXiMain statics, and how they repair themselves**](ffximain-statics.md) — the six addresses that move
   at *every* client patch, why a game update kills a handful of features while everything else keeps working,
   and the proof each one has to pass before it is adopted at runtime. Start here after any FFXI update.
+- [**The client's own windows**](native-windows.md) — every native window (party, alliance, chat, menus) is a
+  named menu in one manager ; the layout record a window opens from, the setter and "move-to" functions, and how
+  the Game UI page hides / moves them with no visible jump. Proven live 2026-11-15.
+- [**The chat log**](chat-log.md) — how a log line reaches the plugin (text_in, its own thread), the Windower mode
+  -> channel table, and the client's control bytes inside a line (colours, breaks, auto-translate, Shift-JIS).
 - [**Two traps that cost real time**](traps.md) — the dangling self-name pointer and the job-ID-vs-job-LEVEL
   offset. Read before reversing anything: both look like working code until they don't.
 - [**Core offsets verified against LuaCore**](luacore-verified-offsets.md) — the 2026-07-19 Ghidra audit.

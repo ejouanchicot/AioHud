@@ -73,11 +73,11 @@ void aio_update_clear();                            // forget the in-progress st
 const char* aio_version_string();
 // Settings modules (the Configuration sidebar). Add a module here = a new settings page ; the profile
 // is GLOBAL (a profile snapshots every module), so it lives in the profile bar, not per-module.
-static const char* MODULES[]  = { "Party / Alliance", "Target", "Player", "Minimap", "Arcade WS", "Skillchains", "Treasure Pool", "Hate List", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "EmpyPop", "Absorb-TP", "Pet", "Interface" };   // Interface stays LAST (SEC_INTERFACE) ; "Pet" (14) : BST / GEO, one box
+static const char* MODULES[]  = { "Party / Alliance", "Target", "Player", "Minimap", "Arcade WS", "Skillchains", "Treasure Pool", "Hate List", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "EmpyPop", "Absorb-TP", "Pet", "Game UI", "Chat", "Interface" };   // Interface stays LAST (SEC_INTERFACE) ; "Pet" (14) : BST / GEO, one box ; "Game UI" (15) : the client's own windows ; "Chat" (16) : AioHUD's own log boxes
 static const int   MODULE_N   = (int)(sizeof(MODULES) / sizeof(MODULES[0]));
 static const int   SEC_INTERFACE = MODULE_N - 1;               // "Interface" = the config MENU's own look (font + accent) ; last sidebar entry, not a HUD module
 static const char* module_label(int i) {                       // Configuration sidebar module name (localized)
-    static const char* fr[] = { "Groupe / Alliance", "Cible", "Joueur", "Minicarte", "Arcade WS", "Skillchains", "Tr\xC3\xA9sor", "Liste de haine", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "EmpyPop", "Absorb-TP", "Pet", "Interface" };
+    static const char* fr[] = { "Groupe / Alliance", "Cible", "Joueur", "Minicarte", "Arcade WS", "Skillchains", "Tr\xC3\xA9sor", "Liste de haine", "PointWatch", "Grimoire (SCH)", "Zone Tracker", "Timers", "EmpyPop", "Absorb-TP", "Pet", "Interface du jeu", "Chat", "Interface" };
     return (ui_config().lang == 1 && i >= 0 && i < (int)(sizeof(fr) / sizeof(fr[0]))) ? fr[i] : MODULES[i];
 }
 
@@ -1027,6 +1027,12 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         } else if (section_ == 14) {
             draw_pet_config(dev, fo, mo, click, ry, ri, e,
                             bandX, bandW, coX, ctrlW, hdrX, hdrW);
+        } else if (section_ == 15) {
+            draw_nui_config(dev, fo, mo, click, ry, ri, e,   // Game UI : the client's own windows
+                            bandX, bandW, coX, ctrlW, hdrX, hdrW);
+        } else if (section_ == 16) {
+            draw_chat_config(dev, fo, mo, click, ry, ri, e,   // Chat : AioHUD's own log boxes
+                             bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == SEC_INTERFACE) {
             draw_interface_category(dev, fo, mo, click, ry, ri, e,   // the config MENU's own font + accent colour
                                     bandX, bandW, coX, ctrlW, hdrX, hdrW);

@@ -263,6 +263,14 @@ static bool save_config_to(const char* path) {
     fprintf(f, "grim=%d,%.3f,%.4f,%.4f,%d\n", c.grimShow, c.grimScale, c.grimX, c.grimY, c.grimArt);   // grimoire box
     save_text_styles(f, "grimText", c.grimText, GRIM_TE_COUNT);   // grimoire : per-element typography
     fprintf(f, "pet=%d,%.3f,%.4f,%.4f,%d\n", c.petShow, c.petScale, c.petX, c.petY, c.petTab);   // the Pet box : show, size, place, config tab
+    fprintf(f, "nativeui=%d,%d,%d\n", c.nuHide, c.nuMenuDx, c.nuMenuDy);   // Game UI : hidden client windows + menus offset
+    for (int b = 0; b < 2; ++b) {   // Chat module : [0] chat, [1] battle -- box, chrome
+        fprintf(f, "chat%d=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d\n", b, c.chShow[b], c.chScale[b], c.chX[b], c.chY[b], c.chW[b], c.chLines[b], c.chStamp[b], c.chTab[b]);
+        const BoxStyle& x = c.chBox[b];
+        fprintf(f, "chbox%d=%d,%.4f,%d,%d,%.4f,%08X,%d\n", b, x.on, x.alpha, x.themeCopy, x.theme, x.lum, x.hue, x.border);
+    }
+    save_text_styles(f, "chText", c.chText, 2);   // Chat module : typography per box
+    fprintf(f, "chatdock=%d\n", c.chDock);         // Chat module : the game's input line docked under the chat box
     fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d,%d,%d,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
             c.bstImage, c.bstName, c.bstHp, c.bstTp, c.bstDist, c.bstCharges, c.bstMoves, c.bstIcons, c.bstDemo, c.bstArtMode,
             c.bstArtSz, c.bstPawSz, c.bstEcoSz, c.bstChargeStyle, c.bstLayout, c.bstJa, c.bstSc);   // BST box + its elements
@@ -377,6 +385,33 @@ static bool parse_aw_line(const char* line, UiConfig& c) {
     if (n >= 5) c.awScreen = scr; if (n >= 6) c.awMemory = mem; if (n >= 7) c.awColors = col; if (n >= 8) c.awCount = cnt; if (n >= 9) c.awTimer = tim;
     return true;
 }
+// Game UI line (the client's own windows), parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line). Absent in
+// an older file -> nothing hidden, menus in place : the client untouched.
+static bool parse_nui_line(const char* line, UiConfig& c) {
+    if (strncmp(line, "nativeui=", 9) != 0) return false;
+    int h = 0, dx = 0, dy = 0;
+    const int n = sscanf(line + 9, "%d,%d,%d", &h, &dx, &dy);
+    if (n >= 1) c.nuHide = h & 0x3F;
+    if (n >= 2) c.nuMenuDx = dx < -2000 ? -2000 : (dx > 2000 ? 2000 : dx);
+    if (n >= 3) c.nuMenuDy = dy < -2000 ? -2000 : (dy > 2000 ? 2000 : dy);
+    return true;
+}
+
+// Chat-module lines (chat0= / chat1= / chbox0= / chbox1= / chText0= / chText1=), OUT-OF-LINE (C1061). Absent in an
+// older file -> both boxes off, at their default places.
+static bool parse_chat_line(const char* line, UiConfig& c) {
+    if (!strncmp(line, "chatdock=", 9)) { const int v = atoi(line + 9); c.chDock = v < 0 ? 0 : (v > 2 ? 2 : v); return true; }
+    if (parse_text_style(line, "chText", c.chText, 2)) return true;
+    if (!strncmp(line, "chbox", 5) && (line[5] == '0' || line[5] == '1') && line[6] == '=') { parse_box(line + 7, c.chBox[line[5] - '0']); return true; }
+    if (strncmp(line, "chat", 4) || (line[4] != '0' && line[4] != '1') || line[5] != '=') return false;
+    const int b = line[4] - '0';
+    int sh = c.chShow[b], w = c.chW[b], ln = c.chLines[b], st = c.chStamp[b], tb = c.chTab[b]; float scl = c.chScale[b], x = c.chX[b], y = c.chY[b];
+    const int n = sscanf(line + 6, "%d,%f,%f,%f,%d,%d,%d,%d", &sh, &scl, &x, &y, &w, &ln, &st, &tb);
+    if (n >= 1) c.chShow[b] = sh ? 1 : 0; if (n >= 2) c.chScale[b] = scl; if (n >= 3) c.chX[b] = x; if (n >= 4) c.chY[b] = y;
+    if (n >= 5) c.chW[b] = w; if (n >= 6) c.chLines[b] = ln; if (n >= 7) c.chStamp[b] = st ? 1 : 0; if (n >= 8) c.chTab[b] = tb;
+    return true;
+}
+
 // Pet-module config lines, parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line). g_petSeen : the file had a
 // pet= line ; without one (a file from before the Pet module) load_config_from gives the Pet box the BST box's place.
 static bool g_petSeen = false;
@@ -713,6 +748,8 @@ static bool load_config_from(const char* path) {
         int v, v1, v2, gps, idx, b0, b1, b2, bc; float gx, gy, gsc, fv, f1, f2; unsigned uc;
         if (parse_aw_line(line, c)) continue;     // out-of-line : the Absorb-TP box (same nesting-limit reason)
         if (parse_pet_line(line, c)) continue;    // out-of-line : the Pet box (same nesting-limit reason)
+        if (parse_nui_line(line, c)) continue;
+        if (parse_chat_line(line, c)) continue;   // out-of-line : the Chat module    // out-of-line : Game UI (the client's own windows)
         if (parse_bst_line(line, c)) continue;    // out-of-line : the BST box (same nesting-limit reason)
         if (parse_geo_line(line, c)) continue;    // out-of-line : the GEO box (same nesting-limit reason)
         if (parse_smn_line(line, c)) continue;    // out-of-line : the SMN content (same nesting-limit reason)
@@ -1245,6 +1282,12 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     for (int i = 0; i < UiConfig::GB_COUNT; ++i) if (a.boxGrow[i] != b.boxGrow[i]) return false;
     if (a.scShow != b.scShow || a.scScale != b.scScale || a.scX != b.scX || a.scY != b.scY || a.scNearby != b.scNearby || a.scReadyDelay != b.scReadyDelay) return false;
     if (a.tpShow != b.tpShow || a.tpScale != b.tpScale || a.tpX != b.tpX || a.tpY != b.tpY || a.tpCount != b.tpCount || a.tpIcon != b.tpIcon) return false;
+    if (a.nuHide != b.nuHide || a.nuMenuDx != b.nuMenuDx || a.nuMenuDy != b.nuMenuDy) return false;
+    for (int k = 0; k < 2; ++k) {   // Chat module
+        if (a.chShow[k] != b.chShow[k] || a.chScale[k] != b.chScale[k] || a.chX[k] != b.chX[k] || a.chY[k] != b.chY[k] || a.chW[k] != b.chW[k]
+            || a.chLines[k] != b.chLines[k] || a.chStamp[k] != b.chStamp[k] || a.chTab[k] != b.chTab[k] || !box_eq(a.chBox[k], b.chBox[k])) return false;
+    }
+    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock) return false;   // Game UI
     if (!text_styles_eq(a.tpText, b.tpText, TP_TE_COUNT)) return false;
     if (a.hlShow != b.hlShow || a.hlScale != b.hlScale || a.hlX != b.hlX || a.hlY != b.hlY || a.hlCount != b.hlCount || a.hlDist != b.hlDist || a.hlTgt != b.hlTgt) return false;
     if (!text_styles_eq(a.hlText, b.hlText, HL_TE_COUNT)) return false;
