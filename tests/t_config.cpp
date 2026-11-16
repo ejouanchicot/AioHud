@@ -108,6 +108,8 @@ static void scribble(UiConfig& c, int seed) {
         c.box[k].scale = 1.0f + 0.1f * (k + seed);
     }
     c.borderCost = (i1 & 1) != 0; c.animHP = !(i1 & 1); c.animTP = (i1 & 1) != 0;
+    // Game UI : the HIGH bit too (0x40 = NU_ACT) -- the loader masked 0x3F and dropped it at every load (2026-11-16)
+    c.nuHide = 0x40 | ((seed * 5) & 0x3F); c.muLabel = seed & 1; c.muGrow = seed & 1;
     c.distColClose = x1 + 21; c.distColNormal = x1 + 23; c.distColFar = x1 + 29;
     // buffOrder : a ROTATION, so it stays a valid permutation. Anything else and the loader's repair would
     // legitimately rewrite it, and the round-trip would fail on the test's own bad input, not on a real bug.
@@ -178,6 +180,11 @@ void test_config() {
     CHECK(profile_save("t_roundtrip"));
     CHECK(profile_load("t_roundtrip"));
     const UiConfig stored = ui_config();                // the reference : what the file actually represents
+    // a value the loader MASKS converges at the first trip, so the fixed point below cannot see it : check it here
+    // (the Game UI mask lost its 0x40 bit, NU_ACT, at every load -- 2026-11-16, "je dois le recocher a chaque reload")
+    CHECK(stored.nuHide == (0x40 | (5 & 0x3F)));
+    CHECK(stored.muLabel == 1);
+    CHECK(stored.muGrow == 1);
 
     // 1b) A key the WRITER emits and the READER ignores is invisible to every comparison below : profile_load starts
     // from the defaults, so an ignored key comes back as its DEFAULT on both sides of each compare, and they agree.

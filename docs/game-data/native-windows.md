@@ -218,3 +218,11 @@ What Enter on a target opens. ONE menu for every target ; AioHUD mirrors it (Gam
   5 -> FUN_0546CC80(code), the command runner). Live 2026-11-16 (`//aio mhook`, all from FFXiMain+0x119964) :
   32 open / refresh, 1 key move, 9 hover, 5 validate (then 29, 32), 6 back from a submenu, 2 cursor re-fit.
   The mirror's mouse = the client's : hover writes obj+0x4C then event 9, a click adds event 5 (native_ui.cpp).
+- **Entry submenus** (`magselec`, `abiselec` ; mirrored with NU_ACT, `native_sub_menu()`) : their rows are the open
+  object's ENTRY children (obj+0x14, child short type 1) in list order -- the cursor obj+0x4C counts THAT order
+  (1-based), the screen order is the child rect's y (+0x34). child+0x10 = state : 0 normal, 1 validated, 3 under the
+  cursor, 5 refused, 0x10 skipped (abiselec's 6th entry). Labels from the definition's help texts : magselec White /
+  Black / Songs / Ninjutsu / Summoning / Blue / Geomancy ; abiselec Job abilities / Weapon skills / Ranged attack /
+  Pet commands / Mount. No arrow on their rows (each opens its LIST). Placement, as the client : `magselec` BESIDE
+  playermo at the same height, `abiselec` IN PLACE of it (same left, bottom anchored, its own height).
+  `chatctrl` (Chat) has no help texts : not mirrored until its rows are named from a screenshot.

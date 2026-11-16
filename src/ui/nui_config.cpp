@@ -66,6 +66,11 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
             const int v = c.muLabel == 1 ? 1 : 0;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Menu rows", "Lignes des menus"), LL[v])) { c.muLabel = (v + d + 2) % 2; save_ui_config(); }
         } ROW_NEXT(52.0f)
+        { ROW_BAND(52.0f)   // a submenu with more rows than its menu : grows up (bottoms level) or down (tops level)
+            const char* GL[2] = { tr("Upward", "Vers le haut"), tr("Downward", "Vers le bas") };
+            const int v = c.muGrow == 1 ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Taller submenu grows", "Sous-menu plus grand : grandit"), GL[v])) { c.muGrow = (v + d + 2) % 2; save_ui_config(); }
+        } ROW_NEXT(52.0f)
         // -1000 .. +1000 screen px, 10 px steps ; persists on release (row_slider)
         #define NUI_OFFSET_ROW(UID, LABEL, FIELD) { ROW_BAND(46.0f) const float lo_ = -1000.0f, hi_ = 1000.0f; char b_[16]; \
             _snprintf(b_, sizeof(b_), "%+d px", (FIELD)); b_[sizeof(b_) - 1] = 0; \

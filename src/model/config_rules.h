@@ -165,7 +165,7 @@ inline void config_sanitise(UiConfig& c) {
     c.scReadyDelay = cfg_int(c.scReadyDelay, 30, 80);   // 3.0 .. 8.0 s
     MUL(scScale);   FRAC(scX);   FRAC(scY);   GAP(scListGap);   cfg_text(c.scText, SC_TE_COUNT);   cfg_box(c.scBox);
     MUL(tpScale);   FRAC(tpX);   FRAC(tpY);                     cfg_text(c.tpText, TP_TE_COUNT);   cfg_box(c.tpBox);
-    cfg_box(c.muBox); c.muLabel = cfg_int(c.muLabel, 0, 1);   // Game UI : the redrawn menus' theme + rows
+    cfg_box(c.muBox); c.muLabel = cfg_int(c.muLabel, 0, 1); c.muGrow = cfg_int(c.muGrow, 0, 1);   // Game UI : the redrawn menus' theme + rows
     for (int b = 0; b < 2; ++b) {   // Chat module : [0] chat, [1] battle
         MUL(chScale[b]); FRAC(chX[b]); FRAC(chY[b]);
         c.chW[b] = cfg_int(c.chW[b], 200, 1600); c.chLines[b] = cfg_int(c.chLines[b], 3, 40);

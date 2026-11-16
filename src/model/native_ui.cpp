@@ -61,6 +61,7 @@ const char* const CHAT_W[]  = { "logwindo", "logwin2", "spoolmsg", "splmsg2", "e
 const char* const HELP_W[]  = { "helpwind", "titlewin", 0 };
 const char* const COST_W[]  = { "subwindo", 0 };
 const char* const NET_W[]   = { "netstat", "polwindo", 0 };
+const char* const ACT_SUB_W[] = { "magselec", "abiselec", 0 };   // the action menu's submenus AioHUD redraws (NU_ACT)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
 
 // the offset a window SHOULD carry under the current config
@@ -72,7 +73,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_HELP)  && in_list(n, HELP_W))  { dy = HIDE_DY; return; }
     if ((hide & NU_COST)  && in_list(n, COST_W))  { dy = HIDE_DY; return; }
     if ((hide & NU_NET)   && in_list(n, NET_W))   { dy = HIDE_DY; return; }
-    if ((hide & NU_ACT)   && !strcmp(n, "playermo")) { dy = HIDE_DY; return; }
+    if ((hide & NU_ACT)   && (!strcmp(n, "playermo") || in_list(n, ACT_SUB_W))) { dy = HIDE_DY; return; }
     // the HUD-like windows never follow the MENUS offset -- they have their own option above
     if (in_list(n, PARTY_W) || in_list(n, ALLY_W) || in_list(n, CHAT_W) || in_list(n, COST_W) || in_list(n, NET_W) || in_list(n, INPUT_W)) return;
     if (ox == 0 && oy == 0 && anc == 0) return;   // frames the client places by CODE (mapframe, cnqframe...)
@@ -123,6 +124,7 @@ bool  g_anyApplied = false;
 // ---- the ACTION menu mirror (NU_ACT) ----
 // If its rows stop reading while the client's menu is parked off-screen, the player would see NO menu at all : after
 // 3 bad frames the client's own menu comes back (g_actFail), and goes away again after 5 s of good reads.
+NativeEntryMenu g_sub;
 NativeMenu g_act; bool g_actFail = false; int g_actBad = 0; DWORD g_actGoodSince = 0;
 u32 g_actObj = 0;          // the playermo object of the last good read (re-read before any call into the client)
 int eff_hide(const UiConfig& c) { return g_actFail ? (c.nuHide & ~NU_ACT) : c.nuHide; }
@@ -501,9 +503,62 @@ int act_read(NativeMenu& m, u32* objOut = 0) {
     if (objOut) *objOut = obj;
     return 1;
 }
+// One read of the open action SUBMENU (ACT_SUB_W ; the focused one when two are open). -1 none, 0 unreadable, 1 read.
+int sub_read(NativeEntryMenu& m, u32* objOut = 0) {
+    memset(&m, 0, sizeof(m)); if (objOut) *objOut = 0;
+    const u32 mgr = manager(); if (!mgr) return -1;
+    u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+    u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
+    u32 obj = 0; char name[9] = "";
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0;
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        char nm[9];
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && in_list(nm, ACT_SUB_W)
+            && rd8(o + OBJ_CLOSING, cl) && !cl) {
+            if (!obj || o == focus) { obj = o; memcpy(name, nm, 9); }
+        }
+        node = next;
+    }
+    if (!obj) return -1;
+    u32 cur = 0; if (!safe_read(obj + 0x4C, &cur)) return 0;
+    // the entry children, in list order (= the cursor's numbering)
+    short ys[16]; int k = 0;
+    u32 cn = 0; safe_read(obj + 0x14, &cn);
+    for (int g = 0; valid_ptr(cn) && g < 64 && k < 32; ++g) {
+        u32 cnext = 0, ch = 0; unsigned char cdead = 0; safe_read(cn, &cnext); safe_read(cn + 0x10, &ch); rd8(cn + 0x14, cdead);
+        short type = -1;
+        if (valid_ptr(ch) && !cdead && rd16(ch, type) && type == 1) {
+            ++k;                                                         // entry index k (1-based), shown or not
+            u32 st = 0; short r[4] = { 0, 0, 0, 0 };
+            if (!safe_read(ch + 0x10, &st) || !rd16(ch + 0x32, r[0]) || !rd16(ch + 0x34, r[1]) || !rd16(ch + 0x36, r[2]) || !rd16(ch + 0x38, r[3])) return 0;
+            if ((st & 0x10) || r[2] - r[0] <= 0 || r[3] - r[1] <= 0 || m.n >= 16) { cn = cnext; continue; }   // skipped / not laid out
+            int at = m.n;                                                // insert by screen y
+            while (at > 0 && ys[at - 1] > r[1]) { ys[at] = ys[at - 1]; m.entry[at] = m.entry[at - 1]; m.state[at] = m.state[at - 1]; --at; }
+            ys[at] = r[1]; m.entry[at] = (unsigned char)k; m.state[at] = (unsigned char)(st & 0xFF); ++m.n;
+        }
+        cn = cnext;
+    }
+    if (m.n < 1) return 0;
+    m.cursor = (int)(cur & 0xFFFF);
+    if (!rd16(obj + OBJ_RECT, m.rx0) || !rd16(obj + OBJ_RECT + 2, m.ry0) || !rd16(obj + OBJ_RECT + 4, m.rx1) || !rd16(obj + OBJ_RECT + 6, m.ry1)) return 0;
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return 0;
+    m.uiW = (short)(wh & 0xFFFF); m.uiH = (short)(wh >> 16);
+    if (m.uiW < 320 || m.uiH < 240 || m.uiW > 8000 || m.uiH > 8000) return 0;
+    if (m.ry0 >= m.uiH) { m.ry0 = (short)(m.ry0 - HIDE_DY); m.ry1 = (short)(m.ry1 - HIDE_DY); }
+    memcpy(m.name, name, 9);
+    m.focused = focus == obj;
+    m.open = true;
+    if (objOut) *objOut = obj;
+    return 1;
+}
+
 void act_poll(bool on) {
-    if (!on) { g_act.open = false; g_actBad = 0; g_actFail = false; return; }
-    NativeMenu m; const int r = act_read(m);
+    if (!on) { g_act.open = false; g_sub.open = false; g_actBad = 0; g_actFail = false; return; }
+    NativeMenu m; int r = act_read(m);
+    NativeEntryMenu sm; const int rs = sub_read(sm);
+    g_sub = sm; if (rs != 1) g_sub.open = false;
+    if (rs == 0) r = 0;                                   // a parked submenu that cannot be read : same fallback
     const DWORD now = GetTickCount();
     if (r == 0) {
         g_act.open = false;
@@ -553,6 +608,7 @@ void rescue_children(u32 mgr, int hide) {
 }
 
 const NativeMenu& native_action_menu() { return g_act; }
+const NativeEntryMenu& native_sub_menu() { return g_sub; }
 
 // ---- the client's menu EVENT function (FUN_054596F0 on the 2026-11-15 client) ----
 // thiscall(menu object, event) ret 4 : 1-4 arrows, 5 validate, 6 cancel, 9 "the cursor was set" (the mouse), ...
@@ -588,6 +644,25 @@ bool native_action_hover(int row) {
     if (!wr16(obj + 0x4C, (short)row)) return false;
     return menu_event(obj, 9);
 }
+// the submenu, read NOW : open, focused, that entry shown and not refused
+u32 sub_live_obj(int entry) {
+    NativeEntryMenu m; u32 obj = 0;
+    if (sub_read(m, &obj) != 1 || !m.focused) return 0;
+    for (int i = 0; i < m.n; ++i) if (m.entry[i] == entry) return m.state[i] == 5 ? 0 : obj;
+    return 0;
+}
+bool native_sub_hover(int entry) {
+    const u32 obj = sub_live_obj(entry); if (!obj) return false;
+    if (!wr16(obj + 0x4C, (short)entry)) return false;
+    return menu_event(obj, 9);
+}
+bool native_sub_pick(int entry) {
+    const u32 obj = sub_live_obj(entry); if (!obj) return false;
+    short cur = 0; rd16(obj + 0x4C, cur);
+    if (cur != entry && !native_sub_hover(entry)) return false;
+    return menu_event(obj, 5);
+}
+
 bool native_action_pick(int row) {
     const u32 obj = act_live_obj(row); if (!obj) return false;
     short cur = 0; rd16(obj + 0x4C, cur);
@@ -597,7 +672,7 @@ bool native_action_pick(int row) {
 
 void native_ui_tick(bool inWorld) {
     const UiConfig& c = ui_config();
-    if (!(inWorld && (c.nuHide & NU_ACT))) g_act.open = false;   // never a stale menu once the option is off / logged out
+    if (!(inWorld && (c.nuHide & NU_ACT))) { g_act.open = false; g_sub.open = false; }   // never a stale menu once the option is off / logged out
     // only while a character is in the world : the title, login and char-select menus are the client's own business
     const bool docking = c.chDock && c.chShow[0] && (c.chDock == 2 || c.chDockRect[2] > 0.0f);   // the game's input line : under / inside AioHUD's chat box
     const bool wanted = inWorld && (c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0 || docking);
@@ -612,7 +687,7 @@ void native_ui_tick(bool inWorld) {
         if (g_lastSig != 0 || strcmp(g_why, why)) { g_lastSig = 0; lstrcpynA(g_why, why, sizeof(g_why)); }
         return;
     }
-    if (!resolve()) { g_act.open = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
+    if (!resolve()) { g_act.open = false; g_sub.open = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
     act_poll(wanted && (c.nuHide & NU_ACT));
     if (wanted && (eff_hide(c) & NU_ACT)) rescue_children(manager(), eff_hide(c));
     if (!wanted && !g_anyApplied) return;                  // recovery done, nothing configured

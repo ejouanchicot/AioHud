@@ -52,6 +52,26 @@ const NativeMenu& native_action_menu();
 bool native_action_hover(int row);
 bool native_action_pick(int row);
 
+// The action menu's SUBMENUS whose rows are their definition's entries -- "magselec" (Magic : White / Black / Songs /
+// Ninjutsu / Summoning / Blue / Geomancy) and "abiselec" (Abilities : Job abilities / Weapon skills / Ranged attack /
+// Pet commands / Mount) -- parked with NU_ACT and redrawn the same way. Rows = the open object's ENTRY children
+// (obj+0x14 list, child short type 1) : `entry` = its index in that list (what the cursor obj+0x4C counts, 1-based),
+// `state` = child+0x10 (0 normal, 1 validated, 3 under the cursor, 5 refused, 0x10 skipped -> left out), shown in
+// screen order (child rect y). Live 2026-11-16 (docs/game-data/native-windows.md section 9).
+struct NativeEntryMenu {
+    bool open, focused;
+    char name[9];
+    int  n;
+    unsigned char entry[16];   // 1-based entry index of each shown row, top to bottom
+    unsigned char state[16];
+    int  cursor;               // 1-based entry index under the cursor
+    short rx0, ry0, rx1, ry1;
+    int  uiW, uiH;
+};
+const NativeEntryMenu& native_sub_menu();
+bool native_sub_hover(int entry);   // cursor -> that entry, event 9 (the client's mouse hover)
+bool native_sub_pick(int entry);    // hover + event 5 (validate)
+
 // once per frame, MAIN thread (render6) : resolves, applies config changes, keeps records true. `inWorld` = a character
 // is logged in : at the title / char-select screens every native window stays (or goes back) where the client puts it.
 void native_ui_tick(bool inWorld);
