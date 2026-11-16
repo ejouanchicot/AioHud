@@ -19,6 +19,10 @@
 #include "ui/party.h"             // party_cursor / party_selframe / party_cursor_bob : AioHUD's hand and gold glass
 #include "model/ui_config.h"
 #include "model/native_ui.h"
+#include "model/gamestate.h"   // GameState (me.mp)
+#include "model/spells_gen.h"  // spell_info : the spell list's names and MP
+#include "model/abilities_gen.h"        // abil_info : the ability list's job abilities
+#include "model/weapon_skills_gen.h"    // ws_info : its weapon skills
 #include "gfx/draw.h"
 #include "gfx/font.h"
 #include <stdio.h>
@@ -42,6 +46,7 @@ const Cmd CMDS[] = {
     {  9, "Items",         "Objets",                false, IC_BAG     },
     { 10, "Check",         "Examiner",              false, IC_LENS    },
     { 11, "Check",         "Examiner",              false, IC_LENS    },
+    { 12, "Treasure",      "Treasure",              false, IC_BAG     },   // the game's own word, in FR too (user, 2026-11-16)   // the treasure POOL : only while items are in it (2026-11-16)
     { 18, "Switch Target", "Changer de cible",      false, IC_RETICLE },
     { 19, "Trade",         "\xC3\x89""changer",     false, IC_SWAP    },
     { 25, "Trust",         "Alter Ego",             false, IC_DUO     },
@@ -170,18 +175,30 @@ const SubRow* sub_row(const char* menu, int entry) {
     return 0;
 }
 
+inline u32 dev_of(const Frame& f) { return f.dev; }
+
 // ---- ONE block : the menus' theme box, thin capsules, the party's gold glass on the picked row, the hand ----
 // `extra` : what the client shows on the right of a row (the Chat submenu : the Tell name, a shell's name, the Unity
 // leader) ; `pearl` : 513 linkshell / 514 linkpearl / 515 pearlsack drawn before it, tinted `pearlArgb`
 struct RowSpec { const char* label; Icon icon; bool sub; bool off; const char* extra = 0; int pearl = 0; u32 pearlArgb = 0;
-                 bool cycle = false; };   // cycle : the extra can be changed with left / right (the Tell name) -> < name >
+                 bool cycle = false; bool center = false; };   // center : a lone message row (the empty list), centred in the block   // cycle : the extra can be changed with RIGHT (the Tell name ; left closes the submenu) -> name >
 struct Block {
     float vis = 0.0f, curY = -1.0f; unsigned openMs = 0; int lastN = 0; bool wasOpen = false; float sel[16] = { 0 };
     float x = 0, y = 0, w = 0, h = 0;           // drawn rect this frame (w = 0 : not drawn)
     float rowY0 = 0, rowStep = 0, capX = 0, capW = 0, capH = 0;
     int hoverRow = 0;
 };
-Block g_main, g_subB;
+Block g_main, g_subB, g_listB;
+
+// a LIST row from its id : kind 0 a spell id, kind 1 the client's ability index (weapon skills 0..255, job abilities
+// 512 + their id -- native_ui.h). `mp` gets the MP cost (0 none) ; `ws` says it is a weapon skill (needs 1000 TP).
+const char* list_row_name(int kind, unsigned id, unsigned& mp, bool& ws) {
+    mp = 0; ws = false;
+    if (kind == 0) { const SpellRow* sp = spell_info(id); if (!sp) return "?"; mp = sp->mp; return sp->en; }
+    if (id < 256) { const WSRow* w = ws_info(id); ws = true; return w ? w->en : "?"; }
+    if (id >= 512) { const AbilRow* a = abil_info(id - 512); if (!a) return "?"; mp = a->mp; return a->en; }
+    return "?";
+}
 unsigned g_lastMs = 0;
 
 struct Metrics { float S, tz, ow, capH, gap, icZ, pad, gutter, capPadL, icW, capPadR, triW; bool icons; };
@@ -202,7 +219,7 @@ void block_size(const Frame& f, const Metrics& k, const RowSpec* rows, int n, fl
         const float lw = f.font->measure(rows[i].label, k.tz); if (lw > wLab) wLab = lw;
         float ew = rows[i].extra && rows[i].extra[0] ? f.font->measure(rows[i].extra, k.tz * 0.92f) : 0.0f;
         if (rows[i].pearl) ew += 14.0f * k.S;
-        if (rows[i].cycle) ew += 2.0f * 9.0f * k.S;
+        if (rows[i].cycle) ew += 9.0f * k.S;
         if (ew > wEx) wEx = ew;
     }
     const float capW = snap(k.capPadL + k.icW + wLab + (wEx > 0.0f ? wEx + 8.0f * k.S : 0.0f) + k.capPadR + tri_col(k, rows, n));
@@ -241,6 +258,13 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
         if (fabsf((on ? 1.0f : 0.0f) - b.sel[i]) < 0.004f) b.sel[i] = on ? 1.0f : 0.0f;
         const float y = snap(by + k.pad + (float)i * step);
         const float a = A * (rows[i].off ? 0.55f : 1.0f);
+        if (rows[i].center) {   // a message row : its capsule spans the block evenly (no hand column -- nothing to pick)
+            const float mx = bx + k.pad, mw = bw - 2.0f * k.pad;
+            rrect(dev, mx, y, mw, k.capH, r, with_alpha(0x5A1C2638u, a), with_alpha(0x5A0A0F18u, a));
+            rrect_topcaps(dev, mx + 1.0f, y + 1.0f, mw - 2.0f, snap(k.capH * 0.45f), r - 1.0f, with_alpha(0x14FFFFFFu, a), with_alpha(0x00FFFFFFu, a));
+            rrect_stroke(dev, mx, y, mw, k.capH, r, with_alpha(0x38C8D6EAu, a), 1.0f);
+            continue;
+        }
         rrect(dev, cx0, y, capW, k.capH, r, with_alpha(0x5A1C2638u, a), with_alpha(0x5A0A0F18u, a));
         rrect_topcaps(dev, cx0 + 1.0f, y + 1.0f, capW - 2.0f, snap(k.capH * 0.45f), r - 1.0f, with_alpha(0x14FFFFFFu, a), with_alpha(0x00FFFFFFu, a));
         rrect_stroke(dev, cx0, y, capW, k.capH, r, with_alpha(0x38C8D6EAu, a), 1.0f);
@@ -268,10 +292,10 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
         if (rows[i].cycle && rows[i].extra && rows[i].extra[0]) {   // < name > : left / right changes it
             const float ew = f.font->measure(rows[i].extra, k.tz * 0.92f), ch = 3.0f * S;
             const float R = cx0 + capW - k.capPadR - triU - 9.0f * S;          // where the name ends (text pass : same)
-            const float rc = R + 4.5f * S, lc = R - ew - 4.5f * S;           // the two chevrons' centres
+            const float rc = R + 4.5f * S;                                     // RIGHT only : right cycles, left closes the submenu
+            (void)ew;
             const u32 cc = with_alpha(mix(0xB093A6BEu, 0xFFFFDA8Au, s), a);
             tri(dev, rc + ch * 0.7f, cy, rc - ch * 0.5f, cy - ch, rc - ch * 0.5f, cy + ch, cc);
-            tri(dev, lc - ch * 0.7f, cy, lc + ch * 0.5f, cy - ch, lc + ch * 0.5f, cy + ch, cc);
         }
         if (rows[i].sub) {
             const float tx = cx0 + capW - k.capPadR * 0.5f - k.triW * 0.5f, th = 3.2f * S;
@@ -291,6 +315,11 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
     for (int i = 0; i < n && i < 16; ++i) {
         const float s = b.sel[i], a = A * (rows[i].off ? 0.5f : 1.0f);
         const float y = snap(by + k.pad + (float)i * step);
+        if (rows[i].center) {
+            fo->draw_lc(dev, snap(bx + (bw - fo->measure(rows[i].label, k.tz)) * 0.5f), snap(y + k.capH * 0.5f), rows[i].label, k.tz,
+                        with_alpha(0xFFC9D3E0u, a), with_alpha(0xC8000000u, a), k.ow);
+            continue;
+        }
         fo->draw_lc(dev, snap(cx0 + k.capPadL + k.icW), snap(y + k.capH * 0.5f), rows[i].label, k.tz,
                     with_alpha(mix(0xFFC9D3E0u, 0xFFFFFFFFu, s), a), with_alpha(0xC8000000u, a), k.ow);
         if (rows[i].extra && rows[i].extra[0]) {
@@ -336,6 +365,13 @@ void actmenu_draw(const Frame& f) {
     // ======== the action menu ========
     static NativeMenu last;                       // the last menu seen : it fades out with its own rows
     if (M.open) last = M;
+    // a spell / ability is being AIMED (the sub-target cursor is up) : the client hides its menus until you cast or back
+    // out -- so do these (2026-11-16, "le menu depop quand la magie est en target ... puis repop")
+    if (f.game && f.game->hasSubTarget) {
+        block_ease(g_main, false, now, dt); block_ease(g_subB, false, now, dt); block_ease(g_listB, false, now, dt);
+        g_main.hoverRow = g_subB.hoverRow = 0;
+        return;
+    }
     if (!block_ease(g_main, M.open, now, dt) || !last.n || last.uiW <= 0 || last.uiH <= 0) { g_subB.w = 0.0f; return; }
     const NativeMenu& m = last;
     RowSpec rows[16]; char nums[16][12];
@@ -362,6 +398,69 @@ void actmenu_draw(const Frame& f) {
     float bx = snap(ax), by = snap(ay - bh + (1.0f - tOpen) * 4.0f * S);
     if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
     if (by < 4.0f) by = 4.0f; if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh);
+    // ======== the SPELL list (native_list) : the client lays it over both menus -- same left, bottom anchored ========
+    {
+        const NativeList& NL = native_list();
+        static NativeList lastL;
+        if (NL.open) lastL = NL;
+        if (block_ease(g_listB, NL.open && M.open, now, dt)) {
+            RowSpec lrows[32]; char mps[32][8];
+            // EMPTY : the client opens the list at its FULL size and writes "No spells available." in its first row
+            const bool empty = lastL.n == 0;
+            if (empty) lastL.rows = 1;
+            const bool live = f.game && f.game->me.name[0];
+            const int mpNow = live ? f.game->me.mp : -1, tpNow = live ? (int)f.game->me.tp : -1;
+            for (int i = 0; i < lastL.rows && i < 32; ++i) {
+                if (empty) {
+                    lrows[i].label = lastL.kind ? tr("No abilities available.", "Aucune aptitude disponible.") : tr("No spells available.", "Aucun sort disponible.");
+                    lrows[i].icon = IC_NONE; lrows[i].sub = false; lrows[i].off = false; lrows[i].center = true; break;
+                }
+                unsigned mp; bool ws;
+                lrows[i].label = list_row_name(lastL.kind, lastL.id[i], mp, ws); lrows[i].icon = lastL.kind ? IC_BOLT : IC_STAR; lrows[i].sub = false;
+                if (mp) { sprintf(mps[i], "%u", mp); lrows[i].extra = mps[i]; }
+                lrows[i].off = (mp && mpNow >= 0 && (int)mp > mpNow) || (ws && tpNow >= 0 && tpNow < 1000);   // not usable right now : dimmed
+            }
+            float lw, lh; block_size(f, k, lrows, lastL.rows, lw, lh);
+            if (empty) {                                        // the full list's height : as many rows as a page shows
+                const int pg = lastL.vis > 0 ? lastL.vis : 12;
+                lh = snap((float)pg * k.capH + (float)(pg - 1) * k.gap + 2.0f * k.pad);
+            }
+            // a FIXED width : the widest spell of the WHOLE list (cached per list), so scrolling never resizes it
+            {
+                static unsigned sig = 0; static float wAll = 0.0f; static float atS = 0.0f;
+                unsigned h = (2166136261u ^ (unsigned)lastL.allN) * 16777619u ^ (unsigned)lastL.kind;
+                for (int i = 0; i < lastL.allN; ++i) h = (h ^ lastL.all[i]) * 16777619u;
+                if (h != sig || atS != k.S) {
+                    sig = h; atS = k.S; wAll = 0.0f;
+                    RowSpec one[1]; char mp1[8];
+                    for (int i = 0; i < lastL.allN; ++i) {
+                        unsigned mp; bool ws;
+                        one[0].label = list_row_name(lastL.kind, lastL.all[i], mp, ws); one[0].icon = IC_STAR; one[0].sub = false; one[0].off = false;
+                        if (mp) { sprintf(mp1, "%u", mp); one[0].extra = mp1; } else one[0].extra = 0;
+                        float w1, h1; block_size(f, k, one, 1, w1, h1); if (w1 > wAll) wAll = w1;
+                    }
+                }
+                if (wAll > lw) lw = wAll;
+            }
+            if (lw < bw) lw = bw;
+            const float tL = ease_out(((float)(now - g_listB.openMs) / 1000.0f) / 0.07f);
+            const float lx = bx, ly = snap(by + bh - lh + (1.0f - tL) * 3.0f * S);
+            const float LA = g_listB.vis * tL;
+            const int cur = empty ? 0 : ((lastL.cursor >= lastL.top && lastL.cursor < lastL.top + lastL.rows) ? lastL.cursor - lastL.top + 1 : 0);
+            if (LA > 0.0f) {
+                block_draw(f, k, g_listB, lrows, lastL.rows, cur, lastL.focused, lx, ly, lw, lh, LA, dt);
+                if (lastL.n > lastL.rows) {                     // where this page sits in the whole list : a thin rail
+                    const float tx = lx + lw - 3.0f * S, ty = ly + k.pad, th = lh - 2.0f * k.pad;
+                    const float th2 = th * (float)lastL.rows / (float)lastL.n, ty2 = ty + th * (float)lastL.top / (float)lastL.n;
+                    rrect(dev_of(f), tx - 1.0f * S, ty, 2.0f * S, th, 1.0f * S, with_alpha(0x30FFFFFFu, LA), with_alpha(0x30FFFFFFu, LA));
+                    rrect(dev_of(f), tx - 1.0f * S, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, LA), with_alpha(0xC0FFDA8Au, LA));
+                }
+                if (NL.open) { g_hit[0][0] = lx / f.screenW; g_hit[0][1] = ly / f.screenH; g_hit[0][2] = lw / f.screenW; g_hit[0][3] = lh / f.screenH; }
+            }
+            if (NL.open) return;                                // while it is up, the menus under it are not drawn
+        }
+    }
+
     // Abilities (abiselec) does not open BESIDE : the client puts it IN PLACE of this menu (same left, same bottom, its
     // own height) -- this menu gives way while it is up (a quick cross-fade) ; Magic's categories open beside.
     static NativeEntryMenu lastS;

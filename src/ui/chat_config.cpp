@@ -27,10 +27,10 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
     #define CHAT_NOTE(TXT) { ROW_BAND(40.0f) const float ty_ = ry + yo; fo->begin(dev); \
         fo->draw_lc(dev, coX + snap(4.0f), ty_ + snap(16.0f), (TXT), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f); } ROW_NEXT(40.0f)
 
-    // ===== BOXES =====
+    // ===== DISPLAY (which box, shown, size, its geometry) =====
     const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Boxes", "Box"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (aF6_ > 0.0f) {
         const float top6_ = ry;
@@ -48,21 +48,6 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
             float v01 = clampf((c.chScale[b] - lo) / (hi - lo), 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), s, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.chScale[b] = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
-        { ROW_BAND(52.0f)   // how the tabs show
-            const char* TL[4] = { tr("Auto", "Auto"), tr("Icon + name", "Ic\xC3\xB4ne + nom"), tr("Icon", "Ic\xC3\xB4ne"), tr("Name", "Nom") };
-            const int v = (c.chTabStyle[b] >= 0 && c.chTabStyle[b] <= 3) ? c.chTabStyle[b] : 0;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Tabs", "Onglets"), TL[v])) c.chTabStyle[b] = wrap(v + d, 4);
-        } ROW_NEXT(52.0f)
-        { ROW_BAND(46.0f)   // the header's size
-            const float lo = 0.60f, hi = 1.60f; char sb[16]; sprintf(sb, "%d%%", (int)(c.chHeadScale[b] * 100.0f + 0.5f));
-            float v01 = clampf((c.chHeadScale[b] - lo) / (hi - lo), 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Header size", "Taille de l'en-t\xC3\xAAte"), sb, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.chHeadScale[b] = v < lo ? lo : (v > hi ? hi : v); }
-        } ROW_NEXT(46.0f)
-        { ROW_BAND(52.0f)   // density : how much air around the text
-            const char* DL[3] = { tr("Compact", "Compacte"), tr("Normal", "Normale"), tr("Airy", "A\xC3\xA9r\xC3\xA9""e") };
-            const int v = (c.chDensity[b] >= 0 && c.chDensity[b] <= 2) ? c.chDensity[b] : 0;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Density", "Densit\xC3\xA9"), DL[v])) c.chDensity[b] = wrap(v + d, 3);
-        } ROW_NEXT(52.0f)
         { ROW_BAND(52.0f)   // fixed size, or grows with its content
             const char* FL[2] = { tr("Fixed", "Fixe"), tr("Follows the content", "Suit le contenu") };
             const int v = c.chFit[b] == 1 ? 1 : 0;
@@ -93,7 +78,65 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
             float v01 = clampf(((float)c.chMaxLines[b] - lo) / (hi - lo), 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Max lines", "Lignes max"), sb, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.chMaxLines[b] = v < 0 ? 0 : (v > 40 ? 40 : v); }
         } ROW_NEXT(46.0f)
+        CHAT_NOTE(tr("Move it in Edit layout ; the corner grip sets its width and height.",
+                     "D\xC3\xA9place-la dans \xC3\x89""diter dispo ; la poign\xC3\xA9""e du coin r\xC3\xA8gle largeur et hauteur."))
+        CHAT_NOTE(tr("Wheel over a box = scroll back. Hide the game's own log in Game UI.",
+                     "Molette sur une box = remonter. Cache le journal du jeu dans Interface du jeu."))
+        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
+    }
+    ry += snap(16.0f);
+    // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
+    ROW_NEXT(42.0f)
+    if (aF20_ > 0.0f) {
+        const float top20_ = ry;
+        cat_fold_clip(dev, hdrX, top20_, hdrW, catH_[20] * aF20_);
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.chBox[b]);
+        cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
+    }   // end Frame
+    ry += snap(16.0f);
+    // ===== sub-section : CONTENT (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF21_ = cat_fold(CTRL_ID, catOpen_[21]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[21], aF21_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[21], aF21_)) catOpen_[21] = !catOpen_[21];
+    ROW_NEXT(42.0f)
+    if (aF21_ > 0.0f) {
+        const float top21_ = ry;
+        cat_fold_clip(dev, hdrX, top21_, hdrW, catH_[21] * aF21_);
+        { ROW_BAND(52.0f)   // how the tabs show
+            const char* TL[4] = { tr("Auto", "Auto"), tr("Icon + name", "Ic\xC3\xB4ne + nom"), tr("Icon", "Ic\xC3\xB4ne"), tr("Name", "Nom") };
+            const int v = (c.chTabStyle[b] >= 0 && c.chTabStyle[b] <= 3) ? c.chTabStyle[b] : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Tabs", "Onglets"), TL[v])) c.chTabStyle[b] = wrap(v + d, 4);
+        } ROW_NEXT(52.0f)
+        { ROW_BAND(46.0f)   // the header's size
+            const float lo = 0.60f, hi = 1.60f; char sb[16]; sprintf(sb, "%d%%", (int)(c.chHeadScale[b] * 100.0f + 0.5f));
+            float v01 = clampf((c.chHeadScale[b] - lo) / (hi - lo), 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Header size", "Taille de l'en-t\xC3\xAAte"), sb, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.chHeadScale[b] = v < lo ? lo : (v > hi ? hi : v); }
+        } ROW_NEXT(46.0f)
+        { ROW_BAND(52.0f)   // density : how much air around the text
+            const char* DL[3] = { tr("Compact", "Compacte"), tr("Normal", "Normale"), tr("Airy", "A\xC3\xA9r\xC3\xA9""e") };
+            const int v = (c.chDensity[b] >= 0 && c.chDensity[b] <= 2) ? c.chDensity[b] : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Density", "Densit\xC3\xA9"), DL[v])) c.chDensity[b] = wrap(v + d, 3);
+        } ROW_NEXT(52.0f)
         ROW_TOGGLE(CTRL_ID, tr("Time stamps", "Horodatage"), c.chStamp[b])
+        if (b == 0) { ROW_BAND(52.0f)   // where you TYPE : the game's own line, docked under the box, or inside it
+            const char* IL[3] = { tr("Game's place", "Place du jeu"), tr("Under the box", "Sous la box"), tr("In the box", "Dans la box") };
+            const int v = (c.chDock >= 0 && c.chDock <= 2) ? c.chDock : 2;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Input line", "Barre de saisie"), IL[v])) c.chDock = wrap(v + d, 3);
+        } if (b == 0) { ROW_NEXT(52.0f) }
+        cat_fold_end(dev, ry, top21_, catH_[21], aF21_);
+    }   // end Content
+    ry += snap(16.0f);
+    // ===== sub-section : BEHAVIOUR (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF22_ = cat_fold(CTRL_ID, catOpen_[22]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[22], aF22_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Behaviour", "Comportement"), catOpen_[22], aF22_)) catOpen_[22] = !catOpen_[22];
+    ROW_NEXT(42.0f)
+    if (aF22_ > 0.0f) {
+        const float top22_ = ry;
+        cat_fold_clip(dev, hdrX, top22_, hdrW, catH_[22] * aF22_);
         // ---- when nothing happens : collapse and / or fade, each on its own delay ----
         { int on = (c.chBehave[b] & 2) ? 1 : 0;
           { ROW_BAND(48.0f) if (row_toggle(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Collapse when idle", "Repli au repos"), &on)) c.chBehave[b] = on ? (c.chBehave[b] | 2) : (c.chBehave[b] & ~2); } ROW_NEXT(48.0f) }
@@ -119,18 +162,8 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
             float v01 = clampf(((float)c.chFadeTo[b] - lo) / (hi - lo), 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("  faded opacity", "  opacit\xC3\xA9 au repos"), sb, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.chFadeTo[b] = v < 0 ? 0 : (v > 80 ? 80 : v); }
         } if (c.chBehave[b] & 1) { ROW_NEXT(46.0f) }
-        if (b == 0) { ROW_BAND(52.0f)   // where you TYPE : the game's own line, docked under the box, or inside it
-            const char* IL[3] = { tr("Game's place", "Place du jeu"), tr("Under the box", "Sous la box"), tr("In the box", "Dans la box") };
-            const int v = (c.chDock >= 0 && c.chDock <= 2) ? c.chDock : 2;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Input line", "Barre de saisie"), IL[v])) c.chDock = wrap(v + d, 3);
-        } if (b == 0) { ROW_NEXT(52.0f) }
-        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.chBox[b]);
-        CHAT_NOTE(tr("Move it in Edit layout ; the corner grip sets its width and height.",
-                     "D\xC3\xA9place-la dans \xC3\x89""diter dispo ; la poign\xC3\xA9""e du coin r\xC3\xA8gle largeur et hauteur."))
-        CHAT_NOTE(tr("Wheel over a box = scroll back. Hide the game's own log in Game UI.",
-                     "Molette sur une box = remonter. Cache le journal du jeu dans Interface du jeu."))
-        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
-    }
+        cat_fold_end(dev, ry, top22_, catH_[22], aF22_);
+    }   // end Behaviour
     ry += snap(16.0f);
 
     // ===== TEXT (of the box picked above) =====

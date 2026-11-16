@@ -28,7 +28,6 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (aF6_ > 0.0f) {
         const float top6_ = ry;
         cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
-        ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.ztShow)   // Show
         { ROW_BAND(52.0f)   // Content -- placed right under Show : it drives BOTH the preview and which options
                             // appear below, so it has to be read before anything else on this panel. This is the
                             // one panel where Size is not the row after Show (the canonical order elsewhere).
@@ -36,17 +35,28 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             int zv = zvSel;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Content", "Contenu"), ZLBL[zv])) { c.ztVariant = wrap(zv + d, 7); save_ui_config(); }
         } ROW_NEXT(52.0f)
+        ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.ztShow)   // Show
         { ROW_BAND(46.0f)   // Size
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.ztScale * 100.0f + 0.5f));
             float v01 = (c.ztScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.ztScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
         ROW_GROW(CTRL_ID, UiConfig::GB_ZT)   // which way the box grows as its content widens (ui/box_grow.h)
-        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.ztBox);   // Box / Transparency / Theme / Hue / Luminosity
-        ROW_TOGGLE(CTRL_ID, tr("Show title", "Afficher le titre"), c.ztHeader)   // Show title row (Dynamis / Abyssea / Omen / Nyzul / Sheol)
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
     }   // end Display
     ry += snap(16.0f);                                 // air between this section and the next title bar
+    // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
+    ROW_NEXT(42.0f)
+    if (aF20_ > 0.0f) {
+        const float top20_ = ry;
+        cat_fold_clip(dev, hdrX, top20_, hdrW, catH_[20] * aF20_);
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.ztBox);   // Box / Transparency / Theme / Hue / Luminosity
+        cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
+    }   // end Frame
+    ry += snap(16.0f);
 
     // ===== sub-section : CONTENT =====
     // WHAT the box lists, for the zone selected above -- and it is the bulk of this panel: six variants, each
@@ -59,6 +69,7 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (aFz_ > 0.0f) {
         const float topZ_ = ry;
         cat_fold_clip(dev, hdrX, topZ_, hdrW, catH_[15] * aFz_);
+        ROW_TOGGLE(CTRL_ID, tr("Show title", "Afficher le titre"), c.ztHeader)   // Show title row (Dynamis / Abyssea / Omen / Nyzul / Sheol)
         // ---- Sheol / Odyssey sub-options (only meaningful in Sheol ; harmless elsewhere) ----
         // Size factors (bar / dot / icon) as a percentage slider. Same shape as the Limbus gauge sliders below.
         // UID is passed IN (like ZT_SHEOL_TOGGLE) : CTRL_ID inside a multi-line macro body would give every

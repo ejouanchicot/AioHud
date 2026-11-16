@@ -310,11 +310,12 @@ void Font::begin(u32 dev) {
 }
 
 // APPENDS the glyphs to the shared batch buffer (does not draw) -- the caller flushes once per pass.
-void Font::emit(u32 dev, u32 tex, const G* g, float x, float y, const char* s, float scale, u32 color) {
+void Font::emit(u32 dev, u32 tex, const G* g, float x, float y, const char* s, float scale, u32 color, float gap, unsigned char prev) {
     (void)tex;   // the atlas is bound ONCE by the caller (same S.tex for every outline + main pass)
     float penx = x;
     for (const char* p = s; *p; ) {
         int c = upcase(utf8_next(p)); if (c < FIRST || c > LAST) c = '?';
+        if (gap > 0.0f) { penx += punct_pre(prev, (unsigned char)c, gap); prev = (unsigned char)c; }
         const G& gg = g[c - FIRST];
         if (c != ' ') gbuf_quad(dev, penx, y, gg.w * scale, gg.h * scale, gg.u0, gg.u1, gg.v0, gg.v1, color);
         penx += gg.adv * scale;
@@ -349,6 +350,25 @@ float Font::draw(u32 dev, float x, float y, const char* s, float size, u32 color
     float w = 0.0f;
     for (const char* p = s; *p; ) { int c = upcase(utf8_next(p)); if (c < FIRST || c > LAST) c = '?'; w += S.g[c - FIRST].adv * scale; }
     return w;
+}
+
+float Font::draw_punct(u32 dev, float x, float y, const char* s, float size, u32 color, u32 outline, float ow, float gap, unsigned char prev) {
+    if (!s) return 0.0f;
+    int si = pick(dev, size); if (si < 0 || !slot_[si].tex) return 0.0f;
+    const Slot& S = slot_[si];
+    x = (float)(int)(x + 0.5f); y = (float)(int)(y + 0.5f);
+    const float scale = size / S.base;
+    dSetTex(dev, 0, S.tex);
+    if ((outline >> 24) && ow > 0.0f) {
+        static const float dx[8] = { -1, 1, 0, 0, -1, -1,  1, 1 };
+        static const float dy[8] = {  0, 0, -1, 1, -1,  1, -1, 1 };
+        for (int k = 0; k < 8; ++k) emit(dev, S.tex, S.g, x + dx[k] * ow, y + dy[k] * ow, s, scale, outline, gap, prev);
+        gbuf_flush(dev);
+    }
+    emit(dev, S.tex, S.g, x, y, s, scale, color, gap, prev);
+    gbuf_flush(dev);
+    dSetTex(dev, 0, 0);
+    return 0.0f;   // callers place by their own advance sums (punct_pre included)
 }
 
 // cell-top y so the cap/digit ink box is centred on `cy`.

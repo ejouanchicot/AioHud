@@ -61,7 +61,8 @@ const char* const CHAT_W[]  = { "logwindo", "logwin2", "spoolmsg", "splmsg2", "e
 const char* const HELP_W[]  = { "helpwind", "titlewin", 0 };
 const char* const COST_W[]  = { "subwindo", 0 };
 const char* const NET_W[]   = { "netstat", "polwindo", 0 };
-const char* const ACT_SUB_W[] = { "magselec", "abiselec", "chatctrl", 0 };   // the action menu's submenus AioHUD redraws (NU_ACT)
+const char* const ACT_SUB_W[] = { "magselec", "abiselec", "chatctrl", 0 };
+const char* const ACT_LIST_W[] = { "magic", "ability", 0 };                   // the lists AioHUD redraws (NU_ACT)   // the action menu's submenus AioHUD redraws (NU_ACT)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
 
 // the offset a window SHOULD carry under the current config
@@ -73,7 +74,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_HELP)  && in_list(n, HELP_W))  { dy = HIDE_DY; return; }
     if ((hide & NU_COST)  && in_list(n, COST_W))  { dy = HIDE_DY; return; }
     if ((hide & NU_NET)   && in_list(n, NET_W))   { dy = HIDE_DY; return; }
-    if ((hide & NU_ACT)   && (!strcmp(n, "playermo") || in_list(n, ACT_SUB_W))) { dy = HIDE_DY; return; }
+    if ((hide & NU_ACT)   && (!strcmp(n, "playermo") || in_list(n, ACT_SUB_W) || in_list(n, ACT_LIST_W))) { dy = HIDE_DY; return; }
     // the HUD-like windows never follow the MENUS offset -- they have their own option above
     if (in_list(n, PARTY_W) || in_list(n, ALLY_W) || in_list(n, CHAT_W) || in_list(n, COST_W) || in_list(n, NET_W) || in_list(n, INPUT_W)) return;
     if (ox == 0 && oy == 0 && anc == 0) return;   // frames the client places by CODE (mapframe, cnqframe...)
@@ -126,6 +127,7 @@ bool  g_anyApplied = false;
 // 3 bad frames the client's own menu comes back (g_actFail), and goes away again after 5 s of good reads.
 NativeEntryMenu g_sub;
 NativeChatInfo  g_chat;
+NativeList      g_list;
 NativeMenu g_act; bool g_actFail = false; int g_actBad = 0; DWORD g_actGoodSince = 0;
 u32 g_actObj = 0;          // the playermo object of the last good read (re-read before any call into the client)
 int eff_hide(const UiConfig& c) { return g_actFail ? (c.nuHide & ~NU_ACT) : c.nuHide; }
@@ -402,6 +404,54 @@ void move_open(u32 mgr, const Delta* D, int nD) {
     }
 }
 
+// ---- the HUD-like windows the client places STRAIGHT from their record : keep the open one where its record says ----
+// 2026-11-16 ("Party window ON -> the game's party window SHOWS") : with everything native the open partywin sat at
+// y -1844 -- its place (record 298 + H-448 = 1156) MINUS HIDE_DY, moved twice by a delta at some point -- so every
+// toggle after that was inverted (ON added 3000 and brought it ON screen). A delta can only carry a drift forward ;
+// these windows have an absolute truth (x + W-512 when anchored right, y + H-448 when anchored bottom, UI units), so
+// any open one off it by half a park or more is put back there (a smaller difference is the client's own business).
+static bool hud_like(const char* n) {
+    return in_list(n, PARTY_W) || in_list(n, ALLY_W) || in_list(n, CHAT_W) || in_list(n, HELP_W) || in_list(n, COST_W) || in_list(n, NET_W);
+}
+static int g_healLog = 0;
+void heal_hud(u32 mgr) {
+    if (!g_setter) return;
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return;
+    const int W = (short)(wh & 0xFFFF), H = (short)(wh >> 16);
+    if (W < 320 || H < 240 || W > 8000 || H > 8000) return;
+    u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, obj = 0, def = 0; safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &obj);
+        unsigned char cl = 0; short r[4] = {0, 0, 0, 0}; char nm[9];
+        if (valid_ptr(obj) && safe_read(obj + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && hud_like(nm) && rd8(obj + OBJ_CLOSING, cl) && !cl
+            && rd16(obj + OBJ_RECT, r[0]) && rd16(obj + OBJ_RECT + 2, r[1]) && rd16(obj + OBJ_RECT + 4, r[2]) && rd16(obj + OBJ_RECT + 6, r[3])) {
+            const int k = find_entry_by_obj(obj);
+            if (k >= 0 && (g_e[k].ox || g_e[k].oy || g_e[k].anc)) {
+                const Entry& e = g_e[k];
+                const int tx = e.ox + e.ax + ((e.anc & 1) ? W - 512 : 0), ty = e.oy + e.ay + ((e.anc & 2) ? H - 448 : 0);
+                const int w = r[2] - r[0], h = r[3] - r[1];
+                const int ddx = r[0] - tx, ddy = r[1] - ty;
+                // only when it SHOWS where it should be hidden, or the reverse : a window the client places relative to
+                // another (logwin2 under the log) can sit elsewhere off-screen, and fighting it there is noise
+                const bool onNow = r[1] < H && r[3] > 0 && r[0] < W && r[2] > 0, onWant = ty < H && ty + h > 0 && tx < W && tx + w > 0;
+                if (onNow != onWant && (ddx >= HIDE_DY / 2 || ddx <= -HIDE_DY / 2 || ddy >= HIDE_DY / 2 || ddy <= -HIDE_DY / 2) && w > 0 && h > 0 && w < 4000 && h < 4000) {
+                    // the formula is only good to a few dozen units (2026-11-16 : it parked partywin at 4076, the client's own
+                    // place was 4156 -> shown back 80 too high) : it only COUNTS the whole parks the window is off by, and
+                    // exactly those are taken out -- the client's own fine placement is kept
+                    const int kx = (ddx + (ddx >= 0 ? HIDE_DY / 2 : -HIDE_DY / 2)) / HIDE_DY, ky = (ddy + (ddy >= 0 ? HIDE_DY / 2 : -HIDE_DY / 2)) / HIDE_DY;
+                    const int nx = r[0] - kx * HIDE_DY, ny = r[1] - ky * HIDE_DY;
+                    bool ok = true;
+                    __try { ((SetRectFn)g_setter)(obj, nx, ny, w, h, 1, 0, 0); }
+                    __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+                    if (ok) refresh_handler(obj, nm);
+                    if (g_healLog < 40) { ++g_healLog; windower::debug::log("NATIVEUI '%s' was at %d,%d, its record says ~%d,%d (applied %d,%d) : %d,%d park(s) off -> %d,%d : %s", nm, r[0], r[1], tx, ty, e.ax, e.ay, kx, ky, nx, ny, ok ? "put back" : "setter faulted"); }
+                }
+            }
+        }
+        node = next;
+    }
+}
+
 // Walk every definition, keep our picture of each record TRUE, and bring each record to its desired offset.
 // zero=true : every desired offset is 0 (shutdown / nothing configured).
 void apply(bool zero) {
@@ -445,6 +495,7 @@ void apply(bool zero) {
     g_eN = k;
     if (any) hook_install();          // before moving : a window re-placed during the move must already get its offset
     move_open(mgr, D, nD);
+    heal_hud(mgr);                    // a HUD-like window off its record by a park (a drift) : back to its absolute place
     if (!any) hook_remove();
     if (changed || any != g_anyApplied) {
         g_anyApplied = any;
@@ -467,6 +518,7 @@ int  config_sig(const UiConfig& c) {
 } // namespace
 
 void chat_info_read(u32 obj);   // below : the Chat submenu's extras (Tell name, linkshells, Unity)
+int  list_read(NativeList& L);   // below : the spell list
 
 namespace {
 // One read of "playermo" : open (in the manager's open list, not dying), its handler's row codes, cursor, rect.
@@ -558,11 +610,14 @@ int sub_read(NativeEntryMenu& m, u32* objOut = 0) {
 }
 
 void act_poll(bool on) {
-    if (!on) { g_act.open = false; g_sub.open = false; g_actBad = 0; g_actFail = false; return; }
+    if (!on) { g_act.open = false; g_sub.open = false; g_list.open = false; g_actBad = 0; g_actFail = false; return; }
     NativeMenu m; int r = act_read(m);
     NativeEntryMenu sm; u32 subObj = 0; const int rs = sub_read(sm, &subObj);
     g_sub = sm; if (rs != 1) g_sub.open = false;
     if (rs == 1 && !strcmp(sm.name, "chatctrl")) chat_info_read(subObj); else g_chat.ok = false;
+    NativeList lst; const int rl = list_read(lst);
+    g_list = lst; if (rl != 1) g_list.open = false;
+    if (rl == 0) r = 0;                                   // a parked list that cannot be read : the client's own back
     if (rs == 0) r = 0;                                   // a parked submenu that cannot be read : same fallback
     const DWORD now = GetTickCount();
     if (r == 0) {
@@ -599,8 +654,13 @@ void rescue_children(u32 mgr, int hide) {
             && rd16(obj + OBJ_RECT, r[0]) && rd16(obj + OBJ_RECT + 2, r[1]) && rd16(obj + OBJ_RECT + 4, r[2]) && rd16(obj + OBJ_RECT + 6, r[3])
             && r[1] >= uiH + HIDE_DY / 2) {
             int dx = 0, dy = 0; desired_offset(nm, 0, 0, 0, hide, 0, 0, dx, dy);
+            // parked by US for ANY reason (an option, the chat's input line "in the box" -- dock_offset) : leave it. The
+            // record table is the truth : desired_offset alone missed the input line, which this then un-parked at
+            // every open (2026-11-16, "le input du jeu, on veut pas le voir" ; CHATIN trace : inline at y1188, read OK)
+            const int ek = find_entry_by_obj(obj);
+            const bool ours = dy == HIDE_DY || (ek >= 0 && g_e[ek].ay >= HIDE_DY / 2);
             const int w = r[2] - r[0], h = r[3] - r[1];
-            if (dy != HIDE_DY && w > 0 && h > 0 && w < 4000 && h < 4000) {          // parked by its parent, not by us
+            if (!ours && w > 0 && h > 0 && w < 4000 && h < 4000) {                 // parked by its parent, not by us
                 bool ok = true;
                 __try { ((SetRectFn)g_setter)(obj, r[0], r[1] - HIDE_DY, w, h, 1, 0, 0); }
                 __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
@@ -615,6 +675,80 @@ void rescue_children(u32 mgr, int hide) {
 const NativeMenu& native_action_menu() { return g_act; }
 const NativeEntryMenu& native_sub_menu() { return g_sub; }
 const NativeChatInfo& native_chat_info() { return g_chat; }
+const NativeList& native_list() { return g_list; }
+
+u32 aob_masked(const char* pat);   // below : a masked, unique AOB in FFXiMain
+// ---- the spell list : FUN_0556DD40's global (the spell slots), by signature ----
+u32 g_spellSlotsVar = 0; int g_slTries = 0; DWORD g_slNext = 0;
+bool spell_slots_res() {
+    if (g_spellSlotsVar) return true;
+    const DWORD now = GetTickCount();
+    if (g_slTries && (int)(now - g_slNext) < 0) return false;          // retried every 5 s, never given up
+    ++g_slTries; g_slNext = now + 5000;
+    const u32 at = aob_masked("8B 44 24 04 85 C0 7C 0F 3B 41 44 7D 0A 8B 49 20 8D 04 C1 85 C0 75 06 83 C8 FF C2 04 00 8B 10 8B 0D ?? ?? ?? ?? 33 C0 66 8B 84 51 80 00 00 00 C2");
+    if (at && safe_read(at + 33, &g_spellSlotsVar)) windower::debug::log("NATIVEUI spell list mapper found (try %d)", g_slTries);
+    else { g_spellSlotsVar = 0; if (g_slTries == 1 || g_slTries % 12 == 0) windower::debug::log("NATIVEUI spell list mapper NOT found (try %d)", g_slTries); }
+    return g_spellSlotsVar != 0;
+}
+// ---- the ability list : FUN_05565730's global (the ability slots), by signature -- the same code, +0x160 ----
+u32 g_abilSlotsVar = 0; int g_alTries = 0; DWORD g_alNext = 0;
+bool abil_slots_res() {
+    if (g_abilSlotsVar) return true;
+    const DWORD now = GetTickCount();
+    if (g_alTries && (int)(now - g_alNext) < 0) return false;          // retried every 5 s, never given up
+    ++g_alTries; g_alNext = now + 5000;
+    const u32 at = aob_masked("8B 44 24 04 85 C0 7C 0F 3B 41 44 7D 0A 8B 49 20 8D 04 C1 85 C0 75 06 83 C8 FF C2 04 00 8B 10 8B 0D ?? ?? ?? ?? 33 C0 66 8B 84 51 60 01 00 00 C2");
+    if (at && safe_read(at + 33, &g_abilSlotsVar)) windower::debug::log("NATIVEUI ability list mapper found (try %d)", g_alTries);
+    else { g_abilSlotsVar = 0; if (g_alTries == 1 || g_alTries % 12 == 0) windower::debug::log("NATIVEUI ability list mapper NOT found (try %d)", g_alTries); }
+    return g_abilSlotsVar != 0;
+}
+// -1 none open, 0 unreadable, 1 read
+int list_read(NativeList& L) {
+    memset(&L, 0, sizeof(L));
+    const u32 mgr = manager(); if (!mgr) return -1;
+    u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+    u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
+    u32 obj = 0; int kind = 0;
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0;
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        char nm[9];
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && in_list(nm, ACT_LIST_W)
+            && rd8(o + OBJ_CLOSING, cl) && !cl) { obj = o; kind = strcmp(nm, "magic") ? 1 : 0; break; }
+        node = next;
+    }
+    if (!obj) return -1;
+    if (!(kind ? abil_slots_res() : spell_slots_res())) return 0;
+    const u32 slotsVar = kind ? g_abilSlotsVar : g_spellSlotsVar, slotsOff = kind ? 0x160u : 0x80u;
+    L.kind = kind;
+    u32 hd = 0, items = 0, slots = 0; int n = 0, top = 0, vis = 0, cur = 0, cap = 0;
+    if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !safe_read(hd + 0x40, (u32*)&n) || !safe_read(hd + 0x38, (u32*)&top)
+        || !safe_read(hd + 0x48, (u32*)&vis) || !safe_read(hd + 0x30, (u32*)&cur) || !safe_read(hd + 0x44, (u32*)&cap)
+        || !safe_read(hd + 0x20, &items) || !safe_read(slotsVar, &slots)) return 0;
+    if (n < 0 || n > 2048 || vis < 1 || vis > 32 || top < 0 || cap < n || !valid_ptr(slots)) return 0;
+    L.n = n; L.top = top; L.vis = vis; L.cursor = cur;
+    if (n > 0 && !valid_ptr(items)) return 0;
+    for (int i = 0; i < vis && top + i < n; ++i) {
+        u32 slot = 0; short id = 0;
+        if (!safe_read(items + (u32)(top + i) * 8, &slot) || slot > 4096 || !rd16(slots + slotsOff + slot * 2, id)) return 0;
+        L.id[i] = (unsigned short)id; ++L.rows;
+    }
+    // the whole list, read again only when it CHANGES (another category, a spell learned) -- not every frame
+    static u32 cItems = 0; static int cN = -1, cKind = -1; static unsigned short cAll[512]; static int cAllN = 0;
+    if (items != cItems || n != cN || kind != cKind) {
+        cAllN = 0;
+        for (int i = 0; i < n && i < 512; ++i) {
+            u32 slot = 0; short id = 0;
+            if (!safe_read(items + (u32)i * 8, &slot) || slot > 4096 || !rd16(slots + slotsOff + slot * 2, id)) { cAllN = 0; break; }
+            cAll[cAllN++] = (unsigned short)id;
+        }
+        cItems = items; cKind = kind; cN = cAllN || !n ? n : -1;   // a failed walk is retried next frame
+    }
+    L.allN = cAllN; memcpy(L.all, cAll, sizeof(unsigned short) * (size_t)cAllN);
+    L.focused = focus == obj;
+    L.open = true;
+    return 1;
+}
 
 // ---- the Chat submenu's extras : found by SIGNATURE (masked AOB), globals read from the code's own operands ----
 // A pattern is "8B 15 ?? ?? ..." ; unique in FFXiMain's image or nothing.
@@ -778,7 +912,7 @@ bool native_action_pick(int row) {
 
 void native_ui_tick(bool inWorld) {
     const UiConfig& c = ui_config();
-    if (!(inWorld && (c.nuHide & NU_ACT))) { g_act.open = false; g_sub.open = false; }   // never a stale menu once the option is off / logged out
+    if (!(inWorld && (c.nuHide & NU_ACT))) { g_act.open = false; g_sub.open = false; g_list.open = false; }   // never a stale menu once the option is off / logged out
     // only while a character is in the world : the title, login and char-select menus are the client's own business
     const bool docking = c.chDock && c.chShow[0] && (c.chDock == 2 || c.chDockRect[2] > 0.0f);   // the game's input line : under / inside AioHUD's chat box
     const bool wanted = inWorld && (c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0 || docking);
@@ -793,7 +927,7 @@ void native_ui_tick(bool inWorld) {
         if (g_lastSig != 0 || strcmp(g_why, why)) { g_lastSig = 0; lstrcpynA(g_why, why, sizeof(g_why)); }
         return;
     }
-    if (!resolve()) { g_act.open = false; g_sub.open = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
+    if (!resolve()) { g_act.open = false; g_sub.open = false; g_list.open = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
     act_poll(wanted && (c.nuHide & NU_ACT));
     if (wanted && (eff_hide(c) & NU_ACT)) rescue_children(manager(), eff_hide(c));
     if (!wanted && !g_anyApplied) return;                  // recovery done, nothing configured

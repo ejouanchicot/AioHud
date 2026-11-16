@@ -50,10 +50,33 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
                 ui_config().tgtScale = v < lo ? lo : (v > hi ? hi : v); }
         }
         ROW_NEXT(46.0f)
+        // Centre-lock hint : centring is done by DRAGGING the box to the screen centre in Edit Layout -- it snaps
+        // and stays centred (so it survives a resolution change). No button ; edit-mode drag is the control.
+        { ROW_BAND(34.0f)
+            fo->begin(dev);
+            const char* h = (ui_config().tgtCenterH || ui_config().tgtCenterV)
+                ? tr("Centred (drag it off to free).", "Centré (glisse-la pour libérer).")
+                : tr("Drag to the screen centre in Edit Layout to centre.", "Glisse au centre en Éditer dispo pour centrer.");
+            fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(14.0f), h, snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+        }
+        ROW_NEXT(34.0f)
+            cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
+        }   // end sub-section Box / Frame (catOpen_[6])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
+    // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
+    ROW_NEXT(42.0f)
+    if (aF20_ > 0.0f) {
+        const float top20_ = ry;
+        cat_fold_clip(dev, hdrX, top20_, hdrW, catH_[20] * aF20_);
         // Box : draw the frame chrome or not. NO box -> name/%/bar/buffs/timer float with a heavy outline, and the
         // theme rows below are hidden (no chrome to theme).
         ROW_CHOICE_G(CTRL_ID, tr("Box", "Cadre"), ui_config().tgtBox, tr("On", "Oui"), tr("None", "Aucun"), 52.0f, 40.0f, 150.0f)
         if (ui_config().tgtBox) {
+        // Border : the frame's edges + corners (None = background only), like every other box
+        ROW_CHOICE_G(CTRL_ID, tr("Border", "Bordure"), ui_config().tgtBorder, tr("On", "Oui"), tr("None", "Aucune"), 52.0f, 40.0f, 150.0f)
         // Transparence : how see-through the box chrome is (the content stays opaque). 0% = solid.
         { ROW_BAND(46.0f)
             const float transp = 1.0f - ui_config().tgtBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
@@ -108,22 +131,10 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
           ROW_NEXT(46.0f)
         }
         }   // end own-theme rows (!tgtThemeCopy)
-        ry += snap(16.0f);                                 // air between this section and the next title bar
         }   // end theme rows (tgtBox on)
-        ry += snap(16.0f);                                 // air between this section and the next title bar
-        // Centre-lock hint : centring is done by DRAGGING the box to the screen centre in Edit Layout -- it snaps
-        // and stays centred (so it survives a resolution change). No button ; edit-mode drag is the control.
-        { ROW_BAND(34.0f)
-            fo->begin(dev);
-            const char* h = (ui_config().tgtCenterH || ui_config().tgtCenterV)
-                ? tr("Centred (drag it off to free).", "Centré (glisse-la pour libérer).")
-                : tr("Drag to the screen centre in Edit Layout to centre.", "Glisse au centre en Éditer dispo pour centrer.");
-            fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(14.0f), h, snap(11.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        }
-        ROW_NEXT(34.0f)
-            cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
-        }   // end sub-section Box / Frame (catOpen_[6])
-        ry += snap(16.0f);                                 // air between this section and the next title bar
+        cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
+    }   // end Frame
+    ry += snap(16.0f);
         // ---- sub-section : Bars ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);

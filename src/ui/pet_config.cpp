@@ -37,7 +37,29 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.petScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
         ROW_GROW(CTRL_ID, UiConfig::GB_PET)   // which way the box grows as its content widens (ui/box_grow.h)
+        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
+    }   // end Display
+    ry += snap(16.0f);
+    // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
+    ROW_NEXT(42.0f)
+    if (aF20_ > 0.0f) {
+        const float top20_ = ry;
+        cat_fold_clip(dev, hdrX, top20_, hdrW, catH_[20] * aF20_);
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.petBox);   // Box / Transparency / Theme / Hue / Luminosity
+        cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
+    }   // end Frame
+    ry += snap(16.0f);
+    // ===== sub-section : CONTENT (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF21_ = cat_fold(CTRL_ID, catOpen_[21]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[21], aF21_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[21], aF21_)) catOpen_[21] = !catOpen_[21];
+    ROW_NEXT(42.0f)
+    if (aF21_ > 0.0f) {
+        const float top21_ = ry;
+        cat_fold_clip(dev, hdrX, top21_, hdrW, catH_[21] * aF21_);
         { ROW_BAND(52.0f)   // the job tab : the rows below and the preview are that job's
             const char* JL[3] = { "BST", "GEO", "SMN" };
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Job", "Job"), JL[tab])) { c.petTab = wrap(tab + d, 3); save_ui_config(); }
@@ -49,8 +71,8 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
         if (tab == 2)      draw_smn_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
         else if (tab == 1) draw_geo_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
         else               draw_bst_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
-        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
-    }   // end Display
+        cat_fold_end(dev, ry, top21_, catH_[21], aF21_);
+    }   // end Content
     ry += snap(16.0f);
 
     // ===== sub-section : TEXT (the tab's text elements) =====

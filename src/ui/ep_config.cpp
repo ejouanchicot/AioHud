@@ -37,6 +37,29 @@ void ConfigPage::draw_ep_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.epScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
         ROW_GROW(CTRL_ID, UiConfig::GB_EP)   // which way the box grows as its content widens (ui/box_grow.h)
+        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
+    }   // end Display
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+    // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
+    ROW_NEXT(42.0f)
+    if (aF20_ > 0.0f) {
+        const float top20_ = ry;
+        cat_fold_clip(dev, hdrX, top20_, hdrW, catH_[20] * aF20_);
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.epBox);   // Box / Transparency / Theme / Hue / Luminosity
+        cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
+    }   // end Frame
+    ry += snap(16.0f);
+    // ===== sub-section : CONTENT (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF21_ = cat_fold(CTRL_ID, catOpen_[21]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[21], aF21_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[21], aF21_)) catOpen_[21] = !catOpen_[21];
+    ROW_NEXT(42.0f)
+    if (aF21_ > 0.0f) {
+        const float top21_ = ry;
+        cat_fold_clip(dev, hdrX, top21_, hdrW, catH_[21] * aF21_);
         // ---- Tracked-NM picker : a grid of NAME buttons (same two-pass pattern as the job picker in
         //      tm_config). Selected = lit panel + white ring ; clicking one stores its KEY (not an index --
         //      that would re-point if the table grows) into epTrack AND turns the box ON, like //aio ept. ----
@@ -77,14 +100,13 @@ void ConfigPage::draw_ep_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             ry += snap(9.0f);   // breathing space after the grid, before the Collectable row
         }
         ROW_TOGGLE(CTRL_ID, tr("Collectable", "Collectable"), c.epColl)   // Collectable counter row
-        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.epBox);   // Box / Transparency / Theme / Hue / Luminosity
         { ROW_BAND(40.0f)   // note
             const float ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Shows the pop + key items needed to spawn the chosen Abyssea NM.", "Montre les items de pop + key items pour faire appara\xC3\xAetre le NM Abyssea choisi."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         } ROW_NEXT(40.0f)
-        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
-    }   // end Display
-    ry += snap(16.0f);                                 // air between this section and the next title bar
+        cat_fold_end(dev, ry, top21_, catH_[21], aF21_);
+    }   // end Content
+    ry += snap(16.0f);
 
     // ===== sub-section : TEXT (per-element typography) =====
     // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).

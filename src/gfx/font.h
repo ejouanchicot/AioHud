@@ -9,6 +9,22 @@
 
 namespace aio {
 
+// Reading spacing before punctuation (2026-11-16, the chat : "la ponctuation est collee a la derniere lettre").
+// Segoe UI at 12-14 px leaves 2 px between a letter and '!' / '?' and a 3-4 px space ; a 1 px dark stroke eats
+// that, so "Blocked! [" read as "Blocked![". Extra px BEFORE c when it follows a LETTER (never a digit : "17:05",
+// "1.5" stay intact) : a thin space before ! ? ; : and a hair before . , -- `gap` = the full step in screen px.
+inline bool punct_letter(unsigned char p) { return (p >= 'A' && p <= 'Z') || (p >= 'a' && p <= 'z') || (p >= 0xC0 && p != 0xD7 && p != 0xF7); }
+// A word space gets half a step more too ("a vial", "the Vampire" : Roboto's 3 px space, minus the stroke, read as
+// glued -- 2026-11-16, the raw text was clean at every colour change).
+inline float punct_pre(unsigned char prev, unsigned char c, float gap) {
+    if (gap <= 0.0f) return 0.0f;
+    if (c == ' ') return (prev && prev != ' ') ? (float)(int)(gap * 0.5f + 0.5f) : 0.0f;
+    if (!punct_letter(prev)) return 0.0f;
+    if (c == '!' || c == '?' || c == ';' || c == ':') return (float)(int)(gap + 0.5f);          // whole px : crisp
+    if (c == '.' || c == ',') return (float)(int)(gap * 0.75f + 0.5f);
+    return 0.0f;
+}
+
 class Font {
 public:
     void  ensure(u32 dev);                  // build the default slot once (idempotent ; rebuilds if face changed)
@@ -23,6 +39,9 @@ public:
     // draw `s` with its CELL top-left at (x,y); `size` = em px; `color` = ARGB. Returns advance width.
     // An `outline` with alpha>0 paints a stroke of width `ow` px (8 offset passes) behind the glyphs.
     float draw(u32 dev, float x, float y, const char* s, float size, u32 color, u32 outline = 0, float ow = 0.0f);
+    bool baked(float size) const { const int s = pickC(size); int em = (int)(size + 0.5f); if (em < 7) em = 7; if (em > 72) em = 72; return s >= 0 && slot_[s].em == em; }   // measure() is EXACT (not a neighbour's, scaled)
+    // draw() with the reading spacing before punctuation (punct_pre) ; `prev` = the Latin-1 char before s (0 none)
+    float draw_punct(u32 dev, float x, float y, const char* s, float size, u32 color, u32 outline, float ow, float gap, unsigned char prev);
     float draw_lv(u32 dev, float x, float cy, const char* s, float size, u32 color, u32 outline = 0, float ow = 0.0f);
     float draw_lc(u32 dev, float x, float cy, const char* s, float size, u32 color, u32 outline = 0, float ow = 0.0f);
     float draw_c(u32 dev, float cx, float cy, const char* s, float size, u32 color, u32 outline = 0, float ow = 0.0f);
@@ -42,7 +61,7 @@ private:
     void build(u32 dev, Slot& s, int em);   // bake the glyphs at `em` px into slot s (its own right-sized atlas)
     int  pick(u32 dev, float size);         // slot index for `size` (build on demand) ; -1 on failure
     int  pickC(float size) const;           // nearest already-built slot (const) ; -1 if none built yet
-    void emit(u32 dev, u32 tex, const G* g, float x, float y, const char* s, float scale, u32 color);
+    void emit(u32 dev, u32 tex, const G* g, float x, float y, const char* s, float scale, u32 color, float gap = 0.0f, unsigned char prev = 0);
 
     // Distinct cached sizes per (face,weight). This was 16 with NO recycling, and the config page alone asks for
     // 13+ distinct pixel sizes from the SAME Font object the HUD draws with -- so opening //aio over a live HUD

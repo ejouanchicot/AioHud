@@ -196,10 +196,11 @@ What Enter on a target opens. ONE menu for every target ; AioHUD mirrors it (Gam
   | 5 | Chat (submenu) | player : 5 8 7 25 9 19 10 |
   | 7 / 8 / 9 / 25 | Abilities / Magic (submenu) / Items / Trust | all |
   | 10 / 11 | Check (player / mob) | |
+  | 12 | Treasure (the pool) | appended only while items are in the treasure pool |
   | 18 | Switch Target | engaged |
   | 19 | Trade | player |
 
-  Unknown yet : 2 4 6 12-17 20-24 26 27 (Invite, Treasure, Request, Fish... : capture + screenshot when met ;
+  Unknown yet : 2 4 6 13-17 20-24 26 27 (Invite, Treasure, Request, Fish... : capture + screenshot when met ;
   the mirror shows an unknown code as `#n`, never a guess).
 - Code table **DAT_056B0278**, stride 0xC, codes 1..0x1B : +0 u16 label IMAGE index, +2 byte image list (0 / 1 =
   handler+0x14 / +0x18), +4 u16 text id (Attack 31, Disengage 32, Chat 23, Abilities 24, Magic 25, Items 26,
@@ -234,3 +235,15 @@ What Enter on a target opens. ONE menu for every target ; AioHUD mirrors it (Gam
   the leader's name = text table 0xC, 0x1A2 + id (FUN_054944F0, cdecl). Left / right on Tell cycles the name.
 - **Abilities swaps at once** (trace 2026-11-16 : abiselec readable the very frame playermo loses the focus) -- the
   mirror draws no cross-fade there.
+- **A delta carries a drift forever** (2026-11-16) : with everything native the open `partywin` sat at y -1844 = its
+  place (record 298 + H-448 = 1156) minus HIDE_DY, so every Party toggle after that was INVERTED. The HUD-like
+  windows (party, alliance, chat, help, cost, net) are placed straight from their record, so `heal_hud()` puts any
+  open one that is off its absolute place (x + W-512 anchored right, y + H-448 anchored bottom) by half a park or
+  more back there, at every walk (once a second) -- logged "was at ... its record says ... put back".
+- **The lists `magic` and `ability`** share one list class (draw FUN_05563560 ; handler h : +0x40 count, +0x38 top,
+  +0x48 rows shown, +0x30 cursor, +0x20 8-byte items whose int0 = a slot). Row id : `magic` = u16 at
+  (spellSlots + 0x80 + slot*2) (FUN_0556DD40) ; `ability` = u16 at (abilSlots + 0x160 + slot*2) (FUN_05565730 ; the
+  same 46 bytes but the displacement), an index into the 0x30-byte ability records (abilRecs global, FUN_05565770) --
+  weapon skills 0..255, job abilities 512 + id. Both globals are read from the functions' operand (+33), found by
+  signature. `ability` serves Job abilities, Weapon skills and Pet commands (h+0x64 = the category, the table at
+  DAT_056C7221 stride 3) ; FUN_055641A0 opens it by its name "menu    ability" (Ghidra, 2026-11-16).

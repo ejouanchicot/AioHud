@@ -212,6 +212,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "cursorScale=%.4f\n", c.cursorScale);
     fprintf(f, "tgtBox=%d\n", c.tgtBox);
     fprintf(f, "tgtBoxAlpha=%.4f\n", c.tgtBoxAlpha);
+    fprintf(f, "tgtBorder=%d\nplrBorder=%d\n", c.tgtBorder, c.plrBorder);   // Target / Player : the frame's edges
     fprintf(f, "tgtThemeCopy=%d\n", c.tgtThemeCopy);
     fprintf(f, "tgtTheme=%d\n", c.tgtTheme);
     fprintf(f, "tgtLum=%.3f\n", c.tgtLum);
@@ -392,6 +393,13 @@ static bool parse_aw_line(const char* line, UiConfig& c) {
 }
 // Game UI line (the client's own windows), parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line). Absent in
 // an older file -> nothing hidden, menus in place : the client untouched.
+// Target / Player : the frame's edges (out of the main chain -- MSVC caps its else-if nesting, C1061)
+static bool parse_border_line(const char* line, UiConfig& c) {
+    int v = 0;
+    if (sscanf(line, "tgtBorder=%d", &v) == 1) { c.tgtBorder = v ? 1 : 0; return true; }
+    if (sscanf(line, "plrBorder=%d", &v) == 1) { c.plrBorder = v ? 1 : 0; return true; }
+    return false;
+}
 static bool parse_nui_line(const char* line, UiConfig& c) {
     if (strncmp(line, "nativeui=", 9) != 0) return false;
     int h = 0, dx = 0, dy = 0;
@@ -766,6 +774,7 @@ static bool load_config_from(const char* path) {
         if (parse_aw_line(line, c)) continue;     // out-of-line : the Absorb-TP box (same nesting-limit reason)
         if (parse_pet_line(line, c)) continue;    // out-of-line : the Pet box (same nesting-limit reason)
         if (parse_nui_line(line, c)) continue;
+        if (parse_border_line(line, c)) continue;
         if (parse_chat_line(line, c)) continue;   // out-of-line : the Chat module    // out-of-line : Game UI (the client's own windows)
         if (parse_bst_line(line, c)) continue;    // out-of-line : the BST box (same nesting-limit reason)
         if (parse_geo_line(line, c)) continue;    // out-of-line : the GEO box (same nesting-limit reason)
@@ -1266,6 +1275,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
             a.box[i].y != b.box[i].y || a.box[i].scale != b.box[i].scale) return false;
     }
     // Target module : theme / sizes / typography / placement all belong to the profile.
+    if (a.tgtBorder != b.tgtBorder || a.plrBorder != b.plrBorder) return false;
     if (a.tgtBox != b.tgtBox || a.tgtBoxAlpha != b.tgtBoxAlpha || a.tgtThemeCopy != b.tgtThemeCopy || a.tgtTheme != b.tgtTheme || a.tgtLum != b.tgtLum || a.tgtHue != b.tgtHue) return false;
     if (a.tgtScale != b.tgtScale || a.tgtNameHostile != b.tgtNameHostile || a.tgtDebuffs != b.tgtDebuffs || a.tgtTimers != b.tgtTimers) return false;
     if (a.tgtBuffPos != b.tgtBuffPos) return false;

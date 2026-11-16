@@ -87,6 +87,24 @@ struct NativeChatInfo {
     char unity[32];
 };
 const NativeChatInfo& native_chat_info();
+
+// The SPELL list ("magic", opened from a Magic category), parked with NU_ACT and redrawn (live 2026-11-16 capture +
+// the list base class's draw FUN_05563560) : handler h = obj+0x0C ; h+0x40 the spells listed, h+0x38 the first one
+// shown (scroll), h+0x48 the rows shown, h+0x30 the one under the cursor ; h+0x20 = 8-byte items, item.int0 = a slot,
+// the SPELL ID = u16 at (spellSlots + 0x80 + slot*2) (FUN_0556DD40 ; spellSlots read from its operand by signature).
+// The ABILITY list "ability" (Job abilities / Weapon skills / Pet commands, FUN_05565730) is the same class : the row
+// id = u16 at (abilSlots + 0x160 + slot*2), an index into the client's ability records (0x30 each) -- weapon skills
+// 0..255, job abilities 512 + their id (2026-11-16, Ghidra ; menu name proven by "menu ability" in FUN_055641A0).
+struct NativeList {
+    bool open, focused;
+    int  kind;                         // 0 the spell list "magic", 1 the ability list "ability"
+    int  n, top, vis, cursor;          // 0-based list positions
+    int  rows;                         // rows read below (top .. top + rows - 1)
+    unsigned short id[32];             // the spell id (kind 0) / ability index (kind 1) of each row shown
+    int  allN;                         // EVERY spell of the list (its width is the widest of them, never the page's)
+    unsigned short all[512];
+};
+const NativeList& native_list();
 bool native_sub_hover(int entry);   // cursor -> that entry, event 9 (the client's mouse hover)
 bool native_sub_pick(int entry);    // hover + event 5 (validate)
 

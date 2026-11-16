@@ -45,9 +45,22 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().plrScale = v < lo ? lo : (v > hi ? hi : v); }
         }
         ROW_NEXT(46.0f)
+            cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
+        }   // end sub-section Box (catOpen_[6])
+        ry += snap(16.0f);                                 // air between this section and the next title bar
+    // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
+    ROW_NEXT(42.0f)
+    if (aF20_ > 0.0f) {
+        const float top20_ = ry;
+        cat_fold_clip(dev, hdrX, top20_, hdrW, catH_[20] * aF20_);
         // Box : draw the frame chrome or not.
         ROW_CHOICE_G(CTRL_ID, tr("Box", "Cadre"), ui_config().plrBox, tr("On", "Oui"), tr("None", "Aucun"), 52.0f, 40.0f, 150.0f)
         if (ui_config().plrBox) {
+        // Border : the frame's edges + corners (None = background only), like every other box
+        ROW_CHOICE_G(CTRL_ID, tr("Border", "Bordure"), ui_config().plrBorder, tr("On", "Oui"), tr("None", "Aucune"), 52.0f, 40.0f, 150.0f)
         // Transparency : how see-through the box chrome is (content stays opaque). 0% = solid.
         { ROW_BAND(46.0f)
             const float transp = 1.0f - ui_config().plrBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
@@ -102,11 +115,10 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
           ROW_NEXT(46.0f)
         }
         }   // end own-theme rows (!plrThemeCopy)
-        ry += snap(16.0f);                                 // air between this section and the next title bar
         }
-            cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
-        }   // end sub-section Box (catOpen_[6])
-        ry += snap(16.0f);                                 // air between this section and the next title bar
+        cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
+    }   // end Frame
+    ry += snap(16.0f);
         // ---- sub-section : Content (what the hub shows) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);

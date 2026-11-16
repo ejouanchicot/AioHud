@@ -62,32 +62,6 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         }   // end Display
         ry += snap(16.0f);                                 // air between this section and the next title bar
 
-        // ===== sub-section : CLOCK (Vana'diel header) =====
-        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
-        const float aF9_ = cat_fold(CTRL_ID, catOpen_[9]);
-        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[9], aF9_));   // the section IS a card, collapsed or not
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Clock", "Horloge"), catOpen_[9], aF9_)) catOpen_[9] = !catOpen_[9];
-        ROW_NEXT(42.0f)
-        if (aF9_ > 0.0f) {
-            const float top9_ = ry;
-            cat_fold_clip(dev, hdrX, top9_, hdrW, catH_[9] * aF9_);
-        ROW_TOGGLE(CTRL_ID, tr("Clock header", "En-t\xC3\xAAte horloge"), c.mmClock)
-        if (c.mmClock) {
-        ROW_TOGGLE(CTRL_ID, tr("Vana'diel time", "Heure Vana'diel"), c.mmClkTime)
-        ROW_TOGGLE(CTRL_ID, tr("Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire"), c.mmClkDay)
-        ROW_TOGGLE(CTRL_ID, tr("Moon phase", "Phase de lune"), c.mmClkMoon)
-        ROW_TOGGLE(CTRL_ID, tr("Real / GMT time", "Heure r\xC3\xA9""elle / GMT"), c.mmClkReal)
-        { ROW_BAND(52.0f)
-            static const char* PLBL_EN[4] = { "Top", "Bottom", "Left", "Right" }; static const char* PLBL_FR[4] = { "Haut", "Bas", "Gauche", "Droite" };
-            int cp = (c.mmClockPos < 0 || c.mmClockPos > 3) ? 0 : c.mmClockPos;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Clock position", "Position horloge"), tr(PLBL_EN[cp], PLBL_FR[cp]))) { c.mmClockPos = wrap(cp + d, 4); save_ui_config(); }
-        } ROW_NEXT(52.0f)
-        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.mmBox);   // clock-box chrome : Box / Transparency / Theme / Hue / Luminosity
-        }
-            cat_fold_end(dev, ry, top9_, catH_[9], aF9_);
-        }   // end Clock
-        ry += snap(16.0f);                                 // air between this section and the next title bar
-
         // ===== sub-section : SHAPE & FRAME =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
@@ -125,6 +99,32 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         }
             cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
         }   // end Shape & Frame
+        ry += snap(16.0f);                                 // air between this section and the next title bar
+
+        // ===== sub-section : CLOCK (Vana'diel header) =====
+        // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+        const float aF9_ = cat_fold(CTRL_ID, catOpen_[9]);
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[9], aF9_));   // the section IS a card, collapsed or not
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Clock", "Horloge"), catOpen_[9], aF9_)) catOpen_[9] = !catOpen_[9];
+        ROW_NEXT(42.0f)
+        if (aF9_ > 0.0f) {
+            const float top9_ = ry;
+            cat_fold_clip(dev, hdrX, top9_, hdrW, catH_[9] * aF9_);
+        ROW_TOGGLE(CTRL_ID, tr("Clock header", "En-t\xC3\xAAte horloge"), c.mmClock)
+        if (c.mmClock) {
+        ROW_TOGGLE(CTRL_ID, tr("Vana'diel time", "Heure Vana'diel"), c.mmClkTime)
+        ROW_TOGGLE(CTRL_ID, tr("Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire"), c.mmClkDay)
+        ROW_TOGGLE(CTRL_ID, tr("Moon phase", "Phase de lune"), c.mmClkMoon)
+        ROW_TOGGLE(CTRL_ID, tr("Real / GMT time", "Heure r\xC3\xA9""elle / GMT"), c.mmClkReal)
+        { ROW_BAND(52.0f)
+            static const char* PLBL_EN[4] = { "Top", "Bottom", "Left", "Right" }; static const char* PLBL_FR[4] = { "Haut", "Bas", "Gauche", "Droite" };
+            int cp = (c.mmClockPos < 0 || c.mmClockPos > 3) ? 0 : c.mmClockPos;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Clock position", "Position horloge"), tr(PLBL_EN[cp], PLBL_FR[cp]))) { c.mmClockPos = wrap(cp + d, 4); save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.mmBox);   // clock-box chrome : Box / Transparency / Theme / Hue / Luminosity
+        }
+            cat_fold_end(dev, ry, top9_, catH_[9], aF9_);
+        }   // end Clock
         ry += snap(16.0f);                                 // air between this section and the next title bar
 
         // ===== sub-section : MARKERS =====

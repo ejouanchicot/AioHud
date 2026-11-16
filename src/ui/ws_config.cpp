@@ -32,23 +32,34 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             float v01 = (c.wsScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.wsScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
-        { ROW_BAND(52.0f)   // Font
-            int fc = c.wsFont; if (fc < 0 || fc >= ui_font_count()) fc = 0;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { c.wsFont = wrap(fc + d, ui_font_count()); save_ui_config(); }
-        } ROW_NEXT(52.0f)
-        ROW_TOGGLE(CTRL_ID, tr("Impact effects", "Effets d'impact"), c.wsFx)   // Impact effects
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
     }   // end Display
     ry += snap(16.0f);                                 // air between this section and the next title bar
+    // ===== sub-section : CONTENT (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF21_ = cat_fold(CTRL_ID, catOpen_[21]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[21], aF21_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[21], aF21_)) catOpen_[21] = !catOpen_[21];
+    ROW_NEXT(42.0f)
+    if (aF21_ > 0.0f) {
+        const float top21_ = ry;
+        cat_fold_clip(dev, hdrX, top21_, hdrW, catH_[21] * aF21_);
+        ROW_TOGGLE(CTRL_ID, tr("Impact effects", "Effets d'impact"), c.wsFx)   // Impact effects
+        cat_fold_end(dev, ry, top21_, catH_[21], aF21_);
+    }   // end Content
+    ry += snap(16.0f);
 
-    // ===== sub-section : COLOURS =====
+    // ===== sub-section : TEXT (the font, then each colour -- typography is always the LAST section) =====
     const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);   // the section FOLDS, like every other module
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // ... and it IS a card, collapsed or not
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Colours", "Couleurs"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (aF7_ > 0.0f) {
         const float top7_ = ry;
         cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
+        { ROW_BAND(52.0f)   // Font
+            int fc = c.wsFont; if (fc < 0 || fc >= ui_font_count()) fc = 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { c.wsFont = wrap(fc + d, ui_font_count()); save_ui_config(); }
+        } ROW_NEXT(52.0f)
         struct ColRow { const char* en; const char* fr; unsigned* col; };
         ColRow cols[3] = {
             { "Name",     "Nom",       &c.wsNameCol },

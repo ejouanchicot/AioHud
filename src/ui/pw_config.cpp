@@ -34,16 +34,38 @@ void ConfigPage::draw_pw_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.pwScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
         ROW_GROW(CTRL_ID, UiConfig::GB_PW)   // which way the box grows as its content widens (ui/box_grow.h)
-        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.pwBox);   // Box / Transparency / Theme / Hue / Luminosity
-        { ROW_BAND(52.0f)   // Progression stage (Auto / XP / CP / Master)
-            const char* MLBL[4] = { tr("Auto", "Auto"), tr("XP (leveling)", "XP (level)"), tr("CP (capacity)", "CP (capacit\xC3\xA9)"), tr("Master (ML)", "Master (ML)") };
-            int md = (c.pwMode < 0 || c.pwMode > 3) ? 0 : c.pwMode;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Progression", "Progression"), MLBL[md])) { c.pwMode = wrap(md + d, 4); save_ui_config(); }
-        } ROW_NEXT(52.0f)
         { ROW_BAND(52.0f)   // Layout : Vertical (stacked) / Horizontal (side by side)
             const char* LLBL[2] = { tr("Vertical", "Vertical"), tr("Horizontal", "Horizontal") };
             int ly = (c.pwLayout == 1) ? 1 : 0;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Layout", "Disposition"), LLBL[ly])) { c.pwLayout = wrap(ly + d, 2); save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
+    }   // end Display
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+    // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
+    ROW_NEXT(42.0f)
+    if (aF20_ > 0.0f) {
+        const float top20_ = ry;
+        cat_fold_clip(dev, hdrX, top20_, hdrW, catH_[20] * aF20_);
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.pwBox);   // Box / Transparency / Theme / Hue / Luminosity
+        cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
+    }   // end Frame
+    ry += snap(16.0f);
+    // ===== sub-section : CONTENT (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF21_ = cat_fold(CTRL_ID, catOpen_[21]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[21], aF21_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[21], aF21_)) catOpen_[21] = !catOpen_[21];
+    ROW_NEXT(42.0f)
+    if (aF21_ > 0.0f) {
+        const float top21_ = ry;
+        cat_fold_clip(dev, hdrX, top21_, hdrW, catH_[21] * aF21_);
+        { ROW_BAND(52.0f)   // Progression stage (Auto / XP / CP / Master)
+            const char* MLBL[4] = { tr("Auto", "Auto"), tr("XP (leveling)", "XP (level)"), tr("CP (capacity)", "CP (capacit\xC3\xA9)"), tr("Master (ML)", "Master (ML)") };
+            int md = (c.pwMode < 0 || c.pwMode > 3) ? 0 : c.pwMode;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Progression", "Progression"), MLBL[md])) { c.pwMode = wrap(md + d, 4); save_ui_config(); }
         } ROW_NEXT(52.0f)
         // "Show" twice in one section -- once for the BOX, once for what the row draws -- reads as the same
         // question asked twice. This one names what it actually chooses.
@@ -57,9 +79,9 @@ void ConfigPage::draw_pw_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const float ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("XP under 99, CP at 99, ML once mastered. + Merits.", "XP <99, CP a\xCC\x80 99, ML si master. + Merits."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         } ROW_NEXT(40.0f)
-        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
-    }   // end Display
-    ry += snap(16.0f);                                 // air between this section and the next title bar
+        cat_fold_end(dev, ry, top21_, catH_[21], aF21_);
+    }   // end Content
+    ry += snap(16.0f);
 
     // ===== sub-section : TEXT =====
     // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).

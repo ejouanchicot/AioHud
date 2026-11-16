@@ -174,6 +174,7 @@ struct UiConfig {
     // ---- Target module (its OWN box theme, independent of the party skinTheme) ----
     int   tgtShow    = 1;      // master on/off : draw the Target module at all (0 = never show the target box)
     int   tgtBox     = 1;      // 1 = draw the box chrome ; 0 = NO box (name/%/bar/buffs/timer float with a heavy outline)
+    int   tgtBorder  = 1;      // the frame's EDGES + corners (0 = background only, like every other box's Border)
     float tgtBoxAlpha = 1.0f;  // box chrome OPACITY (1 = solid .. 0.1 = near-transparent) ; the content stays opaque
     int   tgtThemeCopy = 0;    // 1 = the Target box FOLLOWS the party box theme (skinTheme/skinLum) ; 0 = its own below
     int   tgtTheme   = 0;      // Target box-theme index (family x hue, same encoding as skinTheme)
@@ -208,6 +209,7 @@ struct UiConfig {
     // ---- Player Hub module (single box, like Target) : Phase 1 = identity + vitals + buffs ----
     int   plrShow    = 1;      // master on/off : draw the Player Hub at all (0 = never show the player box)
     int   plrBox     = 1;      // 1 = draw the box chrome ; 0 = no box
+    int   plrBorder  = 1;      // the frame's EDGES + corners (0 = background only)
     float plrBoxAlpha = 1.0f;  // box chrome OPACITY (content stays opaque)
     int   plrThemeCopy = 1;    // 1 = the Player box FOLLOWS the party box theme (skinTheme/skinLum) ; 0 = its own below
     int   plrTheme   = 0;      // Player box-theme index (family x hue, same encoding as skinTheme)

@@ -668,9 +668,9 @@ void Target::draw(const Frame& f) {
     if (!drawBox) {
         /* no box : draw nothing here -- the elements carry their own contrast */
     } else if (window_theme_is_proc(theme)) {
-        draw_proc_window(dev, theme, px, py, W, H, tint, false, true, lum, hue);
+        draw_proc_window(dev, theme, px, py, W, H, tint, false, ui_config().tgtBorder != 0, lum, hue);
     } else if (copyParty && f.skin && f.skin->ready()) {
-        draw_window(dev, *f.skin, px, py, W, H, tint, S, false, true);   // reuse the party's already-loaded FFXI skin
+        draw_window(dev, *f.skin, px, py, W, H, tint, S, false, ui_config().tgtBorder != 0);   // reuse the party's already-loaded FFXI skin
     } else {
         // FFXI family (own theme) : the Target owns its OWN window skin so its texture variant is INDEPENDENT of
         // the party's (family 0 -> the flat theme index IS the texture theme index). Reload only when it changes.
@@ -679,10 +679,10 @@ void Target::draw(const Frame& f) {
         // of permanently falling back to the plain box. dispose() only when the theme genuinely CHANGED.
         if (tgtSkinVar_ != theme) { tgtSkin_.dispose(); if (tgtSkin_.load(dev, window_theme_name(theme))) tgtSkinVar_ = theme; }
         if (tgtSkin_.ready()) {
-            draw_window(dev, tgtSkin_, px, py, W, H, tint, S, false, true);
+            draw_window(dev, tgtSkin_, px, py, W, H, tint, S, false, ui_config().tgtBorder != 0);
         } else {
             const float R = snap(6.0f * S);
-            rrect_bordered(dev, px, py, W, H, R, mul_a(0xFF232E54, ca), mul_a(0xFF080B1A, ca), mul_a(0x6699BBFF, ca), 1.0f);
+            rrect_bordered(dev, px, py, W, H, R, mul_a(0xFF232E54, ca), mul_a(0xFF080B1A, ca), mul_a(ui_config().tgtBorder ? 0x6699BBFF : 0x00000000, ca), 1.0f);
         }
     }
 
@@ -965,10 +965,10 @@ void Target::draw(const Frame& f) {
         const float sCa = a * a * clampf(ui_config().tgtBoxAlpha, 0.0f, 1.0f);   // same chrome opacity as the main box
         const u32   sTint = mul_a(0xFFFFFFFF, sCa);
         if (ui_config().tgtBox == 0) { /* No box : the sub content floats, like the Target */ }
-        else if (window_theme_is_proc(theme))                draw_proc_window(dev, theme, subX, subY, subW, subBoxH, sTint, subFused, true, lum, hue);
-        else if (copyParty && f.skin && f.skin->ready())     draw_window(dev, *f.skin, subX, subY, subW, subBoxH, sTint, S, subFused, true);
-        else if (tgtSkin_.ready())                           draw_window(dev, tgtSkin_, subX, subY, subW, subBoxH, sTint, S, subFused, true);
-        else rrect_bordered(dev, subX, subY, subW, subBoxH, snap(5.0f * S), mul_a(0xFF232E54, sCa), mul_a(0xFF080B1A, sCa), mul_a(0x6699BBFF, sCa), 1.0f);
+        else if (window_theme_is_proc(theme))                draw_proc_window(dev, theme, subX, subY, subW, subBoxH, sTint, subFused, ui_config().tgtBorder != 0, lum, hue);
+        else if (copyParty && f.skin && f.skin->ready())     draw_window(dev, *f.skin, subX, subY, subW, subBoxH, sTint, S, subFused, ui_config().tgtBorder != 0);
+        else if (tgtSkin_.ready())                           draw_window(dev, tgtSkin_, subX, subY, subW, subBoxH, sTint, S, subFused, ui_config().tgtBorder != 0);
+        else rrect_bordered(dev, subX, subY, subW, subBoxH, snap(5.0f * S), mul_a(0xFF232E54, sCa), mul_a(0xFF080B1A, sCa), mul_a(ui_config().tgtBorder ? 0x6699BBFF : 0x00000000, sCa), 1.0f);
         const float sIx = subX + sPad, rowCy = snap(subY + sPad + rowH * 0.5f);
         const float nameX = snap(sIx + distW + sGap), barX = snap(nameX + nameW + sGap);
         if (sf) { sf->begin(dev); sf->draw_lc(dev, sIx, rowCy, db, dsz, 0xFF9AA6BEu, 0xFF000000u, tgt_ow(TGT_NAME, 1.0f * S)); }   // DISTANCE : left

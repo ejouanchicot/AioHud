@@ -1,5 +1,6 @@
 // party.cpp -- see party.h.
 #include "ui/party.h"
+#include "model/native_ui.h"   // native_list : an empty spell list -> the Cost box reads 0 / 0:00
 #include "model/paths.h"
 #include "ui/edit_box.h"      // edit_box_hover_glow : shared edit-mode hover affordance
 #include "windower_debug.h"      // //aio selfcheck : Party::self_check logging
@@ -1336,7 +1337,11 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
     const bool menuOpen = (menuHold_ >= 4 && menuType_ != 0 && examReady);
     const bool inAlliance = party().alliance_count(1) > 0 || party().alliance_count(2) > 0
                             || ui_config().editLayout || party_demo_level() >= 2;
-    if (!nm && !menuOpen && !inAlliance) return;
+    // an EMPTY spell list ("No spells available.") : nothing to cost -> the box does not pop at all (the user's choice,
+    // 2026-11-16 ; the client's own case reads "MP Cost 0, Next 0:00") -- the alliance's permanent slot still shows
+    const NativeList& nl = native_list();
+    const bool emptyList = nl.open && nl.n == 0;
+    if (!nm && (!menuOpen || emptyList) && !inAlliance) return;
     const float fs = te_sz(TE_COST, nameSz_ * S);
     const float pdx = 7.0f * S, pdy = 4.0f * S, gapm = 9.0f * S, lineGap = 2.0f * S;
     const float topPad = snap(10.0f * S);                       // +10px empty at the TOP (text stays bottom-anchored)

@@ -59,6 +59,7 @@ un fichier qu'on vient d'ecrire merite un regard. Le lancer apres avoir ajoute u
 | `gen_actions.py` | `src/model/spells_gen.h` | yes |
 | `gen_buff_names.py` | `src/model/buffs_gen.h` |  |
 | `gen_element_icons.py` | `assets/element_icons.raw` |  |
+| `gen_chat_icons.py` | `assets/chat_icons.raw` | the Chat tabs' mother-of-pearl icons (sources : `assets/chat_icons_src/`) |
 | `gen_enh_dur.py` | `src/model/enh_dur_listed_gen.h` | yes |
 | `gen_geo_dur.py` | `src/model/geo_dur_gen.h` | yes |
 | `gen_grimoire.py` | `—` |  |

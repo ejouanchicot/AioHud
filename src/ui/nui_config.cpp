@@ -50,6 +50,34 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
     }   // end Hide
     ry += snap(16.0f);
 
+    // ===== sub-section : AIOHUD MENUS (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF23_ = cat_fold(CTRL_ID, catOpen_[23]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[23], aF23_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Menus drawn by AioHUD", "Menus dessin\xC3\xA9s par AioHUD"), catOpen_[23], aF23_)) catOpen_[23] = !catOpen_[23];
+    ROW_NEXT(42.0f)
+    if (aF23_ > 0.0f) {
+        const float top23_ = ry;
+        cat_fold_clip(dev, hdrX, top23_, hdrW, catH_[23] * aF23_);
+        { ROW_BAND(46.0f)   // the menus' size : every dimension, the text included
+            const float lo = 0.60f, hi = 1.60f; char sb[16]; sprintf(sb, "%d%%", (int)(c.muScale * 100.0f + 0.5f));
+            float v01 = clampf((c.muScale - lo) / (hi - lo), 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Menu size", "Taille des menus"), sb, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.muScale = v < lo ? lo : (v > hi ? hi : v); }
+        } ROW_NEXT(46.0f)
+        { ROW_BAND(52.0f)   // a submenu with more rows than its menu : grows up (bottoms level) or down (tops level)
+            const char* GL[2] = { tr("Upward", "Vers le haut"), tr("Downward", "Vers le bas") };
+            const int v = c.muGrow == 1 ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Taller submenu grows", "Sous-menu plus grand : grandit"), GL[v])) { c.muGrow = (v + d + 2) % 2; save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.muBox);
+        { ROW_BAND(52.0f)   // the rows : text only, or icon + text
+            const char* LL[2] = { tr("Text only", "Texte seul"), tr("Icon + text", "Ic\xC3\xB4ne + texte") };
+            const int v = c.muLabel == 1 ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Menu rows", "Lignes des menus"), LL[v])) { c.muLabel = (v + d + 2) % 2; save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        cat_fold_end(dev, ry, top23_, catH_[23], aF23_);
+    }   // end AioHUD menus
+    ry += snap(16.0f);
+
     // ===== sub-section : MENUS (main menu, sub-menus, lists, panels) =====
     const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));
@@ -58,24 +86,6 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
     if (aF7_ > 0.0f) {
         const float top7_ = ry;
         cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
-        // the theme of EVERY menu AioHUD redraws (the action menu today) : the same rows as any box, Same-as-Party first
-        NUI_NOTE(tr("Theme of the menus AioHUD draws (all of them) :", "Th\xC3\xA8me des menus dessin\xC3\xA9s par AioHUD (tous) :"))
-        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.muBox);
-        { ROW_BAND(46.0f)   // the menus' size : every dimension, the text included
-            const float lo = 0.60f, hi = 1.60f; char sb[16]; sprintf(sb, "%d%%", (int)(c.muScale * 100.0f + 0.5f));
-            float v01 = clampf((c.muScale - lo) / (hi - lo), 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Menu size", "Taille des menus"), sb, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.muScale = v < lo ? lo : (v > hi ? hi : v); }
-        } ROW_NEXT(46.0f)
-        { ROW_BAND(52.0f)   // the rows : text only, or icon + text
-            const char* LL[2] = { tr("Text only", "Texte seul"), tr("Icon + text", "Ic\xC3\xB4ne + texte") };
-            const int v = c.muLabel == 1 ? 1 : 0;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Menu rows", "Lignes des menus"), LL[v])) { c.muLabel = (v + d + 2) % 2; save_ui_config(); }
-        } ROW_NEXT(52.0f)
-        { ROW_BAND(52.0f)   // a submenu with more rows than its menu : grows up (bottoms level) or down (tops level)
-            const char* GL[2] = { tr("Upward", "Vers le haut"), tr("Downward", "Vers le bas") };
-            const int v = c.muGrow == 1 ? 1 : 0;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Taller submenu grows", "Sous-menu plus grand : grandit"), GL[v])) { c.muGrow = (v + d + 2) % 2; save_ui_config(); }
-        } ROW_NEXT(52.0f)
         // -1000 .. +1000 screen px, 10 px steps ; persists on release (row_slider)
         #define NUI_OFFSET_ROW(UID, LABEL, FIELD) { ROW_BAND(46.0f) const float lo_ = -1000.0f, hi_ = 1000.0f; char b_[16]; \
             _snprintf(b_, sizeof(b_), "%+d px", (FIELD)); b_[sizeof(b_) - 1] = 0; \

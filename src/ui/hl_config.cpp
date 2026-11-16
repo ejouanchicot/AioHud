@@ -35,7 +35,29 @@ void ConfigPage::draw_hl_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.hlScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
         ROW_GROW(CTRL_ID, UiConfig::GB_HL)   // which way the box grows as its content widens (ui/box_grow.h)
+        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
+    }   // end Display
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+    // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
+    ROW_NEXT(42.0f)
+    if (aF20_ > 0.0f) {
+        const float top20_ = ry;
+        cat_fold_clip(dev, hdrX, top20_, hdrW, catH_[20] * aF20_);
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.hlBox);   // Box / Transparency / Theme / Hue / Luminosity
+        cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
+    }   // end Frame
+    ry += snap(16.0f);
+    // ===== sub-section : CONTENT (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+    const float aF21_ = cat_fold(CTRL_ID, catOpen_[21]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[21], aF21_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[21], aF21_)) catOpen_[21] = !catOpen_[21];
+    ROW_NEXT(42.0f)
+    if (aF21_ > 0.0f) {
+        const float top21_ = ry;
+        cat_fold_clip(dev, hdrX, top21_, hdrW, catH_[21] * aF21_);
         { ROW_BAND(46.0f)   // Max mobs shown
             const float lo = 1.0f, hi = 20.0f; char b[16]; sprintf(b, "%d", c.hlCount);
             float v01 = ((float)c.hlCount - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
@@ -47,9 +69,9 @@ void ConfigPage::draw_hl_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const float ty = ry + yo; fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Shows mobs that have aggro on your party.", "Affiche les mobs qui ont de la haine sur le groupe."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
         } ROW_NEXT(40.0f)
-        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
-    }   // end Display
-    ry += snap(16.0f);                                 // air between this section and the next title bar
+        cat_fold_end(dev, ry, top21_, catH_[21], aF21_);
+    }   // end Content
+    ry += snap(16.0f);
 
     // ===== sub-section : TEXT (per-element typography, like the other modules) =====
     // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).

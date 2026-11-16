@@ -483,13 +483,13 @@ void Player::draw(const Frame& f) {
         const float lum   = copyParty ? c.skinLum   : c.plrLum;
         const unsigned hue = copyParty ? c.skinHue  : c.plrHue;   // custom box hue (0 = preset)
         if (window_theme_is_proc(theme)) {
-            draw_proc_window(dev, theme, x, y, W, H, tint, false, true, lum, hue);
+            draw_proc_window(dev, theme, x, y, W, H, tint, false, c.plrBorder != 0, lum, hue);
         } else if (copyParty && f.skin && f.skin->ready()) {
-            draw_window(dev, *f.skin, x, y, W, H, tint, S, false, true);   // reuse the party's already-loaded FFXI skin
+            draw_window(dev, *f.skin, x, y, W, H, tint, S, false, c.plrBorder != 0);   // reuse the party's already-loaded FFXI skin
         } else {
             if (plrSkinVar_ != theme) { plrSkin_.dispose(); if (plrSkin_.load(dev, window_theme_name(theme))) plrSkinVar_ = theme; }   // latch only on success (WindowSkin::load is atomic) -> a transient miss retries instead of latching the fallback box
-            if (plrSkin_.ready()) draw_window(dev, plrSkin_, x, y, W, H, tint, S, false, true);
-            else rrect_bordered(dev, x, y, W, H, snap(6.0f * S), mul_a(0xFF232E54, ca), mul_a(0xFF080B1A, ca), mul_a(0x6699BBFF, ca), 1.0f);
+            if (plrSkin_.ready()) draw_window(dev, plrSkin_, x, y, W, H, tint, S, false, c.plrBorder != 0);
+            else rrect_bordered(dev, x, y, W, H, snap(6.0f * S), mul_a(0xFF232E54, ca), mul_a(0xFF080B1A, ca), mul_a(c.plrBorder ? 0x6699BBFF : 0x00000000, ca), 1.0f);
         }
     }
 

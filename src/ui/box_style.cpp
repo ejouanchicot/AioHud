@@ -172,6 +172,26 @@ void ConfigPage::draw_frame_section(u32 dev, Font* fo, const MouseState* mo, boo
     };
     const int uidBase = ctrl_uid_i(CTRL_ID, group);   // every control below hangs off this, so two calls never share a spring
 
+    // THE FRAME GRAMMAR (2026-11-16, the same in every panel -- draw_box_appearance has it too) :
+    //   Border · Transparency · Theme (Same as Party / Custom) · Box theme · Custom colour / grid · Luminosity
+    { ROW_BAND(48.0f)   // the frame edges, and (party only) the floating Cost box that rides on them
+        const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+        fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Border", "Bordure"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+        const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f;
+        const int nchips = borderExtra ? 2 : 1;
+        const float bx0 = coX + ctrlW - (nchips * bbw + (nchips - 1) * bgap);
+        if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(uidBase, 6), bx0, bty, bbw, bbh, tr("Box", "Bo\xC3\xAEte"), *border)) { *border = !*border; save_ui_config(); }
+        if (borderExtra && toggle_chip(dev, fo, mo, click, ctrl_uid_i(uidBase, 7), bx0 + bbw + bgap, bty, bbw, bbh, extraLabel, *borderExtra)) { *borderExtra = !*borderExtra; save_ui_config(); }
+        ROW_NEXT(48.0f)
+    }
+    // TRANSPARENCY : how much of the frame you see -- second in every panel's Frame, right under Border
+    { ROW_BAND(46.0f)
+      const float transp = 1.0f - *alpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
+      float v01 = clampf(transp, 0.0f, 1.0f);
+      if (row_slider(dev, fo, mo, ctrl_uid_i(uidBase, 5), coX, ry + yo, ctrlW, tr("Transparency", "Transparence"), b, &v01)) {
+          *alpha = 1.0f - v01; }
+      ROW_NEXT(46.0f)
+    }
     // Follow the master box, or have its own. Everything under it exists only in the second case, which is why the
     // choice is the row that OPENS the block rather than one buried inside it.
     if (themeCopy) {
@@ -240,38 +260,15 @@ void ConfigPage::draw_frame_section(u32 dev, Font* fo, const MouseState* mo, boo
           ROW_NEXT(slotH)
         }
     }
-    // Luminosity + Transparency : both "how much of the frame you see". Luminosity exists only on a procedural
-    // theme this box owns ; transparency always does, so the pair collapses to one when it must.
-    { const bool proc = (own && window_theme_family(*theme) != 0);
-      const float bh2 = (twoCol || !proc) ? snap(46.0f) : snap(92.0f);
-      ROW_BAND(bh2) (void)yo;
-      const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !proc) ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
-      const float yB = twoCol ? yA : yA + snap(46.0f);
-      const float xB = proc ? (twoCol ? col2X : coX) : coX;
-      const float wB = proc ? halfW : ctrlW;
-      sepv(ry, bh2, proc);
-      if (proc) {
-          float v01 = (*lum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
-          const int pct = (int)(*lum * 100.0f + (*lum >= 0.0f ? 0.5f : -0.5f));
-          char b[16]; sprintf(b, "%+d%%", pct);
-          if (row_slider(dev, fo, mo, ctrl_uid_i(uidBase, 4), coX, yA, halfW, tr("Luminosity", "Luminosit\xC3\xA9"), b, &v01)) {
-              *lum = v01 * 2.0f - 1.0f; }
-      }
-      { const float transp = 1.0f - *alpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
-        float v01 = clampf(transp, 0.0f, 1.0f);
-        if (row_slider(dev, fo, mo, ctrl_uid_i(uidBase, 5), xB, yB, wB, tr("Transparency", "Transparence"), b, &v01)) {
-            *alpha = 1.0f - v01; } }
-      ROW_NEXT(bh2)
-    }
-    { ROW_BAND(48.0f)   // the frame edges, and (party only) the floating Cost box that rides on them
-        const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-        fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Border", "Bordure"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-        const float bbw = snap(112.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = ty + (rowH - bbh) * 0.5f;
-        const int nchips = borderExtra ? 2 : 1;
-        const float bx0 = coX + ctrlW - (nchips * bbw + (nchips - 1) * bgap);
-        if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(uidBase, 6), bx0, bty, bbw, bbh, tr("Box", "Bo\xC3\xAEte"), *border)) { *border = !*border; save_ui_config(); }
-        if (borderExtra && toggle_chip(dev, fo, mo, click, ctrl_uid_i(uidBase, 7), bx0 + bbw + bgap, bty, bbw, bbh, extraLabel, *borderExtra)) { *borderExtra = !*borderExtra; save_ui_config(); }
-        ROW_NEXT(48.0f)
+    // LUMINOSITY : last, as in every panel's Frame (a procedural theme this box owns only)
+    if (own && window_theme_family(*theme) != 0) {
+      ROW_BAND(46.0f)
+      float v01 = (*lum + 1.0f) * 0.5f; v01 = clampf(v01, 0.0f, 1.0f);
+      const int pct = (int)(*lum * 100.0f + (*lum >= 0.0f ? 0.5f : -0.5f));
+      char b[16]; sprintf(b, "%+d%%", pct);
+      if (row_slider(dev, fo, mo, ctrl_uid_i(uidBase, 4), coX, ry + yo, ctrlW, tr("Luminosity", "Luminosit\xC3\xA9"), b, &v01)) {
+          *lum = v01 * 2.0f - 1.0f; }
+      ROW_NEXT(46.0f)
     }
 }
 

@@ -133,6 +133,8 @@ static const char* sjis_glyph(unsigned char a, unsigned char b) {
             default: break;
         }
     }
+    // the client's own quotation marks around a name ("the challenge 87 B2 Spoils (Seals). 87 B3", captured 2026-11-16)
+    if (a == 0x87 && (b == 0xB2 || b == 0xB3)) return "\"";
     return "?";
 }
 
