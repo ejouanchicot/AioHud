@@ -226,3 +226,11 @@ What Enter on a target opens. ONE menu for every target ; AioHUD mirrors it (Gam
   Pet commands / Mount. No arrow on their rows (each opens its LIST). Placement, as the client : `magselec` BESIDE
   playermo at the same height, `abiselec` IN PLACE of it (same left, bottom anchored, its own height).
   `chatctrl` (Chat) has no help texts : not mirrored until its rows are named from a screenshot.
+- **Chat's extras** (its draw FUN_0546E290 ; found by signature, globals read from the code's operands) : Tell =
+  handler+0x14 (-1 the target, -2 the last tell received = tellObj+0x10E, n = the history, tellObj+0x8C + n*0x10,
+  count +0x88 ; tellObj from FUN_0546E610's operand) ; Linkshell 1/2 = the item worn per the inventory's
+  [+0x9808+n] index / [+0x980F+n] bag, record (bag*0x51+index)*0x2C + 0x9868 (513 shell / 514 pearl / 515 sack),
+  colour nibbles at ext+6/7, name decoded from ext+9 by the client's FUN_0550A580 ; Unity = the id global & 0x1F,
+  the leader's name = text table 0xC, 0x1A2 + id (FUN_054944F0, cdecl). Left / right on Tell cycles the name.
+- **Abilities swaps at once** (trace 2026-11-16 : abiselec readable the very frame playermo loses the focus) -- the
+  mirror draws no cross-fade there.

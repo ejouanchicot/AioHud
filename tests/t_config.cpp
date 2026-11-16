@@ -109,7 +109,7 @@ static void scribble(UiConfig& c, int seed) {
     }
     c.borderCost = (i1 & 1) != 0; c.animHP = !(i1 & 1); c.animTP = (i1 & 1) != 0;
     // Game UI : the HIGH bit too (0x40 = NU_ACT) -- the loader masked 0x3F and dropped it at every load (2026-11-16)
-    c.nuHide = 0x40 | ((seed * 5) & 0x3F); c.muLabel = seed & 1; c.muGrow = seed & 1;
+    c.nuHide = 0x40 | ((seed * 5) & 0x3F); c.muLabel = seed & 1; c.muGrow = seed & 1; c.muScale = 1.1f + 0.05f * seed;
     c.distColClose = x1 + 21; c.distColNormal = x1 + 23; c.distColFar = x1 + 29;
     // buffOrder : a ROTATION, so it stays a valid permutation. Anything else and the loader's repair would
     // legitimately rewrite it, and the round-trip would fail on the test's own bad input, not on a real bug.

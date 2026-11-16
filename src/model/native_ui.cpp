@@ -61,7 +61,7 @@ const char* const CHAT_W[]  = { "logwindo", "logwin2", "spoolmsg", "splmsg2", "e
 const char* const HELP_W[]  = { "helpwind", "titlewin", 0 };
 const char* const COST_W[]  = { "subwindo", 0 };
 const char* const NET_W[]   = { "netstat", "polwindo", 0 };
-const char* const ACT_SUB_W[] = { "magselec", "abiselec", 0 };   // the action menu's submenus AioHUD redraws (NU_ACT)
+const char* const ACT_SUB_W[] = { "magselec", "abiselec", "chatctrl", 0 };   // the action menu's submenus AioHUD redraws (NU_ACT)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
 
 // the offset a window SHOULD carry under the current config
@@ -125,6 +125,7 @@ bool  g_anyApplied = false;
 // If its rows stop reading while the client's menu is parked off-screen, the player would see NO menu at all : after
 // 3 bad frames the client's own menu comes back (g_actFail), and goes away again after 5 s of good reads.
 NativeEntryMenu g_sub;
+NativeChatInfo  g_chat;
 NativeMenu g_act; bool g_actFail = false; int g_actBad = 0; DWORD g_actGoodSince = 0;
 u32 g_actObj = 0;          // the playermo object of the last good read (re-read before any call into the client)
 int eff_hide(const UiConfig& c) { return g_actFail ? (c.nuHide & ~NU_ACT) : c.nuHide; }
@@ -465,6 +466,8 @@ int  config_sig(const UiConfig& c) {
 
 } // namespace
 
+void chat_info_read(u32 obj);   // below : the Chat submenu's extras (Tell name, linkshells, Unity)
+
 namespace {
 // One read of "playermo" : open (in the manager's open list, not dying), its handler's row codes, cursor, rect.
 // Returns -1 when it is not open, 0 when open but unreadable, 1 when read.
@@ -532,7 +535,8 @@ int sub_read(NativeEntryMenu& m, u32* objOut = 0) {
             ++k;                                                         // entry index k (1-based), shown or not
             u32 st = 0; short r[4] = { 0, 0, 0, 0 };
             if (!safe_read(ch + 0x10, &st) || !rd16(ch + 0x32, r[0]) || !rd16(ch + 0x34, r[1]) || !rd16(ch + 0x36, r[2]) || !rd16(ch + 0x38, r[3])) return 0;
-            if ((st & 0x10) || r[2] - r[0] <= 0 || r[3] - r[1] <= 0 || m.n >= 16) { cn = cnext; continue; }   // skipped / not laid out
+            // skipped / not laid out / a DECORATION, not a row (chatctrl's 8th entry : 18 x 12, never under the cursor)
+            if ((st & 0x10) || r[2] - r[0] < 40 || r[3] - r[1] <= 0 || m.n >= 16) { cn = cnext; continue; }
             int at = m.n;                                                // insert by screen y
             while (at > 0 && ys[at - 1] > r[1]) { ys[at] = ys[at - 1]; m.entry[at] = m.entry[at - 1]; m.state[at] = m.state[at - 1]; --at; }
             ys[at] = r[1]; m.entry[at] = (unsigned char)k; m.state[at] = (unsigned char)(st & 0xFF); ++m.n;
@@ -556,8 +560,9 @@ int sub_read(NativeEntryMenu& m, u32* objOut = 0) {
 void act_poll(bool on) {
     if (!on) { g_act.open = false; g_sub.open = false; g_actBad = 0; g_actFail = false; return; }
     NativeMenu m; int r = act_read(m);
-    NativeEntryMenu sm; const int rs = sub_read(sm);
+    NativeEntryMenu sm; u32 subObj = 0; const int rs = sub_read(sm, &subObj);
     g_sub = sm; if (rs != 1) g_sub.open = false;
+    if (rs == 1 && !strcmp(sm.name, "chatctrl")) chat_info_read(subObj); else g_chat.ok = false;
     if (rs == 0) r = 0;                                   // a parked submenu that cannot be read : same fallback
     const DWORD now = GetTickCount();
     if (r == 0) {
@@ -609,6 +614,107 @@ void rescue_children(u32 mgr, int hide) {
 
 const NativeMenu& native_action_menu() { return g_act; }
 const NativeEntryMenu& native_sub_menu() { return g_sub; }
+const NativeChatInfo& native_chat_info() { return g_chat; }
+
+// ---- the Chat submenu's extras : found by SIGNATURE (masked AOB), globals read from the code's own operands ----
+// A pattern is "8B 15 ?? ?? ..." ; unique in FFXiMain's image or nothing.
+u32 aob_masked(const char* pat) {
+    unsigned char P[96]; bool W[96]; int n = 0;
+    for (const char* q = pat; *q && n < 96; ) {
+        while (*q == ' ') ++q; if (!*q) break;
+        if (q[0] == '?') { W[n] = true; P[n++] = 0; q += 2; continue; }
+        unsigned v = 0; for (int i = 0; i < 2; ++i) { const char ch = q[i]; v = v * 16 + (unsigned)(ch <= '9' ? ch - '0' : (ch | 0x20) - 'a' + 10); }
+        W[n] = false; P[n++] = (unsigned char)v; q += 2;
+    }
+    u32 lo = 0, hi = 0; image_range(lo, hi); if (!lo || n < 8) return 0;
+    int hits = 0; u32 at = 0;
+    __try {
+        for (const unsigned char* q = (const unsigned char*)lo; q + n < (const unsigned char*)hi; ++q) {
+            if (q[0] != P[0]) continue;
+            int i = 1; for (; i < n; ++i) if (!W[i] && q[i] != P[i]) break;
+            if (i == n) { ++hits; at = (u32)q; if (hits > 1) break; }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+    return hits == 1 ? at : 0;
+}
+struct ChatRes { u32 invPtrVar, tellPtrVar, unityFlag, unityId, decode, str; };
+ChatRes g_cr = { 0, 0, 0, 0, 0, 0 }; bool g_crOk = false; int g_crTries = 0; DWORD g_crNext = 0;
+bool chat_res() {
+    if (g_crOk) return true;
+    const DWORD now = GetTickCount();
+    if (g_crTries && (int)(now - g_crNext) < 0) return false;          // retried every 5 s, never given up
+    ++g_crTries; g_crNext = now + 5000;
+    const u32 ls = aob_masked("8B 15 ?? ?? ?? ?? 56 85 D2 74 44 8B 74 24 14 81 E6 FF 00 00 00 8A 8C 16 08 98 00 00 84 C9 74 2F 33 C0 81 E1 FF 00 00 00 8A 84 16 0F 98 00 00");
+    const u32 un = aob_masked("8A 0D ?? ?? ?? ?? 33 C0 F6 C1 01 74 05 A1 ?? ?? ?? ?? C3 90 90 90 90 90 90 90 90 90 90 90 90 90 E8 DB FF FF FF 24 1F");
+    const u32 te = aob_masked("53 56 57 8B 7C 24 10 8B F1 66 01 7E 14 66 8B 46 14 66 3D FD FF 7E 69 8A 5C 24 14 0F BF C0 83 F8 FE 74 40 83 F8 FF 74 2E 8B 0D ?? ?? ?? ?? 3B 81 88 00 00 00");
+    const u32 de = aob_masked("8B 44 24 04 50 6A 15 68 ?? ?? ?? ?? E8 ?? ?? ?? ?? 83 C4 0C B8 ?? ?? ?? ?? C3");
+    const u32 st = aob_masked("56 57 8B 7C 24 0C 33 F6 39 3C F5 ?? ?? ?? ?? 74 14 46 83 FE 1C 72 F1 8B 04 BD ?? ?? ?? ?? 85 C0");
+    if (ls && un && te && de && st && safe_read(ls + 2, &g_cr.invPtrVar) && safe_read(un + 2, &g_cr.unityFlag)
+        && safe_read(un + 14, &g_cr.unityId) && safe_read(te + 42, &g_cr.tellPtrVar)) {
+        g_cr.decode = de; g_cr.str = st; g_crOk = true;
+        windower::debug::log("NATIVEUI chat submenu extras resolved (try %d)", g_crTries);
+    } else if (g_crTries == 1 || g_crTries % 12 == 0)
+        windower::debug::log("NATIVEUI chat submenu extras NOT resolved (try %d : ls %d unity %d tell %d decode %d text %d)", g_crTries, !!ls, !!un, !!te, !!de, !!st);
+    return g_crOk;
+}
+// keep printable bytes only (names are ASCII ; the client's text may carry control codes)
+void copy_name(char* dst, int cap, const char* src) {
+    int n = 0;
+    __try { for (; src && src[n] && n < cap - 1; ++n) dst[n] = ((unsigned char)src[n] >= 0x20 && (unsigned char)src[n] < 0x7F) ? src[n] : ' '; }
+    __except (EXCEPTION_EXECUTE_HANDLER) {}
+    dst[n] = 0;
+}
+typedef const char* (__cdecl* DecodeFn)(const unsigned char* src);
+typedef const char* (__cdecl* TextFn)(int table, int id);
+void chat_info_read(u32 obj) {
+    NativeChatInfo c; memset(&c, 0, sizeof(c)); c.tellSel = -3;
+    if (!chat_res()) { g_chat = c; return; }
+    // Tell : the handler's choice, the tell history
+    u32 hd = 0; short sel = -3;
+    if (safe_read(obj + OBJ_HANDLER, &hd) && valid_ptr(hd)) rd16(hd + 0x14, sel);
+    c.tellSel = sel;
+    u32 tg = 0;
+    if (safe_read(g_cr.tellPtrVar, &tg) && valid_ptr(tg)) {
+        char nm[17] = { 0 };
+        if (sel == -2) { __try { memcpy(nm, (const void*)(tg + 0x10E), 16); } __except (EXCEPTION_EXECUTE_HANDLER) { nm[0] = 0; } }
+        else if (sel >= 0) {
+            u32 cnt = 0;
+            if (safe_read(tg + 0x88, &cnt) && cnt > 0 && cnt < 64) { const int i = sel >= (int)cnt ? (int)cnt - 1 : sel;
+                __try { memcpy(nm, (const void*)(tg + 0x8C + i * 0x10), 16); } __except (EXCEPTION_EXECUTE_HANDLER) { nm[0] = 0; } }
+        }
+        copy_name(c.tell, sizeof(c.tell), nm);
+    }
+    // Linkshell 1 / 2 : the item worn in that slot, its colour, its shell's name (the client's own decoder)
+    u32 inv = 0;
+    if (safe_read(g_cr.invPtrVar, &inv) && valid_ptr(inv)) for (int k = 0; k < 2; ++k) {
+        unsigned char idx = 0, bag = 0;
+        if (!rd8(inv + 0x9808 + (k + 1), idx) || !idx || !rd8(inv + 0x980F + (k + 1), bag)) continue;
+        const u32 rec = inv + ((u32)bag * 0x51 + idx) * 0x2C + 0x9868;
+        short id = 0; if (!rd16(rec, id) || id < 513 || id > 515) continue;
+        const u32 ext = rec + 0x10;
+        unsigned char b6 = 0, b7 = 0; rd8(ext + 6, b6); rd8(ext + 7, b7);
+        const unsigned w6 = (unsigned)b6 | ((unsigned)b7 << 8);
+        unsigned r = (w6 & 0xF) * 0xD + 0x38, g = ((w6 >> 4) & 0xF) * 0xD + 0x38, b = (b7 & 0xF) * 0xD + 0x38;   // half-intensity, as drawn
+        r = r * 2 > 255 ? 255 : r * 2; g = g * 2 > 255 ? 255 : g * 2; b = b * 2 > 255 ? 255 : b * 2;
+        c.lsItem[k] = id; c.lsArgb[k] = 0xFF000000u | (r << 16) | (g << 8) | b;
+        const char* name = 0;
+        __try { name = ((DecodeFn)g_cr.decode)((const unsigned char*)(ext + 9)); } __except (EXCEPTION_EXECUTE_HANDLER) { name = 0; }
+        copy_name(c.ls[k], sizeof(c.ls[k]), name);
+    }
+    // Unity : the leader's name from the client's text table
+    unsigned char fl = 0; u32 uid = 0;
+    if (rd8(g_cr.unityFlag, fl) && (fl & 1) && safe_read(g_cr.unityId, &uid)) {
+        uid &= 0x1F; if (uid > 0xB) uid = 0;
+        c.unityId = (int)uid;
+        if (uid) {
+            const char* t = 0;
+            __try { t = ((TextFn)g_cr.str)(0xC, 0x1A2 + (int)uid); } __except (EXCEPTION_EXECUTE_HANDLER) { t = 0; }
+            copy_name(c.unity, sizeof(c.unity), t);
+        }
+    }
+    c.ok = true;
+    g_chat = c;
+}
 
 // ---- the client's menu EVENT function (FUN_054596F0 on the 2026-11-15 client) ----
 // thiscall(menu object, event) ret 4 : 1-4 arrows, 5 validate, 6 cancel, 9 "the cursor was set" (the mouse), ...

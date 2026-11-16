@@ -153,14 +153,28 @@ const SubRow ABISELEC[] = {
     { "Pet Commands",  "Ordres au familier",     false, IC_DUO     },
     { "Mount",         "Monture",                false, IC_NONE    },
 };
+// Chat : no help texts in the client -- named from the user's reading of the client's own menu (2026-11-16)
+const SubRow CHATCTRL[] = {
+    { "Say",         "Dire",              false, IC_BUBBLE },
+    { "Tell",        "Message priv\xC3\xA9", false, IC_BUBBLE },
+    { "Party",       "Groupe",            false, IC_BUBBLE },
+    { "Linkshell",   "Linkshell",         false, IC_BUBBLE },
+    { "Linkshell 2", "Linkshell 2",       false, IC_BUBBLE },
+    { "Unity",       "Unity",             false, IC_BUBBLE },
+    { "Shout",       "Crier",             false, IC_BUBBLE },
+};
 const SubRow* sub_row(const char* menu, int entry) {
+    if (!strcmp(menu, "chatctrl") && entry >= 1 && entry <= 7) return &CHATCTRL[entry - 1];
     if (!strcmp(menu, "magselec") && entry >= 1 && entry <= 7) return &MAGSELEC[entry - 1];
     if (!strcmp(menu, "abiselec") && entry >= 1 && entry <= 5) return &ABISELEC[entry - 1];
     return 0;
 }
 
 // ---- ONE block : the menus' theme box, thin capsules, the party's gold glass on the picked row, the hand ----
-struct RowSpec { const char* label; Icon icon; bool sub; bool off; };
+// `extra` : what the client shows on the right of a row (the Chat submenu : the Tell name, a shell's name, the Unity
+// leader) ; `pearl` : 513 linkshell / 514 linkpearl / 515 pearlsack drawn before it, tinted `pearlArgb`
+struct RowSpec { const char* label; Icon icon; bool sub; bool off; const char* extra = 0; int pearl = 0; u32 pearlArgb = 0;
+                 bool cycle = false; };   // cycle : the extra can be changed with left / right (the Tell name) -> < name >
 struct Block {
     float vis = 0.0f, curY = -1.0f; unsigned openMs = 0; int lastN = 0; bool wasOpen = false; float sel[16] = { 0 };
     float x = 0, y = 0, w = 0, h = 0;           // drawn rect this frame (w = 0 : not drawn)
@@ -172,17 +186,26 @@ unsigned g_lastMs = 0;
 
 struct Metrics { float S, tz, ow, capH, gap, icZ, pad, gutter, capPadL, icW, capPadR, triW; bool icons; };
 Metrics metrics(const Frame& f) {
-    Metrics k; k.S = f.screenH / 1000.0f; const float S = k.S;
+    float sc = ui_config().muScale; if (!(sc >= 0.6f && sc <= 1.6f)) sc = 1.0f;   // Game UI -> Menus : their size
+    Metrics k; k.S = f.screenH / 1000.0f * sc; const float S = k.S;
     k.tz = 11.5f * S; k.ow = 0.9f * S; k.capH = snap(19.0f * S); k.gap = snap(3.0f * S); k.icZ = 10.0f * S;
     k.pad = snap(6.0f * S); k.gutter = snap(22.0f * S); k.icons = ui_config().muLabel == 1;
-    k.capPadL = snap(9.0f * S); k.icW = k.icons ? snap(k.icZ + 7.0f * S) : 0.0f; k.capPadR = snap(8.0f * S); k.triW = snap(8.0f * S);
+    k.capPadL = snap(9.0f * S); k.icW = k.icons ? snap(k.icZ + 7.0f * S) : 0.0f; k.capPadR = snap(6.0f * S); k.triW = snap(8.0f * S);
     return k;
 }
+// the submenu arrow's column : only when a row has one (2026-11-16 : "trop large" -- Magic / Abilities / Chat have none)
+float tri_col(const Metrics& k, const RowSpec* rows, int n) { for (int i = 0; i < n; ++i) if (rows[i].sub) return k.triW; return 0.0f; }
 // the block's size for these rows
 void block_size(const Frame& f, const Metrics& k, const RowSpec* rows, int n, float& w, float& h) {
-    float wLab = 0.0f;
-    for (int i = 0; i < n; ++i) { const float lw = f.font->measure(rows[i].label, k.tz); if (lw > wLab) wLab = lw; }
-    const float capW = snap(k.capPadL + k.icW + wLab + k.capPadR + k.triW);
+    float wLab = 0.0f, wEx = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        const float lw = f.font->measure(rows[i].label, k.tz); if (lw > wLab) wLab = lw;
+        float ew = rows[i].extra && rows[i].extra[0] ? f.font->measure(rows[i].extra, k.tz * 0.92f) : 0.0f;
+        if (rows[i].pearl) ew += 14.0f * k.S;
+        if (rows[i].cycle) ew += 2.0f * 9.0f * k.S;
+        if (ew > wEx) wEx = ew;
+    }
+    const float capW = snap(k.capPadL + k.icW + wLab + (wEx > 0.0f ? wEx + 8.0f * k.S : 0.0f) + k.capPadR + tri_col(k, rows, n));
     w = snap(k.gutter + capW + k.pad); h = snap((float)n * k.capH + (float)(n - 1) * k.gap + 2.0f * k.pad);
 }
 // open / close easing ; false when nothing is to be drawn
@@ -197,6 +220,7 @@ bool block_ease(Block& b, bool open, unsigned now, float dt) {
 // draw at (bx, by) ; returns the row (1-based) under the mouse, 0 none
 int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, int n, int cursorRow, bool focused,
                float bx, float by, float bw, float bh, float A, float dt) {
+    const float triU = tri_col(k, rows, n);   // the arrow column, when one row has an arrow
     const u32 dev = f.dev; const float S = k.S;
     const float kFast = 1.0f - expf(-dt * 30.0f), kSel = 1.0f - expf(-dt * 24.0f);   // the selection glides, quickly
     const float capW = bw - k.gutter - k.pad, cx0 = bx + k.gutter, step = k.capH + k.gap, r = k.capH * 0.5f;
@@ -232,6 +256,23 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
         const float s = b.sel[i], a = A * (rows[i].off ? 0.55f : 1.0f);
         const float cy = snap(by + k.pad + (float)i * step) + k.capH * 0.5f;
         if (k.icons) draw_icon(dev, rows[i].icon, cx0 + k.capPadL + k.icZ * 0.5f, cy, k.icZ, S, with_alpha(mix(0xFF9FB0C6u, 0xFFFFF1CCu, s), a));
+        if (rows[i].pearl) {                                   // the shell worn, in its colour, right-aligned before its name
+            const float ew = rows[i].extra ? f.font->measure(rows[i].extra, k.tz * 0.92f) : 0.0f;
+            const float px = cx0 + capW - k.capPadR - triU - ew - 8.0f * S, pr = 4.2f * S;
+            const u32 pc = with_alpha(rows[i].pearlArgb, a);
+            if (rows[i].pearl == 515) rrect_stroke(dev, px - pr - 1.6f * S, cy - pr - 1.6f * S, 2.0f * pr + 3.2f * S, 2.0f * pr + 3.2f * S, pr + 1.6f * S, with_alpha(0xD0F2C66Bu, a), 1.2f * S);   // pearlsack : a gold ring
+            if (rows[i].pearl == 513) disc_glow(dev, px, cy, pr, with_alpha(0x70F2C66Bu, a), 4.0f * S);                     // linkshell : a gold halo
+            disc(dev, px, cy, pr, pc);
+            disc(dev, px - pr * 0.35f, cy - pr * 0.35f, pr * 0.35f, with_alpha(0x90FFFFFFu, a));                            // the pearl's sheen
+        }
+        if (rows[i].cycle && rows[i].extra && rows[i].extra[0]) {   // < name > : left / right changes it
+            const float ew = f.font->measure(rows[i].extra, k.tz * 0.92f), ch = 3.0f * S;
+            const float R = cx0 + capW - k.capPadR - triU - 9.0f * S;          // where the name ends (text pass : same)
+            const float rc = R + 4.5f * S, lc = R - ew - 4.5f * S;           // the two chevrons' centres
+            const u32 cc = with_alpha(mix(0xB093A6BEu, 0xFFFFDA8Au, s), a);
+            tri(dev, rc + ch * 0.7f, cy, rc - ch * 0.5f, cy - ch, rc - ch * 0.5f, cy + ch, cc);
+            tri(dev, lc - ch * 0.7f, cy, lc + ch * 0.5f, cy - ch, lc + ch * 0.5f, cy + ch, cc);
+        }
         if (rows[i].sub) {
             const float tx = cx0 + capW - k.capPadR * 0.5f - k.triW * 0.5f, th = 3.2f * S;
             tri(dev, tx + th * 0.8f, cy, tx - th * 0.6f, cy - th, tx - th * 0.6f, cy + th, with_alpha(mix(0xA0B9C8DCu, 0xFFFFF1CCu, s), a));
@@ -252,6 +293,11 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
         const float y = snap(by + k.pad + (float)i * step);
         fo->draw_lc(dev, snap(cx0 + k.capPadL + k.icW), snap(y + k.capH * 0.5f), rows[i].label, k.tz,
                     with_alpha(mix(0xFFC9D3E0u, 0xFFFFFFFFu, s), a), with_alpha(0xC8000000u, a), k.ow);
+        if (rows[i].extra && rows[i].extra[0]) {
+            const float ez = k.tz * 0.92f, ew = fo->measure(rows[i].extra, ez);
+            fo->draw_lc(dev, snap(cx0 + capW - k.capPadR - triU - ew - (rows[i].cycle ? 9.0f * k.S : 0.0f)), snap(y + k.capH * 0.5f), rows[i].extra, ez,
+                        with_alpha(mix(0xFF93A6BEu, 0xFFFFF1CCu, s), a), with_alpha(0xC8000000u, a), k.ow);
+        }
     }
     // the row under the mouse (the menu being driven only)
     const MouseState* ms = f.mouse;
@@ -321,7 +367,9 @@ void actmenu_draw(const Frame& f) {
     static NativeEntryMenu lastS;
     if (SM.open) lastS = SM;
     const bool replacing = lastS.n && !strcmp(lastS.name, "abiselec");
-    const float give = replacing ? g_subB.vis : 0.0f;
+    // the client swaps them at ONCE (trace 2026-11-16 : abiselec readable the same frame playermo loses the focus) :
+    // while Abilities is open this menu is not drawn at all -- no cross-fade (its top lingered ~1 s, "il reste un effet")
+    const float give = (replacing && SM.open) ? 1.0f : 0.0f;
     const float A = g_main.vis * tOpen * (m.focused ? 1.0f : 0.62f) * (1.0f - give);   // a submenu on top : steps back
     const int row = A > 0.0f ? block_draw(f, k, g_main, rows, m.n, m.cursor, m.focused, bx, by, bw, bh, A, dt) : 0;
     if (M.open && give < 0.5f) {
@@ -341,6 +389,22 @@ void actmenu_draw(const Frame& f) {
         else { sprintf(snums[i], "#%d", lastS.entry[i]); srows[i].label = snums[i]; srows[i].icon = IC_NONE; srows[i].sub = false; }
         srows[i].off = lastS.state[i] == 5;
         if (lastS.entry[i] == lastS.cursor) scur = i + 1;
+    }
+    // Chat : what the client shows on the right (native_chat_info) -- the Tell's name, each shell's pearl + name, Unity
+    static NativeChatInfo lastC;
+    if (native_chat_info().ok) lastC = native_chat_info();
+    if (!strcmp(lastS.name, "chatctrl") && lastC.ok) {
+        for (int i = 0; i < lastS.n && i < 16; ++i) {
+            const int e = lastS.entry[i];
+            if (e == 2) {                                         // Tell : the target's name (-1) or the history's
+                if (lastC.tellSel == -1) srows[i].extra = (f.game && f.game->target.valid) ? f.game->target.name : 0;
+                else if (lastC.tellSel != -3) srows[i].extra = lastC.tell;
+                srows[i].cycle = true;                            // left / right picks another name : say so
+            } else if (e == 4 || e == 5) {                        // Linkshell 1 / 2
+                const int L = e - 4;
+                if (lastC.lsItem[L]) { srows[i].extra = lastC.ls[L]; srows[i].pearl = lastC.lsItem[L]; srows[i].pearlArgb = lastC.lsArgb[L]; }
+            } else if (e == 6 && lastC.unityId) srows[i].extra = lastC.unity;
+        }
     }
     float sw, sh; block_size(f, k, srows, lastS.n, sw, sh);
     const float tS = ease_out(((float)(now - g_subB.openMs) / 1000.0f) / 0.07f);

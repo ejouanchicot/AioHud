@@ -61,6 +61,11 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
         // the theme of EVERY menu AioHUD redraws (the action menu today) : the same rows as any box, Same-as-Party first
         NUI_NOTE(tr("Theme of the menus AioHUD draws (all of them) :", "Th\xC3\xA8me des menus dessin\xC3\xA9s par AioHUD (tous) :"))
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.muBox);
+        { ROW_BAND(46.0f)   // the menus' size : every dimension, the text included
+            const float lo = 0.60f, hi = 1.60f; char sb[16]; sprintf(sb, "%d%%", (int)(c.muScale * 100.0f + 0.5f));
+            float v01 = clampf((c.muScale - lo) / (hi - lo), 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Menu size", "Taille des menus"), sb, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.muScale = v < lo ? lo : (v > hi ? hi : v); }
+        } ROW_NEXT(46.0f)
         { ROW_BAND(52.0f)   // the rows : text only, or icon + text
             const char* LL[2] = { tr("Text only", "Texte seul"), tr("Icon + text", "Ic\xC3\xB4ne + texte") };
             const int v = c.muLabel == 1 ? 1 : 0;

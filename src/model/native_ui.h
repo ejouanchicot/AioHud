@@ -54,7 +54,7 @@ bool native_action_pick(int row);
 
 // The action menu's SUBMENUS whose rows are their definition's entries -- "magselec" (Magic : White / Black / Songs /
 // Ninjutsu / Summoning / Blue / Geomancy) and "abiselec" (Abilities : Job abilities / Weapon skills / Ranged attack /
-// Pet commands / Mount) -- parked with NU_ACT and redrawn the same way. Rows = the open object's ENTRY children
+// Pet commands / Mount) and "chatctrl" (Chat : Say / Tell / Party / Linkshell / Linkshell 2 / Unity / Shout) -- parked with NU_ACT and redrawn the same way. Rows = the open object's ENTRY children
 // (obj+0x14 list, child short type 1) : `entry` = its index in that list (what the cursor obj+0x4C counts, 1-based),
 // `state` = child+0x10 (0 normal, 1 validated, 3 under the cursor, 5 refused, 0x10 skipped -> left out), shown in
 // screen order (child rect y). Live 2026-11-16 (docs/game-data/native-windows.md section 9).
@@ -69,6 +69,24 @@ struct NativeEntryMenu {
     int  uiW, uiH;
 };
 const NativeEntryMenu& native_sub_menu();
+
+// What the client's Chat submenu (chatctrl) shows on the right of its rows (its draw FUN_0546E290, read 2026-11-16) :
+//   Tell        the name the Tell will go to : handler+0x14 = -1 the current target (the HUD has its name), -2 the
+//               last tell received, n >= 0 the n-th name of the tell history ; -3 nothing
+//   Linkshell 1 / 2  the item worn (513 linkshell / 514 linkpearl / 515 pearlsack), its colour and the shell's name
+//   Unity       the leader's name (the client's own text table 0xC, 0x1A2 + id)
+// Filled while chatctrl is open ; `ok` false when the client's functions / globals were not found (a miss is retried).
+struct NativeChatInfo {
+    bool ok;
+    int  tellSel;              // -3 none, -2 last received, -1 current target, >= 0 history
+    char tell[20];             // the name for -2 / >= 0 (empty for -1 : the target's)
+    int  lsItem[2];            // 0 = none worn
+    unsigned lsArgb[2];        // the shell's colour, opaque
+    char ls[2][24];
+    int  unityId;              // 0 = none
+    char unity[32];
+};
+const NativeChatInfo& native_chat_info();
 bool native_sub_hover(int entry);   // cursor -> that entry, event 9 (the client's mouse hover)
 bool native_sub_pick(int entry);    // hover + event 5 (validate)
 
