@@ -113,6 +113,12 @@ struct ChatBoxState {
     int      grip = 0;              // token for the shared drag lock
 };
 static ChatBoxState g_cb[2];
+static float g_liveRect[2][4]; static unsigned g_liveMs[2] = { 0, 0 };   // the LIVE box's rect (previews never write it)
+bool chat_box_rect(int box, float& x, float& y, float& w, float& h) {
+    if (box < 0 || box > 1 || !ui_config().chShow[box] || !g_liveMs[box] || GetTickCount() - g_liveMs[box] > 500u) return false;
+    x = g_liveRect[box][0]; y = g_liveRect[box][1]; w = g_liveRect[box][2]; h = g_liveRect[box][3];
+    return w > 0.0f && h > 0.0f;
+}
 
 static bool mentions(const char* s, const char* me) {
     if (me && me[0] && strstr(s, me)) return true;
@@ -540,6 +546,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     } else if (ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);
 
     st.rx = px; st.ry = py; st.rw = boxW; st.rh = boxH;                    // next frame's hover test
+    if (!preview && !editing) { g_liveRect[box][0] = px; g_liveRect[box][1] = py; g_liveRect[box][2] = boxW; g_liveRect[box][3] = boxH; g_liveMs[box] = nowMs; }
     if (!preview && f.screenH > 0.0f) { C.chEdge[box][0] = py / f.screenH; C.chEdge[box][1] = (py + boxH) / f.screenH; }
     // the rect the mouse callback tests (live boxes only) -- a box faded near nothing no longer eats clicks
     if (!preview && f.screenW > 0.0f && f.screenH > 0.0f && A > 0.5f) {

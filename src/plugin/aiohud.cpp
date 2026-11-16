@@ -644,6 +644,17 @@ static bool chat_over(int& which) {
     return false;
 }
 
+// the pointer, as fractions of the game's client area, tested against a box's published rect
+static bool pointer_frac_hit(bool (*hit)(float, float)) {
+    if (!g_gameHwnd) return false;
+    POINT p; if (!GetCursorPos(&p)) return false;
+    HWND fg = (HWND)g_gameHwnd; ScreenToClient(fg, &p);
+    RECT rc; if (!GetClientRect(fg, &rc)) return false;
+    const float ww = (float)(rc.right - rc.left), wh = (float)(rc.bottom - rc.top);
+    if (ww <= 1.0f || wh <= 1.0f) return false;
+    return hit((float)p.x / ww, (float)p.y / wh);
+}
+
 unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u32 blocked)   // x/y unused : cursor read via GetCursorPos
 {
     tid_once("mouse");
@@ -689,6 +700,7 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
         // we nudge it explicitly as a belt-and-braces so a swallowed click cannot leave the window inactive.
         blockGest = overlay && (overGame || focused);
         { int cb = 0; if (!overlay && focused && chat_over(cb)) blockGest = true; }   // a click on a Chat box is OURS (tabs, pill)
+        if (!overlay && focused && pointer_frac_hit(aio::actmenu_hit)) blockGest = true;   // ...and on the redrawn action menu (its rows)
         if (blockGest && !focused && g_gameHwnd) SetForegroundWindow((HWND)g_gameHwnd);
         return blockGest ? 1u : blocked;
     }

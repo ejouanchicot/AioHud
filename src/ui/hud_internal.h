@@ -29,6 +29,10 @@ void box_on_screen(const Frame& f, float& px, float& py, float boxW, float boxH)
 // ovS > 0 = preview at (ovX, ovY) centre and that scale. chat_hit_clear() once per frame BEFORE the boxes draw, so a
 // box that is not drawn this frame no longer swallows clicks.
 void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, float ovX, float ovY, float ovS);
+void actmenu_draw(const Frame& f);   // hud_actmenu.cpp : the target action menu, mirrored (Game UI -> NU_ACT)
+void actmenu_set_hand_tex(u32 tex);  // the party's selection-hand texture (its cursor)
+// hud_chat.cpp : a LIVE chat box's rect this frame (false when hidden / not drawn) -- the redrawn menus sit above it
+bool chat_box_rect(int box, float& x, float& y, float& w, float& h);
 void chat_hit_clear();
 
 void draw_icon_cell(u32 dev, u32 tex, float x, float y, float w, float h, float u0, float u1, float v0 = 0.0f, float v1 = 1.0f);

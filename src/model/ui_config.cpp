@@ -272,6 +272,8 @@ static bool save_config_to(const char* path) {
     }
     save_text_styles(f, "chText", c.chText, 2);   // Chat module : typography per box
     fprintf(f, "chatdock=%d\n", c.chDock);         // Chat module : the game's input line docked under the chat box
+    fprintf(f, "menubox=%d,%.4f,%d,%d,%.4f,%08X,%d\n", c.muBox.on, c.muBox.alpha, c.muBox.themeCopy, c.muBox.theme, c.muBox.lum, c.muBox.hue, c.muBox.border);   // Game UI : the redrawn menus' theme
+    fprintf(f, "menulabel=%d\n", c.muLabel);       // Game UI : the redrawn menus' rows (0 text, 1 icon + text)
     fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d,%d,%d,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
             c.bstImage, c.bstName, c.bstHp, c.bstTp, c.bstDist, c.bstCharges, c.bstMoves, c.bstIcons, c.bstDemo, c.bstArtMode,
             c.bstArtSz, c.bstPawSz, c.bstEcoSz, c.bstChargeStyle, c.bstLayout, c.bstJa, c.bstSc);   // BST box + its elements
@@ -402,6 +404,8 @@ static bool parse_nui_line(const char* line, UiConfig& c) {
 // older file -> both boxes off, at their default places.
 static bool parse_chat_line(const char* line, UiConfig& c) {
     if (!strncmp(line, "chatdock=", 9)) { const int v = atoi(line + 9); c.chDock = v < 0 ? 0 : (v > 2 ? 2 : v); return true; }
+    if (!strncmp(line, "menubox=", 8)) { parse_box(line + 8, c.muBox); return true; }
+    if (!strncmp(line, "menulabel=", 10)) { const int v = atoi(line + 10); c.muLabel = v == 1 ? 1 : 0; return true; }
     if (parse_text_style(line, "chText", c.chText, 2)) return true;
     if (!strncmp(line, "chbox", 5) && (line[5] == '0' || line[5] == '1') && line[6] == '=') { parse_box(line + 7, c.chBox[line[5] - '0']); return true; }
     if (strncmp(line, "chat", 4) || (line[4] != '0' && line[4] != '1') || line[5] != '=') return false;
@@ -1297,7 +1301,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
             || a.chLines[k] != b.chLines[k] || a.chStamp[k] != b.chStamp[k] || a.chTab[k] != b.chTab[k] || !box_eq(a.chBox[k], b.chBox[k])
             || a.chBehave[k] != b.chBehave[k] || a.chIdle[k] != b.chIdle[k] || a.chFadeTo[k] != b.chFadeTo[k] || a.chH[k] != b.chH[k] || a.chFoldLines[k] != b.chFoldLines[k] || a.chMaxLines[k] != b.chMaxLines[k] || a.chFadeIdle[k] != b.chFadeIdle[k] || a.chGrow[k] != b.chGrow[k] || a.chFit[k] != b.chFit[k] || a.chDensity[k] != b.chDensity[k] || a.chHeadScale[k] != b.chHeadScale[k] || a.chTabStyle[k] != b.chTabStyle[k]) return false;
     }
-    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock) return false;   // Game UI
+    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock || !box_eq(a.muBox, b.muBox) || a.muLabel != b.muLabel) return false;   // Game UI
     if (!text_styles_eq(a.tpText, b.tpText, TP_TE_COUNT)) return false;
     if (a.hlShow != b.hlShow || a.hlScale != b.hlScale || a.hlX != b.hlX || a.hlY != b.hlY || a.hlCount != b.hlCount || a.hlDist != b.hlDist || a.hlTgt != b.hlTgt) return false;
     if (!text_styles_eq(a.hlText, b.hlText, HL_TE_COUNT)) return false;

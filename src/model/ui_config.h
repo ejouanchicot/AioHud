@@ -329,6 +329,8 @@ struct UiConfig {
                                                    // config flips chY between them when the grow side changes
     TextStyle chText[2];                   // typography per box
     BoxStyle  chBox[2];                    // chrome per box (frame / transparency / theme)
+    BoxStyle  muBox;                       // Game UI : ONE theme for every native menu AioHUD redraws (action menu first)
+    int       muLabel = 0;                 // their rows : 0 = text only, 1 = icon + text
     // transient (not saved) : each box's rect as screen fractions + its pending wheel, for the mouse callback
     // (clicks on a chat box never reach the game ; the wheel scrolls its history). Written every frame it draws.
     float chHit[2][4] = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 } };

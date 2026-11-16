@@ -43,6 +43,7 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
         NUI_HIDE_ROW(CTRL_ID, tr("Help bar + menu name", "Barre d'aide + nom du menu"), NU_HELP)
         NUI_HIDE_ROW(CTRL_ID, tr("MP cost / recast case", "Case co\xC3\xBBt MP / recast"), NU_COST)
         NUI_HIDE_ROW(CTRL_ID, tr("Connection + POL icons", "Ic\xC3\xB4nes connexion + POL"), NU_NET)
+        NUI_HIDE_ROW(CTRL_ID, tr("Action menu (AioHUD draws it)", "Menu d'action (dessin\xC3\xA9 par AioHUD)"), NU_ACT)
         NUI_NOTE(tr("A hidden window keeps working ; it is only parked off-screen.", "Une fen\xC3\xAAtre cach\xC3\xA9""e fonctionne toujours ; elle est juste hors de l'\xC3\xA9""cran."))
         #undef NUI_HIDE_ROW
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
@@ -57,6 +58,14 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
     if (aF7_ > 0.0f) {
         const float top7_ = ry;
         cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
+        // the theme of EVERY menu AioHUD redraws (the action menu today) : the same rows as any box, Same-as-Party first
+        NUI_NOTE(tr("Theme of the menus AioHUD draws (all of them) :", "Th\xC3\xA8me des menus dessin\xC3\xA9s par AioHUD (tous) :"))
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.muBox);
+        { ROW_BAND(52.0f)   // the rows : text only, or icon + text
+            const char* LL[2] = { tr("Text only", "Texte seul"), tr("Icon + text", "Ic\xC3\xB4ne + texte") };
+            const int v = c.muLabel == 1 ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Menu rows", "Lignes des menus"), LL[v])) { c.muLabel = (v + d + 2) % 2; save_ui_config(); }
+        } ROW_NEXT(52.0f)
         // -1000 .. +1000 screen px, 10 px steps ; persists on release (row_slider)
         #define NUI_OFFSET_ROW(UID, LABEL, FIELD) { ROW_BAND(46.0f) const float lo_ = -1000.0f, hi_ = 1000.0f; char b_[16]; \
             _snprintf(b_, sizeof(b_), "%+d px", (FIELD)); b_[sizeof(b_) - 1] = 0; \

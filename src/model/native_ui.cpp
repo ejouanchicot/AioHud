@@ -72,6 +72,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_HELP)  && in_list(n, HELP_W))  { dy = HIDE_DY; return; }
     if ((hide & NU_COST)  && in_list(n, COST_W))  { dy = HIDE_DY; return; }
     if ((hide & NU_NET)   && in_list(n, NET_W))   { dy = HIDE_DY; return; }
+    if ((hide & NU_ACT)   && !strcmp(n, "playermo")) { dy = HIDE_DY; return; }
     // the HUD-like windows never follow the MENUS offset -- they have their own option above
     if (in_list(n, PARTY_W) || in_list(n, ALLY_W) || in_list(n, CHAT_W) || in_list(n, COST_W) || in_list(n, NET_W) || in_list(n, INPUT_W)) return;
     if (ox == 0 && oy == 0 && anc == 0) return;   // frames the client places by CODE (mapframe, cnqframe...)
@@ -118,6 +119,13 @@ bool dock_offset(const Entry& e, int& dx, int& dy) {
 }
 Entry g_e[768]; int g_eN = 0;
 bool  g_anyApplied = false;
+
+// ---- the ACTION menu mirror (NU_ACT) ----
+// If its rows stop reading while the client's menu is parked off-screen, the player would see NO menu at all : after
+// 3 bad frames the client's own menu comes back (g_actFail), and goes away again after 5 s of good reads.
+NativeMenu g_act; bool g_actFail = false; int g_actBad = 0; DWORD g_actGoodSince = 0;
+u32 g_actObj = 0;          // the playermo object of the last good read (re-read before any call into the client)
+int eff_hide(const UiConfig& c) { return g_actFail ? (c.nuHide & ~NU_ACT) : c.nuHide; }
 
 // ---- resolution (bounded retry : a miss right after load must not kill the feature for the session, rule 10) ----
 u32   g_setter = 0, g_moveto = 0;
@@ -396,7 +404,7 @@ void move_open(u32 mgr, const Delta* D, int nD) {
 void apply(bool zero) {
     const u32 mgr = manager(); if (!manager_ok(mgr)) return;
     const UiConfig& c = ui_config();
-    const int hide = zero ? 0 : c.nuHide, mdx = zero ? 0 : c.nuMenuDx, mdy = zero ? 0 : c.nuMenuDy;
+    const int hide = zero ? 0 : eff_hide(c), mdx = zero ? 0 : c.nuMenuDx, mdy = zero ? 0 : c.nuMenuDy;
     if (zero) g_dock.on = false; else dock_compute(mgr);
     for (int i = 0; i < g_eN; ++i) g_e[i].alive = false;
     static Delta D[768]; int nD = 0; int changed = 0;
@@ -446,7 +454,7 @@ void apply(bool zero) {
 
 int  g_lastSig = -1; DWORD g_nextWalk = 0;
 int  config_sig(const UiConfig& c) {
-    int s = (c.nuHide & 0xFF) | ((c.nuMenuDx & 0xFFF) << 8) | ((c.nuMenuDy & 0xFFF) << 20);
+    int s = (eff_hide(c) & 0xFF) | ((c.nuMenuDx & 0xFFF) << 8) | ((c.nuMenuDy & 0xFFF) << 20);
     s ^= (c.chDock & 3) << 30 ^ (c.chInputOk + 1) << 28;      // the input-line mode, and whether its text reads
     if (c.chDock && c.chShow[0] && c.chDockRect[2] > 0.0f)   // the docked input line follows the chat box : re-apply when it moves
         s ^= (int)c.chDockRect[0] * 73856093 ^ (int)(c.chDockRect[1] + c.chDockRect[3]) * 19349663 ^ (int)c.chDockRect[5] * 83492791 ^ 0x5A5A;
@@ -455,8 +463,141 @@ int  config_sig(const UiConfig& c) {
 
 } // namespace
 
+namespace {
+// One read of "playermo" : open (in the manager's open list, not dying), its handler's row codes, cursor, rect.
+// Returns -1 when it is not open, 0 when open but unreadable, 1 when read.
+int act_read(NativeMenu& m, u32* objOut = 0) {
+    memset(&m, 0, sizeof(m)); if (objOut) *objOut = 0;
+    const u32 mgr = manager(); if (!mgr) return -1;
+    u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
+    u32 obj = 0;
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0;
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        char nm[9];
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "playermo")) { obj = o; break; }
+        node = next;
+    }
+    if (!obj) return -1;
+    unsigned char closing = 0; rd8(obj + OBJ_CLOSING, closing);
+    if (closing) return -1;
+    u32 hd = 0, cur = 0;
+    if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !safe_read(obj + 0x4C, &cur)) return 0;
+    unsigned char n = 0; if (!rd8(hd + 0x53, n) || n < 1 || n > 16) return 0;
+    for (int i = 0; i < n; ++i) {
+        short v = 0; if (!rd16(hd + 0x1C + 2 * i, v) || v < 1 || v > 0x1B) return 0;   // the client's code table holds 1..0x1B
+        m.code[i] = (unsigned short)v;
+    }
+    m.n = n;
+    m.cursor = (int)(cur & 0xFFFF); if (m.cursor < 1 || m.cursor > n) m.cursor = 1;
+    if (!rd16(obj + OBJ_RECT, m.rx0) || !rd16(obj + OBJ_RECT + 2, m.ry0) || !rd16(obj + OBJ_RECT + 4, m.rx1) || !rd16(obj + OBJ_RECT + 6, m.ry1)) return 0;
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return 0;
+    m.uiW = (short)(wh & 0xFFFF); m.uiH = (short)(wh >> 16);
+    if (m.uiW < 320 || m.uiH < 240 || m.uiW > 8000 || m.uiH > 8000) return 0;
+    if (m.ry0 >= m.uiH) { m.ry0 = (short)(m.ry0 - HIDE_DY); m.ry1 = (short)(m.ry1 - HIDE_DY); }   // parked : where it would be
+    u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+    m.focused = focus == obj;
+    m.open = true;
+    if (objOut) *objOut = obj;
+    return 1;
+}
+void act_poll(bool on) {
+    if (!on) { g_act.open = false; g_actBad = 0; g_actFail = false; return; }
+    NativeMenu m; const int r = act_read(m);
+    const DWORD now = GetTickCount();
+    if (r == 0) {
+        g_act.open = false;
+        if (++g_actBad == 3 && !g_actFail) { g_actFail = true; windower::debug::log("NATIVEUI action menu : rows unreadable -- the client's own menu is shown"); }
+        g_actGoodSince = 0;
+        return;
+    }
+    g_actBad = 0;
+    if (r == 1) {
+        g_act = m; g_actObj = 0;
+        if (g_actFail) {
+            if (!g_actGoodSince) g_actGoodSince = now;
+            else if (now - g_actGoodSince >= 5000) { g_actFail = false; windower::debug::log("NATIVEUI action menu : rows read again -- AioHUD's menu back"); }
+        }
+    } else g_act.open = false;
+}
+} // namespace
+
+// The client places a SUBMENU beside its parent (Chat -> chatctrl, Magic -> magselec / magic, Abilities -> abiselec /
+// ability / mount...) : with playermo parked HIDE_DY below the screen, its submenus are born parked too (2026-11-16 :
+// "on n'a pas les sous-menus"). Any OPEN window we did not hide that sits that far below the UI screen is brought
+// back by -HIDE_DY through the client's setter -- whatever path placed it. Logged (bounded), the success path too.
+int g_rescueLog = 0;
+void rescue_children(u32 mgr, int hide) {
+    if (!g_setter) return;
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return;
+    const int uiH = (short)(wh >> 16); if (uiH < 240 || uiH > 8000) return;
+    u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, obj = 0, def = 0; safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &obj);
+        unsigned char cl = 0; short r[4] = {0, 0, 0, 0}; char nm[9];
+        if (valid_ptr(obj) && safe_read(obj + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && rd8(obj + OBJ_CLOSING, cl) && !cl
+            && rd16(obj + OBJ_RECT, r[0]) && rd16(obj + OBJ_RECT + 2, r[1]) && rd16(obj + OBJ_RECT + 4, r[2]) && rd16(obj + OBJ_RECT + 6, r[3])
+            && r[1] >= uiH + HIDE_DY / 2) {
+            int dx = 0, dy = 0; desired_offset(nm, 0, 0, 0, hide, 0, 0, dx, dy);
+            const int w = r[2] - r[0], h = r[3] - r[1];
+            if (dy != HIDE_DY && w > 0 && h > 0 && w < 4000 && h < 4000) {          // parked by its parent, not by us
+                bool ok = true;
+                __try { ((SetRectFn)g_setter)(obj, r[0], r[1] - HIDE_DY, w, h, 1, 0, 0); }
+                __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+                if (ok) refresh_handler(obj, nm);
+                if (g_rescueLog < 40) { ++g_rescueLog; windower::debug::log("NATIVEUI '%s' was parked with its parent (y %d) : %s", nm, r[1], ok ? "brought back on screen" : "setter faulted"); }
+            }
+        }
+        node = next;
+    }
+}
+
+const NativeMenu& native_action_menu() { return g_act; }
+
+// ---- the client's menu EVENT function (FUN_054596F0 on the 2026-11-15 client) ----
+// thiscall(menu object, event) ret 4 : 1-4 arrows, 5 validate, 6 cancel, 9 "the cursor was set" (the mouse), ...
+typedef int (__thiscall* MenuEventFn)(u32 obj, int ev);
+u32 g_menuEvent = 0; DWORD g_menuEventNext = 0; int g_menuEventTries = 0;
+u32 menu_event_fn() {
+    if (g_menuEvent) return g_menuEvent;
+    const DWORD now = GetTickCount();
+    if (g_menuEventTries && (int)(now - g_menuEventNext) < 0) return 0;    // a miss : retried every 5 s, never given up
+    ++g_menuEventTries; g_menuEventNext = now + 5000;
+    static const unsigned char SIG[21] = { 0x51, 0x55, 0x56, 0x8B, 0xF1, 0x57, 0x83, 0x7E, 0x10, 0x0E, 0x75, 0x09,
+                                           0x5F, 0x5E, 0x33, 0xC0, 0x5D, 0x59, 0xC2, 0x04, 0x00 };
+    const u32 at = aob_unique(SIG, 21, 0, 0);
+    if (at) { g_menuEvent = at; windower::debug::log("NATIVEUI menu event function found : FFXiMain+0x%X (try %d)", at - ffximain_base(), g_menuEventTries); }
+    else if (g_menuEventTries == 1 || g_menuEventTries % 12 == 0) windower::debug::log("NATIVEUI menu event function NOT found (try %d) -- the menu keeps working by keyboard / gamepad", g_menuEventTries);
+    return g_menuEvent;
+}
+bool menu_event(u32 obj, int ev) {
+    const u32 fn = menu_event_fn(); if (!fn) return false;
+    __try { ((MenuEventFn)fn)(obj, ev); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { windower::debug::log("NATIVEUI menu event %d faulted", ev); return false; }
+    return true;
+}
+// the menu, read NOW (not last frame's) : open, focused (no submenu on top), the row in range
+u32 act_live_obj(int row) {
+    NativeMenu m; u32 obj = 0;
+    if (act_read(m, &obj) != 1 || !m.focused || row < 1 || row > m.n) return 0;
+    return obj;
+}
+
+bool native_action_hover(int row) {
+    const u32 obj = act_live_obj(row); if (!obj) return false;
+    if (!wr16(obj + 0x4C, (short)row)) return false;
+    return menu_event(obj, 9);
+}
+bool native_action_pick(int row) {
+    const u32 obj = act_live_obj(row); if (!obj) return false;
+    short cur = 0; rd16(obj + 0x4C, cur);
+    if (cur != row && !native_action_hover(row)) return false;
+    return menu_event(obj, 5);
+}
+
 void native_ui_tick(bool inWorld) {
     const UiConfig& c = ui_config();
+    if (!(inWorld && (c.nuHide & NU_ACT))) g_act.open = false;   // never a stale menu once the option is off / logged out
     // only while a character is in the world : the title, login and char-select menus are the client's own business
     const bool docking = c.chDock && c.chShow[0] && (c.chDock == 2 || c.chDockRect[2] > 0.0f);   // the game's input line : under / inside AioHUD's chat box
     const bool wanted = inWorld && (c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0 || docking);
@@ -471,7 +612,9 @@ void native_ui_tick(bool inWorld) {
         if (g_lastSig != 0 || strcmp(g_why, why)) { g_lastSig = 0; lstrcpynA(g_why, why, sizeof(g_why)); }
         return;
     }
-    if (!resolve()) return;                                // (resolve() runs the crash recovery once, when it succeeds)
+    if (!resolve()) { g_act.open = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
+    act_poll(wanted && (c.nuHide & NU_ACT));
+    if (wanted && (eff_hide(c) & NU_ACT)) rescue_children(manager(), eff_hide(c));
     if (!wanted && !g_anyApplied) return;                  // recovery done, nothing configured
     const int sig = wanted ? config_sig(c) : 0;
     const DWORD now = GetTickCount();

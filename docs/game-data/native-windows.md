@@ -177,3 +177,44 @@ after a logout.
 - **CURSOR** = open menu object **+0x4C**, the 1-based index into that array (Synthesis selected = 10) ;
   **+0x08** = the live item object under the cursor. No greyed entry was available to capture.
 - **def+0x0C** = the pointing hand's sprite set (section 3), not the scrollbar.
+
+## 9. The target ACTION menu (`playermo`) -- 2026-11-16 (captures + screenshots + static, base 0x05340000)
+
+What Enter on a target opens. ONE menu for every target ; AioHUD mirrors it (Game UI -> "Action menu", `NU_ACT`,
+`native_action_menu()` + `ui/hud_actmenu.cpp`) : the client's own window is parked (section 6) and keeps its input.
+
+- Handler vtable FFXiMain+0x334418, init FUN_0546C1A0. **Rows = handler+0x1C, u16 COMMAND CODES ; count = byte
+  handler+0x53.** "Check" is IN the list (an earlier "appended last" reading was wrong).
+- **Cursor** = obj+0x4C, 1-based screen row. **Rect** = obj+0x3A (x0, y0, x1, y1, UI units ; the UI screen size is
+  manager+0x80). The client grows the menu upward from its bottom-left.
+- Codes (each proven by a capture whose rows matched a screenshot of the same menu) :
+
+  | code | row | seen in |
+  |---|---|---|
+  | 1 | Attack | mob, not engaged : 1 8 7 25 9 11 |
+  | 3 | Disengage (submenu) | engaged : 18 8 7 25 9 3 11 |
+  | 5 | Chat (submenu) | player : 5 8 7 25 9 19 10 |
+  | 7 / 8 / 9 / 25 | Abilities / Magic (submenu) / Items / Trust | all |
+  | 10 / 11 | Check (player / mob) | |
+  | 18 | Switch Target | engaged |
+  | 19 | Trade | player |
+
+  Unknown yet : 2 4 6 12-17 20-24 26 27 (Invite, Treasure, Request, Fish... : capture + screenshot when met ;
+  the mirror shows an unknown code as `#n`, never a guess).
+- Code table **DAT_056B0278**, stride 0xC, codes 1..0x1B : +0 u16 label IMAGE index, +2 byte image list (0 / 1 =
+  handler+0x14 / +0x18), +4 u16 text id (Attack 31, Disengage 32, Chat 23, Abilities 24, Magic 25, Items 26,
+  Check 29 / 30, Switch Target 37, Trade 38, Trust 718), +8 a function. The NAMES are not in the exe : the labels
+  are images, their texts come from a DAT.
+- Submenus are SEPARATE menus (seen 2026-11-16) : `chatctrl` (Chat), `magselec` -> `magic` (Magic), `abiselec` ->
+  `ability` / `mount` (Abilities). While one is open `playermo` stays open but loses the focus.
+- **Parking a parent parks its submenus** : the client places each submenu (and `subwindo`) beside its parent, so
+  with `playermo` parked they were all born HIDE_DY below the screen ("on n'a pas les sous-menus", 2026-11-16).
+  `rescue_children()` (native_ui.cpp) brings back, through the setter, any open window we did not hide that sits
+  that far below ; live : abiselec, chatctrl, magselec, magic, subwindo each logged "brought back on screen".
+- **Every menu event goes through FUN_054596F0(menu object, event)** (thiscall, ret 4 ; found by its unique 21-byte
+  prologue `51 55 56 8B F1 57 83 7E 10 0E 75 09 5F 5E 33 C0 5D 59 C2 04 00`). It plays the sound, moves the cursor
+  (events 1-4 = arrows) or validates (5), cancels (6), takes the cursor as already set (9 = the MOUSE hover : the
+  client writes obj+0x4C first), then forwards (event, cursor) to the handler's slot 6 (playermo : FUN_0546D110 ;
+  5 -> FUN_0546CC80(code), the command runner). Live 2026-11-16 (`//aio mhook`, all from FFXiMain+0x119964) :
+  32 open / refresh, 1 key move, 9 hover, 5 validate (then 29, 32), 6 back from a submenu, 2 cursor re-fit.
+  The mirror's mouse = the client's : hover writes obj+0x4C then event 9, a click adds event 5 (native_ui.cpp).

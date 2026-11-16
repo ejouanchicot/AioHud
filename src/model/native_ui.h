@@ -25,7 +25,32 @@ enum NativeUiBits {
     NU_HELP   = 1 << 3,   // helpwind (description bar) + titlewin (current menu name)
     NU_COST   = 1 << 4,   // subwindo : the MP-cost / recast case above the party (AioHUD's Cost box replaces it)
     NU_NET    = 1 << 5,   // netstat (connection indicator) + polwindo (POL message icon), top-right corner
+    NU_ACT    = 1 << 6,   // playermo : the target ACTION menu (Enter on a target) -- AioHUD draws its own (hud_actmenu)
 };
+
+// The client's ACTION menu ("playermo"), read once a frame by native_ui_tick while NU_ACT is on (rule 6 : widgets read
+// this snapshot, never the memory). Rows = the handler's u16 COMMAND CODES (handler+0x1C, count byte handler+0x53),
+// cursor = obj+0x4C (1-based SCREEN row), rect = obj+0x3A (x0,y0,x1,y1 in the client's UI units, the parking offset
+// removed), uiW/uiH = the UI screen (manager+0x80). Codes proven 2026-11-16 (docs/game-data/native-windows.md) :
+// 1 Attack, 3 Disengage, 5 Chat, 7 Abilities, 8 Magic, 9 Items, 10 / 11 Check (player / mob), 18 Switch Target,
+// 19 Trade, 25 Trust.
+struct NativeMenu {
+    bool open;           // the menu is open and its rows read
+    bool focused;        // it is the menu the player drives (false while one of its submenus is open)
+    int  n;              // rows
+    unsigned short code[16];
+    int  cursor;         // 1..n
+    short rx0, ry0, rx1, ry1;
+    int  uiW, uiH;
+};
+const NativeMenu& native_action_menu();
+// Drive the action menu the way the CLIENT's own mouse does (live 2026-11-16, //aio mhook : every key / hover / click
+// goes through FUN_054596F0(menu object, event), thiscall, which plays the sound and tells the handler) :
+//   hover : cursor (obj+0x4C) = row, then event 9      pick : hover, then event 5 (validate -- what Enter / a click does)
+// Rows are 1-based. False (and nothing done) when the menu is not open and focused, the row is out of range, or the
+// client function is not found (its signature is checked ; a miss is retried every 5 s, never given up).
+bool native_action_hover(int row);
+bool native_action_pick(int row);
 
 // once per frame, MAIN thread (render6) : resolves, applies config changes, keeps records true. `inWorld` = a character
 // is logged in : at the title / char-select screens every native window stays (or goes back) where the client puts it.

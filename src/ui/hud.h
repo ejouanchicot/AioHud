@@ -25,6 +25,9 @@
 
 namespace aio {
 
+// hud_actmenu.cpp : is this screen point (fractions) on the redrawn action menu ? -- its clicks are AioHUD's
+bool actmenu_hit(float fx, float fy);
+
 class Hud {
 public:
     Hud();
