@@ -25,7 +25,8 @@ enum ChatChan {
 };
 
 static const int CHAT_TEXT = 240;   // chars kept per history line (a longer message wraps into several lines)
-static const int CHAT_HIST = 1024;  // history lines kept (power of two)
+static const int CHAT_HIST = 4096;  // history lines kept (power of two) ; battle spam shares it -- 1024 left the talk only a few
+                                     // minutes deep in the expanded log (2026-11-16, "je remonte, au plus loin divine emble") ; ~2.3 MB
 
 struct ChatLine {
     unsigned       seq;              // 1, 2, 3 ... ; 0 = empty slot
@@ -51,6 +52,14 @@ struct ChatLine {
 void chat_queue(const char* s, int mode);
 // MAIN thread, once per frame : decode + append everything queued since the last call
 void chat_drain();
+// The CLIENT's own log, replayed once at load (chat_backlog.cpp) so a //reload does not start the boxes empty.
+// chat_drain holds the live lines back until chat_seed_end : the backlog lands first, in order. chat_seed_line =
+// one whole message as the client stored it (raw bytes, its mode, its hh*100+mm or -1). chat_seed_end(true) drops
+// the lines queued meanwhile -- the backlog already carries them.
+void chat_seed_line(const char* raw, int mode, int hhmm);
+void chat_seed_end(bool tookQueued);
+// MAIN thread, before chat_drain, once per frame : replays the client's log once (bounded wait for a character)
+void chat_backlog_tick(const char* charName);
 
 // history, oldest .. newest : i in [0, chat_count()) ; chat_newest_seq() = the seq of the last line (0 = none)
 int             chat_count();

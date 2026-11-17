@@ -171,6 +171,7 @@ struct UiConfig {
     unsigned uiAccent = 0;     // custom config-menu accent (0 = use uiStyle/uiColor preset ; else derive the accent family from this opaque colour)
     int   hidePeekMode = 0;    // the HUD-hide key (End) : 0 = HOLD (hidden only while held) ; 1 = TOGGLE (press to hide, press again to show)
     float cursorScale = 1.0f;  // selection-cursor (hand) size multiplier (0.50 .. 2.00)
+    int   cursorStyle = 0;     // the cursor's look : 0 = the hand, 1.. = assets/pointers.raw rows (cursor_style_name, party_gauges.cpp)
     // ---- Target module (its OWN box theme, independent of the party skinTheme) ----
     int   tgtShow    = 1;      // master on/off : draw the Target module at all (0 = never show the target box)
     int   tgtBox     = 1;      // 1 = draw the box chrome ; 0 = NO box (name/%/bar/buffs/timer float with a heavy outline)

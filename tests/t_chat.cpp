@@ -94,6 +94,7 @@ void test_chat() {
 
     SECTION("chat : text thread -> ring -> drain -> history, one history line per decoded line, in order");
     {   const int n0 = chat_count(); const unsigned s0 = chat_newest_seq();
+        chat_seed_end(false);                          // no client backlog here : release the live lines
         chat_queue("(PlayerName1) Ready.", 13);
         chat_queue("Line A.\x07Line B.", 150);
         chat_queue("\x07", 121);                       // nothing printable : no history line

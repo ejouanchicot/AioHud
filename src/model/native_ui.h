@@ -105,6 +105,16 @@ struct NativeList {
     unsigned short all[512];
 };
 const NativeList& native_list();
+
+// The client's EXPANDED log "fulllog" (X then Enter in the game ; live probe 2026-11-16, docs/game-data/native-windows.md) :
+// parked with NU_CHAT, AioHUD's Discussion box unfolds in its place. handler +0x54 = the tab (a category id :
+// 0 Windows 1, 8 Windows 2, 3 Say, 4 Tell, 1 Party, 2 Linkshell, 7 Linkshell 2, 10 Assist E, 9 Assist J, 6 Unity,
+// 5 Shout -- X cycles them in that order), +0x20 = lines scrolled back from the newest, +0x1C = the top line.
+// logFocus : the client's SMALL log window holds the focus (selected, before X / Enter expands it) -- 0 "logwindo"
+// (the chat), 1 "logwin2" (the battle log), -1 neither. The focused menu object's name is logged at each change
+// ("NATIVEUI focus -> ...") so the window names are checked in game, not assumed.
+struct NativeFullLog { bool open, focused; int tab, back, top; int logFocus; };
+const NativeFullLog& native_fulllog();
 bool native_sub_hover(int entry);   // cursor -> that entry, event 9 (the client's mouse hover)
 bool native_sub_pick(int entry);    // hover + event 5 (validate)
 

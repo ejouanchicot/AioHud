@@ -20,6 +20,15 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
 // The REAL selection hand (tex from the Party widget), exposed so the Help can show it.
 // mode: 0 = main (white), 1 = sub-target (blue), 2 = locked-on (red).
 void party_cursor(u32 dev, u32 tex, float cx, float cy, float size, int mode);
+// THE CURSOR STYLE (ui_config().cursorStyle, Party > Cursor style) : 0 = the hand (handTex), 1.. = the pointers of
+// assets/pointers.raw (the client's "anc anc" pointer, XiView HD variants, 6 animation frames each ; gen_pointers.py).
+// Every cursor of the HUD (party, alliance, AioHUD's menus, the chat focus, the Help) draws through this. Leaves the
+// device textured with blend on -- the caller resets as after any textured quad. t = time (drives the frames).
+int  cursor_style_count();
+const char* cursor_style_name(int style);
+void draw_pointer(u32 dev, u32 handTex, float x, float y, float w, float h, u32 tint, float t);
+void pointer_atlas_forget();    // device LOST : forget the handle, re-arm the retry (never Release -- rule 4)
+void pointer_atlas_dispose();   // //unload : Release the one handle
 // The REAL selection frame (gold glass main / ocean-blue sub / red locked) with its moving glass sweep, for the Help.
 // mode: 0 = main, 1 = sub-target, 2 = locked-on.
 void party_selframe(u32 dev, float x, float y, float w, float h, float t, float alpha, int mode);

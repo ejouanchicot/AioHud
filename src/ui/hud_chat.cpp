@@ -86,6 +86,30 @@ static const ChatTab TABS_BATTLE[] = {
 #undef CB
 static const int TAB_N[2] = { (int)(sizeof(TABS_CHAT) / sizeof(TABS_CHAT[0])), (int)(sizeof(TABS_BATTLE) / sizeof(TABS_BATTLE[0])) };
 static const ChatTab& tab_def(int box, int t) { return box == 0 ? TABS_CHAT[t] : TABS_BATTLE[t]; }
+// The game's EXPANDED log tabs, by its category id (native_fulllog().tab ; the user named them, 2026-11-16). X cycles
+// them in FULL_ORDER. Names are the game's own words (both languages). Windows 1 = what the Discussion box shows,
+// Windows 2 = the battle log ; Assist E / J are one channel here.
+#define CB(c) (1u << (c))
+static const ChatTab FULL_TABS[11] = {
+    { "Windows 1",   "Windows 1",   0, false, TI_ALL },      // mask : TABS_CHAT[0]'s, filled in full_tab()
+    { "Party",       "Party",       CB(CH_PARTY), false, TI_PARTY },
+    { "Linkshell",   "Linkshell",   CB(CH_LS1), false, TI_LS },
+    { "Say",         "Say",         CB(CH_SAY) | CB(CH_EMOTE), false, TI_SAY },
+    { "Tell",        "Tell",        CB(CH_TELL), false, TI_TELL },
+    { "Shout",       "Shout",       CB(CH_SHOUT) | CB(CH_YELL), false, TI_SAY },
+    { "Unity",       "Unity",       CB(CH_UNITY), false, TI_SAY },
+    { "Linkshell 2", "Linkshell 2", CB(CH_LS2), false, TI_LS },
+    { "Windows 2",   "Windows 2",   CB(CH_BATTLE), false, TI_SWORDS },
+    { "Assist J",    "Assist J",    CB(CH_ASSIST), false, TI_PARTY },
+    { "Assist E",    "Assist E",    CB(CH_ASSIST), false, TI_PARTY },
+};
+#undef CB
+static const int FULL_ORDER[11] = { 0, 8, 3, 4, 1, 2, 7, 10, 9, 6, 5 };
+static ChatTab full_tab(int id) {
+    if (id < 0 || id > 10) id = 0;
+    ChatTab t = FULL_TABS[id]; if (id == 0) t.mask = TABS_CHAT[0].mask;
+    return t;
+}
 
 // ---- per-box runtime state (never saved) ----
 struct ChatBoxState {
@@ -109,7 +133,9 @@ struct ChatBoxState {
     unsigned lastAct = 0;           // GetTickCount of the last line for THIS box
     unsigned actSeq = 0;            // newest seq already checked for activity
     float    vis = 1.0f;            // drawn opacity (eased)
+    float    foc = 0.0f;            // the game's small log window holds the focus here (eased 0..1) : opaque + our pointer
     float    fold = 0.0f;           // 0 = open .. 1 = collapsed to its header + one line (eased)
+    float    full = 0.0f;           // 0 .. 1 : unfolded like the game's EXPANDED log (fulllog open), eased
     float    rx = 0, ry = 0, rw = 0, rh = 0;   // last frame's rect : the hover test
     float    bodyEase = -1.0f;      // the body height drawn (eased toward what the content needs ; -1 = first frame)
     const Font* advFont = 0; float advSize = 0.0f; bool advExact = false; float adv[256];   // per-byte advance cache (face + size) ; >= 0xC0 = Latin-1
@@ -469,18 +495,31 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     const MouseState* mh = f.mouse;
     const bool hoverBox = mh && mh->focused && st.rw > 0.0f && mh->x >= st.rx && mh->x < st.rx + st.rw && mh->y >= st.ry && mh->y < st.ry + st.rh;
     // fade and collapse are independent, each on its own delay (e.g. collapse after 8 s, fade out after 20 s)
-    const bool awake = typing || hoverBox || st.scroll > 0;
+    // the game's EXPANDED log is open : this box unfolds in its place (its window is parked with "Chat log")
+    const NativeFullLog& FL = native_fulllog();
+    const bool fullOn = box == 0 && !preview && !editing && FL.open && (C.nuHide & NU_CHAT);   // only in place of the game's (hidden) log
+    const ChatTab fullT = full_tab(FL.tab);
+    st.full += ((fullOn ? 1.0f : 0.0f) - st.full) * kSoft; if (fabsf((fullOn ? 1.0f : 0.0f) - st.full) < 0.003f) st.full = fullOn ? 1.0f : 0.0f;
+    // the game's SMALL log window is selected (before X / Enter unfolds it) : the client turns it opaque with a little
+    // arrow on its left. Ours : the box goes opaque, with a soft halo and a light rim (2026-11-16).
+    const bool focOn = !preview && !editing && !fullOn && FL.logFocus == box && (C.nuHide & NU_CHAT);
+    st.foc += ((focOn ? 1.0f : 0.0f) - st.foc) * kFast; if (fabsf((focOn ? 1.0f : 0.0f) - st.foc) < 0.003f) st.foc = focOn ? 1.0f : 0.0f;
+    const bool awake = typing || hoverBox || st.scroll > 0 || fullOn || focOn;
     const int idleMs = (int)(nowMs - st.lastAct);
     const bool folded = (beh & 2) && !awake && idleMs >= C.chIdle[box] * 1000;
     const bool faded  = (beh & 1) && !awake && idleMs >= C.chFadeIdle[box] * 1000;
-    const float tVis = faded ? (float)C.chFadeTo[box] / 100.0f : 1.0f;
+    // the game's expanded log open : the Discussion box unfolds in its place, the Battle box steps aside (2026-11-16)
+    const bool asideForFull = box == 1 && !preview && !editing && FL.open && (C.nuHide & NU_CHAT);
+    const float tVis = asideForFull ? 0.0f : (faded ? (float)C.chFadeTo[box] / 100.0f : 1.0f);
     const float tFold = folded ? 1.0f : 0.0f;
     const float kSlow = 1.0f - expf(-dt * 3.5f);
-    st.vis += (tVis - st.vis) * (tVis < st.vis ? kSlow : kFast);
+    st.vis += (tVis - st.vis) * ((tVis < st.vis && !asideForFull) ? kSlow : kFast);
     if (fabsf(tVis - st.vis) < 0.004f) st.vis = tVis;
+    if (asideForFull) st.vis = 0.0f;                                         // the log unfolds : the other box is gone AT ONCE (no fade lag)
     st.fold += (tFold - st.fold) * kSoft;
     if (fabsf(tFold - st.fold) < 0.004f) st.fold = tFold;
     const float A = st.vis;                                                  // every colour below is multiplied by it
+    if (asideForFull && A <= 0.0f) return;                                  // stepped aside : nothing drawn, nothing hit
     // HEIGHT : chMaxLines lines (the text size scales it), or the fixed chH when chMaxLines is 0 ("all")
     float bodyPx = (float)C.chH[box] * S - bodyY0 - pad * 0.8f; if (bodyPx < rowH) bodyPx = rowH;
     const float bodyMax = C.chMaxLines[box] > 0 ? (float)C.chMaxLines[box] * rowH : bodyPx;
@@ -531,7 +570,13 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     const float lines = bodyOpen / rowH;                                     // how many lines fit (fractional : the top one fades)
     float bodyFold = (float)C.chFoldLines[box] * rowH; if (bodyFold > bodyOpen) bodyFold = bodyOpen; if (bodyFold < rowH) bodyFold = rowH;
     (void)bodyFold;
-    const float bodyNow = bodyOpen;                                          // (collapse is per line now : in bodyOpen)
+    float bodyNow = bodyOpen;                                                // (collapse is per line now : in bodyOpen)
+    if (st.full > 0.0f && f.screenH > 0.0f) {       // unfolded : all the room on its growing side (a margin kept), at most 75 %
+        const float edge = C.chY[box] * f.screenH, chrome = bodyY0 + pad * 0.8f + inH * st.inA + 12.0f * S;
+        float room = (C.chGrow[box] != 1) ? edge - chrome : f.screenH - edge - chrome;
+        if (room > f.screenH * 0.75f) room = f.screenH * 0.75f;
+        if (room > bodyOpen) bodyNow = snap(bodyOpen + (room - bodyOpen) * st.full);
+    }
     const float linesVis = bodyNow / rowH;
     const float boxH = snap(bodyY0 + bodyNow + pad * 0.8f + inH * st.inA);
     // WHICH EDGE STAYS : chY is that edge (0 = bottom : the box grows upward ; 1 = top : it grows downward). A config
@@ -570,7 +615,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     } else if (ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);
 
     st.rx = px; st.ry = py; st.rw = boxW; st.rh = boxH;                    // next frame's hover test
-    if (!preview && !editing) { g_liveRect[box][0] = px; g_liveRect[box][1] = py; g_liveRect[box][2] = boxW; g_liveRect[box][3] = boxH; g_liveMs[box] = nowMs; }
+    if (!preview && !editing && A > 0.05f) { g_liveRect[box][0] = px; g_liveRect[box][1] = py; g_liveRect[box][2] = boxW; g_liveRect[box][3] = boxH; g_liveMs[box] = nowMs; }
     if (!preview && f.screenH > 0.0f) { C.chEdge[box][0] = py / f.screenH; C.chEdge[box][1] = (py + boxH) / f.screenH; }
     // the rect the mouse callback tests (live boxes only) -- a box faded near nothing no longer eats clicks
     if (!preview && f.screenW > 0.0f && f.screenH > 0.0f && A > 0.5f) {
@@ -587,9 +632,30 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     // ---- chrome ----
     dColorQuadState(dev);
     if (A <= 0.003f && !editing) return;                                  // fully faded : nothing to draw
-    draw_themed_box(dev, f.skin, px, py, boxW, boxH, C.chBox[box], A, S);
     const u32 accent = box_style_border_color(dev, f.skin, C.chBox[box]) | 0xFF000000u;
     const u32 accentLite = mix(accent, 0xFFFFFFFFu, 0.35f);
+    // FOCUSED (the game's log window is selected) : a soft halo of the frame's own colour BEHIND the box, breathing
+    // slowly, the box turned opaque, and a fine light rim on its edge -- subtle, but readable at a glance (2026-11-16 :
+    // "une surbrillance du chat, quelque chose de subtil mais visible" ; a pointer said nothing).
+    const float fA = A * st.foc, breath = 0.80f + 0.20f * sinf(f.t * 2.4f);
+    if (fA > 0.0f) {
+        rrect_glow(dev, px, py, boxW, boxH, 6.0f * S, with_alpha(mix(accentLite, 0xFFFFFFFFu, 0.15f) & 0xC8FFFFFFu, fA * breath), 11.0f * S);
+        dColorQuadState(dev);
+    }
+    draw_themed_box(dev, f.skin, px, py, boxW, boxH, C.chBox[box], A, S);
+    if (fA > 0.0f) {
+        if (C.chBox[box].on) {                     // the same frame again at full opacity, over the translucent one
+            BoxStyle op = C.chBox[box]; op.alpha = 1.0f;
+            draw_themed_box(dev, f.skin, px, py, boxW, boxH, op, fA, S);
+            dColorQuadState(dev);
+        } else {                                   // no frame at all : a plain dark panel
+            rrect(dev, px, py, boxW, boxH, 6.0f * S, with_alpha(0xF0141A24u, fA), with_alpha(0xF00A0E14u, fA));
+        }
+        // the WHOLE box lit : a wash of the frame's colour over its surface (lighter at the top, like light falling on it)
+        rrect(dev, px + 1.0f * S, py + 1.0f * S, boxW - 2.0f * S, boxH - 2.0f * S, 6.0f * S,
+              with_alpha(accentLite & 0x48FFFFFFu, fA * breath), with_alpha(accent & 0x20FFFFFFu, fA * breath));
+        rrect_stroke(dev, px + 0.5f * S, py + 0.5f * S, boxW - 1.0f * S, boxH - 1.0f * S, 6.0f * S, with_alpha(mix(accentLite, 0xFFFFFFFFu, 0.3f), fA * breath), 1.5f * S);
+    }
 
     const bool canClick = interactive && !editing && !preview && m && m->focused;
     const char* me = (f.game && f.game->me.name[0]) ? f.game->me.name : "";
@@ -627,11 +693,12 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     // the band's own middle (bandCY), and the icons are as big as the pill allows (2026-11-16 : "les icônes le plus
     // gros possible sans déformer le header ni dépasser", "bien centré horizontalement et verticalement").
     const float bandY = py + pad * 0.45f, bandH = headH + pad * 0.55f + headGap * 0.4f, bandCY = bandY + bandH * 0.5f;
-    const float ph = snap(bandH - 4.0f * S);                                 // the pill : the band less a small margin
+    const float ph = snap(bandH - 4.0f * S), bandPh = ph;                    // the pill : the band less a small margin
     const float iz = snap((ph - 1.0f * S) / 1.18f);                          // icon box : its drawn size (x1.18) fills the pill
     dColorQuadState(dev);
     rrect(dev, snap(bandX), snap(bandY), snap(bandW), snap(bandH), 7.0f * S, with_alpha(0x16FFFFFFu, A), with_alpha(0x08FFFFFFu, A));
     if (st.ulX >= 0.0f) {
+        const float ph = fullOn ? snap(bandH - 8.0f * S) : bandPh;          // unfolded : the size of the tab capsules
         const float pyy = snap(bandCY - ph * 0.5f);
         float pxl = px + st.ulX - pillPad, pw = st.ulW + 2.0f * pillPad;
         if (pxl < bandX + 1.0f * S) { pw -= bandX + 1.0f * S - pxl; pxl = bandX + 1.0f * S; }                 // never past the band
@@ -655,7 +722,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     const float izU = iconed ? iz : 0.0f, icGap = (iconed && named) ? 6.0f * S : 0.0f;
     // the tabs that fit, and the even gap around them (the count's spot rides in the gap after its name)
     int nFit = 0; float sumW = 0.0f;
-    for (int t = 0; t < nTabs; ++t) {
+    for (int t = 0; t < (fullOn ? 0 : nTabs); ++t) {
         const float tw = named ? izU + icGap + lws[t] : izU;
         const float add = tw + (named ? cntSlot : 0.0f) + (nFit ? minGap : 0.0f);
         if (sumW + add > availW && nFit) break;
@@ -700,6 +767,40 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         if (active) { actX = tx - px; actW = tw; }
         tx += slot + minGap;
     }
+    if (fullOn) {   // unfolded : EVERY tab of the game's expanded log by NAME (no icons), in X's order -- one capsule each, the
+                    // sliding pill on the game's current one ; ONE baseline for all (draw_lc centred each word on its own ink :
+                    // "Say" / "Party" sat lower than "Tell", 2026-11-16)
+        float lw11[11], sumL = 0.0f;
+        for (int k = 0; k < 11; ++k) { const ChatTab& G = FULL_TABS[FULL_ORDER[k]]; lw11[k] = fo->measure(tr(G.en, G.fr), tabZ); sumL += lw11[k]; }
+        const float minG = 2.0f * pillPad + 4.0f * S;                        // capsules never touch
+        float zF = tabZ, gapF = minGap > minG ? minGap : minG;
+        if (sumL + 10.0f * gapF > availW) {                                  // too wide : tighter gaps first, then a smaller text
+            gapF = (availW - sumL) / 10.0f;
+            if (gapF < minG) { gapF = minG; float k = (availW - 10.0f * gapF) / sumL; if (k < 0.6f) k = 0.6f; zF = tabZ * k; }
+        }
+        const float kz = zF / tabZ;
+        float capT = 0.0f, capB = 0.0f; fo->ink_v("H", zF, capT, capB);
+        const float ty = bandCY - (capT + capB) * 0.5f;                     // the cell top that puts every capital on bandCY
+        const float chH = snap(ph - 4.0f * S), chY = snap(bandCY - chH * 0.5f);
+        tx = tx0;
+        for (int k = 0; k < 11; ++k) {
+            const int id = FULL_ORDER[k]; const ChatTab& G = FULL_TABS[id];
+            const bool active = id == FL.tab;
+            const float tw = lw11[k] * kz;
+            if (tx + tw > tabsRight + 0.5f) break;
+            tx = snap(tx);
+            if (!active) {                                                   // the capsule (the open one wears the sliding pill)
+                const float cx = snap(tx - pillPad), cw = snap(tw + 2.0f * pillPad);
+                dColorQuadState(dev);
+                rrect(dev, cx, chY, cw, chH, chH * 0.5f, with_alpha(0x22FFFFFFu, A), with_alpha(0x0CFFFFFFu, A));
+                rrect_stroke(dev, cx, chY, cw, chH, chH * 0.5f, with_alpha(0x30C8D6EAu, A), 1.0f);
+            }
+            fo->begin(dev);
+            fo->draw(dev, tx, ty, tr(G.en, G.fr), zF, with_alpha(active ? 0xFFFFFFFFu : 0xFFAAB5C4u, A), with_alpha(0xD0000000u, A), tow);
+            if (active) { actX = tx - px; actW = tw; }
+            tx += tw + gapF;
+        }
+    }
     // the pill slides to the open tab (eased ; drawn next frame, under the icons)
     if (actX >= 0.0f) {
         if (st.ulX < 0.0f) { st.ulX = actX; st.ulW = actW; }
@@ -726,10 +827,11 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     char stampFmt[12] = "00:00";
     const float stampW = C.chStamp[box] ? fo->measure("00:00", tz * 0.86f) + 9.0f * S : 0.0f;
     const float avail = boxW - 2.0f * pad - 2.0f * S - stampW;            // wrapped rows align under the text, after the stamp
-    const ChatTab& T = tab_def(box, tab);
+    const ChatTab& T = fullOn ? fullT : tab_def(box, tab);                   // unfolded : the game's tab filters it
+    const int tabKey = fullOn ? 100 + FL.tab : tab;
 
     // ---- scrolling : st.scroll = the TARGET (whole rows up from the newest), st.vpos = what is drawn ----
-    if (st.lastTab != tab) { st.lastTab = tab; st.scroll = 0; st.vpos = 0.0f; st.newBelow = 0; st.lastSeq = newest; }
+    if (st.lastTab != tabKey) { st.lastTab = tabKey; st.scroll = 0; st.vpos = 0.0f; st.newBelow = 0; st.lastSeq = newest; }
     if (!src.sample && newest != st.lastSeq) {
         // rows the new lines add to THIS tab : at the bottom they slide in from below ; scrolled up, the view holds
         int add = 0, msgs = 0; short sa[24], sb[24];
@@ -746,6 +848,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     }
     if (!preview) {
         if (C.chWheel[box] != 0) { st.scroll += C.chWheel[box] * 3; C.chWheel[box] = 0; }
+        if (fullOn) st.scroll = FL.back;                                     // unfolded : the game's own scroll (its lines back)
         if (st.scroll < 0) st.scroll = 0;
         if (st.scroll == 0) st.newBelow = 0;
     } else { st.scroll = 0; st.vpos = 0.0f; }
@@ -753,8 +856,8 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     if (fabsf((float)st.scroll - st.vpos) < 0.01f) st.vpos = (float)st.scroll;
 
     // ---- collect the visible rows, newest first (one extra : the row sliding through the top) ----
-    int want = (int)linesVis + 2; if (want > 41) want = 41;
-    ChatRow rows[48]; int nr = 0;
+    int want = (int)linesVis + 2; if (want > 150) want = 150;            // the unfolded box shows many more rows
+    ChatRow rows[152]; int nr = 0;
     int skip = (int)st.vpos; const float frac = st.vpos - (float)skip;
     int skipLeft = st.scroll;                                               // to clamp the TARGET to the history
     for (int i = src.n() - 1; i >= 0 && (nr < want || skipLeft > 0); --i) {

@@ -210,6 +210,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "uiAccent=%08X\n", c.uiAccent);
     fprintf(f, "hidePeekMode=%d\n", c.hidePeekMode);
     fprintf(f, "cursorScale=%.4f\n", c.cursorScale);
+    fprintf(f, "cursorStyle=%d\n", c.cursorStyle);
     fprintf(f, "tgtBox=%d\n", c.tgtBox);
     fprintf(f, "tgtBoxAlpha=%.4f\n", c.tgtBoxAlpha);
     fprintf(f, "tgtBorder=%d\nplrBorder=%d\n", c.tgtBorder, c.plrBorder);   // Target / Player : the frame's edges
@@ -399,6 +400,13 @@ static bool parse_border_line(const char* line, UiConfig& c) {
     if (sscanf(line, "tgtBorder=%d", &v) == 1) { c.tgtBorder = v ? 1 : 0; return true; }
     if (sscanf(line, "plrBorder=%d", &v) == 1) { c.plrBorder = v ? 1 : 0; return true; }
     return false;
+}
+// the cursor's look (Party > Cursor style) : out-of-line, the main chain is at MSVC's nesting limit (C1061)
+static bool parse_cursor_style_line(const char* line, UiConfig& c) {
+    int v = 0;
+    if (sscanf(line, "cursorStyle=%d", &v) != 1) return false;
+    c.cursorStyle = v < 0 ? 0 : (v > 15 ? 0 : v);
+    return true;
 }
 static bool parse_nui_line(const char* line, UiConfig& c) {
     if (strncmp(line, "nativeui=", 9) != 0) return false;
@@ -774,6 +782,7 @@ static bool load_config_from(const char* path) {
         if (parse_aw_line(line, c)) continue;     // out-of-line : the Absorb-TP box (same nesting-limit reason)
         if (parse_pet_line(line, c)) continue;    // out-of-line : the Pet box (same nesting-limit reason)
         if (parse_nui_line(line, c)) continue;
+        if (parse_cursor_style_line(line, c)) continue;
         if (parse_border_line(line, c)) continue;
         if (parse_chat_line(line, c)) continue;   // out-of-line : the Chat module    // out-of-line : Game UI (the client's own windows)
         if (parse_bst_line(line, c)) continue;    // out-of-line : the BST box (same nesting-limit reason)
@@ -1244,7 +1253,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
         for (int i = 0; i < a.buffPinN[g]; ++i) if (a.buffPin[g][i] != b.buffPin[g][i]) return false;
     }
     if (a.uiStyle != b.uiStyle || a.uiColor != b.uiColor || a.uiAccent != b.uiAccent || a.hidePeekMode != b.hidePeekMode) return false;
-    if (a.cursorScale != b.cursorScale) return false;
+    if (a.cursorScale != b.cursorScale || a.cursorStyle != b.cursorStyle) return false;
     for (int i = 0; i < 6; ++i) if (a.partyRef[i] != b.partyRef[i]) return false;
     if (a.partyBottomY != b.partyBottomY) return false;
     if (a.partyRefX[0] != b.partyRefX[0] || a.partyRefX[1] != b.partyRefX[1]) return false;

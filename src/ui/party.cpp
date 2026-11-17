@@ -971,7 +971,7 @@ void Party::draw(const Frame& f) {
         const float cb = (tier_ != 0 && g_partyBandPx > 0.0f) ? g_partyBandPx : snap(coreBandH() * S);   // alliance reuses the PARTY band -> the hand is the SAME size even though alliance rows are shorter
         const float ih = cb * 1.30f * csz * tierBoost, iw = ih; // square icon, ~1.3 name-line tall * size (points at the name line)
         const float es  = 1.0f;                                 // cursor keeps a constant size on target change (no pop)
-        const float bob = 1.5f * S * gPulse;                     // cursor bob on the SHARED rhythm (already delayed + phase-reset)
+        const float bob = ui_config().cursorStyle > 0 ? 0.0f : 1.5f * S * gPulse;   // cursor bob on the SHARED rhythm ; none for the pointers, they animate themselves
         const float cx  = px - iw * 0.5f + iw * 0.14f + bob;   // +0.14 iw : the hand art has a transparent right margin ; nudge the FINGER right up to the box edge
         // the cursor points at the SUB-target when one is in use, otherwise the main target
         const bool  onSub  = (subA_ > 0.02f);
@@ -979,7 +979,7 @@ void Party::draw(const Frame& f) {
         const float cy  = (onSub ? subY_ : selY_) + mh * 0.5f;            // icon CENTRE y -> on the main band (name line)
         const u32 hrgb  = onSub ? 0x002E9CFF : (locked ? 0x00FF4030 : 0x00FFFFFF);   // blue = sub, RED = locked main, white = normal
         const u32 tint  = ((u32)(0xFF * (onSub ? subA_ : selA_)) << 24) | hrgb;
-        glow_quad(dev, snap(cx - iw * es * 0.5f), snap(cy - ih * es * 0.5f), iw * es, ih * es, tint);
+        draw_pointer(dev, icon_tex_, snap(cx - iw * es * 0.5f), snap(cy - ih * es * 0.5f), iw * es, ih * es, tint, f.t);   // the chosen cursor style
         dSetTex(dev, 0, 0);
     }
 

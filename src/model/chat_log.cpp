@@ -313,63 +313,82 @@ const ChatLine* chat_line(int i) {
 }
 unsigned chat_newest_seq() { return g_seq; }
 
-void chat_drain() {
+// decode ONE raw client line and append it to the history. hhmm < 0 = now ; `ago` ms = how long before NOW it
+// arrived (0 for a live line ; the client's backlog is old news : the boxes' idle collapse must not treat it as fresh).
+static void append_raw(const char* raw, int mode, int hhmm, unsigned ago) {
     static char           dt[8][CHAT_TEXT];
     static unsigned short dc[8][CHAT_TEXT];
     static int            dl[8];
+    mode &= 0x1FF;
+    const int nl = chat_decode(raw, dt, dc, dl, 8);
+    if (g_decUnknown) {                                  // MEASURE what we could not read : the raw bytes, bounded
+        static int nRaw = 0;
+        if (nRaw < 25) {
+            ++nRaw; char hx[3 * 96 + 1]; int k = 0;
+            for (int j = 0; j < 96 && raw[j]; ++j) k += _snprintf(hx + k, sizeof(hx) - k, "%02X ", (unsigned char)raw[j]);
+            hx[k] = 0;
+            windower::debug::log("CHATRAW mode %d | %s | %s", mode, dt[0], hx);
+            if (nRaw == 25) windower::debug::log("=== CHATRAW : 25 lines captured, nothing more this session ===");
+        }
+    }
+    if (nl <= 0) return;
+    {   // a timestamp addon already put "[hh:mm:ss] " / "[hh:mm] " in front : the boxes have their own stamp
+        const char* t0 = dt[0]; int cut = 0;
+        if (t0[0] == '[' && t0[1] >= '0' && t0[1] <= '9' && t0[2] >= '0' && t0[2] <= '9' && t0[3] == ':' && t0[4] >= '0' && t0[4] <= '9' && t0[5] >= '0' && t0[5] <= '9') {
+            if (t0[6] == ']' && t0[7] == ' ') cut = 8;
+            else if (t0[6] == ':' && t0[7] >= '0' && t0[7] <= '9' && t0[8] >= '0' && t0[8] <= '9' && t0[9] == ']' && t0[10] == ' ') cut = 11;
+        }
+        if (cut && dl[0] > cut) { memmove(dt[0], dt[0] + cut, dl[0] - cut + 1); memmove(dc[0], dc[0] + cut, (dl[0] - cut) * sizeof(dc[0][0])); dl[0] -= cut; }
+    }
+    SYSTEMTIME st; GetLocalTime(&st);
+    if (hhmm < 0) hhmm = st.wHour * 100 + st.wMinute;
+    const int chan = chat_classify(mode);
+    if (g_modeCount[mode]++ == 0) { int k = 0; for (; k < 71 && dt[0][k]; ++k) g_modeSample[mode][k] = dt[0][k]; g_modeSample[mode][k] = 0; }
+    for (int L = 0; L < nl; ++L) {
+        ChatLine& h = g_hist[g_histHead];
+        h.seq = ++g_seq; h.mode = (unsigned short)mode; h.chan = (unsigned char)chan; h.cont = L > 0 ? 1 : 0;
+        h.hhmm = (unsigned short)hhmm;
+        h.arrivedTick = GetTickCount() - ago;
+        h.chSpeaker[0] = 0; h.chBodyAt = 0; h.chLsIdx = 0; h.chTellOut = 0;
+        int len = dl[L]; if (len < 0) len = 0; if (len > CHAT_TEXT - 1) len = CHAT_TEXT - 1;
+        memcpy(h.text, dt[L], len); h.text[len] = 0; h.len = (unsigned char)len;
+        // the line's colours as the CLIENT gives them : each distinct code once into pal[], col[] = its index
+        unsigned short codes[8]; int nc = 0;
+        for (int k = 0; k < len; ++k) {
+            const unsigned short code = dc[L][k]; unsigned char idx = 0;
+            if (code) {
+                int f = 0; while (f < nc && codes[f] != code) ++f;
+                if (f == nc && nc < 8) { codes[nc] = code; h.pal[nc] = chat_game_color(code); ++nc; }
+                if (f < nc) idx = (unsigned char)(f + 1);
+            }
+            h.col[k] = idx;
+        }
+        for (int k = nc; k < 8; ++k) h.pal[k] = 0;
+        h.modeArgb = (chan == CH_SYSTEM || chan == CH_BATTLE || chan == CH_NPC || chan == CH_OTHER) ? chat_game_color((unsigned short)(0x200 | (mode & 0xFF))) : 0;
+        if (L == 0) chat_parse_speaker(h);                // the speaker sits on the message's FIRST line only
+        g_histHead = (g_histHead + 1) & (CHAT_HIST - 1);
+        if (g_histN < CHAT_HIST) ++g_histN;
+    }
+}
+
+// the client's own log, replayed at load (chat_backlog.cpp) : held back until it is in, so it lands BEFORE the live lines
+static bool g_seedHold = true;
+void chat_seed_line(const char* raw, int mode, int hhmm) { append_raw(raw, mode, hhmm, 3600000u); }
+void chat_seed_end(bool tookQueued) {
+    // the lines queued since load are IN the client's log already (text_in runs before the client stores the line) :
+    // the backlog brought them, so drop them here rather than show them twice
+    if (tookQueued) g_qTail = g_qHead;
+    g_seedHold = false;
+}
+
+void chat_drain() {
+    if (g_seedHold) return;                              // the backlog first (chat_backlog_tick settles it, bounded)
     int budget = Q_N;                                    // never loop forever on a ring the producer keeps filling
     while (g_qTail != g_qHead && budget-- > 0) {
         const int slot = (int)(g_qTail & (Q_N - 1));
         const int mode = g_qMode[slot] & 0x1FF;
-        const int nl = chat_decode(g_qText[slot], dt, dc, dl, 8);
-        if (g_decUnknown) {                              // MEASURE what we could not read : the raw bytes, bounded
-            static int nRaw = 0;
-            if (nRaw < 25) {
-                ++nRaw; char hx[3 * 96 + 1]; int k = 0;
-                for (int j = 0; j < 96 && g_qText[slot][j]; ++j) k += _snprintf(hx + k, sizeof(hx) - k, "%02X ", (unsigned char)g_qText[slot][j]);
-                hx[k] = 0;
-                windower::debug::log("CHATRAW mode %d | %s | %s", mode, dt[0], hx);
-                if (nRaw == 25) windower::debug::log("=== CHATRAW : 25 lines captured, nothing more this session ===");
-            }
-        }
+        append_raw(g_qText[slot], mode, -1, 0);
         g_qTail = g_qTail + 1;                           // the slot is copied out : hand it back
-        if (nl <= 0) continue;
-        {   // a timestamp addon already put "[hh:mm:ss] " / "[hh:mm] " in front : the boxes have their own stamp
-            const char* t0 = dt[0]; int cut = 0;
-            if (t0[0] == '[' && t0[1] >= '0' && t0[1] <= '9' && t0[2] >= '0' && t0[2] <= '9' && t0[3] == ':' && t0[4] >= '0' && t0[4] <= '9' && t0[5] >= '0' && t0[5] <= '9') {
-                if (t0[6] == ']' && t0[7] == ' ') cut = 8;
-                else if (t0[6] == ':' && t0[7] >= '0' && t0[7] <= '9' && t0[8] >= '0' && t0[8] <= '9' && t0[9] == ']' && t0[10] == ' ') cut = 11;
-            }
-            if (cut && dl[0] > cut) { memmove(dt[0], dt[0] + cut, dl[0] - cut + 1); memmove(dc[0], dc[0] + cut, (dl[0] - cut) * sizeof(dc[0][0])); dl[0] -= cut; }
-        }
-        SYSTEMTIME st; GetLocalTime(&st);
-        const int chan = chat_classify(mode);
-        if (g_modeCount[mode]++ == 0) { int k = 0; for (; k < 71 && dt[0][k]; ++k) g_modeSample[mode][k] = dt[0][k]; g_modeSample[mode][k] = 0; }
-        for (int L = 0; L < nl; ++L) {
-            ChatLine& h = g_hist[g_histHead];
-            h.seq = ++g_seq; h.mode = (unsigned short)mode; h.chan = (unsigned char)chan; h.cont = L > 0 ? 1 : 0;
-            h.hhmm = (unsigned short)(st.wHour * 100 + st.wMinute);
-            h.arrivedTick = GetTickCount();
-            h.chSpeaker[0] = 0; h.chBodyAt = 0; h.chLsIdx = 0; h.chTellOut = 0;
-            int len = dl[L]; if (len < 0) len = 0; if (len > CHAT_TEXT - 1) len = CHAT_TEXT - 1;
-            memcpy(h.text, dt[L], len); h.text[len] = 0; h.len = (unsigned char)len;
-            // the line's colours as the CLIENT gives them : each distinct code once into pal[], col[] = its index
-            unsigned short codes[8]; int nc = 0;
-            for (int k = 0; k < len; ++k) {
-                const unsigned short code = dc[L][k]; unsigned char idx = 0;
-                if (code) {
-                    int f = 0; while (f < nc && codes[f] != code) ++f;
-                    if (f == nc && nc < 8) { codes[nc] = code; h.pal[nc] = chat_game_color(code); ++nc; }
-                    if (f < nc) idx = (unsigned char)(f + 1);
-                }
-                h.col[k] = idx;
-            }
-            for (int k = nc; k < 8; ++k) h.pal[k] = 0;
-            h.modeArgb = (chan == CH_SYSTEM || chan == CH_BATTLE || chan == CH_NPC || chan == CH_OTHER) ? chat_game_color((unsigned short)(0x200 | (mode & 0xFF))) : 0;
-            if (L == 0) chat_parse_speaker(h);                // the speaker sits on the message's FIRST line only
-            g_histHead = (g_histHead + 1) & (CHAT_HIST - 1);
-            if (g_histN < CHAT_HIST) ++g_histN;
-        }
     }
 }
 

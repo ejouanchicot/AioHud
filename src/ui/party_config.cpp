@@ -261,6 +261,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Distance", "Distance"), ui_config().dist[0] != 0)) { ui_config().dist[0] = !ui_config().dist[0]; save_ui_config(); } }
           ROW_NEXT(bh2)
         }
+        { ROW_BAND(52.0f)   // the cursor's LOOK : the hand, or one of the client's pointers (XiView HD variants) -- every cursor of the HUD
+            int cs = ui_config().cursorStyle; if (cs < 0 || cs >= cursor_style_count()) cs = 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Cursor style", "Style du curseur"), cursor_style_name(cs))) {
+                ui_config().cursorStyle = wrap(cs + d, cursor_style_count()); save_ui_config(); }
+        } ROW_NEXT(52.0f)
         // ---- Distance-zone colours : the yalms number is tinted by cast-range zone (Close < 10' / Normal 10'..20.8' / Far >= 20.8'). ----
         // Three zones, three colours -- but three OPEN pickers is ~690px of panel for a setting most people touch
         // once. One row of swatches says everything the three label rows said (the colour IS the label), and the

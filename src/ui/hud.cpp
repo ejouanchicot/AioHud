@@ -268,6 +268,7 @@ void Hud::render(u32 dev) {
         // otherwise, so they used to survive a device recreate and hand a dead device's texture to SetTexture.
         zonetracker_help_forget(); treasure_help_forget(); chat_icons_forget();   // (the debuffs / timers Help samples borrow the shared atlas forgotten just above)
         box_skins_forget();        // per-box Custom->FFXI skins belong to the old device too
+        pointer_atlas_forget();    // the cursor-style sheet (party_gauges.cpp) : forget, re-arm its retry
         corner_mask_forget();      // the baked corner-mask atlas belongs to the old device (and this re-arms its retry)
         for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->on_device_lost();
     }
@@ -320,6 +321,7 @@ void Hud::render(u32 dev) {
     poll_game_state(state_);
     profile_sync_poll();   // another client on this Windower saved the profile we are on -> re-apply it (throttled 1/s)
     drain_game_text();     // Omen / Nyzul chat lines queued by the TEXT thread -> dispatched here, on the main thread
+    chat_backlog_tick(state_.me.name);   // once per load : the CLIENT's own log first (native_ui.cpp), so a reload keeps the chat
     chat_drain();          // every log line queued by the TEXT thread -> decoded into the Chat module's history
     chat_hit_clear();      // the Chat boxes re-publish their click rect only if they draw this frame
     drain_commands();      // //aio commands queued by the COMMAND thread (tid differs) -> executed here, on the main thread
@@ -871,6 +873,7 @@ void Hud::dispose() {
     fonts_.dispose();
     skin_.dispose();
     box_skins_dispose();          // per-box Custom->FFXI skins (else they leak per //unload)
+    pointer_atlas_dispose();      // the cursor-style sheet : its one Release
     window_materials_dispose();   // Release the procedural box-theme material textures (else they leak per //unload)
     if (tpCoffer_) { release_texture(tpCoffer_); tpCoffer_ = 0; }   // treasure-pool coffer icon
     if (weaponIcons_) { release_texture(weaponIcons_); weaponIcons_ = 0; }   // Sheol weapon-type icon atlas

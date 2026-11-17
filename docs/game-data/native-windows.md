@@ -240,6 +240,14 @@ What Enter on a target opens. ONE menu for every target ; AioHUD mirrors it (Gam
   windows (party, alliance, chat, help, cost, net) are placed straight from their record, so `heal_hud()` puts any
   open one that is off its absolute place (x + W-512 anchored right, y + H-448 anchored bottom) by half a park or
   more back there, at every walk (once a second) -- logged "was at ... its record says ... put back".
+- **The expanded log `fulllog`** (live probe 2026-11-16 ; opened in game by X then Enter) : one open object, focused,
+  rect 16,48-745,1210 at a 2327x1226 UI ; handler vtable FFXiMain+0x334C68. Handler fields seen changing :
+  +0x1C counts DOWN as it scrolls up (0x47 at open : the top line's index), +0x20 counts UP from 0 (lines scrolled
+  back from the newest), +0x54 = the TAB (X cycles them ; seen in order 8 3 4 1 2 7 10 9 6 5 0 -> 11 tabs, the value
+  is a category id, not the screen order), each tab switch pulses +0x60 bit 0 and +0x64 = 2 ; +0x24 byte flags
+  (bit 0 / bit 8 around the switches and the close). Tab ids (named by the user, in X order) : 0 Windows 1,
+  8 Windows 2, 3 Say, 4 Tell, 1 Party, 2 Linkshell, 7 Linkshell 2, 10 Assist E, 9 Assist J, 6 Unity, 5 Shout.
+  Parked with NU_CHAT ; AioHUD's Discussion box unfolds in its place (native_fulllog(), hud_chat.cpp FULL_TABS).
 - **The lists `magic` and `ability`** share one list class (draw FUN_05563560 ; handler h : +0x40 count, +0x38 top,
   +0x48 rows shown, +0x30 cursor, +0x20 8-byte items whose int0 = a slot). Row id : `magic` = u16 at
   (spellSlots + 0x80 + slot*2) (FUN_0556DD40) ; `ability` = u16 at (abilSlots + 0x160 + slot*2) (FUN_05565730 ; the

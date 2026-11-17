@@ -13,10 +13,13 @@
 #include "gfx/draw.h"
 #include "gfx/d3d.h"
 #include "gfx/texture.h"
+#include "model/paths.h"       // plugin_path : assets\pointers.raw
 #include <math.h>
 #include <windows.h>
 
 namespace aio {
+
+const char* tr(const char* en, const char* fr);   // config_controls.cpp (the config language)
 
 // ---- alternative gauge shapes (ui_config().gaugeStyle) : all sized to the player-row height ----
 
@@ -286,12 +289,44 @@ void party_gauge(u32 dev, float gx, float gy, float gw, float gh, float pct, u32
 
 // The REAL selection hand (icon_tex passed in so it stays device-loss managed by the Party widget),
 // exposed for the Help live samples. sub = true tints it blue (sub-target), else white (main target).
+// ---- the pointer sheet : ONE owner, consumers only read (the buff_atlas pattern) ----
+static const int PTR_W = 1024, PTR_H = 512, PTR_CELL = 128, PTR_FRAMES = 6, PTR_STYLES = 4;
+static u32 s_ptrTex = 0;
+static TexRetry s_ptrRetry;
+static const char* PTR_PATH() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\pointers.raw"); return b; }
+void pointer_atlas_forget()  { s_ptrTex = 0; s_ptrRetry = TexRetry(); }
+void pointer_atlas_dispose() { release_texture(s_ptrTex); s_ptrTex = 0; s_ptrRetry = TexRetry(); }
+int  cursor_style_count() { return 1 + PTR_STYLES; }
+const char* cursor_style_name(int s) {
+    static const char* EN[] = { "Hand", "Chevron", "Double chevron", "Pearl", "Bronze" };
+    static const char* FR[] = { "Main", "Chevron", "Double chevron", "Nacre", "Bronze" };
+    if (s < 0 || s >= cursor_style_count()) s = 0;
+    return tr(EN[s], FR[s]);
+}
+void draw_pointer(u32 dev, u32 handTex, float x, float y, float w, float h, u32 tint, float t) {
+    int s = ui_config().cursorStyle; if (s < 0 || s >= cursor_style_count()) s = 0;
+    if (s > 0) {
+        ensure_raw_tex(dev, s_ptrTex, s_ptrRetry, PTR_PATH(), PTR_W, PTR_H);
+        if (s_ptrTex) {   // the client plays its 6 frames in a loop ; ~9 per second reads like its own
+            const int fr = (int)((t > 0.0f ? t : 0.0f) * 9.0f) % PTR_FRAMES;
+            const float au = (float)PTR_CELL / PTR_W, av = (float)PTR_CELL / PTR_H;
+            const float u0 = fr * au, v0 = (s - 1) * av;
+            setup_tex_state(dev, s_ptrTex);
+            tquad(dev, x, y, w, h, u0, u0 + au, v0, v0 + av, tint, tint);
+            return;
+        }   // sheet not there (yet) : the hand, never nothing (rule 10)
+    }
+    if (!handTex) return;
+    setup_tex_state(dev, handTex);
+    glow_quad(dev, x, y, w, h, tint);
+}
+
 void party_cursor(u32 dev, u32 tex, float cx, float cy, float size, int mode) {
     if (!tex) return;
-    setup_tex_state(dev, tex);
     const u32 rgb  = (mode == 1) ? 0x002E9CFFu : (mode == 2) ? 0x00FF4030u : 0x00FFFFFFu;   // blue sub / red locked / white main (matches the live cursor)
     const u32 tint = 0xFF000000u | rgb;
-    glow_quad(dev, cx - size * 0.5f, cy - size * 0.5f, size, size, tint);
+    LARGE_INTEGER q, fq; QueryPerformanceCounter(&q); QueryPerformanceFrequency(&fq);
+    draw_pointer(dev, tex, cx - size * 0.5f, cy - size * 0.5f, size, size, tint, (float)((double)q.QuadPart / (double)fq.QuadPart));
     dSetTex(dev, 0, 0);
     dSetTSS(dev, 0, D3DTSS_COLOROP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_COLORARG1, D3DTA_DIFFUSE);   // restore the untextured pipeline for the primitives that follow
     dSetTSS(dev, 0, D3DTSS_ALPHAOP, D3DTOP_SELECTARG1); dSetTSS(dev, 0, D3DTSS_ALPHAARG1, D3DTA_DIFFUSE);
@@ -326,6 +361,7 @@ void party_selframe(u32 dev, float x, float y, float w, float h, float t, float 
 // The cursor's horizontal bob offset (px) for a given time + icon size, matching the live rhythm
 // (bob = 1.5*S*sin, over an icon ~= mainBand*1.3*S -> about 6% of the icon size, on the same 4.6 clock).
 float party_cursor_bob(float t, float size) {
+    if (ui_config().cursorStyle > 0) return 0.0f;   // the client's pointers animate themselves : a bob on top would double it
     const float gPulseT = t - 0.35f;
     const float gPulse  = gPulseT > 0.0f ? sinf(gPulseT * 4.6f) : 0.0f;
     return size * 0.06f * gPulse;

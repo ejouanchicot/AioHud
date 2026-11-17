@@ -5,6 +5,7 @@
 #include "model/ffximain_rva.h"   // FM_MENU_PTR : the menu manager sits 0x54 before the focused-menu slot
 #include "model/game_mem.h"       // ffximain_base
 #include "model/paths.h"          // plugin_path : the crash-recovery file
+#include "model/chat_log.h"       // chat_seed_line / chat_seed_end : the client's own log, replayed at load
 #include "windower.h"
 #include "windower_debug.h"
 #include <windows.h>
@@ -57,7 +58,7 @@ u32 layout_rec(u32 def) {
 bool in_list(const char* n, const char* const* L) { for (; *L; ++L) if (!strcmp(n, *L)) return true; return false; }
 const char* const PARTY_W[] = { "partywin", "targetwi", 0 };
 const char* const ALLY_W[]  = { "raid1", "raid2", 0 };
-const char* const CHAT_W[]  = { "logwindo", "logwin2", "spoolmsg", "splmsg2", "eventlog", "log8", "rem1line", "rem2line", "rem3line", 0 };
+const char* const CHAT_W[]  = { "logwindo", "logwin2", "fulllog", "spoolmsg", "splmsg2", "eventlog", "log8", "rem1line", "rem2line", "rem3line", 0 };
 const char* const HELP_W[]  = { "helpwind", "titlewin", 0 };
 const char* const COST_W[]  = { "subwindo", 0 };
 const char* const NET_W[]   = { "netstat", "polwindo", 0 };
@@ -910,8 +911,48 @@ bool native_action_pick(int row) {
     return menu_event(obj, 5);
 }
 
+// ---- the EXPANDED log "fulllog" : open, focus, its tab and scroll (native_ui.h) ----
+NativeFullLog g_full = { false, false, 0, 0, 0, -1 };
+const NativeFullLog& native_fulllog() { return g_full; }
+static void fulllog_read(u32 mgr) {
+    NativeFullLog F = { false, false, 0, 0, 0, -1 };
+    u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+    {   // WHICH window holds the focus : its name (the small log windows light AioHUD's boxes up)
+        char fn[9] = { 0 }; u32 def = 0;
+        if (valid_ptr(focus) && safe_read(focus + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, fn)) {
+            if (!strcmp(fn, "logwindo")) F.logFocus = 0; else if (!strcmp(fn, "logwin2")) F.logFocus = 1;
+        } else fn[0] = 0;
+        // Closing the EXPANDED log hands the focus back to the small one (fulllog -> logwindo ; one more cancel -> none,
+        // measured 2026-11-16). For the player that cancel CLOSED the chat : no highlight until it is selected anew.
+        static bool fromFull = false; static char prevFn[9] = { 0 };
+        if (strcmp(fn, prevFn)) { fromFull = F.logFocus >= 0 && !strcmp(prevFn, "fulllog"); lstrcpynA(prevFn, fn, sizeof(prevFn)); }
+        if (fromFull) F.logFocus = -1;
+        static char last[9] = { 1 }; static int said = 0;   // every change, bounded (a menu-heavy session must not flood)
+        if (strcmp(fn, last) && said < 300) { ++said; lstrcpynA(last, fn, sizeof(last)); windower::debug::log("NATIVEUI focus -> '%s'", fn[0] ? fn : "(none)"); }
+    }
+    u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "fulllog")
+            && rd8(o + OBJ_CLOSING, cl) && !cl) {
+            u32 hd = 0; int tab = 0, back = 0, top = 0;
+            if (safe_read(o + OBJ_HANDLER, &hd) && valid_ptr(hd) && safe_read(hd + 0x54, (u32*)&tab) && safe_read(hd + 0x20, (u32*)&back)
+                && safe_read(hd + 0x1C, (u32*)&top) && tab >= 0 && tab <= 10 && back >= 0 && back < 100000) {
+                F.open = true; F.focused = focus == o; F.tab = tab; F.back = back; F.top = top;
+            }
+            break;
+        }
+        node = next;
+    }
+    static bool was = false;
+    if (F.open != was) { was = F.open; windower::debug::log("NATIVEUI expanded log %s (tab %d)", F.open ? "opened" : "closed", F.tab); }
+    g_full = F;
+}
+
 void native_ui_tick(bool inWorld) {
     const UiConfig& c = ui_config();
+    g_full.open = false; g_full.logFocus = -1;             // read again below this frame, or not open (never stale)
     if (!(inWorld && (c.nuHide & NU_ACT))) { g_act.open = false; g_sub.open = false; g_list.open = false; }   // never a stale menu once the option is off / logged out
     // only while a character is in the world : the title, login and char-select menus are the client's own business
     const bool docking = c.chDock && c.chShow[0] && (c.chDock == 2 || c.chDockRect[2] > 0.0f);   // the game's input line : under / inside AioHUD's chat box
@@ -928,6 +969,7 @@ void native_ui_tick(bool inWorld) {
         return;
     }
     if (!resolve()) { g_act.open = false; g_sub.open = false; g_list.open = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
+    if (inWorld) fulllog_read(manager()); else g_full.open = false;   // the expanded log : AioHUD's Discussion box unfolds
     act_poll(wanted && (c.nuHide & NU_ACT));
     if (wanted && (eff_hide(c) & NU_ACT)) rescue_children(manager(), eff_hide(c));
     if (!wanted && !g_anyApplied) return;                  // recovery done, nothing configured
@@ -986,6 +1028,180 @@ int native_ui_report(char out[][160], int maxOut) {
     if (n < maxOut && (g_setter || g_moveto)) { _snprintf(out[n], 160, "native windows : setter %s, move-to %s, hook %s, %d records tracked",
                                 g_setter ? "found" : "missing", g_moveto ? "found" : "missing", g_hkMove.on ? "ON" : "off", g_eN); out[n][159] = 0; ++n; }
     return n;
+}
+
+
+// ---- the CLIENT's own chat log, replayed into AioHUD's history at load (2026-11-16 : "au reload les chats sont vides,
+// recupere les messages du vrai chat") -- docs/game-data/chat-log.md "The client's log store".
+// The client keeps every log line twice : on disk, FFXI\TEMP\<character>\<window>_<page>.log, a ring of 20 pages of
+// 50 lines (u16 offsets[50], then the records), and the page being filled in memory, in the SAME layout. A record is
+// "mode,flags,..,seq,..,len,..,cont,<raw text>\0" : 21 hex fields, the 1st the chat mode, the 21st 01 = a continuation
+// of the message above (the client wraps at its window width ; it starts with 1E 01 81 40, an indent), the last piece
+// ends with 7F 31. The fulllog draw (FUN_05479420) holds the view : MOV ECX,[view] -> view+0x64044 = the reader,
+// reader+4 = the page in memory, reader+0xC = the store (+0x54 pages written, +0x58 ring start, +0x5C window number).
+// Measured live on two clients 2026-11-16 : the store's ring start lands on the oldest file, the memory page carries
+// the lines written after the last full page.
+namespace {
+u32 g_logViewVar = 0;
+u32 log_view_var() {
+    if (g_logViewVar) return g_logViewVar;
+    const u32 at = aob_masked("83 EC 0C 53 55 56 8B F1 57 33 ED 8B 46 54 89 6C 24 14 50 E8 ?? ?? ?? ?? 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 7E 20 83 CB FF 66 3B C3");
+    if (!at || !safe_read(at + 26, &g_logViewVar)) g_logViewVar = 0;
+    return g_logViewVar;
+}
+// one message, re-joined from the client's wrapped pieces
+struct SeedMsg { char t[1500]; int n, mode, hhmm; bool open; };
+int g_seedMsgs = 0;
+int hexv(const char* p, int n) {
+    int v = 0;
+    for (int i = 0; i < n; ++i) {
+        const int c = p[i] | 0x20;
+        v = v * 16 + (p[i] >= '0' && p[i] <= '9' ? p[i] - '0' : (c >= 'a' && c <= 'f') ? c - 'a' + 10 : 0);
+    }
+    return v;
+}
+void seed_flush(SeedMsg& m) {
+    if (!m.open) return;
+    while (m.n >= 2 && (unsigned char)m.t[m.n - 2] == 0x7F && m.t[m.n - 1] == '1') m.n -= 2;   // the end marker
+    m.t[m.n] = 0;
+    if (m.n > 0) { chat_seed_line(m.t, m.mode, m.hhmm); ++g_seedMsgs; }
+    m.open = false; m.n = 0;
+}
+// one record (`len` bytes) -> the message being built
+void seed_record(SeedMsg& m, const char* r, int len) {
+    int i = 0, commas = 0, f20 = -1;
+    for (; i < len && commas < 21; ++i) if (r[i] == ',') { ++commas; if (commas == 20) f20 = i + 1; }
+    if (commas < 21 || f20 < 0) return;                          // not a record
+    const int mode = hexv(r, 2), cont = hexv(r + f20, 2);
+    const char* t = r + i; int tn = len - i;
+    if (!cont || !m.open) {
+        seed_flush(m);
+        m.open = true; m.n = 0; m.mode = mode; m.hhmm = -1;
+        for (int k = 0; k + 6 < tn && k < 16; ++k) {               // its time : "[hh:mm" past the colour codes
+            const unsigned char c = (unsigned char)t[k];
+            if (c == 0x1E || c == 0x1F) { ++k; continue; }
+            if (c == '[' && t[k + 3] == ':') m.hhmm = ((t[k + 1] - '0') * 10 + (t[k + 2] - '0')) * 100 + (t[k + 4] - '0') * 10 + (t[k + 5] - '0');
+            break;
+        }
+    } else if (tn >= 4 && (unsigned char)t[0] == 0x1E && (unsigned char)t[2] == 0x81 && (unsigned char)t[3] == 0x40) { t += 4; tn -= 4; }   // the wrap indent
+    for (int k = 0; k < tn && m.n < (int)sizeof(m.t) - 1; ++k) m.t[m.n++] = t[k];
+}
+// a page = u16 offsets[50] + the records (offsets from the records' start)
+int seed_page(SeedMsg& m, const unsigned char* recs, int used, const short* offs, int count) {
+    int n = 0;
+    for (int k = 0; k < count && k < 50; ++k) {
+        const int o = offs[k]; if (o < 0 || o >= used) break;
+        int e = o; while (e < used && recs[e]) ++e;
+        seed_record(m, (const char*)recs + o, e - o); ++n;
+    }
+    return n;
+}
+// a page file : its lines into `m`, or (firstSeq) only the line number of its first record ; -1 unreadable
+// How the page files open. Measured 2026-11-17 : CreateFileA on the real, existing path failed with error 3 (path not
+// found) inside the game process for all 20 pages, while the same call from another process opened them -- a file
+// hook in the process (the Sandbox plugin redirects the FFXI folder) rewrites the ANSI path. The "\\?\" wide form
+// bypasses the path rewriting ; the first way that works is kept for the rest of the load, and logged once.
+int g_openWay = -1;                                            // -1 not yet known, 0 ANSI, 1 wide "\\?\"
+HANDLE open_page(const char* path) {
+    const DWORD share = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
+    HANDLE h = INVALID_HANDLE_VALUE;
+    if (g_openWay != 1) {
+        h = CreateFileA(path, GENERIC_READ, share, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+        if (h != INVALID_HANDLE_VALUE) { if (g_openWay < 0) { g_openWay = 0; windower::debug::log("CHATSEED pages open by their path"); } return h; }
+    }
+    if (g_openWay != 0) {
+        const DWORD errA = GetLastError();
+        wchar_t w[MAX_PATH + 8] = L"\\\\?\\";
+        if (MultiByteToWideChar(CP_ACP, 0, path, -1, w + 4, MAX_PATH)) {
+            h = CreateFileW(w, GENERIC_READ, share, 0, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
+            if (h != INVALID_HANDLE_VALUE) { if (g_openWay < 0) { g_openWay = 1; windower::debug::log("CHATSEED pages open by the wide \\\\?\\ path (the ANSI one failed, error %u)", (unsigned)errA); } return h; }
+        }
+        SetLastError(errA);
+    }
+    return INVALID_HANDLE_VALUE;
+}
+int seed_file(SeedMsg& m, const char* path, unsigned* firstSeq) {
+    HANDLE h = open_page(path);
+    if (h == INVALID_HANDLE_VALUE) return -1;
+    static unsigned char buf[65536]; DWORD got = 0;
+    const BOOL ok = ReadFile(h, buf, sizeof(buf) - 1, &got, 0); CloseHandle(h);
+    if (!ok || got <= 100) return -1;
+    short offs[50]; memcpy(offs, buf, 100);
+    if (firstSeq) {
+        *firstSeq = 0;
+        const char* r = (const char*)buf + 100 + (offs[0] > 0 ? offs[0] : 0); int c = 0, i = 0;
+        for (; i < 80 && c < 5 && 100 + i < (int)got; ++i) if (r[i] == ',') ++c;
+        if (c == 5) *firstSeq = (unsigned)hexv(r + i, 8);
+        return 0;
+    }
+    return seed_page(m, buf + 100, (int)got - 100, offs, 50);
+}
+} // namespace
+
+void chat_backlog_tick(const char* charName) {
+    static int state = 0; static DWORD t0 = 0;                   // 0 waiting, 1 done (once per load)
+    if (state) return;
+    const DWORD now = GetTickCount(); if (!t0) t0 = now;
+    if (!charName || !charName[0]) {                             // not logged in yet : the live lines wait, bounded
+        if ((int)(now - t0) > 20000) { state = 1; chat_seed_end(false); windower::debug::log("CHATSEED no character after 20 s : live lines only"); }
+        return;
+    }
+    state = 1;
+    char dir[MAX_PATH] = { 0 };
+    {   HMODULE fm = GetModuleHandleA("FFXiMain.dll");
+        if (fm && GetModuleFileNameA(fm, dir, MAX_PATH)) { char* sl = strrchr(dir, '\\'); if (sl) sl[1] = 0; else dir[0] = 0; } else dir[0] = 0; }
+    if (!dir[0]) { chat_seed_end(false); windower::debug::log("CHATSEED FFXiMain path unknown : live lines only"); return; }
+    // the store, from memory : which file is the oldest, how many are written, and the page being filled
+    int nPages = -1, start = 0, win = 1, memCount = 0, memUsed = 0;
+    static unsigned char memBuf[0x10000]; short memOffs[50];
+    {   u32 var = log_view_var(), view = 0, rdr = 0, page = 0, store = 0, buf = 0; unsigned char np = 0, cnt = 0; short used = 0;
+        if (var && safe_read(var, &view) && valid_ptr(view) && safe_read(view + 0x64044, &rdr) && valid_ptr(rdr)
+            && safe_read(rdr + 4, &page) && valid_ptr(page) && safe_read(rdr + 0xC, &store) && valid_ptr(store)
+            && rd8(store + 0x54, np) && safe_read(store + 0x58, (u32*)&start) && safe_read(store + 0x5C, (u32*)&win)
+            && np <= 20 && start >= 0 && (win == 1 || win == 2)
+            && rd8(page + 0xC8, cnt) && cnt <= 50 && safe_read(page + 0xCC, &buf) && rd16(page + 0xD8, used)) {
+            nPages = np;
+            bool ok = true;
+            __try { memcpy(memOffs, (const void*)page, 100); if (cnt && used > 0 && valid_ptr(buf)) memcpy(memBuf, (const void*)buf, (unsigned short)used); }
+            __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+            if (ok) { memCount = cnt; memUsed = (unsigned short)used; }
+        }
+    }
+    char base[MAX_PATH]; _snprintf(base, MAX_PATH, "%sTEMP\\%s\\", dir, charName); base[MAX_PATH - 1] = 0;
+    SeedMsg* m = (SeedMsg*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(SeedMsg));
+    if (!m) { chat_seed_end(false); return; }
+    g_seedMsgs = 0; int files = 0, lines = 0;
+    char path[MAX_PATH];
+    bool byOrder = false;
+    if (nPages >= 0) {                                           // the client's own order : oldest file first
+        for (int p = 0; p < nPages; ++p) {
+            _snprintf(path, MAX_PATH, "%s%d_%d.log", base, win, (start + p) % 20); path[MAX_PATH - 1] = 0;
+            const int n = seed_file(*m, path, 0);
+            if (n >= 0) { ++files; lines += n; }
+            else if (p == 0) windower::debug::log("CHATSEED cannot read '%s' (error %u ; store : %d pages, start %d, window %d)", path, (unsigned)GetLastError(), nPages, start, win);
+        }
+    }
+    if (files == 0) {                                            // no store, or its order read nothing : the files, by their first line number
+        byOrder = true;
+        unsigned seq[20]; int idx[20], nf = 0;
+        for (int k = 0; k < 20; ++k) {
+            _snprintf(path, MAX_PATH, "%s1_%d.log", base, k); path[MAX_PATH - 1] = 0;
+            unsigned sq = 0;
+            if (seed_file(*m, path, &sq) == 0) { int j = nf++; while (j > 0 && seq[j - 1] > sq) { seq[j] = seq[j - 1]; idx[j] = idx[j - 1]; --j; } seq[j] = sq; idx[j] = k; }
+        }
+        for (int j = 0; j < nf; ++j) {
+            _snprintf(path, MAX_PATH, "%s1_%d.log", base, idx[j]); path[MAX_PATH - 1] = 0;
+            const int n = seed_file(*m, path, 0); if (n >= 0) { ++files; lines += n; }
+        }
+        if (!nf) windower::debug::log("CHATSEED no page file under '%s' (error %u)", base, (unsigned)GetLastError());
+    }
+    lines += seed_page(*m, memBuf, memUsed, memOffs, memCount);   // then the newest lines : the page in memory
+    seed_flush(*m);
+    HeapFree(GetProcessHeap(), 0, m);
+    chat_seed_end(g_seedMsgs > 0);
+    windower::debug::log("CHATSEED %s : %d messages (%d lines : %d page files%s, %d in memory ; store %d pages, start %d) in %u ms", charName, g_seedMsgs, lines, files,
+                         byOrder ? (nPages >= 0 ? " BY LINE NUMBER, the store order read nothing" : " BY LINE NUMBER, store not found") : "", memCount, nPages, start,
+                         (unsigned)(GetTickCount() - now));
 }
 
 } // namespace aio
