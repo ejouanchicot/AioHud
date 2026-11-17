@@ -27,6 +27,7 @@
 #include "model/paths.h"       // plugin_dir : Windower's own plugins\icons
 #include "model/spells_gen.h"  // spell_info : the spell list's names and MP
 #include "model/abilities_gen.h"        // abil_info : the ability list's job abilities
+#include "model/mounts_gen.h"           // mount_name : the mount list
 #include "model/weapon_skills_gen.h"    // ws_info : its weapon skills
 #include "model/item_text.h"       // the NPC answers' item card : text + flags from the item's DAT record
 #include "gfx/draw.h"
@@ -209,6 +210,7 @@ Block g_main, g_subB, g_listB;
 // 512 + their id -- native_ui.h). `mp` gets the MP cost (0 none) ; `ws` says it is a weapon skill (needs 1000 TP).
 const char* list_row_name(int kind, unsigned id, unsigned& mp, bool& ws) {
     mp = 0; ws = false;
+    if (kind == 2) { const char* m = mount_name(id); return m ? m : "?"; }   // the mount list : the id itself
     if (kind == 0) { const SpellRow* sp = spell_info(id); if (!sp) return "?"; mp = sp->mp; return sp->en; }
     if (id < 256) { const WSRow* w = ws_info(id); ws = true; return w ? w->en : "?"; }
     if (id >= 512) { const AbilRow* a = abil_info(id - 512); if (!a) return "?"; mp = a->mp; return a->en; }
@@ -378,6 +380,39 @@ void list_fallback(const Frame& f, int kind, unsigned id, RowSpec& r) {
     set_cell(r, t, job - 1, 8, 64, 512, 192, 6.0f / 64.0f);   // the emblems' baked transparent margin, cropped (party.cpp)
     r.texTint = job_role_color(job) | 0xFF000000u;
 }
+// ---- the shell WORN, as the inventory shows it (2026-11-17 : "on a les icones dans mon inventaire") : the item's own
+// icon from the game's item DAT (513 Linkshell, 514 Linkpearl, 515 Pearlsack -- General Items 118/106), recoloured
+// in the shell's colour by luminance (the relief kept, the highlights toward white). A decode miss retries (bounded,
+// spaced) ; until then the drawn pearl stays.
+struct PearlTex { int item; u32 argb; u32 tex; unsigned char tries; unsigned nextMs; };
+PearlTex g_pearl[4];
+u32 pearl_tex(u32 dev, int item, u32 argb) {
+    if (!dev || item < 513 || item > 515) return 0;
+    int slot = -1;
+    for (int i = 0; i < 4; ++i) if (g_pearl[i].item == item && g_pearl[i].argb == argb) { slot = i; break; }
+    if (slot < 0) {                                          // a new one : the first free slot, else the oldest replaced
+        for (int i = 0; i < 4 && slot < 0; ++i) if (!g_pearl[i].item) slot = i;
+        if (slot < 0) slot = 0;
+        if (g_pearl[slot].tex) release_texture(g_pearl[slot].tex);
+        g_pearl[slot] = PearlTex(); g_pearl[slot].item = item; g_pearl[slot].argb = argb;
+    }
+    PearlTex& P = g_pearl[slot];
+    if (P.tex || P.tries >= 8 || (P.nextMs && (int)(GetTickCount() - P.nextMs) < 0)) return P.tex;
+    static u32 px[32 * 32];
+    if (decode_gear_icon_from_rom((unsigned)item, px)) {
+        const float cr = (float)((argb >> 16) & 255), cg = (float)((argb >> 8) & 255), cb = (float)(argb & 255);
+        for (int i = 0; i < 32 * 32; ++i) {
+            const u32 q = px[i]; if (!(q >> 24)) continue;
+            const float L = (float)(((q >> 16) & 255) * 77 + ((q >> 8) & 255) * 150 + (q & 255) * 29) / (256.0f * 255.0f);
+            const float k = 0.20f + 1.05f * L, w = L > 0.78f ? (L - 0.78f) / 0.22f * 0.55f : 0.0f;   // shade, then a white sheen
+            auto ch = [&](float c) { float v = c * k; v = v + (255.0f - v) * w; return (u32)(v > 255.0f ? 255.0f : v); };
+            px[i] = (q & 0xFF000000u) | (ch(cr) << 16) | (ch(cg) << 8) | ch(cb);
+        }
+        P.tex = make_texture_argb_mip(dev, 32, 32, px);
+    }
+    if (!P.tex) { ++P.tries; P.nextMs = (GetTickCount() + 2000u) | 1u; if (P.tries == 8) windower::debug::log("ACTMENU pearl icon : item %d not decoded after 8 tries (the drawn pearl stays)", item); }
+    return P.tex;
+}
 unsigned g_lastMs = 0;
 
 struct Metrics { float S, tz, ow, capH, gap, icZ, pad, gutter, capPadL, icW, capPadR, triW; bool icons; };
@@ -401,7 +436,7 @@ void block_size(const Frame& f, const Metrics& k, const RowSpec* rows, int n, fl
     for (int i = 0; i < n; ++i) {
         const float lw = f.font->measure(rows[i].label, k.tz); if (lw > wLab) wLab = lw;
         float ew = rows[i].extra && rows[i].extra[0] ? f.font->measure(rows[i].extra, k.tz * 0.92f) : 0.0f;
-        if (rows[i].pearl) ew += 14.0f * k.S;
+        if (rows[i].pearl) ew += k.capH + 3.0f * k.S;   // its inventory icon, the capsule's height
         if (rows[i].cycle) ew += 9.0f * k.S;
         if (ew > wEx) wEx = ew;
     }
@@ -469,7 +504,14 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
             tquad(dev, ix, iy, z, z, rows[i].tu0, rows[i].tu1, rows[i].tv0, rows[i].tv1, tc, tc);
             dSetTex(dev, 0, 0); cs(dev);
         } else if (k.icons) draw_icon(dev, rows[i].icon, cx0 + k.capPadL + k.icZ * 0.5f, cy, k.icZ, S, with_alpha(mix(0xFF9FB0C6u, 0xFFFFF1CCu, s), a));
-        if (rows[i].pearl) {                                   // the shell worn, in its colour, right-aligned before its name
+        const u32 ptex = rows[i].pearl ? pearl_tex(dev, rows[i].pearl, rows[i].pearlArgb) : 0;
+        if (ptex) {                                            // the shell worn : its inventory icon, in its colour, before its name
+            const float ew = rows[i].extra ? f.font->measure(rows[i].extra, k.tz * 0.92f) : 0.0f;
+            const float z = snap(k.capH - 2.0f * S), ix = snap(cx0 + capW - k.capPadR - triU - ew - 5.0f * S - z), iy = snap(cy - z * 0.5f);
+            dTexQuadState(dev, ptex);
+            tquad(dev, ix, iy, z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a));
+            dSetTex(dev, 0, 0); cs(dev);
+        } else if (rows[i].pearl) {                            // (the icon not read yet) the drawn pearl, in its colour
             const float ew = rows[i].extra ? f.font->measure(rows[i].extra, k.tz * 0.92f) : 0.0f;
             const float px = cx0 + capW - k.capPadR - triU - ew - 8.0f * S, pr = 4.2f * S;
             const u32 pc = with_alpha(rows[i].pearlArgb, a);
@@ -626,13 +668,16 @@ void actmenu_draw(const Frame& f) {
             const int mpNow = live ? f.game->me.mp : -1, tpNow = live ? (int)f.game->me.tp : -1;
             for (int i = 0; i < lastL.rows && i < 32; ++i) {
                 if (empty) {
-                    lrows[i].label = lastL.kind ? tr("No abilities available.", "Aucune aptitude disponible.") : tr("No spells available.", "Aucun sort disponible.");
+                    lrows[i].label = lastL.kind == 2 ? tr("No mounts available.", "Aucune monture disponible.") : lastL.kind ? tr("No abilities available.", "Aucune aptitude disponible.") : tr("No spells available.", "Aucun sort disponible.");
                     lrows[i].icon = IC_NONE; lrows[i].sub = false; lrows[i].off = false; lrows[i].center = true; break;
                 }
                 unsigned mp; bool ws;
-                lrows[i].label = list_row_name(lastL.kind, lastL.id[i], mp, ws); lrows[i].icon = lastL.kind ? (ws ? IC_SWORD : IC_BOLT) : IC_STAR; lrows[i].sub = false;
-                lrows[i].tex = list_icon(f, lastL.kind, lastL.id[i]);
-                if (!lrows[i].tex) list_fallback(f, lastL.kind, lastL.id[i], lrows[i]);
+                lrows[i].label = list_row_name(lastL.kind, lastL.id[i], mp, ws); lrows[i].icon = lastL.kind == 2 ? IC_NONE : lastL.kind ? (ws ? IC_SWORD : IC_BOLT) : IC_STAR; lrows[i].sub = false;
+                lrows[i].tex = lastL.kind == 2 ? 0 : list_icon(f, lastL.kind, lastL.id[i]);
+                if (!lrows[i].tex && lastL.kind != 2) list_fallback(f, lastL.kind, lastL.id[i], lrows[i]);
+                // a mount : no picture exists per mount (Windower has none, the client's list none, res icon_id is 86 / 87
+                // for all) -- the game's own "Mounted" status icon (252), the same on every row (user's choice 2026-11-17)
+                if (lastL.kind == 2) status_cell(f.dev, 252, lrows[i]);
                 if (mp) { sprintf(mps[i], "%u", mp); lrows[i].extra = mps[i]; }
                 lrows[i].off = (mp && mpNow >= 0 && (int)mp > mpNow) || (ws && tpNow >= 0 && tpNow < 1000);   // not usable right now : dimmed
             }
@@ -810,6 +855,7 @@ int wrap_lines(Font* fo, const char* s, float tz, float w, char out[][160], int 
 void npc_card_forget()  {   // device lost : the handles are gone with it (the list icons' too -- they reload on demand)
     g_cardIcon = 0; g_cardIconId = 0; g_cardId = 0;
     for (int i = 0; i < 64; ++i) g_icons[i] = IconSlot();
+    for (int i = 0; i < 4; ++i) g_pearl[i] = PearlTex();
     g_elemTex = g_jobTex = g_wpnTex = 0; g_elemR = TexRetry(); g_jobR = TexRetry(); g_wpnR = TexRetry();
 }
 void npc_card_dispose() {
@@ -818,6 +864,7 @@ void npc_card_dispose() {
     if (g_elemTex) release_texture(g_elemTex);
     if (g_jobTex) release_texture(g_jobTex);
     if (g_wpnTex) release_texture(g_wpnTex);
+    for (int i = 0; i < 4; ++i) if (g_pearl[i].tex) release_texture(g_pearl[i].tex);
     npc_card_forget();
 }
 

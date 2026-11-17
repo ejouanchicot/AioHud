@@ -383,6 +383,12 @@ Live capture must settle : the row text format (plain ASCII ? `7F` codes ? what 
 the category name ?), whether IN+0xEC2C changes on entering a category, whether the hover row really is obj+0x4C =
 sel % 7 + 2 (entry 1 = the header ?), and the item +0x0C id.
 
+- **The mount list `mount`** (Abilities -> Mount) -- LIVE capture 2026-11-17 (`MOUNTPROBE`, 16 mounts) : the same list
+  class (h +0x40 count 0x10, +0x44 capacity 0x40, +0x48 rows shown 0x0C, +0x30 cursor, +0x34 the previous cursor, +0x38
+  top 0 -> 4 as it scrolled, +0x20 the 8-byte items), but an item's int0 is the MOUNT ID itself (res/mounts.lua :
+  1 Raptor .. 15 Xzomit ; the capture's ids 1 2 3 4 5 6 7 8 A D E F), no slot table between. `mount_read`,
+  `native_ui.cpp` ; names from `mounts_gen.h` (`scripts/gen_mounts.py`).
+
 ## 12. The action menu's spell / ability ICONS -- where they come from (2026-11-17)
 
 The client draws NO per-spell picture in its lists, and its DATs hold none : a scan of every DAT (ROM..ROM9, 0.2-40 MB)

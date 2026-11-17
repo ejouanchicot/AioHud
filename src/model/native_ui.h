@@ -154,10 +154,10 @@ const NativeChatInfo& native_chat_info();
 // 0..255, job abilities 512 + their id (2026-11-16, Ghidra ; menu name proven by "menu ability" in FUN_055641A0).
 struct NativeList {
     bool open, focused;
-    int  kind;                         // 0 the spell list "magic", 1 the ability list "ability"
+    int  kind;                         // 0 the spell list "magic", 1 the ability list "ability", 2 the mount list "mount"
     int  n, top, vis, cursor;          // 0-based list positions
     int  rows;                         // rows read below (top .. top + rows - 1)
-    unsigned short id[32];             // the spell id (kind 0) / ability index (kind 1) of each row shown
+    unsigned short id[32];             // the spell id (kind 0) / ability index (kind 1) / mount id (kind 2) of each row shown
     int  allN;                         // EVERY spell of the list (its width is the widest of them, never the page's)
     unsigned short all[512];
 };

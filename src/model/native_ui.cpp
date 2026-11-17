@@ -63,7 +63,7 @@ const char* const HELP_W[]  = { "helpwind", "titlewin", 0 };
 const char* const COST_W[]  = { "subwindo", 0 };
 const char* const NET_W[]   = { "netstat", "polwindo", 0 };
 const char* const ACT_SUB_W[] = { "magselec", "abiselec", "chatctrl", 0 };
-const char* const ACT_LIST_W[] = { "magic", "ability", 0 };                   // the lists AioHUD redraws (NU_ACT)   // the action menu's submenus AioHUD redraws (NU_ACT)
+const char* const ACT_LIST_W[] = { "magic", "ability", "mount", 0 };                   // the lists AioHUD redraws (NU_ACT)   // the action menu's submenus AioHUD redraws (NU_ACT)
 const char* const NPC_W[]   = { "rem4line", "rem4li2", "query", 0 };          // the NPC windows AioHUD redraws (NU_NPC)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
 
@@ -728,6 +728,28 @@ bool abil_slots_res() {
     else { g_abilSlotsVar = 0; if (g_alTries == 1 || g_alTries % 12 == 0) windower::debug::log("NATIVEUI ability list mapper NOT found (try %d)", g_alTries); }
     return g_abilSlotsVar != 0;
 }
+// The client's MOUNT list (Abilities -> Mount, "mount") : the magic / ability list class (handler +0x40 count, +0x38 top,
+// +0x48 rows shown, +0x30 cursor, +0x20 8-byte items) -- but an item's int0 is the MOUNT ID itself (res/mounts.lua),
+// no slot table between. Live capture 2026-11-17 : 16 mounts, 12 rows, items 1 2 3 4 5 6 7 8 A D E F..., the cursor
+// 0..F and the top 0 -> 4 as the list scrolled (docs/game-data/native-windows.md).
+int mount_read(u32 obj, u32 focus, NativeList& L) {
+    L.kind = 2;
+    u32 hd = 0, items = 0; int n = 0, top = 0, vis = 0, cur = 0, cap = 0;
+    if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !safe_read(hd + 0x40, (u32*)&n) || !safe_read(hd + 0x38, (u32*)&top)
+        || !safe_read(hd + 0x48, (u32*)&vis) || !safe_read(hd + 0x30, (u32*)&cur) || !safe_read(hd + 0x44, (u32*)&cap)
+        || !safe_read(hd + 0x20, &items)) return 0;
+    if (n < 0 || n > 256 || vis < 1 || vis > 32 || top < 0 || cap < n || (n > 0 && !valid_ptr(items))) return 0;
+    L.n = n; L.top = top; L.vis = vis; L.cursor = cur;
+    for (int i = 0; i < n && i < 512; ++i) {
+        u32 id = 0; if (!safe_read(items + (u32)i * 8, &id) || id > 255) return 0;
+        L.all[L.allN++] = (unsigned short)id;
+        if (i >= top && i < top + vis) L.id[L.rows++] = (unsigned short)id;
+    }
+    L.focused = focus == obj;
+    L.open = true;
+    return 1;
+}
+
 // -1 none open, 0 unreadable, 1 read
 int list_read(NativeList& L) {
     memset(&L, 0, sizeof(L));
@@ -740,10 +762,11 @@ int list_read(NativeList& L) {
         safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
         char nm[9];
         if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && in_list(nm, ACT_LIST_W)
-            && rd8(o + OBJ_CLOSING, cl) && !cl) { obj = o; kind = strcmp(nm, "magic") ? 1 : 0; break; }
+            && rd8(o + OBJ_CLOSING, cl) && !cl) { obj = o; kind = !strcmp(nm, "magic") ? 0 : !strcmp(nm, "ability") ? 1 : 2; break; }
         node = next;
     }
     if (!obj) return -1;
+    if (kind == 2) return mount_read(obj, focus, L);          // the same list class, its rows hold the mount id itself
     if (!(kind ? abil_slots_res() : spell_slots_res())) return 0;
     const u32 slotsVar = kind ? g_abilSlotsVar : g_spellSlotsVar, slotsOff = kind ? 0x160u : 0x80u;
     L.kind = kind;
