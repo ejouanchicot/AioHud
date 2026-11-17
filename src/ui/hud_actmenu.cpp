@@ -27,6 +27,7 @@
 #include "model/paths.h"       // plugin_dir : Windower's own plugins\icons
 #include "model/spells_gen.h"  // spell_info : the spell list's names and MP
 #include "model/abilities_gen.h"        // abil_info : the ability list's job abilities
+#include "model/itemnames_gen.h"        // item_display_name : the Items list
 #include "model/mounts_gen.h"           // mount_name : the mount list
 #include "model/weapon_skills_gen.h"    // ws_info : its weapon skills
 #include "model/item_text.h"       // the NPC answers' item card : text + flags from the item's DAT record
@@ -211,6 +212,7 @@ Block g_main, g_subB, g_listB;
 const char* list_row_name(int kind, unsigned id, unsigned& mp, bool& ws) {
     mp = 0; ws = false;
     if (kind == 2) { const char* m = mount_name(id); return m ? m : "?"; }   // the mount list : the id itself
+    if (kind == 3) { const char* m = item_display_name(id); return m ? m : "?"; }   // the items : its display name
     if (kind == 0) { const SpellRow* sp = spell_info(id); if (!sp) return "?"; mp = sp->mp; return sp->en; }
     if (id < 256) { const WSRow* w = ws_info(id); ws = true; return w ? w->en : "?"; }
     if (id >= 512) { const AbilRow* a = abil_info(id - 512); if (!a) return "?"; mp = a->mp; return a->en; }
@@ -236,7 +238,10 @@ bool icon_path(unsigned key, wchar_t* out, int cap) {
     char full[MAX_PATH]; _snprintf(full, sizeof(full), "%s\\%s", root, rel); full[sizeof(full) - 1] = 0;
     return MultiByteToWideChar(CP_ACP, 0, full, -1, out, cap) > 0;
 }
-bool icon_file(unsigned key, u32* px) { wchar_t path[MAX_PATH]; return icon_path(key, path, MAX_PATH) && load_png_argb(path, 32, 32, px); }
+bool icon_file(unsigned key, u32* px) {
+    if ((key >> 24) == 3) return decode_gear_icon_from_rom((key >> 8) & 0xFFFFu, px);   // an ITEM : its own icon, the game's item DAT
+    wchar_t path[MAX_PATH]; return icon_path(key, path, MAX_PATH) && load_png_argb(path, 32, 32, px);
+}
 bool spell_file(unsigned spellId, u32* px) { return icon_file((1u << 24) | ((spellId & 0xFFFFu) << 8), px); }
 // a TRUST with no file of its own. Windower's Trust pictures follow the spell's res icon_id : 1000 + 9 * weapon + colour
 // (weapons : shield, sword, bow, staff, club, harp, fist ; colours : red, blue, green, white, orange, purple, pink, cyan,
@@ -287,7 +292,8 @@ bool trust_px(unsigned icon, u32* px) {
 // 0 when there is none (yet). At most 3 files read a frame : a page of new rows fills over a few frames.
 u32 list_icon(const Frame& f, int kind, unsigned id) {
     unsigned key = 0;
-    if (kind == 0) key = (1u << 24) | ((id & 0xFFFFu) << 8);
+    if (kind == 3) key = (3u << 24) | ((id & 0xFFFFu) << 8);
+    else if (kind == 0) key = (1u << 24) | ((id & 0xFFFFu) << 8);
     else if (id >= 512) {
         const AbilRow* a = abil_info(id - 512); if (!a) return 0;
         const unsigned r = a->recast_id;
@@ -312,7 +318,7 @@ u32 list_icon(const Frame& f, int kind, unsigned id) {
     if (sl.tex) release_texture(sl.tex);
     sl.key = key; sl.tex = tex; sl.used = now; sl.miss = !tex;
     static int said = 0;
-    if (said < 6) { ++said; windower::debug::log("ACTMENU icon %s %u%s -> %s", kind == 0 ? "spell" : "ability recast", (key >> 8) & 0xFFFFu, (key & 0xFF) ? " (per job)" : "", tex ? "loaded" : "none (drawn icon kept)"); }
+    if (said < 6) { ++said; windower::debug::log("ACTMENU icon %s %u%s -> %s", kind == 3 ? "item" : kind == 0 ? "spell" : "ability recast", (key >> 8) & 0xFFFFu, (key & 0xFF) ? " (per job)" : "", tex ? "loaded" : "none (drawn icon kept)"); }
     return tex;
 }
 // a row with no picture from Windower, in order : the status the action gives (the game's own icon, the buff atlas) ;
@@ -595,6 +601,11 @@ bool actmenu_hit(float fx, float fy) {
     return false;
 }
 
+namespace {   // the item card (below, with the NPC windows) : the Items list draws it too
+void card_load(u32 dev, unsigned id);
+bool card_ready(unsigned id);
+void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, float bottom, float tO, float A, bool above);
+}
 void actmenu_draw(const Frame& f) {
     const UiConfig& C = ui_config();
     const NativeMenu& M = native_action_menu();
@@ -668,13 +679,14 @@ void actmenu_draw(const Frame& f) {
             const int mpNow = live ? f.game->me.mp : -1, tpNow = live ? (int)f.game->me.tp : -1;
             for (int i = 0; i < lastL.rows && i < 32; ++i) {
                 if (empty) {
-                    lrows[i].label = lastL.kind == 2 ? tr("No mounts available.", "Aucune monture disponible.") : lastL.kind ? tr("No abilities available.", "Aucune aptitude disponible.") : tr("No spells available.", "Aucun sort disponible.");
+                    lrows[i].label = lastL.kind == 3 ? tr("No items available.", "Aucun objet disponible.") : lastL.kind == 2 ? tr("No mounts available.", "Aucune monture disponible.") : lastL.kind ? tr("No abilities available.", "Aucune aptitude disponible.") : tr("No spells available.", "Aucun sort disponible.");
                     lrows[i].icon = IC_NONE; lrows[i].sub = false; lrows[i].off = false; lrows[i].center = true; break;
                 }
                 unsigned mp; bool ws;
                 lrows[i].label = list_row_name(lastL.kind, lastL.id[i], mp, ws); lrows[i].icon = lastL.kind == 2 ? IC_NONE : lastL.kind ? (ws ? IC_SWORD : IC_BOLT) : IC_STAR; lrows[i].sub = false;
                 lrows[i].tex = lastL.kind == 2 ? 0 : list_icon(f, lastL.kind, lastL.id[i]);
-                if (!lrows[i].tex && lastL.kind != 2) list_fallback(f, lastL.kind, lastL.id[i], lrows[i]);
+                if (lastL.kind == 3) { mp = 0; sprintf(mps[i], "%u", (unsigned)lastL.cnt[i]); lrows[i].extra = mps[i]; lrows[i].icon = IC_BAG; }   // the count, right-aligned (not on the icon)
+                if (!lrows[i].tex && lastL.kind < 2) list_fallback(f, lastL.kind, lastL.id[i], lrows[i]);   // spells / abilities only (a mount, an item : their own)
                 // a mount : no picture exists per mount (Windower has none, the client's list none, res icon_id is 86 / 87
                 // for all) -- the game's own "Mounted" status icon (252), the same on every row (user's choice 2026-11-17)
                 if (lastL.kind == 2) status_cell(f.dev, 252, lrows[i]);
@@ -718,6 +730,17 @@ void actmenu_draw(const Frame& f) {
                     rrect(dev_of(f), tx - 1.0f * S, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, LA), with_alpha(0xC0FFDA8Au, LA));
                 }
                 if (NL.open) { g_hit[0][0] = lx / f.screenW; g_hit[0][1] = ly / f.screenH; g_hit[0][2] = lw / f.screenW; g_hit[0][3] = lh / f.screenH; }
+                // ITEMS : the item under the cursor, its card BESIDE the list (the client's own description stays parked)
+                if (lastL.kind == 3 && cur >= 1 && cur <= lastL.rows) {
+                    const unsigned iid = lastL.id[cur - 1];
+                    card_load(dev_of(f), iid);
+                    if (card_ready(iid)) {
+                        const float cw = snap(270.0f * S);
+                        float cx = snap(lx + lw + 3.0f * S);
+                        if (cx + cw > f.screenW - 4.0f) cx = snap(lx - 3.0f * S - cw);
+                        card_draw(f, k, cx, cw, ly, ly + lh, tL, LA, false);
+                    }
+                }
             }
             if (NL.open) return;                                // while it is up, the menus under it are not drawn
         }
@@ -850,6 +873,70 @@ int wrap_lines(Font* fo, const char* s, float tz, float w, char out[][160], int 
     if (cl && n < maxL) lstrcpynA(out[n++], cur, 160);
     return n;
 }
+// THE ITEM CARD (g_card / g_cardIcon, card_load) : the NPC answers' (above their stack) and the Items list's (beside
+// it). above : placed above `top` (else below `bottom`) ; else its top at `top`, kept on screen. bw : its width.
+bool card_ready(unsigned id) { return id && id == g_cardId && g_cardOk; }
+void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, float bottom, float tO, float A, bool above) {
+        const float S = k.S; const u32 dev = f.dev; Font* fo = f.font; const UiConfig& C = ui_config();
+        // THE CLIENT'S LAYOUT (its own card, screenshot 2026-11-17) : the icon top-left ; ONE text column right of it,
+        // white -- the title (the log name, "Ark tachi"), the kind ("(Great Katana)All Races"), the description, then
+        // "Lv.1 All Jobs" ; the enchantment "<1/1 0:30/[1:00:00, 0:30]>" right-aligned in light blue ; round Rare / Ex
+        // badges in the top-right corner. AioHUD's box and font.
+        const float ctz = snap(k.tz * 1.0f), clH = snap(ctz * 1.3f), cpad = snap(8.0f * S), icon = snap(32.0f * S);
+        const float colX = snap(bx + cpad + icon + 6.0f * S), tw = bx + bw - cpad - colX;
+        char title[96]; item_title(g_card, title, sizeof(title));
+        char kind[96]; item_kind_line(g_card, kind, sizeof(kind));
+        char ench[64]; item_enchant_line(g_card, ench, sizeof(ench));
+        char lv[200] = "";
+        if (g_card.level > 0) {
+            int o = _snprintf(lv, sizeof(lv), "Lv.%d ", g_card.level);
+            const unsigned all = 0x7FFFFEu;
+            if ((g_card.jobs & all) == all) _snprintf(lv + o, sizeof(lv) - o, "All Jobs");
+            else { const int o0 = o; for (int j = 1; j <= 22 && o < (int)sizeof(lv) - 6; ++j) if (g_card.jobs & (1u << j)) o += _snprintf(lv + o, sizeof(lv) - o, "%s%s", o > o0 ? "/" : "", JOBS3[j]); }
+            lv[sizeof(lv) - 1] = 0;
+        }
+        // every line of the column, in order (the description wrapped to the column)
+        char lines[18][160]; int nl = 0;
+        lstrcpynA(lines[nl++], title, 160);
+        if (kind[0]) lstrcpynA(lines[nl++], kind, 160);
+        if (g_card.desc[0]) nl += wrap_lines(fo, g_card.desc, ctz, tw, lines + nl, 14);
+        if (lv[0] && nl < 18) lstrcpynA(lines[nl++], lv, 160);
+        const float colH = (float)nl * clH, encH = ench[0] ? clH : 0.0f;
+        const float ch = snap(cpad + (colH > icon ? colH : icon) + encH + cpad);
+        float cy = above ? snap(top - snap(4.0f * S) - ch) : top;
+        if (above && cy < 4.0f) cy = snap(bottom + snap(4.0f * S));
+        if (!above && cy + ch > f.screenH - 4.0f) cy = snap(f.screenH - 4.0f - ch);
+        cy = snap(cy + (1.0f - tO) * 3.0f * S);
+        draw_themed_box(dev, f.skin, bx, cy, bw, ch, C.muBox, A, S);
+        const float ix = snap(bx + cpad), iy = snap(cy + cpad);
+        if (g_cardIcon) {
+            dTexQuadState(dev, g_cardIcon);
+            tquad(dev, ix, iy, icon, icon, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A));
+            dSetTex(dev, 0, 0);
+        }
+        // the badges, in the top-right corner -- Rare (blue) then Ex (green), left to right. PILLS sized to their word at
+        // a readable size (2026-11-17 : the round ones of the client's size were "pas tres lisibles")
+        const char* BADGE[2] = { item_rare(g_card) ? "Rare" : 0, item_ex(g_card) ? "Ex" : 0 };
+        const u32 BCOL[2] = { 0xFF2F5FB8u, 0xFF2E8A46u };
+        const float btz = snap(ctz * 0.85f), bh2 = snap(btz * 1.45f), byB = snap(cy + cpad - 1.0f * S);
+        float bxs[2] = { 0, 0 }, bws[2] = { 0, 0 };
+        { float right = snap(bx + bw - cpad);
+          for (int b = 1; b >= 0; --b) if (BADGE[b]) { bws[b] = snap(fo->measure(BADGE[b], btz) + 12.0f * S); bxs[b] = snap(right - bws[b]); right = snap(bxs[b] - 4.0f * S); } }
+        for (int b = 0; b < 2; ++b) if (BADGE[b]) {
+            rrect(dev, bxs[b], byB, bws[b], bh2, bh2 * 0.5f, with_alpha(BCOL[b], A), with_alpha(mix(BCOL[b], 0xFF000000u, 0.35f), A));
+            rrect_topcaps(dev, bxs[b] + 1.0f, byB + 1.0f, bws[b] - 2.0f, snap(bh2 * 0.45f), bh2 * 0.5f - 1.0f, with_alpha(0x38FFFFFFu, A), with_alpha(0x00FFFFFFu, A));
+            rrect_stroke(dev, bxs[b], byB, bws[b], bh2, bh2 * 0.5f, with_alpha(0xC0E8F0FFu, A), 1.0f);
+        }
+        fo->begin(dev);
+        const u32 sh = with_alpha(0xC8000000u, A), white = with_alpha(0xFFF4F6FAu, A);
+        for (int b = 0; b < 2; ++b) if (BADGE[b])
+            fo->draw_lc(dev, snap(bxs[b] + (bws[b] - fo->measure(BADGE[b], btz)) * 0.5f), snap(byB + bh2 * 0.5f), BADGE[b], btz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
+        for (int i = 0; i < nl; ++i) fo->draw_lc(dev, colX, snap(cy + cpad + (float)i * clH + clH * 0.5f), lines[i], ctz, white, sh, k.ow);
+        if (ench[0]) {
+            const float ew = fo->measure(ench, ctz);
+            fo->draw_lc(dev, snap(bx + bw - cpad - ew), snap(cy + ch - cpad - clH * 0.5f), ench, ctz, with_alpha(0xFF9CC8FFu, A), sh, k.ow);
+        }
+    }
 }
 
 void npc_card_forget()  {   // device lost : the handles are gone with it (the list icons' too -- they reload on demand)
@@ -916,64 +1003,8 @@ void npc_draw(const Frame& f) {
     if (N.query) card_load(dev, N.itemId); else if (!last.query) g_cardId = 0;
     const bool cardOn = !N.fail && N.query && N.itemId && g_cardOk && g_cardId == N.itemId;
     if (block_ease(g_npcCardB, cardOn, now, dt) && g_cardOk) {
-        // THE CLIENT'S LAYOUT (its own card, screenshot 2026-11-17) : the icon top-left ; ONE text column right of it,
-        // white -- the title (the log name, "Ark tachi"), the kind ("(Great Katana)All Races"), the description, then
-        // "Lv.1 All Jobs" ; the enchantment "<1/1 0:30/[1:00:00, 0:30]>" right-aligned in light blue ; round Rare / Ex
-        // badges in the top-right corner. AioHUD's box and font.
-        const float ctz = snap(k.tz * 1.0f), clH = snap(ctz * 1.3f), cpad = snap(8.0f * S), icon = snap(32.0f * S);
-        const float colX = snap(bx + cpad + icon + 6.0f * S), tw = bx + bw - cpad - colX;
-        char title[96]; item_title(g_card, title, sizeof(title));
-        char kind[96]; item_kind_line(g_card, kind, sizeof(kind));
-        char ench[64]; item_enchant_line(g_card, ench, sizeof(ench));
-        char lv[200] = "";
-        if (g_card.level > 0) {
-            int o = _snprintf(lv, sizeof(lv), "Lv.%d ", g_card.level);
-            const unsigned all = 0x7FFFFEu;
-            if ((g_card.jobs & all) == all) _snprintf(lv + o, sizeof(lv) - o, "All Jobs");
-            else { const int o0 = o; for (int j = 1; j <= 22 && o < (int)sizeof(lv) - 6; ++j) if (g_card.jobs & (1u << j)) o += _snprintf(lv + o, sizeof(lv) - o, "%s%s", o > o0 ? "/" : "", JOBS3[j]); }
-            lv[sizeof(lv) - 1] = 0;
-        }
-        // every line of the column, in order (the description wrapped to the column)
-        char lines[18][160]; int nl = 0;
-        lstrcpynA(lines[nl++], title, 160);
-        if (kind[0]) lstrcpynA(lines[nl++], kind, 160);
-        if (g_card.desc[0]) nl += wrap_lines(fo, g_card.desc, ctz, tw, lines + nl, 14);
-        if (lv[0] && nl < 18) lstrcpynA(lines[nl++], lv, 160);
-        const float colH = (float)nl * clH, encH = ench[0] ? clH : 0.0f;
-        const float ch = snap(cpad + (colH > icon ? colH : icon) + encH + cpad);
-        float cy = snap(by - snap(4.0f * S) - ch);
-        if (cy < 4.0f) cy = snap(by + H + snap(4.0f * S));
-        const float tO = ease_out(((float)(now - g_npcCardB.openMs) / 1000.0f) / 0.08f), A = g_npcCardB.vis * tO;
-        cy = snap(cy + (1.0f - tO) * 3.0f * S);
-        draw_themed_box(dev, f.skin, bx, cy, bw, ch, C.muBox, A, S);
-        const float ix = snap(bx + cpad), iy = snap(cy + cpad);
-        if (g_cardIcon) {
-            dTexQuadState(dev, g_cardIcon);
-            tquad(dev, ix, iy, icon, icon, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A));
-            dSetTex(dev, 0, 0);
-        }
-        // the badges, in the top-right corner -- Rare (blue) then Ex (green), left to right. PILLS sized to their word at
-        // a readable size (2026-11-17 : the round ones of the client's size were "pas tres lisibles")
-        const char* BADGE[2] = { item_rare(g_card) ? "Rare" : 0, item_ex(g_card) ? "Ex" : 0 };
-        const u32 BCOL[2] = { 0xFF2F5FB8u, 0xFF2E8A46u };
-        const float btz = snap(ctz * 0.85f), bh2 = snap(btz * 1.45f), byB = snap(cy + cpad - 1.0f * S);
-        float bxs[2] = { 0, 0 }, bws[2] = { 0, 0 };
-        { float right = snap(bx + bw - cpad);
-          for (int b = 1; b >= 0; --b) if (BADGE[b]) { bws[b] = snap(fo->measure(BADGE[b], btz) + 12.0f * S); bxs[b] = snap(right - bws[b]); right = snap(bxs[b] - 4.0f * S); } }
-        for (int b = 0; b < 2; ++b) if (BADGE[b]) {
-            rrect(dev, bxs[b], byB, bws[b], bh2, bh2 * 0.5f, with_alpha(BCOL[b], A), with_alpha(mix(BCOL[b], 0xFF000000u, 0.35f), A));
-            rrect_topcaps(dev, bxs[b] + 1.0f, byB + 1.0f, bws[b] - 2.0f, snap(bh2 * 0.45f), bh2 * 0.5f - 1.0f, with_alpha(0x38FFFFFFu, A), with_alpha(0x00FFFFFFu, A));
-            rrect_stroke(dev, bxs[b], byB, bws[b], bh2, bh2 * 0.5f, with_alpha(0xC0E8F0FFu, A), 1.0f);
-        }
-        fo->begin(dev);
-        const u32 sh = with_alpha(0xC8000000u, A), white = with_alpha(0xFFF4F6FAu, A);
-        for (int b = 0; b < 2; ++b) if (BADGE[b])
-            fo->draw_lc(dev, snap(bxs[b] + (bws[b] - fo->measure(BADGE[b], btz)) * 0.5f), snap(byB + bh2 * 0.5f), BADGE[b], btz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
-        for (int i = 0; i < nl; ++i) fo->draw_lc(dev, colX, snap(cy + cpad + (float)i * clH + clH * 0.5f), lines[i], ctz, white, sh, k.ow);
-        if (ench[0]) {
-            const float ew = fo->measure(ench, ctz);
-            fo->draw_lc(dev, snap(bx + bw - cpad - ew), snap(cy + ch - cpad - clH * 0.5f), ench, ctz, with_alpha(0xFF9CC8FFu, A), sh, k.ow);
-        }
+        const float tO = ease_out(((float)(now - g_npcCardB.openMs) / 1000.0f) / 0.08f);
+        card_draw(f, k, bx, bw, by, by + H, tO, g_npcCardB.vis * tO, true);
     }
     // the client's windows that open WITH the answers (a shop list's item description) : parked while AioHUD draws the
     // card, else brought back above this box (native_ui)

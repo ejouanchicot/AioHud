@@ -531,6 +531,7 @@ int  config_sig(const UiConfig& c) {
 void chat_info_read(u32 obj);   // below : the Chat submenu's extras (Tell name, linkshells, Unity)
 int  list_read(NativeList& L);   // below : the spell list
 
+int inv_read(u32 focus, NativeList& L);   // below, at namespace scope : the Items list (inventor, from the action menu)
 namespace {
 // One read of "playermo" : open (in the manager's open list, not dying), its handler's row codes, cursor, rect.
 // Returns -1 when it is not open, 0 when open but unreadable, 1 when read.
@@ -626,7 +627,8 @@ void act_poll(bool on) {
     NativeEntryMenu sm; u32 subObj = 0; const int rs = sub_read(sm, &subObj);
     g_sub = sm; if (rs != 1) g_sub.open = false;
     if (rs == 1 && !strcmp(sm.name, "chatctrl")) chat_info_read(subObj); else g_chat.ok = false;
-    NativeList lst; const int rl = list_read(lst);
+    NativeList lst; int rl = list_read(lst);
+    if (rl < 0 && r == 1) { u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus); rl = inv_read(focus, lst); }   // Items : the inventory list
     g_list = lst; if (rl != 1) g_list.open = false;
     if (rl == 0) r = 0;                                   // a parked list that cannot be read : the client's own back
     if (rs == 0) r = 0;                                   // a parked submenu that cannot be read : same fallback
@@ -655,6 +657,42 @@ void act_poll(bool on) {
 int g_rescueLog = 0;
 // AioHUD's NPC box this frame (native_npc_box) : the windows that open with the answers go beside it
 float g_npcBoxR[4] = { 0, 0, 0, 0 }; DWORD g_npcBoxMs = 0; bool g_npcCard = false;
+// The Items list's own window : `inventor` is placed by its CODE at every open (the inventory has 17 placement modes,
+// section 3), never parked with the action menu -- so it popped over AioHUD's list (2026-11-17, "la box items du jeu
+// pop toujours"). While AioHUD draws the list (g_list kind 3 : only when it came from the action menu), it is moved
+// HIDE_DY down through the client's setter ; once AioHUD stops (closed, unreadable), rescue_children (invOurs false)
+// brings it back like any window parked under its parent. Logged (bounded), the success path too.
+// 2026-11-17 ("elle pop moins d'une seconde") : parked as soon as it shows WHILE the action menu is up -- not after the
+// list's first good read -- and the frames between its first sight and the park are logged, to measure what is left.
+// Only for ITEMS : the action menu open with its cursor on Items (code 9) -- Trade (19) opens the inventory too, and that
+// one AioHUD does not draw.
+bool act_on_items() { return g_act.open && g_act.cursor >= 1 && g_act.cursor <= g_act.n && g_act.code[g_act.cursor - 1] == 9; }
+int g_invParkLog = 0; u32 g_invSeenObj = 0; int g_invSeenFrames = 0;
+void inv_park(u32 mgr) {
+    if (!g_setter || !(act_on_items() || (g_list.open && g_list.kind == 3))) { g_invSeenObj = 0; return; }
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return;
+    const int uiH = (short)(wh >> 16); if (uiH < 240 || uiH > 8000) return;
+    u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, obj = 0, def = 0; unsigned char cl = 0; short r[4] = { 0, 0, 0, 0 }; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &obj);
+        if (valid_ptr(obj) && safe_read(obj + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "inventor") && rd8(obj + OBJ_CLOSING, cl) && !cl
+            && rd16(obj + OBJ_RECT, r[0]) && rd16(obj + OBJ_RECT + 2, r[1]) && rd16(obj + OBJ_RECT + 4, r[2]) && rd16(obj + OBJ_RECT + 6, r[3])) {
+            const int w = r[2] - r[0], h = r[3] - r[1];
+            if (obj != g_invSeenObj) { g_invSeenObj = obj; g_invSeenFrames = 0; } else ++g_invSeenFrames;
+            if (r[1] < uiH + HIDE_DY / 2 && w > 0 && h > 0 && w < 4000 && h < 4000) {
+                bool ok = true;
+                __try { ((SetRectFn)g_setter)(obj, r[0], r[1] + HIDE_DY, w, h, 1, 0, 0); }
+                __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+                if (ok) refresh_handler(obj, nm);
+                if (g_invParkLog < 20) { ++g_invParkLog; windower::debug::log("NATIVEUI 'inventor' (Items, from the action menu) : %s (y %d, %d frame(s) after it showed)", ok ? "parked -- AioHUD draws the list" : "setter faulted", r[1], g_invSeenFrames); }
+            }
+            return;
+        }
+        node = next;
+    }
+    g_invSeenObj = 0;
+}
 void rescue_children(u32 mgr, int hide) {
     if (!g_setter) return;
     u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return;
@@ -678,7 +716,9 @@ void rescue_children(u32 mgr, int hide) {
             const bool cardOurs = besideNpc && g_npcCard && !strcmp(nm, "iteminfo");
             // AioHUD draws the auto-translate picker itself (above its input line) : the client's stays parked
             const bool fepOurs = g_fep.open && GetTickCount() - g_fepDrawnMs < 500u && !strcmp(nm, "fep");
-            if (!ours && !cardOurs && !fepOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
+            // AioHUD draws the ITEMS list (and its item card) opened from the action menu : the client's stay parked
+            const bool invOurs = (act_on_items() || (g_list.open && g_list.kind == 3)) && (!strcmp(nm, "inventor") || !strcmp(nm, "iteminfo"));
+            if (!ours && !cardOurs && !fepOurs && !invOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
                 int nx = r[0], ny = r[1] - HIDE_DY;
                 // the NPC answers are up : ABOVE AioHUD's box, left edges level (user 2026-11-17 "on la veut au-dessus") ;
                 // no room above : below it ; always inside the UI screen
@@ -744,6 +784,45 @@ int mount_read(u32 obj, u32 focus, NativeList& L) {
         u32 id = 0; if (!safe_read(items + (u32)i * 8, &id) || id > 255) return 0;
         L.all[L.allN++] = (unsigned short)id;
         if (i >= top && i < top + vis) L.id[L.rows++] = (unsigned short)id;
+    }
+    L.focused = focus == obj;
+    L.open = true;
+    return 1;
+}
+
+// The ITEMS list -- `inventor` opened from the ACTION menu (Items : the usable ones, the client's own filter). The same
+// window serves the main menu's inventory, the equipment screen and trades : those are never read here (only while
+// playermo is open) and never parked (they are not born under a parked parent). Live captures 2026-11-17
+// (WINPROBE / INVPROBE 1-3, the user's list "Panacea 12, Panacea 12, Echo Drops 12", 18 items, 10 rows) :
+//   h+0x38 -> the rows, 0x54 bytes each : +0x2C the item id (u16), +0x30 the count, +0x28 its container entry ;
+//   h+0x24 = (count of rows << 16) | the cursor's row IN THE PAGE (1-based, 1..10) ;
+//   h+0x18 = (page top + 2 << 16) | rows shown -- 2 at the list's top, 0xA at its bottom with 18 rows / 10 shown ;
+//   h+0x1C = (the same top + 2 << 16) | its end. No submenu : picking an item opens the target cursor (as a spell).
+int inv_read(u32 focus, NativeList& L) {
+    const u32 mgr = manager(); if (!mgr) return -1;
+    u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node); u32 obj = 0;
+    for (int g = 0; valid_ptr(node) && g < 400 && !obj; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "inventor")
+            && rd8(o + OBJ_CLOSING, cl) && !cl) obj = o;
+        node = next;
+    }
+    if (!obj) return -1;
+    u32 hd = 0, rows = 0, h18 = 0, h24 = 0;
+    if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !safe_read(hd + 0x18, &h18) || !safe_read(hd + 0x24, &h24) || !safe_read(hd + 0x38, &rows)) return 0;
+    const int n = (int)(h24 >> 16), vis = (int)(h18 & 0xFFFF), curInPage = (int)(h24 & 0xFFFF);
+    if (n < 0 || n > 80 || vis < 1 || vis > 32 || (n > 0 && !valid_ptr(rows))) return 0;
+    int top = (int)(h18 >> 16) - 2; const int maxTop = n > vis ? n - vis : 0;
+    if (top < 0) top = 0; if (top > maxTop) top = maxTop;
+    memset(&L, 0, sizeof(L));
+    L.kind = 3; L.n = n; L.top = top; L.vis = vis; L.cursor = curInPage >= 1 ? top + curInPage - 1 : -1;
+    for (int i = 0; i < n; ++i) {
+        u32 id = 0, cnt = 0;
+        if (!safe_read(rows + (u32)i * 0x54 + 0x2C, &id) || !safe_read(rows + (u32)i * 0x54 + 0x30, &cnt)) return 0;
+        id &= 0xFFFF; if (!id) return 0;
+        L.all[L.allN++] = (unsigned short)id;
+        if (i >= top && i < top + vis && L.rows < 32) { L.id[L.rows] = (unsigned short)id; L.cnt[L.rows] = (unsigned short)(cnt > 9999 ? 9999 : cnt); ++L.rows; }
     }
     L.focused = focus == obj;
     L.open = true;
@@ -1288,6 +1367,12 @@ void native_ui_tick(bool inWorld) {
     act_poll(wanted && (c.nuHide & NU_ACT));
     npc_poll(wanted && (c.nuHide & NU_NPC));
     fep_poll(wanted && docking);                         // the input line in AioHUD's box : its auto-translate picker too
+    // the HIDDEN HUD-like windows, EVERY frame (not only in the once-a-second walk below) : the client re-places some on
+    // its own -- partywin at each member who joins (y 1176 -> 1156 -> 1136 ...), shown up to a second before the walk
+    // put it back (2026-11-17, "quand quelqu'un pop dans la party ca la fait pop une seconde"). heal_hud only acts on a
+    // window shown where it should be hidden (or the reverse) : on a quiet frame it is one walk of the open list.
+    if (wanted && g_anyApplied && (c.nuHide & (NU_PARTY | NU_ALLY | NU_CHAT | NU_HELP | NU_COST | NU_NET))) heal_hud(manager());
+    if (wanted && (c.nuHide & NU_ACT)) inv_park(manager());          // the Items list : the client's own window out of the way
     if (wanted && (eff_hide(c) & (NU_ACT | NU_NPC))) rescue_children(manager(), eff_hide(c));
     if (!wanted && !g_anyApplied) return;                  // recovery done, nothing configured
     const int sig = wanted ? config_sig(c) : 0;
