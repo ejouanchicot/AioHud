@@ -63,6 +63,8 @@ struct GearInfo {
     long        fileSize; // bytes in the DAT (0 if never opened) : what a layout report must quote
 };
 bool decode_gear_icon_from_rom(unsigned id, u32* out_px, GearInfo* info = 0);
+// the DECODED first n bytes (n <= 0x2BD) of id's item record, same DAT / proofs as the icon ; parse with item_text.h
+bool read_item_record_head(unsigned id, unsigned char* out, long n);
 
 // Best-effort cache of a decoded icon as the same V4 BMP load_bmp_texture reads. Atomic (temp + rename) and
 // fully checked, so a failed/partial write can never leave a corrupt BMP behind. Returns false if it couldn't
@@ -95,6 +97,9 @@ u32 make_dot(u32 dev);   // solid white AA disc (tinted per role for the leader/
 
 // release a texture (IUnknown::Release, vtbl[2]); safe on 0.
 void release_texture(u32 tex);
+// the live-texture ledger : count + KB of textures created here and not yet finally Released ; at "unload*" also
+// each survivor with its creator's return address (AioHud.dll+RVA -> resolve with the PDB).
+void texture_ledger_report(const char* when);
 
 // keep a MANAGED texture resident (IDirect3DResource8::PreLoad, vtbl[9]); the game
 // can evict our textures from VRAM under load, making them sample wrong.

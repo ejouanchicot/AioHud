@@ -213,6 +213,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "cursorStyle=%d\n", c.cursorStyle);
     fprintf(f, "tgtBox=%d\n", c.tgtBox);
     fprintf(f, "tgtBoxAlpha=%.4f\n", c.tgtBoxAlpha);
+    fprintf(f, "alphaOwn=%d,%d,%d\n", c.allyAlphaOwn, c.tgtAlphaOwn, c.plrAlphaOwn);   // Alliance / Target / Player : own opacity, else the Party box's
     fprintf(f, "tgtBorder=%d\nplrBorder=%d\n", c.tgtBorder, c.plrBorder);   // Target / Player : the frame's edges
     fprintf(f, "tgtThemeCopy=%d\n", c.tgtThemeCopy);
     fprintf(f, "tgtTheme=%d\n", c.tgtTheme);
@@ -270,11 +271,11 @@ static bool save_config_to(const char* path) {
         fprintf(f, "chat%d=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.2f,%d\n", b, c.chShow[b], c.chScale[b], c.chX[b], c.chY[b], c.chW[b], c.chLines[b], c.chStamp[b], c.chTab[b],
                 c.chBehave[b], c.chIdle[b], c.chFadeTo[b], c.chH[b], c.chFoldLines[b], c.chMaxLines[b], c.chFadeIdle[b], c.chGrow[b], c.chFit[b], c.chDensity[b], c.chHeadScale[b], c.chTabStyle[b]);
         const BoxStyle& x = c.chBox[b];
-        fprintf(f, "chbox%d=%d,%.4f,%d,%d,%.4f,%08X,%d\n", b, x.on, x.alpha, x.themeCopy, x.theme, x.lum, x.hue, x.border);
+        fprintf(f, "chbox%d=%d,%.4f,%d,%d,%.4f,%08X,%d,%d\n", b, x.on, x.alpha, x.themeCopy, x.theme, x.lum, x.hue, x.border, x.alphaOwn);
     }
     save_text_styles(f, "chText", c.chText, 2);   // Chat module : typography per box
     fprintf(f, "chatdock=%d\n", c.chDock);         // Chat module : the game's input line docked under the chat box
-    fprintf(f, "menubox=%d,%.4f,%d,%d,%.4f,%08X,%d\n", c.muBox.on, c.muBox.alpha, c.muBox.themeCopy, c.muBox.theme, c.muBox.lum, c.muBox.hue, c.muBox.border);   // Game UI : the redrawn menus' theme
+    fprintf(f, "menubox=%d,%.4f,%d,%d,%.4f,%08X,%d,%d\n", c.muBox.on, c.muBox.alpha, c.muBox.themeCopy, c.muBox.theme, c.muBox.lum, c.muBox.hue, c.muBox.border, c.muBox.alphaOwn);   // Game UI : the redrawn menus' theme
     fprintf(f, "menuscale=%.2f\n", c.muScale);     // Game UI : the redrawn menus' size
     fprintf(f, "menugrow=%d\n", c.muGrow);         // Game UI : a taller submenu grows up (0) or down (1)
     fprintf(f, "menulabel=%d\n", c.muLabel);       // Game UI : the redrawn menus' rows (0 text, 1 icon + text)
@@ -301,7 +302,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "tm=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%.4f,%.4f,%d,%d,%d,%.3f,%d,%d,%d,%.3f,%d,%d\n", c.tmShow, c.tmScale, c.tmX, c.tmY, c.tmMax, c.tmTitle, c.tmBox.on, c.tmMerged, c.tmRX, c.tmRY, c.tmDurMode, c.tmRecMode, c.tmOthers, c.tmIconScale, c.tmMine, c.tmBuffSrc, c.tmSpAlert, c.tmRowGap, c.tmSortDur, c.tmSortRec);   // Timers box (+ box.on/merge/recast-pos/display modes/others/icon-scale/buffs-on-allies/buff-source/SP-alert/row-spacing)
     fprintf(f, "db=%d,%.3f,%.4f,%.4f,%d,%d,%d,%.3f,%.3f\n", c.dbShow, c.dbScale, c.dbX, c.dbY, c.dbMax, c.dbHeader, c.dbDisp, c.dbIconScale, c.dbRowGap);   // Debuffs module (detached target debuffs)
     {   // per-module box appearance (shared BoxStyle : frame / transparency / theme / hue / luminosity)
-        auto sb = [&](const char* k, const BoxStyle& b) { fprintf(f, "%s=%d,%.4f,%d,%d,%.4f,%08X,%d\n", k, b.on, b.alpha, b.themeCopy, b.theme, b.lum, b.hue, b.border); };   // border = trailing field (old 6-field configs load with border=default)
+        auto sb = [&](const char* k, const BoxStyle& b) { fprintf(f, "%s=%d,%.4f,%d,%d,%.4f,%08X,%d,%d\n", k, b.on, b.alpha, b.themeCopy, b.theme, b.lum, b.hue, b.border, b.alphaOwn); };   // border = trailing field (old 6-field configs load with border=default)
         sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("awbox", c.awBox); sb("petbox", c.petBox); sb("bstbox", c.bstBox); sb("geobox", c.geoBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox); sb("dbbox", c.dbBox); sb("plreqbox", c.plrEqBox);
     }
     fprintf(f, "ep=%d,%.3f,%.4f,%.4f,%d\n", c.epShow, c.epScale, c.epX, c.epY, c.epColl);   // EmpyPop box (+ collectable row)
@@ -373,10 +374,17 @@ static bool save_config_to(const char* path) {
     return true;
 }
 
-static void parse_box(const char* s, BoxStyle& b) {   // "on,alpha,themeCopy,theme,lum,hue[,border]" -> BoxStyle (keeps defaults on short lines)
-    int on = b.on, tc = b.themeCopy, th = b.theme, bd = b.border; float al = b.alpha, lm = b.lum; unsigned hu = b.hue;
-    const int n = sscanf(s, "%d,%f,%d,%d,%f,%x,%d", &on, &al, &tc, &th, &lm, &hu, &bd);
+// An opacity from a config that predates the "follow the Party box" rule (2026-11-17) was SET ON PURPOSE when it is
+// neither the default (solid) nor, within 1 %, the Party box's own : that box keeps it ; the others follow the Party box.
+static float s_loadPartyAlpha = 1.0f;   // skinBoxAlpha as read so far (its line comes before every box line)
+static bool alpha_set_on_purpose(float a, float party) { const float d = a - party; return a < 0.999f && (d > 0.01f || d < -0.01f); }
+static void parse_box(const char* s, BoxStyle& b) {   // "on,alpha,themeCopy,theme,lum,hue[,border[,alphaOwn]]" -> BoxStyle (keeps defaults on short lines)
+    int on = b.on, tc = b.themeCopy, th = b.theme, bd = b.border, ao = b.alphaOwn; float al = b.alpha, lm = b.lum; unsigned hu = b.hue;
+    const int n = sscanf(s, "%d,%f,%d,%d,%f,%x,%d,%d", &on, &al, &tc, &th, &lm, &hu, &bd, &ao);
     if (n >= 1) { b.on = on; b.alpha = al; b.themeCopy = tc; b.theme = th; b.lum = lm; b.hue = hu; if (n >= 7) b.border = bd; }   // border absent (old config) -> keep default (1)
+    // alphaOwn absent (a config from before 2026-11-17) : a box left at the default opacity follows the Party box from now
+    // on ; one whose slider was MOVED keeps its own value (it was set on purpose)
+    if (n >= 8) b.alphaOwn = ao ? 1 : 0; else if (n >= 2) b.alphaOwn = alpha_set_on_purpose(al, s_loadPartyAlpha) ? 1 : 0;
 }
 
 
@@ -412,7 +420,7 @@ static bool parse_nui_line(const char* line, UiConfig& c) {
     if (strncmp(line, "nativeui=", 9) != 0) return false;
     int h = 0, dx = 0, dy = 0;
     const int n = sscanf(line + 9, "%d,%d,%d", &h, &dx, &dy);
-    if (n >= 1) c.nuHide = h & 0x7F;   // every NativeUiBits bit (0x3F dropped NU_ACT at each load, 2026-11-16)
+    if (n >= 1) c.nuHide = h & 0xFF;   // every NativeUiBits bit (0x3F dropped NU_ACT at each load, 2026-11-16 ; NU_NPC 0x80)
     if (n >= 2) c.nuMenuDx = dx < -2000 ? -2000 : (dx > 2000 ? 2000 : dx);
     if (n >= 3) c.nuMenuDy = dy < -2000 ? -2000 : (dy > 2000 ? 2000 : dy);
     return true;
@@ -420,7 +428,12 @@ static bool parse_nui_line(const char* line, UiConfig& c) {
 
 // Chat-module lines (chat0= / chat1= / chbox0= / chbox1= / chText0= / chText1=), OUT-OF-LINE (C1061). Absent in an
 // older file -> both boxes off, at their default places.
+static bool s_alphaOwnSeen = false;   // "alphaOwn=" read in this load (absent -> migrated, load_config_from)
 static bool parse_chat_line(const char* line, UiConfig& c) {
+    {   // Alliance / Target / Player : own opacity, else the Party box's (2026-11-17) -- here only for C1061
+        int a = 0, t = 0, p = 0;
+        if (sscanf(line, "alphaOwn=%d,%d,%d", &a, &t, &p) == 3) { c.allyAlphaOwn = a != 0; c.tgtAlphaOwn = t != 0; c.plrAlphaOwn = p != 0; s_alphaOwnSeen = true; return true; }
+    }
     if (!strncmp(line, "chatdock=", 9)) { const int v = atoi(line + 9); c.chDock = v < 0 ? 0 : (v > 2 ? 2 : v); return true; }
     if (!strncmp(line, "menubox=", 8)) { parse_box(line + 8, c.muBox); return true; }
     if (!strncmp(line, "menulabel=", 10)) { const int v = atoi(line + 10); c.muLabel = v == 1 ? 1 : 0; return true; }
@@ -767,6 +780,8 @@ static bool load_config_from(const char* path) {
     c = ui_config();                        // keep the live values the base does not reset (lang, the palette)
     config_defaults(c, /*keepZones=*/false);   // zones are written as `zone=` lines -> the file rebuilds them
     g_petSeen = false;
+    s_alphaOwnSeen = false;                            // "alphaOwn=" (2026-11-17) ; absent -> migrated after the loop
+    s_loadPartyAlpha = c.skinBoxAlpha;                 // the default until the file's skinBoxAlpha line
     static char line[8192];  // BIG : a "tmBuffOff=" line can hold up to TM_TRACK_MAX (512) comma-separated keys ~= 3 KB.
                              // A small buffer truncated it mid-line, so most filter keys were dropped on reload. (The
                              // retired per-job "tmTrkOff<job>=" lines were the same size and are still swallowed below.)
@@ -811,7 +826,7 @@ static bool load_config_from(const char* path) {
         else if (sscanf(line, "skinTheme=%d", &v) == 1) c.skinTheme = v;
         else if (sscanf(line, "skinLum=%f", &fv) == 1)  c.skinLum = fv;
         else if (sscanf(line, "skinHue=%x", &uc) == 1)  c.skinHue = uc;
-        else if (sscanf(line, "skinBoxAlpha=%f", &fv) == 1) c.skinBoxAlpha = fv;
+        else if (sscanf(line, "skinBoxAlpha=%f", &fv) == 1) { c.skinBoxAlpha = fv; s_loadPartyAlpha = fv; }
         else if (sscanf(line, "allyThemeCopy=%d", &v) == 1) c.allyThemeCopy = v;
         else if (sscanf(line, "allyTheme=%d", &v) == 1) c.allyTheme = v;
         else if (sscanf(line, "allyLum=%f", &fv) == 1) c.allyLum = fv;
@@ -972,6 +987,13 @@ static bool load_config_from(const char* path) {
     // a file from before the Pet module : the box takes the BST box's place, size and frame (the BST box was used in
     // game ; the GEO box never was, so its place is dropped -- one place now). The bst= values stay, written back.
     if (!g_petSeen) { c.petScale = c.bstScale; c.petX = c.bstX; c.petY = c.bstY; c.petBox = c.bstBox; }
+    // a file from before "alphaOwn=" : a box whose opacity differs from the Party box's was set on purpose -> its own ;
+    // the rest follows the Party box from now on (the Alliance used its own only with its own theme)
+    if (!s_alphaOwnSeen) {
+        c.allyAlphaOwn = !c.allyThemeCopy && alpha_set_on_purpose(c.allyBoxAlpha, c.skinBoxAlpha);
+        c.tgtAlphaOwn  = alpha_set_on_purpose(c.tgtBoxAlpha, c.skinBoxAlpha);
+        c.plrAlphaOwn  = alpha_set_on_purpose(c.plrBoxAlpha, c.skinBoxAlpha);
+    }
     repair_buff_order(c);   // a corrupt / short / outdated buffOrder line must never leave a group undrawn
     // Every numeric bound now lives in ONE pure place (model/config_rules.h), covered by tests/t_config.cpp.
     // It used to be sixteen fields clamped here out of the hundred-odd the file carries -- the mmZoom S0 was
@@ -1236,7 +1258,7 @@ void profile_autoload_tick() {
 // ---- "unsaved changes" tracking : snapshot the persisted fields, compare to live ----
 static UiConfig g_snap; static bool g_snapValid = false;
 static bool box_eq(const BoxStyle& a, const BoxStyle& b) {
-    return a.on == b.on && a.border == b.border && a.alpha == b.alpha && a.themeCopy == b.themeCopy && a.theme == b.theme && a.lum == b.lum && a.hue == b.hue;
+    return a.on == b.on && a.border == b.border && a.alpha == b.alpha && a.alphaOwn == b.alphaOwn && a.themeCopy == b.themeCopy && a.theme == b.theme && a.lum == b.lum && a.hue == b.hue;
 }
 static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.partyShow != b.partyShow || a.allyShow != b.allyShow || a.tgtShow != b.tgtShow || a.plrShow != b.plrShow) return false;
@@ -1285,6 +1307,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     }
     // Target module : theme / sizes / typography / placement all belong to the profile.
     if (a.tgtBorder != b.tgtBorder || a.plrBorder != b.plrBorder) return false;
+    if (a.allyAlphaOwn != b.allyAlphaOwn || a.tgtAlphaOwn != b.tgtAlphaOwn || a.plrAlphaOwn != b.plrAlphaOwn) return false;
     if (a.tgtBox != b.tgtBox || a.tgtBoxAlpha != b.tgtBoxAlpha || a.tgtThemeCopy != b.tgtThemeCopy || a.tgtTheme != b.tgtTheme || a.tgtLum != b.tgtLum || a.tgtHue != b.tgtHue) return false;
     if (a.tgtScale != b.tgtScale || a.tgtNameHostile != b.tgtNameHostile || a.tgtDebuffs != b.tgtDebuffs || a.tgtTimers != b.tgtTimers) return false;
     if (a.tgtBuffPos != b.tgtBuffPos) return false;

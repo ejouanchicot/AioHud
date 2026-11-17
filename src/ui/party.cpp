@@ -868,7 +868,7 @@ void Party::draw(const Frame& f) {
     const int      boxTheme = allyOwn ? ui_config().allyTheme : ui_config().skinTheme;
     const float    boxLum   = allyOwn ? ui_config().allyLum   : ui_config().skinLum;
     const unsigned boxHue   = allyOwn ? ui_config().allyHue   : ui_config().skinHue;
-    const float bAlpha = allyOwn ? ui_config().allyBoxAlpha : ui_config().skinBoxAlpha;
+    const float bAlpha = (tier_ > 0 && ui_config().allyAlphaOwn) ? ui_config().allyBoxAlpha : ui_config().skinBoxAlpha;   // the Party box's unless set (2026-11-17, independent of the theme)
     const float skinBa = bAlpha < 0.0f ? 0.0f : (bAlpha > 1.0f ? 1.0f : bAlpha);   // box chrome opacity (content stays opaque)
     const u32   skinTint = mul_a(0xFFFFFFFFu, skinBa);
     if (window_theme_is_proc(boxTheme)) {                       // procedural colour theme (no game texture)

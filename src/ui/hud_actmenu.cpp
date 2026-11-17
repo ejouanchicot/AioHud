@@ -23,8 +23,12 @@
 #include "model/spells_gen.h"  // spell_info : the spell list's names and MP
 #include "model/abilities_gen.h"        // abil_info : the ability list's job abilities
 #include "model/weapon_skills_gen.h"    // ws_info : its weapon skills
+#include "model/item_text.h"       // the NPC answers' item card : text + flags from the item's DAT record
 #include "gfx/draw.h"
 #include "gfx/font.h"
+#include "gfx/texture.h"           // read_item_record_head / decode_gear_icon_from_rom : the item card
+#include "gfx/d3d.h"               // dTexQuadState : its icon
+#include "windower_debug.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -138,7 +142,7 @@ void draw_icon(u32 dev, Icon ic, float cx, float cy, float z, float S, u32 c) {
 }
 
 u32 g_handTex = 0;   // the party's selection-hand texture, handed in by the HUD each frame (device-loss managed there)
-float g_hit[2][4] = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 } };   // the drawn blocks (menu, submenu) as screen FRACTIONS : their clicks never reach the game
+float g_hit[4][4] = { { 0, 0, 0, 0 } };   // the drawn blocks (menu, submenu ; NPC bubble, NPC answers) as screen FRACTIONS : their clicks never reach the game
 
 // ---- the action menu's submenus (native_sub_menu) : labels by ENTRY index (1-based), from their help texts ----
 struct SubRow { const char* en; const char* fr; bool sub; Icon icon; };   // sub : none -- each row opens its LIST, no arrow in the client
@@ -181,7 +185,8 @@ inline u32 dev_of(const Frame& f) { return f.dev; }
 // `extra` : what the client shows on the right of a row (the Chat submenu : the Tell name, a shell's name, the Unity
 // leader) ; `pearl` : 513 linkshell / 514 linkpearl / 515 pearlsack drawn before it, tinted `pearlArgb`
 struct RowSpec { const char* label; Icon icon; bool sub; bool off; const char* extra = 0; int pearl = 0; u32 pearlArgb = 0;
-                 bool cycle = false; bool center = false; };   // center : a lone message row (the empty list), centred in the block   // cycle : the extra can be changed with RIGHT (the Tell name ; left closes the submenu) -> name >
+                 bool cycle = false; bool center = false;
+                 u32 tint = 0; };   // tint : the label's own colour (the NPC answers : the client's green), 0 the menus' grey-white   // center : a lone message row (the empty list), centred in the block   // cycle : the extra can be changed with RIGHT (the Tell name ; left closes the submenu) -> name >
 struct Block {
     float vis = 0.0f, curY = -1.0f; unsigned openMs = 0; int lastN = 0; bool wasOpen = false; float sel[16] = { 0 };
     float x = 0, y = 0, w = 0, h = 0;           // drawn rect this frame (w = 0 : not drawn)
@@ -320,8 +325,9 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
                         with_alpha(0xFFC9D3E0u, a), with_alpha(0xC8000000u, a), k.ow);
             continue;
         }
+        const u32 lc = rows[i].tint ? mix(rows[i].tint, 0xFFE4FFD6u, s * 0.6f) : mix(0xFFC9D3E0u, 0xFFFFFFFFu, s);
         fo->draw_lc(dev, snap(cx0 + k.capPadL + k.icW), snap(y + k.capH * 0.5f), rows[i].label, k.tz,
-                    with_alpha(mix(0xFFC9D3E0u, 0xFFFFFFFFu, s), a), with_alpha(0xC8000000u, a), k.ow);
+                    with_alpha(lc, a), with_alpha(0xC8000000u, a), k.ow);
         if (rows[i].extra && rows[i].extra[0]) {
             const float ez = k.tz * 0.92f, ew = fo->measure(rows[i].extra, ez);
             fo->draw_lc(dev, snap(cx0 + capW - k.capPadR - triU - ew - (rows[i].cycle ? 9.0f * k.S : 0.0f)), snap(y + k.capH * 0.5f), rows[i].extra, ez,
@@ -341,7 +347,7 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
 
 void actmenu_set_hand_tex(u32 tex) { g_handTex = tex; }
 bool actmenu_hit(float fx, float fy) {
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < 4; ++i) {
         const float* h = g_hit[i];
         if (h[2] > 0.0f && fx >= h[0] && fx < h[0] + h[2] && fy >= h[1] && fy < h[1] + h[3]) return true;
     }
@@ -386,18 +392,19 @@ void actmenu_draw(const Frame& f) {
     // place : like the client, ABOVE THE CHAT -- the client opens it on top of its log (on the battle log when that one
     // sits above the talk log) ; AioHUD's chat boxes replace that log, so the menu sits on the HIGHER of the two that
     // are shown, flush with its left edge. No chat box shown : the client's own place (its bottom-left corner).
+    // 2026-11-17 : the chat can be anywhere -- the anchor box (stacked : the higher, side by side : the left), above it
+    // when the menu fits, else below it (place_on_chat, hud_chat.cpp)
     const float sx = f.screenW / (float)m.uiW, sy = f.screenH / (float)m.uiH;   // the client's UI units -> backbuffer px
-    float ax = (float)m.rx0 * sx, ay = (float)m.ry1 * sy;
-    {
-        float best = 1e9f;
-        for (int b = 0; b < 2; ++b) {
-            float x, y, w, h;
-            if (chat_box_rect(b, x, y, w, h) && y < best) { best = y; ax = x; ay = y - snap(4.0f * S); }
-        }
+    float bx = 0.0f, by = 0.0f;
+    if (!place_on_chat(bw, bh, snap(4.0f * S), f.screenW, f.screenH, bx, by)) {
+        bx = snap((float)m.rx0 * sx); by = snap((float)m.ry1 * sy - bh);
+        if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+        if (by < 4.0f) by = 4.0f; if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh);
     }
-    float bx = snap(ax), by = snap(ay - bh + (1.0f - tOpen) * 4.0f * S);
-    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
-    if (by < 4.0f) by = 4.0f; if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh);
+    // BELOW the chat (no room above it) : what opens from the menu grows DOWN, never over the chat
+    bool below = false;
+    { float ax_, aw_, top_, bot_; if (chat_anchor(ax_, aw_, top_, bot_)) below = by >= bot_; }
+    by = snap(by + (1.0f - tOpen) * 4.0f * S);
     // ======== the SPELL list (native_list) : the client lays it over both menus -- same left, bottom anchored ========
     {
         const NativeList& NL = native_list();
@@ -444,7 +451,8 @@ void actmenu_draw(const Frame& f) {
             }
             if (lw < bw) lw = bw;
             const float tL = ease_out(((float)(now - g_listB.openMs) / 1000.0f) / 0.07f);
-            const float lx = bx, ly = snap(by + bh - lh + (1.0f - tL) * 3.0f * S);
+            float lx = bx, ly = snap((below ? by : by + bh - lh) + (1.0f - tL) * 3.0f * S);
+            if (ly + lh > f.screenH - 4.0f) ly = snap(f.screenH - 4.0f - lh); if (ly < 4.0f) ly = 4.0f;
             const float LA = g_listB.vis * tL;
             const int cur = empty ? 0 : ((lastL.cursor >= lastL.top && lastL.cursor < lastL.top + lastL.rows) ? lastL.cursor - lastL.top + 1 : 0);
             if (LA > 0.0f) {
@@ -512,11 +520,11 @@ void actmenu_draw(const Frame& f) {
     float sbx, sby;
     if (replacing) {                                  // in place : same left, the BOTTOM anchored, its own height
         if (sw < bw) sw = bw;
-        sbx = bx; sby = snap(by + bh - sh + (1.0f - tS) * 3.0f * S);
+        sbx = bx; sby = snap((below ? by : by + bh - sh) + (1.0f - tS) * 3.0f * S);
     } else {
         if (sh < bh) sh = bh;
         sbx = snap(bx + bw + 3.0f * S - (1.0f - tS) * 5.0f * S);
-        sby = C.muGrow == 1 ? by : snap(by + bh - sh);
+        sby = (C.muGrow == 1 || below) ? by : snap(by + bh - sh);
         if (sbx + sw > f.screenW - 4.0f) sbx = snap(bx - 3.0f * S - sw);        // no room on the right : on the left
     }
     if (sby + sh > f.screenH - 4.0f) sby = snap(f.screenH - 4.0f - sh); if (sby < 4.0f) sby = 4.0f;
@@ -530,6 +538,217 @@ void actmenu_draw(const Frame& f) {
         g_subB.hoverRow = srow;
         if (ent && f.mouse && f.mouse->clicked) native_sub_pick(ent);
     } else g_subB.hoverRow = 0;
+}
+
+// ======== the NPC windows (Game UI -> NU_NPC) : the dialogue and the answers, mirrored ========
+// The client keeps rem4line / query (parked off-screen by native_ui) and their keys ; this draws what they show, on the
+// chat (place_on_chat : above the anchor box when it fits, else below). Top to bottom : a BUBBLE (the dialogue lines,
+// then the question), then the ANSWERS block (the action menu's capsules, gold selection and hand). A click on the
+// bubble turns the page (the client's event 5) ; hover / click on an answer drives the client's own cursor.
+namespace {
+Block g_npcBubble, g_npcAns, g_npcCardB;
+int   g_npcView = 0;                                   // the first answer shown (AioHUD shows up to 8 of them)
+
+// ---- the ITEM CARD : the item a shop list's answer points at (the client's 'iteminfo', parked), drawn from its DAT
+//      record (model/item_text.h) -- icon, name, Rare / Ex, level + jobs for equipment, the description ----
+ItemText g_card; unsigned g_cardId = 0; bool g_cardOk = false;
+u32 g_cardIcon = 0; unsigned g_cardIconId = 0;
+const char* const JOBS3[23] = { "", "WAR", "MNK", "WHM", "BLM", "RDM", "THF", "PLD", "DRK", "BST", "BRD", "RNG", "SAM", "NIN", "DRG",
+                                "SMN", "BLU", "COR", "PUP", "DNC", "SCH", "GEO", "RUN" };
+void card_load(u32 dev, unsigned id) {
+    static DWORD lastTry = 0;   // a failed read is retried every 2 s, never cached for good (rule 10)
+    if (id == g_cardId && (g_cardOk || GetTickCount() - lastTry < 2000u)) return;
+    lastTry = GetTickCount();
+    g_cardId = id; g_cardOk = false;
+    static unsigned char rec[0x2BD];
+    if (id && read_item_record_head(id, rec, sizeof(rec)) && item_text_parse(rec, sizeof(rec), id, g_card)) g_cardOk = true;
+    if (g_cardIcon) { release_texture(g_cardIcon); g_cardIcon = 0; }
+    g_cardIconId = 0;
+    if (g_cardOk) {
+        static u32 px[32 * 32];
+        if (decode_gear_icon_from_rom(id, px)) { g_cardIcon = make_texture_argb_mip(dev, 32, 32, px); g_cardIconId = id; }
+    }
+    if (id) windower::debug::log("NATIVEUI NPC item card : id %u -> %s%s", id, g_cardOk ? g_card.name : "NOT READ", g_cardOk && !g_cardIcon ? " (no icon)" : "");
+}
+// greedy word wrap of `s` ('\n' kept) into at most `maxL` lines of width `w`
+int wrap_lines(Font* fo, const char* s, float tz, float w, char out[][160], int maxL) {
+    int n = 0; char cur[160]; int cl = 0; cur[0] = 0;
+    const char* p = s;
+    while (*p && n < maxL) {
+        if (*p == '\n') { cur[cl] = 0; lstrcpynA(out[n++], cur, 160); cl = 0; cur[0] = 0; ++p; continue; }
+        const char* e = p; while (*e && *e != ' ' && *e != '\n') ++e;
+        char word[160]; int wl = (int)(e - p); if (wl > 150) wl = 150; memcpy(word, p, (size_t)wl); word[wl] = 0;
+        char trial[320]; _snprintf(trial, sizeof(trial), cl ? "%s %s" : "%s%s", cur, word); trial[sizeof(trial) - 1] = 0;
+        if (cl && fo->measure(trial, tz) > w) { cur[cl] = 0; lstrcpynA(out[n++], cur, 160); lstrcpynA(cur, word, 160); cl = (int)strlen(cur); }
+        else { lstrcpynA(cur, trial, 160); cl = (int)strlen(cur); }
+        p = e; while (*p == ' ') ++p;
+    }
+    if (cl && n < maxL) lstrcpynA(out[n++], cur, 160);
+    return n;
+}
+}
+
+void npc_card_forget()  { g_cardIcon = 0; g_cardIconId = 0; g_cardId = 0; }   // device lost : the handle is gone with it
+void npc_card_dispose() { if (g_cardIcon) release_texture(g_cardIcon); npc_card_forget(); }
+
+void npc_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    const NativeNpc& N = native_npc();
+    g_hit[2][2] = g_hit[3][2] = 0.0f;
+    native_npc_box(0.0f, 0.0f, 0.0f, 0.0f);               // published again below while the answers are drawn
+    if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) {
+        g_npcBubble.vis = g_npcAns.vis = 0.0f; g_npcBubble.wasOpen = g_npcAns.wasOpen = false; return;
+    }
+    static unsigned lastMs = 0;
+    const unsigned now = GetTickCount();
+    float dt = lastMs ? (float)(now - lastMs) / 1000.0f : 0.0f; lastMs = now; if (dt > 0.1f) dt = 0.1f;
+    const Metrics k = metrics(f); const float S = k.S; const u32 dev = f.dev; Font* fo = f.font;
+
+    static NativeNpc last;                             // fades out with its own text
+    if (N.talk || N.query) last = N;
+    const bool bubbleOn = N.talk || N.query, ansOn = N.query && N.n > 0;
+    const bool bubbleVis = block_ease(g_npcBubble, bubbleOn, now, dt), ansVis = block_ease(g_npcAns, ansOn, now, dt);
+    if (!bubbleVis && !ansVis) return;
+
+    // ---- the bubble's lines : the dialogue (when shown), then the question ----
+    const char* L[6]; bool lead[6], q[6]; int nL = 0;
+    if (last.talk) for (int i = 0; i < last.nLines && nL < 5; ++i) { L[nL] = last.line[i]; lead[nL] = last.lead[i]; q[nL] = false; ++nL; }
+    if (last.query && last.question[0] && nL < 6) { L[nL] = last.question; lead[nL] = false; q[nL] = true; ++nL; }
+    const float tz = snap(k.tz * 1.08f), lineH = snap(tz * 1.45f), pad = snap(9.0f * S);
+    float wText = 0.0f;
+    for (int i = 0; i < nL; ++i) { const float w = fo->measure(L[i], tz); if (w > wText) wText = w; }
+    // the answers : the CLIENT's page -- its 3 rows from its own top (2026-11-17 : "la liste contient moins d'items dans
+    // le menu du jeu") ; the client scrolls it, the rail says where it sits
+    const int vis = last.n < 3 ? last.n : 3;
+    g_npcView = last.top;
+    if (g_npcView > last.n - vis) g_npcView = last.n - vis; if (g_npcView < 0) g_npcView = 0;
+    RowSpec rows[3];
+    for (int i = 0; i < vis; ++i) { rows[i].label = last.choice[g_npcView + i]; rows[i].icon = IC_NONE; rows[i].sub = false; rows[i].off = false; rows[i].tint = last.ctl[g_npcView + i][0] == 0xFEFE ? 0xFF9CE27Au : 0xFFF4F6FAu; }   // the client : an answer carrying FEFE (live 2026-11-17 : every ITEM of a shop list, FEFE FEFF) green ; "Back." / plain ones white
+    float aw = 0.0f, ah = 0.0f;
+    if (last.query && vis > 0) block_size(f, k, rows, vis, aw, ah);
+    // one width for both : the widest of the text, the answers, and a floor ; the screen's 70 % at most
+    float bw = snap(wText + 2.0f * pad + 14.0f * S); if (aw > bw) bw = aw;
+    if (bw < snap(320.0f * S)) bw = snap(320.0f * S); if (bw > f.screenW * 0.7f) bw = snap(f.screenW * 0.7f);
+    const float bh = nL ? snap((float)nL * lineH + 2.0f * pad) : 0.0f;
+    const float gap = snap(3.0f * S), H = bh + (ah > 0.0f ? (bh > 0.0f ? gap : 0.0f) + ah : 0.0f);
+    float bx = 0.0f, by = 0.0f;
+    if (!place_on_chat(bw, H, snap(4.0f * S), f.screenW, f.screenH, bx, by)) { bx = snap(20.0f * S); by = snap(f.screenH * 0.72f - H); }
+    // ---- the item card : the item the answer under the cursor points at, ABOVE the stack (else below it) ----
+    if (N.query) card_load(dev, N.itemId); else if (!last.query) g_cardId = 0;
+    const bool cardOn = N.query && N.itemId && g_cardOk && g_cardId == N.itemId;
+    if (block_ease(g_npcCardB, cardOn, now, dt) && g_cardOk) {
+        // THE CLIENT'S LAYOUT (its own card, screenshot 2026-11-17) : the icon top-left ; ONE text column right of it,
+        // white -- the title (the log name, "Ark tachi"), the kind ("(Great Katana)All Races"), the description, then
+        // "Lv.1 All Jobs" ; the enchantment "<1/1 0:30/[1:00:00, 0:30]>" right-aligned in light blue ; round Rare / Ex
+        // badges in the top-right corner. AioHUD's box and font.
+        const float ctz = snap(k.tz * 1.0f), clH = snap(ctz * 1.3f), cpad = snap(8.0f * S), icon = snap(32.0f * S);
+        const float colX = snap(bx + cpad + icon + 6.0f * S), tw = bx + bw - cpad - colX;
+        char title[96]; item_title(g_card, title, sizeof(title));
+        char kind[96]; item_kind_line(g_card, kind, sizeof(kind));
+        char ench[64]; item_enchant_line(g_card, ench, sizeof(ench));
+        char lv[200] = "";
+        if (g_card.level > 0) {
+            int o = _snprintf(lv, sizeof(lv), "Lv.%d ", g_card.level);
+            const unsigned all = 0x7FFFFEu;
+            if ((g_card.jobs & all) == all) _snprintf(lv + o, sizeof(lv) - o, "All Jobs");
+            else { const int o0 = o; for (int j = 1; j <= 22 && o < (int)sizeof(lv) - 6; ++j) if (g_card.jobs & (1u << j)) o += _snprintf(lv + o, sizeof(lv) - o, "%s%s", o > o0 ? "/" : "", JOBS3[j]); }
+            lv[sizeof(lv) - 1] = 0;
+        }
+        // every line of the column, in order (the description wrapped to the column)
+        char lines[18][160]; int nl = 0;
+        lstrcpynA(lines[nl++], title, 160);
+        if (kind[0]) lstrcpynA(lines[nl++], kind, 160);
+        if (g_card.desc[0]) nl += wrap_lines(fo, g_card.desc, ctz, tw, lines + nl, 14);
+        if (lv[0] && nl < 18) lstrcpynA(lines[nl++], lv, 160);
+        const float colH = (float)nl * clH, encH = ench[0] ? clH : 0.0f;
+        const float ch = snap(cpad + (colH > icon ? colH : icon) + encH + cpad);
+        float cy = snap(by - snap(4.0f * S) - ch);
+        if (cy < 4.0f) cy = snap(by + H + snap(4.0f * S));
+        const float tO = ease_out(((float)(now - g_npcCardB.openMs) / 1000.0f) / 0.08f), A = g_npcCardB.vis * tO;
+        cy = snap(cy + (1.0f - tO) * 3.0f * S);
+        draw_themed_box(dev, f.skin, bx, cy, bw, ch, C.muBox, A, S);
+        const float ix = snap(bx + cpad), iy = snap(cy + cpad);
+        if (g_cardIcon) {
+            dTexQuadState(dev, g_cardIcon);
+            tquad(dev, ix, iy, icon, icon, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A));
+            dSetTex(dev, 0, 0);
+        }
+        // the badges, in the top-right corner -- Rare (blue) then Ex (green), left to right. PILLS sized to their word at
+        // a readable size (2026-11-17 : the round ones of the client's size were "pas tres lisibles")
+        const char* BADGE[2] = { item_rare(g_card) ? "Rare" : 0, item_ex(g_card) ? "Ex" : 0 };
+        const u32 BCOL[2] = { 0xFF2F5FB8u, 0xFF2E8A46u };
+        const float btz = snap(ctz * 0.85f), bh2 = snap(btz * 1.45f), byB = snap(cy + cpad - 1.0f * S);
+        float bxs[2] = { 0, 0 }, bws[2] = { 0, 0 };
+        { float right = snap(bx + bw - cpad);
+          for (int b = 1; b >= 0; --b) if (BADGE[b]) { bws[b] = snap(fo->measure(BADGE[b], btz) + 12.0f * S); bxs[b] = snap(right - bws[b]); right = snap(bxs[b] - 4.0f * S); } }
+        for (int b = 0; b < 2; ++b) if (BADGE[b]) {
+            rrect(dev, bxs[b], byB, bws[b], bh2, bh2 * 0.5f, with_alpha(BCOL[b], A), with_alpha(mix(BCOL[b], 0xFF000000u, 0.35f), A));
+            rrect_topcaps(dev, bxs[b] + 1.0f, byB + 1.0f, bws[b] - 2.0f, snap(bh2 * 0.45f), bh2 * 0.5f - 1.0f, with_alpha(0x38FFFFFFu, A), with_alpha(0x00FFFFFFu, A));
+            rrect_stroke(dev, bxs[b], byB, bws[b], bh2, bh2 * 0.5f, with_alpha(0xC0E8F0FFu, A), 1.0f);
+        }
+        fo->begin(dev);
+        const u32 sh = with_alpha(0xC8000000u, A), white = with_alpha(0xFFF4F6FAu, A);
+        for (int b = 0; b < 2; ++b) if (BADGE[b])
+            fo->draw_lc(dev, snap(bxs[b] + (bws[b] - fo->measure(BADGE[b], btz)) * 0.5f), snap(byB + bh2 * 0.5f), BADGE[b], btz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
+        for (int i = 0; i < nl; ++i) fo->draw_lc(dev, colX, snap(cy + cpad + (float)i * clH + clH * 0.5f), lines[i], ctz, white, sh, k.ow);
+        if (ench[0]) {
+            const float ew = fo->measure(ench, ctz);
+            fo->draw_lc(dev, snap(bx + bw - cpad - ew), snap(cy + ch - cpad - clH * 0.5f), ench, ctz, with_alpha(0xFF9CC8FFu, A), sh, k.ow);
+        }
+    }
+    // the client's windows that open WITH the answers (a shop list's item description) : parked while AioHUD draws the
+    // card, else brought back above this box (native_ui)
+    if (N.query) native_npc_box(bx / f.screenW, by / f.screenH, bw / f.screenW, H / f.screenH, cardOn);
+
+    // ---- the bubble ----
+    if (bubbleVis && bh > 0.0f) {
+        const float tO = ease_out(((float)(now - g_npcBubble.openMs) / 1000.0f) / 0.08f), A = g_npcBubble.vis * tO;
+        const float y0 = snap(by + (1.0f - tO) * 3.0f * S);
+        draw_themed_box(dev, f.skin, bx, y0, bw, bh, C.muBox, A, S);
+        const bool waits = last.talk && !last.query;   // a page the player turns : a small bobbing chevron, bottom right
+        if (waits) {
+            const float cx = bx + bw - pad - 4.0f * S, cy = y0 + bh - pad * 0.9f + sinf(f.t * 5.0f) * 1.5f * S, c = 3.5f * S;
+            tri(dev, cx - c, cy - c * 0.6f, cx + c, cy - c * 0.6f, cx, cy + c * 0.7f, with_alpha(0xE0FFDA8Au, A));
+        }
+        fo->begin(dev);
+        for (int i = 0; i < nL; ++i) {
+            const float x = snap(bx + pad), yc = snap(y0 + pad + (float)i * lineH + lineH * 0.5f);
+            const u32 sh = with_alpha(0xC8000000u, A);
+            if (q[i]) { fo->draw_lc(dev, x, yc, L[i], tz, with_alpha(0xFFF4F6FAu, A), sh, k.ow); continue; }   // the question : white, as the client
+            const char* colon = lead[i] ? strstr(L[i], " : ") : 0;
+            if (colon && colon - L[i] < 40) {                 // "Name : text" -> the speaker in gold
+                char nm[48]; const int n = (int)(colon - L[i]); memcpy(nm, L[i], (size_t)n); nm[n] = 0;
+                fo->draw_lc(dev, x, yc, nm, tz, with_alpha(0xFFFFDA8Au, A), sh, k.ow);
+                fo->draw_lc(dev, snap(x + fo->measure(nm, tz)), yc, colon, tz, with_alpha(0xFFE8EEF6u, A), sh, k.ow);
+            } else fo->draw_lc(dev, x, yc, L[i], tz, with_alpha(0xFFE8EEF6u, A), sh, k.ow);
+        }
+        if (bubbleOn) {
+            g_hit[2][0] = bx / f.screenW; g_hit[2][1] = y0 / f.screenH; g_hit[2][2] = bw / f.screenW; g_hit[2][3] = bh / f.screenH;
+            const MouseState* ms = f.mouse;
+            if (waits && ms && ms->focused && ms->clicked && ms->x >= bx && ms->x < bx + bw && ms->y >= y0 && ms->y < y0 + bh) native_npc_next();
+        }
+    }
+
+    // ---- the answers ----
+    if (ansVis && ah > 0.0f) {
+        const float tO = ease_out(((float)(now - g_npcAns.openMs) / 1000.0f) / 0.08f), A = g_npcAns.vis * tO;
+        const float ay = snap(by + (bh > 0.0f ? bh + gap : 0.0f) + (1.0f - tO) * 3.0f * S);
+        const int cur = (last.sel >= g_npcView && last.sel < g_npcView + vis) ? last.sel - g_npcView + 1 : 0;
+        const int row = block_draw(f, k, g_npcAns, rows, vis, cur, last.queryFocused, bx, ay, bw, ah, A, dt);
+        if (last.n > vis) {                              // where this page sits in all the answers : a thin rail
+            const float tx = bx + bw - 3.0f * S, ty = ay + k.pad, th = ah - 2.0f * k.pad;
+            const float th2 = th * (float)vis / (float)last.n, ty2 = ty + th * (float)g_npcView / (float)last.n;
+            rrect(dev, tx - 1.0f * S, ty, 2.0f * S, th, 1.0f * S, with_alpha(0x30FFFFFFu, A), with_alpha(0x30FFFFFFu, A));
+            rrect(dev, tx - 1.0f * S, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, A), with_alpha(0xC0FFDA8Au, A));
+        }
+        if (N.query) {
+            g_hit[3][0] = bx / f.screenW; g_hit[3][1] = ay / f.screenH; g_hit[3][2] = bw / f.screenW; g_hit[3][3] = ah / f.screenH;
+            const int idx = row ? g_npcView + row - 1 : -1;
+            if (row && row != g_npcAns.hoverRow && idx != N.sel) native_npc_hover(idx);
+            g_npcAns.hoverRow = row;
+            if (idx >= 0 && f.mouse && f.mouse->clicked) native_npc_pick(idx);
+        } else g_npcAns.hoverRow = 0;
+    }
 }
 
 } // namespace aio

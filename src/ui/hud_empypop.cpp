@@ -202,7 +202,7 @@ void empypop_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
     // rrect fills/dividers/stroke below push diffuse-only verts, so re-establish the colour-quad state HERE, AFTER
     // the chrome -- doing it before (the obvious spot) is dead : the themed box immediately clobbers it.
     dColorQuadState(dev);
-    const float ca = ui_config().epBox.on ? ui_config().epBox.alpha : 1.0f;         // fills follow the box's transparency
+    const float ca = ui_config().epBox.on ? box_alpha(ui_config().epBox) : 1.0f;         // fills follow the box's transparency
     const float fi = 3.0f * S;                                                      // inset : stay INSIDE the container's rounded corners
     const float fx = px + fi, fw = boxW - 2.0f * fi;
     // A box's background : green once it is done (upstream boxcol) ; the container supplies the navy otherwise.

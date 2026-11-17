@@ -26,7 +26,37 @@ enum NativeUiBits {
     NU_COST   = 1 << 4,   // subwindo : the MP-cost / recast case above the party (AioHUD's Cost box replaces it)
     NU_NET    = 1 << 5,   // netstat (connection indicator) + polwindo (POL message icon), top-right corner
     NU_ACT    = 1 << 6,   // playermo : the target ACTION menu (Enter on a target) -- AioHUD draws its own (hud_actmenu)
+    NU_NPC    = 1 << 7,   // rem4line / rem4li2 (NPC dialogue) + query (its answers) -- AioHUD draws them above its chat
 };
+
+// The NPC windows (NU_NPC ; docs/game-data/native-windows.md section 10, live 2026-11-17) read once a frame :
+// the event DIALOGUE `rem4line` (log 1) / `rem4li2` (log 2) and the ANSWERS `query`. Their text is GLYPHS (u16 per
+// character, ASCII - 0x20 ; codes >= 0x5F are controls), decoded here to ASCII with the controls dropped.
+struct NativeNpc {
+    bool talk;                 // the dialogue shows lines
+    int  nLines;               // 1..4
+    char line[4][200];
+    bool lead[4];              // the line starts a speech ("Name : text") -- the client's FEFF FEFF ; else a continuation
+    bool query, queryFocused;  // the answers are up / the player drives them
+    char question[200];
+    int  n, sel, top;          // choices, the selected one (0-based), the first the client shows (it shows 3)
+    char choice[32][100];
+    unsigned short ctl[32][4]; // the CONTROL glyphs (>= 0x5F) each choice carries, first 4 -- the client colours some
+                               // answers (a shop list's items in green, "Check/Exchange points." in white) ; being mapped
+    unsigned itemId;           // the client's item description 'iteminfo' is up WITH the answers : the item it shows
+                               // (handler+0x24, u16 -- live 2026-11-17, 11 / 11 shop items) ; 0 none
+};
+const NativeNpc& native_npc();
+// Drive them the client's way (FUN_054596F0(obj, event)) : hover / pick a choice (0-based ; false when the answers are not
+// up and focused, or the step fails), and "next page" on the dialogue (event 5, what Enter does on a page that waits).
+bool native_npc_hover(int choice);
+bool native_npc_pick(int choice);
+bool native_npc_next();
+// Where AioHUD drew them this frame (screen FRACTIONS ; w <= 0 : not drawn). The client's windows that open WITH the
+// answers (the item description of a shop list, 'iteminfo') follow the parked query off-screen : they are brought back
+// BESIDE this box, not to the client's place, which AioHUD's box now covers (2026-11-17).
+// `card` : AioHUD draws that item's card itself -> the client's description stays parked (not brought back at all).
+void native_npc_box(float x, float y, float w, float h, bool card = false);
 
 // The client's ACTION menu ("playermo"), read once a frame by native_ui_tick while NU_ACT is on (rule 6 : widgets read
 // this snapshot, never the memory). Rows = the handler's u16 COMMAND CODES (handler+0x1C, count byte handler+0x53),

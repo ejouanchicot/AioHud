@@ -12,6 +12,8 @@ struct WindowSkin;
 // reused for FFXI-family themes). `base` = an extra fade (1 = none). `S` = the box's UI scale (fallback corner).
 void draw_themed_box(u32 dev, const WindowSkin* partySkin, float x, float y, float w, float h,
                      const BoxStyle& bs, float base, float S);
+// the box's EFFECTIVE chrome opacity : the party box's unless this box has its own (BoxStyle::alphaOwn)
+float box_alpha(const BoxStyle& bs);
 
 // The box's effective FRAME colour (RGB, alpha 0xFF), resolving Same-as-Party / procedural-hue / FFXI-skin -> tint an
 // inner accent (e.g. the Skillchains "Nuke:" outline) to MATCH the box border. Soft-blue fallback while a skin loads.

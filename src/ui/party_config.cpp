@@ -331,7 +331,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
                            1, &ui_config().allyThemeCopy,                // may simply follow the party theme
                            &ui_config().allyTheme, &ui_config().allyHue, &ui_config().allyLum, &ui_config().allyBoxAlpha,
-                           &ui_config().border[1], nullptr, nullptr);    // no Cost box on an alliance row
+                           &ui_config().border[1], nullptr, nullptr,     // no Cost box on an alliance row
+                           &ui_config().allyAlphaOwn);                   // the Party box's opacity unless set (2026-11-17)
         cat_fold_end(dev, ry, cTop_, pcFull_[2], aS2_);
     }   // end Alliance
     ry += snap(16.0f);                                 // air between this section and the next title bar

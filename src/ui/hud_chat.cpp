@@ -149,6 +149,44 @@ bool chat_box_rect(int box, float& x, float& y, float& w, float& h) {
     return w > 0.0f && h > 0.0f;
 }
 
+// Where AioHUD's menus open (the action menu, the NPC windows) : on the CHAT, wherever the player put it (2026-11-17 :
+// "toujours le chat de gauche ... le joueur peut mettre ses chats ou il veut"). The two boxes STACKED (their x ranges
+// overlap) : anchored on the HIGHER one, the group spans both. SIDE BY SIDE : the LEFT one alone. One box : it.
+bool chat_anchor(float& ax, float& aw, float& top, float& bottom) {
+    float r[2][4]; bool on[2];
+    for (int b = 0; b < 2; ++b) on[b] = chat_box_rect(b, r[b][0], r[b][1], r[b][2], r[b][3]);
+    int a = on[0] ? 0 : (on[1] ? 1 : -1);
+    if (a < 0) return false;
+    top = r[a][1]; bottom = r[a][1] + r[a][3];
+    if (on[0] && on[1]) {
+        const bool stacked = r[0][0] < r[1][0] + r[1][2] && r[1][0] < r[0][0] + r[0][2];
+        if (stacked) {
+            a = r[0][1] <= r[1][1] ? 0 : 1;
+            top = r[0][1] < r[1][1] ? r[0][1] : r[1][1];
+            const float b0 = r[0][1] + r[0][3], b1 = r[1][1] + r[1][3]; bottom = b0 > b1 ? b0 : b1;
+        } else {
+            a = r[0][0] <= r[1][0] ? 0 : 1;
+            top = r[a][1]; bottom = r[a][1] + r[a][3];
+        }
+    }
+    ax = r[a][0]; aw = r[a][2];
+    return true;
+}
+// a bw x bh block against that anchor : ABOVE the group when it fits, else BELOW it ; always inside the screen
+bool place_on_chat(float bw, float bh, float gap, float screenW, float screenH, float& bx, float& by) {
+    float ax, aw, top, bottom;
+    if (!chat_anchor(ax, aw, top, bottom)) return false;
+    (void)aw;
+    bx = ax;
+    by = (top - gap - bh >= 4.0f) ? top - gap - bh : bottom + gap;
+    if (bx + bw > screenW - 4.0f) bx = screenW - 4.0f - bw;
+    if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > screenH - 4.0f) by = screenH - 4.0f - bh;
+    if (by < 4.0f) by = 4.0f;
+    bx = snap(bx); by = snap(by);
+    return true;
+}
+
 static bool mentions(const char* s, const char* me) {
     if (me && me[0] && strstr(s, me)) return true;
     return !strncmp(s, "You ", 4) || !strncmp(s, "Your ", 5);
@@ -645,7 +683,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     draw_themed_box(dev, f.skin, px, py, boxW, boxH, C.chBox[box], A, S);
     if (fA > 0.0f) {
         if (C.chBox[box].on) {                     // the same frame again at full opacity, over the translucent one
-            BoxStyle op = C.chBox[box]; op.alpha = 1.0f;
+            BoxStyle op = C.chBox[box]; op.alpha = 1.0f; op.alphaOwn = 1;
             draw_themed_box(dev, f.skin, px, py, boxW, boxH, op, fA, S);
             dColorQuadState(dev);
         } else {                                   // no frame at all : a plain dark panel

@@ -476,7 +476,7 @@ void Player::draw(const Frame& f) {
     // ---- box chrome : own Box Theme (Copy Party / procedural family / FFXI-texture), like the Target box ----
     if (c.plrBox) {
         color_state(dev);
-        const float ca = clampf(c.plrBoxAlpha, 0.0f, 1.0f);   // full 0..100% (0 = box fully invisible)
+        const float ca = clampf(c.plrAlphaOwn ? c.plrBoxAlpha : c.skinBoxAlpha, 0.0f, 1.0f);   // the Party box's unless set (2026-11-17) ; 0 = invisible
         const u32   tint = mul_a(0xFFFFFFFF, ca);
         const bool  copyParty = c.plrThemeCopy != 0;
         const int   theme = copyParty ? c.skinTheme : c.plrTheme;

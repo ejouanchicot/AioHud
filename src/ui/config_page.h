@@ -211,7 +211,7 @@ private:
                             float bandX, float bandW, float coX, float ctrlW,
                             int group, int* themeCopy,
                             int* theme, unsigned* hue, float* lum, float* alpha,
-                            bool* border, bool* borderExtra, const char* extraLabel);
+                            bool* border, bool* borderExtra, const char* extraLabel, int* alphaOwn = nullptr);   // alphaOwn : a non-master box's own opacity flag (null = the master)
     void draw_box_appearance(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW, struct BoxStyle& bs);

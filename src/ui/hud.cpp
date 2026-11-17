@@ -57,6 +57,8 @@ void chat_icons_forget();    // hud_chat.cpp : the mother-of-pearl tab icon stri
 void zonetracker_help_dispose();
 void treasure_help_dispose();
 void chat_icons_dispose();
+void npc_card_forget();      // hud_actmenu.cpp : the NPC answers' item card icon
+void npc_card_dispose();
 // The presented display mode, captured once (see the note at the capture site). 0 until the first frame.
 static u32 s_dispFmt = 0, s_dispW = 0, s_dispH = 0;
 static const char* disp_fmt_name(u32 f) {
@@ -266,7 +268,7 @@ void Hud::render(u32 dev) {
         smnArt_ = 0; smnArtR_ = {}; smnArtKey_[0] = 0;                                        // the SMN content's avatar picture
         // The Help SAMPLES keep their own lazy copies at file scope in their hud_*.cpp -- unreachable from here
         // otherwise, so they used to survive a device recreate and hand a dead device's texture to SetTexture.
-        zonetracker_help_forget(); treasure_help_forget(); chat_icons_forget();   // (the debuffs / timers Help samples borrow the shared atlas forgotten just above)
+        zonetracker_help_forget(); treasure_help_forget(); chat_icons_forget(); npc_card_forget();   // (the debuffs / timers Help samples borrow the shared atlas forgotten just above)
         box_skins_forget();        // per-box Custom->FFXI skins belong to the old device too
         pointer_atlas_forget();    // the cursor-style sheet (party_gauges.cpp) : forget, re-arm its retry
         corner_mask_forget();      // the baked corner-mask atlas belongs to the old device (and this re-arms its retry)
@@ -447,6 +449,7 @@ void Hud::render(u32 dev) {
             chat_box_draw(f, 0, false, !config_.is_open(), 0.0f, 0.0f, 0.0f);   // Chat module : talk / NPC / system
             chat_box_draw(f, 1, false, !config_.is_open(), 0.0f, 0.0f, 0.0f);   // Chat module : the combat log
             actmenu_draw(f);                        // the target action menu, in place of the client's (Game UI)
+            npc_draw(f);                            // the NPC dialogue + answers, in place of the client's (Game UI)
             draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit
             // EmpyPop -- placed via //aio edit. SKIP the live draw while its own config section is being previewed :
             // unlike ZoneTracker (zone-gated) / Timers (buff-gated), EmpyPop draws whenever epShow is on, so without
@@ -887,7 +890,7 @@ void Hud::dispose() {
     for (int i = 0; i < 3; ++i) if (bstEco_[i]) { release_texture(bstEco_[i]); bstEco_[i] = 0; }   // BST box : the family icons
     for (int i = 0; i < GEO_TEX_N; ++i) if (geoTex_[i]) { release_texture(geoTex_[i]); geoTex_[i] = 0; }   // GEO content : its images
     if (smnArt_)    { release_texture(smnArt_);    smnArt_ = 0; }      // SMN content : the avatar picture
-    zonetracker_help_dispose(); treasure_help_dispose(); chat_icons_dispose();   // the module-owned Help samples (file-static, not members) -- symmetric with the forget block in render()
+    zonetracker_help_dispose(); treasure_help_dispose(); chat_icons_dispose(); npc_card_dispose();   // the module-owned Help samples (file-static, not members) -- symmetric with the forget block in render()
     corner_mask_dispose();   // the baked corner-mask atlas (the ONLY Release of it)
     config_.dispose();   // Release the ConfigPage's owned Help/preview textures (zone map, logo, atlases) -- else they leak per //unload
 }

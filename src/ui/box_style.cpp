@@ -33,6 +33,11 @@ static const WindowSkin* box_ffxi_skin(u32 dev, int variant) {
 void box_skins_forget()  { for (int i = 0; i < BOX_SKIN_MAX; ++i) g_boxSkin[i].on_device_lost(); }   // device recreate : forget handles, reload lazily
 void box_skins_dispose() { for (int i = 0; i < BOX_SKIN_MAX; ++i) g_boxSkin[i].dispose(); }           // shutdown : release textures
 
+float box_alpha(const BoxStyle& bs) {
+    const float a = bs.alphaOwn ? bs.alpha : ui_config().skinBoxAlpha;
+    return a < 0.0f ? 0.0f : (a > 1.0f ? 1.0f : a);
+}
+
 void draw_themed_box(u32 dev, const WindowSkin* partySkin, float x, float y, float w, float h,
                      const BoxStyle& bs, float base, float S) {
     if (!bs.on) return;
@@ -41,7 +46,7 @@ void draw_themed_box(u32 dev, const WindowSkin* partySkin, float x, float y, flo
     const int   theme = cp ? c.skinTheme : bs.theme;
     const float lum   = cp ? c.skinLum   : bs.lum;
     const unsigned hue = cp ? c.skinHue  : bs.hue;
-    float a = base * bs.alpha; if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
+    float a = base * box_alpha(bs); if (a < 0.0f) a = 0.0f; if (a > 1.0f) a = 1.0f;
     const u32 tint = mula(0xFFFFFFFFu, a);
     const bool border = bs.border != 0;                          // Border off -> background only (draw_window's drawBorder=false)
     if (window_theme_is_proc(theme)) {
@@ -92,10 +97,20 @@ void ConfigPage::draw_box_appearance(u32 dev, Font* fo, const MouseState* mo, bo
         if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, bs.border ? tr("On", "Oui") : tr("None", "Aucun"), bs.border != 0)) { bs.border = !bs.border; save_ui_config(); }
     }
     ROW_NEXT(52.0f)
-    { ROW_BAND(46.0f)   // Transparency (content stays opaque)
-        const float transp = 1.0f - bs.alpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
+    { ROW_BAND(52.0f)   // Transparency source : the Party box's (default) / this box's own -- the same chip as the Theme row
+        const float rowH = snap(40.0f), ty = ry + yo; fo->begin(dev);
+        fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Transparency", "Transparence"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+        const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+        if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, bs.alphaOwn ? tr("Custom", "Perso") : tr("Same as Party", "Comme Party"), !bs.alphaOwn)) {
+            if (!bs.alphaOwn) bs.alpha = ui_config().skinBoxAlpha;   // Custom starts from what is shown
+            bs.alphaOwn = !bs.alphaOwn; save_ui_config();
+        }
+    }
+    ROW_NEXT(52.0f)
+    { ROW_BAND(46.0f)   // the slider shows the EFFECTIVE value ; moving it makes this box's own (content stays opaque)
+        const float transp = 1.0f - box_alpha(bs); char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
         float v01 = clampf(transp, 0.0f, 1.0f);   // full 0..100% range (100% = fully invisible box)
-        if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Transparency", "Transparence"), b, &v01)) { bs.alpha = 1.0f - v01; }
+        if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Box transparency", "Transparence du cadre"), b, &v01)) { bs.alpha = 1.0f - v01; bs.alphaOwn = 1; }
     }
     ROW_NEXT(46.0f)
     { ROW_BAND(52.0f)   // Theme : Same as Party / Custom
@@ -161,7 +176,7 @@ void ConfigPage::draw_frame_section(u32 dev, Font* fo, const MouseState* mo, boo
                                     float bandX, float bandW, float coX, float ctrlW,
                                     int group, int* themeCopy,
                                     int* theme, unsigned* hue, float* lum, float* alpha,
-                                    bool* border, bool* borderExtra, const char* extraLabel) {
+                                    bool* border, bool* borderExtra, const char* extraLabel, int* alphaOwn) {
     const bool  twoCol = ctrlW >= snap(720.0f);
     const float gutter = snap(44.0f);
     const float halfW  = twoCol ? (ctrlW - gutter) * 0.5f : ctrlW;
@@ -185,11 +200,25 @@ void ConfigPage::draw_frame_section(u32 dev, Font* fo, const MouseState* mo, boo
         ROW_NEXT(48.0f)
     }
     // TRANSPARENCY : how much of the frame you see -- second in every panel's Frame, right under Border
+    // a non-master box : the Party box's opacity (default) or its own -- the chip, then the EFFECTIVE value (2026-11-17)
+    if (alphaOwn) {
+        { ROW_BAND(48.0f)
+            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Transparency", "Transparence"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(150.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
+            if (toggle_chip(dev, fo, mo, click, ctrl_uid_i(uidBase, 8), bx2, bty, bbw, bbh,
+                            *alphaOwn ? tr("Custom", "Perso") : tr("Same as Party", "Comme Party"), !*alphaOwn)) {
+                if (!*alphaOwn) *alpha = ui_config().skinBoxAlpha;   // Custom starts from what is shown
+                *alphaOwn = !*alphaOwn; save_ui_config(); }
+            ROW_NEXT(48.0f)
+        }
+    }
     { ROW_BAND(46.0f)
-      const float transp = 1.0f - *alpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
+      const float shown = (alphaOwn && !*alphaOwn) ? ui_config().skinBoxAlpha : *alpha;
+      const float transp = 1.0f - shown; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
       float v01 = clampf(transp, 0.0f, 1.0f);
-      if (row_slider(dev, fo, mo, ctrl_uid_i(uidBase, 5), coX, ry + yo, ctrlW, tr("Transparency", "Transparence"), b, &v01)) {
-          *alpha = 1.0f - v01; }
+      if (row_slider(dev, fo, mo, ctrl_uid_i(uidBase, 5), coX, ry + yo, ctrlW, alphaOwn ? tr("Box transparency", "Transparence du cadre") : tr("Transparency", "Transparence"), b, &v01)) {
+          *alpha = 1.0f - v01; if (alphaOwn) *alphaOwn = 1; }
       ROW_NEXT(46.0f)
     }
     // Follow the master box, or have its own. Everything under it exists only in the second case, which is why the

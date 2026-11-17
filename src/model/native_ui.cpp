@@ -64,6 +64,7 @@ const char* const COST_W[]  = { "subwindo", 0 };
 const char* const NET_W[]   = { "netstat", "polwindo", 0 };
 const char* const ACT_SUB_W[] = { "magselec", "abiselec", "chatctrl", 0 };
 const char* const ACT_LIST_W[] = { "magic", "ability", 0 };                   // the lists AioHUD redraws (NU_ACT)   // the action menu's submenus AioHUD redraws (NU_ACT)
+const char* const NPC_W[]   = { "rem4line", "rem4li2", "query", 0 };          // the NPC windows AioHUD redraws (NU_NPC)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
 
 // the offset a window SHOULD carry under the current config
@@ -76,6 +77,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_COST)  && in_list(n, COST_W))  { dy = HIDE_DY; return; }
     if ((hide & NU_NET)   && in_list(n, NET_W))   { dy = HIDE_DY; return; }
     if ((hide & NU_ACT)   && (!strcmp(n, "playermo") || in_list(n, ACT_SUB_W) || in_list(n, ACT_LIST_W))) { dy = HIDE_DY; return; }
+    if ((hide & NU_NPC)   && in_list(n, NPC_W)) { dy = HIDE_DY; return; }
     // the HUD-like windows never follow the MENUS offset -- they have their own option above
     if (in_list(n, PARTY_W) || in_list(n, ALLY_W) || in_list(n, CHAT_W) || in_list(n, COST_W) || in_list(n, NET_W) || in_list(n, INPUT_W)) return;
     if (ox == 0 && oy == 0 && anc == 0) return;   // frames the client places by CODE (mapframe, cnqframe...)
@@ -131,7 +133,14 @@ NativeChatInfo  g_chat;
 NativeList      g_list;
 NativeMenu g_act; bool g_actFail = false; int g_actBad = 0; DWORD g_actGoodSince = 0;
 u32 g_actObj = 0;          // the playermo object of the last good read (re-read before any call into the client)
-int eff_hide(const UiConfig& c) { return g_actFail ? (c.nuHide & ~NU_ACT) : c.nuHide; }
+// the same fallback for the NPC windows : an NPC window open but unreadable 3 frames -> the client's own come back
+NativeNpc g_npc; bool g_npcFail = false; int g_npcBad = 0; DWORD g_npcGoodSince = 0;
+int eff_hide(const UiConfig& c) {
+    int h = c.nuHide;
+    if (g_actFail) h &= ~NU_ACT;
+    if (g_npcFail) h &= ~NU_NPC;
+    return h;
+}
 
 // ---- resolution (bounded retry : a miss right after load must not kill the feature for the session, rule 10) ----
 u32   g_setter = 0, g_moveto = 0;
@@ -643,10 +652,13 @@ void act_poll(bool on) {
 // "on n'a pas les sous-menus"). Any OPEN window we did not hide that sits that far below the UI screen is brought
 // back by -HIDE_DY through the client's setter -- whatever path placed it. Logged (bounded), the success path too.
 int g_rescueLog = 0;
+// AioHUD's NPC box this frame (native_npc_box) : the windows that open with the answers go beside it
+float g_npcBoxR[4] = { 0, 0, 0, 0 }; DWORD g_npcBoxMs = 0; bool g_npcCard = false;
 void rescue_children(u32 mgr, int hide) {
     if (!g_setter) return;
     u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return;
-    const int uiH = (short)(wh >> 16); if (uiH < 240 || uiH > 8000) return;
+    const int uiW = (short)(wh & 0xFFFF), uiH = (short)(wh >> 16); if (uiH < 240 || uiH > 8000 || uiW < 320 || uiW > 8000) return;
+    const bool besideNpc = g_npc.query && g_npcBoxR[2] > 0.0f && GetTickCount() - g_npcBoxMs < 500u;
     u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
     for (int g = 0; valid_ptr(node) && g < 400; ++g) {
         u32 next = 0, obj = 0, def = 0; safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &obj);
@@ -661,12 +673,22 @@ void rescue_children(u32 mgr, int hide) {
             const int ek = find_entry_by_obj(obj);
             const bool ours = dy == HIDE_DY || (ek >= 0 && g_e[ek].ay >= HIDE_DY / 2);
             const int w = r[2] - r[0], h = r[3] - r[1];
-            if (!ours && w > 0 && h > 0 && w < 4000 && h < 4000) {                 // parked by its parent, not by us
+            // AioHUD draws the item card itself : the client's description stays where its parked parent put it
+            const bool cardOurs = besideNpc && g_npcCard && !strcmp(nm, "iteminfo");
+            if (!ours && !cardOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
+                int nx = r[0], ny = r[1] - HIDE_DY;
+                // the NPC answers are up : ABOVE AioHUD's box, left edges level (user 2026-11-17 "on la veut au-dessus") ;
+                // no room above : below it ; always inside the UI screen
+                if (besideNpc) {
+                    const int L = (int)(g_npcBoxR[0] * uiW), T = (int)(g_npcBoxR[1] * uiH), B = (int)((g_npcBoxR[1] + g_npcBoxR[3]) * uiH);
+                    nx = L; if (nx + w > uiW) nx = uiW - w; if (nx < 0) nx = 0;
+                    ny = T - 4 - h; if (ny < 0) ny = B + 4; if (ny + h > uiH) ny = uiH - h; if (ny < 0) ny = 0;
+                }
                 bool ok = true;
-                __try { ((SetRectFn)g_setter)(obj, r[0], r[1] - HIDE_DY, w, h, 1, 0, 0); }
+                __try { ((SetRectFn)g_setter)(obj, nx, ny, w, h, 1, 0, 0); }
                 __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
                 if (ok) refresh_handler(obj, nm);
-                if (g_rescueLog < 40) { ++g_rescueLog; windower::debug::log("NATIVEUI '%s' was parked with its parent (y %d) : %s", nm, r[1], ok ? "brought back on screen" : "setter faulted"); }
+                if (g_rescueLog < 40) { ++g_rescueLog; windower::debug::log("NATIVEUI '%s' was parked with its parent (y %d) : %s", nm, r[1], !ok ? "setter faulted" : besideNpc ? "put beside AioHUD's NPC box" : "brought back on screen"); }
             }
         }
         node = next;
@@ -950,10 +972,171 @@ static void fulllog_read(u32 mgr) {
     g_full = F;
 }
 
+// ---- the NPC windows (NU_NPC) : dialogue rem4line / rem4li2 and answers query (native_ui.h) ----
+const NativeNpc& native_npc() { return g_npc; }
+namespace {
+// glyphs -> ASCII : one u16 per character, code = ASCII - 0x20 ; >= 0x5F a control (dropped). Returns false on a fault.
+bool npc_glyphs(u32 p, int n, char* out, int cap, unsigned short* ctl = 0) {
+    out[0] = 0; if (n < 0 || n > 0x102) return false;
+    unsigned short g[0x102];
+    __try { memcpy(g, (const void*)p, (size_t)n * 2); } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+    int o = 0, nc = 0;
+    for (int i = 0; i < n && o < cap - 1; ++i) {
+        if (g[i] < 0x5F) out[o++] = (char)(g[i] + 0x20);
+        else if (ctl && nc < 4) ctl[nc++] = g[i];
+    }
+    while (o > 0 && out[o - 1] == ' ') --o;
+    out[o] = 0; return true;
+}
+// the open, not closing object of one of these windows (0 none)
+u32 open_obj(u32 mgr, const char* const* names, char* nameOut = 0) {
+    u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && in_list(nm, names)
+            && rd8(o + OBJ_CLOSING, cl) && !cl) { if (nameOut) memcpy(nameOut, nm, 9); return o; }
+        node = next;
+    }
+    return 0;
+}
+const char* const NPC_TALK_W[] = { "rem4line", "rem4li2", 0 };
+const char* const NPC_QUERY_W[] = { "query", 0 };
+// the dialogue : -1 none shown, 0 unreadable, 1 read. Handler : +0x24 lines held, +0x58 the first shown (list node),
+// a line value : +0x04 glyphs, +0x208 u16 their count (the leading controls counted).
+int npc_talk_read(u32 mgr, NativeNpc& N) {
+    const u32 obj = open_obj(mgr, NPC_TALK_W); if (!obj) return -1;
+    u32 hd = 0, cnt = 0, node = 0;
+    if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !safe_read(hd + 0x24, &cnt) || !safe_read(hd + 0x58, &node)) return 0;
+    if (cnt == 0 || cnt > 4096 || !node) return -1;                  // open between two pages : nothing to show
+    for (int g = 0; N.nLines < 4 && valid_ptr(node) && g < 16; ++g) {
+        u32 val = 0, next = 0; unsigned char dead = 0; short len = 0;
+        if (!safe_read(node + NODE_VAL, &val) || !safe_read(node + NODE_NEXT, &next) || !rd8(node + 0x14, dead)) return 0;
+        if (!dead && valid_ptr(val)) {
+            unsigned short g0 = 0;
+            if (!rd16(val + 0x208, len) || len < 0 || len > 0x102 || !rd16(val + 4, (short&)g0)) return 0;
+            if (!npc_glyphs(val + 4, len, N.line[N.nLines], sizeof(N.line[0]))) return 0;
+            N.lead[N.nLines] = g0 == 0xFEFF;
+            if (N.line[N.nLines][0]) ++N.nLines;
+        }
+        node = next;
+    }
+    N.talk = N.nLines > 0;
+    return N.talk ? 1 : -1;
+}
+// the answers : -1 none, 0 unreadable, 1 read. Handler : +0x14 the choice list (+0x24 count), +0x30 selected, +0x32 top,
+// +0x36 / +0x38 the question's length / glyphs ; a choice value : +0x04 glyphs, +0x106 u8 their count.
+int npc_query_read(u32 mgr, NativeNpc& N, u32* objOut = 0) {
+    if (objOut) *objOut = 0;
+    const u32 obj = open_obj(mgr, NPC_QUERY_W); if (!obj) return -1;
+    u32 hd = 0, cnt = 0, node = 0; short sel = 0, top = 0, qn = 0;
+    if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !safe_read(hd + 0x24, &cnt) || !safe_read(hd + 0x14, &node)
+        || !rd16(hd + 0x30, sel) || !rd16(hd + 0x32, top) || !rd16(hd + 0x36, qn)) return 0;
+    if (cnt == 0) return -1;                                          // answered, closing
+    if (cnt > 64 || sel < 0 || top < 0 || qn < 0 || qn > 0x100) return 0;
+    if (!npc_glyphs(hd + 0x38, qn, N.question, sizeof(N.question))) return 0;
+    for (int g = 0; N.n < 32 && valid_ptr(node) && g < 80; ++g) {
+        u32 val = 0, next = 0; unsigned char dead = 0, len = 0;
+        if (!safe_read(node + NODE_VAL, &val) || !safe_read(node + NODE_NEXT, &next) || !rd8(node + 0x14, dead)) return 0;
+        if (!dead && valid_ptr(val)) {
+            if (!rd8(val + 0x106, len) || len > 0x7E || !npc_glyphs(val + 4, len, N.choice[N.n], sizeof(N.choice[0]), N.ctl[N.n])) return 0;
+            ++N.n;
+        }
+        node = next;
+    }
+    if (N.n < 1) return 0;
+    N.sel = sel; N.top = top;
+    {   // the item description opened WITH the answers (a shop list) : the item it shows
+        static const char* const II[] = { "iteminfo", 0 };
+        const u32 io = open_obj(mgr, II); u32 ih = 0; short id = 0;
+        if (io && safe_read(io + OBJ_HANDLER, &ih) && valid_ptr(ih) && rd16(ih + 0x24, id)) N.itemId = (unsigned short)id;
+    }
+    u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+    N.queryFocused = focus == obj;
+    N.query = true;
+    if (objOut) *objOut = obj;
+    return 1;
+}
+void npc_poll(bool on) {
+    if (!on) { memset(&g_npc, 0, sizeof(g_npc)); g_npcBad = 0; g_npcFail = false; return; }
+    const u32 mgr = manager();
+    static NativeNpc N; memset(&N, 0, sizeof(N));
+    const int rt = mgr ? npc_talk_read(mgr, N) : -1;
+    const int rq = mgr ? npc_query_read(mgr, N) : -1;
+    if (rt == 0) { N.talk = false; N.nLines = 0; }
+    if (rq == 0) { N.query = false; N.n = 0; }
+    g_npc = N;
+    const DWORD now = GetTickCount();
+    if (rt == 0 || rq == 0) {   // shown by the client but not readable : never leave the player without its NPC text
+        if (++g_npcBad == 3 && !g_npcFail) { g_npcFail = true; windower::debug::log("NATIVEUI NPC windows : unreadable (talk %d, query %d) -- the client's own are shown", rt, rq); }
+        g_npcGoodSince = 0;
+        return;
+    }
+    g_npcBad = 0;
+    if (g_npcFail && (rt == 1 || rq == 1)) {
+        if (!g_npcGoodSince) g_npcGoodSince = now;
+        else if (now - g_npcGoodSince >= 5000) { g_npcFail = false; windower::debug::log("NATIVEUI NPC windows : read again -- AioHUD's back"); }
+    }
+    static bool wasT = false, wasQ = false;   // the success path, logged (rule 10) : one line per open
+    if (N.talk != wasT) { wasT = N.talk; if (N.talk) windower::debug::log("NATIVEUI NPC dialogue : %d line(s), first '%.60s'", N.nLines, N.line[0]); }
+    if (N.query != wasQ) {
+        wasQ = N.query;
+        if (N.query) {
+            windower::debug::log("NATIVEUI NPC question '%.60s' : %d choice(s)", N.question, N.n);
+            // the control glyphs of each answer (the client's colours, being mapped 2026-11-17) : only answers that carry some
+            for (int i = 0; i < N.n && i < 32; ++i) if (N.ctl[i][0])
+                windower::debug::log("NATIVEUI NPC   answer %d '%.40s' controls %04X %04X %04X %04X", i, N.choice[i], N.ctl[i][0], N.ctl[i][1], N.ctl[i][2], N.ctl[i][3]);
+        }
+    }
+}
+// the answers, read NOW, open and driven by the player
+u32 npc_live_query(NativeNpc& N) {
+    const u32 mgr = manager(); if (!mgr) return 0;
+    memset(&N, 0, sizeof(N)); u32 obj = 0;
+    if (npc_query_read(mgr, N, &obj) != 1 || !N.queryFocused) return 0;
+    return obj;
+}
+} // namespace
+
+bool native_npc_hover(int choice) {
+    NativeNpc N; const u32 obj = npc_live_query(N);
+    if (!obj || choice < 0 || choice >= N.n) return false;
+    if (N.sel == choice) return true;
+    if (choice >= N.top && choice < N.top + 3) {                     // on the client's page : its mouse hover (event 9)
+        if (!wr16(obj + 0x4C, (short)(choice - N.top + 1))) return false;
+        return menu_event(obj, 9);
+    }
+    // off its page : step there with the arrows (1 down, 2 up), the client scrolling as it does for the keys
+    for (int g = 0; g < 40 && N.sel != choice; ++g) {
+        if (!menu_event(obj, choice > N.sel ? 1 : 2)) return false;
+        NativeNpc M; if (npc_live_query(M) != obj) return false;
+        if (M.sel == N.sel) return false;                             // the client did not move : stop, never loop
+        N = M;
+    }
+    return N.sel == choice;
+}
+bool native_npc_pick(int choice) {
+    if (!native_npc_hover(choice)) return false;
+    NativeNpc N; const u32 obj = npc_live_query(N);
+    if (!obj || N.sel != choice || choice < N.top || choice >= N.top + 3) return false;
+    if (!wr16(obj + 0x4C, (short)(choice - N.top + 1))) return false;   // validate reads the row : selected = top + row - 1
+    return menu_event(obj, 5);
+}
+void native_npc_box(float x, float y, float w, float h, bool card) {
+    g_npcBoxR[0] = x; g_npcBoxR[1] = y; g_npcBoxR[2] = w; g_npcBoxR[3] = h; g_npcCard = card && w > 0.0f;
+    if (w > 0.0f) g_npcBoxMs = GetTickCount();
+}
+bool native_npc_next() {
+    const u32 mgr = manager(); if (!mgr) return false;
+    const u32 obj = open_obj(mgr, NPC_TALK_W); if (!obj) return false;
+    return menu_event(obj, 5);
+}
+
 void native_ui_tick(bool inWorld) {
     const UiConfig& c = ui_config();
     g_full.open = false; g_full.logFocus = -1;             // read again below this frame, or not open (never stale)
     if (!(inWorld && (c.nuHide & NU_ACT))) { g_act.open = false; g_sub.open = false; g_list.open = false; }   // never a stale menu once the option is off / logged out
+    if (!(inWorld && (c.nuHide & NU_NPC))) { g_npc.talk = false; g_npc.query = false; }
     // only while a character is in the world : the title, login and char-select menus are the client's own business
     const bool docking = c.chDock && c.chShow[0] && (c.chDock == 2 || c.chDockRect[2] > 0.0f);   // the game's input line : under / inside AioHUD's chat box
     const bool wanted = inWorld && (c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0 || docking);
@@ -968,10 +1151,11 @@ void native_ui_tick(bool inWorld) {
         if (g_lastSig != 0 || strcmp(g_why, why)) { g_lastSig = 0; lstrcpynA(g_why, why, sizeof(g_why)); }
         return;
     }
-    if (!resolve()) { g_act.open = false; g_sub.open = false; g_list.open = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
+    if (!resolve()) { g_act.open = false; g_sub.open = false; g_list.open = false; g_npc.talk = false; g_npc.query = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
     if (inWorld) fulllog_read(manager()); else g_full.open = false;   // the expanded log : AioHUD's Discussion box unfolds
     act_poll(wanted && (c.nuHide & NU_ACT));
-    if (wanted && (eff_hide(c) & NU_ACT)) rescue_children(manager(), eff_hide(c));
+    npc_poll(wanted && (c.nuHide & NU_NPC));
+    if (wanted && (eff_hide(c) & (NU_ACT | NU_NPC))) rescue_children(manager(), eff_hide(c));
     if (!wanted && !g_anyApplied) return;                  // recovery done, nothing configured
     const int sig = wanted ? config_sig(c) : 0;
     const DWORD now = GetTickCount();

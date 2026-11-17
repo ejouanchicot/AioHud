@@ -62,11 +62,14 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         // Border : the frame's edges + corners (None = background only), like every other box
         ROW_CHOICE_G(CTRL_ID, tr("Border", "Bordure"), ui_config().plrBorder, tr("On", "Oui"), tr("None", "Aucune"), 52.0f, 40.0f, 150.0f)
         // Transparency : how see-through the box chrome is (content stays opaque). 0% = solid.
+        // the Party box's (default) or this box's own ; the slider shows the EFFECTIVE value, moving it makes it own (2026-11-17)
+        ROW_CHOICE_G(CTRL_ID, tr("Transparency", "Transparence"), ui_config().plrAlphaOwn, tr("Custom", "Perso"), tr("Same as Party", "Comme Party"), 52.0f, 40.0f, 150.0f)
         { ROW_BAND(46.0f)
-            const float transp = 1.0f - ui_config().plrBoxAlpha; char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
+            UiConfig& uc = ui_config();
+            const float transp = 1.0f - (uc.plrAlphaOwn ? uc.plrBoxAlpha : uc.skinBoxAlpha); char b[16]; sprintf(b, "%d%%", (int)(transp * 100.0f + 0.5f));
             float v01 = clampf(transp, 0.0f, 1.0f);   // full 0..100% range
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Transparency", "Transparence"), b, &v01)) {
-                ui_config().plrBoxAlpha = 1.0f - v01; }
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Box transparency", "Transparence du cadre"), b, &v01)) {
+                uc.plrBoxAlpha = 1.0f - v01; uc.plrAlphaOwn = 1; }
         }
         ROW_NEXT(46.0f)
         // Copy Party : follow the party box theme (hides the own-theme rows below).

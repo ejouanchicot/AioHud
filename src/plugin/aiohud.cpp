@@ -213,6 +213,45 @@ static void tid_once(const char* what) {
     windower::debug::log("THREAD %-10s tid=%u   (main-loop tid is whichever 'render6' reports)", what, GetCurrentThreadId());
 }
 
+// PROCESS MEMORY, measured (2026-11-17 : after ~10 //unload + //load in one client the 2048x2048 minimap could no
+// longer be created, then the game stopped loading its own graphics and crashed). pol.exe is 32-bit : what runs out
+// is ADDRESS SPACE, and fragmentation counts as much as use -- hence the LARGEST free block, not just the total.
+// Logged at load, around the unload's dispose, and every 2 min : a leak per reload or per hour reads directly.
+static void log_vm(const char* when) {
+    MEMORYSTATUSEX ms; ms.dwLength = sizeof(ms);
+    if (!GlobalMemoryStatusEx(&ms)) return;
+    const unsigned usedMB = (unsigned)((ms.ullTotalVirtual - ms.ullAvailVirtual) >> 20), totMB = (unsigned)(ms.ullTotalVirtual >> 20);
+    SIZE_T largest = 0, freeN = 0; MEMORY_BASIC_INFORMATION mbi; unsigned char* p = 0;
+    while (VirtualQuery(p, &mbi, sizeof(mbi)) == sizeof(mbi)) {
+        if (mbi.State == MEM_FREE) { ++freeN; if (mbi.RegionSize > largest) largest = mbi.RegionSize; }
+        unsigned char* nx = (unsigned char*)mbi.BaseAddress + mbi.RegionSize;
+        if (nx <= p) break;
+        p = nx;
+    }
+    // private bytes via kernel32's K32GetProcessMemoryInfo (Win7+), looked up so psapi.lib is not needed
+    struct PMC { DWORD cb, pf; SIZE_T peakWS, ws, qpp, qp, qnpp, qnp, pfu, peakPfu, priv; } pmc = { sizeof(PMC) };
+    typedef BOOL(WINAPI* GPMI)(HANDLE, void*, DWORD);
+    static GPMI gpmi = (GPMI)GetProcAddress(GetModuleHandleA("kernel32.dll"), "K32GetProcessMemoryInfo");
+    const bool havePriv = gpmi && gpmi(GetCurrentProcess(), &pmc, sizeof(pmc));
+    debug::log("VMEM %-14s used %u / %u MB, largest free block %u MB (%u free blocks), private %u MB",
+               when, usedMB, totMB, (unsigned)(largest >> 20), (unsigned)freeN, havePriv ? (unsigned)(pmc.priv >> 20) : 0u);
+    // WHERE it grows (2026-11-17 : textures all released, still ~17 MB lost per reload) : the busy bytes of the
+    // process heap (where our HeapAlloc AND the static CRT's malloc/new land) vs every other heap (drivers, d3d).
+    // Load / unload only -- a heap walk is not a per-2-min cost.
+    if (when[0] == 'e') return;
+    HANDLE heaps[64]; const DWORD nh = GetProcessHeaps(64, heaps);
+    unsigned long long procB = 0, otherB = 0; unsigned procN = 0;
+    for (DWORD i = 0; i < nh && i < 64; ++i) {
+        if (!HeapLock(heaps[i])) continue;
+        PROCESS_HEAP_ENTRY e; e.lpData = 0; unsigned long long b = 0; unsigned n = 0;
+        while (HeapWalk(heaps[i], &e)) if (e.wFlags & PROCESS_HEAP_ENTRY_BUSY) { b += e.cbData; ++n; }
+        HeapUnlock(heaps[i]);
+        if (heaps[i] == GetProcessHeap()) { procB = b; procN = n; } else otherB += b;
+    }
+    debug::log("VMEM %-14s heaps : process heap %u MB in use (%u blocks), %u other heap(s) %u MB",
+               when, (unsigned)(procB >> 20), procN, (unsigned)nh - 1, (unsigned)(otherB >> 20));
+}
+
 void aio_plugin_init(PluginManager host)
 {
     g_host = host;
@@ -224,6 +263,7 @@ void aio_plugin_init(PluginManager host)
     spawn_updater(true);               // no-window update CHECK at startup -> writes data\update\check.txt for the Update tab
     debug::begin_session(AIOHUD_VERSION);   // was debug::clear() -- a //unload + //load (or an updater pass) then destroyed the capture of whatever you were chasing. Appends a version+timestamp banner, rotates once past ~4 MB.
     debug::log("AioHUD init: device = 0x%08X", host.service_raw(2));
+    log_vm("load");
     aio::load_ui_config();             // restore saved theme / font / box positions + sizes
     // NOT party().load() here : the roster cache is per character now, and nothing is logged in at init -- loading
     // blind is exactly what drew another character's party on your screen at the character-select screen. The load
@@ -393,6 +433,7 @@ void aio_plugin_render6()
 #endif
     __try { aio::native_ui_tick(g_hud.logged_in()); } __except (EXCEPTION_EXECUTE_HANDLER) {}   // Game UI : hide / move the client's own windows
     g_hud.render(dev);
+    { static DWORD s_vmAt = 0; const DWORD now = GetTickCount(); if (!s_vmAt || now - s_vmAt >= 120000) { if (s_vmAt) log_vm("every 2 min"); s_vmAt = now; } }
 
     // THE HARNESS SPEAKS HERE, and only here : ui/ and model/ must not reach into the host, so the watcher
     // leaves the file name behind and this drains it. Once per report -- taking the notice clears it.
@@ -904,7 +945,11 @@ void aio_plugin_unload()
     // on reload, which is exactly the window the standard unload/load iteration loop lives in.
     if (aio::party().self_id()) aio::party().save_cache(aio::party().self_id());
 
+    log_vm("unload before");
+    aio::texture_ledger_report("before dispose");
     g_hud.dispose();
+    log_vm("unload after");
+    aio::texture_ledger_report("unload after");
 }
 
 // Launch the updater PowerShell script WITH NO WINDOW (native CreateProcess + CREATE_NO_WINDOW -- a Lua-spawned

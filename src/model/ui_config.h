@@ -77,7 +77,9 @@ const char* ui_text_elem_label(int e);   // "Name" / "HP" / ... / "Interface"
 struct BoxStyle {
     int      on        = 1;      // draw the box chrome at all (0 = the content floats bare : no bg, no border)
     int      border    = 1;      // draw the FRAME edges + corners (0 = background only -> a borderless panel). Needs on.
-    float    alpha     = 1.0f;   // chrome opacity (1 = solid ; user "Transparency" slider = 1 - alpha)
+    float    alpha     = 1.0f;   // chrome opacity (1 = solid ; user "Transparency" slider = 1 - alpha) -- used when alphaOwn
+    int      alphaOwn  = 0;      // 0 = the PARTY box's opacity (skinBoxAlpha), the default (user 2026-11-17) ; 1 = `alpha`
+                                 // (set by moving this box's Transparency slider)
     int      themeCopy = 1;      // 1 = follow the Party box theme (skinTheme/skinLum/skinHue) ; 0 = this box's own
     int      theme     = 0;      // own theme index (window_theme_index) when themeCopy = 0
     float    lum       = 0.0f;   // own luminosity  (-1 darker .. +1 lighter)
@@ -177,6 +179,9 @@ struct UiConfig {
     int   tgtBox     = 1;      // 1 = draw the box chrome ; 0 = NO box (name/%/bar/buffs/timer float with a heavy outline)
     int   tgtBorder  = 1;      // the frame's EDGES + corners (0 = background only, like every other box's Border)
     float tgtBoxAlpha = 1.0f;  // box chrome OPACITY (1 = solid .. 0.1 = near-transparent) ; the content stays opaque
+    // 2026-11-17 : the Alliance / Target / Player boxes follow the PARTY box's opacity (skinBoxAlpha) unless their own
+    // slider was moved -- the same rule as BoxStyle::alphaOwn. Saved together as "alphaOwn=ally,tgt,plr".
+    int   allyAlphaOwn = 0, tgtAlphaOwn = 0, plrAlphaOwn = 0;
     int   tgtThemeCopy = 0;    // 1 = the Target box FOLLOWS the party box theme (skinTheme/skinLum) ; 0 = its own below
     int   tgtTheme   = 0;      // Target box-theme index (family x hue, same encoding as skinTheme)
     float tgtLum     = 0.0f;   // Target box-theme luminosity (-1 darker .. +1 lighter ; procedural themes)

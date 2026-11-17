@@ -8,7 +8,32 @@
 #include <stdio.h>   // gear-icon ROM fallback : fopen/fseek/fread + _snprintf
 #include <errno.h>   // //aio geartrace : distinguish "read-only folder" (EACCES) from the other write failures
 
+#include <intrin.h>   // _ReturnAddress : who created a texture still alive at unload
+#include "windower_debug.h"
+
 namespace aio {
+
+// ---- LIVE-TEXTURE LEDGER (2026-11-17 : each //unload + //load left ~40 MB behind ; the client then ran out of
+// address space and crashed). Every texture this file creates is entered with its size and its creator's return
+// address ; the LAST Release (refcount 0) takes it out. What remains after Hud::dispose is a leak, by name of caller.
+struct TexRec { u32 tex; u32 bytes; u32 ra; unsigned short w, h; };
+static TexRec s_tl[2048]; static int s_tlN = 0;
+static void tl_add(u32 tex, int W, int H, bool mips, void* ra) {
+    if (!tex || s_tlN >= 2048) return;
+    const u32 b = (u32)W * (u32)H * 4u;
+    TexRec& r = s_tl[s_tlN++]; r.tex = tex; r.bytes = mips ? b + b / 3 : b; r.ra = (u32)ra; r.w = (unsigned short)W; r.h = (unsigned short)H;
+}
+static void tl_remove(u32 tex) {
+    for (int i = 0; i < s_tlN; ++i) if (s_tl[i].tex == tex) { s_tl[i] = s_tl[--s_tlN]; return; }
+}
+void texture_ledger_report(const char* when) {
+    u32 total = 0; for (int i = 0; i < s_tlN; ++i) total += s_tl[i].bytes;
+    HMODULE me = 0; GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)&texture_ledger_report, &me);
+    windower::debug::log("TEXLIVE %-14s %d texture(s) alive, %u KB (managed : the same again in system memory)", when, s_tlN, total >> 10);
+    if (strncmp(when, "unload", 6) != 0) return;
+    for (int i = 0; i < s_tlN && i < 60; ++i)
+        windower::debug::log("TEXLIVE   %4ux%-4u %6u KB  creator AioHud.dll+0x%06X", s_tl[i].w, s_tl[i].h, s_tl[i].bytes >> 10, s_tl[i].ra - (u32)me);
+}
 
 // small struct matching D3DLOCKED_RECT's first two fields (Pitch, pBits).
 struct LR { int Pitch; void* pBits; };
@@ -22,6 +47,7 @@ static u32 create_locked(u32 dev, int W, int H, LR* lr)
     u32 tex = 0;
     if (!fCreate || fCreate(dev, W, H, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &tex) < 0 || !valid_ptr(tex))
         return 0;
+    tl_add(tex, W, H, false, _ReturnAddress());
     auto fLock = vmethod<long(__stdcall*)(u32,u32,void*,void*,u32)>(tex, 16);
     if (!fLock || fLock(tex, 0, lr, 0, 0) < 0 || !lr->pBits) { release_texture(tex); return 0; }   // lock failed -> don't hand back an uninitialised (garbage-pixel) texture
     return tex;
@@ -310,6 +336,7 @@ u32 make_texture_argb_mip(u32 dev, int W, int H, const u32* pixels, long* out_wh
     // A texture the runtime says it created but whose handle we refuse must still be RELEASED -- returning 0 on
     // it used to leak the object outright (and it fired for real : see valid_ptr in include/windower.h).
     if (!valid_ptr(tex))   { if (out_why) *out_why = 2;  release_texture(tex); return 0; }
+    tl_add(tex, W, H, levels > 1, _ReturnAddress());
     auto fLock   = vmethod<long(__stdcall*)(u32,u32,void*,void*,u32)>(tex, 16);
     auto fUnlock = vmethod<long(__stdcall*)(u32,u32)>(tex, 17);
 
@@ -370,7 +397,9 @@ void release_texture(u32 tex)
 {
     if (!tex) return;
     auto fRelease = vmethod<long(__stdcall*)(u32)>(tex, 2);
-    if (fRelease) __try { fRelease(tex); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    long left = 1;
+    if (fRelease) __try { left = fRelease(tex); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    if (left == 0) tl_remove(tex);
 }
 
 void preload_texture(u32 tex)
@@ -470,6 +499,25 @@ bool decode_gear_icon_from_rom(unsigned id, u32* out_px, GearInfo* info)
     if (!ok) return false;
     info->step = GS_OK;
     gear_decode_icon(data, out_px);   // top-down, 0xAARRGGBB : the orientation read_gear_icon_bmp returns too
+    return true;
+}
+
+// The DECODED head of `id`'s record (its first `n` bytes, n <= GEAR_HEAD) -- the same DAT, stride proof and record
+// proof as the icon above ; the text and flags are parsed by item_text.h (2026-11-17, the NPC answers' item card).
+bool read_item_record_head(unsigned id, unsigned char* out, long n)
+{
+    if (!out || n <= 0 || n > GEAR_HEAD) return false;
+    const GearDat* d = gear_dat_for(id); if (!d) return false;
+    const char* rom = ffxi_rom_dir_probe(0); if (!rom) return false;
+    char path[340]; _snprintf(path, sizeof(path), "%s\\%s.DAT", rom, d->dat); path[sizeof(path) - 1] = 0;
+    for (char* c = path; *c; ++c) if (*c == '/') *c = '\\';
+    FILE* fp = fopen(path, "rb"); if (!fp) return false;
+    long fsz = -1; if (fseek(fp, 0, SEEK_END) == 0) fsz = ftell(fp);
+    const long stride = fsz > 0 ? gear_find_stride(fsz, *d, id, gear_fread_at, fp) : 0;
+    const bool ok = stride && gear_fread_at(fp, ((long)id - gear_dat_first(*d)) * stride, out, n);
+    fclose(fp);
+    if (!ok) return false;
+    for (long i = 0; i < n; ++i) out[i] = gear_rotl3(out[i]);
     return true;
 }
 

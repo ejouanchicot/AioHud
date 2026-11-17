@@ -255,3 +255,84 @@ What Enter on a target opens. ONE menu for every target ; AioHUD mirrors it (Gam
   weapon skills 0..255, job abilities 512 + id. Both globals are read from the functions' operand (+33), found by
   signature. `ability` serves Job abilities, Weapon skills and Pet commands (h+0x64 = the category, the table at
   DAT_056C7221 stride 3) ; FUN_055641A0 opens it by its name "menu    ability" (Ghidra, 2026-11-16).
+
+## 10. The NPC windows -- event dialogue (`rem4line`) and answers (`query`) -- static, 2026-11-17 (base 0x05340000)
+
+Static reading (Ghidra + raw disassembly on `re/ffximain_dump_20261115.bin`), **then CONFIRMED live 2026-11-17**
+(dev probe `//aio npclog`, Curio Vendor Moogle + Greeter Moogle, EN client, FFXiMain at 0x05AB0000) : both vtables
+match ; the feeder carries the message (mode 150) ; `query` gives the question, the choices with their values, the
+selected row, the scroll and the answer.
+
+**The rendered text is GLYPHS, not bytes** : one u16 per character, code = ASCII - 0x20 (space = 0x0000, `C` =
+0x23, `?` = 0x1F). Codes >= 0x5F are controls : a speaker line starts `FEFF FEFF` ; a continuation line starts
+`0060 FEFF`. Every glyph string carries its LENGTH separately (the buffer after it is stale memory, never 0-ended) :
+the dialogue line node +0x208 (u16, the controls included), the question +0x36 (u16), a choice +0x106 (u8).
+The feeder message +0x42 is the raw SOURCE text instead (bytes, `07` = a line break).
+
+**The menu REGISTRY** (0x056B3320 .. 0x056B6BD8, 330 entries x 0x2C) : `"menu    <name>"` (0x20 bytes), then the
+address of the GLOBAL that holds the window's handler, then two words of parameters. It names a handler for 330 of
+the 409 definitions (the rest -- `eventlog` among them -- are opened by nobody in the exe). A handler class keeps its
+own "open" / "close" statics at vtable[-2] / vtable[-1], and again at slots 18 / 19 ; slot 4 is the draw, slot 6
+the events, slot 10 the per-frame update. Generic list (`FUN_05467990` head, `FUN_054679b0` next, `FUN_05467910`
+append) : list +0 head, +4 tail, +0x10 count ; node +0 next, +4 prev, +0x10 value, byte +0x14 dead.
+
+**The event dialogue is `rem4line` (log window 1) / `rem4li2` (log window 2)** -- 16,298 366x70, anchor 0, the log's
+own place. Globals 0x058B9384 / 0x058B9388 ; handler vtables 0x05674A50 / 0x05674AA0, both derived from the log
+window base class 0x05674A08 (ctor FUN_05477780 ; +0x64 = the PARENT log handler, `logwindo` 0x05962AF4 / `logwin2`
+0x05962AF8, whose +0x20 points back). Built at startup by FUN_054A6E20-ish code (0x054A6E47).
+- **Routing** : the function that writes every log line (FUN_05469096, the log view's writer) sends a line of chat
+  MODE 0x96 / 0x97 (150 / 151) to the two dialogue feeders INSTEAD of the log (two FUN_05467D80 calls, return).
+  150 / 151 are the NPC event dialogue (151 = 0x97 = "type -0x69", no indent on the next page).
+- **Feeder** (0x38 bytes ; globals 0x05823308 / 0x0582330C, = rem4line+0x68) : +0x1C the CURRENT message, +0x20 the
+  page's wait flags, +0x28 int64 countdown (frames), +0x30 the window handler, +0x34 first-page flag, then a queue
+  (+0x00 list) of messages. Enqueue FUN_05467DA0 ; the first queued message opens the window (handler slot 18).
+- **Message** (0x848, FUN_05467FF0) : +0x04 15 dwords of style (byte +0x04 = the mode 0x96 / 0x97), +0x42 the raw
+  text (0x7E6), +0x828 the read cursor, +0x82C the 2 prompt chars, +0x83C the feeder.
+- **Paging** (FUN_054680F0) : the text is cut at `7F xx` codes -- `7F 31` wait for Enter (flags 0x8001 ; the same
+  `7F 31` ends every record of the log store files, section 4 of chat-log.md), `7F 32` / `7F 33` 0x4002 / 0x4001,
+  `7F 34` / `35` / `36` + 1 byte = auto-advance after n seconds (x60 frames), `7F 37` 1, `7F 38` + u16 = a timer.
+  More than 4 display lines in one page are split with the prompt re-inserted.
+- **Lines in the window** : FUN_05477A70 appends one node per display line (0x248 bytes : +0x04 the rendered text,
+  0x200, as glyphs, controls kept ; +0x208 its LENGTH in glyphs (live) ; +0x20C 15 dwords of style) to handler+0x14 (count +0x24) ;
+  handler+0x58 = the first line shown, +0x4E = the lines of the current page, at most 4 drawn (FUN_05477F40, 16 px
+  apart, from rect +0x30). +0x56 = the "more" prompt is shown. +0x60 (short) = auto-advance : the event script's
+  UI op 5 sets / clears it (FUN_053F0A00 case 5) ; slot 10 (FUN_054780D0) then validates by itself.
+- **Events** (slot 6, FUN_05477FF0 -> FUN_05478030) : any event drops the 4 lines shown ; 5 on a manual page = next
+  page (FUN_05467D10 -> FUN_05467F20) ; 6 while an event runs (byte 0x057C6C20 == 1) ENDS the dialogue (clears the
+  feeder, 0x057C93B8 = 2, closes). Message done -> next queued, or close (slot 19) and 0x057C93B8 = 0.
+- **`spoolmsg` / `splmsg2`** (globals 0x058B938C / 0x058B9390, vtables 0x05674B90 / 0x05674BE0, 16,298 366x70) : a
+  separate stack of up to 4 TIMED lines (node 0x150 : +0x04 text, +0x104 style, +0x140 timer), placed on the parent
+  log window, chosen by the writer when the line's style byte +2 == 2. Likely the lines shown while the log is
+  hidden ; not proven.
+
+**The answers are `query`** -- 16,208 366x88, anchor 2 (above the log). Global 0x058B9618 (also 0x057BE598 while an
+event asks), handler 0x54C bytes, vtable 0x056763C8 (base 0x05675F08, shared with `gmtell` 0x05676410) ; built and
+opened by FUN_054A0070 from the event script (FUN_053F25F0).
+- **Text** : the prompt buffer **0x057CA2B8** (= FFXiMain+0x48A2B8, the June note above) : text before 0x0B = the
+  QUESTION, then 0x07-separated CHOICES, `7F 34..36 / 80 84 86 8C 92` skip 3 bytes, `7F 38` 4.
+- **Handler** : +0x14 the choice list (count +0x24), node 0x108 : +0x04 the rendered text (0x80 glyphs), +0x104 u16 the
+  choice VALUE (1..n), +0x106 u8 its LENGTH in glyphs, +0x107 1 (live : "Nothing for now." = 16 -> 0x0110) ; +0x30
+  the SELECTED choice (0-based), +0x32 the first row shown (3 rows), +0x34 widest, +0x36 / +0x38 the question's
+  length (u16) / glyphs (live : 20 "What would you like?"), +0x540 / +0x542 its origin, +0x548 the answer (0xFF =
+  cancelled), +0x54A a style (event UI op 6).
+- **Events** (slot 6, FUN_0548F9E0) : 1 / 0x17 down, 2 / 0x16 up, 3 / 4 page, **5 validate** (selected = +0x32 + row
+  - 1, then FUN_0548F7A0 answers), **6 cancel** (in an event : answer 0xFF), **9 hover** (row = obj+0x4C, as
+  playermo), 0x1B scrollbar. Same driver as the action menu : FUN_054596F0(obj, event).
+- Draw (slot 4, FUN_0548F7F0) : the question at (+0x540 + 4, +0x542 + 7), then 3 choices from +0x32.
+
+**Live 2026-11-17, the mirror (Game UI -> "NPC dialogue + answers", NU_NPC ; hud_actmenu.cpp npc_draw) :**
+- An answer's CONTROL glyphs carry its colour : every ITEM of a shop list starts `FEFE FEFF` and the client draws it
+  green ; plain answers ("Back.", "Nothing.") carry none and are white (Greeter Moogle, 15 / 15 items).
+- The client shows 3 answers ; AioHUD shows the same page (+0x32 top) and drives it with events 9 / 1 / 2 / 5.
+- **`iteminfo`** (global 0x058B93BC, 117 refs : the one item-description window of the whole client) opens WITH a
+  shop list's answers, as their child : parked with the query, so brought back by the rescue pass -- or left parked
+  while AioHUD draws its own card. **Its handler +0x24 (u16) = the item shown** (11 / 11, then 15 / 15 items).
+- The card is drawn from the item's DAT record (model/item_text.h ; the same DATs and proofs as the gear icons) :
+  +0x04 u16 flags (= Windower res flags, 3000 / 3000 : 0x8000 Rare, 0x4000 Ex) ; a string table at +0x1C (general),
+  +0x30 (armour), +0x3C (weapon) -- u32 count, then (u32 offset, u32 kind) pairs, a kind-0 text at table + offset +
+  0x1C : name, log name, plural, description ; armour / weapon : +0x10 level, +0x12 slots, +0x14 races, +0x18 jobs ;
+  weapon +0x20 DMG, +0x22 Delay, +0x26 skill, enchantment +0x2C charges / +0x2E equip delay / +0x30 reuse ; armour
+  enchantment +0x20 / +0x22 / +0x24. The client's title is the LOG name, first letter raised ("Ark tachi").
+
+Other event windows named by the registry : `eventtim` (0x058B9338, an event timer), `msgline` / `msglist`
+(0x059A4C70 / 74), `evitem` / `evitem01` (0x059A838C / 90, item pickers), `sortyn` (0x059A805C), `hnyesno`.

@@ -658,7 +658,7 @@ void Target::draw(const Frame& f) {
     //      where the name/%/bar/buffs/timer float on the game with a heavier outline (applied below). ----
     setup_color_state(dev);
     const bool drawBox = ui_config().tgtBox != 0;
-    const float ca = a * a * clampf(ui_config().tgtBoxAlpha, 0.0f, 1.0f);   // chrome fade x user opacity (content stays opaque)
+    const float ca = a * a * clampf(ui_config().tgtAlphaOwn ? ui_config().tgtBoxAlpha : ui_config().skinBoxAlpha, 0.0f, 1.0f);   // chrome fade x opacity (the Party box's unless set) ; content stays opaque
     const u32 tint = mul_a(0xFFFFFFFF, ca);
     // "Copy Party" : follow the party box theme (skinTheme/skinLum) instead of the Target's own.
     const bool copyParty = ui_config().tgtThemeCopy != 0;
@@ -962,7 +962,7 @@ void Target::draw(const Frame& f) {
         }
         // box chrome : same theme + No-box + Transparency as the Target box (openBottom=true -> fused onto its top).
         setup_color_state(dev);
-        const float sCa = a * a * clampf(ui_config().tgtBoxAlpha, 0.0f, 1.0f);   // same chrome opacity as the main box
+        const float sCa = a * a * clampf(ui_config().tgtAlphaOwn ? ui_config().tgtBoxAlpha : ui_config().skinBoxAlpha, 0.0f, 1.0f);   // same chrome opacity as the main box
         const u32   sTint = mul_a(0xFFFFFFFF, sCa);
         if (ui_config().tgtBox == 0) { /* No box : the sub content floats, like the Target */ }
         else if (window_theme_is_proc(theme))                draw_proc_window(dev, theme, subX, subY, subW, subBoxH, sTint, subFused, ui_config().tgtBorder != 0, lum, hue);

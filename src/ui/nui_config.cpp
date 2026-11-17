@@ -44,6 +44,7 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
         NUI_HIDE_ROW(CTRL_ID, tr("MP cost / recast case", "Case co\xC3\xBBt MP / recast"), NU_COST)
         NUI_HIDE_ROW(CTRL_ID, tr("Connection + POL icons", "Ic\xC3\xB4nes connexion + POL"), NU_NET)
         NUI_HIDE_ROW(CTRL_ID, tr("Action menu (AioHUD draws it)", "Menu d'action (dessin\xC3\xA9 par AioHUD)"), NU_ACT)
+        NUI_HIDE_ROW(CTRL_ID, tr("NPC dialogue + answers (AioHUD draws them)", "Dialogues PNJ + r\xC3\xA9ponses (dessin\xC3\xA9s par AioHUD)"), NU_NPC)
         NUI_NOTE(tr("A hidden window keeps working ; it is only parked off-screen.", "Une fen\xC3\xAAtre cach\xC3\xA9""e fonctionne toujours ; elle est juste hors de l'\xC3\xA9""cran."))
         #undef NUI_HIDE_ROW
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
