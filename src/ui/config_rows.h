@@ -55,6 +55,13 @@
             box_grow_set(BOX, wrap(g_ + d_, 3)); \
     } ROW_NEXT(52.0f)
 
+// One muted explanatory line in its own band. ONE statement (the outer braces) : Chat had its own CHAT_NOTE written
+// as `{ band } ROW_NEXT`, and `if (x) CHAT_NOTE(...)` drew under the if but ADVANCED regardless -- an invisible 40 px
+// row, twice on the Chat page (2026-11-17). Keep notes rare : how a feature is USED belongs in the Help tab ; a note
+// here says only what a setting does that its label cannot (a side effect, a warning).
+#define ROW_NOTE(TXT) { { ROW_BAND(34.0f) fo->begin(dev); \
+    fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(14.0f), (TXT), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f); } ROW_NEXT(34.0f) }
+
 // Two-state chip rows whose labels are NOT On/Off ("Fused"/"Separate", "Standalone"/"In Player", ...).
 #define ROW_CHOICE(UID, LABEL, FIELD, ON, OFF)     { ROW_BAND(48.0f) row_choice(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD), (ON), (OFF)); } ROW_NEXT(48.0f)
 #define ROW_CHOICE_G(UID, LABEL, FIELD, ON, OFF, BAND, ROWH, CHIPW)     { ROW_BAND(BAND) row_choice(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD), (ON), (OFF), (ROWH), (CHIPW)); } ROW_NEXT(BAND)

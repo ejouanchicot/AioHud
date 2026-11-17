@@ -344,7 +344,8 @@ struct UiConfig {
     // transient (not saved) : each box's rect as screen fractions + its pending wheel, for the mouse callback
     // (clicks on a chat box never reach the game ; the wheel scrolls its history). Written every frame it draws.
     float chHit[2][4] = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 } };
-    int   chDock = 2;                      // the GAME's input line : 0 = its own place, 1 = docked under the chat box,
+    unsigned chAtColor = 0xFF9FE8CFu;      // the auto-translated words in the chat (bold, between green / red brackets)
+    int   chDock = 2;                   // the GAME's input line : 0 = its own place, 1 = docked under the chat box,
                                            // 2 = INSIDE the chat box (the client's line hidden, its text drawn by AioHUD)
     int   chInputOk = -1;                  // transient : reading the client's input text works (1) / failed (0) / not tried (-1)
     float chDockRect[6] = { 0, 0, 0, 0, 0, 0 };   // transient : chat box x, y, w, h + backbuffer w, h (px) -- 0 = not drawn

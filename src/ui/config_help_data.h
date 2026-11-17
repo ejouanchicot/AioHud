@@ -705,8 +705,11 @@ static const HelpItem HELP_NUI[] = {
         "AioHUD peut retirer les fen\xC3\xAAtres du jeu, pour que ses box n'aient plus \xC3\xA0 les recouvrir. Ouvre //aio config, *Interface du jeu*."},
     {1, "*Hide* parks a window off-screen : the *party* window (with the game's target bar on it), the *alliance* windows, the *chat log*, the *help bar* with the menu name, the *MP cost* case, and the *connection* and *POL* icons in the top-right corner. A hidden window keeps working, you just no longer see it.",
         "*Cacher* gare une fen\xC3\xAAtre hors de l'\xC3\xA9""cran : la fen\xC3\xAAtre du *groupe* (avec la barre de cible du jeu), les fen\xC3\xAAtres d'*alliance*, le *journal du chat*, la *barre d'aide* avec le nom du menu, la case *co\xC3\xBBt MP*, et les ic\xC3\xB4nes *connexion* et *POL* en haut \xC3\xA0 droite. Une fen\xC3\xAAtre cach\xC3\xA9""e fonctionne toujours, tu ne la vois juste plus."},
-    {2, "NPC dialogue is written in the chat log. Keep the chat while AioHUD has no chat box of its own.",
-        "Les dialogues des PNJ sont \xC3\xA9""crits dans le journal du chat. Garde-le tant qu'AioHUD n'a pas sa propre box de chat."},
+    {2, "NPC dialogue is written in the chat log. Before hiding it, turn AioHUD's own *Chat* on : the same lines land there.",
+        "Les dialogues des PNJ sont \xC3\xA9""crits dans le journal du chat. Avant de le cacher, active le *Chat* d'AioHUD : les m\xC3\xAA""mes lignes y arrivent."},
+    {1, "*Redrawn by AioHUD* : the *action menu* and the *NPC dialogue* (with its answers and item card) can be drawn by AioHUD on your theme instead of the game's windows. The same section sets their size, frame and rows.",
+        "*Redessin\xC3\xA9s par AioHUD* : le *menu d'action* et les *dialogues PNJ* (avec leurs r\xC3\xA9ponses et la fiche d'objet) peuvent \xC3\xAA""tre dessin\xC3\xA9s par AioHUD sur ton th\xC3\xA8me \xC3\xA0 la place des fen\xC3\xAA""tres du jeu. La m\xC3\xAA""me section r\xC3\xA8gle leur taille, leur cadre et leurs lignes."},
+    {49, "", ""},
     {1, "*Move the game's menus* shifts every menu at once -- the main menu, its sub-menus, the lists and the panels, even the ones you never opened. They open straight at the new place.",
         "*D\xC3\xA9placer les menus du jeu* d\xC3\xA9place tous les menus d'un coup -- le menu principal, ses sous-menus, les listes et les panneaux, m\xC3\xAAme ceux jamais ouverts. Ils s'ouvrent directement \xC3\xA0 la nouvelle place."},
     {2, "Nothing is permanent : turning an option off, or unloading AioHUD, puts every window back where the game had it.",
@@ -718,6 +721,7 @@ static const HelpItem HELP_CHAT[] = {
     {0, "AioHUD's own chat", "Le chat d'AioHUD"},
     {1, "Two boxes on your theme : *Chat* (talk, NPC, system) and *Battle* (the combat log). Turn them on in //aio config, *Chat*.",
         "Deux box sur ton th\xC3\xA8me : *Discussion* (conversations, PNJ, syst\xC3\xA8me) et *Combat* (le journal de combat). Active-les dans //aio config, *Chat*."},
+    {48, "", ""},
     {1, "Click a *tab* (its icon) to filter : Chat (everything) / Party / Linkshell / Tell / Say / System, or Battle / Me in the battle box. The open tab spells its name ; a number on an icon counts the messages that tab has and the open one does not show.",
         "Clique un *onglet* (son ic\xC3\xB4ne) pour filtrer : Discussion (tout) / Groupe / Linkshell / Tell / Dire / Syst\xC3\xA8me, ou Combat / Moi dans la box combat. L'onglet ouvert affiche son nom ; un nombre sur une ic\xC3\xB4ne compte les messages que l'onglet ouvert ne montre pas."},
     {1, "The *wheel* over a box scrolls back through the history ; the pill at the bottom brings it back to the newest line. Clicks on a box never reach the game.",
@@ -726,6 +730,15 @@ static const HelpItem HELP_CHAT[] = {
         "Dans *\xC3\x89""diter dispo*, glisse une box pour la d\xC3\xA9placer, la molette r\xC3\xA8gle sa taille, et la poign\xC3\xA9""e du coin sa largeur et sa hauteur (la taille du texte d\xC3\xA9""cide combien de lignes y tiennent)."},
     {2, "To replace the game's log, hide it in *Game UI*. Its lines keep arriving here.",
         "Pour remplacer le journal du jeu, cache-le dans *Interface du jeu*. Ses lignes continuent d'arriver ici."},
+    {0, "Copy, links, banning", "Copier, liens, bannir"},
+    {1, "*Drag* over the text to select it. Nothing is copied yet : *right-click* and pick *Copy the selection*.",
+        "*Glisse* sur le texte pour le s\xC3\xA9lectionner. Rien n'est encore copi\xC3\xA9 : *clic droit* puis *Copier la s\xC3\xA9lection*."},
+    {1, "A *link* is drawn in blue : click it to open it in your browser or copy it.",
+        "Un *lien* est en bleu : clique-le pour l'ouvrir dans ton navigateur ou le copier."},
+    {1, "*Right-click* a line : copy the line, the whole message, the speaker's name or the link -- or *Ban* the speaker. A banned player's messages leave both boxes ; the list, with an *x* to unban each name, is in //aio config, *Chat*, *Banned players*.",
+        "*Clic droit* sur une ligne : copier la ligne, le message entier, le nom de l'auteur ou le lien -- ou *Bannir* l'auteur. Les messages d'un joueur banni quittent les deux box ; la liste, avec un *x* pour d\xC3\xA9""bannir chaque nom, est dans //aio config, *Chat*, *Joueurs bannis*."},
+    {1, "*History* -> *Export* writes the box's history to a text file in plugins\\AioHud\\exports (//aio chat export does the same).",
+        "*Historique* -> *Exporter* \xC3\xA9""crit l'historique de la box dans un fichier texte, dans plugins\\AioHud\\exports (//aio chat export fait pareil)."},
 };
 static const int HELP_CHAT_N = (int)(sizeof(HELP_CHAT) / sizeof(HELP_CHAT[0]));
 
@@ -749,3 +762,8 @@ static const HelpModule HELP_MODULES[] = {
     { "Update",           "Mise à jour",        HELP_UPDATE,  HELP_UPDATE_N },
 };
 static const int HELP_MODULE_N = (int)(sizeof(HELP_MODULES) / sizeof(HELP_MODULES[0]));
+// HELP_MODULES' indices, by name : the Help tab's rail lists them in GROUPS (config_page.cpp), not in this order.
+// Keep in step with the table above (a static_assert there counts the rail against HELP_MODULE_N).
+enum { HELP_GENERAL_I, HELP_PA_I, HELP_TARGET_I, HELP_PLAYER_I, HELP_MINIMAP_I, HELP_HATE_I, HELP_PW_I, HELP_TIMERS_I,
+       HELP_SC_I, HELP_TREASURE_I, HELP_ZT_I, HELP_EP_I, HELP_NUI_I, HELP_CHAT_I, HELP_UPDATE_I, HELP_INDEX_N };
+static_assert(HELP_INDEX_N == sizeof(HELP_MODULES) / sizeof(HELP_MODULES[0]), "HELP_*_I out of step with HELP_MODULES");

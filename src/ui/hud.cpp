@@ -74,7 +74,7 @@ void box_skins_dispose();   // ... release at shutdown
 // Cursor is client-relative to the focused (game) window, scaled by client size -> coord space.
 static void poll_mouse(MouseState& m, float coordW, float coordH, HWND gameHw) {
     POINT p;
-    if (!GetCursorPos(&p)) { m.clicked = false; m.down = false; m.backClicked = false; m.back = false; return; }
+    if (!GetCursorPos(&p)) { m.clicked = false; m.down = false; m.backClicked = false; m.back = false; m.right = m.rightClicked = false; return; }
     HWND fg = GetForegroundWindow();
     // Two SEPARATE questions, deliberately not merged (they used to be, and that was the double-cursor bug) :
     //   focused  -> may we ACT on input ? Only when the game is the OS foreground, else a click meant for the
@@ -88,7 +88,7 @@ static void poll_mouse(MouseState& m, float coordW, float coordH, HWND gameHw) {
     // resolves to the top-level game window. This drives who OWNS the pointer, independently of focus.
     HWND under = WindowFromPoint(p);
     m.overGame = (gameHw != nullptr && under != nullptr && GetAncestor(under, GA_ROOT) == gameHw);
-    if (!m.focused && !m.overGame) { m.clicked = false; m.down = false; m.backClicked = false; m.back = false; return; }
+    if (!m.focused && !m.overGame) { m.clicked = false; m.down = false; m.backClicked = false; m.back = false; m.right = m.rightClicked = false; return; }
     // Map through the GAME window, never through `fg` : when the game is not foreground, `fg` is the OTHER
     // app, and mapping into ITS client rect put our drawn pointer in the wrong place entirely.
     POINT cp = p; ScreenToClient(gameHw, &cp);
@@ -100,13 +100,16 @@ static void poll_mouse(MouseState& m, float coordW, float coordH, HWND gameHw) {
     // POSITION is tracked whenever the pointer is over the game (so our pointer can be drawn while another app
     // has focus) but the BUTTON is only ever read when the game is focused -- otherwise a click meant for the
     // other application would register as a config click here.
-    if (!m.focused) { m.clicked = false; m.down = false; m.backClicked = false; m.back = false; return; }
+    if (!m.focused) { m.clicked = false; m.down = false; m.backClicked = false; m.back = false; m.right = m.rightClicked = false; return; }
     bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
     m.clicked = down && !m.down;   // press edge = one-shot click
     m.down    = down;
     const bool bk = (GetAsyncKeyState(VK_XBUTTON1) & 0x8000) != 0;   // thumb BACK : same press edge, same focus gate
     m.backClicked = bk && !m.back;
     m.back        = bk;
+    const bool rb = (GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0;     // the right button : the same press edge
+    m.rightClicked = rb && !m.right;
+    m.right        = rb;
 }
 
 Hud::Hud()  { add_default(); }   // show the fioles even before a layout is applied
@@ -453,6 +456,7 @@ void Hud::render(u32 dev) {
             chat_box_draw(f, 1, false, !config_.is_open(), 0.0f, 0.0f, 0.0f);   // Chat module : the combat log
             actmenu_draw(f);                        // the target action menu, in place of the client's (Game UI)
             npc_draw(f);                            // the NPC dialogue + answers, in place of the client's (Game UI)
+            fep_draw(f);                            // the auto-translate picker (Tab), on AioHUD's input field
             draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit
             // EmpyPop -- placed via //aio edit. SKIP the live draw while its own config section is being previewed :
             // unlike ZoneTracker (zone-gated) / Timers (buff-gated), EmpyPop draws whenever epShow is on, so without

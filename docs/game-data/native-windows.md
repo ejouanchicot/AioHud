@@ -336,3 +336,76 @@ opened by FUN_054A0070 from the event script (FUN_053F25F0).
 
 Other event windows named by the registry : `eventtim` (0x058B9338, an event timer), `msgline` / `msglist`
 (0x059A4C70 / 74), `evitem` / `evitem01` (0x059A838C / 90, item pickers), `sortyn` (0x059A805C), `hnyesno`.
+
+## 11. The auto-translate picker (`fep`) -- static, NOT YET CONFIRMED LIVE, 2026-11-17 (base 0x05340000)
+
+What Tab in the input line opens (live : the focus goes `inline` -> `fep`, and the rescue pass brings it back from
+under the parked chat, so it is placed on the input line, section 6). "FEP" = the Japanese IME front-end : the same
+window lists the Windows IME's candidates when an IME is open, and the client's own AUTO-TRANSLATE candidates
+otherwise. Probe : `//aio feplog` (dev, `aiohud_probes.cpp`), 10 min, logs FEPLOG lines on change.
+
+- **Registry** : `fep` global 0x059A3F54, params a=0x0081000A b=0x735, record 0,0 96x134 anchor 0 (the record is not
+  used : it is placed by code). Built at load by FUN_054FA440 (with `inline` 0x059A3F50) : handler 0x2224 bytes, ctor
+  FUN_054D0410(IN, inline+0x14), **vtable 0x05677A38** (slot 1 open FUN_054D0500, 4 draw FUN_054D0B20, 5 clamp-to-
+  screen FUN_054D05E0, 6 events FUN_054D0650, 10 update FUN_054D0970, 16 notifications FUN_054D0D90).
+- **IN = handler+0x14 = the input system** (global 0x059A3EF8, 0xF2F8 bytes, vtable 0x05678BE0 ; the `FsTextInput`
+  of section 6 is the same family). Its candidate state : **byte +0x8C81 = FEP mode**, **+0x8C84 = SELECTED (0-based)**,
+  **+0xEC28 = count** (max 0x3FC), candidates 0x18 bytes at **+0x8C88** (an object : vtbl+0xC / +0x10 give its text ;
+  +0x14 an id), **+0xEC2C..+0xEC2F = the category PATH** (4 bytes, 0 0 0 0 = top level), +0xEC30 a move counter.
+- **Filled** (Tab, FUN_054F72E0 key 9 -> FUN_054F84B0(prefix, len)) : IN+0x8C81 = 1 ; the PREFIX = the word typed
+  before the caret (IN vtbl[25]) is saved in **0x059A3F10** (0x40 chars ; the dump holds "east") ; the dictionary
+  object searches it inside the current path (FUN_054FD060 / FUN_054FD430 ; empty prefix at top level = the
+  CATEGORY list ; no match -> one row "エラー" / "メモリーエラー") ; then FUN_054CEDC0 appends PLAYER NAMES that
+  start with it (a name list, yourself, the 18 party / alliance members). Then opens `menu    fep`.
+- **The rows the window draws** are a COPY rebuilt every frame by slot 10 (`IN vtbl[6](handler+0x18)`) : list
+  handler+0x18 : **count handler+0x1C** (max 60), items 0x10 at **handler+0x20 + i*0x10** (or *(handler+0x21E8) when
+  byte handler+0x21F8 is set, a long list) : item **+0x04 char* text (BYTES, not glyphs ; `7F xx` / SJIS pairs kept),
+  +0x08 its length, +0x0C the candidate's id** ; the text buffer is handler+0x3E0 (0x1E00). A text whose length
+  passes its first NUL has a SECOND part : drawn `first 06 second`.
+- **Draw** (slot 4) : header "sel+1/count" ("%d/%d", "0/0" when empty) at (x+4+0x23, y+2) and an SJIS "▲" (81 A3)
+  at (x+9, y+2) ; then the PAGE : **7 rows, from (sel / 7) * 7**, 16 px apart from y+2+16 ; a row wider than
+  width-8 is cut with "..." ; colour 0x80808080 for the text, **0x80404040 (grey) after the 06** ; the cursor is put
+  on menu entry **sel % 7 + 2** (FUN_0545A240). Placed at the input caret : x = anchor vtbl[0]() + caret offset,
+  y = anchor vtbl[1]() (handler+0x2208 / +0x220C) ; width handler+0x2220 = widest row + 12, >= 102, <= 140
+  or 200 (by the client mode at *(0x05797BD8)+8, probably the language) ; height +0x2222.
+- **Events** (slot 6 ; ignored while obj+0x56 > 0) -> IN slot 3 (op) -> in FEP mode a KEY : **1 -> Tab (next,
+  wraps)**, **2 -> Shift+Tab (previous, wraps)**, **5 -> Enter (validate)**, **0x1E -> Escape**, **9 = hover** : the
+  row is the cursor (obj+0x4C, rows 2..8) ; the handler steps next / previous until sel % 7 + 2 == that row (once per
+  frame, flag handler+0x2201) ; 0xC / 0x11 = validate. 3 / 4 (left / right) and 0x12 go to DIK codes the FEP mode does
+  not seem to use. Keyboard in the line itself : Tab / Down next, Shift+Tab / Up previous, PageUp / PageDown -7 / +7.
+- **Validate** (FUN_054F81D0) : on a CATEGORY (its record's first byte set) -> the path IN+0xEC2C = the category's
+  4 bytes, the list is rebuilt with an EMPTY prefix and `fep` re-opens (a category level, then its phrases) ; on a
+  phrase -> inserted into the line (IN vtbl[24]) and FEP mode ends. **Escape** : at a sub-level -> back to the TOP
+  with the saved prefix (not one level up) ; at the top -> FEP closed, IN+0x8C84 = 0. The inserted form is section 6's
+  `7F 69 .. 7F 64` (not traced statically here).
+
+Live capture must settle : the row text format (plain ASCII ? `7F` codes ? what the second part after NUL is --
+the category name ?), whether IN+0xEC2C changes on entering a category, whether the hover row really is obj+0x4C =
+sel % 7 + 2 (entry 1 = the header ?), and the item +0x0C id.
+
+## 12. The action menu's spell / ability ICONS -- where they come from (2026-11-17)
+
+The client draws NO per-spell picture in its lists, and its DATs hold none : a scan of every DAT (ROM..ROM9, 0.2-40 MB)
+for icon-named image records finds only the 640-record status sheet (`sts_icon`, ROM/119/57 and its copies). The res
+`icon_id` of a spell / ability is NOT an index into that sheet (see buffs-and-timers/timers.md).
+
+AioHUD's redrawn lists therefore take, in order (`hud_actmenu.cpp`, `list_icon` / `list_fallback`) :
+1. **Windower's Timers pack**, read from the user's install : `<windower>\plugins\icons\spells\NNNNN.png` (spell id) and
+   `...\abilities\NNNNN.png` (RECAST id ; the shared recasts 0 and 254 have one per job : `NNNNN.JJ.png`, JJ = main job).
+   Dated 2015-08-07 : 87 of 957 spells and 46 of 626 abilities have no file (GEO Indi-/Geo-, most RUN, recent Trusts).
+2. **A Trust without a file** : Windower's Trust pictures follow the res `icon_id`, `1000 + 9 * weapon + colour`
+   (weapons shield / sword / bow / staff / club / harp / fist ; colours red / blue / green / white / orange / purple /
+   pink / cyan / grey -- 37 of 38 icon_ids consistent over the 105 files). A sibling Trust with the same icon_id lends
+   its file ; else the picture is REBUILT : the same weapon in another colour, recoloured with the luminance ramp of
+   the wanted colour read on another weapon (Ygnas 1043, Monberaux 1039, AAHM / AAEV 1008).
+3. **The status the action gives** (`SpellRow::status` / `AbilRow::status`, from res ; a Geo- spell takes its Indi-
+   twin's), drawn from the status atlas.
+4. **A weapon skill** (Windower has none) : an ELEMENTAL one (magical / hybrid) its DAMAGE element, from a table taken
+   from BG Wiki (`scripts/gen_ws.py`, `WSRow::elem`) -- res' own `element` field is not it (Viper Bite, Rudra's Storm
+   carry one and are physical ; Savage Blade and Shining Blade share 6) and neither is the skillchain property
+   (Shining Blade : Light damage, Scission property) ; a physical one its weapon's damage type (`WSRow::skill` ->
+   Slashing / Piercing / Blunt, `assets/weapon_icons.raw`). Elements from `assets/element_icons.raw`.
+5. **A job ability** with no file and no status : its JOB's emblem (`assets/job_icons.raw`) in the role colour -- the
+   job found by name in `job_track` (main job, then support) ; the submenu CATEGORY rows (Waltzes, Rune Enchantment,
+   Ward, Effusion) by a small table.
+6. AioHUD's drawn glyph (a Trust with no picture : the party glyph).

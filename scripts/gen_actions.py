@@ -3,8 +3,12 @@
 # (Reconstructed 2026-07 after the original was lost from the repo; validated to reproduce the committed
 #  tables byte-for-byte on the res build it was regenerated against.)
 #
-#   spells_gen.h    <- res/spells.lua         SpellRow{id, en, cast_ms = cast_time*1000, mp = mp_cost, recast_id}
-#   abilities_gen.h <- res/job_abilities.lua  AbilRow {id, en, mp = mp_cost, recast_id}
+#   spells_gen.h    <- res/spells.lua         SpellRow{id, en, cast_ms = cast_time*1000, mp = mp_cost, recast_id, status, trust, icon}
+#   abilities_gen.h <- res/job_abilities.lua  AbilRow {id, en, mp = mp_cost, recast_id, status}
+# status : the status the action gives (0 none) -- the action menu's icon fallback (the game's own status icon) when
+# Windower's plugins\icons has no picture for it. A Geo- spell has none in res : it takes its Indi- twin's (same
+# effect). trust : 1 for a Trust (Alter Ego) spell. icon : res icon_id (0 when none) -- Windower's Trust pictures
+# follow it (1000 + 9 * weapon + colour), so a Trust without a file borrows / rebuilds one (hud_actmenu.cpp).
 #
 # Every entry with an id + English name is emitted, sorted by id, plus a binary-search accessor.
 #   python scripts/gen_actions.py
@@ -54,8 +58,16 @@ def parse(path):
             rcv = int(rc) if rc else 0
             if is_abil:
                 rcv = ABIL_RECAST_OVERRIDE.get(iid, rcv)
-            rows.append((iid, en, cast_ms, int(mp) if mp else 0, rcv))
+            st  = field(line, "status")
+            trust = 1 if 'type="Trust"' in line else 0
+            ic  = re.search(r'\bicon_id=(-?\d+)', line)
+            icv = int(ic.group(1)) if ic and int(ic.group(1)) > 0 else 0
+            rows.append((iid, en, cast_ms, int(mp) if mp else 0, rcv, int(st) if st else 0, trust, icv))
     rows.sort(key=lambda r: r[0])
+    if not is_abil:   # Geo-X : the status of Indi-X (res leaves the Geo- bubbles without one)
+        by_name = dict((r[1], r) for r in rows)
+        rows = [r if r[5] or not r[1].startswith('Geo-') or ('Indi-' + r[1][4:]) not in by_name
+                else r[:5] + (by_name['Indi-' + r[1][4:]][5],) + r[6:] for r in rows]
     return rows
 
 def emit(out, res, struct, arrname, nname, rowfmt, accessor):
@@ -90,12 +102,12 @@ ab_acc = ("inline const AbilRow* abil_info(unsigned id) {\n"
           "    return 0;\n}\n")
 
 ns = emit(SPELLS_OUT, SPELLS_RES,
-          "struct SpellRow { unsigned id; const char* en; unsigned cast_ms; unsigned mp; unsigned recast_id; };",
+          "struct SpellRow { unsigned id; const char* en; unsigned cast_ms; unsigned mp; unsigned recast_id; unsigned short status; unsigned char trust; unsigned short icon; };",
           "SPELLS", "SPELLS_N",
-          lambda r: '    {%d, "%s", %d, %d, %d},\n' % r, sp_acc)
+          lambda r: '    {%d, "%s", %d, %d, %d, %d, %d, %d},\n' % r, sp_acc)
 na = emit(ABILS_OUT, ABILS_RES,
-          "struct AbilRow { unsigned id; const char* en; unsigned mp; unsigned recast_id; };",
+          "struct AbilRow { unsigned id; const char* en; unsigned mp; unsigned recast_id; unsigned short status; };",
           "ABILS", "ABILS_N",
-          lambda r: '    {%d, "%s", %d, %d},\n' % (r[0], r[1], r[3], r[4]), ab_acc)
+          lambda r: '    {%d, "%s", %d, %d, %d},\n' % (r[0], r[1], r[3], r[4], r[5]), ab_acc)
 print("wrote %d spells -> %s" % (ns, SPELLS_OUT))
 print("wrote %d abilities -> %s" % (na, ABILS_OUT))

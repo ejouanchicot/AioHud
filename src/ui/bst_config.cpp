@@ -18,8 +18,11 @@ namespace aio {
 // the Display rows of the BST tab
 void ConfigPage::draw_bst_rows(u32 dev, Font* fo, const MouseState* mo, bool click,
                                float& ry, int& ri, float e,
-                               float bandX, float bandW, float coX, float ctrlW) {
+                               float bandX, float bandW, float coX, float ctrlW, int part) {
     UiConfig& c = ui_config();
+    // part 0 = the DISPLAY rows (the Pet page's Display section : when and where the box shows), part 1 = the CONTENT
+    // rows (what it shows) -- split 2026-11-17 (config audit : one flat list of up to 20 rows under Content)
+    if (part == 0) {
     ROW_TOGGLE(CTRL_ID, tr("Show on BST", "Afficher en BST"), c.bstShow)
     { ROW_BAND(52.0f)   // where the pet goes : beside the Ready dial in the box, on top of the box, on top of its moves only
         const char* LL[3] = { tr("Side by side", "C\xC3\xB4te \xC3\xA0 c\xC3\xB4te"), tr("Pet on top", "Pet au-dessus"), tr("Pet + moves", "Pet + moves") };
@@ -31,6 +34,8 @@ void ConfigPage::draw_bst_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
         const int pi = (c.bstDemo < 0 || c.bstDemo >= BST_PETS_N) ? 0 : c.bstDemo;
         if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Preview pet", "Pet (aper\xC3\xA7u)"), BST_PETS[pi].name)) { c.bstDemo = wrap(pi + d, BST_PETS_N); save_ui_config(); }
     } ROW_NEXT(52.0f)
+        return;
+    }
     ROW_TOGGLE(CTRL_ID, tr("Pet image", "Image du pet"), c.bstImage)
     { ROW_BAND(52.0f)   // what that place shows : the art, the pet's correlation as text, or both
         const char* ML[3] = { tr("Image", "Image"), tr("Correlation", "Corr\xC3\xA9lation"), tr("Both", "Les deux") };
@@ -66,10 +71,6 @@ void ConfigPage::draw_bst_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
     ROW_TOGGLE(CTRL_ID, tr("Moves' skillchain", "Skillchain des moves"), c.bstSc)   // Compression... after each move's name
     ROW_TOGGLE(CTRL_ID, tr("Job abilities", "Job abilities"), c.bstJa)   // the grid at the bottom of the box
     ROW_TOGGLE(CTRL_ID, tr("Move type icons", "Ic\xC3\xB4nes de type"), c.bstIcons)   // weapon / element icon, else a colour tick
-    { ROW_BAND(40.0f)   // note
-        const float ty = ry + yo; fo->begin(dev);
-        fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Shown when BST is your main job.", "Affich\xC3\xA9 quand BST est ton job principal."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-    } ROW_NEXT(40.0f)
 }
 
 // the Text rows of the BST tab : which text element, then its typography

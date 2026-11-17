@@ -29,6 +29,8 @@ namespace aio {
 bool actmenu_hit(float fx, float fy);
 bool npc_answers_hit(float fx, float fy);   // the NPC answers block (hud_actmenu.cpp) : the wheel over it is ours
 void npc_wheel_add(int d);                  // +1 a notch up, -1 down (window thread ; npc_draw consumes it)
+bool fep_hit(float fx, float fy);          // the auto-translate picker (hud_actmenu.cpp) : the wheel over it is ours
+void fep_wheel_add(int d);                 // +1 a notch up, -1 down (window thread ; fep_draw consumes it)
 
 class Hud {
 public:

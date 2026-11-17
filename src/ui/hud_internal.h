@@ -29,12 +29,17 @@ void box_on_screen(const Frame& f, float& px, float& py, float boxW, float boxH)
 // ovS > 0 = preview at (ovX, ovY) centre and that scale. chat_hit_clear() once per frame BEFORE the boxes draw, so a
 // box that is not drawn this frame no longer swallows clicks.
 void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, float ovX, float ovY, float ovS);
+bool chat_preview_size(int box, float& wU, float& hU);
+void chat_stack_sample(const Frame& f, float cx, float cy, float s, bool force, bool draw, float* outW, float* outH);   // both boxes, stacked (hud_chat.cpp)
+void nui_sample(const Frame& f, float cx, float cy, float s, bool draw, float* outW, float* outH);   // the redrawn action menu + submenu (hud_actmenu.cpp)   // a preview box's size / scale, as last drawn (hud_chat.cpp)
 void actmenu_draw(const Frame& f);   // hud_actmenu.cpp : the target action menu, mirrored (Game UI -> NU_ACT)
 void actmenu_set_hand_tex(u32 tex);  // the party's selection-hand texture (its cursor)
 // hud_chat.cpp : a LIVE chat box's rect this frame (false when hidden / not drawn) -- the redrawn menus sit above it
 bool chat_box_rect(int box, float& x, float& y, float& w, float& h);
 // the chat box AioHUD's menus open on (stacked : the higher ; side by side : the left) and the group's top / bottom
 bool chat_anchor(float& ax, float& aw, float& top, float& bottom);
+bool chat_input_rect(float& x, float& y, float& w, float& h, float& caretX, float& keptX);   // keptX : the caret as it was before the auto-translate picker opened   // hud_chat.cpp : AioHUD's input field (screen px), drawn < 200 ms ago
+void fep_draw(const Frame& f);   // hud_actmenu.cpp : the client's auto-translate picker (Tab), drawn on that field
 // a bw x bh block on it : above the group when it fits, else below ; inside the screen. False : no chat box shown.
 bool place_on_chat(float bw, float bh, float gap, float screenW, float screenH, float& bx, float& by);
 void npc_draw(const Frame& f);   // hud_actmenu.cpp : the NPC dialogue + answers, mirrored (Game UI -> NU_NPC)

@@ -242,22 +242,24 @@ void Hud::draw_config_preview(const Frame& f) {
     }
     // Pet module -> the sample box of the job tab chosen on that page (a jug pet for BST ; a bubble, an aura, an Entrust
     // for GEO) at TRUE in-game size, centred in the preview stage.
-    // Chat module -> both boxes (the ones shown) on sample lines, side by side, scaled to fit the stage.
+    // Chat module -> both boxes (the ones shown) on sample lines, ONE ABOVE THE OTHER, scaled to fit the stage.
     if (config_.section() == 16) {
         float sx = 0, sy = 0, sw = 0, sh = 0; config_.preview_rect(sx, sy, sw, sh);
-        const UiConfig& CC = ui_config();
-        const int n = (CC.chShow[0] ? 1 : 0) + (CC.chShow[1] ? 1 : 0); if (!n) return;
-        float tot = 0.0f; for (int b = 0; b < 2; ++b) if (CC.chShow[b]) tot += (float)CC.chW[b] * CC.chScale[b];
-        const float gapU = 24.0f;
-        float s = (screenH_ / 1000.0f); const float fitW = (tot + gapU * (n - 1)) * s;
-        if (fitW > sw * 0.94f && fitW > 0.0f) s *= (sw * 0.94f) / fitW;
-        float x = sx + (sw - (tot + gapU * (n - 1)) * s) * 0.5f;
-        for (int b = 0; b < 2; ++b) {
-            if (!CC.chShow[b]) continue;
-            const float w = (float)CC.chW[b] * CC.chScale[b] * s;
-            chat_box_draw(f, b, true, false, x + w * 0.5f, sy + sh * 0.5f, s * CC.chScale[b]);
-            x += w + gapU * s;
-        }
+        float s = (screenH_ / 1000.0f), w = 0.0f, h = 0.0f;
+        chat_stack_sample(f, 0.0f, 0.0f, s, false, false, &w, &h);
+        if (w > sw * 0.94f && w > 0.0f) { const float k = (sw * 0.94f) / w; s *= k; h *= k; }
+        if (h > sh * 0.94f && h > 0.0f) s *= (sh * 0.94f) / h;
+        chat_stack_sample(f, sx + sw * 0.5f, sy + sh * 0.5f, s, false, true, 0, 0);
+        return;
+    }
+    // Game UI module -> the redrawn action menu + its submenu, at TRUE in-game size (shrunk only to fit the stage)
+    if (config_.section() == 15) {
+        float sx = 0, sy = 0, sw = 0, sh = 0; config_.preview_rect(sx, sy, sw, sh);
+        float s = (screenH_ / 1000.0f), w = 0.0f, h = 0.0f;
+        nui_sample(f, 0.0f, 0.0f, s, false, &w, &h);
+        if (w > sw * 0.94f && w > 0.0f) { const float k = (sw * 0.94f) / w; s *= k; h *= k; }
+        if (h > sh * 0.94f && h > 0.0f) s *= (sh * 0.94f) / h;
+        nui_sample(f, sx + sw * 0.5f, sy + sh * 0.5f, s, true, 0, 0);
         return;
     }
     if (config_.section() == 14) {

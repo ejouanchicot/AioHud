@@ -6,6 +6,7 @@
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <cerrno>
 
 namespace aio {
 
@@ -147,7 +148,8 @@ int chat_decode(const char* raw, char out[][CHAT_TEXT], unsigned short col[][CHA
     const unsigned char* s = (const unsigned char*)raw;
     int ln = 0, n = 0; unsigned short cur = 0; bool inAt = false;   // inside the client's own auto-translate brackets
     bool full = false;                       // this line had no room for a whole character : the rest of it is dropped
-    auto put = [&](char ch) { if (!full && n < CHAT_TEXT - 1) { out[ln][n] = ch; col[ln][n] = cur; ++n; } };
+    bool atWords = false;                    // inside an auto-translate : the words take CHAT_AT_TEXT
+    auto put = [&](char ch) { if (!full && n < CHAT_TEXT - 1) { out[ln][n] = ch; col[ln][n] = (inAt || atWords) ? CHAT_AT_TEXT : cur; ++n; } };
     // one CODEPOINT as UTF-8 (the history is UTF-8 since 2026-11-17) : all its bytes or none, every byte the same colour
     auto put_cp = [&](unsigned cp) {
         char b[4]; int k = 0;
@@ -160,8 +162,13 @@ int chat_decode(const char* raw, char out[][CHAT_TEXT], unsigned short col[][CHA
         if (n + k > CHAT_TEXT - 1) { full = true; return; }
         for (int q = 0; q < k; ++q) put(b[q]);
     };
+    // an auto-translate BRACKET, coloured as the client draws them : the opening one green, the closing one red
+    // (2026-11-17 : "{Hello!} {Waktza rostrum}" read as plain braces) -- codes CHAT_AT_OPEN / CHAT_AT_CLOSE
+    auto put_at = [&](bool open) {           // written directly : its own code, whatever surrounds it
+        if (!full && n < CHAT_TEXT - 1) { out[ln][n] = open ? '{' : '}'; col[ln][n] = open ? CHAT_AT_OPEN : CHAT_AT_CLOSE; ++n; }
+    };
     auto brk = [&]() {                       // close the current line ; an empty one is not kept
-        full = false;
+        full = false; inAt = false;          // an unclosed bracket never colours the next line
         if (n == 0) return;
         out[ln][n] = 0; lens[ln] = n;
         if (ln + 1 < maxLines) { ++ln; n = 0; }
@@ -180,7 +187,7 @@ int chat_decode(const char* raw, char out[][CHAT_TEXT], unsigned short col[][CHA
             for (int k = 1; k < len && s[i + 1]; ++k) ++i;
             continue;
         }
-        if (c == 0xEF && (s[i + 1] == 0x27 || s[i + 1] == 0x28)) { inAt = s[i + 1] == 0x27; put(inAt ? '{' : '}'); ++i; continue; }
+        if (c == 0xEF && (s[i + 1] == 0x27 || s[i + 1] == 0x28)) { inAt = s[i + 1] == 0x27; put_at(inAt); ++i; continue; }
         if (c == 0xFD) {                     // auto-translate : FD type lang id_hi id_lo FD
             int j = i + 1; while (j < i + 8 && s[j] && s[j] != 0xFD) ++j;
             if (s[j] == 0xFD) {
@@ -191,9 +198,11 @@ int chat_decode(const char* raw, char out[][CHAT_TEXT], unsigned short col[][CHA
                     else if (type == 0x07)            ph = chat_item_name(id);        // an item
                 }
                 if (!ph || !*ph) { ph = "..."; g_decUnknown = true; }
-                if (!inAt) put('{');
+                if (!inAt) put_at(true);
+                atWords = true;
                 for (const char* g = ph; *g; ++g) if ((unsigned char)*g >= 0x20 && (unsigned char)*g < 0x7F) put(*g);
-                if (!inAt) put('}');
+                atWords = false;
+                if (!inAt) put_at(false);
                 i = j; continue;
             }
         }
@@ -293,6 +302,9 @@ static unsigned col_by_key(unsigned key) {
     return out;
 }
 unsigned chat_game_color(unsigned short code) {
+    if (code == CHAT_AT_OPEN)  return 0xFF4CD964u;          // the client's auto-translate brackets : green opens,
+    if (code == CHAT_AT_CLOSE) return 0xFFE5534Bu;          // red closes
+    if (code == CHAT_AT_TEXT)  return 0xFF9FE8CFu;          // the words between : their own pale sea green
     if (!code || !col_resolve()) return 0;
     const unsigned n = code & 0xFF;
     unsigned raw = 0;
@@ -324,6 +336,85 @@ static unsigned g_modeCount[512];
 static char     g_modeSample[512][72];
 
 int chat_count() { return g_histN; }
+
+// ---- the ban list ----
+static char     g_ban[CHAT_BAN_MAX][20];
+static int      g_banN = 0;
+static unsigned g_banVer = 1;
+static bool     g_banLoaded = false;
+static void ban_path(wchar_t* w, int cap) { plugin_path_w(w, cap, L"data\\chat_bans.txt"); }
+static void ban_load() {
+    if (g_banLoaded) return;
+    g_banLoaded = true;                                  // a missing file = nobody banned (not a failure)
+    wchar_t p[600]; ban_path(p, 600);
+    FILE* f = _wfopen(p, L"r"); if (!f) return;
+    char ln[64];
+    while (g_banN < CHAT_BAN_MAX && fgets(ln, sizeof(ln), f)) {
+        int n = (int)strlen(ln); while (n && (ln[n - 1] == '\n' || ln[n - 1] == '\r' || ln[n - 1] == ' ')) ln[--n] = 0;
+        if (n > 0 && n < 20) { lstrcpynA(g_ban[g_banN++], ln, 20); }
+    }
+    fclose(f);
+    for (int i = 1; i < g_banN; ++i) { char t[20]; memcpy(t, g_ban[i], 20); int j = i; while (j > 0 && _stricmp(g_ban[j - 1], t) > 0) { memcpy(g_ban[j], g_ban[j - 1], 20); --j; } memcpy(g_ban[j], t, 20); }   // alphabetical (a hand-edited file too)
+    ++g_banVer;
+    windower::debug::log("CHAT bans : %d name(s) loaded", g_banN);
+}
+static void ban_save() {
+    wchar_t p[600]; ban_path(p, 600);
+    FILE* f = _wfopen(p, L"w");
+    if (!f) { windower::debug::log("CHAT bans : cannot write the file (errno %d) -- kept for this session only", errno); return; }
+    for (int i = 0; i < g_banN; ++i) fprintf(f, "%s\n", g_ban[i]);
+    fclose(f);
+}
+static int ban_find(const char* name) { for (int i = 0; i < g_banN; ++i) if (!_stricmp(g_ban[i], name)) return i; return -1; }
+bool chat_banned(const char* name) { ban_load(); return name && name[0] && ban_find(name) >= 0; }
+bool chat_ban_add(const char* name) {
+    ban_load();
+    if (!name || !name[0] || strlen(name) >= 20 || g_banN >= CHAT_BAN_MAX || ban_find(name) >= 0) return false;
+    int at = g_banN; while (at > 0 && _stricmp(g_ban[at - 1], name) > 0) { memcpy(g_ban[at], g_ban[at - 1], 20); --at; }   // alphabetical
+    lstrcpynA(g_ban[at], name, 20); ++g_banN; ++g_banVer; ban_save();
+    windower::debug::log("CHAT bans : '%s' banned (%d in the list)", name, g_banN);
+    return true;
+}
+bool chat_ban_remove(const char* name) {
+    ban_load();
+    const int k = name ? ban_find(name) : -1; if (k < 0) return false;
+    for (int i = k; i + 1 < g_banN; ++i) memcpy(g_ban[i], g_ban[i + 1], 20);
+    --g_banN; ++g_banVer; ban_save();
+    windower::debug::log("CHAT bans : '%s' unbanned (%d left)", name, g_banN);
+    return true;
+}
+int         chat_ban_count() { ban_load(); return g_banN; }
+const char* chat_ban_name(int i) { ban_load(); return i >= 0 && i < g_banN ? g_ban[i] : ""; }
+unsigned    chat_ban_version() { ban_load(); return g_banVer; }
+
+int chat_export_txt(bool battle, char* nameOut, int nameCap) {
+    static const char* const CH[CH_COUNT] = { "Say", "Shout", "Yell", "Tell", "Party", "LS1", "LS2", "Unity", "Emote", "Assist", "System", "NPC", "Battle", "Other" };
+    SYSTEMTIME t; GetLocalTime(&t);
+    char rel[96]; _snprintf(rel, sizeof(rel), "exports\\chat_%04u-%02u-%02u_%02u%02u%02u.txt", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond); rel[sizeof(rel) - 1] = 0;
+    if (nameOut && nameCap > 0) lstrcpynA(nameOut, rel, nameCap);
+    wchar_t dir[600], path[600], wrel[96];
+    plugin_path_w(dir, 600, L"exports"); CreateDirectoryW(dir, 0);   // already there : fine
+    MultiByteToWideChar(CP_ACP, 0, rel, -1, wrel, 96);
+    plugin_path_w(path, 600, wrel);
+    HANDLE h = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, 0, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    if (h == INVALID_HANDLE_VALUE) { windower::debug::log("CHAT export : cannot create the file (error %u)", (unsigned)GetLastError()); return -1; }
+    static char buf[64 * 1024]; int o = 0, n = 0; DWORD wr = 0; bool ok = true;
+    memcpy(buf, "\xEF\xBB\xBF", 3); o = 3;                         // the UTF-8 BOM (Notepad reads the Japanese right)
+    for (int i = 0; i < g_histN && ok; ++i) {
+        const ChatLine* L = chat_line(i); if (!L || !L->seq) continue;
+        if (!battle && L->chan == CH_BATTLE) continue;
+        if (o > (int)sizeof(buf) - 400) { ok = WriteFile(h, buf, (DWORD)o, &wr, 0) && wr == (DWORD)o; o = 0; }
+        if (L->cont) o += _snprintf(buf + o, sizeof(buf) - o, "                  ");
+        else o += _snprintf(buf + o, sizeof(buf) - o, "[%02u:%02u] %-8s ", L->hhmm / 100, L->hhmm % 100, CH[L->chan < CH_COUNT ? L->chan : CH_OTHER]);
+        memcpy(buf + o, L->text, L->len); o += L->len;
+        buf[o++] = '\r'; buf[o++] = '\n'; ++n;
+    }
+    if (ok && o) ok = WriteFile(h, buf, (DWORD)o, &wr, 0) && wr == (DWORD)o;
+    CloseHandle(h);
+    if (!ok) { windower::debug::log("CHAT export : write failed (error %u) after %d line(s)", (unsigned)GetLastError(), n); return -1; }
+    windower::debug::log("CHAT export : %d line(s) -> %s", n, rel);
+    return n;
+}
 const ChatLine* chat_line(int i) {
     if (i < 0 || i >= g_histN) return 0;
     const int first = (g_histHead - g_histN + CHAT_HIST) & (CHAT_HIST - 1);
@@ -382,8 +473,11 @@ static void append_raw(const char* raw, int mode, int hhmm, unsigned ago) {
             h.col[k] = idx;
         }
         for (int k = nc; k < 8; ++k) h.pal[k] = 0;
+        h.atIdx = 0; for (int f = 0; f < nc; ++f) if (codes[f] == CHAT_AT_TEXT) h.atIdx = (unsigned char)(f + 1);
         h.modeArgb = (chan == CH_SYSTEM || chan == CH_BATTLE || chan == CH_NPC || chan == CH_OTHER) ? chat_game_color((unsigned short)(0x200 | (mode & 0xFF))) : 0;
         if (L == 0) chat_parse_speaker(h);                // the speaker sits on the message's FIRST line only
+        else { const ChatLine& h0 = g_hist[(g_histHead - L + CHAT_HIST) & (CHAT_HIST - 1)];   // ...and its continuations carry it
+               memcpy(h.chSpeaker, h0.chSpeaker, sizeof(h.chSpeaker)); h.chTellOut = h0.chTellOut; }   // (drawn on the first line only : !cont)
         g_histHead = (g_histHead + 1) & (CHAT_HIST - 1);
         if (g_histN < CHAT_HIST) ++g_histN;
     }

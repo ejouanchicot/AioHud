@@ -28,6 +28,10 @@ enum ChatChan {
     CH_SYSTEM, CH_NPC, CH_BATTLE, CH_OTHER, CH_COUNT
 };
 
+// per-char colour codes of the auto-translate BRACKETS (chat_decode) : drawn in the client's green / red
+// and of the auto-translated WORDS between them (their own colour, so the phrase stands out of the message)
+static const unsigned short CHAT_AT_OPEN = 0x401, CHAT_AT_CLOSE = 0x402, CHAT_AT_TEXT = 0x403;
+
 static const int CHAT_TEXT = 240;   // chars kept per history line (a longer message wraps into several lines)
 static const int CHAT_HIST = 4096;  // history lines kept (power of two) ; battle spam shares it -- 1024 left the talk only a few
                                      // minutes deep in the expanded log (2026-11-16, "je remonte, au plus loin divine emble") ; ~2.3 MB
@@ -47,6 +51,7 @@ struct ChatLine {
     unsigned char  len;              // chars in text
     char           text[CHAT_TEXT];  // decoded, UTF-8 : ASCII, the client's accents, Japanese
     unsigned char  col[CHAT_TEXT];   // per BYTE (every byte of a character the same) : 0 = the line's colour, k = pal[k - 1]
+    unsigned char  atIdx;            // the col[] value of the auto-translated WORDS (CHAT_AT_TEXT) : drawn BOLD ; 0 = none
     unsigned       pal[8];           // the line's colour runs, as the CLIENT colours them (ARGB, full intensity ; 0 = base)
     unsigned       modeArgb;         // the client's colour of this line's MODE (ARGB ; 0 = unknown -> the channel palette). NOT "base" : the
                                      // replay's field map types members BY NAME across model headers -- a 2nd "base" broke sheet_.base
@@ -79,6 +84,23 @@ bool chat_is_battle(int chan);
 //   unity / assist "{Name} msg"   say / shout / NPC "Name : msg"   yell "Name[Zone]: msg"
 // Anything else (or a format it does not recognise) leaves no speaker and the whole text as the message.
 void chat_parse_speaker(ChatLine& h);
+
+// Write the history to a text file (UTF-8 with a BOM) under <plugin>\exports\ : "[hh:mm] [Party] (Name) message", one
+// line per history line (a continuation indented). battle : the combat log too. Returns the lines written (-1 the
+// file could not be created) ; `nameOut` gets the file's name (relative to the plugin folder).
+int chat_export_txt(bool battle, char* nameOut, int nameCap);
+
+// BANNED players (2026-11-17 : "bannir quelqu'un, genre les GS qui shout") : their lines are kept in the history but
+// never shown by AioHUD's boxes (unbanning shows them again). Case-insensitive names, saved one per line in
+// <plugin>\data\chat_bans.txt (its own file : a profile switch never loses them). A continuation line carries its
+// message's speaker (chat_drain), so a banned message disappears whole.
+static const int CHAT_BAN_MAX = 200;
+bool        chat_banned(const char* name);
+bool        chat_ban_add(const char* name);       // false : already there / full / empty
+bool        chat_ban_remove(const char* name);
+int         chat_ban_count();
+const char* chat_ban_name(int i);
+unsigned    chat_ban_version();                   // changes on every add / remove (the boxes' cache key)
 
 // //aio chatmodes (dev) : log every mode seen since load with its count, channel and one sample line
 void chat_mode_report();

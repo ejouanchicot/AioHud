@@ -2,18 +2,22 @@
 //
 // ONE set of rows edits the box picked by the "Box" selector (Chat / Battle) -- the same pattern as the per-element
 // Text selector of the other modules, and the reason no control here needs a loop uid : each row has one call site.
-// Reuses catOpen_[6] (Boxes) and [5] (Text). The boxes are placed in //aio edit (drag, wheel = size, corner grip =
-// width + lines).
+// Sections, the config grammar (docs/architecture/config-panels.md) : Display [6] / Frame [20] / Content [21] /
+// Behaviour [22] / History [24] / Banned players [25] / Text [5]. How the boxes are USED (Edit layout, the wheel,
+// select, links, right-click) is the Help tab's page, not notes here.
 #include "ui/config_page.h"
 #include "ui/config_controls.h"
 #include "ui/config_rows.h"
 #include "model/ui_config.h"
+#include "model/chat_log.h"   // chat_export_txt : the Export button
 #include "gfx/font.h"
 #include "gfx/draw.h"
 #include <cstdio>
 
 namespace aio {
 
+static char g_chatExportMsg[160] = "";   // the last export's result, under its button
+static int  g_banPage = 0;               // the banned-players list : the page shown
 static int g_chatCfgBox = 0;   // 0 = Chat, 1 = Battle (which box the rows edit)
 
 void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool click,
@@ -23,9 +27,6 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
     UiConfig& c = ui_config();
     const int b = (g_chatCfgBox == 1) ? 1 : 0;
     const char* BOXL[2] = { tr("Chat", "Discussion"), tr("Battle", "Combat") };
-
-    #define CHAT_NOTE(TXT) { ROW_BAND(40.0f) const float ty_ = ry + yo; fo->begin(dev); \
-        fo->draw_lc(dev, coX + snap(4.0f), ty_ + snap(16.0f), (TXT), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f); } ROW_NEXT(40.0f)
 
     // ===== DISPLAY (which box, shown, size, its geometry) =====
     const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
@@ -38,10 +39,6 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
         { ROW_BAND(52.0f)
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Box", "Box"), BOXL[b])) g_chatCfgBox = wrap(b + d, 2);
         } ROW_NEXT(52.0f)
-        CHAT_NOTE(b == 0 ? tr("Talk, NPC and system lines, with tabs (All / Party / LS / Tell / Say / System).",
-                              "Discussions, PNJ et messages syst\xC3\xA8me, avec onglets (Tout / Groupe / LS / Tell / Dire / Syst\xC3\xA8me).")
-                         : tr("The combat log, with tabs (All / Me : the lines about you).",
-                              "Le journal de combat, avec onglets (Tout / Moi : les lignes qui te concernent)."))
         ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.chShow[b])
         { ROW_BAND(46.0f)   // Size
             const float lo = 0.50f, hi = 2.00f; char s[16]; sprintf(s, "%d%%", (int)(c.chScale[b] * 100.0f + 0.5f));
@@ -78,10 +75,7 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
             float v01 = clampf(((float)c.chMaxLines[b] - lo) / (hi - lo), 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Max lines", "Lignes max"), sb, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.chMaxLines[b] = v < 0 ? 0 : (v > 40 ? 40 : v); }
         } ROW_NEXT(46.0f)
-        CHAT_NOTE(tr("Move it in Edit layout ; the corner grip sets its width and height.",
-                     "D\xC3\xA9place-la dans \xC3\x89""diter dispo ; la poign\xC3\xA9""e du coin r\xC3\xA8gle largeur et hauteur."))
-        CHAT_NOTE(tr("Wheel over a box = scroll back. Hide the game's own log in Game UI.",
-                     "Molette sur une box = remonter. Cache le journal du jeu dans Interface du jeu."))
+        // (the how-to lines -- Edit layout, the wheel, hiding the game's log -- are the Help tab's : Help -> Chat)
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
     }
     ry += snap(16.0f);
@@ -166,6 +160,72 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
     }   // end Behaviour
     ry += snap(16.0f);
 
+    // ===== HISTORY (what was said : kept to a file). Its own section, not Behaviour's : an ACTION, not a setting,
+    // and the place the history's next tools go (2026-11-17 config audit) =====
+    const float aF24_ = cat_fold(CTRL_ID, catOpen_[24]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[24], aF24_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("History", "Historique"), catOpen_[24], aF24_)) catOpen_[24] = !catOpen_[24];
+    ROW_NEXT(42.0f)
+    if (aF24_ > 0.0f) {
+        const float top24_ = ry;
+        cat_fold_clip(dev, hdrX, top24_, hdrW, catH_[24] * aF24_);
+        // the history to a text file (the Battle box : the combat log too)
+        { ROW_BAND(48.0f)
+            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Export the history", "Exporter l'historique"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bw = snap(112.0f), bh = snap(34.0f);
+            if (push_btn(dev, fo, mo, click, CTRL_ID, coX + ctrlW - bw, ty + (rowH - bh) * 0.5f, bw, bh, tr("Export", "Exporter"), 0)) {
+                char nm[96]; const int n = chat_export_txt(b == 1, nm, sizeof(nm));
+                if (n >= 0) _snprintf(g_chatExportMsg, sizeof(g_chatExportMsg), tr("%d lines -> plugins\\AioHud\\%s", "%d lignes -> plugins\\AioHud\\%s"), n, nm);
+                else lstrcpynA(g_chatExportMsg, tr("Export failed (see aiohud_debug.log)", "\xC3\x89""chec de l'export (voir aiohud_debug.log)"), sizeof(g_chatExportMsg));
+                g_chatExportMsg[sizeof(g_chatExportMsg) - 1] = 0;
+            }
+        } ROW_NEXT(48.0f)
+        if (g_chatExportMsg[0]) ROW_NOTE(g_chatExportMsg)
+        cat_fold_end(dev, ry, top24_, catH_[24], aF24_);
+    }   // end History
+    ry += snap(16.0f);
+
+    // ===== BANNED PLAYERS (both boxes) : a LIST the player builds, so its own section, its count in the title -- it
+    // can hold 200 names and must not push the settings around (2026-11-17 config audit) =====
+    const int nBan = chat_ban_count();
+    char hbBan[64]; _snprintf(hbBan, sizeof(hbBan), tr("Banned players (%d)", "Joueurs bannis (%d)"), nBan); hbBan[sizeof(hbBan) - 1] = 0;
+    const float aF25_ = cat_fold(CTRL_ID, catOpen_[25]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[25], aF25_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, hbBan, catOpen_[25], aF25_)) catOpen_[25] = !catOpen_[25];
+    ROW_NEXT(42.0f)
+    if (aF25_ > 0.0f) {
+        const float top25_ = ry;
+        cat_fold_clip(dev, hdrX, top25_, hdrW, catH_[25] * aF25_);
+        // a paged grid (2026-11-17 : "prevois si on a 100 personnes bannies") : 3 names a row, alphabetical, 8 rows a
+        // page, a x on each name unbans it ; the pager only past one page
+        if (nBan == 0) ROW_NOTE(tr("Nobody. Right-click one of their lines -> Ban : their messages leave the boxes.", "Personne. Clic droit sur une de ses lignes -> Bannir : ses messages quittent les box."))
+        const int BAN_COLS = 3, BAN_ROWS = 8, BAN_PAGE = BAN_COLS * BAN_ROWS;
+        const int banPages = (nBan + BAN_PAGE - 1) / BAN_PAGE;
+        if (g_banPage >= banPages) g_banPage = banPages > 0 ? banPages - 1 : 0;
+        if (banPages > 1) { ROW_BAND(46.0f)
+            char pg[32]; _snprintf(pg, sizeof(pg), "%d / %d", g_banPage + 1, banPages); pg[sizeof(pg) - 1] = 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Page", "Page"), pg)) g_banPage = wrap(g_banPage + d, banPages);
+        } if (banPages > 1) { ROW_NEXT(46.0f) }
+        {   int unban = -1;
+            const int first = g_banPage * BAN_PAGE, last = first + BAN_PAGE < nBan ? first + BAN_PAGE : nBan;
+            for (int r0 = first; r0 < last; r0 += BAN_COLS) {
+                ROW_BAND(32.0f)
+                const float ty = ry + yo - (snap(32.0f) - snap(40.0f)) * 0.5f, rowH = snap(32.0f), colW = snap(ctrlW / (float)BAN_COLS);
+                for (int k = r0; k < r0 + BAN_COLS && k < last; ++k) {
+                    const float cx = coX + colW * (float)(k - r0), xb = snap(26.0f);
+                    fo->begin(dev);
+                    fo->draw_lc(dev, snap(cx + 10.0f), ty + rowH * 0.5f, chat_ban_name(k), snap(14.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                    if (push_btn(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, k), snap(cx + colW - xb - 10.0f), ty + (rowH - xb) * 0.5f, xb, xb, "x", 0)) unban = k;
+                }
+                ROW_NEXT(32.0f)
+            }
+            if (unban >= 0) { char nm[20]; lstrcpynA(nm, chat_ban_name(unban), sizeof(nm)); chat_ban_remove(nm); }   // after the loop : the list moves
+        }
+        cat_fold_end(dev, ry, top25_, catH_[25], aF25_);
+    }   // end Banned players
+    ry += snap(16.0f);
+
     // ===== TEXT (of the box picked above) =====
     const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));
@@ -178,10 +238,17 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Box", "Box"), BOXL[b])) g_chatCfgBox = wrap(b + d, 2);
         } ROW_NEXT(52.0f)
         draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.chText[b]);
+        // the auto-translated words' colour (both boxes ; they are drawn bold, between the green / red brackets)
+        { ROW_BAND(48.0f)
+            const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Auto-translate colour", "Couleur des auto-translate"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bw = snap(112.0f), bh = snap(34.0f);
+            if (push_btn(dev, fo, mo, click, CTRL_ID, coX + ctrlW - bw, ty + (rowH - bh) * 0.5f, bw, bh, tr("Default", "D\xC3\xA9""faut"), 0)) { c.chAtColor = 0xFF9FE8CFu; save_ui_config(); }
+        } ROW_NEXT(48.0f)
+        CFG_COLOR_PICKER(&c.chAtColor)
         cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
     }
     ry += snap(16.0f);
-    #undef CHAT_NOTE
     #undef ROW_BAND
     #undef ROW_NEXT
 }

@@ -59,6 +59,32 @@ bool native_npc_next();
 // `card` : AioHUD draws that item's card itself -> the client's description stays parked (not brought back at all).
 void native_npc_box(float x, float y, float w, float h, bool card = false);
 
+// The AUTO-TRANSLATE picker `fep` (Tab in the input line ; docs/game-data/native-windows.md section 11, live
+// 2026-11-17 //aio feplog). The client places it at its input line's caret : with that line parked "in AioHUD's
+// chat box" it opens off-screen, so AioHUD draws it (read while the input line is docked). Handler h = obj+0x0C :
+// h+0x1C the rows, their 0x10-byte items at h+0x20 (or *(h+0x21E8) when byte h+0x21F8 is set), item +4 char* text
+// (cp932 ; a category is wrapped in the client's 【】), +8 its length ; the input system *(h+0x14) : byte +0x8C81
+// the picker is on, +0x8C84 the selected row. The client shows 7 rows from (sel / 7) * 7.
+struct NativeFep {
+    bool open, focused;
+    bool picking;              // the client's auto-translate MODE is on (input +0x8C81) -- also in the frame its window
+                               // closes and reopens on a category ; off as soon as a phrase is chosen / Escape
+    bool fail;                 // open but unreadable this frame : the client's own is brought back (never nothing)
+    int  count, sel, top, rows;
+    char row[7][160];          // UTF-8, the category brackets removed
+    char sub[7][64];           // the part the client greys (after a 0x06 / a NUL inside the length) ; "" none
+    bool cat[7];               // a category (validating it lists its phrases)
+    char prefix[40];           // what the player typed before Tab (the filter) ; "" the category list
+};
+const NativeFep& native_fep();
+// Drive it the client's way : hover a row (0-based list index, on the shown page : event 9 with obj+0x4C = page row + 2),
+// pick (hover + event 5 = Enter), step (+1 next = Tab, -1 previous = Shift+Tab).
+bool native_fep_hover(int idx);
+bool native_fep_pick(int idx);
+bool native_fep_step(int d);
+// AioHUD drew the picker this frame : the client's stays parked (else the rescue pass brings it back)
+void native_fep_drawn();
+
 // The client's ACTION menu ("playermo"), read once a frame by native_ui_tick while NU_ACT is on (rule 6 : widgets read
 // this snapshot, never the memory). Rows = the handler's u16 COMMAND CODES (handler+0x1C, count byte handler+0x53),
 // cursor = obj+0x4C (1-based SCREEN row), rect = obj+0x3A (x0,y0,x1,y1 in the client's UI units, the parking offset

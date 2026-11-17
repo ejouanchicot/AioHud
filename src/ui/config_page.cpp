@@ -175,6 +175,11 @@ void zonetracker_help_fit(const Frame& f, float availW, float maxScale, int vari
 void zonetracker_help_measure(const Frame& f, int variant, float& outW, float& outH);
 // EmpyPop Help sample : the REAL EmpyPop stack in preview mode (the built-in chloris chain), config-aware. Defined in hud_empypop.cpp.
 void empypop_help_box(const Frame& f, float cx, float cy, float s);
+// Chat / Game UI Help samples : both chat boxes stacked (hud_chat.cpp) ; the redrawn action menu + submenu (hud_actmenu.cpp).
+void chat_help_box(const Frame& f, float cx, float cy, float s);
+void chat_help_fit(const Frame& f, float availW, float maxScale, float& outScale, float& outH);
+void nui_help_box(const Frame& f, float cx, float cy, float s);
+void nui_help_fit(const Frame& f, float availW, float maxScale, float& outScale, float& outH);
 void empypop_help_fit(const Frame& f, float availW, float maxScale, float& outScale, float& outH);
 
 #include "ui/config_help_data.h"   // HELP_* pages + HELP_MODULES[] (data only -- see the header)
@@ -204,6 +209,46 @@ static void scrollbar_vert(u32 dev, const MouseState* mo, int barId, float sbx, 
     }
     const u32 col = (hov || s_sbGrab == barId) ? 0x99FFFFFFu : 0x66FFFFFFu;              // brighter on hover / drag
     rrect_fill(dev, sbx, thY, sbw, thH, sbw * 0.5f, col, col);                           // thumb
+}
+
+// The LEFT RAIL of the Configuration and Help tabs : the modules in titled GROUPS, scrolled by the wheel once they
+// outgrow the screen (2026-11-17 audit : 18 flat rows at a 42 px pitch already overflowed a screen under ~1000 px
+// high, and every new module made it worse). An entry with id < 0 is a group title. Returns the id clicked, or -1.
+// `label(id)` names an entry ; the groups are the same on both tabs, so a module is found in the same place.
+struct NavEntry { int id; const char* en; const char* fr; };   // id >= 0 : a module (en/fr unused) ; id < 0 : a title
+static int nav_rail(u32 dev, Font* fo, const MouseState* mo, bool click, float x, float top, float w, float bot,
+                    const NavEntry* ent, int n, int sel, const char* (*label)(int), float& scroll, int barId,
+                    float pulse, u32 uidSeed) {
+    const float titleH = snap(28.0f), pitch = snap(38.0f), rh = snap(34.0f);
+    float total = 0.0f;
+    for (int i = 0; i < n; ++i) total += ent[i].id < 0 ? titleH : pitch;
+    const float viewH = bot - top, maxS = total > viewH ? total - viewH : 0.0f;
+    const bool over = mo && mo->x >= x && mo->x <= x + w && mo->y >= top && mo->y <= bot;
+    if (over && maxS > 0.0f && ui_config().wheel != 0) { scroll -= (float)ui_config().wheel * pitch * 2.0f; ui_config().wheel = 0; }
+    if (scroll > maxS) scroll = maxS;
+    if (scroll < 0.0f) scroll = 0.0f;
+    if (maxS > 0.0f) clip_rect_begin(dev, x, top, w, viewH);
+    int hit = -1; float y = top - scroll;
+    for (int i = 0; i < n; ++i) {
+        if (ent[i].id < 0) {   // a group title : the small gold caps the rail always had ("MODULES"), one per group
+            if (y + titleH > top && y < bot) {
+                fo->begin(dev);
+                fo->draw_lc(dev, x + snap(10.0f), y + titleH * 0.62f, tr(ent[i].en, ent[i].fr), snap(11.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
+            }
+            y += titleH; continue;
+        }
+        const float rx = x, rw = w - (maxS > 0.0f ? snap(10.0f) : 0.0f);
+        const bool active = ent[i].id == sel, hover = over && inrect(mo, rx, y, rw, rh);
+        if (hover && click) hit = ent[i].id;
+        const float ht = ease(ctrl_uid_i(uidSeed, i), (hover || active) ? 1.0f : 0.0f);
+        if (y + rh > top && y < bot) nav_row(dev, fo, rx, y, rw, rh, label(ent[i].id), active, ht, pulse);
+        y += pitch;
+    }
+    if (maxS > 0.0f) {
+        clip_rect_end(dev);
+        scrollbar_vert(dev, mo, barId, x + w - snap(5.0f), top, snap(5.0f), viewH, total, scroll, maxS);
+    }
+    return hit;
 }
 
 // Draw word-wrapped text from (x,y), returning the new y. Lines whose center is outside [top,bot] are
@@ -885,17 +930,20 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         { const float bwS = snap(3.0f);
           flat(dev, ix + sbW, bodyY, bwS, bodyH, C_STEEL);
           q4(dev, ix + sbW + bwS, bodyY, snap(22.0f), bodyH, 0x30000000, 0x00000000, 0x30000000, 0x00000000); }
-        fo->begin(dev);
-        fo->draw_lc(dev, ix + snap(20.0f), bodyY + snap(24.0f), "MODULES", snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
         if (section_ < 0 || section_ >= MODULE_N) section_ = 0;
-        for (int i = 0; i < MODULE_N; ++i) {
-            const int sec = (i == 0) ? SEC_INTERFACE : (i - 1);   // display order : Interface FIRST, then the HUD modules (their section indices are unchanged -> dispatch untouched)
-            const float rx = ix + snap(10.0f), rw = sbW - snap(20.0f);
-            const float ry = bodyY + snap(44.0f) + i * snap(42.0f), rh = snap(36.0f);
-            const bool active = (sec == section_), hover = inrect(mo, rx, ry, rw, rh);
-            if (hover && click) section_ = sec;
-            const float ht = ease(ctrl_uid_i(CTRL_ID, i), (hover || active) ? 1.0f : 0.0f);
-            nav_row(dev, fo, rx, ry, rw, rh, module_label(sec), active, ht, pulse);
+        {   // the modules in GROUPS, by what they are about (the section indices are unchanged -> dispatch untouched).
+            // A new module goes in its group here ; the rail scrolls once the groups outgrow the screen.
+            static const NavEntry NAV[] = {
+                { -1, "GENERAL", "G\xC3\x89N\xC3\x89RAL" },              { SEC_INTERFACE, 0, 0 },
+                { -1, "PARTY", "GROUPE" },                               { 0, 0, 0 }, { 1, 0, 0 }, { 2, 0, 0 }, { 14, 0, 0 },
+                { -1, "COMBAT", "COMBAT" },                              { 11, 0, 0 }, { 5, 0, 0 }, { 7, 0, 0 }, { 13, 0, 0 }, { 9, 0, 0 }, { 4, 0, 0 },
+                { -1, "WORLD", "MONDE" },                                { 3, 0, 0 }, { 10, 0, 0 }, { 6, 0, 0 }, { 8, 0, 0 }, { 12, 0, 0 },
+                { -1, "CHAT & GAME UI", "CHAT & INTERFACE" },             { 16, 0, 0 }, { 15, 0, 0 },
+            };
+            static_assert(sizeof(NAV) / sizeof(NAV[0]) == 18 + 5, "every module once in the rail (MODULE_N = 18) + 5 group titles");
+            const int pick = nav_rail(dev, fo, mo, click, ix + snap(10.0f), bodyY + snap(10.0f), sbW - snap(20.0f), bodyY + bodyH - snap(10.0f),
+                                      NAV, (int)(sizeof(NAV) / sizeof(NAV[0])), section_, module_label, navScroll_, 5, pulse, CTRL_ID);
+            if (pick >= 0) section_ = pick;
         }
 
         const float coX = ix + sbW + snap(30.0f);
@@ -1808,15 +1856,19 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
         { const float bwS = snap(3.0f);
           flat(dev, ix + sbW, bodyY, bwS, bodyH, C_STEEL);
           q4(dev, ix + sbW + bwS, bodyY, snap(22.0f), bodyH, 0x30000000, 0x00000000, 0x30000000, 0x00000000); }
-        fo->begin(dev);
-        fo->draw_lc(dev, ix + snap(20.0f), bodyY + snap(24.0f), "MODULES", snap(12.0f), fa(C_GOLD_DEEP), fa(C_STROKE), 1.4f);
-        for (int i = 0; i < HELP_MODULE_N; ++i) {
-            const float rx = ix + snap(10.0f), rw = sbW - snap(20.0f);
-            const float ry = bodyY + snap(44.0f) + i * snap(42.0f), rh = snap(36.0f);
-            const bool active = (i == helpSel_), hover = inrect(mo, rx, ry, rw, rh);
-            if (hover && click && i != helpSel_) { helpSel_ = i; helpScroll_ = 0.0f; }
-            const float ht = ease(ctrl_uid_i(CTRL_ID, i), (hover || active) ? 1.0f : 0.0f);
-            nav_row(dev, fo, rx, ry, rw, rh, tr(HELP_MODULES[i].en, HELP_MODULES[i].fr), active, ht, pulse);
+        {   // the SAME groups as the Configuration rail (a module is found in the same place on both tabs)
+            static const NavEntry NAV[] = {
+                { -1, "GENERAL", "G\xC3\x89N\xC3\x89RAL" },              { HELP_GENERAL_I, 0, 0 }, { HELP_UPDATE_I, 0, 0 },
+                { -1, "PARTY", "GROUPE" },                               { HELP_PA_I, 0, 0 }, { HELP_TARGET_I, 0, 0 }, { HELP_PLAYER_I, 0, 0 },
+                { -1, "COMBAT", "COMBAT" },                              { HELP_TIMERS_I, 0, 0 }, { HELP_SC_I, 0, 0 }, { HELP_HATE_I, 0, 0 },
+                { -1, "WORLD", "MONDE" },                                { HELP_MINIMAP_I, 0, 0 }, { HELP_ZT_I, 0, 0 }, { HELP_TREASURE_I, 0, 0 }, { HELP_PW_I, 0, 0 }, { HELP_EP_I, 0, 0 },
+                { -1, "CHAT & GAME UI", "CHAT & INTERFACE" },             { HELP_CHAT_I, 0, 0 }, { HELP_NUI_I, 0, 0 },
+            };
+            static_assert(sizeof(NAV) / sizeof(NAV[0]) == HELP_MODULE_N + 5, "every help page once in the rail + 5 group titles");
+            struct L { static const char* name(int i) { return (i >= 0 && i < HELP_MODULE_N) ? tr(HELP_MODULES[i].en, HELP_MODULES[i].fr) : ""; } };
+            const int pick = nav_rail(dev, fo, mo, click, ix + snap(10.0f), bodyY + snap(10.0f), sbW - snap(20.0f), bodyY + bodyH - snap(10.0f),
+                                      NAV, (int)(sizeof(NAV) / sizeof(NAV[0])), helpSel_, &L::name, helpNavScroll_, 6, pulse, CTRL_ID);
+            if (pick >= 0 && pick != helpSel_) { helpSel_ = pick; helpScroll_ = 0.0f; }
         }
 
         // content : the selected module's help, scrollable
@@ -2088,6 +2140,16 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 if (y >= top && y + rh2 <= bot) {
                     cs(dev);
                     empypop_help_box(f, hx + hw * 0.5f, y + rh2 * 0.5f, s);
+                    cs(dev);
+                }
+                y += rh2 + snap(8.0f);
+            } else if (it.kind == 48 || it.kind == 49) {   // LIVE sample : the Chat boxes, stacked (48) / the redrawn menus (49), in YOUR config
+                float s = 1.0f, bh = 0.0f;
+                if (it.kind == 48) chat_help_fit(f, hw * 0.8f, 1.2f, s, bh); else nui_help_fit(f, hw * 0.8f, 1.4f, s, bh);
+                const float rh2 = bh + snap(14.0f);
+                if (y >= top && y + rh2 <= bot) {
+                    cs(dev);
+                    if (it.kind == 48) chat_help_box(f, hx + hw * 0.5f, y + rh2 * 0.5f, s); else nui_help_box(f, hx + hw * 0.5f, y + rh2 * 0.5f, s);
                     cs(dev);
                 }
                 y += rh2 + snap(8.0f);

@@ -159,19 +159,19 @@ private:
                             float hdrX, float hdrW);
     void draw_bst_rows(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
-                            float bandX, float bandW, float coX, float ctrlW);
+                            float bandX, float bandW, float coX, float ctrlW, int part);
     void draw_bst_text_rows(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW);
     void draw_geo_rows(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
-                            float bandX, float bandW, float coX, float ctrlW);
+                            float bandX, float bandW, float coX, float ctrlW, int part);
     void draw_geo_text_rows(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW);
     void draw_smn_rows(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
-                            float bandX, float bandW, float coX, float ctrlW);   // smn_config.cpp : the SMN tab of //aio config -> Pet
+                            float bandX, float bandW, float coX, float ctrlW, int part);   // smn_config.cpp : the SMN tab of //aio config -> Pet
     void draw_smn_text_rows(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW);
@@ -329,6 +329,8 @@ private:
     bool  profSynced_  = false;   // one-time sync of activeProf_ from the persisted active profile (startup auto-load)
     int   helpSel_     = 0;       // Help tab : selected module in the left menu
     float helpScroll_  = 0.0f;    // Help tab vertical scroll (mouse wheel)
+    float navScroll_   = 0.0f;    // the Configuration tab's module rail : its scroll once the groups outgrow the screen
+    float helpNavScroll_ = 0.0f;  // the Help tab's module rail : the same
     bool  helpPlayer_  = false;   // this frame the Help shows the Player-box sample -> the Hud draws the demo box in its slot
     float helpPlayerCx_ = 0.0f, helpPlayerCy_ = 0.0f, helpPlayerW_ = 0.0f, helpPlayerH_ = 0.0f;
     float cfgScroll_   = 0.0f;    // Configuration tab controls vertical scroll (mouse wheel)

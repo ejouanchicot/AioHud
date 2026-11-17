@@ -771,7 +771,9 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
     //     game window mid-drag would swallow the down and pass the up (or vice versa), which is the stuck-input
     //     bug this file already documents for the left button, transposed to mouselook.
     static bool inRGest = false, blockRGest = false;
-    if (eventtype == 4) { inRGest = true;  blockRGest = overlay && (overGame || focused); return blockRGest ? 1u : blocked; }
+    if (eventtype == 4) { inRGest = true;  blockRGest = overlay && (overGame || focused);
+                          { int cb = 0; if (!overlay && focused && chat_over(cb)) blockRGest = true; }   // a right-click on a Chat box : its line menu
+                          return blockRGest ? 1u : blocked; }
     if (eventtype == 5) { const bool b = blockRGest; inRGest = false; blockRGest = false; return b ? 1u : blocked; }
     if (inRGest) return blockRGest ? 1u : blocked;   // mid-right-drag : same fate as its down, never split
 
@@ -788,6 +790,7 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
         // (that input belongs to whatever window has focus) yet do not hand it to the game either.
         if (overlay && overGame) return 1u;
         aio::UiConfig& c = aio::ui_config();
+        if (focused && pointer_frac_hit(aio::fep_hit)) { aio::fep_wheel_add(((int)delta > 0) ? 1 : -1); return 1u; }   // the auto-translate picker : its selection
         if (focused && pointer_frac_hit(aio::npc_answers_hit)) { aio::npc_wheel_add(((int)delta > 0) ? 1 : -1); return 1u; }   // the NPC answers : their cursor
         { int cb = 0; if (focused && chat_over(cb)) { c.chWheel[cb] += ((int)delta > 0) ? 1 : -1; return 1u; } }   // wheel over a Chat box : its history
         if (c.mmVisible && focused && g_gameHwnd) {
@@ -1600,6 +1603,14 @@ static void aio_command_dispatch(const char* cmd)
         aio::party().set_songdur_trace(sec);
         g_host.console().print(aio::tr(">>> AioHud : songdur ARMED -- sing, then send Windower\\plugins\\aiohud_debug.log (SONGDUR lines = the model, SONGREAL = the game's own timer) <<<", ">>> AioHud : songdur ARME -- chante, puis envoie Windower\\plugins\\aiohud_debug.log (lignes SONGDUR = le modele, SONGREAL = le timer reel du jeu) <<<"));
         g_host.console().print(aio::tr(">>> Cleanest test : Pianissimo the song ON YOURSELF -- same math as on an ally, but with a real timer to check it against <<<", ">>> Test le plus net : Pianissimo la song SUR TOI -- meme calcul qu'un Pianissimo sur un allie, mais avec un vrai timer pour le verifier <<<"));
+        return;
+    }
+    if (strstr(buf, "chat export")) {   // //aio chat export [all] -> the chat history to <plugin>\exports\chat_<date>.txt ("all" : the combat log too)
+        char nm[96]; const int n = aio::chat_export_txt(strstr(buf, "chat export all") != 0, nm, sizeof(nm));
+        char msg[220];
+        if (n >= 0) _snprintf(msg, sizeof(msg), aio::tr(">>> AioHud : %d chat line(s) exported -> plugins\\AioHud\\%s <<<", ">>> AioHud : %d ligne(s) de chat exportee(s) -> plugins\\AioHud\\%s <<<"), n, nm);
+        else _snprintf(msg, sizeof(msg), "%s", aio::tr(">>> AioHud : chat export FAILED (see aiohud_debug.log) <<<", ">>> AioHud : export du chat ECHOUE (voir aiohud_debug.log) <<<"));
+        msg[sizeof(msg) - 1] = 0; g_host.console().print(msg);
         return;
     }
     if (strstr(buf, "schlog")) {   // //aio schlog [sec] -> the SCH stratagem pool : the inputs the charge count is decided from, and the interval MEASURED off each spend

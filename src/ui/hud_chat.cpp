@@ -50,6 +50,7 @@ static const u32 CHAN_COL[CH_COUNT] = {
 // unknown (0) -> the line's colour. Faint colours are lifted so they stay readable on a dark panel.
 static u32 code_col(const ChatLine& L, unsigned char idx, u32 base) {
     if (idx == 0 || idx > 8) return base;
+    if (idx == L.atIdx) return ui_config().chAtColor | 0xFF000000u;          // the auto-translated words : the player's colour (Chat -> Text)
     u32 c = L.pal[idx - 1]; if (!c) return base;
     c |= 0xFF000000u;
     const int r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255, mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
@@ -139,9 +140,18 @@ struct ChatBoxState {
     float    rx = 0, ry = 0, rw = 0, rh = 0;   // last frame's rect : the hover test
     float    bodyEase = -1.0f;      // the body height drawn (eased toward what the content needs ; -1 = first frame)
     const Font* advFont = 0; float advSize = 0.0f; bool advExact = false; float adv[256];   // advance cache by CODEPOINT 0..255 (face + size) ; wider ones : cw_at asks the font
+    const Font* advBFont = 0; float advBSize = 0.0f; bool advBExact = false; float advB[256];   // the same for the BOLD auto-translate words
     int      grip = 0;              // token for the shared drag lock
+    // text selection (a drag in the body ; copied on release) and the link under the mouse
+    bool     selOn = false, selDrag = false, selMoved = false;
+    unsigned selASeq = 0, selFSeq = 0; int selAIdx = 0, selFIdx = 0;
+    float    downX = 0.0f, downY = 0.0f;
+    char     downUrl[256] = "";     // the link the press landed on (a click without a drag offers it)
+    unsigned linkSeq = 0; int linkA = -1;   // the link under the mouse (underlined)
+    unsigned toastMs = 0; float toastX = 0.0f, toastY = 0.0f; int toastKind = 0;   // 1 copied, 2 link copied, 3 nothing copied
 };
 static ChatBoxState g_cb[2];
+static float g_pvSizeU[2][2] = { { 0.0f, 0.0f }, { 0.0f, 0.0f } };   // a PREVIEW box's size / its scale (chat_preview_size)
 static float g_liveRect[2][4]; static unsigned g_liveMs[2] = { 0, 0 };   // the LIVE box's rect (previews never write it)
 bool chat_box_rect(int box, float& x, float& y, float& w, float& h) {
     if (box < 0 || box > 1 || !ui_config().chShow[box] || !g_liveMs[box] || GetTickCount() - g_liveMs[box] > 500u) return false;
@@ -152,6 +162,12 @@ bool chat_box_rect(int box, float& x, float& y, float& w, float& h) {
 // Where AioHUD's menus open (the action menu, the NPC windows) : on the CHAT, wherever the player put it (2026-11-17 :
 // "toujours le chat de gauche ... le joueur peut mettre ses chats ou il veut"). The two boxes STACKED (their x ranges
 // overlap) : anchored on the HIGHER one, the group spans both. SIDE BY SIDE : the LEFT one alone. One box : it.
+// the input field drawn last (screen px : x, y, w, h, the caret's x) -- hud_actmenu's auto-translate picker sits on it
+static float s_inRect[6] = { 0, 0, 0, 0, 0, 0 }; static DWORD s_inRectMs = 0;
+bool chat_input_rect(float& x, float& y, float& w, float& h, float& caretX, float& wordX) {
+    if (!s_inRectMs || GetTickCount() - s_inRectMs > 200u) return false;
+    x = s_inRect[0]; y = s_inRect[1]; w = s_inRect[2]; h = s_inRect[3]; caretX = s_inRect[4]; wordX = s_inRect[5]; return true;
+}
 bool chat_anchor(float& ax, float& aw, float& top, float& bottom) {
     float r[2][4]; bool on[2];
     for (int b = 0; b < 2; ++b) on[b] = chat_box_rect(b, r[b][0], r[b][1], r[b][2], r[b][3]);
@@ -197,8 +213,23 @@ static unsigned      g_meSeq[CHAT_HIST];
 static unsigned char g_meVal[CHAT_HIST];
 static unsigned      g_meName = 0;
 static unsigned name_hash(const char* s) { unsigned h = 2166136261u; for (; s && *s; ++s) h = (h ^ (unsigned char)*s) * 16777619u; return h; }
+// a BANNED speaker's line (chat_banned) : asked once per line (keyed by its seq), again when the list changes. Your own
+// tells to them stay (chTellOut : the name is the one you wrote to).
+static unsigned      g_banSeq[CHAT_HIST];
+static unsigned char g_banVal[CHAT_HIST];
+static unsigned      g_banVer = 0;
+static bool line_banned(const ChatLine& L) {
+    if (!L.chSpeaker[0] || L.chTellOut || chat_ban_count() == 0) return false;
+    if (chat_ban_version() != g_banVer) { g_banVer = chat_ban_version(); memset(g_banSeq, 0, sizeof(g_banSeq)); }
+    const int k = (int)(L.seq & (CHAT_HIST - 1));
+    if (L.seq > 16 && g_banSeq[k] == L.seq) return g_banVal[k] != 0;
+    const bool b = chat_banned(L.chSpeaker);
+    if (L.seq > 16) { g_banSeq[k] = L.seq; g_banVal[k] = b ? 1 : 0; }
+    return b;
+}
 static bool line_in_tab(const ChatLine& L, const ChatTab& t, const char* me) {
     if (!((1u << L.chan) & t.mask)) return false;
+    if (line_banned(L)) return false;
     if (!t.me) return true;
     // samples carry seq 1..8 : seq <= 16 is never cached (a live line that low just pays the direct test once)
     const unsigned slot = L.seq & (CHAT_HIST - 1);
@@ -264,18 +295,23 @@ static const char* chan_badge(const ChatLine& L) {
 // adv[] = the advance of codepoints 0..255 (the font's own atlas) ; a wider one is measured by the font (its shared
 // wide pages cache it). s_wFo / s_wTz : the font + size the table was built for, set with it.
 static Font* s_wFo = 0; static float s_wTz = 0.0f;
+// the auto-translated words are BOLD (2026-11-17) : their own font and advance table, set with the regular ones
+static Font* s_wFoB = 0; static const float* s_advB = 0;
 static inline int u8len(unsigned char b) { return b < 0x80 ? 1 : (b & 0xE0) == 0xC0 ? 2 : (b & 0xF0) == 0xE0 ? 3 : (b & 0xF8) == 0xF0 ? 4 : 1; }
-// the character at t[i] : its advance, byte length `k`, codepoint `cp`
-static inline float cw_at(const float* adv, const char* t, int i, int len, int& k, unsigned& cp) {
+// the character at t[i] : its advance, byte length `k`, codepoint `cp` ; `bold` = an auto-translated word's
+static inline float cw_at(const float* adv, const char* t, int i, int len, int& k, unsigned& cp, bool bold = false) {
+    const float* A = (bold && s_advB) ? s_advB : adv;
+    Font* F = (bold && s_wFoB) ? s_wFoB : s_wFo;
     const unsigned char b = (unsigned char)t[i];
     k = u8len(b); if (i + k > len) k = 1;
-    if (k == 1) { cp = b; return adv[b]; }
+    if (k == 1) { cp = b; return A[b]; }
     cp = b & (0x3Fu >> (k - 1));
     for (int q = 1; q < k; ++q) cp = (cp << 6) | ((unsigned char)t[i + q] & 0x3Fu);
-    if (cp < 256) return adv[cp];
+    if (cp < 256) return A[cp];
     char u[5]; for (int q = 0; q < k; ++q) u[q] = t[i + q]; u[k] = 0;
-    return s_wFo ? s_wFo->measure(u, s_wTz) : adv['?'];
+    return F ? F->measure(u, s_wTz) : A['?'];
 }
+static inline bool at_bold(const ChatLine& L, int i) { return L.atIdx && L.col[i] == L.atIdx; }
 // what punct_pre sees of a character : itself when Latin-1, else a neutral non-letter
 static inline unsigned char punct_c(unsigned cp) { return cp < 256 ? (unsigned char)cp : 1; }
 // the advance table : codepoint -> px (0..255, every one as its UTF-8 form)
@@ -308,7 +344,7 @@ static int wrap_line(const ChatLine& L, const float* adv, float gap, float avail
         float w = 0.0f; int b = a, lastSp = -1; unsigned char prev = 0;
         const float av = ns == 0 ? avail - firstCut : avail;
         while (b < L.len) {
-            int k; unsigned cp; float cw = cw_at(adv, L.text, b, L.len, k, cp);
+            int k; unsigned cp; float cw = cw_at(adv, L.text, b, L.len, k, cp, at_bold(L, b));
             const unsigned char c8 = punct_c(cp);
             cw += b > a ? punct_pre(prev, c8, gap) : 0.0f;
             if (w + cw > av && b > a) break;                               // a row breaks BETWEEN characters (Japanese has no spaces)
@@ -320,6 +356,112 @@ static int wrap_line(const ChatLine& L, const float* adv, float gap, float avail
     }
     return ns;
 }
+
+// ---- text selection, links, the clipboard (2026-11-17 : "un chat moderne : copier, coller des liens, exporter") ----
+// The rows drawn this frame (body text only : x0 = where the message starts), for the mouse : a drag in the body selects
+// (anchor / focus = line seq + byte index), the release copies it ; a click on a link offers to open / copy it.
+struct RowHit { const ChatLine* L; short a, b; float x0, cy; };
+static RowHit g_rowHit[2][152]; static int g_rowHitN[2] = { 0, 0 };
+// links : http:// https:// www. at a word start, up to a space / a non-ASCII byte ; trailing punctuation left out
+static int find_links(const ChatLine& L, short* la, short* lb, int cap) {
+    int n = 0;
+    for (int i = 0; i < L.len && n < cap; ++i) {
+        if (i > 0) { const char p = L.text[i - 1]; if (!(p == ' ' || p == '(' || p == '<' || p == '[' || p == '"' || p == '\'' || p == '{' || p == '>')) continue; }
+        int pre = 0;
+        if (i + 8 <= L.len && !_strnicmp(L.text + i, "https://", 8)) pre = 8;
+        else if (i + 7 <= L.len && !_strnicmp(L.text + i, "http://", 7)) pre = 7;
+        else if (i + 4 <= L.len && !_strnicmp(L.text + i, "www.", 4)) pre = 4;
+        if (!pre) continue;
+        int e = i + pre;
+        while (e < L.len) { const unsigned char c = (unsigned char)L.text[e]; if (c <= 0x20 || c >= 0x7F || c == '"' || c == '<' || c == '>' || c == '{' || c == '}') break; ++e; }
+        while (e > i + pre && strchr(".,;:!?)]'", L.text[e - 1])) --e;
+        bool dot = false; for (int q = i + pre; q < e; ++q) if (L.text[q] == '.') dot = true;
+        if (e - i - pre >= 3 && (dot || pre != 4)) { la[n] = (short)i; lb[n] = (short)e; ++n; }
+        i = e > i ? e - 1 : i;
+    }
+    return n;
+}
+// the byte index under x on a drawn row, and the x of an index -- the same advances as the draw
+static int row_index_at(const RowHit& R, float mx, const float* adv, float gap) {
+    const ChatLine& L = *R.L; float x = R.x0; unsigned char lastc = 0;
+    for (int j = R.a; j < R.b; ) {
+        int k; unsigned cp; float cw = cw_at(adv, L.text, j, L.len, k, cp, at_bold(L, j));
+        const unsigned char c8 = punct_c(cp); cw += punct_pre(j > R.a ? lastc : 0, c8, gap);
+        if (mx < x + cw * 0.5f) return j;
+        x += cw; j += k; lastc = c8;
+    }
+    return R.b;
+}
+static float row_x_at(const ChatLine& L, int a, int b, float x0, int idx, const float* adv, float gap) {
+    float x = x0; unsigned char lastc = 0;
+    for (int j = a; j < b && j < idx; ) {
+        int k; unsigned cp; float cw = cw_at(adv, L.text, j, L.len, k, cp, at_bold(L, j));
+        const unsigned char c8 = punct_c(cp); cw += punct_pre(j > a ? lastc : 0, c8, gap);
+        x += cw; j += k; lastc = c8;
+    }
+    return x;
+}
+// UTF-8 -> the clipboard (CF_UNICODETEXT) ; false when the clipboard is busy
+static bool clip_put_utf8(const char* s, int n) {
+    if (n <= 0) return false;
+    const int wn = MultiByteToWideChar(CP_UTF8, 0, s, n, 0, 0); if (wn <= 0) return false;
+    HGLOBAL g = GlobalAlloc(GMEM_MOVEABLE, (SIZE_T)(wn + 1) * sizeof(wchar_t)); if (!g) return false;
+    wchar_t* w = (wchar_t*)GlobalLock(g); if (!w) { GlobalFree(g); return false; }
+    MultiByteToWideChar(CP_UTF8, 0, s, n, w, wn); w[wn] = 0; GlobalUnlock(g);
+    if (!OpenClipboard(0)) { GlobalFree(g); return false; }
+    EmptyClipboard();
+    const bool ok = SetClipboardData(CF_UNICODETEXT, g) != 0;
+    CloseClipboard();
+    if (!ok) GlobalFree(g);
+    return ok;
+}
+// a link opened by the shell, on its own thread (ShellExecute may take a while : never the game's frame). shell32 /
+// ole32 are bound at run time (the DLL links user32 / kernel32 / gdi32 only).
+static DWORD WINAPI url_thread(LPVOID p) {
+    typedef HINSTANCE (WINAPI *SeFn)(HWND, LPCWSTR, LPCWSTR, LPCWSTR, LPCWSTR, INT);
+    typedef HRESULT (WINAPI *CiFn)(LPVOID, DWORD); typedef void (WINAPI *CuFn)();
+    HMODULE ole = LoadLibraryA("ole32.dll"), sh = LoadLibraryA("shell32.dll");
+    CiFn ci = ole ? (CiFn)GetProcAddress(ole, "CoInitializeEx") : 0; CuFn cu = ole ? (CuFn)GetProcAddress(ole, "CoUninitialize") : 0;
+    const bool co = ci && SUCCEEDED(ci(0, 0x2 | 0x4));            // COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE
+    SeFn se = sh ? (SeFn)GetProcAddress(sh, "ShellExecuteW") : 0;
+    const INT_PTR r = se ? (INT_PTR)se(0, L"open", (const wchar_t*)p, 0, 0, SW_SHOWNORMAL) : 0;
+    if (r <= 32) windower::debug::log("CHAT link : the shell could not open it (%d)", (int)r);
+    if (co && cu) cu();
+    HeapFree(GetProcessHeap(), 0, p);
+    return 0;
+}
+static bool open_url(const char* u) {
+    char full[300];
+    if (!_strnicmp(u, "www.", 4)) _snprintf(full, sizeof(full), "http://%s", u); else lstrcpynA(full, u, sizeof(full));
+    full[sizeof(full) - 1] = 0;
+    if (_strnicmp(full, "http://", 7) && _strnicmp(full, "https://", 8)) return false;   // a web page, nothing else
+    for (const char* q = full; *q; ++q) if ((unsigned char)*q <= 0x20 || (unsigned char)*q >= 0x7F) return false;
+    wchar_t* w = (wchar_t*)HeapAlloc(GetProcessHeap(), 0, 300 * sizeof(wchar_t)); if (!w) return false;
+    MultiByteToWideChar(CP_UTF8, 0, full, -1, w, 300); w[299] = 0;
+    HANDLE t = CreateThread(0, 0, url_thread, w, 0, 0);
+    if (!t) { HeapFree(GetProcessHeap(), 0, w); return false; }
+    CloseHandle(t); windower::debug::log("CHAT link opened : %.120s", full);
+    return true;
+}
+// the link popup (one for both boxes) : the link, [Open] [Copy]
+static struct { bool on; int box; char url[256]; float x, y; unsigned ms; } g_lp = { false, 0, "", 0, 0, 0 };
+// the LINE menu (a right-click on a line) : copy the line / the message / the name / its link
+static struct { bool on; int box; unsigned seq; float x, y; char name[20]; char url[256]; } g_cm = { false, 0, 0, 0, 0, "", "" };
+// a whole message from its first history line (its continuations after it) ; body : without the speaker's prefix
+static int message_text(unsigned seq, bool body, char* out, int cap) {
+    int o = 0; bool in = false;
+    for (int i = 0; i < chat_count(); ++i) {
+        const ChatLine* L = chat_line(i); if (!L) continue;
+        if (!in) { if (L->seq != seq) continue; in = true; }
+        else if (!L->cont) break;
+        const int a = (body && !L->cont) ? L->chBodyAt : 0; if (L->len <= a) continue;
+        if (o && o < cap - 2) { out[o++] = ' '; }
+        const int n = L->len - a < cap - 1 - o ? L->len - a : cap - 1 - o; if (n <= 0) break;
+        memcpy(out + o, L->text + a, (size_t)n); o += n;
+    }
+    out[o > 0 ? o : 0] = 0; return o;
+}
+
 
 // The client's input text (native_input_read) -> printable chars + colours + caret index. 7F FF = caret, 7F FE lead,
 // 7F 69 .. 7F 64 = an auto-translate word (shown in braces), 7F 66 = the Tab candidate (dimmed), 85 xx = accents.
@@ -333,8 +475,8 @@ static void input_decode(const char* raw, int rn, InLine& o) {
         if (ch == 0x7F && i + 1 < rn) {
             const unsigned char m = (unsigned char)raw[++i];
             if (m == 0xFF) o.caret = o.n;
-            else if (m == 0x69) { at = true; o.t[o.n] = '{'; o.c[o.n++] = 0xFF8EE88Eu; }
-            else if (m == 0x64) { if (at) { o.t[o.n] = '}'; o.c[o.n++] = 0xFF8EE88Eu; } at = false; cand = false; }
+            else if (m == 0x69) { at = true; o.t[o.n] = '{'; o.c[o.n++] = 0xFF4CD964u; }   // the client's green open
+            else if (m == 0x64) { if (at) { o.t[o.n] = '}'; o.c[o.n++] = 0xFFE5534Bu; } at = false; cand = false; }   // the client's red close
             else if (m == 0x66) cand = !cand;
             continue;
         }
@@ -353,7 +495,7 @@ static void input_decode(const char* raw, int rn, InLine& o) {
         else if (cp < 0x800) { b[k++] = (char)(0xC0 | (cp >> 6)); b[k++] = (char)(0x80 | (cp & 0x3F)); }
         else { b[k++] = (char)(0xE0 | (cp >> 12)); b[k++] = (char)(0x80 | ((cp >> 6) & 0x3F)); b[k++] = (char)(0x80 | (cp & 0x3F)); }
         if (o.n + k > 0x16F) break;
-        const u32 cc = at ? 0xFF8EE88Eu : (cand ? 0xFF8A96A8u : 0xFFF2F5F9u);
+        const u32 cc = at ? (ui_config().chAtColor | 0xFF000000u) : (cand ? 0xFF8A96A8u : 0xFFF2F5F9u);   // auto-translate words : the player's colour
         for (int q = 0; q < k; ++q) { o.t[o.n] = b[q]; o.c[o.n++] = cc; }
     }
     // the getter ends with the caret then ONE space (every live sample) : that space is not the player's
@@ -528,6 +670,15 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     const float S = (ovS > 0.0f) ? ovS : (f.screenH / 1000.0f) * scl;
     const TextStyle& TS = C.chText[box];
     Font* fo = te_font(f, TS); if (!fo) return;
+    // the auto-translated words : the same face, BOLD (one step bolder when the text already is)
+    Font* fb = f.fonts ? f.fonts->get(TS.face > 0 ? ui_font_face(TS.face) : 0, TS.bold ? 900 : 700, TS.italic) : 0;
+    if (!fb) fb = fo;
+    // its advance table follows the regular one ; refreshed once more when that size's atlas exists (exact widths)
+    auto adv_bold = [&](float z) {
+        if (st.advBFont != fb || st.advBSize != z) { st.advBFont = fb; st.advBSize = z; st.advBExact = fb->baked(z); build_adv(st.advB, fb, z); }
+        else if (!st.advBExact && fb->baked(z)) { st.advBExact = true; build_adv(st.advB, fb, z); }
+        s_wFoB = fb; s_advB = st.advB;
+    };
     const float tz = te_sz(TS, 15.0f) * S, tow = te_ow(TS, 1.1f) * S;
     // DENSITY (compact / normal / airy) : the padding, the header's height, the gap under it, the line spacing
     static const float D_PAD[3] = { 7.0f, 10.0f, 13.0f }, D_HEAD[3] = { 24.0f, 28.0f, 32.0f }, D_GAP[3] = { 3.0f, 6.0f, 8.0f }, D_ROW[3] = { 1.30f, 1.40f, 1.50f };
@@ -620,7 +771,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
             st.advFont = fo; st.advSize = tz; st.advExact = fo->baked(tz);
             build_adv(st.adv, fo, tz);
         }
-        s_wFo = fo; s_wTz = tz;
+        s_wFo = fo; s_wTz = tz; adv_bold(tz);
         int tb = C.chTab[box]; if (tb < 0 || tb >= TAB_N[box]) tb = 0;
         const ChatTab& TP = tab_def(box, tb);
         const char* meP = (f.game && f.game->me.name[0]) ? f.game->me.name : "";
@@ -668,6 +819,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     float px, py;
     if (ovS > 0.0f) { px = snap(ovX - boxW * 0.5f); py = snap(ovY - boxH * 0.5f); }
     else            { px = snap(C.chX[box] * f.screenW); py = snap(C.chY[box] * f.screenH - (growUp ? boxH : 0.0f)); }
+    if (preview && S > 0.0f) { g_pvSizeU[box][0] = boxW / S; g_pvSizeU[box][1] = boxH / S; }   // the config preview stacks the boxes : last frame's size
     const MouseState* m = f.mouse;
     if (editing) {
         // the CORNER GRIP first : it takes the shared drag lock, so box_edit cannot grab the same click
@@ -895,6 +1047,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         build_adv(st.adv, fo, tz);
     }
     s_wFo = fo; s_wTz = tz;                                               // the wide characters : measured by this font, this size
+    adv_bold(tz);                                                         // ... and the bold auto-translate words by its bold twin
     const float* adv = st.adv;
     char stampFmt[12] = "00:00";
     const float stampW = C.chStamp[box] ? fo->measure("00:00", tz * 0.86f) + 9.0f * S : 0.0f;
@@ -961,6 +1114,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     const float gapP = chat_punct_gap(tz);
     clip_rect_begin(dev, px + 2.0f * S, bodyTop, boxW - 4.0f * S, bodyH);
     fo->begin(dev);
+    int rowHitN = 0;
     if (nr == 0)
         fo->draw_cc(dev, px + boxW * 0.5f, bodyTop + bodyH * 0.5f, tr("No messages yet", "Aucun message pour l'instant"), tz * 0.92f, with_alpha(0xFF6E7A8Cu, A), with_alpha(0xC0000000u, A), tow);
     for (int r = 0; r < nr; ++r, cy -= rowH) {
@@ -1003,24 +1157,257 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
                 x += lp.nameW + 7.0f * S;
             }
         }
+        if (!src.sample && rowHitN < 152) { RowHit& H = g_rowHit[box][rowHitN++]; H.L = &L; H.a = R.a; H.b = R.b; H.x0 = x; H.cy = cy; }
+        if (st.selOn && !src.sample) {                                      // the selection on this row
+            unsigned s0 = st.selASeq, s1 = st.selFSeq; int i0 = st.selAIdx, i1 = st.selFIdx;
+            if (s0 > s1 || (s0 == s1 && i0 > i1)) { const unsigned ts = s0; s0 = s1; s1 = ts; const int ti = i0; i0 = i1; i1 = ti; }
+            if (L.seq >= s0 && L.seq <= s1) {
+                int sa0 = L.seq == s0 ? i0 : 0, sb0 = L.seq == s1 ? i1 : L.len;
+                if (sa0 < R.a) sa0 = R.a; if (sb0 > R.b) sb0 = R.b;
+                if (sb0 > sa0) {
+                    const float xs = row_x_at(L, R.a, R.b, x, sa0, adv, gapP), xe = row_x_at(L, R.a, R.b, x, sb0, adv, gapP);
+                    dColorQuadState(dev);
+                    // clearly visible (2026-11-17 : "pas assez visible") : a solid bright band, a light rim
+                    rrect(dev, snap(xs - 1.0f * S), snap(cy - rowH * 0.5f), snap(xe - xs + 2.0f * S), rowH, 3.0f * S, with_alpha(0xB04D8FE0u, a), with_alpha(0xB03A72C0u, a));
+                    rrect_stroke(dev, snap(xs - 1.0f * S), snap(cy - rowH * 0.5f), snap(xe - xs + 2.0f * S), rowH, 3.0f * S, with_alpha(0xC0A8D0FFu, a), 1.0f);
+                    fo->begin(dev);
+                }
+            }
+        }
+        short lka[4], lkb[4]; const int nlk = find_links(L, lka, lkb, 4);  // the links : light blue, underlined under the mouse
+        auto lk_at = [&](int j) -> int { for (int q = 0; q < nlk; ++q) if (j >= lka[q] && j < lkb[q]) return q; return -1; };
         int i = R.a;                                                        // runs of one colour, placed by the advance sum
         unsigned char lastc = 0;                                            // the character before (punct_pre), across runs
         while (i < R.b) {
             const unsigned char cc = L.col[i]; int j = i, n = 0; float w = 0.0f;
+            const int li = lk_at(i);
+            const bool bold = L.atIdx && cc == L.atIdx;                     // the auto-translated words : bold
             const unsigned char prev0 = lastc;                              // a run after a colour change keeps the rule
-            while (j < R.b && L.col[j] == cc && n < CHAT_TEXT * 2 - 6) {    // whole characters, copied as they are (UTF-8)
-                int k; unsigned cp; const float cw = cw_at(adv, L.text, j, L.len, k, cp);
+            while (j < R.b && L.col[j] == cc && n < CHAT_TEXT * 2 - 6
+                   && lk_at(j) == li) {    // whole characters, copied as they are (UTF-8)
+                int k; unsigned cp; const float cw = cw_at(adv, L.text, j, L.len, k, cp, bold);
                 const unsigned char c8 = punct_c(cp);
                 w += cw + punct_pre(j > R.a ? lastc : 0, c8, gapP);
                 for (int q = 0; q < k; ++q) buf[n++] = L.text[j + q];
                 j += k; lastc = c8;
             }
             buf[n] = 0;
-            if (n) fo->draw_punct(dev, x, cy - yOff, buf, tz, with_alpha(code_col(L, cc, base), a), stroke, tow, gapP, prev0);
+            if (n) (bold ? fb : fo)->draw_punct(dev, x, cy - yOff, buf, tz, with_alpha(li >= 0 ? 0xFF7CC4FFu : code_col(L, cc, base), a), stroke, tow, gapP, prev0);
+            if (li >= 0 && st.linkSeq == L.seq && st.linkA == lka[li]) {   // the hovered link : underlined
+                dColorQuadState(dev);
+                rrect(dev, snap(x), snap(cy - yOff + capB + 1.0f * S), snap(w), snap(1.0f * S) < 1.0f ? 1.0f : snap(1.0f * S), 0.0f, with_alpha(0xFF7CC4FFu, a), with_alpha(0xFF7CC4FFu, a));
+                fo->begin(dev);
+            }
             x += w; i = j;
         }
     }
     clip_rect_end(dev);
+    if (!src.sample) g_rowHitN[box] = rowHitN;
+
+    // ---- the mouse on the text : select (drag), copy (release), a link (click) ----
+    {
+        const int nh = src.sample ? 0 : g_rowHitN[box];
+        const RowHit* RH = g_rowHit[box];
+        // nearest drawn row to y : its index under x (above the top row : its start, below the bottom one : its end)
+        auto hit = [&](float mx, float my, unsigned& seq, int& idx, bool& onRow) -> bool {
+            onRow = false; if (nh <= 0) return false;
+            int best = 0; float bd = 1e9f;
+            for (int r = 0; r < nh; ++r) { const float d = fabsf(my - RH[r].cy); if (d < bd) { bd = d; best = r; } }
+            const RowHit& H = RH[best];
+            seq = H.L->seq; idx = row_index_at(H, mx, adv, gapP);
+            if (my < H.cy - rowH * 0.5f && best == nh - 1) idx = H.a;
+            else if (my > H.cy + rowH * 0.5f && best == 0) idx = H.b;
+            onRow = bd <= rowH * 0.5f && mx >= H.x0 && mx < row_x_at(*H.L, H.a, H.b, H.x0, H.b, adv, gapP);
+            return true;
+        };
+        // the link under (mx, my) : its url, the line seq and its start
+        auto link_at = [&](float mx, float my, char* url, int cap, unsigned& seq, int& la0) -> bool {
+            unsigned s; int idx; bool on;
+            if (!hit(mx, my, s, idx, on) || !on) return false;
+            for (int r = 0; r < nh; ++r) if (RH[r].L->seq == s && fabsf(my - RH[r].cy) <= rowH * 0.5f) {
+                const ChatLine& L = *RH[r].L; short la[4], lb[4]; const int nl = find_links(L, la, lb, 4);
+                for (int q = 0; q < nl; ++q) if (idx >= la[q] && idx < lb[q]) {
+                    int n = lb[q] - la[q]; if (n > cap - 1) n = cap - 1;
+                    memcpy(url, L.text + la[q], (size_t)n); url[n] = 0; seq = s; la0 = la[q]; return true;
+                }
+            }
+            return false;
+        };
+        const bool inBody = m && m->x >= px && m->x < px + boxW && m->y >= bodyTop && m->y < bodyBot;
+        const bool overPill = st.scroll > 0 && m && m->y >= bodyBot - 30.0f * S;
+        // the hovered link (underlined next frame)
+        st.linkSeq = 0; st.linkA = -1;
+        if (canClick && inBody && !st.selMoved) { char u[8]; unsigned s; int la0; if (link_at(m->x, m->y, u, sizeof(u), s, la0)) { st.linkSeq = s; st.linkA = la0; } }
+        // the link popup's buttons (it is drawn at the end) : a click there is the popup's
+        float lpX = 0, lpY = 0, lpW = 0, lpH = 0, lpB1 = 0, lpB2 = 0, lpBY = 0, lpBW = 0, lpBH = 0;
+        const float lpz = 12.0f * S;
+        char lpShow[64] = "";
+        if (g_lp.on && g_lp.box == box) {
+            if (nowMs - g_lp.ms > 10000u) g_lp.on = false;
+            int n = (int)strlen(g_lp.url); if (n > 44) { memcpy(lpShow, g_lp.url, 41); lpShow[41] = lpShow[42] = lpShow[43] = '.'; lpShow[44] = 0; } else lstrcpynA(lpShow, g_lp.url, sizeof(lpShow));
+            lpBW = snap(fo->measure(tr("Copy", "Copier"), lpz) + 26.0f * S); { const float o = snap(fo->measure(tr("Open", "Ouvrir"), lpz) + 26.0f * S); if (o > lpBW) lpBW = o; }
+            lpBH = snap(24.0f * S);
+            lpW = snap(fo->measure(lpShow, lpz) + 20.0f * S); if (lpW < 2.0f * lpBW + 30.0f * S) lpW = snap(2.0f * lpBW + 30.0f * S);
+            lpH = snap(10.0f * S + lpz * 1.4f + 8.0f * S + lpBH + 10.0f * S);
+            lpX = snap(g_lp.x - lpW * 0.5f); if (lpX + lpW > px + boxW - 4.0f * S) lpX = snap(px + boxW - 4.0f * S - lpW); if (lpX < px + 4.0f * S) lpX = snap(px + 4.0f * S);
+            lpY = snap(g_lp.y - lpH - 8.0f * S); if (lpY < py + 4.0f * S) lpY = snap(g_lp.y + 14.0f * S);
+            lpBY = snap(lpY + lpH - 10.0f * S - lpBH);
+            lpB2 = snap(lpX + lpW - 10.0f * S - lpBW); lpB1 = snap(lpB2 - 8.0f * S - lpBW);
+        }
+        bool eaten = false;
+        // ---- the line menu : its geometry (drawn below), its click ----
+        const char* CML[5] = { tr("Copy the line", "Copier la ligne"), tr("Copy the message", "Copier le message"), tr("Copy the name", "Copier le nom"), tr("Copy the link", "Copier le lien"),
+                               tr("Copy the selection", "Copier la s\xC3\xA9lection") };
+        char banLbl[64]; _snprintf(banLbl, sizeof(banLbl), tr("Ban %s", "Bannir %s"), g_cm.name); banLbl[sizeof(banLbl) - 1] = 0;
+        auto cm_label = [&](int it) -> const char* { return it == 5 ? banLbl : CML[it]; };
+        int cmIt[6]; int cmN = 0; float cmX = 0, cmY = 0, cmW = 0, cmIH = 0, cmH = 0; const float cmz = 12.5f * S;
+        if (g_cm.on && g_cm.box == box) {
+            if (st.selOn) cmIt[cmN++] = 4;
+            cmIt[cmN++] = 0; cmIt[cmN++] = 1; if (g_cm.name[0]) cmIt[cmN++] = 2; if (g_cm.url[0]) cmIt[cmN++] = 3;
+            if (g_cm.name[0] && _stricmp(g_cm.name, me)) cmIt[cmN++] = 5;   // never yourself
+            cmIH = snap(26.0f * S); for (int q = 0; q < cmN; ++q) { const float w = fo->measure(cm_label(cmIt[q]), cmz) + 28.0f * S; if (w > cmW) cmW = w; }
+            cmW = snap(cmW); cmH = snap((float)cmN * cmIH + 8.0f * S);
+            cmX = snap(g_cm.x); if (cmX + cmW > px + boxW - 4.0f * S) cmX = snap(px + boxW - 4.0f * S - cmW); if (cmX < px + 4.0f * S) cmX = snap(px + 4.0f * S);
+            cmY = snap(g_cm.y); if (cmY + cmH > py + boxH - 4.0f * S) cmY = snap(g_cm.y - cmH); if (cmY < py + 4.0f * S) cmY = snap(py + 4.0f * S);
+            if (canClick && (m->clicked || m->rightClicked)) {
+                const bool inM = m->x >= cmX && m->x < cmX + cmW && m->y >= cmY + 4.0f * S && m->y < cmY + cmH - 4.0f * S;
+                if (inM && m->clicked) {
+                    const int it = cmIt[(int)((m->y - cmY - 4.0f * S) / cmIH) < cmN ? (int)((m->y - cmY - 4.0f * S) / cmIH) : cmN - 1];
+                    static char tb[2048]; int n = 0;
+                    if (it == 4) {                                          // the selection, in the box's order
+                        unsigned s0 = st.selASeq, s1 = st.selFSeq; int i0 = st.selAIdx, i1 = st.selFIdx;
+                        if (s0 > s1 || (s0 == s1 && i0 > i1)) { const unsigned ts = s0; s0 = s1; s1 = ts; const int ti = i0; i0 = i1; i1 = ti; }
+                        static char out[48 * 1024]; int o = 0;
+                        for (int i = 0; i < chat_count() && o < (int)sizeof(out) - CHAT_TEXT - 4; ++i) {
+                            const ChatLine* L = chat_line(i); if (!L || L->seq < s0 || L->seq > s1 || !line_in_tab(*L, T, me)) continue;
+                            int a0 = L->seq == s0 ? i0 : 0; const int b0 = L->seq == s1 ? i1 : L->len;
+                            if (a0 == L->chBodyAt && !L->cont) a0 = 0;      // from the message's start : its speaker too, as the client writes it
+                            if (b0 <= a0) continue;
+                            if (o) { out[o++] = '\r'; out[o++] = '\n'; }
+                            memcpy(out + o, L->text + a0, (size_t)(b0 - a0)); o += b0 - a0;
+                        }
+                        const bool ok = clip_put_utf8(out, o);
+                        st.toastMs = nowMs; st.toastX = m->x; st.toastY = m->y; st.toastKind = ok ? 1 : 3;
+                        st.selOn = false; g_cm.on = false; eaten = true;
+                        goto cm_done;
+                    }
+                    if (it == 5) {                                          // ban : the speaker's lines leave the boxes
+                        const bool ok = chat_ban_add(g_cm.name);
+                        st.toastMs = nowMs; st.toastX = m->x; st.toastY = m->y; st.toastKind = ok ? 4 : 5;
+                        g_cm.on = false; eaten = true;
+                        goto cm_done;
+                    }
+                    if (it == 0 || it == 1) n = message_text(g_cm.seq, it == 1, tb, sizeof(tb));
+                    else if (it == 2) { lstrcpynA(tb, g_cm.name, sizeof(tb)); n = (int)strlen(tb); }
+                    else { lstrcpynA(tb, g_cm.url, sizeof(tb)); n = (int)strlen(tb); }
+                    const bool ok = n > 0 && clip_put_utf8(tb, n);
+                    st.toastMs = nowMs; st.toastX = m->x; st.toastY = m->y; st.toastKind = ok ? (it == 3 ? 2 : 1) : 3;
+                }
+                g_cm.on = false; eaten = true;                            // any click with the menu up closes it
+            }
+            cm_done:;
+        }
+        if (!eaten && canClick && m->rightClicked && inBody && !overPill) {   // a right-click on a line : its menu
+            unsigned s; int idx; bool on;
+            if (hit(m->x, m->y, s, idx, on)) {
+                for (int r = 0; r < nh; ++r) if (RH[r].L->seq == s && fabsf(m->y - RH[r].cy) <= rowH * 0.5f) {
+                    unsigned first = s;                                     // a continuation : its message's first line
+                    g_cm.name[0] = 0;
+                    for (int i = chat_count() - 1; i >= 0; --i) { const ChatLine* L = chat_line(i); if (!L || L->seq > s) continue; if (!L->cont) { first = L->seq; lstrcpynA(g_cm.name, L->chSpeaker, sizeof(g_cm.name)); break; } }
+                    g_cm.url[0] = 0; { short la[4], lb[4]; const ChatLine& L = *RH[r].L; const int nl = find_links(L, la, lb, 4);
+                      if (nl > 0) { int n = lb[0] - la[0]; if (n > 255) n = 255; memcpy(g_cm.url, L.text + la[0], (size_t)n); g_cm.url[n] = 0; } }
+                    g_cm.on = true; g_cm.box = box; g_cm.seq = first; g_cm.x = m->x; g_cm.y = m->y; g_lp.on = false;   // the selection stays : the menu copies it
+                    eaten = true; break;
+                }
+            }
+        }
+        if (!eaten && canClick && m->clicked && g_lp.on && g_lp.box == box) {
+            const bool inPop = m->x >= lpX && m->x < lpX + lpW && m->y >= lpY && m->y < lpY + lpH;
+            const bool onB = m->y >= lpBY && m->y < lpBY + lpBH;
+            if (inPop && onB && m->x >= lpB1 && m->x < lpB1 + lpBW) { open_url(g_lp.url); g_lp.on = false; }
+            else if (inPop && onB && m->x >= lpB2 && m->x < lpB2 + lpBW) {
+                const bool ok = clip_put_utf8(g_lp.url, (int)strlen(g_lp.url));
+                st.toastMs = nowMs; st.toastX = m->x; st.toastY = m->y; st.toastKind = ok ? 2 : 3; g_lp.on = false;
+            }
+            else if (!inPop) g_lp.on = false;
+            eaten = true;                                                   // a click with the popup up only closes it
+        }
+        if (!eaten && canClick && m->clicked) {
+            if (inBody && !overPill && nh > 0) {                            // a press in the text : a drag may start
+                unsigned s; int idx; bool on;
+                if (hit(m->x, m->y, s, idx, on)) {
+                    st.selDrag = true; st.selMoved = false; st.selOn = false;
+                    st.selASeq = st.selFSeq = s; st.selAIdx = st.selFIdx = idx;
+                    st.downX = m->x; st.downY = m->y;
+                    unsigned ls; int la0; st.downUrl[0] = 0;
+                    if (!link_at(m->x, m->y, st.downUrl, sizeof(st.downUrl), ls, la0)) st.downUrl[0] = 0;
+                }
+            } else st.selOn = false;                                        // a click elsewhere drops the selection
+        }
+        if (st.selDrag && m) {
+            if (m->down) {
+                unsigned s; int idx; bool on;
+                if (hit(m->x, m->y, s, idx, on)) { st.selFSeq = s; st.selFIdx = idx; }
+                if (fabsf(m->x - st.downX) + fabsf(m->y - st.downY) > 4.0f * S) st.selMoved = true;
+                st.selOn = st.selMoved && (st.selASeq != st.selFSeq || st.selAIdx != st.selFIdx);
+            } else {                                                        // released
+                st.selDrag = false;
+                if (st.selOn) {
+                    // the selection STAYS : copied from the right-click menu only (2026-11-17 : "on veut uniquement sur
+                    // clic droit")
+                } else if (!st.selMoved && st.downUrl[0]) {                 // a click on a link : open / copy it
+                    g_lp.on = true; g_lp.box = box; lstrcpynA(g_lp.url, st.downUrl, sizeof(g_lp.url)); g_lp.x = st.downX; g_lp.y = st.downY; g_lp.ms = nowMs;
+                }
+                st.selMoved = false;
+            }
+        }
+        // ---- the link popup ----
+        if (g_lp.on && g_lp.box == box && lpW > 0.0f) {
+            dColorQuadState(dev);
+            rrect_glow(dev, lpX, lpY, lpW, lpH, 6.0f * S, with_alpha(0x90000000u, A), 8.0f * S);
+            rrect(dev, lpX, lpY, lpW, lpH, 6.0f * S, with_alpha(0xF41A212Cu, A), with_alpha(0xF4111720u, A));
+            rrect_stroke(dev, lpX, lpY, lpW, lpH, 6.0f * S, with_alpha((accent & 0x00FFFFFFu) | 0xB0000000u, A), 1.0f);
+            const char* BL[2] = { tr("Open", "Ouvrir"), tr("Copy", "Copier") }; const float BX[2] = { lpB1, lpB2 };
+            for (int b2 = 0; b2 < 2; ++b2) {
+                const bool hv = m && m->x >= BX[b2] && m->x < BX[b2] + lpBW && m->y >= lpBY && m->y < lpBY + lpBH;
+                const u32 bc = b2 == 0 ? accent : 0xFF3A4556u;
+                rrect(dev, BX[b2], lpBY, lpBW, lpBH, lpBH * 0.5f, with_alpha(hv ? mix(bc, 0xFFFFFFFFu, 0.2f) : bc, A), with_alpha(mix(bc, 0xFF000000u, 0.25f), A));
+            }
+            fo->begin(dev);
+            fo->draw_lc(dev, snap(lpX + 10.0f * S), snap(lpY + 10.0f * S + lpz * 0.7f), lpShow, lpz, with_alpha(0xFF7CC4FFu, A), with_alpha(0xC0000000u, A), tow * 0.8f);
+            for (int b2 = 0; b2 < 2; ++b2)
+                fo->draw_cc(dev, BX[b2] + lpBW * 0.5f, lpBY + lpBH * 0.5f, BL[b2], lpz, with_alpha(0xFFFFFFFFu, A), with_alpha(0xC0000000u, A), tow * 0.7f);
+        }
+        // ---- the line menu ----
+        if (g_cm.on && g_cm.box == box && cmN > 0) {
+            dColorQuadState(dev);
+            rrect_glow(dev, cmX, cmY, cmW, cmH, 6.0f * S, with_alpha(0x90000000u, A), 8.0f * S);
+            rrect(dev, cmX, cmY, cmW, cmH, 6.0f * S, with_alpha(0xF41A212Cu, A), with_alpha(0xF4111720u, A));
+            rrect_stroke(dev, cmX, cmY, cmW, cmH, 6.0f * S, with_alpha((accent & 0x00FFFFFFu) | 0xB0000000u, A), 1.0f);
+            for (int q = 0; q < cmN; ++q) {
+                const float iy = cmY + 4.0f * S + (float)q * cmIH;
+                const bool hv = m && m->x >= cmX && m->x < cmX + cmW && m->y >= iy && m->y < iy + cmIH;
+                if (hv) rrect(dev, cmX + 4.0f * S, iy, cmW - 8.0f * S, cmIH, 4.0f * S, with_alpha((accent & 0x00FFFFFFu) | 0x70000000u, A), with_alpha((accent & 0x00FFFFFFu) | 0x50000000u, A));
+            }
+            fo->begin(dev);
+            for (int q = 0; q < cmN; ++q)
+                fo->draw_lc(dev, snap(cmX + 14.0f * S), snap(cmY + 4.0f * S + (float)q * cmIH + cmIH * 0.5f), cm_label(cmIt[q]), cmz, with_alpha(cmIt[q] == 3 ? 0xFF7CC4FFu : cmIt[q] == 5 ? 0xFFFF8A80u : 0xFFE8EEF6u, A), with_alpha(0xC0000000u, A), tow * 0.7f);
+        }
+        // ---- "Copied" : a small pill where the mouse let go, fading ----
+        if (st.toastMs && nowMs - st.toastMs < 1400u) {
+            const float k = 1.0f - (float)(nowMs - st.toastMs) / 1400.0f, ta = A * (k < 0.3f ? k / 0.3f : 1.0f);
+            const char* tl = st.toastKind == 1 ? tr("Copied", "Copi\xC3\xA9") : st.toastKind == 2 ? tr("Link copied", "Lien copi\xC3\xA9")
+                           : st.toastKind == 4 ? tr("Banned", "Banni") : st.toastKind == 5 ? tr("Already banned (or list full)", "D\xC3\xA9j\xC3\xA0 banni (ou liste pleine)")
+                           : tr("Clipboard busy", "Presse-papiers occup\xC3\xA9");
+            const float tzz = 12.0f * S, th = snap(22.0f * S), tw2 = snap(fo->measure(tl, tzz) + 22.0f * S);
+            float tx = snap(st.toastX - tw2 * 0.5f), ty = snap(st.toastY - th - 10.0f * S - (1.0f - k) * 8.0f * S);
+            if (tx < px) tx = px; if (tx + tw2 > px + boxW) tx = snap(px + boxW - tw2);
+            dColorQuadState(dev);
+            rrect(dev, tx, ty, tw2, th, th * 0.5f, with_alpha(st.toastKind == 3 ? 0xF0803030u : (accent | 0xFF000000u), ta), with_alpha(mix(st.toastKind == 3 ? 0xF0803030u : accent, 0xFF000000u, 0.3f), ta));
+            fo->begin(dev);
+            fo->draw_cc(dev, tx + tw2 * 0.5f, ty + th * 0.5f, tl, tzz, with_alpha(0xFFFFFFFFu, ta), with_alpha(0xC0000000u, ta), tow * 0.7f);
+        } else st.toastMs = 0;
+    }
 
     // ---- the input field (the client's text, live) ----
     if (st.inA > 0.0f) {
@@ -1064,8 +1451,16 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
             x += w; i = j;
         }
         clip_rect_end(dev);
+        s_inRect[0] = fx; s_inRect[1] = fy; s_inRect[2] = fw; s_inRect[3] = fh;   // the auto-translate picker opens on it
+        s_inRect[4] = tx0 - st.inScroll + caretX; s_inRectMs = GetTickCount();
+        // the caret while the auto-translate picker is CLOSED : once open, the client writes the candidate under the
+        // selection into the line and its caret runs with it -- ours STAYS until a choice is made, and the picker opens
+        // right after it (2026-11-17 : "le curseur doit rester a sa place tant qu'on n'a pas choisi")
+        // (a category validated closes and reopens its window : the client's MODE stays on, the same opening)
+        const bool fepOpen = native_fep().picking;
+        if (!fepOpen) s_inRect[5] = tx0 - st.inScroll + caretX;
         if (typing && ((GetTickCount() / 530u) & 1u) == 0) {               // the caret, blinking like the client's
-            const float cx = snap(tx0 - st.inScroll + caretX), ch = snap(tz * 1.05f);
+            const float cx = snap(fepOpen ? s_inRect[5] : tx0 - st.inScroll + caretX), ch = snap(tz * 1.05f);
             dColorQuadState(dev);
             rrect(dev, cx, snap(tcy - ch * 0.5f), snap(2.0f * S) < 2.0f ? 2.0f : snap(2.0f * S), ch, 0.0f, accentLite, accentLite, 0.0f);
         }
@@ -1102,5 +1497,49 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         }
     }
 }
+
+// a preview box's size per unit of scale, as last drawn (0 before its first preview frame) : the config preview and the
+// Help sample stack the two boxes, which needs their heights before drawing them
+bool chat_preview_size(int box, float& wU, float& hU) {
+    if (box < 0 || box > 1 || g_pvSizeU[box][1] <= 0.0f) return false;
+    wU = g_pvSizeU[box][0]; hU = g_pvSizeU[box][1]; return true;
+}
+
+// The two boxes as SAMPLES, one ABOVE the other (2026-11-17 : "mets-les l'un sur l'autre plutot que cote a cote"),
+// centred on (cx, cy) at scale s (the screen-height scale ; each box adds its own Size). `force` : both boxes even when
+// one is turned off (the Help shows what the module is) ; else only the shown ones (the config preview is WYSIWYG).
+// A box's height is known only once drawn (lines, header, density) : the previous preview frame's, else a guess for the
+// first frame. draw = false only measures (outW / outH, in px at s).
+void chat_stack_sample(const Frame& f, float cx, float cy, float s, bool force, bool draw, float* outW, float* outH) {
+    UiConfig& C = ui_config();
+    const float gapU = 14.0f;
+    float wU[2] = { 0.0f, 0.0f }, hU[2] = { 0.0f, 0.0f }, maxW = 0.0f, totH = 0.0f; int n = 0;
+    for (int b = 0; b < 2; ++b) {
+        if (!force && !C.chShow[b]) continue;
+        float w1 = 0.0f, h1 = 0.0f;
+        if (!chat_preview_size(b, w1, h1)) { w1 = (float)C.chW[b]; h1 = C.chH[b] > 0 ? (float)C.chH[b] : 220.0f; }
+        wU[b] = w1 * C.chScale[b]; hU[b] = h1 * C.chScale[b];
+        if (wU[b] > maxW) maxW = wU[b];
+        totH += hU[b] + (n ? gapU : 0.0f); ++n;
+    }
+    if (outW) *outW = maxW * s;
+    if (outH) *outH = totH * s;
+    if (!draw || !n) return;
+    float y = cy - totH * s * 0.5f;
+    for (int b = 0; b < 2; ++b) {
+        if (hU[b] <= 0.0f) continue;
+        const int was = C.chShow[b]; C.chShow[b] = 1;       // force : drawn for this sample only
+        chat_box_draw(f, b, true, false, cx, y + hU[b] * s * 0.5f, s * C.chScale[b]);
+        C.chShow[b] = was;
+        y += (hU[b] + gapU) * s;
+    }
+}
+// the Help's sample : both boxes, as big as fits availW (capped at maxScale)
+void chat_help_fit(const Frame& f, float availW, float maxScale, float& outScale, float& outH) {
+    float w = 0.0f, h = 0.0f; chat_stack_sample(f, 0.0f, 0.0f, 1.0f, true, false, &w, &h);
+    float sc = w > 1.0f ? availW / w : maxScale; if (sc > maxScale) sc = maxScale; if (sc < 0.4f) sc = 0.4f;
+    outScale = sc; outH = h * sc;
+}
+void chat_help_box(const Frame& f, float cx, float cy, float s) { chat_stack_sample(f, cx, cy, s, true, true, 0, 0); }
 
 } // namespace aio

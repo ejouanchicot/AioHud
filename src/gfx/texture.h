@@ -101,6 +101,11 @@ u32 make_dot(u32 dev);   // solid white AA disc (tinted per role for the leader/
 
 // release a texture (IUnknown::Release, vtbl[2]); safe on 0.
 void release_texture(u32 tex);
+
+// A PNG file -> W x H ARGB pixels (out : W*H u32, row 0 = top), resampled (nearest) when the file's size differs.
+// GDI+ is bound at RUN time (the DLL links user32 / kernel32 / gdi32 only) and started once. false : no such file, not
+// a picture, or GDI+ unavailable (logged once). Used for the icons Windower ships in plugins\icons (hud_actmenu.cpp).
+bool load_png_argb(const wchar_t* path, int W, int H, u32* out);
 // the live-texture ledger : count + KB of textures created here and not yet finally Released ; at "unload*" also
 // each survivor with its creator's return address (AioHud.dll+RVA -> resolve with the PDB).
 void texture_ledger_report(const char* when);

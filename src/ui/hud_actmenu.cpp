@@ -20,6 +20,11 @@
 #include "model/ui_config.h"
 #include "model/native_ui.h"
 #include "model/gamestate.h"   // GameState (me.mp)
+#include "ui/buff_atlas.h"        // buff_atlas_tex / buff_cell_uv : the status-icon fallback
+#include "ui/tex_retry.h"         // ensure_raw_tex : the element strip / job emblems (bounded retry)
+#include "model/skillchain.h"     // sc_skill_lookup / sc_info : a weapon skill's property -> its element
+#include "model/job_track_gen.h"  // job_track : which job a job ability belongs to
+#include "model/paths.h"       // plugin_dir : Windower's own plugins\icons
 #include "model/spells_gen.h"  // spell_info : the spell list's names and MP
 #include "model/abilities_gen.h"        // abil_info : the ability list's job abilities
 #include "model/weapon_skills_gen.h"    // ws_info : its weapon skills
@@ -36,6 +41,8 @@
 
 namespace aio {
 
+unsigned job_role_color(int id);   // party_state.cpp : the role tint of a job (the JA emblems)
+
 namespace {
 
 enum Icon { IC_NONE, IC_SWORD, IC_SHEATHE, IC_BUBBLE, IC_BOLT, IC_STAR, IC_BAG, IC_LENS, IC_RETICLE, IC_SWAP, IC_DUO };
@@ -44,6 +51,7 @@ struct Cmd { unsigned short code; const char* en; const char* fr; bool sub; Icon
 const Cmd CMDS[] = {
     {  1, "Attack",        "Attaquer",              false, IC_SWORD   },
     {  3, "Disengage",     "D\xC3\xA9sengager",     true,  IC_SHEATHE },
+    {  4, "Chat",          "Discuter",              true,  IC_BUBBLE  },   // the menu opened on NOTHING (a click in the void) : its Chat (2026-11-17, "#4")
     {  5, "Chat",          "Discuter",              true,  IC_BUBBLE  },
     {  7, "Abilities",     "Aptitudes",             false, IC_BOLT    },
     {  8, "Magic",         "Magie",                 true,  IC_STAR    },
@@ -142,7 +150,7 @@ void draw_icon(u32 dev, Icon ic, float cx, float cy, float z, float S, u32 c) {
 }
 
 u32 g_handTex = 0;   // the party's selection-hand texture, handed in by the HUD each frame (device-loss managed there)
-float g_hit[4][4] = { { 0, 0, 0, 0 } };   // the drawn blocks (menu, submenu ; NPC bubble, NPC answers) as screen FRACTIONS : their clicks never reach the game
+float g_hit[5][4] = { { 0, 0, 0, 0 } };   // the drawn blocks (menu, submenu ; NPC bubble, NPC answers ; the auto-translate picker) as screen FRACTIONS : their clicks never reach the game
 
 // ---- the action menu's submenus (native_sub_menu) : labels by ENTRY index (1-based), from their help texts ----
 struct SubRow { const char* en; const char* fr; bool sub; Icon icon; };   // sub : none -- each row opens its LIST, no arrow in the client
@@ -186,7 +194,9 @@ inline u32 dev_of(const Frame& f) { return f.dev; }
 // leader) ; `pearl` : 513 linkshell / 514 linkpearl / 515 pearlsack drawn before it, tinted `pearlArgb`
 struct RowSpec { const char* label; Icon icon; bool sub; bool off; const char* extra = 0; int pearl = 0; u32 pearlArgb = 0;
                  bool cycle = false; bool center = false;
-                 u32 tint = 0; };   // tint : the label's own colour (the NPC answers : the client's green), 0 the menus' grey-white   // center : a lone message row (the empty list), centred in the block   // cycle : the extra can be changed with RIGHT (the Tell name ; left closes the submenu) -> name >
+                 u32 tint = 0;
+                 u32 tex = 0; float tu0 = 0.0f, tu1 = 1.0f, tv0 = 0.0f, tv1 = 1.0f; u32 texTint = 0xFFFFFFFFu; };
+                 // tex + its UV : the row's picture (Windower's file, a status / element / job cell), tinted texTint   // tex : the row's own picture (a spell / ability icon from Windower's plugins\icons), drawn in place of `icon`   // tint : the label's own colour (the NPC answers : the client's green), 0 the menus' grey-white   // center : a lone message row (the empty list), centred in the block   // cycle : the extra can be changed with RIGHT (the Tell name ; left closes the submenu) -> name >
 struct Block {
     float vis = 0.0f, curY = -1.0f; unsigned openMs = 0; int lastN = 0; bool wasOpen = false; float sel[16] = { 0 };
     float x = 0, y = 0, w = 0, h = 0;           // drawn rect this frame (w = 0 : not drawn)
@@ -204,12 +214,180 @@ const char* list_row_name(int kind, unsigned id, unsigned& mp, bool& ws) {
     if (id >= 512) { const AbilRow* a = abil_info(id - 512); if (!a) return "?"; mp = a->mp; return a->en; }
     return "?";
 }
+// ---- the spell / ability ICONS Windower ships for its Timers plugin : <windower>\plugins\icons\spells\NNNNN.png (by spell
+// id) and ...\abilities\NNNNN.png (by RECAST id ; the shared recasts 0 (the 1-hours) and 254 have one per job :
+// NNNNN.JJ.png). 2026-11-17 : "pour le menu action Windower avait mis ses propres icones". Read at run time from the
+// user's install -- AioHUD does not ship them ; no file : the row keeps AioHUD's drawn icon. One texture per icon, a
+// small cache (a list page shows ~12), a miss remembered so a missing file is looked up once.
+struct IconSlot { unsigned key; u32 tex; unsigned used; bool miss; };
+IconSlot g_icons[64]; int g_iconLoads = 0; unsigned g_iconFrame = 0;
+bool icon_path(unsigned key, wchar_t* out, int cap) {
+    const char* d = plugin_dir(); if (!d[0]) return false;                 // ...\plugins\AioHud
+    char root[MAX_PATH]; lstrcpynA(root, d, sizeof(root));
+    char* slash = strrchr(root, '\\'); if (!slash) return false; *slash = 0;   // ...\plugins
+    char rel[96];
+    const unsigned kind = key >> 24, id = (key >> 8) & 0xFFFFu, job = key & 0xFFu;
+    if (kind == 1)      _snprintf(rel, sizeof(rel), "icons\\spells\\%05u.png", id);
+    else if (job)       _snprintf(rel, sizeof(rel), "icons\\abilities\\%05u.%02u.png", id, job);
+    else                _snprintf(rel, sizeof(rel), "icons\\abilities\\%05u.png", id);
+    rel[sizeof(rel) - 1] = 0;
+    char full[MAX_PATH]; _snprintf(full, sizeof(full), "%s\\%s", root, rel); full[sizeof(full) - 1] = 0;
+    return MultiByteToWideChar(CP_ACP, 0, full, -1, out, cap) > 0;
+}
+bool icon_file(unsigned key, u32* px) { wchar_t path[MAX_PATH]; return icon_path(key, path, MAX_PATH) && load_png_argb(path, 32, 32, px); }
+bool spell_file(unsigned spellId, u32* px) { return icon_file((1u << 24) | ((spellId & 0xFFFFu) << 8), px); }
+// a TRUST with no file of its own. Windower's Trust pictures follow the spell's res icon_id : 1000 + 9 * weapon + colour
+// (weapons : shield, sword, bow, staff, club, harp, fist ; colours : red, blue, green, white, orange, purple, pink, cyan,
+// grey -- read off the 105 files, 37 of 38 icon_ids consistent). 1) another Trust with the same icon_id has a file : that
+// one. 2) else rebuild it : the same WEAPON in another colour, recoloured with the ramp of the wanted COLOUR read on
+// another weapon (luminance -> colour, alpha kept). 2026-11-17 : Ygnas (1043), Monberaux (1039), AAHM / AAEV (1008).
+bool trust_px(unsigned icon, u32* px) {
+    if (icon < 1000 || icon > 1062) return false;
+    for (int i = 0; i < SPELLS_N; ++i)
+        if (SPELLS[i].trust && SPELLS[i].icon == icon && spell_file(SPELLS[i].id, px)) return true;
+    const unsigned w = (icon - 1000) / 9, c = (icon - 1000) % 9;
+    static u32 ref[32 * 32];
+    bool haveT = false, haveR = false;
+    for (int i = 0; i < SPELLS_N && !haveT; ++i) {             // the shape : this weapon, any other colour
+        const unsigned ic = SPELLS[i].icon;
+        if (SPELLS[i].trust && ic >= 1000 && ic <= 1062 && (ic - 1000) / 9 == w && ic != icon) haveT = spell_file(SPELLS[i].id, px);
+    }
+    for (int i = 0; i < SPELLS_N && !haveR; ++i) {             // the colour : this colour, any other weapon
+        const unsigned ic = SPELLS[i].icon;
+        if (SPELLS[i].trust && ic >= 1000 && ic <= 1062 && (ic - 1000) % 9 == c && (ic - 1000) / 9 != w) haveR = spell_file(SPELLS[i].id, ref);
+    }
+    if (!haveT || !haveR) return false;
+    auto lum = [](u32 p) { return (int)((((p >> 16) & 255) * 77 + ((p >> 8) & 255) * 150 + (p & 255) * 29) >> 8); };
+    // the colour's RAMP : the mean colour per luminance band, the gaps filled from the nearest band
+    float sr[16] = { 0 }, sg[16] = { 0 }, sb[16] = { 0 }; int n[16] = { 0 }; int rlo = 255, rhi = 0, tlo = 255, thi = 0;
+    for (int i = 0; i < 32 * 32; ++i) if ((ref[i] >> 24) > 128) { const int L = lum(ref[i]); if (L < rlo) rlo = L; if (L > rhi) rhi = L; }
+    for (int i = 0; i < 32 * 32; ++i) if ((px[i] >> 24) > 128)  { const int L = lum(px[i]);  if (L < tlo) tlo = L; if (L > thi) thi = L; }
+    if (rhi <= rlo || thi <= tlo) return false;
+    for (int i = 0; i < 32 * 32; ++i) if ((ref[i] >> 24) > 128) {
+        const int b = (lum(ref[i]) - rlo) * 15 / (rhi - rlo);
+        sr[b] += (float)((ref[i] >> 16) & 255); sg[b] += (float)((ref[i] >> 8) & 255); sb[b] += (float)(ref[i] & 255); ++n[b];
+    }
+    u32 ramp[16]; int last = -1;
+    for (int b = 0; b < 16; ++b) if (n[b]) { ramp[b] = 0xFF000000u | ((u32)(sr[b] / n[b]) << 16) | ((u32)(sg[b] / n[b]) << 8) | (u32)(sb[b] / n[b]); last = b; }
+    if (last < 0) return false;
+    for (int b = 0; b < 16; ++b) if (!n[b]) {                 // nearest filled band
+        int best = -1; for (int d = 1; d < 16 && best < 0; ++d) { if (b - d >= 0 && n[b - d]) best = b - d; else if (b + d < 16 && n[b + d]) best = b + d; }
+        ramp[b] = ramp[best];
+    }
+    for (int i = 0; i < 32 * 32; ++i) {
+        const u32 a = px[i] >> 24; if (!a) continue;
+        int b = (lum(px[i]) - tlo) * 15 / (thi - tlo); b = b < 0 ? 0 : (b > 15 ? 15 : b);
+        px[i] = (a << 24) | (ramp[b] & 0x00FFFFFFu);
+    }
+    return true;
+}
+// the icon of a list row (kind 0 : spell id ; kind 1 : the client's ability index -- WS < 256, job abilities 512 + id),
+// 0 when there is none (yet). At most 3 files read a frame : a page of new rows fills over a few frames.
+u32 list_icon(const Frame& f, int kind, unsigned id) {
+    unsigned key = 0;
+    if (kind == 0) key = (1u << 24) | ((id & 0xFFFFu) << 8);
+    else if (id >= 512) {
+        const AbilRow* a = abil_info(id - 512); if (!a) return 0;
+        const unsigned r = a->recast_id;
+        const unsigned job = (r == 0 || r == 254) && f.game ? (unsigned)f.game->me.mjob : 0u;
+        if ((r == 0 || r == 254) && !job) return 0;
+        key = (2u << 24) | ((r & 0xFFFFu) << 8) | (job & 0xFFu);
+    } else return 0;                                                       // weapon skills : Windower has none
+    if (g_iconFrame != (unsigned)(f.t * 1000.0f)) { g_iconFrame = (unsigned)(f.t * 1000.0f); g_iconLoads = 0; }
+    const unsigned now = GetTickCount();
+    int lru = 0;
+    for (int i = 0; i < 64; ++i) {
+        if (g_icons[i].key == key) { g_icons[i].used = now; return g_icons[i].tex; }
+        if (g_icons[i].used < g_icons[lru].used) lru = i;
+    }
+    if (g_iconLoads >= 3 || !f.dev) return 0;
+    ++g_iconLoads;
+    static u32 px[32 * 32]; u32 tex = 0;
+    bool got = icon_file(key, px);
+    if (!got && kind == 0) { const SpellRow* sp = spell_info(id); got = sp && sp->trust && trust_px(sp->icon, px); }
+    if (got) tex = make_texture_argb_mip(f.dev, 32, 32, px);
+    IconSlot& sl = g_icons[lru];
+    if (sl.tex) release_texture(sl.tex);
+    sl.key = key; sl.tex = tex; sl.used = now; sl.miss = !tex;
+    static int said = 0;
+    if (said < 6) { ++said; windower::debug::log("ACTMENU icon %s %u%s -> %s", kind == 0 ? "spell" : "ability recast", (key >> 8) & 0xFFFFu, (key & 0xFF) ? " (per job)" : "", tex ? "loaded" : "none (drawn icon kept)"); }
+    return tex;
+}
+// a row with no picture from Windower, in order : the status the action gives (the game's own icon, the buff atlas) ;
+// a weapon skill : its damage element (elemental WS) or its weapon damage type (physical) ; a job
+// ability : its JOB's emblem in the role colour (2026-11-17 : "il manque encore des icones pour les JA ... et les WS")
+// ; a Trust : the party glyph.
+u32 g_elemTex = 0, g_jobTex = 0, g_wpnTex = 0; TexRetry g_elemR, g_jobR, g_wpnR;
+void set_cell(RowSpec& r, u32 tex, int cell, int cols, int cellPx, int W, int H, float crop) {
+    const float au = (float)cellPx / (float)W, av = (float)cellPx / (float)H, cu = au * crop, cv = av * crop;
+    const float u = (float)(cell % cols) * au, v = (float)(cell / cols) * av;
+    r.tex = tex; r.tu0 = u + cu; r.tu1 = u + au - cu; r.tv0 = v + cv; r.tv1 = v + av - cv;
+}
+bool status_cell(u32 dev, int st, RowSpec& r) {
+    if (st <= 0 || st >= BUFF_COLS * BUFF_ATLAS_ROWS) return false;
+    const u32 t = buff_atlas_tex(dev); if (!t) return false;
+    set_cell(r, t, st, BUFF_COLS, BUFF_CELL, BUFF_ATLAS_W, BUFF_ATLAS_H, 0.0f); return true;
+}
+// which job a job ability is (the main job's list first, then the support's) ; 0 unknown
+int abil_job(const Frame& f, const char* en) {
+    if (!f.game || !en) return 0;
+    // the CATEGORY rows (each opens a submenu, absent from the per-job tables) : named here
+    static const struct { const char* en; int job; } CAT[] = { { "Waltzes", 19 }, { "Rune Enchantment", 22 }, { "Ward", 22 }, { "Effusion", 22 } };
+    for (int i = 0; i < 4; ++i) if (!strcmp(CAT[i].en, en)) return CAT[i].job;
+    const int jobs[2] = { f.game->me.mjob, f.game->me.sjob };
+    for (int j = 0; j < 2; ++j) { int n = 0; const JobBuff* b = job_track((unsigned)jobs[j], n);
+        for (int i = 0; i < n; ++i) if (b[i].name && !strcmp(b[i].name, en)) return jobs[j]; }
+    return 0;
+}
+void list_fallback(const Frame& f, int kind, unsigned id, RowSpec& r) {
+    const u32 dev = f.dev;
+    if (kind == 0) {
+        const SpellRow* sp = spell_info(id); if (!sp) return;
+        if (!status_cell(dev, sp->status, r) && sp->trust) r.icon = IC_DUO;
+        return;
+    }
+    if (id < 256) {
+        // a weapon skill : an ELEMENTAL one (magical / hybrid -- BG Wiki, scripts/gen_ws.py) its damage element ; a
+        // physical one its weapon's damage type (Slashing / Piercing / Blunt). NOT the skillchain property : Shining
+        // Blade is Light damage with a Scission (earth) property (2026-11-17, "Shining Blade tu as mis earth")
+        const WSRow* w = ws_info(id); if (!w) return;
+        if (w->elem >= 0 && w->elem < 8) {
+            static const int STRIP[8] = { 0, 4, 3, 1, 5, 2, 6, 7 };   // Fire Ice Wind Earth Thunder Water Light Dark -> element_icons.raw cells
+            const u32 t = ensure_raw_tex(dev, g_elemTex, g_elemR, plugin_path_r("assets\\element_icons.raw"), 256, 32);
+            if (t) set_cell(r, t, STRIP[w->elem], 8, 32, 256, 32, 0.0f);
+            return;
+        }
+        int dt = -1;                                         // weapon_icons.raw : 0 Slashing 1 Piercing 2 Blunt
+        switch (w->skill) {
+            case 3: case 4: case 5: case 6: case 7: case 9: case 10: dt = 0; break;   // sword GS axe GA scythe katana GK
+            case 2: case 8: case 25: case 26: dt = 1; break;                        // dagger polearm archery marksmanship
+            case 1: case 11: case 12: dt = 2; break;                                // H2H club staff
+            default: break;
+        }
+        if (dt < 0) return;
+        const u32 t = ensure_raw_tex(dev, g_wpnTex, g_wpnR, plugin_path_r("assets\\weapon_icons.raw"), 96, 32);
+        if (t) set_cell(r, t, dt, 3, 32, 96, 32, 0.0f);
+        return;
+    }
+    if (id < 512) return;
+    const AbilRow* a = abil_info(id - 512); if (!a) return;
+    if (status_cell(dev, a->status, r)) return;
+    const int job = abil_job(f, a->en); if (job < 1 || job > 22) return;
+    const u32 t = ensure_raw_tex(dev, g_jobTex, g_jobR, plugin_path_r("assets\\job_icons.raw"), 512, 192);
+    if (!t) return;
+    set_cell(r, t, job - 1, 8, 64, 512, 192, 6.0f / 64.0f);   // the emblems' baked transparent margin, cropped (party.cpp)
+    r.texTint = job_role_color(job) | 0xFF000000u;
+}
 unsigned g_lastMs = 0;
 
 struct Metrics { float S, tz, ow, capH, gap, icZ, pad, gutter, capPadL, icW, capPadR, triW; bool icons; };
+Metrics metrics_at(float S);
 Metrics metrics(const Frame& f) {
     float sc = ui_config().muScale; if (!(sc >= 0.6f && sc <= 1.6f)) sc = 1.0f;   // Game UI -> Menus : their size
-    Metrics k; k.S = f.screenH / 1000.0f * sc; const float S = k.S;
+    return metrics_at(f.screenH / 1000.0f * sc);
+}
+Metrics metrics_at(float S_) {
+    Metrics k; k.S = S_; const float S = k.S;
     k.tz = 11.5f * S; k.ow = 0.9f * S; k.capH = snap(19.0f * S); k.gap = snap(3.0f * S); k.icZ = 10.0f * S;
     k.pad = snap(6.0f * S); k.gutter = snap(22.0f * S); k.icons = ui_config().muLabel == 1;
     k.capPadL = snap(9.0f * S); k.icW = k.icons ? snap(k.icZ + 7.0f * S) : 0.0f; k.capPadR = snap(6.0f * S); k.triW = snap(8.0f * S);
@@ -284,7 +462,13 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
     for (int i = 0; i < n && i < 16; ++i) {
         const float s = b.sel[i], a = A * (rows[i].off ? 0.55f : 1.0f);
         const float cy = snap(by + k.pad + (float)i * step) + k.capH * 0.5f;
-        if (k.icons) draw_icon(dev, rows[i].icon, cx0 + k.capPadL + k.icZ * 0.5f, cy, k.icZ, S, with_alpha(mix(0xFF9FB0C6u, 0xFFFFF1CCu, s), a));
+        if (k.icons && rows[i].tex) {                          // a picture : a touch larger than the drawn glyph, the capsule's height
+            const float z = snap(k.capH - 3.0f * S), ix = snap(cx0 + k.capPadL + k.icZ * 0.5f - z * 0.5f), iy = snap(cy - z * 0.5f);
+            const u32 tc = with_alpha(rows[i].texTint, a);
+            dTexQuadState(dev, rows[i].tex);
+            tquad(dev, ix, iy, z, z, rows[i].tu0, rows[i].tu1, rows[i].tv0, rows[i].tv1, tc, tc);
+            dSetTex(dev, 0, 0); cs(dev);
+        } else if (k.icons) draw_icon(dev, rows[i].icon, cx0 + k.capPadL + k.icZ * 0.5f, cy, k.icZ, S, with_alpha(mix(0xFF9FB0C6u, 0xFFFFF1CCu, s), a));
         if (rows[i].pearl) {                                   // the shell worn, in its colour, right-aligned before its name
             const float ew = rows[i].extra ? f.font->measure(rows[i].extra, k.tz * 0.92f) : 0.0f;
             const float px = cx0 + capW - k.capPadR - triU - ew - 8.0f * S, pr = 4.2f * S;
@@ -353,9 +537,16 @@ bool npc_answers_hit(float fx, float fy) {
     return h[2] > 0.0f && fx >= h[0] && fx < h[0] + h[2] && fy >= h[1] && fy < h[1] + h[3];
 }
 void npc_wheel_add(int d) { InterlockedExchangeAdd(&g_npcWheel, d); }
-void actmenu_hits_clear() { for (int i = 0; i < 4; ++i) g_hit[i][2] = 0.0f; }
+void actmenu_hits_clear() { for (int i = 0; i < 5; ++i) g_hit[i][2] = 0.0f; }
+// the auto-translate picker (g_hit[4]) : the wheel over it steps the client's selection (fep_draw consumes it)
+static volatile long g_fepWheel = 0;
+bool fep_hit(float fx, float fy) {
+    const float* h = g_hit[4];
+    return h[2] > 0.0f && fx >= h[0] && fx < h[0] + h[2] && fy >= h[1] && fy < h[1] + h[3];
+}
+void fep_wheel_add(int d) { InterlockedExchangeAdd(&g_fepWheel, d); }
 bool actmenu_hit(float fx, float fy) {
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
         const float* h = g_hit[i];
         if (h[2] > 0.0f && fx >= h[0] && fx < h[0] + h[2] && fy >= h[1] && fy < h[1] + h[3]) return true;
     }
@@ -392,7 +583,15 @@ void actmenu_draw(const Frame& f) {
     for (int i = 0; i < m.n && i < 16; ++i) {
         const Cmd* c = cmd_of(m.code[i]);
         if (c) { rows[i].label = tr(c->en, c->fr); rows[i].icon = c->icon; rows[i].sub = c->sub; }
-        else { sprintf(nums[i], "#%d", m.code[i]); rows[i].label = nums[i]; rows[i].icon = IC_NONE; rows[i].sub = false; }
+        else {
+            sprintf(nums[i], "#%d", m.code[i]); rows[i].label = nums[i]; rows[i].icon = IC_NONE; rows[i].sub = false;
+            static unsigned char said[64] = { 0 };   // an UNKNOWN code : logged once, with the whole menu, so it gets named
+            if (m.code[i] < 64 && !said[m.code[i]]) {
+                said[m.code[i]] = 1;
+                char all[96]; int o = 0; for (int q = 0; q < m.n && o < 80; ++q) o += sprintf(all + o, "%s%d", q ? "," : "", m.code[q]);
+                windower::debug::log("ACTMENU unknown command code %d (row %d ; the menu's codes : %s) -- shown as '#%d'", m.code[i], i + 1, all, m.code[i]);
+            }
+        }
         rows[i].off = false;
     }
     float bw, bh; block_size(f, k, rows, m.n, bw, bh);
@@ -431,7 +630,9 @@ void actmenu_draw(const Frame& f) {
                     lrows[i].icon = IC_NONE; lrows[i].sub = false; lrows[i].off = false; lrows[i].center = true; break;
                 }
                 unsigned mp; bool ws;
-                lrows[i].label = list_row_name(lastL.kind, lastL.id[i], mp, ws); lrows[i].icon = lastL.kind ? IC_BOLT : IC_STAR; lrows[i].sub = false;
+                lrows[i].label = list_row_name(lastL.kind, lastL.id[i], mp, ws); lrows[i].icon = lastL.kind ? (ws ? IC_SWORD : IC_BOLT) : IC_STAR; lrows[i].sub = false;
+                lrows[i].tex = list_icon(f, lastL.kind, lastL.id[i]);
+                if (!lrows[i].tex) list_fallback(f, lastL.kind, lastL.id[i], lrows[i]);
                 if (mp) { sprintf(mps[i], "%u", mp); lrows[i].extra = mps[i]; }
                 lrows[i].off = (mp && mpNow >= 0 && (int)mp > mpNow) || (ws && tpNow >= 0 && tpNow < 1000);   // not usable right now : dimmed
             }
@@ -606,8 +807,19 @@ int wrap_lines(Font* fo, const char* s, float tz, float w, char out[][160], int 
 }
 }
 
-void npc_card_forget()  { g_cardIcon = 0; g_cardIconId = 0; g_cardId = 0; }   // device lost : the handle is gone with it
-void npc_card_dispose() { if (g_cardIcon) release_texture(g_cardIcon); npc_card_forget(); }
+void npc_card_forget()  {   // device lost : the handles are gone with it (the list icons' too -- they reload on demand)
+    g_cardIcon = 0; g_cardIconId = 0; g_cardId = 0;
+    for (int i = 0; i < 64; ++i) g_icons[i] = IconSlot();
+    g_elemTex = g_jobTex = g_wpnTex = 0; g_elemR = TexRetry(); g_jobR = TexRetry(); g_wpnR = TexRetry();
+}
+void npc_card_dispose() {
+    if (g_cardIcon) release_texture(g_cardIcon);
+    for (int i = 0; i < 64; ++i) if (g_icons[i].tex) release_texture(g_icons[i].tex);
+    if (g_elemTex) release_texture(g_elemTex);
+    if (g_jobTex) release_texture(g_jobTex);
+    if (g_wpnTex) release_texture(g_wpnTex);
+    npc_card_forget();
+}
 
 void npc_draw(const Frame& f) {
     const UiConfig& C = ui_config();
@@ -776,5 +988,123 @@ void npc_draw(const Frame& f) {
         } else { g_npcAns.hoverRow = 0; InterlockedExchange(&g_npcWheel, 0); }   // no notch saved for the next question
     }
 }
+
+// ======== the auto-translate picker (Tab in the input line), mirrored on AioHUD's input field ========
+// The client opens `fep` at its own input line's caret ; that line docked in AioHUD's chat box is parked, and the
+// picker with it (2026-11-17 : "je n'ai pas de menu"). Its page (7 rows, the client's own paging), drawn ON the
+// caret, above the field : everything white as the client, a category with an arrow (validating lists its phrases),
+// the greyed part (a name's origin) on the right ; the counter "3/44" on top. Keys stay the
+// client's (Tab / Shift+Tab / Enter / Escape) ; the mouse hovers / picks, the wheel steps.
+Block g_fepB;
+void fep_draw(const Frame& f) {
+    const NativeFep& F = native_fep();
+    g_hit[4][2] = 0.0f;
+    static unsigned lastMs = 0;
+    const unsigned now = GetTickCount();
+    float dt = lastMs ? (float)(now - lastMs) / 1000.0f : 0.0f; lastMs = now; if (dt > 0.1f) dt = 0.1f;
+    float ix = 0, iy = 0, iw = 0, ih = 0, cx = 0, wx = 0;
+    const bool field = f.font && f.screenW > 0.0f && f.screenH > 0.0f && chat_input_rect(ix, iy, iw, ih, cx, wx);
+    const bool on = field && F.open && !F.fail && F.rows > 0;
+    static NativeFep last;
+    if (on) { last = F; native_fep_drawn(); }
+    else InterlockedExchange(&g_fepWheel, 0);
+    // STILL while it is open (2026-11-17 : "il bouge en fonction de la longueur du choix") : the client writes the
+    // selected phrase into the line, the caret runs with it -> the x of the caret AT OPENING, and a width that only grows
+    // (a category validated closes and reopens it in a frame or two : the same opening, not a new one)
+    static bool wasOn = false; static float anchorX = 0.0f, keepW = 0.0f; static unsigned onMs = 0;
+    if (on && !wasOn && now - onMs > 300u) { anchorX = wx; keepW = 0.0f; }   // the caret before it opened
+    if (on) onMs = now;
+    wasOn = on;
+    if (!block_ease(g_fepB, on, now, dt) || !field) return;
+    const Metrics k = metrics(f); const float S = k.S; Font* fo = f.font; const u32 dev = f.dev;
+
+    RowSpec rows[7]; const int n = last.rows;
+    for (int i = 0; i < n; ++i) {
+        rows[i].label = last.row[i]; rows[i].icon = IC_NONE; rows[i].off = false;
+        rows[i].sub = last.cat[i];
+        rows[i].tint = 0xFFF4F6FAu;                    // white, as the client (2026-11-17) ; a category's arrow tells it apart
+        rows[i].extra = last.sub[i][0] ? last.sub[i] : 0;
+    }
+    float bw = 0.0f, bh = 0.0f; block_size(f, k, rows, n, bw, bh);
+    char cnt[64];
+    if (last.prefix[0]) _snprintf(cnt, sizeof(cnt), "%s  %d/%d", last.prefix, last.sel + 1, last.count);
+    else _snprintf(cnt, sizeof(cnt), "%d/%d", last.sel + 1, last.count);
+    cnt[sizeof(cnt) - 1] = 0;
+    const float cz = snap(k.tz * 0.85f), lh = snap(cz * 1.5f);
+    { const float need = snap(fo->measure(cnt, cz) + 2.0f * k.pad + 8.0f * S); if (bw < need) bw = need; }
+    if (bw < snap(170.0f * S)) bw = snap(170.0f * S);
+    if (bw < keepW) bw = keepW; else keepW = bw;
+    // on the caret, its text column level with it ; inside the field, inside the screen
+    float bx = snap(anchorX + 2.0f * S);                 // right after the caret (2026-11-17)
+    if (bx + bw > ix + iw) bx = snap(ix + iw - bw); if (bx < ix) bx = snap(ix);
+    if (bx + bw > f.screenW) bx = snap(f.screenW - bw); if (bx < 0.0f) bx = 0.0f;
+    float by = snap(iy - snap(4.0f * S) - bh);
+    if (by - lh < 0.0f) by = snap(iy + ih + snap(4.0f * S) + lh);    // no room above : below the field
+    const float tO = ease_out(((float)(now - g_fepB.openMs) / 1000.0f) / 0.08f), A = g_fepB.vis * tO;
+    by = snap(by + (1.0f - tO) * 3.0f * S);
+
+    const int cur = last.sel - last.top + 1;
+    const int row = block_draw(f, k, g_fepB, rows, n, cur, last.focused, bx, by, bw, bh, A, dt);
+    if (last.count > 7) {                                // where this page sits in the whole list : a thin rail
+        const float tx = bx + bw - 3.0f * S, ty = by + k.pad, th = bh - 2.0f * k.pad;
+        const float th2 = th * (float)n / (float)last.count, ty2 = ty + th * (float)last.top / (float)last.count;
+        dColorQuadState(dev);
+        rrect(dev, tx - 1.0f * S, ty, 2.0f * S, th, 1.0f * S, with_alpha(0x30FFFFFFu, A), with_alpha(0x30FFFFFFu, A));
+        rrect(dev, tx - 1.0f * S, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, A), with_alpha(0xC0FFDA8Au, A));
+    }
+    // the counter (and the filter typed before Tab), on the block's top-right, as the client's header
+    fo->begin(dev);
+    { const float w = fo->measure(cnt, cz);
+      fo->draw_lc(dev, snap(bx + bw - k.pad - w), snap(by - lh * 0.5f), cnt, cz, with_alpha(0xFFB8C4D4u, A), with_alpha(0xC8000000u, A), k.ow); }
+
+    if (!on) { g_fepB.hoverRow = 0; return; }
+    g_hit[4][0] = bx / f.screenW; g_hit[4][1] = (by - lh) / f.screenH; g_hit[4][2] = bw / f.screenW; g_hit[4][3] = (bh + lh) / f.screenH;
+    const long wh = InterlockedExchange(&g_fepWheel, 0);       // a notch up = the previous row (Shift+Tab), down = the next (Tab)
+    if (wh && F.focused) { const int st = wh > 0 ? -1 : 1; for (int g = 0, m = wh > 0 ? (int)wh : -(int)wh; g < m && g < 7; ++g) native_fep_step(st); }
+    const int idx = row ? last.top + row - 1 : -1;
+    if (row && row != g_fepB.hoverRow && idx != F.sel) native_fep_hover(idx);
+    g_fepB.hoverRow = row;
+    if (idx >= 0 && f.mouse && f.mouse->clicked) native_fep_pick(idx);
+}
+
+// ======== the Game UI SAMPLE (config preview + Help) : the redrawn action menu with Magic's submenu open, on fixed
+// rows, through the SAME block_draw as in play -- size, frame / theme, icons, and how a taller submenu grows all show.
+// Its own Blocks : the live menus' easing is never touched. s = the screen-height scale ; Game UI's Menu size on top.
+// draw = false only measures (outW / outH in px).
+void nui_sample(const Frame& f, float cx, float cy, float s, bool draw, float* outW, float* outH) {
+    if (!f.font) { if (outW) *outW = 0.0f; if (outH) *outH = 0.0f; return; }
+    float sc = ui_config().muScale; if (!(sc >= 0.6f && sc <= 1.6f)) sc = 1.0f;
+    const Metrics k = metrics_at(s * sc); const float S = k.S;
+    static const unsigned short CODES[6] = { 1, 8, 7, 9, 19, 10 };   // Attack / Magic / Abilities / Items / Trade / Check
+    RowSpec rows[6];
+    for (int i = 0; i < 6; ++i) { const Cmd* c = cmd_of(CODES[i]); rows[i].label = c ? tr(c->en, c->fr) : "?"; rows[i].icon = c ? c->icon : IC_NONE; rows[i].sub = c && c->sub; rows[i].off = false; }
+    // beside it : a spell LIST (White Magic), so the spell pictures show ; one row dimmed (not enough MP)
+    static const unsigned SAMPLE_SPELLS[7] = { 1, 2, 3, 43, 48, 57, 108 };   // Cure / Cure II / Cure III / Protect / Shell / Haste / Regen
+    RowSpec srows[7]; char mps[7][8];
+    for (int i = 0; i < 7; ++i) {
+        unsigned mp; bool ws; srows[i].label = list_row_name(0, SAMPLE_SPELLS[i], mp, ws); srows[i].icon = IC_STAR; srows[i].sub = false; srows[i].off = i == 2;
+        if (mp) { sprintf(mps[i], "%u", mp); srows[i].extra = mps[i]; }
+        if (draw) srows[i].tex = list_icon(f, 0, SAMPLE_SPELLS[i]);
+    }
+    float bw, bh, sw, sh; block_size(f, k, rows, 6, bw, bh); block_size(f, k, srows, 7, sw, sh);
+    if (sh < bh) sh = bh;
+    const float gap = snap(3.0f * S), W = bw + gap + sw, H = sh > bh ? sh : bh;
+    if (outW) *outW = W;
+    if (outH) *outH = H;
+    if (!draw) return;
+    static Block pvMain, pvSub; static unsigned last = 0;
+    const unsigned now = GetTickCount(); float dt = last ? (float)(now - last) / 1000.0f : 0.0f; last = now; if (dt > 0.1f) dt = 0.1f;
+    const float x0 = snap(cx - W * 0.5f), top = snap(cy - H * 0.5f);
+    const bool down = ui_config().muGrow == 1;                  // the taller submenu : tops level (down) or bottoms level (up)
+    const float my = down ? top : snap(top + H - bh), sy = down ? top : snap(top + H - sh);
+    block_draw(f, k, pvMain, rows, 6, 2, false, x0, my, bw, bh, 0.62f, dt);       // Magic picked : the menu steps back
+    block_draw(f, k, pvSub, srows, 7, 1, true, snap(x0 + bw + gap), sy, sw, sh, 1.0f, dt);
+}
+void nui_help_fit(const Frame& f, float availW, float maxScale, float& outScale, float& outH) {
+    float w = 0.0f, h = 0.0f; nui_sample(f, 0.0f, 0.0f, 1.0f, false, &w, &h);
+    float sc = w > 1.0f ? availW / w : maxScale; if (sc > maxScale) sc = maxScale; if (sc < 0.5f) sc = 0.5f;
+    outScale = sc; outH = h * sc;
+}
+void nui_help_box(const Frame& f, float cx, float cy, float s) { nui_sample(f, cx, cy, s, true, 0, 0); }
 
 } // namespace aio

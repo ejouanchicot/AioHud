@@ -19,10 +19,6 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
                                  float hdrX, float hdrW) {
     UiConfig& c = ui_config();
 
-    // one muted explanatory line inside a row band
-    #define NUI_NOTE(TEXT) { ROW_BAND(34.0f) fo->begin(dev); \
-        fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(14.0f), (TEXT), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f); } ROW_NEXT(34.0f)
-
     // ===== sub-section : HIDE (the client's windows AioHUD replaces) =====
     const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));
@@ -36,17 +32,14 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
             if (row_toggle(dev, fo, mo, click, (UID), coX, ry + yo, ctrlW, (LABEL), &on_)) { c.nuHide = on_ ? (c.nuHide | (BIT)) : (c.nuHide & ~(BIT)); save_ui_config(); } \
             } ROW_NEXT(48.0f)
         NUI_HIDE_ROW(CTRL_ID, tr("Party window", "Fen\xC3\xAAtre du groupe"), NU_PARTY)
-        NUI_NOTE(tr("Also hides the game's target bar, which sits on it.", "Cache aussi la barre de cible du jeu, pos\xC3\xA9""e dessus."))
+        ROW_NOTE(tr("Also hides the game's target bar, which sits on it.", "Cache aussi la barre de cible du jeu, pos\xC3\xA9""e dessus."))
         NUI_HIDE_ROW(CTRL_ID, tr("Alliance windows", "Fen\xC3\xAAtres d'alliance"), NU_ALLY)
         NUI_HIDE_ROW(CTRL_ID, tr("Chat log", "Journal du chat"), NU_CHAT)
-        NUI_NOTE(tr("NPC dialogue is written there too -- keep it while AioHUD has no chat box.", "Les dialogues des PNJ y sont \xC3\xA9""crits -- garde-le tant qu'AioHUD n'a pas de chat."))
+        ROW_NOTE(tr("Turn AioHUD's Chat on first (module Chat) : NPC dialogue and system lines land there too.", "Active d'abord le Chat d'AioHUD (module Chat) : les dialogues PNJ et messages syst\xC3\xA8me y arrivent aussi."))
         NUI_HIDE_ROW(CTRL_ID, tr("Help bar + menu name", "Barre d'aide + nom du menu"), NU_HELP)
         NUI_HIDE_ROW(CTRL_ID, tr("MP cost / recast case", "Case co\xC3\xBBt MP / recast"), NU_COST)
         NUI_HIDE_ROW(CTRL_ID, tr("Connection + POL icons", "Ic\xC3\xB4nes connexion + POL"), NU_NET)
-        NUI_HIDE_ROW(CTRL_ID, tr("Action menu (AioHUD draws it)", "Menu d'action (dessin\xC3\xA9 par AioHUD)"), NU_ACT)
-        NUI_HIDE_ROW(CTRL_ID, tr("NPC dialogue + answers (AioHUD draws them)", "Dialogues PNJ + r\xC3\xA9ponses (dessin\xC3\xA9s par AioHUD)"), NU_NPC)
-        NUI_NOTE(tr("A hidden window keeps working ; it is only parked off-screen.", "Une fen\xC3\xAAtre cach\xC3\xA9""e fonctionne toujours ; elle est juste hors de l'\xC3\xA9""cran."))
-        #undef NUI_HIDE_ROW
+        ROW_NOTE(tr("A hidden window keeps working ; it is only parked off-screen.", "Une fen\xC3\xAAtre cach\xC3\xA9""e fonctionne toujours ; elle est juste hors de l'\xC3\xA9""cran."))
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
     }   // end Hide
     ry += snap(16.0f);
@@ -54,11 +47,16 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
     // ===== sub-section : AIOHUD MENUS (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
     const float aF23_ = cat_fold(CTRL_ID, catOpen_[23]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[23], aF23_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Menus drawn by AioHUD", "Menus dessin\xC3\xA9s par AioHUD"), catOpen_[23], aF23_)) catOpen_[23] = !catOpen_[23];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Redrawn by AioHUD", "Redessin\xC3\xA9s par AioHUD"), catOpen_[23], aF23_)) catOpen_[23] = !catOpen_[23];
     ROW_NEXT(42.0f)
     if (aF23_ > 0.0f) {
         const float top23_ = ry;
         cat_fold_clip(dev, hdrX, top23_, hdrW, catH_[23] * aF23_);
+        // WHAT AioHUD redraws (the game's own window is parked, AioHUD draws its version) -- these lived in "Hide"
+        // with an "(AioHUD draws it)" suffix ; the section they belong to is this one (2026-11-17 config audit)
+        NUI_HIDE_ROW(CTRL_ID, tr("Action menu", "Menu d'action"), NU_ACT)
+        NUI_HIDE_ROW(CTRL_ID, tr("NPC dialogue + answers", "Dialogues PNJ + r\xC3\xA9ponses"), NU_NPC)
+        #undef NUI_HIDE_ROW
         { ROW_BAND(46.0f)   // the menus' size : every dimension, the text included
             const float lo = 0.60f, hi = 1.60f; char sb[16]; sprintf(sb, "%d%%", (int)(c.muScale * 100.0f + 0.5f));
             float v01 = clampf((c.muScale - lo) / (hi - lo), 0.0f, 1.0f);
@@ -105,13 +103,12 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
             fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(17.0f), tr("Back to the game's place", "Retour \xC3\xA0 la place du jeu"), snap(14.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
         } ROW_NEXT(48.0f)
-        NUI_NOTE(tr("Moves every menu at once, the ones you never opened too.", "D\xC3\xA9place tous les menus d'un coup, m\xC3\xAAme ceux jamais ouverts."))
-        NUI_NOTE(tr("Turning an option off or unloading AioHUD puts everything back.", "D\xC3\xA9sactiver une option ou d\xC3\xA9""charger AioHUD remet tout en place."))
+        ROW_NOTE(tr("Moves every menu at once, the ones you never opened too.", "D\xC3\xA9place tous les menus d'un coup, m\xC3\xAAme ceux jamais ouverts."))
+        ROW_NOTE(tr("Turning an option off or unloading AioHUD puts everything back.", "D\xC3\xA9sactiver une option ou d\xC3\xA9""charger AioHUD remet tout en place."))
         cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
     }   // end Menus
 
     ry += snap(16.0f);
-    #undef NUI_NOTE
     #undef ROW_BAND
     #undef ROW_NEXT
 }

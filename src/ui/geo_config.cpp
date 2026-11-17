@@ -17,10 +17,20 @@ namespace aio {
 // the Display rows of the GEO tab
 void ConfigPage::draw_geo_rows(u32 dev, Font* fo, const MouseState* mo, bool click,
                                float& ry, int& ri, float e,
-                               float bandX, float bandW, float coX, float ctrlW) {
+                               float bandX, float bandW, float coX, float ctrlW, int part) {
     UiConfig& c = ui_config();
+    // part 0 = the DISPLAY rows (the Pet page's Display section : when and where the box shows), part 1 = the CONTENT
+    // rows (what it shows) -- split 2026-11-17 (config audit : one flat list of up to 20 rows under Content)
+    if (part == 0) {
     ROW_TOGGLE(CTRL_ID, tr("Show on GEO", "Afficher en GEO"), c.geoShow)
     ROW_TOGGLE(CTRL_ID, tr("Only with a luopan out", "Seulement avec un luopan"), c.geoOnlyLuopan)
+    { ROW_BAND(52.0f)   // where the compass and the luopan go : on top of the box, beside the text, or alone
+        const char* LL[3] = { tr("Compass on top", "Boussole au-dessus"), tr("Side by side", "C\xC3\xB4te \xC3\xA0 c\xC3\xB4te"), tr("Bubble only", "Bulle seule") };
+        const int l = (c.geoLayout < 0 || c.geoLayout > 2) ? 0 : c.geoLayout;
+        if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Layout", "Disposition"), LL[l])) { c.geoLayout = wrap(l + d, 3); save_ui_config(); }
+    } ROW_NEXT(52.0f)
+        return;
+    }
     { ROW_BAND(46.0f)   // the effect icons' size
         const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.geoIconSz * 100.0f + 0.5f));
         float v01 = (c.geoIconSz - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
@@ -41,15 +51,6 @@ void ConfigPage::draw_geo_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
     } ROW_NEXT(52.0f)
     ROW_TOGGLE(CTRL_ID, tr("Cardinal Chant compass", "Boussole Cardinal Chant"), c.geoCompass)   // round the luopan
     ROW_TOGGLE(CTRL_ID, tr("Cardinal bonus (MAB, M.Acc...)", "Bonus Cardinal (MAB, M.Acc...)"), c.geoCardText)   // the text under it
-    { ROW_BAND(52.0f)   // where the compass and the luopan go : on top of the box, beside the text, or alone
-        const char* LL[3] = { tr("Compass on top", "Boussole au-dessus"), tr("Side by side", "C\xC3\xB4te \xC3\xA0 c\xC3\xB4te"), tr("Bubble only", "Bulle seule") };
-        const int l = (c.geoLayout < 0 || c.geoLayout > 2) ? 0 : c.geoLayout;
-        if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Layout", "Disposition"), LL[l])) { c.geoLayout = wrap(l + d, 3); save_ui_config(); }
-    } ROW_NEXT(52.0f)
-    { ROW_BAND(40.0f)   // note
-        const float ty = ry + yo; fo->begin(dev);
-        fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Shown when GEO is your main job.", "Affich\xC3\xA9 quand GEO est ton job principal."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-    } ROW_NEXT(40.0f)
 }
 
 // the Text rows of the GEO tab : which text element, then its typography

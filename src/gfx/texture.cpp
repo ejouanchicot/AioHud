@@ -604,4 +604,58 @@ bool read_gear_icon_bmp(const char* bmp_path, u32* out_px)
     return true;
 }
 
+// ---- PNG through GDI+'s flat C API, bound at run time (no gdiplus.lib, no C++ headers) ----
+namespace {
+struct GpStartIn { unsigned version; void* debugCb; BOOL noBgThread; BOOL noExtCodecs; };
+struct GpRect { int X, Y, Width, Height; };
+struct GpData { unsigned Width, Height; int Stride; int PixelFormat; void* Scan0; UINT_PTR Reserved; };
+typedef int (WINAPI *GpStartup)(ULONG_PTR*, const GpStartIn*, void*);
+typedef int (WINAPI *GpFromFile)(const wchar_t*, void**);
+typedef int (WINAPI *GpGetDim)(void*, unsigned*);
+typedef int (WINAPI *GpLock)(void*, const GpRect*, unsigned, int, GpData*);
+typedef int (WINAPI *GpUnlock)(void*, GpData*);
+typedef int (WINAPI *GpDispose)(void*);
+struct Gdip { bool ok; GpFromFile fromFile; GpGetDim width, height; GpLock lock; GpUnlock unlock; GpDispose dispose; };
+const Gdip& gdip() {
+    static Gdip g = { false, 0, 0, 0, 0, 0, 0 };
+    static bool tried = false;   // rule10-ok: gdiplus.dll is a system DLL -- absent or broken it stays so for the session ; the miss is logged, and every caller falls back to its own icon
+    if (tried) return g;         // rule10-ok: see above
+    tried = true;                // rule10-ok: see above
+    HMODULE m = LoadLibraryA("gdiplus.dll");
+    GpStartup st = m ? (GpStartup)GetProcAddress(m, "GdiplusStartup") : 0;
+    g.fromFile = m ? (GpFromFile)GetProcAddress(m, "GdipCreateBitmapFromFile") : 0;
+    g.width    = m ? (GpGetDim)GetProcAddress(m, "GdipGetImageWidth") : 0;
+    g.height   = m ? (GpGetDim)GetProcAddress(m, "GdipGetImageHeight") : 0;
+    g.lock     = m ? (GpLock)GetProcAddress(m, "GdipBitmapLockBits") : 0;
+    g.unlock   = m ? (GpUnlock)GetProcAddress(m, "GdipBitmapUnlockBits") : 0;
+    g.dispose  = m ? (GpDispose)GetProcAddress(m, "GdipDisposeImage") : 0;
+    ULONG_PTR token = 0; GpStartIn in = { 1, 0, FALSE, FALSE };
+    const int rc = (st && g.fromFile && g.width && g.height && g.lock && g.unlock && g.dispose) ? st(&token, &in, 0) : -1;
+    g.ok = rc == 0;   // started once, never shut down : the module stays loaded (a pinned system DLL), its thread is its own
+    windower::debug::log("PNG : GDI+ %s (rc %d)", g.ok ? "ready" : "UNAVAILABLE -- the PNG icons fall back to the drawn ones", rc);
+    return g;
+}
+} // namespace
+
+bool load_png_argb(const wchar_t* path, int W, int H, u32* out) {
+    if (!path || !out || W <= 0 || H <= 0) return false;
+    if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES) return false;   // the common miss : no GDI+ work for it
+    const Gdip& g = gdip(); if (!g.ok) return false;
+    void* bmp = 0;
+    if (g.fromFile(path, &bmp) != 0 || !bmp) return false;
+    unsigned w = 0, h = 0; bool ok = false;
+    if (g.width(bmp, &w) == 0 && g.height(bmp, &h) == 0 && w > 0 && h > 0 && w <= 1024 && h <= 1024) {
+        GpRect r = { 0, 0, (int)w, (int)h }; GpData d = { 0, 0, 0, 0, 0, 0 };
+        if (g.lock(bmp, &r, 1 /*ImageLockModeRead*/, 0x26200A /*PixelFormat32bppARGB*/, &d) == 0 && d.Scan0) {
+            for (int y = 0; y < H; ++y) {
+                const u32* row = (const u32*)((const char*)d.Scan0 + (ptrdiff_t)((unsigned)y * h / (unsigned)H) * d.Stride);   // a stride can be negative
+                for (int x = 0; x < W; ++x) out[y * W + x] = row[(unsigned)x * w / (unsigned)W];
+            }
+            g.unlock(bmp, &d); ok = true;
+        }
+    }
+    g.dispose(bmp);
+    return ok;
+}
+
 } // namespace aio

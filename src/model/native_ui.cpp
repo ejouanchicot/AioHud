@@ -135,6 +135,7 @@ NativeMenu g_act; bool g_actFail = false; int g_actBad = 0; DWORD g_actGoodSince
 u32 g_actObj = 0;          // the playermo object of the last good read (re-read before any call into the client)
 // the same fallback for the NPC windows : an NPC window open but unreadable 3 frames -> the client's own come back
 NativeNpc g_npc; bool g_npcFail = false; int g_npcBad = 0; DWORD g_npcGoodSince = 0;
+NativeFep g_fep; DWORD g_fepDrawnMs = 0; int g_fepBadLog = 0; u32 g_fepIn = 0;
 int eff_hide(const UiConfig& c) {
     int h = c.nuHide;
     if (g_actFail) h &= ~NU_ACT;
@@ -675,7 +676,9 @@ void rescue_children(u32 mgr, int hide) {
             const int w = r[2] - r[0], h = r[3] - r[1];
             // AioHUD draws the item card itself : the client's description stays where its parked parent put it
             const bool cardOurs = besideNpc && g_npcCard && !strcmp(nm, "iteminfo");
-            if (!ours && !cardOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
+            // AioHUD draws the auto-translate picker itself (above its input line) : the client's stays parked
+            const bool fepOurs = g_fep.open && GetTickCount() - g_fepDrawnMs < 500u && !strcmp(nm, "fep");
+            if (!ours && !cardOurs && !fepOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
                 int nx = r[0], ny = r[1] - HIDE_DY;
                 // the NPC answers are up : ABOVE AioHUD's box, left edges level (user 2026-11-17 "on la veut au-dessus") ;
                 // no room above : below it ; always inside the UI screen
@@ -1134,6 +1137,110 @@ bool native_npc_next() {
     return menu_event(obj, 5);
 }
 
+// ---- the auto-translate picker `fep` (native_ui.h ; live 2026-11-17, //aio feplog) ----
+const NativeFep& native_fep() { return g_fep; }
+void native_fep_drawn() { g_fepDrawnMs = GetTickCount(); }
+namespace {
+const char* const FEP_W[] = { "fep", 0 };
+// cp932 bytes -> UTF-8 (the client's text : ASCII, its 【】 brackets, Japanese on a JP client)
+void fep_utf8(const unsigned char* s, int n, char* out, int cap) {
+    out[0] = 0; if (n <= 0) return;
+    wchar_t w[200]; const int wn = MultiByteToWideChar(932, 0, (const char*)s, n, w, 199);
+    if (wn <= 0) return;
+    const int o = WideCharToMultiByte(CP_UTF8, 0, w, wn, out, cap - 1, 0, 0);
+    out[o > 0 ? o : 0] = 0;
+}
+// -1 not open, 0 open but unreadable, 1 read. objOut : the open object.
+int fep_read(u32 mgr, NativeFep& F, u32* objOut = 0) {
+    if (objOut) *objOut = 0;
+    const u32 obj = open_obj(mgr, FEP_W); if (!obj) return -1;
+    u32 hd = 0, back = 0, in = 0, cnt = 0, sel = 0, items = 0; unsigned char on = 0, ext = 0;
+    if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !safe_read(hd + 0x08, &back) || back != obj) return 0;
+    if (!safe_read(hd + 0x14, &in) || !valid_ptr(in) || !rd8(in + 0x8C81, on)) return 0;
+    g_fepIn = in;                                                    // the input system : read alone while the window is shut
+    if (!on) return -1;                                               // validated / escaped : closing
+    if (!safe_read(in + 0x8C84, &sel) || !safe_read(hd + 0x1C, &cnt) || !rd8(hd + 0x21F8, ext)) return 0;
+    if (cnt == 0) return -1;
+    if (cnt > 4096 || sel >= cnt) return 0;
+    if (ext) { if (!safe_read(hd + 0x21E8, &items) || !valid_ptr(items)) return 0; } else items = hd + 0x20;
+    F.count = (int)cnt; F.sel = (int)sel; F.top = (F.sel / 7) * 7;
+    F.rows = F.count - F.top < 7 ? F.count - F.top : 7;
+    { const u32 pa = ffximain_base() ? ffximain_base() + 0x663F10 : 0; unsigned char t[40] = { 0 };   // 0x059A3F10 - 0x05340000
+      if (pa) { __try { memcpy(t, (const void*)pa, 39); } __except (EXCEPTION_EXECUTE_HANDLER) { t[0] = 0; } }
+      int n = 0; while (n < 39 && t[n] >= 0x20 && t[n] < 0x7F) ++n;
+      memcpy(F.prefix, t, (size_t)n); F.prefix[n] = 0; }
+    // the TOP level, nothing typed : every row is a category (live 2026-11-17 : 43 "Key Items" / 44 "Items" carry
+    // neither the brackets nor a category id -- they open the item search)
+    u32 path = 1; safe_read(in + 0xEC2C, &path);
+    const bool allCats = path == 0 && !F.prefix[0];
+    for (int i = 0; i < F.rows; ++i) {
+        const u32 it = items + (u32)(F.top + i) * 0x10; u32 tp = 0, len = 0, id = 0;
+        if (!safe_read(it + 4, &tp) || !safe_read(it + 8, &len) || !safe_read(it + 0xC, &id) || !valid_ptr(tp) || len > 190) return 0;
+        unsigned char b[192] = { 0 };
+        __try { memcpy(b, (const void*)tp, len); } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+        int a = (int)len, sb = -1;                                    // the main part ; the greyed part after 0x06 / a NUL
+        for (int j = 0; j < (int)len; ++j) if (b[j] == 0x06 || b[j] == 0) { a = j; sb = j + 1; break; }
+        const unsigned char* m = b; int mn = a;
+        if (mn >= 4 && m[0] == 0x81 && m[1] == 0x79 && m[mn - 2] == 0x81 && m[mn - 1] == 0x7A) { F.cat[i] = true; m += 2; mn -= 4; }
+        // 〔Key Items〕 (id 00000213) / 〔Items〕 (00000207) : the item searches, in the other brackets (live 2026-11-17)
+        else if (mn >= 4 && m[0] == 0x81 && m[1] == 0x6B && m[mn - 2] == 0x81 && m[mn - 1] == 0x6C) { F.cat[i] = true; m += 2; mn -= 4; }
+        // the auto-translate id (lang, 02, category, index) : index 0 = the CATEGORY itself (live : 00010202 Greetings ..
+        // 00150202 ; a phrase 0C020202). The last two of the list (43 / 44, 2026-11-17) carry 〔〕, handled above.
+        if (!F.cat[i] && (allCats || ((id & 0xFFFF) == 0x0202 && (id >> 24) == 0 && ((id >> 16) & 0xFF) != 0))) {
+            F.cat[i] = true;
+            static int said = 0;
+            if (said < 8) { ++said; char hx[100]; int o = 0; for (int j = 0; j < (int)len && j < 30; ++j) o += _snprintf(hx + o, sizeof(hx) - o, "%02X", b[j]);
+                            windower::debug::log("NATIVEUI auto-translate picker : category %08X without brackets, %u byte(s) %s", id, len, hx); }
+        }
+        fep_utf8(m, mn, F.row[i], sizeof(F.row[0]));
+        if (sb >= 0 && sb < (int)len) fep_utf8(b + sb, (int)len - sb, F.sub[i], sizeof(F.sub[0]));
+    }
+    u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+    F.focused = focus == obj;
+    F.open = true;
+    if (objOut) *objOut = obj;
+    return 1;
+}
+void fep_poll(bool on) {
+    if (!on) { memset(&g_fep, 0, sizeof(g_fep)); return; }
+    const u32 mgr = manager();
+    static NativeFep F; memset(&F, 0, sizeof(F));
+    const int r = mgr ? fep_read(mgr, F) : -1;
+    if (r == 0) {                                                     // shown by the client, not readable : the client's own
+        memset(&F, 0, sizeof(F)); F.fail = true;
+        if (g_fepBadLog < 20) { ++g_fepBadLog; windower::debug::log("NATIVEUI auto-translate picker : unreadable -- the client's own is brought back"); }
+    }
+    static bool was = false;
+    if (F.open != was) { was = F.open; if (F.open) windower::debug::log("NATIVEUI auto-translate picker : %d row(s), prefix '%s', first '%.40s'%s", F.count, F.prefix, F.row[0], F.cat[0] ? " (categories)" : ""); }
+    if (F.open) F.picking = true;
+    else if (g_fepIn) { unsigned char on2 = 0; F.picking = valid_ptr(g_fepIn) && rd8(g_fepIn + 0x8C81, on2) && on2 != 0; }
+    g_fep = F;
+}
+u32 fep_live(NativeFep& F) {
+    const u32 mgr = manager(); if (!mgr) return 0;
+    memset(&F, 0, sizeof(F)); u32 obj = 0;
+    if (fep_read(mgr, F, &obj) != 1 || !F.focused) return 0;
+    return obj;
+}
+} // namespace
+bool native_fep_hover(int idx) {
+    NativeFep F; const u32 obj = fep_live(F);
+    if (!obj || idx < F.top || idx >= F.top + F.rows) return false;
+    if (F.sel == idx) return true;
+    if (!wr16(obj + 0x4C, (short)(idx - F.top + 2))) return false;  // the client's rows are 2..8 (1 = its counter)
+    return menu_event(obj, 9);
+}
+bool native_fep_pick(int idx) {
+    if (!native_fep_hover(idx)) return false;
+    NativeFep F; const u32 obj = fep_live(F);
+    if (!obj || F.sel != idx) return false;
+    return menu_event(obj, 5);
+}
+bool native_fep_step(int d) {
+    NativeFep F; const u32 obj = fep_live(F);
+    return obj && menu_event(obj, d > 0 ? 1 : 2);
+}
+
 void native_ui_tick(bool inWorld) {
     const UiConfig& c = ui_config();
     g_full.open = false; g_full.logFocus = -1;             // read again below this frame, or not open (never stale)
@@ -1153,10 +1260,11 @@ void native_ui_tick(bool inWorld) {
         if (g_lastSig != 0 || strcmp(g_why, why)) { g_lastSig = 0; lstrcpynA(g_why, why, sizeof(g_why)); }
         return;
     }
-    if (!resolve()) { g_act.open = false; g_sub.open = false; g_list.open = false; g_npc.talk = false; g_npc.query = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
+    if (!resolve()) { g_act.open = false; g_sub.open = false; g_list.open = false; g_npc.talk = false; g_npc.query = false; g_fep.open = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
     if (inWorld) fulllog_read(manager()); else g_full.open = false;   // the expanded log : AioHUD's Discussion box unfolds
     act_poll(wanted && (c.nuHide & NU_ACT));
     npc_poll(wanted && (c.nuHide & NU_NPC));
+    fep_poll(wanted && docking);                         // the input line in AioHUD's box : its auto-translate picker too
     if (wanted && (eff_hide(c) & (NU_ACT | NU_NPC))) rescue_children(manager(), eff_hide(c));
     if (!wanted && !g_anyApplied) return;                  // recovery done, nothing configured
     const int sig = wanted ? config_sig(c) : 0;

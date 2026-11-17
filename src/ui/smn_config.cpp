@@ -18,15 +18,13 @@ namespace aio {
 // the Display rows of the SMN tab
 void ConfigPage::draw_smn_rows(u32 dev, Font* fo, const MouseState* mo, bool click,
                                float& ry, int& ri, float e,
-                               float bandX, float bandW, float coX, float ctrlW) {
+                               float bandX, float bandW, float coX, float ctrlW, int part) {
     UiConfig& c = ui_config();
+    // part 0 = the DISPLAY rows (the Pet page's Display section : when and where the box shows), part 1 = the CONTENT
+    // rows (what it shows) -- split 2026-11-17 (config audit : one flat list of up to 20 rows under Content)
+    if (part == 0) {
     ROW_TOGGLE(CTRL_ID, tr("Show on SMN", "Afficher en SMN"), c.smnShow)
     ROW_TOGGLE(CTRL_ID, tr("Only with an avatar out", "Seulement avec un avatar"), c.smnOnlyPet)
-    { ROW_BAND(46.0f)   // the portrait's and the ability icons' size
-        const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.smnIconSz * 100.0f + 0.5f));
-        float v01 = (c.smnIconSz - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-        if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Portrait / icon size", "Taille portrait / ic\xC3\xB4nes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.smnIconSz = v < lo ? lo : (v > hi ? hi : v); }
-    } ROW_NEXT(46.0f)
     { ROW_BAND(52.0f)   // where the portrait goes : on top of the box, or beside its text
         const char* LL[2] = { tr("Portrait on top", "Portrait au-dessus"), tr("Side by side", "C\xC3\xB4te \xC3\xA0 c\xC3\xB4te") };
         const int l = (c.smnLayout == 1) ? 1 : 0;
@@ -36,6 +34,13 @@ void ConfigPage::draw_smn_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
         const int ai = (c.smnDemo < 0 || c.smnDemo >= SMN_AVATARS_N) ? 0 : c.smnDemo;
         if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Preview avatar", "Avatar (aper\xC3\xA7u)"), SMN_AVATARS[ai].en)) { c.smnDemo = wrap(ai + d, SMN_AVATARS_N); save_ui_config(); }
     } ROW_NEXT(52.0f)
+        return;
+    }
+    { ROW_BAND(46.0f)   // the portrait's and the ability icons' size
+        const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.smnIconSz * 100.0f + 0.5f));
+        float v01 = (c.smnIconSz - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+        if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Portrait / icon size", "Taille portrait / ic\xC3\xB4nes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.smnIconSz = v < lo ? lo : (v > hi ? hi : v); }
+    } ROW_NEXT(46.0f)
     ROW_TOGGLE(CTRL_ID, tr("Avatar portrait", "Portrait de l'avatar"), c.smnPortrait)
     ROW_TOGGLE(CTRL_ID, tr("Avatar name", "Nom de l'avatar"), c.smnName)
     ROW_TOGGLE(CTRL_ID, tr("Avatar HP", "HP de l'avatar"), c.smnHp)
@@ -45,10 +50,6 @@ void ConfigPage::draw_smn_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
     ROW_TOGGLE(CTRL_ID, tr("Job abilities", "Job abilities"), c.smnJa)
     ROW_TOGGLE(CTRL_ID, tr("MP", "MP"), c.smnMp)
     ROW_TOGGLE(CTRL_ID, tr("The avatar's pacts", "Les pacts de l'avatar"), c.smnPacts)
-    { ROW_BAND(40.0f)   // note
-        const float ty = ry + yo; fo->begin(dev);
-        fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("Shown when SMN is your main job.", "Affich\xC3\xA9 quand SMN est ton job principal."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-    } ROW_NEXT(40.0f)
 }
 
 // the Text rows of the SMN tab : which text element, then its typography

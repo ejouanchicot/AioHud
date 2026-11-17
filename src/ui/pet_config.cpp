@@ -37,6 +37,15 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.petScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
         ROW_GROW(CTRL_ID, UiConfig::GB_PET)   // which way the box grows as its content widens (ui/box_grow.h)
+        // the JOB : the variant row of the grammar's Display (like Chat's Box, Zone Tracker's Content) -- every row
+        // below it, here and in Content / Text, is that job's. Then the job's own when / where rows.
+        { ROW_BAND(52.0f)
+            const char* JL[3] = { "BST", "GEO", "SMN" };
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Job", "Job"), JL[tab])) { c.petTab = wrap(tab + d, 3); save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        if (tab == 2)      draw_smn_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, 0);
+        else if (tab == 1) draw_geo_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, 0);
+        else               draw_bst_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, 0);
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
     }   // end Display
     ry += snap(16.0f);
@@ -60,17 +69,9 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
     if (aF21_ > 0.0f) {
         const float top21_ = ry;
         cat_fold_clip(dev, hdrX, top21_, hdrW, catH_[21] * aF21_);
-        { ROW_BAND(52.0f)   // the job tab : the rows below and the preview are that job's
-            const char* JL[3] = { "BST", "GEO", "SMN" };
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Job", "Job"), JL[tab])) { c.petTab = wrap(tab + d, 3); save_ui_config(); }
-        } ROW_NEXT(52.0f)
-        { ROW_BAND(40.0f)   // note : the jobs to come
-            const float ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("PUP : later.", "PUP : plus tard."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        } ROW_NEXT(40.0f)
-        if (tab == 2)      draw_smn_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
-        else if (tab == 1) draw_geo_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
-        else               draw_bst_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);
+        if (tab == 2)      draw_smn_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, 1);   // what the job's box shows
+        else if (tab == 1) draw_geo_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, 1);
+        else               draw_bst_rows(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, 1);
         cat_fold_end(dev, ry, top21_, catH_[21], aF21_);
     }   // end Content
     ry += snap(16.0f);
