@@ -346,6 +346,14 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
 } // namespace
 
 void actmenu_set_hand_tex(u32 tex) { g_handTex = tex; }
+// the NPC answers block (g_hit[3]) : the wheel over it moves the client's cursor (npc_draw consumes it)
+static volatile long g_npcWheel = 0;
+bool npc_answers_hit(float fx, float fy) {
+    const float* h = g_hit[3];
+    return h[2] > 0.0f && fx >= h[0] && fx < h[0] + h[2] && fy >= h[1] && fy < h[1] + h[3];
+}
+void npc_wheel_add(int d) { InterlockedExchangeAdd(&g_npcWheel, d); }
+void actmenu_hits_clear() { for (int i = 0; i < 4; ++i) g_hit[i][2] = 0.0f; }
 bool actmenu_hit(float fx, float fy) {
     for (int i = 0; i < 4; ++i) {
         const float* h = g_hit[i];
@@ -557,8 +565,18 @@ const char* const JOBS3[23] = { "", "WAR", "MNK", "WHM", "BLM", "RDM", "THF", "P
                                 "SMN", "BLU", "COR", "PUP", "DNC", "SCH", "GEO", "RUN" };
 void card_load(u32 dev, unsigned id) {
     static DWORD lastTry = 0;   // a failed read is retried every 2 s, never cached for good (rule 10)
-    if (id == g_cardId && (g_cardOk || GetTickCount() - lastTry < 2000u)) return;
-    lastTry = GetTickCount();
+    const DWORD nowT = GetTickCount();
+    if (id == g_cardId && g_cardOk) {
+        // the TEXT is read ; its ICON is retried on its own (a device not ready must not leave this item iconless --
+        // review 2026-11-17)
+        if (g_cardIcon || nowT - lastTry < 2000u) return;
+        lastTry = nowT;
+        static u32 px2[32 * 32];
+        if (decode_gear_icon_from_rom(id, px2)) { g_cardIcon = make_texture_argb_mip(dev, 32, 32, px2); g_cardIconId = id; }
+        return;
+    }
+    if (id == g_cardId && nowT - lastTry < 2000u) return;
+    lastTry = nowT;
     g_cardId = id; g_cardOk = false;
     static unsigned char rec[0x2BD];
     if (id && read_item_record_head(id, rec, sizeof(rec)) && item_text_parse(rec, sizeof(rec), id, g_card)) g_cardOk = true;
@@ -595,6 +613,7 @@ void npc_draw(const Frame& f) {
     const UiConfig& C = ui_config();
     const NativeNpc& N = native_npc();
     g_hit[2][2] = g_hit[3][2] = 0.0f;
+    if (!N.query) InterlockedExchange(&g_npcWheel, 0);    // a notch is for THESE answers, never kept for the next
     native_npc_box(0.0f, 0.0f, 0.0f, 0.0f);               // published again below while the answers are drawn
     if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) {
         g_npcBubble.vis = g_npcAns.vis = 0.0f; g_npcBubble.wasOpen = g_npcAns.wasOpen = false; return;
@@ -606,7 +625,8 @@ void npc_draw(const Frame& f) {
 
     static NativeNpc last;                             // fades out with its own text
     if (N.talk || N.query) last = N;
-    const bool bubbleOn = N.talk || N.query, ansOn = N.query && N.n > 0;
+    // the client's own windows are back (an unreadable one) : AioHUD draws nothing -- the text is never shown twice
+    const bool bubbleOn = !N.fail && (N.talk || N.query), ansOn = !N.fail && N.query && N.n > 0;
     const bool bubbleVis = block_ease(g_npcBubble, bubbleOn, now, dt), ansVis = block_ease(g_npcAns, ansOn, now, dt);
     if (!bubbleVis && !ansVis) return;
 
@@ -635,7 +655,7 @@ void npc_draw(const Frame& f) {
     if (!place_on_chat(bw, H, snap(4.0f * S), f.screenW, f.screenH, bx, by)) { bx = snap(20.0f * S); by = snap(f.screenH * 0.72f - H); }
     // ---- the item card : the item the answer under the cursor points at, ABOVE the stack (else below it) ----
     if (N.query) card_load(dev, N.itemId); else if (!last.query) g_cardId = 0;
-    const bool cardOn = N.query && N.itemId && g_cardOk && g_cardId == N.itemId;
+    const bool cardOn = !N.fail && N.query && N.itemId && g_cardOk && g_cardId == N.itemId;
     if (block_ease(g_npcCardB, cardOn, now, dt) && g_cardOk) {
         // THE CLIENT'S LAYOUT (its own card, screenshot 2026-11-17) : the icon top-left ; ONE text column right of it,
         // white -- the title (the log name, "Ark tachi"), the kind ("(Great Katana)All Races"), the description, then
@@ -698,7 +718,7 @@ void npc_draw(const Frame& f) {
     }
     // the client's windows that open WITH the answers (a shop list's item description) : parked while AioHUD draws the
     // card, else brought back above this box (native_ui)
-    if (N.query) native_npc_box(bx / f.screenW, by / f.screenH, bw / f.screenW, H / f.screenH, cardOn);
+    if (N.query && !N.fail) native_npc_box(bx / f.screenW, by / f.screenH, bw / f.screenW, H / f.screenH, cardOn);
 
     // ---- the bubble ----
     if (bubbleVis && bh > 0.0f) {
@@ -741,13 +761,19 @@ void npc_draw(const Frame& f) {
             rrect(dev, tx - 1.0f * S, ty, 2.0f * S, th, 1.0f * S, with_alpha(0x30FFFFFFu, A), with_alpha(0x30FFFFFFu, A));
             rrect(dev, tx - 1.0f * S, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, A), with_alpha(0xC0FFDA8Au, A));
         }
-        if (N.query) {
+        if (ansOn) {                                     // the live answers only (not while they fade, not in the fallback)
             g_hit[3][0] = bx / f.screenW; g_hit[3][1] = ay / f.screenH; g_hit[3][2] = bw / f.screenW; g_hit[3][3] = ah / f.screenH;
+            // the WHEEL over the answers : one choice per notch (up = the previous), the client scrolling its page
+            const long wh = InterlockedExchange(&g_npcWheel, 0);
+            if (wh && N.queryFocused) {
+                int to = N.sel - (int)wh; if (to < 0) to = 0; if (to > N.n - 1) to = N.n - 1;
+                if (to != N.sel) native_npc_hover(to);
+            }
             const int idx = row ? g_npcView + row - 1 : -1;
             if (row && row != g_npcAns.hoverRow && idx != N.sel) native_npc_hover(idx);
             g_npcAns.hoverRow = row;
             if (idx >= 0 && f.mouse && f.mouse->clicked) native_npc_pick(idx);
-        } else g_npcAns.hoverRow = 0;
+        } else { g_npcAns.hoverRow = 0; InterlockedExchange(&g_npcWheel, 0); }   // no notch saved for the next question
     }
 }
 

@@ -83,6 +83,10 @@ const char* ffxi_rom_dir_probe(const char** out_regkey);
 // NO mip chain -- the in-memory twin of load_raw_texture, for a sheet decoded at runtime (the status-icon
 // atlas built from the game's own DAT) that must look byte-identical to the same sheet loaded from an .raw.
 u32 make_texture_argb(u32 dev, int W, int H, const u32* pixels);
+// a W x H single-level MANAGED texture, all transparent, to be filled piece by piece (the font's wide-glyph pages)
+u32 make_texture_blank(u32 dev, int W, int H);
+// write a w x h block of ARGB pixels at (x, y) of a single-level texture (LockRect on that rect only)
+bool texture_write(u32 tex, int x, int y, int w, int h, const u32* px);
 
 // same, but with a full MIP CHAIN (box-filtered) -> clean minification (crisp scaled text).
 // `out_why` (optional) says WHY a 0 came back, because "the texture create failed" alone conflates four very

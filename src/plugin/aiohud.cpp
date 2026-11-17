@@ -788,6 +788,7 @@ unsigned int aio_plugin_mouse(u32 eventtype, u32 /*x*/, u32 /*y*/, u32 delta, u3
         // (that input belongs to whatever window has focus) yet do not hand it to the game either.
         if (overlay && overGame) return 1u;
         aio::UiConfig& c = aio::ui_config();
+        if (focused && pointer_frac_hit(aio::npc_answers_hit)) { aio::npc_wheel_add(((int)delta > 0) ? 1 : -1); return 1u; }   // the NPC answers : their cursor
         { int cb = 0; if (focused && chat_over(cb)) { c.chWheel[cb] += ((int)delta > 0) ? 1 : -1; return 1u; } }   // wheel over a Chat box : its history
         if (c.mmVisible && focused && g_gameHwnd) {
             POINT p;
@@ -938,6 +939,9 @@ void aio_plugin_unload()
     __try { aio::native_ui_shutdown(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
 #ifdef AIOHUD_PROBES
     __try { aio::probes::shutdown(); } __except (EXCEPTION_EXECUTE_HANDLER) {}   // dev probes : unhook the menu setter, restore native windows
+#endif
+#ifdef AIOHUD_DEVTOOLS
+    __try { aio::devtools::shutdown(); } __except (EXCEPTION_EXECUTE_HANDLER) {}   // dev : the black box's ~18.6 MB, freed (2026-11-17)
 #endif
 
     // Flush the derived-state cache NOW. The only other writer is a 4 s throttle in the poller, so a buff cast in the

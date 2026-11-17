@@ -51,7 +51,16 @@ filed under System. Known from other modules : 161 = Omen objectives, 123 / 146 
 | `EF 27` / `EF 28` | auto-translate brackets | `{` / `}` |
 | `FD tt ll ii ii FD` | an auto-translate phrase by id | `{...}` (not resolved yet) |
 | `07`, CR, LF | a break inside one message (NPC dialogue) | separate history lines, `cont = 1` |
-| Shift-JIS pair | full-width punctuation, the battle arrow `81 A8` | ASCII (`->` ...) or `?` |
+| Shift-JIS pair | full-width punctuation, the battle arrow `81 A8` | ASCII (`->` ...) |
+| Shift-JIS pair, any other | Japanese from a player (`95 90 8A ED` = 武器, captured 2026-11-17) | its character, code page 932 -> UTF-8 |
+| `A1`..`DF` | a half-width katakana | U+FF61.., UTF-8 |
+| `85 9F`..`85 DE` | the client's accented Latin letters (`85 C8` = é) | Latin-1 + 0x21 -> UTF-8 |
+
+**The history text is UTF-8** (since 2026-11-17 ; it was one Latin-1 byte per character, and Japanese came out as
+`???`). `col[]` is per BYTE, every byte of a character the same code. The Chat box measures, wraps and colours by
+CHARACTER (`cw_at` in `ui/hud_chat.cpp`), never by byte ; a row breaks between characters when there is no space
+(Japanese). The input line (`input_decode`) is UTF-8 too. The font draws any codepoint : 32..255 from its own
+atlas, the rest from the shared wide-glyph pages (`gfx/font.cpp`, see `reference/d3d8-rendering.md` 10i).
 
 All of it is locked by `tests/t_chat.cpp`.
 

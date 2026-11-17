@@ -48,11 +48,15 @@ void test_chat() {
     CHECK_EQ(dec("Hi \xFD\x02\x02\x01\x0A\xFD!"), 1);
     CHECK_STR(T[0], "Hi {...}!");
 
-    SECTION("chat : Shift-JIS glyphs of the English log (the battle arrow), unknown ones as '?'");
+    SECTION("chat : Shift-JIS -- the English log's own glyphs stay ASCII, Japanese becomes its real UTF-8 character");
     CHECK_EQ(dec("PlayerName1 \x81\xA8 Apex Bat"), 1);
     CHECK_STR(T[0], "PlayerName1 -> Apex Bat");
-    CHECK_EQ(dec("a\x88\x9F" "b"), 1);
-    CHECK_STR(T[0], "a?b");
+    CHECK_EQ(dec("a\x88\x9F" "b"), 1);                              // 88 9F = U+4E9C
+    CHECK_STR(T[0], "a\xE4\xBA\x9C" "b");
+    CHECK_EQ(dec("\x95\x90\x8A\xED"), 1);                           // "Limbus HQ2 ..." captured 2026-11-17 : 95 90 8A ED = U+6B66 U+5668
+    CHECK_STR(T[0], "\xE6\xAD\xA6\xE5\x99\xA8");
+    CHECK_EQ(dec("\xB1\xB2"), 1);                                   // half-width katakana : U+FF71 U+FF72
+    CHECK_STR(T[0], "\xEF\xBD\xB1\xEF\xBD\xB2");
 
     SECTION("chat : battlemod's lines as captured live 2026-11-15 -- the arrow (two U+FFFD) and the space in a mob name (81 3F)");
     CHECK_EQ(dec("\x1E\xFC[17:49:53]\x1E\x01 [\x1E\xF7Tetsouo\x1E\x01] \x1E\x01" "559\x1E\x01 hit \xEF\xBF\xBD\xEF\xBF\xBD \x1F\x45" "Vampire\x81\x3F" "Leech\x1E\x01"), 1);
@@ -62,7 +66,11 @@ void test_chat() {
 
     SECTION("chat : the client's accented letters (85 xx = Latin-1 - 0x21) -- 'envoye' with an acute, captured live");
     CHECK_EQ(dec("envoy\x85\xC8 un tell"), 1);
-    CHECK_EQ((unsigned char)T[0][5], 0xE9); CHECK_EQ(L[0], 14);
+    CHECK_EQ((unsigned char)T[0][5], 0xC3); CHECK_EQ((unsigned char)T[0][6], 0xA9); CHECK_EQ(L[0], 15);   // U+00E9, UTF-8
+
+    SECTION("chat : a 3-byte character that no longer fits ends the LINE (never half of it) ; the next line still comes");
+    {   static char big[400]; memset(big, 'x', 237); memcpy(big + 237, "\x88\x9F" "y\x07" "next", 9);
+        CHECK_EQ(dec(big), 2); CHECK_EQ(L[0], 237); CHECK_EQ((int)strlen(T[0]), 237); CHECK_STR(T[1], "next"); }
 
     SECTION("chat : a message longer than a history line is cut, never overruns");
     {   static char big[600]; memset(big, 'x', 599); big[599] = 0;

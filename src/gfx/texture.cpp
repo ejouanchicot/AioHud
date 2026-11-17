@@ -59,6 +59,32 @@ static void unlock(u32 tex)
     if (fUnlock) fUnlock(tex, 0);
 }
 
+u32 make_texture_blank(u32 dev, int W, int H)
+{
+    if (W <= 0 || H <= 0) return 0;
+    LR lr; u32 tex = create_locked(dev, W, H, &lr);
+    if (!tex) return 0;
+    for (int y = 0; y < H; ++y) memset((char*)lr.pBits + y * lr.Pitch, 0, (size_t)W * 4);
+    unlock(tex);
+    return tex;
+}
+
+bool texture_write(u32 tex, int x, int y, int w, int h, const u32* px)
+{
+    if (!tex || !px || w <= 0 || h <= 0) return false;
+    auto fLock = vmethod<long(__stdcall*)(u32,u32,void*,const RECT*,u32)>(tex, 16);
+    if (!fLock) return false;
+    RECT r = { x, y, x + w, y + h }; LR lr = { 0, 0 };
+    bool ok = false;
+    __try {
+        if (fLock(tex, 0, &lr, &r, 0) >= 0 && lr.pBits) {
+            for (int yy = 0; yy < h; ++yy) memcpy((char*)lr.pBits + yy * lr.Pitch, px + yy * w, (size_t)w * 4);
+            unlock(tex); ok = true;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+    return ok;
+}
+
 u32 make_liquid_texture(u32 dev, int variant)
 {
     const int W = 512, H = 64;   // ~8:1, MATCHES the bar's aspect -> shown 1x (no tiling, no repeat)

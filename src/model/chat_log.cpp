@@ -146,8 +146,22 @@ int chat_decode(const char* raw, char out[][CHAT_TEXT], unsigned short col[][CHA
     if (!raw || maxLines < 1) return 0;
     const unsigned char* s = (const unsigned char*)raw;
     int ln = 0, n = 0; unsigned short cur = 0; bool inAt = false;   // inside the client's own auto-translate brackets
-    auto put = [&](char ch) { if (n < CHAT_TEXT - 1) { out[ln][n] = ch; col[ln][n] = cur; ++n; } };
+    bool full = false;                       // this line had no room for a whole character : the rest of it is dropped
+    auto put = [&](char ch) { if (!full && n < CHAT_TEXT - 1) { out[ln][n] = ch; col[ln][n] = cur; ++n; } };
+    // one CODEPOINT as UTF-8 (the history is UTF-8 since 2026-11-17) : all its bytes or none, every byte the same colour
+    auto put_cp = [&](unsigned cp) {
+        char b[4]; int k = 0;
+        if (cp < 0x80) b[k++] = (char)cp;
+        else if (cp < 0x800) { b[k++] = (char)(0xC0 | (cp >> 6)); b[k++] = (char)(0x80 | (cp & 0x3F)); }
+        else { b[k++] = (char)(0xE0 | (cp >> 12)); b[k++] = (char)(0x80 | ((cp >> 6) & 0x3F)); b[k++] = (char)(0x80 | (cp & 0x3F)); }
+        // no room for the whole character : this LINE ends here (never half a character) ; the message's next lines
+        // (after a 07 / CR / LF) still come -- review 2026-11-17 : `n = CHAT_TEXT` used to end the whole message and leave
+        // lens[] at a previous message's value
+        if (n + k > CHAT_TEXT - 1) { full = true; return; }
+        for (int q = 0; q < k; ++q) put(b[q]);
+    };
     auto brk = [&]() {                       // close the current line ; an empty one is not kept
+        full = false;
         if (n == 0) return;
         out[ln][n] = 0; lens[ln] = n;
         if (ln + 1 < maxLines) { ++ln; n = 0; }
@@ -196,15 +210,19 @@ int chat_decode(const char* raw, char out[][CHAT_TEXT], unsigned short col[][CHA
         }
         const unsigned char t = s[i + 1];
         if (c == 0x81 && t == 0x3F) { put(' '); ++i; continue; }   // battlemod's space inside a mob name (81 3F)
-        // the client's accented Latin letters : 85 xx, xx = Latin-1 - 0x21 ("envoy\xE9" arrived as 85 C8, 2026-11-15).
-        // Kept as ONE Latin-1 byte in the history ; the box turns it into UTF-8 for the font.
-        if (c == 0x85 && t >= 0x9F && t <= 0xDE) { put((char)(unsigned char)(t + 0x21)); ++i; continue; }
+        // the client's accented Latin letters : 85 xx, xx = Latin-1 - 0x21 ("envoy\xE9" arrived as 85 C8, 2026-11-15)
+        if (c == 0x85 && t >= 0x9F && t <= 0xDE) { put_cp((unsigned)t + 0x21u); ++i; continue; }
         if (((c >= 0x81 && c <= 0x9F) || (c >= 0xE0 && c <= 0xFC)) && ((t >= 0x40 && t <= 0x7E) || (t >= 0x80 && t <= 0xFC))) {   // Shift-JIS pair
+            // the English log's own glyphs (arrows, full-width punctuation) stay ASCII ; any other character -- Japanese
+            // from a player (2026-11-17 : "que des ??? c'est du JP") -- is the real one : Windows' code page 932
             const char* g = sjis_glyph(c, t);
-            if (g[0] == '?' && !g[1]) g_decUnknown = true;
-            for (; *g; ++g) put(*g);
+            if (!(g[0] == '?' && !g[1])) { for (; *g; ++g) put(*g); ++i; continue; }
+            const char pr[2] = { (char)c, (char)t }; wchar_t w = 0;
+            if (MultiByteToWideChar(932, MB_ERR_INVALID_CHARS, pr, 2, &w, 1) == 1 && w >= 0x80) put_cp((unsigned)w);
+            else { g_decUnknown = true; put('?'); }
             ++i; continue;
         }
+        if (c >= 0xA1 && c <= 0xDF) { put_cp(0xFF61u + (unsigned)(c - 0xA1)); continue; }   // a half-width katakana (one byte)
         g_decUnknown = true;                 // a lone high byte : not a Shift-JIS pair (the trail would be < 0x40 or 0x7F)
         put('?');
     }

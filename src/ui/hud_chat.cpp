@@ -138,7 +138,7 @@ struct ChatBoxState {
     float    full = 0.0f;           // 0 .. 1 : unfolded like the game's EXPANDED log (fulllog open), eased
     float    rx = 0, ry = 0, rw = 0, rh = 0;   // last frame's rect : the hover test
     float    bodyEase = -1.0f;      // the body height drawn (eased toward what the content needs ; -1 = first frame)
-    const Font* advFont = 0; float advSize = 0.0f; bool advExact = false; float adv[256];   // per-byte advance cache (face + size) ; >= 0xC0 = Latin-1
+    const Font* advFont = 0; float advSize = 0.0f; bool advExact = false; float adv[256];   // advance cache by CODEPOINT 0..255 (face + size) ; wider ones : cw_at asks the font
     int      grip = 0;              // token for the shared drag lock
 };
 static ChatBoxState g_cb[2];
@@ -260,11 +260,43 @@ static const char* chan_badge(const ChatLine& L) {
         default: return 0;                                                  // system, battle : no badge
     }
 }
+// ---- the history is UTF-8 (2026-11-17, Japanese) : every loop below steps by CHARACTER, never by byte ----
+// adv[] = the advance of codepoints 0..255 (the font's own atlas) ; a wider one is measured by the font (its shared
+// wide pages cache it). s_wFo / s_wTz : the font + size the table was built for, set with it.
+static Font* s_wFo = 0; static float s_wTz = 0.0f;
+static inline int u8len(unsigned char b) { return b < 0x80 ? 1 : (b & 0xE0) == 0xC0 ? 2 : (b & 0xF0) == 0xE0 ? 3 : (b & 0xF8) == 0xF0 ? 4 : 1; }
+// the character at t[i] : its advance, byte length `k`, codepoint `cp`
+static inline float cw_at(const float* adv, const char* t, int i, int len, int& k, unsigned& cp) {
+    const unsigned char b = (unsigned char)t[i];
+    k = u8len(b); if (i + k > len) k = 1;
+    if (k == 1) { cp = b; return adv[b]; }
+    cp = b & (0x3Fu >> (k - 1));
+    for (int q = 1; q < k; ++q) cp = (cp << 6) | ((unsigned char)t[i + q] & 0x3Fu);
+    if (cp < 256) return adv[cp];
+    char u[5]; for (int q = 0; q < k; ++q) u[q] = t[i + q]; u[k] = 0;
+    return s_wFo ? s_wFo->measure(u, s_wTz) : adv['?'];
+}
+// what punct_pre sees of a character : itself when Latin-1, else a neutral non-letter
+static inline unsigned char punct_c(unsigned cp) { return cp < 256 ? (unsigned char)cp : 1; }
+// the advance table : codepoint -> px (0..255, every one as its UTF-8 form)
+static void build_adv(float* adv, Font* fo, float tz) {
+    char u[4] = { 0, 0, 0, 0 };
+    for (int ch = 0; ch < 256; ++ch) {
+        if (ch < 0x80) { u[0] = (char)(ch < 32 ? ' ' : ch); u[1] = 0; }
+        else { u[0] = (char)(0xC0 | (ch >> 6)); u[1] = (char)(0x80 | (ch & 0x3F)); u[2] = 0; }
+        adv[ch] = fo->measure(u, tz);
+    }
+}
+
 struct LinePrefix { const char* badge; float badgeW, nameW, w; };
 static void line_prefix(const ChatLine& L, Font* fo, float bz, const float* adv, float S, LinePrefix& p) {
     p.badge = L.cont ? 0 : chan_badge(L); p.badgeW = 0.0f; p.nameW = 0.0f; p.w = 0.0f;
     if (p.badge) { p.badgeW = snap(fo->measure(p.badge, bz) + 10.0f * S); p.w += p.badgeW + 6.0f * S; }
-    if (!L.cont && L.chSpeaker[0]) { for (const char* c = L.chSpeaker; *c; ++c) p.nameW += adv[(unsigned char)*c]; p.w += p.nameW + 7.0f * S; }
+    if (!L.cont && L.chSpeaker[0]) {
+        const int n = (int)strlen(L.chSpeaker);
+        for (int i = 0; i < n; ) { int k; unsigned cp; p.nameW += cw_at(adv, L.chSpeaker, i, n, k, cp); i += k; }
+        p.w += p.nameW + 7.0f * S;
+    }
 }
 
 // the reading space before punctuation (font.h punct_pre), the same step for wrapping, run widths and drawing
@@ -273,14 +305,15 @@ static int wrap_line(const ChatLine& L, const float* adv, float gap, float avail
     int ns = 0, a = L.cont ? 0 : L.chBodyAt; if (a > L.len) a = L.len;
     if (a >= L.len) { sa[0] = (short)a; sb[0] = (short)a; return 1; }    // a speaker with an empty message : one row
     while (a < L.len && ns < cap) {
-        float w = 0.0f; int b = a, lastSp = -1;
+        float w = 0.0f; int b = a, lastSp = -1; unsigned char prev = 0;
         const float av = ns == 0 ? avail - firstCut : avail;
         while (b < L.len) {
-            const unsigned char ch = (unsigned char)L.text[b];
-            const float cw = adv[ch] + (b > a ? punct_pre((unsigned char)L.text[b - 1], ch, gap) : 0.0f);
-            if (w + cw > av && b > a) break;
-            if (ch == ' ') lastSp = b;
-            w += cw; ++b;
+            int k; unsigned cp; float cw = cw_at(adv, L.text, b, L.len, k, cp);
+            const unsigned char c8 = punct_c(cp);
+            cw += b > a ? punct_pre(prev, c8, gap) : 0.0f;
+            if (w + cw > av && b > a) break;                               // a row breaks BETWEEN characters (Japanese has no spaces)
+            if (cp == ' ') lastSp = b;
+            w += cw; b += k; prev = c8;
         }
         if (b < L.len && lastSp > a) b = lastSp + 1;                       // break after the last space that fits
         sa[ns] = (short)a; sb[ns] = (short)b; ++ns; a = b;
@@ -305,12 +338,23 @@ static void input_decode(const char* raw, int rn, InLine& o) {
             else if (m == 0x66) cand = !cand;
             continue;
         }
-        unsigned char out = ch;
-        if (ch == 0x85 && i + 1 < rn && (unsigned char)raw[i + 1] >= 0x9F && (unsigned char)raw[i + 1] <= 0xDE) { out = (unsigned char)((unsigned char)raw[++i] + 0x21); }
-        else if (((ch >= 0x81 && ch <= 0x9F) || (ch >= 0xE0 && ch <= 0xFC)) && i + 1 < rn) { ++i; out = '?'; }
+        // UTF-8, like the history (2026-11-17) : the accents, Japanese (code page 932), half-width katakana
+        unsigned cp = ch;
+        if (ch == 0x85 && i + 1 < rn && (unsigned char)raw[i + 1] >= 0x9F && (unsigned char)raw[i + 1] <= 0xDE) cp = (unsigned)(unsigned char)raw[++i] + 0x21u;
+        else if (((ch >= 0x81 && ch <= 0x9F) || (ch >= 0xE0 && ch <= 0xFC)) && i + 1 < rn) {
+            const char pr[2] = { (char)ch, raw[i + 1] }; wchar_t w = 0; ++i;
+            cp = (MultiByteToWideChar(932, MB_ERR_INVALID_CHARS, pr, 2, &w, 1) == 1 && w >= 0x20) ? (unsigned)w : (unsigned)'?';
+        }
+        else if (ch >= 0xA1 && ch <= 0xDF) cp = 0xFF61u + (unsigned)(ch - 0xA1);
         else if (ch < 0x20 || ch == 0x7F) continue;
-        else if (ch >= 0x80 && ch < 0xC0) out = '?';
-        o.t[o.n] = (char)out; o.c[o.n++] = at ? 0xFF8EE88Eu : (cand ? 0xFF8A96A8u : 0xFFF2F5F9u);
+        else if (ch >= 0x80) cp = '?';
+        char b[3]; int k = 0;
+        if (cp < 0x80) b[k++] = (char)cp;
+        else if (cp < 0x800) { b[k++] = (char)(0xC0 | (cp >> 6)); b[k++] = (char)(0x80 | (cp & 0x3F)); }
+        else { b[k++] = (char)(0xE0 | (cp >> 12)); b[k++] = (char)(0x80 | ((cp >> 6) & 0x3F)); b[k++] = (char)(0x80 | (cp & 0x3F)); }
+        if (o.n + k > 0x16F) break;
+        const u32 cc = at ? 0xFF8EE88Eu : (cand ? 0xFF8A96A8u : 0xFFF2F5F9u);
+        for (int q = 0; q < k; ++q) { o.t[o.n] = b[q]; o.c[o.n++] = cc; }
     }
     // the getter ends with the caret then ONE space (every live sample) : that space is not the player's
     if (o.caret == o.n - 1 && o.n > 0 && o.t[o.n - 1] == ' ') --o.n;
@@ -574,14 +618,9 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     if (!editing && !preview && fitBox) {
         if (st.advFont != fo || st.advSize != tz || !st.advExact) {           // the same per-char advance cache as below
             st.advFont = fo; st.advSize = tz; st.advExact = fo->baked(tz);
-            char u[4] = { 0, 0, 0, 0 };
-            for (int ch = 0; ch < 256; ++ch) {
-                if (ch < 0x80) { u[0] = (char)(ch < 32 ? ' ' : ch); u[1] = 0; }
-                else if (ch >= 0xC0) { u[0] = (char)(0xC0 | (ch >> 6)); u[1] = (char)(0x80 | (ch & 0x3F)); u[2] = 0; }
-                else { u[0] = '?'; u[1] = 0; }
-                st.adv[ch] = fo->measure(u, tz);
-            }
+            build_adv(st.adv, fo, tz);
         }
+        s_wFo = fo; s_wTz = tz;
         int tb = C.chTab[box]; if (tb < 0 || tb >= TAB_N[box]) tb = 0;
         const ChatTab& TP = tab_def(box, tb);
         const char* meP = (f.game && f.game->me.name[0]) ? f.game->me.name : "";
@@ -853,14 +892,9 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     // blood", "a" glued to an item name -- 2026-11-16, the raw text was clean)
     if (st.advFont != fo || st.advSize != tz || !st.advExact) {
         st.advFont = fo; st.advSize = tz; st.advExact = fo->baked(tz);
-        char u[4] = { 0, 0, 0, 0 };
-        for (int ch = 0; ch < 256; ++ch) {
-            if (ch < 0x80) { u[0] = (char)(ch < 32 ? ' ' : ch); u[1] = 0; }
-            else if (ch >= 0xC0) { u[0] = (char)(0xC0 | (ch >> 6)); u[1] = (char)(0x80 | (ch & 0x3F)); u[2] = 0; }   // Latin-1 -> UTF-8
-            else { u[0] = '?'; u[1] = 0; }
-            st.adv[ch] = fo->measure(u, tz);
-        }
+        build_adv(st.adv, fo, tz);
     }
+    s_wFo = fo; s_wTz = tz;                                               // the wide characters : measured by this font, this size
     const float* adv = st.adv;
     char stampFmt[12] = "00:00";
     const float stampW = C.chStamp[box] ? fo->measure("00:00", tz * 0.86f) + 9.0f * S : 0.0f;
@@ -970,13 +1004,16 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
             }
         }
         int i = R.a;                                                        // runs of one colour, placed by the advance sum
+        unsigned char lastc = 0;                                            // the character before (punct_pre), across runs
         while (i < R.b) {
             const unsigned char cc = L.col[i]; int j = i, n = 0; float w = 0.0f;
-            const unsigned char prev0 = i > R.a ? (unsigned char)L.text[i - 1] : 0;   // a run after a colour change keeps the rule
-            while (j < R.b && L.col[j] == cc && n < CHAT_TEXT * 2 - 2) {
-                const unsigned char ch = (unsigned char)L.text[j]; w += adv[ch] + punct_pre(j > R.a ? (unsigned char)L.text[j - 1] : 0, ch, gapP); ++j;
-                if (ch >= 0xC0) { buf[n++] = (char)(0xC0 | (ch >> 6)); buf[n++] = (char)(0x80 | (ch & 0x3F)); }   // Latin-1 -> UTF-8
-                else buf[n++] = (char)ch;
+            const unsigned char prev0 = lastc;                              // a run after a colour change keeps the rule
+            while (j < R.b && L.col[j] == cc && n < CHAT_TEXT * 2 - 6) {    // whole characters, copied as they are (UTF-8)
+                int k; unsigned cp; const float cw = cw_at(adv, L.text, j, L.len, k, cp);
+                const unsigned char c8 = punct_c(cp);
+                w += cw + punct_pre(j > R.a ? lastc : 0, c8, gapP);
+                for (int q = 0; q < k; ++q) buf[n++] = L.text[j + q];
+                j += k; lastc = c8;
             }
             buf[n] = 0;
             if (n) fo->draw_punct(dev, x, cy - yOff, buf, tz, with_alpha(code_col(L, cc, base), a), stroke, tow, gapP, prev0);
@@ -1009,7 +1046,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         }
         const float tx0 = fx + 9.0f * S + chipW, tcy = fy + fh * 0.5f, tw = fw - 18.0f * S - chipW;
         const InLine& L = s_in;
-        float caretX = 0.0f; for (int i = 0; i < L.caret && i < L.n; ++i) caretX += adv[(unsigned char)L.t[i]];
+        float caretX = 0.0f; for (int i = 0; i < L.caret && i < L.n; ) { int k; unsigned cp; caretX += cw_at(adv, L.t, i, L.n, k, cp); i += k; }
         if (caretX - st.inScroll > tw - 4.0f * S) st.inScroll = caretX - (tw - 4.0f * S);   // keep the caret in view
         if (caretX - st.inScroll < 0.0f) st.inScroll = caretX;
         if (st.inScroll < 0.0f) st.inScroll = 0.0f;
@@ -1019,10 +1056,9 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
             fo->draw(dev, tx0, tcy - yOff, tr("Type a message...", "\xC3\x89""cris un message..."), tz, with_alpha(0xFF5F6B7Eu, a), with_alpha(0xC0000000u, a), tow);
         float x = tx0 - st.inScroll;
         char ub[0x170 * 2 + 1];
-        for (int i = 0; i < L.n; ) {                                        // runs of one colour, Latin-1 -> UTF-8
+        for (int i = 0; i < L.n; ) {                                        // runs of one colour (UTF-8, whole characters)
             const u32 col = L.c[i]; int j = i, k = 0; float w = 0.0f;
-            while (j < L.n && L.c[j] == col) { const unsigned char ch = (unsigned char)L.t[j++]; w += adv[ch];
-                if (ch >= 0xC0) { ub[k++] = (char)(0xC0 | (ch >> 6)); ub[k++] = (char)(0x80 | (ch & 0x3F)); } else ub[k++] = (char)ch; }
+            while (j < L.n && L.c[j] == col) { int cl; unsigned cp; w += cw_at(adv, L.t, j, L.n, cl, cp); for (int q = 0; q < cl; ++q) ub[k++] = L.t[j + q]; j += cl; }
             ub[k] = 0;
             if (x + w > tx0 - 2.0f && x < tx0 + tw + 2.0f) fo->draw(dev, x, tcy - yOff, ub, tz, with_alpha(col, a), with_alpha(0xD0000000u, a), tow);
             x += w; i = j;

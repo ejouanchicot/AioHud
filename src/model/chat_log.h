@@ -13,8 +13,12 @@
 //   0xEF 0x27 / 0xEF 0x28   auto-translate brackets                           -> '{' / '}'
 //   0xFD .. .. .. .. 0xFD   an auto-translate phrase id                       -> resolved by the caller later ; "{...}"
 //   0x07, \n, \r  a line break inside one message (NPC dialogue)             -> separate history lines
-//   Shift-JIS lead bytes 0x81..0x9F / 0xE0..0xFC + trail                    -> a few known glyphs ('->' ...), else '?'
-//   85 9F..DE   the client's accented letters                               -> Latin-1 0xC0..0xFF (one byte)
+//   Shift-JIS lead bytes 0x81..0x9F / 0xE0..0xFC + trail                    -> the English log's own glyphs ('->' ...)
+//                                                                              stay ASCII ; any other : its real character
+//                                                                              (code page 932 : Japanese), as UTF-8
+//   A1..DF      a half-width katakana                                        -> U+FF61.., UTF-8
+//   85 9F..DE   the client's accented letters                               -> Latin-1 0xC0..0xFF, as UTF-8
+// The history text is UTF-8 (2026-11-17 ; it was one Latin-1 byte per char, and Japanese came out "???").
 #pragma once
 
 namespace aio {
@@ -41,8 +45,8 @@ struct ChatLine {
     unsigned char  chLsIdx;          // 1 / 2 = which linkshell ; 0 = not a linkshell line
     unsigned char  chTellOut;        // 1 = a tell YOU sent (">>Name ...")
     unsigned char  len;              // chars in text
-    char           text[CHAT_TEXT];  // decoded : printable ASCII + Latin-1 letters 0xC0..0xFF (the client's accents)
-    unsigned char  col[CHAT_TEXT];   // per char : 0 = the line's colour, k = pal[k - 1]
+    char           text[CHAT_TEXT];  // decoded, UTF-8 : ASCII, the client's accents, Japanese
+    unsigned char  col[CHAT_TEXT];   // per BYTE (every byte of a character the same) : 0 = the line's colour, k = pal[k - 1]
     unsigned       pal[8];           // the line's colour runs, as the CLIENT colours them (ARGB, full intensity ; 0 = base)
     unsigned       modeArgb;         // the client's colour of this line's MODE (ARGB ; 0 = unknown -> the channel palette). NOT "base" : the
                                      // replay's field map types members BY NAME across model headers -- a 2nd "base" broke sheet_.base

@@ -38,6 +38,7 @@ bool chat_anchor(float& ax, float& aw, float& top, float& bottom);
 // a bw x bh block on it : above the group when it fits, else below ; inside the screen. False : no chat box shown.
 bool place_on_chat(float bw, float bh, float gap, float screenW, float screenH, float& bx, float& by);
 void npc_draw(const Frame& f);   // hud_actmenu.cpp : the NPC dialogue + answers, mirrored (Game UI -> NU_NPC)
+void actmenu_hits_clear();       // hud_actmenu.cpp : every redrawn menu's click area off (each frame, before the draws)
 void chat_hit_clear();
 
 void draw_icon_cell(u32 dev, u32 tex, float x, float y, float w, float h, float u0, float u1, float v0 = 0.0f, float v1 = 1.0f);

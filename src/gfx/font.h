@@ -3,7 +3,8 @@
 // Instead of one 32px atlas scaled down to every size (= blurry small text), each unique pixel
 // size gets its OWN atlas, baked by GDI at exactly that size (hinted, antialiased). draw() then
 // emits the glyphs 1:1 -> crisp at any size, no minification. Atlases are built lazily and cached
-// (a small per-size "slot" pool). Codepoints 32..255 (ASCII + Latin-1 supplement -> French accents).
+// (a small per-size "slot" pool). Codepoints 32..255 (ASCII + Latin-1 supplement -> French accents) in the slot's
+// atlas ; every codepoint past that (Japanese, symbols -- 2026-11-17) on demand in the shared WIDE pages.
 #pragma once
 #include "d3d.h"
 
@@ -56,12 +57,16 @@ public:
 
 private:
     struct G { float u0, v0, u1, v1; float w, h, adv; float il, ir, it, ib; };  // il..ib = ink bbox (rel. cell top-left), atlas px
-    struct Slot { u32 tex = 0; int em = 0; unsigned used = 0; float base = 0.0f, cap_top = 0.0f, cap_h = 0.0f; G g[224] = {}; };  // one atlas, baked at `em` px ; `used` = LRU stamp
+    struct Slot { u32 tex = 0; int em = 0; unsigned used = 0; float base = 0.0f, cap_top = 0.0f, cap_h = 0.0f, ascent = 0.0f; G g[224] = {}; };  // one atlas, baked at `em` px ; `used` = LRU stamp
 
     void build(u32 dev, Slot& s, int em);   // bake the glyphs at `em` px into slot s (its own right-sized atlas)
     int  pick(u32 dev, float size);         // slot index for `size` (build on demand) ; -1 on failure
     int  pickC(float size) const;           // nearest already-built slot (const) ; -1 if none built yet
-    void emit(u32 dev, u32 tex, const G* g, float x, float y, const char* s, float scale, u32 color, float gap = 0.0f, unsigned char prev = 0);
+    // pass 0 = the Latin glyphs (this slot's atlas), pass 1 = the WIDE ones (codepoints > 255 : the shared wide page)
+    void emit(u32 dev, const Slot& S, float x, float y, const char* s, float scale, u32 color, float gap, unsigned char prev, int pass);
+    float adv_of(const Slot& S, int c, float scale) const;   // one character's advance, Latin or wide
+    // the whole string : stroke + fill for the Latin glyphs, then (when it has any) the same for the wide ones
+    void passes(u32 dev, const Slot& S, float x, float y, const char* s, float scale, u32 color, u32 outline, float ow, float gap, unsigned char prev);
 
     // Distinct cached sizes per (face,weight). This was 16 with NO recycling, and the config page alone asks for
     // 13+ distinct pixel sizes from the SAME Font object the HUD draws with -- so opening //aio over a live HUD
@@ -108,5 +113,10 @@ void font_set_bake_budget(int n);
 // Discard a half-built glyph batch (see the note at the definition). Call it when a draw pass was ABORTED --
 // i.e. from a SEH handler -- not in normal flow, where every Font::draw flushes its own batch.
 void font_reset_batch();
+// The WIDE glyphs (every codepoint past Latin-1 : Japanese from the chat, symbols) live in a few pages SHARED by every
+// Font, baked one glyph at a time with a face that has them (Yu Gothic UI, else Meiryo UI, else MS UI Gothic).
+// Device lost : forget the page textures (re-baked on use) ; dispose : release them and their GDI fonts.
+void font_wide_forget();
+void font_wide_dispose();
 
 } // namespace aio

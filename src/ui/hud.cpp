@@ -418,6 +418,9 @@ void Hud::render(u32 dev) {
         const bool hideForConfig = config_.is_open() && !ui_config().editLayout;   // the preview stage redraws the boxes ; they must not also draw live
         const bool hideHud = hideForRules || peekHide_ || hideForConfig;   // peek (End held) hides the whole HUD too
         set_vial_provider(bars_);   // let the party rows / Help borrow the real fiole assets this frame (null-safe -> fallback)
+        // the redrawn menus' click areas : cleared EVERY frame, republished only by a draw that runs (review 2026-11-17 :
+        // with the HUD hidden -- config open, End-peek -- the last rect kept eating the game's clicks and wheel there)
+        actmenu_hits_clear();
         if (worldReady) {           // logged in -> draw the HUD ; not yet (login/char screen) -> only the config overlay below
         for (size_t i = 0; !hideHud && i < widgets_.size(); ++i) {
             const char* tn = widgets_[i]->type_name();

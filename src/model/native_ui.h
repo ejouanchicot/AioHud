@@ -45,6 +45,7 @@ struct NativeNpc {
                                // answers (a shop list's items in green, "Check/Exchange points." in white) ; being mapped
     unsigned itemId;           // the client's item description 'iteminfo' is up WITH the answers : the item it shows
                                // (handler+0x24, u16 -- live 2026-11-17, 11 / 11 shop items) ; 0 none
+    bool fail;                 // a window was unreadable : the CLIENT's own are shown -> AioHUD draws none (never twice)
 };
 const NativeNpc& native_npc();
 // Drive them the client's way (FUN_054596F0(obj, event)) : hover / pick a choice (0-based ; false when the answers are not

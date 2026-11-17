@@ -1070,6 +1070,7 @@ void npc_poll(bool on) {
     if (rt == 0 || rq == 0) {   // shown by the client but not readable : never leave the player without its NPC text
         if (++g_npcBad == 3 && !g_npcFail) { g_npcFail = true; windower::debug::log("NATIVEUI NPC windows : unreadable (talk %d, query %d) -- the client's own are shown", rt, rq); }
         g_npcGoodSince = 0;
+        g_npc.fail = g_npcFail;
         return;
     }
     g_npcBad = 0;
@@ -1077,6 +1078,7 @@ void npc_poll(bool on) {
         if (!g_npcGoodSince) g_npcGoodSince = now;
         else if (now - g_npcGoodSince >= 5000) { g_npcFail = false; windower::debug::log("NATIVEUI NPC windows : read again -- AioHUD's back"); }
     }
+    g_npc.fail = g_npcFail;                                   // during the 5 s recovery the client's are still the ones shown
     static bool wasT = false, wasQ = false;   // the success path, logged (rule 10) : one line per open
     if (N.talk != wasT) { wasT = N.talk; if (N.talk) windower::debug::log("NATIVEUI NPC dialogue : %d line(s), first '%.60s'", N.nLines, N.line[0]); }
     if (N.query != wasQ) {

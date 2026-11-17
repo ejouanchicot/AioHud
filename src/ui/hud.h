@@ -27,6 +27,8 @@ namespace aio {
 
 // hud_actmenu.cpp : is this screen point (fractions) on the redrawn action menu ? -- its clicks are AioHUD's
 bool actmenu_hit(float fx, float fy);
+bool npc_answers_hit(float fx, float fy);   // the NPC answers block (hud_actmenu.cpp) : the wheel over it is ours
+void npc_wheel_add(int d);                  // +1 a notch up, -1 down (window thread ; npc_draw consumes it)
 
 class Hud {
 public:
