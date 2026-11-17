@@ -390,10 +390,13 @@ sel % 7 + 2 (entry 1 = the header ?), and the item +0x0C id.
   `native_ui.cpp` ; names from `mounts_gen.h` (`scripts/gen_mounts.py`).
 
 - **The Items list `inventor`** (the action menu's Items : the usable ones, the client's filter) -- LIVE captures
-  2026-11-17 (WINPROBE, INVPROBE 1-3 ; the user's list "Panacea 12, Panacea 12, Echo Drops 12", 18 rows, 10 shown).
-  NOT the list class above. h+0x38 -> the rows, 0x54 bytes each : +0x2C the item id (u16), +0x30 the count, +0x28 its
-  item-container entry ; h+0x24 = (rows << 16) | the cursor's row IN THE PAGE (1-based) ; h+0x18 = (page top + 2 << 16)
-  | rows shown (2 at the list's top, 0xA at its bottom : top 8 of 18) ; h+0x1C = (the same << 16) | its end. No
+  2026-11-17 (WINPROBE, INVPROBE 1-3), corrected 2026-11-18 (INVLOG : the whole list by name, both boxes side by side,
+  after "j'ai voulu manger miso ramen +1 ca utilise abdhals seal" -- the top was read 2 rows high and the list 4 short).
+  NOT the list class above. h+0x38 -> the rows, 0x54 bytes each : +0x2C the item id (u16), +0x30 the count (0 on a
+  non-stack, Maze Tabula), +0x28 its item-container entry ; **h+0x20 = (the page top's max << 16) | the count of rows**
+  (0x000C0016 : 22 rows, top 0..12, 10 shown) ; h+0x24 = (?? << 16) | the cursor's row IN THE PAGE (1-based) -- its
+  high word (18 of those 22) is NOT the count ; h+0x18 = (page top << 16) | rows shown (0 at the list's top) ;
+  h+0x1C = (the same << 16) | its end. No
   submenu : picking an item opens the target cursor. The same window serves the main menu's inventory, the equipment
   screen and trades : `inv_read` reads it only while `playermo` is open, and it is never parked by name -- it is born
   under the parked action menu and `rescue_children` leaves it (and its `iteminfo`) there while AioHUD draws them.

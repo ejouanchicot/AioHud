@@ -685,7 +685,7 @@ void actmenu_draw(const Frame& f) {
                 unsigned mp; bool ws;
                 lrows[i].label = list_row_name(lastL.kind, lastL.id[i], mp, ws); lrows[i].icon = lastL.kind == 2 ? IC_NONE : lastL.kind ? (ws ? IC_SWORD : IC_BOLT) : IC_STAR; lrows[i].sub = false;
                 lrows[i].tex = lastL.kind == 2 ? 0 : list_icon(f, lastL.kind, lastL.id[i]);
-                if (lastL.kind == 3) { mp = 0; sprintf(mps[i], "%u", (unsigned)lastL.cnt[i]); lrows[i].extra = mps[i]; lrows[i].icon = IC_BAG; }   // the count, right-aligned (not on the icon)
+                if (lastL.kind == 3) { mp = 0; if (lastL.cnt[i]) { sprintf(mps[i], "%u", (unsigned)lastL.cnt[i]); lrows[i].extra = mps[i]; } lrows[i].icon = IC_BAG; }   // the count, right-aligned (not on the icon)
                 if (!lrows[i].tex && lastL.kind < 2) list_fallback(f, lastL.kind, lastL.id[i], lrows[i]);   // spells / abilities only (a mount, an item : their own)
                 // a mount : no picture exists per mount (Windower has none, the client's list none, res icon_id is 86 / 87
                 // for all) -- the game's own "Mounted" status icon (252), the same on every row (user's choice 2026-11-17)

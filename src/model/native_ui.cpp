@@ -793,11 +793,13 @@ int mount_read(u32 obj, u32 focus, NativeList& L) {
 // The ITEMS list -- `inventor` opened from the ACTION menu (Items : the usable ones, the client's own filter). The same
 // window serves the main menu's inventory, the equipment screen and trades : those are never read here (only while
 // playermo is open) and never parked (they are not born under a parked parent). Live captures 2026-11-17
-// (WINPROBE / INVPROBE 1-3, the user's list "Panacea 12, Panacea 12, Echo Drops 12", 18 items, 10 rows) :
+// (WINPROBE / INVPROBE 1-3) and 2026-11-18 (INVLOG, the whole list by name, both boxes side by side -- "j'ai voulu
+// manger miso ramen +1 ca utilise abdhals seal" : the page top was read 2 rows high and the list 4 rows short) :
 //   h+0x38 -> the rows, 0x54 bytes each : +0x2C the item id (u16), +0x30 the count, +0x28 its container entry ;
-//   h+0x24 = (count of rows << 16) | the cursor's row IN THE PAGE (1-based, 1..10) ;
-//   h+0x18 = (page top + 2 << 16) | rows shown -- 2 at the list's top, 0xA at its bottom with 18 rows / 10 shown ;
-//   h+0x1C = (the same top + 2 << 16) | its end. No submenu : picking an item opens the target cursor (as a spell).
+//   h+0x20 = (the page top's max << 16) | the count of rows -- 0x000C0016 : 22 rows, top 0..12 with 10 shown ;
+//   h+0x24 = (?? << 16) | the cursor's row IN THE PAGE (1-based, 1..10) -- its high word (18 of those 22) is NOT the count ;
+//   h+0x18 = (page top << 16) | rows shown -- 0 at the list's top ;
+//   h+0x1C = (the same top << 16) | its end. No submenu : picking an item opens the target cursor (as a spell).
 int inv_read(u32 focus, NativeList& L) {
     const u32 mgr = manager(); if (!mgr) return -1;
     u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node); u32 obj = 0;
@@ -809,11 +811,12 @@ int inv_read(u32 focus, NativeList& L) {
         node = next;
     }
     if (!obj) return -1;
-    u32 hd = 0, rows = 0, h18 = 0, h24 = 0;
-    if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !safe_read(hd + 0x18, &h18) || !safe_read(hd + 0x24, &h24) || !safe_read(hd + 0x38, &rows)) return 0;
-    const int n = (int)(h24 >> 16), vis = (int)(h18 & 0xFFFF), curInPage = (int)(h24 & 0xFFFF);
+    u32 hd = 0, rows = 0, h18 = 0, h20 = 0, h24 = 0;
+    if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !safe_read(hd + 0x18, &h18) || !safe_read(hd + 0x20, &h20)
+        || !safe_read(hd + 0x24, &h24) || !safe_read(hd + 0x38, &rows)) return 0;
+    const int n = (int)(h20 & 0xFFFF), vis = (int)(h18 & 0xFFFF), curInPage = (int)(h24 & 0xFFFF);
     if (n < 0 || n > 80 || vis < 1 || vis > 32 || (n > 0 && !valid_ptr(rows))) return 0;
-    int top = (int)(h18 >> 16) - 2; const int maxTop = n > vis ? n - vis : 0;
+    int top = (int)(h18 >> 16); const int maxTop = n > vis ? n - vis : 0;
     if (top < 0) top = 0; if (top > maxTop) top = maxTop;
     memset(&L, 0, sizeof(L));
     L.kind = 3; L.n = n; L.top = top; L.vis = vis; L.cursor = curInPage >= 1 ? top + curInPage - 1 : -1;
