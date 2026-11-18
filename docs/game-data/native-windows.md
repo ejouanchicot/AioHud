@@ -177,6 +177,23 @@ after a logout.
 - **CURSOR** = open menu object **+0x4C**, the 1-based index into that array (Synthesis selected = 10) ;
   **+0x08** = the live item object under the cursor. No greyed entry was available to capture.
 - **def+0x0C** = the pointing hand's sprite set (section 3), not the scrollbar.
+- **Two pages, two menus** (live capture MENULOG 2026-11-18) : page 1 `menuwind`, page 2 **`socialme`** (Missions,
+  Quests, Key Items, View House, Set Bazaar, MacroPalette, Config, Help Desk, Communication (entry 9, y=150), Current
+  Time (entry 10, y=134), Shut Down, Log Out). Left / right closes one and opens the other at the SAME rect, the cursor
+  keeping its number. Both are entry-children menus (section 9's submenu shape) : entries 1-12 the rows (child +0x10
+  state : 3 / 0xB on the picked one, 0 else), 13 / 14 the page arrows (15 px wide, state 0xF), 15 hidden (state
+  0x10). The client draws its labels as IMAGES that differ from the definition's texts ("Magic", "Bazaar", "Macros").
+  The rect sits top RIGHT (x 2199-2311 of a 2327-wide UI, y 48) with titlewin / helpwind over it.
+  AioHUD mirrors both (Game UI -> "Main menu", `NU_MAIN`, `native_main_menu()` + `mainmenu_draw`), the same fallback
+  as the action menu (3 unreadable frames -> the client's own back).
+- **What Magic opens from it** (live 2026-11-18) : `mgcmenu` (8 entries, labels are IMAGES -- the help texts give
+  White, Black, Songs, Ninjutsu, Summoning, Blue, Geomancy, Trust), drawn by the client IN PLACE of the main menu ; then
+  the spell list `magic` (the action menu's own list, at the same place : above the chat) with the sort options in the
+  menu's corner : **`mgcsortw`** (Auto-sort, Manual Sort ; X or numpad + gives it the cursor, which the client puts back
+  on the option used last) or **`blusortw`** for Blue Magic (+ a 3rd row, Blue Magic : set the spells). Auto-sort asks
+  **`sortyn`** (Yes / No) -- placed by its CODE, not under a parked parent ; the same window confirms the inventory's
+  and the Mog House's sorts. **Manual sort** : the list handler's **+0x6C** = 0 off, 1 on, 2 a spell held ; **+0x70** =
+  the held one's index in the list ; validating another row puts the held one ABOVE it (capture MSORT).
 
 ## 9. The target ACTION menu (`playermo`) -- 2026-11-16 (captures + screenshots + static, base 0x05340000)
 

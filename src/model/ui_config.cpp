@@ -279,6 +279,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "menubox=%d,%.4f,%d,%d,%.4f,%08X,%d,%d\n", c.muBox.on, c.muBox.alpha, c.muBox.themeCopy, c.muBox.theme, c.muBox.lum, c.muBox.hue, c.muBox.border, c.muBox.alphaOwn);   // Game UI : the redrawn menus' theme
     fprintf(f, "menuscale=%.2f\n", c.muScale);     // Game UI : the redrawn menus' size
     fprintf(f, "menugrow=%d\n", c.muGrow);         // Game UI : a taller submenu grows up (0) or down (1)
+    fprintf(f, "mainmenupos=%d\n", c.muMainPos);   // Game UI : the main menu at the game's place (0) or top left (1)
     fprintf(f, "menulabel=%d\n", c.muLabel);       // Game UI : the redrawn menus' rows (0 text, 1 icon + text)
     fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d,%d,%d,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
             c.bstImage, c.bstName, c.bstHp, c.bstTp, c.bstDist, c.bstCharges, c.bstMoves, c.bstIcons, c.bstDemo, c.bstArtMode,
@@ -421,7 +422,7 @@ static bool parse_nui_line(const char* line, UiConfig& c) {
     if (strncmp(line, "nativeui=", 9) != 0) return false;
     int h = 0, dx = 0, dy = 0;
     const int n = sscanf(line + 9, "%d,%d,%d", &h, &dx, &dy);
-    if (n >= 1) c.nuHide = h & 0xFF;   // every NativeUiBits bit (0x3F dropped NU_ACT at each load, 2026-11-16 ; NU_NPC 0x80)
+    if (n >= 1) c.nuHide = h & 0x1FF;   // every NativeUiBits bit (0x3F dropped NU_ACT at each load, 2026-11-16 ; NU_NPC 0x80, NU_MAIN 0x100)
     if (n >= 2) c.nuMenuDx = dx < -2000 ? -2000 : (dx > 2000 ? 2000 : dx);
     if (n >= 3) c.nuMenuDy = dy < -2000 ? -2000 : (dy > 2000 ? 2000 : dy);
     return true;
@@ -441,6 +442,7 @@ static bool parse_chat_line(const char* line, UiConfig& c) {
     if (!strncmp(line, "menulabel=", 10)) { const int v = atoi(line + 10); c.muLabel = v == 1 ? 1 : 0; return true; }
     if (!strncmp(line, "menuscale=", 10)) { c.muScale = (float)atof(line + 10); return true; }   // clamped by config_rules
     if (!strncmp(line, "menugrow=", 9)) { const int v = atoi(line + 9); c.muGrow = v == 1 ? 1 : 0; return true; }
+    if (!strncmp(line, "mainmenupos=", 12)) { const int v = atoi(line + 12); c.muMainPos = v == 1 ? 1 : 0; return true; }
     if (parse_text_style(line, "chText", c.chText, 2)) return true;
     if (!strncmp(line, "chbox", 5) && (line[5] == '0' || line[5] == '1') && line[6] == '=') { parse_box(line + 7, c.chBox[line[5] - '0']); return true; }
     if (strncmp(line, "chat", 4) || (line[4] != '0' && line[4] != '1') || line[5] != '=') return false;
@@ -1349,7 +1351,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
             || a.chLines[k] != b.chLines[k] || a.chStamp[k] != b.chStamp[k] || a.chTab[k] != b.chTab[k] || !box_eq(a.chBox[k], b.chBox[k])
             || a.chBehave[k] != b.chBehave[k] || a.chIdle[k] != b.chIdle[k] || a.chFadeTo[k] != b.chFadeTo[k] || a.chH[k] != b.chH[k] || a.chFoldLines[k] != b.chFoldLines[k] || a.chMaxLines[k] != b.chMaxLines[k] || a.chFadeIdle[k] != b.chFadeIdle[k] || a.chGrow[k] != b.chGrow[k] || a.chFit[k] != b.chFit[k] || a.chDensity[k] != b.chDensity[k] || a.chHeadScale[k] != b.chHeadScale[k] || a.chTabStyle[k] != b.chTabStyle[k]) return false;
     }
-    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock || a.chAtColor != b.chAtColor || !box_eq(a.muBox, b.muBox) || a.muLabel != b.muLabel || a.muGrow != b.muGrow || a.muScale != b.muScale) return false;   // Game UI
+    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock || a.chAtColor != b.chAtColor || !box_eq(a.muBox, b.muBox) || a.muLabel != b.muLabel || a.muGrow != b.muGrow || a.muMainPos != b.muMainPos || a.muScale != b.muScale) return false;   // Game UI
     if (!text_styles_eq(a.tpText, b.tpText, TP_TE_COUNT)) return false;
     if (a.hlShow != b.hlShow || a.hlScale != b.hlScale || a.hlX != b.hlX || a.hlY != b.hlY || a.hlCount != b.hlCount || a.hlDist != b.hlDist || a.hlTgt != b.hlTgt) return false;
     if (!text_styles_eq(a.hlText, b.hlText, HL_TE_COUNT)) return false;

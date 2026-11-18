@@ -56,6 +56,7 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
         // with an "(AioHUD draws it)" suffix ; the section they belong to is this one (2026-11-17 config audit)
         NUI_HIDE_ROW(CTRL_ID, tr("Action menu", "Menu d'action"), NU_ACT)
         NUI_HIDE_ROW(CTRL_ID, tr("NPC dialogue + answers", "Dialogues PNJ + r\xC3\xA9ponses"), NU_NPC)
+        NUI_HIDE_ROW(CTRL_ID, tr("Main menu", "Menu principal"), NU_MAIN)
         #undef NUI_HIDE_ROW
         { ROW_BAND(46.0f)   // the menus' size : every dimension, the text included
             const float lo = 0.60f, hi = 1.60f; char sb[16]; sprintf(sb, "%d%%", (int)(c.muScale * 100.0f + 0.5f));
@@ -66,6 +67,11 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
             const char* GL[2] = { tr("Upward", "Vers le haut"), tr("Downward", "Vers le bas") };
             const int v = c.muGrow == 1 ? 1 : 0;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Taller submenu grows", "Sous-menu plus grand : grandit"), GL[v])) { c.muGrow = (v + d + 2) % 2; save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        { ROW_BAND(52.0f)   // the main menu : where the game puts it (top right) or top left
+            const char* PL[2] = { tr("Game's place", "Place du jeu"), tr("Top left", "En haut \xC3\xA0 gauche") };
+            const int v = c.muMainPos == 1 ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Main menu position", "Position du menu principal"), PL[v])) { c.muMainPos = (v + d + 2) % 2; save_ui_config(); }
         } ROW_NEXT(52.0f)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.muBox);
         { ROW_BAND(52.0f)   // the rows : text only, or icon + text

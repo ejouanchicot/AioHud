@@ -26,6 +26,7 @@
 #include "model/job_track_gen.h"  // job_track : which job a job ability belongs to
 #include "model/paths.h"       // plugin_dir : Windower's own plugins\icons
 #include "model/spells_gen.h"  // spell_info : the spell list's names and MP
+#include "model/spell_cost.h"  // spell_cost_kind : Full Cure "All", Embrava "20%" 
 #include "model/abilities_gen.h"        // abil_info : the ability list's job abilities
 #include "model/itemnames_gen.h"        // item_display_name : the Items list
 #include "model/mounts_gen.h"           // mount_name : the mount list
@@ -152,7 +153,7 @@ void draw_icon(u32 dev, Icon ic, float cx, float cy, float z, float S, u32 c) {
 }
 
 u32 g_handTex = 0;   // the party's selection-hand texture, handed in by the HUD each frame (device-loss managed there)
-float g_hit[5][4] = { { 0, 0, 0, 0 } };   // the drawn blocks (menu, submenu ; NPC bubble, NPC answers ; the auto-translate picker) as screen FRACTIONS : their clicks never reach the game
+float g_hit[9][4] = { { 0, 0, 0, 0 } };   // the drawn blocks (menu, submenu ; NPC bubble, NPC answers ; the auto-translate picker ; the main menu, its categories, its list) as screen FRACTIONS : their clicks never reach the game
 
 // ---- the action menu's submenus (native_sub_menu) : labels by ENTRY index (1-based), from their help texts ----
 struct SubRow { const char* en; const char* fr; bool sub; Icon icon; };   // sub : none -- each row opens its LIST, no arrow in the client
@@ -182,7 +183,12 @@ const SubRow CHATCTRL[] = {
     { "Unity",       "Unity",             false, IC_BUBBLE },
     { "Shout",       "Crier",             false, IC_BUBBLE },
 };
+// the main menu's Magic (mgcmenu) : the same seven categories in the same order, then Trust (its definition's help texts,
+// docs/notes/native-menu-items-2026-11-15.txt ; its labels are images, no text -- "#1 #2" until 2026-11-18)
+const SubRow MGC_TRUST = { "Trust", "Alter Ego", false, IC_DUO };
 const SubRow* sub_row(const char* menu, int entry) {
+    if (!strcmp(menu, "mgcmenu") && entry >= 1 && entry <= 7) return &MAGSELEC[entry - 1];
+    if (!strcmp(menu, "mgcmenu") && entry == 8) return &MGC_TRUST;
     if (!strcmp(menu, "chatctrl") && entry >= 1 && entry <= 7) return &CHATCTRL[entry - 1];
     if (!strcmp(menu, "magselec") && entry >= 1 && entry <= 7) return &MAGSELEC[entry - 1];
     if (!strcmp(menu, "abiselec") && entry >= 1 && entry <= 5) return &ABISELEC[entry - 1];
@@ -197,6 +203,7 @@ inline u32 dev_of(const Frame& f) { return f.dev; }
 struct RowSpec { const char* label; Icon icon; bool sub; bool off; const char* extra = 0; int pearl = 0; u32 pearlArgb = 0;
                  bool cycle = false; bool center = false;
                  u32 tint = 0;
+                 bool mark = false;   // the row HELD by a manual sort : a pulsing gold rim
                  u32 tex = 0; float tu0 = 0.0f, tu1 = 1.0f, tv0 = 0.0f, tv1 = 1.0f; u32 texTint = 0xFFFFFFFFu; };
                  // tex + its UV : the row's picture (Windower's file, a status / element / job cell), tinted texTint   // tex : the row's own picture (a spell / ability icon from Windower's plugins\icons), drawn in place of `icon`   // tint : the label's own colour (the NPC answers : the client's green), 0 the menus' grey-white   // center : a lone message row (the empty list), centred in the block   // cycle : the extra can be changed with RIGHT (the Tell name ; left closes the submenu) -> name >
 struct Block {
@@ -204,6 +211,7 @@ struct Block {
     float x = 0, y = 0, w = 0, h = 0;           // drawn rect this frame (w = 0 : not drawn)
     float rowY0 = 0, rowStep = 0, capX = 0, capW = 0, capH = 0;
     int hoverRow = 0;
+    float inTop = 0.0f;                         // a band above the rows (the main menu's title and page), inside the box
 };
 Block g_main, g_subB, g_listB;
 
@@ -465,12 +473,13 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
     const u32 dev = f.dev; const float S = k.S;
     const float kFast = 1.0f - expf(-dt * 30.0f), kSel = 1.0f - expf(-dt * 24.0f);   // the selection glides, quickly
     const float capW = bw - k.gutter - k.pad, cx0 = bx + k.gutter, step = k.capH + k.gap, r = k.capH * 0.5f;
-    b.x = bx; b.y = by; b.w = bw; b.h = bh; b.rowY0 = by + k.pad; b.rowStep = step; b.capX = cx0; b.capW = capW; b.capH = k.capH;
+    const float ry0 = by + b.inTop;                     // the rows' top (below the header band, when there is one)
+    b.x = bx; b.y = by; b.w = bw; b.h = bh; b.rowY0 = ry0 + k.pad; b.rowStep = step; b.capX = cx0; b.capW = capW; b.capH = k.capH;
 
     draw_themed_box(dev, f.skin, bx, by, bw, bh, ui_config().muBox, A, S);   // Game UI -> Menus : one theme for all
     const bool hasCur = cursorRow >= 1 && cursorRow <= n;
     if (hasCur) {
-        const float targetY = by + k.pad + (float)(cursorRow - 1) * step;
+        const float targetY = ry0 + k.pad + (float)(cursorRow - 1) * step;
         if (b.curY < 0.0f || b.lastN != n) b.curY = targetY;
         b.curY += (targetY - b.curY) * kFast;
         if (fabsf(targetY - b.curY) < 0.3f) b.curY = targetY;
@@ -480,7 +489,7 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
         const bool on = i + 1 == cursorRow;
         b.sel[i] += ((on ? 1.0f : 0.0f) - b.sel[i]) * kSel;
         if (fabsf((on ? 1.0f : 0.0f) - b.sel[i]) < 0.004f) b.sel[i] = on ? 1.0f : 0.0f;
-        const float y = snap(by + k.pad + (float)i * step);
+        const float y = snap(ry0 + k.pad + (float)i * step);
         const float a = A * (rows[i].off ? 0.55f : 1.0f);
         if (rows[i].center) {   // a message row : its capsule spans the block evenly (no hand column -- nothing to pick)
             const float mx = bx + k.pad, mw = bw - 2.0f * k.pad;
@@ -492,6 +501,11 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
         rrect(dev, cx0, y, capW, k.capH, r, with_alpha(0x5A1C2638u, a), with_alpha(0x5A0A0F18u, a));
         rrect_topcaps(dev, cx0 + 1.0f, y + 1.0f, capW - 2.0f, snap(k.capH * 0.45f), r - 1.0f, with_alpha(0x14FFFFFFu, a), with_alpha(0x00FFFFFFu, a));
         rrect_stroke(dev, cx0, y, capW, k.capH, r, with_alpha(0x38C8D6EAu, a), 1.0f);
+        if (rows[i].mark) {                                    // held by a manual sort : a gold rim, breathing
+            const float p = 0.55f + 0.45f * sinf(f.t * 6.0f);
+            rrect(dev, cx0, y, capW, k.capH, r, with_alpha(0x30FFDA8Au, a * p), with_alpha(0x18FFDA8Au, a * p));
+            rrect_stroke(dev, cx0, y, capW, k.capH, r, with_alpha(0xF0FFDA8Au, a * p), 1.5f * S);
+        }
     }
     if (hasCur) {   // the selection glides between rows : clipped to its capsule, the exact party glass + sweep, a gold rim
         const float y = snap(b.curY);
@@ -502,7 +516,7 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
     }
     for (int i = 0; i < n && i < 16; ++i) {
         const float s = b.sel[i], a = A * (rows[i].off ? 0.55f : 1.0f);
-        const float cy = snap(by + k.pad + (float)i * step) + k.capH * 0.5f;
+        const float cy = snap(ry0 + k.pad + (float)i * step) + k.capH * 0.5f;
         if (k.icons && rows[i].tex) {                          // a picture : a touch larger than the drawn glyph, the capsule's height
             const float z = snap(k.capH - 3.0f * S), ix = snap(cx0 + k.capPadL + k.icZ * 0.5f - z * 0.5f), iy = snap(cy - z * 0.5f);
             const u32 tc = with_alpha(rows[i].texTint, a);
@@ -551,7 +565,7 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
     fo->begin(dev);
     for (int i = 0; i < n && i < 16; ++i) {
         const float s = b.sel[i], a = A * (rows[i].off ? 0.5f : 1.0f);
-        const float y = snap(by + k.pad + (float)i * step);
+        const float y = snap(ry0 + k.pad + (float)i * step);
         if (rows[i].center) {
             fo->draw_lc(dev, snap(bx + (bw - fo->measure(rows[i].label, k.tz)) * 0.5f), snap(y + k.capH * 0.5f), rows[i].label, k.tz,
                         with_alpha(0xFFC9D3E0u, a), with_alpha(0xC8000000u, a), k.ow);
@@ -569,7 +583,7 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
     // the row under the mouse (the menu being driven only)
     const MouseState* ms = f.mouse;
     if (!(ms && ms->focused && focused && ms->x >= cx0 && ms->x < cx0 + capW)) return 0;
-    const float ry = ms->y - (by + k.pad);
+    const float ry = ms->y - (ry0 + k.pad);
     if (ry < 0.0f) return 0;
     const int row = (int)(ry / step);
     return (row < n && ry - (float)row * step < k.capH) ? row + 1 : 0;
@@ -585,7 +599,7 @@ bool npc_answers_hit(float fx, float fy) {
     return h[2] > 0.0f && fx >= h[0] && fx < h[0] + h[2] && fy >= h[1] && fy < h[1] + h[3];
 }
 void npc_wheel_add(int d) { InterlockedExchangeAdd(&g_npcWheel, d); }
-void actmenu_hits_clear() { for (int i = 0; i < 5; ++i) g_hit[i][2] = 0.0f; }
+void actmenu_hits_clear() { for (int i = 0; i < 9; ++i) g_hit[i][2] = 0.0f; }
 // the auto-translate picker (g_hit[4]) : the wheel over it steps the client's selection (fep_draw consumes it)
 static volatile long g_fepWheel = 0;
 bool fep_hit(float fx, float fy) {
@@ -594,7 +608,7 @@ bool fep_hit(float fx, float fy) {
 }
 void fep_wheel_add(int d) { InterlockedExchangeAdd(&g_fepWheel, d); }
 bool actmenu_hit(float fx, float fy) {
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 9; ++i) {
         const float* h = g_hit[i];
         if (h[2] > 0.0f && fx >= h[0] && fx < h[0] + h[2] && fy >= h[1] && fy < h[1] + h[3]) return true;
     }
@@ -605,6 +619,85 @@ namespace {   // the item card (below, with the NPC windows) : the Items list dr
 void card_load(u32 dev, unsigned id);
 bool card_ready(unsigned id);
 void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, float bottom, float tO, float A, bool above);
+
+// ---- a LIST (native_list : spells, abilities, mounts, items), shared by the action menu and the main menu ----
+// its rows and its size : a FIXED width (the widest row of the WHOLE list, cached per list -- scrolling never resizes it) ;
+// EMPTY : the client opens it at its FULL size and writes "No spells available." in its first row
+void list_build(const Frame& f, const Metrics& k, NativeList& L, RowSpec* lrows, char (*mps)[8], float& lw, float& lh) {
+    const bool empty = L.n == 0;
+    if (empty) L.rows = 1;
+    const bool live = f.game && f.game->me.name[0];
+    const int mpNow = live ? f.game->me.mp : -1, tpNow = live ? (int)f.game->me.tp : -1;
+    for (int i = 0; i < L.rows && i < 32; ++i) {
+        if (empty) {
+            lrows[i].label = L.kind == 3 ? tr("No items available.", "Aucun objet disponible.") : L.kind == 2 ? tr("No mounts available.", "Aucune monture disponible.") : L.kind ? tr("No abilities available.", "Aucune aptitude disponible.") : tr("No spells available.", "Aucun sort disponible.");
+            lrows[i].icon = IC_NONE; lrows[i].sub = false; lrows[i].off = false; lrows[i].center = true; break;
+        }
+        unsigned mp; bool ws;
+        lrows[i].label = list_row_name(L.kind, L.id[i], mp, ws); lrows[i].icon = L.kind == 2 ? IC_NONE : L.kind ? (ws ? IC_SWORD : IC_BOLT) : IC_STAR; lrows[i].sub = false;
+        lrows[i].tex = L.kind == 2 ? 0 : list_icon(f, L.kind, L.id[i]);
+        if (L.kind == 3) { mp = 0; if (L.cnt[i]) { sprintf(mps[i], "%u", (unsigned)L.cnt[i]); lrows[i].extra = mps[i]; } lrows[i].icon = IC_BAG; }   // the count, right-aligned (not on the icon)
+        if (!lrows[i].tex && L.kind < 2) list_fallback(f, L.kind, L.id[i], lrows[i]);   // spells / abilities only (a mount, an item : their own)
+        // a mount : no picture exists per mount (Windower has none, the client's list none, res icon_id is 86 / 87
+        // for all) -- the game's own "Mounted" status icon (252), the same on every row (user's choice 2026-11-17)
+        if (L.kind == 2) status_cell(f.dev, 252, lrows[i]);
+        // the spells whose cost is not a number (model/spell_cost.h) : ALL the MP left, or 20 % of the maximum
+        const SpellCostKind ck = L.kind == 0 ? spell_cost_kind(L.id[i], mp) : SC_NUMBER;
+        const bool allMp = ck == SC_ALL_MP, pctMp = ck == SC_PCT20;
+        if (allMp) { lrows[i].extra = tr("All", "Tout"); mp = 0; }
+        else if (pctMp) { lrows[i].extra = "20%"; mp = 0; }
+        if (mp) { sprintf(mps[i], "%u", mp); lrows[i].extra = mps[i]; }
+        lrows[i].off = (mp && mpNow >= 0 && (int)mp > mpNow) || (ws && tpNow >= 0 && tpNow < 1000)   // not usable right now : dimmed
+                    || (allMp && mpNow == 0) || (pctMp && live && f.game->me.mpp < 20);
+        lrows[i].mark = L.kind < 2 && L.held >= 0 && L.top + i == L.held;                                              // manual sort : the held one
+    }
+    block_size(f, k, lrows, L.rows, lw, lh);
+    if (empty) {                                        // the full list's height : as many rows as a page shows
+        const int pg = L.vis > 0 ? L.vis : 12;
+        lh = snap((float)pg * k.capH + (float)(pg - 1) * k.gap + 2.0f * k.pad);
+    }
+    static unsigned sig = 0; static float wAll = 0.0f; static float atS = 0.0f;
+    unsigned h = (2166136261u ^ (unsigned)L.allN) * 16777619u ^ (unsigned)L.kind;
+    for (int i = 0; i < L.allN; ++i) h = (h ^ L.all[i]) * 16777619u;
+    if (h != sig || atS != k.S) {
+        sig = h; atS = k.S; wAll = 0.0f;
+        RowSpec one[1]; char mp1[8];
+        for (int i = 0; i < L.allN; ++i) {
+            unsigned mp; bool ws;
+            one[0].label = list_row_name(L.kind, L.all[i], mp, ws); one[0].icon = IC_STAR; one[0].sub = false; one[0].off = false;
+            if (mp) { sprintf(mp1, "%u", mp); one[0].extra = mp1; } else one[0].extra = 0;
+            float w1, h1; block_size(f, k, one, 1, w1, h1); if (w1 > wAll) wAll = w1;
+        }
+    }
+    if (wAll > lw) lw = wAll;
+}
+// draw it at (lx, ly) : the rows, where this page sits in the whole list (a thin rail), its click area (hit, while
+// open) and, for the ITEMS, the card of the item under the cursor BESIDE it
+void list_paint(const Frame& f, const Metrics& k, Block& B, const NativeList& L, const RowSpec* lrows, bool open,
+                float lx, float ly, float lw, float lh, float LA, float tL, float dt, float* hit) {
+    const float S = k.S;
+    const bool empty = L.n == 0;
+    const int cur = empty ? 0 : ((L.cursor >= L.top && L.cursor < L.top + L.rows) ? L.cursor - L.top + 1 : 0);
+    if (LA <= 0.0f) return;
+    block_draw(f, k, B, lrows, L.rows, cur, L.focused, lx, ly, lw, lh, LA, dt);
+    if (L.n > L.rows) {
+        const float tx = lx + lw - 3.0f * S, ty = ly + k.pad, th = lh - 2.0f * k.pad;
+        const float th2 = th * (float)L.rows / (float)L.n, ty2 = ty + th * (float)L.top / (float)L.n;
+        rrect(f.dev, tx - 1.0f * S, ty, 2.0f * S, th, 1.0f * S, with_alpha(0x30FFFFFFu, LA), with_alpha(0x30FFFFFFu, LA));
+        rrect(f.dev, tx - 1.0f * S, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, LA), with_alpha(0xC0FFDA8Au, LA));
+    }
+    if (open) { hit[0] = lx / f.screenW; hit[1] = ly / f.screenH; hit[2] = lw / f.screenW; hit[3] = lh / f.screenH; }
+    if (L.kind == 3 && cur >= 1 && cur <= L.rows) {
+        const unsigned iid = L.id[cur - 1];
+        card_load(f.dev, iid);
+        if (card_ready(iid)) {
+            const float cw = snap(270.0f * S);
+            float cx = snap(lx + lw + 3.0f * S);
+            if (cx + cw > f.screenW - 4.0f) cx = snap(lx - 3.0f * S - cw);
+            card_draw(f, k, cx, cw, ly, ly + lh, tL, LA, false);
+        }
+    }
+}
 }
 void actmenu_draw(const Frame& f) {
     const UiConfig& C = ui_config();
@@ -671,77 +764,13 @@ void actmenu_draw(const Frame& f) {
         static NativeList lastL;
         if (NL.open) lastL = NL;
         if (block_ease(g_listB, NL.open && M.open, now, dt)) {
-            RowSpec lrows[32]; char mps[32][8];
-            // EMPTY : the client opens the list at its FULL size and writes "No spells available." in its first row
-            const bool empty = lastL.n == 0;
-            if (empty) lastL.rows = 1;
-            const bool live = f.game && f.game->me.name[0];
-            const int mpNow = live ? f.game->me.mp : -1, tpNow = live ? (int)f.game->me.tp : -1;
-            for (int i = 0; i < lastL.rows && i < 32; ++i) {
-                if (empty) {
-                    lrows[i].label = lastL.kind == 3 ? tr("No items available.", "Aucun objet disponible.") : lastL.kind == 2 ? tr("No mounts available.", "Aucune monture disponible.") : lastL.kind ? tr("No abilities available.", "Aucune aptitude disponible.") : tr("No spells available.", "Aucun sort disponible.");
-                    lrows[i].icon = IC_NONE; lrows[i].sub = false; lrows[i].off = false; lrows[i].center = true; break;
-                }
-                unsigned mp; bool ws;
-                lrows[i].label = list_row_name(lastL.kind, lastL.id[i], mp, ws); lrows[i].icon = lastL.kind == 2 ? IC_NONE : lastL.kind ? (ws ? IC_SWORD : IC_BOLT) : IC_STAR; lrows[i].sub = false;
-                lrows[i].tex = lastL.kind == 2 ? 0 : list_icon(f, lastL.kind, lastL.id[i]);
-                if (lastL.kind == 3) { mp = 0; if (lastL.cnt[i]) { sprintf(mps[i], "%u", (unsigned)lastL.cnt[i]); lrows[i].extra = mps[i]; } lrows[i].icon = IC_BAG; }   // the count, right-aligned (not on the icon)
-                if (!lrows[i].tex && lastL.kind < 2) list_fallback(f, lastL.kind, lastL.id[i], lrows[i]);   // spells / abilities only (a mount, an item : their own)
-                // a mount : no picture exists per mount (Windower has none, the client's list none, res icon_id is 86 / 87
-                // for all) -- the game's own "Mounted" status icon (252), the same on every row (user's choice 2026-11-17)
-                if (lastL.kind == 2) status_cell(f.dev, 252, lrows[i]);
-                if (mp) { sprintf(mps[i], "%u", mp); lrows[i].extra = mps[i]; }
-                lrows[i].off = (mp && mpNow >= 0 && (int)mp > mpNow) || (ws && tpNow >= 0 && tpNow < 1000);   // not usable right now : dimmed
-            }
-            float lw, lh; block_size(f, k, lrows, lastL.rows, lw, lh);
-            if (empty) {                                        // the full list's height : as many rows as a page shows
-                const int pg = lastL.vis > 0 ? lastL.vis : 12;
-                lh = snap((float)pg * k.capH + (float)(pg - 1) * k.gap + 2.0f * k.pad);
-            }
-            // a FIXED width : the widest spell of the WHOLE list (cached per list), so scrolling never resizes it
-            {
-                static unsigned sig = 0; static float wAll = 0.0f; static float atS = 0.0f;
-                unsigned h = (2166136261u ^ (unsigned)lastL.allN) * 16777619u ^ (unsigned)lastL.kind;
-                for (int i = 0; i < lastL.allN; ++i) h = (h ^ lastL.all[i]) * 16777619u;
-                if (h != sig || atS != k.S) {
-                    sig = h; atS = k.S; wAll = 0.0f;
-                    RowSpec one[1]; char mp1[8];
-                    for (int i = 0; i < lastL.allN; ++i) {
-                        unsigned mp; bool ws;
-                        one[0].label = list_row_name(lastL.kind, lastL.all[i], mp, ws); one[0].icon = IC_STAR; one[0].sub = false; one[0].off = false;
-                        if (mp) { sprintf(mp1, "%u", mp); one[0].extra = mp1; } else one[0].extra = 0;
-                        float w1, h1; block_size(f, k, one, 1, w1, h1); if (w1 > wAll) wAll = w1;
-                    }
-                }
-                if (wAll > lw) lw = wAll;
-            }
+            RowSpec lrows[32]; char mps[32][8]; float lw, lh;
+            list_build(f, k, lastL, lrows, mps, lw, lh);
             if (lw < bw) lw = bw;
             const float tL = ease_out(((float)(now - g_listB.openMs) / 1000.0f) / 0.07f);
             float lx = bx, ly = snap((below ? by : by + bh - lh) + (1.0f - tL) * 3.0f * S);
             if (ly + lh > f.screenH - 4.0f) ly = snap(f.screenH - 4.0f - lh); if (ly < 4.0f) ly = 4.0f;
-            const float LA = g_listB.vis * tL;
-            const int cur = empty ? 0 : ((lastL.cursor >= lastL.top && lastL.cursor < lastL.top + lastL.rows) ? lastL.cursor - lastL.top + 1 : 0);
-            if (LA > 0.0f) {
-                block_draw(f, k, g_listB, lrows, lastL.rows, cur, lastL.focused, lx, ly, lw, lh, LA, dt);
-                if (lastL.n > lastL.rows) {                     // where this page sits in the whole list : a thin rail
-                    const float tx = lx + lw - 3.0f * S, ty = ly + k.pad, th = lh - 2.0f * k.pad;
-                    const float th2 = th * (float)lastL.rows / (float)lastL.n, ty2 = ty + th * (float)lastL.top / (float)lastL.n;
-                    rrect(dev_of(f), tx - 1.0f * S, ty, 2.0f * S, th, 1.0f * S, with_alpha(0x30FFFFFFu, LA), with_alpha(0x30FFFFFFu, LA));
-                    rrect(dev_of(f), tx - 1.0f * S, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, LA), with_alpha(0xC0FFDA8Au, LA));
-                }
-                if (NL.open) { g_hit[0][0] = lx / f.screenW; g_hit[0][1] = ly / f.screenH; g_hit[0][2] = lw / f.screenW; g_hit[0][3] = lh / f.screenH; }
-                // ITEMS : the item under the cursor, its card BESIDE the list (the client's own description stays parked)
-                if (lastL.kind == 3 && cur >= 1 && cur <= lastL.rows) {
-                    const unsigned iid = lastL.id[cur - 1];
-                    card_load(dev_of(f), iid);
-                    if (card_ready(iid)) {
-                        const float cw = snap(270.0f * S);
-                        float cx = snap(lx + lw + 3.0f * S);
-                        if (cx + cw > f.screenW - 4.0f) cx = snap(lx - 3.0f * S - cw);
-                        card_draw(f, k, cx, cw, ly, ly + lh, tL, LA, false);
-                    }
-                }
-            }
+            list_paint(f, k, g_listB, lastL, lrows, NL.open, lx, ly, lw, lh, g_listB.vis * tL, tL, dt, g_hit[0]);
             if (NL.open) return;                                // while it is up, the menus under it are not drawn
         }
     }
@@ -1184,5 +1213,272 @@ void nui_help_fit(const Frame& f, float availW, float maxScale, float& outScale,
     outScale = sc; outH = h * sc;
 }
 void nui_help_box(const Frame& f, float cx, float cy, float s) { nui_sample(f, cx, cy, s, true, 0, 0); }
+
+// ======== the MAIN menu (Game UI -> NU_MAIN) : the client's two pages `menuwind` / `socialme`, mirrored ========
+// The client keeps its menu (parked off-screen), its input and every window it opens ; this draws its rows, its cursor
+// and its page in the menus' theme. Rows by ENTRY index (the definition's order, = the cursor's numbering ; shown in
+// screen order by native_ui) ; the labels are the ones the client DRAWS (its images : "Magic", "Bazaar", "Macros" --
+// the definition's texts say "Magic List", "Set Bazaar", "MacroPalette"), from the user's screenshots 2026-11-18.
+namespace {
+const SubRow MAIN1[12] = {
+    { "Status",      "Statut",                         false, IC_LENS    },
+    { "Equipment",   "\xC3\x89quipement",              false, IC_SWORD   },
+    { "Magic",       "Magie",                          false, IC_STAR    },
+    { "Items",       "Objets",                         false, IC_BAG     },
+    { "Abilities",   "Aptitudes",                      false, IC_BOLT    },
+    { "Party",       "Groupe",                         false, IC_DUO     },
+    { "Trade",       "\xC3\x89""changer",              false, IC_SWAP    },
+    { "Search",      "Rechercher",                     false, IC_LENS    },
+    { "Linkshell",   "Linkshell",                      false, IC_BUBBLE  },
+    { "Synthesis",   "Synth\xC3\xA8se",                false, IC_NONE    },
+    { "Region Info", "Infos r\xC3\xA9gions",           false, IC_RETICLE },
+    { "Map",         "Carte",                          false, IC_RETICLE },
+};
+const SubRow MAIN2[12] = {
+    { "Missions",      "Missions",                     false, IC_STAR    },
+    { "Quests",        "Qu\xC3\xAAtes",                false, IC_STAR    },
+    { "Key Items",     "Objets cl\xC3\xA9s",           false, IC_BAG     },
+    { "View House",    "Voir la maison",               false, IC_NONE    },
+    { "Bazaar",        "Bazar",                        false, IC_BAG     },
+    { "Macros",        "Macros",                       false, IC_NONE    },
+    { "Config",        "Config",                       false, IC_NONE    },
+    { "Help Desk",     "Help Desk",                    false, IC_BUBBLE  },
+    { "Communication", "Communication",                false, IC_BUBBLE  },
+    { "Current Time",  "Heure",                        false, IC_NONE    },
+    { "Shut Down",     "Quitter le jeu",               false, IC_NONE    },
+    { "Log Out",       "D\xC3\xA9""connexion",         false, IC_NONE    },
+};
+Block g_mainMB, g_mainSubB, g_mainListB, g_mainSortB, g_mainYnB;
+unsigned g_mainLastMs = 0;
+// a row the client's definition names in English : the French of the action menu's same row when there is one
+const char* fr_of(const char* en) {
+    if (!en || !en[0]) return en;
+    for (int i = 0; i < (int)(sizeof(MAGSELEC) / sizeof(MAGSELEC[0])); ++i) if (!strcmp(MAGSELEC[i].en, en)) return tr(MAGSELEC[i].en, MAGSELEC[i].fr);
+    for (int i = 0; i < (int)(sizeof(ABISELEC) / sizeof(ABISELEC[0])); ++i) if (!strcmp(ABISELEC[i].en, en)) return tr(ABISELEC[i].en, ABISELEC[i].fr);
+    return en;
+}
+}
+
+void mainmenu_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    const NativeEntryMenu& M = native_main_menu();
+    g_hit[5][2] = 0.0f;
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_mainMB.vis = 0.0f; g_mainMB.wasOpen = false; g_mainMB.w = 0.0f; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_mainLastMs ? (float)(now - g_mainLastMs) / 1000.0f : 0.0f; g_mainLastMs = now;
+    if (dt > 0.1f) dt = 0.1f;
+    static NativeEntryMenu last;                         // the last menu seen : it fades out with its own rows
+    if (M.open) last = M;
+    const bool chain = M.open || native_main_sub().open;   // the menu stays drawn under what it opened
+    if (!block_ease(g_mainMB, chain, now, dt) || !last.n || last.uiW <= 0 || last.uiH <= 0) return;
+    const Metrics k = metrics(f);
+    const float S = k.S;
+    const bool page2 = !strcmp(last.name, "socialme");
+    const SubRow* T = page2 ? MAIN2 : MAIN1;
+    RowSpec rows[16]; char nums[16][12]; int cur = 0;
+    for (int i = 0; i < last.n && i < 16; ++i) {
+        const int e = last.entry[i];
+        if (e >= 1 && e <= 12) { rows[i].label = tr(T[e - 1].en, T[e - 1].fr); rows[i].icon = T[e - 1].icon; }
+        else { sprintf(nums[i], "#%d", e); rows[i].label = nums[i]; rows[i].icon = IC_NONE; }
+        rows[i].sub = false; rows[i].off = false;
+        if (e == last.cursor) cur = i + 1;
+    }
+    // ONE width for both pages (the widest of the 24 labels) : turning the page never resizes the box
+    float bw = 0.0f, bh = 0.0f;
+    {
+        RowSpec one[1]; one[0].sub = false; one[0].off = false;
+        for (int i = 0; i < 24; ++i) {
+            const SubRow& r = i < 12 ? MAIN1[i] : MAIN2[i - 12];
+            one[0].label = tr(r.en, r.fr); one[0].icon = r.icon;
+            float w1, h1; block_size(f, k, one, 1, w1, h1); if (w1 > bw) bw = w1;
+        }
+        float w2; block_size(f, k, rows, last.n, w2, bh);
+    }
+    // the header band : the title on the left, the page on the right (< 1 / 2 >) ; left / right turn it, as in the game
+    const float tzH = k.tz * 0.92f, headH = snap(k.capH + k.gap);
+    const char* title = tr("Commands", "Commandes");
+    const char* pg = page2 ? "2 / 2" : "1 / 2";
+    {
+        const float need = snap(k.gutter + f.font->measure(title, tzH) + 14.0f * S + f.font->measure(pg, tzH) + 18.0f * S + k.pad);
+        if (need > bw) bw = need;
+    }
+    bh = snap(bh + headH);
+    g_mainMB.inTop = headH;
+    // place : the game's (its top-left corner, in its UI units) or the top left (the client's own left margin)
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    float bx = C.muMainPos == 1 ? snap(16.0f * sx) : snap((float)last.rx1 * sx - bw);
+    float by = snap((float)last.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const float tOpen = ease_out(((float)(now - g_mainMB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tOpen) * 4.0f * S);
+    // Magic's categories open IN PLACE of this menu (the client swaps them, as the action menu's Abilities) : while they
+    // are up this menu is not drawn (2026-11-18, "le sous menu remplace le main menu plutot que de se mettre a cote")
+    const bool subUp = native_main_sub().open;
+    const float A = subUp ? 0.0f : g_mainMB.vis * tOpen * (last.focused ? 1.0f : 0.62f);   // a window it opened on top : steps back
+    if (A > 0.0f) {
+        const int row = block_draw(f, k, g_mainMB, rows, last.n, cur, last.focused, bx, by, bw, bh, A, dt);
+        // the header : a hairline under it, the title, the page between its two arrows
+        const u32 dev = f.dev;
+        const float hy = by + k.pad, hc = snap(hy + (headH - k.gap) * 0.5f);
+        rrect(dev, bx + k.gutter, snap(hy + headH - k.gap * 0.5f - 1.0f), bw - k.gutter - k.pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+        const float pw = f.font->measure(pg, tzH), ar = 3.0f * S;
+        const float rx = snap(bx + bw - k.pad - 4.0f * S), lx = snap(rx - 2.0f * ar - 6.0f * S - pw - 6.0f * S);
+        const u32 ac = with_alpha(0xC0FFDA8Au, A);
+        tri(dev, rx, hc, rx - 2.0f * ar, hc - ar * 1.2f, rx - 2.0f * ar, hc + ar * 1.2f, ac);
+        tri(dev, lx, hc, lx + 2.0f * ar, hc - ar * 1.2f, lx + 2.0f * ar, hc + ar * 1.2f, ac);
+        Font* fo = f.font;
+        fo->begin(dev);
+        fo->draw_lc(dev, snap(bx + k.gutter + k.capPadL * 0.5f), hc, title, tzH, with_alpha(0xFFE8D9B0u, A), with_alpha(0xC8000000u, A), k.ow);
+        fo->draw_lc(dev, snap(lx + 2.0f * ar + 6.0f * S), hc, pg, tzH, with_alpha(0xFFC9D3E0u, A), with_alpha(0xC8000000u, A), k.ow);
+        if (M.open) {
+            g_hit[5][0] = bx / f.screenW; g_hit[5][1] = by / f.screenH; g_hit[5][2] = bw / f.screenW; g_hit[5][3] = bh / f.screenH;
+            // the MOUSE : hover moves the client's cursor, a click validates -- the client's own events (native_ui)
+            const int ent = (row >= 1 && row <= last.n) ? last.entry[row - 1] : 0;
+            if (ent && row != g_mainMB.hoverRow && ent != M.cursor) native_main_hover(ent);
+            g_mainMB.hoverRow = row;
+            if (ent && f.mouse && f.mouse->clicked) native_main_pick(ent);
+        } else g_mainMB.hoverRow = 0;
+    } else g_mainMB.hoverRow = 0;
+
+    // ======== what it opens, in the same style : Magic's categories (mgcmenu), then the spell list ========
+    // The categories IN PLACE of the menu ; the list where the action menu's goes (above the chat). The list is the
+    // action menu's own (native_list : parked by Game UI -> Action menu).
+    const bool leftward = bx + bw * 0.5f > f.screenW * 0.5f;
+    const float gap = snap(3.0f * S);
+    float nextX = leftward ? bx - gap : bx + bw + gap;           // the next block's near edge
+    const NativeEntryMenu& SM = native_main_sub();
+    static NativeEntryMenu lastS;
+    if (SM.open) lastS = SM;
+    g_hit[6][2] = g_hit[7][2] = g_hit[8][2] = 0.0f;
+    // the spell list's SORT options (mgcsortw) : open with the list, in the menu's corner -- in place of the categories
+    // (2026-11-18, "on voit Options: + :Sort - Auto - Manual" ; X or numpad + gives them the cursor)
+    const NativeEntryMenu& SO = native_main_sort();
+    static NativeEntryMenu lastO;
+    if (SO.open) lastO = SO;
+    // AUTO-SORT first : the client puts its cursor back on the option used last (Manual Sort) -- each time the options
+    // take the cursor, it goes on Auto-sort (2026-11-18, "c'est manual qui est selectionne par defaut, on veut auto")
+    {
+        static bool wasF = false;
+        const bool nowF = SO.open && SO.focused;
+        if (nowF && !wasF && SO.cursor != 1) native_main_sort_hover(1);
+        wasF = nowF;
+    }
+    if (block_ease(g_mainSortB, SO.open, now, dt) && lastO.n) {
+        RowSpec orows[16]; char onums[16][12]; int ocur = 0;
+        for (int i = 0; i < lastO.n && i < 16; ++i) {
+            const int e = lastO.entry[i];
+            if (e == 1) orows[i].label = tr("Auto-sort", "Tri automatique");
+            else if (e == 2) orows[i].label = tr("Manual Sort", "Tri manuel");
+            else if (e == 3 && !strcmp(lastO.name, "blusortw")) orows[i].label = tr("Blue Magic", "Magie bleue");   // set the spells
+            else if (lastO.label[i][0]) orows[i].label = lastO.label[i];
+            else { sprintf(onums[i], "#%d", e); orows[i].label = onums[i]; }
+            orows[i].icon = IC_NONE; orows[i].sub = false; orows[i].off = lastO.state[i] == 5;
+            if (e == lastO.cursor) ocur = i + 1;
+        }
+        float ow, oh; block_size(f, k, orows, lastO.n, ow, oh);
+        const float tzH = k.tz * 0.92f, headH = snap(k.capH + k.gap);
+        const char* ot = tr("Sort", "Tri");
+        const char* hint = tr("X / +", "X / +");
+        const float need = snap(k.gutter + f.font->measure(ot, tzH) + 14.0f * S + f.font->measure(hint, tzH * 0.9f) + k.pad + 4.0f * S);
+        if (need > ow) ow = need;
+        oh = snap(oh + headH); g_mainSortB.inTop = headH;
+        const float tS = ease_out(((float)(now - g_mainSortB.openMs) / 1000.0f) / 0.07f);
+        const float obx = C.muMainPos == 1 ? bx : snap(bx + bw - ow), oby = snap(by + (1.0f - tS) * 3.0f * S);
+        const float OA = g_mainSortB.vis * tS * (lastO.focused ? 1.0f : 0.62f);
+        if (OA > 0.0f) {
+            const int orow = block_draw(f, k, g_mainSortB, orows, lastO.n, lastO.focused ? ocur : 0, lastO.focused, obx, oby, ow, oh, OA, dt);
+            const float hc = snap(oby + k.pad + (headH - k.gap) * 0.5f);
+            rrect(f.dev, obx + k.gutter, snap(oby + k.pad + headH - k.gap * 0.5f - 1.0f), ow - k.gutter - k.pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, OA), with_alpha(0x30C8D6EAu, OA));
+            f.font->begin(f.dev);
+            f.font->draw_lc(f.dev, snap(obx + k.gutter + k.capPadL * 0.5f), hc, ot, tzH, with_alpha(0xFFE8D9B0u, OA), with_alpha(0xC8000000u, OA), k.ow);
+            const float hw = f.font->measure(hint, tzH * 0.9f);
+            f.font->draw_lc(f.dev, snap(obx + ow - k.pad - 4.0f * S - hw), hc, hint, tzH * 0.9f, with_alpha(0xFF93A6BEu, OA), with_alpha(0xC8000000u, OA), k.ow);
+            if (SO.open) {
+                g_hit[6][0] = obx / f.screenW; g_hit[6][1] = oby / f.screenH; g_hit[6][2] = ow / f.screenW; g_hit[6][3] = oh / f.screenH;
+                const int ent = (orow >= 1 && orow <= lastO.n) ? lastO.entry[orow - 1] : 0;
+                if (ent && orow != g_mainSortB.hoverRow && ent != SO.cursor) native_main_sort_hover(ent);
+                g_mainSortB.hoverRow = orow;
+                if (ent && f.mouse && f.mouse->clicked) native_main_sort_pick(ent);
+            } else g_mainSortB.hoverRow = 0;
+        }
+        // Auto-sort's confirmation (sortyn) : Yes / No, under the options, right edges level (the client's place)
+        const NativeEntryMenu& YN = native_main_yn();
+        static NativeEntryMenu lastY;
+        if (YN.open) lastY = YN;
+        if (block_ease(g_mainYnB, YN.open, now, dt) && lastY.n) {
+            RowSpec yrows[4]; char ynums[4][12]; int ycur = 0; int yn = 0;
+            for (int i = 0; i < lastY.n && yn < 4; ++i, ++yn) {
+                const int e = lastY.entry[i];
+                if (e == 1) yrows[yn].label = tr("Yes", "Oui");
+                else if (e == 2) yrows[yn].label = tr("No", "Non");
+                else { sprintf(ynums[yn], "#%d", e); yrows[yn].label = ynums[yn]; }
+                yrows[yn].icon = IC_NONE; yrows[yn].sub = false; yrows[yn].off = false;
+                if (e == lastY.cursor) ycur = yn + 1;
+            }
+            float yw, yh; block_size(f, k, yrows, yn, yw, yh);
+            const float tY = ease_out(((float)(now - g_mainYnB.openMs) / 1000.0f) / 0.07f);
+            const float ybx = C.muMainPos == 1 ? obx : snap(obx + ow - yw), yby = snap(oby + oh + 3.0f * S + (1.0f - tY) * 3.0f * S);
+            const float YA = g_mainYnB.vis * tY;
+            if (YA > 0.0f) {
+                const int yrow = block_draw(f, k, g_mainYnB, yrows, yn, ycur, lastY.focused, ybx, yby, yw, yh, YA, dt);
+                if (YN.open) {
+                    g_hit[8][0] = ybx / f.screenW; g_hit[8][1] = yby / f.screenH; g_hit[8][2] = yw / f.screenW; g_hit[8][3] = yh / f.screenH;
+                    const int ent = (yrow >= 1 && yrow <= yn) ? lastY.entry[yrow - 1] : 0;
+                    if (ent && yrow != g_mainYnB.hoverRow && ent != YN.cursor) native_main_yn_hover(ent);
+                    g_mainYnB.hoverRow = yrow;
+                    if (ent && f.mouse && f.mouse->clicked) native_main_yn_pick(ent);
+                } else g_mainYnB.hoverRow = 0;
+            }
+        }
+    }
+    if (block_ease(g_mainSubB, SM.open && !SO.open, now, dt) && lastS.n) {
+        RowSpec srows[16]; char snums[16][12]; int scur = 0;
+        for (int i = 0; i < lastS.n && i < 16; ++i) {
+            const SubRow* r = sub_row(lastS.name, lastS.entry[i]);
+            if (r) { srows[i].label = tr(r->en, r->fr); srows[i].icon = r->icon; }
+            else if (lastS.label[i][0]) { srows[i].label = fr_of(lastS.label[i]); srows[i].icon = IC_STAR; }
+            else { sprintf(snums[i], "#%d", lastS.entry[i]); srows[i].label = snums[i]; srows[i].icon = IC_STAR; }
+            srows[i].sub = false; srows[i].off = lastS.state[i] == 5;
+            if (lastS.entry[i] == lastS.cursor) scur = i + 1;
+        }
+        float sw, sh; block_size(f, k, srows, lastS.n, sw, sh);
+        const float tS = ease_out(((float)(now - g_mainSubB.openMs) / 1000.0f) / 0.07f);
+        // in place : the menu's corner (its right edge at the game's place, its left edge on the left), its own size
+        float sbx = C.muMainPos == 1 ? bx : snap(bx + bw - sw), sby = snap(by + (1.0f - tS) * 3.0f * S);
+        if (sby + sh > f.screenH - 4.0f) sby = snap(f.screenH - 4.0f - sh); if (sby < 4.0f) sby = 4.0f;
+        const float SA = g_mainSubB.vis * tS * (lastS.focused ? 1.0f : 0.62f);
+        if (SA > 0.0f) {
+            const int srow = block_draw(f, k, g_mainSubB, srows, lastS.n, scur, lastS.focused, sbx, sby, sw, sh, SA, dt);
+            if (SM.open) {
+                g_hit[6][0] = sbx / f.screenW; g_hit[6][1] = sby / f.screenH; g_hit[6][2] = sw / f.screenW; g_hit[6][3] = sh / f.screenH;
+                const int ent = (srow >= 1 && srow <= lastS.n) ? lastS.entry[srow - 1] : 0;
+                if (ent && srow != g_mainSubB.hoverRow && ent != SM.cursor) native_main_sub_hover(ent);
+                g_mainSubB.hoverRow = srow;
+                if (ent && f.mouse && f.mouse->clicked) native_main_sub_pick(ent);
+            } else g_mainSubB.hoverRow = 0;
+        }
+        nextX = leftward ? sbx - gap : sbx + sw + gap;
+    }
+    // the list : only while no action menu is up (that one draws it beside itself)
+    const NativeList& NL = native_list();
+    static NativeList lastL;
+    const bool mine = NL.open && chain && !native_action_menu().open;
+    if (mine) lastL = NL;
+    if (block_ease(g_mainListB, mine, now, dt)) {
+        RowSpec lrows[32]; char mps[32][8]; float lw, lh;
+        list_build(f, k, lastL, lrows, mps, lw, lh);
+        const float tL = ease_out(((float)(now - g_mainListB.openMs) / 1000.0f) / 0.07f);
+        // WHERE THE ACTION MENU'S LIST GOES (the client opens White Magic... at the same place from both menus -- user
+        // 2026-11-18, "s'affiche au meme endroit que le menu magie du menu action") : above AioHUD's chat ; no chat box
+        // shown : beside the categories
+        float lx = 0.0f, ly = 0.0f;
+        if (!place_on_chat(lw, lh, snap(4.0f * S), f.screenW, f.screenH, lx, ly)) { lx = leftward ? snap(nextX - lw) : snap(nextX); ly = by; }
+        ly = snap(ly + (1.0f - tL) * 3.0f * S);
+        if (lx < 4.0f) lx = 4.0f; if (lx + lw > f.screenW - 4.0f) lx = snap(f.screenW - 4.0f - lw);
+        if (ly + lh > f.screenH - 4.0f) ly = snap(f.screenH - 4.0f - lh); if (ly < 4.0f) ly = 4.0f;
+        list_paint(f, k, g_mainListB, lastL, lrows, mine, lx, ly, lw, lh, g_mainListB.vis * tL, tL, dt, g_hit[7]);
+    }
+}
 
 } // namespace aio

@@ -341,6 +341,7 @@ struct UiConfig {
     int       muLabel = 0;                 // their rows : 0 = text only, 1 = icon + text
     float     muScale = 1.0f;              // their size (every dimension, text included) : 0.6 .. 1.6
     int       muGrow  = 0;                 // a submenu taller than its menu grows : 0 = upward (bottoms level), 1 = downward
+    int       muMainPos = 0;               // the MAIN menu (NU_MAIN) : 0 = where the game puts it (top right), 1 = top left
     // transient (not saved) : each box's rect as screen fractions + its pending wheel, for the mouse callback
     // (clicks on a chat box never reach the game ; the wheel scrolls its history). Written every frame it draws.
     float chHit[2][4] = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 } };

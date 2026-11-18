@@ -64,7 +64,11 @@ const char* const COST_W[]  = { "subwindo", 0 };
 const char* const NET_W[]   = { "netstat", "polwindo", 0 };
 const char* const ACT_SUB_W[] = { "magselec", "abiselec", "chatctrl", 0 };
 const char* const ACT_LIST_W[] = { "magic", "ability", "mount", 0 };                   // the lists AioHUD redraws (NU_ACT)   // the action menu's submenus AioHUD redraws (NU_ACT)
-const char* const NPC_W[]   = { "rem4line", "rem4li2", "query", 0 };          // the NPC windows AioHUD redraws (NU_NPC)
+const char* const NPC_W[]   = { "rem4line", "rem4li2", "query", 0 };
+const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
+const char* const MAIN_SUB_W[] = { "mgcmenu", 0 };                             // what it opens that AioHUD redraws (NU_MAIN)
+const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row
+const char* const MAIN_YN_W[] = { "sortyn", 0 };                               // Auto-sort's Yes / No (parked by inv-style code, not by name)          // the NPC windows AioHUD redraws (NU_NPC)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
 
 // the offset a window SHOULD carry under the current config
@@ -78,6 +82,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_NET)   && in_list(n, NET_W))   { dy = HIDE_DY; return; }
     if ((hide & NU_ACT)   && (!strcmp(n, "playermo") || in_list(n, ACT_SUB_W) || in_list(n, ACT_LIST_W))) { dy = HIDE_DY; return; }
     if ((hide & NU_NPC)   && in_list(n, NPC_W)) { dy = HIDE_DY; return; }
+    if ((hide & NU_MAIN)  && (in_list(n, MAIN_W) || in_list(n, MAIN_SUB_W) || in_list(n, MAIN_SORT_W))) { dy = HIDE_DY; return; }
     // the HUD-like windows never follow the MENUS offset -- they have their own option above
     if (in_list(n, PARTY_W) || in_list(n, ALLY_W) || in_list(n, CHAT_W) || in_list(n, COST_W) || in_list(n, NET_W) || in_list(n, INPUT_W)) return;
     if (ox == 0 && oy == 0 && anc == 0) return;   // frames the client places by CODE (mapframe, cnqframe...)
@@ -135,11 +140,14 @@ NativeMenu g_act; bool g_actFail = false; int g_actBad = 0; DWORD g_actGoodSince
 u32 g_actObj = 0;          // the playermo object of the last good read (re-read before any call into the client)
 // the same fallback for the NPC windows : an NPC window open but unreadable 3 frames -> the client's own come back
 NativeNpc g_npc; bool g_npcFail = false; int g_npcBad = 0; DWORD g_npcGoodSince = 0;
+// and for the MAIN menu
+NativeEntryMenu g_mainM, g_mainSub, g_mainSort, g_mainYn; bool g_mainFail = false; int g_mainBad = 0; DWORD g_mainGoodSince = 0;
 NativeFep g_fep; DWORD g_fepDrawnMs = 0; int g_fepBadLog = 0; u32 g_fepIn = 0;
 int eff_hide(const UiConfig& c) {
     int h = c.nuHide;
     if (g_actFail) h &= ~NU_ACT;
     if (g_npcFail) h &= ~NU_NPC;
+    if (g_mainFail) h &= ~NU_MAIN;
     return h;
 }
 
@@ -570,8 +578,20 @@ int act_read(NativeMenu& m, u32* objOut = 0) {
     if (objOut) *objOut = obj;
     return 1;
 }
-// One read of the open action SUBMENU (ACT_SUB_W ; the focused one when two are open). -1 none, 0 unreadable, 1 read.
-int sub_read(NativeEntryMenu& m, u32* objOut = 0) {
+// the label of entry k (1-based) as the menu's DEFINITION writes it : *(def+4) = the entries, 0x14 each, +0x0C the label
+// (section 8 ; the client's own FUN_0545C770). Printable ASCII only ; "" when there is none.
+void def_label(u32 obj, int k, char* out, int cap) {
+    out[0] = 0;
+    u32 def = 0, arr = 0, cnt = 0, lp = 0;
+    if (!safe_read(obj + OBJ_DEF, &def) || !valid_ptr(def) || !safe_read(def + 0x04, &arr) || !safe_read(def + 0x18, &cnt)) return;
+    if (!valid_ptr(arr) || k < 1 || k > (short)cnt || !safe_read(arr + (u32)(k - 1) * 0x14 + 0x0C, &lp) || !valid_ptr(lp)) return;
+    int n = 0;
+    for (; n < cap - 1; ++n) { unsigned char b = 0; if (!rd8(lp + (u32)n, b) || b < 0x20 || b >= 0x7F) break; out[n] = (char)b; }
+    out[n] = 0;
+}
+// One read of an open ENTRY menu named in W (the action SUBMENUS ACT_SUB_W, the MAIN menu's pages MAIN_W ; the focused
+// one when two are open). -1 none, 0 unreadable, 1 read.
+int entry_read(const char* const* W, NativeEntryMenu& m, u32* objOut) {
     memset(&m, 0, sizeof(m)); if (objOut) *objOut = 0;
     const u32 mgr = manager(); if (!mgr) return -1;
     u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
@@ -581,7 +601,7 @@ int sub_read(NativeEntryMenu& m, u32* objOut = 0) {
         u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0;
         safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
         char nm[9];
-        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && in_list(nm, ACT_SUB_W)
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && in_list(nm, W)
             && rd8(o + OBJ_CLOSING, cl) && !cl) {
             if (!obj || o == focus) { obj = o; memcpy(name, nm, 9); }
         }
@@ -602,8 +622,10 @@ int sub_read(NativeEntryMenu& m, u32* objOut = 0) {
             // skipped / not laid out / a DECORATION, not a row (chatctrl's 8th entry : 18 x 12, never under the cursor)
             if ((st & 0x10) || r[2] - r[0] < 40 || r[3] - r[1] <= 0 || m.n >= 16) { cn = cnext; continue; }
             int at = m.n;                                                // insert by screen y
-            while (at > 0 && ys[at - 1] > r[1]) { ys[at] = ys[at - 1]; m.entry[at] = m.entry[at - 1]; m.state[at] = m.state[at - 1]; --at; }
-            ys[at] = r[1]; m.entry[at] = (unsigned char)k; m.state[at] = (unsigned char)(st & 0xFF); ++m.n;
+            while (at > 0 && ys[at - 1] > r[1]) { ys[at] = ys[at - 1]; m.entry[at] = m.entry[at - 1]; m.state[at] = m.state[at - 1]; memcpy(m.label[at], m.label[at - 1], sizeof(m.label[at])); --at; }
+            ys[at] = r[1]; m.entry[at] = (unsigned char)k; m.state[at] = (unsigned char)(st & 0xFF);
+            def_label(obj, k, m.label[at], sizeof(m.label[at]));
+            ++m.n;
         }
         cn = cnext;
     }
@@ -619,6 +641,41 @@ int sub_read(NativeEntryMenu& m, u32* objOut = 0) {
     m.open = true;
     if (objOut) *objOut = obj;
     return 1;
+}
+int sub_read(NativeEntryMenu& m, u32* objOut = 0) { return entry_read(ACT_SUB_W, m, objOut); }
+int main_read(NativeEntryMenu& m, u32* objOut = 0) { return entry_read(MAIN_W, m, objOut); }
+
+// The MAIN menu : the same fallback as the action menu -- 3 unreadable frames while open, the client's own comes back ;
+// 5 s of good reads, AioHUD's again. Logged both ways.
+void main_poll(bool on) {
+    if (!on) { g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
+    NativeEntryMenu m; int r = main_read(m);
+    NativeEntryMenu sm; const int rs = entry_read(MAIN_SUB_W, sm, 0);
+    g_mainSub = sm; if (rs != 1) g_mainSub.open = false;
+    {   // the first sight of each sub menu : its rows as read (bounded) -- what the labels are, measured not guessed
+        static int said = 0;
+        if (rs == 1 && said < 4) { ++said; char b[400]; int o = 0;
+            for (int i = 0; i < sm.n && o < 360; ++i) o += _snprintf(b + o, sizeof(b) - o, "%s%d '%s'", i ? ", " : "", sm.entry[i], sm.label[i]);
+            b[sizeof(b) - 1] = 0; windower::debug::log("NATIVEUI '%s' (from the main menu) : %d row(s) : %s", sm.name, sm.n, b); }
+    }
+    NativeEntryMenu so; const int ro = entry_read(MAIN_SORT_W, so, 0);
+    g_mainSort = so; if (ro != 1) g_mainSort.open = false;
+    NativeEntryMenu yn; memset(&yn, 0, sizeof(yn)); const int ry = g_mainSort.open ? entry_read(MAIN_YN_W, yn, 0) : -1;
+    g_mainYn = yn; if (ry != 1) g_mainYn.open = false;
+    if (rs == 0 || ro == 0 || ry == 0) r = 0;                        // a parked submenu that cannot be read : the client's own back
+    if (r == 0) {
+        g_mainM.open = false; g_mainGoodSince = 0;
+        if (++g_mainBad == 3 && !g_mainFail) { g_mainFail = true; windower::debug::log("NATIVEUI main menu : rows unreadable -- the client's own menu is shown"); }
+        return;
+    }
+    g_mainBad = 0;
+    if (r < 0) { g_mainM.open = false; return; }
+    g_mainM = m;
+    if (g_mainFail) {
+        const DWORD now = GetTickCount();
+        if (!g_mainGoodSince) g_mainGoodSince = now;
+        else if (now - g_mainGoodSince >= 5000) { g_mainFail = false; windower::debug::log("NATIVEUI main menu : rows read again -- AioHUD's menu back"); }
+    }
 }
 
 void act_poll(bool on) {
@@ -693,6 +750,33 @@ void inv_park(u32 mgr) {
     }
     g_invSeenObj = 0;
 }
+// Auto-sort's confirmation `sortyn` : placed by its CODE (never born under a parked parent -- it showed at once, 2026-11-18
+// "auto sort ouvre un autre menu ... Yes No"). Parked while the spell list's sort options are AioHUD's ; anywhere else
+// (the inventory, the Mog House) it stays the client's. Once they close, rescue_children brings a parked one back.
+int g_ynParkLog = 0;
+void yn_park(u32 mgr) {
+    if (!g_setter || !g_mainSort.open) return;
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return;
+    const int uiH = (short)(wh >> 16); if (uiH < 240 || uiH > 8000) return;
+    u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, obj = 0, def = 0; unsigned char cl = 0; short r[4] = { 0, 0, 0, 0 }; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &obj);
+        if (valid_ptr(obj) && safe_read(obj + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "sortyn") && rd8(obj + OBJ_CLOSING, cl) && !cl
+            && rd16(obj + OBJ_RECT, r[0]) && rd16(obj + OBJ_RECT + 2, r[1]) && rd16(obj + OBJ_RECT + 4, r[2]) && rd16(obj + OBJ_RECT + 6, r[3])) {
+            const int w = r[2] - r[0], h = r[3] - r[1];
+            if (r[1] < uiH + HIDE_DY / 2 && w > 0 && h > 0 && w < 4000 && h < 4000) {
+                bool ok = true;
+                __try { ((SetRectFn)g_setter)(obj, r[0], r[1] + HIDE_DY, w, h, 1, 0, 0); }
+                __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
+                if (ok) refresh_handler(obj, nm);
+                if (g_ynParkLog < 20) { ++g_ynParkLog; windower::debug::log("NATIVEUI 'sortyn' (Auto-sort, from the spell list) : %s (y %d)", ok ? "parked -- AioHUD draws it" : "setter faulted", r[1]); }
+            }
+            return;
+        }
+        node = next;
+    }
+}
 void rescue_children(u32 mgr, int hide) {
     if (!g_setter) return;
     u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return;
@@ -718,7 +802,9 @@ void rescue_children(u32 mgr, int hide) {
             const bool fepOurs = g_fep.open && GetTickCount() - g_fepDrawnMs < 500u && !strcmp(nm, "fep");
             // AioHUD draws the ITEMS list (and its item card) opened from the action menu : the client's stay parked
             const bool invOurs = (act_on_items() || (g_list.open && g_list.kind == 3)) && (!strcmp(nm, "inventor") || !strcmp(nm, "iteminfo"));
-            if (!ours && !cardOurs && !fepOurs && !invOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
+            // AioHUD draws Auto-sort's Yes / No while the spell list's sort options are up
+            const bool ynOurs = g_mainSort.open && !strcmp(nm, "sortyn");
+            if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
                 int nx = r[0], ny = r[1] - HIDE_DY;
                 // the NPC answers are up : ABOVE AioHUD's box, left edges level (user 2026-11-17 "on la veut au-dessus") ;
                 // no room above : below it ; always inside the UI screen
@@ -740,6 +826,10 @@ void rescue_children(u32 mgr, int hide) {
 
 const NativeMenu& native_action_menu() { return g_act; }
 const NativeEntryMenu& native_sub_menu() { return g_sub; }
+const NativeEntryMenu& native_main_menu() { return g_mainM; }
+const NativeEntryMenu& native_main_sub() { return g_mainSub; }
+const NativeEntryMenu& native_main_sort() { return g_mainSort; }
+const NativeEntryMenu& native_main_yn() { return g_mainYn; }
 const NativeChatInfo& native_chat_info() { return g_chat; }
 const NativeList& native_list() { return g_list; }
 
@@ -858,6 +948,10 @@ int list_read(NativeList& L) {
         || !safe_read(hd + 0x20, &items) || !safe_read(slotsVar, &slots)) return 0;
     if (n < 0 || n > 2048 || vis < 1 || vis > 32 || top < 0 || cap < n || !valid_ptr(slots)) return 0;
     L.n = n; L.top = top; L.vis = vis; L.cursor = cur;
+    // MANUAL SORT (the main menu's Magic -> X -> Manual Sort ; live capture MSORT 2026-11-18) : h+0x6C = 0 off, 1 on,
+    // 2 a spell HELD ; h+0x70 = the held one's index in the list -- validating another row puts it ABOVE that row
+    { u32 mode = 0, hi = 0; L.held = -1;
+      if (safe_read(hd + 0x6C, &mode) && mode == 2 && safe_read(hd + 0x70, &hi) && (int)hi >= 0 && (int)hi < n) L.held = (int)hi; }
     if (n > 0 && !valid_ptr(items)) return 0;
     for (int i = 0; i < vis && top + i < n; ++i) {
         u32 slot = 0; short id = 0;
@@ -1033,6 +1127,49 @@ bool native_sub_pick(int entry) {
     if (cur != entry && !native_sub_hover(entry)) return false;
     return menu_event(obj, 5);
 }
+
+// the main menu, read NOW : open, focused, that entry shown
+u32 main_live_obj(int entry) {
+    NativeEntryMenu m; u32 obj = 0;
+    if (main_read(m, &obj) != 1 || !m.focused) return 0;
+    for (int i = 0; i < m.n; ++i) if (m.entry[i] == entry) return obj;
+    return 0;
+}
+bool native_main_hover(int entry) {
+    const u32 obj = main_live_obj(entry); if (!obj) return false;
+    if (!wr16(obj + 0x4C, (short)entry)) return false;
+    return menu_event(obj, 9);
+}
+bool native_main_pick(int entry) {
+    const u32 obj = main_live_obj(entry); if (!obj) return false;
+    short cur = 0; rd16(obj + 0x4C, cur);
+    if (cur != entry && !native_main_hover(entry)) return false;
+    return menu_event(obj, 5);
+}
+// an entry menu named in W, read NOW : open, focused, that entry shown and not refused
+u32 entry_live_obj(const char* const* W, int entry) {
+    NativeEntryMenu m; u32 obj = 0;
+    if (entry_read(W, m, &obj) != 1 || !m.focused) return 0;
+    for (int i = 0; i < m.n; ++i) if (m.entry[i] == entry) return m.state[i] == 5 ? 0 : obj;
+    return 0;
+}
+bool entry_hover(const char* const* W, int entry) {
+    const u32 obj = entry_live_obj(W, entry); if (!obj) return false;
+    if (!wr16(obj + 0x4C, (short)entry)) return false;
+    return menu_event(obj, 9);
+}
+bool entry_pick(const char* const* W, int entry) {
+    const u32 obj = entry_live_obj(W, entry); if (!obj) return false;
+    short cur = 0; rd16(obj + 0x4C, cur);
+    if (cur != entry && !entry_hover(W, entry)) return false;
+    return menu_event(obj, 5);
+}
+bool native_main_sub_hover(int entry) { return entry_hover(MAIN_SUB_W, entry); }
+bool native_main_sub_pick(int entry) { return entry_pick(MAIN_SUB_W, entry); }
+bool native_main_sort_hover(int entry) { return entry_hover(MAIN_SORT_W, entry); }
+bool native_main_sort_pick(int entry) { return entry_pick(MAIN_SORT_W, entry); }
+bool native_main_yn_hover(int entry) { return entry_hover(MAIN_YN_W, entry); }
+bool native_main_yn_pick(int entry) { return entry_pick(MAIN_YN_W, entry); }
 
 bool native_action_pick(int row) {
     const u32 obj = act_live_obj(row); if (!obj) return false;
@@ -1351,6 +1488,7 @@ void native_ui_tick(bool inWorld) {
     g_full.open = false; g_full.logFocus = -1;             // read again below this frame, or not open (never stale)
     if (!(inWorld && (c.nuHide & NU_ACT))) { g_act.open = false; g_sub.open = false; g_list.open = false; }   // never a stale menu once the option is off / logged out
     if (!(inWorld && (c.nuHide & NU_NPC))) { g_npc.talk = false; g_npc.query = false; }
+    if (!(inWorld && (c.nuHide & NU_MAIN))) { g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; }
     // only while a character is in the world : the title, login and char-select menus are the client's own business
     const bool docking = c.chDock && c.chShow[0] && (c.chDock == 2 || c.chDockRect[2] > 0.0f);   // the game's input line : under / inside AioHUD's chat box
     const bool wanted = inWorld && (c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0 || docking);
@@ -1365,9 +1503,10 @@ void native_ui_tick(bool inWorld) {
         if (g_lastSig != 0 || strcmp(g_why, why)) { g_lastSig = 0; lstrcpynA(g_why, why, sizeof(g_why)); }
         return;
     }
-    if (!resolve()) { g_act.open = false; g_sub.open = false; g_list.open = false; g_npc.talk = false; g_npc.query = false; g_fep.open = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
+    if (!resolve()) { g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_act.open = false; g_sub.open = false; g_list.open = false; g_npc.talk = false; g_npc.query = false; g_fep.open = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
     if (inWorld) fulllog_read(manager()); else g_full.open = false;   // the expanded log : AioHUD's Discussion box unfolds
     act_poll(wanted && (c.nuHide & NU_ACT));
+    main_poll(wanted && (c.nuHide & NU_MAIN));
     npc_poll(wanted && (c.nuHide & NU_NPC));
     fep_poll(wanted && docking);                         // the input line in AioHUD's box : its auto-translate picker too
     // the HIDDEN HUD-like windows, EVERY frame (not only in the once-a-second walk below) : the client re-places some on
@@ -1376,7 +1515,8 @@ void native_ui_tick(bool inWorld) {
     // window shown where it should be hidden (or the reverse) : on a quiet frame it is one walk of the open list.
     if (wanted && g_anyApplied && (c.nuHide & (NU_PARTY | NU_ALLY | NU_CHAT | NU_HELP | NU_COST | NU_NET))) heal_hud(manager());
     if (wanted && (c.nuHide & NU_ACT)) inv_park(manager());          // the Items list : the client's own window out of the way
-    if (wanted && (eff_hide(c) & (NU_ACT | NU_NPC))) rescue_children(manager(), eff_hide(c));
+    if (wanted && (c.nuHide & NU_MAIN)) yn_park(manager());          // Auto-sort's Yes / No (from the spell list's sort options)
+    if (wanted && (eff_hide(c) & (NU_ACT | NU_NPC | NU_MAIN))) rescue_children(manager(), eff_hide(c));
     if (!wanted && !g_anyApplied) return;                  // recovery done, nothing configured
     const int sig = wanted ? config_sig(c) : 0;
     const DWORD now = GetTickCount();

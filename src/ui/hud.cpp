@@ -455,6 +455,7 @@ void Hud::render(u32 dev) {
             chat_box_draw(f, 0, false, !config_.is_open(), 0.0f, 0.0f, 0.0f);   // Chat module : talk / NPC / system
             chat_box_draw(f, 1, false, !config_.is_open(), 0.0f, 0.0f, 0.0f);   // Chat module : the combat log
             actmenu_draw(f);                        // the target action menu, in place of the client's (Game UI)
+            mainmenu_draw(f);                       // the main menu, in place of the client's (Game UI)
             npc_draw(f);                            // the NPC dialogue + answers, in place of the client's (Game UI)
             fep_draw(f);                            // the auto-translate picker (Tab), on AioHUD's input field
             draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit

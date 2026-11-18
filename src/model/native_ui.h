@@ -27,6 +27,7 @@ enum NativeUiBits {
     NU_NET    = 1 << 5,   // netstat (connection indicator) + polwindo (POL message icon), top-right corner
     NU_ACT    = 1 << 6,   // playermo : the target ACTION menu (Enter on a target) -- AioHUD draws its own (hud_actmenu)
     NU_NPC    = 1 << 7,   // rem4line / rem4li2 (NPC dialogue) + query (its answers) -- AioHUD draws them above its chat
+    NU_MAIN   = 1 << 8,   // menuwind / socialme : the MAIN menu's two pages -- AioHUD draws its own (hud_actmenu)
 };
 
 // The NPC windows (NU_NPC ; docs/game-data/native-windows.md section 10, live 2026-11-17) read once a frame :
@@ -121,11 +122,32 @@ struct NativeEntryMenu {
     int  n;
     unsigned char entry[16];   // 1-based entry index of each shown row, top to bottom
     unsigned char state[16];
+    char label[16][24];        // each shown row's label as the client's DEFINITION writes it (ASCII ; "" when it has none --
+                               // some menus draw theirs as images)
     int  cursor;               // 1-based entry index under the cursor
     short rx0, ry0, rx1, ry1;
     int  uiW, uiH;
 };
 const NativeEntryMenu& native_sub_menu();
+// The MAIN menu (NU_MAIN ; docs/game-data/native-windows.md section 8) : page 1 `menuwind` (Status ... Map), page 2
+// `socialme` (Missions ... Log Out) -- the same entry-children shape as the submenus, 12 rows a page. name says the page.
+const NativeEntryMenu& native_main_menu();
+bool native_main_hover(int entry);
+bool native_main_pick(int entry);
+// what the main menu opens that AioHUD redraws too : Magic's categories `mgcmenu` (then the spell list, native_list)
+const NativeEntryMenu& native_main_sub();
+bool native_main_sub_hover(int entry);
+bool native_main_sub_pick(int entry);
+// ... and the spell list's SORT options `mgcsortw` (Auto-sort / Manual Sort ; X or numpad + gives it the cursor), open
+// with the list -- the client puts it in the menu's corner (live 2026-11-18, OPTWIN)
+const NativeEntryMenu& native_main_sort();
+bool native_main_sort_hover(int entry);
+bool native_main_sort_pick(int entry);
+// ... and Auto-sort's confirmation `sortyn` (Yes / No) -- only while the sort options are up : the same window confirms
+// the inventory's and the Mog House's sorts, those stay the client's
+const NativeEntryMenu& native_main_yn();
+bool native_main_yn_hover(int entry);
+bool native_main_yn_pick(int entry);
 
 // What the client's Chat submenu (chatctrl) shows on the right of its rows (its draw FUN_0546E290, read 2026-11-16) :
 //   Tell        the name the Tell will go to : handler+0x14 = -1 the current target (the HUD has its name), -2 the
@@ -158,7 +180,8 @@ struct NativeList {
     int  n, top, vis, cursor;          // 0-based list positions
     int  rows;                         // rows read below (top .. top + rows - 1)
     unsigned short id[32];             // the spell id (kind 0) / ability index (kind 1) / mount id (kind 2) / item id (kind 3) of each row shown
-    unsigned short cnt[32];            // kind 3 : each shown row's count
+    unsigned short cnt[32];
+    int  held;                 // manual sort : the HELD row's index in the whole list (it goes above the next row validated), -1 none            // kind 3 : each shown row's count
     int  allN;                         // EVERY spell of the list (its width is the widest of them, never the page's)
     unsigned short all[512];
 };

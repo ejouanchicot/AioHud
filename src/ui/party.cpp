@@ -18,6 +18,7 @@
 #include "model/ffximain_rva.h"   // fm_confirmed : do not draw the cost frame on an address that is still unproven
 #include "model/gamestate.h"
 #include "model/spells_gen.h"
+#include "model/spell_cost.h"     // spell_cost_kind : the costs that are not a number (Full Cure, Embrava...)
 #include "model/abilities_gen.h"
 #include "model/weapon_skills_gen.h"
 #include "model/zones.h"
@@ -1291,7 +1292,10 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
     char info2buf[16]; const char* info2 = 0; u32 info2Col = 0xFFFFFFFF;       // optional 2nd line (spell recast)
     if (menuHold_ >= 4 && menuSpell_ && menuLive_) {   // CONTENT only for a live selection (ghost -> empty frame)
         if (menuType_ == 1) { const SpellRow* sp = spell_info(menuSpell_); if (sp) { nm = sp->en;     // Spell : MP cost on top, "Next m:ss" below while on recast
-            if (sp->mp) { sprintf(infobuf, "Cost %u MP", sp->mp); info = infobuf; }                   // keep the MP cost (top line)
+            const SpellCostKind ck = spell_cost_kind(sp->id, sp->mp);                                 // Full Cure : ALL the MP, Embrava : 20 %
+            if (ck == SC_ALL_MP) info = "Cost All MP";
+            else if (ck == SC_PCT20) info = "Cost 20% MP";
+            else if (sp->mp) { sprintf(infobuf, "Cost %u MP", sp->mp); info = infobuf; }              // keep the MP cost (top line)
             unsigned rs = spell_recast_sec(sp->recast_id);                                            // per-id lookup in the live recast array
             sprintf(info2buf, "Next %u:%02u", rs / 60, rs % 60); info2 = info2buf;                    // always show "Next" (0:00 when ready)
             info2Col = rs ? 0xFFFFB454 : 0xFF8FA0B8; } }                                              // amber while on recast, dim grey-blue when ready
