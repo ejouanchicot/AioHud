@@ -460,6 +460,11 @@ void Hud::render(u32 dev) {
             persona_draw(f);                        // Status's stat panels, in place of the client's (Game UI)
             jobs_draw(f);                           // Status -> Job / Master Levels, in place of the client's (Game UI)
             skills_draw(f);                         // Status -> Combat / Magic Skills, in place of the client's (Game UI)
+            crafts_draw(f);                         // Status -> Crafts + Merit Points' panel, in place of the client's
+            unityinfo_draw(f);                      // Status -> Unity -> Unity Info, in place of the client's
+            unityrank_draw(f);                      // Status -> Unity -> Ranking Results / Partial
+            unitylists_draw(f);                     // Status -> Unity -> Unity Lists : the Unity, the people found, their options
+            currencies_draw(f);                     // Status -> Currencies 1 / 2, in place of the client's
             npc_draw(f);                            // the NPC dialogue + answers, in place of the client's (Game UI)
             fep_draw(f);                            // the auto-translate picker (Tab), on AioHUD's input field
             draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit

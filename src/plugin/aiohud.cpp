@@ -910,7 +910,8 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
         if (pressed && g_hud.config().wants_keys()) s_ateReturn = true;
         else if (!pressed && s_ateReturn)         { s_ateReturn = false; return 1u; }
     }
-    if (!g_hud.config().wants_keys()) return 0u;            // not typing -> never block the game
+    if (!g_hud.config().wants_keys())                       // not typing -> never block the game (but Currencies' search)
+        return aio::currencies_key(dik, (pressed && nc == 1) ? (unsigned)wbuf[0] : 0u, pressed, mCtrl || mAlt) ? 1u : 0u;
     // Insert toggles the Windower console -> NEVER swallow it, even while typing (extended DIK 0xD2, or the
     // numpad-0 scan 0x52 when NumLock is off so it produced no character).
     if (dik == 0xD2 || (dik == 0x52 && nc == 0)) return 0u;

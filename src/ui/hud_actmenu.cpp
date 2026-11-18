@@ -32,6 +32,7 @@
 #include "model/mounts_gen.h"           // mount_name : the mount list
 #include "model/zones.h"                // zone_name : the Profile's Home Point
 #include "model/game_mem.h"             // PersonaMem : the stat panels' data
+#include "model/currencies_gen.h"       // CURRENCY1_EN / CURRENCY2_EN : the client's row order and labels
 #include "model/weapon_skills_gen.h"    // ws_info : its weapon skills
 #include "model/item_text.h"       // the NPC answers' item card : text + flags from the item's DAT record
 #include "gfx/draw.h"
@@ -47,6 +48,7 @@
 namespace aio {
 
 unsigned job_role_color(int id);   // party_state.cpp : the role tint of a job (the JA emblems)
+const char* job_abbr(int id);       // party_state_roster.cpp : job id -> "WAR".."RUN" (the search results)
 
 namespace {
 
@@ -155,7 +157,8 @@ void draw_icon(u32 dev, Icon ic, float cx, float cy, float z, float S, u32 c) {
 }
 
 u32 g_handTex = 0;   // the party's selection-hand texture, handed in by the HUD each frame (device-loss managed there)
-float g_hit[9][4] = { { 0, 0, 0, 0 } };   // the drawn blocks (menu, submenu ; NPC bubble, NPC answers ; the auto-translate picker ; the main menu, its categories, its list) as screen FRACTIONS : their clicks never reach the game
+float g_subXY[2] = { -1.0f, -1.0f };     // where the main menu's submenu was last drawn (a player's options take its place)
+float g_hit[10][4] = { { 0, 0, 0, 0 } };  // the drawn blocks (menu, submenu ; NPC bubble, NPC answers ; the auto-translate picker ; the main menu, its categories, its list ; Unity Info) as screen FRACTIONS : their clicks never reach the game
 
 // ---- the action menu's submenus (native_sub_menu) : labels by ENTRY index (1-based), from their help texts ----
 struct SubRow { const char* en; const char* fr; bool sub; Icon icon; };   // sub : none -- each row opens its LIST, no arrow in the client
@@ -205,7 +208,24 @@ const SubRow STATCOM2[13] = {
     { "Master Levels",  "Master Levels",                  false, IC_STAR    },
     { "Alter Ego",      "Alter Ego",                      false, IC_DUO     },
 };
+// Status -> Unity (ut_menu) : 3 entries, labels are images -- the user's reading of them, 2026-11-18
+const SubRow UT_MENU[3] = {
+    { "Unity Info",     "Infos Unity",                    false, IC_DUO     },
+    { "Ranking Info",   "Classement",                     false, IC_STAR    },
+    { "Unity Lists",    "Listes Unity",                   false, IC_DUO     },
+};
+// a player's options from the search results (scoption) : 5 entries, labels are images -- named from their help texts
+// (docs/notes/unity-lists-search-re-2026-11-18.md 3d)
+const SubRow SCOPTION[5] = {
+    { "Tell",                   "Tell",                           false, IC_BUBBLE  },
+    { "PlayOnline Message",     "Message PlayOnline",             false, IC_BUBBLE  },
+    { "Invite to Party",        "Inviter dans le groupe",         false, IC_DUO     },
+    { "Express Desire to Join", "Demander \xC3\xA0 rejoindre",    false, IC_DUO     },
+    { "Cancel Request",         "Annuler la demande",             false, IC_NONE    },
+};
 const SubRow* sub_row(const char* menu, int entry) {
+    if (!strcmp(menu, "scoption") && entry >= 1 && entry <= 5) return &SCOPTION[entry - 1];
+    if (!strcmp(menu, "ut_menu") && entry >= 1 && entry <= 3) return &UT_MENU[entry - 1];
     if (!strcmp(menu, "mgcmenu") && entry >= 1 && entry <= 7) return &MAGSELEC[entry - 1];
     if (!strcmp(menu, "mgcmenu") && entry == 8) return &MGC_TRUST;
     if (!strcmp(menu, "statcom2") && entry >= 1 && entry <= 13) return &STATCOM2[entry - 1];
@@ -619,7 +639,7 @@ bool npc_answers_hit(float fx, float fy) {
     return h[2] > 0.0f && fx >= h[0] && fx < h[0] + h[2] && fy >= h[1] && fy < h[1] + h[3];
 }
 void npc_wheel_add(int d) { InterlockedExchangeAdd(&g_npcWheel, d); }
-void actmenu_hits_clear() { for (int i = 0; i < 9; ++i) g_hit[i][2] = 0.0f; }
+void actmenu_hits_clear() { for (int i = 0; i < 10; ++i) g_hit[i][2] = 0.0f; }
 // the auto-translate picker (g_hit[4]) : the wheel over it steps the client's selection (fep_draw consumes it)
 static volatile long g_fepWheel = 0;
 bool fep_hit(float fx, float fy) {
@@ -628,7 +648,7 @@ bool fep_hit(float fx, float fy) {
 }
 void fep_wheel_add(int d) { InterlockedExchangeAdd(&g_fepWheel, d); }
 bool actmenu_hit(float fx, float fy) {
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < 10; ++i) {
         const float* h = g_hit[i];
         if (h[2] > 0.0f && fx >= h[0] && fx < h[0] + h[2] && fy >= h[1] && fy < h[1] + h[3]) return true;
     }
@@ -1257,7 +1277,9 @@ void persona_draw(const Frame& f) {
     const unsigned now = GetTickCount();
     float dt = g_persMs ? (float)(now - g_persMs) / 1000.0f : 0.0f; g_persMs = now; if (dt > 0.1f) dt = 0.1f;
     static PersonaMem lastD; static NativePanel lastP, lastL;
-    const bool onP = PP.open && D.ok, onL = PL.open && D.ok;
+    // Currencies 1 / 2 open IN PLACE of the stat panels : the client hides them then (the user, 2026-11-18)
+    const bool curOn = native_currencies().open || native_unity_info().open || native_search().open;
+    const bool onP = PP.open && D.ok && !curOn, onL = PL.open && D.ok && !curOn;
     if (D.ok) lastD = D;
     if (onP) lastP = PP;
     if (onL) lastL = PL;
@@ -1495,6 +1517,647 @@ void skills_draw(const Frame& f) {
     }
 }
 
+// ======== Status -> CRAFTS (`trdskill`) and Merit Points' panel (`levmerit`) ; Game UI -> NU_MAIN ========
+// Crafts (Ghidra 2026-11-18, FUN_05489D70) : ONE column, ids 48..62 in order, every word but 0xFFFF : the craft's
+// name, its RANK (blue when capped) and "(level)" right-aligned. Rank names : Windower res/synth_ranks.lua (0..10) ;
+// above that the client's own pictures are unknown, so the number. Merit Points' panel (FUN_0548B390) : two lines,
+// Limit Points "lp/10000" and merits "n/max P" (blue at the max), right-aligned.
+namespace {
+Block g_trdB, g_lmB; unsigned g_trdMs = 0;
+const char* const CRAFT_EN[10] = { "Fishing", "Woodworking", "Smithing", "Goldsmithing", "Clothcraft", "Leathercraft",
+    "Bonecraft", "Alchemy", "Cooking", "Synergy" };
+const char* const RANK_EN[11] = { "Amateur", "Recruit", "Initiate", "Novice", "Apprentice", "Journeyman", "Craftsman",
+    "Artisan", "Adept", "Veteran", "Expert" };
+}
+void crafts_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_trdB.vis = g_lmB.vis = 0.0f; g_trdB.wasOpen = g_lmB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_trdMs ? (float)(now - g_trdMs) / 1000.0f : 0.0f; g_trdMs = now; if (dt > 0.1f) dt = 0.1f;
+    const Metrics k = metrics(f);
+    const float S = k.S, vpad = snap(6.0f * S), ip = snap(10.0f * S);
+    const u32 dev = f.dev; Font* fo = f.font;
+    // ---- Crafts ----
+    {
+        const NativePanel& W = native_trdskill(); const NativeSkills& K = native_skills();
+        static NativeSkills lastK; static NativePanel lastW;
+        const bool on = K.ok && W.open;
+        if (on) { lastK = K; lastW = W; }
+        if (block_ease(g_trdB, on, now, dt) && lastK.ok && lastW.uiW > 0) {
+            int ids[16]; int n = 0;
+            for (int id = 48; id <= 57; ++id) if (lastK.v[id] != 0xFFFF) ids[n++] = id;
+            if (n) {
+                const float sx = f.screenW / (float)lastW.uiW, sy = f.screenH / (float)lastW.uiH;
+                const float bw = snap(252.0f * sx), bh = snap(((float)n * 14.0f + 22.0f) * sy);
+                const float lh = (bh - 2.0f * vpad) / (float)n;
+                float tz = k.tz; if (tz > lh * 0.92f) tz = lh * 0.92f;
+                float bx = snap((float)lastW.rx0 * sx), by = snap((float)lastW.ry0 * sy);
+                if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+                if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+                const float tO = ease_out(((float)(now - g_trdB.openMs) / 1000.0f) / 0.08f);
+                by = snap(by + (1.0f - tO) * 4.0f * S);
+                const float A = g_trdB.vis * tO;
+                if (A > 0.0f) {
+                    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+                    const u32 sh = with_alpha(0xC8000000u, A);
+                    fo->begin(dev);
+                    for (int i = 0; i < n; ++i) {
+                        const unsigned v = lastK.v[ids[i]];
+                        const int rank = (int)(v & 0x1F), lvl = (int)((v >> 5) & 0x3FF); const bool capped = (v & 0x8000) != 0;
+                        char rk[16], lv[16]; if (rank <= 10) sprintf(rk, "%s", RANK_EN[rank]); else sprintf(rk, "Rank %d", rank);
+                        sprintf(lv, "(%d)", lvl);
+                        const float cy = snap(by + vpad + (float)i * lh + lh * 0.5f);
+                        fo->draw_lc(dev, snap(bx + ip), cy, CRAFT_EN[ids[i] - 48], tz, with_alpha(0xFFC9D3E0u, A), sh, k.ow);
+                        fo->draw_lc(dev, snap(bx + bw * 0.44f), cy, rk, tz, with_alpha(capped ? 0xFF6FB4FFu : 0xFFF2F5FAu, A), sh, k.ow);
+                        fo->draw_lc(dev, snap(bx + bw - ip - fo->measure(lv, tz)), cy, lv, tz, with_alpha(0xFFF2F5FAu, A), sh, k.ow);
+                    }
+                }
+            }
+        }
+    }
+    // ---- Merit Points' panel ----
+    {
+        const NativePanel& W = native_levmerit(); const NativeMerits& M = native_merits();
+        static NativeMerits lastM; static NativePanel lastW;
+        const bool on = M.ok && W.open;
+        if (on) { lastM = M; lastW = W; }
+        if (block_ease(g_lmB, on, now, dt) && lastM.ok && lastW.uiW > 0) {
+            const float sx = f.screenW / (float)lastW.uiW, sy = f.screenH / (float)lastW.uiH;
+            const float bw = snap((float)(lastW.rx1 - lastW.rx0) * sx), bh = snap((float)(lastW.ry1 - lastW.ry0) * sy);
+            const float lh = (bh - 2.0f * vpad) / 4.0f;
+            float tz = k.tz; if (tz > lh * 0.92f) tz = lh * 0.92f;
+            float bx = snap((float)lastW.rx0 * sx), by = snap((float)lastW.ry0 * sy);
+            if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+            if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+            const float tO = ease_out(((float)(now - g_lmB.openMs) / 1000.0f) / 0.08f);
+            by = snap(by + (1.0f - tO) * 4.0f * S);
+            const float A = g_lmB.vis * tO;
+            if (A > 0.0f) {
+                draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+                const u32 sh = with_alpha(0xC8000000u, A);
+                char a[24], b[24]; sprintf(a, "%d/10000", lastM.lp); sprintf(b, "%d/%d P", lastM.merits, lastM.maxMerits);
+                const bool full = lastM.maxMerits > 0 && lastM.merits >= lastM.maxMerits;
+                fo->begin(dev);
+                const char* t[4] = { tr("Limit Points", "Limit Points"), a, tr("Merit Points", "Points de m\xC3\xA9rite"), b };
+                for (int i = 0; i < 4; ++i) {
+                    const float cy = snap(by + vpad + (float)i * lh + lh * 0.5f);
+                    const bool num = (i & 1) != 0;
+                    const u32 c = !num ? 0xFF93A6BEu : (i == 3 && full) ? 0xFF6FB4FFu : 0xFFF2F5FAu;
+                    fo->draw_lc(dev, num ? snap(bx + bw - ip - fo->measure(t[i], tz)) : snap(bx + ip), cy, t[i], tz, with_alpha(c, A), sh, k.ow);
+                }
+            }
+        }
+    }
+}
+
+// ======== Status -> CURRENCIES 1 / 2 (`evitem` mode 1 / 2 ; Game UI -> NU_MAIN) ========
+// The client's list (Ghidra 2026-11-18) : 8 rows, the currency's name then its value right-aligned, the cursor row
+// picked, every row always present ; while the server's answer is awaited the client draws an empty frame -- here a
+// "..." row. In the menus' list style (capsules, the gold glass, the hand, the position rail), at the client's place.
+// Status -> Currencies 1 / 2 : 99 / 97 rows the client pages 8 at a time. AioHUD's box is a SEARCHABLE list (the user,
+// 2026-11-18 : "il y en a beaucoup, une boite plus moderne") : typing while the list has the focus filters it (the
+// typed text highlighted in each name), Backspace edits, Esc clears (a second Esc closes the window, the client's).
+// The client keeps its window (parked) and its cursor : arrows / numpad / gamepad still drive it, and the box scrolls
+// to that cursor whenever it is on a shown row. Every row's value is in memory (cur_read : rows + r * 8).
+namespace {
+Block g_curB; unsigned g_curMs = 0;
+char g_curQ[32] = { 0 };                 // the search text (ASCII) ; written by the key thread, read by the draw
+volatile long g_curQn = 0;
+volatile long g_curKeysOn = 0;           // the draw says the list has the focus (the key thread's gate)
+bool g_curAte[256] = { false };          // a key whose press was the search's : its release is too
+bool ci_find(const char* hay, const char* q, int qn, int& at) {   // case-insensitive substring
+    if (qn <= 0) { at = -1; return true; }
+    for (int i = 0; hay[i]; ++i) {
+        int j = 0;
+        while (j < qn && hay[i + j] && tolower((unsigned char)hay[i + j]) == tolower((unsigned char)q[j])) ++j;
+        if (j == qn) { at = i; return true; }
+    }
+    return false;
+}
+}
+bool currencies_key(int dik, unsigned ch, bool pressed, bool mod) {
+    if (!pressed) { if (dik >= 0 && dik < 256 && g_curAte[dik]) { g_curAte[dik] = false; return true; } return false; }
+    if (!g_curKeysOn || mod) return false;
+    // the numpad (the game's cursor keys, NumLock on or off) and the arrows stay the game's
+    if ((dik >= 0x47 && dik <= 0x53) || dik == 0x37 || dik == 0xB5 || dik == 0x9C || dik == 0xC8 || dik == 0xD0 || dik == 0xCB || dik == 0xCD) return false;
+    long n = g_curQn;
+    bool mine = false;
+    if (dik == 0x0E) { if (n > 0) { g_curQ[--n] = 0; mine = true; } }                       // Backspace
+    else if (dik == 0x01) { if (n > 0) { n = 0; g_curQ[0] = 0; mine = true; } }              // Esc : clears first
+    else if (ch && ch < 127 && (isalnum((int)ch) || ch == '\'' || ch == '-' || ch == '.' || ch == '(' || ch == ')' || (ch == ' ' && n > 0))) {
+        if (n < (long)sizeof(g_curQ) - 1) { g_curQ[n++] = (char)ch; g_curQ[n] = 0; }
+        mine = true;
+    }
+    if (!mine) return false;
+    g_curQn = n;
+    if (dik >= 0 && dik < 256) g_curAte[dik] = true;
+    return true;
+}
+void currencies_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    const NativeCurrencies& N = native_currencies();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_curB.vis = 0.0f; g_curB.wasOpen = false; g_curKeysOn = 0; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_curMs ? (float)(now - g_curMs) / 1000.0f : 0.0f; g_curMs = now; if (dt > 0.1f) dt = 0.1f;
+    static NativeCurrencies last;
+    static int lastMode = 0;
+    if (N.open) last = N;
+    if (!N.open || N.mode != lastMode) { g_curQn = 0; g_curQ[0] = 0; }      // a new list starts unfiltered
+    if (N.open) lastMode = N.mode;
+    g_curKeysOn = N.open && N.focused && N.loaded ? 1 : 0;
+    if (!block_ease(g_curB, N.open, now, dt) || last.uiW <= 0) return;
+    const Metrics k = metrics(f);
+    const float S = k.S;
+    Font* fo = f.font; const u32 dev = f.dev;
+    const char* const* T = last.mode == 1 ? CURRENCY1_EN : CURRENCY2_EN;
+    const int TN = last.mode == 1 ? CURRENCY1_N : CURRENCY2_N;
+    char q[32]; int qn = (int)g_curQn; if (qn < 0) qn = 0; if (qn > 31) qn = 31;
+    memcpy(q, g_curQ, (size_t)qn); q[qn] = 0;
+    // the shown rows : every row whose name holds the search
+    int idx[99], at[99], m = 0;
+    if (last.loaded) for (int r = 0; r < last.n && r < 99; ++r) { int p = -1; if (ci_find(r < TN ? T[r] : "?", q, qn, p)) { idx[m] = r; at[m] = p; ++m; } }
+    // the size : the widest name of both lists + its value, so nothing resizes as it pages or filters
+    const float tz = k.tz, vz = k.tz * 0.95f;
+    static float wAll = 0.0f, atS = 0.0f;
+    if (atS != S) { atS = S; wAll = 0.0f; for (int t = 0; t < 2; ++t) for (int i = 0; i < (t ? CURRENCY2_N : CURRENCY1_N); ++i) { const float w = fo->measure(t ? CURRENCY2_EN[i] : CURRENCY1_EN[i], tz); if (w > wAll) wAll = w; } }
+    const int V = 12;                                                         // rows shown at once
+    const float pad = snap(8.0f * S), rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S), fieldH = snap(k.capH * 1.05f);
+    const float bw = snap(pad + 6.0f * S + wAll + 18.0f * S + fo->measure("9,999,999", vz) + 10.0f * S + pad);
+    const float listY = headH + 6.0f * S + fieldH + 6.0f * S;
+    const float bh = snap(pad + listY + (float)V * rowH + pad);
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const float tO = ease_out(((float)(now - g_curB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_curB.vis * tO; if (A <= 0.0f) return;
+    // the scroll : follows the client's cursor when it is on a shown row ; back to the top when the search changes
+    static int scroll = 0, lastQn = -1; static char lastQ[32] = { 0 };
+    if (qn != lastQn || strcmp(q, lastQ)) { scroll = 0; lastQn = qn; strcpy(lastQ, q); }
+    int curPos = -1;
+    for (int i = 0; i < m; ++i) if (idx[i] == last.cursor) { curPos = i; break; }
+    if (curPos >= 0) { if (curPos < scroll) scroll = curPos; if (curPos >= scroll + V) scroll = curPos - V + 1; }
+    if (scroll > m - V) scroll = m - V; if (scroll < 0) scroll = 0;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    const float L = bx + pad, W = bw - 2.0f * pad;
+    // the header : the list's name, how many rows the search keeps ; a hairline under it
+    const float hy = snap(by + pad + headH * 0.5f);
+    rrect(dev, L, snap(by + pad + headH), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    // the search field : a capsule, a magnifier, the text and its caret (or the hint)
+    const float fy = snap(by + pad + headH + 6.0f * S), fr = fieldH * 0.5f, fcy = fy + fr;
+    const bool typing = qn > 0;
+    rrect(dev, L, fy, W, fieldH, fr, with_alpha(0x8A0A0F18u, A), with_alpha(0x8A141C2Au, A));
+    rrect_stroke(dev, L, fy, W, fieldH, fr, with_alpha(typing ? 0xB0FFDA8Au : 0x40C8D6EAu, A), 1.0f);
+    const float mgx = L + fr + 2.0f * S, mgr = 4.2f * S;
+    const u32 mgc = with_alpha(typing ? 0xFFFFDA8Au : 0xFF93A6BEu, A);
+    rrect_stroke(dev, mgx - mgr, fcy - mgr - 1.0f * S, 2.0f * mgr, 2.0f * mgr, mgr, mgc, 1.4f * S);
+    seg_soft(dev, mgx + mgr * 0.7f, fcy + mgr * 0.7f - 1.0f * S, mgx + mgr * 1.6f, fcy + mgr * 1.6f - 1.0f * S, 2.2f * S, mgc);
+    const float tx0 = snap(mgx + mgr + 8.0f * S);
+    if (typing && last.focused && ((now / 530u) & 1u) == 0u) {               // the caret
+        const float cxp = snap(tx0 + fo->measure(q, tz) + 1.0f * S);
+        rrect(dev, cxp, snap(fcy - tz * 0.55f), snap(1.2f * S), snap(tz * 1.1f), 0.0f, with_alpha(0xFFFFDA8Au, A), with_alpha(0xFFFFDA8Au, A));
+    }
+    // the rows : zebra bands, the search's text lit in each name, the client's cursor in the party glass
+    const float ly = snap(by + pad + listY);
+    const int shown = m - scroll < V ? m - scroll : V;
+    for (int i = 0; i < shown; ++i) {
+        const float y = snap(ly + (float)i * rowH);
+        if (((scroll + i) & 1) == 0) rrect(dev, L, y, W, rowH, 3.0f * S, with_alpha(0x18FFFFFFu, A), with_alpha(0x10FFFFFFu, A));
+        if (typing && at[scroll + i] >= 0) {
+            char pre[64]; const char* nm = idx[scroll + i] < TN ? T[idx[scroll + i]] : "?";
+            int pn = at[scroll + i]; if (pn > 63) pn = 63; memcpy(pre, nm, (size_t)pn); pre[pn] = 0;
+            char hit[32]; memcpy(hit, nm + at[scroll + i], (size_t)qn); hit[qn] = 0;
+            const float hx = snap(L + 6.0f * S + fo->measure(pre, tz)), hw = snap(fo->measure(hit, tz));
+            rrect(dev, hx - 1.0f * S, snap(y + 2.0f * S), hw + 2.0f * S, rowH - 4.0f * S, 2.5f * S, with_alpha(0x50FFDA8Au, A), with_alpha(0x38E8B860u, A));
+        }
+    }
+    const int curRow = curPos >= scroll && curPos < scroll + V ? curPos - scroll : -1;
+    if (curRow >= 0) {
+        const float targetY = ly + (float)curRow * rowH;
+        if (g_curB.curY < 0.0f) g_curB.curY = targetY;
+        g_curB.curY += (targetY - g_curB.curY) * (1.0f - expf(-dt * 30.0f));
+        if (fabsf(targetY - g_curB.curY) < 0.3f) g_curB.curY = targetY;
+        const float y = snap(g_curB.curY), r = rowH * 0.5f;
+        rrect_clip_begin(dev, L, y, W, rowH, r);
+        party_selframe(dev, L, y, W, rowH, f.t, A, 0);
+        rrect_clip_end(dev);
+        rrect_stroke(dev, L, y, W, rowH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
+    } else g_curB.curY = -1.0f;
+    if (m > V) {                                                              // where the shown rows sit : a thin rail
+        const float rx = bx + bw - pad * 0.5f - 1.0f * S, th = (float)V * rowH;
+        const float th2 = th * (float)V / (float)m, ty2 = ly + th * (float)scroll / (float)m;
+        rrect(dev, rx, ly, 2.0f * S, th, 1.0f * S, with_alpha(0x30FFFFFFu, A), with_alpha(0x30FFFFFFu, A));
+        rrect(dev, rx, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, A), with_alpha(0xC0FFDA8Au, A));
+    }
+    if (curRow >= 0 && last.focused) {                                        // AioHUD's hand, left of the box
+        const float hand = snap(k.capH * 1.25f), cy = g_curB.curY + rowH * 0.5f;
+        const float hx = bx - hand * 0.35f + party_cursor_bob(f.t, hand);
+        if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+    }
+    // the text, in one pass
+    const u32 sh = with_alpha(0xC8000000u, A);
+    fo->begin(dev);
+    fo->draw_lc(dev, L, hy, last.mode == 1 ? "Currencies" : "Currencies 2", tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    {
+        char cnt[32];
+        if (!last.loaded) strcpy(cnt, "...");
+        else if (typing) sprintf(cnt, "%d / %d", m, last.n); else sprintf(cnt, "%d", last.n);
+        fo->draw_lc(dev, snap(L + W - fo->measure(cnt, tz * 0.85f)), hy, cnt, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
+    }
+    if (typing) fo->draw_lc(dev, tx0, snap(fcy), q, tz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
+    else fo->draw_lc(dev, tx0, snap(fcy), tr("Type to search...", "Tapez pour chercher..."), tz, with_alpha(0x9093A6BEu, A), sh, k.ow);
+    if (!last.loaded) fo->draw_lc(dev, snap(L + (W - fo->measure("...", tz)) * 0.5f), snap(ly + rowH * 0.5f), "...", tz, with_alpha(0xFFC9D3E0u, A), sh, k.ow);
+    else if (m == 0) { const char* no = tr("No match", "Aucun r\xC3\xA9sultat"); fo->draw_lc(dev, snap(L + (W - fo->measure(no, tz)) * 0.5f), snap(ly + rowH * 0.5f), no, tz, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
+    for (int i = 0; i < shown; ++i) {
+        const int r = idx[scroll + i];
+        const float cy = snap(ly + (float)i * rowH + rowH * 0.5f);
+        const bool on = i == curRow;
+        const int v = last.all[r] < 0 ? 0 : last.all[r];
+        char val[16]; thousands((unsigned)v, val);
+        fo->draw_lc(dev, snap(L + 6.0f * S), cy, r < TN ? T[r] : "?", tz, with_alpha(on ? 0xFFFFFFFFu : 0xFFC9D3E0u, A), sh, k.ow);
+        const u32 vc = v == 0 ? 0xFF6E7C8Eu : (on ? 0xFFFFF1CCu : 0xFFE8D9B0u);
+        fo->draw_lc(dev, snap(L + W - 8.0f * S - fo->measure(val, vz)), cy, val, vz, with_alpha(vc, A), sh, k.ow);
+    }
+}
+
+// Status -> Unity -> Unity Info (quest00 mode 1) : the client's five lines, then its chat setting's two rows (Active /
+// Inactive -- the client's entries 1 / 2, driven through it : hover, click, keys). In place of the stat panels, as the
+// client puts it. Data : native_unity_info (docs/notes/unity-info-re-2026-11-18.md).
+namespace {
+Block g_uiB; unsigned g_uiMs = 0;
+// the leaders' names : d_msg cat 0xC #402 + id (ROM/165/77.DAT)
+const char* const LEADER[12] = { "None", "Pieuje", "Ayame", "Invincible Shield", "Apururu", "Maat", "Aldo",
+                                 "Jakoh Wahcondalo", "Naja Salaheem", "Flaviria", "Yoran-Oran", "Sylvie" };
+}
+void unityinfo_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    const NativeUnityInfo& U = native_unity_info();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_uiB.vis = 0.0f; g_uiB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_uiMs ? (float)(now - g_uiMs) / 1000.0f : 0.0f; g_uiMs = now; if (dt > 0.1f) dt = 0.1f;
+    static NativeUnityInfo last;
+    const bool on = U.open && !native_unity_rank().open;                 // Ranking Results covers Ranking Info
+    if (on) last = U;
+    if (!block_ease(g_uiB, on, now, dt) || last.uiW <= 0 || last.rows.n != 2) return;
+    const bool info = last.mode == 1;                                    // 2 : Ranking Info, its title and two rows only
+    const Metrics k = metrics(f);
+    const float S = k.S;
+    Font* fo = f.font; const u32 dev = f.dev;
+    const char* lab[5] = { tr("Current Unity:", "Unity actuelle :"), tr("Ranking Results:", "Classement :"),
+                           tr("Partial Ranking Results:", "Classement partiel :"), tr("Personal Evaluation:", "\xC3\x89valuation personnelle :"),
+                           tr("Partial Personal Evaluation:", "\xC3\x89valuation personnelle partielle :") };
+    const char* title = info ? tr("Unity Information", "Informations Unity") : tr("Ranking Information", "Classements");
+    const char* chatL = tr("Unity chat settings:", "Chat Unity :");
+    char rk[2][8], pt[4][16];
+    for (int i = 0; i < 2; ++i) { if (last.rank[i]) { sprintf(rk[i], "%d", last.rank[i]); sprintf(pt[i], "%dpt", last.pts[i]); } else { strcpy(rk[i], "--"); pt[i][0] = 0; } }
+    sprintf(pt[2], "%dpt", last.personal); sprintf(pt[3], "%dpt", last.partial);
+    const char* name = LEADER[last.unity >= 0 && last.unity <= 11 ? last.unity : 0];
+    // the chat rows : the client's entries, the setting chosen marked
+    RowSpec rows[2] = {}; int cur = 0;
+    for (int i = 0; i < 2; ++i) {
+        const int e = last.rows.entry[i];
+        // the client's mark goes in the icon's slot (Menus -> icons on) ; without icons, a few spaces make its room
+        rows[i].label = !info ? (e == 1 ? tr("Ranking Results", "Classement") : tr("Partial Ranking Results", "Classement partiel"))
+                      : k.icons ? (e == 1 ? tr("Active", "Actif") : tr("Inactive", "Inactif"))
+                                : (e == 1 ? tr("     Active", "     Actif") : tr("     Inactive", "     Inactif")); rows[i].icon = IC_NONE; rows[i].sub = false; rows[i].off = false;
+        if (e == last.rows.cursor) cur = i + 1;
+    }
+    // the size : the labels' column, the values ; the rows' own width ; never under the client's
+    const float tz = k.tz, lh = snap(k.capH * 0.92f), pad = k.pad;
+    float labW = 0.0f; for (int i = 0; i < 5; ++i) { const float w = fo->measure(lab[i], tz); if (w > labW) labW = w; }
+    float valW = fo->measure(name, tz); { const float w = fo->measure("99", tz) + 16.0f * S + fo->measure("999999pt", tz); if (w > valW) valW = w; }
+    float bw = info ? snap(k.gutter + labW + 14.0f * S + valW + k.capPadR + pad) : snap(k.gutter + fo->measure(title, tz) + k.capPadR + pad);
+    { float rw, rh; block_size(f, k, rows, 2, rw, rh); if (rw > bw) bw = rw; }
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    { const float nW = snap((float)(last.rx1 - last.rx0) * sx * 0.85f); if (nW > bw) bw = nW; }
+    const float inTop = info ? snap(pad + lh + 4.0f * S + 5.0f * lh + 4.0f * S + lh)   // title, 5 lines, "Unity chat settings:"
+                             : snap(pad + lh + 4.0f * S);                            // title
+    const float bh = snap(inTop + 2.0f * k.capH + k.gap + 2.0f * k.pad);
+    float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const float tO = ease_out(((float)(now - g_uiB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_uiB.vis * tO; if (A <= 0.0f) return;
+    g_uiB.inTop = inTop;
+    const int row = block_draw(f, k, g_uiB, rows, 2, cur, last.focused, bx, by, bw, bh, A, dt);
+    if (U.open) {                                         // the mouse : hover moves the client's cursor, a click validates
+        g_hit[9][0] = bx / f.screenW; g_hit[9][1] = by / f.screenH; g_hit[9][2] = bw / f.screenW; g_hit[9][3] = bh / f.screenH;
+        const int ent = (row >= 1 && row <= 2) ? last.rows.entry[row - 1] : 0;
+        if (ent && row != g_uiB.hoverRow && ent != U.rows.cursor) native_unity_info_hover(ent);
+        g_uiB.hoverRow = row;
+        if (ent && f.mouse && f.mouse->clicked) native_unity_info_pick(ent);
+    } else g_uiB.hoverRow = 0;
+    // the client's mark, left of each label : the setting chosen gets its yellow bubble with a fluo-green "!", the other
+    // a small grey bullet (the user's reading of the client's sprites, 2026-11-18)
+    for (int i = 0; i < 2 && info; ++i) {
+        const bool chosen = (last.rows.entry[i] == 1) == (last.chat == 1);
+        const float cy = snap(g_uiB.rowY0 + (float)i * g_uiB.rowStep + k.capH * 0.5f);
+        const float cx = k.icons ? snap(g_uiB.capX + k.capPadL + k.icZ * 0.5f)                // over the slot's default bullet
+                                 : snap(g_uiB.capX + k.capPadL + fo->measure("     ", tz) * 0.45f);
+        if (chosen) {
+            const float r = snap(k.capH * 0.34f);
+            tri(dev, cx - r * 0.55f, cy + r * 0.55f, cx - r * 0.05f, cy + r * 0.85f, cx - r * 1.05f, cy + r * 1.15f, with_alpha(0xFFE8C238u, A));   // the tail
+            disc(dev, cx, cy, r, with_alpha(0xFFF2D24Au, A));
+            disc(dev, cx - r * 0.3f, cy - r * 0.35f, r * 0.35f, with_alpha(0x70FFFFFFu, A));                                                       // its sheen
+            const u32 g = with_alpha(0xFF6CFF3Au, A);
+            rrect(dev, snap(cx - 0.9f * S), snap(cy - r * 0.62f), snap(1.8f * S), snap(r * 0.78f), 0.9f * S, g, g);                                // "!"
+            disc(dev, cx, cy + r * 0.45f, 1.1f * S, g);
+        } else {                                                     // a metal-grey ball : a dark rim, the body, a sheen
+            const float r = snap(k.capH * 0.2f);
+            disc(dev, cx, cy, r + 0.8f * S, with_alpha(0xFF4A525Cu, A));
+            disc(dev, cx, cy, r, with_alpha(0xFFA8B2BEu, A));
+            disc(dev, cx - r * 0.3f, cy - r * 0.32f, r * 0.42f, with_alpha(0xC0F4F8FCu, A));
+        }
+    }
+    // the info band : the title and its hairline, the five lines (or the client's wait), the chat setting's caption
+    const float L = snap(bx + k.gutter), Rr = snap(bx + bw - k.capPadR - pad), X = snap(L + labW + 14.0f * S);
+    const float ty = snap(by + pad + lh * 0.5f);
+    rrect(dev, L, snap(by + pad + lh + 1.0f * S), Rr - L, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    const u32 sh = with_alpha(0xC8000000u, A), cl = with_alpha(0xFF93A6BEu, A), cv = with_alpha(0xFFE4EAF2u, A), cg = with_alpha(0xFFE8D9B0u, A);
+    fo->begin(dev);
+    fo->draw_lc(dev, L, ty, title, tz * 0.95f, cg, sh, k.ow);
+    const float y0 = by + pad + lh + 4.0f * S;
+    auto rowC = [&](int i) { return snap(y0 + (float)i * lh + lh * 0.5f); };
+    if (!info) {}
+    else if (last.loading) {
+        fo->draw_lc(dev, L, rowC(1), tr("Preparing data.", "Pr\xC3\xA9paration des donn\xC3\xA9""es."), tz, cv, sh, k.ow);
+        fo->draw_lc(dev, L, rowC(2), tr("Please wait a moment.", "Un instant, s'il vous pla\xC3\xAEt."), tz, cl, sh, k.ow);
+    } else {
+        for (int i = 0; i < 5; ++i) fo->draw_lc(dev, L, rowC(i), lab[i], tz, cl, sh, k.ow);
+        fo->draw_lc(dev, X, rowC(0), name, tz, cg, sh, k.ow);
+        for (int i = 0; i < 2; ++i) {
+            fo->draw_lc(dev, X, rowC(1 + i), rk[i], tz, with_alpha(last.rank[i] == 1 ? 0xFFFFDA8Au : 0xFFE4EAF2u, A), sh, k.ow);
+            if (pt[i][0]) fo->draw_lc(dev, snap(Rr - fo->measure(pt[i], tz)), rowC(1 + i), pt[i], tz, cv, sh, k.ow);
+        }
+        for (int i = 2; i < 4; ++i) fo->draw_lc(dev, snap(Rr - fo->measure(pt[i], tz)), rowC(1 + i), pt[i], tz, cv, sh, k.ow);
+    }
+    if (info) fo->draw_lc(dev, L, snap(y0 + 5.0f * lh + 4.0f * S + lh * 0.5f), chatL, tz, cl, sh, k.ow);
+}
+
+// Ranking Info -> Ranking Results / Partial Ranking Results (quest01) : the 11 Unities, rank / leader / points, the
+// player's own in gold, the client's cursor in the party glass. Where the client puts its list.
+namespace { Block g_urB; unsigned g_urMs = 0; }
+void unityrank_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    const NativeUnityRank& K = native_unity_rank();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_urB.vis = 0.0f; g_urB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_urMs ? (float)(now - g_urMs) / 1000.0f : 0.0f; g_urMs = now; if (dt > 0.1f) dt = 0.1f;
+    static NativeUnityRank last;
+    if (K.open) last = K;
+    if (!block_ease(g_urB, K.open, now, dt) || last.uiW <= 0) return;
+    const Metrics k = metrics(f);
+    const float S = k.S, pad = snap(8.0f * S);
+    Font* fo = f.font; const u32 dev = f.dev;
+    const int mine = native_unity_info().unity;
+    const char* title = last.list ? tr("Partial Ranking Results", "Classement partiel") : tr("Ranking Results", "Classement");
+    const float tz = k.tz, rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S);
+    float nameW = 0.0f; for (int i = 1; i <= 11; ++i) { const float w = fo->measure(LEADER[i], tz); if (w > nameW) nameW = w; }
+    const float rankW = fo->measure("10", tz), ptW = fo->measure("999999pt", tz);
+    float bw = snap(pad + 8.0f * S + rankW + 16.0f * S + nameW + 24.0f * S + ptW + 8.0f * S + pad);
+    const int V = 11;
+    const float listY = headH + 6.0f * S;
+    const float bh = snap(pad + listY + (float)V * rowH + pad);
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    { const float nW = snap((float)(last.rx1 - last.rx0) * sx * 0.85f); if (nW > bw) bw = nW; }
+    float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const float tO = ease_out(((float)(now - g_urB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_urB.vis * tO; if (A <= 0.0f) return;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    const float L = bx + pad, W = bw - 2.0f * pad, ly = snap(by + pad + listY);
+    const float hy = snap(by + pad + headH * 0.5f);
+    rrect(dev, L, snap(by + pad + headH), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    const int n = last.loading ? 0 : last.n;
+    for (int i = 0; i < n; ++i) {
+        const float y = snap(ly + (float)i * rowH);
+        if ((i & 1) == 0) rrect(dev, L, y, W, rowH, 3.0f * S, with_alpha(0x18FFFFFFu, A), with_alpha(0x10FFFFFFu, A));
+        if (last.id[i] == mine) rrect_stroke(dev, L, y, W, rowH, rowH * 0.5f, with_alpha(0x60FFDA8Au, A), 1.0f);
+    }
+    const int cr = last.cursor >= 0 && last.cursor < n ? last.cursor : -1;
+    if (cr >= 0) {
+        const float targetY = ly + (float)cr * rowH;
+        if (g_urB.curY < 0.0f) g_urB.curY = targetY;
+        g_urB.curY += (targetY - g_urB.curY) * (1.0f - expf(-dt * 30.0f));
+        if (fabsf(targetY - g_urB.curY) < 0.3f) g_urB.curY = targetY;
+        const float y = snap(g_urB.curY), r = rowH * 0.5f;
+        rrect_clip_begin(dev, L, y, W, rowH, r);
+        party_selframe(dev, L, y, W, rowH, f.t, A, 0);
+        rrect_clip_end(dev);
+        rrect_stroke(dev, L, y, W, rowH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
+        if (last.focused) {
+            const float hand = snap(k.capH * 1.25f), cy = g_urB.curY + rowH * 0.5f;
+            const float hx = bx - hand * 0.35f + party_cursor_bob(f.t, hand);
+            if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+        }
+    } else g_urB.curY = -1.0f;
+    const u32 sh = with_alpha(0xC8000000u, A);
+    fo->begin(dev);
+    fo->draw_lc(dev, L, hy, title, tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    if (last.loading) {
+        const char* w = tr("Preparing data.", "Pr\xC3\xA9paration des donn\xC3\xA9""es.");
+        fo->draw_lc(dev, snap(L + (W - fo->measure(w, tz)) * 0.5f), snap(ly + rowH * 0.5f), w, tz, with_alpha(0xFFC9D3E0u, A), sh, k.ow);
+    }
+    const float rx = snap(L + 8.0f * S + rankW), nx = snap(rx + 16.0f * S);
+    for (int i = 0; i < n; ++i) {
+        const float cy = snap(ly + (float)i * rowH + rowH * 0.5f);
+        const bool me = last.id[i] == mine, on = i == cr;
+        char rk[8], pt[16]; sprintf(rk, "%d", last.rank[i]); sprintf(pt, "%dpt", last.score[i]);
+        const u32 c = me ? 0xFFFFDA8Au : (on ? 0xFFFFFFFFu : 0xFFC9D3E0u);
+        fo->draw_lc(dev, snap(rx - fo->measure(rk, tz)), cy, rk, tz, with_alpha(last.rank[i] <= 3 ? 0xFFE8D9B0u : 0xFF93A6BEu, A), sh, k.ow);
+        fo->draw_lc(dev, nx, cy, LEADER[last.id[i] >= 1 && last.id[i] <= 11 ? last.id[i] : 0], tz, with_alpha(c, A), sh, k.ow);
+        fo->draw_lc(dev, snap(L + W - 8.0f * S - fo->measure(pt, tz)), cy, pt, tz, with_alpha(me ? 0xFFFFF1CCu : 0xFFE4EAF2u, A), sh, k.ow);
+    }
+}
+
+// Status -> Unity -> Unity Lists : the Unity to list (arealist mode 4 -- all 12 rows at once, the client pages 5),
+// the people found (scresult -- the client's page and cursor), a player's options (scoption, in the submenu's place).
+namespace { Block g_alB, g_srB, g_soB; unsigned g_alMs = 0, g_srMs = 0, g_soMs = 0; }
+void unitylists_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) {
+        g_alB.vis = g_srB.vis = g_soB.vis = 0.0f; g_alB.wasOpen = g_srB.wasOpen = g_soB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    const Metrics k = metrics(f);
+    const float S = k.S;
+    Font* fo = f.font; const u32 dev = f.dev;
+    const int own = native_unity_info().unity ? native_unity_info().unity : native_unity().unity;
+    // ---- the Unity to list ----
+    {
+        float dt = g_alMs ? (float)(now - g_alMs) / 1000.0f : 0.0f; g_alMs = now; if (dt > 0.1f) dt = 0.1f;
+        const NativeAreaList& A0 = native_arealist();
+        static NativeAreaList last;
+        if (A0.open) last = A0;
+        if (block_ease(g_alB, A0.open, now, dt) && last.uiW > 0 && last.n == 12) {
+            RowSpec rows[12] = {}; char ownB[40];
+            for (int r = 0; r < 12; ++r) {
+                rows[r].icon = r ? IC_DUO : IC_STAR; rows[r].sub = false; rows[r].off = false;
+                rows[r].label = r ? LEADER[r] : tr("Your Unity", "Ton Unity");
+                if (r == own && r) rows[r].tint = 0xFFFFDA8Au;
+            }
+            if (own >= 1 && own <= 11) { sprintf(ownB, "%s", LEADER[own]); rows[0].extra = ownB; }
+            float bw, bh; block_size(f, k, rows, 12, bw, bh);
+            const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+            float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+            { float cx, cy; if (place_on_chat(bw, bh, snap(4.0f * S), f.screenW, f.screenH, cx, cy)) { bx = cx; by = cy; } }   // above the chat, as the client
+            if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+            if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+            const float tO = ease_out(((float)(now - g_alB.openMs) / 1000.0f) / 0.08f);
+            by = snap(by + (1.0f - tO) * 4.0f * S);
+            const float A = g_alB.vis * tO;
+            if (A > 0.0f) {
+                const int row = block_draw(f, k, g_alB, rows, 12, last.cursor >= 0 ? last.cursor + 1 : 0, last.focused, bx, by, bw, bh, A, dt);
+                if (A0.open) {
+                    g_hit[9][0] = bx / f.screenW; g_hit[9][1] = by / f.screenH; g_hit[9][2] = bw / f.screenW; g_hit[9][3] = bh / f.screenH;
+                    if (row && row != g_alB.hoverRow && row - 1 != A0.cursor) native_textlist_hover("arealist", row - 1);
+                    g_alB.hoverRow = row;
+                    if (row && f.mouse && f.mouse->clicked) native_textlist_pick("arealist", row - 1);
+                } else g_alB.hoverRow = 0;
+            }
+        }
+    }
+    // ---- the people found ----
+    {
+        float dt = g_srMs ? (float)(now - g_srMs) / 1000.0f : 0.0f; g_srMs = now; if (dt > 0.1f) dt = 0.1f;
+        const NativeSearch& S0 = native_search();
+        static NativeSearch last;
+        if (S0.open) last = S0;
+        if (block_ease(g_srB, S0.open, now, dt) && last.uiW > 0) {
+            const float pad = snap(8.0f * S), tz = k.tz, rowH = snap(k.capH * 0.92f), headH = snap(18.0f * S);
+            const int V = last.vis;
+            const float jobW = fo->measure("MNK99/WAR49", tz * 0.92f), nameW = fo->measure("Wwwwwwwwwwwwwww", tz) * 0.8f;
+            float bw = snap(pad + 6.0f * S + jobW + 14.0f * S + nameW + 14.0f * S + fo->measure("Southern San d'Oria [S]", tz * 0.92f) + 6.0f * S + pad);
+            const float listY = headH + 6.0f * S;
+            const float bh = snap(pad + listY + (float)V * rowH + pad);
+            const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+            float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+            if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+            if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+            const float tO = ease_out(((float)(now - g_srB.openMs) / 1000.0f) / 0.08f);
+            by = snap(by + (1.0f - tO) * 4.0f * S);
+            const float A = g_srB.vis * tO * (last.focused || !native_scoption().open ? 1.0f : 0.62f);
+            if (A > 0.0f) {
+                draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+                const float L = bx + pad, W = bw - 2.0f * pad, ly = snap(by + pad + listY), hy = snap(by + pad + headH * 0.5f);
+                rrect(dev, L, snap(by + pad + headH), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+                const int shown = last.n - last.top < V ? last.n - last.top : V;
+                for (int i = 0; i < shown; ++i) {
+                    const float y = snap(ly + (float)i * rowH);
+                    if (((last.top + i) & 1) == 0) rrect(dev, L, y, W, rowH, 3.0f * S, with_alpha(0x18FFFFFFu, A), with_alpha(0x10FFFFFFu, A));
+                    if (last.row[i].type == 2) rrect(dev, L + 6.0f * S, snap(y + rowH * 0.5f), W - 12.0f * S, 1.0f, 0.0f, with_alpha(0x40C8D6EAu, A), with_alpha(0x40C8D6EAu, A));
+                }
+                const int cr = last.cursor >= last.top && last.cursor < last.top + shown ? last.cursor - last.top : -1;
+                if (cr >= 0) {
+                    const float targetY = ly + (float)cr * rowH;
+                    if (g_srB.curY < 0.0f) g_srB.curY = targetY;
+                    g_srB.curY += (targetY - g_srB.curY) * (1.0f - expf(-dt * 30.0f));
+                    if (fabsf(targetY - g_srB.curY) < 0.3f) g_srB.curY = targetY;
+                    const float y = snap(g_srB.curY), r = rowH * 0.5f;
+                    rrect_clip_begin(dev, L, y, W, rowH, r);
+                    party_selframe(dev, L, y, W, rowH, f.t, A, 0);
+                    rrect_clip_end(dev);
+                    rrect_stroke(dev, L, y, W, rowH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
+                    if (last.focused) {
+                        const float hand = snap(k.capH * 1.25f), cy = g_srB.curY + rowH * 0.5f;
+                        const float hx = bx - hand * 0.35f + party_cursor_bob(f.t, hand);
+                        if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+                    }
+                } else g_srB.curY = -1.0f;
+                if (last.n > V) {                                  // where this page sits : a thin rail
+                    const float rx = bx + bw - pad * 0.5f - 1.0f * S, th = (float)V * rowH;
+                    const float th2 = th * (float)V / (float)last.n, ty2 = ly + th * (float)last.top / (float)last.n;
+                    rrect(dev, rx, ly, 2.0f * S, th, 1.0f * S, with_alpha(0x30FFFFFFu, A), with_alpha(0x30FFFFFFu, A));
+                    rrect(dev, rx, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, A), with_alpha(0xC0FFDA8Au, A));
+                }
+                // the mouse : the hand follows, a click validates (a player : his options ; the header : refine)
+                const MouseState* ms = f.mouse;
+                int mrow = -1;
+                if (S0.open && last.focused && ms && ms->focused && ms->x >= L && ms->x < L + W && ms->y >= ly && ms->y < ly + (float)shown * rowH)
+                    mrow = last.top + (int)((ms->y - ly) / rowH);
+                if (S0.open) {
+                    g_hit[9][0] = bx / f.screenW; g_hit[9][1] = by / f.screenH; g_hit[9][2] = bw / f.screenW; g_hit[9][3] = bh / f.screenH;
+                    if (mrow >= 0 && mrow + 1 != g_srB.hoverRow && mrow != S0.cursor) native_textlist_hover("scresult", mrow);
+                    g_srB.hoverRow = mrow + 1;
+                    if (mrow >= 0 && ms->clicked) native_textlist_pick("scresult", mrow);
+                }
+                const u32 sh = with_alpha(0xC8000000u, A);
+                fo->begin(dev);
+                fo->draw_lc(dev, L, hy, tr("Unity Lists", "Listes Unity"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+                {
+                    char cnt[48];
+                    if (last.counted) sprintf(cnt, tr("%d found", "%d trouv\xC3\xA9(s)"), last.total); else strcpy(cnt, tr("Searching...", "Recherche..."));
+                    fo->draw_lc(dev, snap(L + W - fo->measure(cnt, tz * 0.85f)), hy, cnt, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
+                }
+                if (last.n == 0 && last.empty[0]) fo->draw_lc(dev, snap(L + (W - fo->measure(last.empty, tz)) * 0.5f), snap(ly + rowH * 0.5f), last.empty, tz, with_alpha(0xFFC9D3E0u, A), sh, k.ow);
+                const unsigned myZone = f.game ? f.game->zone : 0;
+                const float jx = snap(L + 6.0f * S), nx = snap(jx + jobW + 14.0f * S);
+                for (int i = 0; i < shown; ++i) {
+                    const NativeSearchRow& r = last.row[i];
+                    const float cy = snap(ly + (float)i * rowH + rowH * 0.5f);
+                    const bool on = i == cr;
+                    if (r.type == 1) {
+                        const char* t = tr("Refine search", "Affiner la recherche");
+                        fo->draw_lc(dev, jx, cy, t, tz * 0.92f, with_alpha(on ? 0xFFFFF1CCu : 0xFF93A6BEu, A), sh, k.ow);
+                        continue;
+                    }
+                    if (r.type != 0) continue;
+                    char job[24];
+                    if (r.hasJob) {
+                        if (r.sjob) sprintf(job, "%s%d/%s%d", job_abbr(r.mjob), r.mlvl, job_abbr(r.sjob), r.slvl);
+                        else sprintf(job, "%s%d", job_abbr(r.mjob), r.mlvl);
+                    } else strcpy(job, "Anon");
+                    fo->draw_lc(dev, jx, cy, job, tz * 0.92f, with_alpha(r.hasJob ? 0xFFC9D3E0u : 0xFF7E8A98u, A), sh, k.ow);
+                    const u32 nc = (r.flags & 8) ? 0xFFFFD27Au : (r.flags & 0x2000) ? 0xFF8FD0FFu : (on ? 0xFFFFFFFFu : 0xFFE4EAF2u);
+                    fo->draw_lc(dev, nx, cy, r.name, tz, with_alpha(nc, A), sh, k.ow);
+                    if (r.zone && r.zone != myZone) {
+                        const char* z = zone_name(r.zone);
+                        if (z && z[0]) fo->draw_lc(dev, snap(L + W - 8.0f * S - fo->measure(z, tz * 0.92f)), cy, z, tz * 0.92f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
+                    }
+                }
+            }
+        }
+    }
+    // ---- a player's options : in the submenu's place (the client's 384,48), our menu style ----
+    {
+        float dt = g_soMs ? (float)(now - g_soMs) / 1000.0f : 0.0f; g_soMs = now; if (dt > 0.1f) dt = 0.1f;
+        const NativeEntryMenu& O = native_scoption();
+        static NativeEntryMenu last;
+        if (O.open) last = O;
+        if (block_ease(g_soB, O.open, now, dt) && last.n > 0 && last.uiW > 0) {
+            RowSpec rows[16] = {}; char nums[16][8]; int cur = 0;
+            for (int i = 0; i < last.n && i < 16; ++i) {
+                const SubRow* r = sub_row("scoption", last.entry[i]);
+                if (r) { rows[i].label = tr(r->en, r->fr); rows[i].icon = r->icon; } else { sprintf(nums[i], "#%d", last.entry[i]); rows[i].label = nums[i]; rows[i].icon = IC_NONE; }
+                rows[i].sub = false; rows[i].off = last.state[i] == 5;
+                if (last.entry[i] == last.cursor) cur = i + 1;
+            }
+            float bw, bh; block_size(f, k, rows, last.n, bw, bh);
+            const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+            float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+            if (g_subXY[0] >= 0.0f) { bx = g_subXY[0]; by = g_subXY[1]; }   // where Unity's menu was (it steps aside meanwhile)
+            if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+            if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+            const float tO = ease_out(((float)(now - g_soB.openMs) / 1000.0f) / 0.07f);
+            by = snap(by + (1.0f - tO) * 3.0f * S);
+            const float A = g_soB.vis * tO;
+            if (A > 0.0f) {
+                const int row = block_draw(f, k, g_soB, rows, last.n, cur, last.focused, bx, by, bw, bh, A, dt);
+                if (O.open) {
+                    g_hit[6][0] = bx / f.screenW; g_hit[6][1] = by / f.screenH; g_hit[6][2] = bw / f.screenW; g_hit[6][3] = bh / f.screenH;   // the submenu's slot : it is hidden meanwhile
+                    const int ent = (row >= 1 && row <= last.n) ? last.entry[row - 1] : 0;
+                    if (ent && row != g_soB.hoverRow && ent != O.cursor) native_scoption_hover(ent);
+                    g_soB.hoverRow = row;
+                    if (ent && f.mouse && f.mouse->clicked) native_scoption_pick(ent);
+                } else g_soB.hoverRow = 0;
+            }
+        }
+    }
+}
+
 // ======== Status -> PROFILE (Game UI -> NU_MAIN), in the menus' theme, where the client puts its own ========
 // The fields the client's panel shows, each from a MEASURED source (native_profile : the 0x061 mirror + the self
 // entity, 2026-11-18). Not yet here (no source proven) : Mentor, Monstrosity's rank and Prestige.
@@ -1506,7 +2169,7 @@ void profile_draw(const Frame& f) {
     const unsigned now = GetTickCount();
     float dt = g_profMs ? (float)(now - g_profMs) / 1000.0f : 0.0f; g_profMs = now; if (dt > 0.1f) dt = 0.1f;
     static NativeProfile last;
-    const bool on = P.open && P.ok;
+    const bool on = P.open && P.ok && !native_currencies().open && !native_unity_info().open && !native_search().open;     // Currencies opens in its place (the client hides it)
     if (on) last = P;
     if (!block_ease(g_profB, on, now, dt) || !last.ok || last.uiW <= 0 || last.uiH <= 0) return;
     const Metrics k = metrics(f);
@@ -1838,7 +2501,7 @@ void mainmenu_draw(const Frame& f) {
             }
         }
     }
-    if (block_ease(g_mainSubB, SM.open && !SO.open, now, dt) && lastS.n) {
+    if (block_ease(g_mainSubB, SM.open && !SO.open && !native_scoption().open, now, dt) && lastS.n) {   // a player's options replace it
         RowSpec srows[16]; char snums[16][12]; int scur = 0;
         for (int i = 0; i < lastS.n && i < 16; ++i) {
             const SubRow* r = sub_row(lastS.name, lastS.entry[i]);
@@ -1856,6 +2519,7 @@ void mainmenu_draw(const Frame& f) {
         const float SA = g_mainSubB.vis * tS * (lastS.focused ? 1.0f : 0.62f);
         if (SA > 0.0f) {
             const int srow = block_draw(f, k, g_mainSubB, srows, lastS.n, scur, lastS.focused, sbx, sby, sw, sh, SA, dt);
+            g_subXY[0] = sbx; g_subXY[1] = sby;
             if (SM.open) {
                 g_hit[6][0] = sbx / f.screenW; g_hit[6][1] = sby / f.screenH; g_hit[6][2] = sw / f.screenW; g_hit[6][3] = sh / f.screenH;
                 const int ent = (srow >= 1 && srow <= lastS.n) ? lastS.entry[srow - 1] : 0;

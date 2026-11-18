@@ -220,6 +220,43 @@ after a logout.
   a skill is hidden only when its value is exactly 0x8000 (a job's unusable skills read 0x8010 and show "16" -- the
   client's own rule, kept). Data : packet 0x062 +0x80 (64 u16 : level & 0x7FFF, bit 15 capped) copied to a static at
   FM_PW_BLOCK + 0x60 (both clients). User-confirmed in game.
+- **Status -> Crafts / Merit Points / Job Points / Play Time** (Ghidra 2026-11-18, docs/notes/status-panels-a-re-2026-11-18.md
+  ; Crafts and the Merit panel user-confirmed in game 2026-11-18) : `trdskill` = the same 0x062 array, ids 48..62, rank v & 0x1F, level (v >> 5) & 0x3FF,
+  bit 15 capped, hidden at 0xFFFF ; one column name / rank / "(level)". Merit Points opens the menu `merit1` and the
+  panel `levmerit` (Limit Points "lp/10000", merits "n/max P" -- FM_PW_MERIT) ; Job Points opens the list `merit2ca` +
+  `levmeri2` (the JP block = FM_PW_MERIT + 0xA). Play Time opens NO window : it types `/playtime` (a chat line).
+- **Status -> Currencies / Currencies 2** (docs/notes/status-panels-b-re-2026-11-18.md ; user-confirmed in game 2026-11-18) :
+  ONE list `evitem` in mode 1 / 2 (mode 0 = an NPC's item pick, left to the client) ; it REQUESTS its data (0x10F /
+  0x115, retried every 30 refreshes) and draws an empty frame until 0x113 / 0x118 fill it (nothing kept in a static).
+  Generic list fields : rows +0x20 (u32 value first, 8 bytes), cursor +0x30, top +0x38, count +0x40, visible +0x48 ;
+  mode +0x88, loaded +0x8A. Row labels : the client's TABLE1 / TABLE2 -> src/model/currencies_gen.h.
+  AioHUD draws ONE searchable list of every row (all 99 / 97 values are in the rows array) in place of the stat panels
+  (the client hides Profile / stats then) ; typing while it has the focus filters it (aio::currencies_key, the plugin's
+  key slot ; the numpad and arrows stay the game's).
+  Alter Ego (`fe_main`, faith data from incoming 0x08E) is mapped in the notes, not redrawn yet.
+- **Status -> Unity** (docs/notes/status-panels-b / unity-info / unity-lists-search-re-2026-11-18.md ; user-confirmed in
+  game 2026-11-18) :
+  - `ut_menu` (Unity Info / Ranking Info / Unity Lists, labels are images) opens OVER statcom2 : a main-menu submenu
+    (MAIN_SUB_W ; entry_read prefers the focused one, else the one listed LAST). `ut_point` (Unity Points "n/99999" :
+    0x061 +0x58 = FM_PW_BLOCK + 0x48, bits 0..4 the Unity, 5..9 rank, 10..26 points) is shown in the PARTY's Cost box.
+  - Unity Info / Ranking Info = `quest00` (Records of Eminence's window) in handler mode +0x68 == 1 / 2 (never reset on
+    close : ours only while ut_menu is open). The Unity's leader = d_msg cat 0xC #402 + id. Rankings : incoming 0x063
+    order 7, two 0x1000-byte lists ; score of a Unity = T[2][id] / T[1][id] (dwords at list + (k*0x20 + id)*4),
+    competition ranking. Personal / Partial Personal Evaluation = 0x061 +0x5C high / low u16. Loading : the stats-refresh
+    flag bit 0 clear or a list's loaded byte 0. Addresses self-healed from three AOBs with cross-checks (unity_res).
+    Chat setting rows = entry children 1 Active / 2 Inactive ; the setting chosen at handler +0x6E (the client sends
+    0x118 itself). Ranking Results / Partial = `quest01` (mode 5 / 6), its 11 rows computed from the same lists.
+  - Unity Lists = `arealist` in mode +0x6C == 4 (12 rows : own Unity, the 11 leaders) then `scresult` (the people
+    found) and `scoption` (a player's options). Both lists are the client's multi-column TEXT LIST (vtable 0x0567B878) :
+    handler +0x08 its window, +0x18 visible, +0x1E top, +0x20 count, +0x38 rows (0x54 B, record at +0x48), +0x3C the
+    empty-list text ; cursor row = window +0x4C - 1 + top ; codes 0x16 / 0x17 scroll one row. scresult records : type
+    at +0, the header (type 1, " [Searching]" -> " [N]") first, players (type 0) with their entry at +4 (name +4, jobs
+    +0x20 / +0x21, levels +0x22 / +0x23, ML +0x24, zone +0x28, flags +0x30 : 0x4000 anonymous). The search runs on the
+    search server (no map packet) : driven only through the client's own validate. The main menu's Search reuses these
+    windows : not redrawn yet (ours only under ut_menu).
+- **Reload with a window parked** : move_open no longer parks an open window that is already parked (nor unparks one
+  already on screen) -- a reload with Status open parked the stat panels by name, then the first apply parked them a
+  second time (the box read 3000 too low, on the chat).
 - **Status's stat panels** `persona` (16,16 ; also the Equipment screen's) and `level` (16,208) : BORN parked like the
   Profile, drawn at the client's own size from the same 0x061 mirror (max HP / MP 0x04 / 0x08, jobs 0x0C, attributes
   0x14 / 0x22, Su 0x52, iLv 0x54, Master Level 0x65, Exemplar 0x68 / 0x6C) + the live HP / MP / TP.

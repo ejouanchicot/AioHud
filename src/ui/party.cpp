@@ -1318,6 +1318,15 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
         else if (menuType_ == 3) { const WSRow* ws = ws_info(menuSpell_); if (ws) { nm = ws->en;             // Weapon Skill : show live TP
             if (f.game) { int tp = f.game->me.tp; sprintf(infobuf, "TP %d", tp); info = infobuf; infoCol = (tp >= 1000) ? 0xFF7CFF8A : 0xFFB0B0B0; } } }  // green when usable (>=1000)
     }
+    // Status -> Unity : its points in THIS box (the user, 2026-11-18 : "utilise la cost box de notre party"), the client's
+    // own ut_point parked (native_ui) -- while it is open and the 0x061 word reads
+    const bool unityOn = (ui_config().nuHide & NU_MAIN) && native_utpoint().open && native_unity().ok;
+    if (unityOn) {
+        nm = "Unity Points";
+        sprintf(infobuf, "%d/%d", native_unity().points, native_unity().maxPoints); info = infobuf;
+        infoCol = native_unity().points >= native_unity().maxPoints ? 0xFF6FB4FFu : 0xFFFFFFFFu;
+        info2 = 0;
+    }
     if (ui_config().editLayout || party_demo_level() > 0) {   // edit AND //aio demo : always show a demo Cost/Next box so its footprint is visible
         nm = "Protect V"; sprintf(infobuf, "Cost 24 MP"); info = infobuf; infoCol = 0xFFFFFFFF;
         sprintf(info2buf, "Next 0:00"); info2 = info2buf; info2Col = 0xFF8FA0B8;

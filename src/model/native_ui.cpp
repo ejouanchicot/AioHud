@@ -19,6 +19,8 @@ using windower::u32;
 using windower::valid_ptr;
 using windower::safe_read;
 
+u32 aob_masked(const char* pat);   // below : a masked, unique AOB in FFXiMain
+
 namespace {
 
 // ---- the client's structures (FFXiMain, proven on the 2026-11-15 client) ----------------------------------------
@@ -69,7 +71,7 @@ bool g_profDataOk = false;   // the Profile's data reads (read_profile_mem) : Ai
 bool g_persDataOk = false;   // the stat panels' data reads (read_persona_mem) : same rule for `persona` / `level`
 bool g_skillsOkRule = false; // the skill array reads : same rule for `btlskill` / `mgcskill` (mirrors g_skillsOk)
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
-const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", 0 };                 // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list
+const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", 0 };      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
 const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row
 const char* const MAIN_YN_W[] = { "sortyn", 0 };                               // Auto-sort's Yes / No (parked by inv-style code, not by name)          // the NPC windows AioHUD redraws (NU_NPC)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
@@ -92,7 +94,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_MAIN)  && g_profDataOk && !strcmp(n, "profile")) { dy = HIDE_DY; return; }
     // Status's stat panels : the same (born parked, only while their data reads)
     if ((hide & NU_MAIN)  && g_persDataOk && (!strcmp(n, "persona") || !strcmp(n, "level"))) { dy = HIDE_DY; return; }
-    if ((hide & NU_MAIN)  && g_skillsOkRule && (!strcmp(n, "btlskill") || !strcmp(n, "mgcskill"))) { dy = HIDE_DY; return; }
+    if ((hide & NU_MAIN)  && g_skillsOkRule && (!strcmp(n, "btlskill") || !strcmp(n, "mgcskill") || !strcmp(n, "trdskill"))) { dy = HIDE_DY; return; }
     // the HUD-like windows never follow the MENUS offset -- they have their own option above
     if (in_list(n, PARTY_W) || in_list(n, ALLY_W) || in_list(n, CHAT_W) || in_list(n, COST_W) || in_list(n, NET_W) || in_list(n, INPUT_W)) return;
     if (ox == 0 && oy == 0 && anc == 0) return;   // frames the client places by CODE (mapframe, cnqframe...)
@@ -156,6 +158,248 @@ NativeProfile g_prof;
 NativePanel g_persona, g_levelW; PersonaMem g_persData;
 NativePanel g_jobW, g_mlW; NativeJobs g_jobs; bool g_jobsOurs = false;   // Status -> Job / Master Levels
 NativePanel g_btlW, g_mgcW; NativeSkills g_skills; bool g_skillsOk = false;   // Status -> Combat / Magic Skills
+NativePanel g_utW; NativeUnity g_unity; bool g_unityOk = false;
+NativeAreaList g_area; NativeSearch g_search; NativeEntryMenu g_scopt;               // Unity Lists : arealist, scresult, scoption
+const char* const SCOPT_W[] = { "scoption", 0 };
+NativeUnityRank g_urank;                                                              // Ranking Info -> its two lists (quest01)
+NativeUnityInfo g_uinfo;                                                              // Status -> Unity -> Unity Info (quest00 mode 1)
+const char* const QUEST_W[] = { "quest00", 0 };                  // Status -> Unity's points box
+NativePanel g_trdW, g_lmW; NativeMerits g_merits; bool g_meritsOk = false;     // Status -> Crafts ; Merit Points' panel
+NativeCurrencies g_cur;                                                          // Status -> Currencies 1 / 2
+// one read of `evitem` in its Currencies modes ; false = not open, not in mode 1 / 2, or unreadable
+bool cur_read(u32 mgr, u32 focus, NativeCurrencies& C) {
+    memset(&C, 0, sizeof(C));
+    u32 node = 0; if (!mgr || !safe_read(mgr + MGR_OPEN_LIST, &node)) return false;
+    u32 obj = 0;
+    for (int g = 0; valid_ptr(node) && g < 400 && !obj; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "evitem") && rd8(o + OBJ_CLOSING, cl) && !cl) obj = o;
+        node = next;
+    }
+    if (!obj) return false;
+    u32 hd = 0, rows = 0; unsigned char mode = 0, loaded = 0; int n = 0, top = 0, cur = 0, vis = 0;
+    if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !rd8(hd + 0x88, mode) || (mode != 1 && mode != 2) || !rd8(hd + 0x8A, loaded)
+        || !safe_read(hd + 0x40, (u32*)&n) || !safe_read(hd + 0x38, (u32*)&top) || !safe_read(hd + 0x30, (u32*)&cur) || !safe_read(hd + 0x48, (u32*)&vis)
+        || !safe_read(hd + 0x20, &rows)) return false;
+    const int cap = mode == 1 ? 99 : 97;
+    if (n < 0 || n > cap || vis < 1 || vis > 8 || top < 0 || (n > 0 && (!valid_ptr(rows) || top >= n))) return false;
+    C.mode = mode; C.loaded = loaded != 0 && n > 0; C.n = n; C.top = top; C.cursor = cur; C.vis = vis;
+    for (int i = 0; i < vis && top + i < n; ++i) { u32 v = 0; if (!safe_read(rows + (u32)(top + i) * 8, &v)) return false; C.value[i] = (int)v; }
+    for (int r = 0; r < n; ++r) { u32 v = 0; if (!safe_read(rows + (u32)r * 8, &v)) return false; C.all[r] = (int)v; }
+    if (!rd16(obj + OBJ_RECT, C.rx0) || !rd16(obj + OBJ_RECT + 2, C.ry0) || !rd16(obj + OBJ_RECT + 4, C.rx1) || !rd16(obj + OBJ_RECT + 6, C.ry1)) return false;
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return false;
+    C.uiW = (short)(wh & 0xFFFF); C.uiH = (short)(wh >> 16);
+    if (C.uiW < 320 || C.uiH < 240 || C.uiW > 8000 || C.uiH > 8000) return false;
+    if (C.ry0 >= C.uiH) { C.ry0 = (short)(C.ry0 - HIDE_DY); C.ry1 = (short)(C.ry1 - HIDE_DY); }
+    C.focused = focus == obj;
+    C.open = true;
+    return true;
+}
+int entry_read(const char* const* W, NativeEntryMenu& m, u32* objOut);   // below
+// Unity Info's addresses, from the client's own code (docs/notes/unity-info-re-2026-11-18.md section 7), cross-checked :
+// R1 the 0x116 re-request (have-data[2] at +0x02 == +0x1E, loaded[2] at +0x25 == have + 2), R3 the mode-1 draw (list 0
+// at +0x06 == have + 4, list 1 at +0x16 == list 0 + 0x1000), P the evaluations' getter (the stats-refresh flags at +0x02,
+// 0x061 + 0x5C at +0x0E == FM_PW_BLOCK + 0x4C). Retried every 5 s until it holds, logged both ways.
+struct UnityRes { u32 loaded, list0, list1, gate, eval; };
+UnityRes g_ur; bool g_urOk = false; int g_urTries = 0; DWORD g_urNext = 0;
+bool unity_res() {
+    if (g_urOk) return true;
+    const DWORD now = GetTickCount();
+    if (g_urTries && (int)(now - g_urNext) < 0) return false;
+    ++g_urTries; g_urNext = now + 5000;
+    const u32 r1 = aob_masked("8A 8E ?? ?? ?? ?? 84 C9 74 ?? 84 C0 0F 95 C0 50 E8 ?? ?? ?? ?? 83 C4 04 84 C0 74 ?? C6 86 ?? ?? ?? ?? 00 C6 86 ?? ?? ?? ?? 00 B0 01");
+    const u32 r3 = aob_masked("68 ?? ?? ?? ?? 68 ?? ?? ?? ?? 53 E8 ?? ?? ?? ?? 68 ?? ?? ?? ?? 68 ?? ?? ?? ?? 53 A2 ?? ?? ?? ?? E8 ?? ?? ?? ?? A2 ?? ?? ?? ?? 83 C4 18 C6 46 6C 00");
+    const u32 p = aob_masked("8A 0D ?? ?? ?? ?? 33 C0 F6 C1 01 74 05 A1 ?? ?? ?? ?? C3 90 90 90 90 90 90 90 90 90 90 90 90 90 E8 DB FF FF FF 25 FF FF 00 00 C3 90 90 90 90 90 E8 CB FF FF FF C1 E8 10 C3");
+    u32 h1 = 0, h2 = 0, ld = 0, l0 = 0, l1 = 0, gate = 0, ev = 0;
+    const u32 blk = fm_addr(FM_PW_BLOCK);
+    if (r1 && r3 && p && blk && safe_read(r1 + 0x02, &h1) && safe_read(r1 + 0x1E, &h2) && safe_read(r1 + 0x25, &ld)
+        && safe_read(r3 + 0x06, &l0) && safe_read(r3 + 0x16, &l1) && safe_read(p + 0x02, &gate) && safe_read(p + 0x0E, &ev)
+        && h1 == h2 && ld == h1 + 2 && l0 == h1 + 4 && l1 == l0 + 0x1000 && ev == blk + 0x4C && valid_ptr(l0) && valid_ptr(gate)) {
+        g_ur.loaded = ld; g_ur.list0 = l0; g_ur.list1 = l1; g_ur.gate = gate; g_ur.eval = ev; g_urOk = true;
+        windower::debug::log("NATIVEUI unity info resolved (try %d) : loaded FFXiMain+%X, lists +%X / +%X, gate +%X, evaluations +%X", g_urTries,
+                             ld - ffximain_base(), l0 - ffximain_base(), l1 - ffximain_base(), gate - ffximain_base(), ev - ffximain_base());
+    } else if (g_urTries == 1 || g_urTries % 12 == 0)
+        windower::debug::log("NATIVEUI unity info NOT resolved (try %d : R1 %d R3 %d P %d block %d)", g_urTries, !!r1, !!r3, !!p, !!blk);
+    return g_urOk;
+}
+// a list's score of one Unity : T[2][id] / T[1][id] ; false on a bad read
+bool unity_score(u32 list, int id, int& score) {
+    u32 t1 = 0, t2 = 0;
+    if (!safe_read(list + (u32)(0x20 + id) * 4, &t1) || !safe_read(list + (u32)(0x40 + id) * 4, &t2)) return false;
+    score = t1 ? (int)(t2 / t1) : 0;
+    return true;
+}
+bool uinfo_read(u32 mgr, u32 focus, NativeUnityInfo& U) {
+    memset(&U, 0, sizeof(U));
+    if (!unity_res()) return false;
+    u32 node = 0; if (!mgr || !safe_read(mgr + MGR_OPEN_LIST, &node)) return false;
+    u32 obj = 0; bool utMenu = false;
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && rd8(o + OBJ_CLOSING, cl) && !cl) {
+            if (!strcmp(nm, "quest00")) obj = o;
+            if (!strcmp(nm, "ut_menu")) utMenu = true;
+        }
+        node = next;
+    }
+    if (!obj || !utMenu) return false;                                  // quest00 is Records of Eminence's too
+    u32 hd = 0; unsigned char mode = 0, chat = 0;
+    if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !rd8(hd + 0x68, mode) || (mode != 1 && mode != 2) || !rd8(hd + 0x6E, chat)) return false;
+    U.mode = mode;
+    if (!rd16(obj + OBJ_RECT, U.rx0) || !rd16(obj + OBJ_RECT + 2, U.ry0) || !rd16(obj + OBJ_RECT + 4, U.rx1) || !rd16(obj + OBJ_RECT + 6, U.ry1)) return false;
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return false;
+    U.uiW = (short)(wh & 0xFFFF); U.uiH = (short)(wh >> 16);
+    if (U.uiW < 320 || U.uiH < 240 || U.uiW > 8000 || U.uiH > 8000) return false;
+    if (U.ry0 >= U.uiH) { U.ry0 = (short)(U.ry0 - HIDE_DY); U.ry1 = (short)(U.ry1 - HIDE_DY); }
+    // the chat setting's rows (entries 1 / 2 only : 3 / 4 are hidden, 5 is not the setting's)
+    NativeEntryMenu m; if (entry_read(QUEST_W, m, 0) != 1) return false;
+    for (int i = 0; i < m.n; ++i) if (m.entry[i] == 1 || m.entry[i] == 2) {
+        const int k = U.rows.n++; U.rows.entry[k] = m.entry[i]; U.rows.state[k] = m.state[i];
+    }
+    if (U.rows.n != 2) return false;
+    U.rows.cursor = m.cursor; U.rows.open = true;
+    U.chat = chat ? 1 : 0;
+    // the data
+    unsigned char gate = 0, ld0 = 0, ld1 = 0; u32 w = 0, ev = 0;
+    const u32 blk = fm_addr(FM_PW_BLOCK);
+    if (!blk || !rd8(g_ur.gate, gate) || !rd8(g_ur.loaded, ld0) || !rd8(g_ur.loaded + 1, ld1) || !safe_read(blk + 0x48, &w) || !safe_read(g_ur.eval, &ev)) return false;
+    U.unity = (int)(w & 0x1F); if (U.unity > 11) U.unity = 0;
+    U.loading = !(gate & 1) || !ld0 || !ld1;
+    U.personal = (int)(ev >> 16); U.partial = (int)(ev & 0xFFFF);
+    for (int k = 0; k < 2 && !U.loading; ++k) {
+        const u32 list = k ? g_ur.list1 : g_ur.list0;
+        int sc[12] = { 0 }; bool any = false;
+        for (int id = 1; id <= 11; ++id) { if (!unity_score(list, id, sc[id])) return false; if (sc[id] > 0) any = true; }
+        if (!any || !U.unity) continue;                                 // rank 0 : "--"
+        int r = 1; for (int id = 1; id <= 11; ++id) if (sc[id] > sc[U.unity]) ++r;
+        U.rank[k] = r; U.pts[k] = sc[U.unity] > 999999 ? 999999 : sc[U.unity];
+    }
+    U.focused = focus == obj;
+    U.open = true;
+    return true;
+}
+// Ranking Info's list : quest01 open while quest00 (Ranking Info, mode 2) and ut_menu are. Which list : quest01's mode
+// (5 / 6) when it reads so, else quest00's cursor (its entry 1 / 2 opened it).
+bool urank_read(u32 mgr, u32 focus, const NativeUnityInfo& Q, NativeUnityRank& K) {
+    memset(&K, 0, sizeof(K)); K.cursor = -1;
+    if (!Q.open || Q.mode != 2 || !unity_res()) return false;
+    u32 node = 0; if (!mgr || !safe_read(mgr + MGR_OPEN_LIST, &node)) return false;
+    u32 obj = 0;
+    for (int g = 0; valid_ptr(node) && g < 400 && !obj; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "quest01") && rd8(o + OBJ_CLOSING, cl) && !cl) obj = o;
+        node = next;
+    }
+    if (!obj) return false;
+    if (!rd16(obj + OBJ_RECT, K.rx0) || !rd16(obj + OBJ_RECT + 2, K.ry0) || !rd16(obj + OBJ_RECT + 4, K.rx1) || !rd16(obj + OBJ_RECT + 6, K.ry1)) return false;
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return false;
+    K.uiW = (short)(wh & 0xFFFF); K.uiH = (short)(wh >> 16);
+    if (K.uiW < 320 || K.uiH < 240 || K.uiW > 8000 || K.uiH > 8000) return false;
+    if (K.ry0 >= K.uiH) { K.ry0 = (short)(K.ry0 - HIDE_DY); K.ry1 = (short)(K.ry1 - HIDE_DY); }
+    u32 hd = 0; unsigned char mode = 0; int cur = -1, cnt = -1;
+    const bool hOk = safe_read(obj + OBJ_HANDLER, &hd) && valid_ptr(hd) && rd8(hd + 0x68, mode)
+                  && safe_read(hd + 0x30, (u32*)&cur) && safe_read(hd + 0x40, (u32*)&cnt);
+    K.list = (hOk && (mode == 5 || mode == 6)) ? mode - 5 : (Q.rows.cursor == 2 ? 1 : 0);
+    if (hOk && cnt >= 1 && cnt <= 11 && cur >= 0 && cur < cnt) K.cursor = cur;
+    {   static int said = 0;                                // what the list class holds, measured (bounded)
+        if (said < 3) { ++said; windower::debug::log("NATIVEUI unity ranking : quest01 handler %s (mode %d, cursor %d, count %d, quest00 cursor %d) -> list %d",
+                                                     hOk ? "read" : "UNREADABLE", (int)mode, cur, cnt, Q.rows.cursor, K.list); } }
+    K.loading = Q.loading;
+    if (!K.loading) {
+        const u32 list = K.list ? g_ur.list1 : g_ur.list0;
+        int sc[12] = { 0 };
+        for (int id = 1; id <= 11; ++id) if (!unity_score(list, id, sc[id])) return false;
+        int ord[11]; for (int i = 0; i < 11; ++i) ord[i] = i + 1;
+        for (int i = 1; i < 11; ++i) {                      // by score, high first ; then by id
+            const int v = ord[i]; int j = i;
+            while (j > 0 && (sc[ord[j - 1]] < sc[v] || (sc[ord[j - 1]] == sc[v] && ord[j - 1] > v))) { ord[j] = ord[j - 1]; --j; }
+            ord[j] = v;
+        }
+        for (int i = 0; i < 11; ++i) {
+            K.id[i] = ord[i]; K.score[i] = sc[ord[i]] > 999999 ? 999999 : sc[ord[i]];
+            K.rank[i] = (i > 0 && sc[ord[i]] == sc[ord[i - 1]]) ? K.rank[i - 1] : i + 1;   // ties share a rank
+        }
+        K.n = 11;
+    }
+    K.focused = focus == obj;
+    K.open = true;
+    return true;
+}
+// one guarded block copy
+bool rdblk(u32 a, void* out, unsigned n) { __try { memcpy(out, (const void*)a, n); return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; } }
+// a TEXT LIST window by name : its window object and handler (handler +0x08 == the window : the class check), its page
+struct TextList { u32 obj, h; int vis, top, count, cursor; short rx0, ry0, rx1, ry1; int uiW, uiH; };
+bool tl_find(u32 mgr, const char* want, TextList& T) {
+    memset(&T, 0, sizeof(T)); T.cursor = -1;
+    u32 node = 0; if (!mgr || !safe_read(mgr + MGR_OPEN_LIST, &node)) return false;
+    for (int g = 0; valid_ptr(node) && g < 400 && !T.obj; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, want) && rd8(o + OBJ_CLOSING, cl) && !cl) T.obj = o;
+        node = next;
+    }
+    if (!T.obj) return false;
+    u32 back = 0; short vis = 0, top = 0, cnt = 0, ent = 0;
+    if (!safe_read(T.obj + OBJ_HANDLER, &T.h) || !valid_ptr(T.h) || !safe_read(T.h + 0x08, &back) || back != T.obj
+        || !rd16(T.h + 0x18, vis) || !rd16(T.h + 0x1E, top) || !rd16(T.h + 0x20, cnt) || !rd16(T.obj + 0x4C, ent)) return false;
+    if (vis < 1 || vis > 16 || cnt < 0 || cnt > 700 || top < 0 || (cnt > 0 && top >= cnt)) return false;
+    T.vis = vis; T.top = top; T.count = cnt;
+    if (ent >= 1 && ent <= vis && top + ent - 1 < cnt) T.cursor = top + ent - 1;
+    if (!rd16(T.obj + OBJ_RECT, T.rx0) || !rd16(T.obj + OBJ_RECT + 2, T.ry0) || !rd16(T.obj + OBJ_RECT + 4, T.rx1) || !rd16(T.obj + OBJ_RECT + 6, T.ry1)) return false;
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return false;
+    T.uiW = (short)(wh & 0xFFFF); T.uiH = (short)(wh >> 16);
+    if (T.uiW < 320 || T.uiH < 240 || T.uiW > 8000 || T.uiH > 8000) return false;
+    if (T.ry0 >= T.uiH) { T.ry0 = (short)(T.ry0 - HIDE_DY); T.ry1 = (short)(T.ry1 - HIDE_DY); }
+    return true;
+}
+bool area_read(u32 mgr, u32 focus, NativeAreaList& A) {
+    memset(&A, 0, sizeof(A));
+    TextList T; if (!tl_find(mgr, "arealist", T)) return false;
+    unsigned char mode = 0; if (!rd8(T.h + 0x6C, mode) || mode != 4 || T.count != 12) return false;   // the Unity rows only
+    A.mode = mode; A.n = T.count; A.top = T.top; A.vis = T.vis; A.cursor = T.cursor;
+    A.rx0 = T.rx0; A.ry0 = T.ry0; A.rx1 = T.rx1; A.ry1 = T.ry1; A.uiW = T.uiW; A.uiH = T.uiH;
+    A.focused = focus == T.obj; A.open = true;
+    return true;
+}
+bool search_read(u32 mgr, u32 focus, NativeSearch& S) {
+    memset(&S, 0, sizeof(S)); S.cursor = -1;
+    TextList T; if (!tl_find(mgr, "scresult", T)) return false;
+    S.n = T.count; S.top = T.top; S.vis = T.vis > 16 ? 16 : T.vis; S.cursor = T.cursor;
+    S.rx0 = T.rx0; S.ry0 = T.ry0; S.rx1 = T.rx1; S.ry1 = T.ry1; S.uiW = T.uiW; S.uiH = T.uiH;
+    u32 rows = 0; if (!safe_read(T.h + 0x38, &rows)) return false;
+    if (S.n > 0 && !valid_ptr(rows)) return false;
+    if (S.n == 0) {                                                   // the client's own words for an empty list
+        u32 tp = 0;
+        char t[64];
+        if (safe_read(T.h + 0x3C, &tp) && valid_ptr(tp) && rdblk(tp, t, sizeof(t))) {   // printable ASCII only, up to the NUL
+            int k = 0; for (; k < 63 && t[k]; ++k) S.empty[k] = ((unsigned char)t[k] >= 0x20 && (unsigned char)t[k] < 0x7F) ? t[k] : ' ';
+            S.empty[k] = 0;
+        }
+    }
+    for (int i = 0; i < S.vis && S.top + i < S.n; ++i) {
+        u32 rec = 0; if (!safe_read(rows + (u32)(S.top + i) * 0x54 + 0x48, &rec) || !valid_ptr(rec)) return false;
+        unsigned char b[0x4C]; if (!rdblk(rec, b, sizeof(b))) return false;
+        NativeSearchRow& r = S.row[i];
+        r.type = b[0];
+        if (r.type == 1) {                                            // the header : " [Searching]" or " [N]"
+            char t[24]; int k = 0; for (; k < 23 && b[4 + k]; ++k) t[k] = (char)b[4 + k]; t[k] = 0;
+            const char* o = strchr(t, '[');
+            if (o && o[1] >= '0' && o[1] <= '9') { S.counted = true; S.total = atoi(o + 1); }
+        } else if (r.type == 0) {
+            const unsigned char* e = b + 4;
+            int k = 0; for (; k < 15 && e[4 + k]; ++k) r.name[k] = ((e[4 + k] >= 0x20 && e[4 + k] < 0x7F) ? (char)e[4 + k] : '?'); r.name[k] = 0;
+            u32 mask = 0; memcpy(&mask, e, 4); memcpy(&r.flags, e + 0x30, 4);
+            r.mjob = e[0x20]; r.sjob = e[0x21]; r.mlvl = e[0x22]; r.slvl = e[0x23]; r.ml = e[0x24]; r.mlShown = (e[0x25] & 1) != 0;
+            unsigned short z = 0; memcpy(&z, e + 0x28, 2); r.zone = z;
+            r.hasJob = (mask & 0x40) && !(r.flags & 0x4000);
+        }
+    }
+    S.focused = focus == T.obj; S.open = true;
+    return true;
+}
 // the skill array : FM_PW_BLOCK + 0x60 (the 0x062 handler's copy) ; plausible = every level <= 1000
 bool skills_read(NativeSkills& K) {
     memset(&K, 0, sizeof(K));
@@ -449,6 +693,7 @@ void refresh_handler(u32 obj, const char* name) {
 struct Delta { u32 def; int dx, dy; };
 void move_open(u32 mgr, const Delta* D, int nD) {
     if (!nD || !g_setter) return;
+    u32 wh = 0; const int uiH = safe_read(mgr + 0x80, &wh) ? (short)(wh >> 16) : 0;
     u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
     for (int g = 0; valid_ptr(node) && g < 400; ++g) {
         u32 next = 0, obj = 0, def = 0; safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &obj);
@@ -457,6 +702,12 @@ void move_open(u32 mgr, const Delta* D, int nD) {
             && rd16(obj + OBJ_RECT, r[0]) && rd16(obj + OBJ_RECT + 2, r[1]) && rd16(obj + OBJ_RECT + 4, r[2]) && rd16(obj + OBJ_RECT + 6, r[3])) {
             const int w = r[2] - r[0], h = r[3] - r[1];
             for (int i = 0; i < nD; ++i) if (D[i].def == def) {
+                // a PARK onto a window already parked, or an unpark of one already on screen, is a double move : skipped.
+                // (2026-11-18 : a reload with Status open -- the stat panels were parked by name before this first apply,
+                // which parked them again ; the box read 3000 too low and sat on the chat)
+                const bool parked = uiH >= 240 && r[1] >= uiH;
+                const bool twice = (D[i].dy >= HIDE_DY / 2 && parked) || (D[i].dy <= -HIDE_DY / 2 && !parked && uiH >= 240);
+                if (twice) { static int said = 0; if (said < 20) { ++said; windower::debug::log("NATIVEUI '%s' at y %d : its move of %d not applied (already there)", nm, r[1], D[i].dy); } break; }
                 if (w > 0 && h > 0 && w < 4000 && h < 4000) {
                     __try { ((SetRectFn)g_setter)(obj, r[0] + D[i].dx, r[1] + D[i].dy, w, h, 1, 0, 0); }
                     __except (EXCEPTION_EXECUTE_HANDLER) { windower::debug::log("NATIVEUI setter faulted on '%s'", nm); }
@@ -644,14 +895,18 @@ int entry_read(const char* const* W, NativeEntryMenu& m, u32* objOut) {
     const u32 mgr = manager(); if (!mgr) return -1;
     u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
     u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
-    u32 obj = 0; char name[9] = "";
+    u32 obj = 0; char name[9] = ""; int objAt = -1;
+    auto at_of = [&](const char* n) { for (int i = 0; W[i]; ++i) if (!strcmp(W[i], n)) return i; return -1; };
     for (int g = 0; valid_ptr(node) && g < 400; ++g) {
         u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0;
         safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
         char nm[9];
         if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && in_list(nm, W)
             && rd8(o + OBJ_CLOSING, cl) && !cl) {
-            if (!obj || o == focus) { obj = o; memcpy(name, nm, 9); }
+            // the focused one ; else the one listed LAST (a menu opened over another : Unity's over Status's, whose child
+            // -- ut_point, quest00 -- then has the focus)
+            const int a = at_of(nm);
+            if (!obj || o == focus || (obj != focus && a > objAt)) { obj = o; memcpy(name, nm, 9); objAt = a; }
         }
         node = next;
     }
@@ -696,7 +951,7 @@ int main_read(NativeEntryMenu& m, u32* objOut = 0) { return entry_read(MAIN_W, m
 // The MAIN menu : the same fallback as the action menu -- 3 unreadable frames while open, the client's own comes back ;
 // 5 s of good reads, AioHUD's again. Logged both ways.
 void main_poll(bool on) {
-    if (!on) { g_skillsOk = false; g_skillsOkRule = false; g_btlW.open = g_mgcW.open = false; g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
+    if (!on) { g_area.open = false; g_search.open = false; g_scopt.open = false; g_urank.open = false; g_uinfo.open = false; g_utW.open = false; g_unityOk = false; g_cur.open = false; g_meritsOk = false; g_trdW.open = g_lmW.open = false; g_skillsOk = false; g_skillsOkRule = false; g_btlW.open = g_mgcW.open = false; g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
     NativeEntryMenu m; int r = main_read(m);
     NativeEntryMenu sm; const int rs = entry_read(MAIN_SUB_W, sm, 0);
     g_mainSub = sm; if (rs != 1) g_mainSub.open = false;
@@ -735,9 +990,53 @@ void main_poll(bool on) {
             // Job / Master Levels : ours only while STATUS's list is up (the Mog House's job change reuses joblevel)
             panel_read(mgr, "joblevel", g_jobW); panel_read(mgr, "masterle", g_mlW);
             panel_read(mgr, "btlskill", g_btlW); panel_read(mgr, "mgcskill", g_mgcW);
+            panel_read(mgr, "trdskill", g_trdW); panel_read(mgr, "levmerit", g_lmW);
+            {   // Currencies 1 / 2 (evitem in its mode 1 / 2)
+                u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+                cur_read(mgr, focus, g_cur);
+                static int saidC = 0;
+                if (g_cur.open && g_cur.loaded && saidC < 3) { ++saidC; windower::debug::log("NATIVEUI currencies %d : read -- AioHUD draws it (%d rows, top %d, cursor %d, first %d)", g_cur.mode, g_cur.n, g_cur.top, g_cur.cursor, g_cur.value[0]); }
+            }
+            {   // Unity Info (quest00 mode 1, under ut_menu)
+                u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+                uinfo_read(mgr, focus, g_uinfo);
+                urank_read(mgr, focus, g_uinfo, g_urank);
+                // Unity Lists : under ut_menu only (the main menu's Search reuses these windows)
+                const bool utUp = g_mainSub.open && !strcmp(g_mainSub.name, "ut_menu");
+                if (!utUp || !area_read(mgr, focus, g_area)) g_area.open = false;
+                if (!utUp || !search_read(mgr, focus, g_search)) g_search.open = false;
+                { NativeEntryMenu so; if (utUp && entry_read(SCOPT_W, so, 0) == 1) g_scopt = so; else g_scopt.open = false; }
+                static int saidA = 0, saidS = 0;
+                if (g_area.open && saidA < 3) { ++saidA; windower::debug::log("NATIVEUI unity lists : arealist read (mode %d, %d rows, top %d, visible %d, cursor %d)", g_area.mode, g_area.n, g_area.top, g_area.vis, g_area.cursor); }
+                if (g_search.open && saidS < 6) { ++saidS; windower::debug::log("NATIVEUI unity lists : scresult read (%d rows, top %d, cursor %d, %s %d, first '%s' job %d/%d lv %d zone %d flags %08X)",
+                    g_search.n, g_search.top, g_search.cursor, g_search.counted ? "total" : "searching", g_search.total, g_search.row[1].name, g_search.row[1].mjob, g_search.row[1].sjob, g_search.row[1].mlvl, g_search.row[1].zone, g_search.row[1].flags); }
+                static int saidI = 0;
+                if (g_uinfo.open && saidI < 3) { ++saidI; windower::debug::log("NATIVEUI unity info : read -- AioHUD draws it (%s, unity %d, ranks %d / %d, pts %d / %d, personal %d / %d, chat %d, cursor %d)",
+                    g_uinfo.loading ? "loading" : "loaded", g_uinfo.unity, g_uinfo.rank[0], g_uinfo.rank[1], g_uinfo.pts[0], g_uinfo.pts[1], g_uinfo.personal, g_uinfo.partial, g_uinfo.chat, g_uinfo.rows.cursor); }
+            }
+            {   // Unity's points box : the 0x061 mirror's Unity word (FM_PW_BLOCK + 0x48)
+                panel_read(mgr, "ut_point", g_utW);
+                NativeUnity U; memset(&U, 0, sizeof(U));
+                const u32 blk = fm_addr(FM_PW_BLOCK); u32 v = 0;
+                if (blk && safe_read(blk + 0x48, &v)) {
+                    U.unity = (int)(v & 0x1F); U.rank = (int)((v >> 5) & 0x1F); U.points = (int)((v >> 10) & 0x1FFFF); U.maxPoints = 99999;
+                    U.ok = U.unity >= 1 && U.unity <= 11 && U.points <= 99999;     // in a Unity, a plausible count
+                }
+                g_unity = U; g_unityOk = U.ok;
+                static int saidU = 0;
+                if (g_utW.open && saidU < 3) { ++saidU; windower::debug::log("NATIVEUI unity points : %s (word %08X : unity %d rank %d points %d)", U.ok ? "read -- AioHUD draws it" : "data unreadable -- the client's own stays", v, U.unity, U.rank, U.points); }
+            }
+            {   // Merit Points' panel : AioHUD's own PointWatch read of the merit mirror (FM_PW_MERIT)
+                PwMem pw; read_pointwatch(pw);
+                NativeMerits M; memset(&M, 0, sizeof(M));
+                if (pw.merOk) { M.ok = true; M.lp = (int)pw.lpCur; M.merits = pw.merits; M.maxMerits = pw.maxMerits; }
+                g_merits = M; g_meritsOk = M.ok;
+                static int saidM = 0;
+                if (g_lmW.open && saidM < 3) { ++saidM; windower::debug::log("NATIVEUI merit panel : %s (lp %d merits %d/%d)", M.ok ? "read -- AioHUD draws it" : "data unreadable -- the client's own stays", M.lp, M.merits, M.maxMerits); }
+            }
             { NativeSkills K; g_skillsOk = skills_read(K); g_skills = K; g_skillsOkRule = g_skillsOk; }
             static int saidK = 0;
-            if ((g_btlW.open || g_mgcW.open) && saidK < 3) { ++saidK; windower::debug::log("NATIVEUI skills panel : %s (sword %04X evasion %04X divine %04X)", g_skillsOk ? "read -- AioHUD draws it" : "data unreadable -- the client's own stays", g_skills.v[3], g_skills.v[29], g_skills.v[32]); }
+            if ((g_btlW.open || g_mgcW.open || g_trdW.open) && saidK < 3) { ++saidK; windower::debug::log("NATIVEUI skills panel : %s (sword %04X evasion %04X divine %04X)", g_skillsOk ? "read -- AioHUD draws it" : "data unreadable -- the client's own stays", g_skills.v[3], g_skills.v[29], g_skills.v[32]); }
             const bool inStatus = g_mainSub.open && !strcmp(g_mainSub.name, "statcom2");
             NativeJobs J; memset(&J, 0, sizeof(J));
             if ((g_jobW.open || g_mlW.open) && inStatus) jobs_read(J);
@@ -861,6 +1160,20 @@ void yn_park(u32 mgr) {
     static int bsLog = 0, msLog = 0;                     // placed by their record : born parked (the name rule) ; a late one moved
     if (g_skillsOk && g_btlW.open) park_named(mgr, "btlskill", bsLog, "Status -> Combat Skills");
     if (g_skillsOk && g_mgcW.open) park_named(mgr, "mgcskill", msLog, "Status -> Magic Skills");
+    static int tsLog = 0, lmLog = 0;
+    if (g_skillsOk && g_trdW.open) park_named(mgr, "trdskill", tsLog, "Status -> Crafts");
+    if (g_meritsOk && g_lmW.open) park_named(mgr, "levmerit", lmLog, "Status -> Merit Points' panel");
+    static int utLog = 0, uiLog = 0;
+    if (g_uinfo.open) park_named(mgr, "quest00", uiLog, "Status -> Unity Info / Ranking Info");
+    static int alLog = 0, srLog = 0, soLog = 0;
+    if (g_area.open) park_named(mgr, "arealist", alLog, "Status -> Unity -> Unity Lists");
+    if (g_search.open) park_named(mgr, "scresult", srLog, "Status -> Unity -> Unity Lists' results");
+    if (g_scopt.open) park_named(mgr, "scoption", soLog, "Status -> Unity -> a player's options");
+    static int urLog = 0;
+    if (g_urank.open) park_named(mgr, "quest01", urLog, "Status -> Unity -> Ranking Results");
+    if (g_unityOk && g_utW.open) park_named(mgr, "ut_point", utLog, "Status -> Unity Points");
+    static int evLog = 0;                                // evitem : ONLY in its Currencies modes (mode 0 = an NPC's item pick)
+    if (g_cur.open) park_named(mgr, "evitem", evLog, "Status -> Currencies");
 }
 // a window the client places by CODE (never born under a parked parent), moved HIDE_DY down through its setter, logged
 void park_named(u32 mgr, const char* want, int& logN, const char* what) {
@@ -915,7 +1228,14 @@ void rescue_children(u32 mgr, int hide) {
             const bool ynOurs = (g_mainSort.open && !strcmp(nm, "sortyn")) || (g_prof.open && g_prof.ok && !strcmp(nm, "profile"))
                              || (g_persDataOk && (!strcmp(nm, "persona") || !strcmp(nm, "level")))
                              || (g_jobsOurs && (!strcmp(nm, "joblevel") || !strcmp(nm, "masterle")))
-                             || (g_skillsOk && (!strcmp(nm, "btlskill") || !strcmp(nm, "mgcskill")));
+                             || (g_skillsOk && (!strcmp(nm, "btlskill") || !strcmp(nm, "mgcskill") || !strcmp(nm, "trdskill")))
+                             || (g_meritsOk && !strcmp(nm, "levmerit"))
+                             || (g_unityOk && !strcmp(nm, "ut_point"))
+                             || (g_uinfo.open && !strcmp(nm, "quest00"))
+                             || (g_urank.open && !strcmp(nm, "quest01"))
+                             || (g_area.open && !strcmp(nm, "arealist")) || (g_search.open && !strcmp(nm, "scresult"))
+                             || (g_scopt.open && !strcmp(nm, "scoption"))
+                             || (g_cur.open && !strcmp(nm, "evitem"));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
                 int nx = r[0], ny = r[1] - HIDE_DY;
                 // the NPC answers are up : ABOVE AioHUD's box, left edges level (user 2026-11-17 "on la veut au-dessus") ;
@@ -952,6 +1272,17 @@ const NativeJobs& native_jobs() { return g_jobs; }
 const NativePanel& native_btlskill() { return g_btlW; }
 const NativePanel& native_mgcskill() { return g_mgcW; }
 const NativeSkills& native_skills() { return g_skills; }
+const NativePanel& native_trdskill() { return g_trdW; }
+const NativePanel& native_levmerit() { return g_lmW; }
+const NativeMerits& native_merits() { return g_merits; }
+const NativePanel& native_utpoint() { return g_utW; }
+const NativeUnity& native_unity() { return g_unity; }
+const NativeUnityInfo& native_unity_info() { return g_uinfo; }
+const NativeUnityRank& native_unity_rank() { return g_urank; }
+const NativeAreaList& native_arealist() { return g_area; }
+const NativeSearch& native_search() { return g_search; }
+const NativeEntryMenu& native_scoption() { return g_scopt; }
+const NativeCurrencies& native_currencies() { return g_cur; }
 const NativeChatInfo& native_chat_info() { return g_chat; }
 const NativeList& native_list() { return g_list; }
 
@@ -1394,6 +1725,29 @@ bool entry_pick(const char* const* W, int entry) {
     return menu_event(obj, 5);
 }
 bool native_main_sub_hover(int entry) { return entry_hover(MAIN_SUB_W, entry); }
+bool native_unity_info_hover(int entry) { return entry_hover(QUEST_W, entry); }
+bool native_unity_info_pick(int entry) { return entry_pick(QUEST_W, entry); }
+bool native_scoption_hover(int entry) { return entry_hover(SCOPT_W, entry); }
+bool native_scoption_pick(int entry) { return entry_pick(SCOPT_W, entry); }
+// a text list's row : its page scrolled first (codes 0x16 / 0x17, one row each -- bounded), then the hand on it (9),
+// then validated (5) when asked. The list must have the focus.
+bool textlist_goto(const char* name, int row, bool pick) {
+    const u32 mgr = manager(); if (!mgr) return false;
+    u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+    TextList T; if (!tl_find(mgr, name, T) || T.obj != focus || row < 0 || row >= T.count) return false;
+    for (int g = 0; g < 32 && (row < T.top || row >= T.top + T.vis); ++g) {
+        const int was = T.top;
+        if (!menu_event(T.obj, row < T.top ? 0x16 : 0x17)) return false;
+        if (!tl_find(mgr, name, T) || T.top == was) return false;          // it did not scroll : stop
+    }
+    if (row < T.top || row >= T.top + T.vis) return false;
+    const short ent = (short)(row - T.top + 1);
+    short cur = 0; rd16(T.obj + 0x4C, cur);
+    if (cur != ent) { if (!wr16(T.obj + 0x4C, ent) || !menu_event(T.obj, 9)) return false; }
+    return pick ? menu_event(T.obj, 5) : true;
+}
+bool native_textlist_hover(const char* name, int row) { return textlist_goto(name, row, false); }
+bool native_textlist_pick(const char* name, int row) { return textlist_goto(name, row, true); }
 bool native_main_sub_pick(int entry) { return entry_pick(MAIN_SUB_W, entry); }
 bool native_main_sort_hover(int entry) { return entry_hover(MAIN_SORT_W, entry); }
 bool native_main_sort_pick(int entry) { return entry_pick(MAIN_SORT_W, entry); }

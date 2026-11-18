@@ -191,6 +191,95 @@ struct NativeSkills { bool ok; unsigned short v[64]; };
 const NativePanel& native_btlskill();
 const NativePanel& native_mgcskill();
 const NativeSkills& native_skills();
+// Status -> Crafts (`trdskill`) : the same array, ids 48..62 -- rank v & 0x1F, level (v >> 5) & 0x3FF, bit 15 capped ;
+// exactly 0xFFFF = not shown (Ghidra 2026-11-18, docs/notes/status-panels-a-re-2026-11-18.md)
+const NativePanel& native_trdskill();
+// Status -> Merit Points : `levmerit`, the Limit Points / merits panel beside the menu (FM_PW_MERIT : 0x063 order 2)
+struct NativeMerits { bool ok; int lp, merits, maxMerits; };
+const NativePanel& native_levmerit();
+const NativeMerits& native_merits();
+// Status -> Unity : `ut_point`, the Unity Points box under Unity's menu (its draw FUN_0548D910 : "%d/%d", the max a
+// constant 99999). Data : the 0x061 mirror, packet 0x061 + 0x58 = FM_PW_BLOCK + 0x48 -- bits 0..4 the Unity, 5..9 the
+// rank, 10..26 the points (docs/notes/status-panels-b-re-2026-11-18.md B4)
+struct NativeUnity { bool ok; int unity, rank, points, maxPoints; };
+const NativePanel& native_utpoint();
+// Status -> Unity -> Unity Info : `quest00` (the Records of Eminence window) in its mode 1 (handler +0x68 == 1 -- never
+// reset on close : ours only while ut_menu is up too). docs/notes/unity-info-re-2026-11-18.md :
+//   the Unity       0x061 + 0x58 & 0x1F (FM_PW_BLOCK + 0x48) -> its leader's name (d_msg cat 0xC #402 + id)
+//   Ranking (list 0) / Partial Ranking (list 1) : incoming 0x063 order 7, 0x1000 bytes a list ; score of a Unity =
+//                   T[2][id] / T[1][id] (dwords at list + (k * 0x20 + id) * 4), rank = 1 + the Unities scoring more
+//   Personal / Partial Personal Evaluation : 0x061 + 0x5C, its high / low u16
+//   loading         the stats-refresh flag bit 0 clear, or a list's loaded byte 0 : "Preparing data."
+//   chat settings   entry children 1 Active / 2 Inactive ; the setting chosen at handler +0x6E (1 Active)
+struct NativeUnityInfo {
+    bool open, focused, loading;
+    int  mode;                   // 1 Unity Info, 2 Ranking Info (its two rows : Ranking Results / Partial)
+    int  unity;                  // 1..11, 0 none
+    int  rank[2], pts[2];        // Ranking Results / Partial : rank 0 = none ("--")
+    int  personal, partial;
+    int  chat;                   // 1 Active, 0 Inactive
+    NativeEntryMenu rows;        // the chat setting rows (entries 1 / 2), their cursor
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeUnityInfo& native_unity_info();
+// Ranking Info -> Ranking Results / Partial Ranking Results : `quest01` (handler mode 5 / 6), the 11 Unities sorted by
+// their score (list 0 / 1, the same T[2] / T[1] as Unity Info), ties sharing a rank. The rows are computed here ; the
+// client's cursor (its list class : +0x30 cursor, +0x38 top, +0x40 count) only says which row is under its hand.
+struct NativeUnityRank {
+    bool open, focused, loading;
+    int  list;                   // 0 Ranking Results, 1 Partial
+    int  n;                      // rows (11 once loaded)
+    int  id[11], score[11], rank[11];
+    int  cursor;                 // the client's row under its hand, -1 unknown
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeUnityRank& native_unity_rank();
+// Status -> Unity -> Unity Lists (docs/notes/unity-lists-search-re-2026-11-18.md). Both windows are the client's
+// multi-column TEXT LIST (vtable 0x0567B878) : handler +0x08 its window, +0x18 visible rows, +0x1E top, +0x20 count,
+// +0x38 rows (0x54 B : +0x48 the record) ; the cursor row = window +0x4C (1-based, on screen) - 1 + top.
+//  arealist  mode +0x6C == 4 : the Unity to list -- 12 rows, r = 0 your own ("Unity"), r = 1..11 the leaders
+//  scresult  the people found : row 0 the header (" [Searching]" -> " [N]"), then the players (record +4 : the entry)
+// Ours only while ut_menu is up (the main menu's Search reuses both : not yet).
+struct NativeAreaList { bool open, focused; int mode, n, top, vis, cursor; short rx0, ry0, rx1, ry1; int uiW, uiH; };
+const NativeAreaList& native_arealist();
+struct NativeSearchRow {
+    unsigned char type;          // 0 a player, 1 the header, 2 a group divider
+    char name[16];
+    unsigned char mjob, sjob, mlvl, slvl, ml;
+    bool hasJob, mlShown;
+    unsigned short zone;
+    unsigned flags;              // 0x4000 anonymous, bit 0 mentor, 8 / 0x2000 the name recoloured (meanings mostly inferred)
+};
+struct NativeSearch {
+    bool open, focused, counted;  // counted : the header says " [N]" (the search is over)
+    int  n, top, vis, cursor;     // rows (the header included), the client's page, its cursor row (-1 none)
+    int  total;                   // the server's total (the header's N)
+    char empty[64];               // the client's text when there is no row ("No applicable entries." / "Search failed.")
+    NativeSearchRow row[16];      // rows top .. top + vis - 1
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeSearch& native_search();
+bool native_textlist_hover(const char* name, int row);   // the client's cursor to that row (scrolling its page first)
+bool native_textlist_pick(const char* name, int row);
+// a player's options (scoption : Tell, PlayOnline message, Invite, Express desire to join, Cancel request) : an entry menu
+const NativeEntryMenu& native_scoption();
+bool native_scoption_hover(int entry);
+bool native_scoption_pick(int entry);
+bool native_unity_info_hover(int entry);
+bool native_unity_info_pick(int entry);
+const NativeUnity& native_unity();
+// Status -> Currencies / Currencies 2 : the list `evitem` in its mode 1 / 2 (mode 0 = an NPC's item pick : the client's)
+// -- the generic list class : rows +0x20 (8 bytes, u32 value first), cursor +0x30, top +0x38, count +0x40 (0 while
+// LOADING : the client asks the server, 0x10F / 0x115, and fills it on the answer), visible +0x48 ; mode +0x88,
+// loaded +0x8A (Ghidra 2026-11-18, docs/notes/status-panels-b-re-2026-11-18.md). Row r's label : currencies_gen.h.
+struct NativeCurrencies {
+    bool open, focused, loaded;
+    int  mode, n, top, cursor, vis;
+    int  value[8];               // the rows shown, top..top+vis-1
+    int  all[99];                // EVERY row's value, 0..n-1 (the client holds the whole list : rows + r * 8)
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeCurrencies& native_currencies();
 
 // What the client's Chat submenu (chatctrl) shows on the right of its rows (its draw FUN_0546E290, read 2026-11-16) :
 //   Tell        the name the Tell will go to : handler+0x14 = -1 the current target (the HUD has its name), -2 the

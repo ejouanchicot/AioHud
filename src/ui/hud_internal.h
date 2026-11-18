@@ -37,7 +37,12 @@ void mainmenu_draw(const Frame& f);
 void profile_draw(const Frame& f);
 void persona_draw(const Frame& f);
 void jobs_draw(const Frame& f);
-void skills_draw(const Frame& f);    // hud_actmenu.cpp : Status -> Combat / Magic Skills, mirrored (NU_MAIN)      // hud_actmenu.cpp : Status -> Job / Master Levels, mirrored (NU_MAIN)   // hud_actmenu.cpp : Status's stat panels (persona / level), mirrored (NU_MAIN)   // hud_actmenu.cpp : Status -> Profile, mirrored (Game UI -> NU_MAIN)  // hud_actmenu.cpp : the main menu (menuwind / socialme), mirrored (Game UI -> NU_MAIN)
+void skills_draw(const Frame& f);
+void crafts_draw(const Frame& f);
+void unityinfo_draw(const Frame& f);    // hud_actmenu.cpp : Status -> Unity -> Unity Info, mirrored (NU_MAIN)
+void unityrank_draw(const Frame& f);    // hud_actmenu.cpp : Status -> Unity -> Ranking Results, mirrored (NU_MAIN)
+void unitylists_draw(const Frame& f);   // hud_actmenu.cpp : Status -> Unity -> Unity Lists (arealist, scresult, scoption), mirrored
+void currencies_draw(const Frame& f);   // hud_actmenu.cpp : Status -> Currencies 1 / 2, searchable (NU_MAIN)
 void actmenu_set_hand_tex(u32 tex);  // the party's selection-hand texture (its cursor)
 // hud_chat.cpp : a LIVE chat box's rect this frame (false when hidden / not drawn) -- the redrawn menus sit above it
 bool chat_box_rect(int box, float& x, float& y, float& w, float& h);
