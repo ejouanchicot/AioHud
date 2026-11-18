@@ -34,6 +34,8 @@ void fep_wheel_add(int d);                 // +1 a notch up, -1 down (window thr
 // Status -> Currencies' search (hud_actmenu.cpp) : the key thread hands it each key while the list has the focus ;
 // true = the key is the search's (the game must not see it). ch = the typed character (0 none) ; mod = Ctrl / Alt held
 bool currencies_key(int dik, unsigned ch, bool pressed, bool mod);
+// //aio eqpreview : the Equipment screen shows every state a cell / a list row can take (a visual check) ; returns the new state
+bool equip_preview_toggle();
 
 class Hud {
 public:

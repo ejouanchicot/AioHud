@@ -53,7 +53,19 @@ inline void decode(const unsigned char* s, int max, char* out, int cap) {
             const char* e = EL[s[i + 1] - 0x1F]; while (*e && o < cap - 1) out[o++] = *e++;
             ++i; continue;
         }
-        if (c >= 0x80) { ++i; continue; }                       // a 2-byte character : skipped
+        if (c == 0x81 && i + 1 < max) {                         // the full-width signs that have a plain one (SJIS row 0x81)
+            const unsigned char d = s[i + 1]; char m = 0;
+            switch (d) {
+            case 0x60: m = '~'; break;   // "Accuracy+5~10" (Unity Ranking augments -- the user, 2026-11-18)
+            case 0x7B: m = '+'; break; case 0x7C: m = '-'; break; case 0x46: m = ':'; break; case 0x41: m = ','; break;
+            case 0x44: m = '.'; break; case 0x69: m = '('; break; case 0x6A: m = ')'; break; case 0x93: m = '%'; break;
+            case 0x9A: m = '*'; break; case 0x5E: m = '/'; break;
+            default: break;
+            }
+            if (m && o < cap - 1) out[o++] = m;
+            ++i; continue;
+        }
+        if (c >= 0x80) { ++i; continue; }                       // another 2-byte character : skipped
         if (c >= 0x20 && c < 0x7F) out[o++] = (char)c;
     }
     out[o] = 0;

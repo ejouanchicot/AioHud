@@ -6,6 +6,7 @@
 #include "model/game_mem.h"       // ffximain_base
 #include "model/paths.h"          // plugin_path : the crash-recovery file
 #include "model/chat_log.h"       // chat_seed_line / chat_seed_end : the client's own log, replayed at load
+#include "model/item_text.h"      // item_text_detail::decode : the item card page 2
 #include "model/map_dat.h"        // dat_resolve_path / dat_read_file : the client's d_msg files (Job Points' texts)
 #include "windower.h"
 #include "windower_debug.h"
@@ -72,12 +73,14 @@ const char* const NPC_W[]   = { "rem4line", "rem4li2", "query", 0 };
 bool g_profDataOk = false;   // the Profile's data reads (read_profile_mem) : AioHUD may draw it, so park the client's
 bool g_persDataOk = false;   // the stat panels' data reads (read_persona_mem) : same rule for `persona` / `level`
 bool g_skillsOkRule = false; // the skill array reads : same rule for `btlskill` / `mgcskill` (mirrors g_skillsOk)
+extern bool g_eqRule;
+bool g_eqUp = false;        // AioHUD draws the Equipment screen (the item cards' rule)       // the equipment reads : `equip` born parked (defined with g_equip)
 extern bool g_mcatRule;     // the merit list reads : `meritinf` born parked (defined with g_mcat)
 bool g_faithRule = false;   // the faith points read : `fp_info` (Alter Ego's points) is born parked, as levmeri2
 bool g_jpRule = false;       // the JP mirror reads : `levmeri2` (Job Points' CP / JP) is born parked -- its numbers are drawn
                              // where it opened, so a park after the fact left them on screen (2026-11-18)
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
-const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", 0 };   // later = opened over the earlier ones      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
+const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", 0 };   // later = opened over the earlier ones      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
 const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row
 const char* const MAIN_YN_W[] = { "sortyn", 0 };                               // Auto-sort's Yes / No (parked by inv-style code, not by name)          // the NPC windows AioHUD redraws (NU_NPC)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
@@ -103,6 +106,11 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_MAIN)  && g_jpRule && !strcmp(n, "levmeri2")) { dy = HIDE_DY; return; }
     if ((hide & NU_MAIN)  && g_faithRule && !strcmp(n, "fp_info")) { dy = HIDE_DY; return; }
     if ((hide & NU_MAIN)  && g_mcatRule && !strcmp(n, "meritinf")) { dy = HIDE_DY; return; }
+    if ((hide & NU_MAIN)  && g_eqRule && !strcmp(n, "equip")) { dy = HIDE_DY; return; }
+    // while AioHUD draws the Equipment screen, the client's item cards : it re-places them at every item and every page
+    // (Y / numpad -), and a park after the fact let them show for a frame each time (2026-11-18, "ca fait pop les
+    // vieilles box") -- the record's offset makes the move-to hook put them away as they are placed
+    if ((hide & NU_MAIN)  && g_eqUp && (!strcmp(n, "iteminfo") || !strcmp(n, "itemxinf"))) { dy = HIDE_DY; return; }
     if ((hide & NU_MAIN)  && g_skillsOkRule && (!strcmp(n, "btlskill") || !strcmp(n, "mgcskill") || !strcmp(n, "trdskill"))) { dy = HIDE_DY; return; }
     // the HUD-like windows never follow the MENUS offset -- they have their own option above
     if (in_list(n, PARTY_W) || in_list(n, ALLY_W) || in_list(n, CHAT_W) || in_list(n, COST_W) || in_list(n, NET_W) || in_list(n, INPUT_W)) return;
@@ -168,6 +176,8 @@ NativePanel g_persona, g_levelW; PersonaMem g_persData;
 NativePanel g_jobW, g_mlW; NativeJobs g_jobs; bool g_jobsOurs = false;   // Status -> Job / Master Levels
 NativePanel g_btlW, g_mgcW; NativeSkills g_skills; bool g_skillsOk = false;   // Status -> Combat / Magic Skills
 NativePanel g_utW; NativeUnity g_unity; bool g_unityOk = false;
+ItemExtra g_iix[2];                                                                   // iteminfo / itemxinf : their page 2
+NativeEquip g_equip; bool g_eqRule = false;                                            // the main menu's Equipment
 NativeMeritCat g_mcat; bool g_mcatRule = false;                                        // Merit Points -> Categories
 NativeCelestite g_cel;                                                                // Alter Ego -> Change Celestite
 NativeFaith g_faith;                                         // Status -> Alter Ego (fp_cat / fp_cat2 / fp_info)
@@ -697,6 +707,89 @@ bool mcat_read(u32 mgr, u32 focus, NativeMeritCat& K) {
     K.focused = focus == T.obj; K.open = true;
     return true;
 }
+bool equip_read(u32 mgr, u32 focus, NativeEquip& E) {
+    memset(&E, 0, sizeof(E)); E.lcursor = -1;
+    u32 node = 0; if (!mgr || !safe_read(mgr + MGR_OPEN_LIST, &node)) return false;
+    u32 obj = 0;
+    for (int g = 0; valid_ptr(node) && g < 400 && !obj; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "equip") && rd8(o + OBJ_CLOSING, cl) && !cl) obj = o;
+        node = next;
+    }
+    if (!obj) return false;
+    short cur = 0;
+    if (!rd16(obj + 0x4C, cur) || !rd16(obj + OBJ_RECT, E.rx0) || !rd16(obj + OBJ_RECT + 2, E.ry0) || !rd16(obj + OBJ_RECT + 4, E.rx1) || !rd16(obj + OBJ_RECT + 6, E.ry1)) return false;
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return false;
+    E.uiW = (short)(wh & 0xFFFF); E.uiH = (short)(wh >> 16);
+    if (E.uiW < 320 || E.uiH < 240 || E.uiW > 8000 || E.uiH > 8000) return false;
+    if (E.ry0 >= E.uiH) { E.ry0 = (short)(E.ry0 - HIDE_DY); E.ry1 = (short)(E.ry1 - HIDE_DY); }
+    E.cursor = cur >= 1 && cur <= 16 ? cur : 0;
+    EquipSet es; if (read_equipment(es)) { E.idsOk = true; for (int s = 0; s < 16; ++s) E.id[s] = es.id[s]; }
+    {   // each slot's bag : the grid's copy at handler +0x34 + s*4 (bags 8, 10..16 = Mog Wardrobe 1, 2..8)
+        u32 hd = 0;
+        if (safe_read(obj + OBJ_HANDLER, &hd) && valid_ptr(hd)) for (int s = 0; s < 16; ++s) {
+            u32 bag = 0; if (!safe_read(hd + 0x34 + (u32)s * 4, &bag)) break;
+            E.ward[s] = (unsigned char)(bag == 8 ? 1 : (bag >= 10 && bag <= 16) ? bag - 8 : 0);
+        }
+    }
+    const u32 blk = fm_addr(FM_PW_BLOCK); unsigned char b[0x14];
+    if (blk && rdblk(blk + 0x20, b, sizeof(b))) {
+        unsigned short a = 0, d = 0; memcpy(&a, b, 2); memcpy(&d, b + 2, 2); E.atk = a; E.def = d;
+        for (int i = 0; i < 8; ++i) memcpy(&E.res[i], b + 4 + 2 * i, 2);
+        E.statsOk = a < 10000 && d < 10000;
+    }
+    E.focused = focus == obj; E.open = true;
+    panel_read(mgr, "money", E.money);                                   // Current Gil
+    { NativePanel X; E.compare = panel_read(mgr, "itemxinf", X) && X.open;
+      static int was = -1, said = 0;                                      // measured, not guessed : each change, bounded
+      if ((int)E.compare != was && said < 20) { ++said; was = (int)E.compare; windower::debug::log("NATIVEUI equipment : compare card %s (itemxinf rect %d,%d)", E.compare ? "UP" : "down", X.rx0, X.ry0); } }
+    E.gilOk = read_player_gil(E.gil);
+    // the slot's item list (inventor in its equipment mode)
+    TextList T;
+    if (tl_find(mgr, "inventor", T)) {
+        u32 rows = 0;
+        if (safe_read(T.h + 0x38, &rows) && (T.count == 0 || valid_ptr(rows))) {
+            E.ln = T.count; E.ltop = T.top; E.lvis = T.vis > 16 ? 16 : T.vis; E.lcursor = T.cursor;
+            E.lx0 = T.rx0; E.ly0 = T.ry0; E.lx1 = T.rx1; E.ly1 = T.ry1;
+            bool ok = true;
+            for (int i = 0; i < E.lvis && E.ltop + i < E.ln && ok; ++i) {
+                unsigned char r[0x54]; if (!rdblk(rows + (u32)(E.ltop + i) * 0x54, r, sizeof(r))) { ok = false; break; }
+                int rec = 0; u32 id = 0, cnt = 0, col = 0; memcpy(&rec, r + 0x48, 4); memcpy(&id, r + 0x2C, 4); memcpy(&cnt, r + 0x30, 4); memcpy(&col, r + 0x0C, 4);
+                NativeEqRow& w = E.lrow[i]; w.header = rec == -1; w.id = (unsigned short)(id & 0xFFFF); w.count = (int)(cnt > 9999 ? 9999 : cnt); w.col = col;
+            }
+            E.lopen = ok; E.lfocused = focus == T.obj;
+        }
+    }
+    return true;
+}
+// the two item cards' page 2, read from their handler (+0x24 the item, +0x1B8 augments, +0x2C "<...>", +0x278 item level)
+void item_extra_poll(u32 mgr) {
+    static const char* const W[2] = { "iteminfo", "itemxinf" };
+    for (int c = 0; c < 2; ++c) {
+        ItemExtra& X = g_iix[c]; X.id = 0;
+        u32 node = 0; if (!mgr || !safe_read(mgr + MGR_OPEN_LIST, &node)) continue;
+        u32 obj = 0;
+        for (int g = 0; valid_ptr(node) && g < 400 && !obj; ++g) {
+            u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+            safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+            if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, W[c]) && rd8(o + OBJ_CLOSING, cl) && !cl) obj = o;
+            node = next;
+        }
+        u32 h = 0; short id = 0;
+        if (!obj || !safe_read(obj + OBJ_HANDLER, &h) || !valid_ptr(h) || !rd16(h + 0x24, id) || !id) continue;
+        unsigned char a[0xC0], l[0x80], v[0xC0];
+        if (!rdblk(h + 0x1B8, a, sizeof(a)) || !rdblk(h + 0x2C, l, sizeof(l)) || !rdblk(h + 0x278, v, sizeof(v))) continue;
+        item_text_detail::decode(a, sizeof(a), X.aug, sizeof(X.aug));
+        item_text_detail::decode(l, sizeof(l), X.line, sizeof(X.line));
+        item_text_detail::decode(v, sizeof(v), X.ilvl, sizeof(X.ilvl));
+        X.id = (unsigned)(unsigned short)id;
+        static unsigned lastId[2] = { 0, 0 }; static int said = 0;
+        if (X.id != lastId[c] && said < 30) { ++said; lastId[c] = X.id;
+            char a60[64]; lstrcpynA(a60, X.aug, sizeof(a60)); for (char* p = a60; *p; ++p) if (*p == '\n') *p = '|';
+            windower::debug::log("NATIVEUI %s page 2 : item %u, augments '%s', line '%s', '%s'", W[c], X.id, a60, X.line, X.ilvl); }
+    }
+}
 // the skill array : FM_PW_BLOCK + 0x60 (the 0x062 handler's copy) ; plausible = every level <= 1000
 bool skills_read(NativeSkills& K) {
     memset(&K, 0, sizeof(K));
@@ -1122,6 +1215,7 @@ void apply(bool zero) {
 int  g_lastSig = -1; DWORD g_nextWalk = 0;
 int  config_sig(const UiConfig& c) {
     int s = (eff_hide(c) & 0xFF) | ((c.nuMenuDx & 0xFFF) << 8) | ((c.nuMenuDy & 0xFFF) << 20);
+    if (g_eqUp) s ^= 0x2A5B3C1D;                              // the Equipment screen's item-card rule : applied at once
     s ^= (c.chDock & 3) << 30 ^ (c.chInputOk + 1) << 28;      // the input-line mode, and whether its text reads
     if (c.chDock && c.chShow[0] && c.chDockRect[2] > 0.0f)   // the docked input line follows the chat box : re-apply when it moves
         s ^= (int)c.chDockRect[0] * 73856093 ^ (int)(c.chDockRect[1] + c.chDockRect[3]) * 19349663 ^ (int)c.chDockRect[5] * 83492791 ^ 0x5A5A;
@@ -1255,7 +1349,7 @@ bool inStatusNow() {
     return !strcmp(n, "statcom2") || !strcmp(n, "merit1") || !strcmp(n, "merit2") || !strcmp(n, "merit3");
 }
 void main_poll(bool on) {
-    if (!on) { g_mcat.open = false; g_mcatRule = false; g_cel.open = false; g_faith.open = false; g_faithRule = false; g_jpRule = false; g_jcat.open = false; g_jpts.open = false; g_jpts.box.open = false; g_area.open = false; g_search.open = false; g_scopt.open = false; g_urank.open = false; g_uinfo.open = false; g_utW.open = false; g_unityOk = false; g_cur.open = false; g_meritsOk = false; g_trdW.open = g_lmW.open = false; g_skillsOk = false; g_skillsOkRule = false; g_btlW.open = g_mgcW.open = false; g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
+    if (!on) { g_eqUp = false; g_equip.open = false; g_equip.lopen = false; g_eqRule = false; g_mcat.open = false; g_mcatRule = false; g_cel.open = false; g_faith.open = false; g_faithRule = false; g_jpRule = false; g_jcat.open = false; g_jpts.open = false; g_jpts.box.open = false; g_area.open = false; g_search.open = false; g_scopt.open = false; g_urank.open = false; g_uinfo.open = false; g_utW.open = false; g_unityOk = false; g_cur.open = false; g_meritsOk = false; g_trdW.open = g_lmW.open = false; g_skillsOk = false; g_skillsOkRule = false; g_btlW.open = g_mgcW.open = false; g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
     NativeEntryMenu m; int r = main_read(m);
     NativeEntryMenu sm; const int rs = entry_read(MAIN_SUB_W, sm, 0);
     g_mainSub = sm; if (rs != 1) g_mainSub.open = false;
@@ -1321,6 +1415,15 @@ void main_poll(bool on) {
                 const bool feUp = g_mainSub.open && !strcmp(g_mainSub.name, "fe_main");
                 if (!(feUp && faith_read(mgr, focus, g_faith))) g_faith.open = false;
                 if (!(feUp && cel_read(mgr, focus, g_cel))) g_cel.open = false;
+                // Equipment (from the main menu) : the grid, the slot's item list
+                if (!equip_read(mgr, focus, g_equip)) { g_equip.open = false; g_equip.lopen = false; }
+                g_eqUp = g_equip.open;
+                { EquipSet es; g_eqRule = read_equipment(es); }                   // the equipment reads : equip born parked
+                static int saidE = 0, saidL = 0;
+                if (g_equip.open && saidE < 3) { ++saidE; windower::debug::log("NATIVEUI equipment : grid read (cursor %d, ids %s : main %u head %u, stats %s : atk %d def %d fire %d)",
+                    g_equip.cursor, g_equip.idsOk ? "ok" : "UNREADABLE", g_equip.id[0], g_equip.id[4], g_equip.statsOk ? "ok" : "UNREADABLE", g_equip.atk, g_equip.def, g_equip.res[0]); }
+                if (g_equip.lopen && saidL < 4) { ++saidL; windower::debug::log("NATIVEUI equipment : list read (%d rows, top %d, cursor %d, focus %d ; row 0 header %d id %u ; row 1 id %u count %d colour %08X)",
+                    g_equip.ln, g_equip.ltop, g_equip.lcursor, (int)g_equip.lfocused, (int)g_equip.lrow[0].header, g_equip.lrow[0].id, g_equip.lrow[1].id, g_equip.lrow[1].count, g_equip.lrow[1].col); }
                 // Merit Points -> Categories : under Status's list
                 if (!(inStatusNow() && mcat_read(mgr, focus, g_mcat))) g_mcat.open = false;
                 g_mcatRule = merit_list_ok();                                      // the list reads : meritinf born parked
@@ -1507,7 +1610,11 @@ void yn_park(u32 mgr) {
     if (g_uinfo.open) park_named(mgr, "quest00", uiLog, "Status -> Unity Info / Ranking Info");
     static int jpLog = 0, j2Log = 0, jcLog = 0, bhLog = 0;
     if (g_jcat.open && g_jpts.ok) park_named(mgr, "jbpcat", jcLog, "Status -> Job Points' categories / gifts");
-    static int fcLog = 0, f2Log = 0, fhLog = 0, ceLog = 0, ciLog = 0, cbLog = 0, mcLog = 0, mhLog = 0;
+    static int fcLog = 0, f2Log = 0, fhLog = 0, ceLog = 0, ciLog = 0, cbLog = 0, mcLog = 0, mhLog = 0, eiLog = 0, ecLog = 0;
+    if (g_equip.open && g_equip.lopen) park_named(mgr, "inventor", eiLog, "Equipment -> a slot's items");
+    if (g_equip.open) park_named(mgr, "iteminfo", ecLog, "Equipment -> the item card");
+    static int gmLog = 0; if (g_equip.open && g_equip.gilOk) park_named(mgr, "money", gmLog, "Equipment -> Current Gil");
+    static int gxLog = 0; if (g_equip.open && g_equip.compare) park_named(mgr, "itemxinf", gxLog, "Equipment -> the compare card");
     if (g_mcat.open) { park_named(mgr, "meritcat", mcLog, "Merit Points -> Categories"); park_named(mgr, "bluehelp", mhLog, "Merit Points -> description"); }
     if (g_cel.open) { park_named(mgr, "fe_equip", ceLog, "Alter Ego -> Celestite slots"); park_named(mgr, "fe_inven", ciLog, "Alter Ego -> Celestite owned");
                       park_named(mgr, "bluehelp", cbLog, "Alter Ego -> Celestite description"); }
@@ -1586,6 +1693,7 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_uinfo.open && !strcmp(nm, "quest00"))
                              || (g_urank.open && !strcmp(nm, "quest01"))
                              || (g_jpts.open && g_jpts.ok && (!strcmp(nm, "merit2ca") || !strcmp(nm, "levmeri2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "jbpcat")))
+                             || (g_equip.open && (!strcmp(nm, "equip") || !strcmp(nm, "inventor") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || !strcmp(nm, "itemxinf")))
                              || (g_mcat.open && (!strcmp(nm, "meritcat") || !strcmp(nm, "bluehelp") || !strcmp(nm, "meritinf")))
                              || (g_cel.open && (!strcmp(nm, "fe_equip") || !strcmp(nm, "fe_inven") || !strcmp(nm, "bluehelp")))
                              || (g_faith.open && (!strcmp(nm, "fp_cat") || !strcmp(nm, "fp_cat2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "fp_info")))
@@ -1642,6 +1750,8 @@ const NativeJpCat& native_jp_cat() { return g_jcat; }
 const NativeFaith& native_faith() { return g_faith; }
 const NativeCelestite& native_celestite() { return g_cel; }
 const NativeMeritCat& native_merit_cat() { return g_mcat; }
+const NativeEquip& native_equip() { return g_equip; }
+const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
 const char* native_merit_text(int index, bool desc) { return index < 0 ? 0 : dmsg_str(g_dm[3], (unsigned)(2 * index + (desc ? 1 : 0))); }
 const char* native_faith_text(int id, bool desc) { return id < 0 ? 0 : dmsg_str(g_dm[2], (unsigned)(2 * id + (desc ? 1 : 0))); }
 const char* native_jp_text(int kind, int id, bool desc, int job) {
@@ -2128,6 +2238,24 @@ bool cel_goto(int list, int row, bool pick) {
     return textlist_goto(want, row, pick);
 }
 bool native_celestite_hover(int list, int row) { return cel_goto(list, row, false); }
+// the equipment grid : its cell (entry 1..16) under the hand (9), validated (5) -- the grid must have the focus
+bool equip_goto(int entry, bool pick) {
+    const u32 mgr = manager(); if (!mgr || entry < 1 || entry > 16) return false;
+    u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+    u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node); u32 obj = 0;
+    for (int g = 0; valid_ptr(node) && g < 400 && !obj; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "equip") && rd8(o + OBJ_CLOSING, cl) && !cl) obj = o;
+        node = next;
+    }
+    if (!obj || obj != focus) return false;
+    short cur = 0; rd16(obj + 0x4C, cur);
+    if (cur != entry) { if (!wr16(obj + 0x4C, (short)entry) || !menu_event(obj, 9)) return false; }
+    return pick ? menu_event(obj, 5) : true;
+}
+bool native_equip_hover(int entry) { return equip_goto(entry, false); }
+bool native_equip_pick(int entry) { return equip_goto(entry, true); }
 bool native_celestite_pick(int list, int row) { return cel_goto(list, row, true); }
 bool native_jp_cat_tab(int dir) {                          // codes 3 / 4 : the client's left / right (its tabs)
     const u32 mgr = manager(); if (!mgr) return false;
@@ -2478,6 +2606,7 @@ void native_ui_tick(bool inWorld) {
     if (inWorld) fulllog_read(manager()); else g_full.open = false;   // the expanded log : AioHUD's Discussion box unfolds
     act_poll(wanted && (c.nuHide & NU_ACT));
     main_poll(wanted && (c.nuHide & NU_MAIN));
+    if (wanted) item_extra_poll(manager()); else g_iix[0].id = g_iix[1].id = 0;   // the item cards' page 2
     npc_poll(wanted && (c.nuHide & NU_NPC));
     fep_poll(wanted && docking);                         // the input line in AioHUD's box : its auto-translate picker too
     // the HIDDEN HUD-like windows, EVERY frame (not only in the once-a-second walk below) : the client re-places some on

@@ -272,6 +272,24 @@ after a logout.
     u8 cost, u8 level}, cat = id >> 6) ; caps : file 0x59 (12-byte entries, +3 cat, +4 cap ; Weapon Skills +5 per key
     item 3224 / 3225). `meritinf` born parked.
   - Status's own test (inStatusNow) accepts merit1 / merit2 / merit3 as the submenu : they are main-menu submenus too.
+- **The main menu's Equipment** (docs/notes/equipment-re- / iteminfo-page2-re-2026-11-18.md ; user-confirmed in game
+  2026-11-18) :
+  - `equip` = the 4 x 4 grid, BORN parked (Attack / Defense / the 8 resists are drawn where it opened). Cursor = window
+    +0x4C, the entry 1..16, column-major ; packet slot s -> entry {1,5,9,13,2,3,7,12,16,6,8,10,14,11,15,4}[s]. Worn
+    items : read_equipment ; each slot's bag at handler +0x34 + s*4 (8, 10..16 = Mog Wardrobe 1, 2..8 : the badge).
+    Attack / Defense / resists : FM_PW_BLOCK + 0x20 / + 0x22 / + 0x24 (s16 x 8, drawn column-major : Fire / Ice ...).
+    Encumbrance : party().encumbrance() (0x01B), the Equip Viewer's red cross.
+  - `inventor` in its equipment mode : a TEXT LIST, row 0 = "Storage Options" (record -1 : opens `mnstorag`, a main-menu
+    submenu : Inventory, Mog Wardrobe 1..8), item rows : id +0x2C, count +0x30, the client's colour +0x0C (green worn,
+    grey refused, orange held). Drawn as tall as the grid's box. The client sends 0x050 itself.
+  - `money` (Current Gil) redrawn from read_player_gil. `iteminfo` / `itemxinf` (the card, the compare card -- LB /
+    Ctrl, it TAKES the focus) : while Equipment is up, a record rule parks them as the client places them (it re-places
+    them at every item and page : a park after the fact flashed them).
+  - The card's PAGE 2 : the client rebuilds, every update, in iteminfo / itemxinf's handler : +0x24 the item, +0x1B8
+    the augment text, +0x2C the "<...>" line (charges / rank / path / RP), +0x278 "<Item Level:n>". AioHUD's card shows
+    them all on one page (it grows) : no Y / numpad - needed. The client's text : 81 60 = '~' (and the other
+    full-width signs, item_text_detail::decode).
+  - `//aio eqpreview` : every cell / row state on the real items (badges 1..8, locked, empty, the row colours).
 - **Reload with a window parked** : move_open no longer parks an open window that is already parked (nor unparks one
   already on screen) -- a reload with Status open parked the stat panels by name, then the first apply parked them a
   second time (the box read 3000 too low, on the chat).

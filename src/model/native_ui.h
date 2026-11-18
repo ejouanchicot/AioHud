@@ -331,6 +331,37 @@ struct NativeMeritCat {
     short rx0, ry0, rx1, ry1; int uiW, uiH;
 };
 const NativeMeritCat& native_merit_cat();
+// The main menu's Equipment (docs/notes/equipment-re-2026-11-18.md) : `equip` (the 4 x 4 grid : window +0x4C = the entry
+// 1..16, column-major ; slot s -> entry {1,5,9,13,2,3,7,12,16,6,8,10,14,11,15,4}[s]), BORN parked (its numbers are drawn
+// where it opened) ; `inventor` in its equipment mode (a TEXT LIST : row 0 the bag's header, record -1 ; item rows : id
+// +0x2C, count +0x30, the client's colour +0x0C -- green worn, grey refused, orange held) ; Attack / Defense / the 8
+// resists from the 0x061 mirror (FM_PW_BLOCK + 0x20 / + 0x22 / + 0x24..). The client sends 0x050 itself.
+struct NativeEqRow { bool header; unsigned short id; int count; unsigned col; };
+struct NativeEquip {
+    bool open, focused;          // the grid
+    int  cursor;                 // its entry 1..16
+    unsigned short id[16];       // worn, by packet slot (0 main .. 15 back) ; idsOk : read
+    unsigned char  ward[16];     // its wardrobe 1..8 (0 : the inventory / unknown) -- the grid's badge
+    bool idsOk, statsOk;
+    int  atk, def; short res[8];
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+    bool lopen, lfocused;        // the item list of a slot
+    int  ln, ltop, lvis, lcursor;
+    NativeEqRow lrow[16];
+    short lx0, ly0, lx1, ly1;
+    NativePanel money;           // the client's "Current Gil" box (its rect) ; gil / gilOk : the player's gil
+    bool compare;                // `itemxinf` is up (LB / Ctrl on a list row) : the row's item over the one worn in the slot
+    unsigned gil; bool gilOk;
+};
+const NativeEquip& native_equip();
+// The client's item card's PAGE 2 (docs/notes/iteminfo-page2-re-2026-11-18.md) : `iteminfo` / `itemxinf` rebuild, every
+// update, the item's augment text (handler +0x1B8), its "<...>" line (+0x2C : charges, or rank / path / RP / trial) and
+// "<Item Level:n>" (+0x278), for the item at +0x24. Read once a frame ; AioHUD's card shows them all on one page
+// (no Y / numpad - needed). Decoded to ASCII (elements spelled out, '\n' kept).
+struct ItemExtra { unsigned id; char aug[256]; char line[128]; char ilvl[64]; };
+const ItemExtra* native_item_extra(unsigned id);   // 0 when neither card shows that item
+bool native_equip_hover(int entry);
+bool native_equip_pick(int entry);
 const char* native_merit_text(int index, bool desc);   // d_msg 55686 string 2 * index (+1)
 bool native_celestite_hover(int list, int row);   // list 0 fe_equip, 1 fe_inven : the other list given the focus first
 bool native_celestite_pick(int list, int row);

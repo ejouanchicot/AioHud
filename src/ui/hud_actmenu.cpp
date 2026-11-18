@@ -32,6 +32,7 @@
 #include "model/mounts_gen.h"           // mount_name : the mount list
 #include "model/zones.h"                // zone_name : the Profile's Home Point
 #include "model/game_mem.h"             // PersonaMem : the stat panels' data
+#include "model/party_state.h"          // party().encumbrance() : the Equipment grid's locked slots
 #include "model/currencies_gen.h"       // CURRENCY1_EN / CURRENCY2_EN : the client's row order and labels
 #include "model/weapon_skills_gen.h"    // ws_info : its weapon skills
 #include "model/item_text.h"       // the NPC answers' item card : text + flags from the item's DAT record
@@ -238,7 +239,14 @@ const SubRow FE_MAIN[7] = {
 const SubRow MERIT1[2] = { { "Categories", "CatÃ©gories", false, IC_STAR }, { "Mode Switch", "Changer de mode", false, IC_SWAP } };
 const SubRow MERIT2[2] = { { "EXP", "EXP", false, IC_STAR }, { "Limit Points", "Limit Points", false, IC_STAR } };
 const SubRow MERIT3[2] = { { "Raise", "Augmenter", false, IC_STAR }, { "Lower", "Diminuer", false, IC_STAR } };
+// Equipment -> Storage Options (mnstorag) : the bag the list shows -- the user's reading, 2026-11-18
+const SubRow MNSTORAG[9] = {
+    { "Inventory", "Inventaire", false, IC_BAG }, { "Mog Wardrobe", "Mog Wardrobe", false, IC_BAG }, { "Mog Wardrobe 2", "Mog Wardrobe 2", false, IC_BAG },
+    { "Mog Wardrobe 3", "Mog Wardrobe 3", false, IC_BAG }, { "Mog Wardrobe 4", "Mog Wardrobe 4", false, IC_BAG }, { "Mog Wardrobe 5", "Mog Wardrobe 5", false, IC_BAG },
+    { "Mog Wardrobe 6", "Mog Wardrobe 6", false, IC_BAG }, { "Mog Wardrobe 7", "Mog Wardrobe 7", false, IC_BAG }, { "Mog Wardrobe 8", "Mog Wardrobe 8", false, IC_BAG },
+};
 const SubRow* sub_row(const char* menu, int entry) {
+    if (!strcmp(menu, "mnstorag") && entry >= 1 && entry <= 9) return &MNSTORAG[entry - 1];
     if (!strcmp(menu, "merit1") && entry >= 1 && entry <= 2) return &MERIT1[entry - 1];
     if (!strcmp(menu, "merit2") && entry >= 1 && entry <= 2) return &MERIT2[entry - 1];
     if (!strcmp(menu, "merit3") && entry >= 1 && entry <= 2) return &MERIT3[entry - 1];
@@ -679,6 +687,8 @@ bool actmenu_hit(float fx, float fy) {
 namespace {   // the item card (below, with the NPC windows) : the Items list draws it too
 void card_load(u32 dev, unsigned id);
 bool card_ready(unsigned id);
+void card_use(int s);          // 0 the card, 1 the second one (the compare view)
+extern float g_cardBottom;
 void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, float bottom, float tO, float A, bool above);
 
 // ---- a LIST (native_list : spells, abilities, mounts, items), shared by the action menu and the main menu ----
@@ -920,6 +930,19 @@ int   g_npcView = 0;                                   // the first answer shown
 //      record (model/item_text.h) -- icon, name, Rare / Ex, level + jobs for equipment, the description ----
 ItemText g_card; unsigned g_cardId = 0; bool g_cardOk = false;
 u32 g_cardIcon = 0; unsigned g_cardIconId = 0;
+float g_cardBottom = 0.0f;   // the last card drawn : its bottom edge (a second card stacks under it)
+// a SECOND card (the compare view : the item hovered over the one worn), swapped with the first by card_use
+struct CardAlt { ItemText t; unsigned id = 0; bool ok = false; u32 icon = 0; unsigned iconId = 0; };
+CardAlt g_cardAlt; int g_cardCur = 0;
+void card_use(int s) {
+    if (s == g_cardCur) return;
+    static ItemText tmp; tmp = g_card; g_card = g_cardAlt.t; g_cardAlt.t = tmp;
+    unsigned u = g_cardId; g_cardId = g_cardAlt.id; g_cardAlt.id = u;
+    bool b = g_cardOk; g_cardOk = g_cardAlt.ok; g_cardAlt.ok = b;
+    u32 x = g_cardIcon; g_cardIcon = g_cardAlt.icon; g_cardAlt.icon = x;
+    u = g_cardIconId; g_cardIconId = g_cardAlt.iconId; g_cardAlt.iconId = u;
+    g_cardCur = s;
+}
 const char* const JOBS3[23] = { "", "WAR", "MNK", "WHM", "BLM", "RDM", "THF", "PLD", "DRK", "BST", "BRD", "RNG", "SAM", "NIN", "DRG",
                                 "SMN", "BLU", "COR", "PUP", "DNC", "SCH", "GEO", "RUN" };
 void card_load(u32 dev, unsigned id) {
@@ -953,9 +976,11 @@ int wrap_lines(Font* fo, const char* s, float tz, float w, char out[][160], int 
     const char* p = s;
     while (*p && n < maxL) {
         if (*p == '\n') { cur[cl] = 0; lstrcpynA(out[n++], cur, 160); cl = 0; cur[0] = 0; ++p; continue; }
-        const char* e = p; while (*e && *e != ' ' && *e != '\n') ++e;
+        // a word ends at a space, or just AFTER a '/' (the jobs line "RDM/PLD/DRK/..." breaks there, as the client's)
+        const char* e = p; while (*e && *e != ' ' && *e != '\n') { if (*e == '/') { ++e; break; } ++e; }
         char word[160]; int wl = (int)(e - p); if (wl > 150) wl = 150; memcpy(word, p, (size_t)wl); word[wl] = 0;
-        char trial[320]; _snprintf(trial, sizeof(trial), cl ? "%s %s" : "%s%s", cur, word); trial[sizeof(trial) - 1] = 0;
+        const bool glued = cl && cur[cl - 1] == '/';                    // after a '/' : no space between
+        char trial[320]; _snprintf(trial, sizeof(trial), cl && !glued ? "%s %s" : "%s%s", cur, word); trial[sizeof(trial) - 1] = 0;
         if (cl && fo->measure(trial, tz) > w) { cur[cl] = 0; lstrcpynA(out[n++], cur, 160); lstrcpynA(cur, word, 160); cl = (int)strlen(cur); }
         else { lstrcpynA(cur, trial, 160); cl = (int)strlen(cur); }
         p = e; while (*p == ' ') ++p;
@@ -985,18 +1010,24 @@ void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, 
             else { const int o0 = o; for (int j = 1; j <= 22 && o < (int)sizeof(lv) - 6; ++j) if (g_card.jobs & (1u << j)) o += _snprintf(lv + o, sizeof(lv) - o, "%s%s", o > o0 ? "/" : "", JOBS3[j]); }
             lv[sizeof(lv) - 1] = 0;
         }
-        // every line of the column, in order (the description wrapped to the column)
-        char lines[18][160]; int nl = 0;
-        lstrcpynA(lines[nl++], title, 160);
-        if (kind[0]) lstrcpynA(lines[nl++], kind, 160);
+        // every line of the column, in order (the description wrapped to the column) ; then the client's page 2, when
+        // its own card shows this item : the augments (their own colour), the "<...>" line, "<Item Level:n>"
+        const ItemExtra* X = native_item_extra(g_cardId);
+        char lines[30][160]; int nl = 0, augFrom = 99;
+        nl += wrap_lines(fo, title, ctz, tw, lines + nl, 2);                    // what is longer than the box wraps, as the client
+        if (kind[0]) nl += wrap_lines(fo, kind, ctz, tw, lines + nl, 2);
         if (g_card.desc[0]) nl += wrap_lines(fo, g_card.desc, ctz, tw, lines + nl, 14);
-        if (lv[0] && nl < 18) lstrcpynA(lines[nl++], lv, 160);
-        const float colH = (float)nl * clH, encH = ench[0] ? clH : 0.0f;
+        if (lv[0] && nl < 28) nl += wrap_lines(fo, lv, ctz, tw, lines + nl, 2);
+        if (X && X->aug[0] && nl < 24) { augFrom = nl; nl += wrap_lines(fo, X->aug, ctz, tw, lines + nl, 30 - nl > 6 ? 6 : 30 - nl); }
+        if (X && X->line[0]) lstrcpynA(ench, X->line, sizeof(ench));             // the client's "<...>" (charges, or rank / path / RP)
+        const char* ilv = X && X->ilvl[0] ? X->ilvl : 0;
+        const float colH = (float)nl * clH, encH = (ench[0] ? clH : 0.0f) + (ilv ? clH : 0.0f);
         const float ch = snap(cpad + (colH > icon ? colH : icon) + encH + cpad);
         float cy = above ? snap(top - snap(4.0f * S) - ch) : top;
         if (above && cy < 4.0f) cy = snap(bottom + snap(4.0f * S));
         if (!above && cy + ch > f.screenH - 4.0f) cy = snap(f.screenH - 4.0f - ch);
         cy = snap(cy + (1.0f - tO) * 3.0f * S);
+        g_cardBottom = cy + ch;
         draw_themed_box(dev, f.skin, bx, cy, bw, ch, C.muBox, A, S);
         const float ix = snap(bx + cpad), iy = snap(cy + cpad);
         if (g_cardIcon) {
@@ -1021,22 +1052,26 @@ void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, 
         const u32 sh = with_alpha(0xC8000000u, A), white = with_alpha(0xFFF4F6FAu, A);
         for (int b = 0; b < 2; ++b) if (BADGE[b])
             fo->draw_lc(dev, snap(bxs[b] + (bws[b] - fo->measure(BADGE[b], btz)) * 0.5f), snap(byB + bh2 * 0.5f), BADGE[b], btz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
-        for (int i = 0; i < nl; ++i) fo->draw_lc(dev, colX, snap(cy + cpad + (float)i * clH + clH * 0.5f), lines[i], ctz, white, sh, k.ow);
+        for (int i = 0; i < nl; ++i) fo->draw_lc(dev, colX, snap(cy + cpad + (float)i * clH + clH * 0.5f), lines[i], ctz, i >= augFrom ? with_alpha(0xFFA8E8B4u, A) : white, sh, k.ow);
+        float ry = snap(cy + ch - cpad - clH * 0.5f) - (ilv ? clH : 0.0f);
         if (ench[0]) {
             const float ew = fo->measure(ench, ctz);
-            fo->draw_lc(dev, snap(bx + bw - cpad - ew), snap(cy + ch - cpad - clH * 0.5f), ench, ctz, with_alpha(0xFF9CC8FFu, A), sh, k.ow);
+            fo->draw_lc(dev, snap(bx + bw - cpad - ew), ry, ench, ctz, with_alpha(0xFF9CC8FFu, A), sh, k.ow);
         }
+        if (ilv) { ry = snap(cy + ch - cpad - clH * 0.5f); fo->draw_lc(dev, snap(bx + bw - cpad - fo->measure(ilv, ctz)), ry, ilv, ctz, white, sh, k.ow); }
     }
 }
 
 void npc_card_forget()  {   // device lost : the handles are gone with it (the list icons' too -- they reload on demand)
     g_cardIcon = 0; g_cardIconId = 0; g_cardId = 0;
+    g_cardAlt.icon = 0; g_cardAlt.iconId = 0; g_cardAlt.id = 0;      // the second card's handle is gone too
     for (int i = 0; i < 64; ++i) g_icons[i] = IconSlot();
     for (int i = 0; i < 4; ++i) g_pearl[i] = PearlTex();
     g_elemTex = g_jobTex = g_wpnTex = 0; g_elemR = TexRetry(); g_jobR = TexRetry(); g_wpnR = TexRetry();
 }
 void npc_card_dispose() {
     if (g_cardIcon) release_texture(g_cardIcon);
+    if (g_cardAlt.icon) release_texture(g_cardAlt.icon);
     for (int i = 0; i < 64; ++i) if (g_icons[i].tex) release_texture(g_icons[i].tex);
     if (g_elemTex) release_texture(g_elemTex);
     if (g_jobTex) release_texture(g_jobTex);
@@ -2866,6 +2901,273 @@ void meritcat_draw(const Frame& f) {
         fo->begin(dev);
         fo->draw_lc(dev, Ld, hyd, dTitle, tz * 0.95f, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
         for (int i = 0; i < nl; ++i) fo->draw_lc(dev, snap(Ld + 10.0f * S), snap(lyd + (float)i * rowH + rowH * 0.5f), lines[i], tz * 0.95f, with_alpha(0xFFC9D3E0u, A), sh, k.ow);
+    }
+}
+
+// The main menu's Equipment : the 4 x 4 grid (the client's order : Main Sub Range Ammo / Head Neck L.Ear R.Ear / Body
+// Hands L.Ring R.Ring / Back Waist Legs Feet), Attack / Defense and the 8 resists under it ; the slot's item list beside
+// it (the client's colours) ; the item card of what the hand is on. The client does the equipping (0x050).
+namespace { Block g_eqB, g_elB; unsigned g_eqMs = 0; bool g_eqPreview = false; }
+bool equip_preview_toggle() { g_eqPreview = !g_eqPreview; return g_eqPreview; }
+void equipment_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_eqB.vis = g_elB.vis = 0.0f; g_eqB.wasOpen = g_elB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_eqMs ? (float)(now - g_eqMs) / 1000.0f : 0.0f; g_eqMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeEquip& E0 = native_equip();
+    static NativeEquip last;
+    if (E0.open) last = E0;
+    if (!block_ease(g_eqB, E0.open, now, dt) || last.uiW <= 0) { g_elB.vis = 0.0f; return; }
+    unsigned encMask = party().encumbrance();
+    NativeEquip shown = last;                                            // //aio eqpreview : every state, on the real items
+    if (g_eqPreview) {
+        encMask = 0;
+        for (int s = 0; s < 16; ++s) {
+            shown.ward[s] = (unsigned char)(s % 9);                     // 0 the inventory (no badge), 1..8 the wardrobes
+            if (s % 4 == 3) encMask |= 1u << s;                          // every 4th slot locked (Encumbrance)
+        }
+        shown.id[15] = 0;                                                // Back : an empty slot
+        static const unsigned COLS[4] = { 0x80509050u, 0x80404040u, 0x80804020u, 0x80808080u };   // worn, refused, held, normal
+        for (int i = 0; i < 16; ++i) shown.lrow[i].col = COLS[i % 4];
+    }
+    const NativeEquip& lastS = shown;
+    const Metrics k = metrics(f);
+    const float S = k.S, pad = snap(8.0f * S), tz = k.tz, headH = snap(18.0f * S), gap = snap(6.0f * S);
+    Font* fo = f.font; const u32 dev = f.dev;
+    const float tO = ease_out(((float)(now - g_eqB.openMs) / 1000.0f) / 0.08f);
+    const float A = g_eqB.vis * tO; if (A <= 0.0f) return;
+    const u32 sh = with_alpha(0xC8000000u, A);
+    // the client's grid, row-major on screen ; its entries are column-major
+    static const int SLOT_AT[16] = { 0, 1, 2, 3, 4, 9, 11, 12, 5, 6, 13, 14, 15, 10, 7, 8 };
+    static const int ENTRY_OF[16] = { 1, 5, 9, 13, 2, 3, 7, 12, 16, 6, 8, 10, 14, 11, 15, 4 };   // by packet slot
+    static const char* SLOT_EN[16] = { "Main", "Sub", "Range", "Ammo", "Head", "Body", "Hands", "Legs", "Feet", "Neck", "Waist", "L.Ear", "R.Ear", "L.Ring", "R.Ring", "Back" };
+    const float cell = snap(k.capH * 2.1f), cg = snap(4.0f * S);
+    const float gridW = 4.0f * cell + 3.0f * cg;
+    const float statH = snap(k.capH * 0.9f);
+    const float bw = snap(pad + gridW + pad), bh = snap(pad + headH + 6.0f * S + gridW + 8.0f * S + 3.0f * statH + pad);
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    const float L = bx + pad, hy = snap(by + pad + headH * 0.5f), gy = snap(by + pad + headH + 6.0f * S);
+    rrect(dev, L, snap(by + pad + headH), gridW, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    int curCell = -1;
+    for (int c = 0; c < 16; ++c) if (ENTRY_OF[SLOT_AT[c]] == last.cursor) curCell = c;
+    // the cells : a dark well, the item's icon (or the slot's name), the hand's cell in the party glass
+    const MouseState* ms = f.mouse; int mcell = -1;
+    for (int c = 0; c < 16; ++c) {
+        const float cx = snap(L + (float)(c % 4) * (cell + cg)), cy = snap(gy + (float)(c / 4) * (cell + cg));
+        rrect(dev, cx, cy, cell, cell, 5.0f * S, with_alpha(0x70101826u, A), with_alpha(0x70080C14u, A));
+        rrect_stroke(dev, cx, cy, cell, cell, 5.0f * S, with_alpha(0x30C8D6EAu, A), 1.0f);
+        if (c == curCell) {
+            rrect_clip_begin(dev, cx, cy, cell, cell, 5.0f * S);
+            party_selframe(dev, cx, cy, cell, cell, f.t, A, 0);
+            rrect_clip_end(dev);
+            rrect_stroke(dev, cx, cy, cell, cell, 5.0f * S, with_alpha(0xD8FFDA8Au, A), 1.5f * S);
+        }
+        const unsigned id = lastS.id[SLOT_AT[c]];
+        if (id) {
+            const u32 tex = list_icon(f, 3, id);
+            const float z = snap(cell - 8.0f * S);
+            if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(cx + 4.0f * S), snap(cy + 4.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev); }
+        }
+        if (id && lastS.ward[SLOT_AT[c]]) {                     // the wardrobe it comes from : a small plate, top right
+            const float bz = snap(cell * 0.34f);
+            rrect(dev, snap(cx + cell - bz - 2.0f * S), snap(cy + 2.0f * S), bz, bz, 3.0f * S, with_alpha(0xE0303848u, A), with_alpha(0xE0181E28u, A));
+            rrect_stroke(dev, snap(cx + cell - bz - 2.0f * S), snap(cy + 2.0f * S), bz, bz, 3.0f * S, with_alpha(0x80FFDA8Au, A), 1.0f);
+        }
+        // ENCUMBRANCE : a slot locked by it (0x01B flags, bit = packet slot) gets the Equip Viewer's red cross
+        if ((encMask >> SLOT_AT[c]) & 1u) {
+            const float m = snap(6.0f * S), th = snap(2.5f * S); const u32 red = with_alpha(0xD2FF3838u, A);
+            seg_soft(dev, cx + m, cy + m, cx + cell - m, cy + cell - m, th, red);
+            seg_soft(dev, cx + cell - m, cy + m, cx + m, cy + cell - m, th, red);
+        }
+        if (ms && ms->focused && ms->x >= cx && ms->x < cx + cell && ms->y >= cy && ms->y < cy + cell) mcell = c;
+    }
+    if (curCell >= 0 && last.focused) {
+        const float cx = snap(L + (float)(curCell % 4) * (cell + cg)), cy = snap(gy + (float)(curCell / 4) * (cell + cg));
+        const float hand = snap(k.capH * 1.25f);
+        const float hx = cx - hand * 0.35f + party_cursor_bob(f.t, hand);
+        if (g_handTex) party_cursor(dev, g_handTex, hx, cy + cell * 0.5f, hand, 0);
+    }
+    if (E0.open) {
+        g_hit[9][0] = bx / f.screenW; g_hit[9][1] = by / f.screenH; g_hit[9][2] = bw / f.screenW; g_hit[9][3] = bh / f.screenH;
+        const int ent = mcell >= 0 ? ENTRY_OF[SLOT_AT[mcell]] : 0;
+        if (ent && ent != g_eqB.hoverRow && ent != E0.cursor && E0.focused) native_equip_hover(ent);
+        g_eqB.hoverRow = ent;
+        if (ent && ms->clicked) native_equip_pick(ent);
+    }
+    // the stats : Attack, Defense ; the 8 resists, a dot of their element's colour
+    static const u32 ELC[8] = { 0xFFE85A4Au, 0xFF7FD4F0u, 0xFF6CD48Au, 0xFFC8A060u, 0xFFB07CE8u, 0xFF5A8CE8u, 0xFFF0F0E0u, 0xFF8A6AA8u };   // fire ice wind earth lightning water light dark
+    const float sy0 = gy + gridW + 8.0f * S;
+    const float colW = gridW / 4.0f;
+    for (int i = 0; i < 8; ++i) {
+        const float dx = snap(L + (float)(i / 2) * colW + 5.0f * S), dyc = snap(sy0 + statH * (1.5f + (float)(i % 2)));   // column-major, as the client
+        disc(dev, dx, dyc, 3.2f * S, with_alpha(ELC[i], A));
+    }
+    fo->begin(dev);
+    fo->draw_lc(dev, L, hy, tr("Equipment", "\xC3\x89quipement"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    if (curCell >= 0) { const char* sn = SLOT_EN[SLOT_AT[curCell]]; fo->draw_lc(dev, snap(L + gridW - fo->measure(sn, tz * 0.85f)), hy, sn, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
+    for (int c = 0; c < 16; ++c) if (lastS.id[SLOT_AT[c]] && lastS.ward[SLOT_AT[c]]) {
+        const float cx = snap(L + (float)(c % 4) * (cell + cg)), cy = snap(gy + (float)(c / 4) * (cell + cg));
+        const float bz = snap(cell * 0.34f); char w[4]; sprintf(w, "%d", lastS.ward[SLOT_AT[c]]);
+        fo->draw_lc(dev, snap(cx + cell - bz - 2.0f * S + (bz - fo->measure(w, tz * 0.75f)) * 0.5f), snap(cy + 2.0f * S + bz * 0.5f), w, tz * 0.75f, with_alpha(0xFFFFE6A8u, A), sh, k.ow);
+    }
+    for (int c = 0; c < 16; ++c) if (!lastS.id[SLOT_AT[c]]) {
+        const float cx = snap(L + (float)(c % 4) * (cell + cg)), cy = snap(gy + (float)(c / 4) * (cell + cg));
+        const char* sn = SLOT_EN[SLOT_AT[c]]; const float z = tz * 0.72f;
+        fo->draw_lc(dev, snap(cx + (cell - fo->measure(sn, z)) * 0.5f), snap(cy + cell * 0.5f), sn, z, with_alpha(0xFF56627Au, A), sh, k.ow);
+    }
+    if (last.statsOk) {
+        char a[24], d[24]; sprintf(a, "%d", last.atk); sprintf(d, "%d", last.def);
+        const float r0 = snap(sy0 + statH * 0.5f);
+        fo->draw_lc(dev, L, r0, tr("Attack", "Attaque"), tz * 0.9f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
+        fo->draw_lc(dev, snap(L + colW * 2.0f - 10.0f * S - fo->measure(a, tz * 0.9f)), r0, a, tz * 0.9f, with_alpha(0xFFF2F5FAu, A), sh, k.ow);
+        fo->draw_lc(dev, snap(L + colW * 2.0f + 4.0f * S), r0, tr("Defense", "D\xC3\xA9""fense"), tz * 0.9f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
+        fo->draw_lc(dev, snap(L + gridW - fo->measure(d, tz * 0.9f)), r0, d, tz * 0.9f, with_alpha(0xFFF2F5FAu, A), sh, k.ow);
+        for (int i = 0; i < 8; ++i) {
+            char v[12]; sprintf(v, "%d", (int)last.res[i]);
+            const float dx = snap(L + (float)(i / 2) * colW + 12.0f * S), dyc = snap(sy0 + statH * (1.5f + (float)(i % 2)));
+            fo->draw_lc(dev, dx, dyc, v, tz * 0.9f, with_alpha(0xFFE4EAF2u, A), sh, k.ow);
+        }
+    }
+    // ======== Current Gil (the client's `money` box), where it puts it ========
+    if (last.money.open && last.gilOk && last.money.uiW > 0) {
+        const float msx = f.screenW / (float)last.money.uiW, msy = f.screenH / (float)last.money.uiH;
+        char g[32]; thousands(last.gil, g); strcat(g, " G");
+        const char* gl = tr("Current Gil", "Gils");
+        float gw = snap((float)(last.money.rx1 - last.money.rx0) * msx);
+        { const float need = snap(2.0f * pad + fo->measure(gl, tz) + 24.0f * S); if (gw < need) gw = need; const float n2 = snap(2.0f * pad + fo->measure(g, tz)); if (gw < n2) gw = n2; }
+        const float gh = snap(pad + headH + 6.0f * S + k.capH + pad);
+        float gx = snap((float)last.money.rx0 * msx), gyy = snap((float)last.money.ry0 * msy);
+        if (gx + gw > f.screenW - 4.0f) gx = snap(f.screenW - 4.0f - gw); if (gx < 4.0f) gx = 4.0f;
+        if (gyy + gh > f.screenH - 4.0f) gyy = snap(f.screenH - 4.0f - gh); if (gyy < 4.0f) gyy = 4.0f;
+        draw_themed_box(dev, f.skin, gx, gyy, gw, gh, C.muBox, A, S);
+        const float Lg = gx + pad, Rg = gx + gw - pad, hyg = snap(gyy + pad + headH * 0.5f), vy = snap(gyy + pad + headH + 6.0f * S + k.capH * 0.5f);
+        rrect(dev, Lg, snap(gyy + pad + headH), Rg - Lg, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+        const float cr = 5.0f * S, ccx = snap(Rg - cr), ccy = hyg;                 // a gold coin
+        disc(dev, ccx, ccy, cr, with_alpha(0xFFD9A93Au, A));
+        disc(dev, ccx, ccy, cr * 0.72f, with_alpha(0xFFF2CD5Cu, A));
+        disc(dev, ccx - cr * 0.3f, ccy - cr * 0.3f, cr * 0.28f, with_alpha(0xB0FFFFFFu, A));
+        fo->begin(dev);
+        fo->draw_lc(dev, Lg, hyg, gl, tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+        fo->draw_lc(dev, snap(Rg - fo->measure(g, tz)), vy, g, tz, with_alpha(0xFFF2F5FAu, A), sh, k.ow);
+    }
+    // ======== the slot's item list (inventor), beside the grid ========
+    float dt2 = dt;
+    const bool lon = E0.open && E0.lopen;
+    if (block_ease(g_elB, lon, now, dt2) && last.lvis > 0) {
+        // AS TALL AS THE GRID'S BOX (the user, 2026-11-18) : the client's page of rows spread over that height
+        const float rowH = snap((bh - 2.0f * pad) / (float)last.lvis), iz = snap(rowH - 4.0f * S);
+        float wName = fo->measure("Wwwwwwwwwwwwwwwwwwww", tz) * 0.85f;
+        const int nRows = last.ln - last.ltop < last.lvis ? last.ln - last.ltop : last.lvis;
+        for (int i = 0; i < nRows; ++i) if (!lastS.lrow[i].header && lastS.lrow[i].id) { const char* nm = item_display_name(lastS.lrow[i].id); if (nm) { const float w = fo->measure(nm, tz); if (w > wName) wName = w; } }
+        const float lw = snap(pad + 8.0f * S + iz + 8.0f * S + wName + 16.0f * S + fo->measure("99", tz) + 8.0f * S + pad);
+        const float lh = bh;
+        float lx = snap(bx + bw + gap), ly = by;
+        if (lx + lw > f.screenW - 4.0f) lx = snap(bx - gap - lw);
+        const float LA = g_elB.vis * tO;
+        if (LA > 0.0f) {
+            draw_themed_box(dev, f.skin, lx, ly, lw, lh, C.muBox, LA, S);
+            const float Lx = lx + pad, Wx = lw - 2.0f * pad, ry = snap(ly + pad);
+            for (int i = 0; i < nRows; ++i) {
+                const float y = snap(ry + (float)i * rowH);
+                if (lastS.lrow[i].header) rrect(dev, Lx, snap(y + rowH - 2.0f * S), Wx, 1.0f, 0.0f, with_alpha(0x40FFDA8Au, LA), with_alpha(0x40FFDA8Au, LA));
+                else if (((i + last.ltop) & 1) == 0) rrect(dev, Lx, y, Wx, rowH, 3.0f * S, with_alpha(0x18FFFFFFu, LA), with_alpha(0x10FFFFFFu, LA));
+            }
+            const int cr = last.lcursor >= last.ltop && last.lcursor < last.ltop + nRows ? last.lcursor - last.ltop : -1;
+            if (cr >= 0) {
+                const float targetY = ry + (float)cr * rowH;
+                if (g_elB.curY < 0.0f) g_elB.curY = targetY;
+                g_elB.curY += (targetY - g_elB.curY) * (1.0f - expf(-dt * 30.0f));
+                if (fabsf(targetY - g_elB.curY) < 0.3f) g_elB.curY = targetY;
+                const float y = snap(g_elB.curY), r = rowH * 0.5f;
+                rrect_clip_begin(dev, Lx, y, Wx, rowH, r);
+                party_selframe(dev, Lx, y, Wx, rowH, f.t, LA, 0);
+                rrect_clip_end(dev);
+                rrect_stroke(dev, Lx, y, Wx, rowH, r, with_alpha(0xC8FFDA8Au, LA), 1.0f);
+                if (last.lfocused) {
+                    const float hand = snap(k.capH * 1.25f), cy = g_elB.curY + rowH * 0.5f;
+                    const float hx = lx - hand * 0.35f + party_cursor_bob(f.t, hand);
+                    if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
+                }
+            } else g_elB.curY = -1.0f;
+            if (last.ln > last.lvis) {
+                const float rx = lx + lw - pad * 0.5f - 1.0f * S, th = (float)last.lvis * rowH;
+                const float th2 = th * (float)last.lvis / (float)last.ln, ty2 = ry + th * (float)last.ltop / (float)last.ln;
+                rrect(dev, rx, ry, 2.0f * S, th, 1.0f * S, with_alpha(0x30FFFFFFu, LA), with_alpha(0x30FFFFFFu, LA));
+                rrect(dev, rx, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, LA), with_alpha(0xC0FFDA8Au, LA));
+            }
+            for (int i = 0; i < nRows; ++i) if (!lastS.lrow[i].header && lastS.lrow[i].id) {
+                const u32 tex = list_icon(f, 3, lastS.lrow[i].id);
+                const float a = LA * (lastS.lrow[i].col == 0x80404040u ? 0.5f : 1.0f);
+                if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(Lx + 8.0f * S), snap(ry + (float)i * rowH + 2.0f * S), iz, iz, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a)); dSetTex(dev, 0, 0); cs(dev); }
+            }
+            {   // the mouse : the client's hand follows, a click validates (equips, or takes off the one worn)
+                int mrow = -1;
+                if (E0.lopen && E0.lfocused && ms && ms->focused && ms->x >= Lx && ms->x < Lx + Wx && ms->y >= ry && ms->y < ry + (float)nRows * rowH)
+                    mrow = last.ltop + (int)((ms->y - ry) / rowH);
+                if (E0.lopen) {
+                    g_hit[8][0] = lx / f.screenW; g_hit[8][1] = ly / f.screenH; g_hit[8][2] = lw / f.screenW; g_hit[8][3] = lh / f.screenH;
+                    if (mrow >= 0 && mrow + 1 != g_elB.hoverRow && mrow != E0.lcursor) native_textlist_hover("inventor", mrow);
+                    g_elB.hoverRow = mrow + 1;
+                    if (mrow >= 0 && ms->clicked) native_textlist_pick("inventor", mrow);
+                }
+            }
+            fo->begin(dev);
+            for (int i = 0; i < nRows; ++i) {
+                const NativeEqRow& r = lastS.lrow[i];
+                const float cy = snap(ry + (float)i * rowH + rowH * 0.5f);
+                if (r.header) {                                        // the client's "Storage Options" : it opens the bag chooser
+                    const char* t = tr("Storage Options", "Options de stockage");
+                    fo->draw_lc(dev, snap(Lx + 4.0f * S), cy, t, tz * 0.9f, with_alpha(0xFFE8D9B0u, LA), sh, k.ow);
+                    const float ax = snap(Lx + 4.0f * S + fo->measure(t, tz * 0.9f) + 8.0f * S), ar = 3.2f * S;
+                    tri(dev, ax + ar, cy, ax - ar * 0.6f, cy - ar, ax - ar * 0.6f, cy + ar, with_alpha(0xFFE8D9B0u, LA));
+                    fo->begin(dev);
+                    continue;
+                }
+                const char* nm = r.id ? item_display_name(r.id) : 0;
+                const u32 c = r.col == 0x80509050u ? 0xFF7CE07Cu : r.col == 0x80404040u ? 0xFF6E7C8Eu : r.col == 0x80804020u ? 0xFFFFB45Au : (i == cr ? 0xFFFFFFFFu : 0xFFE4EAF2u);
+                fo->draw_lc(dev, snap(Lx + 8.0f * S + iz + 8.0f * S), cy, nm ? nm : "?", tz, with_alpha(c, LA), sh, k.ow);
+                if (r.count > 1) { char n[8]; sprintf(n, "%d", r.count); fo->draw_lc(dev, snap(Lx + Wx - 8.0f * S - fo->measure(n, tz)), cy, n, tz, with_alpha(0xFF93A6BEu, LA), sh, k.ow); }
+            }
+            // the item card : what has the hand -- the list's row, else the grid's cell (the list is up all along)
+            // the compare card (itemxinf) TAKES the focus when it opens (log 2026-11-18) : the list keeps the hand then
+            const bool listHand = last.lfocused || last.compare;
+            const unsigned rowId = listHand && cr >= 0 && !lastS.lrow[cr].header ? lastS.lrow[cr].id : 0;
+            const unsigned cellId = curCell >= 0 ? lastS.id[SLOT_AT[curCell]] : 0;
+            const unsigned iid = listHand ? rowId : cellId;
+            if (iid) {
+                // UNDER the grid and the list, as the client (the user, 2026-11-18) : from the grid's left to the list's right
+                const float cx = bx, cw = snap((lx > bx ? lx + lw : bx + bw) - bx);
+                const float ctop = snap((by + bh > ly + lh ? by + bh : ly + lh) + gap);
+                card_use(0); card_load(dev, iid);
+                if (card_ready(iid)) {
+                    card_draw(f, k, cx, cw, ctop, ctop, tO, LA, false);
+                    // the compare view (LB / Ctrl) : the item worn in that slot, under it, a gold arrow between
+                    if (last.compare && listHand && cellId && cellId != iid) {
+                        const float ay = snap(g_cardBottom + 7.0f * S), ar = 5.0f * S, acx = snap(cx + cw * 0.5f);
+                        tri(dev, acx - ar * 1.6f, ay - ar * 0.5f, acx + ar * 1.6f, ay - ar * 0.5f, acx, ay + ar * 0.7f, with_alpha(0xFFFFD23Cu, LA));
+                        card_use(1); card_load(dev, cellId);
+                        if (card_ready(cellId)) card_draw(f, k, cx, cw, snap(ay + ar + 4.0f * S), snap(ay + ar + 4.0f * S), tO, LA, false);
+                        card_use(0);
+                    }
+                }
+            }
+        }
+    } else {
+        g_elB.hoverRow = 0;
+        // no list : the card of the grid's cell under the hand
+        if (curCell >= 0 && lastS.id[SLOT_AT[curCell]]) {
+            const unsigned iid = lastS.id[SLOT_AT[curCell]];
+            card_load(dev, iid);
+            if (card_ready(iid)) {
+                const float cw = bw > snap(300.0f * S) ? bw : snap(300.0f * S), cx = bx;   // under the grid, as the client
+                card_draw(f, k, cx, cw, snap(by + bh + gap), snap(by + bh + gap), tO, A, false);
+            }
+        }
     }
 }
 

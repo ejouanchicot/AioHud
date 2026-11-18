@@ -1780,6 +1780,13 @@ static void aio_command_dispatch(const char* cmd)
         if (!ok) g_host.console().print(aio::tr(">>> the segment counter will NOT repair itself after a client patch -- report this message <<<", ">>> le compteur de segments NE se reparera PAS tout seul apres une maj du client -- signale ce message <<<"));
         return;
     }
+    if (strstr(buf, "eqpreview")) {   // //aio eqpreview -> the Equipment screen shows every cell / row state (a visual check) ; again = off
+        const bool on = aio::equip_preview_toggle();
+        g_host.console().print(on ? aio::tr(">>> AioHud : Equipment preview ON (badges 1-8, locked slots, an empty slot, every row colour) -- //aio eqpreview again to stop <<<",
+                                            ">>> AioHud : apercu Equipment ACTIF (badges 1-8, emplacements bloques, un emplacement vide, chaque couleur de ligne) -- //aio eqpreview pour arreter <<<")
+                                  : aio::tr(">>> AioHud : Equipment preview off <<<", ">>> AioHud : apercu Equipment desactive <<<"));
+        return;
+    }
     if (strstr(buf, "geartrace")) {   // //aio geartrace -> trace the next N gear-icon resolutions to aiohud_debug.log (raw-item-ID diagnosis)
         aio::set_gear_trace(120);
         g_host.console().print(aio::tr(">>> AioHud : gear trace ARMED (open the equipment viewer / change gear, then send Windower\\plugins\\aiohud_debug.log ; look for GEAR lines) <<<", ">>> AioHud : trace gear ARMEE (ouvre l'equipment viewer / change de stuff, puis envoie Windower\\plugins\\aiohud_debug.log ; cherche les lignes GEAR) <<<"));
