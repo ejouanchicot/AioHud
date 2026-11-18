@@ -215,6 +215,11 @@ after a logout.
   object P = *(&P) kept by the 0x01B handler -- levels P+0x1A660+j, mastered mask u32 P+0x1A678, master levels
   P+0x1A67C+j, the raw block (main +4, sub +7, unlocked mask +8) P+0x1A61C -- all from signatures in `jobs_res()`,
   adopted when the same &P, ML = mastered + 4 and levels = block + 0x44 hold. User-confirmed in game.
+- **Status -> Combat / Magic Skills** (Ghidra 2026-11-18, docs/notes/skills-re-2026-11-18.md) : `btlskill` (ids 1..31)
+  and `mgcskill` (32..47), placed by their records ; two columns row by row, the level right-aligned, BLUE when capped ;
+  a skill is hidden only when its value is exactly 0x8000 (a job's unusable skills read 0x8010 and show "16" -- the
+  client's own rule, kept). Data : packet 0x062 +0x80 (64 u16 : level & 0x7FFF, bit 15 capped) copied to a static at
+  FM_PW_BLOCK + 0x60 (both clients). User-confirmed in game.
 - **Status's stat panels** `persona` (16,16 ; also the Equipment screen's) and `level` (16,208) : BORN parked like the
   Profile, drawn at the client's own size from the same 0x061 mirror (max HP / MP 0x04 / 0x08, jobs 0x0C, attributes
   0x14 / 0x22, Su 0x52, iLv 0x54, Master Level 0x65, Exemplar 0x68 / 0x6C) + the live HP / MP / TP.

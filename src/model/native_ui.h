@@ -184,6 +184,13 @@ struct NativeJobs {
 const NativePanel& native_joblevel();
 const NativePanel& native_masterle();
 const NativeJobs& native_jobs();
+// Status -> Combat Skills (`btlskill`, ids 1..31) / Magic Skills (`mgcskill`, ids 32..47) : the client's skill array
+// (packet 0x062 +0x80, 64 u16 : the level in the low 15 bits, bit 15 = capped ; exactly 0x8000 = not shown) -- a
+// static right after the 0x061 mirror (FM_PW_BLOCK + 0x60 in both clients ; Ghidra 2026-11-18, docs/notes/skills-re).
+struct NativeSkills { bool ok; unsigned short v[64]; };
+const NativePanel& native_btlskill();
+const NativePanel& native_mgcskill();
+const NativeSkills& native_skills();
 
 // What the client's Chat submenu (chatctrl) shows on the right of its rows (its draw FUN_0546E290, read 2026-11-16) :
 //   Tell        the name the Tell will go to : handler+0x14 = -1 the current target (the HUD has its name), -2 the

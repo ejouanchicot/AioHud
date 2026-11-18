@@ -67,6 +67,7 @@ const char* const ACT_LIST_W[] = { "magic", "ability", "mount", 0 };            
 const char* const NPC_W[]   = { "rem4line", "rem4li2", "query", 0 };
 bool g_profDataOk = false;   // the Profile's data reads (read_profile_mem) : AioHUD may draw it, so park the client's
 bool g_persDataOk = false;   // the stat panels' data reads (read_persona_mem) : same rule for `persona` / `level`
+bool g_skillsOkRule = false; // the skill array reads : same rule for `btlskill` / `mgcskill` (mirrors g_skillsOk)
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
 const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", 0 };                 // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list
 const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row
@@ -91,6 +92,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_MAIN)  && g_profDataOk && !strcmp(n, "profile")) { dy = HIDE_DY; return; }
     // Status's stat panels : the same (born parked, only while their data reads)
     if ((hide & NU_MAIN)  && g_persDataOk && (!strcmp(n, "persona") || !strcmp(n, "level"))) { dy = HIDE_DY; return; }
+    if ((hide & NU_MAIN)  && g_skillsOkRule && (!strcmp(n, "btlskill") || !strcmp(n, "mgcskill"))) { dy = HIDE_DY; return; }
     // the HUD-like windows never follow the MENUS offset -- they have their own option above
     if (in_list(n, PARTY_W) || in_list(n, ALLY_W) || in_list(n, CHAT_W) || in_list(n, COST_W) || in_list(n, NET_W) || in_list(n, INPUT_W)) return;
     if (ox == 0 && oy == 0 && anc == 0) return;   // frames the client places by CODE (mapframe, cnqframe...)
@@ -153,6 +155,20 @@ NativeEntryMenu g_mainM, g_mainSub, g_mainSort, g_mainYn; bool g_mainFail = fals
 NativeProfile g_prof;
 NativePanel g_persona, g_levelW; PersonaMem g_persData;
 NativePanel g_jobW, g_mlW; NativeJobs g_jobs; bool g_jobsOurs = false;   // Status -> Job / Master Levels
+NativePanel g_btlW, g_mgcW; NativeSkills g_skills; bool g_skillsOk = false;   // Status -> Combat / Magic Skills
+// the skill array : FM_PW_BLOCK + 0x60 (the 0x062 handler's copy) ; plausible = every level <= 1000
+bool skills_read(NativeSkills& K) {
+    memset(&K, 0, sizeof(K));
+    const u32 blk = fm_addr(FM_PW_BLOCK); if (!blk) return false;
+    for (int i = 0; i < 64; i += 2) {
+        u32 w = 0; if (!safe_read(blk + 0x60 + (u32)i * 2, &w)) return false;
+        K.v[i] = (unsigned short)(w & 0xFFFF); K.v[i + 1] = (unsigned short)(w >> 16);
+    }
+    bool any = false;
+    for (int i = 1; i < 48; ++i) { if ((K.v[i] & 0x7FFF) > 1000) return false; if (K.v[i] != 0x8000 && K.v[i]) any = true; }
+    K.ok = any;
+    return K.ok;
+}
 // an open panel by name : its rect (parked : where it would be) ; false when not open
 bool panel_read(u32 mgr, const char* want, NativePanel& P) {
     memset(&P, 0, sizeof(P));
@@ -680,7 +696,7 @@ int main_read(NativeEntryMenu& m, u32* objOut = 0) { return entry_read(MAIN_W, m
 // The MAIN menu : the same fallback as the action menu -- 3 unreadable frames while open, the client's own comes back ;
 // 5 s of good reads, AioHUD's again. Logged both ways.
 void main_poll(bool on) {
-    if (!on) { g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
+    if (!on) { g_skillsOk = false; g_skillsOkRule = false; g_btlW.open = g_mgcW.open = false; g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
     NativeEntryMenu m; int r = main_read(m);
     NativeEntryMenu sm; const int rs = entry_read(MAIN_SUB_W, sm, 0);
     g_mainSub = sm; if (rs != 1) g_mainSub.open = false;
@@ -718,6 +734,10 @@ void main_poll(bool on) {
             panel_read(mgr, "persona", g_persona); panel_read(mgr, "level", g_levelW);
             // Job / Master Levels : ours only while STATUS's list is up (the Mog House's job change reuses joblevel)
             panel_read(mgr, "joblevel", g_jobW); panel_read(mgr, "masterle", g_mlW);
+            panel_read(mgr, "btlskill", g_btlW); panel_read(mgr, "mgcskill", g_mgcW);
+            { NativeSkills K; g_skillsOk = skills_read(K); g_skills = K; g_skillsOkRule = g_skillsOk; }
+            static int saidK = 0;
+            if ((g_btlW.open || g_mgcW.open) && saidK < 3) { ++saidK; windower::debug::log("NATIVEUI skills panel : %s (sword %04X evasion %04X divine %04X)", g_skillsOk ? "read -- AioHUD draws it" : "data unreadable -- the client's own stays", g_skills.v[3], g_skills.v[29], g_skills.v[32]); }
             const bool inStatus = g_mainSub.open && !strcmp(g_mainSub.name, "statcom2");
             NativeJobs J; memset(&J, 0, sizeof(J));
             if ((g_jobW.open || g_mlW.open) && inStatus) jobs_read(J);
@@ -838,6 +858,9 @@ void yn_park(u32 mgr) {
     static int jlLog = 0, mlLog = 0;                     // placed by code (joblevel through move-to) : moved once shown
     if (g_jobsOurs && g_jobW.open) park_named(mgr, "joblevel", jlLog, "Status -> Job Levels");
     if (g_jobsOurs && g_mlW.open) park_named(mgr, "masterle", mlLog, "Status -> Master Levels");
+    static int bsLog = 0, msLog = 0;                     // placed by their record : born parked (the name rule) ; a late one moved
+    if (g_skillsOk && g_btlW.open) park_named(mgr, "btlskill", bsLog, "Status -> Combat Skills");
+    if (g_skillsOk && g_mgcW.open) park_named(mgr, "mgcskill", msLog, "Status -> Magic Skills");
 }
 // a window the client places by CODE (never born under a parked parent), moved HIDE_DY down through its setter, logged
 void park_named(u32 mgr, const char* want, int& logN, const char* what) {
@@ -891,7 +914,8 @@ void rescue_children(u32 mgr, int hide) {
             // AioHUD draws Auto-sort's Yes / No while the spell list's sort options are up
             const bool ynOurs = (g_mainSort.open && !strcmp(nm, "sortyn")) || (g_prof.open && g_prof.ok && !strcmp(nm, "profile"))
                              || (g_persDataOk && (!strcmp(nm, "persona") || !strcmp(nm, "level")))
-                             || (g_jobsOurs && (!strcmp(nm, "joblevel") || !strcmp(nm, "masterle")));
+                             || (g_jobsOurs && (!strcmp(nm, "joblevel") || !strcmp(nm, "masterle")))
+                             || (g_skillsOk && (!strcmp(nm, "btlskill") || !strcmp(nm, "mgcskill")));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
                 int nx = r[0], ny = r[1] - HIDE_DY;
                 // the NPC answers are up : ABOVE AioHUD's box, left edges level (user 2026-11-17 "on la veut au-dessus") ;
@@ -925,6 +949,9 @@ const PersonaMem& native_persona_data() { return g_persData; }
 const NativePanel& native_joblevel() { return g_jobW; }
 const NativePanel& native_masterle() { return g_mlW; }
 const NativeJobs& native_jobs() { return g_jobs; }
+const NativePanel& native_btlskill() { return g_btlW; }
+const NativePanel& native_mgcskill() { return g_mgcW; }
+const NativeSkills& native_skills() { return g_skills; }
 const NativeChatInfo& native_chat_info() { return g_chat; }
 const NativeList& native_list() { return g_list; }
 
