@@ -203,6 +203,29 @@ bool read_equipment_ext(unsigned short ids[16], unsigned char ext[16][24]);
 // LOAD instead of waiting for the next login / job change / zone, which is the only time the packet comes.
 struct CharSheet;
 bool read_charsheet_mem(CharSheet& cs);
+// THE PROFILE (Status -> Profile) : the client's own mirror of packet 0x061 (FM_PW_BLOCK = the packet's +0x10 ; the
+// whole body sits from -0x10, measured 2026-11-18 PROFLOG against the user's Profile window) + the self entity.
+//   nation  pkt 0x50 (0 San d'Oria, 1 Bastok, 2 Windurst)   home point  pkt 0x4A (a zone id)
+//   rank    pkt 0x46            rank points pkt 0x48 (capped 0xFFF)   title pkt 0x44
+//   MASTERY RANK pkt 0x64 LOW 4 BITS (fields.lua's _unknown7 ; Tetsouo 0x07 = 7, Kaories 0x15 = 5 -- bit 0x10 is
+//                something else, set on Kaories and not on Tetsouo)
+//   race    self entity +0xEF (luacore-verified-offsets.md ; 3 = Elvaan male, the user's)
+// ok = every field read AND plausible (a zoning blank reads as not ok, never as rank 0 of nation 0).
+struct ProfileMem { bool ok = false; int nation = 0, race = 0, home = 0, rank = 0, rankPts = 0, mastery = 0, title = 0; };
+bool read_profile_mem(ProfileMem& p);
+// THE STATUS PANELS (Status -> `persona` : name / jobs / iLv / HP MP TP / the seven attributes ; `level` : Master Level
+// and Exemplar) : the same 0x061 mirror (the whole body from block -0x10). Fields per Windower fields.lua 0x061 :
+//   max HP 0x04 (u32), max MP 0x08 (u32), main job / lvl / sub job / lvl 0x0C..0x0F, base attributes 0x14 (7 x u16),
+//   added 0x22 (7 x s16), Su level 0x52, max iLevel 0x54, Master Level 0x65, Exemplar current / required 0x68 / 0x6C.
+// ok = read and plausible (a job 1..22 at 1..99, max HP > 0, an attribute > 0 : a zoning blank is not a character).
+struct PersonaMem {
+    bool ok = false;
+    unsigned maxHp = 0, maxMp = 0;
+    int mjob = 0, mlvl = 0, sjob = 0, slvl = 0, su = 0, ilvl = 0, ml = 0;
+    unsigned epCur = 0, epNext = 0;
+    unsigned short base[7] = {}; short added[7] = {};
+};
+bool read_persona_mem(PersonaMem& p);
 // The 22 job levels + master levels from the client's own table (see game_mem.cpp).
 // mainJob/mainLvl are the cross-check that the table belongs to this character.
 bool read_job_table_mem(CharSheet& cs, unsigned mainJob, unsigned mainLvl);

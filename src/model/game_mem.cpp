@@ -394,6 +394,39 @@ bool read_charsheet_mem(CharSheet& cs) {
     return true;
 }
 
+bool read_profile_mem(ProfileMem& p) {
+    p = ProfileMem{};
+    const u32 blk = fm_addr(FM_PW_BLOCK); if (!blk) return false;
+    unsigned char b[0x58]; memset(b, 0, sizeof(b));
+    if (!model_copy(blk + 0x34, b, sizeof(b))) return false;          // packet 0x44 .. 0x9B
+    auto u16at = [&](int pkt) { return (int)b[pkt - 0x44] | ((int)b[pkt - 0x44 + 1] << 8); };
+    p.title = u16at(0x44); p.rank = u16at(0x46); p.rankPts = u16at(0x48) & 0xFFF; p.home = u16at(0x4A);
+    p.nation = b[0x50 - 0x44]; p.mastery = b[0x64 - 0x44] & 0x0F;   // the LOW bits : Kaories 0x15 = rank 5, Tetsouo 0x07 = 7
+    const u32 me = self_entity(); unsigned char race = 0;
+    if (!me || !model_copy(me + 0xEF, &race, 1)) return false;
+    p.race = race;
+    p.ok = p.nation >= 0 && p.nation <= 2 && p.rank >= 1 && p.rank <= 11 && p.home > 0 && p.home < 1024
+        && p.race >= 1 && p.race <= 8;
+    return p.ok;
+}
+
+bool read_persona_mem(PersonaMem& p) {
+    p = PersonaMem{};
+    const u32 blk = fm_addr(FM_PW_BLOCK); if (!blk) return false;
+    unsigned char b[0x70]; memset(b, 0, sizeof(b));
+    if (!model_copy(blk - 0x10, b, sizeof(b))) return false;          // packet 0x00 .. 0x6F
+    auto u16at = [&](int o) { return (unsigned)b[o] | ((unsigned)b[o + 1] << 8); };
+    auto u32at = [&](int o) { return u16at(o) | (u16at(o + 2) << 16); };
+    p.maxHp = u32at(0x04); p.maxMp = u32at(0x08);
+    p.mjob = b[0x0C]; p.mlvl = b[0x0D]; p.sjob = b[0x0E]; p.slvl = b[0x0F];
+    for (int a = 0; a < 7; ++a) { p.base[a] = (unsigned short)u16at(0x14 + 2 * a); p.added[a] = (short)u16at(0x22 + 2 * a); }
+    p.su = b[0x52]; p.ilvl = b[0x54]; p.ml = b[0x65];
+    p.epCur = u32at(0x68); p.epNext = u32at(0x6C);
+    bool attr = false; for (int a = 0; a < 7; ++a) if (p.base[a]) attr = true;
+    p.ok = p.mjob >= 1 && p.mjob <= 22 && p.mlvl >= 1 && p.mlvl <= 99 && p.sjob <= 22 && p.slvl <= 99 && p.maxHp > 0 && attr && p.ml <= 50;
+    return p.ok;
+}
+
 // entity_array[index] -> server id (+0x78). One indexed read (not a scan). 0 if empty/invalid.
 unsigned entity_id_by_index(unsigned index) {
     if (index == 0 || index >= 0x900) return 0;

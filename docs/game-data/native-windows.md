@@ -194,6 +194,23 @@ after a logout.
   **`sortyn`** (Yes / No) -- placed by its CODE, not under a parked parent ; the same window confirms the inventory's
   and the Mog House's sorts. **Manual sort** : the list handler's **+0x6C** = 0 off, 1 on, 2 a spell held ; **+0x70** =
   the held one's index in the list ; validating another row puts the held one ABOVE it (capture MSORT).
+- **Status** opens `statcom2` (13 entries, labels are images : named from their help texts) in place of the menu, and
+  beside it the client's `persona` (the stats, 16,16) and `level` (Master Level / Exemplar, 16,208).
+- **Status -> Profile** (`profile`, 130,48 ; no entries -- a panel) : its flag, rank bar and icons are drawn where it
+  OPENED and do not follow a later move -> it must be BORN parked (its record, `g_profDataOk`). Its data, measured
+  2026-11-18 on two characters (PROFLOG / PROFCMP) : the FM_PW_BLOCK mirror holds the WHOLE 0x061 body from
+  block -0x10 -- nation pkt 0x50, home point 0x4A, rank 0x46, rank points 0x48 (cap 0xFFF), **Mastery Rank = pkt
+  0x64 & 0x0F** (Tetsouo 0x07 = 7, Kaories 0x15 = 5) ; race = self entity +0xEF (3 Elvaan male).
+  **Mentor + Monstrosity** (Ghidra 2026-11-18, the profile draw FUN_05488F90, handler vtable 0x05675998 ; notes in
+  docs/notes/profile-monstrosity-re-2026-11-18.md) : packet **0x063 order 3** copies 0xD4 bytes from its +0x08 into a
+  FFXiMain static ; **Gladiator rank = (u32 @+0x0C >> 2) & 3**, named by the client's own table ("Gla", "CG", "HCG") ;
+  **Prestige = u16 @+0x14** ; a gate byte (block + 0x1C0) set once orders 3 and 4 arrived -- 0 : the client draws no
+  Monstrosity. **Mentor = byte *(player ptr) + off** (packet 0x01B +0x65 : 0 none, 1..3 the flag ; the next byte is the
+  Mastery Rank). All found by SIGNATURE in `mon_res()` (the addresses moved between the June and November clients),
+  adopted only when prestige = rank + 8 and gate = rank - 4 + 0x1C0 hold ; resolved live at the first try.
+- **Status's stat panels** `persona` (16,16 ; also the Equipment screen's) and `level` (16,208) : BORN parked like the
+  Profile, drawn at the client's own size from the same 0x061 mirror (max HP / MP 0x04 / 0x08, jobs 0x0C, attributes
+  0x14 / 0x22, Su 0x52, iLv 0x54, Master Level 0x65, Exemplar 0x68 / 0x6C) + the live HP / MP / TP.
 
 ## 9. The target ACTION menu (`playermo`) -- 2026-11-16 (captures + screenshots + static, base 0x05340000)
 

@@ -65,8 +65,10 @@ const char* const NET_W[]   = { "netstat", "polwindo", 0 };
 const char* const ACT_SUB_W[] = { "magselec", "abiselec", "chatctrl", 0 };
 const char* const ACT_LIST_W[] = { "magic", "ability", "mount", 0 };                   // the lists AioHUD redraws (NU_ACT)   // the action menu's submenus AioHUD redraws (NU_ACT)
 const char* const NPC_W[]   = { "rem4line", "rem4li2", "query", 0 };
+bool g_profDataOk = false;   // the Profile's data reads (read_profile_mem) : AioHUD may draw it, so park the client's
+bool g_persDataOk = false;   // the stat panels' data reads (read_persona_mem) : same rule for `persona` / `level`
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
-const char* const MAIN_SUB_W[] = { "mgcmenu", 0 };                             // what it opens that AioHUD redraws (NU_MAIN)
+const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", 0 };                 // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list
 const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row
 const char* const MAIN_YN_W[] = { "sortyn", 0 };                               // Auto-sort's Yes / No (parked by inv-style code, not by name)          // the NPC windows AioHUD redraws (NU_NPC)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
@@ -83,6 +85,12 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_ACT)   && (!strcmp(n, "playermo") || in_list(n, ACT_SUB_W) || in_list(n, ACT_LIST_W))) { dy = HIDE_DY; return; }
     if ((hide & NU_NPC)   && in_list(n, NPC_W)) { dy = HIDE_DY; return; }
     if ((hide & NU_MAIN)  && (in_list(n, MAIN_W) || in_list(n, MAIN_SUB_W) || in_list(n, MAIN_SORT_W))) { dy = HIDE_DY; return; }
+    // Status -> Profile : BORN parked (its record) -- its flag, rank bar and icons are drawn where it OPENED and do not
+    // follow a later move (2026-11-18, "plein d'elements sont toujours la, la barre, l'icone") ; only while its data
+    // reads (g_profDataOk), else the client's own panel stays
+    if ((hide & NU_MAIN)  && g_profDataOk && !strcmp(n, "profile")) { dy = HIDE_DY; return; }
+    // Status's stat panels : the same (born parked, only while their data reads)
+    if ((hide & NU_MAIN)  && g_persDataOk && (!strcmp(n, "persona") || !strcmp(n, "level"))) { dy = HIDE_DY; return; }
     // the HUD-like windows never follow the MENUS offset -- they have their own option above
     if (in_list(n, PARTY_W) || in_list(n, ALLY_W) || in_list(n, CHAT_W) || in_list(n, COST_W) || in_list(n, NET_W) || in_list(n, INPUT_W)) return;
     if (ox == 0 && oy == 0 && anc == 0) return;   // frames the client places by CODE (mapframe, cnqframe...)
@@ -141,7 +149,28 @@ u32 g_actObj = 0;          // the playermo object of the last good read (re-read
 // the same fallback for the NPC windows : an NPC window open but unreadable 3 frames -> the client's own come back
 NativeNpc g_npc; bool g_npcFail = false; int g_npcBad = 0; DWORD g_npcGoodSince = 0;
 // and for the MAIN menu
-NativeEntryMenu g_mainM, g_mainSub, g_mainSort, g_mainYn; bool g_mainFail = false; int g_mainBad = 0; DWORD g_mainGoodSince = 0;
+NativeEntryMenu g_mainM, g_mainSub, g_mainSort, g_mainYn; bool g_mainFail = false;
+NativeProfile g_prof;
+NativePanel g_persona, g_levelW; PersonaMem g_persData;
+// an open panel by name : its rect (parked : where it would be) ; false when not open
+bool panel_read(u32 mgr, const char* want, NativePanel& P) {
+    memset(&P, 0, sizeof(P));
+    u32 node = 0; if (!mgr || !safe_read(mgr + MGR_OPEN_LIST, &node)) return false;
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, want)
+            && rd8(o + OBJ_CLOSING, cl) && !cl && rd16(o + OBJ_RECT, P.rx0) && rd16(o + OBJ_RECT + 2, P.ry0) && rd16(o + OBJ_RECT + 4, P.rx1) && rd16(o + OBJ_RECT + 6, P.ry1)) {
+            u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return false;
+            P.uiW = (short)(wh & 0xFFFF); P.uiH = (short)(wh >> 16);
+            if (P.uiW < 320 || P.uiH < 240 || P.uiW > 8000 || P.uiH > 8000) return false;
+            if (P.ry0 >= P.uiH) { P.ry0 = (short)(P.ry0 - HIDE_DY); P.ry1 = (short)(P.ry1 - HIDE_DY); }
+            P.open = true; return true;
+        }
+        node = next;
+    }
+    return false;
+} int g_mainBad = 0; DWORD g_mainGoodSince = 0;
 NativeFep g_fep; DWORD g_fepDrawnMs = 0; int g_fepBadLog = 0; u32 g_fepIn = 0;
 int eff_hide(const UiConfig& c) {
     int h = c.nuHide;
@@ -540,6 +569,7 @@ void chat_info_read(u32 obj);   // below : the Chat submenu's extras (Tell name,
 int  list_read(NativeList& L);   // below : the spell list
 
 int inv_read(u32 focus, NativeList& L);   // below, at namespace scope : the Items list (inventor, from the action menu)
+void mon_read(NativeProfile& P);          // below : the Profile's Mentor + Monstrosity (statics found by signature)
 namespace {
 // One read of "playermo" : open (in the manager's open list, not dying), its handler's row codes, cursor, rect.
 // Returns -1 when it is not open, 0 when open but unreadable, 1 when read.
@@ -648,7 +678,7 @@ int main_read(NativeEntryMenu& m, u32* objOut = 0) { return entry_read(MAIN_W, m
 // The MAIN menu : the same fallback as the action menu -- 3 unreadable frames while open, the client's own comes back ;
 // 5 s of good reads, AioHUD's again. Logged both ways.
 void main_poll(bool on) {
-    if (!on) { g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
+    if (!on) { g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
     NativeEntryMenu m; int r = main_read(m);
     NativeEntryMenu sm; const int rs = entry_read(MAIN_SUB_W, sm, 0);
     g_mainSub = sm; if (rs != 1) g_mainSub.open = false;
@@ -662,7 +692,40 @@ void main_poll(bool on) {
     g_mainSort = so; if (ro != 1) g_mainSort.open = false;
     NativeEntryMenu yn; memset(&yn, 0, sizeof(yn)); const int ry = g_mainSort.open ? entry_read(MAIN_YN_W, yn, 0) : -1;
     g_mainYn = yn; if (ry != 1) g_mainYn.open = false;
-    if (rs == 0 || ro == 0 || ry == 0) r = 0;                        // a parked submenu that cannot be read : the client's own back
+    if (rs == 0 || ro == 0 || ry == 0) r = 0;
+    {   // Status -> Profile : the panel's rect, and its data (drawn by AioHUD only when every field reads)
+        NativeProfile P; memset(&P, 0, sizeof(P));
+        const u32 mgr = manager(); u32 node = 0; if (mgr) safe_read(mgr + MGR_OPEN_LIST, &node);
+        for (int g = 0; valid_ptr(node) && g < 400 && !P.open; ++g) {
+            u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+            safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+            if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "profile")
+                && rd8(o + OBJ_CLOSING, cl) && !cl && rd16(o + OBJ_RECT, P.rx0) && rd16(o + OBJ_RECT + 2, P.ry0) && rd16(o + OBJ_RECT + 4, P.rx1) && rd16(o + OBJ_RECT + 6, P.ry1)) {
+                u32 wh = 0;
+                if (safe_read(mgr + 0x80, &wh)) { P.uiW = (short)(wh & 0xFFFF); P.uiH = (short)(wh >> 16); }
+                if (P.uiW >= 320 && P.uiH >= 240 && P.uiW <= 8000 && P.uiH <= 8000) {
+                    if (P.ry0 >= P.uiH) { P.ry0 = (short)(P.ry0 - HIDE_DY); P.ry1 = (short)(P.ry1 - HIDE_DY); }
+                    P.open = true;
+                }
+            }
+            node = next;
+        }
+        { ProfileMem D0; g_profDataOk = read_profile_mem(D0); }
+        {   // the stat panels
+            PersonaMem D; g_persDataOk = read_persona_mem(D); g_persData = D;
+            panel_read(mgr, "persona", g_persona); panel_read(mgr, "level", g_levelW);
+            static int said = 0;
+            if ((g_persona.open || g_levelW.open) && said < 3) { ++said; windower::debug::log("NATIVEUI stat panels : %s (job %d/%d sub %d/%d hp %u mp %u ml %d)", D.ok ? "read -- AioHUD draws them" : "data unreadable -- the client's own stay", D.mjob, D.mlvl, D.sjob, D.slvl, D.maxHp, D.maxMp, D.ml); }
+        }
+        if (P.open) {
+            ProfileMem D;
+            if (read_profile_mem(D)) { P.ok = true; P.nation = D.nation; P.race = D.race; P.home = D.home; P.rank = D.rank; P.rankPts = D.rankPts; P.mastery = D.mastery; P.title = D.title; }
+            mon_read(P);
+            static int said = 0;
+            if (said < 3) { ++said; windower::debug::log("NATIVEUI 'profile' : %s (nation %d race %d home %d rank %d pts %d mastery %d)", P.ok ? "read -- AioHUD draws it" : "data unreadable -- the client's own stays", P.nation, P.race, P.home, P.rank, P.rankPts, P.mastery); }
+        }
+        g_prof = P;
+    }                        // a parked submenu that cannot be read : the client's own back
     if (r == 0) {
         g_mainM.open = false; g_mainGoodSince = 0;
         if (++g_mainBad == 3 && !g_mainFail) { g_mainFail = true; windower::debug::log("NATIVEUI main menu : rows unreadable -- the client's own menu is shown"); }
@@ -753,16 +816,26 @@ void inv_park(u32 mgr) {
 // Auto-sort's confirmation `sortyn` : placed by its CODE (never born under a parked parent -- it showed at once, 2026-11-18
 // "auto sort ouvre un autre menu ... Yes No"). Parked while the spell list's sort options are AioHUD's ; anywhere else
 // (the inventory, the Mog House) it stays the client's. Once they close, rescue_children brings a parked one back.
-int g_ynParkLog = 0;
+int g_ynParkLog = 0, g_profParkLog = 0;
+void park_named(u32 mgr, const char* want, int& logN, const char* what);
 void yn_park(u32 mgr) {
-    if (!g_setter || !g_mainSort.open) return;
+    if (g_mainSort.open) park_named(mgr, "sortyn", g_ynParkLog, "Auto-sort, from the spell list");
+    if (g_prof.open && g_prof.ok) park_named(mgr, "profile", g_profParkLog, "Status -> Profile");   // placed by code too
+    // the stat panels are BORN parked by their record ; a late one (opened before the record took) is moved too
+    static int persLog = 0, lvlLog = 0;
+    if (g_persDataOk && g_persona.open) park_named(mgr, "persona", persLog, "Status -> stats");
+    if (g_persDataOk && g_levelW.open) park_named(mgr, "level", lvlLog, "Status -> Master Level");
+}
+// a window the client places by CODE (never born under a parked parent), moved HIDE_DY down through its setter, logged
+void park_named(u32 mgr, const char* want, int& logN, const char* what) {
+    if (!g_setter) return;
     u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return;
     const int uiH = (short)(wh >> 16); if (uiH < 240 || uiH > 8000) return;
     u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
     for (int g = 0; valid_ptr(node) && g < 400; ++g) {
         u32 next = 0, obj = 0, def = 0; unsigned char cl = 0; short r[4] = { 0, 0, 0, 0 }; char nm[9];
         safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &obj);
-        if (valid_ptr(obj) && safe_read(obj + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "sortyn") && rd8(obj + OBJ_CLOSING, cl) && !cl
+        if (valid_ptr(obj) && safe_read(obj + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, want) && rd8(obj + OBJ_CLOSING, cl) && !cl
             && rd16(obj + OBJ_RECT, r[0]) && rd16(obj + OBJ_RECT + 2, r[1]) && rd16(obj + OBJ_RECT + 4, r[2]) && rd16(obj + OBJ_RECT + 6, r[3])) {
             const int w = r[2] - r[0], h = r[3] - r[1];
             if (r[1] < uiH + HIDE_DY / 2 && w > 0 && h > 0 && w < 4000 && h < 4000) {
@@ -770,7 +843,7 @@ void yn_park(u32 mgr) {
                 __try { ((SetRectFn)g_setter)(obj, r[0], r[1] + HIDE_DY, w, h, 1, 0, 0); }
                 __except (EXCEPTION_EXECUTE_HANDLER) { ok = false; }
                 if (ok) refresh_handler(obj, nm);
-                if (g_ynParkLog < 20) { ++g_ynParkLog; windower::debug::log("NATIVEUI 'sortyn' (Auto-sort, from the spell list) : %s (y %d)", ok ? "parked -- AioHUD draws it" : "setter faulted", r[1]); }
+                if (logN < 20) { ++logN; windower::debug::log("NATIVEUI '%s' (%s) : %s (y %d)", want, what, ok ? "parked -- AioHUD draws it" : "setter faulted", r[1]); }
             }
             return;
         }
@@ -803,7 +876,8 @@ void rescue_children(u32 mgr, int hide) {
             // AioHUD draws the ITEMS list (and its item card) opened from the action menu : the client's stay parked
             const bool invOurs = (act_on_items() || (g_list.open && g_list.kind == 3)) && (!strcmp(nm, "inventor") || !strcmp(nm, "iteminfo"));
             // AioHUD draws Auto-sort's Yes / No while the spell list's sort options are up
-            const bool ynOurs = g_mainSort.open && !strcmp(nm, "sortyn");
+            const bool ynOurs = (g_mainSort.open && !strcmp(nm, "sortyn")) || (g_prof.open && g_prof.ok && !strcmp(nm, "profile"))
+                             || (g_persDataOk && (!strcmp(nm, "persona") || !strcmp(nm, "level")));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
                 int nx = r[0], ny = r[1] - HIDE_DY;
                 // the NPC answers are up : ABOVE AioHUD's box, left edges level (user 2026-11-17 "on la veut au-dessus") ;
@@ -830,6 +904,10 @@ const NativeEntryMenu& native_main_menu() { return g_mainM; }
 const NativeEntryMenu& native_main_sub() { return g_mainSub; }
 const NativeEntryMenu& native_main_sort() { return g_mainSort; }
 const NativeEntryMenu& native_main_yn() { return g_mainYn; }
+const NativeProfile& native_profile() { return g_prof; }
+const NativePanel& native_persona() { return g_persona; }
+const NativePanel& native_level() { return g_levelW; }
+const PersonaMem& native_persona_data() { return g_persData; }
 const NativeChatInfo& native_chat_info() { return g_chat; }
 const NativeList& native_list() { return g_list; }
 
@@ -1015,6 +1093,68 @@ bool chat_res() {
     } else if (g_crTries == 1 || g_crTries % 12 == 0)
         windower::debug::log("NATIVEUI chat submenu extras NOT resolved (try %d : ls %d unity %d tell %d decode %d text %d)", g_crTries, !!ls, !!un, !!te, !!de, !!st);
     return g_crOk;
+}
+// ---- the Profile's MENTOR and MONSTROSITY : read where the client's own panel reads them (Ghidra 2026-11-18, the
+// profile handler's draw FUN_05488F90 ; docs/game-data/native-windows.md). Found by SIGNATURE, every address taken from
+// the code's own operands -- the block moved between the June and November clients -- and adopted only when the
+// relations held in both clients hold : prestige = rank + 8, gate = rank - 4 + 0x1C0, the gate getter's exact bytes.
+//   rank      (u32 @rankVar >> 2) & 3, named by the client's table (0 "Gla", 1 "CG", 2 "HCG") -- packet 0x063 order 3 +0x0C
+//   prestige  u16 @presVar -- packet 0x063 order 3 +0x14 ;  gate byte @gateVar : 0 = the client draws no Monstrosity
+//   mentor    byte *( *mentorPtrVar + mentorOff ) -- packet 0x01B +0x65 (0 none, else the flag)
+// Bounded retry (every 5 s, logged at the first try and every minute), never given up (rule 10).
+struct MonRes { u32 rankVar, presVar, gateVar, nameTbl, mentorPtrVar, mentorOff; };
+MonRes g_mon; bool g_monOk = false, g_mentorOk = false; int g_monTries = 0; DWORD g_monNext = 0;
+bool mon_res() {
+    if (g_monOk && g_mentorOk) return true;
+    const DWORD now = GetTickCount();
+    if (g_monTries && (int)(now - g_monNext) < 0) return g_monOk || g_mentorOk;
+    ++g_monTries; g_monNext = now + 5000;
+    if (!g_monOk) {
+        const u32 a = aob_masked("E8 ?? ?? ?? ?? 84 C0 0F 84 ?? ?? ?? ?? A1 ?? ?? ?? ?? C1 E8 02 83 E0 03 7C ?? 83 F8 02 7F ?? 8B 04 85 ?? ?? ?? ??");
+        const u32 b = aob_masked("83 C4 1C 8B 15 ?? ?? ?? ?? 8D 44 24 ?? 81 E2 FF FF 00 00 52 68 ?? ?? ?? ?? 50 E8 ?? ?? ?? ?? 66 8B 56 16 66 8B 46 14");
+        u32 rel = 0, rk = 0, tbl = 0, pr = 0, gate = 0;
+        if (a && b && safe_read(a + 1, &rel) && safe_read(a + 0x0E, &rk) && safe_read(a + 0x22, &tbl) && safe_read(b + 5, &pr)) {
+            const u32 fn = a + 5 + rel;                      // the gate getter : A0 <imm32> 84 C0 0F 95 C0 C3
+            unsigned char op[11] = { 0 }; bool fnOk = true;
+            for (int i = 0; i < 11 && fnOk; ++i) fnOk = rd8(fn + (u32)i, op[i]);
+            if (fnOk && op[0] == 0xA0 && op[5] == 0x84 && op[6] == 0xC0 && op[7] == 0x0F && op[8] == 0x95 && op[9] == 0xC0 && op[10] == 0xC3) memcpy(&gate, op + 1, 4);
+            if (gate && pr == rk + 8 && gate == rk - 4 + 0x1C0 && valid_ptr(tbl)) {
+                g_mon.rankVar = rk; g_mon.presVar = pr; g_mon.gateVar = gate; g_mon.nameTbl = tbl; g_monOk = true;
+                windower::debug::log("NATIVEUI profile Monstrosity resolved (try %d) : rank FFXiMain+%X, prestige +%X, gate +%X", g_monTries, rk - ffximain_base(), pr - ffximain_base(), gate - ffximain_base());
+            }
+        }
+        if (!g_monOk && (g_monTries == 1 || g_monTries % 12 == 0))
+            windower::debug::log("NATIVEUI profile Monstrosity NOT resolved (try %d : draw %d prestige %d)", g_monTries, !!a, !!b);
+    }
+    if (!g_mentorOk) {
+        const u32 d = aob_masked("A1 ?? ?? ?? ?? 83 C4 1C 8A 80 ?? ?? ?? ?? 84 C0 76");
+        u32 pv = 0, off = 0;
+        if (d && safe_read(d + 1, &pv) && safe_read(d + 0x0A, &off) && valid_ptr(pv) && off > 0 && off < 0x100000) {
+            g_mon.mentorPtrVar = pv; g_mon.mentorOff = off; g_mentorOk = true;
+            windower::debug::log("NATIVEUI profile Mentor resolved (try %d) : *(FFXiMain+%X) + 0x%X", g_monTries, pv - ffximain_base(), off);
+        } else if (g_monTries == 1 || g_monTries % 12 == 0)
+            windower::debug::log("NATIVEUI profile Mentor NOT resolved (try %d : found %d)", g_monTries, !!d);
+    }
+    return g_monOk || g_mentorOk;
+}
+void mon_read(NativeProfile& P) {
+    P.mentor = -1; P.monOk = false; P.gladName[0] = 0; P.prestige = 0;
+    if (!mon_res()) return;
+    if (g_mentorOk) {
+        u32 pl = 0; unsigned char m = 0;
+        if (safe_read(g_mon.mentorPtrVar, &pl) && valid_ptr(pl) && rd8(pl + g_mon.mentorOff, m) && m <= 3) P.mentor = m;
+    }
+    if (g_monOk) {
+        unsigned char gate = 0; u32 rk = 0; short pr = 0;
+        if (rd8(g_mon.gateVar, gate) && gate && safe_read(g_mon.rankVar, &rk) && rd16(g_mon.presVar, pr)) {
+            const u32 r = (rk >> 2) & 3; u32 sp = 0;
+            if (r <= 2 && safe_read(g_mon.nameTbl + r * 4, &sp) && valid_ptr(sp)) {
+                int n = 0; for (; n < 7; ++n) { unsigned char c = 0; if (!rd8(sp + (u32)n, c) || c < 0x20 || c >= 0x7F) break; P.gladName[n] = (char)c; }
+                P.gladName[n] = 0;
+                P.prestige = (unsigned short)pr; P.monOk = n > 0;
+            }
+        }
+    }
 }
 // keep printable bytes only (names are ASCII ; the client's text may carry control codes)
 void copy_name(char* dst, int cap, const char* src) {

@@ -148,6 +148,30 @@ bool native_main_sort_pick(int entry);
 const NativeEntryMenu& native_main_yn();
 bool native_main_yn_hover(int entry);
 bool native_main_yn_pick(int entry);
+// ... and Status -> Profile (`profile`, a panel : no entries) : open, where the client put it (parked : where it would
+// be), and its data (game_mem.h ProfileMem). AioHUD draws it only while `data.ok` ; else the client's stays.
+struct NativeProfile {
+    bool  open;
+    short rx0, ry0, rx1, ry1;
+    int   uiW, uiH;
+    bool  ok;
+    int   nation, race, home, rank, rankPts, mastery, title;
+    // Mentor : 0 none ("--"), 1..3 the flag (bronze / silver / gold, packet 0x01B +0x65) ; -1 not resolved (row hidden)
+    int   mentor;
+    // Monstrosity (packet 0x063 order 3, mirrored in a FFXiMain static) : shown only when the client would (its gate)
+    bool  monOk;
+    char  gladName[8];         // the client's OWN name for the rank ("Gla", "CG", "HCG")
+    int   prestige;
+};
+const NativeProfile& native_profile();
+// Status's two stat panels : `persona` (also the Equipment screen's) and `level` -- open, where the client put them
+// (parked : where they would be) ; their data (PersonaMem) is read by the UI's model call below, once a frame.
+struct NativePanel { bool open; short rx0, ry0, rx1, ry1; int uiW, uiH; };
+const NativePanel& native_persona();
+const NativePanel& native_level();
+// the data both panels show, read once a frame while one of them is open (ok false : the client's panels stay)
+struct PersonaMem;
+const PersonaMem& native_persona_data();
 
 // What the client's Chat submenu (chatctrl) shows on the right of its rows (its draw FUN_0546E290, read 2026-11-16) :
 //   Tell        the name the Tell will go to : handler+0x14 = -1 the current target (the HUD has its name), -2 the

@@ -30,6 +30,8 @@
 #include "model/abilities_gen.h"        // abil_info : the ability list's job abilities
 #include "model/itemnames_gen.h"        // item_display_name : the Items list
 #include "model/mounts_gen.h"           // mount_name : the mount list
+#include "model/zones.h"                // zone_name : the Profile's Home Point
+#include "model/game_mem.h"             // PersonaMem : the stat panels' data
 #include "model/weapon_skills_gen.h"    // ws_info : its weapon skills
 #include "model/item_text.h"       // the NPC answers' item card : text + flags from the item's DAT record
 #include "gfx/draw.h"
@@ -186,9 +188,27 @@ const SubRow CHATCTRL[] = {
 // the main menu's Magic (mgcmenu) : the same seven categories in the same order, then Trust (its definition's help texts,
 // docs/notes/native-menu-items-2026-11-15.txt ; its labels are images, no text -- "#1 #2" until 2026-11-18)
 const SubRow MGC_TRUST = { "Trust", "Alter Ego", false, IC_DUO };
+// the main menu's Status (statcom2) : 13 entries, labels are images -- named from their help texts (the definition,
+// docs/notes/native-menu-items-2026-11-15.txt), by ENTRY index (the screen order is the client's, by y)
+const SubRow STATCOM2[13] = {
+    { "Profile",        "Profil",                         false, IC_DUO     },
+    { "Job Levels",     "Niveaux de job",                 false, IC_STAR    },
+    { "Combat Skills",  "Comp\xC3\xA9tences de combat", false, IC_SWORD   },
+    { "Magic Skills",   "Comp\xC3\xA9tences de magie",  false, IC_STAR    },
+    { "Crafts",         "Artisanat",                      false, IC_NONE    },
+    { "Currencies",     "Monnaies",                       false, IC_BAG     },
+    { "Merit Points",   "Points de m\xC3\xA9rite",      false, IC_STAR    },
+    { "Job Points",     "Job Points",                     false, IC_STAR    },
+    { "Play Time",      "Temps de jeu",                   false, IC_NONE    },
+    { "Currencies 2",   "Monnaies 2",                     false, IC_BAG     },
+    { "Unity",          "Unity",                          false, IC_DUO     },
+    { "Master Levels",  "Master Levels",                  false, IC_STAR    },
+    { "Alter Ego",      "Alter Ego",                      false, IC_DUO     },
+};
 const SubRow* sub_row(const char* menu, int entry) {
     if (!strcmp(menu, "mgcmenu") && entry >= 1 && entry <= 7) return &MAGSELEC[entry - 1];
     if (!strcmp(menu, "mgcmenu") && entry == 8) return &MGC_TRUST;
+    if (!strcmp(menu, "statcom2") && entry >= 1 && entry <= 13) return &STATCOM2[entry - 1];
     if (!strcmp(menu, "chatctrl") && entry >= 1 && entry <= 7) return &CHATCTRL[entry - 1];
     if (!strcmp(menu, "magselec") && entry >= 1 && entry <= 7) return &MAGSELEC[entry - 1];
     if (!strcmp(menu, "abiselec") && entry >= 1 && entry <= 5) return &ABISELEC[entry - 1];
@@ -1213,6 +1233,279 @@ void nui_help_fit(const Frame& f, float availW, float maxScale, float& outScale,
     outScale = sc; outH = h * sc;
 }
 void nui_help_box(const Frame& f, float cx, float cy, float s) { nui_sample(f, cx, cy, s, true, 0, 0); }
+
+// ======== Status's STAT PANELS (`persona`, `level` ; Game UI -> NU_MAIN), where the client puts its own ========
+// What the client's two panels show (the user's screenshot 2026-11-18), from native_persona_data() (the 0x061 mirror)
+// and the live vitals (f.game->me) : name ; Lv main job ; Lv support job ; iLv / Su ; HP MP TP ; the seven attributes
+// with what the gear adds ; then Master Level, Exemplar Points and the next level, with its bar.
+namespace {
+Block g_persB, g_lvlB; unsigned g_persMs = 0;
+const char* const JOB_FULL[23] = { "", "Warrior", "Monk", "White Mage", "Black Mage", "Red Mage", "Thief", "Paladin", "Dark Knight",
+    "Beastmaster", "Bard", "Ranger", "Samurai", "Ninja", "Dragoon", "Summoner", "Blue Mage", "Corsair", "Puppetmaster", "Dancer",
+    "Scholar", "Geomancer", "Rune Fencer" };
+void thousands(unsigned v, char* out) {      // 1628503 -> "1,628,503"
+    char t[16]; sprintf(t, "%u", v); const int n = (int)strlen(t); int o = 0;
+    for (int i = 0; i < n; ++i) { out[o++] = t[i]; if ((n - 1 - i) % 3 == 0 && i != n - 1) out[o++] = ','; }
+    out[o] = 0;
+}
+}
+void persona_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    const NativePanel& PP = native_persona(); const NativePanel& PL = native_level();
+    const PersonaMem& D = native_persona_data();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_persB.vis = g_lvlB.vis = 0.0f; g_persB.wasOpen = g_lvlB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_persMs ? (float)(now - g_persMs) / 1000.0f : 0.0f; g_persMs = now; if (dt > 0.1f) dt = 0.1f;
+    static PersonaMem lastD; static NativePanel lastP, lastL;
+    const bool onP = PP.open && D.ok, onL = PL.open && D.ok;
+    if (D.ok) lastD = D;
+    if (onP) lastP = PP;
+    if (onL) lastL = PL;
+    const bool drawP = block_ease(g_persB, onP, now, dt) && lastD.ok && lastP.uiW > 0;
+    const bool drawL = block_ease(g_lvlB, onL, now, dt) && lastD.ok && lastL.uiW > 0;
+    if (!drawP && !drawL) return;
+    const Metrics k = metrics(f);
+    const float S = k.S, pad = snap(5.0f * S);
+    float tz = k.tz, lh = 0.0f;
+    const u32 dev = f.dev; Font* fo = f.font;
+    const bool live = f.game && f.game->me.name[0];
+    auto place = [&](const NativePanel& P, float w, float h, float& x, float& y) {
+        const float sx = f.screenW / (float)P.uiW, sy = f.screenH / (float)P.uiH;
+        x = snap((float)P.rx0 * sx); y = snap((float)P.ry0 * sy);
+        if (x + w > f.screenW - 4.0f) x = snap(f.screenW - 4.0f - w); if (x < 4.0f) x = 4.0f;
+        if (y + h > f.screenH - 4.0f) y = snap(f.screenH - 4.0f - h); if (y < 4.0f) y = 4.0f;
+    };
+    const u32 cLab = 0xFF93A6BEu, cVal = 0xFFE4EAF2u, cGold = 0xFFE8D9B0u;
+    static const char* ATTR[7] = { "STR", "DEX", "VIT", "AGI", "INT", "MND", "CHR" };
+    float persBottom = 0.0f;
+    if (drawP) {
+        const PersonaMem& d = lastD;
+        char l1[40], l2[40], l3[32], hpS[24], mpS[24], tpS[12], av[7][8], ad[7][8];
+        sprintf(l1, "Lv%d %s", d.mlvl, d.mjob >= 1 && d.mjob <= 22 ? JOB_FULL[d.mjob] : "?");
+        if (d.sjob >= 1 && d.sjob <= 22 && d.slvl) sprintf(l2, "Lv%d %s", d.slvl, JOB_FULL[d.sjob]); else l2[0] = 0;
+        if (d.ilvl > 99) { if (d.su) sprintf(l3, "iLv %d / Su%d", d.ilvl, d.su); else sprintf(l3, "iLv %d", d.ilvl); } else l3[0] = 0;
+        const int hp = live ? f.game->me.hp : (int)d.maxHp, mp = live ? f.game->me.mp : (int)d.maxMp, tp = live ? f.game->me.tp : 0;
+        sprintf(hpS, "%d / %u", hp, d.maxHp); sprintf(mpS, "%d / %u", mp, d.maxMp); sprintf(tpS, "%d", tp);
+        for (int a = 0; a < 7; ++a) { sprintf(av[a], "%u", (unsigned)d.base[a]); if (d.added[a]) sprintf(ad[a], "%+d", (int)d.added[a]); else ad[a][0] = 0; }
+        const char* nm = live ? f.game->me.name : "";
+        // THE CLIENT'S SIZE : its rect, the lines fitted into it (14 lines in 190 UI units) ; the text a touch smaller
+        // than the menus' when the line asks for it. Wider only if a line would not fit (a long name, French labels).
+        const int nTop = 2 + (l2[0] ? 1 : 0) + (l3[0] ? 1 : 0);              // name, main job, [sub job], [iLv]
+        const float gap = snap(3.0f * S);
+        const float sx = f.screenW / (float)lastP.uiW, sy = f.screenH / (float)lastP.uiH;
+        float bw = snap((float)(lastP.rx1 - lastP.rx0) * sx), bh = snap((float)(lastP.ry1 - lastP.ry0) * sy);
+        if (bh < 120.0f * S) bh = snap(120.0f * S);
+        lh = (bh - 2.0f * pad - 2.0f * gap) / (float)(nTop + 10);
+        if (tz > lh * 0.92f) tz = lh * 0.92f;
+        const float c1 = fo->measure("STR", tz) + 8.0f * S, c2 = fo->measure("0000", tz), c3 = fo->measure("+000", tz) + 6.0f * S;
+        float w = c1 + c2 + c3;
+        const float wl[4] = { fo->measure(nm, tz * 1.05f), fo->measure(l1, tz), fo->measure(l2, tz), fo->measure(l3, tz) };
+        for (int i = 0; i < 4; ++i) if (wl[i] > w) w = wl[i];
+        const float vw = fo->measure("HP", tz) + 8.0f * S + fo->measure(hpS, tz); if (vw > w) w = vw;
+        if (w + 2.0f * pad > bw) bw = snap(w + 2.0f * pad);
+        float bx, by; place(lastP, bw, bh, bx, by);
+        const float tO = ease_out(((float)(now - g_persB.openMs) / 1000.0f) / 0.08f);
+        by = snap(by + (1.0f - tO) * 4.0f * S);
+        const float A = g_persB.vis * tO;
+        if (A > 0.0f) {
+            draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+            float y = by + pad;
+            const float yHair1 = y + (float)nTop * lh + gap * 0.5f, yHair2 = yHair1 + 3.0f * lh + gap;
+            rrect(dev, bx + pad, snap(yHair1), bw - 2.0f * pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+            rrect(dev, bx + pad, snap(yHair2), bw - 2.0f * pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+            const u32 sh = with_alpha(0xC8000000u, A);
+            fo->begin(dev);
+            auto line = [&](const char* t, u32 c, float z) { fo->draw_lc(dev, snap(bx + pad), snap(y + lh * 0.5f), t, z, with_alpha(c, A), sh, k.ow); y += lh; };
+            line(nm, 0xFFFFFFFFu, tz * 1.05f);
+            line(l1, cGold, tz);
+            if (l2[0]) line(l2, cVal, tz);
+            if (l3[0]) line(l3, cLab, tz);
+            y += gap;
+            const char* vl[3] = { "HP", "MP", "TP" }; const char* vv[3] = { hpS, mpS, tpS };
+            const u32 vc[3] = { 0xFFB8F0A0u, 0xFFA8D0FFu, 0xFFFFE0A0u };
+            for (int i = 0; i < 3; ++i) {
+                const float cy = snap(y + lh * 0.5f);
+                fo->draw_lc(dev, snap(bx + pad), cy, vl[i], tz, with_alpha(cLab, A), sh, k.ow);
+                fo->draw_lc(dev, snap(bx + bw - pad - fo->measure(vv[i], tz)), cy, vv[i], tz, with_alpha(vc[i], A), sh, k.ow);
+                y += lh;
+            }
+            y += gap;
+            for (int a = 0; a < 7; ++a) {
+                const float cy = snap(y + lh * 0.5f);
+                fo->draw_lc(dev, snap(bx + pad), cy, ATTR[a], tz, with_alpha(cLab, A), sh, k.ow);
+                fo->draw_lc(dev, snap(bx + bw - pad - c3 - fo->measure(av[a], tz)), cy, av[a], tz, with_alpha(cVal, A), sh, k.ow);
+                if (ad[a][0]) fo->draw_lc(dev, snap(bx + bw - pad - fo->measure(ad[a], tz)), cy, ad[a], tz, with_alpha(d.added[a] > 0 ? 0xFF8CE68Cu : 0xFFFF8C8Cu, A), sh, k.ow);
+                y += lh;
+            }
+        }
+        persBottom = by + bh;
+    }
+    if (drawL) {
+        const PersonaMem& d = lastD;
+        char ml[24], ep[24], nx[24]; sprintf(ml, "M.Level %d", d.ml); thousands(d.epCur, ep); thousands(d.epNext, nx);
+        const char* lEp = tr("Exemplar Points", "Exemplar Points");
+        const char* lNx = tr("Next M.Level", "Prochain M.Level");
+        float w = fo->measure(ml, tz);
+        const float ws[4] = { fo->measure(lEp, tz), fo->measure(ep, tz), fo->measure(lNx, tz), fo->measure(nx, tz) };
+        for (int i = 0; i < 4; ++i) if (ws[i] > w) w = ws[i];
+        const float sx = f.screenW / (float)lastL.uiW, sy = f.screenH / (float)lastL.uiH;
+        float bw = snap((float)(lastL.rx1 - lastL.rx0) * sx), bh = snap((float)(lastL.ry1 - lastL.ry0) * sy);
+        if (bh < 60.0f * S) bh = snap(60.0f * S);
+        lh = (bh - 2.0f * pad - 7.0f * S) / 5.0f;
+        if (tz > lh * 0.92f) tz = lh * 0.92f;
+        w = fo->measure(ml, tz); { const float w2[4] = { fo->measure(lEp, tz), fo->measure(ep, tz), fo->measure(lNx, tz), fo->measure(nx, tz) }; for (int i = 0; i < 4; ++i) if (w2[i] > w) w = w2[i]; }
+        if (w + 2.0f * pad > bw) bw = snap(w + 2.0f * pad);
+        if (drawP && g_persB.w > bw) bw = g_persB.w;
+        float bx, by; place(lastL, bw, bh, bx, by);
+        if (persBottom > 0.0f && by < persBottom + 3.0f * S) by = snap(persBottom + 3.0f * S);   // never under the stats
+        const float tO = ease_out(((float)(now - g_lvlB.openMs) / 1000.0f) / 0.08f);
+        by = snap(by + (1.0f - tO) * 4.0f * S);
+        const float A = g_lvlB.vis * tO;
+        if (A > 0.0f) {
+            draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+            const float y = by + pad;
+            const float barY = snap(y + 5.0f * lh + 2.0f * S), barW = bw - 2.0f * pad;
+            const float fr = d.epNext ? (float)d.epCur / (float)d.epNext : 0.0f;
+            rrect(dev, bx + pad, barY, barW, 4.0f * S, 2.0f * S, with_alpha(0x40FFFFFFu, A), with_alpha(0x30FFFFFFu, A));
+            if (fr > 0.0f) rrect(dev, bx + pad, barY, snap(barW * (fr > 1.0f ? 1.0f : fr)), 4.0f * S, 2.0f * S, with_alpha(0xE0FF8C8Cu, A), with_alpha(0xC0D86A6Au, A));
+            const u32 sh = with_alpha(0xC8000000u, A);
+            fo->begin(dev);
+            const char* t[5] = { ml, lEp, ep, lNx, nx };
+            const u32 c[5] = { cGold, cLab, cVal, cLab, cVal };
+            for (int i = 0; i < 5; ++i) {
+                const float cy = snap(y + (float)i * lh + lh * 0.5f);
+                const bool num = i == 2 || i == 4;
+                const float tx = num ? snap(bx + bw - pad - fo->measure(t[i], tz)) : snap(bx + pad);
+                fo->draw_lc(dev, tx, cy, t[i], tz, with_alpha(c[i], A), sh, k.ow);
+            }
+        }
+    }
+}
+
+// ======== Status -> PROFILE (Game UI -> NU_MAIN), in the menus' theme, where the client puts its own ========
+// The fields the client's panel shows, each from a MEASURED source (native_profile : the 0x061 mirror + the self
+// entity, 2026-11-18). Not yet here (no source proven) : Mentor, Monstrosity's rank and Prestige.
+namespace { Block g_profB; unsigned g_profMs = 0; }
+void profile_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    const NativeProfile& P = native_profile();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_profB.vis = 0.0f; g_profB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_profMs ? (float)(now - g_profMs) / 1000.0f : 0.0f; g_profMs = now; if (dt > 0.1f) dt = 0.1f;
+    static NativeProfile last;
+    const bool on = P.open && P.ok;
+    if (on) last = P;
+    if (!block_ease(g_profB, on, now, dt) || !last.ok || last.uiW <= 0 || last.uiH <= 0) return;
+    const Metrics k = metrics(f);
+    const float S = k.S;
+    // COMPACT, at the client's own size (2026-11-18, "compacte le profil" -- like the stat panels) : its rect, the lines
+    // fitted into it, the text a touch smaller when a line asks for it ; wider only if a line would not fit
+    const bool mon = last.monOk;                                             // the Monstrosity section : header + 2 rows
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH, vpad = snap(5.0f * S);
+    float bh = snap((float)(last.ry1 - last.ry0) * sy); if (bh < 150.0f * S) bh = snap(150.0f * S);
+    const int nLines = 7 + (mon ? 3 : 0);                                    // header, 6 rows, [header, 2 rows]
+    float tz = k.tz;
+    const float lh = (bh - 2.0f * vpad - (mon ? 4.0f * S : 0.0f)) / (float)nLines, headH = lh;
+    if (tz > lh * 0.92f) tz = lh * 0.92f;
+    // THE CLIENT'S LAYOUT (the user's reading of it, 2026-11-18) : a "Profile" section --
+    //   Nation : [flag] name / Race / Home Point / Rank : n  .. "Rank Points" with its bar under it /
+    //   Mastery Rank : n  .. Mentor : [flag]
+    // then a "Monstrosity" section (Gladiator Rank, Prestige) -- that one and Mentor once their source is proven.
+    static const char* NAT[3] = { "San d'Oria", "Bastok", "Windurst" };
+    static const u32 NATC[3] = { 0xFFE0524Au, 0xFF4A86E0u, 0xFF52C46Au };
+    static const char* RACE_EN[9] = { "?", "Hume", "Hume", "Elvaan", "Elvaan", "Tarutaru", "Tarutaru", "Mithra", "Galka" };
+    const char* lNat = tr("Nation", "Nation");
+    const char* lRace = tr("Race", "Race");
+    const char* lHome = tr("Home Point", "Home Point");
+    const char* lRank = tr("Rank", "Rang");
+    const char* lPts = tr("Rank Points", "Rank Points");
+    const char* lMas = tr("Mastery Rank", "Mastery Rank");
+    char rk[16], ms[16]; sprintf(rk, "%d", last.rank); sprintf(ms, "%d", last.mastery);
+    const char* hp = zone_name(last.home);
+    const char* vNat = NAT[last.nation % 3];
+    const char* vRace = RACE_EN[last.race >= 1 && last.race <= 8 ? last.race : 0];
+    const char* vHome = hp ? hp : "?";
+    Font* fo = f.font;
+    const char* labs[4] = { lNat, lRace, lHome, lRank };
+    float lw = fo->measure(lMas, tz);
+    for (int i = 0; i < 4; ++i) { const float w = fo->measure(labs[i], tz); if (w > lw) lw = w; }
+    const float pad = snap(6.0f * S), flag = snap(lh * 0.95f), colon = 10.0f * S;
+    const float vx = pad + lw + colon;                                       // the values' column (from the box's left)
+    float wNat = flag + 4.0f * S + fo->measure(vNat, tz), wHome = fo->measure(vHome, tz);
+    const float wRight = fo->measure(lPts, tz) + 8.0f * S;                  // "Rank Points" + its bar, on the right half
+    float bw = vx + (wNat > wHome ? wNat : wHome) + pad;
+    const float rankRow = vx + fo->measure(rk, tz) + 24.0f * S + wRight + pad;
+    if (rankRow > bw) bw = rankRow;
+    { const float nW = (float)(last.rx1 - last.rx0) * sx; if (bw < nW) bw = nW; }
+    bw = snap(bw);
+    const int rows = 6;                                                      // nation, race, home, rank, the bar, mastery
+    float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const float tO = ease_out(((float)(now - g_profB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_profB.vis * tO; if (A <= 0.0f) return;
+    const u32 dev = f.dev;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    // the section header : its title, a hairline under it
+    const float hc = snap(by + vpad + headH * 0.5f);
+    rrect(dev, bx + pad, snap(by + vpad + headH - 1.0f), bw - 2.0f * pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    const float y0 = by + vpad + headH, X = snap(bx + vx);
+    auto rowC = [&](int i) { return snap(y0 + (float)i * lh + lh * 0.5f); };
+    // Nation : the FLAG, the game's own picture (items 181..183 San d'Orian / Bastokan / Windurstian Flag, the item DAT) ;
+    // until it is decoded, a dot in its colour
+    {
+        const u32 ft = list_icon(f, 3, 181u + (unsigned)(last.nation % 3));
+        const float fy = snap(rowC(0) - flag * 0.5f);
+        if (ft) { dTexQuadState(dev, ft); tquad(dev, X - 2.0f * S, fy, flag, flag, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev); }
+        else disc(dev, X + flag * 0.5f - 2.0f * S, rowC(0), 3.6f * S, with_alpha(NATC[last.nation % 3], A));
+    }
+    // Rank Points : the label on the right half of the Rank row, its bar on the row under it (full = 0xFFF, the cap)
+    const float rpX = snap(bx + bw - pad - wRight + 8.0f * S), rpW = snap(bx + bw - pad - rpX);
+    {
+        const float ry = snap(rowC(4) - 2.0f * S), fr = (float)last.rankPts / 4095.0f;
+        rrect(dev, rpX, ry, rpW, 4.0f * S, 2.0f * S, with_alpha(0x40FFFFFFu, A), with_alpha(0x30FFFFFFu, A));
+        if (fr > 0.0f) rrect(dev, rpX, ry, snap(rpW * (fr > 1.0f ? 1.0f : fr)), 4.0f * S, 2.0f * S, with_alpha(0xE0FFDA8Au, A), with_alpha(0xC0E8B860u, A));
+    }
+    const u32 cl = with_alpha(0xFF93A6BEu, A), cv = with_alpha(0xFFE4EAF2u, A), sh = with_alpha(0xC8000000u, A);
+    fo->begin(dev);
+    fo->draw_lc(dev, snap(bx + pad), hc, tr("Profile", "Profil"), tz * 0.92f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    fo->draw_lc(dev, snap(bx + pad), rowC(0), lNat, tz, cl, sh, k.ow);  fo->draw_lc(dev, snap(X + flag + 4.0f * S), rowC(0), vNat, tz, cv, sh, k.ow);
+    fo->draw_lc(dev, snap(bx + pad), rowC(1), lRace, tz, cl, sh, k.ow); fo->draw_lc(dev, X, rowC(1), vRace, tz, cv, sh, k.ow);
+    fo->draw_lc(dev, snap(bx + pad), rowC(2), lHome, tz, cl, sh, k.ow); fo->draw_lc(dev, X, rowC(2), vHome, tz, cv, sh, k.ow);
+    fo->draw_lc(dev, snap(bx + pad), rowC(3), lRank, tz, cl, sh, k.ow); fo->draw_lc(dev, X, rowC(3), rk, tz, cv, sh, k.ow);
+    fo->draw_lc(dev, rpX, rowC(3), lPts, tz, cl, sh, k.ow);
+    fo->draw_lc(dev, snap(bx + pad), rowC(5), lMas, tz, cl, sh, k.ow); fo->draw_lc(dev, X, rowC(5), ms, tz, cv, sh, k.ow);
+    // MENTOR : on the Mastery Rank row, right half -- its flag (bronze / silver / gold), "--" when not a mentor
+    if (last.mentor >= 0) {
+        const char* lMen = tr("Mentor", "Mentor");
+        fo->draw_lc(dev, rpX, rowC(5), lMen, tz, cl, sh, k.ow);
+        const float mx = snap(rpX + fo->measure(lMen, tz) + 8.0f * S), my = rowC(5);
+        if (last.mentor == 0) fo->draw_lc(dev, mx, my, "--", tz, cv, sh, k.ow);
+        else {
+            static const u32 MC[4] = { 0, 0xFFE0A060u, 0xFFD8DEE8u, 0xFFFFD45Au };   // bronze, silver, gold
+            const u32 c = with_alpha(MC[last.mentor], A), pole = with_alpha(0xFFB8A890u, A);
+            const float h = lh * 0.78f, t = my - h * 0.5f;
+            rrect(dev, mx, snap(t), snap(1.6f * S), snap(h), 0.0f, pole, pole);                 // the pole
+            tri(dev, mx + 1.6f * S, t, mx + 1.6f * S + h * 0.85f, t + h * 0.26f, mx + 1.6f * S, t + h * 0.52f, c);   // the pennant
+            fo->begin(dev);
+        }
+    }
+    if (mon) {   // MONSTROSITY : the client's own words for the rank (its table : "Gla", "CG", "HCG")
+        const float my0 = y0 + (float)rows * lh + 4.0f * S;
+        const float mhc = snap(my0 + headH * 0.5f);
+        rrect(dev, bx + pad, snap(my0 + headH - 1.0f), bw - 2.0f * pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+        fo->begin(dev);
+        fo->draw_lc(dev, snap(bx + pad), mhc, "Monstrosity", tz * 0.92f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+        char pr[16]; sprintf(pr, "%d", last.prestige);
+        const char* lG = tr("Gladiator Rank", "Gladiator Rank");
+        const char* lP = tr("Prestige", "Prestige");
+        const float ry1 = snap(my0 + headH + lh * 0.5f), ry2 = snap(my0 + headH + lh * 1.5f);
+        const float gx = snap(bx + pad + (fo->measure(lG, tz) > lw ? fo->measure(lG, tz) : lw) + colon);
+        fo->draw_lc(dev, snap(bx + pad), ry1, lG, tz, cl, sh, k.ow); fo->draw_lc(dev, gx, ry1, last.gladName, tz, cv, sh, k.ow);
+        fo->draw_lc(dev, snap(bx + pad), ry2, lP, tz, cl, sh, k.ow); fo->draw_lc(dev, gx, ry2, pr, tz, cv, sh, k.ow);
+    }
+}
 
 // ======== the MAIN menu (Game UI -> NU_MAIN) : the client's two pages `menuwind` / `socialme`, mirrored ========
 // The client keeps its menu (parked off-screen), its input and every window it opens ; this draws its rows, its cursor
