@@ -6,6 +6,7 @@
 #include "model/game_mem.h"       // ffximain_base
 #include "model/paths.h"          // plugin_path : the crash-recovery file
 #include "model/chat_log.h"       // chat_seed_line / chat_seed_end : the client's own log, replayed at load
+#include "model/map_dat.h"        // dat_resolve_path / dat_read_file : the client's d_msg files (Job Points' texts)
 #include "windower.h"
 #include "windower_debug.h"
 #include <windows.h>
@@ -20,6 +21,7 @@ using windower::valid_ptr;
 using windower::safe_read;
 
 u32 aob_masked(const char* pat);   // below : a masked, unique AOB in FFXiMain
+bool jobs_read(NativeJobs& J);      // below : the Job / Master Levels
 
 namespace {
 
@@ -70,8 +72,12 @@ const char* const NPC_W[]   = { "rem4line", "rem4li2", "query", 0 };
 bool g_profDataOk = false;   // the Profile's data reads (read_profile_mem) : AioHUD may draw it, so park the client's
 bool g_persDataOk = false;   // the stat panels' data reads (read_persona_mem) : same rule for `persona` / `level`
 bool g_skillsOkRule = false; // the skill array reads : same rule for `btlskill` / `mgcskill` (mirrors g_skillsOk)
+extern bool g_mcatRule;     // the merit list reads : `meritinf` born parked (defined with g_mcat)
+bool g_faithRule = false;   // the faith points read : `fp_info` (Alter Ego's points) is born parked, as levmeri2
+bool g_jpRule = false;       // the JP mirror reads : `levmeri2` (Job Points' CP / JP) is born parked -- its numbers are drawn
+                             // where it opened, so a park after the fact left them on screen (2026-11-18)
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
-const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", 0 };      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
+const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", 0 };   // later = opened over the earlier ones      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
 const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row
 const char* const MAIN_YN_W[] = { "sortyn", 0 };                               // Auto-sort's Yes / No (parked by inv-style code, not by name)          // the NPC windows AioHUD redraws (NU_NPC)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
@@ -94,6 +100,9 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_MAIN)  && g_profDataOk && !strcmp(n, "profile")) { dy = HIDE_DY; return; }
     // Status's stat panels : the same (born parked, only while their data reads)
     if ((hide & NU_MAIN)  && g_persDataOk && (!strcmp(n, "persona") || !strcmp(n, "level"))) { dy = HIDE_DY; return; }
+    if ((hide & NU_MAIN)  && g_jpRule && !strcmp(n, "levmeri2")) { dy = HIDE_DY; return; }
+    if ((hide & NU_MAIN)  && g_faithRule && !strcmp(n, "fp_info")) { dy = HIDE_DY; return; }
+    if ((hide & NU_MAIN)  && g_mcatRule && !strcmp(n, "meritinf")) { dy = HIDE_DY; return; }
     if ((hide & NU_MAIN)  && g_skillsOkRule && (!strcmp(n, "btlskill") || !strcmp(n, "mgcskill") || !strcmp(n, "trdskill"))) { dy = HIDE_DY; return; }
     // the HUD-like windows never follow the MENUS offset -- they have their own option above
     if (in_list(n, PARTY_W) || in_list(n, ALLY_W) || in_list(n, CHAT_W) || in_list(n, COST_W) || in_list(n, NET_W) || in_list(n, INPUT_W)) return;
@@ -159,6 +168,11 @@ NativePanel g_persona, g_levelW; PersonaMem g_persData;
 NativePanel g_jobW, g_mlW; NativeJobs g_jobs; bool g_jobsOurs = false;   // Status -> Job / Master Levels
 NativePanel g_btlW, g_mgcW; NativeSkills g_skills; bool g_skillsOk = false;   // Status -> Combat / Magic Skills
 NativePanel g_utW; NativeUnity g_unity; bool g_unityOk = false;
+NativeMeritCat g_mcat; bool g_mcatRule = false;                                        // Merit Points -> Categories
+NativeCelestite g_cel;                                                                // Alter Ego -> Change Celestite
+NativeFaith g_faith;                                         // Status -> Alter Ego (fp_cat / fp_cat2 / fp_info)
+NativeJpCat g_jcat;
+NativeJobPoints g_jpts;                                                               // Status -> Job Points (merit2ca, levmeri2)
 NativeAreaList g_area; NativeSearch g_search; NativeEntryMenu g_scopt;               // Unity Lists : arealist, scresult, scoption
 const char* const SCOPT_W[] = { "scoption", 0 };
 NativeUnityRank g_urank;                                                              // Ranking Info -> its two lists (quest01)
@@ -398,6 +412,289 @@ bool search_read(u32 mgr, u32 focus, NativeSearch& S) {
         }
     }
     S.focused = focus == T.obj; S.open = true;
+    return true;
+}
+bool panel_read(u32 mgr, const char* want, NativePanel& P);   // below
+bool inStatusNow();              // below : Status's list (statcom2) is open
+bool jpts_read(u32 mgr, u32 focus, NativeJobPoints& P) {
+    memset(&P, 0, sizeof(P)); P.cursor = -1;
+    TextList T; if (!tl_find(mgr, "merit2ca", T) || T.count < 1 || T.count > 32) return false;
+    P.n = T.count; P.top = T.top; P.vis = T.vis; P.cursor = T.cursor;
+    P.rx0 = T.rx0; P.ry0 = T.ry0; P.rx1 = T.rx1; P.ry1 = T.ry1; P.uiW = T.uiW; P.uiH = T.uiH;
+    u32 rows = 0, ch = 0; if (!safe_read(T.h + 0x38, &rows) || !valid_ptr(rows) || !safe_read(T.h + 0x54, &ch)) return false;
+    P.chosen = (int)(ch & 0xFF);
+    for (int r = 0; r < P.n; ++r) { u32 id = 0; if (!safe_read(rows + (u32)r * 0x54 + 0x48, &id) || id < 1 || id > 23) return false; P.job[r] = (int)id; }
+    // the JP mirror
+    const u32 mer = fm_addr(FM_PW_MERIT); unsigned char fl = 0;
+    if (mer && rd8(mer - 2, fl) && (fl & 4)) {
+        unsigned char b[0x94];
+        if (rdblk(mer + 0x0A, b, sizeof(b))) {
+            P.ok = true;
+            for (int j = 0; j < 24; ++j) {
+                unsigned short cp = 0, jp = 0, sp = 0;
+                memcpy(&cp, b + 4 + 6 * j, 2); memcpy(&jp, b + 6 + 6 * j, 2); memcpy(&sp, b + 8 + 6 * j, 2);
+                if (cp > 30000 || jp > 500) { P.ok = false; break; }            // implausible : not the mirror
+                P.capPts[j] = cp; P.jobPts[j] = jp; P.jpSpent[j] = sp;
+            }
+        }
+    }
+    NativeJobs J; if (jobs_read(J)) for (int j = 1; j <= 22; ++j) P.lvl[j] = J.lvl[j];
+    panel_read(mgr, "levmeri2", P.box);
+    P.focused = focus == T.obj; P.open = true;
+    return true;
+}
+bool jcat_read(u32 mgr, u32 focus, NativeJpCat& K) {
+    memset(&K, 0, sizeof(K)); K.cursor = -1;
+    TextList T; if (!tl_find(mgr, "jbpcat", T)) return false;
+    unsigned char job = 0, tab = 0;
+    if (!rd8(T.h + 0x54, job) || !rd8(T.h + 0x58, tab) || job < 1 || job > 22 || tab > 1) return false;
+    K.job = job; K.tab = tab; K.n = T.count; K.top = T.top; K.vis = T.vis > 16 ? 16 : T.vis; K.cursor = T.cursor;
+    K.rx0 = T.rx0; K.ry0 = T.ry0; K.rx1 = T.rx1; K.ry1 = T.ry1; K.uiW = T.uiW; K.uiH = T.uiH;
+    u32 rows = 0; if (!safe_read(T.h + 0x38, &rows) || (K.n > 0 && !valid_ptr(rows))) return false;
+    for (int i = 0; i < K.vis && K.top + i < K.n; ++i) {
+        unsigned char b[0x54]; if (!rdblk(rows + (u32)(K.top + i) * 0x54, b, sizeof(b))) return false;
+        NativeJpRow& r = K.row[i]; r.id = r.gift = -1;
+        for (int c = 0; c < 8; ++c) {
+            u32 v = 0, col = 0; memcpy(&v, b + 0x28 + 4 * c, 4); memcpy(&col, b + 8 + 4 * c, 4);
+            switch (b[c]) {
+            case 0x35: r.id = (int)v; r.colName = col; break;
+            case 0x36: r.lvl = (int)v - 1; r.colLvl = col; break;
+            case 0x37: r.max = (int)v - 1; break;
+            case 0x38: r.cost = v ? (int)v - 1 : -1; r.colCost = col; break;     // 0 : not drawn (maxed)
+            case 0x39: r.gift = (int)v - 1; r.colName = col; break;
+            case 0x3A: r.thr = (int)v; r.colThr = col; break;
+            default: break;
+            }
+        }
+    }
+    K.focused = focus == T.obj; K.open = true;
+    return true;
+}
+// ---- the client's d_msg files (the format : header fields at 0x18 = header size, toc, entry size, data size, count ;
+// u16 at 0x0A = the body XOR 0xFF ; an entry = { u32 field count ; { u32 offset, u32 type }... }, a type-0 field =
+// its text at entry + offset + 0x1C) ----
+struct Dmsg { unsigned id; unsigned char* buf; unsigned size, hs, toc, esz, n; int tries; DWORD next; bool ok; };
+Dmsg g_dm[4] = { { 55694, 0, 0, 0, 0, 0, 0, 0, 0, false }, { 55674, 0, 0, 0, 0, 0, 0, 0, 0, false }, { 55683, 0, 0, 0, 0, 0, 0, 0, 0, false }, { 55686, 0, 0, 0, 0, 0, 0, 0, 0, false } };
+bool dmsg_ready(Dmsg& D) {
+    if (D.ok) return true;
+    const DWORD now = GetTickCount();
+    if (D.tries >= 8 || (D.tries && (int)(now - D.next) < 0)) return false;
+    ++D.tries; D.next = now + 5000;
+    char path[MAX_PATH + 8];
+    if (!dat_resolve_path(D.id, path, sizeof(path))) { windower::debug::log("NATIVEUI d_msg %u : no path (try %d/8)", D.id, D.tries); return false; }
+    unsigned sz = 0; unsigned char* b = dat_read_file(path, sz);
+    if (!b || sz < 0x40) { if (b) dat_free_file(b); windower::debug::log("NATIVEUI d_msg %u : unreadable '%s' (try %d/8)", D.id, path, D.tries); return false; }
+    unsigned hs = 0, toc = 0, esz = 0, n = 0; unsigned short enc = 0;
+    memcpy(&hs, b + 0x18, 4); memcpy(&toc, b + 0x1C, 4); memcpy(&esz, b + 0x20, 4); memcpy(&n, b + 0x28, 4); memcpy(&enc, b + 0x0A, 2);
+    if (hs < 0x40 || hs >= sz || n == 0 || n > 200000 || (toc && toc > sz - hs) || (!toc && (!esz || (unsigned long long)esz * n > sz - hs))) {
+        dat_free_file(b); windower::debug::log("NATIVEUI d_msg %u : not a d_msg file (header %u, toc %u, count %u)", D.id, hs, toc, n); return false; }
+    if (enc) for (unsigned i = hs; i < sz; ++i) b[i] ^= 0xFF;
+    D.buf = b; D.size = sz; D.hs = hs; D.toc = toc; D.esz = esz; D.n = n; D.ok = true;
+    windower::debug::log("NATIVEUI d_msg %u : %u strings from '%s' (try %d)", D.id, n, path, D.tries);
+    return true;
+}
+const char* dmsg_str(Dmsg& D, unsigned i) {
+    if (!dmsg_ready(D) || i >= D.n) return 0;
+    const unsigned char* body = D.buf + D.hs; const unsigned blen = D.size - D.hs;
+    unsigned base = 0, len = 0;
+    if (D.toc) { if ((unsigned long long)i * 8 + 8 > blen) return 0; unsigned off = 0; memcpy(&off, body + i * 8, 4); memcpy(&len, body + i * 8 + 4, 4); base = D.toc + off; }
+    else { base = i * D.esz; len = D.esz; }
+    if (base >= blen || len < 12 || len > blen - base) return 0;
+    const unsigned char* e = body + base;
+    unsigned cnt = 0, fo = 0, ft = 0; memcpy(&cnt, e, 4); memcpy(&fo, e + 4, 4); memcpy(&ft, e + 8, 4);
+    if (!cnt || ft != 0 || fo + 0x1C >= len) return 0;
+    const char* s = (const char*)e + fo + 0x1C;
+    for (unsigned k = fo + 0x1C; k < len; ++k) if (!e[k]) return s;          // terminated inside its entry
+    return 0;
+}
+// the faith points : the client's accessor F (&P at +0x01 == +0x12, the points' offset at +0x0B) and its gate G (&P at +0x01,
+// the flag byte's offset at +0x0E) -- docs/notes/status-panels-b-re-2026-11-18.md C4. Retried every 5 s, logged.
+struct FaithRes { u32 pVar, ptsOff, flagOff; };
+FaithRes g_fr; bool g_frOk = false; int g_frTries = 0; DWORD g_frNext = 0;
+bool faith_res() {
+    if (g_frOk) return true;
+    const DWORD now = GetTickCount();
+    if (g_frTries && (int)(now - g_frNext) < 0) return false;
+    ++g_frTries; g_frNext = now + 5000;
+    const u32 f = aob_masked("A1 ?? ?? ?? ?? 85 C0 75 01 C3 05 ?? ?? ?? ?? C3 8B 0D ?? ?? ?? ?? 85 C9 75 06 66 33 C0 C2 04 00 8B 44 24 04 66 3D 20 00 72 06 66 33 C0 C2 04 00 25 FF FF 00 00 66 8B 84 41 ?? ?? ?? ?? C2 04 00");
+    const u32 g = aob_masked("A1 ?? ?? ?? ?? 85 C0 75 03 32 C0 C3 8A 80 ?? ?? ?? ?? C0 E8 04 24 01");
+    u32 p1 = 0, p2 = 0, p3 = 0, pts = 0, fl = 0;
+    if (f && g && safe_read(f + 0x01, &p1) && safe_read(f + 0x12, &p2) && safe_read(f + 0x0B, &pts) && safe_read(g + 0x01, &p3) && safe_read(g + 0x0E, &fl)
+        && p1 == p2 && p1 == p3 && valid_ptr(p1) && pts < 0x100000 && fl < 0x100000) {
+        g_fr.pVar = p1; g_fr.ptsOff = pts; g_fr.flagOff = fl; g_frOk = true;
+        windower::debug::log("NATIVEUI faith resolved (try %d) : *(FFXiMain+%X), points +0x%X, loaded flag +0x%X", g_frTries, p1 - ffximain_base(), pts, fl);
+    } else if (g_frTries == 1 || g_frTries % 12 == 0)
+        windower::debug::log("NATIVEUI faith NOT resolved (try %d : F %d G %d)", g_frTries, !!f, !!g);
+    return g_frOk;
+}
+bool faith_points(int& pts) {
+    if (!faith_res()) return false;
+    u32 P = 0; unsigned char fl = 0; short v = 0;
+    if (!safe_read(g_fr.pVar, &P) || !valid_ptr(P) || !rd8(P + g_fr.flagOff, fl) || !(fl & 0x10) || !rd16(P + g_fr.ptsOff, v)) return false;
+    pts = (unsigned short)v; return pts <= 60000;
+}
+bool faith_read(u32 mgr, u32 focus, NativeFaith& F) {
+    memset(&F, 0, sizeof(F)); F.cursor = -1;
+    TextList T; F.level = 1;
+    if (!tl_find(mgr, "fp_cat2", T)) { F.level = 0; if (!tl_find(mgr, "fp_cat", T)) return false; }
+    F.n = T.count; F.top = T.top; F.vis = T.vis > 16 ? 16 : T.vis; F.cursor = T.cursor;
+    F.rx0 = T.rx0; F.ry0 = T.ry0; F.rx1 = T.rx1; F.ry1 = T.ry1; F.uiW = T.uiW; F.uiH = T.uiH;
+    u32 rows = 0; if (!safe_read(T.h + 0x38, &rows) || (F.n > 0 && !valid_ptr(rows))) return false;
+    for (int i = 0; i < F.vis && F.top + i < F.n; ++i) {
+        unsigned char b[0x54]; if (!rdblk(rows + (u32)(F.top + i) * 0x54, b, sizeof(b))) return false;
+        NativeJpRow& r = F.row[i]; r.id = -1; r.cost = -1;
+        u32 rid = 0; memcpy(&rid, b + 0x48, 4); F.rowId[i] = (int)rid;
+        for (int c = 0; c < 8; ++c) {
+            u32 v = 0, col = 0; memcpy(&v, b + 0x28 + 4 * c, 4); memcpy(&col, b + 8 + 4 * c, 4);
+            switch (b[c]) {
+            case 0x49: r.id = (int)v; r.colName = col; break;
+            case 0x4A: r.lvl = (int)v - 1; r.colLvl = col; break;
+            case 0x4B: r.max = (int)v - 1; break;
+            case 0x4C: r.cost = v ? (int)v - 1 : -1; r.colCost = col; break;
+            default: break;
+            }
+        }
+    }
+    F.pointsOk = faith_points(F.points);
+    F.focused = focus == T.obj; F.open = true;
+    return true;
+}
+bool cel_list(u32 mgr, u32 focus, const char* name, NativeCelList& L, TextList& T) {
+    memset(&L, 0, sizeof(L)); L.cursor = -1;
+    if (!tl_find(mgr, name, T)) return false;
+    L.n = T.count; L.top = T.top; L.vis = T.vis > 16 ? 16 : T.vis; L.cursor = T.cursor;
+    L.rx0 = T.rx0; L.ry0 = T.ry0; L.rx1 = T.rx1; L.ry1 = T.ry1; L.uiW = T.uiW; L.uiH = T.uiH;
+    u32 rows = 0; if (!safe_read(T.h + 0x38, &rows) || (L.n > 0 && !valid_ptr(rows))) return false;
+    for (int i = 0; i < L.vis && L.top + i < L.n; ++i) {
+        unsigned char b[0x54]; if (!rdblk(rows + (u32)(L.top + i) * 0x54, b, sizeof(b))) return false;
+        u32 n = 0; memcpy(&n, b + 0x48, 4); if (n > 255) return false;
+        L.cel[i] = (int)n;
+        for (int c = 0; c < 8; ++c) {
+            u32 v = 0, col = 0; memcpy(&v, b + 0x28 + 4 * c, 4); memcpy(&col, b + 8 + 4 * c, 4);
+            if (b[c] == 0x0E) L.badge[i] = (int)v;                    // the Lv badge (its raw value : logged)
+            if (b[c] == 0x19) L.col[i] = col;                         // the name, in the client's colour
+        }
+    }
+    L.focused = focus == T.obj; L.open = true;
+    return true;
+}
+bool cel_read(u32 mgr, u32 focus, NativeCelestite& K) {
+    memset(&K, 0, sizeof(K));
+    TextList TE, TI;
+    if (!cel_list(mgr, focus, "fe_equip", K.equip, TE) || !cel_list(mgr, focus, "fe_inven", K.inven, TI)) return false;
+    int type = -1, ps = -1, pr = -1; unsigned char may = 0;
+    if (!safe_read(TE.h + 0x58, (u32*)&type) || type < 0 || type > 5 || !safe_read(TE.h + 0x54, (u32*)&ps) || !rd8(TE.h + 0x50, may)
+        || !safe_read(TI.h + 0x50, (u32*)&pr)) return false;
+    K.type = type; K.picked = ps; K.pickedRow = pr; K.mayChange = may != 0;
+    // the Lv badge : the cell's value when it is the level (1..3) or the keytops3 index (0x235 + level) ; else the slot's
+    // place (the client lists Lv3, Lv2, Lv1 top down)
+    for (int i = 0; i < K.equip.vis && K.equip.top + i < K.equip.n; ++i) {
+        const int v = K.equip.badge[i];
+        K.equip.badge[i] = (v >= 1 && v <= 3) ? v : (v >= 0x236 && v <= 0x238) ? v - 0x235 : (K.equip.n - (K.equip.top + i));
+    }
+    K.open = true;
+    return true;
+}
+// the 0x08C merit list in P : MLIST_GET (FUN_05424C70) holds its two offsets (list +0x0A, count +0x19) ; &P from faith_res
+u32 g_mlList = 0, g_mlCount = 0; bool g_mlOk = false; int g_mlTries = 0; DWORD g_mlNext = 0;
+bool mlist_res() {
+    if (g_mlOk) return true;
+    const DWORD now = GetTickCount();
+    if (g_mlTries && (int)(now - g_mlNext) < 0) return false;
+    ++g_mlTries; g_mlNext = now + 5000;
+    const u32 a = aob_masked("8B 54 24 04 85 D2 74 20 8B 8A ?? ?? ?? ?? 85 C9 74 16 8B 44 24 08 66 3B 82 ?? ?? ?? ?? 73 09 25 FF FF 00 00 8D 04 81 C3");
+    u32 l = 0, c = 0;
+    if (a && safe_read(a + 0x0A, &l) && safe_read(a + 0x19, &c) && l == c + 2 && l < 0x100000) {
+        g_mlList = l; g_mlCount = c; g_mlOk = true;
+        windower::debug::log("NATIVEUI merit list resolved (try %d) : P + 0x%X (count + 0x%X)", g_mlTries, l, c);
+    } else if (g_mlTries == 1 || g_mlTries % 12 == 0) windower::debug::log("NATIVEUI merit list NOT resolved (try %d : AOB %d)", g_mlTries, !!a);
+    return g_mlOk;
+}
+// the levels spent in a category : the P entries {u16 id = 2i, u8 cost, u8 level} whose id >> 6 == cat ; -1 unreadable
+int merit_spent(int cat) {
+    if (!faith_res() || !mlist_res()) return -1;
+    u32 P = 0, lst = 0; short n = 0;
+    if (!safe_read(g_fr.pVar, &P) || !valid_ptr(P) || !rd16(P + g_mlCount, n) || n < 0 || n > 3072 || !safe_read(P + g_mlList, &lst)) return -1;
+    if (n > 0 && !valid_ptr(lst)) return -1;
+    int s = 0;
+    for (int k = 0; k < n; ++k) { u32 e = 0; if (!safe_read(lst + (u32)k * 4, &e)) return -1; if (((e & 0xFFFF) >> 6) == (u32)cat) s += (int)(e >> 24); }
+    return s;
+}
+// the list is there (cheap : its count and pointer, every frame) -- meritinf's born-parked rule
+bool merit_list_ok() {
+    if (!faith_res() || !mlist_res()) return false;
+    u32 P = 0, lst = 0; short n = 0;
+    return safe_read(g_fr.pVar, &P) && valid_ptr(P) && rd16(P + g_mlCount, n) && n > 0 && n <= 3072 && safe_read(P + g_mlList, &lst) && valid_ptr(lst);
+}
+// every category's spent levels in ONE walk of the list ; false unreadable
+bool merit_spent_all(short out[96]) {
+    memset(out, 0, sizeof(short) * 96);
+    if (!faith_res() || !mlist_res()) return false;
+    u32 P = 0, lst = 0; short n = 0;
+    if (!safe_read(g_fr.pVar, &P) || !valid_ptr(P) || !rd16(P + g_mlCount, n) || n < 0 || n > 3072 || !safe_read(P + g_mlList, &lst)) return false;
+    if (n > 0 && !valid_ptr(lst)) return false;
+    for (int k = 0; k < n; ++k) { u32 e = 0; if (!safe_read(lst + (u32)k * 4, &e)) return false; const u32 c = (e & 0xFFFF) >> 6; if (c < 96) out[c] = (short)(out[c] + (e >> 24)); }
+    return true;
+}
+// the categories' caps : file 0x59 (96 x 12 B) read once ; the entry whose +3 == cat, its +4. Checked : entry 1 = HP/MP (id 1)
+unsigned char g_mcap[96 * 12]; bool g_mcapOk = false; int g_mcapTries = 0; DWORD g_mcapNext = 0;
+int merit_cap(int cat) {
+    if (!g_mcapOk) {
+        const DWORD now = GetTickCount();
+        if (g_mcapTries >= 5 || (g_mcapTries && (int)(now - g_mcapNext) < 0)) return -1;
+        ++g_mcapTries; g_mcapNext = now + 5000;
+        char path[MAX_PATH + 8]; unsigned sz = 0; unsigned char* b = 0;
+        if (dat_resolve_path(0x59, path, sizeof(path)) && (b = dat_read_file(path, sz)) != 0 && sz >= sizeof(g_mcap)) {
+            memcpy(g_mcap, b, sizeof(g_mcap));
+            short id1 = 0; memcpy(&id1, g_mcap + 12, 2);
+            g_mcapOk = id1 == 1 && g_mcap[12 + 3] == 1 && g_mcap[12 + 4] > 0;
+        }
+        if (b) dat_free_file(b);
+        windower::debug::log("NATIVEUI merit caps (file 0x59) : %s (try %d)", g_mcapOk ? "read" : "NOT a plain table -- the caps stay unknown", g_mcapTries);
+        if (!g_mcapOk) return -1;
+    }
+    for (int e = 0; e < 96; ++e) if (g_mcap[e * 12 + 3] == (unsigned char)cat && g_mcap[e * 12 + 4]) {
+        int c = g_mcap[e * 12 + 4];
+        if (cat == 26) { if (owns_key_item(3224)) c += 5; if (owns_key_item(3225)) c += 5; if (c > 100) c = 100; }
+        return c;
+    }
+    return -1;
+}
+bool mcat_read(u32 mgr, u32 focus, NativeMeritCat& K) {
+    memset(&K, 0, sizeof(K)); K.cursor = -1; K.meritsLeft = -1; K.cap = K.cap2 = -1;
+    TextList T; if (!tl_find(mgr, "meritcat", T)) return false;
+    signed char cat = 0; if (!rd8(T.h + 0x50, *(unsigned char*)&cat) || cat < 0 || cat > 95) return false;
+    K.cat = cat; K.n = T.count; K.top = T.top; K.vis = T.vis > 16 ? 16 : T.vis; K.cursor = T.cursor;
+    K.rx0 = T.rx0; K.ry0 = T.ry0; K.rx1 = T.rx1; K.ry1 = T.ry1; K.uiW = T.uiW; K.uiH = T.uiH;
+    u32 rows = 0; if (!safe_read(T.h + 0x38, &rows) || (K.n > 0 && !valid_ptr(rows))) return false;
+    for (int i = 0; i < K.vis && K.top + i < K.n; ++i) {
+        unsigned char b[0x54]; if (!rdblk(rows + (u32)(K.top + i) * 0x54, b, sizeof(b))) return false;
+        NativeMeritRow& r = K.row[i]; r.cost = -1;
+        int rid = 0; memcpy(&rid, b + 0x48, 4);
+        r.header = rid == -1; r.id = cat ? -1 : rid;                        // a category row : its id ; a merit row : below
+        for (int c = 0; c < 8; ++c) {
+            u32 v = 0, col = 0; memcpy(&v, b + 0x28 + 4 * c, 4); memcpy(&col, b + 8 + 4 * c, 4);
+            switch (b[c]) {
+            case 0x1E: if (cat) r.id = (int)v; r.colName = col; break;
+            case 0x08: r.lvl = (int)v - 1; r.colLvl = col; break;
+            case 0x1F: r.cost = v > 1 ? (int)v - 1 : -1; r.colCost = col; break;
+            case 0x07: r.cap = (int)v; break;
+            default: break;
+            }
+        }
+    }
+    // meritinf's numbers : merits left (the merit mirror), the category under the hand / shown, and its group 2 (jobs)
+    PwMem pw; if (read_pointwatch(pw) && pw.merOk) K.meritsLeft = pw.merits;
+    int cc = cat;
+    if (!cc) { const int r = K.cursor - K.top; if (r >= 0 && r < K.vis && K.top + r < K.n) cc = K.row[r].id; }
+    K.comboCat = cc;
+    const bool all = merit_spent_all(K.spentAll);
+    for (int c = 0; c < 96; ++c) K.capAll[c] = all ? (short)merit_cap(c) : (short)-1;
+    if (cc > 0 && all) {
+        K.spent = K.spentAll[cc]; K.cap = K.capAll[cc];
+        if (cc >= 6 && cc <= 28 && cc != 26) { K.spent2 = K.spentAll[cc + 26]; K.cap2 = K.capAll[cc + 26]; }
+    } else if (cc > 0) K.spent = K.spent2 = -1;
+    K.focused = focus == T.obj; K.open = true;
     return true;
 }
 // the skill array : FM_PW_BLOCK + 0x60 (the 0x062 handler's copy) ; plausible = every level <= 1000
@@ -950,8 +1247,15 @@ int main_read(NativeEntryMenu& m, u32* objOut = 0) { return entry_read(MAIN_W, m
 
 // The MAIN menu : the same fallback as the action menu -- 3 unreadable frames while open, the client's own comes back ;
 // 5 s of good reads, AioHUD's again. Logged both ways.
+// Status's list is up -- or a menu opened over it that is itself a main-menu submenu (Merit Points' merit1 / merit2 /
+// merit3 : the submenu read then names THAT one, 2026-11-18 -- Categories was never read)
+bool inStatusNow() {
+    if (!g_mainSub.open) return false;
+    const char* n = g_mainSub.name;
+    return !strcmp(n, "statcom2") || !strcmp(n, "merit1") || !strcmp(n, "merit2") || !strcmp(n, "merit3");
+}
 void main_poll(bool on) {
-    if (!on) { g_area.open = false; g_search.open = false; g_scopt.open = false; g_urank.open = false; g_uinfo.open = false; g_utW.open = false; g_unityOk = false; g_cur.open = false; g_meritsOk = false; g_trdW.open = g_lmW.open = false; g_skillsOk = false; g_skillsOkRule = false; g_btlW.open = g_mgcW.open = false; g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
+    if (!on) { g_mcat.open = false; g_mcatRule = false; g_cel.open = false; g_faith.open = false; g_faithRule = false; g_jpRule = false; g_jcat.open = false; g_jpts.open = false; g_jpts.box.open = false; g_area.open = false; g_search.open = false; g_scopt.open = false; g_urank.open = false; g_uinfo.open = false; g_utW.open = false; g_unityOk = false; g_cur.open = false; g_meritsOk = false; g_trdW.open = g_lmW.open = false; g_skillsOk = false; g_skillsOkRule = false; g_btlW.open = g_mgcW.open = false; g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
     NativeEntryMenu m; int r = main_read(m);
     NativeEntryMenu sm; const int rs = entry_read(MAIN_SUB_W, sm, 0);
     g_mainSub = sm; if (rs != 1) g_mainSub.open = false;
@@ -984,6 +1288,15 @@ void main_poll(bool on) {
             node = next;
         }
         { ProfileMem D0; g_profDataOk = read_profile_mem(D0); }
+        {   // the JP mirror : valid (flags & 4) and plausible -> levmeri2's rule (before it opens)
+            const u32 mer = fm_addr(FM_PW_MERIT); unsigned char fl = 0, b[0x94]; bool ok = false;
+            if (mer && rd8(mer - 2, fl) && (fl & 4) && rdblk(mer + 0x0A, b, sizeof(b))) {
+                ok = true;
+                for (int j = 0; j < 24 && ok; ++j) { unsigned short cp = 0, jp = 0; memcpy(&cp, b + 4 + 6 * j, 2); memcpy(&jp, b + 6 + 6 * j, 2); if (cp > 30000 || jp > 500) ok = false; }
+            }
+            g_jpRule = ok;
+        }
+        { int fp = 0; g_faithRule = faith_points(fp); }
         {   // the stat panels
             PersonaMem D; g_persDataOk = read_persona_mem(D); g_persData = D;
             panel_read(mgr, "persona", g_persona); panel_read(mgr, "level", g_levelW);
@@ -1001,6 +1314,33 @@ void main_poll(bool on) {
                 u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
                 uinfo_read(mgr, focus, g_uinfo);
                 urank_read(mgr, focus, g_uinfo, g_urank);
+                // Job Points : under Status's list only (the Mog House has its own way there)
+                if (!(inStatusNow() && jpts_read(mgr, focus, g_jpts))) { g_jpts.open = false; g_jpts.box.open = false; }
+                if (!(g_jpts.open && jcat_read(mgr, focus, g_jcat))) g_jcat.open = false;
+                // Alter Ego : under fe_main only
+                const bool feUp = g_mainSub.open && !strcmp(g_mainSub.name, "fe_main");
+                if (!(feUp && faith_read(mgr, focus, g_faith))) g_faith.open = false;
+                if (!(feUp && cel_read(mgr, focus, g_cel))) g_cel.open = false;
+                // Merit Points -> Categories : under Status's list
+                if (!(inStatusNow() && mcat_read(mgr, focus, g_mcat))) g_mcat.open = false;
+                g_mcatRule = merit_list_ok();                                      // the list reads : meritinf born parked
+                static int saidM2 = 0;
+                if (g_mcat.open && saidM2 < 5) { ++saidM2; windower::debug::log("NATIVEUI merits : meritcat read (cat %d, %d rows, top %d, cursor %d ; row 0 : header %d id %d lvl %d cost %d cap %d colours %08X %08X ; left %d, combo cat %d : %d/%d, group 2 %d/%d)",
+                    g_mcat.cat, g_mcat.n, g_mcat.top, g_mcat.cursor, (int)g_mcat.row[0].header, g_mcat.row[0].id, g_mcat.row[0].lvl, g_mcat.row[0].cost, g_mcat.row[0].cap, g_mcat.row[0].colLvl, g_mcat.row[0].colCost,
+                    g_mcat.meritsLeft, g_mcat.comboCat, g_mcat.spent, g_mcat.cap, g_mcat.spent2, g_mcat.cap2); }
+                static int saidC2 = 0;
+                if (g_cel.open && saidC2 < 4) { ++saidC2; windower::debug::log("NATIVEUI celestite : type %d, may change %d, picked slot %d row %d ; equip %d rows (cursor %d, focus %d, row 0 : n %d badge %d) ; inven %d rows (cursor %d, focus %d, row 0 : n %d colour %08X)",
+                    g_cel.type, (int)g_cel.mayChange, g_cel.picked, g_cel.pickedRow, g_cel.equip.n, g_cel.equip.cursor, (int)g_cel.equip.focused, g_cel.equip.cel[0], g_cel.equip.badge[0],
+                    g_cel.inven.n, g_cel.inven.cursor, (int)g_cel.inven.focused, g_cel.inven.cel[0], g_cel.inven.col[0]); }
+                static int saidF = 0;
+                if (g_faith.open && saidF < 5) { ++saidF; windower::debug::log("NATIVEUI alter ego : %s read (%d rows, top %d, cursor %d ; row 0 : name %d id %d lvl %d max %d cost %d colours %08X %08X ; points %s %d)",
+                    g_faith.level ? "fp_cat2" : "fp_cat", g_faith.n, g_faith.top, g_faith.cursor, g_faith.row[0].id, g_faith.rowId[0], g_faith.row[0].lvl, g_faith.row[0].max, g_faith.row[0].cost, g_faith.row[0].colLvl, g_faith.row[0].colCost, g_faith.pointsOk ? "ok" : "UNREADABLE", g_faith.points); }
+                static int saidJ3 = 0;
+                if (g_jcat.open && saidJ3 < 4) { ++saidJ3; windower::debug::log("NATIVEUI job points : jbpcat read (job %d, tab %d, %d rows, top %d, cursor %d ; row 0 : id %d lvl %d max %d cost %d gift %d thr %d colours %08X %08X)",
+                    g_jcat.job, g_jcat.tab, g_jcat.n, g_jcat.top, g_jcat.cursor, g_jcat.row[0].id, g_jcat.row[0].lvl, g_jcat.row[0].max, g_jcat.row[0].cost, g_jcat.row[0].gift, g_jcat.row[0].thr, g_jcat.row[0].colLvl, g_jcat.row[0].colCost); }
+                static int saidJ2 = 0;
+                if (g_jpts.open && saidJ2 < 3) { ++saidJ2; windower::debug::log("NATIVEUI job points : merit2ca read (%d rows, top %d, cursor %d, first job %d, chosen %d, mirror %s : WAR cp %d jp %d spent %d)",
+                    g_jpts.n, g_jpts.top, g_jpts.cursor, g_jpts.job[0], g_jpts.chosen, g_jpts.ok ? "ok" : "UNREADABLE", g_jpts.capPts[1], g_jpts.jobPts[1], g_jpts.jpSpent[1]); }
                 // Unity Lists : under ut_menu only (the main menu's Search reuses these windows)
                 const bool utUp = g_mainSub.open && !strcmp(g_mainSub.name, "ut_menu");
                 if (!utUp || !area_read(mgr, focus, g_area)) g_area.open = false;
@@ -1165,6 +1505,18 @@ void yn_park(u32 mgr) {
     if (g_meritsOk && g_lmW.open) park_named(mgr, "levmerit", lmLog, "Status -> Merit Points' panel");
     static int utLog = 0, uiLog = 0;
     if (g_uinfo.open) park_named(mgr, "quest00", uiLog, "Status -> Unity Info / Ranking Info");
+    static int jpLog = 0, j2Log = 0, jcLog = 0, bhLog = 0;
+    if (g_jcat.open && g_jpts.ok) park_named(mgr, "jbpcat", jcLog, "Status -> Job Points' categories / gifts");
+    static int fcLog = 0, f2Log = 0, fhLog = 0, ceLog = 0, ciLog = 0, cbLog = 0, mcLog = 0, mhLog = 0;
+    if (g_mcat.open) { park_named(mgr, "meritcat", mcLog, "Merit Points -> Categories"); park_named(mgr, "bluehelp", mhLog, "Merit Points -> description"); }
+    if (g_cel.open) { park_named(mgr, "fe_equip", ceLog, "Alter Ego -> Celestite slots"); park_named(mgr, "fe_inven", ciLog, "Alter Ego -> Celestite owned");
+                      park_named(mgr, "bluehelp", cbLog, "Alter Ego -> Celestite description"); }
+    if (g_faith.open && g_faith.level == 0) park_named(mgr, "fp_cat", fcLog, "Status -> Alter Ego's categories");
+    if (g_faith.open && g_faith.level == 1) park_named(mgr, "fp_cat2", f2Log, "Status -> Alter Ego's abilities");
+    if (g_faith.open) park_named(mgr, "bluehelp", fhLog, "Status -> Alter Ego's description");
+    if (g_jpts.open && g_jpts.ok) park_named(mgr, "bluehelp", bhLog, "Status -> Job Points' description");
+    if (g_jpts.open && g_jpts.ok) park_named(mgr, "merit2ca", jpLog, "Status -> Job Points");
+    if (g_jpts.open && g_jpts.ok && g_jpts.box.open) park_named(mgr, "levmeri2", j2Log, "Status -> Job Points' CP / JP");
     static int alLog = 0, srLog = 0, soLog = 0;
     if (g_area.open) park_named(mgr, "arealist", alLog, "Status -> Unity -> Unity Lists");
     if (g_search.open) park_named(mgr, "scresult", srLog, "Status -> Unity -> Unity Lists' results");
@@ -1233,6 +1585,10 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_unityOk && !strcmp(nm, "ut_point"))
                              || (g_uinfo.open && !strcmp(nm, "quest00"))
                              || (g_urank.open && !strcmp(nm, "quest01"))
+                             || (g_jpts.open && g_jpts.ok && (!strcmp(nm, "merit2ca") || !strcmp(nm, "levmeri2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "jbpcat")))
+                             || (g_mcat.open && (!strcmp(nm, "meritcat") || !strcmp(nm, "bluehelp") || !strcmp(nm, "meritinf")))
+                             || (g_cel.open && (!strcmp(nm, "fe_equip") || !strcmp(nm, "fe_inven") || !strcmp(nm, "bluehelp")))
+                             || (g_faith.open && (!strcmp(nm, "fp_cat") || !strcmp(nm, "fp_cat2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "fp_info")))
                              || (g_area.open && !strcmp(nm, "arealist")) || (g_search.open && !strcmp(nm, "scresult"))
                              || (g_scopt.open && !strcmp(nm, "scoption"))
                              || (g_cur.open && !strcmp(nm, "evitem"));
@@ -1281,6 +1637,19 @@ const NativeUnityInfo& native_unity_info() { return g_uinfo; }
 const NativeUnityRank& native_unity_rank() { return g_urank; }
 const NativeAreaList& native_arealist() { return g_area; }
 const NativeSearch& native_search() { return g_search; }
+const NativeJobPoints& native_job_points() { return g_jpts; }
+const NativeJpCat& native_jp_cat() { return g_jcat; }
+const NativeFaith& native_faith() { return g_faith; }
+const NativeCelestite& native_celestite() { return g_cel; }
+const NativeMeritCat& native_merit_cat() { return g_mcat; }
+const char* native_merit_text(int index, bool desc) { return index < 0 ? 0 : dmsg_str(g_dm[3], (unsigned)(2 * index + (desc ? 1 : 0))); }
+const char* native_faith_text(int id, bool desc) { return id < 0 ? 0 : dmsg_str(g_dm[2], (unsigned)(2 * id + (desc ? 1 : 0))); }
+const char* native_jp_text(int kind, int id, bool desc, int job) {
+    if (id < 0) return 0;
+    if (kind == 0 || kind == 1) return dmsg_str(g_dm[0], (unsigned)(2 * id + (desc ? 1 : 0)));          // a job, a category
+    if (kind == 2 && job >= 1 && job <= 22 && id < 256) return dmsg_str(g_dm[1], (unsigned)(2 * ((job - 1) * 256 + id) + (desc ? 1 : 0)));
+    return 0;
+}
 const NativeEntryMenu& native_scoption() { return g_scopt; }
 const NativeCurrencies& native_currencies() { return g_cur; }
 const NativeChatInfo& native_chat_info() { return g_chat; }
@@ -1747,6 +2116,25 @@ bool textlist_goto(const char* name, int row, bool pick) {
     return pick ? menu_event(T.obj, 5) : true;
 }
 bool native_textlist_hover(const char* name, int row) { return textlist_goto(name, row, false); }
+// a Celestite list's row : the other list handed the focus first (code 8 switches them), then its row
+bool cel_goto(int list, int row, bool pick) {
+    const u32 mgr = manager(); if (!mgr) return false;
+    u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+    const char* want = list ? "fe_inven" : "fe_equip"; const char* other = list ? "fe_equip" : "fe_inven";
+    TextList T; if (!tl_find(mgr, want, T)) return false;
+    if (T.obj != focus) {
+        TextList O; if (!tl_find(mgr, other, O) || O.obj != focus || !menu_event(O.obj, 8)) return false;
+    }
+    return textlist_goto(want, row, pick);
+}
+bool native_celestite_hover(int list, int row) { return cel_goto(list, row, false); }
+bool native_celestite_pick(int list, int row) { return cel_goto(list, row, true); }
+bool native_jp_cat_tab(int dir) {                          // codes 3 / 4 : the client's left / right (its tabs)
+    const u32 mgr = manager(); if (!mgr) return false;
+    u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+    TextList T; if (!tl_find(mgr, "jbpcat", T) || T.obj != focus) return false;
+    return menu_event(T.obj, dir < 0 ? 3 : 4);
+}
 bool native_textlist_pick(const char* name, int row) { return textlist_goto(name, row, true); }
 bool native_main_sub_pick(int entry) { return entry_pick(MAIN_SUB_W, entry); }
 bool native_main_sort_hover(int entry) { return entry_hover(MAIN_SORT_W, entry); }

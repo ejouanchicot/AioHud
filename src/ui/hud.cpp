@@ -464,6 +464,10 @@ void Hud::render(u32 dev) {
             unityinfo_draw(f);                      // Status -> Unity -> Unity Info, in place of the client's
             unityrank_draw(f);                      // Status -> Unity -> Ranking Results / Partial
             unitylists_draw(f);                     // Status -> Unity -> Unity Lists : the Unity, the people found, their options
+            jobpoints_draw(f);                      // Status -> Job Points : the jobs, a job's CP / JP
+            alterego_draw(f);                       // Status -> Alter Ego : its categories, abilities and points
+            celestite_draw(f);                      // Alter Ego -> Change Celestite : the slots, the Celestite owned
+            meritcat_draw(f);                       // Merit Points -> Categories : the categories, their merits
             currencies_draw(f);                     // Status -> Currencies 1 / 2, in place of the client's
             npc_draw(f);                            // the NPC dialogue + answers, in place of the client's (Game UI)
             fep_draw(f);                            // the auto-translate picker (Tab), on AioHUD's input field

@@ -254,6 +254,24 @@ after a logout.
     +0x20 / +0x21, levels +0x22 / +0x23, ML +0x24, zone +0x28, flags +0x30 : 0x4000 anonymous). The search runs on the
     search server (no map packet) : driven only through the client's own validate. The main menu's Search reuses these
     windows : not redrawn yet (ours only under ut_menu).
+- **Status -> Job Points / Alter Ego / Merit Points** (docs/notes/job-points-, celestite-, merit-cat-re-2026-11-18.md ;
+  user-confirmed in game 2026-11-18). Every list here is the client's multi-column TEXT LIST (see Unity Lists) and is
+  redrawn from its own row CELLS (type / value / colour) -- the numbers and the greyed / maxed colours are the client's.
+  Names and descriptions come from the client's d_msg files, read once by AioHUD itself (EN 55694 the JP table, 55674
+  the JP gifts, 55683 the faith table, 55686 the merit table ; native_ui.cpp dmsg_*), never from its lazy string cache.
+  - Job Points : `merit2ca` (row id = job) -> `jbpcat` (tab +0x58 : categories 0x35..0x38 / gifts 0x39 / 0x3A ; codes
+    3 / 4 swap tabs). JP / CP / spent : FM_PW_MERIT + 0x0A (flag byte FM_PW_MERIT - 2 & 4). `levmeri2` is BORN parked
+    (its numbers are drawn where it opened). bluehelp (the description) parked while ours shows.
+  - Alter Ego : `fe_main` submenu ; `fp_cat` -> `fp_cat2` (cells 0x49..0x4C) ; points u16 P + 0x2D614 (0x08E, loaded
+    bit 4) via the client's accessors (AOB F / G) ; `fp_info` born parked. Change Celestite : `fe_equip` (slots : 0x0E
+    badge, 0x19 Celestite ; +0x58 type, +0x54 picked) and `fe_inven` (0x4D icon, 0x19 name, client colours) ; code 8
+    switches the lists ; Celestite n = item 0x72F0 + n (name / description from the item DAT).
+  - Merit Points : `merit1` / `merit2` / `merit3` submenus (merit2's greyed entry = the current mode, shown selected) ;
+    `meritcat` (+0x50 the category ; cells 0x1E name, 8 level + 1, 0x1F cost + 1, header rows id -1 with cell 7 = the
+    group cap). Spent per category : the 0x08C list in P (+0x2D000 / count +0x2CFFE, AOB MLIST_GET ; entries {u16 2i,
+    u8 cost, u8 level}, cat = id >> 6) ; caps : file 0x59 (12-byte entries, +3 cat, +4 cap ; Weapon Skills +5 per key
+    item 3224 / 3225). `meritinf` born parked.
+  - Status's own test (inStatusNow) accepts merit1 / merit2 / merit3 as the submenu : they are main-menu submenus too.
 - **Reload with a window parked** : move_open no longer parks an open window that is already parked (nor unparks one
   already on screen) -- a reload with Status open parked the stat panels by name, then the first apply parked them a
   second time (the box read 3000 too low, on the chat).

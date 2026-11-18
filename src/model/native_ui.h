@@ -259,6 +259,82 @@ struct NativeSearch {
     short rx0, ry0, rx1, ry1; int uiW, uiH;
 };
 const NativeSearch& native_search();
+// Status -> Job Points (docs/notes/status-panels-a-re-2026-11-18.md section 4) : `merit2ca`, the job list (a TEXT LIST :
+// each row's id at row +0x48 = the job ; +0x54 the job chosen, jbpcat open over it), and `levmeri2`, the job's CP / JP.
+// Data : the 0x063 order 5 mirror = FM_PW_MERIT + 0x0A, valid while the flags byte (FM_PW_MERIT - 2) & 4 :
+// +4 + 6j Capacity Points, +6 + 6j Job Points, +8 + 6j spent.
+struct NativeJobPoints {
+    bool open, focused, ok;      // ok : the JP mirror reads
+    int  n, top, vis, cursor;    // the rows, the client's page, its cursor row (-1 none)
+    int  job[32];                // each row's job
+    int  chosen;                 // the job validated (jbpcat open over the list), 0 none
+    int  capPts[24], jobPts[24], jpSpent[24];   // (not cp / jp / spent : the replay types fields BY NAME -- CharSheet has a cp)
+    unsigned char lvl[24];       // job levels (a job under 99 is greyed, as the client)
+    NativePanel box;             // levmeri2's rect
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeJobPoints& native_job_points();
+// A job validated : `jbpcat` over the list (docs/notes/job-points-re-2026-11-18.md 3), a TEXT LIST in two tabs (+0x58) :
+// 0 its categories (cells : 0x35 the category id, 0x36 level + 1, 0x37 max + 1, 0x38 next cost + 1 -- 0 = not drawn),
+// 1 its gifts (0x39 the gift + 1, 0x3A its threshold). The client's colours say greyed (0x80404040) / maxed (0x802060A0).
+struct NativeJpRow { int id, lvl, max, cost, gift, thr; unsigned colName, colLvl, colCost, colThr; };
+struct NativeJpCat {
+    bool open, focused;
+    int  job, tab, n, top, vis, cursor;
+    NativeJpRow row[16];         // rows top .. top + vis - 1
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeJpCat& native_jp_cat();
+bool native_jp_cat_tab(int dir);   // the client's left / right : the other tab
+// The client's own texts for Job Points, read from its d_msg files (EN : 55694 the JP table, 55674 the gifts) -- loaded
+// once, retried on a budget. kind 0 a job, 1 a category, 2 a gift of `job` ; desc false the name, true its description.
+// 0 while not loaded / unknown. Bytes as the file has them (0x0A a line break ; 81 9A a star).
+const char* native_jp_text(int kind, int id, bool desc, int job = 0);
+// Status -> Alter Ego (docs/notes/status-panels-b-re-2026-11-18.md C) : `fe_main` (a submenu of 7), its entry 1 opens
+// `fp_cat` (the categories : HP/MP, Attributes, Skills) then `fp_cat2` (a category's abilities), two TEXT LISTS, with
+// `fp_info` (the points "n/1000"). Cells : 0x49 the name (a faith d_msg id), 0x4A level + 1, 0x4B max + 1, 0x4C next cost
+// + 1 (0 blank) ; the client's colours say greyed / maxed. Points : u16 P + 0x2D614 (incoming 0x08E), loaded bit 4 of
+// the flag byte -- both from the client's own accessors (AOB F / G).
+struct NativeFaith {
+    bool open, focused;
+    int  level;                  // 0 the categories (fp_cat), 1 a category's abilities (fp_cat2)
+    int  n, top, vis, cursor;
+    NativeJpRow row[16];         // id = the name's value (the faith d_msg id / 2) ; lvl / max / cost as Job Points'
+    int  rowId[16];              // each row's id (row +0x48)
+    bool pointsOk; int points;
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeFaith& native_faith();
+// Alter Ego -> Change Celestite (fe_main entries 2..7 : docs/notes/celestite-re-2026-11-18.md) : two TEXT LISTS side by
+// side -- `fe_equip` (the type's slots : cell 0x0E the Lv badge, 0x19 the Celestite set, row +0x48 = n, 0 empty ; +0x54
+// the slot picked, +0x58 the type 0..5, +0x50 may change = in the Mog House) and `fe_inven` (the Celestite owned : 0x4D
+// icon, 0x19 name in the client's colour -- orange picked, green set in this type, grey not changeable ; +0x50 the row
+// picked). Celestite n = item 0x72F0 + n (its name / description / icon from the item DAT).
+struct NativeCelList { bool open, focused; int n, top, vis, cursor; int cel[16]; int badge[16]; unsigned col[16]; short rx0, ry0, rx1, ry1; int uiW, uiH; };
+struct NativeCelestite { bool open; int type, picked, pickedRow; bool mayChange; NativeCelList equip, inven; };
+const NativeCelestite& native_celestite();
+// Status -> Merit Points -> Categories : `meritcat` (docs/notes/merit-cat-re-2026-11-18.md), a TEXT LIST in two levels (+0x50
+// = 0 the categories ; else the merits of category +0x50). Category rows : row id = the category. Merit rows : cell 0x1E
+// = i (cat * 32 + k), 8 = level + 1, 0x1F = next cost + 1 (<= 1 : blank) ; a job category has a HEADER row per group
+// (row id -1, cell 7 = the group's cap). Names / descriptions : d_msg EN 55686, string 2 * cat or 2 * i (+1). The
+// "Combo Total/Max" : the levels of the 0x08C list (P + 0x2D000, ids 2i) whose id >> 6 == cat, over the category's cap
+// (file 0x59, the entry whose +3 == cat, its +4 ; Weapon Skills +5 per key item 3224 / 3225, max 100).
+struct NativeMeritRow { bool header; int id, lvl, cost, cap; unsigned colName, colLvl, colCost; };
+struct NativeMeritCat {
+    bool open, focused;
+    int  cat;                    // 0 the category list
+    int  n, top, vis, cursor;
+    NativeMeritRow row[16];
+    int  meritsLeft;             // -1 unknown
+    int  comboCat, spent, cap, spent2, cap2;   // the category under the hand (category list) or shown ; cap -1 unknown ; group 2 (jobs)
+    short spentAll[96], capAll[96];            // every category's spent / cap (one walk of the list ; cap -1 unknown)
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeMeritCat& native_merit_cat();
+const char* native_merit_text(int index, bool desc);   // d_msg 55686 string 2 * index (+1)
+bool native_celestite_hover(int list, int row);   // list 0 fe_equip, 1 fe_inven : the other list given the focus first
+bool native_celestite_pick(int list, int row);
+const char* native_faith_text(int id, bool desc);    // faith d_msg (EN 55683) string 2 * id (+1 its description)
 bool native_textlist_hover(const char* name, int row);   // the client's cursor to that row (scrolling its page first)
 bool native_textlist_pick(const char* name, int row);
 // a player's options (scoption : Tell, PlayOnline message, Invite, Express desire to join, Cancel request) : an entry menu
