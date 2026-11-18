@@ -35,7 +35,8 @@ void nui_sample(const Frame& f, float cx, float cy, float s, bool draw, float* o
 void actmenu_draw(const Frame& f);   // hud_actmenu.cpp : the target action menu, mirrored (Game UI -> NU_ACT)
 void mainmenu_draw(const Frame& f);
 void profile_draw(const Frame& f);
-void persona_draw(const Frame& f);   // hud_actmenu.cpp : Status's stat panels (persona / level), mirrored (NU_MAIN)   // hud_actmenu.cpp : Status -> Profile, mirrored (Game UI -> NU_MAIN)  // hud_actmenu.cpp : the main menu (menuwind / socialme), mirrored (Game UI -> NU_MAIN)
+void persona_draw(const Frame& f);
+void jobs_draw(const Frame& f);      // hud_actmenu.cpp : Status -> Job / Master Levels, mirrored (NU_MAIN)   // hud_actmenu.cpp : Status's stat panels (persona / level), mirrored (NU_MAIN)   // hud_actmenu.cpp : Status -> Profile, mirrored (Game UI -> NU_MAIN)  // hud_actmenu.cpp : the main menu (menuwind / socialme), mirrored (Game UI -> NU_MAIN)
 void actmenu_set_hand_tex(u32 tex);  // the party's selection-hand texture (its cursor)
 // hud_chat.cpp : a LIVE chat box's rect this frame (false when hidden / not drawn) -- the redrawn menus sit above it
 bool chat_box_rect(int box, float& x, float& y, float& w, float& h);

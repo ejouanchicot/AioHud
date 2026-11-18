@@ -172,6 +172,18 @@ const NativePanel& native_level();
 // the data both panels show, read once a frame while one of them is open (ok false : the client's panels stay)
 struct PersonaMem;
 const PersonaMem& native_persona_data();
+// Status -> Job Levels (`joblevel`) / Master Levels (`masterle`) : two columns of jobs, the client's own data (packet
+// 0x01B, kept in its player object -- Ghidra 2026-11-18, docs/notes/job-levels-re-2026-11-18.md). Only while Status's
+// list is up : the Mog House job-change screen reuses `joblevel` with a cursor, and that one stays the client's.
+struct NativeJobs {
+    bool ok;
+    int  mjob, sjob;
+    unsigned char lvl[23], ml[23];   // by job id 1..22
+    unsigned unlocked, mastered;     // bit j = job j
+};
+const NativePanel& native_joblevel();
+const NativePanel& native_masterle();
+const NativeJobs& native_jobs();
 
 // What the client's Chat submenu (chatctrl) shows on the right of its rows (its draw FUN_0546E290, read 2026-11-16) :
 //   Tell        the name the Tell will go to : handler+0x14 = -1 the current target (the HUD has its name), -2 the

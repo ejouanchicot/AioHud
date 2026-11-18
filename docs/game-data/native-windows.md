@@ -208,6 +208,13 @@ after a logout.
   Monstrosity. **Mentor = byte *(player ptr) + off** (packet 0x01B +0x65 : 0 none, 1..3 the flag ; the next byte is the
   Mastery Rank). All found by SIGNATURE in `mon_res()` (the addresses moved between the June and November clients),
   adopted only when prestige = rank + 8 and gate = rank - 4 + 0x1C0 hold ; resolved live at the first try.
+- **Status -> Job Levels / Master Levels** (Ghidra 2026-11-18, docs/notes/job-levels-re-2026-11-18.md) : `joblevel`
+  (placed by code through move-to, at 130,48 ; the Mog House job change REUSES it at 16,300 with a cursor -- so it is
+  ours only while `statcom2` is up) and `masterle` (its record). Two columns of jobs in id order, row by row ; main job
+  gold, support steel blue ; unlocked jobs / mastered jobs. 252 wide, ((n + 1) / 2) * 14 + 22 high. Data : the player
+  object P = *(&P) kept by the 0x01B handler -- levels P+0x1A660+j, mastered mask u32 P+0x1A678, master levels
+  P+0x1A67C+j, the raw block (main +4, sub +7, unlocked mask +8) P+0x1A61C -- all from signatures in `jobs_res()`,
+  adopted when the same &P, ML = mastered + 4 and levels = block + 0x44 hold. User-confirmed in game.
 - **Status's stat panels** `persona` (16,16 ; also the Equipment screen's) and `level` (16,208) : BORN parked like the
   Profile, drawn at the client's own size from the same 0x061 mirror (max HP / MP 0x04 / 0x08, jobs 0x0C, attributes
   0x14 / 0x22, Su 0x52, iLv 0x54, Master Level 0x65, Exemplar 0x68 / 0x6C) + the live HP / MP / TP.

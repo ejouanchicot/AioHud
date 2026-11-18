@@ -1382,6 +1382,60 @@ void persona_draw(const Frame& f) {
     }
 }
 
+// ======== Status -> JOB LEVELS / MASTER LEVELS (Game UI -> NU_MAIN), where the client puts its own ========
+// The client's layout (Ghidra 2026-11-18, the draws FUN_05489500 / FUN_0548DB10) : jobs 1..22 in id order, TWO
+// columns filled row by row (WAR | MNK, WHM | BLM ...), the name then its value right-aligned ; the MAIN job gold, the
+// SUPPORT job steel blue, the rest grey ; no header, no paging. Job Levels lists the UNLOCKED jobs, Master Levels the
+// MASTERED ones (being listed is the mark). At the client's size : 252 wide, ((n + 1) / 2) * 14 + 22 high.
+namespace { Block g_jobB; unsigned g_jobMs = 0; }
+void jobs_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    const NativePanel& JW = native_joblevel(); const NativePanel& MW = native_masterle();
+    const NativeJobs& J = native_jobs();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_jobB.vis = 0.0f; g_jobB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_jobMs ? (float)(now - g_jobMs) / 1000.0f : 0.0f; g_jobMs = now; if (dt > 0.1f) dt = 0.1f;
+    static NativeJobs lastJ; static NativePanel lastW; static bool lastMaster = false;
+    const bool on = J.ok && (JW.open || MW.open);
+    if (on) { lastJ = J; lastMaster = !JW.open && MW.open; lastW = lastMaster ? MW : JW; }
+    if (!block_ease(g_jobB, on, now, dt) || !lastJ.ok || lastW.uiW <= 0) return;
+    // the jobs listed
+    int ids[22]; int n = 0;
+    for (int j = 1; j <= 22; ++j) {
+        const bool listed = lastMaster ? ((lastJ.mastered >> j) & 1u) != 0 : (((lastJ.unlocked >> j) & 1u) != 0 || j == lastJ.mjob);
+        if (listed) ids[n++] = j;
+    }
+    if (!n) return;
+    const Metrics k = metrics(f);
+    const float S = k.S;
+    const float sx = f.screenW / (float)lastW.uiW, sy = f.screenH / (float)lastW.uiH;
+    const int rowsN = (n + 1) / 2;
+    float bw = snap(252.0f * sx), bh = snap(((float)rowsN * 14.0f + 22.0f) * sy);
+    const float vpad = snap(6.0f * S), lh = (bh - 2.0f * vpad) / (float)rowsN;
+    float tz = k.tz; if (tz > lh * 0.92f) tz = lh * 0.92f;
+    float bx = snap((float)lastW.rx0 * sx), by = snap((float)lastW.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const float tO = ease_out(((float)(now - g_jobB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_jobB.vis * tO; if (A <= 0.0f) return;
+    const u32 dev = f.dev; Font* fo = f.font;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    // the column split : a hairline between the two columns
+    rrect(dev, snap(bx + bw * 0.5f), by + vpad, 1.0f, bh - 2.0f * vpad, 0.0f, with_alpha(0x24C8D6EAu, A), with_alpha(0x24C8D6EAu, A));
+    const u32 sh = with_alpha(0xC8000000u, A);
+    fo->begin(dev);
+    const float colW = bw * 0.5f, ip = snap(10.0f * S);
+    for (int i = 0; i < n; ++i) {
+        const int j = ids[i], col = i & 1, row = i >> 1;
+        const float cx = bx + (float)col * colW, cy = snap(by + vpad + (float)row * lh + lh * 0.5f);
+        const u32 nc = j == lastJ.mjob ? 0xFFE8C860u : j == lastJ.sjob ? 0xFF86AEE6u : 0xFFC9D3E0u;
+        char v[8]; sprintf(v, "%d", lastMaster ? (int)lastJ.ml[j] : (int)lastJ.lvl[j]);
+        fo->draw_lc(dev, snap(cx + ip), cy, JOB_FULL[j], tz, with_alpha(nc, A), sh, k.ow);
+        fo->draw_lc(dev, snap(cx + colW - ip - fo->measure(v, tz)), cy, v, tz, with_alpha(j == lastJ.mjob ? 0xFFFFF1CCu : 0xFFE4EAF2u, A), sh, k.ow);
+    }
+}
+
 // ======== Status -> PROFILE (Game UI -> NU_MAIN), in the menus' theme, where the client puts its own ========
 // The fields the client's panel shows, each from a MEASURED source (native_profile : the 0x061 mirror + the self
 // entity, 2026-11-18). Not yet here (no source proven) : Mentor, Monstrosity's rank and Prestige.

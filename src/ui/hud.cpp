@@ -458,6 +458,7 @@ void Hud::render(u32 dev) {
             mainmenu_draw(f);                       // the main menu, in place of the client's (Game UI)
             profile_draw(f);                        // Status -> Profile, in place of the client's (Game UI)
             persona_draw(f);                        // Status's stat panels, in place of the client's (Game UI)
+            jobs_draw(f);                           // Status -> Job / Master Levels, in place of the client's (Game UI)
             npc_draw(f);                            // the NPC dialogue + answers, in place of the client's (Game UI)
             fep_draw(f);                            // the auto-translate picker (Tab), on AioHUD's input field
             draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit

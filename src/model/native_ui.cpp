@@ -152,6 +152,7 @@ NativeNpc g_npc; bool g_npcFail = false; int g_npcBad = 0; DWORD g_npcGoodSince 
 NativeEntryMenu g_mainM, g_mainSub, g_mainSort, g_mainYn; bool g_mainFail = false;
 NativeProfile g_prof;
 NativePanel g_persona, g_levelW; PersonaMem g_persData;
+NativePanel g_jobW, g_mlW; NativeJobs g_jobs; bool g_jobsOurs = false;   // Status -> Job / Master Levels
 // an open panel by name : its rect (parked : where it would be) ; false when not open
 bool panel_read(u32 mgr, const char* want, NativePanel& P) {
     memset(&P, 0, sizeof(P));
@@ -570,6 +571,7 @@ int  list_read(NativeList& L);   // below : the spell list
 
 int inv_read(u32 focus, NativeList& L);   // below, at namespace scope : the Items list (inventor, from the action menu)
 void mon_read(NativeProfile& P);          // below : the Profile's Mentor + Monstrosity (statics found by signature)
+bool jobs_read(NativeJobs& J);            // below : the Job / Master Levels (the player object, found by signature)
 namespace {
 // One read of "playermo" : open (in the manager's open list, not dying), its handler's row codes, cursor, rect.
 // Returns -1 when it is not open, 0 when open but unreadable, 1 when read.
@@ -678,7 +680,7 @@ int main_read(NativeEntryMenu& m, u32* objOut = 0) { return entry_read(MAIN_W, m
 // The MAIN menu : the same fallback as the action menu -- 3 unreadable frames while open, the client's own comes back ;
 // 5 s of good reads, AioHUD's again. Logged both ways.
 void main_poll(bool on) {
-    if (!on) { g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
+    if (!on) { g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
     NativeEntryMenu m; int r = main_read(m);
     NativeEntryMenu sm; const int rs = entry_read(MAIN_SUB_W, sm, 0);
     g_mainSub = sm; if (rs != 1) g_mainSub.open = false;
@@ -714,6 +716,14 @@ void main_poll(bool on) {
         {   // the stat panels
             PersonaMem D; g_persDataOk = read_persona_mem(D); g_persData = D;
             panel_read(mgr, "persona", g_persona); panel_read(mgr, "level", g_levelW);
+            // Job / Master Levels : ours only while STATUS's list is up (the Mog House's job change reuses joblevel)
+            panel_read(mgr, "joblevel", g_jobW); panel_read(mgr, "masterle", g_mlW);
+            const bool inStatus = g_mainSub.open && !strcmp(g_mainSub.name, "statcom2");
+            NativeJobs J; memset(&J, 0, sizeof(J));
+            if ((g_jobW.open || g_mlW.open) && inStatus) jobs_read(J);
+            g_jobs = J; g_jobsOurs = inStatus && J.ok;
+            static int saidJ = 0;
+            if ((g_jobW.open || g_mlW.open) && saidJ < 3) { ++saidJ; windower::debug::log("NATIVEUI job levels panel : %s (status %d, main %d sub %d, mastered %08X)", g_jobsOurs ? "read -- AioHUD draws it" : "the client's own", (int)inStatus, J.mjob, J.sjob, J.mastered); }
             static int said = 0;
             if ((g_persona.open || g_levelW.open) && said < 3) { ++said; windower::debug::log("NATIVEUI stat panels : %s (job %d/%d sub %d/%d hp %u mp %u ml %d)", D.ok ? "read -- AioHUD draws them" : "data unreadable -- the client's own stay", D.mjob, D.mlvl, D.sjob, D.slvl, D.maxHp, D.maxMp, D.ml); }
         }
@@ -825,6 +835,9 @@ void yn_park(u32 mgr) {
     static int persLog = 0, lvlLog = 0;
     if (g_persDataOk && g_persona.open) park_named(mgr, "persona", persLog, "Status -> stats");
     if (g_persDataOk && g_levelW.open) park_named(mgr, "level", lvlLog, "Status -> Master Level");
+    static int jlLog = 0, mlLog = 0;                     // placed by code (joblevel through move-to) : moved once shown
+    if (g_jobsOurs && g_jobW.open) park_named(mgr, "joblevel", jlLog, "Status -> Job Levels");
+    if (g_jobsOurs && g_mlW.open) park_named(mgr, "masterle", mlLog, "Status -> Master Levels");
 }
 // a window the client places by CODE (never born under a parked parent), moved HIDE_DY down through its setter, logged
 void park_named(u32 mgr, const char* want, int& logN, const char* what) {
@@ -877,7 +890,8 @@ void rescue_children(u32 mgr, int hide) {
             const bool invOurs = (act_on_items() || (g_list.open && g_list.kind == 3)) && (!strcmp(nm, "inventor") || !strcmp(nm, "iteminfo"));
             // AioHUD draws Auto-sort's Yes / No while the spell list's sort options are up
             const bool ynOurs = (g_mainSort.open && !strcmp(nm, "sortyn")) || (g_prof.open && g_prof.ok && !strcmp(nm, "profile"))
-                             || (g_persDataOk && (!strcmp(nm, "persona") || !strcmp(nm, "level")));
+                             || (g_persDataOk && (!strcmp(nm, "persona") || !strcmp(nm, "level")))
+                             || (g_jobsOurs && (!strcmp(nm, "joblevel") || !strcmp(nm, "masterle")));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
                 int nx = r[0], ny = r[1] - HIDE_DY;
                 // the NPC answers are up : ABOVE AioHUD's box, left edges level (user 2026-11-17 "on la veut au-dessus") ;
@@ -908,6 +922,9 @@ const NativeProfile& native_profile() { return g_prof; }
 const NativePanel& native_persona() { return g_persona; }
 const NativePanel& native_level() { return g_levelW; }
 const PersonaMem& native_persona_data() { return g_persData; }
+const NativePanel& native_joblevel() { return g_jobW; }
+const NativePanel& native_masterle() { return g_mlW; }
+const NativeJobs& native_jobs() { return g_jobs; }
 const NativeChatInfo& native_chat_info() { return g_chat; }
 const NativeList& native_list() { return g_list; }
 
@@ -1155,6 +1172,51 @@ void mon_read(NativeProfile& P) {
             }
         }
     }
+}
+// ---- Status -> Job / Master Levels : the client's player object P = *(&P), what its 0x01B handler keeps (Ghidra
+// 2026-11-18, docs/notes/job-levels-re-2026-11-18.md section 5) -- every offset from the code's own operands, adopted
+// only when the cross-checks of both clients hold : the same &P in A and B, ML = mastered + 4, levels = block + 0x44.
+//   block (raw 0x01B from +0x04) : main job +4, sub job +7, unlocked mask u32 +8 (bit 0 = the support job, ignored)
+//   levels P + lvOff + j (24) ; mastered mask u32 P + masOff ; master levels P + mlOff + j
+struct JobsRes { u32 pVar, blockOff, lvOff, masOff, mlOff; };
+JobsRes g_jr; bool g_jrOk = false; int g_jrTries = 0; DWORD g_jrNext = 0;
+bool jobs_res() {
+    if (g_jrOk) return true;
+    const DWORD now = GetTickCount();
+    if (g_jrTries && (int)(now - g_jrNext) < 0) return false;
+    ++g_jrTries; g_jrNext = now + 5000;
+    const u32 a = aob_masked("A1 ?? ?? ?? ?? 85 C0 75 01 C3 05 ?? ?? ?? ?? C3 8B 0D ?? ?? ?? ?? 85 C9 74 ?? 8B 44 24 04 3C 10 73 ?? 25 FF 00 00 00 8A 84 08 ?? ?? ?? ?? C3 3C 18 73 ?? 25 FF 00 00 00 8A 84 08 ?? ?? ?? ?? C3");
+    const u32 b = aob_masked("8B 0D ?? ?? ?? ?? 85 C9 74 ?? 8B 44 24 04 3C 18 73 ?? 25 FF 00 00 00 8A 84 08 ?? ?? ?? ?? C3 32 C0 C3");
+    const u32 c = aob_masked("8B 15 ?? ?? ?? ?? 85 D2 74 ?? 8A 4C 24 04 80 F9 18 73 ?? B8 01 00 00 00 D3 E0 23 82 ?? ?? ?? ?? F7 D8");
+    u32 pA = 0, blk = 0, lv = 0, pB = 0, ml = 0, mas = 0;
+    if (a && b && c && safe_read(a + 0x01, &pA) && safe_read(a + 0x0B, &blk) && safe_read(a + 0x3B, &lv)
+        && safe_read(b + 0x02, &pB) && safe_read(b + 0x1A, &ml) && safe_read(c + 0x1C, &mas)
+        && pA == pB && ml == mas + 4 && lv == blk + 0x44 && valid_ptr(pA) && blk < 0x100000) {
+        g_jr.pVar = pA; g_jr.blockOff = blk; g_jr.lvOff = lv; g_jr.masOff = mas; g_jr.mlOff = ml; g_jrOk = true;
+        windower::debug::log("NATIVEUI job levels resolved (try %d) : *(FFXiMain+%X), block +0x%X, levels +0x%X, mastered +0x%X, ML +0x%X", g_jrTries, pA - ffximain_base(), blk, lv, mas, ml);
+    } else if (g_jrTries == 1 || g_jrTries % 12 == 0)
+        windower::debug::log("NATIVEUI job levels NOT resolved (try %d : A %d B %d C %d)", g_jrTries, !!a, !!b, !!c);
+    return g_jrOk;
+}
+bool jobs_read(NativeJobs& J) {
+    memset(&J, 0, sizeof(J));
+    if (!jobs_res()) return false;
+    u32 P = 0; if (!safe_read(g_jr.pVar, &P) || !valid_ptr(P)) return false;
+    unsigned char mj = 0, sj = 0;
+    if (!rd8(P + g_jr.blockOff + 4, mj) || !rd8(P + g_jr.blockOff + 7, sj) || !safe_read(P + g_jr.blockOff + 8, &J.unlocked)
+        || !safe_read(P + g_jr.masOff, &J.mastered)) return false;
+    for (int j = 1; j <= 22; ++j) {
+        if (!rd8(P + g_jr.lvOff + (u32)j, J.lvl[j]) || !rd8(P + g_jr.mlOff + (u32)j, J.ml[j])) return false;
+        if (J.lvl[j] > 99 || J.ml[j] > 50) return false;
+    }
+    J.mjob = mj; J.sjob = sj;
+    // the client's own override : once the stats are in, the MAIN job's level and ML come from the 0x061 mirror
+    if (g_persData.ok && g_persData.mjob >= 1 && g_persData.mjob <= 22) {
+        J.mjob = g_persData.mjob; J.sjob = g_persData.sjob;
+        J.lvl[J.mjob] = (unsigned char)g_persData.mlvl; J.ml[J.mjob] = (unsigned char)g_persData.ml;
+    }
+    J.ok = J.mjob >= 1 && J.mjob <= 22 && J.lvl[J.mjob] >= 1;
+    return J.ok;
 }
 // keep printable bytes only (names are ASCII ; the client's text may carry control codes)
 void copy_name(char* dst, int cap, const char* src) {
