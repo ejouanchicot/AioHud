@@ -80,8 +80,8 @@ bool g_faithRule = false;   // the faith points read : `fp_info` (Alter Ego's po
 bool g_jpRule = false;       // the JP mirror reads : `levmeri2` (Job Points' CP / JP) is born parked -- its numbers are drawn
                              // where it opened, so a park after the fact left them on screen (2026-11-18)
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
-const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", 0 };   // later = opened over the earlier ones      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
-const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row
+const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "iuse", "cmbmenu", "cmbhwin", 0 };   // later = opened over the earlier ones      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
+const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", "itmsort2", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row
 const char* const MAIN_YN_W[] = { "sortyn", 0 };                               // Auto-sort's Yes / No (parked by inv-style code, not by name)          // the NPC windows AioHUD redraws (NU_NPC)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
 
@@ -178,6 +178,8 @@ NativePanel g_btlW, g_mgcW; NativeSkills g_skills; bool g_skillsOk = false;   //
 NativePanel g_utW; NativeUnity g_unity; bool g_unityOk = false;
 ItemExtra g_iix[2];                                                                   // iteminfo / itemxinf : their page 2
 NativeEquip g_equip; bool g_eqRule = false;                                            // the main menu's Equipment
+NativeItems g_items;                                                                     // the main menu's Items
+NativeSynth g_syn;                                                                       // the main menu's Synthesis
 NativeMeritCat g_mcat; bool g_mcatRule = false;                                        // Merit Points -> Categories
 NativeCelestite g_cel;                                                                // Alter Ego -> Change Celestite
 NativeFaith g_faith;                                         // Status -> Alter Ego (fp_cat / fp_cat2 / fp_info)
@@ -761,6 +763,138 @@ bool equip_read(u32 mgr, u32 focus, NativeEquip& E) {
             E.lopen = ok; E.lfocused = focus == T.obj;
         }
     }
+    return true;
+}
+// the main menu's Synthesis : the grid (tskill1), History (cmbhlst) -- docs/notes/synthesis-re-2026-11-19.md
+u32 win_named(u32 mgr, const char* want) {
+    u32 node = 0; if (!mgr || !safe_read(mgr + MGR_OPEN_LIST, &node)) return 0;
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, want) && rd8(o + OBJ_CLOSING, cl) && !cl) return o;
+        node = next;
+    }
+    return 0;
+}
+// the k-th entry child's state (1-based ; -1 unreadable)
+int entry_state(u32 obj, int want) {
+    u32 cn = 0; safe_read(obj + 0x14, &cn); int k = 0;
+    for (int g = 0; valid_ptr(cn) && g < 64; ++g) {
+        u32 cnext = 0, ch = 0; unsigned char cdead = 0; short type = -1; safe_read(cn, &cnext); safe_read(cn + 0x10, &ch); rd8(cn + 0x14, cdead);
+        if (valid_ptr(ch) && !cdead && rd16(ch, type) && type == 1 && ++k == want) { u32 st = 0; return safe_read(ch + 0x10, &st) ? (int)(st & 0xFF) : -1; }
+        cn = cnext;
+    }
+    return -1;
+}
+bool syn_read(u32 mgr, u32 focus, NativeSynth& Y) {
+    memset(&Y, 0, sizeof(Y)); Y.hCursor = -1;
+    { NativePanel CM; if (!panel_read(mgr, "cmbmenu", CM)) return false; }
+    Y.open = true;
+    const u32 to = win_named(mgr, "tskill1");
+    u32 th = 0, back = 0;
+    if (to && safe_read(to + OBJ_HANDLER, &th) && valid_ptr(th) && safe_read(th + 8, &back) && back == to) {
+        unsigned char b[0x78]; short cur = 0;
+        if (rdblk(th, b, sizeof(b)) && rd16(to + 0x4C, cur) && rd16(to + OBJ_RECT, Y.gx0) && rd16(to + OBJ_RECT + 2, Y.gy0)) {
+            u32 wh = 0; safe_read(mgr + 0x80, &wh); Y.gUiW = (short)(wh & 0xFFFF); Y.gUiH = (short)(wh >> 16);
+            if (Y.gUiW >= 320 && Y.gUiH >= 240 && Y.gUiW <= 8000 && Y.gUiH <= 8000) {
+                if (Y.gy0 >= Y.gUiH) Y.gy0 = (short)(Y.gy0 - HIDE_DY);
+                u32 mode = 0; memcpy(&mode, b + 0x70, 4);
+                Y.gridMode = (int)mode; Y.gridCursor = cur >= 1 && cur <= 10 ? cur : 0;
+                memcpy(&Y.crystalId, b + 0x20, 2); Y.crystalHave = b[0x14] != 0;
+                for (int i = 0; i < 8; ++i) {
+                    memcpy(&Y.slotId[i], b + 0x22 + 2 * i, 2); Y.slotQty[i] = b[0x36 + i];
+                    Y.slotMiss[i] = Y.slotId[i] && mode == 2 && (signed char)b[0x15 + i] < 0;
+                }
+                Y.synAllowed = entry_state(to, 9) != 5;
+                Y.gridFocused = focus == to; Y.gridOpen = mode <= 2;
+            }
+        }
+    }
+    TextList T;
+    if (tl_find(mgr, "cmbhlst", T)) {
+        u32 rows = 0;
+        if (safe_read(T.h + 0x38, &rows) && (T.count == 0 || valid_ptr(rows))) {
+            Y.hN = T.count; Y.hTop = T.top; Y.hVis = T.vis > 16 ? 16 : T.vis; Y.hCursor = T.cursor;
+            Y.hx0 = T.rx0; Y.hy0 = T.ry0; Y.hUiW = T.uiW; Y.hUiH = T.uiH;
+            bool ok = true;
+            for (int i = 0; i < Y.hVis && Y.hTop + i < Y.hN && ok; ++i) {
+                u32 node = 0; short id = 0; unsigned char fav = 0;
+                ok = safe_read(rows + (u32)(Y.hTop + i) * 0x54 + 0x48, &node) && valid_ptr(node) && rd16(node + 6, id) && rd8(node + 9, fav);
+                Y.hItem[i] = (unsigned short)id; Y.hFav[i] = (fav & 0x80) != 0;
+            }
+            Y.histOpen = ok; Y.histFocused = focus == T.obj;
+        }
+    }
+    return true;
+}
+// the quantity box `itemctrl` (a stack : the bin's retrieve, a synthesis material) : handler +0x22 max, +0x23 value
+void qty_read(u32 mgr, u32 focus, NativeItems& I) {
+    {
+        u32 node = 0, qo = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
+        for (int g = 0; valid_ptr(node) && g < 400 && !qo; ++g) {
+            u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+            safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+            if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "itemctrl") && rd8(o + OBJ_CLOSING, cl) && !cl) qo = o;
+            node = next;
+        }
+        u32 qh = 0; unsigned char mx = 0, v = 0;
+        if (qo && safe_read(qo + OBJ_HANDLER, &qh) && valid_ptr(qh) && rd8(qh + 0x22, mx) && rd8(qh + 0x23, v)) {
+            I.qtyOk = mx >= 1 && v <= mx; I.qtyVal = v; I.qtyMax = mx; I.qtyFocused = focus == qo;
+        }
+        static int saidQ = 0; static bool wasQ = false;
+        if (!!qo != wasQ && saidQ < 10) { ++saidQ; wasQ = !!qo;
+            windower::debug::log("NATIVEUI items : quantity box (itemctrl) %s -- value %d / max %d%s", qo ? "open" : "closed", I.qtyVal, I.qtyMax, qo ? (I.qtyOk ? " : AioHUD draws it" : " : NOT plausible, the client's stays") : ""); }
+    }
+}
+// the main menu's Items : inventor with handler +0x90 == 1 (set by the main menu's opener only ; Equipment's and the action
+// menu's leave it 0), the Recycling Bin (bank) not open
+bool items_read(u32 mgr, u32 focus, NativeItems& I) {
+    memset(&I, 0, sizeof(I)); I.itCursor = -1; I.binCursor = -1;
+    TextList T; if (!tl_find(mgr, "inventor", T)) return false;
+    {   // `bank` open : the Recycling Bin when its delegate's bag is 0x11 (else a Mog House storage : not ours)
+        NativePanel BP;
+        if (panel_read(mgr, "bank", BP)) {
+            TextList B; u32 dl = 0, bag = 0; static int said = 0;
+            const bool tl = tl_find(mgr, "bank", B);
+            const bool dOk = tl && safe_read(B.h + 0x58, &dl) && valid_ptr(dl) && safe_read(dl + 8, &bag);
+            if (said < 6) { ++said; windower::debug::log("NATIVEUI items : 'bank' open -- text list %s (rows %d, top %d, vis %d, cursor %d), delegate %08X bag %u%s",
+                tl ? "read" : "UNREADABLE", B.count, B.top, B.vis, B.cursor, dl, bag, dOk && bag == 0x11 ? " -> the Recycling Bin, AioHUD draws it" : " -- not the bin : the client's"); }
+            if (!dOk || bag != 0x11) return false;
+            u32 rows = 0; if (!safe_read(B.h + 0x38, &rows) || (B.count > 0 && !valid_ptr(rows))) return false;
+            I.binMode = true; I.binN = B.count; I.binTop = B.top; I.binVis = B.vis > 16 ? 16 : B.vis; I.binCursor = B.cursor;
+            I.bx0 = B.rx0; I.by0 = B.ry0; I.binUiW = B.uiW; I.binUiH = B.uiH; I.binFocused = focus == B.obj;
+            for (int i = 0; i < I.binVis && I.binTop + i < I.binN; ++i) {
+                unsigned char r[0x54]; if (!rdblk(rows + (u32)(I.binTop + i) * 0x54, r, sizeof(r))) return false;
+                u32 id = 0, cnt = 0, col = 0; memcpy(&id, r + 0x2C, 4); memcpy(&cnt, r + 0x30, 4); memcpy(&col, r + 0x0C, 4);
+                NativeItemRow& w = I.binRow[i];
+                w.itemId = (unsigned short)(id & 0xFFFF); w.itemCount = (int)(cnt > 9999 ? 9999 : cnt); w.itemCol = col; w.tempRow = false;
+            }
+            { ItemBagInfo bi; if (item_bag_info(0x11, bi) && bi.max) I.binCap = bi.max; }
+            static int saidR = 0;
+            if (saidR < 4) { ++saidR; windower::debug::log("NATIVEUI items : bin rows %d/%d, row 0 id %u count %d colour %08X", I.binN, I.binCap, I.binRow[0].itemId, I.binRow[0].itemCount, I.binRow[0].itemCol); }
+        }
+    }
+    if (!I.binMode) {
+        unsigned char fromMain = 0; rd8(T.h + 0x90, fromMain);
+        if (fromMain != 1) {                       // Synthesis's pickers (cmbmenu up) : the crystals, or the materials beside tskill1
+            NativePanel CM, TS; if (!panel_read(mgr, "cmbmenu", CM)) return false;
+            I.synMode = panel_read(mgr, "tskill1", TS) ? 2 : 1;
+        }
+    }
+    if (I.binMode || I.synMode) qty_read(mgr, focus, I);
+    short tmp = 0; if (!rd16(T.h + 0x54, tmp) || tmp < 0 || tmp > T.count) return false;
+    u32 rows = 0; if (!safe_read(T.h + 0x38, &rows) || (T.count > 0 && !valid_ptr(rows))) return false;
+    I.itN = T.count; I.itTop = T.top; I.itVis = T.vis > 16 ? 16 : T.vis; I.itCursor = T.cursor; I.tempRows = tmp;
+    I.rx0 = T.rx0; I.ry0 = T.ry0; I.rx1 = T.rx1; I.ry1 = T.ry1; I.uiW = T.uiW; I.uiH = T.uiH;
+    for (int i = 0; i < I.itVis && I.itTop + i < I.itN; ++i) {
+        unsigned char r[0x54]; if (!rdblk(rows + (u32)(I.itTop + i) * 0x54, r, sizeof(r))) return false;
+        u32 id = 0, cnt = 0, col = 0; memcpy(&id, r + 0x2C, 4); memcpy(&cnt, r + 0x30, 4); memcpy(&col, r + 0x0C, 4);
+        NativeItemRow& w = I.itRow[i];
+        w.itemId = (unsigned short)(id & 0xFFFF); w.itemCount = (int)(cnt > 9999 ? 9999 : cnt); w.itemCol = col; w.tempRow = I.itTop + i < tmp;
+    }
+    I.invUsed = I.itN - tmp;
+    { ItemBagInfo bi; if (item_bag_info(0, bi) && bi.max) I.invCap = bi.max; }
+    I.focused = focus == T.obj; I.open = true;
     return true;
 }
 // the two item cards' page 2, read from their handler (+0x24 the item, +0x1B8 augments, +0x2C "<...>", +0x278 item level)
@@ -1349,7 +1483,7 @@ bool inStatusNow() {
     return !strcmp(n, "statcom2") || !strcmp(n, "merit1") || !strcmp(n, "merit2") || !strcmp(n, "merit3");
 }
 void main_poll(bool on) {
-    if (!on) { g_eqUp = false; g_equip.open = false; g_equip.lopen = false; g_eqRule = false; g_mcat.open = false; g_mcatRule = false; g_cel.open = false; g_faith.open = false; g_faithRule = false; g_jpRule = false; g_jcat.open = false; g_jpts.open = false; g_jpts.box.open = false; g_area.open = false; g_search.open = false; g_scopt.open = false; g_urank.open = false; g_uinfo.open = false; g_utW.open = false; g_unityOk = false; g_cur.open = false; g_meritsOk = false; g_trdW.open = g_lmW.open = false; g_skillsOk = false; g_skillsOkRule = false; g_btlW.open = g_mgcW.open = false; g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
+    if (!on) { g_eqUp = false; g_items.open = false; g_syn.open = false; g_equip.open = false; g_equip.lopen = false; g_eqRule = false; g_mcat.open = false; g_mcatRule = false; g_cel.open = false; g_faith.open = false; g_faithRule = false; g_jpRule = false; g_jcat.open = false; g_jpts.open = false; g_jpts.box.open = false; g_area.open = false; g_search.open = false; g_scopt.open = false; g_urank.open = false; g_uinfo.open = false; g_utW.open = false; g_unityOk = false; g_cur.open = false; g_meritsOk = false; g_trdW.open = g_lmW.open = false; g_skillsOk = false; g_skillsOkRule = false; g_btlW.open = g_mgcW.open = false; g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
     NativeEntryMenu m; int r = main_read(m);
     NativeEntryMenu sm; const int rs = entry_read(MAIN_SUB_W, sm, 0);
     g_mainSub = sm; if (rs != 1) g_mainSub.open = false;
@@ -1417,7 +1551,21 @@ void main_poll(bool on) {
                 if (!(feUp && cel_read(mgr, focus, g_cel))) g_cel.open = false;
                 // Equipment (from the main menu) : the grid, the slot's item list
                 if (!equip_read(mgr, focus, g_equip)) { g_equip.open = false; g_equip.lopen = false; }
-                g_eqUp = g_equip.open;
+                // Items (from the main menu) : the list ; the item cards' rule as for Equipment
+                if (!syn_read(mgr, focus, g_syn)) g_syn.open = false;
+                if (g_equip.open || !items_read(mgr, focus, g_items)) g_items.open = false;
+                g_eqUp = g_equip.open || g_items.open || g_syn.open;
+                static int saidSy = 0; static int wasSy = -1;
+                { const int st = (int)g_syn.open + 2 * (int)g_syn.gridOpen + 4 * (int)g_syn.histOpen + 8 * g_syn.gridMode;
+                  if (st != wasSy && saidSy < 16) { ++saidSy; wasSy = st;
+                    windower::debug::log("NATIVEUI synthesis : screen %d, grid %d (mode %d, cursor %d, focus %d, crystal %u have %d, slot 0 id %u qty %u miss %d, synthesize %s), history %d (%d rows, cursor %d, row 0 item %u fav %d)",
+                        (int)g_syn.open, (int)g_syn.gridOpen, g_syn.gridMode, g_syn.gridCursor, (int)g_syn.gridFocused, g_syn.crystalId, (int)g_syn.crystalHave,
+                        g_syn.slotId[0], g_syn.slotQty[0], (int)g_syn.slotMiss[0], g_syn.synAllowed ? "allowed" : "refused", (int)g_syn.histOpen, g_syn.hN, g_syn.hCursor, g_syn.hItem[0], (int)g_syn.hFav[0]); } }
+                static int saidIt = 0; static int wasI = 0;
+                if ((int)g_items.open + 2 * (int)g_items.binMode != wasI && saidIt < 12) { ++saidIt; wasI = (int)g_items.open + 2 * (int)g_items.binMode;
+                    windower::debug::log("NATIVEUI items : list %s%s (%d rows, %d temporary, top %d, cursor %d, focus %d, %d/%d ; row 0 id %u count %d colour %08X)",
+                        g_items.open ? "read -- AioHUD draws it" : "gone", g_items.binMode ? " with the Recycling Bin" : "", g_items.itN, g_items.tempRows, g_items.itTop, g_items.itCursor, (int)g_items.focused,
+                        g_items.invUsed, g_items.invCap, g_items.itRow[0].itemId, g_items.itRow[0].itemCount, g_items.itRow[0].itemCol); }
                 { EquipSet es; g_eqRule = read_equipment(es); }                   // the equipment reads : equip born parked
                 static int saidE = 0, saidL = 0;
                 if (g_equip.open && saidE < 3) { ++saidE; windower::debug::log("NATIVEUI equipment : grid read (cursor %d, ids %s : main %u head %u, stats %s : atk %d def %d fire %d)",
@@ -1591,7 +1739,7 @@ void inv_park(u32 mgr) {
 int g_ynParkLog = 0, g_profParkLog = 0;
 void park_named(u32 mgr, const char* want, int& logN, const char* what);
 void yn_park(u32 mgr) {
-    if (g_mainSort.open) park_named(mgr, "sortyn", g_ynParkLog, "Auto-sort, from the spell list");
+    if (g_mainSort.open) park_named(mgr, "sortyn", g_ynParkLog, "Auto-sort / Dispose, from the spell list or the items");
     if (g_prof.open && g_prof.ok) park_named(mgr, "profile", g_profParkLog, "Status -> Profile");   // placed by code too
     // the stat panels are BORN parked by their record ; a late one (opened before the record took) is moved too
     static int persLog = 0, lvlLog = 0;
@@ -1613,6 +1761,14 @@ void yn_park(u32 mgr) {
     static int fcLog = 0, f2Log = 0, fhLog = 0, ceLog = 0, ciLog = 0, cbLog = 0, mcLog = 0, mhLog = 0, eiLog = 0, ecLog = 0;
     if (g_equip.open && g_equip.lopen) park_named(mgr, "inventor", eiLog, "Equipment -> a slot's items");
     if (g_equip.open) park_named(mgr, "iteminfo", ecLog, "Equipment -> the item card");
+    static int itLog = 0, icLog = 0;
+    if (g_items.open) { park_named(mgr, "inventor", itLog, "Items -> the list"); park_named(mgr, "iteminfo", icLog, "Items -> the item card"); }
+    static int bnLog = 0; if (g_items.open && g_items.binMode) park_named(mgr, "bank", bnLog, "Items -> the Recycling Bin");
+    static int qtLog = 0; if (g_items.open && (g_items.binMode || g_items.synMode) && g_items.qtyOk) park_named(mgr, "itemctrl", qtLog, "Items / Synthesis -> the quantity");
+    static int tsLog2 = 0, hlLog = 0, siLog = 0;
+    if (g_syn.open && g_syn.gridOpen) park_named(mgr, "tskill1", tsLog2, "Synthesis -> the grid");
+    if (g_syn.open && g_syn.histOpen) park_named(mgr, "cmbhlst", hlLog, "Synthesis -> History");
+    if (g_syn.open) park_named(mgr, "iteminfo", siLog, "Synthesis -> the item card");
     static int gmLog = 0; if (g_equip.open && g_equip.gilOk) park_named(mgr, "money", gmLog, "Equipment -> Current Gil");
     static int gxLog = 0; if (g_equip.open && g_equip.compare) park_named(mgr, "itemxinf", gxLog, "Equipment -> the compare card");
     if (g_mcat.open) { park_named(mgr, "meritcat", mcLog, "Merit Points -> Categories"); park_named(mgr, "bluehelp", mhLog, "Merit Points -> description"); }
@@ -1693,6 +1849,8 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_uinfo.open && !strcmp(nm, "quest00"))
                              || (g_urank.open && !strcmp(nm, "quest01"))
                              || (g_jpts.open && g_jpts.ok && (!strcmp(nm, "merit2ca") || !strcmp(nm, "levmeri2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "jbpcat")))
+                             || (g_items.open && (!strcmp(nm, "inventor") || !strcmp(nm, "iteminfo") || (g_items.binMode && !strcmp(nm, "bank")) || ((g_items.binMode || g_items.synMode) && g_items.qtyOk && !strcmp(nm, "itemctrl"))))
+                             || (g_syn.open && ((g_syn.gridOpen && !strcmp(nm, "tskill1")) || (g_syn.histOpen && !strcmp(nm, "cmbhlst")) || !strcmp(nm, "iteminfo")))
                              || (g_equip.open && (!strcmp(nm, "equip") || !strcmp(nm, "inventor") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || !strcmp(nm, "itemxinf")))
                              || (g_mcat.open && (!strcmp(nm, "meritcat") || !strcmp(nm, "bluehelp") || !strcmp(nm, "meritinf")))
                              || (g_cel.open && (!strcmp(nm, "fe_equip") || !strcmp(nm, "fe_inven") || !strcmp(nm, "bluehelp")))
@@ -1751,6 +1909,8 @@ const NativeFaith& native_faith() { return g_faith; }
 const NativeCelestite& native_celestite() { return g_cel; }
 const NativeMeritCat& native_merit_cat() { return g_mcat; }
 const NativeEquip& native_equip() { return g_equip; }
+const NativeItems& native_items() { return g_items; }
+const NativeSynth& native_synth() { return g_syn; }
 const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
 const char* native_merit_text(int index, bool desc) { return index < 0 ? 0 : dmsg_str(g_dm[3], (unsigned)(2 * index + (desc ? 1 : 0))); }
 const char* native_faith_text(int id, bool desc) { return id < 0 ? 0 : dmsg_str(g_dm[2], (unsigned)(2 * id + (desc ? 1 : 0))); }
@@ -1836,6 +1996,8 @@ int inv_read(u32 focus, NativeList& L) {
     u32 hd = 0, rows = 0, h18 = 0, h20 = 0, h24 = 0;
     if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !safe_read(hd + 0x18, &h18) || !safe_read(hd + 0x20, &h20)
         || !safe_read(hd + 0x24, &h24) || !safe_read(hd + 0x38, &rows)) return 0;
+    // opened from the MAIN menu (handler +0x90 == 1 ; the action menu stays open, dimmed, under it) : items_read's, not this
+    { unsigned char fromMain = 0; if (rd8(hd + 0x90, fromMain) && fromMain == 1) return -1; }
     const int n = (int)(h20 & 0xFFFF), vis = (int)(h18 & 0xFFFF), curInPage = (int)(h24 & 0xFFFF);
     if (n < 0 || n > 80 || vis < 1 || vis > 32 || (n > 0 && !valid_ptr(rows))) return 0;
     int top = (int)(h18 >> 16); const int maxTop = n > vis ? n - vis : 0;
@@ -2226,6 +2388,18 @@ bool textlist_goto(const char* name, int row, bool pick) {
     return pick ? menu_event(T.obj, 5) : true;
 }
 bool native_textlist_hover(const char* name, int row) { return textlist_goto(name, row, false); }
+// tskill1's entries : the hand on it (9), then validated (5) ; tskill1 must have the focus, a refused entry is not picked
+bool synth_goto(int entry, bool pick) {
+    const u32 mgr = manager(); if (!mgr || entry < 1 || entry > 10) return false;
+    u32 focus = 0; const u32 fp = aio::fm_addr(aio::FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+    const u32 to = win_named(mgr, "tskill1"); if (!to || to != focus) return false;
+    if (entry_state(to, entry) == 5) return false;
+    short cur = 0; rd16(to + 0x4C, cur);
+    if (cur != entry && (!wr16(to + 0x4C, (short)entry) || !menu_event(to, 9))) return false;
+    return pick ? menu_event(to, 5) : true;
+}
+bool native_synth_grid_hover(int entry) { return synth_goto(entry, false); }
+bool native_synth_grid_pick(int entry) { return synth_goto(entry, true); }
 // a Celestite list's row : the other list handed the focus first (code 8 switches them), then its row
 bool cel_goto(int list, int row, bool pick) {
     const u32 mgr = manager(); if (!mgr) return false;

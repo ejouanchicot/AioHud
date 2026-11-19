@@ -46,6 +46,8 @@ void jobpoints_draw(const Frame& f);    // hud_actmenu.cpp : Status -> Job Point
 void alterego_draw(const Frame& f);     // hud_actmenu.cpp : Status -> Alter Ego's points (fp_cat, fp_cat2, fp_info), mirrored
 void celestite_draw(const Frame& f);    // hud_actmenu.cpp : Alter Ego -> Change Celestite (fe_equip, fe_inven), mirrored
 void meritcat_draw(const Frame& f);     // hud_actmenu.cpp : Merit Points -> Categories (meritcat, meritinf), mirrored
+void synth_draw(const Frame& f);        // hud_actmenu.cpp : the main menu's Synthesis (tskill1, cmbhlst), mirrored (NU_MAIN)
+void items_draw(const Frame& f);        // hud_actmenu.cpp : the main menu's Items (inventor, from the main menu), mirrored (NU_MAIN)
 void equipment_draw(const Frame& f);    // hud_actmenu.cpp : the main menu's Equipment (equip, inventor), mirrored (NU_MAIN)
 void currencies_draw(const Frame& f);   // hud_actmenu.cpp : Status -> Currencies 1 / 2, searchable (NU_MAIN)
 void actmenu_set_hand_tex(u32 tex);  // the party's selection-hand texture (its cursor)

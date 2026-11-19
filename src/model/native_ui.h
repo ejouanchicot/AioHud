@@ -354,6 +354,49 @@ struct NativeEquip {
     unsigned gil; bool gilOk;
 };
 const NativeEquip& native_equip();
+// The main menu's ITEMS (docs/notes/items-menu-re-2026-11-18.md) : `inventor` opened from the main menu (handler +0x90 == 1),
+// a TEXT LIST : the first `s16 handler +0x54` rows are the Temporary Items (colour 0x80806040), then the inventory in the
+// client's view order ; cells : id +0x2C, count +0x30, the client's colour +0x0C (blue enchanted ready, green worn, gold
+// usable, white, grey refused, orange held in Manual Sort). The Recycling Bin (`bank` open) stays the client's for now.
+struct NativeItemRow { unsigned short itemId; int itemCount; unsigned itemCol; bool tempRow; };
+struct NativeItems {
+    bool open, focused;
+    int  itN, itTop, itVis, itCursor, tempRows;   // the whole list, its page, the cursor (-1 none), the temporary rows
+    NativeItemRow itRow[16];                     // the page
+    int  invUsed, invCap;                        // the inventory's items / its size (invCap 0 : unknown)
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+    // the RECYCLING BIN (itmsort2 -> 3) : `bank` on bag 0x11 (handler +0x58 -> its delegate, bag at +8) ; the inventory
+    // beside it is the client's, every row grey (nothing goes in by hand). A row validated : retrieved (0x029, the client)
+    bool binMode, binFocused;
+    int  binN, binTop, binVis, binCursor, binCap;
+    NativeItemRow binRow[16];
+    short bx0, by0; int binUiW, binUiH;
+    // the QUANTITY box (`itemctrl`, a stack retrieved from the bin) : handler +0x22 the max, +0x23 the value -- the client's
+    // keys change it, validate / cancel are the client's ; qtyOk : both read and plausible (else its own box stays)
+    bool qtyOk, qtyFocused; int qtyVal, qtyMax;
+    int  synMode;                                // Synthesis's pickers : 0 no, 1 the crystals (delegate K), 2 the materials (S, beside tskill1)
+};
+const NativeItems& native_items();
+// The main menu's SYNTHESIS (docs/notes/synthesis-re-2026-11-19.md) : `cmbmenu` (Crystal Synthesis / History, a main-menu
+// submenu) ; `tskill1` = the grid (handler : +0x08 its window, +0x14 the crystal's bag index, +0x20 its id, slot i :
+// +0x15+i bag index (s8 < 0 in History = not owned), +0x22+2i id, +0x36+i quantity ; +0x70 mode 0 Items-Use / 1 Crystal
+// Synthesis / 2 History ; window +0x4C : 1..8 the slots, 9 Synthesize, 10 Cancel) ; `cmbhlst` = History (a TEXT LIST,
+// record = a node : +6 the result item, +9 bit 7 favourite) ; `cmbhwin` the favourite on / off. Synthesize sends 0x096 at
+// once (the client's checks), no Yes / No.
+struct NativeSynth {
+    bool open;                                   // cmbmenu up (the screen)
+    bool gridOpen, gridFocused, synAllowed;      // tskill1 ; Synthesize not refused
+    int  gridCursor, gridMode;
+    unsigned short crystalId; bool crystalHave;
+    unsigned short slotId[8]; unsigned char slotQty[8]; bool slotMiss[8];
+    short gx0, gy0; int gUiW, gUiH;
+    bool histOpen, histFocused; int hN, hTop, hVis, hCursor;
+    unsigned short hItem[16]; bool hFav[16];
+    short hx0, hy0; int hUiW, hUiH;
+};
+const NativeSynth& native_synth();
+bool native_synth_grid_hover(int entry);   // tskill1 : 1..8 a slot, 9 Synthesize, 10 Cancel
+bool native_synth_grid_pick(int entry);
 // The client's item card's PAGE 2 (docs/notes/iteminfo-page2-re-2026-11-18.md) : `iteminfo` / `itemxinf` rebuild, every
 // update, the item's augment text (handler +0x1B8), its "<...>" line (+0x2C : charges, or rank / path / RP / trial) and
 // "<Item Level:n>" (+0x278), for the item at +0x24. Read once a frame ; AioHUD's card shows them all on one page

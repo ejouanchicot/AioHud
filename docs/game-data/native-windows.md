@@ -290,6 +290,33 @@ after a logout.
     them all on one page (it grows) : no Y / numpad - needed. The client's text : 81 60 = '~' (and the other
     full-width signs, item_text_detail::decode).
   - `//aio eqpreview` : every cell / row state on the real items (badges 1..8, locked, empty, the row colours).
+- **The main menu's Items** (docs/notes/items-menu-re-2026-11-18.md ; user-confirmed in game 2026-11-19) :
+  - `inventor` opened from the MAIN menu = handler +0x90 == 1 (the main menu's opener sets it ; Equipment's and the action
+    menu's leave it 0). The action menu (`playermo`) stays open, dimmed, under it : inv_read (the action menu's Items)
+    refuses a list with +0x90 == 1, or it drew it a second time above the chat. A TEXT LIST : the first `s16 handler
+    +0x54` rows are the Temporary Items (0x80806040), then the inventory in the client's view order ; cells as Equipment's
+    (id +0x2C, count +0x30, colour +0x0C : 0x80407090 enchanted ready, 0x80509050 worn, 0x80909040 usable, 0x80404040
+    refused, 0x80804020 held in Manual Sort). Counter = the non-temporary rows / item_bag_info(0).max.
+  - Drawn TOP LEFT (both Items lists, the action menu's too) ; the item card ABOVE AioHUD's chat (card_on_chat).
+  - `itmsort2` (Auto-sort / Manual Sort / Recycling Bin) is in MAIN_SORT_W (born parked, drawn in the main menu's place) ;
+    `iuse` (Use / Dispose) in MAIN_SUB_W ; `sortyn` (Sort items? / Dispose of item?) hangs under whichever of the two is up.
+  - The RECYCLING BIN : `bank` whose delegate (handler +0x58) has bag `+8 == 0x11` (else a Mog House storage : the client's).
+    Same TEXT LIST cells. The inventory beside it is all grey. The quantity box `itemctrl` (a stack retrieved) : handler
+    +0x22 the max, +0x23 the value (u8) -- redrawn under the bin, parked once read. Not redrawn yet : `comyn` (the 2nd
+    dispose confirm for Rare / Ex / augmented items).
+- **The main menu's Synthesis** (docs/notes/synthesis-re-2026-11-19.md ; user-confirmed in game 2026-11-19) :
+  - `cmbmenu` (Crystal Synthesis / History) and `cmbhwin` (History's favourite on / off) are main-menu submenus (MAIN_SUB_W,
+    labels are images : named from their help texts).
+  - The pickers are `inventor` with handler +0x90 == 0 while `cmbmenu` is open : the crystals (delegate K, gold rows) ; the
+    materials once `tskill1` is open (delegate S : orange = a stack already in a slot, grey = refused), drawn beside the grid.
+    `itemctrl` asks a stack's quantity (as the bin's), drawn under the grid.
+  - `tskill1` = the grid. Handler : +0x08 its window (cross-check), +0x14 the crystal's bag index (0 = not owned in
+    History), +0x20 its id, slot i : +0x15+i bag index (s8 < 0 in History = not in the inventory -- live-confirmed),
+    +0x22+2i id, +0x36+i quantity, +0x70 mode (0 Items-Use, 1 Crystal Synthesis, 2 History). Window +0x4C : 1..8 the slots
+    (1..4 the top row), 9 Synthesize (state 5 = refused), 10 Cancel. The labels are images ; Synthesize sends 0x096 at once.
+  - `cmbhlst` = History : a TEXT LIST (<= 10 rows, newest first), record row+0x48 = a node : +6 the result item, +9 bit 7
+    favourite. Moving its cursor refills the grid with that recipe (what is missing : dimmed, a red cross).
+  - The item card (iteminfo) is parked and redrawn above the chat while the screen is up.
 - **Reload with a window parked** : move_open no longer parks an open window that is already parked (nor unparks one
   already on screen) -- a reload with Status open parked the stat panels by name, then the first apply parked them a
   second time (the box read 3000 too low, on the chat).
