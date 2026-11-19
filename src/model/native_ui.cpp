@@ -80,8 +80,8 @@ bool g_faithRule = false;   // the faith points read : `fp_info` (Alter Ego's po
 bool g_jpRule = false;       // the JP mirror reads : `levmeri2` (Job Points' CP / JP) is born parked -- its numbers are drawn
                              // where it opened, so a park after the fact left them on screen (2026-11-18)
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
-const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "iuse", "cmbmenu", "cmbhwin", 0 };   // later = opened over the earlier ones      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
-const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", "itmsort2", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row
+const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "iuse", "cmbmenu", "cmbhwin", "abimenu", 0 };   // later = opened over the earlier ones      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
+const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", "itmsort2", "abisortw", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row
 const char* const MAIN_YN_W[] = { "sortyn", 0 };                               // Auto-sort's Yes / No (parked by inv-style code, not by name)          // the NPC windows AioHUD redraws (NU_NPC)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
 
@@ -486,7 +486,8 @@ bool jcat_read(u32 mgr, u32 focus, NativeJpCat& K) {
 // u16 at 0x0A = the body XOR 0xFF ; an entry = { u32 field count ; { u32 offset, u32 type }... }, a type-0 field =
 // its text at entry + offset + 0x1C) ----
 struct Dmsg { unsigned id; unsigned char* buf; unsigned size, hs, toc, esz, n; int tries; DWORD next; bool ok; };
-Dmsg g_dm[4] = { { 55694, 0, 0, 0, 0, 0, 0, 0, 0, false }, { 55674, 0, 0, 0, 0, 0, 0, 0, 0, false }, { 55683, 0, 0, 0, 0, 0, 0, 0, 0, false }, { 55686, 0, 0, 0, 0, 0, 0, 0, 0, false } };
+Dmsg g_dm[6] = { { 55694, 0, 0, 0, 0, 0, 0, 0, 0, false }, { 55674, 0, 0, 0, 0, 0, 0, 0, 0, false }, { 55683, 0, 0, 0, 0, 0, 0, 0, 0, false }, { 55686, 0, 0, 0, 0, 0, 0, 0, 0, false },
+                 { 55701, 0, 0, 0, 0, 0, 0, 0, 0, false }, { 55733, 0, 0, 0, 0, 0, 0, 0, 0, false } };   // + the abilities' names / descriptions (by the client's ability id)
 bool dmsg_ready(Dmsg& D) {
     if (D.ok) return true;
     const DWORD now = GetTickCount();
@@ -1912,6 +1913,9 @@ const NativeEquip& native_equip() { return g_equip; }
 const NativeItems& native_items() { return g_items; }
 const NativeSynth& native_synth() { return g_syn; }
 const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
+// the client's ability table ids (0..0x1FF weapon skills, 0x200.. job abilities, 0x600..0x6FF job traits) : d_msg 55701
+// the name, 55733 the description -- abilities-re-2026-11-19.md (all 124 traits / 626 abilities checked against it)
+const char* native_ability_text(unsigned id, bool desc) { return dmsg_str(g_dm[desc ? 5 : 4], id); }
 const char* native_merit_text(int index, bool desc) { return index < 0 ? 0 : dmsg_str(g_dm[3], (unsigned)(2 * index + (desc ? 1 : 0))); }
 const char* native_faith_text(int id, bool desc) { return id < 0 ? 0 : dmsg_str(g_dm[2], (unsigned)(2 * id + (desc ? 1 : 0))); }
 const char* native_jp_text(int kind, int id, bool desc, int job) {
@@ -2045,7 +2049,8 @@ int list_read(NativeList& L) {
     // MANUAL SORT (the main menu's Magic -> X -> Manual Sort ; live capture MSORT 2026-11-18) : h+0x6C = 0 off, 1 on,
     // 2 a spell HELD ; h+0x70 = the held one's index in the list -- validating another row puts it ABOVE that row
     { u32 mode = 0, hi = 0; L.held = -1;
-      if (safe_read(hd + 0x6C, &mode) && mode == 2 && safe_read(hd + 0x70, &hi) && (int)hi >= 0 && (int)hi < n) L.held = (int)hi; }
+      const u32 mo = kind ? 0x68u : 0x6Cu;                  // the ABILITY list : +0x68 / +0x6C (abilities-re 2026-11-19)
+      if (safe_read(hd + mo, &mode) && mode == 2 && safe_read(hd + mo + 4, &hi) && (int)hi >= 0 && (int)hi < n) L.held = (int)hi; }
     if (n > 0 && !valid_ptr(items)) return 0;
     for (int i = 0; i < vis && top + i < n; ++i) {
         u32 slot = 0; short id = 0;

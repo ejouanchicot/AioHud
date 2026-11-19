@@ -405,6 +405,7 @@ struct ItemExtra { unsigned id; char aug[256]; char line[128]; char ilvl[64]; };
 const ItemExtra* native_item_extra(unsigned id);   // 0 when neither card shows that item
 bool native_equip_hover(int entry);
 bool native_equip_pick(int entry);
+const char* native_ability_text(unsigned id, bool desc);   // the client's ability id (traits 0x600 + t) -> d_msg 55701 name / 55733 description
 const char* native_merit_text(int index, bool desc);   // d_msg 55686 string 2 * index (+1)
 bool native_celestite_hover(int list, int row);   // list 0 fe_equip, 1 fe_inven : the other list given the focus first
 bool native_celestite_pick(int list, int row);

@@ -317,6 +317,16 @@ after a logout.
   - `cmbhlst` = History : a TEXT LIST (<= 10 rows, newest first), record row+0x48 = a node : +6 the result item, +9 bit 7
     favourite. Moving its cursor refills the grid with that recipe (what is missing : dimmed, a red cross).
   - The item card (iteminfo) is parked and redrawn above the chat while the screen is up.
+- **The main menu's Abilities** (docs/notes/abilities-re-2026-11-19.md ; user-confirmed in game 2026-11-19) :
+  - `abimenu` is a main-menu submenu (MAIN_SUB_W) ; entries by the definition's order : 1 Job Traits, 2 Job Abil., 3 Weapon
+    Skil., 4 Ranged Atk. (no window : the target cursor, then `/shoot`), 5 Pet Command, 6 Mount (screen order by y :
+    1 2 3 4 6 5). Labels are images : named from their help texts. `abisortw` (1 entry, Manual Sort) is in MAIN_SORT_W.
+  - Job Traits / Job Abil. / Weapon Skil. / Pet Command all open the SAME `ability` window : `u32 handler+0x64` = 4 / 1 / 3
+    / 2. Its rows index the same slot table as the action menu's (list_read unchanged) ; the client's ability ids :
+    0..0x1FF weapon skills, 0x200.. job abilities (pet commands 0x245..0x33F), **0x600..0x6FF job traits**. Names : d_msg
+    55701 [id] ; the description (the client's helpwind) : d_msg 55733 [id] (native_ability_text) -- drawn in a box above
+    the list. The ability list's manual sort : +0x68 state (2 = held), +0x6C the held index (the spell list's : +0x6C /
+    +0x70).
 - **Reload with a window parked** : move_open no longer parks an open window that is already parked (nor unparks one
   already on screen) -- a reload with Status open parked the stat panels by name, then the first apply parked them a
   second time (the box read 3000 too low, on the chat).

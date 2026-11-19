@@ -250,7 +250,14 @@ const SubRow IUSE[2] = { { "Use", "Utiliser", false, IC_NONE }, { "Dispose", "Je
 // Synthesis (cmbmenu) and History's favourite (cmbhwin) : labels are images -- named from their help texts (synthesis-re 6)
 const SubRow CMBMENU[2] = { { "Crystal Synthesis", "Synth\xC3\xA8se", false, IC_NONE }, { "History", "Historique", false, IC_NONE } };
 const SubRow CMBHWIN[2] = { { "Add to favorites", "Ajouter aux favoris", false, IC_NONE }, { "Remove from favorites", "Retirer des favoris", false, IC_NONE } };
+// Abilities (abimenu) : by ENTRY (the screen order is by y : 1 2 3 4 6 5) -- abilities-re-2026-11-19.md s.1
+const SubRow ABIMENU[6] = {
+    { "Job Traits",    "Traits de job",            false, IC_NONE }, { "Job Abilities", "Aptitudes de job", false, IC_NONE },
+    { "Weapon Skills", "Weapon Skills",            false, IC_NONE }, { "Ranged Attack", "Attaque \xC3\xA0 distance", false, IC_NONE },
+    { "Pet Commands",  "Ordres au familier",       false, IC_NONE }, { "Mount",         "Monture",          false, IC_NONE },
+};
 const SubRow* sub_row(const char* menu, int entry) {
+    if (!strcmp(menu, "abimenu") && entry >= 1 && entry <= 6) return &ABIMENU[entry - 1];
     if (!strcmp(menu, "cmbmenu") && entry >= 1 && entry <= 2) return &CMBMENU[entry - 1];
     if (!strcmp(menu, "cmbhwin") && entry >= 1 && entry <= 2) return &CMBHWIN[entry - 1];
     if (!strcmp(menu, "iuse") && entry >= 1 && entry <= 2) return &IUSE[entry - 1];
@@ -297,8 +304,9 @@ const char* list_row_name(int kind, unsigned id, unsigned& mp, bool& ws) {
     if (kind == 2) { const char* m = mount_name(id); return m ? m : "?"; }   // the mount list : the id itself
     if (kind == 3) { const char* m = item_display_name(id); return m ? m : "?"; }   // the items : its display name
     if (kind == 0) { const SpellRow* sp = spell_info(id); if (!sp) return "?"; mp = sp->mp; return sp->en; }
-    if (id < 256) { const WSRow* w = ws_info(id); ws = true; return w ? w->en : "?"; }
-    if (id >= 512) { const AbilRow* a = abil_info(id - 512); if (!a) return "?"; mp = a->mp; return a->en; }
+    if (id >= 0x600 && id < 0x700) { const char* t = native_ability_text(id, false); return t && t[0] ? t : "?"; }   // a JOB TRAIT (Abilities -> Job Traits)
+    if (id < 512) { const WSRow* w = ws_info(id); ws = true; return w ? w->en : "?"; }
+    if (id >= 512) { const AbilRow* a = abil_info(id - 512); if (!a) { const char* t = native_ability_text(id, false); return t && t[0] ? t : "?"; } mp = a->mp; return a->en; }
     return "?";
 }
 // ---- the spell / ability ICONS Windower ships for its Timers plugin : <windower>\plugins\icons\spells\NNNNN.png (by spell
@@ -377,6 +385,7 @@ u32 list_icon(const Frame& f, int kind, unsigned id) {
     unsigned key = 0;
     if (kind == 3) key = (3u << 24) | ((id & 0xFFFFu) << 8);
     else if (kind == 0) key = (1u << 24) | ((id & 0xFFFFu) << 8);
+    else if (id >= 0x600) return 0;                                       // job traits : no icon of their own
     else if (id >= 512) {
         const AbilRow* a = abil_info(id - 512); if (!a) return 0;
         const unsigned r = a->recast_id;
@@ -3818,7 +3827,8 @@ void mainmenu_draw(const Frame& f) {
         RowSpec orows[16]; char onums[16][12]; int ocur = 0;
         for (int i = 0; i < lastO.n && i < 16; ++i) {
             const int e = lastO.entry[i];
-            if (e == 1) orows[i].label = tr("Auto-sort", "Tri automatique");
+            if (e == 1 && !strcmp(lastO.name, "abisortw")) orows[i].label = tr("Manual Sort", "Tri manuel");   // its only entry
+            else if (e == 1) orows[i].label = tr("Auto-sort", "Tri automatique");
             else if (e == 2) orows[i].label = tr("Manual Sort", "Tri manuel");
             else if (e == 3 && !strcmp(lastO.name, "blusortw")) orows[i].label = tr("Blue Magic", "Magie bleue");   // set the spells
             else if (e == 3 && !strcmp(lastO.name, "itmsort2")) orows[i].label = tr("Recycling Bin", "Corbeille");
@@ -3938,6 +3948,28 @@ void mainmenu_draw(const Frame& f) {
         if (lx < 4.0f) lx = 4.0f; if (lx + lw > f.screenW - 4.0f) lx = snap(f.screenW - 4.0f - lw);
         if (ly + lh > f.screenH - 4.0f) ly = snap(f.screenH - 4.0f - lh); if (ly < 4.0f) ly = 4.0f;
         list_paint(f, k, g_mainListB, lastL, lrows, mine, lx, ly, lw, lh, g_mainListB.vis * tL, tL, dt, g_hit[7]);
+        // ABILITIES : the description under the cursor (the client writes it to its help line) -- the user, 2026-11-19
+        const int cr = lastL.cursor - lastL.top;
+        if (lastL.kind == 1 && cr >= 0 && cr < lastL.rows) {
+            const unsigned aid = lastL.id[cr];
+            const char* d = native_ability_text(aid, true);
+            unsigned mp = 0; bool ws = false; const char* nm = list_row_name(1, aid, mp, ws);
+            if (d && d[0]) {
+                char body[400], title[96]; jp_clean(d, body, sizeof(body)); jp_clean(nm, title, sizeof(title));
+                for (char* p = body; *p; ++p) if (*p == '\n') *p = ' ';
+                const float pad = snap(8.0f * S), tz = k.tz, headH = snap(18.0f * S), rowH = snap(k.capH * 0.95f), dw = lw;
+                char lines[6][96]; const int nl = jp_wrap(f.font, body, tz * 0.92f, dw - 2.0f * pad, lines, 6);
+                const float dh = snap(pad + headH + 6.0f * S + (float)nl * rowH + pad);
+                float dy = snap(ly - 3.0f * S - dh); if (dy < 4.0f) dy = snap(ly + lh + 3.0f * S);
+                const float DA = g_mainListB.vis * tL;
+                draw_themed_box(f.dev, f.skin, lx, dy, dw, dh, C.muBox, DA, S);
+                rrect(f.dev, lx + pad, snap(dy + pad + headH), dw - 2.0f * pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, DA), with_alpha(0x30C8D6EAu, DA));
+                f.font->begin(f.dev);
+                const u32 shd = with_alpha(0xC8000000u, DA);
+                f.font->draw_lc(f.dev, snap(lx + pad), snap(dy + pad + headH * 0.5f), title, tz * 0.95f, with_alpha(0xFFE8D9B0u, DA), shd, k.ow);
+                for (int i = 0; i < nl; ++i) f.font->draw_lc(f.dev, snap(lx + pad), snap(dy + pad + headH + 6.0f * S + (float)i * rowH + rowH * 0.5f), lines[i], tz * 0.92f, with_alpha(0xFFC9D3E0u, DA), shd, k.ow);
+            }
+        }
     }
 }
 
