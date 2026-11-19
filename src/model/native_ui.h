@@ -127,6 +127,8 @@ struct NativeEntryMenu {
     int  cursor;               // 1-based entry index under the cursor
     short rx0, ry0, rx1, ry1;
     int  uiW, uiH;
+    unsigned entMarks;         // the main menu's Party windows : bit e = entry e is ON / checked (party-re-2026-11-19.md)
+    int  entMarkKind;          // 0 none, 1 toggles (Seek Party, Autogroup, Request : "on"), 2 a choice (Languages, Alarm Type)
 };
 const NativeEntryMenu& native_sub_menu();
 // The MAIN menu (NU_MAIN ; docs/game-data/native-windows.md section 8) : page 1 `menuwind` (Status ... Map), page 2
@@ -251,6 +253,7 @@ struct NativeSearchRow {
     unsigned flags;              // 0x4000 anonymous, bit 0 mentor, 8 / 0x2000 the name recoloured (meanings mostly inferred)
 };
 struct NativeSearch {
+    int  ctx;                     // 0 Unity Lists (ut_menu), 1 the Party's (scresult : Find Member, Member List, View Request), 2 Level Sync (levelsyn)
     bool open, focused, counted;  // counted : the header says " [N]" (the search is over)
     int  n, top, vis, cursor;     // rows (the header included), the client's page, its cursor row (-1 none)
     int  total;                   // the server's total (the header's N)

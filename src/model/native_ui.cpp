@@ -80,7 +80,7 @@ bool g_faithRule = false;   // the faith points read : `fp_info` (Alter Ego's po
 bool g_jpRule = false;       // the JP mirror reads : `levmeri2` (Job Points' CP / JP) is born parked -- its numbers are drawn
                              // where it opened, so a park after the fact left them on screen (2026-11-18)
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
-const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "iuse", "cmbmenu", "cmbhwin", "abimenu", 0 };   // later = opened over the earlier ones      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
+const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "iuse", "cmbmenu", "cmbhwin", "abimenu", "prty1", "prty2", "prty3", "prty7", "prty4", "prty8", "prty5us", "alarm", 0 };   // later = opened over the earlier ones      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
 const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", "itmsort2", "abisortw", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row
 const char* const MAIN_YN_W[] = { "sortyn", 0 };                               // Auto-sort's Yes / No (parked by inv-style code, not by name)          // the NPC windows AioHUD redraws (NU_NPC)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
@@ -390,9 +390,9 @@ bool area_read(u32 mgr, u32 focus, NativeAreaList& A) {
     A.focused = focus == T.obj; A.open = true;
     return true;
 }
-bool search_read(u32 mgr, u32 focus, NativeSearch& S) {
+bool search_read(u32 mgr, u32 focus, NativeSearch& S, const char* win = "scresult") {
     memset(&S, 0, sizeof(S)); S.cursor = -1;
-    TextList T; if (!tl_find(mgr, "scresult", T)) return false;
+    TextList T; if (!tl_find(mgr, win, T)) return false;
     S.n = T.count; S.top = T.top; S.vis = T.vis > 16 ? 16 : T.vis; S.cursor = T.cursor;
     S.rx0 = T.rx0; S.ry0 = T.ry0; S.rx1 = T.rx1; S.ry1 = T.ry1; S.uiW = T.uiW; S.uiH = T.uiH;
     u32 rows = 0; if (!safe_read(T.h + 0x38, &rows)) return false;
@@ -1486,7 +1486,27 @@ bool inStatusNow() {
 void main_poll(bool on) {
     if (!on) { g_eqUp = false; g_items.open = false; g_syn.open = false; g_equip.open = false; g_equip.lopen = false; g_eqRule = false; g_mcat.open = false; g_mcatRule = false; g_cel.open = false; g_faith.open = false; g_faithRule = false; g_jpRule = false; g_jcat.open = false; g_jpts.open = false; g_jpts.box.open = false; g_area.open = false; g_search.open = false; g_scopt.open = false; g_urank.open = false; g_uinfo.open = false; g_utW.open = false; g_unityOk = false; g_cur.open = false; g_meritsOk = false; g_trdW.open = g_lmW.open = false; g_skillsOk = false; g_skillsOkRule = false; g_btlW.open = g_mgcW.open = false; g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
     NativeEntryMenu m; int r = main_read(m);
-    NativeEntryMenu sm; const int rs = entry_read(MAIN_SUB_W, sm, 0);
+    NativeEntryMenu sm; u32 smObj = 0; const int rs = entry_read(MAIN_SUB_W, sm, &smObj);
+    if (rs == 1 && smObj && !strncmp(sm.name, "prty", 4) || (rs == 1 && smObj && !strcmp(sm.name, "alarm"))) {
+        // party-re-2026-11-19.md : the toggles = the player flags P+0x2CFD8.. (seek bit 0 ; autogroup +1 bit 7 ; request +3
+        // bit 5) ; Alarm Type : handler +0x14 = the chosen entry - 1 ; Languages (EN client) : handler +0x2C = the mask,
+        // entry 1 English bit 1, 2 French bit 3, 3 German bit 2, 4 Japanese bit 0, 5 other bit 4
+        u32 hd = 0; safe_read(smObj + OBJ_HANDLER, &hd);
+        if (!strcmp(sm.name, "alarm")) { u32 v = 0; if (valid_ptr(hd) && safe_read(hd + 0x14, &v) && v < 8) { sm.entMarks = 1u << (v + 1); sm.entMarkKind = 2; } }
+        else if (!strcmp(sm.name, "prty5us")) {
+            u32 m = 0; static const int BIT[6] = { 0, 1, 3, 2, 0, 4 };
+            if (valid_ptr(hd) && safe_read(hd + 0x2C, &m)) { for (int e = 1; e <= 5; ++e) if (m & (1u << BIT[e])) sm.entMarks |= 1u << e; sm.entMarkKind = 2; }
+        } else if (faith_res()) {
+            u32 P = 0; unsigned char f[4] = { 0, 0, 0, 0 };
+            if (safe_read(g_fr.pVar, &P) && valid_ptr(P) && rdblk(P + 0x2CFD8, f, 4)) {
+                const bool seek = (f[0] & 1) != 0, ag = (f[1] & 0x80) != 0, req = (f[3] & 0x20) != 0;
+                if (!strcmp(sm.name, "prty1")) sm.entMarks = (seek ? 1u << 1 : 0) | (ag ? 1u << 3 : 0) | (req ? 1u << 5 : 0);
+                else if (!strcmp(sm.name, "prty2")) sm.entMarks = req ? 1u << 6 : 0;
+                else if (!strcmp(sm.name, "prty3") || !strcmp(sm.name, "prty7")) sm.entMarks = req ? 1u << 11 : 0;
+                sm.entMarkKind = 1;
+            }
+        }
+    }
     g_mainSub = sm; if (rs != 1) g_mainSub.open = false;
     {   // the first sight of each sub menu : its rows as read (bounded) -- what the labels are, measured not guessed
         static int said = 0;
@@ -1595,9 +1615,18 @@ void main_poll(bool on) {
                     g_jpts.n, g_jpts.top, g_jpts.cursor, g_jpts.job[0], g_jpts.chosen, g_jpts.ok ? "ok" : "UNREADABLE", g_jpts.capPts[1], g_jpts.jobPts[1], g_jpts.jpSpent[1]); }
                 // Unity Lists : under ut_menu only (the main menu's Search reuses these windows)
                 const bool utUp = g_mainSub.open && !strcmp(g_mainSub.name, "ut_menu");
+                // Party (prty* : Find Member / Member List / View Request = scresult ; Level Sync = levelsyn, the same records)
+                const bool ptUp = g_mainSub.open && !strncmp(g_mainSub.name, "prty", 4);
                 if (!utUp || !area_read(mgr, focus, g_area)) g_area.open = false;
-                if (!utUp || !search_read(mgr, focus, g_search)) g_search.open = false;
-                { NativeEntryMenu so; if (utUp && entry_read(SCOPT_W, so, 0) == 1) g_scopt = so; else g_scopt.open = false; }
+                if (utUp && search_read(mgr, focus, g_search)) g_search.ctx = 0;
+                else if (ptUp && search_read(mgr, focus, g_search)) g_search.ctx = 1;
+                else if (ptUp && search_read(mgr, focus, g_search, "levelsyn")) g_search.ctx = 2;
+                else g_search.open = false;
+                { NativeEntryMenu so; if ((utUp || ptUp) && entry_read(SCOPT_W, so, 0) == 1) g_scopt = so; else g_scopt.open = false; }
+                static int saidPt = 0, wasPt = -1;
+                if ((ptUp ? g_search.ctx * 2 + (int)g_search.open : -1) != wasPt && saidPt < 12) { ++saidPt; wasPt = ptUp ? g_search.ctx * 2 + (int)g_search.open : -1;
+                    windower::debug::log("NATIVEUI party : submenu '%s' (marks %X kind %d), list %s (%d rows, cursor %d)", ptUp ? g_mainSub.name : "-", g_mainSub.entMarks, g_mainSub.entMarkKind,
+                        !g_search.open ? "none" : g_search.ctx == 2 ? "levelsyn" : "scresult", g_search.n, g_search.cursor); }
                 static int saidA = 0, saidS = 0;
                 if (g_area.open && saidA < 3) { ++saidA; windower::debug::log("NATIVEUI unity lists : arealist read (mode %d, %d rows, top %d, visible %d, cursor %d)", g_area.mode, g_area.n, g_area.top, g_area.vis, g_area.cursor); }
                 if (g_search.open && saidS < 6) { ++saidS; windower::debug::log("NATIVEUI unity lists : scresult read (%d rows, top %d, cursor %d, %s %d, first '%s' job %d/%d lv %d zone %d flags %08X)",
@@ -1783,7 +1812,7 @@ void yn_park(u32 mgr) {
     if (g_jpts.open && g_jpts.ok && g_jpts.box.open) park_named(mgr, "levmeri2", j2Log, "Status -> Job Points' CP / JP");
     static int alLog = 0, srLog = 0, soLog = 0;
     if (g_area.open) park_named(mgr, "arealist", alLog, "Status -> Unity -> Unity Lists");
-    if (g_search.open) park_named(mgr, "scresult", srLog, "Status -> Unity -> Unity Lists' results");
+    if (g_search.open) park_named(mgr, g_search.ctx == 2 ? "levelsyn" : "scresult", srLog, "Unity Lists / Party -> the search results");
     if (g_scopt.open) park_named(mgr, "scoption", soLog, "Status -> Unity -> a player's options");
     static int urLog = 0;
     if (g_urank.open) park_named(mgr, "quest01", urLog, "Status -> Unity -> Ranking Results");
@@ -1856,7 +1885,7 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_mcat.open && (!strcmp(nm, "meritcat") || !strcmp(nm, "bluehelp") || !strcmp(nm, "meritinf")))
                              || (g_cel.open && (!strcmp(nm, "fe_equip") || !strcmp(nm, "fe_inven") || !strcmp(nm, "bluehelp")))
                              || (g_faith.open && (!strcmp(nm, "fp_cat") || !strcmp(nm, "fp_cat2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "fp_info")))
-                             || (g_area.open && !strcmp(nm, "arealist")) || (g_search.open && !strcmp(nm, "scresult"))
+                             || (g_area.open && !strcmp(nm, "arealist")) || (g_search.open && !strcmp(nm, g_search.ctx == 2 ? "levelsyn" : "scresult"))
                              || (g_scopt.open && !strcmp(nm, "scoption"))
                              || (g_cur.open && !strcmp(nm, "evitem"));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us

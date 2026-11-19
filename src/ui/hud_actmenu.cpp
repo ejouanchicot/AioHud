@@ -256,7 +256,33 @@ const SubRow ABIMENU[6] = {
     { "Weapon Skills", "Weapon Skills",            false, IC_NONE }, { "Ranged Attack", "Attaque \xC3\xA0 distance", false, IC_NONE },
     { "Pet Commands",  "Ordres au familier",       false, IC_NONE }, { "Mount",         "Monture",          false, IC_NONE },
 };
+// Party (party-re-2026-11-19.md) : labels are images -- the user's reading of them ; by ENTRY (the screen order is by y)
+const SubRow PRTY1[7] = { { "Seek Party", "Chercher un groupe", false, IC_NONE }, { "Find Member", "Trouver un membre", false, IC_NONE },
+    { "Autogroup", "Groupe auto", false, IC_NONE }, { "Languages", "Langues", false, IC_NONE }, { "Request", "Demandes", false, IC_NONE },
+    { "View Request", "Voir les demandes", false, IC_NONE }, { "Alarm Type", "Alarme", false, IC_NONE } };
+const SubRow PRTY2[7] = { { "Member List", "Liste des membres", false, IC_NONE }, { "Distribution", "Distribution", false, IC_NONE },
+    { "Leave Party", "Quitter le groupe", false, IC_NONE }, { "Rearrange", "R\xC3\xA9organiser", false, IC_NONE }, { "Focus", "Cibler", false, IC_NONE },
+    { "Request", "Demandes", false, IC_NONE }, { "View Request", "Voir les demandes", false, IC_NONE } };
+const SubRow PRTY3[12] = { { "Find Member", "Trouver un membre", false, IC_NONE }, { "Member List", "Liste des membres", false, IC_NONE },
+    { "Distribution", "Distribution", false, IC_NONE }, { "Change Leader", "Changer de leader", false, IC_NONE }, { "Remove Member", "Retirer un membre", false, IC_NONE },
+    { "Disband", "Dissoudre", false, IC_NONE }, { "Alliance", "Alliance", false, IC_NONE }, { "Level Sync", "Level Sync", false, IC_NONE },
+    { "Rearrange", "R\xC3\xA9organiser", false, IC_NONE }, { "Focus", "Cibler", false, IC_NONE }, { "Request", "Demandes", false, IC_NONE },
+    { "View Request", "Voir les demandes", false, IC_NONE } };
+const SubRow PRTY4[2] = { { "Form Alliance", "Former une alliance", false, IC_NONE }, { "Dissolve Alliance", "Dissoudre l'alliance", false, IC_NONE } };
+const SubRow PRTY8[2] = { { "Lot (pool)", "Tirage au sort", false, IC_NONE }, { "Quartermaster", "Intendant", false, IC_NONE } };
+const SubRow PRTY5[5] = { { "English", "Anglais", false, IC_NONE }, { "French", "Fran\xC3\xA7""ais", false, IC_NONE }, { "German", "Allemand", false, IC_NONE },
+    { "Japanese", "Japonais", false, IC_NONE }, { "Other languages", "Autres langues", false, IC_NONE } };
+const SubRow ALARM[8] = { { "Off", "Aucune", false, IC_NONE }, { "Sound 1", "Son 1", false, IC_NONE }, { "Sound 2", "Son 2", false, IC_NONE },
+    { "Sound 3", "Son 3", false, IC_NONE }, { "Sound 4", "Son 4", false, IC_NONE }, { "Sound 5", "Son 5", false, IC_NONE },
+    { "Sound 6", "Son 6", false, IC_NONE }, { "Sound 7", "Son 7", false, IC_NONE } };
 const SubRow* sub_row(const char* menu, int entry) {
+    if (!strcmp(menu, "prty1") && entry >= 1 && entry <= 7) return &PRTY1[entry - 1];
+    if (!strcmp(menu, "prty2") && entry >= 1 && entry <= 7) return &PRTY2[entry - 1];
+    if ((!strcmp(menu, "prty3") || !strcmp(menu, "prty7")) && entry >= 1 && entry <= 12) return &PRTY3[entry - 1];
+    if (!strcmp(menu, "prty4") && entry >= 1 && entry <= 2) return &PRTY4[entry - 1];
+    if (!strcmp(menu, "prty8") && entry >= 1 && entry <= 2) return &PRTY8[entry - 1];
+    if (!strcmp(menu, "prty5us") && entry >= 1 && entry <= 5) return &PRTY5[entry - 1];
+    if (!strcmp(menu, "alarm") && entry >= 1 && entry <= 8) return &ALARM[entry - 1];
     if (!strcmp(menu, "abimenu") && entry >= 1 && entry <= 6) return &ABIMENU[entry - 1];
     if (!strcmp(menu, "cmbmenu") && entry >= 1 && entry <= 2) return &CMBMENU[entry - 1];
     if (!strcmp(menu, "cmbhwin") && entry >= 1 && entry <= 2) return &CMBHWIN[entry - 1];
@@ -2168,14 +2194,15 @@ void unitylists_draw(const Frame& f) {
                     mrow = last.top + (int)((ms->y - ly) / rowH);
                 if (S0.open) {
                     g_hit[9][0] = bx / f.screenW; g_hit[9][1] = by / f.screenH; g_hit[9][2] = bw / f.screenW; g_hit[9][3] = bh / f.screenH;
-                    if (mrow >= 0 && mrow + 1 != g_srB.hoverRow && mrow != S0.cursor) native_textlist_hover("scresult", mrow);
+                    const char* sw = S0.ctx == 2 ? "levelsyn" : "scresult";
+                    if (mrow >= 0 && mrow + 1 != g_srB.hoverRow && mrow != S0.cursor) native_textlist_hover(sw, mrow);
                     g_srB.hoverRow = mrow + 1;
-                    if (mrow >= 0 && ms->clicked) native_textlist_pick("scresult", mrow);
+                    if (mrow >= 0 && ms->clicked) native_textlist_pick(sw, mrow);
                 }
                 const u32 sh = with_alpha(0xC8000000u, A);
                 fo->begin(dev);
-                fo->draw_lc(dev, L, hy, tr("Unity Lists", "Listes Unity"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
-                {
+                fo->draw_lc(dev, L, hy, last.ctx == 2 ? "Level Sync" : last.ctx == 1 ? tr("Party", "Groupe") : tr("Unity Lists", "Listes Unity"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+                if (last.ctx != 2) {
                     char cnt[48];
                     if (last.counted) sprintf(cnt, tr("%d found", "%d trouv\xC3\xA9(s)"), last.total); else strcpy(cnt, tr("Searching...", "Recherche..."));
                     fo->draw_lc(dev, snap(L + W - fo->measure(cnt, tz * 0.85f)), hy, cnt, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
@@ -2199,7 +2226,9 @@ void unitylists_draw(const Frame& f) {
                         else sprintf(job, "%s%d", job_abbr(r.mjob), r.mlvl);
                     } else strcpy(job, "Anon");
                     fo->draw_lc(dev, jx, cy, job, tz * 0.92f, with_alpha(r.hasJob ? 0xFFC9D3E0u : 0xFF7E8A98u, A), sh, k.ow);
-                    const u32 nc = (r.flags & 8) ? 0xFFFFD27Au : (r.flags & 0x2000) ? 0xFF8FD0FFu : (on ? 0xFFFFFFFFu : 0xFFE4EAF2u);
+                    // Level Sync : the client greys a member under level 10 or anonymous (it cannot be the target)
+                    const bool lsOff = last.ctx == 2 && (r.mlvl < 10 || !r.hasJob);
+                    const u32 nc = lsOff ? 0xFF6E7C8Eu : (r.flags & 8) ? 0xFFFFD27Au : (r.flags & 0x2000) ? 0xFF8FD0FFu : (on ? 0xFFFFFFFFu : 0xFFE4EAF2u);
                     fo->draw_lc(dev, nx, cy, r.name, tz, with_alpha(nc, A), sh, k.ow);
                     if (r.zone && r.zone != myZone) {
                         const char* z = zone_name(r.zone);
@@ -3876,6 +3905,10 @@ void mainmenu_draw(const Frame& f) {
             // Mode Switch : the client greys the CURRENT mode -- shown as the one selected instead (the user, 2026-11-18)
             if (!strcmp(lastS.name, "merit2") && lastS.state[i] == 5) {
                 srows[i].off = false; srows[i].mark = true; srows[i].tint = 0xFFFFDA8Au; srows[i].extra = tr("current", "actuel");
+            }
+            // Party : a toggle that is ON (Seek Party, Autogroup, Request), the language(s) / the alarm chosen
+            if (lastS.entMarkKind && lastS.entry[i] < 32 && ((lastS.entMarks >> lastS.entry[i]) & 1u)) {
+                srows[i].tint = 0xFFFFDA8Au; srows[i].extra = lastS.entMarkKind == 1 ? tr("ON", "actif") : tr("chosen", "choisi");
             }
             if (lastS.entry[i] == lastS.cursor) scur = i + 1;
         }

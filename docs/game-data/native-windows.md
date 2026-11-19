@@ -327,6 +327,20 @@ after a logout.
     55701 [id] ; the description (the client's helpwind) : d_msg 55733 [id] (native_ability_text) -- drawn in a box above
     the list. The ability list's manual sort : +0x68 state (2 = held), +0x6C the held index (the spell list's : +0x6C /
     +0x70).
+- **The main menu's Party** (docs/notes/party-re-2026-11-19.md ; user-confirmed in game 2026-11-19) :
+  - The submenu is chosen by the client from the party state, so the open window's NAME says the mode : `prty1` not in a
+    party (7 entries), `prty2` a member (7), `prty3` leader / alliance leader (12), `prty7` a party leader in someone
+    else's alliance (12) ; `prty4` Alliance (Form / Dissolve), `prty8` Distribution (Lot / Quartermaster), `prty5us`
+    Languages, `alarm` Alarm Type -- all simple entry menus in MAIN_SUB_W (labels are images : the user's reading). Greyed
+    entries are state 5. `prtyjoin` (an invitation, can come without the menu) stays the client's.
+  - Seek Party / Autogroup / Request are TOGGLES : the player flags `P+0x2CFD8` bit 0 / `+0x2CFD9` bit 7 / `+0x2CFDB` bit 5
+    (P through the faith anchor) -> shown "ON". Alarm Type : handler +0x14 = the chosen entry - 1. Languages (EN client) :
+    handler +0x2C = the mask, entries 1..5 = bits 1, 3, 2, 0, 4 (English, French, German, Japanese, other).
+  - Find Member / Member List / View Request = `scresult` (as Unity Lists, titled "Party") ; Level Sync = `levelsyn`, a
+    TEXT LIST with the same records (own party only ; grey under level 10 or anonymous) ; its confirm (`comyn`) stays the
+    client's. Picking a member (Chg. Leader, Rmv. Member, Focus, Rearrange, quartermaster) happens in `partywin` : the
+    party HUD's own hand already follows it (own party).
+  - Refine Search (`scsibori`, from scresult's header row) belongs to the player search : with the main menu's Search.
 - **Reload with a window parked** : move_open no longer parks an open window that is already parked (nor unparks one
   already on screen) -- a reload with Status open parked the stat panels by name, then the first apply parked them a
   second time (the box read 3000 too low, on the chat).
