@@ -469,6 +469,7 @@ void Hud::render(u32 dev) {
             celestite_draw(f);                      // Alter Ego -> Change Celestite : the slots, the Celestite owned
             meritcat_draw(f);                       // Merit Points -> Categories : the categories, their merits
             equipment_draw(f);                      // the main menu's Equipment : the grid, a slot's items, the item card
+            comment_draw(f);                        // Search -> Edit your comment : the 3-line editor
             synth_draw(f);                          // the main menu's Synthesis : the grid, History (before items_draw : the materials sit beside the grid)
             items_draw(f);                          // the main menu's Items : the inventory list, the item card
             currencies_draw(f);                     // Status -> Currencies 1 / 2, in place of the client's

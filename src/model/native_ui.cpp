@@ -80,7 +80,8 @@ bool g_faithRule = false;   // the faith points read : `fp_info` (Alter Ego's po
 bool g_jpRule = false;       // the JP mirror reads : `levmeri2` (Job Points' CP / JP) is born parked -- its numbers are drawn
                              // where it opened, so a park after the fact left them on screen (2026-11-18)
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
-const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "iuse", "cmbmenu", "cmbhwin", "abimenu", "prty1", "prty2", "prty3", "prty7", "prty4", "prty8", "prty5us", "alarm", 0 };   // later = opened over the earlier ones      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
+const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "iuse", "cmbmenu", "cmbhwin", "abimenu", "prty1", "prty2", "prty3", "prty7", "prty4", "prty8", "prty5us", "alarm",
+    "searchma", "scsibori", "searchjo", "searchna", "searchra", "searchle", "scchar", "scmlev", "comgenre", "sccompar", "sccomite", "sccomls", "scname", 0 };   // later = opened over the earlier ones      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
 const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", "itmsort2", "abisortw", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row
 const char* const MAIN_YN_W[] = { "sortyn", 0 };                               // Auto-sort's Yes / No (parked by inv-style code, not by name)          // the NPC windows AioHUD redraws (NU_NPC)
 const char* const INPUT_W[] = { "inline", "inlink", "inparty", "intell", "inshout", "insay", "msgline", "passinpu", "log1", 0 };
@@ -180,6 +181,7 @@ ItemExtra g_iix[2];                                                             
 NativeEquip g_equip; bool g_eqRule = false;                                            // the main menu's Equipment
 NativeItems g_items;                                                                     // the main menu's Items
 NativeSynth g_syn;                                                                       // the main menu's Synthesis
+NativeComment g_cmt;                                                                     // Search -> Edit your comment
 NativeMeritCat g_mcat; bool g_mcatRule = false;                                        // Merit Points -> Categories
 NativeCelestite g_cel;                                                                // Alter Ego -> Change Celestite
 NativeFaith g_faith;                                         // Status -> Alter Ego (fp_cat / fp_cat2 / fp_info)
@@ -384,8 +386,32 @@ bool tl_find(u32 mgr, const char* want, TextList& T) {
 bool area_read(u32 mgr, u32 focus, NativeAreaList& A) {
     memset(&A, 0, sizeof(A));
     TextList T; if (!tl_find(mgr, "arealist", T)) return false;
-    unsigned char mode = 0; if (!rd8(T.h + 0x6C, mode) || mode != 4 || T.count != 12) return false;   // the Unity rows only
+    unsigned char mode = 0; if (!rd8(T.h + 0x6C, mode)) return false;
+    if (mode == 4 && T.count != 12) return false;                       // the Unity rows
+    if (mode != 4 && mode != 0 && mode != 3) return false;             // 1 / 2 : an NPC's zone picker, not ours
     A.mode = mode; A.n = T.count; A.top = T.top; A.vis = T.vis; A.cursor = T.cursor;
+    if (mode != 4) {
+        u32 rows = 0, vals = 0;
+        if (!safe_read(T.h + 0x38, &rows) || (T.count > 0 && !valid_ptr(rows)) || !safe_read(T.h + 0x64, &vals)) return false;
+        static int saidAr = 0;
+        A.arTop = A.top; if (A.arTop > A.n - 12) A.arTop = A.n - 12; if (A.arTop < 0) A.arTop = 0;
+        for (int i = 0; i < 12 && A.arTop + i < A.n; ++i) {
+            unsigned char b[0x54]; if (!rdblk(rows + (u32)(A.arTop + i) * 0x54, b, sizeof(b))) return false;
+            int v = 0x7FFFFFFF; if (valid_ptr(vals)) safe_read(vals + (u32)(A.arTop + i) * 8, (u32*)&v);
+            A.arVal[i] = v; A.arCount[i] = -1; A.arLabel[i][0] = 0;
+            for (int c = 0; c < 8; ++c) {
+                u32 cv = 0; memcpy(&cv, b + 0x28 + 4 * c, 4);
+                if (!b[c]) continue;
+                if (!A.arLabel[i][0] && valid_ptr(cv)) {               // a text cell : printable ASCII, 2 chars at least
+                    char t[32]; if (rdblk(cv, t, sizeof(t))) { int k = 0; for (; k < 31 && t[k] >= 0x20 && t[k] < 0x7F; ++k) A.arLabel[i][k] = t[k];
+                        if (k >= 2 && (k == 31 || !t[k])) A.arLabel[i][k] = 0; else A.arLabel[i][0] = 0; }
+                } else if (cv < 1000 && A.arCount[i] < 0 && c > 0) A.arCount[i] = (int)cv;
+            }
+            if (saidAr < 14) { ++saidAr; windower::debug::log("NATIVEUI search : arealist mode %d row %d : value %d, cells %02X %02X %02X %02X = %08X %08X %08X %08X, label '%s', count %d",
+                mode, A.arTop + i, v, b[0], b[1], b[2], b[3], *(u32*)(b + 0x28), *(u32*)(b + 0x2C), *(u32*)(b + 0x30), *(u32*)(b + 0x34), A.arLabel[i], A.arCount[i]); }
+            ++A.arRows;
+        }
+    }
     A.rx0 = T.rx0; A.ry0 = T.ry0; A.rx1 = T.rx1; A.ry1 = T.ry1; A.uiW = T.uiW; A.uiH = T.uiH;
     A.focused = focus == T.obj; A.open = true;
     return true;
@@ -1363,6 +1389,7 @@ void chat_info_read(u32 obj);   // below : the Chat submenu's extras (Tell name,
 int  list_read(NativeList& L);   // below : the spell list
 
 int inv_read(u32 focus, NativeList& L);   // below, at namespace scope : the Items list (inventor, from the action menu)
+bool comment_read(u32 mgr, u32 focus, NativeComment& K);   // below, at namespace scope : Search -> Edit your comment
 void mon_read(NativeProfile& P);          // below : the Profile's Mentor + Monstrosity (statics found by signature)
 bool jobs_read(NativeJobs& J);            // below : the Job / Master Levels (the player object, found by signature)
 namespace {
@@ -1439,7 +1466,7 @@ int entry_read(const char* const* W, NativeEntryMenu& m, u32* objOut) {
     if (!obj) return -1;
     u32 cur = 0; if (!safe_read(obj + 0x4C, &cur)) return 0;
     // the entry children, in list order (= the cursor's numbering)
-    short ys[16]; int k = 0;
+    short ys[32]; int k = 0;
     u32 cn = 0; safe_read(obj + 0x14, &cn);
     for (int g = 0; valid_ptr(cn) && g < 64 && k < 32; ++g) {
         u32 cnext = 0, ch = 0; unsigned char cdead = 0; safe_read(cn, &cnext); safe_read(cn + 0x10, &ch); rd8(cn + 0x14, cdead);
@@ -1449,7 +1476,7 @@ int entry_read(const char* const* W, NativeEntryMenu& m, u32* objOut) {
             u32 st = 0; short r[4] = { 0, 0, 0, 0 };
             if (!safe_read(ch + 0x10, &st) || !rd16(ch + 0x32, r[0]) || !rd16(ch + 0x34, r[1]) || !rd16(ch + 0x36, r[2]) || !rd16(ch + 0x38, r[3])) return 0;
             // skipped / not laid out / a DECORATION, not a row (chatctrl's 8th entry : 18 x 12, never under the cursor)
-            if ((st & 0x10) || r[2] - r[0] < 40 || r[3] - r[1] <= 0 || m.n >= 16) { cn = cnext; continue; }
+            if ((st & 0x10) || r[2] - r[0] < 24 || r[3] - r[1] <= 0 || m.n >= 32) { cn = cnext; continue; }
             int at = m.n;                                                // insert by screen y
             while (at > 0 && ys[at - 1] > r[1]) { ys[at] = ys[at - 1]; m.entry[at] = m.entry[at - 1]; m.state[at] = m.state[at - 1]; memcpy(m.label[at], m.label[at - 1], sizeof(m.label[at])); --at; }
             ys[at] = r[1]; m.entry[at] = (unsigned char)k; m.state[at] = (unsigned char)(st & 0xFF);
@@ -1484,9 +1511,62 @@ bool inStatusNow() {
     return !strcmp(n, "statcom2") || !strcmp(n, "merit1") || !strcmp(n, "merit2") || !strcmp(n, "merit3");
 }
 void main_poll(bool on) {
-    if (!on) { g_eqUp = false; g_items.open = false; g_syn.open = false; g_equip.open = false; g_equip.lopen = false; g_eqRule = false; g_mcat.open = false; g_mcatRule = false; g_cel.open = false; g_faith.open = false; g_faithRule = false; g_jpRule = false; g_jcat.open = false; g_jpts.open = false; g_jpts.box.open = false; g_area.open = false; g_search.open = false; g_scopt.open = false; g_urank.open = false; g_uinfo.open = false; g_utW.open = false; g_unityOk = false; g_cur.open = false; g_meritsOk = false; g_trdW.open = g_lmW.open = false; g_skillsOk = false; g_skillsOkRule = false; g_btlW.open = g_mgcW.open = false; g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
+    if (!on) { g_eqUp = false; g_items.open = false; g_syn.open = false; g_cmt.open = false; g_equip.open = false; g_equip.lopen = false; g_eqRule = false; g_mcat.open = false; g_mcatRule = false; g_cel.open = false; g_faith.open = false; g_faithRule = false; g_jpRule = false; g_jcat.open = false; g_jpts.open = false; g_jpts.box.open = false; g_area.open = false; g_search.open = false; g_scopt.open = false; g_urank.open = false; g_uinfo.open = false; g_utW.open = false; g_unityOk = false; g_cur.open = false; g_meritsOk = false; g_trdW.open = g_lmW.open = false; g_skillsOk = false; g_skillsOkRule = false; g_btlW.open = g_mgcW.open = false; g_jobsOurs = false; g_jobW.open = g_mlW.open = false; g_profDataOk = false; g_persDataOk = false; g_persona.open = false; g_levelW.open = false; g_prof.open = false; g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainYn.open = false; g_mainBad = 0; g_mainFail = false; return; }
     NativeEntryMenu m; int r = main_read(m);
     NativeEntryMenu sm; u32 smObj = 0; const int rs = entry_read(MAIN_SUB_W, sm, &smObj);
+    for (int e = 0; e < 32; ++e) sm.entVal[e] = sm.entVal2[e] = -1;
+    if (rs == 1 && smObj && (!strcmp(sm.name, "scchar") || !strcmp(sm.name, "scmlev"))) {
+        // two number fields : handler +0x14 editing, +0x16 the field (0 min, 1 max), +0x18 min, +0x1A max (search-re s.6)
+        u32 hd = 0; unsigned char b[0x1C];
+        if (safe_read(smObj + OBJ_HANDLER, &hd) && valid_ptr(hd) && rdblk(hd, b, sizeof(b))) {
+            short mn = 0, mx = 0; memcpy(&mn, b + 0x18, 2); memcpy(&mx, b + 0x1A, 2);
+            if (mn >= 0 && mn <= 99 && mx >= 0 && mx <= 99) { sm.entVal[1] = mn; sm.entVal[2] = mx; }
+            if (b[0x14] && b[0x16] <= 1) { sm.entMarks = 1u << (b[0x16] + 1); sm.entMarkKind = 3; }
+        }
+    }
+    if (rs == 1 && smObj && !strcmp(sm.name, "scname")) {
+        // the name : handler +0x14 = the text input while typing (its display copy +0x3A0, length +0x690 ; 7F FF = the caret),
+        // else +0x18 = the name committed (search-re s.5)
+        u32 hd = 0, in = 0;
+        if (safe_read(smObj + OBJ_HANDLER, &hd) && valid_ptr(hd) && safe_read(hd + 0x14, &in)) {
+            unsigned char t[64]; int o = 0;
+            if (valid_ptr(in)) {
+                u32 len = 0; safe_read(in + 0x690, &len); if (len > 60) len = 60;
+                if (rdblk(in + 0x3A0, t, sizeof(t))) for (u32 i = 0; i < len && t[i] && o < 15; ++i) {
+                    if (t[i] == 0x7F) { ++i; continue; }                     // the caret / a control pair
+                    if (t[i] >= 0x20 && t[i] < 0x7F) sm.entName[o++] = (char)t[i];
+                }
+                sm.entMarks = 1u << 1; sm.entMarkKind = 3;                  // typing : the field is being edited
+            } else if (rdblk(hd + 0x18, t, 16)) { for (int i = 0; i < 15 && t[i]; ++i) if (t[i] >= 0x20 && t[i] < 0x7F) sm.entName[o++] = (char)t[i]; }
+            sm.entName[o] = 0; sm.entVal[1] = 1;
+        }
+    }
+    if (rs == 1 && !strcmp(sm.name, "scsibori")) {
+        // Refine Search : the request R = scresult's handler + 0x5C (search-re s.2) -- what the search holds now
+        TextList T; unsigned char q[0x6C];
+        if (tl_find(manager(), "scresult", T) && rdblk(T.h + 0x5C, q, sizeof(q))) {
+            u32 fl = 0, sp = 0; memcpy(&fl, q, 4); memcpy(&sp, q + 0x60, 4);
+            if (fl & 0x2) { short z = 0; memcpy(&z, q + 0x24, 2); int n = 0; for (int i = 0; i < 16; ++i) { short zz = 0; memcpy(&zz, q + 0x24 + 2 * i, 2); if (zz < 1) break; ++n; }
+                            sm.entVal[1] = z; sm.entVal2[1] = n; }
+            if (fl & 0x1) { int k = 0; for (; k < 15 && q[0x0C + k]; ++k) sm.entName[k] = (q[0x0C + k] >= 0x20 && q[0x0C + k] < 0x7F) ? (char)q[0x0C + k] : '?'; sm.entName[k] = 0; if (k) sm.entVal[2] = 1; }
+            if (fl & 0x8) sm.entVal[3] = q[0x46];
+            if (fl & 0x4) sm.entVal[4] = q[0x44];
+            if (fl & 0x20) sm.entVal[5] = q[0x48];
+            short lmn = 0, lmx = 0; memcpy(&lmn, q + 0x1C, 2); memcpy(&lmx, q + 0x1E, 2);
+            if (fl & 0x10) { sm.entVal[6] = lmn; sm.entVal2[6] = lmx; }
+            if (fl & 0x80) { sm.entVal[15] = lmn; sm.entVal2[15] = lmx; }
+            if (fl & 0x10000) { sm.entVal[7] = q[0x4C]; sm.entVal2[7] = q[0x4D]; }
+            if (fl & 0x1000) sm.entVal[8] = 1;
+            if (fl & 0x800) sm.entVal[9] = 1;
+            if (fl & 0x80000) sm.entVal[13] = 1;
+            if (fl & 0x20000) sm.entVal[11] = q[0x5C] >> 4;
+            if ((fl & 0x40) && (sp & 0x10000000)) sm.entVal[14] = 1;
+            if ((fl & 0x40) && (sp & 0x000F0000)) sm.entVal[10] = 1;
+            if ((fl & 0x40) && (sp & 0x0FC00000)) sm.entVal[12] = 1;
+            static int saidR = 0; static u32 wasF = 0xFFFFFFFF;
+            if (fl != wasF && saidR < 10) { ++saidR; wasF = fl; windower::debug::log("NATIVEUI search : refine -- request flags %08X special %08X (area %d x%d, job %d, level %d-%d, name '%s')", fl, sp, sm.entVal[1], sm.entVal2[1], sm.entVal[3], sm.entVal[6], sm.entVal2[6], sm.entName); }
+        }
+    }
     if (rs == 1 && smObj && !strncmp(sm.name, "prty", 4) || (rs == 1 && smObj && !strcmp(sm.name, "alarm"))) {
         // party-re-2026-11-19.md : the toggles = the player flags P+0x2CFD8.. (seek bit 0 ; autogroup +1 bit 7 ; request +3
         // bit 5) ; Alarm Type : handler +0x14 = the chosen entry - 1 ; Languages (EN client) : handler +0x2C = the mask,
@@ -1574,6 +1654,11 @@ void main_poll(bool on) {
                 if (!equip_read(mgr, focus, g_equip)) { g_equip.open = false; g_equip.lopen = false; }
                 // Items (from the main menu) : the list ; the item cards' rule as for Equipment
                 if (!syn_read(mgr, focus, g_syn)) g_syn.open = false;
+                // the search comment (mode 2 only : the bazaar / linkshell messages stay the client's)
+                if (!comment_read(mgr, focus, g_cmt) || g_cmt.cmMode != 2) g_cmt.open = false;
+                static int saidCm = 0; static int wasCm = -1;
+                if ((int)g_cmt.open * 4 + (int)g_cmt.typing * 2 != wasCm && saidCm < 12) { ++saidCm; wasCm = (int)g_cmt.open * 4 + (int)g_cmt.typing * 2;
+                    windower::debug::log("NATIVEUI search comment : %s (mode %d, genre %02X, line %d, typing %d : %d bytes) line 0 '%.40s'", g_cmt.open ? "open -- AioHUD draws it" : "closed", g_cmt.cmMode, g_cmt.cmGenre, g_cmt.cmLine, (int)g_cmt.typing, g_cmt.cmLiveN, g_cmt.cmText[0]); }
                 if (g_equip.open || !items_read(mgr, focus, g_items)) g_items.open = false;
                 g_eqUp = g_equip.open || g_items.open || g_syn.open;
                 static int saidSy = 0; static int wasSy = -1;
@@ -1617,12 +1702,16 @@ void main_poll(bool on) {
                 const bool utUp = g_mainSub.open && !strcmp(g_mainSub.name, "ut_menu");
                 // Party (prty* : Find Member / Member List / View Request = scresult ; Level Sync = levelsyn, the same records)
                 const bool ptUp = g_mainSub.open && !strncmp(g_mainSub.name, "prty", 4);
-                if (!utUp || !area_read(mgr, focus, g_area)) g_area.open = false;
+                // Search (searchma, Refine Search scsibori and their pickers) : the results are theirs
+                static const char* const SR_W[] = { "searchma", "scsibori", "searchjo", "searchna", "searchra", "searchle", "scchar", "scmlev", "comgenre", "sccompar", "sccomite", "sccomls", "scname", 0 };
+                const bool srUp = g_mainSub.open && in_list(g_mainSub.name, SR_W);
+                if (!(utUp || srUp) || !area_read(mgr, focus, g_area)) g_area.open = false;
                 if (utUp && search_read(mgr, focus, g_search)) g_search.ctx = 0;
                 else if (ptUp && search_read(mgr, focus, g_search)) g_search.ctx = 1;
+                else if (srUp && search_read(mgr, focus, g_search)) g_search.ctx = 3;
                 else if (ptUp && search_read(mgr, focus, g_search, "levelsyn")) g_search.ctx = 2;
                 else g_search.open = false;
-                { NativeEntryMenu so; if ((utUp || ptUp) && entry_read(SCOPT_W, so, 0) == 1) g_scopt = so; else g_scopt.open = false; }
+                { NativeEntryMenu so; if ((utUp || ptUp || srUp) && entry_read(SCOPT_W, so, 0) == 1) g_scopt = so; else g_scopt.open = false; }
                 static int saidPt = 0, wasPt = -1;
                 if ((ptUp ? g_search.ctx * 2 + (int)g_search.open : -1) != wasPt && saidPt < 12) { ++saidPt; wasPt = ptUp ? g_search.ctx * 2 + (int)g_search.open : -1;
                     windower::debug::log("NATIVEUI party : submenu '%s' (marks %X kind %d), list %s (%d rows, cursor %d)", ptUp ? g_mainSub.name : "-", g_mainSub.entMarks, g_mainSub.entMarkKind,
@@ -1799,6 +1888,7 @@ void yn_park(u32 mgr) {
     if (g_syn.open && g_syn.gridOpen) park_named(mgr, "tskill1", tsLog2, "Synthesis -> the grid");
     if (g_syn.open && g_syn.histOpen) park_named(mgr, "cmbhlst", hlLog, "Synthesis -> History");
     if (g_syn.open) park_named(mgr, "iteminfo", siLog, "Synthesis -> the item card");
+    static int cmLog = 0; if (g_cmt.open) park_named(mgr, "comment", cmLog, "Search -> Edit your comment");
     static int gmLog = 0; if (g_equip.open && g_equip.gilOk) park_named(mgr, "money", gmLog, "Equipment -> Current Gil");
     static int gxLog = 0; if (g_equip.open && g_equip.compare) park_named(mgr, "itemxinf", gxLog, "Equipment -> the compare card");
     if (g_mcat.open) { park_named(mgr, "meritcat", mcLog, "Merit Points -> Categories"); park_named(mgr, "bluehelp", mhLog, "Merit Points -> description"); }
@@ -1880,6 +1970,7 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_urank.open && !strcmp(nm, "quest01"))
                              || (g_jpts.open && g_jpts.ok && (!strcmp(nm, "merit2ca") || !strcmp(nm, "levmeri2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "jbpcat")))
                              || (g_items.open && (!strcmp(nm, "inventor") || !strcmp(nm, "iteminfo") || (g_items.binMode && !strcmp(nm, "bank")) || ((g_items.binMode || g_items.synMode) && g_items.qtyOk && !strcmp(nm, "itemctrl"))))
+                             || (g_cmt.open && !strcmp(nm, "comment"))
                              || (g_syn.open && ((g_syn.gridOpen && !strcmp(nm, "tskill1")) || (g_syn.histOpen && !strcmp(nm, "cmbhlst")) || !strcmp(nm, "iteminfo")))
                              || (g_equip.open && (!strcmp(nm, "equip") || !strcmp(nm, "inventor") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || !strcmp(nm, "itemxinf")))
                              || (g_mcat.open && (!strcmp(nm, "meritcat") || !strcmp(nm, "bluehelp") || !strcmp(nm, "meritinf")))
@@ -1941,6 +2032,7 @@ const NativeMeritCat& native_merit_cat() { return g_mcat; }
 const NativeEquip& native_equip() { return g_equip; }
 const NativeItems& native_items() { return g_items; }
 const NativeSynth& native_synth() { return g_syn; }
+const NativeComment& native_comment() { return g_cmt; }
 const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
 // the client's ability table ids (0..0x1FF weapon skills, 0x200.. job abilities, 0x600..0x6FF job traits) : d_msg 55701
 // the name, 55733 the description -- abilities-re-2026-11-19.md (all 124 traits / 626 abilities checked against it)
@@ -2422,6 +2514,30 @@ bool textlist_goto(const char* name, int row, bool pick) {
     return pick ? menu_event(T.obj, 5) : true;
 }
 bool native_textlist_hover(const char* name, int row) { return textlist_goto(name, row, false); }
+bool comment_read(u32 mgr, u32 focus, NativeComment& K) {
+    memset(&K, 0, sizeof(K));
+    const u32 o = win_named(mgr, "comment"); if (!o) return false;
+    u32 h = 0; unsigned char b[0x20];
+    if (!safe_read(o + OBJ_HANDLER, &h) || !valid_ptr(h) || !rdblk(h, b, sizeof(b))) return false;
+    K.cmMode = b[0x16]; K.cmGenre = b[0x17]; K.cmLine = (signed char)b[0x14];
+    if (K.cmMode > 6) return false;
+    for (int i = 0; i < 3; ++i) {
+        unsigned char t[0x29]; if (!rdblk(h + 0x1A + (u32)K.cmMode * 0x7B + (u32)i * 0x29, t, sizeof(t))) return false;
+        memcpy(K.cmText[i], t, 0x28); K.cmText[i][0x28] = 0;
+    }
+    u32 in = 0; unsigned char act = 0;
+    if (safe_read(h + 0x378, &in) && valid_ptr(in) && rd8(in + 0x694, act) && act == 1) {
+        u32 len = 0; safe_read(in + 0x690, &len); if (len > 0x168) len = 0x168;
+        if (rdblk(in + 0x3A0, K.cmLive, len)) { K.cmLiveN = (int)len; K.typing = true; }
+    }
+    if (!rd16(o + OBJ_RECT, K.rx0) || !rd16(o + OBJ_RECT + 2, K.ry0) || !rd16(o + OBJ_RECT + 4, K.rx1) || !rd16(o + OBJ_RECT + 6, K.ry1)) return false;
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return false;
+    K.uiW = (short)(wh & 0xFFFF); K.uiH = (short)(wh >> 16);
+    if (K.uiW < 320 || K.uiH < 240 || K.uiW > 8000 || K.uiH > 8000) return false;
+    if (K.ry0 >= K.uiH) { K.ry0 = (short)(K.ry0 - HIDE_DY); K.ry1 = (short)(K.ry1 - HIDE_DY); }
+    K.focused = focus == o; K.open = true;
+    return true;
+}
 // tskill1's entries : the hand on it (9), then validated (5) ; tskill1 must have the focus, a refused entry is not picked
 bool synth_goto(int entry, bool pick) {
     const u32 mgr = manager(); if (!mgr || entry < 1 || entry > 10) return false;

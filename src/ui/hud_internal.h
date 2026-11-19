@@ -55,6 +55,9 @@ void actmenu_set_hand_tex(u32 tex);  // the party's selection-hand texture (its 
 bool chat_box_rect(int box, float& x, float& y, float& w, float& h);
 // the chat box AioHUD's menus open on (stacked : the higher ; side by side : the left) and the group's top / bottom
 bool chat_anchor(float& ax, float& aw, float& top, float& bottom);
+int  chat_input_decode(const char* raw, int rn, char* t, unsigned* col, int cap, int* caret);   // hud_chat.cpp : the input text (7F codes) -> printable + colours + caret
+void chat_input_rect_set(float x, float y, float w, float h, float caretX);                      // hud_chat.cpp : anchor the auto-translate picker on another field
+void comment_draw(const Frame& f);    // hud_actmenu.cpp : Search -> Edit your comment (the client's `comment`), mirrored (NU_MAIN)
 bool chat_input_rect(float& x, float& y, float& w, float& h, float& caretX, float& keptX);   // keptX : the caret as it was before the auto-translate picker opened   // hud_chat.cpp : AioHUD's input field (screen px), drawn < 200 ms ago
 void fep_draw(const Frame& f);   // hud_actmenu.cpp : the client's auto-translate picker (Tab), drawn on that field
 // a bw x bh block on it : above the group when it fits, else below ; inside the screen. False : no chat box shown.

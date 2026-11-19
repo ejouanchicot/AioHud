@@ -467,6 +467,18 @@ static int message_text(unsigned seq, bool body, char* out, int cap) {
 // 7F 69 .. 7F 64 = an auto-translate word (shown in braces), 7F 66 = the Tab candidate (dimmed), 85 xx = accents.
 // A leading channel command (/p, /l, /t Name ...) takes that channel's colour.
 struct InLine { char t[0x170]; u32 c[0x170]; int n; int caret; };
+static void input_decode(const char* raw, int rn, InLine& o);
+// shared with the search-comment editor (hud_actmenu.cpp) : the same decoding, the picker anchored on ITS line
+int chat_input_decode(const char* raw, int rn, char* t, unsigned* col, int cap, int* caret) {
+    static InLine o; input_decode(raw, rn, o);
+    const int n = o.n < cap - 1 ? o.n : cap - 1;
+    memcpy(t, o.t, (size_t)n); t[n] = 0; if (col) memcpy(col, o.c, sizeof(unsigned) * (size_t)n);
+    if (caret) *caret = o.caret < n ? o.caret : n;
+    return n;
+}
+void chat_input_rect_set(float x, float y, float w, float h, float caretX) {
+    s_inRect[0] = x; s_inRect[1] = y; s_inRect[2] = w; s_inRect[3] = h; s_inRect[4] = caretX; s_inRect[5] = caretX; s_inRectMs = GetTickCount();
+}
 static void input_decode(const char* raw, int rn, InLine& o) {
     o.n = 0; o.caret = -1;
     bool at = false, cand = false;

@@ -341,6 +341,23 @@ after a logout.
     client's. Picking a member (Chg. Leader, Rmv. Member, Focus, Rearrange, quartermaster) happens in `partywin` : the
     party HUD's own hand already follows it (own party).
   - Refine Search (`scsibori`, from scresult's header row) belongs to the player search : with the main menu's Search.
+- **The main menu's Search** (docs/notes/search-re- / search-comment-re-2026-11-19.md ; user-confirmed in game 2026-11-19) :
+  - `searchma` (17 entries), `scsibori` (Refine Search, 15), the pickers `searchjo` (22 jobs) / `searchna` / `searchra` /
+    `searchle`, `comgenre` / `sccompar` / `sccomite` / `sccomls`, and the forms `scname` / `scchar` / `scmlev` are main-menu
+    submenus (labels are images : named from their help texts ; searchma entry 13 = Monstrosity, drawn reddish). Entry
+    menus now carry up to 32 entries (entry_read, Block.sel, block_draw) and the width filter is 24 px (scchar's fields).
+  - The request R = scresult's handler + 0x5C holds every criterion (flags u32 +0 ; name +0x0C ; zones +0x24 ; level
+    +0x1C / +0x1E ; nation +0x44 ; job +0x46 ; race +0x48 ; rank +0x4C / +0x4D ; comment +0x5C ; special +0x60) : Refine
+    Search shows each criterion's value. scchar / scmlev : handler +0x14 editing, +0x16 the field, +0x18 min, +0x1A max.
+    scname : handler +0x14 = the text input while typing (its display copy +0x3A0, length +0x690), else +0x18 the name.
+  - `arealist` modes 0 (Area) / 3 (Monstrosity) : rows from handler +0x38, their values at `*(h+0x64) + r*8` (> 0 a zone, 0
+    All Areas, -1 the region, <= -2 a region group) ; the row's cell 0 is a text pointer (the region names), cell 1 a
+    count. Drawn 12 rows high, at a FIXED width (the game's longest zone name).
+  - `comment` (Edit your comment ; mode +0x16 = 2) : 3 lines x 40 at handler + 0x1A + mode * 0x7B + i * 0x29, the genre
+    +0x17, the line typed +0x14 ; while typing, +0x378 = the input object (+0x3A0 / +0x690 / +0x694 active) -- the same
+    FsTextInput as the chat line, so Tab opens `fep`. No buttons : Escape SAVES and closes (0x0E0 when changed).
+  - List widths never follow the page : items use a fixed reference name (longer names cut with "..."), the others keep
+    their widest width while open (keep_width).
 - **Reload with a window parked** : move_open no longer parks an open window that is already parked (nor unparks one
   already on screen) -- a reload with Status open parked the stat panels by name, then the first apply parked them a
   second time (the box read 3000 too low, on the chat).

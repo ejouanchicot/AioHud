@@ -120,15 +120,19 @@ struct NativeEntryMenu {
     bool open, focused;
     char name[9];
     int  n;
-    unsigned char entry[16];   // 1-based entry index of each shown row, top to bottom
-    unsigned char state[16];
-    char label[16][24];        // each shown row's label as the client's DEFINITION writes it (ASCII ; "" when it has none --
+    unsigned char entry[32];   // 1-based entry index of each shown row, top to bottom (Search's job picker : 22)
+    unsigned char state[32];
+    char label[32][24];        // each shown row's label as the client's DEFINITION writes it (ASCII ; "" when it has none --
                                // some menus draw theirs as images)
     int  cursor;               // 1-based entry index under the cursor
     short rx0, ry0, rx1, ry1;
     int  uiW, uiH;
     unsigned entMarks;         // the main menu's Party windows : bit e = entry e is ON / checked (party-re-2026-11-19.md)
-    int  entMarkKind;          // 0 none, 1 toggles (Seek Party, Autogroup, Request : "on"), 2 a choice (Languages, Alarm Type)
+    int  entMarkKind;          // 0 none, 1 toggles (Seek Party, Autogroup, Request : "on"), 2 a choice (Languages, Alarm Type), 3 the field being edited (scchar)
+    // Search (search-re-2026-11-19.md) : each criterion's CURRENT value, by entry (Refine Search ; the level fields of
+    // scchar / scmlev) -- entVal -1 = not set ; entVal2 the range's max ; entName the name criterion
+    int  entVal[32], entVal2[32];
+    char entName[16];
 };
 const NativeEntryMenu& native_sub_menu();
 // The MAIN menu (NU_MAIN ; docs/game-data/native-windows.md section 8) : page 1 `menuwind` (Status ... Map), page 2
@@ -242,7 +246,11 @@ const NativeUnityRank& native_unity_rank();
 //  arealist  mode +0x6C == 4 : the Unity to list -- 12 rows, r = 0 your own ("Unity"), r = 1..11 the leaders
 //  scresult  the people found : row 0 the header (" [Searching]" -> " [N]"), then the players (record +4 : the entry)
 // Ours only while ut_menu is up (the main menu's Search reuses both : not yet).
-struct NativeAreaList { bool open, focused; int mode, n, top, vis, cursor; short rx0, ry0, rx1, ry1; int uiW, uiH; };
+struct NativeAreaList { bool open, focused; int mode, n, top, vis, cursor; short rx0, ry0, rx1, ry1; int uiW, uiH;
+    // Search -> Area (mode 0) / Monipulators (mode 3) : the rows from the client's top, up to 12 (search-re s.7) -- arVal :
+    // > 0 a zone, 0 All Areas, -1 the current region, <= -2 a region group (-(2 + group)) ; arLabel : the row's own text
+    // when a cell holds one ; arCount : a number cell (a group's zone count), -1 none
+    int arRows, arTop; int arVal[12], arCount[12]; char arLabel[12][32]; };   // arTop : the first row shown (12 show whenever the list has them)
 const NativeAreaList& native_arealist();
 struct NativeSearchRow {
     unsigned char type;          // 0 a player, 1 the header, 2 a group divider
@@ -253,7 +261,7 @@ struct NativeSearchRow {
     unsigned flags;              // 0x4000 anonymous, bit 0 mentor, 8 / 0x2000 the name recoloured (meanings mostly inferred)
 };
 struct NativeSearch {
-    int  ctx;                     // 0 Unity Lists (ut_menu), 1 the Party's (scresult : Find Member, Member List, View Request), 2 Level Sync (levelsyn)
+    int  ctx;                     // 0 Unity Lists (ut_menu), 1 the Party's (scresult : Find Member, Member List, View Request), 2 Level Sync (levelsyn), 3 the main menu's Search
     bool open, focused, counted;  // counted : the header says " [N]" (the search is over)
     int  n, top, vis, cursor;     // rows (the header included), the client's page, its cursor row (-1 none)
     int  total;                   // the server's total (the header's N)
@@ -398,6 +406,19 @@ struct NativeSynth {
     short hx0, hy0; int hUiW, hUiH;
 };
 const NativeSynth& native_synth();
+// Search -> Edit your comment : the client's `comment` editor (docs/notes/search-comment-re-2026-11-19.md). Handler : +0x14
+// the line typed (0..2), +0x16 the mode (2 = the search comment ; 0 / 1 bazaar, 3 linkshell message), +0x17 the genre
+// (major << 4 | sub), the text = 7 sets x 3 lines x 0x29 B from +0x1A (set = the mode) ; +0x378 the input object while a
+// line is typed (its display copy +0x3A0, length +0x690, active +0x694 -- the same FsTextInput as the chat line : Tab
+// opens `fep`). No buttons : Enter / Down = next line, Up = previous, Escape = save and close (sends 0x0E0 if changed).
+struct NativeComment {
+    bool open, focused, typing;
+    int  cmMode, cmGenre, cmLine;
+    char cmText[3][44];        // the committed lines, raw (ASCII / SJIS / FD .. FD auto-translate)
+    char cmLive[0x170]; int cmLiveN;   // the line being typed, raw (7F FF = the caret)
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeComment& native_comment();
 bool native_synth_grid_hover(int entry);   // tskill1 : 1..8 a slot, 9 Synthesize, 10 Cancel
 bool native_synth_grid_pick(int entry);
 // The client's item card's PAGE 2 (docs/notes/iteminfo-page2-re-2026-11-18.md) : `iteminfo` / `itemxinf` rebuild, every

@@ -31,6 +31,7 @@
 #include "model/itemnames_gen.h"        // item_display_name : the Items list
 #include "model/mounts_gen.h"           // mount_name : the mount list
 #include "model/zones.h"                // zone_name : the Profile's Home Point
+#include "model/chat_log.h"             // chat_decode : the search comment lines (auto-translate)
 #include "model/game_mem.h"             // PersonaMem : the stat panels' data
 #include "model/party_state.h"          // party().encumbrance() : the Equipment grid's locked slots
 #include "model/currencies_gen.h"       // CURRENCY1_EN / CURRENCY2_EN : the client's row order and labels
@@ -275,7 +276,56 @@ const SubRow PRTY5[5] = { { "English", "Anglais", false, IC_NONE }, { "French", 
 const SubRow ALARM[8] = { { "Off", "Aucune", false, IC_NONE }, { "Sound 1", "Son 1", false, IC_NONE }, { "Sound 2", "Son 2", false, IC_NONE },
     { "Sound 3", "Son 3", false, IC_NONE }, { "Sound 4", "Son 4", false, IC_NONE }, { "Sound 5", "Son 5", false, IC_NONE },
     { "Sound 6", "Son 6", false, IC_NONE }, { "Sound 7", "Son 7", false, IC_NONE } };
+// Search (search-re-2026-11-19.md s.1b / 1d / 3 / 10) : labels are images -- named from their help texts ; by ENTRY
+const SubRow SEARCHMA[17] = {
+    { "Area", "Zone", false, IC_NONE }, { "Name", "Nom", false, IC_NONE }, { "Job", "Job", false, IC_NONE }, { "Allegiance", "Nation", false, IC_NONE },
+    { "Race", "Race", false, IC_NONE }, { "Level", "Niveau", false, IC_NONE }, { "Mission Rank", "Rang de mission", false, IC_NONE },
+    { "Friend List", "Amis", false, IC_NONE }, { "Linkshell", "Linkshell", false, IC_NONE }, { "Ballista", "Ballista", false, IC_NONE },
+    { "Search by Comment", "Par commentaire", false, IC_NONE }, { "Edit Your Comment", "Mon commentaire", false, IC_NONE },
+    { "Monstrosity", "Monstrosity", false, IC_NONE }, { "Unity", "Unity", false, IC_NONE }, { "Linkshell 2", "Linkshell 2", false, IC_NONE },
+    { "Requests", "Demandes", false, IC_NONE }, { "Master Level", "Master Level", false, IC_NONE } };
+const SubRow SCSIBORI[15] = {
+    { "Area", "Zone", false, IC_NONE }, { "Name", "Nom", false, IC_NONE }, { "Job", "Job", false, IC_NONE }, { "Allegiance", "Nation", false, IC_NONE },
+    { "Race", "Race", false, IC_NONE }, { "Level", "Niveau", false, IC_NONE }, { "Mission Rank", "Rang de mission", false, IC_NONE },
+    { "Friend List", "Amis", false, IC_NONE }, { "Linkshell", "Linkshell", false, IC_NONE }, { "Ballista", "Ballista", false, IC_NONE },
+    { "Comment", "Commentaire", false, IC_NONE }, { "Unity", "Unity", false, IC_NONE }, { "Linkshell 2", "Linkshell 2", false, IC_NONE },
+    { "Requests", "Demandes", false, IC_NONE }, { "Master Level", "Master Level", false, IC_NONE } };
+const SubRow SEARCHJO[22] = {
+    { "Warrior", "Guerrier", false, IC_NONE }, { "Monk", "Moine", false, IC_NONE }, { "White Mage", "Mage blanc", false, IC_NONE },
+    { "Black Mage", "Mage noir", false, IC_NONE }, { "Red Mage", "Mage rouge", false, IC_NONE }, { "Thief", "Voleur", false, IC_NONE },
+    { "Paladin", "Paladin", false, IC_NONE }, { "Dark Knight", "Chevalier noir", false, IC_NONE }, { "Beastmaster", "Dresseur", false, IC_NONE },
+    { "Bard", "Barde", false, IC_NONE }, { "Ranger", "Chasseur", false, IC_NONE }, { "Samurai", "Samoura\xC3\xAF", false, IC_NONE },
+    { "Ninja", "Ninja", false, IC_NONE }, { "Dragoon", "Chevalier dragon", false, IC_NONE }, { "Summoner", "Invocateur", false, IC_NONE },
+    { "Blue Mage", "Mage bleu", false, IC_NONE }, { "Corsair", "Corsaire", false, IC_NONE }, { "Puppetmaster", "Marionnettiste", false, IC_NONE },
+    { "Dancer", "Danseur", false, IC_NONE }, { "Scholar", "\xC3\x89rudit", false, IC_NONE }, { "Geomancer", "G\xC3\xA9omancien", false, IC_NONE },
+    { "Rune Fencer", "Escrimeur runique", false, IC_NONE } };
+const SubRow SEARCHNA[3] = { { "San d'Oria", "San d'Oria", false, IC_NONE }, { "Bastok", "Bastok", false, IC_NONE }, { "Windurst", "Windurst", false, IC_NONE } };
+const SubRow SEARCHRA[5] = { { "Hume", "Hume", false, IC_NONE }, { "Elvaan", "Elvaan", false, IC_NONE }, { "Tarutaru", "Tarutaru", false, IC_NONE },
+    { "Mithra", "Mithra", false, IC_NONE }, { "Galka", "Galka", false, IC_NONE } };
+const SubRow SEARCHLE[10] = { { "Rank 1", "Rang 1", false, IC_NONE }, { "Rank 2", "Rang 2", false, IC_NONE }, { "Rank 3", "Rang 3", false, IC_NONE },
+    { "Rank 4", "Rang 4", false, IC_NONE }, { "Rank 5", "Rang 5", false, IC_NONE }, { "Rank 6", "Rang 6", false, IC_NONE }, { "Rank 7", "Rang 7", false, IC_NONE },
+    { "Rank 8", "Rang 8", false, IC_NONE }, { "Rank 9", "Rang 9", false, IC_NONE }, { "Rank 10", "Rang 10", false, IC_NONE } };
+const SubRow SCNAME[3] = { { "Name", "Nom", false, IC_NONE }, { "Search", "Rechercher", false, IC_NONE }, { "Cancel", "Annuler", false, IC_NONE } };
+const SubRow SCCHAR[4] = { { "Minimum", "Minimum", false, IC_NONE }, { "Maximum", "Maximum", false, IC_NONE }, { "Search", "Rechercher", false, IC_NONE }, { "Cancel", "Annuler", false, IC_NONE } };
+const SubRow COMGENRE[7] = { { "Leveling", "Monter de niveau", false, IC_NONE }, { "Battle Content", "Combats", false, IC_NONE },
+    { "Missions & Quests", "Missions et qu\xC3\xAAtes", false, IC_NONE }, { "Items", "Objets", false, IC_NONE }, { "Linkshells", "Linkshells", false, IC_NONE },
+    { "Friends", "Amis", false, IC_NONE }, { "Other", "Autre", false, IC_NONE } };
+const SubRow SCCOMPAR[3] = { { "Seeking a Party", "Cherche un groupe", false, IC_NONE }, { "Seeking Members", "Cherche des membres", false, IC_NONE }, { "Other", "Autre", false, IC_NONE } };
+const SubRow SCCOMITE[3] = { { "Selling", "Vente", false, IC_NONE }, { "Buying", "Achat", false, IC_NONE }, { "Crafting", "Artisanat", false, IC_NONE } };
+const SubRow SCCOMLS[3] = { { "Want to Join", "Veut rejoindre", false, IC_NONE }, { "Recruiting", "Recrute", false, IC_NONE }, { "Other", "Autre", false, IC_NONE } };
 const SubRow* sub_row(const char* menu, int entry) {
+    if (!strcmp(menu, "searchma") && entry >= 1 && entry <= 17) return &SEARCHMA[entry - 1];
+    if (!strcmp(menu, "scsibori") && entry >= 1 && entry <= 15) return &SCSIBORI[entry - 1];
+    if (!strcmp(menu, "searchjo") && entry >= 1 && entry <= 22) return &SEARCHJO[entry - 1];
+    if (!strcmp(menu, "searchna") && entry >= 1 && entry <= 3) return &SEARCHNA[entry - 1];
+    if (!strcmp(menu, "searchra") && entry >= 1 && entry <= 5) return &SEARCHRA[entry - 1];
+    if (!strcmp(menu, "searchle") && entry >= 1 && entry <= 10) return &SEARCHLE[entry - 1];
+    if ((!strcmp(menu, "scchar") || !strcmp(menu, "scmlev")) && entry >= 1 && entry <= 4) return &SCCHAR[entry - 1];
+    if (!strcmp(menu, "scname") && entry >= 1 && entry <= 3) return &SCNAME[entry - 1];
+    if (!strcmp(menu, "comgenre") && entry >= 1 && entry <= 7) return &COMGENRE[entry - 1];
+    if (!strcmp(menu, "sccompar") && entry >= 1 && entry <= 3) return &SCCOMPAR[entry - 1];
+    if (!strcmp(menu, "sccomite") && entry >= 1 && entry <= 3) return &SCCOMITE[entry - 1];
+    if (!strcmp(menu, "sccomls") && entry >= 1 && entry <= 3) return &SCCOMLS[entry - 1];
     if (!strcmp(menu, "prty1") && entry >= 1 && entry <= 7) return &PRTY1[entry - 1];
     if (!strcmp(menu, "prty2") && entry >= 1 && entry <= 7) return &PRTY2[entry - 1];
     if ((!strcmp(menu, "prty3") || !strcmp(menu, "prty7")) && entry >= 1 && entry <= 12) return &PRTY3[entry - 1];
@@ -302,6 +352,32 @@ const SubRow* sub_row(const char* menu, int entry) {
     if (!strcmp(menu, "abiselec") && entry >= 1 && entry <= 5) return &ABISELEC[entry - 1];
     return 0;
 }
+const SubRow* sub_row(const char* menu, int entry);
+// Search : the value a criterion holds (Refine Search) / a level field (scchar, scmlev) ; false = nothing to show
+bool search_value(const NativeEntryMenu& m, int e, char* out, int cap) {
+    if (e < 1 || e >= 32) return false;
+    const int v = m.entVal[e], v2 = m.entVal2[e];
+    if (!strcmp(m.name, "scchar") || !strcmp(m.name, "scmlev")) { if ((e == 1 || e == 2) && v >= 0) { _snprintf(out, cap, "%d", v); out[cap - 1] = 0; return true; } return false; }
+    if (!strcmp(m.name, "scname")) {                           // the name field : the text, a caret while typing
+        if (e != 1) return false;
+        const bool typing = m.entMarkKind == 3;
+        _snprintf(out, cap, typing ? "%s_" : "%s", m.entName); out[cap - 1] = 0;
+        if (!out[0]) lstrcpynA(out, tr("(press Enter to type)", "(Entr\xC3\xA9""e pour taper)"), cap);
+        return true;
+    }
+    if (strcmp(m.name, "scsibori") || v < 0) return false;
+    switch (e) {
+    case 1: { const char* z = zone_name(v); if (v2 > 1) _snprintf(out, cap, "%s +%d", z && z[0] ? z : "?", v2 - 1); else lstrcpynA(out, z && z[0] ? z : "?", cap); out[cap - 1] = 0; break; }
+    case 2: lstrcpynA(out, m.entName, cap); break;
+    case 3: { const char* j = job_abbr(v); lstrcpynA(out, j && j[0] ? j : "?", cap); break; }
+    case 4: lstrcpynA(out, v == 0 ? "San d'Oria" : v == 1 ? "Bastok" : v == 2 ? "Windurst" : "?", cap); break;
+    case 5: { static const char* const RC[5] = { "Hume", "Elvaan", "Tarutaru", "Mithra", "Galka" }; lstrcpynA(out, v < 5 ? RC[v] : "?", cap); break; }
+    case 6: case 7: case 15: if (v2 >= 0 && v2 != v) _snprintf(out, cap, "%d-%d", v, v2); else _snprintf(out, cap, "%d", v); out[cap - 1] = 0; break;
+    case 11: { const SubRow* g = sub_row("comgenre", v); lstrcpynA(out, g ? tr(g->en, g->fr) : "?", cap); break; }
+    default: lstrcpynA(out, tr("on", "actif"), cap); break;
+    }
+    return true;
+}
 
 inline u32 dev_of(const Frame& f) { return f.dev; }
 
@@ -315,10 +391,11 @@ struct RowSpec { const char* label; Icon icon; bool sub; bool off; const char* e
                  u32 tex = 0; float tu0 = 0.0f, tu1 = 1.0f, tv0 = 0.0f, tv1 = 1.0f; u32 texTint = 0xFFFFFFFFu; };
                  // tex + its UV : the row's picture (Windower's file, a status / element / job cell), tinted texTint   // tex : the row's own picture (a spell / ability icon from Windower's plugins\icons), drawn in place of `icon`   // tint : the label's own colour (the NPC answers : the client's green), 0 the menus' grey-white   // center : a lone message row (the empty list), centred in the block   // cycle : the extra can be changed with RIGHT (the Tell name ; left closes the submenu) -> name >
 struct Block {
-    float vis = 0.0f, curY = -1.0f; unsigned openMs = 0; int lastN = 0; bool wasOpen = false; float sel[16] = { 0 };
+    float vis = 0.0f, curY = -1.0f; unsigned openMs = 0; int lastN = 0; bool wasOpen = false; float sel[32] = { 0 };
     float x = 0, y = 0, w = 0, h = 0;           // drawn rect this frame (w = 0 : not drawn)
     float rowY0 = 0, rowStep = 0, capX = 0, capW = 0, capH = 0;
     int hoverRow = 0;
+    float wKeep = 0.0f; unsigned wKeepMs = 0;   // keep_width : the widest width since this block opened
     float inTop = 0.0f;                         // a band above the rows (the main menu's title and page), inside the box
 };
 Block g_main, g_subB, g_listB;
@@ -570,9 +647,27 @@ void block_size(const Frame& f, const Metrics& k, const RowSpec* rows, int n, fl
     w = snap(k.gutter + capW + k.pad); h = snap((float)n * k.capH + (float)(n - 1) * k.gap + 2.0f * k.pad);
 }
 // open / close easing ; false when nothing is to be drawn
+// FIXED widths (the user, 2026-11-19 : "on veut une taille fixe") : an item list is as wide as a long item name (99 % of
+// the game's display names fit ; a longer one is cut with "...") ; the area list as wide as the game's longest zone name
+const char* const ITEM_NAME_REF = "Bowl of soy sauce-based ramen";
+const char* const ZONE_NAME_REF = "Silver Sea route to Al Zahbi";
+// `s` cut to `maxW` with "..." (into buf) ; s itself when it fits
+const char* fit_text(Font* fo, const char* s, float tz, float maxW, char* buf, int cap) {
+    if (!s || fo->measure(s, tz) <= maxW) return s;
+    int n = lstrlenA(s); if (n > cap - 4) n = cap - 4;
+    for (; n > 0; --n) { memcpy(buf, s, (size_t)n); buf[n] = '.'; buf[n + 1] = '.'; buf[n + 2] = '.'; buf[n + 3] = 0; if (fo->measure(buf, tz) <= maxW) return buf; }
+    return "...";
+}
+// a list's width NEVER shrinks while it stays open : scrolling shows other names, the box keeps its size (it only widens
+// once, if a longer name than any seen comes into view). Reset each time the block opens.
+float keep_width(Block& b, float w) {
+    if (b.wKeepMs != b.openMs) { b.wKeepMs = b.openMs; b.wKeep = 0.0f; }
+    if (w > b.wKeep) b.wKeep = w;
+    return b.wKeep;
+}
 bool block_ease(Block& b, bool open, unsigned now, float dt) {
     const float kFast = 1.0f - expf(-dt * 45.0f);   // ~70 ms to settle : smooth, never in the way
-    if (open && !b.wasOpen) { b.openMs = now; for (int i = 0; i < 16; ++i) b.sel[i] = 0.0f; b.curY = -1.0f; }
+    if (open && !b.wasOpen) { b.openMs = now; for (int i = 0; i < 32; ++i) b.sel[i] = 0.0f; b.curY = -1.0f; }
     b.wasOpen = open;
     b.vis += ((open ? 1.0f : 0.0f) - b.vis) * kFast;
     if (b.vis < 0.01f) { b.vis = 0.0f; b.curY = -1.0f; b.w = 0.0f; return false; }
@@ -597,7 +692,7 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
         if (fabsf(targetY - b.curY) < 0.3f) b.curY = targetY;
     }
     b.lastN = n;
-    for (int i = 0; i < n && i < 16; ++i) {
+    for (int i = 0; i < n && i < 32; ++i) {
         const bool on = i + 1 == cursorRow;
         b.sel[i] += ((on ? 1.0f : 0.0f) - b.sel[i]) * kSel;
         if (fabsf((on ? 1.0f : 0.0f) - b.sel[i]) < 0.004f) b.sel[i] = on ? 1.0f : 0.0f;
@@ -626,7 +721,7 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
         rrect_clip_end(dev);
         rrect_stroke(dev, cx0, y, capW, k.capH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
     }
-    for (int i = 0; i < n && i < 16; ++i) {
+    for (int i = 0; i < n && i < 32; ++i) {
         const float s = b.sel[i], a = A * (rows[i].off ? 0.55f : 1.0f);
         const float cy = snap(ry0 + k.pad + (float)i * step) + k.capH * 0.5f;
         if (k.icons && rows[i].tex) {                          // a picture : a touch larger than the drawn glyph, the capsule's height
@@ -675,7 +770,7 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
     // colour, which draws every glyph as a solid quad : the white bands of 2026-11-16)
     Font* fo = f.font;
     fo->begin(dev);
-    for (int i = 0; i < n && i < 16; ++i) {
+    for (int i = 0; i < n && i < 32; ++i) {
         const float s = b.sel[i], a = A * (rows[i].off ? 0.5f : 1.0f);
         const float y = snap(ry0 + k.pad + (float)i * step);
         if (rows[i].center) {
@@ -2106,6 +2201,56 @@ void unitylists_draw(const Frame& f) {
         const NativeAreaList& A0 = native_arealist();
         static NativeAreaList last;
         if (A0.open) last = A0;
+        if (last.mode != 4) {
+            // Search -> Area / Monipulators : Current Area, Current Region, All Areas, then the regions (a region opens its
+            // zones). The client shows 5 rows ; AioHUD shows 12 from the client's top (its scroll follows the hand).
+            if (block_ease(g_alB, A0.open, now, dt) && last.uiW > 0 && last.arRows > 0) {
+                RowSpec rows[12] = {}; char lab[12][48], cnt[12][8]; const int n = last.arRows;
+                const unsigned myZone = f.game ? f.game->zone : 0;
+                for (int r = 0; r < n; ++r) {
+                    const int v = last.arVal[r]; const char* t = 0;
+                    if (last.arTop + r == 0 && v > 0) { const char* z = zone_name(v); lstrcpynA(lab[r], z && z[0] ? z : "?", sizeof(lab[r])); t = lab[r]; rows[r].extra = tr("current", "actuelle"); rows[r].tint = 0xFFFFDA8Au; }
+                    else if (v == -1) t = tr("Current Region", "R\xC3\xA9gion actuelle");
+                    else if (v == 0) t = tr("All Areas", "Toutes les zones");
+                    else if (v > 0) { const char* z = zone_name(v); lstrcpynA(lab[r], z && z[0] ? z : "?", sizeof(lab[r])); t = lab[r]; rows[r].icon = IC_NONE; }
+                    else if (last.arLabel[r][0]) { lstrcpynA(lab[r], last.arLabel[r], sizeof(lab[r])); t = lab[r]; }
+                    else { _snprintf(lab[r], sizeof(lab[r]), "%s %d", tr("Region", "R\xC3\xA9gion"), -v - 1); t = lab[r]; }
+                    rows[r].label = t; rows[r].sub = v <= -2; rows[r].off = false;
+                    if (v <= -2 && last.arCount[r] > 0) { _snprintf(cnt[r], sizeof(cnt[r]), "%d", last.arCount[r]); rows[r].extra = cnt[r]; }
+                    if (v > 0 && (unsigned)v == myZone) rows[r].tint = 0xFFFFDA8Au;
+                }
+                float bw, bh; block_size(f, k, rows, n, bw, bh);
+                {   // FIXED : as tall as 12 rows whatever the page holds, as wide as the widest page seen since it opened
+                    RowSpec one[12] = {}; for (int r = 0; r < 12; ++r) { one[r].label = ZONE_NAME_REF; one[r].extra = tr("current", "actuelle"); one[r].sub = true; }
+                    float w12, h12; block_size(f, k, one, 12, w12, h12); bw = w12; bh = h12;   // never from the page
+                }
+                const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+                float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+                { float cx, cy; if (place_on_chat(bw, bh, snap(4.0f * S), f.screenW, f.screenH, cx, cy)) { bx = cx; by = cy; } }   // above the chat, as the client
+                if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+                if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+                const float tO = ease_out(((float)(now - g_alB.openMs) / 1000.0f) / 0.08f);
+                by = snap(by + (1.0f - tO) * 4.0f * S);
+                const float A = g_alB.vis * tO;
+                if (A > 0.0f) {
+                    const int cr = last.cursor >= last.arTop && last.cursor < last.arTop + n ? last.cursor - last.arTop + 1 : 0;
+                    const int row = block_draw(f, k, g_alB, rows, n, cr, last.focused, bx, by, bw, bh, A, dt);
+                    if (last.n > n || last.arTop > 0) {                // where this page sits : a thin rail
+                        const float rx = bx + bw - 4.0f * S, ty = by + k.pad, th = bh - 2.0f * k.pad;
+                        const float th2 = th * (float)n / (float)last.n, ty2 = ty + th * (float)last.arTop / (float)last.n;
+                        rrect(f.dev, rx, ty, 2.0f * S, th, 1.0f * S, with_alpha(0x30FFFFFFu, A), with_alpha(0x30FFFFFFu, A));
+                        rrect(f.dev, rx, snap(ty2), 2.0f * S, snap(th2 < 6.0f * S ? 6.0f * S : th2), 1.0f * S, with_alpha(0xC0FFDA8Au, A), with_alpha(0xC0FFDA8Au, A));
+                    }
+                    if (A0.open) {
+                        g_hit[9][0] = bx / f.screenW; g_hit[9][1] = by / f.screenH; g_hit[9][2] = bw / f.screenW; g_hit[9][3] = bh / f.screenH;
+                        const int abs = row ? last.arTop + row - 1 : -1;
+                        if (row && row != g_alB.hoverRow && abs != A0.cursor) native_textlist_hover("arealist", abs);
+                        g_alB.hoverRow = row;
+                        if (row && f.mouse && f.mouse->clicked) native_textlist_pick("arealist", abs);
+                    } else g_alB.hoverRow = 0;
+                }
+            }
+        } else
         if (block_ease(g_alB, A0.open, now, dt) && last.uiW > 0 && last.n == 12) {
             RowSpec rows[12] = {}; char ownB[40];
             for (int r = 0; r < 12; ++r) {
@@ -2201,7 +2346,7 @@ void unitylists_draw(const Frame& f) {
                 }
                 const u32 sh = with_alpha(0xC8000000u, A);
                 fo->begin(dev);
-                fo->draw_lc(dev, L, hy, last.ctx == 2 ? "Level Sync" : last.ctx == 1 ? tr("Party", "Groupe") : tr("Unity Lists", "Listes Unity"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+                fo->draw_lc(dev, L, hy, last.ctx == 3 ? tr("Search", "Recherche") : last.ctx == 2 ? "Level Sync" : last.ctx == 1 ? tr("Party", "Groupe") : tr("Unity Lists", "Listes Unity"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
                 if (last.ctx != 2) {
                     char cnt[48];
                     if (last.counted) sprintf(cnt, tr("%d found", "%d trouv\xC3\xA9(s)"), last.total); else strcpy(cnt, tr("Searching...", "Recherche..."));
@@ -2341,6 +2486,7 @@ void jobpoints_draw(const Frame& f) {
     const float wRight = cat ? (lastK.tab ? fo->measure("2100", tz) : fo->measure("20/20", tz) + 18.0f * S + fo->measure("NEXT 999 P", tz)) : fo->measure("500 JP", tz);
     float bw = snap(pad + 8.0f * S + wName + 28.0f * S + wRight + 8.0f * S + pad);
     if (bw < 360.0f * S) bw = snap(360.0f * S);
+    bw = keep_width(g_jpB, bw);
     const float listY = headH + 6.0f * S;
     const float bh = snap(pad + listY + (float)V * rowH + pad);
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
@@ -2526,6 +2672,7 @@ void alterego_draw(const Frame& f) {
     const float wRight = abil ? fo->measure("60/60", tz) + 18.0f * S + fo->measure("NEXT 99 P", tz) : 0.0f;
     float bw = snap(pad + 8.0f * S + wName + 28.0f * S + wRight + 8.0f * S + pad);
     if (bw < 360.0f * S) bw = snap(360.0f * S);
+    bw = keep_width(g_aeB, bw);
     const float listY = headH + 6.0f * S, bh = snap(pad + listY + (float)V * rowH + pad);
     // the points box and the description under it
     const char* pl = tr("Alter Ego Points", "Points Alter Ego");
@@ -2674,7 +2821,7 @@ void celestite_draw(const Frame& f) {
     for (int i = 0; i < nI; ++i) { const CelText* t = cel_text(last.inven.cel[i]); if (t) { const float w = fo->measure(t->name, tz); if (w > wName) wName = w; } }
     const float badgeW = snap(fo->measure("Lv3", tz * 0.8f) + 10.0f * S), iconZ = snap(rowH - 4.0f * S);
     const float colW = snap(10.0f * S + (badgeW > iconZ ? badgeW : iconZ) + 8.0f * S + wName + 10.0f * S);
-    const float bw = snap(pad + colW + gap + colW + pad);
+    const float bw = keep_width(g_celB, snap(pad + colW + gap + colW + pad));
     const int V = nE > nI ? nE : nI; const int Vr = V < 6 ? 6 : V;
     const float listY = headH + 6.0f * S;
     const float bh = snap(pad + listY + (float)Vr * rowH + pad);
@@ -2819,6 +2966,7 @@ void meritcat_draw(const Frame& f) {
     }
     const float wRight = merits ? fo->measure("15", tz) + 18.0f * S + fo->measure("NEXT 99 P", tz) : fo->measure("G1 10/10   G2 10/10", tz * 0.9f);
     float bw = snap(pad + 8.0f * S + wName + 28.0f * S + wRight + 8.0f * S + pad);
+    bw = keep_width(g_mcB, bw);
     // a category's state : spent / cap of a group (cat, or cat + 26 its group 2) ; full = capped
     auto grpTxt = [&](int c, char* out) -> int { const int sp = c >= 0 && c < 96 ? last.spentAll[c] : 0, cp = c >= 0 && c < 96 ? last.capAll[c] : -1;
         if (cp <= 0) { out[0] = 0; return 0; } sprintf(out, "%d/%d", sp, cp); return sp >= cp ? 2 : sp > 0 ? 1 : 0; };
@@ -3122,10 +3270,9 @@ void equipment_draw(const Frame& f) {
     if (block_ease(g_elB, lon, now, dt2) && last.lvis > 0) {
         // AS TALL AS THE GRID'S BOX (the user, 2026-11-18) : the client's page of rows spread over that height
         const float rowH = snap((bh - 2.0f * pad) / (float)last.lvis), iz = snap(rowH - 4.0f * S);
-        float wName = fo->measure("Wwwwwwwwwwwwwwwwwwww", tz) * 0.85f;
+        const float wName = fo->measure(ITEM_NAME_REF, tz);
         const int nRows = last.ln - last.ltop < last.lvis ? last.ln - last.ltop : last.lvis;
-        for (int i = 0; i < nRows; ++i) if (!lastS.lrow[i].header && lastS.lrow[i].id) { const char* nm = item_display_name(lastS.lrow[i].id); if (nm) { const float w = fo->measure(nm, tz); if (w > wName) wName = w; } }
-        const float lw = snap(pad + 8.0f * S + iz + 8.0f * S + wName + 16.0f * S + fo->measure("99", tz) + 8.0f * S + pad);
+        const float lw = keep_width(g_elB, snap(pad + 8.0f * S + iz + 8.0f * S + wName + 16.0f * S + fo->measure("99", tz) + 8.0f * S + pad));
         const float lh = bh;
         float lx = snap(bx + bw + gap), ly = by;
         if (lx + lw > f.screenW - 4.0f) lx = snap(bx - gap - lw);
@@ -3191,7 +3338,7 @@ void equipment_draw(const Frame& f) {
                 }
                 const char* nm = r.id ? item_display_name(r.id) : 0;
                 const u32 c = r.col == 0x80509050u ? 0xFF7CE07Cu : r.col == 0x80404040u ? 0xFF6E7C8Eu : r.col == 0x80804020u ? 0xFFFFB45Au : (i == cr ? 0xFFFFFFFFu : 0xFFE4EAF2u);
-                fo->draw_lc(dev, snap(Lx + 8.0f * S + iz + 8.0f * S), cy, nm ? nm : "?", tz, with_alpha(c, LA), sh, k.ow);
+                { char cut[64]; fo->draw_lc(dev, snap(Lx + 8.0f * S + iz + 8.0f * S), cy, fit_text(fo, nm ? nm : "?", tz, wName, cut, sizeof(cut)), tz, with_alpha(c, LA), sh, k.ow); }
                 if (r.count > 1) { char n[8]; sprintf(n, "%d", r.count); fo->draw_lc(dev, snap(Lx + Wx - 8.0f * S - fo->measure(n, tz)), cy, n, tz, with_alpha(0xFF93A6BEu, LA), sh, k.ow); }
             }
             // the item card : what has the hand -- the list's row, else the grid's cell (the list is up all along)
@@ -3255,8 +3402,7 @@ struct ItemsBox { const NativeItemRow* row; int n, top, vis, cursor, tempRows; b
 float items_box_width(const Frame& f, const Metrics& k, const ItemsBox& L) {
     Font* fo = f.font; const float S = k.S, tz = k.tz, pad = snap(8.0f * S), iz = snap(snap(k.capH * 1.25f) - 4.0f * S);
     const int nRows = L.n - L.top < L.vis ? L.n - L.top : L.vis;
-    float wName = fo->measure("Wwwwwwwwwwwwwwwwwwww", tz) * 0.85f;
-    for (int i = 0; i < nRows; ++i) if (L.row[i].itemId) { const char* nm = item_display_name(L.row[i].itemId); if (nm) { const float w = fo->measure(nm, tz); if (w > wName) wName = w; } }
+    const float wName = fo->measure(ITEM_NAME_REF, tz); (void)nRows;
     return snap(pad + 8.0f * S + iz + 8.0f * S + wName + 16.0f * S + fo->measure("999", tz) + 8.0f * S + pad);
 }
 unsigned items_box_draw(const Frame& f, const Metrics& k, Block& B, const ItemsBox& L, const char* win, float lx, float ly, float lw, float lh, float A, float dt, float* hit) {
@@ -3325,7 +3471,7 @@ unsigned items_box_draw(const Frame& f, const Metrics& k, Block& B, const ItemsB
         const NativeItemRow& r = L.row[i];
         const float cy = snap(ry + (float)i * rowH + rowH * 0.5f);
         const char* nm = r.itemId ? item_display_name(r.itemId) : 0;
-        fo->draw_lc(dev, snap(Lx + 8.0f * S + iz + 8.0f * S), cy, nm ? nm : "?", tz, with_alpha(item_row_rgb(r.itemCol, i == cr && L.focused), A), sh, k.ow);
+        { char cut[64]; fo->draw_lc(dev, snap(Lx + 8.0f * S + iz + 8.0f * S), cy, fit_text(fo, nm ? nm : "?", tz, fo->measure(ITEM_NAME_REF, tz), cut, sizeof(cut)), tz, with_alpha(item_row_rgb(r.itemCol, i == cr && L.focused), A), sh, k.ow); }
         if (!r.tempRow && r.itemCount > 1) { char n[8]; sprintf(n, "%d", r.itemCount); fo->draw_lc(dev, snap(Lx + Wx - 8.0f * S - fo->measure(n, tz)), cy, n, tz, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
     }
     return cr >= 0 ? L.row[cr].itemId : 0;
@@ -3357,6 +3503,150 @@ float qty_box(const Frame& f, const Metrics& k, unsigned qid, int val, int mx, f
     if (nm) fo->draw_lc(f.dev, snap(Lq + iz + 8.0f * S), vq, nm, k.tz, with_alpha(0xFFE4EAF2u, QA), with_alpha(0xC8000000u, QA), k.ow);
     fo->draw_lc(f.dev, snap(Rq - qw), vq, q, qz, with_alpha(0xFFFFFFFFu, QA), with_alpha(0xC8000000u, QA), k.ow);
     return qh;
+}
+
+
+// ---- a FORM (Search -> Name, Level, Master Level) : the field(s) on one line, OK and Cancel side by side below, as the
+// client lays them out (the user, 2026-11-19 : "dans le jeu c'est OK et Cancel et elles sont horizontales"). Fixed size.
+bool is_form(const char* n) { return !strcmp(n, "scname") || !strcmp(n, "scchar") || !strcmp(n, "scmlev"); }
+void form_size(const Frame& f, const Metrics& k, const NativeEntryMenu& L, float& w, float& h) {
+    const float S = k.S, pad = snap(8.0f * S), headH = snap(18.0f * S), fieldH = snap(k.capH + 6.0f * S), btnH = snap(k.capH + 2.0f * S);
+    const bool name = !strcmp(L.name, "scname");
+    float fw = name ? f.font->measure("Mmmmmmmmmmmmmmm_", k.tz) + 20.0f * S : 2.0f * (f.font->measure("Maximum", k.tz * 0.85f) + f.font->measure("99", k.tz * 1.1f) + 30.0f * S) + 8.0f * S;
+    const float hint = f.font->measure(tr("(press Enter to type)", "(Entr\xC3\xA9""e pour taper)"), k.tz * 0.9f) + 20.0f * S;
+    if (name && hint > fw) fw = hint;
+    const float bwMin = 2.0f * (f.font->measure(tr("Cancel", "Annuler"), k.tz) + 32.0f * S) + 8.0f * S;
+    w = snap(pad + (fw > bwMin ? fw : bwMin) + pad);
+    h = snap(pad + headH + 6.0f * S + fieldH + 6.0f * S + btnH + pad);
+}
+// returns the ROW (1-based index into L.entry) under the mouse, 0 none
+int form_draw(const Frame& f, const Metrics& k, Block& B, const NativeEntryMenu& L, float x, float y, float w, float h, float A) {
+    const u32 dev = f.dev; const float S = k.S, pad = snap(8.0f * S), headH = snap(18.0f * S), fieldH = snap(k.capH + 6.0f * S), btnH = snap(k.capH + 2.0f * S);
+    Font* fo = f.font; const u32 sh = with_alpha(0xC8000000u, A);
+    draw_themed_box(dev, f.skin, x, y, w, h, ui_config().muBox, A, S);
+    const bool name = !strcmp(L.name, "scname");
+    const float Lx = x + pad, W = w - 2.0f * pad, hy = snap(y + pad + headH * 0.5f);
+    rrect(dev, Lx, snap(y + pad + headH), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    const float fy = snap(y + pad + headH + 6.0f * S), by = snap(fy + fieldH + 6.0f * S), bw = snap((W - 8.0f * S) * 0.5f);
+    // the elements by ENTRY : name 1 field, 2 OK, 3 Cancel ; level 1 min, 2 max, 3 OK, 4 Cancel
+    struct El { int entry; float x, y, w, h; bool field; };
+    El el[4]; int ne = 0;
+    if (name) el[ne++] = { 1, Lx, fy, W, fieldH, true };
+    else { const float hw = snap((W - 8.0f * S) * 0.5f); el[ne++] = { 1, Lx, fy, hw, fieldH, true }; el[ne++] = { 2, snap(Lx + hw + 8.0f * S), fy, hw, fieldH, true }; }
+    el[ne++] = { name ? 2 : 3, Lx, by, bw, btnH, false };
+    el[ne++] = { name ? 3 : 4, snap(Lx + bw + 8.0f * S), by, bw, btnH, false };
+    const MouseState* ms = f.mouse; int hover = 0;
+    for (int i = 0; i < ne; ++i) {
+        const El& e = el[i]; const float r = e.field ? 5.0f * S : e.h * 0.5f;
+        const bool cur = L.cursor == e.entry, editing = L.entMarkKind == 3 && ((L.entMarks >> e.entry) & 1u);
+        rrect(dev, e.x, e.y, e.w, e.h, r, with_alpha(e.field ? 0x70101826u : 0x70283040u, A), with_alpha(0x70080C14u, A));
+        if (cur) { rrect_clip_begin(dev, e.x, e.y, e.w, e.h, r); party_selframe(dev, e.x, e.y, e.w, e.h, f.t, A, 0); rrect_clip_end(dev); }
+        rrect_stroke(dev, e.x, e.y, e.w, e.h, r, with_alpha(editing ? 0xE0FFB45Au : cur ? 0xD8FFDA8Au : 0x40C8D6EAu, A), editing || cur ? 1.5f * S : 1.0f);
+        if (ms && ms->focused && ms->x >= e.x && ms->x < e.x + e.w && ms->y >= e.y && ms->y < e.y + e.h)
+            for (int r2 = 0; r2 < L.n; ++r2) if (L.entry[r2] == e.entry) hover = r2 + 1;
+        if (cur && L.focused) { const float hand = snap(k.capH * 1.25f); if (g_handTex) party_cursor(dev, g_handTex, e.x - hand * 0.35f + party_cursor_bob(f.t, hand), e.y + e.h * 0.5f, hand, 0); }
+    }
+    fo->begin(dev);
+    const char* title = name ? tr("Name", "Nom") : !strcmp(L.name, "scmlev") ? "Master Level" : tr("Level", "Niveau");
+    fo->draw_lc(dev, Lx, hy, title, k.tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    for (int i = 0; i < ne; ++i) {
+        const El& e = el[i]; const float cy = snap(e.y + e.h * 0.5f);
+        if (e.field) {
+            if (name) {
+                const bool typing = L.entMarkKind == 3;
+                char t[40]; _snprintf(t, sizeof(t), typing ? "%s_" : "%s", L.entName); t[sizeof(t) - 1] = 0;
+                if (!t[0]) fo->draw_lc(dev, snap(e.x + 10.0f * S), cy, tr("(press Enter to type)", "(Entr\xC3\xA9""e pour taper)"), k.tz * 0.9f, with_alpha(0xFF6E7C8Eu, A), sh, k.ow);
+                else fo->draw_lc(dev, snap(e.x + 10.0f * S), cy, t, k.tz, with_alpha(typing ? 0xFFFFFFFFu : 0xFFFFDA8Au, A), sh, k.ow);
+            } else {
+                const char* lb = e.entry == 1 ? tr("Minimum", "Minimum") : tr("Maximum", "Maximum");
+                fo->draw_lc(dev, snap(e.x + 10.0f * S), cy, lb, k.tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
+                char v[8]; if (L.entVal[e.entry] >= 0) sprintf(v, "%d", L.entVal[e.entry]); else strcpy(v, "-");
+                fo->draw_lc(dev, snap(e.x + e.w - 10.0f * S - fo->measure(v, k.tz * 1.1f)), cy, v, k.tz * 1.1f, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
+            }
+        } else {
+            const bool ok = (name && e.entry == 2) || (!name && e.entry == 3);
+            const char* lb = ok ? "OK" : tr("Cancel", "Annuler");
+            fo->draw_lc(dev, snap(e.x + (e.w - fo->measure(lb, k.tz)) * 0.5f), cy, lb, k.tz, with_alpha(0xFFF2F5FAu, A), sh, k.ow);
+        }
+    }
+    (void)B;
+    return hover;
+}
+
+// ======== Search -> Edit your comment (`comment`) : 3 lines of 40, the genre, above the chat (the client's place) ========
+// The client's editor drives everything (Enter / Down next line, Up previous, Escape SAVES and closes -- no discard) ;
+// AioHUD shows the three lines, the one being typed with its caret, and anchors the auto-translate picker on it.
+namespace { Block g_cmB; unsigned g_cmMs = 0; }
+void comment_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_cmB.vis = 0.0f; g_cmB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_cmMs ? (float)(now - g_cmMs) / 1000.0f : 0.0f; g_cmMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeComment& K0 = native_comment();
+    static NativeComment last;
+    if (K0.open) last = K0;
+    if (!block_ease(g_cmB, K0.open, now, dt) || last.uiW <= 0) return;
+    const Metrics k = no_icons(metrics(f));
+    const float S = k.S, pad = snap(8.0f * S), tz = k.tz, headH = snap(18.0f * S), rowH = snap(k.capH * 1.2f);
+    Font* fo = f.font; const u32 dev = f.dev;
+    const float tO = ease_out(((float)(now - g_cmB.openMs) / 1000.0f) / 0.08f);
+    const float A = g_cmB.vis * tO; if (A <= 0.0f) return;
+    const u32 sh = with_alpha(0xC8000000u, A);
+    // FIXED : 40 characters wide, 3 lines + the hint
+    const float lineW = fo->measure("Wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww", tz) * 0.78f;
+    const float bw = snap(pad + 14.0f * S + lineW + 14.0f * S + pad), bh = snap(pad + headH + 6.0f * S + 3.0f * rowH + 6.0f * S + k.capH * 0.8f + pad);
+    float bx = 0.0f, by = 0.0f;
+    if (!place_on_chat(bw, bh, snap(4.0f * S), f.screenW, f.screenH, bx, by)) {
+        const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+        bx = snap((float)last.rx0 * sx); by = snap((float)last.ry0 * sy);
+    }
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    const float L = bx + pad, W = bw - 2.0f * pad, hy = snap(by + pad + headH * 0.5f), ly = snap(by + pad + headH + 6.0f * S);
+    rrect(dev, L, snap(by + pad + headH), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    // the genre : major (comgenre) > sub (sccompar / sccomite / sccomls)
+    char genre[96] = "";
+    { const int mj = last.cmGenre >> 4, sb = last.cmGenre & 0xF;
+      const SubRow* g = sub_row("comgenre", mj); const char* subMenu = mj >= 1 && mj <= 3 ? "sccompar" : mj == 4 ? "sccomite" : mj == 5 ? "sccomls" : 0;
+      const SubRow* s2 = subMenu ? sub_row(subMenu, sb) : 0;
+      if (g && s2) _snprintf(genre, sizeof(genre), "%s \xE2\x80\xBA %s", tr(g->en, g->fr), tr(s2->en, s2->fr)); else if (g) lstrcpynA(genre, tr(g->en, g->fr), sizeof(genre)); genre[sizeof(genre) - 1] = 0; }
+    // the lines' wells ; the one being typed in the party glass
+    for (int i = 0; i < 3; ++i) {
+        const float y = snap(ly + (float)i * rowH); const bool cur = i == last.cmLine;
+        rrect(dev, L, y, W, rowH - 2.0f * S, 4.0f * S, with_alpha(0x60101826u, A), with_alpha(0x60080C14u, A));
+        if (cur) { rrect_clip_begin(dev, L, y, W, rowH - 2.0f * S, 4.0f * S); party_selframe(dev, L, y, W, rowH - 2.0f * S, f.t, A, 0); rrect_clip_end(dev); }
+        rrect_stroke(dev, L, y, W, rowH - 2.0f * S, 4.0f * S, with_alpha(cur && last.typing ? 0xE0FFB45Au : cur ? 0xC8FFDA8Au : 0x30C8D6EAu, A), cur ? 1.5f * S : 1.0f);
+    }
+    fo->begin(dev);
+    fo->draw_lc(dev, L, hy, tr("Search Comment", "Commentaire de recherche"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    if (genre[0]) fo->draw_lc(dev, snap(L + W - fo->measure(genre, tz * 0.85f)), hy, genre, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
+    for (int i = 0; i < 3; ++i) {
+        const float cy = snap(ly + (float)i * rowH + (rowH - 2.0f * S) * 0.5f), tx = snap(L + 10.0f * S);
+        if (i == last.cmLine && last.typing) {          // the live line : its colours, its caret ; the picker opens on it
+            char t[0x170]; unsigned col[0x170]; int caret = 0;
+            const int n = chat_input_decode(last.cmLive, last.cmLiveN, t, col, sizeof(t), &caret);
+            float x = tx, caretX = tx;
+            for (int a = 0; a < n; ) {
+                int e = a + 1; while (e < n && col[e] == col[a]) ++e;
+                char seg[0x170]; memcpy(seg, t + a, (size_t)(e - a)); seg[e - a] = 0;
+                if (caret >= a && caret < e) { char pre[0x170]; memcpy(pre, t + a, (size_t)(caret - a)); pre[caret - a] = 0; caretX = x + fo->measure(pre, tz); }
+                fo->draw_lc(dev, snap(x), cy, seg, tz, with_alpha(col[a] | 0xFF000000u, A), sh, k.ow);
+                x += fo->measure(seg, tz); a = e;
+            }
+            if (caret >= n) caretX = x;
+            const float p = 0.5f + 0.5f * sinf(f.t * 7.0f);
+            rrect(dev, snap(caretX), snap(cy - k.capH * 0.38f), 1.5f * S, snap(k.capH * 0.76f), 0.0f, with_alpha(0xFFFFDA8Au, A * p), with_alpha(0xFFFFDA8Au, A * p));
+            fo->begin(dev);
+            chat_input_rect_set(L, snap(ly + (float)i * rowH), W, rowH, caretX);
+        } else if (last.cmText[i][0]) {
+            char out[1][CHAT_TEXT]; unsigned short cc[1][CHAT_TEXT]; int lens[1] = { 0 };
+            if (chat_decode(last.cmText[i], out, cc, lens, 1) >= 1) { out[0][lens[0] < CHAT_TEXT ? lens[0] : CHAT_TEXT - 1] = 0; fo->draw_lc(dev, tx, cy, out[0], tz, with_alpha(0xFFE4EAF2u, A), sh, k.ow); }
+        }
+    }
+    const char* hint = tr("Enter : next line  \xC2\xB7  Up : previous  \xC2\xB7  Esc : save and close", "Entr\xC3\xA9""e : ligne suivante  \xC2\xB7  Haut : pr\xC3\xA9""c\xC3\xA9""dente  \xC2\xB7  \xC3\x89""chap : enregistrer et fermer");
+    fo->draw_lc(dev, L, snap(ly + 3.0f * rowH + 6.0f * S + k.capH * 0.4f), hint, tz * 0.8f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
 }
 
 // ======== the main menu's SYNTHESIS : the grid (tskill1) where the client opens it (top left), History beside it ========
@@ -3474,7 +3764,7 @@ void synth_draw(const Frame& f) {
         for (int i = 0; i < 16; ++i) { hr[i].itemId = last.hItem[i]; hr[i].itemCount = 0; hr[i].itemCol = last.hFav[i] ? 0x80909040u : 0x80808080u; hr[i].tempRow = false; }
         char hc[16]; sprintf(hc, "%d / 10", last.hN);
         ItemsBox HL = { hr, last.hN, last.hTop, last.hVis, last.hCursor, 0, last.histFocused, Y0.open && Y0.histOpen, tr("History", "Historique"), hc, false };
-        const float hw = items_box_width(f, k, HL), hh = snap(pad + headH + 6.0f * S + (float)last.hVis * snap(k.capH * 1.25f) + pad);
+        const float hw = keep_width(g_hisB, items_box_width(f, k, HL)), hh = snap(pad + headH + 6.0f * S + (float)last.hVis * snap(k.capH * 1.25f) + pad);
         const float th2 = ease_out(((float)(now - g_hisB.openMs) / 1000.0f) / 0.08f);
         float hx = snap(bx + bw + gap), hyy = by;
         if (hx + hw > f.screenW - 4.0f) hx = snap(f.screenW - 4.0f - hw);
@@ -3518,7 +3808,7 @@ void items_draw(const Frame& f) {
     const char* title = last.synMode == 1 ? tr("Crystals", "Cristaux") : last.synMode == 2 ? tr("Materials", "Mat\xC3\xA9riaux") : tr("Items", "Objets");
     ItemsBox IL = { last.itRow, last.itN, last.itTop, last.itVis, last.itCursor, last.tempRows, last.focused, I0.open,
                     title, last.synMode ? "" : cnt, !last.synMode && last.invCap > 0 && last.invUsed >= last.invCap };
-    const float lw = items_box_width(f, k, IL), lh = snap(pad + headH + 6.0f * S + (float)last.itVis * rowH + pad);
+    const float lw = keep_width(g_itB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.itVis * rowH + pad);
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
     float lx = snap(16.0f * sx), ly = snap(48.0f * sy);       // TOP LEFT, as the client opens it (the bin / the grid push it aside)
     unsigned iid = 0;
@@ -3529,7 +3819,7 @@ void items_draw(const Frame& f) {
         char bc[24]; if (last.binCap > 0) sprintf(bc, "%d / %d", last.binN, last.binCap); else sprintf(bc, "%d", last.binN);
         ItemsBox BL = { last.binRow, last.binN, last.binTop, last.binVis, last.binCursor, 0, last.binFocused, I0.open && I0.binMode,
                         tr("Recycling Bin", "Corbeille"), bc, false };
-        const float bw = items_box_width(f, k, BL), bh = snap(pad + headH + 6.0f * S + (float)last.binVis * rowH + pad);
+        const float bw = keep_width(g_binB, items_box_width(f, k, BL)), bh = snap(pad + headH + 6.0f * S + (float)last.binVis * rowH + pad);
         const float bsx = f.screenW / (float)last.binUiW, bsy = f.screenH / (float)last.binUiH;
         float bx = snap((float)last.bx0 * bsx), by = snap((float)last.by0 * bsy);
         if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f; if (bx < 4.0f) bx = 4.0f;
@@ -3895,8 +4185,8 @@ void mainmenu_draw(const Frame& f) {
         if (OA > 0.0f) { ynX = obx; ynY = oby + oh; ynW = ow; }
     }
     if (block_ease(g_mainSubB, SM.open && (!SO.open || iuseUp) && !native_scoption().open, now, dt) && lastS.n) {   // a player's options replace it
-        RowSpec srows[16]; char snums[16][12]; int scur = 0;
-        for (int i = 0; i < lastS.n && i < 16; ++i) {
+        RowSpec srows[32]; char snums[32][12]; char svals[32][32]; int scur = 0;
+        for (int i = 0; i < lastS.n && i < 32; ++i) {
             const SubRow* r = sub_row(lastS.name, lastS.entry[i]);
             if (r) { srows[i].label = tr(r->en, r->fr); srows[i].icon = r->icon; }
             else if (lastS.label[i][0]) { srows[i].label = fr_of(lastS.label[i]); srows[i].icon = IC_STAR; }
@@ -3910,16 +4200,22 @@ void mainmenu_draw(const Frame& f) {
             if (lastS.entMarkKind && lastS.entry[i] < 32 && ((lastS.entMarks >> lastS.entry[i]) & 1u)) {
                 srows[i].tint = 0xFFFFDA8Au; srows[i].extra = lastS.entMarkKind == 1 ? tr("ON", "actif") : tr("chosen", "choisi");
             }
+            if (!strcmp(lastS.name, "searchma") && lastS.entry[i] == 13) srows[i].tint = 0xFFE8806Eu;   // Monstrosity : reddish, as the client draws it
+            // Search : the value each criterion holds (Refine Search), the level fields (scchar / scmlev)
+            if (search_value(lastS, lastS.entry[i], svals[i], sizeof(svals[i]))) { srows[i].extra = svals[i]; srows[i].tint = 0xFFFFDA8Au; }
+            if (lastS.entMarkKind == 3 && lastS.entry[i] < 32 && ((lastS.entMarks >> lastS.entry[i]) & 1u)) srows[i].tint = 0xFFFFB45Au;   // the field being edited
             if (lastS.entry[i] == lastS.cursor) scur = i + 1;
         }
         float sw, sh; block_size(f, kN, srows, lastS.n, sw, sh);
+        const bool form = is_form(lastS.name);
+        if (form) form_size(f, kN, lastS, sw, sh);   // a fixed form : the field(s), OK / Cancel side by side
         const float tS = ease_out(((float)(now - g_mainSubB.openMs) / 1000.0f) / 0.07f);
         // in place : the menu's corner (its right edge at the game's place, its left edge on the left), its own size
         float sbx = C.muMainPos == 1 ? bx : snap(bx + bw - sw), sby = snap(by + (1.0f - tS) * 3.0f * S);
         if (sby + sh > f.screenH - 4.0f) sby = snap(f.screenH - 4.0f - sh); if (sby < 4.0f) sby = 4.0f;
         const float SA = g_mainSubB.vis * tS * (lastS.focused ? 1.0f : 0.62f);
         if (SA > 0.0f) {
-            const int srow = block_draw(f, kN, g_mainSubB, srows, lastS.n, scur, lastS.focused, sbx, sby, sw, sh, SA, dt);
+            const int srow = form ? form_draw(f, kN, g_mainSubB, lastS, sbx, sby, sw, sh, SA) : block_draw(f, kN, g_mainSubB, srows, lastS.n, scur, lastS.focused, sbx, sby, sw, sh, SA, dt);
             g_subXY[0] = sbx; g_subXY[1] = sby;
             if (!strcmp(lastS.name, "iuse")) { ynX = sbx; ynY = sby + sh; ynW = sw; }
             if (SM.open) {
