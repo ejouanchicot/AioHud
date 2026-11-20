@@ -40,6 +40,7 @@ float box_alpha(const BoxStyle& bs) {
 
 void draw_themed_box(u32 dev, const WindowSkin* partySkin, float x, float y, float w, float h,
                      const BoxStyle& bs, float base, float S) {
+    struct JoinReset { ~JoinReset() { g_frameJoin = 0; } } jr;   // a merge mask (theme kit) never outlives this box, whatever path draws it
     if (!bs.on) return;
     const UiConfig& c = ui_config();
     const bool cp = bs.themeCopy != 0;

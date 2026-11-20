@@ -122,10 +122,11 @@ void Hud::draw_smn(const Frame& f, bool preview, float ovX, float ovY, float ovS
     }
 
     // ---- the sizes ----
-    const float pad = snap((C.petBox.on ? 8.0f : 2.0f) * S);
+    const float bi = box_inset(C.petBox);                             // the frame theme's border (0 = normal frames)
+    const float pad = snap((C.petBox.on ? 8.0f : 2.0f) * S) + bi;     // box edge -> content
     const float lineH = snap(16.0f * S), gap = snap(5.0f * S), pactH = snap(14.0f * S), cellH = snap(18.0f * S);
     const float discD = snap((stacked ? 96.0f : 76.0f) * S * k);
-    const float boxW = snap((stacked ? 230.0f : 260.0f) * S);
+    const float boxW = snap((stacked ? 230.0f : 260.0f) * S) + 2.0f * bi;
     const float topGap = snap(6.0f * S);
     static const int JA_COLS = 2;
 

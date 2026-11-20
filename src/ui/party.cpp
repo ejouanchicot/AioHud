@@ -333,8 +333,8 @@ float Party::box_w_base() const {
 
 void Party::measure(float& w, float& h) const {
     const float S = scale_ * BOOST * ui_config().box[tcfg()].scale;  // per-box size (grouped : both alliances share ; config / edit-mode wheel)
-    w = box_w_base() * S;
-    h = (rowPit() * 6 + 2 * padB()) * S;   // always sized for a full party of 6 (fixed box, solo or not)
+    w = box_w_base() * S + 2.0f * frame_inset();                  // + the frame theme's border on each side (0 = normal frames)
+    h = (rowPit() * 6 + 2 * padB()) * S + 2.0f * frame_inset();   // always sized for a full party of 6 (fixed box, solo or not)
 }
 
 // CONFIG-PREVIEW ONLY : the stage's left edge (px) past which the LEFTWARD member buff strip must not draw
@@ -566,32 +566,36 @@ void Party::draw(const Frame& f) {
     // "truncated" on some rows (which happens with a fractional row pitch).
     float px = snap(px_);
     float oy = snap(py_);
-    const float pad = snap(padB() * S), rowh = snap(rowH() * S);
+    const float fiB = frame_inset();                       // the frame theme's border on each side (0 = normal frames) : the box grows by it, the rows sit inside
+    const float pad = snap(padB() * S) + fiB, rowh = snap(rowH() * S);
     float rowpit = snap(rowPit() * S);   // may be widened below to evenly distribute members across the box
     const float gw = snap(gaugeW() * S), gh = snap(gaugeH() * S), ggap = snap(gaugeGap() * S);
     const float bw = snap(badgeW() * S), bh = snap(badgeH() * S), mw = snap(marksW() * S);
     const float mh = snap(mainBandH() * S);   // MAIN BAND : badge / name / gauges / distance all centre in [ry, ry+mh] ; the cast line sits below it
     const float inset = snap(4 * S), gap5 = snap(5 * S);
-    const float w   = snap(box_w_base() * S);
+    const float w   = snap(box_w_base() * S) + 2.0f * fiB;
     float H   = rowpit * 6 + 2 * pad;   // alliances : always full 6-row height. Party : adapted below.
     // Vertical stacking : the main party box publishes its top Y ; alliance boxes ignore their
     // authored Y and stack UPWARD from just above the floating cost/next action box. The two
     // alliances stack FLUSH (border against border, no gap) -> sepH = 0.
     // A user position override (set in edit mode) WINS over the default placement / stacking.
     const bool posSet = ui_config().box[tier_].posSet && f.screenW > 0.0f;
-    if (posSet) { px = snap(ui_config().box[tier_].x * f.screenW); oy = snap(ui_config().box[tier_].y * f.screenH); }
+    // the stored position is the box WITHOUT the frame theme's border : the border (2 x fiB more width and height) grows the
+    // box up and to the LEFT, so its bottom-right stays where it was placed whether a kit is on or not (else a reload, kit
+    // off, leaves a 2 x fiB margin at the right / bottom)
+    if (posSet) { px = snap(ui_config().box[tier_].x * f.screenW - 2.0f * fiB); oy = snap(ui_config().box[tier_].y * f.screenH - 2.0f * fiB); }
 
     const float sepH = 0.0f;                               // no separator between the two alliance boxes
     // alliances stack on the party's CURRENT top (its placed/dragged position if set, else the default)
     // -> the demo preview is coherent with where you actually put the party. Drag an alliance to give it
     // its own independent position (then it ignores this stack).
     if (tier_ == 0) {
-        g_partyTopY = (ui_config().box[0].posSet && f.screenH > 0.0f) ? snap(ui_config().box[0].y * f.screenH) : snap(py_);
+        g_partyTopY = (ui_config().box[0].posSet && f.screenH > 0.0f) ? snap(ui_config().box[0].y * f.screenH - 2.0f * fiB) : snap(py_);
         g_partyTopReady = true;
     }
     else if (!posSet && g_partyTopReady) {                 // alliances stack on the party ONLY when not user-placed
         const float fsC      = nameSz_ * S;
-        const float costBoxH = 2.0f * fsC + 20.0f * S;     // reserve the 2-line cost/next box (2 lines + padding + the 10px top space ; keep == costH below)
+        const float costBoxH = 2.0f * fsC + 20.0f * S + frame_inset();   // reserve the 2-line cost/next box (2 lines + padding + the 10px top space ; keep == costH below)
         const float allLift  = 0.0f;                       // alliance 1 sits FLUSH on the cost box top (no gap) -> matches a hand-placed "glued to Cost MP/Next" layout
         // Stack each alliance FLUSH on the box just below it, using that box's ACTUAL height -> different
         // per-tier scales no longer leave a gap / overlap at the join. Tier 1 sits above the cost box ;
@@ -651,7 +655,7 @@ void Party::draw(const Frame& f) {
     }
 
     // height of the Cost/Next box that floats ABOVE the party (tier 0 only) -> used for snap + clamp.
-    const float costH = (tier_ == 0) ? snap(2.0f * nameSz_ * S + 20.0f * S) : 0.0f;   // == draw_action_box bh2 max : 2 lines + padding + the 10px topPad (keep in sync)
+    const float costH = (tier_ == 0) ? snap(2.0f * nameSz_ * S + 20.0f * S) + fiB : 0.0f;   // == draw_action_box bh2 max : 2 lines + padding + the 10px topPad (keep in sync)
 
     // LINE 0 (partyBottomY) is just a VISUAL reference for the native party's bottom edge -- it does NOT
     // move our box (you place the party freely at the screen bottom). It only documents, together with the
@@ -683,15 +687,16 @@ void Party::draw(const Frame& f) {
     if (tier_ == 0 && partyFull6 && n < 6) {
         oy = boxOy + (boxH - (rowpit * (float)n + 2.0f * pad));   // bottom-align the members in the full 6-box (empty rows on top bridge to the alliance)
     } else if (tier_ == 0 && n > 0) {
-        const float evenGap = (H - (float)n * rowh) / (float)(n + 1);   // equal spaces (top, between rows, bottom)
+        const float Hi = H - 2.0f * fiB;                               // the height INSIDE the frame border : the rows are spread there
+        const float evenGap = (Hi - (float)n * rowh) / (float)(n + 1);  // equal spaces (top, between rows, bottom)
         if (n == 1) {                                                   // solo : keep it centred
-            if (evenGap > 0.0f) { oy += snap(evenGap) - pad; }
+            if (evenGap > 0.0f) { oy += fiB + snap(evenGap) - pad; }
         } else {
             const float minM = snap(3.0f * S);                         // guaranteed top/bottom margin when packed
             float vm  = evenGap < minM ? minM : evenGap;               // reserve >= minM at top AND bottom
-            float gap = (H - 2.0f * vm - (float)n * rowh) / (float)(n - 1);   // distribute the remainder BETWEEN rows
+            float gap = (Hi - 2.0f * vm - (float)n * rowh) / (float)(n - 1);   // distribute the remainder BETWEEN rows
             if (gap < 0.0f) { vm = evenGap; gap = evenGap; }           // too tight -> fall back to even distribution
-            if (vm > 0.0f) { oy += snap(vm) - pad; rowpit = snap(rowh + gap); }
+            if (vm > 0.0f) { oy += fiB + snap(vm) - pad; rowpit = snap(rowh + gap); }
         }
     }
 
@@ -766,7 +771,7 @@ void Party::draw(const Frame& f) {
                     if (ey > f.screenH - eh) ey = f.screenH - eh; if (ey < 0.0f) ey = 0.0f;
                 }
                 // cluster top-left -> stored PLACED top : the box px = ex + buffW (undo the left strip) ; undo costH + maskOff
-                float nx = (ex + buffW) / f.screenW, ny = (ey + costH + maskOff) / f.screenH;
+                float nx = (ex + buffW + 2.0f * fiB) / f.screenW, ny = (ey + costH + maskOff + 2.0f * fiB) / f.screenH;   // stored without the border (see posSet)
                 nx = nx < 0.0f ? 0.0f : (nx > 1.0f ? 1.0f : nx);   // never store an off-screen position that
                 ny = ny < 0.0f ? 0.0f : (ny > 1.0f ? 1.0f : ny);   // would make the box un-grabbable next time
                 ui_config().box[tier_].posSet = true; ui_config().box[tier_].x = nx; ui_config().box[tier_].y = ny;
@@ -872,6 +877,7 @@ void Party::draw(const Frame& f) {
     const float bAlpha = (tier_ > 0 && ui_config().allyAlphaOwn) ? ui_config().allyBoxAlpha : ui_config().skinBoxAlpha;   // the Party box's unless set (2026-11-17, independent of the theme)
     const float skinBa = bAlpha < 0.0f ? 0.0f : (bAlpha > 1.0f ? 1.0f : bAlpha);   // box chrome opacity (content stays opaque)
     const u32   skinTint = mul_a(0xFFFFFFFFu, skinBa);
+    g_frameAccent = tier_ == 0;                                 // the party box : a theme kit's signature corner (theme_kit test)
     if (window_theme_is_proc(boxTheme)) {                       // procedural colour theme (no game texture)
         draw_proc_window(dev, boxTheme, px, boxOy, w, boxH, skinTint, false, drawBorder, boxLum, boxHue);
     } else if (f.skin && f.skin->ready()) {                     // FFXI native window skin (9-slice) : bg always, frame optional
@@ -884,6 +890,7 @@ void Party::draw(const Frame& f) {
         vgrad(dev, px + R, boxOy, w - 2 * R, 3 * S, mul_a(0x4DBFD8FF, skinBa), mul_a(0x00BFD8FF, skinBa));            // top sheen (inset to stay in the rounded corners)
         vgrad(dev, px + R, boxOy + boxH - 4 * S, w - 2 * R, 4 * S, mul_a(0x00000000, skinBa), mul_a(0x40000000, skinBa));   // bottom vignette
     }
+    g_frameAccent = false;                                      // a path that drew no kit frame left it set : never onto the next box
 
     // (the wide divider band between the two alliance boxes was removed -- they now stack flush.)
 
@@ -1155,7 +1162,7 @@ void Party::draw(const Frame& f) {
     // by the box padding so they sit on the background, never overlapping the window frame.
     // selection / veil span the BACKGROUND width : inset a CONSTANT (native frame thickness, not scaled
     // by S like pad) so they reach the inner border edge at any box size, without spilling onto it.
-    const float selIn = snap(3.0f);
+    const float selIn = snap(3.0f) + fiB;                  // + the frame theme's border
     const float sx = px + selIn, sw = w - 2.0f * selIn;
     // BALANCED selection frame : wrap the member content (main-band top .. cast-line bottom) with an
     // EQUAL margin above and below, instead of spanning the whole reserved row (which sat flush at the
@@ -1360,7 +1367,8 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
     const float topPad = snap(10.0f * S);                       // +10px empty at the TOP (text stays bottom-anchored)
     const float infoW  = info  ? fName->measure(info, fs)  : 0.0f;
     const float info2W = info2 ? fName->measure(info2, fs) : 0.0f;
-    const float bh2 = snap(fs + 2.0f * pdy + fs + lineGap) + topPad;   // reserve 2 lines (matches costH)
+    const float fiB = frame_inset();                            // the frame theme's border (sides + top ; the bottom is open, fused on the party)
+    const float bh2 = snap(fs + 2.0f * pdy + fs + lineGap) + topPad + fiB;   // reserve 2 lines (matches costH)
     // DEFAULT (empty) size : as if showing a typical "name + Cost MP / Next" -> the box NEVER shrinks below it.
     float defW;
     {
@@ -1380,7 +1388,7 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
         const float cw = (line1W > line2W ? line1W : line2W);
         if (cw > defW) bw2 = cw;
     }
-    bw2 = snap(bw2);
+    bw2 = snap(bw2) + 2.0f * fiB;
     const float rightX = snap(px + w);                          // party right edge (constant)
     const float botY   = snap(oy);                              // party top edge (constant ; bottom stays flush/merged)
     const float bx2 = snap(rightX - bw2);                       // grow left (right edge pinned)
@@ -1401,10 +1409,10 @@ void Party::draw_action_box(const Frame& f, float S, float px, float w, float oy
     }
     if (nm) {                                                   // CONTENT : only while on a spell / job ability / weapon skill
         const float maxInfoW = info2W > infoW ? info2W : infoW;
-        const float infoColX = snap(rightX - pdx - maxInfoW);
-        const float nameX    = snap(bx2 + pdx);
+        const float infoColX = snap(rightX - fiB - pdx - maxInfoW);
+        const float nameX    = snap(bx2 + fiB + pdx);
         fName->begin(dev);
-        const float ty  = by2 + topPad + pdy + fs * 0.5f;                          // text anchored to the BOTTOM region
+        const float ty  = by2 + fiB + topPad + pdy + fs * 0.5f;                          // text anchored to the BOTTOM region
         fName->draw_lc(dev, nameX, ty, nm, fs, te_col(TE_COST, 0xFFFFD970), nSTK, nOWf);             // action name (gold, or the element colour), left
         if (info) fName->draw_lc(dev, infoColX, ty, info, fs, te_col(TE_COST, infoCol), nSTK, nOWf); // "Cost XX MP" / live TP, right column
         if (info2) {                                                                                 // recast "Next", below, same column as Cost

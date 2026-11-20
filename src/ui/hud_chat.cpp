@@ -707,7 +707,8 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         C.chH[box] = (int)((pad + headH + headGap + ln * rowH + pad * 0.8f) / S + 0.5f);
         if (!preview) save_ui_config();
     }
-    const float boxW = snap((float)C.chW[box] * S);
+    const float boxW = snap((float)C.chW[box] * S);                        // the CONTENT width ; the box rect adds the frame border
+    const float bi = box_inset(C.chBox[box]);                              // the frame theme's border on each side (0 = normal frames)
     const float bodyY0 = pad + headH + headGap;
     // ---- the client's input line, drawn HERE (UiConfig::chDock == 2) : read it the way the client's draw does ----
     static char s_inRaw[0x170]; static InLine s_in; static int s_inMode = -1;
@@ -812,13 +813,14 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     (void)bodyFold;
     float bodyNow = bodyOpen;                                                // (collapse is per line now : in bodyOpen)
     if (st.full > 0.0f && f.screenH > 0.0f) {       // unfolded : all the room on its growing side (a margin kept), at most 75 %
-        const float edge = C.chY[box] * f.screenH, chrome = bodyY0 + pad * 0.8f + inH * st.inA + 12.0f * S;
+        const float edge = C.chY[box] * f.screenH, chrome = bodyY0 + pad * 0.8f + inH * st.inA + 12.0f * S + 2.0f * bi;
         float room = (C.chGrow[box] != 1) ? edge - chrome : f.screenH - edge - chrome;
         if (room > f.screenH * 0.75f) room = f.screenH * 0.75f;
         if (room > bodyOpen) bodyNow = snap(bodyOpen + (room - bodyOpen) * st.full);
     }
     const float linesVis = bodyNow / rowH;
     const float boxH = snap(bodyY0 + bodyNow + pad * 0.8f + inH * st.inA);
+    const float oW = boxW + 2.0f * bi, oH = boxH + 2.0f * bi;              // the BOX rect (content + the frame border) : placement, edit, hit, chrome
     // WHICH EDGE STAYS : chY is that edge (0 = bottom : the box grows upward ; 1 = top : it grows downward). A config
     // from before kept chY as the top of a chH-high frame whose bottom the box sat on : take that bottom, once.
     if (C.chGrow[box] < 0 && !preview && f.screenH > 0.0f) {
@@ -828,44 +830,44 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     const bool growUp = C.chGrow[box] != 1;
 
     // ---- position ----
-    float px, py;
-    if (ovS > 0.0f) { px = snap(ovX - boxW * 0.5f); py = snap(ovY - boxH * 0.5f); }
-    else            { px = snap(C.chX[box] * f.screenW); py = snap(C.chY[box] * f.screenH - (growUp ? boxH : 0.0f)); }
-    if (preview && S > 0.0f) { g_pvSizeU[box][0] = boxW / S; g_pvSizeU[box][1] = boxH / S; }   // the config preview stacks the boxes : last frame's size
+    float ox, oy;                                                          // the box's top-left (the content sits bi inside)
+    if (ovS > 0.0f) { ox = snap(ovX - oW * 0.5f); oy = snap(ovY - oH * 0.5f); }
+    else            { ox = snap(C.chX[box] * f.screenW); oy = snap(C.chY[box] * f.screenH - (growUp ? oH : 0.0f)); }
+    if (preview && S > 0.0f) { g_pvSizeU[box][0] = oW / S; g_pvSizeU[box][1] = oH / S; }   // the config preview stacks the boxes : last frame's size
     const MouseState* m = f.mouse;
     if (editing) {
         // the CORNER GRIP first : it takes the shared drag lock, so box_edit cannot grab the same click
         // the CORNER GRIP sits on the MOVING edge (top-right when the box grows upward) : width + lines (or height)
-        const float g = 16.0f * S, gx = px + boxW - g, gy = growUp ? py : py + boxH - g;
-        const bool overGrip = m && m->x >= gx && m->x < px + boxW && m->y >= gy && m->y < gy + g;
+        const float g = 16.0f * S, gx = ox + oW - g, gy = growUp ? oy : oy + oH - g;
+        const bool overGrip = m && m->x >= gx && m->x < ox + oW && m->y >= gy && m->y < gy + g;
         if (m && m->clicked && overGrip && !st.resizing && edit_drag_grab(&st.grip)) st.resizing = true;
         if (st.resizing) {
             if (m && m->down) {
-                int w = (int)((m->x - px) / S + 0.5f); C.chW[box] = w < 200 ? 200 : (w > 1600 ? 1600 : w);
-                const float span = growUp ? (py + boxH - m->y) : (m->y - py);    // the new box height, from the fixed edge
+                int w = (int)((m->x - ox - 2.0f * bi) / S + 0.5f); C.chW[box] = w < 200 ? 200 : (w > 1600 ? 1600 : w);
+                const float span = (growUp ? (oy + oH - m->y) : (m->y - oy)) - 2.0f * bi;    // the new content height, from the fixed edge
                 if (C.chMaxLines[box] > 0) { int ln = (int)((span - bodyY0 - pad * 0.8f) / rowH + 0.5f); C.chMaxLines[box] = ln < 1 ? 1 : (ln > 40 ? 40 : ln); }
                 else { int hh = (int)(span / S + 0.5f); C.chH[box] = hh < 80 ? 80 : (hh > 1400 ? 1400 : hh); }
             } else { st.resizing = false; edit_drag_release(&st.grip); save_ui_config(); }
         }
         if (!st.resizing) {   // box_edit stores the TOP : turn it back into the fixed edge (and save once the drop is done)
-            float topY = py / (f.screenH > 0.0f ? f.screenH : 1.0f); const float y0 = C.chY[box];
-            box_edit(f, st.eb, EDITBOX_CHAT + box, px, py, boxW, boxH, C.chScale[box], C.chX[box], topY, 0);
-            C.chY[box] = growUp ? topY + boxH / f.screenH : topY;
+            float topY = oy / (f.screenH > 0.0f ? f.screenH : 1.0f); const float y0 = C.chY[box];
+            box_edit(f, st.eb, EDITBOX_CHAT + box, ox, oy, oW, oH, C.chScale[box], C.chX[box], topY, 0);
+            C.chY[box] = growUp ? topY + oH / f.screenH : topY;
             if (C.chY[box] != y0 && !st.eb.dragging) save_ui_config();
         }
-    } else if (ovS <= 0.0f) box_on_screen(f, px, py, boxW, boxH);
+    } else if (ovS <= 0.0f) box_on_screen(f, ox, oy, oW, oH);
 
-    st.rx = px; st.ry = py; st.rw = boxW; st.rh = boxH;                    // next frame's hover test
-    if (!preview && !editing && A > 0.05f) { g_liveRect[box][0] = px; g_liveRect[box][1] = py; g_liveRect[box][2] = boxW; g_liveRect[box][3] = boxH; g_liveMs[box] = nowMs; }
-    if (!preview && f.screenH > 0.0f) { C.chEdge[box][0] = py / f.screenH; C.chEdge[box][1] = (py + boxH) / f.screenH; }
+    st.rx = ox; st.ry = oy; st.rw = oW; st.rh = oH;                    // next frame's hover test
+    if (!preview && !editing && A > 0.05f) { g_liveRect[box][0] = ox; g_liveRect[box][1] = oy; g_liveRect[box][2] = oW; g_liveRect[box][3] = oH; g_liveMs[box] = nowMs; }
+    if (!preview && f.screenH > 0.0f) { C.chEdge[box][0] = oy / f.screenH; C.chEdge[box][1] = (oy + oH) / f.screenH; }
     // the rect the mouse callback tests (live boxes only) -- a box faded near nothing no longer eats clicks
     if (!preview && f.screenW > 0.0f && f.screenH > 0.0f && A > 0.5f) {
-        C.chHit[box][0] = px / f.screenW; C.chHit[box][1] = py / f.screenH;
-        C.chHit[box][2] = boxW / f.screenW; C.chHit[box][3] = boxH / f.screenH;
+        C.chHit[box][0] = ox / f.screenW; C.chHit[box][1] = oy / f.screenH;
+        C.chHit[box][2] = oW / f.screenW; C.chHit[box][3] = oH / f.screenH;
     }
     if (!preview && f.screenW > 0.0f && f.screenH > 0.0f) {
         if (box == 0 && !editing) {   // the game's input line docks under this box (native_ui.cpp) ; not while dragging
-            C.chDockRect[0] = px; C.chDockRect[1] = py; C.chDockRect[2] = boxW; C.chDockRect[3] = boxH;
+            C.chDockRect[0] = ox; C.chDockRect[1] = oy; C.chDockRect[2] = oW; C.chDockRect[3] = oH;
             C.chDockRect[4] = f.screenW; C.chDockRect[5] = f.screenH;
         }
     }
@@ -880,24 +882,25 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     // "une surbrillance du chat, quelque chose de subtil mais visible" ; a pointer said nothing).
     const float fA = A * st.foc, breath = 0.80f + 0.20f * sinf(f.t * 2.4f);
     if (fA > 0.0f) {
-        rrect_glow(dev, px, py, boxW, boxH, 6.0f * S, with_alpha(mix(accentLite, 0xFFFFFFFFu, 0.15f) & 0xC8FFFFFFu, fA * breath), 11.0f * S);
+        rrect_glow(dev, ox, oy, oW, oH, 6.0f * S, with_alpha(mix(accentLite, 0xFFFFFFFFu, 0.15f) & 0xC8FFFFFFu, fA * breath), 11.0f * S);
         dColorQuadState(dev);
     }
-    draw_themed_box(dev, f.skin, px, py, boxW, boxH, C.chBox[box], A, S);
+    draw_themed_box(dev, f.skin, ox, oy, oW, oH, C.chBox[box], A, S);
     if (fA > 0.0f) {
         if (C.chBox[box].on) {                     // the same frame again at full opacity, over the translucent one
             BoxStyle op = C.chBox[box]; op.alpha = 1.0f; op.alphaOwn = 1;
-            draw_themed_box(dev, f.skin, px, py, boxW, boxH, op, fA, S);
+            draw_themed_box(dev, f.skin, ox, oy, oW, oH, op, fA, S);
             dColorQuadState(dev);
         } else {                                   // no frame at all : a plain dark panel
-            rrect(dev, px, py, boxW, boxH, 6.0f * S, with_alpha(0xF0141A24u, fA), with_alpha(0xF00A0E14u, fA));
+            rrect(dev, ox, oy, oW, oH, 6.0f * S, with_alpha(0xF0141A24u, fA), with_alpha(0xF00A0E14u, fA));
         }
         // the WHOLE box lit : a wash of the frame's colour over its surface (lighter at the top, like light falling on it)
-        rrect(dev, px + 1.0f * S, py + 1.0f * S, boxW - 2.0f * S, boxH - 2.0f * S, 6.0f * S,
+        rrect(dev, ox + 1.0f * S, oy + 1.0f * S, oW - 2.0f * S, oH - 2.0f * S, 6.0f * S,
               with_alpha(accentLite & 0x48FFFFFFu, fA * breath), with_alpha(accent & 0x20FFFFFFu, fA * breath));
-        rrect_stroke(dev, px + 0.5f * S, py + 0.5f * S, boxW - 1.0f * S, boxH - 1.0f * S, 6.0f * S, with_alpha(mix(accentLite, 0xFFFFFFFFu, 0.3f), fA * breath), 1.5f * S);
+        rrect_stroke(dev, ox + 0.5f * S, oy + 0.5f * S, oW - 1.0f * S, oH - 1.0f * S, 6.0f * S, with_alpha(mix(accentLite, 0xFFFFFFFFu, 0.3f), fA * breath), 1.5f * S);
     }
 
+    const float px = ox + bi, py = oy + bi;                                // the content's origin, inside the frame border
     const bool canClick = interactive && !editing && !preview && m && m->focused;
     const char* me = (f.game && f.game->me.name[0]) ? f.game->me.name : "";
     { const unsigned h = name_hash(me); if (h != g_meName) { g_meName = h; memset(g_meSeq, 0, sizeof(g_meSeq)); } }

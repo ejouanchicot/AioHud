@@ -77,7 +77,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         }
         float sscl = C.ztScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
         const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
-        const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S, gap = 5.0f * S;   // no box chrome -> hug the content
+        const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S + box_inset(ui_config().ztBox), gap = 5.0f * S;   // no box chrome -> hug the content
         const u32 white = 0xFFEAF0FFu, strk = 0xFF000000u, orange = 0xFFEB9660u, dim = 0xFFB4B9C8u, green = 0xFF6BE06Bu, red = 0xFFF06060u;
         Font* fH = zt_font(f, ZT_HEADER);
         const float zH = zt_sz(ZT_HEADER, 15.0f) * S, oH = zt_ow(ZT_HEADER, 1.1f) * S, headH = zH + 6.0f * S;
@@ -151,7 +151,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         const bool hasRestr = (restriction[0] != 0) && (C.ztNyRestr != 0);
         float sscl = C.ztScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
         const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
-        const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S, gap = 5.0f * S;   // no box chrome -> hug the content
+        const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S + box_inset(ui_config().ztBox), gap = 5.0f * S;   // no box chrome -> hug the content
         const u32 white = 0xFFEAF0FFu, strk = 0xFF000000u, orange = 0xFFEB9660u;
         const u32 yellow = 0xFFFFFA78u, green = 0xFF6BE06Bu, red = 0xFFF06060u, orst = 0xFFFFA500u;
         Font* fH = zt_font(f, ZT_HEADER);
@@ -246,7 +246,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         const bool showJoke = haveRes && (C.ztSheolJoke != 0) && (rd.jokeVuln >= 0);
         float sscl = C.ztScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
         const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
-        const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S, gap = 5.0f * S;   // no box chrome -> hug the content
+        const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S + box_inset(ui_config().ztBox), gap = 5.0f * S;   // no box chrome -> hug the content
         const u32 white = 0xFFEAF0FFu, strk = 0xFF000000u, orange = 0xFFEB9660u, green = 0xFF6BE06Bu, red = 0xFFF06060u;
         Font* fH = zt_font(f, ZT_HEADER);
         const float zH = zt_sz(ZT_HEADER, 15.0f) * S, oH = zt_ow(ZT_HEADER, 1.1f) * S, headH = zH + 6.0f * S;
@@ -387,7 +387,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         if (!area[0]) { const char* a = "Limbus"; int k = 0; for (; a[k] && k < 15; ++k) area[k] = a[k]; area[k] = 0; }   // name not seen yet
         float sscl = C.ztScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
         const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
-        const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S, gap = 5.0f * S;   // no box chrome -> hug the content
+        const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S + box_inset(ui_config().ztBox), gap = 5.0f * S;   // no box chrome -> hug the content
         const u32 white = 0xFFEAF0FFu, strk = 0xFF000000u, orange = 0xFFEB9660u, dim = 0xFFB4B9C8u;
         Font* fH = zt_font(f, ZT_HEADER); Font* fB = zt_font(f, ZT_BODY);
         const float zH = zt_sz(ZT_HEADER, 15.0f) * S, zB = zt_sz(ZT_BODY, 12.0f) * S;
@@ -560,7 +560,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         }
         float sscl = C.ztScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
         const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
-        const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S, gap = 5.0f * S;
+        const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S + box_inset(ui_config().ztBox), gap = 5.0f * S;
         const u32 white = 0xFFEAF0FFu, strk = 0xFF000000u, orange = 0xFFEB9660u, green = 0xFF6BE06Bu, dim = 0xFFB4B9C8u;
         Font* fH = zt_font(f, ZT_HEADER); Font* fG = zt_font(f, ZT_SO_GAL); Font* fB = zt_font(f, ZT_SO_BOSS); Font* fL = zt_font(f, ZT_SO_LINE);
         const float zH = zt_sz(ZT_HEADER, 15.0f) * S, zG = zt_sz(ZT_SO_GAL, 12.0f) * S, zB = zt_sz(ZT_SO_BOSS, 13.0f) * S, zL = zt_sz(ZT_SO_LINE, 11.0f) * S;
@@ -819,7 +819,7 @@ void zonetracker_draw(const Frame& f, bool preview, float ovX, float ovY, float 
 
     float sscl = C.ztScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
     const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
-    const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S, gap = 6.0f * S;   // no box chrome -> hug the content
+    const float pad = (ui_config().ztBox.on ? 8.0f : 0.0f) * S + box_inset(ui_config().ztBox), gap = 6.0f * S;   // no box chrome -> hug the content
     const u32 white = 0xFFEAF0FFu, strk = 0xFF000000u, orange = 0xFFEB9660u;
     Font* fH = zt_font(f, ZT_HEADER);
     const float zH = zt_sz(ZT_HEADER, 15.0f) * S, oH = zt_ow(ZT_HEADER, 1.1f) * S, headH = zH + 6.0f * S;

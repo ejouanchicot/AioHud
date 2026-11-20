@@ -233,7 +233,7 @@ after a logout.
   AioHUD draws ONE searchable list of every row (all 99 / 97 values are in the rows array) in place of the stat panels
   (the client hides Profile / stats then) ; typing while it has the focus filters it (aio::currencies_key, the plugin's
   key slot ; the numpad and arrows stay the game's).
-  Alter Ego (`fe_main`, faith data from incoming 0x08E) is mapped in the notes, not redrawn yet.
+  Alter Ego (`fe_main`, faith data from incoming 0x08E) : redrawn, see Job Points / Alter Ego / Merit Points below.
 - **Status -> Unity** (docs/notes/status-panels-b / unity-info / unity-lists-search-re-2026-11-18.md ; user-confirmed in
   game 2026-11-18) :
   - `ut_menu` (Unity Info / Ranking Info / Unity Lists, labels are images) opens OVER statcom2 : a main-menu submenu
@@ -252,8 +252,8 @@ after a logout.
     empty-list text ; cursor row = window +0x4C - 1 + top ; codes 0x16 / 0x17 scroll one row. scresult records : type
     at +0, the header (type 1, " [Searching]" -> " [N]") first, players (type 0) with their entry at +4 (name +4, jobs
     +0x20 / +0x21, levels +0x22 / +0x23, ML +0x24, zone +0x28, flags +0x30 : 0x4000 anonymous). The search runs on the
-    search server (no map packet) : driven only through the client's own validate. The main menu's Search reuses these
-    windows : not redrawn yet (ours only under ut_menu).
+    search server (no map packet) : driven only through the client's own validate. The main menu's Search, Party and
+    Linkshell reuse these windows (see them below) : scresult / levelsyn / link12 are AioHUD's in every one.
 - **Status -> Job Points / Alter Ego / Merit Points** (docs/notes/job-points-, celestite-, merit-cat-re-2026-11-18.md ;
   user-confirmed in game 2026-11-18). Every list here is the client's multi-column TEXT LIST (see Unity Lists) and is
   redrawn from its own row CELLS (type / value / colour) -- the numbers and the greyed / maxed colours are the client's.
@@ -358,6 +358,69 @@ after a logout.
     FsTextInput as the chat line, so Tab opens `fep`. No buttons : Escape SAVES and closes (0x0E0 when changed).
   - List widths never follow the page : items use a fixed reference name (longer names cut with "..."), the others keep
     their widest width while open (keep_width).
+- **The main menu's Linkshell** (docs/notes/linkshell-re-2026-11-19.md, static ; redrawn 2026-11-19) :
+  - Entry 9 opens `link5` = a TEXT LIST of every linkshell ITEM carried (inventory / satchel / sack / case ; NOT an LS1 /
+    LS2 chooser), with the header `link6` above it. Record (row +0x48) = 0x17 B : [0] index, [1] container, [2] kind
+    (0 unopened, 1 shell, 2 sack, 3 pearl, 4 broken), [3..] name. Rows of an equipped item are drawn green.
+  - The submenus are simple entry menus in MAIN_SUB_W (image labels, named from their help texts) : link2 / link3 / link4
+    (an equipped Linkshell / Pearlsack / Linkpearl), link13 (equip as LS1 / LS2 / dispose -- its entry order is still
+    a live check), link1 (an unopened shell), link7..10 (a member's actions, by own rank x the member's rank).
+  - The members = `link12`, a scresult-class TEXT LIST (search type 3, the same 0x4C-B records) : AioHUD's Search list
+    in context 4. Its LS slot = handler +0x894 ; a member's rank = `rec+0x3C+i` (1 Linkshell, 2 Pearlsack, 3 Linkpearl)
+    for the i whose `u32 rec+0x40+i*4` is that shell's id ; race = low nibble of entry+0x1D (entry = rec+4).
+  - Equipped LS n (1 / 2) : index `P+idx+n`, container `P+bag+n`, item `P+items+(container*0x51+index)*0x2C`, extdata
+    item+0x10 : +0 the LS id, +6 / +7 colour nibbles R G / B (drawn `n*0xD+0x38`), +8 own rank, +9 the name (6-bit packed,
+    1..26 a-z, 27..52 A-Z, 0x3E space, anything else ends it). idx / bag / items (0x9808 / 0x980F / 0x9868 in 2026-11)
+    are read from the client's own reader (LS_SLOT AOB, ls_res : +0x18 / +0x2B / +0x41 = +0x49, +0x02 &P ; retried
+    every 5 s, logged) -- never hard-coded.
+  - Not redrawn : `link11` (naming + colour), `lscswin`, `comyn` (the confirms), the LS message (`comment` mode 3 ; the
+    server's message is incoming 0x0CC, printed to the chat and stored nowhere).
+- **The main menu's Region Info** (docs/notes/region-info-re-2026-11-19.md, static ; redrawn 2026-11-19, the values
+  compared with the client's panels on screen) :
+  - Entry 11 opens `region` (1 Conquest, 2 Besieged, 3 Campaign, 4 Colonization ; mode = entry - 1, a main-menu
+    submenu). Validate -> `cnqframe`, the FULL-SCREEN MAP (stays the client's) ; handler +0x16C the hovered marker,
+    +0x170 the player's region, +0x1C / +0x1E the map cursor.
+  - Its panels (all custom-drawn, no entries) are BORN parked while the map is up (cnqframe open, or born within the
+    second before -- one opened anywhere else stays the client's) and redrawn : the points `conq3pts` / `imperial` /
+    `allied` / `colopoin`, the overview `conq6sta` / `beseige1` / `campresu`, a region's detail `conquer1` /
+    `beseige2` (stronghold = handler +0x3C) / `camparea` / `colorank`. Still the client's : `campsan`, `coloresu`.
+  - Data : AioHUD keeps incoming 0x05E (conquest / Besieged, 0xB0 B from pkt+4) and 0x071 type 2 (campaign : head +
+    26 area records of 12 B, sent in two halves) / type 3 (colonization). Before any packet this session, the client's
+    own copies, from three AOBs (region_resolve, 5 tries, logged) : G (0x05E copy) + its valid byte ; the campaign
+    block's pointer (zeroed at each request, set once the second half is copied : non-null = valid) ; colonization's
+    points (0 = not yet).
+  - Inferred, not confirmed : region owner 0xFF drawn as "Jeuno", the campaign head's four 5-bit counts, the labels
+    "Fortifications / Resources", the alliance icon read per nation bit.
+- **The top bar, the macro bar, the connection box** (docs/notes/top-bar- / macro-bar- / netstat- / ping-re-2026-11-20.md ;
+  live-confirmed 2026-11-20) :
+  - `titlewin` + `helpwind` (NU_HELP) : each a handler (TB_FADE gives both globals and their help-line offsets +0xA4 /
+    +0x20) ; the help line holds 4 text slots at +0x74 + i*0xCB (0 base, 1 the hovered menu entry, 2 the open screen's
+    text, 3 a server tip from 0x075), +0x70 the shown one, +0x48 non-null when something shows (+0x50, the width, stays
+    stale on clear), +0x64 busy bits (8 Search, 2 Region Info : a spinner), +0x3A1 an over-wide text ("  " appended, it
+    scrolls). AioHUD draws one bar across the very top ; Abilities' description is only there (as in the game).
+  - The macro bar (NU_MACRO) : `mcr1pall` / `mcr2pall` (or `mcr1long` / `mcr2long`, MGR+0xB5 == 0), placed by code
+    (move-to, hooked). Data M = *(slot) : the CURRENT set's 20 macros at M+4+k*0x17C (name +0x172, 6 lines +4+i*0x3D),
+    book M+0x1DC0, set M+0x1DB8 / 2, titles M+0x1DC6+book*16 ; controller C : +0x0C open (1 Ctrl, 2 Alt), +0x0E / +0x0F
+    the slot last run ; the bar's hand = window +0x4C (1-based). A quick Ctrl+n tap runs without opening the bar. The
+    client's header text is refreshed only at open : build it from M. AioHUD draws the cells only, under its top bar.
+  - `netstat` (NU_NET) : P+0x4638 = received / sent bytes per s, the quality score 0..100 (+12 / -6 every 3 s, -6 when
+    the server is silent >= 10 s ; bands 30 / 60) ; handler +0x1C the POL mailbox count, +0x2C GM notices. `polwindo`
+    no longer exists in the client.
+  - The PING (the client computes none) : P u16 +6 our NEXT seq, +0xA the server's ack, u8 +0xC state (3 in game), u32
+    +0x41A0 the last send's time, +0x41A4 the last receive's ; a receive with ack == seq - 1 -> RTT = rx - tx (one sample
+    per 400 ms send ; ~300 ms EU -> JP, matching an independent stopwatch).
+- **The player trade** (NU_TRADE ; docs/notes/trade-re-2026-11-20.md ; live-confirmed 2026-11-20, a trade completed) :
+  - `trade` (your side) handler T : +0x7C partner name, +0xC0 / +0xC4 own / partner state (3 trading, 4 OK pressed) ;
+    entries 1..8 slots, 9 OK, 10 Cancel, 11 the gil. P (TR_OWN / TR_PEER / TR_STATE / TR_NAME, self-healed) : own offer
+    P+0x194C0 + s*8 (u32 count, u16 id -- 0xFFFF the gil in slot 0 -- u8 index), partner offer P+0x19308 + s*0x2C, state
+    P+0x19510 (7 ended ; +4 the last 0x022 type, 9 = completed), own name P+0x3C454 (MOVED between builds).
+  - `gift` (the partner's side) holds no data ; `itemctrl` +0x22 / +0x23 max / value (s8) ; `moneyctr` +0x20 step,
+    +0x24 max, +0x28 value (AioHUD writes the TYPED amount there, clamped, then sends the client's validate) ; `money`
+    draws its digits where it opened -> BORN parked while a trade is up (or `trade` was born within the second).
+  - Menu events : **1 down, 2 up, 3 RIGHT, 4 LEFT** (the static reading had 3 / 4 swapped), 5 validate, 6 cancel, 8 switch
+    window, 9 the cursor was set. AioHUD hooks the event function (prologue 51 55 56 8B F1 57, 6 bytes) and replaces the
+    4 directions on `trade` only -- lines gil / 1-4 / 5-8 / Cancel-OK, no wrap, never into `gift` ; keyboard AND game pad
+    (they all come through it). Unhooked at every unload.
 - **Reload with a window parked** : move_open no longer parks an open window that is already parked (nor unparks one
   already on screen) -- a reload with Status open parked the stat panels by name, then the first apply parked them a
   second time (the box read 3000 too low, on the chat).
@@ -413,11 +476,13 @@ What Enter on a target opens. ONE menu for every target ; AioHUD mirrors it (Gam
   Black / Songs / Ninjutsu / Summoning / Blue / Geomancy ; abiselec Job abilities / Weapon skills / Ranged attack /
   Pet commands / Mount. No arrow on their rows (each opens its LIST). Placement, as the client : `magselec` BESIDE
   playermo at the same height, `abiselec` IN PLACE of it (same left, bottom anchored, its own height).
-  `chatctrl` (Chat) has no help texts : not mirrored until its rows are named from a screenshot.
+  `chatctrl` (Chat) has no help texts : its rows were named from a screenshot (Say / Tell / Party / Linkshell /
+  Linkshell 2 / Unity / Shout) and it is mirrored, with the extras below.
 - **Chat's extras** (its draw FUN_0546E290 ; found by signature, globals read from the code's operands) : Tell =
   handler+0x14 (-1 the target, -2 the last tell received = tellObj+0x10E, n = the history, tellObj+0x8C + n*0x10,
   count +0x88 ; tellObj from FUN_0546E610's operand) ; Linkshell 1/2 = the item worn per the inventory's
-  [+0x9808+n] index / [+0x980F+n] bag, record (bag*0x51+index)*0x2C + 0x9868 (513 shell / 514 pearl / 515 sack),
+  [+0x9808+n] index / [+0x980F+n] bag, record (bag*0x51+index)*0x2C + 0x9868 (513 Linkshell / 514 Pearlsack / 515
+  Linkpearl ; the three offsets are read from the LS_SLOT pattern, never hard-coded -- see the Linkshell section),
   colour nibbles at ext+6/7, name decoded from ext+9 by the client's FUN_0550A580 ; Unity = the id global & 0x1F,
   the leader's name = text table 0xC, 0x1A2 + id (FUN_054944F0, cdecl). Left / right on Tell cycles the name.
 - **Abilities swaps at once** (trace 2026-11-16 : abiselec readable the very frame playermo loses the focus) -- the
@@ -524,7 +589,11 @@ opened by FUN_054A0070 from the event script (FUN_053F25F0).
 Other event windows named by the registry : `eventtim` (0x058B9338, an event timer), `msgline` / `msglist`
 (0x059A4C70 / 74), `evitem` / `evitem01` (0x059A838C / 90, item pickers), `sortyn` (0x059A805C), `hnyesno`.
 
-## 11. The auto-translate picker (`fep`) -- static, NOT YET CONFIRMED LIVE, 2026-11-17 (base 0x05340000)
+## 11. The auto-translate picker (`fep`) -- static 2026-11-17 (base 0x05340000) ; the drawn rows confirmed live the same day
+
+Live (`//aio feplog`, a dev probe, 2026-11-17) : the rows handler +0x1C / +0x20 (item +4 text, +8 length) -- AioHUD redraws the picker
+from them (native_ui.h). Still static only : the input system's fields (IN+0x8C81 .. +0xEC30) and the open questions at
+the end of this section.
 
 What Tab in the input line opens (live : the focus goes `inline` -> `fep`, and the rescue pass brings it back from
 under the parked chat, so it is placed on the input line, section 6). "FEP" = the Japanese IME front-end : the same

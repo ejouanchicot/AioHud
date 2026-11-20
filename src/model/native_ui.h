@@ -22,13 +22,133 @@ enum NativeUiBits {
     NU_PARTY  = 1 << 0,   // partywin (+ targetwi, which the client anchors above it)
     NU_ALLY   = 1 << 1,   // raid1, raid2
     NU_CHAT   = 1 << 2,   // logwindo, logwin2 and the one-line message strips on them (NPC text lives there too)
-    NU_HELP   = 1 << 3,   // helpwind (description bar) + titlewin (current menu name)
+    NU_HELP   = 1 << 3,   // helpwind (description bar) + titlewin (current menu name) -- AioHUD draws its top bar (native_topbar)
     NU_COST   = 1 << 4,   // subwindo : the MP-cost / recast case above the party (AioHUD's Cost box replaces it)
     NU_NET    = 1 << 5,   // netstat (connection indicator) + polwindo (POL message icon), top-right corner
     NU_ACT    = 1 << 6,   // playermo : the target ACTION menu (Enter on a target) -- AioHUD draws its own (hud_actmenu)
     NU_NPC    = 1 << 7,   // rem4line / rem4li2 (NPC dialogue) + query (its answers) -- AioHUD draws them above its chat
     NU_MAIN   = 1 << 8,   // menuwind / socialme : the MAIN menu's two pages -- AioHUD draws its own (hud_actmenu)
+    NU_MACRO  = 1 << 9,   // mcr1pall / mcr2pall (+ their long forms) : the Ctrl / Alt macro bar -- AioHUD draws its own
+    NU_TRADE  = 1 << 10,  // trade (your side) + gift (the partner's) : the player-to-player trade -- AioHUD draws its own
+                          // ... and `handover` (trading to an NPC : the same panel, your column only)
+    NU_DIALOG = 1 << 11,  // the Yes / No confirms (comyn, merityn, resyn*, shopbuy, shopsell) -- AioHUD draws its own
+    NU_BUFF   = 1 << 12,  // buff : your status icons under the top bar -- AioHUD draws its own (the party's icon set)
 };
+static const int NU_ALL = 0x1FFF;   // every NativeUiBits bit (the config line's mask, the change detector)
+
+// The YES / NO CONFIRMS (NU_DIALOG ; docs/notes/dialogs-loot-inspect-re-2026-11-20.md s.1) : ONE client class backs every
+// generic confirm -- the question (+0x1C), the title (+0x34, also pushed to the top bar), 2 entries (1 Yes, 2 No ; the
+// client puts the cursor on No unless the asker keeps it), whether Escape may answer No (+0x39).
+struct NativeDialog {
+    bool open, focused;
+    char name[9];
+    char text[400];        // the question, decoded (colour / control codes dropped ; "\n" kept)
+    char title[64];
+    int  cursor;           // 1 Yes, 2 No
+    bool cancelOk, hold;   // Escape answers No ; a "hold to confirm" answer (the client's gauge)
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeDialog& native_dialog();
+bool native_dialog_hover(int entry);   // 1 Yes / 2 No : the client's cursor there
+bool native_dialog_pick(int entry);    // ... and validated (the asker's callback answers)
+
+// The PLAYER TRADE (NU_TRADE ; docs/notes/trade-re-2026-11-20.md, live 2026-11-20 : both offers, names, cursor, states).
+// Slot 0 = the gil (count), 1..8 the items. States : 0 none, 1 asked, 3 trading, 4 OK pressed (the name turns orange),
+// 5 cancelled ; any item change by either side puts both back to 3.
+struct NativeTradeSlot { unsigned short id; unsigned count; };
+struct NativeTrade {
+    bool open, focused;          // `trade` is up / the player drives it (not the inventory picker or a quantity box)
+    int  cursor;                 // 1..8 a slot, 9 OK, 10 Cancel, 11 the gil ; 0 none
+    int  own, peer;              // the two sides' states (4 = OK pressed)
+    char me[17], partner[33];
+    NativeTradeSlot mine[9], theirs[9];
+    short rx0, ry0, rx1, ry1; int uiW, uiH;   // `trade`'s rect (parked : where the client put it)
+    bool giftUp; short gx0, gy0, gx1, gy1;    // `gift` (the partner's side) : its rect -- the client stacks it under `trade`
+    bool giftFocused; int giftCursor;         // the player browses the partner's side (its item card) : 1..8, 0 none
+    // the client's boxes it opens, parked while the trade is AioHUD's : the QUANTITY (itemctrl : value / max) and the GIL
+    // (moneyctr : value, max, the digit being edited 1 / 10 / 100 ...)
+    bool qtyUp; int qtyVal, qtyMax;
+    bool gilUp; unsigned gilVal, gilMax, gilDigit;
+    // where the client puts them (UI units, parked : where they would be) -- AioHUD draws its own there : itemctrl (the
+    // quantity, its item's card beside it), moneyctr (the gil) and `money` (Current Gil, beside the gil box)
+    short qx0, qy0, qx1, qy1, mx0, my0, mx1, my1, wx0, wy0, wx1, wy1;
+    bool moneyUp; unsigned myGil; bool myGilOk;
+    bool npc; int npcIndex;      // `handover` : trading to an NPC (your side only ; the NPC's entity index)
+};
+const NativeTrade& native_trade();
+// The trade's end, read every frame (even with the windows gone) : the P state (7 = ended) and the last 0x022 type
+// (9 = completed) -- AioHUD's summary of what was given / received
+struct NativeTradeEnd { int state, lastType; };
+const NativeTradeEnd& native_trade_end();
+// The trade's boxes, driven the client's way (trade-re s.7) : box 0 = the quantity (itemctrl : 1 -, 2 +, 3 = 1, 4 = max,
+// 5 validate), box 1 = the gil (moneyctr : 1 -, 2 +, 3 / 4 the digit, 5 validate) ; false when that box is not up.
+bool native_trade_box_event(int box, int ev);
+// The gil typed by the player (the user 2026-11-20 : "gil au clavier oui") : written into moneyctr's value (+0x28),
+// clamped to its max (+0x24) -- the client's own Enter / validate then sends it. False when the gil box is not up.
+bool native_trade_set_gil(unsigned v);
+// The partner's side took the focus (the client's "down" from your bottom row, only there to show its item cards) :
+// sent back to yours with the client's own event 8 (the user 2026-11-20 : "on veut etre bloque dans ce cadre")
+bool native_trade_keep_own();
+// Drive it the client's way : the cursor onto an entry (1..11) / validate it (a slot : remove its item / pick one ;
+// 9 OK ; 10 Cancel ; 11 the gil box). False when `trade` is not up and focused.
+bool native_trade_hover(int entry);
+bool native_trade_pick(int entry);
+
+// The TOP BAR (NU_HELP ; docs/notes/top-bar-re-2026-11-20.md, live 2026-11-20) : `titlewin` (the menu name, left) and
+// `helpwind` (the help line). Each is a handler whose help line holds 4 text slots (0 base, 1 the hovered menu entry, 2
+// the open screen's text, 3 a server tip) ; the client shows the highest non-empty one, or a spinner while `busy`
+// (waiting for the server : Search, Region Info). Plain text (the client's single-byte / SJIS ; no colour codes).
+struct NativeTopLine {
+    bool up;              // its window is open (in game : always, unless the client tore the UI down)
+    bool busy;            // a request is pending : the client draws its spinner, not the text
+    char text[0xCC];      // what the client shows ("" = nothing) ; an over-wide text's two trailing spaces trimmed
+};
+struct NativeTopBar { bool ok; NativeTopLine title, help; };   // ok : both read this frame
+const NativeTopBar& native_topbar();
+
+// The MACRO BAR (NU_MACRO ; docs/notes/macro-bar-re-2026-11-20.md, live 2026-11-20). The client opens it while Ctrl (1) or
+// Alt (2) is held (or toggled by a pad button). Its data object holds the CURRENT set only : 20 macros (0..9 Ctrl,
+// 10..19 Alt), the book and set, the 40 book titles.
+struct NativeMacro {
+    bool ok;              // the data reads (else : nothing to draw)
+    int  open;            // 0 none, 1 the Ctrl bar, 2 the Alt bar
+    int  hand;            // the bar's hand (mouse / pad) 1..10, 0 none
+    int  lastRun[2];      // the slot last run from the Ctrl / Alt bar, 0-based (-1 none)
+    int  book, set;       // 0-based (the client shows "#set+1")
+    char bookTitle[17];
+    char name[20][9];
+    bool longBar;         // the game's long layout (Config) : 862 wide
+    short rx0, ry0, rx1, ry1; int uiW, uiH;   // the open bar's rect, UI units (parked : where the client put it)
+};
+const NativeMacro& native_macro();
+
+// The CONNECTION box `netstat` (NU_NET ; docs/notes/netstat-re-2026-11-20.md, static 2026-11-20). The client's network
+// meter : a quality score 0..100 (every 3 s : -6 when the server has been silent >= 10 s, else +12) drawn as a signal
+// (0 none, < 30, < 60, >= 60), the bytes / s received and sent ; and the PlayOnline mailbox / GM notice counts.
+struct NativeNet {
+    bool ok;
+    int  score;           // 0..100
+    unsigned recvBps, sentBps;
+    unsigned gapMs;       // ms between the last two server packets
+    int  mail, gm;        // POL messages waiting, GM notices
+    int  pingMs;          // the round-trip, ms (the last ~2 s averaged) ; -1 not measured yet (docs/notes/ping-re-2026-11-20.md)
+};
+const NativeNet& native_net();
+
+// The client's BUFF icons (`buff`, NU_BUFF ; WINLIST 2026-11-20) : a HUD window under the top bar, its record at
+// 142,48 (units) -> 382,52 : 240 wide, 4 high -- the icons are drawn past its rect. Read for its place only : the
+// icons themselves are the player's buffs AioHUD already has (GameState::buffs). Un-parked rect, UI units.
+// THE CURSOR (X / numpad + : the client's buff-cancel cursor ; BUFCUR live 2026-11-20, 3 buffs, right x3) : while
+// `buff` holds the focus, handler+0x30 = the cursor's index in the GAME's order (0..n-1, it wraps), +0x34 the previous
+// one, +0x40 the count. Validate (event 5) on it = the client's own cancel (it refuses what cannot be cancelled).
+struct NativeBuffWin { bool open; short rx0, ry0, rx1, ry1; short uiW, uiH; bool focused; int cursor, count; };
+const NativeBuffWin& native_buffwin();
+bool native_buff_hover(int idx);   // the client's cursor to that GAME index (the mouse over an icon)
+bool native_buff_pick(int idx);    // ... and validate : the client cancels it if it can
+// AioHUD's ORDER (the party's sort) : order[i] = the GAME index of the icon drawn i-th. Set by the UI each frame it draws ;
+// the left / right the client receives for `buff` then walk THIS order (BUFMAP 2026-11-20 : the game's own order is not
+// the drawn one -> "si je fais droite ca va a gauche").
+void native_buff_set_order(const int* order, int n);
 
 // The NPC windows (NU_NPC ; docs/game-data/native-windows.md section 10, live 2026-11-17) read once a frame :
 // the event DIALOGUE `rem4line` (log 1) / `rem4li2` (log 2) and the ANSWERS `query`. Their text is GLYPHS (u16 per
@@ -258,10 +378,13 @@ struct NativeSearchRow {
     unsigned char mjob, sjob, mlvl, slvl, ml;
     bool hasJob, mlShown;
     unsigned short zone;
+    unsigned char lsRank;        // the Linkshell member list : 1 holder, 2 sack, 3 pearl (0 not read)
+    unsigned char race;          // entry +0x1D (4 bits ; the client's race sprite) -- mapping checked by the NATIVEUI link12 log
     unsigned flags;              // 0x4000 anonymous, bit 0 mentor, 8 / 0x2000 the name recoloured (meanings mostly inferred)
 };
 struct NativeSearch {
-    int  ctx;                     // 0 Unity Lists (ut_menu), 1 the Party's (scresult : Find Member, Member List, View Request), 2 Level Sync (levelsyn), 3 the main menu's Search
+    int  ctx;                     // 0 Unity Lists (ut_menu), 1 the Party's (scresult : Find Member, Member List, View Request), 2 Level Sync (levelsyn), 3 the main menu's Search, 4 a Linkshell's members (link12)
+    char lsName[24]; unsigned lsRgb;   // ctx 4 : the linkshell listed, its colour
     bool open, focused, counted;  // counted : the header says " [N]" (the search is over)
     int  n, top, vis, cursor;     // rows (the header included), the client's page, its cursor row (-1 none)
     int  total;                   // the server's total (the header's N)
@@ -419,6 +542,20 @@ struct NativeComment {
     short rx0, ry0, rx1, ry1; int uiW, uiH;
 };
 const NativeComment& native_comment();
+// The main menu's LINKSHELL (docs/notes/linkshell-re-2026-11-19.md) : `link5` = a TEXT LIST of every linkshell ITEM carried
+// (row record = row+0x48 -> [0] bag index, [1] container, [2] kind 0 unopened / 1 shell / 2 sack / 3 pearl / 4 broken,
+// [3..] the LS name) ; the client's colour +0x0C (green equipped, grey refused). The item : P + 0x9868 + (container * 0x51
+// + index) * 0x2C (+0 id, extdata +0x10 : +0 LS id, +6 / +7 the colour nibbles R G / B, +8 rank). Equipped LS n (1, 2) :
+// index u8 P+0x9808+n, container u8 P+0x980F+n. Picking a row opens link2 (shell) / link3 (sack) / link4 (pearl) /
+// link13 (not equipped) / link1 (unopened) ; link12 = the members (scresult's records, search type 3).
+struct NativeLsRow { unsigned short itemId; unsigned char kind, slot; unsigned col, rgb; char lsName[24]; };
+struct NativeLinkshell {
+    bool open, focused;
+    int  n, top, vis, cursor;
+    NativeLsRow row[16];
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeLinkshell& native_linkshell();
 bool native_synth_grid_hover(int entry);   // tskill1 : 1..8 a slot, 9 Synthesize, 10 Cancel
 bool native_synth_grid_pick(int entry);
 // The client's item card's PAGE 2 (docs/notes/iteminfo-page2-re-2026-11-18.md) : `iteminfo` / `itemxinf` rebuild, every
@@ -517,5 +654,27 @@ int  native_ui_report(char out[][160], int maxOut);
 // `mode` (optional) = the line's CHANNEL as the client shows it (handler+0x2C : the one picked with Right, or the
 // one a typed /p /l ... selects) -- live 2026-11-15 : 2 say, 3 shout, 4 tell, 5 party, 6 linkshell, 11 unity, 12 linkshell 2.
 int  native_input_read(char* buf, int cap, int* mode = 0);
+
+// Region Info (2026-11-19) : the conquest 0x05E and the campaign / colonization 0x071 answers, kept as they arrive (the
+// client itself copies them only while its own request is pending). Capture stage : each one is also dumped to the log.
+void native_region_packet(int id, const unsigned char* b);
+// The map's state (cnqframe) + the data, as received (docs/notes/region-info-re-2026-11-19.md s.2b-2d ; values matched
+// against the client's panels 2026-11-19). `open` : the map is up ; `mode` : the panel the client shows (0 Conquest,
+// 1 Besieged, 2 Campaign, 3 Colonization ; -1 none yet). The *Ok flags : that answer has arrived this session.
+struct NativeRegion {
+    bool open; int mode; int uiW, uiH;
+    int curX, curY;                          // cnqframe handler +0x1C / +0x1E : the map cursor (the client moves its panels to the other half)
+    int hover, home;                         // cnqframe handler +0x16C the hovered record id (5..23 a region ; -1 none), +0x170 the player's region
+    bool conqOk; unsigned char conq[0xB4];   // 0x05E : +04 ranks, +05 alliance, +1A.. regions, +90 CP, +98 calculating, +9C Besieged present, +A0.. Besieged, +B0 imperial standing
+    bool campOk; unsigned char camp[0x30];   // 0x071 type 2, its header : +0C allied notes, +10 controlled-area counts (4 x 5 bits)
+    bool coloOk; unsigned char colo[0x40];   // 0x071 type 3 : +10 coalition ranks (6 nibbles), +38 bayld
+    bool campAreaOk[26]; unsigned char campArea[26][12];   // 0x071 type 2's area records (pkt+9 the first, 13 a half) : dw0 bit 0 battle, 1-3 owner, 4-13 / 14-23 fortifications / resources, dw2 0-9 / 10-19 their maximums ; bytes 4..7 the influence gauges (x0.4 %)
+    int stronghold;                          // Besieged : the stronghold the client's beseige2 shows (+0x3C : 0 Mamool Ja, 1 Halvung, 2 Arrapago ; -1 none)
+};
+const NativeRegion& native_region();
+// DEV (//aio movediag, aiohud_probes.cpp) : log the next n move-to calls on the windows AioHUD offsets (NUIDIAG lines :
+// caller, request, rect before / after) -- off otherwise ; 0 disarms
+void native_ui_movediag(int n);
+int  native_ui_winlist(int screenW, int screenH);   // every open window logged (WINLIST) -- the dev probe //aio winlist
 
 } // namespace aio

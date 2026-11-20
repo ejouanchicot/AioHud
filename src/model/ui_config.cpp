@@ -266,7 +266,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "grim=%d,%.3f,%.4f,%.4f,%d\n", c.grimShow, c.grimScale, c.grimX, c.grimY, c.grimArt);   // grimoire box
     save_text_styles(f, "grimText", c.grimText, GRIM_TE_COUNT);   // grimoire : per-element typography
     fprintf(f, "pet=%d,%.3f,%.4f,%.4f,%d\n", c.petShow, c.petScale, c.petX, c.petY, c.petTab);   // the Pet box : show, size, place, config tab
-    fprintf(f, "nativeui=%d,%d,%d\n", c.nuHide, c.nuMenuDx, c.nuMenuDy);   // Game UI : hidden client windows + menus offset
+    fprintf(f, "nativeui=%d,%d,%d,4\n", c.nuHide, c.nuMenuDx, c.nuMenuDy);   // ,4 : the macro-bar (1), trade (2), confirms (3), buff icons (4) migrations are done (parse_nui_line)   // Game UI : hidden client windows + menus offset
     for (int b = 0; b < 2; ++b) {   // Chat module : [0] chat, [1] battle -- box, chrome
         fprintf(f, "chat%d=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.2f,%d\n", b, c.chShow[b], c.chScale[b], c.chX[b], c.chY[b], c.chW[b], c.chLines[b], c.chStamp[b], c.chTab[b],
                 c.chBehave[b], c.chIdle[b], c.chFadeTo[b], c.chH[b], c.chFoldLines[b], c.chMaxLines[b], c.chFadeIdle[b], c.chGrow[b], c.chFit[b], c.chDensity[b], c.chHeadScale[b], c.chTabStyle[b]);
@@ -420,9 +420,18 @@ static bool parse_cursor_style_line(const char* line, UiConfig& c) {
 }
 static bool parse_nui_line(const char* line, UiConfig& c) {
     if (strncmp(line, "nativeui=", 9) != 0) return false;
-    int h = 0, dx = 0, dy = 0;
-    const int n = sscanf(line + 9, "%d,%d,%d", &h, &dx, &dy);
-    if (n >= 1) c.nuHide = h & 0x1FF;   // every NativeUiBits bit (0x3F dropped NU_ACT at each load, 2026-11-16 ; NU_NPC 0x80, NU_MAIN 0x100)
+    int h = 0, dx = 0, dy = 0, ver = 0;
+    const int n = sscanf(line + 9, "%d,%d,%d,%d", &h, &dx, &dy, &ver);
+    if (n >= 1) c.nuHide = h & 0x1FFF; // every NativeUiBits bit (0x3F dropped NU_ACT at each load, 2026-11-16 ; NU_NPC 0x80, NU_MAIN 0x100, NU_MACRO 0x200)
+    // a line written before the macro bar existed (no 4th field) : whoever already lets AioHUD draw the main menu gets
+    // its macro bar too (2026-11-20 -- it shipped unchecked and looked missing). Written back with ver 1 : asked once only
+    if (n >= 1 && n < 4 && (c.nuHide & 0x100)) c.nuHide |= 0x200;
+    // ver 2 (2026-11-20) : the player trade (NU_TRADE 0x400) -- on for whoever lets AioHUD draw the main menu
+    if (n >= 1 && (n < 4 || ver < 2) && (c.nuHide & 0x100)) c.nuHide |= 0x400;
+    // ver 3 (2026-11-20) : the Yes / No confirms (NU_DIALOG 0x800) -- the same rule
+    if (n >= 1 && (n < 4 || ver < 3) && (c.nuHide & 0x100)) c.nuHide |= 0x800;
+    // ver 4 (2026-11-20) : the buff icons (NU_BUFF 0x1000) -- the same rule
+    if (n >= 1 && (n < 4 || ver < 4) && (c.nuHide & 0x100)) c.nuHide |= 0x1000;
     if (n >= 2) c.nuMenuDx = dx < -2000 ? -2000 : (dx > 2000 ? 2000 : dx);
     if (n >= 3) c.nuMenuDy = dy < -2000 ? -2000 : (dy > 2000 ? 2000 : dy);
     return true;

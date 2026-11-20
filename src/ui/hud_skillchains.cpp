@@ -208,7 +208,7 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
 
     float sscl = C.scScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
     const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
-    const float pad = (ui_config().scBox.on ? 10.0f : 0.0f) * S, lineH = 20.0f * S, titleH = 24.0f * S;   // no box chrome -> hug the content
+    const float pad = (ui_config().scBox.on ? 10.0f : 0.0f) * S + box_inset(ui_config().scBox), lineH = 20.0f * S, titleH = 24.0f * S;   // no box chrome -> hug the content
     const u32 dim = 0xFFC8D2E6u, white = 0xFFEAF0FFu, gold = 0xFFE8C55Au, strk = 0xFF000000u;
     // per-element fonts / sizes / outlines
     Font* fTitle = sc_font(f, SC_TITLE); Font* fTimer = sc_font(f, SC_TIMER); Font* fStep = sc_font(f, SC_STEP);

@@ -101,7 +101,7 @@ void hatelist_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
     float sscl = C.hlScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
     const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
     // mockup-faithful metrics (hate.css) : bar 126x16, fonts 10px, gaps 5px, rows 3px apart, gold caps 5px.
-    const float pad = (ui_config().hlBox.on ? 5.0f : 0.0f) * S, gap = 5.0f * S;   // no box chrome -> hug the content (precise placement)
+    const float pad = (ui_config().hlBox.on ? 5.0f : 0.0f) * S + box_inset(ui_config().hlBox), gap = 5.0f * S;   // no box chrome -> hug the content (precise placement)
     const u32 white = 0xFFFFFFFFu, dim = 0xFFB4B9C8u, gold = 0xFFE8C55Au, red = 0xFFFF4646u, strk = 0xFF000000u;
     const bool shDist = C.hlDist != 0, shTgt = C.hlTgt != 0;
 

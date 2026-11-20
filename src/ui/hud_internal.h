@@ -57,7 +57,42 @@ bool chat_box_rect(int box, float& x, float& y, float& w, float& h);
 bool chat_anchor(float& ax, float& aw, float& top, float& bottom);
 int  chat_input_decode(const char* raw, int rn, char* t, unsigned* col, int cap, int* caret);   // hud_chat.cpp : the input text (7F codes) -> printable + colours + caret
 void chat_input_rect_set(float x, float y, float w, float h, float caretX);                      // hud_chat.cpp : anchor the auto-translate picker on another field
+
+// theme_kit.cpp + frame_bake.cpp : the //aio kittest theme kits -- DEV ONLY (local, untracked files). build.bat compiles
+// them and defines AIOHUD_THEMEKIT only when they are present ; every other build (CI, releases, package.bat) gets
+// these no-ops, so the tracked code never depends on them.
+#ifdef AIOHUD_THEMEKIT
+void theme_kit_test_draw(const Frame& f);
+void theme_kit_forget();      // on a device change
+void theme_kit_dispose();     // at shutdown
+bool theme_kit_bakes_slots(); // the iron frame is on -> it draws the registered slots (menu_cut) itself
+#else
+inline void theme_kit_test_draw(const Frame&) {}
+inline void theme_kit_forget() {}
+inline void theme_kit_dispose() {}
+inline bool theme_kit_bakes_slots() { return false; }
+#endif
+// hud_actmenu.cpp -> theme_kit.cpp (the procedural iron frame) : the GLUED GROUP the box drawn at (x, y, w, h) belongs to,
+// from LAST frame's placements. Rects relative to the group's top-left (its rest place) ; `self` = this box's own rect.
+struct MenuGroup {
+    int n, self; float r[16][4];              // the boxes
+    int np; float p[8][5];                    // slot plates (x y w h radius)
+    int nc; float c[64][5];                   // the slots cut in them (x y w h radius)
+    int po[8], co[64];                        // the box (index in r) each plate / slot belongs to
+    float W, H;                               // the group's size
+    float ox, oy;                             // its top-left on screen (the rest place)
+};
+bool menu_group_lookup(float x, float y, float w, float h, MenuGroup& g);
+void topbar_draw(const Frame& f);     // hud_actmenu.cpp : the client's top bar (menu name + help), AioHUD's style (NU_HELP)
+void buffbar_draw(const Frame& f);    // hud_actmenu.cpp : your buff icons under the top bar, the party's icon set (NU_BUFF)
+void dialog_draw(const Frame& f);     // hud_actmenu.cpp : the client's Yes / No confirms, AioHUD's style (NU_DIALOG)
+void trade_draw(const Frame& f);     // hud_actmenu.cpp : the player trade (trade + gift), AioHUD's style (NU_TRADE)
+void netbox_draw(const Frame& f);    // hud_actmenu.cpp : the connection box (netstat), top right beside the top bar (NU_NET)
+void macrobar_draw(const Frame& f);  // hud_actmenu.cpp : the Ctrl / Alt macro bar, when the client shows its own (NU_MACRO)
+void item_card_fold(const Frame& f);  // hud_actmenu.cpp : once a frame, after every screen : the item card that was shown folds away
 void comment_draw(const Frame& f);    // hud_actmenu.cpp : Search -> Edit your comment (the client's `comment`), mirrored (NU_MAIN)
+void region_draw(const Frame& f);     // hud_actmenu.cpp : the main menu's Region Info (over the client's map), mirrored (NU_MAIN)
+void linkshell_draw(const Frame& f);  // hud_actmenu.cpp : the main menu's Linkshell (link5, the items), mirrored (NU_MAIN)
 bool chat_input_rect(float& x, float& y, float& w, float& h, float& caretX, float& keptX);   // keptX : the caret as it was before the auto-translate picker opened   // hud_chat.cpp : AioHUD's input field (screen px), drawn < 200 ms ago
 void fep_draw(const Frame& f);   // hud_actmenu.cpp : the client's auto-translate picker (Tab), drawn on that field
 // a bw x bh block on it : above the group when it fits, else below ; inside the screen. False : no chat box shown.

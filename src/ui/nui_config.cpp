@@ -36,9 +36,7 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
         NUI_HIDE_ROW(CTRL_ID, tr("Alliance windows", "Fen\xC3\xAAtres d'alliance"), NU_ALLY)
         NUI_HIDE_ROW(CTRL_ID, tr("Chat log", "Journal du chat"), NU_CHAT)
         ROW_NOTE(tr("Turn AioHUD's Chat on first (module Chat) : NPC dialogue and system lines land there too.", "Active d'abord le Chat d'AioHUD (module Chat) : les dialogues PNJ et messages syst\xC3\xA8me y arrivent aussi."))
-        NUI_HIDE_ROW(CTRL_ID, tr("Help bar + menu name", "Barre d'aide + nom du menu"), NU_HELP)
         NUI_HIDE_ROW(CTRL_ID, tr("MP cost / recast case", "Case co\xC3\xBBt MP / recast"), NU_COST)
-        NUI_HIDE_ROW(CTRL_ID, tr("Connection + POL icons", "Ic\xC3\xB4nes connexion + POL"), NU_NET)
         ROW_NOTE(tr("A hidden window keeps working ; it is only parked off-screen.", "Une fen\xC3\xAAtre cach\xC3\xA9""e fonctionne toujours ; elle est juste hors de l'\xC3\xA9""cran."))
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
     }   // end Hide
@@ -57,6 +55,12 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
         NUI_HIDE_ROW(CTRL_ID, tr("Action menu", "Menu d'action"), NU_ACT)
         NUI_HIDE_ROW(CTRL_ID, tr("NPC dialogue + answers", "Dialogues PNJ + r\xC3\xA9ponses"), NU_NPC)
         NUI_HIDE_ROW(CTRL_ID, tr("Main menu", "Menu principal"), NU_MAIN)
+        NUI_HIDE_ROW(CTRL_ID, tr("Top bar (menu name + help)", "Barre du haut (nom du menu + aide)"), NU_HELP)   // was "hide" ; AioHUD draws it since 2026-11-20
+        NUI_HIDE_ROW(CTRL_ID, tr("Connection box (top right)", "Box connexion (en haut \xC3\xA0 droite)"), NU_NET)   // was "hide" ; AioHUD draws it since 2026-11-20
+        NUI_HIDE_ROW(CTRL_ID, tr("Macro bar (Ctrl / Alt)", "Barre de macros (Ctrl / Alt)"), NU_MACRO)
+        NUI_HIDE_ROW(CTRL_ID, tr("Trade (player / NPC)", "\xC3\x89""change (joueur / PNJ)"), NU_TRADE)
+        NUI_HIDE_ROW(CTRL_ID, tr("Yes / No confirms", "Confirmations Oui / Non"), NU_DIALOG)
+        NUI_HIDE_ROW(CTRL_ID, tr("Your buff icons (top)", "Tes ic\xC3\xB4nes de buff (en haut)"), NU_BUFF)
         #undef NUI_HIDE_ROW
         { ROW_BAND(46.0f)   // the menus' size : every dimension, the text included
             const float lo = 0.60f, hi = 1.60f; char sb[16]; sprintf(sb, "%d%%", (int)(c.muScale * 100.0f + 0.5f));

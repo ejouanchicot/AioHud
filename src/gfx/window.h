@@ -73,6 +73,17 @@ void window_materials_dispose();   // Release the material textures (device aliv
 // run to the bottom) -> the box reads as joined to whatever sits flush below it.
 // `drawBorder` false : paint ONLY the tiled background (skip the frame edges + corners) -> a borderless
 // box that keeps its skin background (the per-box "Borders off" toggle).
+// TEST hook (theme_kit.cpp, //aio kittest) : when set and it returns true, it drew the frame itself and the skin /
+// procedural frame is skipped. Null by default : nothing changes unless the dev test turns it on.
+typedef bool (*FrameOverrideFn)(u32 dev, float x, float y, float w, float h, u32 tint, bool openBottom);
+extern FrameOverrideFn g_frameOverride;
+// The active frame theme's BORDER (screen px) a box reserves on each side : a box adds it to its inner padding, so its rect
+// INCLUDES the painted frame -- placement, snapping, edit layout, on-screen clamping and hit zones then see the real area.
+// 0 with the normal frames (no theme kit) : every box is exactly as before.
+extern float g_frameInset;
+inline float frame_inset() { return g_frameInset; }
+extern int g_frameJoin;     // the sides of the frame being drawn glued to a neighbour box (bits 0-3 : 1 L 2 T 4 R 8 B ; per side sd 0-3 : bit 4+4sd its start end aligned with a neighbour, 5+4sd its end end, 6+4sd / 7+4sd this box protrudes past them there) : a theme kit merges them into one panel -- consumed + reset by the kit
+extern bool g_frameAccent;   // the frame being drawn is the PARTY box's (a theme kit gives it its signature corner) -- set by party.cpp around its frame
 void draw_window(u32 dev, const WindowSkin& s, float x, float y, float w, float h, u32 tint, float scale, bool openBottom = false, bool drawBorder = true);
 
 } // namespace aio

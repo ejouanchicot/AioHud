@@ -4,6 +4,7 @@
 #pragma once
 #include "gfx/d3d.h"
 #include "model/ui_config.h"    // BoxStyle (defined in model so ui_config can hold one per module)
+#include "gfx/window.h"         // frame_inset : the active frame theme's border
 
 namespace aio {
 struct WindowSkin;
@@ -12,6 +13,9 @@ struct WindowSkin;
 // reused for FFXI-family themes). `base` = an extra fade (1 = none). `S` = the box's UI scale (fallback corner).
 void draw_themed_box(u32 dev, const WindowSkin* partySkin, float x, float y, float w, float h,
                      const BoxStyle& bs, float base, float S);
+// The border (screen px, snapped) a box with this style reserves on EACH side for the active frame theme : 0 with the
+// normal frames or when the box chrome is off. Add it to the box-edge->content padding (never an inner padding).
+inline float box_inset(const BoxStyle& bs) { return bs.on ? frame_inset() : 0.0f; }
 // the box's EFFECTIVE chrome opacity : the party box's unless this box has its own (BoxStyle::alphaOwn)
 float box_alpha(const BoxStyle& bs);
 

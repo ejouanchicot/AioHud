@@ -87,7 +87,7 @@ void Hud::draw_absorb(const Frame& f, bool preview, float ovX, float ovY, float 
 
     float sscl = C.awScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
     const float S = (ovS > 0.0f) ? ovS : ((float)screenH_ / 1000.0f) * sscl;
-    const float pad = (C.awBox.on ? 7.0f : 0.0f) * S, gap = 8.0f * S;
+    const float pad = (C.awBox.on ? 7.0f : 0.0f) * S + box_inset(C.awBox), gap = 8.0f * S;   // + the frame theme's border
     const u32 strk = 0xFF000000u, white = 0xFFEAF0FFu, orange = 0xFFEB9660u;
     static const TextStyle TS{};
     Font* fo = te_font(f, TS);

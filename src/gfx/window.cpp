@@ -133,7 +133,12 @@ void WindowSkin::dispose() {
 
 // 9-slice : tiled bg centre + 4 edges (hframe top/bottom halves, vframe left/right halves, tiled
 // along their length) + 4 corners (the corner sheet's 4 quadrants). All MODULATEd by `tint`.
+FrameOverrideFn g_frameOverride = 0;
+bool g_frameAccent = false;
+int g_frameJoin = 0;
+float g_frameInset = 0.0f;
 void draw_window(u32 dev, const WindowSkin& s, float x, float y, float w, float h, u32 tint, float scale, bool openBottom, bool drawBorder) {
+    if (g_frameOverride && w > 0 && h > 0 && g_frameOverride(dev, x, y, w, h, tint, openBottom)) return;
     if (!s.ready() || w <= 0 || h <= 0) return;
     (void)scale;                                   // textures are drawn 1:1 (NATIVE px) and TILED -> no stretch/deformation, like the game
     const float bgT   = 128.0f;                    // bg native tile size
@@ -498,6 +503,7 @@ static void draw_box_family(u32 dev, int family, u32 H, float x, float y, float 
 
 // draw a PROCEDURAL box background for the GLOBAL theme index (family x hue past the texture themes).
 void draw_proc_window(u32 dev, int themeIdx, float x, float y, float w, float h, u32 tint, bool openBottom, bool drawBorder, float lum, u32 hueOverride) {
+    if (g_frameOverride && w > 0 && h > 0 && g_frameOverride(dev, x, y, w, h, tint, openBottom)) return;
     const int p = themeIdx - TEX_N;
     if (p < 0 || p >= PROC_N || w <= 0 || h <= 0) return;
     g_procA = (tint >> 24) & 0xFFu;   // tint alpha -> interior opacity (the frame/glow stay solid ; 255 = opaque)

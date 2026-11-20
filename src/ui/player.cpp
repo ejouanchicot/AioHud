@@ -181,7 +181,7 @@ void Player::preview_footprint(float& w, float& h, float& l, float& t, float& r,
     const bool showBuffs = c.plrBuffs && nbuff > 0;
     const int  nv = (c.plrHp ? 1 : 0) + (c.plrMp ? 1 : 0) + (c.plrTp ? 1 : 0);
     const float pad = snap(12.0f * S), innerW = snap(300.0f * S);
-    const float outerPad = c.plrBox ? pad : 0.0f;   // EDGE margin only -> 0 with no box chrome (bounds hug content ; box ON byte-identical ; bar width innerW unchanged)
+    const float outerPad = c.plrBox ? pad + frame_inset() : 0.0f;   // + the frame theme's border (0 = normal frames) ; EDGE margin only -> 0 with no box chrome (bounds hug content ; box ON byte-identical ; bar width innerW unchanged)
     const float emblemSz = c.plrEmblem ? snap(30.0f * S * clampf(c.plrEmblemSz, 0.5f, 2.0f)) : 0.0f;
     const float nameSz = c.plrName ? snap(plr_sz(PLR_NAME, 18.0f * S)) : 0.0f;
     const float lvlSz  = c.plrLvl ? snap(plr_sz(PLR_LVL, 12.0f * S)) : 0.0f;
@@ -360,7 +360,7 @@ void Player::draw(const Frame& f) {
 
     // ---- sizes (independent of the box POSITION) ----
     const float pad    = snap(12.0f * S);
-    const float outerPad = c.plrBox ? pad : 0.0f;   // EDGE margin only -> 0 with no box chrome (box ON byte-identical ; bar width innerW unchanged)
+    const float outerPad = c.plrBox ? pad + frame_inset() : 0.0f;   // + the frame theme's border (0 = normal frames) ; EDGE margin only -> 0 with no box chrome (box ON byte-identical ; bar width innerW unchanged)
     const float innerW = snap(300.0f * S);
     const float emblemSz = showEmblem ? snap(30.0f * S * clampf(c.plrEmblemSz, 0.5f, 2.0f)) : 0.0f;
     const float nameSz   = showName   ? snap(plr_sz(PLR_NAME, 18.0f * S)) : 0.0f;
@@ -859,7 +859,7 @@ void Player::draw(const Frame& f) {
         // reserve the hit-rect/preview use (24*S above/below, 80*S left/right) + a small pad. Drawn BEFORE the cells ;
         // draw_themed_box restores its own D3D state and the cells re-issue color_state() below.
         if (detachEq && c.plrEqBox.on) {
-            const float bpad = snap(8.0f * S);
+            const float bpad = snap(8.0f * S) + box_inset(c.plrEqBox);   // + the frame theme's border (0 = normal frames)
             float bcx = gx0, bcy = gy0, bcw = gridW, bch = gridW;   // content rect = the 4x4 grid
             if (showGil) switch (c.plrEqGilPlace) {
                 case 1:  { const float e = snap(24.0f * S); bcy -= e; bch += e; } break;   // gil above

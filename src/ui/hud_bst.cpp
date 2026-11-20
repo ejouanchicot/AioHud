@@ -209,7 +209,9 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
     //      sits against the side of that frame nearer to its screen edge : a frame in the lower half keeps its BOTTOM
     //      (the box grows upward), one in the upper half keeps its TOP. ----
     static const int MOVE_ROWS = 7;
-    const float pad = snap((C.petBox.on ? 8.0f : 2.0f) * S);
+    const float bi = box_inset(C.petBox);                       // the frame theme's border (0 = normal frames)
+    const float pad0 = snap((C.petBox.on ? 8.0f : 2.0f) * S);   // the inner air (also between the dial and the pet)
+    const float pad = pad0 + bi;                                // box edge -> content
     const float rowH = snap(15.0f * S), lineH = snap(16.0f * S), smallH = snap(14.0f * S), gap = snap(6.0f * S);
     // the Ready charges : three paws in a triangle when the icon is there (narrower), the ring dial otherwise
     // the style of //aio config -> BST (the player's ask, 2026-10-29) : paws, the ring, bars ; paws without their icon
@@ -266,7 +268,7 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
     const float frameH = heightFor(b.nmoves > MOVE_ROWS ? b.nmoves : MOVE_ROWS, jaFrameH > jaH ? jaFrameH : jaH);
     if (frameH <= 0.0f) return;
     const bool frame = editing;   // //aio edit drags the frame ; the config preview and play show the box itself
-    const float boxW = snap((stacked ? 230.0f : 270.0f) * S);
+    const float boxW = snap((stacked ? 230.0f : 270.0f) * S) + 2.0f * bi;
     const float totW = (stacked && topSide > boxW) ? topSide : boxW, totH = frame ? frameH : heightFor(b.nmoves, jaH);
     if (totH <= 0.0f) return;
     const float movH = (C.bstMoves && b.nmoves) ? rowH * (float)b.nmoves : 0.0f;   // the rows drawn below
@@ -359,7 +361,7 @@ void Hud::draw_bst(const Frame& f, bool preview, float ovX, float ovY, float ovS
         }
 
         // ---- the right column, centred on the dial : the pet (art beside name / HP / TP), the count ----
-        const float x0 = bx + pad + (dialD > 0.0f ? dialD + pad : 0.0f);
+        const float x0 = bx + pad + (dialD > 0.0f ? dialD + pad0 : 0.0f);
         float ry = snap(top + (topH - rightH) * 0.5f);
         if (b.hasPet) {
             if (art && showArt) pet_tex_quad(dev, art, x0, ry + (petBlock - artSz) * 0.5f, artSz, artSz, 0.0f, 1.0f, 0xFFFFFFFFu);

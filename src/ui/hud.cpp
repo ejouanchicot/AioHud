@@ -273,6 +273,7 @@ void Hud::render(u32 dev) {
         // otherwise, so they used to survive a device recreate and hand a dead device's texture to SetTexture.
         zonetracker_help_forget(); treasure_help_forget(); chat_icons_forget(); npc_card_forget();   // (the debuffs / timers Help samples borrow the shared atlas forgotten just above)
         box_skins_forget();        // per-box Custom->FFXI skins belong to the old device too
+        theme_kit_forget();        // the painted theme kits too
         pointer_atlas_forget();    // the cursor-style sheet (party_gauges.cpp) : forget, re-arm its retry
         corner_mask_forget();      // the baked corner-mask atlas belongs to the old device (and this re-arms its retry)
         for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->on_device_lost();
@@ -294,6 +295,10 @@ void Hud::render(u32 dev) {
             Party* p = static_cast<Party*>(widgets_[i]);
             const int b = p->tier(); if (b < 0 || b > 2) continue;
             float nw = 0.0f, nh = 0.0f; p->measure(nw, nh);
+            // the frame theme's border is NOT a size change here : Party::draw already grows the box up-left by it
+            // from a stored position kept without it (else a kit toggle shifts the box twice, and a reload with the
+            // kit off -- a new baseline -- leaves the shift behind as a margin)
+            nw -= 2.0f * frame_inset(); nh -= 2.0f * frame_inset();
             if (baseline || lastW_[b] < 0.0f) { lastW_[b] = nw; lastH_[b] = nh; continue; }   // adopt as baseline
             if (nw == lastW_[b] && nh == lastH_[b]) continue;
             if (ui_config().box[b].posSet && screenW_ > 0.0f && screenH_ > 0.0f) {
@@ -454,6 +459,9 @@ void Hud::render(u32 dev) {
             draw_pet(f);                            // Pet box (BST / GEO main : its content) -- placed via //aio edit
             chat_box_draw(f, 0, false, !config_.is_open(), 0.0f, 0.0f, 0.0f);   // Chat module : talk / NPC / system
             chat_box_draw(f, 1, false, !config_.is_open(), 0.0f, 0.0f, 0.0f);   // Chat module : the combat log
+            topbar_draw(f);                         // the top bar (menu name + help), in place of the client's (Game UI) -- under the menus
+            buffbar_draw(f);                        // your buff icons under it (Game UI -> NU_BUFF)
+            netbox_draw(f);                         // the connection box (netstat), top right, in place of the client's
             actmenu_draw(f);                        // the target action menu, in place of the client's (Game UI)
             mainmenu_draw(f);                       // the main menu, in place of the client's (Game UI)
             profile_draw(f);                        // Status -> Profile, in place of the client's (Game UI)
@@ -469,12 +477,18 @@ void Hud::render(u32 dev) {
             celestite_draw(f);                      // Alter Ego -> Change Celestite : the slots, the Celestite owned
             meritcat_draw(f);                       // Merit Points -> Categories : the categories, their merits
             equipment_draw(f);                      // the main menu's Equipment : the grid, a slot's items, the item card
+            linkshell_draw(f);                      // the main menu's Linkshell : the linkshell items
+            region_draw(f);                         // the main menu's Region Info : over the client's map
             comment_draw(f);                        // Search -> Edit your comment : the 3-line editor
             synth_draw(f);                          // the main menu's Synthesis : the grid, History (before items_draw : the materials sit beside the grid)
             items_draw(f);                          // the main menu's Items : the inventory list, the item card
             currencies_draw(f);                     // Status -> Currencies 1 / 2, in place of the client's
             npc_draw(f);                            // the NPC dialogue + answers, in place of the client's (Game UI)
             fep_draw(f);                            // the auto-translate picker (Tab), on AioHUD's input field
+            trade_draw(f);                          // the player trade (both sides), in place of the client's (Game UI)
+            dialog_draw(f);                         // a Yes / No confirm, in place of the client's (Game UI) -- over the screens
+            macrobar_draw(f);                       // the Ctrl / Alt macro bar, in place of the client's (Game UI)
+            item_card_fold(f);                      // AFTER every screen's card_draw : the item card shown a moment ago, folding away
             draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit
             // EmpyPop -- placed via //aio edit. SKIP the live draw while its own config section is being previewed :
             // unlike ZoneTracker (zone-gated) / Timers (buff-gated), EmpyPop draws whenever epShow is on, so without
@@ -486,6 +500,7 @@ void Hud::render(u32 dev) {
             // Skip the live draw while the Target config previews it (section 1 + Standalone) : it's redrawn in the stage.
             if (!(pvActive && config_.section() == 1 && ui_config().dbShow)) draw_debuffs(f);
             draw_timers(f);                         // Timers box (self buff timers, exact) -- placed via //aio edit
+            theme_kit_test_draw(f);                 // //aio kittest (dev) : the painted theme kit's trial box -- off by default
             draw_ws_popup(f);                       // arcade WS popup, over the HUD but under the config overlay
         }
         }   // end worldReady : boxes hidden until logged in
@@ -901,6 +916,7 @@ void Hud::dispose() {
     fonts_.dispose();
     skin_.dispose();
     box_skins_dispose();          // per-box Custom->FFXI skins (else they leak per //unload)
+    theme_kit_dispose();          // the painted theme kits (the 15 Bastok textures were left alive at an //unload)
     pointer_atlas_dispose();      // the cursor-style sheet : its one Release
     window_materials_dispose();   // Release the procedural box-theme material textures (else they leak per //unload)
     if (tpCoffer_) { release_texture(tpCoffer_); tpCoffer_ = 0; }   // treasure-pool coffer icon

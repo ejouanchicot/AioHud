@@ -462,6 +462,10 @@ void Minimap::draw(const Frame& f) {
         Wbox = mapD;
         boxH = mapD;
     }
+    // the clock box reserves the frame theme's border (0 = normal frames) : the box rect grows by it on each side, the
+    // layout below (Wbox / boxH = the CONTENT area) sits that far inside
+    const float bi = hasClock ? box_inset(c.mmBox) : 0.0f;
+    const float Wout = Wbox + 2.0f * bi, Hout = boxH + 2.0f * bi;
 
     // ---- position : user fraction wins over the layout default (px,py = BOX top-left) ----
     float px, py;
@@ -471,32 +475,33 @@ void Minimap::draw(const Frame& f) {
     // ---- EDIT MODE : drag the WHOLE box (header + map) ----
     int dch = 0, dcv = 0;
     if (c.editLayout &&
-        edit_box_drag(g_mmEdit, EDITBOX_MINIMAP, f, px, py, Wbox, boxH, ZPERM_HUB,
+        edit_box_drag(g_mmEdit, EDITBOX_MINIMAP, f, px, py, Wout, Hout, ZPERM_HUB,
                       ui_config().mmPosSet, ui_config().mmX, ui_config().mmY, dch, dcv, ui_config().mmScale))
-        edit_box_grid(dev, f, g_mmEdit, px, py, Wbox, boxH, dch != 0, dcv != 0);   // highlight the centre axis when snapped
+        edit_box_grid(dev, f, g_mmEdit, px, py, Wout, Hout, dch != 0, dcv != 0);   // highlight the centre axis when snapped
 
     // ---- Vana'diel clock box : the box background FOLLOWS the party/alliance box theme (like every other box),
     // with the clock header on top ; the map fills the region below. Drawn FIRST (behind the map). ----
     const float boxPy = py;
     // ---- header top-left (hx,hy) and MAP CENTRE (ccx,ccy) depend on the clock placement (mmClockPos) ----
+    const float ix = px + bi, iy = py + bi;                    // the content area's top-left (inside the frame border)
     const float r = mapD * 0.5f;
-    float hx = px, hy = py, ccx, ccy;
+    float hx = ix, hy = iy, ccx, ccy;
     if (cpos == 0) {                                            // TOP : header above the map
-        hx = px + (Wbox - hbw) * 0.5f;  hy = py;
-        ccx = px + Wbox * 0.5f;         ccy = py + Hh + bm + r;
+        hx = ix + (Wbox - hbw) * 0.5f;  hy = iy;
+        ccx = ix + Wbox * 0.5f;         ccy = iy + Hh + bm + r;
     } else if (cpos == 1) {                                    // BOTTOM : header below the map
-        ccx = px + Wbox * 0.5f;         ccy = py + bm + r;
+        ccx = ix + Wbox * 0.5f;         ccy = iy + bm + r;
         // subtract the header's intrinsic top lead (draw_clock_header starts at y+6S) so the map<->clock gap == bm
         // (the TOP reference) ; the freed 6S lands under the header, mirroring TOP's top pad.
-        hx = px + (Wbox - hbw) * 0.5f;  hy = py + bm + mapD + bm - snap(6.0f * S);
+        hx = ix + (Wbox - hbw) * 0.5f;  hy = iy + bm + mapD + bm - snap(6.0f * S);
     } else if (cpos == 2) {                                    // LEFT : [fc][content][bm gap][map][bm]
-        hx = px + fc;                   hy = py + (boxH - Hh) * 0.5f;   // content clears the outer (left) frame by fc
-        ccx = px + fc + hbw + bm + r;   ccy = py + boxH * 0.5f;         // map hugs the content : only a bm gap
+        hx = ix + fc;                   hy = iy + (boxH - Hh) * 0.5f;   // content clears the outer (left) frame by fc
+        ccx = ix + fc + hbw + bm + r;   ccy = iy + boxH * 0.5f;         // map hugs the content : only a bm gap
     } else if (cpos == 3) {                                    // RIGHT : [bm][map][bm gap][content][fc]
-        ccx = px + bm + r;              ccy = py + boxH * 0.5f;
-        hx = px + bm + mapD + bm;       hy = py + (boxH - Hh) * 0.5f;   // content hugs the map (bm) ; fc clears the outer (right) frame
+        ccx = ix + bm + r;              ccy = iy + boxH * 0.5f;
+        hx = ix + bm + mapD + bm;       hy = iy + (boxH - Hh) * 0.5f;   // content hugs the map (bm) ; fc clears the outer (right) frame
     } else {                                                   // no clock : the map fills the box
-        ccx = px + Wbox * 0.5f;         ccy = py + boxH * 0.5f;
+        ccx = ix + Wbox * 0.5f;         ccy = iy + boxH * 0.5f;
     }
     const float mapLeft = ccx - r, mapTop = ccy - r;           // map region top-left
     if (hasClock) {
@@ -513,7 +518,7 @@ void Minimap::draw(const Frame& f) {
             }
         }
         color_state(dev);
-        draw_themed_box(dev, f.skin, px, boxPy, Wbox, boxH, c.mmBox, 1.0f, S);   // shared themed chrome (bg + border + transparency + Same-as-Party / own theme)
+        draw_themed_box(dev, f.skin, px, boxPy, Wout, Hout, c.mmBox, 1.0f, S);   // shared themed chrome (bg + border + transparency + Same-as-Party / own theme)
         draw_clock_header(dev, f, g.vana, c, elemTex_, moonTex_, hx, hy, hbw, S);
     }
     const bool  round = (c.mmShape == 1);
@@ -643,6 +648,7 @@ void Minimap::draw(const Frame& f) {
         const int theme = c.skinTheme; const float lum = c.skinLum;
         if (window_theme_is_proc(theme)) { draw_proc_window(dev, theme, mapLeft, mapTop, mapD, mapD, 0xFFFFFFFFu, false, true, lum, c.skinHue); fi = snap(6.0f * S); themedOk = true; }
         else if (f.skin && f.skin->ready()) { draw_window(dev, *f.skin, mapLeft, mapTop, mapD, mapD, 0xFFFFFFFFu, S, false, true); fi = snap(15.0f * S); themedOk = true; }
+        if (themedOk) fi += frame_inset();                    // a frame theme's thicker border : the map clears it too (0 = normal frames)
     }
     const float wx0 = mapLeft + fi, wy0 = mapTop + fi, wx1 = mapLeft + mapD - fi, wy1 = mapTop + mapD - fi;   // clip rect (inset past the chrome border)
 
@@ -880,6 +886,7 @@ void minimap_help_disc(u32 dev, const Frame& f, Font* fo, u32 mkPlayer, u32 mkMo
     } else if (c.mmFrame == 1) {                                       // square + themed window chrome
         if (window_theme_is_proc(c.skinTheme)) { draw_proc_window(dev, c.skinTheme, mapLeft, mapTop, mapD, mapD, 0xFFFFFFFFu, false, true, c.skinLum, c.skinHue); fi = snap(6.0f * Ss); themedOk = true; }
         else if (f.skin && f.skin->ready()) { draw_window(dev, *f.skin, mapLeft, mapTop, mapD, mapD, 0xFFFFFFFFu, Ss, false, true); fi = snap(15.0f * Ss); themedOk = true; }
+        if (themedOk) fi += frame_inset();                    // a frame theme's thicker border : the map clears it too (0 = normal frames)
     }
     const float wx0 = mapLeft + fi, wy0 = mapTop + fi, wx1 = mapLeft + mapD - fi, wy1 = mapTop + mapD - fi;
 

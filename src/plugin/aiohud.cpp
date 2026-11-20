@@ -911,7 +911,8 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
         else if (!pressed && s_ateReturn)         { s_ateReturn = false; return 1u; }
     }
     if (!g_hud.config().wants_keys())                       // not typing -> never block the game (but Currencies' search)
-        return aio::currencies_key(dik, (pressed && nc == 1) ? (unsigned)wbuf[0] : 0u, pressed, mCtrl || mAlt) ? 1u : 0u;
+    {   const unsigned ch = (pressed && nc == 1) ? (unsigned)wbuf[0] : 0u;   // Currencies' search ; the trade's gil typed
+        return (aio::currencies_key(dik, ch, pressed, mCtrl || mAlt) || aio::trade_key(dik, ch, pressed, mCtrl || mAlt)) ? 1u : 0u; }
     // Insert toggles the Windower console -> NEVER swallow it, even while typing (extended DIK 0xD2, or the
     // numpad-0 scan 0x52 when NumLock is off so it produced no character).
     if (dik == 0xD2 || (dik == 0x52 && nc == 0)) return 0u;
@@ -1780,6 +1781,17 @@ static void aio_command_dispatch(const char* cmd)
         if (!ok) g_host.console().print(aio::tr(">>> the segment counter will NOT repair itself after a client patch -- report this message <<<", ">>> le compteur de segments NE se reparera PAS tout seul apres une maj du client -- signale ce message <<<"));
         return;
     }
+#if defined(AIOHUD_PROBES) && defined(AIOHUD_THEMEKIT)
+    if (strstr(buf, "kittest")) {    // //aio kittest (dev build only) -> the painted "Eclat de Holla" kit : one trial party box ; again = off
+        char id[24] = ""; const char* q = strstr(buf, "kittest") + 7; while (*q == ' ') ++q;
+        int n = 0; while (n < 23 && ((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z'))) id[n++] = (char)(*q++ | 0x20); id[n] = 0;
+        const bool on = aio::theme_kit_test_toggle(id);
+        char msg[200];
+        _snprintf(msg, sizeof(msg), ">>> AioHud : theme kit TEST on (%s on EVERY box frame) -- //aio kittest %s again to restore <<<", n ? id : "Holla v4", id); msg[sizeof(msg) - 1] = 0;
+        g_host.console().print(on ? msg : ">>> AioHud : theme kit test off (kits : sandoria bastok windurst ahturhgan adoulin jeuno holla dem mea selbina dynamis) <<<");
+        return;
+    }
+#endif
     if (strstr(buf, "eqpreview")) {   // //aio eqpreview -> the Equipment screen shows every cell / row state (a visual check) ; again = off
         const bool on = aio::equip_preview_toggle();
         g_host.console().print(on ? aio::tr(">>> AioHud : Equipment preview ON (badges 1-8, locked slots, an empty slot, every row colour) -- //aio eqpreview again to stop <<<",

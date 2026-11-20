@@ -27,6 +27,7 @@
 #include "model/action_status_gen.h"   // spell_buff_status / abil_buff_status : action id -> status (self-cast filter)
 #include "model/skillchain.h"          // Skillchains : sc_info / sc_skill_lookup / add-effect anim + message tables
 #include "windower.h"   // safe_read / valid_ptr (guarded game-memory reads)
+#include "model/native_ui.h"     // native_region_packet (Region Info)
 #include "windower_debug.h"   // debug::log (//aio bcaptlog : buff-caster capture diagnostic)
 #include <windows.h>
 #include <time.h>
@@ -2713,6 +2714,7 @@ void model_feed_packet(int id, const unsigned char* b)
         else if (id == 0x00E) party().on_00e(b);              // Zone Tracker : NPC update -> Sheol A/B/C fallback (instance bits)
         else if (id == 0x075) party().on_limbus_075(b);       // Zone Tracker : Limbus menu -> Apollyon/Temenos level (handler self-filters by the string)
         else if (id == 0x076) party().on_076(b);      // party-member buffs
+        else if (id == 0x05E || id == 0x071) native_region_packet(id, b);   // Region Info : conquest / campaign / colonization (native_ui.cpp)
         else if (id == 0x01B) party().on_01b(b);      // job info -> encumbrance flags (locked equip slots)
         else if (id == 0x0D2) party().on_treasure_add(b);   // treasure pool : item dropped / removed
         else if (id == 0x0D3) party().on_treasure_lot(b);   // treasure pool : lot info / won

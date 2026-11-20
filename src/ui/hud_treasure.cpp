@@ -86,7 +86,7 @@ void treasure_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS
 
     float sscl = C.tpScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
     const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
-    const float pad = (ui_config().tpBox.on ? 8.0f : 0.0f) * S, gap = 10.0f * S;   // no box chrome -> hug the content
+    const float pad = (ui_config().tpBox.on ? 8.0f : 0.0f) * S + box_inset(ui_config().tpBox), gap = 10.0f * S;   // no box chrome -> hug the content
     const float iconW = C.tpIcon ? 34.0f * S : 0.0f, iconH = 36.0f * S, iconGap = C.tpIcon ? 8.0f * S : 0.0f;
     const u32 white = 0xFFEAF0FFu, dim = 0xFFC8D2E6u, cyan = 0xFF7AD8F0u, strk = 0xFF000000u;
     // per-element fonts / sizes / outlines / colours

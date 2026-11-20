@@ -291,6 +291,7 @@ void tape_event_begin(char, unsigned, long long) {}
 void tape_event_end() {}
 void tape_packet(int, const unsigned char*) {}
 void tape_frame(const void*, unsigned) {}
+void native_region_packet(int, const unsigned char*) {}   // Region Info's packet feed (native_ui.cpp : not in the suite)
 
 u32 data_root()                      { return 0; }
 u32 entity_array()                   { return W ? (u32)(uintptr_t)W->entities : 0; }

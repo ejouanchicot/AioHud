@@ -182,9 +182,10 @@ void empypop_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
         if (L.tag[0]) w += lf->measure(L.tag, lz);
         if (w > maxw) maxw = w;
     }
-    const float boxW = (maxw > 1.0f ? maxw : 180.0f * S) + 2.0f * pad;
+    const float bi = box_inset(ui_config().epBox);   // the frame theme's border, reserved around the whole stack (0 = normal frames)
+    const float boxW = (maxw > 1.0f ? maxw : 180.0f * S) + 2.0f * pad + 2.0f * bi;
     const float tboxH = titleH + 2.0f * pad;
-    float boxH = tboxH;
+    float boxH = tboxH + 2.0f * bi;
     for (int g = 0; g < ng; ++g) { float h = 2.0f * pad; for (int i = 0; i < gCount[g]; ++i) h += EP_LLH(lines[gFirst[g] + i]); boxH += h; }
     if (collLine >= 0) boxH += 2.0f * pad + lhC;
     if (measureOnly) { if (outW) *outW = boxW; if (outH) *outH = boxH; return; }   // Help scale-to-fit : report dims, don't draw
@@ -203,18 +204,19 @@ void empypop_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
     // the chrome -- doing it before (the obvious spot) is dead : the themed box immediately clobbers it.
     dColorQuadState(dev);
     const float ca = ui_config().epBox.on ? box_alpha(ui_config().epBox) : 1.0f;         // fills follow the box's transparency
+    const float ix = px + bi, iy = py + bi, iw = boxW - 2.0f * bi, ih = boxH - 2.0f * bi;   // the stack's area inside the frame border
     const float fi = 3.0f * S;                                                      // inset : stay INSIDE the container's rounded corners
-    const float fx = px + fi, fw = boxW - 2.0f * fi;
+    const float fx = ix + fi, fw = iw - 2.0f * fi;
     // A box's background : green once it is done (upstream boxcol) ; the container supplies the navy otherwise.
     // Clamped to the container's inset rect so a fill never squares off a rounded corner. Hard edges (r=0,
     // feather=0) : an interior slab, uniformly unfeathered -- no partial-feather black seam.
-    #define EP_FILL(yy, hh, on) do { if (on) { float y0 = (yy), y1 = (yy) + (hh); const float lo = py + fi, hi = py + boxH - fi; \
+    #define EP_FILL(yy, hh, on) do { if (on) { float y0 = (yy), y1 = (yy) + (hh); const float lo = iy + fi, hi = iy + ih - fi; \
         if (y0 < lo) y0 = lo; if (y1 > hi) y1 = hi; \
         if (y1 > y0) rrect(dev, fx, y0, fw, y1 - y0, 0.0f, ep_mula(BG_GREEN, ca), ep_mula(BG_GREEN, ca), 0.0f); } } while (0)
     // The divider SHARED by two adjacent boxes (upstream divcol : gold when READY, green if either side is done).
     #define EP_DIV(yy, filled, prev) do { const u32 dc = ad ? BR_GOLD : (((filled) || (prev)) ? BR_GREEN : BR_LAV); \
         rrect(dev, fx, (yy) - divH * 0.5f, fw, divH, 0.0f, ep_mula(dc, ca), ep_mula(dc, ca), 0.0f); } while (0)
-    float cy = py;
+    float cy = iy;
     EP_FILL(cy, tboxH, ad);                                  // title box : green only when READY (upstream boxcol)
     cy += tboxH;
     bool prevOb = false;
@@ -231,13 +233,13 @@ void empypop_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
         EP_DIV(cy, E.collDone, prevOb);
         cy += h;
     }
-    if (ad) rrect_stroke(dev, px, py, boxW, boxH, 6.0f * S, BR_GOLD, 2.0f * S);   // READY -> the upstream gold frame
+    if (ad) rrect_stroke(dev, ix, iy, iw, ih, 6.0f * S, BR_GOLD, 2.0f * S);   // READY -> the upstream gold frame
 
     // ---- text : title (centred) then each box's lines, segment by segment (arrow / name / (KI) / [pool]) ----
     fT->begin(dev);
-    fT->draw_c(dev, px + boxW * 0.5f, py + pad + titleH * 0.5f, ep_up(EP_TITLE, title, ub, 80), zT,
+    fT->draw_c(dev, ix + iw * 0.5f, iy + pad + titleH * 0.5f, ep_up(EP_TITLE, title, ub, 80), zT,
                ep_col(EP_TITLE, ad ? C_HAVE : white), strk, oT);
-    cy = py + tboxH;
+    cy = iy + tboxH;
     for (int g = 0; g < ng + (collLine >= 0 ? 1 : 0); ++g) {   // the groups, then (g == ng) the collectable box
         const int first = (g < ng) ? gFirst[g] : collLine, cnt = (g < ng) ? gCount[g] : 1;
         float ly = cy + pad;
@@ -245,7 +247,7 @@ void empypop_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
             const EpLine& L = lines[first + i]; Font* lf = EP_LFONT(L);
             const float lz = EP_LSIZE(L), lh = EP_LLH(L), ow = (L.el == EP_POP) ? oP : (L.el == EP_FROM ? oF : oC);
             const float ty = ly + lh * 0.5f;
-            float tx = px + pad + L.indent;
+            float tx = ix + pad + L.indent;
             lf->begin(dev);
             if (L.arrow) { lf->draw_lc(dev, tx, ty, "-> ", lz, C_DIM, strk, ow); tx += lf->measure("-> ", lz); }
             const char* s = ep_up(L.el, L.text, ub, 80);

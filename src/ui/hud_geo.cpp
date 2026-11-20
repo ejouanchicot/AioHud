@@ -134,14 +134,15 @@ void Hud::draw_geo(const Frame& f, bool preview, float ovX, float ovY, float ovS
     //      3-column grid). //aio edit places a FRAME : everything enabled present, so what is dragged never changes
     //      size (docs/architecture/layout-reserve-dont-measure.md) ; in play the box takes the size of what is there
     //      and keeps the frame's edge nearer its screen side, as the BST box does. ----
-    const float pad = snap((C.petBox.on ? 8.0f : 2.0f) * S);
+    const float bi = box_inset(C.petBox);                             // the frame theme's border (0 = normal frames)
+    const float pad = snap((C.petBox.on ? 8.0f : 2.0f) * S) + bi;     // box edge -> content
     const float lineH = snap(16.0f * S), iconSz = snap(18.0f * S * kIcon), gap = snap(5.0f * S), jaH = snap(14.0f * S);
     const float iconRowH = iconSz + snap(2.0f * S) > lineH ? iconSz + snap(2.0f * S) : lineH;
     const float ringD = snap((stacked ? 100.0f : 92.0f) * S * kIcon), cardSz = snap(15.0f * S * kIcon), cardOut = cardSz + snap(4.0f * S);
     const float bubD = compass ? snap(ringD * 0.56f) : snap(58.0f * S * kIcon);
     const float topSide = compass ? ringD + 2.0f * cardOut : bubD + snap(14.0f * S * kIcon);
     const float sideH = topSide > lineH * 5.0f ? topSide : lineH * 5.0f;   // side layout : the compass beside 5 lines
-    const float boxW = snap((stacked ? 210.0f : 250.0f) * S);
+    const float boxW = snap((stacked ? 210.0f : 250.0f) * S) + 2.0f * bi;
     const float jaIsz = snap((stacked ? 20.0f : 22.0f) * S * kIcon), jaRowH = jaIsz + snap(13.0f * S);
     const float jaCellH = jaGridIcons ? snap(18.0f * S) : jaH;   // a grid row : taller with its icon
     static const int JA_COLS = 3;

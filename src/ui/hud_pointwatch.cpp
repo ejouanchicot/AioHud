@@ -97,7 +97,7 @@ void pointwatch_draw(const Frame& f, bool preview, float ovX, float ovY, float o
     const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
     // when the box chrome (frame + background) is OFF, drop the padding so the box hugs the bare text/bars exactly
     // -> no phantom margin, and the anchor (pwX centre / pwY top) sits on the visible content for precise placement.
-    const float pad = (C.pwBox.on ? 6.0f : 0.0f) * S, gap = 6.0f * S;
+    const float pad = (C.pwBox.on ? 6.0f : 0.0f) * S + box_inset(C.pwBox), gap = 6.0f * S;
     Font* fLabel = pw_font(f, PW_LABEL); Font* fVal = pw_font(f, PW_VALUE); Font* fRate = pw_font(f, PW_RATE);
     const float zLabel = pw_sz(PW_LABEL, 12.0f) * S, zVal = pw_sz(PW_VALUE, 11.5f) * S, zRate = pw_sz(PW_RATE, 11.0f) * S;
     const float oLabel = pw_ow(PW_LABEL, 1.0f) * S, oVal = pw_ow(PW_VALUE, 1.0f) * S, oRate = pw_ow(PW_RATE, 1.0f) * S;

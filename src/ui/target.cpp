@@ -400,7 +400,7 @@ void Target::measure(float& w, float& h) const {
     // name + bar only (the debuff band grows DOWNWARD past this) : mirror draw()'s no-debuff content height,
     // honouring the configured name text size + bar height so anchoring/edit bounds track the real box.
     const float pad = 13.0f * S, nameSz = 15.0f * S * ui_config().tgtText[TGT_NAME].size, barH = 18.0f * S * ui_config().tgtBarH;
-    const float outerPad = ui_config().tgtBox ? pad : 0.0f;   // edge margin -> 0 boxless (bounds hug the content ; box ON unchanged)
+    const float outerPad = ui_config().tgtBox ? pad + frame_inset() : 0.0f;   // edge margin (+ the frame theme's border) -> 0 boxless (bounds hug the content ; box ON unchanged)
     w = baseW_ * S - 2.0f * (pad - outerPad);                 // boxless shrinks by the removed side margins (bar width unchanged)
     h = outerPad + nameSz + 5.0f * S + barH + outerPad;
 }
@@ -485,7 +485,8 @@ void Target::draw(const Frame& f) {
     // EDGE margin only : collapses to 0 when the box chrome is off (tgtBox=0) so the content hugs its bounds for
     // precise placement. box ON -> outerPad == pad, so the whole boxed layout is byte-for-byte unchanged. The
     // buff-row side margin (buffRowW) keeps the full `pad` -> internal spacing is untouched, only the borders shrink.
-    const float outerPad = ui_config().tgtBox ? pad : 0.0f;
+    const float fiT = ui_config().tgtBox ? frame_inset() : 0.0f;   // the frame theme's border on each side (0 = normal frames / no box)
+    const float outerPad = ui_config().tgtBox ? pad + fiT : 0.0f;
     const float iconK = ui_config().tgtIconSz;
     const float icon  = snap(18.0f * S * iconK);
     const float timerPx = showTimers ? tgt_sz(TGT_TIMER, 8.5f * S * iconK) : 0.0f;   // timer text size (drives icon spacing + bottom margin)
@@ -498,7 +499,7 @@ void Target::draw(const Frame& f) {
     const int   bpR = (ui_config().tgtBuffPos < 0 || ui_config().tgtBuffPos > 4) ? 0 : ui_config().tgtBuffPos;
     const bool  insideBuffs = (nd > 0 && bpR == 0 && ui_config().tgtBox != 0);
     const int   rowMax  = (nd < BUFF_PER_LINE) ? nd : BUFF_PER_LINE;                  // widest (first) row's icon count
-    const float buffRowW = (rowMax > 0) ? (rowMax * icon + (rowMax - 1) * igap + 2.0f * pad) : 0.0f;
+    const float buffRowW = (rowMax > 0) ? (rowMax * icon + (rowMax - 1) * igap + 2.0f * pad + 2.0f * fiT) : 0.0f;
     float W = snap(baseW_ * S - 2.0f * (pad - outerPad));   // boxless : shrink by the removed side margins so the box hugs the bar (bar width stays identical)
     if (insideBuffs && buffRowW > W) W = snap(buffRowW);
     // position : a user-placed (edit-mode) fraction wins over the layout default. The config preview uses the
@@ -930,7 +931,7 @@ void Target::draw(const Frame& f) {
         int shp = fake ? 93 : se.hpp; if (shp < 0) shp = 0; if (shp > 100) shp = 100;
         const u32 snCol = fake ? 0xFFF0787Au : target_name_color_e(se);
         const u32 hcS   = bar_tint(snCol, (fake || se.spawnType == 0x10));   // same shared-intensity tint as the main bar
-        const float sPad = snap(7.0f * S), sGap = snap(6.0f * S);
+        const float sPad = snap(7.0f * S) + fiT, sGap = snap(6.0f * S);   // box edge -> content (+ the frame theme's border)
         const float sTxt = snap(tgt_sz(TGT_NAME, 12.0f * S)), sBarH = snap(12.0f * S), sBarR = sBarH * 0.5f, dsz = snap(sTxt * 0.85f);
         const float rowH = sBarH > sTxt ? sBarH : sTxt;
         Font* sf = tgt_font(f.fonts, f.font, TGT_NAME);

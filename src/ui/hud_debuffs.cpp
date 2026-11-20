@@ -80,7 +80,7 @@ void debuffs_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS,
     // ---- metrics (mirror the Timers box) ----
     float sscl = C.dbScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;
     const float S = (ovS > 0.0f) ? ovS : (screenH / 1000.0f) * sscl;
-    const float pad = (C.dbBox.on ? 8.0f : 0.0f) * S, gap = 4.0f * S, icgap = 4.0f * S;
+    const float pad = (C.dbBox.on ? 8.0f : 0.0f) * S + box_inset(C.dbBox), gap = 4.0f * S, icgap = 4.0f * S;
     const u32 strk = 0xFF000000u, gold = 0xFFF6C64Eu, goldWarn = 0xFFFF7A4Au, other = 0xFFD8DEE8u, grey = 0xFFAEB6C2u, orange = 0xFFEB9660u;
     Font* fH = db_font(f, DB_HEADER); Font* fN = db_font(f, DB_NAME); Font* fT = db_font(f, DB_TIMER);
     const float zH = db_sz(DB_HEADER, 13.0f) * S, zN = db_sz(DB_NAME, 13.0f) * S, zT = db_sz(DB_TIMER, 13.0f) * S;
