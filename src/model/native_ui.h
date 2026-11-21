@@ -638,7 +638,13 @@ const NativeAuction& native_auction();
 // ENTRY menu in ONE column whose every entry has a name (its definition text, else its help line) is drawn by AioHUD at
 // the client's place ; anything else stays the client's. Read again each frame ; unread -> not parked -> the client's.
 #define GEN_MENUS 4
-struct NativeGenMenus { int n; NativeEntryMenu m[GEN_MENUS]; char help[GEN_MENUS][16][72]; };
+struct NativeGenMenus { int n; NativeEntryMenu m[GEN_MENUS]; char help[GEN_MENUS][16][72];
+    // step 2 : ONE generic TEXT LIST (the focused one, else the last listed) -- its cells by TYPE (the types every list
+    // measured so far uses) : 0x15 / 0x16 / 0x1A an item (its icon, its name), 1 / 3 / 0x19 / 0x22 a text (at the value),
+    // 7 / 9 a count, 0xA / 0xB a price + 1, 4 a date (unix). A row with none of them : the list stays the client's.
+    bool list; bool listFocused; char listName[9]; int ln, ltop, lvis, lcursor; short lx0, ly0, lx1, ly1; int uiW, uiH;
+    struct Row { unsigned short item; char text[44]; int count, price; unsigned date; unsigned col; } lrow[16];
+    bool anyPrice, anyCount, anyItem; };
 const NativeGenMenus& native_gen_menus();
 bool native_gen_hover(const char* name, int entry);
 bool native_gen_pick(const char* name, int entry);

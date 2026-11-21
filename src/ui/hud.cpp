@@ -489,6 +489,7 @@ void Hud::render(u32 dev) {
             room_draw(f);                           // Remodel : the styles (Game UI)
             auc_draw(f);                            // the auction house (Game UI)
             gen_draw(f);                            // the generic engine's menus (Game UI)
+            gen_list_draw(f);                       // the generic engine's list (Game UI)
             jobsel_draw(f);                         // Change Jobs : the job grid (Game UI)
             dlv_draw(f);                            // the delivery box (Game UI)
             mog_draw(f);                            // the Mog House's menus (Game UI)

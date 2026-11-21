@@ -99,6 +99,7 @@ const char* const MOG_W[] = { "myroom", "mogext", "storage", "storage2", "mogcon
 const char* const JOBSEL_W[] = { "jobcselu", 0 };
 // the AUCTION HOUSE : the counter is up (auc1), its menus read through their help lines
 bool g_aucUp = false, g_aucNot = false;
+bool g_genListUp = false;   // gen_poll : a generic list with items is AioHUD's -- its item card born parked
 // an auction menu : auc* (not its lists) ; a sort ("...sort") only while the counter is up
 static bool auc_menu_name(const char* n) {
     if (!strncmp(n, "auc", 3)) return strcmp(n, "auclist") && strcmp(n, "auchisto");
@@ -159,6 +160,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_NPC) && !g_aucNot && (auc_menu_name(n) || !strcmp(n, "auclist") || !strcmp(n, "auchisto")
         || (g_aucUp && (!strcmp(n, "iteminfo") || !strcmp(n, "moneyctr") || !strcmp(n, "money") || !strcmp(n, "inventor"))))) { dy = HIDE_DY; return; }
     if ((hide & NU_NPC) && g_dlvUp && !strcmp(n, "iteminfo")) { dy = HIDE_DY; return; }
+    if ((hide & NU_NPC) && g_genListUp && !strcmp(n, "iteminfo")) { dy = HIDE_DY; return; }   // a generic list's item card
     // the delivery box's Current Gil : born parked (it draws its digits where it is born : 2026-11-21, "les gils reste affiche")
     if ((hide & NU_NPC) && (g_dlvUp || g_mogPostUp) && !strcmp(n, "money")) { dy = HIDE_DY; return; }
     if ((hide & NU_NPC) && g_dlvUp && (!strcmp(n, "moneyctr") || !strcmp(n, "itemctrl"))) { dy = HIDE_DY; return; }   // the gil to send, a count (2026-11-21 : "la saisie des gils ouvre la box du jeu")   // the Mog House's menus (unread : the rescue pass brings one back)
@@ -1950,6 +1952,8 @@ void main_poll(bool on) {
                 if (utUp && search_read(mgr, focus, g_search)) g_search.ctx = 0;
                 else if (ptUp && search_read(mgr, focus, g_search)) g_search.ctx = 1;
                 else if (srUp && search_read(mgr, focus, g_search)) g_search.ctx = 3;
+                // the /search (/sea) command : the same results with no menu behind them (2026-11-21, "/sea all Kaories")
+                else if (!lsUp && !g_mainSub.open && search_read(mgr, focus, g_search)) g_search.ctx = 3;
                 else if (lsUp) {                                   // a linkshell's members : link12, its LS = handler +0x894
                     TextList T12; unsigned char slot = 0; unsigned id = 0, rgb = 0; char nm[24] = "";
                     if (tl_find(mgr, "link12", T12) && rd8(T12.h + 0x894, slot) && !ls_equipped(slot, id, rgb, nm, sizeof(nm))) {
@@ -2334,7 +2338,7 @@ void rescue_children(u32 mgr, int hide) {
                                                   || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl"))))))
                              || (g_auc.up && !g_aucNot && (auc_menu_name(nm) || !strcmp(nm, "auclist") || !strcmp(nm, "auchisto") || !strcmp(nm, "iteminfo")
                                                            || !strcmp(nm, "moneyctr") || !strcmp(nm, "money") || !strcmp(nm, "inventor")))
-                             || [&]() { for (int i = 0; i < g_gen.n; ++i) if (!strcmp(nm, g_gen.m[i].name)) return true; return false; }()
+                             || [&]() { for (int i = 0; i < g_gen.n; ++i) if (!strcmp(nm, g_gen.m[i].name)) return true; return g_gen.list && (!strcmp(nm, g_gen.listName) || (g_gen.anyItem && !strcmp(nm, "iteminfo"))); }()
                              || (g_cur.open && !strcmp(nm, "evitem"))
                              || (g_trade.open && (!strcmp(nm, "moneyctr") || !strcmp(nm, "itemctrl") || !strcmp(nm, "iteminfo") || !strcmp(nm, "gift") || !strcmp(nm, "money")));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
@@ -3350,12 +3354,42 @@ static int gen_columns(u32 obj) {
     }
     return nx;
 }
+// a generic TEXT LIST : its page, each row by its cell types ; false (the client's) when a row has nothing known
+static bool gen_list_read(u32 mgr, const char* nm, u32 focus, NativeGenMenus& G) {
+    TextList T; if (!tl_find(mgr, nm, T)) return false;
+    u32 rows = 0; if (!safe_read(T.h + 0x38, &rows) || (T.count > 0 && !valid_ptr(rows))) return false;
+    NativeGenMenus::Row R[16]; memset(R, 0, sizeof(R));
+    const int vis = T.vis > 16 ? 16 : T.vis; bool anyP = false, anyC = false, anyI = false;
+    for (int i = 0; i < vis && T.top + i < T.count; ++i) {
+        unsigned char r[0x54]; if (!rdblk(rows + (u32)(T.top + i) * 0x54, r, sizeof(r))) return false;
+        NativeGenMenus::Row& w = R[i]; w.count = -1; w.price = -1; bool known = false;
+        for (int c = 0; c < 8; ++c) {
+            const unsigned char t = r[c]; if (!t) continue;
+            u32 v = 0, col = 0; memcpy(&v, r + 0x28 + 4 * c, 4); memcpy(&col, r + 0x08 + 4 * c, 4);
+            if (t == 0x15 || t == 0x16 || ((t == 0x1A || t == 0x19) && !valid_ptr(v))) {
+                if (!w.item) { short id = 0; if (valid_ptr(v)) { if (!rd16(v, id)) id = 0; } else id = (short)(v & 0xFFFF); w.item = (unsigned short)id; }
+                if (w.item) { known = true; anyI = true; if (!w.col) w.col = col; }
+            } else if ((t == 1 || t == 3 || t == 0x19 || t == 0x22) && valid_ptr(v) && !w.text[0]) {
+                char b[44]; if (rdblk(v, b, sizeof(b) - 1)) { b[43] = 0; int o = 0; for (int j = 0; b[j] && o < 43; ++j) if ((unsigned char)b[j] >= 0x20 && (unsigned char)b[j] < 0x7F) w.text[o++] = b[j]; w.text[o] = 0; }
+                if (w.text[0]) { known = true; if (!w.col) w.col = col; }
+            } else if (t == 7 || t == 9) { w.count = (int)(v > 99999 ? 99999 : v); known = true; if (v > 1) anyC = true; }
+            else if (t == 0xA || t == 0xB) { if (v) { w.price = (int)(v - 1); anyP = true; } known = true; }
+            else if (t == 4) { w.date = v; known = true; }
+        }
+        if (!known) return false;
+    }
+    G.list = true; G.listFocused = focus == T.obj; memcpy(G.listName, nm, 9);
+    G.ln = T.count; G.ltop = T.top; G.lvis = vis; G.lcursor = T.cursor; G.lx0 = T.rx0; G.ly0 = T.ry0; G.lx1 = T.rx1; G.ly1 = T.ry1; G.uiW = T.uiW; G.uiH = T.uiH;
+    memcpy(G.lrow, R, sizeof(R)); G.anyPrice = anyP; G.anyCount = anyC; G.anyItem = anyI;
+    return true;
+}
 void gen_poll(bool on, u32 mgr, int hide) {
     NativeGenMenus G; memset(&G, 0, sizeof(G));
     if (!on || !mgr) { g_gen = G; return; }
     u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) { g_gen = G; return; }
     const int uiH = (short)(wh >> 16); if (uiH < 240 || uiH > 8000) { g_gen = G; return; }
     static char seen[160][9]; static int nSeen = 0, lines = 0;
+    u32 focusObj = 0; { const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focusObj); }
     u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
     for (int g = 0; valid_ptr(node) && g < 400; ++g) {
         u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9]; short r[4] = { 0 };
@@ -3385,15 +3419,19 @@ void gen_poll(bool on, u32 mgr, int hide) {
             ++lines;
             windower::debug::log("NATIVEUI generic : '%s' rect %d,%d-%d,%d -- %s%s", nm, rr[0], rr[1], rr[2], rr[3],
                 cls == 1 ? "an entry menu : AioHUD draws it ;" : cls == 2 ? (cols != 1 ? "an entry GRID (not one column) : the client's ;" : "an entry menu with unnamed entries : the client's ;")
-                : cls == 3 ? "a TEXT LIST : the client's (for now) ;" : "another kind : the client's", b);
+                : cls == 3 ? "a TEXT LIST : read by its cell types ;" : "another kind : the client's", b);
         }
         if (cls == 1 && G.n < GEN_MENUS) {
             while (m.ry0 >= uiH) { m.ry0 = (short)(m.ry0 - HIDE_DY); m.ry1 = (short)(m.ry1 - HIDE_DY); }
             memcpy(G.help[G.n], help, sizeof(G.help[G.n])); G.m[G.n++] = m;
         }
+        if (cls == 3 && (!G.list || focusObj == o)) gen_list_read(mgr, nm, focusObj, G);
         node = next;
     }
-    g_gen = G;
+    g_gen = G; g_genListUp = G.list && G.anyItem;
+    {   static char was[9] = ""; static int said = 0;                     // the generic list : which one, logged on change
+        if (strcmp(was, G.list ? G.listName : "") && said < 30) { ++said; lstrcpynA(was, G.list ? G.listName : "", 9);
+            if (G.list) windower::debug::log("NATIVEUI generic : list '%s' -- AioHUD draws it (%d rows ; row 0 item %u text '%s' count %d price %d)", G.listName, G.ln, G.lrow[0].item, G.lrow[0].text, G.lrow[0].count, G.lrow[0].price); } }
 }
 const NativeGenMenus& native_gen_menus() { return g_gen; }
 bool native_gen_hover(const char* name, int entry) { for (int i = 0; name && i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, name)) { const char* one[2] = { name, 0 }; return entry_hover(one, entry); } return false; }
@@ -4491,7 +4529,8 @@ void native_ui_tick(bool inWorld) {
     auc_poll(wanted && (c.nuHide & NU_NPC), manager());        // the auction house : its menus, lists, the price
     gen_poll(wanted && (c.nuHide & NU_NPC), manager(), eff_hide(c));   // the generic engine : the census, the plain menus
     if (wanted) { const int lg = native_client_lang(); if (lg >= 0) menu_dat_load(lg); }   // the menus' image labels (the client's DAT)
-    if (wanted && (c.nuHide & NU_NPC)) { static int gLog[GEN_MENUS] = { 0 }; for (int i = 0; i < g_gen.n; ++i) park_named(manager(), g_gen.m[i].name, gLog[i], "generic -> a menu"); }
+    if (wanted && (c.nuHide & NU_NPC)) { static int gLog[GEN_MENUS] = { 0 }, glLog = 0; for (int i = 0; i < g_gen.n; ++i) park_named(manager(), g_gen.m[i].name, gLog[i], "generic -> a menu");
+        if (g_gen.list) park_named(manager(), g_gen.listName, glLog, "generic -> a list"); }
     if (wanted && (c.nuHide & NU_NPC) && g_auc.up && !g_aucNot) {
         static int a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0;
         if (g_auc.menuOpen) park_named(manager(), g_auc.menu.name, a1, "Auction -> a menu");

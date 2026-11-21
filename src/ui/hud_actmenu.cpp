@@ -5313,6 +5313,61 @@ void gen_draw(const Frame& f) {
         } else g_gnB[s].hoverRow = 0;
     }
 }
+// the generic engine's LIST : an item list (icon, name, count, price) when it holds items, else a text list ; the
+// title the client's top bar shows ; the item card above the chat
+namespace { Block g_glB; unsigned g_glMs = 0; }
+void gen_list_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_glB.vis = 0.0f; g_glB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_glMs ? (float)(now - g_glMs) / 1000.0f : 0.0f; g_glMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeGenMenus& G0 = native_gen_menus();
+    static NativeGenMenus last; static char title[0xCC];
+    if (G0.list) { last = G0; const NativeTopBar& tb = native_topbar(); if (tb.title.text[0]) lstrcpynA(title, tb.title.text, sizeof(title)); }
+    if (!block_ease(g_glB, G0.list, now, dt) || last.uiW <= 0 || last.lvis <= 0) return;
+    const Metrics k = metrics(f);
+    const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), tz = k.tz, rowH = snap(k.capH * 1.25f);
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    const float tO = ease_out(((float)(now - g_glB.openMs) / 1000.0f) / 0.08f), A = g_glB.vis * tO * (last.listFocused || !G0.list ? 1.0f : 0.8f);
+    if (A <= 0.0f) return;
+    unsigned iid = 0;
+    if (last.anyItem) {                                                // an ITEM list : the items box (icon, name, count, price)
+        NativeItemRow rows[16]; memset(rows, 0, sizeof(rows));
+        for (int i = 0; i < last.lvis; ++i) { rows[i].itemId = last.lrow[i].item; rows[i].itemCount = last.lrow[i].count > 0 ? last.lrow[i].count : 0; rows[i].itemCol = 0x80808080u;
+            rows[i].hasPrice = last.anyPrice; rows[i].price = last.lrow[i].price >= 0 ? last.lrow[i].price : -2; }
+        ItemsBox IL = { rows, last.ln, last.ltop, last.lvis, last.lcursor, 0, last.listFocused, G0.list, title[0] ? title : "", 0, false, last.anyPrice, 0, 0 };
+        const float lw = keep_width(g_glB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.lvis * rowH + pad);
+        float lx = snap((float)last.lx0 * sx), ly = snap((float)last.ly0 * sy);
+        if (lx + lw > f.screenW - 4.0f) lx = snap(f.screenW - 4.0f - lw); if (lx < 4.0f) lx = 4.0f;
+        if (ly + lh > f.screenH - 4.0f) ly = snap(f.screenH - 4.0f - lh); if (ly < 4.0f) ly = 4.0f;
+        const int jl = menu_place(f, __LINE__, lx, ly, lw, lh); g_frameJoin = jl;
+        const unsigned r = items_box_draw(f, k, g_glB, IL, last.listName, lx, snap(ly + (1.0f - tO) * 4.0f * S), lw, lh, A, dt, g_hit[17]);
+        const int c = last.lcursor - last.ltop; iid = r ? r : (c >= 0 && c < last.lvis ? last.lrow[c].item : 0);
+    } else {                                                           // a TEXT list : one line per row, a number on the right
+        RowSpec rows[16] = {}; static char nb[16][24]; int cur = 0; const int n = last.ln - last.ltop < last.lvis ? last.ln - last.ltop : last.lvis;
+        for (int i = 0; i < n; ++i) {
+            rows[i].label = last.lrow[i].text[0] ? last.lrow[i].text : "-"; rows[i].icon = IC_NONE;
+            if (last.lrow[i].price >= 0) { price_text(nb[i], last.lrow[i].price); strcat(nb[i], " G"); rows[i].extra = nb[i]; }
+            else if (last.lrow[i].count >= 0) { sprintf(nb[i], "%d", last.lrow[i].count); rows[i].extra = nb[i]; }
+            if (last.ltop + i == last.lcursor) cur = i + 1;
+        }
+        float bw, bh; block_size(f, k, rows, n, bw, bh);
+        float bx = snap((float)last.lx0 * sx), by = snap((float)last.ly0 * sy);
+        if (last.ly0 * 2 > last.uiH) { float cx, cy; if (place_on_chat(bw, bh, snap(4.0f * S), f.screenW, f.screenH, cx, cy)) { bx = cx; by = cy; } }
+        if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+        if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+        const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+        const int row = block_draw(f, k, g_glB, rows, n, cur, last.listFocused, bx, snap(by + (1.0f - tO) * 3.0f * S), bw, bh, A, dt);
+        if (G0.list && last.listFocused) {
+            g_hit[17][0] = bx / f.screenW; g_hit[17][1] = by / f.screenH; g_hit[17][2] = bw / f.screenW; g_hit[17][3] = bh / f.screenH;
+            if (row >= 1 && row <= n && row != g_glB.hoverRow && last.ltop + row - 1 != last.lcursor) native_textlist_hover(last.listName, last.ltop + row - 1);
+            g_glB.hoverRow = row;
+            if (row >= 1 && row <= n && f.mouse && f.mouse->clicked) native_textlist_pick(last.listName, last.ltop + row - 1);
+        } else g_glB.hoverRow = 0;
+        (void)tz;
+    }
+    if (iid && G0.list && !native_dialog().open) card_on_chat(f, k, iid, tO, A);
+}
 // ======== the DELIVERY BOX (Game UI -> NU_NPC) : receive (post1 + post2) / send (delivery + stringdl) ========
 // The 8 slots in the client's grid (4 x 2, entries 1..8) and colours (receive : shown in states 6, 7, 0xA..0xE, usable in 7,
 // 0xB, 0xD ; send : white 1, 5, 9, 0x10, grey 2, 3, 4, 8, 0xE, 0xF), the gil line (receive 9, send 11), Send / Cancel (send 9 /
