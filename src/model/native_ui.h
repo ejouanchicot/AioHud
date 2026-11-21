@@ -504,6 +504,8 @@ struct NativeItems {
     // beside it is the client's, every row grey (nothing goes in by hand). A row validated : retrieved (0x029, the client)
     bool binMode, binFocused;
     int  binN, binTop, binVis, binCursor, binCap;
+    int  binBag;                                 // the bag `bank` shows : 0x11 the Recycling Bin, else a Mog House storage
+                                                 // (1 Safe, 2 Storage, 4 Locker, 5 Satchel, 6 Sack, 7 Case, 8 / 10..16 Wardrobes, 9 Safe 2)
     NativeItemRow binRow[16];
     short bx0, by0; int binUiW, binUiH;
     // the QUANTITY box (`itemctrl`, a stack retrieved from the bin) : handler +0x22 the max, +0x23 the value -- the client's
@@ -559,6 +561,55 @@ struct NativeLoot {
     short rx0, ry0; int uiW, uiH;
 };
 const NativeLoot& native_loot();
+// The MOG HOUSE's menus (docs/notes/storage-delivery-re-2026-11-20.md s.1 ; live 2026-11-21) : simple ENTRY menus, their
+// labels in the definition (mogpost's are images) -- `myroom` (the moogle), `mogext` (outside), `storage` / `storage2` (the
+// bags), `mogcont` (View House), `itmstora` (Switch), `itmsortw` (the storage list's Auto-sort / Manual Sort / Switch),
+// `mogpost` (Receive / Send). Ours under NU_NPC ; up to 4 at once (a menu under the one that has the focus).
+static const int MOG_MENUS = 4;
+// Remodel's style list (`roomlist`, a TEXT LIST, 5 rows) : each row's text from its first text cell (type 1 : a pointer)
+struct NativeRoomList { bool open, focused; int n, top, vis, cursor; char label[8][48]; short rx0, ry0, ry1; int uiW, uiH; };
+const NativeRoomList& native_roomlist();
+struct NativeMogMenus { int n; NativeEntryMenu m[MOG_MENUS]; };
+const NativeMogMenus& native_mog_menus();
+// The DELIVERY BOX (storage-delivery-re s.3 - s.5) : the 8 receive / 8 send slots straight from P (DLV_SLOT : base +
+// i*0x48 ; +0 u32 state, +4 char[16] the sender / recipient, +0x20 u16 item (0xFFFF gil), +0x28 u32 count).
+// Receive = `post1` (entries 1..8 the slots, 9 the gil) + `post2` (1 Take, 2 Dispose, 3 Return ; the sender) ;
+// Send = `delivery` (1..8, 9 Send, 10 Cancel, 11 Gil ; state u16 +0x1B4, recipient +0x1C6) + `stringdl` (1 the name,
+// 2 OK, 3 Cancel ; mode +0x14, name typed +0x58, typing +0x164). Ours under NU_NPC -- except while the name is TYPED.
+struct NativeDlvSlot { unsigned state; unsigned short item; unsigned count; char name[17]; };
+struct NativeDelivery {
+    int  box;                                    // 0 none, 1 receive (post1), 2 send (delivery)
+    bool focused; int cursor;                     // the box's entry under the cursor
+    NativeDlvSlot slot[8];
+    bool subOpen, subFocused; int subCursor; unsigned char subGrey[4];   // post2 (Take / Dispose / Return) or stringdl (name / OK / Cancel)
+    int  sendState, strMode; char recipient[33], typed[33];
+    bool typing; char live[0x170]; int liveN;    // the name typed (stringdl's FsTextInput, the chat line's class : 7F FF = the caret ;
+                                                 // its text stays there after Enter, until OK copies it)
+    bool gilUp; unsigned gilVal, gilMax, gilDigit;   // `moneyctr` (the gil to send) : +0x20 the edited digit's step, +0x24 max, +0x28 value
+    bool qtyUp; int qtyVal, qtyMax;              // `itemctrl` (a stack's count) : +0x22 max, +0x23 value
+    short rx0, ry0, sx0, sy0; int uiW, uiH;
+    // the inventory beside it (`inventor` with the receive / send delegate, the client's (200,48)) : a TEXT LIST
+    bool invOpen, invFocused; int invN, invTop, invVis, invCursor; NativeItemRow invRow[16]; short ix0, iy0;
+};
+const NativeDelivery& native_delivery();
+// CHANGE JOBS (the moogle) : `jobchang` (1 Main Job, 2 Support Job : a Mog House menu above) then `jobcselu` (16,48, 22
+// entries in 2 columns of 11 = the jobs in the client's pairs : entry e = job e [live check : the help line names it]).
+struct NativeJobSel {
+    bool open, focused; int cursor;              // the entry (= the job) under the cursor
+    bool sub;                                    // choosing the SUPPORT job (jobchang's cursor on 2)
+    unsigned char grey[23];                      // by entry 1..22 (state 5)
+    NativeJobs jobs;                             // the levels, main / sub
+    short rx0, ry0; int uiW, uiH;
+};
+const NativeJobSel& native_jobsel();
+bool native_jobsel_hover(int entry);
+bool native_jobsel_pick(int entry);
+bool native_dlv_hover(int entry);                // the box (post1 / delivery)
+bool native_dlv_pick(int entry);
+bool native_dlvsub_hover(int entry);             // post2 / stringdl
+bool native_dlvsub_pick(int entry);
+bool native_mog_hover(const char* name, int entry);
+bool native_mog_pick(const char* name, int entry);
 bool native_loot_hover(int row);   // 0-based
 bool native_loot_pick(int row);
 bool native_lootope_hover(int entry);

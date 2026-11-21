@@ -2,7 +2,9 @@
 // docs/game-data/native-windows.md for every offset below and how each was proven (2026-11-15).
 #include "model/native_ui.h"
 #include "model/ui_config.h"
-#include "model/ffximain_rva.h"   // FM_MENU_PTR : the menu manager sits 0x54 before the focused-menu slot
+#include "model/ffximain_rva.h"
+#include "model/zones.h"         // zone_name : the door's zone page
+#include "model/party_state.h"   // job_abbr : Change Jobs' log   // FM_MENU_PTR : the menu manager sits 0x54 before the focused-menu slot
 #include "model/game_mem.h"       // ffximain_base
 #include "model/paths.h"          // plugin_path : the crash-recovery file
 #include "model/chat_log.h"       // chat_seed_line / chat_seed_end : the client's own log, replayed at load
@@ -91,6 +93,19 @@ bool g_shopMainUp = false;   // shop_poll : a shop's entry menu is up (shopmain,
 bool g_shopUp = false;       // shop_poll : a shop's LIST is ours : its item card and quantity born parked (a new `iteminfo` per row)
 bool g_inspUp = false;       // inspect_poll : a player's Check is ours : its item card born parked (a new `iteminfo` per slot)
 bool g_lootUp = false;       // loot_poll : the Treasure list is ours : its item card born parked
+bool g_dlvUp = false;        // dlv_poll : a delivery box is ours : its item card born parked (a new `iteminfo` per slot)
+bool g_mogPostUp = false;    // mog_poll : `mogpost` (Receive / Send) is up -- the box it opens comes with `money`, BORN first
+const char* const MOG_W[] = { "myroom", "mogext", "storage", "storage2", "mogcont", "itmstora", "itmsortw", "mogpost", "jobchang", "bankmenu", "rmlo1", "rmlo2", "rmlo4", "mogdoor", 0 };   // the Mog House's menus (NU_NPC)
+const char* const JOBSEL_W[] = { "jobcselu", 0 };
+// Rule 10 for the BORN-PARKED windows below : a window parked at birth counts as ours, so the rescue pass never brings it
+// back -- if its reader cannot read it, the client's must come back. Present-but-unread for 30 polls -> the flag stops the
+// rule (logged) ; `inspect` in its mannequin mode is not ours at once.
+bool g_shopNot = false, g_inspNot = false, g_lootNot = false, g_mogNot = false, g_jsNot = false;
+static bool born_guard(bool present, bool read, int& bad, bool& notOurs, const char* what) {
+    if (!present || read) { bad = 0; if (!present) notOurs = false; return notOurs; }
+    if (++bad == 30 && !notOurs) { notOurs = true; windower::debug::log("NATIVEUI %s : open but UNREADABLE for 30 frames -- the client's own window is given back", what); }
+    return notOurs;
+}
 DWORD g_rgMapBornMs = 0;    // when cnqframe was born : its panels born in the same moment, before region_poll sees it open
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
 const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "iuse", "cmbmenu", "cmbhwin", "abimenu", "prty1", "prty2", "prty3", "prty7", "prty4", "prty8", "prty5us", "alarm",
@@ -120,14 +135,20 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     // the NPC SHOP : Buy / Sell, then its list and its Current Gil born parked (the client RESIZES `shop` once it is up and
     // `money` draws where it was born : shops-re s.7, the trade's lesson) -- only under an NPC shop's menu (the bazaar and
     // the guild shops reuse `shop` : the client's)
-    if ((hide & NU_NPC) && (!strcmp(n, "shopmain") || !strcmp(n, "guildsho") || !strcmp(n, "bazaar") || (g_shopMainUp && (!strcmp(n, "shop") || !strcmp(n, "money"))))) { dy = HIDE_DY; return; }
+    if ((hide & NU_NPC) && !g_shopNot && (!strcmp(n, "shopmain") || !strcmp(n, "guildsho") || !strcmp(n, "bazaar") || (g_shopMainUp && (!strcmp(n, "shop") || !strcmp(n, "money"))))) { dy = HIDE_DY; return; }
     // ... and, its list up, the item card the client opens ANEW at each row (2026-11-21, a guild : "la description des
     // articles derriere pop en flash") and the quantity : born parked, as Equipment's cards
     if ((hide & NU_NPC) && g_shopUp && (!strcmp(n, "iteminfo") || !strcmp(n, "itemctrl"))) { dy = HIDE_DY; return; }
     if ((hide & NU_ACT) && g_inspUp && (!strcmp(n, "iteminfo") || !strcmp(n, "comment"))) { dy = HIDE_DY; return; }   // Check : its card, the target's comment
-    if ((hide & NU_ACT) && !strcmp(n, "inspect")) { dy = HIDE_DY; return; }
+    if ((hide & NU_ACT) && !g_inspNot && !strcmp(n, "inspect")) { dy = HIDE_DY; return; }
+    if ((hide & NU_NPC) && !g_mogNot && in_list(n, MOG_W) && strcmp(n, "mogdoor")) { dy = HIDE_DY; return; }   // (the door : parked once read)
+    if ((hide & NU_NPC) && !g_jsNot && in_list(n, JOBSEL_W)) { dy = HIDE_DY; return; }   // Change Jobs : the job grid
+    if ((hide & NU_NPC) && g_dlvUp && !strcmp(n, "iteminfo")) { dy = HIDE_DY; return; }
+    // the delivery box's Current Gil : born parked (it draws its digits where it is born : 2026-11-21, "les gils reste affiche")
+    if ((hide & NU_NPC) && (g_dlvUp || g_mogPostUp) && !strcmp(n, "money")) { dy = HIDE_DY; return; }
+    if ((hide & NU_NPC) && g_dlvUp && (!strcmp(n, "moneyctr") || !strcmp(n, "itemctrl"))) { dy = HIDE_DY; return; }   // the gil to send, a count (2026-11-21 : "la saisie des gils ouvre la box du jeu")   // the Mog House's menus (unread : the rescue pass brings one back)
     // Treasure : the list and Pass all born parked (a read failure : the rescue pass brings them back) ; its card once ours
-    if ((hide & NU_ACT) && (!strcmp(n, "loot") || !strcmp(n, "lnowin") || !strcmp(n, "lootope") || (g_lootUp && !strcmp(n, "iteminfo")))) { dy = HIDE_DY; return; }   // Check : born parked (a mannequin, not ours, is brought back by the rescue pass)
+    if ((hide & NU_ACT) && !g_lootNot && (!strcmp(n, "loot") || !strcmp(n, "lnowin") || !strcmp(n, "lootope") || (g_lootUp && !strcmp(n, "iteminfo")))) { dy = HIDE_DY; return; }   // Check : born parked (a mannequin, not ours, is brought back by the rescue pass)
     if ((hide & NU_NPC)   && in_list(n, NPC_W)) { dy = HIDE_DY; return; }
     if ((hide & NU_MAIN)  && (in_list(n, MAIN_W) || in_list(n, MAIN_SUB_W) || in_list(n, MAIN_SORT_W))) { dy = HIDE_DY; return; }
     // Status -> Profile : BORN parked (its record) -- its flag, rank bar and icons are drawn where it OPENED and do not
@@ -217,6 +238,12 @@ NativeNet g_net; bool g_nsFail = false;                                         
 NativeShop g_shop;                                                                        // the NPC shop (shop_poll)
 NativeInspect g_insp;                                                                     // a player's Check (inspect_poll)
 NativeLoot g_loot;                                                                        // Treasure (loot_poll)
+NativeMogMenus g_mog;                                                                     // the Mog House's menus (mog_poll)
+NativeDelivery g_dlv;                                                                     // the delivery box (dlv_poll)
+NativeJobSel g_js;                                                                        // Change Jobs' grid (jobsel_poll)
+NativeRoomList g_room; bool g_roomNot = false;                                            // Remodel's styles (room_poll)
+const char* const POST1_W[] = { "post1", 0 }; const char* const POST2_W[] = { "post2", 0 };
+const char* const DELIV_W[] = { "delivery", 0 }; const char* const STRDL_W[] = { "stringdl", 0 };
 const char* const LOOT_W[] = { "loot", 0 };
 const char* const LOOTOPE_W[] = { "lootope", 0 };
 const char* const LNOWIN_W[] = { "lnowin", 0 };
@@ -966,11 +993,13 @@ bool items_read(u32 mgr, u32 focus, NativeItems& I) {
             TextList B; u32 dl = 0, bag = 0; static int said = 0;
             const bool tl = tl_find(mgr, "bank", B);
             const bool dOk = tl && safe_read(B.h + 0x58, &dl) && valid_ptr(dl) && safe_read(dl + 8, &bag);
-            if (said < 6) { ++said; windower::debug::log("NATIVEUI items : 'bank' open -- text list %s (rows %d, top %d, vis %d, cursor %d), delegate %08X bag %u%s",
-                tl ? "read" : "UNREADABLE", B.count, B.top, B.vis, B.cursor, dl, bag, dOk && bag == 0x11 ? " -> the Recycling Bin, AioHUD draws it" : " -- not the bin : the client's"); }
-            if (!dOk || bag != 0x11) return false;
+            const bool bagOk = dOk && bag >= 1 && bag <= 0x11 && bag != 3;   // a storage bag (Mog House), or the Recycling Bin
+            static u32 saidBag = 0xFFFFFFFFu;
+            if (said < 12 && bag != saidBag) { ++said; saidBag = bag; windower::debug::log("NATIVEUI items : 'bank' open -- text list %s (rows %d, top %d, vis %d, cursor %d), delegate %08X bag %u%s",
+                tl ? "read" : "UNREADABLE", B.count, B.top, B.vis, B.cursor, dl, bag, !bagOk ? " -- not a bag AioHUD knows : the client's" : bag == 0x11 ? " -> the Recycling Bin, AioHUD draws it" : " -> a Mog House storage, AioHUD draws it (with the inventory beside)"); }
+            if (!bagOk) return false;
             u32 rows = 0; if (!safe_read(B.h + 0x38, &rows) || (B.count > 0 && !valid_ptr(rows))) return false;
-            I.binMode = true; I.binN = B.count; I.binTop = B.top; I.binVis = B.vis > 16 ? 16 : B.vis; I.binCursor = B.cursor;
+            I.binMode = true; I.binBag = (int)bag; I.binN = B.count; I.binTop = B.top; I.binVis = B.vis > 16 ? 16 : B.vis; I.binCursor = B.cursor;
             I.bx0 = B.rx0; I.by0 = B.ry0; I.binUiW = B.uiW; I.binUiH = B.uiH; I.binFocused = focus == B.obj;
             for (int i = 0; i < I.binVis && I.binTop + i < I.binN; ++i) {
                 unsigned char r[0x54]; if (!rdblk(rows + (u32)(I.binTop + i) * 0x54, r, sizeof(r))) return false;
@@ -978,7 +1007,7 @@ bool items_read(u32 mgr, u32 focus, NativeItems& I) {
                 NativeItemRow& w = I.binRow[i];
                 w.itemId = (unsigned short)(id & 0xFFFF); w.itemCount = (int)(cnt > 9999 ? 9999 : cnt); w.itemCol = col; w.tempRow = false;
             }
-            { ItemBagInfo bi; if (item_bag_info(0x11, bi) && bi.max) I.binCap = bi.max; }
+            { ItemBagInfo bi; if (item_bag_info((int)bag, bi) && bi.max) I.binCap = bi.max; }
             static int saidR = 0;
             if (saidR < 4) { ++saidR; windower::debug::log("NATIVEUI items : bin rows %d/%d, row 0 id %u count %d colour %08X", I.binN, I.binCap, I.binRow[0].itemId, I.binRow[0].itemCount, I.binRow[0].itemCol); }
         }
@@ -2157,7 +2186,7 @@ void yn_park(u32 mgr) {
     if (g_equip.open) park_named(mgr, "iteminfo", ecLog, "Equipment -> the item card");
     static int itLog = 0, icLog = 0;
     if (g_items.open) { park_named(mgr, "inventor", itLog, "Items -> the list"); park_named(mgr, "iteminfo", icLog, "Items -> the item card"); }
-    static int bnLog = 0; if (g_items.open && g_items.binMode) park_named(mgr, "bank", bnLog, "Items -> the Recycling Bin");
+    static int bnLog = 0; if (g_items.open && g_items.binMode) park_named(mgr, "bank", bnLog, "Items -> the Recycling Bin / a Mog House storage");
     static int qtLog = 0; if (g_items.open && (g_items.binMode || g_items.synMode) && g_items.qtyOk) park_named(mgr, "itemctrl", qtLog, "Items / Synthesis -> the quantity");
     static int tsLog2 = 0, hlLog = 0, siLog = 0;
     if (g_syn.open && g_syn.gridOpen) park_named(mgr, "tskill1", tsLog2, "Synthesis -> the grid");
@@ -2262,6 +2291,10 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_scopt.open && !strcmp(nm, "scoption"))
                              || (g_insp.open && (!strcmp(nm, "inspect") || !strcmp(nm, "iteminfo") || !strcmp(nm, "comment")))
                              || (g_loot.open && (!strcmp(nm, "loot") || !strcmp(nm, "lootope") || !strcmp(nm, "lnowin") || !strcmp(nm, "iteminfo")))
+                             || [&]() { for (int i = 0; i < g_mog.n; ++i) if (!strcmp(nm, g_mog.m[i].name)) return true; return false; }()
+                             || (g_js.open && !strcmp(nm, "jobcselu")) || (g_room.open && !strcmp(nm, "roomlist"))
+                             || (g_dlv.box && (!strcmp(nm, "post1") || !strcmp(nm, "post2") || !strcmp(nm, "delivery") || !strcmp(nm, "stringdl") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || !strcmp(nm, "inventor")
+                                               || (g_dlv.gilUp && !strcmp(nm, "moneyctr")) || (g_dlv.qtyUp && !strcmp(nm, "itemctrl"))))
                              || (g_shop.owner && ((g_shop.owner == 1 && !strcmp(nm, "shopmain")) || (g_shop.owner == 2 && !strcmp(nm, "guildsho")) || (g_shop.owner == 4 && !strcmp(nm, "bazaar"))
                                                   || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl"))))))
                              || (g_cur.open && !strcmp(nm, "evitem"))
@@ -2780,6 +2813,7 @@ void shop_poll(bool on, u32 mgr) {
     const int stM = S.owner * 4 + (mo ? (S.mainOpen ? 2 : 1) : 0);
     if (stM != wasM && saidM < 20) { ++saidM; wasM = stM;
         windower::debug::log("NATIVEUI shop : %s%s", ONAME[S.owner], !mo ? (S.owner == 3 ? " -- its list, AioHUD draws it" : " (no shop)") : S.mainOpen ? " -- its menu is up, AioHUD draws it" : " -- its menu UNREADABLE (entry_read) : nothing drawn for it"); }
+    { static int bad = 0; born_guard(mo != 0, S.mainOpen, bad, g_shopNot, "shop menu"); }
     if (!S.owner || (mo && !S.mainOpen)) { if (!S.owner) g_shop = S; else { S.owner = 0; g_shop = S; } return; }
     if (S.mainOpen) {
         S.mainFocused = focus == mo; S.mainCursor = m.cursor; S.mx0 = m.rx0; S.my0 = m.ry0; S.uiW = m.uiW; S.uiH = m.uiH;
@@ -2841,14 +2875,15 @@ void inspect_poll(bool on, u32 mgr) {
     g_inspUp = false;
     if (!on || !mgr) { g_insp = I; return; }
     const u32 o = win_named(mgr, "inspect");
-    if (!o) { g_insp = I; return; }
+    if (!o) { g_insp = I; g_inspNot = false; return; }
     u32 focus = 0; { const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus); }
     u32 hd = 0; signed char mode = 0; short cur = 0;
     bool ok = safe_read(o + OBJ_HANDLER, &hd) && valid_ptr(hd) && rd8(hd + 0x14F, *(unsigned char*)&mode) && rd16(o + 0x4C, cur)
               && rd16(o + OBJ_RECT, I.rx0) && rd16(o + OBJ_RECT + 2, I.ry0);
     u32 wh = 0; if (ok && safe_read(mgr + 0x80, &wh)) { I.uiW = (short)(wh & 0xFFFF); I.uiH = (short)(wh >> 16); } else ok = false;
     if (ok && (I.uiW < 320 || I.uiH < 240 || I.uiW > 8000 || I.uiH > 8000)) ok = false;
-    if (ok && mode != -1) ok = false;                               // the Mog House mannequin : the client's
+    if (ok && mode != -1) { ok = false; g_inspNot = true; }        // the Mog House mannequin : the client's, at once
+    { static int bad = 0; born_guard(true, ok || g_inspNot, bad, g_inspNot, "check (inspect)"); }
     unsigned char ids[32];
     if (ok && !rdblk(hd + 0x78, ids, sizeof(ids))) ok = false;
     static int said = 0; static int was = -1;
@@ -2888,7 +2923,7 @@ void loot_poll(bool on, u32 mgr) {
     g_lootUp = false;
     if (!on || !mgr) { g_loot = X; return; }
     const u32 o = win_named(mgr, "loot");
-    if (!o) { g_loot = X; return; }
+    if (!o) { g_loot = X; { static int bad = 0; born_guard(false, false, bad, g_lootNot, "treasure (loot)"); } return; }
     u32 focus = 0; { const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus); }
     u32 hd = 0; short cur = 0, cnt = 0; unsigned char rows[10 * 0x20];
     bool ok = safe_read(o + OBJ_HANDLER, &hd) && valid_ptr(hd) && rd16(hd + 0x15C, cnt) && cnt >= 0 && cnt <= 10 && rd16(o + 0x4C, cur)
@@ -2906,6 +2941,7 @@ void loot_poll(bool on, u32 mgr) {
     if ((ok ? cnt : -1) != wasN && said < 16) { ++said; wasN = ok ? cnt : -1;
         if (ok && cnt) windower::debug::log("NATIVEUI treasure : %d row(s) -- AioHUD draws them ; row 0 : item %u x%d, your lot %d, pool %u, best '%s' %u", cnt, X.row[0].item, X.row[0].qty, X.row[0].ownLot, X.row[0].pool, X.row[0].lotter, X.row[0].hiLot);
         else windower::debug::log("NATIVEUI treasure : %s", ok ? "no row" : "the list UNREADABLE -- the client's"); }
+    { static int bad = 0; born_guard(true, ok, bad, g_lootNot, "treasure (loot)"); }
     if (!ok) { g_loot = X; return; }
     while (X.ry0 >= X.uiH) X.ry0 = (short)(X.ry0 - HIDE_DY);
     X.n = cnt; X.cursor = cur >= 1 && cur <= cnt ? cur - 1 : -1; X.focused = focus == o; X.open = true;
@@ -2920,6 +2956,205 @@ void loot_poll(bool on, u32 mgr) {
     if (stO != wasO && saidO < 20) { ++saidO; wasO = stO;
         windower::debug::log("NATIVEUI treasure : Lot / Pass %s%s, Pass all %s%s", X.opeOpen ? "open" : "closed", X.opeOpen ? (X.opeLotOk ? " (Lot usable)" : " (Lot grey)") : "", X.allOpen ? "up" : "absent", X.allFocused ? " (focused)" : ""); }
     g_loot = X; g_lootUp = true;
+}
+void mog_poll(bool on, u32 mgr) {
+    NativeMogMenus M; memset(&M, 0, sizeof(M)); bool unread = false;
+    if (on && mgr) for (int w = 0; MOG_W[w] && M.n < MOG_MENUS; ++w) {
+        const char* one[2] = { MOG_W[w], 0 };
+        NativeEntryMenu m; u32 o = 0;
+        const int er = entry_read(one, m, &o);
+        if (er == 1 && o && !strcmp(MOG_W[w], "mogdoor")) {          // the door (live 2026-11-21) : its FIRST page only (handler +0x18 page,
+            u32 h = 0; unsigned char pg = 0xFF;                       // +0x15 the result, +0x1A floors allowed) -- entries 1..4 ; the zone page stays the client's
+            if (!safe_read(o + OBJ_HANDLER, &h) || !valid_ptr(h) || !rd8(h + 0x18, pg)) continue;
+            if (pg != 0) {                                            // the ZONE page (docs/notes/mogdoor-re-2026-11-21.md) : h+0x1C -> u16 zone
+                u32 lp = 0; signed char cnt = 0; unsigned char garden = 0;  // ids, 0-ended ; s8 h+0x16 the count ; h+0x19 Mog Garden allowed
+                unsigned short ids[9] = { 0 };
+                const bool lok = safe_read(h + 0x1C, &lp) && valid_ptr(lp) && rd8(h + 0x16, *(unsigned char*)&cnt) && rd8(h + 0x19, garden)
+                                 && cnt >= 1 && cnt <= 8 && rdblk(lp, ids, (unsigned)(cnt + 1) * 2) && ids[cnt] == 0;
+                bool idsOk = lok; for (int i = 0; idsOk && i < cnt; ++i) if (!ids[i] || ids[i] >= 0x400) idsOk = false;
+                static int saidZ = 0; static int wasZ = -2;
+                if ((idsOk ? cnt : -1) != wasZ && saidZ < 10) { ++saidZ; wasZ = idsOk ? cnt : -1;
+                    windower::debug::log("NATIVEUI mog door : the zone page -- %s %d zone(s) : %u %u %u %u %u, Mog Garden %s", idsOk ? "AioHUD draws" : "UNREADABLE (the client's) :", cnt, ids[0], ids[1], ids[2], ids[3], ids[4], garden ? "allowed" : "locked"); }
+                if (!idsOk) continue;
+                int k = 0;
+                for (int i = 0; i < cnt && k < 32; ++i) {               // entry i + 1 = zone i ; the client's name + "." ; a locked Garden grey
+                    int at = -1; for (int j = 0; j < m.n; ++j) if (m.entry[j] == i + 1) at = j;
+                    m.entry[k] = (unsigned char)(i + 1); m.state[k] = (ids[i] == 280 && !garden) ? 5 : (at >= 0 ? m.state[at] : 0);
+                    const char* zn = zone_name(ids[i]); _snprintf(m.label[k], sizeof(m.label[k]), "%s.", zn && zn[0] ? zn : "?"); m.label[k][sizeof(m.label[k]) - 1] = 0;
+                    ++k;
+                }
+                m.n = k;
+            } else {                                                  // the first page : entries 1..4
+                int k = 0; for (int i = 0; i < m.n; ++i) if (m.entry[i] >= 1 && m.entry[i] <= 4) { m.entry[k] = m.entry[i]; m.state[k] = m.state[i]; memcpy(m.label[k], m.label[i], sizeof(m.label[k])); ++k; }
+                m.n = k; if (k != 4) continue;
+            }
+        }
+        if (er == 1 && o) { while (m.uiH > 0 && m.ry0 >= m.uiH) { m.ry0 = (short)(m.ry0 - HIDE_DY); m.ry1 = (short)(m.ry1 - HIDE_DY); } M.m[M.n++] = m; }
+        else if (o) unread = true;
+    }
+    { static int bad = 0; born_guard(M.n > 0 || unread, !unread, bad, g_mogNot, "mog house menu"); }
+    g_mogPostUp = false; for (int i = 0; i < M.n; ++i) if (!strcmp(M.m[i].name, "mogpost")) g_mogPostUp = true;
+    for (int i = 0; i < M.n; ++i) if (!strcmp(M.m[i].name, "myroom")) {
+        static char wasSt[40] = ""; static int saidSt = 0; char st[40]; int o = 0;
+        for (int j = 0; j < M.m[i].n && o < 36; ++j) o += _snprintf(st + o, sizeof(st) - o, "%d:%d ", M.m[i].entry[j], M.m[i].state[j]);
+        st[o] = 0;
+        if (strcmp(st, wasSt) && saidSt < 20) { ++saidSt; lstrcpynA(wasSt, st, sizeof(wasSt)); windower::debug::log("NATIVEUI mog house : the moogle's entries (entry:state) %s", st); }
+    }
+    static int said = 0; static int was = -1;
+    if (M.n != was && said < 30) { ++said; was = M.n;
+        char l[80] = ""; int p = 0; for (int i = 0; i < M.n; ++i) p += _snprintf(l + p, sizeof(l) - p, "%s%s", i ? ", " : "", M.m[i].name);
+        windower::debug::log("NATIVEUI mog house : %d menu(s) AioHUD draws%s%s", M.n, M.n ? " : " : "", l); }
+    g_mog = M;
+}
+// ---- the DELIVERY BOX : the slots' place in P from DLV_SLOT (storage-delivery-re s.9 : the same in the June and November
+// dumps) -- bounded retry, logged ; P from the trade's resolver ----
+u32 g_dlvSend = 0, g_dlvRecv = 0; bool g_dlvOk = false; int g_dlvTries = 0; DWORD g_dlvNext = 0;
+bool dlv_res() {
+    if (g_dlvOk) return true;
+    const DWORD now = GetTickCount();
+    if (g_dlvTries && (int)(now - g_dlvNext) < 0) return false;
+    ++g_dlvTries; g_dlvNext = now + 5000;
+    const u32 a = aob_masked("8B 54 24 04 33 C0 85 D2 56 74 ?? 8B 4C 24 10 85 C9 7C ?? 83 F9 08 7D ?? 8B 74 24 0C 4E 74 ?? 4E 75 ?? 8D 84 C9 ?? ?? ?? ?? 5E 8D 04 C2 C3 8D 0C C9 8D 84 CA ?? ?? ?? ??");
+    u32 q = 0, r = 0;
+    const bool ok = a && safe_read(a + 0x25, &q) && safe_read(a + 0x34, &r) && q * 8 < r && r - q * 8 == 0x24C && r < 0x100000;
+    if (ok) { g_dlvSend = q * 8; g_dlvRecv = r; g_dlvOk = true; windower::debug::log("NATIVEUI delivery resolved (try %d) : send slots P+0x%X, receive slots P+0x%X", g_dlvTries, g_dlvSend, g_dlvRecv); }
+    else if (g_dlvTries == 1 || g_dlvTries == 3 || g_dlvTries % 12 == 0) windower::debug::log("NATIVEUI delivery NOT resolved (try %d : aob %d) -- the client's own boxes stay", g_dlvTries, !!a);
+    return g_dlvOk;
+}
+void jobsel_poll(bool on, u32 mgr) {
+    NativeJobSel J; memset(&J, 0, sizeof(J));
+    if (!on || !mgr) { g_js = J; return; }
+    NativeEntryMenu m; u32 o = 0;
+    const int er = entry_read(JOBSEL_W, m, &o);
+    const bool ok = er == 1 && o && jobs_read(J.jobs) && J.jobs.ok;
+    { static int bad = 0; born_guard(o != 0, ok, bad, g_jsNot, "change jobs (jobcselu)"); }
+    if (!ok) { g_js = J; return; }
+    for (int i = 0; i < m.n; ++i) if (m.entry[i] >= 1 && m.entry[i] <= 22) J.grey[m.entry[i]] = m.state[i] == 5;
+    J.cursor = m.cursor; J.focused = m.focused; J.rx0 = m.rx0; J.ry0 = m.ry0; J.uiW = m.uiW; J.uiH = m.uiH;
+    while (J.uiH > 0 && J.ry0 >= J.uiH) J.ry0 = (short)(J.ry0 - HIDE_DY);
+    { const char* one[2] = { "jobchang", 0 }; NativeEntryMenu c; if (entry_read(one, c, 0) == 1) J.sub = c.cursor == 2; }
+    J.open = true;
+    static int said = 0; static int was = -1;                       // the entry -> job check : the client's help line names it
+    if (J.cursor != was && said < 30) { ++said; was = J.cursor;
+        const NativeTopBar& TB = native_topbar();
+        windower::debug::log("NATIVEUI change jobs : %s job, entry %d (%s) grey %d ; the client's help '%s' ; main %d sub %d",
+            J.sub ? "SUPPORT" : "MAIN", J.cursor, J.cursor >= 1 && J.cursor <= 22 ? job_abbr(J.cursor) : "?", J.cursor >= 1 && J.cursor <= 22 ? (int)J.grey[J.cursor] : -1,
+            TB.ok ? TB.help.text : "?", J.jobs.mjob, J.jobs.sjob); }
+    g_js = J;
+}
+void room_poll(bool on, u32 mgr) {
+    NativeRoomList R; memset(&R, 0, sizeof(R)); R.cursor = -1;
+    if (!on || !mgr) { g_room = R; return; }
+    TextList T; const bool up = tl_find(mgr, "roomlist", T);
+    bool ok = up; u32 rows = 0;
+    if (ok && (!safe_read(T.h + 0x38, &rows) || (T.count > 0 && !valid_ptr(rows)))) ok = false;
+    if (ok) {
+        R.n = T.count; R.top = T.top; R.vis = T.vis > 8 ? 8 : T.vis; R.cursor = T.cursor; R.rx0 = T.rx0; R.ry0 = T.ry0; R.ry1 = T.ry1; R.uiW = T.uiW; R.uiH = T.uiH;
+        unsigned char r0[0x54] = { 0 };
+        for (int i = 0; i < R.vis && R.top + i < R.n && ok; ++i) {
+            unsigned char r[0x54]; if (!rdblk(rows + (u32)(R.top + i) * 0x54, r, sizeof(r))) { ok = false; break; }
+            if (!i) memcpy(r0, r, sizeof(r0));
+            for (int c = 0; c < 8 && !R.label[i][0]; ++c) {
+                u32 v = 0; memcpy(&v, r + 0x28 + 4 * c, 4);
+                if ((r[c] == 1 || r[c] == 3) && valid_ptr(v)) { char t[48]; if (rdblk(v, t, sizeof(t))) { t[47] = 0; int o = 0; for (int j = 0; j < 47 && t[j]; ++j) if ((unsigned char)t[j] >= 0x20 && (unsigned char)t[j] < 0x7F) R.label[i][o++] = t[j]; R.label[i][o] = 0; } }   // type 3 : live 2026-11-21
+            }
+            if (!R.label[i][0]) ok = false;                         // a row without a text : not this reader's
+        }
+        static int said = 0; static int wasN = -1;
+        if (R.n != wasN && said < 10) { ++said; wasN = R.n;
+            u32 v[4]; for (int c = 0; c < 4; ++c) memcpy(&v[c], r0 + 0x28 + 4 * c, 4);
+            windower::debug::log("NATIVEUI remodel : roomlist %d rows (cursor %d) -- row 0 types %02X %02X %02X %02X values %08X %08X %08X %08X -> '%s'%s",
+                R.n, R.cursor, r0[0], r0[1], r0[2], r0[3], v[0], v[1], v[2], v[3], R.label[0], ok ? " -- AioHUD draws it" : " -- NOT read : the client's");
+            if (!ok && valid_ptr(v[0])) {                            // what the text cell points at, raw (the format to learn)
+                unsigned char b[48] = { 0 }; rdblk(v[0], b, sizeof(b)); char hx[48 * 3 + 1]; int o = 0;
+                for (int j = 0; j < 48; ++j) o += sprintf(hx + o, "%02X%s", b[j], (j % 4 == 3) ? " " : "");
+                windower::debug::log("NATIVEUI remodel : row 0's cell 0 points at %s", hx); } }
+    }
+    { static int bad = 0; born_guard(up, ok, bad, g_roomNot, "remodel (roomlist)"); }
+    if (!ok) { g_room = R; g_room.open = false; return; }
+    while (R.uiH > 0 && R.ry0 >= R.uiH) { R.ry0 = (short)(R.ry0 - HIDE_DY); R.ry1 = (short)(R.ry1 - HIDE_DY); }
+    u32 focus = 0; { const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus); }
+    R.focused = focus == T.obj; R.open = true;
+    g_room = R;
+}
+void dlv_poll(bool on, u32 mgr) {
+    NativeDelivery D; memset(&D, 0, sizeof(D));
+    if (!on || !mgr) { g_dlv = D; g_dlvUp = false; return; }
+    const u32 p1 = win_named(mgr, "post1"), dv = p1 ? 0 : win_named(mgr, "delivery");
+    if (!p1 && !dv) { g_dlv = D; g_dlvUp = false; return; }
+    u32 focus = 0; { const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus); }
+    u32 P0 = 0;
+    bool ok = dlv_res() && tr_res() && safe_read(g_trr.pVar, &P0) && valid_ptr(P0);
+    const u32 base = P0 + (p1 ? g_dlvRecv : g_dlvSend);
+    for (int i = 0; ok && i < 8; ++i) {
+        unsigned char b[0x2C]; if (!rdblk(base + (u32)i * 0x48, b, sizeof(b))) { ok = false; break; }
+        NativeDlvSlot& w = D.slot[i];
+        memcpy(&w.state, b, 4); memcpy(&w.item, b + 0x20, 2); memcpy(&w.count, b + 0x28, 4);
+        int j = 0; for (; j < 16 && b[4 + j] >= 0x20 && b[4 + j] < 0x7F; ++j) w.name[j] = (char)b[4 + j]; w.name[j] = 0;
+        if (!w.state) { w.item = 0; w.count = 0; }
+    }
+    const u32 bo = p1 ? p1 : dv; short cur = 0;
+    if (ok && (!rd16(bo + 0x4C, cur) || !rd16(bo + OBJ_RECT, D.rx0) || !rd16(bo + OBJ_RECT + 2, D.ry0))) ok = false;
+    u32 wh = 0; if (ok && safe_read(mgr + 0x80, &wh)) { D.uiW = (short)(wh & 0xFFFF); D.uiH = (short)(wh >> 16); } else ok = false;
+    if (ok && (D.uiW < 320 || D.uiH < 240 || D.uiW > 8000 || D.uiH > 8000)) ok = false;
+    bool typing = false;
+    if (ok && dv) {                                                 // the send box : its state, the recipient ; stringdl
+        u32 h = 0; short st = 0;
+        if (safe_read(dv + OBJ_HANDLER, &h) && valid_ptr(h) && rd16(h + 0x1B4, st)) {
+            D.sendState = st; char r[33]; if (rdblk(h + 0x1C6, r, 32)) { r[32] = 0; int j = 0; for (; j < 32 && r[j] >= 0x20 && r[j] < 0x7F; ++j) D.recipient[j] = r[j]; D.recipient[j] = 0; }
+        } else ok = false;
+        const u32 so = win_named(mgr, "stringdl");
+        if (ok && so) {
+            u32 sh = 0; unsigned char md = 0, ty = 0;
+            if (safe_read(so + OBJ_HANDLER, &sh) && valid_ptr(sh) && rd8(sh + 0x14, md) && rd8(sh + 0x164, ty)) {
+                D.strMode = md; typing = ty != 0;
+                u32 in = 0; unsigned char act = 0;                  // the FsTextInput (+0x160) : active +0x694, length +0x690, text +0x3A0
+                if (safe_read(sh + 0x160, &in) && valid_ptr(in) && rd8(in + 0x694, act)) {
+                    u32 len = 0; safe_read(in + 0x690, &len); if (len > 0x168) len = 0x168;
+                    if (rdblk(in + 0x3A0, D.live, len)) { D.liveN = (int)len; D.typing = act == 1; }   // after Enter : the text stays, inactive
+                }
+                char t[33]; if (rdblk(sh + 0x58, t, 32)) { t[32] = 0; int j = 0; for (; j < 32 && t[j] >= 0x20 && t[j] < 0x7F; ++j) D.typed[j] = t[j]; D.typed[j] = 0; }
+            }
+        }
+    }
+    {   NativeEntryMenu m; u32 mo = 0;                              // post2 / stringdl
+        if (ok && entry_read(p1 ? POST2_W : STRDL_W, m, &mo) == 1 && mo) {
+            D.subOpen = true; D.subFocused = focus == mo; D.subCursor = m.cursor;
+            for (int i = 0; i < m.n; ++i) if (m.entry[i] >= 1 && m.entry[i] <= 3) D.subGrey[m.entry[i]] = m.state[i] == 5;
+            short sy = 0; rd16(mo + OBJ_RECT, D.sx0); rd16(mo + OBJ_RECT + 2, sy); D.sy0 = sy;
+            while (D.sy0 >= D.uiH) D.sy0 = (short)(D.sy0 - HIDE_DY);
+        }
+    }
+    while (ok && D.ry0 >= D.uiH) D.ry0 = (short)(D.ry0 - HIDE_DY);
+    {   TextList T; u32 rows = 0;                                   // the inventory beside the box
+        if (ok && tl_find(mgr, "inventor", T) && safe_read(T.h + 0x38, &rows) && (T.count == 0 || valid_ptr(rows))) {
+            D.invN = T.count; D.invTop = T.top; D.invVis = T.vis > 16 ? 16 : T.vis; D.invCursor = T.cursor; D.ix0 = T.rx0; D.iy0 = T.ry0;
+            bool rok = true;
+            for (int i = 0; i < D.invVis && D.invTop + i < D.invN; ++i) {
+                unsigned char r[0x54]; if (!rdblk(rows + (u32)(D.invTop + i) * 0x54, r, sizeof(r))) { rok = false; break; }
+                u32 id = 0, cnt = 0, col = 0; memcpy(&id, r + 0x2C, 4); memcpy(&cnt, r + 0x30, 4); memcpy(&col, r + 0x0C, 4);
+                NativeItemRow& w = D.invRow[i];
+                w.itemId = (unsigned short)(id & 0xFFFF); w.itemCount = (int)(cnt > 9999 ? 9999 : cnt); w.itemCol = col; w.tempRow = false; w.hasPrice = false;
+            }
+            D.invOpen = rok; D.invFocused = rok && focus == T.obj;
+        }
+    }
+    static int said = 0; static int was = -1;
+    const int st = ok ? (p1 ? 1 : 2) * 2 + (int)typing : 0;
+    if (st != was && said < 20) { ++said; was = st;
+        windower::debug::log("NATIVEUI delivery : %s%s ; slot 0 state %u item %u x%u '%s' ; send state %d, recipient '%s', stringdl mode %d typed '%s'",
+            !ok ? "a box is up but UNREADABLE -- the client's" : p1 ? "RECEIVE box -- AioHUD draws it" : "SEND box -- AioHUD draws it", typing ? (D.typing ? " (the name is being typed : AioHUD shows the line)" : " (typed, its line UNREADABLE : the client's box)") : "",
+            D.slot[0].state, D.slot[0].item, D.slot[0].count, D.slot[0].name, D.sendState, D.recipient, D.strMode, D.typed); }
+    if (typing && !D.typing) ok = false;                            // typing, its line unread : the client's box meanwhile
+    if (ok) {                                                       // the gil to send, a stack's count : the client's boxes, read
+        if (const u32 m = win_named(mgr, "moneyctr")) { u32 h = 0;
+            if (safe_read(m + OBJ_HANDLER, &h) && valid_ptr(h) && safe_read(h + 0x20, &D.gilDigit) && safe_read(h + 0x24, &D.gilMax) && safe_read(h + 0x28, &D.gilVal) && D.gilVal <= D.gilMax) D.gilUp = true; }
+        if (const u32 q = win_named(mgr, "itemctrl")) { u32 h = 0; unsigned char mx = 0, v = 0;
+            if (safe_read(q + OBJ_HANDLER, &h) && valid_ptr(h) && rd8(h + 0x22, mx) && rd8(h + 0x23, v) && mx >= 1 && v <= mx) { D.qtyUp = true; D.qtyMax = mx; D.qtyVal = v; } }
+    }
+    if (!ok) { g_dlv = D; g_dlv.box = 0; g_dlvUp = false; return; }
+    D.box = p1 ? 1 : 2; D.focused = focus == bo; D.cursor = cur;
+    g_dlv = D; g_dlvUp = true;
 }
 void buffwin_poll(bool on, u32 mgr) {
     if (!on || !mgr) { g_bw.open = false; g_bwObj = g_bwH = 0; return; }
@@ -3451,6 +3686,18 @@ bool native_shopmain_pick(int entry) { const char* const* W = shop_owner_w(); re
 const NativeShop& native_shop() { return g_shop; }
 const NativeInspect& native_inspect() { return g_insp; }
 const NativeLoot& native_loot() { return g_loot; }
+const NativeMogMenus& native_mog_menus() { return g_mog; }
+const NativeDelivery& native_delivery() { return g_dlv; }
+const NativeJobSel& native_jobsel() { return g_js; }
+const NativeRoomList& native_roomlist() { return g_room; }
+bool native_jobsel_hover(int entry) { return g_js.open && entry_hover(JOBSEL_W, entry); }
+bool native_jobsel_pick(int entry) { return g_js.open && entry_pick(JOBSEL_W, entry); }
+bool native_dlv_hover(int entry) { return g_dlv.box && entry_hover(g_dlv.box == 1 ? POST1_W : DELIV_W, entry); }
+bool native_dlv_pick(int entry) { return g_dlv.box && entry_pick(g_dlv.box == 1 ? POST1_W : DELIV_W, entry); }
+bool native_dlvsub_hover(int entry) { return g_dlv.box && g_dlv.subOpen && entry_hover(g_dlv.box == 1 ? POST2_W : STRDL_W, entry); }
+bool native_dlvsub_pick(int entry) { return g_dlv.box && g_dlv.subOpen && entry_pick(g_dlv.box == 1 ? POST2_W : STRDL_W, entry); }
+bool native_mog_hover(const char* name, int entry) { if (!name || !in_list(name, MOG_W)) return false; const char* one[2] = { name, 0 }; return entry_hover(one, entry); }
+bool native_mog_pick(const char* name, int entry) { if (!name || !in_list(name, MOG_W)) return false; const char* one[2] = { name, 0 }; return entry_pick(one, entry); }
 bool native_loot_hover(int row) { return g_loot.open && entry_hover(LOOT_W, row + 1); }
 bool native_loot_pick(int row) { return g_loot.open && entry_pick(LOOT_W, row + 1); }
 bool native_lootope_hover(int entry) { return g_loot.opeOpen && entry_hover(LOOTOPE_W, entry); }
@@ -3968,6 +4215,27 @@ void native_ui_tick(bool inWorld) {
     shop_poll(wanted && (c.nuHide & NU_NPC), manager());       // the NPC shop : Buy / Sell, its list, the quantity
     inspect_poll(wanted && (c.nuHide & NU_ACT), manager());    // a player's Check : AioHUD's own
     loot_poll(wanted && (c.nuHide & NU_ACT), manager());       // Treasure : the list, Lot / Pass, Pass all
+    mog_poll(wanted && (c.nuHide & NU_NPC), manager());        // the Mog House's menus : AioHUD's own
+    dlv_poll(wanted && (c.nuHide & NU_NPC), manager());        // the delivery box : AioHUD's own (not while the name is typed)
+    jobsel_poll(wanted && (c.nuHide & NU_NPC), manager());     // Change Jobs : the job grid
+    room_poll(wanted && (c.nuHide & NU_NPC), manager());       // Remodel : the styles
+    if (wanted && (c.nuHide & NU_NPC) && g_room.open) { static int rmLog = 0; park_named(manager(), "roomlist", rmLog, "Remodel -> the styles"); }
+    if (wanted && (c.nuHide & NU_NPC) && g_js.open) { static int jsLog = 0; park_named(manager(), "jobcselu", jsLog, "Change Jobs -> the jobs"); }
+    if (wanted && (c.nuHide & NU_NPC) && g_dlv.box) {
+        static int d1 = 0, d2 = 0, d3 = 0, d4 = 0, d5 = 0;
+        park_named(manager(), g_dlv.box == 1 ? "post1" : "delivery", d1, "Delivery box -> the slots");
+        park_named(manager(), g_dlv.box == 1 ? "post2" : "stringdl", d2, "Delivery box -> the actions / the recipient");
+        park_named(manager(), "iteminfo", d3, "Delivery box -> the item card");
+        park_named(manager(), "money", d4, "Delivery box -> Current Gil");
+        park_named(manager(), "inventor", d5, "Delivery box -> the inventory");
+        static int d6 = 0, d7 = 0;
+        if (g_dlv.gilUp) park_named(manager(), "moneyctr", d6, "Delivery box -> the gil to send");
+        if (g_dlv.qtyUp) park_named(manager(), "itemctrl", d7, "Delivery box -> the count");
+    }
+    if (wanted && (c.nuHide & NU_NPC)) {
+        static int mgLog[8] = { 0 };
+        for (int i = 0; i < g_mog.n; ++i) { int w = 0; while (MOG_W[w] && strcmp(MOG_W[w], g_mog.m[i].name)) ++w; if (MOG_W[w]) park_named(manager(), MOG_W[w], mgLog[w & 7], "Mog House -> a menu"); }
+    }
     if (wanted && (c.nuHide & NU_ACT) && g_loot.open) {
         static int lLog = 0, oLog = 0, aLog = 0, cLog = 0;
         park_named(manager(), "loot", lLog, "Treasure -> the list");

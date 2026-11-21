@@ -739,3 +739,36 @@ Static detail : `docs/notes/dialogs-loot-inspect-re-2026-11-20.md` s.4 / s.5. Co
 - AioHUD (NU_ACT, `loot_poll` / `loot_draw`) : the three windows born parked (a read failure : the rescue pass brings them
   back), `iteminfo` too while the list is ours. The time left per row is the Treasure box's (pool index). The client
   sends 0x041 / 0x042.
+
+## 17. The Mog House : storage, the moogle's menus, the delivery box -- static 2026-11-20, live 2026-11-21
+
+Static detail : `docs/notes/storage-delivery-re-2026-11-20.md`. Confirmed live :
+- **Storage** = `bank` (the bag side, delegate `+0x58` -> bag `+8` : 2 Storage, 4 Locker, 16 Wardrobe 8 seen) + `inventor`
+  beside it (200,48) -- the SAME reader as the Recycling Bin (bag 0x11) : AioHUD's Items screen draws every bag (NU_MAIN).
+- **The moogle's menus** are entry menus WITH text labels in their definitions : `myroom` (16,756 : Storage, Delivery Box,
+  Change Jobs, Gardening, Layout, Open Mog House, Remodel), `storage` (16,628 : Mog Safe, Safe 2, Storage, Mog Locker,
+  Satchel, Mog Sack, Mog Case, M.Ward. 1..8), `itmsortw` (2199,48 : Auto-sort, Manual Sort, Switch, up with a bag's list) ;
+  `mogpost` (16,836, Receive / Send) draws IMAGES. They stay open UNDER the bag's list (AioHUD hides them meanwhile).
+- **Delivery** : DLV_SLOT resolves send P+0x2C7D8 / receive P+0x2CA24 (8 x 0x48 : +0 state, +4 name, +0x20 item (0xFFFF
+  gil), +0x28 count). `post1` (8 slots, 9 gil) + `post2` (Take / Dispose / Return) ; `delivery` (8 slots, 9 Send, 10 Cancel,
+  11 Gil ; state u16 +0x1B4, recipient +0x1C6) + `stringdl` (mode +0x14) -- every label an IMAGE. A sent gil slot : state 3
+  (in transit, grey).
+- **The recipient being typed** : stringdl +0x160 = an FsTextInput (the chat line's class) : active +0x694, length +0x690,
+  text +0x3A0 (7F FF the caret) -- the text STAYS there after Enter (inactive) until OK copies it to +0x1C6.
+- `money` is born BEFORE the box (with `mogpost` up) and draws its digits where it is born ; `moneyctr` (+0x20 digit step,
+  +0x24 max, +0x28 value) and `itemctrl` too : all born parked while the box is ours.
+- **Change Jobs** (live 2026-11-21) : `jobchang` (16,836 : Main Job / Support Job, text labels) then `jobcselu` (16,48,
+  22 entries, 2 columns of 11 = the jobs in the client's pairs, entry e = job e ; image labels). The help line is the same
+  for every job ("Select the job you want to change to.") : the mapping was checked on screen.
+- **Gardening / Layout** open `bankmenu` (Mog Safe / Safe 2, text labels) ; Layout's own menus `rmlo1` / `rmlo2` / `rmlo4`
+  have image labels (named from their help texts). **Remodel** = `roomlist`, a TEXT LIST whose text cell is TYPE 3 (a
+  pointer to the text ; row 0 "No changes").
+- **Open / Close Mog House** (myroom entry 6) : its label is an image that toggles ; the states tell it -- entries 5 / 6 / 7
+  = 11 / 11 / 11 closed, 5 / 11 / 5 open (Layout, Remodel grey), 5 / 5 / 5 a transition.
+- AioHUD draws the moogle's menus ABOVE its chat (the client's bottom-left column sits on it), each submenu BESIDE the
+  moogle's menu ; the moogle's menu steps away while a bag's list, the job grid or Remodel's list is up.
+- **The door** (`mogdoor`, live 2026-11-21 ; static : `docs/notes/mogdoor-re-2026-11-21.md`) : 5 entries, image labels ;
+  handler +0x14 the table slot, +0x15 the result (0xFF stay, 0x7D / 0x7E a floor, the row, 0x7F Mog Garden), +0x16 the zone
+  count, **+0x18 the page** (0 the 4 choices, 1 the zones), +0x19 Mog Garden allowed, +0x1A floors allowed, **+0x1C -> the
+  u16 zone ids, 0-ended** (one of the client's 9 lists ; San d'Oria = 230 231 232 280). Names = Windower's zone names + ".".
+  Not born parked (parked once a page is read) ; an implausible list stays the client's.
