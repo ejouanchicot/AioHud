@@ -90,6 +90,7 @@ DWORD g_tradeBornMs = 0;     // when `trade` was born : the `money` box born wit
 bool g_shopMainUp = false;   // shop_poll : a shop's entry menu is up (shopmain, guildsho, bazaar) : its list and `money` born parked
 bool g_shopUp = false;       // shop_poll : a shop's LIST is ours : its item card and quantity born parked (a new `iteminfo` per row)
 bool g_inspUp = false;       // inspect_poll : a player's Check is ours : its item card born parked (a new `iteminfo` per slot)
+bool g_lootUp = false;       // loot_poll : the Treasure list is ours : its item card born parked
 DWORD g_rgMapBornMs = 0;    // when cnqframe was born : its panels born in the same moment, before region_poll sees it open
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
 const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "iuse", "cmbmenu", "cmbhwin", "abimenu", "prty1", "prty2", "prty3", "prty7", "prty4", "prty8", "prty5us", "alarm",
@@ -124,7 +125,9 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     // articles derriere pop en flash") and the quantity : born parked, as Equipment's cards
     if ((hide & NU_NPC) && g_shopUp && (!strcmp(n, "iteminfo") || !strcmp(n, "itemctrl"))) { dy = HIDE_DY; return; }
     if ((hide & NU_ACT) && g_inspUp && (!strcmp(n, "iteminfo") || !strcmp(n, "comment"))) { dy = HIDE_DY; return; }   // Check : its card, the target's comment
-    if ((hide & NU_ACT) && !strcmp(n, "inspect")) { dy = HIDE_DY; return; }   // Check : born parked (a mannequin, not ours, is brought back by the rescue pass)
+    if ((hide & NU_ACT) && !strcmp(n, "inspect")) { dy = HIDE_DY; return; }
+    // Treasure : the list and Pass all born parked (a read failure : the rescue pass brings them back) ; its card once ours
+    if ((hide & NU_ACT) && (!strcmp(n, "loot") || !strcmp(n, "lnowin") || !strcmp(n, "lootope") || (g_lootUp && !strcmp(n, "iteminfo")))) { dy = HIDE_DY; return; }   // Check : born parked (a mannequin, not ours, is brought back by the rescue pass)
     if ((hide & NU_NPC)   && in_list(n, NPC_W)) { dy = HIDE_DY; return; }
     if ((hide & NU_MAIN)  && (in_list(n, MAIN_W) || in_list(n, MAIN_SUB_W) || in_list(n, MAIN_SORT_W))) { dy = HIDE_DY; return; }
     // Status -> Profile : BORN parked (its record) -- its flag, rank bar and icons are drawn where it OPENED and do not
@@ -213,6 +216,10 @@ NativeMacro g_mc; bool g_mcFail = false;                                        
 NativeNet g_net; bool g_nsFail = false;                                                 // the connection box (netstat)
 NativeShop g_shop;                                                                        // the NPC shop (shop_poll)
 NativeInspect g_insp;                                                                     // a player's Check (inspect_poll)
+NativeLoot g_loot;                                                                        // Treasure (loot_poll)
+const char* const LOOT_W[] = { "loot", 0 };
+const char* const LOOTOPE_W[] = { "lootope", 0 };
+const char* const LNOWIN_W[] = { "lnowin", 0 };
 const char* const INSPECT_W[] = { "inspect", 0 };
 const char* const SHOPMAIN_W[] = { "shopmain", 0 };
 const char* const GUILDSHO_W[] = { "guildsho", 0 };
@@ -2254,6 +2261,7 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_ls.open && !strcmp(nm, "link5")) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
                              || (g_scopt.open && !strcmp(nm, "scoption"))
                              || (g_insp.open && (!strcmp(nm, "inspect") || !strcmp(nm, "iteminfo") || !strcmp(nm, "comment")))
+                             || (g_loot.open && (!strcmp(nm, "loot") || !strcmp(nm, "lootope") || !strcmp(nm, "lnowin") || !strcmp(nm, "iteminfo")))
                              || (g_shop.owner && ((g_shop.owner == 1 && !strcmp(nm, "shopmain")) || (g_shop.owner == 2 && !strcmp(nm, "guildsho")) || (g_shop.owner == 4 && !strcmp(nm, "bazaar"))
                                                   || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl"))))))
                              || (g_cur.open && !strcmp(nm, "evitem"))
@@ -2874,6 +2882,45 @@ void inspect_poll(bool on, u32 mgr) {
             I.name, I.jobs, I.ls, I.lsItem, I.lsArgb, I.id[0], I.id[4], I.id[5], I.waresOk ? "usable" : "grey", entry_state(o, 17), I.cmOpen ? "up" : "none"); }
     g_insp = I; g_inspUp = true;
 }
+// ---- TREASURE (`loot` / `lootope` / `lnowin`) : dialogs-loot-inspect-re s.5 ----
+void loot_poll(bool on, u32 mgr) {
+    NativeLoot X; memset(&X, 0, sizeof(X)); X.cursor = -1;
+    g_lootUp = false;
+    if (!on || !mgr) { g_loot = X; return; }
+    const u32 o = win_named(mgr, "loot");
+    if (!o) { g_loot = X; return; }
+    u32 focus = 0; { const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus); }
+    u32 hd = 0; short cur = 0, cnt = 0; unsigned char rows[10 * 0x20];
+    bool ok = safe_read(o + OBJ_HANDLER, &hd) && valid_ptr(hd) && rd16(hd + 0x15C, cnt) && cnt >= 0 && cnt <= 10 && rd16(o + 0x4C, cur)
+              && rdblk(hd + 0x1C, rows, sizeof(rows)) && rd16(o + OBJ_RECT, X.rx0) && rd16(o + OBJ_RECT + 2, X.ry0);
+    u32 wh = 0; if (ok && safe_read(mgr + 0x80, &wh)) { X.uiW = (short)(wh & 0xFFFF); X.uiH = (short)(wh >> 16); } else ok = false;
+    if (ok && (X.uiW < 320 || X.uiH < 240 || X.uiW > 8000 || X.uiH > 8000)) ok = false;
+    if (ok) for (int r = 0; r < cnt; ++r) {
+        const unsigned char* b = rows + r * 0x20; NativeLootRow& w = X.row[r];
+        memcpy(&w.item, b, 2); w.qty = b[2]; memcpy(&w.ownLot, b + 4, 2); memcpy(&w.pool, b + 6, 2);
+        int j = 0; for (; j < 15 && b[0xC + j] >= 0x20 && b[0xC + j] < 0x7F; ++j) w.lotter[j] = (char)b[0xC + j]; w.lotter[j] = 0;
+        memcpy(&w.hiLot, b + 0x1C, 2);
+        if (!w.item || w.pool > 9) ok = false;
+    }
+    static int said = 0; static int wasN = -1;
+    if ((ok ? cnt : -1) != wasN && said < 16) { ++said; wasN = ok ? cnt : -1;
+        if (ok && cnt) windower::debug::log("NATIVEUI treasure : %d row(s) -- AioHUD draws them ; row 0 : item %u x%d, your lot %d, pool %u, best '%s' %u", cnt, X.row[0].item, X.row[0].qty, X.row[0].ownLot, X.row[0].pool, X.row[0].lotter, X.row[0].hiLot);
+        else windower::debug::log("NATIVEUI treasure : %s", ok ? "no row" : "the list UNREADABLE -- the client's"); }
+    if (!ok) { g_loot = X; return; }
+    while (X.ry0 >= X.uiH) X.ry0 = (short)(X.ry0 - HIDE_DY);
+    X.n = cnt; X.cursor = cur >= 1 && cur <= cnt ? cur - 1 : -1; X.focused = focus == o; X.open = true;
+    {   NativeEntryMenu m; u32 mo = 0;                              // Lot / Pass
+        if (entry_read(LOOTOPE_W, m, &mo) == 1 && mo) {
+            X.opeOpen = true; X.opeFocused = focus == mo; X.opeCursor = m.cursor;
+            X.opeLotOk = true; for (int i = 0; i < m.n; ++i) if (m.entry[i] == 1 && m.state[i] == 5) X.opeLotOk = false;
+        } }
+    {   const u32 ao = win_named(mgr, "lnowin"); X.allOpen = ao != 0; X.allFocused = ao && focus == ao; }
+    static int saidO = 0; static int wasO = -1;
+    const int stO = (int)X.opeOpen * 4 + (int)X.opeLotOk * 2 + (int)X.allFocused;
+    if (stO != wasO && saidO < 20) { ++saidO; wasO = stO;
+        windower::debug::log("NATIVEUI treasure : Lot / Pass %s%s, Pass all %s%s", X.opeOpen ? "open" : "closed", X.opeOpen ? (X.opeLotOk ? " (Lot usable)" : " (Lot grey)") : "", X.allOpen ? "up" : "absent", X.allFocused ? " (focused)" : ""); }
+    g_loot = X; g_lootUp = true;
+}
 void buffwin_poll(bool on, u32 mgr) {
     if (!on || !mgr) { g_bw.open = false; g_bwObj = g_bwH = 0; return; }
     NativeBuffWin B; memset(&B, 0, sizeof(B));
@@ -3403,6 +3450,17 @@ bool native_shopmain_hover(int entry) { const char* const* W = shop_owner_w(); r
 bool native_shopmain_pick(int entry) { const char* const* W = shop_owner_w(); return g_shop.mainOpen && W && entry_pick(W, entry); }
 const NativeShop& native_shop() { return g_shop; }
 const NativeInspect& native_inspect() { return g_insp; }
+const NativeLoot& native_loot() { return g_loot; }
+bool native_loot_hover(int row) { return g_loot.open && entry_hover(LOOT_W, row + 1); }
+bool native_loot_pick(int row) { return g_loot.open && entry_pick(LOOT_W, row + 1); }
+bool native_lootope_hover(int entry) { return g_loot.opeOpen && entry_hover(LOOTOPE_W, entry); }
+bool native_lootope_pick(int entry) { return g_loot.opeOpen && entry_pick(LOOTOPE_W, entry); }
+bool native_lootall_pick() {
+    if (!g_loot.allOpen) return false;
+    if (g_loot.allFocused) return entry_pick(LNOWIN_W, 1);
+    const u32 mgr = manager(); const u32 lo = mgr ? win_named(mgr, "loot") : 0;
+    return lo && g_loot.focused && menu_event(lo, 8);                 // loot's event 8 : the focus to Pass all (validate next)
+}
 bool native_inspect_hover(int entry) { return g_insp.open && entry_hover(INSPECT_W, entry); }
 bool native_inspect_pick(int entry) { return g_insp.open && entry_pick(INSPECT_W, entry); }
 bool native_scoption_pick(int entry) { return entry_pick(SCOPT_W, entry); }
@@ -3909,6 +3967,14 @@ void native_ui_tick(bool inWorld) {
     dialog_poll(wanted && (c.nuHide & NU_DIALOG), manager());  // the Yes / No confirms : AioHUD's own
     shop_poll(wanted && (c.nuHide & NU_NPC), manager());       // the NPC shop : Buy / Sell, its list, the quantity
     inspect_poll(wanted && (c.nuHide & NU_ACT), manager());    // a player's Check : AioHUD's own
+    loot_poll(wanted && (c.nuHide & NU_ACT), manager());       // Treasure : the list, Lot / Pass, Pass all
+    if (wanted && (c.nuHide & NU_ACT) && g_loot.open) {
+        static int lLog = 0, oLog = 0, aLog = 0, cLog = 0;
+        park_named(manager(), "loot", lLog, "Treasure -> the list");
+        park_named(manager(), "lootope", oLog, "Treasure -> Lot / Pass");
+        park_named(manager(), "lnowin", aLog, "Treasure -> Pass all");
+        park_named(manager(), "iteminfo", cLog, "Treasure -> the item card");
+    }
     if (wanted && (c.nuHide & NU_ACT) && g_insp.open) {
         static int inLog = 0, icLog = 0, ccLog = 0;
         park_named(manager(), "inspect", inLog, "Check -> the grid");

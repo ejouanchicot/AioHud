@@ -486,6 +486,7 @@ void Hud::render(u32 dev) {
             npc_draw(f);                            // the NPC dialogue + answers, in place of the client's (Game UI)
             fep_draw(f);                            // the auto-translate picker (Tab), on AioHUD's input field
             trade_draw(f);                          // the player trade (both sides), in place of the client's (Game UI)
+            loot_draw(f);                           // Treasure : the pool list, Lot / Pass, Pass all (Game UI)
             inspect_draw(f);                        // a player's Check : the equipment grid, View wares, the comment (Game UI)
             shop_draw(f);                           // an NPC shop : Buy / Sell, the list with its prices, the quantity (Game UI)
             dialog_draw(f);                         // a Yes / No confirm, in place of the client's (Game UI) -- over the screens

@@ -545,6 +545,25 @@ struct NativeInspect {
     short rx0, ry0; int uiW, uiH;
 };
 const NativeInspect& native_inspect();
+// TREASURE (`loot`, docs/notes/dialogs-loot-inspect-re-2026-11-20.md s.5) : opened by the action menu's Treasure. Handler
+// (0x168 B) : rows +0x1C + r*0x20 (10 max, sorted by drop time) : +0 u16 item, +2 u8 qty, +4 s16 YOUR lot (0 none, -1
+// passed), +6 u16 pool index, +0xC char[15] the best lotter, +0x1C u16 the best lot ; u16 +0x15C the count. Cursor =
+// window +0x4C - 1. `lootope` (1 Cast lots -- grey once lotted, 2 Pass) opens on a row ; `lnowin` (1 Pass all) beside.
+// Ours under NU_ACT ; the client sends 0x041 / 0x042.
+struct NativeLootRow { unsigned short item; int qty; short ownLot; unsigned short pool; char lotter[16]; unsigned short hiLot; };
+struct NativeLoot {
+    bool open, focused; int n, cursor;            // cursor : the row (0-based), -1 none
+    NativeLootRow row[10];
+    bool opeOpen, opeFocused, opeLotOk; int opeCursor;   // Lot / Pass
+    bool allOpen, allFocused;                      // Pass all
+    short rx0, ry0; int uiW, uiH;
+};
+const NativeLoot& native_loot();
+bool native_loot_hover(int row);   // 0-based
+bool native_loot_pick(int row);
+bool native_lootope_hover(int entry);
+bool native_lootope_pick(int entry);
+bool native_lootall_pick();        // Pass all : its focus first (loot event 8), then validate
 bool native_inspect_hover(int entry);
 bool native_inspect_pick(int entry);
 bool native_shopmain_hover(int entry);

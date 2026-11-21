@@ -23,6 +23,7 @@
 #include "ui/buff_atlas.h"        // buff_atlas_tex / buff_cell_uv : the status-icon fallback
 #include "model/buff_groups.h"     // buff_status_name_real : the buff icons' tip
 #include "ui/tex_retry.h"         // ensure_raw_tex : the element strip / job emblems (bounded retry)
+#include <ctime>                   // time : Treasure's time left (the pool's unix expiries)
 #include "model/skillchain.h"     // sc_skill_lookup / sc_info : a weapon skill's property -> its element
 #include "model/job_track_gen.h"  // job_track : which job a job ability belongs to
 #include "model/paths.h"       // plugin_dir : Windower's own plugins\icons
@@ -4793,6 +4794,121 @@ void inspect_draw(const Frame& f) {
     for (int i = 0; i < cmN; ++i) fo->draw_lc(dev, L, snap(btY + btnH + 8.0f * S + ((float)i + 0.5f) * lineH), cm[i], tz * 0.9f, with_alpha(0xFFE4EAF2u, A), sh, k.ow);
     // the item card : the slot under the cursor
     const unsigned iid = curCell >= 0 && last.focused ? last.id[SLOT_AT[curCell]] : 0;
+    if (iid && !card_on_chat(f, k, iid, tO, A)) {
+        const float cw = bw > snap(300.0f * S) ? bw : snap(300.0f * S), ctop = snap(by + bh + 14.0f * S);
+        card_use(0); card_load(f.dev, iid);
+        if (card_ready(iid)) card_draw(f, k, bx, cw, ctop, ctop, tO, A, false);
+    }
+}
+// ======== TREASURE (`loot` / `lootope` / `lnowin`, Game UI -> NU_ACT) ========
+// The pool as the client lists it (by drop time) : the icon, the name in YOUR state's colour (gold lotted, grey passed),
+// the quantity, the time left (the Treasure box's timer, by pool index), the best lot and who holds it, your own lot.
+// Lot / Pass beside the picked row, Pass all under the list. The client sends 0x041 / 0x042.
+namespace { Block g_ltB, g_loB; unsigned g_ltMs = 0; }
+void loot_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_ACT) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_ltB.vis = g_loB.vis = 0.0f; g_ltB.wasOpen = g_loB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_ltMs ? (float)(now - g_ltMs) / 1000.0f : 0.0f; g_ltMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeLoot& X0 = native_loot();
+    static NativeLoot last;
+    if (X0.open) last = X0;
+    if (!block_ease(g_ltB, X0.open, now, dt) || last.uiW <= 0 || last.n <= 0) { g_loB.vis = 0.0f; g_loB.wasOpen = false; return; }
+    const Metrics k = metrics(f);
+    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S), gap = snap(6.0f * S);
+    Font* fo = f.font; const u32 dev = f.dev;
+    const float tO = ease_out(((float)(now - g_ltB.openMs) / 1000.0f) / 0.08f);
+    const float A = g_ltB.vis * tO * (last.focused || !X0.open ? 1.0f : 0.85f); if (A <= 0.0f) return;
+    const u32 sh = with_alpha(0xC8000000u, A);
+    const float rowH = snap(k.capH * 1.45f), iz = snap(rowH - 4.0f * S), btnH = snap(k.capH * 1.5f);
+    const float wName = fo->measure(ITEM_NAME_REF, tz), wTime = fo->measure("00:00", tz * 0.9f), wBest = fo->measure("Mmmmmmmmmmmmmmm 999", tz * 0.85f), wOwn = fo->measure("999", tz);
+    const float bw = snap(pad + 8.0f * S + iz + 8.0f * S + wName + 14.0f * S + wTime + 14.0f * S + wBest + 14.0f * S + wOwn + 8.0f * S + pad);
+    const float bh = snap(pad + headH + 6.0f * S + (float)last.n * rowH + (last.allOpen ? 8.0f * S + btnH : 0.0f) + pad);
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    g_frameJoin = jm;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    const float L = bx + pad, W = bw - 2.0f * pad, hy = snap(by + pad + headH * 0.5f), ry = snap(by + pad + headH + 6.0f * S);
+    rrect(dev, L, snap(by + pad + headH), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    for (int i = 0; i < last.n; ++i) if ((i & 1) == 0) rrect(dev, L, snap(ry + (float)i * rowH), W, rowH, 3.0f * S, with_alpha(0x18FFFFFFu, A), with_alpha(0x10FFFFFFu, A));
+    const MouseState* ms = f.mouse; int mrow = -1;
+    if (last.cursor >= 0 && last.cursor < last.n) {
+        const float y = snap(ry + (float)last.cursor * rowH), r = rowH * 0.5f;
+        rrect_clip_begin(dev, L, y, W, rowH, r); party_selframe(dev, L, y, W, rowH, f.t, A, 0); rrect_clip_end(dev);
+        rrect_stroke(dev, L, y, W, rowH, r, with_alpha(0xC8FFDA8Au, A), 1.0f);
+        if (last.focused && g_handTex) { const float hand = snap(k.capH * 1.25f); party_cursor(dev, g_handTex, bx - hand * 0.35f + party_cursor_bob(f.t, hand), y + rowH * 0.5f, hand, 0); }
+    }
+    for (int i = 0; i < last.n; ++i) {
+        const u32 tex = list_icon(f, 3, last.row[i].item);
+        const float a = A * (last.row[i].ownLot < 0 ? 0.5f : 1.0f);
+        if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(L + 8.0f * S), snap(ry + (float)i * rowH + 2.0f * S), iz, iz, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a)); dSetTex(dev, 0, 0); cs(dev); }
+        if (ms && ms->focused && ms->x >= L && ms->x < L + W && ms->y >= ry + (float)i * rowH && ms->y < ry + (float)(i + 1) * rowH) mrow = i;
+    }
+    // Pass all : a button under the list
+    const float btY = snap(ry + (float)last.n * rowH + 8.0f * S); bool mAll = false;
+    if (last.allOpen) {
+        const bool on = last.allFocused;
+        rrect(dev, L, btY, W, btnH, btnH * 0.5f, with_alpha(on ? 0x40FFDA8Au : 0x20FFFFFFu, A), with_alpha(on ? 0x30FFDA8Au : 0x14FFFFFFu, A));
+        rrect_stroke(dev, L, btY, W, btnH, btnH * 0.5f, with_alpha(on ? 0xD8FFDA8Au : 0x40C8D6EAu, A), on ? 1.5f * S : 1.0f);
+        mAll = ms && ms->focused && ms->x >= L && ms->x < L + W && ms->y >= btY && ms->y < btY + btnH;
+    }
+    if (X0.open) {
+        g_hit[19][0] = bx / f.screenW; g_hit[19][1] = by / f.screenH; g_hit[19][2] = bw / f.screenW; g_hit[19][3] = bh / f.screenH;
+        if (X0.focused) {
+            if (mrow >= 0 && mrow + 1 != g_ltB.hoverRow && mrow != X0.cursor) native_loot_hover(mrow);
+            g_ltB.hoverRow = mrow + 1;
+            if (mrow >= 0 && ms->clicked) native_loot_pick(mrow);
+        } else g_ltB.hoverRow = 0;
+        if (mAll && ms->clicked) native_lootall_pick();
+    }
+    const TreasureItem* pool = party().treasure_slots();
+    const unsigned unow = (unsigned)time(0);
+    fo->begin(dev);
+    fo->draw_lc(dev, L, hy, tr("Treasure", "Tr\xC3\xA9sor"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    {   char c[16]; sprintf(c, "%d / 10", last.n); fo->draw_lc(dev, snap(L + W - fo->measure(c, tz * 0.85f)), hy, c, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
+    const float xName = snap(L + 8.0f * S + iz + 8.0f * S), xTime = snap(xName + wName + 14.0f * S), xBest = snap(xTime + wTime + 14.0f * S), xOwnR = snap(L + W - 8.0f * S);
+    for (int i = 0; i < last.n; ++i) {
+        const NativeLootRow& r = last.row[i];
+        const float cy = snap(ry + (float)i * rowH + rowH * 0.5f);
+        const u32 nc = r.ownLot < 0 ? 0xFF8A8F99u : r.ownLot > 0 ? 0xFFFFC870u : 0xFFF2F5FAu;   // passed grey, lotted gold
+        { const char* nm = item_display_name(r.item); char cut[64], q[72];
+          if (r.qty > 1) { _snprintf(q, sizeof(q), "%s x%d", nm ? nm : "?", r.qty); q[71] = 0; } else lstrcpynA(q, nm ? nm : "?", sizeof(q));
+          fo->draw_lc(dev, xName, cy, fit_text(fo, q, tz, wName, cut, sizeof(cut)), tz, with_alpha(nc, A), sh, k.ow); }
+        if (r.pool < 10 && pool[r.pool].itemId == r.item && pool[r.pool].expireUnix > unow) {   // the time left (the Treasure box's)
+            const unsigned rem = pool[r.pool].expireUnix - unow; char t[8]; sprintf(t, "%02u:%02u", (rem / 60) % 100, rem % 60);
+            fo->draw_lc(dev, xTime, cy, t, tz * 0.9f, with_alpha(rem < 60 ? 0xFFF06060u : rem > 180 ? 0xFF6BE06Bu : 0xFFF0A030u, A), sh, k.ow);
+        }
+        if (r.hiLot && r.lotter[0]) { char b[40]; _snprintf(b, sizeof(b), "%s %u", r.lotter, r.hiLot); b[39] = 0; fo->draw_lc(dev, xBest, cy, b, tz * 0.85f, with_alpha(0xFF7AD8F0u, A), sh, k.ow); }
+        {   char o[16]; u32 oc;
+            if (r.ownLot < 0) { strcpy(o, tr("Pass", "Pass\xC3\xA9")); oc = 0xFF8A8F99u; } else if (r.ownLot > 0) { sprintf(o, "%d", r.ownLot); oc = 0xFFFFC870u; } else { strcpy(o, "-"); oc = 0xFF56627Au; }
+            fo->draw_lc(dev, snap(xOwnR - fo->measure(o, tz)), cy, o, tz, with_alpha(oc, A), sh, k.ow); }
+    }
+    if (last.allOpen) { const char* t = tr("Pass all", "Tout passer"); fo->draw_lc(dev, snap(L + (W - fo->measure(t, tz)) * 0.5f), snap(btY + btnH * 0.5f), t, tz, with_alpha(0xFFF2F5FAu, A), sh, k.ow); }
+    // Lot / Pass : beside the picked row (the client opens it at the row's right edge)
+    if (block_ease(g_loB, X0.open && X0.opeOpen, now, dt)) {
+        RowSpec rows[2] = {};
+        rows[0].label = tr("Cast lots", "Lancer les d\xC3\xA9s"); rows[0].icon = IC_NONE; rows[0].off = !last.opeLotOk;
+        rows[1].label = tr("Pass", "Passer"); rows[1].icon = IC_NONE;
+        float ow, oh; block_size(f, k, rows, 2, ow, oh);
+        const int rr = last.cursor >= 0 ? last.cursor : 0;
+        float ox = snap(bx + bw + gap), oy = snap(ry + (float)rr * rowH);
+        if (ox + ow > f.screenW - 4.0f) ox = snap(bx - gap - ow); if (oy + oh > f.screenH - 4.0f) oy = snap(f.screenH - 4.0f - oh);
+        const float tq = ease_out(((float)(now - g_loB.openMs) / 1000.0f) / 0.07f), OA = g_loB.vis * tq;
+        const int cur = last.opeCursor == 1 || last.opeCursor == 2 ? last.opeCursor : 0;
+        const int row = block_draw(f, k, g_loB, rows, 2, cur, last.opeFocused, ox, snap(oy + (1.0f - tq) * 3.0f * S), ow, oh, OA, dt);
+        if (X0.opeOpen && X0.opeFocused) {
+            if (row >= 1 && row <= 2 && row != g_loB.hoverRow && row != X0.opeCursor && (row != 1 || X0.opeLotOk)) native_lootope_hover(row);
+            g_loB.hoverRow = row;
+            if (row >= 1 && row <= 2 && (row != 1 || X0.opeLotOk) && f.mouse && f.mouse->clicked) native_lootope_pick(row);
+        } else g_loB.hoverRow = 0;
+        hit_extend(19, oy + oh, f.screenH);
+    }
+    // the item card : the row under the cursor
+    const unsigned iid = last.cursor >= 0 && last.cursor < last.n ? last.row[last.cursor].item : 0;
     if (iid && !card_on_chat(f, k, iid, tO, A)) {
         const float cw = bw > snap(300.0f * S) ? bw : snap(300.0f * S), ctop = snap(by + bh + 14.0f * S);
         card_use(0); card_load(f.dev, iid);

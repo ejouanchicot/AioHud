@@ -728,3 +728,14 @@ Static detail : `docs/notes/dialogs-loot-inspect-re-2026-11-20.md` s.6. Confirme
   u16 the colour (R, G, B nibbles), tinted v * 0xD + 0x38 per channel -- confirmed against the client's icon.
 - AioHUD (NU_ACT, `inspect_poll` / `inspect_draw`) : `inspect` born parked (a mannequin is brought back by the rescue pass),
   `iteminfo` and `comment` born parked while it is ours ; hidden while the bazaar's list is up over it.
+
+## 16. Treasure (`loot` / `lootope` / `lnowin`) -- static 2026-11-20, live 2026-11-21
+
+Static detail : `docs/notes/dialogs-loot-inspect-re-2026-11-20.md` s.4 / s.5. Confirmed live (2 items in the pool) :
+- `loot` handler : u16 +0x15C the count ; rows +0x1C + r*0x20 : +0 u16 item, +2 u8 qty, +4 s16 YOUR lot (0 none, -1 passed),
+  +6 u16 pool index, +0xC the best lotter's name (15 ch), +0x1C u16 the best lot. Cursor = window +0x4C - 1.
+- `lnowin` (Pass all) opens with the list, without the focus : X (loot event 8) gives it the focus, and back.
+- `lootope` (1 Cast lots, grey once lotted ; 2 Pass) opens on a validated row -- not yet seen live.
+- AioHUD (NU_ACT, `loot_poll` / `loot_draw`) : the three windows born parked (a read failure : the rescue pass brings them
+  back), `iteminfo` too while the list is ours. The time left per row is the Treasure box's (pool index). The client
+  sends 0x041 / 0x042.
