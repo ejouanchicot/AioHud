@@ -492,7 +492,8 @@ const NativeEquip& native_equip();
 // a TEXT LIST : the first `s16 handler +0x54` rows are the Temporary Items (colour 0x80806040), then the inventory in the
 // client's view order ; cells : id +0x2C, count +0x30, the client's colour +0x0C (blue enchanted ready, green worn, gold
 // usable, white, grey refused, orange held in Manual Sort). The Recycling Bin (`bank` open) stays the client's for now.
-struct NativeItemRow { unsigned short itemId; int itemCount; unsigned itemCol; bool tempRow; };
+struct NativeItemRow { unsigned short itemId; int itemCount; unsigned itemCol; bool tempRow;
+    bool hasPrice; int price; unsigned priceCol; };   // a shop's price cell (price -1 : not asked yet) ; hasPrice false elsewhere
 struct NativeItems {
     bool open, focused;
     int  itN, itTop, itVis, itCursor, tempRows;   // the whole list, its page, the cursor (-1 none), the temporary rows
@@ -511,6 +512,23 @@ struct NativeItems {
     int  synMode;                                // Synthesis's pickers : 0 no, 1 the crystals (delegate K), 2 the materials (S, beside tskill1)
 };
 const NativeItems& native_items();
+// The NPC SHOP (docs/notes/shops-re-2026-11-20.md, live 2026-11-21) : `shopmain` (1 Buy / 2 Sell, image labels), then `shop`,
+// a TEXT LIST (rows +0x38, 0x54 B : cell c type +c, colour +0x08 + 4c, value +0x28 + 4c ; record +0x48) : col 0 the icon
+// (the item), col 1 the name (its colour : grey = refused), col 2 the price + 1 (Sell : 0 until the client asked it).
+// `itemctrl` the quantity. Ours under NU_NPC and only while `shopmain` is up -- the bazaar / guild shops reuse `shop` and stay
+// the client's. The client does every packet (0x083 buy, 0x084 / 0x085 sell).
+struct NativeShop {
+    bool mainOpen, mainFocused; int mainCursor;   // shopmain : 1 Buy, 2 Sell
+    bool open, focused, sell;
+    int  n, top, vis, cursor;
+    NativeItemRow row[16];                       // the page (hasPrice set)
+    unsigned gil; bool gilOk;
+    bool qtyOk, qtyFocused; int qtyVal, qtyMax;
+    short mx0, my0, rx0, ry0; int uiW, uiH;
+};
+const NativeShop& native_shop();
+bool native_shopmain_hover(int entry);
+bool native_shopmain_pick(int entry);
 // The main menu's SYNTHESIS (docs/notes/synthesis-re-2026-11-19.md) : `cmbmenu` (Crystal Synthesis / History, a main-menu
 // submenu) ; `tskill1` = the grid (handler : +0x08 its window, +0x14 the crystal's bag index, +0x20 its id, slot i :
 // +0x15+i bag index (s8 < 0 in History = not owned), +0x22+2i id, +0x36+i quantity ; +0x70 mode 0 Items-Use / 1 Crystal

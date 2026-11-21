@@ -161,7 +161,9 @@ void draw_icon(u32 dev, Icon ic, float cx, float cy, float z, float S, u32 c) {
 
 u32 g_handTex = 0;   // the party's selection-hand texture, handed in by the HUD each frame (device-loss managed there)
 float g_subXY[2] = { -1.0f, -1.0f };     // where the main menu's submenu was last drawn (a player's options take its place)
-float g_hit[16][4] = { { 0, 0, 0, 0 } };   // 13 the trade, 14 a confirm  // the drawn blocks (menu, submenu ; NPC bubble, NPC answers ; the auto-translate picker ; the main menu, its categories, its list ; Unity Info) as screen FRACTIONS : their clicks never reach the game
+const int HIT_N = 20;
+float g_hit[HIT_N][4] = { { 0, 0, 0, 0 } };   // 13 the trade, 14 a confirm, 15 the buff bar, 16 a shop's Buy / Sell, 17 its list
+struct CoinQ { float x, y, z, a; }; CoinQ g_coinQ[16]; int g_coinN = 0;   // a list's gil coins, drawn after its text pass  // the drawn blocks (menu, submenu ; NPC bubble, NPC answers ; the auto-translate picker ; the main menu, its categories, its list ; Unity Info) as screen FRACTIONS : their clicks never reach the game
 // grow block i's (already set) hit rect down to `bottom` (screen px) -- a box drawn under it after the rect was set
 // (a long description) ; never shrinks it
 static void hit_extend(int i, float bottom, float screenH) {
@@ -961,7 +963,7 @@ bool npc_answers_hit(float fx, float fy) {
     return h[2] > 0.0f && fx >= h[0] && fx < h[0] + h[2] && fy >= h[1] && fy < h[1] + h[3];
 }
 void npc_wheel_add(int d) { InterlockedExchangeAdd(&g_npcWheel, d); }
-void actmenu_hits_clear() { for (int i = 0; i < 16; ++i) g_hit[i][2] = 0.0f; menu_frame_end(); }   // once a frame : the menu boxes' joins too
+void actmenu_hits_clear() { for (int i = 0; i < HIT_N; ++i) g_hit[i][2] = 0.0f; menu_frame_end(); }   // once a frame : the menu boxes' joins too
 // the glued group of the box drawn at (x, y, w, h) (hud_internal.h) : its rest rect = last frame's rect of the same size
 // nearest to it (a box drawn mid-slide sits a few px off its rest place) ; the group = the rects overlapping, transitively
 bool menu_group_lookup(float x, float y, float w, float h, MenuGroup& g) {
@@ -1038,7 +1040,7 @@ bool fep_hit(float fx, float fy) {
 }
 void fep_wheel_add(int d) { InterlockedExchangeAdd(&g_fepWheel, d); }
 bool actmenu_hit(float fx, float fy) {
-    for (int i = 0; i < 16; ++i) {
+    for (int i = 0; i < HIT_N; ++i) {
         const float* h = g_hit[i];
         if (h[2] > 0.0f && fx >= h[0] && fx < h[0] + h[2] && fy >= h[1] && fy < h[1] + h[3]) return true;
     }
@@ -3781,11 +3783,20 @@ u32 item_row_rgb(unsigned col, bool cur) {
 }
 // one Items list box : rows (the client's cells), its title and counter, the cursor, the mouse (hover / click through
 // the client's text list `win`), a hit rect. Returns the cursor row's item (0 none).
-struct ItemsBox { const NativeItemRow* row; int n, top, vis, cursor, tempRows; bool focused, live; const char* title; const char* counter; bool full; };
-float items_box_width(const Frame& f, const Metrics& k, const ItemsBox&) {   // one width whatever the rows : the widest name's
+struct ItemsBox { const NativeItemRow* row; int n, top, vis, cursor, tempRows; bool focused, live; const char* title; const char* counter; bool full;
+                  bool prices; };   // prices : a shop's price column (the rows' hasPrice) in place of the counts
+// a price, grouped by thousands ("12,345")
+void price_text(char* out, int v) {
+    char t[16]; sprintf(t, "%d", v < 0 ? 0 : v);
+    const int n = (int)strlen(t); int o = 0;
+    for (int i = 0; i < n; ++i) { out[o++] = t[i]; if ((n - 1 - i) % 3 == 0 && i < n - 1) out[o++] = ','; }
+    out[o] = 0;
+}
+float items_box_width(const Frame& f, const Metrics& k, const ItemsBox& L) {   // one width whatever the rows : the widest name's
     Font* fo = f.font; const float S = k.S, tz = k.tz, pad = snap(8.0f * S) + k.bi, iz = snap(snap(k.capH * 1.25f) - 4.0f * S);
     const float wName = fo->measure(ITEM_NAME_REF, tz);
-    return snap(pad + 8.0f * S + iz + 8.0f * S + wName + 16.0f * S + fo->measure("999", tz) + 8.0f * S + pad);
+    const float wRight = L.prices ? fo->measure("99,999,999", tz) + snap(k.capH) + 4.0f * S : fo->measure("999", tz);
+    return snap(pad + 8.0f * S + iz + 8.0f * S + wName + 16.0f * S + wRight + 8.0f * S + pad);
 }
 unsigned items_box_draw(const Frame& f, const Metrics& k, Block& B, const ItemsBox& L, const char* win, float lx, float ly, float lw, float lh, float A, float dt, float* hit) {
     const UiConfig& C = ui_config(); Font* fo = f.font; const u32 dev = f.dev;
@@ -3855,7 +3866,15 @@ unsigned items_box_draw(const Frame& f, const Metrics& k, Block& B, const ItemsB
         const char* nm = r.itemId ? item_display_name(r.itemId) : 0;
         { char cut[64]; fo->draw_lc(dev, snap(Lx + 8.0f * S + iz + 8.0f * S), cy, fit_text(fo, nm ? nm : "?", tz, fo->measure(ITEM_NAME_REF, tz), cut, sizeof(cut)), tz, with_alpha(item_row_rgb(r.itemCol, i == cr && L.focused), A), sh, k.ow); }
         if (!r.tempRow && r.itemCount > 1) { char n[8]; sprintf(n, "%d", r.itemCount); fo->draw_lc(dev, snap(Lx + Wx - 8.0f * S - fo->measure(n, tz)), cy, n, tz, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
+        if (L.prices && r.hasPrice) {                                 // the price, the gil coin after it ; "?" not asked yet (Sell)
+            char p[24]; if (r.price >= 0) price_text(p, r.price); else strcpy(p, "?");
+            const float cz = snap(k.capH * 0.95f), px = snap(Lx + Wx - 8.0f * S - cz - 4.0f * S - fo->measure(p, tz));
+            const bool off = r.itemCol == 0x80404040u;               // refused (too dear, a requirement, cannot be sold)
+            fo->draw_lc(dev, px, cy, p, tz, with_alpha(r.price < 0 ? 0xFF6E7C8Eu : off ? 0xFF8A8F99u : 0xFFFFDA8Au, A), sh, k.ow);
+            g_coinQ[g_coinN < 16 ? g_coinN++ : 15] = { snap(Lx + Wx - 8.0f * S - cz * 0.5f), cy, cz, A * (off || r.price < 0 ? 0.5f : 1.0f) };
+        }
     }
+    if (g_coinN) { for (int i = 0; i < g_coinN; ++i) gil_coin(dev, g_coinQ[i].x, g_coinQ[i].y, g_coinQ[i].z, g_coinQ[i].a); g_coinN = 0; fo->begin(dev); }
     return cr >= 0 ? L.row[cr].itemId : 0;
 }
 // The main menu's ITEMS : the inventory list TOP LEFT (the client's place), in its colours (blue enchanted and ready, green
@@ -4448,7 +4467,7 @@ void synth_draw(const Frame& f) {
     if (last.gridFocused && cur >= 1 && cur <= 8) iid = last.slotId[cur - 1];
     if (block_ease(g_hisB, Y0.open && Y0.histOpen, now, dt) && last.hVis > 0) {
         NativeItemRow hr[16];
-        for (int i = 0; i < 16; ++i) { hr[i].itemId = last.hItem[i]; hr[i].itemCount = 0; hr[i].itemCol = last.hFav[i] ? 0x80909040u : 0x80808080u; hr[i].tempRow = false; }
+        for (int i = 0; i < 16; ++i) { hr[i].itemId = last.hItem[i]; hr[i].itemCount = 0; hr[i].itemCol = last.hFav[i] ? 0x80909040u : 0x80808080u; hr[i].tempRow = false; hr[i].hasPrice = false; hr[i].price = 0; hr[i].priceCol = 0; }
         char hc[16]; sprintf(hc, "%d / 10", last.hN);
         ItemsBox HL = { hr, last.hN, last.hTop, last.hVis, last.hCursor, 0, last.histFocused, Y0.open && Y0.histOpen, tr("History", "Historique"), hc, false };
         const float hw = keep_width(g_hisB, items_box_width(f, k, HL)), hh = snap(pad + headH + 6.0f * S + (float)last.hVis * snap(k.capH * 1.25f) + pad);
@@ -4557,6 +4576,90 @@ void items_draw(const Frame& f) {
     // the item card : ABOVE THE CHAT (under the list when no chat box) ; Synthesis's grid draws its own
     if (iid && !card_on_chat(f, k, iid, tO, A)) {
         const float cw = lw > snap(300.0f * S) ? lw : snap(300.0f * S), ctop = snap(ly + lh + gap);
+        card_use(0); card_load(f.dev, iid);
+        if (card_ready(iid)) card_draw(f, k, lx, cw, ctop, ctop, tO, A, false);
+    }
+}
+// ======== the NPC SHOP (Game UI -> NU_NPC), in the menus' theme, where the client puts its own ========
+// Buy / Sell (shopmain) where the client opens it, the list (shop) top left with each row's price and the gil coin, your
+// gil in its header, the quantity (itemctrl) under it with the total, the item card above the chat. The client keeps the
+// rules (greyed rows, the price query on a first Sell, the 6-yalm close) and sends every packet ; shopbuy / shopsell are
+// AioHUD's confirms (dialog_draw).
+namespace { Block g_shMB, g_shLB, g_shQB; unsigned g_shMs = 0; }
+void shop_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_shMB.vis = g_shLB.vis = g_shQB.vis = 0.0f; g_shMB.wasOpen = g_shLB.wasOpen = g_shQB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_shMs ? (float)(now - g_shMs) / 1000.0f : 0.0f; g_shMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeShop& S0 = native_shop();
+    static NativeShop last;
+    if (S0.mainOpen) { const bool keepList = !S0.open && last.open; const NativeShop prev = last; last = S0; if (keepList) { memcpy(last.row, prev.row, sizeof(last.row)); last.n = prev.n; last.top = prev.top; last.vis = prev.vis; last.cursor = prev.cursor; last.rx0 = prev.rx0; last.ry0 = prev.ry0; last.sell = prev.sell; } }
+    if (last.uiW <= 0) return;
+    const Metrics k = metrics(f);
+    const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), gap = snap(6.0f * S);
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    // ---- Buy / Sell ----
+    if (block_ease(g_shMB, S0.mainOpen, now, dt)) {
+        RowSpec rows[2] = {};
+        rows[0].label = tr("Buy", "Acheter"); rows[0].icon = IC_NONE;
+        rows[1].label = tr("Sell", "Vendre"); rows[1].icon = IC_NONE;
+        const int cur = last.mainCursor == 1 || last.mainCursor == 2 ? last.mainCursor : 0;
+        float bw, bh; block_size(f, k, rows, 2, bw, bh);
+        float bx = snap((float)last.mx0 * sx), by = snap((float)last.my0 * sy);
+        if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+        if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+        const int jm = menu_place(f, __LINE__, bx, by, bw, bh);
+        const float tO = ease_out(((float)(now - g_shMB.openMs) / 1000.0f) / 0.07f);
+        by = snap(by + (1.0f - tO) * 3.0f * S);
+        const float A = g_shMB.vis * tO * (last.mainFocused || !S0.mainOpen ? 1.0f : 0.62f);   // the list has the hand : it steps back
+        if (A > 0.0f) {
+            g_frameJoin = jm;
+            const int row = block_draw(f, k, g_shMB, rows, 2, cur, last.mainFocused, bx, by, bw, bh, A, dt);
+            if (S0.mainOpen) {
+                g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH;
+                if (S0.mainFocused) {
+                    if (row >= 1 && row <= 2 && row != g_shMB.hoverRow && row != S0.mainCursor) native_shopmain_hover(row);
+                    g_shMB.hoverRow = row;
+                    if (row >= 1 && row <= 2 && f.mouse && f.mouse->clicked) native_shopmain_pick(row);
+                } else g_shMB.hoverRow = 0;
+            }
+        }
+    }
+    // ---- the list ----
+    if (!block_ease(g_shLB, S0.mainOpen && S0.open, now, dt) || last.vis <= 0) { g_shQB.vis = 0.0f; g_shQB.wasOpen = false; return; }
+    const float tO = ease_out(((float)(now - g_shLB.openMs) / 1000.0f) / 0.08f);
+    const float A = g_shLB.vis * tO; if (A <= 0.0f) return;
+    const float rowH = snap(k.capH * 1.25f);
+    char gil[24] = ""; if (last.gilOk) { price_text(gil, (int)(last.gil > 999999999u ? 999999999u : last.gil)); strcat(gil, " G"); }
+    ItemsBox IL = { last.row, last.n, last.top, last.vis, last.cursor, 0, last.focused, S0.open, last.sell ? tr("Sell", "Vendre") : tr("Buy", "Acheter"), gil, false, true };
+    const float lw = keep_width(g_shLB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.vis * rowH + pad);
+    float lx = snap((float)last.rx0 * sx), ly = snap((float)last.ry0 * sy);
+    if (lx + lw > f.screenW - 4.0f) lx = snap(f.screenW - 4.0f - lw); if (lx < 4.0f) lx = 4.0f;
+    if (ly + lh > f.screenH - 4.0f) ly = snap(f.screenH - 4.0f - lh); if (ly < 4.0f) ly = 4.0f;
+    const int jl = menu_place(f, __LINE__, lx, ly, lw, lh);
+    ly = snap(ly + (1.0f - tO) * 4.0f * S);
+    g_frameJoin = jl;
+    const float LA = A * (last.focused || !S0.open ? 1.0f : 0.8f);   // the quantity / the confirm have the hand
+    unsigned iid = items_box_draw(f, k, g_shLB, IL, "shop", lx, ly, lw, lh, LA, dt, g_hit[17]);
+    const int cr = last.cursor - last.top;
+    const NativeItemRow* cur = cr >= 0 && cr < last.vis ? &last.row[cr] : 0;
+    if (!iid && cur) iid = cur->itemId;                                // the quantity / a confirm up : the row they are about
+    // ---- the quantity, and what it costs / brings ----
+    float under = snap(ly + lh + gap);
+    if (block_ease(g_shQB, S0.open && S0.qtyOk, now, dt)) {
+        const float tq = ease_out(((float)(now - g_shQB.openMs) / 1000.0f) / 0.07f), QA = g_shQB.vis * tq * A;
+        const float qh = qty_box(f, k, cur ? cur->itemId : 0, last.qtyVal, last.qtyMax, lx, snap(under + (1.0f - tq) * 3.0f * S), lw, QA);
+        if (cur && cur->price >= 0 && last.qtyVal > 0) {
+            char t[40], p[24]; price_text(p, (int)((long long)cur->price * last.qtyVal > 999999999LL ? 999999999LL : (long long)cur->price * last.qtyVal));
+            sprintf(t, "%s %s G", last.sell ? tr("You get", "Tu re\xC3\xA7ois") : tr("Total", "Total"), p);
+            Font* fo = f.font; fo->begin(f.dev);
+            fo->draw_lc(f.dev, snap(lx + lw - pad - fo->measure(t, k.tz)), snap(under + qh + 9.0f * S), t, k.tz, with_alpha(0xFFFFDA8Au, QA), with_alpha(0xC8000000u, QA), k.ow);
+        }
+        under = snap(under + qh + gap);
+    }
+    // ---- the item card : above the chat (under the list when no chat box) ----
+    if (iid && !card_on_chat(f, k, iid, tO, A)) {
+        const float cw = lw > snap(300.0f * S) ? lw : snap(300.0f * S), ctop = snap(under + 14.0f * S);
         card_use(0); card_load(f.dev, iid);
         if (card_ready(iid)) card_draw(f, k, lx, cw, ctop, ctop, tO, A, false);
     }

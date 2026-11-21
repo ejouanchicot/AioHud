@@ -87,6 +87,7 @@ bool g_jpRule = false;       // the JP mirror reads : `levmeri2` (Job Points' CP
 extern NativeRegion g_rg;    // defined below (Region Info) : its panels are born parked only under the map
 extern NativeTrade g_trade;  // defined below (the player trade) : its Current Gil is born parked
 DWORD g_tradeBornMs = 0;     // when `trade` was born : the `money` box born with it, before trade_poll sees it
+bool g_shopMainUp = false;   // shop_poll : an NPC shop's `shopmain` is up (its list and `money` are then born parked)
 DWORD g_rgMapBornMs = 0;    // when cnqframe was born : its panels born in the same moment, before region_poll sees it open
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
 const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "iuse", "cmbmenu", "cmbhwin", "abimenu", "prty1", "prty2", "prty3", "prty7", "prty4", "prty8", "prty5us", "alarm",
@@ -113,6 +114,10 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     // "on voit les chiffres de gil ... ceux du jeu") : BORN parked while a trade is up (or `trade` was born a moment ago)
     if ((hide & NU_TRADE) && !strcmp(n, "money") && (g_trade.open || (g_tradeBornMs && GetTickCount() - g_tradeBornMs < 1000))) { dy = HIDE_DY; return; }
     if ((hide & NU_ACT)   && (!strcmp(n, "playermo") || in_list(n, ACT_SUB_W) || in_list(n, ACT_LIST_W))) { dy = HIDE_DY; return; }
+    // the NPC SHOP : Buy / Sell, then its list and its Current Gil born parked (the client RESIZES `shop` once it is up and
+    // `money` draws where it was born : shops-re s.7, the trade's lesson) -- only under an NPC shop's menu (the bazaar and
+    // the guild shops reuse `shop` : the client's)
+    if ((hide & NU_NPC) && (!strcmp(n, "shopmain") || (g_shopMainUp && (!strcmp(n, "shop") || !strcmp(n, "money"))))) { dy = HIDE_DY; return; }
     if ((hide & NU_NPC)   && in_list(n, NPC_W)) { dy = HIDE_DY; return; }
     if ((hide & NU_MAIN)  && (in_list(n, MAIN_W) || in_list(n, MAIN_SUB_W) || in_list(n, MAIN_SORT_W))) { dy = HIDE_DY; return; }
     // Status -> Profile : BORN parked (its record) -- its flag, rank bar and icons are drawn where it OPENED and do not
@@ -199,6 +204,8 @@ NativeEntryMenu g_mainM, g_mainSub, g_mainSort, g_mainYn; bool g_mainFail = fals
 NativeTopBar g_tb; bool g_tbFail = false;                                               // the top bar (titlewin + helpwind)
 NativeMacro g_mc; bool g_mcFail = false;                                                // the macro bar
 NativeNet g_net; bool g_nsFail = false;                                                 // the connection box (netstat)
+NativeShop g_shop;                                                                        // the NPC shop (shop_poll)
+const char* const SHOPMAIN_W[] = { "shopmain", 0 };
 NativeTrade g_trade; bool g_trFail = false;                                             // the player trade
 NativeDialog g_dlg; bool g_dlgFail = false; u32 g_dlgObj = 0;                           // the Yes / No confirms (+ the open one's window, the driver)
 NativeProfile g_prof;
@@ -2234,6 +2241,7 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_area.open && !strcmp(nm, "arealist")) || (g_search.open && !strcmp(nm, g_search.ctx == 2 ? "levelsyn" : g_search.ctx == 4 ? "link12" : "scresult"))
                              || (g_ls.open && !strcmp(nm, "link5")) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
                              || (g_scopt.open && !strcmp(nm, "scoption"))
+                             || (g_shop.mainOpen && (!strcmp(nm, "shopmain") || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl"))))))
                              || (g_cur.open && !strcmp(nm, "evitem"))
                              || (g_trade.open && (!strcmp(nm, "moneyctr") || !strcmp(nm, "itemctrl") || !strcmp(nm, "iteminfo") || !strcmp(nm, "gift") || !strcmp(nm, "money")));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
@@ -2730,6 +2738,54 @@ bool native_trade_pick(int entry) {
 const NativeNet& native_net() { return g_net; }
 // the buff window's place : the open `buff`, its rect less the park (read each frame while NU_BUFF is on)
 NativeBuffWin g_bw;   // (g_bwObj / g_bwH : defined with the event hook, above)
+// ---- the NPC SHOP (docs/notes/shops-re-2026-11-20.md ; live 2026-11-21 : 0x03E +4 = the row count, 0x03C 12-B records,
+// `shop` count +0x20 / top +0x1E / visible +0x18 = 10, rows +0x38 rebuilt every update, itemctrl +0x22 max / +0x23 value) ----
+void shop_poll(bool on, u32 mgr) {
+    NativeShop S; memset(&S, 0, sizeof(S)); S.cursor = -1;
+    if (!on || !mgr) { g_shop = S; g_shopMainUp = false; return; }
+    u32 focus = 0; { const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus); }
+    NativeEntryMenu m; u32 mo = 0;
+    const int er = entry_read(SHOPMAIN_W, m, &mo);
+    S.mainOpen = er == 1 && mo; g_shopMainUp = mo != 0;           // (the born-park rule : the window, even before it reads)
+    static int saidM = 0; static int wasM = -1;
+    const int stM = mo ? (S.mainOpen ? 2 : 1) : 0;
+    if (stM != wasM && saidM < 12) { ++saidM; wasM = stM;
+        windower::debug::log("NATIVEUI shop : Buy / Sell menu %s", !mo ? "closed" : S.mainOpen ? "open -- AioHUD draws it" : "open but UNREADABLE (entry_read) -- nothing drawn for it"); }
+    if (!S.mainOpen) { g_shop = S; return; }
+    S.mainFocused = focus == mo; S.mainCursor = m.cursor; S.mx0 = m.rx0; S.my0 = m.ry0; S.uiW = m.uiW; S.uiH = m.uiH;
+    while (S.uiH > 0 && S.my0 >= S.uiH) S.my0 = (short)(S.my0 - HIDE_DY);
+    { unsigned g = 0; S.gilOk = read_player_gil(g); S.gil = g; }
+    TextList T;
+    if (tl_find(mgr, "shop", T)) {
+        u32 rows = 0;
+        if (safe_read(T.h + 0x38, &rows) && (T.count == 0 || valid_ptr(rows))) {
+            S.n = T.count; S.top = T.top; S.vis = T.vis > 16 ? 16 : T.vis; S.cursor = T.cursor;
+            S.rx0 = T.rx0; S.ry0 = T.ry0; S.uiW = T.uiW; S.uiH = T.uiH;
+            S.sell = m.cursor == 2;
+            bool ok = true; unsigned char r0[0x54] = { 0 };
+            for (int i = 0; i < S.vis && S.top + i < S.n && ok; ++i) {
+                unsigned char r[0x54]; if (!rdblk(rows + (u32)(S.top + i) * 0x54, r, sizeof(r))) { ok = false; break; }
+                if (!i) memcpy(r0, r, sizeof(r0));
+                u32 v0 = 0, v2 = 0, c1 = 0, c2 = 0; memcpy(&v0, r + 0x28, 4); memcpy(&v2, r + 0x30, 4); memcpy(&c1, r + 0x0C, 4); memcpy(&c2, r + 0x10, 4);
+                short id = 0;
+                if (valid_ptr(v0)) { if (!rd16(v0, id)) id = 0; } else id = (short)(v0 & 0xFFFF);   // the icon cell : a pointer to the id (buy), or the id
+                NativeItemRow& w = S.row[i];
+                w.itemId = (unsigned short)id; w.itemCount = 0; w.itemCol = c1; w.tempRow = false;
+                w.hasPrice = true; w.price = v2 ? (int)(v2 - 1) : -1; w.priceCol = c2;
+            }
+            S.open = ok; S.focused = focus == T.obj;
+            static int saidL = 0; static int wasN = -1, wasSell = -1;
+            if (ok && (S.n != wasN || (int)S.sell != wasSell) && saidL < 12) { ++saidL; wasN = S.n; wasSell = (int)S.sell;
+                u32 rec = 0, ic = 0, pc = 0; memcpy(&rec, r0 + 0x48, 4); memcpy(&ic, r0 + 0x28, 4); memcpy(&pc, r0 + 0x30, 4);
+                windower::debug::log("NATIVEUI shop : %s list, %d rows (top %d, vis %d, cursor %d) -- row 0 : types %02X %02X %02X %02X, icon cell %08X -> item %u, name colour %08X, price cell %08X (-> %d) colour %08X, record %08X ; gil %u%s",
+                    S.sell ? "SELL" : "BUY", S.n, S.top, S.vis, S.cursor, r0[0], r0[1], r0[2], r0[3], ic, S.row[0].itemId, S.row[0].itemCol,
+                    pc, S.row[0].price, S.row[0].priceCol, rec, S.gil, S.gilOk ? "" : " (gil UNREADABLE)"); }
+            if (!ok) { static int saidF = 0; if (saidF < 6) { ++saidF; windower::debug::log("NATIVEUI shop : a row UNREADABLE (%d rows, top %d) -- the list is not drawn this frame", S.n, S.top); } }
+        }
+    }
+    if (S.open) { NativeItems q; memset(&q, 0, sizeof(q)); qty_read(mgr, focus, q); S.qtyOk = q.qtyOk; S.qtyFocused = q.qtyFocused; S.qtyVal = q.qtyVal; S.qtyMax = q.qtyMax; }
+    g_shop = S;
+}
 void buffwin_poll(bool on, u32 mgr) {
     if (!on || !mgr) { g_bw.open = false; g_bwObj = g_bwH = 0; return; }
     NativeBuffWin B; memset(&B, 0, sizeof(B));
@@ -3254,6 +3310,9 @@ bool native_main_sub_hover(int entry) { return entry_hover(MAIN_SUB_W, entry); }
 bool native_unity_info_hover(int entry) { return entry_hover(QUEST_W, entry); }
 bool native_unity_info_pick(int entry) { return entry_pick(QUEST_W, entry); }
 bool native_scoption_hover(int entry) { return entry_hover(SCOPT_W, entry); }
+bool native_shopmain_hover(int entry) { return g_shop.mainOpen && entry_hover(SHOPMAIN_W, entry); }
+bool native_shopmain_pick(int entry) { return g_shop.mainOpen && entry_pick(SHOPMAIN_W, entry); }
+const NativeShop& native_shop() { return g_shop; }
 bool native_scoption_pick(int entry) { return entry_pick(SCOPT_W, entry); }
 // a text list's row : its page scrolled first (codes 0x16 / 0x17, one row each -- bounded), then the hand on it (9),
 // then validated (5) when asked. The list must have the focus.
@@ -3756,6 +3815,17 @@ void native_ui_tick(bool inWorld) {
     if (wanted && (eff_hide(c) & NU_BUFF)) ensure_event_hook();   // the buff cursor's left / right walk AioHUD's order
     trade_poll(wanted && (c.nuHide & NU_TRADE), manager());   // the player trade : AioHUD's own
     dialog_poll(wanted && (c.nuHide & NU_DIALOG), manager());  // the Yes / No confirms : AioHUD's own
+    shop_poll(wanted && (c.nuHide & NU_NPC), manager());       // the NPC shop : Buy / Sell, its list, the quantity
+    if (wanted && (c.nuHide & NU_NPC) && g_shop.mainOpen) {
+        static int smLog = 0, slLog = 0, sqLog = 0, siLog = 0, sgLog = 0;
+        park_named(manager(), "shopmain", smLog, "Shop -> Buy / Sell");
+        if (g_shop.open) {
+            park_named(manager(), "shop", slLog, "Shop -> the list");
+            park_named(manager(), "iteminfo", siLog, "Shop -> the item card");
+            park_named(manager(), "money", sgLog, "Shop -> Current Gil");
+            if (g_shop.qtyOk) park_named(manager(), "itemctrl", sqLog, "Shop -> the quantity");
+        }
+    }
     if (wanted && (eff_hide(c) & NU_DIALOG)) ensure_event_hook();   // the confirms' left / right (the same event hook as the trade)
     if (wanted && (eff_hide(c) & NU_TRADE) && g_trade.open) {   // ... and the boxes it opens : AioHUD draws them (the user 2026-11-20 : they still popped)
         static int tgLog = 0, tqLog = 0, tiLog = 0;

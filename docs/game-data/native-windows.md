@@ -683,3 +683,28 @@ AioHUD's redrawn lists therefore take, in order (`hud_actmenu.cpp`, `list_icon` 
    job found by name in `job_track` (main job, then support) ; the submenu CATEGORY rows (Waltzes, Rune Enchantment,
    Ward, Effusion) by a small table.
 6. AioHUD's drawn glyph (a Trust with no picture : the party glyph).
+
+## 13. Your buff icons (`buff`) -- live 2026-11-20
+
+- The client's own status icons under the top bar. Record 142,48 -> 382,52 (240 x 4 units : the icons are drawn OUTSIDE
+  the rect). Hidden with `NU_BUFF` (1 << 12) ; AioHUD draws the party's icon set in the party's order (no hide filter).
+- **Handler** : +0x30 the cursor index in the GAME's order (it wraps), +0x34 the previous one, +0x40 the count.
+- The focus comes through `logwindo` -> `buff` (X / numpad +). Menu events : 3 right, 4 left, 5 validate (the client
+  cancels the buff if it can), 9 set. AioHUD's left / right walk ITS drawn order : the hook puts +0x30 on the game index
+  just before the target (right ; just after it for left) and passes the same event on, so the client's help line follows.
+
+## 14. The NPC shop (`shopmain` / `shop` / `itemctrl`) -- static 2026-11-20, live 2026-11-21
+
+Static detail : `docs/notes/shops-re-2026-11-20.md` (local). Confirmed live 2026-11-21 (a vendor, 6 items ; Sell, 28 rows) :
+- **0x03E** +4 = the row count (6) ; **0x03C** 12-byte records from +8 : u32 price, u16 item, **u8 shop slot** (+6 ; +7
+  junk), two u16 ; +6 bit 0 of the header = the list is complete. **0x03D** type 0 : +4 price, +8 inventory index.
+- `shopmain` (16,836 units, image labels) : entry 1 Buy, 2 Sell -- its cursor stays on the choice while the list is up.
+- `shop` (16,48 -> 290,238) = a TEXT LIST : count s16 +0x20, top s16 +0x1E, visible +0x18 (10), rows +0x38 (0x54 B,
+  REALLOCATED every update -- the pointer changes each frame), cursor = window +0x4C - 1 + top. Cells (c = 0..3) : type
+  +c, colour +0x08 + 4c, value +0x28 + 4c ; record +0x48. Buy : types 16 01 0A 00, col 0 = a POINTER to the item id, col 2
+  = price + 1, record = the shop slot. Sell : types 16 01 0B 00, col 2 = 0 until the client asked the price (0x084 ->
+  0x03D), record = a pointer. Name colour : 0x80909040 gold usable, 0x80808080 white, 0x80404040 refused.
+- `itemctrl` : u8 +0x22 max, u8 +0x23 value (1 -> 99 wraps down). `money` and `iteminfo` open with the list.
+- AioHUD (NU_NPC, `shop_poll` / `shop_draw`) : `shopmain`, `shop` and `money` BORN parked (the client resizes `shop`
+  once it is up ; `money` draws where it was born) -- `shop` / `money` only while `shopmain` is up, since the bazaar and
+  the guild shops reuse `shop`. The client keeps every rule and packet.

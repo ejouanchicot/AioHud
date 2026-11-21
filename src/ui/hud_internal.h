@@ -87,6 +87,7 @@ void topbar_draw(const Frame& f);     // hud_actmenu.cpp : the client's top bar 
 void buffbar_draw(const Frame& f);    // hud_actmenu.cpp : your buff icons under the top bar, the party's icon set (NU_BUFF)
 void dialog_draw(const Frame& f);     // hud_actmenu.cpp : the client's Yes / No confirms, AioHUD's style (NU_DIALOG)
 void trade_draw(const Frame& f);     // hud_actmenu.cpp : the player trade (trade + gift), AioHUD's style (NU_TRADE)
+void shop_draw(const Frame& f);      // hud_actmenu.cpp : an NPC shop (Buy / Sell, the list, the quantity), AioHUD's style (NU_NPC)
 void netbox_draw(const Frame& f);    // hud_actmenu.cpp : the connection box (netstat), top right beside the top bar (NU_NET)
 void macrobar_draw(const Frame& f);  // hud_actmenu.cpp : the Ctrl / Alt macro bar, when the client shows its own (NU_MACRO)
 void item_card_fold(const Frame& f);  // hud_actmenu.cpp : once a frame, after every screen : the item card that was shown folds away
