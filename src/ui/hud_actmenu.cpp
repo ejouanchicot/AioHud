@@ -18,6 +18,7 @@
 #include "ui/box_style.h"         // draw_themed_box : the block
 #include "ui/party.h"             // party_cursor / party_selframe / party_cursor_bob : AioHUD's hand and gold glass
 #include "model/ui_config.h"
+#include "model/map_dat.h"     // menu_label : the menus' image labels
 #include "model/native_ui.h"
 #include "model/gamestate.h"   // GameState (me.mp)
 #include "ui/buff_atlas.h"        // buff_atlas_tex / buff_cell_uv : the status-icon fallback
@@ -418,7 +419,8 @@ struct RowSpec { const char* label; Icon icon; bool sub; bool off; const char* e
                  bool cycle = false; bool center = false;
                  u32 tint = 0;
                  bool mark = false;   // the row HELD by a manual sort : a pulsing gold rim
-                 u32 tex = 0; float tu0 = 0.0f, tu1 = 1.0f, tv0 = 0.0f, tv1 = 1.0f; u32 texTint = 0xFFFFFFFFu; };
+                 u32 tex = 0; float tu0 = 0.0f, tu1 = 1.0f, tv0 = 0.0f, tv1 = 1.0f; u32 texTint = 0xFFFFFFFFu;
+                 u32 ltex = 0; float lw = 0.0f, lh = 0.0f, lu1 = 1.0f, lv1 = 1.0f; };   // ltex : the LABEL as the client's own image (its letters, white) -- lw x lh texels
                  // tex + its UV : the row's picture (Windower's file, a status / element / job cell), tinted texTint   // tex : the row's own picture (a spell / ability icon from Windower's plugins\icons), drawn in place of `icon`   // tint : the label's own colour (the NPC answers : the client's green), 0 the menus' grey-white   // center : a lone message row (the empty list), centred in the block   // cycle : the extra can be changed with RIGHT (the Tell name ; left closes the submenu) -> name >
 struct Block {
     float vis = 0.0f, curY = -1.0f; unsigned openMs = 0; int lastN = 0; bool wasOpen = false; float sel[32] = { 0 };
@@ -631,6 +633,40 @@ void list_fallback(const Frame& f, int kind, unsigned id, RowSpec& r) {
 // spaced) ; until then the drawn pearl stays.
 struct PearlTex { int item; u32 argb; u32 tex; unsigned char tries; unsigned nextMs; };
 PearlTex g_pearl[4];
+// ---- the menus' IMAGE labels : the client's sprite letters (model/map_dat : menu_label), one texture each, cached ----
+struct LabelTex { unsigned char sheet = 0; unsigned short id = 0; u32 tex = 0; int w = 0, h = 0, pw = 0, ph = 0; unsigned char tries = 0; unsigned nextMs = 0; };
+LabelTex g_lbl[96]; unsigned g_lblClock = 0;
+// fills r.ltex... from the entry's sprite (sheet 1 windowps, 2 keytops3 ; id + 1) ; false = keep the text label
+bool label_img(u32 dev, int sheet, unsigned short sprPlus1, RowSpec& r) {
+    if (!dev || !sheet || !sprPlus1) return false;
+    const unsigned short id = (unsigned short)(sprPlus1 - 1);
+    int slot = -1; for (int i = 0; i < 96; ++i) if (g_lbl[i].sheet == sheet && g_lbl[i].id == id && (g_lbl[i].tex || g_lbl[i].tries)) { slot = i; break; }
+    if (slot < 0) { for (int i = 0; i < 96 && slot < 0; ++i) if (!g_lbl[i].sheet) slot = i;
+        if (slot < 0) { slot = (int)(g_lblClock++ % 96); if (g_lbl[slot].tex) release_texture(g_lbl[slot].tex); }
+        g_lbl[slot] = LabelTex(); g_lbl[slot].sheet = (unsigned char)sheet; g_lbl[slot].id = id; }
+    LabelTex& L = g_lbl[slot];
+    if (!L.tex && L.tries < 4 && (!L.nextMs || (int)(GetTickCount() - L.nextMs) >= 0)) {
+        ++L.tries; L.nextMs = GetTickCount() + 2000;
+        const MenuLabel* M = menu_label(sheet == 1 ? "menu    windowps" : "menu    keytops3", id);
+        if (M && M->w > 0 && M->h > 0 && M->w <= 512 && M->h <= 128) {
+            int pw = 1, ph = 1; while (pw < M->w) pw <<= 1; while (ph < M->h) ph <<= 1;    // a power of two (old D3D8 parts)
+            static u32 buf[512 * 128]; memset(buf, 0, sizeof(u32) * (size_t)pw * ph);
+            for (int y = 0; y < M->h; ++y) memcpy(buf + (size_t)y * pw, M->px + (size_t)y * M->w, (size_t)M->w * 4);
+            L.tex = make_texture_argb(dev, pw, ph, buf); L.w = M->w; L.h = M->h; L.pw = pw; L.ph = ph;
+        }
+    }
+    if (!L.tex) return false;
+    r.ltex = L.tex; r.lw = (float)L.w; r.lh = (float)L.h; r.lu1 = (float)L.w / (float)L.pw; r.lv1 = (float)L.h / (float)L.ph;
+    return true;
+}
+// a menu row from an entry : its image label when the client has one (grey -> the grey look ; alt -> the toggle's other)
+void row_image(u32 dev, const NativeEntryMenu& m, int i, RowSpec& r, bool alt = false) {
+    if (i < 0 || i >= 32 || !m.sheet[i]) return;
+    // only in the client's own language = the config's (an EN client + a French config : our French text stays)
+    const int cl = native_client_lang(), ul = ui_config().lang; if (!((ul == 0 && cl == 1) || (ul == 1 && cl == 3))) return;
+    const unsigned short id = alt && m.spr[i][1] ? m.spr[i][1] : m.spr[i][0];   // (grey : the normal look, dimmed by the row)
+    label_img(dev, m.sheet[i], id, r);
+}
 u32 pearl_tex(u32 dev, int item, u32 argb) {
     if (!dev || item < 513 || item > 515) return 0;
     int slot = -1;
@@ -791,10 +827,13 @@ int menu_place_at(const Frame& f, int key, float& x, float& y, float ux, float u
 // the submenu arrow's column : only when a row has one (2026-11-16 : "trop large" -- Magic / Abilities / Chat have none)
 float tri_col(const Metrics& k, const RowSpec* rows, int n) { for (int i = 0; i < n; ++i) if (rows[i].sub) return k.triW; return 0.0f; }
 // the block's size for these rows
+// an image label's drawn size : its letters at the text's height (the client's 9 x 11 glyphs, scaled)
+float label_img_h(const Metrics& k) { return snap(k.tz * 0.82f); }
+float label_img_w(const Metrics& k, const RowSpec& r) { return r.lh > 0.0f ? snap(r.lw * label_img_h(k) / r.lh) : 0.0f; }
 void block_size(const Frame& f, const Metrics& k, const RowSpec* rows, int n, float& w, float& h) {
     float wLab = 0.0f, wEx = 0.0f;
     for (int i = 0; i < n; ++i) {
-        const float lw = f.font->measure(rows[i].label, k.tz); if (lw > wLab) wLab = lw;
+        const float lw = rows[i].ltex ? label_img_w(k, rows[i]) : f.font->measure(rows[i].label, k.tz); if (lw > wLab) wLab = lw;
         float ew = rows[i].extra && rows[i].extra[0] ? f.font->measure(rows[i].extra, k.tz * 0.92f) : 0.0f;
         if (rows[i].pearl) ew += k.capH + 3.0f * k.S;   // its inventory icon, the capsule's height
         if (rows[i].cycle) ew += 9.0f * k.S;
@@ -924,6 +963,16 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
         if (g_handTex) party_cursor(dev, g_handTex, hx, cy, hand, 0);
         else tri(dev, hx + 5.0f * S, cy, hx - 3.5f * S, cy - 5.0f * S, hx - 3.5f * S, cy + 5.0f * S, with_alpha(0xFFFFDA8Au, A));
     }
+    // the IMAGE labels (the client's letters) : a shadow, then the letters in the text's colour
+    for (int i = 0; i < n && i < 32; ++i) if (rows[i].ltex && !rows[i].center) {
+        const float s = b.sel[i], a = A * (rows[i].off ? 0.5f : 1.0f), y = snap(ry0 + k.pad + (float)i * step);
+        const float ih = label_img_h(k), iw = label_img_w(k, rows[i]), ix = snap(cx0 + k.capPadL + k.icW), iy = snap(y + (k.capH - ih) * 0.5f);
+        const u32 lc = rows[i].tint ? mix(rows[i].tint, 0xFFE4FFD6u, s * 0.6f) : mix(0xFFC9D3E0u, 0xFFFFFFFFu, s);
+        dTexQuadState(dev, rows[i].ltex);
+        tquad(dev, ix + 1.0f * S, iy + 1.0f * S, iw, ih, 0.0f, rows[i].lu1, 0.0f, rows[i].lv1, with_alpha(0xC8000000u, a), with_alpha(0xC8000000u, a));
+        tquad(dev, ix, iy, iw, ih, 0.0f, rows[i].lu1, 0.0f, rows[i].lv1, with_alpha(lc, a), with_alpha(lc, a));
+        dSetTex(dev, 0, 0); cs(dev);
+    }
     // the labels, in ONE textured pass (begin() binds the glyph state -- a shape drawn before leaves the stage on plain
     // colour, which draws every glyph as a solid quad : the white bands of 2026-11-16)
     Font* fo = f.font;
@@ -937,8 +986,8 @@ int block_draw(const Frame& f, const Metrics& k, Block& b, const RowSpec* rows, 
             continue;
         }
         const u32 lc = rows[i].tint ? mix(rows[i].tint, 0xFFE4FFD6u, s * 0.6f) : mix(0xFFC9D3E0u, 0xFFFFFFFFu, s);
-        fo->draw_lc(dev, snap(cx0 + k.capPadL + k.icW), snap(y + k.capH * 0.5f), rows[i].label, k.tz,
-                    with_alpha(lc, a), with_alpha(0xC8000000u, a), k.ow);
+        if (!rows[i].ltex) fo->draw_lc(dev, snap(cx0 + k.capPadL + k.icW), snap(y + k.capH * 0.5f), rows[i].label, k.tz,
+                                       with_alpha(lc, a), with_alpha(0xC8000000u, a), k.ow);
         if (rows[i].extra && rows[i].extra[0]) {
             const float ez = k.tz * 0.92f, ew = fo->measure(rows[i].extra, ez);
             fo->draw_lc(dev, snap(cx0 + capW - k.capPadR - triU - ew - (rows[i].cycle ? 9.0f * k.S : 0.0f)), snap(y + k.capH * 0.5f), rows[i].extra, ez,
@@ -1516,6 +1565,7 @@ void npc_card_forget()  {   // device lost : the handles are gone with it (the l
     g_cardAlt.icon = 0; g_cardAlt.iconId = 0; g_cardAlt.id = 0;      // the second card's handle is gone too
     for (int i = 0; i < 64; ++i) g_icons[i] = IconSlot();
     for (int i = 0; i < 4; ++i) g_pearl[i] = PearlTex();
+    for (int i = 0; i < 96; ++i) g_lbl[i] = LabelTex();                 // the menus' image labels
     g_elemTex = g_jobTex = g_wpnTex = 0; g_elemR = TexRetry(); g_jobR = TexRetry(); g_wpnR = TexRetry();
     g_gilTex = 0; g_gilR = TexRetry();
 }
@@ -1528,6 +1578,7 @@ void npc_card_dispose() {
     if (g_wpnTex) release_texture(g_wpnTex);
     if (g_gilTex) release_texture(g_gilTex);
     for (int i = 0; i < 4; ++i) if (g_pearl[i].tex) release_texture(g_pearl[i].tex);
+    for (int i = 0; i < 96; ++i) if (g_lbl[i].tex) release_texture(g_lbl[i].tex);
     npc_card_forget();
 }
 
@@ -4893,6 +4944,7 @@ void mog_draw(const Frame& f) {
             rows[i].label = mog_label(L.name, L.entry[i], L.label[i], bufs[i], sizeof(bufs[i])); rows[i].icon = IC_NONE;
             if (mhOpen && L.entry[i] == 6) rows[i].label = tr("Close Mog House", "Fermer la Mog House");   // the client's image toggles
             rows[i].off = L.state[i] == 5;
+            row_image(f.dev, L, i, rows[i], mhOpen && L.entry[i] == 6);   // the client's own label image, when it has one
             if (L.entry[i] == L.cursor) cur = i + 1;
         }
         float bw, bh; block_size(f, k, rows, L.n, bw, bh);
@@ -5118,7 +5170,7 @@ void auc_draw(const Frame& f) {
     if (block_ease(g_auMB, A0.up && A0.menuOpen, now, dt) && last.menu.n > 0) {
         const NativeEntryMenu& M = last.menu;
         RowSpec rows[16] = {}; int cur = 0; const int n = M.n < 16 ? M.n : 16; static char lb[16][48];
-        for (int i = 0; i < n; ++i) { rows[i].label = auc_label(last.help[i], lb[i], sizeof(lb[i])); rows[i].icon = IC_NONE; rows[i].off = M.state[i] == 5; if (M.entry[i] == M.cursor) cur = i + 1; }
+        for (int i = 0; i < n; ++i) { rows[i].label = auc_label(last.help[i], lb[i], sizeof(lb[i])); rows[i].icon = IC_NONE; rows[i].off = M.state[i] == 5; if (M.entry[i] == M.cursor) cur = i + 1; row_image(f.dev, M, i, rows[i]); }
         float bw, bh; block_size(f, k, rows, n, bw, bh);
         float bx = snap((float)M.rx1 * sx - bw), by = snap((float)M.ry0 * sy);   // its right edge where the client's is
         if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
@@ -5235,6 +5287,7 @@ void gen_draw(const Frame& f) {
             rows[i].label = L.label[i][0] ? L.label[i] : auc_label(lastHelp[s][i], bufs[s][i], sizeof(bufs[s][i]));
             rows[i].icon = IC_NONE; rows[i].off = L.state[i] == 5;
             if (L.entry[i] == L.cursor) cur = i + 1;
+            if (!L.label[i][0]) row_image(f.dev, L, i, rows[i]);
         }
         float bw, bh; block_size(f, k, rows, n, bw, bh);
         const float sx = f.screenW / (float)L.uiW, sy = f.screenH / (float)L.uiH;

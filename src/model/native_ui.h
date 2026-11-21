@@ -105,6 +105,8 @@ struct NativeTopLine {
 };
 struct NativeTopBar { bool ok; NativeTopLine title, help; };   // ok : both read this frame
 const NativeTopBar& native_topbar();
+// the client's language (0 JP, 1 EN, 2 DE, 3 FR ; -1 unknown) : its menu DAT is the labels' source
+int native_client_lang();
 
 // The MACRO BAR (NU_MACRO ; docs/notes/macro-bar-re-2026-11-20.md, live 2026-11-20). The client opens it while Ctrl (1) or
 // Alt (2) is held (or toggled by a pad button). Its data object holds the CURRENT set only : 20 macros (0..9 Ctrl,
@@ -245,6 +247,10 @@ struct NativeEntryMenu {
     char label[32][24];        // each shown row's label as the client's DEFINITION writes it (ASCII ; "" when it has none --
                                // some menus draw theirs as images)
     int  cursor;               // 1-based entry index under the cursor
+    // each shown row's IMAGE label (the client's sprite : menu-dat-re-2026-11-21.md) -- sheet 1 "menu    windowps", 2
+    // "menu    keytops3", 0 none ; spr[i][0] the normal look, [1] the alternate (a toggle : Close Mog House), [2] the grey
+    // look (state 4) ; each = sprite id + 1, 0 none
+    unsigned char sheet[32]; unsigned short spr[32][3];
     short rx0, ry0, rx1, ry1;
     int  uiW, uiH;
     unsigned entMarks;         // the main menu's Party windows : bit e = entry e is ON / checked (party-re-2026-11-19.md)

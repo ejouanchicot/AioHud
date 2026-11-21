@@ -2,9 +2,11 @@
 // file-id via the VTABLE/FTABLE volume scheme, reads the DAT, and decodes the type-0x20 8-bit-palette
 // graphic to A8R8G8B8. Confirmed against the live install (Valkurm ROM/17/27.DAT, Selbina ROM/18/80.DAT).
 #include "model/map_dat.h"
+#include "windower_debug.h"   // MENUDAT : the menu DAT's load, logged
 #include "retry_clock.h"   // retry_due / retry_arm : the 0-sentinel-safe "try again later" (see the header for the 24.8 d trap)
 #include <windows.h>
 #include <string.h>
+#include <new>      // std::nothrow : the menu DAT's buffers
 #include <stdio.h>   // _snprintf : bounded path formatting (wsprintfA is capped by its own buffer, not the destination)
 #pragma comment(lib, "advapi32.lib")   // RegOpenKeyExA / RegQueryValueExA (PlayOnline install path)
 
@@ -298,6 +300,146 @@ bool dat_resolve_vanilla(unsigned fileId, char* out, unsigned cap) {
     return resolve_path(fileId, out, false);
 }
 const char* dat_windower_root() { return windower_root(); }
+
+// ======== the client's MENU DAT : sheets, textures, the labels' letters (menu-dat-re-2026-11-21.md) ========
+namespace {
+unsigned char* g_md = 0; unsigned g_mdN = 0; int g_mdLang = -1, g_mdTries = 0; DWORD g_mdNext = 0; bool g_mdOk = false;
+struct MdSheet { char name[17]; unsigned off, end; int nspr; unsigned* spr; };   // spr[i] : the sprite's offset in g_md
+struct MdTex { char name[17]; unsigned off; int w, h, fmt; u32* px; bool tried; };   // fmt 1 DXT1, 3 DXT3 ; px decoded lazily
+MdSheet g_mdSheet[64]; int g_mdSheets = 0; MdTex g_mdTex[96]; int g_mdTexN = 0;
+struct MdLabel { char sheet[17]; unsigned id; MenuLabel L; bool tried; };
+MdLabel g_mdLab[256]; int g_mdLabN = 0;
+
+void md_dxt_colours(const unsigned char* cb, unsigned char r[4], unsigned char g[4], unsigned char b[4], bool dxt1, bool& punch) {
+    const unsigned short c0 = (unsigned short)(cb[0] | cb[1] << 8), c1 = (unsigned short)(cb[2] | cb[3] << 8);
+    r[0] = (unsigned char)(((c0 >> 11) & 31) * 255 / 31); g[0] = (unsigned char)(((c0 >> 5) & 63) * 255 / 63); b[0] = (unsigned char)((c0 & 31) * 255 / 31);
+    r[1] = (unsigned char)(((c1 >> 11) & 31) * 255 / 31); g[1] = (unsigned char)(((c1 >> 5) & 63) * 255 / 63); b[1] = (unsigned char)((c1 & 31) * 255 / 31);
+    punch = dxt1 && c0 <= c1;
+    if (!punch) { r[2] = (unsigned char)((2 * r[0] + r[1]) / 3); g[2] = (unsigned char)((2 * g[0] + g[1]) / 3); b[2] = (unsigned char)((2 * b[0] + b[1]) / 3);
+                  r[3] = (unsigned char)((r[0] + 2 * r[1]) / 3); g[3] = (unsigned char)((g[0] + 2 * g[1]) / 3); b[3] = (unsigned char)((b[0] + 2 * b[1]) / 3); }
+    else { r[2] = (unsigned char)((r[0] + r[1]) / 2); g[2] = (unsigned char)((g[0] + g[1]) / 2); b[2] = (unsigned char)((b[0] + b[1]) / 2); r[3] = g[3] = b[3] = 0; }
+}
+// a whole DXT1 / DXT3 image, top-left origin (no flip) ; DXT3 alpha doubled (the 0x80 = opaque convention)
+u32* md_decode(const unsigned char* d, unsigned n, int W, int Ht, int fmt) {
+    const int bw = (W + 3) / 4, bh = (Ht + 3) / 4, bs = fmt == 1 ? 8 : 16;
+    if (W <= 0 || Ht <= 0 || W > 2048 || Ht > 2048 || (unsigned)(bw * bh * bs) > n) return 0;
+    u32* px = new (std::nothrow) u32[(size_t)W * Ht]; if (!px) return 0;
+    for (int by = 0; by < bh; ++by) for (int bx = 0; bx < bw; ++bx) {
+        const unsigned char* s = d + (by * bw + bx) * bs;
+        const unsigned char* cb = fmt == 1 ? s : s + 8;
+        unsigned char r[4], g[4], b[4]; bool punch = false; md_dxt_colours(cb, r, g, b, fmt == 1, punch);
+        const unsigned idx = (unsigned)(cb[4] | cb[5] << 8 | cb[6] << 16 | (unsigned)cb[7] << 24);
+        for (int y = 0; y < 4; ++y) for (int x = 0; x < 4; ++x) {
+            const int X = bx * 4 + x, Y = by * 4 + y; if (X >= W || Y >= Ht) continue;
+            const int k = (idx >> (2 * (y * 4 + x))) & 3; int a = 255;
+            if (fmt == 3) { const int a4 = (s[(y * 4 + x) / 2] >> (((y * 4 + x) & 1) * 4)) & 15; a = ((a4 << 4) | a4) * 2; if (a > 255) a = 255; }
+            else if (punch && k == 3) a = 0;
+            px[(size_t)Y * W + X] = ((u32)a << 24) | ((u32)r[k] << 16) | ((u32)g[k] << 8) | b[k];
+        }
+    }
+    return px;
+}
+// the chunks : sheets (0x31) indexed with their sprites' offsets, textures (0x20) by name
+bool md_index() {
+    g_mdSheets = 0; g_mdTexN = 0;
+    for (unsigned at = 0; at + 16 <= g_mdN; ) {
+        const unsigned w = *(const unsigned*)(g_md + at + 4), type = w & 0x7F, size = ((w >> 7) & 0x7FFFF) * 16;
+        if (size < 16 || at + size > g_mdN) break;
+        const unsigned p = at + 16, pe = at + size;
+        if (type == 0x31 && g_mdSheets < 64 && p + 17 < pe) {
+            MdSheet& S = g_mdSheet[g_mdSheets]; memcpy(S.name, g_md + p, 16); S.name[16] = 0;
+            const unsigned ntex = g_md[p + 16]; unsigned q = p + 17 + ntex * 16;
+            if (q + 2 <= pe) {
+                const int ns = *(const unsigned short*)(g_md + q); q += 2;
+                S.spr = new (std::nothrow) unsigned[ns > 0 ? ns : 1]; S.nspr = 0; S.off = p; S.end = pe;
+                for (int i = 0; S.spr && i < ns && q < pe; ++i) { S.spr[S.nspr++] = q; q += 1 + (unsigned)g_md[q] * 61; }
+                if (S.spr && S.nspr == ns && q <= pe) ++g_mdSheets; else { delete[] S.spr; S.spr = 0; }
+            }
+        } else if (type == 0x20 && g_mdTexN < 96 && p + 0x45 <= pe) {
+            MdTex& T = g_mdTex[g_mdTexN]; memcpy(T.name, g_md + p + 1, 16); T.name[16] = 0;
+            T.w = *(const int*)(g_md + p + 0x15); T.h = *(const int*)(g_md + p + 0x19);
+            const char* fc = (const char*)(g_md + p + 0x39);
+            T.fmt = !memcmp(fc, "1TXD", 4) ? 1 : !memcmp(fc, "3TXD", 4) ? 3 : 0; T.off = p + 0x45; T.px = 0; T.tried = false;
+            if (T.fmt && T.w > 0 && T.h > 0) ++g_mdTexN;
+        }
+        if (type == 0) break;
+        at += size;
+    }
+    return g_mdSheets > 0 && g_mdTexN > 0;
+}
+MdTex* md_tex(const char* name16) {
+    for (int i = 0; i < g_mdTexN; ++i) if (!memcmp(g_mdTex[i].name, name16, 16)) {
+        MdTex& T = g_mdTex[i];
+        if (!T.px && !T.tried) { T.tried = true; T.px = md_decode(g_md + T.off, g_mdN - T.off, T.w, T.h, T.fmt);
+            if (!T.px) windower::debug::log("MENUDAT texture '%.16s' %dx%d fmt %d : NOT decoded", T.name, T.w, T.h, T.fmt); }
+        return T.px ? &T : 0;
+    }
+    return 0;
+}
+} // namespace
+
+bool menu_dat_load(int lang) {
+    static const unsigned IDS[4] = { 39532, 39542, 55746, 56166 };
+    if (lang < 0 || lang > 3) return false;
+    if (g_mdOk && g_mdLang == lang) return true;
+    if (g_mdTries >= 6 || (g_mdTries && (int)(GetTickCount() - g_mdNext) < 0)) return false;
+    ++g_mdTries; g_mdNext = GetTickCount() + 10000;
+    if (g_md) { dat_free_file(g_md); g_md = 0; g_mdN = 0; }
+    for (int i = 0; i < g_mdSheets; ++i) { delete[] g_mdSheet[i].spr; g_mdSheet[i].spr = 0; }
+    for (int i = 0; i < g_mdTexN; ++i) { delete[] g_mdTex[i].px; g_mdTex[i].px = 0; }
+    for (int i = 0; i < g_mdLabN; ++i) { delete[] g_mdLab[i].L.px; g_mdLab[i].L.px = 0; }
+    g_mdSheets = g_mdTexN = g_mdLabN = 0; g_mdOk = false;
+    char path[MAX_PATH] = "";
+    if (!dat_resolve_path(IDS[lang], path, sizeof(path))) { windower::debug::log("MENUDAT lang %d : file %u NOT resolved (try %d)", lang, IDS[lang], g_mdTries); return false; }
+    g_md = dat_read_file(path, g_mdN);
+    if (!g_md) { windower::debug::log("MENUDAT lang %d : '%s' NOT read (try %d)", lang, path, g_mdTries); return false; }
+    g_mdOk = md_index(); g_mdLang = lang;
+    windower::debug::log("MENUDAT lang %d : '%s' %u bytes -- %d sheets, %d textures%s (try %d)", lang, path, g_mdN, g_mdSheets, g_mdTexN,
+                         g_mdOk ? "" : " -- NOT a menu DAT : labels stay text", g_mdTries);
+    if (g_mdOk) g_mdTries = 0;
+    return g_mdOk;
+}
+
+const MenuLabel* menu_label(const char* sheet16, unsigned sprite) {
+    if (!g_mdOk || !sheet16) return 0;
+    for (int i = 0; i < g_mdLabN; ++i) if (g_mdLab[i].id == sprite && !memcmp(g_mdLab[i].sheet, sheet16, 16)) return g_mdLab[i].L.px ? &g_mdLab[i].L : 0;
+    if (g_mdLabN >= 256) return 0;
+    MdLabel& M = g_mdLab[g_mdLabN++]; memset(&M, 0, sizeof(M)); memcpy(M.sheet, sheet16, 16); M.id = sprite; M.tried = true;
+    const MdSheet* S = 0; for (int i = 0; i < g_mdSheets; ++i) if (!memcmp(g_mdSheet[i].name, sheet16, 16)) S = &g_mdSheet[i];
+    if (!S || sprite >= (unsigned)S->nspr) return 0;
+    const unsigned q = S->spr[sprite]; const int np = g_md[q];
+    // the LETTER parts : a "font    ..." texture, not the shadow pass (flag byte 1 = 2) -- no button, no frame (hfr1 / newtex : the skin's DATs)
+    int x0 = 1 << 30, y0 = 1 << 30, x1 = -(1 << 30), y1 = -(1 << 30), nl = 0;
+    for (int k = 0; k < np; ++k) {
+        const unsigned char* P = g_md + q + 1 + k * 61; if (q + 1 + (k + 1) * 61 > S->end) return 0;
+        if (P[0x2A] == 2 || memcmp(P + 0x2D, "font    ", 8)) continue;   // the letters only (a font texture) : no button, no frame, no shadow pass
+        const short* c = (const short*)P; const int ax = c[0], ay = c[1], bx = c[6], by = c[7];
+        if (ax < x0) x0 = ax; if (ay < y0) y0 = ay; if (bx > x1) x1 = bx; if (by > y1) y1 = by; ++nl;
+    }
+    if (!nl || x1 <= x0 || y1 <= y0 || x1 - x0 > 512 || y1 - y0 > 128) return 0;
+    const int W = x1 - x0, Hh = y1 - y0;
+    u32* px = new (std::nothrow) u32[(size_t)W * Hh]; if (!px) return 0;
+    memset(px, 0, (size_t)W * Hh * 4);
+    for (int k = 0; k < np; ++k) {
+        const unsigned char* P = g_md + q + 1 + k * 61;
+        if (P[0x2A] == 2 || memcmp(P + 0x2D, "font    ", 8)) continue;   // the letters only (a font texture) : no button, no frame, no shadow pass
+        MdTex* T = md_tex((const char*)P + 0x2D); if (!T) { delete[] px; windower::debug::log("MENUDAT sprite %u : its texture '%.16s' missing -- the text label stays", sprite, (const char*)P + 0x2D); return 0; }
+        const short* c = (const short*)P; const int ax = c[0] - x0, ay = c[1] - y0, bx = c[6] - x0, by = c[7] - y0;
+        const unsigned short* r = (const unsigned short*)(P + 0x10); const int sw = r[0], sh = r[1], su = r[2], sv = r[3];
+        const int dw = bx - ax, dh = by - ay; if (dw <= 0 || dh <= 0 || sw <= 0 || sh <= 0) continue;
+        for (int y = 0; y < dh; ++y) for (int x = 0; x < dw; ++x) {
+            const int tx = su + x * sw / dw, ty = sv + y * sh / dh; if (tx < 0 || ty < 0 || tx >= T->w || ty >= T->h) continue;
+            const int X = ax + x, Y = ay + y; if (X < 0 || Y < 0 || X >= W || Y >= Hh) continue;
+            const u32 t = T->px[(size_t)ty * T->w + tx]; const unsigned a = t >> 24;
+            // white, the glyph's coverage as alpha (its luminance x its alpha : the font is white on black or on clear)
+            const unsigned lum = (((t >> 16) & 255) + ((t >> 8) & 255) + (t & 255)) / 3, cov = a * lum / 255;
+            u32& o = px[(size_t)Y * W + X]; if (cov > (o >> 24)) o = (cov << 24) | 0x00FFFFFFu;
+        }
+    }
+    M.L.w = W; M.L.h = Hh; M.L.px = px;
+    return &M.L;
+}
+
 unsigned char* dat_read_file(const char* path, unsigned& sizeOut) { sizeOut = 0; return path ? read_file(path, sizeOut) : 0; }
 void dat_free_file(unsigned char* buf) { if (buf) HeapFree(GetProcessHeap(), 0, buf); }
 

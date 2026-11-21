@@ -790,3 +790,18 @@ Static detail : `docs/notes/storage-delivery-re-2026-11-20.md`. Confirmed live :
   (+0x2C id, +0x30 count, +0x0C colour per row). A remove / a bid : the `comyn` confirm (the dialogs).
 - Born parked under NU_NPC : every auction menu, both lists ; while `auc1` is up, `iteminfo`, `moneyctr`, `money`,
   `inventor`. Rule 10 : unreadable 30 frames -> `g_aucNot`, the client's windows come back (logged), until `auc1` closes.
+
+## 19. The menus' image labels -- the client's menu DAT (2026-11-21)
+
+- The language : `A3 ?? ?? ?? ?? A1 [lang] 8A 50 18 8B 48 08` (FUN_05350D20, the menu DAT's load ; the global is the
+  same at its 9 reads) -> `*(*lang + 8)` 0 JP, 1 EN, 2 DE, 3 FR (byte +0x18 & 0x80 with DE / FR -> EN).
+- The menu DAT per language : JP 39532, EN 39542, DE 55746, FR 56166 (resolved through `dat_resolve_path` : an XIPivot
+  overlay wins -- IconsHD here). Chunks : 16-byte header (`w & 0x7F` type, `((w >> 7) & 0x7FFFF) * 16` size) ; 0x30 a
+  window definition, 0x31 a sprite sheet, 0x20 a DXT1 / DXT3 texture (FourCC reversed at +0x39, data +0x45).
+- An entry's image : def +0x04 -> 0x14-byte entry objects : +0x00 the raw record (+0x1B its ref count), +0x04 the refs
+  (0x1C each : u16 state -- 0 normal, 1 the toggle's other look, 4 grey -- u16 sprite, char[16] sheet).
+- A sprite (sheet 0x31) : u8 part count, 61-byte parts -- 4 corners (s16), texel rect u16 w h u v, 4 RGBA, 4 flag bytes
+  (byte 1 = 2 : the shadow pass), char[16] texture. A label = a button (`menu    buttonto`), a shadow pass, the LETTERS
+  (`font    font`). AioHUD bakes the letters only (white, the glyph's coverage as alpha : `menu_label`, model/map_dat.cpp)
+  and draws them in its own row colour, at the text's height -- only when the client's language is the config's.
+- Detail, the catalogue of the 407 windows : docs/notes/menu-dat-re-2026-11-21.md (local), dev/scripts/menu_catalog.py.

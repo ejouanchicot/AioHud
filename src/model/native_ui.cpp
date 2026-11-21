@@ -1706,6 +1706,24 @@ int entry_read(const char* const* W, NativeEntryMenu& m, u32* objOut) {
         cn = cnext;
     }
     if (m.n < 1) return 0;
+    {   // each row's image label : def +0x04 -> 0x14 B entry objects, +0x00 the raw record (+0x1B its ref count), +0x04 the
+        // refs (0x1C each : u16 state, u16 sprite, char[16] sheet) -- the client resolved them from its menu DAT
+        u32 def = 0, arr = 0; unsigned short dn = 0;
+        if (safe_read(obj + OBJ_DEF, &def) && valid_ptr(def) && safe_read(def + 0x04, &arr) && valid_ptr(arr) && rd16(def + 0x18, *(short*)&dn))
+            for (int i = 0; i < m.n; ++i) {
+                const int k = m.entry[i]; if (k < 1 || k > dn || dn > 64) continue;
+                u32 raw = 0, refs = 0; unsigned char nr = 0;
+                if (!safe_read(arr + (u32)(k - 1) * 0x14, &raw) || !valid_ptr(raw) || !rd8(raw + 0x1B, nr) || !safe_read(arr + (u32)(k - 1) * 0x14 + 4, &refs) || !valid_ptr(refs) || nr > 8) continue;
+                for (int q = 0; q < nr; ++q) {
+                    unsigned char b[0x14]; if (!rdblk(refs + (u32)q * 0x1C, b, sizeof(b))) break;
+                    const unsigned short st = (unsigned short)(b[0] | b[1] << 8), id = (unsigned short)(b[2] | b[3] << 8);
+                    const int sh = !memcmp(b + 4, "menu    windowps", 16) ? 1 : !memcmp(b + 4, "menu    keytops3", 16) ? 2 : 0;
+                    if (!sh || (m.sheet[i] && m.sheet[i] != sh)) continue;
+                    const int slot = st == 0 ? 0 : st == 1 ? 1 : st == 4 ? 2 : -1; if (slot < 0) continue;
+                    m.sheet[i] = (unsigned char)sh; m.spr[i][slot] = (unsigned short)(id + 1);
+                }
+            }
+    }
     m.cursor = (int)(cur & 0xFFFF);
     if (!rd16(obj + OBJ_RECT, m.rx0) || !rd16(obj + OBJ_RECT + 2, m.ry0) || !rd16(obj + OBJ_RECT + 4, m.rx1) || !rd16(obj + OBJ_RECT + 6, m.ry1)) return 0;
     u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) return 0;
@@ -3607,6 +3625,21 @@ int list_read(NativeList& L) {
 
 // ---- the Chat submenu's extras : found by SIGNATURE (masked AOB), globals read from the code's own operands ----
 // A pattern is "8B 15 ?? ?? ..." ; unique in FFXiMain's image or nothing.
+int native_client_lang() {
+    static u32 var = 0; static int tries = 0; static DWORD next = 0;
+    if (!var) {
+        if (tries >= 5 || (tries && (int)(GetTickCount() - next) < 0)) return -1;
+        ++tries; next = GetTickCount() + 5000;
+        const u32 a = aob_masked("A3 ?? ?? ?? ?? A1 ?? ?? ?? ?? 8A 50 18 8B 48 08");
+        if (a) safe_read(a + 6, &var);
+        windower::debug::log("NATIVEUI client language object %s (try %d) : %08X", valid_ptr(var) ? "found" : "NOT found -- menu labels stay text", tries, var);
+        if (!valid_ptr(var)) { var = 0; return -1; }
+    }
+    u32 p = 0; int l = -1; unsigned char f = 0;
+    if (!safe_read(var, &p) || !valid_ptr(p) || !safe_read(p + 8, (u32*)&l) || !rd8(p + 0x18, f)) return -1;
+    if ((f & 0x80) && (l == 2 || l == 3)) l = 1;                        // (the client : DE / FR with this flag -> EN)
+    return l >= 0 && l <= 3 ? l : -1;
+}
 u32 aob_masked(const char* pat) {
     unsigned char P[96]; bool W[96]; int n = 0;
     for (const char* q = pat; *q && n < 96; ) {
@@ -4457,6 +4490,7 @@ void native_ui_tick(bool inWorld) {
     room_poll(wanted && (c.nuHide & NU_NPC), manager());       // Remodel : the styles
     auc_poll(wanted && (c.nuHide & NU_NPC), manager());        // the auction house : its menus, lists, the price
     gen_poll(wanted && (c.nuHide & NU_NPC), manager(), eff_hide(c));   // the generic engine : the census, the plain menus
+    if (wanted) { const int lg = native_client_lang(); if (lg >= 0) menu_dat_load(lg); }   // the menus' image labels (the client's DAT)
     if (wanted && (c.nuHide & NU_NPC)) { static int gLog[GEN_MENUS] = { 0 }; for (int i = 0; i < g_gen.n; ++i) park_named(manager(), g_gen.m[i].name, gLog[i], "generic -> a menu"); }
     if (wanted && (c.nuHide & NU_NPC) && g_auc.up && !g_aucNot) {
         static int a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0;

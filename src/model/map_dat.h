@@ -45,4 +45,14 @@ const char* dat_windower_root();
 unsigned char* dat_read_file(const char* path, unsigned& sizeOut);
 void dat_free_file(unsigned char* buf);
 
+// ---- the client's MENU DAT : the image labels of its menus (docs/notes/menu-dat-re-2026-11-21.md) -------------
+// The menu entries' labels are sprites of a sheet (type-0x31 chunk, "menu    windowps"...) : a list of textured quads --
+// a button, a shadow pass, then one quad per LETTER from the font texture ("font    font", DXT, same DAT). The file is
+// per language (lang 0 JP 39532, 1 EN 39542, 2 DE 55746, 3 FR 56166). menu_dat_load : once (a failure retried on its
+// own budget, logged) ; menu_label : the sprite's LETTERS baked into a white ARGB image (alpha = the glyph), cached ;
+// 0 when the sheet / sprite / its font is missing (the caller keeps its text label).
+struct MenuLabel { int w, h; const u32* px; };
+bool menu_dat_load(int lang);
+const MenuLabel* menu_label(const char* sheet16, unsigned sprite);
+
 } // namespace aio
