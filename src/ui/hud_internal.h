@@ -93,6 +93,7 @@ void loot_draw(const Frame& f);
 void mog_draw(const Frame& f);
 void dlv_draw(const Frame& f);
 void jobsel_draw(const Frame& f);
+void gen_draw(const Frame& f);       // hud_actmenu.cpp : the generic engine's menus (NU_NPC)
 void auc_draw(const Frame& f);       // hud_actmenu.cpp : the auction house (NU_NPC)
 void room_draw(const Frame& f);      // hud_actmenu.cpp : Remodel's styles (roomlist) (NU_NPC)    // hud_actmenu.cpp : Change Jobs' grid of the 22 jobs (NU_NPC)       // hud_actmenu.cpp : the delivery box (receive / send, the inventory beside) (NU_NPC)       // hud_actmenu.cpp : the Mog House's menus (moogle, bags, Switch, post) (NU_NPC)      // hud_actmenu.cpp : Treasure (the pool list, Lot / Pass, Pass all) (NU_ACT)   // hud_actmenu.cpp : a player's Check (the equipment grid, View wares, the comment) (NU_ACT)
 void netbox_draw(const Frame& f);    // hud_actmenu.cpp : the connection box (netstat), top right beside the top bar (NU_NET)

@@ -628,6 +628,14 @@ struct NativeAuction {
     int uiW, uiH;
 };
 const NativeAuction& native_auction();
+// The GENERIC engine (NU_NPC ; 2026-11-21) : any window no module handles is classed once (logged : the census) -- an
+// ENTRY menu in ONE column whose every entry has a name (its definition text, else its help line) is drawn by AioHUD at
+// the client's place ; anything else stays the client's. Read again each frame ; unread -> not parked -> the client's.
+#define GEN_MENUS 4
+struct NativeGenMenus { int n; NativeEntryMenu m[GEN_MENUS]; char help[GEN_MENUS][16][72]; };
+const NativeGenMenus& native_gen_menus();
+bool native_gen_hover(const char* name, int entry);
+bool native_gen_pick(const char* name, int entry);
 bool native_auc_hover(const char* name, int entry);
 bool native_auc_pick(const char* name, int entry);
 bool native_dlv_hover(int entry);                // the box (post1 / delivery)

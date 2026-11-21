@@ -1564,8 +1564,15 @@ void npc_draw(const Frame& f) {
     const int vis = last.n < 3 ? last.n : 3;
     g_npcView = last.top;
     if (g_npcView > last.n - vis) g_npcView = last.n - vis; if (g_npcView < 0) g_npcView = 0;
-    RowSpec rows[3];
-    for (int i = 0; i < vis; ++i) { rows[i].label = last.choice[g_npcView + i]; rows[i].icon = IC_NONE; rows[i].sub = false; rows[i].off = false; rows[i].tint = last.ctl[g_npcView + i][0] == 0xFEFE ? 0xFF9CE27Au : 0xFFF4F6FAu; }   // the client : an answer carrying FEFE (live 2026-11-17 : every ITEM of a shop list, FEFE FEFF) green ; "Back." / plain ones white
+    RowSpec rows[3]; static char marked[3][80];
+    for (int i = 0; i < vis; ++i) {
+        const unsigned short* c = last.ctl[g_npcView + i];
+        rows[i].label = last.choice[g_npcView + i]; rows[i].icon = IC_NONE; rows[i].sub = false; rows[i].off = false;
+        rows[i].tint = (c[0] == 0xFEFE || (c[1] == 0xFEFE && (c[0] == 0xB9 || c[0] == 0x9C))) ? 0xFF9CE27Au : 0xFFF4F6FAu;   // the client : an answer carrying FEFE (live 2026-11-17 : every ITEM of a shop list, FEFE FEFF) green ; "Back." / plain ones white
+        // a reward list's mark (the client : "(star)" or "(_)" , taken or not -- 2026-11-21) : 0xB9 the star, 0x9C the dash
+        // in the text, as the client writes it ("une vraie etoile") : U+2605 from the wide-glyph face
+        if (c[0] == 0xB9 || c[0] == 0x9C) { _snprintf(marked[i], sizeof(marked[i]), "%s %s", c[0] == 0xB9 ? "(\xE2\x98\x85)" : "(\xE2\x80\x95)", last.choice[g_npcView + i]); marked[i][79] = 0; rows[i].label = marked[i]; }
+    }
     float aw = 0.0f, ah = 0.0f;
     if (last.query && vis > 0) block_size(f, k, rows, vis, aw, ah);
     // one width for both : the widest of the text, the answers, and a floor ; the screen's 70 % at most
@@ -5200,6 +5207,58 @@ void auc_draw(const Frame& f) {
     }
     // ---- the item card : above the chat ----
     if (iid && A0.up && !native_dialog().open) card_on_chat(f, k, iid, 1.0f, g_auLB.vis > g_auIB.vis ? g_auLB.vis : g_auIB.vis);   // (no chat box : no card ; a confirm up : none)
+}
+// ======== the GENERIC engine's menus (Game UI -> NU_NPC) : any plain one-column menu no module draws ========
+// Its label : the definition's text, else its help line (auc_label : a phrase table, else the help shortened). At the
+// client's place ; one in the bottom half goes above the chat.
+namespace { Block g_gnB[GEN_MENUS]; unsigned g_gnMs = 0; char g_gnName[GEN_MENUS][9]; }
+void gen_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { for (int i = 0; i < GEN_MENUS; ++i) { g_gnB[i].vis = 0.0f; g_gnB[i].wasOpen = false; } return; }
+    const unsigned now = GetTickCount();
+    float dt = g_gnMs ? (float)(now - g_gnMs) / 1000.0f : 0.0f; g_gnMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeGenMenus& G0 = native_gen_menus();
+    static NativeEntryMenu last[GEN_MENUS]; static char lastHelp[GEN_MENUS][16][72];
+    const Metrics k = metrics(f); const float S = k.S;
+    for (int i = 0; i < G0.n; ++i) {                                   // a slot per menu NAME (its fade survives the others)
+        int s = -1; for (int j = 0; j < GEN_MENUS; ++j) if (!strcmp(g_gnName[j], G0.m[i].name)) s = j;
+        if (s < 0) for (int j = 0; j < GEN_MENUS && s < 0; ++j) { bool used = false; for (int q = 0; q < G0.n; ++q) if (!strcmp(g_gnName[j], G0.m[q].name)) used = true; if (!used && g_gnB[j].vis <= 0.0f) { s = j; lstrcpynA(g_gnName[j], G0.m[i].name, 9); g_gnB[j] = Block(); } }
+        if (s >= 0) { last[s] = G0.m[i]; memcpy(lastHelp[s], G0.help[i], sizeof(lastHelp[s])); }
+    }
+    for (int s = 0; s < GEN_MENUS; ++s) {
+        if (!g_gnName[s][0]) continue;
+        bool open = false; for (int i = 0; i < G0.n; ++i) if (!strcmp(G0.m[i].name, g_gnName[s])) open = true;
+        const NativeEntryMenu& L = last[s];
+        if (!block_ease(g_gnB[s], open, now, dt) || L.n <= 0 || L.uiW <= 0) { if (!open && g_gnB[s].vis <= 0.0f) g_gnName[s][0] = 0; continue; }
+        RowSpec rows[16] = {}; static char bufs[GEN_MENUS][16][48]; int cur = 0; const int n = L.n < 16 ? L.n : 16;
+        for (int i = 0; i < n; ++i) {
+            rows[i].label = L.label[i][0] ? L.label[i] : auc_label(lastHelp[s][i], bufs[s][i], sizeof(bufs[s][i]));
+            rows[i].icon = IC_NONE; rows[i].off = L.state[i] == 5;
+            if (L.entry[i] == L.cursor) cur = i + 1;
+        }
+        float bw, bh; block_size(f, k, rows, n, bw, bh);
+        const float sx = f.screenW / (float)L.uiW, sy = f.screenH / (float)L.uiH;
+        float bx = snap((float)L.rx0 * sx), by = snap((float)L.ry0 * sy);
+        if (L.ry1 > L.ry0 && L.ry0 * 2 > L.uiH) { by = snap((float)L.ry1 * sy - bh); float cx, cy; if (place_on_chat(bw, bh, snap(4.0f * S), f.screenW, f.screenH, cx, cy)) { bx = cx; by = cy; } }
+        if (L.rx0 * 2 > L.uiW) bx = snap((float)L.rx1 * sx - bw);       // a right-side menu : its right edge where the client's is
+        if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+        if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+        const int jm = menu_place(f, __LINE__ * 16 + s, bx, by, bw, bh);
+        const float tO = ease_out(((float)(now - g_gnB[s].openMs) / 1000.0f) / 0.07f);
+        by = snap(by + (1.0f - tO) * 3.0f * S);
+        const float A = g_gnB[s].vis * tO * (L.focused || !open ? 1.0f : 0.62f);
+        if (A <= 0.0f) continue;
+        g_frameJoin = jm;
+        const int row = block_draw(f, k, g_gnB[s], rows, n, cur, L.focused, bx, by, bw, bh, A, dt);
+        if (open && L.focused) {
+            hit_extend(16, by + bh, f.screenH);
+            if (g_hit[16][2] <= 0.0f) { g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH; }
+            const int ent = (row >= 1 && row <= n) ? L.entry[row - 1] : 0;
+            if (ent && row != g_gnB[s].hoverRow && ent != L.cursor && L.state[row - 1] != 5) native_gen_hover(L.name, ent);
+            g_gnB[s].hoverRow = row;
+            if (ent && L.state[row - 1] != 5 && f.mouse && f.mouse->clicked) native_gen_pick(L.name, ent);
+        } else g_gnB[s].hoverRow = 0;
+    }
 }
 // ======== the DELIVERY BOX (Game UI -> NU_NPC) : receive (post1 + post2) / send (delivery + stringdl) ========
 // The 8 slots in the client's grid (4 x 2, entries 1..8) and colours (receive : shown in states 6, 7, 0xA..0xE, usable in 7,

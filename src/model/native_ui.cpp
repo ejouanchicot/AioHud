@@ -258,6 +258,7 @@ NativeDelivery g_dlv;                                                           
 NativeJobSel g_js;                                                                        // Change Jobs' grid (jobsel_poll)
 NativeRoomList g_room; bool g_roomNot = false;                                            // Remodel's styles (room_poll)
 NativeAuction g_auc;                                                                      // the auction house (auc_poll)
+NativeGenMenus g_gen;                                                                     // the generic engine's menus (gen_poll)
 const char* const POST1_W[] = { "post1", 0 }; const char* const POST2_W[] = { "post2", 0 };
 const char* const DELIV_W[] = { "delivery", 0 }; const char* const STRDL_W[] = { "stringdl", 0 };
 const char* const LOOT_W[] = { "loot", 0 };
@@ -2315,6 +2316,7 @@ void rescue_children(u32 mgr, int hide) {
                                                   || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl"))))))
                              || (g_auc.up && !g_aucNot && (auc_menu_name(nm) || !strcmp(nm, "auclist") || !strcmp(nm, "auchisto") || !strcmp(nm, "iteminfo")
                                                            || !strcmp(nm, "moneyctr") || !strcmp(nm, "money") || !strcmp(nm, "inventor")))
+                             || [&]() { for (int i = 0; i < g_gen.n; ++i) if (!strcmp(nm, g_gen.m[i].name)) return true; return false; }()
                              || (g_cur.open && !strcmp(nm, "evitem"))
                              || (g_trade.open && (!strcmp(nm, "moneyctr") || !strcmp(nm, "itemctrl") || !strcmp(nm, "iteminfo") || !strcmp(nm, "gift") || !strcmp(nm, "money")));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
@@ -3296,6 +3298,89 @@ void dlv_poll(bool on, u32 mgr) {
     D.box = p1 ? 1 : 2; D.focused = focus == bo; D.cursor = cur;
     g_dlv = D; g_dlvUp = true;
 }
+bool entry_hover(const char* const* W, int entry);
+bool entry_pick(const char* const* W, int entry);
+// ---- the GENERIC engine (step 1, 2026-11-21) : the census + the one-column entry menus ----
+// never the generic engine's : the HUD's own windows, and every window a module reads (parked by name, or a module's
+// helper window) -- a module that gives one back (rule 10) gives it to the CLIENT, not to the generic engine
+static const char* const GEN_SKIP[] = { "titlewin", "helpwind", "logwindo", "logwin2", "partywin", "netstat", "buff", "targetwi", "fulllog", "cnqframe",
+    "shop", "shopbuy", "shopsell", "shopmain", "guildsho", "bazaar", "auclist", "auchisto", "inventor", "iteminfo", "itemxinf", "money", "moneyctr", "itemctrl",
+    "bank", "equip", "inspect", "comment", "loot", "lootope", "lnowin", "post1", "post2", "delivery", "stringdl", "roomlist", "fep", "query", "evitem", "gift",
+    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcrmenu", "mcrselop", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn", 0 };
+static bool gen_candidate(const char* nm, int hide) {
+    int dx = 0, dy = 0; desired_offset(nm, 0, 0, 0, hide, 0, 0, dx, dy);
+    if (dy == HIDE_DY) return false;                                  // a rule parks it : someone's
+    if (in_list(nm, GEN_SKIP) || auc_menu_name(nm) || !strncmp(nm, "auc", 3)) return false;
+    const char* const* L[] = { PARTY_W, ALLY_W, CHAT_W, HELP_W, COST_W, NET_W, BUFF_W, MACRO_W, TRADE_W, DIALOG_W, INPUT_W, NPC_W, MAIN_W, MAIN_SUB_W, MAIN_SORT_W, MAIN_YN_W,
+                               ACT_SUB_W, ACT_LIST_W, MOG_W, JOBSEL_W };
+    for (size_t i = 0; i < sizeof(L) / sizeof(L[0]); ++i) if (in_list(nm, L[i])) return false;
+    return true;
+}
+// the entry children's columns (distinct left edges, 4 px apart) among the laid-out rows
+static int gen_columns(u32 obj) {
+    short xs[8]; int nx = 0; u32 cn = 0; safe_read(obj + 0x14, &cn);
+    for (int g = 0; valid_ptr(cn) && g < 64; ++g) {
+        u32 cnext = 0, ch = 0; unsigned char cdead = 0; short type = -1; safe_read(cn, &cnext); safe_read(cn + 0x10, &ch); rd8(cn + 0x14, cdead);
+        if (valid_ptr(ch) && !cdead && rd16(ch, type) && type == 1) {
+            u32 st = 0; short r[4] = { 0 };
+            if (safe_read(ch + 0x10, &st) && rd16(ch + 0x32, r[0]) && rd16(ch + 0x34, r[1]) && rd16(ch + 0x36, r[2]) && rd16(ch + 0x38, r[3]) && !(st & 0x10) && r[2] - r[0] >= 24 && r[3] > r[1]) {
+                bool seen = false; for (int i = 0; i < nx; ++i) if (abs(xs[i] - r[0]) <= 4) seen = true;
+                if (!seen && nx < 8) xs[nx++] = r[0];
+            }
+        }
+        cn = cnext;
+    }
+    return nx;
+}
+void gen_poll(bool on, u32 mgr, int hide) {
+    NativeGenMenus G; memset(&G, 0, sizeof(G));
+    if (!on || !mgr) { g_gen = G; return; }
+    u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) { g_gen = G; return; }
+    const int uiH = (short)(wh >> 16); if (uiH < 240 || uiH > 8000) { g_gen = G; return; }
+    static char seen[160][9]; static int nSeen = 0, lines = 0;
+    u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
+    for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+        u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9]; short r[4] = { 0 };
+        safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+        if (dead || !valid_ptr(o) || !safe_read(o + OBJ_DEF, &def) || !valid_ptr(def) || !rdname(def, nm) || !rd8(o + OBJ_CLOSING, cl) || cl || !nm[0]) { node = next; continue; }
+        if (!gen_candidate(nm, hide) || !rd16(o + OBJ_RECT + 2, r[1])) { node = next; continue; }
+        bool wasOurs = false; for (int i = 0; i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, nm)) wasOurs = true;
+        if (r[1] >= uiH + HIDE_DY / 2 && !wasOurs) { node = next; continue; }   // parked by its parent (not by us) : not shown
+        // classify
+        const char* one[2] = { nm, 0 }; NativeEntryMenu m; u32 mo = 0;
+        const int er = entry_read(one, m, &mo);
+        int cls = 0; int cols = 0; bool named = false; char help[16][72]; memset(help, 0, sizeof(help));
+        if (er == 1 && mo == o && m.n >= 1) {
+            cols = gen_columns(o); named = true;
+            for (int i = 0; i < m.n && i < 16; ++i) { def_help(o, m.entry[i], help[i], sizeof(help[i])); if (!m.label[i][0] && !help[i][0]) named = false; }
+            cls = (cols == 1 && named && m.n <= 16) ? 1 : 2;              // 1 : drawn ; 2 : an entry window kept the client's
+        } else { TextList T; cls = tl_find(mgr, nm, T) ? 3 : 4; }       // 3 : a TEXT LIST (step 2) ; 4 : another window
+        bool known = false; for (int i = 0; i < nSeen; ++i) if (!strcmp(seen[i], nm)) known = true;
+        if (!known && lines < 200) {                                     // the CENSUS : each window once, with what it is
+            if (nSeen < 160) memcpy(seen[nSeen++], nm, 9);
+            short rr[4] = { 0 }; for (int k = 0; k < 4; ++k) rd16(o + OBJ_RECT + 2 * k, rr[k]);
+            char b[900]; int bo = 0; b[0] = 0;
+            if (cls <= 2) for (int i = 0; i < m.n && i < 16 && bo < 840; ++i) bo += _snprintf(b + bo, sizeof(b) - bo, " %d:'%s'/'%s'", m.entry[i], m.label[i], help[i]);
+            else if (cls == 3) { TextList T; if (tl_find(mgr, nm, T)) { u32 rows = 0; unsigned char rw[0x54] = { 0 };
+                if (safe_read(T.h + 0x38, &rows) && T.count > 0 && valid_ptr(rows)) rdblk(rows, rw, sizeof(rw));
+                bo += _snprintf(b, sizeof(b), " count %d vis %d ; row 0 cell types %02X %02X %02X %02X %02X %02X %02X %02X", T.count, T.vis, rw[0], rw[1], rw[2], rw[3], rw[4], rw[5], rw[6], rw[7]); } }
+            ++lines;
+            windower::debug::log("NATIVEUI generic : '%s' rect %d,%d-%d,%d -- %s%s", nm, rr[0], rr[1], rr[2], rr[3],
+                cls == 1 ? "an entry menu : AioHUD draws it ;" : cls == 2 ? (cols != 1 ? "an entry GRID (not one column) : the client's ;" : "an entry menu with unnamed entries : the client's ;")
+                : cls == 3 ? "a TEXT LIST : the client's (for now) ;" : "another kind : the client's", b);
+        }
+        if (cls == 1 && G.n < GEN_MENUS) {
+            while (m.ry0 >= uiH) { m.ry0 = (short)(m.ry0 - HIDE_DY); m.ry1 = (short)(m.ry1 - HIDE_DY); }
+            memcpy(G.help[G.n], help, sizeof(G.help[G.n])); G.m[G.n++] = m;
+        }
+        node = next;
+    }
+    g_gen = G;
+}
+const NativeGenMenus& native_gen_menus() { return g_gen; }
+bool native_gen_hover(const char* name, int entry) { for (int i = 0; name && i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, name)) { const char* one[2] = { name, 0 }; return entry_hover(one, entry); } return false; }
+bool native_gen_pick(const char* name, int entry) { for (int i = 0; name && i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, name)) { const char* one[2] = { name, 0 }; return entry_pick(one, entry); } return false; }
+
 void buffwin_poll(bool on, u32 mgr) {
     if (!on || !mgr) { g_bw.open = false; g_bwObj = g_bwH = 0; return; }
     NativeBuffWin B; memset(&B, 0, sizeof(B));
@@ -4070,7 +4155,15 @@ bool npc_glyphs(u32 p, int n, char* out, int cap, unsigned short* ctl = 0) {
         else if (ctl && nc < 4) ctl[nc++] = g[i];
     }
     while (o > 0 && out[o - 1] == ' ') --o;
-    out[o] = 0; return true;
+    out[o] = 0;
+    // a bracket pair that only held a control glyph (a reward list's mark, 0x9C / 0xB9 : live 2026-11-21, "il y a () en
+    // debut de tous les items") : dropped with the space after it
+    for (int i = 0; out[i] && out[i + 1]; ) {
+        if ((out[i] == '(' && out[i + 1] == ')') || (out[i] == '{' && out[i + 1] == '}') || (out[i] == '[' && out[i + 1] == ']')) {
+            const int cut = out[i + 2] == ' ' ? 3 : 2; memmove(out + i, out + i + cut, strlen(out + i + cut) + 1);
+        } else ++i;
+    }
+    return true;
 }
 // the open, not closing object of one of these windows (0 none)
 u32 open_obj(u32 mgr, const char* const* names, char* nameOut = 0) {
@@ -4363,6 +4456,8 @@ void native_ui_tick(bool inWorld) {
     jobsel_poll(wanted && (c.nuHide & NU_NPC), manager());     // Change Jobs : the job grid
     room_poll(wanted && (c.nuHide & NU_NPC), manager());       // Remodel : the styles
     auc_poll(wanted && (c.nuHide & NU_NPC), manager());        // the auction house : its menus, lists, the price
+    gen_poll(wanted && (c.nuHide & NU_NPC), manager(), eff_hide(c));   // the generic engine : the census, the plain menus
+    if (wanted && (c.nuHide & NU_NPC)) { static int gLog[GEN_MENUS] = { 0 }; for (int i = 0; i < g_gen.n; ++i) park_named(manager(), g_gen.m[i].name, gLog[i], "generic -> a menu"); }
     if (wanted && (c.nuHide & NU_NPC) && g_auc.up && !g_aucNot) {
         static int a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0;
         if (g_auc.menuOpen) park_named(manager(), g_auc.menu.name, a1, "Auction -> a menu");
