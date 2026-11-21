@@ -644,7 +644,14 @@ struct NativeGenMenus { int n; NativeEntryMenu m[GEN_MENUS]; char help[GEN_MENUS
     // 7 / 9 a count, 0xA / 0xB a price + 1, 4 a date (unix). A row with none of them : the list stays the client's.
     bool list; bool listFocused; char listName[9]; int ln, ltop, lvis, lcursor; short lx0, ly0, lx1, ly1; int uiW, uiH;
     struct Row { unsigned short item; char text[44]; int count, price; unsigned date; unsigned col; } lrow[16];
-    bool anyPrice, anyCount, anyItem; };
+    bool anyPrice, anyCount, anyItem;
+    // step 3 : ONE generic GRID (Config's screens first) : the window at the client's layout -- its rect, each entry's
+    // rect (in the window, UI pixels), state and image label ; the frame's static texts drawn from its sprite
+    bool grid, gridFocused; NativeEntryMenu gm; short gx[32], gy[32], gw[32], gh[32]; unsigned gst[32];   // gst : each entry's full state word, by entry index - 1
+    // Config's screens (docs/notes/config-screens-re-2026-11-21.md) : per shown row, the client's own rule read from the
+    // settings store -- gchosen 1 = the option in force (the client underlines it) ; gfrac >= 0 a slider's fill (value /
+    // range), gval its value (gvalText : a label the client prints instead, the aspect ratio) ; -1 none
+    signed char gchosen[32]; float gfrac[32]; int gval[32]; char gvalText[32][10]; };
 const NativeGenMenus& native_gen_menus();
 bool native_gen_hover(const char* name, int entry);
 bool native_gen_pick(const char* name, int entry);

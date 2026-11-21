@@ -51,8 +51,11 @@ void dat_free_file(unsigned char* buf);
 // per language (lang 0 JP 39532, 1 EN 39542, 2 DE 55746, 3 FR 56166). menu_dat_load : once (a failure retried on its
 // own budget, logged) ; menu_label : the sprite's LETTERS baked into a white ARGB image (alpha = the glyph), cached ;
 // 0 when the sheet / sprite / its font is missing (the caller keeps its text label).
-struct MenuLabel { int w, h; const u32* px; };
+struct MenuLabel { int w, h; const u32* px; int ox, oy; };   // ox, oy : the letters' top-left in the sprite's own space
 bool menu_dat_load(int lang);
 const MenuLabel* menu_label(const char* sheet16, unsigned sprite);
+// a window's FRAME sprite (its definition's first ref, state 0, in "menu    windowps" -- the panels whose static texts
+// are letters : Config's screens) ; false when it has none (a plain frame : comwin / frames)
+bool menu_window_frame(const char* name8, unsigned& sprite);
 
 } // namespace aio

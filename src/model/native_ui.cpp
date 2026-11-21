@@ -100,6 +100,36 @@ const char* const JOBSEL_W[] = { "jobcselu", 0 };
 // the AUCTION HOUSE : the counter is up (auc1), its menus read through their help lines
 bool g_aucUp = false, g_aucNot = false;
 bool g_genListUp = false;   // gen_poll : a generic list with items is AioHUD's -- its item card born parked
+// the generic engine LEARNS (2026-11-21) : a window it drew once is remembered (<plugin>\AioHud\data\gen_learned.txt) and born
+// parked from then on -- no frame of the client's window. Rule 10 : learned but not drawn for 30 polls -> refused for the
+// session (logged) and the rescue pass brings the client's back.
+char g_genLearn[96][9]; int g_genLearnN = -1; char g_genRefused[32][9]; int g_genRefusedN = 0;
+void gen_learn_load() {
+    if (g_genLearnN >= 0) return; g_genLearnN = 0;
+    char p[MAX_PATH]; plugin_path(p, sizeof(p), "data\\gen_learned.txt");
+    FILE* f = fopen(p, "r"); if (!f) return;
+    char line[32]; while (g_genLearnN < 96 && fgets(line, sizeof(line), f)) { int n = 0; while (line[n] && line[n] != '\n' && line[n] != '\r' && n < 8) ++n; if (n < 2) continue; memcpy(g_genLearn[g_genLearnN], line, (size_t)n); g_genLearn[g_genLearnN][n] = 0; ++g_genLearnN; }
+    fclose(f);
+}
+bool gen_learned(const char* n) {
+    gen_learn_load();
+    for (int i = 0; i < g_genRefusedN; ++i) if (!strcmp(g_genRefused[i], n)) return false;
+    for (int i = 0; i < g_genLearnN; ++i) if (!strcmp(g_genLearn[i], n)) return true;
+    return false;
+}
+void gen_learn(const char* n) {
+    gen_learn_load(); if (!n || !n[0] || g_genLearnN >= 96) return;
+    for (int i = 0; i < g_genLearnN; ++i) if (!strcmp(g_genLearn[i], n)) return;
+    memcpy(g_genLearn[g_genLearnN++], n, 9);
+    char p[MAX_PATH]; plugin_path(p, sizeof(p), "data\\gen_learned.txt");
+    FILE* f = fopen(p, "a"); if (f) { fprintf(f, "%s\n", n); fclose(f); }
+    windower::debug::log("NATIVEUI generic : '%s' learned -- born parked from its next opening%s", n, f ? "" : " (the file NOT written : this session only)");
+}
+void gen_refuse(const char* n) {
+    for (int i = 0; i < g_genRefusedN; ++i) if (!strcmp(g_genRefused[i], n)) return;
+    if (g_genRefusedN < 32) memcpy(g_genRefused[g_genRefusedN++], n, 9);
+    windower::debug::log("NATIVEUI generic : '%s' learned but NOT drawn for 30 polls -- refused this session, the client's window comes back", n);
+}
 // an auction menu : auc* (not its lists) ; a sort ("...sort") only while the counter is up
 static bool auc_menu_name(const char* n) {
     if (!strncmp(n, "auc", 3)) return strcmp(n, "auclist") && strcmp(n, "auchisto");
@@ -167,6 +197,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     // Treasure : the list and Pass all born parked (a read failure : the rescue pass brings them back) ; its card once ours
     if ((hide & NU_ACT) && !g_lootNot && (!strcmp(n, "loot") || !strcmp(n, "lnowin") || !strcmp(n, "lootope") || (g_lootUp && !strcmp(n, "iteminfo")))) { dy = HIDE_DY; return; }   // Check : born parked (a mannequin, not ours, is brought back by the rescue pass)
     if ((hide & NU_NPC)   && in_list(n, NPC_W)) { dy = HIDE_DY; return; }
+    if ((hide & NU_NPC) && gen_learned(n)) { dy = HIDE_DY; return; }   // the generic engine drew it before : born parked
     if ((hide & NU_MAIN)  && (in_list(n, MAIN_W) || in_list(n, MAIN_SUB_W) || in_list(n, MAIN_SORT_W))) { dy = HIDE_DY; return; }
     // Status -> Profile : BORN parked (its record) -- its flag, rank bar and icons are drawn where it OPENED and do not
     // follow a later move (2026-11-18, "plein d'elements sont toujours la, la barre, l'icone") ; only while its data
@@ -2338,7 +2369,7 @@ void rescue_children(u32 mgr, int hide) {
                                                   || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl"))))))
                              || (g_auc.up && !g_aucNot && (auc_menu_name(nm) || !strcmp(nm, "auclist") || !strcmp(nm, "auchisto") || !strcmp(nm, "iteminfo")
                                                            || !strcmp(nm, "moneyctr") || !strcmp(nm, "money") || !strcmp(nm, "inventor")))
-                             || [&]() { for (int i = 0; i < g_gen.n; ++i) if (!strcmp(nm, g_gen.m[i].name)) return true; return g_gen.list && (!strcmp(nm, g_gen.listName) || (g_gen.anyItem && !strcmp(nm, "iteminfo"))); }()
+                             || [&]() { for (int i = 0; i < g_gen.n; ++i) if (!strcmp(nm, g_gen.m[i].name)) return true; return (g_gen.grid && !strcmp(nm, g_gen.gm.name)) || (g_gen.list && (!strcmp(nm, g_gen.listName) || (g_gen.anyItem && !strcmp(nm, "iteminfo")))); }()
                              || (g_cur.open && !strcmp(nm, "evitem"))
                              || (g_trade.open && (!strcmp(nm, "moneyctr") || !strcmp(nm, "itemctrl") || !strcmp(nm, "iteminfo") || !strcmp(nm, "gift") || !strcmp(nm, "money")));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
@@ -3331,7 +3362,7 @@ static const char* const GEN_SKIP[] = { "titlewin", "helpwind", "logwindo", "log
     "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcrmenu", "mcrselop", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn", 0 };
 static bool gen_candidate(const char* nm, int hide) {
     int dx = 0, dy = 0; desired_offset(nm, 0, 0, 0, hide, 0, 0, dx, dy);
-    if (dy == HIDE_DY) return false;                                  // a rule parks it : someone's
+    if (dy == HIDE_DY && !gen_learned(nm)) return false;              // a rule parks it : someone's (the learned rule is ours)
     if (in_list(nm, GEN_SKIP) || auc_menu_name(nm) || !strncmp(nm, "auc", 3)) return false;
     const char* const* L[] = { PARTY_W, ALLY_W, CHAT_W, HELP_W, COST_W, NET_W, BUFF_W, MACRO_W, TRADE_W, DIALOG_W, INPUT_W, NPC_W, MAIN_W, MAIN_SUB_W, MAIN_SORT_W, MAIN_YN_W,
                                ACT_SUB_W, ACT_LIST_W, MOG_W, JOBSEL_W };
@@ -3383,6 +3414,109 @@ static bool gen_list_read(u32 mgr, const char* nm, u32 focus, NativeGenMenus& G)
     memcpy(G.lrow, R, sizeof(R)); G.anyPrice = anyP; G.anyCount = anyC; G.anyItem = anyI;
     return true;
 }
+// ---- Config's screens : the SETTINGS STORE (config-screens-re-2026-11-21.md s.0) ----
+// CFG = the global behind "8B 0D [CFG] 85 C9 74 0B ..." (the getter FUN_054D4E20 and its neighbour : 2 hits, one
+// operand) ; slot(id) = *(CFG + 4) + id * 0x2C : +4 the id (the check), +8 the VALUE, +0x18 min, +0x1C max.
+static u32 aob_first(const char* pat, u32* operandOut, int at) {   // the FIRST hit's u32 operand at +at, when every hit agrees
+    unsigned char P[64]; bool W[64]; int n = 0;
+    for (const char* q = pat; *q && n < 64; ) {
+        while (*q == ' ') ++q; if (!*q) break;
+        if (q[0] == '?') { W[n] = true; P[n++] = 0; q += 2; continue; }
+        unsigned v = 0; for (int i = 0; i < 2; ++i) { const char ch = q[i]; v = v * 16 + (unsigned)(ch <= '9' ? ch - '0' : (ch | 0x20) - 'a' + 10); }
+        W[n] = false; P[n++] = (unsigned char)v; q += 2;
+    }
+    u32 lo = 0, hi = 0; image_range(lo, hi); if (!lo || n < 8) return 0;
+    int hits = 0; u32 op = 0, first = 0;
+    __try {
+        for (const unsigned char* q = (const unsigned char*)lo; q + n < (const unsigned char*)hi; ++q) {
+            if (q[0] != P[0]) continue;
+            int i = 1; for (; i < n; ++i) if (!W[i] && q[i] != P[i]) break;
+            if (i != n) continue;
+            const u32 o = *(const u32*)(q + at);
+            if (!hits) { op = o; first = (u32)q; } else if (o != op) return 0;   // two different operands : not the store
+            if (++hits > 4) break;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
+    if (operandOut) *operandOut = op;
+    return hits ? first : 0;
+}
+static bool cfg_setting(int id, int& v, int* mn = 0, int* mx = 0) {
+    static u32 var = 0; static int tries = 0; static DWORD next = 0;
+    if (!var) {
+        if (tries >= 5 || (tries && (int)(GetTickCount() - next) < 0)) return false;
+        ++tries; next = GetTickCount() + 5000; u32 op = 0;
+        aob_first("8B 0D ?? ?? ?? ?? 85 C9 74 0B 8B 44 24 04 50 E8 ?? ?? ?? ?? C3", &op, 2);
+        windower::debug::log("NATIVEUI config store %s (try %d) : %08X", valid_ptr(op) ? "found" : "NOT found -- Config's screens stay the client's", tries, op);
+        if (!valid_ptr(op)) return false;
+        var = op;
+    }
+    u32 c = 0, arr = 0; int sid = -1;
+    if (!safe_read(var, &c) || !valid_ptr(c) || !safe_read(c + 4, &arr) || !valid_ptr(arr) || id < 0 || id >= 0xD0) return false;
+    const u32 sl = arr + (u32)id * 0x2C;
+    if (!safe_read(sl + 4, (u32*)&sid) || sid != id || !safe_read(sl + 8, (u32*)&v)) return false;
+    if (mn) safe_read(sl + 0x18, (u32*)mn); if (mx) safe_read(sl + 0x1C, (u32*)mx);
+    return true;
+}
+// the client's rule per screen : kind 1 PAIR (v == 0 -> a, else b), 2 TRIPLE (0 -> a, 1 -> b, else c), 3 SLIDER (entry
+// a, lo..hi), 4 BIT (setting's bit `lo` set -> a, else b), 5 WAY (entry a + v), 6 DISC (conf4 auto-disconnect : v / 10 + 2,
+// 9 when off)
+struct CfgRule { const char* win; unsigned char kind, a, b, c; short id, lo, hi; };
+static const CfgRule CFG_RULES[] = {
+    { "conf2win", 1, 1, 2, 0, 7, 0, 0 }, { "conf2win", 3, 3, 0, 0, 9, 0, 100 }, { "conf2win", 3, 4, 0, 0, 10, 0, 100 },
+    { "conf2win", 3, 5, 0, 0, 0x37, 0, 100 }, { "conf2win", 3, 6, 0, 0, 0x38, 0, 100 }, { "conf2win", 3, 7, 0, 0, 0x39, 0, 100 },
+    { "conf2win", 1, 9, 8, 0, 0x9A, 0, 0 }, { "conf2win", 1, 10, 11, 0, 0xCA, 0, 0 },
+    { "conf3win", 2, 1, 2, 5, 0x13, 0, 0 }, { "conf3win", 2, 7, 8, 6, 0x3A, 0, 0 }, { "conf3win", 1, 10, 9, 0, 0x3B, 0, 0 },
+    { "conf3win", 3, 11, 0, 0, 0x3C, 25, 50 }, { "conf3win", 4, 12, 13, 0, 0x99, 2, 0 }, { "conf3win", 1, 14, 15, 0, 0xA5, 0, 0 },
+    { "conf6win", 3, 1, 0, 0, 0x3E, 0, 25 }, { "conf6win", 1, 2, 3, 0, 0x3F, 0, 0 }, { "conf6win", 3, 4, 0, 0, 0x40, 0, 3 },
+    { "conf6win", 2, 5, 6, 11, 0x42, 0, 0 }, { "conf6win", 3, 7, 0, 0, 0x43, 0, 5 }, { "conf6win", 1, 12, 13, 0, 0x9D, 0, 0 }, { "conf6win", 1, 14, 15, 0, 0x9E, 0, 0 },
+    { "conf12wi", 1, 1, 2, 0, 0xBE, 0, 0 }, { "conf12wi", 1, 3, 4, 0, 0xBF, 0, 0 }, { "conf12wi", 1, 6, 5, 0, 0xC0, 0, 0 },
+    { "conf12wi", 4, 8, 7, 0, 0x99, 7, 0 }, { "conf12wi", 1, 10, 9, 0, 0xC2, 0, 0 }, { "conf12wi", 1, 12, 11, 0, 0xC3, 0, 0 }, { "conf12wi", 4, 14, 13, 0, 0x99, 6, 0 },
+    { "conf13wi", 2, 1, 2, 3, 0xC9, 0, 0 }, { "conf13wi", 2, 6, 4, 5, 0xCE, 0, 0 },
+    { "conf7", 1, 1, 2, 0, 0x90, 0, 0 }, { "conf7", 1, 3, 4, 0, 0x8F, 0, 0 }, { "conf7", 1, 5, 6, 0, 0x91, 0, 0 }, { "conf7", 1, 7, 8, 0, 0x8C, 0, 0 },
+    { "conf7", 1, 9, 10, 0, 0x8B, 0, 0 }, { "conf7", 1, 11, 12, 0, 0x8E, 0, 0 }, { "conf7", 1, 13, 14, 0, 0x8D, 0, 0 },
+    { "conf4", 1, 1, 2, 0, 0x18, 0, 0 }, { "conf4", 6, 3, 9, 0, 0x41, 0, 0 },
+    { "conf5win", 2, 3, 1, 2, 0xB4, 0, 0 }, { "conf5win", 2, 6, 4, 5, 0xB5, 0, 0 }, { "conf5win", 5, 7, 14, 0, 0x12, 0, 7 }, { "conf5win", 1, 15, 16, 0, 0xA4, 0, 0 },
+    { "conf5w1", 1, 1, 2, 0, 0x0E, 0, 0 }, { "conf5w1", 3, 3, 0, 0, 0x0F, 0, 20 }, { "conf5w1", 3, 4, 0, 0, 0x10, 0, 20 }, { "conf5w1", 3, 5, 0, 0, 0x9C, 0, 100 }, { "conf5w1", 3, 6, 0, 0, 0x11, 3, 30 },
+    { "conf5w2", 1, 1, 2, 0, 0xB6, 0, 0 }, { "conf5w2", 3, 3, 0, 0, 0xB7, 0, 20 }, { "conf5w2", 3, 4, 0, 0, 0xB8, 0, 20 }, { "conf5w2", 3, 5, 0, 0, 0xC5, 0, 100 }, { "conf5w2", 3, 6, 0, 0, 0xC6, 3, 30 },
+};
+static bool cfg_screen(const char* nm) { for (size_t i = 0; i < sizeof(CFG_RULES) / sizeof(CFG_RULES[0]); ++i) if (!strcmp(CFG_RULES[i].win, nm)) return true; return false; }
+// the chosen / slider values of a Config screen's shown rows ; false when a setting does not read (the client's)
+static bool cfg_values(const char* nm, const NativeEntryMenu& m, NativeGenMenus& G) {
+    static const char* const ASPECT[6] = { "(4:3)", "(15:9)", "(15:10)", "(16:9)", "(16:10)", "(5:4)" };
+    for (int i = 0; i < 32; ++i) { G.gchosen[i] = -1; G.gfrac[i] = -1.0f; G.gval[i] = -1; G.gvalText[i][0] = 0; }
+    auto row = [&](int e) { for (int i = 0; i < m.n && i < 32; ++i) if (m.entry[i] == e) return i; return -1; };
+    for (size_t r = 0; r < sizeof(CFG_RULES) / sizeof(CFG_RULES[0]); ++r) {
+        const CfgRule& R = CFG_RULES[r]; if (strcmp(R.win, nm)) continue;
+        int v = 0; if (!cfg_setting(R.id, v)) return false;
+        auto mark = [&](int chosenEntry, int e0, int e1, int e2) { const int es[3] = { e0, e1, e2 }; for (int q = 0; q < 3; ++q) { const int i = es[q] ? row(es[q]) : -1; if (i >= 0) G.gchosen[i] = es[q] == chosenEntry ? 1 : 0; } };
+        if (R.kind == 1) mark(v == 0 ? R.a : R.b, R.a, R.b, 0);
+        else if (R.kind == 2) mark(v == 0 ? R.a : v == 1 ? R.b : R.c, R.a, R.b, R.c);
+        else if (R.kind == 4) mark(((v >> R.lo) & 1) ? R.a : R.b, R.a, R.b, 0);
+        else if (R.kind == 3) { const int i = row(R.a); if (i >= 0) { const int span = R.hi - R.lo; float f = span > 0 ? (float)(v - R.lo) / (float)span : 0.0f; if (f < 0.0f) f = 0.0f; if (f > 1.0f) f = 1.0f;
+            G.gfrac[i] = f; G.gval[i] = v; if (!strcmp(nm, "conf6win") && R.a == 7 && v >= 0 && v <= 5) lstrcpynA(G.gvalText[i], ASPECT[v], sizeof(G.gvalText[i])); } }
+        else if (R.kind == 5) { for (int e = R.a; e <= R.b; ++e) { const int i = row(e); if (i >= 0) G.gchosen[i] = (e == R.a + v) ? 1 : 0; } }
+        else if (R.kind == 6) { int ce = v <= 0 ? 9 : v / 10 + 2; if (ce < 3 || ce > 9) ce = 9; for (int e = R.a; e <= R.b; ++e) { const int i = row(e); if (i >= 0) G.gchosen[i] = e == ce ? 1 : 0; } }
+    }
+    return true;
+}
+// the GRID families drawn at the client's layout (step 3 : Config's screens)
+static bool gen_grid_family(const char* nm) { return cfg_screen(nm); }   // Config's screens with their values mapped (config-screens-re s.3) ; the list screens stay the client's
+// a grid's entries : the laid-out children's rects (in the window) by entry index, matched to the read menu's rows
+static bool gen_grid_read(u32 o, const NativeEntryMenu& m, NativeGenMenus& G) {
+    short rx[33], ry[33], rw[33], rh[33]; bool have[33]; memset(have, 0, sizeof(have));
+    u32 cn = 0; safe_read(o + 0x14, &cn); int k = 0;
+    for (int g = 0; valid_ptr(cn) && g < 64 && k < 32; ++g) {
+        u32 cnext = 0, ch = 0; unsigned char cdead = 0; short type = -1; safe_read(cn, &cnext); safe_read(cn + 0x10, &ch); rd8(cn + 0x14, cdead);
+        if (valid_ptr(ch) && !cdead && rd16(ch, type) && type == 1) {
+            ++k; short r[4] = { 0 };
+            if (k <= 32) { u32 st = 0; safe_read(ch + 0x10, &st); G.gst[k - 1] = st; }
+            if (rd16(ch + 0x32, r[0]) && rd16(ch + 0x34, r[1]) && rd16(ch + 0x36, r[2]) && rd16(ch + 0x38, r[3])) { rx[k] = r[0]; ry[k] = r[1]; rw[k] = (short)(r[2] - r[0]); rh[k] = (short)(r[3] - r[1]); have[k] = true; }
+        }
+        cn = cnext;
+    }
+    for (int i = 0; i < m.n && i < 32; ++i) { const int e = m.entry[i]; if (e < 1 || e > 32 || !have[e]) return false; G.gx[i] = rx[e]; G.gy[i] = ry[e]; G.gw[i] = rw[e]; G.gh[i] = rh[e]; }
+    return true;
+}
 void gen_poll(bool on, u32 mgr, int hide) {
     NativeGenMenus G; memset(&G, 0, sizeof(G));
     if (!on || !mgr) { g_gen = G; return; }
@@ -3396,7 +3530,8 @@ void gen_poll(bool on, u32 mgr, int hide) {
         safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
         if (dead || !valid_ptr(o) || !safe_read(o + OBJ_DEF, &def) || !valid_ptr(def) || !rdname(def, nm) || !rd8(o + OBJ_CLOSING, cl) || cl || !nm[0]) { node = next; continue; }
         if (!gen_candidate(nm, hide) || !rd16(o + OBJ_RECT + 2, r[1])) { node = next; continue; }
-        bool wasOurs = false; for (int i = 0; i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, nm)) wasOurs = true;
+        bool wasOurs = gen_learned(nm) || (g_gen.grid && !strcmp(g_gen.gm.name, nm)) || (g_gen.list && !strcmp(g_gen.listName, nm));   // parked by US (last frame, or at birth) : still ours
+        for (int i = 0; i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, nm)) wasOurs = true;
         if (r[1] >= uiH + HIDE_DY / 2 && !wasOurs) { node = next; continue; }   // parked by its parent (not by us) : not shown
         // classify
         const char* one[2] = { nm, 0 }; NativeEntryMenu m; u32 mo = 0;
@@ -3418,14 +3553,29 @@ void gen_poll(bool on, u32 mgr, int hide) {
                 bo += _snprintf(b, sizeof(b), " count %d vis %d ; row 0 cell types %02X %02X %02X %02X %02X %02X %02X %02X", T.count, T.vis, rw[0], rw[1], rw[2], rw[3], rw[4], rw[5], rw[6], rw[7]); } }
             ++lines;
             windower::debug::log("NATIVEUI generic : '%s' rect %d,%d-%d,%d -- %s%s", nm, rr[0], rr[1], rr[2], rr[3],
-                cls == 1 ? "an entry menu : AioHUD draws it ;" : cls == 2 ? (cols != 1 ? "an entry GRID (not one column) : the client's ;" : "an entry menu with unnamed entries : the client's ;")
+                cls == 1 ? "an entry menu : AioHUD draws it ;" : cls == 2 ? (gen_grid_family(nm) ? "a GRID : AioHUD draws it at the client's layout ;" : cols != 1 ? "an entry GRID (not one column) : the client's ;" : "an entry menu with unnamed entries : the client's ;")
                 : cls == 3 ? "a TEXT LIST : read by its cell types ;" : "another kind : the client's", b);
         }
         if (cls == 1 && G.n < GEN_MENUS) {
             while (m.ry0 >= uiH) { m.ry0 = (short)(m.ry0 - HIDE_DY); m.ry1 = (short)(m.ry1 - HIDE_DY); }
             memcpy(G.help[G.n], help, sizeof(G.help[G.n])); G.m[G.n++] = m;
         }
-        if (cls == 3 && (!G.list || focusObj == o)) gen_list_read(mgr, nm, focusObj, G);
+        bool drawnNow = cls == 1;
+        if (cls == 3 && (!G.list || focusObj == o) && gen_list_read(mgr, nm, focusObj, G)) drawnNow = true;
+        if (cls == 2 && gen_grid_family(nm) && (!G.grid || focusObj == o) && gen_grid_read(o, m, G) && cfg_values(nm, m, G)) {
+            while (m.ry0 >= uiH) { m.ry0 = (short)(m.ry0 - HIDE_DY); m.ry1 = (short)(m.ry1 - HIDE_DY); }
+            G.grid = true; G.gridFocused = focusObj == o; G.gm = m; drawnNow = true;
+            static char sN[9] = ""; static char sSt[200] = ""; static int said = 0;    // the states, logged on change : which one marks the CHOSEN option
+            char st[200]; int so = 0; for (int i = 0; i < m.n && i < 16 && so < 190; ++i) so += _snprintf(st + so, sizeof(st) - so, " %d:%X", m.entry[i], G.gst[m.entry[i] - 1]); st[so < 199 ? so : 199] = 0;
+            if ((strcmp(sN, nm) || strcmp(sSt, st)) && said < 60) { ++said; memcpy(sN, nm, 9); lstrcpynA(sSt, st, sizeof(sSt));
+                windower::debug::log("NATIVEUI generic : grid '%s' (cursor %d) -- entry states %s ; entry 1 at %d,%d %dx%d", nm, m.cursor, st, G.gx[0], G.gy[0], G.gw[0], G.gh[0]); }
+        }
+        // learn what is drawn ; a learned window present and not drawn for 30 polls : refused (rule 10)
+        {   static char badN[8][9]; static int badC[8];
+            if (drawnNow) { gen_learn(nm); for (int q = 0; q < 8; ++q) if (!strcmp(badN[q], nm)) badC[q] = 0; }
+            else if (gen_learned(nm)) { int q = 0; while (q < 8 && strcmp(badN[q], nm) && badN[q][0]) ++q; if (q == 8) q = 0;
+                if (strcmp(badN[q], nm)) { memcpy(badN[q], nm, 9); badC[q] = 0; } if (++badC[q] >= 30) { gen_refuse(nm); badC[q] = 0; } }
+        }
         node = next;
     }
     g_gen = G; g_genListUp = G.list && G.anyItem;
@@ -3434,8 +3584,10 @@ void gen_poll(bool on, u32 mgr, int hide) {
             if (G.list) windower::debug::log("NATIVEUI generic : list '%s' -- AioHUD draws it (%d rows ; row 0 item %u text '%s' count %d price %d)", G.listName, G.ln, G.lrow[0].item, G.lrow[0].text, G.lrow[0].count, G.lrow[0].price); } }
 }
 const NativeGenMenus& native_gen_menus() { return g_gen; }
-bool native_gen_hover(const char* name, int entry) { for (int i = 0; name && i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, name)) { const char* one[2] = { name, 0 }; return entry_hover(one, entry); } return false; }
-bool native_gen_pick(const char* name, int entry) { for (int i = 0; name && i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, name)) { const char* one[2] = { name, 0 }; return entry_pick(one, entry); } return false; }
+bool native_gen_hover(const char* name, int entry) { if (name && g_gen.grid && !strcmp(g_gen.gm.name, name)) { const char* one[2] = { name, 0 }; return entry_hover(one, entry); }
+    for (int i = 0; name && i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, name)) { const char* one[2] = { name, 0 }; return entry_hover(one, entry); } return false; }
+bool native_gen_pick(const char* name, int entry) { if (name && g_gen.grid && !strcmp(g_gen.gm.name, name)) { const char* one[2] = { name, 0 }; return entry_pick(one, entry); }
+    for (int i = 0; name && i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, name)) { const char* one[2] = { name, 0 }; return entry_pick(one, entry); } return false; }
 
 void buffwin_poll(bool on, u32 mgr) {
     if (!on || !mgr) { g_bw.open = false; g_bwObj = g_bwH = 0; return; }
@@ -4530,7 +4682,8 @@ void native_ui_tick(bool inWorld) {
     gen_poll(wanted && (c.nuHide & NU_NPC), manager(), eff_hide(c));   // the generic engine : the census, the plain menus
     if (wanted) { const int lg = native_client_lang(); if (lg >= 0) menu_dat_load(lg); }   // the menus' image labels (the client's DAT)
     if (wanted && (c.nuHide & NU_NPC)) { static int gLog[GEN_MENUS] = { 0 }, glLog = 0; for (int i = 0; i < g_gen.n; ++i) park_named(manager(), g_gen.m[i].name, gLog[i], "generic -> a menu");
-        if (g_gen.list) park_named(manager(), g_gen.listName, glLog, "generic -> a list"); }
+        if (g_gen.list) park_named(manager(), g_gen.listName, glLog, "generic -> a list");
+        static int ggLog = 0; if (g_gen.grid) park_named(manager(), g_gen.gm.name, ggLog, "generic -> a grid"); }
     if (wanted && (c.nuHide & NU_NPC) && g_auc.up && !g_aucNot) {
         static int a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0;
         if (g_auc.menuOpen) park_named(manager(), g_auc.menu.name, a1, "Auction -> a menu");

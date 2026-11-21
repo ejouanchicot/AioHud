@@ -634,8 +634,8 @@ void list_fallback(const Frame& f, int kind, unsigned id, RowSpec& r) {
 struct PearlTex { int item; u32 argb; u32 tex; unsigned char tries; unsigned nextMs; };
 PearlTex g_pearl[4];
 // ---- the menus' IMAGE labels : the client's sprite letters (model/map_dat : menu_label), one texture each, cached ----
-struct LabelTex { unsigned char sheet = 0; unsigned short id = 0; u32 tex = 0; int w = 0, h = 0, pw = 0, ph = 0; unsigned char tries = 0; unsigned nextMs = 0; };
-LabelTex g_lbl[96]; unsigned g_lblClock = 0;
+struct LabelTex { unsigned char sheet = 0; unsigned short id = 0; u32 tex = 0; int w = 0, h = 0, pw = 0, ph = 0, ox = 0, oy = 0; unsigned char tries = 0; unsigned nextMs = 0; };
+LabelTex g_lbl[96]; unsigned g_lblClock = 0; int g_lblOx = 0, g_lblOy = 0;   // the last label's letters origin (a frame : where its texts sit)
 // fills r.ltex... from the entry's sprite (sheet 1 windowps, 2 keytops3 ; id + 1) ; false = keep the text label
 bool label_img(u32 dev, int sheet, unsigned short sprPlus1, RowSpec& r) {
     if (!dev || !sheet || !sprPlus1) return false;
@@ -648,15 +648,16 @@ bool label_img(u32 dev, int sheet, unsigned short sprPlus1, RowSpec& r) {
     if (!L.tex && L.tries < 4 && (!L.nextMs || (int)(GetTickCount() - L.nextMs) >= 0)) {
         ++L.tries; L.nextMs = GetTickCount() + 2000;
         const MenuLabel* M = menu_label(sheet == 1 ? "menu    windowps" : "menu    keytops3", id);
-        if (M && M->w > 0 && M->h > 0 && M->w <= 512 && M->h <= 128) {
+        if (M && M->w > 0 && M->h > 0 && M->w <= 512 && M->h <= 512) {
             int pw = 1, ph = 1; while (pw < M->w) pw <<= 1; while (ph < M->h) ph <<= 1;    // a power of two (old D3D8 parts)
-            static u32 buf[512 * 128]; memset(buf, 0, sizeof(u32) * (size_t)pw * ph);
+            static u32 buf[512 * 512]; memset(buf, 0, sizeof(u32) * (size_t)pw * ph);
             for (int y = 0; y < M->h; ++y) memcpy(buf + (size_t)y * pw, M->px + (size_t)y * M->w, (size_t)M->w * 4);
-            L.tex = make_texture_argb(dev, pw, ph, buf); L.w = M->w; L.h = M->h; L.pw = pw; L.ph = ph;
+            L.tex = make_texture_argb(dev, pw, ph, buf); L.w = M->w; L.h = M->h; L.pw = pw; L.ph = ph; L.ox = M->ox; L.oy = M->oy;
         }
     }
     if (!L.tex) return false;
     r.ltex = L.tex; r.lw = (float)L.w; r.lh = (float)L.h; r.lu1 = (float)L.w / (float)L.pw; r.lv1 = (float)L.h / (float)L.ph;
+    g_lblOx = L.ox; g_lblOy = L.oy;
     return true;
 }
 // a menu row from an entry : its image label when the client has one (grey -> the grey look ; alt -> the toggle's other)
@@ -5280,8 +5281,7 @@ void gen_draw(const Frame& f) {
     for (int s = 0; s < GEN_MENUS; ++s) {
         if (!g_gnName[s][0]) continue;
         bool open = false; for (int i = 0; i < G0.n; ++i) if (!strcmp(G0.m[i].name, g_gnName[s])) open = true;
-        const NativeEntryMenu& L = last[s];
-        if (!block_ease(g_gnB[s], open, now, dt) || L.n <= 0 || L.uiW <= 0) { if (!open && g_gnB[s].vis <= 0.0f) g_gnName[s][0] = 0; continue; }
+        const NativeEntryMenu& L = last[s];        if (!block_ease(g_gnB[s], open, now, dt) || L.n <= 0 || L.uiW <= 0) { if (!open && g_gnB[s].vis <= 0.0f) g_gnName[s][0] = 0; continue; }
         RowSpec rows[16] = {}; static char bufs[GEN_MENUS][16][48]; int cur = 0; const int n = L.n < 16 ? L.n : 16;
         for (int i = 0; i < n; ++i) {
             rows[i].label = L.label[i][0] ? L.label[i] : auc_label(lastHelp[s][i], bufs[s][i], sizeof(bufs[s][i]));
@@ -5333,7 +5333,7 @@ void gen_list_draw(const Frame& f) {
     unsigned iid = 0;
     if (last.anyItem) {                                                // an ITEM list : the items box (icon, name, count, price)
         NativeItemRow rows[16]; memset(rows, 0, sizeof(rows));
-        for (int i = 0; i < last.lvis; ++i) { rows[i].itemId = last.lrow[i].item; rows[i].itemCount = last.lrow[i].count > 0 ? last.lrow[i].count : 0; rows[i].itemCol = 0x80808080u;
+        for (int i = 0; i < last.lvis; ++i) { rows[i].itemId = last.lrow[i].item; rows[i].itemCount = last.lrow[i].count > 0 ? last.lrow[i].count : 0; rows[i].itemCol = last.lrow[i].col ? last.lrow[i].col : 0x80808080u;
             rows[i].hasPrice = last.anyPrice; rows[i].price = last.lrow[i].price >= 0 ? last.lrow[i].price : -2; }
         ItemsBox IL = { rows, last.ln, last.ltop, last.lvis, last.lcursor, 0, last.listFocused, G0.list, title[0] ? title : "", 0, false, last.anyPrice, 0, 0 };
         const float lw = keep_width(g_glB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.lvis * rowH + pad);
@@ -5347,6 +5347,11 @@ void gen_list_draw(const Frame& f) {
         RowSpec rows[16] = {}; static char nb[16][24]; int cur = 0; const int n = last.ln - last.ltop < last.lvis ? last.ln - last.ltop : last.lvis;
         for (int i = 0; i < n; ++i) {
             rows[i].label = last.lrow[i].text[0] ? last.lrow[i].text : "-"; rows[i].icon = IC_NONE;
+            {   const unsigned c = last.lrow[i].col;                     // the client's row colour (grids-re s.1) : its meaning, in our palette
+                if (c == 0x80509050u) rows[i].tint = 0xFF9CE27Au;           // set / equipped : green
+                else if (c == 0x80909040u) rows[i].tint = 0xFFFFDA8Au;      // a command row : gold
+                else if (c == 0x80404040u) rows[i].off = true;              // refused : grey
+                else if (c == 0x80804020u) rows[i].mark = true; }          // picked as the swap source : the gold rim
             if (last.lrow[i].price >= 0) { price_text(nb[i], last.lrow[i].price); strcat(nb[i], " G"); rows[i].extra = nb[i]; }
             else if (last.lrow[i].count >= 0) { sprintf(nb[i], "%d", last.lrow[i].count); rows[i].extra = nb[i]; }
             if (last.ltop + i == last.lcursor) cur = i + 1;
@@ -5367,6 +5372,77 @@ void gen_list_draw(const Frame& f) {
         (void)tz;
     }
     if (iid && G0.list && !native_dialog().open) card_on_chat(f, k, iid, tO, A);
+}
+// the generic engine's GRID (Config's screens) : the client's layout -- our box at its rect, the frame's static texts
+// (its sprite's letters, where the client puts them), each entry a capsule at its rect with its own letters ; the cursor
+// gold, a grey entry dimmed. The client keeps the keys ; the mouse hovers / picks an entry.
+namespace { Block g_ggB; unsigned g_ggMs = 0; }
+void gen_grid_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_ggB.vis = 0.0f; g_ggB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_ggMs ? (float)(now - g_ggMs) / 1000.0f : 0.0f; g_ggMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeGenMenus& G0 = native_gen_menus();
+    static NativeGenMenus last; static char title[0xCC];
+    if (G0.grid) { last = G0; const NativeTopBar& tb = native_topbar(); if (tb.title.text[0]) lstrcpynA(title, tb.title.text, sizeof(title)); }
+    if (!block_ease(g_ggB, G0.grid, now, dt) || last.gm.uiW <= 0) return;
+    const NativeEntryMenu& M = last.gm;
+    const Metrics k = metrics(f); const float S = k.S; const u32 dev = f.dev; Font* fo = f.font;
+    const float sx = f.screenW / (float)M.uiW, sy = f.screenH / (float)M.uiH;
+    const float tO = ease_out(((float)(now - g_ggB.openMs) / 1000.0f) / 0.08f), A = g_ggB.vis * tO;
+    if (A <= 0.0f) return;
+    float bx = snap((float)M.rx0 * sx), by = snap((float)M.ry0 * sy), bw = snap((float)(M.rx1 - M.rx0) * sx), bh = snap((float)(M.ry1 - M.ry0) * sy);
+    if (bw < 40.0f || bh < 20.0f) return;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    // the frame's static texts : its sprite's letters at their place (sprite origin = the window's)
+    unsigned fspr = 0;
+    if (menu_window_frame(M.name, fspr)) { RowSpec fr; if (label_img(dev, 1, (unsigned short)(fspr + 1), fr)) {
+        const float x = snap(bx + (float)g_lblOx * sx), y = snap(by + (float)g_lblOy * sy), w = snap(fr.lw * sx), h = snap(fr.lh * sy);
+        dTexQuadState(dev, fr.ltex);
+        tquad(dev, x + 1.0f * S, y + 1.0f * S, w, h, 0.0f, fr.lu1, 0.0f, fr.lv1, with_alpha(0xC8000000u, A), with_alpha(0xC8000000u, A));
+        tquad(dev, x, y, w, h, 0.0f, fr.lu1, 0.0f, fr.lv1, with_alpha(0xFFE8D9B0u, A), with_alpha(0xFFE8D9B0u, A));
+        dSetTex(dev, 0, 0); cs(dev); } }
+    // the entries
+    const MouseState* ms = f.mouse; int ment = 0;
+    for (int i = 0; i < M.n && i < 32; ++i) {
+        const float x = snap(bx + (float)last.gx[i] * sx), y = snap(by + (float)last.gy[i] * sy), w = snap((float)last.gw[i] * sx), h = snap((float)last.gh[i] * sy);
+        if (w < 6.0f || h < 4.0f) continue;
+        const bool on = M.entry[i] == M.cursor && last.gridFocused, off = M.state[i] == 5;
+        const bool slider = last.gfrac[i] >= 0.0f, chosen = last.gchosen[i] == 1, other = last.gchosen[i] == 0;
+        const float a = A * (off ? 0.5f : 1.0f), r = h * 0.5f;
+        if (slider) {                                                    // a slider : the track, its fill (value / range), the value
+            rrect(dev, x, y, w, h, r, with_alpha(0x70101826u, a), with_alpha(0x70080C14u, a));
+            const float fw = snap((w - 4.0f * S) * last.gfrac[i]);
+            if (fw > 1.0f) rrect(dev, x + 2.0f * S, y + 2.0f * S, fw, h - 4.0f * S, (h - 4.0f * S) * 0.5f, with_alpha(on ? 0xE0FFDA8Au : 0xB0C8A860u, a), with_alpha(on ? 0xC0E8B860u : 0x90A88848u, a));
+            rrect_stroke(dev, x, y, w, h, r, with_alpha(on ? 0xE0FFDA8Au : 0x38C8D6EAu, a), on ? 1.5f * S : 1.0f);
+            char t[16]; if (last.gvalText[i][0]) lstrcpynA(t, last.gvalText[i], sizeof(t)); else sprintf(t, "%d", last.gval[i]);
+            fo->begin(dev); fo->draw_lc(dev, snap(x + w + 6.0f * S), snap(y + h * 0.5f), t, k.tz * 0.85f, with_alpha(on ? 0xFFFFFFFFu : 0xFFC9D3E0u, a), with_alpha(0xC8000000u, a), k.ow);
+            if (ms && ms->focused && ms->x >= x && ms->x < x + w && ms->y >= y && ms->y < y + h) ment = M.entry[i];
+            continue;
+        }
+        rrect(dev, x, y, w, h, r, with_alpha(on ? 0x50FFDA8Au : chosen ? 0x40C8A860u : 0x5A1C2638u, a), with_alpha(on ? 0x38FFDA8Au : chosen ? 0x30A88848u : 0x5A0A0F18u, a));
+        rrect_stroke(dev, x, y, w, h, r, with_alpha(on ? 0xE0FFDA8Au : chosen ? 0xB0FFDA8Au : 0x38C8D6EAu, a), on || chosen ? 1.5f * S : 1.0f);
+        RowSpec rs; rs.ltex = 0;
+        if (M.sheet[i] && label_img(dev, M.sheet[i], M.spr[i][0], rs)) {
+            const float ih = h * 0.72f, iw = rs.lh > 0.0f ? rs.lw * ih / rs.lh : 0.0f, ix = snap(x + (w - iw) * 0.5f), iy = snap(y + (h - ih) * 0.5f);
+            const u32 lc = on ? 0xFFFFFFFFu : chosen ? 0xFFFFE9B0u : other ? 0xFF8A96A8u : 0xFFC9D3E0u;   // the option in force bright, the others dim
+            dTexQuadState(dev, rs.ltex);
+            tquad(dev, ix + 1.0f * S, iy + 1.0f * S, snap(iw), snap(ih), 0.0f, rs.lu1, 0.0f, rs.lv1, with_alpha(0xC8000000u, a), with_alpha(0xC8000000u, a));
+            tquad(dev, ix, iy, snap(iw), snap(ih), 0.0f, rs.lu1, 0.0f, rs.lv1, with_alpha(lc, a), with_alpha(lc, a));
+            dSetTex(dev, 0, 0); cs(dev);
+        }
+        if (ms && ms->focused && ms->x >= x && ms->x < x + w && ms->y >= y && ms->y < y + h) ment = M.entry[i];
+    }
+    fo->begin(dev);
+    if (title[0]) fo->draw_lc(dev, snap(bx + 10.0f * S), snap(by - 10.0f * S), title, k.tz * 0.95f, with_alpha(0xFFE8D9B0u, A), with_alpha(0xC8000000u, A), k.ow);
+    if (G0.grid && last.gridFocused) {
+        g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH;
+        if (ment && ment != g_ggB.hoverRow && ment != M.cursor) native_gen_hover(M.name, ment);
+        g_ggB.hoverRow = ment;
+        if (ment && ms && ms->clicked) native_gen_pick(M.name, ment);
+    } else g_ggB.hoverRow = 0;
 }
 // ======== the DELIVERY BOX (Game UI -> NU_NPC) : receive (post1 + post2) / send (delivery + stringdl) ========
 // The 8 slots in the client's grid (4 x 2, entries 1..8) and colours (receive : shown in states 6, 7, 0xA..0xE, usable in 7,
@@ -5973,7 +6049,8 @@ void mainmenu_draw(const Frame& f) {
     if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
     // Magic's categories open IN PLACE of this menu (the client swaps them, as the action menu's Abilities) : while they
     // are up this menu is not drawn (2026-11-18, "le sous menu remplace le main menu plutot que de se mettre a cote")
-    const bool subUp = native_main_sub().open || native_main_sort().open;
+    const NativeGenMenus& GM = native_gen_menus();             // ... and so does a generic window it opened (Config & co, 2026-11-21)
+    const bool subUp = native_main_sub().open || native_main_sort().open || (!last.focused && (GM.n > 0 || GM.grid || GM.list));
     const int jm = subUp ? 0 : menu_place(f, __LINE__, bx, by, bw, bh);   // recorded only while drawn (theme kit)
     const float by0 = by;                                    // its rest place : what opens in its place is placed from it
     const float tOpen = ease_out(((float)(now - g_mainMB.openMs) / 1000.0f) / 0.08f);

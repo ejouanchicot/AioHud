@@ -93,6 +93,7 @@ void loot_draw(const Frame& f);
 void mog_draw(const Frame& f);
 void dlv_draw(const Frame& f);
 void jobsel_draw(const Frame& f);
+void gen_grid_draw(const Frame& f);  // hud_actmenu.cpp : the generic engine's grid (NU_NPC)
 void gen_list_draw(const Frame& f);  // hud_actmenu.cpp : the generic engine's list (NU_NPC)
 void gen_draw(const Frame& f);       // hud_actmenu.cpp : the generic engine's menus (NU_NPC)
 void auc_draw(const Frame& f);       // hud_actmenu.cpp : the auction house (NU_NPC)

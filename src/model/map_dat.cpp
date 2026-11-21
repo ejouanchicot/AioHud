@@ -307,6 +307,7 @@ unsigned char* g_md = 0; unsigned g_mdN = 0; int g_mdLang = -1, g_mdTries = 0; D
 struct MdSheet { char name[17]; unsigned off, end; int nspr; unsigned* spr; };   // spr[i] : the sprite's offset in g_md
 struct MdTex { char name[17]; unsigned off; int w, h, fmt; u32* px; bool tried; };   // fmt 1 DXT1, 3 DXT3 ; px decoded lazily
 MdSheet g_mdSheet[64]; int g_mdSheets = 0; MdTex g_mdTex[96]; int g_mdTexN = 0;
+unsigned g_mdWin[512]; int g_mdWins = 0;   // the window definitions (type 0x30) : their payload offsets
 struct MdLabel { char sheet[17]; unsigned id; MenuLabel L; bool tried; };
 MdLabel g_mdLab[256]; int g_mdLabN = 0;
 
@@ -341,11 +342,12 @@ u32* md_decode(const unsigned char* d, unsigned n, int W, int Ht, int fmt) {
 }
 // the chunks : sheets (0x31) indexed with their sprites' offsets, textures (0x20) by name
 bool md_index() {
-    g_mdSheets = 0; g_mdTexN = 0;
+    g_mdSheets = 0; g_mdTexN = 0; g_mdWins = 0;
     for (unsigned at = 0; at + 16 <= g_mdN; ) {
         const unsigned w = *(const unsigned*)(g_md + at + 4), type = w & 0x7F, size = ((w >> 7) & 0x7FFFF) * 16;
         if (size < 16 || at + size > g_mdN) break;
         const unsigned p = at + 16, pe = at + size;
+        if (type == 0x30 && g_mdWins < 512 && p + 0x40 < pe) g_mdWin[g_mdWins++] = p;
         if (type == 0x31 && g_mdSheets < 64 && p + 17 < pe) {
             MdSheet& S = g_mdSheet[g_mdSheets]; memcpy(S.name, g_md + p, 16); S.name[16] = 0;
             const unsigned ntex = g_md[p + 16]; unsigned q = p + 17 + ntex * 16;
@@ -416,7 +418,7 @@ const MenuLabel* menu_label(const char* sheet16, unsigned sprite) {
         const short* c = (const short*)P; const int ax = c[0], ay = c[1], bx = c[6], by = c[7];
         if (ax < x0) x0 = ax; if (ay < y0) y0 = ay; if (bx > x1) x1 = bx; if (by > y1) y1 = by; ++nl;
     }
-    if (!nl || x1 <= x0 || y1 <= y0 || x1 - x0 > 512 || y1 - y0 > 128) return 0;
+    if (!nl || x1 <= x0 || y1 <= y0 || x1 - x0 > 512 || y1 - y0 > 512) return 0;
     const int W = x1 - x0, Hh = y1 - y0;
     u32* px = new (std::nothrow) u32[(size_t)W * Hh]; if (!px) return 0;
     memset(px, 0, (size_t)W * Hh * 4);
@@ -436,8 +438,25 @@ const MenuLabel* menu_label(const char* sheet16, unsigned sprite) {
             u32& o = px[(size_t)Y * W + X]; if (cov > (o >> 24)) o = (cov << 24) | 0x00FFFFFFu;
         }
     }
-    M.L.w = W; M.L.h = Hh; M.L.px = px;
+    M.L.w = W; M.L.h = Hh; M.L.px = px; M.L.ox = x0; M.L.oy = y0;
     return &M.L;
+}
+
+bool menu_window_frame(const char* name8, unsigned& sprite) {
+    if (!g_mdOk || !name8) return false;
+    char want[9]; memset(want, ' ', 8); want[8] = 0; for (int i = 0; i < 8 && name8[i]; ++i) want[i] = name8[i];
+    for (int i = 0; i < g_mdWins; ++i) {
+        const unsigned p = g_mdWin[i];
+        if (memcmp(g_md + p, "menu    ", 8) || memcmp(g_md + p + 8, want, 8)) continue;
+        const unsigned rec = p + 0x20; const int nr = g_md[rec + 0x14];
+        for (int q = 0; q < nr && q < 8; ++q) {
+            const unsigned char* R = g_md + rec + 0x20 + q * 0x14; if (rec + 0x20 + (q + 1) * 0x14 > g_mdN) return false;
+            const unsigned short st = (unsigned short)(R[0] | R[1] << 8), id = (unsigned short)(R[2] | R[3] << 8);
+            if (st == 0 && !memcmp(R + 4, "menu    windowps", 16)) { sprite = id; return true; }
+        }
+        return false;
+    }
+    return false;
 }
 
 unsigned char* dat_read_file(const char* path, unsigned& sizeOut) { sizeOut = 0; return path ? read_file(path, sizeOut) : 0; }
