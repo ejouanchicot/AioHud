@@ -4948,6 +4948,259 @@ void room_draw(const Frame& f) {
         if (row >= 1 && row <= n && f.mouse && f.mouse->clicked) native_textlist_pick("roomlist", last.top + row - 1);
     } else g_rmB.hoverRow = 0;
 }
+// ======== the AUCTION HOUSE (Game UI -> NU_NPC) : its menus, the item list, the price history, the price, your items ========
+// The menus are images in the client : named here from their help lines (live 2026-11-21). One menu at a time -- the
+// deepest open, at the client's top right ; the list top left, the history beside it, the price under the history ; the
+// item card above the chat.
+namespace { Block g_auMB, g_auLB, g_auHB, g_auPB, g_auIB; unsigned g_auMs = 0; char g_auMName[9]; }
+// an entry's label from its HELP line (the client draws an image) : a phrase in the help -> EN / FR ; else the help
+// itself, shortened ("View smithing materials on auction." -> "Smithing materials")
+static const char* auc_label(const char* help, char* buf, int cap) {
+    struct L { const char* key; const char* en; const char* fr; };
+    static const L T[] = {
+        // scrolls
+        { "white magic", "White Magic", "Blanche" }, { "black magic", "Black Magic", "Noire" }, { "summoning", "Summoning", "Invocation" },
+        { "ninjutsu", "Ninjutsu", "Ninjutsu" }, { "songs", "Songs", "Chants" }, { "dice", "Dice", "D\xC3\xA9s" }, { "geomanc", "Geomancy", "G\xC3\xA9omancie" },
+        // auc1 / auc3 / a sort
+        { "all merchandise up for auction", "Bid", "Acheter" }, { "Place unwanted items", "Sell", "Vendre" }, { "currently placed on auction", "Sales Status", "Mes ventes" },
+        { "recent sales data", "Price History", "Historique" }, { "Place a bid", "Bid", "Ench\xC3\xA9rir" }, { "Remove merchandise", "Remove", "Retirer" },
+        { "Rearrange the order", "Sort", "Trier" }, { "Return to list", "Back", "Retour" },
+        { "highest defense", "Defense", "D\xC3\xA9""fense" }, { "elemental resistance", "Resistances", "R\xC3\xA9sistances" },
+        { "required level", "Level", "Niveau" }, { "usable by current job", "Your Job", "Ton job" }, { "usable by your race", "Your Race", "Ta race" },
+        { "highest damage", "Damage", "D\xC3\xA9g\xC3\xA2ts" }, { "attack delay", "Delay", "D\xC3\xA9lai" },
+        // auc2
+        { "View weapons", "Weapons", "Armes" }, { "View armor", "Armor", "Armures" }, { "magic scrolls", "Scrolls", "Parchemins" },
+        { "View medicines", "Medicines", "Rem\xC3\xA8""des" }, { "View furnishings", "Furnishings", "Mobilier" },
+        { "synthesis materials", "Materials", "Mat\xC3\xA9riaux" }, { "View food", "Food", "Nourriture" }, { "View crystals", "Crystals", "Cristaux" },
+        { "other miscellaneous", "Others", "Divers" },
+        // armor
+        { "Shields", "Shields", "Boucliers" }, { "headwear", "Head", "T\xC3\xAAte" }, { "neckwear", "Neck", "Cou" }, { "body armor", "Body", "Corps" },
+        { "hands and forearms", "Hands", "Mains" }, { "Belts", "Waist", "Taille" }, { "legwear", "Legs", "Jambes" }, { "footwear", "Feet", "Pieds" },
+        { "Capes", "Back", "Dos" }, { "Earrings", "Earrings", "Oreilles" }, { "Rings", "Rings", "Anneaux" },
+        // weapons
+        { "hand-to-hand", "Hand-to-Hand", "Poings" }, { "Daggers", "Daggers", "Dagues" }, { "One-handed swords", "Swords", "\xC3\x89p\xC3\xA9""es" },
+        { "Two-handed swords", "Great Swords", "Gr. \xC3\xA9p\xC3\xA9""es" }, { "One-handed axes", "Axes", "Haches" }, { "Two-handed axes", "Great Axes", "Gr. haches" },
+        { "scythes", "Scythes", "Faux" }, { "polearms", "Polearms", "Lances" }, { "One-handed katana", "Katana", "Katana" }, { "Two-handed katana", "Great Katana", "Gr. katana" },
+        { "clubs", "Clubs", "Masses" }, { "staves", "Staves", "B\xC3\xA2tons" }, { "ranged weapons", "Ranged", "Distance" },
+        { "Musical instruments", "Instruments", "Instruments" }, { "Arrows, bullets", "Ammo", "Munitions" }, { "grips", "Grips", "Poign\xC3\xA9""es" },
+        // materials
+        { "View smithing", "Smithing", "Forge" }, { "goldsmithing", "Goldsmithing", "Orf\xC3\xA8vrerie" }, { "clothcraft", "Clothcraft", "Couture" },
+        { "leatherworking", "Leathercraft", "Tannerie" }, { "bonecraft", "Bonecraft", "Os" }, { "woodworking", "Woodworking", "Menuiserie" },
+        { "alchemy materials 2", "Alchemy 2", "Alchimie 2" }, { "alchemy materials", "Alchemy", "Alchimie" },
+        // food
+        { "View meals", "Meals", "Plats" }, { "View fish ", "Fish", "Poissons" }, { "View ammunition", "Ammunition", "Munitions" },
+        { "fishing gear", "Fishing Gear", "P\xC3\xAA""che" }, { "pet items", "Pet Items", "Familiers" }, { "View ingredients", "Ingredients", "Ingr\xC3\xA9""dients" }, { "meat and egg", "Meat & Eggs", "Viandes" },
+        { "seafood dishes", "Seafood", "Mer" }, { "vegetable dishes", "Vegetables", "L\xC3\xA9gumes" }, { "soups", "Soups", "Soupes" },
+        { "bread and rice", "Breads & Rice", "Pains" }, { "sweets", "Sweets", "Desserts" }, { "drinks", "Drinks", "Boissons" },
+    };
+    if (!help || !help[0]) { lstrcpynA(buf, "?", cap); return buf; }
+    for (size_t i = 0; i < sizeof(T) / sizeof(T[0]); ++i) {          // a case-insensitive phrase match
+        const char* k = T[i].key; const size_t kl = strlen(k);
+        for (const char* p = help; *p; ++p) if (!_strnicmp(p, k, kl)) return tr(T[i].en, T[i].fr);
+    }
+    // the help, shortened : no "View " / "Display ", no " on auction." / " scrolls." / ".", a capital first
+    const char* p = help; if (!_strnicmp(p, "View ", 5)) p += 5; else if (!_strnicmp(p, "Display ", 8)) p += 8;
+    lstrcpynA(buf, p, cap); char* e;
+    if ((e = strstr(buf, " on auction")) != 0) *e = 0; if ((e = strstr(buf, " up for auction")) != 0) *e = 0;
+    size_t l = strlen(buf); while (l && (buf[l - 1] == '.' || buf[l - 1] == ',' || buf[l - 1] == ' ')) buf[--l] = 0;
+    for (int i = 0; buf[i]; ++i) if ((i == 0 || buf[i - 1] == ' ') && buf[i] >= 'a' && buf[i] <= 'z') buf[i] = (char)(buf[i] - 32);
+    return buf;
+}
+// the price typed : the client's value and its edited digit (its keys change it), your gil under it. Returns its height.
+static float auc_price_box(const Frame& f, const Metrics& k, const NativeAuction& a, float x, float y, float w, float A) {
+    const UiConfig& C = ui_config(); const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), tz = k.tz;
+    const float lineH = snap(k.capH * 1.5f), h = snap(pad + headH + 6.0f * S + lineH + 4.0f * S + k.capH * 1.2f + pad);
+    const u32 dev = f.dev, sh = with_alpha(0xC8000000u, A); Font* fo = f.font;
+    draw_themed_box(dev, f.skin, x, y, w, h, C.muBox, A, S);
+    const float L = x + pad, W = w - 2.0f * pad, hy = snap(y + pad + headH * 0.5f), ly = snap(y + pad + headH + 6.0f * S);
+    rrect(dev, L, snap(y + pad + headH), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    rrect(dev, L, ly, W, lineH, 4.0f * S, with_alpha(0x30FFDA8Au, A), with_alpha(0x18FFDA8Au, A));
+    rrect_stroke(dev, L, ly, W, lineH, 4.0f * S, with_alpha(a.priceFocused ? 0xD8FFDA8Au : 0x80FFDA8Au, A), a.priceFocused ? 1.5f * S : 1.0f * S);
+    const float cz = snap(k.capH), vz = tz * 1.1f, vx = snap(L + 10.0f * S + cz), vy = snap(ly + lineH * 0.5f);
+    int pos = 0; for (unsigned d = a.priceDigit; d >= 10 && pos < 9; d /= 10) ++pos;
+    char raw[16]; sprintf(raw, "%u", a.priceVal); const int nd = (int)strlen(raw);
+    char dig[16]; const int want = nd > pos + 1 ? nd : pos + 1;
+    for (int i = 0; i < want - nd; ++i) dig[i] = '0'; memcpy(dig + (want - nd), raw, (size_t)nd + 1);
+    char v[28]; int ci = -1; { int o = 0; for (int i = 0; i < want; ++i) { if (i && (want - i) % 3 == 0) v[o++] = ','; if (want - 1 - i == pos) ci = o; v[o++] = dig[i]; } v[o] = 0; }
+    if (ci >= 0) { char pre[28]; lstrcpynA(pre, v, ci + 1); const float ux = fo->measure(pre, vz), cw = fo->measure("0", vz);
+        rrect(dev, snap(vx + ux - 1.0f * S), snap(vy - vz * 0.6f), snap(cw + 2.0f * S), snap(vz * 1.2f), 2.0f * S, with_alpha(0x60E86A5Au, A), with_alpha(0x60E86A5Au, A)); }
+    gil_coin(dev, snap(L + 5.0f * S + cz * 0.5f), vy, cz, A);
+    fo->begin(dev);
+    fo->draw_lc(dev, L, hy, a.sell ? tr("Selling price", "Prix de vente") : tr("Your bid", "Ton ench\xC3\xA8re"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    fo->draw_lc(dev, vx, vy, v, vz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
+    if (a.gilOk) { char g[24], t[48]; price_text(g, (int)(a.gil > 999999999u ? 999999999u : a.gil)); _snprintf(t, sizeof(t), "%s %s G", tr("Your gil", "Tes gils"), g); t[47] = 0;
+        fo->draw_lc(dev, snap(L + W - fo->measure(t, tz * 0.85f)), snap(ly + lineH + 4.0f * S + k.capH * 0.6f), t, tz * 0.85f,
+                    with_alpha(!a.sell && a.priceVal > a.gil ? 0xFFFF8A6Au : 0xFF93A6BEu, A), sh, k.ow); }
+    return h;
+}
+// the price history : the last ten sales -- the date, the seller -> the buyer, the price
+static float auc_hist_width(const Frame& f, const Metrics& k) {
+    Font* fo = f.font; const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz;
+    return snap(pad + 8.0f * S + fo->measure("00/00/00", tz * 0.85f) + 12.0f * S + 2.0f * fo->measure("Wwwwwwwwwwww", tz * 0.9f) + fo->measure(" > ", tz) + 12.0f * S
+                + fo->measure("999,999,999", tz) + 8.0f * S + snap(k.capH) + 8.0f * S + pad);
+}
+static void auc_hist_draw(const Frame& f, const Metrics& k, const NativeAuction& a, bool live, float x, float y, float w, float h, float A, float dt) {
+    const UiConfig& C = ui_config(); const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), tz = k.tz;
+    const u32 dev = f.dev, sh = with_alpha(0xC8000000u, A); Font* fo = f.font;
+    const float rowH = snap(k.capH * 1.25f);
+    draw_themed_box(dev, f.skin, x, y, w, h, C.muBox, A, S);
+    const float L = x + pad, W = w - 2.0f * pad, hy = snap(y + pad + headH * 0.5f), ry = snap(y + pad + headH + 6.0f * S);
+    rrect(dev, L, snap(y + pad + headH), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    for (int i = 0; i < a.hn; ++i) if ((i & 1) == 0) rrect(dev, L, snap(ry + (float)i * rowH), W, rowH, 3.0f * S, with_alpha(0x18FFFFFFu, A), with_alpha(0x10FFFFFFu, A));
+    const int cr = a.hcursor >= 0 && a.hcursor < a.hn ? a.hcursor : -1;
+    if (cr >= 0 && a.histFocused) {
+        const float targetY = ry + (float)cr * rowH;
+        if (g_auHB.curY < 0.0f) g_auHB.curY = targetY;
+        g_auHB.curY += (targetY - g_auHB.curY) * (1.0f - expf(-dt * 30.0f)); if (fabsf(targetY - g_auHB.curY) < 0.3f) g_auHB.curY = targetY;
+        const float yy = snap(g_auHB.curY);
+        rrect_clip_begin(dev, L, yy, W, rowH, rowH * 0.5f); party_selframe(dev, L, yy, W, rowH, f.t, A, 0); rrect_clip_end(dev);
+        rrect_stroke(dev, L, yy, W, rowH, rowH * 0.5f, with_alpha(0xC8FFDA8Au, A), 1.0f);
+    } else g_auHB.curY = -1.0f;
+    const float cz = snap(k.capH * 0.95f), colR = snap(L + W - 8.0f * S - cz - 4.0f * S);
+    int sold = 0;
+    for (int i = 0; i < a.hn; ++i) if (a.hist[i].price >= 0 || a.hist[i].seller[0]) { ++sold; gil_coin(dev, snap(L + W - 8.0f * S - cz * 0.5f), snap(ry + (float)i * rowH + rowH * 0.5f), cz, A); }
+    const MouseState* ms = f.mouse;
+    if (live) {
+        int mrow = -1;
+        if (a.histFocused && ms && ms->focused && ms->x >= L && ms->x < L + W && ms->y >= ry && ms->y < ry + (float)a.hn * rowH) mrow = (int)((ms->y - ry) / rowH);
+        hit_extend(18, y + h, f.screenH);
+        if (g_hit[18][2] <= 0.0f) { g_hit[18][0] = x / f.screenW; g_hit[18][1] = y / f.screenH; g_hit[18][2] = w / f.screenW; g_hit[18][3] = h / f.screenH; }
+        if (mrow >= 0 && mrow + 1 != g_auHB.hoverRow && mrow != a.hcursor) native_textlist_hover("auchisto", mrow);
+        g_auHB.hoverRow = mrow + 1;
+    } else g_auHB.hoverRow = 0;
+    fo->begin(dev);
+    fo->draw_lc(dev, L, hy, tr("Price history", "Historique des prix"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    if (!sold) fo->draw_lc(dev, snap(L + 8.0f * S), snap(ry + rowH * 0.5f), tr("No sales yet.", "Aucune vente."), tz, with_alpha(0xFF6E7C8Eu, A), sh, k.ow);
+    const float dW = fo->measure("00/00/00", tz * 0.85f), nW = fo->measure("Wwwwwwwwwwww", tz * 0.9f);
+    for (int i = 0; i < a.hn; ++i) {
+        const NativeAucHist& r = a.hist[i]; const float cy = snap(ry + (float)i * rowH + rowH * 0.5f);
+        if (r.price < 0 && !r.seller[0]) continue;                       // a blank row (an item never sold)
+        char d[16] = "--"; { const time_t t = (time_t)r.date; struct tm* tm = r.date ? gmtime(&t) : 0;
+            if (tm) { if (ui_config().lang == 1) sprintf(d, "%02d/%02d/%02d", tm->tm_mday, tm->tm_mon + 1, tm->tm_year % 100); else sprintf(d, "%02d/%02d/%02d", tm->tm_mon + 1, tm->tm_mday, tm->tm_year % 100); } }
+        float tx = snap(L + 8.0f * S);
+        fo->draw_lc(dev, tx, cy, d, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow); tx = snap(tx + dW + 12.0f * S);
+        char cut[40];
+        fo->draw_lc(dev, tx, cy, fit_text(fo, r.seller, tz * 0.9f, nW, cut, sizeof(cut)), tz * 0.9f, with_alpha(0xFFE4EAF2u, A), sh, k.ow); tx = snap(tx + nW);
+        fo->draw_lc(dev, tx, cy, " > ", tz, with_alpha(0xFF6E7C8Eu, A), sh, k.ow); tx = snap(tx + fo->measure(" > ", tz));
+        fo->draw_lc(dev, tx, cy, fit_text(fo, r.buyer, tz * 0.9f, nW, cut, sizeof(cut)), tz * 0.9f, with_alpha(0xFFE4EAF2u, A), sh, k.ow);
+        char p[24]; price_text(p, r.price);
+        fo->draw_lc(dev, snap(colR - fo->measure(p, tz)), cy, p, tz, with_alpha(0xFFFFDA8Au, A), sh, k.ow);
+    }
+}
+void auc_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    Block* all[5] = { &g_auMB, &g_auLB, &g_auHB, &g_auPB, &g_auIB };
+    if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { for (Block* b : all) { b->vis = 0.0f; b->wasOpen = false; } return; }
+    const unsigned now = GetTickCount();
+    float dt = g_auMs ? (float)(now - g_auMs) / 1000.0f : 0.0f; g_auMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeAuction& A0 = native_auction();
+    static NativeAuction last;
+    if (A0.up) {   // a list closing keeps its rows while it fades
+        const NativeAuction prev = last; last = A0;
+        if (!A0.listOpen && prev.listOpen) { memcpy(last.row, prev.row, sizeof(last.row)); last.n = prev.n; last.top = prev.top; last.vis = prev.vis; last.cursor = prev.cursor; last.lx0 = prev.lx0; last.ly0 = prev.ly0; memcpy(last.cat, prev.cat, 9); last.catEntry = prev.catEntry; memcpy(last.catHelp, prev.catHelp, sizeof(last.catHelp)); }
+        if (!A0.histOpen && prev.histOpen) { memcpy(last.hist, prev.hist, sizeof(last.hist)); last.hn = prev.hn; last.hcursor = prev.hcursor; }
+        if (!A0.invOpen && prev.invOpen) { memcpy(last.invRow, prev.invRow, sizeof(last.invRow)); last.invN = prev.invN; last.invTop = prev.invTop; last.invVis = prev.invVis; last.invCursor = prev.invCursor; last.ix0 = prev.ix0; last.iy0 = prev.iy0; }
+        if (!A0.menuOpen && prev.menuOpen) { last.menu = prev.menu; memcpy(last.help, prev.help, sizeof(last.help)); }
+    }
+    if (last.uiW <= 0) return;
+    const Metrics k = metrics(f);
+    const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), gap = snap(6.0f * S), rowH = snap(k.capH * 1.25f);
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    // ---- the menu : one, the deepest, at the client's top right ----
+    if (A0.menuOpen && strcmp(g_auMName, A0.menu.name)) { lstrcpynA(g_auMName, A0.menu.name, 9); g_auMB.openMs = now; g_auMB.hoverRow = 0; }
+    if (block_ease(g_auMB, A0.up && A0.menuOpen, now, dt) && last.menu.n > 0) {
+        const NativeEntryMenu& M = last.menu;
+        RowSpec rows[16] = {}; int cur = 0; const int n = M.n < 16 ? M.n : 16; static char lb[16][48];
+        for (int i = 0; i < n; ++i) { rows[i].label = auc_label(last.help[i], lb[i], sizeof(lb[i])); rows[i].icon = IC_NONE; rows[i].off = M.state[i] == 5; if (M.entry[i] == M.cursor) cur = i + 1; }
+        float bw, bh; block_size(f, k, rows, n, bw, bh);
+        float bx = snap((float)M.rx1 * sx - bw), by = snap((float)M.ry0 * sy);   // its right edge where the client's is
+        if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+        if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+        const int jm = menu_place(f, __LINE__, bx, by, bw, bh);
+        const float tO = ease_out(((float)(now - g_auMB.openMs) / 1000.0f) / 0.07f);
+        by = snap(by + (1.0f - tO) * 3.0f * S);
+        const float MA = g_auMB.vis * tO * (M.focused || !A0.menuOpen ? 1.0f : 0.62f);
+        if (MA > 0.0f) {
+            g_frameJoin = jm;
+            const int row = block_draw(f, k, g_auMB, rows, n, cur, M.focused, bx, by, bw, bh, MA, dt);
+            if (A0.menuOpen && M.focused) {
+                g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH;
+                const int ent = (row >= 1 && row <= n) ? M.entry[row - 1] : 0;
+                if (ent && row != g_auMB.hoverRow && ent != M.cursor && M.state[row - 1] != 5) native_auc_hover(M.name, ent);
+                g_auMB.hoverRow = row;
+                if (ent && M.state[row - 1] != 5 && f.mouse && f.mouse->clicked) native_auc_pick(M.name, ent);
+            } else g_auMB.hoverRow = 0;
+        }
+    }
+    // ---- the left column : the item list (Buy) or your items (Sell) ----
+    unsigned iid = 0; float colR = -1.0f, colY = 0.0f, colB = 0.0f;
+    if (block_ease(g_auLB, A0.up && A0.listOpen, now, dt) && last.vis > 0) {
+        const float tO = ease_out(((float)(now - g_auLB.openMs) / 1000.0f) / 0.08f), LA = g_auLB.vis * tO * (last.listFocused || !A0.listOpen ? 1.0f : 0.8f);
+        char tb[48]; const char* title = last.status ? tr("Your sales", "Tes ventes") : last.catHelp[0] ? auc_label(last.catHelp, tb, sizeof(tb)) : tr("Auction", "H\xC3\xB4tel des ventes");
+        char cnt[16]; sprintf(cnt, "%d", last.n);
+        ItemsBox IL = { last.row, last.n, last.top, last.vis, last.cursor, 0, last.listFocused, A0.listOpen, title, cnt, false, false, 0, 0 };
+        const float lw = keep_width(g_auLB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.vis * rowH + pad);
+        float lx = snap((float)last.lx0 * sx), ly = snap((float)last.ly0 * sy);
+        if (lx + lw > f.screenW - 4.0f) lx = snap(f.screenW - 4.0f - lw); if (lx < 4.0f) lx = 4.0f;
+        if (ly + lh > f.screenH - 4.0f) ly = snap(f.screenH - 4.0f - lh); if (ly < 4.0f) ly = 4.0f;
+        const int jl = menu_place(f, __LINE__, lx, ly, lw, lh);
+        ly = snap(ly + (1.0f - tO) * 4.0f * S);
+        if (LA > 0.0f) {
+            g_frameJoin = jl;
+            const unsigned r = items_box_draw(f, k, g_auLB, IL, "auclist", lx, ly, lw, lh, LA, dt, g_hit[17]);
+            const int c = last.cursor - last.top;
+            iid = r ? r : (c >= 0 && c < last.vis ? last.row[c].itemId : 0);   // the history / the bid up : the row they are about
+            colR = lx + lw; colY = ly; colB = ly + lh;
+        }
+    }
+    if (block_ease(g_auIB, A0.up && A0.sell && A0.invOpen, now, dt) && last.invVis > 0) {
+        const float tO = ease_out(((float)(now - g_auIB.openMs) / 1000.0f) / 0.08f), IA = g_auIB.vis * tO * (last.invFocused || !A0.invOpen ? 1.0f : 0.8f);
+        char gil[24] = ""; if (last.gilOk) { price_text(gil, (int)(last.gil > 999999999u ? 999999999u : last.gil)); strcat(gil, " G"); }
+        ItemsBox IL = { last.invRow, last.invN, last.invTop, last.invVis, last.invCursor, 0, last.invFocused, A0.invOpen, tr("Sell", "Vendre"), gil, false, false, 0, 0 };
+        const float lw = keep_width(g_auIB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.invVis * rowH + pad);
+        float lx = snap((float)last.ix0 * sx), ly = snap((float)last.iy0 * sy);
+        if (colR >= 0.0f) { lx = snap(colR + gap); ly = colY; }
+        if (lx + lw > f.screenW - 4.0f) lx = snap(f.screenW - 4.0f - lw); if (lx < 4.0f) lx = 4.0f;
+        if (ly + lh > f.screenH - 4.0f) ly = snap(f.screenH - 4.0f - lh); if (ly < 4.0f) ly = 4.0f;
+        const int ji = menu_place(f, __LINE__, lx, ly, lw, lh);
+        ly = snap(ly + (1.0f - tO) * 4.0f * S);
+        if (IA > 0.0f) {
+            g_frameJoin = ji;
+            const unsigned r = items_box_draw(f, k, g_auIB, IL, "inventor", lx, ly, lw, lh, IA, dt, g_hit[17]);
+            const int c = last.invCursor - last.invTop;
+            const unsigned ii = r ? r : (c >= 0 && c < last.invVis ? last.invRow[c].itemId : 0);
+            if (ii) iid = ii;
+            colR = lx + lw; colY = ly; colB = ly + lh;
+        }
+    }
+    // ---- the history beside the column, the price under it ----
+    float hx = colR >= 0.0f ? snap(colR + gap) : snap((float)last.hx0 * sx), hy = colR >= 0.0f ? colY : snap((float)last.hy0 * sy);
+    const float hw = auc_hist_width(f, k), hh = snap(pad + headH + 6.0f * S + 10.0f * rowH + pad);
+    if (hx + hw > f.screenW - 4.0f) hx = snap(f.screenW - 4.0f - hw); if (hx < 4.0f) hx = 4.0f;
+    float under = colR >= 0.0f ? snap(colB + gap) : hy;
+    if (block_ease(g_auHB, A0.up && A0.histOpen, now, dt)) {
+        const int jh = menu_place(f, __LINE__, hx, hy, hw, hh);
+        const float tO = ease_out(((float)(now - g_auHB.openMs) / 1000.0f) / 0.08f), HA = g_auHB.vis * tO * (last.histFocused || !A0.histOpen ? 1.0f : 0.85f);
+        const float yy = snap(hy + (1.0f - tO) * 4.0f * S);
+        if (HA > 0.0f) { g_frameJoin = jh; auc_hist_draw(f, k, last, A0.histOpen, hx, yy, hw, hh, HA, dt); }
+        under = snap(hy + hh + gap);
+    }
+    if (block_ease(g_auPB, A0.up && A0.priceUp, now, dt)) {
+        const bool beside = A0.histOpen || g_auHB.vis > 0.0f;            // under the history ; else beside the column
+        const float pw = beside ? hw : snap(300.0f * S);
+        const float tO = ease_out(((float)(now - g_auPB.openMs) / 1000.0f) / 0.07f), PA = g_auPB.vis * tO;
+        float pxx = beside || colR < 0.0f ? hx : snap(colR + gap);
+        if (!beside && colR >= 0.0f) under = colY;
+        if (pxx + pw > f.screenW - 4.0f) pxx = snap(f.screenW - 4.0f - pw);
+        if (PA > 0.0f) {
+            const float ph = auc_price_box(f, k, last, pxx, snap(under + (1.0f - tO) * 3.0f * S), pw, PA);
+            hit_extend(18, under + ph, f.screenH);
+            if (g_hit[18][2] <= 0.0f) { g_hit[18][0] = pxx / f.screenW; g_hit[18][1] = under / f.screenH; g_hit[18][2] = pw / f.screenW; g_hit[18][3] = ph / f.screenH; }
+        }
+    }
+    // ---- the item card : above the chat ----
+    if (iid && A0.up && !native_dialog().open) card_on_chat(f, k, iid, 1.0f, g_auLB.vis > g_auIB.vis ? g_auLB.vis : g_auIB.vis);   // (no chat box : no card ; a confirm up : none)
+}
 // ======== the DELIVERY BOX (Game UI -> NU_NPC) : receive (post1 + post2) / send (delivery + stringdl) ========
 // The 8 slots in the client's grid (4 x 2, entries 1..8) and colours (receive : shown in states 6, 7, 0xA..0xE, usable in 7,
 // 0xB, 0xD ; send : white 1, 5, 9, 0x10, grey 2, 3, 4, 8, 0xE, 0xF), the gil line (receive 9, send 11), Send / Cancel (send 9 /

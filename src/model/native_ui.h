@@ -604,6 +604,32 @@ struct NativeJobSel {
 const NativeJobSel& native_jobsel();
 bool native_jobsel_hover(int entry);
 bool native_jobsel_pick(int entry);
+// The AUCTION HOUSE (NU_NPC ; live 2026-11-21, docs/game-data/native-windows.md s.18). `auc1` (1 Bid, 2 Sell, 3 Sales
+// status) stays up the whole visit ; its menus open over each other at the client's top right : `auc2` (9 categories),
+// a category's (`aucweapo`, `aucarmor`, `aucmater`... ; `aucfood` -> `aucmeals`), `auc3` (1 Price history, 2 Bid, 3 Sort),
+// a sort (`armsort`...) -- IMAGE labels : each entry's help line is in the window definition (def +0x04 -> records of
+// 0x14 B, +0x08 the help text ; def +0x18 u16 the count), the UI names the entry from it. `auclist` (TEXT
+// LIST : cell type 0x15 the icon id, 0x1A the name id, 9 the stock), `auchisto` (the last 10 sales : 4 the date (unix),
+// 0x22 the seller then the buyer (text at the value), 0xA the price + 1), `moneyctr` (the price typed : +0x20 the edited
+// digit's step, +0x24 max, +0x28 value), `inventor` (Sell : your items).
+struct NativeAucHist { unsigned date; char seller[16], buyer[16]; int price; };
+struct NativeAuction {
+    bool up;                                     // auc1 is open : an auction counter's visit
+    bool menuOpen; NativeEntryMenu menu;         // the deepest auction menu open (menu.name says which)
+    char help[16][72];                           // each shown row's help line (the client's text ; its label is an image)
+    bool menuUnknown;                            // (unused : every auction menu is read through its help lines)
+    char cat[9]; int catEntry; char catHelp[72]; // the category menu (tier 2), its cursor, that entry's help : the list's title
+    bool listOpen, listFocused; int n, top, vis, cursor; NativeItemRow row[16]; short lx0, ly0;
+    bool histOpen, histFocused; int hn, htop, hvis, hcursor; NativeAucHist hist[10]; short hx0, hy0;
+    bool priceUp, priceFocused; unsigned priceVal, priceMax, priceDigit;
+    bool sell, status;                           // auc1's cursor on Sell / on Sales status
+    bool invOpen, invFocused; int invN, invTop, invVis, invCursor; NativeItemRow invRow[16]; short ix0, iy0;
+    unsigned gil; bool gilOk;
+    int uiW, uiH;
+};
+const NativeAuction& native_auction();
+bool native_auc_hover(const char* name, int entry);
+bool native_auc_pick(const char* name, int entry);
 bool native_dlv_hover(int entry);                // the box (post1 / delivery)
 bool native_dlv_pick(int entry);
 bool native_dlvsub_hover(int entry);             // post2 / stringdl

@@ -97,6 +97,17 @@ bool g_dlvUp = false;        // dlv_poll : a delivery box is ours : its item car
 bool g_mogPostUp = false;    // mog_poll : `mogpost` (Receive / Send) is up -- the box it opens comes with `money`, BORN first
 const char* const MOG_W[] = { "myroom", "mogext", "storage", "storage2", "mogcont", "itmstora", "itmsortw", "mogpost", "jobchang", "bankmenu", "rmlo1", "rmlo2", "rmlo4", "mogdoor", 0 };   // the Mog House's menus (NU_NPC)
 const char* const JOBSEL_W[] = { "jobcselu", 0 };
+// the AUCTION HOUSE : the counter is up (auc1), its menus read through their help lines
+bool g_aucUp = false, g_aucNot = false;
+// an auction menu : auc* (not its lists) ; a sort ("...sort") only while the counter is up
+static bool auc_menu_name(const char* n) {
+    if (!strncmp(n, "auc", 3)) return strcmp(n, "auclist") && strcmp(n, "auchisto");
+    const size_t l = strlen(n); return g_aucUp && l > 4 && !strcmp(n + l - 4, "sort");
+}
+static int auc_tier(const char* n) {                // auc1 < auc2 < a category < auc3 < a sort
+    if (!strcmp(n, "auc1")) return 0; if (!strcmp(n, "auc2")) return 1; if (!strcmp(n, "auc3")) return 3;
+    return strncmp(n, "auc", 3) ? 4 : 2;
+}
 // Rule 10 for the BORN-PARKED windows below : a window parked at birth counts as ours, so the rescue pass never brings it
 // back -- if its reader cannot read it, the client's must come back. Present-but-unread for 30 polls -> the flag stops the
 // rule (logged) ; `inspect` in its mannequin mode is not ours at once.
@@ -143,6 +154,10 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_ACT) && !g_inspNot && !strcmp(n, "inspect")) { dy = HIDE_DY; return; }
     if ((hide & NU_NPC) && !g_mogNot && in_list(n, MOG_W) && strcmp(n, "mogdoor")) { dy = HIDE_DY; return; }   // (the door : parked once read)
     if ((hide & NU_NPC) && !g_jsNot && in_list(n, JOBSEL_W)) { dy = HIDE_DY; return; }   // Change Jobs : the job grid
+    // the AUCTION HOUSE : its labelled menus and its two lists always ; while the counter is up, the item card, the price
+    // typed, Current Gil, the inventory (Sell) -- each drawn by AioHUD (an unlabelled menu stays the client's)
+    if ((hide & NU_NPC) && !g_aucNot && (auc_menu_name(n) || !strcmp(n, "auclist") || !strcmp(n, "auchisto")
+        || (g_aucUp && (!strcmp(n, "iteminfo") || !strcmp(n, "moneyctr") || !strcmp(n, "money") || !strcmp(n, "inventor"))))) { dy = HIDE_DY; return; }
     if ((hide & NU_NPC) && g_dlvUp && !strcmp(n, "iteminfo")) { dy = HIDE_DY; return; }
     // the delivery box's Current Gil : born parked (it draws its digits where it is born : 2026-11-21, "les gils reste affiche")
     if ((hide & NU_NPC) && (g_dlvUp || g_mogPostUp) && !strcmp(n, "money")) { dy = HIDE_DY; return; }
@@ -242,6 +257,7 @@ NativeMogMenus g_mog;                                                           
 NativeDelivery g_dlv;                                                                     // the delivery box (dlv_poll)
 NativeJobSel g_js;                                                                        // Change Jobs' grid (jobsel_poll)
 NativeRoomList g_room; bool g_roomNot = false;                                            // Remodel's styles (room_poll)
+NativeAuction g_auc;                                                                      // the auction house (auc_poll)
 const char* const POST1_W[] = { "post1", 0 }; const char* const POST2_W[] = { "post2", 0 };
 const char* const DELIV_W[] = { "delivery", 0 }; const char* const STRDL_W[] = { "stringdl", 0 };
 const char* const LOOT_W[] = { "loot", 0 };
@@ -2297,6 +2313,8 @@ void rescue_children(u32 mgr, int hide) {
                                                || (g_dlv.gilUp && !strcmp(nm, "moneyctr")) || (g_dlv.qtyUp && !strcmp(nm, "itemctrl"))))
                              || (g_shop.owner && ((g_shop.owner == 1 && !strcmp(nm, "shopmain")) || (g_shop.owner == 2 && !strcmp(nm, "guildsho")) || (g_shop.owner == 4 && !strcmp(nm, "bazaar"))
                                                   || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl"))))))
+                             || (g_auc.up && !g_aucNot && (auc_menu_name(nm) || !strcmp(nm, "auclist") || !strcmp(nm, "auchisto") || !strcmp(nm, "iteminfo")
+                                                           || !strcmp(nm, "moneyctr") || !strcmp(nm, "money") || !strcmp(nm, "inventor")))
                              || (g_cur.open && !strcmp(nm, "evitem"))
                              || (g_trade.open && (!strcmp(nm, "moneyctr") || !strcmp(nm, "itemctrl") || !strcmp(nm, "iteminfo") || !strcmp(nm, "gift") || !strcmp(nm, "money")));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
@@ -3077,6 +3095,128 @@ void room_poll(bool on, u32 mgr) {
     R.focused = focus == T.obj; R.open = true;
     g_room = R;
 }
+// ---- the AUCTION HOUSE (native-windows.md s.18) ----
+// entry k's HELP line, from the window definition (def +0x04 -> 0x14 B records, +0x08 the text ; def +0x18 u16 the count ;
+// live 2026-11-21 : aucweapo 15 + its back entry, aucmater 8 + 1)
+static void def_help(u32 obj, int k, char* out, int cap) {
+    out[0] = 0; u32 def = 0, arr = 0, lp = 0; unsigned short cnt = 0;
+    if (!safe_read(obj + OBJ_DEF, &def) || !valid_ptr(def) || !safe_read(def + 0x04, &arr) || !rd16(def + 0x18, *(short*)&cnt)) return;
+    if (!valid_ptr(arr) || k < 1 || k > cnt || cnt > 64 || !safe_read(arr + (u32)(k - 1) * 0x14 + 0x08, &lp) || !valid_ptr(lp)) return;
+    char t[128]; if (!rdblk(lp, t, sizeof(t) - 1)) { int n = 0; for (; n < cap - 1; ++n) { unsigned char b = 0; if (!rd8(lp + (u32)n, b) || !b) break; out[n] = (b >= 0x20 && b < 0x7F) ? (char)b : '?'; } out[n] = 0; return; }
+    t[127] = 0; int o = 0; for (int j = 0; t[j] && o < cap - 1; ++j) { const unsigned char b = (unsigned char)t[j]; out[o++] = (b >= 0x20 && b < 0x7F) ? (char)b : '?'; }
+    out[o] = 0;
+}
+static void auc_text(u32 at, char* out, int cap) {        // a cell's text : printable ASCII, up to cap - 1
+    out[0] = 0; char t[24]; if (!valid_ptr(at) || !rdblk(at, t, sizeof(t))) return;
+    int o = 0; for (int j = 0; j < (int)sizeof(t) && t[j] && o < cap - 1; ++j) if ((unsigned char)t[j] >= 0x20 && (unsigned char)t[j] < 0x7F) out[o++] = t[j];
+    out[o] = 0;
+}
+static bool auc_items(u32 h, int top, int vis, int cnt, NativeItemRow* out) {   // auclist's rows
+    u32 rows = 0; if (!safe_read(h + 0x38, &rows) || (cnt > 0 && !valid_ptr(rows))) return false;
+    for (int i = 0; i < vis && top + i < cnt; ++i) {
+        unsigned char r[0x54]; if (!rdblk(rows + (u32)(top + i) * 0x54, r, sizeof(r))) return false;
+        NativeItemRow& w = out[i]; memset(&w, 0, sizeof(w)); w.itemCol = 0x80808080u;
+        for (int c = 0; c < 8; ++c) {
+            u32 v = 0; memcpy(&v, r + 0x28 + 4 * c, 4);
+            if (r[c] == 0x15 || r[c] == 0x1A) { if (!w.itemId) { short id = 0; if (valid_ptr(v)) { if (!rd16(v, id)) id = 0; } else id = (short)(v & 0xFFFF); w.itemId = (unsigned short)id; } }
+            else if (r[c] == 9) w.itemCount = (int)(v > 9999 ? 9999 : v);
+        }
+        if (!w.itemId) return false;                                   // a row without its item : not the layout measured
+    }
+    return true;
+}
+void auc_poll(bool on, u32 mgr) {
+    NativeAuction A; memset(&A, 0, sizeof(A)); A.cursor = A.hcursor = A.invCursor = -1;
+    if (!on || !mgr || !win_named(mgr, "auc1")) { g_auc = A; g_aucUp = false; g_aucNot = false; return; }
+    g_aucUp = true; A.up = true;
+    u32 focus = 0; { const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus); }
+    u32 wh = 0; if (safe_read(mgr + 0x80, &wh)) { A.uiW = (short)(wh & 0xFFFF); A.uiH = (short)(wh >> 16); }
+    if (A.uiW < 320 || A.uiH < 240 || A.uiW > 8000 || A.uiH > 8000) { g_auc = A; g_auc.up = false; return; }
+    // the menus open : the deepest (by tier ; the later listed on a tie), and the category one
+    char deep[9] = ""; int dt = -1; u32 deepObj = 0;
+    {   u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
+        for (int g = 0; valid_ptr(node) && g < 400; ++g) {
+            u32 next = 0, o = 0, def = 0; unsigned char dead = 0, cl = 0; char nm[9];
+            safe_read(node + NODE_NEXT, &next); safe_read(node + NODE_VAL, &o); rd8(node + 0x14, dead);
+            if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && rd8(o + OBJ_CLOSING, cl) && !cl && auc_menu_name(nm)) {
+                const int t = auc_tier(nm);
+                if (t >= dt) { dt = t; memcpy(deep, nm, 9); deepObj = o; }
+                if (t == 2) { short c = 0; if (rd16(o + 0x4C, c)) { memcpy(A.cat, nm, 9); A.catEntry = c; def_help(o, c, A.catHelp, sizeof(A.catHelp)); } }
+                if (!strcmp(nm, "auc1")) { short c = 0; if (rd16(o + 0x4C, c)) { A.sell = c == 2; A.status = c == 3; } }
+            }
+            node = next;
+        }
+    }
+    bool menuBad = false;
+    if (deep[0]) {
+        const char* one[2] = { deep, 0 }; u32 mo = 0;
+        if (entry_read(one, A.menu, &mo) == 1 && mo) {
+            A.menuOpen = true; while (A.menu.ry0 >= A.uiH) { A.menu.ry0 = (short)(A.menu.ry0 - HIDE_DY); A.menu.ry1 = (short)(A.menu.ry1 - HIDE_DY); }
+            for (int i = 0; i < A.menu.n && i < 16; ++i) def_help(mo, A.menu.entry[i], A.help[i], sizeof(A.help[i]));
+            static char saidN[24][9]; static int nSaid = 0;               // each menu's help lines, logged once (the labels' source)
+            bool seen = false; for (int j = 0; j < nSaid; ++j) if (!strcmp(saidN[j], deep)) seen = true;
+            if (!seen && nSaid < 24) { memcpy(saidN[nSaid++], deep, 9);
+                char b2[900]; int bo = 0; b2[0] = 0;
+                for (int i = 0; i < A.menu.n && i < 16 && bo < 860; ++i) bo += _snprintf(b2 + bo, sizeof(b2) - bo, " %d='%s'", A.menu.entry[i], A.help[i]);
+                windower::debug::log("NATIVEUI auction : menu '%s' (%d entries) :%s", deep, A.menu.n, b2); }
+        } else menuBad = true;
+    }
+    // the item list
+    TextList T; bool listBad = false;
+    if (tl_find(mgr, "auclist", T)) {
+        A.n = T.count; A.top = T.top; A.vis = T.vis > 16 ? 16 : T.vis; A.cursor = T.cursor; A.lx0 = T.rx0; A.ly0 = T.ry0;
+        if (auc_items(T.h, A.top, A.vis, A.n, A.row)) { A.listOpen = true; A.listFocused = focus == T.obj; } else listBad = true;
+    }
+    // the price history
+    bool histBad = false;
+    if (tl_find(mgr, "auchisto", T)) {
+        A.hn = T.count > 10 ? 10 : T.count; A.htop = T.top; A.hvis = T.vis > 10 ? 10 : T.vis; A.hcursor = T.cursor; A.hx0 = T.rx0; A.hy0 = T.ry0;
+        u32 rows = 0; bool ok = safe_read(T.h + 0x38, &rows) && (A.hn == 0 || valid_ptr(rows));
+        for (int i = 0; ok && i < A.hn; ++i) {
+            unsigned char r[0x54]; if (!rdblk(rows + (u32)i * 0x54, r, sizeof(r))) { ok = false; break; }
+            NativeAucHist& w = A.hist[i]; memset(&w, 0, sizeof(w)); w.price = -1; int texts = 0;
+            for (int c = 0; c < 8; ++c) {
+                u32 v = 0; memcpy(&v, r + 0x28 + 4 * c, 4);
+                if (r[c] == 4) w.date = v;
+                else if (r[c] == 0x22) { auc_text(v, texts == 0 ? w.seller : w.buyer, 16); ++texts; }
+                else if (r[c] == 0xA || r[c] == 0xB) w.price = v ? (int)(v - 1) : -1;
+            }
+            // (an item never sold : 10 blank rows -- live 2026-11-21 ; shown empty, not a failure)
+        }
+        if (ok) { A.histOpen = true; A.histFocused = focus == T.obj; } else histBad = true;
+    }
+    // the price typed (Bid, Sell)
+    if (const u32 m = win_named(mgr, "moneyctr")) { u32 h = 0;
+        if (safe_read(m + OBJ_HANDLER, &h) && valid_ptr(h) && safe_read(h + 0x20, &A.priceDigit) && safe_read(h + 0x24, &A.priceMax) && safe_read(h + 0x28, &A.priceVal) && A.priceVal <= A.priceMax) { A.priceUp = true; A.priceFocused = focus == m; } }
+    // Sell : your inventory
+    bool invBad = false;
+    if (tl_find(mgr, "inventor", T)) {
+        u32 rows = 0; A.invN = T.count; A.invTop = T.top; A.invVis = T.vis > 16 ? 16 : T.vis; A.invCursor = T.cursor; A.ix0 = T.rx0; A.iy0 = T.ry0;
+        bool ok = safe_read(T.h + 0x38, &rows) && (T.count == 0 || valid_ptr(rows));
+        for (int i = 0; ok && i < A.invVis && A.invTop + i < A.invN; ++i) {
+            unsigned char r[0x54]; if (!rdblk(rows + (u32)(A.invTop + i) * 0x54, r, sizeof(r))) { ok = false; break; }
+            u32 id = 0, cnt = 0, col = 0; memcpy(&id, r + 0x2C, 4); memcpy(&cnt, r + 0x30, 4); memcpy(&col, r + 0x0C, 4);
+            NativeItemRow& w = A.invRow[i]; memset(&w, 0, sizeof(w));
+            w.itemId = (unsigned short)(id & 0xFFFF); w.itemCount = (int)(cnt > 9999 ? 9999 : cnt); w.itemCol = col;
+        }
+        if (ok) { A.invOpen = true; A.invFocused = focus == T.obj; } else invBad = true;
+    }
+    { unsigned g = 0; A.gilOk = read_player_gil(g); A.gil = g; }
+    // rule 10 : a window born parked that cannot be read gives the client's back (30 frames), logged
+    { static int bad = 0; born_guard(true, !(menuBad || listBad || histBad || invBad), bad, g_aucNot, "auction house"); }
+    static int said = 0; static unsigned was = 0xFFFFFFFF;
+    const unsigned st = (unsigned)A.menuOpen | (unsigned)A.menuUnknown << 1 | (unsigned)A.listOpen << 2 | (unsigned)A.histOpen << 3 | (unsigned)A.priceUp << 4 | (unsigned)A.invOpen << 5
+                      | (unsigned)menuBad << 6 | (unsigned)listBad << 7 | (unsigned)histBad << 8 | (unsigned)invBad << 9 | (unsigned)g_aucNot << 10;
+    if (st != was && said < 40) { ++said; was = st;
+        windower::debug::log("NATIVEUI auction : menu %s%s, list %s (%d rows, item %u x%d), history %s (%d : '%s' -> '%s' %d G, date %u), price %s (%u / %u), inventory %s%s",
+            A.menuOpen ? A.menu.name : A.menuUnknown ? deep : "-", menuBad ? " UNREADABLE" : A.menuUnknown ? " (no labels : the client's)" : "",
+            A.listOpen ? "read" : listBad ? "UNREADABLE" : "-", A.n, A.row[0].itemId, A.row[0].itemCount,
+            A.histOpen ? "read" : histBad ? "UNREADABLE" : "-", A.hn, A.hist[0].seller, A.hist[0].buyer, A.hist[0].price, A.hist[0].date,
+            A.priceUp ? "up" : "-", A.priceVal, A.priceMax, A.invOpen ? "read" : invBad ? "UNREADABLE" : "-", g_aucNot ? " -- GIVEN BACK to the client" : " -- AioHUD draws it"); }
+    if (g_aucNot) { A.menuOpen = A.listOpen = A.histOpen = A.priceUp = A.invOpen = false; }
+    g_auc = A;
+}
+
 void dlv_poll(bool on, u32 mgr) {
     NativeDelivery D; memset(&D, 0, sizeof(D));
     if (!on || !mgr) { g_dlv = D; g_dlvUp = false; return; }
@@ -3690,6 +3830,9 @@ const NativeMogMenus& native_mog_menus() { return g_mog; }
 const NativeDelivery& native_delivery() { return g_dlv; }
 const NativeJobSel& native_jobsel() { return g_js; }
 const NativeRoomList& native_roomlist() { return g_room; }
+const NativeAuction& native_auction() { return g_auc; }
+bool native_auc_hover(const char* name, int entry) { if (!name || !g_auc.up || !auc_menu_name(name)) return false; const char* one[2] = { name, 0 }; return entry_hover(one, entry); }
+bool native_auc_pick(const char* name, int entry) { if (!name || !g_auc.up || !auc_menu_name(name)) return false; const char* one[2] = { name, 0 }; return entry_pick(one, entry); }
 bool native_jobsel_hover(int entry) { return g_js.open && entry_hover(JOBSEL_W, entry); }
 bool native_jobsel_pick(int entry) { return g_js.open && entry_pick(JOBSEL_W, entry); }
 bool native_dlv_hover(int entry) { return g_dlv.box && entry_hover(g_dlv.box == 1 ? POST1_W : DELIV_W, entry); }
@@ -4219,6 +4362,15 @@ void native_ui_tick(bool inWorld) {
     dlv_poll(wanted && (c.nuHide & NU_NPC), manager());        // the delivery box : AioHUD's own (not while the name is typed)
     jobsel_poll(wanted && (c.nuHide & NU_NPC), manager());     // Change Jobs : the job grid
     room_poll(wanted && (c.nuHide & NU_NPC), manager());       // Remodel : the styles
+    auc_poll(wanted && (c.nuHide & NU_NPC), manager());        // the auction house : its menus, lists, the price
+    if (wanted && (c.nuHide & NU_NPC) && g_auc.up && !g_aucNot) {
+        static int a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0;
+        if (g_auc.menuOpen) park_named(manager(), g_auc.menu.name, a1, "Auction -> a menu");
+        if (g_auc.listOpen) park_named(manager(), "auclist", a2, "Auction -> the list");
+        if (g_auc.histOpen) park_named(manager(), "auchisto", a3, "Auction -> the price history");
+        if (g_auc.priceUp) { park_named(manager(), "moneyctr", a4, "Auction -> the price"); park_named(manager(), "money", a5, "Auction -> Current Gil"); }
+        if (g_auc.invOpen) park_named(manager(), "inventor", a6, "Auction -> your items");
+    }
     if (wanted && (c.nuHide & NU_NPC) && g_room.open) { static int rmLog = 0; park_named(manager(), "roomlist", rmLog, "Remodel -> the styles"); }
     if (wanted && (c.nuHide & NU_NPC) && g_js.open) { static int jsLog = 0; park_named(manager(), "jobcselu", jsLog, "Change Jobs -> the jobs"); }
     if (wanted && (c.nuHide & NU_NPC) && g_dlv.box) {

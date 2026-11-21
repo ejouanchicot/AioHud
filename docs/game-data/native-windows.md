@@ -772,3 +772,21 @@ Static detail : `docs/notes/storage-delivery-re-2026-11-20.md`. Confirmed live :
   count, **+0x18 the page** (0 the 4 choices, 1 the zones), +0x19 Mog Garden allowed, +0x1A floors allowed, **+0x1C -> the
   u16 zone ids, 0-ended** (one of the client's 9 lists ; San d'Oria = 230 231 232 280). Names = Windower's zone names + ".".
   Not born parked (parked once a page is read) ; an implausible list stays the client's.
+
+## 18. The auction house (`auc1` ... `auchisto`) -- live 2026-11-21
+
+- `auc1` (1 Bid, 2 Sell, 3 Sales Status) stays open the whole visit. Its menus open over each other at the client's
+  top right : `auc2` (the 9 categories), a category's (`aucweapo` 15, `aucarmor` 11, `aucmagic` 7, `aucmater` 8,
+  `aucfood` 3 -> `aucmeals` 7, `aucammo` 4, `aucitem` 8...), `auc3` (an item : 1 Price History, 2 Bid, 3 Sort),
+  `auc4` (one of your sales : 1 Price History, 2 Remove), a sort (`armsort` 6...). AioHUD draws the deepest one open.
+- Their labels are IMAGES (sprites of `menu windowps`, one per entry : auc1 515..517, auc2 518..526, aucarmor 534..).
+  No text names them -- but each entry's HELP line is in the window definition : def +0x04 -> records of 0x14 B, +0x08
+  the help text (def +0x18 u16 the count, the last record the back entry). The UI names the entry from it (a phrase
+  table, EN = the client's names, FR ; else the help shortened). Drawing the client's sprite itself is open work.
+- `auclist` (TEXT LIST, rows +0x38 of 0x54 B) : cell type 0x15 the icon (item id), 0x1A the name (item id), 9 the
+  stock. `auchisto` (the last 10 sales) : type 4 the date (unix), 0x22 the seller then the buyer (text at the value),
+  0xA the price + 1 ; an item never sold : 10 blank rows (not a failure).
+- The price typed : `moneyctr` (+0x20 the edited digit's step, +0x24 max, +0x28 value), with `money`. Sell : `inventor`
+  (+0x2C id, +0x30 count, +0x0C colour per row). A remove / a bid : the `comyn` confirm (the dialogs).
+- Born parked under NU_NPC : every auction menu, both lists ; while `auc1` is up, `iteminfo`, `moneyctr`, `money`,
+  `inventor`. Rule 10 : unreadable 30 frames -> `g_aucNot`, the client's windows come back (logged), until `auc1` closes.
