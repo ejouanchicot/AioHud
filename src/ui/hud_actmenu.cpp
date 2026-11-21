@@ -3784,7 +3784,9 @@ u32 item_row_rgb(unsigned col, bool cur) {
 // one Items list box : rows (the client's cells), its title and counter, the cursor, the mouse (hover / click through
 // the client's text list `win`), a hit rect. Returns the cursor row's item (0 none).
 struct ItemsBox { const NativeItemRow* row; int n, top, vis, cursor, tempRows; bool focused, live; const char* title; const char* counter; bool full;
-                  bool prices; };   // prices : a shop's price column (the rows' hasPrice) in place of the counts
+                  bool prices;            // a shop's price column (the rows' hasPrice ; price -2 : none on that row)
+                  const int* tax;         // a bazaar's tax per row (-1 none), drawn in gold before the price
+                  const char* noItem; };  // the label of a row with no item (a guild's "Select from your inventory.")
 // a price, grouped by thousands ("12,345")
 void price_text(char* out, int v) {
     char t[16]; sprintf(t, "%d", v < 0 ? 0 : v);
@@ -3795,7 +3797,10 @@ void price_text(char* out, int v) {
 float items_box_width(const Frame& f, const Metrics& k, const ItemsBox& L) {   // one width whatever the rows : the widest name's
     Font* fo = f.font; const float S = k.S, tz = k.tz, pad = snap(8.0f * S) + k.bi, iz = snap(snap(k.capH * 1.25f) - 4.0f * S);
     const float wName = fo->measure(ITEM_NAME_REF, tz);
-    const float wRight = L.prices ? fo->measure("99,999,999", tz) + snap(k.capH) + 4.0f * S : fo->measure("999", tz);
+    float wRight = L.prices ? fo->measure("99,999,999", tz) + snap(k.capH) + 4.0f * S : fo->measure("999", tz);
+    if (L.prices) for (int i = 0; i < L.vis && L.top + i < L.n; ++i) {   // a count beside the price, a tax before it
+        if (L.row[i].itemCount > 1) { wRight += fo->measure("x999", tz * 0.85f) + 10.0f * S; break; } }
+    if (L.prices && L.tax) for (int i = 0; i < L.vis && L.top + i < L.n; ++i) if (L.tax[i] >= 0) { wRight += fo->measure("+99,999", tz * 0.85f) + 6.0f * S; break; }
     return snap(pad + 8.0f * S + iz + 8.0f * S + wName + 16.0f * S + wRight + 8.0f * S + pad);
 }
 unsigned items_box_draw(const Frame& f, const Metrics& k, Block& B, const ItemsBox& L, const char* win, float lx, float ly, float lw, float lh, float A, float dt, float* hit) {
@@ -3863,15 +3868,25 @@ unsigned items_box_draw(const Frame& f, const Metrics& k, Block& B, const ItemsB
     for (int i = 0; i < nRows; ++i) {
         const NativeItemRow& r = L.row[i];
         const float cy = snap(ry + (float)i * rowH + rowH * 0.5f);
-        const char* nm = r.itemId ? item_display_name(r.itemId) : 0;
-        { char cut[64]; fo->draw_lc(dev, snap(Lx + 8.0f * S + iz + 8.0f * S), cy, fit_text(fo, nm ? nm : "?", tz, fo->measure(ITEM_NAME_REF, tz), cut, sizeof(cut)), tz, with_alpha(item_row_rgb(r.itemCol, i == cr && L.focused), A), sh, k.ow); }
-        if (!r.tempRow && r.itemCount > 1) { char n[8]; sprintf(n, "%d", r.itemCount); fo->draw_lc(dev, snap(Lx + Wx - 8.0f * S - fo->measure(n, tz)), cy, n, tz, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
-        if (L.prices && r.hasPrice) {                                 // the price, the gil coin after it ; "?" not asked yet (Sell)
-            char p[24]; if (r.price >= 0) price_text(p, r.price); else strcpy(p, "?");
-            const float cz = snap(k.capH * 0.95f), px = snap(Lx + Wx - 8.0f * S - cz - 4.0f * S - fo->measure(p, tz));
-            const bool off = r.itemCol == 0x80404040u;               // refused (too dear, a requirement, cannot be sold)
-            fo->draw_lc(dev, px, cy, p, tz, with_alpha(r.price < 0 ? 0xFF6E7C8Eu : off ? 0xFF8A8F99u : 0xFFFFDA8Au, A), sh, k.ow);
-            g_coinQ[g_coinN < 16 ? g_coinN++ : 15] = { snap(Lx + Wx - 8.0f * S - cz * 0.5f), cy, cz, A * (off || r.price < 0 ? 0.5f : 1.0f) };
+        const char* nm = r.itemId ? item_display_name(r.itemId) : (L.noItem ? L.noItem : 0);
+        { char cut[64]; fo->draw_lc(dev, snap(Lx + 8.0f * S + (r.itemId ? iz + 8.0f * S : 0.0f)), cy, fit_text(fo, nm ? nm : "?", tz, fo->measure(ITEM_NAME_REF, tz), cut, sizeof(cut)), tz, with_alpha(item_row_rgb(r.itemCol, i == cr && L.focused), A), sh, k.ow); }
+        if (!L.prices && !r.tempRow && r.itemCount > 1) { char n[8]; sprintf(n, "%d", r.itemCount); fo->draw_lc(dev, snap(Lx + Wx - 8.0f * S - fo->measure(n, tz)), cy, n, tz, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
+        if (L.prices) {                                               // the price, the gil coin after it ; "?" not asked yet (Sell)
+            const float cz = snap(k.capH * 0.95f), colR = snap(Lx + Wx - 8.0f * S - cz - 4.0f * S);
+            float x = colR - fo->measure("99,999,999", tz);            // left of the price column : the tax, then the count
+            if (r.hasPrice && r.price != -2) {
+                char p[24]; if (r.price >= 0) price_text(p, r.price); else strcpy(p, "?");
+                const bool off = r.itemCol == 0x80404040u;           // refused (too dear, a requirement, cannot be sold)
+                fo->draw_lc(dev, snap(colR - fo->measure(p, tz)), cy, p, tz, with_alpha(r.price < 0 ? 0xFF6E7C8Eu : off ? 0xFF8A8F99u : 0xFFFFDA8Au, A), sh, k.ow);
+                g_coinQ[g_coinN < 16 ? g_coinN++ : 15] = { snap(Lx + Wx - 8.0f * S - cz * 0.5f), cy, cz, A * (off || r.price < 0 ? 0.5f : 1.0f) };
+                if (L.tax && L.tax[i] >= 0) {                         // the bazaar's tax, as the client : gold, before the price
+                    char t[24], q[20]; price_text(q, L.tax[i]); sprintf(t, "+%s", q);
+                    x = snap(colR - fo->measure(p, tz) - 6.0f * S - fo->measure(t, tz * 0.85f));
+                    fo->draw_lc(dev, x, cy, t, tz * 0.85f, with_alpha(0xFFC8B060u, A), sh, k.ow);
+                    x -= 4.0f * S;
+                }
+            }
+            if (r.itemCount > 1) { char n[8]; sprintf(n, "x%d", r.itemCount); fo->draw_lc(dev, snap(x - 10.0f * S - fo->measure(n, tz * 0.85f)), cy, n, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
         }
     }
     if (g_coinN) { for (int i = 0; i < g_coinN; ++i) gil_coin(dev, g_coinQ[i].x, g_coinQ[i].y, g_coinQ[i].z, g_coinQ[i].a); g_coinN = 0; fo->begin(dev); }
@@ -4593,7 +4608,7 @@ void shop_draw(const Frame& f) {
     float dt = g_shMs ? (float)(now - g_shMs) / 1000.0f : 0.0f; g_shMs = now; if (dt > 0.1f) dt = 0.1f;
     const NativeShop& S0 = native_shop();
     static NativeShop last;
-    if (S0.mainOpen) { const bool keepList = !S0.open && last.open; const NativeShop prev = last; last = S0; if (keepList) { memcpy(last.row, prev.row, sizeof(last.row)); last.n = prev.n; last.top = prev.top; last.vis = prev.vis; last.cursor = prev.cursor; last.rx0 = prev.rx0; last.ry0 = prev.ry0; last.sell = prev.sell; } }
+    if (S0.owner) { const bool keepList = !S0.open && last.open; const NativeShop prev = last; last = S0; if (keepList) { memcpy(last.row, prev.row, sizeof(last.row)); last.n = prev.n; last.top = prev.top; last.vis = prev.vis; last.cursor = prev.cursor; last.rx0 = prev.rx0; last.ry0 = prev.ry0; last.sell = prev.sell; } }
     if (last.uiW <= 0) return;
     const Metrics k = metrics(f);
     const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), gap = snap(6.0f * S);
@@ -4601,8 +4616,9 @@ void shop_draw(const Frame& f) {
     // ---- Buy / Sell ----
     if (block_ease(g_shMB, S0.mainOpen, now, dt)) {
         RowSpec rows[2] = {};
-        rows[0].label = tr("Buy", "Acheter"); rows[0].icon = IC_NONE;
-        rows[1].label = tr("Sell", "Vendre"); rows[1].icon = IC_NONE;
+        const bool own = last.owner == 4;                              // your bazaar : 1 Set prices, 2 Comment
+        rows[0].label = own ? tr("Set prices", "Fixer les prix") : tr("Buy", "Acheter"); rows[0].icon = IC_NONE;
+        rows[1].label = own ? tr("Comment", "Commentaire") : tr("Sell", "Vendre"); rows[1].icon = IC_NONE;
         const int cur = last.mainCursor == 1 || last.mainCursor == 2 ? last.mainCursor : 0;
         float bw, bh; block_size(f, k, rows, 2, bw, bh);
         float bx = snap((float)last.mx0 * sx), by = snap((float)last.my0 * sy);
@@ -4626,12 +4642,16 @@ void shop_draw(const Frame& f) {
         }
     }
     // ---- the list ----
-    if (!block_ease(g_shLB, S0.mainOpen && S0.open, now, dt) || last.vis <= 0) { g_shQB.vis = 0.0f; g_shQB.wasOpen = false; return; }
+    if (!block_ease(g_shLB, S0.owner && S0.open, now, dt) || last.vis <= 0) { g_shQB.vis = 0.0f; g_shQB.wasOpen = false; return; }
     const float tO = ease_out(((float)(now - g_shLB.openMs) / 1000.0f) / 0.08f);
     const float A = g_shLB.vis * tO; if (A <= 0.0f) return;
     const float rowH = snap(k.capH * 1.25f);
     char gil[24] = ""; if (last.gilOk) { price_text(gil, (int)(last.gil > 999999999u ? 999999999u : last.gil)); strcat(gil, " G"); }
-    ItemsBox IL = { last.row, last.n, last.top, last.vis, last.cursor, 0, last.focused, S0.open, last.sell ? tr("Sell", "Vendre") : tr("Buy", "Acheter"), gil, false, true };
+    const char* title = last.owner == 2 ? (last.sell ? tr("Guild : sell", "Guilde : vendre") : tr("Guild : buy", "Guilde : acheter"))
+                      : last.owner == 3 ? tr("Bazaar", "Bazar") : last.owner == 4 ? tr("Your bazaar", "Ton bazar")
+                      : last.sell ? tr("Sell", "Vendre") : tr("Buy", "Acheter");
+    ItemsBox IL = { last.row, last.n, last.top, last.vis, last.cursor, 0, last.focused, S0.open, title, gil, false, true,
+                    last.anyTax ? last.tax : 0, tr("Select from your inventory.", "Choisir dans ton inventaire.") };
     const float lw = keep_width(g_shLB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.vis * rowH + pad);
     float lx = snap((float)last.rx0 * sx), ly = snap((float)last.ry0 * sy);
     if (lx + lw > f.screenW - 4.0f) lx = snap(f.screenW - 4.0f - lw); if (lx < 4.0f) lx = 4.0f;
@@ -4649,8 +4669,9 @@ void shop_draw(const Frame& f) {
     if (block_ease(g_shQB, S0.open && S0.qtyOk, now, dt)) {
         const float tq = ease_out(((float)(now - g_shQB.openMs) / 1000.0f) / 0.07f), QA = g_shQB.vis * tq * A;
         const float qh = qty_box(f, k, cur ? cur->itemId : 0, last.qtyVal, last.qtyMax, lx, snap(under + (1.0f - tq) * 3.0f * S), lw, QA);
-        if (cur && cur->price >= 0 && last.qtyVal > 0) {
-            char t[40], p[24]; price_text(p, (int)((long long)cur->price * last.qtyVal > 999999999LL ? 999999999LL : (long long)cur->price * last.qtyVal));
+        const int unit = cur && cur->price >= 0 ? cur->price + (last.anyTax && cr >= 0 && last.tax[cr] > 0 ? last.tax[cr] : 0) : -1;   // a bazaar : the tax too
+        if (cur && unit >= 0 && last.qtyVal > 0) {
+            char t[40], p[24]; price_text(p, (int)((long long)unit * last.qtyVal > 999999999LL ? 999999999LL : (long long)unit * last.qtyVal));
             sprintf(t, "%s %s G", last.sell ? tr("You get", "Tu re\xC3\xA7ois") : tr("Total", "Total"), p);
             Font* fo = f.font; fo->begin(f.dev);
             fo->draw_lc(f.dev, snap(lx + lw - pad - fo->measure(t, k.tz)), snap(under + qh + 9.0f * S), t, k.tz, with_alpha(0xFFFFDA8Au, QA), with_alpha(0xC8000000u, QA), k.ow);
@@ -4662,6 +4683,120 @@ void shop_draw(const Frame& f) {
         const float cw = lw > snap(300.0f * S) ? lw : snap(300.0f * S), ctop = snap(under + 14.0f * S);
         card_use(0); card_load(f.dev, iid);
         if (card_ready(iid)) card_draw(f, k, lx, cw, ctop, ctop, tO, A, false);
+    }
+}
+// ======== CHECK (`inspect`, Game UI -> NU_ACT) : the target's equipment as our Equipment grid ========
+// The name and the job line in the header, the 16 slots (the client's entry order), the linkshell, View wares (entry 17 :
+// the target's bazaar, grey without one), the target's comment under it ; the item card above the chat. Hidden while the
+// bazaar's list is up (the client opens it OVER the check, at the same place).
+namespace { Block g_inB; unsigned g_inMs = 0; }
+void inspect_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_ACT) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_inB.vis = 0.0f; g_inB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_inMs ? (float)(now - g_inMs) / 1000.0f : 0.0f; g_inMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeInspect& I0 = native_inspect();
+    static NativeInspect last;
+    if (I0.open) last = I0;
+    const bool bazaarUp = native_shop().owner == 3 && native_shop().open;
+    if (!block_ease(g_inB, I0.open && !bazaarUp, now, dt) || last.uiW <= 0) return;
+    const Metrics k = metrics(f);
+    const float S = k.S, pad = snap(8.0f * S) + k.bi, tz = k.tz, headH = snap(18.0f * S);
+    Font* fo = f.font; const u32 dev = f.dev;
+    const float tO = ease_out(((float)(now - g_inB.openMs) / 1000.0f) / 0.08f);
+    const float A = g_inB.vis * tO; if (A <= 0.0f) return;
+    const u32 sh = with_alpha(0xC8000000u, A);
+    static const int SLOT_AT[16] = { 0, 1, 2, 3, 4, 9, 11, 12, 5, 6, 13, 14, 15, 10, 7, 8 };      // Equipment's grid
+    static const int ENTRY_OF[16] = { 1, 5, 9, 13, 2, 3, 7, 12, 16, 6, 8, 10, 14, 11, 15, 4 };
+    static const char* SLOT_EN[16] = { "Main", "Sub", "Range", "Ammo", "Head", "Body", "Hands", "Legs", "Feet", "Neck", "Waist", "L.Ear", "R.Ear", "L.Ring", "R.Ring", "Back" };
+    const float cell = snap(k.capH * 2.1f), cg = snap(4.0f * S), gridW = 4.0f * cell + 3.0f * cg;
+    const float lineH = snap(k.capH * 1.2f), btnH = snap(k.capH * 1.5f);
+    int cmN = 0; char cm[3][CHAT_TEXT];
+    if (last.cmOpen) for (int i = 0; i < 3; ++i) if (last.cmText[i][0]) {
+        char out[1][CHAT_TEXT]; unsigned short cc[1][CHAT_TEXT]; int lens[1] = { 0 };
+        if (chat_decode(last.cmText[i], out, cc, lens, 1) >= 1) { out[0][lens[0] < CHAT_TEXT ? lens[0] : CHAT_TEXT - 1] = 0; strcpy(cm[cmN++], out[0]); }
+    }
+    float bw = snap(pad + gridW + pad);
+    for (int i = 0; i < cmN; ++i) { const float w = snap(pad + fo->measure(cm[i], tz * 0.9f) + pad); if (w > bw) bw = w; }
+    { const float w = snap(pad + fo->measure(last.jobs, tz * 0.85f) + pad); if (w > bw) bw = w; }
+    const float gridX = 0.0f;                                     // the grid, centred in the box
+    const float bh = snap(pad + headH + lineH + 6.0f * S + gridW + 8.0f * S + (last.ls[0] ? lineH : 0.0f) + btnH + (cmN ? 8.0f * S + (float)cmN * lineH : 0.0f) + pad);
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    g_frameJoin = jm;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    const float L = bx + pad, W = bw - 2.0f * pad, hy = snap(by + pad + headH * 0.5f), jy = snap(by + pad + headH + lineH * 0.5f);
+    const float gx = snap(L + (W - gridW) * 0.5f + gridX), gy = snap(by + pad + headH + lineH + 6.0f * S);
+    rrect(dev, L, snap(by + pad + headH + lineH + 2.0f * S), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    int curCell = -1;
+    for (int c = 0; c < 16; ++c) if (ENTRY_OF[SLOT_AT[c]] == last.cursor) curCell = c;
+    const MouseState* ms = f.mouse; int ment = 0;
+    for (int c = 0; c < 16; ++c) {
+        const float cx = snap(gx + (float)(c % 4) * (cell + cg)), cy = snap(gy + (float)(c / 4) * (cell + cg));
+        rrect(dev, cx, cy, cell, cell, 5.0f * S, with_alpha(0x70101826u, A), with_alpha(0x70080C14u, A));
+        rrect_stroke(dev, cx, cy, cell, cell, 5.0f * S, with_alpha(0x30C8D6EAu, A), 1.0f);
+        if (c == curCell && last.focused) {
+            rrect_clip_begin(dev, cx, cy, cell, cell, 5.0f * S); party_selframe(dev, cx, cy, cell, cell, f.t, A, 0); rrect_clip_end(dev);
+            rrect_stroke(dev, cx, cy, cell, cell, 5.0f * S, with_alpha(0xD8FFDA8Au, A), 1.5f * S);
+        }
+        const unsigned id = last.id[SLOT_AT[c]];
+        if (id) {
+            const u32 tex = list_icon(f, 3, id); const float z = snap(cell - 8.0f * S);
+            if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(cx + 4.0f * S), snap(cy + 4.0f * S), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev); }
+        }
+        if (ms && ms->focused && ms->x >= cx && ms->x < cx + cell && ms->y >= cy && ms->y < cy + cell) ment = ENTRY_OF[SLOT_AT[c]];
+    }
+    // the linkshell, then View wares (entry 17)
+    float y = snap(gy + gridW + 8.0f * S);
+    const float lsY = snap(y + lineH * 0.5f); if (last.ls[0]) y = snap(y + lineH);
+    const float btX = L, btW = W, btY = y;
+    {   const bool on = last.cursor == 17 && last.focused;
+        rrect(dev, btX, btY, btW, btnH, btnH * 0.5f, with_alpha(on ? 0x40FFDA8Au : 0x20FFFFFFu, A), with_alpha(on ? 0x30FFDA8Au : 0x14FFFFFFu, A));
+        rrect_stroke(dev, btX, btY, btW, btnH, btnH * 0.5f, with_alpha(on ? 0xD8FFDA8Au : 0x40C8D6EAu, A), on ? 1.5f * S : 1.0f);
+        if (ms && ms->focused && ms->x >= btX && ms->x < btX + btW && ms->y >= btY && ms->y < btY + btnH) ment = 17;
+    }
+    if (curCell >= 0 && last.focused) {
+        const float cx = snap(gx + (float)(curCell % 4) * (cell + cg)), cy = snap(gy + (float)(curCell / 4) * (cell + cg));
+        const float hand = snap(k.capH * 1.25f);
+        if (g_handTex) party_cursor(dev, g_handTex, cx - hand * 0.35f + party_cursor_bob(f.t, hand), cy + cell * 0.5f, hand, 0);
+    }
+    if (I0.open) {
+        g_hit[18][0] = bx / f.screenW; g_hit[18][1] = by / f.screenH; g_hit[18][2] = bw / f.screenW; g_hit[18][3] = bh / f.screenH;
+        if (ment && ment != g_inB.hoverRow && ment != I0.cursor && I0.focused && (ment != 17 || I0.waresOk)) native_inspect_hover(ment);
+        g_inB.hoverRow = ment;
+        if (ment && ms && ms->clicked && (ment != 17 || I0.waresOk)) native_inspect_pick(ment);
+    }
+    fo->begin(dev);
+    fo->draw_lc(dev, L, hy, last.name[0] ? last.name : tr("Check", "Examiner"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    if (curCell >= 0 && last.focused) { const char* sn = SLOT_EN[SLOT_AT[curCell]]; fo->draw_lc(dev, snap(L + W - fo->measure(sn, tz * 0.85f)), hy, sn, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
+    fo->draw_lc(dev, L, jy, last.jobs, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
+    for (int c = 0; c < 16; ++c) if (!last.id[SLOT_AT[c]]) {
+        const float cx = snap(gx + (float)(c % 4) * (cell + cg)), cy = snap(gy + (float)(c / 4) * (cell + cg));
+        const char* sn = SLOT_EN[SLOT_AT[c]]; const float z = tz * 0.72f;
+        fo->draw_lc(dev, snap(cx + (cell - fo->measure(sn, z)) * 0.5f), snap(cy + cell * 0.5f), sn, z, with_alpha(0xFF56627Au, A), sh, k.ow);
+    }
+    if (last.ls[0]) {                                              // the linkshell : its item's icon in its colour, then its name
+        float tx = L;
+        if (last.lsItem) {
+            const u32 tex = list_icon(f, 3, last.lsItem); const float z = snap(lineH);
+            if (tex) { dTexQuadState(dev, tex); tquad(dev, L, snap(lsY - z * 0.5f), z, z, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(last.lsArgb, A), with_alpha(last.lsArgb, A)); dSetTex(dev, 0, 0); cs(dev); fo->begin(dev); }
+            tx = snap(L + z + 6.0f * S);
+        }
+        fo->draw_lc(dev, tx, lsY, last.ls, tz * 0.85f, with_alpha(0xFFC8D6EAu, A), sh, k.ow);
+    }
+    {   const char* t = tr("View wares", "Voir le bazar");
+        fo->draw_lc(dev, snap(btX + (btW - fo->measure(t, tz)) * 0.5f), snap(btY + btnH * 0.5f), t, tz, with_alpha(last.waresOk ? 0xFFF2F5FAu : 0xFF56627Au, A), sh, k.ow); }
+    for (int i = 0; i < cmN; ++i) fo->draw_lc(dev, L, snap(btY + btnH + 8.0f * S + ((float)i + 0.5f) * lineH), cm[i], tz * 0.9f, with_alpha(0xFFE4EAF2u, A), sh, k.ow);
+    // the item card : the slot under the cursor
+    const unsigned iid = curCell >= 0 && last.focused ? last.id[SLOT_AT[curCell]] : 0;
+    if (iid && !card_on_chat(f, k, iid, tO, A)) {
+        const float cw = bw > snap(300.0f * S) ? bw : snap(300.0f * S), ctop = snap(by + bh + 14.0f * S);
+        card_use(0); card_load(f.dev, iid);
+        if (card_ready(iid)) card_draw(f, k, bx, cw, ctop, ctop, tO, A, false);
     }
 }
 // ======== Status -> PROFILE (Game UI -> NU_MAIN), in the menus' theme, where the client puts its own ========

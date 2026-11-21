@@ -708,3 +708,23 @@ Static detail : `docs/notes/shops-re-2026-11-20.md` (local). Confirmed live 2026
 - AioHUD (NU_NPC, `shop_poll` / `shop_draw`) : `shopmain`, `shop` and `money` BORN parked (the client resizes `shop`
   once it is up ; `money` draws where it was born) -- `shop` / `money` only while `shopmain` is up, since the bazaar and
   the guild shops reuse `shop`. The client keeps every rule and packet.
+- **Guild shops** (live 2026-11-21) : `guildsho` (1 Buy, 2 Sell) owns the same `shop` list. Buy : types 15 01 0A 00, col 0
+  = the item id itself (not a pointer), price + 1. Sell : row 0 = types 00 01 00 00, record 1, no item ("Select from your
+  inventory."), then the guild's buy list. The client opens a NEW `iteminfo` at every row : born parked while a shop's
+  list is ours (else it flashes for one frame).
+- **Someone's bazaar** (live 2026-11-21) : `shop` with NO entry menu, opened over `inspect` at the same place (16,48).
+  Types 16 00 0A 00 (no name cell : the name comes from the item), price + 1, record = the seller's inventory index ;
+  0x105 records : +4 u32 price, +8 u32 count, +0xE u16 item, +0x10 u8 index.
+
+## 15. Check (`inspect`) -- static 2026-11-20, live 2026-11-21
+
+Static detail : `docs/notes/dialogs-loot-inspect-re-2026-11-20.md` s.6. Confirmed live (a player with a bazaar) :
+- `inspect` 16,48 -> 198,238 ; handler : `s8 +0x14F` = -1 a player's check (else the Mog House mannequin) ; u16 `+0x78 +
+  s*2` the item per packet slot ; `+0xD8` the name, `+0xF0` the job line ("M.Lv.39 Geomancer / Lv.53 Dark Knight"),
+  `+0x120` the linkshell name -- all three EMPTY for one frame when the client rebuilds them (keep the last).
+- Cursor window +0x4C : entries 1..16 = Equipment's grid order, **17 = View wares** (state 5 = grey : no bazaar ; it opens
+  the bazaar's `shop` list). `comment` in mode 1 = the target's comment (16,1018).
+- The LS icon : metadata M = P + 0x19D28, valid iff P + 0x19D24 & 0x80 ; M+0x1A u16 the LS item (513 / 514 / 515), M+0x18
+  u16 the colour (R, G, B nibbles), tinted v * 0xD + 0x38 per channel -- confirmed against the client's icon.
+- AioHUD (NU_ACT, `inspect_poll` / `inspect_draw`) : `inspect` born parked (a mannequin is brought back by the rescue pass),
+  `iteminfo` and `comment` born parked while it is ours ; hidden while the bazaar's list is up over it.

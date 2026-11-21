@@ -512,13 +512,16 @@ struct NativeItems {
     int  synMode;                                // Synthesis's pickers : 0 no, 1 the crystals (delegate K), 2 the materials (S, beside tskill1)
 };
 const NativeItems& native_items();
-// The NPC SHOP (docs/notes/shops-re-2026-11-20.md, live 2026-11-21) : `shopmain` (1 Buy / 2 Sell, image labels), then `shop`,
-// a TEXT LIST (rows +0x38, 0x54 B : cell c type +c, colour +0x08 + 4c, value +0x28 + 4c ; record +0x48) : col 0 the icon
-// (the item), col 1 the name (its colour : grey = refused), col 2 the price + 1 (Sell : 0 until the client asked it).
-// `itemctrl` the quantity. Ours under NU_NPC and only while `shopmain` is up -- the bazaar / guild shops reuse `shop` and stay
-// the client's. The client does every packet (0x083 buy, 0x084 / 0x085 sell).
+// The SHOPS (docs/notes/shops-re-2026-11-20.md, live 2026-11-21) : ONE list, `shop`, a TEXT LIST (rows +0x38, 0x54 B : cell c
+// type +c, colour +0x08 + 4c, value +0x28 + 4c ; record +0x48), owned by an entry menu : `shopmain` (an NPC vendor : 1 Buy,
+// 2 Sell), `guildsho` (a guild : 1 Buy, 2 Sell), `bazaar` (yours : 1 Set prices, 2 Comment), or none (someone's bazaar,
+// opened from /check). Cells by TYPE : 0x15 / 0x16 the icon (the id, or a pointer to it), 1 / 0x19 the name (its colour :
+// grey = refused), 10 / 0xB the price + 1 (0 : not asked yet), 0xC the bazaar tax + 1, 7 a count. `itemctrl` the quantity.
+// Ours under NU_NPC ; the client keeps every rule and packet.
 struct NativeShop {
-    bool mainOpen, mainFocused; int mainCursor;   // shopmain : 1 Buy, 2 Sell
+    int  owner;                                  // 0 none, 1 an NPC vendor, 2 a guild, 3 someone's bazaar, 4 your bazaar
+    bool mainOpen, mainFocused; int mainCursor;   // the owner's entry menu (1 / 2 ; owner 3 has none)
+    bool anyTax, anyCount; int tax[16];          // the bazaar's tax per row (-1 none)
     bool open, focused, sell;
     int  n, top, vis, cursor;
     NativeItemRow row[16];                       // the page (hasPrice set)
@@ -527,6 +530,23 @@ struct NativeShop {
     short mx0, my0, rx0, ry0; int uiW, uiH;
 };
 const NativeShop& native_shop();
+// CHECK (`inspect`, docs/notes/dialogs-loot-inspect-re-2026-11-20.md s.6) : a subclass of Equipment's grid -- the same 16
+// entries (+ 17 under it : View wares, the target's bazaar), handler (0x154 B) : u16 +0x78 + s*2 the item per packet slot,
+// +0xD8 the name, +0xF0 the job line ("Lv.99 Warrior / Lv.49 Ninja"), +0x120 the linkshell, s8 +0x14F = -1 a player's
+// check (else the Mog House mannequin : the client's). The target's comment = `comment` in mode 1. Ours under NU_ACT.
+struct NativeInspect {
+    bool open, focused;
+    int  cursor;                  // entry 1..16 the grid, 17 View wares
+    unsigned short id[16];        // by packet slot (0 main .. 15 back)
+    char name[28], jobs[56], ls[36];
+    unsigned short lsItem; unsigned lsArgb;   // the linkshell ITEM (513 shell, 514 sack, 515 pearl ; 0 none) and its tint
+    bool waresOk;                 // entry 17 usable (the target has a bazaar)
+    bool cmOpen; char cmText[3][44];   // the target's comment (raw, chat_decode)
+    short rx0, ry0; int uiW, uiH;
+};
+const NativeInspect& native_inspect();
+bool native_inspect_hover(int entry);
+bool native_inspect_pick(int entry);
 bool native_shopmain_hover(int entry);
 bool native_shopmain_pick(int entry);
 // The main menu's SYNTHESIS (docs/notes/synthesis-re-2026-11-19.md) : `cmbmenu` (Crystal Synthesis / History, a main-menu

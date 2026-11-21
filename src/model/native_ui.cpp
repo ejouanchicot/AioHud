@@ -87,7 +87,9 @@ bool g_jpRule = false;       // the JP mirror reads : `levmeri2` (Job Points' CP
 extern NativeRegion g_rg;    // defined below (Region Info) : its panels are born parked only under the map
 extern NativeTrade g_trade;  // defined below (the player trade) : its Current Gil is born parked
 DWORD g_tradeBornMs = 0;     // when `trade` was born : the `money` box born with it, before trade_poll sees it
-bool g_shopMainUp = false;   // shop_poll : an NPC shop's `shopmain` is up (its list and `money` are then born parked)
+bool g_shopMainUp = false;   // shop_poll : a shop's entry menu is up (shopmain, guildsho, bazaar) : its list and `money` born parked
+bool g_shopUp = false;       // shop_poll : a shop's LIST is ours : its item card and quantity born parked (a new `iteminfo` per row)
+bool g_inspUp = false;       // inspect_poll : a player's Check is ours : its item card born parked (a new `iteminfo` per slot)
 DWORD g_rgMapBornMs = 0;    // when cnqframe was born : its panels born in the same moment, before region_poll sees it open
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
 const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "iuse", "cmbmenu", "cmbhwin", "abimenu", "prty1", "prty2", "prty3", "prty7", "prty4", "prty8", "prty5us", "alarm",
@@ -117,7 +119,12 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     // the NPC SHOP : Buy / Sell, then its list and its Current Gil born parked (the client RESIZES `shop` once it is up and
     // `money` draws where it was born : shops-re s.7, the trade's lesson) -- only under an NPC shop's menu (the bazaar and
     // the guild shops reuse `shop` : the client's)
-    if ((hide & NU_NPC) && (!strcmp(n, "shopmain") || (g_shopMainUp && (!strcmp(n, "shop") || !strcmp(n, "money"))))) { dy = HIDE_DY; return; }
+    if ((hide & NU_NPC) && (!strcmp(n, "shopmain") || !strcmp(n, "guildsho") || !strcmp(n, "bazaar") || (g_shopMainUp && (!strcmp(n, "shop") || !strcmp(n, "money"))))) { dy = HIDE_DY; return; }
+    // ... and, its list up, the item card the client opens ANEW at each row (2026-11-21, a guild : "la description des
+    // articles derriere pop en flash") and the quantity : born parked, as Equipment's cards
+    if ((hide & NU_NPC) && g_shopUp && (!strcmp(n, "iteminfo") || !strcmp(n, "itemctrl"))) { dy = HIDE_DY; return; }
+    if ((hide & NU_ACT) && g_inspUp && (!strcmp(n, "iteminfo") || !strcmp(n, "comment"))) { dy = HIDE_DY; return; }   // Check : its card, the target's comment
+    if ((hide & NU_ACT) && !strcmp(n, "inspect")) { dy = HIDE_DY; return; }   // Check : born parked (a mannequin, not ours, is brought back by the rescue pass)
     if ((hide & NU_NPC)   && in_list(n, NPC_W)) { dy = HIDE_DY; return; }
     if ((hide & NU_MAIN)  && (in_list(n, MAIN_W) || in_list(n, MAIN_SUB_W) || in_list(n, MAIN_SORT_W))) { dy = HIDE_DY; return; }
     // Status -> Profile : BORN parked (its record) -- its flag, rank bar and icons are drawn where it OPENED and do not
@@ -205,7 +212,12 @@ NativeTopBar g_tb; bool g_tbFail = false;                                       
 NativeMacro g_mc; bool g_mcFail = false;                                                // the macro bar
 NativeNet g_net; bool g_nsFail = false;                                                 // the connection box (netstat)
 NativeShop g_shop;                                                                        // the NPC shop (shop_poll)
+NativeInspect g_insp;                                                                     // a player's Check (inspect_poll)
+const char* const INSPECT_W[] = { "inspect", 0 };
 const char* const SHOPMAIN_W[] = { "shopmain", 0 };
+const char* const GUILDSHO_W[] = { "guildsho", 0 };
+const char* const BAZAAR_W[] = { "bazaar", 0 };
+const char* const* const SHOP_OWNER_W[3] = { SHOPMAIN_W, GUILDSHO_W, BAZAAR_W };   // owners 1, 2, 4
 NativeTrade g_trade; bool g_trFail = false;                                             // the player trade
 NativeDialog g_dlg; bool g_dlgFail = false; u32 g_dlgObj = 0;                           // the Yes / No confirms (+ the open one's window, the driver)
 NativeProfile g_prof;
@@ -2241,7 +2253,9 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_area.open && !strcmp(nm, "arealist")) || (g_search.open && !strcmp(nm, g_search.ctx == 2 ? "levelsyn" : g_search.ctx == 4 ? "link12" : "scresult"))
                              || (g_ls.open && !strcmp(nm, "link5")) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
                              || (g_scopt.open && !strcmp(nm, "scoption"))
-                             || (g_shop.mainOpen && (!strcmp(nm, "shopmain") || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl"))))))
+                             || (g_insp.open && (!strcmp(nm, "inspect") || !strcmp(nm, "iteminfo") || !strcmp(nm, "comment")))
+                             || (g_shop.owner && ((g_shop.owner == 1 && !strcmp(nm, "shopmain")) || (g_shop.owner == 2 && !strcmp(nm, "guildsho")) || (g_shop.owner == 4 && !strcmp(nm, "bazaar"))
+                                                  || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl"))))))
                              || (g_cur.open && !strcmp(nm, "evitem"))
                              || (g_trade.open && (!strcmp(nm, "moneyctr") || !strcmp(nm, "itemctrl") || !strcmp(nm, "iteminfo") || !strcmp(nm, "gift") || !strcmp(nm, "money")));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
@@ -2742,49 +2756,123 @@ NativeBuffWin g_bw;   // (g_bwObj / g_bwH : defined with the event hook, above)
 // `shop` count +0x20 / top +0x1E / visible +0x18 = 10, rows +0x38 rebuilt every update, itemctrl +0x22 max / +0x23 value) ----
 void shop_poll(bool on, u32 mgr) {
     NativeShop S; memset(&S, 0, sizeof(S)); S.cursor = -1;
-    if (!on || !mgr) { g_shop = S; g_shopMainUp = false; return; }
+    if (!on || !mgr) { g_shop = S; g_shopMainUp = false; g_shopUp = false; return; }
+    g_shopUp = false;
     u32 focus = 0; { const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus); }
-    NativeEntryMenu m; u32 mo = 0;
-    const int er = entry_read(SHOPMAIN_W, m, &mo);
-    S.mainOpen = er == 1 && mo; g_shopMainUp = mo != 0;           // (the born-park rule : the window, even before it reads)
+    // the owner : the entry menu that is up (present = the born-park rule, even before it reads)
+    static const int OWN[3] = { 1, 2, 4 };
+    static const char* const ONAME[5] = { "none", "an NPC vendor", "a guild", "someone's bazaar", "your bazaar" };
+    NativeEntryMenu m; memset(&m, 0, sizeof(m)); u32 mo = 0; int er = -1;
+    for (int i = 0; i < 3 && !mo; ++i) { er = entry_read(SHOP_OWNER_W[i], m, &mo); if (mo) S.owner = OWN[i]; }
+    g_shopMainUp = mo != 0;
+    S.mainOpen = er == 1 && mo;
+    TextList T; const bool listUp = tl_find(mgr, "shop", T);
+    if (!mo && listUp) S.owner = 3;                                 // the list alone : someone's bazaar (opened from /check)
     static int saidM = 0; static int wasM = -1;
-    const int stM = mo ? (S.mainOpen ? 2 : 1) : 0;
-    if (stM != wasM && saidM < 12) { ++saidM; wasM = stM;
-        windower::debug::log("NATIVEUI shop : Buy / Sell menu %s", !mo ? "closed" : S.mainOpen ? "open -- AioHUD draws it" : "open but UNREADABLE (entry_read) -- nothing drawn for it"); }
-    if (!S.mainOpen) { g_shop = S; return; }
-    S.mainFocused = focus == mo; S.mainCursor = m.cursor; S.mx0 = m.rx0; S.my0 = m.ry0; S.uiW = m.uiW; S.uiH = m.uiH;
-    while (S.uiH > 0 && S.my0 >= S.uiH) S.my0 = (short)(S.my0 - HIDE_DY);
+    const int stM = S.owner * 4 + (mo ? (S.mainOpen ? 2 : 1) : 0);
+    if (stM != wasM && saidM < 20) { ++saidM; wasM = stM;
+        windower::debug::log("NATIVEUI shop : %s%s", ONAME[S.owner], !mo ? (S.owner == 3 ? " -- its list, AioHUD draws it" : " (no shop)") : S.mainOpen ? " -- its menu is up, AioHUD draws it" : " -- its menu UNREADABLE (entry_read) : nothing drawn for it"); }
+    if (!S.owner || (mo && !S.mainOpen)) { if (!S.owner) g_shop = S; else { S.owner = 0; g_shop = S; } return; }
+    if (S.mainOpen) {
+        S.mainFocused = focus == mo; S.mainCursor = m.cursor; S.mx0 = m.rx0; S.my0 = m.ry0; S.uiW = m.uiW; S.uiH = m.uiH;
+        while (S.uiH > 0 && S.my0 >= S.uiH) S.my0 = (short)(S.my0 - HIDE_DY);
+    }
     { unsigned g = 0; S.gilOk = read_player_gil(g); S.gil = g; }
-    TextList T;
-    if (tl_find(mgr, "shop", T)) {
+    if (listUp) {
         u32 rows = 0;
         if (safe_read(T.h + 0x38, &rows) && (T.count == 0 || valid_ptr(rows))) {
             S.n = T.count; S.top = T.top; S.vis = T.vis > 16 ? 16 : T.vis; S.cursor = T.cursor;
             S.rx0 = T.rx0; S.ry0 = T.ry0; S.uiW = T.uiW; S.uiH = T.uiH;
-            S.sell = m.cursor == 2;
+            S.sell = (S.owner == 1 || S.owner == 2) && m.cursor == 2;
             bool ok = true; unsigned char r0[0x54] = { 0 };
             for (int i = 0; i < S.vis && S.top + i < S.n && ok; ++i) {
                 unsigned char r[0x54]; if (!rdblk(rows + (u32)(S.top + i) * 0x54, r, sizeof(r))) { ok = false; break; }
                 if (!i) memcpy(r0, r, sizeof(r0));
-                u32 v0 = 0, v2 = 0, c1 = 0, c2 = 0; memcpy(&v0, r + 0x28, 4); memcpy(&v2, r + 0x30, 4); memcpy(&c1, r + 0x0C, 4); memcpy(&c2, r + 0x10, 4);
-                short id = 0;
-                if (valid_ptr(v0)) { if (!rd16(v0, id)) id = 0; } else id = (short)(v0 & 0xFFFF);   // the icon cell : a pointer to the id (buy), or the id
                 NativeItemRow& w = S.row[i];
-                w.itemId = (unsigned short)id; w.itemCount = 0; w.itemCol = c1; w.tempRow = false;
-                w.hasPrice = true; w.price = v2 ? (int)(v2 - 1) : -1; w.priceCol = c2;
+                w.itemId = 0; w.itemCount = 0; w.itemCol = 0x80808080u; w.tempRow = false; w.hasPrice = false; w.price = -1; w.priceCol = 0;
+                S.tax[i] = -1;
+                bool nameSeen = false;
+                for (int c = 0; c < 8; ++c) {                            // the cells by their TYPE (shops-re s.2 - s.6)
+                    const unsigned char t = r[c]; u32 v = 0, col = 0; memcpy(&v, r + 0x28 + 4 * c, 4); memcpy(&col, r + 0x08 + 4 * c, 4);
+                    if (t == 0x15 || t == 0x16) { short id = 0; if (valid_ptr(v)) { if (!rd16(v, id)) id = 0; } else id = (short)(v & 0xFFFF); w.itemId = (unsigned short)id; }
+                    else if ((t == 1 || t == 0x19) && !nameSeen) { nameSeen = true; w.itemCol = col; if (t == 0x19 && !w.itemId && v && !valid_ptr(v)) w.itemId = (unsigned short)(v & 0xFFFF); }
+                    else if (t == 10 || t == 0xB) { w.hasPrice = true; w.price = v ? (int)(v - 1) : -1; w.priceCol = col; }
+                    else if (t == 0xC) { S.tax[i] = v ? (int)(v - 1) : -1; if (S.tax[i] >= 0) S.anyTax = true; }
+                    else if (t == 7) { w.itemCount = (int)(v > 9999 ? 9999 : v); if (v > 1) S.anyCount = true; }
+                }
+                if (!w.hasPrice) { w.hasPrice = true; w.price = -2; }    // a row without a price (your bazaar : not on sale ; a guild's header row)
             }
             S.open = ok; S.focused = focus == T.obj;
-            static int saidL = 0; static int wasN = -1, wasSell = -1;
-            if (ok && (S.n != wasN || (int)S.sell != wasSell) && saidL < 12) { ++saidL; wasN = S.n; wasSell = (int)S.sell;
-                u32 rec = 0, ic = 0, pc = 0; memcpy(&rec, r0 + 0x48, 4); memcpy(&ic, r0 + 0x28, 4); memcpy(&pc, r0 + 0x30, 4);
-                windower::debug::log("NATIVEUI shop : %s list, %d rows (top %d, vis %d, cursor %d) -- row 0 : types %02X %02X %02X %02X, icon cell %08X -> item %u, name colour %08X, price cell %08X (-> %d) colour %08X, record %08X ; gil %u%s",
-                    S.sell ? "SELL" : "BUY", S.n, S.top, S.vis, S.cursor, r0[0], r0[1], r0[2], r0[3], ic, S.row[0].itemId, S.row[0].itemCol,
-                    pc, S.row[0].price, S.row[0].priceCol, rec, S.gil, S.gilOk ? "" : " (gil UNREADABLE)"); }
+            static int saidL = 0; static int wasN = -1, wasK = -1;
+            const int k = S.owner * 4 + (int)S.sell * 2;
+            if (ok && (S.n != wasN || k != wasK) && saidL < 24) { ++saidL; wasN = S.n; wasK = k;
+                u32 rec = 0, v[4]; memcpy(&rec, r0 + 0x48, 4); for (int c = 0; c < 4; ++c) memcpy(&v[c], r0 + 0x28 + 4 * c, 4);
+                windower::debug::log("NATIVEUI shop : %s, %s list, %d rows (top %d, vis %d, cursor %d) -- row 0 : types %02X %02X %02X %02X %02X, values %08X %08X %08X %08X -> item %u, name colour %08X, price %d, tax %d, count %d, record %08X ; gil %u%s",
+                    ONAME[S.owner], S.owner == 4 ? "SET-PRICES" : S.sell ? "SELL" : "BUY", S.n, S.top, S.vis, S.cursor, r0[0], r0[1], r0[2], r0[3], r0[4], v[0], v[1], v[2], v[3],
+                    S.row[0].itemId, S.row[0].itemCol, S.row[0].price, S.tax[0], S.row[0].itemCount, rec, S.gil, S.gilOk ? "" : " (gil UNREADABLE)"); }
             if (!ok) { static int saidF = 0; if (saidF < 6) { ++saidF; windower::debug::log("NATIVEUI shop : a row UNREADABLE (%d rows, top %d) -- the list is not drawn this frame", S.n, S.top); } }
         }
     }
     if (S.open) { NativeItems q; memset(&q, 0, sizeof(q)); qty_read(mgr, focus, q); S.qtyOk = q.qtyOk; S.qtyFocused = q.qtyFocused; S.qtyVal = q.qtyVal; S.qtyMax = q.qtyMax; }
+    g_shopUp = S.open;
     g_shop = S;
+}
+// ---- CHECK (`inspect`) : dialogs-loot-inspect-re s.6 ----
+static void insp_str(u32 at, char* out, int cap) {          // the client's text, ASCII kept (a SJIS "?" glyph -> '?')
+    unsigned char b[64]; const int n = cap - 1 < 63 ? cap - 1 : 63;
+    out[0] = 0; if (!rdblk(at, b, (unsigned)n)) return;
+    int o = 0;
+    for (int i = 0; i < n && b[i]; ++i) {
+        if (b[i] >= 0x20 && b[i] < 0x7F) out[o++] = (char)b[i];
+        else if (b[i] >= 0x81 && i + 1 < n) { out[o++] = '?'; ++i; }
+    }
+    out[o] = 0;
+}
+void inspect_poll(bool on, u32 mgr) {
+    NativeInspect I; memset(&I, 0, sizeof(I));
+    g_inspUp = false;
+    if (!on || !mgr) { g_insp = I; return; }
+    const u32 o = win_named(mgr, "inspect");
+    if (!o) { g_insp = I; return; }
+    u32 focus = 0; { const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus); }
+    u32 hd = 0; signed char mode = 0; short cur = 0;
+    bool ok = safe_read(o + OBJ_HANDLER, &hd) && valid_ptr(hd) && rd8(hd + 0x14F, *(unsigned char*)&mode) && rd16(o + 0x4C, cur)
+              && rd16(o + OBJ_RECT, I.rx0) && rd16(o + OBJ_RECT + 2, I.ry0);
+    u32 wh = 0; if (ok && safe_read(mgr + 0x80, &wh)) { I.uiW = (short)(wh & 0xFFFF); I.uiH = (short)(wh >> 16); } else ok = false;
+    if (ok && (I.uiW < 320 || I.uiH < 240 || I.uiW > 8000 || I.uiH > 8000)) ok = false;
+    if (ok && mode != -1) ok = false;                               // the Mog House mannequin : the client's
+    unsigned char ids[32];
+    if (ok && !rdblk(hd + 0x78, ids, sizeof(ids))) ok = false;
+    static int said = 0; static int was = -1;
+    if ((int)ok != was && said < 12) { ++said; was = (int)ok;
+        windower::debug::log("NATIVEUI check : inspect %s (mode %d, handler %08X)", ok ? "read -- AioHUD draws it" : "NOT read (a mannequin, or unreadable) : the client's", (int)mode, hd); }
+    if (!ok) { g_insp = I; return; }
+    while (I.ry0 >= I.uiH) I.ry0 = (short)(I.ry0 - HIDE_DY);
+    for (int s = 0; s < 16; ++s) memcpy(&I.id[s], ids + 2 * s, 2);
+    insp_str(hd + 0xD8, I.name, sizeof(I.name)); insp_str(hd + 0xF0, I.jobs, sizeof(I.jobs)); insp_str(hd + 0x120, I.ls, sizeof(I.ls));
+    if (!I.name[0] && g_insp.open && g_insp.name[0]) {   // a frame where the client rebuilds its texts : keep the last
+        memcpy(I.name, g_insp.name, sizeof(I.name)); memcpy(I.jobs, g_insp.jobs, sizeof(I.jobs)); memcpy(I.ls, g_insp.ls, sizeof(I.ls)); }
+    // the LINKSHELL item + its colour : the check's metadata M = P + 0x19D28, valid iff P + 0x19D24 & 0x80 (CHK_META,
+    // the same in the June and November dumps) : M+0x1A u16 the LS item, M+0x18 u16 the colour (R, G, B nibbles) ; the
+    // client tints the icon (v * 0xD + 0x38) per channel
+    if (tr_res()) {
+        u32 P0 = 0; unsigned char fl = 0; unsigned short it = 0, col = 0;
+        if (safe_read(g_trr.pVar, &P0) && valid_ptr(P0) && rd8(P0 + 0x19D24, fl) && (fl & 0x80)
+            && rd16(P0 + 0x19D28 + 0x1A, *(short*)&it) && rd16(P0 + 0x19D28 + 0x18, *(short*)&col) && it >= 513 && it <= 515) {
+            const unsigned r = (col & 0xF) * 0xD + 0x38, g = ((col >> 4) & 0xF) * 0xD + 0x38, b = ((col >> 8) & 0xF) * 0xD + 0x38;
+            I.lsItem = it; I.lsArgb = 0xFF000000u | (r << 16) | (g << 8) | b;
+        }
+    }
+    I.cursor = cur >= 1 && cur <= 17 ? cur : 0;
+    { const int st = entry_state(o, 17); I.waresOk = st >= 0 && st != 5; }
+    {   NativeComment K;                                            // the target's comment (mode 1)
+        if (comment_read(mgr, focus, K) && K.cmMode == 1) { I.cmOpen = true; memcpy(I.cmText, K.cmText, sizeof(I.cmText)); } }
+    I.focused = focus == o; I.open = true;
+    static int saidD = 0; static char wasN[28] = "";
+    if (strcmp(wasN, I.name) && saidD < 12) { ++saidD; lstrcpynA(wasN, I.name, sizeof(wasN));
+        windower::debug::log("NATIVEUI check : '%s' -- '%s' ; LS '%s' (item %u, tint %08X) ; main %u head %u body %u ; View wares %s (state %d) ; comment %s",
+            I.name, I.jobs, I.ls, I.lsItem, I.lsArgb, I.id[0], I.id[4], I.id[5], I.waresOk ? "usable" : "grey", entry_state(o, 17), I.cmOpen ? "up" : "none"); }
+    g_insp = I; g_inspUp = true;
 }
 void buffwin_poll(bool on, u32 mgr) {
     if (!on || !mgr) { g_bw.open = false; g_bwObj = g_bwH = 0; return; }
@@ -3310,9 +3398,13 @@ bool native_main_sub_hover(int entry) { return entry_hover(MAIN_SUB_W, entry); }
 bool native_unity_info_hover(int entry) { return entry_hover(QUEST_W, entry); }
 bool native_unity_info_pick(int entry) { return entry_pick(QUEST_W, entry); }
 bool native_scoption_hover(int entry) { return entry_hover(SCOPT_W, entry); }
-bool native_shopmain_hover(int entry) { return g_shop.mainOpen && entry_hover(SHOPMAIN_W, entry); }
-bool native_shopmain_pick(int entry) { return g_shop.mainOpen && entry_pick(SHOPMAIN_W, entry); }
+static const char* const* shop_owner_w() { return g_shop.owner == 1 ? SHOPMAIN_W : g_shop.owner == 2 ? GUILDSHO_W : g_shop.owner == 4 ? BAZAAR_W : 0; }
+bool native_shopmain_hover(int entry) { const char* const* W = shop_owner_w(); return g_shop.mainOpen && W && entry_hover(W, entry); }
+bool native_shopmain_pick(int entry) { const char* const* W = shop_owner_w(); return g_shop.mainOpen && W && entry_pick(W, entry); }
 const NativeShop& native_shop() { return g_shop; }
+const NativeInspect& native_inspect() { return g_insp; }
+bool native_inspect_hover(int entry) { return g_insp.open && entry_hover(INSPECT_W, entry); }
+bool native_inspect_pick(int entry) { return g_insp.open && entry_pick(INSPECT_W, entry); }
 bool native_scoption_pick(int entry) { return entry_pick(SCOPT_W, entry); }
 // a text list's row : its page scrolled first (codes 0x16 / 0x17, one row each -- bounded), then the hand on it (9),
 // then validated (5) when asked. The list must have the focus.
@@ -3816,9 +3908,18 @@ void native_ui_tick(bool inWorld) {
     trade_poll(wanted && (c.nuHide & NU_TRADE), manager());   // the player trade : AioHUD's own
     dialog_poll(wanted && (c.nuHide & NU_DIALOG), manager());  // the Yes / No confirms : AioHUD's own
     shop_poll(wanted && (c.nuHide & NU_NPC), manager());       // the NPC shop : Buy / Sell, its list, the quantity
-    if (wanted && (c.nuHide & NU_NPC) && g_shop.mainOpen) {
-        static int smLog = 0, slLog = 0, sqLog = 0, siLog = 0, sgLog = 0;
-        park_named(manager(), "shopmain", smLog, "Shop -> Buy / Sell");
+    inspect_poll(wanted && (c.nuHide & NU_ACT), manager());    // a player's Check : AioHUD's own
+    if (wanted && (c.nuHide & NU_ACT) && g_insp.open) {
+        static int inLog = 0, icLog = 0, ccLog = 0;
+        park_named(manager(), "inspect", inLog, "Check -> the grid");
+        park_named(manager(), "iteminfo", icLog, "Check -> the item card");
+        park_named(manager(), "comment", ccLog, "Check -> the comment");
+    }
+    if (wanted && (c.nuHide & NU_NPC) && g_shop.owner) {
+        static int smLog = 0, slLog = 0, sqLog = 0, siLog = 0, sgLog = 0, ggLog = 0, bzLog = 0;
+        if (g_shop.owner == 1) park_named(manager(), "shopmain", smLog, "Shop -> Buy / Sell");
+        if (g_shop.owner == 2) park_named(manager(), "guildsho", ggLog, "Guild shop -> Buy / Sell");
+        if (g_shop.owner == 4) park_named(manager(), "bazaar", bzLog, "Your bazaar -> Set prices / Comment");
         if (g_shop.open) {
             park_named(manager(), "shop", slLog, "Shop -> the list");
             park_named(manager(), "iteminfo", siLog, "Shop -> the item card");
