@@ -27,6 +27,7 @@ u32 aob_masked(const char* pat);   // below : a masked, unique AOB in FFXiMain
 bool jobs_read(NativeJobs& J);      // below : the Job / Master Levels
 u32 menu_event_fn();                // below : the client's menu event function (found by signature) -- the trade's lines hook it
 
+bool gen_skip_name(const char* n);   // below (GEN_SKIP : the windows a module reads -- never the learned rule's)
 namespace {
 
 // ---- the client's structures (FFXiMain, proven on the 2026-11-15 client) ----------------------------------------
@@ -197,7 +198,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     // Treasure : the list and Pass all born parked (a read failure : the rescue pass brings them back) ; its card once ours
     if ((hide & NU_ACT) && !g_lootNot && (!strcmp(n, "loot") || !strcmp(n, "lnowin") || !strcmp(n, "lootope") || (g_lootUp && !strcmp(n, "iteminfo")))) { dy = HIDE_DY; return; }   // Check : born parked (a mannequin, not ours, is brought back by the rescue pass)
     if ((hide & NU_NPC)   && in_list(n, NPC_W)) { dy = HIDE_DY; return; }
-    if ((hide & NU_NPC) && gen_learned(n)) { dy = HIDE_DY; return; }   // the generic engine drew it before : born parked
+    if ((hide & NU_NPC) && gen_learned(n) && !gen_skip_name(n)) { dy = HIDE_DY; return; }   // (a module's window : never the learned rule's)   // the generic engine drew it before : born parked
     if ((hide & NU_MAIN)  && (in_list(n, MAIN_W) || in_list(n, MAIN_SUB_W) || in_list(n, MAIN_SORT_W))) { dy = HIDE_DY; return; }
     // Status -> Profile : BORN parked (its record) -- its flag, rank bar and icons are drawn where it OPENED and do not
     // follow a later move (2026-11-18, "plein d'elements sont toujours la, la barre, l'icone") ; only while its data
@@ -3479,7 +3480,10 @@ bool entry_pick(const char* const* W, int entry);
 static const char* const GEN_SKIP[] = { "titlewin", "helpwind", "logwindo", "logwin2", "partywin", "netstat", "buff", "targetwi", "fulllog", "cnqframe",
     "shop", "shopbuy", "shopsell", "shopmain", "guildsho", "bazaar", "auclist", "auchisto", "inventor", "iteminfo", "itemxinf", "money", "moneyctr", "itemctrl",
     "bank", "equip", "inspect", "comment", "loot", "lootope", "lnowin", "post1", "post2", "delivery", "stringdl", "roomlist", "fep", "query", "evitem", "gift",
-    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcrmenu", "mcrselop", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn", 0 };
+    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcrmenu", "mcrselop", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
+    "cmbhlst", "tskill1", "cmbhwin",   // Synthesis (its module ; 2026-11-22 : the panel engine drew its History a second time, misplaced)
+    0 };
+bool gen_skip_name(const char* n) { return in_list(n, GEN_SKIP); }
 static bool gen_candidate(const char* nm, int hide) {
     int dx = 0, dy = 0; desired_offset(nm, 0, 0, 0, hide, 0, 0, dx, dy);
     if (dy == HIDE_DY && !gen_learned(nm)) return false;              // a rule parks it : someone's (the learned rule is ours)

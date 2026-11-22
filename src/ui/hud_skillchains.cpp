@@ -148,10 +148,12 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
                            + (unsigned)props[0] * 7u + (unsigned)props[1] * 1013u + (unsigned)props[2] * 65537u + (unsigned)nProp * 40503u
                            + (unsigned)(selfAeonic + 1) * 277u + (unsigned)amLvl * 1201u;   // rebuild on weapon swap / AM change (aeonic on/off changes what continues)
         if (key != listKey) {
-            listKey = key; listN = 0;
+            listKey = key; listN = 0; int found = 0;
             // add a candidate move (weapon skill / job ability / SCH element) IF it continues the active chain.
+            // The list holds 16 : once full, a candidate of a HIGHER level replaces the lowest kept one (2026-11-22 :
+            // the cap used to stop the scan, and the level sort only ran on the first 16 found -- WS are scanned first,
+            // so a better JA / BLU / SCH closer past 16 matches was never offered).
             auto tryAdd = [&](int resource, unsigned id, const char* nm) {
-                if (listN >= 16) return;
                 const SkillRow* sk = sc_skill_lookup(resource, id); if (!sk) return;
                 // wsAeonic : THIS candidate is the WS of YOUR equipped Aeonic AND your Aftermath allows Radiance/Umbra.
                 // Only then does it gain its aeonic opening property and can UPGRADE a Light/Darkness Lv.4 close to
@@ -162,7 +164,13 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
                 int lv = 0, rs = 0;
                 if (sc_check_props(props, nProp, cp, ncp, lv, rs)) {
                     if (wsAeonic) { if (rs == SCP_Light) rs = SCP_Radiance; else if (rs == SCP_Darkness) rs = SCP_Umbra; }   // aeonic close -> Radiance/Umbra ; otherwise the Light/Darkness Lv.4 stands
-                    ScLine& L = list[listN++]; if (!nm) nm = "";
+                    ++found;
+                    int slot = listN;
+                    if (listN >= 16) {                                                    // full : evict the lowest level if this one is higher
+                        slot = 0; for (int k = 1; k < 16; ++k) if (list[k].lvl < list[slot].lvl) slot = k;
+                        if (list[slot].lvl >= lv) return;
+                    } else ++listN;
+                    ScLine& L = list[slot]; if (!nm) nm = "";
                     int c = 0; for (; nm[c] && c < 27; ++c) L.name[c] = nm[c]; L.name[c] = 0;
                     L.lvl = (unsigned char)lv; L.prop = (unsigned char)rs;
                 }
@@ -196,7 +204,7 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             if (mjob == 20) for (int el = 0; el < 8; ++el) tryAdd(SCR_ELEM, el, scelem_name(el));        // SCH : the 8 elemental magics are always castable
             for (int i = 1; i < listN; ++i) { ScLine t = list[i]; int j = i - 1; while (j >= 0 && list[j].lvl < t.lvl) { list[j + 1] = list[j]; --j; } list[j + 1] = t; }   // highest level first
             if (party().scapt_armed()) {   // what the box then offers
-                char b[700]; int o = _snprintf(b, sizeof(b), "SCLIST offered (%d):", listN);
+                char b[700]; int o = _snprintf(b, sizeof(b), "SCLIST offered (%d of %d continuing):", listN, found);
                 for (int i = 0; i < listN && o > 0 && o < (int)sizeof(b) - 40; ++i) {
                     const int w = _snprintf(b + o, sizeof(b) - o, " %s(lv%d)", list[i].name, list[i].lvl);
                     if (w < 0) break; o += w;
