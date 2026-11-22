@@ -639,6 +639,16 @@ const NativeAuction& native_auction();
 // the client's place ; anything else stays the client's. Read again each frame ; unread -> not parked -> the client's.
 #define GEN_MENUS 4
 struct NativeGenMenus { int n; NativeEntryMenu m[GEN_MENUS]; char help[GEN_MENUS][16][72];
+    // step 4 : the PANELS -- a window whose rows have no text in its definition (Missions, Quests, Wide Scan...) drawn at
+    // the client's layout from the client's own text calls (the text capture, list-text-capture-re-2026-11-21.md) : every
+    // text run where the client writes it (window-relative UI pixels, its colour ; col bit 24 = right-aligned at x), each
+    // entry's rect (to light the cursor, to hover / pick)
+    struct Panel { char name[9]; bool focused; int cursor; short rx0, ry0, rx1, ry1; int uiW, uiH;
+        int n; unsigned char entry[32]; unsigned st[32]; short ex0[32], ey0[32], ex1[32], ey1[32];
+        int nr; struct Run { short x, y; unsigned col; unsigned char ent; char s[60]; } run[40];
+        int titleRun;
+        int lcount, ltop, lvis, lcur; };   // a list-base window (miss00 / quest00's class) : its rows, first shown, page, cursor -- lcount -1 otherwise   // ent : the entry the run belongs to (0 none) ; titleRun : the title's run, -1 none, -2 "the top lone line"
+    int np; Panel p[2];
     // step 2 : ONE generic TEXT LIST (the focused one, else the last listed) -- its cells by TYPE (the types every list
     // measured so far uses) : 0x15 / 0x16 / 0x1A an item (its icon, its name), 1 / 3 / 0x19 / 0x22 a text (at the value),
     // 7 / 9 a count, 0xA / 0xB a price + 1, 4 a date (unix). A row with none of them : the list stays the client's.
@@ -653,6 +663,47 @@ struct NativeGenMenus { int n; NativeEntryMenu m[GEN_MENUS]; char help[GEN_MENUS
     // range), gval its value (gvalText : a label the client prints instead, the aspect ratio) ; -1 none
     signed char gchosen[32]; float gfrac[32]; int gval[32]; char gvalText[32][10]; };
 const NativeGenMenus& native_gen_menus();
+// MISSIONS (miss00) read as DATA (list-text-capture-re-2026-11-21.md s.1c) : the whole list, not the client's page of 5 --
+// row 0 the "Current" header (-1), row 1 the current mission (or -3 / -4 : none), row 2 the "Completed" header (-2), rows
+// 3.. the completed missions (or one -5 : none). A mission's name carries its depth (leading '_' : a sub-mission).
+// ok only when a decoded name matched the text the client draws (the self-check) ; else the panel stays the capture's.
+struct NativeMissions { bool ok, open, focused; int state, cat; char title[48];
+    int count, top, vis, cursor;               // the list's rows (cursor : row index)
+    struct Row { int value; signed char depth; char name[64]; } row[200];
+    char hCur[32], hDone[32];                  // the client's own header words (the capture), "" when not seen
+    // the DETAIL page (state 2, a row validated) : the mission's name, current or completed, its orders (the category's
+    // mission DAT, field 2 ; '\n' = the DAT's line breaks) ; detailOk once the name equals the client's own title
+    bool detailOk, detailCurrent; int detailValue; char dName[64]; char dDesc[1400];
+};
+const NativeMissions& native_missions();
+// the JOURNAL (quest01 as data, quest-lists-re-2026-11-21.md) : mode 0 current quests, 1 completed quests (area 0..10), 2 RoE
+// current, 3 RoE objective list (a category tree : depth, crumb = the categories' names, root first), 4 Vana'Bout. The
+// WHOLE list ; each row's name + state (quests : done / current / repeatable ; RoE : accepted, progress / required, done,
+// ready to claim, locked = done and not repeatable, special, the rewards ; a category : its children's count).
+// ok only once a decoded name matched the client's own text for that mode, and only on the list (sub 0).
+struct NativeJournal { bool ok, open, focused; int mode, sub, area, depth; char title[64]; char crumb[5][48];
+    int count, top, vis, cursor, accepted;
+    int catDone, catTotal; bool catOk;   // mode 3 : the CURRENT category's objectives done / total (catOk once all read)
+    struct Row { int value; char name[60]; bool category, done, current, repeatable, accepted, ready, locked, special;
+                 int children, progress, required, sparks, exp, cap, acc;
+                 int objDone, objTotal; bool tallyOk; } row[400];   // a category : its objectives done / total (sub-categories included), tallyOk once all read
+};
+const NativeJournal& native_journal();
+// KEY ITEMS (evitem in its Key Items mode, key-items-re-2026-11-22.md) : state 1 the categories (each : owned / total of
+// the whole table, how many new), 2 a category's items (owned only : the client's list), 3 an item's description. "new" =
+// owned, never examined. desc : the cursor item's description (the DAT). ok once a decoded name matched the client's text.
+struct NativeKeyItems { bool ok, open, focused; int state, cat, catColour; char title[48];
+    int count, top, vis, cursor; int ownedAll, totalAll, newAll;
+    struct Row { int index, cat; unsigned short id; bool category, isNew; int owned, total, fresh; char name[64]; } row[800];
+    char desc[1400]; short rx0, ry0; int uiW, uiH;   // the client's window's corner (UI px), its UI size
+    bool ask, askFocused; int askCursor; char askText[96];   // evitem01 : "Examine X?" (an item never examined), its cursor 1 Yes / 2 No
+};
+const NativeKeyItems& native_key_items();
+bool native_key_hover(int entry);
+bool native_key_pick(int entry);
+bool native_key_ask_hover(int entry);   // evitem01's Yes (1) / No (2)
+bool native_key_ask_pick(int entry);
+const char* native_journal_desc(unsigned objectiveId);   // an RoE objective's description (the DAT), "" if none
 bool native_gen_hover(const char* name, int entry);
 bool native_gen_pick(const char* name, int entry);
 bool native_auc_hover(const char* name, int entry);

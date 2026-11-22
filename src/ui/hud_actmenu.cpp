@@ -775,6 +775,13 @@ void menu_frame_end() {                                  // once a frame (actmen
     memcpy(g_mcP, g_mc, sizeof(MenuCut) * (size_t)g_mcN); g_mcPN = g_mcN;
     g_mrN = 0; g_mcN = 0;
 }
+// the mouse HOVERS a row only when it MOVED : a box that re-lays out (grows, glues elsewhere) under a still pointer must
+// not drag the client's cursor back (2026-11-22 : Missions -- down from Current opened the timeline, the box moved, the
+// Current card slid under the idle pointer and the hover sent the cursor back up : "bas ne descend pas"). One pair per site.
+static bool mouse_moved(const MouseState* ms, float* last) {
+    if (!ms) return false;
+    const bool m = fabsf(ms->x - last[0]) > 0.5f || fabsf(ms->y - last[1]) > 0.5f; last[0] = ms->x; last[1] = ms->y; return m;
+}
 // growW (optional) : a box STACKED on a wider neighbour takes its width + left edge -> both vertical edges run straight
 // through the join (the user : "les barres verticales mal alignees") ; its content must lay out from *growW afterwards
 int menu_place(const Frame& f, int key, float& x, float& y, float w, float h, float* growW = nullptr, float targetH = 0.0f) {
@@ -4919,6 +4926,7 @@ void mog_draw(const Frame& f) {
     auto is_root = [](const char* n) { return !strcmp(n, "myroom") || !strcmp(n, "mogext") || !strcmp(n, "mogdoor"); };
     auto is_child = [](const char* n) { return !strcmp(n, "storage") || !strcmp(n, "storage2") || !strcmp(n, "jobchang") || !strcmp(n, "mogpost") || !strcmp(n, "bankmenu"); };
     float rootR = -1.0f, rootB = 0.0f;                                   // the root's right edge and bottom this frame (-1 : not drawn)
+    float ynX = -1.0f, ynY = 0.0f, ynW = 0.0f;                           // the storage's sort options : its Yes / No hangs under them
     for (int pass = 0; pass < 2; ++pass)
     for (int s = 0; s < MOG_MENUS; ++s) {
         if (!g_mgName[s][0]) continue;
@@ -4965,6 +4973,7 @@ void mog_draw(const Frame& f) {
         if (A <= 0.0f) continue;
         g_frameJoin = jm;
         const int row = block_draw(f, k, g_mgB[s], rows, L.n, cur, L.focused, bx, by, bw, bh, A, dt);
+        if (open && !strcmp(L.name, "itmsortw")) { ynX = bx; ynY = by + bh; ynW = bw; }
         if (open && L.focused) {
             hit_extend(16, by + bh, f.screenH);
             if (g_hit[16][2] <= 0.0f) { g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH; }
@@ -4973,6 +4982,34 @@ void mog_draw(const Frame& f) {
             g_mgB[s].hoverRow = row;
             if (ent && L.state[row - 1] != 5 && f.mouse && f.mouse->clicked) native_mog_pick(L.name, ent);
         } else g_mgB[s].hoverRow = 0;
+    }
+    {   // a storage's sort : its confirmation (sortyn) under the sort options, Yes / No (as the items' own, mainmenu_draw)
+        static Block g_mgYnB; const NativeEntryMenu& YN = native_main_yn(); static NativeEntryMenu lastY;
+        if (YN.open) lastY = YN;
+        if (block_ease(g_mgYnB, YN.open && ynX >= 0.0f, now, dt) && lastY.n && ynX >= 0.0f) {
+            RowSpec yrows[4] = {}; char ynums[4][12]; int ycur = 0, yn = 0;
+            for (int i = 0; i < lastY.n && yn < 4; ++i, ++yn) {
+                const int e = lastY.entry[i];
+                if (e == 1) yrows[yn].label = tr("Yes", "Oui"); else if (e == 2) yrows[yn].label = tr("No", "Non");
+                else { sprintf(ynums[yn], "#%d", e); yrows[yn].label = ynums[yn]; }
+                yrows[yn].icon = IC_NONE; if (e == lastY.cursor) ycur = yn + 1; }
+            float yw, yh; block_size(f, k, yrows, yn, yw, yh);
+            const float tY = ease_out(((float)(now - g_mgYnB.openMs) / 1000.0f) / 0.07f);
+            float ybx = snap(ynX + ynW - yw), yby = snap(ynY + 3.0f * S + (1.0f - tY) * 3.0f * S);
+            const int jy = menu_place_at(f, __LINE__, ybx, yby, ybx, snap(ynY + 3.0f * S), yw, yh);
+            const float YA = g_mgYnB.vis * tY;
+            if (YA > 0.0f) {
+                g_frameJoin = jy;
+                const int yrow = block_draw(f, k, g_mgYnB, yrows, yn, ycur, lastY.focused, ybx, yby, yw, yh, YA, dt);
+                if (YN.open) {
+                    g_hit[8][0] = ybx / f.screenW; g_hit[8][1] = yby / f.screenH; g_hit[8][2] = yw / f.screenW; g_hit[8][3] = yh / f.screenH;
+                    const int ent = (yrow >= 1 && yrow <= yn) ? lastY.entry[yrow - 1] : 0;
+                    if (ent && yrow != g_mgYnB.hoverRow && ent != YN.cursor) native_main_yn_hover(ent);
+                    g_mgYnB.hoverRow = yrow;
+                    if (ent && f.mouse && f.mouse->clicked) native_main_yn_pick(ent);
+                } else g_mgYnB.hoverRow = 0;
+            }
+        }
     }
 }
 // ======== Remodel's styles (`roomlist`, Game UI -> NU_NPC) : the client's text rows, as a menu above the chat ========
@@ -5198,7 +5235,8 @@ void auc_draw(const Frame& f) {
         const float tO = ease_out(((float)(now - g_auLB.openMs) / 1000.0f) / 0.08f), LA = g_auLB.vis * tO * (last.listFocused || !A0.listOpen ? 1.0f : 0.8f);
         char tb[48]; const char* title = last.status ? tr("Your sales", "Tes ventes") : last.catHelp[0] ? auc_label(last.catHelp, tb, sizeof(tb)) : tr("Auction", "H\xC3\xB4tel des ventes");
         char cnt[16]; sprintf(cnt, "%d", last.n);
-        ItemsBox IL = { last.row, last.n, last.top, last.vis, last.cursor, 0, last.listFocused, A0.listOpen, title, cnt, false, false, 0, 0 };
+        bool salePrices = false; for (int i = 0; i < last.vis && i < 16; ++i) if (last.row[i].hasPrice) salePrices = true;   // Sales status : each sale's price
+        ItemsBox IL = { last.row, last.n, last.top, last.vis, last.cursor, 0, last.listFocused, A0.listOpen, title, cnt, false, salePrices, 0, 0 };
         const float lw = keep_width(g_auLB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.vis * rowH + pad);
         float lx = snap((float)last.lx0 * sx), ly = snap((float)last.ly0 * sy);
         if (lx + lw > f.screenW - 4.0f) lx = snap(f.screenW - 4.0f - lw); if (lx < 4.0f) lx = 4.0f;
@@ -5307,7 +5345,8 @@ void gen_draw(const Frame& f) {
             hit_extend(16, by + bh, f.screenH);
             if (g_hit[16][2] <= 0.0f) { g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH; }
             const int ent = (row >= 1 && row <= n) ? L.entry[row - 1] : 0;
-            if (ent && row != g_gnB[s].hoverRow && ent != L.cursor && L.state[row - 1] != 5) native_gen_hover(L.name, ent);
+            static float mv[4][2]; const bool moved = mouse_moved(f.mouse, mv[s & 3]);
+            if (ent && moved && row != g_gnB[s].hoverRow && ent != L.cursor && L.state[row - 1] != 5) native_gen_hover(L.name, ent);
             g_gnB[s].hoverRow = row;
             if (ent && L.state[row - 1] != 5 && f.mouse && f.mouse->clicked) native_gen_pick(L.name, ent);
         } else g_gnB[s].hoverRow = 0;
@@ -5439,10 +5478,1020 @@ void gen_grid_draw(const Frame& f) {
     if (title[0]) fo->draw_lc(dev, snap(bx + 10.0f * S), snap(by - 10.0f * S), title, k.tz * 0.95f, with_alpha(0xFFE8D9B0u, A), with_alpha(0xC8000000u, A), k.ow);
     if (G0.grid && last.gridFocused) {
         g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH;
-        if (ment && ment != g_ggB.hoverRow && ment != M.cursor) native_gen_hover(M.name, ment);
+        static float mv[2]; const bool moved = mouse_moved(f.mouse, mv);
+        if (ment && moved && ment != g_ggB.hoverRow && ment != M.cursor) native_gen_hover(M.name, ment);
         g_ggB.hoverRow = ment;
         if (ment && ms && ms->clicked) native_gen_pick(M.name, ment);
     } else g_ggB.hoverRow = 0;
+}
+// the generic engine's PANELS (Missions, Quests, Wide Scan... : the text capture) -- AioHUD's own layout, the client's
+// CONTENT. The texts it writes are read as lines (top to bottom) and laid out anew :
+//   the TITLE (the top line outside every entry)      -> the header band
+//   a lone text outside the entries ("Completed:")    -> a SECTION : small gold caps, a hairline, air above
+//   a text inside an entry                            -> a ROW (cursor, mouse, greyed as the client greys it) ; its value
+//                                                        on the right, a count "12/30" as a progress bar
+//   a label + value outside the entries ("Sparks")    -> a STAT tile (two a line, the number large) under the rows
+namespace { Block g_gpB[2]; unsigned g_gpMs = 0; char g_gpName[2][9]; float g_gpCurY[2] = { -1.0f, -1.0f }; }
+static bool cap_valueish(const char* t, unsigned col) {
+    if ((col & 0x01000000u) || (col & 0x00FFFFFFu) == 0x407090u) return true;
+    const char* p = t; if (*p == '(' || *p == '[' || *p == '+' || *p == '-') ++p;
+    return *p >= '0' && *p <= '9';
+}
+struct PanelItem { char label[60]; char value[48]; int entry; bool grey, section, stat, pink; };   // pink : the client drew it in its cursor colour
+static int panel_items(const NativeGenMenus::Panel& P, char* title, int tcap, PanelItem* it, int cap) {
+    title[0] = 0; int ord[40]; const int n = P.nr < 40 ? P.nr : 40;
+    for (int i = 0; i < n; ++i) ord[i] = i;
+    for (int i = 1; i < n; ++i) for (int j = i; j > 0; --j) {         // by line (6 px), then x
+        const NativeGenMenus::Panel::Run &A = P.run[ord[j - 1]], &B = P.run[ord[j]];
+        const bool swap = (B.y < A.y - 6) || (abs(B.y - A.y) <= 6 && B.x < A.x);
+        if (!swap) break; const int t = ord[j]; ord[j] = ord[j - 1]; ord[j - 1] = t;
+    }
+    int m = 0, lineY = -9999, lineFirst = 0;
+    for (int q = 0; q < n; ++q) {
+        const NativeGenMenus::Panel::Run& U = P.run[ord[q]];
+        const bool newLine = abs(U.y - lineY) > 6; if (newLine) { lineY = U.y; lineFirst = m; }
+        const int e = U.ent;
+        if (P.titleRun >= 0 ? ord[q] == P.titleRun : (P.titleRun == -2 && q == 0 && !e && U.y < 30 && (n < 2 || abs(P.run[ord[1]].y - U.y) > 6))) { lstrcpynA(title, U.s, tcap); continue; }
+        if (newLine && m > 0 && e && it[m - 1].entry == e && !it[m - 1].value[0] && cap_valueish(U.s, U.col)) { lstrcpynA(it[m - 1].value, U.s, sizeof(it[m - 1].value)); continue; }   // its value, under it
+        if (!newLine && m > lineFirst) {
+            PanelItem& L = it[m - 1];
+            if (L.entry && (!e || e == L.entry)) {                      // beside a row : that row's value ("Plaudits 200")
+                const int lv = lstrlenA(L.value); _snprintf(L.value + lv, sizeof(L.value) - lv, "%s%s", lv ? " " : "", U.s); L.value[sizeof(L.value) - 1] = 0; continue; }
+            if (!L.value[0] && cap_valueish(U.s, U.col)) { lstrcpynA(L.value, U.s, sizeof(L.value)); L.section = false; L.stat = !L.entry; continue; }
+        }
+        if (m >= cap) break;
+        PanelItem& I = it[m++]; memset(&I, 0, sizeof(I));
+        lstrcpynA(I.label, U.s, sizeof(I.label));
+        { char* sp = strstr(I.label, "   ");                            // "Current          12/30" : a label, a value
+          if (sp) { const char* v = sp; while (*v == ' ') ++v; lstrcpynA(I.value, v, sizeof(I.value)); *sp = 0; } }
+        I.entry = e; I.grey = (U.col & 0x00FFFFFFu) == 0x404040u; I.pink = (U.col & 0x00FFFFFFu) == 0x803040u;
+        I.section = !e && !I.value[0]; I.stat = !e && I.value[0];
+        if (I.section) { int l = lstrlenA(I.label); while (l && (I.label[l - 1] == ':' || I.label[l - 1] == ' ')) I.label[--l] = 0; }
+    }
+    return m;
+}
+static bool parse_frac(const char* v, int& a, int& b) { a = b = 0; return v && sscanf(v, "%d/%d", &a, &b) == 2 && b > 0 && a >= 0 && a <= b * 4; }
+// the panel's KICKER (the family, small caps above the title) and its title when the client draws none at the top
+static void panel_names(const char* nm, const char* title, const char*& kicker, const char*& fallback) {
+    kicker = 0; fallback = 0;
+    if (!strncmp(nm, "miss", 4)) kicker = tr("Missions", "Missions");
+    else if (!strcmp(nm, "quest00")) { kicker = tr("Journal", "Journal"); fallback = tr("Quests", "Quetes"); }
+    else if (!strncmp(nm, "quest", 5)) kicker = tr("Records of Eminence", "Records of Eminence");
+    else if (!strcmp(nm, "scanlist")) { kicker = tr("Wide Scan", "Wide Scan"); fallback = tr("Nearby", "A proximite"); }
+    if (kicker && title && title[0] && !lstrcmpiA(kicker, title)) kicker = 0;
+}
+// the panel's ACCENT : the nation / the expansion / the family it shows (the title's words, then the window's) -- it tints
+// the header band, the kicker, the sections, the bullets and the bars
+static u32 panel_accent(const char* nm, const char* title) {
+    char b[64]; lstrcpynA(b, title ? title : "", sizeof(b)); CharLowerA(b);
+    struct { const char* w; u32 c; } T[] = {
+        { "san d'oria", 0xFFE8706Au }, { "bastok", 0xFF6AA8F0u }, { "windurst", 0xFF7CCF7Au }, { "jeuno", 0xFFE8C060u },
+        { "zilart", 0xFFE8C060u }, { "promathia", 0xFFA88CF0u }, { "aht urhgan", 0xFFF09A50u }, { "goddess", 0xFF68D0D8u },
+        { "adoulin", 0xFF84DCA8u }, { "eminence", 0xFF62BEF8u }, { "objective", 0xFF62BEF8u }, { "unity", 0xFFB48CFFu } };
+    for (size_t i = 0; i < sizeof(T) / sizeof(T[0]); ++i) if (strstr(b, T[i].w)) return T[i].c;
+    if (!strcmp(nm, "quest00")) return 0xFFE0B060u;
+    if (!strncmp(nm, "quest", 5)) return 0xFF62BEF8u;
+    if (!strcmp(nm, "scanlist")) return 0xFFF08A6Au;
+    return 0xFFE0B060u;
+}
+// a stat tile's own colour, by its words
+static u32 stat_colour(const char* l, u32 accent) {
+    char b[60]; lstrcpynA(b, l, sizeof(b)); CharLowerA(b);
+    if (strstr(b, "spark")) return 0xFFFFC857u;
+    if (strstr(b, "accolade") || strstr(b, "unity")) return 0xFFC09CFFu;
+    if (strstr(b, "deed")) return 0xFF6EC8FFu;
+    if (strstr(b, "complet")) return 0xFF8EDB7Au;
+    if (strstr(b, "plaudit") || strstr(b, "point")) return 0xFFFFA060u;
+    return accent;
+}
+static u32 with_a(u32 c, u32 a) { return (c & 0x00FFFFFFu) | (a << 24); }
+// a section's kind, from its words (the client's EN / FR) : 1 done (a green check), 2 in progress (a gold diamond)
+static int section_kind(const char* l) {
+    char b[60]; lstrcpynA(b, l, sizeof(b)); CharLowerA(b);
+    if (strstr(b, "complet") || strstr(b, "termin") || strstr(b, "accompli")) return 1;
+    if (strstr(b, "current") || strstr(b, "en cours") || strstr(b, "actuel")) return 2;
+    return 0;
+}
+void gen_panel_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { for (int i = 0; i < 2; ++i) { g_gpB[i].vis = 0.0f; g_gpB[i].wasOpen = false; } return; }
+    const unsigned now = GetTickCount();
+    float dt = g_gpMs ? (float)(now - g_gpMs) / 1000.0f : 0.0f; g_gpMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeGenMenus& G0 = native_gen_menus();
+    static NativeGenMenus::Panel last[2];
+    for (int i = 0; i < G0.np; ++i) {                                  // a slot per panel NAME
+        int s = -1; for (int j = 0; j < 2; ++j) if (!strcmp(g_gpName[j], G0.p[i].name)) s = j;
+        if (s < 0) for (int j = 0; j < 2 && s < 0; ++j) { bool used = false; for (int q = 0; q < G0.np; ++q) if (!strcmp(g_gpName[j], G0.p[q].name)) used = true; if (!used && g_gpB[j].vis <= 0.0f) { s = j; lstrcpynA(g_gpName[j], G0.p[i].name, 9); g_gpB[j] = Block(); g_gpCurY[j] = -1.0f; } }
+        if (s >= 0) last[s] = G0.p[i];
+    }
+    bool anyFocused = false; for (int i = 0; i < G0.np; ++i) if (G0.p[i].focused) anyFocused = true;
+    const Metrics k = metrics(f); const float S = k.S; const u32 dev = f.dev; Font* fo = f.font; const MouseState* ms = f.mouse;
+    // the type scale : rows a touch larger than the menus, the title larger still, the stats' numbers the largest
+    const float tz = snap(k.tz * 1.08f), tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = snap(k.tz * 1.32f), tzV = snap(k.tz * 1.45f);
+    const float pad = snap(18.0f * S) + k.bi, rowH = snap(k.capH * 2.0f), secH = snap(tzS * 2.6f), secGap = snap(10.0f * S);
+    const float tileH = snap(tzV * 2.9f), gapT = snap(8.0f * S), bulletW = snap(22.0f * S);
+    for (int s = 0; s < 2; ++s) {
+        if (!g_gpName[s][0]) continue;
+        bool open = false; for (int i = 0; i < G0.np; ++i) if (!strcmp(G0.p[i].name, g_gpName[s])) open = true;
+        const NativeGenMenus::Panel& P = last[s];
+        if (!strcmp(P.name, "miss00") && (native_missions().ok || native_missions().detailOk)) open = false;   // Missions read as data : missions_draw draws it
+        if (!strcmp(P.name, "quest01") && native_journal().ok) open = false;
+        if (!strcmp(P.name, "evitem01") && native_key_items().ok) open = false;   // Key Items' question : key_items_draw asks it, in its own box   // the journal read as data : journal_draw draws it
+        const bool shown = open && (P.focused || !anyFocused);              // the panel it opened on top (Quests -> a list) replaces it
+        if (!block_ease(g_gpB[s], shown, now, dt) || P.uiW <= 0) { if (!open && g_gpB[s].vis <= 0.0f) g_gpName[s][0] = 0; continue; }
+        static char title[2][60]; static PanelItem items[2][32];
+        const int n = panel_items(P, title[s], sizeof(title[s]), items[s], 32);
+        if (n <= 0) continue;
+        static char tval[2][24]; tval[s][0] = 0;
+        { char* sp = strstr(title[s], "   "); if (sp) { const char* v = sp; while (*v == ' ') ++v; lstrcpynA(tval[s], v, sizeof(tval[s])); *sp = 0; } }
+        const char *kicker = 0, *fb = 0; panel_names(P.name, title[s], kicker, fb);
+        const char* ttl = title[s][0] ? title[s] : fb;
+        const u32 acc = panel_accent(P.name, ttl);
+        const float headH = ttl ? snap((kicker ? tzK * 1.5f : 0.0f) + tzT * 1.6f + 14.0f * S) : 0.0f;
+        // ---- each row's kind : its section's (done / in progress), an empty-state line ("No current missions.")
+        int kind[32]; bool empty[32]; { int sk = 0; for (int i = 0; i < n; ++i) { const PanelItem& I = items[s][i];
+            if (I.section) sk = section_kind(I.label); kind[i] = sk; empty[i] = !I.value[0] && (!strncmp(I.label, "No ", 3) || !strncmp(I.label, "Aucun", 5)); } }
+        float rh[32]; bool two[32]; { const float rowH2 = snap(rowH * 1.55f);
+            for (int i = 0; i < n; ++i) { int a2, b2; two[i] = items[s][i].entry && parse_frac(items[s][i].value, a2, b2); rh[i] = two[i] ? rowH2 : rowH; } }
+        const bool scroll = P.lcount > 0 && P.lvis > 0 && P.lcount > P.lvis;    // a list longer than its page : a scrollbar, a footer
+        const float footH = scroll ? snap(tzS * 2.2f) : 0.0f;
+        // ---- measure
+        float wRow = 0.0f, wStat = 0.0f, h = 0.0f; int nStat = 0; bool firstBody = true;
+        for (int i = 0; i < n; ++i) {
+            const PanelItem& I = items[s][i];
+            if (I.stat) { ++nStat; const float w = fmaxf(fo->measure(I.label, tzS), fo->measure(I.value, tzV)) + snap(28.0f * S); if (w > wStat) wStat = w; continue; }
+            if (I.section) { h += (firstBody ? 0.0f : secGap) + secH; wRow = fmaxf(wRow, fo->measure(I.label, tzS) * 1.2f + snap(40.0f * S)); }
+            else { int a, b; const float bar = parse_frac(I.value, a, b) ? snap(96.0f * S) : 0.0f;
+                   wRow = fmaxf(wRow, bulletW + fo->measure(I.label, tz) + (I.value[0] && !two[i] ? snap(32.0f * S) + fo->measure(I.value, tz) + bar : 0.0f) + snap(24.0f * S)); h += rh[i]; }
+            firstBody = false;
+        }
+        float bw = fmaxf(wRow + 2.0f * pad, 2.0f * wStat + gapT + 2.0f * pad);
+        if (ttl) bw = fmaxf(bw, fo->measure(ttl, tzT) + 2.0f * pad + snap(24.0f * S) + (tval[s][0] ? fo->measure(tval[s], tzS) + snap(120.0f * S) : 0.0f));
+        bw = keep_width(g_gpB[s], fmaxf(bw, snap(440.0f * S)));            // a journal page : roomy (the user, 2026-11-21)
+        const int statLines = (nStat + 1) / 2;
+        const float statsH = statLines ? snap(16.0f * S) + statLines * tileH + (statLines - 1) * gapT : 0.0f;
+        const float bh = snap((ttl ? headH : 0.0f) + pad + h + statsH + footH + pad);
+        // ---- place : where the client's window is (its left / right side)
+        const float sx = f.screenW / (float)P.uiW, sy = f.screenH / (float)P.uiH;
+        float bx = snap((float)P.rx0 * sx), by = snap((float)P.ry0 * sy);
+        if (P.rx0 * 2 > P.uiW) bx = snap((float)P.rx1 * sx - bw);
+        if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+        if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+        const int jm = menu_place(f, __LINE__ * 4 + s, bx, by, bw, bh); g_frameJoin = jm;
+        const float tO = ease_out(((float)(now - g_gpB[s].openMs) / 1000.0f) / 0.09f);
+        by = snap(by + (1.0f - tO) * 4.0f * S);
+        const float A = g_gpB[s].vis * tO;
+        if (A <= 0.0f) continue;
+        draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+        const float x0 = bx + pad, x1 = bx + bw - pad;
+        // ---- the header : the kicker (small caps, gold), the title (large), a hairline ; a band a shade lighter
+        float y = by + pad * 0.5f;
+        if (ttl) {
+            rrect_topcaps(dev, bx + k.bi, by + k.bi, bw - 2.0f * k.bi, headH - k.bi, snap(6.0f * S), with_alpha(with_a(acc, 0x46), A), with_alpha(with_a(acc, 0x0A), A));
+            float ky = by + snap(10.0f * S);
+            fo->begin(dev);
+            if (kicker) { char up[48]; lstrcpynA(up, kicker, sizeof(up)); CharUpperA(up);
+                fo->draw_lc(dev, snap(x0), snap(ky + tzK * 0.7f), up, tzK, with_alpha(acc, A), with_alpha(0xA0000000u, A), k.ow); ky += tzK * 1.5f; }
+            fo->draw_lc(dev, snap(x0), snap(ky + tzT * 0.8f), ttl, tzT, with_alpha(0xFFF4E8C8u, A), with_alpha(0xC8000000u, A), k.ow);
+            if (tval[s][0]) {
+                int a2, b2; const bool fr = parse_frac(tval[s], a2, b2);
+                const float tw2 = fo->measure(tval[s], tzS), barW = fr ? snap(54.0f * S) : 0.0f, pw = tw2 + barW + (fr ? 34.0f : 20.0f) * S, ph = snap(tzS * 1.8f);
+                const float px = snap(x1 - pw), py = snap(by + headH * 0.5f - ph * 0.5f);
+                rrect(dev, px, py, pw, ph, ph * 0.5f, with_alpha(with_a(acc, 0x3C), A), with_alpha(with_a(acc, 0x22), A));
+                rrect_stroke(dev, px, py, pw, ph, ph * 0.5f, with_alpha(with_a(acc, 0x80), A), 1.0f);
+                float tx = px + 10.0f * S;
+                if (fr) { const float bh2 = snap(5.0f * S), by2 = snap(py + ph * 0.5f - bh2 * 0.5f);
+                    rrect(dev, tx, by2, barW, bh2, bh2 * 0.5f, with_alpha(0x70101826u, A), with_alpha(0x70080C14u, A));
+                    const float fw = snap(barW * fminf(1.0f, (float)a2 / (float)b2)); if (fw > 1.0f) rrect(dev, tx, by2, fw, bh2, bh2 * 0.5f, with_alpha(acc, A), with_alpha(with_a(acc, 0xB0), A));
+                    tx += barW + 10.0f * S; }
+                fo->begin(dev); fo->draw_lc(dev, snap(tx), snap(py + ph * 0.5f), tval[s], tzS, with_alpha(0xFFF4F6FAu, A), with_alpha(0xA0000000u, A), k.ow);
+            }
+            rrect(dev, bx + k.bi, snap(by + headH - 1.0f), bw - 2.0f * k.bi, 1.5f, 0.0f, with_alpha(with_a(acc, 0x90), A), with_alpha(with_a(acc, 0x90), A));
+            y = by + headH + pad * 0.6f;
+        } else y = by + pad;
+        // ---- the rows' y
+        float ry[32]; { float yy = y; bool fb2 = true;
+            for (int i = 0; i < n; ++i) { const PanelItem& I = items[s][i]; if (I.stat) { ry[i] = -1.0f; continue; }
+                if (I.section) { yy += fb2 ? 0.0f : secGap; ry[i] = yy; yy += secH; } else { ry[i] = yy; yy += rh[i]; } fb2 = false; } }
+        // ---- zebra : every other row of a run a faint band (the eye follows the line across the value)
+        { int z = 0; for (int i = 0; i < n; ++i) { const PanelItem& I = items[s][i]; if (I.stat) continue; if (I.section) { z = 0; continue; }
+            if (z++ & 1) rrect(dev, snap(x0 - 8.0f * S), snap(ry[i]), (x1 - x0) + 16.0f * S, rh[i], snap(4.0f * S), with_alpha(0x0EFFFFFFu, A), with_alpha(0x0EFFFFFFu, A)); } }
+        // ---- the cursor : a gold capsule gliding to its row
+        // the cursor's row : the one the client draws in its cursor colour (pink) -- the entry ids are a fallback
+        int curI = -1; for (int i = 0; i < n; ++i) if (items[s][i].pink && !items[s][i].stat && !items[s][i].section) { curI = i; break; }
+        if (curI < 0) for (int i = 0; i < n; ++i) if (items[s][i].entry && items[s][i].entry == P.cursor) { curI = i; break; }
+        if (curI >= 0 && P.focused) {
+            float& cy = g_gpCurY[s]; const float target = ry[curI];
+            cy = cy < 0.0f ? target : cy + (target - cy) * fminf(1.0f, dt * 18.0f);
+            const float cx = snap(x0 - 8.0f * S), cw = (x1 - x0) + 16.0f * S;
+            rrect(dev, cx, snap(cy + 1.0f * S), cw, rh[curI] - 2.0f * S, snap(6.0f * S), with_alpha(0x50FFDA8Au, A), with_alpha(0x2EFFDA8Au, A));
+            rrect_stroke(dev, cx, snap(cy + 1.0f * S), cw, rh[curI] - 2.0f * S, snap(6.0f * S), with_alpha(0xC8FFDA8Au, A), 1.5f * S);
+        }
+        // ---- the sections and the rows
+        int ment = 0, mrow = -1;
+        for (int i = 0; i < n; ++i) {
+            const PanelItem& I = items[s][i]; if (I.stat) continue;
+            if (I.section) {
+                int cnt = 0; for (int j = i + 1; j < n && !items[s][j].section; ++j) if (!items[s][j].stat && !empty[j]) ++cnt;
+                const float cy = snap(ry[i] + secH * 0.58f);
+                char up[60]; lstrcpynA(up, I.label, sizeof(up)); CharUpperA(up);
+                fo->begin(dev); const float tw = fo->measure(up, tzS);
+                fo->draw_lc(dev, snap(x0), cy, up, tzS, with_alpha(acc, A), with_alpha(0xA0000000u, A), k.ow);
+                float lineEnd = x1;
+                if (cnt > 0) { char c[12]; sprintf(c, "%d", cnt); const float cw2 = fo->measure(c, tzS);       // how many, on the right : a small pill
+                    const float pw = cw2 + 14.0f * S, ph = snap(tzS * 1.45f), px = snap(x1 - pw);
+                    rrect(dev, px, snap(cy - ph * 0.5f), pw, ph, ph * 0.5f, with_alpha(with_a(acc, 0x38), A), with_alpha(with_a(acc, 0x22), A));
+                    fo->begin(dev); fo->draw_lc(dev, snap(px + 7.0f * S), cy, c, tzS, with_alpha(0xFFF4F6FAu, A), with_alpha(0xA0000000u, A), k.ow); lineEnd = px - 8.0f * S; }
+                hbar_soft(dev, snap(x0 + tw + 10.0f * S), cy, fmaxf(0.0f, lineEnd - (x0 + tw + 10.0f * S)), 1.0f, acc & 0x00FFFFFFu, 0x60, 0.0f);
+                continue;
+            }
+            const float cy = snap(ry[i] + (two[i] ? rh[i] * 0.34f : rowH * 0.5f));
+            const bool on = i == curI && P.focused;
+            float lx = x0 + 4.0f * S;
+            if (empty[i]) {                                               // an empty state : dim, no bullet
+                fo->begin(dev); fo->draw_lc(dev, snap(lx), cy, I.label, tz, with_alpha(on ? 0xFFE6ECF4u : 0xFF7C8594u, A), with_alpha(0xA0000000u, A), k.ow);
+            } else {
+                if (kind[i] == 1) {                                       // done : a green check
+                    const float c0 = snap(lx + 7.0f * S);
+                    seg_soft(dev, c0 - 5.0f * S, cy, c0 - 1.5f * S, cy + 4.0f * S, 2.0f * S, with_alpha(I.grey ? 0xFF5A6474u : 0xFF7FD08Au, A));
+                    seg_soft(dev, c0 - 1.5f * S, cy + 4.0f * S, c0 + 6.0f * S, cy - 5.0f * S, 2.0f * S, with_alpha(I.grey ? 0xFF5A6474u : 0xFF7FD08Au, A));
+                } else if (kind[i] == 2) {                                // in progress : a gold diamond
+                    const float c0 = snap(lx + 7.0f * S), r = 4.5f * S;
+                    disc_glow(dev, c0, cy, r * 0.6f, with_alpha(with_a(acc, 0x60), A), 6.0f * S);
+                    fill_tri(dev, c0, cy - r, c0 + r, cy, c0 - r, cy, with_alpha(acc, A)); fill_tri(dev, c0 - r, cy, c0 + r, cy, c0, cy + r, with_alpha(acc, A));
+                } else {                                                  // a plain row : a small dot
+                    disc(dev, snap(lx + 7.0f * S), cy, 2.6f * S, with_alpha(I.grey ? 0xFF4A5262u : on ? 0xFFFFDA8Au : with_a(acc, 0xC0), A));
+                }
+                lx += bulletW;
+                const u32 lc = I.grey ? 0xFF6E7888u : on ? 0xFFFFFFFFu : I.entry ? (kind[i] == 1 ? 0xFFC9D3E0u : 0xFFE6ECF4u) : 0xFF9AA6B8u;
+                fo->begin(dev); fo->draw_lc(dev, snap(lx), cy, I.label, tz, with_alpha(lc, A), with_alpha(0xC8000000u, A), k.ow);
+            }
+            if (I.value[0] && two[i]) {                                   // a count : its own line -- a bar across, the count at its end
+                int a, b; parse_frac(I.value, a, b);
+                const float cy2 = snap(ry[i] + rh[i] * 0.72f), vw = fo->measure(I.value, tzS), bx2 = snap(x0 + 4.0f * S + bulletW), bw2 = fmaxf(10.0f, x1 - vw - 12.0f * S - bx2), bh2 = snap(6.0f * S);
+                rrect(dev, bx2, snap(cy2 - bh2 * 0.5f), bw2, bh2, bh2 * 0.5f, with_alpha(0x70101826u, A), with_alpha(0x70080C14u, A));
+                const float fw = snap(bw2 * fminf(1.0f, (float)a / (float)b));
+                if (fw > 1.0f) rrect(dev, bx2, snap(cy2 - bh2 * 0.5f), fw, bh2, bh2 * 0.5f, with_alpha(a >= b ? 0xF09CE27Au : with_a(acc, 0xF0), A), with_alpha(a >= b ? 0xD070B060u : with_a(acc, 0xB0), A));
+                fo->begin(dev); fo->draw_lc(dev, snap(x1 - vw), cy2, I.value, tzS, with_alpha(I.grey ? 0xFF6E7888u : a >= b ? 0xFF9CE27Au : 0xFFFFE9B0u, A), with_alpha(0xC8000000u, A), k.ow);
+            } else if (I.value[0]) {
+                int a, b; const bool frac = parse_frac(I.value, a, b);
+                const float vw = fo->measure(I.value, tz), vx = snap(x1 - vw);
+                fo->begin(dev); fo->draw_lc(dev, vx, cy, I.value, tz, with_alpha(I.grey ? 0xFF6E7888u : frac && a >= b ? 0xFF9CE27Au : 0xFFFFE9B0u, A), with_alpha(0xC8000000u, A), k.ow);
+                if (frac) {                                              // a count : a bar before it, green when full
+                    const float bw2 = snap(84.0f * S), bh2 = snap(6.0f * S), bx2 = snap(vx - 12.0f * S - bw2), by2 = snap(cy - bh2 * 0.5f);
+                    rrect(dev, bx2, by2, bw2, bh2, bh2 * 0.5f, with_alpha(0x70101826u, A), with_alpha(0x70080C14u, A));
+                    const float fw = snap(bw2 * fminf(1.0f, (float)a / (float)b));
+                    if (fw > 1.0f) rrect(dev, bx2, by2, fw, bh2, bh2 * 0.5f, with_alpha(a >= b ? 0xF09CE27Au : with_a(acc, 0xF0), A), with_alpha(a >= b ? 0xD070B060u : with_a(acc, 0xB0), A));
+                }
+            }
+            if (I.entry && ms && ms->focused && ms->x >= x0 - 8.0f * S && ms->x < x1 + 8.0f * S && ms->y >= ry[i] && ms->y < ry[i] + rh[i]) { ment = I.entry; mrow = i; }
+        }
+        // ---- the stat tiles : two a line, the label small and dim, the number large and warm
+        if (nStat) {
+            float ty = y; for (int i = 0; i < n; ++i) if (!items[s][i].stat && ry[i] >= 0.0f) ty = fmaxf(ty, ry[i] + (items[s][i].section ? secH : rh[i]));
+            ty = snap(ty + 16.0f * S);
+            const float tw = snap(((x1 - x0) - gapT) * 0.5f); int c = 0;
+            for (int i = 0; i < n; ++i) { const PanelItem& I = items[s][i]; if (!I.stat) continue;
+                const float tx = snap(x0 + (c & 1) * (tw + gapT)), tyy = snap(ty + (c / 2) * (tileH + gapT)); ++c;
+                const u32 sc = stat_colour(I.label, acc);
+                rrect(dev, tx, tyy, tw, tileH, snap(7.0f * S), with_alpha(with_a(sc, 0x30), A), with_alpha(0x60101624u, A));
+                rrect_stroke(dev, tx, tyy, tw, tileH, snap(7.0f * S), with_alpha(with_a(sc, 0x58), A), 1.0f);
+                char up[60]; lstrcpynA(up, I.label, sizeof(up)); CharUpperA(up);
+                disc(dev, snap(tx + 15.0f * S), snap(tyy + tileH * 0.30f), 3.0f * S, with_alpha(sc, A));
+                fo->begin(dev);
+                fo->draw_lc(dev, snap(tx + 24.0f * S), snap(tyy + tileH * 0.30f), up, tzK, with_alpha(0xFFB4BECCu, A), with_alpha(0xA0000000u, A), k.ow);
+                fo->draw_lc(dev, snap(tx + 12.0f * S), snap(tyy + tileH * 0.68f), I.value, tzV, with_alpha(sc, A), with_alpha(0xC8000000u, A), k.ow);
+            }
+        }
+        if (scroll) {
+            float r0 = 1e9f, r1 = 0.0f; for (int i = 0; i < n; ++i) if (items[s][i].entry && ry[i] >= 0.0f) { r0 = fminf(r0, ry[i]); r1 = fmaxf(r1, ry[i] + rh[i]); }
+            if (r1 > r0) {
+                const float tx = snap(bx + bw - pad * 0.45f), tw = snap(3.0f * S), th = r1 - r0;
+                rrect(dev, tx, snap(r0), tw, th, tw * 0.5f, with_alpha(0x40FFFFFFu, A), with_alpha(0x40FFFFFFu, A));
+                const float kh = fmaxf(12.0f * S, th * (float)P.lvis / (float)P.lcount), ky = r0 + (th - kh) * (float)P.ltop / (float)(P.lcount - P.lvis);
+                rrect(dev, tx, snap(ky), tw, snap(kh), tw * 0.5f, with_alpha(acc, A), with_alpha(with_a(acc, 0xC0), A));
+            }
+            const int last = P.ltop + P.lvis < P.lcount ? P.ltop + P.lvis : P.lcount;
+            char ft[48]; sprintf(ft, "%d-%d / %d", P.ltop + 1, last, P.lcount);
+            const float fy = snap(by + bh - pad - footH * 0.5f), fw = fo->measure(ft, tzS);
+            fo->begin(dev); fo->draw_lc(dev, snap(x1 - fw), fy, ft, tzS, with_alpha(0xFF9AA6B8u, A), with_alpha(0xA0000000u, A), k.ow);
+            const float ax = snap(x1 - fw - 16.0f * S), aa = 3.5f * S;
+            const u32 cUp = P.ltop > 0 ? with_alpha(acc, A) : with_alpha(0x40FFFFFFu, A), cDn = last < P.lcount ? with_alpha(acc, A) : with_alpha(0x40FFFFFFu, A);
+            tri(dev, ax, fy - aa * 2.0f, ax - aa, fy - aa * 0.6f, ax + aa, fy - aa * 0.6f, cUp);
+            tri(dev, ax, fy + aa * 2.0f, ax - aa, fy + aa * 0.6f, ax + aa, fy + aa * 0.6f, cDn);
+            if (P.ltop > 0 || last < P.lcount) { char mt[48]; sprintf(mt, tr("%d more", "%d de plus"), P.lcount - (last - P.ltop));
+                fo->begin(dev); fo->draw_lc(dev, snap(x0), fy, mt, tzS, with_alpha(0xFF7C8594u, A), with_alpha(0xA0000000u, A), k.ow); }
+        }
+        dSetTex(dev, 0, 0); cs(dev);
+        if (open && P.focused) {
+            g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH;
+            static float mv[4][2]; const bool moved = mouse_moved(ms, mv[s & 3]);
+            if (ment && moved && mrow != g_gpB[s].hoverRow && ment != P.cursor && !items[s][mrow].grey) native_gen_hover(P.name, ment);
+            g_gpB[s].hoverRow = mrow;
+            if (ment && !items[s][mrow].grey && ms && ms->clicked) native_gen_pick(P.name, ment);
+        } else g_gpB[s].hoverRow = -1;
+    }
+}
+// ======== MISSIONS (miss00 as data : native_missions) -- the STORY, not the client's page of five ========
+// The header : MISSIONS / the nation or the expansion, how many are done (a pill) ; the CURRENT mission on a card ; the
+// COMPLETED ones as a timeline (numbered in story order, a sub-mission indented under its chapter ; with chapters, the one
+// holding the cursor is open, the others folded with their count). The timeline folds itself while the cursor is on the
+// current mission and opens when it walks into the completed ones ; a click on its header forces it open / closed. A
+// long list scrolls around the cursor ("n more" above / below). The client keeps the keys ; the mouse hovers / picks a
+// row of the client's page.
+namespace { Block g_msB; unsigned g_msMs = 0; int g_msPin = 0, g_msPinCat = -1; float g_msCurY = -1.0f; }
+void missions_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_msB.vis = 0.0f; g_msB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_msMs ? (float)(now - g_msMs) / 1000.0f : 0.0f; g_msMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeMissions& M0 = native_missions();
+    static NativeMissions L; const bool up = M0.open && M0.ok;
+    if (up) L = M0;
+    if (!block_ease(g_msB, up, now, dt) || L.count < 3) { if (!M0.open) { g_msPin = 0; g_msCurY = -1.0f; } return; }
+    const NativeGenMenus& G0 = native_gen_menus(); int uiW = 0, uiH = 0; short rx0 = 16, ry0 = 48;
+    for (int i = 0; i < G0.np; ++i) if (!strcmp(G0.p[i].name, "miss00")) { uiW = G0.p[i].uiW; uiH = G0.p[i].uiH; rx0 = G0.p[i].rx0; ry0 = G0.p[i].ry0; }
+    const Metrics k = metrics(f); const float S = k.S; const u32 dev = f.dev; Font* fo = f.font; const MouseState* ms = f.mouse;
+    const float tz = snap(k.tz * 1.06f), tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = snap(k.tz * 1.32f), tzC = snap(k.tz * 1.22f);
+    const float pad = snap(18.0f * S) + k.bi, rowH = snap(k.capH * 1.85f), secH = snap(tzS * 2.6f), indent = snap(18.0f * S);
+    const u32 acc = panel_accent("miss00", L.title);
+    const char* kicker = tr("Missions", "Missions");
+    const char* title = L.title[0] ? L.title : kicker;
+    // ---- the rows : the current one, the completed ones (their chapters)
+    const int cur = L.cursor; const bool curOnDone = cur >= 3;
+    int done[200], nd = 0; for (int i = 3; i < L.count; ++i) if (L.row[i].value >= 0) done[nd++] = i;
+    bool depthAny = false; for (int i = 0; i < nd; ++i) if (L.row[done[i]].depth > 0) depthAny = true;
+    // folded / open : the cursor in the completed ones ALWAYS opens it (a fold pinned by a click only holds while the cursor
+    // is on Current) ; a pin dies with its category (2026-11-22 : RotZ, the client's cursor walked the list, the box stayed folded)
+    if (g_msPinCat != L.cat) { g_msPin = 0; g_msPinCat = L.cat; }
+    const bool open = curOnDone || g_msPin > 0;
+    // the display list of the timeline : a row index, or a folded chapter (its row, its hidden children's count)
+    struct DI { int row; int folded; int num; };
+    static DI di[220]; int nDi = 0, curDi = -1;
+    if (open) {
+        int num = 0;
+        for (int q = 0; q < nd; ++q) {
+            const int r = done[q]; const bool chapter = L.row[r].depth == 0;
+            if (chapter) ++num;
+            if (depthAny && chapter) {                                     // a chapter : open when it holds the cursor (or the last one, the cursor elsewhere)
+                int last = q; while (last + 1 < nd && L.row[done[last + 1]].depth > 0) ++last;
+                const bool holds = cur >= r && cur <= done[last];
+                const bool openCh = holds || (!curOnDone && last == nd - 1);
+                di[nDi++] = { r, openCh ? 0 : last - q, num }; if (r == cur) curDi = nDi - 1;
+                if (!openCh) { if (holds) curDi = nDi - 1; q = last; continue; }
+                continue;
+            }
+            if (nDi < 220) { di[nDi++] = { r, 0, chapter ? num : 0 }; if (r == cur) curDi = nDi - 1; }
+        }
+    }
+    // ---- the viewport : at most what fits (14 rows), scrolled to keep the cursor in sight
+    const int maxRows = (int)fmaxf(5.0f, fminf(14.0f, (f.screenH * 0.62f - 6.0f * rowH) / rowH));
+    static int vTop = 0; if (!open) vTop = 0;
+    if (curDi >= 0) { if (curDi < vTop + 1) vTop = curDi - 1; if (curDi > vTop + maxRows - 2) vTop = curDi - maxRows + 2; }
+    if (vTop > nDi - maxRows) vTop = nDi - maxRows; if (vTop < 0) vTop = 0;
+    const int nVis = nDi < maxRows ? nDi : maxRows;
+    const bool moreUp = open && vTop > 0, moreDn = open && vTop + nVis < nDi;
+    // ---- measure
+    const float headH = snap(tzK * 1.5f + tzT * 1.6f + 14.0f * S);
+    const float cardH = snap(tzS * 1.6f + tzC * 1.5f + 18.0f * S);
+    float wMax = fo->measure(title, tzT) + snap(140.0f * S);
+    wMax = fmaxf(wMax, fo->measure(L.row[1].name, tzC) + snap(80.0f * S));
+    for (int i = 0; i < nDi; ++i) wMax = fmaxf(wMax, indent * (1 + L.row[di[i].row].depth) + fo->measure(L.row[di[i].row].name, tz) + snap(110.0f * S));
+    const float bw = keep_width(g_msB, fmaxf(snap(480.0f * S), fminf(wMax + 2.0f * pad, f.screenW * 0.5f)));
+    const float listH = open ? (nVis * rowH + (moreUp ? rowH * 0.7f : 0.0f) + (moreDn ? rowH * 0.7f : 0.0f)) : (nd ? rowH : rowH);
+    const float bh = snap(headH + pad * 0.6f + secH + cardH + snap(12.0f * S) + secH + listH + pad);
+    // ---- place : the client's window's corner
+    const float sx = uiW > 0 ? f.screenW / (float)uiW : 1.0f, sy = uiH > 0 ? f.screenH / (float)uiH : 1.0f;
+    float bx = snap((float)rx0 * sx), by = snap((float)ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+    const float tO = ease_out(((float)(now - g_msB.openMs) / 1000.0f) / 0.09f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_msB.vis * tO; if (A <= 0.0f) return;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    const float x0 = bx + pad, x1 = bx + bw - pad;
+    // ---- the header : the band in the accent, MISSIONS, the title, how many are done
+    rrect_topcaps(dev, bx + k.bi, by + k.bi, bw - 2.0f * k.bi, headH - k.bi, snap(6.0f * S), with_alpha(with_a(acc, 0x50), A), with_alpha(with_a(acc, 0x0A), A));
+    {   char up[32]; lstrcpynA(up, kicker, sizeof(up)); CharUpperA(up);
+        float ky = by + snap(10.0f * S);
+        fo->begin(dev);
+        if (lstrcmpiA(title, kicker)) { fo->draw_lc(dev, snap(x0), snap(ky + tzK * 0.7f), up, tzK, with_alpha(acc, A), with_alpha(0xA0000000u, A), k.ow); ky += tzK * 1.5f; }
+        fo->draw_lc(dev, snap(x0), snap(ky + tzT * 0.8f), title, tzT, with_alpha(0xFFF4E8C8u, A), with_alpha(0xC8000000u, A), k.ow);
+        char c[48]; sprintf(c, tr("%d completed", "%d accomplies"), nd);
+        const float cw = fo->measure(c, tzS) + 26.0f * S, ch = snap(tzS * 1.7f), cx = snap(x1 - cw), cy = snap(by + headH * 0.5f - ch * 0.5f);
+        rrect(dev, cx, cy, cw, ch, ch * 0.5f, with_alpha(0x3C7FD08Au, A), with_alpha(0x247FD08Au, A));
+        rrect_stroke(dev, cx, cy, cw, ch, ch * 0.5f, with_alpha(0x707FD08Au, A), 1.0f);
+        const float ckx = cx + 10.0f * S, cky = cy + ch * 0.5f;
+        seg_soft(dev, ckx - 3.5f * S, cky, ckx - 1.0f * S, cky + 3.0f * S, 1.6f * S, with_alpha(0xFF9CE27Au, A));
+        seg_soft(dev, ckx - 1.0f * S, cky + 3.0f * S, ckx + 4.0f * S, cky - 3.5f * S, 1.6f * S, with_alpha(0xFF9CE27Au, A));
+        fo->begin(dev); fo->draw_lc(dev, snap(cx + 18.0f * S), snap(cky), c, tzS, with_alpha(0xFFE6F4E0u, A), with_alpha(0xA0000000u, A), k.ow);
+        rrect(dev, bx + k.bi, snap(by + headH - 1.0f), bw - 2.0f * k.bi, 1.5f, 0.0f, with_alpha(with_a(acc, 0x90), A), with_alpha(with_a(acc, 0x90), A));
+    }
+    auto section = [&](float y, const char* label, int count, int chevron) {   // chevron : 0 none, 1 folded, 2 open
+        const float cy = snap(y + secH * 0.58f); char up[48]; lstrcpynA(up, label, sizeof(up));
+        int l = lstrlenA(up); while (l && (up[l - 1] == ':' || up[l - 1] == ' ')) up[--l] = 0; CharUpperA(up);
+        float tx = x0;
+        if (chevron) { const float a = 4.0f * S, c0 = snap(x0 + 5.0f * S);
+            if (chevron == 1) tri(dev, c0 + a, cy, c0 - a * 0.6f, cy - a, c0 - a * 0.6f, cy + a, with_alpha(acc, A));
+            else tri(dev, c0, cy + a, c0 - a, cy - a * 0.6f, c0 + a, cy - a * 0.6f, with_alpha(acc, A));
+            tx = x0 + 16.0f * S; }
+        fo->begin(dev); const float tw = fo->measure(up, tzS);
+        fo->draw_lc(dev, snap(tx), cy, up, tzS, with_alpha(acc, A), with_alpha(0xA0000000u, A), k.ow);
+        float lineEnd = x1;
+        if (count >= 0) { char c[12]; sprintf(c, "%d", count); const float cw2 = fo->measure(c, tzS), pw = cw2 + 14.0f * S, ph = snap(tzS * 1.45f), px = snap(x1 - pw);
+            rrect(dev, px, snap(cy - ph * 0.5f), pw, ph, ph * 0.5f, with_alpha(with_a(acc, 0x38), A), with_alpha(with_a(acc, 0x22), A));
+            fo->begin(dev); fo->draw_lc(dev, snap(px + 7.0f * S), cy, c, tzS, with_alpha(0xFFF4F6FAu, A), with_alpha(0xA0000000u, A), k.ow); lineEnd = px - 8.0f * S; }
+        hbar_soft(dev, snap(tx + tw + 10.0f * S), cy, fmaxf(0.0f, lineEnd - (tx + tw + 10.0f * S)), 1.0f, acc & 0x00FFFFFFu, 0x60, 0.0f);
+    };
+    float y = by + headH + pad * 0.6f;
+    // ---- CURRENT : a card
+    section(y, L.hCur[0] ? L.hCur : tr("Current", "En cours"), -1, 0); y += secH;
+    int mrow = -1;
+    {   const bool none = L.row[1].value < 0, on = cur == 1 && L.focused;
+        const float cx = snap(x0 - 4.0f * S), cw = (x1 - x0) + 8.0f * S;
+        rrect(dev, cx, snap(y), cw, cardH, snap(8.0f * S), with_alpha(none ? 0x30202A3Cu : with_a(acc, on ? 0x48 : 0x2C), A), with_alpha(0x50101624u, A));
+        rrect_stroke(dev, cx, snap(y), cw, cardH, snap(8.0f * S), with_alpha(on ? 0xD0FFDA8Au : none ? 0x30C8D6EAu : with_a(acc, 0x90), A), on ? 1.6f * S : 1.0f);
+        const float ly = snap(y + 9.0f * S + tzS * 0.7f), ny = snap(y + cardH - 9.0f * S - tzC * 0.75f);
+        if (none) {
+            fo->begin(dev); fo->draw_lc(dev, snap(x0 + 10.0f * S), snap(y + cardH * 0.5f), L.row[1].name[0] ? L.row[1].name : tr("No current mission.", "Aucune mission en cours."), tz, with_alpha(on ? 0xFFE6ECF4u : 0xFF7C8594u, A), with_alpha(0xA0000000u, A), k.ow);
+        } else {
+            const float c0 = snap(x0 + 12.0f * S), r = 6.0f * S;
+            disc_glow(dev, c0, ny, r * 0.7f, with_alpha(with_a(acc, 0x70), A), 8.0f * S);
+            fill_tri(dev, c0, ny - r, c0 + r, ny, c0 - r, ny, with_alpha(acc, A)); fill_tri(dev, c0 - r, ny, c0 + r, ny, c0, ny + r, with_alpha(acc, A));
+            char up[40]; lstrcpynA(up, tr("In progress", "En cours"), sizeof(up)); CharUpperA(up);
+            fo->begin(dev);
+            fo->draw_lc(dev, snap(x0 + 30.0f * S), ly, up, tzK, with_alpha(0xFF9AA6B8u, A), with_alpha(0xA0000000u, A), k.ow);
+            fo->draw_lc(dev, snap(x0 + 30.0f * S), ny, L.row[1].name, tzC, with_alpha(on ? 0xFFFFFFFFu : 0xFFF4E8C8u, A), with_alpha(0xC8000000u, A), k.ow);
+        }
+        if (ms && ms->focused && ms->x >= cx && ms->x < cx + cw && ms->y >= y && ms->y < y + cardH) mrow = 1;
+        y += cardH + snap(12.0f * S);
+    }
+    // ---- COMPLETED : the header (a chevron, the count ; a click folds / opens), then the timeline or one summary line
+    const float secY = y;
+    section(y, L.hDone[0] ? L.hDone : tr("Completed", "Accomplies"), nd, nd ? (open ? 2 : 1) : 0); y += secH;
+    if (ms && ms->focused && ms->clicked && nd && ms->x >= x0 && ms->x < x1 && ms->y >= secY && ms->y < secY + secH) g_msPin = open ? -1 : 1;
+    if (!nd) {
+        const char* t = tr("No completed missions.", "Aucune mission accomplie."); for (int i = 3; i < L.count; ++i) if (L.row[i].value < 0 && L.row[i].name[0]) t = L.row[i].name;
+        fo->begin(dev); fo->draw_lc(dev, snap(x0 + 4.0f * S), snap(y + rowH * 0.5f), t, tz, with_alpha(0xFF7C8594u, A), with_alpha(0xA0000000u, A), k.ow);
+    } else if (!open) {                                                   // folded : the latest one
+        char t[120]; _snprintf(t, sizeof(t), "%s  %s", tr("Latest :", "Derniere :"), L.row[done[nd - 1]].name); t[sizeof(t) - 1] = 0;
+        fo->begin(dev); fo->draw_lc(dev, snap(x0 + 4.0f * S), snap(y + rowH * 0.5f), t, tz, with_alpha(0xFF9AA6B8u, A), with_alpha(0xA0000000u, A), k.ow);
+    } else {
+        if (moreUp) { char t[32]; sprintf(t, tr("%d more", "%d de plus"), vTop); const float cy = snap(y + rowH * 0.35f);
+            tri(dev, x0 + 10.0f * S, cy - 3.0f * S, x0 + 6.0f * S, cy + 2.0f * S, x0 + 14.0f * S, cy + 2.0f * S, with_alpha(0xFF8A96A8u, A));
+            fo->begin(dev); fo->draw_lc(dev, snap(x0 + 22.0f * S), cy, t, tzK, with_alpha(0xFF8A96A8u, A), with_alpha(0xA0000000u, A), k.ow); y += rowH * 0.7f; }
+        const float lineX = snap(x0 + 9.0f * S);
+        // the spine : one hairline through the nodes
+        if (nVis > 1) rrect(dev, lineX - 0.75f * S, snap(y + rowH * 0.5f), 1.5f * S, (nVis - 1) * rowH, 0.0f, with_alpha(0x507FD08Au, A), with_alpha(0x507FD08Au, A));
+        // the cursor : a gold capsule gliding to its row
+        if (curDi >= vTop && curDi < vTop + nVis && L.focused) {
+            const float target = y + (curDi - vTop) * rowH; g_msCurY = g_msCurY < 0.0f ? target : g_msCurY + (target - g_msCurY) * fminf(1.0f, dt * 18.0f);
+            const float cx = snap(x0 + 20.0f * S), cw = x1 - cx + 6.0f * S;
+            rrect(dev, cx, snap(g_msCurY + 1.0f * S), cw, rowH - 2.0f * S, snap(6.0f * S), with_alpha(0x50FFDA8Au, A), with_alpha(0x2EFFDA8Au, A));
+            rrect_stroke(dev, cx, snap(g_msCurY + 1.0f * S), cw, rowH - 2.0f * S, snap(6.0f * S), with_alpha(0xC8FFDA8Au, A), 1.5f * S);
+        }
+        for (int v = 0; v < nVis; ++v) {
+            const DI& D = di[vTop + v]; const NativeMissions::Row& R = L.row[D.row];
+            const float ry = y + v * rowH, cy = snap(ry + rowH * 0.5f);
+            const bool on = vTop + v == curDi && L.focused, chapter = R.depth == 0;
+            if (chapter) {                                                // a chapter / a mission : a green node with its check
+                disc(dev, lineX, cy, 6.0f * S, with_alpha(0xFF2A4A34u, A));
+                rrect_stroke(dev, lineX - 6.0f * S, cy - 6.0f * S, 12.0f * S, 12.0f * S, 6.0f * S, with_alpha(0xFF7FD08Au, A), 1.2f * S);
+                seg_soft(dev, lineX - 3.0f * S, cy, lineX - 0.8f * S, cy + 2.6f * S, 1.5f * S, with_alpha(0xFF9CE27Au, A));
+                seg_soft(dev, lineX - 0.8f * S, cy + 2.6f * S, lineX + 3.4f * S, cy - 3.0f * S, 1.5f * S, with_alpha(0xFF9CE27Au, A));
+            } else disc(dev, lineX, cy, 2.6f * S, with_alpha(0xFF7FD08Au, A));   // a sub-mission : a small node
+            float tx = x0 + 26.0f * S + indent * (float)R.depth;
+            if (D.folded) { const float a = 3.5f * S; tri(dev, tx + a, cy, tx - a * 0.6f, cy - a, tx - a * 0.6f, cy + a, with_alpha(acc, A)); tx += 12.0f * S; }
+            fo->begin(dev);
+            fo->draw_lc(dev, snap(tx), cy, R.name, chapter ? tz : snap(tz * 0.94f), with_alpha(on ? 0xFFFFFFFFu : chapter ? 0xFFE6ECF4u : 0xFFB4BECCu, A), with_alpha(0xC8000000u, A), k.ow);
+            char rt[24]; rt[0] = 0;
+            if (D.folded) sprintf(rt, "+%d", D.folded); else if (D.num) sprintf(rt, "%d", D.num);
+            if (rt[0]) { const float w2 = fo->measure(rt, tzS); fo->draw_lc(dev, snap(x1 - w2), cy, rt, tzS, with_alpha(D.folded ? acc : 0xFF7C8594u, A), with_alpha(0xA0000000u, A), k.ow); }
+            if (ms && ms->focused && ms->x >= x0 && ms->x < x1 && ms->y >= ry && ms->y < ry + rowH) mrow = D.row;
+        }
+        y += nVis * rowH;
+        if (moreDn) { char t[32]; sprintf(t, tr("%d more", "%d de plus"), nDi - vTop - nVis); const float cy = snap(y + rowH * 0.35f);
+            tri(dev, x0 + 10.0f * S, cy + 3.0f * S, x0 + 6.0f * S, cy - 2.0f * S, x0 + 14.0f * S, cy - 2.0f * S, with_alpha(0xFF8A96A8u, A));
+            fo->begin(dev); fo->draw_lc(dev, snap(x0 + 22.0f * S), cy, t, tzK, with_alpha(0xFF8A96A8u, A), with_alpha(0xA0000000u, A), k.ow); }
+    }
+    dSetTex(dev, 0, 0); cs(dev);
+    // ---- the mouse : a row of the client's page (its entries 1.. are the page's rows top..)
+    if (M0.open && L.focused) {
+        g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH;
+        const int ent = (mrow >= L.top && mrow < L.top + L.vis) ? mrow - L.top + 1 : 0;
+        static float mv[2]; const bool moved = mouse_moved(ms, mv);
+        if (ent && moved && mrow != g_msB.hoverRow && mrow != cur) native_gen_hover("miss00", ent);
+        g_msB.hoverRow = mrow;
+        if (ent && ms && ms->clicked) native_gen_pick("miss00", ent);
+    } else g_msB.hoverRow = -1;
+}
+// ======== the JOURNAL (quest01 as data : native_journal) -- quests and Records of Eminence, readable ========
+// One page per list : the header (the family, the title -- a quest area with its neighbours for L / R, the objective
+// list's path --, how many), the rows (a quest : done / current / repeatable ; a category : its count and a chevron ;
+// an objective : its state, its rewards, its progress bar), scrolled around the cursor, and for an objective the DETAIL
+// strip : its description and its rewards in full. The client keeps the keys ; the mouse hovers / picks a page row.
+namespace { Block g_jrB; unsigned g_jrMs = 0; float g_jrCurY = -1.0f; int g_jrTop = 0; }
+static const char* jr_area_name(int a) {
+    static const char* EN[11] = { "San d'Oria", "Bastok", "Windurst", "Jeuno", "Other Areas", "Outlands", "Aht Urhgan", "Crystal War", "Abyssea", "Adoulin", "Coalition" };
+    return a >= 0 && a < 11 ? EN[a] : "";
+}
+static u32 jr_area_colour(int a) {
+    static const u32 C[11] = { 0xFFE8706Au, 0xFF6AA8F0u, 0xFF7CCF7Au, 0xFFE8C060u, 0xFFB4BECCu, 0xFF9CC28Au, 0xFFF09A50u, 0xFFA88CF0u, 0xFF68D0D8u, 0xFF84DCA8u, 0xFFE0B060u };
+    return a >= 0 && a < 11 ? C[a] : 0xFFE0B060u;
+}
+// greedy word wrap into at most maxL lines (the last one ends with "..." when cut)
+static int wrap_lines(Font* fo, const char* t, float size, float w, char out[][120], int maxL) {
+    int n = 0; const char* p = t;
+    while (*p && n < maxL) {
+        while (*p == ' ') ++p; if (!*p) break;
+        char line[120]; int L = 0; const char* lastSp = 0; int lastL = 0;
+        while (p[0] && L < 118) { line[L] = *p; line[L + 1] = 0;
+            if (fo->measure(line, size) > w) { if (lastSp) { p = lastSp + 1; L = lastL; } break; }
+            if (*p == ' ') { lastSp = p; lastL = L; } ++L; ++p; }
+        line[L] = 0; lstrcpynA(out[n], line, 120); ++n;
+        if (n == maxL && *p) { int l2 = lstrlenA(out[n - 1]); if (l2 > 3) lstrcpyA(out[n - 1] + l2 - 3, "..."); }
+    }
+    return n;
+}
+void journal_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_jrB.vis = 0.0f; g_jrB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_jrMs ? (float)(now - g_jrMs) / 1000.0f : 0.0f; g_jrMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeJournal& J0 = native_journal();
+    static NativeJournal L; const bool up = J0.open && J0.ok;
+    if (up) L = J0;
+    if (!block_ease(g_jrB, up, now, dt)) { if (!J0.open) { g_jrCurY = -1.0f; g_jrTop = 0; } return; }
+    const NativeGenMenus& G0 = native_gen_menus(); int uiW = 0, uiH = 0; short rx0 = 16, ry0 = 48;
+    for (int i = 0; i < G0.np; ++i) if (!strcmp(G0.p[i].name, "quest01")) { uiW = G0.p[i].uiW; uiH = G0.p[i].uiH; rx0 = G0.p[i].rx0; ry0 = G0.p[i].ry0; }
+    const Metrics k = metrics(f); const float S = k.S; const u32 dev = f.dev; Font* fo = f.font; const MouseState* ms = f.mouse;
+    const float tz = snap(k.tz * 1.04f), tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = snap(k.tz * 1.30f);
+    const float pad = snap(18.0f * S) + k.bi, rowH = snap(k.capH * 1.85f), rowH2 = snap(k.capH * 2.75f);
+    const bool roe = L.mode >= 2, quests = !roe;
+    // ---- the names : family, title, subtitle, accent
+    const char* kicker = quests ? tr("Quests", "Quetes") : L.mode == 4 ? "Vana'Bout" : "Records of Eminence";
+    char title[64] = "", subt[64] = "";
+    if (quests) { lstrcpynA(title, jr_area_name(L.area), sizeof(title)); const char* c = strchr(L.title, ':'); lstrcpynA(subt, c ? c + 1 + (c[1] == ' ') : (L.mode ? tr("Completed Quests", "Quetes accomplies") : tr("Current Quests", "Quetes en cours")), sizeof(subt)); }
+    else if (L.mode == 3) { lstrcpynA(title, L.depth > 0 && L.crumb[L.depth][0] ? L.crumb[L.depth] : tr("Objective List", "Liste des objectifs"), sizeof(title));
+        int o = 0; for (int i = 0; i < L.depth && o < 60; ++i) o += _snprintf(subt + o, sizeof(subt) - o, "%s%s", i ? "  >  " : "", i == 0 ? tr("Objective List", "Liste des objectifs") : L.crumb[i]); subt[63] = 0; }
+    else { lstrcpynA(title, L.title, sizeof(title)); char* sp = strstr(title, "   "); if (sp) *sp = 0; if (!title[0]) lstrcpynA(title, L.mode == 4 ? "Vana'Bout" : tr("Current", "En cours"), sizeof(title)); }
+    const u32 acc = quests ? jr_area_colour(L.area) : L.mode == 4 ? 0xFFFFA060u : 0xFF62BEF8u;
+    // ---- the viewport
+    const int maxRows = (int)fmaxf(5.0f, fminf(roe ? 9.0f : 13.0f, (f.screenH * 0.6f) / (roe ? rowH2 : rowH)));
+    if (!L.count) g_jrTop = 0;
+    if (L.cursor < g_jrTop + 1) g_jrTop = L.cursor - 1; if (L.cursor > g_jrTop + maxRows - 2) g_jrTop = L.cursor - maxRows + 2;
+    if (g_jrTop > L.count - maxRows) g_jrTop = L.count - maxRows; if (g_jrTop < 0) g_jrTop = 0;
+    const int nVis = L.count < maxRows ? L.count : maxRows;
+    auto rh_of = [&](int r) { const NativeJournal::Row& R = L.row[r]; return roe && !R.category ? rowH2 : rowH; };
+    float listH = 0.0f; for (int v = 0; v < nVis; ++v) listH += rh_of(g_jrTop + v);
+    // the detail strip : the cursor's objective
+    const NativeJournal::Row* CR = L.count ? &L.row[L.cursor] : 0;
+    const bool detail = roe && CR && !CR->category && CR->name[0];
+    char dl[4][120]; int nDl = 0; const float headH = snap(tzK * 1.5f + tzT * 1.6f + (subt[0] ? tzS * 1.4f : 0.0f) + 14.0f * S);
+    const float bw = keep_width(g_jrB, fmaxf(snap(500.0f * S), fminf(f.screenW * 0.42f, snap(560.0f * S))));
+    const float x0r = pad, x1r = bw - pad;
+    if (detail) nDl = wrap_lines(fo, native_journal_desc((unsigned)CR->value), tzS, x1r - x0r - 4.0f * S, dl, 3);
+    const float detH = detail ? snap(12.0f * S + tzS * 1.5f * (float)nDl + tzS * 2.4f + 16.0f * S) : 0.0f;
+    const float footH = L.count > nVis ? snap(tzS * 2.2f) : 0.0f;
+    const float bh = snap(headH + pad * 0.6f + (L.count ? listH : rowH) + footH + (detail ? snap(12.0f * S) + detH : 0.0f) + pad);
+    // ---- place
+    const float sx = uiW > 0 ? f.screenW / (float)uiW : 1.0f, sy = uiH > 0 ? f.screenH / (float)uiH : 1.0f;
+    float bx = snap((float)rx0 * sx), by = snap((float)ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+    const float tO = ease_out(((float)(now - g_jrB.openMs) / 1000.0f) / 0.09f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_jrB.vis * tO; if (A <= 0.0f) return;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    const float x0 = bx + pad, x1 = bx + bw - pad;
+    // ---- the header
+    rrect_topcaps(dev, bx + k.bi, by + k.bi, bw - 2.0f * k.bi, headH - k.bi, snap(6.0f * S), with_alpha(with_a(acc, 0x50), A), with_alpha(with_a(acc, 0x0A), A));
+    {   char up[48]; lstrcpynA(up, kicker, sizeof(up)); CharUpperA(up);
+        float ky = by + snap(10.0f * S);
+        fo->begin(dev);
+        fo->draw_lc(dev, snap(x0), snap(ky + tzK * 0.7f), up, tzK, with_alpha(acc, A), with_alpha(0xA0000000u, A), k.ow); ky += tzK * 1.5f;
+        fo->draw_lc(dev, snap(x0), snap(ky + tzT * 0.8f), title, tzT, with_alpha(0xFFF4E8C8u, A), with_alpha(0xC8000000u, A), k.ow); ky += tzT * 1.6f;
+        if (subt[0]) fo->draw_lc(dev, snap(x0), snap(ky + tzS * 0.5f), subt, tzS, with_alpha(0xFFB4BECCu, A), with_alpha(0xA0000000u, A), k.ow);
+        // the right : the count (RoE current : n / 30 with a bar) ; a quest area : its neighbours (L / R)
+        char c[48]; int a2 = 0, b2 = 0;
+        if (L.mode == 2) { sprintf(c, "%d/30", L.accepted); a2 = L.accepted; b2 = 30; }
+        else if (L.mode == 3 && L.catOk && L.catTotal > 0) { sprintf(c, tr("%d/%d done", "%d/%d faits"), L.catDone, L.catTotal); a2 = L.catDone; b2 = L.catTotal; }
+        else if (quests) sprintf(c, tr("%d quests", "%d quetes"), L.count);
+        else sprintf(c, "%d", L.count);
+        const float barW = b2 ? snap(54.0f * S) : 0.0f, cw = fo->measure(c, tzS) + barW + (b2 ? 34.0f : 20.0f) * S, ch = snap(tzS * 1.8f), cx = snap(x1 - cw), cy = snap(by + snap(10.0f * S));
+        rrect(dev, cx, cy, cw, ch, ch * 0.5f, with_alpha(with_a(acc, 0x3C), A), with_alpha(with_a(acc, 0x22), A));
+        rrect_stroke(dev, cx, cy, cw, ch, ch * 0.5f, with_alpha(with_a(acc, 0x80), A), 1.0f);
+        float tx = cx + 10.0f * S;
+        if (b2) { const float bh2 = snap(5.0f * S), by2 = snap(cy + ch * 0.5f - bh2 * 0.5f);
+            rrect(dev, tx, by2, barW, bh2, bh2 * 0.5f, with_alpha(0x70101826u, A), with_alpha(0x70080C14u, A));
+            const float fw = snap(barW * fminf(1.0f, (float)a2 / (float)b2)); if (fw > 1.0f) rrect(dev, tx, by2, fw, bh2, bh2 * 0.5f, with_alpha(acc, A), with_alpha(with_a(acc, 0xB0), A));
+            tx += barW + 10.0f * S; }
+        fo->begin(dev); fo->draw_lc(dev, snap(tx), snap(cy + ch * 0.5f), c, tzS, with_alpha(0xFFF4F6FAu, A), with_alpha(0xA0000000u, A), k.ow);
+        if (quests) {                                                    // L / R : the previous / next area
+            const int pa = (L.area + 10) % 11, na = (L.area + 1) % 11; char lr[80]; _snprintf(lr, sizeof(lr), "<  %s     %s  >", jr_area_name(pa), jr_area_name(na)); lr[79] = 0;
+            const float lw = fo->measure(lr, tzK); fo->draw_lc(dev, snap(x1 - lw), snap(by + headH - 10.0f * S - tzK * 0.5f), lr, tzK, with_alpha(0xFF8A96A8u, A), with_alpha(0xA0000000u, A), k.ow);
+        }
+        rrect(dev, bx + k.bi, snap(by + headH - 1.0f), bw - 2.0f * k.bi, 1.5f, 0.0f, with_alpha(with_a(acc, 0x90), A), with_alpha(with_a(acc, 0x90), A));
+    }
+    float y = by + headH + pad * 0.6f;
+    int mrow = -1;
+    if (!L.count) {
+        fo->begin(dev); fo->draw_lc(dev, snap(x0 + 4.0f * S), snap(y + rowH * 0.5f), roe ? tr("No objectives.", "Aucun objectif.") : tr("No quests here.", "Aucune quete ici."), tz, with_alpha(0xFF7C8594u, A), with_alpha(0xA0000000u, A), k.ow);
+        y += rowH;
+    } else {
+        // the cursor
+        {   float ty = y; for (int r = g_jrTop; r < L.cursor; ++r) ty += rh_of(r);
+            if (L.cursor >= g_jrTop && L.cursor < g_jrTop + nVis && L.focused) {
+                g_jrCurY = g_jrCurY < 0.0f ? ty : g_jrCurY + (ty - g_jrCurY) * fminf(1.0f, dt * 18.0f);
+                const float h = rh_of(L.cursor), cx = snap(x0 - 8.0f * S), cw = (x1 - x0) + 16.0f * S;
+                rrect(dev, cx, snap(g_jrCurY + 1.0f * S), cw, h - 2.0f * S, snap(6.0f * S), with_alpha(0x50FFDA8Au, A), with_alpha(0x2EFFDA8Au, A));
+                rrect_stroke(dev, cx, snap(g_jrCurY + 1.0f * S), cw, h - 2.0f * S, snap(6.0f * S), with_alpha(0xC8FFDA8Au, A), 1.5f * S); } }
+        float ry = y;
+        for (int v = 0; v < nVis; ++v) {
+            const int r = g_jrTop + v; const NativeJournal::Row& R = L.row[r]; const float h = rh_of(r);
+            const bool on = r == L.cursor && L.focused;
+            const bool tal = R.category && R.tallyOk && R.objTotal > 0, full = tal && R.objDone >= R.objTotal;   // a category's done / total
+            const u32 fc = full ? 0xFF9CE27Au : acc;
+            if (!on && (v & 1)) rrect(dev, snap(x0 - 8.0f * S), snap(ry), (x1 - x0) + 16.0f * S, h, snap(4.0f * S), with_alpha(0x0CFFFFFFu, A), with_alpha(0x0CFFFFFFu, A));
+            const float cy = snap(ry + (h == rowH2 ? h * 0.33f : h * 0.5f)), ix = snap(x0 + 8.0f * S);
+            // the state icon
+            if (R.category) {                                             // a folder : a small accent tile
+                rrect(dev, ix - 6.0f * S, cy - 5.0f * S, 12.0f * S, 10.0f * S, 2.0f * S, with_alpha(with_a(fc, 0xB0), A), with_alpha(with_a(fc, 0x80), A));
+                rrect(dev, ix - 6.0f * S, cy - 7.0f * S, 6.0f * S, 3.0f * S, 1.0f * S, with_alpha(with_a(fc, 0xB0), A), with_alpha(with_a(fc, 0xB0), A));
+            } else if (R.ready) {                                         // a reward to claim : a gold disc with a glow
+                disc_glow(dev, ix, cy, 4.5f * S, with_alpha(0x90FFDA8Au, A), 7.0f * S); disc(dev, ix, cy, 4.5f * S, with_alpha(0xFFFFDA8Au, A));
+            } else if (R.done || R.locked) {                              // done : a green check
+                const u32 gc = R.locked ? 0xFF6E8A74u : 0xFF9CE27Au;
+                seg_soft(dev, ix - 5.0f * S, cy, ix - 1.5f * S, cy + 4.0f * S, 2.0f * S, with_alpha(gc, A));
+                seg_soft(dev, ix - 1.5f * S, cy + 4.0f * S, ix + 6.0f * S, cy - 5.0f * S, 2.0f * S, with_alpha(gc, A));
+            } else if (R.current || R.accepted) {                         // in progress : a diamond in the accent
+                const float rr = 4.5f * S; fill_tri(dev, ix, cy - rr, ix + rr, cy, ix - rr, cy, with_alpha(acc, A)); fill_tri(dev, ix - rr, cy, ix + rr, cy, ix, cy + rr, with_alpha(acc, A));
+            } else disc(dev, ix, cy, 2.5f * S, with_alpha(0xFF6E7A8Cu, A));
+            // the name
+            const u32 lc = on ? 0xFFFFFFFFu : full ? 0xFFC8F0B4u : R.locked ? 0xFF8A94A4u : R.ready ? 0xFFFFE9B0u : 0xFFE6ECF4u;
+            const float nx = snap(x0 + 26.0f * S);
+            fo->begin(dev); fo->draw_lc(dev, nx, cy, R.name[0] ? R.name : "...", tz, with_alpha(lc, A), with_alpha(0xC8000000u, A), k.ow);
+            // the right of the first line : a category's count, a quest's repeatable mark, an objective's rewards
+            float rx = x1;
+            auto chip = [&](const char* t, u32 col) { const float w = fo->measure(t, tzK) + 12.0f * S, hh = snap(tzK * 1.6f), px = snap(rx - w);
+                rrect(dev, px, snap(cy - hh * 0.5f), w, hh, hh * 0.5f, with_alpha(with_a(col, 0x30), A), with_alpha(with_a(col, 0x1C), A));
+                fo->begin(dev); fo->draw_lc(dev, snap(px + 6.0f * S), cy, t, tzK, with_alpha(col, A), with_alpha(0xA0000000u, A), k.ow); rx = px - 6.0f * S; };
+            if (R.category) { char t[16]; sprintf(t, "%d", R.children); const float a = 3.5f * S;
+                tri(dev, x1, cy, x1 - a * 1.6f, cy - a, x1 - a * 1.6f, cy + a, with_alpha(0xFF8A96A8u, A)); rx = x1 - 12.0f * S;
+                if (tal) {                                                // done / total : a chip (green when all done) + a small bar
+                    sprintf(t, "%d/%d", R.objDone, R.objTotal); chip(t, fc);
+                    const float mw = snap(54.0f * S), mh = snap(4.0f * S), mx = snap(rx - mw), my = snap(cy - mh * 0.5f);
+                    rrect(dev, mx, my, mw, mh, mh * 0.5f, with_alpha(0x70101826u, A), with_alpha(0x70080C14u, A));
+                    const float fw = snap(mw * fminf(1.0f, (float)R.objDone / (float)R.objTotal));
+                    if (fw > 1.0f) rrect(dev, mx, my, fw, mh, mh * 0.5f, with_alpha(with_a(fc, 0xF0), A), with_alpha(with_a(fc, 0xB0), A));
+                    rx = mx - 8.0f * S; }
+                else if (R.children > 0) chip(t, acc); }
+            else if (quests) { if (R.repeatable) chip(tr("Repeatable", "Repetable"), 0xFF8CC8FFu); if (R.current && R.done) chip(tr("Again", "A nouveau"), acc); }
+            else {
+                char t[24];
+                if (R.ready) chip(tr("Claim!", "A recuperer !"), 0xFFFFDA8Au);
+                if (R.sparks > 0) { sprintf(t, "%d Sp", R.sparks); chip(t, 0xFFFFC857u); }
+                if (R.acc > 0) { sprintf(t, "%d Acc", R.acc); chip(t, 0xFFC09CFFu); }
+                if (R.repeatable) chip("R", 0xFF8CC8FFu);
+            }
+            // an objective's second line : its progress bar and count
+            if (h == rowH2) {
+                const int req = R.required > 0 ? R.required : 1, pr = R.locked && !R.accepted ? req : R.progress;
+                char t[32]; sprintf(t, "%d/%d", pr, req);
+                const float cy2 = snap(ry + h * 0.72f), vw = fo->measure(t, tzS), bx2 = nx, bw2 = fmaxf(10.0f, x1 - vw - 12.0f * S - bx2), bh2 = snap(5.0f * S);
+                rrect(dev, bx2, snap(cy2 - bh2 * 0.5f), bw2, bh2, bh2 * 0.5f, with_alpha(0x70101826u, A), with_alpha(0x70080C14u, A));
+                const float fr = fminf(1.0f, (float)pr / (float)req), fw = snap(bw2 * fr);
+                const bool full = pr >= req;
+                if (fw > 1.0f) rrect(dev, bx2, snap(cy2 - bh2 * 0.5f), fw, bh2, bh2 * 0.5f, with_alpha(full ? 0xF09CE27Au : R.accepted ? with_a(acc, 0xF0) : 0x90808A9Au, A), with_alpha(full ? 0xD070B060u : R.accepted ? with_a(acc, 0xB0) : 0x70606A7Au, A));
+                fo->begin(dev); fo->draw_lc(dev, snap(x1 - vw), cy2, t, tzS, with_alpha(full ? 0xFF9CE27Au : R.accepted ? 0xFFFFE9B0u : 0xFF8A96A8u, A), with_alpha(0xC8000000u, A), k.ow);
+            }
+            if (ms && ms->focused && ms->x >= x0 - 8.0f * S && ms->x < x1 + 8.0f * S && ms->y >= ry && ms->y < ry + h) mrow = r;
+            ry += h;
+        }
+        y = ry;
+        if (L.count > nVis) {                                             // the footer : where, how many more ; a scrollbar
+            const int last = g_jrTop + nVis; char ft[48]; sprintf(ft, "%d-%d / %d", g_jrTop + 1, last, L.count);
+            const float fy = snap(y + footH * 0.5f), fw = fo->measure(ft, tzS);
+            fo->begin(dev); fo->draw_lc(dev, snap(x1 - fw), fy, ft, tzS, with_alpha(0xFF9AA6B8u, A), with_alpha(0xA0000000u, A), k.ow);
+            const float ax = snap(x1 - fw - 16.0f * S), aa = 3.5f * S;
+            tri(dev, ax, fy - aa * 2.0f, ax - aa, fy - aa * 0.6f, ax + aa, fy - aa * 0.6f, g_jrTop > 0 ? with_alpha(acc, A) : with_alpha(0x40FFFFFFu, A));
+            tri(dev, ax, fy + aa * 2.0f, ax - aa, fy + aa * 0.6f, ax + aa, fy + aa * 0.6f, last < L.count ? with_alpha(acc, A) : with_alpha(0x40FFFFFFu, A));
+            const float tx = snap(bx + bw - pad * 0.45f), tw = snap(3.0f * S), th = listH, y0l = by + headH + pad * 0.6f;
+            rrect(dev, tx, snap(y0l), tw, th, tw * 0.5f, with_alpha(0x40FFFFFFu, A), with_alpha(0x40FFFFFFu, A));
+            const float kh = fmaxf(12.0f * S, th * (float)nVis / (float)L.count), ky = y0l + (th - kh) * (float)g_jrTop / (float)(L.count - nVis);
+            rrect(dev, tx, snap(ky), tw, snap(kh), tw * 0.5f, with_alpha(acc, A), with_alpha(with_a(acc, 0xC0), A));
+            y += footH;
+        }
+    }
+    // ---- the detail strip : the cursor's objective -- its description, its rewards
+    if (detail) {
+        y += snap(12.0f * S);
+        rrect(dev, snap(x0 - 6.0f * S), snap(y), (x1 - x0) + 12.0f * S, detH, snap(7.0f * S), with_alpha(0x50202A3Cu, A), with_alpha(0x60101624u, A));
+        rrect_stroke(dev, snap(x0 - 6.0f * S), snap(y), (x1 - x0) + 12.0f * S, detH, snap(7.0f * S), with_alpha(with_a(acc, 0x50), A), 1.0f);
+        float ty = y + 10.0f * S;
+        fo->begin(dev);
+        for (int i = 0; i < nDl; ++i) { fo->draw_lc(dev, snap(x0 + 4.0f * S), snap(ty + tzS * 0.7f), dl[i], tzS, with_alpha(0xFFC9D3E0u, A), with_alpha(0xA0000000u, A), k.ow); ty += tzS * 1.5f; }
+        ty += tzS * 0.4f;
+        char rw[160]; int o = _snprintf(rw, sizeof(rw), "%s  %d Sparks  .  %d EXP", tr("Rewards :", "Recompenses :"), CR->sparks, CR->exp);
+        if (CR->cap > 0) o += _snprintf(rw + o, sizeof(rw) - o, "  .  %d CAP", CR->cap);
+        if (CR->acc > 0) o += _snprintf(rw + o, sizeof(rw) - o, "  .  %d Accolades", CR->acc);
+        rw[159] = 0;
+        fo->draw_lc(dev, snap(x0 + 4.0f * S), snap(ty + tzS * 0.7f), rw, tzS, with_alpha(0xFFFFE9B0u, A), with_alpha(0xA0000000u, A), k.ow);
+        const char* rp = CR->repeatable ? tr("Repeatable", "Repetable") : tr("Not repeatable", "Non repetable");
+        const float rpw = fo->measure(rp, tzK); fo->draw_lc(dev, snap(x1 - rpw), snap(ty + tzS * 0.7f), rp, tzK, with_alpha(CR->repeatable ? 0xFF8CC8FFu : 0xFF8A96A8u, A), with_alpha(0xA0000000u, A), k.ow);
+    }
+    dSetTex(dev, 0, 0); cs(dev);
+    // ---- the mouse : a row of the client's page
+    if (J0.open && L.focused) {
+        g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH;
+        const int ent = (mrow >= L.top && mrow < L.top + L.vis) ? mrow - L.top + 1 : 0;
+        static float mv[2]; const bool moved = mouse_moved(ms, mv);
+        if (ent && moved && mrow != g_jrB.hoverRow && mrow != L.cursor) native_gen_hover("quest01", ent);
+        g_jrB.hoverRow = mrow;
+        if (ent && ms && ms->clicked) native_gen_pick("quest01", ent);
+    } else g_jrB.hoverRow = -1;
+}
+// ======== a MISSION's page (miss00 state 2 : a row validated) -- its name, current / completed, its orders ========
+// The client draws the name and the DAT's "Mission Orders" in its 8-row window ; AioHUD : a card in the category's
+// accent, the state on a chip, the orders wrapped in full (the DAT's line breaks kept). No keys of its own : the client's
+// Cancel goes back to the list.
+namespace { Block g_mdB; unsigned g_mdMs = 0; }
+void mission_detail_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_mdB.vis = 0.0f; g_mdB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_mdMs ? (float)(now - g_mdMs) / 1000.0f : 0.0f; g_mdMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeMissions& M0 = native_missions();
+    static NativeMissions L; const bool up = M0.open && M0.state == 2 && M0.detailOk;
+    if (up) L = M0;
+    if (!block_ease(g_mdB, up, now, dt) || !L.dName[0]) return;
+    const NativeGenMenus& G0 = native_gen_menus(); int uiW = 0, uiH = 0; short rx0 = 16, ry0 = 48;
+    for (int i = 0; i < G0.np; ++i) if (!strcmp(G0.p[i].name, "miss00")) { uiW = G0.p[i].uiW; uiH = G0.p[i].uiH; rx0 = G0.p[i].rx0; ry0 = G0.p[i].ry0; }
+    const Metrics k = metrics(f); const float S = k.S; const u32 dev = f.dev; Font* fo = f.font;
+    const float tz = snap(k.tz * 1.0f), tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = snap(k.tz * 1.32f);
+    const float pad = snap(18.0f * S) + k.bi;
+    const u32 acc = panel_accent("miss00", L.title);
+    const u32 sc = L.detailCurrent ? acc : 0xFF9CE27Au;
+    // ---- the orders : each DAT line wrapped to the box
+    const float bw = keep_width(g_mdB, fmaxf(snap(500.0f * S), fminf(f.screenW * 0.42f, snap(580.0f * S))));
+    const float tw = bw - 2.0f * pad;
+    static char dl[22][120]; int nDl = 0;
+    {   const char* p = L.dDesc;
+        while (*p && nDl < 22) {
+            char para[700]; int n = 0; while (p[n] && p[n] != '\n' && n < 699) { para[n] = p[n]; ++n; } para[n] = 0;
+            if (n) nDl += wrap_lines(fo, para, tz, tw, dl + nDl, 22 - nDl);
+            p += n; if (*p == '\n') ++p;
+        } }
+    // no orders in the DAT (the final mission of a finished story : RotZ / CoP "The Last Verse" are an empty line, measured 2026-11-22)
+    const char* none = L.detailCurrent ? tr("No further orders : this story is complete.", "Plus d'ordres : cette histoire est terminee.")
+                                       : tr("No orders recorded for this mission.", "Aucun ordre pour cette mission.");
+    const float headH = snap(tzK * 1.5f + tzT * 1.6f + 14.0f * S), chipH = snap(tzS * 1.8f), lineH = snap(tz * 1.45f);
+    const float bh = snap(headH + pad * 0.7f + chipH + 12.0f * S + (nDl ? nDl : 1) * lineH + 10.0f * S + tzS * 1.6f + pad);
+    // ---- place : the client's window's corner
+    const float sx = uiW > 0 ? f.screenW / (float)uiW : 1.0f, sy = uiH > 0 ? f.screenH / (float)uiH : 1.0f;
+    float bx = snap((float)rx0 * sx), by = snap((float)ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+    const float tO = ease_out(((float)(now - g_mdB.openMs) / 1000.0f) / 0.09f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_mdB.vis * tO; if (A <= 0.0f) return;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    const float x0 = bx + pad, x1 = bx + bw - pad;
+    // ---- the header : MISSIONS / the category, then the mission's name
+    rrect_topcaps(dev, bx + k.bi, by + k.bi, bw - 2.0f * k.bi, headH - k.bi, snap(6.0f * S), with_alpha(with_a(acc, 0x50), A), with_alpha(with_a(acc, 0x0A), A));
+    float y = by + snap(10.0f * S);
+    {   char up[64]; _snprintf(up, sizeof(up), "%s  -  %s", tr("Missions", "Missions"), L.title[0] ? L.title : ""); up[63] = 0; CharUpperA(up);
+        fo->begin(dev);
+        fo->draw_lc(dev, snap(x0), snap(y + tzK * 0.7f), up, tzK, with_alpha(acc, A), with_alpha(0xA0000000u, A), k.ow); y += tzK * 1.5f;
+        fo->draw_lc(dev, snap(x0), snap(y + tzT * 0.8f), L.dName, tzT, with_alpha(0xFFF4E8C8u, A), with_alpha(0xC8000000u, A), k.ow);
+        rrect(dev, bx + k.bi, snap(by + headH - 1.0f), bw - 2.0f * k.bi, 1.5f, 0.0f, with_alpha(with_a(acc, 0x90), A), with_alpha(with_a(acc, 0x90), A)); }
+    y = by + headH + pad * 0.7f;
+    // ---- the state chip : In progress (a diamond, the accent) / Completed (a check, green)
+    {   const char* t = L.detailCurrent ? tr("In progress", "En cours") : tr("Completed", "Accomplie");
+        const float cw = fo->measure(t, tzS) + 30.0f * S, cy = snap(y + chipH * 0.5f);
+        rrect(dev, snap(x0), snap(y), cw, chipH, chipH * 0.5f, with_alpha(with_a(sc, 0x34), A), with_alpha(with_a(sc, 0x1E), A));
+        rrect_stroke(dev, snap(x0), snap(y), cw, chipH, chipH * 0.5f, with_alpha(with_a(sc, 0x90), A), 1.0f);
+        const float ix = snap(x0 + 12.0f * S);
+        if (L.detailCurrent) { const float r = 4.0f * S; fill_tri(dev, ix, cy - r, ix + r, cy, ix - r, cy, with_alpha(sc, A)); fill_tri(dev, ix - r, cy, ix + r, cy, ix, cy + r, with_alpha(sc, A)); }
+        else { seg_soft(dev, ix - 3.5f * S, cy, ix - 1.0f * S, cy + 3.0f * S, 1.6f * S, with_alpha(sc, A)); seg_soft(dev, ix - 1.0f * S, cy + 3.0f * S, ix + 4.0f * S, cy - 3.5f * S, 1.6f * S, with_alpha(sc, A)); }
+        fo->begin(dev); fo->draw_lc(dev, snap(x0 + 22.0f * S), cy, t, tzS, with_alpha(0xFFF4F6FAu, A), with_alpha(0xA0000000u, A), k.ow);
+        y += chipH + 12.0f * S; }
+    // ---- the orders : a line starting with a word and ':' (the DAT's "Mission Orders:") in the accent, the rest light
+    fo->begin(dev);
+    if (!nDl) fo->draw_lc(dev, snap(x0), snap(y + lineH * 0.5f), none, tz, with_alpha(0xFF7C8594u, A), with_alpha(0xA0000000u, A), k.ow);
+    for (int i = 0; i < nDl; ++i) {
+        const int l = lstrlenA(dl[i]); const bool head = l > 1 && l < 40 && dl[i][l - 1] == ':';
+        fo->draw_lc(dev, snap(x0), snap(y + lineH * 0.5f), dl[i], tz, with_alpha(head ? acc : 0xFFDCE2EAu, A), with_alpha(0xB0000000u, A), k.ow);
+        y += lineH; }
+    if (!nDl) y += lineH;
+    // ---- the hint : the client's Cancel goes back
+    y += 10.0f * S;
+    fo->draw_lc(dev, snap(x0), snap(y + tzS * 0.6f), tr("Cancel : back to the list", "Annuler : retour a la liste"), tzS, with_alpha(0xFF7C8594u, A), with_alpha(0xA0000000u, A), k.ow);
+    (void)x1;
+    dSetTex(dev, 0, 0); cs(dev);
+    if (L.focused) { g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH; }
+}
+// ======== KEY ITEMS (evitem as data : native_key_items) -- the categories with their tallies, a category's whole list ========
+// The header : KEY ITEMS / the category (its colour), how many owned, how many new. The categories : a folder in its
+// colour, owned / total with a bar (green when complete), a gold "n new" chip. A category's items : a bullet, a glowing
+// gold dot + "New" for one never examined. Under the list : the cursor item's description (the DAT) ; the description
+// page (state 3) shows it in full. The client keeps the keys ; the mouse hovers / picks a row of its page.
+namespace { Block g_kiB; unsigned g_kiMs = 0; float g_kiCurY = -1.0f; int g_kiTop = 0; }
+static u32 ki_colour(int c) {
+    static const u32 C[12] = { 0xFFF09A50u, 0xFFE8C060u, 0xFF68D0D8u, 0xFFA88CF0u, 0xFF84DCA8u, 0xFFD8A070u, 0xFF9CD070u, 0xFF6AA8F0u, 0xFFB4BECCu, 0xFFF080B0u, 0xFFE8706Au, 0xFF7CCF7Au };
+    return c >= 0 ? C[c % 12] : 0xFFE8C060u;
+}
+void key_items_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_kiB.vis = 0.0f; g_kiB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_kiMs ? (float)(now - g_kiMs) / 1000.0f : 0.0f; g_kiMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeKeyItems& K0 = native_key_items();
+    static NativeKeyItems L; const bool up = K0.open && K0.ok;
+    if (up) L = K0;
+    if (!block_ease(g_kiB, up, now, dt)) { if (!K0.open) { g_kiCurY = -1.0f; g_kiTop = 0; } return; }
+    const Metrics k = metrics(f); const float S = k.S; const u32 dev = f.dev; Font* fo = f.font; const MouseState* ms = f.mouse;
+    const float tz = snap(k.tz * 1.04f), tzS = snap(k.tz * 0.80f), tzK = snap(k.tz * 0.74f), tzT = snap(k.tz * 1.30f);
+    const float pad = snap(18.0f * S) + k.bi, rowH = snap(k.capH * 1.85f);
+    const bool cats = L.state == 1, page = L.state == 3;
+    const u32 acc = cats ? 0xFFE8C060u : ki_colour(L.catColour);
+    char title[64], subt[96] = "";
+    if (cats) { lstrcpynA(title, tr("Key Items", "Objets cles"), sizeof(title)); _snprintf(subt, sizeof(subt), tr("%d owned of %d", "%d possedes sur %d"), L.ownedAll, L.totalAll); subt[95] = 0; }
+    else { lstrcpynA(title, L.title[0] ? L.title : tr("Key Items", "Objets cles"), sizeof(title)); _snprintf(subt, sizeof(subt), "%s  >  %s", tr("Key Items", "Objets cles"), title); subt[95] = 0; }
+    // ---- the viewport
+    const int maxRows = (int)fmaxf(5.0f, fminf(13.0f, (f.screenH * 0.55f) / rowH));
+    if (!L.count) g_kiTop = 0;
+    if (L.cursor < g_kiTop + 1) g_kiTop = L.cursor - 1; if (L.cursor > g_kiTop + maxRows - 2) g_kiTop = L.cursor - maxRows + 2;
+    if (g_kiTop > L.count - maxRows) g_kiTop = L.count - maxRows; if (g_kiTop < 0) g_kiTop = 0;
+    const int nVis = L.count < maxRows ? L.count : maxRows;
+    const float listH = (float)(nVis ? nVis : 1) * rowH;
+    // ---- the description : under the list (3 lines), or the page in full
+    const NativeKeyItems::Row* CR = L.count ? &L.row[L.cursor] : 0;
+    const bool detail = !cats && CR && CR->name[0];
+    const float bw = keep_width(g_kiB, fmaxf(snap(500.0f * S), fminf(f.screenW * 0.42f, snap(560.0f * S))));
+    static char dl[16][120]; int nDl = 0;
+    if (detail) { const char* p = L.desc; const int maxL = page ? 16 : 4;
+        while (*p && nDl < maxL) { char para[700]; int n = 0; while (p[n] && p[n] != '\n' && n < 699) { para[n] = p[n]; ++n; } para[n] = 0;
+            if (n) nDl += wrap_lines(fo, para, tzS, bw - 2.0f * pad - 4.0f * S, dl + nDl, maxL - nDl);
+            p += n; if (*p == '\n') ++p; } }
+    const float headH = snap(tzK * 1.5f + tzT * 1.6f + tzS * 1.4f + 14.0f * S);
+    const float detH = detail ? snap(12.0f * S + tzS * 1.6f + tzS * 1.5f * (float)(nDl ? nDl : 1) + 12.0f * S) : 0.0f;
+    const float footH = L.count > nVis ? snap(tzS * 2.2f) : 0.0f;
+    const float bh = snap(headH + pad * 0.6f + listH + footH + (detail ? snap(12.0f * S) + detH : 0.0f) + pad);
+    // ---- place : the client's window's corner (16,48 of its UI)
+    const float sx = L.uiW > 0 ? f.screenW / (float)L.uiW : 1.0f, sy = L.uiH > 0 ? f.screenH / (float)L.uiH : 1.0f;
+    float bx = snap((float)L.rx0 * sx), by = snap((float)L.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+    const float tO = ease_out(((float)(now - g_kiB.openMs) / 1000.0f) / 0.09f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_kiB.vis * tO; if (A <= 0.0f) return;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    const float x0 = bx + pad, x1 = bx + bw - pad;
+    // ---- the header
+    rrect_topcaps(dev, bx + k.bi, by + k.bi, bw - 2.0f * k.bi, headH - k.bi, snap(6.0f * S), with_alpha(with_a(acc, 0x50), A), with_alpha(with_a(acc, 0x0A), A));
+    {   char up[48]; lstrcpynA(up, tr("Key Items", "Objets cles"), sizeof(up)); CharUpperA(up);
+        float ky = by + snap(10.0f * S);
+        fo->begin(dev);
+        fo->draw_lc(dev, snap(x0), snap(ky + tzK * 0.7f), up, tzK, with_alpha(acc, A), with_alpha(0xA0000000u, A), k.ow); ky += tzK * 1.5f;
+        fo->draw_lc(dev, snap(x0), snap(ky + tzT * 0.8f), title, tzT, with_alpha(0xFFF4E8C8u, A), with_alpha(0xC8000000u, A), k.ow); ky += tzT * 1.6f;
+        fo->draw_lc(dev, snap(x0), snap(ky + tzS * 0.5f), subt, tzS, with_alpha(0xFFB4BECCu, A), with_alpha(0xA0000000u, A), k.ow);
+        // the right : how many (a category : its list's size) ; the new ones (gold)
+        float rx = x1; const float ch = snap(tzS * 1.8f), cy = snap(by + snap(10.0f * S));
+        auto pill = [&](const char* t, u32 col) { const float cw = fo->measure(t, tzS) + 20.0f * S, cx = snap(rx - cw);
+            rrect(dev, cx, cy, cw, ch, ch * 0.5f, with_alpha(with_a(col, 0x3C), A), with_alpha(with_a(col, 0x22), A));
+            rrect_stroke(dev, cx, cy, cw, ch, ch * 0.5f, with_alpha(with_a(col, 0x80), A), 1.0f);
+            fo->begin(dev); fo->draw_lc(dev, snap(cx + 10.0f * S), snap(cy + ch * 0.5f), t, tzS, with_alpha(0xFFF4F6FAu, A), with_alpha(0xA0000000u, A), k.ow); rx = cx - 6.0f * S; };
+        char c[32];
+        if (cats) { sprintf(c, "%d", L.ownedAll); pill(c, acc); if (L.newAll > 0) { sprintf(c, tr("%d new", "%d nouveaux"), L.newAll); pill(c, 0xFFFFDA8Au); } }
+        else { int nn = 0; for (int i = 0; i < L.count; ++i) if (L.row[i].isNew) ++nn;
+            sprintf(c, "%d", L.count); pill(c, acc); if (nn) { sprintf(c, tr("%d new", "%d nouveaux"), nn); pill(c, 0xFFFFDA8Au); } }
+        rrect(dev, bx + k.bi, snap(by + headH - 1.0f), bw - 2.0f * k.bi, 1.5f, 0.0f, with_alpha(with_a(acc, 0x90), A), with_alpha(with_a(acc, 0x90), A));
+    }
+    float y = by + headH + pad * 0.6f;
+    int mrow = -1;
+    if (!L.count) { fo->begin(dev); fo->draw_lc(dev, snap(x0 + 4.0f * S), snap(y + rowH * 0.5f), tr("You do not possess any key items.", "Tu ne possedes aucun objet cle."), tz, with_alpha(0xFF7C8594u, A), with_alpha(0xA0000000u, A), k.ow); }
+    else {
+        // the cursor : a gold capsule gliding to its row
+        if (L.cursor >= g_kiTop && L.cursor < g_kiTop + nVis && L.focused) {
+            const float ty = y + (float)(L.cursor - g_kiTop) * rowH;
+            g_kiCurY = g_kiCurY < 0.0f ? ty : g_kiCurY + (ty - g_kiCurY) * fminf(1.0f, dt * 18.0f);
+            const float cx = snap(x0 - 8.0f * S), cw = (x1 - x0) + 16.0f * S;
+            rrect(dev, cx, snap(g_kiCurY + 1.0f * S), cw, rowH - 2.0f * S, snap(6.0f * S), with_alpha(0x50FFDA8Au, A), with_alpha(0x2EFFDA8Au, A));
+            rrect_stroke(dev, cx, snap(g_kiCurY + 1.0f * S), cw, rowH - 2.0f * S, snap(6.0f * S), with_alpha(0xC8FFDA8Au, A), 1.5f * S); }
+        for (int v = 0; v < nVis; ++v) {
+            const int r = g_kiTop + v; const NativeKeyItems::Row& R = L.row[r]; const float ry = y + (float)v * rowH, cy = snap(ry + rowH * 0.5f), ix = snap(x0 + 8.0f * S);
+            const bool on = r == L.cursor && L.focused;
+            if (!on && (v & 1)) rrect(dev, snap(x0 - 8.0f * S), snap(ry), (x1 - x0) + 16.0f * S, rowH, snap(4.0f * S), with_alpha(0x0CFFFFFFu, A), with_alpha(0x0CFFFFFFu, A));
+            const bool full = R.category && R.total > 0 && R.owned >= R.total;
+            const u32 cc = R.category ? (full ? 0xFF9CE27Au : ki_colour(R.cat)) : acc;
+            if (R.category) {                                             // a folder in its category's colour
+                rrect(dev, ix - 6.0f * S, cy - 5.0f * S, 12.0f * S, 10.0f * S, 2.0f * S, with_alpha(with_a(cc, 0xB0), A), with_alpha(with_a(cc, 0x80), A));
+                rrect(dev, ix - 6.0f * S, cy - 7.0f * S, 6.0f * S, 3.0f * S, 1.0f * S, with_alpha(with_a(cc, 0xB0), A), with_alpha(with_a(cc, 0xB0), A));
+            } else if (R.isNew) { disc_glow(dev, ix, cy, 4.0f * S, with_alpha(0x90FFDA8Au, A), 7.0f * S); disc(dev, ix, cy, 4.0f * S, with_alpha(0xFFFFDA8Au, A)); }
+            else disc(dev, ix, cy, 2.8f * S, with_alpha(with_a(acc, 0xD0), A));
+            const u32 lc = on ? 0xFFFFFFFFu : R.isNew ? 0xFFFFE9B0u : full ? 0xFFC8F0B4u : 0xFFE6ECF4u;
+            const float nx = snap(x0 + 26.0f * S);
+            // the right : a category's owned / total + bar, its new ; an item's "New"
+            float rx = x1;
+            auto chip = [&](const char* t, u32 col) { const float w = fo->measure(t, tzK) + 12.0f * S, hh = snap(tzK * 1.6f), px = snap(rx - w);
+                rrect(dev, px, snap(cy - hh * 0.5f), w, hh, hh * 0.5f, with_alpha(with_a(col, 0x30), A), with_alpha(with_a(col, 0x1C), A));
+                fo->begin(dev); fo->draw_lc(dev, snap(px + 6.0f * S), cy, t, tzK, with_alpha(col, A), with_alpha(0xA0000000u, A), k.ow); rx = px - 6.0f * S; };
+            char t[32];
+            if (R.category) {
+                const float a = 3.5f * S; tri(dev, x1, cy, x1 - a * 1.6f, cy - a, x1 - a * 1.6f, cy + a, with_alpha(0xFF8A96A8u, A)); rx = x1 - 12.0f * S;
+                sprintf(t, "%d/%d", R.owned, R.total); chip(t, cc);
+                const float mw = snap(54.0f * S), mh = snap(4.0f * S), mx = snap(rx - mw), my = snap(cy - mh * 0.5f);
+                rrect(dev, mx, my, mw, mh, mh * 0.5f, with_alpha(0x70101826u, A), with_alpha(0x70080C14u, A));
+                const float fw = R.total > 0 ? snap(mw * fminf(1.0f, (float)R.owned / (float)R.total)) : 0.0f;
+                if (fw > 1.0f) rrect(dev, mx, my, fw, mh, mh * 0.5f, with_alpha(with_a(cc, 0xF0), A), with_alpha(with_a(cc, 0xB0), A));
+                rx = mx - 8.0f * S;
+                if (R.fresh > 0) { sprintf(t, tr("%d new", "%d nouv."), R.fresh); chip(t, 0xFFFFDA8Au); }
+            } else if (R.isNew) chip(tr("New", "Nouveau"), 0xFFFFDA8Au);
+            { char cut[80]; fo->begin(dev); fo->draw_lc(dev, nx, cy, fit_text(fo, R.name[0] ? R.name : "...", tz, fmaxf(40.0f, rx - nx - 6.0f * S), cut, sizeof(cut)), tz, with_alpha(lc, A), with_alpha(0xC8000000u, A), k.ow); }
+            if (ms && ms->focused && ms->x >= x0 - 8.0f * S && ms->x < x1 + 8.0f * S && ms->y >= ry && ms->y < ry + rowH) mrow = r;
+        }
+    }
+    y += listH;
+    if (L.count > nVis) {                                                 // the footer : where, how many ; the arrows
+        const int last = g_kiTop + nVis; char ft[48]; sprintf(ft, "%d-%d / %d", g_kiTop + 1, last, L.count);
+        const float fy = snap(y + footH * 0.5f), fw = fo->measure(ft, tzS);
+        fo->begin(dev); fo->draw_lc(dev, snap(x1 - fw), fy, ft, tzS, with_alpha(0xFF9AA6B8u, A), with_alpha(0xA0000000u, A), k.ow);
+        const float ax = snap(x1 - fw - 16.0f * S), aa = 3.5f * S;
+        tri(dev, ax, fy - aa * 2.0f, ax - aa, fy - aa * 0.6f, ax + aa, fy - aa * 0.6f, g_kiTop > 0 ? with_alpha(acc, A) : with_alpha(0x40FFFFFFu, A));
+        tri(dev, ax, fy + aa * 2.0f, ax - aa, fy + aa * 0.6f, ax + aa, fy + aa * 0.6f, last < L.count ? with_alpha(acc, A) : with_alpha(0x40FFFFFFu, A));
+        y += footH;
+    }
+    if (detail && !page) {                                                // the cursor item : its name, its description
+        y += snap(12.0f * S);
+        rrect(dev, snap(x0 - 6.0f * S), snap(y), (x1 - x0) + 12.0f * S, detH, snap(7.0f * S), with_alpha(with_a(acc, 0x22), A), with_alpha(0x50101624u, A));
+        rrect_stroke(dev, snap(x0 - 6.0f * S), snap(y), (x1 - x0) + 12.0f * S, detH, snap(7.0f * S), with_alpha(with_a(acc, 0x60), A), 1.0f);
+        float dy = y + 10.0f * S;
+        fo->begin(dev); fo->draw_lc(dev, snap(x0 + 2.0f * S), snap(dy + tzS * 0.6f), CR->name, tzS, with_alpha(acc, A), with_alpha(0xA0000000u, A), k.ow); dy += tzS * 1.6f;
+        if (!nDl) fo->draw_lc(dev, snap(x0 + 2.0f * S), snap(dy + tzS * 0.6f), tr("No description.", "Aucune description."), tzS, with_alpha(0xFF7C8594u, A), with_alpha(0xA0000000u, A), k.ow);
+        for (int i = 0; i < nDl; ++i) { fo->draw_lc(dev, snap(x0 + 2.0f * S), snap(dy + tzS * 0.6f), dl[i], tzS, with_alpha(0xFFDCE2EAu, A), with_alpha(0xA0000000u, A), k.ow); dy += tzS * 1.5f; }
+    }
+    // ---- the description PAGE (state 3, the client waits for Cancel) : a card over the list -- the list is not live
+    // under it (2026-11-22 : "je peux pas naviguer tant que je ne fais pas cancel"), so it says so
+    if (page && CR) {
+        const float ay0 = by + headH, ah = bh - headH - k.bi;
+        rrect(dev, bx + k.bi, ay0, bw - 2.0f * k.bi, ah, snap(6.0f * S), with_alpha(0xA0080C14u, A), with_alpha(0xA0080C14u, A));
+        const float cx = snap(bx + pad * 0.6f), cw = snap(bw - 1.2f * pad), cy = snap(ay0 + pad * 0.5f), ch = snap(ah - pad);
+        rrect(dev, cx, cy, cw, ch, snap(9.0f * S), with_alpha(with_a(acc, 0x38), A), with_alpha(0xF0141C2Au, A));
+        rrect_stroke(dev, cx, cy, cw, ch, snap(9.0f * S), with_alpha(with_a(acc, 0xB0), A), 1.5f * S);
+        float py = cy + 14.0f * S;
+        { char cut[80]; fo->begin(dev); fo->draw_lc(dev, snap(cx + 16.0f * S), snap(py + tzT * 0.6f), fit_text(fo, CR->name, tzT, cw - 32.0f * S, cut, sizeof(cut)), tzT, with_alpha(0xFFF4E8C8u, A), with_alpha(0xC8000000u, A), k.ow); }
+        py += tzT * 1.5f;
+        rrect(dev, snap(cx + 16.0f * S), snap(py), cw - 32.0f * S, 1.0f, 0.0f, with_alpha(with_a(acc, 0x80), A), with_alpha(with_a(acc, 0x80), A)); py += 10.0f * S;
+        fo->begin(dev);
+        if (!nDl) fo->draw_lc(dev, snap(cx + 16.0f * S), snap(py + tz * 0.6f), tr("No description.", "Aucune description."), tz, with_alpha(0xFF7C8594u, A), with_alpha(0xA0000000u, A), k.ow);
+        for (int i = 0; i < nDl && py < cy + ch - tz * 2.6f; ++i) { fo->draw_lc(dev, snap(cx + 16.0f * S), snap(py + tz * 0.6f), dl[i], tzS * 1.08f, with_alpha(0xFFDCE2EAu, A), with_alpha(0xA0000000u, A), k.ow); py += tzS * 1.6f; }
+        const char* hint = tr("Cancel : back to the list", "Annuler : retour a la liste");
+        fo->draw_lc(dev, snap(cx + cw - 16.0f * S - fo->measure(hint, tzS)), snap(cy + ch - 12.0f * S - tzS * 0.5f), hint, tzS, with_alpha(0xFF9AA6B8u, A), with_alpha(0xA0000000u, A), k.ow);
+    }
+    // ---- the question on an item never examined (evitem01) : a card over the list, Yes / No (the client's cursor)
+    int askRow = 0;
+    if (L.ask) {
+        rrect(dev, bx + k.bi, by + headH, bw - 2.0f * k.bi, bh - headH - k.bi, snap(6.0f * S), with_alpha(0x90080C14u, A), with_alpha(0x90080C14u, A));
+        const float cw = snap(fminf(bw - 2.0f * pad, 380.0f * S)), bH = snap(tz * 2.0f), ch = snap(tz * 2.2f + 16.0f * S + bH + 18.0f * S);
+        const float cx = snap(bx + (bw - cw) * 0.5f), cy = snap(by + headH + (bh - headH - ch) * 0.45f);
+        rrect(dev, cx, cy, cw, ch, snap(9.0f * S), with_alpha(with_a(acc, 0x40), A), with_alpha(0xF0141C2Au, A));
+        rrect_stroke(dev, cx, cy, cw, ch, snap(9.0f * S), with_alpha(with_a(acc, 0xB0), A), 1.5f * S);
+        { char cut[120]; fo->begin(dev); const char* q = fit_text(fo, L.askText, tz, cw - 24.0f * S, cut, sizeof(cut));
+          fo->draw_lc(dev, snap(cx + (cw - fo->measure(q, tz)) * 0.5f), snap(cy + 14.0f * S + tz * 0.6f), q, tz, with_alpha(0xFFF4E8C8u, A), with_alpha(0xC8000000u, A), k.ow); }
+        const float gap = snap(12.0f * S), btW = snap((cw - 3.0f * gap) * 0.5f), btY = snap(cy + ch - 14.0f * S - bH);
+        for (int b = 1; b <= 2; ++b) {
+            const float btX = snap(cx + gap + (float)(b - 1) * (btW + gap)); const bool on = L.askCursor == b;
+            const u32 bc = b == 1 ? 0xFF9CE27Au : 0xFFB4BECCu;
+            rrect(dev, btX, btY, btW, bH, snap(6.0f * S), with_alpha(with_a(on ? 0xFFFFDA8Au : bc, on ? 0x50 : 0x24), A), with_alpha(with_a(on ? 0xFFFFDA8Au : bc, on ? 0x30 : 0x12), A));
+            rrect_stroke(dev, btX, btY, btW, bH, snap(6.0f * S), with_alpha(on ? 0xD0FFDA8Au : with_a(bc, 0x70), A), on ? 1.5f * S : 1.0f);
+            const char* t = b == 1 ? tr("Yes", "Oui") : tr("No", "Non");
+            fo->begin(dev); fo->draw_lc(dev, snap(btX + (btW - fo->measure(t, tz)) * 0.5f), snap(btY + bH * 0.5f), t, tz, with_alpha(on ? 0xFFFFFFFFu : 0xFFE6ECF4u, A), with_alpha(0xC8000000u, A), k.ow);
+            if (ms && ms->focused && ms->x >= btX && ms->x < btX + btW && ms->y >= btY && ms->y < btY + bH) askRow = b;
+        }
+    }
+    dSetTex(dev, 0, 0); cs(dev);
+    if (K0.open && L.ask && L.askFocused) {                               // the question's mouse : Yes / No
+        g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH;
+        static float mq[2]; static int lastAsk = 0; const bool moved = mouse_moved(ms, mq);
+        if (askRow && moved && askRow != lastAsk && askRow != L.askCursor) native_key_ask_hover(askRow);
+        lastAsk = askRow;
+        if (askRow && ms && ms->clicked) native_key_ask_pick(askRow);
+        return;
+    }
+    // ---- the mouse : a row of the client's page (entries 1.. = the page's rows top..)
+    if (K0.open && L.focused && !page) {
+        g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH;
+        const int ent = (mrow >= L.top && mrow < L.top + L.vis) ? mrow - L.top + 1 : 0;
+        static float mv[2]; const bool moved = mouse_moved(ms, mv);
+        if (ent && moved && mrow != g_kiB.hoverRow && mrow != L.cursor) native_key_hover(ent);
+        g_kiB.hoverRow = mrow;
+        if (ent && ms && ms->clicked) native_key_pick(ent);
+    } else g_kiB.hoverRow = -1;
 }
 // ======== the DELIVERY BOX (Game UI -> NU_NPC) : receive (post1 + post2) / send (delivery + stringdl) ========
 // The 8 slots in the client's grid (4 x 2, entries 1..8) and colours (receive : shown in states 6, 7, 0xA..0xE, usable in 7,
@@ -6050,7 +7099,8 @@ void mainmenu_draw(const Frame& f) {
     // Magic's categories open IN PLACE of this menu (the client swaps them, as the action menu's Abilities) : while they
     // are up this menu is not drawn (2026-11-18, "le sous menu remplace le main menu plutot que de se mettre a cote")
     const NativeGenMenus& GM = native_gen_menus();             // ... and so does a generic window it opened (Config & co, 2026-11-21)
-    const bool subUp = native_main_sub().open || native_main_sort().open || (!last.focused && (GM.n > 0 || GM.grid || GM.list));
+    // ... and the Mog House's menus it opens (View House -> mogcont, 2026-11-22 "le menu principal reste affiche derriere"), the panels
+    const bool subUp = native_main_sub().open || native_main_sort().open || (!last.focused && (GM.n > 0 || GM.grid || GM.list || GM.np > 0 || native_mog_menus().n > 0));
     const int jm = subUp ? 0 : menu_place(f, __LINE__, bx, by, bw, bh);   // recorded only while drawn (theme kit)
     const float by0 = by;                                    // its rest place : what opens in its place is placed from it
     const float tOpen = ease_out(((float)(now - g_mainMB.openMs) / 1000.0f) / 0.08f);

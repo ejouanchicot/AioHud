@@ -101,7 +101,7 @@ const char* const JOBSEL_W[] = { "jobcselu", 0 };
 bool g_aucUp = false, g_aucNot = false;
 bool g_genListUp = false;   // gen_poll : a generic list with items is AioHUD's -- its item card born parked
 // the generic engine LEARNS (2026-11-21) : a window it drew once is remembered (<plugin>\AioHud\data\gen_learned.txt) and born
-// parked from then on -- no frame of the client's window. Rule 10 : learned but not drawn for 30 polls -> refused for the
+// parked from then on -- no frame of the client's window. Rule 10 : learned but not drawn for 5 s -> refused for the
 // session (logged) and the rescue pass brings the client's back.
 char g_genLearn[96][9]; int g_genLearnN = -1; char g_genRefused[32][9]; int g_genRefusedN = 0;
 void gen_learn_load() {
@@ -128,7 +128,7 @@ void gen_learn(const char* n) {
 void gen_refuse(const char* n) {
     for (int i = 0; i < g_genRefusedN; ++i) if (!strcmp(g_genRefused[i], n)) return;
     if (g_genRefusedN < 32) memcpy(g_genRefused[g_genRefusedN++], n, 9);
-    windower::debug::log("NATIVEUI generic : '%s' learned but NOT drawn for 30 polls -- refused this session, the client's window comes back", n);
+    windower::debug::log("NATIVEUI generic : '%s' learned but NOT drawn for 5 s -- refused this session, the client's window comes back", n);
 }
 // an auction menu : auc* (not its lists) ; a sort ("...sort") only while the counter is up
 static bool auc_menu_name(const char* n) {
@@ -286,7 +286,9 @@ NativeNet g_net; bool g_nsFail = false;                                         
 NativeShop g_shop;                                                                        // the NPC shop (shop_poll)
 NativeInspect g_insp;                                                                     // a player's Check (inspect_poll)
 NativeLoot g_loot;                                                                        // Treasure (loot_poll)
-NativeMogMenus g_mog;                                                                     // the Mog House's menus (mog_poll)
+NativeMogMenus g_mog;
+// a Mog House storage's sort options are up (itmsortw) : its Yes / No (sortyn) is AioHUD's too (2026-11-22 : "il reste des yes no")
+static bool mog_sort_open() { for (int i = 0; i < g_mog.n; ++i) if (!strcmp(g_mog.m[i].name, "itmsortw")) return true; return false; }                                                                     // the Mog House's menus (mog_poll)
 NativeDelivery g_dlv;                                                                     // the delivery box (dlv_poll)
 NativeJobSel g_js;                                                                        // Change Jobs' grid (jobsel_poll)
 NativeRoomList g_room; bool g_roomNot = false;                                            // Remodel's styles (room_poll)
@@ -1471,6 +1473,115 @@ void ensure_event_hook() {
     if (!trade_nav_hook() && (tries == 1 || tries == 20))
         windower::debug::log("NATIVEUI the menu-event hook is not installed (try %d)%s -- the client's own moves stay in the trade / confirms", tries, tries == 20 ? ", giving up" : "");
 }
+// ---- TEXT CAPTURE (list-text-capture-re-2026-11-21.md) : the lists whose rows have no text in their definition (Missions,
+// Quests, the map list, the chat filters...) get theirs from the client's own text calls. The window draw (FUN_05458C60)
+// is detoured to know WHICH window is drawing ; the four text functions every row text ends in record (x, y, colour,
+// string) for it. A parked window is still drawn (no rect culling, re s.2a) : its texts come at y + 3000. Immediate mode :
+// each window's buffer is reset when its draw starts, so it always holds its last complete frame.
+const unsigned char PRO_WINDRAW[5]   = { 0x83,0xEC,0x24,0x53,0x55 };
+const unsigned char PRO_TEXTCORE[5]  = { 0x83,0xEC,0x08,0x53,0x55 };
+const unsigned char PRO_ASCII[8]     = { 0x83,0xEC,0x08,0x53,0x8B,0x5C,0x24,0x18 };
+const unsigned char PRO_ASCIIR[6]    = { 0x51,0x56,0x8B,0x74,0x24,0x14 };
+const unsigned char PRO_ASCIIC[7]    = { 0x8B,0x54,0x24,0x10,0x83,0xEC,0x10 };
+Hook g_hkWinDraw = { 0, PRO_WINDRAW,  5, 0, 0, {0}, false, "text capture : window draw" };
+Hook g_hkTxCore  = { 0, PRO_TEXTCORE, 5, 0, 0, {0}, false, "text capture : proportional text" };
+Hook g_hkTxAsc   = { 0, PRO_ASCII,    8, 0, 0, {0}, false, "text capture : ascii text" };
+Hook g_hkTxAscR  = { 0, PRO_ASCIIR,   6, 0, 0, {0}, false, "text capture : right-aligned ascii" };
+Hook g_hkTxAscC  = { 0, PRO_ASCIIC,   7, 0, 0, {0}, false, "text capture : clipped ascii" };
+struct CapRun { short x, y; u32 col; char s[60]; };
+struct CapWin { u32 win; DWORD ms; int n; CapRun r[40]; };
+CapWin g_cap[24]; u32 g_capCur = 0; int g_capSlot = -1, g_capDepth = 0;
+typedef u32 (__fastcall* WinDrawFn)(u32 win, u32 edx);
+typedef u32 (__fastcall* TextCoreFn)(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy);
+typedef u32 (__cdecl* Cdecl10Fn)(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);
+// the client's bytes -> plain text : colour / control pairs dropped (0x1E / 0x1F / 0x7F + a byte), a double-byte glyph
+// (Shift-JIS lead) skipped, the rest kept when printable
+void cap_clean(const char* s, int len, char* out, int cap) {
+    int o = 0; out[0] = 0;
+    __try {
+        for (int i = 0; (len <= 0 || i < len) && i < 200 && o < cap - 1; ++i) {
+            const unsigned char c = (unsigned char)s[i];
+            if (!c) break;
+            if (c == 0x1E || c == 0x1F || c == 0x7F || c == 0xEF) { if (s[i + 1]) ++i; continue; }
+            if ((c >= 0x81 && c <= 0x9F) || (c >= 0xE0 && c <= 0xFC)) { if (s[i + 1]) ++i; if (o && out[o - 1] != ' ') out[o++] = ' '; continue; }
+            if (c >= 0x20 && c < 0x7F) out[o++] = (char)c;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    while (o && out[o - 1] == ' ') --o; out[o] = 0;
+}
+void cap_add(int x, int y, const char* s, int len, u32 col) {
+    if (!g_capCur || g_capSlot < 0 || g_capDepth) return;
+    CapWin& W = g_cap[g_capSlot]; if (W.win != g_capCur || W.n >= 40) return;
+    CapRun& R = W.r[W.n]; cap_clean(s, len, R.s, sizeof(R.s)); if (!R.s[0]) return;
+    R.x = (short)x; R.y = (short)y; R.col = col; ++W.n;
+}
+u32 __fastcall hk_windraw(u32 win, u32 edx) {
+    const u32 pc = g_capCur; const int ps = g_capSlot;
+    int s = -1, old = 0; const DWORD now = GetTickCount();
+    for (int i = 0; i < 24; ++i) if (g_cap[i].win == win) { s = i; break; }
+    if (s < 0) for (int i = 0; i < 24; ++i) if (s < 0 || (int)(now - g_cap[i].ms) > (int)(now - g_cap[old].ms)) { s = i; old = i; }
+    g_cap[s].win = win; g_cap[s].ms = now; g_cap[s].n = 0;
+    g_capCur = win; g_capSlot = s;
+    const u32 r = ((WinDrawFn)g_hkWinDraw.tramp)(win, edx);
+    g_capCur = pc; g_capSlot = ps;
+    return r;
+}
+u32 __fastcall hk_txcore(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy) {
+    if (g_capCur) cap_add((int)x, (int)y, s, (int)len, col);
+    ++g_capDepth; const u32 r = ((TextCoreFn)g_hkTxCore.tramp)(font, edx, x, y, s, len, col, fl, sx, sy); --g_capDepth;
+    return r;
+}
+// the ascii ones are cdecl : 10 slots forwarded (the caller cleans ; the extra ones are its own stack, untouched)
+u32 __cdecl hk_txasc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
+    if (g_capCur) cap_add((short)a1, (short)a2, (const char*)a3, 0, a4);
+    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAsc.tramp)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
+    return r;
+}
+u32 __cdecl hk_txascr(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
+    if (g_capCur) cap_add((short)a1, (short)a2, (const char*)a3, 0, a4 | 0x01000000u);   // right-aligned : x is its RIGHT edge (bit 24 of the colour marks it)
+    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscR.tramp)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
+    return r;
+}
+u32 __cdecl hk_txascc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
+    if (g_capCur) cap_add((int)a2, (short)a3, (const char*)a4, 0, a5);
+    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscC.tramp)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
+    return r;
+}
+// installed by AOB (re s.4), a bounded retry (20 x 5 s), logged ; the window-draw hook goes in LAST (nothing is attributed
+// before every text hook it can be is in)
+bool g_capOk = false;
+void ensure_text_capture() {
+    static int tries = 0; static DWORD next = 0;
+    if (g_capOk || tries >= 20 || (int)(GetTickCount() - next) < 0) return;
+    ++tries; next = GetTickCount() + 5000;
+    const u32 core = aob_masked("83 EC 08 53 55 56 57 8B 7C 24 30 8B E9 8B C7 8B CF C1 F8 06 C1 F9 02 83 E0 03");
+    const u32 aw   = aob_masked("8B 44 24 10 8B 4C 24 0C 8B 54 24 08 6A 00 68 00 00 80 3F 68 00 00 80 3F 50 8B 44 24 14 51 52 50 E8 ?? ?? ?? ?? 83 C4 1C C3");
+    const u32 ac   = aob_masked("8B 54 24 10 83 EC 10 85 D2 75 09 0F BF 44 24 18 83 C4 10 C3 53 55 56 57 6A 00 E8");
+    const u32 ar   = aob_masked("51 56 8B 74 24 14 85 F6 75 08 0F BF 44 24 0C 5E 59 C3 53");
+    const u32 wd   = aob_masked("83 EC 24 53 55 56 57 8B E9 E8 ?? ?? ?? ?? 66 8B 45 56 33 FF 66 3B C7");
+    u32 asc = 0; if (aw) { u32 rel = 0; if (safe_read(aw + 0x21, &rel)) asc = aw + 0x25 + rel; }
+    if (!core || !wd) {
+        if (tries == 1 || tries == 20) windower::debug::log("NATIVEUI text capture : not found (try %d : core %08X, window draw %08X)%s", tries, core, wd, tries == 20 ? " -- giving up : the unnamed lists stay the client's" : "");
+        return;
+    }
+    g_hkTxCore.at = core; g_hkTxCore.dst = (void*)&hk_txcore;
+    g_hkTxAsc.at = asc;   g_hkTxAsc.dst = (void*)&hk_txasc;
+    g_hkTxAscR.at = ar;   g_hkTxAscR.dst = (void*)&hk_txascr;
+    g_hkTxAscC.at = ac;   g_hkTxAscC.dst = (void*)&hk_txascc;
+    g_hkWinDraw.at = wd;  g_hkWinDraw.dst = (void*)&hk_windraw;
+    if (!hook_on(g_hkTxCore)) return;
+    if (asc) hook_on(g_hkTxAsc); if (ar) hook_on(g_hkTxAscR); if (ac) hook_on(g_hkTxAscC);
+    if (!hook_on(g_hkWinDraw)) { hook_off(g_hkTxCore); hook_off(g_hkTxAsc); hook_off(g_hkTxAscR); hook_off(g_hkTxAscC); return; }
+    g_capOk = true;
+    windower::debug::log("NATIVEUI text capture : on (try %d ; ascii %d, right %d, clipped %d)", tries, g_hkTxAsc.on, g_hkTxAscR.on, g_hkTxAscC.on);
+}
+void text_capture_off() { hook_off(g_hkWinDraw); hook_off(g_hkTxCore); hook_off(g_hkTxAsc); hook_off(g_hkTxAscR); hook_off(g_hkTxAscC); g_capOk = false; g_capCur = 0; }
+// a window's texts of its last drawn frame (none when it was not drawn for 300 ms)
+int text_capture(u32 win, const CapRun*& runs) {
+    runs = 0; if (!g_capOk || !win) return 0;
+    for (int i = 0; i < 24; ++i) if (g_cap[i].win == win) { if ((int)(GetTickCount() - g_cap[i].ms) > 300) return 0; runs = g_cap[i].r; return g_cap[i].n; }
+    return 0;
+}
 bool hook_install() {
     g_hkMove.at = g_moveto;     g_hkMove.dst = (void*)&hk_moveto;
     g_hkPlace.at = g_listPlace; g_hkPlace.dst = (void*)&hk_listplace;
@@ -1867,7 +1978,7 @@ void main_poll(bool on) {
     }
     NativeEntryMenu so; const int ro = entry_read(MAIN_SORT_W, so, 0);
     g_mainSort = so; if (ro != 1) g_mainSort.open = false;
-    NativeEntryMenu yn; memset(&yn, 0, sizeof(yn)); const int ry = g_mainSort.open ? entry_read(MAIN_YN_W, yn, 0) : -1;
+    NativeEntryMenu yn; memset(&yn, 0, sizeof(yn)); const int ry = (g_mainSort.open || mog_sort_open()) ? entry_read(MAIN_YN_W, yn, 0) : -1;
     g_mainYn = yn; if (ry != 1) g_mainYn.open = false;
     if (rs == 0 || ro == 0 || ry == 0) r = 0;
     {   // Status -> Profile : the panel's rect, and its data (drawn by AioHUD only when every field reads)
@@ -2217,7 +2328,11 @@ void region_poll(u32 mgr) {
     if (g_rg.open != was || g_rg.mode != wasMode)
         windower::debug::log("NATIVEUI region : map %s, mode %d (data : conquest %d, campaign %d, colonization %d)", g_rg.open ? "up" : "closed", g_rg.mode, g_rg.conqOk, g_rg.campOk, g_rg.coloOk);
 }
+void key_read(u32 o, u32 focusObj);   // below (Key Items as data)
+extern NativeKeyItems g_key;
 void yn_park(u32 mgr) {
+    { u32 focus = 0; const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus); key_read(win_named(mgr, "evitem"), focus); }
+    static int kLog = 0; if (g_key.ok) park_named(mgr, "evitem", kLog, "Key Items");
     region_poll(mgr);
     static int rgLog[8] = {};
     if (g_rg.open && g_rg.mode >= 0) {
@@ -2232,7 +2347,7 @@ void yn_park(u32 mgr) {
         if (g_rg.mode == 3) park_named(mgr, "colorank", dLog[2], "Region Info -> the coalition ranks");
         g_parkClosing = false;
     }
-    if (g_mainSort.open) park_named(mgr, "sortyn", g_ynParkLog, "Auto-sort / Dispose, from the spell list or the items");
+    if (g_mainSort.open || (mog_sort_open() && g_mainYn.open)) park_named(mgr, "sortyn", g_ynParkLog, "Auto-sort / Dispose, from the spell list, the items or a Mog House storage");
     if (g_prof.open && g_prof.ok) park_named(mgr, "profile", g_profParkLog, "Status -> Profile");   // placed by code too
     // the stat panels are BORN parked by their record ; a late one (opened before the record took) is moved too
     static int persLog = 0, lvlLog = 0;
@@ -2340,7 +2455,7 @@ void rescue_children(u32 mgr, int hide) {
             // AioHUD draws Auto-sort's Yes / No while the spell list's sort options are up
             const bool ynOurs = (g_rg.open && g_rg.mode >= 0 && (!strcmp(nm, RG_PTS[g_rg.mode]) || (RG_TOP[g_rg.mode] && !strcmp(nm, RG_TOP[g_rg.mode])) || (g_rg.mode == 0 && !strcmp(nm, "conquer1")) || (g_rg.mode == 1 && !strcmp(nm, "beseige2"))
                                  || (g_rg.mode == 2 && !strcmp(nm, "camparea")) || (g_rg.mode == 3 && !strcmp(nm, "colorank"))))
-                             || (g_mainSort.open && !strcmp(nm, "sortyn")) || (g_prof.open && g_prof.ok && !strcmp(nm, "profile"))
+                             || ((g_mainSort.open || (mog_sort_open() && g_mainYn.open)) && !strcmp(nm, "sortyn")) || (g_prof.open && g_prof.ok && !strcmp(nm, "profile"))
                              || (g_persDataOk && (!strcmp(nm, "persona") || !strcmp(nm, "level")))
                              || (g_jobsOurs && (!strcmp(nm, "joblevel") || !strcmp(nm, "masterle")))
                              || (g_skillsOk && (!strcmp(nm, "btlskill") || !strcmp(nm, "mgcskill") || !strcmp(nm, "trdskill")))
@@ -2369,8 +2484,8 @@ void rescue_children(u32 mgr, int hide) {
                                                   || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl"))))))
                              || (g_auc.up && !g_aucNot && (auc_menu_name(nm) || !strcmp(nm, "auclist") || !strcmp(nm, "auchisto") || !strcmp(nm, "iteminfo")
                                                            || !strcmp(nm, "moneyctr") || !strcmp(nm, "money") || !strcmp(nm, "inventor")))
-                             || [&]() { for (int i = 0; i < g_gen.n; ++i) if (!strcmp(nm, g_gen.m[i].name)) return true; return (g_gen.grid && !strcmp(nm, g_gen.gm.name)) || (g_gen.list && (!strcmp(nm, g_gen.listName) || (g_gen.anyItem && !strcmp(nm, "iteminfo")))); }()
-                             || (g_cur.open && !strcmp(nm, "evitem"))
+                             || [&]() { for (int i = 0; i < g_gen.n; ++i) if (!strcmp(nm, g_gen.m[i].name)) return true; for (int i = 0; i < g_gen.np; ++i) if (!strcmp(nm, g_gen.p[i].name)) return true; return (g_gen.grid && !strcmp(nm, g_gen.gm.name)) || (g_gen.list && (!strcmp(nm, g_gen.listName) || (g_gen.anyItem && !strcmp(nm, "iteminfo")))); }()
+                             || ((g_cur.open || g_key.ok) && !strcmp(nm, "evitem"))
                              || (g_trade.open && (!strcmp(nm, "moneyctr") || !strcmp(nm, "itemctrl") || !strcmp(nm, "iteminfo") || !strcmp(nm, "gift") || !strcmp(nm, "money")));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
                 int nx = r[0], ny = r[1] - HIDE_DY;
@@ -3175,6 +3290,11 @@ static bool auc_items(u32 h, int top, int vis, int cnt, NativeItemRow* out) {   
             u32 v = 0; memcpy(&v, r + 0x28 + 4 * c, 4);
             if (r[c] == 0x15 || r[c] == 0x1A) { if (!w.itemId) { short id = 0; if (valid_ptr(v)) { if (!rd16(v, id)) id = 0; } else id = (short)(v & 0xFFFF); w.itemId = (unsigned short)id; } }
             else if (r[c] == 9) w.itemCount = (int)(v > 9999 ? 9999 : v);
+            // Sales status (auction-re 4b) : col 3 the PRICE (type 0xA, value price + 1), col 1 the name (0x19) in the
+            // status colour (green on auction, gold sold, orange returned, grey otherwise), col 2 the stack size
+            else if (r[c] == 0xA || r[c] == 0xB) { w.hasPrice = true; w.price = v ? (int)(v - 1) : -2; }
+            else if (r[c] == 0x19) { u32 col = 0; memcpy(&col, r + 0x08 + 4 * c, 4); if (col) w.itemCol = col; }
+            else if (r[c] == 7) { if (!w.itemCount) w.itemCount = (int)(v > 9999 ? 9999 : v); }
         }
         if (!w.itemId) return false;                                   // a row without its item : not the layout measured
     }
@@ -3364,6 +3484,7 @@ static bool gen_candidate(const char* nm, int hide) {
     int dx = 0, dy = 0; desired_offset(nm, 0, 0, 0, hide, 0, 0, dx, dy);
     if (dy == HIDE_DY && !gen_learned(nm)) return false;              // a rule parks it : someone's (the learned rule is ours)
     if (in_list(nm, GEN_SKIP) || auc_menu_name(nm) || !strncmp(nm, "auc", 3)) return false;
+    for (int i = 0; i < g_genRefusedN; ++i) if (!strcmp(g_genRefused[i], nm)) return false;   // refused this session : the client's, for good (no ping-pong)
     const char* const* L[] = { PARTY_W, ALLY_W, CHAT_W, HELP_W, COST_W, NET_W, BUFF_W, MACRO_W, TRADE_W, DIALOG_W, INPUT_W, NPC_W, MAIN_W, MAIN_SUB_W, MAIN_SORT_W, MAIN_YN_W,
                                ACT_SUB_W, ACT_LIST_W, MOG_W, JOBSEL_W };
     for (size_t i = 0; i < sizeof(L) / sizeof(L[0]); ++i) if (in_list(nm, L[i])) return false;
@@ -3517,12 +3638,109 @@ static bool gen_grid_read(u32 o, const NativeEntryMenu& m, NativeGenMenus& G) {
     for (int i = 0; i < m.n && i < 32; ++i) { const int e = m.entry[i]; if (e < 1 || e > 32 || !have[e]) return false; G.gx[i] = rx[e]; G.gy[i] = ry[e]; G.gw[i] = rw[e]; G.gh[i] = rh[e]; }
     return true;
 }
+static u32 handler_global_of(const char* name8);   // below : the client's name -> handler registry
+// the PANEL lists (cfilter & co : checkboxes the capture does not see -- the client's)
+static const char* const PANEL_SKIP[] = { "cfilter", "fxfilter", "conf11s", "textcol", 0 };
+// an UNNAMED window as a PANEL from the text capture : its runs of the last frame + its entries' rects. false (the client's)
+// when the capture is off / stale, fewer than 2 runs, or no entry holds a text (a list drawn another way : mapv3)
+static bool gen_panel_read(u32 o, const NativeEntryMenu& m, NativeGenMenus::Panel& P) {
+    for (int i = 0; PANEL_SKIP[i]; ++i) if (!strncmp(m.name, PANEL_SKIP[i], strlen(PANEL_SKIP[i]))) return false;
+    // the last good read of each open panel : the client stops drawing a window another one covers (quest00 under its
+    // list, live 2026-11-21) -- its content stays what it last wrote, while the window is open
+    static struct { u32 o; NativeGenMenus::Panel P; } cache[4]; static int cacheNext = 0;
+    const CapRun* R = 0; const int nr = text_capture(o, R);
+    if (nr < 2) {
+        for (int i = 0; i < 4; ++i) if (cache[i].o == o && !strcmp(cache[i].P.name, m.name)) {
+            P = cache[i].P; P.cursor = m.cursor; P.rx0 = m.rx0; P.ry0 = m.ry0; P.rx1 = m.rx1; P.ry1 = m.ry1; P.uiW = m.uiW; P.uiH = m.uiH; return true; }
+        return false;
+    }
+    short wx = 0, wy = 0; if (!rd16(o + OBJ_RECT, wx) || !rd16(o + OBJ_RECT + 2, wy)) return false;
+    memset(&P, 0, sizeof(P));
+    u32 cn = 0; safe_read(o + 0x14, &cn); int k = 0;
+    for (int g = 0; valid_ptr(cn) && g < 64 && k < 32; ++g) {
+        u32 cnext = 0, ch = 0; unsigned char cdead = 0; short type = -1; safe_read(cn, &cnext); safe_read(cn + 0x10, &ch); rd8(cn + 0x14, cdead);
+        if (valid_ptr(ch) && !cdead && rd16(ch, type) && type == 1) { short r[4] = { 0 }; u32 st = 0; safe_read(ch + 0x10, &st);
+            if (rd16(ch + 0x32, r[0]) && rd16(ch + 0x34, r[1]) && rd16(ch + 0x36, r[2]) && rd16(ch + 0x38, r[3])) {
+                P.entry[P.n] = (unsigned char)(k + 1); P.st[P.n] = st; P.ex0[P.n] = r[0]; P.ey0[P.n] = r[1]; P.ex1[P.n] = r[2]; P.ey1[P.n] = r[3]; ++P.n; } ++k; }
+        cn = cnext;
+    }
+    for (int j = 0; j < nr && j < 40; ++j) { NativeGenMenus::Panel::Run& U = P.run[P.nr++]; U.x = (short)(R[j].x - wx); int ry = R[j].y - wy;
+        if (ry < -HIDE_DY / 2) ry += HIDE_DY; else if (ry > HIDE_DY / 2) ry -= HIDE_DY;   // some texts keep the origin cached before the park (quest00's rows, live 2026-11-21)
+        U.y = (short)ry; U.col = R[j].col; memcpy(U.s, R[j].s, sizeof(U.s)); }
+    // which run is which entry's : the client does NOT always write a row inside its entry's rect (quest00 : "Current" at
+    // y 13, its entry at 31-49, live 2026-11-21). The rows' texts are the leftmost text of their line in the entries'
+    // column, top to bottom : as many as the shown entries -> one each in order ; one more -> the top one is the title ;
+    // otherwise the nearest entry by y (within 20 px)
+    {   int ve[32], nv = 0; short minX = 32767;
+        for (int e = 0; e < P.n; ++e) if (P.st[e] != 0x10) { ve[nv++] = e; if (P.ex0[e] < minX) minX = P.ex0[e]; }
+        for (int a = 1; a < nv; ++a) for (int b2 = a; b2 > 0 && P.ey0[ve[b2]] < P.ey0[ve[b2 - 1]]; --b2) { const int t = ve[b2]; ve[b2] = ve[b2 - 1]; ve[b2 - 1] = t; }
+        int cand[40], nc = 0;
+        for (int j = 0; j < P.nr; ++j) { const NativeGenMenus::Panel::Run& U = P.run[j]; if (U.x < minX - 2 || (U.col & 0x01000000u)) continue;
+            bool leftmost = true; for (int q = 0; q < P.nr; ++q) if (q != j && abs(P.run[q].y - U.y) <= 6 && P.run[q].x < U.x) leftmost = false;
+            if (leftmost) cand[nc++] = j; }
+        for (int a = 1; a < nc; ++a) for (int b2 = a; b2 > 0 && P.run[cand[b2]].y < P.run[cand[b2 - 1]].y; --b2) { const int t = cand[b2]; cand[b2] = cand[b2 - 1]; cand[b2 - 1] = t; }
+        P.titleRun = -2;
+        if (nv && (nc == nv || nc == nv + 1)) {
+            const int off = nc - nv; P.titleRun = off ? cand[0] : -1;
+            for (int i = 0; i < nv; ++i) P.run[cand[i + off]].ent = P.entry[ve[i]];
+        } else for (int j = 0; j < P.nr; ++j) { NativeGenMenus::Panel::Run& U = P.run[j]; if (U.x < minX - 2 || (U.col & 0x01000000u)) continue;
+            int best = -1, bd = 21; for (int i = 0; i < nv; ++i) { const int d = abs(U.y - (P.ey0[ve[i]] + P.ey1[ve[i]]) / 2); if (d < bd) { bd = d; best = ve[i]; } }
+            if (best >= 0) U.ent = P.entry[best]; }
+        // a value beside a row (same line, to its right) is that row's ; a right-aligned value on the line just under a row
+        // too (the RoE objectives' "77/200", live 2026-11-21)
+        for (int j = 0; j < P.nr; ++j) if (!P.run[j].ent) for (int q = 0; q < P.nr; ++q) if (P.run[q].ent && abs(P.run[q].y - P.run[j].y) <= 6 && P.run[q].x < P.run[j].x) { P.run[j].ent = P.run[q].ent; break; }
+        for (int j = 0; j < P.nr; ++j) if (!P.run[j].ent && (P.run[j].col & 0x01000000u)) {
+            int best = -1, bd = 23; for (int q = 0; q < P.nr; ++q) if (P.run[q].ent && !(P.run[q].col & 0x01000000u)) { const int d = P.run[j].y - P.run[q].y; if (d > 6 && d < bd) { bd = d; best = q; } }
+            if (best >= 0) P.run[j].ent = P.run[best].ent; }
+        bool any = false; for (int j = 0; j < P.nr; ++j) if (P.run[j].ent) any = true;
+        if (!any) return false;
+    }
+    P.lcount = -1;
+    {   static u32 refF5 = 0; if (!refF5) { const u32 hg = handler_global_of("quest00"); u32 hh = 0, vt = 0; if (hg && safe_read(hg, &hh) && valid_ptr(hh) && safe_read(hh, &vt) && valid_ptr(vt)) safe_read(vt + 0x14, &refF5); }
+        u32 hh = 0, vt = 0, f5 = 0, c = 0, t = 0, v = 0, cu = 0;
+        if (refF5 && safe_read(o + OBJ_HANDLER, &hh) && valid_ptr(hh) && safe_read(hh, &vt) && valid_ptr(vt) && safe_read(vt + 0x14, &f5) && f5 == refF5
+            && safe_read(hh + 0x40, &c) && safe_read(hh + 0x38, &t) && safe_read(hh + 0x48, &v) && safe_read(hh + 0x30, &cu) && c < 1000 && t <= c && v < 64) {
+            P.lcount = (int)c; P.ltop = (int)t; P.lvis = (int)v; P.lcur = (int)cu; }
+    }
+    memcpy(P.name, m.name, 9); P.cursor = m.cursor; P.rx0 = m.rx0; P.ry0 = m.ry0; P.rx1 = m.rx1; P.ry1 = m.ry1; P.uiW = m.uiW; P.uiH = m.uiH;
+    {   // PANELPROBE (dev, 2026-11-21) : on a cursor change, the cursor id, each entry child (order, +0x3A, rect), the pink run
+        static char pn[9] = ""; static int pc = -99, said = 0;
+        if ((strcmp(pn, m.name) || pc != m.cursor) && said < 80) { ++said; memcpy(pn, m.name, 9); pc = m.cursor;
+            char b[900]; int bo = 0; b[0] = 0; u32 c2 = 0; safe_read(o + 0x14, &c2); int kk = 0;
+            for (int g = 0; valid_ptr(c2) && g < 64 && bo < 820; ++g) { u32 nx = 0, ch = 0; unsigned char dd = 0; short ty = -1; safe_read(c2, &nx); safe_read(c2 + 0x10, &ch); rd8(c2 + 0x14, dd);
+                if (valid_ptr(ch) && !dd && rd16(ch, ty) && ty == 1) { short id = 0, r0 = 0, r1 = 0, r2 = 0, r3 = 0; u32 st = 0; rd16(ch + 0x3A, id); rd16(ch + 0x32, r0); rd16(ch + 0x34, r1); rd16(ch + 0x36, r2); rd16(ch + 0x38, r3); safe_read(ch + 0x10, &st);
+                    bo += _snprintf(b + bo, sizeof(b) - bo, " [k%d id%d %d,%d-%d,%d s%X]", ++kk, id, r0, r1, r2, r3, st); }
+                c2 = nx; }
+            const char* pk = ""; for (int j = 0; j < P.nr; ++j) if ((P.run[j].col & 0xFFFFFF) == 0x803040) { pk = P.run[j].s; break; }
+            windower::debug::log("PANELPROBE '%s' cursor %d (pink '%s') children :%s", m.name, m.cursor, pk, b); }
+    }
+    {   int c = -1; for (int i = 0; i < 4; ++i) if (cache[i].o == o) c = i; if (c < 0) { c = cacheNext; cacheNext = (cacheNext + 1) & 3; }
+        cache[c].o = o; cache[c].P = P; }
+    return true;
+}
+// CAPPROBE (dev, 2026-11-21) : a window's captured runs + its entry rects, once per window name -- the attribution checked live
+static void cap_probe(u32 o, const char* nm, const NativeEntryMenu& m) {
+    static char seen[24][9]; static int seenN[24], seenK[24], nSeen = 0;
+    const CapRun* R = 0; const int nr = text_capture(o, R); if (nr <= 0) return;
+    int q = -1; for (int i = 0; i < nSeen; ++i) if (!strcmp(seen[i], nm)) q = i;
+    if (q >= 0 && (nr <= seenN[q] || seenK[q] >= 3)) return;
+    if (q < 0) { if (nSeen >= 24) return; q = nSeen++; memcpy(seen[q], nm, 9); seenK[q] = 0; }
+    seenN[q] = nr; ++seenK[q];
+    short wx = 0, wy = 0; rd16(o + OBJ_RECT, wx); rd16(o + OBJ_RECT + 2, wy);
+    char b[1500]; int bo = 0; b[0] = 0;
+    for (int j = 0; j < nr && bo < 1400; ++j) bo += _snprintf(b + bo, sizeof(b) - bo, " [%d,%d %08X '%s']", R[j].x - wx, R[j].y - wy, R[j].col, R[j].s);
+    windower::debug::log("CAPPROBE '%s' win %d,%d, %d entries, %d runs :%s", nm, wx, wy, m.n, nr, b);
+}
+static void miss_read(u32 o, u32 focusObj);   // below (Missions as data)
+static void journal_read(u32 o, u32 focusObj);   // below (the journal as data)
+extern NativeJournal g_jrn;
+extern NativeMissions g_miss;
 void gen_poll(bool on, u32 mgr, int hide) {
     NativeGenMenus G; memset(&G, 0, sizeof(G));
     if (!on || !mgr) { g_gen = G; return; }
     u32 wh = 0; if (!safe_read(mgr + 0x80, &wh)) { g_gen = G; return; }
     const int uiH = (short)(wh >> 16); if (uiH < 240 || uiH > 8000) { g_gen = G; return; }
-    static char seen[160][9]; static int nSeen = 0, lines = 0;
+    static char seen[160][9]; static int nSeen = 0, lines = 0; bool missSeen = false, jrSeen = false;
     u32 focusObj = 0; { const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focusObj); }
     u32 node = 0; safe_read(mgr + MGR_OPEN_LIST, &node);
     for (int g = 0; valid_ptr(node) && g < 400; ++g) {
@@ -3532,6 +3750,7 @@ void gen_poll(bool on, u32 mgr, int hide) {
         if (!gen_candidate(nm, hide) || !rd16(o + OBJ_RECT + 2, r[1])) { node = next; continue; }
         bool wasOurs = gen_learned(nm) || (g_gen.grid && !strcmp(g_gen.gm.name, nm)) || (g_gen.list && !strcmp(g_gen.listName, nm));   // parked by US (last frame, or at birth) : still ours
         for (int i = 0; i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, nm)) wasOurs = true;
+        for (int i = 0; i < g_gen.np; ++i) if (!strcmp(g_gen.p[i].name, nm)) wasOurs = true;
         if (r[1] >= uiH + HIDE_DY / 2 && !wasOurs) { node = next; continue; }   // parked by its parent (not by us) : not shown
         // classify
         const char* one[2] = { nm, 0 }; NativeEntryMenu m; u32 mo = 0;
@@ -3541,6 +3760,13 @@ void gen_poll(bool on, u32 mgr, int hide) {
             cols = gen_columns(o); named = true;
             for (int i = 0; i < m.n && i < 16; ++i) { def_help(o, m.entry[i], help[i], sizeof(help[i])); if (!m.label[i][0] && !help[i][0]) named = false; }
             cls = (cols == 1 && named && m.n <= 16) ? 1 : 2;              // 1 : drawn ; 2 : an entry window kept the client's
+            cap_probe(o, nm, m);
+            if (!strcmp(nm, "miss00")) { missSeen = true; miss_read(o, focusObj); }
+            if (!strcmp(nm, "quest01")) { jrSeen = true; journal_read(o, focusObj); }   // the journal : the whole list as data (journal_draw when verified)   // Missions : the whole list as data (drawn by missions_draw when verified)
+            if (cls == 2 && !named && !gen_grid_family(nm) && G.np < 2 && gen_panel_read(o, m, G.p[G.np])) {   // a PANEL from the text capture
+                NativeGenMenus::Panel& P = G.p[G.np++]; P.focused = focusObj == o;
+                while (P.ry0 >= uiH) { P.ry0 = (short)(P.ry0 - HIDE_DY); P.ry1 = (short)(P.ry1 - HIDE_DY); }
+                cls = 5; }
         } else { TextList T; cls = tl_find(mgr, nm, T) ? 3 : 4; }       // 3 : a TEXT LIST (step 2) ; 4 : another window
         bool known = false; for (int i = 0; i < nSeen; ++i) if (!strcmp(seen[i], nm)) known = true;
         if (!known && lines < 200) {                                     // the CENSUS : each window once, with what it is
@@ -3554,13 +3780,13 @@ void gen_poll(bool on, u32 mgr, int hide) {
             ++lines;
             windower::debug::log("NATIVEUI generic : '%s' rect %d,%d-%d,%d -- %s%s", nm, rr[0], rr[1], rr[2], rr[3],
                 cls == 1 ? "an entry menu : AioHUD draws it ;" : cls == 2 ? (gen_grid_family(nm) ? "a GRID : AioHUD draws it at the client's layout ;" : cols != 1 ? "an entry GRID (not one column) : the client's ;" : "an entry menu with unnamed entries : the client's ;")
-                : cls == 3 ? "a TEXT LIST : read by its cell types ;" : "another kind : the client's", b);
+                : cls == 3 ? "a TEXT LIST : read by its cell types ;" : cls == 5 ? "a PANEL (the text capture) : AioHUD draws it at the client's layout ;" : "another kind : the client's", b);
         }
         if (cls == 1 && G.n < GEN_MENUS) {
             while (m.ry0 >= uiH) { m.ry0 = (short)(m.ry0 - HIDE_DY); m.ry1 = (short)(m.ry1 - HIDE_DY); }
             memcpy(G.help[G.n], help, sizeof(G.help[G.n])); G.m[G.n++] = m;
         }
-        bool drawnNow = cls == 1;
+        bool drawnNow = cls == 1 || cls == 5;
         if (cls == 3 && (!G.list || focusObj == o) && gen_list_read(mgr, nm, focusObj, G)) drawnNow = true;
         if (cls == 2 && gen_grid_family(nm) && (!G.grid || focusObj == o) && gen_grid_read(o, m, G) && cfg_values(nm, m, G)) {
             while (m.ry0 >= uiH) { m.ry0 = (short)(m.ry0 - HIDE_DY); m.ry1 = (short)(m.ry1 - HIDE_DY); }
@@ -3570,23 +3796,447 @@ void gen_poll(bool on, u32 mgr, int hide) {
             if ((strcmp(sN, nm) || strcmp(sSt, st)) && said < 60) { ++said; memcpy(sN, nm, 9); lstrcpynA(sSt, st, sizeof(sSt));
                 windower::debug::log("NATIVEUI generic : grid '%s' (cursor %d) -- entry states %s ; entry 1 at %d,%d %dx%d", nm, m.cursor, st, G.gx[0], G.gy[0], G.gw[0], G.gh[0]); }
         }
-        // learn what is drawn ; a learned window present and not drawn for 30 polls : refused (rule 10)
-        {   static char badN[8][9]; static int badC[8];
-            if (drawnNow) { gen_learn(nm); for (int q = 0; q < 8; ++q) if (!strcmp(badN[q], nm)) badC[q] = 0; }
+        // learn what is drawn ; a learned window present and not drawn for 5 s : refused (rule 10)
+        {   static char badN[8][9]; static DWORD badMs[8];                  // (5 s, not 30 polls : a list that loads its rows, live 2026-11-21)
+            if (drawnNow) { gen_learn(nm); for (int q = 0; q < 8; ++q) if (!strcmp(badN[q], nm)) badMs[q] = 0; }
             else if (gen_learned(nm)) { int q = 0; while (q < 8 && strcmp(badN[q], nm) && badN[q][0]) ++q; if (q == 8) q = 0;
-                if (strcmp(badN[q], nm)) { memcpy(badN[q], nm, 9); badC[q] = 0; } if (++badC[q] >= 30) { gen_refuse(nm); badC[q] = 0; } }
+                const DWORD t = GetTickCount();
+                if (strcmp(badN[q], nm)) { memcpy(badN[q], nm, 9); badMs[q] = 0; }
+                if (!badMs[q]) badMs[q] = t; else if (t - badMs[q] >= 5000) { gen_refuse(nm); badMs[q] = 0; } }
         }
         node = next;
     }
+    if (!missSeen) g_miss.open = g_miss.ok = false;
+    if (!jrSeen) g_jrn.open = g_jrn.ok = false;
     g_gen = G; g_genListUp = G.list && G.anyItem;
     {   static char was[9] = ""; static int said = 0;                     // the generic list : which one, logged on change
         if (strcmp(was, G.list ? G.listName : "") && said < 30) { ++said; lstrcpynA(was, G.list ? G.listName : "", 9);
             if (G.list) windower::debug::log("NATIVEUI generic : list '%s' -- AioHUD draws it (%d rows ; row 0 item %u text '%s' count %d price %d)", G.listName, G.ln, G.lrow[0].item, G.lrow[0].text, G.lrow[0].count, G.lrow[0].price); } }
 }
 const NativeGenMenus& native_gen_menus() { return g_gen; }
-bool native_gen_hover(const char* name, int entry) { if (name && g_gen.grid && !strcmp(g_gen.gm.name, name)) { const char* one[2] = { name, 0 }; return entry_hover(one, entry); }
+
+// ---- the client's NAME -> HANDLER registry (FUN_0549F240's table : { char name[0x20] ; u32 &handler_global ; 8 B }) ----
+static u32 handler_global_of(const char* name8) {
+    static u32 table = 0; static int tries = 0; static DWORD next = 0;
+    if (!table) {
+        if (tries >= 20 || (int)(GetTickCount() - next) < 0) return 0;
+        ++tries; next = GetTickCount() + 5000;
+        const u32 a = aob_masked("A0 ?? ?? ?? ?? 53 56 57 33 FF 84 C0 74 ?? 8B 5C 24 10 B8 ?? ?? ?? ?? 8B F0 6A 10 53 50 E8 ?? ?? ?? ?? 83 C4 0C 85 C0 74 ?? 8A 4E 2C 83 C6 2C");
+        u32 t1 = 0, t2 = 0;
+        if (!a || !safe_read(a + 1, &t1) || !safe_read(a + 0x13, &t2) || t1 != t2 || !valid_ptr(t1)) {
+            if (tries == 1 || tries == 20) windower::debug::log("NATIVEUI window registry : not found (try %d)%s", tries, tries == 20 ? " -- giving up" : "");
+            return 0;
+        }
+        table = t1; windower::debug::log("NATIVEUI window registry found (try %d)", tries);
+    }
+    char want[17]; memset(want, ' ', 16); want[16] = 0; memcpy(want, "menu", 4);
+    for (int i = 0; i < 8 && name8[i]; ++i) want[8 + i] = name8[i];
+    for (int i = 0; i < 400; ++i) {
+        char nm[17] = { 0 }; if (!rdblk(table + i * 0x2C, (unsigned char*)nm, 16) || !nm[0]) return 0;
+        if (!memcmp(nm, want, 16)) { u32 g = 0; return safe_read(table + i * 0x2C + 0x20, &g) && valid_ptr(g) ? g : 0; }
+    }
+    return 0;
+}
+// ---- MISSIONS as data. Category c's name table : T = &miss00's handler global - 0x8E8 + c * 0x94 (Nov RVAs 0x668C48 /
+// 0x669530, the same .data block) ; its title : *(&global - 0x3C + c * 4). NOT trusted : a decoded name must equal the
+// client's own text this frame (the capture) before AioHUD draws the list from them.
+NativeMissions g_miss;
+static bool miss_name(u32 hg, int cat, int idx, char* out, int cap, signed char& depth) {
+    out[0] = 0; depth = 0; if (cat < 0 || cat > 14 || idx < 0) return false;
+    const u32 T = hg - 0x8E8 + (u32)cat * 0x94; u32 cnt = 0, arr = 0, base = 0, off = 0;
+    if (!safe_read(T + 0x0C, &cnt) || cnt > 4000 || (u32)idx >= cnt || !safe_read(T + 0x18, &arr) || !valid_ptr(arr)
+        || !safe_read(T + 0x1C, &base) || !safe_read(arr + idx * 4, &off)) return false;
+    char raw[96] = { 0 }; if (!rdblk(base + off, (unsigned char*)raw, sizeof(raw) - 1)) return false;
+    const char* p = raw; while (*p == '_' && depth < 8) { ++p; ++depth; }
+    cap_clean(p, 0, out, cap); return out[0] != 0;
+}
+// a d_msg entry's field k (type 0 = text) -- the mission DATs' records are [id, name, orders]
+static const char* dmsg_field(Dmsg& D, unsigned i, unsigned k) {
+    if (!dmsg_ready(D) || i >= D.n) return 0;
+    const unsigned char* body = D.buf + D.hs; const unsigned blen = D.size - D.hs;
+    unsigned base = 0, len = 0;
+    if (D.toc) { if ((unsigned long long)i * 8 + 8 > blen) return 0; unsigned off = 0; memcpy(&off, body + i * 8, 4); memcpy(&len, body + i * 8 + 4, 4); base = D.toc + off; }
+    else { base = i * D.esz; len = D.esz; }
+    if (base >= blen || len < 12 || len > blen - base) return 0;
+    const unsigned char* e = body + base; unsigned cnt = 0; memcpy(&cnt, e, 4);
+    if (k >= cnt || 4 + k * 8 + 8 > len) return 0;
+    unsigned fo = 0, ft = 0; memcpy(&fo, e + 4 + k * 8, 4); memcpy(&ft, e + 8 + k * 8, 4);
+    if (ft != 0 || fo + 0x1C >= len) return 0;
+    for (unsigned q = fo + 0x1C; q < len; ++q) if (!e[q]) return (const char*)e + fo + 0x1C;
+    return 0;
+}
+// the mission DATs (EN), by miss00 category (quest-lists-re-2026-11-21.md section 6) ; other languages : the name only
+static Dmsg g_mdm[15] = {
+    { 55715 }, { 55716 }, { 55717 }, { 55718 }, { 55719 }, { 55720 }, { 55721 }, { 55724 }, { 55723 }, { 55738 }, { 55741 }, { 55742 }, { 55735 }, { 55736 }, { 55737 } };
+// the client's text -> plain : 0x0A a line break, its 2-byte escapes (0x1E / 0x1F / 0x7F + a byte) dropped, the rest printable
+static void miss_text(const char* s, char* out, int cap) {
+    int o = 0; const unsigned char* p = (const unsigned char*)s;
+    while (p && *p && o < cap - 1) {
+        const unsigned char c = *p;
+        if ((c == 0x1E || c == 0x1F || c == 0x7F) && p[1]) { p += 2; continue; }
+        if (c == 0x0A) { if (o && out[o - 1] != '\n') out[o++] = '\n'; ++p; continue; }
+        if (c >= 0x20 && c < 0x7F) out[o++] = (char)c;
+        else if (c >= 0x80 && c != 0x81 && c != 0x85) out[o++] = (char)c;   // a Latin-1 accent passes ; a SJIS lead byte (JP) is never this file
+        ++p;
+    }
+    out[o] = 0;
+}
+static void miss_read(u32 o, u32 focusObj) {
+    NativeMissions M; memset(&M, 0, sizeof(M));
+    static int bad = 0, said = 0; static bool verified = false;
+    u32 h = 0, hv = 0; const u32 hg = handler_global_of("miss00");
+    if (!safe_read(o + OBJ_HANDLER, &h) || !valid_ptr(h) || !hg || !safe_read(hg, &hv) || hv != h) { g_miss = M; return; }
+    u32 st = 0, cat = 0, rows = 0, cnt = 0, top = 0, cur = 0, vis = 0;
+    safe_read(h + 0x64, &st); safe_read(h + 0x6C, &cat); safe_read(h + 0x20, &rows); safe_read(h + 0x40, &cnt);
+    safe_read(h + 0x38, &top); safe_read(h + 0x30, &cur); safe_read(h + 0x48, &vis);
+    M.open = true; M.focused = focusObj == o; M.state = (int)st; M.cat = (int)cat;
+    if (st == 2 && cat <= 14 && valid_ptr(rows) && cnt <= 200 && cur < cnt) {   // the DETAIL page : the validated row's mission
+        u32 v = 0; safe_read(rows + cur * 8, &v); M.detailValue = (int)v; M.detailCurrent = cur == 1;
+        signed char d = 0; if ((int)v >= 0) miss_name(hg, (int)cat, (int)v, M.dName, sizeof(M.dName), d);
+        { u32 tp = 0; if (safe_read(hg - 0x3C + cat * 4, &tp) && valid_ptr(tp)) { char raw[64] = { 0 }; rdblk(tp, (unsigned char*)raw, 63); cap_clean(raw, 0, M.title, sizeof(M.title)); } }
+        const char* t = native_client_lang() == 1 && (int)v >= 0 ? dmsg_field(g_mdm[cat], v, 2) : 0;
+        if (t) miss_text(t, M.dDesc, sizeof(M.dDesc));
+        const CapRun* R = 0; const int nr = text_capture(o, R);
+        for (int j = 0; j < nr && !M.detailOk; ++j) if (M.dName[0] && !strcmp(M.dName, R[j].s)) M.detailOk = true;
+        {   static int lv = -9, lcat = -1; static bool lok = false; static int n = 0;
+            if ((lv != (int)v || lcat != (int)cat || lok != M.detailOk) && n < 40) { ++n; lv = (int)v; lcat = (int)cat; lok = M.detailOk;
+                windower::debug::log("NATIVEUI missions detail : cat %d value %d '%s' (%s), orders %d chars (DAT %u%s) -- %s", (int)cat, (int)v, M.dName,
+                    M.detailCurrent ? "current" : "completed", lstrlenA(M.dDesc), g_mdm[cat].id, g_mdm[cat].ok ? "" : " not read", M.detailOk ? "verified : AioHUD draws it" : nr ? "name NOT in the client's text" : "no capture yet"); } }
+        g_miss = M; return;
+    }
+    if (st != 1 || cat > 14 || !valid_ptr(rows) || cnt < 3 || cnt > 200 || top > cnt || cur >= cnt) { g_miss = M; return; }
+    M.count = (int)cnt; M.top = (int)top; M.cursor = (int)cur; M.vis = (int)vis;
+    for (int i = 0; i < M.count; ++i) {
+        u32 v = 0; safe_read(rows + i * 8, &v); M.row[i].value = (int)v;
+        if ((int)v >= 0) miss_name(hg, (int)cat, (int)v, M.row[i].name, sizeof(M.row[i].name), M.row[i].depth);
+    }
+    { u32 tp = 0; if (safe_read(hg - 0x3C + cat * 4, &tp) && valid_ptr(tp)) { char raw[64] = { 0 }; rdblk(tp, (unsigned char*)raw, 63); cap_clean(raw, 0, M.title, sizeof(M.title)); } }
+    const bool shape = M.row[0].value == -1 && M.row[2].value == -2;
+    // the self-check + the client's own words for the headers / the empty lines (what it draws this frame)
+    const CapRun* R = 0; const int nr = text_capture(o, R); bool match = false;
+    for (int j = 0; j < nr; ++j) {
+        for (int i = 0; i < M.count && !match; ++i) if (M.row[i].name[0] && !strcmp(M.row[i].name, R[j].s)) match = true;
+        const int L = lstrlenA(R[j].s);
+        if (L && R[j].s[L - 1] == ':') { if (!M.hCur[0]) lstrcpynA(M.hCur, R[j].s, sizeof(M.hCur)); else if (!M.hDone[0]) lstrcpynA(M.hDone, R[j].s, sizeof(M.hDone)); }
+    }
+    for (int i = 0; i < M.count; ++i) if (M.row[i].value < -2 && !M.row[i].name[0])
+        for (int j = 0; j < nr; ++j) if (!strncmp(R[j].s, "No ", 3) || !strncmp(R[j].s, "Aucun", 5)) { lstrcpynA(M.row[i].name, R[j].s, sizeof(M.row[i].name)); break; }
+    if (match) verified = true;
+    M.ok = shape && verified;
+    if (!M.ok && shape && nr > 0 && ++bad == 120 && said < 30) { ++said;
+        windower::debug::log("NATIVEUI missions : the decoded names never matched the client's text (cat %d, row 3 '%s') -- the panel stays the capture's", M.cat, M.count > 3 ? M.row[3].name : ""); }
+    {   static int lastCat = -1, lastCnt = -1; static bool lastOk = false;           // logged on a change of category / size / verdict
+        if ((lastCat != M.cat || lastCnt != M.count || lastOk != M.ok) && said < 30) { ++said; lastCat = M.cat; lastCnt = M.count; lastOk = M.ok;
+            windower::debug::log("NATIVEUI missions : cat %d '%s', %d rows (top %d, vis %d, cursor %d), current %d '%s', row 3 %d '%s' depth %d -- %s",
+                M.cat, M.title, M.count, M.top, M.vis, M.cursor, M.row[1].value, M.row[1].name, M.count > 3 ? M.row[3].value : 0, M.count > 3 ? M.row[3].name : "",
+                M.count > 3 ? M.row[3].depth : 0, M.ok ? "verified : AioHUD draws the whole list" : shape ? "NOT verified yet" : "unexpected rows : the capture's panel"); } }
+    g_miss = M;
+}
+const NativeMissions& native_missions() { return g_miss; }
+
+// ---- the JOURNAL : quest01 read as DATA (docs/notes/quest-lists-re-2026-11-21.md) ----
+// Its handler H (registry "quest01") : mode +0x68 (0 current quests, 1 completed quests, 2 RoE current, 3 RoE objective
+// list, 4 Vana'Bout), +0x64 0 list / 1 detail, +0x6C the quest area, rows +0x20 {u32 value ; u8} x count +0x40 (the WHOLE
+// list), cursor +0x30, top +0x38, page +0x48 ; the RoE navigator +0x70 : depth u8 +0x8B, category stack u16 +0x7C[5].
+// Quests : the area's name table Q (QNAME), the current / completed bitfields (QCUR / QDONE). RoE : the 64 accepted slots
+// + their progress, the completion bitfield, the flags (ROE64) ; the names / rewards from the objective & category DATs.
+// ok only once a decoded name equals one the client draws (the self-check), as Missions.
+NativeJournal g_jrn;
+namespace {
+struct JrAnchors { u32 q0, qcur, qdone, roeA, roeFlags; bool ok; int tries; DWORD next; };
+JrAnchors g_ja = { 0, 0, 0, 0, 0, false, 0, 0 };
+bool jr_anchors() {
+    if (g_ja.ok) return true;
+    if (g_ja.tries >= 20 || (g_ja.tries && (int)(GetTickCount() - g_ja.next) < 0)) return false;
+    ++g_ja.tries; g_ja.next = GetTickCount() + 5000;
+    const u32 qn = aob_masked("8B 44 24 08 50 8B 44 24 08 8D 0C C0 8D 14 88 8D 0C 95 ?? ?? ?? ?? E8 ?? ?? ?? ?? 80 38 2B 75 01");
+    const u32 qc = aob_masked("51 56 8B F1 8D 4C 24 0C 57 8B 46 6C 8B 7C 24 10 51 8D 54 24 0C 8D 0C C0 52 68 00 01 00 00 50 8D 14 88 57 8D 0C 95 ?? ?? ?? ?? E8 ?? ?? ?? ?? 50 E8 ?? ?? ?? ?? 8B 4C 24 1C 8B 44 24 24 83 C4 14 85 04 8D ?? ?? ?? ??");
+    const u32 qd = aob_masked("51 8B 41 6C 8D 4C 24 00 8D 54 24 08 51 8B 4C 24 0C 52 8D 14 C0 68 00 01 00 00 50 51 8D 04 90 8D 0C 85 ?? ?? ?? ?? E8 ?? ?? ?? ?? 50 E8 ?? ?? ?? ?? 8B 4C 24 1C 8B 04 8D ?? ?? ?? ??");
+    const u32 ra = aob_masked("8B 4C 24 0C B8 ?? ?? ?? ?? 83 C1 04 8B 11 83 C1 04 89 10 83 C0 04 3D ?? ?? ?? ?? 7C EF 8B 15 ?? ?? ?? ?? A1 ?? ?? ?? ?? 83 CA 02 85 C0 89 15 ?? ?? ?? ?? 74 02 FF D0");
+    u32 q0 = 0, q0b = 0, cur = 0, done = 0, A = 0, Aend = 0, fl = 0;
+    if (qn) safe_read(qn + 0x12, &q0);
+    if (qc) { safe_read(qc + 0x26, &q0b); safe_read(qc + 0x43, &cur); }
+    if (qd) safe_read(qd + 0x38, &done);
+    if (ra) { safe_read(ra + 0x05, &A); safe_read(ra + 0x17, &Aend); safe_read(ra + 0x1F, &fl); }
+    const bool okQ = valid_ptr(q0) && q0 == q0b && valid_ptr(cur) && done == cur + 0x160;   // the note's cross-checks
+    const bool okR = valid_ptr(A) && Aend == A + 0x100 && valid_ptr(fl);
+    if (okQ) { g_ja.q0 = q0; g_ja.qcur = cur; g_ja.qdone = done; }
+    if (okR) { g_ja.roeA = A; g_ja.roeFlags = fl; }
+    g_ja.ok = okQ && okR;
+    if (g_ja.ok || g_ja.tries == 1 || g_ja.tries == 20)
+        windower::debug::log("NATIVEUI journal anchors %s (try %d) : quests %s (name %08X, bits %08X), RoE %s%s", g_ja.ok ? "found" : "NOT found", g_ja.tries,
+                             okQ ? "ok" : "MISSING", q0, cur, okR ? "ok" : "MISSING", !g_ja.ok && g_ja.tries == 20 ? " -- giving up : the journal stays the capture's panel" : "");
+    return g_ja.ok;
+}
+// a record of an item-style DAT (RoE objectives / categories) : 0x1400 bytes at (id - lo) * 0x1400, each byte rotl 3
+struct JrDat { unsigned fid; FILE* f; };
+JrDat g_jd[2] = { { 0, 0 }, { 0, 0 } };
+bool jr_record(int which, unsigned fid, unsigned idx, unsigned char* out) {
+    JrDat& D = g_jd[which];
+    if (D.fid != fid) { if (D.f) fclose(D.f); D.f = 0; D.fid = fid;
+        char p[MAX_PATH]; if (dat_resolve_path(fid, p, sizeof(p))) D.f = fopen(p, "rb");
+        windower::debug::log("NATIVEUI journal : RoE %s DAT %u %s", which ? "category" : "objective", fid, D.f ? "open" : "NOT opened -- names from the capture only"); }
+    if (!D.f || fseek(D.f, (long)(idx * 0x1400u), SEEK_SET) || fread(out, 1, 0x1400, D.f) != 0x1400) return false;
+    for (int i = 0; i < 0x1400; ++i) out[i] = (unsigned char)((out[i] << 3) | (out[i] >> 5));
+    return true;
+}
+// string k of a record's string block (u32 count, count x {u32 offset, u32 type}, text at block + offset + 0x1C)
+bool jr_str(const unsigned char* R, int block, int k, char* out, int cap) {
+    out[0] = 0; u32 cnt = *(const u32*)(R + block); if (cnt > 16 || k < 0 || (u32)k >= cnt) return false;
+    const u32 off = *(const u32*)(R + block + 4 + k * 8); if (block + off + 0x1C >= 0x1400) return false;
+    char raw[200]; int n = 0; const unsigned char* t = R + block + off + 0x1C;
+    while (n < 199 && block + off + 0x1C + n < 0x1400 && t[n]) { raw[n] = (char)t[n]; ++n; } raw[n] = 0;
+    cap_clean(raw, n, out, cap); return out[0] != 0;
+}
+// the per-id cache : objectives 0xE000..0xEFFF, categories 0xF200..0xF5FF (read once each)
+struct JrObj { unsigned char st; char name[60]; char desc[240]; int req, sparks, exp, cap, acc; bool rep; };   // st 0 unread, 1 ok, 2 failed
+struct JrCat { unsigned char st; char name[48]; int n; int nk; unsigned short kid[28]; };   // kid : the children's ids (+0x08, 20 B each)
+JrObj g_jo[4096]; JrCat g_jc[1024]; int g_jLang = -1; int g_jBudget = 0;
+const JrObj* jr_obj(unsigned id) {
+    if (id < 0xE000 || id > 0xEFFF) return 0;
+    const int lang = native_client_lang(); if (lang < 0 || lang > 3) return 0;
+    if (lang != g_jLang) { memset(g_jo, 0, sizeof(g_jo)); memset(g_jc, 0, sizeof(g_jc)); g_jLang = lang; }
+    JrObj& O = g_jo[id - 0xE000]; if (O.st) return O.st == 1 ? &O : 0;
+    if (g_jBudget <= 0) return 0; --g_jBudget;
+    static const unsigned FID[4] = { 55552, 55672, 55792, 56212 }; static const int NAME[4] = { 1, 0, 8, 5 }, DESC[4] = { 2, 4, 9, 6 };
+    static unsigned char R[0x1400];
+    O.st = 2;
+    if (!jr_record(0, FID[lang], id - 0xE000, R) || *(const u32*)R != id) return 0;
+    O.rep = *(const u32*)(R + 8) != 0; O.req = *(const int*)(R + 0x0C); O.sparks = *(const int*)(R + 0x10); O.exp = *(const int*)(R + 0x14); O.cap = *(const int*)(R + 0x18); O.acc = *(const int*)(R + 0x1C);
+    if (!jr_str(R, 0x20, NAME[lang], O.name, sizeof(O.name))) return 0;
+    jr_str(R, 0x20, DESC[lang], O.desc, sizeof(O.desc));
+    O.st = 1; return &O;
+}
+const JrCat* jr_cat(unsigned id) {
+    if (id < 0xF200 || id > 0xF5FF) return 0;
+    const int lang = native_client_lang(); if (lang < 0 || lang > 3) return 0;
+    if (lang != g_jLang) { memset(g_jo, 0, sizeof(g_jo)); memset(g_jc, 0, sizeof(g_jc)); g_jLang = lang; }
+    JrCat& Cc = g_jc[id - 0xF200]; if (Cc.st) return Cc.st == 1 ? &Cc : 0;
+    if (g_jBudget <= 0) return 0; --g_jBudget;
+    static const unsigned FID[4] = { 55553, 55673, 55793, 56213 };
+    static unsigned char R[0x1400];
+    Cc.st = 2;
+    if (!jr_record(1, FID[lang], id - 0xF200, R) || *(const u32*)R != id) return 0;
+    Cc.n = *(const unsigned short*)(R + 4);
+    Cc.nk = 0; for (int i = 0; i < Cc.n && i < 28 && 8 + i * 20 + 2 <= 0x238; ++i) Cc.kid[Cc.nk++] = *(const unsigned short*)(R + 8 + i * 20);
+    if (!jr_str(R, 0x238, 0, Cc.name, sizeof(Cc.name))) return 0;
+    Cc.st = 1; return &Cc;
+}
+// a category's objectives, done / total, its sub-categories included (the DAT's tree + the live done bitfield) ;
+// false while a record is not read yet (the per-poll budget) -- the caller then shows no tally this frame
+bool jr_tally(unsigned id, const unsigned char* doneBits, int lvl, int& done, int& total) {
+    if (lvl > 6) return true;
+    const JrCat* K = jr_cat(id); if (!K) return false;
+    bool all = true;
+    for (int i = 0; i < K->nk; ++i) { const unsigned c = K->kid[i];
+        if (c >= 0xF200 && c <= 0xF5FF) { if (c != id && !jr_tally(c, doneBits, lvl + 1, done, total)) all = false; }
+        else if (c > 0xE000 && c <= 0xEFFF) { const unsigned n = c - 0xE000; ++total; if ((doneBits[n >> 3] >> (n & 7)) & 1) ++done; } }
+    return all;
+}
+} // namespace
+
+static void journal_read(u32 o, u32 focusObj) {
+    static NativeJournal J; memset(&J, 0, sizeof(J)); g_jBudget = 80;
+    static bool verified[5] = { false }; static int said = 0;
+    u32 h = 0, hv = 0; const u32 hg = handler_global_of("quest01");
+    if (!safe_read(o + OBJ_HANDLER, &h) || !valid_ptr(h) || !hg || !safe_read(hg, &hv) || hv != h || !jr_anchors()) { g_jrn = J; return; }
+    u32 mode = 0, sub = 0, area = 0, rows = 0, cnt = 0, top = 0, cur = 0, vis = 0;
+    safe_read(h + 0x68, &mode); safe_read(h + 0x64, &sub); safe_read(h + 0x6C, &area); safe_read(h + 0x20, &rows);
+    safe_read(h + 0x40, &cnt); safe_read(h + 0x38, &top); safe_read(h + 0x30, &cur); safe_read(h + 0x48, &vis);
+    J.open = true; J.focused = focusObj == o; J.mode = (int)mode; J.sub = (int)sub; J.area = (int)area;
+    if (mode > 4 || sub != 0 || !valid_ptr(rows) || cnt > 400 || top > cnt || (cnt && cur >= cnt)) { g_jrn = J; return; }
+    J.count = (int)cnt; J.top = (int)top; J.cursor = (int)cur; J.vis = (int)vis;
+    if (mode == 3) { unsigned char d = 0; rd8(h + 0x8B, d); J.depth = d > 4 ? 4 : d;
+        for (int i = 0; i <= J.depth; ++i) { unsigned short c = 0; rd16(h + 0x7C + 2 * i, (short&)c); const JrCat* K = jr_cat(c); lstrcpynA(J.crumb[i], K ? K->name : "", sizeof(J.crumb[i])); } }
+    u32 A[64] = { 0 }; u32 flags = 0; const bool roe = mode >= 2;
+    if (roe) { rdblk(g_ja.roeA, (unsigned char*)A, sizeof(A)); safe_read(g_ja.roeFlags, &flags); J.accepted = 0; for (int k = 0; k < 30; ++k) if (A[k] & 0xFFF) ++J.accepted; }
+    static unsigned char doneBits[0x200]; const bool bitsOk = mode == 3 && rdblk(g_ja.roeA + 0x100, doneBits, sizeof(doneBits));   // the completion bitfield, once
+    for (int k = 0; k < J.count && k < 400; ++k) {
+        NativeJournal::Row& R = J.row[k]; u32 v = 0; safe_read(rows + k * 8, &v); R.value = (int)v;
+        if (!roe) {                                                         // a quest : its name, done / current, repeatable
+            const u32 Q = g_ja.q0 + area * 0x94; u32 n = 0, arr = 0, base = 0, off = 0, qids = 0;
+            if (area > 10 || !safe_read(Q + 0x0C, &n) || v >= n || !safe_read(Q + 0x18, &arr) || !valid_ptr(arr) || !safe_read(Q + 0x1C, &base) || !safe_read(arr + v * 4, &off)) continue;
+            char raw[96] = { 0 }; rdblk(base + off, (unsigned char*)raw, 95);
+            const char* p = raw; if (*p == '+') { R.repeatable = true; ++p; }
+            cap_clean(p, 0, R.name, sizeof(R.name));
+            unsigned short qid = 0; if (safe_read(Q + 8, &qids) && valid_ptr(qids)) rd16(qids + v * 2, (short&)qid);
+            u32 b = qid + area * 0x100;
+            if (qid >= 0x40F && qid <= 0x415) b = 9 * 0x100 + 0x27 + (qid - 0x40F); else if (qid >= 0x417 && qid <= 0x419) b = 9 * 0x100 + 0x2F + (qid - 0x417);
+            u32 wd = 0, wc = 0; safe_read(g_ja.qdone + (b >> 5) * 4, &wd); safe_read(g_ja.qcur + (b >> 5) * 4, &wc);
+            R.done = (wd >> (b & 31)) & 1; R.current = ((wc >> (b & 31)) & 1) && (R.repeatable || !R.done);
+        } else if (v >= 0xF200 && v <= 0xF5FF) {                           // a category (the objective list's tree)
+            R.category = true; const JrCat* K = jr_cat(v); if (K) { lstrcpynA(R.name, K->name, sizeof(R.name)); R.children = K->n; }
+            if (K && bitsOk) { int d = 0, t = 0; R.tallyOk = jr_tally(v, doneBits, 0, d, t); R.objDone = d; R.objTotal = t; }
+        } else if (v >= 0xE000 && v <= 0xEFFF) {                           // an objective : the DAT's record + the live state
+            const JrObj* O = jr_obj(v); if (O) { lstrcpynA(R.name, O->name, sizeof(R.name)); R.required = O->req; R.sparks = O->sparks; R.exp = O->exp; R.cap = O->cap; R.acc = O->acc; R.repeatable = O->rep; }
+            for (int s2 = 0; s2 < 64; ++s2) if ((A[s2] & 0xFFF) == (v & 0xFFF) && (s2 < 30 || s2 >= 42)) { R.accepted = s2 < 30 || s2 == 63 || s2 == 42; R.progress = (int)(A[s2] >> 12); if (s2 == 63 || s2 == 42) R.special = true; break; }
+            u32 w = 0; const u32 n = v - 0xE000; if (safe_read(g_ja.roeA + 0x100 + (n >> 3), &w)) R.done = (w & 0xFF) >> (n & 7) & 1;
+            R.ready = R.accepted && R.required > 0 && R.progress >= R.required;
+            R.locked = R.done && !R.repeatable;
+        }
+    }
+    if (bitsOk) { unsigned short c = 0; rd16(h + 0x7C + 2 * J.depth, (short&)c); if (c >= 0xF200 && c <= 0xF5FF) { int d = 0, t = 0; J.catOk = jr_tally(c, doneBits, 0, d, t); J.catDone = d; J.catTotal = t; } }   // after the rows (their names first, the budget)
+    // the self-check (per mode) : a decoded name equals one the client draws ; the title the client draws, kept
+    const CapRun* Rr = 0; const int nr = text_capture(o, Rr); bool match = false; int topY = 9999;
+    for (int j = 0; j < nr; ++j) {
+        if (Rr[j].y < topY && !(Rr[j].col & 0x01000000u)) { topY = Rr[j].y; lstrcpynA(J.title, Rr[j].s, sizeof(J.title)); }
+        for (int k = 0; k < J.count && !match; ++k) if (J.row[k].name[0] && !strcmp(J.row[k].name, Rr[j].s)) match = true;
+    }
+    if (match) verified[mode] = true;
+    J.ok = verified[mode] && (J.count == 0 || J.row[J.cursor].name[0]);
+    {   static int lm = -1, lc = -1, la = -1; static bool lok = false;
+        if ((lm != J.mode || lc != J.count || la != J.area || lok != J.ok) && said < 40) { ++said; lm = J.mode; lc = J.count; la = J.area; lok = J.ok;
+            windower::debug::log("NATIVEUI journal : mode %d area %d depth %d, %d rows (top %d, vis %d, cursor %d), row 0 %X '%s' (done %d cur %d prog %d/%d) -- %s",
+                J.mode, J.area, J.depth, J.count, J.top, J.vis, J.cursor, J.count ? J.row[0].value : 0, J.count ? J.row[0].name : "", J.count ? J.row[0].done : 0,
+                J.count ? J.row[0].current : 0, J.count ? J.row[0].progress : 0, J.count ? J.row[0].required : 0,
+                J.ok ? "verified : AioHUD draws the whole list" : nr ? "NOT verified yet (no decoded name in the client's text)" : "no capture yet"); } }
+    if (J.mode == 3) {   // the tallies : once per category, once complete (or a line saying it is not, after the reads)
+        static int lcat = -1; static bool lok = false; static int nsaid = 0; unsigned short c = 0; rd16(h + 0x7C + 2 * J.depth, (short&)c);
+        if ((c != lcat || J.catOk != lok) && nsaid < 40) { lcat = c; lok = J.catOk; ++nsaid;
+            char b[400]; int bo = 0;
+            for (int k = 0; k < J.count && k < 12 && bo < 340; ++k) if (J.row[k].category) bo += _snprintf(b + bo, sizeof(b) - bo, " [%s %d/%d%s]", J.row[k].name, J.row[k].objDone, J.row[k].objTotal, J.row[k].tallyOk ? "" : " partial");
+            b[bo < 0 ? 0 : (bo > 399 ? 399 : bo)] = 0;
+            windower::debug::log("NATIVEUI journal tally : category %X '%s' %d/%d%s, rows :%s", c, J.crumb[J.depth], J.catDone, J.catTotal, J.catOk ? "" : " (partial, records still loading)", b); } }
+    g_jrn = J;
+}
+const NativeJournal& native_journal() { return g_jrn; }
+const char* native_journal_desc(unsigned id) { if (id < 0xE000 || id > 0xEFFF) return ""; const JrObj& O = g_jo[id - 0xE000]; return O.st == 1 ? O.desc : ""; }
+
+
+// ---- KEY ITEMS as data (evitem with H+0x88 == 0 && H+0x89 == 0 ; docs/notes/key-items-re-2026-11-22.md) ----
+// H+0x90 the state (0 loading, 1 the categories, 2 a category's items, 3 an item's description) ; rows +0x20 : a category
+// row's value = its HEADER record's index in the key item table T (d_msg LANG 0x3F, in memory) -- a header ('-' + the
+// name) CLOSES its group : the records after the previous header ; an item row's value -> {s16 w, s16 h, i32 index}. The
+// owned / seen bitfields (0x055 mirror) by id ; "new" = owned and never examined. Description : the DAT, by language.
+// ok only once a decoded name equals one the client draws (the self-check), as Missions.
+NativeKeyItems g_key;
+namespace {
+struct KiAnchors { u32 T, owned, seen, ready; bool ok; int tries; DWORD next; };
+KiAnchors g_ka = { 0, 0, 0, 0, false, 0, 0 };
+bool ki_anchors() {
+    if (g_ka.ok) return true;
+    const DWORD now = GetTickCount();
+    if (g_ka.tries >= 20 || (g_ka.tries && (int)(now - g_ka.next) < 0)) return false;
+    ++g_ka.tries; g_ka.next = now + 5000;
+    const u32 lg = aob_masked("66 8B 86 84 00 00 00 C1 E0 04 8D 48 10 81 F9 80 00 00 00 0F 87 ?? ?? ?? ?? 53 57 8D 56 44 8D 04 85 ?? ?? ?? ?? BF 10 00 00 00 8B 4A C0 BB 01 00 00 00 89 88 00 FE FF FF 8A 8E 84 00 00 00 D3 E3 8B 0D ?? ?? ?? ?? 81 E1 FF FF 00 00");
+    const u32 rd = aob_masked("66 83 3D ?? ?? ?? ?? 00 5F 5B 75 1D 8A 8E 84 00 00 00 BA 01 00 00 00 D3 E2 66 C7 05 ?? ?? ?? ?? 01 00 66 09 15 ?? ?? ?? ??");
+    const u32 cl = aob_masked("57 B9 82 01 00 00 33 C0 BF ?? ?? ?? ?? F3 AB 5F C3");
+    const u32 ct = aob_masked("8B F1 E8 ?? ?? ?? ?? 8B C8 E8 ?? ?? ?? ?? 8B CE 8B E8 E8 ?? ?? ?? ?? 6A 08 6A 00 55 6A 00 8B CE E8 ?? ?? ?? ?? 33 FF 33 DB 85 ED C7 46 1C ?? ?? ?? ?? C7 46 58 01 00 00 00");
+    u32 seen = 0, mask = 0, ready = 0, mask2 = 0, owned = 0, T = 0, guard = 0;
+    if (lg) { safe_read(lg + 0x21, &seen); safe_read(lg + 0x42, &mask); }
+    if (rd) { safe_read(rd + 0x03, &ready); safe_read(rd + 0x25, &mask2); }
+    if (cl) safe_read(cl + 0x09, &owned);
+    if (ct) { u32 rel = 0; if (safe_read(ct + 3, &rel)) { const u32 g = ct + 7 + rel; safe_read(g + 0x0F, &T); safe_read(g + 0x02, &guard); } }
+    // the note's cross-checks : OWNED = SEEN - 0x200 (two anchors), the received mask twice, the getter's guard = T + 0x8C
+    g_ka.ok = valid_ptr(seen) && owned == seen - 0x200 && mask && mask == mask2 && valid_ptr(ready) && valid_ptr(T) && guard == T + 0x8C;
+    if (g_ka.ok) { g_ka.T = T; g_ka.owned = owned; g_ka.seen = seen; g_ka.ready = ready; }
+    if (g_ka.ok || g_ka.tries == 1 || g_ka.tries == 20)
+        windower::debug::log("NATIVEUI key items anchors %s (try %d) : table %08X owned %08X seen %08X ready %08X (log %X ready %X clear %X cats %X, guard %08X)%s",
+            g_ka.ok ? "found" : "NOT found", g_ka.tries, T, owned, seen, ready, lg, rd, cl, ct, guard,
+            !g_ka.ok && g_ka.tries == 20 ? " -- giving up : Key Items stay the client's window" : "");
+    return g_ka.ok;
+}
+// a record's display name (the table's string pool) ; false past the table
+bool ki_name(int i, char* out, int cap) {
+    out[0] = 0; u32 cnt = 0, arr = 0, base = 0, off = 0; const u32 T = g_ka.T;
+    if (i < 0 || !safe_read(T + 8, &cnt) || (u32)i >= cnt || !safe_read(T + 0x14, &arr) || !valid_ptr(arr) || !safe_read(T + 0x18, &base) || !safe_read(arr + (u32)i * 4, &off)) return false;
+    char raw[96] = { 0 }; if (!rdblk(base + off, (unsigned char*)raw, sizeof(raw) - 1)) return false;
+    cap_clean(raw, 0, out, cap); return out[0] != 0;
+}
+// the table : its ids (all), its headers (the categories) -- read once per table (a language change rebuilds T)
+struct KiTable { u32 T; int n; unsigned short id[4096]; int nh; int h[32]; char hname[32][48]; bool ok; };
+KiTable g_kt;
+bool ki_table() {
+    u32 n = 0, ids = 0; const u32 T = g_ka.T;
+    if (!safe_read(T, &n) || n == 0 || n > 4096 || !safe_read(T + 4, &ids) || !valid_ptr(ids)) return false;
+    if (g_kt.ok && g_kt.T == T && g_kt.n == (int)n) return true;
+    KiTable& K = g_kt; K.ok = false; K.T = T; K.n = (int)n; K.nh = 0;
+    if (!rdblk(ids, (unsigned char*)K.id, n * 2)) return false;
+    u32 cnt = 0, arr = 0, base = 0; if (!safe_read(T + 8, &cnt) || !safe_read(T + 0x14, &arr) || !valid_ptr(arr) || !safe_read(T + 0x18, &base)) return false;
+    for (u32 i = 0; i < n && i < cnt && K.nh < 32; ++i) { u32 off = 0; unsigned char c0 = 0;
+        if (!safe_read(arr + i * 4, &off) || !rd8(base + off, c0)) return false;
+        if (c0 == '-') { char nm[64]; ki_name((int)i, nm, sizeof(nm)); K.h[K.nh] = (int)i; lstrcpynA(K.hname[K.nh], nm[0] == '-' ? nm + 1 : nm, sizeof(K.hname[0])); ++K.nh; } }
+    K.ok = K.nh > 0;
+    windower::debug::log("NATIVEUI key items table : %u records, %d categories%s%s", n, K.nh, K.nh ? ", first '" : "", K.nh ? K.hname[0] : "");
+    return K.ok;
+}
+inline bool ki_bit(const u32* bits, unsigned id) { return id < 4096 && ((bits[id >> 5] >> (id & 31)) & 1); }
+static Dmsg g_kdm[4] = { { 55585 }, { 55705 }, { 55825 }, { 56245 } };   // the key item DATs JP / EN / DE / FR ; the description's field below
+}   // namespace
+void key_read(u32 o, u32 focusObj) {
+    static NativeKeyItems K; memset(&K, 0, sizeof(K));
+    static bool verified = false; static int said = 0;
+    u32 h = 0; unsigned char m88 = 0xFF, m89 = 0xFF;
+    if (!o || !safe_read(o + OBJ_HANDLER, &h) || !valid_ptr(h) || !rd8(h + 0x88, m88) || !rd8(h + 0x89, m89) || m88 != 0 || m89 != 0) { g_key = K; return; }
+    u32 st = 0, rows = 0, cnt = 0, top = 0, cur = 0, vis = 0, saved = 0;
+    safe_read(h + 0x90, &st); safe_read(h + 0x20, &rows); safe_read(h + 0x40, &cnt); safe_read(h + 0x38, &top); safe_read(h + 0x30, &cur); safe_read(h + 0x48, &vis); safe_read(h + 0x74, &saved);
+    K.open = true; K.focused = focusObj == o; K.state = (int)st;
+    { u32 wh = 0; const u32 mg = manager(); if (mg && safe_read(mg + 0x80, &wh)) { K.uiW = (short)(wh & 0xFFFF); K.uiH = (short)(wh >> 16); }
+      rd16(o + OBJ_RECT, K.rx0); rd16(o + OBJ_RECT + 2, K.ry0); while (K.uiH > 0 && K.ry0 >= K.uiH) K.ry0 = (short)(K.ry0 - HIDE_DY); }
+    if (!ki_anchors() || !ki_table()) { g_key = K; return; }
+    unsigned short ready = 0; rd16(g_ka.ready, (short&)ready);
+    if (!ready || st < 1 || st > 3 || cnt > 800 || top > cnt || (cnt && (cur >= cnt || !valid_ptr(rows)))) { g_key = K; return; }
+    static u32 own[128], seen[128];
+    if (!rdblk(g_ka.owned, (unsigned char*)own, sizeof(own)) || !rdblk(g_ka.seen, (unsigned char*)seen, sizeof(seen))) { g_key = K; return; }
+    const KiTable& T = g_kt;
+    K.count = (int)cnt; K.top = (int)top; K.cursor = (int)cur; K.vis = (int)vis; K.cat = st == 1 ? -1 : (int)saved;
+    for (int c = 0; c < T.nh; ++c) {   // every category's tally (the whole table : the header's group)
+        const int lo = c ? T.h[c - 1] + 1 : 0;
+        for (int i = lo; i < T.h[c]; ++i) { const unsigned id = T.id[i]; if (!id) continue; ++K.totalAll;
+            if (ki_bit(own, id)) { ++K.ownedAll; if (!ki_bit(seen, id)) ++K.newAll; } } }
+    for (int k = 0; k < K.count; ++k) {
+        NativeKeyItems::Row& R = K.row[k]; u32 v = 0; if (!safe_read(rows + (u32)k * 8, &v)) continue;
+        if (st == 1) {                                                     // a category : its header ; its tallies
+            R.category = true; R.index = (int)v;
+            int c = 0; while (c < T.nh && T.h[c] != (int)v) ++c;
+            if (c == T.nh) continue;
+            R.cat = c; lstrcpynA(R.name, T.hname[c], sizeof(R.name));
+            const int lo = c ? T.h[c - 1] + 1 : 0;
+            for (int i = lo; i < T.h[c]; ++i) { const unsigned id = T.id[i]; if (!id) continue; ++R.total;
+                if (ki_bit(own, id)) { ++R.owned; if (!ki_bit(seen, id)) ++R.fresh; } }
+        } else {                                                           // an item : {w, h, index}
+            u32 idx = 0; if (!valid_ptr(v) || !safe_read(v + 4, &idx) || (int)idx < 0 || (int)idx >= T.n) continue;
+            R.index = (int)idx; R.id = T.id[idx]; ki_name((int)idx, R.name, sizeof(R.name));
+            R.owned = ki_bit(own, R.id) ? 1 : 0; R.isNew = R.owned && !ki_bit(seen, R.id);
+        }
+    }
+    if (st != 1 && (int)saved >= 0 && (int)saved < T.nh) { lstrcpynA(K.title, T.hname[saved], sizeof(K.title)); K.catColour = (int)saved; }
+    // the cursor item's description (the DAT, the client's language)
+    if (st != 1 && K.count && K.row[K.cursor].name[0]) {
+        static const int FIELD[4] = { 2, 6, 8, 10 }; const int lang = native_client_lang();
+        if (lang >= 0 && lang <= 3) { const char* t = dmsg_field(g_kdm[lang], (unsigned)K.row[K.cursor].index, (unsigned)FIELD[lang]); if (t) miss_text(t, K.desc, sizeof(K.desc)); }
+    }
+    {   // the question on an item never examined (evitem01, over the list) : its words (the client's), its cursor
+        static const char* const W[] = { "evitem01", 0 }; NativeEntryMenu q; u32 qo = 0;
+        if (entry_read(W, q, &qo) == 1 && qo) { K.ask = true; K.askFocused = q.focused; K.askCursor = q.cursor;
+            const CapRun* Q = 0; const int nq = text_capture(qo, Q); int topY = 9999;
+            for (int j = 0; j < nq; ++j) if (Q[j].y < topY && lstrcmpA(Q[j].s, "Yes") && lstrcmpA(Q[j].s, "No")) { topY = Q[j].y; lstrcpynA(K.askText, Q[j].s, sizeof(K.askText)); }
+            if (!K.askText[0] && K.count) _snprintf(K.askText, sizeof(K.askText) - 1, "Examine %s?", K.row[K.cursor].name); } }
+    // the self-check : a decoded name equals the client's own text (any case : the client capitalises its first letter)
+    const CapRun* Rr = 0; const int nr = text_capture(o, Rr); bool match = false;
+    for (int j = 0; j < nr && !match; ++j) for (int k = 0; k < K.count && !match; ++k) if (K.row[k].name[0] && !lstrcmpiA(K.row[k].name, Rr[j].s)) match = true;
+    if (match) verified = true;
+    K.ok = verified && (K.count == 0 || K.row[K.cursor].name[0]);
+    {   static int ls = -1, lc = -1, lcat = -2; static bool lok = false;
+        if ((ls != (int)st || lc != K.count || lcat != K.cat || lok != K.ok) && said < 40) { ++said; ls = (int)st; lc = K.count; lcat = K.cat; lok = K.ok;
+            windower::debug::log("NATIVEUI key items : state %d, category %d '%s', %d rows (top %d, vis %d, cursor %d), row 0 %d id %u '%s' (%d/%d, %d new), all %d/%d, %d new, desc %d chars -- %s",
+                (int)st, K.cat, K.title, K.count, K.top, K.vis, K.cursor, K.count ? K.row[0].index : 0, K.count ? K.row[0].id : 0, K.count ? K.row[0].name : "",
+                K.count ? K.row[0].owned : 0, K.count ? K.row[0].total : 0, K.count ? K.row[0].fresh : 0, K.ownedAll, K.totalAll, K.newAll, lstrlenA(K.desc),
+                K.ok ? "verified : AioHUD draws it" : nr ? "NOT verified yet (no decoded name in the client's text)" : "no capture yet"); } }
+    g_key = K;
+}
+const NativeKeyItems& native_key_items() { return g_key; }
+bool native_key_hover(int entry) { if (!g_key.ok) return false; static const char* const W[] = { "evitem", 0 }; return entry_hover(W, entry); }
+bool native_key_pick(int entry) { if (!g_key.ok) return false; static const char* const W[] = { "evitem", 0 }; return entry_pick(W, entry); }
+bool native_key_ask_hover(int entry) { if (!g_key.ok) return false; static const char* const W[] = { "evitem01", 0 }; return entry_hover(W, entry); }
+bool native_key_ask_pick(int entry) { if (!g_key.ok) return false; static const char* const W[] = { "evitem01", 0 }; return entry_pick(W, entry); }
+
+static bool gen_panel_named(const char* name) { for (int i = 0; name && i < g_gen.np; ++i) if (!strcmp(g_gen.p[i].name, name)) return true; return false; }
+bool native_gen_hover(const char* name, int entry) { if (gen_panel_named(name)) { const char* one[2] = { name, 0 }; return entry_hover(one, entry); }
+    if (name && g_gen.grid && !strcmp(g_gen.gm.name, name)) { const char* one[2] = { name, 0 }; return entry_hover(one, entry); }
     for (int i = 0; name && i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, name)) { const char* one[2] = { name, 0 }; return entry_hover(one, entry); } return false; }
-bool native_gen_pick(const char* name, int entry) { if (name && g_gen.grid && !strcmp(g_gen.gm.name, name)) { const char* one[2] = { name, 0 }; return entry_pick(one, entry); }
+bool native_gen_pick(const char* name, int entry) { if (gen_panel_named(name)) { const char* one[2] = { name, 0 }; return entry_pick(one, entry); }
+    if (name && g_gen.grid && !strcmp(g_gen.gm.name, name)) { const char* one[2] = { name, 0 }; return entry_pick(one, entry); }
     for (int i = 0; name && i < g_gen.n; ++i) if (!strcmp(g_gen.m[i].name, name)) { const char* one[2] = { name, 0 }; return entry_pick(one, entry); } return false; }
 
 void buffwin_poll(bool on, u32 mgr) {
@@ -4679,11 +5329,13 @@ void native_ui_tick(bool inWorld) {
     jobsel_poll(wanted && (c.nuHide & NU_NPC), manager());     // Change Jobs : the job grid
     room_poll(wanted && (c.nuHide & NU_NPC), manager());       // Remodel : the styles
     auc_poll(wanted && (c.nuHide & NU_NPC), manager());        // the auction house : its menus, lists, the price
+    if (wanted && (c.nuHide & NU_NPC)) ensure_text_capture();     // the unnamed lists' rows (hk_txcore & co)
     gen_poll(wanted && (c.nuHide & NU_NPC), manager(), eff_hide(c));   // the generic engine : the census, the plain menus
     if (wanted) { const int lg = native_client_lang(); if (lg >= 0) menu_dat_load(lg); }   // the menus' image labels (the client's DAT)
     if (wanted && (c.nuHide & NU_NPC)) { static int gLog[GEN_MENUS] = { 0 }, glLog = 0; for (int i = 0; i < g_gen.n; ++i) park_named(manager(), g_gen.m[i].name, gLog[i], "generic -> a menu");
         if (g_gen.list) park_named(manager(), g_gen.listName, glLog, "generic -> a list");
-        static int ggLog = 0; if (g_gen.grid) park_named(manager(), g_gen.gm.name, ggLog, "generic -> a grid"); }
+        static int ggLog = 0; if (g_gen.grid) park_named(manager(), g_gen.gm.name, ggLog, "generic -> a grid");
+        static int gpLog[2] = { 0 }; for (int i = 0; i < g_gen.np; ++i) park_named(manager(), g_gen.p[i].name, gpLog[i], "generic -> a panel"); }
     if (wanted && (c.nuHide & NU_NPC) && g_auc.up && !g_aucNot) {
         static int a1 = 0, a2 = 0, a3 = 0, a4 = 0, a5 = 0, a6 = 0;
         if (g_auc.menuOpen) park_named(manager(), g_auc.menu.name, a1, "Auction -> a menu");
@@ -4761,6 +5413,7 @@ void native_ui_tick(bool inWorld) {
 }
 
 void native_ui_shutdown() {
+    text_capture_off();       // the text capture : ALWAYS off at an unload (its JMPs point into this DLL)
     hook_off(g_hkEvent);      // the trade's lines : ALWAYS off at an unload (a JMP into an unloaded DLL would crash the client)
     if (!g_anyApplied && !g_hkMove.on) return;
     apply(true);              // records back, open windows back by their delta, hook removed, undo file deleted
