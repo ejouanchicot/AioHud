@@ -1745,6 +1745,9 @@ void apply(bool zero) {
             if (at < 0 && g_eN < (int)(sizeof(g_e) / sizeof(g_e[0]))) {
                 Entry& e = g_e[g_eN]; memset(&e, 0, sizeof(e)); e.rec = rec; e.def = def; memcpy(e.name, nm, 9);
                 e.ox = cx; e.oy = cy; e.anc = anc; at = g_eN++;
+            } else if (at < 0) {   // FULL : this window is neither tracked nor hidden -- say it once, with its name
+                static bool s_fullSaid = false;
+                if (!s_fullSaid) { s_fullSaid = true; windower::debug::log("NATIVEUI window table FULL (%d entries) : '%s' and any later one are not tracked (neither hidden nor moved)", g_eN, nm); }
             }
             if (at >= 0) {
                 Entry& e = g_e[at]; e.alive = true;

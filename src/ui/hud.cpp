@@ -538,9 +538,18 @@ void Hud::render(u32 dev) {
             windower::debug::log("HUD draw threw (SEH) -- %u fault(s) so far this session", faults);
         }
     }
-    if (!tok) {   // no state block -> the game's own render state is NOT protected from our draws (rule 8)
-        static bool sbWarned = false;
-        if (!sbWarned) { sbWarned = true; windower::debug::log("WARNING: CreateStateBlock returned 0 -- drawing WITHOUT save/restore this session"); }
+    // No state block -> the game's own render state is NOT protected from our draws (rule 8). It is retried every
+    // frame, so the old "this session" was false and a recovery was never said : counted, every 5 s, and its end logged.
+    static unsigned sbMiss = 0, sbNextLogMs = 0;
+    if (!tok) {
+        const unsigned nowMs = GetTickCount();
+        if (++sbMiss == 1 || (int)(nowMs - sbNextLogMs) >= 0) {
+            sbNextLogMs = nowMs + 5000;
+            windower::debug::log("WARNING: CreateStateBlock returned 0 -- drawing WITHOUT save/restore (%u frame(s) so far, retried every frame)", sbMiss);
+        }
+    } else if (sbMiss) {
+        windower::debug::log("CreateStateBlock recovered after %u frame(s) without save/restore", sbMiss);
+        sbMiss = 0;
     }
     if (tok) { dApplySB(dev, tok); dDelSB(dev, tok); }
 }

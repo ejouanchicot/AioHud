@@ -314,7 +314,14 @@ void ensure_gen(u32 dev) {
         }
         sx_atlas = make_texture_argb(dev, 256, 32, at);
     }
-    if (!sx_noise || !sx_soft || !sx_atlas || !sx_noiseS || !sx_caus) { ++sx_genTries; sx_genNext = (GetTickCount() + 300u) | 1u; }
+    // Rule 10 : the success AND the give-up are said. Before, a miss right after a zone-in left the spheres textureless
+    // for the session with no line at all (8 tries 300 ms apart, then silence ; only a device change re-arms it).
+    if (!sx_noise || !sx_soft || !sx_atlas || !sx_noiseS || !sx_caus) {
+        ++sx_genTries; sx_genNext = (GetTickCount() + 300u) | 1u;
+        if (sx_genTries >= 8)
+            windower::debug::log("SCFX generated textures : gave up after %d tries (missing :%s%s%s%s%s) -- re-armed by the next device change",
+                                 (int)sx_genTries, sx_noise ? "" : " noise", sx_soft ? "" : " soft", sx_atlas ? "" : " atlas", sx_noiseS ? "" : " noiseS", sx_caus ? "" : " caustics");
+    } else windower::debug::log("SCFX generated textures : ready (try %d)", (int)sx_genTries + 1);
 }
 
 // ---------------------------------------------------------------- primitives ----
