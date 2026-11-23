@@ -1148,8 +1148,7 @@ void zt_msg_state(int which, unsigned& id, bool& proven, int& seen, int& traffic
 // with a new process (a client update needs one) ; the offline suite calls it to replay a renumbered run after a
 // normal one in the same process, where the seed's `seen` would otherwise freeze the search.
 void zt_sortie_msg_new_session();
-// The short English name of an item id, or 0. One definition for the whole plugin : itemnames_gen.h holds 23 536 names
-// in a static table, and every translation unit including it would carry its own copy.
+// The short English name of an item id, or 0 (itemnames_gen.cpp's table, defined once).
 const char* model_item_name(unsigned id);
 // Abyssea has no arithmetic to prove its message base with, so it is watched instead : how many 0x02A landed
 // on a known offset this run, and how many did not. All traffic and no match = the base moved.

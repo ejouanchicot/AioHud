@@ -10,8 +10,8 @@
 
 namespace aio {
 
-// an item quoted with auto-translate : the id -> name table lives in party_state_empypop.cpp's copy of
-// itemnames_gen.h (that header's table is `static` : every TU including it carries 240 KB more -- not this one)
+// an item quoted with auto-translate : the id -> name table (itemnames_gen.cpp, defined once), reached through
+// party_state_empypop.cpp
 const char* chat_item_name(unsigned id);
 
 // ---------------- the text-thread ring (single producer = text_in, single consumer = render6) ----------------
