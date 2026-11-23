@@ -1326,20 +1326,31 @@ Hook g_hkMove  = { 0, PRO_MOVETO,    8, 0, 0, {0}, false, "move-to" };
 Hook g_hkPlace = { 0, PRO_LISTPLACE, 7, 0, 0, {0}, false, "list beside-parent" };
 typedef int (__fastcall* ListPlaceFn)(u32 ecx_, u32 edx_, int* holder, u32 list);   // ret 8 : callee pops ; ecx passed through untouched (cdecl here crashed the client, 2026-11-15)
 
+// The bytes our JMP writes at h.at : E9 rel32, NOP-padded to the whole instructions it covers.
+void hook_jmp(const Hook& h, unsigned char* j) { j[0] = 0xE9; *(u32*)(j + 1) = (u32)h.dst - (h.at + 5); for (int k = 5; k < h.len; ++k) j[k] = 0x90; }
+// A GUARDED compare : a hook address can come from a rel32 read out of the client (the text capture's ascii entry),
+// so it is not trusted to be readable. A fault reads as "not these bytes".
+bool bytes_are(u32 at, const void* p, int n) { __try { return memcmp((const void*)at, p, n) == 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; } }
+// Inside FFXiMain's image : no hook is ever placed anywhere else.
+bool in_image(u32 at, int len) { u32 lo = 0, hi = 0; image_range(lo, hi); return lo && at >= lo && at + (u32)len <= hi; }
+
 bool hook_on(Hook& h) {
     if (h.on) return true;
     if (!h.at) return false;
-    if (memcmp((const void*)h.at, h.pro, h.len)) { windower::debug::log("NATIVEUI %s prologue changed -- NOT hooked", h.what); return false; }
+    // Every refusal SAYS so (rule 10) : a computed address outside the client, an unreadable or changed prologue,
+    // no memory for the trampoline, a page that would not unprotect.
+    if (!in_image(h.at, h.len)) { windower::debug::log("NATIVEUI %s at %08X is outside FFXiMain -- NOT hooked", h.what, h.at); return false; }
+    if (!bytes_are(h.at, h.pro, h.len)) { windower::debug::log("NATIVEUI %s prologue changed or unreadable -- NOT hooked", h.what); return false; }
     if (!h.tramp) {
         h.tramp = (unsigned char*)VirtualAlloc(0, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-        if (!h.tramp) return false;
+        if (!h.tramp) { windower::debug::log("NATIVEUI %s : no trampoline (VirtualAlloc failed, error %lu) -- NOT hooked", h.what, GetLastError()); return false; }
     }
     memcpy(h.tramp, (const void*)h.at, h.len);
     h.tramp[h.len] = 0xE9; *(u32*)(h.tramp + h.len + 1) = (h.at + h.len) - ((u32)h.tramp + h.len + 5);
     memcpy(h.orig, (const void*)h.at, h.len);
-    unsigned char j[8]; j[0] = 0xE9; *(u32*)(j + 1) = (u32)h.dst - (h.at + 5); for (int k = 5; k < h.len; ++k) j[k] = 0x90;
+    unsigned char j[8]; hook_jmp(h, j);
     DWORD old = 0;
-    if (!VirtualProtect((void*)h.at, h.len, PAGE_EXECUTE_READWRITE, &old)) return false;
+    if (!VirtualProtect((void*)h.at, h.len, PAGE_EXECUTE_READWRITE, &old)) { windower::debug::log("NATIVEUI %s : VirtualProtect failed (error %lu) -- NOT hooked", h.what, GetLastError()); return false; }
     memcpy((void*)h.at, j, h.len);
     VirtualProtect((void*)h.at, h.len, old, &old);
     FlushInstructionCache(GetCurrentProcess(), (void*)h.at, h.len);
@@ -1347,16 +1358,29 @@ bool hook_on(Hook& h) {
     windower::debug::log("NATIVEUI %s hooked", h.what);
     return true;
 }
-void hook_off(Hook& h) {
-    if (!h.on) return;
-    DWORD old = 0;
-    if (VirtualProtect((void*)h.at, h.len, PAGE_EXECUTE_READWRITE, &old)) {
-        memcpy((void*)h.at, h.orig, h.len);
-        VirtualProtect((void*)h.at, h.len, old, &old);
-        FlushInstructionCache(GetCurrentProcess(), (void*)h.at, h.len);
+// Restore the original bytes -- but ONLY over our own JMP. Another hook placed on the same function after ours copied
+// our JMP into ITS trampoline : writing the prologue back would erase that hook while it still leads into this DLL.
+// So when the bytes are no longer ours they are left as found, and said. A page that will not unprotect leaves the
+// hook ON (it still is) and is said too : the old code set on=false and logged "unhooked" either way.
+bool hook_off(Hook& h) {
+    if (!h.on) return true;
+    unsigned char j[8]; hook_jmp(h, j);
+    if (!bytes_are(h.at, j, h.len)) {
+        h.on = false;
+        windower::debug::log("NATIVEUI %s NOT unhooked : its bytes at %08X are no longer our JMP (another hook over it) -- left as found", h.what, h.at);
+        return false;
     }
+    DWORD old = 0;
+    if (!VirtualProtect((void*)h.at, h.len, PAGE_EXECUTE_READWRITE, &old)) {
+        windower::debug::log("NATIVEUI %s unhook FAILED : VirtualProtect error %lu -- the JMP is still in place", h.what, GetLastError());
+        return false;
+    }
+    memcpy((void*)h.at, h.orig, h.len);
+    VirtualProtect((void*)h.at, h.len, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), (void*)h.at, h.len);
     h.on = false;
     windower::debug::log("NATIVEUI %s unhooked", h.what);
+    return true;
 }
 
 // DIAG (2026-11-15) : the next N move-to calls on a window AioHUD offsets -- caller, request, rect + scrollbar
@@ -5436,12 +5460,17 @@ void native_ui_tick(bool inWorld) {
     }
 }
 
+// apply(true) in a guard of its own : a fault in the restore must not skip the hooks' removal that follows it.
+bool apply_restore_guarded() { __try { apply(true); return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; } }
 void native_ui_shutdown() {
     text_capture_off();       // the text capture : ALWAYS off at an unload (its JMPs point into this DLL)
     hook_off(g_hkEvent);      // the trade's lines : ALWAYS off at an unload (a JMP into an unloaded DLL would crash the client)
     if (!g_anyApplied && !g_hkMove.on) return;
-    apply(true);              // records back, open windows back by their delta, hook removed, undo file deleted
-    hook_remove();
+    // records back, open windows back by their delta, undo file deleted. Its own guard : before, a fault here
+    // jumped straight to the caller's silent __except and skipped hook_remove -- the move-to JMP then outlived the DLL.
+    const bool restoreRan = apply_restore_guarded();
+    hook_remove();            // ALWAYS, whatever the restore did
+    if (!restoreRan) { windower::debug::log("NATIVEUI shutdown : the restore THREW (SEH) -- hooks removed anyway ; the undo file stays, the next load puts the windows back"); return; }
     // SAY WHAT HAPPENED, not what was meant to : apply() returns early when no manager is proven, and this line used to
     // claim a restore that never ran (the windows then stayed parked until the next load's recovery).
     if (g_anyApplied) windower::debug::log("NATIVEUI shutdown : restore FAILED (no proven menu manager) -- the client's windows stay moved ; the undo file stays, the next load puts them back");

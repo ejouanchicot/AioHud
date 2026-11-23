@@ -422,6 +422,8 @@ static void aio_subclass_remove()
     g_subclassed = NULL; g_relay = NULL;
 }
 
+void native_ui_fault(const char* where);   // below : a Game UI fault, counted and logged
+
 void aio_plugin_render6()
 {
     tid_once("render6");
@@ -431,7 +433,7 @@ void aio_plugin_render6()
 #ifdef AIOHUD_PROBES
     __try { aio::probes::frame(); } __except (EXCEPTION_EXECUTE_HANDLER) {}   // dev-only per-frame probes (native-window RE)
 #endif
-    __try { aio::native_ui_tick(g_hud.logged_in()); } __except (EXCEPTION_EXECUTE_HANDLER) {}   // Game UI : hide / move the client's own windows
+    __try { aio::native_ui_tick(g_hud.logged_in()); } __except (EXCEPTION_EXECUTE_HANDLER) { native_ui_fault("tick"); }   // Game UI : hide / move the client's own windows
     g_hud.render(dev);
     { static DWORD s_vmAt = 0; const DWORD now = GetTickCount(); if (!s_vmAt || now - s_vmAt >= 120000) { if (s_vmAt) log_vm("every 2 min"); s_vmAt = now; } }
 
@@ -936,12 +938,25 @@ unsigned int aio_plugin_key(u32 key, u32 b, u32 c) {
     return 1u;   // consume EVERY key while typing -> the game stays quiet
 }
 
+// A fault in Game UI used to vanish into an empty __except : a fault repeating every frame killed the feature with
+// no log line at all. Counted, and said at most every 5 s (the first one at once).
+void native_ui_fault(const char* where)
+{
+    static unsigned faults = 0, nextLogMs = 0;
+    const unsigned nowMs = GetTickCount();
+    ++faults;
+    if (faults == 1 || (int)(nowMs - nextLogMs) >= 0) {
+        nextLogMs = nowMs + 5000;
+        windower::debug::log("NATIVEUI %s threw (SEH) -- %u fault(s) so far this session", where, faults);
+    }
+}
+
 void aio_plugin_unload()
 {
     tid_once("unload");   // the thread the relay's removal really runs on (aio_subclass_remove assumes: any)
     aio_subclass_remove();   // MUST come first : a WndProc pointing into a freed DLL crashes the client
     // the same for our JMP into the client's move-to function -- and every native window goes back where it was
-    __try { aio::native_ui_shutdown(); } __except (EXCEPTION_EXECUTE_HANDLER) {}
+    __try { aio::native_ui_shutdown(); } __except (EXCEPTION_EXECUTE_HANDLER) { native_ui_fault("shutdown"); }
 #ifdef AIOHUD_PROBES
     __try { aio::probes::shutdown(); } __except (EXCEPTION_EXECUTE_HANDLER) {}   // dev probes : unhook the menu setter, restore native windows
 #endif
