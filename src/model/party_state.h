@@ -54,6 +54,10 @@ struct CastSlot { unsigned id = 0; unsigned spell = 0; unsigned startMs = 0; uns
 // YOUR last weaponskill -> the arcade "ULTRA COMBO" centre-screen popup (name + total damage). Set on the
 // 0x028 category-3 (WS finish) from the local player ; the HUD animates + fades it over ~2.4s.
 struct WsPopup { char name[40] = {0}; int dmg = 0; unsigned startMs = 0; };
+// YOUR last MAGIC BURST (the Skillchains box's burst popup) : the move that burst, its damage summed over the targets
+// it burst on, the element it burst in (-1 unknown). Set on a 0x028 whose target message is a "Magic Burst!" one
+// (res action_messages : 252 265 650 379 747 damage ; 274 275 748-753 803 drain ; 268 269 271 272 754 755 804 effect).
+struct MbPopup { char name[40] = {0}; int dmg = 0; signed char elem = -1; unsigned char hasDmg = 0; unsigned startMs = 0; };
 
 // TREASURE POOL : one lottery slot (module : TreasurePool). Built from the drop packets 0x0D2 (item added :
 // Item id / Index / Timestamp) + 0x0D3 (lot info : highest lotter name+lot / Drop=won). Indexed directly by
@@ -429,6 +433,8 @@ struct PartyState {
     CastSlot casts_[18];
     WsPopup  wsPop_;                      // your last WS (arcade popup) ; startMs=0 = none yet
     const WsPopup& ws_popup() const { return wsPop_; }
+    MbPopup  mbPop_;                      // your last magic burst ; startMs=0 = none yet
+    const MbPopup& mb_popup() const { return mbPop_; }
     // WS-popup suppressions : the popup fires only on the MEASURED weaponskill target message (185). Anything
     // else that sc_is_finish_msg accepts fails closed rather than pop under a colliding ability's name -- but
     // the whitelist was measured on one character, so a player whose weaponskills use another message would
@@ -987,6 +993,7 @@ struct PartyState {
     void act_sleep_wake(unsigned cat, unsigned actor);   // a slept mob that ACTS has woken -- drop its sleep
     void act_treasure_hunter(const unsigned char* p, int size, unsigned cat, unsigned actor);   // TH proc = add-effect anim 7 msg 603 (msg 608 on a weaponskill)
     void act_hate_list(const unsigned char* p, int size, unsigned actor);   // any friendly-vs-mob pairing records that mob as aggroing
+    void act_magic_burst(const unsigned char* p, int size, unsigned cat, unsigned actor);   // YOUR magic burst -> mbPop_ (never consumes the packet)
     bool act_skillchain(const unsigned char* p, int size, unsigned cat, unsigned actor);   // opens/closes a resonance, and fires the weaponskill popup (which consumes the packet)
     void act_buff_attribution(const unsigned char* p, int size, unsigned cat, unsigned actor);   // a buff landing on ME -> remember WHO cast it (the self-cast-only filter)
     void act_song_tags(const unsigned char* p, int size, unsigned cat, unsigned actor);   // SV/NT/TR/M tags for a song someone else cast

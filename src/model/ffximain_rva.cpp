@@ -1,6 +1,7 @@
 // ffximain_rva.cpp -- see ffximain_rva.h for WHY the addresses are data.
 #include "model/flipwatch.h"   // an address that keeps changing back is two healers arguing
 #include "model/ffximain_rva.h"
+#include "model/native_ui.h"     // native_ui_slot_in_manager : the live-menu slot's structural proof
 #include "model/rva_rules.h"         // the decisions below, pure and tested (tests/t_rvarules.cpp)
 #include "model/game_mem.h"        // ffximain_base / entity_array
 #include "model/paths.h"           // the data dir for the cache file
@@ -540,6 +541,16 @@ static void heal_menu_ptr() {
         if (!rva_menu_name_shaped(nm)) nm = 0;
         const u32 firstName = lastName[i];
         if (!rva_second_different(lastName[i], nm, 0xFFFFFFFFu)) continue;
+        // TWO NAMES ARE NOT ENOUGH (2026-11-23) : +0x622AB0 ('newt' then 'menu') and +0x623988 ('usta' then 'ytop')
+        // showed two different names too, were adopted as FINAL, cached -- and the menu manager derived from them was
+        // garbage, so the native-UI restore at unload silently did nothing. The focused slot also sits INSIDE the menu
+        // manager ; a candidate that does not is a decoy, whatever it reads.
+        if (!native_ui_slot_in_manager(cand[i])) {
+            static u32 s_saidNot = 0;
+            if (s_saidNot != cand[i]) { s_saidNot = cand[i];
+                windower::debug::log("fm: menu candidate FFXiMain+0x%X showed two names but is not inside the menu manager -- a decoy, ignored", cand[i] - ffximain_base()); }
+            continue;
+        }
         if (rva_closer(cand[i], seedAddr, bestAddr)) { bestAddr = cand[i]; bestFirst = firstName; bestNow = nm; }   // tie-break : a patch shifts by bytes
     }
     if (bestAddr) {

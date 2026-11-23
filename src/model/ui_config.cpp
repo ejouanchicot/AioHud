@@ -252,7 +252,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "mm3=%d,%d,%d,%d,%d,%.3f,%d\n", c.mmClock, c.mmClkTime, c.mmClkDay, c.mmClkMoon, c.mmClkReal, c.mmMapSize, c.mmClockPos);   // clock : on/time/day/moon/real + independent map size + header placement
     fprintf(f, "mm5=%.3f,%.3f,%d,%.3f\n", c.mmBezelW, c.mmCardSz, c.mmBezel, c.mmSqBorder);   // round bezel width / round cardinal size / round bezel on / square border width
     fprintf(f, "ws=%d,%.3f,%.3f,%.3f,%d,%d\n", c.wsShow, c.wsScale, c.wsX, c.wsY, c.wsFont, c.wsFx);   // arcade WS popup
-    fprintf(f, "aw=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d\n", c.awShow, c.awScale, c.awX, c.awY, c.awScreen, c.awMemory, c.awColors, c.awCount, c.awTimer);   // Absorb-TP box
+    fprintf(f, "aw=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%d,%.3f,%.3f\n", c.awShow, c.awScale, c.awX, c.awY, c.awScreen, c.awMemory, c.awColors, c.awCount, c.awTimer, c.awStyle, c.awSide, c.awFx, c.awDistort, c.awJobs, c.awBadge, c.awLayout, c.awText, c.awOrb);   // Absorb-TP box
     { fprintf(f, "grow=");   // the grow direction of each module box (UiConfig::boxGrow, GrowBox order)
       for (int i = 0; i < UiConfig::GB_COUNT; ++i) fprintf(f, i ? ",%d" : "%d", c.boxGrow[i]);
       fprintf(f, "\n"); }
@@ -305,7 +305,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "db=%d,%.3f,%.4f,%.4f,%d,%d,%d,%.3f,%.3f\n", c.dbShow, c.dbScale, c.dbX, c.dbY, c.dbMax, c.dbHeader, c.dbDisp, c.dbIconScale, c.dbRowGap);   // Debuffs module (detached target debuffs)
     {   // per-module box appearance (shared BoxStyle : frame / transparency / theme / hue / luminosity)
         auto sb = [&](const char* k, const BoxStyle& b) { fprintf(f, "%s=%d,%.4f,%d,%d,%.4f,%08X,%d,%d\n", k, b.on, b.alpha, b.themeCopy, b.theme, b.lum, b.hue, b.border, b.alphaOwn); };   // border = trailing field (old 6-field configs load with border=default)
-        sb("scbox", c.scBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("awbox", c.awBox); sb("petbox", c.petBox); sb("bstbox", c.bstBox); sb("geobox", c.geoBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox); sb("dbbox", c.dbBox); sb("plreqbox", c.plrEqBox);
+        sb("scbox", c.scBox); sb("sclbox", c.scListBox); sb("tpbox", c.tpBox); sb("hlbox", c.hlBox); sb("awbox", c.awBox); sb("petbox", c.petBox); sb("bstbox", c.bstBox); sb("geobox", c.geoBox); sb("pwbox", c.pwBox); sb("ztbox", c.ztBox); sb("tmbox", c.tmBox); sb("mmbox", c.mmBox); sb("epbox", c.epBox); sb("dbbox", c.dbBox); sb("plreqbox", c.plrEqBox);
     }
     fprintf(f, "ep=%d,%.3f,%.4f,%.4f,%d\n", c.epShow, c.epScale, c.epX, c.epY, c.epColl);   // EmpyPop box (+ collectable row)
     fprintf(f, "eptrack=%s\n", c.epTrack);   // the tracked NM KEY -- its OWN line : keys contain spaces
@@ -327,7 +327,9 @@ static bool save_config_to(const char* path) {
         for (int i = 0; i < c.favColorN; ++i) fprintf(f, "%s%u", i ? "," : "", c.favColors[i]);
         fprintf(f, "\n");
     }
-    fprintf(f, "sc2=%d,%d,%d,%d,%d,%.4f,%d\n", c.scTimer, c.scStep, c.scProps, c.scList, c.scTitle, c.scListGap, c.scTP);   // skillchains : element toggles (title + WS-list spacing + TP line appended)
+    fprintf(f, "sc2=%d,%d,%d,%d,%d,%.4f,%d\n", c.scTimer, c.scStep, c.scProps, c.scList, c.scTitle, c.scListGap, c.scTP);
+    fprintf(f, "schit=%d,%.3f,%.1f,%.1f,%d,%d,%d,%08X,%08X,%08X,%d,%.1f,%.1f,%d\n", c.scHitFx, c.scHitScale, c.scHitNameY, c.scHitDmgY, c.scMbLabel, c.scMbName, c.scHitFont, c.scHitNameCol, c.scHitDmgCol1, c.scHitDmgCol2, c.scHitPos, c.scHitX, c.scHitY, c.scHitStyle);   // skillchains : the Circle's hit popup
+    fprintf(f, "sc3=%d,%.3f,%d,%.1f,%d,%d,%.3f,%.3f,%.1f,%d,%d,%.3f,%.3f,%d,%d,%d,%d\n", c.scStyle, c.scListScale, c.scListPos, c.scListOff, c.scAnim, c.scDistort, c.scParticles, c.scReach, c.scTitleOff, c.scListStyle, c.scWsScope, c.scListIcon, c.scCardScale, c.scListElem, c.scListCols, c.scArcade, c.scMbFx);   // skillchains : the Circle style (style / list size, place, distance / animations, distortion, particles, reach)   // skillchains : element toggles (title + WS-list spacing + TP line appended)
     save_text_styles(f, "scText", c.scText, SC_TE_COUNT);   // skillchains : per-element typography
     fprintf(f, "wscol=%08X,%08X,%08X\n", c.wsNameCol, c.wsDmgCol1, c.wsDmgCol2);
     fprintf(f, "plrSizes=%.4f,%.4f,%.4f,%.4f,%.4f\n", c.plrBoxAlpha, c.plrScale, c.plrBarH, c.plrBarW, c.plrIconSz);
@@ -393,13 +395,60 @@ static void parse_box(const char* s, BoxStyle& b) {   // "on,alpha,themeCopy,the
 // The grow direction of every module box (UiConfig::boxGrow), OUT-OF-LINE for the same C1061 reason as
 // parse_ep_line. Absent in an old file -> every box keeps the anchor it always had.
 // The Absorb-TP box (aw= and awbox=), OUT-OF-LINE for the C1061 reason above. Absent keys keep the defaults.
+// The Skillchains CIRCLE style (sc3= and sclbox=), OUT-OF-LINE for the C1061 reason above. Absent keys keep the defaults.
+static bool parse_sc3_line(const char* line, UiConfig& c) {
+    if (strncmp(line, "sclbox=", 7) == 0) { parse_box(line + 7, c.scListBox); return true; }
+    if (strncmp(line, "schit=", 6) == 0) {   // the Circle's hit popup
+        int fx = 1, ml = 1, mn = 1, fo = 0, hp = 0, hst = 0; float hs = 1.0f, ny = 0.0f, dy = 0.0f, hx = 0.0f, hy = 0.0f; unsigned nc = c.scHitNameCol, d1 = c.scHitDmgCol1, d2 = c.scHitDmgCol2;
+        const int n = sscanf(line + 6, "%d,%f,%f,%f,%d,%d,%d,%X,%X,%X,%d,%f,%f,%d", &fx, &hs, &ny, &dy, &ml, &mn, &fo, &nc, &d1, &d2, &hp, &hx, &hy, &hst);
+        if (n >= 1) c.scHitFx = fx ? 1 : 0;
+        if (n >= 2) c.scHitScale = hs < 0.5f ? 0.5f : (hs > 2.0f ? 2.0f : hs);
+        if (n >= 3) c.scHitNameY = ny < -80.0f ? -80.0f : (ny > 80.0f ? 80.0f : ny);
+        if (n >= 4) c.scHitDmgY = dy < -80.0f ? -80.0f : (dy > 80.0f ? 80.0f : dy);
+        if (n >= 5) c.scMbLabel = ml ? 1 : 0;
+        if (n >= 6) c.scMbName = mn ? 1 : 0;
+        if (n >= 7) c.scHitFont = fo >= 0 ? fo : 0;
+        if (n >= 8) c.scHitNameCol = nc;
+        if (n >= 9) c.scHitDmgCol1 = d1;
+        if (n >= 10) c.scHitDmgCol2 = d2;
+        if (n >= 11) c.scHitPos = (hp >= 0 && hp <= 4) ? hp : 0;
+        if (n >= 12) c.scHitX = hx < -200.0f ? -200.0f : (hx > 200.0f ? 200.0f : hx);
+        if (n >= 13) c.scHitY = hy < -200.0f ? -200.0f : (hy > 200.0f ? 200.0f : hy);
+        if (n >= 14) c.scHitStyle = (hst >= 0 && hst <= 3) ? hst : 0;
+        return true;
+    }
+    if (strncmp(line, "sc3=", 4) != 0) return false;
+    int st = 0, lp = 0, an = 1, di = 1, lst = 0, wsc = 0; float ls = 1.0f, lo = 0.0f, pa = 1.0f, re = 0.65f, to = 0.0f, li = 1.0f, cs = 1.0f; int le = 1, lc = 0, ar = 1, mbx = 1;
+    const int n = sscanf(line + 4, "%d,%f,%d,%f,%d,%d,%f,%f,%f,%d,%d,%f,%f,%d,%d,%d,%d", &st, &ls, &lp, &lo, &an, &di, &pa, &re, &to, &lst, &wsc, &li, &cs, &le, &lc, &ar, &mbx);
+    if (n >= 1) c.scStyle = (st == 1) ? 1 : 0;
+    if (n >= 2) c.scListScale = ls < 0.5f ? 0.5f : (ls > 2.0f ? 2.0f : ls);
+    if (n >= 3) c.scListPos = (lp >= 0 && lp <= 4) ? lp : 0;
+    if (n >= 4) c.scListOff = lo < -200.0f ? -200.0f : (lo > 80.0f ? 80.0f : lo);
+    if (n >= 5) c.scAnim = an ? 1 : 0;
+    if (n >= 6) c.scDistort = di ? 1 : 0;
+    if (n >= 7) c.scParticles = pa < 0.0f ? 0.0f : (pa > 1.0f ? 1.0f : pa);
+    if (n >= 8) c.scReach = re < 0.3f ? 0.3f : (re > 1.0f ? 1.0f : re);
+    if (n >= 9) c.scTitleOff = to < -120.0f ? -120.0f : (to > 80.0f ? 80.0f : to);
+    if (n >= 10) c.scListStyle = (lst >= 0 && lst <= 3) ? lst : 0;
+    if (n >= 11) c.scWsScope = wsc ? 1 : 0;
+    if (n >= 12) c.scListIcon = li < 0.5f ? 0.5f : (li > 2.0f ? 2.0f : li);
+    if (n >= 14) c.scListElem = le ? 1 : 0;
+    if (n >= 16) c.scArcade = ar ? 1 : 0;
+    if (n >= 17) c.scMbFx = mbx ? 1 : 0;
+    if (n >= 15) c.scListCols = (lc >= 0 && lc <= 4) ? lc : 0;
+    if (n >= 13) c.scCardScale = cs < 0.6f ? 0.6f : (cs > 1.6f ? 1.6f : cs);
+    return true;
+}
 static bool parse_aw_line(const char* line, UiConfig& c) {
     if (strncmp(line, "awbox=", 6) == 0) { parse_box(line + 6, c.awBox); return true; }
     if (strncmp(line, "aw=", 3) != 0) return false;
-    int sh = 1, scr = 90, mem = 900, col = 1, cnt = 1, tim = 1; float scl = 1.0f, x = 0.30f, y = 0.55f;
-    const int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d,%d,%d,%d", &sh, &scl, &x, &y, &scr, &mem, &col, &cnt, &tim);
+    int sh = 1, scr = 90, mem = 900, col = 1, cnt = 1, tim = 1, sty = 0, sd = 0, fx = 1, di = 1, jb = 1, lay = 0; float scl = 1.0f, x = 0.30f, y = 0.55f, bdg = 1.0f, txs = 1.0f, orb = 1.0f;
+    const int n = sscanf(line + 3, "%d,%f,%f,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%f,%d,%f,%f", &sh, &scl, &x, &y, &scr, &mem, &col, &cnt, &tim, &sty, &sd, &fx, &di, &jb, &bdg, &lay, &txs, &orb);
     if (n >= 1) c.awShow = sh; if (n >= 2) c.awScale = scl; if (n >= 3) c.awX = x; if (n >= 4) c.awY = y;
     if (n >= 5) c.awScreen = scr; if (n >= 6) c.awMemory = mem; if (n >= 7) c.awColors = col; if (n >= 8) c.awCount = cnt; if (n >= 9) c.awTimer = tim;
+    if (n >= 10) c.awStyle = sty == 1 ? 1 : 0; if (n >= 11) c.awSide = (sd >= 0 && sd <= 2) ? sd : 0; if (n >= 12) c.awFx = fx ? 1 : 0; if (n >= 13) c.awDistort = di ? 1 : 0;
+    if (n >= 14) c.awJobs = (jb >= 0 && jb <= 2) ? jb : 1; if (n >= 15) c.awBadge = bdg < 0.7f ? 0.7f : (bdg > 1.6f ? 1.6f : bdg); if (n >= 16) c.awLayout = (lay >= 0 && lay <= 2) ? lay : 0;
+    if (n >= 17) c.awText = txs < 0.7f ? 0.7f : (txs > 1.6f ? 1.6f : txs); if (n >= 18) c.awOrb = orb < 0.6f ? 0.6f : (orb > 1.8f ? 1.8f : orb);
     return true;
 }
 // Game UI line (the client's own windows), parsed OUT-OF-LINE (same C1061 nesting reason as parse_ep_line). Absent in
@@ -807,6 +856,7 @@ static bool load_config_from(const char* path) {
         // another's. Renaming the SHARED names (only four sites use them: partyRefX, zonePanel, guide, box)
         // leaves the well-behaved branches untouched and removes the collision instead of muting it.
         int v, v1, v2, gps, idx, b0, b1, b2, bc; float gx, gy, gsc, fv, f1, f2; unsigned uc;
+        if (parse_sc3_line(line, c)) continue;    // out-of-line : the Skillchains Circle style (same nesting-limit reason)
         if (parse_aw_line(line, c)) continue;     // out-of-line : the Absorb-TP box (same nesting-limit reason)
         if (parse_pet_line(line, c)) continue;    // out-of-line : the Pet box (same nesting-limit reason)
         if (parse_nui_line(line, c)) continue;
@@ -1401,6 +1451,9 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (!text_styles_eq(a.epText, b.epText, EP_TE_COUNT)) return false;
     if (a.scTitle != b.scTitle || a.scTimer != b.scTimer || a.scStep != b.scStep || a.scProps != b.scProps || a.scList != b.scList || a.scListGap != b.scListGap || a.scTP != b.scTP) return false;
     if (!text_styles_eq(a.scText, b.scText, SC_TE_COUNT)) return false;
+    if (a.scStyle != b.scStyle || a.scListScale != b.scListScale || a.scListPos != b.scListPos || a.scListOff != b.scListOff) return false;
+    if (a.scAnim != b.scAnim || a.scDistort != b.scDistort || a.scParticles != b.scParticles || a.scReach != b.scReach || a.scTitleOff != b.scTitleOff || a.scListStyle != b.scListStyle || a.scWsScope != b.scWsScope || a.scListIcon != b.scListIcon || a.scListElem != b.scListElem || a.scListCols != b.scListCols || a.scArcade != b.scArcade || a.scMbFx != b.scMbFx || a.scHitFx != b.scHitFx || a.scHitScale != b.scHitScale || a.scHitNameY != b.scHitNameY || a.scHitDmgY != b.scHitDmgY
+        || a.scMbLabel != b.scMbLabel || a.scMbName != b.scMbName || a.scHitFont != b.scHitFont || a.scHitPos != b.scHitPos || a.scHitX != b.scHitX || a.scHitY != b.scHitY || a.scHitStyle != b.scHitStyle || a.scHitNameCol != b.scHitNameCol || a.scHitDmgCol1 != b.scHitDmgCol1 || a.scHitDmgCol2 != b.scHitDmgCol2 || a.scCardScale != b.scCardScale || !box_eq(a.scListBox, b.scListBox)) return false;
     if (a.plrBarH != b.plrBarH || a.plrBarW != b.plrBarW || a.plrIconSz != b.plrIconSz) return false;
     if (a.plrBarGap != b.plrBarGap || a.plrEmblemSz != b.plrEmblemSz) return false;
     for (int k = 0; k < PLR_TE_COUNT; ++k) {
@@ -1417,6 +1470,8 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.tmMerged != b.tmMerged || a.tmRX != b.tmRX || a.tmRY != b.tmRY || a.tmIconScale != b.tmIconScale || a.tmRowGap != b.tmRowGap) return false;
     // per-module box appearance (shared BoxStyle)
     if (a.awShow != b.awShow || a.awScale != b.awScale || a.awX != b.awX || a.awY != b.awY || a.awScreen != b.awScreen || a.awMemory != b.awMemory) return false;
+    if (a.awStyle != b.awStyle || a.awSide != b.awSide || a.awFx != b.awFx || a.awDistort != b.awDistort) return false;
+    if (a.awJobs != b.awJobs || a.awBadge != b.awBadge || a.awLayout != b.awLayout || a.awText != b.awText || a.awOrb != b.awOrb) return false;
     if (a.awColors != b.awColors || a.awCount != b.awCount || a.awTimer != b.awTimer || !box_eq(a.awBox, b.awBox)) return false;
     if (!box_eq(a.scBox, b.scBox) || !box_eq(a.tpBox, b.tpBox) || !box_eq(a.hlBox, b.hlBox) || !box_eq(a.pwBox, b.pwBox) || !box_eq(a.ztBox, b.ztBox) || !box_eq(a.tmBox, b.tmBox) || !box_eq(a.mmBox, b.mmBox) || !box_eq(a.epBox, b.epBox)) return false;
     if (a.tmDurMode != b.tmDurMode || a.tmRecMode != b.tmRecMode || a.tmOthers != b.tmOthers || a.tmMine != b.tmMine || a.tmBuffSrc != b.tmBuffSrc || a.tmSpAlert != b.tmSpAlert) return false;

@@ -4,6 +4,7 @@
 #include "model/ui_config.h"
 #include "ui/text_style.h"
 #include "ui/box_style.h"
+#include "ui/sc_circle.h"
 #include "model/party_state.h"
 #include "gfx/draw.h"
 #include "gfx/d3d.h"
@@ -61,6 +62,7 @@ static float sc_pip(u32 dev, float x, float cy, float sz, u32 col) {
 // config-aware draw with no Hud instance.
 void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float ovS, float screenW, float screenH,
                       bool measureOnly = false, float* outW = 0, float* outH = 0) {
+    if (!preview && !measureOnly) sc_circle_idle();   // the Circle's distortion copy : given back 5 s after its last use
     const UiConfig& C = ui_config();
     if (!C.scShow) return;
     const bool editing = C.editLayout && !preview;
@@ -69,10 +71,20 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
 
     // ---- gather the display data (live resonance, or a sample in preview/edit) ----
     int step, phase, nProp; unsigned char props[3]; bool formed; const char* actName; float timerSec; float burstFrac = 1.0f;
+    // the Circle style's extra inputs : its countdown arc, its animation clock (seconds since the chain formed), the
+    // chain's identity (a new one restarts the animation), whether it is closed
+    float arcFrac = 1.0f, liveBt = -1.0f; unsigned liveKey = 0; bool closedC = false;
     if (preview || editing) {
-        step = 2; props[0] = SCP_Fusion; nProp = 1; formed = true; actName = "Savage Blade"; phase = 1;
-        timerSec = preview ? (5.0f - (float)(GetTickCount() % 5000u) / 1000.0f) : 5.0f;   // preview counts down + loops
+        // the sample : the skillchain picked in the config (Display > Preview), or a lone move ; Lv.4 = a closed chain
+        const int pv = (C.scPreview >= -1 && C.scPreview < SCP_N) ? C.scPreview : SCP_Fusion;
+        step = pv < 0 ? 1 : 2; props[0] = (unsigned char)(pv < 0 ? SCP_Liquefaction : pv); nProp = 1; formed = pv >= 0; actName = "Savage Blade";
+        phase = (pv >= 0 && sc_info(pv).lvl >= 4) ? 2 : 1;
+        // preview AND edit layout : the same loop -- the countdown, the animation clock and the chain's identity all
+        // run (edit layout froze them at 5 s / 2 s while the particles kept the real clock : half the sphere stood still)
+        timerSec = 5.0f - (float)(GetTickCount() % 5000u) / 1000.0f;
         if (timerSec < 0.1f) timerSec = 5.0f;
+        arcFrac = timerSec / 5.0f; liveBt = 5.0f - timerSec; liveKey = 0x5C1E0000u + GetTickCount() / 5000u + (unsigned)(pv + 1) * 0x10000u;
+        closedC = phase == 2;
     } else {
         if (!f.game) return;
         const GameState& g = *f.game;
@@ -110,6 +122,9 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         else if (now >= r->endMs) { phase = 1; timerSec = 0.0f; }
         else if (now < goAt)      { phase = 0; timerSec = (float)(goAt - now) / 1000.0f; }
         else                      { phase = 1; timerSec = (float)(r->endMs - now) / 1000.0f; }
+        arcFrac = phase == 0 ? 1.0f : (phase == 2 ? burstFrac : ((r->endMs > goAt && now < r->endMs) ? (float)(r->endMs - now) / (float)(r->endMs - goAt) : 0.0f));
+        liveBt = formed ? (float)(now - r->openMs) / 1000.0f : -1.0f;   // openMs = when the closing move landed
+        liveKey = (r->target * 2654435761u) ^ r->openMs; closedC = r->closed != 0;
         actName = "";
         if (r->resource == SCR_WS)         { const WSRow* w = ws_info(r->actionId);        if (w) actName = w->en; }
         else if (r->resource == SCR_SPELL) { const SpellRow* s = spell_info(r->actionId);   if (s) actName = s->en; }
@@ -120,13 +135,22 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
     // ---- continuation list : YOUR usable weapon skills that extend the chain ("Name > Lv.X property").
     // Rebuilt only when the resonance changes (a get_abilities read + check_props per usable WS). No list once
     // the chain is CLOSED (lvl4 / step>5 = burst only), mirroring the addon. ----
-    struct ScLine { char name[28]; unsigned char lvl, prop; };
+    struct ScLine { char name[28]; unsigned char lvl, prop, now, wsk; };   // now = usable with the weapon in hand ; wsk = its weapon type
     static ScLine list[16]; static int listN = 0; static unsigned listKey = 0;
     if (preview || editing) {
-        static const struct { const char* n; int l; int p; } SMP[3] = {
-            { "Savage Blade", 2, SCP_Fusion }, { "Requiescat", 2, SCP_Gravitation }, { "Resolution", 1, SCP_Scission } };
-        listN = 3;
-        for (int i = 0; i < 3; ++i) { int c = 0; for (; SMP[i].n[c] && c < 27; ++c) list[i].name[c] = SMP[i].n[c]; list[i].name[c] = 0; list[i].lvl = (unsigned char)SMP[i].l; list[i].prop = (unsigned char)SMP[i].p; }
+        // what the "WS offered" setting gives : MY WEAPON = one sword's moves (8) ; ALL MY JOB'S WEAPONS = the worst case,
+        // 16 (the most the box holds) across a WAR's weapons, 8 skillchains -- the room it really takes
+        struct Smp { const char* n; int l; int p; int k; };   // k : the weapon (3 = sword, the one "in hand")
+        static const Smp ONE[8] = {
+            { "Savage Blade", 2, SCP_Fusion, 3 }, { "Requiescat", 2, SCP_Gravitation, 3 }, { "Sanguine Blade", 1, SCP_Compression, 3 }, { "Circle Blade", 1, SCP_Impaction, 3 },
+            { "Red Lotus Blade", 1, SCP_Liquefaction, 3 }, { "Burning Blade", 1, SCP_Liquefaction, 3 }, { "Seraph Blade", 1, SCP_Scission, 3 }, { "Fast Blade", 1, SCP_Scission, 3 } };
+        static const Smp ALL[16] = {
+            { "Ukko's Fury", 3, SCP_Light, 6 }, { "Savage Blade", 2, SCP_Fusion, 3 }, { "Upheaval", 2, SCP_Fusion, 6 }, { "Resolution", 2, SCP_Fragmentation, 4 },
+            { "Requiescat", 2, SCP_Gravitation, 3 }, { "Cross Reaper", 2, SCP_Distortion, 7 }, { "Impulse Drive", 2, SCP_Gravitation, 8 }, { "Judgment", 2, SCP_Fragmentation, 11 },
+            { "Decimation", 1, SCP_Compression, 5 }, { "Steel Cyclone", 1, SCP_Compression, 6 }, { "Circle Blade", 1, SCP_Impaction, 3 }, { "Black Halo", 1, SCP_Impaction, 11 },
+            { "Fell Cleave", 1, SCP_Scission, 6 }, { "Evisceration", 1, SCP_Scission, 2 }, { "Red Lotus Blade", 1, SCP_Liquefaction, 3 }, { "Shell Crusher", 1, SCP_Reverberation, 12 } };
+        const Smp* SMP = C.scWsScope ? ALL : ONE; listN = C.scWsScope ? 16 : 8;
+        for (int i = 0; i < listN; ++i) { int c = 0; for (; SMP[i].n[c] && c < 27; ++c) list[i].name[c] = SMP[i].n[c]; list[i].name[c] = 0; list[i].lvl = (unsigned char)SMP[i].l; list[i].prop = (unsigned char)SMP[i].p; list[i].wsk = (unsigned char)SMP[i].k; list[i].now = (unsigned char)(SMP[i].k == 3); }
     } else if (phase == 2) {
         listN = 0; listKey = 0;                                 // closed chain -> burst only, no continuation list
     } else {
@@ -146,14 +170,14 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         // one) reused the stale continuation list -> wrong "what continues" suggestions until the key happened to move.
         const unsigned key = f.game->target.id * 2654435761u + (unsigned)step * 131u + (unsigned)mjob * 97u
                            + (unsigned)props[0] * 7u + (unsigned)props[1] * 1013u + (unsigned)props[2] * 65537u + (unsigned)nProp * 40503u
-                           + (unsigned)(selfAeonic + 1) * 277u + (unsigned)amLvl * 1201u;   // rebuild on weapon swap / AM change (aeonic on/off changes what continues)
+                           + (unsigned)(selfAeonic + 1) * 277u + (unsigned)amLvl * 1201u + (unsigned)C.scWsScope * 7919u;   // rebuild on weapon swap / AM change (aeonic on/off changes what continues)
         if (key != listKey) {
             listKey = key; listN = 0; int found = 0;
             // add a candidate move (weapon skill / job ability / SCH element) IF it continues the active chain.
             // The list holds 16 : once full, a candidate of a HIGHER level replaces the lowest kept one (2026-11-22 :
             // the cap used to stop the scan, and the level sort only ran on the first 16 found -- WS are scanned first,
             // so a better JA / BLU / SCH closer past 16 matches was never offered).
-            auto tryAdd = [&](int resource, unsigned id, const char* nm) {
+            auto tryAdd = [&](int resource, unsigned id, const char* nm, bool now, int wsk) {
                 const SkillRow* sk = sc_skill_lookup(resource, id); if (!sk) return;
                 // wsAeonic : THIS candidate is the WS of YOUR equipped Aeonic AND your Aftermath allows Radiance/Umbra.
                 // Only then does it gain its aeonic opening property and can UPGRADE a Light/Darkness Lv.4 close to
@@ -166,24 +190,30 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
                     if (wsAeonic) { if (rs == SCP_Light) rs = SCP_Radiance; else if (rs == SCP_Darkness) rs = SCP_Umbra; }   // aeonic close -> Radiance/Umbra ; otherwise the Light/Darkness Lv.4 stands
                     ++found;
                     int slot = listN;
-                    if (listN >= 16) {                                                    // full : evict the lowest level if this one is higher
-                        slot = 0; for (int k = 1; k < 16; ++k) if (list[k].lvl < list[slot].lvl) slot = k;
-                        if (list[slot].lvl >= lv) return;
+                    if (listN >= 16) {                                                    // full : evict the lowest level (another weapon's first) if this one is better
+                        slot = 0; for (int k = 1; k < 16; ++k) if (list[k].lvl < list[slot].lvl || (list[k].lvl == list[slot].lvl && !list[k].now && list[slot].now)) slot = k;
+                        if (!(lv > list[slot].lvl || (lv == list[slot].lvl && now && !list[slot].now))) return;
                     } else ++listN;
                     ScLine& L = list[slot]; if (!nm) nm = "";
                     int c = 0; for (; nm[c] && c < 27; ++c) L.name[c] = nm[c]; L.name[c] = 0;
-                    L.lvl = (unsigned char)lv; L.prop = (unsigned char)rs;
+                    L.lvl = (unsigned char)lv; L.prop = (unsigned char)rs; L.now = now ? 1 : 0; L.wsk = (unsigned char)wsk;
                 }
             };
             unsigned short ws[128]; const int nws = read_usable_weapon_skills(ws, 128);                 // everyone : weapon skills
-            for (int i = 0; i < nws; ++i) { const WSRow* w = ws_info(ws[i]); tryAdd(SCR_WS, ws[i], w ? w->en : 0); }
+            const unsigned jm = C.scWsScope ? sc_job_weapon_mask(mjob) : 0u;
+            if (jm) {   // EVERY weapon your job wields (as the weapon you might swap to) : the whole table, by weapon type ; plus what is usable now
+                for (int i = 0; i < WEAPON_SKILLS_N; ++i) { const WSRow& w = WEAPON_SKILLS[i];
+                    bool now = false; for (int j = 0; j < nws; ++j) if (ws[j] == w.id) { now = true; break; }
+                    if (now || (w.skill && w.skill < 32 && (jm & (1u << w.skill)))) tryAdd(SCR_WS, w.id, w.en, now, w.skill); }
+            } else
+                for (int i = 0; i < nws; ++i) { const WSRow* w = ws_info(ws[i]); tryAdd(SCR_WS, ws[i], w ? w->en : 0, true, w ? w->skill : 0); }
             unsigned short ja[256]; const int nja = read_usable_job_abilities(ja, 256);                 // BST/SMN : pet ready moves (self-gated on the pet being out) + any skillchaining JA
             for (int i = 0; i < nja; ++i) {
                 const AbilRow* a = abil_info(ja[i]);
                 // a Blood Pact (recast 173 Rage / 174 Ward) only on a SMN main : the game also marks Cait Sith's Regal Gash
                 // (id 780, filed among the Ready moves) usable on BST -- seen in the SCLIST capture of 2026-10-29
                 if (a && (a->recast_id == 173 || a->recast_id == 174) && mjob != 15) continue;
-                tryAdd(SCR_JA, ja[i], a ? a->en : 0);
+                tryAdd(SCR_JA, ja[i], a ? a->en : 0, true, 0);
             }
             // //aio sclog : every job ability the game marks usable (id, name, recast id), to tell why a move that cannot be
             // used is offered (2026-10-29 : Regal Gash, a Cait Sith Blood Pact, listed on BST after Sensilla Blades)
@@ -200,9 +230,9 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
                 windower::debug::log("%s", b);
             }
             if (mjob == 16) { unsigned short bs[24]; const int nbs = read_blu_spells(bs, 24);            // BLU : your currently-SET blue magic
-                for (int i = 0; i < nbs; ++i) { const SpellRow* s = spell_info(bs[i]); tryAdd(SCR_SPELL, bs[i], s ? s->en : 0); } }
-            if (mjob == 20) for (int el = 0; el < 8; ++el) tryAdd(SCR_ELEM, el, scelem_name(el));        // SCH : the 8 elemental magics are always castable
-            for (int i = 1; i < listN; ++i) { ScLine t = list[i]; int j = i - 1; while (j >= 0 && list[j].lvl < t.lvl) { list[j + 1] = list[j]; --j; } list[j + 1] = t; }   // highest level first
+                for (int i = 0; i < nbs; ++i) { const SpellRow* s = spell_info(bs[i]); tryAdd(SCR_SPELL, bs[i], s ? s->en : 0, true, 0); } }
+            if (mjob == 20) for (int el = 0; el < 8; ++el) tryAdd(SCR_ELEM, el, scelem_name(el), true, 0);        // SCH : the 8 elemental magics are always castable
+            for (int i = 1; i < listN; ++i) { ScLine t = list[i]; int j = i - 1; while (j >= 0 && (list[j].lvl < t.lvl || (list[j].lvl == t.lvl && !list[j].now && t.now))) { list[j + 1] = list[j]; --j; } list[j + 1] = t; }   // highest level first, the weapon in hand before the others
             if (party().scapt_armed()) {   // what the box then offers
                 char b[700]; int o = _snprintf(b, sizeof(b), "SCLIST offered (%d of %d continuing):", listN, found);
                 for (int i = 0; i < listN && o > 0 && o < (int)sizeof(b) - 40; ++i) {
@@ -212,6 +242,80 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
                 windower::debug::log("%s", b);
             }
         }
+    }
+
+    // ===== the CIRCLE style (the default) : the resonance sphere, its animation, the moves that continue it beside it
+    // (ui/sc_circle.h, engine in hud_scfx.cpp). The edit box = the sphere with its title and burst icons ; the list
+    // follows it (scListPos / scListOff), so placing the sphere places both. =====
+    if (C.scStyle == 0) {
+        const float sc = C.scScale < 0.4f ? 0.4f : (C.scScale > 3.0f ? 3.0f : C.scScale);
+        const float ls = C.scListScale < 0.5f ? 0.5f : (C.scListScale > 2.0f ? 2.0f : C.scListScale);
+        const float k  = (ovS > 0.0f) ? ovS * (1000.0f / 1349.0f) * 1.25f : (screenH / 1349.0f) * 1.25f * sc;   // preview : ovS is the box's scale
+        const float kl = (ovS > 0.0f) ? k * ls / sc : (screenH / 1349.0f) * 1.25f * ls;   // live : the list's size does NOT follow the sphere's -- the preview the same
+        const float R = sc_circle_radius(k), cw = 2.0f * (R + 40.0f * k), top = R + 58.0f * k, ch = top + R + 40.0f * k;
+        const int nItems = (C.scList && phase != 2) ? (listN < 16 ? listN : 16) : 0;
+        const float gm = C.scListGap < 0.6f ? 0.6f : (C.scListGap > 3.0f ? 3.0f : C.scListGap);
+        const float lH = nItems > 0 ? nItems * 14.0f * kl * gm + 40.0f * kl : 0.0f, lW = nItems > 0 ? 300.0f * kl : 0.0f;
+        const bool vert = C.scListPos <= 1;
+        const float totW = vert ? (cw > lW ? cw : lW) : cw + 2.0f * lW, totH = vert ? ch + lH : ch;
+        if (measureOnly) { if (outW) *outW = totW; if (outH) *outH = totH; return; }
+        float px, py;
+        if (ovS > 0.0f) {   // preview : the whole centred on the point -- with the list's room ALWAYS counted, so a closed chain (no list) sits where the others do
+            const int nP = C.scList ? (listN < 16 ? listN : 16) : 0;
+            const float lHp = nP > 0 ? nP * 14.0f * kl * gm + 40.0f * kl : 0.0f, totHp = vert ? ch + lHp : ch;
+            px = snap(ovX - cw * 0.5f); py = snap(ovY - totHp * 0.5f + (C.scListPos == 1 ? lHp : 0.0f)); }
+        else            { px = box_grow_x(screenW, UiConfig::GB_SC, 0, C.scX, cw); py = snap(C.scY * screenH); }
+        ScCircleItem items[16];
+        for (int i = 0; i < nItems; ++i) { items[i].ws = list[i].name; items[i].prop = list[i].prop; items[i].lvl = list[i].lvl; items[i].other = list[i].now ? 0 : 1; items[i].wsk = list[i].wsk; }
+        const int tpRawC = (preview || editing) ? 1000 : (f.game ? f.game->me.tp : 0);
+        ScCircleLive L;
+        L.key = liveKey; L.prop = formed ? props[0] : -1; L.bt = liveBt; L.phase = phase; L.closed = closedC;
+        L.timer = timerSec; L.frac = arcFrac; L.tp = tpRawC < 0 ? 0 : (tpRawC > 3000 ? 3000 : tpRawC); L.opener = actName;
+        L.items = items; L.nItems = nItems; L.CX = snap(px + cw * 0.5f); L.CY = snap(py + top); L.k = k; L.kl = kl;
+        L.scaleRel = (ovS > 0.0f) ? 1.0f : sc; L.preview = ovS > 0.0f;
+        if (preview || editing) {   // the sample : your weaponskill, then a magic burst in the shown chain's first element, in a loop
+            const unsigned cyc = GetTickCount() % 6000u;
+            static const char* MBN[8] = { "Fire VI", "Blizzard VI", "Aero VI", "Stone VI", "Thunder VI", "Water VI", "Holy II", "Impact" };
+            if (C.scArcade && cyc < 2400u) { L.hitKind = 1; L.hitName = "Savage Blade"; L.hitDmg = 12345; L.hitMs = (float)cyc; }
+            else if (C.scMbFx && cyc >= 3000u && cyc < 5400u) {
+                const int el = L.prop >= 0 && sc_info(L.prop).nElem > 0 ? sc_info(L.prop).elem[0] : EL_Lightning;
+                L.hitKind = 2; L.hitName = MBN[el & 7]; L.hitDmg = 23456; L.hitElem = el; L.hitMs = (float)(cyc - 3000u); }
+        } else {   // live : the more recent of your weaponskill / your magic burst, each if switched on
+            const unsigned nowMs = GetTickCount();
+            const WsPopup& wp = party().ws_popup(); const MbPopup& mp = party().mb_popup();
+            const unsigned aW = wp.startMs ? nowMs - wp.startMs : 0xFFFFFFFFu, aM = mp.startMs ? nowMs - mp.startMs : 0xFFFFFFFFu;
+            const bool wOn = C.scArcade && wp.name[0] && aW < 2400u, mOn = C.scMbFx && aM < 2400u;
+            if (mOn && (!wOn || aM <= aW)) { L.hitKind = 2; L.hitName = mp.name; L.hitDmg = mp.dmg; L.hitElem = mp.elem; L.hitHasDmg = mp.hasDmg != 0; L.hitMs = (float)aM; }
+            else if (wOn) { L.hitKind = 1; L.hitName = wp.name; L.hitDmg = wp.dmg; L.hitMs = (float)aW; }
+        }
+        if (ovS <= 0.0f) {
+            // the WHOLE content (sphere + title + list) : the edit-layout box and the keep-on-screen rect. The stored
+            // place stays the sphere's own (scX / scY) : the union is offset from it by (dx, dy).
+            float ux = px, uy = py, uw = cw, uh = ch, lx, ly, lw, lh2;
+            auto take = [&](float rx, float ry, float rw, float rh) {   // grow the union by a rect
+                const float x1 = (rx + rw > ux + uw ? rx + rw : ux + uw), y1 = (ry + rh > uy + uh ? ry + rh : uy + uh);
+                ux = rx < ux ? rx : ux; uy = ry < uy ? ry : uy; uw = x1 - ux; uh = y1 - uy; };
+            const bool hasList = sc_circle_list_rect(f, L, lx, ly, lw, lh2);
+            if (hasList) take(lx, ly, lw, lh2);
+            if (editing && sc_circle_hit_rect(L, lx, ly, lw, lh2)) take(lx, ly, lw, lh2);   // the Arcade WS / Magic Burst popup : placed with the box
+            if (hasList || editing) {
+                // SYMMETRIC round the sphere horizontally : the edit grid's centre line then centres the SPHERE (a list
+                // on one side made the union lopsided -> snapped to the centre, the sphere sat off it)
+                const float cxS = px + cw * 0.5f, hw = (cxS - ux > ux + uw - cxS) ? cxS - ux : ux + uw - cxS;
+                ux = cxS - hw; uw = 2.0f * hw; }
+            const float dx = ux - px, dy = uy - py;
+            if (editing) {
+                static EditBox g_scEditC; const bool wasDrag = g_scEditC.dragging; float tx = 0.0f, ty = 0.0f;
+                box_edit(f, g_scEditC, EDITBOX_SKILLCHAIN, ux, uy, snap(uw), snap(uh), ui_config().scScale, tx, ty, 0);
+                px = ux - dx; py = uy - dy;
+                const int an = C.boxGrow[UiConfig::GB_SC];
+                ui_config().scX = (px + (an == 1 ? cw * 0.5f : an == 2 ? cw : 0.0f)) / screenW; ui_config().scY = py / screenH;
+                if (wasDrag && !g_scEditC.dragging) save_ui_config();   // box_edit saved before the sphere's place was written back
+            } else { box_on_screen(f, ux, uy, uw, uh); px = ux - dx; py = uy - dy; }
+            L.CX = snap(px + cw * 0.5f); L.CY = snap(py + top);
+        }
+        sc_circle_draw(f, L);
+        return;
     }
 
     float sscl = C.scScale; if (sscl < 0.5f) sscl = 0.5f; if (sscl > 2.0f) sscl = 2.0f;

@@ -858,6 +858,7 @@ bool native_sub_pick(int entry);    // hover + event 5 (validate)
 // once per frame, MAIN thread (render6) : resolves, applies config changes, keeps records true. `inWorld` = a character
 // is logged in : at the title / char-select screens every native window stays (or goes back) where the client puts it.
 void native_ui_tick(bool inWorld);
+bool native_ui_slot_in_manager(unsigned slot);   // fm's structural proof : a real live-menu slot sits inside the menu manager
 void native_ui_shutdown();   // //unload : every record and every open window back where the client put it ; hooks removed
 // one line per fact for //aio doctor (state, what is applied, why it is inactive)
 int  native_ui_report(char out[][160], int maxOut);

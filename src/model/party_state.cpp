@@ -11,6 +11,7 @@
 #include "model/geo_state.h"   // geo_on_packet
 #include "model/paths.h"
 #include "model/spells_gen.h"
+#include "model/spell_elem_gen.h"      // spell_elem : a spell's element (the magic-burst popup's colour)
 #include "model/weapon_skills_gen.h"   // ws_info : WS/ability names for the target action bar (cat 7 "readies")
 #include "model/abilities_gen.h"       // abil_info : job-ability names (cat 7)
 #include "model/mobskills_gen.h"       // mobskill_info : MOB TP-move names (cat 7, ids >= 257)
@@ -1043,6 +1044,47 @@ void PartyState::act_hate_list(const unsigned char* p, int size, unsigned actor)
 }
 
 // opens/closes a resonance, and fires the weaponskill popup (which consumes the packet)
+// 0 not a magic-burst message ; 1 damage ; 2 drain (a number too) ; 3 an effect (no number). res action_messages.
+static int mb_msg_kind(unsigned m) {
+    switch (m) {
+    case 252: case 265: case 650: case 379: case 747: return 1;
+    case 274: case 275: case 748: case 749: case 750: case 751: case 752: case 753: case 803: return 2;
+    case 268: case 269: case 271: case 272: case 754: case 755: case 804: return 3;
+    }
+    return 0;
+}
+void PartyState::act_magic_burst(const unsigned char* p, int size, unsigned cat, unsigned actor) {
+    if (actor != selfId_ || !selfId_ || (size * 8) < 240) return;
+    if (cat != 3 && cat != 4 && cat != 6 && cat != 11 && cat != 13 && cat != 14 && cat != 15) return;
+    // walk EVERY target / action (the variable stride, as the WS damage sum does) : an AoE nuke bursts on several
+    u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
+    int off = 150, nMb = 0, kind = 0; u32 dmg = 0;
+    for (u32 t = 0; t < tc; ++t) {
+        if (off + 36 > size * 8) break;
+        unsigned ac = getbits(p, off + 32, 4, size); off += 36;
+        for (unsigned a = 0; a < ac; ++a) {
+            if (off + 86 > size * 8) { off = size * 8; break; }
+            const int k = mb_msg_kind(getbits(p, off + 44, 10, size));
+            if (k) { ++nMb; if (!kind || k < kind) kind = k; if (k <= 2) dmg += getbits(p, off + 27, 17, size); }
+            const unsigned hasAdd = getbits(p, off + 85, 1, size);
+            off += 86;
+            if (hasAdd) off += 37;
+            if (getbits(p, off, 1, size)) off += 35; else off += 1;
+        }
+    }
+    if (!nMb) return;
+    const u32 id = getbits(p, 86, 16, size);
+    const char* nm = 0; int el = -1;
+    if (cat == 4)      { const SpellRow* s = spell_info(id); nm = s ? s->en : 0; el = spell_elem(id); }
+    else if (cat == 3) { const WSRow* w = ws_info(id); nm = w ? w->en : 0; el = w ? w->elem : -1; }
+    else               { const AbilRow* a = abil_info(id); nm = a ? a->en : 0; }
+    if (!nm) nm = "Magic Burst";
+    int i = 0; for (; nm[i] && i < 39; ++i) mbPop_.name[i] = nm[i]; mbPop_.name[i] = 0;
+    mbPop_.dmg = (int)dmg; mbPop_.hasDmg = kind <= 2 ? 1 : 0; mbPop_.elem = (signed char)(el >= 0 && el <= 7 ? el : -1);
+    mbPop_.startMs = model_now_ms();
+    windower::debug::log("MBPOP cat=%u id=%u '%s' elem=%d targets=%d dmg=%u kind=%d", cat, id, nm, el, nMb, dmg, kind);   // the success path, logged (rule 10)
+}
+
 bool PartyState::act_skillchain(const unsigned char* p, int size, unsigned cat, unsigned actor) {
     // ---- SKILLCHAINS (module) : a WS (cat 3) / spell (cat 4) FINISH either OPENS a step-1 resonance (its own
     // skillchain property, from skillchain_gen) or, when the hit carries a skillchain ADDED EFFECT, CLOSES one
@@ -1989,6 +2031,7 @@ void PartyState::on_action(const unsigned char* p) {
     act_treasure_hunter(p, size, cat, actor);
     act_hate_list(p, size, actor);
     act_absorb_tp(p, size, cat, actor);   // the Absorb-TP box : before the skillchain early return, which can end the walk
+    act_magic_burst(p, size, cat, actor);                  // before the skillchain early return (a magical WS can burst AND pop)
     if (act_skillchain(p, size, cat, actor)) return;       // the weaponskill popup took this packet
     act_buff_attribution(p, size, cat, actor);
     act_song_tags(p, size, cat, actor);

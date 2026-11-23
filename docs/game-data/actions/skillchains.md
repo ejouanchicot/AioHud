@@ -119,6 +119,25 @@ multi-colour. Center-anchored, `EDITBOX_SKILLCHAIN`. Config module "Skillchains"
 (`sc_config.cpp`): Size + per-line Elements toggles + per-element Text
 (Title / Timer / Step / Property / List). Lines `sc=` / `sc2=` / `scText%d=`.
 
+**Two styles** (`scStyle`, Display's first row after Show) :
+- **Circle** (default, 2026-11-22) — the resonance SPHERE (`ui/sc_circle.h`, engine `ui/hud_scfx.cpp`, shared
+  with the `//aio scfx` dev demo). A lone move = a neutral grey sphere ; a formed chain = its own animation
+  (each property's identity : lava, electric shocks, air bursts, cut stone, water waves, freezing, collapse, light
+  lances, Lv.2/3 combinations), the scene bent behind it (one 512×512 `CopyRects` of the render target into a
+  `D3DPOOL_DEFAULT` texture, made at the first sight of a window, given back 5 s after its last use, forgotten on
+  device loss ; 3 failed tries -> OFF, logged, drawn waves instead). Centre : state, seconds, TP + gauge ; round
+  it the countdown arc and the burst-element icons ; above, the chain's name + level pips. The continuing moves
+  are ONE column split on an axis : the move | its level, skillchain name, burst elements — under / above / left /
+  right of the sphere. Animation clock = `now - Resonating::openMs` (when the closing move landed) ; a new
+  `target ^ openMs` restarts it.
+- **Classic** — the text box above.
+
+Circle settings, line `sc3=style,listScale,listPos,listOff,anim,distort,particles,reach` + `sclbox=` (the list's
+frame, a `BoxStyle`, default off = a faint wash). The `sc3=` / `sclbox=` parse is out-of-line (`parse_sc3_line`) :
+the load's else-if chain is at MSVC's nesting limit (C1061). Panel : Display (Style, Sphere size, List size, Grow) ·
+Frame (the list's) · Content (scope, List position, List distance) · Elements · **Animations** `[22]` (on/off,
+Scene distortion, Particles, Effect reach) · Text (Property = the list's skillchain names, WS list = its moves).
+
 ## See also
 - [Party cast bar — 0x028](../party/cast-bar.md) — the shared ActionPacket bit layout (this module reuses those offsets).
 - [Data channels](../../architecture/data-channels.md) — the packet-hook channel + the `get_abilities` memory read for prediction.

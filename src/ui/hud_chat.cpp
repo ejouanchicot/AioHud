@@ -1266,6 +1266,12 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
             lpH = snap(10.0f * S + lpz * 1.4f + 8.0f * S + lpBH + 10.0f * S);
             lpX = snap(g_lp.x - lpW * 0.5f); if (lpX + lpW > px + boxW - 4.0f * S) lpX = snap(px + boxW - 4.0f * S - lpW); if (lpX < px + 4.0f * S) lpX = snap(px + 4.0f * S);
             lpY = snap(g_lp.y - lpH - 8.0f * S); if (lpY < py + 4.0f * S) lpY = snap(g_lp.y + 14.0f * S);
+            if (f.screenW > 0.0f && f.screenH > 0.0f) {   // never off the screen either
+                if (lpY < 4.0f * S) lpY = snap(g_lp.y + 14.0f * S);
+                if (lpY + lpH > f.screenH - 4.0f * S) lpY = snap(f.screenH - 4.0f * S - lpH);
+                if (lpX + lpW > f.screenW - 4.0f * S) lpX = snap(f.screenW - 4.0f * S - lpW);
+                if (lpX < 4.0f * S) lpX = snap(4.0f * S);
+            }
             lpBY = snap(lpY + lpH - 10.0f * S - lpBH);
             lpB2 = snap(lpX + lpW - 10.0f * S - lpBW); lpB1 = snap(lpB2 - 8.0f * S - lpBW);
         }
@@ -1284,6 +1290,14 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
             cmW = snap(cmW); cmH = snap((float)cmN * cmIH + 8.0f * S);
             cmX = snap(g_cm.x); if (cmX + cmW > px + boxW - 4.0f * S) cmX = snap(px + boxW - 4.0f * S - cmW); if (cmX < px + 4.0f * S) cmX = snap(px + 4.0f * S);
             cmY = snap(g_cm.y); if (cmY + cmH > py + boxH - 4.0f * S) cmY = snap(g_cm.y - cmH); if (cmY < py + 4.0f * S) cmY = snap(py + 4.0f * S);
+            // ... and never off the SCREEN (a box near an edge, or partly off it : the menu's last rows -- Ban -- were out of reach)
+            if (f.screenW > 0.0f && f.screenH > 0.0f) {
+                if (cmY + cmH > f.screenH - 4.0f * S) cmY = snap(g_cm.y - cmH);
+                if (cmY + cmH > f.screenH - 4.0f * S) cmY = snap(f.screenH - 4.0f * S - cmH);
+                if (cmY < 4.0f * S) cmY = snap(4.0f * S);
+                if (cmX + cmW > f.screenW - 4.0f * S) cmX = snap(f.screenW - 4.0f * S - cmW);
+                if (cmX < 4.0f * S) cmX = snap(4.0f * S);
+            }
             if (canClick && (m->clicked || m->rightClicked)) {
                 const bool inM = m->x >= cmX && m->x < cmX + cmW && m->y >= cmY + 4.0f * S && m->y < cmY + cmH - 4.0f * S;
                 if (inM && m->clicked) {

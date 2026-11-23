@@ -27,6 +27,11 @@ void ConfigPage::draw_aw_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         const float top6_ = ry;
         cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
         ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.awShow)
+        { ROW_BAND(52.0f)   // the shape : the dial (the last cast in the middle, the casters round it) or the table
+            const char* ST[2] = { tr("Animated list", "Liste anim\xC3\xA9" "e"), tr("Table (classic)", "Tableau (classique)") };
+            const int st = c.awStyle == 1 ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Style", "Style"), ST[st])) c.awStyle = wrap(st + d, 2);
+        } ROW_NEXT(52.0f)
         { ROW_BAND(46.0f)   // Size
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.awScale * 100.0f + 0.5f));
             float v01 = (c.awScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
@@ -56,6 +61,39 @@ void ConfigPage::draw_aw_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     if (aF21_ > 0.0f) {
         const float top21_ = ry;
         cat_fold_clip(dev, hdrX, top21_, hdrW, catH_[21] * aF21_);
+        if (c.awStyle == 0) {
+            { ROW_BAND(52.0f)   // the beacon (the last cast / the warning) : on top, at the bottom, none
+                const char* LY[3] = { tr("Beacon on top", "Rep\xC3\xA8re en haut"), tr("Beacon at the bottom", "Rep\xC3\xA8re en bas"), tr("List only", "Liste seule") };
+                const int ly = (c.awLayout >= 0 && c.awLayout <= 2) ? c.awLayout : 0;
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Layout", "Disposition"), LY[ly])) c.awLayout = wrap(ly + d, 3);
+            } ROW_NEXT(52.0f)
+            { ROW_BAND(46.0f)   // the list's text
+                const float lo = 0.70f, hi = 1.60f; char b[16]; sprintf(b, "%d%%", (int)(c.awText * 100.0f + 0.5f));
+                float v01 = clampf((c.awText - lo) / (hi - lo), 0.0f, 1.0f);
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Text size", "Taille du texte"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.awText = v < lo ? lo : (v > hi ? hi : v); }
+            } ROW_NEXT(46.0f)
+            if (c.awLayout != 2) {
+                { ROW_BAND(46.0f)   // the beacon's orb
+                    const float lo = 0.60f, hi = 1.80f; char b[16]; sprintf(b, "%d%%", (int)(c.awOrb * 100.0f + 0.5f));
+                    float v01 = clampf((c.awOrb - lo) / (hi - lo), 0.0f, 1.0f);
+                    if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Orb size", "Taille de l'orbe"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.awOrb = v < lo ? lo : (v > hi ? hi : v); }
+                } ROW_NEXT(46.0f)
+            }
+            { ROW_BAND(52.0f)   // the job badges
+                const char* JB[3] = { tr("None", "Aucun"), tr("Job", "Job"), tr("Initials", "Initiales") };
+                const int jb = (c.awJobs >= 0 && c.awJobs <= 2) ? c.awJobs : 1;
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Badges", "Badges"), JB[jb])) c.awJobs = wrap(jb + d, 3);
+            } ROW_NEXT(52.0f)
+            if (c.awJobs) {
+                { ROW_BAND(46.0f)
+                    const float lo = 0.70f, hi = 1.60f; char b[16]; sprintf(b, "%d%%", (int)(c.awBadge * 100.0f + 0.5f));
+                    float v01 = clampf((c.awBadge - lo) / (hi - lo), 0.0f, 1.0f);
+                    if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Badge size", "Taille des badges"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.awBadge = v < lo ? lo : (v > hi ? hi : v); }
+                } ROW_NEXT(46.0f)
+            }
+            ROW_TOGGLE(CTRL_ID, tr("Absorb animation", "Animation d'absorption"), c.awFx)
+            if (c.awFx) { ROW_TOGGLE(CTRL_ID, tr("Scene distortion", "D\xC3\xA9" "formation du d\xC3\xA9" "cor"), c.awDistort) }
+        }
         ROW_TOGGLE(CTRL_ID, tr("Colour the TP", "Couleur des TP"), c.awColors)       // white / green / yellow / orange / red ; blue = nothing drained
         ROW_TOGGLE(CTRL_ID, tr("Time since", "Temps \xC3\xA9""coul\xC3\xA9"), c.awTimer)
         ROW_TOGGLE(CTRL_ID, tr("Absorb count", "Nombre d'Absorb"), c.awCount)

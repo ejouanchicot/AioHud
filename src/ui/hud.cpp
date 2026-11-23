@@ -271,7 +271,7 @@ void Hud::render(u32 dev) {
         smnArt_ = 0; smnArtR_ = {}; smnArtKey_[0] = 0;                                        // the SMN content's avatar picture
         // The Help SAMPLES keep their own lazy copies at file scope in their hud_*.cpp -- unreachable from here
         // otherwise, so they used to survive a device recreate and hand a dead device's texture to SetTexture.
-        zonetracker_help_forget(); treasure_help_forget(); chat_icons_forget(); npc_card_forget();   // (the debuffs / timers Help samples borrow the shared atlas forgotten just above)
+        zonetracker_help_forget(); treasure_help_forget(); chat_icons_forget(); npc_card_forget(); scfx_forget();   // (the debuffs / timers Help samples borrow the shared atlas forgotten just above)
         box_skins_forget();        // per-box Custom->FFXI skins belong to the old device too
         theme_kit_forget();        // the painted theme kits too
         pointer_atlas_forget();    // the cursor-style sheet (party_gauges.cpp) : forget, re-arm its retry
@@ -447,6 +447,7 @@ void Hud::render(u32 dev) {
         for (size_t i = 0; i < widgets_.size(); ++i)   // hand the Help the party's selection-hand texture (for its live cursor sample)
             if (strcmp(widgets_[i]->type_name(), "PartyList") == 0 && static_cast<Party*>(widgets_[i])->tier() == 0) { config_.set_help_cursor_tex(static_cast<Party*>(widgets_[i])->cursor_tex()); actmenu_set_hand_tex(static_cast<Party*>(widgets_[i])->cursor_tex()); break; }
         if (!hideHud) {   // Rules mode / End-peek hide the WHOLE HUD (like the widget loop above) -- these boxes must depop too
+            scfx_draw(f, (float)screenW_, (float)screenH_);   // //aio scfx : the resonance-circle demo (off unless asked)
             draw_skillchains(f);                    // skillchains box (target's active chain) -- placed via //aio edit
             draw_treasure_pool(f);                  // treasure pool box (lottery items) -- placed via //aio edit
             draw_hate_list(f);                      // hate list box (mobs aggro'd on the party) -- placed via //aio edit
@@ -942,7 +943,7 @@ void Hud::dispose() {
     for (int i = 0; i < 3; ++i) if (bstEco_[i]) { release_texture(bstEco_[i]); bstEco_[i] = 0; }   // BST box : the family icons
     for (int i = 0; i < GEO_TEX_N; ++i) if (geoTex_[i]) { release_texture(geoTex_[i]); geoTex_[i] = 0; }   // GEO content : its images
     if (smnArt_)    { release_texture(smnArt_);    smnArt_ = 0; }      // SMN content : the avatar picture
-    zonetracker_help_dispose(); treasure_help_dispose(); chat_icons_dispose(); npc_card_dispose();   // the module-owned Help samples (file-static, not members) -- symmetric with the forget block in render()
+    zonetracker_help_dispose(); treasure_help_dispose(); chat_icons_dispose(); npc_card_dispose(); scfx_dispose();   // the module-owned Help samples (file-static, not members) -- symmetric with the forget block in render()
     corner_mask_dispose();   // the baked corner-mask atlas (the ONLY Release of it)
     config_.dispose();   // Release the ConfigPage's owned Help/preview textures (zone map, logo, atlases) -- else they leak per //unload
 }

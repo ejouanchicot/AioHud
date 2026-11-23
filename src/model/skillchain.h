@@ -144,6 +144,8 @@ inline bool sc_is_weaponskill_msg(unsigned m) { return m == 185; }
 // per-action property lookup (weapon skill / spell / mob TP / job ability / SCH element) -> the generated row, or 0.
 enum SCResource { SCR_WS = 0, SCR_SPELL, SCR_MOB, SCR_JA, SCR_ELEM };
 const SkillRow* sc_skill_lookup(int resource, unsigned id);
+// the weapon types a main job wields (bit = res skill id : 1 H2H .. 12 Staff, 25 Archery, 26 Marksmanship) ; 0 unknown
+unsigned sc_job_weapon_mask(int job);
 
 // the Aeonic-weapon idx for an equipped item id (SC_AEONIC_ITEMS), or -1 if that item is not an Aeonic. A WS whose
 // SkillRow.weapon == this idx gains its aeonic opening property while you wield it (see the Phase-2 continuation list).

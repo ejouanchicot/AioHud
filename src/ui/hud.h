@@ -39,6 +39,9 @@ bool currencies_key(int dik, unsigned ch, bool pressed, bool mod);
 bool trade_key(int dik, unsigned ch, bool pressed, bool mod);
 // //aio eqpreview : the Equipment screen shows every state a cell / a list row can take (a visual check) ; returns the new state
 bool equip_preview_toggle();
+bool scfx_toggle(const char* arg, char* msg, int cap);   // //aio scfx <prop> [scale] (dev) : the skillchain resonance-circle demo, looping ; off = stop
+void scfx_draw(const Frame& f, float screenW, float screenH);
+void scfx_forget(); void scfx_dispose();
 bool buff_preview_toggle();    // //aio buffpreview (dev) : 32 fake buffs in place of yours, under the top bar
 bool net_preview_toggle();     // //aio netpreview (dev) : the connection box shows every state it can (mail, GM, the 4 bands)
 // //aio kittest (dev build) : the painted theme kit (Eclat de Holla), one trial party box -- theme_kit.cpp ; returns the new state

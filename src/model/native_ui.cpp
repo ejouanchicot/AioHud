@@ -1197,9 +1197,29 @@ u32 aob_unique(const unsigned char* P, int n, int wlo, int whi) {
     return hits == 1 ? at : 0;
 }
 
+bool manager_ok(u32 mgr);
+// The manager is a STATIC object of the client (FFXiMain's image) : once proven it does not move for the session.
+// fm's live-menu slot can be swapped under us for a decoy that also showed "two different menu names" (2026-11-23 :
+// +0x622A44 -> +0x622AB0 'newt'/'menu', and -> +0x623988 'usta'/'ytop') ; slot - 0x54 is then no manager at all and
+// EVERY native-UI write stopped -- the shutdown restore included, which left the windows parked off-screen (the
+// auction house "no longer popped" in the next sessions). So : a derived address is used only once PROVEN, and the
+// last proven one is kept while the slot is wrong.
+u32 g_mgrGood = 0, g_mgrBad = 0;
 u32 manager() {
     const u32 slot = fm_addr(FM_MENU_PTR);
-    return slot ? slot - MGR_BEFORE_MENU_SLOT : 0;
+    const u32 m = slot ? slot - MGR_BEFORE_MENU_SLOT : 0;
+    if (!m) return g_mgrGood;
+    if (m == g_mgrGood) return m;
+    if (m != g_mgrBad) {
+        if (manager_ok(m)) {
+            if (g_mgrGood) windower::debug::log("NATIVEUI manager moved : %08X -> %08X (proven)", g_mgrGood, m);
+            g_mgrGood = m; g_mgrBad = 0; return m;
+        }
+        g_mgrBad = m;
+        windower::debug::log("NATIVEUI manager derived from the live-menu slot (%08X) is NOT a manager -- %s", m,
+                             g_mgrGood ? "keeping the last proven one" : "none proven yet");
+    }
+    return g_mgrGood ? g_mgrGood : m;
 }
 // the manager is PROVEN, not assumed : its definition list must hold real menu definitions
 bool manager_ok(u32 mgr) {
@@ -5422,8 +5442,14 @@ void native_ui_shutdown() {
     if (!g_anyApplied && !g_hkMove.on) return;
     apply(true);              // records back, open windows back by their delta, hook removed, undo file deleted
     hook_remove();
-    windower::debug::log("NATIVEUI shutdown : every native window restored");
+    // SAY WHAT HAPPENED, not what was meant to : apply() returns early when no manager is proven, and this line used to
+    // claim a restore that never ran (the windows then stayed parked until the next load's recovery).
+    if (g_anyApplied) windower::debug::log("NATIVEUI shutdown : restore FAILED (no proven menu manager) -- the client's windows stay moved ; the undo file stays, the next load puts them back");
+    else              windower::debug::log("NATIVEUI shutdown : every native window restored");
 }
+// The live-menu slot's structural proof, for fm's candidate sweep : the FOCUSED-menu slot lives inside the menu
+// manager, so a real one sits MGR_BEFORE_MENU_SLOT after a definition list of real menus. A decoy slot cannot.
+bool native_ui_slot_in_manager(u32 slot) { return slot > MGR_BEFORE_MENU_SLOT && manager_ok(slot - MGR_BEFORE_MENU_SLOT); }
 
 // The client's chat INPUT text, read the way its own draw reads it (FUN_054F95A0, inline handler vtable slot 4) :
 // (*(handler+0x1C))->vtbl[4](buf, 0x168) on an "FsTextInput" object, thiscall, returns the length. The text carries

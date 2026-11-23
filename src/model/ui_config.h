@@ -85,6 +85,7 @@ struct BoxStyle {
     float    lum       = 0.0f;   // own luminosity  (-1 darker .. +1 lighter)
     unsigned hue       = 0;      // own custom hue  (0 = the theme's preset colour)
 };
+inline BoxStyle box_style_off() { BoxStyle b; b.on = 0; return b; }   // a box that starts WITHOUT chrome (the content floats)
 
 struct UiConfig {
     // ---- Party / Alliance ----
@@ -304,6 +305,43 @@ struct UiConfig {
                                //   SCs) ; 0 = STRICT, only your current cursor target <t>'s chain (nothing while you
                                //   target nothing / an ally, even if engaged)
     TextStyle scText[SC_TE_COUNT];   // per-element typography : [SC_TITLE] [SC_TIMER] [SC_STEP] [SC_PROP] [SC_LIST]
+    // the CIRCLE style (the default, ui/sc_circle.h) : the resonance sphere + the moves that continue the chain beside it.
+    // scScale is the sphere's size ; Title / Timer / Property / WS list text elements = its title, centre, the list's
+    // skillchain names and move names ; scProps = the burst-element icons round it ; scStep is the Classic box's only.
+    int   scStyle     = 0;      // 0 = Circle ; 1 = Classic (the text box)
+    float scListScale = 1.0f;   // the list's size, apart from the sphere's : 0.5 .. 2.0
+    int   scListPos   = 0;      // where the list sits : 0 under the sphere, 1 above, 2 left, 3 right
+    float scListOff   = 0.0f;   // extra distance from the sphere to the list (design px, scaled with the sphere) : -200 .. 80 (< 0 : pulled in, over the sphere)
+    int   scAnim      = 1;      // the animations at all (0 = a still sphere, the cheapest)
+    int   scDistort   = 1;      // the scene bent behind it (one 512x512 screen copy a frame while a chain shows)
+    float scParticles = 1.0f;   // particle density : 0 none .. 1 full
+    float scReach     = 0.65f;  // how far the effects spread round the sphere : 0.3 .. 1.0
+    int   scPreview   = 11;     // TRANSIENT (never saved) : the config / Help preview's sample -- -1 a lone move, else the SCP_* (11 = Fusion)
+    int   scArcade = 1;         // the Circle : YOUR weaponskill bursts out of the sphere, arcade style (name + damage) -- the Arcade WS module stays on its own
+    int   scMbFx = 1;           // the Circle : YOUR magic burst, in the colour of the element that burst (move + damage)
+    // the Circle's HIT popup (your WS arcade / your magic burst) : its own settings, the Arcade WS module keeps its own
+    int   scHitFx = 1;          // impact effects (flash, shockwaves, light spokes, the burst beam)
+    float scHitScale = 1.0f;    // its text size (0.5 .. 2)
+    float scHitNameY = 0.0f;    // the name / "MAGIC BURST" line : > 0 higher, < 0 lower (-80 .. 80, sphere units)
+    float scHitDmgY = 0.0f;     // the damage line, the same way
+    int   scMbLabel = 1;        // the "MAGIC BURST" line
+    int   scMbName = 1;         // the burst's move name (under the damage)
+    int   scHitPos = 0;         // where : 0 auto (the side the list leaves free), 1 above, 2 under, 3 left, 4 right
+    float scHitX = 0.0f;        // the whole popup moved : > 0 right (-200 .. 200, sphere units)
+    float scHitY = 0.0f;        // ... > 0 higher
+    int   scHitStyle = 0;       // the text's look : 0 Versus, 1 Comic, 2 Impact, 3 Critical (fighting-game styles)
+    int   scHitFont = 0;        // font face index (ui_font_face ; drawn heavy)
+    unsigned scHitNameCol = 0xFFFFA518u;   // the WS name
+    unsigned scHitDmgCol1 = 0xFFFFF024u;   // the WS damage flashes A <-> B (a burst's damage : its element's colour)
+    unsigned scHitDmgCol2 = 0xFFFF5A0Au;
+    int   scListCols = 0;       // the list's columns (Cards / Tree / Grouped) : 0 auto, 1 .. 4
+    int   scListElem = 1;       // the element icons IN THE LIST (every style) : 0 off, to save room
+    float scListIcon = 1.0f;     // the list's element icons (0.5 .. 2), every list style
+    float scCardScale = 1.0f;    // the Cards style : card size / padding (0.6 .. 1.6) ; its text follows the Text section
+    int   scWsScope = 0;        // which moves the continuation list scans : 0 your weapon (the WS usable now), 1 every weapon your main job wields
+    int   scListStyle = 0;      // the list's shape : 0 rows (move | skillchain), 1 tree, 2 cards, 3 grouped by skillchain
+    float scTitleOff  = 0.0f;   // the title moved up (> 0) or down (< 0, over the sphere if wanted) : -120 .. 80 design px
+    BoxStyle scListBox = box_style_off();   // the list's frame (default : none -- a faint wash under it)
     // ---- Game UI : the CLIENT's own windows (model/native_ui.h). Everything off = the client untouched. ----
     int   nuHide   = 0;        // NativeUiBits mask : party, alliance, chat, help bar, MP-cost case parked off-screen
     int   nuMenuDx = 0;        // the client's MENUS (main menu, sub-menus, lists, panels) moved by this many screen px
@@ -381,6 +419,15 @@ struct UiConfig {
     int   awColors = 1;        // colour the TP by amount (white / green / yellow / orange / red ; blue = drained nothing)
     int   awCount  = 1;        // show how many Absorb-TP that caster landed in the memory window
     int   awTimer  = 1;        // show the time since their last one
+    int   awStyle  = 0;        // 0 the DIAL (the last cast in the middle, the casters round it in rotation order), 1 the table (classic)
+    int   awSide   = 0;        // the dial's casters : 0 both sides, 1 all left, 2 all right
+    int   awFx     = 1;        // the dial : the absorb animation (matter drawn in, the shockwave closing)
+    int   awDistort = 1;       // ... and the scene bent into the dial (DX8 render-target copy)
+    int   awJobs   = 1;        // the animated list : each caster's job badge (0 none, 1 the job, 2 the initials)
+    float awBadge  = 1.0f;     // ... its size (0.7 .. 1.6)
+    int   awLayout = 0;        // ... the beacon (the last cast / the warning) : 0 on top, 1 at the bottom, 2 none
+    float awText   = 1.0f;     // ... its text size (0.7 .. 1.6)
+    float awOrb    = 1.0f;     // ... the beacon's orb size (0.6 .. 1.8)
 
     int   pwShow  = 1;         // show the PointWatch box (XP / CP / ML + Merits)
     float pwScale = 1.0f;      // size multiplier (0.5 .. 2.0)

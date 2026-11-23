@@ -75,6 +75,7 @@ GENERATORS = [
     ('gen_tb_debuffs.py',    ['tb_debuff_gen.h'], 'stdout', [('addons', 'AioHUD/vendor/targetbar/tb_spells.lua')]),
     ('gen_trusts.py',        ['trusts_gen.h'], 'file', [('res', 'spells.lua'), ('repo', 'src/model/trusts_gen.h')]),
     ('gen_ws.py',            ['weapon_skills_gen.h'], 'file', [('res', 'weapon_skills.lua')]),
+    ('gen_spell_elem.py',    ['spell_elem_gen.h'], 'file', [('res', 'spells.lua')]),
     ('gen_mounts.py',        ['mounts_gen.h'], 'file', [('res', 'mounts.lua')]),
 ]
 
