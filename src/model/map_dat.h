@@ -53,6 +53,7 @@ void dat_free_file(unsigned char* buf);
 // 0 when the sheet / sprite / its font is missing (the caller keeps its text label).
 struct MenuLabel { int w, h; const u32* px; int ox, oy; };   // ox, oy : the letters' top-left in the sprite's own space
 bool menu_dat_load(int lang);
+void menu_dat_free();   // the plugin's unload : the DAT buffer, its decoded textures, the baked labels
 const MenuLabel* menu_label(const char* sheet16, unsigned sprite);
 // a window's FRAME sprite (its definition's first ref, state 0, in "menu    windowps" -- the panels whose static texts
 // are letters : Config's screens) ; false when it has none (a plain frame : comwin / frames)

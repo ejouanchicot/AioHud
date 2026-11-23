@@ -380,17 +380,24 @@ MdTex* md_tex(const char* name16) {
 }
 } // namespace
 
+// the whole menu DAT (~4.5 MB, one VirtualAlloc-sized heap block) + its decoded font textures + the baked labels.
+// Called at a reload of another language AND at the plugin's unload : until 2026-11-23 nothing freed it at the unload,
+// and every //unload + //load left the 4.5 MB block behind (VMDIFF : one NEW ~4500 KB private base per reload).
+void menu_dat_free() {
+    if (g_md) { dat_free_file(g_md); g_md = 0; g_mdN = 0; }
+    for (int i = 0; i < g_mdSheets; ++i) { delete[] g_mdSheet[i].spr; g_mdSheet[i].spr = 0; }
+    for (int i = 0; i < g_mdTexN; ++i) { delete[] g_mdTex[i].px; g_mdTex[i].px = 0; }
+    for (int i = 0; i < g_mdLabN; ++i) { delete[] g_mdLab[i].L.px; g_mdLab[i].L.px = 0; }
+    g_mdSheets = g_mdTexN = g_mdLabN = 0; g_mdOk = false; g_mdLang = -1;
+}
+
 bool menu_dat_load(int lang) {
     static const unsigned IDS[4] = { 39532, 39542, 55746, 56166 };
     if (lang < 0 || lang > 3) return false;
     if (g_mdOk && g_mdLang == lang) return true;
     if (g_mdTries >= 6 || (g_mdTries && (int)(GetTickCount() - g_mdNext) < 0)) return false;
     ++g_mdTries; g_mdNext = GetTickCount() + 10000;
-    if (g_md) { dat_free_file(g_md); g_md = 0; g_mdN = 0; }
-    for (int i = 0; i < g_mdSheets; ++i) { delete[] g_mdSheet[i].spr; g_mdSheet[i].spr = 0; }
-    for (int i = 0; i < g_mdTexN; ++i) { delete[] g_mdTex[i].px; g_mdTex[i].px = 0; }
-    for (int i = 0; i < g_mdLabN; ++i) { delete[] g_mdLab[i].L.px; g_mdLab[i].L.px = 0; }
-    g_mdSheets = g_mdTexN = g_mdLabN = 0; g_mdOk = false;
+    menu_dat_free();
     char path[MAX_PATH] = "";
     if (!dat_resolve_path(IDS[lang], path, sizeof(path))) { windower::debug::log("MENUDAT lang %d : file %u NOT resolved (try %d)", lang, IDS[lang], g_mdTries); return false; }
     g_md = dat_read_file(path, g_mdN);
