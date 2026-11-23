@@ -49,6 +49,7 @@ namespace aio { extern bool g_facingProbe; }   // ui/hud.cpp : the //aio facing 
 #include <time.h>
 #include <windows.h>
 #include <locale.h>
+#include <tlhelp32.h>   // the thread count of log_vm
 
 // build.bat always passes /DAIOHUD_VERSION, but the fallback used to sit ~400 lines BELOW the first use of the
 // macro -- so a build that did not define it failed at the use site with a confusing error instead of falling
@@ -236,10 +237,26 @@ static void log_vm(const char* when) {
     const bool havePriv = gpmi && gpmi(GetCurrentProcess(), &pmc, sizeof(pmc));
     debug::log("VMEM %-14s used %u / %u MB, largest free block %u MB (%u free blocks), private %u MB",
                when, usedMB, totMB, (unsigned)(largest >> 20), (unsigned)freeN, havePriv ? (unsigned)(pmc.priv >> 20) : 0u);
+    // the kernel / GDI / USER objects and the threads : a leaked thread keeps a 1 MB stack reservation, a leaked
+    // handle or GDI object is the other per-reload residue address space alone does not name (2026-11-23)
+    {
+        DWORD handles = 0; GetProcessHandleCount(GetCurrentProcess(), &handles);
+        const DWORD gdi = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS), usr = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
+        unsigned threads = 0; const DWORD pid = GetCurrentProcessId();
+        HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if (snap != INVALID_HANDLE_VALUE) {
+            THREADENTRY32 te; te.dwSize = sizeof(te);
+            for (BOOL ok = Thread32First(snap, &te); ok; ok = Thread32Next(snap, &te)) if (te.th32OwnerProcessID == pid) ++threads;
+            CloseHandle(snap);
+        }
+        debug::log("VMEM %-14s objects : %lu handles, %lu GDI, %lu USER, %u threads", when, handles, gdi, usr, threads);
+    }
     // WHERE it grows (2026-11-17 : textures all released, still ~17 MB lost per reload) : the busy bytes of the
     // process heap (where our HeapAlloc AND the static CRT's malloc/new land) vs every other heap (drivers, d3d).
-    // Load / unload only -- a heap walk is not a per-2-min cost.
-    if (when[0] == 'e') return;
+    // On demand only (//aio vmem) : the walk holds the game's heap lock over ~2-3 M blocks, ~110-140 ms each time --
+    // at load + twice at the unload it was ~80 % of the "heavy" reload measured on 2026-11-23.
+    if (strncmp(when, "mark", 4) != 0) return;
+    const DWORD tWalk = GetTickCount();   // the walk holds each heap's lock : ~3 M blocks in the game's heap, so it is TIMED
     HANDLE heaps[64]; const DWORD nh = GetProcessHeaps(64, heaps);
     unsigned long long procB = 0, otherB = 0; unsigned procN = 0;
     for (DWORD i = 0; i < nh && i < 64; ++i) {
@@ -249,12 +266,68 @@ static void log_vm(const char* when) {
         HeapUnlock(heaps[i]);
         if (heaps[i] == GetProcessHeap()) { procB = b; procN = n; } else otherB += b;
     }
-    debug::log("VMEM %-14s heaps : process heap %u MB in use (%u blocks), %u other heap(s) %u MB",
-               when, (unsigned)(procB >> 20), procN, (unsigned)nh - 1, (unsigned)(otherB >> 20));
+    debug::log("VMEM %-14s heaps : process heap %u MB in use (%u blocks), %u other heap(s) %u MB -- walk %u ms",
+               when, (unsigned)(procB >> 20), procN, (unsigned)nh - 1, (unsigned)(otherB >> 20), (unsigned)(GetTickCount() - tWalk));
 }
+
+static double qpc_ms() { LARGE_INTEGER f, c; QueryPerformanceFrequency(&f); QueryPerformanceCounter(&c); return (double)c.QuadPart * 1000.0 / (double)f.QuadPart; }
+
+// ADDRESS-SPACE MAP DIFF (2026-11-23 : ~4 MB of address space stays per //unload + //load, handles / GDI / threads
+// flat, textures all released). The map is summed per ALLOCATION BASE at load ; at the unload, every base that is
+// new or grew is listed with its type, so the residue is NAMED (a heap segment, a VirtualAlloc block, a stack, a DLL).
+namespace {
+struct VmBase { u32 base, bytes, type, state; };
+const int VMB_MAX = 8192;
+VmBase g_vmLoad[VMB_MAX]; int g_vmLoadN = 0;
+int vm_map(VmBase* out, int cap) {
+    int n = 0; MEMORY_BASIC_INFORMATION mbi; unsigned char* p = 0;
+    while (VirtualQuery(p, &mbi, sizeof(mbi)) == sizeof(mbi)) {
+        if (mbi.State != MEM_FREE) {
+            const u32 b = (u32)mbi.AllocationBase;
+            if (n && out[n - 1].base == b) { out[n - 1].bytes += (u32)mbi.RegionSize; out[n - 1].state |= mbi.State; }
+            else if (n < cap) { out[n].base = b; out[n].bytes = (u32)mbi.RegionSize; out[n].type = mbi.Type; out[n].state = mbi.State; ++n; }
+        }
+        unsigned char* nx = (unsigned char*)mbi.BaseAddress + mbi.RegionSize;
+        if (nx <= p) break;
+        p = nx;
+    }
+    return n;
+}
+const char* vm_type(u32 t) { return t == MEM_IMAGE ? "image" : t == MEM_MAPPED ? "mapped" : "private"; }
+void vm_diff_log() {
+    static VmBase now[VMB_MAX];
+    const int n = vm_map(now, VMB_MAX);
+    // both lists are in address order : one merge pass
+    unsigned long long grew = 0, gone = 0; int newN = 0, goneN = 0, logged = 0;
+    struct Top { u32 base, delta, type, state; bool fresh; } top[16]; int topN = 0;
+    int i = 0, j = 0;
+    while (i < g_vmLoadN || j < n) {
+        if (j >= n || (i < g_vmLoadN && g_vmLoad[i].base < now[j].base)) { gone += g_vmLoad[i].bytes; ++goneN; ++i; continue; }
+        const bool fresh = i >= g_vmLoadN || now[j].base < g_vmLoad[i].base;
+        const u32 before = fresh ? 0 : g_vmLoad[i].bytes;
+        if (now[j].bytes > before) {
+            const u32 d = now[j].bytes - before; grew += d; if (fresh) ++newN;
+            int k = topN < 16 ? topN++ : (top[15].delta < d ? 15 : -1);   // keep the 16 largest, sorted
+            if (k >= 0) { top[k].base = now[j].base; top[k].delta = d; top[k].type = now[j].type; top[k].state = now[j].state; top[k].fresh = fresh;
+                          while (k > 0 && top[k - 1].delta < top[k].delta) { Top t = top[k]; top[k] = top[k - 1]; top[k - 1] = t; --k; } }
+        } else if (now[j].bytes < before) gone += before - now[j].bytes;
+        if (!fresh) ++i;
+        ++j;
+    }
+    windower::debug::log("VMDIFF load -> unload after : +%u KB in %d new + grown base(s), -%u KB in %d gone / shrunk (%d bases at load, %d now)",
+                         (unsigned)(grew >> 10), newN, (unsigned)(gone >> 10), goneN, g_vmLoadN, n);
+    for (int k = 0; k < topN && logged < 16; ++k, ++logged) {
+        char mod[MAX_PATH] = "";
+        if (top[k].type == MEM_IMAGE) { GetModuleFileNameA((HMODULE)top[k].base, mod, MAX_PATH); const char* sl = strrchr(mod, '\\'); if (sl) memmove(mod, sl + 1, strlen(sl)); }
+        windower::debug::log("VMDIFF   %s 0x%08X +%6u KB  %-7s %s%s %s", top[k].fresh ? "NEW " : "GREW", top[k].base, top[k].delta >> 10, vm_type(top[k].type),
+                             (top[k].state & MEM_COMMIT) ? "commit" : "", (top[k].state & MEM_RESERVE) ? "+reserve" : "", mod);
+    }
+}
+} // namespace
 
 void aio_plugin_init(PluginManager host)
 {
+    const double t0 = qpc_ms();   // LOAD took N ms (2026-11-23 : "load/unload feel heavy" was never measured)
     g_host = host;
     tid_once("init");
     setlocale(LC_NUMERIC, "C");         // dot decimals for ALL our float I/O (config.txt + layout.json strtod) whatever
@@ -265,6 +338,7 @@ void aio_plugin_init(PluginManager host)
     debug::begin_session(AIOHUD_VERSION);   // was debug::clear() -- a //unload + //load (or an updater pass) then destroyed the capture of whatever you were chasing. Appends a version+timestamp banner, rotates once past ~4 MB.
     debug::log("AioHUD init: device = 0x%08X", host.service_raw(2));
     log_vm("load");
+    g_vmLoadN = vm_map(g_vmLoad, VMB_MAX);
     aio::load_ui_config();             // restore saved theme / font / box positions + sizes
     // NOT party().load() here : the roster cache is per character now, and nothing is logged in at init -- loading
     // blind is exactly what drew another character's party on your screen at the character-select screen. The load
@@ -283,6 +357,7 @@ void aio_plugin_init(PluginManager host)
     g_hud.apply_layout(LAYOUT_PATH());   // place widgets from the descriptor (keeps defaults if absent)
     char banner[128]; _snprintf(banner, sizeof(banner), ">>> AioHUD v%s by ejouanchicot  --  //aio config <<<", AIOHUD_VERSION); banner[sizeof(banner) - 1] = 0;
     host.console().print(banner);   // user-facing load line : credits the author + points at the config (the //aio hp/mp/tp fill commands still work, just no longer advertised here)
+    debug::log("LOAD took %d ms (init only -- textures, fonts and the chat seed come on the first frames)", (int)(qpc_ms() - t0));
 }
 
 void aio_plugin_render()      // slot 5 : unused by the HUD (we draw on slot 6, like FFXIDB)
@@ -955,6 +1030,7 @@ void native_ui_fault(const char* where)
 void aio_plugin_unload()
 {
     tid_once("unload");   // the thread the relay's removal really runs on (aio_subclass_remove assumes: any)
+    const double t0 = qpc_ms();
     aio_subclass_remove();   // MUST come first : a WndProc pointing into a freed DLL crashes the client
     // the same for our JMP into the client's move-to function -- and every native window goes back where it was
     __try { aio::native_ui_shutdown(); } __except (EXCEPTION_EXECUTE_HANDLER) { native_ui_fault("shutdown"); }
@@ -972,10 +1048,14 @@ void aio_plugin_unload()
 
     log_vm("unload before");
     aio::texture_ledger_report("before dispose");
+    const double tDisp0 = qpc_ms();
     g_hud.dispose();
     aio::menu_dat_free();   // the menu DAT (~4.5 MB) + its decoded fonts : left behind at every reload until 2026-11-23
+    const double tDisp1 = qpc_ms();
     log_vm("unload after");
     aio::texture_ledger_report("unload after");
+    debug::log("UNLOAD took %d ms (dispose %d ms)", (int)(qpc_ms() - t0), (int)(tDisp1 - tDisp0));
+    vm_diff_log();
 }
 
 // Launch the updater PowerShell script WITH NO WINDOW (native CreateProcess + CREATE_NO_WINDOW -- a Lua-spawned
@@ -1122,6 +1202,20 @@ static void aio_command_dispatch(const char* cmd)
 
     // ---- VERBS FIRST. Commands whose argument is free text (a name, a spell), matched on the command word itself,
     //      before any branch below searches the whole buffer for a substring (see aio_verb).
+    if (const char* vmRest = aio_verb(buf, "vmem")) {   // //aio vmem [tag] -> one VMEM snapshot NOW, tagged : the bracket of an A/B
+        // (2026-11-23 : ~7.6 MB stays per reload -- is it AioHUD or GearSwap ? //aio vmem a ; 10x //gs reload ; //aio vmem b)
+        const char* tag = vmRest; while (*tag == ' ' || *tag == '\t') ++tag;
+        char when[24]; _snprintf(when, sizeof(when), "mark %s", tag); when[sizeof(when) - 1] = 0;
+        log_vm(when);
+        MEMORYSTATUSEX ms; ms.dwLength = sizeof(ms);
+        if (GlobalMemoryStatusEx(&ms)) {
+            char line[160];
+            _snprintf(line, sizeof(line), aio::tr(">>> AioHud vmem %s : %u MB used / %u, logged to aiohud_debug.log <<<", ">>> AioHud vmem %s : %u Mo utilises / %u, note dans aiohud_debug.log <<<"),
+                      tag, (unsigned)((ms.ullTotalVirtual - ms.ullAvailVirtual) >> 20), (unsigned)(ms.ullTotalVirtual >> 20));
+            line[sizeof(line) - 1] = 0; g_host.console().print(line);
+        }
+        return;
+    }
     // //aio out <n|name|spell|alerts|all|list> -- forget a buff we are watching on someone. The case it exists for: you Haste the wrong name,
     // and from then on AioHUD believes that person is supposed to have Haste, and says so in red when it ends.
     // Nothing at cast time can tell a mistake from an intention, so the correction has to be a person's, and it
