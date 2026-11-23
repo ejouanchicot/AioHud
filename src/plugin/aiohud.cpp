@@ -329,6 +329,9 @@ void aio_plugin_init(PluginManager host)
 {
     const double t0 = qpc_ms();   // LOAD took N ms (2026-11-23 : "load/unload feel heavy" was never measured)
     g_host = host;
+#ifdef AIOHUD_DEVTOOLS
+    aio::devtools::heap_trap_init(aio::plugin_path_r("data\\heaptrap.txt"));   // dev : //aio heap trap, armed before anything allocates
+#endif
     tid_once("init");
     setlocale(LC_NUMERIC, "C");         // dot decimals for ALL our float I/O (config.txt + layout.json strtod) whatever
                                         // the OS locale -- a comma-locale (French-Canadian, French, German...) would
@@ -339,6 +342,9 @@ void aio_plugin_init(PluginManager host)
     debug::log("AioHUD init: device = 0x%08X", host.service_raw(2));
     log_vm("load");
     g_vmLoadN = vm_map(g_vmLoad, VMB_MAX);
+#ifdef AIOHUD_DEVTOOLS
+    aio::devtools::alloc_report("load");   // the static constructors' blocks : the baseline of the unload's report
+#endif
     aio::load_ui_config();             // restore saved theme / font / box positions + sizes
     // NOT party().load() here : the roster cache is per character now, and nothing is logged in at init -- loading
     // blind is exactly what drew another character's party on your screen at the character-select screen. The load
@@ -1056,6 +1062,10 @@ void aio_plugin_unload()
     aio::texture_ledger_report("unload after");
     debug::log("UNLOAD took %d ms (dispose %d ms)", (int)(qpc_ms() - t0), (int)(tDisp1 - tDisp0));
     vm_diff_log();
+#ifdef AIOHUD_DEVTOOLS
+    aio::devtools::alloc_report("unload after");   // what this DLL still holds through operator new, per caller
+    aio::devtools::heap_trap_shutdown();           // the ntdll hook goes before the image does
+#endif
 }
 
 // Launch the updater PowerShell script WITH NO WINDOW (native CreateProcess + CREATE_NO_WINDOW -- a Lua-spawned
@@ -1202,6 +1212,16 @@ static void aio_command_dispatch(const char* cmd)
 
     // ---- VERBS FIRST. Commands whose argument is free text (a name, a spell), matched on the command word itself,
     //      before any branch below searches the whole buffer for a substring (see aio_verb).
+#ifdef AIOHUD_DEVTOOLS
+    if (const char* hpRest = aio_verb(buf, "heap")) {   // //aio heap snap | diff : every module's heap blocks born across a test (dev only)
+        char snapP[MAX_PATH], diffP[MAX_PATH];
+        aio::plugin_path(snapP, MAX_PATH, "data\\heapsnap.bin"); aio::plugin_path(diffP, MAX_PATH, "data\\heapdiff.bin");
+        const char* hr = hpRest; while (*hr == ' ') ++hr;
+        if (!strncmp(hr, "trap", 4)) aio::devtools::heap_trap_command(hr + 4, aio::plugin_path_r("data\\heaptrap.txt"));
+        else aio::devtools::heap_command(hpRest, snapP, diffP);
+        return;
+    }
+#endif
     if (const char* vmRest = aio_verb(buf, "vmem")) {   // //aio vmem [tag] -> one VMEM snapshot NOW, tagged : the bracket of an A/B
         // (2026-11-23 : ~7.6 MB stays per reload -- is it AioHUD or GearSwap ? //aio vmem a ; 10x //gs reload ; //aio vmem b)
         const char* tag = vmRest; while (*tag == ' ' || *tag == '\t') ++tag;
