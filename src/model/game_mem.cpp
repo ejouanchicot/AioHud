@@ -522,6 +522,31 @@ bool read_map_record(unsigned zone, int submap, MapRecord& out) {
     return false;
 }
 
+// The map record, CACHED by (zone, submap) -- the poller's only caller (2026-11-23, audit P5). read_map_record walks
+// up to 2048 records with 2+ guarded reads each ; it ran every frame for a key that changes on a zone or a floor.
+//  - a record found is kept, and re-read every 10 s (cheap insurance against a table the client rebuilt) ;
+//  - a key with no record is retried, BOUNDED (rule 10) : 10 tries 500 ms apart -- the usual miss is a table not
+//    ready right after a zone-in -- then settled as "no map here" until the key changes, and SAID ;
+//  - a record that was there and is gone is dropped and retried the same way, and said.
+void map_record_cached(unsigned zone, int submap, MapRecord& out) {
+    static unsigned cZone = ~0u; static int cSub = -2; static MapRecord cRec; static int cTries = 0; static unsigned cNext = 0;
+    const unsigned now = model_now_ms();
+    if (zone != cZone || submap != cSub) { cZone = zone; cSub = submap; cRec = MapRecord{}; cRec.zone = zone; cTries = 0; cNext = now; }
+    const bool due = (int)(now - cNext) >= 0 && (cRec.valid || cTries < 10);
+    if (due && zone) {
+        MapRecord r;
+        if (read_map_record(zone, submap, r)) {
+            if (cTries) windower::debug::log("MAP record for zone %u submap %d found after %d miss(es)", zone, submap, cTries);
+            cRec = r; cTries = 0; cNext = now + 10000u;
+        } else if (cRec.valid) {
+            windower::debug::log("MAP record for zone %u submap %d LOST (it was there) -- retrying", zone, submap);
+            cRec = r; cTries = 1; cNext = now + 500u;
+        } else if (++cTries < 10) cNext = now + 500u;
+        else windower::debug::log("MAP no record for zone %u submap %d after %d tries -- no map here until the zone or the floor changes", zone, submap, cTries);
+    }
+    out = cRec;
+}
+
 // The current sub-map / FLOOR index for a multi-floor zone (dungeons, towers, ...). Unlike every other
 // datum we take, the client does NOT store this as a plain integer -- it PARTITIONS the world by the
 // player's position via a routine at *(g+0x20) (context = *(g+0x1C)), returning the floor index (or
@@ -1673,7 +1698,7 @@ void poll_game_state(GameState& gs) {
     { u32 ent = self_entity();
       if (ent) { u32 xx = 0, zz = 0, hh = 0; safe_read(ent + ENT_X_OFF, &xx); safe_read(ent + ENT_Z_OFF, &zz); safe_read(ent + ENT_HEADING_OFF, &hh);
                  gs.meX = *(float*)&xx; gs.meZ = *(float*)&zz; gs.meHeading = *(float*)&hh; } }
-    read_map_record(gs.zone, current_submap(), gs.map);   // real floor (multi-level zones) -> right map page
+    map_record_cached(gs.zone, current_submap(), gs.map);   // real floor (multi-level zones) -> right map page ; cached by (zone, floor)
     // Gated on the minimap being ON. This is a 9 KB guarded block copy + a 2304-slot sweep + ~7 safe_read per live
     // slot, EVERY frame -- in a crowded city that is thousands of guarded reads for data nobody draws when the
     // module is switched off (Minimap::draw returns on !mmShow long after the work is already paid for).
