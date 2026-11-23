@@ -67,6 +67,9 @@ void chat_drain();
 // the lines queued meanwhile -- the backlog already carries them.
 void chat_seed_line(const char* raw, int mode, int hhmm);
 void chat_seed_end(bool tookQueued);
+// A LATE backlog (the character logged in after the bounded wait, so the live lines were already released) : empty
+// the history and hold the live lines again -- the client's log then brings everything back, in order, once.
+void chat_seed_restart();
 // MAIN thread, before chat_drain, once per frame : replays the client's log once (bounded wait for a character)
 void chat_backlog_tick(const char* charName);
 

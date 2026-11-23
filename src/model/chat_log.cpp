@@ -493,6 +493,11 @@ void chat_seed_end(bool tookQueued) {
     g_seedHold = false;
 }
 
+void chat_seed_restart() {
+    g_histN = 0; g_histHead = 0; ++g_seq;   // the boxes key their cache on the newest seq : a bump redraws them empty
+    g_seedHold = true;
+}
+
 void chat_drain() {
     if (g_seedHold) return;                              // the backlog first (chat_backlog_tick settles it, bounded)
     int budget = Q_N;                                    // never loop forever on a ring the producer keeps filling

@@ -5636,12 +5636,22 @@ int seed_file(SeedMsg& m, const char* path, unsigned* firstSeq) {
 } // namespace
 
 void chat_backlog_tick(const char* charName) {
-    static int state = 0; static DWORD t0 = 0;                   // 0 waiting, 1 done (once per load)
-    if (state) return;
+    // 0 waiting (live lines held), 2 waited 20 s without a character (live lines released, STILL watching),
+    // 1 done (once per load). Until 2026-11-23 the 20 s expiry was final : a cold start where the login took longer
+    // than that (the title screen, the character select) never replayed the client's log at all -- rule 10.
+    static int state = 0; static DWORD t0 = 0;
+    if (state == 1) return;
     const DWORD now = GetTickCount(); if (!t0) t0 = now;
     if (!charName || !charName[0]) {                             // not logged in yet : the live lines wait, bounded
-        if ((int)(now - t0) > 20000) { state = 1; chat_seed_end(false); windower::debug::log("CHATSEED no character after 20 s : live lines only"); }
+        if (state == 0 && (int)(now - t0) > 20000) {
+            state = 2; chat_seed_end(false);
+            windower::debug::log("CHATSEED no character after 20 s : live lines shown meanwhile, the backlog comes at the login");
+        }
         return;
+    }
+    if (state == 2) {                                            // the late login : start the boxes over from the client's log
+        chat_seed_restart();
+        windower::debug::log("CHATSEED character '%s' after %u s : the backlog now (the lines shown meanwhile are in it)", charName, (unsigned)((now - t0) / 1000));
     }
     state = 1;
     char dir[MAX_PATH] = { 0 };
