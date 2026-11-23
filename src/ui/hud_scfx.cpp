@@ -227,6 +227,9 @@ void fx_state(u32 dev, u32 tex, bool two, bool add = true) {
 void fx_end(u32 dev) {
     dSetTex(dev, 1, 0); dSetTSS(dev, 1, D3DTSS_COLOROP, D3DTOP_DISABLE); dSetTSS(dev, 1, D3DTSS_ALPHAOP, D3DTOP_DISABLE);
     dSetTSS(dev, 1, D3DTSS_TEXCOORDINDEX, 1); dSetTSS(dev, 0, D3DTSS_TEXCOORDINDEX, 0);
+    // the address modes back to D3D's default (WRAP) on both stages : distort() leaves stage 0 on CLAMP, and the next
+    // widget's textured draw would inherit it (rule 8 : no dirty state for the next widget)
+    for (int s = 0; s < 2; ++s) { dSetTSS(dev, s, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP); dSetTSS(dev, s, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP); }
     blend(dev, false); cqs(dev);
 }
 

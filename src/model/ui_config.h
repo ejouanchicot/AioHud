@@ -1,6 +1,6 @@
 // ui_config.h -- live, user-editable HUD settings (edited by the //aio config page, read by the
-// widgets + Hud each frame). A process-wide singleton, like party(). Start small (the Party/Alliance
-// basics) ; grow as more controls are added. Not yet persisted to disk.
+// widgets + Hud each frame). A process-wide singleton, like party(). Persisted by ui_config.cpp to
+// data\config.txt and the named profiles in data\profiles\ (a profile is reloaded when its file changes on disk).
 #pragma once
 
 namespace aio {
