@@ -5466,6 +5466,8 @@ void native_ui_tick(bool inWorld) {
 // apply(true) in a guard of its own : a fault in the restore must not skip the hooks' removal that follows it.
 bool apply_restore_guarded() { __try { apply(true); return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; } }
 void native_ui_shutdown() {
+    // the d_msg text files kept for the session (Job Points, abilities) : nothing freed them at the unload (2026-11-23)
+    for (Dmsg& D : g_dm) { if (D.buf) dat_free_file(D.buf); D.buf = 0; D.ok = false; D.tries = 0; }
     text_capture_off();       // the text capture : ALWAYS off at an unload (its JMPs point into this DLL)
     hook_off(g_hkEvent);      // the trade's lines : ALWAYS off at an unload (a JMP into an unloaded DLL would crash the client)
     if (!g_anyApplied && !g_hkMove.on) return;

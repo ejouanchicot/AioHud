@@ -41,7 +41,7 @@ namespace aio { extern bool g_facingProbe; }   // ui/hud.cpp : the //aio facing 
 #include "model/ui_config.h"
 #include "model/nms_gen.h"          // NMS / NMS_N : the //aio pop <nm> selector
 #include "model/paths.h"
-#include "model/map_dat.h"          // menu_dat_free : the menu DAT's 4.5 MB, released at the unload
+#include "model/map_dat.h"          // map_dat_shutdown : the DAT buffers kept for the session, released at the unload
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1050,7 +1050,7 @@ void aio_plugin_unload()
     aio::texture_ledger_report("before dispose");
     const double tDisp0 = qpc_ms();
     g_hud.dispose();
-    aio::menu_dat_free();   // the menu DAT (~4.5 MB) + its decoded fonts : left behind at every reload until 2026-11-23
+    aio::map_dat_shutdown();   // the menu DAT (~4.5 MB) + the ROM volume tables (~2.9 MB) : left behind at every reload until 2026-11-23
     const double tDisp1 = qpc_ms();
     log_vm("unload after");
     aio::texture_ledger_report("unload after");

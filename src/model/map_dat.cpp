@@ -380,6 +380,18 @@ MdTex* md_tex(const char* name16) {
 }
 } // namespace
 
+// every DAT buffer this file keeps for the session : the volume tables (VTABLE / FTABLE of the 9 ROM volumes,
+// ~2.9 MB) and the menu DAT (~4.5 MB). Nothing freed the tables at the unload either : //aio heap trap caught their
+// 9 + 9 blocks (109701 / 219402 bytes) born at every //load and never released (2026-11-23).
+void map_dat_shutdown() {
+    menu_dat_free();
+    for (int v = 0; v < MAX_VOL; ++v) {
+        if (g_vt[v]) { HeapFree(GetProcessHeap(), 0, g_vt[v]); g_vt[v] = 0; } g_vtN[v] = 0;
+        if (g_ft[v]) { HeapFree(GetProcessHeap(), 0, g_ft[v]); g_ft[v] = 0; } g_ftN[v] = 0;
+    }
+    g_maxVol = 0; g_tablesTried = false;
+}
+
 // the whole menu DAT (~4.5 MB, one VirtualAlloc-sized heap block) + its decoded font textures + the baked labels.
 // Called at a reload of another language AND at the plugin's unload : until 2026-11-23 nothing freed it at the unload,
 // and every //unload + //load left the 4.5 MB block behind (VMDIFF : one NEW ~4500 KB private base per reload).
