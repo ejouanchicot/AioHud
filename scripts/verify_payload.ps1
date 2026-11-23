@@ -36,6 +36,7 @@ $srcFull = (Get-Item -LiteralPath $src).FullName
 $n = 0
 foreach ($f in Get-ChildItem -LiteralPath $src -Recurse -File) {
     if ($f.FullName -match '\\[^\\]+_src\\') { continue }       # regeneration sources : never shipped, by design
+    if ($f.FullName -match '\\assets\\themes\\') { continue }   # the trial theme kits : dev-only, package.bat skips them
     $rel = $f.FullName.Substring($srcFull.Length).TrimStart('\')
     $t = Join-Path $dst $rel
     $n++

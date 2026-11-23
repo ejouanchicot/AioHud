@@ -89,3 +89,12 @@ __pycache__/
 # never published and never compiled into a release. build.bat / tests.bat / deploy.bat / the pre-commit hook use
 # them when the folder exists and skip them, out loud, when it does not.
 /dev/
+
+# Local design work : boards, mock-ups, PDFs, screenshots, ChatGPT exchanges. One folder, never committed (a stray
+# `git add -A` once put 34 such PNGs into a commit). Loose ones at the root are caught too.
+/_local/
+/*.pdf
+/*.png
+/*.jpg
+# The trial theme kits (theme_kit.cpp / frame_bake.cpp, dev-only) : not shipped (package.bat skips them), not tracked.
+/assets/themes/

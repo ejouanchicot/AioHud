@@ -39,8 +39,10 @@ copy /Y "%ROOT%build\release\AioHud.dll" "%PLG%\AioHud.dll" >nul
 if errorlevel 1 ( echo [package] build\release\AioHud.dll could not be copied & exit /b 1 )
 
 REM 4) runtime assets : the whole assets\ tree EXCEPT any *_src\ (job/window/icon regeneration sources).
+REM    Also EXCEPT themes\ : the trial theme kits (theme_kit.cpp, untracked) are not in a release, and a CI checkout
+REM    never has them -- a package built on the dev machine must not differ from the one CI builds.
 REM    robocopy exit codes 0-7 = success ; 8+ = real error (don't treat <8 as failure).
-robocopy "%ROOT%assets" "%DATA%\assets" /E /XD *_src /NFL /NDL /NJH /NJS /NP >nul
+robocopy "%ROOT%assets" "%DATA%\assets" /E /XD *_src themes /NFL /NDL /NJH /NJS /NP >nul
 if errorlevel 8 ( echo [package] asset copy failed & exit /b 1 )
 
 REM 5) the default box layout (positions/toggles) the plugin reads at startup.
