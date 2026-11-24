@@ -139,6 +139,7 @@ struct ChatBoxState {
     float    full = 0.0f;           // 0 .. 1 : unfolded like the game's EXPANDED log (fulllog open), eased
     float    rx = 0, ry = 0, rw = 0, rh = 0;   // last frame's rect : the hover test
     float    bodyEase = -1.0f;      // the body height drawn (eased toward what the content needs ; -1 = first frame)
+    unsigned advGen = 0;            // bumped at EVERY build_adv of adv / advB : the wrap cache's key (P10) changes with them
     const Font* advFont = 0; float advSize = 0.0f; bool advExact = false; float adv[256];   // advance cache by CODEPOINT 0..255 (face + size) ; wider ones : cw_at asks the font
     const Font* advBFont = 0; float advBSize = 0.0f; bool advBExact = false; float advB[256];   // the same for the BOLD auto-translate words
     int      grip = 0;              // token for the shared drag lock
@@ -353,6 +354,50 @@ static int wrap_line(const ChatLine& L, const float* adv, float gap, float avail
         }
         if (b < L.len && lastSp > a) b = lastSp + 1;                       // break after the last space that fits
         sa[ns] = (short)a; sb[ns] = (short)b; ++ns; a = b;
+    }
+    return ns;
+}
+
+// ---- THE WRAP CACHE (audit P10, 2026-11-24) ----
+// //aio perf : scrolled up, chat.0 went from 49 to 256 us a frame (and chat.1 34 -> 104) -- every frame re-ran
+// line_prefix + wrap_line for EVERY line from the newest down to the scroll position, so the cost grew with how far
+// back you read. A line never changes once it is in the history (its seq is unique), so its prefix width and its
+// rows are kept here, by seq, and only recomputed when what they depend on changes : the font and size, the advance
+// tables (advGen), the width, the punctuation gap, the badge size, the scale -- all folded into one key per site.
+// Direct-mapped by seq ; a slot holding another seq or another key is simply recomputed. Not for the preview's
+// sample lines (their own numbering) : the caller passes no cache there.
+struct WrapCache {
+    struct E { unsigned seq, key; float lpw; unsigned char ns; short sa[24], sb[24]; };
+    E e[512];
+};
+static WrapCache g_wrapCache[2][2];   // [box][site] : 0 = the rows drawn, 1 = the fit-to-content count
+static unsigned wrap_key(const Font* fo, unsigned gen, float tz, float avail, float bz, float S, float gap) {
+    unsigned h = 2166136261u;
+    auto mix = [&h](unsigned v) { for (int i = 0; i < 4; ++i) { h ^= (v >> (8 * i)) & 0xFF; h *= 16777619u; } };
+    auto fbits = [](float f) { unsigned u; memcpy(&u, &f, 4); return u; };
+    mix((unsigned)(uintptr_t)fo); mix(gen); mix(fbits(tz)); mix(fbits(avail)); mix(fbits(bz)); mix(fbits(S)); mix(fbits(gap));
+    // the badge is measured at bz : until that size is baked, measure() is a neighbour's metrics scaled, so a width
+    // kept from then would stay approximate for good (rule 10) -- the baked state is part of the key
+    mix(fo && fo->baked(bz) ? 1u : 0u);
+    return h | 1u;                    // never 0 : an empty slot's key
+}
+static int wrap_cached(WrapCache* W, unsigned key, const ChatLine& L, Font* fo, float bz, const float* adv, float S,
+                       float gap, float avail, short* sa, short* sb, float* lpwOut = 0) {
+    if (W && L.seq) {
+        WrapCache::E& x = W->e[L.seq & 511];
+        if (x.seq == L.seq && x.key == key) {
+            for (int i = 0; i < x.ns; ++i) { sa[i] = x.sa[i]; sb[i] = x.sb[i]; }
+            if (lpwOut) *lpwOut = x.lpw;
+            return x.ns;
+        }
+    }
+    LinePrefix lp; line_prefix(L, fo, bz, adv, S, lp);
+    const int ns = wrap_line(L, adv, gap, avail, sa, sb, 24, lp.w);
+    if (lpwOut) *lpwOut = lp.w;
+    if (W && L.seq) {
+        WrapCache::E& x = W->e[L.seq & 511];
+        x.seq = L.seq; x.key = key; x.lpw = lp.w; x.ns = (unsigned char)ns;
+        for (int i = 0; i < ns; ++i) { x.sa[i] = sa[i]; x.sb[i] = sb[i]; }
     }
     return ns;
 }
@@ -687,8 +732,8 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     if (!fb) fb = fo;
     // its advance table follows the regular one ; refreshed once more when that size's atlas exists (exact widths)
     auto adv_bold = [&](float z) {
-        if (st.advBFont != fb || st.advBSize != z) { st.advBFont = fb; st.advBSize = z; st.advBExact = fb->baked(z); build_adv(st.advB, fb, z); }
-        else if (!st.advBExact && fb->baked(z)) { st.advBExact = true; build_adv(st.advB, fb, z); }
+        if (st.advBFont != fb || st.advBSize != z) { st.advBFont = fb; st.advBSize = z; st.advBExact = fb->baked(z); ++st.advGen, build_adv(st.advB, fb, z); }
+        else if (!st.advBExact && fb->baked(z)) { st.advBExact = true; ++st.advGen, build_adv(st.advB, fb, z); }
         s_wFoB = fb; s_advB = st.advB;
     };
     const float tz = te_sz(TS, 15.0f) * S, tow = te_ow(TS, 1.1f) * S;
@@ -782,7 +827,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     if (!editing && !preview && fitBox) {
         if (st.advFont != fo || st.advSize != tz || !st.advExact) {           // the same per-char advance cache as below
             st.advFont = fo; st.advSize = tz; st.advExact = fo->baked(tz);
-            build_adv(st.adv, fo, tz);
+            ++st.advGen, build_adv(st.adv, fo, tz);
         }
         s_wFo = fo; s_wTz = tz; adv_bold(tz);
         int tb = C.chTab[box]; if (tb < 0 || tb >= TAB_N[box]) tb = 0;
@@ -792,10 +837,11 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
         const float availP = (float)C.chW[box] * S - 2.0f * pad - 2.0f * S - stampP;
         const int cap = (int)(bodyMax / rowH + 0.999f);
         int have = 0, fresh = 0; bool aged = false; short sa[24], sb[24];
+        WrapCache* wcP = src.sample ? 0 : &g_wrapCache[box][1];   // P10 : the rows of each line, kept (see WrapCache)
+        const unsigned keyP = wrap_key(fo, st.advGen, tz, availP, tz * 0.62f, S, chat_punct_gap(tz));
         for (int i = src.n() - 1; i >= 0 && have < cap; --i) {
             const ChatLine* L = src.at(i); if (!L || !line_in_tab(*L, TP, meP)) continue;
-            LinePrefix lp; line_prefix(*L, fo, tz * 0.62f, st.adv, S, lp);
-            const int rws = wrap_line(*L, st.adv, chat_punct_gap(tz), availP, sa, sb, 24, lp.w);
+            const int rws = wrap_cached(wcP, keyP, *L, fo, tz * 0.62f, st.adv, S, chat_punct_gap(tz), availP, sa, sb);
             have += rws;
             if (!aged && nowMs - L->arrivedTick < keepMs) fresh += rws; else aged = true;   // newest first : the fresh ones are on top of the list
         }
@@ -1059,7 +1105,7 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     // blood", "a" glued to an item name -- 2026-11-16, the raw text was clean)
     if (st.advFont != fo || st.advSize != tz || !st.advExact) {
         st.advFont = fo; st.advSize = tz; st.advExact = fo->baked(tz);
-        build_adv(st.adv, fo, tz);
+        ++st.advGen, build_adv(st.adv, fo, tz);
     }
     s_wFo = fo; s_wTz = tz;                                               // the wide characters : measured by this font, this size
     adv_bold(tz);                                                         // ... and the bold auto-translate words by its bold twin
@@ -1100,10 +1146,11 @@ void chat_box_draw(const Frame& f, int box, bool preview, bool interactive, floa
     ChatRow rows[152]; int nr = 0;
     int skip = (int)st.vpos; const float frac = st.vpos - (float)skip;
     int skipLeft = st.scroll;                                               // to clamp the TARGET to the history
+    WrapCache* wc = src.sample ? 0 : &g_wrapCache[box][0];                  // P10 : scrolled far up, this loop walked
+    const unsigned wkey = wrap_key(fo, st.advGen, tz, avail, bz, S, chat_punct_gap(tz));   // every line back to here
     for (int i = src.n() - 1; i >= 0 && (nr < want || skipLeft > 0); --i) {
         const ChatLine* L = src.at(i); if (!L || !line_in_tab(*L, T, me)) continue;
-        LinePrefix lp; line_prefix(*L, fo, bz, adv, S, lp);
-        short sa[24], sb[24]; const int ns = wrap_line(*L, adv, chat_punct_gap(tz), avail, sa, sb, 24, lp.w);
+        short sa[24], sb[24]; const int ns = wrap_cached(wc, wkey, *L, fo, bz, adv, S, chat_punct_gap(tz), avail, sa, sb);
         for (int k = ns - 1; k >= 0; --k) {
             if (skipLeft > 0) --skipLeft;
             if (skip > 0) { --skip; continue; }
