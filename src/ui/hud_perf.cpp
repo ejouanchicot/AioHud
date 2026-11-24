@@ -9,7 +9,8 @@
 //   //aio perf auto    the whole campaign in ONE command (asked for in game : 15 commands typed 50 s apart was the
 //                      first protocol) -- six phases, each set up by the plugin itself, settled, measured and dumped
 //                      under its own label : base, alliance (18-member demo), chat (both boxes scrolled to the top),
-//                      skillchain (the sphere demo, every chain in turn), config (the window open), then an ab run.
+//                      skillchain (the sphere demo, every chain in turn), worst (all of those at once + 32 fake buffs),
+//                      config (the window open), then an ab run.
 //                      Everything it changed is put back. //aio perf off stops it.
 //   //aio perf filter on|off   the redundant-state filter (gfx/d3d.h, audit P4) : on by default
 #include "ui/hud_internal.h"
@@ -59,10 +60,13 @@ char g_notice[200]; bool g_noticeReady = false;
 void post(const char* m) { lstrcpynA(g_notice, m, sizeof(g_notice)); g_noticeReady = true; }
 
 // //aio perf auto
-const int  AUTO_PHASES = 6;                 // 5 measured + the ab run
+const int  AUTO_PHASES = 7;                 // 6 measured + the ab run
 const u32  AUTO_SETTLE = 90, AUTO_MEASURE = 600;
-const char* const AUTO_LABEL[AUTO_PHASES] = { "auto.base", "auto.alliance", "auto.chat", "auto.skillchain", "auto.config", "auto.ab" };
-struct Auto { int phase = -1; u32 frame = 0; bool prevWant = false; bool cfgWasOpen = false; };
+// "worst" : every demo AT ONCE -- the 18-member alliance, both chats scrolled to the top, the sphere demo, 32 fake buffs
+// under the top bar. A combat stand-in made only of the demos (asked for 2026-11-24 instead of a measure in a real
+// alliance) : nothing is injected into the model, so nothing real is touched, and all of it is put back.
+const char* const AUTO_LABEL[AUTO_PHASES] = { "auto.base", "auto.alliance", "auto.chat", "auto.skillchain", "auto.worst", "auto.config", "auto.ab" };
+struct Auto { int phase = -1; u32 frame = 0; bool prevWant = false; bool cfgWasOpen = false; bool buffDemo = false; };
 Auto g_auto;
 
 void auto_restore(ConfigPage* cfg) {
@@ -70,6 +74,7 @@ void auto_restore(ConfigPage* cfg) {
     set_party_demo_total(0);
     ui_config().chWheel[0] = ui_config().chWheel[1] = -100000;   // back to the newest line (clamped at 0)
     scfx_toggle("off", m, sizeof(m));
+    if (g_auto.buffDemo) { g_auto.buffDemo = false; if (buff_preview_toggle()) buff_preview_toggle(); }   // a toggle : make sure it ends OFF
     if (cfg) cfg->set_open(g_auto.cfgWasOpen);
 }
 
@@ -89,7 +94,12 @@ void perf_auto_tick(ConfigPage& cfg) {
                 case 2: ui_config().chWheel[0] = ui_config().chWheel[1] = 100000; break;   // as far up as the history goes
                 case 3: set_party_demo_total(0); ui_config().chWheel[0] = ui_config().chWheel[1] = -100000;
                         scfx_toggle("all", m, sizeof(m)); break;
-                case 4: scfx_toggle("off", m, sizeof(m)); cfg.set_open(true); break;
+                case 4: set_party_demo_total(18); ui_config().chWheel[0] = ui_config().chWheel[1] = 100000;   // + the spheres, still on
+                        if (!g_auto.buffDemo) { g_auto.buffDemo = true; if (!buff_preview_toggle()) buff_preview_toggle(); } break;
+                case 5: set_party_demo_total(0); ui_config().chWheel[0] = ui_config().chWheel[1] = -100000;
+                        scfx_toggle("off", m, sizeof(m));
+                        if (g_auto.buffDemo) { g_auto.buffDemo = false; if (buff_preview_toggle()) buff_preview_toggle(); }
+                        cfg.set_open(true); break;
                 default: break;
             }
             _snprintf(m, sizeof(m), tr(">>> AioHud perf auto %d/%d : %s <<<", ">>> AioHud perf auto %d/%d : %s <<<"), ph + 1, AUTO_PHASES, AUTO_LABEL[ph] + 5);

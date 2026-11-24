@@ -234,6 +234,10 @@ travail du jeu + Present + AioHUD ; vsync comprise, donc une borne haute de la p
 | sphères | 17,8 / 46,9 ms | 1,57 ms | 8,8 % |
 | config ouverte | 17,5 / 38,1 ms | 1,84 ms | 10,4 % |
 
+**Pire cas** (`auto.worst` : alliance 18 + chats remontés + sphères + 32 faux buffs, en même temps) : AioHUD 2,62 ms,
+**15,1 %**, et l'image entière reste à **17,3 ms (57 fps), comme dans toutes les autres phases** : les 1,4 ms de plus
+qu'en ville tiennent dans la marge avant la vsync, aucune image n'est perdue à cause d'AioHUD.
+
 Les pics de 37-55 ms (2-3 images perdues) sont présents dans toutes les phases, ville comprise, alors qu'AioHUD n'y
 prend que 1-2 ms : ils viennent du jeu ou du système. Décision : optimisations arrêtées ici ; P3 (texte) seulement si
 la mesure en vraie alliance (`//aio perf on`, une minute de combat, `//aio perf dump sortie`) dépasse nettement 10 %

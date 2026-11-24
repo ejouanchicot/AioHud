@@ -1399,7 +1399,7 @@ static void aio_command_dispatch(const char* cmd)
             "  //aio doctor            checks everything and says what to do     //aio report   one file to send",
             "  //aio why               the last decisions        //aio selftest     the internal checks",
             "  //aio rva               game addresses after an FFXI update       //aio watch on|off  passive watchers",
-            "  //aio perf on|off|dump  what each module costs per frame (overlay ; dump -> log)   //aio perf auto  all cases, ~75 s",
+            "  //aio perf on|off|dump  what each module costs per frame (overlay ; dump -> log)   //aio perf auto  all cases, ~90 s",
         };
         static const char* const FR[] = {
             ">>> Commandes AioHud <<<",
@@ -1412,7 +1412,7 @@ static void aio_command_dispatch(const char* cmd)
             "  //aio doctor            verifie tout et dit quoi faire           //aio report   un fichier a envoyer",
             "  //aio why               les dernieres decisions   //aio selftest     les verifications internes",
             "  //aio rva               adresses du jeu apres une maj FFXI       //aio watch on|off  veilleurs passifs",
-            "  //aio perf on|off|dump  le cout de chaque module par image (surimpression ; dump -> log)   //aio perf auto  tous les cas, ~75 s",
+            "  //aio perf on|off|dump  le cout de chaque module par image (surimpression ; dump -> log)   //aio perf auto  tous les cas, ~90 s",
         };
         const bool fr = aio::tr("en", "fr")[0] == 'f';
         for (int k = 0; k < (int)(sizeof(EN) / sizeof(EN[0])); ++k) g_host.console().print(fr ? FR[k] : EN[k]);
