@@ -713,6 +713,13 @@ struct UiConfig {
     int   mmScan = 1;                  // the Wide Scan TRACKED target : a pulsing mark (on the lens rim when off-map) + its line
     unsigned mmScanCol = 0xFF5AB4FFu;  // its colour
     int   mmGrid = 1;                  // the map grid square you stand in, "(F-10)", under the map
+    // LAYOUT : 0 Classic (the stacked clock header, mmClockPos) ; 1 Compact (the "Sentinel" look) -- the clock and the
+    // map info become two thin one-line BANDS, each placed above or below the map, the box no wider than the map
+    int   mmLayout = 0;
+    int   mmClkBand = 0;               // Compact : the clock band 0 above the map, 1 below
+    int   mmInfoBand = 2;              // Compact : the info band (map square | zoom | distances) 0 off, 1 above, 2 below
+    int   mmInfoDist = 1;              // info band : the distance to your target and to the Wide Scan track
+    int   mmMarkStyle = 1;             // entity markers : 0 Classic (dots + arrows), 1 Icons (the gold-framed atlas, a silhouette per kind)
     // transient (not saved) : minimap rect as screen fractions + pending wheel, so the mouse callback can
     // zoom the map when the cursor is over it (outside edit mode). Written by the Minimap widget each frame.
     float mmHitX = 0.0f, mmHitY = 0.0f, mmHitW = 0.0f, mmHitH = 0.0f;

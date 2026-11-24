@@ -9,6 +9,10 @@ namespace aio {
 
 struct GameState;
 
+// the ASTRAL compass kit's pieces (assets/astral/laiton_*.raw, scripts/gen_astral.py)
+enum { AS_SHADOW, AS_BASE, AS_TICKS, AS_GLINT, AS_PAST, AS_LN, AS_LE, AS_LS, AS_LW, AS_N };
+static const int AS_SZ[AS_N] = { 512, 512, 512, 512, 64, 64, 64, 64, 64 };
+
 class Minimap : public Widget {
 public:
     explicit Minimap(const GameState* state);
@@ -39,6 +43,10 @@ private:
     u32      elemTex_ = 0;                 // 8-cell elemental-icon atlas (clock header day icon)
     u32      moonTex_ = 0;                 // supersampled moon-phase texture (rebuilt only when the phase/day changes)
     int      moonKey_ = -1;                // cache key : dayIdx / moonPct / waning
+    u32      mkAtlas_ = 0;                // the v3 marker icon atlas (assets/map_markers.raw, 512 x 256) ...
+    TexRetry mkAtlasR_;                   // ... under its bounded retry
+    u32      ast_[AS_N] = {};             // the Astral kit textures (0 = not loaded) ...
+    TexRetry astR_[AS_N];                 // ... each under its own bounded retry (rule 10)
     int      mkTries_ = 0;      // bounded retry budget for the marker/element textures (was a one-shot bool)
     unsigned mkNextMs_ = 0;
 

@@ -71,6 +71,15 @@ static inline u32 mm_darken(u32 c, float f) {
 
 // marker icons (white, tinted per entity) : Location pin (points DOWN) for the player, Arrow (points UP) for mobs.
 static const char* MK_PLAYER_PATH() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\icon_marker_player.raw"); return b; }
+// the v3 marker atlas (scripts/gen_map_markers.py) : 8 x 4 cells of 64 px in a 512 x 256 texture
+static const char* MK_ATLAS_PATH() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\map_markers.raw"); return b; }
+enum { MK_ME_FILL, MK_ME_FRAME, MK_MOB_FILL, MK_MOB_FRAME, MK_NM_FRAME, MK_PARTY_FILL, MK_PARTY_FRAME, MK_ALLY_FILL, MK_ALLY_FRAME,
+       MK_TRUST_FILL, MK_TRUST_FRAME, MK_PET_FILL, MK_PET_FRAME, MK_TARGET_FILL, MK_TARGET_FRAME, MK_PIN_FILL, MK_PIN_FRAME,
+       MK_PC_OTHER, MK_NPC, MK_HOMEPOINT, MK_GUIDE, MK_MOOGLE, MK_WAYPOINT, MK_QUEST, MK_WIDESCAN, MK_OFFMAP };
+static void mk_cell(u32 dev, int cell, float cx, float cy, float sz, float ang, u32 col) {   // the atlas must be bound
+    const float u0 = (float)(cell % 8) / 8.0f, v0 = (float)(cell / 8) / 4.0f;
+    tquad_rot_uv(dev, snap(cx), snap(cy), sz, sz, ang, u0, v0, u0 + 1.0f / 8.0f, v0 + 1.0f / 4.0f, col);
+}
 static const char* MK_MOB_PATH() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\icon_marker_mob.raw"); return b; }
 static const char* ELEM_ATLAS_PATH() { static char b[260]; if (!b[0]) plugin_path(b, 260, "assets\\element_icons.raw"); return b; }
 
@@ -339,6 +348,242 @@ static void draw_clock_header(u32 dev, const Frame& f, const VanaClock& v, const
     (void)cy;
 }
 
+// ================= COMPACT layout (the "Sentinel" look) : the clock and the map info are two THIN BANDS, each on
+// one line, above or below the map (mmClkBand / mmInfoBand), the box no wider than the map. Every piece of a band
+// sits CENTRED IN ITS OWN CELL (the slack is shared equally), cells split by full-height rules ; the frame is its
+// own : a dark bevelled plate (light edge on top, soft drop shadow) with a recessed well around the map. =========
+static float clock_band_h(const UiConfig& c, float S) {
+    if (!c.mmClock || !(c.mmClkTime || c.mmClkDay || c.mmClkMoon || c.mmClkReal)) return 0.0f;
+    // just the text plus a small breath above and below : the cap height of the tallest piece (the time) + 2 x 5 px
+    const float tsz = mm_sz(MM_TIME, 25.0f * S);
+    float h = (c.mmClkTime || c.mmClkDay || c.mmClkMoon) ? snap(tsz * 0.72f + 10.0f * S) : snap(4.0f * S);
+    if (c.mmClkReal && c.mmInfoBand <= 0) h += snap(14.0f * S);             // the real / GMT line under it -- only when there is no info band to carry it
+    return h;
+}
+static float info_band_h(const UiConfig& c, float S) { return (c.mmInfoBand > 0) ? snap(18.0f * S * 0.72f + 10.0f * S) : 0.0f; }   // the square's cap height + 2 x 5 px
+
+// the band face : serif bold (the concept's numerals) unless the user picked a face for that element
+static Font* band_font(const Frame& f, int e) {
+    const TextStyle& t = ui_config().mmText[e];
+    if (t.face > 0 || !f.fonts) return mm_font(f.fonts, f.font, e);
+    Font* r = f.fonts->get("Georgia", 700, t.italic);
+    return r ? r : f.font;
+}
+
+static void band_rule(u32 dev, float x, float y0, float y1) {               // a full-height cell rule : dark line + light line
+    color_state(dev);
+    const float h = y1 - y0;
+    grad_quad(dev, snap(x),        snap(y0), 1.0f, h, 0x00000000u, 0x00000000u, 0xAA000000u, 0xAA000000u);
+    grad_quad(dev, snap(x) + 1.0f, snap(y0), 1.0f, h, 0x00FFFFFFu, 0x00FFFFFFu, 0x30FFFFFFu, 0x30FFFFFFu);
+    grad_quad(dev, snap(x),        snap(y0 + h * 0.5f), 1.0f, h * 0.5f, 0xAA000000u, 0xAA000000u, 0x00000000u, 0x00000000u);
+    grad_quad(dev, snap(x) + 1.0f, snap(y0 + h * 0.5f), 1.0f, h * 0.5f, 0x30FFFFFFu, 0x30FFFFFFu, 0x00FFFFFFu, 0x00FFFFFFu);
+}
+
+// n cells of content widths cw[] across [x, x+w] : the slack is shared equally, each content centred in its cell.
+// Returns each content's LEFT x in cx[] and the rule positions in rx[] (n-1).
+static void band_cells(const float* cw, int n, float x, float w, float* cx, float* rx) {
+    float sum = 0.0f; for (int i = 0; i < n; ++i) sum += cw[i];
+    float slack = (w - sum) / (float)(n > 0 ? n : 1); if (slack < 0.0f) slack = 0.0f;
+    float cur = x + ((w - sum - slack * n) > 0.0f ? (w - sum - slack * n) * 0.5f : 0.0f);
+    for (int i = 0; i < n; ++i) {
+        cx[i] = cur + slack * 0.5f;
+        cur += cw[i] + slack;
+        if (i < n - 1) rx[i] = cur;
+    }
+}
+
+// one line : TIME | [icon] Day > [icon] Next | (moon) 98 %  ; the next day's NAME and then today's name drop out
+// (icons stay) when the map is too narrow for them -- nothing enabled is ever lost, only shortened.
+static void draw_clock_band(u32 dev, const Frame& f, const VanaClock& v, const UiConfig& c, u32 elemTex, u32 moonTex, float x, float y, float w, float S) {
+    const int di = (v.dayIdx < 0 || v.dayIdx > 7) ? 2 : v.dayIdx, ni = (di + 1) & 7;
+    const bool line1 = c.mmClkTime || c.mmClkDay || c.mmClkMoon;
+    const float bandH = snap(mm_sz(MM_TIME, 25.0f * S) * 0.72f + 10.0f * S), cy = y + bandH * 0.5f, sg = snap(4.0f * S), pad = snap(6.0f * S);
+    char tb[8], u0[40], u1[40], u2[40], mb[8];
+    Font* tf = band_font(f, MM_TIME);
+    Font* df = band_font(f, MM_DAY);
+    Font* mf = mm_font(f.fonts, f.font, MM_MOON);
+    const float tsz = snap(mm_sz(MM_TIME, 25.0f * S)), dsz = snap(mm_sz(MM_DAY, 15.0f * S)), nsz = snap(mm_sz(MM_DAY, 11.0f * S));
+    const float isz = snap(mm_sz(MM_DAY, 18.0f * S)), nisz = snap(mm_sz(MM_DAY, 13.0f * S)), msz = snap(mm_sz(MM_MOON, 14.0f * S)), mr = snap(9.0f * S);
+    sprintf(tb, "%02d:%02d", v.hh, v.mm); sprintf(mb, "%d%%", v.moonPct);
+    const char* const* DN = (c.lang == 1) ? VANA_DAYNAME_FR : VANA_DAYNAME;
+    const char* ts = mm_up(MM_TIME, tb, u0, 40), *ds = mm_up(MM_DAY, DN[di], u1, 40), *ns = mm_up(MM_DAY, DN[ni], u2, 40);
+    const float wt = (c.mmClkTime && tf) ? tf->measure(ts, tsz) : 0.0f;
+    const float wm = (c.mmClkMoon && mf) ? 2.0f * mr + sg + mf->measure(mb, msz) : 0.0f;
+    const float wd = df ? df->measure(ds, dsz) : 0.0f, wa = df ? df->measure(">", nsz) : 0.0f, wn = df ? df->measure(ns, nsz) : 0.0f;
+    const float ic = elemTex ? isz + sg : 0.0f, nic = elemTex ? nisz : 0.0f;
+    const int nseg = (c.mmClkTime ? 1 : 0) + (c.mmClkDay ? 1 : 0) + (c.mmClkMoon ? 1 : 0);
+    const float minGap = snap(10.0f * S);                                  // the least air a cell keeps around its content
+    const float avail = w - 2.0f * pad - nseg * minGap - wt - wm;
+    // the day segment, widest form first : icon Day > icon Next  ->  icon Day > icon  ->  icon > icon
+    int dayForm = 0; float wday = 0.0f;
+    if (c.mmClkDay) {
+        const float f0 = ic + wd + sg + wa + sg + nic + (elemTex ? sg : 0.0f) + wn;
+        const float f1 = ic + wd + sg + wa + sg + (elemTex ? nic : wn);
+        const float f2 = ic + wa + sg + (elemTex ? nic : wn);
+        if (f0 <= avail || !elemTex) { dayForm = (f0 <= avail || !elemTex) ? 0 : 1; wday = f0; }
+        else if (f1 <= avail) { dayForm = 1; wday = f1; }
+        else { dayForm = 2; wday = f2; }
+    }
+    if (line1 && nseg > 0) {
+        float cw[3], cx[3], rx[2]; int n = 0;
+        if (c.mmClkTime) cw[n++] = wt;
+        if (c.mmClkDay)  cw[n++] = wday;
+        if (c.mmClkMoon) cw[n++] = wm;
+        band_cells(cw, n, x + pad, w - 2.0f * pad, cx, rx);
+        for (int i = 0; i < n - 1; ++i) band_rule(dev, rx[i], y + snap(4.0f * S), y + bandH - snap(4.0f * S));
+        int k = 0;
+        if (c.mmClkTime && tf) {
+            tf->begin(dev);
+            tf->draw_lc(dev, snap(cx[k]), snap(cy), ts, tsz, mm_col(MM_TIME, 0xFFF4EEDFu), 0xFF000000u, mm_ow(MM_TIME, 1.4f * S));
+            ++k;
+        }
+        if (c.mmClkDay && df) {
+            float rx0 = cx[k++];
+            if (elemTex) { tex_state(dev, elemTex);
+                tquad(dev, snap(rx0), snap(cy - isz * 0.5f), isz, isz, di / 8.0f, (di + 1) / 8.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
+                dSetTex(dev, 0, 0); rx0 += isz + sg; }
+            df->begin(dev);
+            if (dayForm < 2) { df->draw_lc(dev, snap(rx0), snap(cy), ds, dsz, mm_col(MM_DAY, VANA_DAYCOL[di]), 0xFF000000u, mm_ow(MM_DAY, 1.2f * S)); rx0 += wd + sg; }
+            df->draw_lc(dev, snap(rx0), snap(cy), ">", nsz, 0xFF8894A4u, 0xFF000000u, 1.0f * S); rx0 += wa + sg;
+            if (elemTex) { tex_state(dev, elemTex);
+                tquad(dev, snap(rx0), snap(cy - nisz * 0.5f), nisz, nisz, ni / 8.0f, (ni + 1) / 8.0f, 0.0f, 1.0f, 0xC8FFFFFFu, 0xC8FFFFFFu);
+                dSetTex(dev, 0, 0); rx0 += nisz + sg; df->begin(dev); }
+            if (dayForm == 0) df->draw_lc(dev, snap(rx0), snap(cy), ns, nsz, mm_col(MM_DAY, VANA_DAYCOL[ni]), 0xFF000000u, mm_ow(MM_DAY, 1.1f * S));
+        }
+        if (c.mmClkMoon && mf) {
+            const float rx0 = cx[k++];
+            draw_moon(dev, snap(rx0 + mr), snap(cy), mr, moonTex);
+            mf->begin(dev);
+            mf->draw_lc(dev, snap(rx0 + 2.0f * mr + sg), snap(cy), mb, msz, mm_col(MM_MOON, 0xFFE6E9F0u), 0xFF000000u, mm_ow(MM_MOON, 1.2f * S));
+        }
+    }
+    if (c.mmClkReal && c.mmInfoBand <= 0) {                                 // Real .. · GMT .. , small, under the line (the info band carries it when shown)
+        Font* rf = mm_font(f.fonts, f.font, MM_REAL);
+        if (rf) { rf->begin(dev);
+            time_t t = time(0); struct tm lt, gt; localtime_s(&lt, &t); gmtime_s(&gt, &t);
+            char rb[48]; sprintf(rb, (c.lang == 1) ? "R\xC3\xA9""el %02d:%02d \xC2\xB7 GMT %02d:%02d" : "Real %02d:%02d \xC2\xB7 GMT %02d:%02d", lt.tm_hour, lt.tm_min, gt.tm_hour, gt.tm_min);
+            const float ry = line1 ? y + bandH + snap(5.0f * S) : y + snap(9.0f * S);
+            rf->draw_c(dev, snap(x + w * 0.5f), snap(ry), mm_up(MM_REAL, rb, u0, 40), snap(mm_sz(MM_REAL, 10.0f * S)), mm_col(MM_REAL, 0xFFC8D2E6u), 0xFF000000u, mm_ow(MM_REAL, 1.1f * S));
+        }
+    }
+}
+
+// one line : F-10 | 2.0x | (reticle) 12.4y | (scan) 48y | 17:43 · 16:43 GMT -- each piece in its own cell, only
+// when it has something to say
+static void fmt_yalms(char* b, float d) { if (d < 100.0f) sprintf(b, "%.1fy", d); else sprintf(b, "%dy", (int)(d + 0.5f)); }
+static void draw_info_band(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, float mapX, float mapY, float x, float y, float w, float S) {
+    Font* sf = band_font(f, MM_TIME);                                        // the square / zoom : the serif numerals
+    Font* fo = f.font; if (!fo || !sf) return;
+    const float bandH = info_band_h(c, S), cy = y + bandH * 0.5f, sg = snap(4.0f * S), ir = snap(5.5f * S), pad = snap(6.0f * S);
+    const float gsz = snap(18.0f * S), zsz = snap(14.0f * S), vsz = snap(13.0f * S);
+    char gb[12] = "", zb[12], tdb[16] = "", sdb[16] = "", rb[32] = "";
+    if (c.mmGrid) {
+        const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
+        if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) sprintf(gb, "%c-%d", 'A' + gc, gr + 1);
+    }
+    sprintf(zb, "%.1fx", clampf(c.mmZoom, 1.0f, 24.0f));
+    if (c.mmInfoDist && g.target.valid) { const float dx = g.target.posX - g.meX, dz = g.target.posZ - g.meZ; fmt_yalms(tdb, sqrtf(dx * dx + dz * dz)); }
+    if (c.mmInfoDist && c.mmScan) {
+        const PartyState::ScanTrack& st = party().scan_track();
+        if (st.ms && (unsigned)(model_now_ms() - st.ms) < 3000u) { const float dx = st.x - g.meX, dz = st.z - g.meZ; fmt_yalms(sdb, sqrtf(dx * dx + dz * dz)); }
+    }
+    // cells : 0 square, 1 zoom, 2 target, 3 scan, 4 real/GMT
+    float cw[5]; int id[5]; int n = 0;
+    if (gb[0])  { id[n] = 0; cw[n++] = sf->measure(gb, gsz); }
+    id[n] = 1; cw[n++] = sf->measure(zb, zsz);
+    if (tdb[0]) { id[n] = 2; cw[n++] = 2.0f * ir + sg + fo->measure(tdb, vsz); }
+    if (sdb[0]) { id[n] = 3; cw[n++] = 2.0f * ir + sg + fo->measure(sdb, vsz); }
+    Font* rf = mm_font(f.fonts, f.font, MM_REAL);
+    const float rsz = snap(mm_sz(MM_REAL, 12.0f * S));
+    if (c.mmClock && c.mmClkReal && rf) {                                    // "17:43 · 16:43 GMT" ; only "17:43" if too narrow
+        time_t t = time(0); struct tm lt, gt; localtime_s(&lt, &t); gmtime_s(&gt, &t);
+        float used = 0.0f; for (int i = 0; i < n; ++i) used += cw[i];
+        const float room = w - 2.0f * pad - used - (n + 1) * snap(10.0f * S);
+        sprintf(rb, "%02d:%02d \xC2\xB7 %02d:%02d GMT", lt.tm_hour, lt.tm_min, gt.tm_hour, gt.tm_min);
+        if (rf->measure(rb, rsz) > room) sprintf(rb, "%02d:%02d", lt.tm_hour, lt.tm_min);
+        id[n] = 4; cw[n++] = rf->measure(rb, rsz);
+    }
+    float cx[5], rx[4];
+    band_cells(cw, n, x + pad, w - 2.0f * pad, cx, rx);
+    for (int i = 0; i < n - 1; ++i) band_rule(dev, rx[i], y + snap(4.0f * S), y + bandH - snap(4.0f * S));
+    for (int i = 0; i < n; ++i) {
+        const float lx = cx[i];
+        switch (id[i]) {
+        case 0: sf->begin(dev); sf->draw_lc(dev, snap(lx), snap(cy), gb, gsz, 0xFFF4EEDFu, 0xFF000000u, 1.3f * S); break;
+        case 1: sf->begin(dev); sf->draw_lc(dev, snap(lx), snap(cy), zb, zsz, 0xFFC9CED6u, 0xFF000000u, 1.1f * S); break;
+        case 2: {                                                         // your target : a reticle, its claim colour
+            u32 lc = c.mmTgtLineCol | 0xFF000000u;
+            for (int e = 0; e < g.mapEntN; ++e) if (g.mapEnts[e].id == g.target.id) { lc = mm_ent_color(g.mapEnts[e]) | 0xFF000000u; break; }
+            color_state(dev);
+            const float icx = snap(lx + ir), icy = snap(cy);
+            rrect_stroke(dev, icx - ir, icy - ir, 2.0f * ir, 2.0f * ir, ir, lc, snap(1.5f * S));
+            disc(dev, icx, icy, snap(1.4f * S), lc);
+            fo->begin(dev); fo->draw_lc(dev, snap(lx + 2.0f * ir + sg), snap(cy), tdb, vsz, 0xFFF2F5FAu, 0xFF000000u, 1.1f * S);
+        } break;
+        case 3: {                                                         // the Wide Scan track : its ring, its colour
+            const u32 sc = c.mmScanCol | 0xFF000000u;
+            color_state(dev);
+            const float icx = snap(lx + ir), icy = snap(cy), ph = f.t * 2.2f - floorf(f.t * 2.2f), rp = ir * (0.6f + 0.6f * ph);
+            rrect_stroke(dev, icx - rp, icy - rp, 2.0f * rp, 2.0f * rp, rp, (sc & 0x00FFFFFFu) | ((u32)((1.0f - ph) * 200.0f) << 24), snap(1.2f * S));
+            rrect_stroke(dev, icx - ir * 0.6f, icy - ir * 0.6f, 1.2f * ir, 1.2f * ir, ir * 0.6f, sc, snap(1.5f * S));
+            fo->begin(dev); fo->draw_lc(dev, snap(lx + 2.0f * ir + sg), snap(cy), sdb, vsz, sc, 0xFF000000u, 1.1f * S);
+        } break;
+        case 4: { char ru[32]; rf->begin(dev);
+            rf->draw_lc(dev, snap(lx), snap(cy), mm_up(MM_REAL, rb, ru, 32), rsz, mm_col(MM_REAL, 0xFFC8D2E6u), 0xFF000000u, mm_ow(MM_REAL, 1.1f * S)); } break;
+        }
+    }
+}
+
+// the compact plate : soft drop shadow, a metal edge lighter on top, a dark body, each band its own gradient with a
+// light bevel line on its top edge, and a recessed WELL around the map (dark rim + a faint light line outside it)
+static void draw_compact_plate(u32 dev, float x, float y, float w, float h, float mx, float my, float md, bool round,
+                               float cbY, float cbH, float ibY, float ibH, float S) {
+    (void)x; (void)y; (void)h;   // the BOX itself is the user's themed box (draw_themed_box, mmBox) : this only adds the bands and the well
+    color_state(dev);
+    struct B { float y, h; } bands[2] = { { cbY, cbH }, { ibY, ibH } };
+    for (int i = 0; i < 2; ++i) {
+        if (bands[i].h <= 0.0f) continue;
+        const float by = snap(bands[i].y), bh = snap(bands[i].h);
+        const float bx = x + snap(2.0f * S), bw = w - snap(4.0f * S);
+        rrect(dev, bx, by + 1.0f, bw, bh - 2.0f, snap(3.0f * S), 0x1EFFFFFFu, 0x06FFFFFFu);   // the band's own face : a LIGHT lift over the theme (relief = lighter)
+        grad_quad(dev, bx + snap(3.0f * S), by + 1.0f, bw * 0.5f - snap(3.0f * S), 1.0f, 0x00FFFFFFu, 0x40FFFFFFu, 0x00FFFFFFu, 0x40FFFFFFu);   // top bevel, fading at the ends
+        grad_quad(dev, bx + bw * 0.5f, by + 1.0f, bw * 0.5f - snap(3.0f * S), 1.0f, 0x40FFFFFFu, 0x00FFFFFFu, 0x40FFFFFFu, 0x00FFFFFFu);
+    }
+    // the map well
+    if (round) {
+        const float cxm = mx + md * 0.5f, cym = my + md * 0.5f, rr = md * 0.5f;
+        rrect_stroke(dev, cxm - rr - 2.0f, cym - rr - 2.0f, md + 4.0f, md + 4.0f, rr + 2.0f, 0x38FFFFFFu, 1.0f);
+        rrect_stroke(dev, cxm - rr - 1.0f, cym - rr - 1.0f, md + 2.0f, md + 2.0f, rr + 1.0f, 0xFF06080Au, 1.6f);
+    } else {
+        rrect_stroke(dev, mx - 2.0f, my - 2.0f, md + 4.0f, md + 4.0f, snap(2.0f * S), 0x38FFFFFFu, 1.0f);
+        rrect_stroke(dev, mx - 1.0f, my - 1.0f, md + 2.0f, md + 2.0f, snap(1.0f * S), 0xFF06080Au, 1.6f);
+    }
+}
+
+// ---- ASTRAL kit : the pieces' files and one full-canvas layer draw (the kit's 1024 canvas holds a ring of diameter
+// 1000, so the quad is 1.024 x the ring diameter, centred) ----
+static const char* astral_path(int i) {
+    static const char* NAME[AS_N] = { "lentille_ombre", "anneau_base", "anneau_graduations", "anneau_reflet", "pastille_cardinal",
+                                      "lettre_N", "lettre_E", "lettre_S", "lettre_W" };
+    static char b[AS_N][260];
+    if (!b[i][0]) { char rel[96]; _snprintf(rel, sizeof(rel), "assets\\astral\\laiton_%s.raw", NAME[i]); rel[95] = 0; plugin_path(b[i], 260, rel); }
+    return b[i];
+}
+// a ring layer of the kit drawn as an ANNULUS (tannulus) : kit radius t (canvas 1024, lens 420, ring edge 500) maps
+// LINEARLY to screen so that 420 -> rc (the lens edge) and 500 -> r (the outer edge) -- the Bezel-width slider thickens
+// the painted ring instead of scaling the whole picture. The lens shadow keeps the lens's own scale (rc / 420).
+static void draw_astral_ring(u32 dev, u32 tex, float cx, float cy, float rc, float r, float t0, float t1, float ang) {
+    const float k = (r - rc) / 80.0f;
+    tex_state(dev, tex);
+    tannulus(dev, cx, cy, rc + (t0 - 420.0f) * k, rc + (t1 - 420.0f) * k, t0 / 1024.0f, t1 / 1024.0f, ang, 0xFFFFFFFFu);
+    dSetTex(dev, 0, 0);
+}
+static void draw_astral_shadow(u32 dev, u32 tex, float cx, float cy, float rc) {
+    tex_state(dev, tex);
+    tannulus(dev, cx, cy, rc * (390.0f / 420.0f), rc * (424.0f / 420.0f), 390.0f / 1024.0f, 424.0f / 1024.0f, 0.0f, 0xFFFFFFFFu);
+    dSetTex(dev, 0, 0);
+}
+
 // longue-vue BRASS BEZEL around the round map : a wide beveled gold ring + a specular glint + fixed cardinal
 // marks (N up -- our map is north-up). rOuter = widget radius ; the map lens fills radius rOuter - bw inside it.
 static void draw_brass_bezel(u32 dev, const Frame& f, float cx, float cy, float r, float bw, float S) {
@@ -389,8 +634,10 @@ static void map_retry_later(int& tries, unsigned& retryAt) {
     retry_arm(retryAt, tries < 3 ? 1u : (tries < MAP_SLOW_AFTER ? 300u : MAP_SLOW_MS));
 }
 
-void Minimap::on_device_lost() { mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
+void Minimap::on_device_lost() { mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
 void Minimap::dispose() {
+    release_texture(mkAtlas_); mkAtlas_ = 0; mkAtlasR_ = TexRetry{};
+    for (int i = 0; i < AS_N; ++i) { release_texture(ast_[i]); ast_[i] = 0; astR_[i] = TexRetry{}; }
     release_texture(mapTex_); mapTex_ = 0; mapFileId_ = 0;
     release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_);
     mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
@@ -416,6 +663,7 @@ void Minimap::draw(const Frame& f) {
     // is otherwise indistinguishable from an empty zone.
     // Uses retry_clock.h rather than the hand-rolled sentinel this carried : retry_due() IS that 0-sentinel
     // check, and the project has one correct implementation of it on purpose.
+    const bool icons = (c.mmMarkStyle == 1) && ensure_raw_tex_mip(dev, mkAtlas_, mkAtlasR_, MK_ATLAS_PATH(), 512, 256) != 0;   // the v3 icon atlas (gen_map_markers.py) ; the classic blips are the fallback
     if ((!mkPlayer_ || !mkMob_ || !elemTex_) && mkTries_ < MK_TRIES) {
         if (retry_due(mkNextMs_)) {
             retry_arm(mkNextMs_, mkTries_ < 4 ? 1u : MK_RETRY_MS);   // the first few immediately (a device just becoming ready), then spaced
@@ -437,11 +685,21 @@ void Minimap::draw(const Frame& f) {
 
     const float S = scale_ * clampf(c.mmScale, 0.5f, 2.0f);     // overall box / header scale
     const float mapD = snap(220.0f * S * clampf(c.mmMapSize, 0.5f, 1.6f));   // map DIAMETER -- independent of the box
-    const float bm = c.mmClock ? snap(5.0f * S) : 0.0f;         // inner margin around the map (inside the themed box)
+    // COMPACT layout : two thin bands (clock / map info), each above or below the map ; the classic header is off
+    const bool  compact = (c.mmLayout == 1);
+    const float cbH = compact ? clock_band_h(c, S) : 0.0f, ibH = compact ? info_band_h(c, S) : 0.0f;
+    const bool  cbTop = (c.mmClkBand == 0), ibTop = (c.mmInfoBand == 1);
+    const float topH = (cbTop ? cbH : 0.0f) + (ibTop ? ibH : 0.0f), botH = (cbTop ? 0.0f : cbH) + (ibTop ? 0.0f : ibH);
+    // compact = the economy of space : the map sits nearly edge to edge (1 px of air), the classic keeps its 5 px
+    // ... except around the Astral ring, whose cardinal medallions stand 4 % of the radius outside it (kit radius 520 / 500)
+    const bool  astralRing = (c.mmShape == 1 && c.mmClock && c.mmBezel);
+    // (medallion half-size 0.128 r x the Cardinal-size slider, centred ~0.94 r out : what passes the ring's edge)
+    const float medOut = mapD * 0.5f * (0.128f * clampf(c.mmCardSz, 0.5f, 2.0f) - 0.06f);
+    const float bm = compact ? (astralRing ? snap((medOut > 0.0f ? medOut : 0.0f) + 4.0f * S) : snap(3.0f * S)) : (c.mmClock ? snap(5.0f * S) : 0.0f);   // inner margin around the map (inside the themed box)
     const float hdrW = snap(210.0f * S);                        // the clock header's natural width
-    const float Hh = clock_header_height(c, S);                 // clock header height (enabled rows only ; 0 if off)
-    const bool  hasClock = (c.mmClock != 0);                    // clock header shown at all
-    const int   cpos = hasClock ? ((c.mmClockPos < 0 || c.mmClockPos > 3) ? 0 : c.mmClockPos) : -1;   // header placement (-1 = none)
+    const float Hh = compact ? 0.0f : clock_header_height(c, S);   // clock header height (enabled rows only ; 0 if off)
+    const bool  hasClock = (c.mmClock != 0) || (compact && ibH > 0.0f);   // the box (themed chrome) is drawn at all
+    const int   cpos = (hasClock && !compact) ? ((c.mmClockPos < 0 || c.mmClockPos > 3) ? 0 : c.mmClockPos) : -1;   // classic header placement (-1 = none)
     // header BAND width (the content is CENTRED in `hbw`) + the box layout.
     const float cw = (cpos >= 0) ? clock_header_width(f, g.vana, c, elemTex_, S) : 0.0f;   // widest enabled row (incl. the long FR day row)
     const float fc = bm + snap(5.0f * S);                       // OUTER frame clearance : keeps the content off the themed box border
@@ -452,7 +710,10 @@ void Minimap::draw(const Frame& f) {
     if (cpos == 0 || cpos == 1) { if (cw > snap(20.0f * S)) hbw = cw + 2.0f * fc; }
     else if (cpos == 2 || cpos == 3) { if (cw > snap(20.0f * S)) hbw = cw; }
     float Wbox, boxH;
-    if (cpos == 0 || cpos == 1) {                               // TOP / BOTTOM : header stacked with the map
+    if (compact) {                                              // [top bands][bm][map][bm][bottom bands]
+        Wbox = mapD + 2.0f * bm;
+        boxH = topH + mapD + 2.0f * bm + botH;
+    } else if (cpos == 0 || cpos == 1) {                               // TOP / BOTTOM : header stacked with the map
         const float needW = mapD + 2.0f * bm;                  // width the map + side margins want
         Wbox = (needW > hbw ? needW : hbw);                   // box width = max(header, map+margins)
         boxH = Hh + mapD + 2.0f * bm;                          // header + gap + map + margins
@@ -487,7 +748,14 @@ void Minimap::draw(const Frame& f) {
     const float ix = px + bi, iy = py + bi;                    // the content area's top-left (inside the frame border)
     const float r = mapD * 0.5f;
     float hx = ix, hy = iy, ccx, ccy;
-    if (cpos == 0) {                                            // TOP : header above the map
+    // compact : band rects (the clock outermost, the info band against the map)
+    float cbY = 0.0f, ibY = 0.0f;
+    if (compact) {
+        ccx = ix + Wbox * 0.5f; ccy = iy + topH + bm + r;
+        const float mapBot = iy + topH + bm + mapD + bm;
+        if (cbTop) cbY = iy; else cbY = mapBot + (ibTop ? 0.0f : ibH);
+        if (ibTop) ibY = iy + (cbTop ? cbH : 0.0f); else ibY = mapBot;
+    } else if (cpos == 0) {                                          // TOP : header above the map
         hx = ix + (Wbox - hbw) * 0.5f;  hy = iy;
         ccx = ix + Wbox * 0.5f;         ccy = iy + Hh + bm + r;
     } else if (cpos == 1) {                                    // BOTTOM : header below the map
@@ -519,8 +787,10 @@ void Minimap::draw(const Frame& f) {
             }
         }
         color_state(dev);
-        draw_themed_box(dev, f.skin, px, boxPy, Wout, Hout, c.mmBox, 1.0f, S);   // shared themed chrome (bg + border + transparency + Same-as-Party / own theme)
-        draw_clock_header(dev, f, g.vana, c, elemTex_, moonTex_, hx, hy, hbw, S);
+        draw_themed_box(dev, f.skin, px, boxPy, Wout, Hout, c.mmBox, 1.0f, S);   // shared themed chrome (Same-as-Party / own theme, transparency, border)
+        if (compact) draw_compact_plate(dev, px, boxPy, Wout, Hout, ccx - r, ccy - r, mapD, c.mmShape == 1, cbY, cbH, ibY, ibH, S);   // + the bands' faces, their rules' rails and the map well
+        if (!compact) draw_clock_header(dev, f, g.vana, c, elemTex_, moonTex_, hx, hy, hbw, S);
+        else if (cbH > 0.0f) draw_clock_band(dev, f, g.vana, c, elemTex_, moonTex_, ix, cbY, Wbox, S);
     }
     const bool  round = (c.mmShape == 1);
     const float MSc = clampf(c.mmMarkerScale, 0.5f, 2.0f);
@@ -657,7 +927,16 @@ void Minimap::draw(const Frame& f) {
     // as a crisp solid ring -- a thin dark AA outline + the colour band -- and inset the circular clip so the map
     // fills only the interior, leaving the ring visible. Gives the round minimap a real border, not a soft glow. ----
     float rc = r;                                            // circle clip radius = the interior map area (inside the ring)
+    // ASTRAL : the textured compass kit (assets/astral, scripts/gen_astral.py) when every piece is loaded ; the vector
+    // brass bezel below stays the fallback (a piece that will not load never leaves the map without a ring)
+    bool astral = false;
     if (round && c.mmClock && c.mmBezel) {
+        astral = true;
+        for (int i = 0; i < AS_N; ++i) if (!ensure_raw_tex_mip(dev, ast_[i], astR_[i], astral_path(i), AS_SZ[i], AS_SZ[i])) astral = false;
+    }
+    if (astral) {
+        rc = r - r * (80.0f / 500.0f) * clampf(c.mmBezelW, 0.5f, 2.0f);   // the kit's ring is 80 / 500 of the radius (manifest.json) x the Bezel-width slider
+    } else if (round && c.mmClock && c.mmBezel) {
         // longue-vue INSTRUMENT look (the Vana box) : a wide brass bezel + fixed cardinals around the lens.
         const float bezelW = snap(22.0f * S * clampf(c.mmBezelW, 0.5f, 2.0f));   // Bezel-width slider
         rc = r - bezelW;
@@ -700,6 +979,7 @@ void Minimap::draw(const Frame& f) {
         if (round) {
             const float u0c = mapX / mapPx, v0c = 1.0f - mapY / mapPx;             // player UV (V flipped) at the centre
             tdisc(dev, ccx, ccy, rc, u0c, v0c, 1.0f / qs, -1.0f / qs, 0xFFFFFFFFu);
+            if (astral) draw_astral_shadow(dev, ast_[AS_SHADOW], ccx, ccy, rc);   // the lens shadow : on the map, under the markers
         } else {
             const float cx0 = qx > wx0 ? qx : wx0, cy0 = qy > wy0 ? qy : wy0;
             const float cx1 = (qx + qs) < wx1 ? (qx + qs) : wx1, cy1 = (qy + qs) < wy1 ? (qy + qs) : wy1;
@@ -745,10 +1025,18 @@ void Minimap::draw(const Frame& f) {
             seg_soft(dev, ccx, ccy, sx, sy, w + snap(2.6f * S), 0x88000000u);   // dark under-stroke (halo)
             seg_soft(dev, ccx, ccy, sx, sy, w, lc);                            // colour line
             // target-end RETICLE : a ring (+ centre pip) on the target so it reads even when the line is short.
+            if (icons) {                                                  // the reticle icon : its fill in the claim colour, its gold frame
+                const float ts = snap(17.0f * S * MSc);
+                tex_state(dev, mkAtlas_);
+                mk_cell(dev, MK_TARGET_FILL, sx, sy, ts, 0.0f, lc);
+                mk_cell(dev, MK_TARGET_FRAME, sx, sy, ts, 0.0f, 0xFFFFFFFFu);
+                dSetTex(dev, 0, 0);
+            } else {
             const float rr = clampf(5.0f * S, 4.0f, 10.0f);
             rrect_stroke(dev, sx - rr, sy - rr, 2.0f * rr, 2.0f * rr, rr, 0x88000000u, snap(3.0f * S));   // dark rim
             rrect_stroke(dev, sx - rr, sy - rr, 2.0f * rr, 2.0f * rr, rr, lc, snap(1.8f * S));            // colour ring
             disc(dev, snap(sx), snap(sy), snap(1.6f * S), lc);                                            // centre pip
+            }
         }
     }
 
@@ -805,8 +1093,72 @@ void Minimap::draw(const Frame& f) {
     }
     const bool clipped = vpSet;   // only the square viewport clip lets a blip cross the rim ; round keeps blips wholly inside
 
+    // ---- ICONS (the v3 atlas) : one silhouette per kind, the fill tinted by state, the gold frame over it. Drawn
+    //      least to most important : other players, NPCs, mobs, then trusts / alliance / party on top ----
+    if (icons && g.mapEntN > 0 && c.mmNPC) {                      // plain NPCs : small green dots (the user's pick over a diamond icon)
+        color_state(dev);
+        const float dF = clampf(0.6f + 0.16f * Z, 1.2f, 2.4f) * S * MSc, dO = dF + 0.6f * S;   // small : a crowd of NPCs must not cover the map
+        for (int e = 0; e < g.mapEntN; ++e) {
+            const MapEntity& me = g.mapEnts[e];
+            if (me.type != 2 || me.kind != MAPK_NONE) continue;
+            const float ex = (g.map.scale * me.x) / 5.0f - (float)g.map.offX;
+            const float ey = (g.map.scale * -me.z) / 5.0f - (float)g.map.offY;
+            const float sx = ccx + (ex - mapX) * pn, sy = ccy + (ey - mapY) * pn;
+            const float pad = clipped ? dO : -dO;
+            if (round) { const float dx = sx - ccx, dy = sy - ccy, lim = rc + pad; if (lim < 0.0f || dx * dx + dy * dy > lim * lim) continue; }
+            else if (sx < wx0 - pad || sx > wx1 + pad || sy < wy0 - pad || sy > wy1 + pad) continue;
+            disc(dev, snap(sx), snap(sy), dO, 0x99000000u);
+            disc(dev, snap(sx), snap(sy), dF, 0xFF5ED37Cu);
+        }
+    }
+    if (icons && g.mapEntN > 0) {
+        tex_state(dev, mkAtlas_);
+        // size follows the zoom : zoomed out = a crowd, small marks ; zoomed in = room for the full icon (x0.62 at 1x .. x1.1 from 10x)
+        const float zk = clampf(0.58f + 0.052f * Z, 0.62f, 1.1f) * S * MSc;
+        for (int pass = 0; pass < 3; ++pass)
+        for (int e = 0; e < g.mapEntN; ++e) {
+            const MapEntity& me = g.mapEnts[e];
+            if (me.id && me.id == party().selfId_) continue;
+            int fill = -1, frame = -1; float sz = 0.0f, ang = 0.0f; u32 col = 0xFFFFFFFFu; int layer = 0;
+            if (me.kind == MAPK_PET) {                             // YOUR pet : the paw, teal, upright (whatever its entity type)
+                if (!c.mmPC) continue;
+                layer = 2; fill = MK_PET_FILL; frame = MK_PET_FRAME; sz = 12.0f * zk; col = 0xFF4FD1C5u;
+            } else if (me.type == 3) {                             // MOB : the arrow, its fill = the claim ; a pop NM wears the crowned frame
+                if (!c.mmMob) continue;
+                const bool nm = (me.kind == MAPK_NM);
+                layer = nm ? 2 : 1; fill = MK_MOB_FILL; frame = nm ? MK_NM_FRAME : MK_MOB_FRAME; sz = (nm ? 16.0f : 12.0f) * zk;
+                ang = eased_angle(me.id, me.heading + 1.5708f);
+                col = (me.claimId != 0 && !in_my_group(me.claimId)) ? 0xFFE86BE0u : (me.claimId != 0 || me.status == 1) ? 0xFFFF5A4Eu : 0xFFFFE600u;   // unclaimed : a clean yellow -- it reads because a mob's frame is DARK bronze (below), not gold
+            } else if (me.type == 2) {                             // NPC : a trust (flagged in your party / alliance), a service NPC by its name, or a plain NPC
+                if (me.kind == MAPK_TRUST) { if (!c.mmPC) continue; layer = 2; fill = MK_TRUST_FILL; frame = MK_TRUST_FRAME; sz = 13.0f * zk; col = 0xFF9CCBFFu; }
+                else {
+                    if (!c.mmNPC) continue;
+                    static const int SVC[9] = { -1, -1, -1, -1, MK_HOMEPOINT, MK_GUIDE, MK_MOOGLE, MK_WAYPOINT, MK_QUEST };   // by MapKind
+                    const int svc = (me.kind < 9) ? SVC[me.kind] : -1;
+                    if (svc >= 0) { layer = 1; fill = svc; sz = 22.0f * S * MSc * clampf(0.85f + 0.02f * Z, 0.9f, 1.2f); }   // a LANDMARK : big, and nearly zoom-proof -- you navigate by it
+                    else          continue;                         // a plain NPC : a green DOT, drawn in the vector pass below
+                }
+            } else {                                               // PC
+                if (!c.mmPC) continue;
+                if (me.spawn & 0x04)      { layer = 2; fill = MK_PARTY_FILL; frame = MK_PARTY_FRAME; sz = 14.0f * zk; col = 0xFF5AB4FFu; }
+                else if (me.spawn & 0x08) { layer = 2; fill = MK_ALLY_FILL;  frame = MK_ALLY_FRAME;  sz = 13.0f * zk; col = 0xFFB48CFFu; }
+                else                      { layer = 0; fill = MK_PC_OTHER; sz = 7.0f * zk; }
+            }
+            if (layer != pass) continue;
+            const float ex = (g.map.scale * me.x) / 5.0f - (float)g.map.offX;
+            const float ey = (g.map.scale * -me.z) / 5.0f - (float)g.map.offY;
+            const float sx = ccx + (ex - mapX) * pn, sy = ccy + (ey - mapY) * pn;
+            const float mh = sz * 0.5f, pad = clipped ? mh : -mh;
+            if (round) { const float dx = sx - ccx, dy = sy - ccy, lim = rc + pad; if (lim < 0.0f || dx * dx + dy * dy > lim * lim) continue; }
+            else if (sx < wx0 - pad || sx > wx1 + pad || sy < wy0 - pad || sy > wy1 + pad) continue;
+            mk_cell(dev, frame >= 0 ? frame : fill, sx, sy + 1.0f, sz * 1.14f, ang, 0x8C000000u);   // a soft dark under-shape : the icon stands off the parchment
+            mk_cell(dev, fill, sx, sy, sz, ang, col);
+            if (frame >= 0) mk_cell(dev, frame, sx, sy, sz, ang, (me.type == 3 && me.kind != MAPK_NM && me.kind != MAPK_PET) ? 0xFF4A3A22u : 0xFFFFFFFFu);   // mobs : dark bronze (any fill pops, a mob never reads as a player) ; an NM keeps its gold crown, players and pets the gold
+        }
+        dSetTex(dev, 0, 0);
+    }
     // ---- mob markers : the Arrow icon rotated by heading, tinted by claim colour ----
-    if (g.mapEntN > 0 && mkMob_ && c.mmMob) {
+    if (!icons && g.mapEntN > 0 && mkMob_ && c.mmMob) {
         const float mkSz = clampf(2.4f + 1.0f * Z, 4.4f, 11.0f) * S * MSc;
         tex_state(dev, mkMob_);
         for (int e = 0; e < g.mapEntN; ++e) {
@@ -826,7 +1178,7 @@ void Minimap::draw(const Frame& f) {
     }
 
     // ---- NPC / other-PC markers : a tinted dot, per-type visibility toggle ----
-    if (g.mapEntN > 0 && (c.mmNPC || c.mmPC)) {
+    if (!icons && g.mapEntN > 0 && (c.mmNPC || c.mmPC)) {
         color_state(dev);
         const float dF = clampf(0.9f + 0.42f * Z, 1.5f, 4.2f) * S * MSc, dO = dF + 0.5f * S;   // NPC / PC pastilles -- smaller
         for (int e = 0; e < g.mapEntN; ++e) {
@@ -846,7 +1198,14 @@ void Minimap::draw(const Frame& f) {
     if (vpSet) dSetViewport(dev, vpSave);   // restore the full viewport
 
     // ---- player marker : the Location pin at the centre, rotated to face the heading, navy + halo ----
-    if (mkPlayer_) {
+    if (icons) {                                                  // YOU : the navigation arrow, white, gold frame
+        const float pSz = snap(17.0f * S * MSc), pang = g.meHeading + 1.5708f;
+        tex_state(dev, mkAtlas_);
+        mk_cell(dev, MK_ME_FRAME, ccx, ccy + 1.0f, pSz * 1.14f, pang, 0x8C000000u);
+        mk_cell(dev, MK_ME_FILL, ccx, ccy, pSz, pang, 0xFFFFFFFFu);
+        mk_cell(dev, MK_ME_FRAME, ccx, ccy, pSz, pang, 0xFFFFFFFFu);
+        dSetTex(dev, 0, 0);
+    } else if (mkPlayer_) {
         const float pSz = clampf(3.2f + 1.3f * Z, 8.0f, 15.0f) * S * MSc;
         const float pang = g.meHeading + 1.5708f;
         tex_state(dev, mkPlayer_);
@@ -857,7 +1216,25 @@ void Minimap::draw(const Frame& f) {
 
     // ---- the map grid square, "(F-10)" -- the native compass's line, the client's own formula (FUN_05538C10) :
     //      column 'A' + (px - 16) / 32, row 1 + (py - 16) / 32 on the 512 px native map, C division (toward zero) ----
-    if (c.mmGrid && g.map.scale != 0 && f.font) {
+    if (astral) {                                              // the ring, its graduations, the glint, the cardinal medallions
+        draw_astral_ring(dev, ast_[AS_BASE],  ccx, ccy, rc, r, 416.0f, 504.0f, 0.0f);
+        draw_astral_ring(dev, ast_[AS_TICKS], ccx, ccy, rc, r, 424.0f, 474.0f, 0.0f);      // north-up : the camera rotation will turn this one
+        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+        draw_astral_ring(dev, ast_[AS_GLINT], ccx, ccy, rc, r, 418.0f, 488.0f, 0.0f);
+        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+        // the medallions : on the kit's cardinal circle (470, mapped like the ring), sized by the outer radius x the
+        // Cardinal-size slider
+        const float rr = rc + (470.0f - 420.0f) * (r - rc) / 80.0f, ps = 128.0f * (2.0f * r / 1000.0f) * clampf(c.mmCardSz, 0.5f, 2.0f);
+        static const float DX[4] = { 0.0f, 1.0f, 0.0f, -1.0f }, DY[4] = { -1.0f, 0.0f, 1.0f, 0.0f };
+        for (int i = 0; i < 4; ++i) {
+            const float px0 = snap(ccx + DX[i] * rr - ps * 0.5f), py0 = snap(ccy + DY[i] * rr - ps * 0.5f);
+            tex_state(dev, ast_[AS_PAST]);   tquad(dev, px0, py0, ps, ps, 0.0f, 1.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
+            tex_state(dev, ast_[AS_LN + i]); tquad(dev, px0, py0, ps, ps, 0.0f, 1.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
+        }
+        dSetTex(dev, 0, 0);
+    }
+    if (compact && ibH > 0.0f) draw_info_band(dev, f, c, g, mapX, mapY, ix, ibY, Wbox, S);   // the square lives in the band then
+    else if (c.mmGrid && g.map.scale != 0 && f.font) {
         const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
         if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) {
             char gb[12]; _snprintf(gb, sizeof(gb), "(%c-%d)", 'A' + gc, gr + 1); gb[sizeof(gb) - 1] = 0;

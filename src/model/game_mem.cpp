@@ -45,6 +45,7 @@
 #include "model/paths.h"             // publish_sortie_track : plugin_path
 #include <stdio.h>                   // publish_sortie_track : the per-character file for the aioupdate addon
 #include "model/bst_state.h"      // compute_bst : the BST module's snapshot part
+#include "model/nms_gen.h"        // map_kind : a pop NM's name -> the minimap's NM icon
 #include "model/geo_state.h"      // compute_geo : the GEO module's snapshot part
 #include "model/smn_avatars_gen.h" // compute_smn : which avatar is out, its pacts (the player's grimoire)
 #include "model/geo_spells_gen.h" // compute_geo : the Geo- / Indi- spells (radius rule, aura from its status)
@@ -170,6 +171,31 @@ static const u32 ENT_STATUS_OFF  = 0x170;   // u32 : 0 = idle, 1 = engaged/in-co
 static const u32 ENT_CLAIM_OFF   = 0x188;   // u32 : claiming player's server id (0 = unclaimed)
 static const u32 ENT_SPAWN_OFF   = 0x1D0;   // u8 SpawnType (read as a dword -> mask 0xFF) : 0x01 PC, 0x02 NPC, 0x10 Mob
 
+// what the entity IS (MapKind), for the minimap's icon. PCs need nothing ; a trust is an NPC the client flags in your
+// party / alliance ; the rest is the NAME (one guarded 24-byte copy) : the service NPCs by their fixed names, a pop NM
+// by the NM table (lowercase key).
+static unsigned char map_kind(u32 p, unsigned char type, unsigned char spawn, bool isPet) {
+    if (type == 1) return MAPK_NONE;
+    if (isPet) return MAPK_PET;
+    if (type == 2 && (spawn & 0x0C)) return MAPK_TRUST;
+    char nm[24] = {0};
+    __try { memcpy(nm, (const void*)(uintptr_t)(p + ENT_NAME_OFF), 23); }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return MAPK_NONE; }
+    nm[23] = 0;
+    if (type == 2) {
+        if (!strncmp(nm, "Home Point", 10))     return MAPK_HOMEPOINT;
+        if (!strcmp(nm, "Survival Guide"))      return MAPK_GUIDE;
+        if (!strncmp(nm, "Moogle", 6))          return MAPK_MOOGLE;
+        if (!strncmp(nm, "Waypoint", 8))        return MAPK_WAYPOINT;
+        if (!strcmp(nm, "???"))                 return MAPK_QUEST;
+        return MAPK_NONE;
+    }
+    char key[24]; int j = 0;
+    for (; j < 23 && nm[j]; ++j) key[j] = (nm[j] >= 'A' && nm[j] <= 'Z') ? (char)(nm[j] + 32) : nm[j];
+    key[j] = 0;
+    return nm_by_key(key) ? MAPK_NM : MAPK_NONE;
+}
+
 // Nearby entities for the minimap. The entity array (*(g+0x24)) is 0x900 pointers ; block-copy it once
 // (one SEH frame) then read each live entity's type (spawnType), render flag (& 0x4000 = hidden) and
 // world X/Z. Skips self, hidden, and non PC/NPC/mob. Returns the count.
@@ -181,6 +207,8 @@ int read_map_entities(MapEntity* out, int maxN) {
     __try { memcpy(ptrs, (const void*)ent, sizeof(ptrs)); }
     __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
     const u32 self = self_entity();
+    unsigned petIdx = 0xFFFFFFFFu;                                         // our pet : the self entity's pet index (+0x1FA)
+    { u32 w = 0; if (self && safe_read(self + 0x1FA, &w) && (w & 0xFFFF)) petIdx = w & 0xFFFF; }
     int n = 0;
     for (unsigned i = 0; i < 0x900 && n < maxN; ++i) {
         u32 p = ptrs[i];
@@ -206,6 +234,7 @@ int read_map_entities(MapEntity* out, int maxN) {
         out[n].x = ex; out[n].z = ez; out[n].heading = *(float*)&hh; out[n].type = type;
         out[n].id = id; out[n].claimId = cl; out[n].pflags = pf; out[n].status = (unsigned char)(st & 0xFF);
         out[n].spawn = (unsigned char)(sp & 0xFF);   // party/alliance bits ride along
+        out[n].kind = map_kind(p, type, out[n].spawn, i == petIdx);
         ++n;
     }
     return n;

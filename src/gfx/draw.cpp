@@ -37,6 +37,22 @@ void tquad_rot(u32 dev, float cx, float cy, float w, float h, float ang, u32 col
     dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, q, sizeof(Vtx));
 }
 
+void tquad_rot_uv(u32 dev, float cx, float cy, float w, float h, float ang, float u0, float v0, float u1, float v1, u32 col)
+{
+    const float ca = cosf(ang), sa = sinf(ang), hx = w * 0.5f, hy = h * 0.5f;
+    #define RX(lx,ly) (cx + (lx)*ca - (ly)*sa - 0.5f)
+    #define RY(lx,ly) (cy + (lx)*sa + (ly)*ca - 0.5f)
+    Vtx q[4] = {
+        { RX(-hx,-hy), RY(-hx,-hy), 0, 1, col, u0, v0 },
+        { RX( hx,-hy), RY( hx,-hy), 0, 1, col, u1, v0 },
+        { RX(-hx, hy), RY(-hx, hy), 0, 1, col, u0, v1 },
+        { RX( hx, hy), RY( hx, hy), 0, 1, col, u1, v1 },
+    };
+    #undef RX
+    #undef RY
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, q, sizeof(Vtx));
+}
+
 // filled TEXTURED circle (triangle fan), centred at (cx,cy) radius r, tinted `col` (MODULATE). Each vertex's
 // UV is the linear map (u0 + (vx-cx)*du, v0 + (vy-cy)*dv) -> the caller supplies the screen->UV mapping so a
 // map quad can be drawn as a GENUINE circle (round minimap) with NO stencil buffer. Centre UV = (u0,v0).
@@ -62,6 +78,20 @@ void tdisc(u32 dev, float cx, float cy, float r, float u0, float v0, float du, f
         const float ix = cx + r * ca, iy = cy + r * sa, ox = cx + (r + fth) * ca, oy = cy + (r + fth) * sa;
         ring[i * 2 + 0] = { ix - 0.5f, iy - 0.5f, 0, 1, col,  u0 + (ix - cx) * du, v0 + (iy - cy) * dv };
         ring[i * 2 + 1] = { ox - 0.5f, oy - 0.5f, 0, 1, col0, u0 + (ox - cx) * du, v0 + (oy - cy) * dv };
+    }
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, ring, sizeof(Vtx));
+}
+
+void tannulus(u32 dev, float cx, float cy, float s0, float s1, float t0, float t1, float ang, u32 col)
+{
+    const int MAXN = 160;
+    int N = (int)(s1 * 1.3f); if (N < 48) N = 48; if (N > MAXN) N = MAXN;
+    Vtx ring[(MAXN + 1) * 2];
+    for (int i = 0; i <= N; ++i) {
+        const float a = (float)i / (float)N * 6.28318530f, ca = cosf(a), sa = sinf(a);
+        const float ua = cosf(a - ang), va = sinf(a - ang);              // the texture turns by +ang on screen
+        ring[i * 2 + 0] = { cx + s0 * ca - 0.5f, cy + s0 * sa - 0.5f, 0, 1, col, 0.5f + t0 * ua, 0.5f + t0 * va };
+        ring[i * 2 + 1] = { cx + s1 * ca - 0.5f, cy + s1 * sa - 0.5f, 0, 1, col, 0.5f + t1 * ua, 0.5f + t1 * va };
     }
     dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, ring, sizeof(Vtx));
 }

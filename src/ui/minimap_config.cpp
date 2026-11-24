@@ -110,6 +110,21 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         if (aF9_ > 0.0f) {
             const float top9_ = ry;
             cat_fold_clip(dev, hdrX, top9_, hdrW, catH_[9] * aF9_);
+        { ROW_BAND(52.0f)   // Classic (stacked header) / Compact (thin bands above / below the map)
+            static const char* LL_EN[2] = { "Classic", "Compact" }; static const char* LL_FR[2] = { "Classique", "Compact" };
+            const int ly = (c.mmLayout == 1) ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Layout", "Disposition"), tr(LL_EN[ly], LL_FR[ly]))) { c.mmLayout = wrap(ly + d, 2); save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        if (c.mmLayout == 1) {
+            { ROW_BAND(52.0f)
+                static const char* IB_EN[3] = { "Off", "Top", "Bottom" }; static const char* IB_FR[3] = { "Aucune", "Haut", "Bas" };
+                const int ib = (c.mmInfoBand < 0 || c.mmInfoBand > 2) ? 2 : c.mmInfoBand;
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Info band (square, zoom, targets)", "Bande infos (case, zoom, cibles)"), tr(IB_EN[ib], IB_FR[ib]))) { c.mmInfoBand = wrap(ib + d, 3); save_ui_config(); }
+            } ROW_NEXT(52.0f)
+            if (c.mmInfoBand > 0) {
+                ROW_TOGGLE(CTRL_ID, tr("Distances (target, Wide Scan)", "Distances (cible, Wide Scan)"), c.mmInfoDist)
+            }
+        }
         ROW_TOGGLE(CTRL_ID, tr("Clock header", "En-t\xC3\xAAte horloge"), c.mmClock)
         if (c.mmClock) {
         ROW_TOGGLE(CTRL_ID, tr("Vana'diel time", "Heure Vana'diel"), c.mmClkTime)
@@ -118,8 +133,13 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         ROW_TOGGLE(CTRL_ID, tr("Real / GMT time", "Heure r\xC3\xA9""elle / GMT"), c.mmClkReal)
         { ROW_BAND(52.0f)
             static const char* PLBL_EN[4] = { "Top", "Bottom", "Left", "Right" }; static const char* PLBL_FR[4] = { "Haut", "Bas", "Gauche", "Droite" };
+            if (c.mmLayout == 1) {                          // Compact : the clock band goes above or below the map
+                const int cb = (c.mmClkBand == 1) ? 1 : 0;
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Clock position", "Position horloge"), tr(PLBL_EN[cb], PLBL_FR[cb]))) { c.mmClkBand = wrap(cb + d, 2); save_ui_config(); }
+            } else {
             int cp = (c.mmClockPos < 0 || c.mmClockPos > 3) ? 0 : c.mmClockPos;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Clock position", "Position horloge"), tr(PLBL_EN[cp], PLBL_FR[cp]))) { c.mmClockPos = wrap(cp + d, 4); save_ui_config(); }
+            }
         } ROW_NEXT(52.0f)
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.mmBox);   // clock-box chrome : Box / Transparency / Theme / Hue / Luminosity
         }
@@ -136,6 +156,11 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         if (aF8_ > 0.0f) {
             const float top8_ = ry;
             cat_fold_clip(dev, hdrX, top8_, hdrW, catH_[8] * aF8_);
+        { ROW_BAND(52.0f)   // Classic (dots + arrows) / Icons (a gold-framed silhouette per kind)
+            static const char* MS_EN[2] = { "Classic", "Icons" }; static const char* MS_FR[2] = { "Classique", "Ic\xC3\xB4nes" };
+            const int ms = (c.mmMarkStyle == 1) ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Marker style", "Style des marqueurs"), tr(MS_EN[ms], MS_FR[ms]))) { c.mmMarkStyle = wrap(ms + d, 2); save_ui_config(); }
+        } ROW_NEXT(52.0f)
         MM_PCT_SLIDER(CTRL_ID, tr("Marker Size", "Taille marqueurs"), c.mmMarkerScale, 0.50f, 2.00f)
         ROW_TOGGLE(CTRL_ID, tr("Players (PC)", "Joueurs (PC)"), c.mmPC)
         ROW_TOGGLE(CTRL_ID, tr("NPCs", "PNJ"),                  c.mmNPC)

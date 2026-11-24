@@ -46,7 +46,11 @@ static const int MAP_ENT_MAX = 400;
 // (Windower derives its in_party/in_alliance from exactly these -- FUN_1008DB90), which is a direct signal and
 // does not depend on our roster being loaded. Kept alongside `type` so the colour logic can tell party from
 // alliance, something a roster lookup cannot do (both are in party().find).
-struct MapEntity { float x, z, heading; unsigned id, claimId, pflags; unsigned char type, status, spawn; };
+// what an entity IS, beyond PC / NPC / mob -- decided by the poller from its name (and the pet index), so the minimap
+// picks its icon without reading memory in the draw. NM = a name in the pop-NM table (nms_gen.h : 28 pop NMs, not
+// every NM -- the client keeps no "notorious" flag we know of).
+enum MapKind : unsigned char { MAPK_NONE = 0, MAPK_NM, MAPK_PET, MAPK_TRUST, MAPK_HOMEPOINT, MAPK_GUIDE, MAPK_MOOGLE, MAPK_WAYPOINT, MAPK_QUEST };
+struct MapEntity { float x, z, heading; unsigned id, claimId, pflags; unsigned char type, status, spawn, kind; };
 int read_map_entities(MapEntity* out, int maxN);
 
 // Resolve up to `n` entity server-ids to their live vitals in ONE entity-array block-copy (rule 6/7 : the

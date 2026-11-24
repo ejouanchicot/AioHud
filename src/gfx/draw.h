@@ -33,6 +33,15 @@ inline void keep_on_screen(float sw, float sh, float& x, float& y, float w, floa
 
 // --- textured (FVF 0x144) ---
 
+// a SUB-RECT of the bound texture (u0,v0)-(u1,v1) as a w x h quad rotated `ang` about (cx,cy), tinted `col` --
+// one cell of an icon atlas, turned (the minimap's heading markers).
+void tquad_rot_uv(u32 dev, float cx, float cy, float w, float h, float ang, float u0, float v0, float u1, float v1, u32 col);
+
+// textured ANNULUS : screen radii s0..s1 around (cx,cy) show the texture's ring of UV radii t0..t1 around its centre
+// (0.5,0.5) -- a radial REMAP, so a ring texture can be drawn thicker or thinner than it was painted without the
+// lens hole changing shape. `ang` turns the texture (radians, clockwise on screen). Textured state, tex bound.
+void tannulus(u32 dev, float cx, float cy, float s0, float s1, float t0, float t1, float ang, u32 col);
+
 // textured quad, explicit UVs, left/right vertex colours (horizontal gradient).
 void tquad(u32 dev, float x, float y, float w, float h,
            float u0, float u1, float v0, float v1, u32 cL, u32 cR);

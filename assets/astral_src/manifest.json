@@ -1,0 +1,171 @@
+{
+  "canvas": 1024,
+  "center": [
+    512,
+    512
+  ],
+  "r_outer": 500,
+  "r_lens": 420,
+  "r_ticks": [
+    428,
+    470
+  ],
+  "r_cardinals": 470,
+  "texture_format": "PNG RGBA8 straight alpha",
+  "themes": [
+    "laiton",
+    "gris"
+  ],
+  "grayscale": "Rec.709 luminance on encoded RGB; alpha identical",
+  "pixel_coordinates": "Pixel centers at i+0.5; geometric pivots at exact integer center",
+  "blend_states": {
+    "alpha": {
+      "src": "SRCALPHA",
+      "dst": "INVSRCALPHA"
+    },
+    "additive": {
+      "src": "SRCALPHA",
+      "dst": "ONE"
+    }
+  },
+  "angle_convention": "zero = North/up, positive clockwise in screen space; use same rotation for map and ticks",
+  "draw_order": [
+    "game_map",
+    "lentille_ombre",
+    "anneau_base",
+    "anneau_graduations",
+    "anneau_reflet",
+    "pastille_cardinal",
+    "lettre",
+    "cartouches",
+    "satellite_lune"
+  ],
+  "pieces": {
+    "anneau_base": {
+      "size": [
+        1024,
+        1024
+      ],
+      "pivot": [
+        512,
+        512
+      ],
+      "rotates": false,
+      "blend": "alpha"
+    },
+    "anneau_graduations": {
+      "size": [
+        1024,
+        1024
+      ],
+      "pivot": [
+        512,
+        512
+      ],
+      "rotates": true,
+      "blend": "alpha"
+    },
+    "anneau_reflet": {
+      "size": [
+        1024,
+        1024
+      ],
+      "pivot": [
+        512,
+        512
+      ],
+      "rotates": false,
+      "blend": "additive"
+    },
+    "lentille_ombre": {
+      "size": [
+        1024,
+        1024
+      ],
+      "pivot": [
+        512,
+        512
+      ],
+      "rotates": false,
+      "blend": "alpha"
+    },
+    "pastille_cardinal": {
+      "size": 128,
+      "pivot": [
+        64,
+        64
+      ],
+      "diameter_px": 100,
+      "rotates": false,
+      "blend": "alpha"
+    },
+    "lettre": {
+      "files": [
+        "lettre_N.png",
+        "lettre_E.png",
+        "lettre_S.png",
+        "lettre_W.png"
+      ],
+      "size": 128,
+      "pivot": [
+        64,
+        64
+      ],
+      "rotates": false,
+      "blend": "alpha"
+    },
+    "cartouche_haut": {
+      "height": 128,
+      "left_w": 64,
+      "mid_w": 32,
+      "right_w": 64,
+      "reference_width": 320,
+      "text_area": [
+        38,
+        26,
+        282,
+        102
+      ],
+      "text_area_right_from_edge": 38,
+      "mid_mode": "stretch_or_tile",
+      "min_width": 128
+    },
+    "cartouche_bas": {
+      "height": 128,
+      "left_w": 64,
+      "mid_w": 32,
+      "right_w": 64,
+      "reference_width": 320,
+      "text_area": [
+        38,
+        32,
+        282,
+        96
+      ],
+      "text_area_right_from_edge": 38,
+      "mid_mode": "stretch_or_tile",
+      "min_width": 128
+    },
+    "satellite_lune": {
+      "size": 256,
+      "pivot": [
+        128,
+        128
+      ],
+      "r_outer": 120,
+      "r_hole": 96,
+      "blend": "alpha"
+    },
+    "separateur": {
+      "size": [
+        16,
+        64
+      ],
+      "pivot": [
+        8,
+        32
+      ],
+      "blend": "alpha"
+    }
+  }
+}
