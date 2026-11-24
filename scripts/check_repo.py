@@ -56,14 +56,39 @@ def prose(t):
     t = re.sub(r'```.*?```', '', t, flags=re.S)
     return re.sub(r'`[^`\n]*`', '', t)
 
-docs = [f for f in tracked() if f.endswith('.md')]
+ALL = tracked()
+TRACKED = set(ALL)
+TRACKED_DIRS = set()
+for f in ALL:
+    p = os.path.dirname(f)
+    while p and p not in TRACKED_DIRS:
+        TRACKED_DIRS.add(p); p = os.path.dirname(p)
+docs = [f for f in ALL if f.endswith('.md')]
+links = []   # (doc, target as written, repo-relative path)
 for d in docs:
     for m in re.finditer(r'\[[^\]]*\]\(([^)#]+?)(?:#[^)]*)?\)', prose(read(d))):
         tgt = m.group(1).strip()
         if tgt.startswith(('http', 'mailto:', '../../releases')):   # last one: GitHub's own relative repo link
             continue
-        if not os.path.exists(os.path.normpath(os.path.join(os.path.dirname(d), tgt))):
-            problems.append('%s : lien mort -> %s' % (d, tgt))
+        links.append((d, tgt, os.path.normpath(os.path.join(os.path.dirname(d), tgt)).replace('\\', '/')))
+# The same verdict here and on CI's clean clone (where this check runs too, 2026-11-24) : a link is judged against GIT,
+# not against this disk. Tracked -> fine. Not tracked but IGNORED on purpose (the private docs : docs/architecture,
+# docs/reverse-engineering, ... -- out of the public repository by design) -> a deliberate pointer, skipped. Neither
+# -> dead : a missing file, or one that exists only on this machine and that no other reader will ever have.
+untracked = sorted(set(rel for _, _, rel in links if rel not in TRACKED and rel.rstrip('/') not in TRACKED_DIRS))
+ignored = set()
+if untracked:
+    # BYTES : in text mode Python writes \r\n on Windows, and git then matches 'path\r' -- nothing is ever "ignored"
+    r = subprocess.run(['git', 'check-ignore', '--no-index', '--stdin'], input=('\n'.join(untracked) + '\n').encode('utf-8'), capture_output=True)
+    ignored = set(x.strip() for x in r.stdout.decode('utf-8', 'replace').splitlines() if x.strip())
+for d, tgt, rel in links:
+    if TRACKED and (rel in TRACKED or rel.rstrip('/') in TRACKED_DIRS):
+        continue
+    if rel in ignored:
+        continue
+    if not TRACKED and os.path.exists(rel):   # no git at all : the old on-disk check
+        continue
+    problems.append('%s : lien mort -> %s%s' % (d, tgt, '' if not os.path.exists(rel) else '  (present ici, mais ni suivi ni ignore par git)'))
 
 # ---- 2. //aio commands in living docs ---------------------------------------------------------
 shipped = verbs('src/plugin/aio_verbs.h')

@@ -41,3 +41,21 @@ if [ -n "$hits4" ]; then printf '%s\n' "$hits4"
   echo "::error::game-memory read inside src/ui (rule 6) -- the poller fills GameState, the widget reads f.game"
   exit 1; fi
 echo "rule 6 : no game-memory read in src/ui"
+# THE LAST THREE ADVISORY RULES, promoted 2026-11-24 : each counted zero hits that day (the advisory CI step is gone).
+# Rule 9 -- every control passes CTRL_ID ; a hand-picked number silently shares a spring.
+hits5="$(git grep -nE 'ease\( *[0-9]' -- 'src/*' || true)"
+if [ -n "$hits5" ]; then printf '%s\n' "$hits5"
+  echo "::error::hand-picked ease() uid (rule 9) -- use CTRL_ID / ctrl_uid_i"
+  exit 1; fi
+# windower::debug::log goes through wvsprintfA, which has NO floating point : a %f prints garbage -- on exactly the
+# diagnostic capture that mattered, which then reads like the bug not reproducing. Integer math for tenths / percents.
+hits6="$(git grep -nE 'debug::log\("[^"]*%[-0-9.+ ]*[fgeFGE][^a-zA-Z]' -- 'src/*' 'include/*' || true)"
+if [ -n "$hits6" ]; then printf '%s\n' "$hits6"
+  echo "::error::%f in a debug::log format -- wvsprintfA has no floating point, use integer math"
+  exit 1; fi
+# A generated header with no banner is one somebody will hand-edit (the gen_guard hook reads the banner too).
+hits7="$(git grep -L 'GENERATED' -- 'src/model/*_gen.h' || true)"
+if [ -n "$hits7" ]; then printf '%s\n' "$hits7"
+  echo "::error::generated header without a 'GENERATED' banner"
+  exit 1; fi
+echo "rule 9, %f in logs, generated banners : clean"
