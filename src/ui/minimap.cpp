@@ -605,6 +605,105 @@ static void draw_compact_plate(u32 dev, float x, float y, float w, float h, floa
     }
 }
 
+// ---- DIAL layout : the clock and the map info in the four CORNERS of the square box around the round dial ----
+// For a line at depth h from the box's top (or bottom) edge, the dial covers |x - cx| < sqrt(R^2 - (R - h')^2) where h'
+// is that line's distance to the dial's top ; what is left from the box edge to the circle is the room the line gets.
+// Each line is shrunk (never below 70 %) to fit its room -- nothing ever touches the ring.
+static float dial_room(float boxEdgeX, float cx, float cy, float R, float lineY, bool leftSide) {
+    const float dy = lineY - cy;
+    const float half = (dy * dy < R * R) ? sqrtf(R * R - dy * dy) : 0.0f;
+    const float circleEdge = leftSide ? cx - half : cx + half;
+    return leftSide ? (circleEdge - boxEdgeX) : (boxEdgeX - circleEdge);
+}
+static float dial_fit(Font* fo, const char* t, float sz, float room) { float s = sz; while (s > sz * 0.7f && fo->measure(t, s) > room) s *= 0.93f; return s; }
+
+static void draw_dial_corners(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, u32 elemTex, u32 moonTex,
+                              float mapX, float mapY, float x, float y, float w, float h, float cx, float cy, float R, float S) {
+    Font* tf = band_font(f, MM_TIME); Font* fo = f.font;
+    if (!tf || !fo) return;
+    const VanaClock& v = g.vana;
+    const float pad = snap(5.0f * S), gapR = snap(4.0f * S);         // box edge padding ; air kept off the ring
+    const float L = x + pad, Rr = x + w - pad, T = y + pad, B = y + h - pad;
+    char b0[48], u0[48];
+    // ---- top-left : the TIME, big ; under it the day -> next day (icons) ----
+    if (c.mmClock && c.mmClkTime) {
+        sprintf(b0, "%02d:%02d", v.hh, v.mm);
+        const char* t = mm_up(MM_TIME, b0, u0, 48);
+        const float ly = T + snap(11.0f * S);
+        const float sz = dial_fit(tf, t, snap(mm_sz(MM_TIME, 22.0f * S)), dial_room(L, cx, cy, R, ly, true) - gapR);
+        tf->begin(dev); tf->draw_lc(dev, snap(L), snap(ly), t, sz, mm_col(MM_TIME, 0xFFF4EEDFu), 0xFF000000u, mm_ow(MM_TIME, 1.4f * S));
+    }
+    if (c.mmClock && c.mmClkDay && elemTex) {
+        const int di = (v.dayIdx < 0 || v.dayIdx > 7) ? 2 : v.dayIdx, ni = (di + 1) & 7;
+        const float ly = T + snap((c.mmClkTime ? 31.0f : 9.0f) * S), isz = snap(15.0f * S), nsz = snap(11.0f * S);
+        tex_state(dev, elemTex);
+        tquad(dev, snap(L), snap(ly - isz * 0.5f), isz, isz, di / 8.0f, (di + 1) / 8.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
+        tquad(dev, snap(L + isz + 9.0f * S), snap(ly - nsz * 0.5f), nsz, nsz, ni / 8.0f, (ni + 1) / 8.0f, 0.0f, 1.0f, 0xB4FFFFFFu, 0xB4FFFFFFu);
+        dSetTex(dev, 0, 0);
+        fo->begin(dev); fo->draw_c(dev, snap(L + isz + 4.5f * S), snap(ly), ">", snap(9.0f * S), 0xFF8894A4u, 0xFF000000u, 0.8f);
+    }
+    // ---- top-right : the MOON (disc + %) ----
+    if (c.mmClock && c.mmClkMoon) {
+        sprintf(b0, "%d%%", v.moonPct);
+        const float mr = snap(8.0f * S), ly = T + snap(10.0f * S);
+        const float sz = dial_fit(fo, b0, snap(mm_sz(MM_MOON, 13.0f * S)), dial_room(Rr, cx, cy, R, ly, false) - gapR - 2.0f * mr - 4.0f * S);
+        const float tw = fo->measure(b0, sz);
+        draw_moon(dev, snap(Rr - mr), snap(ly), mr, moonTex);
+        fo->begin(dev); fo->draw_lc(dev, snap(Rr - 2.0f * mr - 4.0f * S - tw), snap(ly), b0, sz, mm_col(MM_MOON, 0xFFE6E9F0u), 0xFF000000u, mm_ow(MM_MOON, 1.1f * S));
+    }
+    // ---- bottom-left : the map SQUARE, big ; above it the zoom ----
+    if (c.mmGrid) {
+        const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
+        if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) {
+            sprintf(b0, "%c-%d", 'A' + gc, gr + 1);
+            const float ly = B - snap(11.0f * S);
+            const float sz = dial_fit(tf, b0, snap(18.0f * S), dial_room(L, cx, cy, R, ly, true) - gapR);
+            tf->begin(dev); tf->draw_lc(dev, snap(L), snap(ly), b0, sz, 0xFFF4EEDFu, 0xFF000000u, 1.3f * S);
+        }
+    }
+    {
+        sprintf(b0, "%.1fx", clampf(c.mmZoom, 1.0f, 24.0f));
+        const float ly = B - snap((c.mmGrid ? 30.0f : 9.0f) * S);
+        const float sz = dial_fit(fo, b0, snap(11.0f * S), dial_room(L, cx, cy, R, ly, true) - gapR);
+        fo->begin(dev); fo->draw_lc(dev, snap(L), snap(ly), b0, sz, 0xFFA8B3BFu, 0xFF000000u, 0.9f);
+    }
+    // ---- bottom-right : the DISTANCES (target, Wide Scan) ; with neither, the real time ----
+    {
+        char td[16] = "", sd[16] = "";
+        if (c.mmInfoDist && g.target.valid) { const float dx = g.target.posX - g.meX, dz = g.target.posZ - g.meZ; fmt_yalms(td, sqrtf(dx * dx + dz * dz)); }
+        if (c.mmInfoDist && c.mmScan) {
+            const PartyState::ScanTrack& st = party().scan_track();
+            if (st.ms && (unsigned)(model_now_ms() - st.ms) < 3000u) { const float dx = st.x - g.meX, dz = st.z - g.meZ; fmt_yalms(sd, sqrtf(dx * dx + dz * dz)); }
+        }
+        const float ir = snap(4.5f * S);
+        float ly = B - snap(11.0f * S);
+        if (td[0] || sd[0]) {
+            const char* lines[2] = { td[0] ? td : sd, (td[0] && sd[0]) ? sd : 0 };
+            const u32 cols[2] = { td[0] ? 0xFFF2F5FAu : (c.mmScanCol | 0xFF000000u), c.mmScanCol | 0xFF000000u };
+            const bool reticle[2] = { td[0] != 0, false };
+            for (int k = 0; k < 2 && lines[k]; ++k) {
+                const float sz = dial_fit(fo, lines[k], snap(13.0f * S), dial_room(Rr, cx, cy, R, ly, false) - gapR - 2.0f * ir - 4.0f * S);
+                const float tw = fo->measure(lines[k], sz), icx = snap(Rr - ir);
+                color_state(dev);
+                if (reticle[k]) {
+                    u32 lc = c.mmTgtLineCol | 0xFF000000u;
+                    for (int e = 0; e < g.mapEntN; ++e) if (g.mapEnts[e].id == g.target.id) { lc = mm_ent_color(g.mapEnts[e]) | 0xFF000000u; break; }
+                    rrect_stroke(dev, icx - ir, snap(ly) - ir, 2.0f * ir, 2.0f * ir, ir, lc, snap(1.4f * S)); disc(dev, icx, snap(ly), snap(1.3f * S), lc);
+                } else {
+                    rrect_stroke(dev, icx - ir * 0.7f, snap(ly) - ir * 0.7f, 1.4f * ir, 1.4f * ir, ir * 0.7f, cols[k], snap(1.4f * S));
+                }
+                fo->begin(dev); fo->draw_lc(dev, snap(Rr - 2.0f * ir - 4.0f * S - tw), snap(ly), lines[k], sz, cols[k], 0xFF000000u, 1.0f);
+                ly -= snap(18.0f * S);
+            }
+        } else if (c.mmClock && c.mmClkReal) {
+            time_t t = time(0); struct tm lt; localtime_s(&lt, &t);
+            sprintf(b0, "%02d:%02d", lt.tm_hour, lt.tm_min);
+            const float sz = dial_fit(fo, b0, snap(mm_sz(MM_REAL, 11.0f * S)), dial_room(Rr, cx, cy, R, ly, false) - gapR);
+            fo->begin(dev); fo->draw_lc(dev, snap(Rr - fo->measure(b0, sz)), snap(ly), b0, sz, mm_col(MM_REAL, 0xFFC8D2E6u), 0xFF000000u, 0.9f);
+        }
+    }
+}
+
 // ---- ASTRAL kit : the pieces' files and one full-canvas layer draw (the kit's 1024 canvas holds a ring of diameter
 // 1000, so the quad is 1.024 x the ring diameter, centred) ----
 static const char* astral_path(int i) {
@@ -748,8 +847,12 @@ void Minimap::draw(const Frame& f) {
     const float S = scale_ * clampf(c.mmScale, 0.5f, 2.0f);     // overall box / header scale
     const float mapD = snap(220.0f * S * clampf(c.mmMapSize, 0.5f, 1.6f));   // map DIAMETER -- independent of the box
     // COMPACT layout : two thin bands (clock / map info), each above or below the map ; the classic header is off
-    const bool  compact = (c.mmLayout == 1);
-    const float cbH = compact ? clock_band_h(c, S) : 0.0f, ibH = compact ? info_band_h(c, S) : 0.0f;
+    // DIAL layout (2) : round + the Astral bezel -> no bands at all, the infos live in the four CORNERS the round dial
+    // leaves empty in its square box (the least space there is) ; without the round ring it behaves as Compact
+    const bool  dialAsk = (c.mmLayout == 2), dialRing = (c.mmShape == 1 && c.mmClock && c.mmBezel);
+    const bool  dial = dialAsk && dialRing;
+    const bool  compact = (c.mmLayout == 1) || dial || (dialAsk && !dialRing);
+    const float cbH = (compact && !dial) ? clock_band_h(c, S) : 0.0f, ibH = (compact && !dial) ? info_band_h(c, S) : 0.0f;
     const bool  cbTop = (c.mmClkBand == 0), ibTop = (c.mmInfoBand == 1);
     const float topH = (cbTop ? cbH : 0.0f) + (ibTop ? ibH : 0.0f), botH = (cbTop ? 0.0f : cbH) + (ibTop ? 0.0f : ibH);
     // compact = the economy of space : the map sits nearly edge to edge (1 px of air), the classic keeps its 5 px
@@ -760,7 +863,7 @@ void Minimap::draw(const Frame& f) {
     const float bm = compact ? (astralRing ? snap((medOut > 0.0f ? medOut : 0.0f) + 4.0f * S) : snap(3.0f * S)) : (c.mmClock ? snap(5.0f * S) : 0.0f);   // inner margin around the map (inside the themed box)
     const float hdrW = snap(210.0f * S);                        // the clock header's natural width
     const float Hh = compact ? 0.0f : clock_header_height(c, S);   // clock header height (enabled rows only ; 0 if off)
-    const bool  hasClock = (c.mmClock != 0) || (compact && ibH > 0.0f);   // the box (themed chrome) is drawn at all
+    const bool  hasClock = (c.mmClock != 0) || (compact && ibH > 0.0f) || dial;   // the box (themed chrome) is drawn at all
     const int   cpos = (hasClock && !compact) ? ((c.mmClockPos < 0 || c.mmClockPos > 3) ? 0 : c.mmClockPos) : -1;   // classic header placement (-1 = none)
     // header BAND width (the content is CENTRED in `hbw`) + the box layout.
     const float cw = (cpos >= 0) ? clock_header_width(f, g.vana, c, elemTex_, S) : 0.0f;   // widest enabled row (incl. the long FR day row)
@@ -1445,7 +1548,8 @@ void Minimap::draw(const Frame& f) {
         }
         dSetTex(dev, 0, 0);
     }
-    if (compact && ibH > 0.0f) draw_info_band(dev, f, c, g, mapX, mapY, ix, ibY, Wbox, S);   // the square lives in the band then
+    if (dial) draw_dial_corners(dev, f, c, g, elemTex_, moonTex_, mapX, mapY, ix, iy, Wbox, boxH, ccx, ccy, r + medOut, S);
+    else if (compact && ibH > 0.0f) draw_info_band(dev, f, c, g, mapX, mapY, ix, ibY, Wbox, S);   // the square lives in the band then
     else if (c.mmGrid && g.map.scale != 0 && f.font) {
         const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
         if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) {

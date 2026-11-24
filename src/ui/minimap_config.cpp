@@ -111,9 +111,9 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
             const float top9_ = ry;
             cat_fold_clip(dev, hdrX, top9_, hdrW, catH_[9] * aF9_);
         { ROW_BAND(52.0f)   // Classic (stacked header) / Compact (thin bands above / below the map)
-            static const char* LL_EN[2] = { "Classic", "Compact" }; static const char* LL_FR[2] = { "Classique", "Compact" };
-            const int ly = (c.mmLayout == 1) ? 1 : 0;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Layout", "Disposition"), tr(LL_EN[ly], LL_FR[ly]))) { c.mmLayout = wrap(ly + d, 2); save_ui_config(); }
+            static const char* LL_EN[3] = { "Classic", "Compact", "Dial (round)" }; static const char* LL_FR[3] = { "Classique", "Compact", "Cadran (rond)" };
+            const int ly = (c.mmLayout < 0 || c.mmLayout > 2) ? 0 : c.mmLayout;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Layout", "Disposition"), tr(LL_EN[ly], LL_FR[ly]))) { c.mmLayout = wrap(ly + d, 3); save_ui_config(); }
         } ROW_NEXT(52.0f)
         if (c.mmLayout == 1) {
             { ROW_BAND(52.0f)
