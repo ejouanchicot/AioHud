@@ -696,6 +696,7 @@ struct UiConfig {
     TextStyle mmText[MM_TE_COUNT];   // clock per-element typography : [MM_TIME] time, [MM_DAY] day, [MM_MOON] moon, [MM_REAL] real/GMT
     bool  mmPosSet = false;    // user-placed position (edit mode) ; else the layout default
     float mmX = 0.0f, mmY = 0.0f;   // top-left as a screen fraction when mmPosSet
+    float mmAW = 0.0f, mmAH = 0.0f; // the box SIZE (px) when it was placed : the smart anchor re-lays it around the edge it hangs from (0 = placed before it existed)
     float mmScale = 1.0f;      // minimap size multiplier (0.50 .. 2.00 ; wheel resize in edit mode)
     float mmZoom  = 2.0f;      // minimap zoom (player-centred ; 1.0 = whole map fits, higher = zoomed in)
     int   mmShape = 0;         // 0 = square, 1 = round (circular clip)
@@ -723,6 +724,8 @@ struct UiConfig {
     // transient (not saved) : minimap rect as screen fractions + pending wheel, so the mouse callback can
     // zoom the map when the cursor is over it (outside edit mode). Written by the Minimap widget each frame.
     float mmHitX = 0.0f, mmHitY = 0.0f, mmHitW = 0.0f, mmHitH = 0.0f;
+    float mmBoxX = 0.0f, mmBoxY = 0.0f, mmBoxW = 0.0f, mmBoxH = 0.0f;   // transient : the whole minimap box, screen px (the dev option sweep crops on it)
+    float mmPpy = 0.0f;        // transient : screen pixels per yalm this frame (the markers' level of detail runs on it)
     int   mmWheel = 0;
     bool  mmVisible = false;
     bool  mmPreview = false;   // transient : the config live-preview is driving the minimap's position this frame

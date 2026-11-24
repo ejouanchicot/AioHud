@@ -252,7 +252,8 @@ static bool save_config_to(const char* path) {
     fprintf(f, "mm3=%d,%d,%d,%d,%d,%.3f,%d\n", c.mmClock, c.mmClkTime, c.mmClkDay, c.mmClkMoon, c.mmClkReal, c.mmMapSize, c.mmClockPos);   // clock : on/time/day/moon/real + independent map size + header placement
     fprintf(f, "mm5=%.3f,%.3f,%d,%.3f\n", c.mmBezelW, c.mmCardSz, c.mmBezel, c.mmSqBorder);
     fprintf(f, "mm6=%d,%08X,%d\n", c.mmScan, c.mmScanCol, c.mmGrid);   // Wide Scan track on/colour ; map grid square on
-    fprintf(f, "mm7=%d,%d,%d,%d,%d\n", c.mmLayout, c.mmClkBand, c.mmInfoBand, c.mmInfoDist, c.mmMarkStyle);   // layout Classic/Compact ; clock band side ; info band off/top/bottom ; distances   // round bezel width / round cardinal size / round bezel on / square border width
+    fprintf(f, "mm7=%d,%d,%d,%d,%d\n", c.mmLayout, c.mmClkBand, c.mmInfoBand, c.mmInfoDist, c.mmMarkStyle);
+    fprintf(f, "mm8=%.1f,%.1f\n", c.mmAW, c.mmAH);   // the box size when placed (smart anchor)   // layout Classic/Compact ; clock band side ; info band off/top/bottom ; distances   // round bezel width / round cardinal size / round bezel on / square border width
     fprintf(f, "ws=%d,%.3f,%.3f,%.3f,%d,%d\n", c.wsShow, c.wsScale, c.wsX, c.wsY, c.wsFont, c.wsFx);   // arcade WS popup
     fprintf(f, "aw=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%d,%.3f,%.3f\n", c.awShow, c.awScale, c.awX, c.awY, c.awScreen, c.awMemory, c.awColors, c.awCount, c.awTimer, c.awStyle, c.awSide, c.awFx, c.awDistort, c.awJobs, c.awBadge, c.awLayout, c.awText, c.awOrb);   // Absorb-TP box
     { fprintf(f, "grow=");   // the grow direction of each module box (UiConfig::boxGrow, GrowBox order)
@@ -825,6 +826,11 @@ static bool parse_mm_line(const char* line, UiConfig& c) {
         int sc = 1, gr = 1; unsigned scc = 0xFF5AB4FFu;
         const int n = sscanf(line + 4, "%d,%x,%d", &sc, &scc, &gr);
         if (n >= 1) { c.mmScan = sc; if (n >= 2) c.mmScanCol = scc; if (n >= 3) c.mmGrid = gr; }
+        return true;
+    }
+    if (strncmp(line, "mm8=", 4) == 0) {                     // the box size when placed (smart anchor)
+        float aw = 0.0f, ah = 0.0f;
+        if (sscanf(line + 4, "%f,%f", &aw, &ah) == 2) { c.mmAW = aw; c.mmAH = ah; }
         return true;
     }
     if (strncmp(line, "mm7=", 4) == 0) {                     // layout : Classic / Compact bands
@@ -1416,6 +1422,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.mmBezelW != b.mmBezelW || a.mmCardSz != b.mmCardSz || a.mmBezel != b.mmBezel || a.mmSqBorder != b.mmSqBorder) return false;
     if (a.mmScan != b.mmScan || a.mmScanCol != b.mmScanCol || a.mmGrid != b.mmGrid) return false;
     if (a.mmLayout != b.mmLayout || a.mmClkBand != b.mmClkBand || a.mmInfoBand != b.mmInfoBand || a.mmInfoDist != b.mmInfoDist || a.mmMarkStyle != b.mmMarkStyle) return false;
+    if (a.mmAW != b.mmAW || a.mmAH != b.mmAH) return false;
     if (a.wsShow != b.wsShow || a.wsScale != b.wsScale || a.wsX != b.wsX || a.wsY != b.wsY || a.wsFont != b.wsFont || a.wsFx != b.wsFx || a.wsNameCol != b.wsNameCol || a.wsDmgCol1 != b.wsDmgCol1 || a.wsDmgCol2 != b.wsDmgCol2) return false;
     for (int i = 0; i < UiConfig::GB_COUNT; ++i) if (a.boxGrow[i] != b.boxGrow[i]) return false;
     if (a.scShow != b.scShow || a.scScale != b.scScale || a.scX != b.scX || a.scY != b.scY || a.scNearby != b.scNearby || a.scReadyDelay != b.scReadyDelay) return false;

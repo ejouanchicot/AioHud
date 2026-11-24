@@ -37,6 +37,7 @@ static const Spec TABLE[] = {
     { "rva",       V_RVA,       SHIPPED },
     { "pcap",      V_DEVTOOL,   DEV },       // dev tools (dev/src) : they parse the line themselves
     { "igstate",   V_DEVTOOL,   DEV },
+    { "mmset",     V_DEVTOOL,   DEV },       // dev : one minimap option by name (the option sweep)
     { "jobtab",    V_DEVTOOL,   DEV },
     { "gearskew",  V_DEVTOOL,   DEV },
     { "perf",      V_PERF,      SHIPPED },

@@ -43,6 +43,14 @@ private:
     u32      elemTex_ = 0;                 // 8-cell elemental-icon atlas (clock header day icon)
     u32      moonTex_ = 0;                 // supersampled moon-phase texture (rebuilt only when the phase/day changes)
     int      moonKey_ = -1;                // cache key : dayIdx / moonPct / waning
+    // per-entity LEVEL-OF-DETAIL state : the dot <-> icon morph is ANIMATED and remembered (an entity that is an icon
+    // keeps its place against an equal one), so a moving camp no longer snaps / ping-pongs between dots and arrows.
+    // A small open-addressing table keyed by entity id ; a slot unseen for a few frames is free again.
+    struct LodSt { unsigned id; float a; unsigned frame; };
+    LodSt    lod_[1024] = {};
+    unsigned lodFrame_ = 0;
+    float    lodT_ = 0.0f;
+    LodSt*   lod_slot(unsigned id);
     u32      mkAtlas_ = 0;                // the v3 marker icon atlas (assets/map_markers.raw, 512 x 256) ...
     TexRetry mkAtlasR_;                   // ... under its bounded retry
     u32      ast_[AS_N] = {};             // the Astral kit textures (0 = not loaded) ...

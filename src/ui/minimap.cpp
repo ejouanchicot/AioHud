@@ -19,6 +19,7 @@
 static const int      MK_TRIES    = 24;
 static const unsigned MK_RETRY_MS = 2500;
 #include "gfx/draw.h"
+#include "ui/tune.h"                // TUNE : the marker level-of-detail knobs (dev : data\tune.txt)
 #include "gfx/font.h"
 #include "gfx/texture.h"             // make_texture_argb_mip / release_texture
 #include "gfx/window.h"              // window_theme_family / window_theme_variant / box_hue_color (frame theme)
@@ -76,6 +77,9 @@ static const char* MK_ATLAS_PATH() { static char b[260]; if (!b[0]) plugin_path(
 enum { MK_ME_FILL, MK_ME_FRAME, MK_MOB_FILL, MK_MOB_FRAME, MK_NM_FRAME, MK_PARTY_FILL, MK_PARTY_FRAME, MK_ALLY_FILL, MK_ALLY_FRAME,
        MK_TRUST_FILL, MK_TRUST_FRAME, MK_PET_FILL, MK_PET_FRAME, MK_TARGET_FILL, MK_TARGET_FRAME, MK_PIN_FILL, MK_PIN_FRAME,
        MK_PC_OTHER, MK_NPC, MK_HOMEPOINT, MK_GUIDE, MK_MOOGLE, MK_WAYPOINT, MK_QUEST, MK_WIDESCAN, MK_OFFMAP };
+struct GroupDot { float x, y, r, a; u32 col; };
+static GroupDot s_group[64];                                   // this frame's group dots (drawn after the player arrow)
+static int s_groupN = 0;
 static void mk_cell(u32 dev, int cell, float cx, float cy, float sz, float ang, u32 col) {   // the atlas must be bound
     const float u0 = (float)(cell % 8) / 8.0f, v0 = (float)(cell / 8) / 4.0f;
     tquad_rot_uv(dev, snap(cx), snap(cy), sz, sz, ang, u0, v0, u0 + 1.0f / 8.0f, v0 + 1.0f / 4.0f, col);
@@ -634,6 +638,21 @@ static void map_retry_later(int& tries, unsigned& retryAt) {
     retry_arm(retryAt, tries < 3 ? 1u : (tries < MAP_SLOW_AFTER ? 300u : MAP_SLOW_MS));
 }
 
+// the LOD state of one entity : open addressing on the id ; a slot not seen for 30 frames is reused
+Minimap::LodSt* Minimap::lod_slot(unsigned id) {
+    const unsigned N = sizeof(lod_) / sizeof(lod_[0]);
+    unsigned h = (id * 2654435761u) & (N - 1), freeAt = N;
+    for (unsigned k = 0; k < 16; ++k, h = (h + 1) & (N - 1)) {
+        LodSt& e = lod_[h];
+        if (e.id == id) { e.frame = lodFrame_; return &e; }
+        const bool stale = (e.id == 0) || (lodFrame_ - e.frame > 30u);
+        if (stale && freeAt == N) freeAt = h;
+    }
+    if (freeAt == N) return 0;                                    // a full neighbourhood : no memory, no harm (no easing)
+    LodSt& e = lod_[freeAt]; e.id = id; e.a = 0.0f; e.frame = lodFrame_;
+    return &e;
+}
+
 void Minimap::on_device_lost() { mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
 void Minimap::dispose() {
     release_texture(mkAtlas_); mkAtlas_ = 0; mkAtlasR_ = TexRetry{};
@@ -733,17 +752,42 @@ void Minimap::draw(const Frame& f) {
     float px, py;
     if (c.mmPosSet && f.screenW > 0.0f && f.screenH > 0.0f) { px = snap(c.mmX * f.screenW); py = snap(c.mmY * f.screenH); }
     else { px = snap(px_); py = snap(py_); }
+    // ---- SMART ANCHOR : a size change (Size, Map size, bands, ring, Classic <-> Compact...) must not push the box off
+    //      where the user put it. The rect they PLACED is (mmX, mmY, mmAW x mmAH) ; the third of the screen its centre
+    //      sits in names the edge it hangs from (left / centre / right, top / centre / bottom), and the box is re-laid
+    //      around that point at its CURRENT size. Then it is kept on screen. A box placed before this existed
+    //      (mmAW = 0) just keeps its top-left. ----
+    static bool s_awDirty = false;
+    if (c.mmPosSet && (c.mmAW <= 0.0f || c.mmAH <= 0.0f)) {        // placed before the anchor existed : today's size is the placed one
+        ui_config().mmAW = Wout; ui_config().mmAH = Hout; s_awDirty = true;
+    }
+    if (c.mmPosSet && c.mmAW > 0.0f && c.mmAH > 0.0f && f.screenW > 0.0f && f.screenH > 0.0f) {
+        const float cx0 = (px + c.mmAW * 0.5f) / f.screenW, cy0 = (py + c.mmAH * 0.5f) / f.screenH;
+        const float ax = cx0 < 0.3333f ? 0.0f : (cx0 > 0.6667f ? 1.0f : 0.5f);
+        const float ay = cy0 < 0.3333f ? 0.0f : (cy0 > 0.6667f ? 1.0f : 0.5f);
+        px = snap(px + (c.mmAW - Wout) * ax); py = snap(py + (c.mmAH - Hout) * ay);
+    }
+    if (f.screenW > 0.0f && f.screenH > 0.0f) {                // never off screen (a box bigger than the screen keeps its top-left)
+        if (px + Wout > f.screenW) px = snap(f.screenW - Wout); if (px < 0.0f) px = 0.0f;
+        if (py + Hout > f.screenH) py = snap(f.screenH - Hout); if (py < 0.0f) py = 0.0f;
+    }
 
     // ---- EDIT MODE : drag the WHOLE box (header + map) ----
     int dch = 0, dcv = 0;
+    const float preX = c.mmX, preY = c.mmY; const bool preSet = c.mmPosSet;
     if (c.editLayout &&
         edit_box_drag(g_mmEdit, EDITBOX_MINIMAP, f, px, py, Wout, Hout, ZPERM_HUB,
                       ui_config().mmPosSet, ui_config().mmX, ui_config().mmY, dch, dcv, ui_config().mmScale))
         edit_box_grid(dev, f, g_mmEdit, px, py, Wout, Hout, dch != 0, dcv != 0);   // highlight the centre axis when snapped
+    if (c.mmX != preX || c.mmY != preY || c.mmPosSet != preSet) {   // the user just placed it : this size is the placed one
+        ui_config().mmAW = Wout; ui_config().mmAH = Hout; s_awDirty = true;
+    }
+    if (s_awDirty && !g_mmEdit.dragging) { s_awDirty = false; save_ui_config(); }   // persist it once the drag is over
 
     // ---- Vana'diel clock box : the box background FOLLOWS the party/alliance box theme (like every other box),
     // with the clock header on top ; the map fills the region below. Drawn FIRST (behind the map). ----
     const float boxPy = py;
+    ui_config().mmBoxX = px; ui_config().mmBoxY = py; ui_config().mmBoxW = Wout; ui_config().mmBoxH = Hout;   // the whole box, for the dev option sweep
     // ---- header top-left (hx,hy) and MAP CENTRE (ccx,ccy) depend on the clock placement (mmClockPos) ----
     const float ix = px + bi, iy = py + bi;                    // the content area's top-left (inside the frame border)
     const float r = mapD * 0.5f;
@@ -1093,69 +1137,160 @@ void Minimap::draw(const Frame& f) {
     }
     const bool clipped = vpSet;   // only the square viewport clip lets a blip cross the rim ; round keeps blips wholly inside
 
-    // ---- ICONS (the v3 atlas) : one silhouette per kind, the fill tinted by state, the gold frame over it. Drawn
-    //      least to most important : other players, NPCs, mobs, then trusts / alliance / party on top ----
-    if (icons && g.mapEntN > 0 && c.mmNPC) {                      // plain NPCs : small green dots (the user's pick over a diamond icon)
-        color_state(dev);
-        const float dF = clampf(0.6f + 0.16f * Z, 1.2f, 2.4f) * S * MSc, dO = dF + 0.6f * S;   // small : a crowd of NPCs must not cover the map
-        for (int e = 0; e < g.mapEntN; ++e) {
-            const MapEntity& me = g.mapEnts[e];
-            if (me.type != 2 || me.kind != MAPK_NONE) continue;
-            const float ex = (g.map.scale * me.x) / 5.0f - (float)g.map.offX;
-            const float ey = (g.map.scale * -me.z) / 5.0f - (float)g.map.offY;
-            const float sx = ccx + (ex - mapX) * pn, sy = ccy + (ey - mapY) * pn;
-            const float pad = clipped ? dO : -dO;
-            if (round) { const float dx = sx - ccx, dy = sy - ccy, lim = rc + pad; if (lim < 0.0f || dx * dx + dy * dy > lim * lim) continue; }
-            else if (sx < wx0 - pad || sx > wx1 + pad || sy < wy0 - pad || sy > wy1 + pad) continue;
-            disc(dev, snap(sx), snap(sy), dO, 0x99000000u);
-            disc(dev, snap(sx), snap(sy), dF, 0xFF5ED37Cu);
-        }
-    }
+    // ---- ICONS with a LEVEL OF DETAIL (the v3 atlas). A detailed icon needs ~12-16 px to read ; zoomed out, many
+    //      entities share those pixels and the icons bury each other (a trust under a mob). So :
+    //      * the measure is SCREEN PIXELS PER YALM (ppy), not the zoom -- every zone's map has its own scale ;
+    //      * each entity is a DOT far away and its ICON close up, cross-faded over a band [P1, P2] x its class factor
+    //        (the party turns into icons first, other players last ; plain NPCs stay dots, as the user chose) ;
+    //      * a placement pass in PRIORITY order turns an icon that would cover a more important one back into a dot ;
+    //      * the LANDMARKS (Home Point, Survival Guide, Waypoint, Moogle, ???) are always big icons with a halo.
+    //      Every threshold and size is a TUNE knob (data\tune.txt, dev build) -- tuned in game, then set as default. ----
+    s_groupN = 0;                                              // never a stale group from an earlier frame (no entities this one)
     if (icons && g.mapEntN > 0) {
-        tex_state(dev, mkAtlas_);
-        // size follows the zoom : zoomed out = a crowd, small marks ; zoomed in = room for the full icon (x0.62 at 1x .. x1.1 from 10x)
-        const float zk = clampf(0.58f + 0.052f * Z, 0.62f, 1.1f) * S * MSc;
-        for (int pass = 0; pass < 3; ++pass)
-        for (int e = 0; e < g.mapEntN; ++e) {
+        const float ppy =((float)g.map.scale / 5.0f) * pn;       // screen px per yalm
+        ui_config().mmPpy = ppy;
+        const float P1 = TUNE("mm.lod_p1", 0.5f), P2 = TUNE("mm.lod_p2", 1.1f);
+        const float iconK = TUNE("mm.icon_k", 1.0f) * S * MSc, dotK = TUNE("mm.dot_k", 1.0f) * S * MSc;
+        const float lmK = TUNE("mm.landmark_k", 1.0f) * S * MSc;
+        struct Mk { float sx, sy, sz, ang, a, dr, prev; int fill, frame, prio; u32 col, frameCol, dotCol; bool ring; LodSt* st; };
+        ++lodFrame_;
+        float ldt = f.t - lodT_; lodT_ = f.t; if (ldt < 0.0f || ldt > 0.1f) ldt = 0.016f;   // frame time (f.t wraps ; a long gap = one step)
+        const float ease = clampf(ldt * TUNE("mm.morph_speed", 9.0f), 0.0f, 1.0f);           // ~0.2-0.3 s for a full dot <-> icon morph
+        static Mk mk[MAP_ENT_MAX];
+        int n = 0;
+        for (int e = 0; e < g.mapEntN && n < MAP_ENT_MAX; ++e) {
             const MapEntity& me = g.mapEnts[e];
             if (me.id && me.id == party().selfId_) continue;
-            int fill = -1, frame = -1; float sz = 0.0f, ang = 0.0f; u32 col = 0xFFFFFFFFu; int layer = 0;
-            if (me.kind == MAPK_PET) {                             // YOUR pet : the paw, teal, upright (whatever its entity type)
+            Mk m; m.ang = 0.0f; m.fill = -1; m.frame = -1; m.col = 0xFFFFFFFFu; m.frameCol = 0xFFFFFFFFu; m.ring = false;
+            float cf, isz, dr;                                       // class factor (x the fade band), icon size, dot radius
+            if (me.kind == MAPK_PET) {
                 if (!c.mmPC) continue;
-                layer = 2; fill = MK_PET_FILL; frame = MK_PET_FRAME; sz = 12.0f * zk; col = 0xFF4FD1C5u;
-            } else if (me.type == 3) {                             // MOB : the arrow, its fill = the claim ; a pop NM wears the crowned frame
+                m.prio = 5; cf = 0.7f; isz = 13.0f; dr = 2.6f; m.fill = MK_PET_FILL; m.frame = MK_PET_FRAME; m.col = 0xFF4FD1C5u;
+            } else if (me.type == 3) {
                 if (!c.mmMob) continue;
                 const bool nm = (me.kind == MAPK_NM);
-                layer = nm ? 2 : 1; fill = MK_MOB_FILL; frame = nm ? MK_NM_FRAME : MK_MOB_FRAME; sz = (nm ? 16.0f : 12.0f) * zk;
-                ang = eased_angle(me.id, me.heading + 1.5708f);
-                col = (me.claimId != 0 && !in_my_group(me.claimId)) ? 0xFFE86BE0u : (me.claimId != 0 || me.status == 1) ? 0xFFFF5A4Eu : 0xFFFFE600u;   // unclaimed : a clean yellow -- it reads because a mob's frame is DARK bronze (below), not gold
-            } else if (me.type == 2) {                             // NPC : a trust (flagged in your party / alliance), a service NPC by its name, or a plain NPC
-                if (me.kind == MAPK_TRUST) { if (!c.mmPC) continue; layer = 2; fill = MK_TRUST_FILL; frame = MK_TRUST_FRAME; sz = 13.0f * zk; col = 0xFF9CCBFFu; }
-                else {
+                const bool other = (me.claimId != 0 && !in_my_group(me.claimId)), mine = !other && (me.claimId != 0 || me.status == 1);
+                m.col = other ? 0xFFE86BE0u : mine ? 0xFFFF5A4Eu : 0xFFFFE600u;
+                m.prio = nm ? 5 : (mine ? 4 : 3); cf = nm ? 0.5f : 1.0f; isz = nm ? 18.0f : 13.0f; dr = nm ? 3.2f : 2.2f;
+                m.fill = MK_MOB_FILL; m.frame = nm ? MK_NM_FRAME : MK_MOB_FRAME; m.frameCol = nm ? 0xFFFFFFFFu : 0xFF4A3A22u;
+                m.ang = eased_angle(me.id, me.heading + 1.5708f);
+            } else if (me.type == 2) {
+                if (me.kind == MAPK_TRUST) {
+                    if (!c.mmPC) continue;
+                    m.prio = 5; cf = 0.7f; isz = 14.0f; dr = 2.6f; m.fill = MK_TRUST_FILL; m.frame = MK_TRUST_FRAME; m.col = 0xFF9CCBFFu;
+                } else {
                     if (!c.mmNPC) continue;
                     static const int SVC[9] = { -1, -1, -1, -1, MK_HOMEPOINT, MK_GUIDE, MK_MOOGLE, MK_WAYPOINT, MK_QUEST };   // by MapKind
                     const int svc = (me.kind < 9) ? SVC[me.kind] : -1;
-                    if (svc >= 0) { layer = 1; fill = svc; sz = 22.0f * S * MSc * clampf(0.85f + 0.02f * Z, 0.9f, 1.2f); }   // a LANDMARK : big, and nearly zoom-proof -- you navigate by it
-                    else          continue;                         // a plain NPC : a green DOT, drawn in the vector pass below
+                    if (svc >= 0) { m.prio = 9; cf = 0.0f; isz = 24.0f; dr = 3.0f; m.fill = svc; }   // a LANDMARK : always the icon
+                    else { m.prio = 1; cf = -1.0f; isz = 0.0f; dr = 1.6f; m.col = 0xFF5ED37Cu; }    // a plain NPC : always a dot
                 }
-            } else {                                               // PC
+            } else {
                 if (!c.mmPC) continue;
-                if (me.spawn & 0x04)      { layer = 2; fill = MK_PARTY_FILL; frame = MK_PARTY_FRAME; sz = 14.0f * zk; col = 0xFF5AB4FFu; }
-                else if (me.spawn & 0x08) { layer = 2; fill = MK_ALLY_FILL;  frame = MK_ALLY_FRAME;  sz = 13.0f * zk; col = 0xFFB48CFFu; }
-                else                      { layer = 0; fill = MK_PC_OTHER; sz = 7.0f * zk; }
+                if (me.spawn & 0x04)      { m.prio = 7; cf = 0.55f; isz = 15.0f; dr = 3.0f; m.fill = MK_PARTY_FILL; m.frame = MK_PARTY_FRAME; m.col = 0xFF5AB4FFu; m.ring = true; }
+                else if (me.spawn & 0x08) { m.prio = 6; cf = 0.65f; isz = 14.0f; dr = 2.8f; m.fill = MK_ALLY_FILL;  m.frame = MK_ALLY_FRAME;  m.col = 0xFFB48CFFu; m.ring = true; }
+                else                      { m.prio = 2; cf = 1.5f;  isz = 9.0f;  dr = 1.8f; m.fill = MK_PC_OTHER; m.col = 0xFFD8DEE6u; }
             }
-            if (layer != pass) continue;
+            // the fade : 0 = dot, 1 = icon
+            if (cf < 0.0f) m.a = 0.0f;
+            else if (cf == 0.0f) m.a = 1.0f;
+            else {                                                   // ONE threshold (no frozen half-state) with a +-10 % hysteresis :
+                const float T = (P1 + P2) * 0.5f * cf;                // the animation (below) makes the switch smooth, the margin
+                const LodSt* st0 = me.id ? lod_slot(me.id) : 0;       // keeps a zoom right on the line from flipping back and forth
+                const bool was = st0 && st0->a >= 0.5f;
+                m.a = (ppy >= T * (was ? 0.9f : 1.1f)) ? 1.0f : 0.0f;
+            }
+            // a landmark shrinks a little when the map is far out (it must stay seen, not cover the player) ; full size from ~1 px/yalm
+            m.sz = isz * (m.prio == 9 ? lmK * clampf(TUNE("mm.lm_far", 0.62f) + 0.4f * ppy, TUNE("mm.lm_far", 0.62f), 1.0f) : iconK);
+            m.dr = dr * dotK * clampf(0.85f + 0.06f * ppy, 0.85f, 1.3f);
+            m.dotCol = m.col;
+            m.st = me.id ? lod_slot(me.id) : 0;
+            m.prev = m.st ? m.st->a : m.a;
             const float ex = (g.map.scale * me.x) / 5.0f - (float)g.map.offX;
             const float ey = (g.map.scale * -me.z) / 5.0f - (float)g.map.offY;
-            const float sx = ccx + (ex - mapX) * pn, sy = ccy + (ey - mapY) * pn;
-            const float mh = sz * 0.5f, pad = clipped ? mh : -mh;
-            if (round) { const float dx = sx - ccx, dy = sy - ccy, lim = rc + pad; if (lim < 0.0f || dx * dx + dy * dy > lim * lim) continue; }
-            else if (sx < wx0 - pad || sx > wx1 + pad || sy < wy0 - pad || sy > wy1 + pad) continue;
-            mk_cell(dev, frame >= 0 ? frame : fill, sx, sy + 1.0f, sz * 1.14f, ang, 0x8C000000u);   // a soft dark under-shape : the icon stands off the parchment
-            mk_cell(dev, fill, sx, sy, sz, ang, col);
-            if (frame >= 0) mk_cell(dev, frame, sx, sy, sz, ang, (me.type == 3 && me.kind != MAPK_NM && me.kind != MAPK_PET) ? 0xFF4A3A22u : 0xFFFFFFFFu);   // mobs : dark bronze (any fill pops, a mob never reads as a player) ; an NM keeps its gold crown, players and pets the gold
+            m.sx = ccx + (ex - mapX) * pn; m.sy = ccy + (ey - mapY) * pn;
+            const float half = (m.a > 0.0f ? m.sz * 0.5f : m.dr + 1.0f), pad = clipped ? half : -half;
+            if (round) { const float dx = m.sx - ccx, dy = m.sy - ccy, lim = rc + pad; if (lim < 0.0f || dx * dx + dy * dy > lim * lim) continue; }
+            else if (m.sx < wx0 - pad || m.sx > wx1 + pad || m.sy < wy0 - pad || m.sy > wy1 + pad) continue;
+            mk[n++] = m;
         }
+        // THE ZOOM DECIDES (the user's rule, 2026-11-24) : at one zoom every entity of a kind has the SAME form -- dots
+        // far, icons near -- whatever its neighbours. (A neighbour-based demotion made a camp a mix of arrows and dots,
+        // unreadable : why is THIS one a dot ?) One exception : your party / trusts / pet at your feet stay DOTS, the
+        // satellites around your arrow -- an icon there was buried under it.
+        {
+            const float ringR = TUNE("mm.me_size", 13.0f) * S * MSc * 0.5f + (TUNE("mm.sat_gap", 5.5f) + 7.0f) * S;
+            for (int i = 0; i < n; ++i) {
+                Mk& m = mk[i];
+                const bool group = m.ring || (m.prio == 5 && m.fill != MK_MOB_FILL);
+                if (!group || m.a <= 0.0f) continue;
+                const float dx = m.sx - ccx, dy = m.sy - ccy, rr = ringR + m.sz * 0.5f;
+                if (dx * dx + dy * dy < rr * rr) m.a = 0.0f;
+            }
+        }
+        // LANDMARKS never hide (a Home Point next to a "???" stacked one on the other) : they push each other apart, just
+        // enough to read side by side -- a few px, each stays near its spot
+        for (int it = 0; it < 6; ++it) {
+            bool moved = false;
+            for (int i = 0; i < n; ++i) for (int j = i + 1; j < n; ++j) {
+                Mk& p = mk[i]; Mk& q = mk[j];
+                if (p.prio != 9 || q.prio != 9) continue;
+                float dx = q.sx - p.sx, dy = q.sy - p.sy; const float d = sqrtf(dx * dx + dy * dy), need = (p.sz + q.sz) * 0.45f;
+                if (d >= need) continue;
+                if (d < 0.01f) { dx = 1.0f; dy = 0.0f; } else { dx /= d; dy /= d; }
+                const float push = (need - d) * 0.5f;
+                p.sx -= dx * push; p.sy -= dy * push; q.sx += dx * push; q.sy += dy * push; moved = true;
+            }
+            if (!moved) break;
+        }
+        // EASE each entity from what it SHOWED last frame toward this frame's target : the morph is animated, never a snap
+        for (int i = 0; i < n; ++i) {
+            Mk& m = mk[i];
+            if (!m.st || m.prio == 9) continue;
+            m.a = m.prev + (m.a - m.prev) * ease;
+            if (m.a < 0.004f) m.a = 0.0f; if (m.a > 0.996f) m.a = 1.0f;
+            m.st->a = m.a;
+        }
+        // DOTS (least important first), faded out as their icon fades in
+        color_state(dev);
+        for (int pr = 1; pr <= 9; ++pr)
+            for (int i = 0; i < n; ++i) {
+                const Mk& m = mk[i];
+                if (m.prio != pr || m.a >= 1.0f) continue;
+                if (m.ring || (m.prio == 5 && m.fill != MK_MOB_FILL)) continue;   // party / alliance / trust / pet : drawn over your arrow, below
+                const float da = m.a > 0.5f ? 0.0f : 1.0f - m.a * 2.0f;   // the dot leaves in the first half of the morph
+                if (da <= 0.0f) continue;
+                const u32 ka = (u32)(da * 255.0f + 0.5f);
+                disc(dev, snap(m.sx), snap(m.sy), m.dr + 0.8f * S, (u32)(da * 153.0f) << 24);
+                if (m.ring) disc(dev, snap(m.sx), snap(m.sy), m.dr + 0.6f * S, (ka << 24) | 0x00FFFFFFu);
+                disc(dev, snap(m.sx), snap(m.sy), m.dr, (ka << 24) | (m.dotCol & 0x00FFFFFFu));
+            }
+        // the landmarks' halo (additive), under their icons
+        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+        for (int i = 0; i < n; ++i) if (mk[i].prio == 9) disc_glow(dev, mk[i].sx, mk[i].sy, mk[i].sz * 0.25f, ((u32)TUNE("mm.halo_a", 40.0f) << 24) | 0x00FFF2C8u, mk[i].sz * TUNE("mm.halo_w", 0.32f));
+        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+        // ICONS (least important first)
+        tex_state(dev, mkAtlas_);
+        for (int pr = 1; pr <= 9; ++pr)
+            for (int i = 0; i < n; ++i) {
+                const Mk& m = mk[i];
+                if (m.prio != pr || m.a <= 0.0f) continue;
+                // MORPH : the icon GROWS out of the dot (size from the dot's diameter to its own) while it fades in
+                const float sz = (2.0f * m.dr) + (m.sz - 2.0f * m.dr) * m.a;
+                const float ia = m.a < 0.5f ? m.a * 2.0f : 1.0f;     // opaque from half-way : no long ghost of two shapes
+                const u32 ka = (u32)(ia * 255.0f + 0.5f);
+                mk_cell(dev, m.frame >= 0 ? m.frame : m.fill, m.sx, m.sy + 1.0f, sz * 1.14f, m.ang, (u32)(ia * 140.0f) << 24);   // the dark under-shape
+                mk_cell(dev, m.fill, m.sx, m.sy, sz, m.ang, (ka << 24) | (m.col & 0x00FFFFFFu));
+                if (m.frame >= 0) mk_cell(dev, m.frame, m.sx, m.sy, sz, m.ang, (ka << 24) | (m.frameCol & 0x00FFFFFFu));
+            }
         dSetTex(dev, 0, 0);
+        s_groupN = 0;                                          // the group's dots, kept for the pass after your arrow
+        for (int i = 0; i < n && s_groupN < 64; ++i) {
+            const Mk& m = mk[i];
+            if (m.a >= 1.0f || !(m.ring || (m.prio == 5 && m.fill != MK_MOB_FILL))) continue;
+            GroupDot& d = s_group[s_groupN++];
+            d.x = m.sx; d.y = m.sy; d.r = m.dr; d.a = 1.0f - m.a; d.col = m.dotCol;
+        }
     }
     // ---- mob markers : the Arrow icon rotated by heading, tinted by claim colour ----
     if (!icons && g.mapEntN > 0 && mkMob_ && c.mmMob) {
@@ -1199,12 +1334,63 @@ void Minimap::draw(const Frame& f) {
 
     // ---- player marker : the Location pin at the centre, rotated to face the heading, navy + halo ----
     if (icons) {                                                  // YOU : the navigation arrow, white, gold frame
-        const float pSz = snap(17.0f * S * MSc), pang = g.meHeading + 1.5708f;
+        const float pSz = snap(TUNE("mm.me_size", 13.0f) * S * MSc), pang = g.meHeading + 1.5708f;   // 17 covered the trusts at your feet
         tex_state(dev, mkAtlas_);
         mk_cell(dev, MK_ME_FRAME, ccx, ccy + 1.0f, pSz * 1.14f, pang, 0x8C000000u);
         mk_cell(dev, MK_ME_FILL, ccx, ccy, pSz, pang, 0xFFFFFFFFu);
         mk_cell(dev, MK_ME_FRAME, ccx, ccy, pSz, pang, 0xFFFFFFFFu);
         dSetTex(dev, 0, 0);
+        // your party / alliance / trusts / pet as DOTS, ON TOP of your arrow : they walk at your feet (1-2 yalms = a
+        // few px), under the arrow they vanished. A white rim keeps each one readable against the arrow.
+        // SATELLITES : a member closer than the arrow's own radius is pushed out to a small ring around it, in ITS
+        // direction from you, then spread so no two dots overlap -- the arrow stays visible, every trust is counted.
+        {
+            const float R = pSz * 0.5f + TUNE("mm.sat_gap", 5.5f) * S;
+            int idx[64]; float ang[64]; int nn = 0;
+            for (int i = 0; i < s_groupN; ++i) {
+                const float dx = s_group[i].x - ccx, dy = s_group[i].y - ccy;
+                if (dx * dx + dy * dy >= R * R) continue;
+                idx[nn] = i; ang[nn] = (dx * dx + dy * dy > 0.25f) ? atan2f(dy, dx) : (-1.5708f + 0.9f * nn); ++nn;
+            }
+            for (int a = 1; a < nn; ++a) for (int b = a; b > 0 && ang[b] < ang[b - 1]; --b) {   // by angle
+                float t = ang[b]; ang[b] = ang[b - 1]; ang[b - 1] = t; int u = idx[b]; idx[b] = idx[b - 1]; idx[b - 1] = u; }
+            if (nn > 1) {
+                const float need = (2.0f * s_group[idx[0]].r + 2.6f * S) / R;          // the arc two dots need side by side
+                for (int pass = 0; pass < 6; ++pass)
+                    for (int k = 0; k < nn; ++k) {
+                        const int k2 = (k + 1) % nn;
+                        float gap = ang[k2] - ang[k]; if (k2 == 0) gap += 6.2832f;
+                        if (gap < need) { const float push = (need - gap) * 0.5f; ang[k] -= push; ang[k2] += push; }
+                    }
+            }
+            for (int k = 0; k < nn; ++k) { GroupDot& d = s_group[idx[k]]; d.x = ccx + cosf(ang[k]) * R; d.y = ccy + sinf(ang[k]) * R; }
+            // then ALL the group's dots push each other apart (a few px at most) until none overlaps, and none
+            // re-enters your arrow : members just past the ring were still stacked on each other
+            for (int it = 0; it < 8; ++it) {
+                bool moved = false;
+                for (int i = 0; i < s_groupN; ++i) for (int j = i + 1; j < s_groupN; ++j) {
+                    GroupDot& p = s_group[i]; GroupDot& q = s_group[j];
+                    float dx = q.x - p.x, dy = q.y - p.y; const float d = sqrtf(dx * dx + dy * dy), need = p.r + q.r + 1.6f * S;
+                    if (d >= need) continue;
+                    if (d < 0.01f) { dx = 1.0f; dy = 0.0f; } else { dx /= d; dy /= d; }
+                    const float push = (need - d) * 0.5f;
+                    p.x -= dx * push; p.y -= dy * push; q.x += dx * push; q.y += dy * push; moved = true;
+                }
+                for (int i = 0; i < s_groupN; ++i) {                // and out of the arrow
+                    GroupDot& p = s_group[i]; const float dx = p.x - ccx, dy = p.y - ccy, d = sqrtf(dx * dx + dy * dy);
+                    if (d < R && d > 0.01f) { p.x = ccx + dx / d * R; p.y = ccy + dy / d * R; }
+                }
+                if (!moved) break;
+            }
+        }
+        color_state(dev);
+        for (int i = 0; i < s_groupN; ++i) {
+            const GroupDot& d = s_group[i];
+            const u32 ka = (u32)(d.a * 255.0f + 0.5f);
+            disc(dev, snap(d.x), snap(d.y), d.r + 1.4f * S, (u32)(d.a * 170.0f) << 24);
+            disc(dev, snap(d.x), snap(d.y), d.r + 0.7f * S, (ka << 24) | 0x00FFFFFFu);
+            disc(dev, snap(d.x), snap(d.y), d.r, (ka << 24) | (d.col & 0x00FFFFFFu));
+        }
     } else if (mkPlayer_) {
         const float pSz = clampf(3.2f + 1.3f * Z, 8.0f, 15.0f) * S * MSc;
         const float pang = g.meHeading + 1.5708f;
@@ -1237,10 +1423,16 @@ void Minimap::draw(const Frame& f) {
     else if (c.mmGrid && g.map.scale != 0 && f.font) {
         const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
         if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) {
-            char gb[12]; _snprintf(gb, sizeof(gb), "(%c-%d)", 'A' + gc, gr + 1); gb[sizeof(gb) - 1] = 0;
-            const float gy = round ? (ccy + rc - snap(12.0f * S)) : (wy1 - snap(11.0f * S));
-            f.font->begin(dev);
-            f.font->draw_c(dev, snap(ccx), snap(gy), gb, snap(13.0f * S), 0xFFEAF0FFu, 0xFF000000u, 1.6f * S);
+            // the SAME face as the info band's square (serif), in a small dark pill -- not a heavy outlined "(F-10)"
+            char gb[12]; _snprintf(gb, sizeof(gb), "%c-%d", 'A' + gc, gr + 1); gb[sizeof(gb) - 1] = 0;
+            Font* sf = band_font(f, MM_TIME);
+            const float gsz = snap(13.0f * S), tw = sf->measure(gb, gsz), ph = snap(17.0f * S), pw = tw + snap(14.0f * S);
+            const float gy = round ? (ccy + rc - snap(14.0f * S)) : (wy1 - snap(13.0f * S));
+            color_state(dev);
+            rrect(dev, snap(ccx - pw * 0.5f), snap(gy - ph * 0.5f), snap(pw), ph, ph * 0.5f, 0xB0141820u, 0xC00C0F14u);
+            rrect_stroke(dev, snap(ccx - pw * 0.5f), snap(gy - ph * 0.5f), snap(pw), ph, ph * 0.5f, 0x40FFFFFFu, 1.0f);
+            sf->begin(dev);
+            sf->draw_c(dev, snap(ccx), snap(gy), gb, gsz, 0xFFF4EEDFu, 0xFF000000u, 1.0f * S);
         }
     }
 
