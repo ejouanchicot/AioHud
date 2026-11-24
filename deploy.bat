@@ -69,6 +69,14 @@ if exist "%ROOT%dev\aiotest\aiotest.lua" (
     copy /Y "%ROOT%dev\aiotest\aiotest.lua" "%WP%\..\addons\aiotest\aiotest.lua" >nul
 )
 
+REM 5) dev only : archive the deployed DLL + its PDB under their CodeView GUID (dev\symbols\, git-ignored). A crash dump
+REM    names the module by that GUID ; the next build overwrites build\AioHud.pdb, and a dump of THIS build could then
+REM    never be symbolised again (it happened 2026-11-24). Not fatal : the deploy itself already succeeded.
+if exist "%ROOT%dev\scripts\crashdump\symstore.py" (
+    python "%ROOT%dev\scripts\crashdump\symstore.py" add "%ROOT%build\AioHud.dll"
+    if errorlevel 1 echo [deploy] WARNING: symbols not archived -- a crash dump of this build will not be symbolisable
+)
+
 echo [deploy] OK -^> %WP%\AioHud.dll  (+ assets synced to AioHud\, addon synced to addons\aioupdate\)   (now //load AioHud in game)
 
 goto :eof
