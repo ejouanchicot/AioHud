@@ -31,7 +31,7 @@
 
 _addon.name     = 'AioUpdate'
 _addon.author   = 'ejouanchicot'
-_addon.version  = '2.7'
+_addon.version  = '2.8'
 _addon.commands = { 'aioupdate', 'aioup' }
 
 local base     = windower.windower_path
@@ -246,6 +246,26 @@ local function watch_request()
     if f then f:close(); os.remove(request); trigger() end
 end
 
+-- FPS HAND-OVER (v2.8, 2026-11-24) : the plugin's connection box shows the FPS in the top-right corner, where Windower's
+-- own counter sits. While it does, the plugin rewrites dataps_<character>.txt every 5 s (a counter) ; here Windower's
+-- counter is hidden while that counter moves, and shown again once it stops moving for 15 s or the file is gone (box
+-- turned off, plugin unloaded or crashed). Only a counter WE hid is shown again : a player running without it keeps it off.
+local fps_hidden, fps_last, fps_seen = false, nil, 0
+local function watch_fps()
+    local me = windower.ffxi.get_player()
+    local now = os.clock()
+    local v
+    if me and me.name then
+        local f = io.open(data_dir .. '\\fps_' .. me.name .. '.txt', 'r')
+        if f then v = f:read('*l'); f:close() end
+    end
+    if v and v ~= fps_last then fps_last = v; fps_seen = now end
+    local live = v ~= nil and (now - fps_seen) < 15
+    if live and not fps_hidden then windower.send_command('showfps 0'); fps_hidden = true
+    elseif not live and fps_hidden then windower.send_command('showfps 1'); fps_hidden = false end
+end
+windower.register_event('unload', function() if fps_hidden then windower.send_command('showfps 1') end end)
+
 -- The one clock of this addon : the two watchers once a second, and whatever after() is holding. 'prerender' runs
 -- every frame, so the cost of a frame with nothing due is one os.clock() and two comparisons.
 local next_poll = os.clock() + 1
@@ -256,6 +276,7 @@ windower.register_event('prerender', function()
     next_poll = now + 1
     pcall(watch_done)
     pcall(watch_request)
+    pcall(watch_fps)
 end)
 
 --[[ ===== SORTIE : AUTO WIDESCAN TRACK of the wing's NM -- OPT-IN, OFF BY DEFAULT =====================================

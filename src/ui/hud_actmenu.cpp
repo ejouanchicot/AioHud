@@ -574,6 +574,8 @@ u32 g_elemTex = 0, g_jobTex = 0, g_wpnTex = 0; TexRetry g_elemR, g_jobR, g_wpnR;
 // the GIL coin : the player box's own icon (assets/icon_gil.raw, 64x64) -- the user 2026-11-20 : "tu as mis un cercle
 // jaune, on a une icone piece de gils". Drawn centred on (cx, cy), z wide ; the old drawn coin while it is not loaded.
 u32 g_gilTex = 0; TexRetry g_gilR;
+char g_fpsFile[MAX_PATH] = { 0 };   // the FPS hand-over file (net_fps_flag, beside netbox_draw) : removed at unload
+u32 g_netTex = 0; TexRetry g_netR;   // the connection box's icons (scripts/gen_net_icons.py) : mail, GM, bag, sword, spinner
 void gil_coin(u32 dev, float cx, float cy, float z, float A) {
     const u32 t = ensure_raw_tex(dev, g_gilTex, g_gilR, plugin_path_r("assets\\icon_gil.raw"), 64, 64);
     if (t) {
@@ -1594,6 +1596,7 @@ void npc_card_forget()  {   // device lost : the handles are gone with it (the l
     for (int i = 0; i < 96; ++i) g_lbl[i] = LabelTex();                 // the menus' image labels
     g_elemTex = g_jobTex = g_wpnTex = 0; g_elemR = TexRetry(); g_jobR = TexRetry(); g_wpnR = TexRetry();
     g_gilTex = 0; g_gilR = TexRetry();
+    g_netTex = 0; g_netR = TexRetry();
 }
 void npc_card_dispose() {
     if (g_cardIcon) release_texture(g_cardIcon);
@@ -1603,6 +1606,8 @@ void npc_card_dispose() {
     if (g_jobTex) release_texture(g_jobTex);
     if (g_wpnTex) release_texture(g_wpnTex);
     if (g_gilTex) release_texture(g_gilTex);
+    if (g_netTex) { release_texture(g_netTex); g_netTex = 0; g_netR = TexRetry(); }
+    if (g_fpsFile[0]) remove(g_fpsFile);   // at unload : Windower's FPS counter comes back at once
     for (int i = 0; i < 4; ++i) if (g_pearl[i].tex) release_texture(g_pearl[i].tex);
     for (int i = 0; i < 96; ++i) if (g_lbl[i].tex) release_texture(g_lbl[i].tex);
     npc_card_forget();
@@ -7476,16 +7481,23 @@ void buffbar_paint(const Frame& f) {
         fo->begin(dev); fo->draw_lc(dev, snap(tx + pad), snap(ty + th * 0.5f), nm, tz, 0xFFE4EAF2u, 0xC8000000u, k.ow);
     }
 }
-// //aio netpreview (dev) : every state the box can show -- mail AND GM counts, the 4 signal bands and the ping colours
-// cycling every 2 s -- on top of the real reading
-bool g_netPreview = false;
+// //aio netpreview (dev) : a SCRIPTED DEMO of the box, a 16 s loop telling a zone-in (the user 2026-11-25 : "everything,
+// like a demo", for a GIF) : 0-3 s both bags and gear loading, no signal yet ; 3-5.5 the bags alone, weak ; 5.5-8 all
+// loaded, fair, the FPS ; 8-11 three mails arrive ; 11-14 a GM notice joins them ; 14-16 back to the FPS, good signal.
+// g_netDemoSocial : how much of the notice (vs the FPS) the demo shows now, faded over 0.35 s at each switch.
+bool g_netPreview = false; float g_netDemoSocial = -1.0f;
 NativeNet net_shown(const Frame& f) {
     NativeNet N = native_net();
+    g_netDemoSocial = -1.0f;
     if (!g_netPreview) return N;
-    static const int SC[4] = { 0, 20, 45, 100 }, PG[4] = { -1, 520, 310, 140 };
-    const int st = ((int)(f.t / 2.0f)) & 3;
-    N.ok = true; N.score = SC[st]; N.pingMs = PG[st]; N.mail = 3; N.gm = st >= 2 ? 1 : 0;
-    N.loadOk = true; N.bagsLoading = st == 1 || st == 2; N.gearLoading = st == 1;   // the zone-in order : both, then the bags alone, then none
+    const float t = fmodf(f.t, 16.0f);
+    N.ok = true; N.loadOk = true;
+    N.bagsLoading = t < 5.5f; N.gearLoading = t < 3.0f;
+    N.score  = t < 3.0f ? 0 : (t < 5.5f ? 20 : (t < 14.0f ? 45 : 100));
+    N.pingMs = t < 3.0f ? -1 : (t < 5.5f ? 520 : (t < 14.0f ? 310 : 140));
+    N.mail = t >= 8.0f ? 3 : 0; N.gm = t >= 11.0f ? 1 : 0;
+    const float fd = 0.35f;
+    g_netDemoSocial = t < 8.0f ? 0.0f : (t < 8.0f + fd ? (t - 8.0f) / fd : (t < 14.0f - fd ? 1.0f : (t < 14.0f ? (14.0f - t) / fd : 0.0f)));
     return N;
 }
 // the counts' text : "Mail n", "GM n", or both ; false when there is none
@@ -7498,17 +7510,38 @@ bool net_counts(const NativeNet& N, char* out, int cap) {
 }
 // the connection box's width : what it shows, no more (the user 2026-11-20 : "un espace a droite, pourquoi ?") -- the
 // signal, the ping (room for "000 ms" : steady while it moves), the mail / GM count only when there is one
+float netbox_inset(const Metrics& k) { return snap(4.0f * k.S); }   // the gap between the box and the screen's right edge
 float netbox_width(const Frame& f, const Metrics& k) {
     const float S = k.S, pad = snap(10.0f * S) + k.bi, tz = k.tz;
     const NativeNet N = net_shown(f);
     float w = pad + 4.0f * (snap(4.0f * S) + snap(2.0f * S)) + 6.0f * S;
     char sc[16]; if (N.pingMs >= 1000) sprintf(sc, "%d ms", N.pingMs); else sprintf(sc, "000 ms");
     w += f.font ? f.font->measure(sc, tz) : 60.0f * S;
-    // ALWAYS the room of the widest it can show ("Mail 200  GM 99" : the mailbox caps at 200) -- the box never resizes when
-    // a message arrives (the user 2026-11-20 : "laisse l'espace ... la place que le max affiche prendrait")
-    (void)N; w += 8.0f * S + (f.font ? f.font->measure("Mail 200  GM 99", tz * 0.95f) : 120.0f * S);
-    w += 6.0f * S + 2.0f * snap(18.0f * S);   // the two zone-in loading marks (bags, equipment) : their room is always kept
-    return snap(w + pad);
+    // the ping's room is FIXED ("000 ms" : steady while it moves) ; the rest follows the content, below
+    // what the box shows NOW (the user 2026-11-25 : "on a encore plein de place" -- the fixed room for 200 mails + 99 GM
+    // notices stood empty almost always) : the FPS alone, or, while a notice is up, the envelope / GM bubble with their
+    // REAL counts (or the FPS if wider : the two alternate, the box must not breathe every 4 s). The width EASES to it
+    // (~0.25 s) and the right edge stays on the screen's : the capsule stretches leftwards when a mail arrives.
+    const float isz = snap(tz * 1.45f), nz = tz * 0.95f;
+    const float fpsw = f.font ? f.font->measure("000 fps", nz) : 60.0f * S;
+    float icons = 0.0f;
+    for (int q = 0; q < 2; ++q) {
+        const int n = q == 0 ? N.mail : N.gm;
+        if (n <= 0) continue;
+        char nb[8]; sprintf(nb, "%d", n);
+        if (icons > 0.0f) icons += 6.0f * S;
+        icons += (q == 0 ? snap(isz * 1.15f) : snap(isz * 1.3f)) + 2.0f * S + (f.font ? f.font->measure(nb, nz) : 10.0f * S);
+    }
+    w += 8.0f * S + (icons > fpsw ? icons : fpsw) + pad;
+    static float cur = 0.0f, lastT = -1.0f;
+    if (cur <= 0.0f) cur = w;
+    if (f.t != lastT) {                                        // one step per frame (the top bar asks too)
+        const float dt = lastT < 0.0f ? 0.0f : f.t - lastT; lastT = f.t;
+        const float kk = dt > 0.0f ? 1.0f - expf(-dt * 14.0f) : 0.0f;
+        cur += (w - cur) * kk;
+        if (fabsf(w - cur) < 0.5f) cur = w;
+    }
+    return snap(cur);
 }
 Block g_tbB; unsigned g_tbMs = 0, g_tbLastText = 0;
 char g_tbShown[2][0xCC]; float g_tbScrollT0 = 0.0f;
@@ -7556,7 +7589,7 @@ void topbar_draw(const Frame& f) {
     // the very top of the screen, its whole width (the user 2026-11-20 : "tout en haut, toute la largeur")
     // ... less the connection box on its right when AioHUD draws it (the user 2026-11-20 : "a droite de la barre d'infos")
     const float bx = 0.0f, by = 0.0f, bh = topbar_height(k);
-    const float bw = snap(f.screenW - ((C.nuHide & NU_NET) && net_shown(f).ok ? netbox_width(f, k) + 2.0f * S : 0.0f));
+    const float bw = snap(f.screenW - ((C.nuHide & NU_NET) && net_shown(f).ok ? netbox_width(f, k) + netbox_inset(k) + 2.0f * S : 0.0f));
     if (bw < 200.0f * S) return;
     draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
     const float cy = snap(by + bh * 0.5f);
@@ -7576,15 +7609,38 @@ void topbar_draw(const Frame& f) {
 // ======== THE CONNECTION BOX (NU_NET) : the client's netstat, top right, beside the top bar. Always shown (it is a
 // status, not a help line) : the signal (4 bars, the client's bands 0 / < 30 / < 60 / >= 60), the score, and the
 // PlayOnline mail / GM notice counts when there are any ========
+// The FPS hand-over to the updater addon : plugins\AioHud\data\fps_<character>.txt holds a counter rewritten every 5 s
+// while this box shows the FPS ; addons\aioupdate sends "showfps 0" while it keeps moving and "showfps 1" once it stops
+// (box off, plugin unloaded, or crashed : a counter that no longer moves for 15 s is stale). Per character : dual-box
+// clients share the data folder. File I/O only every 5 s, or when the state flips.
+void net_fps_flag(const Frame& f, bool on) {
+    static bool was = false; static unsigned lastW = 0, ctr = 0;
+    const unsigned now = GetTickCount();
+    if (on) {
+        if (was && now - lastW < 5000) return;
+        const char* nm = (f.game && f.game->me.name[0]) ? f.game->me.name : 0;
+        if (!nm) return;
+        char rel[64]; _snprintf(rel, sizeof(rel), "data\\fps_%s.txt", nm); rel[sizeof(rel) - 1] = 0;
+        strncpy(g_fpsFile, plugin_path_r(rel), sizeof(g_fpsFile) - 1);
+        FILE* fp = fopen(g_fpsFile, "w");
+        if (fp) { fprintf(fp, "%u\n", ++ctr); fclose(fp); was = true; lastW = now; }
+        return;
+    }
+    if (!was) return;
+    if (g_fpsFile[0]) remove(g_fpsFile);
+    was = false;
+}
+
 void netbox_draw(const Frame& f) {
     const UiConfig& C = ui_config();
-    if (!(C.nuHide & NU_NET) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) return;
+    if (!(C.nuHide & NU_NET) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { net_fps_flag(f, false); return; }
     const NativeNet N = net_shown(f);
-    if (!N.ok) return;
+    if (!N.ok) { net_fps_flag(f, false); return; }
     const Metrics k = metrics(f);
     const float S = k.S, tz = k.tz, pad = snap(10.0f * S) + k.bi;
     Font* fo = f.font; const u32 dev = f.dev; const float A = 1.0f; const u32 sh = with_alpha(0xC8000000u, A);
-    const float bw = netbox_width(f, k), bh = topbar_height(k), bx = snap(f.screenW - bw), by = 0.0f;
+    // inset from the screen's right edge : flush, the frame's right side was off-screen (the user 2026-11-25 : "coupe a droite")
+    const float bw = netbox_width(f, k), bh = topbar_height(k), bx = snap(f.screenW - bw - netbox_inset(k)), by = 0.0f;
     draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
     const int band = N.score <= 0 ? 0 : (N.score < 30 ? 1 : (N.score < 60 ? 2 : 3));
     static const u32 COL[4] = { 0xFF6E7C8Eu, 0xFFE86A5Au, 0xFFE8C45Au, 0xFF7FD67Fu };   // none, weak, fair, good
@@ -7604,19 +7660,108 @@ void netbox_draw(const Frame& f) {
     fo->begin(dev);
     fo->draw_lc(dev, tx, cy, sc, tz, with_alpha(pc, A), sh, k.ow);
     tx = snap(tx + fo->measure(N.pingMs >= 1000 ? sc : "000 ms", tz) + 8.0f * S);
-    char m[24];
-    if (net_counts(N, m, sizeof(m)))                                     // the POL messages waiting / GM notices
-        fo->draw_lc(dev, tx, cy, m, tz * 0.95f, with_alpha(N.gm > 0 ? 0xFFFFB98Au : 0xFF8FC8FFu, A), sh, k.ow);
-    // THE ZONE-IN LOADING MARKS, right end of the box (where the client puts them, at the end of its help bar, which
-    // NU_HELP hides) : a bag while no item bag has finished loading, a sword while the equipment has not. Shown only
+    // the PlayOnline MAIL waiting and the GM notices : the envelope / the "GM" bubble, their count beside (the client's
+    // own icons, netstat page 0) ; the plain text when the icon atlas is not loaded yet
+    const u32 netTex = ensure_raw_tex_mip(dev, g_netTex, g_netR, plugin_path_r("assets\\net_icons.raw"), 512, 128);
+    const u32 metal = with_alpha(box_style_border_color(dev, f.skin, C.muBox) | 0xFF000000u, A);
+    auto niCell = [&](int cell, float x, float y, float sz, float ang, u32 col) {   // one cell of the atlas, centred
+        const float u0 = (float)(cell % 8) / 8.0f, v0 = (float)(cell / 8) / 2.0f;
+        tquad_rot_uv(dev, snap(x), snap(y), sz, sz, ang, u0, v0, u0 + 0.125f, v0 + 0.5f, col);
+    };
+    const float isz = snap(tz * 1.45f);
+    // THE FPS (the user 2026-11-24 : Windower's own counter sat in this corner -- it moves in here, and the updater addon
+    // hides Windower's while this box is up, net_fps_flag) : frames counted over half a second. With a mail / GM
+    // notice it ALTERNATES with the notice, 4 s each, crossfaded.
+    static unsigned fpsT0 = 0, fpsN = 0; static int fpsShown = 0;
+    { const unsigned now = GetTickCount(); ++fpsN;
+      if (!fpsT0) fpsT0 = now;
+      else if (now - fpsT0 >= 500) { fpsShown = (int)((fpsN * 1000u + (now - fpsT0) / 2) / (now - fpsT0)); fpsN = 0; fpsT0 = now; } }
+    const bool social = N.mail > 0 || N.gm > 0;
+    // 0..4 s the notice, 4..8 s the FPS, each fading in / out over 0.35 s ; no notice -> the FPS alone
+    const float ph = fmodf(f.t, 8.0f), half = ph < 4.0f ? ph : ph - 4.0f, fd = 0.35f;
+    const float env = half < fd ? half / fd : (half > 4.0f - fd ? (4.0f - half) / fd : 1.0f);
+    float aS = social ? (ph < 4.0f ? env : 0.0f) : 0.0f;
+    float aFin = social ? (ph >= 4.0f ? env : 0.0f) : 1.0f;
+    if (g_netDemoSocial >= 0.0f) {                             // the demo's own script : OUT, then IN (a crossfade overlapped "3" and "58 fps")
+        const float v = social ? g_netDemoSocial : 0.0f;
+        aS = v > 0.5f ? (v - 0.5f) * 2.0f : 0.0f; aFin = v < 0.5f ? 1.0f - v * 2.0f : 0.0f;
+    }
+    if (aFin > 0.0f && fpsShown > 0) {
+        char fs[16]; sprintf(fs, "%d fps", fpsShown);
+        const u32 fc = fpsShown >= 50 ? 0xFFD8E0EAu : (fpsShown >= 30 ? 0xFFE8C45Au : 0xFFE86A5Au);   // ~60 fine ; under 30 red
+        fo->begin(dev);
+        fo->draw_lc(dev, tx, cy, fs, tz * 0.95f, with_alpha(fc, A * aFin), with_alpha(0xC8000000u, A * aFin), k.ow);
+    }
+    const float AS = A * aS;
+    if (AS > 0.0f && netTex) {
+        float sx = tx;
+        for (int q = 0; q < 2; ++q) {
+            const int n = q == 0 ? N.mail : N.gm;
+            if (n <= 0) continue;
+            const u32 fillC = with_alpha(q == 0 ? 0xFF8FC8FFu : 0xFFFFB98Au, AS);
+            // the GM bubble : its letters live in the FRAME layer, so the bubble is filled DARK and the frame takes the
+            // bright colour (a light fill under metal letters read as a blank bubble) ; and a size up, the letters are small
+            const float s1 = q == 0 ? snap(isz * 1.15f) : snap(isz * 1.3f);   // the flat envelope reads smaller than the round bubble
+            dTexQuadState(dev, netTex, true, true);
+            niCell(q == 0 ? 0 : 2, sx + s1 * 0.5f, cy, s1, 0.0f, q == 0 ? fillC : with_alpha(0xFF3C2414u, AS));
+            niCell(q == 0 ? 1 : 3, sx + s1 * 0.5f, cy, s1, 0.0f, q == 0 ? with_alpha(metal, AS) : fillC);
+            dSetTex(dev, 0, 0);
+            char nb[8]; sprintf(nb, "%d", n);
+            fo->begin(dev);
+            fo->draw_lc(dev, snap(sx + s1 + 2.0f * S), cy, nb, tz * 0.95f, fillC, with_alpha(0xC8000000u, AS), k.ow);
+            sx = snap(sx + s1 + 2.0f * S + fo->measure(nb, tz * 0.95f) + 6.0f * S);
+        }
+    } else if (AS > 0.0f) {
+        char m[24];
+        if (net_counts(N, m, sizeof(m)))
+            fo->draw_lc(dev, tx, cy, m, tz * 0.95f, with_alpha(N.gm > 0 ? 0xFFFFB98Au : 0xFF8FC8FFu, AS), with_alpha(0xC8000000u, AS), k.ow);
+    }
+    net_fps_flag(f, true);
+    // THE ZONE-IN LOADING MARKS, just LEFT of the box (where the client puts them, at the end of its help bar, which
+    // NU_HELP hides ; the user 2026-11-24) : a bag while no item bag has finished loading, a sword while the equipment has not. Shown only
     // while loading, pulsing amber -- the client's own animated icons say "not ready yet" the same way.
     if (N.loadOk && (N.bagsLoading || N.gearLoading)) {
-        const float cell = snap(18.0f * S), z = 0.72f * cell;
-        const float p = 0.775f + 0.225f * sinf(f.t * 5.0f);   // 55..100 % : at 10 % (the first try) they vanished half the time
+        // each mark is a small WATCH SUBDIAL, of a piece with the minimap's Dial (the user 2026-11-25 : "with the quality of
+        // our map module, can't you do better ?") : a soft drop shadow, a rim in the box theme's metal (lit on top, in
+        // shade below), a recessed dark face with its inner shadow, a faint track, a gold COMET sweeping it whose head
+        // glows, and the bag / sword at the centre, breathing. All vector (colour-quad state) but the icon.
+        const float cell = snap(bh - 2.0f * S), z = 0.72f * cell, R = cell * 0.5f, gap = snap(3.0f * S);
+        const float p = 0.80f + 0.20f * sinf(f.t * 3.2f);
         const u32 c = with_alpha(0xFFE8C45Au, A * p);
-        float ix = snap(bx + bw - pad - cell * 0.5f);
-        if (N.bagsLoading) { draw_icon(dev, IC_BAG, ix, cy, z, S, c); ix = snap(ix - cell); }
-        if (N.gearLoading) draw_icon(dev, IC_SWORD, ix, cy, z, S, c);
+        auto mixc = [](u32 x, u32 y, float t) -> u32 {            // RGB blend x -> y (alpha from x)
+            const float u = 1.0f - t; u32 o = x & 0xFF000000u;
+            for (int sh2 = 0; sh2 < 24; sh2 += 8) o |= (u32)((float)((x >> sh2) & 0xFF) * u + (float)((y >> sh2) & 0xFF) * t + 0.5f) << sh2;
+            return o;
+        };
+        const u32 mBase = metal | 0xFF000000u, mLite = mixc(mBase, 0xFFFFFFFFu, 0.45f), mDark = mixc(mBase, 0xFF000000u, 0.55f);
+        float ix = snap(bx - gap - R);                                 // OUTSIDE, left of the box : the end of the help bar, as the client
+        for (int m = 0; m < 2; ++m) {
+            if (m == 0 ? !N.bagsLoading : !N.gearLoading) continue;
+            if (netTex) {
+                const float rim = 1.6f * S, rf = R - rim;               // the rim's width, the face's radius
+                disc_glow(dev, ix, cy + 1.0f * S, R - 0.5f * S, with_alpha(0x70000000u, A), 3.0f * S);   // drop shadow
+                disc(dev, ix, cy, R, with_alpha(mDark, A));                                              // the rim, in shade
+                ring_sector(dev, ix, cy, rf, R, 3.1416f + 0.25f, 6.2832f - 0.25f, with_alpha(mLite, A * 0.85f));   // lit from above
+                ring_sector(dev, ix, cy, rf, R, 0.55f, 3.1416f - 0.55f, with_alpha(mixc(mBase, 0xFF000000u, 0.75f), A * 0.8f));
+                disc(dev, ix, cy, rf, with_alpha(0xFF10141Au, A));                                       // the recessed face
+                ring_sector(dev, ix, cy, rf - 2.2f * S, rf, 3.1416f, 6.2832f, with_alpha(0x66000000u, A));   // its inner shadow
+                // the track and the comet (250 degrees, overlapping sectors tail-first : no seams), then the glowing head
+                const float ro = rf - 1.2f * S, ri = ro - 2.2f * S, head = f.t * 4.2f + (float)m * 1.6f;
+                ring_sector(dev, ix, cy, ri, ro, 0.0f, 6.2832f, with_alpha(0x1EFFFFFFu, A));
+                for (int g = 0; g < 12; ++g) {
+                    const float u1 = (float)(g + 1) / 12.0f, span = 4.36f;
+                    ring_sector(dev, ix, cy, ri, ro, head - span * (1.0f - (float)g / 12.0f), head, with_alpha(0xFFE8B850u, A * 0.15f * u1));
+                }
+                const float hr = (ri + ro) * 0.5f, hx = ix + hr * cosf(head), hy = cy + hr * sinf(head);
+                disc_glow(dev, hx, hy, 1.1f * S, with_alpha(0xB0FFD98Au, A), 3.5f * S);
+                disc(dev, hx, hy, 1.3f * S, with_alpha(0xFFFFF4D6u, A));
+                dTexQuadState(dev, netTex, true, true);
+                niCell(m == 0 ? 4 : 6, ix, cy, cell * 0.50f, 0.0f, c);
+                niCell(m == 0 ? 5 : 7, ix, cy, cell * 0.50f, 0.0f, with_alpha(mLite, A));
+                dSetTex(dev, 0, 0);
+            } else draw_icon(dev, m == 0 ? IC_BAG : IC_SWORD, ix, cy, z, S, c);
+            ix = snap(ix - cell - gap);
+        }
     }
 }
 bool net_preview_toggle() { g_netPreview = !g_netPreview; return g_netPreview; }
