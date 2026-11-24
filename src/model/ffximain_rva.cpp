@@ -430,6 +430,28 @@ static unsigned page_faults() {
     static GPMI gpmi = (GPMI)GetProcAddress(GetModuleHandleA("kernel32.dll"), "K32GetProcessMemoryInfo");
     return (gpmi && gpmi(GetCurrentProcess(), &pmc, sizeof(pmc))) ? (unsigned)pmc.pf : 0u;
 }
+// PAGES THAT ARE NOT IN MEMORY. With every read pre-checked against the page map, slices still took up to 5.5 ms.
+// Timing every slot (2026-11-24) gave the cause : dozens of slots, each pointing into a DIFFERENT page (values
+// 0x35300000, 0x34F00000 ... 0x77000000), each costing ~0.8 ms with a page fault and no exception. Those pages are
+// committed and readable but not resident -- the first touch is Windows bringing the page back in. A list of bad
+// pages could not keep up with dozens of them. So the sweep asks Windows whether a page is IN the working set
+// (QueryWorkingSetEx, kernel32 : no psapi.lib) before it reads it, and skips one that is not : no read, no fault.
+// That cannot hide the focused menu : the game reads it every frame while it is shown, so its page is resident.
+// The answer is kept in the same page map, per sweep (g_rd : 3 = resident, 4 = not), learned afresh each sweep.
+static bool g_msAsked = false;          // the slot just walked asked Windows something (a page seen for the first time)
+static bool menu_page_ok(u32 v) {
+    if (!g_rd[v >> 12]) g_msAsked = true;   // bg_readable is about to VirtualQuery
+    if (!bg_readable(v)) return false;
+    unsigned char& m = g_rd[v >> 12];
+    if (m == 1) {                                    // readable, residency not asked yet
+        g_msAsked = true;
+        struct WSX { void* va; ULONG_PTR attr; } q = { (void*)(uintptr_t)(v & ~0xFFFu), 0 };
+        typedef BOOL(WINAPI* QWSX)(HANDLE, void*, DWORD);
+        static QWSX qwsx = (QWSX)GetProcAddress(GetModuleHandleA("kernel32.dll"), "K32QueryWorkingSetEx");
+        m = (qwsx && qwsx(GetCurrentProcess(), &q, sizeof(q))) ? ((q.attr & 1) ? 3 : 4) : 3;   // unknown -> as before : read it
+    }
+    return m == 3;
+}
 // One slice. true = the sweep is complete (g_ms.fresh / g_ms.n hold it). A fault skips the rest and is counted.
 static bool menu_sweep_step() {
     const double t0 = bg_now_ms(), deadline = t0 + MENU_SWEEP_BUDGET_MS;
@@ -446,17 +468,22 @@ static bool menu_sweep_step() {
         for (; a + 4 <= g_ms.hi && g_ms.n < 16; a += 4) {
             // the clock every 16 slots : a slot can cost a VirtualQuery (bg_readable, first sight of a page), and
             // checking every 64 let one slice run to 1.5 ms against a 1 ms budget (measured 2026-11-24)
-            if (a != a0 && ((a - a0) & 0x3F) == 0 && bg_now_ms() >= deadline) break;
+            // ...and after ANY slot that asked Windows something : a first sight of a page is a VirtualQuery plus a
+            // QueryWorkingSetEx, and sixteen of those in a row overran a 1 ms budget by another 1-1.7 ms (measured)
+            if (a != a0 && (g_msAsked || ((a - a0) & 0x3F) == 0) && bg_now_ms() >= deadline) break;
+            g_msAsked = false;
             const u32 v = *(const unsigned*)a;
             // EVERY READ IS PRE-CHECKED, not only the first. Measured 2026-11-24 with the slow-slice line below : the
             // spikes left were ONE slot each, always the same one (FFXiMain+0x61B544 on one client, +0x61C204 on the
             // other) -- a value whose own page is readable but whose def lies in a page that is not. A hardware fault
             // costs 2 to 6 ms in this process (Windower's exception handlers run first), and no time budget can cut
             // a single read short. So no read here is made into a page the map has not seen readable : no fault left.
-            if (!valid_ptr(v) || !bg_readable(v) || !bg_readable(v + 7)) continue;          // v+4..v+7 : the def pointer
-            const u32 def = *(const unsigned*)(v + 4);
-            if (!valid_ptr(def) || !bg_readable(def + 0x46) || !bg_readable(def + 0x49)) continue;   // the tag
-            if (*(const unsigned*)(def + 0x46) == RVA_TAG_MENU) g_ms.fresh[g_ms.n++] = a;    // == fm_menu_shaped(v), fault-free
+            // ...and resident (menu_page_ok, above) : a page Windows has to bring back in costs ~0.8 ms on first touch
+            if (valid_ptr(v) && menu_page_ok(v) && menu_page_ok(v + 7)) {             // v+4..v+7 : the def pointer
+                const u32 def = *(const unsigned*)(v + 4);
+                if (valid_ptr(def) && menu_page_ok(def + 0x46) && menu_page_ok(def + 0x49)   // the tag
+                    && *(const unsigned*)(def + 0x46) == RVA_TAG_MENU) g_ms.fresh[g_ms.n++] = a;   // == fm_menu_shaped(v), fault-free
+            }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) { ++g_ms.faults; a = g_ms.hi; }
     g_ms.cur = a;
@@ -1014,7 +1041,7 @@ static bool bg_readable(u32 v) {
         memset(g_rd + first, rd ? 1 : 2, pages);
         if (pg < first || pg >= first + pages) g_rd[pg] = rd ? 1 : 2;
     }
-    return g_rd[pg] == 1;
+    return g_rd[pg] == 1 || g_rd[pg] >= 3;           // 3 / 4 : readable, and the menu sweep has also asked if it is resident
 }
 
 bool fm_bg_find(bool (*sig)(unsigned v), int what, FmBgDone done) {

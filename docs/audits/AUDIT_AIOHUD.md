@@ -195,8 +195,33 @@ la carte des pages lisibles avant d'être faite ; le repli sur toute l'image pas
 | avant | 8 486-8 887 µs | ~8,6 ms en 1 image | toutes les ~3 s, jusqu'au 1er menu ouvert |
 | après | 1 345-1 997 µs (4 phases sur 5) | 3,0-4,8 ms en 4-7 images | un seul pic résiduel par session : 5,5 ms au 1er balayage |
 
-Le pic résiduel n'est pas une faute (la tranche n'a pas été interrompue) ; hypothèse : premiers accès à des pages
-non résidentes. La ligne `fm: menu sweep slice took` compte désormais les défauts de page pour le confirmer.
+Le pic résiduel n'était pas une faute : en chronométrant chaque case, des dizaines de pointeurs vers des pages
+**valides mais non résidentes** (~0,8 ms chacune au premier accès, avec un défaut de page). Le balayage demande
+maintenant à Windows si la page est en mémoire (`QueryWorkingSetEx`) avant de la lire, et vérifie l'horloge après
+chaque appel système. Résultat final : 0 défaut de page, max **1,4-2,4 ms** par fenêtre de 10 s ; quelques tranches
+isolées à 2,0-2,7 ms restent (une case ~1-1,5 ms dans un appel système, cause non isolée).
+
+### 2.2 Bilan de la phase 2 (P8, P4, P10 + pic fm_tick), mesuré le 2026-11-24
+
+Même campagne `//aio perf auto`, Tetsouo seul en ville, DLL en forme release. Total par image (µs) :
+
+| Phase | Avant (`0f19e21`) | Après | Gain |
+|---|---|---|---|
+| base (ville) | 1 263 | 1 046 | -17 % |
+| alliance 18 (démo) | 2 668 | 1 978 | -26 % |
+| alliance + chat remonté | 2 807 | 2 025 | -28 % |
+| sphères | 1 789 | 1 444 | -19 % |
+| config ouverte | 3 007 | 1 807 | -40 % |
+
+| Point | Mesure clé avant → après |
+|---|---|
+| pic fm_tick | max 8,5-8,9 ms toutes les 3 s → 1,4-2,4 ms |
+| P8 rrect | gfx.rrect alliance 1 085 → 519 µs ; draws 1 984 → 209 |
+| P4 états | RS/image 1 423 → 100 (ville), 3 656 → 196 (alliance), 5 047 → 122 (config) |
+| P10 chat | surcoût du chat remonté +207 → +111 µs |
+
+Le coût de la mesure elle-même (`//aio perf ab`, médianes) reste ~50 µs/image quand elle est active. À revérifier
+en vraie alliance (Sortie, Odyssey) : l'alliance de 18 est la démo.
 
 ---
 
