@@ -129,4 +129,91 @@ void test_skillchain() {
         CHECK(!sc_is_finish_msg(0));
         CHECK(!sc_is_weaponskill_msg(0));
     }
+
+    // ---- THE WHOLE TABLE (audit 5.4 #2). The reference below is the game's skillchain chart, typed here independently
+    //      of sc_info -- not copied from it -- so a wrong row in either shows. Every one of the 16 x 16 single-property
+    //      pairs is judged : a pair the chart has must chain to its level and result, and a pair it does not have must
+    //      be REFUSED (an extra combination offers a continuation that does nothing in game).
+    SECTION("skillchain : every opener x closer pair of the chart, and only those");
+    {   // Mutations : one combo's result (Liquefaction+Impaction -> Fusion made Gravitation), one level (Fusion+Fragmentation
+        // Lv.3 made 2), one extra combo (Transfixion's third slot Compression made Scission) -- each fails here.
+        struct Ref { int open, close, lvl, result; };
+        static const Ref CHART[] = {
+            // level 1
+            { SCP_Transfixion, SCP_Compression, 1, SCP_Compression },     { SCP_Transfixion, SCP_Reverberation, 1, SCP_Reverberation },
+            { SCP_Compression, SCP_Transfixion, 1, SCP_Transfixion },     { SCP_Compression, SCP_Detonation, 1, SCP_Detonation },
+            { SCP_Liquefaction, SCP_Scission, 1, SCP_Scission },
+            { SCP_Scission, SCP_Liquefaction, 1, SCP_Liquefaction },      { SCP_Scission, SCP_Reverberation, 1, SCP_Reverberation },
+            { SCP_Scission, SCP_Detonation, 1, SCP_Detonation },
+            { SCP_Reverberation, SCP_Induration, 1, SCP_Induration },     { SCP_Reverberation, SCP_Impaction, 1, SCP_Impaction },
+            { SCP_Detonation, SCP_Scission, 1, SCP_Scission },
+            { SCP_Impaction, SCP_Liquefaction, 1, SCP_Liquefaction },     { SCP_Impaction, SCP_Detonation, 1, SCP_Detonation },
+            { SCP_Induration, SCP_Compression, 1, SCP_Compression },      { SCP_Induration, SCP_Impaction, 1, SCP_Impaction },
+            // level 2 : two level-1 properties make one
+            { SCP_Transfixion, SCP_Scission, 2, SCP_Distortion },         { SCP_Liquefaction, SCP_Impaction, 2, SCP_Fusion },
+            { SCP_Detonation, SCP_Compression, 2, SCP_Gravitation },      { SCP_Induration, SCP_Reverberation, 2, SCP_Fragmentation },
+            // level 2 : a level-2 property continued by another
+            { SCP_Gravitation, SCP_Fragmentation, 2, SCP_Fragmentation }, { SCP_Fragmentation, SCP_Distortion, 2, SCP_Distortion },
+            { SCP_Distortion, SCP_Fusion, 2, SCP_Fusion },                { SCP_Fusion, SCP_Gravitation, 2, SCP_Gravitation },
+            // level 3
+            { SCP_Gravitation, SCP_Distortion, 3, SCP_Darkness },         { SCP_Distortion, SCP_Gravitation, 3, SCP_Darkness },
+            { SCP_Fragmentation, SCP_Fusion, 3, SCP_Light },              { SCP_Fusion, SCP_Fragmentation, 3, SCP_Light },
+            // level 4 : Light / Darkness continued by themselves (Radiance / Umbra only through an Aeonic : hud_skillchains)
+            { SCP_Light, SCP_Light, 4, SCP_Light },                       { SCP_Darkness, SCP_Darkness, 4, SCP_Darkness },
+        };
+        const int N = (int)(sizeof(CHART) / sizeof(CHART[0]));
+        CHECK_EQ(N, 29);
+        int wrong = 0, extra = 0, missing = 0;
+        for (int o = 0; o < SCP_N; ++o)
+            for (int c = 0; c < SCP_N; ++c) {
+                const Ref* want = 0;
+                for (int i = 0; i < N; ++i) if (CHART[i].open == o && CHART[i].close == c) { want = &CHART[i]; break; }
+                int lvl = -1, res = -1;
+                const bool got = chain((unsigned char)o, (unsigned char)c, lvl, res);
+                if (want && !got) { ++missing; printf("   missing : %s + %s should make %s Lv.%d\n", scprop_name(o), scprop_name(c), scprop_name(want->result), want->lvl); }
+                else if (!want && got) { ++extra; printf("   extra   : %s + %s makes %s Lv.%d -- not in the chart\n", scprop_name(o), scprop_name(c), scprop_name(res), lvl); }
+                else if (want && (lvl != want->lvl || res != want->result)) {
+                    ++wrong; printf("   wrong   : %s + %s makes %s Lv.%d, the chart says %s Lv.%d\n", scprop_name(o), scprop_name(c), scprop_name(res), lvl, scprop_name(want->result), want->lvl);
+                }
+            }
+        CHECK_EQ(missing, 0); CHECK_EQ(extra, 0); CHECK_EQ(wrong, 0);
+    }
+
+    SECTION("skillchain : each property's level and magic-burst elements");
+    {   // Mutation : Distortion's elements (Ice, Water) made (Ice, Wind) -- the burst hint would name the wrong magic.
+        struct Ref { int prop, lvl; unsigned char el[4]; int n; };
+        static const Ref P[] = {
+            { SCP_Transfixion, 1, { EL_Light }, 1 },   { SCP_Compression, 1, { EL_Dark }, 1 },      { SCP_Liquefaction, 1, { EL_Fire }, 1 },
+            { SCP_Scission, 1, { EL_Earth }, 1 },      { SCP_Reverberation, 1, { EL_Water }, 1 },   { SCP_Detonation, 1, { EL_Wind }, 1 },
+            { SCP_Impaction, 1, { EL_Lightning }, 1 }, { SCP_Induration, 1, { EL_Ice }, 1 },
+            { SCP_Gravitation, 2, { EL_Earth, EL_Dark }, 2 },        { SCP_Fragmentation, 2, { EL_Wind, EL_Lightning }, 2 },
+            { SCP_Distortion, 2, { EL_Ice, EL_Water }, 2 },          { SCP_Fusion, 2, { EL_Fire, EL_Light }, 2 },
+            { SCP_Light, 3, { EL_Fire, EL_Wind, EL_Lightning, EL_Light }, 4 }, { SCP_Darkness, 3, { EL_Earth, EL_Ice, EL_Water, EL_Dark }, 4 },
+            { SCP_Radiance, 4, { EL_Fire, EL_Wind, EL_Lightning, EL_Light }, 4 }, { SCP_Umbra, 4, { EL_Earth, EL_Ice, EL_Water, EL_Dark }, 4 },
+        };
+        CHECK_EQ((int)(sizeof(P) / sizeof(P[0])), (int)SCP_N);   // every property, none forgotten
+        for (const Ref& r : P) {
+            const SCInfo& s = sc_info(r.prop);
+            if (s.lvl != r.lvl) printf("   %s : level %d, the chart says %d\n", scprop_name(r.prop), s.lvl, r.lvl);
+            CHECK_EQ((int)s.lvl, r.lvl);
+            CHECK_EQ((int)s.nElem, r.n);
+            bool same = (int)s.nElem == r.n;   // the same SET (order free)
+            for (int i = 0; same && i < r.n; ++i) { bool f = false; for (int j = 0; j < s.nElem; ++j) if (s.elem[j] == r.el[i]) f = true; same = f; }
+            if (!same) printf("   %s : burst elements differ from the chart\n", scprop_name(r.prop));
+            CHECK(same);
+        }
+    }
+
+    SECTION("skillchain : a multi-property opener against a multi-property closer");
+    {   // Savage Blade (Fragmentation, Scission) opens ; Knights of Round (Light, Fusion) answers with Fusion :
+        // Fragmentation + Fusion = Light Lv.3 -- the higher property of the opener must be tried, not only the first.
+        const unsigned char open[2] = { SCP_Fragmentation, SCP_Scission }, close[2] = { SCP_Light, SCP_Fusion };
+        int lvl = 0, res = 0;
+        CHECK(sc_check_props(open, 2, close, 2, lvl, res));
+        CHECK_EQ(lvl, 3); CHECK_EQ(res, SCP_Light);
+        // Scission alone against Liquefaction : the level-1 answer.
+        const unsigned char open2[1] = { SCP_Scission }, close2[2] = { SCP_Gravitation, SCP_Liquefaction };
+        CHECK(sc_check_props(open2, 1, close2, 2, lvl, res));
+        CHECK_EQ(lvl, 1); CHECK_EQ(res, SCP_Liquefaction);
+    }
 }
