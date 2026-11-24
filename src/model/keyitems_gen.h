@@ -3232,6 +3232,7 @@ static const KeyItemRow KEY_ITEMS[] = {
     {3372, "Mog Kupon A-AF+3"},
     {3373, "Mog Kupon A-Rel+3"},
     {3374, "Mog Kupon A-Emp+2"},
+    {3375, "Celestite Case"},
     {3376, "Mog Kupon A-sAF+3"},
     {3377, "Mog Kupon A-sRE1+3"},
     {3378, "Mog Kupon A-sEmp+3"},
@@ -3239,7 +3240,7 @@ static const KeyItemRow KEY_ITEMS[] = {
     {3380, "Mog Kupon I-Amb"},
     {3381, "Ode of Life Bestowing phantom gem"},
 };
-static const int KEY_ITEMS_N = 3231;
+static const int KEY_ITEMS_N = 3232;
 
 // English name for a key-item id, or 0 if unknown.
 inline const char* key_item_name(unsigned id) {
