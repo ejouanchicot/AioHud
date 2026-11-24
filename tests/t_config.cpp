@@ -134,6 +134,20 @@ static void scribble(UiConfig& c, int seed) {
         t.bold = ((k + seed) & 1) != 0; t.italic = ((k + seed) & 2) != 0;
         t.upper = ((k + seed) & 4) != 0; t.colorOn = ((k + seed) & 8) != 0;
     }
+
+    // the fields the PATTERN pass below cannot drive (it has to keep them structurally legal) : the two strings,
+    // the Timers off-list, the user-drawn zones. Found by that pass on 2026-11-24 -- none of them was here.
+    _snprintf(c.epTrack, sizeof(c.epTrack), "test nm key %d", seed);   /* longer than the default "briareus" : every byte it compares moves */ c.epTrack[sizeof(c.epTrack) - 1] = 0;
+    _snprintf(c.iconPack, sizeof(c.iconPack), "pack %d", seed); c.iconPack[sizeof(c.iconPack) - 1] = 0;
+    c.tmBuffOffN = 3; for (int i = 0; i < 3; ++i) c.tmBuffOff[i] = (unsigned short)(100 * (i + 1) + seed);
+    c.guideGroupCount = 2;
+    for (int i = 0; i < 2; ++i) {
+        GuideGroup& z = c.guideGroup[i];
+        z.x = 0.125f * (i + 1); z.y = 0.25f + 0.125f * seed; z.w = 0.25f; z.h = 0.125f;   // exact in 5 decimals
+        z.allow[0] = (i + seed) & 1; z.allow[1] = !z.allow[0]; z.allow[2] = true; z.allow[ZPERM_TARGET] = (seed & 1) != 0;
+        z.role = (i + seed) % 9;
+        _snprintf(z.name, sizeof(z.name), "zone %d-%d", i, seed); z.name[sizeof(z.name) - 1] = 0;
+    }
 }
 
 // ---- EVERY persisted byte, not just the ones a test remembered to name.
@@ -156,7 +170,90 @@ static void dirty_every_field(UiConfig& c) {
     c.iconPack[sizeof(c.iconPack) - 1] = 0;
 }
 
+// ---- WHAT scribble() DOES NOT REACH (audit 5.4, 2026-11-24). The round-trip below only proves the fields scribble
+// writes : sc3= / schit= / aw= had been added since, none of them in scribble, so a key the reader lost there passed.
+// persist_eq is the definition of "persisted" ; flipping one byte at a time in a default config and asking it maps
+// every persisted byte. A persisted 4-byte word that scribble leaves at its default under BOTH seeds is a blind spot.
+// Returns how many ; prints their offsets (map an offset to its field with offsetof, or the printed neighbours).
+static int scribble_blind_spots(bool print) {
+    static const UiConfig DEF{};
+    static UiConfig a, b, probe;
+    a = DEF; scribble(a, 1); b = DEF; scribble(b, 2);
+    const unsigned char* d = (const unsigned char*)&DEF;
+    const unsigned char* pa = (const unsigned char*)&a;
+    const unsigned char* pb = (const unsigned char*)&b;
+    int blind = 0;
+    for (size_t w = 0; w + 4 <= sizeof(UiConfig); w += 4) {
+        bool persisted = false;
+        for (int k = 0; k < 4 && !persisted; ++k) {
+            probe = DEF; ((unsigned char*)&probe)[w + k] ^= 0x01;
+            if (!ui_config_persist_eq(DEF, probe)) persisted = true;
+        }
+        if (!persisted) continue;
+        if (!memcmp(pa + w, d + w, 4) && !memcmp(pb + w, d + w, 4)) {
+            ++blind;
+            if (print) printf("    blind : byte offset %u (persisted, never scribbled)\n", (unsigned)w);
+        }
+    }
+    return blind;
+}
+
+// ---- EVERY persisted word, by PATTERN (audit 5.4). Hand-writing scribble for ~860 more words is not a test anyone
+// would keep up to date, so the words are driven generically : each candidate value below is written into EVERY
+// persisted word at once (then the few structural fields are made legal again), the config goes through the file,
+// and a word that comes back DIFFERENT from its default was read. A word no candidate brings back is either a key
+// the reader ignores -- the defect this exists for -- or a domain none of the candidates fits ; it is listed.
+static void legalize(UiConfig& c, const UiConfig& def) {
+    for (int i = 0; i < UiConfig::BUFF_ORDER_N; ++i) c.buffOrder[i] = (unsigned char)i;   // a permutation
+    for (int g = 0; g < UiConfig::BUFF_ORDER_N; ++g) c.buffPinN[g] = 0;                  // loop bounds : nothing pinned
+    c.tmBuffOffN = 0; c.favColorN = def.favColorN; c.guideGroupCount = def.guideGroupCount;
+    memcpy(c.epTrack, def.epTrack, sizeof(c.epTrack));                                     // strings : left to scribble
+    memcpy(c.iconPack, def.iconPack, sizeof(c.iconPack));
+    memcpy(c.guideGroup, def.guideGroup, sizeof(c.guideGroup));
+}
+static int pattern_uncovered(bool print) {
+    static const UiConfig DEF{};
+    static bool pers[sizeof(UiConfig) / 4], hand[sizeof(UiConfig) / 4], seen[sizeof(UiConfig) / 4];
+    static UiConfig probe, a, b;
+    a = DEF; scribble(a, 1); b = DEF; scribble(b, 2);
+    const size_t NW = sizeof(UiConfig) / 4;
+    for (size_t w = 0; w < NW; ++w) {
+        pers[w] = false;
+        for (int k = 0; k < 4 && !pers[w]; ++k) { probe = DEF; ((unsigned char*)&probe)[w * 4 + k] ^= 0x01; if (!ui_config_persist_eq(DEF, probe)) pers[w] = true; }
+        hand[w] = memcmp((const unsigned char*)&a + w * 4, (const unsigned char*)&DEF + w * 4, 4) != 0
+               || memcmp((const unsigned char*)&b + w * 4, (const unsigned char*)&DEF + w * 4, 4) != 0;
+        seen[w] = false;
+    }
+    // ints, floats, colours, packed bools / chars : one of them lands inside every sane field's domain
+    static const unsigned CAND[] = { 0u /* every field whose default is 1 or true */, 1u, 2u, 3u, 5u, 0x3F400000u /*0.75f*/, 0x3FA00000u /*1.25f*/, 0x3E800000u /*0.25f*/,
+                                     0x3F000000u /*0.5f*/, 0xFF336699u, 0x01010101u, 0x00010001u, 0x01000100u, 12u, 30u };
+    UiConfig& live = ui_config();
+    for (unsigned v : CAND) {
+        live = DEF;
+        unsigned char* p = (unsigned char*)&live;
+        for (size_t w = 0; w < NW; ++w) if (pers[w]) memcpy(p + w * 4, &v, 4);
+        legalize(live, DEF);
+        if (!profile_save("t_pattern") || !profile_load("t_pattern")) continue;
+        const unsigned char* l = (const unsigned char*)&ui_config();
+        for (size_t w = 0; w < NW; ++w) if (pers[w] && memcmp(l + w * 4, (const unsigned char*)&DEF + w * 4, 4) != 0) seen[w] = true;
+    }
+    int n = 0;
+    for (size_t w = 0; w < NW; ++w) if (pers[w] && !hand[w] && !seen[w]) {
+        ++n; if (print) printf("    never read back : byte offset %u\n", (unsigned)(w * 4));
+    }
+    return n;
+}
+
 void test_config() {
+    SECTION("config : scribble() reaches every field persist_eq compares -- no blind spot");
+    {
+        load_ui_config();   // builds data\ + data\profiles\ (see below)
+        const int blind = scribble_blind_spots(false);
+        const int lost = pattern_uncovered(true);
+        printf("    %d persisted word(s) outside the hand-written scribble ; %d of them never read back by any pattern\n", blind, lost);
+        CHECK_EQ(lost, 0);
+    }
+
     SECTION("config : every persisted field survives a save/load round-trip");
 
     // Same first call the plugin makes at init : it is what builds data\ + data\profiles\ (profile_save only

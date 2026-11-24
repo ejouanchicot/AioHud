@@ -334,7 +334,7 @@ Petit point à noter : `native_ui.cpp` contient 32 blocs `__try` écrits à la m
 
 ### 5.4 Les tests manquants qui rapportent le plus
 
-1. **La config sur `sc3=`, `schit=`, `aw=` [code]**
+1. **La config sur `sc3=`, `schit=`, `aw=` [code]** **[fait 2026-11-24 : `t_config.cpp` cartographie par `persist_eq` les ~860 mots persistés hors de `scribble()` et les fait tous relire par motif ; un lecteur qui ignore `scAnim` échoue]**
    - `scribble()` dans `tests/t_config.cpp` est écrit à la main et ne touche aucun des nouveaux champs. Une recherche de `sc3|scStyle` dans `tests/` ne trouve rien.
    - Un champ perdu par le parseur passerait donc inaperçu.
    - Correctif : remplir `scribble()` par motif d'octets, comme `dirty_every_field`.
