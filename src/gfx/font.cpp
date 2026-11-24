@@ -414,6 +414,7 @@ void FontManager::dispose()             { for (int i = 0; i < n_; ++i) f_[i].dis
 
 // ---- render ----
 void Font::begin(u32 dev) {
+    PERF_SCOPE("gfx.text");   // //aio perf : every glyph pass + the text state block, across all modules (audit P3)
     dSetVS(dev, FVF_XYZRHW_DIFFUSE_TEX1);
     dSetRS(dev, D3DRS_ZENABLE, 0);
     dSetRS(dev, D3DRS_CULLMODE, D3DCULL_NONE);
@@ -482,6 +483,7 @@ void Font::emit(u32 dev, const Slot& S, float x, float y, const char* s, float s
 
 // stroke + fill of the Latin glyphs (the slot's atlas), then -- only when the string has some -- of the wide ones
 void Font::passes(u32 dev, const Slot& S, float x, float y, const char* s, float scale, u32 color, u32 outline, float ow, float gap, unsigned char prev) {
+    PERF_SCOPE("gfx.text");   // //aio perf : every glyph pass + the text state block, across all modules (audit P3)
     static const float dx[8] = { -1, 1, 0, 0, -1, -1,  1, 1 };
     static const float dy[8] = {  0, 0, -1, 1, -1,  1, -1, 1 };
     const bool stroke = (outline >> 24) && ow > 0.0f;

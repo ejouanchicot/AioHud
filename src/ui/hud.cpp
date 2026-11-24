@@ -214,6 +214,9 @@ void Hud::update_screen(u32 dev) {
 
 void Hud::render(u32 dev) {
     if (!valid_ptr(dev)) return;
+    // //aio perf scopes : PERF_BEGIN/END, not PERF_SCOPE -- this function has a __try (C2712). One "hud.setup" span
+    // covers the bookkeeping before the poll (watchers, layout reload, device change, fonts, re-anchor, skin).
+    PERF_BEGIN("hud.setup");
 
     // THE SAFETY HARNESS. Registered here, on the first frame, rather than at static-init: the registry is a
     // plain array with no order dependency, and doing it where the module is known to be alive avoids a
@@ -328,13 +331,19 @@ void Hud::render(u32 dev) {
     // ONE poll of live game memory for the WHOLE frame -> the shared snapshot every widget
     // draws from (player vitals/jobs, target, leaders, action menu). Read each pointer-chain
     // once here, never in a widget's draw(). See gamestate.h.
+    PERF_END("hud.setup");
+    PERF_BEGIN("poll_game_state");
     poll_game_state(state_);
+    PERF_END("poll_game_state");
+    PERF_BEGIN("hud.drains");   // profile sync, game text, chat backlog + decode, //aio commands
     profile_sync_poll();   // another client on this Windower saved the profile we are on -> re-apply it (throttled 1/s)
     drain_game_text();     // Omen / Nyzul chat lines queued by the TEXT thread -> dispatched here, on the main thread
     chat_backlog_tick(state_.me.name);   // once per load : the CLIENT's own log first (native_ui.cpp), so a reload keeps the chat
     chat_drain();          // every log line queued by the TEXT thread -> decoded into the Chat module's history
     chat_hit_clear();      // the Chat boxes re-publish their click rect only if they draw this frame
     drain_commands();      // //aio commands queued by the COMMAND thread (tid differs) -> executed here, on the main thread
+    PERF_END("hud.drains");
+    perf_auto_tick(config_);   // //aio perf auto : sets up / measures / dumps its phases (idle : one comparison)
 
     // GATE the whole HUD on "logged in / in the world". read_player STILL succeeds while zoning, so it alone can't
     // hide during a zone -- but the client sends 0x00B (zone-out) then 0x00A (zone-in), which set party().zoning_
@@ -364,7 +373,9 @@ void Hud::render(u32 dev) {
         in.zone = state_.zone;
         lstrcpynA(in.epTrack, ui_config().epTrack, sizeof(in.epTrack));
         model_event_begin('F');
+        PERF_BEGIN("model_frame_upkeep");
         model_frame_upkeep(in);
+        PERF_END("model_frame_upkeep");
         model_event_end();
     }
     profile_autoload_tick();   // auto-switch profile when the character's Name/Main/Sub changes (login / job change)
@@ -372,7 +383,9 @@ void Hud::render(u32 dev) {
     devtools::after_upkeep(state_);   // dev-only (dev/src) : the in-game test bridge's whole-model dump, after this frame's poll and upkeep
 #endif
 
+    PERF_BEGIN("widgets.ensure");
     for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->ensure(dev);
+    PERF_END("widgets.ensure");
 
     Frame f;
     f.dev   = dev;
@@ -393,7 +406,10 @@ void Hud::render(u32 dev) {
     // ONE state block around ALL our drawing: save the game's render state, set ours,
     // restore afterwards (else we corrupt the game's own rendering). Retained widgets
     // (text/prims) are auto-rendered by Windower outside this block -- harmless here.
+    PERF_BEGIN("stateblock.create");
     u32 tok = dCreateSB(dev, D3DSBT_ALL);
+    PERF_END("stateblock.create");
+    const int perfDepth = perf::depth();   // what a fault inside the block unwinds back to
     __try {
         // Once per session : what are we presenting INTO ? A 16-bit back buffer bands every smooth gradient no
         // matter how it is drawn, and that is a question about the game's settings, not about our geometry --
@@ -442,24 +458,30 @@ void Hud::render(u32 dev) {
             if (strcmp(tn, "PartyList") == 0) { if (static_cast<Party*>(widgets_[i])->tier() == 0 ? !ui_config().partyShow : !ui_config().allyShow) continue; }
             else if (strcmp(tn, "TargetBar") == 0) { if (!ui_config().tgtShow) continue; }
             else if (strcmp(tn, "PlayerHub")  == 0) { if (!ui_config().plrShow && !(ui_config().plrEquip && ui_config().plrEquipDetach)) continue; }   // still run it when a STANDALONE equipment module needs drawing
-            widgets_[i]->draw(f);
+            if (perf::g_perf.on) {   // one row per widget ; the party tiers are three instances of one class
+                const char* pn = tn;
+                if (strcmp(tn, "PartyList") == 0) { const int t = static_cast<Party*>(widgets_[i])->tier(); pn = t == 0 ? "party" : t == 1 ? "alliance1" : "alliance2"; }
+                const int pid = perf::reg(pn);
+                perf::begin(pid); widgets_[i]->draw(f); perf::end(pid);
+            } else widgets_[i]->draw(f);
         }
         for (size_t i = 0; i < widgets_.size(); ++i)   // hand the Help the party's selection-hand texture (for its live cursor sample)
             if (strcmp(widgets_[i]->type_name(), "PartyList") == 0 && static_cast<Party*>(widgets_[i])->tier() == 0) { config_.set_help_cursor_tex(static_cast<Party*>(widgets_[i])->cursor_tex()); actmenu_set_hand_tex(static_cast<Party*>(widgets_[i])->cursor_tex()); break; }
         if (!hideHud) {   // Rules mode / End-peek hide the WHOLE HUD (like the widget loop above) -- these boxes must depop too
-            scfx_draw(f, (float)screenW_, (float)screenH_);   // //aio scfx : the resonance-circle demo (off unless asked)
-            draw_skillchains(f);                    // skillchains box (target's active chain) -- placed via //aio edit
-            draw_treasure_pool(f);                  // treasure pool box (lottery items) -- placed via //aio edit
-            draw_hate_list(f);                      // hate list box (mobs aggro'd on the party) -- placed via //aio edit
-            draw_absorb(f);                         // Absorb-TP box (party casts of Absorb-TP) -- placed via //aio edit
+            PERF_BEGIN("scfx.demo");   scfx_draw(f, (float)screenW_, (float)screenH_); PERF_END("scfx.demo");   // //aio scfx : the resonance-circle demo (off unless asked)
+            PERF_BEGIN("skillchains"); draw_skillchains(f);    PERF_END("skillchains");  // skillchains box -- its spheres are their own nested row (sc_circle_draw)
+            PERF_BEGIN("treasure");    draw_treasure_pool(f);  PERF_END("treasure");     // treasure pool box (lottery items) -- placed via //aio edit
+            PERF_BEGIN("hatelist");    draw_hate_list(f);      PERF_END("hatelist");     // hate list box (mobs aggro'd on the party) -- placed via //aio edit
+            PERF_BEGIN("absorb");      draw_absorb(f);         PERF_END("absorb");       // Absorb-TP box (party casts of Absorb-TP) -- placed via //aio edit
 #ifdef AIOHUD_DEVTOOLS
             draw_facing_probe(f);                   // DEV ONLY : //aio facing
 #endif
-            draw_pointwatch(f);                     // PointWatch box (XP/CP/ML + Merits) -- placed via //aio edit
-            draw_grimoire(f);                       // Scholar grimoire (SCH only) -- placed via //aio edit
-            draw_pet(f);                            // Pet box (BST / GEO main : its content) -- placed via //aio edit
-            chat_box_draw(f, 0, false, !config_.is_open(), 0.0f, 0.0f, 0.0f);   // Chat module : talk / NPC / system
-            chat_box_draw(f, 1, false, !config_.is_open(), 0.0f, 0.0f, 0.0f);   // Chat module : the combat log
+            PERF_BEGIN("pointwatch");  draw_pointwatch(f);     PERF_END("pointwatch");   // PointWatch box (XP/CP/ML + Merits) -- placed via //aio edit
+            PERF_BEGIN("grimoire");    draw_grimoire(f);       PERF_END("grimoire");     // Scholar grimoire (SCH only) -- placed via //aio edit
+            PERF_BEGIN("pet");         draw_pet(f);            PERF_END("pet");          // Pet box (BST / GEO main : its content) -- placed via //aio edit
+            PERF_BEGIN("chat.0"); chat_box_draw(f, 0, false, !config_.is_open(), 0.0f, 0.0f, 0.0f); PERF_END("chat.0");   // Chat module : talk / NPC / system
+            PERF_BEGIN("chat.1"); chat_box_draw(f, 1, false, !config_.is_open(), 0.0f, 0.0f, 0.0f); PERF_END("chat.1");   // Chat module : the combat log
+            PERF_BEGIN("gameui.screens");           // every redrawn client screen below, as ONE row (most draw nothing unless their menu is open)
             topbar_draw(f);                         // the top bar (menu name + help), in place of the client's (Game UI) -- under the menus
             buffbar_draw(f);                        // your buff icons under it (Game UI -> NU_BUFF)
             netbox_draw(f);                         // the connection box (netstat), top right, in place of the client's
@@ -501,24 +523,30 @@ void Hud::render(u32 dev) {
             dialog_draw(f);                         // a Yes / No confirm, in place of the client's (Game UI) -- over the screens
             macrobar_draw(f);                       // the Ctrl / Alt macro bar, in place of the client's (Game UI)
             item_card_fold(f);                      // AFTER every screen's card_draw : the item card shown a moment ago, folding away
-            draw_zonetracker(f);                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit
+            PERF_END("gameui.screens");
+            PERF_BEGIN("zonetracker"); draw_zonetracker(f); PERF_END("zonetracker");                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit
             // EmpyPop -- placed via //aio edit. SKIP the live draw while its own config section is being previewed :
             // unlike ZoneTracker (zone-gated) / Timers (buff-gated), EmpyPop draws whenever epShow is on, so without
             // this it ALSO paints at epX/epY and bleeds through the transparent preview hole -> a second, off-centre
             // box next to the centred sample. pvActive reflects last frame's stage, cleared before edit-layout, so
             // this never hides the box you are dragging in //aio edit.
-            if (!(pvActive && config_.section() == 12)) draw_empypop(f);
+            PERF_BEGIN("empypop"); if (!(pvActive && config_.section() == 12)) draw_empypop(f); PERF_END("empypop");
             // detached target debuffs (a Target sub-feature) -- self-gates on dbShow ; placed via //aio edit.
             // Skip the live draw while the Target config previews it (section 1 + Standalone) : it's redrawn in the stage.
-            if (!(pvActive && config_.section() == 1 && ui_config().dbShow)) draw_debuffs(f);
-            draw_timers(f);                         // Timers box (self buff timers, exact) -- placed via //aio edit
+            PERF_BEGIN("debuffs"); if (!(pvActive && config_.section() == 1 && ui_config().dbShow)) draw_debuffs(f); PERF_END("debuffs");
+            PERF_BEGIN("timers"); draw_timers(f); PERF_END("timers");                         // Timers box (self buff timers, exact) -- placed via //aio edit
             theme_kit_test_draw(f);                 // //aio kittest (dev) : the painted theme kit's trial box -- off by default
-            draw_ws_popup(f);                       // arcade WS popup, over the HUD but under the config overlay
+            PERF_BEGIN("ws_popup"); draw_ws_popup(f); PERF_END("ws_popup");                       // arcade WS popup, over the HUD but under the config overlay
         }
         }   // end worldReady : boxes hidden until logged in
+        PERF_BEGIN("config.draw");
         config_.draw(f, screenW_, screenH_);   // full-screen config overlay, on top of everything (the Help owns + loads its own zone map)
+        PERF_END("config.draw");
         clip_rect_reset(f.dev);                // a clip left open would narrow everything drawn after it
+        PERF_BEGIN("config.preview");
         draw_config_preview(f);                // real party+alliance demo boxes inside the config preview stage
+        PERF_END("config.preview");
+        perf_overlay_draw(f);                  // //aio perf : the measurement itself, on top of everything (its own row, "perf.overlay")
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         // RATE-LIMITED, not once-per-session. A `static bool logged` meant a widget faulting on EVERY frame
         // produced exactly one line for the whole session -- indistinguishable in the log from a single transient
@@ -529,6 +557,7 @@ void Hud::render(u32 dev) {
         // whatever atlas is bound by then -- as a stray line of ghost text.
         font_reset_batch();
         clip_rect_reset(dev);   // ... and the same for a clip the unwind never closed : the viewport is state too
+        perf::unwind_to(perfDepth);   // the scopes the fault skipped closing (their time is charged up to here)
 
         static unsigned faults = 0, nextLogMs = 0;
         const unsigned nowMs = GetTickCount();
@@ -551,7 +580,9 @@ void Hud::render(u32 dev) {
         windower::debug::log("CreateStateBlock recovered after %u frame(s) without save/restore", sbMiss);
         sbMiss = 0;
     }
+    PERF_BEGIN("stateblock.apply");   // ApplyStateBlock + DeleteStateBlock
     if (tok) { dApplySB(dev, tok); dDelSB(dev, tok); }
+    PERF_END("stateblock.apply");
 }
 
 

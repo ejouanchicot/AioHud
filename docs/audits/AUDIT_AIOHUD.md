@@ -143,6 +143,47 @@ Tout se passe sur le thread du jeu, à chaque image.
 - Affichage en surimpression, moyenne glissante sur 60 images. Coût nul quand c'est éteint.
 - Mesurer dans une ville chargée, minimap active, alliance pleine, chat remonté. **Sans ces chiffres, P1-P10 restent des hypothèses.**
 
+### 2.1 Mesures en jeu (`//aio perf`, 2026-11-24) [mesuré]
+
+`//aio perf` est livré (`src/perf.h`, `src/ui/hud_perf.cpp`, test `tests/t_perf.cpp` contre le faux device). Campagne
+`//aio perf auto` ×3, DLL en forme release, Tetsouo en ville (minimap active), 600 images par phase, surimpression
+masquée. Temps = temps PROPRE par image (les scopes imbriqués sont soustraits), en µs, moyenne sur 600 images.
+Troisième passage, avec les scopes de primitives `gfx.text` / `gfx.rrect` / `gfx.disc` :
+
+| Phase | Total/image | Draws | RS+TSS | gfx.rrect | gfx.text | gfx.disc | Autres postes notables |
+|---|---|---|---|---|---|---|---|
+| base (ville) | 1 231 | 903 | 2 881 | 245 (444 draws) | 265 | 159 | PlayerHub 98, native_ui_tick 52, state block 26+24 |
+| alliance 18 (démo) | 2 590 | 2 947 | 7 421 | **1 049** (1 965 draws) | 514 | 156 | party 171, alliance1/2 79+77 |
+| alliance + chat remonté | 2 800 | 2 795 | 7 200 | 1 062 | 389 | 156 | **chat.0 49 → 256, chat.1 34 → 104** |
+| sphères (démo scfx all) | 1 741 | 1 189 | 4 824 | 332 | 346 | 168 | scfx.demo 288 (pic 22 ms au 1er passage) |
+| config ouverte | 2 910 | 3 365 | 10 475 | **1 438** (2 532 draws) | 479 | 8 | config.preview 313, config.draw 229 |
+
+- **Deux clients** (Kaories chargé dans la même ville) : base 1 252 → 1 323 µs, chat 2 640 → 2 864 µs (+5 à +8 %).
+- **Pic hors liste : `poll.fm_tick` = 8,6 à 14,9 ms sur UNE image, dans chaque fenêtre de 10 s** des trois passages
+  (moyenne 30 à 70 µs). C'est le réparateur d'adresses FFXiMain (`ffximain_rva.cpp:781`). Absent d'une mesure manuelle
+  faite plus tard dans une session (max 63 µs sur 1 160 images) : hypothèse à vérifier, les balayages de
+  `heal_menu_ptr` (toutes les ~3 s tant qu'aucun vrai nom de menu n'a été vu après le chargement).
+- **Coût de l'instrumentation** (`//aio perf ab`, médianes) : +26 µs, +26 µs, puis +49 µs/image avec les scopes de
+  primitives (1 112 → 1 161 µs). Éteint, il ne reste que des tests d'un octet (aucune horloge, aucune écriture).
+
+**Classement d'après les mesures** (gain possible, cas le plus chargé réaliste) :
+
+| Rang | # | Mesuré | Verdict |
+|---|---|---|---|
+| 1 | P8 rrect | 0,25 ms en base, **1,05 ms** en alliance, 1,44 ms config ; 444 → 2 532 draws | Premier poste. L'audit le plaçait 8e. |
+| 2 | P3 texte | 0,27 ms en base, 0,51 ms en alliance ; 171-350 draws, jusqu'à 16 000 primitives | Deuxième, comme prévu. |
+| 3 | P4 états | 2 900 (base) à 10 500 (config) appels RS+TSS/image, ~3 par draw | Coût unitaire non isolé : majoré à ~0,1 µs/appel par les scopes qui ne font presque que des états (chat.0 : 49 µs pour 477 appels) → ≤ 0,3 à 0,75 ms. |
+| 4 | P10 chat | **+0,28 ms** dès que le chat est remonté (chat.0 ×5) ; 0 sinon | Confirmé, plus cher que « faible à moyen ». |
+| 5 | P2 minimap | gfx.disc 0,16 ms, **130 draws** (pas 1 000+) dans cette ville | Réel mais 8 fois sous l'estimation en draws. |
+| 6 | P9 sphères | scfx.demo 0,29 ms propre ; pic 22 ms une fois (création de la texture de distorsion) | Seulement pendant une chaîne. |
+| 7 | P6 native_ui_tick | 52 µs constant, pics 250-780 µs | Faible. |
+| 8 | P1 state block | 26 + 24 = **50 µs** | Sous l'estimation (0,1-0,5 ms). Facile mais petit. |
+| 9 | P5 fiche de carte | poll.map_record 18 µs | Déjà en cache (`map_record_cached`) : le constat ne tient plus. |
+| 10 | P7 entités | poll.map_entities 9-12 µs, poll.targets 5 µs | Négligeable. |
+
+**Avant P8, traiter le pic `fm_tick`** : c'est la seule image ratée perceptible (15 ms d'un coup = une image perdue à
+60 fps), et il n'est dans aucune ligne P1-P10.
+
 ---
 
 ## 3. Robustesse

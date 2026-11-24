@@ -3185,6 +3185,7 @@ static void scfx_draw_inner(const Frame& f, float screenW, float screenH) {
 // ---------------------------------------------------------------- the LIVE circle (the Skillchains box) ----
 void sc_circle_draw(const Frame& f, const ScCircleLive& L) {
     if (!f.dev || (!f.font && !f.fonts)) return;
+    PERF_SCOPE("sc_spheres");   // //aio perf : the resonance spheres, nested inside the "skillchains" row (audit P9)
     const UiConfig& U = ui_config();
     const u32 dev = f.dev;
     REACH = U.scReach < 0.3f ? 0.3f : (U.scReach > 1.0f ? 1.0f : U.scReach);

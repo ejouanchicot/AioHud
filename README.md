@@ -80,6 +80,9 @@ Type `//aio edit` to arrange the interface live over the game:
 | `//aio out alerts` | drop only the rows in red (the buffs that just ran out), leaving every running timer alone |
 | `//aio in` | put those lines back -- all of them, or just the one you name |
 | `//aioupdate` | update to the latest version in game, with no window (the HUD reloads for a moment) |
+| `//aio perf on` / `off` | what each module costs per frame, as an overlay (60-frame average and worst, draws, state changes) -- `off` brings the cost back to zero |
+| `//aio perf dump` / `reset` | write every measured row to `aiohud_debug.log` (AIO PERF block) / start the measure over |
+| `//aio perf auto` | the whole measurement in one command (about 75 s, stay put): normal, full alliance, chat scrolled up, skillchain spheres, config open, then the cost of the measuring itself -- everything goes back as it was |
 
 Settings and profiles live in `plugins\AioHud\data\` and are kept across updates.
 

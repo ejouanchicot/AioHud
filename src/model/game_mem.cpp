@@ -33,6 +33,7 @@
 #include "model/ffximain_rva.h"   // the FFXiMain statics : addresses as data, re-derived after a client patch
 #include "model/luacore_root.h"   // where LuaCore keeps `g` : a WINDOWER update moves it, so it is derived too
 #include "model/sentinel.h"       // packet-vs-memory cross-check, run once the snapshot is complete
+#include "perf.h"                 // //aio perf : the poll's pieces, timed (PERF_SCOPE ; one byte test when off)
 #include "model/capwatch.h"       // notice a fixed table that has quietly run out of room
 #include "model/battle_target.h"  // <bt> : the game's resolver rule, walked over the entity array here
 #include "model/charsheet.h"   // the sheet decoder, shared with the packet path
@@ -1674,10 +1675,13 @@ static void publish_sortie_track(unsigned meId) {
 }
 
 void poll_game_state(GameState& gs) {
-    fm_tick();                                               // FFXiMain statics : validate / re-derive whatever is due
+    // //aio perf : the pieces of the poll, each its own row nested under "poll_game_state" (src/perf.h). Added when the
+    // first in-game run showed a 12-16 ms single-frame spike in the poll as a whole, in every scenario.
+    { PERF_SCOPE("poll.fm_tick"); fm_tick(); }               // FFXiMain statics : validate / re-derive whatever is due
     PlayerCacheScope _plc;                                   // cache read_player for this whole poll cycle (hit ~5x below)
     PlayerInfo me;
-    if (!read_player(me)) { gs.inGame = false; return; }     // not ready (zoning) -> keep last-good
+    { PERF_SCOPE("poll.read_player");
+      if (!read_player(me)) { gs.inGame = false; return; } } // not ready (zoning) -> keep last-good
     gs.inGame = true;
     gs.me = me;
     windower::debug::set_tag(me.name);   // stamp every log line with WHO wrote it : all clients of a multi-box share one log file
@@ -1685,6 +1689,7 @@ void poll_game_state(GameState& gs) {
     gs.hp = me.hpp / 100.0f;
     gs.mp = me.mpp / 100.0f;
     gs.tp = me.tp / 3000.0f; if (gs.tp > 1.0f) gs.tp = 1.0f; if (gs.tp < 0.0f) gs.tp = 0.0f;
+    PERF_BEGIN("poll.self");   // buffs, recasts, speed, gil, JA bits, equipment
     gs.nbuff = read_player_buffs(gs.buffs, 32, &gs.buffsOk);   // self status icons -> the Player Hub buff tray (snapshot, not poll-in-draw)
     { unsigned short rid[40]; unsigned char kd[40]; int sc[40]; int tk[40] = { 0 };   // Timers module : active JA + spell recasts (snapshot)
       const int nr = read_recasts(rid, kd, sc, 40, tk); gs.nRecast = (nr > 40) ? 40 : nr;
@@ -1694,6 +1699,7 @@ void poll_game_state(GameState& gs) {
     gs.jaOk = read_usable_ja_bits(gs.jaBits);                                    // usable-JA bitmap -> snapshot, NOT re-read from the draw path
     gs.equipValid = read_equipment(gs.equip);                                    // 16 equipped items -> Equipment Viewer grid
     if (!gs.equipValid) gs.equip = EquipSet{};                                   // not ready (zone / not-logged-in) : zero it AND flag it so the viewer keeps its cached icons
+    PERF_END("poll.self");
 
     // minimap : zone + self world position/heading + the zone's map calibration record (snapshot once/frame)
     gs.zone = zone_id();
@@ -1704,17 +1710,18 @@ void poll_game_state(GameState& gs) {
     { u32 ent = self_entity();
       if (ent) { u32 xx = 0, zz = 0, hh = 0; safe_read(ent + ENT_X_OFF, &xx); safe_read(ent + ENT_Z_OFF, &zz); safe_read(ent + ENT_HEADING_OFF, &hh);
                  gs.meX = *(float*)&xx; gs.meZ = *(float*)&zz; gs.meHeading = *(float*)&hh; } }
-    map_record_cached(gs.zone, current_submap(), gs.map);   // real floor (multi-level zones) -> right map page ; cached by (zone, floor)
+    { PERF_SCOPE("poll.map_record"); map_record_cached(gs.zone, current_submap(), gs.map); }   // real floor (multi-level zones) -> right map page ; cached by (zone, floor)
     // Gated on the minimap being ON. This is a 9 KB guarded block copy + a 2304-slot sweep + ~7 safe_read per live
     // slot, EVERY frame -- in a crowded city that is thousands of guarded reads for data nobody draws when the
     // module is switched off (Minimap::draw returns on !mmShow long after the work is already paid for).
-    gs.mapEntN = ui_config().mmShow ? read_map_entities(gs.mapEnts, MAP_ENT_MAX) : 0;   // PC/NPC/mob markers
+    { PERF_SCOPE("poll.map_entities"); gs.mapEntN = ui_config().mmShow ? read_map_entities(gs.mapEnts, MAP_ENT_MAX) : 0; }   // PC/NPC/mob markers
     // 400 slots against a zone that can hold more entities than that -- a city at prime time, Escha with two
     // alliances up. What does not fit is simply not on the map, and a minimap missing blips looks exactly like
     // a quiet zone. (Sampled only while the minimap is ON : with it off the count is 0 by construction.)
     if (ui_config().mmShow) capwatch("model.mapents", gs.mapEntN, MAP_ENT_MAX);
     gs.vana = vana_clock_now();                                // Vana'diel clock (computed, no memory read)
 
+    PERF_BEGIN("poll.targets");   // target, <bt>, target entities, leaders, action menu, exam, party picker
     TargetInfo tg;
     if (read_target(tg)) { gs.targetId = tg.id; gs.subTargetId = tg.sid; gs.targetLocked = tg.locked; }
     else                 { gs.targetId = gs.subTargetId = 0; gs.targetLocked = false; }
@@ -1769,22 +1776,27 @@ void poll_game_state(GameState& gs) {
     // not match their gear. Measured 2026-09-15 on a Holy Circle swap (11 slots) : the in-game harness read
     // "the set moved and the column did not" on 13 of 16 actions, and the column had moved -- one frame later.
     // A snapshot is supposed to be ONE instant ; skewing part of it to save a 58-byte copy is not a saving.
+    PERF_END("poll.targets");
+    PERF_BEGIN("poll.charsheet");
     { CharSheet& cs_ = party().charsheet_mut();
       read_charsheet_mem(cs_);
       // The job table is a SEPARATE read : the 0x061 mirror does not carry it, and it is the one
       // block whose packet may not come back for hours (0x01B needs a job change, not a zone).
       read_job_table_mem(cs_, gs.me.mjob, gs.me.mlvl); }
 
+    PERF_END("poll.charsheet");
+    PERF_BEGIN("poll.jobs");   // grimoire, BST, GEO, SMN, Sortie track
     compute_grimoire(gs);   // SCH grimoire (book + charges + timer) from buffs / jobs / stratagem recast
     compute_bst(gs);        // BST pet + Ready charges + its moves (model/bst_state.cpp)
     compute_geo(gs);        // GEO luopan + aura + Entrust + MP + job abilities (model/geo_state.cpp)
     compute_smn(gs);        // SMN avatar + Blood Pact recasts + job abilities + known pacts (smn_avatars_gen.h)
     publish_sortie_track(gs.me.id);   // the Sortie auto-track choice of THIS character, for the aioupdate addon
+    PERF_END("poll.jobs");
 
     // Last, with the snapshot complete : cross-check what the server said against what memory says. It
     // repairs nothing -- it exists so the day a struct or packet field shifts, we hear about it that day
     // instead of noticing three weeks later that a number has quietly been wrong.
-    sentinel_tick(gs);
+    { PERF_SCOPE("poll.sentinel"); sentinel_tick(gs); }
 }
 
 } // namespace aio

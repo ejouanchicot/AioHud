@@ -512,11 +512,16 @@ void aio_plugin_render6()
     u32 dev = g_host.service_raw(2);   // host vtbl[2] = D3D8 device
     if (valid_ptr(dev)) g_gameHwnd = aio::dFocusWindow(dev);
     if (g_gameHwnd) aio_subclass_install((HWND)g_gameHwnd);   // once the device gives us the window
+    aio::perf::frame_begin();   // //aio perf : one frame = this callback (off : nothing runs past one byte test)
 #ifdef AIOHUD_PROBES
     __try { aio::probes::frame(); } __except (EXCEPTION_EXECUTE_HANDLER) {}   // dev-only per-frame probes (native-window RE)
 #endif
+    PERF_BEGIN("native_ui_tick");
     __try { aio::native_ui_tick(g_hud.logged_in()); } __except (EXCEPTION_EXECUTE_HANDLER) { native_ui_fault("tick"); }   // Game UI : hide / move the client's own windows
+    PERF_END("native_ui_tick");
     g_hud.render(dev);
+    aio::perf::frame_end();
+    { char pm[200]; if (aio::perf_ab_take(pm, sizeof(pm))) g_host.console().print(pm); }   // a finished //aio perf ab
     { static DWORD s_vmAt = 0; const DWORD now = GetTickCount(); if (!s_vmAt || now - s_vmAt >= 120000) { if (s_vmAt) log_vm("every 2 min"); s_vmAt = now; } }
 
     // THE HARNESS SPEAKS HERE, and only here : ui/ and model/ must not reach into the host, so the watcher
@@ -1374,6 +1379,14 @@ static void aio_command_dispatch(const char* cmd)
     // and a tester had to be told each name one message at a time (2026-09-14 audit). The list is the everyday
     // commands, then the diagnostics a tester can be asked for ; the per-feature captures are named by //aio doctor
     // and by the messages that need them.
+    // //aio perf on|off|reset|dump|ab -- what each module costs per frame, measured (gfx/perf.h, ui/hud_perf.cpp). It ran
+    // BEFORE any optimisation of the 2026-11 audit's P1-P10, which were estimates read off the code until it existed.
+    if (const char* pfRest = aio_verb(buf, "perf")) {
+        char m[200];
+        aio::perf_command(pfRest, m, sizeof(m));
+        g_host.console().print(m);
+        return;
+    }
     if (aio_verb(buf, "help")) {
         static const char* const EN[] = {
             ">>> AioHud commands <<<",
@@ -1386,6 +1399,7 @@ static void aio_command_dispatch(const char* cmd)
             "  //aio doctor            checks everything and says what to do     //aio report   one file to send",
             "  //aio why               the last decisions        //aio selftest     the internal checks",
             "  //aio rva               game addresses after an FFXI update       //aio watch on|off  passive watchers",
+            "  //aio perf on|off|dump  what each module costs per frame (overlay ; dump -> log)   //aio perf auto  all cases, ~75 s",
         };
         static const char* const FR[] = {
             ">>> Commandes AioHud <<<",
@@ -1398,6 +1412,7 @@ static void aio_command_dispatch(const char* cmd)
             "  //aio doctor            verifie tout et dit quoi faire           //aio report   un fichier a envoyer",
             "  //aio why               les dernieres decisions   //aio selftest     les verifications internes",
             "  //aio rva               adresses du jeu apres une maj FFXI       //aio watch on|off  veilleurs passifs",
+            "  //aio perf on|off|dump  le cout de chaque module par image (surimpression ; dump -> log)   //aio perf auto  tous les cas, ~75 s",
         };
         const bool fr = aio::tr("en", "fr")[0] == 'f';
         for (int k = 0; k < (int)(sizeof(EN) / sizeof(EN[0])); ++k) g_host.console().print(fr ? FR[k] : EN[k]);

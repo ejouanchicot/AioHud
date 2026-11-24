@@ -9,6 +9,7 @@
 // Nothing here knows about the HUD -- it is pure GPU plumbing.
 #pragma once
 #include "windower.h"
+#include "perf.h"   // //aio perf : the counters below (one byte test when off)
 
 namespace aio {
 
@@ -73,11 +74,13 @@ struct VtxC { float x, y, z, rhw; u32 color; };              // 20 bytes, FVF 0x
 struct D3DVIEWPORT8 { u32 X, Y, Width, Height; float MinZ, MaxZ; };
 
 // ---- IDirect3DDevice8 vtable helpers (call by reversed index, SEH-guarded by vmethod) ----
-inline void dSetRS (u32 d, u32 s, u32 v)          { auto f = vmethod<long(__stdcall*)(u32,u32,u32)>(d,50);     if(f) f(d,s,v); }
-inline void dSetTSS(u32 d, u32 st, u32 ty, u32 v) { auto f = vmethod<long(__stdcall*)(u32,u32,u32,u32)>(d,63);  if(f) f(d,st,ty,v); }
-inline void dSetTex(u32 d, u32 st, u32 tex)       { auto f = vmethod<long(__stdcall*)(u32,u32,u32)>(d,61);      if(f) f(d,st,tex); }
-inline void dSetVS (u32 d, u32 fvf)               { auto f = vmethod<long(__stdcall*)(u32,u32)>(d,76);          if(f) f(d,fvf); }
-inline void dDrawUP(u32 d, u32 pt, u32 n, const void* v, u32 st){ auto f = vmethod<long(__stdcall*)(u32,u32,u32,const void*,u32)>(d,72); if(f) f(d,pt,n,v,st); }
+// The single path every draw and state change takes : //aio perf counts here (gfx/perf.h), and only when it reached
+// the device (a null vtable slot is not a call).
+inline void dSetRS (u32 d, u32 s, u32 v)          { auto f = vmethod<long(__stdcall*)(u32,u32,u32)>(d,50);     if(f) { f(d,s,v); perf::on_rs(); } }
+inline void dSetTSS(u32 d, u32 st, u32 ty, u32 v) { auto f = vmethod<long(__stdcall*)(u32,u32,u32,u32)>(d,63);  if(f) { f(d,st,ty,v); perf::on_tss(); } }
+inline void dSetTex(u32 d, u32 st, u32 tex)       { auto f = vmethod<long(__stdcall*)(u32,u32,u32)>(d,61);      if(f) { f(d,st,tex); perf::on_tex(); } }
+inline void dSetVS (u32 d, u32 fvf)               { auto f = vmethod<long(__stdcall*)(u32,u32)>(d,76);          if(f) { f(d,fvf); perf::on_fvf(); } }
+inline void dDrawUP(u32 d, u32 pt, u32 n, const void* v, u32 st){ auto f = vmethod<long(__stdcall*)(u32,u32,u32,const void*,u32)>(d,72); if(f) { f(d,pt,n,v,st); perf::on_draw(n); } }
 inline u32  dCreateSB(u32 d, u32 type)            { auto f = vmethod<long(__stdcall*)(u32,u32,u32*)>(d,57); u32 t=0; if(f) f(d,type,&t); return t; }
 // The display mode, for ONE question we cannot answer by looking: how many bits per channel the game is
 // presenting into. A gradient that bands no matter what it is drawn with is banding because the destination

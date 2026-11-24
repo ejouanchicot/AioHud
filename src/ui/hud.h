@@ -42,6 +42,12 @@ bool equip_preview_toggle();
 bool scfx_toggle(const char* arg, char* msg, int cap);   // //aio scfx <prop> [scale] (dev) : the skillchain resonance-circle demo, looping ; off = stop
 void scfx_draw(const Frame& f, float screenW, float screenH);
 void scfx_forget(); void scfx_dispose();
+// //aio perf (hud_perf.cpp ; the measuring is gfx/perf.h) : on | off | reset | dump | ab [frames] -> one console line in msg
+void perf_command(const char* rest, char* msg, int cap);
+bool perf_ab_take(char* msg, int cap);       // a console line from //aio perf (a finished ab, perf auto's progress) ; false = none
+class ConfigPage;
+void perf_auto_tick(ConfigPage& cfg);        // //aio perf auto : one step per frame (Hud::render, main thread)
+void perf_overlay_draw(const Frame& f);      // the overlay (only while //aio perf on)
 bool buff_preview_toggle();    // //aio buffpreview (dev) : 32 fake buffs in place of yours, under the top bar
 bool net_preview_toggle();     // //aio netpreview (dev) : the connection box shows every state it can (mail, GM, the 4 bands)
 // //aio kittest (dev build) : the painted theme kit (Eclat de Holla), one trial party box -- theme_kit.cpp ; returns the new state

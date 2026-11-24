@@ -202,6 +202,7 @@ void seg_soft(u32 dev, float ax, float ay, float bx, float by, float th, u32 col
 
 void disc(u32 dev, float cx, float cy, float r, u32 col)
 {
+    PERF_SCOPE("gfx.disc");   // //aio perf : discs (the minimap dots are two each, audit P2)
     cx -= 0.5f; cy -= 0.5f;                          // D3D half-pixel rule
     const int MAXN = 96;
     int N = (int)(r * 1.15f); if (N < 24) N = 24; if (N > MAXN) N = MAXN;   // segments scale with radius -> big discs stay ROUND (no facets)
@@ -304,6 +305,7 @@ static bool rrect_masked(u32 dev, float x, float y, float w, float h, int r, u32
 
 void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 cBot, float feather)
 {
+    PERF_SCOPE("gfx.rrect");   // //aio perf : the rounded shapes, across all modules (audit P8)
     if (w <= 0.0f || h <= 0.0f) return;
     x -= 0.5f; y -= 0.5f;                                        // D3D half-pixel rule (applied ONCE here)
     if (r > w * 0.5f) r = w * 0.5f;
@@ -518,6 +520,7 @@ static bool topcaps_masked(u32 dev, float x, float y, float w, float h, int r, u
 //   * the segment count follows the RADIUS instead of a fixed 8, so a big corner stops being a polygon.
 void rrect_topcaps(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 cBot, float feather)
 {
+    PERF_SCOPE("gfx.rrect");   // //aio perf : the rounded shapes, across all modules (audit P8)
     if (w <= 0.0f || h <= 0.0f) return;
     x -= 0.5f; y -= 0.5f;                                        // D3D half-pixel rule (applied ONCE here)
     if (r > w * 0.5f) r = w * 0.5f;
@@ -645,6 +648,7 @@ static bool rrect_tb_masked(u32 dev, float x, float y, float w, float h, int rT,
 // feather width across the whole perimeter (rule 2 -- feather everything or nothing).
 void rrect_tb(u32 dev, float x, float y, float w, float h, float rT, float rB, u32 cTop, u32 cBot, float feather)
 {
+    PERF_SCOPE("gfx.rrect");   // //aio perf : the rounded shapes, across all modules (audit P8)
     if (w <= 0.0f || h <= 0.0f) return;
     x -= 0.5f; y -= 0.5f;
     const float rmax = w * 0.5f;
@@ -721,6 +725,7 @@ void rrect_tb(u32 dev, float x, float y, float w, float h, float rT, float rB, u
 
 void rrect_left(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 cBot, float feather)
 {
+    PERF_SCOPE("gfx.rrect");   // //aio perf : the rounded shapes, across all modules (audit P8)
     if (w <= 0.0f || h <= 0.0f) return;
     x -= 0.5f; y -= 0.5f;
     if (r > w) r = w;
@@ -780,6 +785,7 @@ void rrect_left(u32 dev, float x, float y, float w, float h, float r, u32 cTop, 
 
 void rrect_glow(u32 dev, float x, float y, float w, float h, float r, u32 col, float glowW)
 {
+    PERF_SCOPE("gfx.rrect");   // //aio perf : the rounded shapes, across all modules (audit P8)
     if (w <= 0.0f || h <= 0.0f || glowW <= 0.0f) return;
     x -= 0.5f; y -= 0.5f;
     if (r > w * 0.5f) r = w * 0.5f;
@@ -824,6 +830,7 @@ void rrect_glow(u32 dev, float x, float y, float w, float h, float r, u32 col, f
 
 void disc_glow(u32 dev, float cx, float cy, float r, u32 col, float glowW)
 {
+    PERF_SCOPE("gfx.disc");   // //aio perf : discs (the minimap dots are two each, audit P2)
     if (r <= 0.0f || glowW <= 0.0f) return;
     cx -= 0.5f; cy -= 0.5f;
     const int N = 32;
@@ -839,6 +846,7 @@ void disc_glow(u32 dev, float cx, float cy, float r, u32 col, float glowW)
 
 void rrect_stroke(u32 dev, float x, float y, float w, float h, float r, u32 col, float bt)
 {
+    PERF_SCOPE("gfx.rrect");   // //aio perf : the rounded shapes, across all modules (audit P8)
     if (w <= 0.0f || h <= 0.0f || bt <= 0.0f) return;
     x -= 0.5f; y -= 0.5f;
     if (r > w * 0.5f) r = w * 0.5f;
