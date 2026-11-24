@@ -5,6 +5,11 @@ source: model/party_state_zonetracker.cpp (zt_set_zone mode 7, on_2a SORTIE bloc
 ---
 # Sortie tracker (zone tracker mode 7)
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `pcap` : outil(s) de developpement (`dev/src`, compile seulement avec l'arbre `dev/` local) — cela repond sur la machine de dev, **jamais dans une release**.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
+
 **Zone.** Outer Ra'Kaznar [U2] = zone **133**, the only one measured. The basement is the same zone (no zone change).
 Leaving to **Kamihr Drifts (267)** freezes the run as "last run" (the box stays, the counters stop) ; entering 133
 again starts a clean run. Any other exit clears the mode. A reload inside the run restores it from the zone cache.

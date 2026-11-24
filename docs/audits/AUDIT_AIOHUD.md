@@ -270,7 +270,7 @@ mémoire, crochet) et **l'état silencieusement faux** (violation de la règle 1
 | R9 | Faux silencieux | Le suivi des fenêtres s'arrête en silence à 768 entrées | `g_e[768]`, `D[768]` (`native_ui.cpp:269, 1713`) pour un parcours jusqu'à 2 000 (`1715`) | Au-delà, une fenêtre n'est ni suivie ni cachée | Log unique de saturation (`capwatch` existe déjà) | XS |
 | R10 | Cosmétique | Modes d'adressage de texture laissés modifiés pour le widget suivant | `distort()` laisse CLAMP (`hud_scfx.cpp:1896`) ; `fx_end` (`227-231`) ne le remet pas | Bavures de bord sur une texture dessinée ensuite | WRAP sur l'étage 0 dans `fx_end` | XS |
 | R11 | Diagnostic | Le message du state block ment | `hud.cpp:541-544` dit « drawing WITHOUT save/restore this session » alors qu'il retente à chaque image, et ne logue jamais la récupération | Diagnostic trompeur | Compteur + ligne « recovered » | XS |
-| R12 | Faible (plausible) | Commande tronquée à 255 caractères sans le dire | `aiohud.cpp:2004` | Argument long silencieusement coupé | Compteur, comme `g_cmdDropped` | XS |
+| R12 | Faible (plausible) | **[corrigé 2026-11-24 : compteur `g_cmdTruncated`, log + console, `//aio doctor`]** Commande tronquée à 255 caractères sans le dire | `aiohud.cpp:2004` | Argument long silencieusement coupé | Compteur, comme `g_cmdDropped` | XS |
 
 **Équivalents « zonage, changement de job, déconnexion, groupe qui change »**
 - Ces transitions sont traitées par le modèle et largement testées hors ligne : 37 fichiers de tests, environ 1 900 `CHECK`, des bandes de rejeu.

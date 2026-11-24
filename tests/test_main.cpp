@@ -47,6 +47,7 @@ void test_rva_rules();
 void test_render();
 void test_perf();
 void test_shapes();
+void test_verbs();
 
 int main() {
     test_json();
@@ -85,6 +86,7 @@ int main() {
     test_render();
     test_perf();
     test_shapes();
+    test_verbs();
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail;
 }

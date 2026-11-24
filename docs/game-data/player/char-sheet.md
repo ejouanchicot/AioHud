@@ -6,6 +6,11 @@ source: Windower addons/libs/packets/fields.lua, confirmed against the game's ow
 
 # The character sheet
 
+> **Sondes citees ici.** Les commandes `//aio` nommees dans cette page ne sont pas toutes livrees.
+> `gearskew`, `jobtab` : outil(s) de developpement (`dev/src`, compile seulement avec l'arbre `dev/` local) — cela repond sur la machine de dev, **jamais dans une release**.
+> Ce qu'une release porte vraiment : `//aio help` (et `//aio doctor` en premier quand quelque chose ne va pas).
+
+
 Three packets AioHUD already received carried far more than it read. `model/charsheet.h` decodes them; this file
 is what each field is, where it sits, and **how it was confirmed** — because two of these blocks have no
 automatic witness at all and only a human reading the game's menu can settle them.

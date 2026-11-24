@@ -19,6 +19,7 @@
 #include "aiohud_probes.h"          // dev-only diagnostic surface (present only in the local tree ; build.bat wires it in when the file exists)
 #endif
 #include "ui/hud.h"
+#include "plugin/aio_verbs.h"   // the //aio command words : one table, matched exactly on the first word
 #include "ui/doctor_html.h"   // //aio doctor also writes the sheet as a page
 #include "model/chat_log.h"   // the Chat module : every log line is queued from text_in
 #include "model/native_ui.h"   // Game UI : the client's own windows (tick + unload restore)
@@ -58,21 +59,8 @@ namespace aio { extern bool g_facingProbe; }   // ui/hud.cpp : the //aio facing 
 #define AIOHUD_VERSION "dev"
 #endif
 
-// The COMMAND WORD itself : the first word after an optional leading "aio". out / in / rva take a free-text
-// argument (a name, a spell), and the branches above them in the old order matched by substring over the WHOLE
-// buffer -- so "//aio out Poppy" changed the EmpyPop NM ("pop"), and "//aio in Simon" added a fake party member
-// ("sim"). Found by the 2026-09-14 audit. A verb is matched where a verb is, and dispatched before anything
-// that searches the buffer. It replaces aio_word, a word-boundary match ANYWHERE in the buffer that existed because
-// "out" is a substring of "layout" -- boundaries fixed that collision, but not a name argument that contains another
-// command's token. Returns the text AFTER the verb (possibly empty), or 0.
-static const char* aio_verb(const char* buf, const char* tok) {
-    const char* p = buf;
-    while (*p == ' ' || *p == '\t' || *p == '/') ++p;
-    if (!strncmp(p, "aio", 3) && (p[3] == ' ' || p[3] == '\t')) { p += 3; while (*p == ' ' || *p == '\t') ++p; }
-    const size_t n = strlen(tok);
-    if (strncmp(p, tok, n) || (p[n] && p[n] != ' ' && p[n] != '\t')) return 0;
-    return p + n;
-}
+// The COMMAND WORD is matched in plugin/aio_verbs.h now : ONE table, the first word compared exactly (it replaced
+// aio_verb, which a dozen verbs had moved to one incident at a time, and the strstr() chain the others still used).
 
 #include "model/timers_build.h"   // //aio timers reset / out / in / oblog / ftrace : the Timers rows and their FOCUS monitor
 // EVERY line this file prints is read by a PERSON, so it comes out in the language they picked in the config --
@@ -561,6 +549,9 @@ static void feed_packet(int id, const unsigned char* b)
 // Commands refused because the queue was full. Declared HERE, far above the queue itself, because //aio doctor
 // reports it and the doctor is dispatched earlier in this file -- the counter has to be visible to both.
 static volatile long g_cmdDropped = 0;
+// ...and commands CUT at 255 characters (audit R12) : the queue slot is 256 bytes, and a longer line used to lose its
+// end without a word -- an argument silently shortened is a command that "did the wrong thing" for no visible reason.
+static volatile long g_cmdTruncated = 0;
 static int g_omenRaw = 0;
 // Which packet ids arrive while inside Omen, counted rather than dumped. The open question the text capture
 // cannot answer is whether the floors are ALSO described by a structured packet (Limbus's 0x075 carries floor +
@@ -1211,23 +1202,25 @@ static void aio_command_dispatch(const char* cmd)
 {
     if (!cmd) return;
     // lower-case a copy so keywords are case-insensitive (//AIO HP 50 == //aio hp 50).
-    char buf[256]; int i = 0;
-    for (; cmd[i] && i < 255; i++) { char c = cmd[i]; buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; }
-    buf[i] = 0;
+    char buf[256];
+    aio::verbs::copy_lower(cmd, buf, sizeof(buf));        // (the queue already cut it at 255 and said so : drain_commands)
+    namespace verbs = aio::verbs;
+    // THE COMMAND WORD, matched EXACTLY against the table (plugin/aio_verbs.h) -- it used to be a chain of strstr()
+    // over the whole line, so an argument could fire another command. Each case below is the old branch, unchanged.
+    const char* rest = "";
+    switch (verbs::find(buf, &rest)) {
 
-    // ---- VERBS FIRST. Commands whose argument is free text (a name, a spell), matched on the command word itself,
-    //      before any branch below searches the whole buffer for a substring (see aio_verb).
 #ifdef AIOHUD_DEVTOOLS
-    if (const char* hpRest = aio_verb(buf, "heap")) {   // //aio heap snap | diff : every module's heap blocks born across a test (dev only)
+    case verbs::V_HEAP: { const char* hpRest = rest;   // //aio heap snap | diff : every module's heap blocks born across a test (dev only)
         char snapP[MAX_PATH], diffP[MAX_PATH];
         aio::plugin_path(snapP, MAX_PATH, "data\\heapsnap.bin"); aio::plugin_path(diffP, MAX_PATH, "data\\heapdiff.bin");
         const char* hr = hpRest; while (*hr == ' ') ++hr;
         if (!strncmp(hr, "trap", 4)) aio::devtools::heap_trap_command(hr + 4, aio::plugin_path_r("data\\heaptrap.txt"));
         else aio::devtools::heap_command(hpRest, snapP, diffP);
         return;
-    }
+    } break;
 #endif
-    if (const char* vmRest = aio_verb(buf, "vmem")) {   // //aio vmem [tag] -> one VMEM snapshot NOW, tagged : the bracket of an A/B
+    case verbs::V_VMEM: { const char* vmRest = rest;   // //aio vmem [tag] -> one VMEM snapshot NOW, tagged : the bracket of an A/B
         // (2026-11-23 : ~7.6 MB stays per reload -- is it AioHUD or GearSwap ? //aio vmem a ; 10x //gs reload ; //aio vmem b)
         const char* tag = vmRest; while (*tag == ' ' || *tag == '\t') ++tag;
         char when[24]; _snprintf(when, sizeof(when), "mark %s", tag); when[sizeof(when) - 1] = 0;
@@ -1240,7 +1233,7 @@ static void aio_command_dispatch(const char* cmd)
             line[sizeof(line) - 1] = 0; g_host.console().print(line);
         }
         return;
-    }
+    } break;
     // //aio out <n|name|spell|alerts|all|list> -- forget a buff we are watching on someone. The case it exists for: you Haste the wrong name,
     // and from then on AioHUD believes that person is supposed to have Haste, and says so in red when it ends.
     // Nothing at cast time can tell a mistake from an intention, so the correction has to be a person's, and it
@@ -1249,7 +1242,7 @@ static void aio_command_dispatch(const char* cmd)
     // which says "Name - Spell") and type as much as you like: an index, a prefix of the name, a prefix of the
     // spell, or both in either order. "all" clears the lot. The mute lasts exactly as long as the buff that is
     // up -- cast it on them again later and it is watched again, because that time you meant it.
-    if (const char* outRest = aio_verb(buf, "out")) {
+    case verbs::V_OUT: { const char* outRest = rest;
         // The two words after the token, copied out. tok_arg() is deliberately NOT used: it lives in the
         // untracked probes file, so a command leaning on it is silently absent from every release build
         // (architecture/release-checklist.md -- this has bitten before).
@@ -1300,13 +1293,13 @@ static void aio_command_dispatch(const char* cmd)
         else   _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cnothing matches \"%s\"", "%c%c[Timers] %c%crien ne correspond a \"%s\""), 0x1F, YEL, 0x1F, RED, a1);
         m[sizeof(m) - 1] = 0; chat(m);
         return;
-    }
+    } break;
     // //aio in -- the undo of //aio out, and the no-argument form puts back EVERYTHING that is off. A row you
     // took off shows no number any more (that is how you know it is off), so a bare "in" is the only form that
     // can be typed from what is on screen ; a number or a name still works, off //aio out list.
     // The FIRST word, like "out" : "in" hides inside a dozen words ("inv", "minimap"), and this chain matches
     // by substring everywhere else.
-    if (const char* inRest = aio_verb(buf, "in")) {
+    case verbs::V_IN: { const char* inRest = rest;
         char w1[32] = { 0 }, w2[32] = { 0 };
         { const char* a = inRest;
           for (int w = 0; w < 2; ++w) {
@@ -1322,14 +1315,14 @@ static void aio_command_dispatch(const char* cmd)
         else   _snprintf(m, sizeof(m), aio::tr("%c%c[Timers] %c%cnothing to put back (no line was removed)", "%c%c[Timers] %c%crien a remettre (aucune ligne retiree)"), 0x1F, YEL, 0x1F, GRAY);
         m[sizeof(m) - 1] = 0; g_host.ffxi().add_to_chat(MODE, m);
         return;
-    }
+    } break;
     // //aio rva [break [delta]] -- the FFXiMain addresses after a client patch. //aio doctor sends a tester here when
     // the target chain is dead, and two healers log "run //aio rva" when their budget closes : it has to exist in a
     // RELEASE, which it did not -- it lived in the untracked probes file, so the remedy the doctor named answered
     // "unknown command" (2026-09-14 audit). This is the shipped half : the addresses in use, a whole-image search
     // for the target pointer (adopted when unique) and for the menu slots, and a block ready to paste over the
     // seeds. `break` poisons them in memory to watch the healers work ; a reload undoes it.
-    if (const char* rvaRest = aio_verb(buf, "rva")) {
+    case verbs::V_RVA: { const char* rvaRest = rest;
         while (*rvaRest == ' ') ++rvaRest;
         if (!strncmp(rvaRest, "break", 5)) {
             unsigned d = 0x100; { const char* q = rvaRest + 5; while (*q == ' ') ++q; if (*q) d = (unsigned)strtoul(q, 0, 0); }
@@ -1368,12 +1361,12 @@ static void aio_command_dispatch(const char* cmd)
                      : aio::fm_bg_busy() ? aio::tr(" ; a whole-memory search is already running", " ; une recherche dans toute la memoire tourne deja") : "");
         m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
-    }
+    } break;
 #ifdef AIOHUD_DEVTOOLS
     // The dev tools own their command words, dispatched BEFORE the probes file : "pcap dump <name>" contains "dump",
     // which a probe matches anywhere in the buffer -- the first black box dump went to the hexdump probe, read its
     // name as an address and wrote nothing (2026-09-14).
-    if (aio_verb(buf, "pcap") || aio_verb(buf, "igstate") || aio_verb(buf, "jobtab") || aio_verb(buf, "gearskew")) { if (aio::devtools::command(buf)) return; }
+    case verbs::V_DEVTOOL: { if (aio::devtools::command(buf)) return; } break;   // pcap, igstate, jobtab, gearskew : they parse the line themselves
 #endif
     // //aio help -- what exists. Without it the only answer to a mistyped or forgotten command was "unknown command",
     // and a tester had to be told each name one message at a time (2026-09-14 audit). The list is the everyday
@@ -1381,13 +1374,13 @@ static void aio_command_dispatch(const char* cmd)
     // and by the messages that need them.
     // //aio perf on|off|reset|dump|ab -- what each module costs per frame, measured (gfx/perf.h, ui/hud_perf.cpp). It ran
     // BEFORE any optimisation of the 2026-11 audit's P1-P10, which were estimates read off the code until it existed.
-    if (const char* pfRest = aio_verb(buf, "perf")) {
+    case verbs::V_PERF: { const char* pfRest = rest;
         char m[200];
         aio::perf_command(pfRest, m, sizeof(m));
         g_host.console().print(m);
         return;
-    }
-    if (aio_verb(buf, "help")) {
+    } break;
+    case verbs::V_HELP: {
         static const char* const EN[] = {
             ">>> AioHud commands <<<",
             "  //aio config [1-3]      settings (optionally a tab)      //aio edit          move / resize boxes",
@@ -1417,12 +1410,12 @@ static void aio_command_dispatch(const char* cmd)
         const bool fr = aio::tr("en", "fr")[0] == 'f';
         for (int k = 0; k < (int)(sizeof(EN) / sizeof(EN[0])); ++k) g_host.console().print(fr ? FR[k] : EN[k]);
         return;
-    }
+    } break;
     // //aio report -- ONE file a tester can send : the doctor's problems and the internal checks, written by the same
     // reporter the watcher uses (next to AioHud.dll), with the decision ring and the doctor's detail in the log. It
     // used to take four commands and two files, asked for one at a time. With nothing failing it still writes the
     // file, which proves the reporter can write on THAT install (the Program Files case).
-    if (aio_verb(buf, "report")) {
+    case verbs::V_REPORT: {
         char lines[12][aio::Hud::DOC_LINE];
         const int nd = g_hud.doctor(lines, 12);
         aio::CheckFail hits[aio::SELFTEST_FAILS_MAX];
@@ -1446,12 +1439,12 @@ static void aio_command_dispatch(const char* cmd)
                   nd, n, nw);
         m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
-    }
+    } break;
     // //aio bcaptlog [sec] -> the buff-action capture (every cat 4/6/11 action : who cast what on whom, message id,
     // the caster attributed to that status). The capture is compiled into every build (party_state.cpp) and its
     // own log line says "re-arm with //aio bcaptlog" -- but the only way to ARM it lived in the untracked probes
     // file, so in a release the capture was dead code (2026-09-14 audit). Time-windowed, 10..900 s.
-    if (const char* bc = aio_verb(buf, "bcaptlog")) {
+    case verbs::V_BCAPTLOG: { const char* bc = rest;
         int sec = 180; while (*bc == ' ') ++bc; if (*bc >= '0' && *bc <= '9') sec = atoi(bc);
         if (sec < 10) sec = 10; if (sec > 900) sec = 900;
         aio::party().arm_bcapt_log(sec);
@@ -1460,11 +1453,11 @@ static void aio_command_dispatch(const char* cmd)
                                         ">>> AioHud : bcaptlog ARME pour %d s -- lance tes buffs / laisse les autres lancer, puis envoie Windower\\plugins\\aiohud_debug.log (lignes BCAPT) <<<"), sec);
         m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
-    }
+    } break;
 
     // //aio sclog [sec] -> the skillchain capture (party_state.cpp act_skillchain, SCAPT lines) : every WS / spell /
     // ability / pet move finish, the game's skillchain messages and what the box decided. Time-windowed, 10..900 s.
-    if (const char* sc = aio_verb(buf, "sclog")) {
+    case verbs::V_SCLOG: { const char* sc = rest;
         int sec = 300; while (*sc == ' ') ++sc; if (*sc >= '0' && *sc <= '9') sec = atoi(sc);
         if (sec < 10) sec = 10; if (sec > 900) sec = 900;
         aio::party().arm_scapt_log(sec);
@@ -1473,11 +1466,11 @@ static void aio_command_dispatch(const char* cmd)
                                         ">>> AioHud : sclog ARME pour %d s -- fais tes skillchains, puis envoie Windower\\plugins\\aiohud_debug.log (lignes SCAPT) <<<"), sec);
         m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
-    }
+    } break;
 
     // //aio scdelay [s] -> the Wait of a pet's move window (UiConfig::scReadyDelay, tenths of a second) : "4.5" or "45".
     // Set while the true threshold is searched with //aio sclog (each try logs its delay and whether it chained).
-    if (const char* sd = aio_verb(buf, "scdelay")) {
+    case verbs::V_SCDELAY: { const char* sd = rest;
         while (*sd == ' ') ++sd;
         aio::UiConfig& c = aio::ui_config();
         if (*sd >= '0' && *sd <= '9') {
@@ -1493,14 +1486,14 @@ static void aio_command_dispatch(const char* cmd)
                   c.scReadyDelay / 10, c.scReadyDelay % 10);
         m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
-    }
+    } break;
 
     // //aio profile save|load|delete <name> | profile list -> named snapshots of the whole config.
     // Dispatched FIRST : the free-text <name> can contain other command keywords ("mydemo", "sim1",
     // "myconfig", ...) that the substring-matched branches below (strstr over the whole buffer) would
     // otherwise capture. (The dispatch is substring-based by design -- e.g. "party demo" -- so a proper
     // verb tokenizer would be the fuller fix ; this keeps the free-text command safe for now.)
-    if (strstr(buf, "profile")) {
+    case verbs::V_PROFILE: {
         const char* a = strstr(buf, "profile") + 7; while (*a == ' ' || *a == '\t') ++a;
         if (strncmp(a, "list", 4) == 0) {
             aio::profile_refresh();
@@ -1540,7 +1533,7 @@ static void aio_command_dispatch(const char* cmd)
         g_host.console().print(aio::tr(">>> usage: //aio profile save|load|delete <name>  |  profile list <<<",
                                        ">>> usage : //aio profile save|load|delete <nom>  |  profile list <<<"));
         return;
-    }
+    } break;
 
 
     // //aio party N  -> fake roster for previewing the layout. N = TOTAL member count 0-18 ; YOU
@@ -1550,7 +1543,7 @@ static void aio_command_dispatch(const char* cmd)
     //   13-18    -> full party (6) + alliance 1 (6) + alliance 2 (N-12)
     // //aio party off (or demo off) -> live.  Legacy still accepted : "demo", "alliance1/2 demo".
     // Caught here first so a "party N" / "demo" / "off" isn't shadowed by a later "party"-prefixed handler.
-    {
+    case verbs::V_PARTY: {
         const bool isDemo  = strstr(buf, "demo")      != 0;
         const bool isParty = strstr(buf, "party")     != 0;
         const bool a1      = strstr(buf, "alliance1") != 0;
@@ -1564,7 +1557,7 @@ static void aio_command_dispatch(const char* cmd)
             aio::set_party_demo_total(total);
             return;
         }
-    }
+    } break;
 
     // //aio ept <nm> -> track that Abyssea NM in the EmpyPop box + show it. "//aio ept" alone toggles the box ;
     // "ept list" prints the NM names ; "ept off"/"hide" hides it. "pop" is kept as an alias. The friendly driver
@@ -1572,7 +1565,7 @@ static void aio_command_dispatch(const char* cmd)
     // "ept"/"pop" are 3 chars each, and NEITHER is the dev probe token "ep" (tok_arg requires a delimiter after
     // "ep", which "ept" lacks) -> no clash. Placed after the party/demo block ; NM keys are letters+spaces only,
     // so none collide with the keywords above, and we fully handle + return here so the name never leaks below.
-    if (const char* pp = (strstr(buf, "ept") ? strstr(buf, "ept") : strstr(buf, "pop"))) {
+    case verbs::V_EPT: { const char* pp = rest - 3;   // "ept" and "pop" are both 3 letters : the body reads its argument at pp + 3
         const char* a = pp + 3; while (*a == ' ' || *a == '\t') ++a;
         aio::UiConfig& C = aio::ui_config();
         // Output goes to the FFXI CHAT LOG (not the Windower console) via the reversed ffxi()->add_to_chat, so
@@ -1648,38 +1641,32 @@ static void aio_command_dispatch(const char* cmd)
             chat(m);
         }
         return;
-    }
+    } break;
 
     // //aio menu N -> select the N-th window theme (1-based). The skin-select digit form is caught here.
-    if (strstr(buf, "menu")) {
+    case verbs::V_MENU: {
         const char* mp = strstr(buf, "menu") + 4; while (*mp == ' ') ++mp;
         if (*mp >= '0' && *mp <= '9') { g_hud.set_skin(atoi(mp) - 1); return; }
-    }
-
-#ifdef AIOHUD_PROBES
-    // Dev-only diagnostic commands. Runs here so no shipping command above is shadowed ; anything it
-    // doesn't recognise falls through to the shipping handlers below.
-    if (aio::probes::command(buf)) return;
-#endif
+    } break;
 
 #ifdef AIOHUD_DEVTOOLS   // developer toy : not in a release (the //aio party N demo does not use it)
     // //aio sim [N] -> append N (0-5) FAKE members to the LIVE party, so the box grows and the alliances
     // react to the main-party size for testing. //aio sim 0 (or sim off) -> back to the real size.
-    if (strstr(buf, "sim")) {
+    case verbs::V_SIM: {
         const char* p = strstr(buf, "sim") + 3; while (*p == ' ' || *p == '\t') ++p;
         const int v = strstr(buf, "off") ? 0 : ((*p >= '0' && *p <= '5') ? (*p - '0') : 1);
         aio::set_party_sim_extra(v);
         return;
-    }
+    } break;
 #endif
 
     // //aio config -> toggle the full-screen configuration overlay. "config N" = select tab N (1..3).
-    if (strstr(buf, "update")) {   // //aio update -> spawn the no-window updater (the AioUpdate Lua addon drives the unload/load)
+    case verbs::V_UPDATE: {   // //aio update -> spawn the no-window updater (the AioUpdate Lua addon drives the unload/load)
         aio::g_updBusy = true; aio::g_updFinal = 0; aio::g_updMsg[0] = 0; aio::g_updReqT = GetTickCount();   // Update tab shows live progress whether the trigger was the button or a typed //aioupdate
         spawn_updater(false);      // silent on purpose : //aioupdate must produce no console output
         return;
-    }
-    if (strstr(buf, "keylog")) {   // //aio keylog [sec] -> key events to aiohud_debug.log for [sec] (default 60, 10..300) or 400 events ; again = off
+    } break;
+    case verbs::V_KEYLOG: {   // //aio keylog [sec] -> key events to aiohud_debug.log for [sec] (default 60, 10..300) or 400 events ; again = off
         if (g_keyLog) {
             g_keyLog = false; debug::log("KEY window closed (turned off)");
             g_host.console().print(aio::tr(">>> AioHud : key log OFF <<<", ">>> AioHud : log clavier OFF <<<"));
@@ -1694,24 +1681,24 @@ static void aio_command_dispatch(const char* cmd)
                                         ">>> AioHud : log clavier ON pour %d s (tape dans le champ nom de profil, puis envoie aiohud_debug.log -- les touches du chat ne sont PAS enregistrees en caracteres) <<<"), sec);
         m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
-    }
+    } break;
     // NB the name: NOT "focustrace". Command dispatch is a chain of strstr(), and the pre-existing `//aio focus`
     // probe runs earlier -- it matches the "focus" INSIDE "focustrace" and swallows the command, so the trace
     // silently never armed while printing the other probe's output. Any new command must not contain an existing
     // one as a substring.
-    if (strstr(buf, "ftrace")) {   // //aio ftrace -> explain the Timers "track per job" decision for the next N self-buff rows
+    case verbs::V_FTRACE: {   // //aio ftrace -> explain the Timers "track per job" decision for the next N self-buff rows
         aio::timers_focus_trace(180);   // 180 SECONDS -- long enough for a full buff cycle plus the alert window
         aio::party().set_buff076_trace(180);   // model-side twin : log 0x076 arrivals + zone markers over the same window (does an ally's buff set refresh after a zone ?)
         g_host.console().print(aio::tr(">>> AioHud : ftrace ARMED (have the Hidden+Focus buff up, then send Windower\\plugins\\aiohud_debug.log ; look for FOCUS / B076 lines) <<<", ">>> AioHud : ftrace ARME (garde le buff Hidden+Focus actif, puis envoie Windower\\plugins\\aiohud_debug.log ; cherche les lignes FOCUS / B076) <<<"));
         return;
-    }
-    if (strstr(buf, "oblog")) {   // //aio oblog -> ONE-frame dump of the ally-buff pipeline : prune -> model -> groups -> rows -> focus
+    } break;
+    case verbs::V_OBLOG: {   // //aio oblog -> ONE-frame dump of the ally-buff pipeline : prune -> model -> groups -> rows -> focus
         aio::timers_oblog_arm();
         g_host.console().print(aio::tr(">>> AioHud : oblog ARMED -- the next frame dumps the ally-buff pipeline to Windower\\plugins\\aiohud_debug.log (OBPRUNE + OBLOG blocks) <<<", ">>> AioHud : oblog ARME -- la prochaine frame dumpe le pipeline des buffs allies dans Windower\\plugins\\aiohud_debug.log (blocs OBPRUNE + OBLOG) <<<"));
         return;
-    }
+    } break;
     // //aio unitslog [sec] -> raw currency / NPC-dialog packets for sec seconds (default 180, 0 = off).
-    if (strstr(buf, "unitslog")) {
+    case verbs::V_UNITSLOG: {
         int sec = 180; { const char* a = strstr(buf, "unitslog") + 8; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
         if (sec > 600) sec = 600;
         g_unitsLogUntil = sec > 0 ? ((GetTickCount() + (unsigned)sec * 1000u) | 1u) : 0;
@@ -1722,12 +1709,12 @@ static void aio_command_dispatch(const char* cmd)
                   sec > 0 ? aio::tr("ON", "ACTIVE") : aio::tr("off", "arretee"));
         m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
-    }
+    } break;
     // NB : NOT "songlog" -- aiohud_probes.cpp already owns that name, and probes::command() runs FIRST (above),
     // so a colliding name is silently unreachable : the probe answers, this never runs, and the capture comes back
     // looking like the trace simply produced nothing. Checked against all 93 command patterns in both files.
     // //aio songtape [sec] -> record the whole song sequence as it happens (default 120 s, 0 = off).
-    if (strstr(buf, "songtape")) {
+    case verbs::V_SONGTAPE: {
         int sec = 120; { const char* a = strstr(buf, "songtape") + 8; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
         if (sec > 600) sec = 600;
         aio::party().set_song_tape(sec);
@@ -1737,31 +1724,31 @@ static void aio_command_dispatch(const char* cmd)
                   sec > 0 ? aio::tr("ON", "ACTIF") : aio::tr("off", "arrete"));
         m[sizeof(m) - 1] = 0; g_host.console().print(m);
         return;
-    }
+    } break;
     // //aio songrow -> dump every ally song row with the numbers behind it (aiohud_debug.log). Read-only.
-    if (strstr(buf, "songrow")) {
+    case verbs::V_SONGROW: {
         aio::party().songrow_dump();
         g_host.console().print(aio::tr(">>> AioHud : songrow written to Windower\\plugins\\aiohud_debug.log (look for AIO SONGROW) <<<",
                                        ">>> AioHud : songrow ecrit dans Windower\\plugins\\aiohud_debug.log (cherche AIO SONGROW) <<<"));
         return;
-    }
-    if (strstr(buf, "songdur")) {   // //aio songdur [sec] -> the BRD song-duration MODEL, inputs included, checked against the game's own 0x063
+    } break;
+    case verbs::V_SONGDUR: {   // //aio songdur [sec] -> the BRD song-duration MODEL, inputs included, checked against the game's own 0x063
         int sec = 120; { const char* a = strstr(buf, "songdur") + 7; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
         if (sec < 10) sec = 10; if (sec > 900) sec = 900;
         aio::party().set_songdur_trace(sec);
         g_host.console().print(aio::tr(">>> AioHud : songdur ARMED -- sing, then send Windower\\plugins\\aiohud_debug.log (SONGDUR lines = the model, SONGREAL = the game's own timer) <<<", ">>> AioHud : songdur ARME -- chante, puis envoie Windower\\plugins\\aiohud_debug.log (lignes SONGDUR = le modele, SONGREAL = le timer reel du jeu) <<<"));
         g_host.console().print(aio::tr(">>> Cleanest test : Pianissimo the song ON YOURSELF -- same math as on an ally, but with a real timer to check it against <<<", ">>> Test le plus net : Pianissimo la song SUR TOI -- meme calcul qu'un Pianissimo sur un allie, mais avec un vrai timer pour le verifier <<<"));
         return;
-    }
-    if (strstr(buf, "chat export")) {   // //aio chat export [all] -> the chat history to <plugin>\exports\chat_<date>.txt ("all" : the combat log too)
+    } break;
+    case verbs::V_CHAT: { if (!strstr(rest, "export")) break;   // //aio chat export [all] -> the chat history to <plugin>\exports\chat_<date>.txt ("all" : the combat log too)
         char nm[96]; const int n = aio::chat_export_txt(strstr(buf, "chat export all") != 0, nm, sizeof(nm));
         char msg[220];
         if (n >= 0) _snprintf(msg, sizeof(msg), aio::tr(">>> AioHud : %d chat line(s) exported -> plugins\\AioHud\\%s <<<", ">>> AioHud : %d ligne(s) de chat exportee(s) -> plugins\\AioHud\\%s <<<"), n, nm);
         else _snprintf(msg, sizeof(msg), "%s", aio::tr(">>> AioHud : chat export FAILED (see aiohud_debug.log) <<<", ">>> AioHud : export du chat ECHOUE (voir aiohud_debug.log) <<<"));
         msg[sizeof(msg) - 1] = 0; g_host.console().print(msg);
         return;
-    }
-    if (strstr(buf, "schlog")) {   // //aio schlog [sec] -> the SCH stratagem pool : the inputs the charge count is decided from, and the interval MEASURED off each spend
+    } break;
+    case verbs::V_SCHLOG: {   // //aio schlog [sec] -> the SCH stratagem pool : the inputs the charge count is decided from, and the interval MEASURED off each spend
         int sec = 180; { const char* a = strstr(buf, "schlog") + 6; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
         if (sec < 10) sec = 10; if (sec > 900) sec = 900;
         aio::sch_log_arm(sec);
@@ -1770,18 +1757,17 @@ static void aio_command_dispatch(const char* cmd)
         g_host.console().print(aio::tr(">>> Do it on SCH main AND on a job subbing /SCH : each spend prints the interval the game really uses <<<",
                                        ">>> A faire en SCH main ET en /SCH : chaque depense affiche l'intervalle reellement utilise par le jeu <<<"));
         return;
-    }
+    } break;
 #ifdef AIOHUD_DEVTOOLS   // developer toy : not in a release
-    if (strstr(buf, "corners")) {   // //aio corners -> A/B the BAKED corner masks against the feathered geometry
+    case verbs::V_CORNERS: {   // //aio corners -> A/B the BAKED corner masks against the feathered geometry
         const bool off = !aio::corner_mask_user_is_off();
         aio::corner_mask_user_off(off);
         g_host.console().print(off ? aio::tr(">>> AioHud : corners = feathered geometry (baked mask OFF) -- //aio corners to go back <<<", ">>> AioHud : coins = geometrie plumee (masque cuit DESACTIVE) -- //aio corners pour revenir <<<")
                                    : aio::tr(">>> AioHud : corners = baked mask (real coverage, one texel per pixel) <<<", ">>> AioHud : coins = masque cuit (couverture reelle, 1 texel par pixel) <<<"));
         return;
-    }
-    if (aio::devtools::command(buf)) return;   // dev-only tools (dev/src, never in a release) : pcap, igstate
+    } break;
 #endif
-    if (strstr(buf, "doctor")) {   // //aio doctor -> run every RUNTIME check and print what to DO about each problem
+    case verbs::V_DOCTOR: {   // //aio doctor -> run every RUNTIME check and print what to DO about each problem
         char lines[12][aio::Hud::DOC_LINE];
         const int n = g_hud.doctor(lines, 12);
         g_hud.self_check();   // ...and the per-widget texture health //aio selfcheck logs : one command to ask a tester for, not two
@@ -1810,6 +1796,9 @@ static void aio_command_dispatch(const char* cmd)
                                    (int)rj[i].worstNeed - (int)rj[i].worstGot, rj[i].worstNeed, rj[i].worstGot,
                                    rj[i].lastMs ? (aio::model_now_ms() - rj[i].lastMs) / 1000u : 0u);
           if (drops) windower::debug::log("  refused  : %u command(s) dropped -- the queue was full (typed faster than the game draws)", drops);
+          { const unsigned cut = (unsigned)g_cmdTruncated;
+            if (cut) windower::debug::log("  refused  : %u command(s) cut at 255 characters -- the end of the line was lost", cut);
+            else     windower::debug::log("  refused  : no command was cut (all fit in 255 characters)"); }
           if (nr || drops) {
               char rm[200];
               _snprintf(rm, sizeof(rm), aio::tr(">>> AioHud doctor : %u packet(s) refused as malformed, %u command(s) dropped -- detail in the log <<<",
@@ -1826,7 +1815,7 @@ static void aio_command_dispatch(const char* cmd)
             g_host.console().print(aio::tr(">>> full detail : Windower\\plugins\\aiohud_debug.log (AIO DOCTOR block) <<<", ">>> detail complet : Windower\\plugins\\aiohud_debug.log (bloc AIO DOCTOR) <<<"));
         }
         return;
-    }
+    } break;
     // //aio selftest [on|off|report] -- the in-game safety harness (model/selftest.h).
     //   (no argument) run every registered check RIGHT NOW and say what is failing. No debounce: this is the
     //                 command you use while looking at the bug, so "it is failing this instant" is the answer.
@@ -1837,9 +1826,9 @@ static void aio_command_dispatch(const char* cmd)
     //                 ever exercised is a reporter that discovers its own permissions problem at the worst
     //                 possible moment (the Program Files install, silently unwritable -- a bug this project has
     //                 already paid for once with the log file).
-    if (strstr(buf, "selftest")) {
-        const bool on  = strstr(buf, " on")  != 0;
-        const bool off = strstr(buf, " off") != 0;
+    case verbs::V_SELFTEST: {
+        const bool on  = strstr(rest, " on")  != 0;   // the ARGUMENTS only (rest) : never the command word
+        const bool off = strstr(rest, " off") != 0;
         const bool rep = strstr(buf, "report") != 0;
         if (on || off) {
             aio::selftest_arm(on && !off);
@@ -1872,11 +1861,11 @@ static void aio_command_dispatch(const char* cmd)
             g_hud.write_bug_report(hits, n, false);   // asked for by hand : one instant, no debounce
         }
         return;
-    }
+    } break;
     // //aio why [topic] -- dump the decision ring (model/decisions.h). The armed traces (dbflog, ftrace, tpool,
     // songlog) all need arming BEFORE the thing happens ; this one is always recording, so it answers the
     // question in the order it actually gets asked : you saw something odd, and NOW you want to know why.
-    if (strstr(buf, "why")) {
+    case verbs::V_WHY: {
         // THE TOPIC WORDS ARE DELIBERATELY NOT "zone" AND "debuff". aiohud_probes.cpp is consulted BEFORE this
         // file and owns a //aio zone command, so "//aio why zone" would never reach here on a dev build while
         // working fine on a release one -- the worst kind of difference. "zt" and "dbf" collide with nothing.
@@ -1891,13 +1880,13 @@ static void aio_command_dispatch(const char* cmd)
         msg[sizeof(msg) - 1] = 0;
         g_host.console().print(msg);
         return;
-    }
+    } break;
     // //aio watch [on|off] -- the master switch for the passive watchers (model/watchdogs.h). They only ever
     // OBSERVE, so turning them off changes nothing the HUD draws -- it is here so that a watcher suspected of
     // being wrong can be ruled out in one command, with no rebuild and no reload, instead of being argued with.
-    if (strstr(buf, "watch")) {
-        if (strstr(buf, "on"))       aio::watch_enable(true);
-        else if (strstr(buf, "off")) aio::watch_enable(false);
+    case verbs::V_WATCH: {
+        if (strstr(rest, "on"))       aio::watch_enable(true);    // the ARGUMENTS only (rest)
+        else if (strstr(rest, "off")) aio::watch_enable(false);
         int fn = 0, cn = 0, tripped = 0, full = 0;
         aio::FlipSlot* fs = aio::flip_slots(fn);
         aio::CapSlot*  cs = aio::cap_slots(cn);
@@ -1911,13 +1900,13 @@ static void aio_command_dispatch(const char* cmd)
         msg[sizeof(msg) - 1] = 0;
         g_host.console().print(msg);
         return;
-    }
-    if (strstr(buf, "selfcheck")) {   // //aio selfcheck (kept as an alias : //aio doctor now logs this block too) -> dump texture-load health to aiohud_debug.log (verify the rule-10 latch fixes held : no stuck give-up, no permanently-missing icon)
+    } break;
+    case verbs::V_SELFCHECK: {   // //aio selfcheck (kept as an alias : //aio doctor now logs this block too) -> dump texture-load health to aiohud_debug.log (verify the rule-10 latch fixes held : no stuck give-up, no permanently-missing icon)
         g_hud.self_check();
         g_host.console().print(aio::tr(">>> AioHud : selfcheck written to Windower\\plugins\\aiohud_debug.log (look for the AIO SELFCHECK block) <<<", ">>> AioHud : selfcheck ecrit dans Windower\\plugins\\aiohud_debug.log (cherche le bloc AIO SELFCHECK) <<<"));
         return;
-    }
-    if (strstr(buf, "sheoltest")) {   // //aio sheoltest -> exercise the Odyssey segment-id healing WITHOUT an Odyssey run
+    } break;
+    case verbs::V_SHEOLTEST: {   // //aio sheoltest -> exercise the Odyssey segment-id healing WITHOUT an Odyssey run
         char r[200]; const bool ok = aio::sheol_selftest(r, sizeof(r));
         // the verdict text itself stays English : it names an assertion (A1..D3), it is an identifier a tester
         // copies back to me, not prose to read.
@@ -1926,9 +1915,9 @@ static void aio_command_dispatch(const char* cmd)
         windower::debug::log("SHEOL selftest : %s", r);
         if (!ok) g_host.console().print(aio::tr(">>> the segment counter will NOT repair itself after a client patch -- report this message <<<", ">>> le compteur de segments NE se reparera PAS tout seul apres une maj du client -- signale ce message <<<"));
         return;
-    }
+    } break;
 #if defined(AIOHUD_PROBES) && defined(AIOHUD_THEMEKIT)
-    if (strstr(buf, "kittest")) {    // //aio kittest (dev build only) -> the painted "Eclat de Holla" kit : one trial party box ; again = off
+    case verbs::V_KITTEST: {    // //aio kittest (dev build only) -> the painted "Eclat de Holla" kit : one trial party box ; again = off
         char id[24] = ""; const char* q = strstr(buf, "kittest") + 7; while (*q == ' ') ++q;
         int n = 0; while (n < 23 && ((*q >= 'a' && *q <= 'z') || (*q >= 'A' && *q <= 'Z'))) id[n++] = (char)(*q++ | 0x20); id[n] = 0;
         const bool on = aio::theme_kit_test_toggle(id);
@@ -1936,27 +1925,27 @@ static void aio_command_dispatch(const char* cmd)
         _snprintf(msg, sizeof(msg), ">>> AioHud : theme kit TEST on (%s on EVERY box frame) -- //aio kittest %s again to restore <<<", n ? id : "Holla v4", id); msg[sizeof(msg) - 1] = 0;
         g_host.console().print(on ? msg : ">>> AioHud : theme kit test off (kits : sandoria bastok windurst ahturhgan adoulin jeuno holla dem mea selbina dynamis) <<<");
         return;
-    }
+    } break;
 #endif
-    if (strstr(buf, "eqpreview")) {   // //aio eqpreview -> the Equipment screen shows every cell / row state (a visual check) ; again = off
+    case verbs::V_EQPREVIEW: {   // //aio eqpreview -> the Equipment screen shows every cell / row state (a visual check) ; again = off
         const bool on = aio::equip_preview_toggle();
         g_host.console().print(on ? aio::tr(">>> AioHud : Equipment preview ON (badges 1-8, locked slots, an empty slot, every row colour) -- //aio eqpreview again to stop <<<",
                                             ">>> AioHud : apercu Equipment ACTIF (badges 1-8, emplacements bloques, un emplacement vide, chaque couleur de ligne) -- //aio eqpreview pour arreter <<<")
                                   : aio::tr(">>> AioHud : Equipment preview off <<<", ">>> AioHud : apercu Equipment desactive <<<"));
         return;
-    }
-    if (strstr(buf, "geartrace")) {   // //aio geartrace -> trace the next N gear-icon resolutions to aiohud_debug.log (raw-item-ID diagnosis)
+    } break;
+    case verbs::V_GEARTRACE: {   // //aio geartrace -> trace the next N gear-icon resolutions to aiohud_debug.log (raw-item-ID diagnosis)
         aio::set_gear_trace(120);
         g_host.console().print(aio::tr(">>> AioHud : gear trace ARMED (open the equipment viewer / change gear, then send Windower\\plugins\\aiohud_debug.log ; look for GEAR lines) <<<", ">>> AioHud : trace gear ARMEE (ouvre l'equipment viewer / change de stuff, puis envoie Windower\\plugins\\aiohud_debug.log ; cherche les lignes GEAR) <<<"));
         return;
-    }
+    } break;
     // //aio rangelog [sec] -> party + alliance DISTANCE capture. Named "rangelog", not "distlog" : probes::command()
     // runs first with a bare strstr and already owns the token "dist" (the old entity-offset calibration probe), so
     // "distlog" would have been swallowed by it on a dev build and never reached here -- the exact collision
     // documented at the bottom of this dispatch. Checked, not chosen by eye.
     // Lives HERE, in the tracked file, on purpose: aiohud_probes.cpp is untracked, so a probe defined there is
     // absent from any release AND is replaced by the published build the moment the updater runs mid-test.
-    if (strstr(buf, "rangelog")) {
+    case verbs::V_RANGELOG: {
         int sec = 120; { const char* a = strstr(buf, "rangelog") + 8; while (*a == ' ') ++a; if (*a >= '0' && *a <= '9') sec = atoi(a); }
         if (sec < 10) sec = 10; if (sec > 900) sec = 900;
         aio::party().arm_dist_log(sec);
@@ -1964,19 +1953,19 @@ static void aio_command_dispatch(const char* cmd)
         g_host.console().print(aio::tr(">>> (1) stale index : look for STALE on the line of a member who is OUT OF ZONE (off=1) <<<", ">>> (1) index perime : cherche STALE sur une ligne d'un membre HORS ZONE (off=1) <<<"));
         g_host.console().print(aio::tr(">>> (2) height : stand ABOVE a member, compare dh and d3, then try a Cure <<<", ">>> (2) hauteur : place-toi AU-DESSUS d'un membre, compare dh et d3, puis tente un Cure <<<"));
         return;
-    }
+    } break;
     // //aio sortielog [sec|off] -> the Sortie navigation, line by line : each wing arrival (and whether the point was
     // recognised), the Widescan track replies, each bitzer position learned, and every 5 s what the box SHOWS
     // (your position, the NM and bitzer distance / direction). Shipped, for the same reason as rangelog : it is how a
     // run is compared with another tool's readout. No token of an earlier command is a substring of it (checked).
 #ifdef AIOHUD_DEVTOOLS
-    if (strstr(buf, "facing")) {   // DEV ONLY : toggle the facing check box (ui/hud.cpp draw_facing_probe)
+    case verbs::V_FACING: {   // DEV ONLY : toggle the facing check box (ui/hud.cpp draw_facing_probe)
         aio::g_facingProbe = !aio::g_facingProbe;
         g_host.console().print(aio::g_facingProbe ? ">>> AioHud : facing box ON (//aio facing to hide) <<<" : ">>> AioHud : facing box OFF <<<");
         return;
-    }
+    } break;
 #endif
-    if (strstr(buf, "sortielog")) {
+    case verbs::V_SORTIELOG: {
         const char* a = strstr(buf, "sortielog") + 9; while (*a == ' ') ++a;
         int sec = 3600; if (*a >= '0' && *a <= '9') sec = atoi(a); else if (*a == 'o') sec = 0;   // "off"
         if (sec != 0 && sec < 60) sec = 60; if (sec > 7200) sec = 7200;
@@ -1985,17 +1974,17 @@ static void aio_command_dispatch(const char* cmd)
                                              ">>> AioHud : sortielog ARME -- lignes aile / NM / bitzer de la Sortie dans Windower\\plugins\\aiohud_debug.log (//aio sortielog off pour arreter) <<<")
                                    : aio::tr(">>> AioHud : sortielog off <<<", ">>> AioHud : sortielog arrete <<<"));
         return;
-    }
-    if (strstr(buf, "dbflog")) {   // //aio dbflog -> trace the next N target-debuff mutations to aiohud_debug.log (debuff-box diagnosis)
+    } break;
+    case verbs::V_DBFLOG: {   // //aio dbflog -> trace the next N target-debuff mutations to aiohud_debug.log (debuff-box diagnosis)
         aio::party().set_debuff_trace(400);
         g_host.console().print(aio::tr(">>> AioHud : debuff log ARMED (cast a debuff on a mob, melee/sleep it, then send Windower\\plugins\\aiohud_debug.log ; look for DBF lines) <<<", ">>> AioHud : log debuffs ARME (lance un debuff sur un mob, tape-le / endors-le, puis envoie Windower\\plugins\\aiohud_debug.log ; cherche les lignes DBF) <<<"));
         return;
-    }
+    } break;
     // The name is CHECKED, not chosen by eye. probes::command() runs first (line 858) and matches with bare strstr,
     // so this token must not CONTAIN any of its tokens: "omenlog" is taken (0x017 packet dump) and "omenobj" was
     // swallowed whole by probes' `strstr(buf, "obj")` -- armed nothing, dumped the ffxi object, and read exactly
     // like "the objective lines never arrive". Verified free against every earlier token in both files.
-    if (strstr(buf, "omenparse")) {   // //aio omenparse -> trace Omen objective text + its PARSE RESULT to aiohud_debug.log (objective-never-validates diagnosis)
+    case verbs::V_OMENPARSE: {   // //aio omenparse -> trace Omen objective text + its PARSE RESULT to aiohud_debug.log (objective-never-validates diagnosis)
         // Sized for a WHOLE RUN, not a floor : the first capture spent 400 lines inside one floor and went quiet
         // exactly where the interesting floor transition was. Mode 161 is unbudgeted in the callback ; this bounds
         // the parse side, which emits at most one line per objective line.
@@ -2013,24 +2002,24 @@ static void aio_command_dispatch(const char* cmd)
         windower::debug::log("=== OMENPARSE armed : mode-161 unlimited, OMENCORR (Skillchain/Magic Burst) unlimited, 8000 parse lines, 100 other-mode samples, packet census ON, auto-dump on leaving Omen ===");
         g_host.console().print(aio::tr(">>> AioHud : Omen capture ARMED for a FULL RUN. It closes itself when you leave the zone -- then send Windower\\plugins\\aiohud_debug.log <<<", ">>> AioHud : capture Omen ARMEE pour une RUN COMPLETE. Elle se ferme seule quand tu quittes la zone -- envoie ensuite Windower\\plugins\\aiohud_debug.log <<<"));
         return;
-    }
-    if (strstr(buf, "omenstate")) {   // //aio omenstate -> the ten slots as the BOX sees them + the Omen packet census
+    } break;
+    case verbs::V_OMENSTATE: {   // //aio omenstate -> the ten slots as the BOX sees them + the Omen packet census
         aio::party().omen_state_dump("on demand");
         omen_census_dump();
         g_host.console().print(aio::tr(">>> AioHud : Omen state + packet census written to Windower\\plugins\\aiohud_debug.log (OMENSTATE / OMENPKT lines) <<<", ">>> AioHud : etat Omen + recensement des paquets ecrits dans Windower\\plugins\\aiohud_debug.log (lignes OMENSTATE / OMENPKT) <<<"));
         return;
-    }
-    if (strstr(buf, "tpool")) {   // //aio tpool -> trace the next N treasure-pool packets (0x0D2/0x0D3) + expiry math to aiohud_debug.log ("box with no pool" phantom diagnosis)
+    } break;
+    case verbs::V_TPOOL: {   // //aio tpool -> trace the next N treasure-pool packets (0x0D2/0x0D3) + expiry math to aiohud_debug.log ("box with no pool" phantom diagnosis)
         aio::party().set_treasure_trace(200);
         g_host.console().print(aio::tr(">>> AioHud : treasure-pool log ARMED (go THF ; drop / lot / win treasures, and zone in-out ; then send Windower\\plugins\\aiohud_debug.log ; look for TPOOL lines) <<<", ">>> AioHud : log du pool de tresors ARME (passe THF ; jette / lot / gagne des tresors, et zone aller-retour ; puis envoie Windower\\plugins\\aiohud_debug.log ; cherche les lignes TPOOL) <<<"));
         return;
-    }
-    if (strstr(buf, "tmem")) {   // //aio tmem -> one-shot raw dump of the in-game treasure view (*(g+0x5C)) to aiohud_debug.log (memory ground-truth for reconciliation)
+    } break;
+    case verbs::V_TMEM: {   // //aio tmem -> one-shot raw dump of the in-game treasure view (*(g+0x5C)) to aiohud_debug.log (memory ground-truth for reconciliation)
         aio::party().treasure_mem_probe();
         g_host.console().print(aio::tr(">>> AioHud : treasure MEMORY dumped (have a REAL pool up first) -- send Windower\\plugins\\aiohud_debug.log ; look for TMEM lines <<<", ">>> AioHud : MEMOIRE tresors dumpee (aie un VRAI pool ouvert d'abord) -- envoie Windower\\plugins\\aiohud_debug.log ; cherche les lignes TMEM <<<"));
         return;
-    }
-    if (strstr(buf, "config")) {
+    } break;
+    case verbs::V_CONFIG: {
         // In edit layout the config flag is kept "open" (toolbar + mouse capture) -> a bare //aio config
         // must act like the "Done" button : leave edit mode (persisting positions/sizes) AND close, not
         // just drop the toolbar while editLayout silently stays on.
@@ -2044,23 +2033,23 @@ static void aio_command_dispatch(const char* cmd)
         if (*cp >= '1' && *cp <= '3') { g_hud.config().set_tab(atoi(cp) - 1); g_hud.config().set_open(true); }
         else                          g_hud.config().toggle();
         return;
-    }
-    if (strstr(buf, "timers")) {                          // //aio timers reset -> flush live buff/recast timers + focus "OUT" alerts
+    } break;
+    case verbs::V_TIMERS: {                          // //aio timers reset -> flush live buff/recast timers + focus "OUT" alerts
         if (strstr(buf, "reset")) { aio::timers_reset();
             g_host.console().print(aio::tr(">>> AioHud : timers reset <<<", ">>> AioHud : timers remis a zero <<<")); }
         return;
-    }
-    if (strstr(buf, "edit")) {                            // toggle layout edit mode (drag/resize boxes on the live game)
+    } break;
+    case verbs::V_EDIT: {                            // toggle layout edit mode (drag/resize boxes on the live game)
         bool e = !aio::ui_config().editLayout;
         aio::ui_config().editLayout = e;
         g_hud.config().set_open(e);                       // keep config "open" so the mouse is captured + toolbar shows
         if (!e) aio::save_ui_config();                    // persist positions/sizes when leaving edit mode
         return;
-    }
+    } break;
 
     // //aio layout -> load design/exports/layout.json, log the widgets, and save a round-trip copy.
     // (checked BEFORE "lay" because "layout" contains "lay".)
-    if (strstr(buf, "layout")) {
+    case verbs::V_LAYOUT: {
         aio::Layout lay;
         if (aio::load_layout(LAYOUT_PATH(), lay)) {
             char msg[160];
@@ -2085,9 +2074,9 @@ static void aio_command_dispatch(const char* cmd)
             g_host.console().print(aio::tr(">>> layout LOAD FAILED (design/exports/layout.json) <<<", ">>> CHARGEMENT du layout ECHOUE (design/exports/layout.json) <<<"));
         }
         return;
-    }
+    } break;
 
-    if (strstr(buf, "res")) {                             // backbuffer vs window-client size -> the 1:1 resolution to set
+    case verbs::V_RES: {                             // backbuffer vs window-client size -> the 1:1 resolution to set
         u32 dev = g_host.service_raw(2);
         u32 hwnd = valid_ptr(dev) ? aio::dFocusWindow(dev) : 0;
         RECT rc = {0}; int cw = 0, ch = 0;
@@ -2103,15 +2092,25 @@ static void aio_command_dispatch(const char* cmd)
         debug::log("RES: backbuffer %dx%d  window-client %dx%d", bbw, bbh, cw, ch);
         g_host.console().print(msg);
         return;
-    }
+    } break;
 
-#ifdef AIOHUD_DEVTOOLS   // developer toys : not in a release, where anything unmatched is simply "unknown command"
-    const char* lp = strstr(buf, "lay");                 // //aio lay N -> effect layers
-    if (lp) {
-        const char* p = lp + 3; while (*p && (*p < '0' || *p > '9')) p++;
+#ifdef AIOHUD_DEVTOOLS
+    case verbs::V_LAY: {                                    // //aio lay N -> effect layers (dev)
+        const char* p = rest; while (*p && (*p < '0' || *p > '9')) p++;
         if (*p && g_hud.bars()) g_hud.bars()->set_layers(*p - '0');
         return;
     }
+#endif
+    default: break;
+    }   // switch (the command word)
+
+    // NOT A WORD OF THE TABLE -- or a case that did not take it (a bare "party", "menu" without a number). The dev
+    // probes and tools come LAST : a shipped command can no longer be shadowed by a probe with a similar name.
+#ifdef AIOHUD_PROBES
+    if (aio::probes::command(buf)) return;
+#endif
+#ifdef AIOHUD_DEVTOOLS   // developer toys : not in a release, where anything unmatched is simply "unknown command"
+    if (aio::devtools::command(buf)) return;
     // catch-all : the debug FILL command (//aio hp 50 / //aio 100 50 30). Only fire it when the command
     // actually looks like one (an hp/mp/tp keyword, or a leading digit) -> a random typo no longer silently
     // rewrites the player's HP/MP/TP fills.
@@ -2135,6 +2134,7 @@ static void aio_command_dispatch(const char* cmd)
 // Single producer (command thread), single consumer (main thread), no allocation. Costs at most one frame.
 static const int CMDQ_N = 16;
 static char          g_cmdQ[CMDQ_N][256];
+static int           g_cmdLost[CMDQ_N];   // characters a line lost to the 255 cut, per slot (R12 : said by the consumer)
 static volatile long g_cmdHead = 0;   // written by the COMMAND thread only
 static volatile long g_cmdTail = 0;   // written by the MAIN thread only
 
@@ -2149,13 +2149,25 @@ void aio_plugin_command(const char* cmd)
     const int slot = (int)(head & (CMDQ_N - 1));
     int i = 0; for (; i < (int)sizeof(g_cmdQ[0]) - 1 && cmd[i]; ++i) g_cmdQ[slot][i] = cmd[i];
     g_cmdQ[slot][i] = 0;
+    int lost = 0; while (cmd[i + lost]) ++lost;            // R12 : what did not fit is counted here, said on the main thread
+    g_cmdLost[slot] = lost;
+    if (lost) ++g_cmdTruncated;
     g_cmdHead = head + 1;                                 // publish LAST : the consumer never sees a partial slot
 }
 
 namespace aio {
 void drain_commands() {                                   // called once per frame from Hud::render (main thread)
     while (g_cmdTail != g_cmdHead) {
-        aio_command_dispatch(g_cmdQ[(int)(g_cmdTail & (CMDQ_N - 1))]);
+        const int slot = (int)(g_cmdTail & (CMDQ_N - 1));
+        if (g_cmdLost[slot]) {   // R12 : a cut line runs as it was received, but never silently
+            windower::debug::log("COMMAND cut at 255 characters : %d character(s) lost from '%.60s...' (%ld cut this session)",
+                       g_cmdLost[slot], g_cmdQ[slot], (long)g_cmdTruncated);
+            char m[160];
+            _snprintf(m, sizeof(m), aio::tr(">>> AioHud : command too long -- the last %d character(s) were ignored <<<",
+                                            ">>> AioHud : commande trop longue -- les %d dernier(s) caractere(s) ont ete ignores <<<"), g_cmdLost[slot]);
+            m[sizeof(m) - 1] = 0; g_host.console().print(m);
+        }
+        aio_command_dispatch(g_cmdQ[slot]);
         g_cmdTail = g_cmdTail + 1;
     }
 }

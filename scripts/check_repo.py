@@ -36,14 +36,12 @@ def tracked():
     return [f for f in out.split('\n') if f]
 
 def verbs(path):
-    """The //aio words a command dispatcher answers to."""
+    """The //aio words that SHIP : the SHIPPED rows of the dispatcher's table (src/plugin/aio_verbs.h, 2026-11-24).
+    It used to be read off strstr()/aio_verb() calls in aiohud.cpp, which also counted the DEV-only verbs sitting
+    under an #ifdef (pcap, jobtab, gearskew) as shipped -- the very confusion the shipped-commands rule warns about."""
     if not os.path.exists(path):
         return set()
-    t = read(path)
-    v = set(re.findall(r'strstr\(buf,\s*"([a-z0-9_]+)"\)', t))
-    v |= set(re.findall(r'aio_verb\(buf,\s*"([a-z0-9_]+)"\)', t))
-    v |= set(re.findall(r'tok_arg\(buf,\s*"([a-z0-9_]+)"\)', t))
-    return v
+    return set(re.findall(r'\{\s*"([a-z0-9_]+)",\s*V_\w+,\s*SHIPPED', read(path)))
 
 # sub-commands and arguments, not commands of their own
 ARGS = {'party', 'profile', 'timers', 'out', 'in', 'pop', 'config', 'edit', 'layout', 'update', 'help',
@@ -68,7 +66,7 @@ for d in docs:
             problems.append('%s : lien mort -> %s' % (d, tgt))
 
 # ---- 2. //aio commands in living docs ---------------------------------------------------------
-shipped = verbs('src/plugin/aiohud.cpp')
+shipped = verbs('src/plugin/aio_verbs.h')
 living = [f for f in docs if f.startswith('docs/game-data/') or f.startswith('docs/songs/')]
 for d in living:
     t = read(d)
