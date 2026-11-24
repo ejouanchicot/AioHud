@@ -2246,8 +2246,8 @@ void PartyState::watch_tables() {
     // reson_ : one skillchain window per tracked target. Eight is a guess about how many mobs are being chained
     // at once, and a missing window is a missing skillchain prompt. A window past its endMs is over and stays in
     // its slot until the slot is reused (sc_reson_slot takes the oldest) : only the open ones are counted.
-    n = 0; for (int i = 0; i < 8; ++i) if (reson_[i].target && (int)(reson_[i].endMs - now) > 0) ++n;
-    capwatch("model.skillchain", n, 8);
+    n = 0; for (int i = 0; i < SC_SLOTS; ++i) if (reson_[i].target && (int)(reson_[i].endMs - now) > 0) ++n;
+    capwatch("model.skillchain", n, SC_SLOTS);
     // songPred_ : casts waiting for their real 0x063 expiry. Eight against five song slots -- plus the fifth
     // under Clarion Call, plus whatever is in flight -- is thinner than it looks, and the cost of losing one is
     // a song whose timer stays an estimate for its whole life.

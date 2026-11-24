@@ -1505,7 +1505,7 @@ static void aio_command_dispatch(const char* cmd)
     // //aio bcaptlog [sec] -> the buff-action capture (every cat 4/6/11 action : who cast what on whom, message id,
     // the caster attributed to that status). The capture is compiled into every build (party_state.cpp) and its
     // own log line says "re-arm with //aio bcaptlog" -- but the only way to ARM it lived in the untracked probes
-    // file, so in a release the capture was dead code (2026-09-14 audit). Time-windowed, 10..900 s.
+    // file, so in a release the capture was dead code (2026-09-14 audit). Time-windowed, 10..3600 s.
     case verbs::V_BCAPTLOG: { const char* bc = rest;
         int sec = 180; while (*bc == ' ') ++bc; if (*bc >= '0' && *bc <= '9') sec = atoi(bc);
         if (sec < 10) sec = 10; if (sec > 900) sec = 900;
@@ -1518,10 +1518,10 @@ static void aio_command_dispatch(const char* cmd)
     } break;
 
     // //aio sclog [sec] -> the skillchain capture (party_state.cpp act_skillchain, SCAPT lines) : every WS / spell /
-    // ability / pet move finish, the game's skillchain messages and what the box decided. Time-windowed, 10..900 s.
+    // ability / pet move finish, the game's skillchain messages and what the box decided. Time-windowed, 10..3600 s.
     case verbs::V_SCLOG: { const char* sc = rest;
         int sec = 300; while (*sc == ' ') ++sc; if (*sc >= '0' && *sc <= '9') sec = atoi(sc);
-        if (sec < 10) sec = 10; if (sec > 900) sec = 900;
+        if (sec < 10) sec = 10; if (sec > 3600) sec = 3600;   // up to an hour : a whole Odyssey / Sortie run
         aio::party().arm_scapt_log(sec);
         char m[240];
         _snprintf(m, sizeof(m), aio::tr(">>> AioHud : sclog ARMED for %d s -- do your skillchains, then send Windower\\plugins\\aiohud_debug.log (SCAPT lines) <<<",

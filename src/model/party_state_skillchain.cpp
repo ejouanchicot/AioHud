@@ -8,18 +8,23 @@
 #include "model/game_mem.h"     // EntityVitals / read_entities_by_id
 #include <windows.h>            // GetTickCount
 #include <stdio.h>              // _snprintf : sc_window_text (//aio sclog)
+#include "windower_debug.h"     // SCAPT prune : a dropped window, logged during a capture
 
 namespace aio {
 
 // SKILLCHAINS : pick a resonance slot for a target (reuse its own / a free one / the oldest).
 static Resonating* sc_reson_slot(Resonating* r8, unsigned tid) {
-    int freeS = -1, oldest = 0;
-    for (int i = 0; i < 8; ++i) {
+    // its own slot ; else a free one ; else a window already OVER (endMs passed) -- the oldest of those ; only when
+    // every slot is still live, the oldest live one (a party farm used to evict YOUR mob's open window here)
+    const unsigned now = model_now_ms();
+    int freeS = -1, overS = -1, oldest = 0;
+    for (int i = 0; i < PartyState::SC_SLOTS; ++i) {
         if (r8[i].target == tid) return &r8[i];
-        if (!r8[i].target && freeS < 0) freeS = i;
+        if (!r8[i].target) { if (freeS < 0) freeS = i; continue; }
+        if ((int)(now - r8[i].endMs) > 0 && (overS < 0 || r8[i].openMs < r8[overS].openMs)) overS = i;
         if (r8[i].openMs < r8[oldest].openMs) oldest = i;
     }
-    const int s = (freeS >= 0) ? freeS : oldest;
+    const int s = freeS >= 0 ? freeS : (overS >= 0 ? overS : oldest);
     r8[s] = Resonating{}; r8[s].target = tid; return &r8[s];
 }
 // burst-window timing (abs ms) : [openMs,delayMs)=Wait, [delayMs,endMs)=Go!/Burst. endMs = delayMs + (8-step)s
@@ -47,14 +52,18 @@ void PartyState::sc_open(unsigned tid, unsigned aid, int res, const unsigned cha
 // nearby-fallback) don't linger on a dead target. A read that can't find the entity (valid=false) is left to the
 // window's own endMs expiry -- a transient bad read must not kill a still-live chain.
 void PartyState::prune_skillchains() {
-    unsigned ids[8]; int slot[8]; int nq = 0;
-    for (int i = 0; i < 8; ++i) if (reson_[i].target && reson_[i].nProp) { ids[nq] = reson_[i].target; slot[nq] = i; ++nq; }
+    unsigned ids[SC_SLOTS]; int slot[SC_SLOTS]; int nq = 0;
+    for (int i = 0; i < SC_SLOTS; ++i) if (reson_[i].target && reson_[i].nProp) { ids[nq] = reson_[i].target; slot[nq] = i; ++nq; }
     if (!nq) return;
-    EntityVitals ev[8];
+    EntityVitals ev[SC_SLOTS];
     read_entities_by_id(ids, nq, ev);
     for (int q = 0; q < nq; ++q) {
         const EntityVitals& v = ev[q];
-        if (v.valid && (v.hpp <= 0 || v.spawnType != 0x10)) reson_[slot[q]] = Resonating{};   // confirmed dead / not-a-mob -> drop
+        if (v.valid && (v.hpp <= 0 || v.spawnType != 0x10)) {           // confirmed dead / not-a-mob -> drop
+            if (scapt_armed()) windower::debug::log("SCAPT prune tgt=%08X hpp=%d spawn=%02X -> window dropped (%s)", ids[q], v.hpp, v.spawnType,
+                                                    v.hpp <= 0 ? "dead" : "not read as a monster");   // the drop was invisible in a capture
+            reson_[slot[q]] = Resonating{};
+        }
     }
 }
 // SCH Immanence (status 470) : while it is up, the caster's NEXT elemental spell can OPEN/continue a skillchain
@@ -74,7 +83,7 @@ bool PartyState::has_immanence(unsigned actor) const {
 void PartyState::sc_window_text(unsigned tid, char* out, int cap) const {
     out[0] = 0;
     const Resonating* r = 0;
-    for (int i = 0; i < 8; ++i) if (tid && reson_[i].target == tid && reson_[i].nProp) { r = &reson_[i]; break; }
+    for (int i = 0; i < SC_SLOTS; ++i) if (tid && reson_[i].target == tid && reson_[i].nProp) { r = &reson_[i]; break; }
     if (!r) return;
     const unsigned now = model_now_ms();
     char when[40];
@@ -89,7 +98,7 @@ void PartyState::sc_window_text(unsigned tid, char* out, int cap) const {
 const Resonating* PartyState::skillchain_newest_live() const {
     const unsigned now = model_now_ms();
     const Resonating* best = 0;
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < SC_SLOTS; ++i) {
         const Resonating& r = reson_[i];
         if (!r.target || !r.nProp) continue;
         if (now >= r.endMs + 250u) continue;                        // window (+ the widget's grace) already passed

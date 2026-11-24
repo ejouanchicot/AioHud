@@ -105,11 +105,25 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         // OFF the box is STRICT : only your <t> chain (the fallbacks were what made it show while engaged / not
         // targeting -- exactly the "box appears even when the toggle is off" case). The broader steps never fire while
         // your reticle is on a DIFFERENT mob (targetingMob), so the box can't linger on a mob you targeted away from.
+        // ONLY THE MOB YOU FIGHT (user, 2026-11-24 : "a WS or SC on another mob than the one I fight, I don't want to see
+        // it"). Your reticle's mob first, else your battle target <bt>. The "newest chain nearby" fallback (a healer
+        // watching) runs ONLY when you are neither targeting a mob nor engaged -- in a party farm it showed another
+        // member's chain on another mob whenever yours had none.
         const bool targetingMob = g.target.valid && g.target.spawnType == 0x10;
-        const Resonating* r = party().skillchain_for(g.target.valid ? g.target.id : 0);
-        if (!r && !targetingMob && C.scNearby) {
-            if (g.battleTargetId)   r = party().skillchain_for(g.battleTargetId);
-            if (!r)                 r = party().skillchain_newest_live();
+        const Resonating* r = party().skillchain_for(targetingMob ? g.target.id : 0);
+        if (!r && !targetingMob && g.battleTargetId) r = party().skillchain_for(g.battleTargetId);
+        if (!r && !targetingMob && !g.battleTargetId && C.scNearby) r = party().skillchain_newest_live();
+        if (party().scapt_armed()) {                                  // //aio sclog : WHAT the box chose, logged on each change
+            static unsigned lastT = 0xFFFFFFFFu, lastBt = 0xFFFFFFFFu, lastShown = 0xFFFFFFFFu;
+            const unsigned tId = g.target.valid ? g.target.id : 0, shown = r ? r->target : 0;
+            if (tId != lastT || g.battleTargetId != lastBt || shown != lastShown) {
+                lastT = tId; lastBt = g.battleTargetId; lastShown = shown;
+                const Resonating* nl = party().skillchain_newest_live();
+                windower::debug::log("SCAPT show t=%08X spawn=%02X bt=%08X -> %s%08X | own window on t : %s | newest live window : %08X%s",
+                    tId, g.target.valid ? g.target.spawnType : 0, g.battleTargetId, shown ? "showing " : "NOTHING ", shown,
+                    party().skillchain_for(tId) ? "yes" : "no", nl ? nl->target : 0,
+                    (!shown && targetingMob && nl) ? " (hidden : your reticle is on another mob)" : (!C.scNearby && !shown ? " (scNearby off)" : ""));
+            }
         }
         if (!r) return;
         const unsigned now = GetTickCount();
