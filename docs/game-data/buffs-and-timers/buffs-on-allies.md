@@ -21,7 +21,9 @@ A buff **spell (cat 4)** with `actor == selfId_` that lands on a member ≠ you:
 
 - Spell id = `getbits(p, 86, 16, size)` (actor.param). Mapped to `{status, base duration, skill}` via
   `spell_buff(sid)` (`tb_buff_gen`). A spell absent from the table (nuke/cure) records nothing.
-- **Target gate**: each target id `getbits(p, base=150 + i*123, 32, size)`, resolved through
+- **Target gate**: each target id from the packet's one decode (`act_`, `action_decode_full` — the VARIABLE
+  stride, see [`action-packet.md`](../actions/action-packet.md) ; a fixed `150 + i*123` misreads every target after
+  a proc or a spike), resolved through
   `pc_name_by_id(tid)`. **Do NOT gate on the `(id>>24)==0x01` mob top-byte** — not all PC ids carry it;
   `pc_name_by_id` (roster + both alliances) is the reliable "is this a real party/alliance member" test.
 - **Keyed by (target, SPELL)** — not (target, status) — so two tiers of the same song (Valor Minuet V +

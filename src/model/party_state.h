@@ -99,6 +99,21 @@ struct HateEntry { unsigned mob = 0;     // aggroing mob's server id (0 = free s
 struct HateRow  { unsigned id = 0; char mob[24] = {0}; char pc[20] = {0}; int hpp = 0; float dist = 0.0f;
                   unsigned char red = 0, target = 0; };   // red = claimed by someone ; target = it's your <t>
 
+// One 0x028 action packet, decoded ONCE (PartyState::on_action) with the VARIABLE stride : a target block is 36 bits
+// (id + action count), then each action 86 bits, + a 37-bit add-effect body when its flag is set, + a 34-bit spike body
+// when its flag is set. Seven readers used to walk the packet themselves ; each copy was a chance to get the stride
+// wrong (it was wrong twice, audit S4). Now there is one walk (action_decode_full) and the readers read this.
+struct ActionAct { unsigned msg = 0, param = 0, aeParam = 0; unsigned short aeMsg = 0; unsigned char hasAdd = 0, aeAnim = 0; };
+struct ActionTgt { unsigned id = 0; unsigned char first = 0, n = 0, ac = 0; };   // acts [first, first+n) ; ac = the count the packet declares (n < ac only when truncated)
+struct ActionFull {
+    unsigned actor = 0, category = 0, param = 0;
+    unsigned tc = 0;                     // the declared target count, clamped 1..16 (what every reader used)
+    unsigned nT = 0, nA = 0;             // targets / actions actually decoded (a truncated packet stops early)
+    ActionTgt t[16];
+    ActionAct a[16 * 15];                // the action count is a 4-bit field : 15 per target at most
+};
+bool action_decode_full(const unsigned char* p, int size, ActionFull& out);
+
 // Member buffs from the party-buffs packet 0x076 (which never carries the local player -> self
 // buffs come from memory). Keyed by server id, sized for a full alliance, refreshed each 0x076.
 // Transient (NOT part of the cached roster). ids are FFXI status ids (uint16) ; n = count.
@@ -936,6 +951,7 @@ struct PartyState {
     unsigned buffsClock_ = 0;             // monotonic tick for BuffSet::seen (evict the stalest slot, never drop a new member)
     bool     ztDirty_ = false;            // a text-path change is pending -> drain_game_text flushes it once (zt_save_soon)
     DebuffSet tdebuffs_[DEBUFF_SLOTS];    // debuffs per tracked target id (roomy : AoE/-ga/Horde songs debuff a whole same-name pack at once)
+    ActionFull act_;                      // the 0x028 being handled, decoded once by on_action : every act_* reads it, none walks the packet
     unsigned  curTarget_ = 0, selfId_ = 0;   // context for on_action : the mob you're on + your own id
     float     selfX_ = 0.0f, selfZ_ = 0.0f;  // the player's own horizontal position (entity X@+0x04 / Z@+0x0C) -> target distance
     unsigned  encumber_ = 0;              // 0x01B 'Encumbrance Flags' (bit sid = equip slot sid is locked) -> equipment viewer cross
@@ -991,8 +1007,8 @@ struct PartyState {
     // The ten stages 0x028 feeds, in walk order. They were one 950-line on_action; the two returning
     // bool CONSUME the packet (true = handled, stop) -- which is what their early `return` always did.
     void act_sleep_wake(unsigned cat, unsigned actor);   // a slept mob that ACTS has woken -- drop its sleep
-    void act_treasure_hunter(const unsigned char* p, int size, unsigned cat, unsigned actor);   // TH proc = add-effect anim 7 msg 603 (msg 608 on a weaponskill)
-    void act_hate_list(const unsigned char* p, int size, unsigned actor);   // any friendly-vs-mob pairing records that mob as aggroing
+    void act_treasure_hunter(unsigned cat, unsigned actor);   // reads act_   // TH proc = add-effect anim 7 msg 603 (msg 608 on a weaponskill)
+    void act_hate_list(unsigned actor);   // reads act_   // any friendly-vs-mob pairing records that mob as aggroing
     void act_magic_burst(const unsigned char* p, int size, unsigned cat, unsigned actor);   // YOUR magic burst -> mbPop_ (never consumes the packet)
     bool act_skillchain(const unsigned char* p, int size, unsigned cat, unsigned actor);   // opens/closes a resonance, and fires the weaponskill popup (which consumes the packet)
     void act_buff_attribution(const unsigned char* p, int size, unsigned cat, unsigned actor);   // a buff landing on ME -> remember WHO cast it (the self-cast-only filter)

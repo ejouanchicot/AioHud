@@ -83,38 +83,64 @@ static unsigned getbits(const unsigned char* p, int bitoff, int width, int nbyte
 // 236 = the effect landed, 75 = "no effect" (resisted, or the target already has something better). Reading
 // it is the only way to know a cast did nothing : predicting it from a spell table is what broke the debuff
 // arbitration, and the ally-buff path never looked at it at all.
-static unsigned action_target_ids(const unsigned char* p, int size, unsigned tc, unsigned* out, unsigned cap,
-                                  unsigned* msgOut = 0, unsigned* paramOut = 0) {
-    unsigned n = 0; int off = 150;
-    for (unsigned i = 0; i < tc && n < cap; ++i) {
+// THE walk -- the only one in the model (audit S4). Header, then every target and every action, the stride
+// following each action's add-effect and spike flags. Truncation is not an error : a target whose block starts
+// past the end is not decoded, an action that does not fit stops that target (n < ac) and the walk.
+bool action_decode_full(const unsigned char* p, int size, ActionFull& o) {
+    o.actor = o.category = o.param = o.tc = o.nT = o.nA = 0;
+    if (!p || size < 30) return false;
+    o.actor = getbits(p, 40, 32, size); o.category = getbits(p, 82, 4, size); o.param = getbits(p, 86, 16, size);
+    o.tc = getbits(p, 72, 6, size); if (o.tc < 1) o.tc = 1; if (o.tc > 16) o.tc = 16;   // 6 bits : proven in FFXiMain's own parser
+    int off = 150;
+    for (unsigned i = 0; i < o.tc; ++i) {
         if (off + 36 > size * 8) break;
-        const unsigned id = getbits(p, off, 32, size);
-        unsigned ac = getbits(p, off + 32, 4, size); off += 36;
-        unsigned amsg = 0, aparam = 0;
-        for (unsigned a = 0; a < ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound
+        ActionTgt& T = o.t[o.nT++];
+        T.id = getbits(p, off, 32, size); T.ac = (unsigned char)getbits(p, off + 32, 4, size);
+        T.first = (unsigned char)o.nA; T.n = 0;
+        off += 36;
+        for (unsigned a = 0; a < T.ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound
             if (off + 86 > size * 8) { off = size * 8; break; }
-            if (a == 0) { amsg = getbits(p, off + 44, 10, size); aparam = getbits(p, off + 27, 17, size); }   // this target's main message and param
-            const unsigned hasAdd = getbits(p, off + 85, 1, size);
+            ActionAct& A = o.a[o.nA++];
+            A.param = getbits(p, off + 27, 17, size);                  // main param  @+27
+            A.msg = getbits(p, off + 44, 10, size);                    // main message @+44
+            A.hasAdd = (unsigned char)getbits(p, off + 85, 1, size);
             off += 86;
-            if (hasAdd) off += 37;                                     // add-effect body (anim 6 / param 17 / msg 10)
+            A.aeAnim = 0; A.aeParam = 0; A.aeMsg = 0;
+            if (A.hasAdd) {                                            // add-effect body : anim 6 / param 17 / msg 10
+                A.aeAnim = (unsigned char)getbits(p, off, 6, size); A.aeParam = getbits(p, off + 10, 17, size);
+                A.aeMsg = (unsigned short)getbits(p, off + 27, 10, size); off += 37;
+            }
             if (getbits(p, off, 1, size)) off += 35; else off += 1;    // spike block : +1 flag, +34 body
+            ++T.n;
         }
-        out[n] = id; if (msgOut) msgOut[n] = amsg; if (paramOut) paramOut[n] = aparam;
-        ++n;
+    }
+    return true;
+}
+
+// Per target : its id and its FIRST action's message and param (0 when it has no decoded action). `msgOut` receives
+// the server's verdict on that target -- 236 = the effect landed, 75 = "no effect" (resisted, or the target already
+// has something better). Reading it is the only way to know a cast did nothing.
+static unsigned action_target_ids(const ActionFull& A, unsigned* out, unsigned cap, unsigned* msgOut = 0, unsigned* paramOut = 0) {
+    unsigned n = 0;
+    for (unsigned i = 0; i < A.nT && n < cap; ++i, ++n) {
+        const ActionTgt& T = A.t[i];
+        out[n] = T.id;
+        if (msgOut) msgOut[n] = T.n ? A.a[T.first].msg : 0;
+        if (paramOut) paramOut[n] = T.n ? A.a[T.first].param : 0;
     }
     return n;
 }
 
-// The same walk, exposed : the header and every target of one 0x028 as on_action reads them. Used by the in-game
+// The same decode, exposed : the header and every target of one 0x028 as on_action reads them. Used by the in-game
 // packet witness (dev) to compare the model's decode with Windower's own action parser, and by the tests.
 bool model_decode_action(const unsigned char* p, ActionDecode& o) {
     o = ActionDecode{};
     if (!p) return false;
     const int size = (int)((((unsigned)p[0] | ((unsigned)p[1] << 8)) >> 9) & 0x7F) * 4;
-    if (size < 30) return false;
-    o.actor = getbits(p, 40, 32, size); o.category = getbits(p, 82, 4, size); o.param = getbits(p, 86, 16, size);
-    unsigned tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
-    o.n = action_target_ids(p, size, tc, o.ids, 16, o.msgs, o.params);
+    static ActionFull A;                       // ~4 KB : not on the stack of a packet callback
+    if (!action_decode_full(p, size, A)) return false;
+    o.actor = A.actor; o.category = A.category; o.param = A.param;
+    o.n = action_target_ids(A, o.ids, 16, o.msgs, o.params);
     return true;
 }
 
@@ -125,9 +151,8 @@ bool model_decode_action(const unsigned char* p, ActionDecode& o) {
 void PartyState::act_absorb_tp(const unsigned char* p, int size, unsigned cat, unsigned actor) {
     if (cat != 4 || getbits(p, 86, 16, size) != 275) return;       // not an Absorb-TP finishing
     if (party_order(actor) > 17) return;                             // a stranger's : not ours to show
-    unsigned tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
     unsigned ids[16], msgs[16] = {}, params[16] = {};
-    if (action_target_ids(p, size, tc, ids, 16, msgs, params) < 1) return;
+    if (action_target_ids(act_, ids, 16, msgs, params) < 1) return;
     int tp;
     if (msgs[0] == 454) tp = (int)params[0];
     else if (msgs[0] == 85 || msgs[0] == 114) tp = 0;
@@ -965,7 +990,7 @@ void PartyState::act_sleep_wake(unsigned cat, unsigned actor) {
 }
 
 // TH proc = add-effect anim 7 msg 603 (msg 608 on a weaponskill)
-void PartyState::act_treasure_hunter(const unsigned char* p, int size, unsigned cat, unsigned actor) {
+void PartyState::act_treasure_hunter(unsigned cat, unsigned actor) {
     // ---- TREASURE HUNTER : detected EXACTLY like the reference addons on RETAIL (Krizz's THTracker + Ariel's easyTH,
     // web-verified 2026-07-10) : a TH proc is an ADD-EFFECT with **animation 7** and **message 603**, and the tier is
     // that add-effect's **param**. On a weaponskill (cat 3) it lands as the action's MAIN message 608, tier = main
@@ -973,30 +998,16 @@ void PartyState::act_treasure_hunter(const unsigned char* p, int size, unsigned 
     // message, so gating on 603 cleanly excludes it (the phantom-TH-from-Enlight bug). We walk every action so a proc
     // on any hit of a multi-hit round is caught. Recorded from your / your party's hits onto the struck mob.
     if ((cat == 1 || cat == 2 || cat == 3) && (actor == selfId_ || is_party_or_pet(actor))) {
-        // 6 bits, NOT 10 -- PROVEN from the client's own parser (FFXiMain 0x05DEC950, Ghidra 2026-07-20). Bits 78-81
-        // are a SEPARATE unknown field ; folding them in inflated the count by multiples of 64 whenever they were
-        // non-zero, and the clamp below then silently hid it. Every other target-count read in this file used 6.
-        unsigned tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
-        int off = 150;
-        for (unsigned t = 0; t < tc; ++t) {
-            if (off + 36 > size * 8) break;
-            const u32 tgt = getbits(p, off, 32, size);
-            unsigned ac = getbits(p, off + 32, 4, size); off += 36;
-            for (unsigned a = 0; a < ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound
-                if (off + 86 > size * 8) { off = size * 8; break; }
-                const unsigned mainMsg   = getbits(p, off + 44, 10, size);   // action main message @ off+44
-                const unsigned mainParam = getbits(p, off + 27, 17, size);   // action main param   @ off+27
-                const unsigned hasAdd    = getbits(p, off + 85, 1, size);
-                off += 86;
-                unsigned aeAnim = 0, aeParam = 0, aeMsg = 0;
-                if (hasAdd) { aeAnim = getbits(p, off, 6, size); aeParam = getbits(p, off + 10, 17, size); aeMsg = getbits(p, off + 27, 10, size); off += 37; }
-                if (getbits(p, off, 1, size)) off += 35; else off += 1;      // spike block (+1 flag, +34 body)
-                if (tgt && (tgt >> 24) == 0x01) {                            // struck a real mob
-                    unsigned tier = 0;
-                    if ((cat == 1 || cat == 2) && hasAdd && aeAnim == 7 && aeMsg == 603) tier = aeParam;   // melee/ranged proc
-                    else if (cat == 3 && mainMsg == 608)                               tier = mainParam;   // weaponskill proc
-                    if (tier >= 1 && tier <= 20) record_th(tdebuffs_, tgt, (unsigned char)tier);
-                }
+        // every action of every target (act_, the one decode) : a proc on any hit of a multi-hit round counts
+        for (unsigned t = 0; t < act_.nT; ++t) {
+            const ActionTgt& T = act_.t[t];
+            if (!T.id || (T.id >> 24) != 0x01) continue;                     // struck a real mob
+            for (unsigned a = T.first; a < (unsigned)T.first + T.n; ++a) {
+                const ActionAct& A = act_.a[a];
+                unsigned tier = 0;
+                if ((cat == 1 || cat == 2) && A.hasAdd && A.aeAnim == 7 && A.aeMsg == 603) tier = A.aeParam;   // melee/ranged proc
+                else if (cat == 3 && A.msg == 608)                                     tier = A.param;     // weaponskill proc
+                if (tier >= 1 && tier <= 20) record_th(tdebuffs_, T.id, (unsigned char)tier);
             }
         }
     }
@@ -1004,7 +1015,7 @@ void PartyState::act_treasure_hunter(const unsigned char* p, int size, unsigned 
 }
 
 // any friendly-vs-mob pairing records that mob as aggroing
-void PartyState::act_hate_list(const unsigned char* p, int size, unsigned actor) {
+void PartyState::act_hate_list(unsigned actor) {
     // ---- HATE LIST (module) : any action pairing one of our PCs (you / a party/alliance member) with a non-PC
     // entity records that entity as an aggroing mob (hate_[]) -- this is now the SOLE membership source for the hate
     // list (refresh_hate no longer scans claims ; it only reads these tracked mobs' vitals). We DON'T classify
@@ -1016,28 +1027,13 @@ void PartyState::act_hate_list(const unsigned char* p, int size, unsigned actor)
         // >= 0x01000000 that isn't friendly. refresh_hate verifies spawnType 0x10 in memory at display.
         const bool actorFriend = is_party_or_pet(actor);
         const bool actorEnemy = (actor >= 0x01000000u) && !actorFriend;
-        // VARIABLE stride, NOT the old fixed 150 + i*123. The 0x028 target block is variable-length (each earlier
-        // target's add-effect +37 / spike +35 / extra action +87 shifts every following target), so the fixed stride
-        // read GARBAGE ids the moment an earlier target crit / procced / took a spike -> ally rows silently lost on
-        // exactly the busy multi-target actions a hate list is for. Proven wrong in Ghidra (see action-packet.md) ;
-        // this is the same walk the buff-caster / debuff blocks already use.
-        u32 tc2 = getbits(p, 72, 6, size); if (tc2 < 1) tc2 = 1; if (tc2 > 16) tc2 = 16;
-        int off = 150;
-        for (u32 t = 0; t < tc2; ++t) {
-            if (off + 36 > size * 8) break;
-            const u32 tid = getbits(p, off, 32, size);
-            unsigned ac = getbits(p, off + 32, 4, size); off += 36;
+        // every target (act_, the one decode : an earlier target's add-effect / spike / extra action never shifts it)
+        for (unsigned t = 0; t < act_.nT; ++t) {
+            const u32 tid = act_.t[t].id;
             unsigned mob = 0, pc = 0;
             if (actorFriend) pc = actor; else if (actorEnemy) mob = actor;
             if (is_party_or_pet(tid)) pc = tid; else if (tid >= 0x01000000u) mob = tid;
             if (mob && pc) record_hate(hate_, mob, pet_owner(pc));   // show the OWNER (not the pet) in the Target column
-            for (unsigned a = 0; a < ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound            // skip this target's actions to reach the next target
-                if (off + 86 > size * 8) { off = size * 8; break; }
-                const unsigned hasAdd = getbits(p, off + 85, 1, size);
-                off += 86;
-                if (hasAdd) off += 37;                               // add-effect body
-                if (getbits(p, off, 1, size)) off += 35; else off += 1;   // spike block (+1 flag, +34 body)
-            }
         }
     }
 
@@ -1056,21 +1052,11 @@ static int mb_msg_kind(unsigned m) {
 void PartyState::act_magic_burst(const unsigned char* p, int size, unsigned cat, unsigned actor) {
     if (actor != selfId_ || !selfId_ || (size * 8) < 240) return;
     if (cat != 3 && cat != 4 && cat != 6 && cat != 11 && cat != 13 && cat != 14 && cat != 15) return;
-    // walk EVERY target / action (the variable stride, as the WS damage sum does) : an AoE nuke bursts on several
-    u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
-    int off = 150, nMb = 0, kind = 0; u32 dmg = 0;
-    for (u32 t = 0; t < tc; ++t) {
-        if (off + 36 > size * 8) break;
-        unsigned ac = getbits(p, off + 32, 4, size); off += 36;
-        for (unsigned a = 0; a < ac; ++a) {
-            if (off + 86 > size * 8) { off = size * 8; break; }
-            const int k = mb_msg_kind(getbits(p, off + 44, 10, size));
-            if (k) { ++nMb; if (!kind || k < kind) kind = k; if (k <= 2) dmg += getbits(p, off + 27, 17, size); }
-            const unsigned hasAdd = getbits(p, off + 85, 1, size);
-            off += 86;
-            if (hasAdd) off += 37;
-            if (getbits(p, off, 1, size)) off += 35; else off += 1;
-        }
+    // EVERY action of every target (act_, the one decode) : an AoE nuke bursts on several
+    int nMb = 0, kind = 0; u32 dmg = 0;
+    for (unsigned a = 0; a < act_.nA; ++a) {
+        const int k = mb_msg_kind(act_.a[a].msg);
+        if (k) { ++nMb; if (!kind || k < kind) kind = k; if (k <= 2) dmg += act_.a[a].param; }
     }
     if (!nMb) return;
     const u32 id = getbits(p, 86, 16, size);
@@ -1224,25 +1210,11 @@ bool PartyState::act_skillchain(const unsigned char* p, int size, unsigned cat, 
         // DAMAGE = the sum over EVERY target, not target[0]. An AoE weaponskill hits several mobs and the
         // popup was showing only the first one : Aeolian Edge on three mobs read 6503 where the round did
         // 14341 (caught by the in-game cross-check, 2026-09-16 -- it compares against what Windower's own
-        // action parse totals). Walk the VARIABLE stride, the same walk the hate list and the TH block use:
-        // an earlier target's add-effect / spike / extra action shifts every later target, so a fixed stride
-        // reads garbage exactly on the busy rounds this number is for.
+        // action parse totals). Every action of every target, from act_ (the one decode : an earlier target's
+        // add-effect / spike / extra action never shifts a later one).
         u32 dmg = 0;
         {
-            u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
-            int off = 150;
-            for (u32 t = 0; t < tc; ++t) {
-                if (off + 36 > size * 8) break;
-                unsigned ac = getbits(p, off + 32, 4, size); off += 36;
-                for (unsigned a = 0; a < ac; ++a) {
-                    if (off + 86 > size * 8) { off = size * 8; break; }
-                    dmg += getbits(p, off + 27, 17, size);          // this action's param = its damage
-                    const unsigned hasAdd = getbits(p, off + 85, 1, size);
-                    off += 86;
-                    if (hasAdd) off += 37;                          // add-effect body
-                    if (getbits(p, off, 1, size)) off += 35; else off += 1;   // spike block
-                }
-            }
+            for (unsigned a = 0; a < act_.nA; ++a) dmg += act_.a[a].param;   // each action's param = its damage
         }
         const WSRow* w = ws_info(wsid); const char* nm = w ? w->en : "Weapon Skill";
         int i = 0; for (; nm[i] && i < 39; ++i) wsPop_.name[i] = nm[i]; wsPop_.name[i] = 0;
@@ -1268,12 +1240,10 @@ void PartyState::act_buff_attribution(const unsigned char* p, int size, unsigned
     if ((cat == 4 || cat == 6 || cat == 11 || cat == 15) && selfId_) {
         const u32 aid = getbits(p, 86, 16, size);          // actor.param = spell id (cat 4) / ability id (cat 6, 15)
         const unsigned bstTab = (cat == 4) ? spell_buff_status(aid) : (cat == 6 || cat == 15) ? abil_buff_status(aid) : 0;
-        // Walk the targets with the SAME variable stride as the TH block above (id 32 + action_count 4, then per
-        // action : 86-bit main block + optional 37-bit add-effect + optional 35-bit spike). The old fixed 150+i*123
-        // stride misaligned the moment ANY earlier target carried an add-effect, so an AoE party buff (Protectra/
-        // Shellra/marches...) that hit YOU as target[1+] never matched selfId_ -> no caster -> "self-cast only"
-        // couldn't hide it. Walking properly finds your block at any rank.
-        unsigned tc2 = getbits(p, 72, 6, size); if (tc2 < 1) tc2 = 1; if (tc2 > 16) tc2 = 16;
+        // Every target, at any rank (act_, the one decode). A fixed stride once misaligned the moment an earlier
+        // target carried an add-effect, so an AoE party buff (Protectra / Shellra / marches...) that hit YOU as
+        // target[1+] never matched selfId_ -> no caster -> "self-cast only" could not hide it.
+        const unsigned tc2 = act_.tc;
         const bool bcapt = bcapt_armed();
         if (bcapt) {   // ONE header line per cast : who cast what, on how many -- the "qui a cast quoi sur qui" spine
             const char* an = pc_name_by_id(actor); const char* sn = 0;
@@ -1306,20 +1276,16 @@ void PartyState::act_buff_attribution(const unsigned char* p, int size, unsigned
                 }
             }
         }
-        int off = 150;
-        for (unsigned t = 0; t < tc2; ++t) {
-            if (off + 36 > size * 8) break;
-            const u32 tgt = getbits(p, off, 32, size);
-            unsigned ac = getbits(p, off + 32, 4, size); off += 36;
+        for (unsigned t = 0; t < act_.nT; ++t) {
+            const ActionTgt& T = act_.t[t];
+            const u32 tgt = T.id;
+            const unsigned ac = T.ac;                                       // declared count (the BCAPT line prints it)
             const bool isMe = (tgt == selfId_);
-            for (unsigned a = 0; a < ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound
-                if (off + 86 > size * 8) { off = size * 8; break; }
-                const unsigned mMsg   = getbits(p, off + 44, 10, size);   // this action's main message
-                const unsigned mParam = getbits(p, off + 27, 17, size);   // this action's main param
-                const unsigned hasAdd = getbits(p, off + 85, 1, size);
-                off += 86;
-                if (hasAdd) off += 37;                                     // add-effect body (anim 6 / param 17 / msg 10)
-                if (getbits(p, off, 1, size)) off += 35; else off += 1;    // spike block (+1 flag, +34 body)
+            for (unsigned a = 0; a < T.n; ++a) {
+                const ActionAct& A = act_.a[T.first + a];
+                const unsigned mMsg   = A.msg;                              // this action's main message
+                const unsigned mParam = A.param;                            // this action's main param
+                const unsigned hasAdd = A.hasAdd;
                 if (bcapt) {   // every target/action : shows WHO was touched, and where the bit-stride would drift
                     const char* tn = pc_name_by_id(tgt);
                     windower::debug::log("BCAPT   tgt[%u/%u]=%08X \"%s\"%s act[%u/%u] mMsg=%u mParam=%u hasAdd=%u  (prevCaster[%u]=%08X)",
@@ -1540,8 +1506,8 @@ void PartyState::act_ally_buffs(const unsigned char* p, int size, unsigned cat, 
             if (marcato)             songA3 += read_jp_u8(0x148);
             if (tenuto || clarion)   songA3 += read_jp_u8(0x142) * 2;
             const bool   miracle  = has_miracle_cheer(eids);
-            u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
-            unsigned tgtIds[16], tgtMsg[16]; const unsigned nTgt = action_target_ids(p, size, tc, tgtIds, 16, tgtMsg);
+            const unsigned tc = act_.tc;   // the declared target count, decoded once (on_action)
+            unsigned tgtIds[16], tgtMsg[16]; const unsigned nTgt = action_target_ids(act_, tgtIds, 16, tgtMsg);
             bool aoeSelf = false;   // an AoE buff that ALSO landed on YOU -> the ally copies share your EXACT 0x063 timer
             // Read the verdict here too, not just on the ally targets. A Protectra cast while a party WHM's
             // Protect V is already on you reports msg 75 on YOUR target block : without this test the cast is
@@ -1797,8 +1763,7 @@ void PartyState::act_cor_rolls(const unsigned char* p, int size, unsigned cat, u
         if (bySelf ? (isRoll || raid == 123) : isRoll) {
             bool landsOnMe = bySelf;                                        // your own roll always applies to you
             if (!bySelf) {                                                  // else confirm the AoE roll actually hit you
-                u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
-                unsigned ids[16]; const unsigned n = action_target_ids(p, size, tc, ids, 16);
+                unsigned ids[16]; const unsigned n = action_target_ids(act_, ids, 16);
                 for (unsigned i = 0; i < n; ++i) if (ids[i] == selfId_) { landsOnMe = true; break; }
             }
             const unsigned pip = getbits(p, 150 + 63, 17, size);           // target[0] action param = the pip total (1..12), global to the roll
@@ -1836,8 +1801,7 @@ void PartyState::act_cor_rolls(const unsigned char* p, int size, unsigned cat, u
             int w = 0;                                                     // prune expired before (re)recording -> keep the list tight
             for (int k = 0; k < otherBuffN_; ++k) if ((int)((otherBuffs_[k].startMs + otherBuffs_[k].durMs) - nowMs) > 0 || ob_self_alive(otherBuffs_[k])) { if (w != k) otherBuffs_[w] = otherBuffs_[k]; ++w; }   // keep while EITHER the estimate OR the real self timer runs -> recasting one song no longer prunes siblings whose estimate lapsed early (Troubadour)
             otherBuffN_ = w;
-            u32 tc = getbits(p, 72, 6, size); if (tc < 1) tc = 1; if (tc > 16) tc = 16;
-            unsigned tgtIds[16]; const unsigned nTgt = action_target_ids(p, size, tc, tgtIds, 16);
+            unsigned tgtIds[16]; const unsigned nTgt = action_target_ids(act_, tgtIds, 16);
             bool aoeSelf = false;                                          // the roll landed on YOU -> ally copies mirror your exact 0x063 timer
             for (unsigned i = 0; i < nTgt; ++i) if (tgtIds[i] == selfId_) { aoeSelf = true; break; }
             // NB : do NOT seed selfBuffSpell_/selfCasts_ here -- those map a status to a SPELL id for the self-row name ;
@@ -1880,27 +1844,13 @@ bool PartyState::act_target_debuffs(const unsigned char* p, int size, unsigned c
         const SpellDebuff* de = spell_debuff(spellId);
         DBFTRACE("DBF cast cat4 actor=%08X spell=%u self=%u -> effect=%d", actor, spellId, bySelf ? 1u : 0u, de ? (int)de->effect : -1);
         if (!de) return true;                                             // spell lands no trackable debuff (nuke / cure / buff)
-        u32 tcount = getbits(p, 72, 6, size);
-        if (tcount < 1) tcount = 1; if (tcount > 16) tcount = 16;
-        // VARIABLE stride, same walk as the TH / buff-caster blocks above. The old fixed `150 + i*123` was
-        // documented as broken there and rewritten in both -- but not here. It desynchronises the moment ANY
-        // earlier target carries an add-effect (+37 bits) or a spike block (+35), so an AoE debuff (Sleepga,
-        // Horde Lullaby, a cleaved Dia) read a garbage id AND a garbage message for every target after the
-        // first. Silent : it recorded plausible-looking debuffs on the wrong mobs.
-        int off = 150;
-        for (u32 i = 0; i < tcount; ++i) {
-            if (off + 36 > size * 8) break;                // past the packet
-            const u32 tid = getbits(p, off, 32, size);
-            unsigned ac = getbits(p, off + 32, 4, size); off += 36;
-            u32 amsg = 0, aparam = 0;                      // the FIRST action's main message -- what `base + 80` used to read
-            for (unsigned a = 0; a < ac; ++a) {   // ac is a 4-bit field (0..15) : an a<12 cut-off would stop advancing `off` mid-target and silently desync the stride for every LATER target -- the size guard inside is the real bound
-                if (off + 86 > size * 8) { off = size * 8; break; }
-                if (a == 0) { amsg = getbits(p, off + 44, 10, size); aparam = getbits(p, off + 27, 17, size); }
-                const unsigned hasAdd = getbits(p, off + 85, 1, size);
-                off += 86;
-                if (hasAdd) off += 37;                     // optional add-effect block
-                if (getbits(p, off, 1, size)) off += 35; else off += 1;   // optional spike block (+1 flag, +34 body)
-            }
+        // Every target (act_, the one decode). A fixed `150 + i*123` stride once desynchronised here on any earlier
+        // add-effect or spike, so an AoE debuff (Sleepga, Horde Lullaby, a cleaved Dia) recorded plausible-looking
+        // debuffs on the wrong mobs, silently.
+        for (u32 i = 0; i < act_.nT; ++i) {
+            const ActionTgt& T = act_.t[i];
+            const u32 tid = T.id;
+            const u32 amsg = T.n ? act_.a[T.first].msg : 0, aparam = T.n ? act_.a[T.first].param : 0;   // the FIRST action's main message / param
             if (tid && (tid >> 24) == 0x01) {              // a real server id (top byte 0x01)
                 DBFTRACE("DBF cat4-tgt tid=%08X msg=%u param=%u effect=%u self=%u", tid, amsg, aparam, de->effect, bySelf ? 1u : 0u);
                 // The cast did NOT (re)apply : resisted, immune, or the target already has it -> do NOT add or
@@ -2024,12 +1974,13 @@ void PartyState::on_action(const unsigned char* p) {
     u32 hdr = (u32)p[0] | ((u32)p[1] << 8);
     int size = (int)((hdr >> 9) & 0x7F) * 4;               // packet size in bytes
     if (size < 30) { pkt_note_reject(PKTREJ_SHORT, 30, size); return; }   // begin-cast needs the action block (bit 213 -> byte 26..)
-    const unsigned cat   = getbits(p, 82, 4, size);
-    const unsigned actor = getbits(p, 40, 32, size);
+    action_decode_full(p, size, act_);                     // THE one walk of the targets ; every act_* below reads act_
+    const unsigned cat   = act_.category;
+    const unsigned actor = act_.actor;
 
     act_sleep_wake(cat, actor);
-    act_treasure_hunter(p, size, cat, actor);
-    act_hate_list(p, size, actor);
+    act_treasure_hunter(cat, actor);
+    act_hate_list(actor);
     act_absorb_tp(p, size, cat, actor);   // the Absorb-TP box : before the skillchain early return, which can end the walk
     act_magic_burst(p, size, cat, actor);                  // before the skillchain early return (a magical WS can burst AND pop)
     if (act_skillchain(p, size, cat, actor)) return;       // the weaponskill popup took this packet

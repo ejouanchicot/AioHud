@@ -822,4 +822,77 @@ void test_packets() {
         deliver(pkt_cast(GAB, 23, { { MOB, 454, 150 } }));          // another spell (Dia) with the same message id
         CHECK(row(GAB) == nullptr);
     }
+
+    // ---- 0x028 THE VARIABLE STRIDE, every reader (audit S4). Each case puts an add-effect, a spike or a multi-hit round
+    //      on target 0 and judges what the handler made of target 1 : a walk that steps a fixed 123 bits per target reads
+    //      target 1's id and message out of target 0's tail. Written BEFORE the walks were folded into one decode, run
+    //      green on the six separate walks, then kept as the proof the single decode changed nothing.
+    const unsigned MOB_A = 0x01000A01u, MOB_B = 0x01000B02u;
+    const Target PROCCED = { MOB_A, 1, 50, 3, true, 2, 77, 161, true };   // 3 hits, an add-effect (not TH) and a spike on the first
+
+    SECTION("0x028 stride : the decode finds every target after a multi-hit round with an add-effect and a spike");
+    {   // Mutation : action_target_ids skips the 37-bit add-effect body (`if (hasAdd) off += 37;` removed).
+        const Packet p = pkt_action(ME, 11, 0, { PROCCED, { MOB_B, 185, 1234 }, { KAO, 230, 40 } });
+        ActionDecode d;
+        CHECK(model_decode_action(p.b, d));
+        CHECK_EQ(d.n, 3u);
+        CHECK_EQ(d.ids[0], MOB_A); CHECK_EQ(d.msgs[0], 1u); CHECK_EQ(d.params[0], 50u);
+        CHECK_EQ(d.ids[1], MOB_B); CHECK_EQ(d.msgs[1], 185u); CHECK_EQ(d.params[1], 1234u);
+        CHECK_EQ(d.ids[2], KAO); CHECK_EQ(d.msgs[2], 230u); CHECK_EQ(d.params[2], 40u);
+    }
+
+    SECTION("0x028 stride : a Treasure Hunter proc on the SECOND mob of a round is that mob's tier");
+    {   // TH = add-effect anim 7, message 603, param = the tier (act_treasure_hunter).
+        // Mutation : the TH walk drops the spike block (`off += 35` -> `off += 1`).
+        fresh();
+        deliver(pkt_action(ME, 1, 0, { PROCCED, { MOB_B, 1, 60, 1, true, 7, 4, 603 } }));
+        CHECK_EQ(party().target_th(MOB_B), 4);
+        CHECK_EQ(party().target_th(MOB_A), 0);       // target 0's add-effect is not a TH proc (anim 2, msg 161)
+    }
+
+    SECTION("0x028 stride : a magic burst is summed over every target, past a procced one");
+    {   // 252 = magic burst damage (mb_msg_kind 1). Thunder 164. The add-effect's param is NOT damage.
+        // Mutation : the burst walk skips the add-effect body.
+        fresh();
+        deliver(pkt_action(ME, 4, 164, { { MOB_A, 252, 100, 1, true, 0, 9999, 163, true }, { MOB_B, 252, 200 } }));
+        CHECK_EQ(party().mb_popup().dmg, 300);
+    }
+
+    SECTION("0x028 stride : a weaponskill's damage is summed over every target, past a procced one");
+    {   // 185 = the weaponskill message measured on this character ; Savage Blade 42.
+        // Mutation : the WS damage walk skips the spike block.
+        fresh();
+        deliver(pkt_action(ME, 3, 42, { { MOB_A, 185, 1000, 1, true, 0, 9999, 163, true }, { MOB_B, 185, 2000 } }));
+        CHECK_EQ(party().ws_popup().dmg, 3000);
+    }
+
+    SECTION("0x028 stride : an AoE buff that reaches YOU as the second target names its caster");
+    {   // Protectra V (129) -> Protect (40), "gains the effect" 230.
+        // Mutation : the buff-attribution walk skips the add-effect body.
+        fresh();
+        deliver(pkt_cast(KAO, 129, { { GAB, 230, 40, 1, true, 0, 0, 0, true }, { ME, 230, 40 } }));
+        CHECK_EQ(party().buff_caster(40), KAO);
+    }
+
+    SECTION("0x028 stride : a Sleepga lands on the second mob too, past a procced first one");
+    {   // Sleepga (273) -> sleep (2). 236 = the effect landed.
+        // Mutation : the debuff walk skips the add-effect body.
+        fresh();
+        deliver(pkt_cast(ME, 273, { { MOB_A, 236, 2, 1, true, 0, 0, 0, true }, { MOB_B, 236, 2 } }));
+        unsigned short st[8]; int rem[8]; unsigned char self[8];
+        const int n = party().target_debuffs(MOB_B, st, rem, self, 8);
+        bool slept = false; for (int i = 0; i < n; ++i) if (st[i] == 2) slept = true;
+        CHECK(slept);
+    }
+
+    SECTION("0x028 stride : a mob's AoE that hits a procced first player still puts the second one on its hate list");
+    {   // Mutation : the hate walk skips the spike block.
+        fresh();
+        entity(0x234, 0x01000234u, "Crawler", 0x10, 90, 1);
+        deliver(pkt_action(0x01000234u, 11, 0, { { ME, 1, 50, 2, true, 0, 0, 0, true }, { KAO, 1, 40 } }));
+        frame();
+        int n = 0; const HateRow* r = party().hate_rows(n);
+        bool kao = false; for (int i = 0; i < n; ++i) if (r[i].id == 0x01000234u && !strcmp(r[i].pc, "Kaories")) kao = true;
+        CHECK(kao);
+    }
 }

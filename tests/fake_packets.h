@@ -73,11 +73,21 @@ inline Packet pkt_party_buffs(std::initializer_list<MemberBuffs> members) {
 // ---- 0x028 : an action. Actor @bit 40 (32), target count @72 (6), category @82 (4), param @86 (16) ; target blocks
 //      from bit 150 : id (32) + action count (4), then per action 86 bits -- param @+27 (17), message @+44 (10),
 //      add-effect flag @+85 -- and a 1-bit spike flag. No add-effect, no spike : 123 bits a target. ----
-struct Target { unsigned id; unsigned message; unsigned param = 0; };   // param : the result's value -- the STATUS for a "gains the effect" message (230)
+//      THE STRIDE IS VARIABLE : an action with its add-effect flag set is followed by a 37-bit body (anim 6 @+0,
+//      param 17 @+10, message 10 @+27), and a set spike flag by a 34-bit body. `acts` > 1 repeats the action (same
+//      message / param) -- a multi-hit round. The add-effect and the spike ride the FIRST action. A target with any of
+//      these shifts every target after it : the cases that prove a walk follows the stride put them on target 0.
+struct Target {
+    unsigned id; unsigned message; unsigned param = 0;   // param : the result's value -- the STATUS for a "gains the effect" message (230)
+    unsigned acts = 1;                                     // actions on this target (1..15)
+    bool add = false; unsigned aeAnim = 0, aeParam = 0, aeMsg = 0;   // an add-effect on the first action (a TH proc : anim 7, msg 603, param = tier)
+    bool spike = false;                                    // a spike block on the first action
+};
+inline int action_bits(const Target& t) { return 36 + (int)t.acts * 87 + (t.add ? 37 : 0) + (t.spike ? 34 : 0); }
 inline Packet pkt_action(unsigned actor, unsigned category, unsigned param, std::initializer_list<Target> targets) {
     Packet p;
     const int nt = (int)targets.size();
-    const int bits = 150 + nt * 123;
+    int bits = 150; for (const Target& t : targets) bits += action_bits(t);
     pkt_header(p, 0x028, (bits + 7) / 8 + 8);
     put_bits(p, 40, 32, actor);
     put_bits(p, 72, 6, (unsigned)nt);
@@ -86,12 +96,18 @@ inline Packet pkt_action(unsigned actor, unsigned category, unsigned param, std:
     int off = 150;
     for (const Target& t : targets) {
         put_bits(p, off, 32, t.id);
-        put_bits(p, off + 32, 4, 1);          // one action on this target
+        put_bits(p, off + 32, 4, t.acts);
         off += 36;
-        put_bits(p, off + 27, 17, t.param);
-        put_bits(p, off + 44, 10, t.message);
-        off += 86;                              // add-effect flag left 0
-        off += 1;                               // spike flag 0
+        for (unsigned a = 0; a < t.acts; ++a) {
+            put_bits(p, off + 27, 17, t.param);
+            put_bits(p, off + 44, 10, t.message);
+            const bool add = (a == 0 && t.add), spike = (a == 0 && t.spike);
+            put_bits(p, off + 85, 1, add ? 1u : 0u);
+            off += 86;
+            if (add) { put_bits(p, off, 6, t.aeAnim); put_bits(p, off + 10, 17, t.aeParam); put_bits(p, off + 27, 10, t.aeMsg); off += 37; }
+            put_bits(p, off, 1, spike ? 1u : 0u);
+            off += spike ? 35 : 1;
+        }
     }
     return p;
 }

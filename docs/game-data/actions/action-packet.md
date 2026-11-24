@@ -82,8 +82,16 @@ ne lisent que `target[0]` (skillchain, popup de WS) sont sains.
 Un critique, un proc ou un spike sur une cible antérieure désynchronise tout ce qui suit.
 
 Autrement dit : **le pas fixe échoue d'autant plus souvent que le groupe est actif**. Et il échoue précisément sur
-le cas « le joueur était-il parmi les cibles de l'AoE ». Les sites concernés dans `party_state.cpp` — le parcours
-de la liste de haine et les balayages `aoeSelf` / lignes de buff alliées — restent à convertir au pas variable.
+le cas « le joueur était-il parmi les cibles de l'AoE ».
+
+**État (2026-11-24, audit S4) : un seul parcours.** `action_decode_full` (`model/party_state.cpp`) décode le paquet
+**une fois**, au début de `PartyState::on_action`, dans `ActionFull act_` : chaque cible (id, nombre d'effets
+déclaré), chaque effet (message, param, add-effect anim/param/message), le pas suivant les drapeaux add-effect et
+spike. Les lecteurs (TH, liste de haine, magic burst, dégâts de WS, lanceur des buffs, buffs alliés, rolls COR,
+debuffs, Absorb-TP) lisent `act_` ; aucun ne parcourt plus le paquet. `model_decode_action` (témoin en jeu, tests)
+passe par le même décodeur. Les tests `0x028 stride` (`tests/t_packets.cpp`) mettent un proc / un spike / un round
+multi-coups sur la cible 0 et jugent la cible 1 de chaque lecteur ; casser l'add-effect ou le spike du décodeur fait
+échouer les sept.
 
 ### Bug corrigé grâce à cette passe
 
