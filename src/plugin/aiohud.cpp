@@ -1248,8 +1248,8 @@ static void doctor_crash_dumps() {
         char when[32]; _snprintf(when, sizeof(when), "%04u-%02u-%02u %02u:%02u", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute); when[sizeof(when) - 1] = 0;
         const bool isOurs = got && !_strnicmp(c.module, "AioHud", 6);
         if (isOurs) ++ours;
-        if (got) windower::debug::log("  dumps    : %s  %s  code %08X in %s+0x%llX%s", when, f[i].name, c.code,
-                                      c.module[0] ? c.module : "(no module)", c.offset, isOurs ? "   <-- AIOHUD" : "");
+        if (got) windower::debug::log("  dumps    : %s  %s  code %08X in %s+0x%08X%s", when, f[i].name, c.code,   // NO %ll : debug::log formats through wvsprintfA, which has no 64-bit size -- %llX made the next %s read the offset as a pointer and crashed the game (2026-11-24)
+                                      c.module[0] ? c.module : "(no module)", (unsigned)c.offset, isOurs ? "   <-- AIOHUD" : "");
         else     windower::debug::log("  dumps    : %s  %s  (not readable as a minidump)", when, f[i].name);
         if (i == 0) { _snprintf(newest, sizeof(newest), "%s %s", when, got ? (c.module[0] ? c.module : "(no module)") : "(unreadable)"); newest[sizeof(newest) - 1] = 0; }
     }
