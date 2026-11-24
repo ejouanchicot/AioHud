@@ -450,8 +450,19 @@ What Enter on a target opens. ONE menu for every target ; AioHUD mirrors it (Gam
   | 18 | Switch Target | engaged |
   | 19 | Trade | player |
 
-  Unknown yet : 2 4 6 13-17 20-24 26 27 (Invite, Treasure, Request, Fish... : capture + screenshot when met ;
-  the mirror shows an unknown code as `#n`, never a guess).
+  **All named (2026-11-24)**, from the client's own label sprites -- the code table's sprite index (+0) on sheet
+  keytops3 (list 0) or windowps (list 1), calibrated on the known codes, rendered by `dev/scripts/menu_catalog.py --png` :
+
+  | code | label | code | label | code | label |
+  |---|---|---|---|---|---|
+  | 2 | Call for Help (arrow : a submenu) | 15 | Dismount | 22 | Quarry (event : dig for a Petra) |
+  | 4 | Chat (the menu opened on nothing) | 16 | Invite | 23 | Scout (event : the nearest Rook) |
+  | 6 | Talk (your fellow) | 17 | Disband (your fellow) | 24 | Sprint (event : a speed-up) |
+  | 13 | Fish | 20 | Trade (your fellow) | 26 | Release (an alter ego) |
+  | 14 | Dig (chocobo) | 21 | Attack (dismount and attack) | 27 | Request (to join a party) |
+
+  The mounted / fellow command windows of the menu DAT (`chocopc`, `choconor`, `chocobat`, `fellow`) are never opened :
+  those menus ARE `playermo` with these codes (notes/re-2026-11-25/gauges-system-map-commands.md s.4).
 - Code table **DAT_056B0278**, stride 0xC, codes 1..0x1B : +0 u16 label IMAGE index, +2 byte image list (0 / 1 =
   handler+0x14 / +0x18), +4 u16 text id (Attack 31, Disengage 32, Chat 23, Abilities 24, Magic 25, Items 26,
   Check 29 / 30, Switch Target 37, Trade 38, Trust 718), +8 a function. The NAMES are not in the exe : the labels

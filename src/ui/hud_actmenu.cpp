@@ -74,6 +74,24 @@ const Cmd CMDS[] = {
     { 18, "Switch Target", "Changer de cible",      false, IC_RETICLE },
     { 19, "Trade",         "\xC3\x89""changer",     false, IC_SWAP    },
     { 25, "Trust",         "Alter Ego",             false, IC_DUO     },
+    // the other fourteen, named 2026-11-24 from the client's OWN label sprites (code table FFXiMain RVA 0x370278 :
+    // +0 sprite, +2 sheet 0 keytops3 / 1 windowps -- calibrated on Attack / Abilities / Trust / Trade) ; `sub` = the
+    // sprite carries the arrow (Call for Help does, like Disengage). They used to show as "#13", "#16"... Mounted,
+    // fellow and event menus are THIS menu with these codes (chocopc / fellow windows are never opened).
+    {  2, "Call for Help", "Appel \xC3\xA0 l'aide",  true,  IC_BUBBLE  },
+    {  6, "Talk",          "Parler",                false, IC_BUBBLE  },   // your adventuring fellow
+    { 13, "Fish",          "P\xC3\xAA""cher",       false, IC_NONE    },
+    { 14, "Dig",           "Creuser",               false, IC_LENS    },   // chocobo digging
+    { 15, "Dismount",      "Descendre",             false, IC_NONE    },
+    { 16, "Invite",        "Inviter",               false, IC_DUO     },
+    { 17, "Disband",       "Cong\xC3\xA9""dier",    false, IC_DUO     },   // your fellow
+    { 20, "Trade",         "\xC3\x89""changer",     false, IC_SWAP    },   // with your fellow
+    { 21, "Attack",        "Attaquer",              false, IC_SWORD   },   // dismount and attack
+    { 22, "Quarry",        "Fouiller",              false, IC_LENS    },   // event : search the ground for a Petra
+    { 23, "Scout",         "Rep\xC3\xA9rer",        false, IC_LENS    },   // event : where is the nearest Rook
+    { 24, "Sprint",        "Sprint",                false, IC_NONE    },   // event : a short speed-up
+    { 26, "Release",       "Lib\xC3\xA9rer",        false, IC_DUO     },   // an alter ego
+    { 27, "Request",       "Demander",              false, IC_DUO     },   // to join another's party
 };
 const Cmd* cmd_of(unsigned short code) {
     for (int i = 0; i < (int)(sizeof(CMDS) / sizeof(CMDS[0])); ++i) if (CMDS[i].code == code) return &CMDS[i];
