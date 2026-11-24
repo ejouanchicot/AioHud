@@ -11,7 +11,7 @@ SRC = os.path.join(genpaths.addons_dir(), 'BST_JUG_PETS_DATABASE.md')
 OUT = genpaths.out_path("bst_pets_gen.h")
 MAXM = 8
 
-ab = io.open(genpaths.model_path('abilities_gen.h'), encoding='utf-8').read()
+ab = io.open(genpaths.model_path('abilities_gen.cpp'), encoding='utf-8').read()   # the rows (the .h only declares)
 known = dict((m.group(2), int(m.group(1))) for m in re.finditer(r'\{(\d+), "([^"]*)", (\d+), 102\}', ab) if m.group(1) != '72')
 
 pets, names, inmoves = [], None, False

@@ -44,7 +44,7 @@ ROOT, MODEL = genpaths.ROOT, genpaths.MODEL
 # optional ones included : a generator that silently skips a missing optional input (bluguide, GearSwap) still
 # produces a DIFFERENT table, and that must read as CANNOT RUN, not as drift.
 GENERATORS = [
-    ('gen_actions.py',       ['spells_gen.h', 'abilities_gen.h'], 'file',
+    ('gen_actions.py',       ['spells_gen.h', 'spells_gen.cpp', 'abilities_gen.h', 'abilities_gen.cpp'], 'file',
         [('res', 'spells.lua'), ('res', 'job_abilities.lua')]),
     ('gen_action_status.py', ['action_status_gen.h'], 'file',
         [('res', 'spells.lua'), ('res', 'job_abilities.lua')]),
@@ -61,14 +61,14 @@ GENERATORS = [
     ('gen_mobskills.py',     ['mobskills_gen.h'], 'file', [('res', 'monster_abilities.lua')]),
     ('gen_nms.py',           ['nms_gen.h'], 'file', [('addons', 'AioHUD/vendor/nms/index.lua')]),
     ('gen_overwrites.py',    ['overwrites_gen.h'], 'file', [('res', 'spells.lua')]),
-    ('gen_bst_pets.py',      ['bst_pets_gen.h'], 'file', [('addons', 'BST_JUG_PETS_DATABASE.md'), ('repo', 'src/model/abilities_gen.h')]),
+    ('gen_bst_pets.py',      ['bst_pets_gen.h'], 'file', [('addons', 'BST_JUG_PETS_DATABASE.md'), ('repo', 'src/model/abilities_gen.cpp')]),
     ('gen_ready_moves.py',   ['ready_moves_gen.h'], 'file', [('addons', 'BST-HUD/ready_move_mappings.lua'), ('repo', 'scripts/ready_move_icons.txt')]),
     ('gen_regen_dur.py',     ['regen_dur_gen.h'], 'stdout', [('res', 'item_descriptions.lua')]),
     ('gen_resistances.py',   ['resistances_gen.h'], 'file',
         [('addons', 'sheolhelper/resistances.lua'), ('addons', 'sheolhelper/types.lua'),
          ('addons', 'AioHUD/modules/sheolhelper.lua')]),
     ('gen_skillchain.py',    ['skillchain_gen.h'], 'file',
-        [('repo', 'scripts/skills.lua'), ('repo', 'src/model/abilities_gen.h')]),
+        [('repo', 'scripts/skills.lua'), ('repo', 'src/model/abilities_gen.cpp')]),
     ('gen_song_dur.py',      ['song_dur_gen.h'], 'file', [('res', 'item_descriptions.lua'), ('res', 'items.lua')]),
     ('gen_song_family.py',   ['song_family_gen.h'], 'stdout', [('res', 'spells.lua')]),
     ('gen_tb_buffs.py',      ['tb_buff_gen.h'], 'stdout', [('res', 'spells.lua')]),

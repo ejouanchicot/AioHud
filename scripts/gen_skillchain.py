@@ -133,7 +133,7 @@ def main():
         if nm and nm not in mob_by_name:
             mob_by_name[nm] = row
     ja_ids = set(r[0] for r in res_rows['job_abilities'])
-    abil_h = genpaths.model_path('abilities_gen.h')     # the TRACKED table : an input, never the redirected output
+    abil_h = genpaths.model_path('abilities_gen.cpp')   # the TRACKED table (its rows ; the .h only declares) : an input, never the redirected output
     added = 0
     if os.path.exists(abil_h):
         atext = open(abil_h, encoding='utf-8', errors='replace').read()

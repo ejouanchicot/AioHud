@@ -1,5 +1,7 @@
 #!/usr/bin/env python
-# gen_actions.py -- generate src/model/spells_gen.h + abilities_gen.h from Windower res.
+# gen_actions.py -- generate src/model/spells_gen.h/.cpp + abilities_gen.h/.cpp from Windower res.
+# The tables live in the .cpp files, ONE definition each : as `static` arrays in the headers, every one of the ~14
+# translation units including them compiled and linked its own copy (audit S1, 2026-11-24 ; itemnames_gen the same).
 # (Reconstructed 2026-07 after the original was lost from the repo; validated to reproduce the committed
 #  tables byte-for-byte on the res build it was regenerated against.)
 #
@@ -28,6 +30,8 @@ SPELLS_RES = str(RES / "spells.lua")
 ABILS_RES  = str(RES / "job_abilities.lua")
 SPELLS_OUT = genpaths.out_path("spells_gen.h")
 ABILS_OUT  = genpaths.out_path("abilities_gen.h")
+SPELLS_CPP = genpaths.out_path("spells_gen.cpp")
+ABILS_CPP  = genpaths.out_path("abilities_gen.cpp")
 
 LINE = re.compile(r'\[(\d+)\]\s*=\s*\{.*?\bid=(\d+)\b.*?\ben="((?:[^"\\]|\\.)*)"', re.S)
 
@@ -70,44 +74,56 @@ def parse(path):
                 else r[:5] + (by_name['Indi-' + r[1][4:]][5],) + r[6:] for r in rows]
     return rows
 
-def emit(out, res, struct, arrname, nname, rowfmt, accessor):
+def emit(out, cpp, res, struct, arrname, nname, rowfmt, accessor, decl):
+    rows = parse(res)
+    src  = os.path.basename(res)
+    tname = struct.split()[1]
     with io.open(out, "w", encoding="utf-8", newline="\n") as o:
         base = os.path.basename(out)   # not split('\\') : a '/'-separated path put the WHOLE path in the banner
-        src  = os.path.basename(res)
         o.write("// %s -- AUTO-GENERATED from Windower res/%s (do not edit).\n" % (base, src))
         o.write("// Regenerate: python scripts/gen_actions.py\n")
+        o.write("// Declarations only : the table is defined ONCE, in %s.\n" % os.path.basename(cpp))
         o.write("#pragma once\n\nnamespace aio {\n\n")
         o.write(struct + "\n")
-        o.write("static const %s %s[] = {\n" % (struct.split()[1], arrname))
-        rows = parse(res)
+        o.write("extern const %s %s[];\n" % (tname, arrname))
+        o.write("extern const int %s;\n\n" % nname)
+        o.write(decl + "\n")
+        o.write("\n} // namespace aio\n")
+    with io.open(cpp, "w", encoding="utf-8", newline="\n") as o:
+        o.write("// %s -- AUTO-GENERATED from Windower res/%s (do not edit).\n" % (os.path.basename(cpp), src))
+        o.write("// Regenerate: python scripts/gen_actions.py\n")
+        o.write('#include "model/%s"\n\nnamespace aio {\n\n' % os.path.basename(out))
+        o.write("extern const %s %s[] = {\n" % (tname, arrname))
         for r in rows:
             o.write(rowfmt(r))
         o.write("};\n")
-        o.write("static const int %s = %d;\n\n" % (nname, len(rows)))
+        o.write("extern const int %s = %d;\n\n" % (nname, len(rows)))
         o.write(accessor)
         o.write("\n} // namespace aio\n")
-    return len(parse(res))
+    return len(rows)
 
-sp_acc = ("inline const SpellRow* spell_info(unsigned id) {\n"
+sp_acc = ("const SpellRow* spell_info(unsigned id) {\n"
           "    int lo = 0, hi = SPELLS_N - 1;\n"
           "    while (lo <= hi) { int mid = (lo + hi) >> 1;\n"
           "        if (SPELLS[mid].id == id) return &SPELLS[mid];\n"
           "        if (SPELLS[mid].id < id) lo = mid + 1; else hi = mid - 1; }\n"
           "    return 0;\n}\n")
-ab_acc = ("inline const AbilRow* abil_info(unsigned id) {\n"
+ab_acc = ("const AbilRow* abil_info(unsigned id) {\n"
           "    int lo = 0, hi = ABILS_N - 1;\n"
           "    while (lo <= hi) { int mid = (lo + hi) >> 1;\n"
           "        if (ABILS[mid].id == id) return &ABILS[mid];\n"
           "        if (ABILS[mid].id < id) lo = mid + 1; else hi = mid - 1; }\n"
           "    return 0;\n}\n")
 
-ns = emit(SPELLS_OUT, SPELLS_RES,
+ns = emit(SPELLS_OUT, SPELLS_CPP, SPELLS_RES,
           "struct SpellRow { unsigned id; const char* en; unsigned cast_ms; unsigned mp; unsigned recast_id; unsigned short status; unsigned char trust; unsigned short icon; };",
           "SPELLS", "SPELLS_N",
-          lambda r: '    {%d, "%s", %d, %d, %d, %d, %d, %d},\n' % r, sp_acc)
-na = emit(ABILS_OUT, ABILS_RES,
+          lambda r: '    {%d, "%s", %d, %d, %d, %d, %d, %d},\n' % r, sp_acc,
+          "const SpellRow* spell_info(unsigned id);   // binary search on id ; 0 when unknown")
+na = emit(ABILS_OUT, ABILS_CPP, ABILS_RES,
           "struct AbilRow { unsigned id; const char* en; unsigned mp; unsigned recast_id; unsigned short status; };",
           "ABILS", "ABILS_N",
-          lambda r: '    {%d, "%s", %d, %d, %d},\n' % (r[0], r[1], r[3], r[4], r[5]), ab_acc)
-print("wrote %d spells -> %s" % (ns, SPELLS_OUT))
-print("wrote %d abilities -> %s" % (na, ABILS_OUT))
+          lambda r: '    {%d, "%s", %d, %d, %d},\n' % (r[0], r[1], r[3], r[4], r[5]), ab_acc,
+          "const AbilRow* abil_info(unsigned id);     // binary search on id ; 0 when unknown")
+print("wrote %d spells -> %s + %s" % (ns, SPELLS_OUT, SPELLS_CPP))
+print("wrote %d abilities -> %s + %s" % (na, ABILS_OUT, ABILS_CPP))
