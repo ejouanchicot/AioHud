@@ -305,13 +305,19 @@ const char* dat_windower_root() { return windower_root(); }
 namespace {
 unsigned char* g_md = 0; unsigned g_mdN = 0; int g_mdLang = -1, g_mdTries = 0; DWORD g_mdNext = 0; bool g_mdOk = false;
 struct MdSheet { char name[17]; unsigned off, end; int nspr; unsigned* spr; };   // spr[i] : the sprite's offset in g_md
-// fmt 1 DXT1, 3 DXT3 ; px decoded lazily. tries / next : the decode's BOUNDED retry (rule 10) -- a one-shot `tried`
-// lost a font texture, and every label drawn from it, for the session on one failed allocation (CI guard, 2026-11-24)
-struct MdTex { char name[17]; unsigned off; int w, h, fmt; u32* px; unsigned char tries; unsigned next; };
+// fmt 1 DXT1, 3 DXT3 ; px decoded lazily.
+// RULE 10, the two ways a texture or a label can fail, told apart (2026-11-24) :
+//  - bad : the DAT's OWN bytes cannot make it (sizes out of range, blocks past the buffer, no letters, a sprite the
+//    sheet does not have). g_md is read once and never changes until a language change rebuilds everything, so the
+//    same bytes give the same answer : ONE try, logged.
+//  - tries / nextMs : an allocation that failed (a 32-bit process under memory pressure). That can pass : retried
+//    MD_TRIES times MD_RETRY_MS apart (retry_clock.h), and re-armed at every zone change (menu_dat_rearm), when the
+//    client frees and reallocates the most. The late success and the give-up are both logged.
+struct MdTex { char name[17]; unsigned off; int w, h, fmt; u32* px; unsigned char tries; unsigned nextMs; bool bad; };
 MdSheet g_mdSheet[64]; int g_mdSheets = 0; MdTex g_mdTex[96]; int g_mdTexN = 0;
 unsigned g_mdWin[512]; int g_mdWins = 0;   // the window definitions (type 0x30) : their payload offsets
-struct MdLabel { char sheet[17]; unsigned id; MenuLabel L; unsigned char tries; unsigned next; };   // tries / next : bounded retry
-const int MD_TRIES = 3; const unsigned MD_RETRY_MS = 2000;
+struct MdLabel { char sheet[17]; unsigned id; MenuLabel L; unsigned char tries; unsigned nextMs; bool bad; };   // as MdTex
+const int MD_TRIES = 6; const unsigned MD_RETRY_MS = 2000;
 MdLabel g_mdLab[256]; int g_mdLabN = 0;
 
 void md_dxt_colours(const unsigned char* cb, unsigned char r[4], unsigned char g[4], unsigned char b[4], bool dxt1, bool& punch) {
@@ -324,10 +330,12 @@ void md_dxt_colours(const unsigned char* cb, unsigned char r[4], unsigned char g
     else { r[2] = (unsigned char)((r[0] + r[1]) / 2); g[2] = (unsigned char)((g[0] + g[1]) / 2); b[2] = (unsigned char)((b[0] + b[1]) / 2); r[3] = g[3] = b[3] = 0; }
 }
 // a whole DXT1 / DXT3 image, top-left origin (no flip) ; DXT3 alpha doubled (the 0x80 = opaque convention)
-u32* md_decode(const unsigned char* d, unsigned n, int W, int Ht, int fmt) {
+// 0 with oom false : the bytes cannot make this image (permanent) ; 0 with oom true : the allocation failed (can pass)
+u32* md_decode(const unsigned char* d, unsigned n, int W, int Ht, int fmt, bool& oom) {
+    oom = false;
     const int bw = (W + 3) / 4, bh = (Ht + 3) / 4, bs = fmt == 1 ? 8 : 16;
     if (W <= 0 || Ht <= 0 || W > 2048 || Ht > 2048 || (unsigned)(bw * bh * bs) > n) return 0;
-    u32* px = new (std::nothrow) u32[(size_t)W * Ht]; if (!px) return 0;
+    u32* px = new (std::nothrow) u32[(size_t)W * Ht]; if (!px) { oom = true; return 0; }
     for (int by = 0; by < bh; ++by) for (int bx = 0; bx < bw; ++bx) {
         const unsigned char* s = d + (by * bw + bx) * bs;
         const unsigned char* cb = fmt == 1 ? s : s + 8;
@@ -364,7 +372,7 @@ bool md_index() {
             MdTex& T = g_mdTex[g_mdTexN]; memcpy(T.name, g_md + p + 1, 16); T.name[16] = 0;
             T.w = *(const int*)(g_md + p + 0x15); T.h = *(const int*)(g_md + p + 0x19);
             const char* fc = (const char*)(g_md + p + 0x39);
-            T.fmt = !memcmp(fc, "1TXD", 4) ? 1 : !memcmp(fc, "3TXD", 4) ? 3 : 0; T.off = p + 0x45; T.px = 0; T.tries = 0; T.next = 0;
+            T.fmt = !memcmp(fc, "1TXD", 4) ? 1 : !memcmp(fc, "3TXD", 4) ? 3 : 0; T.off = p + 0x45; T.px = 0; T.tries = 0; T.nextMs = 0; T.bad = false;
             if (T.fmt && T.w > 0 && T.h > 0) ++g_mdTexN;
         }
         if (type == 0) break;
@@ -372,17 +380,30 @@ bool md_index() {
     }
     return g_mdSheets > 0 && g_mdTexN > 0;
 }
-MdTex* md_tex(const char* name16) {
+// the decoded texture, or 0 ; `transient` true when it may come later (an allocation failed, its retry still pending)
+MdTex* md_tex(const char* name16, bool& transient) {
+    transient = false;
     for (int i = 0; i < g_mdTexN; ++i) if (!memcmp(g_mdTex[i].name, name16, 16)) {
         MdTex& T = g_mdTex[i];
-        if (!T.px && T.tries < MD_TRIES && (!T.tries || (int)(GetTickCount() - T.next) >= 0)) {
-            ++T.tries; T.next = GetTickCount() + MD_RETRY_MS;
-            T.px = md_decode(g_md + T.off, g_mdN - T.off, T.w, T.h, T.fmt);
-            if (T.px && T.tries > 1) windower::debug::log("MENUDAT texture '%.16s' decoded on try %d", T.name, T.tries);
-            if (!T.px) windower::debug::log("MENUDAT texture '%.16s' %dx%d fmt %d : NOT decoded (try %d/%d)%s", T.name, T.w, T.h, T.fmt,
-                                            T.tries, MD_TRIES, T.tries >= MD_TRIES ? " -- given up, its labels stay text" : "");
+        if (T.px) return &T;
+        if (T.bad) return 0;                                       // rule10-ok: the DAT's own bytes cannot make it, they never change
+        if (T.tries >= MD_TRIES) { transient = true; return 0; }   // given up until the next zone change re-arms it
+        if (!retry_due(T.nextMs)) { transient = true; return 0; }
+        bool oom = false;
+        T.px = md_decode(g_md + T.off, g_mdN - T.off, T.w, T.h, T.fmt, oom);
+        if (T.px) {
+            if (T.tries) windower::debug::log("MENUDAT texture '%.16s' decoded after %d failed allocation(s)", T.name, T.tries);
+            return &T;
         }
-        return T.px ? &T : 0;
+        if (!oom) {
+            T.bad = true;                                          // rule10-ok: permanent (the DAT's bytes), one try, logged
+            windower::debug::log("MENUDAT texture '%.16s' %dx%d fmt %d : the DAT's data cannot make it -- its labels stay text", T.name, T.w, T.h, T.fmt);
+            return 0;
+        }
+        ++T.tries; retry_arm(T.nextMs, MD_RETRY_MS); transient = true;
+        windower::debug::log("MENUDAT texture '%.16s' %dx%d : allocation FAILED (try %d/%d)%s", T.name, T.w, T.h, T.tries, MD_TRIES,
+                             T.tries >= MD_TRIES ? " -- given up until the next zone change" : " -- retried");
+        return 0;
     }
     return 0;
 }
@@ -429,46 +450,69 @@ bool menu_dat_load(int lang) {
     return g_mdOk;
 }
 
-static const MenuLabel* menu_label_build(MdLabel& M);
+enum LabelBuild { LB_OK, LB_BAD, LB_RETRY };
+static LabelBuild menu_label_build(MdLabel& M);
+// The DAT not loaded yet is NOT cached (the line below returns first) : menu_dat_load has its own bounded retry.
 const MenuLabel* menu_label(const char* sheet16, unsigned sprite) {
     if (!g_mdOk || !sheet16) return 0;
     MdLabel* E = 0;
     for (int i = 0; i < g_mdLabN; ++i) if (g_mdLab[i].id == sprite && !memcmp(g_mdLab[i].sheet, sheet16, 16)) { E = &g_mdLab[i]; break; }
     if (E && E->L.px) return &E->L;
-    // a failed build is tried again, BOUNDED (rule 10) : its causes include a failed allocation and a texture not
-    // decoded yet, which a later frame can win. Before, the failure stayed cached for the whole session.
-    if (E && (E->tries >= MD_TRIES || (int)(GetTickCount() - E->next) < 0)) return 0;
+    if (E && E->bad) return 0;                                     // rule10-ok: the DAT's bytes cannot make this label, they never change
+    if (E && (E->tries >= MD_TRIES || !retry_due(E->nextMs))) return 0;   // transient : waiting, or given up until the next zone change
     if (!E) { if (g_mdLabN >= 256) return 0; E = &g_mdLab[g_mdLabN++]; memset(E, 0, sizeof(*E)); memcpy(E->sheet, sheet16, 16); E->id = sprite; }
     MdLabel& M = *E;
-    ++M.tries; M.next = GetTickCount() + MD_RETRY_MS;
-    const MenuLabel* got = menu_label_build(M);
-    if (got && M.tries > 1) windower::debug::log("MENUDAT sprite %u of '%.16s' : label built on try %d", sprite, sheet16, M.tries);
-    if (!got && M.tries >= MD_TRIES) windower::debug::log("MENUDAT sprite %u of '%.16s' : label NOT built after %d tries -- given up, the text label stays", sprite, sheet16, M.tries);
-    return got;
+    const LabelBuild b = menu_label_build(M);
+    if (b == LB_OK) {
+        if (M.tries) windower::debug::log("MENUDAT sprite %u of '%.16s' : label built after %d failed try(s)", sprite, sheet16, M.tries);
+        return &M.L;
+    }
+    if (b == LB_BAD) { M.bad = true; return 0; }                   // rule10-ok: permanent, logged by menu_label_build
+    ++M.tries; retry_arm(M.nextMs, MD_RETRY_MS);
+    if (M.tries >= MD_TRIES) windower::debug::log("MENUDAT sprite %u of '%.16s' : label NOT built after %d tries -- given up until the next zone change, the text label stays", sprite, sheet16, M.tries);
+    return 0;
 }
 
-// one build of a menu label into its cache entry (menu_label above owns the retry) ; 0 when it cannot be built now
-static const MenuLabel* menu_label_build(MdLabel& M) {
+// Every texture and label that failed for a TRANSIENT reason gets its budget back : called by the poller at each zone
+// change (game_mem.cpp), when the client's memory moves the most. The permanent ones (bad) stay as they are.
+void menu_dat_rearm() {
+    int t = 0, l = 0;
+    for (int i = 0; i < g_mdTexN; ++i) if (!g_mdTex[i].px && !g_mdTex[i].bad && g_mdTex[i].tries) { g_mdTex[i].tries = 0; g_mdTex[i].nextMs = 0; ++t; }
+    for (int i = 0; i < g_mdLabN; ++i) if (!g_mdLab[i].L.px && !g_mdLab[i].bad && g_mdLab[i].tries) { g_mdLab[i].tries = 0; g_mdLab[i].nextMs = 0; ++l; }
+    if (t || l) windower::debug::log("MENUDAT zone change : %d texture(s) and %d label(s) that failed to allocate are tried again", t, l);
+}
+
+// one build of a menu label into its cache entry (menu_label above owns the retry) : LB_BAD when the DAT's bytes
+// cannot make it (logged here), LB_RETRY when an allocation or its texture's allocation failed
+static LabelBuild menu_label_build(MdLabel& M) {
     const char* sheet16 = M.sheet; const unsigned sprite = M.id;
     const MdSheet* S = 0; for (int i = 0; i < g_mdSheets; ++i) if (!memcmp(g_mdSheet[i].name, sheet16, 16)) S = &g_mdSheet[i];
-    if (!S || sprite >= (unsigned)S->nspr) return 0;
+    if (!S || sprite >= (unsigned)S->nspr) { windower::debug::log("MENUDAT sprite %u of '%.16s' : not in the DAT -- the text label stays", sprite, sheet16); return LB_BAD; }
     const unsigned q = S->spr[sprite]; const int np = g_md[q];
     // the LETTER parts : a "font    ..." texture, not the shadow pass (flag byte 1 = 2) -- no button, no frame (hfr1 / newtex : the skin's DATs)
     int x0 = 1 << 30, y0 = 1 << 30, x1 = -(1 << 30), y1 = -(1 << 30), nl = 0;
     for (int k = 0; k < np; ++k) {
-        const unsigned char* P = g_md + q + 1 + k * 61; if (q + 1 + (k + 1) * 61 > S->end) return 0;
+        const unsigned char* P = g_md + q + 1 + k * 61;
+        if (q + 1 + (k + 1) * 61 > S->end) { windower::debug::log("MENUDAT sprite %u of '%.16s' : its parts run past the sheet -- the text label stays", sprite, sheet16); return LB_BAD; }
         if (P[0x2A] == 2 || memcmp(P + 0x2D, "font    ", 8)) continue;   // the letters only (a font texture) : no button, no frame, no shadow pass
         const short* c = (const short*)P; const int ax = c[0], ay = c[1], bx = c[6], by = c[7];
         if (ax < x0) x0 = ax; if (ay < y0) y0 = ay; if (bx > x1) x1 = bx; if (by > y1) y1 = by; ++nl;
     }
-    if (!nl || x1 <= x0 || y1 <= y0 || x1 - x0 > 512 || y1 - y0 > 512) return 0;
+    if (!nl || x1 <= x0 || y1 <= y0 || x1 - x0 > 512 || y1 - y0 > 512) { windower::debug::log("MENUDAT sprite %u of '%.16s' : no letters to bake -- the text label stays", sprite, sheet16); return LB_BAD; }
     const int W = x1 - x0, Hh = y1 - y0;
-    u32* px = new (std::nothrow) u32[(size_t)W * Hh]; if (!px) return 0;
+    u32* px = new (std::nothrow) u32[(size_t)W * Hh];
+    if (!px) { windower::debug::log("MENUDAT sprite %u of '%.16s' : %dx%d allocation FAILED -- retried", sprite, sheet16, W, Hh); return LB_RETRY; }
     memset(px, 0, (size_t)W * Hh * 4);
     for (int k = 0; k < np; ++k) {
         const unsigned char* P = g_md + q + 1 + k * 61;
         if (P[0x2A] == 2 || memcmp(P + 0x2D, "font    ", 8)) continue;   // the letters only (a font texture) : no button, no frame, no shadow pass
-        MdTex* T = md_tex((const char*)P + 0x2D); if (!T) { delete[] px; windower::debug::log("MENUDAT sprite %u : its texture '%.16s' missing -- the text label stays", sprite, (const char*)P + 0x2D); return 0; }
+        bool texLater = false; MdTex* T = md_tex((const char*)P + 0x2D, texLater);
+        if (!T) {
+            delete[] px;
+            if (texLater) return LB_RETRY;                         // its texture's allocation failed : retried with it
+            windower::debug::log("MENUDAT sprite %u : its texture '%.16s' missing -- the text label stays", sprite, (const char*)P + 0x2D);
+            return LB_BAD;
+        }
         const short* c = (const short*)P; const int ax = c[0] - x0, ay = c[1] - y0, bx = c[6] - x0, by = c[7] - y0;
         const unsigned short* r = (const unsigned short*)(P + 0x10); const int sw = r[0], sh = r[1], su = r[2], sv = r[3];
         const int dw = bx - ax, dh = by - ay; if (dw <= 0 || dh <= 0 || sw <= 0 || sh <= 0) continue;
@@ -482,7 +526,7 @@ static const MenuLabel* menu_label_build(MdLabel& M) {
         }
     }
     M.L.w = W; M.L.h = Hh; M.L.px = px; M.L.ox = x0; M.L.oy = y0;
-    return &M.L;
+    return LB_OK;
 }
 
 bool menu_window_frame(const char* name8, unsigned& sprite) {

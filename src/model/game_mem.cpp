@@ -48,6 +48,8 @@
 #include "model/smn_avatars_gen.h" // compute_smn : which avatar is out, its pacts (the player's grimoire)
 #include "model/geo_spells_gen.h" // compute_geo : the Geo- / Indi- spells (radius rule, aura from its status)
 #include "model/geo_dur.h"        // compute_geo : an Entrust whose ally row is missing (base + JP + gear)
+#include "model/map_dat.h"        // menu_dat_rearm : a zone change re-arms the menu DAT's transient retries (rule 10)
+#include "model/chat_log.h"       // chat_ban_rearm : the same for an unreadable ban file
 #include "model/tb_buff_gen.h"    // compute_geo : that Indi-'s base duration
 #include "model/model_clock.h"    // //aio schlog : the model's one source of "now" (replayable offline)
 #include "windower.h"   // safe_read / valid_ptr (guarded game-memory reads)
@@ -1695,6 +1697,10 @@ void poll_game_state(GameState& gs) {
 
     // minimap : zone + self world position/heading + the zone's map calibration record (snapshot once/frame)
     gs.zone = zone_id();
+    // a ZONE CHANGE re-arms the retries whose failure can pass (rule 10) : allocations of the menu DAT's textures and
+    // labels, a ban file that could not be opened. Not the first zone of the session : nothing has failed yet.
+    { static unsigned zPrev = 0;
+      if (gs.zone && gs.zone != zPrev) { if (zPrev) { menu_dat_rearm(); chat_ban_rearm(); } zPrev = gs.zone; } }
     { u32 ent = self_entity();
       if (ent) { u32 xx = 0, zz = 0, hh = 0; safe_read(ent + ENT_X_OFF, &xx); safe_read(ent + ENT_Z_OFF, &zz); safe_read(ent + ENT_HEADING_OFF, &hh);
                  gs.meX = *(float*)&xx; gs.meZ = *(float*)&zz; gs.meHeading = *(float*)&hh; } }

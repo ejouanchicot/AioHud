@@ -56,6 +56,8 @@ bool menu_dat_load(int lang);
 void menu_dat_free();   // the menu DAT buffer, its decoded textures, the baked labels
 void map_dat_shutdown();   // the plugin's unload : the menu DAT + the ROM volume tables (every buffer kept for the session)
 const MenuLabel* menu_label(const char* sheet16, unsigned sprite);
+// a zone change : the textures and labels that failed to ALLOCATE get their retry budget back (rule 10)
+void menu_dat_rearm();
 // a window's FRAME sprite (its definition's first ref, state 0, in "menu    windowps" -- the panels whose static texts
 // are letters : Config's screens) ; false when it has none (a plain frame : comwin / frames)
 bool menu_window_frame(const char* name8, unsigned& sprite);

@@ -99,6 +99,7 @@ int chat_export_txt(bool battle, char* nameOut, int nameCap);
 // message's speaker (chat_drain), so a banned message disappears whole.
 static const int CHAT_BAN_MAX = 200;
 bool        chat_banned(const char* name);
+void        chat_ban_rearm();                     // a zone change : an unreadable ban file gets its retry budget back
 bool        chat_ban_add(const char* name);       // false : already there / full / empty
 bool        chat_ban_remove(const char* name);
 int         chat_ban_count();

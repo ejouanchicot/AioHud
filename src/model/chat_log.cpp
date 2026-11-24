@@ -2,6 +2,7 @@
 #include "model/chat_log.h"
 #include "windower_debug.h"
 #include "model/paths.h"          // plugin_path : Windower's res folder
+#include "retry_clock.h"          // retry_due / retry_arm : the ban file's bounded retry
 #include <windows.h>
 #include <cstring>
 #include <cstdio>
@@ -343,17 +344,22 @@ static int      g_banN = 0;
 static unsigned g_banVer = 1;
 // Rule 10 (2026-11-24, the CI guard) : this was a one-shot latch -- a file that EXISTS but could not be opened at
 // that moment (an antivirus or an editor holding it) read as "nobody banned" for the whole session, and the next
-// ban then rewrote the file with that one name : the list was LOST. Now a missing file is an empty list, an
-// unreadable one is retried (BAN_TRIES, 1 s apart, logged), and the list is never saved before it was read.
+// ban then rewrote the file with that one name : the list was LOST. The two cases, told apart :
+//  - no file (ERROR_FILE_NOT_FOUND / PATH_NOT_FOUND) : only this code creates it, at the first ban -- an empty list
+//    is the TRUE answer for the session ; permanent, one look. (The path itself cannot fail transiently :
+//    plugin_dir memoises our own module path, paths.cpp.)
+//  - a file that exists but does not open : a sharing violation, which passes. Retried BAN_TRIES times 1 s apart
+//    (retry_clock.h), re-armed at every zone change (chat_ban_rearm), success and give-up logged ; and the list is
+//    never saved before it was read.
 static bool     g_banLoaded = false;   // rule10-ok: set only by a REAL read or a file that does not exist ; a failed open retries (ban_load)
 static int      g_banTries = 0;
-static unsigned g_banNext = 0;
+static unsigned g_banNextMs = 0;
 static const int BAN_TRIES = 5;
 static void ban_path(wchar_t* w, int cap) { plugin_path_w(w, cap, L"data\\chat_bans.txt"); }
 // true once the list is known (read, or no file) ; false while a file that exists could not be read yet
 static bool ban_load() {
     if (g_banLoaded) return true;
-    if (g_banTries >= BAN_TRIES || (g_banTries && (int)(GetTickCount() - g_banNext) < 0)) return false;
+    if (g_banTries >= BAN_TRIES || !retry_due(g_banNextMs)) return false;
     wchar_t p[600]; ban_path(p, 600);
     if (GetFileAttributesW(p) == INVALID_FILE_ATTRIBUTES) {
         const DWORD e = GetLastError();
@@ -361,9 +367,9 @@ static bool ban_load() {
     }
     FILE* f = _wfopen(p, L"r");
     if (!f) {
-        ++g_banTries; g_banNext = GetTickCount() + 1000;
+        ++g_banTries; retry_arm(g_banNextMs, 1000);
         windower::debug::log("CHAT bans : the file exists but could not be read (errno %d, try %d/%d)%s", errno, g_banTries, BAN_TRIES,
-                             g_banTries >= BAN_TRIES ? " -- given up : no ban applied, the file is left untouched" : " -- retried");
+                             g_banTries >= BAN_TRIES ? " -- given up until the next zone change : no ban applied, the file is left untouched" : " -- retried");
         return false;
     }
     char ln[64];
@@ -377,6 +383,11 @@ static bool ban_load() {
     g_banLoaded = true;                                  // rule10-ok: after a real read
     windower::debug::log("CHAT bans : %d name(s) loaded%s", g_banN, g_banTries ? " (after a failed read)" : "");
     return true;
+}
+void chat_ban_rearm() {
+    if (g_banLoaded || g_banTries < BAN_TRIES) return;
+    g_banTries = 0; g_banNextMs = 0;
+    windower::debug::log("CHAT bans : zone change -- the unreadable ban file is tried again");
 }
 static void ban_save() {
     wchar_t p[600]; ban_path(p, 600);
