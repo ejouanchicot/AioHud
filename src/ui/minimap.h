@@ -55,6 +55,8 @@ private:
     TexRetry mkAtlasR_;                   // ... under its bounded retry
     u32      ast_[AS_N] = {};             // the Astral kit textures (0 = not loaded) ...
     TexRetry astR_[AS_N];                 // ... each under its own bounded retry (rule 10)
+    u32      astG_[AS_N] = {};            // the same kit in GREY, tinted by the theme's metal (Frame = Theme / Custom)
+    TexRetry astGR_[AS_N];
     int      mkTries_ = 0;      // bounded retry budget for the marker/element textures (was a one-shot bool)
     unsigned mkNextMs_ = 0;
 

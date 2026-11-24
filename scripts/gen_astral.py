@@ -27,7 +27,7 @@ PIECES = {
     'cartouche_bas_gauche': (32, 64), 'cartouche_bas_milieu': (16, 64), 'cartouche_bas_droite': (32, 64),
     'separateur': (8, 32),
 }
-PALETTES = ['laiton']   # 'gris' (the tintable one) joins when a theme uses it -- its sources are kept
+PALETTES = ['laiton', 'gris']   # laiton : the brass as painted ; gris : the same in grey, tinted by the HUD theme's metal
 
 
 def premul_resize(im, size):
