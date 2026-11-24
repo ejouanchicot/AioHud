@@ -11,6 +11,7 @@
 //                      under its own label : base, alliance (18-member demo), chat (both boxes scrolled to the top),
 //                      skillchain (the sphere demo, every chain in turn), config (the window open), then an ab run.
 //                      Everything it changed is put back. //aio perf off stops it.
+//   //aio perf filter on|off   the redundant-state filter (gfx/d3d.h, audit P4) : on by default
 #include "ui/hud_internal.h"
 #include "ui/config_controls.h"   // tr()
 #include "ui/config_page.h"       // //aio perf auto : the config phase opens it
@@ -210,6 +211,12 @@ void perf_command(const char* rest, char* msg, int cap) {
         _snprintf(msg, cap, tr(">>> AioHud perf auto : about %d s, stay put -- the plugin sets up each case itself <<<",
                                ">>> AioHud perf auto : environ %d s, ne bouge pas -- le plugin prepare chaque cas lui-meme <<<"),
                   (int)((AUTO_PHASES - 1) * (AUTO_SETTLE + AUTO_MEASURE) + 1200) / 60);
+    } else if (!strncmp(rest, "filter", 6)) {   // //aio perf filter on|off : the P4 state shadow (gfx/d3d.h), for an A/B or as the way out
+        const char* q = rest + 6; while (*q == ' ') ++q;
+        if (!strncmp(q, "off", 3)) dStateFilter(false); else if (!strncmp(q, "on", 2)) dStateFilter(true);
+        windower::debug::log("AIO PERF state filter %s", dStateFiltering() ? "ON" : "OFF");
+        _snprintf(msg, cap, tr(">>> AioHud perf : redundant-state filter %s <<<", ">>> AioHud perf : filtre des etats redondants %s <<<"),
+                  dStateFiltering() ? "ON" : "OFF");
     } else if (!strncmp(rest, "off", 3)) {
         if (g_auto.phase >= 0) { auto_restore(nullptr); g_auto.phase = -1; windower::debug::log("AIO PERF auto stopped by //aio perf off"); }
         perf::set_on(false);
@@ -233,7 +240,7 @@ void perf_command(const char* rest, char* msg, int cap) {
         _snprintf(msg, cap, tr(">>> AioHud perf ab : %u frames, alternating with / without instrumentation -- result in the chat <<<",
                                ">>> AioHud perf ab : %u images, avec / sans instrumentation en alternance -- resultat dans le chat <<<"), frames);
     } else {
-        _snprintf(msg, cap, "%s", tr("//aio perf on | off | reset | dump [label] | ab [frames] | auto", "//aio perf on | off | reset | dump [etiquette] | ab [images] | auto"));
+        _snprintf(msg, cap, "%s", tr("//aio perf on | off | reset | dump [label] | ab [frames] | auto | filter on|off", "//aio perf on | off | reset | dump [etiquette] | ab [images] | auto | filter on|off"));
     }
     msg[cap - 1] = 0;
 }

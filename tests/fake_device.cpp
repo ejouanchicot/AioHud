@@ -6,6 +6,7 @@
 // Anything gfx calls that is not filled stays null, and vfn's valid_ptr check turns that into a no-op --
 // which is the same thing that happens in game on a device that lost these entry points.
 #include "fake_device.h"
+#include "gfx/d3d.h"   // dStateForget : a reset device has no state left for the shadow to remember
 
 namespace fakedev {
 
@@ -25,11 +26,13 @@ static long __stdcall fd_SetRenderState(u32, u32 state, u32 value) {
     return 0;
 }
 static long __stdcall fd_SetTextureStageState(u32, u32 stage, u32 type, u32 value) {
+    if (stage < 8 && type < 32) g_log.tss[stage][type] = value;
     push(Call::SetTSS, stage, type, value, 0);
     return 0;
 }
 static long __stdcall fd_SetTexture(u32, u32 stage, u32 tex) {
     if (stage == 0) g_log.tex0 = tex;
+    if (stage < 8) g_log.tex[stage] = tex;
     push(Call::SetTex, stage, tex, 0, 0);
     return 0;
 }
@@ -99,6 +102,9 @@ u32 device() { build_once(); return (u32)(uintptr_t)&g_obj; }
 void reset() {
     build_once();
     memset(&g_log, 0, sizeof(g_log));
+    // A reset is a FRESH device : its states are back to nothing, so what gfx's state shadow remembers (d3d.h, P4) is
+    // no longer what the device holds. In the game the same thing is handled by forgetting at every CreateStateBlock.
+    aio::dStateForget();
 }
 
 u32  state(u32 rsId)          { return rsId < 256 ? g_log.rs[rsId] : 0u; }

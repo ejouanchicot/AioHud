@@ -45,6 +45,8 @@ struct Log {
     bool  rsSet[256];
     u32   tex0;               // texture bound on stage 0
     u32   fvf;
+    u32   tss[8][32];         // texture-stage states, [stage][type] (the types gfx uses are all < 32)
+    u32   tex[8];             // texture bound per stage
 };
 
 Log&  log();                  // the one log

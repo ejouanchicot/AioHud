@@ -10,6 +10,7 @@
 #pragma once
 #include "windower.h"
 #include "perf.h"   // //aio perf : the counters below (one byte test when off)
+#include <string.h> // memset : the state shadow
 
 namespace aio {
 
@@ -73,15 +74,52 @@ struct VtxC { float x, y, z, rhw; u32 color; };              // 20 bytes, FVF 0x
 // D3DVIEWPORT8 : the active render rectangle (== backbuffer size at HUD-draw time).
 struct D3DVIEWPORT8 { u32 X, Y, Width, Height; float MinZ, MaxZ; };
 
+// ---- THE STATE SHADOW (audit P4, 2026-11-24) ---------------------------------------------------------------------
+// //aio perf counted 2 900 (town) to 10 500 (config open) SetRenderState + SetTextureStageState calls a frame, ~3 per
+// draw : dColorQuadState alone sets 18 states, and it runs before nearly every shape whatever the device already
+// holds. Each call is two guarded vtable reads and a driver call. The shadow remembers, per state, the value WE last
+// set on this device, and drops a call that would set it again to the same value.
+// WHEN IT IS FORGOTTEN (everything marked unknown) : at CreateStateBlock and ApplyStateBlock -- i.e. at the start of
+// our drawing, after the game drew with its own state, and once the game's state is restored -- and whenever the
+// device address changes. Between the two, nothing but us touches the device (the HUD draws inside one block). An
+// entry is only ever written after the call reached the device, so "known" always means "the device holds it".
+// dStateFilter(false) turns it off (//aio perf filter off : the in-game A/B, and the way out if a draw ever looks wrong).
+struct StateShadow {
+    u32 dev; bool off;
+    u32 rs[256]; u32 tss[8][32]; u32 tex[8]; u32 fvf;
+    unsigned char rsK[256], tssK[8][32], texK[8], fvfK;
+};
+inline StateShadow g_ss = {};
+inline void dStateForget() { const bool off = g_ss.off; memset(&g_ss, 0, sizeof(g_ss)); g_ss.off = off; }
+inline void dStateFilter(bool on) { dStateForget(); g_ss.off = !on; }
+inline bool dStateFiltering() { return !g_ss.off; }
+inline void ss_dev(u32 d) { if (g_ss.dev != d) { dStateForget(); g_ss.dev = d; } }
+
 // ---- IDirect3DDevice8 vtable helpers (call by reversed index, SEH-guarded by vmethod) ----
 // The single path every draw and state change takes : //aio perf counts here (gfx/perf.h), and only when it reached
-// the device (a null vtable slot is not a call).
-inline void dSetRS (u32 d, u32 s, u32 v)          { auto f = vmethod<long(__stdcall*)(u32,u32,u32)>(d,50);     if(f) { f(d,s,v); perf::on_rs(); } }
-inline void dSetTSS(u32 d, u32 st, u32 ty, u32 v) { auto f = vmethod<long(__stdcall*)(u32,u32,u32,u32)>(d,63);  if(f) { f(d,st,ty,v); perf::on_tss(); } }
-inline void dSetTex(u32 d, u32 st, u32 tex)       { auto f = vmethod<long(__stdcall*)(u32,u32,u32)>(d,61);      if(f) { f(d,st,tex); perf::on_tex(); } }
-inline void dSetVS (u32 d, u32 fvf)               { auto f = vmethod<long(__stdcall*)(u32,u32)>(d,76);          if(f) { f(d,fvf); perf::on_fvf(); } }
+// the device (a null vtable slot is not a call) -- so a call the shadow drops is not counted either.
+inline void dSetRS (u32 d, u32 s, u32 v) {
+    if (s < 256 && !g_ss.off && g_ss.dev == d && g_ss.rsK[s] && g_ss.rs[s] == v) return;   // the device already holds it
+    auto f = vmethod<long(__stdcall*)(u32,u32,u32)>(d,50);
+    if (f) { f(d,s,v); perf::on_rs(); if (s < 256) { ss_dev(d); g_ss.rs[s] = v; g_ss.rsK[s] = 1; } }
+}
+inline void dSetTSS(u32 d, u32 st, u32 ty, u32 v) {
+    if (st < 8 && ty < 32 && !g_ss.off && g_ss.dev == d && g_ss.tssK[st][ty] && g_ss.tss[st][ty] == v) return;
+    auto f = vmethod<long(__stdcall*)(u32,u32,u32,u32)>(d,63);
+    if (f) { f(d,st,ty,v); perf::on_tss(); if (st < 8 && ty < 32) { ss_dev(d); g_ss.tss[st][ty] = v; g_ss.tssK[st][ty] = 1; } }
+}
+inline void dSetTex(u32 d, u32 st, u32 tex) {
+    if (st < 8 && !g_ss.off && g_ss.dev == d && g_ss.texK[st] && g_ss.tex[st] == tex) return;
+    auto f = vmethod<long(__stdcall*)(u32,u32,u32)>(d,61);
+    if (f) { f(d,st,tex); perf::on_tex(); if (st < 8) { ss_dev(d); g_ss.tex[st] = tex; g_ss.texK[st] = 1; } }
+}
+inline void dSetVS (u32 d, u32 fvf) {
+    if (!g_ss.off && g_ss.dev == d && g_ss.fvfK && g_ss.fvf == fvf) return;
+    auto f = vmethod<long(__stdcall*)(u32,u32)>(d,76);
+    if (f) { f(d,fvf); perf::on_fvf(); ss_dev(d); g_ss.fvf = fvf; g_ss.fvfK = 1; }
+}
 inline void dDrawUP(u32 d, u32 pt, u32 n, const void* v, u32 st){ auto f = vmethod<long(__stdcall*)(u32,u32,u32,const void*,u32)>(d,72); if(f) { f(d,pt,n,v,st); perf::on_draw(n); } }
-inline u32  dCreateSB(u32 d, u32 type)            { auto f = vmethod<long(__stdcall*)(u32,u32,u32*)>(d,57); u32 t=0; if(f) f(d,type,&t); return t; }
+inline u32  dCreateSB(u32 d, u32 type)            { dStateForget(); auto f = vmethod<long(__stdcall*)(u32,u32,u32*)>(d,57); u32 t=0; if(f) f(d,type,&t); return t; }   // forget : the game drew since our last frame
 // The display mode, for ONE question we cannot answer by looking: how many bits per channel the game is
 // presenting into. A gradient that bands no matter what it is drawn with is banding because the destination
 // is 16-bit (R5G6B5 = 32 levels of green, 31 of red and blue), and no amount of care in our vertices changes
@@ -114,7 +152,7 @@ inline bool dGetBackBufferSize(u32 d, u32& w, u32& h) {
     if (rel) rel(surf);
     return ok;
 }
-inline void dApplySB(u32 d, u32 tok)              { auto f = vmethod<long(__stdcall*)(u32,u32)>(d,54);          if(f) f(d,tok); }
+inline void dApplySB(u32 d, u32 tok)              { auto f = vmethod<long(__stdcall*)(u32,u32)>(d,54);          if(f) f(d,tok); dStateForget(); }   // forget : the game's state is back
 inline void dDelSB  (u32 d, u32 tok)              { auto f = vmethod<long(__stdcall*)(u32,u32)>(d,56);          if(f) f(d,tok); }
 
 // The 2D untextured colour-quad pipeline (XYZRHW diffuse, no Z/cull/light/fog/spec, standard alpha blend,
