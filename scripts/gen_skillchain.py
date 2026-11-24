@@ -147,7 +147,7 @@ def main():
                 ja_ids.add(aid); added += 1
         # the Ready moves skills.lua does not know at all (EXTRA_READY), by their ability id
         extra = 0
-        for m in re.finditer(r'\{\s*(\d+)\s*,\s*"([^"]*)"\s*,\s*\d+\s*,\s*102\s*\}', atext):
+        for m in re.finditer(r'\{\s*(\d+)\s*,\s*"([^"]*)"\s*,\s*\d+\s*,\s*102\s*(?:,\s*\d+\s*)?\}', atext):
             aid, anm = int(m.group(1)), m.group(2)
             if anm in EXTRA_READY and aid not in ja_ids:
                 ix = ([PROP_IX[p] for p in EXTRA_READY[anm]] + [255, 255, 255])[:3]
@@ -164,7 +164,7 @@ def main():
         # uses (a charmed tiger's Claw Cyclone is 273) -- the player, 2026-10-29 : "pense à tous les JA de pet qui
         # peuvent ouvrir". Only a party member's or a pet's finish is read, so a wild mob's own move never counts.
         ready_props = {}
-        for m in re.finditer(r'\{\s*(\d+)\s*,\s*"([^"]*)"\s*,\s*\d+\s*,\s*102\s*\}', atext):
+        for m in re.finditer(r'\{\s*(\d+)\s*,\s*"([^"]*)"\s*,\s*\d+\s*,\s*102\s*(?:,\s*\d+\s*)?\}', atext):
             row = next((r for r in res_rows['job_abilities'] if r[0] == int(m.group(1))), None)
             if row: ready_props[m.group(2)] = row[1:4]
         mextra = 0
