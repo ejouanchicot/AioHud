@@ -22,8 +22,11 @@ REM    ON A DEV MACHINE IT MUST BE THE DEV SHAPE. A release-shape DLL (package.b
 REM    or a build run with AIOHUD_NO_DEVTOOLS=1) has no //aio igstate : the doctor then reports "the plugin did not
 REM    answer" on every poll and the pre-commit in-game check skips itself -- with nothing saying why (2026-09-13).
 REM    AIOHUD_DEPLOY_RELEASE=1 deploys it anyway, on purpose.
+REM    The MARKER must exist only in dev code : "igstate" did until 2026-11-24, when the //aio dispatcher table
+REM    (aio_verbs.h) started carrying every verb NAME, the DEV rows included, in every build -- a release DLL then
+REM    passed this check. "aiohud_state_" is the file name dev\src\igstate.cpp writes : absent from a release (checked).
 if exist "%ROOT%dev\src\aiohud_devtools.cpp" if not defined AIOHUD_DEPLOY_RELEASE (
-    findstr /m /c:"igstate" "%ROOT%build\AioHud.dll" >nul 2>nul
+    findstr /m /c:"aiohud_state_" "%ROOT%build\AioHud.dll" >nul 2>nul
     if errorlevel 1 (
         echo [deploy] REFUSED -- build\AioHud.dll is a RELEASE-shape build ^(no dev tools, no //aio igstate^).
         echo          Run build.bat first. To deploy a release shape on purpose : set AIOHUD_DEPLOY_RELEASE=1
