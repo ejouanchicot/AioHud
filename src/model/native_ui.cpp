@@ -8,6 +8,7 @@
 #include "model/game_mem.h"       // ffximain_base
 #include "model/paths.h"          // plugin_path : the crash-recovery file
 #include "model/native_ui_undo.h" // the crash-recovery files, one per client (audit R4)
+#include "model/xy_write.h"       // X and Y written as one change : a refused Y puts X back (audit R8)
 #include "model/chat_log.h"       // chat_seed_line / chat_seed_end : the client's own log, replayed at load
 #include "model/item_text.h"      // item_text_detail::decode : the item card page 2
 #include "model/map_dat.h"        // dat_resolve_path / dat_read_file : the client's d_msg files (Job Points' texts)
@@ -49,6 +50,18 @@ typedef void (__thiscall* HandlerFn)(u32 self);
 bool rd16(u32 a, short& v)  { __try { v = *(const short*)a; return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; } }
 bool rd8 (u32 a, unsigned char& v) { __try { v = *(const unsigned char*)a; return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; } }
 bool wr16(u32 a, short v)   { __try { *(short*)a = v; return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; } }
+// A window record's X then Y as ONE change (model/xy_write.h, audit R8) ; every outcome but XY_OK is logged, at most one
+// line per 5 s with the running count -- a record that refuses every frame must show as repeating, not as once.
+int wr_xy(u32 rec, short x, short y, short oldX, const char* who) {
+    const int rc = write_xy([](unsigned a, short v) { return wr16(a, v); }, rec + REC_X, rec + REC_Y, x, y, oldX);
+    if (rc != XY_OK) {
+        static unsigned s_n = 0, s_next = 0; ++s_n;
+        const unsigned now = GetTickCount();
+        if (s_n == 1 || (int)(now - s_next) >= 0) { s_next = now + 5000;
+            windower::debug::log("NATIVEUI '%s' record %08X : move to %d,%d -- %s (%u such write(s) this session)", who, rec, x, y, xy_write_name(rc), s_n); }
+    }
+    return rc;
+}
 bool rdname(u32 def, char out[9]) {
     memset(out, 0, 9);
     __try {
@@ -1276,7 +1289,8 @@ u32 def_by_name(u32 mgr, const char* want) {
 // client's file is left alone. Missed records stay in their file for the next load (bounded : undo::MAX_TRIES).
 bool undo_apply(const char* nm, int x, int y, void* u) {
     const u32 rec = layout_rec(def_by_name(*(const u32*)u, nm));
-    return rec && wr16(rec + REC_X, (short)x) && wr16(rec + REC_Y, (short)y);
+    short oldX = 0;
+    return rec && rd16(rec + REC_X, oldX) && wr_xy(rec, (short)x, (short)y, oldX, nm) == XY_OK;   // a half-written record is not "restored"
 }
 void recover_from_file(u32 mgr) {
     const aio::undo::Hooks h = { undo_alive, undo_apply, undo_log, &mgr };
@@ -1775,17 +1789,21 @@ void apply(bool zero) {
             }
             if (at >= 0) {
                 Entry& e = g_e[at]; e.alive = true;
-                if (cx != e.ox + e.ax || cy != e.oy + e.ay) {    // the CLIENT rewrote it (relog, DAT reload) : re-learn
+                if (xy_client_rewrote(cx, cy, e.ox, e.oy, e.ax, e.ay)) {   // the CLIENT rewrote it (relog, DAT reload) : re-learn
                     if (!(cx == e.ox && cy == e.oy)) { e.ox = cx; e.oy = cy; }
                     e.ax = e.ay = 0;
                 }
                 int dx = 0, dy = 0;
                 if (zero || !dock_offset(e, dx, dy)) desired_offset(e.name, e.ox, e.oy, e.anc, hide, mdx, mdy, dx, dy);
                 if (dx != e.ax || dy != e.ay) {
-                    if (wr16(rec + REC_X, (short)(e.ox + dx)) && wr16(rec + REC_Y, (short)(e.oy + dy))) {
+                    // X and Y as ONE change (audit R8) : a refused Y used to leave X moved and untracked, and the next
+                    // frame re-learned that moved X as the window's ORIGIN -- shifted for good, and saved for the next load.
+                    const int rc = wr_xy(rec, (short)(e.ox + dx), (short)(e.oy + dy), cx, e.name);
+                    if (rc == XY_OK) {
                         if (nD < 768) { D[nD].def = e.def; D[nD].dx = dx - e.ax; D[nD].dy = dy - e.ay; ++nD; }
-                        e.ax = (short)dx; e.ay = (short)dy; ++changed;
+                        ++changed;
                     }
+                    xy_track(rc, (short)dx, (short)dy, e.ax, e.ay);   // the offsets follow what the record HOLDS
                 }
             }
         }

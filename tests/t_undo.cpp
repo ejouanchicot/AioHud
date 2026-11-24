@@ -5,6 +5,7 @@
 // windows stayed off-screen with nothing left to put them back.
 #include "check.h"
 #include "model/native_ui_undo.h"
+#include "model/xy_write.h"
 
 #include <windows.h>
 #include <stdio.h>
@@ -139,4 +140,58 @@ void test_undo() {
     }
 
     fresh_dir(dir, sizeof(dir)); RemoveDirectoryA(dir);
+
+    SECTION("R8 : a refused Y puts X back -- the learned origin is never poisoned");
+    {
+        // a record (X at +2, Y at +4, as in the client) whose writes can be refused one address at a time
+        static short mem[4]; static unsigned failAt; static int writes;
+        const unsigned base = 0x1000, AX = base + 2, AY = base + 4;
+        auto wr = [](unsigned a, short v) { ++writes; if (a == failAt) return false; mem[(a - 0x1000) / 2] = v; return true; };
+        auto X = [&]() { return mem[1]; }; auto Y = [&]() { return mem[2]; };
+
+        // one apply() step for one window, written with the very rules native_ui.cpp uses
+        struct Win { short ox, oy, ax, ay; } w = { 100, 50, 0, 0 };
+        auto step = [&](short dx, short dy) {
+            const short cx = X(), cy = Y();
+            if (xy_client_rewrote(cx, cy, w.ox, w.oy, w.ax, w.ay)) { if (!(cx == w.ox && cy == w.oy)) { w.ox = cx; w.oy = cy; } w.ax = w.ay = 0; }
+            if (dx != w.ax || dy != w.ay) {
+                const int rc = write_xy(wr, AX, AY, (short)(w.ox + dx), (short)(w.oy + dy), cx);
+                xy_track(rc, dx, dy, w.ax, w.ay);
+                return rc;
+            }
+            return (int)XY_OK;
+        };
+
+        mem[1] = 100; mem[2] = 50; failAt = AY; writes = 0;
+        CHECK_EQ(step(-400, 0), (int)XY_Y_FAILED_X_RESTORED);   // Y refused : X written, then put back
+        CHECK_EQ(X(), 100); CHECK_EQ(Y(), 50);                    // the record is exactly as it was
+        CHECK_EQ(writes, 3);
+        step(-400, 0);                                            // the NEXT frame : the case that used to poison
+        CHECK_EQ(w.ox, 100); CHECK_EQ(w.oy, 50);                  // the origin is still the window's own
+        failAt = 0;
+        CHECK_EQ(step(-400, 0), (int)XY_OK);                      // Y accepted again : the move happens, once
+        CHECK_EQ(X(), -300); CHECK_EQ(Y(), 50);
+        CHECK_EQ(w.ox, 100);
+        CHECK_EQ(step(0, 0), (int)XY_OK);                         // and back home : the origin was never lost
+        CHECK_EQ(X(), 100);
+
+        // X cannot even be put back : the tracking follows the record, and the next frame re-learns nothing
+        mem[1] = 100; mem[2] = 50; w = { 100, 50, 0, 0 };
+        auto wr2 = [](unsigned a, short v) {                      // Y refused ; the SECOND write to X (the put-back) refused
+            static int nX = 0;
+            if (a == 0x1004) return false;
+            if (a == 0x1002 && ++nX >= 2) return false;
+            mem[(a - 0x1000) / 2] = v; return true;
+        };
+        {
+            const short cx = X();
+            const int rc = write_xy(wr2, AX, AY, (short)(w.ox - 400), (short)(w.oy), cx);
+            CHECK_EQ(rc, (int)XY_Y_FAILED_X_STUCK);
+            xy_track(rc, -400, 0, w.ax, w.ay);
+            CHECK_EQ(X(), -300);                                  // X did move...
+            CHECK_EQ(w.ax, -400);                                 // ...and the tracking says so
+            CHECK(!xy_client_rewrote(X(), Y(), w.ox, w.oy, w.ax, w.ay));   // so nothing is re-learned next frame
+        }
+        CHECK_STR(xy_write_name(XY_OK), "ok");
+    }
 }
