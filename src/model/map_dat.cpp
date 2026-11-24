@@ -305,10 +305,13 @@ const char* dat_windower_root() { return windower_root(); }
 namespace {
 unsigned char* g_md = 0; unsigned g_mdN = 0; int g_mdLang = -1, g_mdTries = 0; DWORD g_mdNext = 0; bool g_mdOk = false;
 struct MdSheet { char name[17]; unsigned off, end; int nspr; unsigned* spr; };   // spr[i] : the sprite's offset in g_md
-struct MdTex { char name[17]; unsigned off; int w, h, fmt; u32* px; bool tried; };   // fmt 1 DXT1, 3 DXT3 ; px decoded lazily
+// fmt 1 DXT1, 3 DXT3 ; px decoded lazily. tries / next : the decode's BOUNDED retry (rule 10) -- a one-shot `tried`
+// lost a font texture, and every label drawn from it, for the session on one failed allocation (CI guard, 2026-11-24)
+struct MdTex { char name[17]; unsigned off; int w, h, fmt; u32* px; unsigned char tries; unsigned next; };
 MdSheet g_mdSheet[64]; int g_mdSheets = 0; MdTex g_mdTex[96]; int g_mdTexN = 0;
 unsigned g_mdWin[512]; int g_mdWins = 0;   // the window definitions (type 0x30) : their payload offsets
-struct MdLabel { char sheet[17]; unsigned id; MenuLabel L; bool tried; };
+struct MdLabel { char sheet[17]; unsigned id; MenuLabel L; unsigned char tries; unsigned next; };   // tries / next : bounded retry
+const int MD_TRIES = 3; const unsigned MD_RETRY_MS = 2000;
 MdLabel g_mdLab[256]; int g_mdLabN = 0;
 
 void md_dxt_colours(const unsigned char* cb, unsigned char r[4], unsigned char g[4], unsigned char b[4], bool dxt1, bool& punch) {
@@ -361,7 +364,7 @@ bool md_index() {
             MdTex& T = g_mdTex[g_mdTexN]; memcpy(T.name, g_md + p + 1, 16); T.name[16] = 0;
             T.w = *(const int*)(g_md + p + 0x15); T.h = *(const int*)(g_md + p + 0x19);
             const char* fc = (const char*)(g_md + p + 0x39);
-            T.fmt = !memcmp(fc, "1TXD", 4) ? 1 : !memcmp(fc, "3TXD", 4) ? 3 : 0; T.off = p + 0x45; T.px = 0; T.tried = false;
+            T.fmt = !memcmp(fc, "1TXD", 4) ? 1 : !memcmp(fc, "3TXD", 4) ? 3 : 0; T.off = p + 0x45; T.px = 0; T.tries = 0; T.next = 0;
             if (T.fmt && T.w > 0 && T.h > 0) ++g_mdTexN;
         }
         if (type == 0) break;
@@ -372,8 +375,13 @@ bool md_index() {
 MdTex* md_tex(const char* name16) {
     for (int i = 0; i < g_mdTexN; ++i) if (!memcmp(g_mdTex[i].name, name16, 16)) {
         MdTex& T = g_mdTex[i];
-        if (!T.px && !T.tried) { T.tried = true; T.px = md_decode(g_md + T.off, g_mdN - T.off, T.w, T.h, T.fmt);
-            if (!T.px) windower::debug::log("MENUDAT texture '%.16s' %dx%d fmt %d : NOT decoded", T.name, T.w, T.h, T.fmt); }
+        if (!T.px && T.tries < MD_TRIES && (!T.tries || (int)(GetTickCount() - T.next) >= 0)) {
+            ++T.tries; T.next = GetTickCount() + MD_RETRY_MS;
+            T.px = md_decode(g_md + T.off, g_mdN - T.off, T.w, T.h, T.fmt);
+            if (T.px && T.tries > 1) windower::debug::log("MENUDAT texture '%.16s' decoded on try %d", T.name, T.tries);
+            if (!T.px) windower::debug::log("MENUDAT texture '%.16s' %dx%d fmt %d : NOT decoded (try %d/%d)%s", T.name, T.w, T.h, T.fmt,
+                                            T.tries, MD_TRIES, T.tries >= MD_TRIES ? " -- given up, its labels stay text" : "");
+        }
         return T.px ? &T : 0;
     }
     return 0;
@@ -421,11 +429,27 @@ bool menu_dat_load(int lang) {
     return g_mdOk;
 }
 
+static const MenuLabel* menu_label_build(MdLabel& M);
 const MenuLabel* menu_label(const char* sheet16, unsigned sprite) {
     if (!g_mdOk || !sheet16) return 0;
-    for (int i = 0; i < g_mdLabN; ++i) if (g_mdLab[i].id == sprite && !memcmp(g_mdLab[i].sheet, sheet16, 16)) return g_mdLab[i].L.px ? &g_mdLab[i].L : 0;
-    if (g_mdLabN >= 256) return 0;
-    MdLabel& M = g_mdLab[g_mdLabN++]; memset(&M, 0, sizeof(M)); memcpy(M.sheet, sheet16, 16); M.id = sprite; M.tried = true;
+    MdLabel* E = 0;
+    for (int i = 0; i < g_mdLabN; ++i) if (g_mdLab[i].id == sprite && !memcmp(g_mdLab[i].sheet, sheet16, 16)) { E = &g_mdLab[i]; break; }
+    if (E && E->L.px) return &E->L;
+    // a failed build is tried again, BOUNDED (rule 10) : its causes include a failed allocation and a texture not
+    // decoded yet, which a later frame can win. Before, the failure stayed cached for the whole session.
+    if (E && (E->tries >= MD_TRIES || (int)(GetTickCount() - E->next) < 0)) return 0;
+    if (!E) { if (g_mdLabN >= 256) return 0; E = &g_mdLab[g_mdLabN++]; memset(E, 0, sizeof(*E)); memcpy(E->sheet, sheet16, 16); E->id = sprite; }
+    MdLabel& M = *E;
+    ++M.tries; M.next = GetTickCount() + MD_RETRY_MS;
+    const MenuLabel* got = menu_label_build(M);
+    if (got && M.tries > 1) windower::debug::log("MENUDAT sprite %u of '%.16s' : label built on try %d", sprite, sheet16, M.tries);
+    if (!got && M.tries >= MD_TRIES) windower::debug::log("MENUDAT sprite %u of '%.16s' : label NOT built after %d tries -- given up, the text label stays", sprite, sheet16, M.tries);
+    return got;
+}
+
+// one build of a menu label into its cache entry (menu_label above owns the retry) ; 0 when it cannot be built now
+static const MenuLabel* menu_label_build(MdLabel& M) {
+    const char* sheet16 = M.sheet; const unsigned sprite = M.id;
     const MdSheet* S = 0; for (int i = 0; i < g_mdSheets; ++i) if (!memcmp(g_mdSheet[i].name, sheet16, 16)) S = &g_mdSheet[i];
     if (!S || sprite >= (unsigned)S->nspr) return 0;
     const unsigned q = S->spr[sprite]; const int np = g_md[q];
