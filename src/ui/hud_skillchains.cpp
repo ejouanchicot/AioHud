@@ -30,6 +30,17 @@ static inline float sc_sz(int e, float base) { return te_sz(ui_config().scText[e
 static inline float sc_ow(int e, float base) { return te_ow(ui_config().scText[e], base); }
 static inline u32   sc_col(int e, u32 base)  { return te_col(ui_config().scText[e], base); }
 static const char*  sc_up(int e, const char* s, char* buf, int cap) { return te_upper(ui_config().scText[e], s, buf, cap); }   // UPPERCASE into buf if the element wants CAPS
+// FNV-1a over what the player can use right now (snapshot) : part of the continuation list's key, so the list is
+// rebuilt when a weapon swap changes the WS, a pet brings its ready moves, the BLU set changes, or the bitmap
+// resolves after a failed read (it used to stay empty until the target / step / job happened to change).
+static unsigned usable_hash(const GameState& g) {
+    unsigned h = 2166136261u;
+    auto mix = [&h](const unsigned char* p, int n) { for (int i = 0; i < n; ++i) { h ^= p[i]; h *= 16777619u; } };
+    mix(g.wsBits, sizeof(g.wsBits)); mix(g.jaBits, sizeof(g.jaBits));
+    mix((const unsigned char*)g.blu, g.nBlu * (int)sizeof(g.blu[0]));
+    h ^= g.jaOk ? 0x9E37u : 0u;
+    return h;
+}
 // a small VECTOR "->" arrow, vertically centred at cy (the font atlas is Latin-1 only, so U+2192 can't be baked
 // like the original addon's "→"). Caller is in colour-quad state ; returns the width consumed.
 static float sc_arrow(u32 dev, float x, float cy, float sz, u32 col) {
@@ -170,7 +181,8 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
         // one) reused the stale continuation list -> wrong "what continues" suggestions until the key happened to move.
         const unsigned key = f.game->target.id * 2654435761u + (unsigned)step * 131u + (unsigned)mjob * 97u
                            + (unsigned)props[0] * 7u + (unsigned)props[1] * 1013u + (unsigned)props[2] * 65537u + (unsigned)nProp * 40503u
-                           + (unsigned)(selfAeonic + 1) * 277u + (unsigned)amLvl * 1201u + (unsigned)C.scWsScope * 7919u;   // rebuild on weapon swap / AM change (aeonic on/off changes what continues)
+                           + (unsigned)(selfAeonic + 1) * 277u + (unsigned)amLvl * 1201u + (unsigned)C.scWsScope * 7919u   // rebuild on weapon swap / AM change (aeonic on/off changes what continues)
+                           + usable_hash(*f.game) * 104729u;   // ...and when what you CAN use changes : another weapon (its WS), a pet out (ready moves), BLU set spells, the bitmap resolving after a miss
         if (key != listKey) {
             listKey = key; listN = 0; int found = 0;
             // add a candidate move (weapon skill / job ability / SCH element) IF it continues the active chain.
@@ -199,7 +211,10 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
                     L.lvl = (unsigned char)lv; L.prop = (unsigned char)rs; L.now = now ? 1 : 0; L.wsk = (unsigned char)wsk;
                 }
             };
-            unsigned short ws[128]; const int nws = read_usable_weapon_skills(ws, 128);                 // everyone : weapon skills
+            // what you can use comes from the frame SNAPSHOT (rule 6 : the poller reads the client, widgets never do)
+            const GameState& G = *f.game;
+            unsigned short ws[128]; int nws = 0;                                                        // everyone : weapon skills
+            if (G.jaOk) for (int id = 1; id < 256 && nws < 128; ++id) if (G.wsBits[id >> 3] & (1u << (id & 7))) ws[nws++] = (unsigned short)id;
             const unsigned jm = C.scWsScope ? sc_job_weapon_mask(mjob) : 0u;
             if (jm) {   // EVERY weapon your job wields (as the weapon you might swap to) : the whole table, by weapon type ; plus what is usable now
                 for (int i = 0; i < WEAPON_SKILLS_N; ++i) { const WSRow& w = WEAPON_SKILLS[i];
@@ -207,7 +222,8 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
                     if (now || (w.skill && w.skill < 32 && (jm & (1u << w.skill)))) tryAdd(SCR_WS, w.id, w.en, now, w.skill); }
             } else
                 for (int i = 0; i < nws; ++i) { const WSRow* w = ws_info(ws[i]); tryAdd(SCR_WS, ws[i], w ? w->en : 0, true, w ? w->skill : 0); }
-            unsigned short ja[256]; const int nja = read_usable_job_abilities(ja, 256);                 // BST/SMN : pet ready moves (self-gated on the pet being out) + any skillchaining JA
+            unsigned short ja[256]; int nja = 0;                                                        // BST/SMN : pet ready moves (self-gated on the pet being out) + any skillchaining JA
+            if (G.jaOk) for (int id = 0; id < 1024 && nja < 256; ++id) if (G.jaBits[id >> 3] & (1u << (id & 7))) ja[nja++] = (unsigned short)id;
             for (int i = 0; i < nja; ++i) {
                 const AbilRow* a = abil_info(ja[i]);
                 // a Blood Pact (recast 173 Rage / 174 Ward) only on a SMN main : the game also marks Cait Sith's Regal Gash
@@ -229,8 +245,8 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
                 }
                 windower::debug::log("%s", b);
             }
-            if (mjob == 16) { unsigned short bs[24]; const int nbs = read_blu_spells(bs, 24);            // BLU : your currently-SET blue magic
-                for (int i = 0; i < nbs; ++i) { const SpellRow* s = spell_info(bs[i]); tryAdd(SCR_SPELL, bs[i], s ? s->en : 0, true, 0); } }
+            if (mjob == 16) for (int i = 0; i < G.nBlu; ++i) {                                         // BLU : your currently-SET blue magic
+                const SpellRow* s = spell_info(G.blu[i]); tryAdd(SCR_SPELL, G.blu[i], s ? s->en : 0, true, 0); }
             if (mjob == 20) for (int el = 0; el < 8; ++el) tryAdd(SCR_ELEM, el, scelem_name(el), true, 0);        // SCH : the 8 elemental magics are always castable
             for (int i = 1; i < listN; ++i) { ScLine t = list[i]; int j = i - 1; while (j >= 0 && (list[j].lvl < t.lvl || (list[j].lvl == t.lvl && !list[j].now && t.now))) { list[j + 1] = list[j]; --j; } list[j + 1] = t; }   // highest level first, the weapon in hand before the others
             if (party().scapt_armed()) {   // what the box then offers

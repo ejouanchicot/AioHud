@@ -604,22 +604,14 @@ static bool read_ability_block(unsigned char* buf, int n) {
     } __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     return true;
 }
-int read_usable_weapon_skills(unsigned short* out, int maxN) {   // WS bitmap @ block[0x04..0x24), ids 1..255
-    if (!out || maxN <= 0) return 0;
-    unsigned char b[0x24]; if (!read_ability_block(b, 0x24)) return 0;
-    int n = 0; for (int id = 1; id < 256 && n < maxN; ++id) if (b[0x04 + (id >> 3)] & (1u << (id & 7))) out[n++] = (unsigned short)id;
-    return n;
-}
-int read_usable_job_abilities(unsigned short* out, int maxN) {   // JA bitmap @ block[0x44..0xC4), ids 0..1023 (pet ready moves included when a pet is out)
-    if (!out || maxN <= 0) return 0;
-    unsigned char b[0xC4]; if (!read_ability_block(b, 0xC4)) return 0;
-    int n = 0; for (int id = 0; id < 1024 && n < maxN; ++id) if (b[0x44 + (id >> 3)] & (1u << (id & 7))) out[n++] = (unsigned short)id;
-    return n;
-}
-bool read_usable_ja_bits(unsigned char set[128]) {   // raw 1024-bit usable-JA bitmap (block[0x44..0xC4) is exactly 0x80 = 128 bytes)
-    if (!set) return false;
+// The two raw usable bitmaps from ONE block read : WS @ block[0x04..0x24) (ids 1..255, 32 bytes) and JA @
+// block[0x44..0xC4) (ids 0..1023, 128 bytes ; pet ready moves included when a pet is out). Poller only : the
+// widgets read GameState (rule 6) -- Skillchains used to call the client from its draw path for both lists.
+bool read_usable_bits(unsigned char ws[32], unsigned char ja[128]) {
+    if (!ws || !ja) return false;
     unsigned char b[0xC4]; if (!read_ability_block(b, 0xC4)) return false;
-    memcpy(set, b + 0x44, 128);
+    memcpy(ws, b + 0x04, 32);
+    memcpy(ja, b + 0x44, 128);
     return true;
 }
 
@@ -1696,7 +1688,8 @@ void poll_game_state(GameState& gs) {
       for (int i = 0; i < gs.nRecast; ++i) { gs.recasts[i].recastId = rid[i]; gs.recasts[i].kind = kd[i]; gs.recasts[i].sec = sc[i]; gs.recasts[i].ticks = tk[i]; } }
     { float ms = 0.0f; gs.meSpeed = read_self_speed(me.id, ms) ? ms : 0.0f; }   // own movement speed -> Player Hub speed band
     { unsigned gv = 0; gs.meGil = read_player_gil(gv) ? gv : 0; }               // own gil -> Player Hub gil band
-    gs.jaOk = read_usable_ja_bits(gs.jaBits);                                    // usable-JA bitmap -> snapshot, NOT re-read from the draw path
+    gs.jaOk = read_usable_bits(gs.wsBits, gs.jaBits);                            // usable WS + JA bitmaps -> snapshot, NOT re-read from the draw path
+    gs.nBlu = (me.mjob == 16) ? read_blu_spells(gs.blu, 20) : 0;                 // BLU : the set blue magic (Skillchains' list)
     gs.equipValid = read_equipment(gs.equip);                                    // 16 equipped items -> Equipment Viewer grid
     if (!gs.equipValid) gs.equip = EquipSet{};                                   // not ready (zone / not-logged-in) : zero it AND flag it so the viewer keeps its cached icons
     PERF_END("poll.self");

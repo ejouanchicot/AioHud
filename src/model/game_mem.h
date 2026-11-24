@@ -33,9 +33,7 @@ struct MapRecord { unsigned zone = 0, fileIdx = 0, flags = 0, fileId = 0; int sc
 bool read_map_record(unsigned zone, int submap, MapRecord& out);   // fileId = (flags&1 ? 0xD02F : 0x14C0) + fileIdx
 bool entity_name_by_index(unsigned index, char* out, int sz);// entity INDEX (what packets carry) -> name ; false if the slot is empty
 int  current_submap();   // current FLOOR index (multi-level zones) via the client position->floor routine ; 0 if mapless/ground
-int  read_usable_weapon_skills(unsigned short* out, int maxN);   // the player's usable WS ids (get_abilities bitmask) ; count
-int  read_usable_job_abilities(unsigned short* out, int maxN);   // the player's usable JA ids (incl. pet ready moves when a pet is out) ; count
-bool read_usable_ja_bits(unsigned char set[128]);                // the raw usable-JA bitmap (1024 bits ; bit id set => usable) ; false on fault -- for disambiguating recast_id collisions by job
+bool read_usable_bits(unsigned char ws[32], unsigned char ja[128]);   // usable WS (bit id, 1..255) + JA (bit id, 0..1023, pet moves incl.) bitmaps, one read ; false on fault
 int  read_blu_spells(unsigned short* out, int maxN);             // BLU : the currently-SET blue magic spell ids (get_mjob_data) ; count
 
 // nearby entities for the minimap : world X/Z + type (1=PC, 2=NPC, 3=mob) from the entity array (*(g+0x24)).

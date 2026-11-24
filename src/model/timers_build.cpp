@@ -567,7 +567,7 @@ bool timers_build_rows(const GameState* game, bool preview, bool editing, Timers
         static char selfTag[TM_ROWS_MAX][32]; int stN = 0;
         const int stMax = (int)(sizeof(selfTag) / sizeof(selfTag[0]));
         // Which JAs THIS job can use (self-cast filter + shared recast_id disambiguation). Taken from the frame
-        // SNAPSHOT: read_usable_ja_bits makes two indirect calls into the client's own resource manager, and doing
+        // SNAPSHOT: read_usable_bits makes two indirect calls into the client's own resource manager, and doing
         // that from draw() put client code on the render path 60 times a second for a value that only changes on a
         // job change. The poller reads it now (rule 6).
         static const unsigned char JA_NONE[128] = {};

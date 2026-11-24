@@ -61,16 +61,14 @@ jobs:
         # the body is scripts/guardrails.sh : the pre-commit hook runs the very same file (2026-11-24)
         run: bash scripts/guardrails.sh
 
-      # The four ADVISORY rules. Each still has known hits in the tree, so this step reports without blocking.
+      # The three ADVISORY rules. Each still has known hits in the tree, so this step reports without blocking.
       # Promote a rule into the blocking step above the moment its own hit count reaches zero -- one at a time,
       # never as a batch: the point is that a red guard always means something.
       - name: Guardrails (advisory)
         shell: bash
         run: |
           fail=0
-          # Rule 6 -- widgets read the once-per-frame snapshot ; only the poller touches game memory.
-          if git grep -nE '\b(read_[a-z_]+|zone_id) *\(' -- 'src/ui/*.cpp'; then
-            echo "::error::game-memory read inside src/ui (rule 6) -- read it from the GameState snapshot"; fail=1; fi
+          # (Rule 6 left this step on 2026-11-24 : zero hits, now blocking in scripts/guardrails.sh.)
           # Rule 9 -- every control passes CTRL_ID ; a hand-picked number silently shares a spring.
           if git grep -nE 'ease\( *[0-9]' -- 'src/*'; then
             echo "::error::hand-picked ease() uid (rule 9) -- use CTRL_ID / ctrl_uid_i"; fail=1; fi

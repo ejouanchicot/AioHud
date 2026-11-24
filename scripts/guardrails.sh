@@ -31,3 +31,13 @@ if [ -n "$hits3" ]; then printf '%s\n' "$hits3"
   echo "::error::%ll / %I64 in a debug::log format -- wvsprintfA has no 64-bit size and it crashes ; cast to unsigned, use %08X"
   exit 1; fi
 echo "debug::log formats : no 64-bit size"
+# RULE 6 -- widgets read the once-per-frame snapshot ; only the poller touches game memory. Promoted from the
+# advisory step on 2026-11-24, the day its count reached zero : Skillchains read the usable WS / JA / BLU lists
+# from the client in its draw path (now GameState.wsBits / jaBits / blu). read_gear_icon_bmp and
+# read_item_record_head read FILES (gfx/texture.h : a cached BMP, the item DAT), not game memory -- excluded by name.
+hits4="$(git grep -nE '\b(read_[a-z_]+|zone_id) *\(' -- 'src/ui/*.cpp' \
+         | grep -vE '\b(read_gear_icon_bmp|read_item_record_head) *\(' || true)"
+if [ -n "$hits4" ]; then printf '%s\n' "$hits4"
+  echo "::error::game-memory read inside src/ui (rule 6) -- the poller fills GameState, the widget reads f.game"
+  exit 1; fi
+echo "rule 6 : no game-memory read in src/ui"

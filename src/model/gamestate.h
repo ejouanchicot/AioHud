@@ -114,7 +114,11 @@ struct GameState {
     // reader calls twice into the client's own resource manager through its vtables, and Timers was doing that
     // 60 times a second from inside EndScene. It changes on a job change, not per frame.
     unsigned char jaBits[128] = {};
+    unsigned char wsBits[32] = {};   // the usable WEAPON SKILLS (ids 1..255), same block, same read : jaOk covers both
     bool jaOk = false;        // the bitmap actually resolved -- honour it, an all-zero bitmap is NOT "no abilities"
+    // BLU : the blue magic currently SET (spell ids), read by the poller on a BLU main only (Skillchains' list).
+    unsigned short blu[20] = {};
+    int nBlu = 0;
 
     // --- minimap : current zone, self world position + heading, and the zone's map calibration record ---
     unsigned  zone = 0;       // current zone id (*(g+0x40)+0x02)
