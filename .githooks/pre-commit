@@ -46,6 +46,19 @@ fi
 
 echo "$out" | grep -E "checks|\[tests\]" | tail -2
 
+# ---- 1b. THE BLOCKING GUARDRAILS, the very file CI runs (scripts/guardrails.sh, < 1 s) ----------------------------
+# Without this a commit passed here and was refused by CI after the push (twice on 2026-11-24).
+if [ -f scripts/guardrails.sh ]; then
+    gout=$(sh scripts/guardrails.sh 2>&1)
+    if [ $? -ne 0 ]; then
+        echo "$gout"
+        echo ""
+        echo "pre-commit: GUARDRAIL FAILED (the same check CI blocks on) -- commit refused."
+        exit 1
+    fi
+    echo "pre-commit: guardrails : clean"
+fi
+
 # ---- 2. THE IN-GAME CROSS-CHECK, when the game can answer -------------------------------------------------
 # The offline suite cannot say whether our memory offsets are still right -- the harness plan named that as the
 # half no test could reach. On a development machine it can: Windower reads the same facts by a completely

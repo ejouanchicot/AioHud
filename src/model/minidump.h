@@ -87,7 +87,7 @@ inline bool minidump_crash(Rd rd, DumpCrash& out) {
                 const unsigned long long modBase = u64at(e); const unsigned modSize = u32at(e + 8);
                 if (out.addr >= modBase && out.addr < modBase + modSize) {
                     name_at(rd, u32at(e + 20), out.module, sizeof(out.module) - 10);
-                    strcat(out.module, "_unloaded"); out.offset = out.addr - modBase; out.unloaded = true; return true;
+                    strcat(out.module, "_unloaded"); out.offset = out.addr - modBase; out.unloaded = true; return true;   // rule10-ok: a field of the crash being read, not a latch
                 }
             }
         }
