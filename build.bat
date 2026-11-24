@@ -6,6 +6,10 @@ REM Layers:  src\gfx (D3D backend)  src\ui (widgets + HUD)  src\model  src\plugi
 REM Iterate:  //unload AioHud  ->  deploy.bat  ->  //load AioHud
 setlocal
 set "ROOT=%~dp0"
+REM `build.bat inc [-j N] [--why]` : the INCREMENTAL edit-loop build (scripts\build_inc.py -- one .obj per source,
+REM /showIncludes dependencies, sources from git ls-files ; one widget edited = ~3 s instead of ~24 s). Everything
+REM below is the FULL build : CI, package.bat and every release use it, never the incremental one.
+if /i "%~1"=="inc" goto :incremental
 REM --- x86 MSVC toolchain. If cl is already on PATH (a developer prompt) -> skip. Else locate VS with vswhere
 REM     (any installed VS, no hardcoded version), falling back to the pinned local VS2017 BuildTools path.
 where cl.exe >nul 2>nul && goto :have_cl
@@ -118,3 +122,10 @@ if not "%CLRC%"=="0" ( echo [build] FAILED -- compile/link error above ^(DLL NOT
 if exist "%OUT%\AioHud.dll" ( echo [build] OK -^> %OUT%\AioHud.dll ) else ( echo [build] FAILED & exit /b 1 )
 REM A missing PDB is not a build failure, but it must not pass unnoticed : producing it is the point of /Zi above.
 if exist "%OUT%\AioHud.pdb" ( echo [build] symbols -^> %OUT%\AioHud.pdb ) else ( echo [build] WARNING: no AioHud.pdb -- a crash dump from this build cannot be symbolised )
+
+goto :eof
+
+:incremental
+shift
+python "%ROOT%scripts\build_inc.py" %1 %2 %3 %4
+exit /b %errorlevel%
