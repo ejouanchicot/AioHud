@@ -184,6 +184,20 @@ Troisième passage, avec les scopes de primitives `gfx.text` / `gfx.rrect` / `gf
 **Avant P8, traiter le pic `fm_tick`** : c'est la seule image ratée perceptible (15 ms d'un coup = une image perdue à
 60 fps), et il n'est dans aucune ligne P1-P10.
 
+**Pic `fm_tick` -- traité (2026-11-24).** Cause mesurée (scopes `fm.*`) : le balayage régional de `heal_menu_ptr`
+(±32 Ko autour du pointeur de menu, relancé toutes les ~3 s tant qu'aucun vrai menu n'a été ouvert), 8,5-8,9 ms en une
+image ; le coût venait de fautes matérielles (2 à 6 ms chacune dans ce processus) sur des pointeurs vers des pages non
+lisibles. Correctif : le balayage avance par tranches à budget de temps (1 ms), et chaque lecture est vérifiée contre
+la carte des pages lisibles avant d'être faite ; le repli sur toute l'image passe par la recherche d'arrière-plan.
+
+| fm.menu.sweep | max sur une image | total par balayage | fréquence du pic |
+|---|---|---|---|
+| avant | 8 486-8 887 µs | ~8,6 ms en 1 image | toutes les ~3 s, jusqu'au 1er menu ouvert |
+| après | 1 345-1 997 µs (4 phases sur 5) | 3,0-4,8 ms en 4-7 images | un seul pic résiduel par session : 5,5 ms au 1er balayage |
+
+Le pic résiduel n'est pas une faute (la tranche n'a pas été interrompue) ; hypothèse : premiers accès à des pages
+non résidentes. La ligne `fm: menu sweep slice took` compte désormais les défauts de page pour le confirmer.
+
 ---
 
 ## 3. Robustesse

@@ -31,7 +31,9 @@ namespace aio { namespace perf {
 
 using windower::u32;
 
-const int CAP   = 64;   // named scopes (+ the root). A 65th name is charged to the overflow row, never dropped silently.
+const int CAP   = 96;   // named scopes (+ the root). One more name is charged to the overflow row, never dropped silently.
+                        // 64 at first ; the fm_tick rows (2026-11-24) brought the registered names to ~61, and a row
+                        // lost to "(overflow)" is exactly the row being looked for.
 const int WIN   = 60;   // the sliding window, in frames
 const int DEPTH = 16;   // nesting
 

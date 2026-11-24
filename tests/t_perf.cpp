@@ -241,7 +241,7 @@ void test_perf() {
         P.abN[0] = P.abN[1] = 0;
     }
 
-    SECTION("perf : a full table charges the 65th name to the overflow row");
+    SECTION("perf : a full table charges one name too many to the overflow row");
     {
         char nm[24];
         for (int k = 0; k < perf::CAP + 4; ++k) { _snprintf(nm, sizeof(nm), "t.fill%d", k); nm[23] = 0; perf::reg(nm); }

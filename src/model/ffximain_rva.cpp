@@ -1,6 +1,7 @@
 // ffximain_rva.cpp -- see ffximain_rva.h for WHY the addresses are data.
 #include "model/flipwatch.h"   // an address that keeps changing back is two healers arguing
 #include "model/ffximain_rva.h"
+#include "perf.h"   // //aio perf : fm_tick's pieces (the 9-15 ms single-frame spike, 2026-11-24)
 #include "model/native_ui.h"     // native_ui_slot_in_manager : the live-menu slot's structural proof
 #include "model/rva_rules.h"         // the decisions below, pure and tested (tests/t_rvarules.cpp)
 #include "model/game_mem.h"        // ffximain_base / entity_array
@@ -296,6 +297,7 @@ static int scan_region_menu(u32 rl, u32 rh, u32* out, int cap, int n) {
 
 // Walk the image's readable regions, feeding one scanner. `kind` picks it (keeps the region walk single).
 static u32 image_scan(int kind, const u32* args, u32* menuOut, int menuCap, int* menuN) {
+    perf::Scope perfScan(perf::g_perf.on ? perf::reg(kind == 1 ? "fm.image_scan.pw" : kind == 2 ? "fm.image_scan.merit" : "fm.image_scan.menu") : -1);
     u32 lo = 0, hi = 0, best = 0; image_range(lo, hi);
     if (!lo) return 0;
     const u32 MASK_RD = PAGE_READONLY | PAGE_READWRITE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY;
@@ -394,6 +396,104 @@ static void heal_pw_merit() {
 // "not a pointer" cannot be the test. What the broken state actually looked like on 2026-08-12 was a
 // small integer (14, 15) -- a different variable entirely. That IS the test.
 static bool g_adoptedTag = false;
+
+// ---- the menu sweeps, a slice a frame ---------------------------------------------------------------------------
+// MEASURED 2026-11-24 (//aio perf, fm.menu.sweep) : the +/-32 KB region sweep below took 8.5 to 8.9 ms in ONE frame,
+// every 3 s, for as long as the menu pointer was unproven -- i.e. from every load until the player opens a menu. A
+// dropped frame each time, and the only one the whole plugin had. Most slots hold a number in valid_ptr's range that
+// is not a pointer, and following one into unmapped memory faults : a fault costs microseconds. Two changes, the same
+// two the //aio rva search already made (bg_scan, below) : values whose page is not readable are skipped before they
+// are followed (bg_readable), and the walk stops at a TIME budget and resumes next frame. The candidates found and
+// the cadence (one sweep started every ~3 s) are unchanged ; a sweep now takes a few frames instead of one.
+// The whole-image fallback (rare : only when the region holds no menu-shaped slot at all) no longer walks 12 MB in
+// the frame either -- it goes to the background search (fm_bg_find), whose result the next sweep merges.
+static double bg_now_ms();             // below, with the //aio rva search
+static bool   bg_readable(u32 v);
+static unsigned char g_rd[1u << 20];   // bg_readable's page map (defined with it ; declared here for the sweep's reset)
+static const double MENU_SWEEP_BUDGET_MS = 1.0;
+struct MenuSweep { bool on, fresh0; u32 lo, hi, cur; u32 fresh[16]; int n, frames, faults; double totalMs, maxMs; };
+static MenuSweep g_ms = {};
+static int  g_menuFullSweeps = 0;      // whole-image fallbacks STARTED (bounded : RVA_FULL_SWEEPS)
+static u32  g_menuFullHits[16]; static int g_menuFullN = 0; static bool g_menuFullReady = false;
+
+static void menu_sweep_start(u32 lo, u32 hi) {
+    g_ms = MenuSweep{}; g_ms.on = true; g_ms.lo = lo & ~3u; g_ms.hi = hi; g_ms.cur = g_ms.lo;
+    g_ms.fresh0 = true;                // the page map is reset by the FIRST step, alone in its frame (1 MB)
+}
+// The process's page-fault count (soft + hard), for the slow-slice line : a slice that is slow WITHOUT a hardware
+// fault (2026-11-24 : 5.5 ms over 2688 bytes, the first sweep of a session) is suspected to be first touches of
+// pages that are committed but not resident. This says whether it is. kernel32's K32GetProcessMemoryInfo, looked up
+// (no psapi.lib), as aiohud.cpp's VMEM line does. 0 when unavailable.
+static unsigned page_faults() {
+    struct PMC { DWORD cb, pf; SIZE_T peakWS, ws, qpp, qp, qnpp, qnp, pfu, peakPfu; } pmc = { sizeof(PMC) };
+    typedef BOOL(WINAPI* GPMI)(HANDLE, void*, DWORD);
+    static GPMI gpmi = (GPMI)GetProcAddress(GetModuleHandleA("kernel32.dll"), "K32GetProcessMemoryInfo");
+    return (gpmi && gpmi(GetCurrentProcess(), &pmc, sizeof(pmc))) ? (unsigned)pmc.pf : 0u;
+}
+// One slice. true = the sweep is complete (g_ms.fresh / g_ms.n hold it). A fault skips the rest and is counted.
+static bool menu_sweep_step() {
+    const double t0 = bg_now_ms(), deadline = t0 + MENU_SWEEP_BUDGET_MS;
+    if (g_ms.fresh0) {                 // the memory map is the game's : learned afresh each sweep, never assumed (rule 10)
+        g_ms.fresh0 = false;
+        memset(g_rd, 0, sizeof(g_rd));
+        const double dt0 = bg_now_ms() - t0; g_ms.totalMs += dt0; if (dt0 > g_ms.maxMs) g_ms.maxMs = dt0; ++g_ms.frames;
+        return false;
+    }
+    const u32 a0 = g_ms.cur;           // where this slice started (the slow-slice line says it)
+    const unsigned pf0 = page_faults();
+    u32 a = a0;
+    __try {
+        for (; a + 4 <= g_ms.hi && g_ms.n < 16; a += 4) {
+            // the clock every 16 slots : a slot can cost a VirtualQuery (bg_readable, first sight of a page), and
+            // checking every 64 let one slice run to 1.5 ms against a 1 ms budget (measured 2026-11-24)
+            if (a != a0 && ((a - a0) & 0x3F) == 0 && bg_now_ms() >= deadline) break;
+            const u32 v = *(const unsigned*)a;
+            // EVERY READ IS PRE-CHECKED, not only the first. Measured 2026-11-24 with the slow-slice line below : the
+            // spikes left were ONE slot each, always the same one (FFXiMain+0x61B544 on one client, +0x61C204 on the
+            // other) -- a value whose own page is readable but whose def lies in a page that is not. A hardware fault
+            // costs 2 to 6 ms in this process (Windower's exception handlers run first), and no time budget can cut
+            // a single read short. So no read here is made into a page the map has not seen readable : no fault left.
+            if (!valid_ptr(v) || !bg_readable(v) || !bg_readable(v + 7)) continue;          // v+4..v+7 : the def pointer
+            const u32 def = *(const unsigned*)(v + 4);
+            if (!valid_ptr(def) || !bg_readable(def + 0x46) || !bg_readable(def + 0x49)) continue;   // the tag
+            if (*(const unsigned*)(def + 0x46) == RVA_TAG_MENU) g_ms.fresh[g_ms.n++] = a;    // == fm_menu_shaped(v), fault-free
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) { ++g_ms.faults; a = g_ms.hi; }
+    g_ms.cur = a;
+    const double dt = bg_now_ms() - t0;
+    g_ms.totalMs += dt; if (dt > g_ms.maxMs) g_ms.maxMs = dt; ++g_ms.frames;
+    // A SLICE OVER 2 ms IS SAID, with where it was : the budget is the whole point of this code, and a slow slice
+    // that only shows as a max in //aio perf leaves the cause to be guessed (one 5.8 ms frame, 2026-11-24).
+    if (dt > 2.0) {
+        static unsigned s_slowN = 0, s_slowAt = 0;
+        const unsigned now = GetTickCount(); ++s_slowN;
+        if (s_slowN == 1 || now - s_slowAt >= 10000) { s_slowAt = now;
+            windower::debug::log("fm: menu sweep slice took %u us (budget %u us) at FFXiMain+0x%X, %u byte(s) walked, %u page fault(s)%s -- %u slow slice(s) this session",
+                                 (unsigned)(dt * 1000.0), (unsigned)(MENU_SWEEP_BUDGET_MS * 1000.0), a0 - ffximain_base(), a - a0,
+                                 page_faults() - pf0, g_ms.faults ? ", a HARDWARE fault" : "", s_slowN); }
+    }
+    if (a + 4 <= g_ms.hi && g_ms.n < 16) return false;   // the budget ran out first : next frame
+    g_ms.on = false;
+    // said once per sweep that FOUND something new is too often (every 3 s) : the first sweep of the session, and any
+    // one that faulted, is logged -- the success path is visible, and so is a partial one (rule 10)
+    static bool s_said = false;   // rule10-ok: a log-once for the first success line, not a give-up latch
+    if (!s_said || g_ms.faults) {
+        s_said = true;
+        windower::debug::log("fm: menu region sweep done -- %d menu-shaped slot(s), %d frame(s), %u us in all, %u us at most in a frame%s",
+                             g_ms.n, g_ms.frames, (unsigned)(g_ms.totalMs * 1000.0), (unsigned)(g_ms.maxMs * 1000.0),
+                             g_ms.faults ? ", PARTIAL (a fault skipped the rest)" : "");
+    }
+    return true;
+}
+static void menu_full_done(const unsigned* rvas, int n, int, bool partial) {
+    const u32 base = ffximain_base();
+    g_menuFullN = 0;
+    for (int i = 0; i < n && g_menuFullN < 16; ++i) g_menuFullHits[g_menuFullN++] = base + rvas[i];
+    g_menuFullReady = true;
+    if (rva_full_sweep_spent(g_menuFullN, g_menuFullSweeps))
+        windower::debug::log("fm: no menu-shaped slot anywhere in FFXiMain%s -- the cost/Next box stays "
+                             "off ; run //aio rva with a menu open and send the log", partial ? " (search partial)" : "");
+}
 static unsigned g_menuRealName  = 0;   // ...of which showed ANY name that is not one of the two decoys. That is
                                        // the evidence that vindicates a slot for good: a decoy is always itself,
                                        // so one real name proves this is the focused menu and no amount of idle
@@ -405,7 +505,7 @@ static int  g_decoyRun  = 0;      // consecutive frames a CONFIRMED menu slot ha
 static void heal_menu_ptr() {
     static u32 cand[16]; static int nCand = 0;
     static u32 lastName[16];
-    static int fullSweeps = 0, sampleIn = 0, sweepIn = 0, grace = 600;
+    static int sampleIn = 0, sweepIn = 0, grace = 600;
     // A CONFIRMATION THAT READS ONLY DECOYS IS REVISABLE -- BUT IT IS NEVER TORN DOWN FIRST. The tag test used
     // to confirm on "this is a menu object", which every slot satisfies, and the verdict was then cached to
     // disk against the client fingerprint, so a wrong answer survived reloads and updates alike while reporting
@@ -492,20 +592,30 @@ static void heal_menu_ptr() {
     // with everything closed cannot see the one we are after -- it sees only the always-present decoys, and
     // then patiently watches the wrong thing forever. (That is precisely what the first version did.) So the
     // candidate set keeps growing as menus come and go.
-    if (--sweepIn <= 0) {
-        sweepIn = 180;                                    // ~3 s between sweeps
+    bool swept = false;
+    u32 fresh[16]; int nf = 0;
+    if (g_ms.on || --sweepIn <= 0) {
+        PERF_SCOPE("fm.menu.sweep");                      // //aio perf : one slice of the region sweep (see menu_sweep_step)
         // Cheap first : a window around the seed. A recompile shifts things by bytes (this one by 0x40), so
-        // 64 KB finds it in microseconds. The 12 MB whole-image sweep is the rare fallback -- run every time
-        // it would stutter the game for as long as no menu had ever been opened.
-        u32 fresh[16];
-        int nf = scan_region_menu(a - 0x8000, a + 0x8000, fresh, 16, 0);
-        if (rva_full_sweep_due(nf, nCand, fullSweeps)) {
-            ++fullSweeps;
-            image_scan(3, 0, fresh, 16, &nf);
-            if (rva_full_sweep_spent(nf, fullSweeps))
-                windower::debug::log("fm: no menu-shaped slot anywhere in FFXiMain -- the cost/Next box stays "
-                                     "off ; run //aio rva with a menu open and send the log");
+        // 64 KB holds it. A sweep is STARTED every ~3 s and walked a slice a frame (it used to be one frame : 8.5 ms).
+        if (!g_ms.on) { sweepIn = 180; menu_sweep_start(a - 0x8000, a + 0x8000); }
+        if (menu_sweep_step()) {
+            swept = true;
+            nf = g_ms.n; for (int i = 0; i < nf; ++i) fresh[i] = g_ms.fresh[i];
+            // what the whole-image fallback found since the last sweep, if it ran (union, as before)
+            if (g_menuFullReady) { g_menuFullReady = false;
+                for (int i = 0; i < g_menuFullN && nf < 16; ++i) fresh[nf++] = g_menuFullHits[i]; }
+            // The 12 MB fallback, rare by construction (nothing menu-shaped in the region, nothing watched yet) and
+            // bounded : now in the background, a slice a frame (fm_bg_find). Busy with //aio rva's own search ->
+            // not counted, asked again at the next sweep.
+            if (rva_full_sweep_due(nf, nCand, g_menuFullSweeps) && !fm_bg_busy() && fm_bg_find(fm_menu_shaped, 2, menu_full_done)) {
+                ++g_menuFullSweeps;
+                windower::debug::log("fm: no menu-shaped slot near the seed -- whole-image search %d/%d started in the background",
+                                     g_menuFullSweeps, RVA_FULL_SWEEPS);
+            }
         }
+    }
+    if (swept) {
         const int n = rva_merge_candidates(cand, lastName, nCand, 16, fresh, nf, 0xFFFFFFFFu);   // union : never drop a slot we already watch
         if (n != nCand) {
             // SAY WHICH OF THE TWO IT IS. Since the sweep now runs UNDERNEATH a pointer that is confirmed and
@@ -779,13 +889,14 @@ void rva_register_checks() { selftest_add("statics", rva_checks); }
 
 static void bg_tick();   // //aio rva's background search (below, beside fm_bg_find)
 void fm_tick() {
-    ensure_loaded();
+    { PERF_SCOPE("fm.ensure_loaded"); ensure_loaded(); }
     if (!ffximain_base()) return;
-    bg_tick();                                        // //aio rva's whole-image search, a slice a frame
+    { PERF_SCOPE("fm.bg_tick"); bg_tick(); }          // //aio rva's whole-image search, a slice a frame
     // Two healers with equal standing over one address re-proposed to each other every frame, twice on
     // 2026-09-11 -- and both times the only evidence was a log line repeating at 60 Hz. Watch the addresses
     // themselves: an RVA that keeps changing back is an argument, not a repair.
-    { static const char* const IDS[FM_N] = { "rva.target_t", "rva.menu_ptr", "rva.exam_spell",
+    { PERF_SCOPE("fm.flipwatch");
+      static const char* const IDS[FM_N] = { "rva.target_t", "rva.menu_ptr", "rva.exam_spell",
                                              "rva.exam_abil", "rva.pw_block", "rva.pw_merit" };
       const unsigned nowMs = (unsigned)GetTickCount();
       // THE VERDICT, NOT JUST THE ADDRESS. The first version of this watched g_rva[i] alone and stayed silent
@@ -801,13 +912,12 @@ void fm_tick() {
         const u32 t = open_menu_tag();
         if (rva_menu_real_name(t)) g_menuRealName = 1;
     }
-    heal_pw_block();
-    heal_pw_merit();
-    heal_menu_ptr();
+    { PERF_SCOPE("fm.heal_pw_block"); heal_pw_block(); }
+    { PERF_SCOPE("fm.heal_pw_merit"); heal_pw_merit(); }
+    { PERF_SCOPE("fm.heal_menu_ptr"); heal_menu_ptr(); }
     // The menu pointer is the right anchor for the examine caches : it lives in the same region, and it is
     // the one that proves itself the moment the player opens the very menu those caches serve.
-    heal_exam(FM_EXAM_SPELL, FM_MENU_PTR);
-    heal_exam(FM_EXAM_ABIL,  FM_MENU_PTR);
+    { PERF_SCOPE("fm.heal_exam"); heal_exam(FM_EXAM_SPELL, FM_MENU_PTR); heal_exam(FM_EXAM_ABIL, FM_MENU_PTR); }
 }
 
 // ---------------------------------------------------------------- test hook ----
@@ -891,7 +1001,6 @@ bool fm_bg_busy() { return g_bg.sig != 0; }
 // so it is skipped before the signature follows it. One byte per 4 KB page of the 32-bit space (0 not asked yet,
 // 1 readable, 2 not), each VirtualQuery filling its whole region at once ; cleared at each search's start, the map of
 // the process being the game's and not ours to assume.
-static unsigned char g_rd[1u << 20];
 static bool bg_readable(u32 v) {
     const u32 pg = v >> 12;
     if (!g_rd[pg]) {
