@@ -19,6 +19,7 @@ static bool chain(unsigned char oldp, unsigned char newp, int& lvl, int& res) {
 #include "model/abilities_gen.h"     // the Ready moves' ids (recast 102)
 #include "model/ready_moves_gen.h"   // their kind : a physical one carries a skillchain property
 #include "model/mobskills_gen.h"     // every monster ability id of a move's name
+#include "model/spell_elem_gen.h"    // SPELL_ELEMS[] + spell_elem() : the magic-burst element
 #include <string.h>
 
 void test_skillchain() {
@@ -215,5 +216,34 @@ void test_skillchain() {
         const unsigned char open2[1] = { SCP_Scission }, close2[2] = { SCP_Gravitation, SCP_Liquefaction };
         CHECK(sc_check_props(open2, 1, close2, 2, lvl, res));
         CHECK_EQ(lvl, 1); CHECK_EQ(res, SCP_Liquefaction);
+    }
+
+    // ---- spell_elem (audit 5.4 #3) : the element a magic burst is drawn in. Agreement with res/spells.lua itself is
+    //      check_gen_drift.py's job ; what nothing checked is the LOOKUP : a binary search, right only on a sorted table.
+    SECTION("spell_elem : every row of the table is found by its own id, the table sorted, the elements in range");
+    {   // Mutation : two rows swapped in spell_elem_gen.h (the generator's sort dropped) -- ids around them read -1.
+        int unsorted = 0, badElem = 0, lost = 0;
+        for (int i = 0; i < SPELL_ELEMS_N; ++i) {
+            if (i && SPELL_ELEMS[i].id <= SPELL_ELEMS[i - 1].id) { ++unsorted; if (unsorted < 4) printf("   row %d (id %u) after id %u\n", i, SPELL_ELEMS[i].id, SPELL_ELEMS[i - 1].id); }
+            if (SPELL_ELEMS[i].elem > EL_Dark) ++badElem;
+            if (spell_elem(SPELL_ELEMS[i].id) != SPELL_ELEMS[i].elem) { ++lost; if (lost < 4) printf("   spell %u : lookup gives %d, the row says %d\n", SPELL_ELEMS[i].id, spell_elem(SPELL_ELEMS[i].id), SPELL_ELEMS[i].elem); }
+        }
+        CHECK_EQ(unsorted, 0); CHECK_EQ(badElem, 0); CHECK_EQ(lost, 0);
+        CHECK(SPELL_ELEMS_N > 800);                       // the whole res table, not a stub (883 on 2026-11-24)
+        CHECK_EQ(spell_elem(0), -1);                      // below the first id
+        CHECK_EQ(spell_elem(65535), -1);                  // past the last
+        CHECK_EQ(spell_elem(SPELL_ELEMS[0].id), SPELL_ELEMS[0].elem);
+        CHECK_EQ(spell_elem(SPELL_ELEMS[SPELL_ELEMS_N - 1].id), SPELL_ELEMS[SPELL_ELEMS_N - 1].elem);
+    }
+
+    SECTION("spell_elem : the spells whose element is beyond doubt");
+    {   // Mutation : Thunder (164) made Water in the table.
+        CHECK_EQ(spell_elem(144), (int)EL_Fire);      CHECK_EQ(spell_elem(149), (int)EL_Ice);     // Fire, Blizzard
+        CHECK_EQ(spell_elem(154), (int)EL_Wind);      CHECK_EQ(spell_elem(159), (int)EL_Earth);   // Aero, Stone
+        CHECK_EQ(spell_elem(164), (int)EL_Lightning); CHECK_EQ(spell_elem(169), (int)EL_Water);   // Thunder, Water
+        CHECK_EQ(spell_elem(1), (int)EL_Light);       CHECK_EQ(spell_elem(23), (int)EL_Light);    // Cure, Dia
+        CHECK_EQ(spell_elem(28), (int)EL_Light);                                                  // Banish
+        CHECK_EQ(spell_elem(230), (int)EL_Dark);      CHECK_EQ(spell_elem(245), (int)EL_Dark);    // Bio, Drain
+        CHECK_EQ(spell_elem(253), (int)EL_Dark);                                                  // Sleep
     }
 }
