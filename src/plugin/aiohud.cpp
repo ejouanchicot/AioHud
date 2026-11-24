@@ -19,7 +19,8 @@
 #include "aiohud_probes.h"          // dev-only diagnostic surface (present only in the local tree ; build.bat wires it in when the file exists)
 #endif
 #include "ui/hud.h"
-#include "plugin/aio_verbs.h"   // the //aio command words : one table, matched exactly on the first word
+#include "plugin/aio_verbs.h"
+#include "model/minidump.h"   // //aio doctor : which module a crash dump says the game died in   // the //aio command words : one table, matched exactly on the first word
 #include "ui/doctor_html.h"   // //aio doctor also writes the sheet as a page
 #include "model/chat_log.h"   // the Chat module : every log line is queued from text_in
 #include "model/native_ui.h"   // Game UI : the client's own windows (tick + unload restore)
@@ -1198,6 +1199,67 @@ static void rva_target_done(const unsigned* rvas, int n, int, bool partial) {
     if (g_rvaMenuNext) { g_rvaMenuNext = false; aio::fm_bg_find(aio::fm_menu_shaped, 1, rva_menu_done); }
 }
 
+// //aio doctor : the crash dumps Windows kept for pol.exe (LocalDumps), newest first -- when, what, and in which module,
+// LOADED or already UNLOADED. Audit R1 would show as a crash in "AioHud.dll_unloaded" ; the event log had none on the
+// author's machine (2026-11-24) but 8 identical Hook.dll crashes, one right after an //unload. With the dumps on, the
+// next one is named here instead of guessed. Read-only ; the key is read in the 64-bit view (this DLL is 32-bit).
+static void doctor_crash_dumps() {
+    char folder[MAX_PATH] = "";
+    { HKEY k = 0; DWORD type = 0, sz = sizeof(folder); char raw[MAX_PATH] = "";
+      const char* keys[2] = { "SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps\\pol.exe",
+                              "SOFTWARE\\Microsoft\\Windows\\Windows Error Reporting\\LocalDumps" };
+      bool configured = false;
+      for (int i = 0; i < 2 && !configured; ++i) {
+          if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, keys[i], 0, KEY_READ | KEY_WOW64_64KEY, &k) != ERROR_SUCCESS) continue;
+          configured = true;
+          sz = sizeof(raw);
+          if (RegQueryValueExA(k, "DumpFolder", 0, &type, (LPBYTE)raw, &sz) == ERROR_SUCCESS && (type == REG_SZ || type == REG_EXPAND_SZ)) {
+              raw[sizeof(raw) - 1] = 0; ExpandEnvironmentStringsA(raw, folder, MAX_PATH);
+          }
+          RegCloseKey(k);
+      }
+      if (!configured) { windower::debug::log("  dumps    : LocalDumps is not enabled for pol.exe -- a crash leaves no dump to read"); return; }
+      if (!folder[0]) ExpandEnvironmentStringsA("%LOCALAPPDATA%\\CrashDumps", folder, MAX_PATH); }   // Windows' default
+    struct F { char name[MAX_PATH]; FILETIME t; };
+    static F f[32]; int nf = 0;
+    { char pat[MAX_PATH]; _snprintf(pat, sizeof(pat), "%s\\pol.exe*.dmp", folder); pat[sizeof(pat) - 1] = 0;
+      WIN32_FIND_DATAA fd; HANDLE h = FindFirstFileA(pat, &fd);
+      if (h != INVALID_HANDLE_VALUE) {
+          do { if (nf < 32) { lstrcpynA(f[nf].name, fd.cFileName, MAX_PATH); f[nf].t = fd.ftLastWriteTime; ++nf; } } while (FindNextFileA(h, &fd));
+          FindClose(h);
+      } }
+    if (!nf) { windower::debug::log("  dumps    : none in %s -- no crash since the dumps were enabled", folder); return; }
+    for (int a = 1; a < nf; ++a) { F v = f[a]; int b = a - 1;           // newest first
+        while (b >= 0 && CompareFileTime(&f[b].t, &v.t) < 0) { f[b + 1] = f[b]; --b; } f[b + 1] = v; }
+    int ours = 0; char newest[160] = "";
+    for (int i = 0; i < nf && i < 5; ++i) {
+        char path[MAX_PATH]; _snprintf(path, sizeof(path), "%s\\%s", folder, f[i].name); path[sizeof(path) - 1] = 0;
+        HANDLE fh = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
+        aio::DumpCrash c; bool got = false;
+        if (fh != INVALID_HANDLE_VALUE) {
+            auto rd = [fh](unsigned long long off, void* out, unsigned n) {
+                LARGE_INTEGER li; li.QuadPart = (LONGLONG)off; DWORD got2 = 0;
+                return SetFilePointerEx(fh, li, 0, FILE_BEGIN) && ReadFile(fh, out, n, &got2, 0) && got2 == n;
+            };
+            got = aio::minidump_crash(rd, c);
+            CloseHandle(fh);
+        }
+        SYSTEMTIME st; FILETIME lt; FileTimeToLocalFileTime(&f[i].t, &lt); FileTimeToSystemTime(&lt, &st);
+        char when[32]; _snprintf(when, sizeof(when), "%04u-%02u-%02u %02u:%02u", st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute); when[sizeof(when) - 1] = 0;
+        const bool isOurs = got && !_strnicmp(c.module, "AioHud", 6);
+        if (isOurs) ++ours;
+        if (got) windower::debug::log("  dumps    : %s  %s  code %08X in %s+0x%llX%s", when, f[i].name, c.code,
+                                      c.module[0] ? c.module : "(no module)", c.offset, isOurs ? "   <-- AIOHUD" : "");
+        else     windower::debug::log("  dumps    : %s  %s  (not readable as a minidump)", when, f[i].name);
+        if (i == 0) { _snprintf(newest, sizeof(newest), "%s %s", when, got ? (c.module[0] ? c.module : "(no module)") : "(unreadable)"); newest[sizeof(newest) - 1] = 0; }
+    }
+    char m[260];
+    _snprintf(m, sizeof(m), aio::tr(">>> AioHud doctor : %d crash dump(s) in %s -- newest %s%s <<<",
+                                    ">>> AioHud doctor : %d dump(s) de plantage dans %s -- le plus recent %s%s <<<"),
+              nf, folder, newest, ours ? aio::tr(" -- AIOHUD IS IN ONE : send it to the author", " -- AIOHUD EN CAUSE dans un : envoie-le a l'auteur") : "");
+    m[sizeof(m) - 1] = 0; g_host.console().print(m);
+}
+
 static void aio_command_dispatch(const char* cmd)
 {
     if (!cmd) return;
@@ -1796,6 +1858,7 @@ static void aio_command_dispatch(const char* cmd)
                                    (int)rj[i].worstNeed - (int)rj[i].worstGot, rj[i].worstNeed, rj[i].worstGot,
                                    rj[i].lastMs ? (aio::model_now_ms() - rj[i].lastMs) / 1000u : 0u);
           if (drops) windower::debug::log("  refused  : %u command(s) dropped -- the queue was full (typed faster than the game draws)", drops);
+          doctor_crash_dumps();   // the crash dumps Windows kept (LocalDumps), newest first, with their faulting module
           { const unsigned cut = (unsigned)g_cmdTruncated;
             if (cut) windower::debug::log("  refused  : %u command(s) cut at 255 characters -- the end of the line was lost", cut);
             else     windower::debug::log("  refused  : no command was cut (all fit in 255 characters)"); }

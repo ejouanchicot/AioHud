@@ -48,6 +48,7 @@ void test_render();
 void test_perf();
 void test_shapes();
 void test_verbs();
+void test_minidump();
 
 int main() {
     test_json();
@@ -87,6 +88,7 @@ int main() {
     test_perf();
     test_shapes();
     test_verbs();
+    test_minidump();
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail;
 }
