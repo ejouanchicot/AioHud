@@ -7,6 +7,7 @@
 #include "model/party_state.h"   // job_abbr : Change Jobs' log   // FM_MENU_PTR : the menu manager sits 0x54 before the focused-menu slot
 #include "model/game_mem.h"       // ffximain_base
 #include "model/paths.h"          // plugin_path : the crash-recovery file
+#include "model/native_ui_undo.h" // the crash-recovery files, one per client (audit R4)
 #include "model/chat_log.h"       // chat_seed_line / chat_seed_end : the client's own log, replayed at load
 #include "model/item_text.h"      // item_text_detail::decode : the item card page 2
 #include "model/map_dat.h"        // dat_resolve_path / dat_read_file : the client's d_msg files (Job Points' texts)
@@ -1233,7 +1234,31 @@ bool manager_ok(u32 mgr) {
     return good >= 50;
 }
 
-const char* undo_path() { static char p[MAX_PATH] = {0}; if (!p[0]) plugin_path(p, sizeof(p), "data\\native_ui_undo.txt"); return p; }
+// The crash-recovery files live in data\ : this client's is native_ui_undo_<pid>.txt (native_ui_undo.h -- one per
+// process, so a second client of a multibox never consumes or deletes the first one's).
+const char* undo_dir() { static char p[MAX_PATH] = {0}; if (!p[0]) plugin_path(p, sizeof(p), "data"); return p; }
+const char* undo_path() {
+    static char p[MAX_PATH] = {0};
+    if (!p[0]) aio::undo::path_for(p, sizeof(p), undo_dir(), (unsigned)GetCurrentProcessId());
+    return p;
+}
+// A pid is "running" only when it is the same game client : a pid reused by another program counts as closed.
+bool undo_alive(unsigned pid, void*) {
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!h) return false;
+    DWORD code = 0; bool alive = GetExitCodeProcess(h, &code) && code == STILL_ACTIVE;
+    if (alive) {
+        char mine[MAX_PATH] = {0}, his[MAX_PATH] = {0}; DWORD n = MAX_PATH;
+        GetModuleFileNameA(NULL, mine, MAX_PATH);
+        if (QueryFullProcessImageNameA(h, 0, his, &n)) {
+            const char* a = strrchr(mine, '\\'); const char* b = strrchr(his, '\\');
+            alive = !_stricmp(a ? a + 1 : mine, b ? b + 1 : his);
+        }
+    }
+    CloseHandle(h);
+    return alive;
+}
+void undo_log(const char* line, void*) { windower::debug::log("%s", line); }
 
 u32 def_by_name(u32 mgr, const char* want) {
     u32 node = 0; safe_read(mgr + MGR_DEF_LIST, &node); char nm[9];
@@ -1247,18 +1272,17 @@ u32 def_by_name(u32 mgr, const char* want) {
 
 // A previous session that ended WITHOUT shutdown (crash, killed client) left records shifted in game memory -- the
 // client keeps them until it restarts. The file names every record we had moved and where it really belongs.
+// Files : this client's own (a reload without shutdown) and those of clients that no longer run ; a running OTHER
+// client's file is left alone. Missed records stay in their file for the next load (bounded : undo::MAX_TRIES).
+bool undo_apply(const char* nm, int x, int y, void* u) {
+    const u32 rec = layout_rec(def_by_name(*(const u32*)u, nm));
+    return rec && wr16(rec + REC_X, (short)x) && wr16(rec + REC_Y, (short)y);
+}
 void recover_from_file(u32 mgr) {
-    FILE* f = fopen(undo_path(), "r"); if (!f) return;
-    char ln[96]; int k = 0, miss = 0;
-    while (fgets(ln, sizeof(ln), f)) {
-        char nm[12] = {0}; int x = 0, y = 0;
-        if (sscanf(ln, "%11[^|]|%d|%d", nm, &x, &y) != 3) continue;
-        const u32 rec = layout_rec(def_by_name(mgr, nm));
-        if (rec && wr16(rec + REC_X, (short)x) && wr16(rec + REC_Y, (short)y)) ++k; else ++miss;
-    }
-    fclose(f);
-    DeleteFileA(undo_path());
-    windower::debug::log("NATIVEUI recovery : %d record(s) put back from the last session's undo file (%d not found)", k, miss);
+    const aio::undo::Hooks h = { undo_alive, undo_apply, undo_log, &mgr };
+    const aio::undo::Result r = aio::undo::recover_all(undo_dir(), (unsigned)GetCurrentProcessId(), h);
+    windower::debug::log("NATIVEUI recovery : %d file(s), %d record(s) put back, %d missed (kept), %d given up, %d file(s) cleaned, %d of a running client left alone",
+                         r.files, r.put, r.missed, r.dropped, r.cleaned, r.skipped);
 }
 
 void save_undo() {
@@ -5351,7 +5375,10 @@ void native_ui_tick(bool inWorld) {
     // A crashed session's undo file must be honoured even when nothing is configured any more -- otherwise the
     // early-out below would never resolve, and the records it names would stay shifted until the client restarts.
     static int pendingRecovery = -1;
-    if (pendingRecovery < 0) pendingRecovery = (GetFileAttributesA(undo_path()) != INVALID_FILE_ATTRIBUTES) ? 1 : 0;
+    if (pendingRecovery < 0) {
+        const aio::undo::Hooks h = { undo_alive, nullptr, nullptr, nullptr };
+        pendingRecovery = aio::undo::pending(undo_dir(), (unsigned)GetCurrentProcessId(), h) ? 1 : 0;
+    }
     if (pendingRecovery == 1 && g_recovered) pendingRecovery = 0;
     if (!wanted && !g_anyApplied && pendingRecovery == 0) {   // the normal case for most players : two compares
         const bool configured = c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0;
