@@ -21,6 +21,8 @@
 #include "model/ui_config.h"      // chWheel : the chat phase scrolls both boxes up
 #include "perf.h"
 #include "gfx/font.h"
+#include "gfx/draw.h"               // the overlay card : rrect / glow / bars / the frame graph
+#include <math.h>
 #include "windower_debug.h"
 #include <stdio.h>
 #include <string.h>
@@ -133,63 +135,171 @@ void perf_auto_tick(ConfigPage& cfg) {
             ">>> AioHud perf auto : termine -- aiohud_debug.log (AIO PERF dump [auto.*] + AB) <<<"));
 }
 
+// The overlay : a monitoring card, not a text dump.
+//   header   : a live dot, the title, a STATUS pill from AioHUD's share of the whole frame (OK / WATCH / HEAVY)
+//   tiles    : AioHUD cost (avg + worst), the whole frame (ms + fps), the share (with a gauge), the draw calls
+//   graph    : the last 60 frames -- the whole-frame time as a line over the 60 fps reference, AioHUD's part as bars
+//   modules  : one row per scope, its cost as a coloured bar behind the numbers (green / amber / red), aligned columns
+// Everything is read from the 60-frame window perf.h already keeps ; no allocation, no extra state.
+// the largest size <= `sz` at which `t` fits in `maxW` (never below 70 % : past that, the layout is what is wrong)
+static float perf_fit(Font* fo, const char* t, float sz, float maxW) { float s = sz; while (s > sz * 0.7f && fo->measure(t, s) > maxW) s *= 0.93f; return s; }
+static u32 perf_sev_col(u32 us) { return us < 150u ? 0xFF4FC98Au : (us < 400u ? 0xFFE8B04Au : 0xFFE8605Au); }
+
 void perf_overlay_draw(const Frame& f) {
     if (!perf::g_perf.want || g_auto.phase >= 0 || !f.font || !f.dev) return;   // perf auto measures without it (it was 0.34 ms of a 1.57 ms frame)
     PERF_SCOPE("perf.overlay");
     const perf::State& P = perf::g_perf;
     const u32 dev = f.dev;
     const float S = f.screenH > 0.0f ? f.screenH / 1080.0f : 1.0f;
-    const float z = 13.0f * S, lh = 16.0f * S, pad = 8.0f * S;
-    int idx[perf::CAP]; const int n = sorted_rows(idx, false);
-    const int shown = n < 24 ? n : 24;
-    // columns : name | avg | max | draws | states | tex
-    const float cName = 150.0f * S, cNum = 58.0f * S;
-    const float W = snap(pad * 2.0f + cName + cNum * 5.0f), H = snap(pad * 2.0f + lh * (float)(shown + 3));
-    const float X = snap(12.0f * S), Y = snap(f.screenH * 0.12f);
-    dColorQuadState(dev);
-    rrect(dev, X, Y, W, H, 6.0f * S, 0xE0101418u, 0xE0080A0Cu);
-
     Font* fo = f.font;
-    fo->begin(dev);
+    int idx[perf::CAP]; const int n = sorted_rows(idx, false);
+    const int shown = n < 16 ? n : 16;
+
+    // ---- the numbers ----
+    unsigned long long dSum = 0, sSum = 0, tSum = 0;
+    for (int i = 0; i < P.n; ++i) { dSum += P.e[i].wDraws; sSum += P.e[i].wStates; tSum += P.e[i].wTex; }
+    const u32 ourAvg = perf::win_total_avg_us(), ourMax = perf::win_total_max_us();
+    const u32 frAvg = perf::win_int_avg_us(), frMax = perf::win_int_max_us(), share = perf::win_share_x10();   // share : tenths of %
+    const u32 fps = frAvg ? 1000000u / frAvg : 0u;
+    const int status = ourAvg < 2500u ? 0 : (ourAvg < 5000u ? 1 : 2);   // by what AioHUD COSTS a frame (ms), not its share : 2 ms of a 17 ms frame is a normal full HUD
+    static const u32 STC[3] = { 0xFF4FC98Au, 0xFFE8B04Au, 0xFFE8605Au };
+    const char* stTxt[3] = { "OK", tr("WATCH", "A SURVEILLER"), tr("HEAVY", "LOURD") };
+
+    // ---- layout ----
+    const float pad = snap(12.0f * S), W = snap(500.0f * S);
+    const float hdrH = snap(34.0f * S), tileH = snap(52.0f * S), graphH = snap(64.0f * S), rowH = snap(19.0f * S), thH = snap(20.0f * S), footH = snap(22.0f * S);
+    const float H = snap(hdrH + pad + tileH + pad + graphH + pad + thH + rowH * (float)shown + footH + pad * 0.5f);
+    const float X = snap(14.0f * S), Y = snap(f.screenH * 0.10f);
     char a[32], b[32], line[160];
-    float y = Y + pad;
-    {
-        unsigned long long d = 0, s = 0, t = 0;
-        for (int i = 0; i < P.n; ++i) { d += P.e[i].wDraws; s += P.e[i].wStates; t += P.e[i].wTex; }
-        fmt_ms(a, sizeof(a), perf::win_total_avg_us()); fmt_ms(b, sizeof(b), perf::win_total_max_us());
-        _snprintf(line, sizeof(line), tr("AioHUD perf  %u frames   total %s ms  (max %s)   draws %u  states %u  tex %u",
-                                         "AioHUD perf  %u images   total %s ms  (max %s)   draws %u  etats %u  tex %u"),
-                  P.framesInWin, a, b, perf::win_avg(d), perf::win_avg(s), perf::win_avg(t));
-        line[sizeof(line) - 1] = 0;
-        fo->draw(dev, X + pad, y, line, z, 0xFFF0D890u, 0xFF000000u, 1.0f);
-        y += lh;
-        // the WHOLE frame (game + Present + us) and our share of it -- what decides whether our ms cost frames
-        const u32 iv = perf::win_int_avg_us(), sh = perf::win_share_x10();
-        fmt_ms(a, sizeof(a), iv); fmt_ms(b, sizeof(b), perf::win_int_max_us());
-        _snprintf(line, sizeof(line), tr("whole frame %s ms (max %s)  %u fps   AioHUD %u.%u %%",
-                                         "image entiere %s ms (max %s)  %u fps   AioHUD %u.%u %%"),
-                  a, b, iv ? 1000000u / iv : 0u, sh / 10, sh % 10);
-        line[sizeof(line) - 1] = 0;
-        fo->draw(dev, X + pad, y, line, z, 0xFFF0D890u, 0xFF000000u, 1.0f);
-        y += lh;
+
+    // ---- the card ----
+    dColorQuadState(dev);
+    rrect_glow(dev, X, Y + snap(3.0f * S), W, H, snap(10.0f * S), 0x90000000u, snap(14.0f * S));               // drop shadow
+    rrect(dev, X, Y, W, H, snap(10.0f * S), 0xF2161B22u, 0xF20B0E13u);                                         // body
+    rrect_stroke(dev, X, Y, W, H, snap(10.0f * S), 0x30FFFFFFu, 1.0f);                                          // hairline edge
+    rrect_tb(dev, X + 1.0f, Y + 1.0f, W - 2.0f, hdrH, snap(9.0f * S), 0.0f, 0x16FFFFFFu, 0x04FFFFFFu);        // header lift
+    grad_quad(dev, X + snap(10.0f * S), Y + 1.0f, W - snap(20.0f * S), 1.0f, 0x00FFFFFFu, 0x00FFFFFFu, 0x00FFFFFFu, 0x00FFFFFFu);
+    grad_quad(dev, X + pad, Y + hdrH, W - 2.0f * pad, 1.0f, 0x14FFFFFFu, 0x14FFFFFFu, 0x14FFFFFFu, 0x14FFFFFFu);  // header rule
+
+    // ---- header ----
+    const float hy = Y + hdrH * 0.5f;
+    const float pulse = 0.55f + 0.45f * (0.5f + 0.5f * sinf(f.t * 4.0f));
+    disc(dev, snap(X + pad + 4.0f * S), snap(hy), snap(4.5f * S), (u32)(pulse * 90.0f) << 24 | (STC[status] & 0x00FFFFFFu));
+    disc(dev, snap(X + pad + 4.0f * S), snap(hy), snap(3.0f * S), STC[status]);
+    const float pillW = snap(fo->measure(stTxt[status], snap(11.0f * S)) + 18.0f * S), pillH = snap(18.0f * S);
+    const float pillX = X + W - pad - pillW;
+    rrect(dev, pillX, snap(hy - pillH * 0.5f), pillW, pillH, pillH * 0.5f, (STC[status] & 0x00FFFFFFu) | 0x30000000u, (STC[status] & 0x00FFFFFFu) | 0x24000000u);
+    rrect_stroke(dev, pillX, snap(hy - pillH * 0.5f), pillW, pillH, pillH * 0.5f, (STC[status] & 0x00FFFFFFu) | 0x90000000u, 1.0f);
+    fo->begin(dev);
+    fo->draw_lc(dev, snap(X + pad + 14.0f * S), snap(hy), "AioHUD", snap(15.0f * S), 0xFFF4F6FAu, 0xFF000000u, 0.8f);
+    fo->draw_lc(dev, snap(X + pad + 14.0f * S + fo->measure("AioHUD ", snap(15.0f * S))), snap(hy), tr("Performance", "Performance"), snap(15.0f * S), 0xFF8E9AAAu, 0xFF000000u, 0.8f);
+    _snprintf(line, sizeof(line), tr("%u frames", "%u images"), P.framesInWin); line[sizeof(line) - 1] = 0;
+    fo->draw_lc(dev, snap(pillX - 10.0f * S - fo->measure(line, snap(11.0f * S))), snap(hy), line, snap(11.0f * S), 0xFF6E7A8Au, 0xFF000000u, 0.6f);
+    fo->draw_c(dev, snap(pillX + pillW * 0.5f), snap(hy), stTxt[status], snap(11.0f * S), STC[status], 0xFF000000u, 0.6f);
+
+    // ---- tiles ----
+    const float ty = Y + hdrH + pad, gap = snap(8.0f * S), tw = snap((W - 2.0f * pad - 3.0f * gap) / 4.0f);
+    for (int t = 0; t < 4; ++t) {
+        const float tx = X + pad + (tw + gap) * (float)t;
+        dColorQuadState(dev);
+        rrect(dev, tx, ty, tw, tileH, snap(6.0f * S), 0x12FFFFFFu, 0x06FFFFFFu);
+        rrect_stroke(dev, tx, ty, tw, tileH, snap(6.0f * S), 0x18FFFFFFu, 1.0f);
+        const char* lab = t == 0 ? "AIOHUD" : t == 1 ? tr("FRAME", "IMAGE") : t == 2 ? tr("SHARE", "PART") : tr("DRAW CALLS", "APPELS");
+        char big[32], sub[48]; u32 bigCol = 0xFFF4F6FAu;
+        if (t == 0) { fmt_ms(a, sizeof(a), ourAvg); fmt_ms(b, sizeof(b), ourMax); _snprintf(big, 32, "%s ms", a); _snprintf(sub, 48, "max %s", b); bigCol = STC[status]; }
+        else if (t == 1) { fmt_ms(a, sizeof(a), frAvg); fmt_ms(b, sizeof(b), frMax); _snprintf(big, 32, "%s ms", a); _snprintf(sub, 48, "%u fps  -  max %s", fps, b); }
+        else if (t == 2) { _snprintf(big, 32, "%u.%u %%", share / 10, share % 10); sub[0] = 0; bigCol = STC[status]; }
+        else { _snprintf(big, 32, "%u", perf::win_avg(dSum)); _snprintf(sub, 48, tr("states %u  -  tex %u", "etats %u  -  tex %u"), perf::win_avg(sSum), perf::win_avg(tSum)); }
+        big[31] = 0; sub[47] = 0;
+        if (t == 2) {                                                      // the share gauge (0..20 %)
+            const float gx = tx + snap(10.0f * S), gw = tw - snap(20.0f * S), gy = ty + tileH - snap(12.0f * S), gh = snap(4.0f * S);
+            const float k = clampf((float)share / 200.0f, 0.0f, 1.0f);
+            dColorQuadState(dev);
+            rrect(dev, gx, gy, gw, gh, gh * 0.5f, 0x22FFFFFFu, 0x22FFFFFFu);
+            if (k > 0.0f) rrect(dev, gx, gy, snap(gw * k) < gh ? gh : snap(gw * k), gh, gh * 0.5f, STC[status], STC[status]);
+        }
+        fo->begin(dev);
+        const float inner = tw - snap(20.0f * S);                     // every line FITS its tile (measured, shrunk if needed)
+        fo->draw_lc(dev, snap(tx + 10.0f * S), snap(ty + 12.0f * S), lab, perf_fit(fo, lab, snap(10.0f * S), inner), 0xFF7C8898u, 0xFF000000u, 0.5f);
+        fo->draw_lc(dev, snap(tx + 10.0f * S), snap(ty + 29.0f * S), big, perf_fit(fo, big, snap(17.0f * S), inner), bigCol, 0xFF000000u, 0.8f);
+        if (sub[0]) fo->draw_lc(dev, snap(tx + 10.0f * S), snap(ty + 44.0f * S), sub, perf_fit(fo, sub, snap(10.0f * S), inner), 0xFF7C8898u, 0xFF000000u, 0.5f);
     }
-    const char* hdr[6] = { tr("module", "module"), tr("avg ms", "moy ms"), "max ms", "draws", tr("states", "etats"), "tex" };
-    fo->draw(dev, X + pad, y, hdr[0], z, 0xFF9AA4B4u, 0xFF000000u, 1.0f);
-    for (int c = 1; c < 6; ++c) fo->draw(dev, X + pad + cName + cNum * (float)c - fo->measure(hdr[c], z), y, hdr[c], z, 0xFF9AA4B4u, 0xFF000000u, 1.0f);
-    y += lh;
+
+    // ---- the graph : last 60 frames ----
+    const float gx0 = X + pad, gy0 = ty + tileH + pad, gw = W - 2.0f * pad, gh = graphH;
+    dColorQuadState(dev);
+    rrect(dev, gx0, gy0, gw, gh, snap(6.0f * S), 0x0CFFFFFFu, 0x04FFFFFFu);
+    {
+        const u32 N = P.framesInWin;
+        u32 top = 33333u;                                                   // scale : at least 30 fps worth, more if a frame went past it
+        for (u32 i = 0; i < N; ++i) if (P.rIntUs[i] > top) top = P.rIntUs[i];
+        const float ix = gx0 + snap(6.0f * S), iw = gw - snap(12.0f * S), iy = gy0 + snap(6.0f * S), ih = gh - snap(12.0f * S);
+        const float ref = iy + ih * (1.0f - 16667.0f / (float)top);         // the 60 fps line
+        for (float xx = ix; xx < ix + iw; xx += snap(6.0f * S)) grad_quad(dev, snap(xx), snap(ref), snap(3.0f * S), 1.0f, 0x40FFFFFFu, 0x40FFFFFFu, 0x40FFFFFFu, 0x40FFFFFFu);
+        fo->begin(dev);
+        fo->draw_lc(dev, snap(ix + 2.0f * S), snap(ref - 7.0f * S), "60 fps", snap(9.0f * S), 0xFF6E7A8Au, 0xFF000000u, 0.5f);
+        {   // the graph's legend, top right : the white line = the whole frame, the blue bars = AioHUD
+            const char* l1 = tr("frame", "image"); const char* l2 = "AioHUD";
+            const float ls = snap(9.0f * S), lx2 = ix + iw - fo->measure(l2, ls), lx1 = lx2 - snap(22.0f * S) - fo->measure(l1, ls), ly = iy + snap(4.0f * S);
+            fo->draw_lc(dev, snap(lx1), snap(ly), l1, ls, 0xFFB4BDCAu, 0xFF000000u, 0.5f);
+            fo->draw_lc(dev, snap(lx2), snap(ly), l2, ls, 0xFF5AB4FFu, 0xFF000000u, 0.5f);
+            dColorQuadState(dev);
+            grad_quad(dev, snap(lx1 - 12.0f * S), snap(ly), snap(9.0f * S), snap(1.6f * S), 0xE0E8ECF2u, 0xE0E8ECF2u, 0xE0E8ECF2u, 0xE0E8ECF2u);
+            grad_quad(dev, snap(lx2 - 9.0f * S), snap(ly - 3.0f * S), snap(5.0f * S), snap(6.0f * S), 0xC05AB4FFu, 0xC05AB4FFu, 0xC05AB4FFu, 0xC05AB4FFu);
+        }
+        dColorQuadState(dev);
+        if (N > 1) {
+            const float step = iw / (float)(perf::WIN - 1);
+            float px = 0.0f, py = 0.0f;
+            for (u32 k = 0; k < N; ++k) {
+                const int slot = (int)((P.ring + perf::WIN - N + k) % perf::WIN);   // oldest -> newest
+                unsigned long long ours = 0; for (int e = 0; e < P.n; ++e) ours += P.e[e].rSelfUs[slot];
+                const float xk = ix + step * (float)(perf::WIN - N + k);
+                const float bh = ih * 0.5f * clampf((float)ours / 5000.0f, 0.0f, 1.0f);       // AioHUD's part : a bar from the floor, its OWN scale (5 ms = half the graph) -- at the frame's scale 2 ms was 2 px
+                if (bh > 0.5f) grad_quad(dev, snap(xk - step * 0.35f), snap(iy + ih - bh), snap(step * 0.7f) < 1.0f ? 1.0f : snap(step * 0.7f), snap(bh) < 1.0f ? 1.0f : snap(bh),
+                                         0xC05AB4FFu, 0xC05AB4FFu, 0x605AB4FFu, 0x605AB4FFu);
+                const float yk = iy + ih * (1.0f - clampf((float)P.rIntUs[slot] / (float)top, 0.0f, 1.0f));   // the whole frame : a line
+                if (k > 0 && P.rIntUs[slot]) seg_soft(dev, px, py, xk, yk, snap(1.6f * S), 0xE0E8ECF2u);
+                px = xk; py = yk;
+            }
+        }
+    }
+
+    // ---- the module table ----
+    float y = gy0 + gh + pad;
+    const float cName = X + pad + snap(8.0f * S), cR[5] = { X + W - pad - snap(206.0f * S), X + W - pad - snap(154.0f * S), X + W - pad - snap(102.0f * S), X + W - pad - snap(50.0f * S), X + W - pad - snap(6.0f * S) };
+    const char* hdr[6] = { tr("MODULE", "MODULE"), tr("AVG ms", "MOY ms"), "MAX ms", "DRAWS", tr("STATES", "ETATS"), "TEX" };
+    fo->begin(dev);
+    fo->draw_lc(dev, snap(cName), snap(y + thH * 0.5f), hdr[0], snap(10.0f * S), 0xFF7C8898u, 0xFF000000u, 0.5f);
+    for (int c = 0; c < 5; ++c) fo->draw_lc(dev, snap(cR[c] - fo->measure(hdr[c + 1], snap(10.0f * S))), snap(y + thH * 0.5f), hdr[c + 1], snap(10.0f * S), 0xFF7C8898u, 0xFF000000u, 0.5f);
+    y += thH;
+    u32 rowMax = 1; for (int r = 0; r < shown; ++r) { const u32 v = perf::win_avg(P.e[idx[r]].wSelfUs); if (v > rowMax) rowMax = v; }
     for (int r = 0; r < shown; ++r) {
         const perf::Entry& E = P.e[idx[r]];
+        const u32 avg = perf::win_avg(E.wSelfUs);
+        dColorQuadState(dev);
+        if (r & 1) grad_quad(dev, X + pad, y, W - 2.0f * pad, rowH, 0x08FFFFFFu, 0x08FFFFFFu, 0x08FFFFFFu, 0x08FFFFFFu);   // zebra
+        const float bw = (cR[0] - cName - snap(14.0f * S)) * clampf((float)avg / (float)rowMax, 0.0f, 1.0f);              // the cost bar, under the name
+        const u32 sc = perf_sev_col(avg);
+        if (bw > 1.0f) rrect(dev, cName - snap(4.0f * S), y + snap(3.0f * S), bw, rowH - snap(6.0f * S), snap(3.0f * S), (sc & 0x00FFFFFFu) | 0x38000000u, (sc & 0x00FFFFFFu) | 0x20000000u);
         char col[5][24];
-        fmt_ms(col[0], 24, perf::win_avg(E.wSelfUs));
+        fmt_ms(col[0], 24, avg);
         fmt_ms(col[1], 24, perf::win_max_us(E));
         _snprintf(col[2], 24, "%u", perf::win_avg(E.wDraws));  col[2][23] = 0;
         _snprintf(col[3], 24, "%u", perf::win_avg(E.wStates)); col[3][23] = 0;
         _snprintf(col[4], 24, "%u", perf::win_avg(E.wTex));    col[4][23] = 0;
-        const u32 c0 = idx[r] == 0 ? 0xFFB0B0B0u : 0xFFE8ECF4u;
-        fo->draw(dev, X + pad, y, row_name(idx[r]), z, c0, 0xFF000000u, 1.0f);
-        for (int c = 0; c < 5; ++c) fo->draw(dev, X + pad + cName + cNum * (float)(c + 1) - fo->measure(col[c], z), y, col[c], z, c0, 0xFF000000u, 1.0f);
-        y += lh;
+        const u32 c0 = idx[r] == 0 ? 0xFF8A94A4u : 0xFFE2E7EEu;
+        fo->begin(dev);
+        fo->draw_lc(dev, snap(cName), snap(y + rowH * 0.5f), row_name(idx[r]), perf_fit(fo, row_name(idx[r]), snap(12.0f * S), cR[0] - cName - snap(48.0f * S)), c0, 0xFF000000u, 0.6f);
+        for (int c = 0; c < 5; ++c)
+            fo->draw_lc(dev, snap(cR[c] - fo->measure(col[c], snap(12.0f * S))), snap(y + rowH * 0.5f), col[c], snap(12.0f * S),
+                        c == 0 ? sc : (c == 1 ? 0xFFB4BDCAu : 0xFF8A94A4u), 0xFF000000u, 0.6f);
+        y += rowH;
     }
+    // ---- footer ----
+    fo->begin(dev);
+    fo->draw_lc(dev, snap(X + pad), snap(y + footH * 0.5f), "//aio perf off  -  reset  -  dump", snap(10.0f * S), 0xFF5E6A7Au, 0xFF000000u, 0.5f);
+    dColorQuadState(dev);
 }
 
 // Every row since the last reset -> aiohud_debug.log. Per-frame figures are averages over the frames measured.

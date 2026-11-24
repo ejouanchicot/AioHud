@@ -77,6 +77,47 @@ static const char* MK_ATLAS_PATH() { static char b[260]; if (!b[0]) plugin_path(
 enum { MK_ME_FILL, MK_ME_FRAME, MK_MOB_FILL, MK_MOB_FRAME, MK_NM_FRAME, MK_PARTY_FILL, MK_PARTY_FRAME, MK_ALLY_FILL, MK_ALLY_FRAME,
        MK_TRUST_FILL, MK_TRUST_FRAME, MK_PET_FILL, MK_PET_FRAME, MK_TARGET_FILL, MK_TARGET_FRAME, MK_PIN_FILL, MK_PIN_FRAME,
        MK_PC_OTHER, MK_NPC, MK_HOMEPOINT, MK_GUIDE, MK_MOOGLE, MK_WAYPOINT, MK_QUEST, MK_WIDESCAN, MK_OFFMAP };
+// WHAT an entity is drawn as (icon cells, colours, sizes, its class threshold factor). ONE function for the widget
+// and the Help sample, so the two can never drift. false = this kind is hidden by the user's toggles.
+//   cf : x the zoom threshold (0 = always the icon -- a landmark ; < 0 = always a dot -- a plain NPC)
+struct MkClass { int fill, frame, prio; u32 col, frameCol; float cf, isz, dr; bool ring, dir; };
+static bool mk_classify(const MapEntity& me, const UiConfig& c, MkClass& k) {
+    k.fill = -1; k.frame = -1; k.col = 0xFFFFFFFFu; k.frameCol = 0xFFFFFFFFu; k.ring = false; k.dir = false;
+    if (me.kind == MAPK_PET) {
+        if (!c.mmPC) return false;
+        k.prio = 5; k.cf = -1.0f; k.isz = 13.0f; k.dr = 2.2f; k.fill = MK_PET_FILL; k.frame = MK_PET_FRAME; k.col = 0xFF4FD1C5u; k.ring = true;
+    } else if (me.type == 3) {
+        if (!c.mmMob) return false;
+        const bool nm = (me.kind == MAPK_NM);
+        const bool other = (me.claimId != 0 && !in_my_group(me.claimId)), mine = !other && (me.claimId != 0 || me.status == 1);
+        k.col = other ? 0xFFE86BE0u : mine ? 0xFFFF5A4Eu : 0xFFFFE600u;
+        k.prio = nm ? 5 : (mine ? 4 : 3); k.cf = nm ? 0.5f : 1.0f; k.isz = nm ? 18.0f : 13.0f; k.dr = nm ? 3.2f : 2.2f;
+        k.fill = MK_MOB_FILL; k.frame = MK_MOB_FRAME; k.frameCol = nm ? 0xFFFFD34Au : 0xFF4A3A22u;   // an NM : the same arrow, bigger, a BRIGHT gold frame (the crown was unreadable at 16 px)   // mobs : a dark bronze frame (any fill pops, never read as a player)
+        k.dir = true;
+    } else if (me.type == 2) {
+        if (me.kind == MAPK_TRUST) {
+            if (!c.mmPC) return false;
+            k.prio = 5; k.cf = -1.0f; k.isz = 14.0f; k.dr = 2.2f; k.fill = MK_TRUST_FILL; k.frame = MK_TRUST_FRAME; k.col = 0xFF9CCBFFu; k.ring = true;
+        } else {
+            if (!c.mmNPC) return false;
+            static const int SVC[9] = { -1, -1, -1, -1, MK_HOMEPOINT, MK_GUIDE, MK_MOOGLE, MK_WAYPOINT, MK_QUEST };   // by MapKind
+            const int svc = (me.kind < 9) ? SVC[me.kind] : -1;
+            if (svc >= 0) { k.prio = 9; k.cf = 0.0f; k.isz = 24.0f; k.dr = 3.0f; k.fill = svc; }   // a LANDMARK : always the icon
+            else { k.prio = 1; k.cf = -1.0f; k.isz = 0.0f; k.dr = 1.6f; k.col = 0xFF5ED37Cu; }    // a plain NPC : always a dot
+        }
+    } else {
+        if (!c.mmPC) return false;
+        if (me.spawn & 0x04)      { k.prio = 7; k.cf = -1.0f; k.isz = 15.0f; k.dr = 2.2f; k.fill = MK_PARTY_FILL; k.frame = MK_PARTY_FRAME; k.col = 0xFF5AB4FFu; k.ring = true; }
+        else if (me.spawn & 0x08) { k.prio = 6; k.cf = -1.0f; k.isz = 14.0f; k.dr = 2.2f; k.fill = MK_ALLY_FILL;  k.frame = MK_ALLY_FRAME;  k.col = 0xFFB48CFFu; k.ring = true; }
+        else                      { k.prio = 2; k.cf = -1.0f; k.isz = 9.0f;  k.dr = 2.2f; k.fill = MK_PC_OTHER; k.col = 0xFFD8DEE6u; }
+    }
+    return true;
+}
+// the textures the LIVE widget holds (same device), lent to the Help sample : the icon atlas and the Astral kit.
+// Set by Minimap::draw each frame they exist, forgotten with the widget's own on device-lost / dispose.
+static u32 s_shAtlas = 0;
+static u32 s_shAst[AS_N] = {};
+
 struct GroupDot { float x, y, r, a; u32 col; };
 static GroupDot s_group[64];                                   // this frame's group dots (drawn after the player arrow)
 static int s_groupN = 0;
@@ -653,8 +694,9 @@ Minimap::LodSt* Minimap::lod_slot(unsigned id) {
     return &e;
 }
 
-void Minimap::on_device_lost() { mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
+void Minimap::on_device_lost() { s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
 void Minimap::dispose() {
+    s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0;
     release_texture(mkAtlas_); mkAtlas_ = 0; mkAtlasR_ = TexRetry{};
     for (int i = 0; i < AS_N; ++i) { release_texture(ast_[i]); ast_[i] = 0; astR_[i] = TexRetry{}; }
     release_texture(mapTex_); mapTex_ = 0; mapFileId_ = 0;
@@ -682,7 +724,8 @@ void Minimap::draw(const Frame& f) {
     // is otherwise indistinguishable from an empty zone.
     // Uses retry_clock.h rather than the hand-rolled sentinel this carried : retry_due() IS that 0-sentinel
     // check, and the project has one correct implementation of it on purpose.
-    const bool icons = (c.mmMarkStyle == 1) && ensure_raw_tex_mip(dev, mkAtlas_, mkAtlasR_, MK_ATLAS_PATH(), 512, 256) != 0;   // the v3 icon atlas (gen_map_markers.py) ; the classic blips are the fallback
+    const bool icons = (c.mmMarkStyle == 1) && ensure_raw_tex_mip(dev, mkAtlas_, mkAtlasR_, MK_ATLAS_PATH(), 512, 256) != 0;
+    s_shAtlas = mkAtlas_;                                      // lent to the Help sample (same device)   // the v3 icon atlas (gen_map_markers.py) ; the classic blips are the fallback
     if ((!mkPlayer_ || !mkMob_ || !elemTex_) && mkTries_ < MK_TRIES) {
         if (retry_due(mkNextMs_)) {
             retry_arm(mkNextMs_, mkTries_ < 4 ? 1u : MK_RETRY_MS);   // the first few immediately (a device just becoming ready), then spaced
@@ -978,6 +1021,7 @@ void Minimap::draw(const Frame& f) {
         astral = true;
         for (int i = 0; i < AS_N; ++i) if (!ensure_raw_tex_mip(dev, ast_[i], astR_[i], astral_path(i), AS_SZ[i], AS_SZ[i])) astral = false;
     }
+    if (astral) for (int i = 0; i < AS_N; ++i) s_shAst[i] = ast_[i];   // lent to the Help sample
     if (astral) {
         rc = r - r * (80.0f / 500.0f) * clampf(c.mmBezelW, 0.5f, 2.0f);   // the kit's ring is 80 / 500 of the radius (manifest.json) x the Bezel-width slider
     } else if (round && c.mmClock && c.mmBezel) {
@@ -1162,35 +1206,11 @@ void Minimap::draw(const Frame& f) {
             const MapEntity& me = g.mapEnts[e];
             if (me.id && me.id == party().selfId_) continue;
             Mk m; m.ang = 0.0f; m.fill = -1; m.frame = -1; m.col = 0xFFFFFFFFu; m.frameCol = 0xFFFFFFFFu; m.ring = false;
-            float cf, isz, dr;                                       // class factor (x the fade band), icon size, dot radius
-            if (me.kind == MAPK_PET) {
-                if (!c.mmPC) continue;
-                m.prio = 5; cf = 0.7f; isz = 13.0f; dr = 2.6f; m.fill = MK_PET_FILL; m.frame = MK_PET_FRAME; m.col = 0xFF4FD1C5u;
-            } else if (me.type == 3) {
-                if (!c.mmMob) continue;
-                const bool nm = (me.kind == MAPK_NM);
-                const bool other = (me.claimId != 0 && !in_my_group(me.claimId)), mine = !other && (me.claimId != 0 || me.status == 1);
-                m.col = other ? 0xFFE86BE0u : mine ? 0xFFFF5A4Eu : 0xFFFFE600u;
-                m.prio = nm ? 5 : (mine ? 4 : 3); cf = nm ? 0.5f : 1.0f; isz = nm ? 18.0f : 13.0f; dr = nm ? 3.2f : 2.2f;
-                m.fill = MK_MOB_FILL; m.frame = nm ? MK_NM_FRAME : MK_MOB_FRAME; m.frameCol = nm ? 0xFFFFFFFFu : 0xFF4A3A22u;
-                m.ang = eased_angle(me.id, me.heading + 1.5708f);
-            } else if (me.type == 2) {
-                if (me.kind == MAPK_TRUST) {
-                    if (!c.mmPC) continue;
-                    m.prio = 5; cf = 0.7f; isz = 14.0f; dr = 2.6f; m.fill = MK_TRUST_FILL; m.frame = MK_TRUST_FRAME; m.col = 0xFF9CCBFFu;
-                } else {
-                    if (!c.mmNPC) continue;
-                    static const int SVC[9] = { -1, -1, -1, -1, MK_HOMEPOINT, MK_GUIDE, MK_MOOGLE, MK_WAYPOINT, MK_QUEST };   // by MapKind
-                    const int svc = (me.kind < 9) ? SVC[me.kind] : -1;
-                    if (svc >= 0) { m.prio = 9; cf = 0.0f; isz = 24.0f; dr = 3.0f; m.fill = svc; }   // a LANDMARK : always the icon
-                    else { m.prio = 1; cf = -1.0f; isz = 0.0f; dr = 1.6f; m.col = 0xFF5ED37Cu; }    // a plain NPC : always a dot
-                }
-            } else {
-                if (!c.mmPC) continue;
-                if (me.spawn & 0x04)      { m.prio = 7; cf = 0.55f; isz = 15.0f; dr = 3.0f; m.fill = MK_PARTY_FILL; m.frame = MK_PARTY_FRAME; m.col = 0xFF5AB4FFu; m.ring = true; }
-                else if (me.spawn & 0x08) { m.prio = 6; cf = 0.65f; isz = 14.0f; dr = 2.8f; m.fill = MK_ALLY_FILL;  m.frame = MK_ALLY_FRAME;  m.col = 0xFFB48CFFu; m.ring = true; }
-                else                      { m.prio = 2; cf = 1.5f;  isz = 9.0f;  dr = 1.8f; m.fill = MK_PC_OTHER; m.col = 0xFFD8DEE6u; }
-            }
+            MkClass k;
+            if (!mk_classify(me, c, k)) continue;
+            m.prio = k.prio; m.fill = k.fill; m.frame = k.frame; m.col = k.col; m.frameCol = k.frameCol; m.ring = k.ring;
+            const float cf = k.cf, isz = k.isz, dr = k.dr;
+            if (k.dir) m.ang = eased_angle(me.id, me.heading + 1.5708f);
             // the fade : 0 = dot, 1 = icon
             if (cf < 0.0f) m.a = 0.0f;
             else if (cf == 0.0f) m.a = 1.0f;
@@ -1209,6 +1229,12 @@ void Minimap::draw(const Frame& f) {
             const float ex = (g.map.scale * me.x) / 5.0f - (float)g.map.offX;
             const float ey = (g.map.scale * -me.z) / 5.0f - (float)g.map.offY;
             m.sx = ccx + (ex - mapX) * pn; m.sy = ccy + (ey - mapY) * pn;
+            // a TRUST at your side says nothing (it follows you, or warps back when left behind) and its dots covered the
+            // map around you : it is drawn only once it is AWAY from you (in TUNE("mm.trust_hide") yalms -- 12 by default : they trail you at 6-10)
+            if (me.kind == MAPK_TRUST) {
+                const float dxw = me.x - g.meX, dzw = me.z - g.meZ, hideY = TUNE("mm.trust_hide", 12.0f);
+                if (dxw * dxw + dzw * dzw < hideY * hideY) continue;
+            }
             const float half = (m.a > 0.0f ? m.sz * 0.5f : m.dr + 1.0f), pad = clipped ? half : -half;
             if (round) { const float dx = m.sx - ccx, dy = m.sy - ccy, lim = rc + pad; if (lim < 0.0f || dx * dx + dy * dy > lim * lim) continue; }
             else if (m.sx < wx0 - pad || m.sx > wx1 + pad || m.sy < wy0 - pad || m.sy > wy1 + pad) continue;
@@ -1387,8 +1413,8 @@ void Minimap::draw(const Frame& f) {
         for (int i = 0; i < s_groupN; ++i) {
             const GroupDot& d = s_group[i];
             const u32 ka = (u32)(d.a * 255.0f + 0.5f);
-            disc(dev, snap(d.x), snap(d.y), d.r + 1.4f * S, (u32)(d.a * 170.0f) << 24);
-            disc(dev, snap(d.x), snap(d.y), d.r + 0.7f * S, (ka << 24) | 0x00FFFFFFu);
+            disc(dev, snap(d.x), snap(d.y), d.r + 1.1f * S, (u32)(d.a * 170.0f) << 24);
+            disc(dev, snap(d.x), snap(d.y), d.r + 0.5f * S, (ka << 24) | 0x00FFFFFFu);
             disc(dev, snap(d.x), snap(d.y), d.r, (ka << 24) | (d.col & 0x00FFFFFFu));
         }
     } else if (mkPlayer_) {
@@ -1482,7 +1508,10 @@ void minimap_help_disc(u32 dev, const Frame& f, Font* fo, u32 mkPlayer, u32 mkMo
     // ---- frame : config-aware, exactly like Minimap::draw (bezel when round+clock, themed/custom ring for round,
     //      themed window chrome for square) ----
     bool themedOk = false; float fi = 0.0f, rc = r;
-    if (round) {
+    bool astral = round && c.mmClock && c.mmBezel;                     // the Astral kit, borrowed from the live widget
+    for (int i = 0; i < AS_N && astral; ++i) if (!s_shAst[i]) astral = false;
+    if (astral) rc = r - r * (80.0f / 500.0f) * clampf(c.mmBezelW, 0.5f, 2.0f);
+    else if (round) {
         if (c.mmClock && c.mmBezel) { const float bw = snap(22.0f * Ss * clampf(c.mmBezelW, 0.5f, 2.0f)); draw_brass_bezel(dev, f, cx, cy, r, bw, Ss); rc = r - bw; }
         else if (c.mmClock && !c.mmBezel) { /* no circle at all : lens fills the full radius (rc stays r) */ }
         else if (c.mmFrame != 0) {
@@ -1518,13 +1547,45 @@ void minimap_help_disc(u32 dev, const Frame& f, Font* fo, u32 mkPlayer, u32 mkMo
                 tquad(dev, snap(bx0), snap(by0), snap(bx1) - snap(bx0), snap(by1) - snap(by0), u0, u1, v0, v1, 0xFFFFFFFFu, 0xFFFFFFFFu);
             }
         }
+        if (astral) draw_astral_shadow(dev, s_shAst[AS_SHADOW], cx, cy, rc);
         dSetTex(dev, 0, 0); color_state(dev);
     } else if (round) {                                               // no map -> a plain lens hint
         disc_glow(dev, cx, cy, rc * 0.62f, 0x304A569Cu, rc * 0.5f);
     }
 
-    // ---- markers + player pin : same transform / colours as the widget ; round -> circle clip, square -> rect clip ----
-    if (g && g->map.valid) {
+    // ---- ICON markers : the widget's own classification (mk_classify) and zoom rule, without the animation ----
+    const bool icons = (c.mmMarkStyle == 1) && s_shAtlas;
+    if (icons && g && g->map.valid) {
+        const float MSc = clampf(c.mmMarkerScale, 0.5f, 2.0f);
+        const float ppy = ((float)g->map.scale / 5.0f) * pn, T0 = (TUNE("mm.lod_p1", 0.5f) + TUNE("mm.lod_p2", 1.1f)) * 0.5f;
+        for (int pass = 0; pass < 2; ++pass) {                       // dots, then icons
+            if (pass == 0) color_state(dev); else tex_state(dev, s_shAtlas);
+            for (int e = 0; e < g->mapEntN; ++e) {
+                const MapEntity& me = g->mapEnts[e];
+                MkClass k; if (!mk_classify(me, c, k)) continue;
+                const bool icon = k.cf == 0.0f || (k.cf > 0.0f && ppy >= T0 * k.cf);
+                if (icon != (pass == 1)) continue;
+                const float ex = (g->map.scale * me.x) / 5.0f - (float)g->map.offX, ey = (g->map.scale * -me.z) / 5.0f - (float)g->map.offY;
+                const float sx = cx + (ex - mapX) * pn, sy = cy + (ey - mapY) * pn;
+                const float sz = k.isz * Ss * MSc * (k.prio == 9 ? clampf(0.62f + 0.4f * ppy, 0.62f, 1.0f) : 1.0f), dr = k.dr * Ss * MSc, half = icon ? sz * 0.5f : dr + 1.0f;
+                if (round) { const float dx = sx - cx, dy = sy - cy, lim = rc - half; if (lim < 0.0f || dx * dx + dy * dy > lim * lim) continue; }
+                else if (sx < wx0 + half || sx > wx1 - half || sy < wy0 + half || sy > wy1 - half) continue;
+                if (!icon) {
+                    disc(dev, snap(sx), snap(sy), dr + 0.8f * Ss, 0x99000000u);
+                    if (k.ring) disc(dev, snap(sx), snap(sy), dr + 0.6f * Ss, 0xFFFFFFFFu);
+                    disc(dev, snap(sx), snap(sy), dr, k.col | 0xFF000000u);
+                } else {
+                    const float ang = k.dir ? me.heading + 1.5708f : 0.0f;
+                    mk_cell(dev, k.frame >= 0 ? k.frame : k.fill, sx, sy + 1.0f, sz * 1.14f, ang, 0x8C000000u);
+                    mk_cell(dev, k.fill, sx, sy, sz, ang, k.col);
+                    if (k.frame >= 0) mk_cell(dev, k.frame, sx, sy, sz, ang, k.frameCol);
+                }
+            }
+        }
+        dSetTex(dev, 0, 0);
+    }
+    // ---- CLASSIC markers + player pin : same transform / colours as the widget ; round -> circle clip, square -> rect clip ----
+    if (!icons && g && g->map.valid) {
         const float MSc = clampf(c.mmMarkerScale, 0.5f, 2.0f);
         if (mkMob && c.mmMob) {                                       // mobs = the Arrow icon, rotated by heading, tinted by claim
             const float mkSz = clampf(2.4f + 1.0f * Z, 4.4f, 11.0f) * Ss * MSc;
@@ -1554,11 +1615,33 @@ void minimap_help_disc(u32 dev, const Frame& f, Font* fo, u32 mkPlayer, u32 mkMo
             disc(dev, snap(sx), snap(sy), dF, mm_ent_color(me));
         }
     }
-    if (mkPlayer) {                                                                // player Location pin at the centre (navy + halo)
+    if (icons) {                                                                   // YOU : the navigation arrow (icons)
+        const float pSz = snap(TUNE("mm.me_size", 13.0f) * Ss * clampf(c.mmMarkerScale, 0.5f, 2.0f)), pang = (g ? g->meHeading : 0.0f) + 1.5708f;
+        tex_state(dev, s_shAtlas);
+        mk_cell(dev, MK_ME_FRAME, cx, cy + 1.0f, pSz * 1.14f, pang, 0x8C000000u);
+        mk_cell(dev, MK_ME_FILL, cx, cy, pSz, pang, 0xFFFFFFFFu);
+        mk_cell(dev, MK_ME_FRAME, cx, cy, pSz, pang, 0xFFFFFFFFu);
+        dSetTex(dev, 0, 0);
+    } else if (mkPlayer) {                                                         // player Location pin at the centre (navy + halo)
         tex_state(dev, mkPlayer);
         const float pSz = snap(14.0f), pang = (g ? g->meHeading : 0.0f) + 1.5708f;
         tquad_rot(dev, snap(cx), snap(cy), pSz * 1.2f, pSz * 1.2f, pang, 0xF0FFFFFFu);
         tquad_rot(dev, snap(cx), snap(cy), pSz, pSz, pang, 0xFF12224Au);
+        dSetTex(dev, 0, 0);
+    }
+    if (astral) {                                                                  // the Astral ring over the lens, like the widget
+        draw_astral_ring(dev, s_shAst[AS_BASE],  cx, cy, rc, r, 416.0f, 504.0f, 0.0f);
+        draw_astral_ring(dev, s_shAst[AS_TICKS], cx, cy, rc, r, 424.0f, 474.0f, 0.0f);
+        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+        draw_astral_ring(dev, s_shAst[AS_GLINT], cx, cy, rc, r, 418.0f, 488.0f, 0.0f);
+        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+        const float rr = rc + (470.0f - 420.0f) * (r - rc) / 80.0f, ps = 128.0f * (2.0f * r / 1000.0f) * clampf(c.mmCardSz, 0.5f, 2.0f);
+        static const float DX[4] = { 0.0f, 1.0f, 0.0f, -1.0f }, DY[4] = { -1.0f, 0.0f, 1.0f, 0.0f };
+        for (int i = 0; i < 4; ++i) {
+            const float px0 = snap(cx + DX[i] * rr - ps * 0.5f), py0 = snap(cy + DY[i] * rr - ps * 0.5f);
+            tex_state(dev, s_shAst[AS_PAST]);   tquad(dev, px0, py0, ps, ps, 0.0f, 1.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
+            tex_state(dev, s_shAst[AS_LN + i]); tquad(dev, px0, py0, ps, ps, 0.0f, 1.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
+        }
         dSetTex(dev, 0, 0);
     }
     color_state(dev);
@@ -1567,6 +1650,84 @@ void minimap_help_disc(u32 dev, const Frame& f, Font* fo, u32 mkPlayer, u32 mkMo
 // the marker legend : one row each = the real marker (dot / mob Arrow / player pin, in its model colour) + its
 // meaning. Clips per row against [top,bot] (like the leader-dots sample) so a long list scrolls cleanly.
 float minimap_help_legend(u32 dev, Font* fo, u32 mkPlayer, u32 mkMob, float x, float y, float rowH, float top, float bot, int lang) {
+    if (ui_config().mmMarkStyle == 1 && s_shAtlas) {                  // ICONS : the legend of what the map really draws
+        // GROUPED CARDS over the full width : People / Monsters / Places, each a titled column of rows with a 34 px icon,
+        // its name and one line of what it means. The column count follows the width (3, 2 or 1).
+        struct IRow { int fill, frame; u32 col, frameCol; bool dot; const char* en; const char* fr; const char* den; const char* dfr; };
+        static const IRow PEOPLE[] = {
+            { MK_ME_FILL,    MK_ME_FRAME,    0xFFFFFFFFu, 0xFFFFFFFFu, false, "You", "Toi", "points where you face", "pointe l\xC3\xA0 o\xC3\xB9 tu regardes" },
+            { MK_PARTY_FILL, MK_PARTY_FRAME, 0xFF5AB4FFu, 0xFFFFFFFFu, true,  "Party member", "Membre de ta party", "blue dot, white rim", "point bleu, liser\xC3\xA9 blanc" },
+            { MK_ALLY_FILL,  MK_ALLY_FRAME,  0xFFB48CFFu, 0xFFFFFFFFu, true,  "Alliance member", "Membre de l'alliance", "lavender dot, white rim", "point lavande, liser\xC3\xA9 blanc" },
+            { MK_TRUST_FILL, MK_TRUST_FRAME, 0xFF9CCBFFu, 0xFFFFFFFFu, true,  "Trust", "Trust", "pale blue dot, white rim", "point bleu p\xC3\xA2le, liser\xC3\xA9 blanc" },
+            { MK_PET_FILL,   MK_PET_FRAME,   0xFF4FD1C5u, 0xFFFFFFFFu, true,  "Your pet", "Ton familier", "teal dot, white rim", "point turquoise, liser\xC3\xA9 blanc" },
+            { MK_PC_OTHER,   -1,             0xFFD8DEE6u, 0,           true,  "Other player", "Autre joueur", "a small grey dot", "un petit point gris" },
+            { -1,            -1,             0xFF5ED37Cu, 0,           true,  "NPC", "PNJ", "a green dot, always", "un point vert, toujours" },
+        };
+        static const IRow MOBS[] = {
+            { MK_MOB_FILL, MK_MOB_FRAME, 0xFFFFE600u, 0xFF4A3A22u, false, "Unclaimed", "Libre", "free to pull", "libre de pull" },
+            { MK_MOB_FILL, MK_MOB_FRAME, 0xFFFF5A4Eu, 0xFF4A3A22u, false, "Yours / your party's", "\xC3\x80 toi / ta party", "claimed by you, or fighting you", "r\xC3\xA9""clam\xC3\xA9 par toi, ou te combat" },
+            { MK_MOB_FILL, MK_MOB_FRAME, 0xFFE86BE0u, 0xFF4A3A22u, false, "Another player's", "Pris par un autre", "hands off", "ne pas toucher" },
+            { MK_MOB_FILL, MK_MOB_FRAME, 0xFFFFE600u, 0xFFFFD34Au, false, "Notorious monster", "Monstre notable (NM)", "bigger, a bright gold frame", "plus grand, liser\xC3\xA9 or vif" },
+        };
+        static const IRow PLACES[] = {
+            { MK_HOMEPOINT, -1, 0xFFFFFFFFu, 0, false, "Home Point", "Home Point", "warp and return point", "point de retour et de t\xC3\xA9l\xC3\xA9port" },
+            { MK_WAYPOINT,  -1, 0xFFFFFFFFu, 0, false, "Waypoint", "Waypoint", "Adoulin travel", "voyage d'Adoulin" },
+            { MK_GUIDE,     -1, 0xFFFFFFFFu, 0, false, "Survival Guide", "Survival Guide", "fast travel", "voyage rapide" },
+            { MK_MOOGLE,    -1, 0xFFFFFFFFu, 0, false, "Moogle", "Moogle", "your Mog House services", "les services de ta Mog House" },
+            { MK_QUEST,     -1, 0xFFFFFFFFu, 0, false, "???", "???", "something to examine", "quelque chose \xC3\xA0 examiner" },
+        };
+        struct Grp { const char* en; const char* fr; const IRow* r; int n; };
+        const Grp G[3] = { { "PEOPLE", "PERSONNES", PEOPLE, 7 }, { "MONSTERS", "MONSTRES", MOBS, 4 }, { "PLACES", "LIEUX", PLACES, 5 } };
+        const float W = rowH > 100.0f ? rowH : 0.0f;                  // (rowH carries the available WIDTH when > 100 : see config_page.cpp)
+        const float avail = W > 0.0f ? W : snap(900.0f);
+        const int cols = avail >= snap(840.0f) ? 3 : (avail >= snap(560.0f) ? 2 : 1);
+        const float gap = snap(18.0f), cw = snap((avail - gap * (float)(cols - 1)) / (float)cols);
+        const float rh = snap(46.0f), hh = snap(30.0f), isz = snap(34.0f);
+        float colY[3] = { y, y, y };
+        for (int gi = 0; gi < 3; ++gi) {
+            int c = 0; for (int k = 1; k < cols; ++k) if (colY[k] < colY[c]) c = k;     // the shortest column takes the next group
+            const float cx0 = x + (cw + gap) * (float)c;
+            float yy = colY[c];
+            const float cardH = hh + rh * (float)G[gi].n + snap(8.0f);
+            if (yy + cardH >= top && yy <= bot) {
+                color_state(dev);
+                rrect(dev, cx0, yy, cw, cardH, snap(8.0f), 0x14FFFFFFu, 0x08FFFFFFu);
+                rrect_stroke(dev, cx0, yy, cw, cardH, snap(8.0f), 0x1EFFFFFFu, 1.0f);
+                if (fo && yy + hh >= top && yy <= bot) { fo->begin(dev); fo->draw_lc(dev, snap(cx0 + 14.0f), snap(yy + hh * 0.55f), lang == 1 ? G[gi].fr : G[gi].en, snap(12.0f), 0xFFC9A55Au, 0xFF000000u, 0.6f); }
+            }
+            yy += hh;
+            for (int i = 0; i < G[gi].n; ++i) {
+                const IRow& R = G[gi].r[i];
+                if (yy >= top && yy + rh <= bot) {
+                    const float mcx = cx0 + snap(14.0f) + isz * 0.5f, mcy = yy + rh * 0.5f;
+                    if (R.dot) {
+                        const bool rim = R.col != 0xFF5ED37Cu && R.col != 0xFFD8DEE6u;   // your own people wear the white rim, like on the map
+                        color_state(dev); disc(dev, snap(mcx), snap(mcy), snap(8.0f), 0x99000000u);
+                        if (rim) disc(dev, snap(mcx), snap(mcy), snap(7.0f), 0xFFFFFFFFu);
+                        disc(dev, snap(mcx), snap(mcy), snap(5.8f), R.col);
+                    }
+                    else {
+                        tex_state(dev, s_shAtlas);
+                        mk_cell(dev, R.frame >= 0 ? R.frame : R.fill, mcx, mcy + 1.5f, isz * 1.12f, 0.0f, 0x8C000000u);
+                        mk_cell(dev, R.fill, mcx, mcy, isz, 0.0f, R.col);
+                        if (R.frame >= 0) mk_cell(dev, R.frame, mcx, mcy, isz, 0.0f, R.frameCol);
+                        dSetTex(dev, 0, 0);
+                    }
+                    if (fo) {
+                        fo->begin(dev);
+                        const float tx = cx0 + snap(14.0f) + isz + snap(14.0f);
+                        fo->draw_lc(dev, snap(tx), snap(mcy - 8.0f), lang == 1 ? R.fr : R.en, snap(15.0f), 0xFFF0F3F7u, 0xFF000000u, 1.0f);
+                        fo->draw_lc(dev, snap(tx), snap(mcy + 10.0f), lang == 1 ? R.dfr : R.den, snap(12.0f), 0xFF8E9AAAu, 0xFF000000u, 0.6f);
+                    }
+                }
+                yy += rh;
+            }
+            colY[c] = yy + snap(8.0f) + gap;
+        }
+        float yMax = y; for (int k = 0; k < cols; ++k) if (colY[k] > yMax) yMax = colY[k];
+        color_state(dev);
+        return yMax - gap;
+    }
     struct Row { int kind; u32 col; const char* en; const char* fr; };            // kind : 0 dot, 1 mob arrow, 2 player pin
     static const Row rows[8] = {
         { 2, 0xFF12224Au, "Your position",                        "Ta position" },

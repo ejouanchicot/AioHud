@@ -2030,7 +2030,8 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
                 }
                 y += rh2 + snap(8.0f);
             } else if (it.kind == 31) {               // LIVE sample : the marker legend (real dot / arrow / pin + its meaning), one row each
-                const float rowH = snap(24.0f);
+                // the ICON legend lays itself out in cards over the column's width : it gets the width through rowH (> 100 = a width)
+                const float rowH = ui_config().mmMarkStyle == 1 ? hwWide - snap(12.0f) : snap(24.0f);
                 minimap_help_textures(dev, mmMkPlayer_, mmMkMob_, mmElem_, mmMkPlayerRetry_, mmMkMobRetry_, mmElemRetry_);   // every frame : each handle retries under its own bounded budget
                 cs(dev);
                 y = minimap_help_legend(dev, fo, mmMkPlayer_, mmMkMob_, hx + snap(6.0f), y, rowH, top, bot, ui_config().lang);
