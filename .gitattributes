@@ -1,0 +1,3 @@
+# Windows batch files: CRLF in the working tree whatever core.autocrlf says (cmd.exe misreads labels and
+# multi-line commands in LF .bat files). Stored LF in the repository.
+*.bat text eol=crlf
