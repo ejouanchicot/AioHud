@@ -38,6 +38,7 @@
 #include "ui/box_style.h"
 #include "ui/sc_circle.h"
 #include "ui/box_grow.h"
+#include "ui/tune.h"          // TUNE("name", default) : data\tune.txt in a dev build, the default in a release
 #include <windows.h>
 #include <math.h>
 #include <stdio.h>
@@ -431,7 +432,11 @@ int lightning_path(float* xs, float* ys, float ax, float ay, float bx, float by,
 }
 void lightning_draw(u32 dev, const float* xs, const float* ys, int n, float w, u32 glow, float al) {
     float hw[33]; u32 c[33];
-    static const struct { float wm, am; bool white; } L[3] = { { 3.4f, 0.2f, false }, { 1.7f, 0.55f, false }, { 0.6f, 1.0f, true } };
+    // the three layers : wide faint glow, mid glow, white core. TUNE : data\tune.txt in a dev build (ui/tune.h).
+    const struct { float wm, am; bool white; } L[3] = {
+        { TUNE("bolt.glow_w", 3.4f), TUNE("bolt.glow_a", 0.2f), false },
+        { TUNE("bolt.mid_w", 1.7f), TUNE("bolt.mid_a", 0.55f), false },
+        { TUNE("bolt.core_w", 0.6f), 1.0f, true } };
     for (int l = 0; l < 3; ++l) {
         for (int i = 0; i < n; ++i) { const float tp = 0.55f + 0.45f * sinf(PI * i / (n - 1)); hw[i] = w * L[l].wm * tp; c[i] = C(L[l].white ? 0xFFFFFF : glow, L[l].am * al); }
         ribbon(dev, xs, ys, n, hw, c);
