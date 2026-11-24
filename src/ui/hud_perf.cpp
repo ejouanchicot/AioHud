@@ -134,7 +134,7 @@ void perf_overlay_draw(const Frame& f) {
     const int shown = n < 24 ? n : 24;
     // columns : name | avg | max | draws | states | tex
     const float cName = 150.0f * S, cNum = 58.0f * S;
-    const float W = snap(pad * 2.0f + cName + cNum * 5.0f), H = snap(pad * 2.0f + lh * (float)(shown + 2));
+    const float W = snap(pad * 2.0f + cName + cNum * 5.0f), H = snap(pad * 2.0f + lh * (float)(shown + 3));
     const float X = snap(12.0f * S), Y = snap(f.screenH * 0.12f);
     dColorQuadState(dev);
     rrect(dev, X, Y, W, H, 6.0f * S, 0xE0101418u, 0xE0080A0Cu);
@@ -150,6 +150,15 @@ void perf_overlay_draw(const Frame& f) {
         _snprintf(line, sizeof(line), tr("AioHUD perf  %u frames   total %s ms  (max %s)   draws %u  states %u  tex %u",
                                          "AioHUD perf  %u images   total %s ms  (max %s)   draws %u  etats %u  tex %u"),
                   P.framesInWin, a, b, perf::win_avg(d), perf::win_avg(s), perf::win_avg(t));
+        line[sizeof(line) - 1] = 0;
+        fo->draw(dev, X + pad, y, line, z, 0xFFF0D890u, 0xFF000000u, 1.0f);
+        y += lh;
+        // the WHOLE frame (game + Present + us) and our share of it -- what decides whether our ms cost frames
+        const u32 iv = perf::win_int_avg_us(), sh = perf::win_share_x10();
+        fmt_ms(a, sizeof(a), iv); fmt_ms(b, sizeof(b), perf::win_int_max_us());
+        _snprintf(line, sizeof(line), tr("whole frame %s ms (max %s)  %u fps   AioHUD %u.%u %%",
+                                         "image entiere %s ms (max %s)  %u fps   AioHUD %u.%u %%"),
+                  a, b, iv ? 1000000u / iv : 0u, sh / 10, sh % 10);
         line[sizeof(line) - 1] = 0;
         fo->draw(dev, X + pad, y, line, z, 0xFFF0D890u, 0xFF000000u, 1.0f);
         y += lh;
@@ -181,6 +190,11 @@ int perf_dump(const char* label) {
     for (int i = 0; i < P.n; ++i) { tot += P.e[i].sumUs; d += P.e[i].sumDraws; rs += P.e[i].sumRs; tss += P.e[i].sumTss; tex += P.e[i].sumTex; }
     windower::debug::log("AIO PERF dump [%s] : %u frame(s) measured since reset ; per frame : total %u us, draws %u, rs %u, tss %u, tex %u",
                          label && *label ? label : "-", P.frames, (u32)(tot / fr), (u32)(d / fr), (u32)(rs / fr), (u32)(tss / fr), (u32)(tex / fr));
+    // the whole frame : the interval between two of our frames (the game's work, the Present, us), and our share
+    { const u32 ivAvg = P.nInt ? (u32)(P.sumIntUs / P.nInt) : 0u, ours = (u32)(tot / fr);
+      const u32 shx10 = ivAvg ? (u32)((unsigned long long)ours * 1000 / ivAvg) : 0u;
+      windower::debug::log("AIO PERF   whole frame : avg %u us, max %u us over %u interval(s) (%u fps) ; AioHUD %u us of it = %u.%u %%",
+                           ivAvg, P.maxIntUs, P.nInt, ivAvg ? 1000000u / ivAvg : 0u, ours, shx10 / 10, shx10 % 10); }
     windower::debug::log("AIO PERF   %-20s %8s %8s %8s %6s %7s %8s %7s %7s %6s %5s %6s", "scope", "avg_us", "max_us", "incl_us",
                          "pct", "draws", "prims", "rs", "tss", "tex", "fvf", "runs");
     int idx[perf::CAP]; const int n = sorted_rows(idx, true);

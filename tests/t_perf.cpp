@@ -230,6 +230,23 @@ void test_perf() {
         perf::frame_end();
     }
 
+    SECTION("perf : the WHOLE frame -- the interval between two frames, and our share of it");
+    {
+        perf::set_on(false);
+        perf::frame_begin(); perf::frame_end();          // off : no interval kept
+        CHECK_EQ(P.lastBegin, 0);
+        perf::set_on(true); perf::request_reset();
+        perf::frame_begin(); perf::frame_end();          // the first frame watched : no interval yet
+        CHECK_EQ(P.nInt, 0);
+        for (int k = 0; k < 3; ++k) { Sleep(5); perf::frame_begin(); perf::frame_end(); }
+        CHECK_EQ(P.nInt, 3);
+        CHECK(perf::win_int_avg_us() >= 4000);           // Sleep(5) between frames : at least ~5 ms each
+        CHECK(perf::win_int_max_us() >= perf::win_int_avg_us());
+        CHECK(perf::win_share_x10() < 1000);             // our own time is a part of the interval, never more
+        perf::set_on(false); perf::frame_begin(); perf::frame_end();
+        CHECK_EQ(P.lastBegin, 0);                        // switching off forgets the last frame
+    }
+
     SECTION("perf : the ab result is a MEDIAN -- one spike on one side does not decide it");
     {
         // the first in-game run : one 15 ms poll spike made the mean say the instrumentation saved 126 us a frame

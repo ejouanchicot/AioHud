@@ -223,6 +223,22 @@ Même campagne `//aio perf auto`, Tetsouo seul en ville, DLL en forme release. T
 Le coût de la mesure elle-même (`//aio perf ab`, médianes) reste ~50 µs/image quand elle est active. À revérifier
 en vraie alliance (Sortie, Odyssey) : l'alliance de 18 est la démo.
 
+**La part d'AioHUD dans l'image entière** (`whole frame` de `//aio perf`, intervalle entre deux appels de rendu :
+travail du jeu + Present + AioHUD ; vsync comprise, donc une borne haute de la part réelle) :
+
+| Phase | Image entière (moy / max) | AioHUD | Part |
+|---|---|---|---|
+| ville | 17,6 / 46,7 ms (56 fps) | 1,15 ms | 6,5 % |
+| alliance 18 (démo) | 17,7 / 55,0 ms | 1,92 ms | 10,8 % |
+| chat remonté | 17,6 / 37,0 ms | 1,93 ms | 10,9 % |
+| sphères | 17,8 / 46,9 ms | 1,57 ms | 8,8 % |
+| config ouverte | 17,5 / 38,1 ms | 1,84 ms | 10,4 % |
+
+Les pics de 37-55 ms (2-3 images perdues) sont présents dans toutes les phases, ville comprise, alors qu'AioHUD n'y
+prend que 1-2 ms : ils viennent du jeu ou du système. Décision : optimisations arrêtées ici ; P3 (texte) seulement si
+la mesure en vraie alliance (`//aio perf on`, une minute de combat, `//aio perf dump sortie`) dépasse nettement 10 %
+ou si des saccades se sentent.
+
 ---
 
 ## 3. Robustesse

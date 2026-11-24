@@ -83,6 +83,15 @@ struct State {
     static const u32 AB_MAX = 18000;
     u32      abS[2][AB_MAX];
     bool     abDone;           // a finished run waiting to be reported
+    // THE WHOLE FRAME, not just ours (2026-11-24) : the interval from one frame_begin to the next -- the game's own
+    // work, the Present (and any vsync wait in it), and AioHUD. AioHUD runs on the game's thread, so its share of this
+    // is what decides whether its milliseconds cost frames. Measured while counting ; 0 = no interval this frame (the
+    // first after perf was switched on, or a gap over 2 s : a load, a minimised window).
+    long long lastBegin;
+    u32      curIntUs;
+    u32      rIntUs[WIN];
+    unsigned long long wIntUs; u32 wIntN;                     // window : sum and count of the valid intervals
+    unsigned long long sumIntUs; u32 nInt, maxIntUs;          // since reset
 };
 
 inline State g_perf = {};
@@ -155,13 +164,19 @@ inline void frame_begin() {
         P.wantReset = false;
         for (int i = 0; i < CAP; ++i) { char nm[24]; lstrcpynA(nm, P.e[i].name, 24); P.e[i] = Entry(); lstrcpynA(P.e[i].name, nm, 24); }
         P.ring = 0; P.framesInWin = 0; P.frames = 0;
+        P.wIntUs = 0; P.wIntN = 0; P.sumIntUs = 0; P.nInt = 0; P.maxIntUs = 0;
+        for (int i = 0; i < WIN; ++i) P.rIntUs[i] = 0;
     }
     P.abFrame = P.abLeft != 0;
     if (P.abFrame) { P.abBare = !P.abBare; P.on = !P.abBare; P.abT0 = now(); }
     else          P.on = P.want;
     P.inFrame = true;
     P.top = &P.sink;
-    if (!P.on) return;
+    if (!P.on) { P.lastBegin = 0; P.curIntUs = 0; return; }   // an interval spanning frames we did not watch means nothing
+    { const long long t = now();
+      const u32 iv = P.lastBegin ? to_us(t - P.lastBegin) : 0u;
+      P.curIntUs = iv < 2000000u ? iv : 0u;
+      P.lastBegin = t; }
     if (P.n == 0) reg("(frame)");
     for (int i = 0; i < P.n; ++i) { Entry& E = P.e[i]; E.selfT = E.inclT = 0; E.calls = 0; E.c = Counters(); }
     P.depth = 0;
@@ -208,6 +223,10 @@ inline void frame_book() {
         if (us > E.maxUs) E.maxUs = us;
         if (E.calls) ++E.framesSeen;
     }
+    // the frame interval, into its own window and totals
+    if (P.framesInWin == (u32)WIN && P.rIntUs[s]) { P.wIntUs -= P.rIntUs[s]; --P.wIntN; }
+    P.rIntUs[s] = P.curIntUs;
+    if (P.curIntUs) { P.wIntUs += P.curIntUs; ++P.wIntN; P.sumIntUs += P.curIntUs; ++P.nInt; if (P.curIntUs > P.maxIntUs) P.maxIntUs = P.curIntUs; }
     P.ring = (s + 1) % WIN;
     if (P.framesInWin < (u32)WIN) ++P.framesInWin;
     ++P.frames;
@@ -233,6 +252,11 @@ inline u32 win_total_max_us() {
     }
     return m;
 }
+
+// The frame interval over the window : avg and worst (us, 0 = none yet) ; AioHUD's share of it, in tenths of a percent.
+inline u32 win_int_avg_us() { return g_perf.wIntN ? (u32)(g_perf.wIntUs / g_perf.wIntN) : 0u; }
+inline u32 win_int_max_us() { u32 m = 0; for (u32 i = 0; i < g_perf.framesInWin; ++i) if (g_perf.rIntUs[i] > m) m = g_perf.rIntUs[i]; return m; }
+inline u32 win_share_x10()  { const u32 iv = win_int_avg_us(); return iv ? (u32)((unsigned long long)win_total_avg_us() * 1000 / iv) : 0u; }
 
 // ---- the commands' side ----
 inline void set_on(bool v)  { g_perf.want = v; }
