@@ -341,13 +341,31 @@ int chat_count() { return g_histN; }
 static char     g_ban[CHAT_BAN_MAX][20];
 static int      g_banN = 0;
 static unsigned g_banVer = 1;
-static bool     g_banLoaded = false;
+// Rule 10 (2026-11-24, the CI guard) : this was a one-shot latch -- a file that EXISTS but could not be opened at
+// that moment (an antivirus or an editor holding it) read as "nobody banned" for the whole session, and the next
+// ban then rewrote the file with that one name : the list was LOST. Now a missing file is an empty list, an
+// unreadable one is retried (BAN_TRIES, 1 s apart, logged), and the list is never saved before it was read.
+static bool     g_banLoaded = false;   // rule10-ok: set only by a REAL read or a file that does not exist ; a failed open retries (ban_load)
+static int      g_banTries = 0;
+static unsigned g_banNext = 0;
+static const int BAN_TRIES = 5;
 static void ban_path(wchar_t* w, int cap) { plugin_path_w(w, cap, L"data\\chat_bans.txt"); }
-static void ban_load() {
-    if (g_banLoaded) return;
-    g_banLoaded = true;                                  // a missing file = nobody banned (not a failure)
+// true once the list is known (read, or no file) ; false while a file that exists could not be read yet
+static bool ban_load() {
+    if (g_banLoaded) return true;
+    if (g_banTries >= BAN_TRIES || (g_banTries && (int)(GetTickCount() - g_banNext) < 0)) return false;
     wchar_t p[600]; ban_path(p, 600);
-    FILE* f = _wfopen(p, L"r"); if (!f) return;
+    if (GetFileAttributesW(p) == INVALID_FILE_ATTRIBUTES) {
+        const DWORD e = GetLastError();
+        if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) { g_banLoaded = true; return true; }   // rule10-ok: no file = nobody banned
+    }
+    FILE* f = _wfopen(p, L"r");
+    if (!f) {
+        ++g_banTries; g_banNext = GetTickCount() + 1000;
+        windower::debug::log("CHAT bans : the file exists but could not be read (errno %d, try %d/%d)%s", errno, g_banTries, BAN_TRIES,
+                             g_banTries >= BAN_TRIES ? " -- given up : no ban applied, the file is left untouched" : " -- retried");
+        return false;
+    }
     char ln[64];
     while (g_banN < CHAT_BAN_MAX && fgets(ln, sizeof(ln), f)) {
         int n = (int)strlen(ln); while (n && (ln[n - 1] == '\n' || ln[n - 1] == '\r' || ln[n - 1] == ' ')) ln[--n] = 0;
@@ -356,7 +374,9 @@ static void ban_load() {
     fclose(f);
     for (int i = 1; i < g_banN; ++i) { char t[20]; memcpy(t, g_ban[i], 20); int j = i; while (j > 0 && _stricmp(g_ban[j - 1], t) > 0) { memcpy(g_ban[j], g_ban[j - 1], 20); --j; } memcpy(g_ban[j], t, 20); }   // alphabetical (a hand-edited file too)
     ++g_banVer;
-    windower::debug::log("CHAT bans : %d name(s) loaded", g_banN);
+    g_banLoaded = true;                                  // rule10-ok: after a real read
+    windower::debug::log("CHAT bans : %d name(s) loaded%s", g_banN, g_banTries ? " (after a failed read)" : "");
+    return true;
 }
 static void ban_save() {
     wchar_t p[600]; ban_path(p, 600);
@@ -368,7 +388,7 @@ static void ban_save() {
 static int ban_find(const char* name) { for (int i = 0; i < g_banN; ++i) if (!_stricmp(g_ban[i], name)) return i; return -1; }
 bool chat_banned(const char* name) { ban_load(); return name && name[0] && ban_find(name) >= 0; }
 bool chat_ban_add(const char* name) {
-    ban_load();
+    if (!ban_load()) { windower::debug::log("CHAT bans : '%s' NOT banned -- the ban file could not be read yet (saving now would erase it)", name ? name : ""); return false; }
     if (!name || !name[0] || strlen(name) >= 20 || g_banN >= CHAT_BAN_MAX || ban_find(name) >= 0) return false;
     int at = g_banN; while (at > 0 && _stricmp(g_ban[at - 1], name) > 0) { memcpy(g_ban[at], g_ban[at - 1], 20); --at; }   // alphabetical
     lstrcpynA(g_ban[at], name, 20); ++g_banN; ++g_banVer; ban_save();
@@ -376,7 +396,7 @@ bool chat_ban_add(const char* name) {
     return true;
 }
 bool chat_ban_remove(const char* name) {
-    ban_load();
+    if (!ban_load()) { windower::debug::log("CHAT bans : '%s' NOT unbanned -- the ban file could not be read yet", name ? name : ""); return false; }
     const int k = name ? ban_find(name) : -1; if (k < 0) return false;
     for (int i = k; i + 1 < g_banN; ++i) memcpy(g_ban[i], g_ban[i + 1], 20);
     --g_banN; ++g_banVer; ban_save();
