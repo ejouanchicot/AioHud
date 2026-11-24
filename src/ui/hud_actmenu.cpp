@@ -7485,6 +7485,7 @@ NativeNet net_shown(const Frame& f) {
     static const int SC[4] = { 0, 20, 45, 100 }, PG[4] = { -1, 520, 310, 140 };
     const int st = ((int)(f.t / 2.0f)) & 3;
     N.ok = true; N.score = SC[st]; N.pingMs = PG[st]; N.mail = 3; N.gm = st >= 2 ? 1 : 0;
+    N.loadOk = true; N.bagsLoading = st == 1 || st == 2; N.gearLoading = st == 1;   // the zone-in order : both, then the bags alone, then none
     return N;
 }
 // the counts' text : "Mail n", "GM n", or both ; false when there is none
@@ -7506,6 +7507,7 @@ float netbox_width(const Frame& f, const Metrics& k) {
     // ALWAYS the room of the widest it can show ("Mail 200  GM 99" : the mailbox caps at 200) -- the box never resizes when
     // a message arrives (the user 2026-11-20 : "laisse l'espace ... la place que le max affiche prendrait")
     (void)N; w += 8.0f * S + (f.font ? f.font->measure("Mail 200  GM 99", tz * 0.95f) : 120.0f * S);
+    w += 6.0f * S + 2.0f * snap(18.0f * S);   // the two zone-in loading marks (bags, equipment) : their room is always kept
     return snap(w + pad);
 }
 Block g_tbB; unsigned g_tbMs = 0, g_tbLastText = 0;
@@ -7605,6 +7607,17 @@ void netbox_draw(const Frame& f) {
     char m[24];
     if (net_counts(N, m, sizeof(m)))                                     // the POL messages waiting / GM notices
         fo->draw_lc(dev, tx, cy, m, tz * 0.95f, with_alpha(N.gm > 0 ? 0xFFFFB98Au : 0xFF8FC8FFu, A), sh, k.ow);
+    // THE ZONE-IN LOADING MARKS, right end of the box (where the client puts them, at the end of its help bar, which
+    // NU_HELP hides) : a bag while no item bag has finished loading, a sword while the equipment has not. Shown only
+    // while loading, pulsing amber -- the client's own animated icons say "not ready yet" the same way.
+    if (N.loadOk && (N.bagsLoading || N.gearLoading)) {
+        const float cell = snap(18.0f * S), z = 0.72f * cell;
+        const float p = 0.775f + 0.225f * sinf(f.t * 5.0f);   // 55..100 % : at 10 % (the first try) they vanished half the time
+        const u32 c = with_alpha(0xFFE8C45Au, A * p);
+        float ix = snap(bx + bw - pad - cell * 0.5f);
+        if (N.bagsLoading) { draw_icon(dev, IC_BAG, ix, cy, z, S, c); ix = snap(ix - cell); }
+        if (N.gearLoading) draw_icon(dev, IC_SWORD, ix, cy, z, S, c);
+    }
 }
 bool net_preview_toggle() { g_netPreview = !g_netPreview; return g_netPreview; }
 bool buff_preview_toggle() { g_buffPreview = !g_buffPreview; return g_buffPreview; }

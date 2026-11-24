@@ -2803,6 +2803,47 @@ bool ns_res() {
     }
     return g_nsrOk;
 }
+// THE ZONE-IN LOADING ICONS (docs/notes/re-2026-11-25/zone-load-icons-and-compass.md ; live 2026-11-24 : steady mask
+// 0x00601801, 18 bag bits). The client's own decider FUN_053C72C0 (LOADICON_DECIDE, unique in the Nov and June dumps)
+// calls the mask getter (rel32 at +2) : `A1 [&P] 85 C0 75 01 C3 8B 80 [off] C3`. The offset MOVED with the August patch
+// (0x3C35C -> 0x3C40C) : it is read from the getter, never hard-coded. Rule : bag icon while neither 0x1000 nor 0x800,
+// sword icon while neither 0x200000 nor 0x800. Retried every 5 s, logged ; unresolved = loadOk false (nothing shown).
+struct LdRes { u32 pVar, maskOff; };
+LdRes g_ldr; bool g_ldrOk = false; int g_ldrTries = 0; DWORD g_ldrNext = 0;
+bool ld_res() {
+    if (g_ldrOk) return true;
+    const DWORD now = GetTickCount();
+    if (g_ldrTries && (int)(now - g_ldrNext) < 0) return false;
+    ++g_ldrTries; g_ldrNext = now + 5000;
+    const u32 a = aob_masked("53 E8 ?? ?? ?? ?? F6 C4 10 75 0E E8 ?? ?? ?? ?? F6 C4 08 75 04 32 DB EB 02 B3 01 8B 0D ?? ?? ?? ?? 85 C9 74 15 68 00 00 00 80 83 C1 20 E8");
+    u32 rel = 0, p = 0, off = 0; unsigned char g[17] = { 0 };   // A1 [&P:4] 85 C0 75 01 C3 8B 80 [off:4] C3 = 17 bytes
+    bool ok = a && safe_read(a + 2, &rel);
+    const u32 fn = ok ? a + 6 + rel : 0;                   // the CALL at +1 : its target = next instruction (+6) + rel32
+    ok = ok && rdblk(fn, g, sizeof(g)) && g[0] == 0xA1 && g[5] == 0x85 && g[6] == 0xC0 && g[7] == 0x75 && g[8] == 0x01 && g[9] == 0xC3
+            && g[10] == 0x8B && g[11] == 0x80 && g[16] == 0xC3;
+    if (ok) { memcpy(&p, g + 1, 4); memcpy(&off, g + 12, 4); ok = valid_ptr(p) && off > 0x1000 && off < 0x100000; }
+    if (ok) {
+        g_ldr.pVar = p; g_ldr.maskOff = off; g_ldrOk = true;
+        windower::debug::log("NATIVEUI loading icons resolved (try %d) : *(FFXiMain+%X), mask +0x%X%s", g_ldrTries, p - ffximain_base(), off,
+                             off == 0x3C40C ? "" : " -- MOVED since 2026-11-24 (was 0x3C40C)");
+    } else if (g_ldrTries == 1 || g_ldrTries % 12 == 0)
+        windower::debug::log("NATIVEUI loading icons NOT resolved (try %d : decider %s) -- the bag / equipment loading marks stay hidden", g_ldrTries, a ? "found, getter off" : "missing");
+    return g_ldrOk;
+}
+void load_read(NativeNet& t) {
+    t.loadOk = false; t.bagsLoading = t.gearLoading = false;
+    if (!ld_res()) return;
+    u32 P = 0, m = 0;
+    if (!safe_read(g_ldr.pVar, &P) || !valid_ptr(P) || !safe_read(P + g_ldr.maskOff, &m)) return;
+    t.loadOk = true;
+    t.bagsLoading = !(m & 0x1800u);                     // neither 0x1000 nor 0x800
+    t.gearLoading = !(m & 0x200800u);                   // neither 0x200000 nor 0x800
+    static int was = -1; const int now = (t.bagsLoading ? 1 : 0) | (t.gearLoading ? 2 : 0);
+    if (now != was) {                                   // every change, the success path too (rule 10) : the zone-in order
+        windower::debug::log("NATIVEUI loading : bags %s, equipment %s (mask %08X)", t.bagsLoading ? "LOADING" : "ready", t.gearLoading ? "LOADING" : "ready", m);
+        was = now;
+    }
+}
 void net_poll(bool on) {
     if (!on || !ns_res()) { g_net.ok = false; return; }
     NativeNet t; memset(&t, 0, sizeof(t));
@@ -2829,6 +2870,7 @@ void net_poll(bool on) {
         if (nRing && GetTickCount() - lastSample < 10000) { int s = 0; for (int i = 0; i < nRing; ++i) s += ring[i]; t.pingMs = s / nRing; }
         else t.pingMs = -1;                                   // no sample for 10 s (a zone, a stall) : unknown, never a stale number
     }
+    load_read(t);
     t.ok = true;
     static int lastBand = -1;
     const int band = t.score == 0 ? 0 : (t.score < 30 ? 1 : (t.score < 60 ? 2 : 3));

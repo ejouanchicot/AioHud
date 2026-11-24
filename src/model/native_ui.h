@@ -134,6 +134,11 @@ struct NativeNet {
     unsigned gapMs;       // ms between the last two server packets
     int  mail, gm;        // POL messages waiting, GM notices
     int  pingMs;          // the round-trip, ms (the last ~2 s averaged) ; -1 not measured yet (docs/notes/ping-re-2026-11-20.md)
+    // THE ZONE-IN LOADING ICONS the client draws at the right end of its help bar (hidden by NU_HELP, so AioHUD shows
+    // them) : the item bags, and the equipment (docs/notes/re-2026-11-25/zone-load-icons-and-compass.md, live 2026-11-24).
+    bool loadOk;          // the mask resolved and read this frame (false : nothing is claimed either way)
+    bool bagsLoading;     // the client's bag icon : no bag finished yet since the zone-in
+    bool gearLoading;     // the client's sword icon : the equipment not loaded yet
 };
 const NativeNet& native_net();
 
