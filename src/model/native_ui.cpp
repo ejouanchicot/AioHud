@@ -80,7 +80,11 @@ u32 layout_rec(u32 def) {
 
 // ---- which windows belong to which option ----
 bool in_list(const char* n, const char* const* L) { for (; *L; ++L) if (!strcmp(n, *L)) return true; return false; }
-const char* const PARTY_W[] = { "partywin", "targetwi", 0 };
+// ptw0..ptw6 are partywin's SIZE VARIANTS (0..6 members) : at each join / leave the client switches the open party
+// window's frame to ptw<count>'s RECORD (FUN_05545290 -> FUN_0545BD80 -> the setter, never the hooked move-to), so an
+// unshifted ptwN put the hidden window back on screen until heal_hud caught it -- the "it pops for a second when someone
+// joins" of 2026-11-17. Shifted with partywin, the switch lands parked. (docs/notes/re-2026-11-25/job-equip-storage-menus.md)
+const char* const PARTY_W[] = { "partywin", "targetwi", "ptw0", "ptw1", "ptw2", "ptw3", "ptw4", "ptw5", "ptw6", 0 };
 const char* const ALLY_W[]  = { "raid1", "raid2", 0 };
 const char* const CHAT_W[]  = { "logwindo", "logwin2", "fulllog", "spoolmsg", "splmsg2", "eventlog", "log8", "rem1line", "rem2line", "rem3line", 0 };
 const char* const HELP_W[]  = { "helpwind", "titlewin", 0 };
@@ -189,7 +193,9 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     // the trade's Current Gil (`money`) draws its digits WHERE IT OPENED and does not follow a later park (2026-11-20 :
     // "on voit les chiffres de gil ... ceux du jeu") : BORN parked while a trade is up (or `trade` was born a moment ago)
     if ((hide & NU_TRADE) && !strcmp(n, "money") && (g_trade.open || (g_tradeBornMs && GetTickCount() - g_tradeBornMs < 1000))) { dy = HIDE_DY; return; }
-    if ((hide & NU_ACT)   && (!strcmp(n, "playermo") || in_list(n, ACT_SUB_W) || in_list(n, ACT_LIST_W))) { dy = HIDE_DY; return; }
+    // actionm1..actiom10 : playermo's SIZE VARIANTS (1..10 rows) -- the same switch as partywin's ptwN at each row-count
+    // change (engage, a drop adds Treasure : 0x0546CA44), so they carry playermo's park (gauges-system-map-commands.md s.4.1)
+    if ((hide & NU_ACT)   && (!strcmp(n, "playermo") || !strncmp(n, "actionm", 7) || !strcmp(n, "actiom10") || in_list(n, ACT_SUB_W) || in_list(n, ACT_LIST_W))) { dy = HIDE_DY; return; }
     // the NPC SHOP : Buy / Sell, then its list and its Current Gil born parked (the client RESIZES `shop` once it is up and
     // `money` draws where it was born : shops-re s.7, the trade's lesson) -- only under an NPC shop's menu (the bazaar and
     // the guild shops reuse `shop` : the client's)
@@ -1795,6 +1801,16 @@ void apply(bool zero) {
     int k = 0; bool any = false;   // forget records that are gone -- never write to one we did not just see
     for (int i = 0; i < g_eN; ++i) if (g_e[i].alive) { g_e[k++] = g_e[i]; if (g_e[i].ax || g_e[i].ay) any = true; }
     g_eN = k;
+    {   // the SIZE VARIANTS carried with their window (ptw0..6 with partywin, actionm1..actiom10 with playermo) : said when
+        // the count changes -- the success path is the only proof the switch-on-resize cannot pop the native window back
+        int pv = 0, av = 0;
+        for (int i = 0; i < g_eN; ++i) if (g_e[i].ax || g_e[i].ay) {
+            if (!strncmp(g_e[i].name, "ptw", 3) && g_e[i].name[3] >= '0' && g_e[i].name[3] <= '6' && !g_e[i].name[4]) ++pv;
+            else if (!strncmp(g_e[i].name, "actionm", 7) || !strcmp(g_e[i].name, "actiom10")) ++av;
+        }
+        static int lastPv = -1, lastAv = -1;
+        if (pv != lastPv || av != lastAv) { windower::debug::log("NATIVEUI size variants carried : %d / 7 party (ptwN), %d / 10 action menu (actionmN)", pv, av); lastPv = pv; lastAv = av; }
+    }
     if (any) hook_install();          // before moving : a window re-placed during the move must already get its offset
     move_open(mgr, D, nD);
     heal_hud(mgr);                    // a HUD-like window off its record by a park (a drift) : back to its absolute place
