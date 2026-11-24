@@ -1,3 +1,6 @@
 # Windows batch files: CRLF in the working tree whatever core.autocrlf says (cmd.exe misreads labels and
 # multi-line commands in LF .bat files). Stored LF in the repository.
 *.bat text eol=crlf
+# Shell scripts: LF in the working tree whatever core.autocrlf says -- bash reads a CRLF line as "command\r" and
+# fails ; scripts/guardrails.sh runs in CI (a Windows runner) and in the pre-commit hook.
+*.sh text eol=lf
