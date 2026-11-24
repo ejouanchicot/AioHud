@@ -58,6 +58,7 @@ int   draws();                         // DrawPrimitiveUP calls
 int   verts();                         // vertices submitted
 const Vertex& vertex(int i);
 u32   bound_texture();
+extern unsigned g_fakeTexture;         // != 0 : the texture handle the gfx texture stub hands out (0 = none, the default)
 // Everything the log holds, as one line per call -- the golden form.
 void  trace(char* out, int cap);
 

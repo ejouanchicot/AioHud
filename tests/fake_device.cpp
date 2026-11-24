@@ -137,7 +137,11 @@ void trace(char* out, int cap) {
 // the plugin is genuinely in before the masks exist (first frame, and after a device loss), and it is
 // what makes rrect() take its GEOMETRIC path -- the feathered triangle fan the assertions describe.
 // The masked path is a texture blit whose correctness is a pixel question, not a geometry one.
+// ...unless a test asks for the MASKED path too (t_shapes.cpp : both paths of every rounded shape are locked by
+// their triangles) : fakedev::g_fakeTexture != 0 is then handed out as the texture. Nothing is ever read from it --
+// the fake device only records which handle was bound.
+namespace fakedev { unsigned g_fakeTexture = 0; }
 namespace aio {
-unsigned make_texture_argb_mip(unsigned, int, int, const unsigned*, long* out_why) { if (out_why) *out_why = 0; return 0; }
+unsigned make_texture_argb_mip(unsigned, int, int, const unsigned*, long* out_why) { if (out_why) *out_why = 0; return fakedev::g_fakeTexture; }
 void     release_texture(unsigned) {}
 }

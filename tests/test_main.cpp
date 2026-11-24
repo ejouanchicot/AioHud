@@ -46,6 +46,7 @@ void test_charsheet();
 void test_rva_rules();
 void test_render();
 void test_perf();
+void test_shapes();
 
 int main() {
     test_json();
@@ -83,6 +84,7 @@ int main() {
     test_rva_rules();
     test_render();
     test_perf();
+    test_shapes();
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail;
 }

@@ -231,17 +231,41 @@ static const float PI_ = 3.14159265f;
 // lerp_argb (per-channel ARGB interpolation, used for the vertical gradient across the rounded rect)
 // lives in color.h -> one implementation shared with the rest of the renderer.
 
-// a plain vertical-gradient rect (raw verts, half-pixel already applied by the caller).
-static void vrect_raw(u32 dev, float x, float y, float w, float h, u32 cT, u32 cB)
+// ---- ONE TRIANGLE LIST PER SHAPE (audit P8, 2026-11-24) ----------------------------------------------------------
+// //aio perf measured the rounded shapes as the first cost of the HUD : 1.05 ms a frame with a full alliance, up to
+// 15 DrawPrimitiveUP per rrect (3 rects, 4 corner fans, 4 edge feathers, 4 corner rings). Each piece is now handed to
+// a batch, which turns it into the very triangles D3D would have formed from it -- a strip's odd triangles reordered
+// (k, k+2, k+1) exactly as the runtime does, a fan's (0, k+1, k+2) -- and submits them as ONE list. Same triangles,
+// same vertices, same order : D3D rasterises triangle by triangle in submission order, so the pixels are the same.
+// tests/t_shapes.cpp holds that, every triangle of every shape hashed against the code from before the merge.
+// The batch is FLUSHED before any state change (the masked paths switch to a texture between their rects and their
+// corners), so the order of states and draws is the one the old code had. A shape too big for it flushes and goes on.
+template <class V> struct TriBatchT {
+    static const int CAP = 3 * 360;                  // the biggest shape here (rrect, 24-segment corners) is 302 triangles
+    V v[CAP]; int n; u32 dev;
+    explicit TriBatchT(u32 d) : n(0), dev(d) {}
+    ~TriBatchT() { flush(); }
+    TriBatchT(const TriBatchT&) = delete; TriBatchT& operator=(const TriBatchT&) = delete;
+    void flush() { if (n >= 3) dDrawUP(dev, D3DPT_TRIANGLELIST, (u32)(n / 3), v, sizeof(V)); n = 0; }
+    void tri(const V& a, const V& b, const V& c) { if (n + 3 > CAP) flush(); v[n++] = a; v[n++] = b; v[n++] = c; }
+    void strip(const V* q, int prims) { for (int k = 0; k < prims; ++k) { if (k & 1) tri(q[k], q[k + 2], q[k + 1]); else tri(q[k], q[k + 1], q[k + 2]); } }
+    void fan(const V* q, int prims)   { for (int k = 0; k < prims; ++k) tri(q[0], q[k + 1], q[k + 2]); }
+};
+typedef TriBatchT<VtxC> TriBatch;
+typedef TriBatchT<Vtx>  TriBatchTex;
+
+// a plain vertical-gradient rect (raw verts, half-pixel already applied by the caller), into a batch -- it was
+// vrect_raw, one draw each : same skip, same four corners, same strip
+static void vrect_b(TriBatch& tb, float x, float y, float w, float h, u32 cT, u32 cB)
 {
     if (w <= 0.0f || h <= 0.0f) return;
-    VtxC q[4] = {
+    const VtxC q[4] = {
         { x,     y,     0, 1, cT },
         { x + w, y,     0, 1, cT },
         { x,     y + h, 0, 1, cB },
         { x + w, y + h, 0, 1, cB },
     };
-    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, q, sizeof(VtxC));
+    tb.strip(q, 2);
 }
 
 // The BAKED-MASK path for a fully rounded rect -- the four-corner sibling of topcaps_masked above, and the
@@ -260,6 +284,7 @@ static bool px_aligned(float v) { float d = v - (float)(int)(v < 0.0f ? v - 0.5f
 
 static bool rrect_masked(u32 dev, float x, float y, float w, float h, int r, u32 cTop, u32 cBot)
 {
+    TriBatch tb(dev); TriBatchTex tbt(dev);   // one list for the rects, one for the textured corners (P8)
     if (!corner_mask_enabled()) return false;
     if (r < CM_RMIN || r > CM_RMAX) return false;
     if (!px_aligned(x) || !px_aligned(y) || !px_aligned(w) || !px_aligned(h)) return false;
@@ -274,11 +299,12 @@ static bool rrect_masked(u32 dev, float x, float y, float w, float h, int r, u32
     const u32 cB = lerp_argb(cTop, cBot, (h - R) / h);    // ... and where the bottom ones begin
 
     // --- the straight body : three crisp rects, no feather ---
-    vrect_raw(dev, x + R - 0.5f,     y - 0.5f,     w - 2.0f * R, h,            cTop, cBot);   // centre column, full height
-    vrect_raw(dev, x - 0.5f,         y + R - 0.5f, R,            h - 2.0f * R, cA,   cB);     // left band, between the arcs
-    vrect_raw(dev, x + w - R - 0.5f, y + R - 0.5f, R,            h - 2.0f * R, cA,   cB);     // right band
+    vrect_b(tb, x + R - 0.5f,     y - 0.5f,     w - 2.0f * R, h,            cTop, cBot);   // centre column, full height
+    vrect_b(tb, x - 0.5f,         y + R - 0.5f, R,            h - 2.0f * R, cA,   cB);     // left band, between the arcs
+    vrect_b(tb, x + w - R - 0.5f, y + R - 0.5f, R,            h - 2.0f * R, cA,   cB);     // right band
 
     // --- the four arcs : ONE baked block, mirrored in u and/or v ---
+    tb.flush();   // the rects BEFORE the texture is bound (the old order)
     dTexQuadState(dev, tex);
     const float X0 = x - 0.5f, X1 = x + R - 0.5f, X2 = x + w - R - 0.5f, X3 = x + w - 0.5f;
     const float Y0 = y - 0.5f, Y1 = y + R - 0.5f, Y2 = y + h - R - 0.5f, Y3 = y + h - 0.5f;
@@ -297,8 +323,9 @@ static bool rrect_masked(u32 dev, float x, float y, float w, float h, int r, u32
             { c.x0, c.y1, 0, 1, c.cb, c.ua, c.vb },
             { c.x1, c.y1, 0, 1, c.cb, c.ub, c.vb },
         };
-        dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, q, sizeof(Vtx));
+        tbt.strip(q, 2);
     }
+    tbt.flush();  // the corners BEFORE the 2D state comes back
     dColorQuadState(dev);   // never leave a bound texture for the next widget (rule 8)
     return true;
 }
@@ -306,6 +333,7 @@ static bool rrect_masked(u32 dev, float x, float y, float w, float h, int r, u32
 void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 cBot, float feather)
 {
     PERF_SCOPE("gfx.rrect");   // //aio perf : the rounded shapes, across all modules (audit P8)
+    TriBatch tb(dev);   // every piece below into ONE triangle list (P8)
     if (w <= 0.0f || h <= 0.0f) return;
     x -= 0.5f; y -= 0.5f;                                        // D3D half-pixel rule (applied ONCE here)
     if (r > w * 0.5f) r = w * 0.5f;
@@ -316,13 +344,13 @@ void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 c
     // colour at any scanline y' (linear top->bottom across the whole box height)
     #define CY(yy) lerp_argb(cTop, cBot, ((yy) - y) / h)
     if (r < 0.75f && feather <= 0.0f) {                          // no radius, no feather -> a plain crisp rect
-        vrect_raw(dev, x, y, w, h, cTop, cBot);
+        vrect_b(tb, x, y, w, h, cTop, cBot);
     } else {
         if (r < 0.75f) { r = 0.75f; if (r > w * 0.5f) r = w * 0.5f; if (r > h * 0.5f) r = h * 0.5f; }   // feather asked with ~no radius -> a hair of corner so the rounded path's CONSISTENT edge+corner feather applies (rule 2)
         // --- solid interior : centre column full-height + the two side bands + 4 quarter-disc corners ---
-        vrect_raw(dev, x + r,     y,     w - 2 * r, h,         cTop,       cBot);          // centre column
-        vrect_raw(dev, x,         y + r, r,         h - 2 * r, CY(y + r),  CY(y + h - r)); // left band
-        vrect_raw(dev, x + w - r, y + r, r,         h - 2 * r, CY(y + r),  CY(y + h - r)); // right band
+        vrect_b(tb, x + r,     y,     w - 2 * r, h,         cTop,       cBot);          // centre column
+        vrect_b(tb, x,         y + r, r,         h - 2 * r, CY(y + r),  CY(y + h - r)); // left band
+        vrect_b(tb, x + w - r, y + r, r,         h - 2 * r, CY(y + r),  CY(y + h - r)); // right band
         const int NcMax = 24;                                   // stack-array bound (raised : big circles/discs -- e.g. the minimap brass lens -- were faceted at 14/corner)
         int Nc = (int)(r * 0.7f); if (Nc < 6) Nc = 6; if (Nc > NcMax) Nc = NcMax;   // more segments on bigger radii -> rounder
         struct Corner { float cx, cy, a0; };
@@ -341,7 +369,7 @@ void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 c
                 const float vx = ccx + r * cosf(a), vy = ccy + r * sinf(a);
                 fan[i + 1] = { vx, vy, 0, 1, CY(vy) };
             }
-            dDrawUP(dev, D3DPT_TRIANGLEFAN, Nc, fan, sizeof(VtxC));   // Nc triangles, one submit
+            tb.fan(fan, Nc);   // Nc triangles, one submit
         }
         // --- feather ALL edges + corners CONSISTENTLY, so the silhouette extends by the same `feather`
         // everywhere. (If only the corners feathered, the rounded ends would reach ~1px further than the
@@ -351,18 +379,18 @@ void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 c
             { const u32 tA = cTop & 0x00FFFFFF;                                       // top edge : y -> y-f (alpha 0)
               VtxC T[4] = { { x + r, y - f, 0,1, tA }, { x + w - r, y - f, 0,1, tA },
                             { x + r, y,     0,1, cTop }, { x + w - r, y,     0,1, cTop } };
-              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, T, sizeof(VtxC)); }
+              tb.strip(T, 2); }
             { const u32 bA = cBot & 0x00FFFFFF;                                       // bottom edge : y+h -> y+h+f
               VtxC B[4] = { { x + r, y + h,     0,1, cBot }, { x + w - r, y + h,     0,1, cBot },
                             { x + r, y + h + f, 0,1, bA },   { x + w - r, y + h + f, 0,1, bA } };
-              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, B, sizeof(VtxC)); }
+              tb.strip(B, 2); }
             { const u32 c0 = CY(y + r), c1 = CY(y + h - r);                           // left + right edges
               VtxC L[4] = { { x - f, y + r, 0,1, c0 & 0x00FFFFFF }, { x, y + r, 0,1, c0 },
                             { x - f, y + h - r, 0,1, c1 & 0x00FFFFFF }, { x, y + h - r, 0,1, c1 } };
-              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, L, sizeof(VtxC));
+              tb.strip(L, 2);
               VtxC R[4] = { { x + w, y + r, 0,1, c0 }, { x + w + f, y + r, 0,1, c0 & 0x00FFFFFF },
                             { x + w, y + h - r, 0,1, c1 }, { x + w + f, y + h - r, 0,1, c1 & 0x00FFFFFF } };
-              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, R, sizeof(VtxC)); }
+              tb.strip(R, 2); }
             // 4 corner arcs : radius r (full) -> r+f (alpha 0)
             for (int k = 0; k < 4; ++k) {
                 const float ccx = cs4[k].cx, ccy = cs4[k].cy, a0 = cs4[k].a0;
@@ -373,7 +401,7 @@ void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 c
                     ring[2 * i]     = { ccx + r * ca,       ccy + r * sa,       0, 1, ci };
                     ring[2 * i + 1] = { ccx + (r + f) * ca, ccy + (r + f) * sa, 0, 1, ci & 0x00FFFFFF };
                 }
-                dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * Nc, ring, sizeof(VtxC));
+                tb.strip(ring, 2 * Nc);
             }
         }
     }
@@ -469,6 +497,7 @@ void hbar_soft(u32 dev, float x, float y, float w, float h, u32 rgb, u32 peakAlp
 // That also removes the mismatch rule 2 exists for: there is no feather to be inconsistent about.
 static bool topcaps_masked(u32 dev, float x, float y, float w, float h, int r, u32 cTop, u32 cBot)
 {
+    TriBatch tb(dev); TriBatchTex tbt(dev);   // one list for the rects, one for the textured corners (P8)
     if (!corner_mask_enabled()) return false;
     if (r < CM_RMIN || r > CM_RMAX) return false;
     float u0, v0, u1, v1;
@@ -484,11 +513,12 @@ static bool topcaps_masked(u32 dev, float x, float y, float w, float h, int r, u
     const u32   cMid = lerp_argb(cTop, cBot, R / h);         // the gradient where the arcs end
 
     // --- the straight body : three crisp rects, no feather ---
-    vrect_raw(dev, x + R - 0.5f,     y - 0.5f,     w - 2.0f * R, h,     cTop, cBot);   // centre column, full height
-    vrect_raw(dev, x - 0.5f,         y + R - 0.5f, R,            h - R, cMid, cBot);   // left band, below the arc
-    vrect_raw(dev, x + w - R - 0.5f, y + R - 0.5f, R,            h - R, cMid, cBot);   // right band
+    vrect_b(tb, x + R - 0.5f,     y - 0.5f,     w - 2.0f * R, h,     cTop, cBot);   // centre column, full height
+    vrect_b(tb, x - 0.5f,         y + R - 0.5f, R,            h - R, cMid, cBot);   // left band, below the arc
+    vrect_b(tb, x + w - R - 0.5f, y + R - 0.5f, R,            h - R, cMid, cBot);   // right band
 
     // --- the two arcs : the baked mask, 1:1, mirrored in u for the right-hand one ---
+    tb.flush();   // the rects BEFORE the texture is bound (the old order)
     dTexQuadState(dev, tex);                                  // MODULATE tex x diffuse, on colour AND alpha
     Vtx q[4] = {
         { x - 0.5f,     y - 0.5f,     0, 1, cTop, u0, v0 },   // TL corner
@@ -496,14 +526,15 @@ static bool topcaps_masked(u32 dev, float x, float y, float w, float h, int r, u
         { x - 0.5f,     y + R - 0.5f, 0, 1, cMid, u0, v1 },
         { x + R - 0.5f, y + R - 0.5f, 0, 1, cMid, u1, v1 },
     };
-    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, q, sizeof(Vtx));
+    tbt.strip(q, 2);
     Vtx q2[4] = {
         { x + w - R - 0.5f, y - 0.5f,     0, 1, cTop, u1, v0 },   // TR : the same block, u mirrored
         { x + w - 0.5f,     y - 0.5f,     0, 1, cTop, u0, v0 },
         { x + w - R - 0.5f, y + R - 0.5f, 0, 1, cMid, u1, v1 },
         { x + w - 0.5f,     y + R - 0.5f, 0, 1, cMid, u0, v1 },
     };
-    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, q2, sizeof(Vtx));
+    tbt.strip(q2, 2);
+    tbt.flush();  // the corners BEFORE the 2D state comes back
     dColorQuadState(dev);                                     // never leave a bound texture for the next widget (rule 8)
     return true;
 }
@@ -521,6 +552,7 @@ static bool topcaps_masked(u32 dev, float x, float y, float w, float h, int r, u
 void rrect_topcaps(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 cBot, float feather)
 {
     PERF_SCOPE("gfx.rrect");   // //aio perf : the rounded shapes, across all modules (audit P8)
+    TriBatch tb(dev);   // every piece below into ONE triangle list (P8)
     if (w <= 0.0f || h <= 0.0f) return;
     x -= 0.5f; y -= 0.5f;                                        // D3D half-pixel rule (applied ONCE here)
     if (r > w * 0.5f) r = w * 0.5f;
@@ -529,14 +561,14 @@ void rrect_topcaps(u32 dev, float x, float y, float w, float h, float r, u32 cTo
     // approximated). Everything below is the fallback -- no mask texture yet, a radius outside the baked set,
     // or a zone loading, where a texture's alpha would sample opaque and square off every corner.
     if (topcaps_masked(dev, x + 0.5f, y + 0.5f, w, h, (int)(r + 0.5f), cTop, cBot)) return;
-    if (r < 0.75f && feather <= 0.0f) { vrect_raw(dev, x, y, w, h, cTop, cBot); return; }
+    if (r < 0.75f && feather <= 0.0f) { vrect_b(tb, x, y, w, h, cTop, cBot); return; }
     if (r < 0.75f) { r = 0.75f; if (r > w * 0.5f) r = w * 0.5f; if (r > h) r = h; }
     #define CY(yy) lerp_argb(cTop, cBot, ((yy) - y) / h)
     // --- solid interior : centre column full height + the two side bands, which run to the BOTTOM (only the
     //     top corners are cut away) ---
-    vrect_raw(dev, x + r,     y,     w - 2 * r, h,     cTop,      cBot);
-    vrect_raw(dev, x,         y + r, r,         h - r, CY(y + r), cBot);
-    vrect_raw(dev, x + w - r, y + r, r,         h - r, CY(y + r), cBot);
+    vrect_b(tb, x + r,     y,     w - 2 * r, h,     cTop,      cBot);
+    vrect_b(tb, x,         y + r, r,         h - r, CY(y + r), cBot);
+    vrect_b(tb, x + w - r, y + r, r,         h - r, CY(y + r), cBot);
     const int NcMax = 24;
     int Nc = (int)(r * 0.7f); if (Nc < 6) Nc = 6; if (Nc > NcMax) Nc = NcMax;
     struct Corner { float cx, cy, a0; };
@@ -551,7 +583,7 @@ void rrect_topcaps(u32 dev, float x, float y, float w, float h, float r, u32 cTo
             const float vx = ccx + r * cosf(a), vy = ccy + r * sinf(a);
             fan[i + 1] = { vx, vy, 0, 1, CY(vy) };
         }
-        dDrawUP(dev, D3DPT_TRIANGLEFAN, Nc, fan, sizeof(VtxC));
+        tb.fan(fan, Nc);
     }
     // --- feather the VISIBLE perimeter (top edge, both sides, both arcs) by the SAME width. The bottom is
     //     deliberately left crisp : it is covered by the body the tab melts into, so feathering it would only
@@ -561,14 +593,14 @@ void rrect_topcaps(u32 dev, float x, float y, float w, float h, float r, u32 cTo
         { const u32 tA = cTop & 0x00FFFFFF;
           VtxC T[4] = { { x + r, y - f, 0,1, tA },   { x + w - r, y - f, 0,1, tA },
                         { x + r, y,     0,1, cTop }, { x + w - r, y,     0,1, cTop } };
-          dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, T, sizeof(VtxC)); }
+          tb.strip(T, 2); }
         { const u32 c0 = CY(y + r);
           VtxC L[4] = { { x - f, y + r, 0,1, c0 & 0x00FFFFFF },   { x, y + r, 0,1, c0 },
                         { x - f, y + h, 0,1, cBot & 0x00FFFFFF }, { x, y + h, 0,1, cBot } };
-          dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, L, sizeof(VtxC));
+          tb.strip(L, 2);
           VtxC R[4] = { { x + w, y + r, 0,1, c0 },   { x + w + f, y + r, 0,1, c0 & 0x00FFFFFF },
                         { x + w, y + h, 0,1, cBot }, { x + w + f, y + h, 0,1, cBot & 0x00FFFFFF } };
-          dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, R, sizeof(VtxC)); }
+          tb.strip(R, 2); }
         for (int k = 0; k < 2; ++k) {
             const float ccx = cs2[k].cx, ccy = cs2[k].cy, a0 = cs2[k].a0;
             VtxC ring[2 * (NcMax + 1)];
@@ -578,7 +610,7 @@ void rrect_topcaps(u32 dev, float x, float y, float w, float h, float r, u32 cTo
                 ring[2 * i]     = { ccx + r * ca,       ccy + r * sa,       0, 1, ci };
                 ring[2 * i + 1] = { ccx + (r + f) * ca, ccy + (r + f) * sa, 0, 1, ci & 0x00FFFFFF };
             }
-            dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * Nc, ring, sizeof(VtxC));
+            tb.strip(ring, 2 * Nc);
         }
     }
     #undef CY
@@ -593,6 +625,7 @@ void rrect_topcaps(u32 dev, float x, float y, float w, float h, float r, u32 cTo
 // anyway; the straight edges stay crisp the whole way, so nothing about the silhouette pops.
 static bool rrect_tb_masked(u32 dev, float x, float y, float w, float h, int rT, int rB, u32 cTop, u32 cBot)
 {
+    TriBatch tb(dev); TriBatchTex tbt(dev);   // one list for the rects, one for the textured corners (P8)
     if (!corner_mask_enabled()) return false;
     if (rT < CM_RMIN || rT > CM_RMAX) return false;
     if (rB && (rB < CM_RMIN || rB > CM_RMAX)) return false;
@@ -609,11 +642,12 @@ static bool rrect_tb_masked(u32 dev, float x, float y, float w, float h, int rT,
     const u32 cA = lerp_argb(cTop, cBot, RT / h);
     const u32 cB = lerp_argb(cTop, cBot, (h - RB) / h);
     // bands : the middle spans the full width ; the top and bottom bands sit between their own corners
-    if (h - RT - RB > 0.0f) vrect_raw(dev, x - 0.5f, y + RT - 0.5f, w, h - RT - RB, cA, cB);
-    vrect_raw(dev, x + RT - 0.5f, y - 0.5f, w - 2.0f * RT, RT, cTop, cA);
-    if (rB) vrect_raw(dev, x + RB - 0.5f, y + h - RB - 0.5f, w - 2.0f * RB, RB, cB, cBot);
-    else    vrect_raw(dev, x - 0.5f,      y + h - 0.5f,      w,             0.0f, cB, cBot);   // (no-op : square feet)
+    if (h - RT - RB > 0.0f) vrect_b(tb, x - 0.5f, y + RT - 0.5f, w, h - RT - RB, cA, cB);
+    vrect_b(tb, x + RT - 0.5f, y - 0.5f, w - 2.0f * RT, RT, cTop, cA);
+    if (rB) vrect_b(tb, x + RB - 0.5f, y + h - RB - 0.5f, w - 2.0f * RB, RB, cB, cBot);
+    else    vrect_b(tb, x - 0.5f,      y + h - 0.5f,      w,             0.0f, cB, cBot);   // (no-op : square feet)
 
+    tb.flush();   // the rects BEFORE the texture is bound (the old order)
     dTexQuadState(dev, tex);
     struct C { float x0, x1, y0, y1; float ua, ub, va, vb; u32 ct, cb; };
     C q[4]; int n = 0;
@@ -632,8 +666,9 @@ static bool rrect_tb_masked(u32 dev, float x, float y, float w, float h, int rT,
             { c.x0, c.y1, 0, 1, c.cb, c.ua, c.vb },
             { c.x1, c.y1, 0, 1, c.cb, c.ub, c.vb },
         };
-        dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(Vtx));
+        tbt.strip(v, 2);
     }
+    tbt.flush();  // the corners BEFORE the 2D state comes back
     dColorQuadState(dev);
     return true;
 }
@@ -649,6 +684,7 @@ static bool rrect_tb_masked(u32 dev, float x, float y, float w, float h, int rT,
 void rrect_tb(u32 dev, float x, float y, float w, float h, float rT, float rB, u32 cTop, u32 cBot, float feather)
 {
     PERF_SCOPE("gfx.rrect");   // //aio perf : the rounded shapes, across all modules (audit P8)
+    TriBatch tb(dev);   // every piece below into ONE triangle list (P8)
     if (w <= 0.0f || h <= 0.0f) return;
     x -= 0.5f; y -= 0.5f;
     const float rmax = w * 0.5f;
@@ -663,9 +699,9 @@ void rrect_tb(u32 dev, float x, float y, float w, float h, float rT, float rB, u
       if (feather > 0.0f && rrect_tb_masked(dev, x + 0.5f, y + 0.5f, w, h, iT, iB, cTop, cBot)) return; }
     #define CY(yy) lerp_argb(cTop, cBot, ((yy) - y) / h)
     // middle : full width, between the two corner zones -- the left and right edges are straight there
-    if (h - rT - rB > 0.0f) vrect_raw(dev, x, y + rT, w, h - rT - rB, CY(y + rT), CY(y + h - rB));
-    if (rT > 0.0f) vrect_raw(dev, x + rT, y,          w - 2.0f * rT, rT, cTop,           CY(y + rT));
-    if (rB > 0.0f) vrect_raw(dev, x + rB, y + h - rB, w - 2.0f * rB, rB, CY(y + h - rB), cBot);
+    if (h - rT - rB > 0.0f) vrect_b(tb, x, y + rT, w, h - rT - rB, CY(y + rT), CY(y + h - rB));
+    if (rT > 0.0f) vrect_b(tb, x + rT, y,          w - 2.0f * rT, rT, cTop,           CY(y + rT));
+    if (rB > 0.0f) vrect_b(tb, x + rB, y + h - rB, w - 2.0f * rB, rB, CY(y + h - rB), cBot);
     const int NcMax = 24;
     struct Corner { float cx, cy, a0, r; };
     const Corner cs4[4] = {
@@ -686,25 +722,25 @@ void rrect_tb(u32 dev, float x, float y, float w, float h, float rT, float rB, u
             const float vx = ccx + r * cosf(a), vy = ccy + r * sinf(a);
             fan[i + 1] = { vx, vy, 0, 1, CY(vy) };
         }
-        dDrawUP(dev, D3DPT_TRIANGLEFAN, Nc, fan, sizeof(VtxC));
+        tb.fan(fan, Nc);
     }
     if (feather > 0.0f) {
         const float f = feather;
         { const u32 tA = cTop & 0x00FFFFFF;
           VtxC T[4] = { { x + rT, y - f, 0,1, tA },   { x + w - rT, y - f, 0,1, tA },
                         { x + rT, y,     0,1, cTop }, { x + w - rT, y,     0,1, cTop } };
-          dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, T, sizeof(VtxC)); }
+          tb.strip(T, 2); }
         { const u32 bA = cBot & 0x00FFFFFF;
           VtxC B[4] = { { x + rB, y + h,     0,1, cBot }, { x + w - rB, y + h,     0,1, cBot },
                         { x + rB, y + h + f, 0,1, bA },   { x + w - rB, y + h + f, 0,1, bA } };
-          dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, B, sizeof(VtxC)); }
+          tb.strip(B, 2); }
         { const u32 c0 = CY(y + rT), c1 = CY(y + h - rB);
           VtxC L[4] = { { x - f, y + rT, 0,1, c0 & 0x00FFFFFF }, { x, y + rT, 0,1, c0 },
                         { x - f, y + h - rB, 0,1, c1 & 0x00FFFFFF }, { x, y + h - rB, 0,1, c1 } };
-          dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, L, sizeof(VtxC));
+          tb.strip(L, 2);
           VtxC R[4] = { { x + w, y + rT, 0,1, c0 }, { x + w + f, y + rT, 0,1, c0 & 0x00FFFFFF },
                         { x + w, y + h - rB, 0,1, c1 }, { x + w + f, y + h - rB, 0,1, c1 & 0x00FFFFFF } };
-          dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, R, sizeof(VtxC)); }
+          tb.strip(R, 2); }
         for (int k = 0; k < 4; ++k) {
             const float r = cs4[k].r;
             if (r < 0.35f) continue;
@@ -717,7 +753,7 @@ void rrect_tb(u32 dev, float x, float y, float w, float h, float rT, float rB, u
                 ring[2 * i]     = { ccx + r * ca,       ccy + r * sa,       0, 1, ci };
                 ring[2 * i + 1] = { ccx + (r + f) * ca, ccy + (r + f) * sa, 0, 1, ci & 0x00FFFFFF };
             }
-            dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * Nc, ring, sizeof(VtxC));
+            tb.strip(ring, 2 * Nc);
         }
     }
     #undef CY
@@ -726,16 +762,17 @@ void rrect_tb(u32 dev, float x, float y, float w, float h, float rT, float rB, u
 void rrect_left(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 cBot, float feather)
 {
     PERF_SCOPE("gfx.rrect");   // //aio perf : the rounded shapes, across all modules (audit P8)
+    TriBatch tb(dev);   // every piece below into ONE triangle list (P8)
     if (w <= 0.0f || h <= 0.0f) return;
     x -= 0.5f; y -= 0.5f;
     if (r > w) r = w;
     if (r > h * 0.5f) r = h * 0.5f;
     if (r < 0.0f) r = 0.0f;
     #define CY(yy) lerp_argb(cTop, cBot, ((yy) - y) / h)
-    if (r < 0.75f) { vrect_raw(dev, x, y, w, h, cTop, cBot); }
+    if (r < 0.75f) { vrect_b(tb, x, y, w, h, cTop, cBot); }
     else {
-        vrect_raw(dev, x + r, y,     w - r, h,         cTop,       cBot);          // body (flat right edge = the level)
-        vrect_raw(dev, x,     y + r, r,     h - 2 * r, CY(y + r),  CY(y + h - r)); // left band
+        vrect_b(tb, x + r, y,     w - r, h,         cTop,       cBot);          // body (flat right edge = the level)
+        vrect_b(tb, x,     y + r, r,     h - 2 * r, CY(y + r),  CY(y + h - r)); // left band
         const int NcMax = 14;
         int Nc = (int)(r * 0.9f); if (Nc < 6) Nc = 6; if (Nc > NcMax) Nc = NcMax;   // rounder on bigger radii
         const float cc[2][3] = { { x + r, y + r,     PI_ },          // TL : 180 -> 270
@@ -749,24 +786,24 @@ void rrect_left(u32 dev, float x, float y, float w, float h, float r, u32 cTop, 
                 const float vx = ccx + r * cosf(a), vy = ccy + r * sinf(a);
                 fan[i + 1] = { vx, vy, 0, 1, CY(vy) };
             }
-            dDrawUP(dev, D3DPT_TRIANGLEFAN, Nc, fan, sizeof(VtxC));
+            tb.fan(fan, Nc);
         }
         if (feather > 0.0f) {
             const float f = feather;
             const u32 c0 = CY(y + r), c1 = CY(y + h - r);
             VtxC L[4] = { { x, y + r, 0, 1, c0 }, { x, y + h - r, 0, 1, c1 },
                           { x - f, y + r, 0, 1, c0 & 0x00FFFFFF }, { x - f, y + h - r, 0, 1, c1 & 0x00FFFFFF } };
-            dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, L, sizeof(VtxC));   // left edge feather
+            tb.strip(L, 2);   // left edge feather
             // top + bottom edge feathers (x+r..x+w ; the flat RIGHT edge stays crisp = the level tip) so the
             // straight edges extend by the same `feather` as the rounded left cap (no 1px centre mismatch).
             { const u32 tA = cTop & 0x00FFFFFF;
               VtxC T[4] = { { x + r, y - f, 0,1, tA }, { x + w, y - f, 0,1, tA },
                             { x + r, y,     0,1, cTop }, { x + w, y,     0,1, cTop } };
-              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, T, sizeof(VtxC)); }
+              tb.strip(T, 2); }
             { const u32 bA = cBot & 0x00FFFFFF;
               VtxC B[4] = { { x + r, y + h,     0,1, cBot }, { x + w, y + h,     0,1, cBot },
                             { x + r, y + h + f, 0,1, bA },   { x + w, y + h + f, 0,1, bA } };
-              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, B, sizeof(VtxC)); }
+              tb.strip(B, 2); }
             for (int k = 0; k < 2; ++k) {
                 const float ccx = cc[k][0], ccy = cc[k][1], a0 = cc[k][2];
                 VtxC ring[2 * (NcMax + 1)];
@@ -776,7 +813,7 @@ void rrect_left(u32 dev, float x, float y, float w, float h, float r, u32 cTop, 
                     ring[2 * i]     = { ccx + r * ca,        ccy + r * sa,        0, 1, ci };
                     ring[2 * i + 1] = { ccx + (r + f) * ca,  ccy + (r + f) * sa,  0, 1, ci & 0x00FFFFFF };
                 }
-                dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * Nc, ring, sizeof(VtxC));
+                tb.strip(ring, 2 * Nc);
             }
         }
     }
@@ -786,6 +823,7 @@ void rrect_left(u32 dev, float x, float y, float w, float h, float r, u32 cTop, 
 void rrect_glow(u32 dev, float x, float y, float w, float h, float r, u32 col, float glowW)
 {
     PERF_SCOPE("gfx.rrect");   // //aio perf : the rounded shapes, across all modules (audit P8)
+    TriBatch tb(dev);   // every piece below into ONE triangle list (P8)
     if (w <= 0.0f || h <= 0.0f || glowW <= 0.0f) return;
     x -= 0.5f; y -= 0.5f;
     if (r > w * 0.5f) r = w * 0.5f;
@@ -796,16 +834,16 @@ void rrect_glow(u32 dev, float x, float y, float w, float h, float r, u32 col, f
     // 4 straight edges : peak on the path, alpha 0 outward
     { VtxC v[4] = { { x + r, y, 0,1, col }, { x + w - r, y, 0,1, col },
                     { x + r, y - f, 0,1, c0 }, { x + w - r, y - f, 0,1, c0 } };            // top
-      dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC)); }
+      tb.strip(v, 2); }
     { VtxC v[4] = { { x + r, y + h, 0,1, col }, { x + w - r, y + h, 0,1, col },
                     { x + r, y + h + f, 0,1, c0 }, { x + w - r, y + h + f, 0,1, c0 } };      // bottom
-      dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC)); }
+      tb.strip(v, 2); }
     { VtxC v[4] = { { x, y + r, 0,1, col }, { x, y + h - r, 0,1, col },
                     { x - f, y + r, 0,1, c0 }, { x - f, y + h - r, 0,1, c0 } };              // left
-      dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC)); }
+      tb.strip(v, 2); }
     { VtxC v[4] = { { x + w, y + r, 0,1, col }, { x + w, y + h - r, 0,1, col },
                     { x + w + f, y + r, 0,1, c0 }, { x + w + f, y + h - r, 0,1, c0 } };      // right
-      dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC)); }
+      tb.strip(v, 2); }
     // 4 corner arcs : radius r (peak) -> r+f (alpha 0)
     if (r > 0.25f) {
         const int Nc = 6;
@@ -823,7 +861,7 @@ void rrect_glow(u32 dev, float x, float y, float w, float h, float r, u32 col, f
                 ring[2 * i]     = { ccx + r * ca,       ccy + r * sa,       0, 1, col };
                 ring[2 * i + 1] = { ccx + (r + f) * ca, ccy + (r + f) * sa, 0, 1, c0 };
             }
-            dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * Nc, ring, sizeof(VtxC));
+            tb.strip(ring, 2 * Nc);
         }
     }
 }
@@ -847,6 +885,7 @@ void disc_glow(u32 dev, float cx, float cy, float r, u32 col, float glowW)
 void rrect_stroke(u32 dev, float x, float y, float w, float h, float r, u32 col, float bt)
 {
     PERF_SCOPE("gfx.rrect");   // //aio perf : the rounded shapes, across all modules (audit P8)
+    TriBatch tb(dev);   // every piece below into ONE triangle list (P8)
     if (w <= 0.0f || h <= 0.0f || bt <= 0.0f) return;
     x -= 0.5f; y -= 0.5f;
     if (r > w * 0.5f) r = w * 0.5f;
@@ -858,16 +897,16 @@ void rrect_stroke(u32 dev, float x, float y, float w, float h, float r, u32 col,
     // 4 straight edges (axis-aligned -> no aliasing, solid bands from the tangent points)
     { VtxC v[4] = { { x + r, y, 0,1, col }, { x + w - r, y, 0,1, col },
                     { x + r, y + bt, 0,1, col }, { x + w - r, y + bt, 0,1, col } };                 // top
-      dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC)); }
+      tb.strip(v, 2); }
     { VtxC v[4] = { { x + r, y + h - bt, 0,1, col }, { x + w - r, y + h - bt, 0,1, col },
                     { x + r, y + h, 0,1, col }, { x + w - r, y + h, 0,1, col } };                    // bottom
-      dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC)); }
+      tb.strip(v, 2); }
     { VtxC v[4] = { { x, y + r, 0,1, col }, { x + bt, y + r, 0,1, col },
                     { x, y + h - r, 0,1, col }, { x + bt, y + h - r, 0,1, col } };                   // left
-      dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC)); }
+      tb.strip(v, 2); }
     { VtxC v[4] = { { x + w - bt, y + r, 0,1, col }, { x + w, y + r, 0,1, col },
                     { x + w - bt, y + h - r, 0,1, col }, { x + w, y + h - r, 0,1, col } };            // right
-      dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2, v, sizeof(VtxC)); }
+      tb.strip(v, 2); }
     // 4 corner arcs : a quarter annulus ri..r + a feathered rim r..r+fth
     if (r > 0.25f) {
         const int Nc = 8;
@@ -887,8 +926,8 @@ void rrect_stroke(u32 dev, float x, float y, float w, float h, float r, u32 col,
                 rim[2 * i]     = { ccx + r * ca,        ccy + r * sa,        0, 1, col };
                 rim[2 * i + 1] = { ccx + (r + fth) * ca, ccy + (r + fth) * sa, 0, 1, c0 };
             }
-            dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * Nc, ann, sizeof(VtxC));
-            dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * Nc, rim, sizeof(VtxC));
+            tb.strip(ann, 2 * Nc);
+            tb.strip(rim, 2 * Nc);
         }
     }
 }
