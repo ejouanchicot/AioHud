@@ -180,7 +180,7 @@ inline void frame_end() {
         const int k = P.abBare ? 1 : 0;
         if (P.abN[k] < State::AB_MAX) P.abS[k][P.abN[k]] = us;
         P.abSum[k] += us; ++P.abN[k];
-        if (--P.abLeft == 0) { P.abDone = true; P.abBare = false; }
+        if (--P.abLeft == 0) { P.abDone = true; P.abBare = false; }   // rule10-ok: a result waiting to be reported (perf_ab_take clears it ; every ab re-arms), not a give-up latch
     }
 }
 
