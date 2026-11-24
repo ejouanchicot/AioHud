@@ -49,6 +49,7 @@ void test_perf();
 void test_shapes();
 void test_verbs();
 void test_minidump();
+void test_hookrelay();
 
 int main() {
     test_json();
@@ -89,6 +90,7 @@ int main() {
     test_shapes();
     test_verbs();
     test_minidump();
+    test_hookrelay();
     printf("\n%d checks, %d failed\n", g_run, g_fail);
     return g_fail;
 }

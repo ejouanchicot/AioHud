@@ -36,7 +36,7 @@ cl /nologo /MP /EHsc /W4 /WX /permissive- /std:c++17 /Od /Zi /fsanitize=address 
    "src\gfx\draw.cpp" "src\gfx\corner_mask.cpp" "src\gfx\noise.cpp" ^
    "src\model\skillchain.cpp" "src\model\ui_config.cpp" "src\model\chat_log.cpp" ^
    "src\model\timers_build.cpp" "src\model\model_clock.cpp" "src\model\flipwatch.cpp" "src\model\capwatch.cpp" "src\model\zones.cpp" "src\model\sentinel.cpp" ^
-   "src\model\party_state.cpp" "src\model\party_state_roster.cpp" "src\model\party_state_zonetracker.cpp" "src\model\party_state_pointwatch.cpp" "src\model\party_state_hate.cpp" "src\model\party_state_skillchain.cpp" "src\model\party_state_empypop.cpp" "src\model\itemnames_gen.cpp" "src\model\spells_gen.cpp" "src\model\abilities_gen.cpp" "src\model\native_ui_undo.cpp" "src\model\bst_state.cpp" "src\model\geo_state.cpp" ^
+   "src\model\party_state.cpp" "src\model\party_state_roster.cpp" "src\model\party_state_zonetracker.cpp" "src\model\party_state_pointwatch.cpp" "src\model\party_state_hate.cpp" "src\model\party_state_skillchain.cpp" "src\model\party_state_empypop.cpp" "src\model\itemnames_gen.cpp" "src\model\spells_gen.cpp" "src\model\abilities_gen.cpp" "src\model\native_ui_undo.cpp" "src\model\hook_relay.cpp" "tests\t_hookrelay.cpp" "src\model\bst_state.cpp" "src\model\geo_state.cpp" ^
    user32.lib kernel32.lib ^
    /Fo"%ROOT%build\t\\" /Fd"%ROOT%build\t\\" /Fe"%ROOT%build\tests.exe"
 set "CLRC=%errorlevel%"

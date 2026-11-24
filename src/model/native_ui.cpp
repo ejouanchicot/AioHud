@@ -8,7 +8,8 @@
 #include "model/game_mem.h"       // ffximain_base
 #include "model/paths.h"          // plugin_path : the crash-recovery file
 #include "model/native_ui_undo.h" // the crash-recovery files, one per client (audit R4)
-#include "model/xy_write.h"       // X and Y written as one change : a refused Y puts X back (audit R8)
+#include "model/xy_write.h"
+#include "model/hook_relay.h"     // the hooks : a permanent relay switched by one atomic write (audit R1)       // X and Y written as one change : a refused Y puts X back (audit R8)
 #include "model/chat_log.h"       // chat_seed_line / chat_seed_end : the client's own log, replayed at load
 #include "model/item_text.h"      // item_text_detail::decode : the item card page 2
 #include "model/map_dat.h"        // dat_resolve_path / dat_read_file : the client's d_msg files (Job Points' texts)
@@ -1197,18 +1198,12 @@ void image_range(u32& lo, u32& hi) {
     lo = b; hi = b + sz;
 }
 // AOB with a wildcard window [wlo,whi) ; returns the address only when it is UNIQUE
+// Relay-aware (model/hook_relay.h) : our JMPs stay in the client's code for good, so a hooked function's own prologue is
+// compared with the bytes the client had there -- or the second load would never find what the first one hooked.
 u32 aob_unique(const unsigned char* P, int n, int wlo, int whi) {
-    u32 lo = 0, hi = 0; image_range(lo, hi); if (!lo) return 0;
-    int hits = 0; u32 at = 0;
-    __try {
-        for (const unsigned char* q = (const unsigned char*)lo; q + n < (const unsigned char*)hi; ++q) {
-            if (q[0] != P[0]) continue;
-            bool ok = true;
-            for (int i = 1; i < n; ++i) { if (i >= wlo && i < whi) continue; if (q[i] != P[i]) { ok = false; break; } }
-            if (ok) { ++hits; at = (u32)q; if (hits > 1) break; }
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
-    return hits == 1 ? at : 0;
+    u32 lo = 0, hi = 0; image_range(lo, hi); if (!lo || n > 96) return 0;
+    bool W[96]; for (int i = 0; i < n; ++i) W[i] = (i >= wlo && i < whi);
+    return relay_aware_find(lo, hi, P, W, n);
 }
 
 bool manager_ok(u32 mgr);
@@ -1355,72 +1350,34 @@ miss:
 }
 
 // ---- the HOOKS : a window placed by its screen's code gets its offset before it is ever drawn ----
-// A 5-byte JMP over a function's first `len` bytes (whole instructions, no relative operand) ; the trampoline replays
-// them and jumps back. Trampolines are allocated ONCE and never freed : a frame could still be inside one after an unhook.
-struct Hook { u32 at; const unsigned char* pro; int len; void* dst; unsigned char* tramp; unsigned char orig[8]; bool on; const char* what; };
+// A 5-byte JMP over a function's first `len` bytes (whole instructions, no relative operand). Since 2026-11-24 (audit R1)
+// the JMP leads to a PERMANENT relay block (model/hook_relay.h), never into this DLL, and it is never taken out : on and
+// off -- the unload included -- are one atomic write of the relay's slot. Every handler below brackets itself with
+// relay_enter / relay_leave, so the shutdown can wait for a call still inside this DLL.
 const unsigned char PRO_MOVETO[8]    = { 0x83,0xEC,0x0C,0x66,0x8B,0x44,0x24,0x14 };
 const unsigned char PRO_LISTPLACE[7] = { 0x8B,0x44,0x24,0x04,0x83,0xEC,0x18 };
 Hook g_hkMove  = { 0, PRO_MOVETO,    8, 0, 0, {0}, false, "move-to" };
 Hook g_hkPlace = { 0, PRO_LISTPLACE, 7, 0, 0, {0}, false, "list beside-parent" };
 typedef int (__fastcall* ListPlaceFn)(u32 ecx_, u32 edx_, int* holder, u32 list);   // ret 8 : callee pops ; ecx passed through untouched (cdecl here crashed the client, 2026-11-15)
 
-// The bytes our JMP writes at h.at : E9 rel32, NOP-padded to the whole instructions it covers.
-void hook_jmp(const Hook& h, unsigned char* j) { j[0] = 0xE9; *(u32*)(j + 1) = (u32)h.dst - (h.at + 5); for (int k = 5; k < h.len; ++k) j[k] = 0x90; }
-// A GUARDED compare : a hook address can come from a rel32 read out of the client (the text capture's ascii entry),
-// so it is not trusted to be readable. A fault reads as "not these bytes".
-bool bytes_are(u32 at, const void* p, int n) { __try { return memcmp((const void*)at, p, n) == 0; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; } }
+// (the guarded prologue compare lives in the relay now : model/hook_relay.cpp, read_guarded)
 // Inside FFXiMain's image : no hook is ever placed anywhere else.
 bool in_image(u32 at, int len) { u32 lo = 0, hi = 0; image_range(lo, hi); return lo && at >= lo && at + (u32)len <= hi; }
 
 bool hook_on(Hook& h) {
     if (h.on) return true;
     if (!h.at) return false;
-    // Every refusal SAYS so (rule 10) : a computed address outside the client, an unreadable or changed prologue,
-    // no memory for the trampoline, a page that would not unprotect.
     if (!in_image(h.at, h.len)) { windower::debug::log("NATIVEUI %s at %08X is outside FFXiMain -- NOT hooked", h.what, h.at); return false; }
-    if (!bytes_are(h.at, h.pro, h.len)) { windower::debug::log("NATIVEUI %s prologue changed or unreadable -- NOT hooked", h.what); return false; }
-    if (!h.tramp) {
-        h.tramp = (unsigned char*)VirtualAlloc(0, 32, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-        if (!h.tramp) { windower::debug::log("NATIVEUI %s : no trampoline (VirtualAlloc failed, error %lu) -- NOT hooked", h.what, GetLastError()); return false; }
-    }
-    memcpy(h.tramp, (const void*)h.at, h.len);
-    h.tramp[h.len] = 0xE9; *(u32*)(h.tramp + h.len + 1) = (h.at + h.len) - ((u32)h.tramp + h.len + 5);
-    memcpy(h.orig, (const void*)h.at, h.len);
-    unsigned char j[8]; hook_jmp(h, j);
-    DWORD old = 0;
-    if (!VirtualProtect((void*)h.at, h.len, PAGE_EXECUTE_READWRITE, &old)) { windower::debug::log("NATIVEUI %s : VirtualProtect failed (error %lu) -- NOT hooked", h.what, GetLastError()); return false; }
-    memcpy((void*)h.at, j, h.len);
-    VirtualProtect((void*)h.at, h.len, old, &old);
-    FlushInstructionCache(GetCurrentProcess(), (void*)h.at, h.len);
-    h.on = true;
-    windower::debug::log("NATIVEUI %s hooked", h.what);
-    return true;
+    return relay_on(h);   // installs, or adopts the relay a previous load left, then switches it to our handler ; says every refusal
 }
-// Restore the original bytes -- but ONLY over our own JMP. Another hook placed on the same function after ours copied
-// our JMP into ITS trampoline : writing the prologue back would erase that hook while it still leads into this DLL.
-// So when the bytes are no longer ours they are left as found, and said. A page that will not unprotect leaves the
-// hook ON (it still is) and is said too : the old code set on=false and logged "unhooked" either way.
+// Never writes the client's code any more : the relay's slot goes back to the trampoline, the JMP stays (audit R1). The
+// old byte restore -- from the unload thread, over code the game's thread runs -- was the race.
 bool hook_off(Hook& h) {
     if (!h.on) return true;
-    unsigned char j[8]; hook_jmp(h, j);
-    if (!bytes_are(h.at, j, h.len)) {
-        h.on = false;
-        windower::debug::log("NATIVEUI %s NOT unhooked : its bytes at %08X are no longer our JMP (another hook over it) -- left as found", h.what, h.at);
-        return false;
-    }
-    DWORD old = 0;
-    if (!VirtualProtect((void*)h.at, h.len, PAGE_EXECUTE_READWRITE, &old)) {
-        windower::debug::log("NATIVEUI %s unhook FAILED : VirtualProtect error %lu -- the JMP is still in place", h.what, GetLastError());
-        return false;
-    }
-    memcpy((void*)h.at, h.orig, h.len);
-    VirtualProtect((void*)h.at, h.len, old, &old);
-    FlushInstructionCache(GetCurrentProcess(), (void*)h.at, h.len);
-    h.on = false;
-    windower::debug::log("NATIVEUI %s unhooked", h.what);
+    relay_off(h);
+    windower::debug::log("NATIVEUI %s off (relay to the original ; the JMP stays)", h.what);
     return true;
 }
-
 // DIAG (2026-11-15) : the next N move-to calls on a window AioHUD offsets -- caller, request, rect + scrollbar
 // (obj+0x88 : x, y) before and after. It is how the relative list movers above were found. DEV ONLY now : armed by
 // `//aio movediag` (aiohud_probes.cpp, native_ui_movediag) -- it used to re-arm at every record change, and with the
@@ -1440,8 +1397,9 @@ int find_entry_by_obj(u32 obj) {
 
 u32 g_placingList = 0;   // the list FUN_054A0D60 is placing right now (main thread only)
 
-void __fastcall hk_moveto(u32 obj, u32 /*edx*/, int x, int y) {
-    const u32 ret = (u32)_ReturnAddress();
+u32 g_movetoRet = 0;   // hk_moveto's caller in the client (main thread only)
+void __fastcall hk_moveto_body(u32 obj, u32 /*edx*/, int x, int y) {
+    const u32 ret = g_movetoRet;   // the CLIENT caller, taken by the wrapper (here it would be the wrapper itself)
     const int k = find_entry_by_obj(obj); const int rx0 = (short)x, ry0 = (short)y;
     int addX = 0, addY = 0;
     if (k >= 0) {
@@ -1459,10 +1417,14 @@ void __fastcall hk_moveto(u32 obj, u32 /*edx*/, int x, int y) {
                              g_e[k].name, ret - ffximain_base(), rx0, ry0, addX, addY, bx, by, bsx, bsy, axx, ayy, asx, asy);
     }
 }
+void __fastcall hk_moveto(u32 obj, u32 edx, int x, int y) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
+    g_movetoRet = (u32)_ReturnAddress();
+    relay_enter(); hk_moveto_body(obj, edx, x, y); relay_leave();
+}
 
 // FUN_054A0D60 writes the scrollbar from ITS OWN numbers after the move (old right - 8, the y it asked for) : put
 // it back where the client's rule puts it for the window as it now stands -- x = right - 8, y = top.
-int __fastcall hk_listplace(u32 ecx_, u32 edx_, int* holder, u32 list) {
+int __fastcall hk_listplace_body(u32 ecx_, u32 edx_, int* holder, u32 list) {
     const u32 prev = g_placingList; g_placingList = list;
     const int r = ((ListPlaceFn)g_hkPlace.tramp)(ecx_, edx_, holder, list);
     g_placingList = prev;
@@ -1475,6 +1437,9 @@ int __fastcall hk_listplace(u32 ecx_, u32 edx_, int* holder, u32 list) {
         }
     }
     return r;
+}
+int __fastcall hk_listplace(u32 ecx_, u32 edx_, int* holder, u32 list) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
+    relay_enter(); const auto r = hk_listplace_body(ecx_, edx_, holder, list); relay_leave(); return r;
 }
 
 // ---- the TRADE's navigation, in LINES (the user 2026-11-20) : gil / slots 1-4 / slots 5-8 / Cancel - OK. Every input
@@ -1500,7 +1465,7 @@ int trade_nav_to(int cur, int dx, int dy) {
     if (cur == 9)  { if (dy < 0) return col >= 3 ? col + 4 : 8; return dx < 0 ? 10 : 9; }      // OK (bottom right)
     return cur;
 }
-int __fastcall hk_menuevent(u32 obj, u32 /*edx*/, int ev) {
+int __fastcall hk_menuevent_body(u32 obj, u32 /*edx*/, int ev) {
     // a CONFIRM drawn by AioHUD lays Yes / No side by side : left -> Yes (1), right -> No (2) ; up / down stay the client's
     // (shopbuy / shopsell are a 2-row MENU -- Buy or Sell / Cancel, live 2026-11-20 -- : vertical, the client's own moves)
     if ((ev == 3 || ev == 4) && obj && obj == g_dlgObj && (ui_config().nuHide & NU_DIALOG) && !g_dlgFail && strncmp(g_dlg.name, "shop", 4)) {
@@ -1540,6 +1505,9 @@ int __fastcall hk_menuevent(u32 obj, u32 /*edx*/, int ev) {
         }
     }
     return ((MenuEventFn)g_hkEvent.tramp)(obj, ev);
+}
+int __fastcall hk_menuevent(u32 obj, u32 edx, int ev) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
+    relay_enter(); const auto r = hk_menuevent_body(obj, edx, ev); relay_leave(); return r;
 }
 bool trade_nav_hook() {                                                             // installed once the event function is known
     if (g_hkEvent.on) return true;
@@ -1598,7 +1566,7 @@ void cap_add(int x, int y, const char* s, int len, u32 col) {
     CapRun& R = W.r[W.n]; cap_clean(s, len, R.s, sizeof(R.s)); if (!R.s[0]) return;
     R.x = (short)x; R.y = (short)y; R.col = col; ++W.n;
 }
-u32 __fastcall hk_windraw(u32 win, u32 edx) {
+u32 __fastcall hk_windraw_body(u32 win, u32 edx) {
     const u32 pc = g_capCur; const int ps = g_capSlot;
     int s = -1, old = 0; const DWORD now = GetTickCount();
     for (int i = 0; i < 24; ++i) if (g_cap[i].win == win) { s = i; break; }
@@ -1609,26 +1577,41 @@ u32 __fastcall hk_windraw(u32 win, u32 edx) {
     g_capCur = pc; g_capSlot = ps;
     return r;
 }
-u32 __fastcall hk_txcore(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy) {
+u32 __fastcall hk_windraw(u32 win, u32 edx) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
+    relay_enter(); const auto r = hk_windraw_body(win, edx); relay_leave(); return r;
+}
+u32 __fastcall hk_txcore_body(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy) {
     if (g_capCur) cap_add((int)x, (int)y, s, (int)len, col);
     ++g_capDepth; const u32 r = ((TextCoreFn)g_hkTxCore.tramp)(font, edx, x, y, s, len, col, fl, sx, sy); --g_capDepth;
     return r;
 }
+u32 __fastcall hk_txcore(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
+    relay_enter(); const auto r = hk_txcore_body(font, edx, x, y, s, len, col, fl, sx, sy); relay_leave(); return r;
+}
 // the ascii ones are cdecl : 10 slots forwarded (the caller cleans ; the extra ones are its own stack, untouched)
-u32 __cdecl hk_txasc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
+u32 __cdecl hk_txasc_body(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
     if (g_capCur) cap_add((short)a1, (short)a2, (const char*)a3, 0, a4);
     ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAsc.tramp)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
     return r;
 }
-u32 __cdecl hk_txascr(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
+u32 __cdecl hk_txasc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
+    relay_enter(); const auto r = hk_txasc_body(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); relay_leave(); return r;
+}
+u32 __cdecl hk_txascr_body(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
     if (g_capCur) cap_add((short)a1, (short)a2, (const char*)a3, 0, a4 | 0x01000000u);   // right-aligned : x is its RIGHT edge (bit 24 of the colour marks it)
     ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscR.tramp)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
     return r;
 }
-u32 __cdecl hk_txascc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
+u32 __cdecl hk_txascr(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
+    relay_enter(); const auto r = hk_txascr_body(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); relay_leave(); return r;
+}
+u32 __cdecl hk_txascc_body(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
     if (g_capCur) cap_add((int)a2, (short)a3, (const char*)a4, 0, a5);
     ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscC.tramp)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
     return r;
+}
+u32 __cdecl hk_txascc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
+    relay_enter(); const auto r = hk_txascc_body(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); relay_leave(); return r;
 }
 // installed by AOB (re s.4), a bounded retry (20 x 5 s), logged ; the window-draw hook goes in LAST (nothing is attributed
 // before every text hook it can be is in)
@@ -4582,15 +4565,7 @@ u32 aob_masked(const char* pat) {
         W[n] = false; P[n++] = (unsigned char)v; q += 2;
     }
     u32 lo = 0, hi = 0; image_range(lo, hi); if (!lo || n < 8) return 0;
-    int hits = 0; u32 at = 0;
-    __try {
-        for (const unsigned char* q = (const unsigned char*)lo; q + n < (const unsigned char*)hi; ++q) {
-            if (q[0] != P[0]) continue;
-            int i = 1; for (; i < n; ++i) if (!W[i] && q[i] != P[i]) break;
-            if (i == n) { ++hits; at = (u32)q; if (hits > 1) break; }
-        }
-    } __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
-    return hits == 1 ? at : 0;
+    return relay_aware_find(lo, hi, P, W, n);   // relay-aware : see aob_unique
 }
 struct ChatRes { u32 invPtrVar, tellPtrVar, unityFlag, unityId, decode, str; };
 ChatRes g_cr = { 0, 0, 0, 0, 0, 0 }; bool g_crOk = false; int g_crTries = 0; DWORD g_crNext = 0;
@@ -5508,18 +5483,26 @@ void native_ui_tick(bool inWorld) {
     }
 }
 
+// Every relay is switched off by now : wait (bounded) for a call still inside one of our handlers, and say how it went.
+void relay_drain() {
+    const DWORD t0 = GetTickCount();
+    const int left = relay_wait_idle(200);
+    if (left) windower::debug::log("NATIVEUI shutdown : %d call(s) STILL inside a hook handler after %u ms -- the unload goes on", left, (unsigned)(GetTickCount() - t0));
+    else      windower::debug::log("NATIVEUI shutdown : no call in flight in a hook handler (checked in %u ms)", (unsigned)(GetTickCount() - t0));
+}
 // apply(true) in a guard of its own : a fault in the restore must not skip the hooks' removal that follows it.
 bool apply_restore_guarded() { __try { apply(true); return true; } __except (EXCEPTION_EXECUTE_HANDLER) { return false; } }
 void native_ui_shutdown() {
     // the d_msg text files kept for the session (Job Points, abilities) : nothing freed them at the unload (2026-11-23)
     for (Dmsg& D : g_dm) { if (D.buf) dat_free_file(D.buf); D.buf = 0; D.ok = false; D.tries = 0; }
-    text_capture_off();       // the text capture : ALWAYS off at an unload (its JMPs point into this DLL)
-    hook_off(g_hkEvent);      // the trade's lines : ALWAYS off at an unload (a JMP into an unloaded DLL would crash the client)
-    if (!g_anyApplied && !g_hkMove.on) return;
+    text_capture_off();       // the text capture : ALWAYS off at an unload (its relays back to the original)
+    hook_off(g_hkEvent);      // the trade's lines : ALWAYS off at an unload
+    if (!g_anyApplied && !g_hkMove.on) { relay_drain(); return; }
     // records back, open windows back by their delta, undo file deleted. Its own guard : before, a fault here
     // jumped straight to the caller's silent __except and skipped hook_remove -- the move-to JMP then outlived the DLL.
     const bool restoreRan = apply_restore_guarded();
     hook_remove();            // ALWAYS, whatever the restore did
+    relay_drain();            // and nothing of this DLL may still be running inside a hook when it is let go (R1)
     if (!restoreRan) { windower::debug::log("NATIVEUI shutdown : the restore THREW (SEH) -- hooks removed anyway ; the undo file stays, the next load puts the windows back"); return; }
     // SAY WHAT HAPPENED, not what was meant to : apply() returns early when no manager is proven, and this line used to
     // claim a restore that never ran (the windows then stayed parked until the next load's recovery).
