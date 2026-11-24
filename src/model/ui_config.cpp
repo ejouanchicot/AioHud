@@ -250,7 +250,8 @@ static bool save_config_to(const char* path) {
     fprintf(f, "mm2=%d,%d,%08X,%.3f,%.3f,%d,%d,%d\n", c.mmShape, c.mmFrame, c.mmFrameColor, c.mmBgAlpha, c.mmMarkerScale, c.mmPC, c.mmNPC, c.mmMob);   // shape / frame / frameColour / bgAlpha / markerScale / PC / NPC / mob
     fprintf(f, "mm4=%d,%08X,%d,%.2f,%08X\n", c.mmTgtLine, c.mmTgtLineCol, c.mmRing, c.mmRingR, c.mmRingCol);   // target-line on/colour ; range-ring on/radius/colour  (was mm3= -> collided with the clock line below, so it never reloaded)
     fprintf(f, "mm3=%d,%d,%d,%d,%d,%.3f,%d\n", c.mmClock, c.mmClkTime, c.mmClkDay, c.mmClkMoon, c.mmClkReal, c.mmMapSize, c.mmClockPos);   // clock : on/time/day/moon/real + independent map size + header placement
-    fprintf(f, "mm5=%.3f,%.3f,%d,%.3f\n", c.mmBezelW, c.mmCardSz, c.mmBezel, c.mmSqBorder);   // round bezel width / round cardinal size / round bezel on / square border width
+    fprintf(f, "mm5=%.3f,%.3f,%d,%.3f\n", c.mmBezelW, c.mmCardSz, c.mmBezel, c.mmSqBorder);
+    fprintf(f, "mm6=%d,%08X,%d\n", c.mmScan, c.mmScanCol, c.mmGrid);   // Wide Scan track on/colour ; map grid square on   // round bezel width / round cardinal size / round bezel on / square border width
     fprintf(f, "ws=%d,%.3f,%.3f,%.3f,%d,%d\n", c.wsShow, c.wsScale, c.wsX, c.wsY, c.wsFont, c.wsFx);   // arcade WS popup
     fprintf(f, "aw=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%d,%.3f,%.3f\n", c.awShow, c.awScale, c.awX, c.awY, c.awScreen, c.awMemory, c.awColors, c.awCount, c.awTimer, c.awStyle, c.awSide, c.awFx, c.awDistort, c.awJobs, c.awBadge, c.awLayout, c.awText, c.awOrb);   // Absorb-TP box
     { fprintf(f, "grow=");   // the grow direction of each module box (UiConfig::boxGrow, GrowBox order)
@@ -817,6 +818,12 @@ static bool parse_mm_line(const char* line, UiConfig& c) {
         float bw = 1.0f, cs = 1.0f, sb = 1.0f; int bz = 1;
         const int n = sscanf(line + 4, "%f,%f,%d,%f", &bw, &cs, &bz, &sb);
         if (n >= 1) { c.mmBezelW = bw; if (n >= 2) c.mmCardSz = cs; if (n >= 3) c.mmBezel = bz; if (n >= 4) c.mmSqBorder = sb; }
+        return true;
+    }
+    if (strncmp(line, "mm6=", 4) == 0) {                     // the native compass's pieces : Wide Scan track / map grid square
+        int sc = 1, gr = 1; unsigned scc = 0xFF5AB4FFu;
+        const int n = sscanf(line + 4, "%d,%x,%d", &sc, &scc, &gr);
+        if (n >= 1) { c.mmScan = sc; if (n >= 2) c.mmScanCol = scc; if (n >= 3) c.mmGrid = gr; }
         return true;
     }
     return false;
@@ -1400,6 +1407,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.mmTgtLine != b.mmTgtLine || a.mmTgtLineCol != b.mmTgtLineCol || a.mmRing != b.mmRing || a.mmRingR != b.mmRingR || a.mmRingCol != b.mmRingCol) return false;
     if (a.mmClock != b.mmClock || a.mmClkTime != b.mmClkTime || a.mmClkDay != b.mmClkDay || a.mmClkMoon != b.mmClkMoon || a.mmClkReal != b.mmClkReal || a.mmMapSize != b.mmMapSize || a.mmClockPos != b.mmClockPos) return false;
     if (a.mmBezelW != b.mmBezelW || a.mmCardSz != b.mmCardSz || a.mmBezel != b.mmBezel || a.mmSqBorder != b.mmSqBorder) return false;
+    if (a.mmScan != b.mmScan || a.mmScanCol != b.mmScanCol || a.mmGrid != b.mmGrid) return false;
     if (a.wsShow != b.wsShow || a.wsScale != b.wsScale || a.wsX != b.wsX || a.wsY != b.wsY || a.wsFont != b.wsFont || a.wsFx != b.wsFx || a.wsNameCol != b.wsNameCol || a.wsDmgCol1 != b.wsDmgCol1 || a.wsDmgCol2 != b.wsDmgCol2) return false;
     for (int i = 0; i < UiConfig::GB_COUNT; ++i) if (a.boxGrow[i] != b.boxGrow[i]) return false;
     if (a.scShow != b.scShow || a.scScale != b.scScale || a.scX != b.scX || a.scY != b.scY || a.scNearby != b.scNearby || a.scReadyDelay != b.scReadyDelay) return false;

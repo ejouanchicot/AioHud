@@ -686,6 +686,7 @@ void PartyState::zt_set_zone(int zone, const char* name) {
     // proves nothing, and last run's traffic would make a healthy id look silent. What an id HAS proven is not
     // reset here -- that belongs to the client build, not to the run.
     zt_msg_reset_run();
+    scan_ = ScanTrack{};                                     // a Wide Scan track never survives the zone line
     for (int i = 0; i < 10; ++i) treasure_[i] = TreasureItem{};   // Treasure Pool is ZONE-specific : empty it on ANY zone change (runs every frame here, module-independent). No packet clears the old zone's items, so without this they linger as a phantom pool until their ~5-min expiry.
     const int oldZone = zt_.curZone;
     const int prevMode = zt_.mode;
@@ -867,8 +868,16 @@ void PartyState::on_065(const unsigned char* p) {          // 0x065 repositionin
     if (w >= 0 && w < SORTIE_WINGS && sortie_trace_on()) windower::debug::log("SORTIELOG WING %c", SORTIE_WING[w].letter);
 }
 void PartyState::on_0f5(const unsigned char* p) {          // 0x0F5 Widescan track reply (~every 0.44 s while a track runs)
-    if (zt_.curZone != SORTIE_NAV_ZONE) return;
     if (pkt_short(p, 0x18)) return;
+    {   // the general track (Minimap) : status 1 = position valid, 2 = ended (the target died), 3 = stopped
+        const unsigned st = pkt_u32(p, 0x14);
+        const float tx = pkt_f32(p, 0x04), tz = pkt_f32(p, 0x0C);
+        if (st == 1 && (tx != 0.0f || tz != 0.0f)) {
+            const unsigned now = model_now_ms();
+            scan_.idx = pkt_u16(p, 0x12); scan_.x = tx; scan_.z = tz; scan_.lvl = p[0x10]; scan_.ms = now ? now : 1u;
+        } else if (st >= 2) scan_ = ScanTrack{};
+    }
+    if (zt_.curZone != SORTIE_NAV_ZONE) return;
     const unsigned idx = pkt_u16(p, 0x12);
     const float x = pkt_f32(p, 0x04), y = pkt_f32(p, 0x0C);
     const unsigned status = pkt_u32(p, 0x14);              // 1 = tracking (position valid), 2 = the track ENDED (measured : the NM's kill), 3 = stopped

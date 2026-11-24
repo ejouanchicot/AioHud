@@ -709,6 +709,10 @@ struct UiConfig {
     int   mmRing = 0;                  // show a range ring (pull / aggro distance) centred on you
     float mmRingR = 20.0f;             // range-ring radius in game distance (yalms ; 3 .. 50)
     unsigned mmRingCol = 0xFF66E0FFu;  // range-ring colour
+    // the native compass's pieces (it is anchored to the log window : the chat park takes it off screen)
+    int   mmScan = 1;                  // the Wide Scan TRACKED target : a pulsing mark (on the lens rim when off-map) + its line
+    unsigned mmScanCol = 0xFF5AB4FFu;  // its colour
+    int   mmGrid = 1;                  // the map grid square you stand in, "(F-10)", under the map
     // transient (not saved) : minimap rect as screen fractions + pending wheel, so the mouse callback can
     // zoom the map when the cursor is over it (outside edit mode). Written by the Minimap widget each frame.
     float mmHitX = 0.0f, mmHitY = 0.0f, mmHitW = 0.0f, mmHitH = 0.0f;

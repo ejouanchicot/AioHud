@@ -522,6 +522,12 @@ struct PartyState {
     };
     SortieNav soNav_;
     const SortieNav& sortie_nav() const { return soNav_; }
+    // WIDE SCAN TRACK, any zone : the target the native compass points its arrow at (that compass is anchored to the
+    // log window, so the chat park takes it off screen -- the Minimap draws it instead). Fed by the 0x0F5 replies the
+    // server streams (~2 a second) while a track runs ; ms = 0 : nothing tracked. Cleared on a zone change.
+    struct ScanTrack { unsigned idx = 0, ms = 0; float x = 0.0f, z = 0.0f; unsigned char lvl = 0; };
+    ScanTrack scan_;
+    const ScanTrack& scan_track() const { return scan_; }
     // ABSORB-TP WATCH (the Absorb-TP box, ui/hud_absorb.cpp) : who in the party / alliance cast Absorb-TP (spell 275),
     // what the last one drained, and when. Read off the 0x028 the server sends anyway -- the same source as the
     // AbsorbWatch addon it replaces, plus the true resist (msg 85) that addon missed. Fixed table : one row per

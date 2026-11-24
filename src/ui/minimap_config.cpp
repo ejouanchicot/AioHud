@@ -156,6 +156,11 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
             ROW_NEXT(46.0f)
             CFG_COLOR_PICKER(&c.mmRingCol)
         }
+        // --- the native compass's pieces : the Wide Scan tracked target, the map grid square ---
+        ROW_TOGGLE(CTRL_ID, tr("Wide Scan track", "Suivi Wide Scan"), c.mmScan)
+        if (c.mmScan)
+            CFG_COLOR_PICKER(&c.mmScanCol)
+        ROW_TOGGLE(CTRL_ID, tr("Map square (F-10)", "Case de carte (F-10)"), c.mmGrid)
             cat_fold_end(dev, ry, top8_, catH_[8], aF8_);
         }   // end Markers
 

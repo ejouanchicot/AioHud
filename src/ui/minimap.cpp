@@ -11,6 +11,7 @@
 #include "model/game_mem.h"          // current_submap : logged when a map load fails (black-minimap diagnosis)
 #include "windower_debug.h"          // MAP FAIL log (always on -- the bug is rare and can't be armed for)
 #include "retry_clock.h"             // retry_due / retry_arm : bounded retry with a delay, the project's one idiom
+#include "model/model_clock.h"       // model_now_ms : the Wide Scan track freshness (same clock as the 0x0F5 stamp)
 #include "model/selftest.h"          // MAP.LOAD_FAILED : a map that will not load reaches doctor and the watcher
 
 // The marker/element retry budget. 12 attempts over 2.4 s was the old value and it was too short to survive a
@@ -751,6 +752,34 @@ void Minimap::draw(const Frame& f) {
         }
     }
 
+    // ---- Wide Scan TRACK : the native compass's arrow (that compass sits on the log window, which the chat park
+    //      takes off screen). The server streams 0x0F5 ~2 a second while a track runs : a reply older than 3 s means
+    //      the track is gone even when no "ended" status came. A pulsing ring on the target, a thin line to it ;
+    //      off the lens the mark rides the rim, so it still points the way. ----
+    if (c.mmScan && g.map.scale != 0) {
+        const PartyState::ScanTrack& st = party().scan_track();
+        if (st.ms && (unsigned)(model_now_ms() - st.ms) < 3000u) {
+            const float ex = ((float)g.map.scale * st.x) / 5.0f - (float)g.map.offX;
+            const float ey = ((float)g.map.scale * -st.z) / 5.0f - (float)g.map.offY;
+            float sx = ccx + (ex - mapX) * pn, sy = ccy + (ey - mapY) * pn;
+            const float dx = sx - ccx, dy = sy - ccy, d = sqrtf(dx * dx + dy * dy);
+            const float lim = (round ? rc : (mapD * 0.5f - fi)) - snap(7.0f * S);
+            const bool off = d > lim && d > 0.001f;
+            if (off) { const float k = lim / d; sx = ccx + dx * k; sy = ccy + dy * k; }
+            const u32 sc = c.mmScanCol | 0xFF000000u;
+            color_state(dev);
+            seg_soft(dev, ccx, ccy, sx, sy, snap(1.4f * S) + snap(2.0f * S), 0x55000000u);
+            seg_soft(dev, ccx, ccy, sx, sy, snap(1.4f * S), (sc & 0x00FFFFFFu) | 0x99000000u);
+            const float ph = f.t * 2.2f - floorf(f.t * 2.2f);                 // 0..1 pulse
+            const float r0 = clampf(4.5f * S, 3.5f, 9.0f), rp = r0 + ph * r0 * 1.6f;
+            const u32 pa = (u32)((1.0f - ph) * 200.0f) << 24;
+            rrect_stroke(dev, sx - rp, sy - rp, 2.0f * rp, 2.0f * rp, rp, (sc & 0x00FFFFFFu) | pa, snap(1.6f * S));   // the expanding pulse
+            rrect_stroke(dev, sx - r0, sy - r0, 2.0f * r0, 2.0f * r0, r0, 0x99000000u, snap(3.2f * S));
+            rrect_stroke(dev, sx - r0, sy - r0, 2.0f * r0, 2.0f * r0, r0, sc, snap(1.8f * S));
+            disc(dev, snap(sx), snap(sy), snap((off ? 1.2f : 2.0f) * S), sc);
+        }
+    }
+
     // ---- clip the entity blips to the map so a blip crossing the rim is CUT at the frame instead of popping off
     //      whole. NB the stencil mask (rrect_clip) is NOT used here : Windower renders the overlay with no
     //      depth-stencil bound, so stencil ops no-op even when the device was created with one -> the mask never
@@ -824,6 +853,18 @@ void Minimap::draw(const Frame& f) {
         tquad_rot(dev, snap(ccx), snap(ccy), pSz * 1.2f, pSz * 1.2f, pang, 0xF0FFFFFFu);   // white halo behind
         tquad_rot(dev, snap(ccx), snap(ccy), pSz,        pSz,        pang, 0xFF12224Au);    // navy pin
         dSetTex(dev, 0, 0);
+    }
+
+    // ---- the map grid square, "(F-10)" -- the native compass's line, the client's own formula (FUN_05538C10) :
+    //      column 'A' + (px - 16) / 32, row 1 + (py - 16) / 32 on the 512 px native map, C division (toward zero) ----
+    if (c.mmGrid && g.map.scale != 0 && f.font) {
+        const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
+        if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) {
+            char gb[12]; _snprintf(gb, sizeof(gb), "(%c-%d)", 'A' + gc, gr + 1); gb[sizeof(gb) - 1] = 0;
+            const float gy = round ? (ccy + rc - snap(12.0f * S)) : (wy1 - snap(11.0f * S));
+            f.font->begin(dev);
+            f.font->draw_c(dev, snap(ccx), snap(gy), gb, snap(13.0f * S), 0xFFEAF0FFu, 0xFF000000u, 1.6f * S);
+        }
     }
 
     // ---- SQUARE frame stroke on top : custom colour, or the fallback when an FFXI skin wasn't ready yet ----
