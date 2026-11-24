@@ -12,6 +12,7 @@
 #                      temp folder so a drift check never writes over the tracked headers.
 # The legacy variable names (AIOHUD_RES, FFXI_RES) are still honoured, AFTER the canonical one.
 import os
+import sys
 
 ROOT       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL      = os.path.join(ROOT, 'src', 'model')
@@ -46,6 +47,18 @@ def out_path(name):
 def model_path(name):
     """A tracked header a generator READS as an input (never redirected by $AIOHUD_GEN_OUT)."""
     return os.path.join(MODEL, name)
+
+
+def require_found(count, minimum, what, source):
+    """Stop the generator (exit 1) when it read far fewer entries than it always does.
+
+    A changed input FORMAT does not crash a regex : it just matches nothing, and the generator used to write an
+    emptied table with exit 0 -- gen_bst_pets.py did for a week after AbilRow gained a field (2026-11-17), every
+    jug pet with no Ready move, and nothing said so. check_gen_drift.py reports this exit as CRASH."""
+    if count < minimum:
+        sys.stderr.write('%s: found only %d %s in %s (always >= %d) -- did its format change ? '
+                         'NOT writing the table.\n' % (os.path.basename(sys.argv[0]), count, what, source, minimum))
+        sys.exit(1)
 
 
 def rel(path):

@@ -15,6 +15,7 @@ ab = io.open(genpaths.model_path('abilities_gen.cpp'), encoding='utf-8').read() 
 # AbilRow is {id, "en", mp, recast_id, status} since f53616e (2026-11-17) : the optional 5th field, or no Ready
 # move matched and every pet came out with {0}
 known = dict((m.group(2), int(m.group(1))) for m in re.finditer(r'\{(\d+), "([^"]*)", (\d+), 102(?:, \d+)?\}', ab) if m.group(1) != '72')
+genpaths.require_found(len(known), 60, 'Ready moves (recast 102)', 'abilities_gen.cpp')   # 120 on 2026-11-24
 
 pets, names, inmoves = [], None, False
 for line in io.open(SRC, encoding='utf-8'):

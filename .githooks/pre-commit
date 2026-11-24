@@ -68,6 +68,22 @@ if [ -f scripts/check_repo.py ]; then
     fi
 fi
 
+# GENERATORS (scripts/check_gen_drift.py --crash-only, only when the commit touches a generator, genpaths.py or a
+# src/model/*_gen.* table). It fails when a generator no longer finds its inputs or crashes -- gen_bst_pets wrote
+# every jug pet without moves for a week (2026-11-17..24) with exit 0. A DRIFT (Windower res updated) is shown, never
+# blocking : those tables are regenerated on purpose, after an in-game check. Needs the dev install's res\.
+if git diff --cached --name-only | grep -qE '^scripts/(gen_[a-z_]+|genpaths|check_gen_drift)\.py$|^src/model/[a-z_]+_gen\.(h|cpp)$'; then
+    py=$(command -v python 2>/dev/null || command -v py 2>/dev/null)
+    if [ -n "$py" ]; then
+        if ! gout=$("$py" scripts/check_gen_drift.py --crash-only 2>&1); then
+            echo "$gout" | grep -E "CRASH|CANNOT RUN|SAME,"
+            echo "pre-commit: A GENERATOR NO LONGER RUNS -- commit refused (scripts/check_gen_drift.py --crash-only)."
+            exit 1
+        fi
+        echo "pre-commit: generators: $(echo "$gout" | tail -n 1)"
+    fi
+fi
+
 #
 # THE RULES THIS OBEYS, because a hook that blocks for the wrong reason is worse than no hook:
 #   * the game NOT running, or the addon not loaded, is NOT a failure -- it is skipped, out loud.

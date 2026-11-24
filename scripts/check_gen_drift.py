@@ -22,6 +22,11 @@ Usage (from anywhere) :
     python scripts/check_gen_drift.py spells trusts   # only headers whose name contains one of the words
     python scripts/check_gen_drift.py --keep          # keep the temp folder (its path is printed) to diff by hand
     python scripts/check_gen_drift.py --lines 12      # show up to 12 differing lines per drifting header (default 6)
+    python scripts/check_gen_drift.py --crash-only    # exit 1 only when a generator CRASHES or CANNOT RUN (its
+                                                      # inputs gone or unreadable) ; a DRIFT is reported, not failed.
+                                                      # The pre-commit hook runs this when a generator or a table
+                                                      # changes : a source update must not block, a broken generator
+                                                      # must (2026-11-24, gen_bst_pets / gen_skillchain).
 
 Inputs : Windower res\\ from $WINDOWER_RES and addons\\ from $WINDOWER_ADDONS, else the dev install (genpaths.py).
 The check resolves them ONCE and hands the same folders to every generator, so "missing" means the same thing to
@@ -109,6 +114,7 @@ def main():
     sys.stdout.reconfigure(errors='replace')   # a diff line must never kill the report on a cp1252 console
     args = sys.argv[1:]
     keep = '--keep' in args
+    crash_only = '--crash-only' in args
     nlines = 6
     if '--lines' in args:
         nlines = int(args[args.index('--lines') + 1])
@@ -139,6 +145,7 @@ def main():
             for h in headers:
                 print('%-22s CANNOT RUN  (%s) missing: %s' % (h, script, '; '.join(missing)))
                 counts['CANNOT RUN'] += 1
+            if crash_only: failed = True
             continue
 
         # cwd = the temp folder : a generator that still writes somewhere RELATIVE drops it there, harmlessly.
@@ -184,7 +191,7 @@ def main():
                 for l in shown:
                     print(l)
                 counts['DRIFT'] += 1
-                failed = True
+                if not crash_only: failed = True
 
     print('')
     print('%d SAME, %d DRIFT, %d CANNOT RUN, %d CRASH' % (counts['SAME'], counts['DRIFT'], counts['CANNOT RUN'],
