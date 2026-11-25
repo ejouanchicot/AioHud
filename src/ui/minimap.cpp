@@ -1347,7 +1347,15 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         const bool bandMoon = c.mmClock && c.mmClkMoon, bandDay = c.mmClock && (c.mmClkTime || c.mmClkDay);
         const float bandH = snap(pSz + 12.0f * S), by0 = snap(sq ? cy + off + sr * 0.95f : cy + r - 1.0f * S), bmid = by0 + bandH * 0.5f + 0.5f * S;   // the square : under its corner subdials, as on the round
         const float bx0 = snap(sq ? cx - r : cx - off - sr * 0.8f - TUNE("mm.dial_fillet", 12.0f) * S - 3.0f * S), bx1 = snap(sq ? cx + r : cx + off + sr * 0.8f + TUNE("mm.dial_fillet", 12.0f) * S + 3.0f * S), bins = 2.6f * S;   // the square : the frame's width   // both fillets land on the band
-        const float lc0 = bx0 + bins, lc1 = cx - 7.0f * S, rc0 = cx + 7.0f * S, rc1 = bx1 - bins;   // the two compartments
+        // the POSITION in the band (the user 2026-11-25 : "lower, between the moon and the time") : a third compartment at
+        // the centre, under the S, sized to the grid square -- in the modules style (round)
+        char posTxt[12] = ""; bool posBand = false;
+        if (c.mmGrid && c.mmDayDial == 2 && !sq) {
+            const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
+            if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { sprintf(posTxt, "%c-%d", 'A' + gc, gr + 1); posBand = true; }
+        }
+        const float posHalf = posBand && tf ? snap(tf->measure(posTxt, pSz) * 0.5f + 7.0f * S) : 0.0f;
+        const float lc0 = bx0 + bins, lc1 = cx - (posBand ? posHalf + 4.0f * S : 7.0f * S), rc0 = cx + (posBand ? posHalf + 4.0f * S : 7.0f * S), rc1 = bx1 - bins;   // the compartments
         if (bandMoon || bandDay) {
             color_state(dev);
             const float rad = snap(3.0f * S);
@@ -1398,8 +1406,15 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 rrect(dev, a0 - 0.8f * S, iy - 0.8f * S, a1 - a0 + 1.6f * S, bandH - 2.0f * bins + 1.6f * S, snap(1.8f * S), g_dm.dark, g_dm.lite);   // the chamfer
                 rrect(dev, a0, iy, a1 - a0, bandH - 2.0f * bins, snap(1.4f * S), 0xFF0F0C08u, 0xFF1E1810u);                                         // the recess
             }
-            disc(dev, cx, bmid, 4.2f * S, g_dm.edge); disc(dev, cx, bmid, 3.4f * S, g_dm.lite);    // the gilt cabochon
-            disc(dev, cx - 1.0f * S, bmid - 1.0f * S, 1.2f * S, 0xC0FFF6DCu);
+            if (posBand) {                                                                      // the position's compartment, its text
+                const float a0 = cx - posHalf, a1 = cx + posHalf, iy = by0 + bins;
+                rrect(dev, a0 - 0.8f * S, iy - 0.8f * S, a1 - a0 + 1.6f * S, bandH - 2.0f * bins + 1.6f * S, snap(1.8f * S), g_dm.dark, g_dm.lite);
+                rrect(dev, a0, iy, a1 - a0, bandH - 2.0f * bins, snap(1.4f * S), 0xFF0F0C08u, 0xFF1E1810u);
+                plateText(cx, bmid, posTxt, 0xFFF0D898u, -1);
+            } else {
+                disc(dev, cx, bmid, 4.2f * S, g_dm.edge); disc(dev, cx, bmid, 3.4f * S, g_dm.lite);    // the gilt cabochon
+                disc(dev, cx - 1.0f * S, bmid - 1.0f * S, 1.2f * S, 0xC0FFF6DCu);
+            }
             color_state(dev);
         }
         PERF_END("mm.band");
@@ -2027,7 +2042,7 @@ void Minimap::draw(const Frame& f) {
         const float rcM = dialSq ? r - snap(r * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f)) : r - r * (80.0f / 500.0f) * clampf(c.mmBezelW, 0.5f, 2.0f);
         draw_dial_instrument(dev, f, c, g, dial_vana(g.vana), elemTex_, wxTex_, mapX, mapY, ccx, ccy, rcM, r, S, 0.0f, dialSq, 0);
     }
-    if (dial && !dialSq && c.mmDayDial == 2 && c.mmGrid) {                // the POSITION POD : under the frame, the map and the ring
+    if (false && dial && !dialSq && c.mmDayDial == 2 && c.mmGrid) {       // (the position plate : replaced by the band's centre compartment)
         dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);
         const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
         if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { char gb[12]; sprintf(gb, "%c-%d", 'A' + gc, gr + 1); draw_pos_pod(dev, band_font(f, MM_TIME), ccx, ccy, r, S, gb); }
