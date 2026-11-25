@@ -1759,7 +1759,7 @@ static void drum_arc(u32 dev, Font* fo, int slot, float cx, float cy, float th0,
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw - wr - 0.6f * S, aLo, aHi, MA(0x50, g_dm.lite));                         // its lip toward the centre, a faint light
     ring_sector(dev, cx, cy, rw - wr - 0.6f * S, rw + wr + 0.6f * S, aLo - 0.6f * S / rw, aHi + 0.6f * S / rw, 0xFF0A0806u);  // the hollow
     const float ux0 = cosf(th0), uy0 = sinf(th0);                        // the roll axis (the tube is short : one axis for all)
-    float w = 0.0f;
+    float w = 0.0f; float cutA[16]; int ncut = 0;
     for (int i = 0; i < n; ++i) {
         const float ww = tk[i].w, a = ang(w + ww * 0.5f);
         if (tk[i].wheel) {
@@ -1785,9 +1785,10 @@ static void drum_arc(u32 dev, Font* fo, int slot, float cx, float cy, float th0,
             if (k < 1.0f) clip_rect_end(dev);
         }
         w += ww;
-        if (tk[i].wheel && i + 1 < n && tk[i + 1].wheel) { color_state(dev); pod_cut(dev, cx, cy, rw, wr, ang(w), S); }
+        if (tk[i].wheel && i + 1 < n && tk[i + 1].wheel && ncut < 16) cutA[ncut++] = ang(w);   // the cuts : drawn AFTER every wheel (the next wheel covered them)
     }
     color_state(dev);
+    for (int q = 0; q < ncut; ++q) pod_cut(dev, cx, cy, rw, wr, cutA[q], S);
     pod_glass(dev, cx, cy, rw, wr, aLo, aHi, S);                        // the glass tube...
     pod_caps(dev, cx, cy, rw, wr, aLo, aHi, S);                         // ...clamped by its end caps
 }
