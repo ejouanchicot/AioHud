@@ -1019,6 +1019,64 @@ static void glass_bead_over(u32 dev, float x, float y, float R, float S) {
     dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
     (void)S;
 }
+// A POD'S HOUSING, MACHINED OUT OF THE BEZEL (the user 2026-11-25 : "they stop dead -- they must melt into the dial" ;
+// then "think realism, steam magitech : it must be credible") : a BOSS milled in the ring's own metal, as a Bastokan
+// instrument maker would cut it -- a flat top face, its two ends CHAMFERED at 45 degrees down into the ring (plane facets :
+// the one facing the lamp, upper left, lit ; the other in shade), a sharp crease between face and chamfer, an engraved
+// groove along the top (a tool mark). No screws (refused). The ring's rim, drawn later, overlaps its root.
+static void pod_quad_strip(u32 dev, float cx, float cy, float a0, float a1, float ri0, float ro0, float ri1, float ro1, u32 c0, u32 c1) {
+    const int N = 10; VtxC v[(N + 1) * 2];
+    for (int i = 0; i <= N; ++i) {
+        const float t = (float)i / N, a = a0 + (a1 - a0) * t, ri = ri0 + (ri1 - ri0) * t, ro = ro0 + (ro1 - ro0) * t;
+        const u32 c = t < 0.5f ? c0 : c1;
+        v[2 * i]     = { cx + cosf(a) * ri - 0.5f, cy + sinf(a) * ri - 0.5f, 0, 1, c };
+        v[2 * i + 1] = { cx + cosf(a) * ro - 0.5f, cy + sinf(a) * ro - 0.5f, 0, 1, c };
+    }
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
+}
+static u32 pod_mix(u32 a, u32 b, float t) {
+    t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
+    const u32 r = (u32)(((a >> 16) & 0xFF) + (((int)((b >> 16) & 0xFF) - (int)((a >> 16) & 0xFF)) * t));
+    const u32 g = (u32)(((a >> 8) & 0xFF) + (((int)((b >> 8) & 0xFF) - (int)((a >> 8) & 0xFF)) * t));
+    const u32 bl = (u32)((a & 0xFF) + (((int)(b & 0xFF) - (int)(a & 0xFF)) * t));
+    return (a & 0xFF000000u) | (r << 16) | (g << 8) | bl;
+}
+static void pod_housing(u32 dev, float cx, float cy, float r, float Ri, float Ro, float th0, float Ph, float S, u32 hb) {
+    const float rB = r - 1.5f * S, rm = (Ri + Ro) * 0.5f;
+    const float C = (Ro - rB) / rm * TUNE("mm.pod_chamfer", 1.0f);       // the chamfer's angular length : 45 degrees
+    const float aL0 = th0 - Ph - C, aL1 = th0 - Ph, aR0 = th0 + Ph, aR1 = th0 + Ph + C;
+    color_state(dev);
+    // its shadow, then the dark edge : the whole silhouette (face + chamfers), a little larger
+    for (int pass = 0; pass < 2; ++pass) {
+        const float ox = pass == 0 ? 0.8f * S : 0.0f, oy = pass == 0 ? 1.4f * S : 0.0f, g = pass == 0 ? 0.6f * S : 1.3f * S;
+        const u32 col = pass == 0 ? 0x60000000u : g_dm.edge;
+        const float gA = g / rm;
+        pod_quad_strip(dev, cx + ox, cy + oy, aL0 - gA, aL1 - gA * 0.4f, Ri - g, rB, Ri - g, Ro + g, col, col);
+        ring_sector(dev, cx + ox, cy + oy, Ri - g, Ro + g, aL1 - gA * 0.4f, aR0 + gA * 0.4f, col);
+        pod_quad_strip(dev, cx + ox, cy + oy, aR0 + gA * 0.4f, aR1 + gA, Ri - g, Ro + g, Ri - g, rB, col, col);
+    }
+    // the top face
+    ring_sector(dev, cx, cy, Ri, Ro, aL1, aR0, hb);
+    // the CHAMFERS : plane facets lit by the lamp (upper left) -- facet normal = radial + tangent away from the face, 45 deg
+    const float Lx = -0.55f, Ly = -0.83f;
+    for (int e = -1; e <= 1; e += 2) {
+        const float am = th0 + (float)e * (Ph + C * 0.5f);
+        const float rx = cosf(am), ry = sinf(am), tx = -sinf(am) * (float)e, ty = cosf(am) * (float)e;
+        const float nx = (rx + tx) * 0.7071f, ny = (ry + ty) * 0.7071f, l = nx * Lx + ny * Ly;
+        const u32 fc = l > 0.0f ? pod_mix(hb, g_dm.lite, l * 0.55f) : pod_mix(hb, g_dm.edge, -l * 0.75f);
+        if (e < 0) pod_quad_strip(dev, cx, cy, aL0, aL1, Ri, rB, Ri, Ro, fc, fc);
+        else       pod_quad_strip(dev, cx, cy, aR0, aR1, Ri, Ro, Ri, rB, fc, fc);
+        // the sharp CREASE between the face and the chamfer : a fine bright line
+        const float ac = e < 0 ? aL1 : aR0;
+        seg_soft(dev, cx + cosf(ac) * (Ri + 1.0f * S), cy + sinf(ac) * (Ri + 1.0f * S), cx + cosf(ac) * Ro, cy + sinf(ac) * Ro, 0.9f * S, MA(l > 0.0f ? 0xB0 : 0x60, g_dm.lite));
+    }
+    // the face's outer lip : lit toward the lamp, turning away from it
+    ring_sector(dev, cx, cy, Ro - 1.2f * S, Ro, aL1, th0, MA(0xB0, g_dm.glint));
+    ring_sector(dev, cx, cy, Ro - 1.2f * S, Ro, th0, aR0, MA(0x80, g_dm.shade));
+    // the engraved GROOVE along the top, a tool mark : dark cut, its lit lower lip
+    ring_sector(dev, cx, cy, Ro - 3.4f * S, Ro - 2.6f * S, aL1 + 1.5f * S / Ro, aR0 - 1.5f * S / Ro, MA(0xA0, g_dm.edge));
+    ring_sector(dev, cx, cy, Ro - 4.2f * S, Ro - 3.4f * S, aL1 + 1.5f * S / Ro, aR0 - 1.5f * S / Ro, MA(0x50, g_dm.lite));
+}
 struct PodGeo { float th0, D, Ri, Ro, rm, isz, rw, wr, as, Wh, Ph; };
 static PodGeo pod_geo(float r, float S) {
     PodGeo g;
@@ -1057,13 +1115,10 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
         ring_sector(dev, cx, cy, Ri - grow, Ro + grow, th0 - Ph - grow / rm, th0 + Ph + grow / rm, col);
     };
     color_state(dev);
-    // ---- the housing : its shadow, the dark edge, the metal, lit along its upper flank ----
-    { const float sx = 0.8f * S, sy = 1.4f * S; ring_sector(dev, cx + sx, cy + sy, Ri, Ro + 2.0f * S, th0 - Ph, th0 + Ph, 0x60000000u); }
-    housing(1.3f * S, g_dm.edge);
-    const u32 hb = dm_toward(g_dm.bot, 0xFF000000u, 0.45f);            // the ring's dark metal, not the light body
-    housing(0.0f, hb);
-    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0 - Ph, th0, MA(0xA0, g_dm.glint));     // the outer flank catches the light...
-    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0, th0 + Ph, MA(0x80, g_dm.shade));     // ...and turns away from it
+    // ---- the housing, cast into the dial : its ends flow down into the ring ----
+    const u32 hb = dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f));   // the ring's own metal : one cast piece
+    pod_housing(dev, cx, cy, r, Ri, Ro, th0, Ph, S, hb);
+    (void)housing;
     // ---- the WINDOW : a chamfer, then the dark guilloche floor ----
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Wh - 0.02f, th0 + Wh + 0.02f, g_dm.dark);
     // the wheel is PAPER (the user 2026-11-25 : "as if inside it were paper, separations, icons painted on") : the map's
@@ -1296,13 +1351,10 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int ph,
     const float dir = sinf(G.th0) > 0.0f ? -1.0f : 1.0f;                // yesterday | today | tomorrow read LEFT to right wherever it sits
     const float th0 = G.th0, Ri = G.Ri, Ro = G.Ro, rm = G.rm, isz = G.isz * TUNE("mm.mpod_icon", 1.10f), rw = G.rw, wr = isz * 0.56f, as = G.as, Wh = G.Wh, Ph = G.Ph;
     auto at = [&](float ang, float rad, float& x, float& y) { x = cx + cosf(ang) * rad; y = cy + sinf(ang) * rad; };
-    const u32 hb = dm_toward(g_dm.bot, 0xFF000000u, 0.45f);
+    const u32 hb = dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f));
     color_state(dev);
-    { const float sx = 0.8f * S, sy = 1.4f * S; ring_sector(dev, cx + sx, cy + sy, Ri, Ro + 2.0f * S, th0 - Ph, th0 + Ph, 0x60000000u); }   // its shadow
-    ring_sector(dev, cx, cy, Ri - 1.3f * S, Ro + 1.3f * S, th0 - Ph - 1.3f * S / rm, th0 + Ph + 1.3f * S / rm, g_dm.edge);   // the housing : dark edge...
-    ring_sector(dev, cx, cy, Ri, Ro, th0 - Ph, th0 + Ph, hb);                                                               // ...the metal
-    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0 - Ph, th0, MA(0xA0, g_dm.glint));                                       // lit along its outer flank
-    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0, th0 + Ph, MA(0x80, g_dm.shade));
+    pod_housing(dev, cx, cy, r, Ri, Ro, th0, Ph, S, hb);                // cast into the dial : its ends flow down into the ring
+    (void)rm;
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Wh - 0.02f, th0 + Wh + 0.02f, g_dm.dark);     // the window's chamfer
     ring_sector(dev, cx, cy, rw - wr, rw + wr, th0 - Wh, th0 + Wh, 0xFFE6CF9Au);                                         // the band : PAPER, as the day pod's
     ring_sector(dev, cx, cy, rw - wr, rw - wr * 0.55f, th0 - Wh, th0 + Wh, 0x30603A10u);                                 // darker where it curls under the frame
