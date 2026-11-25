@@ -1129,43 +1129,35 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
     (void)PI; (void)capR; (void)frac;
 }
 
-// THE POSITION POD (the user 2026-11-25 : "the position, the same kind of module") : the day pod's family -- a housing
-// cast with the case, coming out from under the ring at the upper LEFT, its window a strip of the map's parchment with
-// the grid square engraved in ink ("H-9"). The window is as wide as the text. Drawn BEFORE the frame and the map.
+// THE POSITION PLATE (the user 2026-11-25 : "straight text in a rounded bulge looks odd, and the text overflows") : a
+// HORIZONTAL plate, mounted behind the compass at its upper left (the ring overlaps its inner corner), the same dark metal
+// as the day pod, a parchment window sized to the text with a margin -- the grid square in ink, never past it. Drawn
+// BEFORE the frame and the map.
 static void draw_pos_pod(u32 dev, Font* fo, float cx, float cy, float r, float S, const char* txt) {
     PERF_SCOPE("mm.pospod");
     const PodGeo G = pod_geo(r, S);
-    const float th0 = TUNE("mm.pos_angle", -2.3562f);                   // the upper left diagonal (the old corner subdial's place)
-    const float tsz = snap(G.isz * 0.95f), tw = fo ? fo->measure(txt, tsz) : 30.0f * S;
-    const float rw = G.rw, wr = G.wr, Ri = G.Ri, Ro = G.Ro, rm = G.rm;
-    const float Wh = (tw * 0.5f + 6.0f * S) / rw, Ph = Wh + 2.6f * S / rm + 0.04f;
+    const float tsz = snap(G.isz * 0.92f), tw = fo ? fo->measure(txt, tsz) : 30.0f * S;
+    const float ww = snap(tw + 12.0f * S), wh = snap(tsz + 7.0f * S);          // the window : the text and its margin
+    const float bz = snap(3.2f * S), hw = ww + 2.0f * bz, hh = wh + 2.0f * bz;   // the plate around it
+    const float an = TUNE("mm.pos_angle", -2.3562f), dist = r + TUNE("mm.pos_out", 0.10f) * r;
+    const float px = snap(cx + cosf(an) * dist), py = snap(cy + sinf(an) * dist);   // the plate's centre, beyond the ring
+    const float x0 = px - hw * 0.5f, y0 = py - hh * 0.5f;
     const u32 hb = dm_toward(g_dm.bot, 0xFF000000u, 0.45f);
     color_state(dev);
-    ring_sector(dev, cx + 0.8f * S, cy + 1.4f * S, Ri, Ro + 2.0f * S, th0 - Ph, th0 + Ph, 0x60000000u);   // its shadow
-    ring_sector(dev, cx, cy, Ri - 1.3f * S, Ro + 1.3f * S, th0 - Ph - 1.3f * S / rm, th0 + Ph + 1.3f * S / rm, g_dm.edge);
-    ring_sector(dev, cx, cy, Ri, Ro, th0 - Ph, th0 + Ph, hb);
-    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0 - Ph, th0, MA(0xA0, g_dm.glint));
-    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0, th0 + Ph, MA(0x80, g_dm.shade));
-    // the window : a chamfer, the parchment, darker toward the frame
-    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Wh - 0.02f, th0 + Wh + 0.02f, g_dm.dark);
-    ring_sector(dev, cx, cy, rw - wr, rw + wr, th0 - Wh, th0 + Wh, 0xFFE6CF9Au);
-    ring_sector(dev, cx, cy, rw - wr, rw - wr * 0.55f, th0 - Wh, th0 + Wh, 0x30603A10u);
-    ring_sector(dev, cx, cy, rw + wr * 0.55f, rw + wr, th0 - Wh, th0 + Wh, 0x30603A10u);
-    // the frame's bevel
-    ring_sector(dev, cx, cy, rw + wr, rw + wr + 1.2f * S, th0 - Wh, th0 + Wh, MA(0xC0, g_dm.lite));
-    ring_sector(dev, cx, cy, rw - wr - 1.2f * S, rw - wr, th0 - Wh, th0 + Wh, MA(0xC0, g_dm.dark));
-    // the grid square, in ink, upright, centred in the window
+    rrect_glow(dev, x0, y0 + 1.5f * S, hw, hh, snap(4.0f * S), 0x80000000u, snap(3.0f * S));   // its shadow
+    rrect(dev, x0 - 1.2f * S, y0 - 1.2f * S, hw + 2.4f * S, hh + 2.4f * S, snap(5.0f * S), g_dm.edge, g_dm.edge);
+    rrect(dev, x0, y0, hw, hh, snap(4.0f * S), dm_toward(hb, 0xFFFFFFFFu, 0.10f), hb);   // the plate, lit from the top
+    grad_quad(dev, x0 + 4.0f * S, y0 + 1.0f, hw - 8.0f * S, 1.0f, MA(0x90, g_dm.glint), MA(0x90, g_dm.glint), MA(0x90, g_dm.glint), MA(0x90, g_dm.glint));   // its lit top edge
+    const float wx = x0 + bz, wy = y0 + bz;
+    rrect(dev, wx - 0.9f * S, wy - 0.9f * S, ww + 1.8f * S, wh + 1.8f * S, snap(2.4f * S), g_dm.dark, g_dm.lite);   // the window's chamfer
+    rrect(dev, wx, wy, ww, wh, snap(2.0f * S), 0xFFDCC28Cu, 0xFFEAD6A6u);           // the parchment, shaded under the lip
+    grad_quad(dev, wx + 1.0f, wy, ww - 2.0f, snap(2.0f * S), 0x50603A10u, 0x50603A10u, 0x00603A10u, 0x00603A10u);   // the lip's shadow on it
     if (fo) {
-        const float px = cx + cosf(th0) * rw, py = cy + sinf(th0) * rw;
         fo->begin(dev);
-        fo->draw_c(dev, snap(px), snap(py + 0.6f), txt, tsz, 0x50FFF4DCu, 0, 0.0f);     // the paper's lit lip under the ink
+        fo->draw_c(dev, snap(px), snap(py + 0.6f), txt, tsz, 0x60FFF4DCu, 0, 0.0f);   // the paper's lit lip under the ink
         fo->draw_c(dev, snap(px), snap(py), txt, tsz, 0xFF3A2410u, 0, 0.0f);
     }
     color_state(dev);
-    // the glass
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
-    ring_sector(dev, cx, cy, rw + wr * 0.25f, rw + wr * 0.85f, th0 - Wh * 0.9f, th0 - Wh * 0.15f, 0x1CFFFFFFu);
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
 }
 
 static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, const VanaClock& v, u32 elemTex, u32 wxTex,
