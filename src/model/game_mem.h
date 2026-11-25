@@ -23,6 +23,7 @@ u32 entity_array();    // *(g + 0x24) -- the entity position-object array (index
 u32 player_struct();   // *(g + 0x3C) -- the local player struct (main job @+0x94, main lvl @+0x98, sub job @+0x9C, sub lvl @+0xA0)
 u32 self_party_base(unsigned selfId);   // id-validated self party-block base (pp-4, tolerating a 0/-4 shift) ; 0 if unavailable
 u32 self_entity();     // the local player's ENTITY struct (entity_array[selfIndex]) : X@+0x04 Y@+0x08 Z@+0x0C heading@+0x18 ; 0 if unavailable
+int weather_id();      // current weather (*(g+0x40)+0x04), res/weather.lua id 0..19 ; -1 if unavailable
 unsigned zone_id();    // current zone id (*(g+0x40)+0x02) -- matches the zones resource + map system ; 0 if unavailable
 
 // the client map-info record for (zone, submap) : the world->map-pixel calibration. Walked from the table

@@ -122,6 +122,7 @@ struct GameState {
 
     // --- minimap : current zone, self world position + heading, and the zone's map calibration record ---
     unsigned  zone = 0;       // current zone id (*(g+0x40)+0x02)
+    int       weather = -1;   // current weather, res/weather.lua id 0..19 (*(g+0x40)+0x04) ; -1 = unavailable
     float     meX = 0.0f, meZ = 0.0f;   // self world position (entity+0x04 / +0x0C)
     float     meHeading = 0.0f;         // self facing (entity+0x18, radians)
     MapRecord map;            // (zone, submap 0) map-pixel calibration ; map.valid=false when the zone has no map

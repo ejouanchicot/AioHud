@@ -154,6 +154,18 @@ unsigned zone_id() {
     u32 z = 0; safe_read(zi + 0x02, &z); return z & 0xFFFF;
 }
 
+// Current WEATHER : the same session struct, u32 @+0x04 (Windower get_info().weather ; docs/game-data/world/map-system.md).
+// The id indexes res/weather.lua : 0..3 no element (fine, sunshine, clouds, fog), then pairs single / double per element
+// (4-5 fire, 6-7 water, 8-9 earth, 10-11 wind, 12-13 ice, 14-15 thunder, 16-17 light, 18-19 dark). -1 = unavailable
+// (no session struct, a failed read, or an id outside that table) -- never "clear".
+int weather_id() {
+    u32 g = data_root();
+    if (!g) return -1;
+    u32 zi = 0; if (!safe_read(g + 0x40, &zi) || !valid_ptr(zi)) return -1;
+    u32 w = 0; if (!safe_read(zi + 0x04, &w)) return -1;
+    return w <= 19 ? (int)w : -1;
+}
+
 // ---- Entity struct field offsets : ONE source of truth (rule 7) for both read_map_entities and
 // read_target_entity, which read the same entity_array[idx] struct. Reversed via //aio tent / minimap
 // probes ; see docs/game-data. (T0_EPTR_OFF below is a TARGET-system field, not an entity field.)
@@ -1725,6 +1737,9 @@ void poll_game_state(GameState& gs) {
 
     // minimap : zone + self world position/heading + the zone's map calibration record (snapshot once/frame)
     gs.zone = zone_id();
+    gs.weather = weather_id();
+    { static int wPrev = -2; static unsigned wz = 0;                             // log each change : the offset is from a decompile, verify it live
+      if (gs.weather != wPrev || gs.zone != wz) { windower::debug::log("WEATHER id=%d zone=%u", gs.weather, gs.zone); wPrev = gs.weather; wz = gs.zone; } }
     // a ZONE CHANGE re-arms the retries whose failure can pass (rule 10) : allocations of the menu DAT's textures and
     // labels, a ban file that could not be opened. Not the first zone of the session : nothing has failed yet.
     { static unsigned zPrev = 0;

@@ -26,7 +26,10 @@ Windower get_info().zone (LuaCore FUN_10070120) reads it as a u16 field literall
     Z    = *(g + 0x40)          // session / zone-info struct
     zone = *(u16*)(Z + 0x02)    // current zone id (matches the zones resource + zoom.json keys)
 
-Same struct Z also holds: +0x00 u8 logged_in, +0x04 u32 weather, +0x08 mog_house. This is the
+Same struct Z also holds: +0x00 u8 logged_in, +0x04 u32 weather, +0x08 mog_house.
+**weather VERIFIED live 2026-11-25** (`game_mem.cpp weather_id`, `WEATHER id=` log lines vs Windower get_info().weather
+through the aiotest bridge) : 0 Rabao (247), 3 (231), 2 (126), 13 = Blizzards in Beaucedine Glacier (111), both
+clients. The id indexes res/weather.lua (0..3 no element, then single/double pairs per element). This is the
 authoritative "which zone am I in" for map selection and the zoom.json lookup.
 
 > The client map subsystem keeps its own copy of the current zone (used as the map-table key,
