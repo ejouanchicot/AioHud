@@ -137,6 +137,30 @@ struct NativeMacroBooks {
     short rx0, ry0, rx1, ry1; int uiW, uiH;   // the client's rect (UI units, unparked)
 };
 const NativeMacroBooks& native_macro_books();
+
+// The macro EDITOR (macro-bar-re s.7) : the palette (mcr1edit / mcr2edit, long forms mcr1edlo / mcr2edlo : the Ctrl and
+// Alt bars stacked) and `macro` (one macro : its name + 6 command lines ; previous / next). Data from M (the set being
+// edited), the slot from the controller E, what is typed from the window's inputs.
+struct NativeMacroEdit {
+    bool pal, palFocused;        // the palette is up / has the keys
+    int  row;                    // the active bar 1 Ctrl / 2 Alt
+    int  hand[2];                // each bar's hand 1..10 (0 none)
+    int  book, set;              // 0-based
+    char bookTitle[17];
+    char name[20][9];            // 0..9 Ctrl 1..0, 10..19 Alt 1..0
+    short px0, py0, px1, py1;    // the Ctrl bar's rect (UI units, unparked)
+    bool ed, edFocused;          // `macro` is up / has the keys
+    int  k;                      // the macro edited 0..19
+    int  cursor;                 // its hand : 1 previous, 2 next, 3 the name, 4..9 lines 1..6
+    int  typing;                 // the entry being typed (3..9), 0 none
+    char ename[24];
+    char line[6][128];           // auto-translate blocks spelled out {...}
+    short ex0, ey0, ex1, ey1;    // `macro`'s rect
+    int  uiW, uiH;
+};
+const NativeMacroEdit& native_macro_edit();
+bool native_macro_edit_hover(int bar, int entry);   // bar 0 palette Ctrl, 1 palette Alt, 2 the macro window
+bool native_macro_edit_pick(int bar, int entry);
 bool native_macro_books_hover(int entry);   // entry 1..22 (rows, then the page arrows)
 bool native_macro_books_pick(int entry);
 

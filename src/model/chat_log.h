@@ -59,6 +59,8 @@ struct ChatLine {
 
 // TEXT thread : copy one incoming line (never blocks ; a full ring drops the line and counts it)
 void chat_queue(const char* s, int mode);
+// an auto-translate block FD type lang id_hi id_lo FD -> its words (0 unknown) ; the dictionary / an item name
+const char* chat_at_words(unsigned type, unsigned id);
 // MAIN thread, once per frame : decode + append everything queued since the last call
 void chat_drain();
 // The CLIENT's own log, replayed once at load (chat_backlog.cpp) so a //reload does not start the boxes empty.

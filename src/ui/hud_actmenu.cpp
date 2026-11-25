@@ -5453,7 +5453,8 @@ void macro_books_draw(const Frame& f) {
     const NativeMacroBooks& B0 = native_macro_books();
     static NativeMacroBooks last;
     if (B0.open) last = B0;
-    if (!block_ease(g_mbkB, B0.open, now, dt) || last.uiW <= 0 || last.uiH <= 0) return;
+    const bool editing = native_macro_edit().pal || native_macro_edit().ed;   // the editor opens in its place
+    if (!block_ease(g_mbkB, B0.open && !editing, now, dt) || last.uiW <= 0 || last.uiH <= 0) return;
     const Metrics k = metrics(f), kN = no_icons(k);
     const float S = k.S;
     RowSpec rows[20]; static char lab[20][24], num[20][8]; int cur = 0;
@@ -5511,6 +5512,124 @@ void macro_books_draw(const Frame& f) {
             }
         }
     } else g_mbkB.hoverRow = 0;
+}
+// ======== MacroPalette -> a book -> Edit : the PALETTE (mcr1edlo / mcr2edlo : Ctrl and Alt stacked) and ONE MACRO
+// (`macro` : its name, its 6 lines). The client keeps the keys (and the typing) ; the mouse hovers / picks a cell, a
+// field, the previous / next arrows. ========
+namespace { Block g_mpB, g_meB; unsigned g_medMs = 0; }
+void macro_edit_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_mpB.vis = g_meB.vis = 0.0f; g_mpB.wasOpen = g_meB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_medMs ? (float)(now - g_medMs) / 1000.0f : 0.0f; g_medMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeMacroEdit& E0 = native_macro_edit();
+    static NativeMacroEdit last;
+    if (E0.pal || E0.ed) last = E0;
+    if (last.uiW <= 0 || last.uiH <= 0) return;
+    const Metrics k = metrics(f), kN = no_icons(k);
+    const float S = k.S, tz = k.tz, pad = snap(8.0f * S) + k.bi;
+    Font* fo = f.font; const u32 dev = f.dev; const u32 sh0 = 0xC8000000u;
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    const MouseState* ms = f.mouse;
+    // ---- the palette : a header, then Ctrl 1..0 and Alt 1..0 ----
+    if (block_ease(g_mpB, E0.pal, now, dt)) {
+        const float tO = ease_out(((float)(now - g_mpB.openMs) / 1000.0f) / 0.08f);
+        const float A = g_mpB.vis * tO * (last.palFocused || !E0.pal ? 1.0f : 0.62f);
+        if (A > 0.0f) {
+            const u32 sh = with_alpha(sh0, A);
+            float bw = snap((float)(last.px1 - last.px0) * sx); if (bw < 520.0f * S) bw = snap(520.0f * S);
+            const float cellH = snap(k.capH * 1.55f), headH = snap(k.capH + k.gap), lab = snap(34.0f * S), rg = snap(4.0f * S);
+            const float bh = snap(pad + headH + cellH + rg + cellH + pad);
+            float bx = snap((float)last.px0 * sx), by = snap((float)last.py0 * sy);
+            if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+            if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+            by = snap(by + (1.0f - tO) * 3.0f * S);
+            draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+            char head[64]; _snprintf(head, sizeof(head), "Macro Set %s (#%d)", last.bookTitle, last.set + 1); head[63] = 0;
+            fo->begin(dev);
+            fo->draw_lc(dev, snap(bx + pad), snap(by + pad + headH * 0.45f), head, tz * 0.92f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+            const float L = bx + pad + lab, W = bw - 2.0f * pad - lab, cg = snap(4.0f * S), cw = (W - 9.0f * cg) / 10.0f;
+            int hovBar = -1, hovCell = 0;
+            for (int bar = 0; bar < 2; ++bar) {
+                const float cy0 = snap(by + pad + headH + (float)bar * (cellH + rg));
+                const bool active = last.row == bar + 1;
+                fo->begin(dev);
+                fo->draw_lc(dev, snap(bx + pad), snap(cy0 + cellH * 0.5f), bar ? "Alt" : "Ctrl", tz * 0.85f, with_alpha(active ? 0xFFFFDA8Au : 0xFF93A6BEu, A), sh, k.ow);
+                for (int i = 0; i < 10; ++i) {
+                    const float cx = snap(L + (float)i * (cw + cg)), cwi = snap(L + (float)(i + 1) * (cw + cg) - cg) - cx;
+                    const char* nm = last.name[bar * 10 + i];
+                    const bool hand = last.hand[bar] == i + 1, empty = !nm[0], lit = hand && active;
+                    const float r = snap(4.0f * S);
+                    rrect(dev, cx, cy0, cwi, cellH, r, with_alpha(empty ? 0x14FFFFFFu : 0x22FFFFFFu, A), with_alpha(empty ? 0x0CFFFFFFu : 0x16FFFFFFu, A));
+                    if (lit) { rrect_clip_begin(dev, cx, cy0, cwi, cellH, r); party_selframe(dev, cx, cy0, cwi, cellH, f.t, A, 0); rrect_clip_end(dev); }
+                    if (hand) rrect_stroke(dev, cx, cy0, cwi, cellH, r, with_alpha(lit ? 0xC8FFDA8Au : 0x50FFDA8Au, A), 1.0f);
+                    char key[4]; _snprintf(key, sizeof(key), "%d", (i + 1) % 10); key[3] = 0;
+                    fo->begin(dev);
+                    fo->draw_lc(dev, snap(cx + 4.0f * S), snap(cy0 + 7.0f * S), key, tz * 0.72f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
+                    if (!empty) {
+                        char cut[32]; const char* s = fit_text(fo, nm, tz, cwi - 8.0f * S, cut, sizeof(cut));
+                        fo->draw_lc(dev, snap(cx + (cwi - fo->measure(s, tz)) * 0.5f), snap(cy0 + cellH * 0.58f), s, tz, with_alpha(lit ? 0xFFFFFFFFu : 0xFFE4EAF2u, A), sh, k.ow);
+                    }
+                    if (ms && ms->x >= cx && ms->x < cx + cwi && ms->y >= cy0 && ms->y < cy0 + cellH) { hovBar = bar; hovCell = i + 1; }
+                }
+            }
+            if (E0.pal && last.palFocused) {
+                static int lastHov = 0;
+                const int key = hovBar >= 0 ? hovBar * 16 + hovCell : 0;
+                if (key && key != lastHov && !(hovBar == last.row - 1 && hovCell == last.hand[hovBar])) native_macro_edit_hover(hovBar, hovCell);
+                lastHov = key;
+                if (key && ms && ms->clicked) native_macro_edit_pick(hovBar, hovCell);
+            }
+        }
+    }
+    // ---- one macro : "< Ctrl 1 >", its name, its 6 lines ----
+    if (block_ease(g_meB, E0.ed, now, dt)) {
+        RowSpec rows[7]; static char lab[7][136]; static const char* const NUM[7] = { "Name", "1", "2", "3", "4", "5", "6" };
+        int cur = 0;
+        for (int i = 0; i < 7; ++i) {
+            const char* src = i == 0 ? last.ename : last.line[i - 1];
+            const bool typing = last.typing == i + 3;
+            _snprintf(lab[i], sizeof(lab[i]), "%s%s", src[0] || typing ? src : "", typing ? ((now / 500) % 2 ? "_" : " ") : ""); lab[i][135] = 0;
+            rows[i].label = lab[i]; rows[i].icon = IC_NONE; rows[i].sub = false; rows[i].off = false; rows[i].extra = NUM[i];
+            if (typing) rows[i].tint = 0xFFFFFFFFu; else if (i == 0) rows[i].tint = 0xFFFFDA8Au;
+            if (last.cursor == i + 3) cur = i + 1;
+        }
+        float bw = 0.0f, bh = 0.0f; block_size(f, kN, rows, 7, bw, bh);
+        const float minW = snap(420.0f * S); if (bw < minW) bw = minW;
+        const float headH = snap(k.capH + k.gap), tzH = tz * 0.92f;
+        bw = keep_width(g_meB, bw); bh = snap(bh + headH); g_meB.inTop = headH;
+        float bx = snap((float)last.ex0 * sx), by = snap((float)last.ey0 * sy);
+        if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+        if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+        const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+        const float tO = ease_out(((float)(now - g_meB.openMs) / 1000.0f) / 0.08f);
+        by = snap(by + (1.0f - tO) * 4.0f * S);
+        const float A = g_meB.vis * tO * (last.edFocused || !E0.ed ? 1.0f : 0.62f);
+        if (A > 0.0f) {
+            const int row = block_draw(f, kN, g_meB, rows, 7, cur, last.edFocused, bx, by, bw, bh, A, dt);
+            const float hy = by + k.bi + k.pad, hc = snap(hy + (headH - k.gap) * 0.5f);
+            rrect(dev, bx + k.bi + k.gutter, snap(hy + headH - k.gap * 0.5f - 1.0f), bw - 2.0f * k.bi - k.gutter - k.pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+            char ttl[16]; _snprintf(ttl, sizeof(ttl), "%s %d", last.k >= 10 ? "Alt" : "Ctrl", (last.k % 10 + 1) % 10); ttl[15] = 0;
+            const float tw = fo->measure(ttl, tzH), ar = 3.5f * S, cx = snap(bx + bw * 0.5f);
+            const float lx = snap(cx - tw * 0.5f - 10.0f * S), rx = snap(cx + tw * 0.5f + 10.0f * S);
+            const u32 acL = with_alpha(last.cursor == 1 ? 0xFFFFFFFFu : 0xC0FFDA8Au, A), acR = with_alpha(last.cursor == 2 ? 0xFFFFFFFFu : 0xC0FFDA8Au, A);
+            tri(dev, lx - 2.0f * ar, hc, lx, hc - ar * 1.2f, lx, hc + ar * 1.2f, acL);
+            tri(dev, rx + 2.0f * ar, hc, rx, hc - ar * 1.2f, rx, hc + ar * 1.2f, acR);
+            fo->begin(dev);
+            fo->draw_lc(dev, snap(cx - tw * 0.5f), hc, ttl, tzH, with_alpha(0xFFE8D9B0u, A), with_alpha(sh0, A), k.ow);
+            if (E0.ed && last.edFocused && !last.typing) {
+                if (row >= 1 && row <= 7 && row != g_meB.hoverRow && row + 2 != last.cursor) native_macro_edit_hover(2, row + 2);
+                g_meB.hoverRow = row;
+                if (ms && ms->clicked) {
+                    if (row >= 1 && row <= 7) native_macro_edit_pick(2, row + 2);
+                    else if (fabsf(ms->y - hc) < 9.0f * S) {
+                        if (fabsf(ms->x - (lx - ar)) < 9.0f * S) native_macro_edit_pick(2, 1);
+                        else if (fabsf(ms->x - (rx + ar)) < 9.0f * S) native_macro_edit_pick(2, 2);
+                    }
+                }
+            } else g_meB.hoverRow = 0;
+        }
+    }
 }
 // the generic engine's GRID (Config's screens) : the client's layout -- our box at its rect, the frame's static texts
 // (its sprite's letters, where the client puts them), each entry a capsule at its rect with its own letters ; the cursor

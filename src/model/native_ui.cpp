@@ -303,6 +303,7 @@ NativeNpc g_npc; bool g_npcFail = false; int g_npcBad = 0; DWORD g_npcGoodSince 
 // and for the MAIN menu
 NativeEntryMenu g_mainM, g_mainSub, g_mainSort, g_mainYn; bool g_mainFail = false;
 extern NativeMacroBooks g_mbk;   // the macro book list (macro_books_poll, below)
+extern NativeMacroEdit g_med;    // the macro editor (macro_edit_poll, below)
 bool g_mainNative = false;   // a main-menu child the client keeps drawing, in the main menu's place (main_poll)
 NativeTopBar g_tb; bool g_tbFail = false;                                               // the top bar (titlewin + helpwind)
 NativeMacro g_mc; bool g_mcFail = false;                                                // the macro bar
@@ -2517,6 +2518,10 @@ void yn_park(u32 mgr) {
     static int l5Log = 0, l6Log = 0, mbLog = 0;
     if (g_ls.open) park_named(mgr, "link5", l5Log, "Linkshell -> the items");
     if (g_mbk.open) park_named(mgr, "mcrselec", mbLog, "MacroPalette -> the books");
+    {   static int m1Log = 0, m2Log = 0, m3Log = 0, m4Log = 0, mmLog = 0;
+        if (g_med.pal) { park_named(mgr, "mcr1edlo", m1Log, "MacroPalette -> the palette (Ctrl)"); park_named(mgr, "mcr2edlo", m2Log, "MacroPalette -> the palette (Alt)");
+                         park_named(mgr, "mcr1edit", m3Log, "MacroPalette -> the palette (Ctrl)"); park_named(mgr, "mcr2edit", m4Log, "MacroPalette -> the palette (Alt)"); }
+        if (g_med.ed) park_named(mgr, "macro", mmLog, "MacroPalette -> a macro"); }
     if (g_ls.open || (g_search.open && g_search.ctx == 4)) park_named(mgr, "link6", l6Log, "Linkshell -> the header");
     if (g_scopt.open) park_named(mgr, "scoption", soLog, "Status -> Unity -> a player's options");
     static int urLog = 0;
@@ -2595,7 +2600,7 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_cel.open && (!strcmp(nm, "fe_equip") || !strcmp(nm, "fe_inven") || !strcmp(nm, "bluehelp")))
                              || (g_faith.open && (!strcmp(nm, "fp_cat") || !strcmp(nm, "fp_cat2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "fp_info")))
                              || (g_area.open && !strcmp(nm, "arealist")) || (g_search.open && !strcmp(nm, g_search.ctx == 2 ? "levelsyn" : g_search.ctx == 4 ? "link12" : "scresult"))
-                             || (g_ls.open && !strcmp(nm, "link5")) || (g_mbk.open && !strcmp(nm, "mcrselec")) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
+                             || (g_ls.open && !strcmp(nm, "link5")) || (g_mbk.open && !strcmp(nm, "mcrselec")) || (g_med.pal && (!strcmp(nm, "mcr1edlo") || !strcmp(nm, "mcr2edlo") || !strcmp(nm, "mcr1edit") || !strcmp(nm, "mcr2edit"))) || (g_med.ed && !strcmp(nm, "macro")) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
                              || (g_scopt.open && !strcmp(nm, "scoption"))
                              || (g_insp.open && (!strcmp(nm, "inspect") || !strcmp(nm, "iteminfo") || !strcmp(nm, "comment")))
                              || (g_loot.open && (!strcmp(nm, "loot") || !strcmp(nm, "lootope") || !strcmp(nm, "lnowin") || !strcmp(nm, "iteminfo")))
@@ -2863,6 +2868,88 @@ void macro_books_poll(bool on, u32 mgr, u32 focusObj) {
         windower::debug::log("NATIVEUI macro books : page %u row +0x68 %u, win cursor %d, chosen %u, rename %s '%s', current book %u ; row 0 '%s'",
             page, row, cur, chosen, valid_ptr(in) ? "ON" : "off", t.rename, book, t.title[0]); }
     g_mbk = t;
+}
+
+// ---- the macro EDITOR (macro-bar-re s.7) : E = *(Ctrl bar slot + 8) : +4 M, +0x0C row, +0x0D / +0x0E the Ctrl / Alt slot ;
+// `macro` handler +0x1C typing, +0x20 the entry typed, +0x2C + i*4 line i's input, +0x44 the name's input ----
+NativeMacroEdit g_med;
+const char* const MED_W1[] = { "mcr1edlo", "mcr1edit", 0 };
+const char* const MED_W2[] = { "mcr2edlo", "mcr2edit", 0 };
+const char* const MED_WM[] = { "macro", 0 };
+// raw macro bytes -> text : FD blocks spelled out {words}, other bytes kept when printable
+static void med_text(const unsigned char* b, int n, char* out, int cap) {
+    int o = 0;
+    for (int i = 0; i < n && b[i] && o < cap - 1; ++i) {
+        if (b[i] == 0xFD && i + 5 < n && b[i + 5] == 0xFD) {
+            const char* w = chat_at_words(b[i + 1], ((unsigned)b[i + 3] << 8) | b[i + 4]);
+            if (!w || !*w) w = "...";
+            if (o < cap - 1) out[o++] = '{';
+            for (; *w && o < cap - 2; ++w) if ((unsigned char)*w >= 0x20 && (unsigned char)*w < 0x7F) out[o++] = *w;
+            if (o < cap - 1) out[o++] = '}';
+            i += 5; continue;
+        }
+        if (b[i] == 0x7F) { ++i; continue; }                  // an input's caret / control pair
+        if (b[i] >= 0x20 && b[i] < 0x7F) out[o++] = (char)b[i];
+    }
+    out[o] = 0;
+}
+static bool med_input(u32 in, char* out, int cap) {           // an input's display copy (+0x3A0, length +0x690)
+    if (!valid_ptr(in)) return false;
+    u32 len = 0; unsigned char b[160]; if (!safe_read(in + 0x690, &len)) return false; if (len > 150) len = 150;
+    if (!rdblk(in + 0x3A0, b, sizeof(b))) return false;
+    med_text(b, (int)len, out, cap); return true;
+}
+void macro_edit_poll(bool on, u32 mgr, u32 focusObj) {
+    NativeMacroEdit t; memset(&t, 0, sizeof(t));
+    u32 M = 0, E = 0, Ms = 0;
+    if (!on || !mgr || !g_mcrOk || !safe_read(g_mcr.mSlot, &M) || !valid_ptr(M) || !safe_read(g_mcr.bar[0] + 8, &E) || !valid_ptr(E)
+        || !safe_read(E + 4, &Ms) || Ms != M) { g_med = t; return; }
+    short wh[2] = { 0, 0 }; if (!rdblk(mgr + 0x80, wh, 4)) { g_med = t; return; }
+    t.uiW = wh[0]; t.uiH = wh[1];
+    u32 o1 = 0, o2 = 0, om = 0;
+    for (int i = 0; MED_W1[i] && !o1; ++i) o1 = win_named(mgr, MED_W1[i]);
+    for (int i = 0; MED_W2[i] && !o2; ++i) o2 = win_named(mgr, MED_W2[i]);
+    om = win_named(mgr, "macro");
+    unsigned char e[0x10]; u32 book = 0, set2 = 0;
+    if ((!o1 && !om) || !rdblk(E, e, sizeof(e)) || !safe_read(M + g_mcr.book, &book) || !safe_read(M + 0x1DB8, &set2) || book >= 40 || set2 >= 20) { g_med = t; return; }
+    t.row = e[0x0C] == 2 ? 2 : 1; t.book = (int)book; t.set = (int)(set2 / 2);
+    unsigned char bt[16]; int q = 0;
+    if (rdblk(M + g_mcr.title + book * 16, bt, 16)) for (int j = 0; j < 15 && bt[j]; ++j) t.bookTitle[q++] = (bt[j] >= 0x20 && bt[j] < 0x7F) ? (char)bt[j] : '?';
+    t.bookTitle[q] = 0;
+    for (int kk = 0; kk < 20; ++kk) { unsigned char nb[9]; if (rdblk(M + 4 + (u32)kk * 0x17C + 0x172, nb, 9)) med_text(nb, 8, t.name[kk], 9); else t.name[kk][0] = 0; }
+    if (o1) {
+        short r[4]; short h1 = 0, h2 = 0;
+        if (rdblk(o1 + OBJ_RECT, r, 8)) { t.px0 = r[0]; t.py0 = r[1]; t.px1 = r[2]; t.py1 = r[3]; if (t.py0 >= t.uiH) { t.py0 = (short)(t.py0 - HIDE_DY); t.py1 = (short)(t.py1 - HIDE_DY); } }
+        if (rd16(o1 + 0x4C, h1) && h1 >= 1 && h1 <= 10) t.hand[0] = h1;
+        if (o2 && rd16(o2 + 0x4C, h2) && h2 >= 1 && h2 <= 10) t.hand[1] = h2;
+        t.pal = true; t.palFocused = focusObj == o1 || (o2 && focusObj == o2);
+        if (o2 && focusObj == o2) t.row = 2; else if (focusObj == o1) t.row = 1;
+    }
+    if (om) {
+        u32 hd = 0; short r[4], cur = 0;
+        if (safe_read(om + OBJ_HANDLER, &hd) && valid_ptr(hd) && rdblk(om + OBJ_RECT, r, 8)) {
+            t.ex0 = r[0]; t.ey0 = r[1]; t.ex1 = r[2]; t.ey1 = r[3]; if (t.ey0 >= t.uiH) { t.ey0 = (short)(t.ey0 - HIDE_DY); t.ey1 = (short)(t.ey1 - HIDE_DY); }
+            const int slot = t.row == 2 ? e[0x0E] : e[0x0D];
+            t.k = (t.row == 2 ? 10 : 0) + (slot < 10 ? slot : 0);
+            if (rd16(om + 0x4C, cur) && cur >= 1 && cur <= 9) t.cursor = cur;
+            const u32 base = M + 4 + (u32)t.k * 0x17C;
+            unsigned char nb[9]; if (rdblk(base + 0x172, nb, 9)) med_text(nb, 8, t.ename, sizeof(t.ename));
+            for (int i = 0; i < 6; ++i) { unsigned char lb[61]; if (rdblk(base + 4 + (u32)i * 0x3D, lb, 61)) med_text(lb, 60, t.line[i], sizeof(t.line[i])); else t.line[i][0] = 0; }
+            u32 typing = 0, ent = 0; safe_read(hd + 0x1C, &typing); safe_read(hd + 0x20, &ent);
+            if (typing && ent >= 3 && ent <= 9) {                      // what is being typed replaces the stored text
+                u32 in = 0;
+                if (ent == 3) { if (safe_read(hd + 0x44, &in) && med_input(in, t.ename, sizeof(t.ename))) t.typing = 3; }
+                else if (safe_read(hd + 0x2C + (ent - 4) * 4, &in) && med_input(in, t.line[ent - 4], sizeof(t.line[0]))) t.typing = (int)ent;
+            }
+            t.ed = true; t.edFocused = focusObj == om;
+        }
+    }
+    static unsigned sig = ~0u; static int said = 0;
+    const unsigned s2 = (t.pal ? 1u : 0u) + (t.ed ? 2u : 0u) + (u32)t.row * 4u + (u32)t.hand[0] * 16u + (u32)t.hand[1] * 256u + (u32)t.k * 4096u + (u32)t.cursor * 131072u + (u32)t.typing * 2097152u;
+    if (s2 != sig && said < 40) { sig = s2; ++said;
+        windower::debug::log("NATIVEUI macro edit : palette %d (focus %d, E row %u slots %u/%u, hands %d/%d) ; macro %d (k %d '%s', cursor %d, typing %d) line0 '%s'",
+            t.pal, t.palFocused, e[0x0C], e[0x0D], e[0x0E], t.hand[0], t.hand[1], t.ed, t.k, t.ename, t.cursor, t.typing, t.line[0]); }
+    g_med = t;
 }
 
 // ---- the CONNECTION box (netstat) -- docs/notes/netstat-re-2026-11-20.md ----
@@ -3684,7 +3771,7 @@ bool entry_pick(const char* const* W, int entry);
 static const char* const GEN_SKIP[] = { "titlewin", "helpwind", "logwindo", "logwin2", "partywin", "netstat", "buff", "targetwi", "fulllog", "cnqframe",
     "shop", "shopbuy", "shopsell", "shopmain", "guildsho", "bazaar", "auclist", "auchisto", "inventor", "iteminfo", "itemxinf", "money", "moneyctr", "itemctrl",
     "bank", "equip", "inspect", "comment", "loot", "lootope", "lnowin", "post1", "post2", "delivery", "stringdl", "roomlist", "fep", "query", "evitem", "gift",
-    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
+    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edit", "mcr2edit", "macro", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
     "cmbhlst", "tskill1", "cmbhwin",   // Synthesis (its module ; 2026-11-22 : the panel engine drew its History a second time, misplaced)
     "link5", "link6", "link12",        // Linkshell (its module ; 2026-11-25 : link5 is born before g_ls reads it -- the panel engine learned it and
                                        // drew the items a second time, over the module's box)
@@ -4512,6 +4599,7 @@ bool native_buff_pick(int idx) {
 const NativeTopBar& native_topbar() { return g_tb; }
 const NativeMacro& native_macro() { return g_mc; }
 const NativeMacroBooks& native_macro_books() { return g_mbk; }
+const NativeMacroEdit& native_macro_edit() { return g_med; }
 const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
 // the client's ability table ids (0..0x1FF weapon skills, 0x200.. job abilities, 0x600..0x6FF job traits) : d_msg 55701
 // the name, 55733 the description -- abilities-re-2026-11-19.md (all 124 traits / 626 abilities checked against it)
@@ -5012,6 +5100,8 @@ bool native_lootall_pick() {
     const u32 mgr = manager(); const u32 lo = mgr ? win_named(mgr, "loot") : 0;
     return lo && g_loot.focused && menu_event(lo, 8);                 // loot's event 8 : the focus to Pass all (validate next)
 }
+bool native_macro_edit_hover(int bar, int entry) { return (bar == 2 ? g_med.ed : g_med.pal) && entry_hover(bar == 0 ? MED_W1 : bar == 1 ? MED_W2 : MED_WM, entry); }
+bool native_macro_edit_pick(int bar, int entry) { return (bar == 2 ? g_med.ed : g_med.pal) && entry_pick(bar == 0 ? MED_W1 : bar == 1 ? MED_W2 : MED_WM, entry); }
 bool native_macro_books_hover(int entry) { return g_mbk.open && entry_hover(MBOOK_W, entry); }
 bool native_macro_books_pick(int entry) { return g_mbk.open && entry_pick(MBOOK_W, entry); }
 bool native_inspect_hover(int entry) { return g_insp.open && entry_hover(INSPECT_W, entry); }
@@ -5525,7 +5615,8 @@ void native_ui_tick(bool inWorld) {
     topbar_poll(wanted && (c.nuHide & NU_HELP));          // the top bar (menu name + help) : AioHUD's own
     macro_poll(wanted && (c.nuHide & NU_MACRO), manager());   // the Ctrl / Alt macro bar : AioHUD's own
     { u32 focus = 0; const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus);
-      macro_books_poll(wanted && (c.nuHide & NU_MAIN) && mc_res(), manager(), focus); }   // MacroPalette's book list
+      macro_books_poll(wanted && (c.nuHide & NU_MAIN) && mc_res(), manager(), focus);     // MacroPalette's book list
+      macro_edit_poll(wanted && (c.nuHide & NU_MAIN) && mc_res(), manager(), focus); }   // ... and its editor
     net_poll(wanted && (c.nuHide & NU_NET));                                              // the connection box (netstat) : AioHUD's own
     buffwin_poll(wanted && (c.nuHide & NU_BUFF), manager());   // your buff icons : AioHUD's own, where the client puts them
     if (wanted && (eff_hide(c) & NU_BUFF)) ensure_event_hook();   // the buff cursor's left / right walk AioHUD's order

@@ -117,6 +117,12 @@ static const char* at_phrase(unsigned id) {
     return g_atPool + g_atOff[id] - 1;
 }
 
+const char* chat_at_words(unsigned type, unsigned id) {
+    if (type == 0x02 || type == 0x01) return at_phrase(id);
+    if (type == 0x07) return chat_item_name(id);
+    return 0;
+}
+
 // ---------------- decoding ----------------
 // Shift-JIS glyphs the English client actually prints in its log (arrows in battle lines, full-width punctuation)
 static const char* sjis_glyph(unsigned char a, unsigned char b) {
