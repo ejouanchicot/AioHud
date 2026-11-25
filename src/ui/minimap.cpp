@@ -2827,7 +2827,7 @@ void Minimap::dispose() {
 // free one ; -1 : off
 static void pod_slots(const UiConfig& c, bool sq, int& sDay, int& sMoon, int& sSky, int& sWx) {
     auto fold = [&](int v) { return sq ? v : (v == 7 ? 1 : (v == 8 ? 4 : v)); };
-    int v[4] = { c.mmPodDay, c.mmPodMoon, c.mmPodSky, c.mmPodWx };
+    int v[4] = { c.mmPodDay, c.mmPodMoon, c.mmSkyShow ? c.mmPodSky : 6, c.mmWxShow ? c.mmPodWx : 6 };   // switched off : no place
     const int def[4] = { 3, 2, 5, 4 };
     for (int q = 0; q < 4; ++q) { if (v[q] < 0 || v[q] > 8 || (q < 2 && v[q] == 6)) v[q] = def[q]; v[q] = v[q] == 6 ? -1 : fold(v[q]); }
     static const int FREE_R[6] = { 0, 1, 2, 3, 4, 5 }, FREE_S[8] = { 0, 1, 7, 2, 3, 8, 4, 5 };

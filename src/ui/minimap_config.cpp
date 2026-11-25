@@ -135,7 +135,8 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
                 auto taken = [&](int slot, int self) {           // a place held by another module (Off holds none)
                     if (slot == 6) return false;
                     const int m[4] = { c.mmPodDay, c.mmPodMoon, c.mmPodSky, c.mmPodWx };
-                    for (int q = 0; q < 4; ++q) if (q != self && shown(m[q]) == slot) return true;
+                    const bool on[4] = { c.mmClkDay != 0, c.mmClkMoon != 0, c.mmSkyShow != 0, c.mmWxShow != 0 };
+                    for (int q = 0; q < 4; ++q) if (q != self && on[q] && shown(m[q]) == slot) return true;
                     return false;
                 };
                 // one module's place : step through the shape's places (Off only for the day/night and the weather), skip the taken
@@ -151,16 +152,24 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
                     }
                     ROW_NEXT(52.0f)
                 };
-                { ROW_BAND(52.0f)
+                // EACH ELEMENT : its switch, then its place (the user 2026-11-25 : "an on / off per element rather than in the
+                // place choices ; the position is missing")
+                ROW_TOGGLE(CTRL_ID, tr("Vana'diel time", "Heure Vana'diel"), c.mmClkTime)
+                ROW_TOGGLE(CTRL_ID, tr("Map square (F-10)", "Case de carte (F-10)"), c.mmGrid)
+                if (c.mmClkTime || c.mmGrid) { ROW_BAND(52.0f)
                     static const char* HP_EN[2] = { "Hour top, square bottom", "Square top, hour bottom" };
                     static const char* HP_FR[2] = { "Heure en haut, case en bas", "Case en haut, heure en bas" };
                     const int hp = c.mmPodHP == 1 ? 1 : 0;
                     if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Hour / map square", "Heure / case de carte"), tr(HP_EN[hp], HP_FR[hp]))) { (void)d; c.mmPodHP = 1 - hp; save_ui_config(); }
-                } ROW_NEXT(52.0f)
-                place(c.mmPodDay, 0, false, 3, "Day's element", "\xC3\x89l\xC3\xA9ment du jour");
-                place(c.mmPodMoon, 1, false, 2, "Moon", "Lune");
-                place(c.mmPodSky, 2, true, 5, "Day / night", "Jour / nuit");
-                place(c.mmPodWx, 3, true, 4, "Weather", "M\xC3\xA9t\xC3\xA9o");
+                ROW_NEXT(52.0f) }
+                ROW_TOGGLE(CTRL_ID, tr("Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire"), c.mmClkDay)
+                if (c.mmClkDay) place(c.mmPodDay, 0, false, 3, "  Place", "  Emplacement");
+                ROW_TOGGLE(CTRL_ID, tr("Moon phase", "Phase de lune"), c.mmClkMoon)
+                if (c.mmClkMoon) place(c.mmPodMoon, 1, false, 2, "  Place", "  Emplacement");
+                ROW_TOGGLE(CTRL_ID, tr("Day / night", "Jour / nuit"), c.mmSkyShow)
+                if (c.mmSkyShow) place(c.mmPodSky, 2, false, 5, "  Place", "  Emplacement");
+                ROW_TOGGLE(CTRL_ID, tr("Weather", "M\xC3\xA9t\xC3\xA9o"), c.mmWxShow)
+                if (c.mmWxShow) place(c.mmPodWx, 3, false, 4, "  Place", "  Emplacement");
             }
         }
         if (c.mmLayout == 1) {
@@ -180,9 +189,11 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         if (dialM && (!c.mmClock || !c.mmBezel)) { c.mmClock = 1; c.mmBezel = 1; save_ui_config(); }
         if (!dialM) { ROW_TOGGLE(CTRL_ID, tr("Clock header", "En-t\xC3\xAAte horloge"), c.mmClock) }
         if (c.mmClock) {
+        if (!(dialM && c.mmDayDial == 2)) {                                 // (the Dial's modules : their switches sit with their places above)
         ROW_TOGGLE(CTRL_ID, tr("Vana'diel time", "Heure Vana'diel"), c.mmClkTime)
         ROW_TOGGLE(CTRL_ID, tr("Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire"), c.mmClkDay)
         ROW_TOGGLE(CTRL_ID, tr("Moon phase", "Phase de lune"), c.mmClkMoon)
+        }
         if (!dialM) { ROW_TOGGLE(CTRL_ID, tr("Real / GMT time", "Heure r\xC3\xA9""elle / GMT"), c.mmClkReal) }
         if (!dialM) { { ROW_BAND(52.0f)
             static const char* PLBL_EN[4] = { "Top", "Bottom", "Left", "Right" }; static const char* PLBL_FR[4] = { "Haut", "Bas", "Gauche", "Droite" };
@@ -238,7 +249,7 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         ROW_TOGGLE(CTRL_ID, tr("Wide Scan track", "Suivi Wide Scan"), c.mmScan)
         if (c.mmScan)
             CFG_COLOR_PICKER(&c.mmScanCol)
-        ROW_TOGGLE(CTRL_ID, tr("Map square (F-10)", "Case de carte (F-10)"), c.mmGrid)
+        if (!(c.mmLayout == 2 && c.mmDayDial == 2)) { ROW_TOGGLE(CTRL_ID, tr("Map square (F-10)", "Case de carte (F-10)"), c.mmGrid) }   // (the Dial : in its modules' group)
             cat_fold_end(dev, ry, top8_, catH_[8], aF8_);
         }   // end Markers
 
