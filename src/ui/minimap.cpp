@@ -1228,10 +1228,15 @@ static void pod_roll_cell(u32 dev, float ccx, float ccy, float ang, float rc, fl
     const float Cx = ccx + ux * rc, Cy = ccy + uy * rc;                   // the cell's centre
     auto draw = [&](float off, int c, u32 col, bool clip) {
         if (c < 0) return;
-        const float px = snap(Cx + ux * off - sz * 0.5f) + sz * 0.5f, py = snap(Cy + uy * off - sz * 0.5f) + sz * 0.5f;
+        const float px = Cx + ux * off, py = Cy + uy * off;
         const float u0 = c / 8.0f, u1 = (c + 1) / 8.0f;
-        float P[16][4] = { { px - sz * 0.5f, py - sz * 0.5f, u0, 0.0f }, { px + sz * 0.5f, py - sz * 0.5f, u1, 0.0f },
-                           { px + sz * 0.5f, py + sz * 0.5f, u1, 1.0f }, { px - sz * 0.5f, py + sz * 0.5f, u0, 1.0f } };
+        // IN THE WHEEL'S READING SENSE (the user 2026-11-25 : "the icons always straight in their reading sense, never
+        // tilted, never upside down") : turned with the wheel as the hour's figures are -- the head outward on the top
+        // half of the dial, toward the centre on the bottom half
+        const float rot = ang + (sinf(ang) > 0.0f ? -1.5707963f : 1.5707963f), rc_ = cosf(rot), rs_ = sinf(rot), h2 = sz * 0.5f;
+        const float cxq[4] = { -h2, h2, h2, -h2 }, cyq[4] = { -h2, -h2, h2, h2 }, uq[4] = { u0, u1, u1, u0 }, vq[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+        float P[16][4];
+        for (int q = 0; q < 4; ++q) { P[q][0] = px + cxq[q] * rc_ - cyq[q] * rs_; P[q][1] = py + cxq[q] * rs_ + cyq[q] * rc_; P[q][2] = uq[q]; P[q][3] = vq[q]; }
         int n = 4;
         if (clip) {
             const float pl[4][3] = { { ux, uy, hR }, { -ux, -uy, hR }, { tx, ty, hT }, { -tx, -ty, hT } };   // dot(p - C, n) <= h
@@ -1262,11 +1267,13 @@ static void pod_roll_cell(u32 dev, float ccx, float ccy, float ang, float rc, fl
 // sqrt(1 - y^2 / R^2) (f the lit fraction) ; waxing lit on the right, waning on the left (the plate's convention).
 // Drawn in horizontal slices (any shape, crescent or gibbous), the terminator stroked soft, a fine inked outline, a light
 // inked limb so a full moon still reads as a moon.
+static float s_inkRotC = 1.0f, s_inkRotS = 0.0f;   // the present moon turned with its wheel (draw_moon_pod sets it)
 static void draw_ink_moon(u32 dev, float x, float y, float R, float f, bool waning, float S,
                           float ax = 1.0f, float ay = 0.0f, float phi = 0.0f, float Rcyl = 0.0f, float Rwin = 0.0f, u32 alpha = 0xFF) {
     // ON A DRUM : (ax, ay) the wheel's roll axis, phi its turn ; a point at d along the axis sits at Rcyl sin(phi + d / Rcyl),
     // and what passes the window's edge (+-Rwin) is gone under the frame (pinned at the edge, the alpha fades it)
-    auto T = [&](float lx, float ly, float& ox, float& oy) {
+    auto T = [&](float lx0, float ly0, float& ox, float& oy) {
+        const float lx = lx0 * s_inkRotC - ly0 * s_inkRotS, ly = lx0 * s_inkRotS + ly0 * s_inkRotC;   // turned with its wheel
         const float d = lx * ax + ly * ay;
         float d2 = d;
         if (Rcyl > 0.0f) {
@@ -1654,6 +1661,7 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
             const float km = mRoll ? fminf(1.0f, (float)(nowMs - mRoll) / 240.0f) : 1.0f;
             float px, py; at(th0, rw, px, py);
             const float ux = cosf(th0), uy = sinf(th0), Rm = isz * 0.44f, Rc = wr;
+            { const float rot = th0 + (sinf(th0) > 0.0f ? -1.5707963f : 1.5707963f); s_inkRotC = cosf(rot); s_inkRotS = sinf(rot); }
             if (km >= 1.0f) draw_ink_moon(dev, snap(px), snap(py), Rm, fCur, wCur, S);
             else {
                 const float e = 1.0f - (1.0f - km) * (1.0f - km), PH = 1.3f, Rcyl = 2.0f * Rm;
@@ -1664,6 +1672,7 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
             }
         }
         color_state(dev);
+        s_inkRotC = 1.0f; s_inkRotS = 0.0f;
         pod_wheels_over(dev, cx, cy, rw, wr, th0, as, Wh, S);           // the cuts between them, the glass
     }
     // the housing's metal over the band beyond the window's ends (what slipped under is hidden)
