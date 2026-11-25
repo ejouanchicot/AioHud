@@ -1079,19 +1079,86 @@ static void pod_housing(u32 dev, float cx, float cy, float r, float Ri, float Ro
 }
 void clip_rect_begin(u32 dev, float x, float y, float w, float h);   // (config_controls.cpp : a sub-viewport clip)
 void clip_rect_end(u32 dev);
-// A POD CELL THAT ROLLS (the user 2026-11-25 : "the hour's wheel system : three cells that change when it turns, the
-// three together") : each cell is a wheel ; on a change the old icon rolls up and out while the new one rolls in from
-// below, inside the cell (a sub-viewport clip, only while it rolls). k : 0..1 through the roll (1 = at rest).
-static void pod_roll_cell(u32 dev, u32 tex, float px, float py, float sz, float cw, float ch, float k, int oldCell, int newCell, u32 colOld, u32 colNew) {
-    auto quad = [&](float y, int c, u32 col) { if (c >= 0) tquad(dev, snap(px - sz * 0.5f), snap(y - sz * 0.5f), sz, sz, c / 8.0f, (c + 1) / 8.0f, 0.0f, 1.0f, col, col); };
-    if (k >= 1.0f || oldCell < 0) { quad(py, newCell, colNew); return; }
-    const float e = 1.0f - (1.0f - k) * (1.0f - k);                       // ease-out : it settles into its notch
-    clip_rect_begin(dev, px - cw * 0.5f, py - ch * 0.5f, cw, ch);
-    tex_state(dev, tex);                                                  // (the clip resets the vertex format and unbinds the texture)
-    quad(py - e * ch, oldCell, colOld);
-    quad(py + (1.0f - e) * ch, newCell, colNew);
-    clip_rect_end(dev);
-    tex_state(dev, tex);
+// THE WHEELS' LOOK (the user 2026-11-25 : "the same quality as the hour's wheels -- it must really feel like wheels") : each
+// cell is drawn as drum_text draws a wheel, in the cell's own frame -- parchment, a bright crown, the paper TURNING AWAY
+// toward its two edges along the roll (outer and inner, the radial axis), its rounded sides ; hairline cuts between the
+// wheels (a dark cut, a lit edge) ; a glass over the window (a sheen on its outer half, a lit lip).
+static u32 col_lerp(u32 a, u32 b, float t) {
+    u32 o = 0;
+    for (int sh = 0; sh < 32; sh += 8) { const float x = (float)((a >> sh) & 0xFF), y = (float)((b >> sh) & 0xFF); o |= ((u32)(x + (y - x) * t + 0.5f) & 0xFF) << sh; }
+    return o;
+}
+static void sector_grad(u32 dev, float cx, float cy, float r0, float r1, float a0, float a1, u32 cA0r0, u32 cA0r1, u32 cA1r0, u32 cA1r1) {
+    const int N = 8; VtxC v[(N + 1) * 2];
+    for (int i = 0; i <= N; ++i) {
+        const float t = (float)i / N, a = a0 + (a1 - a0) * t;
+        v[2 * i]     = { cx + cosf(a) * r0 - 0.5f, cy + sinf(a) * r0 - 0.5f, 0, 1, col_lerp(cA0r0, cA1r0, t) };
+        v[2 * i + 1] = { cx + cosf(a) * r1 - 0.5f, cy + sinf(a) * r1 - 0.5f, 0, 1, col_lerp(cA0r1, cA1r1, t) };
+    }
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
+}
+static void pod_wheels_under(u32 dev, float cx, float cy, float rw, float wr, float th0, float as) {
+    color_state(dev);
+    const u32 sh = 0xB03A2410u, sh0 = 0x003A2410u, sd = 0x603A2410u;
+    for (int d = -1; d <= 1; ++d) {
+        const float a = th0 + (float)d * as, a0 = a - as * 0.5f, a1 = a + as * 0.5f;
+        ring_sector(dev, cx, cy, rw - wr, rw + wr, a0, a1, 0xFFD6BC86u);                                   // the wheel's parchment
+        ring_sector(dev, cx, cy, rw - wr * 0.52f, rw + wr * 0.52f, a - as * 0.36f, a + as * 0.36f, 0xFFEBD8AAu);   // its bright crown
+        sector_grad(dev, cx, cy, rw + wr * 0.36f, rw + wr, a0, a1, sh0, sh, sh0, sh);                      // turning away : outward...
+        sector_grad(dev, cx, cy, rw - wr, rw - wr * 0.36f, a0, a1, sh, sh0, sh, sh0);                      // ...and inward
+        sector_grad(dev, cx, cy, rw - wr, rw + wr, a0, a0 + as * 0.16f, sd, sd, sh0, sh0);                 // its rounded sides
+        sector_grad(dev, cx, cy, rw - wr, rw + wr, a1 - as * 0.16f, a1, sh0, sh0, sd, sd);
+    }
+}
+static void pod_wheels_over(u32 dev, float cx, float cy, float rw, float wr, float th0, float as, float Wh, float S) {
+    color_state(dev);
+    for (int e = -1; e <= 1; e += 2) {                                    // the cuts between the wheels : a dark hairline, a lit edge
+        const float sa = th0 + (float)e * as * 0.5f, tx = -sinf(sa), ty = cosf(sa);
+        const float x0 = cx + cosf(sa) * (rw - wr), y0 = cy + sinf(sa) * (rw - wr), x1 = cx + cosf(sa) * (rw + wr), y1 = cy + sinf(sa) * (rw + wr);
+        seg_soft(dev, x0, y0, x1, y1, 0.8f * S, 0xD0140C04u);
+        seg_soft(dev, x0 + tx * 0.8f * S, y0 + ty * 0.8f * S, x1 + tx * 0.8f * S, y1 + ty * 0.8f * S, 0.5f * S, 0x40FFF0D0u);
+    }
+    sector_grad(dev, cx, cy, rw, rw + wr, th0 - Wh, th0 + Wh, 0x08FFFFFFu, 0x38FFFFFFu, 0x08FFFFFFu, 0x38FFFFFFu);   // the GLASS : a sheen on its outer half
+    ring_sector(dev, cx, cy, rw + wr - 1.0f, rw + wr, th0 - Wh, th0 + Wh, 0x70FFFFFFu);                          // its lit lip
+}
+// A POD CELL THAT ROLLS (the user 2026-11-25 : "the hour's wheel system : three cells that change together" ; "the wheels
+// must turn the way they are mounted -- along their axis to the centre") : each cell is a wheel whose axle lies ACROSS the
+// radius, so it rolls ALONG the radius (outward = away from the dial's centre) ; the icons stay upright on the screen. The
+// cell is a box in the wheel's own frame (radial u, tangential t) : the upright icon quad is clipped against it (convex
+// polygon clip, UVs carried), so a tilted wheel cuts its icons along its own edges. k : 0..1 through the roll.
+static void pod_roll_cell(u32 dev, float ccx, float ccy, float ang, float rc, float sz, float hT, float hR, float k, int oldCell, int newCell, u32 colOld, u32 colNew) {
+    const float ux = cosf(ang), uy = sinf(ang), tx = -uy, ty = ux;        // radial, tangential
+    const float Cx = ccx + ux * rc, Cy = ccy + uy * rc;                   // the cell's centre
+    auto draw = [&](float off, int c, u32 col, bool clip) {
+        if (c < 0) return;
+        const float px = snap(Cx + ux * off - sz * 0.5f) + sz * 0.5f, py = snap(Cy + uy * off - sz * 0.5f) + sz * 0.5f;
+        const float u0 = c / 8.0f, u1 = (c + 1) / 8.0f;
+        float P[16][4] = { { px - sz * 0.5f, py - sz * 0.5f, u0, 0.0f }, { px + sz * 0.5f, py - sz * 0.5f, u1, 0.0f },
+                           { px + sz * 0.5f, py + sz * 0.5f, u1, 1.0f }, { px - sz * 0.5f, py + sz * 0.5f, u0, 1.0f } };
+        int n = 4;
+        if (clip) {
+            const float pl[4][3] = { { ux, uy, hR }, { -ux, -uy, hR }, { tx, ty, hT }, { -tx, -ty, hT } };   // dot(p - C, n) <= h
+            for (int q = 0; q < 4 && n > 0; ++q) {
+                float Q[16][4]; int m = 0;
+                for (int i = 0; i < n; ++i) {
+                    const float* A = P[i]; const float* B = P[(i + 1) % n];
+                    const float da = (A[0] - Cx) * pl[q][0] + (A[1] - Cy) * pl[q][1] - pl[q][2];
+                    const float db = (B[0] - Cx) * pl[q][0] + (B[1] - Cy) * pl[q][1] - pl[q][2];
+                    if (da <= 0.0f && m < 16) { for (int j = 0; j < 4; ++j) Q[m][j] = A[j]; ++m; }
+                    if ((da <= 0.0f) != (db <= 0.0f) && m < 16) { const float t = da / (da - db); for (int j = 0; j < 4; ++j) Q[m][j] = A[j] + (B[j] - A[j]) * t; ++m; }
+                }
+                n = m; for (int i = 0; i < n; ++i) for (int j = 0; j < 4; ++j) P[i][j] = Q[i][j];
+            }
+        }
+        if (n < 3) return;
+        Vtx v[16];
+        for (int i = 0; i < n; ++i) v[i] = { P[i][0] - 0.5f, P[i][1] - 0.5f, 0, 1, col, P[i][2], P[i][3] };
+        dDrawUP(dev, D3DPT_TRIANGLEFAN, n - 2, v, sizeof(Vtx));
+    };
+    if (k >= 1.0f || oldCell < 0) { draw(0.0f, newCell, colNew, false); return; }
+    const float e = 1.0f - (1.0f - k) * (1.0f - k), ch = 2.0f * hR;      // ease-out : it settles into its notch
+    draw(e * ch, oldCell, colOld, true);                                  // the old value rolls OUT (away from the centre)...
+    draw(-(1.0f - e) * ch, newCell, colNew, true);                        // ...the new one rolls in from the centre's side
 }
 // THE PRESENT MOON, INKED TO ITS EXACT PHASE (the user 2026-11-25 : "the current moon with precision -- we are at 62 %") :
 // the lit part is the bare paper ; the dark part is ink, from the dark limb to the TERMINATOR, the ellipse x = (1 - 2 f) R
@@ -1164,13 +1231,7 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Wh - 0.02f, th0 + Wh + 0.02f, g_dm.dark);
     // the wheel is PAPER (the user 2026-11-25 : "as if inside it were paper, separations, icons painted on") : the map's
     // parchment, darker toward the frame (it curls under it), a few fibres ; ink separators between the days
-    ring_sector(dev, cx, cy, rw - wr, rw + wr, th0 - Wh, th0 + Wh, 0xFFE6CF9Au);
-    ring_sector(dev, cx, cy, rw - wr, rw - wr * 0.55f, th0 - Wh, th0 + Wh, 0x30603A10u);
-    ring_sector(dev, cx, cy, rw + wr * 0.55f, rw + wr, th0 - Wh, th0 + Wh, 0x30603A10u);
-    for (int k = 0; k < 9; ++k) {                                         // paper fibres
-        const float fa = th0 - Wh + (2.0f * Wh) * ((float)k + 0.5f) / 9.0f, rr = rw - wr * 0.8f + wr * 1.6f * (float)((k * 5) % 9) / 9.0f;
-        ring_sector(dev, cx, cy, rr - 0.35f, rr + 0.35f, fa - 0.03f, fa + 0.05f, 0x22704818u);
-    }
+    pod_wheels_under(dev, cx, cy, rw, wr, th0, as);                     // three paper WHEELS, as the hour's
     // ---- the three WHEELS (yesterday | today | tomorrow), icons upright ; when the day changes the three roll together ----
     if (wxTex) {
         tex_state(dev, wxTex);
@@ -1180,22 +1241,15 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
         if (di != lastDi) { oldDi = lastDi; lastDi = di; rollMs = nowMs; }
         const float k = rollMs ? fminf(1.0f, (float)(nowMs - rollMs) / 240.0f) : 1.0f;
         for (int d = -1; d <= 1; ++d) {
-            float px, py; at(th0 + (float)d * as, rw + wr * 0.12f, px, py);
             const bool today = d == 0;
             const float sz = today ? isz : isz * (0.13f / 0.18f);
             const u32 col = today ? 0xFFFFFFFFu : 0xFFD2D2D2u;
-            pod_roll_cell(dev, wxTex, px, py, sz, as * rw * 0.96f, isz * 1.02f, k, oldDi < 0 ? -1 : ((oldDi + d + 16) & 7), (di + d + 16) & 7, col, col);
+            pod_roll_cell(dev, cx, cy, th0 + (float)d * as, rw + wr * 0.12f, sz, as * rw * 0.48f, wr, k, oldDi < 0 ? -1 : ((oldDi + d + 16) & 7), (di + d + 16) & 7, col, col);
         }
         dSetTex(dev, 0, 0);
         color_state(dev);
     }
-    for (int k = -1; k <= 2; ++k) {                                       // the ink separators between the days (move with the wheel's jump)
-        static int dummy = 0; (void)dummy;
-        const float sa = th0 + ((float)k - 0.5f) * as;
-        if (fabsf(sa - th0) > Wh - 0.01f) continue;
-        float x0, y0, x1, y1; at(sa, rw - wr * 0.80f, x0, y0); at(sa, rw + wr * 0.80f, x1, y1);
-        seg_soft(dev, x0, y0, x1, y1, 1.1f * S, 0xB05A3A18u);
-    }
+    pod_wheels_over(dev, cx, cy, rw, wr, th0, as, Wh, S);               // the cuts between them, the glass
     // ---- the housing's metal OVER the wheel beyond the window's ends (what slipped under the frame is hidden) ----
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 + Wh + 0.02f, th0 + Ph, hb);   // (the caps cover past Ph)
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Ph, th0 - Wh - 0.02f, hb);
@@ -1388,13 +1442,7 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
     pod_housing(dev, cx, cy, r, Ri, Ro, th0, Ph, S, hb);                // cast into the dial : its ends flow down into the ring
     (void)rm;
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Wh - 0.02f, th0 + Wh + 0.02f, g_dm.dark);     // the window's chamfer
-    ring_sector(dev, cx, cy, rw - wr, rw + wr, th0 - Wh, th0 + Wh, 0xFFE6CF9Au);                                         // the band : PAPER, as the day pod's
-    ring_sector(dev, cx, cy, rw - wr, rw - wr * 0.55f, th0 - Wh, th0 + Wh, 0x30603A10u);                                 // darker where it curls under the frame
-    ring_sector(dev, cx, cy, rw + wr * 0.55f, rw + wr, th0 - Wh, th0 + Wh, 0x30603A10u);
-    for (int k = 0; k < 9; ++k) {                                                                                         // paper fibres
-        const float fa = th0 - Wh + (2.0f * Wh) * ((float)k + 0.5f) / 9.0f, rr = rw - wr * 0.8f + wr * 1.6f * (float)((k * 5) % 9) / 9.0f;
-        ring_sector(dev, cx, cy, rr - 0.35f, rr + 0.35f, fa - 0.03f, fa + 0.05f, 0x22704818u);
-    }
+    pod_wheels_under(dev, cx, cy, rw, wr, th0, as);                     // three paper WHEELS, as the hour's
     // the three WHEELS : the last NEW or FULL before | the present moon, inked to its exact phase | the next NEW or FULL ;
     // the side wheels roll together when the cycle turns (at the full and at the new)
     {
@@ -1406,24 +1454,19 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
         const bool rolled = w != lastW;
         if (rolled) { lastW = w; rollMs = nowMs; }
         const float k = rollMs ? fminf(1.0f, (float)(nowMs - rollMs) / 240.0f) : 1.0f;
-        const float szS = isz * (0.13f / 0.18f), cw = as * rw * 0.96f, ch = isz * 1.02f;
+        const float szS = isz * (0.13f / 0.18f);
         if (tex) {
             tex_state(dev, tex);
             for (int d = -1; d <= 1; d += 2) {
-                float px, py; at(th0 + dir * (float)d * as, rw, px, py);
                 const int nc = d < 0 ? prevC : nextC, oc = d < 0 ? nextC : prevC;   // a flip swaps the two
-                pod_roll_cell(dev, tex, px, py, szS, cw, ch, k, rollMs ? oc : -1, nc, 0xFFFFFFFFu, 0xFFFFFFFFu);
+                pod_roll_cell(dev, cx, cy, th0 + dir * (float)d * as, rw, szS, as * rw * 0.48f, wr, k, rollMs ? oc : -1, nc, 0xFFFFFFFFu, 0xFFFFFFFFu);
             }
             dSetTex(dev, 0, 0);
         }
         float px, py; at(th0, rw, px, py);
         draw_ink_moon(dev, snap(px), snap(py), isz * 0.44f, (float)pct / 100.0f, waning, S);
         color_state(dev);
-        for (int e = -1; e <= 1; e += 2) {                               // the cuts between the wheels
-            const float sa = th0 + (float)e * as * 0.5f;
-            float x0, y0, x1, y1; at(sa, rw - wr * 0.80f, x0, y0); at(sa, rw + wr * 0.80f, x1, y1);
-            seg_soft(dev, x0, y0, x1, y1, 1.1f * S, 0xB05A3A18u);
-        }
+        pod_wheels_over(dev, cx, cy, rw, wr, th0, as, Wh, S);           // the cuts between them, the glass
     }
     // the housing's metal over the band beyond the window's ends (what slipped under is hidden)
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 + Wh + 0.02f, th0 + Ph, hb);
