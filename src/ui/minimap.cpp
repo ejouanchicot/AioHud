@@ -1483,7 +1483,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         float cwX[3] = { (lc0 + lc1) * 0.5f, cx, (rc0 + rc1) * 0.5f }, cwY[3] = { bmid, bmid, bmid }, cwH[3] = { 0, posHalf, 0 }, cwHH = 0.0f;
         if (foot && (bandMoon || bandDay || posBand)) {
             const float wh = snap(pSz + 6.0f * S), bz = snap(4.0f * S), gap = snap(TUNE("mm.foot_gap", 15.0f) * S);   // the windows apart : three instruments, not one strip
-            const float hwM = snap(drum_width(tf, c.lang == 1 ? "Nouv. 99j" : "Full 99d", pSz, S) * 0.5f + 3.0f * S);   // the windows hold their wheels
+            const float hwM = snap(drum_width(tf, "Full 99d", pSz, S) * 0.5f + 3.0f * S);   // the windows hold their wheels
             const float hwT = snap(drum_width(tf, "00:00", pSz, S) * 0.5f + 3.0f * S);
             const float hwP = posBand ? posHalf : 0.0f;
             const float yB = snap(cy + r + 2.0f * S + wh + bz * 1.6f);                       // the base line
@@ -1614,7 +1614,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             const int dd = fullFirst ? v.daysToFull : v.daysToNew;
             char mb[32];
             (void)0;                                                                      // (day 0 : "00", the cylinders stay -- an odometer never loses a wheel)
-            sprintf(mb, c.lang == 1 ? (fullFirst ? "Pleine %02dj" : "Nouv. %02dj") : (fullFirst ? "Full %02dd" : "New %02dd"), dd < 0 ? 0 : dd);
+            sprintf(mb, fullFirst ? "Full %02dd" : "New %02dd", dd < 0 ? 0 : dd);   // New / Full in every language (the user 2026-11-25 : everyone reads them)
             const float ty = bmid;
             bezel(x, y, 0xFF101C3Cu, true);
             color_state(dev);
