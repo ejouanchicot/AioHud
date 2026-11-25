@@ -181,7 +181,9 @@ void draw_icon(u32 dev, Icon ic, float cx, float cy, float z, float S, u32 c) {
 
 u32 g_handTex = 0;   // the party's selection-hand texture, handed in by the HUD each frame (device-loss managed there)
 float g_subXY[2] = { -1.0f, -1.0f };
-float g_mbkAt[3] = { 0.0f, 0.0f, 0.0f };   // the macro book list : its left edge, the cursor row's top, 1 = drawn this frame (mcrselop hangs there)     // where the main menu's submenu was last drawn (a player's options take its place)
+float g_mbkAt[3] = { 0.0f, 0.0f, 0.0f };
+float g_esAt[3] = { 0.0f, 0.0f, 0.0f };    // the equipment set list : left edge, the cursor row's top, 1 = drawn (mcresmn hangs there)
+float g_medAt[2][3] = { { 0, 0, 0 }, { 0, 0, 0 } };   // the macro palette / the macro : right edge, top, 1 = drawn (their option menus hang there)   // the macro book list : its left edge, the cursor row's top, 1 = drawn this frame (mcrselop hangs there)     // where the main menu's submenu was last drawn (a player's options take its place)
 const int HIT_N = 21;   // ... 20 the macro book list
 float g_hit[HIT_N][4] = { { 0, 0, 0, 0 } };   // 13 the trade, 14 a confirm, 15 the buff bar, 16 a shop's Buy / Sell, 17 its list
 struct CoinQ { float x, y, z, a; }; CoinQ g_coinQ[16]; int g_coinN = 0;   // a list's gil coins, drawn after its text pass  // the drawn blocks (menu, submenu ; NPC bubble, NPC answers ; the auto-translate picker ; the main menu, its categories, its list ; Unity Info) as screen FRACTIONS : their clicks never reach the game
@@ -5358,8 +5360,11 @@ void gen_draw(const Frame& f) {
         if (L.rx0 * 2 > L.uiW) bx = snap((float)L.rx1 * sx - bw);       // a right-side menu : its right edge where the client's is
         // MacroPalette : the book list opens IN PLACE of mcrmenu (not drawn under it) ; the book's options hang beside OUR
         // list, on its row (the client places them beside its own, narrower list -- they covered ours, 2026-11-25)
-        if (!strcmp(L.name, "mcrmenu") && native_macro_books().open) continue;
+        if (!strcmp(L.name, "mcrmenu") && (native_macro_books().open || native_equip_sets().open)) continue;
+        if (!strcmp(L.name, "mcresmn") && g_esAt[2] > 0.0f) { bx = snap(g_esAt[0] - snap(3.0f * S) - bw); by = snap(g_esAt[1]); }
         if (!strcmp(L.name, "mcrselop") && g_mbkAt[2] > 0.0f) { bx = snap(g_mbkAt[0] - snap(3.0f * S) - bw); by = snap(g_mbkAt[1]); }
+        if (!strcmp(L.name, "mcrbedit") && g_medAt[0][2] > 0.0f) { bx = snap(g_medAt[0][0] + snap(3.0f * S)); by = snap(g_medAt[0][1]); }
+        if (!strcmp(L.name, "mcrledit") && g_medAt[1][2] > 0.0f) { bx = snap(g_medAt[1][0] + snap(3.0f * S)); by = snap(g_medAt[1][1]); }
         if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
         if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
         const int jm = menu_place(f, __LINE__ * 16 + s, bx, by, bw, bh);
@@ -5513,6 +5518,67 @@ void macro_books_draw(const Frame& f) {
         }
     } else g_mbkB.hoverRow = 0;
 }
+// ======== MacroPalette -> Edit Equip. Set : the SET LIST (mcres20) -- 20 sets a page (10 pages), each with its count of
+// pieces ; a row renamed shows what is typed. The client keeps the keys ; the mouse hovers / picks a row. ========
+namespace { Block g_esB; unsigned g_esMs = 0; }
+void equip_sets_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    g_esAt[2] = 0.0f;
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_esB.vis = 0.0f; g_esB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_esMs ? (float)(now - g_esMs) / 1000.0f : 0.0f; g_esMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeEquipSets& E0 = native_equip_sets();
+    static NativeEquipSets last;
+    if (E0.open) last = E0;
+    const bool editing = native_ui_window_open("mcresed");               // the set's grid opens in its place
+    if (!block_ease(g_esB, E0.open && !editing, now, dt) || last.uiW <= 0 || last.uiH <= 0) return;
+    const Metrics k = metrics(f), kN = no_icons(k);
+    const float S = k.S;
+    RowSpec rows[20]; static char lab[20][24], num[20][12]; int cur = 0;
+    for (int i = 0; i < 20; ++i) {
+        int pieces = 0; for (int s = 0; s < 16; ++s) if (last.item[i][s]) ++pieces;
+        if (last.renaming == i + 1) { _snprintf(lab[i], sizeof(lab[i]), "%s%s", last.rename, (now / 500) % 2 ? "_" : " "); lab[i][23] = 0; rows[i].tint = 0xFFFFFFFFu; }
+        else lstrcpynA(lab[i], last.name[i][0] ? last.name[i] : "-", sizeof(lab[i]));
+        if (pieces) sprintf(num[i], "%d", pieces); else num[i][0] = 0;
+        rows[i].label = lab[i]; rows[i].icon = IC_NONE; rows[i].sub = false; rows[i].off = !pieces && last.renaming != i + 1; rows[i].extra = num[i][0] ? num[i] : 0;
+        if (last.cursor == i + 1) cur = i + 1;
+    }
+    float bw = 0.0f, bh = 0.0f; block_size(f, kN, rows, 20, bw, bh);
+    const float tzH = k.tz * 0.92f, headH = snap(k.capH + k.gap);
+    const char* title = tr("Equipment Sets", "Sets d'equipement");
+    char pg[16]; sprintf(pg, "%d / 10", last.page + 1);
+    {   const float need = snap(k.gutter + f.font->measure(title, tzH) + 14.0f * S + f.font->measure("10 / 10", tzH) + 18.0f * S + k.pad) + 2.0f * k.bi;
+        if (need > bw) bw = need; }
+    bw = keep_width(g_esB, bw); bh = snap(bh + headH); g_esB.inTop = headH;
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    float bx = (last.rx0 * 2 > last.uiW) ? snap((float)last.rx1 * sx - bw) : snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+    const float tO = ease_out(((float)(now - g_esB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_esB.vis * tO * (last.focused || !E0.open ? 1.0f : 0.62f);
+    if (A <= 0.0f) return;
+    const int row = block_draw(f, kN, g_esB, rows, 20, cur, last.focused, bx, by, bw, bh, A, dt);
+    g_esAt[0] = bx; g_esAt[1] = g_esB.rowY0 + (float)((last.cursor >= 1 && last.cursor <= 20 ? last.cursor : 1) - 1) * g_esB.rowStep; g_esAt[2] = E0.open ? 1.0f : 0.0f;
+    const u32 dev = f.dev;
+    const float hy = by + k.bi + k.pad, hc = snap(hy + (headH - k.gap) * 0.5f);
+    rrect(dev, bx + k.bi + k.gutter, snap(hy + headH - k.gap * 0.5f - 1.0f), bw - 2.0f * k.bi - k.gutter - k.pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    const float pw = f.font->measure(pg, tzH), ar = 3.0f * S;
+    const float rx = snap(bx + bw - k.bi - k.pad - 4.0f * S), lx = snap(rx - 2.0f * ar - 6.0f * S - pw - 6.0f * S);
+    const u32 ac = with_alpha(0xC0FFDA8Au, A);
+    tri(dev, rx, hc, rx - 2.0f * ar, hc - ar * 1.2f, rx - 2.0f * ar, hc + ar * 1.2f, ac);
+    tri(dev, lx, hc, lx + 2.0f * ar, hc - ar * 1.2f, lx + 2.0f * ar, hc + ar * 1.2f, ac);
+    Font* fo = f.font;
+    fo->begin(dev);
+    fo->draw_lc(dev, snap(bx + k.bi + k.gutter + k.capPadL * 0.5f), hc, title, tzH, with_alpha(0xFFE8D9B0u, A), with_alpha(0xC8000000u, A), k.ow);
+    fo->draw_lc(dev, snap(lx + 2.0f * ar + 6.0f * S), hc, pg, tzH, with_alpha(0xFFC9D3E0u, A), with_alpha(0xC8000000u, A), k.ow);
+    if (E0.open && last.focused && !last.renaming) {
+        if (row >= 1 && row <= 20 && row != g_esB.hoverRow && row != last.cursor) native_equip_sets_hover(row);
+        g_esB.hoverRow = row;
+        if (f.mouse && f.mouse->clicked && row >= 1 && row <= 20) native_equip_sets_pick(row);
+    } else g_esB.hoverRow = 0;
+}
 // ======== MacroPalette -> a book -> Edit : the PALETTE (mcr1edlo / mcr2edlo : Ctrl and Alt stacked) and ONE MACRO
 // (`macro` : its name, its 6 lines). The client keeps the keys (and the typing) ; the mouse hovers / picks a cell, a
 // field, the previous / next arrows. ========
@@ -5523,6 +5589,7 @@ void macro_edit_draw(const Frame& f) {
     const unsigned now = GetTickCount();
     float dt = g_medMs ? (float)(now - g_medMs) / 1000.0f : 0.0f; g_medMs = now; if (dt > 0.1f) dt = 0.1f;
     const NativeMacroEdit& E0 = native_macro_edit();
+    g_medAt[0][2] = g_medAt[1][2] = 0.0f;
     static NativeMacroEdit last;
     if (E0.pal || E0.ed) last = E0;
     if (last.uiW <= 0 || last.uiH <= 0) return;
@@ -5545,6 +5612,7 @@ void macro_edit_draw(const Frame& f) {
             if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
             by = snap(by + (1.0f - tO) * 3.0f * S);
             draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+            g_medAt[0][0] = bx + bw; g_medAt[0][1] = by; g_medAt[0][2] = E0.pal ? 1.0f : 0.0f;
             char head[64]; _snprintf(head, sizeof(head), "Macro Set %s (#%d)", last.bookTitle, last.set + 1); head[63] = 0;
             fo->begin(dev);
             fo->draw_lc(dev, snap(bx + pad), snap(by + pad + headH * 0.45f), head, tz * 0.92f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
@@ -5607,6 +5675,7 @@ void macro_edit_draw(const Frame& f) {
         const float A = g_meB.vis * tO * (last.edFocused || !E0.ed ? 1.0f : 0.62f);
         if (A > 0.0f) {
             const int row = block_draw(f, kN, g_meB, rows, 7, cur, last.edFocused, bx, by, bw, bh, A, dt);
+            g_medAt[1][0] = bx + bw; g_medAt[1][1] = by; g_medAt[1][2] = E0.ed ? 1.0f : 0.0f;
             const float hy = by + k.bi + k.pad, hc = snap(hy + (headH - k.gap) * 0.5f);
             rrect(dev, bx + k.bi + k.gutter, snap(hy + headH - k.gap * 0.5f - 1.0f), bw - 2.0f * k.bi - k.gutter - k.pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
             char ttl[16]; _snprintf(ttl, sizeof(ttl), "%s %d", last.k >= 10 ? "Alt" : "Ctrl", (last.k % 10 + 1) % 10); ttl[15] = 0;

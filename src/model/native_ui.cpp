@@ -304,6 +304,7 @@ NativeNpc g_npc; bool g_npcFail = false; int g_npcBad = 0; DWORD g_npcGoodSince 
 NativeEntryMenu g_mainM, g_mainSub, g_mainSort, g_mainYn; bool g_mainFail = false;
 extern NativeMacroBooks g_mbk;   // the macro book list (macro_books_poll, below)
 extern NativeMacroEdit g_med;    // the macro editor (macro_edit_poll, below)
+extern NativeEquipSets g_es;     // the equipment set list (equip_sets_poll, below)
 bool g_mainNative = false;   // a main-menu child the client keeps drawing, in the main menu's place (main_poll)
 NativeTopBar g_tb; bool g_tbFail = false;                                               // the top bar (titlewin + helpwind)
 NativeMacro g_mc; bool g_mcFail = false;                                                // the macro bar
@@ -2091,7 +2092,7 @@ void main_poll(bool on) {
         // PLACE of the main menu, so the main menu steps aside while it is up (2026-11-25 : the client's Macro menu sat on
         // the header of AioHUD's main menu)
         const u32 mg = manager();
-        g_mainNative = mg && win_named(mg, "mcrselec");
+        g_mainNative = mg && (win_named(mg, "mcrselec") || win_named(mg, "mcres20"));
     }
     {   // the first sight of each sub menu : its rows as read (bounded) -- what the labels are, measured not guessed
         static int said = 0;
@@ -2521,7 +2522,8 @@ void yn_park(u32 mgr) {
     {   static int m1Log = 0, m2Log = 0, m3Log = 0, m4Log = 0, mmLog = 0;
         if (g_med.pal) { park_named(mgr, "mcr1edlo", m1Log, "MacroPalette -> the palette (Ctrl)"); park_named(mgr, "mcr2edlo", m2Log, "MacroPalette -> the palette (Alt)");
                          park_named(mgr, "mcr1edit", m3Log, "MacroPalette -> the palette (Ctrl)"); park_named(mgr, "mcr2edit", m4Log, "MacroPalette -> the palette (Alt)"); }
-        if (g_med.ed) park_named(mgr, "macro", mmLog, "MacroPalette -> a macro"); }
+        if (g_med.ed) park_named(mgr, "macro", mmLog, "MacroPalette -> a macro");
+        static int esLog = 0; if (g_es.open) park_named(mgr, "mcres20", esLog, "MacroPalette -> the equipment sets"); }
     if (g_ls.open || (g_search.open && g_search.ctx == 4)) park_named(mgr, "link6", l6Log, "Linkshell -> the header");
     if (g_scopt.open) park_named(mgr, "scoption", soLog, "Status -> Unity -> a player's options");
     static int urLog = 0;
@@ -2600,7 +2602,7 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_cel.open && (!strcmp(nm, "fe_equip") || !strcmp(nm, "fe_inven") || !strcmp(nm, "bluehelp")))
                              || (g_faith.open && (!strcmp(nm, "fp_cat") || !strcmp(nm, "fp_cat2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "fp_info")))
                              || (g_area.open && !strcmp(nm, "arealist")) || (g_search.open && !strcmp(nm, g_search.ctx == 2 ? "levelsyn" : g_search.ctx == 4 ? "link12" : "scresult"))
-                             || (g_ls.open && !strcmp(nm, "link5")) || (g_mbk.open && !strcmp(nm, "mcrselec")) || (g_med.pal && (!strcmp(nm, "mcr1edlo") || !strcmp(nm, "mcr2edlo") || !strcmp(nm, "mcr1edit") || !strcmp(nm, "mcr2edit"))) || (g_med.ed && !strcmp(nm, "macro")) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
+                             || (g_ls.open && !strcmp(nm, "link5")) || (g_mbk.open && !strcmp(nm, "mcrselec")) || (g_med.pal && (!strcmp(nm, "mcr1edlo") || !strcmp(nm, "mcr2edlo") || !strcmp(nm, "mcr1edit") || !strcmp(nm, "mcr2edit"))) || (g_med.ed && !strcmp(nm, "macro")) || (g_es.open && !strcmp(nm, "mcres20")) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
                              || (g_scopt.open && !strcmp(nm, "scoption"))
                              || (g_insp.open && (!strcmp(nm, "inspect") || !strcmp(nm, "iteminfo") || !strcmp(nm, "comment")))
                              || (g_loot.open && (!strcmp(nm, "loot") || !strcmp(nm, "lootope") || !strcmp(nm, "lnowin") || !strcmp(nm, "iteminfo")))
@@ -2870,6 +2872,41 @@ void macro_books_poll(bool on, u32 mgr, u32 focusObj) {
     g_mbk = t;
 }
 
+// ---- the EQUIPMENT SET list (mcres20) : handler +0x14 data (its +4 = the page's 20 records), +0x1C the rename input,
+// +0x20 the row renamed, +0x24 the page (u8). Live 2026-11-25 (//aio esdump). ----
+NativeEquipSets g_es;
+const char* const ES_W[] = { "mcres20", 0 };
+void equip_sets_poll(bool on, u32 mgr, u32 focusObj) {
+    NativeEquipSets t; memset(&t, 0, sizeof(t));
+    u32 o = 0, hd = 0, ob = 0, pg = 0;
+    if (!on || !mgr || !(o = win_named(mgr, "mcres20")) || !safe_read(o + OBJ_HANDLER, &hd) || !valid_ptr(hd)
+        || !safe_read(hd + 0x14, &ob) || !valid_ptr(ob) || !safe_read(ob + 4, &pg) || !valid_ptr(pg)) { g_es = t; return; }
+    unsigned char page = 0; u32 in = 0, chosen = 0; short cur = 0, wh[2] = { 0, 0 };
+    if (!rd8(hd + 0x24, page) || page > 9 || !safe_read(hd + 0x1C, &in) || !safe_read(hd + 0x20, &chosen) || !rd16(o + 0x4C, cur)
+        || !rd16(o + OBJ_RECT, t.rx0) || !rd16(o + OBJ_RECT + 2, t.ry0) || !rd16(o + OBJ_RECT + 4, t.rx1) || !rd16(o + OBJ_RECT + 6, t.ry1)
+        || !rdblk(mgr + 0x80, wh, 4)) { g_es = t; return; }
+    t.uiW = wh[0]; t.uiH = wh[1];
+    if (t.ry0 >= t.uiH) { t.ry0 = (short)(t.ry0 - HIDE_DY); t.ry1 = (short)(t.ry1 - HIDE_DY); }
+    t.page = page; t.cursor = cur >= 1 && cur <= 22 ? cur : 0; t.focused = focusObj == o;
+    for (int r = 0; r < 20; ++r) {
+        unsigned char b[0x50]; if (!rdblk(pg + 4 + (u32)r * 0x50, b, sizeof(b))) { g_es = NativeEquipSets(); memset(&g_es, 0, sizeof(g_es)); return; }
+        int k = 0; for (int j = 0; j < 15 && b[j]; ++j) t.name[r][k++] = (b[j] >= 0x20 && b[j] < 0x7F) ? (char)b[j] : '?';
+        t.name[r][k] = 0;
+        for (int s = 0; s < 16; ++s) { u32 v = 0; memcpy(&v, b + 0x10 + s * 4, 4); t.item[r][s] = (v & 3) == 1 ? (unsigned short)(v >> 16) : 0; t.keep[r][s] = (v & 3) == 2; }
+    }
+    if (valid_ptr(in)) {
+        u32 len = 0; unsigned char b[64]; int k = 0; safe_read(in + 0x690, &len); if (len > 60) len = 60;
+        if (rdblk(in + 0x3A0, b, sizeof(b))) for (u32 i = 0; i < len && b[i] && k < 16; ++i) { if (b[i] == 0x7F) { ++i; continue; } if (b[i] >= 0x20 && b[i] < 0x7F) t.rename[k++] = (char)b[i]; }
+        t.rename[k] = 0; t.renaming = chosen < 20 ? (int)chosen + 1 : 0;
+    }
+    t.open = true;
+    static unsigned sig = ~0u; static int said = 0;
+    const unsigned s2 = (u32)page * 1000003u + (u32)cur * 131u + chosen * 17u + (valid_ptr(in) ? 1u : 0u);
+    if (s2 != sig && said < 30) { sig = s2; ++said;
+        windower::debug::log("NATIVEUI equip sets : page %u, cursor %d, rename %s (row %u '%s') ; row 0 '%s' main %u", page, cur, valid_ptr(in) ? "ON" : "off", chosen, t.rename, t.name[0], t.item[0][0]); }
+    g_es = t;
+}
+
 // ---- the macro EDITOR (macro-bar-re s.7) : E = *(Ctrl bar slot + 8) : +4 M, +0x0C row, +0x0D / +0x0E the Ctrl / Alt slot ;
 // `macro` handler +0x1C typing, +0x20 the entry typed, +0x2C + i*4 line i's input, +0x44 the name's input ----
 NativeMacroEdit g_med;
@@ -2935,7 +2972,7 @@ void macro_edit_poll(bool on, u32 mgr, u32 focusObj) {
             const u32 base = M + 4 + (u32)t.k * 0x17C;
             unsigned char nb[9]; if (rdblk(base + 0x172, nb, 9)) med_text(nb, 8, t.ename, sizeof(t.ename));
             for (int i = 0; i < 6; ++i) { unsigned char lb[61]; if (rdblk(base + 4 + (u32)i * 0x3D, lb, 61)) med_text(lb, 60, t.line[i], sizeof(t.line[i])); else t.line[i][0] = 0; }
-            u32 typing = 0, ent = 0; safe_read(hd + 0x1C, &typing); safe_read(hd + 0x20, &ent);
+            unsigned char typing = 0; u32 ent = 0; rd8(hd + 0x1C, typing); safe_read(hd + 0x20, &ent);   // a BYTE : +0x1D.. hold other state (07 00 0A, live 2026-11-25)
             if (typing && ent >= 3 && ent <= 9) {                      // what is being typed replaces the stored text
                 u32 in = 0;
                 if (ent == 3) { if (safe_read(hd + 0x44, &in) && med_input(in, t.ename, sizeof(t.ename))) t.typing = 3; }
@@ -3771,7 +3808,7 @@ bool entry_pick(const char* const* W, int entry);
 static const char* const GEN_SKIP[] = { "titlewin", "helpwind", "logwindo", "logwin2", "partywin", "netstat", "buff", "targetwi", "fulllog", "cnqframe",
     "shop", "shopbuy", "shopsell", "shopmain", "guildsho", "bazaar", "auclist", "auchisto", "inventor", "iteminfo", "itemxinf", "money", "moneyctr", "itemctrl",
     "bank", "equip", "inspect", "comment", "loot", "lootope", "lnowin", "post1", "post2", "delivery", "stringdl", "roomlist", "fep", "query", "evitem", "gift",
-    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edit", "mcr2edit", "macro", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
+    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edit", "mcr2edit", "macro", "mcres20", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
     "cmbhlst", "tskill1", "cmbhwin",   // Synthesis (its module ; 2026-11-22 : the panel engine drew its History a second time, misplaced)
     "link5", "link6", "link12",        // Linkshell (its module ; 2026-11-25 : link5 is born before g_ls reads it -- the panel engine learned it and
                                        // drew the items a second time, over the module's box)
@@ -4599,7 +4636,11 @@ bool native_buff_pick(int idx) {
 const NativeTopBar& native_topbar() { return g_tb; }
 const NativeMacro& native_macro() { return g_mc; }
 const NativeMacroBooks& native_macro_books() { return g_mbk; }
+unsigned native_manager() { return manager(); }
+bool native_ui_window_open(const char* name) { const u32 m = manager(); return m && win_named(m, name) != 0; }
+unsigned native_win_named(unsigned mgr, const char* want) { return win_named(mgr, want); }
 const NativeMacroEdit& native_macro_edit() { return g_med; }
+const NativeEquipSets& native_equip_sets() { return g_es; }
 const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
 // the client's ability table ids (0..0x1FF weapon skills, 0x200.. job abilities, 0x600..0x6FF job traits) : d_msg 55701
 // the name, 55733 the description -- abilities-re-2026-11-19.md (all 124 traits / 626 abilities checked against it)
@@ -5102,6 +5143,8 @@ bool native_lootall_pick() {
 }
 bool native_macro_edit_hover(int bar, int entry) { return (bar == 2 ? g_med.ed : g_med.pal) && entry_hover(bar == 0 ? MED_W1 : bar == 1 ? MED_W2 : MED_WM, entry); }
 bool native_macro_edit_pick(int bar, int entry) { return (bar == 2 ? g_med.ed : g_med.pal) && entry_pick(bar == 0 ? MED_W1 : bar == 1 ? MED_W2 : MED_WM, entry); }
+bool native_equip_sets_hover(int entry) { return g_es.open && entry_hover(ES_W, entry); }
+bool native_equip_sets_pick(int entry) { return g_es.open && entry_pick(ES_W, entry); }
 bool native_macro_books_hover(int entry) { return g_mbk.open && entry_hover(MBOOK_W, entry); }
 bool native_macro_books_pick(int entry) { return g_mbk.open && entry_pick(MBOOK_W, entry); }
 bool native_inspect_hover(int entry) { return g_insp.open && entry_hover(INSPECT_W, entry); }
@@ -5616,7 +5659,8 @@ void native_ui_tick(bool inWorld) {
     macro_poll(wanted && (c.nuHide & NU_MACRO), manager());   // the Ctrl / Alt macro bar : AioHUD's own
     { u32 focus = 0; const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus);
       macro_books_poll(wanted && (c.nuHide & NU_MAIN) && mc_res(), manager(), focus);     // MacroPalette's book list
-      macro_edit_poll(wanted && (c.nuHide & NU_MAIN) && mc_res(), manager(), focus); }   // ... and its editor
+      macro_edit_poll(wanted && (c.nuHide & NU_MAIN) && mc_res(), manager(), focus);     // ... and its editor
+      equip_sets_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus); }               // ... and the equipment sets
     net_poll(wanted && (c.nuHide & NU_NET));                                              // the connection box (netstat) : AioHUD's own
     buffwin_poll(wanted && (c.nuHide & NU_BUFF), manager());   // your buff icons : AioHUD's own, where the client puts them
     if (wanted && (eff_hide(c) & NU_BUFF)) ensure_event_hook();   // the buff cursor's left / right walk AioHUD's order

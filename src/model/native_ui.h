@@ -136,6 +136,9 @@ struct NativeMacroBooks {
     char title[20][17];   // the page's 20 titles
     short rx0, ry0, rx1, ry1; int uiW, uiH;   // the client's rect (UI units, unparked)
 };
+bool native_ui_window_open(const char* name);   // native_ui.cpp : a client window of that name is open
+unsigned native_manager();                       // native_ui.cpp : the menu manager (0 unresolved)
+unsigned native_win_named(unsigned mgr, const char* want);   // ... an open window by name (0 none)
 const NativeMacroBooks& native_macro_books();
 
 // The macro EDITOR (macro-bar-re s.7) : the palette (mcr1edit / mcr2edit, long forms mcr1edlo / mcr2edlo : the Ctrl and
@@ -159,6 +162,25 @@ struct NativeMacroEdit {
     int  uiW, uiH;
 };
 const NativeMacroEdit& native_macro_edit();
+
+// The EQUIPMENT SET list `mcres20` (MacroPalette -> Edit Equip. Set ; macro-bar-re s.8, live 2026-11-25) : 200 sets on 10
+// pages of 20. The page buffer = *(*(handler+0x14)+4) : 20 records of 0x50 = name (16 B) + 16 pieces (u32 : item id << 16,
+// low 2 bits 1 a piece, 2 "keep the piece worn") in the order main sub range ammo head body hands legs feet neck waist
+// ear1 ear2 ring1 ring2 back (proved by the items' slot masks).
+struct NativeEquipSets {
+    bool open, focused;
+    int  page;            // 0..9
+    int  cursor;          // the hand's entry : 1..20 a row, 0 none
+    int  renaming;        // the row being renamed 1..20, 0 none
+    char rename[17];
+    char name[20][17];
+    unsigned short item[20][16];   // 0 none
+    unsigned char  keep[20][16];   // 1 = keep the piece worn
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeEquipSets& native_equip_sets();
+bool native_equip_sets_hover(int entry);
+bool native_equip_sets_pick(int entry);
 bool native_macro_edit_hover(int bar, int entry);   // bar 0 palette Ctrl, 1 palette Alt, 2 the macro window
 bool native_macro_edit_pick(int bar, int entry);
 bool native_macro_books_hover(int entry);   // entry 1..22 (rows, then the page arrows)
