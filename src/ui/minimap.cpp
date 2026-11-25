@@ -1636,26 +1636,44 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 // THE MOON-PHASE DIAL (the user 2026-11-25) : the moon in the middle ; around it the LUNAR CYCLE -- a ring with
                 // the FULL moon marked at the top (a bright disc) and the NEW at the bottom (a dark one), a needle at where the
                 // cycle stands (waxing up the left, waning down the right) ; the days to the next of the two on a wheel
-                const float rIn = sr * 0.66f, rT0 = sr * 0.72f, rT1 = sr * 0.92f;
-                draw_moon_sphere(dev, x, y, rIn, v.moonPct, v.waning);
-                color_state(dev);
-                ring_sector(dev, x, y, rT0, rT1, 0.0f, 2.0f * PI, 0xFF0E1426u);          // the ring's dark enamel
-                for (int k = 0; k < 28; ++k) {                                          // the graduations : a cycle
-                    const float a2 = (float)k / 28.0f * 2.0f * PI, big = (k % 7 == 0) ? 1.0f : 0.0f;
-                    const float r0 = rT1 - (big > 0.5f ? 5.0f : 3.0f) * S, r1 = rT1 - 1.0f * S;
-                    seg_soft(dev, x + cosf(a2) * r0, y + sinf(a2) * r0, x + cosf(a2) * r1, y + sinf(a2) * r1, big > 0.5f ? 1.2f * S : 0.9f * S, big > 0.5f ? MA(0xE0, g_dm.lite) : MA(0x80, g_dm.lite));
+                // A PAPER DIAL OF THE PHASES (the user 2026-11-25 : "steampunk : no 3D moon -- a paper disc with all the moon's
+                // phases, like a watch, a hand pointing the present phase") : the whole face is parchment, the eight phases
+                // inked round it (new at the bottom, full at the top, waxing up the left, waning down the right), a chased
+                // metal HAND on a pivot pointing where the cycle stands
+                const float pct = (float)v.moonPct / 100.0f, cyc = v.waning ? 0.5f + (1.0f - pct) * 0.5f : pct * 0.5f;   // 0 new .. 0.5 full .. 1 new
+                const float face = sr - 0.5f * S;
+                disc(dev, x, y, face, 0xFFDCC48Eu);                                     // the parchment face
+                ring_sector(dev, x, y, face * 0.80f, face, 0.0f, 2.0f * PI, 0x30603A10u);   // darker toward the bezel
+                ring_sector(dev, x, y, face * 0.86f - 0.5f * S, face * 0.86f + 0.5f * S, 0.0f, 2.0f * PI, 0x903A2410u);   // an inked circle
+                const float rmP = face * 0.62f, pr = face * 0.17f;
+                for (int k = 0; k < 8; ++k) {                                           // the phases in INK
+                    const float a2 = PI * 0.5f + (float)k / 8.0f * 2.0f * PI;            // new at the bottom, turning up the left
+                    const float px = x + cosf(a2) * rmP, py = y + sinf(a2) * rmP;
+                    const u32 ink = 0xFF2E1C0Cu, lit = 0xFFF4E8C4u;
+                    disc(dev, px, py, pr + 0.7f * S, ink);
+                    if (k == 4) disc(dev, px, py, pr - 0.3f * S, lit);                  // full
+                    else if (k != 0) {                                                  // a lit crescent / half / gibbous
+                        const float l = (float)(k < 4 ? k : 8 - k) / 4.0f, side = k < 4 ? 1.0f : -1.0f;   // waxing lit on the right
+                        disc(dev, px, py, pr - 0.3f * S, lit);
+                        const float off = l * pr * 2.0f;
+                        if (l < 0.999f) disc(dev, px - side * off, py, pr - 0.3f * S, ink);
+                    }
+                    const float ta = a2 + PI / 8.0f;                                    // an inked tick between two phases
+                    seg_soft(dev, x + cosf(ta) * face * 0.86f, y + sinf(ta) * face * 0.86f, x + cosf(ta) * face * 0.97f, y + sinf(ta) * face * 0.97f, 0.9f * S, 0xB03A2410u);
                 }
-                const float rm2 = (rT0 + rT1) * 0.5f, mk = (rT1 - rT0) * 0.48f;
-                disc(dev, x, y - rm2, mk + 1.0f * S, g_dm.edge); disc(dev, x, y - rm2, mk, 0xFFF4ECD4u);   // FULL, at the top
-                disc(dev, x, y + rm2, mk + 1.0f * S, g_dm.lite); disc(dev, x, y + rm2, mk, 0xFF101828u);   // NEW, at the bottom
-                // the needle : where the cycle stands -- from New (bottom) up the left side (waxing) to Full (top), down the right (waning)
-                const float pct = (float)v.moonPct / 100.0f, cyc = v.waning ? 0.5f + (1.0f - pct) * 0.5f : pct * 0.5f;
-                const float na = PI * 0.5f + cyc * 2.0f * PI;
-                const float tipR = rT1 + 1.0f * S, baseR = rT0 - 2.0f * S, nw = 2.4f * S, ux2 = cosf(na), uy2 = sinf(na), nx2 = -uy2, ny2 = ux2;
-                const float tri[6] = { x + ux2 * baseR + nx2 * nw, y + uy2 * baseR + ny2 * nw, x + ux2 * baseR - nx2 * nw, y + uy2 * baseR - ny2 * nw, x + ux2 * tipR, y + uy2 * tipR };
-                const float sh3[6] = { tri[0] + 0.8f, tri[1] + 1.0f, tri[2] + 0.8f, tri[3] + 1.0f, tri[4] + 0.8f, tri[5] + 1.0f };
-                fill_poly_aa(dev, sh3, 3, 0x90000000u);
-                fill_poly_aa(dev, tri, 3, 0xFFE0452Fu);                                   // red, as the North's needle
+                {   // the HAND : chased metal, a counterweight, a pivot
+                    const float na = PI * 0.5f + cyc * 2.0f * PI, ux2 = cosf(na), uy2 = sinf(na), nx2 = -uy2, ny2 = ux2;
+                    const float tip = rmP - pr - 1.5f * S, tail = face * 0.20f, w0 = 2.0f * S;
+                    const float hs[8] = { x + ux2 * tip + 0.7f, y + uy2 * tip + 1.0f, x + nx2 * w0 + 0.7f, y + ny2 * w0 + 1.0f,
+                                          x - ux2 * tail + 0.7f, y - uy2 * tail + 1.0f, x - nx2 * w0 + 0.7f, y - ny2 * w0 + 1.0f };
+                    fill_poly_aa(dev, hs, 4, 0x80000000u);                              // its shadow on the paper
+                    const float hd[8] = { x + ux2 * tip, y + uy2 * tip, x + nx2 * w0, y + ny2 * w0, x - ux2 * tail, y - uy2 * tail, x - nx2 * w0, y - ny2 * w0 };
+                    fill_poly_aa(dev, hd, 4, g_dm.dark | 0xFF000000u);
+                    const float hl[6] = { x + ux2 * tip, y + uy2 * tip, x + nx2 * w0, y + ny2 * w0, x - ux2 * tail, y - uy2 * tail };
+                    fill_poly_aa(dev, hl, 3, g_dm.lite | 0xFF000000u);                  // its lit facet
+                    disc(dev, x, y, 2.6f * S, g_dm.edge); disc(dev, x, y, 1.9f * S, g_dm.lite);   // the pivot
+                }
+                color_state(dev);
                 glass_dome(dev, x, y, sr, 0xFF9CB8FFu, 0.35f);
                 color_state(dev);
                 char db[8]; sprintf(db, "%02d", dd < 0 ? 0 : (dd > 99 ? 99 : dd));       // the days to that event, on a two-wheel counter
