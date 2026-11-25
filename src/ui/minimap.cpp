@@ -1659,6 +1659,13 @@ static float drum_width(Font* fo, const char* txt, float sz, float S) {
     DrumTok tk[16]; const int n = drum_tokens(fo, txt, sz, S, tk, 16);
     float w = 0.0f; for (int i = 0; i < n; ++i) w += tk[i].w; return w;
 }
+// a wheel's character : centred HORIZONTALLY on its own ink, VERTICALLY on ONE common line (the digits' ink) -- each glyph
+// centred on its own ink sat a pixel higher or lower than its neighbours (the user 2026-11-25 : "not aligned vertically")
+static void drum_glyph(Font* fo, u32 dev, float px, float py, const char* s, float sz, u32 col) {
+    float t = 0.0f, b = 0.0f, T = 0.0f, B = 0.0f;
+    fo->ink_v(s, sz, t, b); fo->ink_v("0123456789", sz, T, B);
+    fo->draw_cc(dev, px, py + ((t + b) - (T + B)) * 0.5f, s, sz, col, 0, 0.0f);
+}
 static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw, float hh, const char* txt, float sz, float S) {
     if (!fo || slot < 0 || slot > 3) return;
     (void)hw;
@@ -1699,12 +1706,13 @@ static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw,
             grad_quad(dev, x + ww * 0.84f, y0, ww * 0.16f, h, 0x003A2410u, 0x603A2410u, 0x003A2410u, 0x603A2410u);
             const char* ol = old[slot][i];
             const float cw = fo->measure(tk[i].t, sz), ow = ol[0] ? fo->measure(ol, sz) : 0.0f;
+            (void)ow; (void)cw;
             float k = tch[slot][i] ? (float)(now - tch[slot][i]) / 200.0f : 1.0f; if (k > 1.0f) k = 1.0f;
             const float e = 1.0f - (1.0f - k) * (1.0f - k);
             clip_rect_begin(dev, x, y0, ww, h);
             fo->begin(dev);
-            if (k < 1.0f && ol[0] && ol[0] != ' ') fo->draw_lc(dev, snap(x + (ww - ow) * 0.5f), snap(cy - e * lh), ol, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the old value rolls away
-            if (tk[i].t[0] != ' ') fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy + (1.0f - e) * lh), tk[i].t, sz, 0xFF2E1C0Cu, 0, 0.0f);     // the new one rolls in
+            if (k < 1.0f && ol[0] && ol[0] != ' ') drum_glyph(fo, dev, snap(x + ww * 0.5f), snap(cy - e * lh), ol, sz, 0xFF2E1C0Cu);   // the old value rolls away (centred on its ink)
+            if (tk[i].t[0] != ' ') drum_glyph(fo, dev, snap(x + ww * 0.5f), snap(cy + (1.0f - e) * lh), tk[i].t, sz, 0xFF2E1C0Cu);     // the new one rolls in (centred on its ink)
             clip_rect_end(dev);
         } else if (tk[i].t[0] != ' ') {                                  // the sign ENGRAVED in the plinth's own metal, between the apertures
             const float cw = fo->measure(tk[i].t, sz);
@@ -1778,8 +1786,9 @@ static void drum_arc(u32 dev, Font* fo, int slot, float cx, float cy, float th0,
             const float rot = pod_rot(a, th0), ux = cosf(a), uy = sinf(a);
             Font::set_rotation(px, py, rot);
             const float og = sinf(a) > 0.0f ? 1.0f : -1.0f;              // outward, in the figure's own frame (its head points in on the bottom half)
-            if (rolling) fo->draw_lc(dev, px - ow * 0.5f, py + og * ee * lh, ol, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the old value rolls OUT (away from the centre)
-            if (tk[i].t[0] != ' ') fo->draw_lc(dev, px - cw * 0.5f, py - og * inn, tk[i].t, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the new one rolls in
+            if (rolling) drum_glyph(fo, dev, px, py + og * ee * lh, ol, sz, 0xFF2E1C0Cu);   // the old value rolls OUT -- centred on its INK (a '1' is narrower than its advance)
+            if (tk[i].t[0] != ' ') drum_glyph(fo, dev, px, py - og * inn, tk[i].t, sz, 0xFF2E1C0Cu);   // the new one rolls in, centred on its ink
+            (void)cw; (void)ow;
             Font::clear_rotation();
             (void)ux; (void)uy; (void)ux0; (void)uy0;
             if (k < 1.0f) clip_rect_end(dev);
