@@ -1067,7 +1067,8 @@ static float pod_rot(float a, float thPod) { return fabsf(pod_rot1(thPod)) > 0.8
 static float pod_wrapa(float a) { while (a > 3.14159265f) a -= 6.2831853f; while (a < -3.14159265f) a += 6.2831853f; return a; }
 static float pod_smax(float a, float b, float k) { return 0.5f * (a + b + sqrtf((a - b) * (a - b) + k * k)); }
 // the modules present this frame (Minimap::draw) : their angles and half-spans
-static int s_podN = 0; static float s_podTh[4], s_podPh[4];
+static const int POD_MAX = 8;   // (was 4 : with the sky module the fifth -- the grid square -- was silently dropped, no tube, no weld)
+static int s_podN = 0; static float s_podTh[POD_MAX], s_podPh[POD_MAX];
 
 // THE COLLAR (the user 2026-11-25 : "join them at the weld ; adapt the welds to where the modules are") : ONE cast piece
 // for every module present -- each a lug cast with the watch case (a flat top, a rounded corner, a steep wall, a concave
@@ -1079,9 +1080,9 @@ static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
     const float D = r * TUNE("mm.pod_depth", 0.235f), Ri = r - 3.0f * S, Ro = r + D, rB = r - 1.5f * S, H = Ro - rB, rm = (Ri + Ro) * 0.5f;
     const float L = H * TUNE("mm.pod_lug", 1.05f) / rm, kS = TUNE("mm.pod_lug_k", 5.0f), tk = tanhf(kS * 0.5f);
     const float bR = rB + H * TUNE("mm.pod_bridge_h", 0.55f), bMax = TUNE("mm.pod_bridge", 2.4f) * L, kR = 3.0f * S;
-    float bA0[8], bLen[8]; int nb = 0;                                    // the welds : from a module's end to the next one's start
+    float bA0[POD_MAX * 2], bLen[POD_MAX * 2]; int nb = 0;                                    // the welds : from a module's end to the next one's start
     for (int i = 0; i < n; ++i) for (int j = 0; j < n; ++j) {
-        if (i == j || nb >= 8) continue;
+        if (i == j || nb >= POD_MAX * 2) continue;
         float g = pod_wrapa((s_podTh[j] - s_podPh[j]) - (s_podTh[i] + s_podPh[i])); if (g < 0.0f) g += 6.2831853f;
         if (g <= bMax) { bA0[nb] = s_podTh[i] + s_podPh[i]; bLen[nb] = g; ++nb; }
     }
@@ -2948,7 +2949,7 @@ void Minimap::draw(const Frame& f) {
             const float D = r * TUNE("mm.pod_depth", 0.235f), Ri = r - 3.0f * S, Ro = r + D, rmT = (Ri + Ro) * 0.5f, rwT = r + D * 0.5f;
             Font* tfP = band_font(f, MM_TIME);
             const float pSzP = snap(TUNE("mm.dial_cap", 12.5f) * S);
-            auto add = [&](float th, float ph) { if (s_podN < 4) { s_podTh[s_podN] = th; s_podPh[s_podN] = ph; ++s_podN; } };
+            auto add = [&](float th, float ph) { if (s_podN < POD_MAX) { s_podTh[s_podN] = th; s_podPh[s_podN] = ph; ++s_podN; } };
             if (c.mmClock && c.mmClkDay) add(s_dayTh, G.Ph);
             if (c.mmClock && c.mmClkMoon) add(s_moonTh, G.Ph);
             if (s_skyPod) add(s_skyTh, sky_pod_ph(r, S));
