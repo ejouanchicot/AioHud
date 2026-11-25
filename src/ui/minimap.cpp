@@ -3689,12 +3689,16 @@ void Minimap::draw(const Frame& f) {
                     ring_sector(dev, ccx, ccy, rM - wR, rM + wR, aLo, aHi, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);
                     grain_sector(dev, ccx, ccy, rM - wR, rM + wR, aLo, aHi, S);
                     ring_sector(dev, ccx, ccy, rM + wR * 0.2f, rM + wR, aLo, aHi, MA(0x90, g_dm.glint));
-                    // the TAIL : a stop bar across the rail
-                    {
-                        float x0, y0, x1, y1; P(aP, rM - hA * 0.45f, x0, y0); P(aP, rM + hA * 0.45f, x1, y1);
-                        seg_soft(dev, x0 + 0.8f * S, y0 + 1.1f * S, x1 + 0.8f * S, y1 + 1.1f * S, 2.6f * S, 0x90000000u);
-                        seg_soft(dev, x0, y0, x1, y1, 2.8f * S, g_dm.edge | 0xFF000000u);
-                        seg_soft(dev, x0, y0, x1, y1, 1.6f * S, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);
+                    // the TAIL : an arrow's FLETCHING at the previous wheel (the user 2026-11-25 : "a tail starting from the first
+                    // cell") -- two pairs of feathers swept back from the rail
+                    for (int fq = 0; fq < 2; ++fq) {
+                        const float ab = aP + dir * G.as * (0.10f + 0.22f * (float)fq), ae = ab - dir * G.as * 0.20f;
+                        for (int sd = -1; sd <= 1; sd += 2) {
+                            float x0, y0, x1, y1; P(ab, rM, x0, y0); P(ae, rM + (float)sd * hA * 0.55f, x1, y1);
+                            seg_soft(dev, x0 + 0.8f * S, y0 + 1.1f * S, x1 + 0.8f * S, y1 + 1.1f * S, 2.2f * S, 0x90000000u);
+                            seg_soft(dev, x0, y0, x1, y1, 2.4f * S, g_dm.edge | 0xFF000000u);
+                            seg_soft(dev, x0, y0, x1, y1, 1.3f * S, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);
+                        }
                     }
                     // the ARROWHEAD at the next wheel, pointing onward along the rail (none when a counter is the target)
                     if (head) {
@@ -3740,8 +3744,22 @@ void Minimap::draw(const Frame& f) {
                     const float half = nf ? drum_width(nf, d2, dsz, S) * 0.5f / rM : 0.0f;
                     const float cA = 0.0f;                                         // the counter OVER THE PRESENT MOON (the user 2026-11-25) : the arrow runs from
                     (void)half;                                                    // the previous moon's tail, through it, to the next moon's head
-                    marks(s_moonTh, 0.0f, true, false);
+                    marks(s_moonTh, G.as * TUNE("mm.mhead_past", 0.40f), true, false);   // the head well past the next moon
                     if (nf) drum_arc(dev, nf, 0, ccx, ccy, s_moonTh + pod_dir(s_moonTh) * cA, rM, dhh, d2, dsz, S);
+                    {   // a RED POINTER on the counter's outer rim, pointing at the present moon (red enamel, as the N)
+                        const float ux = cosf(s_moonTh), uy = sinf(s_moonTh), tx = -uy, ty = ux;
+                        const float rb = rM + dhh + 1.5f * S, h = hA * 0.42f, wd = hA * 0.34f;
+                        const float bx = ccx + ux * rb, by = ccy + uy * rb;
+                        float tr[6] = { bx + ux * h, by + uy * h, bx + tx * wd, by + ty * wd, bx - tx * wd, by - ty * wd };
+                        float sh[6]; for (int q = 0; q < 6; ++q) sh[q] = tr[q] + (q & 1 ? 1.1f : 0.8f) * S;
+                        fill_poly_aa(dev, sh, 3, 0x90000000u);
+                        float ed[6] = { tr[0] + ux * 1.4f * S, tr[1] + uy * 1.4f * S, tr[2] + tx * 1.0f * S - ux * S, tr[3] + ty * 1.0f * S - uy * S, tr[4] - tx * 1.0f * S - ux * S, tr[5] - ty * 1.0f * S - uy * S };
+                        fill_poly_aa(dev, ed, 3, g_dm.edge | 0xFF000000u);
+                        fill_poly_aa(dev, tr, 3, 0xFFB8301Eu);
+                        const float hl[6] = { tr[0], tr[1], tr[2], tr[3], bx, by };
+                        fill_poly_aa(dev, hl, 3, 0x40FFB0A0u);
+                        color_state(dev);
+                    }
                 }
             }
         } else
