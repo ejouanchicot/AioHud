@@ -1755,8 +1755,11 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
         float dayK = clampf((elev + 0.1f) / 0.45f, 0.0f, 1.0f); dayK = dayK * dayK * (3.0f - 2.0f * dayK);
         const float duskK = clampf(1.0f - fabsf(elev) / 0.35f, 0.0f, 1.0f);
         // the WASH : a watercolour sky laid on the paper (translucent : the papyrus shows through), stronger toward the top
-        u32 wTop = col_lerp(0xE0283C78u, 0x9C6EA6DCu, dayK), wBot = col_lerp(0xC0405890u, 0x60A8CCE8u, dayK);   // the night wash deeper : it must read as night
-        wTop = col_lerp(wTop, 0xA8604880u, duskK * 0.5f); wBot = col_lerp(wBot, 0xB0E89858u, duskK * 0.8f);
+        // PAPYRUS INKS (the user 2026-11-25 : "the day/night on papyrus -- a question of colour") : light, translucent
+        // washes as on the inked storyboard -- a greyed lavender by night, a pale rose and soft orange at dawn and dusk, a
+        // very pale blue by day ; the papyrus always shows through
+        u32 wTop = col_lerp(0xA8585088u, 0x6894B4D0u, dayK), wBot = col_lerp(0x70847CA8u, 0x30B8CCD8u, dayK);
+        wTop = col_lerp(wTop, 0x80A07898u, duskK * 0.5f); wBot = col_lerp(wBot, 0x90E8A478u, duskK * 0.8f);
         const bool topHalf = sinf(aSky) <= 0.0f;                          // the sky's top : the screen's top
         const float b0 = clampf(lo + shift, lo, hi), b1 = clampf(hi + shift, lo, hi);
         if (b1 - b0 > 0.3f) {
@@ -1766,7 +1769,7 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
         // pen STARS by night : small inked crosses, pale ink on the indigo
         if (dayK < 0.6f) {
             static const float SX[6] = { -0.72f, -0.30f, 0.10f, 0.48f, 0.80f, -0.05f }, SY[6] = { -0.55f, -0.15f, -0.62f, -0.30f, -0.58f, 0.18f };
-            const u32 sc = MA((u32)(210.0f * (1.0f - dayK / 0.6f)), 0xF4E6BCu);
+            const u32 sc = MA((u32)(200.0f * (1.0f - dayK / 0.6f)), 0x3C2614u);   // sepia pen on the paper
             for (int i = 0; i < 6; ++i) {
                 const float x = Cx + SX[i] * hx, y = Cy + SY[i] * hy, l = 1.6f * S;
                 pen(x - l, y, x + l, y, 0.7f * S, sc); pen(x, y - l, x, y + l, 0.7f * S, sc);
@@ -1788,7 +1791,8 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
             } else {
                 blob(bx, by, br + 0.7f * S, 0xC03C2614u);
                 blob(bx, by, br, 0xFFEEE4C2u);
-                blob(bx + br * 0.45f, by - br * 0.22f, br * 0.82f, wTop | 0xFF000000u);   // the crescent : the night bites it
+                const u32 paperUnder = col_lerp(0xFFEBD8AAu, wTop | 0xFF000000u, (float)(wTop >> 24) / 255.0f);
+                blob(bx + br * 0.45f, by - br * 0.22f, br * 0.82f, paperUnder);   // the crescent : the washed paper bites it
             }
         }
         // the HILLS : a pen line along the foot, an ink wash under it
