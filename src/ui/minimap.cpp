@@ -1157,6 +1157,7 @@ static float s_dayTh = 0.7854f, s_moonTh = 2.3562f, s_hourTh = -1.5707963f, s_po
 struct PodF { float cx, cy, R, th; };
 static PodF s_dayF = {}, s_moonF = {}, s_skyF = {}, s_wxF = {}, s_hourF = {}, s_posF = {};
 static float s_podR0 = 0.0f;
+static bool s_noMap = false;   // the zone has no map : the lens closed by a metal plate, the position's capsule shut
 static float s_podOut = 0.0f;   // the square : the modules stand this far OUT of the case (not half hidden behind it) ; their collar reaches back in
 static float s_colA0 = -3.14159265f, s_colA1 = 3.14159265f;   // the collar's angular range (the round : the full turn)
 static bool s_heldW = false, s_heldE = false;                  // a module on the W / E side : that cardinal plate gives way
@@ -2242,7 +2243,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         // the POSITION in the band (the user 2026-11-25 : "lower, between the moon and the time") : a third compartment at
         // the centre, under the S, sized to the grid square -- in the modules style (round)
         char posTxt[12] = ""; bool posBand = false;
-        if (c.mmGrid && c.mmDayDial == 2 && g.map.valid) {
+        if (c.mmGrid && c.mmDayDial == 2 && s_noMap) { strcpy(posTxt, "\x02H-9"); posBand = true; }   // (no map : the capsule shut, at its usual size)
+        else if (c.mmGrid && c.mmDayDial == 2 && g.map.valid) {
             int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
             mm_demo_square(gc, gr);
             if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { sprintf(posTxt, "%c-%d", 'A' + gc, gr + 1); posBand = true; }   // ONE wheel for the whole square (), as the game writes it : "H-9"
@@ -2339,6 +2341,24 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 }
             }
             color_state(dev);
+            if (posBand && s_tubes && s_noMap && tf) {
+                // THE CAPSULE SHUT (the user 2026-11-25) : two metal shutters closed over the position's window, meeting in a seam
+                const PodGeo PG = pod_geo(s_posF.R, S);
+                const float span = (drum_width(tf, posTxt, pSz, S) * 0.5f + 2.5f * S) / PG.rw, a0 = s_posTh - span, a1 = s_posTh + span;
+                const u32 lid = dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f));
+                const float r0 = PG.rw - cwHH - 1.6f * S, r1 = PG.rw + cwHH + 1.6f * S;
+                color_state(dev);
+                ring_sector(dev, s_posF.cx, s_posF.cy, r0, r1, a0, a1, lid);
+                grain_sector(dev, s_posF.cx, s_posF.cy, r0, r1, a0, a1, S);
+                ring_sector(dev, s_posF.cx, s_posF.cy, r1 - 1.2f * S, r1, a0, a1, MA(0x50, g_dm.lite));      // the lit lip
+                ring_sector(dev, s_posF.cx, s_posF.cy, r0, r0 + 1.2f * S, a0, a1, MA(0x90, g_dm.edge));      // in shade
+                const float ux = cosf(s_posTh), uy = sinf(s_posTh);                                           // the seam where the shutters meet
+                seg_soft(dev, s_posF.cx + ux * r0, s_posF.cy + uy * r0, s_posF.cx + ux * r1, s_posF.cy + uy * r1, 1.0f * S, MA(0xC0, g_dm.edge));
+                const float tx = -uy * 0.9f * S, ty = ux * 0.9f * S;
+                seg_soft(dev, s_posF.cx + ux * r0 + tx, s_posF.cy + uy * r0 + ty, s_posF.cx + ux * r1 + tx, s_posF.cy + uy * r1 + ty, 0.7f * S, MA(0x50, g_dm.lite));
+                pod_caps(dev, s_posF.cx, s_posF.cy, PG.rw, cwHH, a0, a1, S);
+                color_state(dev);
+            } else
             if (posBand) { if (s_tubes) drum_arc(dev, tf, 1, s_posF.cx, s_posF.cy, s_posTh, pod_geo(s_posF.R, S).rw, cwHH, posTxt, pSz, S); else drum_text(dev, tf, 1, cwX[1], cwY[1], cwH[1] - 0.6f * S, cwHH, posTxt, pSz, S); }
         }
         if (!foot && (bandMoon || bandDay)) {
@@ -2846,6 +2866,7 @@ static float sq_band_k(const UiConfig& c) { return (c.mmLayout == 2 && c.mmDayDi
 // below") : how far past the map's square each side reaches, from the modules actually shown -- every module's outer edge
 // sampled along its span, in its frame (the same slots and frames as Minimap::draw, centred on 0,0). L T R B : px past r.
 static void dial_extents(const UiConfig& c, float r, float S, bool sq, float& eL, float& eT, float& eR, float& eB, bool hasMap = true) {
+    (void)hasMap;                                                       // (a shut position capsule still stands)
     const float PIf = 3.14159265f, keep = s_podR0, keepO = s_podOut;
     s_podR0 = r; s_podOut = sq ? r * TUNE("mm.sq_out", 0.08f) : 0.0f;
     const bool pods = TUNE("mm.foot_body", 0.0f) <= 0.5f;
@@ -2878,7 +2899,7 @@ static void dial_extents(const UiConfig& c, float r, float S, bool sq, float& eL
         if (skyOn) take(F_of(sSky), ph);
         if (wxOn) take(F_of(sWx), ph);
         if (c.mmClock && c.mmClkTime) take(F_of(c.mmPodHP == 1 ? 11 : 10), ph * 0.5f);
-        if (c.mmGrid && hasMap) take(F_of(c.mmPodHP == 1 ? 10 : 11), ph * 0.5f);
+        if (c.mmGrid) take(F_of(c.mmPodHP == 1 ? 10 : 11), ph * 0.5f);
     }
     const float base = r * 0.06f;                                       // the cardinal plates stand a little past the bezel
     eL = fmaxf(base, -x0 - r) + 3.0f * S; eR = fmaxf(base, x1 - r) + 3.0f * S; eT = fmaxf(base, -y0 - r) + 3.0f * S; eB = fmaxf(base, y1 - r) + 3.0f * S;
@@ -3199,7 +3220,7 @@ void Minimap::draw(const Frame& f) {
     // A ZONE WITHOUT A MAP (the user 2026-11-25 : "some zones have no map") : the Dial stays whole -- the hour, the day,
     // the moon, the weather still matter there ; the lens shows bare parchment with an inked wind rose, no markers, no
     // grid square. The other layouts keep their "No map" line.
-    const bool noMap = !g.map.valid || TUNE("mm.test_nomap", 0.0f) > 0.5f;   // (dev : simulate a map-less zone)
+    const bool noMap = s_noMap;
     if (noMap && !dial) {
         if (f.font) { f.font->begin(dev); f.font->draw_c(dev, snap(ccx), snap(ccy), (c.lang == 1) ? "Pas de carte" : "No map", snap(14.0f * S), 0xFF8894A4u, 0xFF000000u, 1.4f); }
         return;
@@ -3313,6 +3334,7 @@ void Minimap::draw(const Frame& f) {
     const float Z   = clampf(c.mmZoom, 1.0f, 24.0f);
     const float pn  = (mapD / mapPx) * Z;                     // screen px per native map px (Z=1 => full map spans the lens)
 
+    s_noMap = !g.map.valid || TUNE("mm.test_nomap", 0.0f) > 0.5f;       // (dev : mm.test_nomap simulates a map-less zone)
     if (dial && c.mmDayDial == 2) {                                      // THE MODULES' SLOTS, THEIR FRAMES and THE COLLAR (round or square)
         const float PIf = 3.14159265f;
         s_podR0 = r;
@@ -3361,7 +3383,8 @@ void Minimap::draw(const Frame& f) {
             if (s_skyOn) { mf[nm] = s_skyF; mp[nm] = sky_pod_ph(s_skyF.R, S, true, false); ++nm; }
             if (s_wxOn) { mf[nm] = s_wxF; mp[nm] = sky_pod_ph(s_wxF.R, S, false, true); ++nm; }
             if (c.mmClock && c.mmClkTime && tfP) { mf[nm] = s_hourF; mp[nm] = tubeHalf(s_hourF, drum_width(tfP, "00:00", pSzP, S)); ++nm; }
-            if (c.mmGrid && tfP && g.map.valid) {
+            if (c.mmGrid && tfP && s_noMap) { mf[nm] = s_posF; mp[nm] = tubeHalf(s_posF, drum_width(tfP, "H-9", pSzP, S)); ++nm; }   // the shut capsule
+            else if (c.mmGrid && tfP && g.map.valid) {
                 int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
                 mm_demo_square(gc, gr);
                 if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) {
@@ -3502,20 +3525,30 @@ void Minimap::draw(const Frame& f) {
     // ---- the map image, player-centred, V-flipped to read upright. SQUARE = a rect-clamped quad ; ROUND = a
     // textured circular FAN (`tdisc`) so the map is genuinely round with NO stencil buffer -- the round shape is
     // entirely geometry (fan + circle-tested markers), no clip mask needed. ----
-    if (noMap) {                                               // no map : bare parchment, an inked wind rose (terra incognita)
+    if (noMap) {                                               // NO MAP : the lens CLOSED by a full metal plate, the frame's own metal (the user 2026-11-25)
         color_state(dev);
         const float rr = round ? rc : (mapD * 0.5f - fi);
-        if (round) disc(dev, ccx, ccy, rr, 0xFFE2CB94u);
-        else rrect(dev, wx0, wy0, wx1 - wx0, wy1 - wy0, 0.0f, 0xFFE2CB94u, 0xFFD8BE84u);
-        const u32 ink = 0x603C2614u;
-        for (int k = 0; k < 8; ++k) {                          // the rose : 4 long points, 4 short
-            const float a = (float)k * 0.7853982f - 1.5707963f, L = rr * (k % 2 ? 0.30f : 0.55f), w = rr * (k % 2 ? 0.05f : 0.08f);
-            const float ux = cosf(a), uy = sinf(a), tx = -uy, ty = ux;
-            const float tri[6] = { ccx + ux * L, ccy + uy * L, ccx + tx * w, ccy + ty * w, ccx - tx * w, ccy - ty * w };
-            fill_poly_aa(dev, tri, 3, ink);
+        const u32 pl = dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f)), hi = dm_toward(pl, g_dm.lite, 0.14f), lo = dm_toward(pl, g_dm.edge, 0.16f);
+        if (round) {
+            disc(dev, ccx, ccy, rr, pl);
+            disc(dev, ccx - rr * 0.12f, ccy - rr * 0.14f, rr * 0.82f, MA(0x30, hi));                // softly lit toward the lamp
+            float xy[48]; for (int i = 0; i < 24; ++i) { const float a2 = 6.2831853f * (float)i / 24.0f; xy[2 * i] = ccx + cosf(a2) * rr; xy[2 * i + 1] = ccy + sinf(a2) * rr; }
+            grain_poly(dev, xy, 24, S);
+            color_state(dev); disc(dev, ccx, ccy, rr, MA(0xA8, pl));                                // the grain toned down : a wide plate, not a patina map
+            ring_sector(dev, ccx, ccy, rr - 2.0f * S, rr, 2.4f, 5.6f, MA(0x60, g_dm.lite));       // the plate's edge : lit...
+            ring_sector(dev, ccx, ccy, rr - 2.0f * S, rr, -0.7f, 2.4f, MA(0x90, g_dm.edge));      // ...and in shade
+            ring_sector(dev, ccx, ccy, rr * 0.30f, rr * 0.30f + 1.0f * S, 0.0f, 6.2831853f, MA(0x70, g_dm.edge));   // a turned boss at its centre
+            ring_sector(dev, ccx, ccy, rr * 0.30f + 1.0f * S, rr * 0.30f + 1.8f * S, 0.0f, 6.2831853f, MA(0x40, g_dm.lite));
+        } else {
+            rrect(dev, wx0, wy0, wx1 - wx0, wy1 - wy0, 0.0f, hi, lo);
+            const float xy[8] = { wx0, wy0, wx1, wy0, wx1, wy1, wx0, wy1 };
+            grain_poly(dev, xy, 4, S);
+            color_state(dev); rrect(dev, wx0, wy0, wx1 - wx0, wy1 - wy0, 0.0f, MA(0xA8, hi), MA(0xA8, lo));   // the grain toned down
+            rrect_stroke(dev, wx0 + 1.0f * S, wy0 + 1.0f * S, wx1 - wx0 - 2.0f * S, wy1 - wy0 - 2.0f * S, 0.0f, MA(0x50, g_dm.lite), 1.0f);
+            const float m = (wx1 - wx0) * 0.18f;
+            rrect_stroke(dev, wx0 + m, wy0 + m, wx1 - wx0 - 2.0f * m, wy1 - wy0 - 2.0f * m, snap(3.0f * S), MA(0x60, g_dm.edge), 1.0f);   // an engraved panel
         }
-        ring_sector(dev, ccx, ccy, rr * 0.18f, rr * 0.18f + 1.2f * S, 0.0f, 6.2831853f, ink);
-        ring_sector(dev, ccx, ccy, rr * 0.62f, rr * 0.62f + 1.0f * S, 0.0f, 6.2831853f, 0x403C2614u);
+        color_state(dev);
     }
     if (mapTex_ && !noMap) {
         const float qx = ccx - mapX * pn, qy = ccy - mapY * pn, qs = mapPx * pn;   // native (0,0)..(512,512)
