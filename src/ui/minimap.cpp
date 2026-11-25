@@ -1263,8 +1263,11 @@ static void pod_wheels_over(u32 dev, float cx, float cy, float rw, float wr, flo
 // catches the curve -- stronger on the lamp's side ; at each end a turned METAL CAP (a ferrule) clamps the tube : a
 // cylinder across the radius, lit on its outer half, a dark seam against the glass.
 static void pod_glass(u32 dev, float cx, float cy, float rw, float wr, float a0, float a1, float S) {
-    (void)S;
     color_state(dev);
+    // the window's two radial edges : a fine dark lip over the wheels' feathered paper edge (it left a dotted line of
+    // light pixels along the tube -- the user 2026-11-25)
+    ring_sector(dev, cx, cy, rw + wr - 0.7f * S, rw + wr + 0.9f * S, a0, a1, 0xE00A0806u);
+    ring_sector(dev, cx, cy, rw - wr - 0.9f * S, rw - wr + 0.7f * S, a0, a1, 0xE00A0806u);
     sector_grad(dev, cx, cy, rw - wr, rw - wr * 0.45f, a0, a1, 0x58000000u, 0x00000000u, 0x58000000u, 0x00000000u);   // the inner edge curves away : darker
     sector_grad(dev, cx, cy, rw + wr * 0.50f, rw + wr, a0, a1, 0x00FFFFFFu, 0x12FFFFFFu, 0x00FFFFFFu, 0x12FFFFFFu);   // the outer edge catches the sky (a whisper)
     const float l0 = cosf(a0) * POD_LX + sinf(a0) * POD_LY, l1 = cosf(a1) * POD_LX + sinf(a1) * POD_LY;
@@ -1645,7 +1648,7 @@ static void drum_arc(u32 dev, Font* fo, int slot, float cx, float cy, float th0,
     const float aLo = th0 - span * 0.5f, aHi = th0 + span * 0.5f;
     color_state(dev);
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, aLo - 1.6f * S / rw, aHi + 1.6f * S / rw, g_dm.edge);   // the cut in the metal
-    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw - wr - 0.6f * S, aLo, aHi, MA(0xFF, g_dm.lite));                         // its lit lip toward the centre
+    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw - wr - 0.6f * S, aLo, aHi, MA(0x50, g_dm.lite));                         // its lip toward the centre, a faint light
     ring_sector(dev, cx, cy, rw - wr - 0.6f * S, rw + wr + 0.6f * S, aLo - 0.6f * S / rw, aHi + 0.6f * S / rw, 0xFF0A0806u);  // the hollow
     const float ux0 = cosf(th0), uy0 = sinf(th0);                        // the roll axis (the tube is short : one axis for all)
     float w = 0.0f;
