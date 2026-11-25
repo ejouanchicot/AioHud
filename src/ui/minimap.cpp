@@ -2930,24 +2930,6 @@ static void arc_text(u32 dev, Font* fo, float cx, float cy, float R, float ac, c
     }
     color_state(dev);
 }
-// a GUILLOCHE SUNBURST : fine radial lines catching the light, a slow sheen sweeping round (additive)
-static void sunburst(u32 dev, float cx, float cy, float r0, float r1, float t, float S, float g0 = 0.0f, float g1 = 0.0f) {
-    const int N = 144;
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
-    const float sweep = fmodf(t * 0.15f, 6.2831853f);
-    for (int i = 0; i < N; ++i) {
-        const float a = 6.2831853f * (float)i / N, l = cosf(a) * POD_LX + sinf(a) * POD_LY;
-        float d = fabsf(pod_wrapa(a - sweep)); const float sw = d < 0.6f ? (1.0f - d / 0.6f) : 0.0f;
-        const u32 al = (u32)clampf(10.0f + 20.0f * (l > 0.0f ? l : 0.0f) + 36.0f * sw, 0.0f, 90.0f);
-        const u32 col = (al << 24) | 0x00FFFFFFu;
-        if (g1 > g0) {                                                   // a plain band left for the engraving
-            seg_soft(dev, cx + cosf(a) * r0, cy + sinf(a) * r0, cx + cosf(a) * g0, cy + sinf(a) * g0, 0.6f * S, col);
-            seg_soft(dev, cx + cosf(a) * g1, cy + sinf(a) * g1, cx + cosf(a) * r1, cy + sinf(a) * r1, 0.6f * S, col);
-        } else seg_soft(dev, cx + cosf(a) * r0, cy + sinf(a) * r0, cx + cosf(a) * r1, cy + sinf(a) * r1, 0.6f * S, col);
-    }
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    color_state(dev);
-}
 // A CUT GEM in a metal bezel with six claws : the pavilion's dark ground, eight facets round an octagonal table (each lit by
 // its angle to the lamp), then ADDITIVE light -- its inner glow, the table's sheen, a sharp specular, a slow star glint and a
 // few motes of fire turning inside it
@@ -3631,14 +3613,14 @@ void Minimap::draw(const Frame& f) {
             color_state(dev); disc(dev, ccx, ccy, rr, MA(0xA8, pl));                                // the grain toned down : a wide plate, not a patina map
             ring_sector(dev, ccx, ccy, rr - 2.0f * S, rr, 2.4f, 5.6f, MA(0x60, g_dm.lite));       // the plate's edge : lit...
             ring_sector(dev, ccx, ccy, rr - 2.0f * S, rr, -0.7f, 2.4f, MA(0x90, g_dm.edge));      // ...and in shade
-            sunburst(dev, ccx, ccy, rr * 0.30f, rr * 0.96f, f.t, S, rr * 0.55f, rr * 0.78f);     // the guilloche, a plain band for the engraving
+            (void)0;   // (no guilloche : its fine lines aliased -- the user 2026-11-25)
         } else {
             rrect(dev, wx0, wy0, wx1 - wx0, wy1 - wy0, 0.0f, hi, lo);
             const float xy[8] = { wx0, wy0, wx1, wy0, wx1, wy1, wx0, wy1 };
             grain_poly(dev, xy, 4, S);
             color_state(dev); rrect(dev, wx0, wy0, wx1 - wx0, wy1 - wy0, 0.0f, MA(0xA8, hi), MA(0xA8, lo));   // the grain toned down
             rrect_stroke(dev, wx0 + 1.0f * S, wy0 + 1.0f * S, wx1 - wx0 - 2.0f * S, wy1 - wy0 - 2.0f * S, 0.0f, MA(0x50, g_dm.lite), 1.0f);
-            sunburst(dev, ccx, ccy, rr * 0.30f, rr * 0.96f, f.t, S, rr * 0.55f, rr * 0.78f);     // the guilloche, a plain band for the engraving
+            (void)0;   // (no guilloche : its fine lines aliased -- the user 2026-11-25)
         }
         {   // the GEM at the centre, the maker's engraving round it
             const float gR = rr * TUNE("mm.gem_r", 0.22f), tR = rr * TUNE("mm.engrave_r", 0.66f);
