@@ -1000,18 +1000,6 @@ static int mm_weather_elem(int wid) {
     static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };              // weather pair (fire, water, earth, wind, ice, thunder, light, dark) -> day order
     return (wid >= 4 && wid <= 19) ? WCELL[(wid - 4) / 2] : -1;
 }
-// THE RESONANCE (the designer's brief, 2026-11-25) : when the weather's element is the day's, a thin filament of that
-// element's colour lights under today's icon and at the foot of each weather orb -- stable, no blinking, no text. It
-// lies in a dark groove so it reads on every metal ; Light gets a dark outline. A short arc (ring sector) of radius `rr`.
-static const u32 RES_COL[8] = { 0xFFFF5A2Au, 0xFFE8A040u, 0xFF3C8CFFu, 0xFF3CE070u, 0xFF7CDCFFu, 0xFFC060FFu, 0xFFFFE9A8u, 0xFFA040FFu };
-static void resonance_filament(u32 dev, float cx, float cy, float rr, float a0, float a1, float th, int elem, float S) {
-    if (elem < 0 || elem > 7) return;
-    ring_sector(dev, cx, cy, rr - th * 0.5f - 1.0f * S, rr + th * 0.5f + 1.0f * S, a0 - 0.02f, a1 + 0.02f, 0xC0080A0Eu);   // the groove
-    ring_sector(dev, cx, cy, rr - th * 0.5f, rr + th * 0.5f, a0, a1, RES_COL[elem]);
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
-    ring_sector(dev, cx, cy, rr - th * 0.15f, rr + th * 0.15f, a0 + 0.03f, a1 - 0.03f, (RES_COL[elem] & 0x00FFFFFFu) | 0x50000000u);   // its light core
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-}
 struct PodGeo { float th0, D, Ri, Ro, rm, isz, rw, wr, as, Wh, Ph; };
 static PodGeo pod_geo(float r, float S) {
     PodGeo g;
@@ -1039,6 +1027,7 @@ static void draw_day_pod_needle(u32 dev, float cx, float cy, float rc, float r, 
     fill_poly_aa(dev, hl, 3, 0x70FFFFFFu);                               // its lit facet
 }
 static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di, float frac, u32 wxTex, int wElem) {
+    (void)wElem;                                                         // (no resonance mark : dropped, the user 2026-11-25)
     PERF_SCOPE("mm.disc");
     const PodGeo G = pod_geo(r, S);                                      // above the North : yesterday | today | tomorrow, left to right
     const float PI = 3.14159265f, th0 = G.th0, D = G.D, Ri = G.Ri, Ro = G.Ro, rm = G.rm, capR = (Ro - Ri) * 0.5f;
@@ -1093,10 +1082,6 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
         }
         dSetTex(dev, 0, 0);
         color_state(dev);
-        if (wElem == di) {                                                 // RESONANCE : the day is the weather's element
-            const float rr = rw + wr * 0.12f - isz * 0.49f - 1.6f * S, half = (isz * 0.40f) / rr;
-            resonance_filament(dev, cx, cy, rr, th0 - half, th0 + half, 1.8f * S, di, S);
-        }
     }
     for (int k = -1; k <= 2; ++k) {                                       // the ink separators between the days (move with the wheel's jump)
         static int dummy = 0; (void)dummy;
@@ -1491,7 +1476,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                     if (shownCell[q] == -2) { shownCell[q] = want[q] = w2; tChange[q] = 0; }   // the first frame : in place
                     else if (w2 != want[q]) { want[q] = w2; tChange[q] = nowMs; }
                 }
-                const float rs = sr * 0.44f;
+                const float rs = sr * TUNE("mm.caps_r", 0.60f);          // bigger : the element must read at a glance
                 // EACH CAPSULE ITS OWN FOLD (the user 2026-11-25 : "side by side from the start ; a single element : only one
                 // unfolds") : p[q] runs 0 (stowed) -> 1 (out) in ~0.45 s ; the slide 0..0.7, its label 0.7..1
                 static float pq[2] = { -1.0f, -1.0f }; static unsigned lastMs = 0;
@@ -1514,10 +1499,13 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 const float D0 = r - rs * TUNE("mm.slot_in", 0.35f), D1 = r + rs * TUNE("mm.slot_reach", 0.65f);
                 const float half = rs * TUNE("mm.slot_gap", 1.10f);              // side by side across the axis, always
                 float OX[2], OY[2];
+                (void)D1;
+                const float aq[2] = { TUNE("mm.caps_a0", 3.30f), TUNE("mm.caps_a1", 1.05f) };   // around the sky dial : its left, its lower right
+                const float Rq = sr + rs * TUNE("mm.caps_out", 0.70f);
                 for (int q = 0; q < 2; ++q) {
-                    const float D = D0 + (D1 - D0) * depQ[q];
-                    OX[q] = cx + ux * D + (q == 0 ? -1.0f : 1.0f) * tx * half;
-                    OY[q] = cy + uy * D + (q == 0 ? -1.0f : 1.0f) * ty * half;
+                    const float sx0 = cx + ux * D0 + (q == 0 ? -1.0f : 1.0f) * tx * half, sy0 = cy + uy * D0 + (q == 0 ? -1.0f : 1.0f) * ty * half;   // stowed at the weld
+                    const float fx = x + cosf(aq[q]) * Rq, fy = y + sinf(aq[q]) * Rq;                                                               // its corner
+                    OX[q] = sx0 + (fx - sx0) * depQ[q]; OY[q] = sy0 + (fy - sy0) * depQ[q];
                 }
                 color_state(dev);
                 for (int q = 0; q < 2; ++q)
@@ -1526,7 +1514,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 // the two wells, cast as one : the dark edges, a bridge, then the metal
                 const float bw = rs * 0.55f;
                 auto bridge = [&](float grow, u32 col) {
-                    if (fabsf(depQ[0] - depQ[1]) > 0.02f) return;                 // joined only when side by side at one height
+                    if (depQ[0] > 0.02f || depQ[1] > 0.02f) return;                // joined only while both are stowed at the weld
                     const float dx = OX[1] - OX[0], dy = OY[1] - OY[0], L = sqrtf(dx * dx + dy * dy); if (L < 1.0f) return;
                     const float nx = -dy / L * (bw + grow), ny = dx / L * (bw + grow);
                     const float q4[8] = { OX[0] + nx, OY[0] + ny, OX[1] + nx, OY[1] + ny, OX[1] - nx, OY[1] - ny, OX[0] - nx, OY[0] - ny };
@@ -1539,7 +1527,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 for (int q = 0; q < 2; ++q) {
                     const float ox = OX[q], oy = OY[q];
                     ring_sector(dev, ox, oy, rs, rs + 1.1f * S, PI, 1.5f * PI, MA(0xA0, g_dm.glint));
-                    disc(dev, ox, oy, rs, 0xFF0B0D11u);                                         // the empty well
+                    disc(dev, ox, oy, rs, 0xFF000000u);                                         // the black glass
                     ring_sector(dev, ox, oy, rs - 2.0f * S, rs, PI, 2.0f * PI, 0x70000000u);       // its inner shadow, from the lip above
                     // the LABEL : out (the old one shrinks away, 0.12 s), then in (the new one pops, 0.22 s, a small overshoot)
                     float sc = 0.0f; int cell = shownCell[q];
@@ -1558,13 +1546,9 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                         }
                     } else sc = 1.0f;
                     if (cell >= 0 && sc > 0.01f) {
-                        const float lr = rs * 0.86f * sc * lab;
-                        disc(dev, ox, oy + 0.8f * S, lr, 0x60000000u);                          // its shadow in the well
-                        disc(dev, ox, oy, lr, 0xFFE6CF9Au);                                    // the parchment
-                        ring_sector(dev, ox, oy, lr * 0.78f, lr, 0.0f, 2.0f * PI, 0x30603A10u); // darker toward its edge
-                        ring_sector(dev, ox, oy, lr - 0.9f * S, lr, 0.0f, 2.0f * PI, 0x905A3A18u);   // an ink rim
+                        const float lr = rs * sc * lab;                              // GLASS (the user 2026-11-25) : the element alone in the black glass
                         if (wxTex) {
-                            const float isz = snap(lr * 2.05f);                     // the element fills its label
+                            const float isz = snap(lr * 1.95f);                     // the element fills the capsule
                             tex_state(dev, wxTex);
                             tquad(dev, snap(ox - isz * 0.5f), snap(oy - isz * 0.5f), isz, isz, cell / 8.0f, (cell + 1) / 8.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
                             dSetTex(dev, 0, 0);
@@ -1613,8 +1597,6 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                         }
                         color_state(dev);
                     }
-                    if (cell >= 0 && sc >= 1.0f && lab >= 1.0f && mm_weather_elem(wid) == di && q < nNow)
-                        resonance_filament(dev, ox, oy, rs + 0.4f * S, 0.55f, PI - 0.55f, 1.8f * S, di, S);   // RESONANCE : at the slot's foot
                 }
                 color_state(dev);
                 }
