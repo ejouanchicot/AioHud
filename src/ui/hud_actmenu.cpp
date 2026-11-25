@@ -5365,6 +5365,7 @@ void gen_draw(const Frame& f) {
         if (!strcmp(L.name, "mcrmenu") && (native_macro_books().open || native_equip_sets().open)) continue;
         if (!strcmp(L.name, "mcresmn") && g_esAt[2] > 0.0f) { bx = snap(g_esAt[0] - snap(3.0f * S) - bw); by = snap(g_esAt[1]); }
         if (!strcmp(L.name, "mcrselop") && g_mbkAt[2] > 0.0f) { bx = snap(g_mbkAt[0] - snap(3.0f * S) - bw); by = snap(g_mbkAt[1]); }
+        if ((!strcmp(L.name, "mcrbedit") || !strcmp(L.name, "mcrledit")) && !L.focused) continue;   // opened WITH the palette / the macro, idle : shown only when called (the option key)
         if (!strcmp(L.name, "mcrbedit") && g_medAt[0][2] > 0.0f) { bx = snap(g_medAt[0][0] + snap(3.0f * S)); by = snap(g_medAt[0][1]); }
         if (!strcmp(L.name, "mcrledit") && g_medAt[1][2] > 0.0f) { bx = snap(g_medAt[1][0] + snap(3.0f * S)); by = snap(g_medAt[1][1]); }
         if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
