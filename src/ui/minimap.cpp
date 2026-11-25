@@ -1072,6 +1072,30 @@ static void pod_lit_band(u32 dev, float cx, float cy, float r0, float r1, float 
     }
     dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
 }
+// THE METAL'S GRAIN (assets/metal_grain.raw, scripts/gen_metal_grain.py) : a signed detail layer (patina, grain, casting
+// pits) alpha-blended over the flat metal, mapped in screen space (one tile ~ 110 px x S), WRAP addressing. 0 = not loaded.
+static u32 s_grainTex = 0;
+static void grain_ring(u32 dev, float cx, float cy, float r0, const float* Ra, int N, float rConst, float S, float rMin) {
+    if (!s_grainTex) return;
+    const u32 col = ((u32)(255.0f * TUNE("mm.grain", 0.55f)) << 24) | 0x00FFFFFFu;
+    const float T = 110.0f * S;
+    tex_state(dev, s_grainTex);
+    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
+    static Vtx buf[480 * 6];
+    int m = 0;
+    for (int i = 0; i < N && m + 6 <= 480 * 6; ++i) {
+        const float ra0 = Ra ? Ra[i] : rConst, ra1 = Ra ? Ra[i + 1] : rConst;
+        if (ra0 < rMin && ra1 < rMin) continue;
+        const float a0 = -3.14159265f + 6.2831853f * (float)i / N, a1 = -3.14159265f + 6.2831853f * (float)(i + 1) / N;
+        auto V = [&](float a, float rr) { const float x = cx + cosf(a) * rr, y = cy + sinf(a) * rr; Vtx v = { x - 0.5f, y - 0.5f, 0, 1, col, x / T, y / T }; return v; };
+        const Vtx A = V(a0, r0), B = V(a0, ra0), C = V(a1, r0), E = V(a1, ra1);
+        buf[m++] = A; buf[m++] = B; buf[m++] = C; buf[m++] = B; buf[m++] = E; buf[m++] = C;
+    }
+    if (m >= 3) dDrawUP(dev, D3DPT_TRIANGLELIST, m / 3, buf, sizeof(Vtx));
+    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+    dSetTex(dev, 0, 0);
+    color_state(dev);
+}
 // THE MODULES' SLOTS (the user 2026-11-25 : "players choose where to put them") : the hour and the grid square at the top
 // or the bottom (they alternate), the moon and the day's element in one of the four corners or on a side (never the same
 // one) ; Minimap::draw sets the angles each frame from the config.
@@ -1173,6 +1197,7 @@ static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
         struct G2 { static float in(float R, float p, float s) { (void)R; (void)s; return p; } static float out(float R, float p, float s) { (void)p; (void)s; return R; } };
         band(0.0f, 0.0f, G2::in, G2::out, Ri, B1::c, hb);
     }
+    grain_ring(dev, cx, cy, Ri, Ra, N, 0.0f, S, rB + 0.3f);              // the metal's grain over the cast body
     // the rounded cast edge : a soft lit lip toward the lamp, in shade away from it
     {
         struct C1 { static u32 c(float a, float, float t, u32) {
@@ -2718,15 +2743,15 @@ Minimap::LodSt* Minimap::lod_slot(unsigned id) {
     return &e;
 }
 
-void Minimap::on_device_lost() { for (int i = 0; i < AS_N; ++i) { astG_[i] = 0; astGR_[i] = TexRetry{}; } s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; skyTex_ = 0; skyR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
+void Minimap::on_device_lost() { for (int i = 0; i < AS_N; ++i) { astG_[i] = 0; astGR_[i] = TexRetry{}; } s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; skyTex_ = 0; skyR_ = TexRetry{}; grainTex_ = 0; grainR_ = TexRetry{}; s_grainTex = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
 void Minimap::dispose() {
     s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0;
     for (int i = 0; i < AS_N; ++i) { release_texture(astG_[i]); astG_[i] = 0; astGR_[i] = TexRetry{}; }
     release_texture(mkAtlas_); mkAtlas_ = 0; mkAtlasR_ = TexRetry{};
     for (int i = 0; i < AS_N; ++i) { release_texture(ast_[i]); ast_[i] = 0; astR_[i] = TexRetry{}; }
     release_texture(mapTex_); mapTex_ = 0; mapFileId_ = 0;
-    release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_); if (wxTex_) release_texture(wxTex_); if (moonDialTex_) release_texture(moonDialTex_); if (moonPhTex_) release_texture(moonPhTex_); if (skyTex_) release_texture(skyTex_);
-    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; skyTex_ = 0; skyR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
+    release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_); if (wxTex_) release_texture(wxTex_); if (moonDialTex_) release_texture(moonDialTex_); if (moonPhTex_) release_texture(moonPhTex_); if (skyTex_) release_texture(skyTex_); if (grainTex_) release_texture(grainTex_);
+    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; skyTex_ = 0; skyR_ = TexRetry{}; grainTex_ = 0; grainR_ = TexRetry{}; s_grainTex = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
 }
 
 void Minimap::draw(const Frame& f) {
@@ -3076,6 +3101,7 @@ void Minimap::draw(const Frame& f) {
                     add(s_posTh, (snap(drum_width(tfP, pt, pSzP, S) * 0.5f + 3.0f * S) + 3.0f * S) / rwT + 2.0f * S / rmT);
                 }
             }
+            s_grainTex = ensure_raw_tex_mip(dev, grainTex_, grainR_, plugin_path_r("assets\\metal_grain.raw"), 256, 256);
             pod_collar(dev, ccx, ccy, r, S, dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f)));
         }
     }
@@ -3581,6 +3607,10 @@ void Minimap::draw(const Frame& f) {
         const u32 tint = grey ? dm_toward(g_dm.body, 0xFFFFFFFFu, 0.35f) : 0xFFFFFFFFu;
         // (no horns : the modules are mounted BEHIND the compass now, nothing joins them on its face)
         draw_astral_ring(dev, grey ? astG_[AS_BASE] : ast_[AS_BASE],  ccx, ccy, rc, r, 416.0f, 504.0f, 0.0f, tint);
+        if (dial && !dialSq && c.mmDayDial == 2) {                        // the metal's grain over the bezel
+            s_grainTex = ensure_raw_tex_mip(dev, grainTex_, grainR_, plugin_path_r("assets\\metal_grain.raw"), 256, 256);
+            grain_ring(dev, ccx, ccy, rc, 0, 96, r, S, 0.0f);
+        }
         if (dial && !dialSq && c.mmDayDial == 2) {
             // THE GRADUATION, ENGRAVED (the user 2026-11-25 : "forged by Bastok") : every 10 degrees a burin's groove cut
             // into the bezel -- a dark cut, its lit lip on the lamp's far side ; longer every 30 degrees, a punched dot at the
