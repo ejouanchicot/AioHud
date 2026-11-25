@@ -1192,9 +1192,9 @@ static int drum_tokens(Font* fo, const char* txt, float sz, float S, DrumTok* ou
                 for (const char* wd : WORDS) { const float ww2 = fo->measure(wd, sz); if (ww2 > mw) mw = ww2; }
             }
             if (k.wheel && m == 1 && fo) { const float mw2 = fo->measure("W", sz); if (mw2 > mw) mw = mw2; }   // a letter wheel : A-Z, the width of the widest
-            k.w = mw + (k.wheel ? 3.2f * S : 1.0f * S);
+            k.w = mw + (k.wheel ? 3.2f * S : 4.0f * S);
             i = j;
-        } else { k.t[0] = ch; k.t[1] = 0; k.wheel = false; k.w = ch == ' ' ? 3.0f * S : (fo ? fo->measure(k.t, sz) : 4.0f * S) + 1.2f * S; ++i; }
+        } else { k.t[0] = ch; k.t[1] = 0; k.wheel = false; k.w = ch == ' ' ? 3.0f * S : (fo ? fo->measure(k.t, sz) : 4.0f * S) + 4.0f * S; ++i; }   // a bridge : room for the engraving
         ++n;
     }
     return n;
@@ -1238,11 +1238,15 @@ static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw,
             if (k < 1.0f && ol[0]) fo->draw_lc(dev, snap(x + (ww - ow) * 0.5f), snap(cy - e * lh), ol, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the old value rolls away
             fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy + (1.0f - e) * lh), tk[i].t, sz, 0xFF2E1C0Cu, 0, 0.0f);     // the new one rolls in
             clip_rect_end(dev);
-        } else if (tk[i].t[0] != ' ') {                                  // ENGRAVED in the metal : a lit lip under a dark cut
+        } else if (tk[i].t[0] != ' ') {                                  // a METAL BRIDGE between the wheels, the sign ENGRAVED in it
             const float cw = fo->measure(tk[i].t, sz);
+            color_state(dev);
+            rrect(dev, x, y0 - 1.0f * S, ww, h + 2.0f * S, 0.0f, dm_toward(g_dm.body, 0xFFFFFFFFu, 0.10f), dm_toward(g_dm.body, 0xFF000000u, 0.25f));
+            grad_quad(dev, x, y0 - 1.0f * S, 1.0f, h + 2.0f * S, MA(0x90, g_dm.edge), MA(0x90, g_dm.edge), MA(0x90, g_dm.edge), MA(0x90, g_dm.edge));
+            grad_quad(dev, x + ww - 1.0f, y0 - 1.0f * S, 1.0f, h + 2.0f * S, MA(0x90, g_dm.edge), MA(0x90, g_dm.edge), MA(0x90, g_dm.edge), MA(0x90, g_dm.edge));
             fo->begin(dev);
-            fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy + 0.8f), tk[i].t, sz, 0xC0000000u, 0, 0.0f);   // engraved, but READABLE : a light metal
-            fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy), tk[i].t, sz, g_dm.lite | 0xFF000000u, 0, 0.0f);
+            fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy + 0.8f), tk[i].t, sz, MA(0xB0, g_dm.lite), 0, 0.0f);   // the cut's lit lip
+            fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy), tk[i].t, sz, 0xFF140E06u, 0, 0.0f);                  // the engraving, dark in the metal
         }
         x += ww;
         if (tk[i].wheel && i + 1 < n && tk[i + 1].wheel && tk[i].t[0] >= '0' && tk[i].t[0] <= '9' && tk[i + 1].t[0] >= '0' && tk[i + 1].t[0] <= '9') {
@@ -1457,7 +1461,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         const bool foot = !sq && c.mmDayDial == 2;
         float cwX[3] = { (lc0 + lc1) * 0.5f, cx, (rc0 + rc1) * 0.5f }, cwY[3] = { bmid, bmid, bmid }, cwH[3] = { 0, posHalf, 0 }, cwHH = 0.0f;
         if (foot && (bandMoon || bandDay || posBand)) {
-            const float wh = snap(pSz + 6.0f * S), bz = snap(4.0f * S), gap = snap(9.0f * S);
+            const float wh = snap(pSz + 6.0f * S), bz = snap(4.0f * S), gap = snap(TUNE("mm.foot_gap", 15.0f) * S);   // the windows apart : three instruments, not one strip
             const float hwM = snap(drum_width(tf, c.lang == 1 ? "Nouv. 99j" : "Full 99d", pSz, S) * 0.5f + 3.0f * S);   // the windows hold their wheels
             const float hwT = snap(drum_width(tf, "00:00", pSz, S) * 0.5f + 3.0f * S);
             const float hwP = posBand ? posHalf : 0.0f;
@@ -1492,7 +1496,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             }
             grad_quad(dev, cx - W + ch, yB - 2.6f * S, 2.0f * (W - ch), 1.0f, MA(0x70, g_dm.lite), MA(0x70, g_dm.lite), MA(0x70, g_dm.lite), MA(0x70, g_dm.lite));   // an engraved filet along the base
             // the windows : one row, the position under the S, the moon and the hour on either side
-            const float x3[3] = { cx - hwP - gap - hwM, cx, cx + hwP + gap + hwT }, hw3[3] = { hwM, hwP, hwT };
+            const float edgeM = TUNE("mm.foot_edge", 7.0f) * S;                            // BALANCED : the moon against the left end, the hour against the right, the square centred
+            const float x3[3] = { cx - W + edgeM + hwM, cx, cx + W - edgeM - hwT }, hw3[3] = { hwM, hwP, hwT };
             const bool on3[3] = { bandMoon, posBand, bandDay };
             for (int k = 0; k < 3; ++k) {
                 if (!on3[k] || hw3[k] <= 0.0f) continue;
@@ -1507,17 +1512,14 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 oct(0.6f * S, g_dm.dark);                                                    // ...its inner shade : the drum turns behind it
                 cwHH = wh * 0.5f - 0.6f * S;
             }
-            for (int k = 0; k < 2; ++k) {                                                    // the CRYSTAL SHARDS between the windows
-                if (!on3[1]) break;
-                const float sx = k == 0 ? cx - hwP - gap * 0.5f : cx + hwP + gap * 0.5f, hh = wh * 0.46f, ww = gap * 0.30f;
-                const float d4[8] = { sx, yC - hh, sx + ww, yC, sx, yC + hh, sx - ww, yC };
-                dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
-                disc_glow(dev, sx, yC, ww * 0.6f, 0x406CB4FFu, ww * 2.6f);                   // its light
-                dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-                fill_poly_aa(dev, d4, 4, 0xFF3A7CC8u);                                       // the shard, two facets
-                const float f2[6] = { sx, yC - hh, sx + ww, yC, sx, yC + hh };
-                fill_poly_aa(dev, f2, 3, 0xFF9CD0FFu);
-                seg_soft(dev, sx, yC - hh * 0.8f, sx, yC + hh * 0.8f, 0.8f, 0xC0FFFFFFu);
+            for (int k = 0; k < 2; ++k) {                                                    // between the windows : a double groove cut in the metal
+                if (!on3[1]) break;                                                          // (the crystals : set aside, the user 2026-11-25)
+                const float sx = k == 0 ? ((x3[0] + hwM) + (cx - hwP)) * 0.5f : ((cx + hwP) + (x3[2] - hwT)) * 0.5f, hh = wh * 0.42f;   // midway between the windows
+                for (int g2 = -1; g2 <= 1; g2 += 2) {
+                    const float gx = sx + (float)g2 * 1.6f * S;
+                    seg_soft(dev, gx, yC - hh, gx, yC + hh, 1.0f * S, MA(0xC0, g_dm.edge));
+                    seg_soft(dev, gx + 0.9f * S, yC - hh, gx + 0.9f * S, yC + hh, 0.8f * S, MA(0x60, g_dm.lite));
+                }
             }
             color_state(dev);
             if (posBand) drum_text(dev, tf, 1, cwX[1], cwY[1], cwH[1] - 0.6f * S, cwHH, posTxt, pSz, S);
