@@ -1052,7 +1052,8 @@ static void pod_lit_band(u32 dev, float cx, float cy, float r0, float r1, float 
 // or the bottom (they alternate), the moon and the day's element in one of the four corners or on a side (never the same
 // one) ; Minimap::draw sets the angles each frame from the config.
 static const float POD_SLOT[6] = { -2.3562f, 3.14159265f, 2.3562f, 0.7854f, 0.0f, -0.7854f };   // NW, W, SW, SE, E, NE
-static float s_dayTh = 0.7854f, s_moonTh = 2.3562f, s_hourTh = -1.5707963f, s_posTh = 1.5707963f;
+static float s_dayTh = 0.7854f, s_moonTh = 2.3562f, s_hourTh = -1.5707963f, s_posTh = 1.5707963f, s_skyTh = -0.7854f;
+static bool s_skyPod = false;   // the SKY module replaces the old sky dial and its weather capsules
 // reading order : left to right, top to bottom on a side -- +1 when the increasing angle runs that way here
 static float pod_dir(float th) { return (-sinf(th) + 0.5f * cosf(th)) >= 0.0f ? 1.0f : -1.0f; }
 // a wheel's figure turned in its reading sense (head outward on the top half, toward the centre on the bottom half,
@@ -1646,6 +1647,107 @@ static void drum_arc(u32 dev, Font* fo, int slot, float cx, float cy, float th0,
 }
 static bool s_tubes = false; static float s_tubeRw = 0.0f;   // the hour / position in their tubes (the plinth off) : drum_arc
 static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it each frame ; 0 = draw the inked fallback)
+// THE SKY MODULE (the user 2026-11-25 : "rethink the day/night module and the two weather elements, the same technology
+// as the rest" ; "won't the weather confuse the user with the day's elements ?") : one tube, read in its slot's order --
+// a SKY WINDOW (its colour by the hour : night blue, an orange dawn, a clear noon, dusk ; the inked SUN crosses it by day,
+// the MOON by night, rising on one side and setting on the other) then the WEATHER on two wheels of BLACK ENAMEL (not
+// parchment : parchment is the calendar, the black is the sky's -- they never read alike) : one element for a single
+// weather, the SAME element on both for a double, both bare for none ; they roll together when the weather changes.
+static void pod_enamel_cell(u32 dev, float cx, float cy, float rw, float wr, float a, float as) {   // a weather wheel : black enamel
+    const u32 sh = 0xD0000000u, sh0 = 0x00000000u, sd = 0x90000000u;
+    const float a0 = a - as * 0.5f, a1 = a + as * 0.5f;
+    ring_sector(dev, cx, cy, rw - wr, rw + wr, a0, a1, 0xFF0C0E16u);
+    ring_sector(dev, cx, cy, rw - wr * 0.52f, rw + wr * 0.52f, a - as * 0.36f, a + as * 0.36f, 0xFF1A1E2Cu);   // its crown, a deep sheen
+    sector_grad(dev, cx, cy, rw + wr * 0.36f, rw + wr, a0, a1, sh0, sh, sh0, sh);
+    sector_grad(dev, cx, cy, rw - wr, rw - wr * 0.36f, a0, a1, sh, sh0, sh, sh0);
+    sector_grad(dev, cx, cy, rw - wr, rw + wr, a0, a0 + as * 0.16f, sd, sd, sh0, sh0);
+    sector_grad(dev, cx, cy, rw - wr, rw + wr, a1 - as * 0.16f, a1, sh0, sh0, sd, sd);
+}
+static float sky_cell_ratio() { return TUNE("mm.sky_cell", 1.6f); }   // the sky window's width, in wheel widths
+static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th0, int hh, int mi, int wid, u32 wxTex) {
+    PERF_SCOPE("mm.skypod");
+    PodGeo G = pod_geo(r, S);
+    const float isz = G.isz * 0.92f, rw = G.rw, wr = isz * 0.56f, as = G.as, k = sky_cell_ratio();
+    const float Wh = (k + 2.0f) * as * 0.5f, dir = pod_dir(th0);
+    const float aStart = th0 - dir * Wh;
+    const float aSky = aStart + dir * (k * as * 0.5f), aW[2] = { aStart + dir * (k * as + as * 0.5f), aStart + dir * (k * as + as * 1.5f) };
+    color_state(dev);
+    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Wh - 0.02f, th0 + Wh + 0.02f, g_dm.dark);   // the window's chamfer
+    // ---- the SKY window ----
+    const float t = (float)hh + (float)mi / 60.0f, PI = 3.14159265f;
+    const float elev = -cosf(t / 24.0f * 2.0f * PI);
+    float dayK = clampf((elev + 0.1f) / 0.45f, 0.0f, 1.0f); dayK = dayK * dayK * (3.0f - 2.0f * dayK);
+    const float duskK = clampf(1.0f - fabsf(elev) / 0.35f, 0.0f, 1.0f);
+    auto mix = [](u32 a2, u32 b2, float q2) -> u32 { return col_lerp(a2 | 0xFF000000u, b2 | 0xFF000000u, q2); };
+    u32 skyTop = mix(0xFF0A1640u, 0xFF2E6ED8u, dayK), skyBot = mix(0xFF1C3470u, 0xFF9CCCF4u, dayK);
+    skyTop = mix(skyTop, 0xFF3A3C7Cu, duskK * 0.5f); skyBot = mix(skyBot, 0xFFF0A050u, duskK * 0.85f);
+    const float hS = k * as * 0.5f;                                       // the window's half width (rad)
+    const bool topHalf = sinf(aSky) <= 0.0f;                              // the sky's TOP is the screen's top : outward on the top half
+    sector_grad(dev, cx, cy, rw - wr, rw + wr, aSky - hS, aSky + hS, topHalf ? skyBot : skyTop, topHalf ? skyTop : skyBot, topHalf ? skyBot : skyTop, topHalf ? skyTop : skyBot);
+    // its upright frame : the cell's centre, the screen's up and right
+    const float Cx = cx + cosf(aSky) * rw, Cy = cy + sinf(aSky) * rw, hx = hS * rw * 0.80f, hy = wr * 0.80f;
+    // stars by night (fixed, they fade in)
+    if (dayK < 0.95f) {
+        static const float SX[7] = { -0.7f, -0.35f, 0.05f, 0.42f, 0.78f, -0.15f, 0.62f }, SY[7] = { -0.55f, -0.2f, -0.65f, -0.35f, -0.6f, 0.15f, 0.05f };
+        for (int i = 0; i < 7; ++i) disc(dev, Cx + SX[i] * hx, Cy + SY[i] * hy, 0.7f * S, MA((u32)(200.0f * (1.0f - dayK)), 0xFFF4E8C0u));
+    }
+    // the SUN by day, the MOON by night : rising on the left, culminating, setting on the right
+    for (int body = 0; body < 2; ++body) {
+        const float tb = body == 0 ? t : fmodf(t + 12.0f, 24.0f), ph = (tb - 6.0f) / 12.0f;   // 0 rise .. 1 set
+        if (ph <= -0.05f || ph >= 1.05f) continue;
+        const float xs = -cosf(ph * PI), ys = sinf(ph * PI);
+        const float bx = Cx + xs * hx * 0.85f, by = Cy + hy * 0.75f - ys * hy * 1.25f;
+        const float br = wr * 0.34f;
+        const float vis = clampf(ys * 4.0f + 0.2f, 0.0f, 1.0f);
+        if (vis <= 0.0f) continue;
+        if (body == 0) {
+            disc(dev, bx, by, br * 1.7f, MA((u32)(50.0f * vis), 0xFFFFD070u));                   // its glow
+            disc(dev, bx, by, br + 0.8f * S, MA((u32)(200.0f * vis), 0xFF5A3410u));            // an inked rim
+            disc(dev, bx, by, br, MA((u32)(255.0f * vis), 0xFFF6C850u));
+            disc(dev, bx - br * 0.25f, by - br * 0.25f, br * 0.45f, MA((u32)(140.0f * vis), 0xFFFFF0B0u));
+        } else {
+            disc(dev, bx, by, br + 0.8f * S, MA((u32)(180.0f * vis), 0xFF3C2614u));
+            disc(dev, bx, by, br, MA((u32)(255.0f * vis), 0xFFEDE4C4u));
+            disc(dev, bx + br * 0.45f, by - br * 0.2f, br * 0.85f, MA((u32)(255.0f * vis), skyTop));   // the crescent : the sky bites it
+        }
+    }
+    // the ground at the window's foot : an inked hill line
+    {
+        const float gy = Cy + hy * 0.95f;
+        const float hill[10] = { Cx - hx * 1.25f, gy, Cx - hx * 0.4f, gy - hy * 0.22f, Cx + hx * 0.3f, gy - hy * 0.08f, Cx + hx * 1.25f, gy - hy * 0.28f, Cx + hx * 1.25f, gy + hy * 0.6f };
+        (void)hill;
+        sector_grad(dev, cx, cy, topHalf ? rw - wr : rw + wr * 0.62f, topHalf ? rw - wr * 0.62f : rw + wr, aSky - hS, aSky + hS,
+                    topHalf ? 0xFF1C2418u : MA(0x00, 0x1C2418u), topHalf ? MA(0x00, 0x1C2418u) : 0xFF1C2418u, topHalf ? 0xFF1C2418u : MA(0x00, 0x1C2418u), topHalf ? MA(0x00, 0x1C2418u) : 0xFF1C2418u);
+    }
+    // ---- the WEATHER : two wheels of black enamel ----
+    static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };              // weather pair -> the element's cell (the icons' order)
+    const int cellNow = (wid >= 4 && wid <= 19) ? WCELL[(wid - 4) / 2] : -1, nNow = cellNow < 0 ? 0 : ((wid & 1) ? 2 : 1);
+    const int want[2] = { nNow >= 1 ? cellNow : -1, nNow >= 2 ? cellNow : -1 };
+    static int cur[2] = { -2, -2 }, old[2] = { -1, -1 }; static unsigned rollMs = 0;
+    const unsigned nowMs = GetTickCount();
+    if (cur[0] == -2) { cur[0] = want[0]; cur[1] = want[1]; }
+    if (want[0] != cur[0] || want[1] != cur[1]) { old[0] = cur[0]; old[1] = cur[1]; cur[0] = want[0]; cur[1] = want[1]; rollMs = nowMs; }
+    const float kR = rollMs ? fminf(1.0f, (float)(nowMs - rollMs) / 240.0f) : 1.0f;
+    color_state(dev);
+    for (int q = 0; q < 2; ++q) pod_enamel_cell(dev, cx, cy, rw, wr, aW[q], as);
+    if (wxTex) {
+        tex_state(dev, wxTex);
+        for (int q = 0; q < 2; ++q)
+            pod_roll_cell(dev, cx, cy, aW[q], rw, isz * 0.86f, as * rw * 0.48f, wr, kR, rollMs ? (old[q] < 0 ? -1 : old[q]) : -1, cur[q], 0xFFFFFFFFu, 0xFFFFFFFFu, th0);
+        dSetTex(dev, 0, 0);
+    }
+    color_state(dev);
+    pod_cut(dev, cx, cy, rw, wr, aStart + dir * (k * as), S);           // between the sky and the weather
+    pod_cut(dev, cx, cy, rw, wr, aStart + dir * (k * as + as), S);      // between the two weather wheels
+    pod_glass(dev, cx, cy, rw, wr, th0 - Wh, th0 + Wh, S);
+    pod_caps(dev, cx, cy, rw, wr, th0 - Wh, th0 + Wh, S);
+    color_state(dev);
+}
+static float sky_pod_ph(float r, float S) {                               // its half span, for the collar
+    const PodGeo G = pod_geo(r, S);
+    return (sky_cell_ratio() + 2.0f) * G.as * 0.5f + 2.6f * S / G.rm + 0.04f;
+}
+
 // THE MOON POD (the user 2026-11-25 : "the same principle as the elements, yesterday / today / tomorrow" -- and the
 // moons "must stay the right way up") : the day pod's twin, at the compass's upper left. A housing on the ring, a window
 // on a PAPER band, three phases INKED upright on it (assets/moon_phases.raw, scripts/gen_moon_phases.py : 0 new ..
@@ -1806,7 +1908,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         //      blue, an orange dawn, a clear noon, dusk) ; the SUN (a gold disc with its rays) and a crescent MOON ride an arc,
         //      setting below its lower edge ; a glass dome over it. The weather (*(g+0x40)+0x04, verified live) : its
         //      element in small glass ORBS at the bottom, overlapping the rim -- one for a single weather, two for a double ----
-        if (c.mmClock && (c.mmClkTime || c.mmClkDay)) {
+        if (c.mmClock && (c.mmClkTime || c.mmClkDay) && !(s_skyPod && !sq && c.mmDayDial == 2)) {   // (the SKY MODULE replaces it)
             const float x = cx + off, y = cy - off;
             bezel(x, y, 0xFF0E1830u);
             const float t = (float)v.hh + (float)v.mm / 60.0f;
@@ -2230,7 +2332,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
     {   // the weather module, on the FACE (pass 1)
         const float sr = snap(r * TUNE("mm.dial_sub_k", 0.165f)), rr = r + sr + TUNE("mm.dial_sub_gap", 1.5f) * S;
         const float off = sq ? r - (r - rc) * 0.5f : 0.7071f * rr, x = cx + off, y = cy - off;
-        if (c.mmClock && (c.mmClkTime || c.mmClkDay)) {
+        if (c.mmClock && (c.mmClkTime || c.mmClkDay) && !(s_skyPod && !sq && c.mmDayDial == 2)) {   // (the SKY MODULE replaces the capsules)
             // THE WEATHER MODULE (the user 2026-11-25 : "the day/night module is welded to the map ; at the WELD the two
             // modules are stowed on top of the main dial, and they unfold toward the day/night module, in the right
             // orientation") : drawn on the compass's face. Folded : the two wells stacked on the ring at the weld. A weather :
@@ -2784,6 +2886,8 @@ void Minimap::draw(const Frame& f) {
         s_dayTh = POD_SLOT[(c.mmPodDay < 0 || c.mmPodDay > 5) ? 3 : c.mmPodDay];
         s_moonTh = POD_SLOT[(c.mmPodMoon < 0 || c.mmPodMoon > 5) ? 2 : c.mmPodMoon];
         s_hourTh = c.mmPodHP == 1 ? 1.5707963f : -1.5707963f; s_posTh = -s_hourTh;
+        s_skyTh = POD_SLOT[(c.mmPodSky < 0 || c.mmPodSky > 5) ? 5 : c.mmPodSky];
+        s_skyPod = c.mmClock && (c.mmClkTime || c.mmClkDay) && TUNE("mm.foot_body", 0.0f) <= 0.5f;
         s_podN = 0;
         if (TUNE("mm.foot_body", 0.0f) <= 0.5f) {
             dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);
@@ -2794,6 +2898,7 @@ void Minimap::draw(const Frame& f) {
             auto add = [&](float th, float ph) { if (s_podN < 4) { s_podTh[s_podN] = th; s_podPh[s_podN] = ph; ++s_podN; } };
             if (c.mmClock && c.mmClkDay) add(s_dayTh, G.Ph);
             if (c.mmClock && c.mmClkMoon) add(s_moonTh, G.Ph);
+            if (s_skyPod) add(s_skyTh, sky_pod_ph(r, S));
             if (c.mmClock && c.mmClkTime && tfP) add(s_hourTh, (snap(drum_width(tfP, "00:00", pSzP, S) * 0.5f + 3.0f * S) + 3.0f * S) / rwT + 2.0f * S / rmT);
             if (c.mmGrid && tfP) {
                 const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
@@ -2804,6 +2909,11 @@ void Minimap::draw(const Frame& f) {
             }
             pod_collar(dev, ccx, ccy, r, S, dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f)));
         }
+    }
+    if (dial && !dialSq && c.mmDayDial == 2 && s_skyPod) {               // the SKY MODULE : the day/night window + the weather's enamel wheels
+        const VanaClock sv = dial_vana(g.vana);
+        ensure_raw_tex_mip(dev, wxTex_, wxR_, plugin_path_r("assets\\weather_icons.raw"), 1024, 128);
+        draw_sky_pod(dev, ccx, ccy, r, S, s_skyTh, sv.hh, sv.mm, mm_weather(g.weather), wxTex_);
     }
     if (dial && !dialSq && c.mmDayDial == 2 && c.mmClock && c.mmClkDay) {          // the DAY DISC : under the frame, the map and the ring -- and BEHIND the position's tube (drawn before it)
         dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);

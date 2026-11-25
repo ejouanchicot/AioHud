@@ -133,15 +133,22 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
                 { ROW_BAND(52.0f)
                     const int s0 = (c.mmPodDay < 0 || c.mmPodDay > 5) ? 3 : c.mmPodDay;
                     if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Day's element", "\xC3\x89l\xC3\xA9ment du jour"), tr(SL_EN[s0], SL_FR[s0]))) {
-                        int n2 = wrap(s0 + d, 6); if (n2 == c.mmPodMoon) n2 = wrap(n2 + d, 6);   // skip the moon's slot
+                        int n2 = wrap(s0 + d, 6); for (int k = 0; k < 6 && (n2 == c.mmPodMoon || n2 == c.mmPodSky); ++k) n2 = wrap(n2 + d, 6);   // skip the others' slots
                         c.mmPodDay = n2; save_ui_config();
                     }
                 } ROW_NEXT(52.0f)
                 { ROW_BAND(52.0f)
                     const int s0 = (c.mmPodMoon < 0 || c.mmPodMoon > 5) ? 2 : c.mmPodMoon;
                     if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Moon", "Lune"), tr(SL_EN[s0], SL_FR[s0]))) {
-                        int n2 = wrap(s0 + d, 6); if (n2 == c.mmPodDay) n2 = wrap(n2 + d, 6);    // skip the day's slot
+                        int n2 = wrap(s0 + d, 6); for (int k = 0; k < 6 && (n2 == c.mmPodDay || n2 == c.mmPodSky); ++k) n2 = wrap(n2 + d, 6);    // skip the others' slots
                         c.mmPodMoon = n2; save_ui_config();
+                    }
+                } ROW_NEXT(52.0f)
+                { ROW_BAND(52.0f)
+                    const int s0 = (c.mmPodSky < 0 || c.mmPodSky > 5) ? 5 : c.mmPodSky;
+                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Sky and weather", "Ciel et m\xC3\xA9t\xC3\xA9o"), tr(SL_EN[s0], SL_FR[s0]))) {
+                        int n2 = wrap(s0 + d, 6); for (int k = 0; k < 6 && (n2 == c.mmPodDay || n2 == c.mmPodMoon); ++k) n2 = wrap(n2 + d, 6);   // skip the others' slots
+                        c.mmPodSky = n2; save_ui_config();
                     }
                 } ROW_NEXT(52.0f)
             }
