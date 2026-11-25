@@ -1544,7 +1544,12 @@ void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, 
             if (fabsf(chT - an.h) < 0.75f) an.h = chT;
             an.t = f.t; an.ghost = false; }
         const float ch = snap(an.h);
-        const float contentA = ch >= chT - 1.0f ? 1.0f : 0.0f;          // only once it is (all but) there : the text never passes its edge
+        // the content FADES IN as the box unfolds (from a third of its height), cut at the box's edge : it was held until the box
+        // was all there, then popped (2026-11-25, "le texte pop un peu apres")
+        const float prog = chT > an.fold + 1.0f ? (ch - an.fold) / (chT - an.fold) : 1.0f;
+        const float pc = prog <= 0.3f ? 0.0f : prog >= 1.0f ? 1.0f : (prog - 0.3f) / 0.7f;
+        const float contentA = pc * pc * (3.0f - 2.0f * pc);
+        const bool clipContent = ch < chT - 0.5f;
         float cy = above ? snap(top - snap(4.0f * S) - ch) : top;
         if (above && cy < 4.0f) cy = snap(bottom + snap(4.0f * S));
         if (!above && cy + ch > f.screenH - 4.0f) cy = snap(f.screenH - 4.0f - ch);
@@ -1556,8 +1561,10 @@ void card_draw(const Frame& f, const Metrics& k, float bx, float bw, float top, 
         g_frameJoin = jm;
         draw_themed_box(dev, f.skin, bx, cy, bw, ch, C.muBox, A, S);
         an.x = bx; an.y = cy; an.w = bw; an.A = A; an.S = S; an.above = above;
-        A *= contentA;                                                    // the content : once the box has (nearly) its size
+        A *= contentA;                                                    // the content : faded in with the unfolding
         if (A <= 0.0f) return;
+        if (clipContent) clip_rect_begin(dev, bx, cy, bw, ch);            // ... and never past the box's edge
+        struct ClipEnd { u32 d; bool on; ~ClipEnd() { if (on) clip_rect_end(d); } } clipEnd = { dev, clipContent };
         const float ix = snap(bx + cpad), iy = snap(cy + cpad);
         if (g_cardIcon) {
             dTexQuadState(dev, g_cardIcon);
