@@ -2570,9 +2570,25 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         if (!sq && c.mmDayDial == 2 && c.mmClock && c.mmClkDay && fabsf(pod_geo(r, S).th0 + 1.5708f) < 0.05f) draw_day_pod_needle(dev, cx, cy, rc, r, S, csz);   // the day pod's needle, out of the N (only when the pod sits above it)
         static const char* NM[4] = { "N", "E", "S", "W" };
         static const float DX[4] = { 0.0f, 1.0f, 0.0f, -1.0f }, DY[4] = { -1.0f, 0.0f, 1.0f, 0.0f };
-        fo->begin(dev);
-        for (int i = 0; i < 4; ++i)
-            fo->draw_c(dev, snap(cx + DX[i] * rm), snap(cy + DY[i] * rm), NM[i], csz, i == 0 ? 0xFFFF5A44u : 0xFFF4E8C8u, 0xFF140C04u, 1.3f * S);
+        if (!sq && c.mmDayDial == 2 && tf) {
+            // ENGRAVED AND ENAMELLED (the user 2026-11-25 : "the letters are just laid on -- imagine it forged by Bastok") :
+            // each letter is CUT into the bezel's metal, a serif Roman capital (the wheels' face) : the cut's far edge in
+            // shadow, its near edge catching the lamp (upper left), and the hollow filled with ENAMEL -- champleve, as a
+            // watchmaker does : ivory for E S W (black vanished on the dark bezel), a deep red for the N (a marine watch's north)
+            const float ksz = snap(csz * 1.05f), o = 0.8f * S;
+            tf->begin(dev);
+            for (int i = 0; i < 4; ++i) {
+                const float lx = snap(cx + DX[i] * rm), ly = snap(cy + DY[i] * rm);
+                tf->draw_c(dev, lx + o, ly + o, NM[i], ksz, MA(0xB0, g_dm.lite), 0, 0.0f);          // the cut's lower-right lip, lit
+                tf->draw_c(dev, lx - o * 0.8f, ly - o * 0.8f, NM[i], ksz, MA(0xE0, g_dm.edge), 0, 0.0f);   // its upper-left wall, in shadow
+                tf->draw_c(dev, lx, ly, NM[i], ksz, i == 0 ? 0xFFB8301Eu : 0xFFE6DAC0u, 0, 0.0f);   // the ENAMEL in the hollow : ivory (it reads on the dark metal), the N red
+                tf->draw_c(dev, lx - 0.3f * S, ly - 0.3f * S, NM[i], ksz, i == 0 ? 0x40FFB090u : 0x18FFFFFFu, 0, 0.0f);   // the enamel's glaze
+            }
+        } else {
+            fo->begin(dev);
+            for (int i = 0; i < 4; ++i)
+                fo->draw_c(dev, snap(cx + DX[i] * rm), snap(cy + DY[i] * rm), NM[i], csz, i == 0 ? 0xFFFF5A44u : 0xFFF4E8C8u, 0xFF140C04u, 1.3f * S);
+        }
     }
     // -- the ZOOM, only while it changes --
     if (zoomA > 0.0f && fo) {
@@ -3546,6 +3562,28 @@ void Minimap::draw(const Frame& f) {
         const u32 tint = grey ? dm_toward(g_dm.body, 0xFFFFFFFFu, 0.35f) : 0xFFFFFFFFu;
         // (no horns : the modules are mounted BEHIND the compass now, nothing joins them on its face)
         draw_astral_ring(dev, grey ? astG_[AS_BASE] : ast_[AS_BASE],  ccx, ccy, rc, r, 416.0f, 504.0f, 0.0f, tint);
+        if (dial && !dialSq && c.mmDayDial == 2) {
+            // THE GRADUATION, ENGRAVED (the user 2026-11-25 : "forged by Bastok") : every 10 degrees a burin's groove cut
+            // into the bezel -- a dark cut, its lit lip on the lamp's far side ; longer every 30 degrees, a punched dot at the
+            // intercardinals ; none under the
+            // cardinal letters (the engraver leaves their field clear)
+            color_state(dev);
+            const float rA = rc + (r - rc) * 0.14f;
+            for (int k = 0; k < 36; ++k) {
+                if (k % 9 == 0) continue;                                      // the cardinals' field
+                const float a = (float)k / 36.0f * 6.2831853f, ux = cosf(a), uy = sinf(a);
+                const bool major = (k % 3) == 0;                                 // every 30 degrees : a longer groove
+                const float rB2 = rc + (r - rc) * (major ? 0.48f : 0.32f), w = (major ? 1.3f : 1.0f) * S;
+                const float x0 = ccx + ux * rA, y0 = ccy + uy * rA, x1 = ccx + ux * rB2, y1 = ccy + uy * rB2;
+                seg_soft(dev, x0 + 0.8f * S, y0 + 0.8f * S, x1 + 0.8f * S, y1 + 0.8f * S, w * 0.9f, MA(0xC0, g_dm.lite));   // the lit lip
+                seg_soft(dev, x0, y0, x1, y1, w, MA(0xD8, g_dm.edge));                                                     // the groove
+            }
+            for (int k = 0; k < 4; ++k) {                                       // the intercardinals : a punched dot at the groove's end
+                const float a = 0.7853982f + (float)k * 1.5707963f, rD = rc + (r - rc) * 0.58f;
+                disc(dev, ccx + cosf(a) * rD + 0.6f * S, ccy + sinf(a) * rD + 0.6f * S, 1.7f * S, MA(0xC0, g_dm.lite));
+                disc(dev, ccx + cosf(a) * rD, ccy + sinf(a) * rD, 1.6f * S, MA(0xE0, g_dm.edge));
+            }
+        } else
         draw_astral_ring(dev, grey ? astG_[AS_TICKS] : ast_[AS_TICKS], ccx, ccy, rc, r, 424.0f, 474.0f, 0.0f, tint);      // north-up : the camera rotation will turn this one
         dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
         draw_astral_ring(dev, grey ? astG_[AS_GLINT] : ast_[AS_GLINT], ccx, ccy, rc, r, 418.0f, 488.0f, 0.0f, tint);
