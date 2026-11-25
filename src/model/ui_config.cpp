@@ -252,7 +252,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "mm3=%d,%d,%d,%d,%d,%.3f,%d\n", c.mmClock, c.mmClkTime, c.mmClkDay, c.mmClkMoon, c.mmClkReal, c.mmMapSize, c.mmClockPos);   // clock : on/time/day/moon/real + independent map size + header placement
     fprintf(f, "mm5=%.3f,%.3f,%d,%.3f\n", c.mmBezelW, c.mmCardSz, c.mmBezel, c.mmSqBorder);
     fprintf(f, "mm6=%d,%08X,%d\n", c.mmScan, c.mmScanCol, c.mmGrid);   // Wide Scan track on/colour ; map grid square on
-    fprintf(f, "mm7=%d,%d,%d,%d,%d\n", c.mmLayout, c.mmClkBand, c.mmInfoBand, c.mmInfoDist, c.mmMarkStyle);
+    fprintf(f, "mm7=%d,%d,%d,%d,%d,%d\n", c.mmLayout, c.mmClkBand, c.mmInfoBand, c.mmInfoDist, c.mmMarkStyle, c.mmDayDial);
     fprintf(f, "mm8=%.1f,%.1f\n", c.mmAW, c.mmAH);   // the box size when placed (smart anchor)   // layout Classic/Compact ; clock band side ; info band off/top/bottom ; distances   // round bezel width / round cardinal size / round bezel on / square border width
     fprintf(f, "ws=%d,%.3f,%.3f,%.3f,%d,%d\n", c.wsShow, c.wsScale, c.wsX, c.wsY, c.wsFont, c.wsFx);   // arcade WS popup
     fprintf(f, "aw=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%d,%.3f,%.3f\n", c.awShow, c.awScale, c.awX, c.awY, c.awScreen, c.awMemory, c.awColors, c.awCount, c.awTimer, c.awStyle, c.awSide, c.awFx, c.awDistort, c.awJobs, c.awBadge, c.awLayout, c.awText, c.awOrb);   // Absorb-TP box
@@ -834,9 +834,9 @@ static bool parse_mm_line(const char* line, UiConfig& c) {
         return true;
     }
     if (strncmp(line, "mm7=", 4) == 0) {                     // layout : Classic / Compact bands
-        int ly = 0, cb = 0, ib = 2, id = 1, ms = 1;
-        const int n = sscanf(line + 4, "%d,%d,%d,%d,%d", &ly, &cb, &ib, &id, &ms);
-        if (n >= 1) { c.mmLayout = ly; if (n >= 2) c.mmClkBand = cb; if (n >= 3) c.mmInfoBand = ib; if (n >= 4) c.mmInfoDist = id; if (n >= 5) c.mmMarkStyle = ms; }
+        int ly = 0, cb = 0, ib = 2, id = 1, ms = 1, dd = 1;
+        const int n = sscanf(line + 4, "%d,%d,%d,%d,%d,%d", &ly, &cb, &ib, &id, &ms, &dd);
+        if (n >= 1) { c.mmLayout = ly; if (n >= 2) c.mmClkBand = cb; if (n >= 3) c.mmInfoBand = ib; if (n >= 4) c.mmInfoDist = id; if (n >= 5) c.mmMarkStyle = ms; if (n >= 6) c.mmDayDial = dd; }
         return true;
     }
     return false;
@@ -1421,7 +1421,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.mmClock != b.mmClock || a.mmClkTime != b.mmClkTime || a.mmClkDay != b.mmClkDay || a.mmClkMoon != b.mmClkMoon || a.mmClkReal != b.mmClkReal || a.mmMapSize != b.mmMapSize || a.mmClockPos != b.mmClockPos) return false;
     if (a.mmBezelW != b.mmBezelW || a.mmCardSz != b.mmCardSz || a.mmBezel != b.mmBezel || a.mmSqBorder != b.mmSqBorder) return false;
     if (a.mmScan != b.mmScan || a.mmScanCol != b.mmScanCol || a.mmGrid != b.mmGrid) return false;
-    if (a.mmLayout != b.mmLayout || a.mmClkBand != b.mmClkBand || a.mmInfoBand != b.mmInfoBand || a.mmInfoDist != b.mmInfoDist || a.mmMarkStyle != b.mmMarkStyle) return false;
+    if (a.mmLayout != b.mmLayout || a.mmClkBand != b.mmClkBand || a.mmInfoBand != b.mmInfoBand || a.mmInfoDist != b.mmInfoDist || a.mmMarkStyle != b.mmMarkStyle || a.mmDayDial != b.mmDayDial) return false;
     if (a.mmAW != b.mmAW || a.mmAH != b.mmAH) return false;
     if (a.wsShow != b.wsShow || a.wsScale != b.wsScale || a.wsX != b.wsX || a.wsY != b.wsY || a.wsFont != b.wsFont || a.wsFx != b.wsFx || a.wsNameCol != b.wsNameCol || a.wsDmgCol1 != b.wsDmgCol1 || a.wsDmgCol2 != b.wsDmgCol2) return false;
     for (int i = 0; i < UiConfig::GB_COUNT; ++i) if (a.boxGrow[i] != b.boxGrow[i]) return false;

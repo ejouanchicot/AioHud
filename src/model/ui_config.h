@@ -721,6 +721,7 @@ struct UiConfig {
     int   mmInfoBand = 2;              // Compact : the info band (map square | zoom | distances) 0 off, 1 above, 2 below
     int   mmInfoDist = 1;              // info band : the distance to your target and to the Wide Scan track
     int   mmMarkStyle = 1;             // entity markers : 0 Classic (dots + arrows), 1 Icons (the gold-framed atlas, a silhouette per kind)
+    int   mmDayDial = 1;               // the Dial's day subdial : 0 the enamel globe (coloured quarters), 1 the icons' carousel
     // transient (not saved) : minimap rect as screen fractions + pending wheel, so the mouse callback can
     // zoom the map when the cursor is over it (outside edit mode). Written by the Minimap widget each frame.
     float mmHitX = 0.0f, mmHitY = 0.0f, mmHitW = 0.0f, mmHitH = 0.0f;

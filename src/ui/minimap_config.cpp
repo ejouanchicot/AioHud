@@ -115,6 +115,13 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
             const int ly = (c.mmLayout < 0 || c.mmLayout > 2) ? 0 : c.mmLayout;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Layout", "Disposition"), tr(LL_EN[ly], LL_FR[ly]))) { c.mmLayout = wrap(ly + d, 3); save_ui_config(); }
         } ROW_NEXT(52.0f)
+        if (c.mmLayout == 2) {
+            { ROW_BAND(52.0f)   // the Dial's day subdial : the enamel globe or the icons' carousel
+                static const char* DD_EN[3] = { "Globe (colours)", "Carousel (icons)", "Disc (icons)" }; static const char* DD_FR[3] = { "Globe (couleurs)", "Carrousel (ic\xC3\xB4nes)", "Disque (ic\xC3\xB4nes)" };
+                const int dd = (c.mmDayDial < 0 || c.mmDayDial > 2) ? 1 : c.mmDayDial;
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Day dial", "Cadran du jour"), tr(DD_EN[dd], DD_FR[dd]))) { c.mmDayDial = wrap(dd + d, 3); save_ui_config(); }
+            } ROW_NEXT(52.0f)
+        }
         if (c.mmLayout == 1) {
             { ROW_BAND(52.0f)
                 static const char* IB_EN[3] = { "Off", "Top", "Bottom" }; static const char* IB_FR[3] = { "Aucune", "Haut", "Bas" };
