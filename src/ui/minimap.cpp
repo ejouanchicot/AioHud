@@ -1213,6 +1213,32 @@ static void draw_pos_pod(u32 dev, Font* fo, float cx, float cy, float r, float S
     dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
 }
 
+// the Astral ring's three layers as drawn this frame (Minimap::draw sets them) : an orb coming out from BEHIND the compass
+// is drawn over the sky dial, then the ring is drawn AGAIN over the orb's sector only -- the part still under the ring is
+// hidden, you never see where it comes from
+static u32 s_ringTex[3] = {}, s_ringTint = 0xFFFFFFFFu; static float s_ringRc = 0.0f; static bool s_ringOk = false;
+static void tannulus_arc(u32 dev, float cx, float cy, float s0, float s1, float t0, float t1, float a0, float a1, u32 col) {
+    const int N = 24; Vtx ring[(N + 1) * 2];
+    for (int i = 0; i <= N; ++i) {
+        const float a = a0 + (a1 - a0) * (float)i / (float)N, ca = cosf(a), sa = sinf(a);
+        ring[i * 2 + 0] = { cx + s0 * ca - 0.5f, cy + s0 * sa - 0.5f, 0, 1, col, 0.5f + t0 * ca, 0.5f + t0 * sa };
+        ring[i * 2 + 1] = { cx + s1 * ca - 0.5f, cy + s1 * sa - 0.5f, 0, 1, col, 0.5f + t1 * ca, 0.5f + t1 * sa };
+    }
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, ring, sizeof(Vtx));
+}
+static void ring_redraw_sector(u32 dev, float cx, float cy, float r, float a0, float a1) {
+    if (!s_ringOk) return;
+    const float rc = s_ringRc, k = (r - rc) / 80.0f;
+    static const float T0[3] = { 416.0f, 424.0f, 418.0f }, T1[3] = { 504.0f, 474.0f, 488.0f };
+    for (int L = 0; L < 3; ++L) {
+        if (!s_ringTex[L]) continue;
+        if (L == 2) dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+        dTexQuadState(dev, s_ringTex[L], true, true);
+        tannulus_arc(dev, cx, cy, rc + (T0[L] - 420.0f) * k, rc + (T1[L] - 420.0f) * k, T0[L] / 1024.0f, T1[L] / 1024.0f, a0, a1, s_ringTint);
+        if (L == 2) dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    }
+    dSetTex(dev, 0, 0);
+}
 static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, const VanaClock& v, u32 elemTex, u32 wxTex,
                                  float mapX, float mapY, float cx, float cy, float rc, float r, float S, float zoomA, bool sq = false) {
     (void)g;
@@ -1296,104 +1322,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         //      element in small glass ORBS at the bottom, overlapping the rim -- one for a single weather, two for a double ----
         if (c.mmClock && (c.mmClkTime || c.mmClkDay)) {
             const float x = cx + off, y = cy - off;
-            // THE WEATHER ORBS, MECHANICAL (the user 2026-11-25 : "as if mechanical, coming out of the compass -- not through
-            // the front face") : drawn BEFORE the sky dial, an orb is stowed BEHIND it ; when a weather begins it slides out
-            // from under the sky dial to its seat on its lower rim (an ease-out with a small overshoot : it reaches its stop),
-            // then a SHUTTER turns open over its black glass, revealing the element. A weather ending : the shutter closes, the orb slides back in.
-            // The element changing with the same count : only the shutter closes and reopens on the new icon. Nothing
-            // animates on the first frame (a load, a zone-in shows the weather in place).
-            const int widNow = mm_weather(g.weather);
-            auto orbsOf = [](int w2) { return (w2 >= 4 && w2 <= 19) ? ((w2 & 1) ? 2 : 1) : 0; };
-            static int shown = -999, target = -999, phase = 0; static unsigned t0 = 0;   // phase : 0 idle, 1 retract, 2 deploy, 3 swap
-            const unsigned nowMs = GetTickCount();
-            if (shown == -999) { shown = target = widNow; phase = 0; }
-            if (widNow != target) {
-                target = widNow; t0 = nowMs;
-                const int on = orbsOf(shown), nn = orbsOf(widNow);
-                if (on > 0 && on == nn) phase = 3;
-                else if (on > 0)        phase = 1;
-                else if (nn > 0)        { shown = widNow; phase = 2; }
-                else                    { shown = widNow; phase = 0; }
-            }
-            float dep = 1.0f, iris = 1.0f; int wDraw = shown;
-            { const float t = (float)(nowMs - t0) / 1000.0f;
-              auto cl = [](float v2) { return v2 < 0.0f ? 0.0f : (v2 > 1.0f ? 1.0f : v2); };
-              auto outBack = [](float k) { const float c1 = 1.9f, c3 = c1 + 1.0f; const float u = k - 1.0f; return 1.0f + c3 * u * u * u + c1 * u * u; };
-              if (phase == 1) {                                       // RETRACT : the shutter closes, then the orb slides in
-                  const float k = cl(t / 0.42f);
-                  iris = 1.0f - cl(k / 0.40f); dep = 1.0f - cl((k - 0.40f) / 0.60f); dep = dep * dep * (3.0f - 2.0f * dep);
-                  if (k >= 1.0f) { shown = target; t0 = nowMs; phase = orbsOf(target) > 0 ? 2 : 0; if (!phase) { dep = 0.0f; iris = 0.0f; } }
-              }
-              if (phase == 2) {                                       // DEPLOY : out of the compass to its stop, then the shutter opens
-                  const float t2 = (float)(nowMs - t0) / 1000.0f, k = cl(t2 / 0.58f);
-                  dep = outBack(cl(k / 0.60f)); iris = cl((k - 0.58f) / 0.42f);
-                  if (k >= 1.0f) phase = 0;
-              }
-              if (phase == 3) {                                       // SWAP : the shutter closes, the icon changes, it reopens
-                  const float k = cl(t / 0.40f);
-                  iris = k < 0.5f ? 1.0f - k * 2.0f : k * 2.0f - 1.0f; wDraw = k < 0.5f ? shown : target;
-                  if (k >= 1.0f) { shown = target; phase = 0; }
-              }
-              if (phase == 0) { wDraw = shown; dep = orbsOf(shown) ? 1.0f : 0.0f; iris = 1.0f; } }
-            const int wid = wDraw;
-            if (wid >= 4 && wid <= 19) {
-                static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };                             // weather pair -> the element strip's cell
-                const int cell = WCELL[(wid - 4) / 2], n = (wid & 1) ? 2 : 1;
-                const float rs0 = sr * 0.44f;
-                const u32 ec = VANA_DAYCOL[cell];
-                // the seats : on the sky dial's lower rim, just outside it (the dial overlaps their top a little : mounted behind
-                // it) ; a double weather's two orbs side by side along that rim, touching. Each slides from behind the dial's
-                // centre straight out to its seat.
-                float OX[2], OY[2];
-                const float rs = rs0, R0 = sr + rs * 0.55f;
-                const float da = 2.0f * asinf(1.05f * rs / R0), am = TUNE("mm.orb_angle", 1.20f);
-                for (int q = 0; q < n; ++q) {
-                    const float an = n == 2 ? am + (q == 0 ? 0.5f : -0.5f) * da : am;
-                    const float fx = x + cosf(an) * R0, fy = y + sinf(an) * R0;
-                    OX[q] = x + (fx - x) * dep; OY[q] = y + (fy - y) * dep;
-                }
-                color_state(dev);
-                for (int q = 0; q < n; ++q)
-                    rrect_glow(dev, OX[q] - rs - 1.5f * S, OY[q] - rs - 0.5f * S, 2.0f * rs + 3.0f * S, 2.0f * rs + 3.0f * S, rs + 1.5f * S, 0x90000000u, snap(2.5f * S));
-                color_state(dev);
-                const float bw = rs * 0.55f;                                                     // the bridge (double only), between the orbs where they are
-                auto bridge = [&](float grow, u32 col) {
-                    if (n != 2 || dep < 0.85f) return;
-                    const float dx = OX[1] - OX[0], dy = OY[1] - OY[0], L = sqrtf(dx * dx + dy * dy); if (L < 1.0f) return;
-                    const float nx = -dy / L * (bw + grow), ny = dx / L * (bw + grow);
-                    const float q4[8] = { OX[0] + nx, OY[0] + ny, OX[1] + nx, OY[1] + ny, OX[1] - nx, OY[1] - ny, OX[0] - nx, OY[0] - ny };
-                    fill_poly_aa(dev, q4, 4, col);
-                };
-                for (int q = 0; q < n; ++q) disc(dev, OX[q], OY[q], rs + 1.8f * S, g_dm.edge);   // the dark edges...
-                bridge(1.2f * S, g_dm.edge);
-                for (int q = 0; q < n; ++q) disc(dev, OX[q], OY[q], rs + 1.1f * S, g_dm.body);   // ...then the metal over them
-                bridge(0.0f, g_dm.body);
-                for (int q = 0; q < n; ++q) {
-                    const float ox = OX[q], oy = OY[q];
-                    ring_sector(dev, ox, oy, rs, rs + 1.1f * S, PI, 1.5f * PI, MA(0xA0, g_dm.glint));
-                    disc(dev, ox, oy, rs, 0xFF000000u);                                              // a PERFECTLY BLACK face : the element stands out
-                    ring_sector(dev, ox, oy, rs - 0.8f, rs + 0.5f, 0.0f, 2.0f * PI, 0x90060A10u);
-                    if (wxTex && iris > 0.0f) {
-                        const float isz = snap(rs * 1.95f);                                     // the icon FILLS the black round
-                        const u32 ia = (u32)(255.0f * (iris < 1.0f ? iris : 1.0f)) << 24 | 0x00FFFFFFu;
-                        tex_state(dev, wxTex);
-                        tquad(dev, snap(ox - isz * 0.5f), snap(oy - isz * 0.5f), isz, isz, cell / 8.0f, (cell + 1) / 8.0f, 0.0f, 1.0f, ia, ia);
-                        dSetTex(dev, 0, 0);
-                    }
-                    color_state(dev);
-                    if (iris < 0.999f) {                                                     // the SHUTTER : a metal blade sweeping over the glass
-                        const float a0 = -PI * 0.5f + iris * 2.0f * PI, a1 = 1.5f * PI;
-                        ring_sector(dev, ox, oy, 0.6f, rs, a0, a1, g_dm.body);
-                        ring_sector(dev, ox, oy, rs * 0.72f, rs, a0, a1, MA(0xFF, g_dm.bot));
-                        seg_soft(dev, ox, oy, ox + cosf(a0) * rs, oy + sinf(a0) * rs, 1.4f * S, g_dm.dark);   // the blade's leading edge
-                        disc(dev, ox, oy, rs * 0.16f, g_dm.lite);                              // its pivot
-                    }
-                    glass_dome(dev, ox, oy, rs, ec, 0.7f);
-                    if (mm_weather_elem(wid) == di && iris > 0.95f) resonance_filament(dev, ox, oy, rs + 0.4f * S, 0.55f, PI - 0.55f, 1.8f * S, di, S);   // RESONANCE : at the orb's foot
-                }
-                color_state(dev);
-            }
-            bezel(x, y, 0xFF0E1830u);                                                   // the sky dial OVER the orbs : they come out from behind it
+            bezel(x, y, 0xFF0E1830u);
             const float t = (float)v.hh + (float)v.mm / 60.0f;
             const float elev = -cosf(t / 24.0f * 2.0f * PI);                                         // the sun's height : -1 midnight .. +1 noon
             float dayK = (elev + 0.1f) / 0.45f; dayK = clampf(dayK, 0.0f, 1.0f); dayK = dayK * dayK * (3.0f - 2.0f * dayK);
@@ -1484,6 +1413,112 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             ring_sector(dev, x, y, sr - 0.8f, sr + 0.4f, 0.0f, 2.0f * PI, g_dm.dark);              // a clean rim
             glass_dome(dev, x, y, sr, 0xFFB8D4FFu, 0.8f);
             color_state(dev);
+            // THE WEATHER ORBS, MECHANICAL (the user 2026-11-25 : "over the sun / moon dial, but coming out from BEHIND the
+            // compass, you must not see where they come from") : an orb is stowed under the compass ring ; when a weather
+            // begins it slides out along the compass's radius to its seat over the sky dial (an ease-out with a small
+            // overshoot : it reaches its stop) -- the ring, drawn again over its sector, hides what is still under it --
+            // then a SHUTTER turns open over its black glass, revealing the element. A weather ending : the shutter closes, the orb slides back in.
+            // The element changing with the same count : only the shutter closes and reopens on the new icon. Nothing
+            // animates on the first frame (a load, a zone-in shows the weather in place).
+            const int widNow = mm_weather(g.weather);
+            auto orbsOf = [](int w2) { return (w2 >= 4 && w2 <= 19) ? ((w2 & 1) ? 2 : 1) : 0; };
+            static int shown = -999, target = -999, phase = 0; static unsigned t0 = 0;   // phase : 0 idle, 1 retract, 2 deploy, 3 swap
+            const unsigned nowMs = GetTickCount();
+            if (shown == -999) { shown = target = widNow; phase = 0; }
+            if (widNow != target) {
+                target = widNow; t0 = nowMs;
+                const int on = orbsOf(shown), nn = orbsOf(widNow);
+                if (on > 0 && on == nn) phase = 3;
+                else if (on > 0)        phase = 1;
+                else if (nn > 0)        { shown = widNow; phase = 2; }
+                else                    { shown = widNow; phase = 0; }
+            }
+            float dep = 1.0f, iris = 1.0f; int wDraw = shown;
+            { const float t = (float)(nowMs - t0) / 1000.0f;
+              auto cl = [](float v2) { return v2 < 0.0f ? 0.0f : (v2 > 1.0f ? 1.0f : v2); };
+              auto outBack = [](float k) { const float c1 = 1.9f, c3 = c1 + 1.0f; const float u = k - 1.0f; return 1.0f + c3 * u * u * u + c1 * u * u; };
+              if (phase == 1) {                                       // RETRACT : the shutter closes, then the orb slides in
+                  const float k = cl(t / 0.42f);
+                  iris = 1.0f - cl(k / 0.40f); dep = 1.0f - cl((k - 0.40f) / 0.60f); dep = dep * dep * (3.0f - 2.0f * dep);
+                  if (k >= 1.0f) { shown = target; t0 = nowMs; phase = orbsOf(target) > 0 ? 2 : 0; if (!phase) { dep = 0.0f; iris = 0.0f; } }
+              }
+              if (phase == 2) {                                       // DEPLOY : out of the compass to its stop, then the shutter opens
+                  const float t2 = (float)(nowMs - t0) / 1000.0f, k = cl(t2 / 0.58f);
+                  dep = outBack(cl(k / 0.60f)); iris = cl((k - 0.58f) / 0.42f);
+                  if (k >= 1.0f) phase = 0;
+              }
+              if (phase == 3) {                                       // SWAP : the shutter closes, the icon changes, it reopens
+                  const float k = cl(t / 0.40f);
+                  iris = k < 0.5f ? 1.0f - k * 2.0f : k * 2.0f - 1.0f; wDraw = k < 0.5f ? shown : target;
+                  if (k >= 1.0f) { shown = target; phase = 0; }
+              }
+              if (phase == 0) { wDraw = shown; dep = orbsOf(shown) ? 1.0f : 0.0f; iris = 1.0f; } }
+            const int wid = wDraw;
+            if (wid >= 4 && wid <= 19) {
+                static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };                             // weather pair -> the element strip's cell
+                const int cell = WCELL[(wid - 4) / 2], n = (wid & 1) ? 2 : 1;
+                const float rs0 = sr * 0.44f;
+                const u32 ec = VANA_DAYCOL[cell];
+                // the seats : over the sky dial's lower part (as designed), each pushed just clear of the compass ring ; the
+                // way out : from the middle of the ring's band, along the compass's radius through the seat
+                float OX[2], OY[2], AN[2];
+                const float rs = rs0, need = r + rs + 1.5f * S, rmid = (s_ringOk ? (s_ringRc + r) * 0.5f : r - rs);
+                for (int q = 0; q < n; ++q) {
+                    float fx = n == 2 ? x + (q == 0 ? -1.0f : 1.0f) * sr * 0.60f : x, fy = n == 2 ? y + sr * 0.70f : y + sr * 0.80f;
+                    float dx = fx - cx, dy = fy - cy; const float L = sqrtf(dx * dx + dy * dy); dx /= L; dy /= L;
+                    if (L < need) { fx = cx + dx * need; fy = cy + dy * need; }
+                    const float L2 = L < need ? need : L, d = rmid + (L2 - rmid) * dep;
+                    OX[q] = cx + dx * d; OY[q] = cy + dy * d; AN[q] = atan2f(dy, dx);
+                }
+                color_state(dev);
+                if (dep > 0.97f)
+                    for (int q = 0; q < n; ++q)
+                        rrect_glow(dev, OX[q] - rs - 1.5f * S, OY[q] - rs - 0.5f * S, 2.0f * rs + 3.0f * S, 2.0f * rs + 3.0f * S, rs + 1.5f * S, 0x90000000u, snap(2.5f * S));
+                color_state(dev);
+                const float bw = rs * 0.55f;                                                     // the bridge (double only), between the orbs where they are
+                auto bridge = [&](float grow, u32 col) {
+                    if (n != 2 || dep < 0.97f) return;
+                    const float dx = OX[1] - OX[0], dy = OY[1] - OY[0], L = sqrtf(dx * dx + dy * dy); if (L < 1.0f) return;
+                    const float nx = -dy / L * (bw + grow), ny = dx / L * (bw + grow);
+                    const float q4[8] = { OX[0] + nx, OY[0] + ny, OX[1] + nx, OY[1] + ny, OX[1] - nx, OY[1] - ny, OX[0] - nx, OY[0] - ny };
+                    fill_poly_aa(dev, q4, 4, col);
+                };
+                for (int q = 0; q < n; ++q) disc(dev, OX[q], OY[q], rs + 1.8f * S, g_dm.edge);   // the dark edges...
+                bridge(1.2f * S, g_dm.edge);
+                for (int q = 0; q < n; ++q) disc(dev, OX[q], OY[q], rs + 1.1f * S, g_dm.body);   // ...then the metal over them
+                bridge(0.0f, g_dm.body);
+                for (int q = 0; q < n; ++q) {
+                    const float ox = OX[q], oy = OY[q];
+                    ring_sector(dev, ox, oy, rs, rs + 1.1f * S, PI, 1.5f * PI, MA(0xA0, g_dm.glint));
+                    disc(dev, ox, oy, rs, 0xFF000000u);                                              // a PERFECTLY BLACK face : the element stands out
+                    ring_sector(dev, ox, oy, rs - 0.8f, rs + 0.5f, 0.0f, 2.0f * PI, 0x90060A10u);
+                    if (wxTex && iris > 0.0f) {
+                        const float isz = snap(rs * 1.95f);                                     // the icon FILLS the black round
+                        const u32 ia = (u32)(255.0f * (iris < 1.0f ? iris : 1.0f)) << 24 | 0x00FFFFFFu;
+                        tex_state(dev, wxTex);
+                        tquad(dev, snap(ox - isz * 0.5f), snap(oy - isz * 0.5f), isz, isz, cell / 8.0f, (cell + 1) / 8.0f, 0.0f, 1.0f, ia, ia);
+                        dSetTex(dev, 0, 0);
+                    }
+                    color_state(dev);
+                    if (iris < 0.999f) {                                                     // the SHUTTER : a metal blade sweeping over the glass
+                        const float a0 = -PI * 0.5f + iris * 2.0f * PI, a1 = 1.5f * PI;
+                        ring_sector(dev, ox, oy, 0.6f, rs, a0, a1, g_dm.body);
+                        ring_sector(dev, ox, oy, rs * 0.72f, rs, a0, a1, MA(0xFF, g_dm.bot));
+                        seg_soft(dev, ox, oy, ox + cosf(a0) * rs, oy + sinf(a0) * rs, 1.4f * S, g_dm.dark);   // the blade's leading edge
+                        disc(dev, ox, oy, rs * 0.16f, g_dm.lite);                              // its pivot
+                    }
+                    glass_dome(dev, ox, oy, rs, ec, 0.7f);
+                    if (mm_weather_elem(wid) == di && iris > 0.95f) resonance_filament(dev, ox, oy, rs + 0.4f * S, 0.55f, PI - 0.55f, 1.8f * S, di, S);   // RESONANCE : at the orb's foot
+                }
+                color_state(dev);
+                for (int q = 0; q < n; ++q) {                                                   // the RING over the orb's part still behind the compass
+                    const float dq = sqrtf((OX[q] - cx) * (OX[q] - cx) + (OY[q] - cy) * (OY[q] - cy));
+                    if (dq - rs - 2.0f * S > r) continue;
+                    const float half = asinf(fminf(1.0f, (rs + 3.0f * S) / (dq > 1.0f ? dq : 1.0f)));
+                    ring_redraw_sector(dev, cx, cy, r, AN[q] - half, AN[q] + half);
+                }
+                color_state(dev);
+            }
             // THE WEATHER ORBS : the element in small glass spheres at the bottom, overlapping the rim
         }
         PERF_END("mm.sky");
@@ -2533,10 +2568,13 @@ void Minimap::draw(const Frame& f) {
     // ---- the map grid square, "(F-10)" -- the native compass's line, the client's own formula (FUN_05538C10) :
     //      column 'A' + (px - 16) / 32, row 1 + (py - 16) / 32 on the 512 px native map, C division (toward zero) ----
     PERF_BEGIN("mm.ring");
+    s_ringOk = false;
     if (astral) {                                              // the ring, its graduations, the glint, the cardinal medallions
         const bool grey = c.mmFrame != 0 && astG_[AS_BASE] && astG_[AS_TICKS] && astG_[AS_GLINT];   // the theme's metal : the grey kit, tinted
         const u32 tint = grey ? dm_toward(g_dm.body, 0xFFFFFFFFu, 0.35f) : 0xFFFFFFFFu;
         if (dial) draw_dial_horns(dev, c, ccx, ccy, r, S);         // under the ring and the subdials : one cast object
+        s_ringTex[0] = grey ? astG_[AS_BASE] : ast_[AS_BASE]; s_ringTex[1] = grey ? astG_[AS_TICKS] : ast_[AS_TICKS]; s_ringTex[2] = grey ? astG_[AS_GLINT] : ast_[AS_GLINT];
+        s_ringTint = tint; s_ringRc = rc; s_ringOk = true;                 // for an orb coming out from behind the compass
         draw_astral_ring(dev, grey ? astG_[AS_BASE] : ast_[AS_BASE],  ccx, ccy, rc, r, 416.0f, 504.0f, 0.0f, tint);
         draw_astral_ring(dev, grey ? astG_[AS_TICKS] : ast_[AS_TICKS], ccx, ccy, rc, r, 424.0f, 474.0f, 0.0f, tint);      // north-up : the camera rotation will turn this one
         dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
