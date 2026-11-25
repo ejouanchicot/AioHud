@@ -1170,32 +1170,30 @@ void clip_rect_end(u32 dev);
 // ROLL one notch (the old up and away, the new in from below, ~0.2 s). The ink stays upright ; each wheel clips its roll.
 struct DrumTok { char t[12]; bool wheel; float w; };
 static int drum_tokens(Font* fo, const char* txt, float sz, float S, DrumTok* out, int cap) {
-    int n = 0, i = 0;
-    const float dw = fo ? fo->measure("0", sz) : 7.0f * S;
+    // ONE GAUGE (the user 2026-11-25 : "every wheel the same width, the widest character sets the standard") : every
+    // character is its own wheel of one width ; a word is a row of letter wheels padded with blank wheels to the longest
+    // word it can show (New -> 4 wheels like Full ; Nouv. / Pleine -> 6), so the mechanism never changes ; a space is a gap
+    static const char* WORDS[] = { "New", "Full", "Nouv.", "Pleine" };
+    float std = 0.0f;
+    if (fo) { static const char* PROBE[] = { "W", "M", "0", "8", "D" }; for (const char* q : PROBE) { const float m2 = fo->measure(q, sz); if (m2 > std) std = m2; } }
+    else std = 8.0f * S;
+    const float ww = std + 2.6f * S;
     auto isL = [](char ch) { return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (unsigned char)ch >= 0xC0 || ch == '.'; };
+    int n = 0, i = 0;
     while (txt[i] && n < cap) {
-        DrumTok& k = out[n]; k.t[0] = 0; k.wheel = false; k.w = 0.0f;
         const char ch = txt[i];
-        if (ch >= '0' && ch <= '9') {                                    // ONE DIGIT, ONE CYLINDER (0-9, an odometer : the user 2026-11-25)
-            k.t[0] = ch; k.t[1] = 0; k.wheel = true; k.w = dw + 2.4f * S; ++i;
-            const bool nextDigit = txt[i] >= '0' && txt[i] <= '9';
-            k.w += nextDigit ? 0.0f : 0.0f;
-        }
-        else if (isL(ch)) {
-            int j = i, m = 0; while (txt[j] && isL(txt[j]) && m < 10) k.t[m++] = txt[j++];
-            k.t[m] = 0;
-            const bool unit = m == 1 && i > 0 && txt[i - 1] >= '0' && txt[i - 1] <= '9';   // '17d' : the d never moves
-            k.wheel = true; (void)unit;                                     // a unit ('d') too : a wheel that never turns
-            float mw = fo ? fo->measure(k.t, sz) : 7.0f * S * (float)m;
-            if (k.wheel && fo && m >= 2) {                                 // a WORD wheel holds its longest word : it never resizes
-                static const char* WORDS[] = { "New", "Full", "Nouv.", "Pleine" };
-                for (const char* wd : WORDS) { const float ww2 = fo->measure(wd, sz); if (ww2 > mw) mw = ww2; }
+        if (ch == ' ') { DrumTok& k = out[n++]; k.t[0] = ' '; k.t[1] = 0; k.wheel = false; k.w = 3.0f * S; ++i; continue; }
+        if (isL(ch)) {                                                    // a word : its letters, padded to the longest word
+            int j = i; while (txt[j] && isL(txt[j])) ++j;
+            const int m = j - i; int pad = m;
+            if (m >= 2) {                                                  // padded to the longest word of ITS pair (EN New/Full, FR Nouv./Pleine)
+                const bool fr = !strncmp(txt + i, "Nouv", 4) || !strncmp(txt + i, "Pleine", 6);
+                for (int q = fr ? 2 : 0; q < (fr ? 4 : 2); ++q) { const int L = (int)strlen(WORDS[q]); if (L > pad) pad = L; }
             }
-            if (k.wheel && m == 1 && fo) { const float mw2 = fo->measure("W", sz); if (mw2 > mw) mw = mw2; }   // a letter wheel : A-Z, the width of the widest
-            k.w = mw + (k.wheel ? 3.2f * S : 4.0f * S);
-            i = j;
-        } else { k.t[0] = ch; k.t[1] = 0; k.wheel = ch != ' '; k.w = ch == ' ' ? 3.0f * S : (fo ? fo->measure(k.t, sz) : 4.0f * S) + 2.4f * S; ++i; }   // ':' '-' : narrow wheels that never turn (the user 2026-11-25) -- a value reads as ONE block
-        ++n;
+            for (int q = 0; q < pad && n < cap; ++q) { DrumTok& k = out[n++]; k.t[0] = q < m ? txt[i + q] : ' '; k.t[1] = 0; k.wheel = true; k.w = ww; }
+            i = j; continue;
+        }
+        DrumTok& k = out[n++]; k.t[0] = ch; k.t[1] = 0; k.wheel = true; k.w = ww; ++i;   // a digit, ':' '-' : one wheel each
     }
     return n;
 }
@@ -1247,8 +1245,8 @@ static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw,
             const float e = 1.0f - (1.0f - k) * (1.0f - k);
             clip_rect_begin(dev, x, y0, ww, h);
             fo->begin(dev);
-            if (k < 1.0f && ol[0]) fo->draw_lc(dev, snap(x + (ww - ow) * 0.5f), snap(cy - e * lh), ol, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the old value rolls away
-            fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy + (1.0f - e) * lh), tk[i].t, sz, 0xFF2E1C0Cu, 0, 0.0f);     // the new one rolls in
+            if (k < 1.0f && ol[0] && ol[0] != ' ') fo->draw_lc(dev, snap(x + (ww - ow) * 0.5f), snap(cy - e * lh), ol, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the old value rolls away
+            if (tk[i].t[0] != ' ') fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy + (1.0f - e) * lh), tk[i].t, sz, 0xFF2E1C0Cu, 0, 0.0f);     // the new one rolls in
             clip_rect_end(dev);
         } else if (tk[i].t[0] != ' ') {                                  // the sign ENGRAVED in the plinth's own metal, between the apertures
             const float cw = fo->measure(tk[i].t, sz);
