@@ -1180,6 +1180,11 @@ static int drum_tokens(Font* fo, const char* txt, float sz, float S, DrumTok* ou
     const float ww = std + 2.6f * S;
     auto isL = [](char ch) { return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (unsigned char)ch >= 0xC0 || ch == '.'; };
     int n = 0, i = 0;
+    if (txt[0] == '' && cap > 0) {                                  //  : the whole text on ONE wheel (the grid square), as wide as "Z-99"
+        DrumTok& k = out[n++]; strncpy(k.t, txt + 1, 11); k.t[11] = 0; k.wheel = true;
+        k.w = (fo ? fo->measure("Z-99", sz) : 30.0f * S) + 6.0f * S;
+        return n;
+    }
     while (txt[i] && n < cap) {
         const char ch = txt[i];
         if (ch == ' ') { DrumTok& k = out[n++]; k.t[0] = ' '; k.t[1] = 0; k.wheel = false; k.w = 3.0f * S; ++i; continue; }
@@ -1469,7 +1474,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         char posTxt[12] = ""; bool posBand = false;
         if (c.mmGrid && c.mmDayDial == 2 && !sq) {
             const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
-            if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { sprintf(posTxt, gr + 1 < 10 ? "%c-%d" : "%c-%d", 'A' + gc, gr + 1); posBand = true; }   // the game's "H-9", a BLANK wheel after it () : always 4 wheels
+            if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { sprintf(posTxt, "%c-%d", 'A' + gc, gr + 1); posBand = true; }   // ONE wheel for the whole square (), as the game writes it : "H-9"
         }
         const float posHalf = posBand && tf ? snap(drum_width(tf, posTxt, pSz, S) * 0.5f + 3.0f * S) : 0.0f;
         const float lc0 = bx0 + bins, lc1 = cx - (posBand ? posHalf + 4.0f * S : 7.0f * S), rc0 = cx + (posBand ? posHalf + 4.0f * S : 7.0f * S), rc1 = bx1 - bins;   // the compartments
