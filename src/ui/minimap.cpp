@@ -1356,62 +1356,78 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         }
         const float posHalf = posBand && tf ? snap(tf->measure(posTxt, pSz) * 0.5f + 7.0f * S) : 0.0f;
         const float lc0 = bx0 + bins, lc1 = cx - (posBand ? posHalf + 4.0f * S : 7.0f * S), rc0 = cx + (posBand ? posHalf + 4.0f * S : 7.0f * S), rc1 = bx1 - bins;   // the compartments
-        // THE FOOT (the user 2026-11-25 : "rethink how it was forged, credible in FFXI's lore -- the bottom first") : the
-        // instrument of a Bastokan cartographer stands on a FOOT -- a lunula CAST WITH THE RING, following its curve, thick
-        // under the S and tapering into the case at both ends, as the base of an astrolabe. Three CARTOUCHES are cut into
-        // it, their corners chamfered like Vana'diel's own windows : the moon (left), the grid square (centre, under the S),
-        // the hour (right) -- riding the curve, the side ones higher. A filet engraved along its edge. (Round, modules style.)
+        // THE PLINTH (the user 2026-11-25 : "rethink how it was forged, credible in FFXI -- steampunk or magic in its
+        // making" ; "the cartouches still overflow") : Vana'diel's craft is Bastok's machinery driven by crystals, so the
+        // instrument stands on a FORGED PLINTH -- a straight base, its sides rising in concave fillets into the ring like a
+        // Bastokan clock's foot -- and its three windows are lit from within by CRYSTAL light, two cut crystal shards
+        // between them. The windows sit on ONE row : the room under the ring only grows toward the sides, nothing can
+        // overflow. Moon (left) | grid square (centre, under the S) | hour (right). (Round, modules style.)
         const bool foot = !sq && c.mmDayDial == 2;
         float cwX[3] = { (lc0 + lc1) * 0.5f, cx, (rc0 + rc1) * 0.5f }, cwY[3] = { bmid, bmid, bmid }, cwH[3] = { 0, posHalf, 0 };
         if (foot && (bandMoon || bandDay || posBand)) {
-            const float A = TUNE("mm.foot_span", 0.95f), Dm = bandH + TUNE("mm.foot_extra", 10.0f) * S, rin = r - 4.0f * S;
-            auto Dof = [&](float th) { const float k = (th - PI * 0.5f) / A; if (k <= -1.0f || k >= 1.0f) return 0.0f; return Dm * powf(cosf(k * PI * 0.5f), 0.40f); };   // full under the cartouches, a quick taper at the ends
-            const int NF = 48;
-            auto strip = [&](float grow, u32 cIn, u32 cOut) {                                    // the lunula, grown by `grow`
-                VtxC fv[2 * (NF + 1)];
-                for (int i = 0; i <= NF; ++i) {
-                    const float th = PI * 0.5f - A + 2.0f * A * (float)i / NF, ct = cosf(th), st = sinf(th), ro = r + Dof(th) + grow;
-                    fv[2 * i] = { cx + ct * (rin - grow) - 0.5f, cy + st * (rin - grow) - 0.5f, 0, 1, cIn };
-                    fv[2 * i + 1] = { cx + ct * ro - 0.5f, cy + st * ro - 0.5f, 0, 1, cOut };
+            const float wh = snap(pSz + 6.0f * S), bz = snap(4.0f * S), gap = snap(9.0f * S);
+            const float hwM = tf ? tf->measure(c.lang == 1 ? "Pleine 99j" : "Full 99d", pSz) * 0.5f + 6.0f * S : 30.0f * S;
+            const float hwT = tf ? tf->measure("00:00", pSz) * 0.5f + 7.0f * S : 22.0f * S;
+            const float hwP = posBand ? posHalf : 0.0f;
+            const float yB = snap(cy + r + 2.0f * S + wh + bz * 1.6f);                       // the base line
+            const float yC = snap(yB - bz - wh * 0.5f);                                      // the windows' row
+            const float half = hwP + gap + 2.0f * hwM + gap * 0.5f;                           // the plinth's half width
+            const float W = half + 2.0f * S, xa = r * 0.78f, ya = cy + sqrtf(r * r - xa * xa) - 3.0f * S;   // where the fillets leave the ring
+            const float ySide = yB - 4.0f * S, ch = 3.5f * S;                                 // the sides' foot, the base's chamfer
+            auto topAt = [&](float dx) {                                                     // the plinth's top : under the ring, then the fillet
+                const float ax = fabsf(dx);
+                if (ax <= xa) return cy + sqrtf(r * r - ax * ax) - 3.0f * S;
+                const float t = (ax - xa) / (W - xa); return ya + (ySide - ya) * t * t;        // concave : flaring out into the base
+            };
+            auto botAt = [&](float dx) { const float e = W - fabsf(dx); return yB - (e < ch ? ch - e : 0.0f); };
+            const int NC = 72;
+            auto slab = [&](float g, u32 cT, u32 cB) {
+                VtxC fv[2 * (NC + 1)];
+                for (int i = 0; i <= NC; ++i) {
+                    const float dx = -W + 2.0f * W * (float)i / NC, tY = topAt(dx) - g, bY = botAt(dx) + g, xg = dx * (W + g) / W;
+                    fv[2 * i] = { cx + xg - 0.5f, tY - 0.5f, 0, 1, cT }; fv[2 * i + 1] = { cx + xg - 0.5f, bY - 0.5f, 0, 1, cB };
                 }
-                dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NF, fv, sizeof(VtxC));
+                dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NC, fv, sizeof(VtxC));
             };
             color_state(dev);
-            { VtxC fv[2 * (NF + 1)];                                                               // its shadow on the world
-              for (int i = 0; i <= NF; ++i) { const float th = PI * 0.5f - A + 2.0f * A * (float)i / NF, ct = cosf(th), st = sinf(th), ro = r + Dof(th);
-                  fv[2 * i] = { cx + ct * ro - 0.5f, cy + st * ro + 1.0f * S - 0.5f, 0, 1, 0x70000000u }; fv[2 * i + 1] = { cx + ct * (ro + 4.0f * S) - 0.5f, cy + st * (ro + 4.0f * S) + 1.0f * S - 0.5f, 0, 1, 0x00000000u }; }
-              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NF, fv, sizeof(VtxC)); }
-            strip(1.3f * S, g_dm.edge, g_dm.edge);                                                // the dark edge
-            strip(0.0f, dm_toward(g_dm.bot, 0xFF000000u, 0.25f), dm_toward(g_dm.bot, 0xFF000000u, 0.50f));   // the cast metal, the modules' dark tone, darker toward its rim
-            for (int i = 0; i < NF; ++i) {                                                        // the engraved filet along its edge, and its lit lip
-                const float t0 = PI * 0.5f - A + 2.0f * A * (float)i / NF, t1 = PI * 0.5f - A + 2.0f * A * (float)(i + 1) / NF;
-                const float d0 = Dof(t0), d1 = Dof(t1); if (d0 < 3.0f * S || d1 < 3.0f * S) continue;
-                const float r0 = r + d0 - 2.4f * S, r1 = r + d1 - 2.4f * S;
-                seg_soft(dev, cx + cosf(t0) * r0, cy + sinf(t0) * r0, cx + cosf(t1) * r1, cy + sinf(t1) * r1, 0.9f * S, MA(0xA0, g_dm.dark));
-                seg_soft(dev, cx + cosf(t0) * (r0 + 0.9f * S), cy + sinf(t0) * (r0 + 0.9f * S), cx + cosf(t1) * (r1 + 0.9f * S), cy + sinf(t1) * (r1 + 0.9f * S), 0.8f * S, MA(0x70, g_dm.lite));
+            rrect_glow(dev, cx - W, yB - 6.0f * S, 2.0f * W, 6.0f * S + 1.0f * S, snap(3.0f * S), 0x80000000u, snap(4.0f * S));   // its shadow on the world
+            slab(1.3f * S, g_dm.edge, g_dm.edge);                                             // the dark edge
+            slab(0.0f, dm_toward(g_dm.bot, 0xFF000000u, 0.20f), dm_toward(g_dm.bot, 0xFF000000u, 0.50f));   // the forged metal
+            for (int i = 0; i < NC; ++i) {                                                   // its anti-aliased outline, and the fillets' lit edge
+                const float d0 = -W + 2.0f * W * (float)i / NC, d1 = -W + 2.0f * W * (float)(i + 1) / NC;
+                if (fabsf(d0) > xa && fabsf(d1) > xa) seg_soft(dev, cx + d0, topAt(d0), cx + d1, topAt(d1), 1.0f, MA(0x90, g_dm.lite));
+                seg_soft(dev, cx + d0, botAt(d0) + 0.6f, cx + d1, botAt(d1) + 0.6f, 1.1f, g_dm.edge);
             }
-            // the three cartouches : centre under the S, the side ones up the curve
-            const float wh = snap(pSz + 6.0f * S), dl = TUNE("mm.foot_side", 0.42f) * A;
-            const float hw[3] = { tf ? tf->measure(c.lang == 1 ? "Pleine 99j" : "Full 99d", pSz) * 0.5f + 6.0f * S : 30.0f * S, posHalf,
-                                  tf ? tf->measure("00:00", pSz) * 0.5f + 7.0f * S : 22.0f * S };
-            const float th3[3] = { PI * 0.5f + dl, PI * 0.5f, PI * 0.5f - dl };
+            grad_quad(dev, cx - W + ch, yB - 2.6f * S, 2.0f * (W - ch), 1.0f, MA(0x70, g_dm.lite), MA(0x70, g_dm.lite), MA(0x70, g_dm.lite), MA(0x70, g_dm.lite));   // an engraved filet along the base
+            // the windows : one row, the position under the S, the moon and the hour on either side
+            const float x3[3] = { cx - hwP - gap - hwM, cx, cx + hwP + gap + hwT }, hw3[3] = { hwM, hwP, hwT };
             const bool on3[3] = { bandMoon, posBand, bandDay };
             for (int k = 0; k < 3; ++k) {
-                if (!on3[k]) continue;
-                const float rr2 = r + Dof(th3[k]) * 0.56f + 1.5f * S;
-                cwX[k] = snap(cx + cosf(th3[k]) * rr2); cwY[k] = snap(cy + sinf(th3[k]) * rr2); cwH[k] = hw[k];
-                const float x0 = cwX[k] - hw[k], x1 = cwX[k] + hw[k], y0 = cwY[k] - wh * 0.5f, y1 = cwY[k] + wh * 0.5f, ch = 3.0f * S;
-                auto oct = [&](float g, u32 col) {                                                // a cartouche : a rectangle, its corners cut
-                    const float o8[16] = { x0 + ch - g, y0 - g, x1 - ch + g, y0 - g, x1 + g, y0 + ch - g, x1 + g, y1 - ch + g,
-                                           x1 - ch + g, y1 + g, x0 + ch - g, y1 + g, x0 - g, y1 - ch + g, x0 - g, y0 + ch - g };
+                if (!on3[k] || hw3[k] <= 0.0f) continue;
+                cwX[k] = snap(x3[k]); cwY[k] = yC; cwH[k] = hw3[k];
+                const float x0 = cwX[k] - hw3[k], x1 = cwX[k] + hw3[k], y0 = yC - wh * 0.5f, y1 = yC + wh * 0.5f, cc = 3.0f * S;
+                auto oct = [&](float gg, u32 col) {
+                    const float o8[16] = { x0 + cc - gg, y0 - gg, x1 - cc + gg, y0 - gg, x1 + gg, y0 + cc - gg, x1 + gg, y1 - cc + gg,
+                                           x1 - cc + gg, y1 + gg, x0 + cc - gg, y1 + gg, x0 - gg, y1 - cc + gg, x0 - gg, y0 + cc - gg };
                     fill_poly_aa(dev, o8, 8, col);
                 };
-                oct(1.4f * S, g_dm.lite);                                                         // its bevel : lit...
-                { const float o8[16] = { x0 + ch - 1.4f * S, y0 - 1.4f * S, x1 - ch + 1.4f * S, y0 - 1.4f * S, x1 + 1.4f * S, y0 + ch - 1.4f * S, x1 + 1.4f * S, cwY[k],
-                                         x0 - 1.4f * S, cwY[k], x0 - 1.4f * S, y0 + ch - 1.4f * S, x0 + ch - 1.4f * S, y0 - 1.4f * S, x0 + ch - 1.4f * S, y0 - 1.4f * S };
-                  fill_poly_aa(dev, o8, 6, g_dm.dark); }                                          // ...in shade on its upper half (a recess)
-                oct(0.0f, 0xFF120E09u);                                                           // the dark enamel
-                grad_quad(dev, x0 + ch, y0, (x1 - x0) - 2.0f * ch, 2.0f * S, 0x70000000u, 0x70000000u, 0x00000000u, 0x00000000u);   // the lip's shadow in it
+                oct(1.5f * S, g_dm.lite);                                                    // the cut bevel, lit...
+                oct(0.6f * S, g_dm.dark);                                                    // ...its inner shade
+                oct(0.0f, 0xFF0C1018u);                                                      // the dark enamel...
+                grad_quad(dev, x0 + cc, yC, (x1 - x0) - 2.0f * cc, wh * 0.5f - 0.5f, 0x00204A70u, 0x00204A70u, 0x50305C88u, 0x50305C88u);   // ...lit from below by CRYSTAL light
+                grad_quad(dev, x0 + cc, y0, (x1 - x0) - 2.0f * cc, 2.0f * S, 0x80000000u, 0x80000000u, 0x00000000u, 0x00000000u);   // the lip's shadow
+            }
+            for (int k = 0; k < 2; ++k) {                                                    // the CRYSTAL SHARDS between the windows
+                if (!on3[1]) break;
+                const float sx = k == 0 ? cx - hwP - gap * 0.5f : cx + hwP + gap * 0.5f, hh = wh * 0.46f, ww = gap * 0.30f;
+                const float d4[8] = { sx, yC - hh, sx + ww, yC, sx, yC + hh, sx - ww, yC };
+                dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+                disc_glow(dev, sx, yC, ww * 0.6f, 0x406CB4FFu, ww * 2.6f);                   // its light
+                dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+                fill_poly_aa(dev, d4, 4, 0xFF3A7CC8u);                                       // the shard, two facets
+                const float f2[6] = { sx, yC - hh, sx + ww, yC, sx, yC + hh };
+                fill_poly_aa(dev, f2, 3, 0xFF9CD0FFu);
+                seg_soft(dev, sx, yC - hh * 0.8f, sx, yC + hh * 0.8f, 0.8f, 0xC0FFFFFFu);
             }
             color_state(dev);
             if (posBand) plateText(cwX[1], cwY[1], posTxt, 0xFFF0D898u, -1);
