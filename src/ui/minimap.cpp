@@ -1179,9 +1179,12 @@ static void draw_ink_moon(u32 dev, float x, float y, float R, float f, bool wani
         }
         ox = x + lx + ax * (d2 - d); oy = y + ly + ay * (d2 - d);
     };
-    const u32 ink = (alpha << 24) | 0x002E1C0Cu;
+    // REAL INK ON PAPER (the user 2026-11-25 : "too sharp, too opaque") : a sepia wash, not a solid -- the paper shows
+    // through, the wash a little uneven from row to row, soft edges
+    const u32 ink = ((alpha * 0xB4u / 255u) << 24) | 0x003C2614u;
     auto ma = [&](u32 c) { return (((c >> 24) * alpha / 255u) << 24) | (c & 0x00FFFFFFu); };
     auto annulus = [&](float r0, float r1, u32 col) {
+        if (Rcyl <= 0.0f) { ring_sector(dev, x, y, r0, r1, 0.0f, 6.2831853f, col); return; }   // at rest : the feathered ring
         const int M = 40; VtxC w[(M + 1) * 2];
         for (int i = 0; i <= M; ++i) {
             const float t = 6.2831853f * (float)i / M, c = cosf(t), sn = sinf(t);
@@ -1197,8 +1200,10 @@ static void draw_ink_moon(u32 dev, float x, float y, float R, float f, bool wani
         const float xl = -R * sq, xt = (1.0f - 2.0f * f) * R * sq;       // waxing : dark from the LEFT limb to the terminator
         const float a = waning ? -xt : xl, b = waning ? R * sq : xt;
         float px, py;
-        T(a, yy, px, py); v[2 * i]     = { px - 0.5f, py - 0.5f, 0, 1, ink };
-        T(b, yy, px, py); v[2 * i + 1] = { px - 0.5f, py - 0.5f, 0, 1, ink };
+        const u32 wa = (u32)((float)(ink >> 24) * (0.84f + 0.16f * (float)((i * 7 + 3) % 5) / 4.0f));   // the wash, uneven
+        const u32 ci = (wa << 24) | (ink & 0x00FFFFFFu);
+        T(a, yy, px, py); v[2 * i]     = { px - 0.5f, py - 0.5f, 0, 1, ci };
+        T(b, yy, px, py); v[2 * i + 1] = { px - 0.5f, py - 0.5f, 0, 1, ci };
         T(waning ? -xt : xt, yy, tx[i], ty[i]);
     }
     color_state(dev);
@@ -1206,8 +1211,16 @@ static void draw_ink_moon(u32 dev, float x, float y, float R, float f, bool wani
     annulus(R * 0.90f, R, ma(0x20603A10u));
     if (f < 0.995f) dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
     if (f > 0.005f && f < 0.995f)
-        for (int i = 0; i < N; ++i) seg_soft(dev, tx[i], ty[i], tx[i + 1], ty[i + 1], 0.9f * S, ma(0x90000000u | 0x2E1C0Cu));   // the terminator, soft
-    annulus(R - 0.9f * S, R + 0.2f * S, ink);                             // the inked outline
+        for (int i = 0; i < N; ++i) seg_soft(dev, tx[i], ty[i], tx[i + 1], ty[i + 1], 1.6f * S, ma(0x40000000u | 0x3C2614u));   // the terminator : the wash bleeds a little
+    if (Rcyl <= 0.0f) ring_sector(dev, x, y, R - 0.8f * S, R + 0.2f * S, 0.0f, 6.2831853f, ma(0xB0000000u | 0x3C2614u));   // the inked outline, a fine pen line
+    else {   // (rolling : the outline follows the drum)
+        float px0 = 0.0f, py0 = 0.0f;
+        for (int i = 0; i <= 48; ++i) {
+            const float t = 6.2831853f * (float)i / 48.0f; float px, py; T(cosf(t) * (R - 0.3f * S), sinf(t) * (R - 0.3f * S), px, py);
+            if (i) seg_soft(dev, px0, py0, px, py, 1.0f * S, ma(0xB0000000u | 0x3C2614u));
+            px0 = px; py0 = py;
+        }
+    }
 }
 struct PodGeo { float th0, D, Ri, Ro, rm, isz, rw, wr, as, Wh, Ph; };
 static PodGeo pod_geo(float r, float S) {
@@ -1483,7 +1496,7 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
             tex_state(dev, tex);
             for (int d = -1; d <= 1; d += 2) {
                 const int nc = d < 0 ? prevC : nextC, oc = d < 0 ? nextC : prevC;   // a flip swaps the two
-                pod_roll_cell(dev, cx, cy, th0 + dir * (float)d * as, rw, szS, as * rw * 0.48f, wr, k, rollMs ? oc : -1, nc, 0xFFFFFFFFu, 0xFFFFFFFFu);
+                pod_roll_cell(dev, cx, cy, th0 + dir * (float)d * as, rw, szS, as * rw * 0.48f, wr, k, rollMs ? oc : -1, nc, 0xB4FFFFFFu, 0xB4FFFFFFu);   // ink, not solid
             }
             dSetTex(dev, 0, 0);
         }
