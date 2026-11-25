@@ -1777,8 +1777,31 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
                 blob(bx, by, br, 0xF03C2614u);                             // a bold ring...
                 blob(bx, by, br - 1.4f * S, 0xFFEBD8AAu);                  // ...the paper inside
             } else {
-                blob(bx, by, br * 1.05f, 0xF03C2614u);                     // a bold ink CRESCENT : the ink disc...
-                blob(bx + br * 0.50f, by - br * 0.25f, br * 0.92f, 0xFFEBD8AAu);   // ...bitten by the paper
+                // ONE CRESCENT, a single shape (the user 2026-11-25 : "not two circles -- just a crescent") : between the outer
+                // arc (radius R) and the inner arc of an offset circle, from horn to horn ; filled in ink, both arcs pen-stroked
+                const float R = br * 1.05f, ox = R * 0.48f, oy = -R * 0.22f, R2 = R * 0.92f;
+                const float dd = sqrtf(ox * ox + oy * oy), aa = (R * R - R2 * R2 + dd * dd) / (2.0f * dd), hh2 = sqrtf(fmaxf(0.0f, R * R - aa * aa));
+                const float mx = aa * ox / dd, my = aa * oy / dd;           // the horns : the two circles' intersections
+                const float h1x = mx - hh2 * oy / dd, h1y = my + hh2 * ox / dd, h2x = mx + hh2 * oy / dd, h2y = my - hh2 * ox / dd;
+                float o0 = atan2f(h1y, h1x), o1 = atan2f(h2y, h2x);        // the OUTER arc : the long way round, away from the bite
+                float i0 = atan2f(h1y - oy, h1x - ox), i1 = atan2f(h2y - oy, h2x - ox);   // the INNER arc : the bite's near side
+                const float bite = atan2f(oy, ox);
+                auto norm = [](float x) { while (x > 3.14159265f) x -= 6.2831853f; while (x < -3.14159265f) x += 6.2831853f; return x; };
+                float dO = norm(o1 - o0); if (fabsf(norm(o0 + dO * 0.5f - bite)) < 1.5707963f) dO = dO > 0.0f ? dO - 6.2831853f : dO + 6.2831853f;
+                float dI = norm(i1 - i0); if (fabsf(norm(i0 + dI * 0.5f - (bite + 3.14159265f))) > 1.5707963f) dI = dI > 0.0f ? dI - 6.2831853f : dI + 6.2831853f;
+                const int N = 18; VtxC cv[(N + 1) * 2]; float ptO[(N + 1) * 2], ptI[(N + 1) * 2];
+                for (int i = 0; i <= N; ++i) {
+                    const float q = (float)i / N, ao = o0 + dO * q, ai = i0 + dI * q;
+                    clampP(bx + cosf(ao) * R, by + sinf(ao) * R, ptO[2 * i], ptO[2 * i + 1]);
+                    clampP(bx + ox + cosf(ai) * R2, by + oy + sinf(ai) * R2, ptI[2 * i], ptI[2 * i + 1]);
+                    cv[2 * i]     = { ptO[2 * i] - 0.5f, ptO[2 * i + 1] - 0.5f, 0, 1, 0xF03C2614u };
+                    cv[2 * i + 1] = { ptI[2 * i] - 0.5f, ptI[2 * i + 1] - 0.5f, 0, 1, 0xF03C2614u };
+                }
+                dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, cv, sizeof(VtxC));
+                for (int i = 0; i < N; ++i) {                              // its edges, anti-aliased
+                    seg_soft(dev, ptO[2 * i], ptO[2 * i + 1], ptO[2 * i + 2], ptO[2 * i + 3], 1.0f * S, 0xF03C2614u);
+                    seg_soft(dev, ptI[2 * i], ptI[2 * i + 1], ptI[2 * i + 2], ptI[2 * i + 3], 1.0f * S, 0xF03C2614u);
+                }
             }
         }
     };
