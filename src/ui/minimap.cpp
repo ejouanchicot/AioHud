@@ -681,10 +681,13 @@ static void dial_metal_set(u32 base) {
     g_dm.body = B;
     g_dm.top = dm_toward(B, 0xFFFFFFFFu, 0.25f);
     g_dm.bot = dm_scale(B, 0.68f);
-    g_dm.edge = dm_scale(B, 0.26f);
+    // NOT A COMIC (the user 2026-11-25 : "too kitsch, it looks like a comic strip") : real metal has no ink outline -- its
+    // edges read by light and shade. The edge tone (once 0.26 : near black, a contour round every piece) and the glints
+    // (once 0.80 toward white : plastic) are toned down
+    g_dm.edge = dm_scale(B, TUNE("mm.metal_edge", 0.46f));
     g_dm.dark = dm_scale(B, 0.46f);
-    g_dm.lite = dm_toward(B, 0xFFFFFFFFu, 0.42f);
-    g_dm.glint = dm_toward(B, 0xFFFFFFFFu, 0.80f);
+    g_dm.lite = dm_toward(B, 0xFFFFFFFFu, TUNE("mm.metal_lite", 0.34f));
+    g_dm.glint = dm_toward(B, 0xFFFFFFFFu, TUNE("mm.metal_glint", 0.58f));
     g_dm.shade = dm_scale(B, 0.16f);
 }
 
@@ -1153,9 +1156,11 @@ static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
         static float s_ri, s_g;
         s_ri = Ri - 0.6f * S; s_g = 0.6f * S;
         struct G1 { static float in(float R, float p, float s) { (void)R; (void)s; return p; } static float out(float R, float p, float s) { (void)p; (void)s; return R + s_g; } };
-        band(0.8f * S, 1.4f * S, G1::in, G1::out, s_ri, L1::c, 0x60000000u);
+        s_g = 2.4f * S; band(0.9f * S, 1.6f * S, G1::in, G1::out, s_ri, L1::c, 0x38000000u);   // a SOFT cast shadow on the world (wide, light)...
+        s_g = 0.6f * S;
+        band(0.8f * S, 1.4f * S, G1::in, G1::out, s_ri, L1::c, 0x50000000u);
         s_ri = Ri - 1.3f * S; s_g = 1.3f * S;
-        band(0.0f, 0.0f, G1::in, G1::out, s_ri, L1::c, g_dm.edge);
+        band(0.0f, 0.0f, G1::in, G1::out, s_ri, L1::c, 0x70000000u);   // the silhouette : a translucent shade, not an ink contour
     }
     // the cast body : lit from the lamp, darker where it falls away (the lugs' walls, the welds)
     {
@@ -1191,7 +1196,7 @@ static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
         if (Ra[i] < rB + 0.3f && Ra[i + 1] < rB + 0.3f) continue;
         const float a0 = -3.14159265f + 6.2831853f * (float)i / N, a1 = -3.14159265f + 6.2831853f * (float)(i + 1) / N;
         const float r0 = Ra[i] + 1.3f * S, r1 = Ra[i + 1] + 1.3f * S;
-        seg_soft(dev, cx + cosf(a0) * r0, cy + sinf(a0) * r0, cx + cosf(a1) * r1, cy + sinf(a1) * r1, 1.2f * S, g_dm.edge);
+        seg_soft(dev, cx + cosf(a0) * r0, cy + sinf(a0) * r0, cx + cosf(a1) * r1, cy + sinf(a1) * r1, 1.2f * S, 0x60000000u);
     }
 }
 void clip_rect_begin(u32 dev, float x, float y, float w, float h);   // (config_controls.cpp : a sub-viewport clip)
