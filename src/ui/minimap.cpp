@@ -1219,6 +1219,18 @@ static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw,
     seen[slot] = true;                                                    // (the first frame shows the value in place)
     const float tw = drum_width(fo, txt, sz, S), y0 = cy - hh, h = 2.0f * hh, lh = h * 0.95f;
     float x = cx - tw * 0.5f;
+    // the APERTURES (the user 2026-11-25 : "the separators part of the foot, the dials cut into the foot with a glass") :
+    // each run of wheels sits in its own opening cut in the plinth -- a dark chamfered rim first, the wheels, a glass over
+    float gx0[8], gx1[8]; int ng = 0;
+    { float xx = x; for (int i = 0; i < n && ng < 8; ++i) {
+        if (tk[i].wheel && (i == 0 || !tk[i - 1].wheel)) gx0[ng] = xx;
+        xx += tk[i].w;
+        if (tk[i].wheel && (i + 1 == n || !tk[i + 1].wheel)) gx1[ng++] = xx; } }
+    color_state(dev);
+    for (int g = 0; g < ng; ++g) {                                        // the cut : a lit lower lip, a dark upper edge, the hollow
+        rrect(dev, gx0[g] - 1.6f * S, y0 - 1.6f * S, gx1[g] - gx0[g] + 3.2f * S, h + 3.2f * S, snap(2.4f * S), g_dm.edge, MA(0xFF, g_dm.lite));
+        rrect(dev, gx0[g] - 0.6f * S, y0 - 0.6f * S, gx1[g] - gx0[g] + 1.2f * S, h + 1.2f * S, snap(1.8f * S), 0xFF0A0806u, 0xFF0A0806u);
+    }
     for (int i = 0; i < n; ++i) {
         const float ww = tk[i].w;
         if (tk[i].wheel) {
@@ -1238,21 +1250,32 @@ static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw,
             if (k < 1.0f && ol[0]) fo->draw_lc(dev, snap(x + (ww - ow) * 0.5f), snap(cy - e * lh), ol, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the old value rolls away
             fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy + (1.0f - e) * lh), tk[i].t, sz, 0xFF2E1C0Cu, 0, 0.0f);     // the new one rolls in
             clip_rect_end(dev);
-        } else if (tk[i].t[0] != ' ') {                                  // a METAL BRIDGE between the wheels, the sign ENGRAVED in it
+        } else if (tk[i].t[0] != ' ') {                                  // the sign ENGRAVED in the plinth's own metal, between the apertures
             const float cw = fo->measure(tk[i].t, sz);
-            color_state(dev);
-            rrect(dev, x, y0 - 1.0f * S, ww, h + 2.0f * S, 0.0f, dm_toward(g_dm.body, 0xFFFFFFFFu, 0.10f), dm_toward(g_dm.body, 0xFF000000u, 0.25f));
-            grad_quad(dev, x, y0 - 1.0f * S, 1.0f, h + 2.0f * S, MA(0x90, g_dm.edge), MA(0x90, g_dm.edge), MA(0x90, g_dm.edge), MA(0x90, g_dm.edge));
-            grad_quad(dev, x + ww - 1.0f, y0 - 1.0f * S, 1.0f, h + 2.0f * S, MA(0x90, g_dm.edge), MA(0x90, g_dm.edge), MA(0x90, g_dm.edge), MA(0x90, g_dm.edge));
             fo->begin(dev);
-            fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy + 0.8f), tk[i].t, sz, MA(0xB0, g_dm.lite), 0, 0.0f);   // the cut's lit lip
-            fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy), tk[i].t, sz, 0xFF140E06u, 0, 0.0f);                  // the engraving, dark in the metal
+            fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy - 0.8f), tk[i].t, sz, 0xD0000000u, 0, 0.0f);              // the cut's shadow
+            fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy), tk[i].t, sz, g_dm.lite | 0xFF000000u, 0, 0.0f);          // INLAID with bright metal : it reads
         }
         x += ww;
-        if (tk[i].wheel && i + 1 < n && tk[i + 1].wheel && tk[i].t[0] >= '0' && tk[i].t[0] <= '9' && tk[i + 1].t[0] >= '0' && tk[i + 1].t[0] <= '9') {
+        if (false && tk[i].wheel && i + 1 < n && tk[i + 1].wheel && tk[i].t[0] >= '0' && tk[i].t[0] <= '9' && tk[i + 1].t[0] >= '0' && tk[i + 1].t[0] <= '9') {
             color_state(dev);                                              // the cut between two cylinders of one number : a hairline
             rrect(dev, x - 0.5f * S, y0, 1.0f * S, h, 0.0f, 0xC0201408u, 0xC0201408u);
         }
+        if (tk[i].wheel && i + 1 < n && tk[i + 1].wheel) {                // the cut between two cylinders : a dark hairline, a lit edge
+            color_state(dev);
+            rrect(dev, x - 0.5f * S, y0, 0.8f * S, h, 0.0f, 0xD0140C04u, 0xD0140C04u);
+            rrect(dev, x + 0.3f * S, y0, 0.5f * S, h, 0.0f, 0x40FFF0D0u, 0x40FFF0D0u);
+        }
+    }
+    color_state(dev);
+    for (int g = 0; g < ng; ++g) {                                        // the GLASS over each aperture : a sheen on its upper half, a lit edge
+        const float gw = gx1[g] - gx0[g] + 1.2f * S;
+        grad_quad(dev, gx0[g] - 0.6f * S, y0 - 0.6f * S, gw, h * 0.45f, 0x38FFFFFFu, 0x38FFFFFFu, 0x08FFFFFFu, 0x08FFFFFFu);
+        grad_quad(dev, gx0[g] - 0.6f * S, y0 - 0.6f * S, gw, 1.0f, 0x70FFFFFFu, 0x70FFFFFFu, 0x70FFFFFFu, 0x70FFFFFFu);
+        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+        const float ra[8] = { gx0[g] + gw * 0.15f, y0 + h * 0.95f, gx0[g] + gw * 0.30f, y0 - 0.6f * S, gx0[g] + gw * 0.38f, y0 - 0.6f * S, gx0[g] + gw * 0.23f, y0 + h * 0.95f };
+        fill_poly_aa(dev, ra, 4, 0x18FFFFFFu);                            // a slanted reflection across it
+        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
     }
     color_state(dev);
 }
@@ -1508,8 +1531,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                                            x1 - cc + gg, y1 + gg, x0 + cc - gg, y1 + gg, x0 - gg, y1 - cc + gg, x0 - gg, y0 + cc - gg };
                     fill_poly_aa(dev, o8, 8, col);
                 };
-                oct(1.5f * S, g_dm.lite);                                                    // the cut bevel, lit...
-                oct(0.6f * S, g_dm.dark);                                                    // ...its inner shade : the drum turns behind it
+                (void)oct;                                                                  // (no frame : each wheel group is its own aperture in the plinth)
                 cwHH = wh * 0.5f - 0.6f * S;
             }
             for (int k = 0; k < 2; ++k) {                                                    // between the windows : a double groove cut in the metal
