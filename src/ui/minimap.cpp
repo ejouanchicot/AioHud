@@ -1165,25 +1165,49 @@ static void pod_roll_cell(u32 dev, float ccx, float ccy, float ang, float rc, fl
 // sqrt(1 - y^2 / R^2) (f the lit fraction) ; waxing lit on the right, waning on the left (the plate's convention).
 // Drawn in horizontal slices (any shape, crescent or gibbous), the terminator stroked soft, a fine inked outline, a light
 // inked limb so a full moon still reads as a moon.
-static void draw_ink_moon(u32 dev, float x, float y, float R, float f, bool waning, float S) {
-    const u32 ink = 0xFF2E1C0Cu;
+static void draw_ink_moon(u32 dev, float x, float y, float R, float f, bool waning, float S,
+                          float ax = 1.0f, float ay = 0.0f, float phi = 0.0f, float Rcyl = 0.0f, float Rwin = 0.0f, u32 alpha = 0xFF) {
+    // ON A DRUM : (ax, ay) the wheel's roll axis, phi its turn ; a point at d along the axis sits at Rcyl sin(phi + d / Rcyl),
+    // and what passes the window's edge (+-Rwin) is gone under the frame (pinned at the edge, the alpha fades it)
+    auto T = [&](float lx, float ly, float& ox, float& oy) {
+        const float d = lx * ax + ly * ay;
+        float d2 = d;
+        if (Rcyl > 0.0f) {
+            const float th = phi + d / Rcyl;
+            d2 = fabsf(th) >= 1.5707963f ? (th > 0.0f ? Rwin : -Rwin) : Rcyl * sinf(th);
+            d2 = d2 > Rwin ? Rwin : (d2 < -Rwin ? -Rwin : d2);
+        }
+        ox = x + lx + ax * (d2 - d); oy = y + ly + ay * (d2 - d);
+    };
+    const u32 ink = (alpha << 24) | 0x002E1C0Cu;
+    auto ma = [&](u32 c) { return (((c >> 24) * alpha / 255u) << 24) | (c & 0x00FFFFFFu); };
+    auto annulus = [&](float r0, float r1, u32 col) {
+        const int M = 40; VtxC w[(M + 1) * 2];
+        for (int i = 0; i <= M; ++i) {
+            const float t = 6.2831853f * (float)i / M, c = cosf(t), sn = sinf(t);
+            float px, py; T(c * r0, sn * r0, px, py); w[2 * i] = { px - 0.5f, py - 0.5f, 0, 1, col };
+            T(c * r1, sn * r1, px, py); w[2 * i + 1] = { px - 0.5f, py - 0.5f, 0, 1, col };
+        }
+        dDrawUP(dev, D3DPT_TRIANGLESTRIP, M * 2, w, sizeof(VtxC));
+    };
     const int N = 28; VtxC v[(N + 1) * 2]; float tx[N + 1], ty[N + 1];
     f = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
     for (int i = 0; i <= N; ++i) {
         const float yy = -R + 2.0f * R * (float)i / N, sq = sqrtf(fmaxf(0.0f, 1.0f - (yy * yy) / (R * R)));
         const float xl = -R * sq, xt = (1.0f - 2.0f * f) * R * sq;       // waxing : dark from the LEFT limb to the terminator
         const float a = waning ? -xt : xl, b = waning ? R * sq : xt;
-        v[2 * i]     = { x + a - 0.5f, y + yy - 0.5f, 0, 1, ink };
-        v[2 * i + 1] = { x + b - 0.5f, y + yy - 0.5f, 0, 1, ink };
-        tx[i] = x + (waning ? -xt : xt); ty[i] = y + yy;
+        float px, py;
+        T(a, yy, px, py); v[2 * i]     = { px - 0.5f, py - 0.5f, 0, 1, ink };
+        T(b, yy, px, py); v[2 * i + 1] = { px - 0.5f, py - 0.5f, 0, 1, ink };
+        T(waning ? -xt : xt, yy, tx[i], ty[i]);
     }
     color_state(dev);
-    ring_sector(dev, x, y, R * 0.78f, R, 0.0f, 6.2831853f, 0x20603A10u);  // the limb, lightly inked (the sphere)
-    ring_sector(dev, x, y, R * 0.90f, R, 0.0f, 6.2831853f, 0x20603A10u);
+    annulus(R * 0.78f, R, ma(0x20603A10u));                               // the limb, lightly inked (the sphere)
+    annulus(R * 0.90f, R, ma(0x20603A10u));
     if (f < 0.995f) dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
     if (f > 0.005f && f < 0.995f)
-        for (int i = 0; i < N; ++i) seg_soft(dev, tx[i], ty[i], tx[i + 1], ty[i + 1], 0.9f * S, MA(0x90, ink));   // the terminator, soft
-    ring_sector(dev, x, y, R - 0.9f * S, R + 0.2f * S, 0.0f, 6.2831853f, ink);   // the inked outline
+        for (int i = 0; i < N; ++i) seg_soft(dev, tx[i], ty[i], tx[i + 1], ty[i + 1], 0.9f * S, ma(0x90000000u | 0x2E1C0Cu));   // the terminator, soft
+    annulus(R - 0.9f * S, R + 0.2f * S, ink);                             // the inked outline
 }
 struct PodGeo { float th0, D, Ri, Ro, rm, isz, rw, wr, as, Wh, Ph; };
 static PodGeo pod_geo(float r, float S) {
@@ -1430,7 +1454,7 @@ static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it e
 // 4 full .. 7 waning crescent) : the present one whole and bright in the middle, the one before and the one after
 // dimmer either side ; when the phase changes the band snaps one notch (the click). Drawn before the frame : the
 // compass covers its root.
-static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct, bool waning, u32 tex) {
+static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct, bool waning, int hh, u32 tex) {
     PERF_SCOPE("mm.moonpod");
     PodGeo G = pod_geo(r, S);
     G.th0 = TUNE("mm.mpod_angle", 2.3562f);                              // the LOWER left, on the diagonal between the W and the S (the user 2026-11-25)
@@ -1463,8 +1487,28 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
             }
             dSetTex(dev, 0, 0);
         }
-        float px, py; at(th0, rw, px, py);
-        draw_ink_moon(dev, snap(px), snap(py), isz * 0.44f, (float)pct / 100.0f, waning, S);
+        // the PRESENT moon : its wheel turns when the GAME changes it -- once a Vana'diel day, at midnight (the user
+        // 2026-11-25 : "per day, more coherent") ; the old moon rolls out along the wheel's axis (outward), the new one in,
+        // on a drum (each point at Rcyl sin(phi + d / Rcyl), gone past the window's edge)
+        {
+            (void)hh;
+            const float fNow = (float)pct / 100.0f;
+            const int key = pct * 2 + (waning ? 1 : 0);
+            static int lastKey = -1; static float fOld = 0.0f, fCur = 0.0f; static bool wOld = false, wCur = false; static unsigned mRoll = 0;
+            if (lastKey < 0) { lastKey = key; fCur = fNow; wCur = waning; }
+            if (key != lastKey) { lastKey = key; fOld = fCur; wOld = wCur; fCur = fNow; wCur = waning; mRoll = nowMs; }
+            const float km = mRoll ? fminf(1.0f, (float)(nowMs - mRoll) / 240.0f) : 1.0f;
+            float px, py; at(th0, rw, px, py);
+            const float ux = cosf(th0), uy = sinf(th0), Rm = isz * 0.44f, Rc = wr;
+            if (km >= 1.0f) draw_ink_moon(dev, snap(px), snap(py), Rm, fCur, wCur, S);
+            else {
+                const float e = 1.0f - (1.0f - km) * (1.0f - km), PH = 1.3f, Rcyl = 2.0f * Rm;
+                const float phO = e * PH, phN = -(1.0f - e) * PH;        // the old turns away outward, the new comes up from the centre's side
+                auto al = [&](float ph) { const float q = fabsf(ph) / PH; return (u32)(255.0f * (1.0f - q * q)); };
+                draw_ink_moon(dev, snap(px), snap(py), Rm, fOld, wOld, S, ux, uy, phO, Rcyl, Rc, al(phO));
+                draw_ink_moon(dev, snap(px), snap(py), Rm, fCur, wCur, S, ux, uy, phN, Rcyl, Rc, al(phN));
+            }
+        }
         color_state(dev);
         pod_wheels_over(dev, cx, cy, rw, wr, th0, as, Wh, S);           // the cuts between them, the glass
     }
@@ -2541,7 +2585,7 @@ void Minimap::draw(const Frame& f) {
         if (!dialSq && c.mmDayDial == 2 && c.mmClock && c.mmClkMoon) {    // the MOON POD : the disc behind the compass, three phases in a window
             const VanaClock mv = dial_vana(g.vana);
             const float pct = (float)mv.moonPct / 100.0f, cyc = mv.waning ? 0.5f + (1.0f - pct) * 0.5f : pct * 0.5f;
-            draw_moon_pod(dev, ccx, ccy, r, S, mv.moonPct, mv.waning, moonPhTex_); (void)cyc;   // the exact phase
+            draw_moon_pod(dev, ccx, ccy, r, S, mv.moonPct, mv.waning, mv.hh, moonPhTex_); (void)cyc;   // the exact phase, hour by hour
         }
         draw_dial_instrument(dev, f, c, g, dial_vana(g.vana), elemTex_, wxTex_, mapX, mapY, ccx, ccy, rcM, r, S, 0.0f, dialSq, 0);
     }
