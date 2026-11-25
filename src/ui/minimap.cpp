@@ -1758,8 +1758,12 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
         // PAPYRUS INKS (the user 2026-11-25 : "the day/night on papyrus -- a question of colour") : light, translucent
         // washes as on the inked storyboard -- a greyed lavender by night, a pale rose and soft orange at dawn and dusk, a
         // very pale blue by day ; the papyrus always shows through
-        u32 wTop = col_lerp(0xA8585088u, 0x6894B4D0u, dayK), wBot = col_lerp(0x70847CA8u, 0x30B8CCD8u, dayK);
-        wTop = col_lerp(wTop, 0x80A07898u, duskK * 0.5f); wBot = col_lerp(wBot, 0x90E8A478u, duskK * 0.8f);
+        // ONLY INK (the user 2026-11-25 : "the same as the other modules -- papyrus and ink, no colour") : the night is a
+        // SEPIA INK WASH over the paper, deeper toward the top ; the day is the bare papyrus ; dawn and dusk a light wash
+        // rising from the horizon
+        const u32 INKW = 0x003C2614u;
+        u32 wTop = col_lerp(0x8C000000u | INKW, 0x00000000u | INKW, dayK), wBot = col_lerp(0x50000000u | INKW, 0x00000000u | INKW, dayK);
+        wTop = col_lerp(wTop, 0x30000000u | INKW, duskK * 0.5f); wBot = col_lerp(wBot, 0x48000000u | INKW, duskK * 0.8f);
         const bool topHalf = sinf(aSky) <= 0.0f;                          // the sky's top : the screen's top
         const float b0 = clampf(lo + shift, lo, hi), b1 = clampf(hi + shift, lo, hi);
         if (b1 - b0 > 0.3f) {
@@ -1769,7 +1773,7 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
         // pen STARS by night : small inked crosses, pale ink on the indigo
         if (dayK < 0.6f) {
             static const float SX[6] = { -0.72f, -0.30f, 0.10f, 0.48f, 0.80f, -0.05f }, SY[6] = { -0.55f, -0.15f, -0.62f, -0.30f, -0.58f, 0.18f };
-            const u32 sc = MA((u32)(200.0f * (1.0f - dayK / 0.6f)), 0x3C2614u);   // sepia pen on the paper
+            const u32 sc = MA((u32)(230.0f * (1.0f - dayK / 0.6f)), 0xF2E4BCu);   // the paper RESERVED in the ink wash (the stars stay paper)
             for (int i = 0; i < 6; ++i) {
                 const float x = Cx + SX[i] * hx, y = Cy + SY[i] * hy, l = 1.6f * S;
                 pen(x - l, y, x + l, y, 0.7f * S, sc); pen(x, y - l, x, y + l, 0.7f * S, sc);
@@ -1784,13 +1788,13 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
             if (body == 0) {
                 for (int i = 0; i < 8; ++i) {                              // its rays, pen strokes
                     const float ra = 6.2831853f * (float)i / 8.0f + 0.2f;
-                    pen(bx + cosf(ra) * br * 1.25f, by + sinf(ra) * br * 1.25f, bx + cosf(ra) * br * 1.75f, by + sinf(ra) * br * 1.75f, 0.8f * S, 0xC05A3410u);
+                    pen(bx + cosf(ra) * br * 1.25f, by + sinf(ra) * br * 1.25f, bx + cosf(ra) * br * 1.75f, by + sinf(ra) * br * 1.75f, 0.8f * S, 0xD03C2614u);
                 }
-                blob(bx, by, br + 0.7f * S, 0xD05A3410u);                  // the pen outline
-                blob(bx, by, br, 0xFFF0C658u);                             // the gold wash
+                blob(bx, by, br + 0.8f * S, 0xE03C2614u);                  // the pen outline
+                blob(bx, by, br, 0xFFEBD8AAu);                             // the paper inside (no colour)
             } else {
-                blob(bx, by, br + 0.7f * S, 0xC03C2614u);
-                blob(bx, by, br, 0xFFEEE4C2u);
+                blob(bx, by, br + 0.8f * S, 0xE03C2614u);
+                blob(bx, by, br, 0xFFEBD8AAu);
                 const u32 paperUnder = col_lerp(0xFFEBD8AAu, wTop | 0xFF000000u, (float)(wTop >> 24) / 255.0f);
                 blob(bx + br * 0.45f, by - br * 0.22f, br * 0.82f, paperUnder);   // the crescent : the washed paper bites it
             }
@@ -1814,7 +1818,7 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
                 clampP(Cx + hx3[i + 1] * hx, gy + hy3[i + 1] * hy, pa[2], pa[3]);
                 clampP(Cx + hx3[i + 1] * hx, gy + hy * 0.9f, pa[4], pa[5]);
                 clampP(Cx + hx3[i] * hx, gy + hy * 0.9f, pa[6], pa[7]);
-                fill_poly_aa(dev, pa, 4, MA(0x70, 0x5A4A28u));
+                fill_poly_aa(dev, pa, 4, MA(0x38, 0x3C2614u));
             }
         }
     };
