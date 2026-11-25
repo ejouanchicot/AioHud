@@ -1283,6 +1283,70 @@ static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw,
     color_state(dev);
 }
 static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it each frame ; 0 = draw the inked fallback)
+// THE MOON POD (the user 2026-11-25 : "the same principle as the elements, yesterday / today / tomorrow" -- and the
+// moons "must stay the right way up") : the day pod's twin, at the compass's upper left. A housing on the ring, a window
+// on a night-sky band, three phases painted UPRIGHT on it (assets/moon_phases.raw, scripts/gen_moon_phases.py : 0 new ..
+// 4 full .. 7 waning crescent) : the present one whole and bright in the middle, the one before and the one after
+// dimmer either side ; when the phase changes the band snaps one notch (the click). Drawn before the frame : the
+// compass covers its root.
+static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int ph, u32 tex) {
+    PERF_SCOPE("mm.moonpod");
+    PodGeo G = pod_geo(r, S);
+    G.th0 = TUNE("mm.mpod_angle", -2.3562f);                             // the upper left, on the ring's diagonal
+    const float th0 = G.th0, Ri = G.Ri, Ro = G.Ro, rm = G.rm, isz = G.isz * TUNE("mm.mpod_icon", 1.10f), rw = G.rw, wr = isz * 0.56f, as = G.as, Wh = G.Wh, Ph = G.Ph;
+    auto at = [&](float ang, float rad, float& x, float& y) { x = cx + cosf(ang) * rad; y = cy + sinf(ang) * rad; };
+    const u32 hb = dm_toward(g_dm.bot, 0xFF000000u, 0.45f);
+    color_state(dev);
+    { const float sx = 0.8f * S, sy = 1.4f * S; ring_sector(dev, cx + sx, cy + sy, Ri, Ro + 2.0f * S, th0 - Ph, th0 + Ph, 0x60000000u); }   // its shadow
+    ring_sector(dev, cx, cy, Ri - 1.3f * S, Ro + 1.3f * S, th0 - Ph - 1.3f * S / rm, th0 + Ph + 1.3f * S / rm, g_dm.edge);   // the housing : dark edge...
+    ring_sector(dev, cx, cy, Ri, Ro, th0 - Ph, th0 + Ph, hb);                                                               // ...the metal
+    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0 - Ph, th0, MA(0xA0, g_dm.glint));                                       // lit along its outer flank
+    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0, th0 + Ph, MA(0x80, g_dm.shade));
+    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Wh - 0.02f, th0 + Wh + 0.02f, g_dm.dark);     // the window's chamfer
+    ring_sector(dev, cx, cy, rw - wr, rw + wr, th0 - Wh, th0 + Wh, 0xFF1E2848u);                                         // the band : the plate's night sky
+    if (tex) {
+        tex_state(dev, tex);
+        static int lastPh = -1; static unsigned jumpMs = 0;              // the JUMP, as the day pod's
+        const unsigned nowMs = GetTickCount();
+        if (lastPh < 0) lastPh = ph;
+        if (ph != lastPh) { const int step = (ph - lastPh + 8) & 7; lastPh = ph; jumpMs = step == 1 ? nowMs : 0; }
+        float shift = 0.0f;
+        { const float k = (float)(nowMs - jumpMs) / 160.0f;
+          if (jumpMs && k < 1.0f) { const float e2 = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k); shift = (1.0f - e2) - 0.06f * sinf(k * 3.14159f); } }
+        for (int d = -2; d <= 2; ++d) {
+            const float ang = th0 + ((float)d + shift) * as, off = fabsf(ang - th0);
+            if (off > Wh + as * 0.5f) continue;
+            float vis = 1.0f - (off - (Wh - as * 0.55f)) / (as * 0.6f); vis = vis > 1.0f ? 1.0f : (vis < 0.0f ? 0.0f : vis);
+            if (vis <= 0.0f) continue;
+            float px, py; at(ang, rw, px, py);
+            const bool now = d == 0;
+            const float sz = now ? isz : isz * (0.13f / 0.18f);
+            const u32 col = ((u32)(255.0f * vis) << 24) | (now ? 0x00FFFFFFu : 0x00B4B4B4u);   // UPRIGHT : a screen-aligned quad, never rotated
+            const int c8 = (ph + d + 16) & 7;
+            tquad(dev, snap(px - sz * 0.5f), snap(py - sz * 0.5f), sz, sz, c8 / 8.0f, (c8 + 1) / 8.0f, 0.0f, 1.0f, col, col);
+        }
+        dSetTex(dev, 0, 0);
+        color_state(dev);
+    }
+    // the housing's metal over the band beyond the window's ends (what slipped under is hidden)
+    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 + Wh + 0.02f, th0 + Ph, hb);
+    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Ph, th0 - Wh - 0.02f, hb);
+    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0 - Ph, th0, MA(0xA0, g_dm.glint));
+    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0, th0 + Ph, MA(0x80, g_dm.shade));
+    // the window's frame : a polished bevel ; its two radial ends
+    ring_sector(dev, cx, cy, rw + wr, rw + wr + 1.2f * S, th0 - Wh, th0 + Wh, MA(0xC0, g_dm.lite));
+    ring_sector(dev, cx, cy, rw - wr - 1.2f * S, rw - wr, th0 - Wh, th0 + Wh, MA(0xC0, g_dm.dark));
+    for (int e = -1; e <= 1; e += 2) {
+        float x0, y0, x1, y1; at(th0 + e * Wh, rw - wr - 1.2f * S, x0, y0); at(th0 + e * Wh, rw + wr + 1.2f * S, x1, y1);
+        seg_soft(dev, x0, y0, x1, y1, 1.6f * S, MA(0xC0, e < 0 ? g_dm.lite : g_dm.dark));
+    }
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);                          // the glass : a soft reflection on its outer half
+    ring_sector(dev, cx, cy, rw + wr * 0.25f, rw + wr * 0.85f, th0 - Wh * 0.9f, th0 - Wh * 0.15f, 0x22FFFFFFu);
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    color_state(dev);
+}
+
+
 static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, const VanaClock& v, u32 elemTex, u32 wxTex,
                                  float mapX, float mapY, float cx, float cy, float rc, float r, float S, float zoomA, bool sq, int pass) {
     // pass 0 : the MODULES -- sky, weather, moon, position, the band -- drawn BEFORE the map and the ring : they are mounted
@@ -1627,7 +1691,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             sprintf(mb, fullFirst ? "Full %02dd" : "New %02dd", dd < 0 ? 0 : dd);   // New / Full in every language (the user 2026-11-25 : everyone reads them)
             const float ty = bmid;
             if (!foot) bezel(x, y, 0xFF101C3Cu, true);
-            else {                                                                   // its own case, at its size
+            else if (false) {                                                        // (the round phase dial : replaced by the MOON POD, upper left)
                 color_state(dev);
                 rrect_glow(dev, x - srM - 2.0f * S, y - srM - 1.0f * S, 2.0f * srM + 4.0f * S, 2.0f * srM + 4.0f * S, srM + 2.0f * S, 0x80000000u, snap(3.0f * S));
                 color_state(dev);
@@ -1649,6 +1713,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 // THE MOON-PHASE DIAL (the user 2026-11-25) : the moon in the middle ; around it the LUNAR CYCLE -- a ring with
                 // the FULL moon marked at the top (a bright disc) and the NEW at the bottom (a dark one), a needle at where the
                 // cycle stands (waxing up the left, waning down the right) ; the days to the next of the two on a wheel
+                if (false) {                                                         // (the round phase dial : replaced by the MOON POD)
                 // A PAPER DIAL OF THE PHASES (the user 2026-11-25 : "steampunk : no 3D moon -- a paper disc with all the moon's
                 // phases, like a watch, a hand pointing the present phase") : the whole face is parchment, the eight phases
                 // inked round it (new at the bottom, full at the top, waxing up the left, waning down the right), a chased
@@ -1719,6 +1784,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 color_state(dev);
                 glass_dome(dev, x, y, srM, 0xFF9CB8FFu, 0.35f);
                 color_state(dev);
+                }
                 char db[8]; sprintf(db, "%02d", dd < 0 ? 0 : (dd > 99 ? 99 : dd));       // the days to the next new / full : the plinth's left window
                 if (cwHH > 0.0f) drum_text(dev, tf, 0, cwX[0], cwY[0], cwH[0] - 0.6f * S, cwHH, db, pSz, S);
             }
@@ -1989,15 +2055,15 @@ Minimap::LodSt* Minimap::lod_slot(unsigned id) {
     return &e;
 }
 
-void Minimap::on_device_lost() { for (int i = 0; i < AS_N; ++i) { astG_[i] = 0; astGR_[i] = TexRetry{}; } s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
+void Minimap::on_device_lost() { for (int i = 0; i < AS_N; ++i) { astG_[i] = 0; astGR_[i] = TexRetry{}; } s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
 void Minimap::dispose() {
     s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0;
     for (int i = 0; i < AS_N; ++i) { release_texture(astG_[i]); astG_[i] = 0; astGR_[i] = TexRetry{}; }
     release_texture(mkAtlas_); mkAtlas_ = 0; mkAtlasR_ = TexRetry{};
     for (int i = 0; i < AS_N; ++i) { release_texture(ast_[i]); ast_[i] = 0; astR_[i] = TexRetry{}; }
     release_texture(mapTex_); mapTex_ = 0; mapFileId_ = 0;
-    release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_); if (wxTex_) release_texture(wxTex_); if (moonDialTex_) release_texture(moonDialTex_);
-    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
+    release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_); if (wxTex_) release_texture(wxTex_); if (moonDialTex_) release_texture(moonDialTex_); if (moonPhTex_) release_texture(moonPhTex_);
+    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
 }
 
 void Minimap::draw(const Frame& f) {
@@ -2328,6 +2394,12 @@ void Minimap::draw(const Frame& f) {
         // the inner radius as the frame / ring below will set it (the astral ring : 80/500 of r ; the square case : its inset)
         const float rcM = dialSq ? r - snap(r * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f)) : r - r * (80.0f / 500.0f) * clampf(c.mmBezelW, 0.5f, 2.0f);
         s_moonDialTex = ensure_raw_tex_mip(dev, moonDialTex_, moonDialR_, plugin_path_r("assets\\moon_dial.raw"), 512, 512);
+        ensure_raw_tex_mip(dev, moonPhTex_, moonPhR_, plugin_path_r("assets\\moon_phases.raw"), 1024, 128);
+        if (!dialSq && c.mmDayDial == 2 && c.mmClock && c.mmClkMoon) {    // the MOON POD : the disc behind the compass, three phases in a window
+            const VanaClock mv = dial_vana(g.vana);
+            const float pct = (float)mv.moonPct / 100.0f, cyc = mv.waning ? 0.5f + (1.0f - pct) * 0.5f : pct * 0.5f;
+            draw_moon_pod(dev, ccx, ccy, r, S, ((int)floorf(cyc * 8.0f + 0.5f)) & 7, moonPhTex_);   // the nearest of the 8 phases
+        }
         draw_dial_instrument(dev, f, c, g, dial_vana(g.vana), elemTex_, wxTex_, mapX, mapY, ccx, ccy, rcM, r, S, 0.0f, dialSq, 0);
     }
     if (false && dial && !dialSq && c.mmDayDial == 2 && c.mmGrid) {       // (the position plate : replaced by the band's centre compartment)
