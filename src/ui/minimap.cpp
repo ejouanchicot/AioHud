@@ -3680,7 +3680,7 @@ void Minimap::draw(const Frame& f) {
                 // facing the previous wheel, the red-enamelled lozenge facing the present one, the ARROWHEAD facing the next :
                 // what the arrow points at is what comes
                 auto marks = [&](float th, float headPast, bool head, bool lozenge = true) {
-                    const float dir = pod_dir(th), aP = th - dir * G.as * 1.05f, aN = th + dir * (G.as * 1.05f + headPast);
+                    const float dir = pod_dir(th), aP = th - dir * (G.as * 1.05f + headPast), aN = th + dir * (G.as * 1.05f + headPast);   // symmetric : the rail runs as far behind as ahead
                     const float wR = hA * 0.16f, aLo = fminf(aP, aN), aHi = fmaxf(aP, aN);
                     auto P = [&](float a, float rr, float& x, float& y) { x = ccx + cosf(a) * rr; y = ccy + sinf(a) * rr; };
                     // the rail : shadow, edge, metal, a lit upper lip
@@ -3689,17 +3689,7 @@ void Minimap::draw(const Frame& f) {
                     ring_sector(dev, ccx, ccy, rM - wR, rM + wR, aLo, aHi, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);
                     grain_sector(dev, ccx, ccy, rM - wR, rM + wR, aLo, aHi, S);
                     ring_sector(dev, ccx, ccy, rM + wR * 0.2f, rM + wR, aLo, aHi, MA(0x90, g_dm.glint));
-                    // the TAIL : an arrow's FLETCHING at the previous wheel (the user 2026-11-25 : "a tail starting from the first
-                    // cell") -- two pairs of feathers swept back from the rail
-                    for (int fq = 0; fq < 2; ++fq) {
-                        const float ab = aP + dir * G.as * (0.10f + 0.22f * (float)fq), ae = ab - dir * G.as * 0.20f;
-                        for (int sd = -1; sd <= 1; sd += 2) {
-                            float x0, y0, x1, y1; P(ab, rM, x0, y0); P(ae, rM + (float)sd * hA * 0.55f, x1, y1);
-                            seg_soft(dev, x0 + 0.8f * S, y0 + 1.1f * S, x1 + 0.8f * S, y1 + 1.1f * S, 2.2f * S, 0x90000000u);
-                            seg_soft(dev, x0, y0, x1, y1, 2.4f * S, g_dm.edge | 0xFF000000u);
-                            seg_soft(dev, x0, y0, x1, y1, 1.3f * S, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);
-                        }
-                    }
+                    // (no tail ornament : the rail simply runs on past the previous wheel, as the head does past the next -- the user 2026-11-25)
                     // the ARROWHEAD at the next wheel, pointing onward along the rail (none when a counter is the target)
                     if (head) {
                         const float ux = cosf(aN), uy = sinf(aN), tx = -uy * dir, ty = ux * dir, h = hA * 0.70f, wd = hA * 0.55f;
