@@ -170,6 +170,12 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
                 if (c.mmSkyShow) place(c.mmPodSky, 2, false, 5, "  Place", "  Emplacement");
                 ROW_TOGGLE(CTRL_ID, tr("Weather", "M\xC3\xA9t\xC3\xA9o"), c.mmWxShow)
                 if (c.mmWxShow) place(c.mmPodWx, 3, false, 4, "  Place", "  Emplacement");
+                { ROW_BAND(52.0f)   // the gem set in the closed dial (a zone without a map)
+                    static const char* GM_EN[6] = { "Ruby", "Sapphire", "Emerald", "Topaz", "Amethyst", "Diamond" };
+                    static const char* GM_FR[6] = { "Rubis", "Saphir", "\xC3\x89meraude", "Topaze", "Am\xC3\xA9thyste", "Diamant" };
+                    const int gm = (c.mmGem < 0 || c.mmGem > 5) ? 0 : c.mmGem;
+                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Gem (zone without a map)", "Pierre (zone sans carte)"), tr(GM_EN[gm], GM_FR[gm]))) { c.mmGem = wrap(gm + d, 6); save_ui_config(); }
+                } ROW_NEXT(52.0f)
             }
         }
         if (c.mmLayout == 1) {

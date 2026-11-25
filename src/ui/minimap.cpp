@@ -2905,6 +2905,100 @@ static void dial_extents(const UiConfig& c, float r, float S, bool sq, float& eL
     eL = fmaxf(base, -x0 - r) + 3.0f * S; eR = fmaxf(base, x1 - r) + 3.0f * S; eT = fmaxf(base, -y0 - r) + 3.0f * S; eB = fmaxf(base, y1 - r) + 3.0f * S;
     s_podR0 = keep; s_podOut = keepO;
 }
+// ---- THE CLOSED DIAL'S JEWELLERY (the user 2026-11-25 : "engrave the object's name and Metalworks as a pro signature, or a
+// Bastok ornament -- a precious stone, its colour chosen ; use DirectX's effects so the stone looks really precious, the
+// metal too") ----
+// text along an arc, letter by letter, each turned with the arc ; top = reads left to right clockwise over the top,
+// bottom = left to right along the bottom ; ENGRAVED : a lit lower lip, then the cut
+static void arc_text(u32 dev, Font* fo, float cx, float cy, float R, float ac, const char* txt, float sz, float track, bool top, u32 cut, u32 lip, float S) {
+    if (!fo || !txt[0]) return;
+    float total = 0.0f; int n = 0; char one[2] = { 0, 0 };
+    for (const char* q = txt; *q; ++q) { one[0] = *q; total += fo->measure(one, sz) + track; ++n; }
+    total -= track;
+    float a = ac - (top ? 1.0f : -1.0f) * (total * 0.5f) / R;
+    fo->begin(dev);
+    for (const char* q = txt; *q; ++q) {
+        one[0] = *q; const float w = fo->measure(one, sz), am = a + (top ? 1.0f : -1.0f) * (w * 0.5f) / R;
+        const float x = cx + cosf(am) * R, y = cy + sinf(am) * R, rot = am + (top ? 1.5707963f : -1.5707963f);
+        if (*q != ' ') {
+            Font::set_rotation(x, y, rot);
+            fo->draw_lc(dev, x - w * 0.5f + 0.6f * S, y + 0.6f * S, one, sz, lip, 0, 0.0f);
+            fo->draw_lc(dev, x - w * 0.5f, y, one, sz, cut, 0, 0.0f);
+            Font::clear_rotation();
+        }
+        a += (top ? 1.0f : -1.0f) * (w + track) / R;
+    }
+    color_state(dev);
+}
+// a GUILLOCHE SUNBURST : fine radial lines catching the light, a slow sheen sweeping round (additive)
+static void sunburst(u32 dev, float cx, float cy, float r0, float r1, float t, float S) {
+    const int N = 144;
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+    const float sweep = fmodf(t * 0.15f, 6.2831853f);
+    for (int i = 0; i < N; ++i) {
+        const float a = 6.2831853f * (float)i / N, l = cosf(a) * POD_LX + sinf(a) * POD_LY;
+        float d = fabsf(pod_wrapa(a - sweep)); const float sw = d < 0.6f ? (1.0f - d / 0.6f) : 0.0f;
+        const u32 al = (u32)clampf(10.0f + 20.0f * (l > 0.0f ? l : 0.0f) + 36.0f * sw, 0.0f, 90.0f);
+        seg_soft(dev, cx + cosf(a) * r0, cy + sinf(a) * r0, cx + cosf(a) * r1, cy + sinf(a) * r1, 0.6f * S, (al << 24) | 0x00FFFFFFu);
+    }
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    color_state(dev);
+}
+// A CUT GEM in a metal bezel with six claws : the pavilion's dark ground, eight facets round an octagonal table (each lit by
+// its angle to the lamp), then ADDITIVE light -- its inner glow, the table's sheen, a sharp specular, a slow star glint and a
+// few motes of fire turning inside it
+static void draw_gem(u32 dev, float cx, float cy, float g, int kind, float t, float S) {
+    static const u32 GEM[6]  = { 0xFFB0102Au, 0xFF1A3EB8u, 0xFF0E8A48u, 0xFFE08A14u, 0xFF7A2CB8u, 0xFFD8E4F4u };
+    static const u32 GLOW[6] = { 0xFFFF4060u, 0xFF5C8CFFu, 0xFF40F090u, 0xFFFFC040u, 0xFFC070FFu, 0xFFFFFFFFu };
+    const u32 base = GEM[kind < 0 || kind > 5 ? 0 : kind], glow = GLOW[kind < 0 || kind > 5 ? 0 : kind];
+    color_state(dev);
+    // the bezel and its claws
+    disc(dev, cx + 0.8f * S, cy + 1.2f * S, g * 1.30f, 0x90000000u);
+    disc(dev, cx, cy, g * 1.26f, g_dm.edge | 0xFF000000u);
+    disc(dev, cx, cy, g * 1.20f, dm_toward(g_dm.body, g_dm.lite, 0.30f) | 0xFF000000u);
+    ring_sector(dev, cx, cy, g * 1.08f, g * 1.20f, 2.4f, 5.6f, MA(0x90, g_dm.glint));
+    for (int k = 0; k < 6; ++k) {
+        const float a = 6.2831853f * (float)k / 6.0f + 0.52f, x = cx + cosf(a) * g * 1.06f, y = cy + sinf(a) * g * 1.06f;
+        disc(dev, x, y, g * 0.17f, g_dm.edge | 0xFF000000u); disc(dev, x - g * 0.03f, y - g * 0.03f, g * 0.12f, dm_toward(g_dm.body, g_dm.glint, 0.5f) | 0xFF000000u);
+    }
+    // the pavilion's dark ground
+    disc(dev, cx, cy, g, dm_toward(base, 0xFF000000u, 0.55f));
+    // eight crown facets round the table
+    const float rt = g * 0.52f;
+    for (int k = 0; k < 8; ++k) {
+        const float a0 = 6.2831853f * (float)k / 8.0f, a1 = a0 + 6.2831853f / 8.0f, am = (a0 + a1) * 0.5f;
+        const float l = cosf(am) * POD_LX + sinf(am) * POD_LY;
+        const u32 fc = l > 0.0f ? dm_toward(base, glow, 0.15f + 0.55f * l) : dm_toward(base, 0xFF000000u, -0.45f * l);
+        const float q[8] = { cx + cosf(a0) * rt, cy + sinf(a0) * rt, cx + cosf(a0) * g, cy + sinf(a0) * g, cx + cosf(a1) * g, cy + sinf(a1) * g, cx + cosf(a1) * rt, cy + sinf(a1) * rt };
+        fill_poly_aa(dev, q, 4, fc);
+        seg_soft(dev, q[0], q[1], q[2], q[3], 0.6f * S, 0x50000000u);
+    }
+    // the table
+    float tb[16]; for (int k = 0; k < 8; ++k) { const float a = 6.2831853f * (float)k / 8.0f; tb[2 * k] = cx + cosf(a) * rt; tb[2 * k + 1] = cy + sinf(a) * rt; }
+    fill_poly_aa(dev, tb, 8, dm_toward(base, glow, 0.35f));
+    // THE LIGHT (additive)
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+    const float pulse = 0.85f + 0.15f * sinf(t * 1.3f);
+    disc_glow(dev, cx, cy, g * 0.35f, MA((u32)(90.0f * pulse), glow), g * 0.9f);                 // the glow inside
+    disc_glow(dev, cx - g * 0.25f, cy - g * 0.28f, g * 0.10f, 0xC0FFFFFFu, g * 0.35f);           // the specular, toward the lamp
+    disc(dev, cx - g * 0.24f, cy - g * 0.27f, g * 0.07f, 0xE0FFFFFFu);
+    for (int k = 0; k < 4; ++k) {                                                               // motes of fire turning inside
+        const float a = t * (0.4f + 0.13f * k) + k * 1.7f, rr = g * (0.25f + 0.12f * k);
+        const float tw = 0.5f + 0.5f * sinf(t * (2.1f + k) + k);
+        disc_glow(dev, cx + cosf(a) * rr, cy + sinf(a) * rr * 0.8f, g * 0.03f, MA((u32)(150.0f * tw), glow), g * 0.10f);
+    }
+    {   // a star glint, now and then
+        const float ph = fmodf(t, 5.0f), k = ph < 0.6f ? sinf(ph / 0.6f * 3.14159f) : 0.0f;
+        if (k > 0.01f) {
+            const float sx = cx + g * 0.42f, sy = cy - g * 0.38f, L = g * 0.75f * k;
+            seg_soft(dev, sx - L, sy, sx + L, sy, 1.0f * S, MA((u32)(220.0f * k), 0xFFFFFFu));
+            seg_soft(dev, sx, sy - L, sx, sy + L, 1.0f * S, MA((u32)(220.0f * k), 0xFFFFFFu));
+            disc_glow(dev, sx, sy, g * 0.05f, MA((u32)(255.0f * k), 0xFFFFFFu), g * 0.18f);
+        }
+    }
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    color_state(dev);
+}
 // THE MODULES' INDEX MARKS on the bezel / the square case's frame (time arrows, the red pointer, the moon's day counter) --
 // each module's in its own frame (PodF) ; band : the bezel's / the frame's width
 static void draw_index_marks(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, float S, float band) {
@@ -3537,16 +3631,23 @@ void Minimap::draw(const Frame& f) {
             color_state(dev); disc(dev, ccx, ccy, rr, MA(0xA8, pl));                                // the grain toned down : a wide plate, not a patina map
             ring_sector(dev, ccx, ccy, rr - 2.0f * S, rr, 2.4f, 5.6f, MA(0x60, g_dm.lite));       // the plate's edge : lit...
             ring_sector(dev, ccx, ccy, rr - 2.0f * S, rr, -0.7f, 2.4f, MA(0x90, g_dm.edge));      // ...and in shade
-            ring_sector(dev, ccx, ccy, rr * 0.30f, rr * 0.30f + 1.0f * S, 0.0f, 6.2831853f, MA(0x70, g_dm.edge));   // a turned boss at its centre
-            ring_sector(dev, ccx, ccy, rr * 0.30f + 1.0f * S, rr * 0.30f + 1.8f * S, 0.0f, 6.2831853f, MA(0x40, g_dm.lite));
+            sunburst(dev, ccx, ccy, rr * 0.30f, rr * 0.96f, f.t, S);                                // the guilloche
         } else {
             rrect(dev, wx0, wy0, wx1 - wx0, wy1 - wy0, 0.0f, hi, lo);
             const float xy[8] = { wx0, wy0, wx1, wy0, wx1, wy1, wx0, wy1 };
             grain_poly(dev, xy, 4, S);
             color_state(dev); rrect(dev, wx0, wy0, wx1 - wx0, wy1 - wy0, 0.0f, MA(0xA8, hi), MA(0xA8, lo));   // the grain toned down
             rrect_stroke(dev, wx0 + 1.0f * S, wy0 + 1.0f * S, wx1 - wx0 - 2.0f * S, wy1 - wy0 - 2.0f * S, 0.0f, MA(0x50, g_dm.lite), 1.0f);
-            const float m = (wx1 - wx0) * 0.18f;
-            rrect_stroke(dev, wx0 + m, wy0 + m, wx1 - wx0 - 2.0f * m, wy1 - wy0 - 2.0f * m, snap(3.0f * S), MA(0x60, g_dm.edge), 1.0f);   // an engraved panel
+            sunburst(dev, ccx, ccy, rr * 0.30f, rr * 0.96f, f.t, S);                                // the guilloche
+        }
+        {   // the GEM at the centre, the maker's engraving round it
+            const float gR = rr * TUNE("mm.gem_r", 0.22f), tR = rr * TUNE("mm.engrave_r", 0.66f);
+            Font* ef = band_font(f, MM_TIME);
+            const float esz = snap(TUNE("mm.engrave_sz", 11.0f) * S), trk = 1.6f * S;
+            const u32 cut = MA(0xE0, g_dm.edge), lip = MA(0x70, g_dm.lite);
+            arc_text(dev, ef, ccx, ccy, tR, -1.5707963f, "ADVENTURER'S DIAL", esz, trk, true, cut, lip, S);
+            arc_text(dev, ef, ccx, ccy, tR, 1.5707963f, "BASTOK METALWORKS", esz, trk, false, cut, lip, S);
+            draw_gem(dev, ccx, ccy, gR, c.mmGem, f.t, S);
         }
         color_state(dev);
     }
