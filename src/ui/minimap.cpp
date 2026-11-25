@@ -1787,7 +1787,7 @@ static float sky_cell_ratio() { return TUNE("mm.sky_cell", 1.6f); }   // the sky
 static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th0, int hh, int mi, int wid, u32 wxTex, u32 skyTex) {
     PERF_SCOPE("mm.skypod");
     PodGeo G = pod_geo(r, S);
-    const float isz = G.isz * 0.92f, rw = G.rw, wr = isz * 0.56f, as = G.as, k = sky_cell_ratio();
+    const float isz = G.isz, rw = G.rw, wr = G.wr, as = G.as, k = sky_cell_ratio();   // the SAME tube as the day's (it was 0.92 x)
     const float Wh = (k + 2.0f) * as * 0.5f, dir = pod_dir(th0);
     const float aStart = th0 - dir * Wh;
     const float aSky = aStart + dir * (k * as * 0.5f), aW[2] = { aStart + dir * (k * as + as * 0.5f), aStart + dir * (k * as + as * 1.5f) };
@@ -1932,7 +1932,7 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
     if (wxTex) {
         tex_state(dev, wxTex);
         for (int q = 0; q < 2; ++q)
-            pod_roll_cell(dev, cx, cy, aW[q], rw, isz * 0.86f, as * rw * 0.48f, wr, kR, rollMs ? (old[q] < 0 ? -1 : old[q]) : -1, cur[q], 0xFFFFFFFFu, 0xFFFFFFFFu, th0);
+            pod_roll_cell(dev, cx, cy, aW[q], rw, isz * TUNE("mm.pod_icon_k", 0.88f), as * rw * 0.48f, wr, kR, rollMs ? (old[q] < 0 ? -1 : old[q]) : -1, cur[q], 0xFFFFFFFFu, 0xFFFFFFFFu, th0);
         dSetTex(dev, 0, 0);
     }
     color_state(dev);
