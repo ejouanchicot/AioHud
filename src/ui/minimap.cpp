@@ -1956,7 +1956,7 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
     PodGeo G = pod_geo(r, S);
     G.th0 = s_moonTh;                                                    // the moon : its slot (Minimap > Clock, the user 2026-11-25)
     const float dir = pod_dir(G.th0);                                    // read left to right (top to bottom on a side) wherever it sits
-    const float th0 = G.th0, Ri = G.Ri, Ro = G.Ro, rm = G.rm, isz = G.isz * TUNE("mm.mpod_icon", 1.10f), rw = G.rw, wr = isz * 0.56f, as = G.as, Wh = G.Wh, Ph = G.Ph;
+    const float th0 = G.th0, Ri = G.Ri, Ro = G.Ro, rm = G.rm, isz = G.isz, rw = G.rw, wr = G.wr, as = G.as, Wh = G.Wh, Ph = G.Ph;   // the SAME gauge as the other modules
     auto at = [&](float ang, float rad, float& x, float& y) { x = cx + cosf(ang) * rad; y = cy + sinf(ang) * rad; };
     const u32 hb = dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f));
     color_state(dev);
@@ -3679,8 +3679,8 @@ void Minimap::draw(const Frame& f) {
                 // which the previous") : an applied metal rail along the bezel under the three wheels -- its TAIL (a stop bar)
                 // facing the previous wheel, the red-enamelled lozenge facing the present one, the ARROWHEAD facing the next :
                 // what the arrow points at is what comes
-                auto marks = [&](float th) {
-                    const float dir = pod_dir(th), aP = th - dir * G.as * 1.05f, aN = th + dir * G.as * 1.05f;
+                auto marks = [&](float th, float headPast) {
+                    const float dir = pod_dir(th), aP = th - dir * G.as * 1.05f, aN = th + dir * (G.as * 1.05f + headPast);
                     const float wR = hA * 0.16f, aLo = fminf(aP, aN), aHi = fmaxf(aP, aN);
                     auto P = [&](float a, float rr, float& x, float& y) { x = ccx + cosf(a) * rr; y = ccy + sinf(a) * rr; };
                     // the rail : shadow, edge, metal, a lit upper lip
@@ -3728,8 +3728,19 @@ void Minimap::draw(const Frame& f) {
                         disc(dev, mx, my, W * 0.45f, 0xFFA82418u);
                     }
                 };
-                if (c.mmClock && c.mmClkDay) marks(s_dayTh);
-                if (c.mmClock && c.mmClkMoon) marks(s_moonTh);
+                if (c.mmClock && c.mmClkDay) marks(s_dayTh, 0.0f);
+                if (c.mmClock && c.mmClkMoon) {
+                    // THE DAYS TO THE NEXT NEW / FULL MOON (the user 2026-11-25) : a two-wheel counter on the bezel, centred over
+                    // the NEXT moon's wheel, laid along the bezel and turned with it (drum_arc) ; the arrow's head passes beyond it
+                    Font* nf = band_font(f, MM_TIME);
+                    const VanaClock mv = dial_vana(g.vana);
+                    int dd = mv.waning ? mv.daysToNew : mv.daysToFull; dd = dd < 0 ? 0 : (dd > 99 ? 99 : dd);
+                    char d2[4]; sprintf(d2, "%02d", dd);
+                    const float dsz = snap(TUNE("mm.mcount_sz", 13.0f) * S), dhh = snap(hA * TUNE("mm.mcount_h", 0.95f));
+                    const float half = nf ? drum_width(nf, d2, dsz, S) * 0.5f / rM : 0.0f;
+                    marks(s_moonTh, half + 2.0f * S / rM);
+                    if (nf) drum_arc(dev, nf, 0, ccx, ccy, s_moonTh + pod_dir(s_moonTh) * G.as, rM, dhh, d2, dsz, S);
+                }
             }
         } else
         draw_astral_ring(dev, grey ? astG_[AS_TICKS] : ast_[AS_TICKS], ccx, ccy, rc, r, 424.0f, 474.0f, 0.0f, tint);      // north-up : the camera rotation will turn this one
