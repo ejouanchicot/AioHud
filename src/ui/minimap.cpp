@@ -1492,24 +1492,30 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                     else if (w2 != want[q]) { want[q] = w2; tChange[q] = nowMs; }
                 }
                 const float rs = sr * 0.44f;
-                // the FOLD : p runs 0 (stowed) -> 1 (open) in ~0.6 s ; slide 0..0.5, spread 0.5..0.8, labels 0.8..1
-                static float p = -1.0f; static unsigned lastMs = 0;
-                const float tgt = nNow > 0 ? 1.0f : 0.0f;
-                if (p < 0.0f) p = tgt;
-                { const float dt = lastMs ? (float)(nowMs - lastMs) / 1000.0f : 0.0f; lastMs = nowMs;
-                  const float stepP = (dt > 0.1f ? 0.1f : dt) / 0.6f; p = p < tgt ? (p + stepP > tgt ? tgt : p + stepP) : (p - stepP < tgt ? tgt : p - stepP); }
+                // EACH CAPSULE ITS OWN FOLD (the user 2026-11-25 : "side by side from the start ; a single element : only one
+                // unfolds") : p[q] runs 0 (stowed) -> 1 (out) in ~0.45 s ; the slide 0..0.7, its label 0.7..1
+                static float pq[2] = { -1.0f, -1.0f }; static unsigned lastMs = 0;
+                const float dtS = lastMs ? (float)(nowMs - lastMs) / 1000.0f : 0.0f; lastMs = nowMs;
                 auto cl = [](float v2) { return v2 < 0.0f ? 0.0f : (v2 > 1.0f ? 1.0f : v2); };
-                float dep = cl(p / 0.5f); dep = dep * dep * (3.0f - 2.0f * dep);
-                float spr = cl((p - 0.5f) / 0.3f); spr = spr * spr * (3.0f - 2.0f * spr);
-                const float lab = cl((p - 0.8f) / 0.2f);
+                float depQ[2], labQ[2], lidQ[2];
+                for (int q = 0; q < 2; ++q) {
+                    const float tgt = q < nNow ? 1.0f : 0.0f;
+                    if (pq[q] < 0.0f) pq[q] = tgt;
+                    const float st = (dtS > 0.1f ? 0.1f : dtS) / 0.60f;
+                    pq[q] = pq[q] < tgt ? (pq[q] + st > tgt ? tgt : pq[q] + st) : (pq[q] - st < tgt ? tgt : pq[q] - st);
+                    lidQ[q] = cl(pq[q] / 0.30f);                                     // the LID opens first (the user : "a cover when stowed")...
+                    float d = cl((pq[q] - 0.25f) / 0.50f); depQ[q] = d * d * (3.0f - 2.0f * d);   // ...then the capsule slides out...
+                    labQ[q] = cl((pq[q] - 0.75f) / 0.25f);                          // ...then its label
+                }
                 {
                 // the axis : compass centre -> sky dial ; the WELD is where the ring meets the sky dial. Folded on the ring there,
                 // the carrier slides out toward the sky dial and its wells spread across the axis
                 const float ax0 = x - cx, ay0 = y - cy, aL = sqrtf(ax0 * ax0 + ay0 * ay0), ux = ax0 / aL, uy = ay0 / aL, tx = -uy, ty = ux;
                 const float D0 = r - rs * TUNE("mm.slot_in", 0.35f), D1 = r + rs * TUNE("mm.slot_reach", 0.65f);
-                const float D = D0 + (D1 - D0) * dep, half = rs * TUNE("mm.slot_gap", 1.10f) * spr;
+                const float half = rs * TUNE("mm.slot_gap", 1.10f);              // side by side across the axis, always
                 float OX[2], OY[2];
                 for (int q = 0; q < 2; ++q) {
+                    const float D = D0 + (D1 - D0) * depQ[q];
                     OX[q] = cx + ux * D + (q == 0 ? -1.0f : 1.0f) * tx * half;
                     OY[q] = cy + uy * D + (q == 0 ? -1.0f : 1.0f) * ty * half;
                 }
@@ -1520,6 +1526,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 // the two wells, cast as one : the dark edges, a bridge, then the metal
                 const float bw = rs * 0.55f;
                 auto bridge = [&](float grow, u32 col) {
+                    if (fabsf(depQ[0] - depQ[1]) > 0.02f) return;                 // joined only when side by side at one height
                     const float dx = OX[1] - OX[0], dy = OY[1] - OY[0], L = sqrtf(dx * dx + dy * dy); if (L < 1.0f) return;
                     const float nx = -dy / L * (bw + grow), ny = dx / L * (bw + grow);
                     const float q4[8] = { OX[0] + nx, OY[0] + ny, OX[1] + nx, OY[1] + ny, OX[1] - nx, OY[1] - ny, OX[0] - nx, OY[0] - ny };
@@ -1536,7 +1543,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                     ring_sector(dev, ox, oy, rs - 2.0f * S, rs, PI, 2.0f * PI, 0x70000000u);       // its inner shadow, from the lip above
                     // the LABEL : out (the old one shrinks away, 0.12 s), then in (the new one pops, 0.22 s, a small overshoot)
                     float sc = 0.0f; int cell = shownCell[q];
-                    if (lab <= 0.0f) cell = -1;                                     // the labels come once the wells are open
+                    const float lab = labQ[q];
+                    if (lab <= 0.0f) cell = -1;                                     // the label comes once its capsule is out
                     if (tChange[q]) {
                         const float t = (float)(nowMs - tChange[q]) / 1000.0f;
                         const bool hadOld = shownCell[q] >= 0 && shownCell[q] != want[q];
@@ -1564,6 +1572,23 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                         color_state(dev);
                     }
                     glass_dome(dev, ox, oy, rs, 0xFFB8D4FFu, 0.6f);
+                    if (lidQ[q] < 0.999f) {                                         // the LID : a domed metal cap hinged on the sky dial's side,
+                        const float op = lidQ[q], ey = rs * (1.0f - op) + 0.01f;   // swinging open : seen edge-on, it flattens toward its hinge
+                        const float hx = ox + ux * rs * op, hy = oy + uy * rs * op;   // its centre moves toward the hinge
+                        float e1[24], e2[24];
+                        for (int k = 0; k < 12; ++k) {
+                            const float a2 = (float)k / 12.0f * 2.0f * PI, ca = cosf(a2), sa = sinf(a2);
+                            e1[2 * k] = hx + (tx * ca * (rs + 0.8f * S) + ux * sa * (ey + 0.8f * S)); e1[2 * k + 1] = hy + (ty * ca * (rs + 0.8f * S) + uy * sa * (ey + 0.8f * S));
+                            e2[2 * k] = hx + (tx * ca * rs + ux * sa * ey);                         e2[2 * k + 1] = hy + (ty * ca * rs + uy * sa * ey);
+                        }
+                        fill_poly_aa(dev, e1, 12, g_dm.edge);
+                        fill_poly_aa(dev, e2, 12, op < 0.5f ? g_dm.body : g_dm.bot);  // its top, then its underside as it turns
+                        if (op < 0.4f) {                                            // closed : a lit dome and a little knob
+                            disc(dev, hx - tx * rs * 0.25f - ux * ey * 0.25f, hy - ty * rs * 0.25f - uy * ey * 0.25f, rs * 0.35f * (1.0f - op), MA(0x60, g_dm.glint));
+                            disc(dev, hx - ux * ey * 0.62f, hy - uy * ey * 0.62f, rs * 0.14f, g_dm.lite);
+                        }
+                        color_state(dev);
+                    }
                     if (cell >= 0 && sc >= 1.0f && lab >= 1.0f && mm_weather_elem(wid) == di && q < nNow)
                         resonance_filament(dev, ox, oy, rs + 0.4f * S, 0.55f, PI - 0.55f, 1.8f * S, di, S);   // RESONANCE : at the slot's foot
                 }
