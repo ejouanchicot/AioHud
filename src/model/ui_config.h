@@ -728,7 +728,8 @@ struct UiConfig {
     int   mmPodHP = 0;
     int   mmPodDay = 3;
     int   mmPodMoon = 2;
-    int   mmPodSky = 5;                // the SKY module (the day/night window + the weather's two enamel wheels) : its slot, the same six
+    int   mmPodSky = 5;                // the DAY / NIGHT module : its slot (the same six), 6 = off
+    int   mmPodWx = 4;                 // the WEATHER module (two wheels), independent of the day / night : its slot, 6 = off
     // transient (not saved) : minimap rect as screen fractions + pending wheel, so the mouse callback can
     // zoom the map when the cursor is over it (outside edit mode). Written by the Minimap widget each frame.
     float mmHitX = 0.0f, mmHitY = 0.0f, mmHitW = 0.0f, mmHitH = 0.0f;

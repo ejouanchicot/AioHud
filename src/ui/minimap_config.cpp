@@ -122,8 +122,14 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
                 if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Day dial", "Cadran du jour"), tr(DD_EN[dd], DD_FR[dd]))) { c.mmDayDial = wrap(dd + d, 3); save_ui_config(); }
             } ROW_NEXT(52.0f)
             if (c.mmDayDial == 2) {   // the MODULES around the compass : where each one sits
-                static const char* SL_EN[6] = { "Top left", "Left", "Bottom left", "Bottom right", "Right", "Top right" };
-                static const char* SL_FR[6] = { "Haut gauche", "Gauche", "Bas gauche", "Bas droite", "Droite", "Haut droite" };
+                static const char* SL_EN[7] = { "Top left", "Left", "Bottom left", "Bottom right", "Right", "Top right", "Off" };
+                static const char* SL_FR[7] = { "Haut gauche", "Gauche", "Bas gauche", "Bas droite", "Droite", "Haut droite", "Aucun" };
+                auto taken = [&](int slot, int self) {           // a slot held by another module (Off holds none)
+                    if (slot == 6) return false;
+                    const int m[4] = { c.mmPodDay, c.mmPodMoon, c.mmPodSky, c.mmPodWx };
+                    for (int q = 0; q < 4; ++q) if (q != self && m[q] == slot) return true;
+                    return false;
+                };
                 { ROW_BAND(52.0f)
                     static const char* HP_EN[2] = { "Hour top, square bottom", "Square top, hour bottom" };
                     static const char* HP_FR[2] = { "Heure en haut, case en bas", "Case en haut, heure en bas" };
@@ -133,22 +139,29 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
                 { ROW_BAND(52.0f)
                     const int s0 = (c.mmPodDay < 0 || c.mmPodDay > 5) ? 3 : c.mmPodDay;
                     if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Day's element", "\xC3\x89l\xC3\xA9ment du jour"), tr(SL_EN[s0], SL_FR[s0]))) {
-                        int n2 = wrap(s0 + d, 6); for (int k = 0; k < 6 && (n2 == c.mmPodMoon || n2 == c.mmPodSky); ++k) n2 = wrap(n2 + d, 6);   // skip the others' slots
+                        int n2 = wrap(s0 + d, 6); for (int k = 0; k < 6 && taken(n2, 0); ++k) n2 = wrap(n2 + d, 6);   // skip the others' slots
                         c.mmPodDay = n2; save_ui_config();
                     }
                 } ROW_NEXT(52.0f)
                 { ROW_BAND(52.0f)
                     const int s0 = (c.mmPodMoon < 0 || c.mmPodMoon > 5) ? 2 : c.mmPodMoon;
                     if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Moon", "Lune"), tr(SL_EN[s0], SL_FR[s0]))) {
-                        int n2 = wrap(s0 + d, 6); for (int k = 0; k < 6 && (n2 == c.mmPodDay || n2 == c.mmPodSky); ++k) n2 = wrap(n2 + d, 6);    // skip the others' slots
+                        int n2 = wrap(s0 + d, 6); for (int k = 0; k < 6 && taken(n2, 1); ++k) n2 = wrap(n2 + d, 6);    // skip the others' slots
                         c.mmPodMoon = n2; save_ui_config();
                     }
                 } ROW_NEXT(52.0f)
                 { ROW_BAND(52.0f)
-                    const int s0 = (c.mmPodSky < 0 || c.mmPodSky > 5) ? 5 : c.mmPodSky;
-                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Sky and weather", "Ciel et m\xC3\xA9t\xC3\xA9o"), tr(SL_EN[s0], SL_FR[s0]))) {
-                        int n2 = wrap(s0 + d, 6); for (int k = 0; k < 6 && (n2 == c.mmPodDay || n2 == c.mmPodMoon); ++k) n2 = wrap(n2 + d, 6);   // skip the others' slots
+                    const int s0 = (c.mmPodSky < 0 || c.mmPodSky > 6) ? 5 : c.mmPodSky;
+                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Day / night", "Jour / nuit"), tr(SL_EN[s0], SL_FR[s0]))) {
+                        int n2 = wrap(s0 + d, 7); for (int k = 0; k < 7 && taken(n2, 2); ++k) n2 = wrap(n2 + d, 7);   // skip the others' slots
                         c.mmPodSky = n2; save_ui_config();
+                    }
+                } ROW_NEXT(52.0f)
+                { ROW_BAND(52.0f)
+                    const int s0 = (c.mmPodWx < 0 || c.mmPodWx > 6) ? 4 : c.mmPodWx;
+                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Weather", "M\xC3\xA9t\xC3\xA9o"), tr(SL_EN[s0], SL_FR[s0]))) {
+                        int n2 = wrap(s0 + d, 7); for (int k = 0; k < 7 && taken(n2, 3); ++k) n2 = wrap(n2 + d, 7);   // skip the others' slots
+                        c.mmPodWx = n2; save_ui_config();
                     }
                 } ROW_NEXT(52.0f)
             }

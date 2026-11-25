@@ -253,7 +253,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "mm5=%.3f,%.3f,%d,%.3f\n", c.mmBezelW, c.mmCardSz, c.mmBezel, c.mmSqBorder);
     fprintf(f, "mm6=%d,%08X,%d\n", c.mmScan, c.mmScanCol, c.mmGrid);   // Wide Scan track on/colour ; map grid square on
     fprintf(f, "mm7=%d,%d,%d,%d,%d,%d\n", c.mmLayout, c.mmClkBand, c.mmInfoBand, c.mmInfoDist, c.mmMarkStyle, c.mmDayDial);
-    fprintf(f, "mm9=%d,%d,%d,%d\n", c.mmPodHP, c.mmPodDay, c.mmPodMoon, c.mmPodSky);   // the Dial's modules : hour/square top-bottom ; the day's and the moon's slots
+    fprintf(f, "mm9=%d,%d,%d,%d,%d\n", c.mmPodHP, c.mmPodDay, c.mmPodMoon, c.mmPodSky, c.mmPodWx);   // the Dial's modules : hour/square top-bottom ; the day's and the moon's slots
     fprintf(f, "mm8=%.1f,%.1f\n", c.mmAW, c.mmAH);   // the box size when placed (smart anchor)   // layout Classic/Compact ; clock band side ; info band off/top/bottom ; distances   // round bezel width / round cardinal size / round bezel on / square border width
     fprintf(f, "ws=%d,%.3f,%.3f,%.3f,%d,%d\n", c.wsShow, c.wsScale, c.wsX, c.wsY, c.wsFont, c.wsFx);   // arcade WS popup
     fprintf(f, "aw=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%d,%.3f,%.3f\n", c.awShow, c.awScale, c.awX, c.awY, c.awScreen, c.awMemory, c.awColors, c.awCount, c.awTimer, c.awStyle, c.awSide, c.awFx, c.awDistort, c.awJobs, c.awBadge, c.awLayout, c.awText, c.awOrb);   // Absorb-TP box
@@ -830,14 +830,16 @@ static bool parse_mm_line(const char* line, UiConfig& c) {
         return true;
     }
     if (strncmp(line, "mm9=", 4) == 0) {                     // the Dial's modules : hour/square top-bottom ; the day's and the moon's slots
-        int hp = 0, dy = 3, mo = 2, sk = 5;
-        const int n = sscanf(line + 4, "%d,%d,%d,%d", &hp, &dy, &mo, &sk);
+        int hp = 0, dy = 3, mo = 2, sk = 5, wx = 4;
+        const int n = sscanf(line + 4, "%d,%d,%d,%d,%d", &hp, &dy, &mo, &sk, &wx);
         if (n >= 1) c.mmPodHP = (hp == 1) ? 1 : 0;
         if (n >= 2 && dy >= 0 && dy <= 5) c.mmPodDay = dy;
         if (n >= 3 && mo >= 0 && mo <= 5) c.mmPodMoon = mo;
-        if (n >= 4 && sk >= 0 && sk <= 5) c.mmPodSky = sk;
+        if (n >= 4 && sk >= 0 && sk <= 6) c.mmPodSky = sk;
+        if (n >= 5 && wx >= 0 && wx <= 6) c.mmPodWx = wx;
         if (c.mmPodMoon == c.mmPodDay) c.mmPodMoon = (c.mmPodDay + 5) % 6;   // never the same slot
-        for (int k = 0; k < 6 && (c.mmPodSky == c.mmPodDay || c.mmPodSky == c.mmPodMoon); ++k) c.mmPodSky = (c.mmPodSky + 1) % 6;
+        for (int k = 0; k < 6 && c.mmPodSky != 6 && (c.mmPodSky == c.mmPodDay || c.mmPodSky == c.mmPodMoon); ++k) c.mmPodSky = (c.mmPodSky + 1) % 6;
+        for (int k = 0; k < 6 && c.mmPodWx != 6 && (c.mmPodWx == c.mmPodDay || c.mmPodWx == c.mmPodMoon || c.mmPodWx == c.mmPodSky); ++k) c.mmPodWx = (c.mmPodWx + 1) % 6;
         return true;
     }
     if (strncmp(line, "mm8=", 4) == 0) {                     // the box size when placed (smart anchor)
@@ -1435,7 +1437,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
     if (a.mmScan != b.mmScan || a.mmScanCol != b.mmScanCol || a.mmGrid != b.mmGrid) return false;
     if (a.mmLayout != b.mmLayout || a.mmClkBand != b.mmClkBand || a.mmInfoBand != b.mmInfoBand || a.mmInfoDist != b.mmInfoDist || a.mmMarkStyle != b.mmMarkStyle || a.mmDayDial != b.mmDayDial) return false;
     if (a.mmAW != b.mmAW || a.mmAH != b.mmAH) return false;
-    if (a.mmPodHP != b.mmPodHP || a.mmPodDay != b.mmPodDay || a.mmPodMoon != b.mmPodMoon || a.mmPodSky != b.mmPodSky) return false;
+    if (a.mmPodHP != b.mmPodHP || a.mmPodDay != b.mmPodDay || a.mmPodMoon != b.mmPodMoon || a.mmPodSky != b.mmPodSky || a.mmPodWx != b.mmPodWx) return false;
     if (a.wsShow != b.wsShow || a.wsScale != b.wsScale || a.wsX != b.wsX || a.wsY != b.wsY || a.wsFont != b.wsFont || a.wsFx != b.wsFx || a.wsNameCol != b.wsNameCol || a.wsDmgCol1 != b.wsDmgCol1 || a.wsDmgCol2 != b.wsDmgCol2) return false;
     for (int i = 0; i < UiConfig::GB_COUNT; ++i) if (a.boxGrow[i] != b.boxGrow[i]) return false;
     if (a.scShow != b.scShow || a.scScale != b.scScale || a.scX != b.scX || a.scY != b.scY || a.scNearby != b.scNearby || a.scReadyDelay != b.scReadyDelay) return false;

@@ -1140,7 +1140,8 @@ static void grain_sector(u32 dev, float cx, float cy, float r0, float r1, float 
 // one) ; Minimap::draw sets the angles each frame from the config.
 static const float POD_SLOT[6] = { -2.3562f, 3.14159265f, 2.3562f, 0.7854f, 0.0f, -0.7854f };   // NW, W, SW, SE, E, NE
 static float s_dayTh = 0.7854f, s_moonTh = 2.3562f, s_hourTh = -1.5707963f, s_posTh = 1.5707963f, s_skyTh = -0.7854f;
-static bool s_skyPod = false;   // the SKY module replaces the old sky dial and its weather capsules
+static bool s_skyPod = false;   // the modules' mode (no plinth) : the sky and weather modules replace the old sky dial and its capsules
+static bool s_skyOn = false, s_wxOn = false; static float s_wxTh = 0.0f;
 // reading order : left to right, top to bottom on a side -- +1 when the increasing angle runs that way here
 static float pod_dir(float th) { return (-sinf(th) + 0.5f * cosf(th)) >= 0.0f ? 1.0f : -1.0f; }
 // a wheel's figure turned in its reading sense (head outward on the top half, toward the centre on the bottom half,
@@ -1777,13 +1778,16 @@ static void pod_tex_clipped(u32 dev, float ccx, float ccy, float ang, float rc, 
 // parchment : parchment is the calendar, the black is the sky's -- they never read alike) : one element for a single
 // weather, the SAME element on both for a double, both bare for none ; they roll together when the weather changes.
 static float sky_cell_ratio() { return TUNE("mm.sky_cell", 1.6f); }   // the sky window's width, in wheel widths
-static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th0, int hh, int mi, int wid, u32 wxTex, u32 skyTex) {
+static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th0, int hh, int mi, int wid, u32 wxTex, u32 skyTex, bool showSky, bool showWx) {
     PERF_SCOPE("mm.skypod");
     PodGeo G = pod_geo(r, S);
     const float isz = G.isz, rw = G.rw, wr = G.wr, as = G.as, k = sky_cell_ratio();   // the SAME tube as the day's (it was 0.92 x)
-    const float Wh = (k + 2.0f) * as * 0.5f, dir = pod_dir(th0);
+    // TWO INDEPENDENT MODULES (the user 2026-11-25 : the day / night optional, placed in a corner or on a side ; the weather
+    // independent of it, placed anywhere free) : this tube holds the sky wheel, the weather's two wheels, or (never now) both
+    const float skyW = showSky ? k * as : 0.0f, wxW = showWx ? 2.0f * as : 0.0f;
+    const float Wh = (skyW + wxW) * 0.5f, dir = pod_dir(th0);
     const float aStart = th0 - dir * Wh;
-    const float aSky = aStart + dir * (k * as * 0.5f), aW[2] = { aStart + dir * (k * as + as * 0.5f), aStart + dir * (k * as + as * 1.5f) };
+    const float aSky = aStart + dir * (skyW * 0.5f), aW[2] = { aStart + dir * (skyW + as * 0.5f), aStart + dir * (skyW + as * 1.5f) };
     color_state(dev);
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Wh - 0.02f, th0 + Wh + 0.02f, g_dm.dark);   // the window's chamfer
     // ---- the SKY : a PAPYRUS WHEEL painted in ink and wash (the user 2026-11-25 : "a day/night cycle, drawn on papyrus,
@@ -1791,6 +1795,7 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
     // dusk, a pale blue by day), the sun or the moon inked where the hour puts it, pen stars by night, a line of hills --
     // and the wheel rolls ONE NOTCH AN HOUR along its axis, the hour's scene out, the next one in. Everything is clipped to
     // the wheel's own annular cell (each point clamped to its radii and angles : the roll axis IS the radius).
+    if (showSky) {
     const float PI = 3.14159265f, hS = k * as * 0.5f, lo = rw - wr, hi = rw + wr;
     pod_wheel_cell(dev, cx, cy, rw, wr, aSky, k * as);                     // the papyrus wheel itself
     auto scene = [&](int hour, float shift) {
@@ -1911,7 +1916,9 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
         }
         (void)mi;
     }
+    }   // (showSky)
     // ---- the WEATHER : two papyrus wheels (one element for a single weather, the same twice for a double) ----
+    if (showWx) {
     static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };              // weather pair -> the element's cell (the icons' order)
     const int cellNow = (wid >= 4 && wid <= 19) ? WCELL[(wid - 4) / 2] : -1, nNow = cellNow < 0 ? 0 : ((wid & 1) ? 2 : 1);
     const int want[2] = { nNow >= 1 ? cellNow : -1, nNow >= 2 ? cellNow : -1 };
@@ -1929,8 +1936,10 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
         dSetTex(dev, 0, 0);
     }
     color_state(dev);
+    }   // (showWx)
     for (int q = 0; q < 2; ++q) {                                         // the cuts : sky | weather | weather -- a dark cut, a lit brass edge
-        const float sa = aStart + dir * (k * as + as * (float)q);
+        if (q == 0 ? !(showSky && showWx) : !showWx) continue;
+        const float sa = aStart + dir * (skyW + as * (float)q);
         pod_cut(dev, cx, cy, rw, wr, sa, S);
         const float tx = -sinf(sa) * dir, ty = cosf(sa) * dir;
         seg_soft(dev, cx + cosf(sa) * (rw - wr) + tx * 0.9f * S, cy + sinf(sa) * (rw - wr) + ty * 0.9f * S,
@@ -1940,9 +1949,9 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
     pod_caps(dev, cx, cy, rw, wr, th0 - Wh, th0 + Wh, S);
     color_state(dev);
 }
-static float sky_pod_ph(float r, float S) {                               // its half span, for the collar
+static float sky_pod_ph(float r, float S, bool sky, bool wx) {           // its half span, for the collar
     const PodGeo G = pod_geo(r, S);
-    return (sky_cell_ratio() + 2.0f) * G.as * 0.5f + 2.6f * S / G.rm + 0.04f;
+    return ((sky ? sky_cell_ratio() : 0.0f) + (wx ? 2.0f : 0.0f)) * G.as * 0.5f + 2.6f * S / G.rm + 0.04f;
 }
 
 // THE MOON POD (the user 2026-11-25 : "the same principle as the elements, yesterday / today / tomorrow" -- and the
@@ -3112,8 +3121,10 @@ void Minimap::draw(const Frame& f) {
         s_dayTh = POD_SLOT[(c.mmPodDay < 0 || c.mmPodDay > 5) ? 3 : c.mmPodDay];
         s_moonTh = POD_SLOT[(c.mmPodMoon < 0 || c.mmPodMoon > 5) ? 2 : c.mmPodMoon];
         s_hourTh = c.mmPodHP == 1 ? 1.5707963f : -1.5707963f; s_posTh = -s_hourTh;
-        s_skyTh = POD_SLOT[(c.mmPodSky < 0 || c.mmPodSky > 5) ? 5 : c.mmPodSky];
-        s_skyPod = c.mmClock && (c.mmClkTime || c.mmClkDay) && TUNE("mm.foot_body", 0.0f) <= 0.5f;
+        s_skyPod = TUNE("mm.foot_body", 0.0f) <= 0.5f;
+        s_skyOn = s_skyPod && c.mmPodSky >= 0 && c.mmPodSky <= 5;           // 6 = off
+        s_wxOn = s_skyPod && c.mmPodWx >= 0 && c.mmPodWx <= 5;
+        s_skyTh = POD_SLOT[s_skyOn ? c.mmPodSky : 5]; s_wxTh = POD_SLOT[s_wxOn ? c.mmPodWx : 4];
         s_podN = 0;
         if (TUNE("mm.foot_body", 0.0f) <= 0.5f) {
             dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);
@@ -3124,7 +3135,8 @@ void Minimap::draw(const Frame& f) {
             auto add = [&](float th, float ph) { if (s_podN < POD_MAX) { s_podTh[s_podN] = th; s_podPh[s_podN] = ph; ++s_podN; } };
             if (c.mmClock && c.mmClkDay) add(s_dayTh, G.Ph);
             if (c.mmClock && c.mmClkMoon) add(s_moonTh, G.Ph);
-            if (s_skyPod) add(s_skyTh, sky_pod_ph(r, S));
+            if (s_skyOn) add(s_skyTh, sky_pod_ph(r, S, true, false));
+            if (s_wxOn) add(s_wxTh, sky_pod_ph(r, S, false, true));
             if (c.mmClock && c.mmClkTime && tfP) add(s_hourTh, (snap(drum_width(tfP, "00:00", pSzP, S) * 0.5f + 3.0f * S) + 3.0f * S) / rwT + 2.0f * S / rmT);
             if (c.mmGrid && tfP) {
                 int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
@@ -3138,11 +3150,12 @@ void Minimap::draw(const Frame& f) {
             pod_collar(dev, ccx, ccy, r, S, dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f)));
         }
     }
-    if (dial && !dialSq && c.mmDayDial == 2 && s_skyPod) {               // the SKY MODULE : the day/night window + the weather's enamel wheels
+    if (dial && !dialSq && c.mmDayDial == 2 && (s_skyOn || s_wxOn)) {   // the DAY / NIGHT module and the WEATHER module, each in its slot
         const VanaClock sv = dial_vana(g.vana);
         ensure_raw_tex_mip(dev, wxTex_, wxR_, plugin_path_r("assets\\weather_icons.raw"), 1024, 128);
-        draw_sky_pod(dev, ccx, ccy, r, S, s_skyTh, sv.hh, sv.mm, mm_weather(g.weather), wxTex_,   // (the painted scenes : off -- the code's sky is easier to frame, the user 2026-11-25)
-                     TUNE("mm.sky_tex", 0.0f) > 0.5f ? ensure_raw_tex_mip(dev, skyTex_, skyR_, plugin_path_r("assets\\sky_frames.raw"), 1024, 512) : 0u);
+        const u32 skT = TUNE("mm.sky_tex", 0.0f) > 0.5f ? ensure_raw_tex_mip(dev, skyTex_, skyR_, plugin_path_r("assets\\sky_frames.raw"), 1024, 512) : 0u;   // (the painted scenes : off)
+        if (s_skyOn) draw_sky_pod(dev, ccx, ccy, r, S, s_skyTh, sv.hh, sv.mm, mm_weather(g.weather), wxTex_, skT, true, false);
+        if (s_wxOn)  draw_sky_pod(dev, ccx, ccy, r, S, s_wxTh, sv.hh, sv.mm, mm_weather(g.weather), wxTex_, skT, false, true);
     }
     if (dial && !dialSq && c.mmDayDial == 2 && c.mmClock && c.mmClkDay) {          // the DAY DISC : under the frame, the map and the ring -- and BEHIND the position's tube (drawn before it)
         dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);
@@ -3722,7 +3735,22 @@ void Minimap::draw(const Frame& f) {
                         disc(dev, mx, my, W * 0.45f, 0xFFA82418u);
                     }
                 };
-                if (c.mmClock && c.mmClkDay) marks(s_dayTh, 0.0f, true);
+                // the RED POINTER (red enamel, as the N) : at the present wheel, pointing out at it -- the moon's and the day's
+                auto redPtr = [&](float thP, float rb) {
+                        const float ux = cosf(thP), uy = sinf(thP), tx = -uy, ty = ux;
+                        const float h = hA * 0.42f, wd = hA * 0.34f;
+                        const float bx = ccx + ux * rb, by = ccy + uy * rb;
+                        float tr[6] = { bx + ux * h, by + uy * h, bx + tx * wd, by + ty * wd, bx - tx * wd, by - ty * wd };
+                        float sh[6]; for (int q = 0; q < 6; ++q) sh[q] = tr[q] + (q & 1 ? 1.1f : 0.8f) * S;
+                        fill_poly_aa(dev, sh, 3, 0x90000000u);
+                        float ed[6] = { tr[0] + ux * 1.4f * S, tr[1] + uy * 1.4f * S, tr[2] + tx * 1.0f * S - ux * S, tr[3] + ty * 1.0f * S - uy * S, tr[4] - tx * 1.0f * S - ux * S, tr[5] - ty * 1.0f * S - uy * S };
+                        fill_poly_aa(dev, ed, 3, g_dm.edge | 0xFF000000u);
+                        fill_poly_aa(dev, tr, 3, 0xFFB8301Eu);
+                        const float hl[6] = { tr[0], tr[1], tr[2], tr[3], bx, by };
+                        fill_poly_aa(dev, hl, 3, 0x40FFB0A0u);
+                        color_state(dev);
+                };
+                if (c.mmClock && c.mmClkDay) { marks(s_dayTh, G.as * TUNE("mm.mhead_past", 0.40f), true, false); redPtr(s_dayTh, rM + hA * 0.25f); }   // the same red pointer as the moon's, not the lozenge
                 if (c.mmClock && c.mmClkMoon) {
                     // THE DAYS TO THE NEXT NEW / FULL MOON (the user 2026-11-25) : a two-wheel counter on the bezel, centred over
                     // the NEXT moon's wheel, laid along the bezel and turned with it (drum_arc) ; the arrow's head passes beyond it
@@ -3736,20 +3764,7 @@ void Minimap::draw(const Frame& f) {
                     (void)half;                                                    // the previous moon's tail, through it, to the next moon's head
                     marks(s_moonTh, G.as * TUNE("mm.mhead_past", 0.40f), true, false);   // the head well past the next moon
                     if (nf) drum_arc(dev, nf, 0, ccx, ccy, s_moonTh + pod_dir(s_moonTh) * cA, rM, dhh, d2, dsz, S);
-                    {   // a RED POINTER on the counter's outer rim, pointing at the present moon (red enamel, as the N)
-                        const float ux = cosf(s_moonTh), uy = sinf(s_moonTh), tx = -uy, ty = ux;
-                        const float rb = rM + dhh + 1.5f * S, h = hA * 0.42f, wd = hA * 0.34f;
-                        const float bx = ccx + ux * rb, by = ccy + uy * rb;
-                        float tr[6] = { bx + ux * h, by + uy * h, bx + tx * wd, by + ty * wd, bx - tx * wd, by - ty * wd };
-                        float sh[6]; for (int q = 0; q < 6; ++q) sh[q] = tr[q] + (q & 1 ? 1.1f : 0.8f) * S;
-                        fill_poly_aa(dev, sh, 3, 0x90000000u);
-                        float ed[6] = { tr[0] + ux * 1.4f * S, tr[1] + uy * 1.4f * S, tr[2] + tx * 1.0f * S - ux * S, tr[3] + ty * 1.0f * S - uy * S, tr[4] - tx * 1.0f * S - ux * S, tr[5] - ty * 1.0f * S - uy * S };
-                        fill_poly_aa(dev, ed, 3, g_dm.edge | 0xFF000000u);
-                        fill_poly_aa(dev, tr, 3, 0xFFB8301Eu);
-                        const float hl[6] = { tr[0], tr[1], tr[2], tr[3], bx, by };
-                        fill_poly_aa(dev, hl, 3, 0x40FFB0A0u);
-                        color_state(dev);
-                    }
+                    redPtr(s_moonTh, rM + dhh + 1.5f * S);   // a RED POINTER on the counter's outer rim, at the present moon
                 }
             }
         } else
