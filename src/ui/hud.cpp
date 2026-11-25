@@ -44,6 +44,21 @@
 
 namespace aio {
 
+// The HUD draw's SEH filter : NOTE where the fault happened (code, address, and the address as an offset into AioHud)
+// so the log names it -- the handler used to count faults only, and a fault repeating every frame said nothing about
+// where (2026-11-25 : a font change blanked every text, 146 faults, no address)
+static u32 g_hudExCode = 0, g_hudExAddr = 0, g_hudExOff = 0;
+static int hud_seh_note(EXCEPTION_POINTERS* ep) {
+    if (ep && ep->ExceptionRecord) {
+        g_hudExCode = ep->ExceptionRecord->ExceptionCode; g_hudExAddr = (u32)(uintptr_t)ep->ExceptionRecord->ExceptionAddress;
+        MEMORY_BASIC_INFORMATION mbi; HMODULE self = 0;
+        if (VirtualQuery((void*)&hud_seh_note, &mbi, sizeof(mbi))) self = (HMODULE)mbi.AllocationBase;
+        g_hudExOff = self ? g_hudExAddr - (u32)(uintptr_t)self : 0;
+    }
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+
+
 // The Help samples own lazy texture copies at file scope in their own hud_*.cpp (they must draw without a Hud).
 // These forget them on a device change -- see the dev != last_dev_ block in Hud::render.
 void zonetracker_help_forget();
@@ -547,7 +562,7 @@ void Hud::render(u32 dev) {
         draw_config_preview(f);                // real party+alliance demo boxes inside the config preview stage
         PERF_END("config.preview");
         perf_overlay_draw(f);                  // //aio perf : the measurement itself, on top of everything (its own row, "perf.overlay")
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    } __except (hud_seh_note(GetExceptionInformation())) {
         // RATE-LIMITED, not once-per-session. A `static bool logged` meant a widget faulting on EVERY frame
         // produced exactly one line for the whole session -- indistinguishable in the log from a single transient
         // hiccup, while the HUD silently drew nothing. Report the first one immediately, then at most one line
@@ -564,7 +579,7 @@ void Hud::render(u32 dev) {
         ++faults;
         if (faults == 1 || (int)(nowMs - nextLogMs) >= 0) {
             nextLogMs = nowMs + 5000;
-            windower::debug::log("HUD draw threw (SEH) -- %u fault(s) so far this session", faults);
+            windower::debug::log("HUD draw threw (SEH) -- %u fault(s) so far this session ; the last : code %08X at AioHud+0x%X (abs %08X)", faults, g_hudExCode, g_hudExOff, g_hudExAddr);
         }
     }
     // No state block -> the game's own render state is NOT protected from our draws (rule 8). It is retried every
