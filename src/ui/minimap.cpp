@@ -1332,14 +1332,23 @@ static void pod_glass(u32 dev, float cx, float cy, float rw, float wr, float a0,
     // light pixels along the tube -- the user 2026-11-25)
     ring_sector(dev, cx, cy, rw + wr - 0.7f * S, rw + wr + 0.9f * S, a0, a1, 0xE00A0806u);
     ring_sector(dev, cx, cy, rw - wr - 0.9f * S, rw - wr + 0.7f * S, a0, a1, 0xE00A0806u);
-    sector_grad(dev, cx, cy, rw - wr, rw - wr * 0.45f, a0, a1, 0x58000000u, 0x00000000u, 0x58000000u, 0x00000000u);   // the inner edge curves away : darker
-    sector_grad(dev, cx, cy, rw + wr * 0.50f, rw + wr, a0, a1, 0x00FFFFFFu, 0x12FFFFFFu, 0x00FFFFFFu, 0x12FFFFFFu);   // the outer edge catches the sky (a whisper)
-    const float l0 = cosf(a0) * POD_LX + sinf(a0) * POD_LY, l1 = cosf(a1) * POD_LX + sinf(a1) * POD_LY;
-    const u32 s0 = MA((u32)(8.0f + 14.0f * (l0 > 0.0f ? l0 : 0.0f)), 0xFFFFFFu), s1 = MA((u32)(8.0f + 14.0f * (l1 > 0.0f ? l1 : 0.0f)), 0xFFFFFFu);   // subtle : it must never strike the figures out
+    // A DOMED GLASS TUBE (the user 2026-11-25 : "we no longer see the glass tubes over the wheels -- we want a domed effect,
+    // they are tubes") : across the tube (the radial axis) the glass darkens at BOTH edges where it curves away, a faint
+    // veil over the whole, a crisp SPECULAR STREAK along its length on the side facing the lamp (upper left) with a soft
+    // halo, and a dimmer reflection on the opposite side -- the streaks kept near the edges, clear of the figures
+    const float am = (a0 + a1) * 0.5f, lOut = cosf(am) * POD_LX + sinf(am) * POD_LY;   // > 0 : the OUTER side faces the lamp
+    const float sg = lOut >= 0.0f ? 1.0f : -1.0f, kG = TUNE("mm.glass", 1.0f);
+    auto A = [&](float a) { return (u32)clampf(a * kG, 0.0f, 255.0f); };
+    sector_grad(dev, cx, cy, rw - wr, rw - wr * 0.40f, a0, a1, MA(A(96), 0x000000u), 0x00000000u, MA(A(96), 0x000000u), 0x00000000u);   // the edges curve away : darker
+    sector_grad(dev, cx, cy, rw + wr * 0.40f, rw + wr, a0, a1, 0x00000000u, MA(A(96), 0x000000u), 0x00000000u, MA(A(96), 0x000000u));
     dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
-    sector_grad(dev, cx, cy, rw + wr * 0.70f, rw + wr * 0.80f, a0, a1, s0, s0, s1, s1);                       // the specular line, near the outer edge (clear of the figures)
-    sector_grad(dev, cx, cy, rw + wr * 0.55f, rw + wr * 0.70f, a0, a1, 0, s0, 0, s1);                          // its soft halo (inner side)
-    sector_grad(dev, cx, cy, rw - wr * 0.62f, rw - wr * 0.58f, a0, a1, 0x08FFFFFFu, 0x08FFFFFFu, 0x08FFFFFFu, 0x08FFFFFFu);   // a faint second reflection
+    ring_sector(dev, cx, cy, rw - wr, rw + wr, a0, a1, MA(A(10), 0xFFFFFFu));                       // the glass veil
+    const float rS = rw + sg * wr * 0.68f, hw = wr * 0.07f, hh = wr * 0.22f;                       // the specular streak, near the lit edge
+    sector_grad(dev, cx, cy, rS - hh, rS, a0, a1, 0x00000000u, MA(A(46), 0xFFFFFFu), 0x00000000u, MA(A(46), 0xFFFFFFu));
+    sector_grad(dev, cx, cy, rS, rS + hh, a0, a1, MA(A(46), 0xFFFFFFu), 0x00000000u, MA(A(46), 0xFFFFFFu), 0x00000000u);
+    ring_sector(dev, cx, cy, rS - hw, rS + hw, a0 + (a1 - a0) * 0.03f, a1 - (a1 - a0) * 0.03f, MA(A(120), 0xFFFFFFu));   // its crisp core
+    const float rT = rw - sg * wr * 0.74f;                                                          // the dimmer reflection opposite
+    ring_sector(dev, cx, cy, rT - hw, rT + hw, a0 + (a1 - a0) * 0.08f, a1 - (a1 - a0) * 0.08f, MA(A(34), 0xFFFFFFu));
     dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
     color_state(dev);
 }
