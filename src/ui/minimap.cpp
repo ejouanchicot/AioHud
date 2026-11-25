@@ -2982,11 +2982,7 @@ static void draw_gem(u32 dev, float cx, float cy, float g, int kind, float t, fl
     disc_glow(dev, cx, cy, g * 0.35f, MA((u32)(90.0f * pulse), glow), g * 0.9f);                 // the glow inside
     disc_glow(dev, cx - g * 0.25f, cy - g * 0.28f, g * 0.10f, 0xC0FFFFFFu, g * 0.35f);           // the specular, toward the lamp
     disc(dev, cx - g * 0.24f, cy - g * 0.27f, g * 0.07f, 0xE0FFFFFFu);
-    for (int k = 0; k < 4; ++k) {                                                               // motes of fire turning inside
-        const float a = t * (0.4f + 0.13f * k) + k * 1.7f, rr = g * (0.25f + 0.12f * k);
-        const float tw = 0.5f + 0.5f * sinf(t * (2.1f + k) + k);
-        disc_glow(dev, cx + cosf(a) * rr, cy + sinf(a) * rr * 0.8f, g * 0.03f, MA((u32)(150.0f * tw), glow), g * 0.10f);
-    }
+    // (no moving motes inside : they read as bubbles -- the user 2026-11-25)
     {   // a star glint, now and then
         const float ph = fmodf(t, 5.0f), k = ph < 0.6f ? sinf(ph / 0.6f * 3.14159f) : 0.0f;
         if (k > 0.01f) {
