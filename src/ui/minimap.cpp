@@ -1326,130 +1326,14 @@ static void pod_wheels_over(u32 dev, float cx, float cy, float rw, float wr, flo
 // darker at its inner edge (it curves away), brighter at its outer edge, with ONE thin specular line where the lamp
 // catches the curve -- stronger on the lamp's side ; at each end a turned METAL CAP (a ferrule) clamps the tube : a
 // cylinder across the radius, lit on its outer half, a dark seam against the glass.
-// ---- THE GLASS TUBES' REFRACTION (the user 2026-11-25 : "rather than that, can't you do it with distortion, with
-// DirectX 8 ?") : what is under a tube (wheels, figures, icons) is COPIED from the render target into a texture
-// (CopyRects, GPU to GPU -- the skillchain effects' proven technique, hud_scfx.cpp) and drawn back over itself through
-// a mesh whose UVs bend ACROSS the tube as a glass cylinder would : magnified at the axis, compressed toward the walls,
-// and at the very edges a thin INVERTED band (the internal reflection a glass rod shows) ; the walls a little darker.
-// The copy texture is a D3DPOOL_DEFAULT render target : released when the Dial is not drawn (Minimap::draw), on
-// dispose ; forgotten on device loss (rule 4). Every step checked and logged ; three failures 0.5 s apart -> OFF until
-// the next device (logged), and the tubes keep their drawn glass. TUNE mm.refract (1 on).
-static u32 s_rfTex = 0, s_rfSurf = 0, s_rfFmt = 0, s_rfNext = 0; static int s_rfFail = 0; static bool s_rfOff = false;
-static const int RF_TS = 512;
-static void rf_rel_obj(u32 o) { auto f = vmethod<u32(__stdcall*)(u32)>(o, 2); if (f) f(o); }
-void refract_release() { if (s_rfSurf) rf_rel_obj(s_rfSurf); if (s_rfTex) release_texture(s_rfTex); s_rfSurf = s_rfTex = 0; }
-void refract_forget() { s_rfTex = s_rfSurf = 0; s_rfFail = 0; s_rfOff = false; s_rfNext = 0; }
-static bool rf_fail(const char* step, long hr) {
-    ++s_rfFail; refract_release();
-    if (s_rfFail >= 3) { s_rfOff = true; windower::debug::log("MM refract OFF : %s failed hr=0x%08X (3 tries) -- drawn glass until the next device", step, (unsigned)hr); }
-    else { s_rfNext = (GetTickCount() + 500u) | 1u; windower::debug::log("MM refract : %s failed hr=0x%08X (try %d/3)", step, (unsigned)hr, s_rfFail); }
-    return false;
-}
-static bool rf_ensure(u32 dev, u32& rt, int& W, int& H) {
-    rt = 0;
-    if (s_rfOff || (s_rfNext && (int)(GetTickCount() - s_rfNext) < 0)) return false;
-    auto getrt = vmethod<long(__stdcall*)(u32, u32*)>(dev, 32);           // GetRenderTarget
-    if (!getrt) return false;
-    u32 srf = 0; long hr = getrt(dev, &srf);
-    if (hr < 0 || !valid_ptr(srf)) return rf_fail("GetRenderTarget", hr);
-    u32 desc[8] = { 0 }; auto gd = vmethod<long(__stdcall*)(u32, void*)>(srf, 8);
-    if (!gd || (hr = gd(srf, desc)) < 0) { rf_rel_obj(srf); return rf_fail("GetDesc", hr); }
-    if (desc[5] != 0) { rf_rel_obj(srf); s_rfOff = true; windower::debug::log("MM refract OFF : the render target is multisampled (%u) -- drawn glass", desc[5]); return false; }
-    W = (int)desc[6]; H = (int)desc[7];
-    if (!s_rfTex || s_rfFmt != desc[0]) {
-        refract_release();
-        auto ct = vmethod<long(__stdcall*)(u32, u32, u32, u32, u32, u32, u32, u32*)>(dev, 20);   // CreateTexture
-        u32 tx = 0; hr = ct ? ct(dev, (u32)RF_TS, (u32)RF_TS, 1, 1 /* RENDERTARGET */, desc[0], 0 /* POOL_DEFAULT */, &tx) : -1;
-        if (hr < 0 || !valid_ptr(tx)) { rf_rel_obj(srf); return rf_fail("CreateTexture", hr); }
-        auto gs = vmethod<long(__stdcall*)(u32, u32, u32*)>(tx, 15);      // GetSurfaceLevel
-        u32 ts = 0; hr = gs ? gs(tx, 0, &ts) : -1;
-        if (hr < 0 || !valid_ptr(ts)) { release_texture(tx); rf_rel_obj(srf); return rf_fail("GetSurfaceLevel", hr); }
-        s_rfTex = tx; s_rfSurf = ts; s_rfFmt = desc[0];
-        windower::debug::log("MM refract ready : %dx%d copy, format %u, target %dx%d", RF_TS, RF_TS, desc[0], W, H);
-    }
-    rt = srf; return true;
-}
-// bend the window (the annular sector rw +- wr, a0..a1) ; false = not available (the drawn glass alone)
-static bool refract_tube(u32 dev, float cx, float cy, float rw, float wr, float a0, float a1) {
-    if (TUNE("mm.refract", 1.0f) <= 0.5f) return false;
-    // the window's screen bounding box
-    float bx0 = 1e9f, by0 = 1e9f, bx1 = -1e9f, by1 = -1e9f;
-    for (int i = 0; i <= 8; ++i) for (int q = 0; q < 2; ++q) {
-        const float a = a0 + (a1 - a0) * (float)i / 8.0f, rr = q ? rw + wr : rw - wr, x = cx + cosf(a) * rr, y = cy + sinf(a) * rr;
-        bx0 = fminf(bx0, x); by0 = fminf(by0, y); bx1 = fmaxf(bx1, x); by1 = fmaxf(by1, y);
-    }
-    int x0 = (int)floorf(bx0) - 2, y0 = (int)floorf(by0) - 2, x1 = (int)ceilf(bx1) + 2, y1 = (int)ceilf(by1) + 2;
-    if (x1 - x0 > RF_TS || y1 - y0 > RF_TS || x1 <= x0 || y1 <= y0) return false;
-    u32 rt; int W, H; if (!rf_ensure(dev, rt, W, H)) return false;
-    if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0; if (x1 > W) x1 = W; if (y1 > H) y1 = H;
-    if (x1 <= x0 || y1 <= y0) { rf_rel_obj(rt); return false; }
-    RECT rc = { x0, y0, x1, y1 }; POINT pt = { 0, 0 };
-    auto cr = vmethod<long(__stdcall*)(u32, u32, const RECT*, u32, u32, const POINT*)>(dev, 28);   // CopyRects
-    const long hr = cr ? cr(dev, rt, &rc, 1, s_rfSurf, &pt) : -1;
-    rf_rel_obj(rt);
-    if (hr < 0) return rf_fail("CopyRects", hr);
-    s_rfFail = 0;
-    // the lens ACROSS the tube : t in [-1, 1] from the inner wall to the outer ; the source sampled at lens(t)
-    const float kA = TUNE("mm.refract_k", 0.02f), sA = sinf(kA), edge = TUNE("mm.refract_edge", 0.86f);
-    auto lens = [&](float t, float& shade) {
-        const float at = fabsf(t), sg = t < 0.0f ? -1.0f : 1.0f;
-        shade = at > 0.80f ? 1.0f - 0.30f * (at - 0.80f) / 0.20f : 1.0f;   // only the glass's curved edge darker : the figures untouched
-        if (at > edge) {                                                 // the internal reflection : a thin inverted band
-            const float q = (at - edge) / (1.0f - edge);
-            shade *= 0.62f;
-            return sg * (asinf(clampf(edge * sA, -1.0f, 1.0f)) / kA) * (1.0f - 0.55f * q);
-        }
-        return sg * asinf(clampf(at * sA, -1.0f, 1.0f)) / kA;          // magnified at the axis, compressed toward the walls
-    };
-    const int NA = 18, NR = 14; const float inv = 1.0f / (float)RF_TS;
-    static Vtx m[NA * NR * 6];
-    float px[NR + 1][NA + 1], py[NR + 1][NA + 1], pu[NR + 1][NA + 1], pv[NR + 1][NA + 1]; u32 pc[NR + 1][NA + 1];
-    for (int j = 0; j <= NR; ++j) {
-        const float t = -1.0f + 2.0f * (float)j / NR;
-        float sh; const float ts = lens(t, sh);
-        const u32 g = (u32)clampf(255.0f * sh, 0.0f, 255.0f);
-        for (int i = 0; i <= NA; ++i) {
-            const float a = a0 + (a1 - a0) * (float)i / NA, ca = cosf(a), sa = sinf(a);
-            const float rr = rw + t * wr, rs = rw + ts * wr;
-            px[j][i] = cx + ca * rr; py[j][i] = cy + sa * rr;
-            pu[j][i] = (cx + ca * rs - (float)x0) * inv; pv[j][i] = (cy + sa * rs - (float)y0) * inv;
-            pc[j][i] = 0xFF000000u | (g << 16) | (g << 8) | g;
-        }
-    }
-    int n = 0;
-    for (int j = 0; j < NR; ++j) for (int i = 0; i < NA; ++i) {
-        static const int cj[6] = { 0, 0, 1, 0, 1, 1 }, ci[6] = { 0, 1, 1, 0, 1, 0 };
-        for (int e = 0; e < 6; ++e) { const int a = j + cj[e], b = i + ci[e]; Vtx& o = m[n++];
-            o.x = px[a][b] - 0.5f; o.y = py[a][b] - 0.5f; o.z = 0; o.rhw = 1; o.color = pc[a][b]; o.u = pu[a][b]; o.v = pv[a][b]; }
-    }
-    tex_state(dev, s_rfTex);
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 0);
-    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
-    dDrawUP(dev, D3DPT_TRIANGLELIST, n / 3, m, sizeof(Vtx));
-    dSetRS(dev, D3DRS_ALPHABLENDENABLE, 1);
-    dSetTex(dev, 0, 0);
-    color_state(dev);
-    return true;
-}
 static void pod_glass(u32 dev, float cx, float cy, float rw, float wr, float a0, float a1, float S) {
-    refract_tube(dev, cx, cy, rw, wr, a0, a1);                           // the real glass first : what is under it, bent
     color_state(dev);
     // the window's two radial edges : a fine dark lip over the wheels' feathered paper edge (it left a dotted line of
     // light pixels along the tube -- the user 2026-11-25)
     ring_sector(dev, cx, cy, rw + wr - 0.7f * S, rw + wr + 0.9f * S, a0, a1, 0xE00A0806u);
     ring_sector(dev, cx, cy, rw - wr - 0.9f * S, rw - wr + 0.7f * S, a0, a1, 0xE00A0806u);
-    // THE GLASS SEEN, THE FIGURES UNTOUCHED (the user 2026-11-25 : "not distortion -- glass on top, without touching
-    // readability") : no lens (the refraction above only folds the outermost band, the glass's internal reflection) ; a
-    // thin specular line in the band the icons never reach (beyond 0.86 of the half height), on the lamp's side, and a
-    // fainter one opposite
-    {
-        const float am = (a0 + a1) * 0.5f, lOut = cosf(am) * POD_LX + sinf(am) * POD_LY, sg = lOut >= 0.0f ? 1.0f : -1.0f;
-        const float rS = rw + sg * wr * 0.91f, rT = rw - sg * wr * 0.91f, hw = 0.55f * S, da = (a1 - a0) * 0.04f;
-        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
-        ring_sector(dev, cx, cy, rS - hw, rS + hw, a0 + da, a1 - da, MA((u32)(110.0f * TUNE("mm.glass", 1.0f)), 0xFFFFFFu));
-        ring_sector(dev, cx, cy, rT - hw, rT + hw, a0 + da * 3.0f, a1 - da * 3.0f, MA((u32)(40.0f * TUNE("mm.glass", 1.0f)), 0xFFFFFFu));
-        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    }
+    // (no glass effect : the user 2026-11-25 -- "drop it, it looks odd" ; the refraction and the streaks were removed)
+    (void)S;
     color_state(dev);
 }
 static void pod_caps(u32 dev, float cx, float cy, float rw, float wr, float a0, float a1, float S) {
@@ -2892,15 +2776,15 @@ Minimap::LodSt* Minimap::lod_slot(unsigned id) {
     return &e;
 }
 
-void Minimap::on_device_lost() { for (int i = 0; i < AS_N; ++i) { astG_[i] = 0; astGR_[i] = TexRetry{}; } s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; skyTex_ = 0; skyR_ = TexRetry{}; grainTex_ = 0; grainR_ = TexRetry{}; s_grainTex = 0; refract_forget(); moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
+void Minimap::on_device_lost() { for (int i = 0; i < AS_N; ++i) { astG_[i] = 0; astGR_[i] = TexRetry{}; } s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; skyTex_ = 0; skyR_ = TexRetry{}; grainTex_ = 0; grainR_ = TexRetry{}; s_grainTex = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
 void Minimap::dispose() {
     s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0;
     for (int i = 0; i < AS_N; ++i) { release_texture(astG_[i]); astG_[i] = 0; astGR_[i] = TexRetry{}; }
     release_texture(mkAtlas_); mkAtlas_ = 0; mkAtlasR_ = TexRetry{};
     for (int i = 0; i < AS_N; ++i) { release_texture(ast_[i]); ast_[i] = 0; astR_[i] = TexRetry{}; }
     release_texture(mapTex_); mapTex_ = 0; mapFileId_ = 0;
-    release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_); if (wxTex_) release_texture(wxTex_); if (moonDialTex_) release_texture(moonDialTex_); if (moonPhTex_) release_texture(moonPhTex_); if (skyTex_) release_texture(skyTex_); if (grainTex_) release_texture(grainTex_); refract_release();
-    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; skyTex_ = 0; skyR_ = TexRetry{}; grainTex_ = 0; grainR_ = TexRetry{}; s_grainTex = 0; refract_forget(); moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
+    release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_); if (wxTex_) release_texture(wxTex_); if (moonDialTex_) release_texture(moonDialTex_); if (moonPhTex_) release_texture(moonPhTex_); if (skyTex_) release_texture(skyTex_); if (grainTex_) release_texture(grainTex_);
+    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; skyTex_ = 0; skyR_ = TexRetry{}; grainTex_ = 0; grainR_ = TexRetry{}; s_grainTex = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
 }
 
 void Minimap::draw(const Frame& f) {
@@ -3224,7 +3108,6 @@ void Minimap::draw(const Frame& f) {
     const float Z   = clampf(c.mmZoom, 1.0f, 24.0f);
     const float pn  = (mapD / mapPx) * Z;                     // screen px per native map px (Z=1 => full map spans the lens)
 
-    if (!(dial && !dialSq && c.mmDayDial == 2)) refract_release();      // the tubes' copy texture : held only while the Dial draws them
     if (dial && !dialSq && c.mmDayDial == 2) {                           // THE MODULES' SLOTS and THE COLLAR (one cast piece for all)
         s_dayTh = POD_SLOT[(c.mmPodDay < 0 || c.mmPodDay > 5) ? 3 : c.mmPodDay];
         s_moonTh = POD_SLOT[(c.mmPodMoon < 0 || c.mmPodMoon > 5) ? 2 : c.mmPodMoon];
