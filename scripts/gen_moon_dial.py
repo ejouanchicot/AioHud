@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# gen_moon_dial.py -- the moon-phase dial's face : assets/moon_dial_src/moon_dial.png (an inked parchment disc, the eight
-# phases round it : NEW at the bottom, waxing up the LEFT, FULL at the top, waning down the RIGHT ; the centre empty ;
+# gen_moon_dial.py -- the moon-phase dial's face : assets/moon_dial_src/moon_dial.png (a parchment disc, a continuous
+# midnight-blue band with the eight golden phases on it : NEW at the bottom, waxing up the LEFT, FULL at the top, waning down the RIGHT ; the centre empty ;
 # transparent around the disc) -> assets/moon_dial.raw, a 512x512 straight-alpha BGRA texture (loaded with mipmaps).
 # The minimap draws it as the moon dial's face and its metal hand over it (src/ui/minimap.cpp, the modules style).
 #   python scripts/gen_moon_dial.py
@@ -31,8 +31,6 @@ def main():
     b = np.asarray(pm).astype(np.float32) / 255.0
     al = b[..., 3:4]
     rgb = np.where(al > 1e-4, b[..., :3] / np.maximum(al, 1e-4), 0.0)
-    lum = rgb.mean(-1, keepdims=True)                                       # darken the ink : it must read at ~90 px
-    rgb = np.where(lum < 0.55, rgb * 0.55, rgb)
     out = np.uint8(np.clip(np.concatenate([rgb, al], -1) * 255.0 + 0.5, 0, 255))
     with open(OUT, 'wb') as f:
         f.write(out[..., [2, 1, 0, 3]].copy().tobytes())

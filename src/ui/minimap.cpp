@@ -1708,9 +1708,12 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                                           x - ux2 * tail + 0.7f, y - uy2 * tail + 1.0f, x - nx2 * w0 + 0.7f, y - ny2 * w0 + 1.0f };
                     fill_poly_aa(dev, hs, 4, 0x80000000u);                              // its shadow on the paper
                     const float hd[8] = { x + ux2 * tip, y + uy2 * tip, x + nx2 * w0, y + ny2 * w0, x - ux2 * tail, y - uy2 * tail, x - nx2 * w0, y - ny2 * w0 };
-                    fill_poly_aa(dev, hd, 4, 0xFF1A120Au);                                // BLUED steel, dark on the parchment
+                    const float ho[8] = { x + ux2 * (tip + 1.0f * S), y + uy2 * (tip + 1.0f * S), x + nx2 * (w0 + 1.0f * S), y + ny2 * (w0 + 1.0f * S),
+                                          x - ux2 * (tail + 1.0f * S), y - uy2 * (tail + 1.0f * S), x - nx2 * (w0 + 1.0f * S), y - ny2 * (w0 + 1.0f * S) };
+                    fill_poly_aa(dev, ho, 4, 0xFF1A120Au);                                // a dark edge : it reads on the parchment AND on the night band
+                    fill_poly_aa(dev, hd, 4, 0xFFB88A3Au);                                // gilt brass
                     const float hl[6] = { x + ux2 * tip, y + uy2 * tip, x + nx2 * w0, y + ny2 * w0, x - ux2 * tail, y - uy2 * tail };
-                    fill_poly_aa(dev, hl, 3, 0xFF3C4A66u);                                // its lit facet
+                    fill_poly_aa(dev, hl, 3, 0xFFF0D088u);                                // its lit facet
                     disc(dev, x, y, 2.8f * S, 0xFF1A120Au); disc(dev, x, y, 2.0f * S, 0xFFC8A050u);   // the pivot, a gilt cap
                 }
                 color_state(dev);
