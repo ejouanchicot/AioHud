@@ -1504,8 +1504,14 @@ static void drum_arc(u32 dev, Font* fo, int slot, float cx, float cy, float th0,
             const bool rolling = k < 1.0f && ol[0] && ol[0] != ' ';
             if (k < 1.0f) clip_rect_begin(dev, px - ww * 0.5f, py - wr, ww, 2.0f * wr);
             fo->begin(dev);
-            if (rolling) fo->draw_lc(dev, snap(px - ow * 0.5f + ux0 * ee * lh), snap(py + uy0 * ee * lh), ol, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the old value rolls OUT
-            if (tk[i].t[0] != ' ') fo->draw_lc(dev, snap(px - cw * 0.5f - ux0 * inn), snap(py - uy0 * inn), tk[i].t, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the new one rolls in
+            // the characters FOLLOW THEIR WHEEL (the user 2026-11-25) : each turned to its wheel's angle, upright toward the
+            // outside on the top half, toward the centre on the bottom half ; drawn in the wheel's frame, then rotated in
+            const float rot = a + dir * 1.5707963f, ux = cosf(a), uy = sinf(a);
+            Font::set_rotation(px, py, rot);
+            if (rolling) fo->draw_lc(dev, px - ow * 0.5f, py - dir * ee * lh, ol, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the old value rolls OUT (away from the centre)
+            if (tk[i].t[0] != ' ') fo->draw_lc(dev, px - cw * 0.5f, py + dir * inn, tk[i].t, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the new one rolls in
+            Font::clear_rotation();
+            (void)ux; (void)uy; (void)ux0; (void)uy0;
             if (k < 1.0f) clip_rect_end(dev);
         }
         w += ww;

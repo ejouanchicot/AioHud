@@ -172,14 +172,25 @@ static inline void gbuf_flush(u32 dev) {
     if (g_gn >= 3) dDrawUP(dev, D3DPT_TRIANGLELIST, g_gn / 3, g_gbuf, sizeof(Vtx));
     g_gn = 0;
 }
+// An optional ROTATION of every glyph quad about a point (Font::set_rotation ; off by default) : text that follows a
+// curved instrument (the minimap's wheels on an arc). Rotated glyphs lose the pixel snap -- used for short labels only.
+static bool  g_rotOn = false;
+static float g_rotX = 0.0f, g_rotY = 0.0f, g_rotC = 1.0f, g_rotS = 0.0f;
 static inline void gbuf_quad(u32 dev, float x, float y, float w, float h,
                              float u0, float u1, float v0, float v1, u32 c) {
     if (g_gn + 6 > GBUF_CAP) gbuf_flush(dev);           // full -> submit and keep going
     x -= 0.5f; y -= 0.5f;                               // same D3D half-texel rule tquad() applied
-    const Vtx tl = { x,     y,     0, 1, c, u0, v0 };
-    const Vtx tr = { x + w, y,     0, 1, c, u1, v0 };
-    const Vtx bl = { x,     y + h, 0, 1, c, u0, v1 };
-    const Vtx br = { x + w, y + h, 0, 1, c, u1, v1 };
+    Vtx tl = { x,     y,     0, 1, c, u0, v0 };
+    Vtx tr = { x + w, y,     0, 1, c, u1, v0 };
+    Vtx bl = { x,     y + h, 0, 1, c, u0, v1 };
+    Vtx br = { x + w, y + h, 0, 1, c, u1, v1 };
+    if (g_rotOn) {
+        Vtx* q[4] = { &tl, &tr, &bl, &br };
+        for (int i = 0; i < 4; ++i) {
+            const float dx = q[i]->x + 0.5f - g_rotX, dy = q[i]->y + 0.5f - g_rotY;
+            q[i]->x = g_rotX + dx * g_rotC - dy * g_rotS - 0.5f; q[i]->y = g_rotY + dx * g_rotS + dy * g_rotC - 0.5f;
+        }
+    }
     g_gbuf[g_gn++] = tl; g_gbuf[g_gn++] = tr; g_gbuf[g_gn++] = bl;   // tri 1
     g_gbuf[g_gn++] = tr; g_gbuf[g_gn++] = br; g_gbuf[g_gn++] = bl;   // tri 2
 }
@@ -460,6 +471,9 @@ float Font::adv_of(const Slot& S, int c, float scale) const {
 
 // APPENDS the glyphs of ONE pass to the shared batch buffer (does not draw) -- the caller binds the texture and
 // flushes. Both passes advance the pen over EVERY character, so a wide glyph lands exactly where measure() put it.
+void Font::set_rotation(float cx, float cy, float ang) { g_rotOn = true; g_rotX = cx; g_rotY = cy; g_rotC = cosf(ang); g_rotS = sinf(ang); }
+void Font::clear_rotation() { g_rotOn = false; }
+
 void Font::emit(u32 dev, const Slot& S, float x, float y, const char* s, float scale, u32 color, float gap, unsigned char prev, int pass) {
     WPage* P = 0; bool hasP = false;                                   // the wide page, fetched at the first wide char
     float yw = 0.0f;

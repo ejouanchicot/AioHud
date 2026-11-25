@@ -50,6 +50,10 @@ public:
     // centred, but BAKE at `bakeSize` (kept constant -> one atlas) and RENDER at `dispSize` -> animate the on-screen
     // size (pop/pulse/slam) with NO per-frame atlas re-bake. Pass a stable bakeSize and vary dispSize freely.
     float draw_c_scaled(u32 dev, float cx, float cy, const char* s, float bakeSize, float dispSize, u32 color, u32 outline = 0, float ow = 0.0f);
+    // every glyph drawn until clear_rotation() is ROTATED by `ang` (rad) about (cx, cy) -- text following a curve (the
+    // minimap's wheels on an arc) ; static state, off by default ; always pair it with clear_rotation()
+    static void set_rotation(float cx, float cy, float ang);
+    static void clear_rotation();
     float measure(const char* s, float size) const;   // pixel width of `s` at `size`
     // the INK's vertical extent of `s` at `size`, from the cell top (what draw_lc centres on). A line drawn in several
     // coloured runs must use ONE reference for all of them -- draw_lc per run centres each on its own letters.
