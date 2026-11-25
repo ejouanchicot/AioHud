@@ -1616,17 +1616,28 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         PERF_BEGIN("mm.moon");
         // ---- BL : the MOON, large, in a starry night ; its line on the band : the next event, in words ----
         if (c.mmClock && c.mmClkMoon) {
-            const float x = cx - off, y = cy + off;
+            const float srM = foot ? sr * TUNE("mm.moon_k", 1.45f) : sr;            // the phase dial needs room : bigger, pushed out along its diagonal
+            const float offM = off + (srM - sr) * 0.62f, x = cx - offM, y = cy + offM;
             const bool fullFirst = v.daysToFull < v.daysToNew;
             const int dd = fullFirst ? v.daysToFull : v.daysToNew;
             char mb[32];
             (void)0;                                                                      // (day 0 : "00", the cylinders stay -- an odometer never loses a wheel)
             sprintf(mb, fullFirst ? "Full %02dd" : "New %02dd", dd < 0 ? 0 : dd);   // New / Full in every language (the user 2026-11-25 : everyone reads them)
             const float ty = bmid;
-            bezel(x, y, 0xFF101C3Cu, true);
+            if (!foot) bezel(x, y, 0xFF101C3Cu, true);
+            else {                                                                   // its own case, at its size
+                color_state(dev);
+                rrect_glow(dev, x - srM - 2.0f * S, y - srM - 1.0f * S, 2.0f * srM + 4.0f * S, 2.0f * srM + 4.0f * S, srM + 2.0f * S, 0x80000000u, snap(3.0f * S));
+                color_state(dev);
+                disc(dev, x, y, srM + 2.4f * S, g_dm.edge);
+                disc(dev, x, y, srM + 1.6f * S, g_dm.body);
+                ring_sector(dev, x, y, srM + 0.3f * S, srM + 1.6f * S, PI, 1.5f * PI, MA(0xA0, g_dm.glint));
+                ring_sector(dev, x, y, srM + 0.3f * S, srM + 1.6f * S, 0.0f, 0.5f * PI, MA(0x90, g_dm.shade));
+                disc(dev, x, y, srM + 0.3f * S, g_dm.dark);
+            }
             color_state(dev);
-            static const float ST[6][2] = { {-0.62f,-0.30f}, {0.58f,-0.48f}, {-0.35f,-0.70f}, {0.70f,0.10f}, {-0.72f,0.22f}, {0.30f,-0.75f} };
-            for (int k = 0; k < 6; ++k) disc(dev, snap(x + ST[k][0] * sr), snap(y + ST[k][1] * sr), 0.7f, 0xB0FFF6DCu);
+            if (!foot) { static const float ST[6][2] = { {-0.62f,-0.30f}, {0.58f,-0.48f}, {-0.35f,-0.70f}, {0.70f,0.10f}, {-0.72f,0.22f}, {0.30f,-0.75f} };
+            for (int k = 0; k < 6; ++k) disc(dev, snap(x + ST[k][0] * sr), snap(y + ST[k][1] * sr), 0.7f, 0xB0FFF6DCu); }
             if (!foot) {
                 draw_moon_sphere(dev, x, y, sr, v.moonPct, v.waning);              // a lit sphere by the real phase, the WHOLE face
                 glass_dome(dev, x, y, sr, 0xFF9CB8FFu, 0.35f);
@@ -1641,7 +1652,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 // inked round it (new at the bottom, full at the top, waxing up the left, waning down the right), a chased
                 // metal HAND on a pivot pointing where the cycle stands
                 const float pct = (float)v.moonPct / 100.0f, cyc = v.waning ? 0.5f + (1.0f - pct) * 0.5f : pct * 0.5f;   // 0 new .. 0.5 full .. 1 new
-                const float face = sr - 0.5f * S;
+                const float face = srM - 0.5f * S;
                 disc(dev, x, y, face, 0xFFDCC48Eu);                                     // the parchment face
                 ring_sector(dev, x, y, face * 0.80f, face, 0.0f, 2.0f * PI, 0x30603A10u);   // darker toward the bezel
                 ring_sector(dev, x, y, face * 0.86f - 0.5f * S, face * 0.86f + 0.5f * S, 0.0f, 2.0f * PI, 0x903A2410u);   // an inked circle
@@ -1674,11 +1685,11 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                     disc(dev, x, y, 2.6f * S, g_dm.edge); disc(dev, x, y, 1.9f * S, g_dm.lite);   // the pivot
                 }
                 color_state(dev);
-                glass_dome(dev, x, y, sr, 0xFF9CB8FFu, 0.35f);
+                glass_dome(dev, x, y, srM, 0xFF9CB8FFu, 0.35f);
                 color_state(dev);
                 char db[8]; sprintf(db, "%02d", dd < 0 ? 0 : (dd > 99 ? 99 : dd));       // the days to that event, on a two-wheel counter
                 const float dsz = snap(pSz * 0.80f), dh = snap(dsz * 0.5f + 2.0f * S), dw = drum_width(tf, db, dsz, S) * 0.5f;
-                drum_text(dev, tf, 0, x, snap(y + sr + dh + 3.0f * S), dw, dh, db, dsz, S);   // under the dial, on the plinth's shoulder
+                drum_text(dev, tf, 0, x, snap(y + srM + dh + 3.0f * S), dw, dh, db, dsz, S);   // under the dial, on the plinth's shoulder
             }
         }
         PERF_END("mm.moon");
