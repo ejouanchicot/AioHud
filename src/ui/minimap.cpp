@@ -1185,7 +1185,7 @@ static int drum_tokens(Font* fo, const char* txt, float sz, float S, DrumTok* ou
             int j = i, m = 0; while (txt[j] && isL(txt[j]) && m < 10) k.t[m++] = txt[j++];
             k.t[m] = 0;
             const bool unit = m == 1 && i > 0 && txt[i - 1] >= '0' && txt[i - 1] <= '9';   // '17d' : the d never moves
-            k.wheel = !unit;
+            k.wheel = true; (void)unit;                                     // a unit ('d') too : a wheel that never turns
             float mw = fo ? fo->measure(k.t, sz) : 7.0f * S * (float)m;
             if (k.wheel && fo && m >= 2) {                                 // a WORD wheel holds its longest word : it never resizes
                 static const char* WORDS[] = { "New", "Full", "Nouv.", "Pleine" };
@@ -1194,7 +1194,7 @@ static int drum_tokens(Font* fo, const char* txt, float sz, float S, DrumTok* ou
             if (k.wheel && m == 1 && fo) { const float mw2 = fo->measure("W", sz); if (mw2 > mw) mw = mw2; }   // a letter wheel : A-Z, the width of the widest
             k.w = mw + (k.wheel ? 3.2f * S : 4.0f * S);
             i = j;
-        } else { k.t[0] = ch; k.t[1] = 0; k.wheel = false; k.w = ch == ' ' ? 3.0f * S : (fo ? fo->measure(k.t, sz) : 4.0f * S) + 4.0f * S; ++i; }   // a bridge : room for the engraving
+        } else { k.t[0] = ch; k.t[1] = 0; k.wheel = ch != ' '; k.w = ch == ' ' ? 3.0f * S : (fo ? fo->measure(k.t, sz) : 4.0f * S) + 2.4f * S; ++i; }   // ':' '-' : narrow wheels that never turn (the user 2026-11-25) -- a value reads as ONE block
         ++n;
     }
     return n;
@@ -1261,7 +1261,7 @@ static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw,
             color_state(dev);                                              // the cut between two cylinders of one number : a hairline
             rrect(dev, x - 0.5f * S, y0, 1.0f * S, h, 0.0f, 0xC0201408u, 0xC0201408u);
         }
-        if (tk[i].wheel && i + 1 < n && tk[i + 1].wheel) {                // the cut between two cylinders : a dark hairline, a lit edge
+        if (tk[i].wheel && i + 1 < n && tk[i + 1].wheel) {                // the cut between ANY two wheels : a dark hairline, a lit edge
             color_state(dev);
             rrect(dev, x - 0.5f * S, y0, 0.8f * S, h, 0.0f, 0xD0140C04u, 0xD0140C04u);
             rrect(dev, x + 0.3f * S, y0, 0.5f * S, h, 0.0f, 0x40FFF0D0u, 0x40FFF0D0u);
