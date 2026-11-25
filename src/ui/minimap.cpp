@@ -2571,18 +2571,19 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         static const char* NM[4] = { "N", "E", "S", "W" };
         static const float DX[4] = { 0.0f, 1.0f, 0.0f, -1.0f }, DY[4] = { -1.0f, 0.0f, 1.0f, 0.0f };
         if (!sq && c.mmDayDial == 2 && tf) {
-            // ENGRAVED AND ENAMELLED (the user 2026-11-25 : "the letters are just laid on -- imagine it forged by Bastok") :
-            // each letter is CUT into the bezel's metal, a serif Roman capital (the wheels' face) : the cut's far edge in
-            // shadow, its near edge catching the lamp (upper left), and the hollow filled with ENAMEL -- champleve, as a
-            // watchmaker does : ivory for E S W (black vanished on the dark bezel), a deep red for the N (a marine watch's north)
+            // FORGED BY BASTOK (the user 2026-11-25) : each letter a serif Roman capital (the wheels' face) cast with the
+            // bezel
             const float ksz = snap(csz * 1.05f), o = 0.8f * S;
             tf->begin(dev);
             for (int i = 0; i < 4; ++i) {
                 const float lx = snap(cx + DX[i] * rm), ly = snap(cy + DY[i] * rm);
-                tf->draw_c(dev, lx + o, ly + o, NM[i], ksz, MA(0xB0, g_dm.lite), 0, 0.0f);          // the cut's lower-right lip, lit
-                tf->draw_c(dev, lx - o * 0.8f, ly - o * 0.8f, NM[i], ksz, MA(0xE0, g_dm.edge), 0, 0.0f);   // its upper-left wall, in shadow
-                tf->draw_c(dev, lx, ly, NM[i], ksz, i == 0 ? 0xFFB8301Eu : 0xFFE6DAC0u, 0, 0.0f);   // the ENAMEL in the hollow : ivory (it reads on the dark metal), the N red
-                tf->draw_c(dev, lx - 0.3f * S, ly - 0.3f * S, NM[i], ksz, i == 0 ? 0x40FFB090u : 0x18FFFFFFu, 0, 0.0f);   // the enamel's glaze
+                // CAST IN RELIEF, IN THE BEZEL'S OWN METAL (the user 2026-11-25 : "they still look laid on as characters, not
+                // part of it") : no contrasting colour -- a shadow the relief casts on the bezel (lower right), its lit
+                // upper-left edge, then the letter's face in the same metal, a shade brighter ; the N's metal copper-red
+                const u32 face = i == 0 ? pod_mix(g_dm.lite, 0xFFB04028u, 0.55f) : pod_mix(g_dm.body, g_dm.lite, 0.45f);
+                tf->draw_c(dev, lx + o * 1.2f, ly + o * 1.4f, NM[i], ksz, MA(0xB0, g_dm.edge), 0, 0.0f);   // the relief's shadow on the bezel
+                tf->draw_c(dev, lx - o * 0.7f, ly - o * 0.7f, NM[i], ksz, MA(0xD0, g_dm.glint), 0, 0.0f);  // its edge catching the lamp
+                tf->draw_c(dev, lx, ly, NM[i], ksz, face | 0xFF000000u, 0, 0.0f);                          // the letter's face : the bezel's metal
             }
         } else {
             fo->begin(dev);
@@ -3572,6 +3573,9 @@ void Minimap::draw(const Frame& f) {
             for (int k = 0; k < 36; ++k) {
                 if (k % 9 == 0) continue;                                      // the cardinals' field
                 const float a = (float)k / 36.0f * 6.2831853f, ux = cosf(a), uy = sinf(a);
+                bool under = false;                                            // under a module : its index marks take the place
+                for (int q = 0; q < s_podN; ++q) if (fabsf(pod_wrapa(a - s_podTh[q])) < s_podPh[q]) under = true;
+                if (under) continue;
                 const bool major = (k % 3) == 0;                                 // every 30 degrees : a longer groove
                 const float rB2 = rc + (r - rc) * (major ? 0.48f : 0.32f), w = (major ? 1.3f : 1.0f) * S;
                 const float x0 = ccx + ux * rA, y0 = ccy + uy * rA, x1 = ccx + ux * rB2, y1 = ccy + uy * rB2;
@@ -3582,6 +3586,41 @@ void Minimap::draw(const Frame& f) {
                 const float a = 0.7853982f + (float)k * 1.5707963f, rD = rc + (r - rc) * 0.58f;
                 disc(dev, ccx + cosf(a) * rD + 0.6f * S, ccy + sinf(a) * rD + 0.6f * S, 1.7f * S, MA(0xC0, g_dm.lite));
                 disc(dev, ccx + cosf(a) * rD, ccy + sinf(a) * rD, 1.6f * S, MA(0xE0, g_dm.edge));
+            }
+            // THE INDEX MARKS (the user 2026-11-25 : "symbols on the graduated dial for our modules -- an arrowhead at the
+            // current moon, another symbol for the previous and next new / full moon ; the same for the day's elements") :
+            // engraved in the bezel facing each wheel -- an ARROWHEAD (red enamel, as the N) pointing out at the present
+            // wheel, a CHEVRON at each side wheel pointing the way time runs (< before, > after along the reading order)
+            {
+                const PodGeo G = pod_geo(r, S);
+                const float rM = rc + (r - rc) * 0.50f, hA = (r - rc) * TUNE("mm.idx_size", 0.46f);
+                auto marks = [&](float th) {
+                    const float dir = pod_dir(th);
+                    for (int d = -1; d <= 1; ++d) {
+                        const float a = th + dir * (float)d * G.as, ux = cosf(a), uy = sinf(a), tx = -uy * dir, ty = ux * dir;
+                        const float mx = ccx + ux * rM, my = ccy + uy * rM;
+                        if (d == 0) {                                          // the ARROWHEAD, pointing out at the wheel
+                            const float w = hA * 0.75f;
+                            const float tri[6] = { mx + ux * hA, my + uy * hA, mx - ux * hA * 0.7f + tx * w, my - uy * hA * 0.7f + ty * w, mx - ux * hA * 0.7f - tx * w, my - uy * hA * 0.7f - ty * w };
+                            const float lip[6] = { tri[0] + 0.7f * S, tri[1] + 0.7f * S, tri[2] + 0.7f * S, tri[3] + 0.7f * S, tri[4] + 0.7f * S, tri[5] + 0.7f * S };
+                            fill_poly_aa(dev, lip, 3, MA(0xC0, g_dm.lite));    // the cut's lit lip
+                            fill_poly_aa(dev, tri, 3, g_dm.edge | 0xFF000000u); // the cut
+                            const float en[6] = { mx + ux * hA * 0.65f, my + uy * hA * 0.65f, mx - ux * hA * 0.4f + tx * w * 0.55f, my - uy * hA * 0.4f + ty * w * 0.55f, mx - ux * hA * 0.4f - tx * w * 0.55f, my - uy * hA * 0.4f - ty * w * 0.55f };
+                            fill_poly_aa(dev, en, 3, 0xFFB8301Eu);             // the red enamel
+                        } else {                                               // a CHEVRON : the way time runs
+                            const float v = (float)d, h = hA * 0.62f;
+                            const float tipx = mx + tx * v * h, tipy = my + ty * v * h;
+                            const float b1x = mx - tx * v * h + ux * h, b1y = my - ty * v * h + uy * h, b2x = mx - tx * v * h - ux * h, b2y = my - ty * v * h - uy * h;
+                            for (int pass = 0; pass < 2; ++pass) {
+                                const float o = pass == 0 ? 0.7f * S : 0.0f; const u32 col = pass == 0 ? MA(0xC0, g_dm.lite) : MA(0xE8, g_dm.edge);
+                                seg_soft(dev, b1x + o, b1y + o, tipx + o, tipy + o, 1.7f * S, col);
+                                seg_soft(dev, b2x + o, b2y + o, tipx + o, tipy + o, 1.7f * S, col);
+                            }
+                        }
+                    }
+                };
+                if (c.mmClock && c.mmClkDay) marks(s_dayTh);
+                if (c.mmClock && c.mmClkMoon) marks(s_moonTh);
             }
         } else
         draw_astral_ring(dev, grey ? astG_[AS_TICKS] : ast_[AS_TICKS], ccx, ccy, rc, r, 424.0f, 474.0f, 0.0f, tint);      // north-up : the camera rotation will turn this one
