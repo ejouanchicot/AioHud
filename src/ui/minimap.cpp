@@ -1285,14 +1285,15 @@ static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw,
 static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it each frame ; 0 = draw the inked fallback)
 // THE MOON POD (the user 2026-11-25 : "the same principle as the elements, yesterday / today / tomorrow" -- and the
 // moons "must stay the right way up") : the day pod's twin, at the compass's upper left. A housing on the ring, a window
-// on a night-sky band, three phases painted UPRIGHT on it (assets/moon_phases.raw, scripts/gen_moon_phases.py : 0 new ..
+// on a PAPER band, three phases INKED upright on it (assets/moon_phases.raw, scripts/gen_moon_phases.py : 0 new ..
 // 4 full .. 7 waning crescent) : the present one whole and bright in the middle, the one before and the one after
 // dimmer either side ; when the phase changes the band snaps one notch (the click). Drawn before the frame : the
 // compass covers its root.
 static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int ph, u32 tex) {
     PERF_SCOPE("mm.moonpod");
     PodGeo G = pod_geo(r, S);
-    G.th0 = TUNE("mm.mpod_angle", -2.3562f);                             // the upper left, on the ring's diagonal
+    G.th0 = TUNE("mm.mpod_angle", 2.85f);                                // the LOWER left, between the W and the S (the user 2026-11-25), just clear of the plinth
+    const float dir = sinf(G.th0) > 0.0f ? -1.0f : 1.0f;                // yesterday | today | tomorrow read LEFT to right wherever it sits
     const float th0 = G.th0, Ri = G.Ri, Ro = G.Ro, rm = G.rm, isz = G.isz * TUNE("mm.mpod_icon", 1.10f), rw = G.rw, wr = isz * 0.56f, as = G.as, Wh = G.Wh, Ph = G.Ph;
     auto at = [&](float ang, float rad, float& x, float& y) { x = cx + cosf(ang) * rad; y = cy + sinf(ang) * rad; };
     const u32 hb = dm_toward(g_dm.bot, 0xFF000000u, 0.45f);
@@ -1303,7 +1304,13 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int ph,
     ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0 - Ph, th0, MA(0xA0, g_dm.glint));                                       // lit along its outer flank
     ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0, th0 + Ph, MA(0x80, g_dm.shade));
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Wh - 0.02f, th0 + Wh + 0.02f, g_dm.dark);     // the window's chamfer
-    ring_sector(dev, cx, cy, rw - wr, rw + wr, th0 - Wh, th0 + Wh, 0xFF1E2848u);                                         // the band : the plate's night sky
+    ring_sector(dev, cx, cy, rw - wr, rw + wr, th0 - Wh, th0 + Wh, 0xFFE6CF9Au);                                         // the band : PAPER, as the day pod's
+    ring_sector(dev, cx, cy, rw - wr, rw - wr * 0.55f, th0 - Wh, th0 + Wh, 0x30603A10u);                                 // darker where it curls under the frame
+    ring_sector(dev, cx, cy, rw + wr * 0.55f, rw + wr, th0 - Wh, th0 + Wh, 0x30603A10u);
+    for (int k = 0; k < 9; ++k) {                                                                                         // paper fibres
+        const float fa = th0 - Wh + (2.0f * Wh) * ((float)k + 0.5f) / 9.0f, rr = rw - wr * 0.8f + wr * 1.6f * (float)((k * 5) % 9) / 9.0f;
+        ring_sector(dev, cx, cy, rr - 0.35f, rr + 0.35f, fa - 0.03f, fa + 0.05f, 0x22704818u);
+    }
     if (tex) {
         tex_state(dev, tex);
         static int lastPh = -1; static unsigned jumpMs = 0;              // the JUMP, as the day pod's
@@ -1314,14 +1321,14 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int ph,
         { const float k = (float)(nowMs - jumpMs) / 160.0f;
           if (jumpMs && k < 1.0f) { const float e2 = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k); shift = (1.0f - e2) - 0.06f * sinf(k * 3.14159f); } }
         for (int d = -2; d <= 2; ++d) {
-            const float ang = th0 + ((float)d + shift) * as, off = fabsf(ang - th0);
+            const float ang = th0 + dir * ((float)d + shift) * as, off = fabsf(ang - th0);
             if (off > Wh + as * 0.5f) continue;
             float vis = 1.0f - (off - (Wh - as * 0.55f)) / (as * 0.6f); vis = vis > 1.0f ? 1.0f : (vis < 0.0f ? 0.0f : vis);
             if (vis <= 0.0f) continue;
             float px, py; at(ang, rw, px, py);
             const bool now = d == 0;
             const float sz = now ? isz : isz * (0.13f / 0.18f);
-            const u32 col = ((u32)(255.0f * vis) << 24) | (now ? 0x00FFFFFFu : 0x00B4B4B4u);   // UPRIGHT : a screen-aligned quad, never rotated
+            const u32 col = ((u32)((now ? 255.0f : 150.0f) * vis) << 24) | 0x00FFFFFFu;   // INK on the paper, UPRIGHT (never rotated) ; the neighbours fainter
             const int c8 = (ph + d + 16) & 7;
             tquad(dev, snap(px - sz * 0.5f), snap(py - sz * 0.5f), sz, sz, c8 / 8.0f, (c8 + 1) / 8.0f, 0.0f, 1.0f, col, col);
         }
