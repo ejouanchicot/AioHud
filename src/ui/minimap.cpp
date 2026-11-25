@@ -1180,7 +1180,7 @@ static void pod_caps(u32 dev, float cx, float cy, float rw, float wr, float a0, 
     const u32 body = g_dm.bot | 0xFF000000u;
     for (int e = -1; e <= 1; e += 2) {
         const float aIn = e < 0 ? a0 : a1;                                // the glass's end
-        const float c0 = e < 0 ? aIn - cw * 0.45f : aIn - cw * 0.55f, c1 = c0 + cw;
+        const float c0 = e < 0 ? aIn - cw : aIn, c1 = c0 + cw;            // wholly OUTSIDE the window : it must not bite the end wheels
         const float l = cosf(aIn) * POD_LX + sinf(aIn) * POD_LY;           // the cap's own light : its outward face
         ring_sector(dev, cx, cy, ri - 1.0f * S, ro + 1.0f * S, c0 - 1.0f * S / rw, c1 + 1.0f * S / rw, g_dm.edge);   // its dark edge
         ring_sector(dev, cx, cy, ri, ro, c0, c1, l > 0.0f ? pod_mix(body, g_dm.lite, l * 0.25f) : pod_mix(body, g_dm.edge, -l * 0.25f));
