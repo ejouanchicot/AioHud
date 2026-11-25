@@ -1292,7 +1292,7 @@ static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it e
 static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int ph, u32 tex) {
     PERF_SCOPE("mm.moonpod");
     PodGeo G = pod_geo(r, S);
-    G.th0 = TUNE("mm.mpod_angle", 2.85f);                                // the LOWER left, between the W and the S (the user 2026-11-25), just clear of the plinth
+    G.th0 = TUNE("mm.mpod_angle", 2.3562f);                              // the LOWER left, on the diagonal between the W and the S (the user 2026-11-25)
     const float dir = sinf(G.th0) > 0.0f ? -1.0f : 1.0f;                // yesterday | today | tomorrow read LEFT to right wherever it sits
     const float th0 = G.th0, Ri = G.Ri, Ro = G.Ro, rm = G.rm, isz = G.isz * TUNE("mm.mpod_icon", 1.10f), rw = G.rw, wr = isz * 0.56f, as = G.as, Wh = G.Wh, Ph = G.Ph;
     auto at = [&](float ang, float rad, float& x, float& y) { x = cx + cosf(ang) * rad; y = cy + sinf(ang) * rad; };
@@ -1588,6 +1588,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NC, fv, sizeof(VtxC));
             };
             color_state(dev);
+            const bool body = TUNE("mm.foot_body", 0.0f) > 0.5f;                            // the plinth's metal : OFF for now (the user 2026-11-25 : "remove the foot, keep the hour and the position")
+            if (body) {
             rrect_glow(dev, cx - W, yB - 6.0f * S, 2.0f * W, 6.0f * S + 1.0f * S, snap(3.0f * S), 0x80000000u, snap(4.0f * S));   // its shadow on the world
             slab(1.3f * S, g_dm.edge, g_dm.edge);                                             // the dark edge
             slab(0.0f, dm_toward(g_dm.bot, 0xFF000000u, 0.20f), dm_toward(g_dm.bot, 0xFF000000u, 0.50f));   // the forged metal
@@ -1597,9 +1599,10 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 seg_soft(dev, cx + d0, botAt(d0) + 0.6f, cx + d1, botAt(d1) + 0.6f, 1.1f, g_dm.edge);
             }
             grad_quad(dev, cx - W + ch, yB - 2.6f * S, 2.0f * (W - ch), 1.0f, MA(0x70, g_dm.lite), MA(0x70, g_dm.lite), MA(0x70, g_dm.lite), MA(0x70, g_dm.lite));   // an engraved filet along the base
+            }
             // the windows : one row, the position under the S, the moon and the hour on either side
             const float x3[3] = { cx - W + 2.0f * S + edge0 + hwD, cx, cx + W - 2.0f * S - edge0 - hwT }, hw3[3] = { hwD, hwP, hwT };
-            const bool on3[3] = { bandMoon, posBand, bandDay };
+            const bool on3[3] = { bandMoon && body, posBand, bandDay };   // no plinth : no day counter (the moon pod shows the phases)
             for (int k = 0; k < 3; ++k) {
                 if (!on3[k] || hw3[k] <= 0.0f) continue;
                 cwX[k] = snap(x3[k]); cwY[k] = yC; cwH[k] = hw3[k];
@@ -1613,7 +1616,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 cwHH = wh * 0.5f - 0.6f * S;
             }
             for (int k = 0; k < 2; ++k) {                                                    // between the windows : a double groove cut in the metal
-                if (!on3[1]) break;
+                if (!on3[1] || !body) break;
                 const float sx = k == 0 ? ((x3[0] + hwD) + (cx - hwP)) * 0.5f : ((cx + hwP) + (x3[2] - hwT)) * 0.5f, hh = wh * 0.42f;
                 for (int g2 = -1; g2 <= 1; g2 += 2) {
                     const float gx = sx + (float)g2 * 1.6f * S;
@@ -1793,7 +1796,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 color_state(dev);
                 }
                 char db[8]; sprintf(db, "%02d", dd < 0 ? 0 : (dd > 99 ? 99 : dd));       // the days to the next new / full : the plinth's left window
-                if (cwHH > 0.0f) drum_text(dev, tf, 0, cwX[0], cwY[0], cwH[0] - 0.6f * S, cwHH, db, pSz, S);
+                if (cwHH > 0.0f && cwH[0] > 0.0f) drum_text(dev, tf, 0, cwX[0], cwY[0], cwH[0] - 0.6f * S, cwHH, db, pSz, S);
             }
         }
         PERF_END("mm.moon");
