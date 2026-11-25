@@ -1000,6 +1000,25 @@ static int mm_weather_elem(int wid) {
     static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };              // weather pair (fire, water, earth, wind, ice, thunder, light, dark) -> day order
     return (wid >= 4 && wid <= 19) ? WCELL[(wid - 4) / 2] : -1;
 }
+// A CLEAR GLASS PASTILLE (the user 2026-11-25 : "really a glass pastille ; full glass, no black") : see-through, its rim
+// darker where the glass is thick, the light passing through pooled at the bottom, a sharp reflection toward the lamp.
+// _under before what floats inside it, _over after.
+static void glass_bead_under(u32 dev, float x, float y, float R, float S) {
+    disc(dev, x + 0.6f * S, y + 1.6f * S, R * 0.92f, 0x38000000u);                 // its soft shadow on what lies beneath
+    disc(dev, x, y, R, 0x30BCD8F0u);                                            // the glass : a faint cool tint
+    ring_sector(dev, x, y, R * 0.80f, R, 0.0f, 6.2832f, 0x40102030u);           // thicker at the rim : darker
+    ring_sector(dev, x, y, R - 1.0f * S, R, 0.0f, 6.2832f, 0x90203040u);        // its edge
+}
+static void glass_bead_over(u32 dev, float x, float y, float R, float S) {
+    const Lamp Lp = lamp_for(x, y); const float la = atan2f(Lp.y, Lp.x);
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+    ring_sector(dev, x, y, R * 0.55f, R * 0.88f, la - 0.75f, la + 0.75f, 0x40FFFFFFu);   // the broad reflection, toward the lamp
+    ring_sector(dev, x, y, R * 0.62f, R * 0.90f, la + 3.1416f - 0.6f, la + 3.1416f + 0.6f, 0x2AD8F0FFu);   // the light through it, pooled opposite
+    ring_sector(dev, x, y, R - 1.6f * S, R - 0.4f * S, la - 1.2f, la + 1.2f, 0x50FFFFFFu);   // the lit lip
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    disc(dev, x + Lp.x * R * 0.48f, y + Lp.y * R * 0.48f, R * 0.11f, 0xE8FFFFFFu);   // the glint
+    (void)S;
+}
 struct PodGeo { float th0, D, Ri, Ro, rm, isz, rw, wr, as, Wh, Ph; };
 static PodGeo pod_geo(float r, float S) {
     PodGeo g;
@@ -1520,15 +1539,10 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                     const float q4[8] = { OX[0] + nx, OY[0] + ny, OX[1] + nx, OY[1] + ny, OX[1] - nx, OY[1] - ny, OX[0] - nx, OY[0] - ny };
                     fill_poly_aa(dev, q4, 4, col);
                 };
-                for (int q = 0; q < 2; ++q) disc(dev, OX[q], OY[q], rs + 1.8f * S, g_dm.edge);
-                bridge(1.2f * S, g_dm.edge);
-                for (int q = 0; q < 2; ++q) disc(dev, OX[q], OY[q], rs + 1.1f * S, g_dm.body);
-                bridge(0.0f, g_dm.body);
+                (void)bridge;                                                          // (all glass now : no metal setting, no bridge)
                 for (int q = 0; q < 2; ++q) {
                     const float ox = OX[q], oy = OY[q];
-                    ring_sector(dev, ox, oy, rs, rs + 1.1f * S, PI, 1.5f * PI, MA(0xA0, g_dm.glint));
-                    disc(dev, ox, oy, rs, 0xFF000000u);                                         // the black glass
-                    ring_sector(dev, ox, oy, rs - 2.0f * S, rs, PI, 2.0f * PI, 0x70000000u);       // its inner shadow, from the lip above
+                    glass_bead_under(dev, ox, oy, rs, S);
                     // the LABEL : out (the old one shrinks away, 0.12 s), then in (the new one pops, 0.22 s, a small overshoot)
                     float sc = 0.0f; int cell = shownCell[q];
                     const float lab = labQ[q];
@@ -1555,47 +1569,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                         }
                         color_state(dev);
                     }
-                    glass_dome(dev, ox, oy, rs, 0xFFB8D4FFu, 0.6f);
-                    if (lidQ[q] < 0.999f) {                                         // the LID : a domed metal cap hinged on the sky dial's side,
-                        const float op = lidQ[q], ey = rs * (1.0f - op) + 0.01f;   // swinging open : seen edge-on, it flattens toward its hinge
-                        const float hx = ox + ux * rs * op, hy = oy + uy * rs * op;   // its centre moves toward the hinge
-                        float e1[24], e2[24];
-                        for (int k = 0; k < 12; ++k) {
-                            const float a2 = (float)k / 12.0f * 2.0f * PI, ca = cosf(a2), sa = sinf(a2);
-                            e1[2 * k] = hx + (tx * ca * (rs + 0.8f * S) + ux * sa * (ey + 0.8f * S)); e1[2 * k + 1] = hy + (ty * ca * (rs + 0.8f * S) + uy * sa * (ey + 0.8f * S));
-                            e2[2 * k] = hx + (tx * ca * rs + ux * sa * ey);                         e2[2 * k + 1] = hy + (ty * ca * rs + uy * sa * ey);
-                        }
-                        fill_poly_aa(dev, e1, 12, g_dm.edge);
-                        fill_poly_aa(dev, e2, 12, op < 0.5f ? 0xF0141C28u : 0xF00C1018u);  // GLASS (the user 2026-11-25 : "not steel, glass") : smoked, its underside darker as it turns
-                        if (op < 0.4f) {                                            // CLOSED : etched glass under a domed reflection
-                            const float fa = 1.0f - op / 0.4f, sq2 = ey / rs;
-                            auto P = [&](float a2, float rad, float& px, float& py) { px = hx + tx * cosf(a2) * rad + ux * sinf(a2) * rad * sq2; py = hy + ty * cosf(a2) * rad + uy * sinf(a2) * rad * sq2; };
-                            auto A = [&](u32 col) { return ((u32)((float)(col >> 24) * fa) << 24) | (col & 0x00FFFFFFu); };
-                            const Lamp Lp = lamp_for(hx, hy);
-                            for (int k = 0; k < 28; ++k) {                          // the sunburst, ETCHED : fine frosted rays
-                                const float a2 = (float)k / 28.0f * 2.0f * PI; float x0, y0, x1, y1;
-                                P(a2, rs * 0.22f, x0, y0); P(a2, rs * 0.78f, x1, y1);
-                                seg_soft(dev, x0, y0, x1, y1, 0.9f, A(k & 1 ? 0x2EFFFFFFu : 0x18C8DCFFu));
-                            }
-                            for (int k = 0; k < 24; ++k) {                          // an etched filet near the rim
-                                float x0, y0, x1, y1; const float a0 = (float)k / 24.0f * 2.0f * PI, a1 = (float)(k + 1) / 24.0f * 2.0f * PI;
-                                P(a0, rs * 0.84f, x0, y0); P(a1, rs * 0.84f, x1, y1); seg_soft(dev, x0, y0, x1, y1, 0.9f, A(0x40E0F0FFu));
-                            }
-                            dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);           // the dome's reflection, toward the lamp, and a rim of light
-                            { float d3[24]; for (int k = 0; k < 12; ++k) { float px, py; P((float)k / 12.0f * 2.0f * PI, rs * 0.42f, px, py); d3[2 * k] = px + Lp.x * rs * 0.38f; d3[2 * k + 1] = py + Lp.y * rs * 0.38f; }
-                              fill_poly_aa(dev, d3, 12, A(0x30FFFFFFu)); }
-                            for (int k = 0; k < 24; ++k) {
-                                float x0, y0, x1, y1; const float a0 = (float)k / 24.0f * 2.0f * PI, a1 = (float)(k + 1) / 24.0f * 2.0f * PI;
-                                P(a0, rs * 0.95f, x0, y0); P(a1, rs * 0.95f, x1, y1); seg_soft(dev, x0, y0, x1, y1, 1.2f, A(0x26B8D4FFu));
-                            }
-                            dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-                            disc(dev, hx, hy, rs * 0.17f, A(g_dm.lite | 0xFF000000u));    // a clear CRYSTAL in a thin metal bezel
-                            disc(dev, hx, hy, rs * 0.13f, A(0xFF9FB8D0u));
-                            disc(dev, hx, hy + rs * 0.03f, rs * 0.08f, A(0xFFDCEAF6u));
-                            disc(dev, hx - rs * 0.045f, hy - rs * 0.05f, rs * 0.035f, A(0xF0FFFFFFu));
-                        }
-                        color_state(dev);
-                    }
+                    glass_bead_over(dev, ox, oy, rs, S);
                 }
                 color_state(dev);
                 }
