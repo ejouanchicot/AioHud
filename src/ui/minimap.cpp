@@ -1096,6 +1096,45 @@ static void grain_ring(u32 dev, float cx, float cy, float r0, const float* Ra, i
     dSetTex(dev, 0, 0);
     color_state(dev);
 }
+// the grain over any convex polygon (a plate, an index's facet) or an annular sector (a rail)
+static void grain_begin(u32 dev) {
+    tex_state(dev, s_grainTex);
+    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_WRAP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_WRAP);
+}
+static void grain_end(u32 dev) {
+    dSetTSS(dev, 0, D3DTSS_ADDRESSU, D3DTADDRESS_CLAMP); dSetTSS(dev, 0, D3DTSS_ADDRESSV, D3DTADDRESS_CLAMP);
+    dSetTex(dev, 0, 0);
+    color_state(dev);
+}
+static void grain_poly(u32 dev, const float* xy, int n, float S) {
+    if (!s_grainTex || n < 3 || n > 32) return;
+    const u32 col = ((u32)(255.0f * TUNE("mm.grain", 0.55f)) << 24) | 0x00FFFFFFu;
+    const float T = 110.0f * S;
+    Vtx v[32];
+    for (int i = 0; i < n; ++i) v[i] = { xy[2 * i] - 0.5f, xy[2 * i + 1] - 0.5f, 0, 1, col, xy[2 * i] / T, xy[2 * i + 1] / T };
+    grain_begin(dev);
+    dDrawUP(dev, D3DPT_TRIANGLEFAN, n - 2, v, sizeof(Vtx));
+    grain_end(dev);
+}
+static void grain_disc(u32 dev, float x, float y, float r, float S) {
+    float xy[48];
+    for (int i = 0; i < 24; ++i) { const float a = 6.2831853f * (float)i / 24.0f; xy[2 * i] = x + cosf(a) * r; xy[2 * i + 1] = y + sinf(a) * r; }
+    grain_poly(dev, xy, 24, S);
+}
+static void grain_sector(u32 dev, float cx, float cy, float r0, float r1, float a0, float a1, float S) {
+    if (!s_grainTex) return;
+    const u32 col = ((u32)(255.0f * TUNE("mm.grain", 0.55f)) << 24) | 0x00FFFFFFu;
+    const float T = 110.0f * S;
+    const int N = 16; Vtx v[(N + 1) * 2];
+    for (int i = 0; i <= N; ++i) {
+        const float a = a0 + (a1 - a0) * (float)i / N;
+        const float x0 = cx + cosf(a) * r0, y0 = cy + sinf(a) * r0, x1 = cx + cosf(a) * r1, y1 = cy + sinf(a) * r1;
+        v[2 * i] = { x0 - 0.5f, y0 - 0.5f, 0, 1, col, x0 / T, y0 / T }; v[2 * i + 1] = { x1 - 0.5f, y1 - 0.5f, 0, 1, col, x1 / T, y1 / T };
+    }
+    grain_begin(dev);
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(Vtx));
+    grain_end(dev);
+}
 // THE MODULES' SLOTS (the user 2026-11-25 : "players choose where to put them") : the hour and the grid square at the top
 // or the bottom (they alternate), the moon and the day's element in one of the four corners or on a side (never the same
 // one) ; Minimap::draw sets the angles each frame from the config.
@@ -2619,6 +2658,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 disc(dev, lx + 0.9f * S, ly + 1.3f * S, pr + 1.0f * S, 0x80000000u);                       // its shadow on the bezel
                 disc(dev, lx, ly, pr + 1.1f * S, g_dm.edge | 0xFF000000u);                                  // the solder seam
                 disc(dev, lx, ly, pr, pod_mix(g_dm.body, g_dm.bot, 0.30f) | 0xFF000000u);                  // the plate : satin metal
+                grain_disc(dev, lx, ly, pr, S);                                                               // the metal's grain
                 disc(dev, lx - pr * 0.18f, ly - pr * 0.18f, pr * 0.74f, MA(0x50, g_dm.lite));                 // domed : softly lit toward the lamp
                 ring_sector(dev, lx, ly, pr - 1.0f * S, pr, 2.4f, 5.6f, MA(0x50, g_dm.lite));             // its rim, a faint light
                 ring_sector(dev, lx, ly, pr - 1.0f * S, pr, -0.7f, 2.4f, MA(0x90, g_dm.edge));            // ...and in shade
@@ -3654,6 +3694,7 @@ void Minimap::draw(const Frame& f) {
                     ring_sector(dev, ccx + 0.8f * S, ccy + 1.1f * S, rM - wR, rM + wR, aLo, aHi, 0x90000000u);
                     ring_sector(dev, ccx, ccy, rM - wR - 0.9f * S, rM + wR + 0.9f * S, aLo, aHi, g_dm.edge | 0xFF000000u);
                     ring_sector(dev, ccx, ccy, rM - wR, rM + wR, aLo, aHi, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);
+                    grain_sector(dev, ccx, ccy, rM - wR, rM + wR, aLo, aHi, S);
                     ring_sector(dev, ccx, ccy, rM + wR * 0.2f, rM + wR, aLo, aHi, MA(0x90, g_dm.glint));
                     // the TAIL : a stop bar across the rail
                     {
@@ -3673,6 +3714,7 @@ void Minimap::draw(const Frame& f) {
                         float ed[6] = { tr[0] + tx * g2 * 1.6f, tr[1] + ty * g2 * 1.6f, tr[2] + ux * g2 - tx * g2, tr[3] + uy * g2 - ty * g2, tr[4] - ux * g2 - tx * g2, tr[5] - uy * g2 - ty * g2 };
                         fill_poly_aa(dev, ed, 3, g_dm.edge | 0xFF000000u);
                         fill_poly_aa(dev, tr, 3, pod_mix(g_dm.body, g_dm.lite, 0.60f) | 0xFF000000u);
+                        grain_poly(dev, tr, 3, S);
                         const float hl[6] = { tr[0], tr[1], tr[2], tr[3], bx, by };
                         fill_poly_aa(dev, hl, 3, MA(0xB0, g_dm.glint));
                     }
@@ -3687,6 +3729,7 @@ void Minimap::draw(const Frame& f) {
                                         mx - ux * (L + 1.0f * S), my - uy * (L + 1.0f * S), mx - tx * (W + 1.0f * S), my - ty * (W + 1.0f * S) };
                         fill_poly_aa(dev, ed, 4, g_dm.edge | 0xFF000000u);
                         fill_poly_aa(dev, lz, 4, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);
+                        grain_poly(dev, lz, 4, S);
                         const float hl[6] = { lz[0], lz[1], lz[2], lz[3], mx, my };
                         fill_poly_aa(dev, hl, 3, MA(0xC0, g_dm.glint));
                         disc(dev, mx, my, W * 0.45f, 0xFFA82418u);
