@@ -306,6 +306,7 @@ NativeEntryMenu g_mainM, g_mainSub, g_mainSort, g_mainYn; bool g_mainFail = fals
 extern NativeMacroBooks g_mbk;   // the macro book list (macro_books_poll, below)
 extern NativeMacroEdit g_med;    // the macro editor (macro_edit_poll, below)
 extern NativeEquipSets g_es;     // the equipment set list (equip_sets_poll, below)
+extern NativeCfgFilter g_cff;    // Config's filter lists (cfg_filter_poll, below)
 bool g_mainNative = false;   // a main-menu child the client keeps drawing, in the main menu's place (main_poll)
 NativeTopBar g_tb; bool g_tbFail = false;                                               // the top bar (titlewin + helpwind)
 NativeMacro g_mc; bool g_mcFail = false;                                                // the macro bar
@@ -2544,7 +2545,8 @@ void yn_park(u32 mgr) {
         if (g_med.pal) { park_named(mgr, "mcr1edlo", m1Log, "MacroPalette -> the palette (Ctrl)"); park_named(mgr, "mcr2edlo", m2Log, "MacroPalette -> the palette (Alt)");
                          park_named(mgr, "mcr1edit", m3Log, "MacroPalette -> the palette (Ctrl)"); park_named(mgr, "mcr2edit", m4Log, "MacroPalette -> the palette (Alt)"); }
         if (g_med.ed) park_named(mgr, "macro", mmLog, "MacroPalette -> a macro");
-        static int esLog = 0; if (g_es.open) park_named(mgr, "mcres20", esLog, "MacroPalette -> the equipment sets"); }
+        static int esLog = 0; if (g_es.open) park_named(mgr, "mcres20", esLog, "MacroPalette -> the equipment sets");
+        static int cfLog = 0; if (g_cff.open) park_named(mgr, g_cff.name, cfLog, "Config -> a filter list"); }
     if (g_ls.open || (g_search.open && g_search.ctx == 4)) park_named(mgr, "link6", l6Log, "Linkshell -> the header");
     if (g_scopt.open) park_named(mgr, "scoption", soLog, "Status -> Unity -> a player's options");
     static int urLog = 0;
@@ -2623,7 +2625,7 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_cel.open && (!strcmp(nm, "fe_equip") || !strcmp(nm, "fe_inven") || !strcmp(nm, "bluehelp")))
                              || (g_faith.open && (!strcmp(nm, "fp_cat") || !strcmp(nm, "fp_cat2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "fp_info")))
                              || (g_area.open && !strcmp(nm, "arealist")) || (g_search.open && !strcmp(nm, g_search.ctx == 2 ? "levelsyn" : g_search.ctx == 4 ? "link12" : "scresult"))
-                             || (g_ls.open && !strcmp(nm, "link5")) || (g_mbk.open && !strcmp(nm, "mcrselec")) || (g_med.pal && (!strcmp(nm, "mcr1edlo") || !strcmp(nm, "mcr2edlo") || !strcmp(nm, "mcr1edit") || !strcmp(nm, "mcr2edit"))) || (g_med.ed && !strcmp(nm, "macro")) || (g_es.open && !strcmp(nm, "mcres20")) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
+                             || (g_ls.open && !strcmp(nm, "link5")) || (g_mbk.open && !strcmp(nm, "mcrselec")) || (g_med.pal && (!strcmp(nm, "mcr1edlo") || !strcmp(nm, "mcr2edlo") || !strcmp(nm, "mcr1edit") || !strcmp(nm, "mcr2edit"))) || (g_med.ed && !strcmp(nm, "macro")) || (g_es.open && !strcmp(nm, "mcres20")) || (g_cff.open && !strcmp(nm, g_cff.name)) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
                              || (g_scopt.open && !strcmp(nm, "scoption"))
                              || (g_insp.open && (!strcmp(nm, "inspect") || !strcmp(nm, "iteminfo") || !strcmp(nm, "comment")))
                              || (g_loot.open && (!strcmp(nm, "loot") || !strcmp(nm, "lootope") || !strcmp(nm, "lnowin") || !strcmp(nm, "iteminfo")))
@@ -2926,6 +2928,65 @@ void equip_sets_poll(bool on, u32 mgr, u32 focusObj) {
     if (s2 != sig && said < 30) { sig = s2; ++said;
         windower::debug::log("NATIVEUI equip sets : page %u, cursor %d, rename %s (row %u '%s') ; row 0 '%s' main %u", page, cur, valid_ptr(in) ? "ON" : "off", chosen, t.rename, t.name[0], t.item[0][0]); }
     g_es = t;
+}
+
+// ---- Config's FILTER lists (cfilter / fxfilter) ----
+NativeCfgFilter g_cff; bool g_cffOk = false;
+u32 g_cfState = 0, g_fxTable = 0; int g_cfTries = 0; DWORD g_cfNext = 0;
+typedef int (__thiscall* CfStateFn)(u32 self, int row);
+bool cff_res() {
+    if (g_cffOk) return true;
+    const DWORD now = GetTickCount();
+    if (g_cfTries && (int)(now - g_cfNext) < 0) return false;
+    if (g_cfTries >= 12) return false;
+    ++g_cfTries; g_cfNext = now + 5000;
+    const u32 s = aob_masked("56 57 8B 7C 24 0C 8B F1 8A 04 BD ?? ?? ?? ?? 3C 33 75 ?? 8A 04 BD ?? ?? ?? ?? 84 C0 7D");   // FUN_054D9810 (Nov) : unique Nov + June
+    const u32 d = aob_masked("8B 4E 18 8D 58 01 03 C8 6A 01 6A 01 8D 54 24 18 8D 3C 8D ?? ?? ?? ?? 8B 4E 08 53 52 E8");   // fxfilter's draw : its table at +0x13
+    u32 t = 0;
+    if (s && d && safe_read(d + 0x13, &t) && valid_ptr(t)) { g_cfState = s; g_fxTable = t; g_cffOk = true;
+        windower::debug::log("NATIVEUI config filters resolved (try %d) : cfilter state FFXiMain+%X, fxfilter table FFXiMain+%X", g_cfTries, s - ffximain_base(), t - ffximain_base()); }
+    else if (g_cfTries == 1 || g_cfTries == 12) windower::debug::log("NATIVEUI config filters NOT resolved (try %d : state %08X, fx draw %08X)%s", g_cfTries, s, d, g_cfTries == 12 ? " -- they stay the client's" : "");
+    return g_cffOk;
+}
+static int cf_state_call(u32 hd, int row) { __try { return ((CfStateFn)g_cfState)(hd, row); } __except (EXCEPTION_EXECUTE_HANDLER) { return -1; } }
+void cfg_filter_poll(bool on, u32 mgr, u32 focusObj) {
+    NativeCfgFilter t; memset(&t, 0, sizeof(t));
+    if (!on || !mgr || !cff_res()) { g_cff = t; return; }
+    u32 o = win_named(mgr, "cfilter"); const bool fx = !o; if (!o) o = win_named(mgr, "fxfilter");
+    u32 hd = 0, cnt = 0, top = 0; short cur = 0, wh[2] = { 0, 0 };
+    if (!o || !safe_read(o + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !safe_read(hd + 0x14, &cnt) || !safe_read(hd + 0x18, &top) || cnt > 200 || top > cnt
+        || !rd16(o + 0x4C, cur) || !rd16(o + OBJ_RECT, t.rx0) || !rd16(o + OBJ_RECT + 2, t.ry0) || !rd16(o + OBJ_RECT + 4, t.rx1) || !rd16(o + OBJ_RECT + 6, t.ry1)
+        || !rdblk(mgr + 0x80, wh, 4)) { g_cff = t; return; }
+    t.uiW = wh[0]; t.uiH = wh[1];
+    short wy = t.ry0; if (t.ry0 >= t.uiH) { t.ry0 = (short)(t.ry0 - HIDE_DY); t.ry1 = (short)(t.ry1 - HIDE_DY); }
+    lstrcpynA(t.name, fx ? "fxfilter" : "cfilter", sizeof(t.name));
+    t.count = (int)cnt; t.top = (int)top; t.cursor = cur >= 1 && cur <= 14 ? cur : 0; t.focused = focusObj == o;
+    t.n = t.count - t.top < 14 ? t.count - t.top : 14;
+    // the labels : the window's text runs of its last frame, top to bottom (one per row, x past the badge)
+    const CapRun* R = 0; const int nr = text_capture(o, R);
+    int idx[40], ni = 0;
+    for (int j = 0; j < nr && ni < 40; ++j) if (R[j].x - (short)t.rx0 >= 40) idx[ni++] = j;
+    for (int a = 1; a < ni; ++a) for (int b = a; b > 0 && R[idx[b]].y < R[idx[b - 1]].y; --b) { const int q = idx[b]; idx[b] = idx[b - 1]; idx[b - 1] = q; }
+    if (ni < t.n) { g_cff = t; return; }                      // the capture is not there (yet) : the client's this frame
+    for (int i = 0; i < t.n; ++i) {
+        const char* s = R[idx[i]].s; int k = 0;
+        for (int j = 0; s[j] && k < 62; ++j) {
+            if (fx && s[j] == ' ' && s[j + 1] == ' ') { t.label[i][k++] = ' '; t.label[i][k++] = '>'; t.label[i][k++] = ' '; ++j; continue; }   // the arrow glyph the capture drops
+            t.label[i][k++] = s[j];
+        }
+        t.label[i][k] = 0;
+        int st = 0;
+        if (fx) { unsigned char bit = 0; u32 v = 0; if (rd8(g_fxTable + (u32)(t.top + i) * 4, bit) && safe_read(hd + 0x30, &v)) st = bit < 32 && ((v >> bit) & 1) ? 1 : 0; }
+        else { const int r = cf_state_call(hd, t.top + i); if (r < 0) { g_cff = t; g_cff.open = false; return; } st = r == 1 ? 1 : (r == 2 || r == 4) ? 2 : 0; }
+        t.state[i] = (unsigned char)st;
+    }
+    (void)wy;
+    t.open = true;
+    static unsigned sig = ~0u; static int said = 0;
+    unsigned s2 = (u32)t.top * 131u + (u32)t.cursor + (fx ? 7777u : 0u); for (int i = 0; i < t.n; ++i) s2 = s2 * 3u + t.state[i];
+    if (s2 != sig && said < 30) { sig = s2; ++said; char b[64]; int o2 = 0; for (int i = 0; i < t.n && o2 < 60; ++i) b[o2++] = (char)('0' + t.state[i]); b[o2] = 0;
+        windower::debug::log("NATIVEUI config filter '%s' : %d rows (top %d, cursor %d) states %s ; row 0 '%s'", t.name, t.count, t.top, t.cursor, b, t.label[0]); }
+    g_cff = t;
 }
 
 // ---- the macro EDITOR (macro-bar-re s.7) : E = *(Ctrl bar slot + 8) : +4 M, +0x0C row, +0x0D / +0x0E the Ctrl / Alt slot ;
@@ -3837,7 +3898,7 @@ bool entry_pick(const char* const* W, int entry);
 static const char* const GEN_SKIP[] = { "titlewin", "helpwind", "logwindo", "logwin2", "partywin", "netstat", "buff", "targetwi", "fulllog", "cnqframe",
     "shop", "shopbuy", "shopsell", "shopmain", "guildsho", "bazaar", "auclist", "auchisto", "inventor", "iteminfo", "itemxinf", "money", "moneyctr", "itemctrl",
     "bank", "equip", "inspect", "comment", "loot", "lootope", "lnowin", "post1", "post2", "delivery", "stringdl", "roomlist", "fep", "query", "evitem", "gift",
-    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edit", "mcr2edit", "macro", "mcres20", "mcresed", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
+    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edit", "mcr2edit", "macro", "mcres20", "mcresed", "cfilter", "fxfilter", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
     "cmbhlst", "tskill1", "cmbhwin",   // Synthesis (its module ; 2026-11-22 : the panel engine drew its History a second time, misplaced)
     "link5", "link6", "link12",        // Linkshell (its module ; 2026-11-25 : link5 is born before g_ls reads it -- the panel engine learned it and
                                        // drew the items a second time, over the module's box)
@@ -4671,6 +4732,7 @@ bool native_ui_window_open(const char* name) { const u32 m = manager(); return m
 unsigned native_win_named(unsigned mgr, const char* want) { return win_named(mgr, want); }
 const NativeMacroEdit& native_macro_edit() { return g_med; }
 const NativeEquipSets& native_equip_sets() { return g_es; }
+const NativeCfgFilter& native_cfg_filter() { return g_cff; }
 const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
 // the client's ability table ids (0..0x1FF weapon skills, 0x200.. job abilities, 0x600..0x6FF job traits) : d_msg 55701
 // the name, 55733 the description -- abilities-re-2026-11-19.md (all 124 traits / 626 abilities checked against it)
@@ -5173,6 +5235,8 @@ bool native_lootall_pick() {
 }
 bool native_macro_edit_hover(int bar, int entry) { return (bar == 2 ? g_med.ed : g_med.pal) && entry_hover(bar == 0 ? MED_W1 : bar == 1 ? MED_W2 : MED_WM, entry); }
 bool native_macro_edit_pick(int bar, int entry) { return (bar == 2 ? g_med.ed : g_med.pal) && entry_pick(bar == 0 ? MED_W1 : bar == 1 ? MED_W2 : MED_WM, entry); }
+bool native_cfg_filter_hover(int entry) { const char* one[2] = { g_cff.name, 0 }; return g_cff.open && entry_hover(one, entry); }
+bool native_cfg_filter_pick(int entry) { const char* one[2] = { g_cff.name, 0 }; return g_cff.open && entry_pick(one, entry); }
 bool native_equip_sets_hover(int entry) { return g_es.open && entry_hover(ES_W, entry); }
 bool native_equip_sets_pick(int entry) { return g_es.open && entry_pick(ES_W, entry); }
 bool native_macro_books_hover(int entry) { return g_mbk.open && entry_hover(MBOOK_W, entry); }
@@ -5691,7 +5755,8 @@ void native_ui_tick(bool inWorld) {
     { u32 focus = 0; const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus);
       macro_books_poll(wanted && (c.nuHide & NU_MAIN) && mc_res(), manager(), focus);     // MacroPalette's book list
       macro_edit_poll(wanted && (c.nuHide & NU_MAIN) && mc_res(), manager(), focus);     // ... and its editor
-      equip_sets_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus); }               // ... and the equipment sets
+      equip_sets_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus);                 // ... and the equipment sets
+      cfg_filter_poll(wanted && (c.nuHide & NU_NPC), manager(), focus); }                 // Config's filter lists
     net_poll(wanted && (c.nuHide & NU_NET));                                              // the connection box (netstat) : AioHUD's own
     buffwin_poll(wanted && (c.nuHide & NU_BUFF), manager());   // your buff icons : AioHUD's own, where the client puts them
     if (wanted && (eff_hide(c) & NU_BUFF)) ensure_event_hook();   // the buff cursor's left / right walk AioHUD's order

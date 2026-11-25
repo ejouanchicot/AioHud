@@ -5539,6 +5539,57 @@ void macro_books_draw(const Frame& f) {
         }
     } else g_mbkB.hoverRow = 0;
 }
+// ======== Config -> the chat filters (cfilter) / the battle effects (fxfilter) : 14 rows, each a label and its badge (the
+// client's : OFF / ON / Hold). The client keeps the keys ; the mouse hovers a row, a click toggles it (the client's validate). ========
+namespace { Block g_cfB; unsigned g_cfMs = 0; }
+void cfg_filter_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_cfB.vis = 0.0f; g_cfB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_cfMs ? (float)(now - g_cfMs) / 1000.0f : 0.0f; g_cfMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeCfgFilter& F0 = native_cfg_filter();
+    static NativeCfgFilter last;
+    if (F0.open) last = F0;
+    if (!block_ease(g_cfB, F0.open, now, dt) || last.uiW <= 0 || last.n <= 0) return;
+    const Metrics k = metrics(f), kN = no_icons(k);
+    const float S = k.S;
+    static const char* const BADGE[3] = { "OFF", "ON", "Hold" };
+    RowSpec rows[14]; int cur = 0;
+    for (int i = 0; i < last.n; ++i) {
+        rows[i].label = last.label[i]; rows[i].icon = IC_NONE; rows[i].sub = false; rows[i].off = false; rows[i].extra = BADGE[last.state[i] < 3 ? last.state[i] : 0];
+        rows[i].tint = last.state[i] == 1 ? 0xFF9CC8FFu : last.state[i] == 2 ? 0xFF9CE27Au : 0;
+        if (last.cursor == i + 1) cur = i + 1;
+    }
+    float bw = 0.0f, bh = 0.0f; block_size(f, kN, rows, last.n, bw, bh);
+    const float tzH = k.tz * 0.92f, headH = snap(k.capH + k.gap);
+    const char* title = !strcmp(last.name, "fxfilter") ? tr("Battle Effects", "Effets de combat") : tr("Chat Filters", "Filtres du chat");
+    char pg[24]; sprintf(pg, "%d-%d / %d", last.top + 1, last.top + last.n, last.count);
+    {   const float need = snap(k.gutter + f.font->measure(title, tzH) + 14.0f * S + f.font->measure(pg, tzH) + k.pad) + 2.0f * k.bi;
+        if (need > bw) bw = need; }
+    bw = keep_width(g_cfB, bw); bh = snap(bh + headH); g_cfB.inTop = headH;
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+    const float tO = ease_out(((float)(now - g_cfB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_cfB.vis * tO * (last.focused || !F0.open ? 1.0f : 0.62f);
+    if (A <= 0.0f) return;
+    const int row = block_draw(f, kN, g_cfB, rows, last.n, cur, last.focused, bx, by, bw, bh, A, dt);
+    const u32 dev = f.dev;
+    const float hy = by + k.bi + k.pad, hc = snap(hy + (headH - k.gap) * 0.5f);
+    rrect(dev, bx + k.bi + k.gutter, snap(hy + headH - k.gap * 0.5f - 1.0f), bw - 2.0f * k.bi - k.gutter - k.pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    Font* fo = f.font;
+    fo->begin(dev);
+    fo->draw_lc(dev, snap(bx + k.bi + k.gutter + k.capPadL * 0.5f), hc, title, tzH, with_alpha(0xFFE8D9B0u, A), with_alpha(0xC8000000u, A), k.ow);
+    fo->draw_lc(dev, snap(bx + bw - k.bi - k.pad - fo->measure(pg, tzH)), hc, pg, tzH, with_alpha(0xFFC9D3E0u, A), with_alpha(0xC8000000u, A), k.ow);
+    if (F0.open && last.focused) {
+        if (row >= 1 && row <= last.n && row != g_cfB.hoverRow && row != last.cursor) native_cfg_filter_hover(row);
+        g_cfB.hoverRow = row;
+        if (f.mouse && f.mouse->clicked && row >= 1 && row <= last.n) native_cfg_filter_pick(row);
+    } else g_cfB.hoverRow = 0;
+}
 // ======== MacroPalette -> Edit Equip. Set : the SET LIST (mcres20) -- 20 sets a page (10 pages), each with its count of
 // pieces ; a row renamed shows what is typed. The client keeps the keys ; the mouse hovers / picks a row. ========
 namespace { Block g_esB; unsigned g_esMs = 0; }

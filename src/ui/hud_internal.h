@@ -101,7 +101,8 @@ void mission_detail_draw(const Frame& f);
 void key_items_draw(const Frame& f);       // Key Items (evitem) as data   // a mission's page (miss00 state 2)     // the journal (quests, Records of Eminence) as data    // Missions as data (the story)   // the generic PANELS (the text capture)  // hud_actmenu.cpp : the generic engine's grid (NU_NPC)
 void macro_books_draw(const Frame& f);
 void macro_edit_draw(const Frame& f);
-void equip_sets_draw(const Frame& f);    // hud_actmenu.cpp : MacroPalette's equipment set list (mcres20, NU_MAIN)    // hud_actmenu.cpp : MacroPalette's editor (palette + one macro, NU_MAIN)   // hud_actmenu.cpp : MacroPalette's book list (mcrselec, NU_MAIN)
+void equip_sets_draw(const Frame& f);
+void cfg_filter_draw(const Frame& f);    // hud_actmenu.cpp : Config's chat / battle-effect filters (cfilter / fxfilter, NU_NPC)    // hud_actmenu.cpp : MacroPalette's equipment set list (mcres20, NU_MAIN)    // hud_actmenu.cpp : MacroPalette's editor (palette + one macro, NU_MAIN)   // hud_actmenu.cpp : MacroPalette's book list (mcrselec, NU_MAIN)
 void gen_list_draw(const Frame& f);  // hud_actmenu.cpp : the generic engine's list (NU_NPC)
 void gen_draw(const Frame& f);       // hud_actmenu.cpp : the generic engine's menus (NU_NPC)
 void auc_draw(const Frame& f);       // hud_actmenu.cpp : the auction house (NU_NPC)

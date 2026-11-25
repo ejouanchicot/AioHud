@@ -137,6 +137,7 @@ struct NativeMacroBooks {
     short rx0, ry0, rx1, ry1; int uiW, uiH;   // the client's rect (UI units, unparked)
 };
 bool native_ui_window_open(const char* name);   // native_ui.cpp : a client window of that name is open
+bool native_any_hover(const char* name, int entry);   // native_ui.cpp (dev walk) : that window's hand on that entry
 unsigned native_manager();                       // native_ui.cpp : the menu manager (0 unresolved)
 unsigned native_win_named(unsigned mgr, const char* want);   // ... an open window by name (0 none)
 const NativeMacroBooks& native_macro_books();
@@ -179,6 +180,23 @@ struct NativeEquipSets {
     short rx0, ry0, rx1, ry1; int uiW, uiH;
 };
 const NativeEquipSets& native_equip_sets();
+
+// Config -> the chat FILTERS (cfilter) and the battle EFFECTS filter (fxfilter) : one scroll class (base FUN_054D9060,
+// docs/notes/list-text-capture-re-2026-11-21.md 1c + live 2026-11-25). 14 rows a page (handler +0x14 count, +0x18 top),
+// the labels from the text capture ; each row's badge = a "menu    framesus" sprite by state : 0 / 3 OFF, 1 ON, 2 / 4 Hold.
+// cfilter's state = the client's own FUN_054D9810(row) (thiscall, reads only) ; fxfilter's = bit table[row].byte0 of +0x30.
+struct NativeCfgFilter {
+    bool open, focused;
+    char name[9];          // "cfilter" / "fxfilter"
+    int  count, top, cursor;   // cursor : the hand's entry 1..14 (0 none)
+    int  n;                // rows shown
+    char label[14][64];
+    unsigned char state[14];   // 0 off, 1 on, 2 hold
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeCfgFilter& native_cfg_filter();
+bool native_cfg_filter_hover(int entry);
+bool native_cfg_filter_pick(int entry);
 bool native_equip_sets_hover(int entry);
 bool native_equip_sets_pick(int entry);
 bool native_macro_edit_hover(int bar, int entry);   // bar 0 palette Ctrl, 1 palette Alt, 2 the macro window
