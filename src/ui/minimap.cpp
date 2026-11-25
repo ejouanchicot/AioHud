@@ -3679,7 +3679,7 @@ void Minimap::draw(const Frame& f) {
                 // which the previous") : an applied metal rail along the bezel under the three wheels -- its TAIL (a stop bar)
                 // facing the previous wheel, the red-enamelled lozenge facing the present one, the ARROWHEAD facing the next :
                 // what the arrow points at is what comes
-                auto marks = [&](float th, float headPast, bool head) {
+                auto marks = [&](float th, float headPast, bool head, bool lozenge = true) {
                     const float dir = pod_dir(th), aP = th - dir * G.as * 1.05f, aN = th + dir * (G.as * 1.05f + headPast);
                     const float wR = hA * 0.16f, aLo = fminf(aP, aN), aHi = fmaxf(aP, aN);
                     auto P = [&](float a, float rr, float& x, float& y) { x = ccx + cosf(a) * rr; y = ccy + sinf(a) * rr; };
@@ -3711,8 +3711,8 @@ void Minimap::draw(const Frame& f) {
                         const float hl[6] = { tr[0], tr[1], tr[2], tr[3], bx, by };
                         fill_poly_aa(dev, hl, 3, MA(0xB0, g_dm.glint));
                     }
-                    // the PRESENT : a polished lozenge set on the rail, a red enamel dot
-                    {
+                    // the PRESENT : a polished lozenge set on the rail, a red enamel dot (the moon : its day counter instead)
+                    if (lozenge) {
                         const float ux = cosf(th), uy = sinf(th), tx = -uy, ty = ux, mx = ccx + ux * rM, my = ccy + uy * rM;
                         const float L = hA * 0.85f, W = hA * 0.50f;
                         float lz[8] = { mx + ux * L, my + uy * L, mx + tx * W, my + ty * W, mx - ux * L, my - uy * L, mx - tx * W, my - ty * W };
@@ -3738,8 +3738,9 @@ void Minimap::draw(const Frame& f) {
                     char d2[4]; sprintf(d2, "%02d", dd);
                     const float dsz = snap(TUNE("mm.mcount_sz", 13.0f) * S), dhh = snap(hA * TUNE("mm.mcount_h", 0.95f));
                     const float half = nf ? drum_width(nf, d2, dsz, S) * 0.5f / rM : 0.0f;
-                    const float cA = G.as * TUNE("mm.mcount_at", 1.22f);       // the counter : over the next moon, a little beyond (air for the present's lozenge)
-                    marks(s_moonTh, (cA - half - 1.5f * S / rM) - G.as * 1.05f, false);   // the rail runs to the counter ; the counter IS the target (no head)
+                    const float cA = 0.0f;                                         // the counter OVER THE PRESENT MOON (the user 2026-11-25) : the arrow runs from
+                    (void)half;                                                    // the previous moon's tail, through it, to the next moon's head
+                    marks(s_moonTh, 0.0f, true, false);
                     if (nf) drum_arc(dev, nf, 0, ccx, ccy, s_moonTh + pod_dir(s_moonTh) * cA, rM, dhh, d2, dsz, S);
                 }
             }
