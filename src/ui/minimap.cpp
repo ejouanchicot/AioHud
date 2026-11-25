@@ -704,6 +704,7 @@ static void dial_metal_set(u32 base) {
 // instrument). Drawn BEFORE the map, which then fills the inside. ----
 static void grain_poly(u32 dev, const float* xy, int n, float S);
 static void draw_square_case(u32 dev, float cx, float cy, float r, float fi, float S, bool pods = false) {
+    PERF_SCOPE("mm.sqcase");
     const float x0 = cx - r, y0 = cy - r, W = 2.0f * r, rad = snap(6.0f * S), ri = r - fi;
     // with the modules : the SAME metal as their collar (the user 2026-11-25 : "the main frame is not the modules' metal")
     const u32 hb = dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f));
@@ -1086,6 +1087,7 @@ static void pod_lit_band(u32 dev, float cx, float cy, float r0, float r1, float 
 // pits) alpha-blended over the flat metal, mapped in screen space (one tile ~ 110 px x S), WRAP addressing. 0 = not loaded.
 static u32 s_grainTex = 0;
 static void grain_ring(u32 dev, float cx, float cy, float r0, const float* Ra, int N, float rConst, float S, float rMin, float A0 = -3.14159265f, float A1 = 3.14159265f) {
+    PERF_SCOPE("mm.grain");
     if (!s_grainTex) return;
     const u32 col = ((u32)(255.0f * TUNE("mm.grain", 0.55f)) << 24) | 0x00FFFFFFu;
     const float T = 110.0f * S;
@@ -1186,6 +1188,7 @@ static int s_podN = 0; static float s_podTh[POD_MAX], s_podPh[POD_MAX];
 // enough are WELDED by a lower bridge between them, its valleys rounded (a smooth max) -- the silhouette is computed from
 // the modules present, wherever they sit. Lit continuously from the lamp ; a polished bevel along its edge.
 static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
+    PERF_SCOPE("mm.collar");
     const int n = s_podN; if (n <= 0) return;
     const float D = (s_podR0 > 0.0f ? s_podR0 : r) * TUNE("mm.pod_depth", 0.235f), Ri = r - 3.0f * S - s_podOut, Ro = r + D, rB = r - 1.5f * S - s_podOut, H = Ro - rB, rm = (Ri + Ro) * 0.5f;
     const float L = H * TUNE("mm.pod_lug", 1.05f) / rm, kS = TUNE("mm.pod_lug_k", 5.0f), tk = tanhf(kS * 0.5f);
@@ -1214,18 +1217,34 @@ static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
     const int N = 360;
     static float Ra[N + 1];
     const float A0 = s_colA0, AS = s_colA1 - s_colA0;                    // the range (the round : the full turn ; a square edge : its modules)
-    for (int i = 0; i <= N; ++i) Ra[i] = prof(A0 + AS * (float)i / N);
+    {   // the profile : recomputed only when its inputs change (4 cached collars : the square draws one per edge)
+        struct Key { float v[4 + 2 * POD_MAX]; int n; };
+        static Key keys[4]; static float cache[4][N + 1]; static int used = 0, next = 0;
+        Key k = {}; k.n = n; k.v[0] = r; k.v[1] = S; k.v[2] = A0; k.v[3] = AS;
+        for (int i = 0; i < n; ++i) { k.v[4 + 2 * i] = s_podTh[i]; k.v[5 + 2 * i] = s_podPh[i]; }
+        int hit = -1;
+        for (int q = 0; q < used; ++q) if (keys[q].n == k.n && memcmp(keys[q].v, k.v, sizeof(k.v)) == 0) { hit = q; break; }
+        if (hit < 0) {
+            hit = used < 4 ? used++ : next; next = (hit + 1) % 4; keys[hit] = k;
+            for (int i = 0; i <= N; ++i) cache[hit][i] = prof(A0 + AS * (float)i / N);
+        }
+        for (int i = 0; i <= N; ++i) Ra[i] = cache[hit][i];
+    }
     static VtxC buf[N * 6];
     // one layer : a band from inner(a, R) to outer(a, R), coloured per vertex, over every segment where the collar stands
+    // the angles' cos / sin ONCE (perf 2026-11-25 : every band recomputed them, 4 x 360 per band, 6 bands)
+    static float Ca[N + 1], Sa[N + 1], Aa[N + 1], La[N + 1];
+    for (int i = 0; i <= N; ++i) { Aa[i] = A0 + AS * (float)i / N; Ca[i] = cosf(Aa[i]); Sa[i] = sinf(Aa[i]); La[i] = Ca[i] * POD_LX + Sa[i] * POD_LY; }
     auto band = [&](float ox, float oy, float (*inner)(float, float, float), float (*outer)(float, float, float), float prm, u32 (*colf)(float, float, float, u32), u32 base) {
         int m = 0;
         for (int i = 0; i < N; ++i) {
             if (Ra[i] < rB + 0.3f && Ra[i + 1] < rB + 0.3f) continue;
-            const float a0 = A0 + AS * (float)i / N, a1 = A0 + AS * (float)(i + 1) / N;
+            const float a0 = La[i], a1 = La[i + 1];                     // the lamp terms (the colour functions take them)
             const float i0 = inner(Ra[i], prm, S), o0 = outer(Ra[i], prm, S), i1 = inner(Ra[i + 1], prm, S), o1 = outer(Ra[i + 1], prm, S);
             const u32 c0i = colf(a0, Ra[i], 0.0f, base), c0o = colf(a0, Ra[i], 1.0f, base), c1i = colf(a1, Ra[i + 1], 0.0f, base), c1o = colf(a1, Ra[i + 1], 1.0f, base);
-            const VtxC A = { cx + ox + cosf(a0) * i0 - 0.5f, cy + oy + sinf(a0) * i0 - 0.5f, 0, 1, c0i }, B = { cx + ox + cosf(a0) * o0 - 0.5f, cy + oy + sinf(a0) * o0 - 0.5f, 0, 1, c0o };
-            const VtxC C = { cx + ox + cosf(a1) * i1 - 0.5f, cy + oy + sinf(a1) * i1 - 0.5f, 0, 1, c1i }, E = { cx + ox + cosf(a1) * o1 - 0.5f, cy + oy + sinf(a1) * o1 - 0.5f, 0, 1, c1o };
+            const float x0 = cx + ox - 0.5f, y0 = cy + oy - 0.5f;
+            const VtxC A = { x0 + Ca[i] * i0, y0 + Sa[i] * i0, 0, 1, c0i }, B = { x0 + Ca[i] * o0, y0 + Sa[i] * o0, 0, 1, c0o };
+            const VtxC C = { x0 + Ca[i + 1] * i1, y0 + Sa[i + 1] * i1, 0, 1, c1i }, E = { x0 + Ca[i + 1] * o1, y0 + Sa[i + 1] * o1, 0, 1, c1o };
             buf[m++] = A; buf[m++] = B; buf[m++] = C; buf[m++] = B; buf[m++] = E; buf[m++] = C;
         }
         if (m >= 3) dDrawUP(dev, D3DPT_TRIANGLELIST, m / 3, buf, sizeof(VtxC));
@@ -1254,7 +1273,7 @@ static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
         static float s_Ro, s_H;
         s_Ro = Ro; s_H = H;
         struct B1 { static u32 c(float a, float R, float, u32 b) {
-            const float l = cosf(a) * POD_LX + sinf(a) * POD_LY;
+            const float l = a;                                           // (band passes the lamp term, not the angle)
             u32 cc = l > 0.0f ? pod_mix(b, g_dm.lite, l * 0.14f) : pod_mix(b, g_dm.edge, -l * 0.14f);
             return pod_mix(cc, g_dm.edge, 0.20f * fminf(1.0f, (s_Ro - R) / s_H)); } };
         struct G2 { static float in(float R, float p, float s) { (void)R; (void)s; return p; } static float out(float R, float p, float s) { (void)p; (void)s; return R; } };
@@ -1264,7 +1283,7 @@ static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
     // the rounded cast edge : a soft lit lip toward the lamp, in shade away from it
     {
         struct C1 { static u32 c(float a, float, float t, u32) {
-            const float l = cosf(a) * POD_LX + sinf(a) * POD_LY;
+            const float l = a;                                           // (band passes the lamp term, not the angle)
             const u32 cc = l > 0.0f ? MA((u32)(14.0f + 50.0f * l), g_dm.lite) : MA((u32)(20.0f - 50.0f * l), g_dm.shade);   // subdued : a worn edge, not a neon line
             return t > 0.5f ? cc : (cc & 0x00FFFFFFu); } };
         band(0.0f, 0.0f, K::lipIn, K::lipOut, 0.0f, C1::c, 0);
@@ -1272,19 +1291,19 @@ static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
     // the polished bevel inside the edge : a bright band, a soft shadow below it
     {
         struct C2 { static u32 c(float a, float, float t, u32) {
-            const float l = cosf(a) * POD_LX + sinf(a) * POD_LY;
+            const float l = a;                                           // (band passes the lamp term, not the angle)
             const u32 hi = MA((u32)(10.0f + 26.0f * (l > 0.0f ? l : 0.0f)), g_dm.lite);
             return t > 0.5f ? hi : (hi & 0x00FFFFFFu); } };
         struct C3 { static u32 c(float, float, float t, u32) { return t > 0.5f ? MA(0x30, g_dm.edge) : 0x00000000u; } };
         band(0.0f, 0.0f, K::sh0, K::sh1, 0.0f, C3::c, 0);
         band(0.0f, 0.0f, K::bv0, K::bv1, 0.0f, C2::c, 0);
     }
-    // the outline, anti-aliased (the strips' own edges are hard)
-    for (int i = 0; i < N; ++i) {
-        if (Ra[i] < rB + 0.3f && Ra[i + 1] < rB + 0.3f) continue;
-        const float a0 = A0 + AS * (float)i / N, a1 = A0 + AS * (float)(i + 1) / N;
-        const float r0 = Ra[i] + 1.3f * S, r1 = Ra[i + 1] + 1.3f * S;
-        seg_soft(dev, cx + cosf(a0) * r0, cy + sinf(a0) * r0, cx + cosf(a1) * r1, cy + sinf(a1) * r1, 1.2f * S, 0x60000000u);
+    // the outline, anti-aliased : ONE feathered band (it was a seg_soft per segment -- ~700 draws a frame, perf 2026-11-25)
+    {
+        struct C4 { static u32 c(float, float, float t, u32) { return t > 0.5f ? 0x00000000u : 0x60000000u; } };
+        struct K4 { static float o0(float R, float p, float s) { (void)p; (void)s; return R; }
+                    static float o1(float R, float p, float s) { (void)p; return R + 1.8f * s; } };
+        band(0.0f, 0.0f, K4::o0, K4::o1, 0.0f, C4::c, 0);
     }
 }
 void clip_rect_begin(u32 dev, float x, float y, float w, float h);   // (config_controls.cpp : a sub-viewport clip)
@@ -1361,18 +1380,24 @@ static void pod_glass(u32 dev, float cx, float cy, float rw, float wr, float a0,
     color_state(dev);
 }
 static void pod_caps(u32 dev, float cx, float cy, float rw, float wr, float a0, float a1, float S) {
+    PERF_SCOPE("mm.caps");
+    // a cap is ~3 px wide : drawn as QUADS, not 56-segment arcs (perf 2026-11-25 : 168 draws a frame for the caps)
     color_state(dev);
     const float cw = 3.0f * S / rw, ri = rw - wr - 1.2f * S, ro = rw + wr + 1.2f * S;
     const u32 body = dm_toward(g_dm.bot, 0xFF000000u, 0.20f) | 0xFF000000u;   // a darker, matte metal than the collar
+    auto quad = [&](float r0, float r1, float b0, float b1, u32 col) {
+        const float q[8] = { cx + cosf(b0) * r0, cy + sinf(b0) * r0, cx + cosf(b0) * r1, cy + sinf(b0) * r1,
+                             cx + cosf(b1) * r1, cy + sinf(b1) * r1, cx + cosf(b1) * r0, cy + sinf(b1) * r0 };
+        fill_poly_aa(dev, q, 4, col);
+    };
     for (int e = -1; e <= 1; e += 2) {
         const float aIn = e < 0 ? a0 : a1;                                // the glass's end
         const float c0 = e < 0 ? aIn - cw : aIn, c1 = c0 + cw;            // wholly OUTSIDE the window : it must not bite the end wheels
         const float l = cosf(aIn) * POD_LX + sinf(aIn) * POD_LY;           // the cap's own light : its outward face
-        ring_sector(dev, cx, cy, ri - 1.0f * S, ro + 1.0f * S, c0 - 1.0f * S / rw, c1 + 1.0f * S / rw, g_dm.edge);   // its dark edge
-        ring_sector(dev, cx, cy, ri, ro, c0, c1, l > 0.0f ? pod_mix(body, g_dm.lite, l * 0.25f) : pod_mix(body, g_dm.edge, -l * 0.25f));
-        sector_grad(dev, cx, cy, rw, ro, c0, c1, MA(0x00, g_dm.lite), MA(0x40, g_dm.lite), MA(0x00, g_dm.lite), MA(0x40, g_dm.lite));   // a cylinder : softly lit on its outer half...
-        sector_grad(dev, cx, cy, ri, rw, c0, c1, MA(0x60, g_dm.edge), MA(0x00, g_dm.edge), MA(0x60, g_dm.edge), MA(0x00, g_dm.edge));   // ...in shade on its inner
-        ring_sector(dev, cx, cy, ro - 0.9f * S, ro, c0, c1, MA(0x40, g_dm.lite));                     // the lip, a faint light
+        quad(ri - 1.0f * S, ro + 1.0f * S, c0 - 1.0f * S / rw, c1 + 1.0f * S / rw, g_dm.edge | 0xFF000000u);   // its dark edge
+        const u32 bc = l > 0.0f ? pod_mix(body, g_dm.lite, l * 0.25f) : pod_mix(body, g_dm.edge, -l * 0.25f);
+        quad(rw, ro, c0, c1, pod_mix(bc, g_dm.lite, 0.12f));             // a cylinder : its outer half lit...
+        quad(ri, rw, c0, c1, pod_mix(bc, g_dm.edge, 0.18f));             // ...its inner half in shade
         const float sa = e < 0 ? c1 : c0;                                  // the seam against the glass
         seg_soft(dev, cx + cosf(sa) * (rw - wr), cy + sinf(sa) * (rw - wr), cx + cosf(sa) * (rw + wr), cy + sinf(sa) * (rw + wr), 0.9f * S, 0xC0000000u);
     }
@@ -1715,6 +1740,7 @@ static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw,
 // the cuts radial, the aperture and the glass following the curve ; the characters stay upright and roll ALONG THE
 // RADIUS (outward = the old value leaves away from the centre). th0 the tube's angle, rw its mid radius, wr half its height.
 static void drum_arc(u32 dev, Font* fo, int slot, float cx, float cy, float th0, float rw, float wr, const char* txt, float sz, float S) {
+    PERF_SCOPE("mm.drumarc");
     if (!fo || slot < 0 || slot > 3) return;
     DrumTok tk[16]; const int n = drum_tokens(fo, txt, sz, S, tk, 16);
     static char cur[4][16][12] = {}, old[4][16][12] = {}; static unsigned tch[4][16] = {}; static bool seen[4] = {};
@@ -2055,6 +2081,7 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
 
 static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, const VanaClock& v, u32 elemTex, u32 wxTex,
                                  float mapX, float mapY, float cx, float cy, float rc, float r, float S, float zoomA, bool sq, int pass) {
+    PERF_SCOPE("mm.instr");
     // pass 0 : the MODULES -- sky, weather, moon, position, the band -- drawn BEFORE the map and the ring : they are mounted
     // BEHIND the compass, on a lower plane, and peek out from under its case (the user 2026-11-25 : "everything that comes
     // out of the compass comes from behind ; the main dial is in front"). pass 1 : the compass face (cardinals, needle, zoom).
@@ -2984,6 +3011,7 @@ static void draw_gem(u32 dev, float cx, float cy, float g, int kind, float t, fl
 // THE MODULES' INDEX MARKS on the bezel / the square case's frame (time arrows, the red pointer, the moon's day counter) --
 // each module's in its own frame (PodF) ; band : the bezel's / the frame's width
 static void draw_index_marks(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, float S, float band) {
+    PERF_SCOPE("mm.idx");
             // THE INDEX MARKS (the user 2026-11-25 : "symbols on the graduated dial for our modules -- an arrowhead at the
             // current moon, another symbol for the previous and next new / full moon ; the same for the day's elements") :
             // APPLIED on the bezel facing each wheel (the user : "the arrows too blunt, not visible") -- a polished lozenge
