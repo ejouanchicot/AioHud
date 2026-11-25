@@ -181,7 +181,7 @@ void draw_icon(u32 dev, Icon ic, float cx, float cy, float z, float S, u32 c) {
 
 u32 g_handTex = 0;   // the party's selection-hand texture, handed in by the HUD each frame (device-loss managed there)
 float g_subXY[2] = { -1.0f, -1.0f };     // where the main menu's submenu was last drawn (a player's options take its place)
-const int HIT_N = 20;
+const int HIT_N = 21;   // ... 20 the macro book list
 float g_hit[HIT_N][4] = { { 0, 0, 0, 0 } };   // 13 the trade, 14 a confirm, 15 the buff bar, 16 a shop's Buy / Sell, 17 its list
 struct CoinQ { float x, y, z, a; }; CoinQ g_coinQ[16]; int g_coinN = 0;   // a list's gil coins, drawn after its text pass  // the drawn blocks (menu, submenu ; NPC bubble, NPC answers ; the auto-translate picker ; the main menu, its categories, its list ; Unity Info) as screen FRACTIONS : their clicks never reach the game
 // grow block i's (already set) hit rect down to `bottom` (screen px) -- a box drawn under it after the rect was set
@@ -5434,6 +5434,77 @@ void gen_list_draw(const Frame& f) {
         (void)tz;
     }
     if (iid && G0.list && !native_dialog().open) card_on_chat(f, k, iid, tO, A);
+}
+// ======== MacroPalette -> Edit Macro : the BOOK LIST (mcrselec) -- 20 books a page, the one in use in gold, a row being
+// renamed shows what is typed ; a header band "Macro Books  < 1 / 2 >" like the main menu's. The client keeps the keys ;
+// the mouse hovers / picks a row, a click on an arrow turns the page (its entries 21 / 22). ========
+namespace { Block g_mbkB; unsigned g_mbkMs = 0; }
+void macro_books_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    g_hit[20][2] = 0.0f;
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_mbkB.vis = 0.0f; g_mbkB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_mbkMs ? (float)(now - g_mbkMs) / 1000.0f : 0.0f; g_mbkMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeMacroBooks& B0 = native_macro_books();
+    static NativeMacroBooks last;
+    if (B0.open) last = B0;
+    if (!block_ease(g_mbkB, B0.open, now, dt) || last.uiW <= 0 || last.uiH <= 0) return;
+    const Metrics k = metrics(f), kN = no_icons(k);
+    const float S = k.S;
+    RowSpec rows[20]; static char lab[20][24], num[20][8]; int cur = 0;
+    for (int i = 0; i < 20; ++i) {
+        const int book = last.page * 20 + i;
+        if (last.renaming == i + 1) { _snprintf(lab[i], sizeof(lab[i]), "%s%s", last.rename, (now / 500) % 2 ? "_" : " "); lab[i][23] = 0; rows[i].tint = 0xFFFFFFFFu; }
+        else { lstrcpynA(lab[i], last.title[i][0] ? last.title[i] : "-", sizeof(lab[i])); if (book == last.current) rows[i].tint = 0xFFFFDA8Au; }
+        sprintf(num[i], "%d", book + 1);
+        rows[i].label = lab[i]; rows[i].icon = IC_NONE; rows[i].sub = false; rows[i].off = false; rows[i].extra = num[i];
+        if (last.cursor == i + 1) cur = i + 1;
+    }
+    float bw = 0.0f, bh = 0.0f; block_size(f, kN, rows, 20, bw, bh);
+    const float tzH = k.tz * 0.92f, headH = snap(k.capH + k.gap);
+    const char* title = tr("Macro Books", "Livres de macros");
+    char pg[16]; sprintf(pg, "%d / 2", last.page + 1);
+    {   const float need = snap(k.gutter + f.font->measure(title, tzH) + 14.0f * S + f.font->measure("2 / 2", tzH) + 18.0f * S + k.pad) + 2.0f * k.bi;
+        if (need > bw) bw = need; }
+    bw = keep_width(g_mbkB, bw); bh = snap(bh + headH); g_mbkB.inTop = headH;
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    float bx = (last.rx0 * 2 > last.uiW) ? snap((float)last.rx1 * sx - bw) : snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+    const float tO = ease_out(((float)(now - g_mbkB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_mbkB.vis * tO * (last.focused || !B0.open ? 1.0f : 0.62f);
+    if (A <= 0.0f) return;
+    const int row = block_draw(f, kN, g_mbkB, rows, 20, cur, last.focused, bx, by, bw, bh, A, dt);
+    // the header : the title, the page between its two arrows (the client's entries 21 / 22)
+    const u32 dev = f.dev;
+    const float hy = by + k.bi + k.pad, hc = snap(hy + (headH - k.gap) * 0.5f);
+    rrect(dev, bx + k.bi + k.gutter, snap(hy + headH - k.gap * 0.5f - 1.0f), bw - 2.0f * k.bi - k.gutter - k.pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    const float pw = f.font->measure(pg, tzH), ar = 3.0f * S;
+    const float rx = snap(bx + bw - k.bi - k.pad - 4.0f * S), lx = snap(rx - 2.0f * ar - 6.0f * S - pw - 6.0f * S);
+    const u32 ac = with_alpha(0xC0FFDA8Au, A);
+    tri(dev, rx, hc, rx - 2.0f * ar, hc - ar * 1.2f, rx - 2.0f * ar, hc + ar * 1.2f, ac);
+    tri(dev, lx, hc, lx + 2.0f * ar, hc - ar * 1.2f, lx + 2.0f * ar, hc + ar * 1.2f, ac);
+    Font* fo = f.font;
+    fo->begin(dev);
+    fo->draw_lc(dev, snap(bx + k.bi + k.gutter + k.capPadL * 0.5f), hc, title, tzH, with_alpha(0xFFE8D9B0u, A), with_alpha(0xC8000000u, A), k.ow);
+    fo->draw_lc(dev, snap(lx + 2.0f * ar + 6.0f * S), hc, pg, tzH, with_alpha(0xFFC9D3E0u, A), with_alpha(0xC8000000u, A), k.ow);
+    if (B0.open && last.focused && !last.renaming) {
+        g_hit[20][0] = bx / f.screenW; g_hit[20][1] = by / f.screenH; g_hit[20][2] = bw / f.screenW; g_hit[20][3] = bh / f.screenH;
+        if (row >= 1 && row <= 20 && row != g_mbkB.hoverRow && row != last.cursor) native_macro_books_hover(row);
+        g_mbkB.hoverRow = row;
+        if (f.mouse && f.mouse->clicked) {
+            if (row >= 1 && row <= 20) native_macro_books_pick(row);
+            else {                                                 // the header's arrows : 6 px around each
+                const float mx = f.mouse->x, my = f.mouse->y;
+                if (fabsf(my - hc) < 8.0f * S) {
+                    if (fabsf(mx - (lx + ar)) < 8.0f * S) native_macro_books_pick(21);
+                    else if (fabsf(mx - (rx - ar)) < 8.0f * S) native_macro_books_pick(22);
+                }
+            }
+        }
+    } else g_mbkB.hoverRow = 0;
 }
 // the generic engine's GRID (Config's screens) : the client's layout -- our box at its rect, the frame's static texts
 // (its sprite's letters, where the client puts them), each entry a capsule at its rect with its own letters ; the cursor

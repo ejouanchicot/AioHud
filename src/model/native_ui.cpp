@@ -302,6 +302,7 @@ u32 g_actObj = 0;          // the playermo object of the last good read (re-read
 NativeNpc g_npc; bool g_npcFail = false; int g_npcBad = 0; DWORD g_npcGoodSince = 0;
 // and for the MAIN menu
 NativeEntryMenu g_mainM, g_mainSub, g_mainSort, g_mainYn; bool g_mainFail = false;
+extern NativeMacroBooks g_mbk;   // the macro book list (macro_books_poll, below)
 bool g_mainNative = false;   // a main-menu child the client keeps drawing, in the main menu's place (main_poll)
 NativeTopBar g_tb; bool g_tbFail = false;                                               // the top bar (titlewin + helpwind)
 NativeMacro g_mc; bool g_mcFail = false;                                                // the macro bar
@@ -1550,11 +1551,17 @@ Hook g_hkTxAscC  = { 0, PRO_ASCIIC,   7, 0, 0, {0}, false, "text capture : clipp
 Hook g_hkSprite  = { 0, PRO_SPRITE,   7, 0, 0, {0}, false, "text capture : entry images" };
 struct CapRun { short x, y; u32 col; char s[60]; };
 struct CapWin { u32 win; DWORD ms; int n; CapRun r[40]; };
-CapWin g_cap[24]; u32 g_capCur = 0; int g_capSlot = -1, g_capDepth = 0, g_capWy = 0;
+CapWin g_cap[24]; u32 g_capCur = 0; int g_capSlot = -1, g_capDepth = 0, g_capWy = 0; short g_capR[4] = { 0, 0, 0, 0 };
 // a parked window's text that still lands on the screen : some rows keep the origin the client cached BEFORE the park
 // (quest00's, 2026-11-25 : the client's rows showed under AioHUD's Journal). Drawn HIDE_DY lower -- off-screen with
 // their window ; the capture keeps the real y (gen_panel_read folds it back), the return value (end x) is unchanged
-inline u32 cap_park_y(u32 y) { return g_capCur && (int)y - g_capWy < -HIDE_DY / 2 ? y + (u32)HIDE_DY : y; }
+// ONLY inside the window's own unparked rect (+ a margin) : a window also draws things at WORLD places -- the target
+// window's cursor over a character / NPC went off-screen with it (2026-11-25, "je ne vois plus le curseur de selection")
+inline u32 cap_park_y(int x, u32 y) {
+    if (!g_capCur || (int)y - g_capWy >= -HIDE_DY / 2) return y;
+    const int uy = (int)y + HIDE_DY;
+    return (x >= g_capR[0] - 24 && x <= g_capR[2] + 24 && uy >= g_capR[1] - 24 && uy <= g_capR[3] + 24) ? y + (u32)HIDE_DY : y;
+}
 typedef u32 (__fastcall* WinDrawFn)(u32 win, u32 edx);
 typedef u32 (__fastcall* TextCoreFn)(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy);
 typedef u32 (__cdecl* Cdecl10Fn)(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);
@@ -1585,10 +1592,10 @@ u32 __fastcall hk_windraw_body(u32 win, u32 edx) {
     for (int i = 0; i < 24; ++i) if (g_cap[i].win == win) { s = i; break; }
     if (s < 0) for (int i = 0; i < 24; ++i) if (s < 0 || (int)(now - g_cap[i].ms) > (int)(now - g_cap[old].ms)) { s = i; old = i; }
     g_cap[s].win = win; g_cap[s].ms = now; g_cap[s].n = 0;
-    const int pwy = g_capWy; short wy = 0; if (!rd16(win + OBJ_RECT + 2, wy)) wy = 0;
-    g_capCur = win; g_capSlot = s; g_capWy = wy;
+    const int pwy = g_capWy; short pr[4]; memcpy(pr, g_capR, sizeof(pr)); short r4[4] = { 0, 0, 0, 0 }; if (!rdblk(win + OBJ_RECT, r4, 8)) memset(r4, 0, 8);
+    g_capCur = win; g_capSlot = s; g_capWy = r4[1]; memcpy(g_capR, r4, sizeof(r4));
     const u32 r = ((WinDrawFn)g_hkWinDraw.tramp)(win, edx);
-    g_capCur = pc; g_capSlot = ps; g_capWy = pwy;
+    g_capCur = pc; g_capSlot = ps; g_capWy = pwy; memcpy(g_capR, pr, sizeof(pr));
     return r;
 }
 u32 __fastcall hk_windraw(u32 win, u32 edx) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
@@ -1596,7 +1603,7 @@ u32 __fastcall hk_windraw(u32 win, u32 edx) {   // relay_enter / relay_leave : a
 }
 u32 __fastcall hk_txcore_body(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy) {
     if (g_capCur) cap_add((int)x, (int)y, s, (int)len, col);
-    ++g_capDepth; const u32 r = ((TextCoreFn)g_hkTxCore.tramp)(font, edx, x, cap_park_y(y), s, len, col, fl, sx, sy); --g_capDepth;
+    ++g_capDepth; const u32 r = ((TextCoreFn)g_hkTxCore.tramp)(font, edx, x, cap_park_y((int)x, y), s, len, col, fl, sx, sy); --g_capDepth;
     return r;
 }
 // the window IMAGES : the inner sprite draw FUN_05460FF0 (Nov ; thiscall (x, y, colour, ?, ?) ret 0x14, 213 callers) under
@@ -1604,7 +1611,7 @@ u32 __fastcall hk_txcore_body(u32 font, u32 edx, u32 x, u32 y, const char* s, u3
 // the RoE row callback) : quest00's bullets stayed on the screen with the rows' texts -- the same park (cap_park_y)
 typedef u32 (__fastcall* Sprite5Fn)(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5);
 u32 __fastcall hk_sprite_body(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5) {
-    return ((Sprite5Fn)g_hkSprite.tramp)(spr, edx, x, cap_park_y(y), a3, a4, a5);
+    return ((Sprite5Fn)g_hkSprite.tramp)(spr, edx, x, cap_park_y((int)x, y), a3, a4, a5);
 }
 u32 __fastcall hk_sprite(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5) {   // relay_enter / relay_leave (R1)
     relay_enter(); const auto r = hk_sprite_body(spr, edx, x, y, a3, a4, a5); relay_leave(); return r;
@@ -1615,7 +1622,7 @@ u32 __fastcall hk_txcore(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len
 // the ascii ones are cdecl : 10 slots forwarded (the caller cleans ; the extra ones are its own stack, untouched)
 u32 __cdecl hk_txasc_body(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
     if (g_capCur) cap_add((short)a1, (short)a2, (const char*)a3, 0, a4);
-    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAsc.tramp)(a1, cap_park_y(a2), a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
+    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAsc.tramp)(a1, cap_park_y((short)a1, a2), a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
     return r;
 }
 u32 __cdecl hk_txasc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
@@ -1623,7 +1630,7 @@ u32 __cdecl hk_txasc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32
 }
 u32 __cdecl hk_txascr_body(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
     if (g_capCur) cap_add((short)a1, (short)a2, (const char*)a3, 0, a4 | 0x01000000u);   // right-aligned : x is its RIGHT edge (bit 24 of the colour marks it)
-    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscR.tramp)(a1, (u32)(short)cap_park_y((u32)(int)(short)a2), a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
+    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscR.tramp)(a1, (u32)(short)cap_park_y((short)a1, (u32)(int)(short)a2), a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
     return r;
 }
 u32 __cdecl hk_txascr(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
@@ -1631,7 +1638,7 @@ u32 __cdecl hk_txascr(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u3
 }
 u32 __cdecl hk_txascc_body(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
     if (g_capCur) cap_add((int)a2, (short)a3, (const char*)a4, 0, a5);
-    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscC.tramp)(a1, a2, (u32)(short)cap_park_y((u32)(int)(short)a3), a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
+    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscC.tramp)(a1, a2, (u32)(short)cap_park_y((int)a2, (u32)(int)(short)a3), a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
     return r;
 }
 u32 __cdecl hk_txascc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
@@ -2083,7 +2090,7 @@ void main_poll(bool on) {
         // PLACE of the main menu, so the main menu steps aside while it is up (2026-11-25 : the client's Macro menu sat on
         // the header of AioHUD's main menu)
         const u32 mg = manager();
-        g_mainNative = mg && (win_named(mg, "mcrmenu") || win_named(mg, "mcrselec"));
+        g_mainNative = mg && win_named(mg, "mcrselec");
     }
     {   // the first sight of each sub menu : its rows as read (bounded) -- what the labels are, measured not guessed
         static int said = 0;
@@ -2507,8 +2514,9 @@ void yn_park(u32 mgr) {
     static int alLog = 0, srLog = 0, soLog = 0;
     if (g_area.open) park_named(mgr, "arealist", alLog, "Status -> Unity -> Unity Lists");
     if (g_search.open) park_named(mgr, g_search.ctx == 2 ? "levelsyn" : g_search.ctx == 4 ? "link12" : "scresult", srLog, "Unity Lists / Party / Search / Linkshell -> the list");
-    static int l5Log = 0, l6Log = 0;
+    static int l5Log = 0, l6Log = 0, mbLog = 0;
     if (g_ls.open) park_named(mgr, "link5", l5Log, "Linkshell -> the items");
+    if (g_mbk.open) park_named(mgr, "mcrselec", mbLog, "MacroPalette -> the books");
     if (g_ls.open || (g_search.open && g_search.ctx == 4)) park_named(mgr, "link6", l6Log, "Linkshell -> the header");
     if (g_scopt.open) park_named(mgr, "scoption", soLog, "Status -> Unity -> a player's options");
     static int urLog = 0;
@@ -2587,7 +2595,7 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_cel.open && (!strcmp(nm, "fe_equip") || !strcmp(nm, "fe_inven") || !strcmp(nm, "bluehelp")))
                              || (g_faith.open && (!strcmp(nm, "fp_cat") || !strcmp(nm, "fp_cat2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "fp_info")))
                              || (g_area.open && !strcmp(nm, "arealist")) || (g_search.open && !strcmp(nm, g_search.ctx == 2 ? "levelsyn" : g_search.ctx == 4 ? "link12" : "scresult"))
-                             || (g_ls.open && !strcmp(nm, "link5")) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
+                             || (g_ls.open && !strcmp(nm, "link5")) || (g_mbk.open && !strcmp(nm, "mcrselec")) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
                              || (g_scopt.open && !strcmp(nm, "scoption"))
                              || (g_insp.open && (!strcmp(nm, "inspect") || !strcmp(nm, "iteminfo") || !strcmp(nm, "comment")))
                              || (g_loot.open && (!strcmp(nm, "loot") || !strcmp(nm, "lootope") || !strcmp(nm, "lnowin") || !strcmp(nm, "iteminfo")))
@@ -2818,6 +2826,45 @@ void macro_poll(bool on, u32 mgr) {
     if (t.book != K.book || t.set != K.set || !K.ok) windower::debug::log("NATIVEUI macro bar : book %d '%s' set %d (%s bar)", t.book + 1, t.bookTitle, t.set + 1, t.longBar ? "long" : "short");
     K = t;
 }
+// ---- the macro BOOK LIST (mcrselec) -- macro-bar-re s.6 : handler +0x1C chosen row, +0x20 the rename input (non-0 while
+// typing ; display copy +0x3A0, length +0x690 like scname's), +0x68 cursor row, +0x6C page. Titles from M. ----
+NativeMacroBooks g_mbk;
+const char* const MBOOK_W[] = { "mcrselec", 0 };
+void macro_books_poll(bool on, u32 mgr, u32 focusObj) {
+    NativeMacroBooks t; memset(&t, 0, sizeof(t));
+    u32 o = 0, hd = 0, M = 0;
+    if (!on || !mgr || !g_mcrOk || !(o = win_named(mgr, "mcrselec")) || !safe_read(o + OBJ_HANDLER, &hd) || !valid_ptr(hd)
+        || !safe_read(g_mcr.mSlot, &M) || !valid_ptr(M)) { g_mbk = t; return; }
+    u32 page = 0, row = 0, chosen = 0, in = 0, book = 0; short cur = 0, wh[2] = { 0, 0 };
+    if (!safe_read(hd + 0x6C, &page) || page > 1 || !safe_read(hd + 0x68, &row) || !safe_read(hd + 0x1C, &chosen) || !safe_read(hd + 0x20, &in)
+        || !safe_read(M + g_mcr.book, &book) || book >= 40 || !rd16(o + 0x4C, cur)
+        || !rd16(o + OBJ_RECT, t.rx0) || !rd16(o + OBJ_RECT + 2, t.ry0) || !rd16(o + OBJ_RECT + 4, t.rx1) || !rd16(o + OBJ_RECT + 6, t.ry1)
+        || !rdblk(mgr + 0x80, wh, 4)) { g_mbk = t; return; }
+    t.uiW = wh[0]; t.uiH = wh[1];
+    if (t.ry0 >= t.uiH) { t.ry0 = (short)(t.ry0 - HIDE_DY); t.ry1 = (short)(t.ry1 - HIDE_DY); }
+    t.page = (int)page; t.cursor = cur >= 1 && cur <= 22 ? cur : 0; t.current = (int)book; t.focused = focusObj == o;
+    for (int i = 0; i < 20; ++i) {
+        unsigned char b[16]; int k = 0;
+        if (rdblk(M + g_mcr.title + (page * 20 + (u32)i) * 16, b, 16)) for (int j = 0; j < 15 && b[j]; ++j) t.title[i][k++] = (b[j] >= 0x20 && b[j] < 0x7F) ? (char)b[j] : '?';
+        t.title[i][k] = 0;
+    }
+    if (valid_ptr(in)) {                                       // renaming : the input's display copy (7F xx = caret / control pairs)
+        u32 len = 0; unsigned char b[64]; int k = 0; safe_read(in + 0x690, &len); if (len > 60) len = 60;
+        if (rdblk(in + 0x3A0, b, sizeof(b))) for (u32 i = 0; i < len && b[i] && k < 16; ++i) {
+            if (b[i] == 0x7F) { ++i; continue; }
+            if (b[i] >= 0x20 && b[i] < 0x7F) t.rename[k++] = (char)b[i];
+        }
+        t.rename[k] = 0; t.renaming = chosen < 20 ? (int)chosen + 1 : 0;
+    }
+    t.open = true;
+    static unsigned sig = ~0u; static int said = 0;           // the decision's inputs, on change (bounded) : the live proof of s.6
+    const unsigned s2 = page * 1000003u + row * 7919u + (u32)cur * 131u + chosen * 17u + (valid_ptr(in) ? 1u : 0u);
+    if (s2 != sig && said < 40) { sig = s2; ++said;
+        windower::debug::log("NATIVEUI macro books : page %u row +0x68 %u, win cursor %d, chosen %u, rename %s '%s', current book %u ; row 0 '%s'",
+            page, row, cur, chosen, valid_ptr(in) ? "ON" : "off", t.rename, book, t.title[0]); }
+    g_mbk = t;
+}
+
 // ---- the CONNECTION box (netstat) -- docs/notes/netstat-re-2026-11-20.md ----
 // NS_CREATE : the netstat handler's global ; NS_STATS : &P and the stats block (+0 recv, +4 sent, +8 score) ; NS_ROLL :
 // the packet-gap field ; NS_ICON : the GM count's offset. Handler : +0x1C the mailbox count. Retried, logged, g_nsFail.
@@ -3637,7 +3684,7 @@ bool entry_pick(const char* const* W, int entry);
 static const char* const GEN_SKIP[] = { "titlewin", "helpwind", "logwindo", "logwin2", "partywin", "netstat", "buff", "targetwi", "fulllog", "cnqframe",
     "shop", "shopbuy", "shopsell", "shopmain", "guildsho", "bazaar", "auclist", "auchisto", "inventor", "iteminfo", "itemxinf", "money", "moneyctr", "itemctrl",
     "bank", "equip", "inspect", "comment", "loot", "lootope", "lnowin", "post1", "post2", "delivery", "stringdl", "roomlist", "fep", "query", "evitem", "gift",
-    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcrmenu", "mcrselop", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
+    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
     "cmbhlst", "tskill1", "cmbhwin",   // Synthesis (its module ; 2026-11-22 : the panel engine drew its History a second time, misplaced)
     "link5", "link6", "link12",        // Linkshell (its module ; 2026-11-25 : link5 is born before g_ls reads it -- the panel engine learned it and
                                        // drew the items a second time, over the module's box)
@@ -4464,6 +4511,7 @@ bool native_buff_pick(int idx) {
 }
 const NativeTopBar& native_topbar() { return g_tb; }
 const NativeMacro& native_macro() { return g_mc; }
+const NativeMacroBooks& native_macro_books() { return g_mbk; }
 const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
 // the client's ability table ids (0..0x1FF weapon skills, 0x200.. job abilities, 0x600..0x6FF job traits) : d_msg 55701
 // the name, 55733 the description -- abilities-re-2026-11-19.md (all 124 traits / 626 abilities checked against it)
@@ -4964,6 +5012,8 @@ bool native_lootall_pick() {
     const u32 mgr = manager(); const u32 lo = mgr ? win_named(mgr, "loot") : 0;
     return lo && g_loot.focused && menu_event(lo, 8);                 // loot's event 8 : the focus to Pass all (validate next)
 }
+bool native_macro_books_hover(int entry) { return g_mbk.open && entry_hover(MBOOK_W, entry); }
+bool native_macro_books_pick(int entry) { return g_mbk.open && entry_pick(MBOOK_W, entry); }
 bool native_inspect_hover(int entry) { return g_insp.open && entry_hover(INSPECT_W, entry); }
 bool native_inspect_pick(int entry) { return g_insp.open && entry_pick(INSPECT_W, entry); }
 bool native_scoption_pick(int entry) { return entry_pick(SCOPT_W, entry); }
@@ -5474,6 +5524,8 @@ void native_ui_tick(bool inWorld) {
     npc_poll(wanted && (c.nuHide & NU_NPC));
     topbar_poll(wanted && (c.nuHide & NU_HELP));          // the top bar (menu name + help) : AioHUD's own
     macro_poll(wanted && (c.nuHide & NU_MACRO), manager());   // the Ctrl / Alt macro bar : AioHUD's own
+    { u32 focus = 0; const u32 fp = fm_addr(FM_MENU_PTR); if (fp) safe_read(fp, &focus);
+      macro_books_poll(wanted && (c.nuHide & NU_MAIN) && mc_res(), manager(), focus); }   // MacroPalette's book list
     net_poll(wanted && (c.nuHide & NU_NET));                                              // the connection box (netstat) : AioHUD's own
     buffwin_poll(wanted && (c.nuHide & NU_BUFF), manager());   // your buff icons : AioHUD's own, where the client puts them
     if (wanted && (eff_hide(c) & NU_BUFF)) ensure_event_hook();   // the buff cursor's left / right walk AioHUD's order

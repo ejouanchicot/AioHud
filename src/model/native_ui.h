@@ -124,6 +124,22 @@ struct NativeMacro {
 };
 const NativeMacro& native_macro();
 
+// The macro BOOK LIST `mcrselec` (main menu -> MacroPalette -> Edit Macro ; macro-bar-re s.6) : 40 books on 2 pages of
+// 20, the titles from the macro data (M+0x1DC6 + book*16), the current book marked, a row renamed in place.
+struct NativeMacroBooks {
+    bool open, focused;
+    int  page;            // 0 / 1 (books 1-20 / 21-40)
+    int  cursor;          // the hand's entry : 1..20 a row, 21 / 22 the page arrows, 0 none
+    int  current;         // the book in use, 0..39
+    int  renaming;        // the row being renamed 1..20, 0 none
+    char rename[17];      // its live text
+    char title[20][17];   // the page's 20 titles
+    short rx0, ry0, rx1, ry1; int uiW, uiH;   // the client's rect (UI units, unparked)
+};
+const NativeMacroBooks& native_macro_books();
+bool native_macro_books_hover(int entry);   // entry 1..22 (rows, then the page arrows)
+bool native_macro_books_pick(int entry);
+
 // The CONNECTION box `netstat` (NU_NET ; docs/notes/netstat-re-2026-11-20.md, static 2026-11-20). The client's network
 // meter : a quality score 0..100 (every 3 s : -6 when the server has been silent >= 10 s, else +12) drawn as a signal
 // (0 none, < 30, < 60, >= 60), the bytes / s received and sent ; and the PlayOnline mailbox / GM notice counts.
