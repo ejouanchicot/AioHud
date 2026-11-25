@@ -1097,18 +1097,25 @@ static void sector_grad(u32 dev, float cx, float cy, float r0, float r1, float a
     }
     dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
 }
+static void pod_wheel_cell(u32 dev, float cx, float cy, float rw, float wr, float a, float as) {   // one wheel, as wide as `as` (rad)
+    const u32 sh = 0xB03A2410u, sh0 = 0x003A2410u, sd = 0x603A2410u;
+    const float a0 = a - as * 0.5f, a1 = a + as * 0.5f;
+    ring_sector(dev, cx, cy, rw - wr, rw + wr, a0, a1, 0xFFD6BC86u);                                   // the wheel's parchment
+    ring_sector(dev, cx, cy, rw - wr * 0.52f, rw + wr * 0.52f, a - as * 0.36f, a + as * 0.36f, 0xFFEBD8AAu);   // its bright crown
+    sector_grad(dev, cx, cy, rw + wr * 0.36f, rw + wr, a0, a1, sh0, sh, sh0, sh);                      // turning away : outward...
+    sector_grad(dev, cx, cy, rw - wr, rw - wr * 0.36f, a0, a1, sh, sh0, sh, sh0);                      // ...and inward
+    sector_grad(dev, cx, cy, rw - wr, rw + wr, a0, a0 + as * 0.16f, sd, sd, sh0, sh0);                 // its rounded sides
+    sector_grad(dev, cx, cy, rw - wr, rw + wr, a1 - as * 0.16f, a1, sh0, sh0, sd, sd);
+}
+static void pod_cut(u32 dev, float cx, float cy, float rw, float wr, float sa, float S) {   // a cut between two wheels : a dark hairline, a lit edge
+    const float tx = -sinf(sa), ty = cosf(sa);
+    const float x0 = cx + cosf(sa) * (rw - wr), y0 = cy + sinf(sa) * (rw - wr), x1 = cx + cosf(sa) * (rw + wr), y1 = cy + sinf(sa) * (rw + wr);
+    seg_soft(dev, x0, y0, x1, y1, 0.8f * S, 0xD0140C04u);
+    seg_soft(dev, x0 + tx * 0.8f * S, y0 + ty * 0.8f * S, x1 + tx * 0.8f * S, y1 + ty * 0.8f * S, 0.5f * S, 0x40FFF0D0u);
+}
 static void pod_wheels_under(u32 dev, float cx, float cy, float rw, float wr, float th0, float as) {
     color_state(dev);
-    const u32 sh = 0xB03A2410u, sh0 = 0x003A2410u, sd = 0x603A2410u;
-    for (int d = -1; d <= 1; ++d) {
-        const float a = th0 + (float)d * as, a0 = a - as * 0.5f, a1 = a + as * 0.5f;
-        ring_sector(dev, cx, cy, rw - wr, rw + wr, a0, a1, 0xFFD6BC86u);                                   // the wheel's parchment
-        ring_sector(dev, cx, cy, rw - wr * 0.52f, rw + wr * 0.52f, a - as * 0.36f, a + as * 0.36f, 0xFFEBD8AAu);   // its bright crown
-        sector_grad(dev, cx, cy, rw + wr * 0.36f, rw + wr, a0, a1, sh0, sh, sh0, sh);                      // turning away : outward...
-        sector_grad(dev, cx, cy, rw - wr, rw - wr * 0.36f, a0, a1, sh, sh0, sh, sh0);                      // ...and inward
-        sector_grad(dev, cx, cy, rw - wr, rw + wr, a0, a0 + as * 0.16f, sd, sd, sh0, sh0);                 // its rounded sides
-        sector_grad(dev, cx, cy, rw - wr, rw + wr, a1 - as * 0.16f, a1, sh0, sh0, sd, sd);
-    }
+    for (int d = -1; d <= 1; ++d) pod_wheel_cell(dev, cx, cy, rw, wr, th0 + (float)d * as, as);
 }
 static void pod_wheels_over(u32 dev, float cx, float cy, float rw, float wr, float th0, float as, float Wh, float S) {
     color_state(dev);
@@ -1225,7 +1232,7 @@ static void draw_ink_moon(u32 dev, float x, float y, float R, float f, bool wani
 struct PodGeo { float th0, D, Ri, Ro, rm, isz, rw, wr, as, Wh, Ph; };
 static PodGeo pod_geo(float r, float S) {
     PodGeo g;
-    g.th0 = TUNE("mm.pod_angle", 0.66f);                                 // the LOWER RIGHT, between the S and the E (the user 2026-11-25 ; the hour took the top) -- 52 deg off the S : clear of the position's tube
+    g.th0 = TUNE("mm.pod_angle", 0.7854f);                               // the LOWER RIGHT, between the S and the E (the user 2026-11-25 ; the hour took the top) -- its end runs BEHIND the position's tube
     g.D = r * TUNE("mm.pod_depth", 0.235f);                              // the designer's spec (2026-11-25) : ~0.23 r at the summit
     g.Ri = r - 3.0f * S; g.Ro = r + g.D; g.rm = (g.Ri + g.Ro) * 0.5f;
     g.isz = r * TUNE("mm.pod_icon", 0.18f); g.rw = r + g.D * 0.50f; g.wr = g.isz * 0.56f;   // today's icon 0.18 r ; the window just holds it
@@ -1460,6 +1467,55 @@ static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw,
     }
     color_state(dev);
 }
+// THE WHEELS ON AN ARC (the user 2026-11-25 : "like the others, an orientation that follows the main frame -- the position
+// too") : drum_text's wheels laid along the tube's arc -- each wheel an annular cell (pod_wheel_cell) as wide as its gauge,
+// the cuts radial, the aperture and the glass following the curve ; the characters stay upright and roll ALONG THE
+// RADIUS (outward = the old value leaves away from the centre). th0 the tube's angle, rw its mid radius, wr half its height.
+static void drum_arc(u32 dev, Font* fo, int slot, float cx, float cy, float th0, float rw, float wr, const char* txt, float sz, float S) {
+    if (!fo || slot < 0 || slot > 3) return;
+    DrumTok tk[16]; const int n = drum_tokens(fo, txt, sz, S, tk, 16);
+    static char cur[4][16][12] = {}, old[4][16][12] = {}; static unsigned tch[4][16] = {}; static bool seen[4] = {};
+    const unsigned now = GetTickCount();
+    for (int i = 0; i < 16; ++i) {
+        const char* nv = i < n ? tk[i].t : "";
+        if (strcmp(nv, cur[slot][i]) != 0) { strcpy(old[slot][i], cur[slot][i]); strncpy(cur[slot][i], nv, 11); cur[slot][i][11] = 0; tch[slot][i] = seen[slot] ? now : 0; }
+    }
+    seen[slot] = true;
+    const float tw = drum_width(fo, txt, sz, S), dir = sinf(th0) > 0.0f ? -1.0f : 1.0f;   // left to right on the screen wherever it sits
+    const float span = tw / rw, aS = th0 - dir * span * 0.5f;
+    auto ang = [&](float w) { return aS + dir * w / rw; };               // the angle at w along the row
+    const float aLo = th0 - span * 0.5f, aHi = th0 + span * 0.5f;
+    color_state(dev);
+    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, aLo - 1.6f * S / rw, aHi + 1.6f * S / rw, g_dm.edge);   // the cut in the metal
+    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw - wr - 0.6f * S, aLo, aHi, MA(0xFF, g_dm.lite));                         // its lit lip toward the centre
+    ring_sector(dev, cx, cy, rw - wr - 0.6f * S, rw + wr + 0.6f * S, aLo - 0.6f * S / rw, aHi + 0.6f * S / rw, 0xFF0A0806u);  // the hollow
+    const float ux0 = cosf(th0), uy0 = sinf(th0);                        // the roll axis (the tube is short : one axis for all)
+    float w = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        const float ww = tk[i].w, a = ang(w + ww * 0.5f);
+        if (tk[i].wheel) {
+            color_state(dev);
+            pod_wheel_cell(dev, cx, cy, rw, wr, a, ww / rw);
+            const float px = cx + cosf(a) * rw, py = cy + sinf(a) * rw, lh = 2.0f * wr * 0.95f;
+            const char* ol = old[slot][i];
+            const float cw = fo->measure(tk[i].t, sz), ow = ol[0] ? fo->measure(ol, sz) : 0.0f;
+            float k = tch[slot][i] ? (float)(now - tch[slot][i]) / 200.0f : 1.0f; if (k > 1.0f) k = 1.0f;
+            const float ee = 1.0f - (1.0f - k) * (1.0f - k), inn = k < 1.0f ? (1.0f - ee) * lh : 0.0f;
+            const bool rolling = k < 1.0f && ol[0] && ol[0] != ' ';
+            if (k < 1.0f) clip_rect_begin(dev, px - ww * 0.5f, py - wr, ww, 2.0f * wr);
+            fo->begin(dev);
+            if (rolling) fo->draw_lc(dev, snap(px - ow * 0.5f + ux0 * ee * lh), snap(py + uy0 * ee * lh), ol, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the old value rolls OUT
+            if (tk[i].t[0] != ' ') fo->draw_lc(dev, snap(px - cw * 0.5f - ux0 * inn), snap(py - uy0 * inn), tk[i].t, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the new one rolls in
+            if (k < 1.0f) clip_rect_end(dev);
+        }
+        w += ww;
+        if (tk[i].wheel && i + 1 < n && tk[i + 1].wheel) { color_state(dev); pod_cut(dev, cx, cy, rw, wr, ang(w), S); }
+    }
+    color_state(dev);
+    sector_grad(dev, cx, cy, rw, rw + wr, aLo, aHi, 0x08FFFFFFu, 0x38FFFFFFu, 0x08FFFFFFu, 0x38FFFFFFu);   // the GLASS : a sheen on its outer half
+    ring_sector(dev, cx, cy, rw + wr - 1.0f, rw + wr, aLo, aHi, 0x70FFFFFFu);                          // its lit lip
+}
+static bool s_tubes = false; static float s_tubeRw = 0.0f;   // the hour / position in their tubes (the plinth off) : drum_arc
 static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it each frame ; 0 = draw the inked fallback)
 // THE MOON POD (the user 2026-11-25 : "the same principle as the elements, yesterday / today / tomorrow" -- and the
 // moons "must stay the right way up") : the day pod's twin, at the compass's upper left. A housing on the ring, a window
@@ -1470,7 +1526,7 @@ static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it e
 static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct, bool waning, int hh, u32 tex) {
     PERF_SCOPE("mm.moonpod");
     PodGeo G = pod_geo(r, S);
-    G.th0 = TUNE("mm.mpod_angle", 2.48f);                                // the LOWER left, between the W and the S (the user 2026-11-25) -- 52 deg off the S, the day pod's mirror
+    G.th0 = TUNE("mm.mpod_angle", 2.3562f);                              // the LOWER left, between the W and the S (the user 2026-11-25) -- its end runs BEHIND the position's tube
     const float dir = sinf(G.th0) > 0.0f ? -1.0f : 1.0f;                // yesterday | today | tomorrow read LEFT to right wherever it sits
     const float th0 = G.th0, Ri = G.Ri, Ro = G.Ro, rm = G.rm, isz = G.isz * TUNE("mm.mpod_icon", 1.10f), rw = G.rw, wr = isz * 0.56f, as = G.as, Wh = G.Wh, Ph = G.Ph;
     auto at = [&](float ang, float rad, float& x, float& y) { x = cx + cosf(ang) * rad; y = cy + sinf(ang) * rad; };
@@ -1778,7 +1834,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NC, fv, sizeof(VtxC));
             };
             color_state(dev);
-            const bool body = TUNE("mm.foot_body", 0.0f) > 0.5f;                            // the plinth's metal : OFF for now (the user 2026-11-25 : "remove the foot, keep the hour and the position")
+            const bool body = TUNE("mm.foot_body", 0.0f) > 0.5f;
+            s_tubes = !body;                            // the plinth's metal : OFF for now (the user 2026-11-25 : "remove the foot, keep the hour and the position")
             if (body) {
             rrect_glow(dev, cx - W, yB - 6.0f * S, 2.0f * W, 6.0f * S + 1.0f * S, snap(3.0f * S), 0x80000000u, snap(4.0f * S));   // its shadow on the world
             slab(1.3f * S, g_dm.edge, g_dm.edge);                                             // the dark edge
@@ -1820,6 +1877,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 const float D = r * TUNE("mm.pod_depth", 0.235f), Ri = r - 3.0f * S, Ro = r + D, rmT = (Ri + Ro) * 0.5f, rwT = r + D * 0.5f;
                 const u32 hbT = dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f));
                 cwHH = fminf(wh * 0.5f - 0.6f * S, D * 0.5f - 2.5f * S);
+                s_tubeRw = rwT;
                 for (int k = 1; k <= 2; ++k) {
                     if (!on3[k] || hw3[k] <= 0.0f) continue;
                     const float th = k == 2 ? -PI * 0.5f : PI * 0.5f;
@@ -1829,7 +1887,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 }
             }
             color_state(dev);
-            if (posBand) drum_text(dev, tf, 1, cwX[1], cwY[1], cwH[1] - 0.6f * S, cwHH, posTxt, pSz, S);
+            if (posBand) { if (s_tubes) drum_arc(dev, tf, 1, cx, cy, PI * 0.5f, s_tubeRw, cwHH, posTxt, pSz, S); else drum_text(dev, tf, 1, cwX[1], cwY[1], cwH[1] - 0.6f * S, cwHH, posTxt, pSz, S); }
         }
         if (!foot && (bandMoon || bandDay)) {
             color_state(dev);
@@ -2035,7 +2093,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 const float hl[6] = { x, nTop + 0.6f * S, x + nw * 0.75f, nTop + 0.6f * S, x, nTip - 1.5f * S };
                 fill_poly_aa(dev, hl, 3, MA(0xB0, g_dm.glint));                       // its lit facet
             }
-            if (tb[0] && foot && cwHH > 0.0f) drum_text(dev, tf, 2, cwX[2], cwY[2], cwH[2] - 0.6f * S, cwHH, tb, pSz, S);
+            if (tb[0] && foot && cwHH > 0.0f && s_tubes) drum_arc(dev, tf, 2, cx, cy, -PI * 0.5f, s_tubeRw, cwHH, tb, pSz, S);
+            else if (tb[0] && foot && cwHH > 0.0f) drum_text(dev, tf, 2, cwX[2], cwY[2], cwH[2] - 0.6f * S, cwHH, tb, pSz, S);
             else if (tb[0]) plateText((rc0 + rc1) * 0.5f, ty, tb, 0xFFF4EEDFu, -1);
         }
         color_state(dev);
@@ -2601,6 +2660,13 @@ void Minimap::draw(const Frame& f) {
     const float Z   = clampf(c.mmZoom, 1.0f, 24.0f);
     const float pn  = (mapD / mapPx) * Z;                     // screen px per native map px (Z=1 => full map spans the lens)
 
+    if (dial && !dialSq && c.mmDayDial == 2 && c.mmClock && c.mmClkDay) {          // the DAY DISC : under the frame, the map and the ring -- and BEHIND the position's tube (drawn before it)
+        dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);
+        const VanaClock dv0 = dial_vana(g.vana);
+        const int di0 = (dv0.dayIdx < 0 || dv0.dayIdx > 7) ? 2 : dv0.dayIdx;
+        ensure_raw_tex_mip(dev, wxTex_, wxR_, plugin_path_r("assets\\weather_icons.raw"), 1024, 128);
+        draw_day_disc(dev, ccx, ccy, r, S, di0, ((float)dv0.hh * 60.0f + (float)dv0.mm) / 1440.0f, wxTex_, mm_weather_elem(mm_weather(g.weather)));
+    }
     if (dial) {                                                          // the MODULES : behind the compass (drawn before its frame, map and ring)
         dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);
         ensure_raw_tex_mip(dev, wxTex_, wxR_, plugin_path_r("assets\\weather_icons.raw"), 1024, 128);
@@ -2620,13 +2686,6 @@ void Minimap::draw(const Frame& f) {
         dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);
         const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
         if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { char gb[12]; sprintf(gb, "%c-%d", 'A' + gc, gr + 1); draw_pos_pod(dev, band_font(f, MM_TIME), ccx, ccy, r, S, gb); }
-    }
-    if (dial && !dialSq && c.mmDayDial == 2 && c.mmClock && c.mmClkDay) {          // the DAY DISC : under the frame, the map and the ring
-        dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);
-        const VanaClock dv0 = dial_vana(g.vana);
-        const int di0 = (dv0.dayIdx < 0 || dv0.dayIdx > 7) ? 2 : dv0.dayIdx;
-        ensure_raw_tex_mip(dev, wxTex_, wxR_, plugin_path_r("assets\\weather_icons.raw"), 1024, 128);
-        draw_day_disc(dev, ccx, ccy, r, S, di0, ((float)dv0.hh * 60.0f + (float)dv0.mm) / 1440.0f, wxTex_, mm_weather_elem(mm_weather(g.weather)));
     }
     PERF_BEGIN("mm.frame");
     // ---- box-theme frame : draw the REAL box-theme window chrome (the same 9-slice / procedural border the
