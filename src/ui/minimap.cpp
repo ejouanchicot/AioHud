@@ -1024,16 +1024,6 @@ static void glass_bead_over(u32 dev, float x, float y, float R, float S) {
 // instrument maker would cut it -- a flat top face, its two ends CHAMFERED at 45 degrees down into the ring (plane facets :
 // the one facing the lamp, upper left, lit ; the other in shade), a sharp crease between face and chamfer, an engraved
 // groove along the top (a tool mark). No screws (refused). The ring's rim, drawn later, overlaps its root.
-static void pod_quad_strip(u32 dev, float cx, float cy, float a0, float a1, float ri0, float ro0, float ri1, float ro1, u32 c0, u32 c1) {
-    const int N = 10; VtxC v[(N + 1) * 2];
-    for (int i = 0; i <= N; ++i) {
-        const float t = (float)i / N, a = a0 + (a1 - a0) * t, ri = ri0 + (ri1 - ri0) * t, ro = ro0 + (ro1 - ro0) * t;
-        const u32 c = t < 0.5f ? c0 : c1;
-        v[2 * i]     = { cx + cosf(a) * ri - 0.5f, cy + sinf(a) * ri - 0.5f, 0, 1, c };
-        v[2 * i + 1] = { cx + cosf(a) * ro - 0.5f, cy + sinf(a) * ro - 0.5f, 0, 1, c };
-    }
-    dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
-}
 static u32 pod_mix(u32 a, u32 b, float t) {
     t = t < 0.0f ? 0.0f : (t > 1.0f ? 1.0f : t);
     const u32 r = (u32)(((a >> 16) & 0xFF) + (((int)((b >> 16) & 0xFF) - (int)((a >> 16) & 0xFF)) * t));
@@ -1058,52 +1048,89 @@ static void pod_lit_band(u32 dev, float cx, float cy, float r0, float r1, float 
     }
     dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
 }
+// A POD'S HOUSING, CAST WITH THE CASE (the user 2026-11-25 : the 45-degree chamfers "look too modern" ; "an adventurer's
+// POCKET WATCH forged in Bastok's metal, made by Cid") : the boss is cast in one piece with the watch case, as a pocket
+// watch's lugs -- the flat top turns over a ROUNDED corner, falls steeply, and a CONCAVE fillet runs it into the ring
+// (the designer's "continuous silhouette, concave fillets", Concept 'Astrarium'). A polished bevel follows its whole
+// edge ; the light is continuous from the lamp. No milled facet, no ornament glued on.
 static void pod_housing(u32 dev, float cx, float cy, float r, float Ri, float Ro, float th0, float Ph, float S, u32 hb) {
-    const float rB = r - 1.5f * S, rm = (Ri + Ro) * 0.5f;
-    const float C = (Ro - rB) / rm * TUNE("mm.pod_chamfer", 1.0f);       // the chamfer's angular length : 45 degrees
-    const float aL0 = th0 - Ph - C, aL1 = th0 - Ph, aR0 = th0 + Ph, aR1 = th0 + Ph + C;
+    const float rB = r - 1.5f * S, rm = (Ri + Ro) * 0.5f, H = Ro - rB;
+    const float L = H * TUNE("mm.pod_lug", 1.05f) / rm;                 // the lug's run along the ring
+    const float kS = TUNE("mm.pod_lug_k", 5.0f), tk = tanhf(kS * 0.5f);
+    // the outline radius at angle a (|a - th0| = u) : the flat top, then the lug's end -- a sigmoid profile : a rounded
+    // corner at the top, a steep wall, a concave fillet at the foot, flush with the ring
+    auto prof = [&](float u) {
+        if (u <= Ph) return Ro;
+        const float t = (u - Ph) / L; if (t >= 1.0f) return rB;
+        const float f = 0.5f - 0.5f * tanhf(kS * (t - 0.5f)) / tk;
+        return rB + H * f;
+    };
+    // the silhouette at a growth g : the face + coves (one strip), the two volute discs
+    auto shape = [&](float ox, float oy, float g, u32 col) {
+        const int N = 40; VtxC v[(N + 1) * 2];
+        const float a0 = th0 - Ph - L, a1 = th0 + Ph + L;
+        for (int i = 0; i <= N; ++i) {
+            const float a = a0 + (a1 - a0) * (float)i / N, R = prof(fabsf(a - th0)) + g;
+            v[2 * i]     = { cx + ox + cosf(a) * (Ri - g) - 0.5f, cy + oy + sinf(a) * (Ri - g) - 0.5f, 0, 1, col };
+            v[2 * i + 1] = { cx + ox + cosf(a) * R - 0.5f,        cy + oy + sinf(a) * R - 0.5f,        0, 1, col };
+        }
+        dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
+    };
     color_state(dev);
-    // its shadow, then the dark edge : the whole silhouette (face + chamfers), a little larger
-    for (int pass = 0; pass < 2; ++pass) {
-        const float ox = pass == 0 ? 0.8f * S : 0.0f, oy = pass == 0 ? 1.4f * S : 0.0f, g = pass == 0 ? 0.6f * S : 1.3f * S;
-        const u32 col = pass == 0 ? 0x60000000u : g_dm.edge;
-        const float gA = g / rm;
-        pod_quad_strip(dev, cx + ox, cy + oy, aL0 - gA, aL1 - gA * 0.4f, Ri - g, rB, Ri - g, Ro + g, col, col);
-        ring_sector(dev, cx + ox, cy + oy, Ri - g, Ro + g, aL1 - gA * 0.4f, aR0 + gA * 0.4f, col);
-        pod_quad_strip(dev, cx + ox, cy + oy, aR0 + gA * 0.4f, aR1 + gA, Ri - g, Ro + g, Ri - g, rB, col, col);
-    }
-    // the front face : domed metal, lit toward the lamp
-    pod_lit_band(dev, cx, cy, Ri, Ro, aL1, aR0, hb, 0);
-    // the CHAMFERS : plane facets lit by the lamp -- facet normal = radial + tangent away from the face, 45 deg
-    for (int e = -1; e <= 1; e += 2) {
-        const float am = th0 + (float)e * (Ph + C * 0.5f);
-        const float rx = cosf(am), ry = sinf(am), tx = -sinf(am) * (float)e, ty = cosf(am) * (float)e;
-        const float nx = (rx + tx) * 0.7071f, ny = (ry + ty) * 0.7071f, l = nx * POD_LX + ny * POD_LY;
-        const u32 fc = l > 0.0f ? pod_mix(hb, g_dm.lite, l * 0.45f) : pod_mix(hb, g_dm.edge, -l * 0.65f);
-        if (e < 0) pod_quad_strip(dev, cx, cy, aL0, aL1, Ri, rB, Ri, Ro, fc, fc);
-        else       pod_quad_strip(dev, cx, cy, aR0, aR1, Ri, Ro, Ri, rB, fc, fc);
-    }
-    // the outer lip : one continuous light, toward the lamp and turning away from it
-    pod_lit_band(dev, cx, cy, Ro - 1.3f * S, Ro, aL1, aR0, hb, 1);
-    // the SILHOUETTE, anti-aliased : the chamfers' slopes and the top arc drawn as one soft dark line (the strips' own
-    // edges are hard : they stair-stepped)
+    shape(0.8f * S, 1.4f * S, 0.6f * S, 0x60000000u);                    // its shadow
+    shape(0.0f, 0.0f, 1.3f * S, g_dm.edge);                              // the dark edge
+    // the cast body : lit per vertex from the lamp, the cove a little darker (it turns away from the front)
     {
-        const int K = 24; float px0 = 0.0f, py0 = 0.0f;
+        const int N = 40; VtxC v[(N + 1) * 2];
+        const float a0 = th0 - Ph - L, a1 = th0 + Ph + L;
+        for (int i = 0; i <= N; ++i) {
+            const float a = a0 + (a1 - a0) * (float)i / N, u = fabsf(a - th0), R = prof(u), l = cosf(a) * POD_LX + sinf(a) * POD_LY;
+            u32 c = l > 0.0f ? pod_mix(hb, g_dm.lite, l * 0.14f) : pod_mix(hb, g_dm.edge, -l * 0.14f);
+            if (u > Ph) c = pod_mix(c, g_dm.edge, 0.18f * fminf(1.0f, (u - Ph) / L));
+            v[2 * i]     = { cx + cosf(a) * Ri - 0.5f, cy + sinf(a) * Ri - 0.5f, 0, 1, c };
+            v[2 * i + 1] = { cx + cosf(a) * R - 0.5f,  cy + sinf(a) * R - 0.5f,  0, 1, c };
+        }
+        dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
+    }
+    // the rounded cast EDGE along the outline : a soft lit lip toward the lamp, shade away (no hard facet)
+    {
+        const int N = 40; VtxC v[(N + 1) * 2];
+        const float a0 = th0 - Ph - L * 0.85f, a1 = th0 + Ph + L * 0.85f;
+        for (int i = 0; i <= N; ++i) {
+            const float a = a0 + (a1 - a0) * (float)i / N, R = prof(fabsf(a - th0)), l = cosf(a) * POD_LX + sinf(a) * POD_LY;
+            const u32 c = l > 0.0f ? MA((u32)(40.0f + 150.0f * l), g_dm.glint) : MA((u32)(40.0f - 80.0f * l), g_dm.shade);
+            v[2 * i]     = { cx + cosf(a) * (R - 1.6f * S) - 0.5f, cy + sinf(a) * (R - 1.6f * S) - 0.5f, 0, 1, c & 0x00FFFFFFu };
+            v[2 * i + 1] = { cx + cosf(a) * R - 0.5f,              cy + sinf(a) * R - 0.5f,              0, 1, c };
+        }
+        dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
+    }
+    // the outline, anti-aliased (the strips' own edges are hard) : face and coves ; each volute's rim
+    {
+        const int K = 40; float px0 = 0.0f, py0 = 0.0f;
+        const float a0 = th0 - Ph - L, a1 = th0 + Ph + L;
         for (int i = 0; i <= K; ++i) {
-            const float t = (float)i / K, a = aL0 - 1.0f * S / rm + (aR1 - aL0 + 2.0f * S / rm) * t;
-            float rr;
-            if (a < aL1) rr = rB + (Ro - rB) * (a - aL0) / (aL1 - aL0);
-            else if (a > aR0) rr = Ro + (rB - Ro) * (a - aR0) / (aR1 - aR0);
-            else rr = Ro;
-            rr += 1.3f * S;
-            const float px = cx + cosf(a) * rr, py = cy + sinf(a) * rr;
-            if (i) seg_soft(dev, px0, py0, px, py, 1.3f * S, g_dm.edge);
+            const float a = a0 + (a1 - a0) * (float)i / K, R = prof(fabsf(a - th0)) + 1.3f * S;
+            const float px = cx + cosf(a) * R, py = cy + sinf(a) * R;
+            if (i) seg_soft(dev, px0, py0, px, py, 1.2f * S, g_dm.edge);
             px0 = px; py0 = py;
         }
     }
-    // the engraved GROOVE along the top, a tool mark : dark cut, its lit lower lip
-    ring_sector(dev, cx, cy, Ro - 3.4f * S, Ro - 2.6f * S, aL1 + 1.5f * S / Ro, aR0 - 1.5f * S / Ro, MA(0x90, g_dm.edge));
-    ring_sector(dev, cx, cy, Ro - 4.2f * S, Ro - 3.4f * S, aL1 + 1.5f * S / Ro, aR0 - 1.5f * S / Ro, MA(0x40, g_dm.lite));
+    // the POLISHED BEVEL inside the edge : a bright band, then a soft shadow below it -- a cased watch's rounded rim
+    {
+        const int N = 40; VtxC v[(N + 1) * 2], w[(N + 1) * 2];
+        const float a0 = th0 - Ph - L * 0.70f, a1 = th0 + Ph + L * 0.70f;
+        for (int i = 0; i <= N; ++i) {
+            const float a = a0 + (a1 - a0) * (float)i / N, R = prof(fabsf(a - th0)), l = cosf(a) * POD_LX + sinf(a) * POD_LY;
+            const u32 hi = MA((u32)(30.0f + 70.0f * (l > 0.0f ? l : 0.0f)), g_dm.lite);
+            v[2 * i]     = { cx + cosf(a) * (R - 3.6f * S) - 0.5f, cy + sinf(a) * (R - 3.6f * S) - 0.5f, 0, 1, hi & 0x00FFFFFFu };
+            v[2 * i + 1] = { cx + cosf(a) * (R - 1.8f * S) - 0.5f, cy + sinf(a) * (R - 1.8f * S) - 0.5f, 0, 1, hi };
+            w[2 * i]     = { cx + cosf(a) * (R - 5.4f * S) - 0.5f, cy + sinf(a) * (R - 5.4f * S) - 0.5f, 0, 1, 0x00000000u };
+            w[2 * i + 1] = { cx + cosf(a) * (R - 3.6f * S) - 0.5f, cy + sinf(a) * (R - 3.6f * S) - 0.5f, 0, 1, MA(0x30, g_dm.edge) };
+        }
+        dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, w, sizeof(VtxC));
+        dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
+    }
+    (void)rm;
 }
 void clip_rect_begin(u32 dev, float x, float y, float w, float h);   // (config_controls.cpp : a sub-viewport clip)
 void clip_rect_end(u32 dev);
