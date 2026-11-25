@@ -1036,6 +1036,31 @@ static void draw_day_carousel(u32 dev, float cx, float cy, float R, int di, floa
 // has a bevelled frame, a dark guilloche floor, a glass over it and a gilt INDEX at its centre ; two screws hold the
 // housing at its ends. The icons stand upright and slide along the arc with the hours : today's is centred under the
 // index at noon, enters at midnight from one end and leaves at the next by the other. Drawn BEFORE the frame and the map.
+// the weather as the Dial shows it (res/weather.lua id ; the dev overrides mm.test_weather / mm.test_wcycle applied) and
+// its ELEMENT in the day order (0 Fire .. 7 Dark ; -1 none : clear, sunshine, clouds, fog)
+static int mm_weather(int real) {
+    int wid = real;
+    { const float tw = TUNE("mm.test_weather", -1.0f); if (tw >= 0.0f) wid = (int)tw; }
+    { const float wc = TUNE("mm.test_wcycle", 0.0f);
+      if (wc > 0.0f) { static const int WC[10] = { 1, 5, 7, 9, 2, 11, 13, 15, 17, 19 }; wid = WC[(int)(model_now_ms() / 1000.0 / wc) % 10]; } }
+    return wid;
+}
+static int mm_weather_elem(int wid) {
+    static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };              // weather pair (fire, water, earth, wind, ice, thunder, light, dark) -> day order
+    return (wid >= 4 && wid <= 19) ? WCELL[(wid - 4) / 2] : -1;
+}
+// THE RESONANCE (the designer's brief, 2026-11-25) : when the weather's element is the day's, a thin filament of that
+// element's colour lights under today's icon and at the foot of each weather orb -- stable, no blinking, no text. It
+// lies in a dark groove so it reads on every metal ; Light gets a dark outline. A short arc (ring sector) of radius `rr`.
+static const u32 RES_COL[8] = { 0xFFFF5A2Au, 0xFFE8A040u, 0xFF3C8CFFu, 0xFF3CE070u, 0xFF7CDCFFu, 0xFFC060FFu, 0xFFFFE9A8u, 0xFFA040FFu };
+static void resonance_filament(u32 dev, float cx, float cy, float rr, float a0, float a1, float th, int elem, float S) {
+    if (elem < 0 || elem > 7) return;
+    ring_sector(dev, cx, cy, rr - th * 0.5f - 1.0f * S, rr + th * 0.5f + 1.0f * S, a0 - 0.02f, a1 + 0.02f, 0xC0080A0Eu);   // the groove
+    ring_sector(dev, cx, cy, rr - th * 0.5f, rr + th * 0.5f, a0, a1, RES_COL[elem]);
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+    ring_sector(dev, cx, cy, rr - th * 0.15f, rr + th * 0.15f, a0 + 0.03f, a1 - 0.03f, (RES_COL[elem] & 0x00FFFFFFu) | 0x50000000u);   // its light core
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+}
 struct PodGeo { float th0, D, Ri, Ro, rm, isz, rw, wr, as, Wh, Ph; };
 static PodGeo pod_geo(float r, float S) {
     PodGeo g;
@@ -1062,7 +1087,7 @@ static void draw_day_pod_needle(u32 dev, float cx, float cy, float rc, float r, 
     const float hl[6] = { x0, y0, x0 - nx * w * 0.85f, y0 - ny * w * 0.85f, x1, y1 };
     fill_poly_aa(dev, hl, 3, 0x70FFFFFFu);                               // its lit facet
 }
-static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di, float frac, u32 wxTex) {
+static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di, float frac, u32 wxTex, int wElem) {
     PERF_SCOPE("mm.disc");
     const PodGeo G = pod_geo(r, S);                                      // above the North : yesterday | today | tomorrow, left to right
     const float PI = 3.14159265f, th0 = G.th0, D = G.D, Ri = G.Ri, Ro = G.Ro, rm = G.rm, capR = (Ro - Ri) * 0.5f;
@@ -1117,6 +1142,10 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
         }
         dSetTex(dev, 0, 0);
         color_state(dev);
+        if (wElem == di) {                                                 // RESONANCE : the day is the weather's element
+            const float rr = rw + wr * 0.22f - isz * 0.49f - 1.6f * S, half = (isz * 0.40f) / rr;
+            resonance_filament(dev, cx, cy, rr, th0 - half, th0 + half, 1.8f * S, di, S);
+        }
     }
     for (int k = -1; k <= 2; ++k) {                                       // the ink separators between the days (move with the wheel's jump)
         static int dummy = 0; (void)dummy;
@@ -1359,10 +1388,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             glass_dome(dev, x, y, sr, 0xFFB8D4FFu, 0.8f);
             color_state(dev);
             // THE WEATHER ORBS : the element in small glass spheres at the bottom, overlapping the rim
-            int wid = g.weather;
-            { const float tw = TUNE("mm.test_weather", -1.0f); if (tw >= 0.0f) wid = (int)tw; }       // dev : force one
-            { const float wc = TUNE("mm.test_wcycle", 0.0f);                                            // dev : cycle them (videos)
-              if (wc > 0.0f) { static const int WC[10] = { 1, 5, 7, 9, 2, 11, 13, 15, 17, 19 }; wid = WC[(int)(model_now_ms() / 1000.0 / wc) % 10]; } }
+            const int wid = mm_weather(g.weather);                                                     // (the dev overrides inside)
             if (wid >= 4 && wid <= 19) {
                 static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };                             // weather pair -> the element strip's cell
                 const int cell = WCELL[(wid - 4) / 2], n = (wid & 1) ? 2 : 1;
@@ -1386,6 +1412,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                     }
                     color_state(dev);
                     glass_dome(dev, ox, oy, rs, ec, 0.7f);
+                    if (mm_weather_elem(wid) == di) resonance_filament(dev, ox, oy, rs + 0.4f * S, 0.55f, PI - 0.55f, 1.8f * S, di, S);   // RESONANCE : at the orb's foot
                 }
                 color_state(dev);
             }
@@ -1971,7 +1998,7 @@ void Minimap::draw(const Frame& f) {
         const VanaClock dv0 = dial_vana(g.vana);
         const int di0 = (dv0.dayIdx < 0 || dv0.dayIdx > 7) ? 2 : dv0.dayIdx;
         ensure_raw_tex_mip(dev, wxTex_, wxR_, plugin_path_r("assets\\weather_icons.raw"), 1024, 128);
-        draw_day_disc(dev, ccx, ccy, r, S, di0, ((float)dv0.hh * 60.0f + (float)dv0.mm) / 1440.0f, wxTex_);
+        draw_day_disc(dev, ccx, ccy, r, S, di0, ((float)dv0.hh * 60.0f + (float)dv0.mm) / 1440.0f, wxTex_, mm_weather_elem(mm_weather(g.weather)));
     }
     PERF_BEGIN("mm.frame");
     // ---- box-theme frame : draw the REAL box-theme window chrome (the same 9-slice / procedural border the
