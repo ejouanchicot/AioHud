@@ -125,8 +125,10 @@ Acc run(int s, bool masked) {
 struct Golden { unsigned geo, st; int tris, draws; };
 const Golden GOLD[S_N][2] = {
     // { geometry path }, { masked path } -- taken 2026-11-24 from draw.cpp before the merge (AIO_SHAPES_PRINT=1 prints them)
-    { { 0xB90F3444u, 0x238F2FC5u, 17388, 2642 }, { 0x6F9A43B0u, 0x078386A5u, 14652, 2402 } },   // rrect
-    { { 0xDEECF858u, 0x238F2FC5u, 30844, 4698 }, { 0xC2055EDEu, 0xD5EC8BF8u, 27436, 4402 } },   // rrect_bordered
+    // (rrect / rrect_bordered geo re-taken 2026-11-25 : the corners' angles now come from a unit-circle table -- the same
+    //  points to the last float bits ; triangles, state and draws unchanged)
+    { { 0x6B7609D6u, 0x238F2FC5u, 17388, 2642 }, { 0x29333E67u, 0x078386A5u, 14652, 2402 } },   // rrect
+    { { 0x1A194AFAu, 0x238F2FC5u, 30844, 4698 }, { 0x950A8C80u, 0xD5EC8BF8u, 27436, 4402 } },   // rrect_bordered
     { { 0x431EB193u, 0x238F2FC5u, 9772, 1818 }, { 0x93F3B325u, 0xF9BB0A65u, 5908, 1438 } },   // rrect_topcaps
     { { 0x38B59429u, 0x238F2FC5u, 23932, 4138 }, { 0xA4CAA4E6u, 0x319C6C65u, 18896, 3564 } },   // rrect_tb
     { { 0xDEDB06B0u, 0x238F2FC5u, 7472, 1284 }, { 0xDEDB06B0u, 0x238F2FC5u, 7472, 1284 } },   // rrect_left

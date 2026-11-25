@@ -170,6 +170,21 @@ void fill_tri(u32 dev, float x0, float y0, float x1, float y1, float x2, float y
     dDrawUP(dev, D3DPT_TRIANGLEFAN, 1, v, sizeof(VtxC));   // 3 verts = 1 triangle
 }
 
+void ShapeBatch::flush() { if (n >= 3) dDrawUP(dev, D3DPT_TRIANGLELIST, (u32)(n / 3), v, sizeof(VtxC)); n = 0; }
+void ShapeBatch::tri(float x0, float y0, float x1, float y1, float x2, float y2, u32 col) {
+    if (n + 3 > CAP) flush();
+    v[n++] = { x0 - 0.5f, y0 - 0.5f, 0, 1, col }; v[n++] = { x1 - 0.5f, y1 - 0.5f, 0, 1, col }; v[n++] = { x2 - 0.5f, y2 - 0.5f, 0, 1, col };
+}
+void ShapeBatch::seg(float ax, float ay, float bx, float by, float th, u32 col) {   // seg_soft's 6-vertex strip as 4 triangles
+    ax -= 0.5f; ay -= 0.5f; bx -= 0.5f; by -= 0.5f;
+    const float dx = bx - ax, dy = by - ay, l = sqrtf(dx * dx + dy * dy); if (l < 0.01f) return;
+    const float nx = -dy / l * th * 0.5f, ny = dx / l * th * 0.5f; const u32 c0 = col & 0x00FFFFFF;
+    const VtxC q[6] = { { ax + nx, ay + ny, 0, 1, c0 }, { bx + nx, by + ny, 0, 1, c0 }, { ax, ay, 0, 1, col },
+                        { bx, by, 0, 1, col }, { ax - nx, ay - ny, 0, 1, c0 }, { bx - nx, by - ny, 0, 1, c0 } };
+    if (n + 12 > CAP) flush();
+    for (int k = 0; k < 4; ++k) { if (k & 1) { v[n++] = q[k]; v[n++] = q[k + 2]; v[n++] = q[k + 1]; } else { v[n++] = q[k]; v[n++] = q[k + 1]; v[n++] = q[k + 2]; } }
+}
+
 // an ANTI-ALIASED filled CONVEX polygon (`n` points, 3..12) : solid centroid-fan core + a feathered skirt
 // (each vertex extruded outward from the centroid, alpha 0 at the rim) -> crisp AA silhouette on triangles,
 // diamonds and chevrons, the same recipe as disc(). Call in the colour-quad state. Points in CW or CCW order.
@@ -230,6 +245,13 @@ void seg_soft(u32 dev, float ax, float ay, float bx, float by, float th, u32 col
     dDrawUP(dev, D3DPT_TRIANGLESTRIP, 4, q, sizeof(VtxC));       // 6 verts = 4 tris (two feathered halves)
 }
 
+// unit-circle tables, one per segment count (perf 2026-11-25 : a disc was 4 (N+1) cosf/sinf a frame, 138 discs a frame)
+static const float* circle_lut(int N, bool sinT) {
+    static float c[97][97], sn[97][97]; static bool ok[97] = {};
+    if (N < 1) N = 1; if (N > 96) N = 96;
+    if (!ok[N]) { for (int i = 0; i <= N; ++i) { const float a = (float)i / N * 6.2831853f; c[N][i] = cosf(a); sn[N][i] = sinf(a); } ok[N] = true; }
+    return sinT ? sn[N] : c[N];
+}
 void disc(u32 dev, float cx, float cy, float r, u32 col)
 {
     PERF_SCOPE("gfx.disc");   // //aio perf : discs (the minimap dots are two each, audit P2)
@@ -238,22 +260,23 @@ void disc(u32 dev, float cx, float cy, float r, u32 col)
     int N = (int)(r * 1.15f); if (N < 24) N = 24; if (N > MAXN) N = MAXN;   // segments scale with radius -> big discs stay ROUND (no facets)
     const float f = 1.3f;                           // feather width -> anti-aliased edge
     const u32 c0 = col & 0x00FFFFFF;                // same colour, alpha 0
-    // solid core (triangle fan)
-    VtxC fan[MAXN + 2];
-    fan[0] = { cx, cy, 0, 1, col };
-    for (int i = 0; i <= N; ++i) {
-        float a = (float)i / N * 6.2831853f;
-        fan[i + 1] = { cx + r * cosf(a), cy + r * sinf(a), 0, 1, col };
+    const float* C = circle_lut(N, false); const float* Sn = circle_lut(N, true);
+    // ONE triangle list (was a fan + a strip, 2 draws) : the solid core, then the feathered rim (opaque at r ->
+    // transparent at r+f), in the same order as before
+    VtxC v[9 * MAXN]; int n = 0;
+    const VtxC ctr = { cx, cy, 0, 1, col };
+    for (int i = 0; i < N; ++i) {
+        v[n++] = ctr;
+        v[n++] = { cx + r * C[i],     cy + r * Sn[i],     0, 1, col };
+        v[n++] = { cx + r * C[i + 1], cy + r * Sn[i + 1], 0, 1, col };
     }
-    dDrawUP(dev, D3DPT_TRIANGLEFAN, N, fan, sizeof(VtxC));
-    // feathered rim (triangle strip): opaque at r -> transparent at r+f
-    VtxC ring[2 * (MAXN + 1)];
-    for (int i = 0; i <= N; ++i) {
-        float a = (float)i / N * 6.2831853f, ca = cosf(a), sa = sinf(a);
-        ring[2 * i]     = { cx + r * ca,       cy + r * sa,       0, 1, col };
-        ring[2 * i + 1] = { cx + (r + f) * ca, cy + (r + f) * sa, 0, 1, c0  };
+    for (int i = 0; i < N; ++i) {
+        const VtxC a0 = { cx + r * C[i],           cy + r * Sn[i],           0, 1, col }, a1 = { cx + (r + f) * C[i],     cy + (r + f) * Sn[i],     0, 1, c0 };
+        const VtxC b0 = { cx + r * C[i + 1],       cy + r * Sn[i + 1],       0, 1, col }, b1 = { cx + (r + f) * C[i + 1], cy + (r + f) * Sn[i + 1], 0, 1, c0 };
+        v[n++] = a0; v[n++] = a1; v[n++] = b0;
+        v[n++] = a1; v[n++] = b1; v[n++] = b0;
     }
-    dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * N, ring, sizeof(VtxC));
+    dDrawUP(dev, D3DPT_TRIANGLELIST, (u32)(n / 3), v, sizeof(VtxC));
 }
 
 static const float PI_ = 3.14159265f;
@@ -394,9 +417,10 @@ void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 c
             const float ccx = cs4[k].cx, ccy = cs4[k].cy, a0 = cs4[k].a0;
             VtxC fan[NcMax + 2];
             fan[0] = { ccx, ccy, 0, 1, CY(ccy) };                // fan centre
+            const float* LC = circle_lut(4 * Nc, false); const float* LS = circle_lut(4 * Nc, true);   // the quarter's angles from the unit table
+            const int q0 = (int)(a0 / (0.5f * PI_) + 0.5f) * Nc;
             for (int i = 0; i <= Nc; ++i) {
-                const float a = a0 + (0.5f * PI_) * (float)i / (float)Nc;
-                const float vx = ccx + r * cosf(a), vy = ccy + r * sinf(a);
+                const float vx = ccx + r * LC[q0 + i], vy = ccy + r * LS[q0 + i];
                 fan[i + 1] = { vx, vy, 0, 1, CY(vy) };
             }
             tb.fan(fan, Nc);   // Nc triangles, one submit
@@ -425,8 +449,10 @@ void rrect(u32 dev, float x, float y, float w, float h, float r, u32 cTop, u32 c
             for (int k = 0; k < 4; ++k) {
                 const float ccx = cs4[k].cx, ccy = cs4[k].cy, a0 = cs4[k].a0;
                 VtxC ring[2 * (NcMax + 1)];
+                const float* LC = circle_lut(4 * Nc, false); const float* LS = circle_lut(4 * Nc, true);
+                const int q0 = (int)(a0 / (0.5f * PI_) + 0.5f) * Nc;
                 for (int i = 0; i <= Nc; ++i) {
-                    const float a = a0 + (0.5f * PI_) * (float)i / (float)Nc, ca = cosf(a), sa = sinf(a);
+                    const float ca = LC[q0 + i], sa = LS[q0 + i];
                     const u32 ci = CY(ccy + r * sa);
                     ring[2 * i]     = { ccx + r * ca,       ccy + r * sa,       0, 1, ci };
                     ring[2 * i + 1] = { ccx + (r + f) * ca, ccy + (r + f) * sa, 0, 1, ci & 0x00FFFFFF };

@@ -89,6 +89,17 @@ void disc(u32 dev, float cx, float cy, float r, u32 col);
 // fill_poly_aa for any small on-screen triangle/chevron/diamond ; keep fill_tri only for interiors that are
 // feathered separately (edge_feather) or fully covered.
 void fill_tri(u32 dev, float x0, float y0, float x1, float y1, float x2, float y2, u32 col);
+// A SHAPE BATCH (perf 2026-11-25 : the Dial's horns were ~424 draws a frame, one per triangle / segment) : the SAME
+// geometry as fill_tri / seg_soft, accumulated in call order and submitted as ONE draw on flush (or when full).
+// Colour-quad state ; flush before any other draw that must land between two of its shapes.
+struct ShapeBatch {
+    static const int CAP = 3 * 640;
+    VtxC v[CAP]; int n; u32 dev;
+    explicit ShapeBatch(u32 d) : n(0), dev(d) {}
+    void flush();
+    void tri(float x0, float y0, float x1, float y1, float x2, float y2, u32 col);     // = fill_tri
+    void seg(float ax, float ay, float bx, float by, float th, u32 col);               // = seg_soft
+};
 
 // an ANTI-ALIASED filled convex polygon (`n` = 3..12 points, CW or CCW) : solid core + feathered rim (disc's
 // recipe) -> crisp AA triangles / diamonds / chevrons with no texture. Call in the colour-quad state.

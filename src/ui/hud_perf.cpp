@@ -1,6 +1,7 @@
 // hud_perf.cpp -- //aio perf : the overlay, the dump and the command. The measuring itself is gfx/perf.h.
 //
 //   //aio perf on      start measuring + show the overlay (60-frame sliding window, rows sorted by cost)
+//   //aio perf quiet   measure WITHOUT the overlay (the overlay's own text otherwise counts in gfx.text)
 //   //aio perf off     stop (back to zero cost : every hook is one byte test)
 //   //aio perf reset   clear the window and the since-reset totals
 //   //aio perf dump [label]  the since-reset totals, every row, into aiohud_debug.log (AIO PERF block, tagged)
@@ -145,8 +146,9 @@ void perf_auto_tick(ConfigPage& cfg) {
 static float perf_fit(Font* fo, const char* t, float sz, float maxW) { float s = sz; while (s > sz * 0.7f && fo->measure(t, s) > maxW) s *= 0.93f; return s; }
 static u32 perf_sev_col(u32 us) { return us < 150u ? 0xFF4FC98Au : (us < 400u ? 0xFFE8B04Au : 0xFFE8605Au); }
 
+static bool g_perfQuiet = false;   // //aio perf quiet : measure WITHOUT the overlay (its own ~40 text rows were most of gfx.text, 2026-11-25)
 void perf_overlay_draw(const Frame& f) {
-    if (!perf::g_perf.want || g_auto.phase >= 0 || !f.font || !f.dev) return;   // perf auto measures without it (it was 0.34 ms of a 1.57 ms frame)
+    if (!perf::g_perf.want || g_auto.phase >= 0 || g_perfQuiet || !f.font || !f.dev) return;   // perf auto measures without it (it was 0.34 ms of a 1.57 ms frame)
     PERF_SCOPE("perf.overlay");
     const perf::State& P = perf::g_perf;
     const u32 dev = f.dev;
@@ -333,8 +335,12 @@ int perf_dump(const char* label) {
 // The command. `rest` = what follows "perf". Writes one console line into `msg`.
 void perf_command(const char* rest, char* msg, int cap) {
     while (*rest == ' ') ++rest;
-    if (!strncmp(rest, "on", 2)) {
-        perf::set_on(true); perf::request_reset();
+    if (!strncmp(rest, "quiet", 5)) {                       // measure, no overlay : the HUD's own cost, not the meter's
+        g_perfQuiet = true; perf::set_on(true); perf::request_reset();
+        _snprintf(msg, cap, "%s", tr(">>> AioHud perf : ON, no overlay (//aio perf dump writes the log, //aio perf off stops) <<<",
+                                     ">>> AioHud perf : ON, sans surimpression (//aio perf dump ecrit le log, //aio perf off arrete) <<<"));
+    } else if (!strncmp(rest, "on", 2)) {
+        g_perfQuiet = false; perf::set_on(true); perf::request_reset();
         _snprintf(msg, cap, "%s", tr(">>> AioHud perf : ON (overlay ; //aio perf dump writes the log, //aio perf off stops) <<<",
                                      ">>> AioHud perf : ON (surimpression ; //aio perf dump ecrit le log, //aio perf off arrete) <<<"));
     } else if (!strncmp(rest, "auto", 4)) {
