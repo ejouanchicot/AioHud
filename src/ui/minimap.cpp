@@ -1360,11 +1360,10 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 }
                 const float rs = sr * 0.44f, need = r + rs + 1.5f * S;
                 float OX[2], OY[2];
-                for (int q = 0; q < 2; ++q) {                                       // the seats : under the sky dial, clear of the compass
-                    float fx = x + (q == 0 ? -1.0f : 1.0f) * sr * 0.60f, fy = y + sr * 0.70f;
-                    float dx = fx - cx, dy = fy - cy; const float L = sqrtf(dx * dx + dy * dy);
-                    if (L < need) { fx = cx + dx / L * need; fy = cy + dy / L * need; }
-                    OX[q] = fx; OY[q] = fy;
+                (void)need;
+                for (int q = 0; q < 2; ++q) {                                       // the seats : BALANCED under the sky dial (the user 2026-11-25) --
+                    OX[q] = x + (q == 0 ? -1.0f : 1.0f) * rs * TUNE("mm.slot_gap", 1.10f);   // symmetric about its vertical axis, one height ;
+                    OY[q] = y + sr * TUNE("mm.slot_y", 0.82f);                      // the compass, in front, may overlap them : they are behind it
                 }
                 color_state(dev);
                 for (int q = 0; q < 2; ++q)
