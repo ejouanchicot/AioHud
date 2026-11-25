@@ -2581,7 +2581,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 // plates") : a small domed round plate soldered on the bezel -- its shadow, a dark solder seam, the plate
                 // lit from the lamp (upper left) with a soft highlight ; the letter STRUCK into it (a dark cut, its lit lower
                 // lip), the N's cut filled with red enamel
-                const float pr = (r - rc) * TUNE("mm.card_plate", 0.50f) * clampf(c.mmCardSz, 0.5f, 2.0f) / 0.7f;
+                const float pr = (r - rc) * TUNE("mm.card_plate", 0.72f) * clampf(c.mmCardSz, 0.5f, 2.0f) / 0.7f;
                 color_state(dev);
                 disc(dev, lx + 0.9f * S, ly + 1.3f * S, pr + 1.0f * S, 0x80000000u);                       // its shadow on the bezel
                 disc(dev, lx, ly, pr + 1.1f * S, g_dm.edge | 0xFF000000u);                                  // the solder seam
@@ -3603,7 +3603,7 @@ void Minimap::draw(const Frame& f) {
             // with a red enamel dot at the present wheel, a small round stud at each side wheel
             {
                 const PodGeo G = pod_geo(r, S);
-                const float rM = rc + (r - rc) * 0.50f, hA = (r - rc) * TUNE("mm.idx_size", 0.46f);
+                const float rM = rc + (r - rc) * 0.50f, hA = (r - rc) * TUNE("mm.idx_size", 0.66f);
                 auto marks = [&](float th) {
                     const float dir = pod_dir(th);
                     for (int d = -1; d <= 1; ++d) {
@@ -3621,12 +3621,20 @@ void Minimap::draw(const Frame& f) {
                             const float hl[6] = { lz[0], lz[1], lz[2], lz[3], mx, my };
                             fill_poly_aa(dev, hl, 3, MA(0xC0, g_dm.glint));                                // a lit facet
                             disc(dev, mx, my, W * 0.42f, 0xFFA82418u);                                     // the red enamel
-                        } else {                                               // a small applied STUD
-                            const float sr2 = hA * 0.36f;
-                            disc(dev, mx + 0.8f * S, my + 1.1f * S, sr2 + 0.6f * S, 0x90000000u);
-                            disc(dev, mx, my, sr2 + 0.9f * S, g_dm.edge | 0xFF000000u);
-                            disc(dev, mx, my, sr2, pod_mix(g_dm.body, g_dm.lite, 0.45f) | 0xFF000000u);
-                            disc(dev, mx - sr2 * 0.3f, my - sr2 * 0.3f, sr2 * 0.45f, MA(0xC0, g_dm.glint));
+                        } else {                                               // an applied TRIANGLE pointing the way time runs :
+                            // before = tarnished, pointing at the present ; after = bright, pointing onward (show, don't tell)
+                            const float h = hA * 0.62f, wd = hA * 0.58f;
+                            const float tipx = mx + tx * h, tipy = my + ty * h, bx0 = mx - tx * h * 0.6f, by0 = my - ty * h * 0.6f;
+                            float tr[6] = { tipx, tipy, bx0 + ux * wd, by0 + uy * wd, bx0 - ux * wd, by0 - uy * wd };
+                            float sh[6]; for (int q = 0; q < 6; ++q) sh[q] = tr[q] + (q & 1 ? 1.2f : 0.9f) * S;
+                            fill_poly_aa(dev, sh, 3, 0x90000000u);
+                            const float g2 = 1.0f * S;
+                            float ed[6] = { tipx + tx * g2 * 1.6f, tipy + ty * g2 * 1.6f, bx0 + ux * (wd + g2) - tx * g2, by0 + uy * (wd + g2) - ty * g2, bx0 - ux * (wd + g2) - tx * g2, by0 - uy * (wd + g2) - ty * g2 };
+                            fill_poly_aa(dev, ed, 3, g_dm.edge | 0xFF000000u);
+                            const bool past = d < 0;
+                            fill_poly_aa(dev, tr, 3, (past ? pod_mix(g_dm.body, g_dm.edge, 0.35f) : pod_mix(g_dm.body, g_dm.lite, 0.65f)) | 0xFF000000u);
+                            const float hl[6] = { tr[0], tr[1], tr[2], tr[3], mx - tx * h * 0.1f, my - ty * h * 0.1f };
+                            fill_poly_aa(dev, hl, 3, MA(past ? 0x40 : 0xC0, g_dm.glint));
                         }
                         (void)tx; (void)ty;
                     }
