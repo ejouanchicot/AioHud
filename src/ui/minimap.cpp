@@ -2812,6 +2812,49 @@ void Minimap::dispose() {
     mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; skyTex_ = 0; skyR_ = TexRetry{}; grainTex_ = 0; grainR_ = TexRetry{}; s_grainTex = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
 }
 
+// the square case's frame width factor : wider with the modules (the user 2026-11-25 : "enlarge the frame to leave room")
+static float sq_band_k(const UiConfig& c) { return (c.mmLayout == 2 && c.mmDayDial == 2 && TUNE("mm.foot_body", 0.0f) <= 0.5f) ? TUNE("mm.sq_band", 1.45f) : 1.0f; }
+// THE MODULES' FOOTPRINT (the user 2026-11-25 : "make the edit-layout box smart -- whether the modules are on the sides, above,
+// below") : how far past the map's square each side reaches, from the modules actually shown -- every module's outer edge
+// sampled along its span, in its frame (the same slots and frames as Minimap::draw, centred on 0,0). L T R B : px past r.
+static void dial_extents(const UiConfig& c, float r, float S, bool sq, float& eL, float& eT, float& eR, float& eB) {
+    const float PIf = 3.14159265f, keep = s_podR0, keepO = s_podOut;
+    s_podR0 = r; s_podOut = sq ? r * TUNE("mm.sq_out", 0.08f) : 0.0f;
+    const bool pods = TUNE("mm.foot_body", 0.0f) <= 0.5f;
+    const bool skyOn = pods && c.mmPodSky >= 0 && c.mmPodSky <= 5, wxOn = pods && c.mmPodWx >= 0 && c.mmPodWx <= 5;
+    auto F_of = [&](int slot) -> PodF {
+        if (!sq) { const float th = slot == 6 ? -PIf * 0.5f : (slot == 7 ? PIf * 0.5f : POD_SLOT[slot]); PodF F = { 0.0f, 0.0f, r, th }; return F; }
+        const float Rv = r * TUNE("mm.sq_rv", 24.0f), dX = r * TUNE("mm.sq_corner", 0.66f), o = s_podOut;
+        PodF F;
+        switch (slot) {
+        case 1:  F = { -r - o + Rv, 0.0f, Rv, PIf }; break;
+        case 4:  F = { r + o - Rv, 0.0f, Rv, 0.0f }; break;
+        case 2: case 3: case 7: { const float dx = slot == 2 ? -dX : (slot == 3 ? dX : 0.0f); F = { 0.0f, r + o - Rv, Rv, PIf * 0.5f - asinf(dx / Rv) }; } break;
+        default: { const float dx = slot == 0 ? -dX : (slot == 5 ? dX : 0.0f); F = { 0.0f, -r - o + Rv, Rv, -PIf * 0.5f + asinf(dx / Rv) }; } break;
+        }
+        return F;
+    };
+    float x0 = -r, y0 = -r, x1 = r, y1 = r;
+    auto take = [&](const PodF& F, float k) {                         // k : the share of a pod's span (the drum tubes are shorter)
+        const PodGeo G = pod_geo(F.R, S); const float ph = G.Ph * k;     // the span in THIS frame's angle
+        for (int i = 0; i <= 12; ++i) {
+            const float a = F.th - ph + 2.0f * ph * (float)i / 12.0f, x = F.cx + cosf(a) * (G.Ro + 2.0f * S), y = F.cy + sinf(a) * (G.Ro + 2.0f * S);
+            x0 = fminf(x0, x); x1 = fmaxf(x1, x); y0 = fminf(y0, y); y1 = fmaxf(y1, y);
+        }
+    };
+    if (pods) {
+        const float ph = 1.0f;
+        if (c.mmClock && c.mmClkDay)  take(F_of((c.mmPodDay < 0 || c.mmPodDay > 5) ? 3 : c.mmPodDay), ph);
+        if (c.mmClock && c.mmClkMoon) take(F_of((c.mmPodMoon < 0 || c.mmPodMoon > 5) ? 2 : c.mmPodMoon), ph);
+        if (skyOn) take(F_of(c.mmPodSky), ph);
+        if (wxOn) take(F_of(c.mmPodWx), ph);
+        if (c.mmClock && c.mmClkTime) take(F_of(c.mmPodHP == 1 ? 7 : 6), ph * 0.5f);
+        if (c.mmGrid) take(F_of(c.mmPodHP == 1 ? 6 : 7), ph * 0.5f);
+    }
+    const float base = r * 0.06f;                                       // the cardinal plates stand a little past the bezel
+    eL = fmaxf(base, -x0 - r) + 3.0f * S; eR = fmaxf(base, x1 - r) + 3.0f * S; eT = fmaxf(base, -y0 - r) + 3.0f * S; eB = fmaxf(base, y1 - r) + 3.0f * S;
+    s_podR0 = keep; s_podOut = keepO;
+}
 // THE MODULES' INDEX MARKS on the bezel / the square case's frame (time arrows, the red pointer, the moon's day counter) --
 // each module's in its own frame (PodF) ; band : the bezel's / the frame's width
 static void draw_index_marks(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, float S, float band) {
@@ -2960,10 +3003,10 @@ void Minimap::draw(const Frame& f) {
     const float topH = (cbTop ? cbH : 0.0f) + (ibTop ? ibH : 0.0f);
     // the DIAL's real footprint (the box and the edit rect hug it) : on the sides and the top only what the corner subdials
     // overhang ; at the bottom the band, when it is shown. Mirrors the geometry of draw_dial_instrument / the square case.
-    float dialSide = 0.0f, dialBot = 0.0f;
+    float dialSide = 0.0f, dialBot = 0.0f, podL = 0.0f, podT = 0.0f, podR = 0.0f, podB = 0.0f; bool podBox = false;
     if (dial) {
         const float rr0 = mapD * 0.5f, sr0 = snap(rr0 * TUNE("mm.dial_sub_k", 0.165f)), rim = sr0 + 2.4f * S;
-        const float fi0 = snap(rr0 * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f));
+        const float fi0 = snap(rr0 * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f) * (dialSq ? sq_band_k(c) : 1.0f));
         const float off0 = dialSq ? rr0 - fi0 * 0.5f : 0.7071f * (rr0 + sr0 + TUNE("mm.dial_sub_gap", 1.5f) * S);
         const bool cornersTop = c.mmGrid || (c.mmClock && (c.mmClkTime || c.mmClkDay));
         const bool bandOn = c.mmClock && (c.mmClkMoon || c.mmClkTime || c.mmClkDay);
@@ -2978,6 +3021,7 @@ void Minimap::draw(const Frame& f) {
         }
         if (dialBot < dialSide) dialBot = dialSide;
         if (c.mmDayDial == 2 && TUNE("mm.foot_body", 0.0f) <= 0.5f) {
+            dial_extents(c, rr0, S, dialSq, podL, podT, podR, podB); podBox = true;
             // THE MODULES' MODEL (the user 2026-11-25 : "the edit-layout box does not match") : no corner subdials, no plinth --
             // the modules' collar stands out of the bezel all round, by the pods' depth, plus its soft cast shadow
             dialSide = dialBot = snap(rr0 * (TUNE("mm.pod_depth", 0.235f) + (dialSq ? TUNE("mm.sq_out", 0.08f) : 0.0f)) + 4.0f * S);
@@ -3006,7 +3050,10 @@ void Minimap::draw(const Frame& f) {
     if (cpos == 0 || cpos == 1) { if (cw > snap(20.0f * S)) hbw = cw + 2.0f * fc; }
     else if (cpos == 2 || cpos == 3) { if (cw > snap(20.0f * S)) hbw = cw; }
     float Wbox, boxH;
-    if (compact) {                                              // [top bands][bm][map][bm][bottom bands]
+    if (podBox) {                                               // the modules' model : each side only as far as its modules reach
+        Wbox = snap(podL + mapD + podR);
+        boxH = snap(podT + mapD + podB);
+    } else if (compact) {                                       // [top bands][bm][map][bm][bottom bands]
         Wbox = mapD + 2.0f * bm;
         boxH = topH + mapD + 2.0f * bm + botH;
     } else if (cpos == 0 || cpos == 1) {                               // TOP / BOTTOM : header stacked with the map
@@ -3071,7 +3118,9 @@ void Minimap::draw(const Frame& f) {
     float hx = ix, hy = iy, ccx, ccy;
     // compact : band rects (the clock outermost, the info band against the map)
     float cbY = 0.0f, ibY = 0.0f;
-    if (compact) {
+    if (podBox) {
+        ccx = ix + podL + r; ccy = iy + podT + r;
+    } else if (compact) {
         ccx = ix + Wbox * 0.5f; ccy = iy + topH + bm + r;
         const float mapBot = iy + topH + bm + mapD + bm;
         if (cbTop) cbY = iy; else cbY = mapBot + (ibTop ? 0.0f : ibH);
@@ -3330,7 +3379,7 @@ void Minimap::draw(const Frame& f) {
         ensure_raw_tex_mip(dev, wxTex_, wxR_, plugin_path_r("assets\\weather_icons.raw"), 1024, 128);
         PERF_SCOPE("mm.modules");
         // the inner radius as the frame / ring below will set it (the astral ring : 80/500 of r ; the square case : its inset)
-        const float rcM = dialSq ? r - snap(r * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f)) : r - r * (80.0f / 500.0f) * clampf(c.mmBezelW, 0.5f, 2.0f);
+        const float rcM = dialSq ? r - snap(r * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f) * sq_band_k(c)) : r - r * (80.0f / 500.0f) * clampf(c.mmBezelW, 0.5f, 2.0f);
         s_moonDialTex = ensure_raw_tex_mip(dev, moonDialTex_, moonDialR_, plugin_path_r("assets\\moon_dial.raw"), 512, 512);
         ensure_raw_tex_mip(dev, moonPhTex_, moonPhR_, plugin_path_r("assets\\moon_phases.raw"), 1024, 128);
         if (c.mmDayDial == 2 && c.mmClock && c.mmClkMoon) {              // the MOON POD : the disc behind the compass, three phases in a window
@@ -3354,7 +3403,7 @@ void Minimap::draw(const Frame& f) {
     float fi = 0.0f;                                          // frame inset : keep the map clear of the chrome border
     dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);   // the dial's metal : the theme / custom colour / the brass
     if (dialSq) {                                                  // the square watch case (the map is drawn inside it)
-        fi = snap(r * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f));
+        fi = snap(r * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f) * sq_band_k(c));
         draw_square_case(dev, ccx, ccy, r, fi, S);
     } else if (c.mmFrame == 1 && !round) {
         const int theme = c.skinTheme; const float lum = c.skinLum;
