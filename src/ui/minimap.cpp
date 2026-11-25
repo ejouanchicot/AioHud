@@ -2,6 +2,8 @@
 // frame, with the player dot + heading arrow placed by the reversed transform. Validates the world->pixel
 // math live before we extract the real zone map image (phase 1b).
 #include "minimap.h"
+#include "perf.h"                    // PERF_SCOPE : the Dial's parts in //aio perf
+#include <string.h>                  // memcmp : the mesh caches' keys
 #include "model/paths.h"
 #include "edit_box.h"                // shared edit-mode drag (Target/Player/Minimap)
 #include "model/gamestate.h"
@@ -621,6 +623,18 @@ static VanaClock dial_vana(const VanaClock& in) {               // the dev test 
     if (th >= 0.0f) { v.hh = (int)th % 24; v.mm = (int)((th - (float)(int)th) * 60.0f); }
     if (td >= 0.0f) v.dayIdx = (int)td & 7;
     if (tm >= 0.0f) { v.moonPct = (int)tm; if (v.moonPct > 100) v.moonPct = 100; v.daysToFull = (100 - v.moonPct) / 3; v.daysToNew = v.moonPct / 3 + 42; }
+    // "mm.test_speed" : a TIME-LAPSE for videos (Vana'diel hours per real second) -- the hour, the day of the week and the
+    // moon's phase all run from it
+    const float sp = TUNE("mm.test_speed", 0.0f);
+    if (sp > 0.0f) {
+        const double H = (double)model_now_ms() / 1000.0 * (double)sp;
+        const double hh = fmod(H, 24.0), dd = H / 24.0;
+        v.hh = (int)hh; v.mm = (int)((hh - (double)v.hh) * 60.0); v.dayIdx = (int)fmod(dd, 8.0);
+        const double ph = fmod(dd * 4.0, 84.0) / 84.0;                   // the moon : 4 x faster, so a week shows its phases
+        v.moonPct = (int)((1.0 - cos(ph * 6.2831853)) * 50.0); v.waning = ph > 0.5;
+        const int dn = (int)((1.0 - ph) * 84.0) % 84, df = (int)((ph < 0.5 ? 0.5 - ph : 1.5 - ph) * 84.0) % 84;
+        v.daysToNew = dn; v.daysToFull = df;
+    }
     return v;
 }
 // ---- the dial's METAL follows the HUD theme : Minimap > Frame = Theme (Same as Party : the party box's FFXI skin or
@@ -738,11 +752,223 @@ static void draw_square_case(u32 dev, float cx, float cy, float r, float fi, flo
     color_state(dev);
 }
 
-static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, const VanaClock& v, u32 elemTex, u32 moonTex,
+// THE DAY ORB (the user 2026-11-25 : "a ball with colour bands, in 3D, in a dial of water ; it turns horizontally on a
+// north-south axis, the quarters running top to bottom" ; the 8 days ; vivid element colours ; then "better -- heroic
+// fantasy technology, a little magical") : an ENCHANTED GLOBE of 8 slices, one per day in its element's colour, 45
+// degrees each, pole to pole, spinning on its upright axis with the hours (today faces you at the start of the day,
+// tomorrow at midnight). Gold filigree meridians between the slices ; every slice lit from WITHIN (today the brightest),
+// a slow shimmer running through the colours, a rim of light of today's colour (the crystal's edge) ; outside, today's aura breathing, and a glass shell : a crescent reflection and a glint.
+// Rendered as a polar grid over the visible disc : each vertex's normal gives its longitude (-> its slice) and its
+// latitude, and is lit. Colour-quad state ; additive passes reset the blend. No allocation.
+static const u32 ORB_ELEM[8] = { 0xFFE0261Au, 0xFFB07A22u, 0xFF1C4FD6u, 0xFF22A83Cu, 0xFF2EC4F0u, 0xFF9A2EE0u, 0xFFF4F1E8u, 0xFF2A1446u };
+static const u32 ORB_GLOW[8] = { 0xFFFF6A3Cu, 0xFFE8B850u, 0xFF4C8CFFu, 0xFF5CE07Au, 0xFF8CE8FFu, 0xFFC878FFu, 0xFFFFF6D8u, 0xFF9A5CFFu };   // each element's LIGHT (Dark glows violet)
+// ONE LAMP for the whole instrument (the user 2026-11-25 : "think each sphere's lighting from its position") : a light
+// hanging above the dial's centre ; every sphere is lit on the side that faces it (the top-left subdial from the lower
+// right, the day orb from the upper left, ...) and its glass reflection sits on that side. Set by draw_dial_instrument.
+// (MESH CACHES : see sphere_mesh_c below -- the key every cached mesh compares)
+struct MeshKey { float k[10]; };
+static bool mesh_key_changed(MeshKey& held, const MeshKey& now, bool& valid) {
+    if (valid && memcmp(held.k, now.k, sizeof(held.k)) == 0) return false;
+    held = now; valid = true; return true;
+}
+static float s_lampX = 0.0f, s_lampY = 0.0f, s_lampH = 1.0f;
+struct Lamp { float x, y, z; };
+static Lamp lamp_for(float cx, float cy) {
+    float dx = s_lampX - cx, dy = s_lampY - cy;
+    const float d = sqrtf(dx * dx + dy * dy);
+    if (d < 1e-3f) { dx = -0.55f; dy = -0.65f; } else { dx /= d; dy /= d; }   // at the lamp itself : the old upper left
+    Lamp L = { dx * 0.62f, dy * 0.62f, 0.78f };                         // a raking light : 0.62 sideways, 0.78 toward you
+    return L;
+}
+// CLOISONNE ENAMEL, A FABERGE GLOBE (the user 2026-11-25 : keep the coloured quarters, no icon, but "not a beach ball") :
+// the toy look was bright flat colours on glossy plastic. Here each day is a JEWEL-toned translucent enamel (ruby, topaz,
+// sapphire, emerald, aquamarine, amethyst, pearl, onyx) laid over an engine-turned GUILLOCHE (fine waves that show through),
+// thicker and lighter at the slice's heart, darker where it pools against the GOLD CLOISONS ; today a little brighter, the
+// others not switched off ; a faint gilt rim. Lit by the instrument's one lamp.
+// the ELEMENTS' colours as the HD element icons paint them (measured on assets/weather_icons.raw, the user 2026-11-25 :
+// "the elements' colours are not respected") -- spread apart where two were too close (Water deep / Ice light blue,
+// Lightning bright violet / Dark deep violet) : Fire red, Earth copper, Water deep blue, Wind green, Ice light blue,
+// Lightning violet, Light gold, Dark deep violet
+static const u32 ORB_JEWEL[8] = { 0xFFC8180Au, 0xFFA8561Au, 0xFF0A3FC8u, 0xFF18A034u, 0xFF3C9BF0u, 0xFF9A3CF0u, 0xFFE8A82Au, 0xFF3A0C78u };
+static u32 orb_col(float u, float v, float z, int di, float frac, float t, const Lamp& Lp) {
+    (void)t;
+    const float lon = atan2f(u, z), lat = asinf(v < -1.0f ? -1.0f : (v > 1.0f ? 1.0f : v));
+    const float band = 0.7853982f;                                      // 45 degrees a day
+    const float pp = lon / band + frac - 0.5f;                          // in days from today : the needle (lon 0) ENTERS today's slice at
+                                                                        // midnight, is at its heart at noon, leaves it at the next midnight
+                                                                        // (the user 2026-11-25 : lit for the whole day, not from noon)
+    const int d0 = (int)floorf(pp + 0.5f);
+    const float edge = (pp + 0.5f) - floorf(pp + 0.5f);                // 0..1 across the slice
+    auto day = [&](int d) { return (di + (d % 8) + 16) & 7; };
+    const u32 base = ORB_JEWEL[day(d0)];
+    float dif = Lp.x * u + Lp.y * v + Lp.z * z; if (dif < 0.0f) dif = 0.0f;
+    const float k = (0.42f + 0.78f * dif) * (0.62f + 0.38f * z);
+    const float heart = sinf(edge * 3.1415927f);                       // 0 at the cloisons, 1 at the slice's heart
+    const float pool = 0.62f + 0.38f * powf(heart, 0.6f);              // the enamel pools darker against the gold
+    // the GUILLOCHE under the enamel : fine waves following the latitude, rippled by the longitude
+    const float gl = 0.5f + 0.5f * sinf(lat * 12.0f + sinf(lon * 5.0f + (float)d0) * 1.4f);
+    const float guil = 0.86f + 0.14f * gl;
+    const int ad = d0 < 0 ? -d0 : d0;
+    const float today = ad == 0 ? 1.18f : 0.88f;
+    float rgb[3];
+    for (int q = 0; q < 3; ++q) rgb[q] = (float)((base >> (q * 8)) & 0xFF) * k * pool * guil * today;
+    // a soft broad sheen from the lamp (no glint dot)
+    const float sh = powf(dif, 10.0f) * 60.0f;
+    for (int q = 0; q < 3; ++q) rgb[q] += sh;
+    // the GOLD CLOISONS : a wire at each seam (its width in longitude : it thins toward the limb like a real wire)
+    const float sd = (edge < 0.5f ? edge : 1.0f - edge) * band;
+    const float wire = 0.06f;
+    if (sd < wire) {
+        const float g = 1.0f - sd / wire, gl2 = 0.50f + 0.85f * dif;
+        const float GOLD[3] = { 0x40, 0xB0, 0xE8 };                     // B, G, R
+        for (int q = 0; q < 3; ++q) rgb[q] = rgb[q] * (1.0f - g) + GOLD[q] * gl2 * g;
+    }
+    // a faint gilt rim (fresnel)
+    const float fr = (1.0f - z) * (1.0f - z) * 0.35f;
+    const float RIM[3] = { 0x50, 0xB8, 0xE8 };
+    u32 o = 0xFF000000u;
+    for (int q = 0; q < 3; ++q) {
+        float c = rgb[q] + RIM[q] * fr;
+        if (c > 255.0f) c = 255.0f; if (c < 0.0f) c = 0.0f;
+        o |= (u32)c << (q * 8);
+    }
+    return o;
+}
+static void draw_day_sphere(u32 dev, float cx, float cy, float R, int di, float frac, float t) {
+    PERF_SCOPE("mm.orb");
+    const Lamp Lp = lamp_for(cx, cy);
+    const u32 tg = ORB_GLOW[di] & 0x00FFFFFFu;
+    // today's AURA, breathing (additive, under the orb)
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+    const float br = 0.5f + 0.5f * sinf(t * 1.6f);
+    disc_glow(dev, cx, cy, R * 0.92f, tg | ((u32)(40.0f + 40.0f * br) << 24), R * 0.30f);
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    // THE MESH IN MERIDIANS : columns of constant view longitude from limb to limb, every 7.5 degrees PLUS, at each seam,
+    // three columns (seam - wire, the seam, seam + wire) so the gold wire is a crisp geometric line and every slice a
+    // clean colour (a polar grid interpolated the seams into zigzags). Rows : latitude, pole to pole.
+    const float band = 0.7853982f, wire = 0.045f, HP = 1.5707963f;
+    float col[64]; int nc = 0;
+    for (int i = 0; i <= 16; ++i) col[nc++] = -HP + (float)i * (3.1415927f / 16.0f);
+    for (int k = -4; k <= 4; ++k) {
+        const float sp = ((float)k + 1.0f - frac) * band;              // a seam's view longitude (pp = k + 0.5)
+        const float c3[3] = { sp - wire, sp, sp + wire };
+        for (int q = 0; q < 3; ++q) if (c3[q] > -HP && c3[q] < HP && nc < 64) col[nc++] = c3[q];
+    }
+    for (int i = 1; i < nc; ++i) { const float vv = col[i]; int j = i - 1; while (j >= 0 && col[j] > vv) { col[j + 1] = col[j]; --j; } col[j + 1] = vv; }
+    const int NLAT = 32;                                                // rows : the guilloche's waves must still resolve
+    static VtxC orbV[64 * 2 * (NLAT + 1)]; static int orbN = 0; static MeshKey orbKey = {}; static bool orbOk = false;
+    const MeshKey key = { { cx, cy, R, (float)di, floorf(frac * 1440.0f), Lp.x, Lp.y } };   // rebuilt once per Vana'diel minute
+    if (mesh_key_changed(orbKey, key, orbOk)) {
+        orbN = 0;
+        for (int i = 0; i + 1 < nc; ++i) {
+            if (col[i + 1] - col[i] < 1e-4f) continue;
+            VtxC* strip = orbV + orbN * 2 * (NLAT + 1);
+            for (int j = 0; j <= NLAT; ++j) {
+                const float la = -HP + (float)j * (3.1415927f / NLAT), cl = cosf(la), sl = sinf(la);
+                for (int q = 0; q < 2; ++q) {
+                    const float ph = col[i + q], u = cl * sinf(ph), v = sl, zz = cl * cosf(ph);
+                    strip[2 * j + q] = { cx - 0.5f + u * R, cy - 0.5f + v * R, 0, 1, orb_col(u, v, zz < 0.0f ? 0.0f : zz, di, frac, t, Lp) };
+                }
+            }
+            ++orbN;
+        }
+    }
+    for (int i = 0; i < orbN; ++i) dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NLAT, orbV + i * 2 * (NLAT + 1), sizeof(VtxC));
+    ring_sector(dev, cx, cy, R - 0.8f, R + 0.6f, 0.0f, 6.2832f, 0xA0080B10u);   // the limb, anti-aliased
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);                         // (no specks of light : the user 2026-11-25)
+    // the GLASS SHELL : a crescent reflection up left, a glint
+    { const float la = atan2f(Lp.y, Lp.x); ring_sector(dev, cx, cy, R * 0.70f, R * 0.86f, la - 0.45f, la + 0.45f, 0x38FFFFFFu); }   // the reflection, on the lamp's side
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);                 // (no glint dot : too marked)
+}
+
+// A lit SPHERE over a polar grid (no seams to carry) : `colf(u, v, z)` gives each vertex's colour from its unit normal
+// (u right, v down, z toward you). Shared by the moon and the glass domes. Colour-quad state.
+// MESH CACHES (//aio perf 2026-11-25 : the Dial cost 2.0 ms a frame, half the HUD -- thousands of vertices whose colour
+// is a few exp / atan2 / pow each, recomputed every frame although their inputs change once per Vana'diel minute) : each
+// per-vertex-coloured mesh is built into a fixed CPU buffer and REBUILT only when its key changes (its screen place and
+// size, the hour's minute, the phase, the lamp...) ; every frame only replays the strips. CPU memory, no GPU handle :
+// nothing to forget on a device loss.
+struct SphCache { MeshKey key = {}; bool valid = false; VtxC v[10 * 2 * 41]; };
+template <class F> static void sphere_mesh_c(u32 dev, SphCache& C, const MeshKey& key, float cx, float cy, float R, F colf) {
+    const int NR = 10, NS = 40;                                         // ~800 triangles : enough at a subdial's size (perf)
+    if (mesh_key_changed(C.key, key, C.valid)) {
+        for (int i = 0; i < NR; ++i) {
+            const float r0 = (float)i / NR, r1 = (float)(i + 1) / NR;
+            VtxC* strip = C.v + i * 2 * (NS + 1);
+            for (int j = 0; j <= NS; ++j) {
+                const float a = (float)j / NS * 6.2831853f, ca = cosf(a), sa = sinf(a);
+                for (int q = 0; q < 2; ++q) {
+                    const float rr = q == 0 ? r0 : r1, u = rr * ca, v = rr * sa;
+                    float zz = 1.0f - u * u - v * v; zz = zz > 0.0f ? sqrtf(zz) : 0.0f;
+                    strip[2 * j + q] = { cx - 0.5f + u * R, cy - 0.5f + v * R, 0, 1, colf(u, v, zz) };
+                }
+            }
+        }
+    }
+    for (int i = 0; i < NR; ++i) dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NS, C.v + i * 2 * (NS + 1), sizeof(VtxC));
+}
+template <class F> static void sphere_mesh(u32 dev, float cx, float cy, float R, F colf) {
+    const int NR = 12, NS = 56;
+    VtxC strip[2 * (NS + 1)];
+    for (int i = 0; i < NR; ++i) {
+        const float r0 = (float)i / NR, r1 = (float)(i + 1) / NR;
+        for (int j = 0; j <= NS; ++j) {
+            const float a = (float)j / NS * 6.2831853f, ca = cosf(a), sa = sinf(a);
+            for (int q = 0; q < 2; ++q) {
+                const float rr = q == 0 ? r0 : r1, u = rr * ca, v = rr * sa;
+                float zz = 1.0f - u * u - v * v; zz = zz > 0.0f ? sqrtf(zz) : 0.0f;
+                strip[2 * j + q] = { cx - 0.5f + u * R, cy - 0.5f + v * R, 0, 1, colf(u, v, zz) };
+            }
+        }
+        dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NS, strip, sizeof(VtxC));
+    }
+}
+static u32 rgb_scale(u32 c, float k) {
+    u32 o = 0xFF000000u;
+    for (int sh = 0; sh < 24; sh += 8) { float x = (float)((c >> sh) & 0xFF) * k; if (x > 255.0f) x = 255.0f; if (x < 0.0f) x = 0.0f; o |= (u32)x << sh; }
+    return o;
+}
+// THE GLASS DOME over a subdial (the user 2026-11-25 : "spherical, glass reflections") : a faint fresnel rim, a crescent
+// reflection up left. Drawn LAST over the face ; the blend is reset after its additive part.
+static void glass_dome(u32 dev, float cx, float cy, float R, u32 rimTint, float k = 1.0f) {   // k < 1 over a LIGHT face (additive saturates)
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+    auto A = [k](float a) { return (u32)(a * k) << 24; };
+    ring_sector(dev, cx, cy, R * 0.90f, R, 0.0f, 6.2832f, (rimTint & 0x00FFFFFFu) | A(34.0f));   // the rim catches the light
+    const Lamp Lp = lamp_for(cx, cy); const float la = atan2f(Lp.y, Lp.x);
+    ring_sector(dev, cx, cy, R * 0.70f, R * 0.86f, la - 0.45f, la + 0.45f, 0x00FFFFFFu | A(48.0f));   // the crescent reflection, toward the lamp
+    ring_sector(dev, cx, cy, R * 0.78f, R * 0.88f, la + 3.1416f - 0.40f, la + 3.1416f + 0.40f, 0x00FFFFFFu | A(18.0f));   // a weaker one, opposite
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);                                              // (no glint dot : too marked, the user 2026-11-25)
+}
+// THE MOON as a SPHERE : ivory with darker maria, lit by the REAL phase (the illuminated fraction f = moonPct ;
+// waxing = lit from the right, waning = from the left, as build_moon_argb), a soft terminator, and the dark side's
+// faint earthshine.
+static void draw_moon_sphere(u32 dev, float cx, float cy, float R, int pct, bool waning) {
+    float f = (float)pct / 100.0f; if (f < 0.0f) f = 0.0f; if (f > 1.0f) f = 1.0f;
+    const float th = acosf(2.0f * f - 1.0f), sx = waning ? -1.0f : 1.0f;     // th = 0 full, pi new
+    const float lx = sx * sinf(th), ly = -0.12f, lz = cosf(th);
+    static const float MAR[5][4] = { {-0.30f,-0.25f,0.26f,0.30f}, {0.22f,-0.10f,0.20f,0.26f}, {-0.05f,0.28f,0.22f,0.22f}, {0.35f,0.35f,0.14f,0.20f}, {-0.42f,0.20f,0.12f,0.18f} };
+    static SphCache cache; const MeshKey key = { { cx, cy, R, (float)pct, waning ? 1.0f : 0.0f } };
+    sphere_mesh_c(dev, cache, key, cx, cy, R, [&](float u, float v, float z) -> u32 {
+        float m = 1.0f;
+        for (int k = 0; k < 5; ++k) { const float dx = u - MAR[k][0], dy = v - MAR[k][1]; m -= MAR[k][3] * expf(-(dx * dx + dy * dy) / (MAR[k][2] * MAR[k][2])); }
+        float ndl = u * lx + v * ly + z * lz;
+        float lit = (ndl + 0.06f) / 0.22f; if (lit < 0.0f) lit = 0.0f; if (lit > 1.0f) lit = 1.0f;   // a soft terminator
+        lit = lit * lit * (3.0f - 2.0f * lit);
+        const float shade = (0.55f + 0.55f * (ndl > 0.0f ? ndl : 0.0f)) * (0.70f + 0.30f * z);
+        const u32 day = rgb_scale(0xFFEDE4CCu, m * shade);
+        const u32 night = rgb_scale(0xFF1A2440u, 0.55f + 0.25f * m);           // earthshine
+        u32 o = 0xFF000000u;
+        for (int sh = 0; sh < 24; sh += 8) o |= (u32)((float)((night >> sh) & 0xFF) * (1.0f - lit) + (float)((day >> sh) & 0xFF) * lit) << sh;
+        return o;
+    });
+    ring_sector(dev, cx, cy, R - 0.8f, R + 0.6f, 0.0f, 6.2832f, 0x90060A14u);   // the limb, anti-aliased
+}
+static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, const VanaClock& v, u32 elemTex, u32 wxTex,
                                  float mapX, float mapY, float cx, float cy, float rc, float r, float S, float zoomA, bool sq = false) {
     (void)g;
+    s_lampX = cx; s_lampY = cy - r * 0.15f; s_lampH = r;                 // THE LAMP : above the dial's centre, a little north
     Font* tf = band_font(f, MM_TIME); Font* fo = f.font;
-    const int di = (v.dayIdx < 0 || v.dayIdx > 7) ? 2 : v.dayIdx, ni = (di + 1) & 7;
+    const int di = (v.dayIdx < 0 || v.dayIdx > 7) ? 2 : v.dayIdx;
     const float PI = 3.14159265f;
     // -- the four COMPLICATIONS, one per corner of the dial's square (the only room left by the round dial ; nothing goes
     //    past that square). A subdial of radius sr fits a corner while  0.707 (r + sr + gap) + sr <= r  ->  sr ~ 0.165 r.
@@ -778,10 +1004,20 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
             if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) {
                 bezel(x, y, 0xFF17130Cu);
+                color_state(dev);
+                const Lamp Lt = lamp_for(x, y);
+                static SphCache tlCache; const MeshKey tlKey = { { x, y, sr, Lt.x, Lt.y } };
+                sphere_mesh_c(dev, tlCache, tlKey, x, y, sr, [Lt](float u, float v, float z) -> u32 {      // a DOMED face, lit from the lamp
+                    float dif = Lt.x * u + Lt.y * v + Lt.z * z; if (dif < 0.0f) dif = 0.0f;
+                    return rgb_scale(0xFF2A2214u, (0.55f + 0.75f * dif) * (0.60f + 0.40f * z));
+                });
+                ring_sector(dev, x, y, sr - 0.8f, sr + 0.6f, 0.0f, 6.2832f, 0x90060A10u);
                 for (int k = 1; k <= 2; ++k) { const float gr2 = sr * (0.45f + 0.25f * (float)k); color_state(dev); rrect_stroke(dev, x - gr2, y - gr2, 2.0f * gr2, 2.0f * gr2, gr2, 0x16F4E4B8u, 1.0f); }
                 char gb[12]; sprintf(gb, "%c-%d", 'A' + gc, gr + 1);
                 float gsz = snap(sr * 0.62f); if (tf) while (gsz > sr * 0.4f && tf->measure(gb, gsz) > sr * 1.6f) gsz -= 1.0f;
                 engrave(x, y, gb, gsz, 0xFFF0D898u);
+                color_state(dev);
+                glass_dome(dev, x, y, sr, 0xFFF0D898u);                                 // the glass over the engraving
             }
         }
         const float pSz = snap(TUNE("mm.dial_cap", 12.5f) * S);                                  // the engraved text
@@ -799,9 +1035,12 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             }
             color_state(dev);
         };
-        // ---- TR : DAY / NIGHT, a small landscape : the sky's colour follows the hour smoothly (night blue, an orange dawn,
-        //      a clear noon, dusk, night again) ; the sun and the moon ride an arc, rising on the left and setting on the
-        //      right BEHIND brass hills ; the stars come out with the night ----
+        // ---- TR : THE SKY SPHERE + THE WEATHER ORBS (the user 2026-11-25 : "no weather in the sphere, only the sun and the moon,
+        //      well recognisable, a blue sky by day and a night blue for the moon ; below, two small spheres that may
+        //      overflow the main one on the sides, the elements set in them") : the sky's colour follows the hour (night
+        //      blue, an orange dawn, a clear noon, dusk) ; the SUN (a gold disc with its rays) and a crescent MOON ride an arc,
+        //      setting below its lower edge ; a glass dome over it. The weather (*(g+0x40)+0x04, verified live) : its
+        //      element in small glass ORBS at the bottom, overlapping the rim -- one for a single weather, two for a double ----
         if (c.mmClock && (c.mmClkTime || c.mmClkDay)) {
             const float x = cx + off, y = cy - off;
             bezel(x, y, 0xFF0E1830u);
@@ -814,92 +1053,118 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 return 0xFF000000u | ((u32)(((a2 >> 16) & 0xFF) * q + ((b2 >> 16) & 0xFF) * k) << 16)
                                    | ((u32)(((a2 >> 8) & 0xFF) * q + ((b2 >> 8) & 0xFF) * k) << 8) | (u32)((a2 & 0xFF) * q + (b2 & 0xFF) * k);
             };
-            u32 skyTop = mix(0xFF08112Au, 0xFF3C78CCu, dayK), skyBot = mix(0xFF1A2A56u, 0xFFA8D2F2u, dayK);
+            u32 skyTop = mix(0xFF0A1640u, 0xFF2E6ED8u, dayK), skyBot = mix(0xFF1C3470u, 0xFF9CCCF4u, dayK);   // night BLUE (not black) .. day blue
             skyTop = mix(skyTop, 0xFF3A3C7Cu, duskK * 0.5f); skyBot = mix(skyBot, 0xFFF0A050u, duskK * 0.85f);
-            const float hz = y + sr * 0.22f;                                                         // the horizon line
             color_state(dev);
-            const int NS = 16;                                                                       // the sky : strips with a vertical gradient
-            for (int k = 0; k < NS; ++k) {
-                const float ya = (y - sr) + (hz - (y - sr)) * (float)k / NS, yb = (y - sr) + (hz - (y - sr)) * (float)(k + 1) / NS;
-                const float ym = (ya + yb) * 0.5f - y, hw = sqrtf(sr * sr - ym * ym > 0.0f ? sr * sr - ym * ym : 0.0f);
-                const float ka = (ya - (y - sr)) / (hz - (y - sr)), kb = (yb - (y - sr)) / (hz - (y - sr));
-                const u32 ca2 = mix(skyTop, skyBot, ka * ka), cb2 = mix(skyTop, skyBot, kb * kb);
-                grad_quad(dev, x - hw, ya, 2.0f * hw, yb - ya + 0.6f, ca2, ca2, cb2, cb2);
-            }
-            static const float STX[9] = { -0.55f, -0.2f, 0.15f, 0.5f, -0.38f, 0.32f, 0.0f, -0.68f, 0.66f }, STY[9] = { -0.62f, -0.78f, -0.55f, -0.70f, -0.30f, -0.25f, -0.88f, -0.05f, -0.12f };
-            const float starA = (1.0f - dayK) * (1.0f - duskK * 0.6f);
-            for (int k = 0; k < 9; ++k)
-                if (starA > 0.02f) disc(dev, snap(x + STX[k] * sr), snap(y + STY[k] * sr), (k % 3 == 0) ? 0.9f : 0.6f, ((u32)(starA * 230.0f) << 24) | 0x00FFF6DCu);
-            // the sun and the moon on their arc (left horizon -> top -> right horizon), hidden by the hills below
-            const float AR = sr * 0.66f;
+            // THE SKY, THE SUN AND THE MOON, CLIPPED TO THE DIAL (the user 2026-11-25 : "they must never go past the piece ; the
+            // aura that goes past must be cut at the dial's edge") : no stencil here (minimap.cpp's note), so the clip is
+            // GEOMETRIC -- one polar mesh covering exactly the dial's disc, each vertex's colour computed : the sky's
+            // gradient, then the sun (its glow, 8 turning rays, a rimmed gold disc, a highlight) and a crescent moon with
+            // its halo. Whatever lies past the rim is simply never drawn.
+            const float hz = y + sr * 0.35f, AR = sr * 0.78f;
+            float sx = 0, sy = 0, svis = 0, mx = 0, my = 0, mvis = 0;
             for (int body = 0; body < 2; ++body) {
                 const float tt = body == 0 ? t : fmodf(t + 12.0f, 24.0f);                             // the moon is opposite the sun
                 const float ph = (tt - 6.0f) / 12.0f * PI;                                            // 0 at its rise, pi at its set
-                const float bx = x - cosf(ph) * AR, by = hz - sinf(ph) * AR * 0.95f;
-                if (by > hz + sr * 0.3f) continue;                                                    // well under the hills
-                if (body == 0) {
-                    const float sR = sr * 0.17f;
-                    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
-                    disc_glow(dev, bx, by, sR, 0x80FFE8A0u, sR * 1.6f);
-                    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-                    disc(dev, bx, by, sR + 0.6f, 0xFFB88A30u); disc(dev, bx, by, sR, 0xFFFFD670u);
-                    disc(dev, bx - sR * 0.3f, by - sR * 0.3f, sR * 0.35f, 0x90FFFFFFu);
-                } else {
-                    draw_moon(dev, snap(bx), snap(by), sr * 0.17f, moonTex);
-                    color_state(dev);
-                }
+                const float bx = x - cosf(ph) * AR, by = hz - sinf(ph) * AR;
+                const float up = body == 0 ? elev : -elev;                                           // above the horizon BY THE HOUR (the user :
+                const float vis = clampf((up + 0.04f) / 0.10f, 0.0f, 1.0f);                           // the sun stayed low right after nightfall)
+                if (body == 0) { sx = bx; sy = by; svis = vis; } else { mx = bx; my = by; mvis = vis; }
             }
-            // the GROUND, engraved in depth : a farC hill tinted by the sky (haze by day, dark by night) with two small pines
-            // on its crest ; the near hill in brass, lit on its crest and darker toward the foot ; engraved hatching below
-            const int NH = 22;
-            auto ridge = [&](float xn, int layer) {                                                 // the crest height (fraction of sr)
-                return layer == 0 ? 0.20f + 0.08f * sinf(xn * 2.3f + 2.1f) + 0.04f * sinf(xn * 6.1f + 0.4f)
-                                  : 0.08f + 0.07f * sinf(xn * 3.2f + 0.7f) + 0.035f * sinf(xn * 7.9f + 1.3f);
+            const float tq = floorf(f.t * 6.0f) / 6.0f;                                              // the rays turn in 6 steps a second (cache)
+            const float sR = sr * 0.20f, mR = sr * 0.30f, rot = tq * 0.25f, px1 = 1.0f;              // px1 : one pixel, the soft edge
+            auto smooth = [](float e0, float e1, float v2) { float k = (v2 - e0) / (e1 - e0); k = k < 0.0f ? 0.0f : (k > 1.0f ? 1.0f : k); return k * k * (3.0f - 2.0f * k); };
+            auto over = [](float* c3, u32 col, float a2) { if (a2 <= 0.0f) return; if (a2 > 1.0f) a2 = 1.0f;
+                for (int q = 0; q < 3; ++q) c3[q] = c3[q] * (1.0f - a2) + (float)((col >> (q * 8)) & 0xFF) * a2; };
+            auto skyAt = [&](float px, float py) -> u32 {
+                const float kk = clampf((py - (y - sr)) / (2.0f * sr), 0.0f, 1.0f);
+                const u32 sk = mix(skyTop, skyBot, kk);
+                float c3[3] = { (float)(sk & 0xFF), (float)((sk >> 8) & 0xFF), (float)((sk >> 16) & 0xFF) };
+                if (svis > 0.0f) {                                                                    // the SUN
+                    const float dx = px - sx, dy = py - sy, d = sqrtf(dx * dx + dy * dy);
+                    over(c3, 0x00FFE8A0u, svis * 0.55f * expf(-(d - sR) * (d - sR) / (sR * sR * 1.6f)) * (d > sR ? 1.0f : 1.0f));   // its glow
+                    if (d > sR * 1.15f && d < sR * 1.95f) {                                           // 8 rays, turning
+                        const float an = atan2f(dy, dx) - rot, w = cosf(an * 4.0f);
+                        const float ray = smooth(0.82f, 0.90f, w * w) * (1.0f - smooth(sR * 1.6f, sR * 1.95f, d)) * smooth(sR * 1.15f, sR * 1.3f, d);
+                        over(c3, 0x00FFD060u, svis * ray);
+                    }
+                    over(c3, 0x00C88A20u, svis * (1.0f - smooth(sR + 0.7f - px1, sR + 0.7f, d)));      // the rim
+                    over(c3, 0x00FFD86Au, svis * (1.0f - smooth(sR - px1, sR, d)));                  // the disc
+                    const float hx = px - (sx - sR * 0.3f), hy = py - (sy - sR * 0.3f);
+                    over(c3, 0x00FFFFFFu, svis * 0.55f * (1.0f - smooth(sR * 0.30f, sR * 0.40f, sqrtf(hx * hx + hy * hy))));
+                }
+                if (mvis > 0.0f) {                                                                    // the MOON : a halo, then a crescent
+                    const float dx = px - mx, dy = py - my, d = sqrtf(dx * dx + dy * dy);
+                    over(c3, 0x00C8D8FFu, mvis * 0.30f * expf(-(d - mR) * (d - mR) / (mR * mR * 0.8f)));
+                    const float ex = px - (mx + mR * 0.48f), ey = py - (my - mR * 0.18f), e = sqrtf(ex * ex + ey * ey);
+                    const float lit = (1.0f - smooth(mR - px1, mR, d)) * smooth(mR * 0.88f - px1, mR * 0.88f, e);   // the disc, bitten by the night
+                    over(c3, 0x00F4ECD4u, mvis * lit);
+                }
+                const float below = smooth(hz - 1.0f, hz + 1.0f, py);                                // the HORIZON : the land in front of the sun and
+                over(c3, mix(skyBot, 0xFF0A0E16u, 0.80f), below);                                     // the moon -- they set BEHIND it
+                return 0xFF000000u | ((u32)c3[2] << 16) | ((u32)c3[1] << 8) | (u32)c3[0];
             };
-            for (int layer = 0; layer < 2; ++layer) {
-                float hx[NH + 1], hy[NH + 1], hb[NH + 1];
-                for (int i = 0; i <= NH; ++i) {
-                    const float xn = -1.0f + 2.0f * (float)i / NH, dx = xn * sr;
-                    const float circ = sqrtf(sr * sr - dx * dx > 0.0f ? sr * sr - dx * dx : 0.0f);
-                    float sy = hz - sr * ridge(xn, layer); if (sy < y - circ + 1.0f) sy = y - circ + 1.0f;
-                    hx[i] = x + dx; hy[i] = sy; hb[i] = y + circ;
-                }
-                const u32 farC = mix(skyBot, 0xFF2A2418u, 0.55f + 0.35f * (1.0f - dayK));             // the farC hill : the sky's haze over dark
-                for (int i = 0; i < NH; ++i) {
-                    if (layer == 0) {
-                        fill_tri(dev, hx[i], hy[i], hx[i + 1], hy[i + 1], hx[i + 1], hb[i + 1], farC);
-                        fill_tri(dev, hx[i], hy[i], hx[i + 1], hb[i + 1], hx[i], hb[i], farC);
-                    } else {                                                                        // the near hill : three bands, lit at the crest
-                        const float d1 = sr * 0.07f, d2 = sr * 0.20f;
-                        const u32 c0 = g_dm.body, c1 = g_dm.bot, c2 = g_dm.dark;
-                        fill_tri(dev, hx[i], hy[i], hx[i + 1], hy[i + 1], hx[i + 1], hy[i + 1] + d1, c0);
-                        fill_tri(dev, hx[i], hy[i], hx[i + 1], hy[i + 1] + d1, hx[i], hy[i] + d1, c0);
-                        fill_tri(dev, hx[i], hy[i] + d1, hx[i + 1], hy[i + 1] + d1, hx[i + 1], hy[i + 1] + d2, c1);
-                        fill_tri(dev, hx[i], hy[i] + d1, hx[i + 1], hy[i + 1] + d2, hx[i], hy[i] + d2, c1);
-                        fill_tri(dev, hx[i], hy[i] + d2, hx[i + 1], hy[i + 1] + d2, hx[i + 1], hb[i + 1], c2);
-                        fill_tri(dev, hx[i], hy[i] + d2, hx[i + 1], hb[i + 1], hx[i], hb[i], c2);
+            {
+                const int NR = 16, NSg = 72;                                    // ~2300 triangles (was 4200 : perf)
+                static VtxC skyV[NR * 2 * (NSg + 1)]; static MeshKey skyKey = {}; static bool skyOk = false;
+                const MeshKey key = { { x, y, sr, (float)v.hh * 60.0f + (float)v.mm, tq, (float)skyTop, (float)skyBot } };
+                if (mesh_key_changed(skyKey, key, skyOk)) {
+                    for (int i = 0; i < NR; ++i) {
+                        const float r0 = sr * (float)i / NR, r1 = sr * (float)(i + 1) / NR;
+                        VtxC* strip = skyV + i * 2 * (NSg + 1);
+                        for (int j = 0; j <= NSg; ++j) {
+                            const float an = (float)j / NSg * 6.2831853f, ca = cosf(an), sa = sinf(an);
+                            for (int q = 0; q < 2; ++q) {
+                                const float rr = q == 0 ? r0 : r1, px = x + ca * rr, py = y + sa * rr;
+                                strip[2 * j + q] = { px - 0.5f, py - 0.5f, 0, 1, skyAt(px, py) };
+                            }
+                        }
                     }
                 }
-                for (int i = 0; i < NH; ++i) seg_soft(dev, hx[i], hy[i], hx[i + 1], hy[i + 1], 1.2f, layer == 0 ? farC : g_dm.body);   // AA crests
-                if (layer == 0) {                                                                   // two small pines on the farC crest
-                    static const float PX[2] = { -0.42f, -0.28f }, PH[2] = { 0.16f, 0.12f };
-                    for (int k = 0; k < 2; ++k) {
-                        const float px2 = x + PX[k] * sr, py2 = hz - sr * ridge(PX[k], 0) + 0.5f, ph2 = sr * PH[k], pw = ph2 * 0.38f;
-                        fill_tri(dev, px2, py2 - ph2, px2 + pw, py2, px2 - pw, py2, mix(farC, 0xFF141008u, 0.5f));
-                    }
-                } else {
-                    for (int i = 0; i < NH; ++i)                                                    // the light on the near crest
-                        seg_soft(dev, hx[i], hy[i] + 0.8f, hx[i + 1], hy[i + 1] + 0.8f, 0.8f * S, MA(0xA0, g_dm.glint));
-                    for (int k = 0; k < 7; ++k) {                                                   // engraved hatching on the ground
-                        const float gx = x - sr * 0.6f + sr * 0.2f * (float)k, gy = hz + sr * 0.32f + (float)(k & 1) * sr * 0.12f;
-                        const float dxh = gx - x, lim = sqrtf(sr * sr - dxh * dxh > 0.0f ? sr * sr - dxh * dxh : 0.0f);
-                        if (gy + sr * 0.18f > y + lim - 1.0f) continue;
-                        seg_soft(dev, gx, gy, gx + sr * 0.12f, gy + sr * 0.18f, 0.8f, MA(0x60, g_dm.shade));
-                    }
-                }
+                for (int i = 0; i < NR; ++i) dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NSg, skyV + i * 2 * (NSg + 1), sizeof(VtxC));
             }
-            ring_sector(dev, x, y, sr - 0.8f, sr + 0.4f, 0.0f, 2.0f * PI, g_dm.dark);              // a clean rim over the stair-stepped strips
+            static const float STX[9] = { -0.55f, -0.2f, 0.15f, 0.5f, -0.38f, 0.32f, 0.0f, -0.68f, 0.66f }, STY[9] = { -0.62f, -0.78f, -0.55f, -0.70f, -0.30f, -0.25f, -0.88f, -0.05f, -0.12f };
+            const float starA = (1.0f - dayK) * (1.0f - duskK * 0.6f);
+            for (int k = 0; k < 9; ++k) {                                                             // fine stars, never on the moon
+                const float stx = x + STX[k] * sr, sty = y + STY[k] * sr, dmx = stx - mx, dmy = sty - my;
+                if (starA > 0.02f && dmx * dmx + dmy * dmy > mR * mR * 1.4f)
+                    disc(dev, snap(stx), snap(sty), (k % 3 == 0) ? 0.45f : 0.3f, ((u32)(starA * (k % 3 == 0 ? 210.0f : 150.0f)) << 24) | 0x00FFF6DCu);
+            }
             color_state(dev);
+            ring_sector(dev, x, y, sr - 0.8f, sr + 0.4f, 0.0f, 2.0f * PI, g_dm.dark);              // a clean rim
+            glass_dome(dev, x, y, sr, 0xFFB8D4FFu, 0.8f);
+            color_state(dev);
+            // THE WEATHER ORBS : the element in small glass spheres at the bottom, overlapping the rim
+            int wid = g.weather;
+            { const float tw = TUNE("mm.test_weather", -1.0f); if (tw >= 0.0f) wid = (int)tw; }       // dev : force one
+            { const float wc = TUNE("mm.test_wcycle", 0.0f);                                            // dev : cycle them (videos)
+              if (wc > 0.0f) { static const int WC[10] = { 1, 5, 7, 9, 2, 11, 13, 15, 17, 19 }; wid = WC[(int)(model_now_ms() / 1000.0 / wc) % 10]; } }
+            if (wid >= 4 && wid <= 19) {
+                static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };                             // weather pair -> the element strip's cell
+                const int cell = WCELL[(wid - 4) / 2], n = (wid & 1) ? 2 : 1;
+                const float rs = sr * 0.46f;
+                const u32 ec = VANA_DAYCOL[cell];
+                for (int q = 0; q < n; ++q) {
+                    const float ox = n == 2 ? x + (q == 0 ? -1.0f : 1.0f) * sr * 0.60f : x, oy = n == 2 ? y + sr * 0.70f : y + sr * 0.80f;
+                    color_state(dev);
+                    rrect_glow(dev, ox - rs - 1.5f * S, oy - rs - 0.5f * S, 2.0f * rs + 3.0f * S, 2.0f * rs + 3.0f * S, rs + 1.5f * S, 0x90000000u, snap(2.5f * S));   // its shadow
+                    color_state(dev);
+                    disc(dev, ox, oy, rs + 1.8f * S, g_dm.edge);                                    // a metal setting
+                    disc(dev, ox, oy, rs + 1.1f * S, g_dm.body);
+                    ring_sector(dev, ox, oy, rs, rs + 1.1f * S, PI, 1.5f * PI, MA(0xA0, g_dm.glint));
+                    disc(dev, ox, oy, rs, 0xFF000000u);                                              // a PERFECTLY BLACK face (the user 2026-11-25) : the element stands out
+                    ring_sector(dev, ox, oy, rs - 0.8f, rs + 0.5f, 0.0f, 2.0f * PI, 0x90060A10u);
+                    if (wxTex) {
+                        const float isz = snap(rs * 1.95f);                               // the icon FILLS the black round (the user 2026-11-25)                               // the atlas cell has a margin : fill the orb (the user : "bigger")
+                        tex_state(dev, wxTex);
+                        tquad(dev, snap(ox - isz * 0.5f), snap(oy - isz * 0.5f), isz, isz, cell / 8.0f, (cell + 1) / 8.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
+                        dSetTex(dev, 0, 0);
+                    }
+                    color_state(dev);
+                    glass_dome(dev, ox, oy, rs, ec, 0.7f);
+                }
+                color_state(dev);
+            }
         }
         // ---- the BAND : ONE brass bar under the ring, from the moon subdial to the day subdial (both sit on its ends ; it
         //      touches the ring at the S). Two compartments, each under its subdial and lined with ITS colour -- night blue for
@@ -973,30 +1238,40 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             color_state(dev);
             static const float ST[6][2] = { {-0.62f,-0.30f}, {0.58f,-0.48f}, {-0.35f,-0.70f}, {0.70f,0.10f}, {-0.72f,0.22f}, {0.30f,-0.75f} };
             for (int k = 0; k < 6; ++k) disc(dev, snap(x + ST[k][0] * sr), snap(y + ST[k][1] * sr), 0.7f, 0xB0FFF6DCu);
-            draw_moon(dev, snap(x), snap(y), sr * 0.62f, moonTex);
+            draw_moon_sphere(dev, x, y, sr, v.moonPct, v.waning);                  // a lit sphere by the real phase, the WHOLE face (the user 2026-11-25)
+            glass_dome(dev, x, y, sr, 0xFF9CB8FFu, 0.35f);                         // under a glass dome (soft : the moon is light)
             color_state(dev);
             plateText((lc0 + lc1) * 0.5f, ty, mb, fullFirst ? 0xFFF8E6B0u : 0xFFC8D6F4u, -1);
         }
-        // ---- BR : the DAY -- the element of the day, large, on an enamel tinted with its colour ; its plate : the exact
-        //      time, then a chevron and tomorrow's element ----
+        // ---- BR : the DAY WHEEL (the user 2026-11-25 : "a wheel of all the elements, in coloured quarters, with a needle,
+        //      and the dial turns") : the eight elements in their week order, each a quarter of its colour on a ring ; a
+        //      gilt needle fixed at 12 o'clock points at TODAY ; the wheel turns with the hours, so tomorrow's quarter
+        //      creeps toward the needle and reaches it at midnight. Today's element, large, at the hub. Its plate : the
+        //      time alone, centred ----
         if (c.mmClock && (c.mmClkTime || c.mmClkDay)) {
             const float x = cx + off, y = cy + off;
-            char tb[16]; if (c.mmClkTime) sprintf(tb, "%02d:%02d \xE2\x80\xBA", v.hh, v.mm); else sprintf(tb, "\xE2\x80\xBA");
+            char tb[16]; tb[0] = 0; if (c.mmClkTime) sprintf(tb, "%02d:%02d", v.hh, v.mm);
             const float ty = bmid;
-            const u32 dc = VANA_DAYCOL[di];
-            const u32 enamel = 0xFF000000u | ((((dc >> 16) & 0xFF) * 30 / 100) << 16) | ((((dc >> 8) & 0xFF) * 30 / 100) << 8) | (((dc & 0xFF) * 30 / 100));
-            bezel(x, y, enamel, true);
-            color_state(dev);
-            dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
-            disc_glow(dev, x, y, sr * 0.35f, (dc & 0x00FFFFFFu) | 0x50000000u, sr * 0.55f);           // the element glows on its enamel
-            dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-            if (elemTex) {
-                const float isz = sr * 1.25f;
-                tex_state(dev, elemTex);
-                tquad(dev, snap(x - isz * 0.5f), snap(y - isz * 0.5f), isz, isz, di / 8.0f, (di + 1) / 8.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
-                dSetTex(dev, 0, 0);
+            bezel(x, y, 0xFF0E1218u, true);
+            if (c.mmClkDay) {
+                // the DAY SPHERE in a water-filled dial : the face a deep teal, the ball floating in it, a glass gleam over all
+                const float frac = ((float)v.hh * 60.0f + (float)v.mm) / 1440.0f;
+                const float ri = sr * 0.70f;                                                  // (the needle's tip reaches it)
+                color_state(dev);
+                rrect(dev, x - sr, y - sr, 2.0f * sr, 2.0f * sr, sr, 0xFF16303Au, 0xFF0A161Eu);   // the water, darker deep down
+                draw_day_sphere(dev, x, y, sr, di, frac, f.t);                                // the WHOLE face (the user 2026-11-25)
+                color_state(dev);
+                // the NEEDLE : a pointer fixed at 12 o'clock, from above the case's rim down into the ring, in the theme's metal
+                // with a dark outline (a thin light needle vanished against the quarters)
+                const float nTop = y - sr - 3.0f * S, nTip = y - ri * 0.80f, nw = 3.6f * S, o = 1.1f * S;
+                const float ol[6] = { x - nw - o, nTop - o, x + nw + o, nTop - o, x, nTip + o * 1.8f };
+                fill_poly_aa(dev, ol, 3, 0xE0000000u);                                // its dark outline / shadow
+                const float nd[6] = { x - nw, nTop, x + nw, nTop, x, nTip };
+                fill_poly_aa(dev, nd, 3, g_dm.lite | 0xFF000000u);
+                const float hl[6] = { x, nTop + 0.6f * S, x + nw * 0.75f, nTop + 0.6f * S, x, nTip - 1.5f * S };
+                fill_poly_aa(dev, hl, 3, MA(0xB0, g_dm.glint));                       // its lit facet
             }
-            plateText((rc0 + rc1) * 0.5f, ty, tb, 0xFFF4EEDFu, (c.mmClkDay && elemTex) ? ni : -1);
+            if (tb[0]) plateText((rc0 + rc1) * 0.5f, ty, tb, 0xFFF4EEDFu, -1);
         }
         color_state(dev);
     }
@@ -1118,15 +1393,15 @@ Minimap::LodSt* Minimap::lod_slot(unsigned id) {
     return &e;
 }
 
-void Minimap::on_device_lost() { for (int i = 0; i < AS_N; ++i) { astG_[i] = 0; astGR_[i] = TexRetry{}; } s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
+void Minimap::on_device_lost() { for (int i = 0; i < AS_N; ++i) { astG_[i] = 0; astGR_[i] = TexRetry{}; } s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
 void Minimap::dispose() {
     s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0;
     for (int i = 0; i < AS_N; ++i) { release_texture(astG_[i]); astG_[i] = 0; astGR_[i] = TexRetry{}; }
     release_texture(mkAtlas_); mkAtlas_ = 0; mkAtlasR_ = TexRetry{};
     for (int i = 0; i < AS_N; ++i) { release_texture(ast_[i]); ast_[i] = 0; astR_[i] = TexRetry{}; }
     release_texture(mapTex_); mapTex_ = 0; mapFileId_ = 0;
-    release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_);
-    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
+    release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_); if (wxTex_) release_texture(wxTex_);
+    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
 }
 
 void Minimap::draw(const Frame& f) {
@@ -1450,6 +1725,7 @@ void Minimap::draw(const Frame& f) {
     const float Z   = clampf(c.mmZoom, 1.0f, 24.0f);
     const float pn  = (mapD / mapPx) * Z;                     // screen px per native map px (Z=1 => full map spans the lens)
 
+    PERF_BEGIN("mm.frame");
     // ---- box-theme frame : draw the REAL box-theme window chrome (the same 9-slice / procedural border the
     // party/target/player boxes use) and inset the map INSIDE its border -- so "Box Theme" is the theme's actual
     // frame, not just its colour approximated by a stroke. Square only : the chrome is rectangular, so a round
@@ -1517,6 +1793,8 @@ void Minimap::draw(const Frame& f) {
         if (round) disc(dev, ccx, ccy, rc, bg); else grad_quad(dev, wx0, wy0, wx1 - wx0, wy1 - wy0, bg, bg, bg, bg);
     }
 
+    PERF_END("mm.frame");
+    PERF_BEGIN("mm.map");
     // ---- the map image, player-centred, V-flipped to read upright. SQUARE = a rect-clamped quad ; ROUND = a
     // textured circular FAN (`tdisc`) so the map is genuinely round with NO stencil buffer -- the round shape is
     // entirely geometry (fan + circle-tested markers), no clip mask needed. ----
@@ -1539,6 +1817,8 @@ void Minimap::draw(const Frame& f) {
         dSetTex(dev, 0, 0);
     }
 
+    PERF_END("mm.map");
+    PERF_BEGIN("mm.lines");
     // ---- range ring : a circle at the configured game-distance (yalms) around you -- a pull / aggro gauge.
     //      Radius follows the map calibration (scale/5 native px per yalm) so it stays true under any zoom.
     //      Skipped when it would spill past the lens (lower the radius to bring it into view). ----
@@ -1658,6 +1938,8 @@ void Minimap::draw(const Frame& f) {
     }
     const bool clipped = vpSet;   // only the square viewport clip lets a blip cross the rim ; round keeps blips wholly inside
 
+    PERF_END("mm.lines");
+    PERF_BEGIN("mm.markers");
     // ---- ICONS with a LEVEL OF DETAIL (the v3 atlas). A detailed icon needs ~12-16 px to read ; zoomed out, many
     //      entities share those pixels and the icons bury each other (a trust under a mob). So :
     //      * the measure is SCREEN PIXELS PER YALM (ppy), not the zoom -- every zone's map has its own scale ;
@@ -1903,6 +2185,7 @@ void Minimap::draw(const Frame& f) {
         dSetTex(dev, 0, 0);
     }
 
+    PERF_END("mm.markers");
     // ---- the map grid square, "(F-10)" -- the native compass's line, the client's own formula (FUN_05538C10) :
     //      column 'A' + (px - 16) / 32, row 1 + (py - 16) / 32 on the 512 px native map, C division (toward zero) ----
     if (astral) {                                              // the ring, its graduations, the glint, the cardinal medallions
@@ -1932,7 +2215,8 @@ void Minimap::draw(const Frame& f) {
         if (f.t < s_zoomT) za = 0.0f;                                       // f.t wrapped
         const VanaClock dv = dial_vana(g.vana);
         if (dialSq) { color_state(dev); rrect_stroke(dev, wx0 - 0.5f, wy0 - 0.5f, wx1 - wx0 + 1.0f, wy1 - wy0 + 1.0f, snap(2.0f * S), 0xC0140F08u, snap(1.4f * S)); }   // the inner edge's shadow on the map
-        draw_dial_instrument(dev, f, c, g, dv, elemTex_, moonTex_, mapX, mapY, ccx, ccy, dialSq ? r - fi : rc, r, S, za, dialSq);
+        ensure_raw_tex_mip(dev, wxTex_, wxR_, plugin_path_r("assets\\weather_icons.raw"), 1024, 128);   // the weather orbs' HD icons
+        { PERF_SCOPE("mm.dial"); draw_dial_instrument(dev, f, c, g, dv, elemTex_, wxTex_, mapX, mapY, ccx, ccy, dialSq ? r - fi : rc, r, S, za, dialSq); }
     }
     else if (compact && ibH > 0.0f) draw_info_band(dev, f, c, g, mapX, mapY, ix, ibY, Wbox, S);   // the square lives in the band then
     else if (c.mmGrid && g.map.scale != 0 && f.font) {

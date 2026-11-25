@@ -41,6 +41,7 @@ private:
     int      mapW_ = 0, mapH_ = 0;
     u32      mkPlayer_ = 0, mkMob_ = 0;   // marker icons : player Location pin + mob Arrow (white, tinted)
     u32      elemTex_ = 0;                 // 8-cell elemental-icon atlas (clock header day icon)
+    u32      wxTex_ = 0; TexRetry wxR_;    // the WEATHER's 8 element icons, HD (assets/weather_icons.raw, scripts/gen_weather_icons.py) : the Dial's weather orbs only
     u32      moonTex_ = 0;                 // supersampled moon-phase texture (rebuilt only when the phase/day changes)
     int      moonKey_ = -1;                // cache key : dayIdx / moonPct / waning
     // per-entity LEVEL-OF-DETAIL state : the dot <-> icon morph is ANIMATED and remembered (an entity that is an icon
