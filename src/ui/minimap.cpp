@@ -1077,6 +1077,47 @@ static void pod_housing(u32 dev, float cx, float cy, float r, float Ri, float Ro
     ring_sector(dev, cx, cy, Ro - 3.4f * S, Ro - 2.6f * S, aL1 + 1.5f * S / Ro, aR0 - 1.5f * S / Ro, MA(0xA0, g_dm.edge));
     ring_sector(dev, cx, cy, Ro - 4.2f * S, Ro - 3.4f * S, aL1 + 1.5f * S / Ro, aR0 - 1.5f * S / Ro, MA(0x50, g_dm.lite));
 }
+void clip_rect_begin(u32 dev, float x, float y, float w, float h);   // (config_controls.cpp : a sub-viewport clip)
+void clip_rect_end(u32 dev);
+// A POD CELL THAT ROLLS (the user 2026-11-25 : "the hour's wheel system : three cells that change when it turns, the
+// three together") : each cell is a wheel ; on a change the old icon rolls up and out while the new one rolls in from
+// below, inside the cell (a sub-viewport clip, only while it rolls). k : 0..1 through the roll (1 = at rest).
+static void pod_roll_cell(u32 dev, u32 tex, float px, float py, float sz, float cw, float ch, float k, int oldCell, int newCell, u32 colOld, u32 colNew) {
+    auto quad = [&](float y, int c, u32 col) { if (c >= 0) tquad(dev, snap(px - sz * 0.5f), snap(y - sz * 0.5f), sz, sz, c / 8.0f, (c + 1) / 8.0f, 0.0f, 1.0f, col, col); };
+    if (k >= 1.0f || oldCell < 0) { quad(py, newCell, colNew); return; }
+    const float e = 1.0f - (1.0f - k) * (1.0f - k);                       // ease-out : it settles into its notch
+    clip_rect_begin(dev, px - cw * 0.5f, py - ch * 0.5f, cw, ch);
+    tex_state(dev, tex);                                                  // (the clip resets the vertex format and unbinds the texture)
+    quad(py - e * ch, oldCell, colOld);
+    quad(py + (1.0f - e) * ch, newCell, colNew);
+    clip_rect_end(dev);
+    tex_state(dev, tex);
+}
+// THE PRESENT MOON, INKED TO ITS EXACT PHASE (the user 2026-11-25 : "the current moon with precision -- we are at 62 %") :
+// the lit part is the bare paper ; the dark part is ink, from the dark limb to the TERMINATOR, the ellipse x = (1 - 2 f) R
+// sqrt(1 - y^2 / R^2) (f the lit fraction) ; waxing lit on the right, waning on the left (the plate's convention).
+// Drawn in horizontal slices (any shape, crescent or gibbous), the terminator stroked soft, a fine inked outline, a light
+// inked limb so a full moon still reads as a moon.
+static void draw_ink_moon(u32 dev, float x, float y, float R, float f, bool waning, float S) {
+    const u32 ink = 0xFF2E1C0Cu;
+    const int N = 28; VtxC v[(N + 1) * 2]; float tx[N + 1], ty[N + 1];
+    f = f < 0.0f ? 0.0f : (f > 1.0f ? 1.0f : f);
+    for (int i = 0; i <= N; ++i) {
+        const float yy = -R + 2.0f * R * (float)i / N, sq = sqrtf(fmaxf(0.0f, 1.0f - (yy * yy) / (R * R)));
+        const float xl = -R * sq, xt = (1.0f - 2.0f * f) * R * sq;       // waxing : dark from the LEFT limb to the terminator
+        const float a = waning ? -xt : xl, b = waning ? R * sq : xt;
+        v[2 * i]     = { x + a - 0.5f, y + yy - 0.5f, 0, 1, ink };
+        v[2 * i + 1] = { x + b - 0.5f, y + yy - 0.5f, 0, 1, ink };
+        tx[i] = x + (waning ? -xt : xt); ty[i] = y + yy;
+    }
+    color_state(dev);
+    ring_sector(dev, x, y, R * 0.78f, R, 0.0f, 6.2831853f, 0x20603A10u);  // the limb, lightly inked (the sphere)
+    ring_sector(dev, x, y, R * 0.90f, R, 0.0f, 6.2831853f, 0x20603A10u);
+    if (f < 0.995f) dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
+    if (f > 0.005f && f < 0.995f)
+        for (int i = 0; i < N; ++i) seg_soft(dev, tx[i], ty[i], tx[i + 1], ty[i + 1], 0.9f * S, MA(0x90, ink));   // the terminator, soft
+    ring_sector(dev, x, y, R - 0.9f * S, R + 0.2f * S, 0.0f, 6.2831853f, ink);   // the inked outline
+}
 struct PodGeo { float th0, D, Ri, Ro, rm, isz, rw, wr, as, Wh, Ph; };
 static PodGeo pod_geo(float r, float S) {
     PodGeo g;
@@ -1130,29 +1171,20 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
         const float fa = th0 - Wh + (2.0f * Wh) * ((float)k + 0.5f) / 9.0f, rr = rw - wr * 0.8f + wr * 1.6f * (float)((k * 5) % 9) / 9.0f;
         ring_sector(dev, cx, cy, rr - 0.35f, rr + 0.35f, fa - 0.03f, fa + 0.05f, 0x22704818u);
     }
-    // ---- the wheel's icons, upright on the screen, sliding along the arc ----
+    // ---- the three WHEELS (yesterday | today | tomorrow), icons upright ; when the day changes the three roll together ----
     if (wxTex) {
         tex_state(dev, wxTex);
-        // the JUMP : the wheel stands still all day ; when the day changes it snaps one notch in ~0.22 s (ease-out with a
-        // tiny overshoot : the click), the new day sliding in from tomorrow's place
-        static int lastDi = -1; static unsigned jumpMs = 0;
+        static int lastDi = -1, oldDi = -1; static unsigned rollMs = 0;
         const unsigned nowMs = GetTickCount();
         if (lastDi < 0) lastDi = di;
-        if (di != lastDi) { const int step = (di - lastDi + 8) & 7; lastDi = di; jumpMs = step == 1 ? nowMs : 0; }   // one day : the click ; more (a zone-in, a long AFK) : resync at once, no replay
-        float shift = 0.0f;
-        { const float k = (float)(nowMs - jumpMs) / 160.0f;
-          if (jumpMs && k < 1.0f) { const float e = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k); shift = (1.0f - e) - 0.06f * sinf(k * 3.14159f); } }
-        for (int d = -2; d <= 2; ++d) {
-            const float ang = th0 + ((float)d + shift) * as, off = fabsf(ang - th0);
-            if (off > Wh + as * 0.5f) continue;
-            float vis = 1.0f - (off - (Wh - as * 0.55f)) / (as * 0.6f); vis = vis > 1.0f ? 1.0f : (vis < 0.0f ? 0.0f : vis);   // fades as it slips under the frame
-            if (vis <= 0.0f) continue;
-            float px, py; at(ang, rw + wr * 0.12f, px, py);                  // a little high in the window : the needle's tip enters the paper below
+        if (di != lastDi) { oldDi = lastDi; lastDi = di; rollMs = nowMs; }
+        const float k = rollMs ? fminf(1.0f, (float)(nowMs - rollMs) / 240.0f) : 1.0f;
+        for (int d = -1; d <= 1; ++d) {
+            float px, py; at(th0 + (float)d * as, rw + wr * 0.12f, px, py);
             const bool today = d == 0;
-            const float sz = today ? isz : isz * (0.13f / 0.18f);           // today 0.18 r, its neighbours 0.13 r (the spec)
-            // PAINTED on the paper : today in full colour, its neighbours faded into the parchment (a sepia wash)
-            const u32 col = today ? (((u32)(255.0f * vis) << 24) | 0x00FFFFFFu) : (((u32)(255.0f * vis) << 24) | 0x00D2D2D2u);   // no white veil : the neighbours keep their colours, a shade dimmer
-            tquad(dev, snap(px - sz * 0.5f), snap(py - sz * 0.5f), sz, sz, ((di + d + 16) & 7) / 8.0f, (((di + d + 16) & 7) + 1) / 8.0f, 0.0f, 1.0f, col, col);
+            const float sz = today ? isz : isz * (0.13f / 0.18f);
+            const u32 col = today ? 0xFFFFFFFFu : 0xFFD2D2D2u;
+            pod_roll_cell(dev, wxTex, px, py, sz, as * rw * 0.96f, isz * 1.02f, k, oldDi < 0 ? -1 : ((oldDi + d + 16) & 7), (di + d + 16) & 7, col, col);
         }
         dSetTex(dev, 0, 0);
         color_state(dev);
@@ -1344,7 +1376,7 @@ static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it e
 // 4 full .. 7 waning crescent) : the present one whole and bright in the middle, the one before and the one after
 // dimmer either side ; when the phase changes the band snaps one notch (the click). Drawn before the frame : the
 // compass covers its root.
-static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int ph, u32 tex) {
+static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct, bool waning, u32 tex) {
     PERF_SCOPE("mm.moonpod");
     PodGeo G = pod_geo(r, S);
     G.th0 = TUNE("mm.mpod_angle", 2.3562f);                              // the LOWER left, on the diagonal between the W and the S (the user 2026-11-25)
@@ -1363,29 +1395,35 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int ph,
         const float fa = th0 - Wh + (2.0f * Wh) * ((float)k + 0.5f) / 9.0f, rr = rw - wr * 0.8f + wr * 1.6f * (float)((k * 5) % 9) / 9.0f;
         ring_sector(dev, cx, cy, rr - 0.35f, rr + 0.35f, fa - 0.03f, fa + 0.05f, 0x22704818u);
     }
-    if (tex) {
-        tex_state(dev, tex);
-        static int lastPh = -1; static unsigned jumpMs = 0;              // the JUMP, as the day pod's
+    // the three WHEELS : the last NEW or FULL before | the present moon, inked to its exact phase | the next NEW or FULL ;
+    // the side wheels roll together when the cycle turns (at the full and at the new)
+    {
+        const int prevC = waning ? 4 : 0, nextC = waning ? 0 : 4;        // waxing : from a new toward a full ; waning : the reverse
+        static int lastW = -1; static unsigned rollMs = 0;
         const unsigned nowMs = GetTickCount();
-        if (lastPh < 0) lastPh = ph;
-        if (ph != lastPh) { const int step = (ph - lastPh + 8) & 7; lastPh = ph; jumpMs = step == 1 ? nowMs : 0; }
-        float shift = 0.0f;
-        { const float k = (float)(nowMs - jumpMs) / 160.0f;
-          if (jumpMs && k < 1.0f) { const float e2 = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k); shift = (1.0f - e2) - 0.06f * sinf(k * 3.14159f); } }
-        for (int d = -2; d <= 2; ++d) {
-            const float ang = th0 + dir * ((float)d + shift) * as, off = fabsf(ang - th0);
-            if (off > Wh + as * 0.5f) continue;
-            float vis = 1.0f - (off - (Wh - as * 0.55f)) / (as * 0.6f); vis = vis > 1.0f ? 1.0f : (vis < 0.0f ? 0.0f : vis);
-            if (vis <= 0.0f) continue;
-            float px, py; at(ang, rw, px, py);
-            const bool now = d == 0;
-            const float sz = now ? isz : isz * (0.13f / 0.18f);
-            const u32 col = ((u32)((now ? 255.0f : 150.0f) * vis) << 24) | 0x00FFFFFFu;   // INK on the paper, UPRIGHT (never rotated) ; the neighbours fainter
-            const int c8 = (ph + d + 16) & 7;
-            tquad(dev, snap(px - sz * 0.5f), snap(py - sz * 0.5f), sz, sz, c8 / 8.0f, (c8 + 1) / 8.0f, 0.0f, 1.0f, col, col);
+        const int w = waning ? 1 : 0;
+        if (lastW < 0) lastW = w;
+        const bool rolled = w != lastW;
+        if (rolled) { lastW = w; rollMs = nowMs; }
+        const float k = rollMs ? fminf(1.0f, (float)(nowMs - rollMs) / 240.0f) : 1.0f;
+        const float szS = isz * (0.13f / 0.18f), cw = as * rw * 0.96f, ch = isz * 1.02f;
+        if (tex) {
+            tex_state(dev, tex);
+            for (int d = -1; d <= 1; d += 2) {
+                float px, py; at(th0 + dir * (float)d * as, rw, px, py);
+                const int nc = d < 0 ? prevC : nextC, oc = d < 0 ? nextC : prevC;   // a flip swaps the two
+                pod_roll_cell(dev, tex, px, py, szS, cw, ch, k, rollMs ? oc : -1, nc, 0xFFFFFFFFu, 0xFFFFFFFFu);
+            }
+            dSetTex(dev, 0, 0);
         }
-        dSetTex(dev, 0, 0);
+        float px, py; at(th0, rw, px, py);
+        draw_ink_moon(dev, snap(px), snap(py), isz * 0.44f, (float)pct / 100.0f, waning, S);
         color_state(dev);
+        for (int e = -1; e <= 1; e += 2) {                               // the cuts between the wheels
+            const float sa = th0 + (float)e * as * 0.5f;
+            float x0, y0, x1, y1; at(sa, rw - wr * 0.80f, x0, y0); at(sa, rw + wr * 0.80f, x1, y1);
+            seg_soft(dev, x0, y0, x1, y1, 1.1f * S, 0xB05A3A18u);
+        }
     }
     // the housing's metal over the band beyond the window's ends (what slipped under is hidden)
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 + Wh + 0.02f, th0 + Ph, hb);
@@ -2460,7 +2498,7 @@ void Minimap::draw(const Frame& f) {
         if (!dialSq && c.mmDayDial == 2 && c.mmClock && c.mmClkMoon) {    // the MOON POD : the disc behind the compass, three phases in a window
             const VanaClock mv = dial_vana(g.vana);
             const float pct = (float)mv.moonPct / 100.0f, cyc = mv.waning ? 0.5f + (1.0f - pct) * 0.5f : pct * 0.5f;
-            draw_moon_pod(dev, ccx, ccy, r, S, ((int)floorf(cyc * 8.0f + 0.5f)) & 7, moonPhTex_);   // the nearest of the 8 phases
+            draw_moon_pod(dev, ccx, ccy, r, S, mv.moonPct, mv.waning, moonPhTex_); (void)cyc;   // the exact phase
         }
         draw_dial_instrument(dev, f, c, g, dial_vana(g.vana), elemTex_, wxTex_, mapX, mapY, ccx, ccy, rcM, r, S, 0.0f, dialSq, 0);
     }
