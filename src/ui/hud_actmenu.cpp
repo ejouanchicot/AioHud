@@ -180,7 +180,8 @@ void draw_icon(u32 dev, Icon ic, float cx, float cy, float z, float S, u32 c) {
 }
 
 u32 g_handTex = 0;   // the party's selection-hand texture, handed in by the HUD each frame (device-loss managed there)
-float g_subXY[2] = { -1.0f, -1.0f };     // where the main menu's submenu was last drawn (a player's options take its place)
+float g_subXY[2] = { -1.0f, -1.0f };
+float g_mbkAt[3] = { 0.0f, 0.0f, 0.0f };   // the macro book list : its left edge, the cursor row's top, 1 = drawn this frame (mcrselop hangs there)     // where the main menu's submenu was last drawn (a player's options take its place)
 const int HIT_N = 21;   // ... 20 the macro book list
 float g_hit[HIT_N][4] = { { 0, 0, 0, 0 } };   // 13 the trade, 14 a confirm, 15 the buff bar, 16 a shop's Buy / Sell, 17 its list
 struct CoinQ { float x, y, z, a; }; CoinQ g_coinQ[16]; int g_coinN = 0;   // a list's gil coins, drawn after its text pass  // the drawn blocks (menu, submenu ; NPC bubble, NPC answers ; the auto-translate picker ; the main menu, its categories, its list ; Unity Info) as screen FRACTIONS : their clicks never reach the game
@@ -5355,6 +5356,10 @@ void gen_draw(const Frame& f) {
         float bx = snap((float)L.rx0 * sx), by = snap((float)L.ry0 * sy);
         if (L.ry1 > L.ry0 && L.ry0 * 2 > L.uiH) { by = snap((float)L.ry1 * sy - bh); float cx, cy; if (place_on_chat(bw, bh, snap(4.0f * S), f.screenW, f.screenH, cx, cy)) { bx = cx; by = cy; } }
         if (L.rx0 * 2 > L.uiW) bx = snap((float)L.rx1 * sx - bw);       // a right-side menu : its right edge where the client's is
+        // MacroPalette : the book list opens IN PLACE of mcrmenu (not drawn under it) ; the book's options hang beside OUR
+        // list, on its row (the client places them beside its own, narrower list -- they covered ours, 2026-11-25)
+        if (!strcmp(L.name, "mcrmenu") && native_macro_books().open) continue;
+        if (!strcmp(L.name, "mcrselop") && g_mbkAt[2] > 0.0f) { bx = snap(g_mbkAt[0] - snap(3.0f * S) - bw); by = snap(g_mbkAt[1]); }
         if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
         if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
         const int jm = menu_place(f, __LINE__ * 16 + s, bx, by, bw, bh);
@@ -5441,7 +5446,7 @@ void gen_list_draw(const Frame& f) {
 namespace { Block g_mbkB; unsigned g_mbkMs = 0; }
 void macro_books_draw(const Frame& f) {
     const UiConfig& C = ui_config();
-    g_hit[20][2] = 0.0f;
+    g_hit[20][2] = 0.0f; g_mbkAt[2] = 0.0f;
     if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_mbkB.vis = 0.0f; g_mbkB.wasOpen = false; return; }
     const unsigned now = GetTickCount();
     float dt = g_mbkMs ? (float)(now - g_mbkMs) / 1000.0f : 0.0f; g_mbkMs = now; if (dt > 0.1f) dt = 0.1f;
@@ -5477,6 +5482,7 @@ void macro_books_draw(const Frame& f) {
     const float A = g_mbkB.vis * tO * (last.focused || !B0.open ? 1.0f : 0.62f);
     if (A <= 0.0f) return;
     const int row = block_draw(f, kN, g_mbkB, rows, 20, cur, last.focused, bx, by, bw, bh, A, dt);
+    g_mbkAt[0] = bx; g_mbkAt[1] = g_mbkB.rowY0 + (float)((last.cursor >= 1 && last.cursor <= 20 ? last.cursor : 1) - 1) * g_mbkB.rowStep; g_mbkAt[2] = B0.open ? 1.0f : 0.0f;
     // the header : the title, the page between its two arrows (the client's entries 21 / 22)
     const u32 dev = f.dev;
     const float hy = by + k.bi + k.pad, hc = snap(hy + (headH - k.gap) * 0.5f);
