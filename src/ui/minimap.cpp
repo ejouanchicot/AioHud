@@ -702,13 +702,23 @@ static void dial_metal_set(u32 base) {
 // ---- the SQUARE watch case (Dial layout, square shape) : a bevelled brass frame around the map, lit from the top,
 // a chamfer into the map, engraved hour marks along its sides (the cardinals are engraved at mid-sides by the
 // instrument). Drawn BEFORE the map, which then fills the inside. ----
-static void draw_square_case(u32 dev, float cx, float cy, float r, float fi, float S) {
+static void grain_poly(u32 dev, const float* xy, int n, float S);
+static void draw_square_case(u32 dev, float cx, float cy, float r, float fi, float S, bool pods = false) {
     const float x0 = cx - r, y0 = cy - r, W = 2.0f * r, rad = snap(6.0f * S), ri = r - fi;
+    // with the modules : the SAME metal as their collar (the user 2026-11-25 : "the main frame is not the modules' metal")
+    const u32 hb = dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f));
+    const u32 cTop = pods ? dm_toward(hb, g_dm.lite, 0.10f) : g_dm.top, cBot = pods ? dm_toward(hb, g_dm.edge, 0.12f) : g_dm.bot;
     color_state(dev);
     rrect_glow(dev, x0, y0 + 2.0f * S, W, W, rad, 0x90000000u, snap(6.0f * S));
     rrect(dev, x0 - 1.4f * S, y0 - 1.4f * S, W + 2.8f * S, W + 2.8f * S, rad + 1.4f * S, g_dm.edge, g_dm.edge);   // the dark edge
-    rrect(dev, x0, y0, W, W, rad, g_dm.top, g_dm.bot);                                                          // the brass, lit from the top
-    rrect_stroke(dev, x0 + 1.0f * S, y0 + 1.0f * S, W - 2.0f * S, W - 2.0f * S, rad - 1.0f * S, MA(0x60, g_dm.glint), 1.0f);   // a polished outer filet
+    rrect(dev, x0, y0, W, W, rad, cTop, cBot);                                                                  // the brass, lit from the top
+    if (pods) {                                                                                                     // the cast grain over the frame
+        const float t[8] = { x0, y0, x0 + W, y0, x0 + W, cy - ri, x0, cy - ri }, b[8] = { x0, cy + ri, x0 + W, cy + ri, x0 + W, y0 + W, x0, y0 + W };
+        const float l[8] = { x0, cy - ri, cx - ri, cy - ri, cx - ri, cy + ri, x0, cy + ri }, rr[8] = { cx + ri, cy - ri, x0 + W, cy - ri, x0 + W, cy + ri, cx + ri, cy + ri };
+        grain_poly(dev, t, 4, S); grain_poly(dev, b, 4, S); grain_poly(dev, l, 4, S); grain_poly(dev, rr, 4, S);
+        color_state(dev);
+    }
+    rrect_stroke(dev, x0 + 1.0f * S, y0 + 1.0f * S, W - 2.0f * S, W - 2.0f * S, rad - 1.0f * S, MA(pods ? 0x28 : 0x60, g_dm.glint), 1.0f);   // a polished outer filet (with the modules : a worn edge)
     rrect_stroke(dev, cx - ri - 3.0f * S, cy - ri - 3.0f * S, 2.0f * ri + 6.0f * S, 2.0f * ri + 6.0f * S, snap(2.5f * S), MA(0x50, g_dm.shade), 1.0f);   // an engraved line
     rrect(dev, cx - ri - 1.8f * S, cy - ri - 1.8f * S, 2.0f * ri + 3.6f * S, 2.0f * ri + 3.6f * S, snap(2.2f * S), g_dm.dark, g_dm.lite);   // the chamfer : dark at the top, lit at the bottom
     rrect(dev, cx - ri, cy - ri, 2.0f * ri, 2.0f * ri, snap(1.5f * S), 0xFF140F08u, 0xFF140F08u);                    // the seat of the map
@@ -2812,6 +2822,24 @@ void Minimap::dispose() {
     mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; skyTex_ = 0; skyR_ = TexRetry{}; grainTex_ = 0; grainR_ = TexRetry{}; s_grainTex = 0; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
 }
 
+// THE PLACES, RESOLVED (one module per place) : day, moon, day/night, weather -> their places on this shape (the round
+// folds the square's lower side places 7 / 8 onto its sides) ; a module whose place is already held moves to the first
+// free one ; -1 : off
+static void pod_slots(const UiConfig& c, bool sq, int& sDay, int& sMoon, int& sSky, int& sWx) {
+    auto fold = [&](int v) { return sq ? v : (v == 7 ? 1 : (v == 8 ? 4 : v)); };
+    int v[4] = { c.mmPodDay, c.mmPodMoon, c.mmPodSky, c.mmPodWx };
+    const int def[4] = { 3, 2, 5, 4 };
+    for (int q = 0; q < 4; ++q) { if (v[q] < 0 || v[q] > 8 || (q < 2 && v[q] == 6)) v[q] = def[q]; v[q] = v[q] == 6 ? -1 : fold(v[q]); }
+    static const int FREE_R[6] = { 0, 1, 2, 3, 4, 5 }, FREE_S[8] = { 0, 1, 7, 2, 3, 8, 4, 5 };
+    for (int q = 1; q < 4; ++q) {
+        if (v[q] < 0) continue;
+        bool dup = false; for (int k = 0; k < q; ++k) if (v[k] == v[q]) dup = true;
+        if (!dup) continue;
+        const int* fr = sq ? FREE_S : FREE_R; const int nf = sq ? 8 : 6;
+        for (int k = 0; k < nf; ++k) { bool used = false; for (int j = 0; j < 4; ++j) if (j != q && v[j] == fr[k]) used = true; if (!used) { v[q] = fr[k]; break; } }
+    }
+    sDay = v[0]; sMoon = v[1]; sSky = v[2]; sWx = v[3];
+}
 // the square case's frame width factor : wider with the modules (the user 2026-11-25 : "enlarge the frame to leave room")
 static float sq_band_k(const UiConfig& c) { return (c.mmLayout == 2 && c.mmDayDial == 2 && TUNE("mm.foot_body", 0.0f) <= 0.5f) ? TUNE("mm.sq_band", 1.45f) : 1.0f; }
 // THE MODULES' FOOTPRINT (the user 2026-11-25 : "make the edit-layout box smart -- whether the modules are on the sides, above,
@@ -2821,15 +2849,16 @@ static void dial_extents(const UiConfig& c, float r, float S, bool sq, float& eL
     const float PIf = 3.14159265f, keep = s_podR0, keepO = s_podOut;
     s_podR0 = r; s_podOut = sq ? r * TUNE("mm.sq_out", 0.08f) : 0.0f;
     const bool pods = TUNE("mm.foot_body", 0.0f) <= 0.5f;
-    const bool skyOn = pods && c.mmPodSky >= 0 && c.mmPodSky <= 5, wxOn = pods && c.mmPodWx >= 0 && c.mmPodWx <= 5;
+    int sDay, sMoon, sSky, sWx; pod_slots(c, sq, sDay, sMoon, sSky, sWx);
+    const bool skyOn = pods && sSky >= 0, wxOn = pods && sWx >= 0;
     auto F_of = [&](int slot) -> PodF {
-        if (!sq) { const float th = slot == 6 ? -PIf * 0.5f : (slot == 7 ? PIf * 0.5f : POD_SLOT[slot]); PodF F = { 0.0f, 0.0f, r, th }; return F; }
-        const float Rv = r * TUNE("mm.sq_rv", 24.0f), dX = r * TUNE("mm.sq_corner", 0.66f), o = s_podOut;
+        if (!sq) { const float th = slot == 10 ? -PIf * 0.5f : (slot == 11 ? PIf * 0.5f : (slot == 7 ? POD_SLOT[1] : (slot == 8 ? POD_SLOT[4] : POD_SLOT[slot]))); PodF F = { 0.0f, 0.0f, r, th }; return F; }
+        const float Rv = r * TUNE("mm.sq_rv", 400.0f), dX = r * TUNE("mm.sq_corner", 0.66f), o = s_podOut;
         PodF F;
         switch (slot) {
-        case 1:  F = { -r - o + Rv, 0.0f, Rv, PIf }; break;
-        case 4:  F = { r + o - Rv, 0.0f, Rv, 0.0f }; break;
-        case 2: case 3: case 7: { const float dx = slot == 2 ? -dX : (slot == 3 ? dX : 0.0f); F = { 0.0f, r + o - Rv, Rv, PIf * 0.5f - asinf(dx / Rv) }; } break;
+        case 1: case 7: { const float dy = (slot == 7 ? 1.0f : -1.0f) * r * TUNE("mm.sq_side", 0.48f); F = { -r - o + Rv, 0.0f, Rv, PIf - asinf(dy / Rv) }; } break;
+        case 4: case 8: { const float dy = (slot == 8 ? 1.0f : -1.0f) * r * TUNE("mm.sq_side", 0.48f); F = { r + o - Rv, 0.0f, Rv, asinf(dy / Rv) }; } break;
+        case 2: case 3: case 11: { const float dx = slot == 2 ? -dX : (slot == 3 ? dX : 0.0f); F = { 0.0f, r + o - Rv, Rv, PIf * 0.5f - asinf(dx / Rv) }; } break;
         default: { const float dx = slot == 0 ? -dX : (slot == 5 ? dX : 0.0f); F = { 0.0f, -r - o + Rv, Rv, -PIf * 0.5f + asinf(dx / Rv) }; } break;
         }
         return F;
@@ -2844,12 +2873,12 @@ static void dial_extents(const UiConfig& c, float r, float S, bool sq, float& eL
     };
     if (pods) {
         const float ph = 1.0f;
-        if (c.mmClock && c.mmClkDay)  take(F_of((c.mmPodDay < 0 || c.mmPodDay > 5) ? 3 : c.mmPodDay), ph);
-        if (c.mmClock && c.mmClkMoon) take(F_of((c.mmPodMoon < 0 || c.mmPodMoon > 5) ? 2 : c.mmPodMoon), ph);
-        if (skyOn) take(F_of(c.mmPodSky), ph);
-        if (wxOn) take(F_of(c.mmPodWx), ph);
-        if (c.mmClock && c.mmClkTime) take(F_of(c.mmPodHP == 1 ? 7 : 6), ph * 0.5f);
-        if (c.mmGrid) take(F_of(c.mmPodHP == 1 ? 6 : 7), ph * 0.5f);
+        if (c.mmClock && c.mmClkDay)  take(F_of(sDay), ph);
+        if (c.mmClock && c.mmClkMoon) take(F_of(sMoon), ph);
+        if (skyOn) take(F_of(sSky), ph);
+        if (wxOn) take(F_of(sWx), ph);
+        if (c.mmClock && c.mmClkTime) take(F_of(c.mmPodHP == 1 ? 11 : 10), ph * 0.5f);
+        if (c.mmGrid) take(F_of(c.mmPodHP == 1 ? 10 : 11), ph * 0.5f);
     }
     const float base = r * 0.06f;                                       // the cardinal plates stand a little past the bezel
     eL = fmaxf(base, -x0 - r) + 3.0f * S; eR = fmaxf(base, x1 - r) + 3.0f * S; eT = fmaxf(base, -y0 - r) + 3.0f * S; eB = fmaxf(base, y1 - r) + 3.0f * S;
@@ -3285,23 +3314,25 @@ void Minimap::draw(const Frame& f) {
         s_podR0 = r;
         s_podOut = dialSq ? r * TUNE("mm.sq_out", 0.08f) : 0.0f;
         s_skyPod = TUNE("mm.foot_body", 0.0f) <= 0.5f;
-        s_skyOn = s_skyPod && c.mmPodSky >= 0 && c.mmPodSky <= 5;           // 6 = off
-        s_wxOn = s_skyPod && c.mmPodWx >= 0 && c.mmPodWx <= 5;
-        const int sDay = (c.mmPodDay < 0 || c.mmPodDay > 5) ? 3 : c.mmPodDay, sMoon = (c.mmPodMoon < 0 || c.mmPodMoon > 5) ? 2 : c.mmPodMoon;
-        const int sSky = s_skyOn ? c.mmPodSky : 5, sWx = s_wxOn ? c.mmPodWx : 4;
+        int sDay, sMoon, sSky, sWx; pod_slots(c, dialSq, sDay, sMoon, sSky, sWx);
+        s_skyOn = s_skyPod && sSky >= 0; s_wxOn = s_skyPod && sWx >= 0;
+        if (sSky < 0) sSky = 5; if (sWx < 0) sWx = 4;
         const bool dayOn = c.mmClock && c.mmClkDay, moonOn = c.mmClock && c.mmClkMoon;
-        s_heldW = (dayOn && sDay == 1) || (moonOn && sMoon == 1) || (s_skyOn && sSky == 1) || (s_wxOn && sWx == 1);
-        s_heldE = (dayOn && sDay == 4) || (moonOn && sMoon == 4) || (s_skyOn && sSky == 4) || (s_wxOn && sWx == 4);
-        // a slot's frame : 0..5 the six slots, 6 the top's centre, 7 the bottom's centre. The SQUARE : the corner slots sit
+        auto onW = [](int v) { return v == 1 || v == 7; }; auto onE = [](int v) { return v == 4 || v == 8; };
+        s_heldW = (dayOn && onW(sDay)) || (moonOn && onW(sMoon)) || (s_skyOn && onW(sSky)) || (s_wxOn && onW(sWx));
+        s_heldE = (dayOn && onE(sDay)) || (moonOn && onE(sMoon)) || (s_skyOn && onE(sSky)) || (s_wxOn && onE(sWx));
+        // a slot's frame : 0..5 the six slots, 7 / 8 the square's lower sides, 10 the top's centre, 11 the bottom's centre. The SQUARE : the corner slots sit
         // along the top / bottom edge toward the corners, the sides on the left / right edge, each on a circle 24 r wide
         auto F_of = [&](int slot) -> PodF {
-            if (!dialSq) { const float th = slot == 6 ? -PIf * 0.5f : (slot == 7 ? PIf * 0.5f : POD_SLOT[slot]); PodF F = { ccx, ccy, r, th }; return F; }
-            const float Rv = r * TUNE("mm.sq_rv", 24.0f), dX = r * TUNE("mm.sq_corner", 0.66f), o = s_podOut;   // tangent to the case's edge, pushed out by o
+            if (!dialSq) { const float th = slot == 10 ? -PIf * 0.5f : (slot == 11 ? PIf * 0.5f : (slot == 7 ? POD_SLOT[1] : (slot == 8 ? POD_SLOT[4] : POD_SLOT[slot]))); PodF F = { ccx, ccy, r, th }; return F; }
+            const float Rv = r * TUNE("mm.sq_rv", 400.0f), dX = r * TUNE("mm.sq_corner", 0.66f), o = s_podOut;   // tangent to the case's edge, pushed out by o
             PodF F;
             switch (slot) {
-            case 1:  F = { ccx - r - o + Rv, ccy, Rv, PIf }; break;                                       // W : the left edge
-            case 4:  F = { ccx + r + o - Rv, ccy, Rv, 0.0f }; break;                                      // E : the right edge
-            case 2: case 3: case 7: { const float dx = slot == 2 ? -dX : (slot == 3 ? dX : 0.0f);      // the bottom edge
+            case 1: case 7: { const float dy = (slot == 7 ? 1.0f : -1.0f) * r * TUNE("mm.sq_side", 0.48f);   // the left edge : high / low
+                F = { ccx - r - o + Rv, ccy, Rv, PIf - asinf(dy / Rv) }; } break;
+            case 4: case 8: { const float dy = (slot == 8 ? 1.0f : -1.0f) * r * TUNE("mm.sq_side", 0.48f);   // the right edge : high / low
+                F = { ccx + r + o - Rv, ccy, Rv, asinf(dy / Rv) }; } break;
+            case 2: case 3: case 11: { const float dx = slot == 2 ? -dX : (slot == 3 ? dX : 0.0f);      // the bottom edge
                 F = { ccx, ccy + r + o - Rv, Rv, PIf * 0.5f - asinf(dx / Rv) }; } break;
             default: { const float dx = slot == 0 ? -dX : (slot == 5 ? dX : 0.0f);                    // the top edge
                 F = { ccx, ccy - r - o + Rv, Rv, -PIf * 0.5f + asinf(dx / Rv) }; } break;
@@ -3309,7 +3340,7 @@ void Minimap::draw(const Frame& f) {
             return F;
         };
         s_dayF = F_of(sDay); s_moonF = F_of(sMoon); s_skyF = F_of(sSky); s_wxF = F_of(sWx);
-        s_hourF = F_of(c.mmPodHP == 1 ? 7 : 6); s_posF = F_of(c.mmPodHP == 1 ? 6 : 7);
+        s_hourF = F_of(c.mmPodHP == 1 ? 11 : 10); s_posF = F_of(c.mmPodHP == 1 ? 10 : 11);
         s_dayTh = s_dayF.th; s_moonTh = s_moonF.th; s_skyTh = s_skyF.th; s_wxTh = s_wxF.th; s_hourTh = s_hourF.th; s_posTh = s_posF.th;
         s_podN = 0;
         if (s_skyPod) {
@@ -3404,7 +3435,7 @@ void Minimap::draw(const Frame& f) {
     dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);   // the dial's metal : the theme / custom colour / the brass
     if (dialSq) {                                                  // the square watch case (the map is drawn inside it)
         fi = snap(r * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f) * sq_band_k(c));
-        draw_square_case(dev, ccx, ccy, r, fi, S);
+        draw_square_case(dev, ccx, ccy, r, fi, S, c.mmDayDial == 2 && s_skyPod);
     } else if (c.mmFrame == 1 && !round) {
         const int theme = c.skinTheme; const float lum = c.skinLum;
         if (window_theme_is_proc(theme)) { draw_proc_window(dev, theme, mapLeft, mapTop, mapD, mapD, 0xFFFFFFFFu, false, true, lum, c.skinHue); fi = snap(6.0f * S); themedOk = true; }
@@ -3860,7 +3891,8 @@ void Minimap::draw(const Frame& f) {
     PERF_BEGIN("mm.ring");
     if (astral) {                                              // the ring, its graduations, the glint, the cardinal medallions
         const bool grey = c.mmFrame != 0 && astG_[AS_BASE] && astG_[AS_TICKS] && astG_[AS_GLINT];   // the theme's metal : the grey kit, tinted
-        const u32 tint = grey ? dm_toward(g_dm.body, 0xFFFFFFFFu, 0.35f) : 0xFFFFFFFFu;
+        u32 tint = grey ? dm_toward(g_dm.body, 0xFFFFFFFFu, 0.35f) : 0xFFFFFFFFu;
+        if (grey && dial && c.mmDayDial == 2) tint = dm_toward(g_dm.body, 0xFFFFFFFFu, TUNE("mm.ring_lift", 0.60f));   // with the modules : the ring's metal matched to their collar
         // (no horns : the modules are mounted BEHIND the compass now, nothing joins them on its face)
         draw_astral_ring(dev, grey ? astG_[AS_BASE] : ast_[AS_BASE],  ccx, ccy, rc, r, 416.0f, 504.0f, 0.0f, tint);
         if (dial && !dialSq && c.mmDayDial == 2) {                        // the metal's grain over the bezel

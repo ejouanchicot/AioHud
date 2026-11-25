@@ -833,13 +833,12 @@ static bool parse_mm_line(const char* line, UiConfig& c) {
         int hp = 0, dy = 3, mo = 2, sk = 5, wx = 4;
         const int n = sscanf(line + 4, "%d,%d,%d,%d,%d", &hp, &dy, &mo, &sk, &wx);
         if (n >= 1) c.mmPodHP = (hp == 1) ? 1 : 0;
-        if (n >= 2 && dy >= 0 && dy <= 5) c.mmPodDay = dy;
-        if (n >= 3 && mo >= 0 && mo <= 5) c.mmPodMoon = mo;
-        if (n >= 4 && sk >= 0 && sk <= 6) c.mmPodSky = sk;
-        if (n >= 5 && wx >= 0 && wx <= 6) c.mmPodWx = wx;
-        if (c.mmPodMoon == c.mmPodDay) c.mmPodMoon = (c.mmPodDay + 5) % 6;   // never the same slot
-        for (int k = 0; k < 6 && c.mmPodSky != 6 && (c.mmPodSky == c.mmPodDay || c.mmPodSky == c.mmPodMoon); ++k) c.mmPodSky = (c.mmPodSky + 1) % 6;
-        for (int k = 0; k < 6 && c.mmPodWx != 6 && (c.mmPodWx == c.mmPodDay || c.mmPodWx == c.mmPodMoon || c.mmPodWx == c.mmPodSky); ++k) c.mmPodWx = (c.mmPodWx + 1) % 6;
+        auto okS = [](int v, bool off) { return (v >= 0 && v <= 8 && v != 6) || (off && v == 6); };   // 0..5 the six places, 7 / 8 the square's lower sides, 6 off
+        if (n >= 2 && okS(dy, false)) c.mmPodDay = dy;
+        if (n >= 3 && okS(mo, false)) c.mmPodMoon = mo;
+        if (n >= 4 && okS(sk, true)) c.mmPodSky = sk;
+        if (n >= 5 && okS(wx, true)) c.mmPodWx = wx;
+        // (two modules on one place : resolved when drawn, pod_slots -- the round folds 7 / 8 onto its sides)
         return true;
     }
     if (strncmp(line, "mm8=", 4) == 0) {                     // the box size when placed (smart anchor)

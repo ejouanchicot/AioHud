@@ -122,13 +122,34 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
                 if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Day dial", "Cadran du jour"), tr(DD_EN[dd], DD_FR[dd]))) { c.mmDayDial = wrap(dd + d, 3); save_ui_config(); }
             } ROW_NEXT(52.0f)
             if (c.mmDayDial == 2) {   // the MODULES around the compass : where each one sits
-                static const char* SL_EN[7] = { "Top left", "Left", "Bottom left", "Bottom right", "Right", "Top right", "Off" };
-                static const char* SL_FR[7] = { "Haut gauche", "Gauche", "Bas gauche", "Bas droite", "Droite", "Haut droite", "Aucun" };
-                auto taken = [&](int slot, int self) {           // a slot held by another module (Off holds none)
+                // the PLACES of the chosen shape : the round -- 4 corners and 2 sides ; the square -- 4 corners and 2 places on
+                // each side (the user 2026-11-25), going round the frame
+                const bool sqS = c.mmShape == 0;
+                static const char* SL_EN[9] = { "Top left", "Left", "Bottom left", "Bottom right", "Right", "Top right", "Off", "Left (low)", "Right (low)" };
+                static const char* SL_FR[9] = { "Haut gauche", "Gauche", "Bas gauche", "Bas droite", "Droite", "Haut droite", "Aucun", "Gauche (bas)", "Droite (bas)" };
+                static const char* SQ_EN[9] = { "Top left", "Left (high)", "Bottom left", "Bottom right", "Right (high)", "Top right", "Off", "Left (low)", "Right (low)" };
+                static const char* SQ_FR[9] = { "Haut gauche", "Gauche (haut)", "Bas gauche", "Bas droite", "Droite (haut)", "Haut droite", "Aucun", "Gauche (bas)", "Droite (bas)" };
+                static const int ORD_R[7] = { 0, 1, 2, 3, 4, 5, 6 }, ORD_S[9] = { 0, 1, 7, 2, 3, 8, 4, 5, 6 };
+                auto label = [&](int v) { return sqS ? tr(SQ_EN[v], SQ_FR[v]) : tr(SL_EN[v], SL_FR[v]); };
+                auto shown = [&](int v) { return sqS ? v : (v == 7 ? 1 : (v == 8 ? 4 : v)); };   // the round folds 7 / 8 onto its sides
+                auto taken = [&](int slot, int self) {           // a place held by another module (Off holds none)
                     if (slot == 6) return false;
                     const int m[4] = { c.mmPodDay, c.mmPodMoon, c.mmPodSky, c.mmPodWx };
-                    for (int q = 0; q < 4; ++q) if (q != self && m[q] == slot) return true;
+                    for (int q = 0; q < 4; ++q) if (q != self && shown(m[q]) == slot) return true;
                     return false;
+                };
+                // one module's place : step through the shape's places (Off only for the day/night and the weather), skip the taken
+                auto place = [&](int& field, int self, bool canOff, int def, const char* en, const char* fr) {
+                    ROW_BAND(52.0f)
+                    const int* ord = sqS ? ORD_S : ORD_R; const int n = (sqS ? 9 : 7) - (canOff ? 0 : 1);
+                    int cur = (field < 0 || field > 8) ? def : shown(field); if (!canOff && cur == 6) cur = def;
+                    int idx = 0; for (int k = 0; k < n; ++k) if (ord[k] == cur) idx = k;
+                    if (int d = row_selector(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, self), coX, ry + yo, ctrlW, tr(en, fr), label(cur))) {
+                        int k2 = idx;
+                        for (int t = 0; t < n; ++t) { k2 = (k2 + d + n) % n; if (!taken(ord[k2], self)) break; }
+                        field = ord[k2]; save_ui_config();
+                    }
+                    ROW_NEXT(52.0f)
                 };
                 { ROW_BAND(52.0f)
                     static const char* HP_EN[2] = { "Hour top, square bottom", "Square top, hour bottom" };
@@ -136,34 +157,10 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
                     const int hp = c.mmPodHP == 1 ? 1 : 0;
                     if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Hour / map square", "Heure / case de carte"), tr(HP_EN[hp], HP_FR[hp]))) { (void)d; c.mmPodHP = 1 - hp; save_ui_config(); }
                 } ROW_NEXT(52.0f)
-                { ROW_BAND(52.0f)
-                    const int s0 = (c.mmPodDay < 0 || c.mmPodDay > 5) ? 3 : c.mmPodDay;
-                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Day's element", "\xC3\x89l\xC3\xA9ment du jour"), tr(SL_EN[s0], SL_FR[s0]))) {
-                        int n2 = wrap(s0 + d, 6); for (int k = 0; k < 6 && taken(n2, 0); ++k) n2 = wrap(n2 + d, 6);   // skip the others' slots
-                        c.mmPodDay = n2; save_ui_config();
-                    }
-                } ROW_NEXT(52.0f)
-                { ROW_BAND(52.0f)
-                    const int s0 = (c.mmPodMoon < 0 || c.mmPodMoon > 5) ? 2 : c.mmPodMoon;
-                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Moon", "Lune"), tr(SL_EN[s0], SL_FR[s0]))) {
-                        int n2 = wrap(s0 + d, 6); for (int k = 0; k < 6 && taken(n2, 1); ++k) n2 = wrap(n2 + d, 6);    // skip the others' slots
-                        c.mmPodMoon = n2; save_ui_config();
-                    }
-                } ROW_NEXT(52.0f)
-                { ROW_BAND(52.0f)
-                    const int s0 = (c.mmPodSky < 0 || c.mmPodSky > 6) ? 5 : c.mmPodSky;
-                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Day / night", "Jour / nuit"), tr(SL_EN[s0], SL_FR[s0]))) {
-                        int n2 = wrap(s0 + d, 7); for (int k = 0; k < 7 && taken(n2, 2); ++k) n2 = wrap(n2 + d, 7);   // skip the others' slots
-                        c.mmPodSky = n2; save_ui_config();
-                    }
-                } ROW_NEXT(52.0f)
-                { ROW_BAND(52.0f)
-                    const int s0 = (c.mmPodWx < 0 || c.mmPodWx > 6) ? 4 : c.mmPodWx;
-                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Weather", "M\xC3\xA9t\xC3\xA9o"), tr(SL_EN[s0], SL_FR[s0]))) {
-                        int n2 = wrap(s0 + d, 7); for (int k = 0; k < 7 && taken(n2, 3); ++k) n2 = wrap(n2 + d, 7);   // skip the others' slots
-                        c.mmPodWx = n2; save_ui_config();
-                    }
-                } ROW_NEXT(52.0f)
+                place(c.mmPodDay, 0, false, 3, "Day's element", "\xC3\x89l\xC3\xA9ment du jour");
+                place(c.mmPodMoon, 1, false, 2, "Moon", "Lune");
+                place(c.mmPodSky, 2, true, 5, "Day / night", "Jour / nuit");
+                place(c.mmPodWx, 3, true, 4, "Weather", "M\xC3\xA9t\xC3\xA9o");
             }
         }
         if (c.mmLayout == 1) {

@@ -724,7 +724,8 @@ struct UiConfig {
     int   mmDayDial = 1;               // the Dial's day subdial : 0 the enamel globe (coloured quarters), 1 the icons' carousel
     // the Dial's MODULES around the compass (Day dial = Disc ; the user 2026-11-25) : the hour and the grid square share the
     // top and the bottom (0 : the hour on top, the square below ; 1 : the reverse) ; the moon and the day's element each
-    // take one of the four corners or a side, never the same one -- slot 0 NW, 1 W, 2 SW, 3 SE, 4 E, 5 NE
+    // take one of the four corners or a side, never the same one -- slot 0 NW, 1 W, 2 SW, 3 SE, 4 E, 5 NE ; the square adds
+    // 7 / 8 : the left / right side's LOWER place (1 / 4 are then the upper ones) ; the round folds them onto its sides
     int   mmPodHP = 0;
     int   mmPodDay = 3;
     int   mmPodMoon = 2;
