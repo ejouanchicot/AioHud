@@ -1390,10 +1390,10 @@ static bool refract_tube(u32 dev, float cx, float cy, float rw, float wr, float 
     if (hr < 0) return rf_fail("CopyRects", hr);
     s_rfFail = 0;
     // the lens ACROSS the tube : t in [-1, 1] from the inner wall to the outer ; the source sampled at lens(t)
-    const float kA = TUNE("mm.refract_k", 1.40f), sA = sinf(kA), edge = TUNE("mm.refract_edge", 0.80f);
+    const float kA = TUNE("mm.refract_k", 0.02f), sA = sinf(kA), edge = TUNE("mm.refract_edge", 0.86f);
     auto lens = [&](float t, float& shade) {
         const float at = fabsf(t), sg = t < 0.0f ? -1.0f : 1.0f;
-        shade = 1.0f - 0.22f * at * at;                                 // the walls a little darker
+        shade = at > 0.80f ? 1.0f - 0.30f * (at - 0.80f) / 0.20f : 1.0f;   // only the glass's curved edge darker : the figures untouched
         if (at > edge) {                                                 // the internal reflection : a thin inverted band
             const float q = (at - edge) / (1.0f - edge);
             shade *= 0.62f;
@@ -1438,8 +1438,18 @@ static void pod_glass(u32 dev, float cx, float cy, float rw, float wr, float a0,
     // light pixels along the tube -- the user 2026-11-25)
     ring_sector(dev, cx, cy, rw + wr - 0.7f * S, rw + wr + 0.9f * S, a0, a1, 0xE00A0806u);
     ring_sector(dev, cx, cy, rw - wr - 0.9f * S, rw - wr + 0.7f * S, a0, a1, 0xE00A0806u);
-    // (no drawn streak, veil or edge shade any more -- they cut the icons, the user 2026-11-25 : the REFRACTION above is the glass)
-    (void)S;
+    // THE GLASS SEEN, THE FIGURES UNTOUCHED (the user 2026-11-25 : "not distortion -- glass on top, without touching
+    // readability") : no lens (the refraction above only folds the outermost band, the glass's internal reflection) ; a
+    // thin specular line in the band the icons never reach (beyond 0.86 of the half height), on the lamp's side, and a
+    // fainter one opposite
+    {
+        const float am = (a0 + a1) * 0.5f, lOut = cosf(am) * POD_LX + sinf(am) * POD_LY, sg = lOut >= 0.0f ? 1.0f : -1.0f;
+        const float rS = rw + sg * wr * 0.91f, rT = rw - sg * wr * 0.91f, hw = 0.55f * S, da = (a1 - a0) * 0.04f;
+        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+        ring_sector(dev, cx, cy, rS - hw, rS + hw, a0 + da, a1 - da, MA((u32)(110.0f * TUNE("mm.glass", 1.0f)), 0xFFFFFFu));
+        ring_sector(dev, cx, cy, rT - hw, rT + hw, a0 + da * 3.0f, a1 - da * 3.0f, MA((u32)(40.0f * TUNE("mm.glass", 1.0f)), 0xFFFFFFu));
+        dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    }
     color_state(dev);
 }
 static void pod_caps(u32 dev, float cx, float cy, float rw, float wr, float a0, float a1, float S) {
