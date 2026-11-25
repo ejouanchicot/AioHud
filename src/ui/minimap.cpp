@@ -3679,7 +3679,7 @@ void Minimap::draw(const Frame& f) {
                 // which the previous") : an applied metal rail along the bezel under the three wheels -- its TAIL (a stop bar)
                 // facing the previous wheel, the red-enamelled lozenge facing the present one, the ARROWHEAD facing the next :
                 // what the arrow points at is what comes
-                auto marks = [&](float th, float headPast) {
+                auto marks = [&](float th, float headPast, bool head) {
                     const float dir = pod_dir(th), aP = th - dir * G.as * 1.05f, aN = th + dir * (G.as * 1.05f + headPast);
                     const float wR = hA * 0.16f, aLo = fminf(aP, aN), aHi = fmaxf(aP, aN);
                     auto P = [&](float a, float rr, float& x, float& y) { x = ccx + cosf(a) * rr; y = ccy + sinf(a) * rr; };
@@ -3696,8 +3696,8 @@ void Minimap::draw(const Frame& f) {
                         seg_soft(dev, x0, y0, x1, y1, 2.8f * S, g_dm.edge | 0xFF000000u);
                         seg_soft(dev, x0, y0, x1, y1, 1.6f * S, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);
                     }
-                    // the ARROWHEAD at the next wheel, pointing onward along the rail
-                    {
+                    // the ARROWHEAD at the next wheel, pointing onward along the rail (none when a counter is the target)
+                    if (head) {
                         const float ux = cosf(aN), uy = sinf(aN), tx = -uy * dir, ty = ux * dir, h = hA * 0.70f, wd = hA * 0.55f;
                         const float bx = ccx + ux * rM - tx * h * 0.35f, by = ccy + uy * rM - ty * h * 0.35f;
                         float tr[6] = { bx + tx * h, by + ty * h, bx + ux * wd, by + uy * wd, bx - ux * wd, by - uy * wd };
@@ -3728,7 +3728,7 @@ void Minimap::draw(const Frame& f) {
                         disc(dev, mx, my, W * 0.45f, 0xFFA82418u);
                     }
                 };
-                if (c.mmClock && c.mmClkDay) marks(s_dayTh, 0.0f);
+                if (c.mmClock && c.mmClkDay) marks(s_dayTh, 0.0f, true);
                 if (c.mmClock && c.mmClkMoon) {
                     // THE DAYS TO THE NEXT NEW / FULL MOON (the user 2026-11-25) : a two-wheel counter on the bezel, centred over
                     // the NEXT moon's wheel, laid along the bezel and turned with it (drum_arc) ; the arrow's head passes beyond it
@@ -3738,8 +3738,9 @@ void Minimap::draw(const Frame& f) {
                     char d2[4]; sprintf(d2, "%02d", dd);
                     const float dsz = snap(TUNE("mm.mcount_sz", 13.0f) * S), dhh = snap(hA * TUNE("mm.mcount_h", 0.95f));
                     const float half = nf ? drum_width(nf, d2, dsz, S) * 0.5f / rM : 0.0f;
-                    marks(s_moonTh, half + 2.0f * S / rM);
-                    if (nf) drum_arc(dev, nf, 0, ccx, ccy, s_moonTh + pod_dir(s_moonTh) * G.as, rM, dhh, d2, dsz, S);
+                    const float cA = G.as * TUNE("mm.mcount_at", 1.22f);       // the counter : over the next moon, a little beyond (air for the present's lozenge)
+                    marks(s_moonTh, (cA - half - 1.5f * S / rM) - G.as * 1.05f, false);   // the rail runs to the counter ; the counter IS the target (no head)
+                    if (nf) drum_arc(dev, nf, 0, ccx, ccy, s_moonTh + pod_dir(s_moonTh) * cA, rM, dhh, d2, dsz, S);
                 }
             }
         } else
