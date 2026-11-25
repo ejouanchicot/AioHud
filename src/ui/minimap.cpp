@@ -2242,7 +2242,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         // the POSITION in the band (the user 2026-11-25 : "lower, between the moon and the time") : a third compartment at
         // the centre, under the S, sized to the grid square -- in the modules style (round)
         char posTxt[12] = ""; bool posBand = false;
-        if (c.mmGrid && c.mmDayDial == 2) {
+        if (c.mmGrid && c.mmDayDial == 2 && g.map.valid) {
             int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
             mm_demo_square(gc, gr);
             if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { sprintf(posTxt, "%c-%d", 'A' + gc, gr + 1); posBand = true; }   // ONE wheel for the whole square (), as the game writes it : "H-9"
@@ -2845,7 +2845,7 @@ static float sq_band_k(const UiConfig& c) { return (c.mmLayout == 2 && c.mmDayDi
 // THE MODULES' FOOTPRINT (the user 2026-11-25 : "make the edit-layout box smart -- whether the modules are on the sides, above,
 // below") : how far past the map's square each side reaches, from the modules actually shown -- every module's outer edge
 // sampled along its span, in its frame (the same slots and frames as Minimap::draw, centred on 0,0). L T R B : px past r.
-static void dial_extents(const UiConfig& c, float r, float S, bool sq, float& eL, float& eT, float& eR, float& eB) {
+static void dial_extents(const UiConfig& c, float r, float S, bool sq, float& eL, float& eT, float& eR, float& eB, bool hasMap = true) {
     const float PIf = 3.14159265f, keep = s_podR0, keepO = s_podOut;
     s_podR0 = r; s_podOut = sq ? r * TUNE("mm.sq_out", 0.08f) : 0.0f;
     const bool pods = TUNE("mm.foot_body", 0.0f) <= 0.5f;
@@ -2878,7 +2878,7 @@ static void dial_extents(const UiConfig& c, float r, float S, bool sq, float& eL
         if (skyOn) take(F_of(sSky), ph);
         if (wxOn) take(F_of(sWx), ph);
         if (c.mmClock && c.mmClkTime) take(F_of(c.mmPodHP == 1 ? 11 : 10), ph * 0.5f);
-        if (c.mmGrid) take(F_of(c.mmPodHP == 1 ? 10 : 11), ph * 0.5f);
+        if (c.mmGrid && hasMap) take(F_of(c.mmPodHP == 1 ? 10 : 11), ph * 0.5f);
     }
     const float base = r * 0.06f;                                       // the cardinal plates stand a little past the bezel
     eL = fmaxf(base, -x0 - r) + 3.0f * S; eR = fmaxf(base, x1 - r) + 3.0f * S; eT = fmaxf(base, -y0 - r) + 3.0f * S; eB = fmaxf(base, y1 - r) + 3.0f * S;
@@ -3050,7 +3050,7 @@ void Minimap::draw(const Frame& f) {
         }
         if (dialBot < dialSide) dialBot = dialSide;
         if (c.mmDayDial == 2 && TUNE("mm.foot_body", 0.0f) <= 0.5f) {
-            dial_extents(c, rr0, S, dialSq, podL, podT, podR, podB); podBox = true;
+            dial_extents(c, rr0, S, dialSq, podL, podT, podR, podB, g.map.valid); podBox = true;
             // THE MODULES' MODEL (the user 2026-11-25 : "the edit-layout box does not match") : no corner subdials, no plinth --
             // the modules' collar stands out of the bezel all round, by the pods' depth, plus its soft cast shadow
             dialSide = dialBot = snap(rr0 * (TUNE("mm.pod_depth", 0.235f) + (dialSq ? TUNE("mm.sq_out", 0.08f) : 0.0f)) + 4.0f * S);
@@ -3196,7 +3196,11 @@ void Minimap::draw(const Frame& f) {
     const float MSc = clampf(c.mmMarkerScale, 0.5f, 2.0f);
 
     // no map image chrome -> the map fills the region below the header.
-    if (!g.map.valid) {                                        // zone has no map record -> header only
+    // A ZONE WITHOUT A MAP (the user 2026-11-25 : "some zones have no map") : the Dial stays whole -- the hour, the day,
+    // the moon, the weather still matter there ; the lens shows bare parchment with an inked wind rose, no markers, no
+    // grid square. The other layouts keep their "No map" line.
+    const bool noMap = !g.map.valid || TUNE("mm.test_nomap", 0.0f) > 0.5f;   // (dev : simulate a map-less zone)
+    if (noMap && !dial) {
         if (f.font) { f.font->begin(dev); f.font->draw_c(dev, snap(ccx), snap(ccy), (c.lang == 1) ? "Pas de carte" : "No map", snap(14.0f * S), 0xFF8894A4u, 0xFF000000u, 1.4f); }
         return;
     }
@@ -3205,14 +3209,14 @@ void Minimap::draw(const Frame& f) {
     //      FAILS (data not ready right after a zone-in, or a registry/path hiccup on some installs), RETRY a bounded
     //      number of times instead of caching the failure until the next zone -- that was the "minimap doesn't
     //      always load when I zone" bug. On success we stop retrying ; after the budget we give up (truly no map). ----
-    if (g.map.fileId != mapFileId_) {                          // zone's map changed
+    if (!noMap && g.map.fileId != mapFileId_) {                // zone's map changed
         if (mapTex_) { release_texture(mapTex_); mapTex_ = 0; }
         mapFileId_ = g.map.fileId;
         mobAngN_ = 0;                                           // new zone -> drop the eased-angle cache
         mapTries_ = 0; mapRetryAt_ = 0;                        // new zone -> fresh schedule, try immediately
         s_mapFail.on = false;                                  // a finding about the zone we left is not about this one
     }
-    if (mapTex_ == 0 && g.map.fileId) {                        // not loaded yet -> (re)try, throttled. NO terminating budget : see minimap.h
+    if (!noMap && mapTex_ == 0 && g.map.fileId) {              // not loaded yet -> (re)try, throttled. NO terminating budget : see minimap.h
         if (retry_due(mapRetryAt_)) {   // retry_clock.h owns the 0-sentinel case (set on every zone change) : without it the map stays black past 24.8 d of uptime
             u32* pixels = 0; int mw = 0, mh = 0; MapLoadDiag md;
             // Only STOP retrying when the texture actually exists. This used to clear the budget as soon as the DAT
@@ -3271,13 +3275,13 @@ void Minimap::draw(const Frame& f) {
     // is what "elle pop noir puis s'affiche" describes: the load can miss on the first frame after a zone-in and
     // only succeed on a retry. Once the budget is spent we fall through and show the normal empty panel, so a
     // zone whose map genuinely cannot load still renders its frame rather than silently vanishing.
-    if (!mapTex_ && mapTries_ < MAP_SLOW_AFTER) return;   // only the FAST lane waits ; in the slow lane draw the normal empty panel and keep retrying underneath
+    if (!noMap && !mapTex_ && mapTries_ < MAP_SLOW_AFTER) return;   // only the FAST lane waits ; in the slow lane draw the normal empty panel and keep retrying underneath
 
     // BLACK-MAP catch-all. The block above only logs after its 12 retries are spent, and it only RUNS when
     // g.map.fileId is non-zero -- so a record that is "valid" with fileId 0 (or one whose retries were never
     // armed) left the map black with NOTHING in the log. That blind spot is exactly what the first capture hit.
     // One line per zone, only once the texture is genuinely absent and no retry budget is left.
-    if (!mapTex_) {
+    if (!noMap && !mapTex_) {
         static unsigned lastLoggedZone = 0xFFFFFFFFu;
         if (g.map.zone != lastLoggedZone && mapTries_ >= MAP_SLOW_AFTER) {
             lastLoggedZone = g.map.zone;
@@ -3357,7 +3361,7 @@ void Minimap::draw(const Frame& f) {
             if (s_skyOn) { mf[nm] = s_skyF; mp[nm] = sky_pod_ph(s_skyF.R, S, true, false); ++nm; }
             if (s_wxOn) { mf[nm] = s_wxF; mp[nm] = sky_pod_ph(s_wxF.R, S, false, true); ++nm; }
             if (c.mmClock && c.mmClkTime && tfP) { mf[nm] = s_hourF; mp[nm] = tubeHalf(s_hourF, drum_width(tfP, "00:00", pSzP, S)); ++nm; }
-            if (c.mmGrid && tfP) {
+            if (c.mmGrid && tfP && g.map.valid) {
                 int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
                 mm_demo_square(gc, gr);
                 if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) {
@@ -3498,7 +3502,22 @@ void Minimap::draw(const Frame& f) {
     // ---- the map image, player-centred, V-flipped to read upright. SQUARE = a rect-clamped quad ; ROUND = a
     // textured circular FAN (`tdisc`) so the map is genuinely round with NO stencil buffer -- the round shape is
     // entirely geometry (fan + circle-tested markers), no clip mask needed. ----
-    if (mapTex_) {
+    if (noMap) {                                               // no map : bare parchment, an inked wind rose (terra incognita)
+        color_state(dev);
+        const float rr = round ? rc : (mapD * 0.5f - fi);
+        if (round) disc(dev, ccx, ccy, rr, 0xFFE2CB94u);
+        else rrect(dev, wx0, wy0, wx1 - wx0, wy1 - wy0, 0.0f, 0xFFE2CB94u, 0xFFD8BE84u);
+        const u32 ink = 0x603C2614u;
+        for (int k = 0; k < 8; ++k) {                          // the rose : 4 long points, 4 short
+            const float a = (float)k * 0.7853982f - 1.5707963f, L = rr * (k % 2 ? 0.30f : 0.55f), w = rr * (k % 2 ? 0.05f : 0.08f);
+            const float ux = cosf(a), uy = sinf(a), tx = -uy, ty = ux;
+            const float tri[6] = { ccx + ux * L, ccy + uy * L, ccx + tx * w, ccy + ty * w, ccx - tx * w, ccy - ty * w };
+            fill_poly_aa(dev, tri, 3, ink);
+        }
+        ring_sector(dev, ccx, ccy, rr * 0.18f, rr * 0.18f + 1.2f * S, 0.0f, 6.2831853f, ink);
+        ring_sector(dev, ccx, ccy, rr * 0.62f, rr * 0.62f + 1.0f * S, 0.0f, 6.2831853f, 0x403C2614u);
+    }
+    if (mapTex_ && !noMap) {
         const float qx = ccx - mapX * pn, qy = ccy - mapY * pn, qs = mapPx * pn;   // native (0,0)..(512,512)
         tex_state(dev, mapTex_);
         if (round) {
@@ -3640,6 +3659,7 @@ void Minimap::draw(const Frame& f) {
 
     PERF_END("mm.lines");
     PERF_BEGIN("mm.markers");
+    if (!noMap) {                                              // (no map : nothing to place the entities on)
     // ---- ICONS with a LEVEL OF DETAIL (the v3 atlas). A detailed icon needs ~12-16 px to read ; zoomed out, many
     //      entities share those pixels and the icons bury each other (a trust under a mob). So :
     //      * the measure is SCREEN PIXELS PER YALM (ppy), not the zoom -- every zone's map has its own scale ;
@@ -3885,6 +3905,8 @@ void Minimap::draw(const Frame& f) {
         dSetTex(dev, 0, 0);
     }
 
+    }
+    if (noMap && vpSet) dSetViewport(dev, vpSave);              // (its restore sits in the skipped block : the frame and the plates must not stay clipped)
     PERF_END("mm.markers");
     // ---- the map grid square, "(F-10)" -- the native compass's line, the client's own formula (FUN_05538C10) :
     //      column 'A' + (px - 16) / 32, row 1 + (py - 16) / 32 on the 512 px native map, C division (toward zero) ----
