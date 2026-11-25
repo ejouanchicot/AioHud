@@ -1066,7 +1066,7 @@ static void pod_lit_band(u32 dev, float cx, float cy, float r0, float r1, float 
         const float a = a0 + (a1 - a0) * (float)i / N, l = cosf(a) * POD_LX + sinf(a) * POD_LY;
         u32 c;
         if (kind == 0) c = l > 0.0f ? pod_mix(hb, g_dm.lite, l * 0.14f) : pod_mix(hb, g_dm.edge, -l * 0.14f);
-        else           c = l > 0.0f ? MA((u32)(40.0f + 150.0f * l), g_dm.glint) : MA((u32)(40.0f - 40.0f * l * 2.0f), g_dm.shade);
+        else           c = l > 0.0f ? MA((u32)(14.0f + 50.0f * l), g_dm.lite) : MA((u32)(20.0f - 40.0f * l), g_dm.shade);   // subdued (the user : the light effects look kitsch)
         v[2 * i]     = { cx + cosf(a) * r0 - 0.5f, cy + sinf(a) * r0 - 0.5f, 0, 1, c };
         v[2 * i + 1] = { cx + cosf(a) * r1 - 0.5f, cy + sinf(a) * r1 - 0.5f, 0, 1, c };
     }
@@ -1177,7 +1177,7 @@ static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
     {
         struct C1 { static u32 c(float a, float, float t, u32) {
             const float l = cosf(a) * POD_LX + sinf(a) * POD_LY;
-            const u32 cc = l > 0.0f ? MA((u32)(40.0f + 150.0f * l), g_dm.glint) : MA((u32)(40.0f - 80.0f * l), g_dm.shade);
+            const u32 cc = l > 0.0f ? MA((u32)(14.0f + 50.0f * l), g_dm.lite) : MA((u32)(20.0f - 50.0f * l), g_dm.shade);   // subdued : a worn edge, not a neon line
             return t > 0.5f ? cc : (cc & 0x00FFFFFFu); } };
         band(0.0f, 0.0f, K::lipIn, K::lipOut, 0.0f, C1::c, 0);
     }
@@ -1185,7 +1185,7 @@ static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
     {
         struct C2 { static u32 c(float a, float, float t, u32) {
             const float l = cosf(a) * POD_LX + sinf(a) * POD_LY;
-            const u32 hi = MA((u32)(30.0f + 70.0f * (l > 0.0f ? l : 0.0f)), g_dm.lite);
+            const u32 hi = MA((u32)(10.0f + 26.0f * (l > 0.0f ? l : 0.0f)), g_dm.lite);
             return t > 0.5f ? hi : (hi & 0x00FFFFFFu); } };
         struct C3 { static u32 c(float, float, float t, u32) { return t > 0.5f ? MA(0x30, g_dm.edge) : 0x00000000u; } };
         band(0.0f, 0.0f, K::sh0, K::sh1, 0.0f, C3::c, 0);
@@ -1266,29 +1266,29 @@ static void pod_glass(u32 dev, float cx, float cy, float rw, float wr, float a0,
     (void)S;
     color_state(dev);
     sector_grad(dev, cx, cy, rw - wr, rw - wr * 0.45f, a0, a1, 0x58000000u, 0x00000000u, 0x58000000u, 0x00000000u);   // the inner edge curves away : darker
-    sector_grad(dev, cx, cy, rw + wr * 0.50f, rw + wr, a0, a1, 0x00FFFFFFu, 0x30FFFFFFu, 0x00FFFFFFu, 0x30FFFFFFu);   // the outer edge catches the sky
+    sector_grad(dev, cx, cy, rw + wr * 0.50f, rw + wr, a0, a1, 0x00FFFFFFu, 0x12FFFFFFu, 0x00FFFFFFu, 0x12FFFFFFu);   // the outer edge catches the sky (a whisper)
     const float l0 = cosf(a0) * POD_LX + sinf(a0) * POD_LY, l1 = cosf(a1) * POD_LX + sinf(a1) * POD_LY;
-    const u32 s0 = MA((u32)(22.0f + 30.0f * (l0 > 0.0f ? l0 : 0.0f)), 0xFFFFFFu), s1 = MA((u32)(22.0f + 30.0f * (l1 > 0.0f ? l1 : 0.0f)), 0xFFFFFFu);   // subtle : it must never strike the figures out
+    const u32 s0 = MA((u32)(8.0f + 14.0f * (l0 > 0.0f ? l0 : 0.0f)), 0xFFFFFFu), s1 = MA((u32)(8.0f + 14.0f * (l1 > 0.0f ? l1 : 0.0f)), 0xFFFFFFu);   // subtle : it must never strike the figures out
     dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
     sector_grad(dev, cx, cy, rw + wr * 0.70f, rw + wr * 0.80f, a0, a1, s0, s0, s1, s1);                       // the specular line, near the outer edge (clear of the figures)
     sector_grad(dev, cx, cy, rw + wr * 0.55f, rw + wr * 0.70f, a0, a1, 0, s0, 0, s1);                          // its soft halo (inner side)
-    sector_grad(dev, cx, cy, rw - wr * 0.62f, rw - wr * 0.58f, a0, a1, 0x18FFFFFFu, 0x18FFFFFFu, 0x18FFFFFFu, 0x18FFFFFFu);   // a faint second reflection
+    sector_grad(dev, cx, cy, rw - wr * 0.62f, rw - wr * 0.58f, a0, a1, 0x08FFFFFFu, 0x08FFFFFFu, 0x08FFFFFFu, 0x08FFFFFFu);   // a faint second reflection
     dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
     color_state(dev);
 }
 static void pod_caps(u32 dev, float cx, float cy, float rw, float wr, float a0, float a1, float S) {
     color_state(dev);
     const float cw = 3.0f * S / rw, ri = rw - wr - 1.2f * S, ro = rw + wr + 1.2f * S;
-    const u32 body = g_dm.bot | 0xFF000000u;
+    const u32 body = dm_toward(g_dm.bot, 0xFF000000u, 0.20f) | 0xFF000000u;   // a darker, matte metal than the collar
     for (int e = -1; e <= 1; e += 2) {
         const float aIn = e < 0 ? a0 : a1;                                // the glass's end
         const float c0 = e < 0 ? aIn - cw : aIn, c1 = c0 + cw;            // wholly OUTSIDE the window : it must not bite the end wheels
         const float l = cosf(aIn) * POD_LX + sinf(aIn) * POD_LY;           // the cap's own light : its outward face
         ring_sector(dev, cx, cy, ri - 1.0f * S, ro + 1.0f * S, c0 - 1.0f * S / rw, c1 + 1.0f * S / rw, g_dm.edge);   // its dark edge
         ring_sector(dev, cx, cy, ri, ro, c0, c1, l > 0.0f ? pod_mix(body, g_dm.lite, l * 0.25f) : pod_mix(body, g_dm.edge, -l * 0.25f));
-        sector_grad(dev, cx, cy, rw, ro, c0, c1, MA(0x00, g_dm.lite), MA(0xC0, g_dm.lite), MA(0x00, g_dm.lite), MA(0xC0, g_dm.lite));   // a cylinder : lit on its outer half...
-        sector_grad(dev, cx, cy, ri, rw, c0, c1, MA(0xA0, g_dm.edge), MA(0x00, g_dm.edge), MA(0xA0, g_dm.edge), MA(0x00, g_dm.edge));   // ...in shade on its inner
-        ring_sector(dev, cx, cy, ro - 0.9f * S, ro, c0, c1, MA(0xD0, g_dm.glint));                    // the lip catching the light
+        sector_grad(dev, cx, cy, rw, ro, c0, c1, MA(0x00, g_dm.lite), MA(0x40, g_dm.lite), MA(0x00, g_dm.lite), MA(0x40, g_dm.lite));   // a cylinder : softly lit on its outer half...
+        sector_grad(dev, cx, cy, ri, rw, c0, c1, MA(0x60, g_dm.edge), MA(0x00, g_dm.edge), MA(0x60, g_dm.edge), MA(0x00, g_dm.edge));   // ...in shade on its inner
+        ring_sector(dev, cx, cy, ro - 0.9f * S, ro, c0, c1, MA(0x40, g_dm.lite));                     // the lip, a faint light
         const float sa = e < 0 ? c1 : c0;                                  // the seam against the glass
         seg_soft(dev, cx + cosf(sa) * (rw - wr), cy + sinf(sa) * (rw - wr), cx + cosf(sa) * (rw + wr), cy + sinf(sa) * (rw + wr), 0.9f * S, 0xC0000000u);
     }
@@ -2590,9 +2590,9 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 color_state(dev);
                 disc(dev, lx + 0.9f * S, ly + 1.3f * S, pr + 1.0f * S, 0x80000000u);                       // its shadow on the bezel
                 disc(dev, lx, ly, pr + 1.1f * S, g_dm.edge | 0xFF000000u);                                  // the solder seam
-                disc(dev, lx, ly, pr, pod_mix(g_dm.body, g_dm.lite, 0.30f) | 0xFF000000u);                 // the plate
-                disc(dev, lx - pr * 0.18f, ly - pr * 0.18f, pr * 0.78f, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);   // domed : lit toward the lamp
-                ring_sector(dev, lx, ly, pr - 1.0f * S, pr, 2.4f, 5.6f, MA(0xB0, g_dm.glint));            // its rim catching the light
+                disc(dev, lx, ly, pr, pod_mix(g_dm.body, g_dm.bot, 0.30f) | 0xFF000000u);                  // the plate : satin metal
+                disc(dev, lx - pr * 0.18f, ly - pr * 0.18f, pr * 0.74f, MA(0x50, g_dm.lite));                 // domed : softly lit toward the lamp
+                ring_sector(dev, lx, ly, pr - 1.0f * S, pr, 2.4f, 5.6f, MA(0x50, g_dm.lite));             // its rim, a faint light
                 ring_sector(dev, lx, ly, pr - 1.0f * S, pr, -0.7f, 2.4f, MA(0x90, g_dm.edge));            // ...and in shade
                 tf->begin(dev);
                 const float lsz = snap(pr * 1.30f);
