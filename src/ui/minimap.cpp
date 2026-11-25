@@ -1394,13 +1394,25 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 const int cell = WCELL[(wid - 4) / 2], n = (wid & 1) ? 2 : 1;
                 const float rs = sr * 0.46f;
                 const u32 ec = VANA_DAYCOL[cell];
+                // CAST AS ONE with the sky dial (the designer's brief : "the small intersection disappears in a common metal
+                // bridge ; no capsule added") : every dark edge first -- the orbs', the bridge's -- then all the metal over them
+                float OX[2], OY[2];
+                for (int q = 0; q < n; ++q) { OX[q] = n == 2 ? x + (q == 0 ? -1.0f : 1.0f) * sr * 0.60f : x; OY[q] = n == 2 ? y + sr * 0.70f : y + sr * 0.80f; }
+                color_state(dev);
+                for (int q = 0; q < n; ++q)
+                    rrect_glow(dev, OX[q] - rs - 1.5f * S, OY[q] - rs - 0.5f * S, 2.0f * rs + 3.0f * S, 2.0f * rs + 3.0f * S, rs + 1.5f * S, 0x90000000u, snap(2.5f * S));
+                color_state(dev);
+                const float bw = rs * 0.55f;                                                     // the bridge's half height (orb to orb, double only)
+                auto bridge = [&](float grow, u32 col) {
+                    if (n == 2) rrect(dev, OX[0], OY[0] - bw - grow, OX[1] - OX[0], 2.0f * (bw + grow), 0.0f, col, col);   // orb to orb
+                    (void)x; (void)y;                                                           // (the orbs sit on the sky's rim : no stem into the sky)
+                };
+                for (int q = 0; q < n; ++q) disc(dev, OX[q], OY[q], rs + 1.8f * S, g_dm.edge);   // the dark edges...
+                bridge(1.2f * S, g_dm.edge);
+                for (int q = 0; q < n; ++q) disc(dev, OX[q], OY[q], rs + 1.1f * S, g_dm.body);   // ...then the metal over them
+                bridge(0.0f, g_dm.body);
                 for (int q = 0; q < n; ++q) {
-                    const float ox = n == 2 ? x + (q == 0 ? -1.0f : 1.0f) * sr * 0.60f : x, oy = n == 2 ? y + sr * 0.70f : y + sr * 0.80f;
-                    color_state(dev);
-                    rrect_glow(dev, ox - rs - 1.5f * S, oy - rs - 0.5f * S, 2.0f * rs + 3.0f * S, 2.0f * rs + 3.0f * S, rs + 1.5f * S, 0x90000000u, snap(2.5f * S));   // its shadow
-                    color_state(dev);
-                    disc(dev, ox, oy, rs + 1.8f * S, g_dm.edge);                                    // a metal setting
-                    disc(dev, ox, oy, rs + 1.1f * S, g_dm.body);
+                    const float ox = OX[q], oy = OY[q];
                     ring_sector(dev, ox, oy, rs, rs + 1.1f * S, PI, 1.5f * PI, MA(0xA0, g_dm.glint));
                     disc(dev, ox, oy, rs, 0xFF000000u);                                              // a PERFECTLY BLACK face (the user 2026-11-25) : the element stands out
                     ring_sector(dev, ox, oy, rs - 0.8f, rs + 0.5f, 0.0f, 2.0f * PI, 0x90060A10u);
