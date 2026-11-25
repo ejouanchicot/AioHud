@@ -3604,39 +3604,54 @@ void Minimap::draw(const Frame& f) {
             {
                 const PodGeo G = pod_geo(r, S);
                 const float rM = rc + (r - rc) * 0.50f, hA = (r - rc) * TUNE("mm.idx_size", 0.66f);
+                // ONE TIME ARROW per module (the user 2026-11-25 : "with those arrows I can't tell which is the next element and
+                // which the previous") : an applied metal rail along the bezel under the three wheels -- its TAIL (a stop bar)
+                // facing the previous wheel, the red-enamelled lozenge facing the present one, the ARROWHEAD facing the next :
+                // what the arrow points at is what comes
                 auto marks = [&](float th) {
-                    const float dir = pod_dir(th);
-                    for (int d = -1; d <= 1; ++d) {
-                        const float a = th + dir * (float)d * G.as, ux = cosf(a), uy = sinf(a), tx = -uy * dir, ty = ux * dir;
-                        const float mx = ccx + ux * rM, my = ccy + uy * rM;
-                        if (d == 0) {                                          // an APPLIED LOZENGE, polished, a red enamel dot
-                            const float L = hA * 0.95f, W = hA * 0.55f;
-                            float lz[8] = { mx + ux * L, my + uy * L, mx + tx * W, my + ty * W, mx - ux * L, my - uy * L, mx - tx * W, my - ty * W };
-                            float sh[8]; for (int q = 0; q < 8; ++q) sh[q] = lz[q] + (q & 1 ? 1.2f : 0.9f) * S;
-                            fill_poly_aa(dev, sh, 4, 0x90000000u);                                         // its shadow
-                            float ed[8] = { mx + ux * (L + 1.0f * S), my + uy * (L + 1.0f * S), mx + tx * (W + 1.0f * S), my + ty * (W + 1.0f * S),
-                                            mx - ux * (L + 1.0f * S), my - uy * (L + 1.0f * S), mx - tx * (W + 1.0f * S), my - ty * (W + 1.0f * S) };
-                            fill_poly_aa(dev, ed, 4, g_dm.edge | 0xFF000000u);                             // its edge
-                            fill_poly_aa(dev, lz, 4, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);   // polished metal
-                            const float hl[6] = { lz[0], lz[1], lz[2], lz[3], mx, my };
-                            fill_poly_aa(dev, hl, 3, MA(0xC0, g_dm.glint));                                // a lit facet
-                            disc(dev, mx, my, W * 0.42f, 0xFFA82418u);                                     // the red enamel
-                        } else {                                               // an applied TRIANGLE pointing the way time runs :
-                            // before = tarnished, pointing at the present ; after = bright, pointing onward (show, don't tell)
-                            const float h = hA * 0.62f, wd = hA * 0.58f;
-                            const float tipx = mx + tx * h, tipy = my + ty * h, bx0 = mx - tx * h * 0.6f, by0 = my - ty * h * 0.6f;
-                            float tr[6] = { tipx, tipy, bx0 + ux * wd, by0 + uy * wd, bx0 - ux * wd, by0 - uy * wd };
-                            float sh[6]; for (int q = 0; q < 6; ++q) sh[q] = tr[q] + (q & 1 ? 1.2f : 0.9f) * S;
-                            fill_poly_aa(dev, sh, 3, 0x90000000u);
-                            const float g2 = 1.0f * S;
-                            float ed[6] = { tipx + tx * g2 * 1.6f, tipy + ty * g2 * 1.6f, bx0 + ux * (wd + g2) - tx * g2, by0 + uy * (wd + g2) - ty * g2, bx0 - ux * (wd + g2) - tx * g2, by0 - uy * (wd + g2) - ty * g2 };
-                            fill_poly_aa(dev, ed, 3, g_dm.edge | 0xFF000000u);
-                            const bool past = d < 0;
-                            fill_poly_aa(dev, tr, 3, (past ? pod_mix(g_dm.body, g_dm.edge, 0.35f) : pod_mix(g_dm.body, g_dm.lite, 0.65f)) | 0xFF000000u);
-                            const float hl[6] = { tr[0], tr[1], tr[2], tr[3], mx - tx * h * 0.1f, my - ty * h * 0.1f };
-                            fill_poly_aa(dev, hl, 3, MA(past ? 0x40 : 0xC0, g_dm.glint));
-                        }
-                        (void)tx; (void)ty;
+                    const float dir = pod_dir(th), aP = th - dir * G.as * 1.05f, aN = th + dir * G.as * 1.05f;
+                    const float wR = hA * 0.16f, aLo = fminf(aP, aN), aHi = fmaxf(aP, aN);
+                    auto P = [&](float a, float rr, float& x, float& y) { x = ccx + cosf(a) * rr; y = ccy + sinf(a) * rr; };
+                    // the rail : shadow, edge, metal, a lit upper lip
+                    ring_sector(dev, ccx + 0.8f * S, ccy + 1.1f * S, rM - wR, rM + wR, aLo, aHi, 0x90000000u);
+                    ring_sector(dev, ccx, ccy, rM - wR - 0.9f * S, rM + wR + 0.9f * S, aLo, aHi, g_dm.edge | 0xFF000000u);
+                    ring_sector(dev, ccx, ccy, rM - wR, rM + wR, aLo, aHi, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);
+                    ring_sector(dev, ccx, ccy, rM + wR * 0.2f, rM + wR, aLo, aHi, MA(0x90, g_dm.glint));
+                    // the TAIL : a stop bar across the rail
+                    {
+                        float x0, y0, x1, y1; P(aP, rM - hA * 0.45f, x0, y0); P(aP, rM + hA * 0.45f, x1, y1);
+                        seg_soft(dev, x0 + 0.8f * S, y0 + 1.1f * S, x1 + 0.8f * S, y1 + 1.1f * S, 2.6f * S, 0x90000000u);
+                        seg_soft(dev, x0, y0, x1, y1, 2.8f * S, g_dm.edge | 0xFF000000u);
+                        seg_soft(dev, x0, y0, x1, y1, 1.6f * S, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);
+                    }
+                    // the ARROWHEAD at the next wheel, pointing onward along the rail
+                    {
+                        const float ux = cosf(aN), uy = sinf(aN), tx = -uy * dir, ty = ux * dir, h = hA * 0.70f, wd = hA * 0.55f;
+                        const float bx = ccx + ux * rM - tx * h * 0.35f, by = ccy + uy * rM - ty * h * 0.35f;
+                        float tr[6] = { bx + tx * h, by + ty * h, bx + ux * wd, by + uy * wd, bx - ux * wd, by - uy * wd };
+                        float sh[6]; for (int q = 0; q < 6; ++q) sh[q] = tr[q] + (q & 1 ? 1.1f : 0.8f) * S;
+                        fill_poly_aa(dev, sh, 3, 0x90000000u);
+                        const float g2 = 1.0f * S;
+                        float ed[6] = { tr[0] + tx * g2 * 1.6f, tr[1] + ty * g2 * 1.6f, tr[2] + ux * g2 - tx * g2, tr[3] + uy * g2 - ty * g2, tr[4] - ux * g2 - tx * g2, tr[5] - uy * g2 - ty * g2 };
+                        fill_poly_aa(dev, ed, 3, g_dm.edge | 0xFF000000u);
+                        fill_poly_aa(dev, tr, 3, pod_mix(g_dm.body, g_dm.lite, 0.60f) | 0xFF000000u);
+                        const float hl[6] = { tr[0], tr[1], tr[2], tr[3], bx, by };
+                        fill_poly_aa(dev, hl, 3, MA(0xB0, g_dm.glint));
+                    }
+                    // the PRESENT : a polished lozenge set on the rail, a red enamel dot
+                    {
+                        const float ux = cosf(th), uy = sinf(th), tx = -uy, ty = ux, mx = ccx + ux * rM, my = ccy + uy * rM;
+                        const float L = hA * 0.85f, W = hA * 0.50f;
+                        float lz[8] = { mx + ux * L, my + uy * L, mx + tx * W, my + ty * W, mx - ux * L, my - uy * L, mx - tx * W, my - ty * W };
+                        float sh[8]; for (int q = 0; q < 8; ++q) sh[q] = lz[q] + (q & 1 ? 1.2f : 0.9f) * S;
+                        fill_poly_aa(dev, sh, 4, 0x90000000u);
+                        float ed[8] = { mx + ux * (L + 1.0f * S), my + uy * (L + 1.0f * S), mx + tx * (W + 1.0f * S), my + ty * (W + 1.0f * S),
+                                        mx - ux * (L + 1.0f * S), my - uy * (L + 1.0f * S), mx - tx * (W + 1.0f * S), my - ty * (W + 1.0f * S) };
+                        fill_poly_aa(dev, ed, 4, g_dm.edge | 0xFF000000u);
+                        fill_poly_aa(dev, lz, 4, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);
+                        const float hl[6] = { lz[0], lz[1], lz[2], lz[3], mx, my };
+                        fill_poly_aa(dev, hl, 3, MA(0xC0, g_dm.glint));
+                        disc(dev, mx, my, W * 0.45f, 0xFFA82418u);
                     }
                 };
                 if (c.mmClock && c.mmClkDay) marks(s_dayTh);
