@@ -1160,6 +1160,98 @@ static void draw_pos_pod(u32 dev, Font* fo, float cx, float cy, float r, float S
     color_state(dev);
 }
 
+void clip_rect_begin(u32 dev, float x, float y, float w, float h);   // ui/config_controls.cpp : the viewport scissor
+void clip_rect_end(u32 dev);
+// COMBINATION-LOCK WHEELS (the user 2026-11-25 : "mechanical -- papyrus that turns" ; "a wheel for each number" ; "a
+// roller only for each element that can move") : a window's text is split into what can CHANGE -- each digit its own
+// parchment wheel, a word (New / Full) one wide wheel, the grid column's letter a wheel -- and what never moves -- ':' '-',
+// a unit after a number ('d', 'j'), spaces -- ENGRAVED in the metal between the wheels. Each wheel is a cylinder (darker
+// toward its top, bottom and sides, a bright crown facing you). When a value changes only the wheels whose text changed
+// ROLL one notch (the old up and away, the new in from below, ~0.2 s). The ink stays upright ; each wheel clips its roll.
+struct DrumTok { char t[12]; bool wheel; float w; };
+static int drum_tokens(Font* fo, const char* txt, float sz, float S, DrumTok* out, int cap) {
+    int n = 0, i = 0;
+    const float dw = fo ? fo->measure("0", sz) : 7.0f * S;
+    auto isL = [](char ch) { return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (unsigned char)ch >= 0xC0 || ch == '.'; };
+    while (txt[i] && n < cap) {
+        DrumTok& k = out[n]; k.t[0] = 0; k.wheel = false; k.w = 0.0f;
+        const char ch = txt[i];
+        if (ch >= '0' && ch <= '9') {                                    // ONE DIGIT, ONE CYLINDER (0-9, an odometer : the user 2026-11-25)
+            k.t[0] = ch; k.t[1] = 0; k.wheel = true; k.w = dw + 2.4f * S; ++i;
+            const bool nextDigit = txt[i] >= '0' && txt[i] <= '9';
+            k.w += nextDigit ? 0.0f : 0.0f;
+        }
+        else if (isL(ch)) {
+            int j = i, m = 0; while (txt[j] && isL(txt[j]) && m < 10) k.t[m++] = txt[j++];
+            k.t[m] = 0;
+            const bool unit = m == 1 && i > 0 && txt[i - 1] >= '0' && txt[i - 1] <= '9';   // '17d' : the d never moves
+            k.wheel = !unit;
+            float mw = fo ? fo->measure(k.t, sz) : 7.0f * S * (float)m;
+            if (k.wheel && fo && m >= 2) {                                 // a WORD wheel holds its longest word : it never resizes
+                static const char* WORDS[] = { "New", "Full", "Nouv.", "Pleine" };
+                for (const char* wd : WORDS) { const float ww2 = fo->measure(wd, sz); if (ww2 > mw) mw = ww2; }
+            }
+            if (k.wheel && m == 1 && fo) { const float mw2 = fo->measure("W", sz); if (mw2 > mw) mw = mw2; }   // a letter wheel : A-Z, the width of the widest
+            k.w = mw + (k.wheel ? 3.2f * S : 1.0f * S);
+            i = j;
+        } else { k.t[0] = ch; k.t[1] = 0; k.wheel = false; k.w = ch == ' ' ? 3.0f * S : (fo ? fo->measure(k.t, sz) : 4.0f * S) + 1.2f * S; ++i; }
+        ++n;
+    }
+    return n;
+}
+static float drum_width(Font* fo, const char* txt, float sz, float S) {
+    DrumTok tk[16]; const int n = drum_tokens(fo, txt, sz, S, tk, 16);
+    float w = 0.0f; for (int i = 0; i < n; ++i) w += tk[i].w; return w;
+}
+static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw, float hh, const char* txt, float sz, float S) {
+    if (!fo || slot < 0 || slot > 3) return;
+    (void)hw;
+    DrumTok tk[16]; const int n = drum_tokens(fo, txt, sz, S, tk, 16);
+    static char cur[4][16][12] = {}, old[4][16][12] = {}; static unsigned tch[4][16] = {}; static bool seen[4] = {};
+    const unsigned now = GetTickCount();
+    for (int i = 0; i < 16; ++i) {
+        const char* nv = i < n ? tk[i].t : "";
+        if (strcmp(nv, cur[slot][i]) != 0) {
+            strcpy(old[slot][i], cur[slot][i]); strncpy(cur[slot][i], nv, 11); cur[slot][i][11] = 0;
+            tch[slot][i] = seen[slot] ? now : 0;
+        }
+    }
+    seen[slot] = true;                                                    // (the first frame shows the value in place)
+    const float tw = drum_width(fo, txt, sz, S), y0 = cy - hh, h = 2.0f * hh, lh = h * 0.95f;
+    float x = cx - tw * 0.5f;
+    for (int i = 0; i < n; ++i) {
+        const float ww = tk[i].w;
+        if (tk[i].wheel) {
+            color_state(dev);
+            rrect(dev, x + 0.4f * S, y0, ww - 0.8f * S, h, snap(1.2f * S), 0xFFD6BC86u, 0xFFD6BC86u);   // the wheel's parchment
+            rrect(dev, x + ww * 0.14f, y0 + h * 0.24f, ww * 0.72f, h * 0.52f, 0.0f, 0xFFEBD8AAu, 0xFFEBD8AAu);   // its bright crown
+            grad_quad(dev, x, y0, ww, h * 0.32f, 0xB03A2410u, 0xB03A2410u, 0x003A2410u, 0x003A2410u);  // turning away : top...
+            grad_quad(dev, x, y0 + h * 0.68f, ww, h * 0.32f, 0x003A2410u, 0x003A2410u, 0xB03A2410u, 0xB03A2410u);   // ...bottom
+            grad_quad(dev, x, y0, ww * 0.16f, h, 0x603A2410u, 0x003A2410u, 0x603A2410u, 0x003A2410u);   // ...its rounded sides
+            grad_quad(dev, x + ww * 0.84f, y0, ww * 0.16f, h, 0x003A2410u, 0x603A2410u, 0x003A2410u, 0x603A2410u);
+            const char* ol = old[slot][i];
+            const float cw = fo->measure(tk[i].t, sz), ow = ol[0] ? fo->measure(ol, sz) : 0.0f;
+            float k = tch[slot][i] ? (float)(now - tch[slot][i]) / 200.0f : 1.0f; if (k > 1.0f) k = 1.0f;
+            const float e = 1.0f - (1.0f - k) * (1.0f - k);
+            clip_rect_begin(dev, x, y0, ww, h);
+            fo->begin(dev);
+            if (k < 1.0f && ol[0]) fo->draw_lc(dev, snap(x + (ww - ow) * 0.5f), snap(cy - e * lh), ol, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the old value rolls away
+            fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy + (1.0f - e) * lh), tk[i].t, sz, 0xFF2E1C0Cu, 0, 0.0f);     // the new one rolls in
+            clip_rect_end(dev);
+        } else if (tk[i].t[0] != ' ') {                                  // ENGRAVED in the metal : a lit lip under a dark cut
+            const float cw = fo->measure(tk[i].t, sz);
+            fo->begin(dev);
+            fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy + 0.8f), tk[i].t, sz, 0xC0000000u, 0, 0.0f);   // engraved, but READABLE : a light metal
+            fo->draw_lc(dev, snap(x + (ww - cw) * 0.5f), snap(cy), tk[i].t, sz, g_dm.lite | 0xFF000000u, 0, 0.0f);
+        }
+        x += ww;
+        if (tk[i].wheel && i + 1 < n && tk[i + 1].wheel && tk[i].t[0] >= '0' && tk[i].t[0] <= '9' && tk[i + 1].t[0] >= '0' && tk[i + 1].t[0] <= '9') {
+            color_state(dev);                                              // the cut between two cylinders of one number : a hairline
+            rrect(dev, x - 0.5f * S, y0, 1.0f * S, h, 0.0f, 0xC0201408u, 0xC0201408u);
+        }
+    }
+    color_state(dev);
+}
 static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, const VanaClock& v, u32 elemTex, u32 wxTex,
                                  float mapX, float mapY, float cx, float cy, float rc, float r, float S, float zoomA, bool sq, int pass) {
     // pass 0 : the MODULES -- sky, weather, moon, position, the band -- drawn BEFORE the map and the ring : they are mounted
@@ -1352,9 +1444,9 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         char posTxt[12] = ""; bool posBand = false;
         if (c.mmGrid && c.mmDayDial == 2 && !sq) {
             const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
-            if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { sprintf(posTxt, "%c-%d", 'A' + gc, gr + 1); posBand = true; }
+            if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { sprintf(posTxt, "%c-%02d", 'A' + gc, gr + 1); posBand = true; }   // two cylinders, always
         }
-        const float posHalf = posBand && tf ? snap(tf->measure(posTxt, pSz) * 0.5f + 7.0f * S) : 0.0f;
+        const float posHalf = posBand && tf ? snap(drum_width(tf, posTxt, pSz, S) * 0.5f + 3.0f * S) : 0.0f;
         const float lc0 = bx0 + bins, lc1 = cx - (posBand ? posHalf + 4.0f * S : 7.0f * S), rc0 = cx + (posBand ? posHalf + 4.0f * S : 7.0f * S), rc1 = bx1 - bins;   // the compartments
         // THE PLINTH (the user 2026-11-25 : "rethink how it was forged, credible in FFXI -- steampunk or magic in its
         // making" ; "the cartouches still overflow") : Vana'diel's craft is Bastok's machinery driven by crystals, so the
@@ -1363,11 +1455,11 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         // between them. The windows sit on ONE row : the room under the ring only grows toward the sides, nothing can
         // overflow. Moon (left) | grid square (centre, under the S) | hour (right). (Round, modules style.)
         const bool foot = !sq && c.mmDayDial == 2;
-        float cwX[3] = { (lc0 + lc1) * 0.5f, cx, (rc0 + rc1) * 0.5f }, cwY[3] = { bmid, bmid, bmid }, cwH[3] = { 0, posHalf, 0 };
+        float cwX[3] = { (lc0 + lc1) * 0.5f, cx, (rc0 + rc1) * 0.5f }, cwY[3] = { bmid, bmid, bmid }, cwH[3] = { 0, posHalf, 0 }, cwHH = 0.0f;
         if (foot && (bandMoon || bandDay || posBand)) {
             const float wh = snap(pSz + 6.0f * S), bz = snap(4.0f * S), gap = snap(9.0f * S);
-            const float hwM = tf ? tf->measure(c.lang == 1 ? "Pleine 99j" : "Full 99d", pSz) * 0.5f + 6.0f * S : 30.0f * S;
-            const float hwT = tf ? tf->measure("00:00", pSz) * 0.5f + 7.0f * S : 22.0f * S;
+            const float hwM = snap(drum_width(tf, c.lang == 1 ? "Nouv. 99j" : "Full 99d", pSz, S) * 0.5f + 3.0f * S);   // the windows hold their wheels
+            const float hwT = snap(drum_width(tf, "00:00", pSz, S) * 0.5f + 3.0f * S);
             const float hwP = posBand ? posHalf : 0.0f;
             const float yB = snap(cy + r + 2.0f * S + wh + bz * 1.6f);                       // the base line
             const float yC = snap(yB - bz - wh * 0.5f);                                      // the windows' row
@@ -1412,10 +1504,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                     fill_poly_aa(dev, o8, 8, col);
                 };
                 oct(1.5f * S, g_dm.lite);                                                    // the cut bevel, lit...
-                oct(0.6f * S, g_dm.dark);                                                    // ...its inner shade
-                oct(0.0f, 0xFF0C1018u);                                                      // the dark enamel...
-                grad_quad(dev, x0 + cc, yC, (x1 - x0) - 2.0f * cc, wh * 0.5f - 0.5f, 0x00204A70u, 0x00204A70u, 0x50305C88u, 0x50305C88u);   // ...lit from below by CRYSTAL light
-                grad_quad(dev, x0 + cc, y0, (x1 - x0) - 2.0f * cc, 2.0f * S, 0x80000000u, 0x80000000u, 0x00000000u, 0x00000000u);   // the lip's shadow
+                oct(0.6f * S, g_dm.dark);                                                    // ...its inner shade : the drum turns behind it
+                cwHH = wh * 0.5f - 0.6f * S;
             }
             for (int k = 0; k < 2; ++k) {                                                    // the CRYSTAL SHARDS between the windows
                 if (!on3[1]) break;
@@ -1430,7 +1520,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 seg_soft(dev, sx, yC - hh * 0.8f, sx, yC + hh * 0.8f, 0.8f, 0xC0FFFFFFu);
             }
             color_state(dev);
-            if (posBand) plateText(cwX[1], cwY[1], posTxt, 0xFFF0D898u, -1);
+            if (posBand) drum_text(dev, tf, 1, cwX[1], cwY[1], cwH[1] - 0.6f * S, cwHH, posTxt, pSz, S);
         }
         if (!foot && (bandMoon || bandDay)) {
             color_state(dev);
@@ -1501,8 +1591,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             const bool fullFirst = v.daysToFull < v.daysToNew;
             const int dd = fullFirst ? v.daysToFull : v.daysToNew;
             char mb[32];
-            if (dd <= 0) sprintf(mb, "%s", c.lang == 1 ? (fullFirst ? "Pleine" : "Nouvelle") : (fullFirst ? "Full" : "New"));
-            else sprintf(mb, c.lang == 1 ? (fullFirst ? "Pleine %dj" : "Nouv. %dj") : (fullFirst ? "Full %dd" : "New %dd"), dd);
+            (void)0;                                                                      // (day 0 : "00", the cylinders stay -- an odometer never loses a wheel)
+            sprintf(mb, c.lang == 1 ? (fullFirst ? "Pleine %02dj" : "Nouv. %02dj") : (fullFirst ? "Full %02dd" : "New %02dd"), dd < 0 ? 0 : dd);
             const float ty = bmid;
             bezel(x, y, 0xFF101C3Cu, true);
             color_state(dev);
@@ -1511,7 +1601,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             draw_moon_sphere(dev, x, y, sr, v.moonPct, v.waning);                  // a lit sphere by the real phase, the WHOLE face (the user 2026-11-25)
             glass_dome(dev, x, y, sr, 0xFF9CB8FFu, 0.35f);                         // under a glass dome (soft : the moon is light)
             color_state(dev);
-            plateText(cwX[0], foot ? cwY[0] : ty, mb, fullFirst ? 0xFFF8E6B0u : 0xFFC8D6F4u, -1);
+            if (foot && cwHH > 0.0f) drum_text(dev, tf, 0, cwX[0], cwY[0], cwH[0] - 0.6f * S, cwHH, mb, pSz, S);
+            else plateText(cwX[0], ty, mb, fullFirst ? 0xFFF8E6B0u : 0xFFC8D6F4u, -1);
         }
         PERF_END("mm.moon");
         PERF_BEGIN("mm.globe");
@@ -1545,7 +1636,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 const float hl[6] = { x, nTop + 0.6f * S, x + nw * 0.75f, nTop + 0.6f * S, x, nTip - 1.5f * S };
                 fill_poly_aa(dev, hl, 3, MA(0xB0, g_dm.glint));                       // its lit facet
             }
-            if (tb[0]) plateText(foot ? cwX[2] : (rc0 + rc1) * 0.5f, foot ? cwY[2] : ty, tb, 0xFFF4EEDFu, -1);
+            if (tb[0] && foot && cwHH > 0.0f) drum_text(dev, tf, 2, cwX[2], cwY[2], cwH[2] - 0.6f * S, cwHH, tb, pSz, S);
+            else if (tb[0]) plateText((rc0 + rc1) * 0.5f, ty, tb, 0xFFF4EEDFu, -1);
         }
         color_state(dev);
     }
