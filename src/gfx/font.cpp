@@ -221,11 +221,16 @@ void Font::build(u32 dev, Slot& s, int em) {
 
     for (int c = FIRST; c <= LAST; ++c) {
         char ch = (char)c;
-        int adv; ABC abc;
-        if (GetCharABCWidthsA(hdc, c, c, &abc)) adv = abc.abcA + (int)abc.abcB + abc.abcC;
+        int adv; ABC abc; int inkR = 0;
+        if (GetCharABCWidthsA(hdc, c, c, &abc)) { adv = abc.abcA + (int)abc.abcB + abc.abcC; inkR = abc.abcA + (int)abc.abcB; }
         else { SIZE sz; GetTextExtentPoint32A(hdc, &ch, 1, &sz); adv = sz.cx; }
         if (adv < 1) adv = (int)(em * 0.3f);
-        if (penx + adv + pad > AW) { penx = pad; peny += rowH; }
+        // the CELL : the advance, widened to the ink's right edge when the glyph overhangs it (a negative C width :
+        // bold digits do) plus 1 px of antialiasing. A cell cut at the advance clipped the right of the LAST character
+        // of every string (the user 2026-11-25 : "the ping is cut on its right, look at the 0") -- mid-string the next
+        // glyph covered it. The quad is this wide ; the pen still moves by the advance.
+        const int cw = (inkR + 1 > adv ? inkR + 1 : adv);
+        if (penx + cw + pad > AW) { penx = pad; peny += rowH; }
         if (peny + cellH > AH) {
             // SAY IT. Every glyph past this point keeps its default G -- w = h = adv = 0 -- and the slot is still
             // published as valid below, so those characters render as nothing AND advance nothing: they vanish
@@ -238,16 +243,16 @@ void Font::build(u32 dev, Slot& s, int em) {
         }
         if (c != ' ') TextOutA(hdc, penx, peny, &ch, 1);
         G& g = s.g[c - FIRST];
-        g.u0 = (float)penx / AW;          g.u1 = (float)(penx + adv) / AW;
+        g.u0 = (float)penx / AW;          g.u1 = (float)(penx + cw) / AW;
         g.v0 = (float)peny / AH;          g.v1 = (float)(peny + cellH) / AH;
-        g.w  = (float)adv; g.h = (float)cellH; g.adv = (float)adv;
+        g.w  = (float)cw; g.h = (float)cellH; g.adv = (float)adv;
 
         // per-glyph INK bbox (rel. to this cell's top-left) -> true visual centring (draw_cc)
         {
-            int minx = adv, maxx = -1, miny = cellH, maxy = -1;
+            int minx = cw, maxx = -1, miny = cellH, maxy = -1;
             for (int yy = 0; yy < cellH; ++yy) {
                 const u32* row = px + (peny + yy) * AW;
-                for (int xx = penx; xx < penx + adv && xx < AW; ++xx)
+                for (int xx = penx; xx < penx + cw && xx < AW; ++xx)
                     if (((row[xx] >> 16) & 0xFF) > 40) {
                         int rx = xx - penx;
                         if (rx < minx) minx = rx; if (rx > maxx) maxx = rx;
@@ -266,7 +271,7 @@ void Font::build(u32 dev, Slot& s, int em) {
                 if (ink) { if (yy < inkTop) inkTop = yy; if (yy > inkBot) inkBot = yy; }
             }
         }
-        penx += adv + pad;
+        penx += cw + pad;
     }
 
     s.em = em; s.base = (float)em;
