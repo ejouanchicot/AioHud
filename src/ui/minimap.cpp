@@ -3356,7 +3356,6 @@ void Minimap::draw(const Frame& f) {
     if (dialSq) {                                                  // the square watch case (the map is drawn inside it)
         fi = snap(r * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f));
         draw_square_case(dev, ccx, ccy, r, fi, S);
-        if (c.mmDayDial == 2 && s_skyPod) draw_index_marks(dev, f, c, g, S, fi);   // the modules' time arrows on the frame
     } else if (c.mmFrame == 1 && !round) {
         const int theme = c.skinTheme; const float lum = c.skinLum;
         if (window_theme_is_proc(theme)) { draw_proc_window(dev, theme, mapLeft, mapTop, mapD, mapD, 0xFFFFFFFFu, false, true, lum, c.skinHue); fi = snap(6.0f * S); themedOk = true; }
@@ -3868,6 +3867,7 @@ void Minimap::draw(const Frame& f) {
         if (f.t < s_zoomT) za = 0.0f;                                       // f.t wrapped
         const VanaClock dv = dial_vana(g.vana);
         if (dialSq) { color_state(dev); rrect_stroke(dev, wx0 - 0.5f, wy0 - 0.5f, wx1 - wx0 + 1.0f, wy1 - wy0 + 1.0f, snap(2.0f * S), 0xC0140F08u, snap(1.4f * S)); }   // the inner edge's shadow on the map
+        if (dialSq && c.mmDayDial == 2 && s_skyPod) draw_index_marks(dev, f, c, g, S, fi);   // the modules' time arrows and the moon's counter on the frame -- AFTER the map (it covered them)
         ensure_raw_tex_mip(dev, wxTex_, wxR_, plugin_path_r("assets\\weather_icons.raw"), 1024, 128);   // the weather orbs' HD icons
         { PERF_SCOPE("mm.dial"); draw_dial_instrument(dev, f, c, g, dv, elemTex_, wxTex_, mapX, mapY, ccx, ccy, dialSq ? r - fi : rc, r, S, za, dialSq, 1); }
     }
