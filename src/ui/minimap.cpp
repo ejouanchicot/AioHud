@@ -1280,11 +1280,13 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 float dep = cl(p / 0.5f); dep = dep * dep * (3.0f - 2.0f * dep);
                 float spr = cl((p - 0.5f) / 0.3f); spr = spr * spr * (3.0f - 2.0f * spr);
                 const float lab = cl((p - 0.8f) / 0.2f);
-                if (p <= 0.0f) { color_state(dev); goto weather_done; }            // folded away : nothing shows
+                // (folded, it stays VISIBLE : stowed on top of the sky dial, its wells stacked -- the user 2026-11-25)
                 {
                 // the axis : compass centre -> sky dial ; the carrier's centre beyond the sky dial on it, the wells across it
-                const float ax0 = x - cx, ay0 = y - cy, aL = sqrtf(ax0 * ax0 + ay0 * ay0), ux = ax0 / aL, uy = ay0 / aL, tx = -uy, ty = ux;
-                const float D = (sr + rs + TUNE("mm.slot_out", 3.0f) * S) * dep, half = rs * TUNE("mm.slot_gap", 1.10f) * spr;
+                // the MAIN FRAME's orientation : straight up from the sky dial, the wells side by side horizontally
+                const float ux = 0.0f, uy = -1.0f, tx = 1.0f, ty = 0.0f;
+                const float D0 = sr + rs * 0.25f, D1 = sr + rs + TUNE("mm.slot_out", 3.0f) * S;
+                const float D = D0 + (D1 - D0) * dep, half = rs * TUNE("mm.slot_gap", 1.10f) * spr;
                 float OX[2], OY[2];
                 for (int q = 0; q < 2; ++q) {
                     OX[q] = x + ux * D + (q == 0 ? -1.0f : 1.0f) * tx * half;
@@ -1346,7 +1348,6 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 }
                 color_state(dev);
                 }
-                weather_done:;
             }
             bezel(x, y, 0xFF0E1830u);                                                   // the sky dial over the folded weather module
             const float t = (float)v.hh + (float)v.mm / 60.0f;
