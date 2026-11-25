@@ -1537,6 +1537,7 @@ void ensure_event_hook() {
 // each window's buffer is reset when its draw starts, so it always holds its last complete frame.
 const unsigned char PRO_WINDRAW[5]   = { 0x83,0xEC,0x24,0x53,0x55 };
 const unsigned char PRO_TEXTCORE[5]  = { 0x83,0xEC,0x08,0x53,0x55 };
+const unsigned char PRO_SPRITE[7]    = { 0x51,0x53,0x55,0x56,0x8B,0x71,0x14 };
 const unsigned char PRO_ASCII[8]     = { 0x83,0xEC,0x08,0x53,0x8B,0x5C,0x24,0x18 };
 const unsigned char PRO_ASCIIR[6]    = { 0x51,0x56,0x8B,0x74,0x24,0x14 };
 const unsigned char PRO_ASCIIC[7]    = { 0x8B,0x54,0x24,0x10,0x83,0xEC,0x10 };
@@ -1545,9 +1546,14 @@ Hook g_hkTxCore  = { 0, PRO_TEXTCORE, 5, 0, 0, {0}, false, "text capture : propo
 Hook g_hkTxAsc   = { 0, PRO_ASCII,    8, 0, 0, {0}, false, "text capture : ascii text" };
 Hook g_hkTxAscR  = { 0, PRO_ASCIIR,   6, 0, 0, {0}, false, "text capture : right-aligned ascii" };
 Hook g_hkTxAscC  = { 0, PRO_ASCIIC,   7, 0, 0, {0}, false, "text capture : clipped ascii" };
+Hook g_hkSprite  = { 0, PRO_SPRITE,   7, 0, 0, {0}, false, "text capture : entry images" };
 struct CapRun { short x, y; u32 col; char s[60]; };
 struct CapWin { u32 win; DWORD ms; int n; CapRun r[40]; };
-CapWin g_cap[24]; u32 g_capCur = 0; int g_capSlot = -1, g_capDepth = 0;
+CapWin g_cap[24]; u32 g_capCur = 0; int g_capSlot = -1, g_capDepth = 0, g_capWy = 0;
+// a parked window's text that still lands on the screen : some rows keep the origin the client cached BEFORE the park
+// (quest00's, 2026-11-25 : the client's rows showed under AioHUD's Journal). Drawn HIDE_DY lower -- off-screen with
+// their window ; the capture keeps the real y (gen_panel_read folds it back), the return value (end x) is unchanged
+inline u32 cap_park_y(u32 y) { return g_capCur && (int)y - g_capWy < -HIDE_DY / 2 ? y + (u32)HIDE_DY : y; }
 typedef u32 (__fastcall* WinDrawFn)(u32 win, u32 edx);
 typedef u32 (__fastcall* TextCoreFn)(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy);
 typedef u32 (__cdecl* Cdecl10Fn)(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);
@@ -1578,9 +1584,10 @@ u32 __fastcall hk_windraw_body(u32 win, u32 edx) {
     for (int i = 0; i < 24; ++i) if (g_cap[i].win == win) { s = i; break; }
     if (s < 0) for (int i = 0; i < 24; ++i) if (s < 0 || (int)(now - g_cap[i].ms) > (int)(now - g_cap[old].ms)) { s = i; old = i; }
     g_cap[s].win = win; g_cap[s].ms = now; g_cap[s].n = 0;
-    g_capCur = win; g_capSlot = s;
+    const int pwy = g_capWy; short wy = 0; if (!rd16(win + OBJ_RECT + 2, wy)) wy = 0;
+    g_capCur = win; g_capSlot = s; g_capWy = wy;
     const u32 r = ((WinDrawFn)g_hkWinDraw.tramp)(win, edx);
-    g_capCur = pc; g_capSlot = ps;
+    g_capCur = pc; g_capSlot = ps; g_capWy = pwy;
     return r;
 }
 u32 __fastcall hk_windraw(u32 win, u32 edx) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
@@ -1588,8 +1595,18 @@ u32 __fastcall hk_windraw(u32 win, u32 edx) {   // relay_enter / relay_leave : a
 }
 u32 __fastcall hk_txcore_body(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy) {
     if (g_capCur) cap_add((int)x, (int)y, s, (int)len, col);
-    ++g_capDepth; const u32 r = ((TextCoreFn)g_hkTxCore.tramp)(font, edx, x, y, s, len, col, fl, sx, sy); --g_capDepth;
+    ++g_capDepth; const u32 r = ((TextCoreFn)g_hkTxCore.tramp)(font, edx, x, cap_park_y(y), s, len, col, fl, sx, sy); --g_capDepth;
     return r;
+}
+// the window IMAGES : the inner sprite draw FUN_05460FF0 (Nov ; thiscall (x, y, colour, ?, ?) ret 0x14, 213 callers) under
+// both the entry images (FUN_05461110, the window draw's children) and the draw-rect helper FUN_05458580 (a row's bullet,
+// the RoE row callback) : quest00's bullets stayed on the screen with the rows' texts -- the same park (cap_park_y)
+typedef u32 (__fastcall* Sprite5Fn)(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5);
+u32 __fastcall hk_sprite_body(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5) {
+    return ((Sprite5Fn)g_hkSprite.tramp)(spr, edx, x, cap_park_y(y), a3, a4, a5);
+}
+u32 __fastcall hk_sprite(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5) {   // relay_enter / relay_leave (R1)
+    relay_enter(); const auto r = hk_sprite_body(spr, edx, x, y, a3, a4, a5); relay_leave(); return r;
 }
 u32 __fastcall hk_txcore(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
     relay_enter(); const auto r = hk_txcore_body(font, edx, x, y, s, len, col, fl, sx, sy); relay_leave(); return r;
@@ -1597,7 +1614,7 @@ u32 __fastcall hk_txcore(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len
 // the ascii ones are cdecl : 10 slots forwarded (the caller cleans ; the extra ones are its own stack, untouched)
 u32 __cdecl hk_txasc_body(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
     if (g_capCur) cap_add((short)a1, (short)a2, (const char*)a3, 0, a4);
-    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAsc.tramp)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
+    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAsc.tramp)(a1, cap_park_y(a2), a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
     return r;
 }
 u32 __cdecl hk_txasc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
@@ -1605,7 +1622,7 @@ u32 __cdecl hk_txasc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32
 }
 u32 __cdecl hk_txascr_body(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
     if (g_capCur) cap_add((short)a1, (short)a2, (const char*)a3, 0, a4 | 0x01000000u);   // right-aligned : x is its RIGHT edge (bit 24 of the colour marks it)
-    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscR.tramp)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
+    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscR.tramp)(a1, (u32)(short)cap_park_y((u32)(int)(short)a2), a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
     return r;
 }
 u32 __cdecl hk_txascr(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
@@ -1613,7 +1630,7 @@ u32 __cdecl hk_txascr(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u3
 }
 u32 __cdecl hk_txascc_body(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
     if (g_capCur) cap_add((int)a2, (short)a3, (const char*)a4, 0, a5);
-    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscC.tramp)(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
+    ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscC.tramp)(a1, a2, (u32)(short)cap_park_y((u32)(int)(short)a3), a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
     return r;
 }
 u32 __cdecl hk_txascc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
@@ -1631,6 +1648,7 @@ void ensure_text_capture() {
     const u32 ac   = aob_masked("8B 54 24 10 83 EC 10 85 D2 75 09 0F BF 44 24 18 83 C4 10 C3 53 55 56 57 6A 00 E8");
     const u32 ar   = aob_masked("51 56 8B 74 24 14 85 F6 75 08 0F BF 44 24 0C 5E 59 C3 53");
     const u32 wd   = aob_masked("83 EC 24 53 55 56 57 8B E9 E8 ?? ?? ?? ?? 66 8B 45 56 33 FF 66 3B C7");
+    const u32 sp   = aob_masked("51 53 55 56 8B 71 14 8D 59 04 57 8B CB E8 ?? ?? ?? ?? 89 44 24 10 8B 44 24 28");   // unique Nov + June
     u32 asc = 0; if (aw) { u32 rel = 0; if (safe_read(aw + 0x21, &rel)) asc = aw + 0x25 + rel; }
     if (!core || !wd) {
         if (tries == 1 || tries == 20) windower::debug::log("NATIVEUI text capture : not found (try %d : core %08X, window draw %08X)%s", tries, core, wd, tries == 20 ? " -- giving up : the unnamed lists stay the client's" : "");
@@ -1640,14 +1658,15 @@ void ensure_text_capture() {
     g_hkTxAsc.at = asc;   g_hkTxAsc.dst = (void*)&hk_txasc;
     g_hkTxAscR.at = ar;   g_hkTxAscR.dst = (void*)&hk_txascr;
     g_hkTxAscC.at = ac;   g_hkTxAscC.dst = (void*)&hk_txascc;
+    g_hkSprite.at = sp;   g_hkSprite.dst = (void*)&hk_sprite;
     g_hkWinDraw.at = wd;  g_hkWinDraw.dst = (void*)&hk_windraw;
     if (!hook_on(g_hkTxCore)) return;
-    if (asc) hook_on(g_hkTxAsc); if (ar) hook_on(g_hkTxAscR); if (ac) hook_on(g_hkTxAscC);
-    if (!hook_on(g_hkWinDraw)) { hook_off(g_hkTxCore); hook_off(g_hkTxAsc); hook_off(g_hkTxAscR); hook_off(g_hkTxAscC); return; }
+    if (asc) hook_on(g_hkTxAsc); if (ar) hook_on(g_hkTxAscR); if (ac) hook_on(g_hkTxAscC); if (sp) hook_on(g_hkSprite);
+    if (!hook_on(g_hkWinDraw)) { hook_off(g_hkTxCore); hook_off(g_hkTxAsc); hook_off(g_hkTxAscR); hook_off(g_hkTxAscC); hook_off(g_hkSprite); return; }
     g_capOk = true;
-    windower::debug::log("NATIVEUI text capture : on (try %d ; ascii %d, right %d, clipped %d)", tries, g_hkTxAsc.on, g_hkTxAscR.on, g_hkTxAscC.on);
+    windower::debug::log("NATIVEUI text capture : on (try %d ; ascii %d, right %d, clipped %d, entry images %d)", tries, g_hkTxAsc.on, g_hkTxAscR.on, g_hkTxAscC.on, g_hkSprite.on);
 }
-void text_capture_off() { hook_off(g_hkWinDraw); hook_off(g_hkTxCore); hook_off(g_hkTxAsc); hook_off(g_hkTxAscR); hook_off(g_hkTxAscC); g_capOk = false; g_capCur = 0; }
+void text_capture_off() { hook_off(g_hkWinDraw); hook_off(g_hkSprite); hook_off(g_hkTxCore); hook_off(g_hkTxAsc); hook_off(g_hkTxAscR); hook_off(g_hkTxAscC); g_capOk = false; g_capCur = 0; }
 // a window's texts of its last drawn frame (none when it was not drawn for 300 ms)
 int text_capture(u32 win, const CapRun*& runs) {
     runs = 0; if (!g_capOk || !win) return 0;
@@ -3612,6 +3631,8 @@ static const char* const GEN_SKIP[] = { "titlewin", "helpwind", "logwindo", "log
     "bank", "equip", "inspect", "comment", "loot", "lootope", "lnowin", "post1", "post2", "delivery", "stringdl", "roomlist", "fep", "query", "evitem", "gift",
     "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcrmenu", "mcrselop", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
     "cmbhlst", "tskill1", "cmbhwin",   // Synthesis (its module ; 2026-11-22 : the panel engine drew its History a second time, misplaced)
+    "link5", "link6", "link12",        // Linkshell (its module ; 2026-11-25 : link5 is born before g_ls reads it -- the panel engine learned it and
+                                       // drew the items a second time, over the module's box)
     0 };
 bool gen_skip_name(const char* n) { return in_list(n, GEN_SKIP); }
 static bool gen_candidate(const char* nm, int hide) {
