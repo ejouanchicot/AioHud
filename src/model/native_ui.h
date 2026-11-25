@@ -198,9 +198,12 @@ const NativeCfgFilter& native_cfg_filter();
 // the MAP (mapframe, docs/notes/map-macro-re-2026-11-21.md s.1) : the client paints it across the whole screen ; AioHUD
 // draws it in its place with the client's own view (zoom / scroll), so the client's pan / zoom / cursor keys still drive it.
 // Every position is the client's UI px (sx = screenW / uiW) or map px (the 512-px image's frame, before the record origin)
-struct NativeMapIcon { short x, y; unsigned short flags; unsigned char sprite, alpha; float angle; char label[20]; };
+struct NativeMapIcon { short x, y; unsigned short flags; unsigned char sprite, alpha; float angle; char label[24]; };
+const int NATIVE_MAP_ICONS = 192;   // Region Info's map holds 169 (its regions + their zones)
 struct NativeMap {
     bool open;                 // read this frame (the client's map is parked only then)
+    int  kind;                 // 0 the zone map (mapframe) ; 1 Region Info's world map (cnqframe : mode = Conquest / Besieged / Campaign / Colonization)
+    int  hover;                // cnqframe : the record under the cursor (its icon = hover - 1 ; -1 none)
     int  uiW, uiH;
     int  zone, sub, mode;      // mode : 0 normal, 5 another zone / map, 1..3 an event, 4 markers only, 6 small framed, 7 picture
     unsigned fileId;           // the map DAT (0 = none : no record / not owned)
@@ -212,7 +215,8 @@ struct NativeMap {
     bool player; short px, py; float heading;   // the player's icon (map px, heading rad)
     bool target; short tx, ty;                  // the tracked target
     int  page;                 // the markers page (0 own, 1 event, 2 party, 3 alliance)
-    int  nIcons; NativeMapIcon icon[40];        // the markers / Wide Scan dots shown
+    int  nIcons; NativeMapIcon icon[NATIVE_MAP_ICONS];   // the markers / Wide Scan dots / regions shown
+    short iconIdx[NATIVE_MAP_ICONS];            // each one's index in the client's group (cnqframe : the record id - 1)
     int  cursorMode; short cx, cy;              // the map cursor (UI px) : 1 placing a marker, 7 the remote-scan centre ; 0 none
     char grid[8];              // "(F-7)" : the player's square
     // the MARKERS list (mapv3, the map's page H+0x106) : 10 rows of page*10 + row ; its rect (UI px, unparked)

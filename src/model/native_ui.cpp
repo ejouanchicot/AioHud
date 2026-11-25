@@ -3030,7 +3030,9 @@ bool map_rec_for(unsigned zone, int sub, MapRecord& out) {
 void map_poll(bool on, u32 mgr, u32 focusObj) {
     NativeMap t; memset(&t, 0, sizeof(t));
     u32 o = 0, H = 0; short wh[2] = { 0, 0 };
-    if (!on || !mgr || !(o = win_named(mgr, "mapframe")) || !safe_read(o + OBJ_HANDLER, &H) || !valid_ptr(H) || !rdblk(mgr + 0x80, wh, 4) || wh[0] <= 0 || wh[1] <= 0) { g_map = t; g_fullPark[0] = 0; return; }
+    // the zone map, else Region Info's world map : the SAME class (base FUN_0552F800 : view, icon groups, cursor)
+    if (on && mgr && !(o = win_named(mgr, "mapframe")) && (o = win_named(mgr, "cnqframe")) != 0) t.kind = 1;
+    if (!on || !mgr || !o || !safe_read(o + OBJ_HANDLER, &H) || !valid_ptr(H) || !rdblk(mgr + 0x80, wh, 4) || wh[0] <= 0 || wh[1] <= 0) { g_map = t; g_fullPark[0] = 0; return; }
     unsigned char b[0x110]; unsigned char pl[0x40]; unsigned char tail[8];
     if (!rdblk(H, b, sizeof(b)) || !rdblk(H + 0x674, pl, sizeof(pl)) || !rdblk(H + 0xA44, tail, sizeof(tail))) { g_map = t; g_fullPark[0] = 0; return; }
     auto S16 = [&](int off) { short v; memcpy(&v, b + off, 2); return v; };
@@ -3044,12 +3046,20 @@ void map_poll(bool on, u32 mgr, u32 focusObj) {
     { unsigned short fd = 0; memcpy(&fd, b + 0xA6, 2); t.fade = fd > 255 ? 255 : fd; }
     if (!(t.zoom > 0.05f && t.zoom < 64.0f) || t.scrollX != t.scrollX || t.scrollY != t.scrollY) { g_map = t; g_fullPark[0] = 0; return; }
     int idx = 0; memcpy(&idx, b + 0xFC, 4);
-    MapRecord rec; const bool hasRec = idx >= 0 && map_rec_for((unsigned)t.zone, t.sub, rec);
+    if (t.kind == 1) {   // Region Info (region-info-re s.4) : C+0x160 the mode -> its picture (static s16[4] 0x056C051C, both dumps)
+        static const unsigned CNQ_FILE[4] = { 0x14C0u, 0xD0A8u, 0xD0C3u, 0xD141u };
+        u32 md = 0; short hv = -1, cx = 0, cy = 0;
+        if (!safe_read(H + 0x160, &md) || md > 3 || !rd16(H + 0x16C, hv)) { g_map = t; g_fullPark[0] = 0; return; }
+        t.mode = (int)md; t.fileId = CNQ_FILE[md]; t.hasMap = true; t.hover = hv; t.otherZone = true;
+        cx = S16(0x1C); cy = S16(0x1E); t.cursorMode = 100; t.cx = cx; t.cy = cy;   // the cursor (UI px), on the hovered marker when it snaps
+        idx = -1;
+    }
+    MapRecord rec; const bool hasRec = t.kind == 0 && idx >= 0 && map_rec_for((unsigned)t.zone, t.sub, rec);
     if (hasRec && t.hasMap) t.fileId = rec.fileId;
     // the close : the client sets the index to -1 at once and fades its map out -- the same window keeps the file it
     // showed, so ours fades with it (the client's came back for its fade, 2026-11-26)
     { static u32 heldWin = 0; static unsigned heldFile = 0;
-      if (t.fileId) { heldWin = o; heldFile = t.fileId; } else if (idx < 0 && o == heldWin) t.fileId = heldFile; else heldWin = 0; }
+      if (t.fileId) { heldWin = o; heldFile = t.fileId; } else if (t.kind == 0 && idx < 0 && o == heldWin) t.fileId = heldFile; else heldWin = 0; }
     // the player + the tracked target (group *(H+0x98) x s8 H+0xA0) : the player's icon H+0x674 (map px +6 / +8, heading +0x14)
     const signed char ng = (signed char)b[0xA0];
     { unsigned short fl; memcpy(&fl, pl, 2); t.player = ng >= 1 && !t.otherZone && (fl & 0x80);
@@ -3058,16 +3068,16 @@ void map_poll(bool on, u32 mgr, u32 focusObj) {
     // the markers / Wide Scan dots : *(H+0x94) x s16 H+0x7A (the client draws those with flag 0x01)
     u32 grp = 0; memcpy(&grp, b + 0x94, 4); const short ni = S16(0x7A);
     if (valid_ptr(grp) && ni > 0) {
-        for (int i = 0; i < ni && i < 40 && t.nIcons < 40; ++i) {
+        for (int i = 0; i < ni && i < NATIVE_MAP_ICONS && t.nIcons < NATIVE_MAP_ICONS; ++i) {
             unsigned char ic[0x20]; if (!rdblk(grp + (u32)i * 0x20, ic, sizeof(ic))) break;
             unsigned short fl; memcpy(&fl, ic, 2); if (!(fl & 0x01)) continue;
-            NativeMapIcon& I = t.icon[t.nIcons++];
+            t.iconIdx[t.nIcons] = (short)i; NativeMapIcon& I = t.icon[t.nIcons++];
             I.flags = fl; I.sprite = ic[2]; I.alpha = ic[5]; memcpy(&I.x, ic + 6, 2); memcpy(&I.y, ic + 8, 2); memcpy(&I.angle, ic + 0x14, 4);
             u32 lp = 0; memcpy(&lp, ic + 0x18, 4); I.label[0] = 0;
-            if (!(fl & 0x08) && valid_ptr(lp)) { char tb[20]; if (rdblk(lp, tb, sizeof(tb))) { int k = 0; for (int j = 0; j < 19 && tb[j]; ++j) if ((unsigned char)tb[j] >= 0x20 && (unsigned char)tb[j] < 0x7F) I.label[k++] = tb[j]; I.label[k] = 0; } }
+            if (!(fl & 0x08) && valid_ptr(lp)) { char tb[24]; if (rdblk(lp, tb, sizeof(tb))) { int k = 0; for (int j = 0; j < 23 && tb[j]; ++j) if ((unsigned char)tb[j] >= 0x20 && (unsigned char)tb[j] < 0x7F) I.label[k++] = tb[j]; I.label[k] = 0; } }
         }
     }
-    { const short cm = S16(0x16); unsigned short nc = 0; memcpy(&nc, b + 0x74, 2);
+    if (t.kind == 0) { const short cm = S16(0x16); unsigned short nc = 0; memcpy(&nc, b + 0x74, 2);
       if (cm > 0 && cm < (short)nc) { t.cursorMode = cm; t.cx = (short)(S16(0x1C) + S16(0x18)); t.cy = (short)(S16(0x1E) + S16(0x1A)); } }
     if (t.player && hasRec) {
         const int col = ((t.px - rec.offX) - 16) / 32, row = 1 + ((t.py - rec.offY) - 16) / 32;
@@ -3075,7 +3085,7 @@ void map_poll(bool on, u32 mgr, u32 focusObj) {
     // the Markers list (mapv3, map-macro-re s.1.5) : row r of page p = icon / record p*10 + r. Own markers (page 0) : the
     // 10 records (an unused one has no name) ; event markers (1) : the used records ; party / alliance (2 / 3) : the icons
     // with a label. The row being renamed (an FsTextInput at mapv3+0x38, the row at +0x14) shows the live input
-    if (const u32 lo = win_named(mgr, "mapv3")) {
+    if (const u32 lo = t.kind == 0 ? win_named(mgr, "mapv3") : 0) {
         u32 lh = 0; short cur = 0, r4[4];
         if (safe_read(lo + OBJ_HANDLER, &lh) && valid_ptr(lh) && rd16(lo + 0x4C, cur) && rdblk(lo + OBJ_RECT, r4, 8) && t.page >= 0 && t.page < 4) {
             t.lx0 = r4[0]; t.ly0 = r4[1]; t.lx1 = r4[2]; t.ly1 = r4[3];
@@ -3107,10 +3117,10 @@ void map_poll(bool on, u32 mgr, u32 focusObj) {
     if (const u32 vo = win_named(mgr, "mapv2")) { u32 vh = 0; unsigned char u = 0; if (safe_read(vo + OBJ_HANDLER, &vh) && valid_ptr(vh) && rd8(vh + 0x14, u)) t.v2Used = u ? 1 : 0; }
     t.open = true;
     static unsigned sig = ~0u; static int said = 0;
-    const unsigned s2 = (u32)(t.v2Used + 1) * 50021u + (u32)t.listN * 31u + (u32)t.listCursor * 7u + (u32)t.renameRow * 101u + (u32)t.zone * 7919u + (u32)t.sub * 131u + (u32)t.mode * 17u + (u32)t.page * 3u + (u32)t.nIcons + (t.fileId << 8) + (u32)t.cursorMode * 991u;
+    const unsigned s2 = (u32)t.kind * 900007u + (u32)(t.hover + 1) * 613u + (u32)(t.v2Used + 1) * 50021u + (u32)t.listN * 31u + (u32)t.listCursor * 7u + (u32)t.renameRow * 101u + (u32)t.zone * 7919u + (u32)t.sub * 131u + (u32)t.mode * 17u + (u32)t.page * 3u + (u32)t.nIcons + (t.fileId << 8) + (u32)t.cursorMode * 991u;
     if (s2 != sig && said < 30) { sig = s2; ++said;
-        windower::debug::log("NATIVEUI map : zone %d sub %d mode %d page %d file 0x%04X has %d other %d idx %d rec %d ; zoom %d/100 scroll %d,%d img %d,%d ico %d,%d ; player %d (%d,%d) target %d ; %d icon(s) ; cursor %d ; %s",
-            t.zone, t.sub, t.mode, t.page, t.fileId, t.hasMap, t.otherZone, idx, hasRec ? 1 : 0, (int)(t.zoom * 100.0f), (int)t.scrollX, (int)t.scrollY, t.imgX, t.imgY, t.icoX, t.icoY,
+        windower::debug::log("NATIVEUI map (%s) : hover %d zone %d sub %d mode %d page %d file 0x%04X has %d other %d idx %d rec %d ; zoom %d/100 scroll %d,%d img %d,%d ico %d,%d ; player %d (%d,%d) target %d ; %d icon(s) ; cursor %d ; %s",
+            t.kind ? "Region Info" : "zone", t.hover, t.zone, t.sub, t.mode, t.page, t.fileId, t.hasMap, t.otherZone, idx, hasRec ? 1 : 0, (int)(t.zoom * 100.0f), (int)t.scrollX, (int)t.scrollY, t.imgX, t.imgY, t.icoX, t.icoY,
             t.player, t.px, t.py, t.target, t.nIcons, t.cursorMode, t.grid);
         if (t.listOpen) windower::debug::log("NATIVEUI map markers list : page %d, %d row(s), cursor %d, rename %d '%s' ; row 1 '%s' placed %d", t.page, t.listN, t.listCursor, t.renameRow, t.renameText, t.listN ? t.listName[0] : "", t.listN ? t.listPlaced[0] : 0); }
     g_map = t;

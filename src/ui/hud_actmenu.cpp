@@ -8624,7 +8624,7 @@ void macrobar_draw(const Frame& f) {
 // BEFORE the HUD's widgets (the client's map sat under them too). The image : the zone's map DAT (the minimap's
 // decoder), a texture of its own keyed by file id, bounded retry (rule 10) ; forgotten on a device change.
 namespace {
-u32 g_mapTex = 0; unsigned g_mapTexId = 0; int g_mapTries = 0; unsigned g_mapNext = 0; Block g_mapB; unsigned g_mapMs = 0;
+u32 g_mapTex = 0; int g_mapTexW = 512, g_mapTexH = 512; unsigned g_mapTexId = 0; int g_mapTries = 0; unsigned g_mapNext = 0; Block g_mapB; unsigned g_mapMs = 0;
 NativeMap g_mapLast; float g_mapA = 0.0f;                   // the map last read + its shown alpha (the cartouche, drawn later)
 u32 g_mkAtlas = 0; TexRetry g_mkAtlasR; char g_mkPath[260] = "";   // the minimap's marker atlas, a copy of our own (device-owned)
 }
@@ -8646,7 +8646,7 @@ void map_screen_draw(const Frame& f) {
     if (up && last.fileId != g_mapTexId) { if (g_mapTex) release_texture(g_mapTex); g_mapTex = 0; g_mapTexId = last.fileId; g_mapTries = 0; g_mapNext = now; }
     if (up && !g_mapTex && (int)(now - g_mapNext) >= 0) {
         u32* px = 0; int w = 0, h = 0; MapLoadDiag md;
-        if (load_zone_map(g_mapTexId, px, w, h, &md)) { g_mapTex = make_texture_argb_mip(dev, w, h, px); free_map_image(px); }
+        if (load_zone_map(g_mapTexId, px, w, h, &md)) { g_mapTex = make_texture_argb_mip(dev, w, h, px); free_map_image(px); if (g_mapTex) { g_mapTexW = w; g_mapTexH = h; } }
         ++g_mapTries; g_mapNext = now + 2000;
         if (g_mapTex) { if (g_mapTries > 1) windower::debug::log("NATIVEUI map screen : file 0x%04X loaded on try %d", g_mapTexId, g_mapTries); }
         else if (g_mapTries == 1 || g_mapTries % 10 == 0) windower::debug::log("NATIVEUI map screen : file 0x%04X NOT loaded (try %d, step %d) -- retrying every 2 s", g_mapTexId, g_mapTries, md.step);
@@ -8663,7 +8663,7 @@ void map_screen_draw(const Frame& f) {
     cs(dev);
     rrect(dev, 0.0f, 0.0f, f.screenW, f.screenH, 0.0f, with_alpha(0xB4080A0Eu, A), with_alpha(0xC8080A0Eu, A), 0.0f);
     const float ix = (((float)last.imgX - last.scrollX) * last.zoom) * sx, iy = (((float)last.imgY - last.scrollY) * last.zoom) * sy;
-    const float iw = 512.0f * last.zoom * sx, ih = 512.0f * last.zoom * sy;
+    const float iw = 512.0f * last.zoom * sx, ih = 512.0f * last.zoom * sy;   // the sprite is 512 map px whatever its texture (the world map : 2048)
     if (g_mapTex) {
         const float x0 = ix > 0.0f ? ix : 0.0f, y0 = iy > 0.0f ? iy : 0.0f;
         const float x1 = ix + iw < f.screenW ? ix + iw : f.screenW, y1 = iy + ih < f.screenH ? iy + ih : f.screenH;
@@ -8694,6 +8694,21 @@ void map_screen_draw(const Frame& f) {
         const float a = A * (I.alpha >= 0x80 ? 1.0f : (float)I.alpha / 128.0f); if (a <= 0.02f) continue;
         const float x = snap(SX(I.x)), y = snap(SY(I.y));
         int fill = -1, frame = -1; u32 col = 0xFFFFFFFFu, fcol = 0xFFFFFFFFu; float sz = 15.0f; bool pin = false, ring = false;
+        if (last.kind == 1) {   // Region Info : sprite = owner + 3 (2 Jeuno, 3 nobody, 4 San d'Oria, 5 Bastok, 6 Windurst, 7 beastmen, 8 unknown)
+            static const u32 OWN[7] = { 0xFFF2F2F2u, 0xFFB8B0A0u, 0xFFE87878u, 0xFF7FA8F0u, 0xFFE8D060u, 0xFFB894E0u, 0xFF9AA0A8u };
+            const bool hov = last.hover >= 1 && last.iconIdx[i] == last.hover - 1;
+            col = I.sprite >= 2 && I.sprite <= 8 ? OWN[I.sprite - 2] : 0xFFE8D9B0u;
+            const float psz = (hov ? 26.0f : 20.0f) * S * IS, py = y - psz * 0.5f;
+            if (hov) { const float t = (float)(now % 1200) / 1200.0f, rr = (10.0f + 8.0f * t) * S * IS;
+                ring_sector(dev, x, y, rr - 1.6f * S, rr, 0.0f, 6.2831853f, with_alpha(col, a * (1.0f - t))); }
+            if (atl) { dTexQuadState(dev, g_mkAtlas, true, true);
+                cell(PIN_FRAME, x, py + 1.0f, psz * 1.12f, 0.0f, with_alpha(0x8C000000u, a)); cell(PIN_FILL, x, py, psz, 0.0f, with_alpha(col, a)); cell(PIN_FRAME, x, py, psz, 0.0f, with_alpha(hov ? 0xFFFFE08Au : 0xFFFFFFFFu, a));
+                dSetTex(dev, 0, 0); cs(dev); }
+            else { disc(dev, x, py, psz * 0.32f + 1.4f * S, with_alpha(0xD0000000u, a)); disc(dev, x, py, psz * 0.32f, with_alpha(col, a)); }
+            if (I.label[0]) { const float lzz = hov ? lz * 1.12f : lz; fo->begin(dev);
+                fo->draw_cc(dev, x, snap(py - psz * 0.5f - lzz * 0.6f), I.label, lzz, with_alpha(hov ? 0xFFFFE8B0u : 0xFFF4ECD8u, a), sh, k.ow); cs(dev); }
+            continue;
+        }
         switch (I.sprite) {
             case 3:  fill = PIN_FILL; frame = PIN_FRAME; col = 0xFFFFC85Au; sz = 20.0f; pin = true; break;     // your own marker
             case 4:  fill = PIN_FILL; frame = PIN_FRAME; col = 0xFFFF6A5Au; sz = 20.0f; pin = true; break;     // an event marker
@@ -8826,7 +8841,7 @@ void map_list_draw(const Frame& f) {
 // the map's cartouche (the zone, its floor, your square) : drawn in the screens' pass, with the other boxes -- before the
 // widgets the frame / text state is not set up yet (2026-11-26 : an empty broken box)
 void map_screen_hud(const Frame& f) {
-    const float A = g_mapA; if (A <= 0.0f || !f.font) return;
+    const float A = g_mapA; if (A <= 0.0f || !f.font || g_mapLast.kind != 0) return;
     const NativeMap& last = g_mapLast; const UiConfig& C = ui_config(); const u32 dev = f.dev; Font* fo = f.font;
     const Metrics k = metrics(f); const float S = k.S; const u32 sh = with_alpha(0xE0000000u, A);
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
