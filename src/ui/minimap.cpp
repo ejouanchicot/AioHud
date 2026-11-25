@@ -1493,7 +1493,9 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             const float hwP = posBand ? posHalf : 0.0f;
             const float yB = snap(cy + r + 2.0f * S + wh + bz * 1.6f);                       // the base line
             const float yC = snap(yB - bz - wh * 0.5f);                                      // the windows' row
-            const float half = hwP + gap + 2.0f * hwM + gap * 0.5f;                           // the plinth's half width
+            const float edge0 = TUNE("mm.foot_edge", 7.0f) * S;                            // position | hour : the moon lives in its own dial now
+            const float half = edge0 + (hwP > hwT ? hwP : hwT) * 2.0f + gap * 0.5f;          // symmetric : both windows the same distance from the centre
+            (void)hwM;
             const float W = half + 2.0f * S, xa = r * 0.78f, ya = cy + sqrtf(r * r - xa * xa) - 3.0f * S;   // where the fillets leave the ring
             const float ySide = yB - 4.0f * S, ch = 3.5f * S;                                 // the sides' foot, the base's chamfer
             auto topAt = [&](float dx) {                                                     // the plinth's top : under the ring, then the fillet
@@ -1522,9 +1524,9 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             }
             grad_quad(dev, cx - W + ch, yB - 2.6f * S, 2.0f * (W - ch), 1.0f, MA(0x70, g_dm.lite), MA(0x70, g_dm.lite), MA(0x70, g_dm.lite), MA(0x70, g_dm.lite));   // an engraved filet along the base
             // the windows : one row, the position under the S, the moon and the hour on either side
-            const float edgeM = TUNE("mm.foot_edge", 7.0f) * S;                            // BALANCED : the moon against the left end, the hour against the right, the square centred
-            const float x3[3] = { cx - W + edgeM + hwM, cx, cx + W - edgeM - hwT }, hw3[3] = { hwM, hwP, hwT };
-            const bool on3[3] = { bandMoon, posBand, bandDay };
+            const float hwMax = hwP > hwT ? hwP : hwT, xo = gap * 0.5f + hwMax;             // each window's centre, mirrored about the S
+            const float x3[3] = { 0.0f, cx - xo, cx + xo }, hw3[3] = { 0.0f, hwP, hwT };
+            const bool on3[3] = { false, posBand, bandDay };
             for (int k = 0; k < 3; ++k) {
                 if (!on3[k] || hw3[k] <= 0.0f) continue;
                 cwX[k] = snap(x3[k]); cwY[k] = yC; cwH[k] = hw3[k];
@@ -1537,9 +1539,9 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 (void)oct;                                                                  // (no frame : each wheel group is its own aperture in the plinth)
                 cwHH = wh * 0.5f - 0.6f * S;
             }
-            for (int k = 0; k < 2; ++k) {                                                    // between the windows : a double groove cut in the metal
-                if (!on3[1]) break;                                                          // (the crystals : set aside, the user 2026-11-25)
-                const float sx = k == 0 ? ((x3[0] + hwM) + (cx - hwP)) * 0.5f : ((cx + hwP) + (x3[2] - hwT)) * 0.5f, hh = wh * 0.42f;   // midway between the windows
+            for (int k = 0; k < 1; ++k) {                                                    // between the two windows, under the S : a double groove cut in the metal
+                if (!on3[1] || !on3[2]) break;
+                const float sx = cx, hh = wh * 0.42f;
                 for (int g2 = -1; g2 <= 1; g2 += 2) {
                     const float gx = sx + (float)g2 * 1.6f * S;
                     seg_soft(dev, gx, yC - hh, gx, yC + hh, 1.0f * S, MA(0xC0, g_dm.edge));
@@ -1625,11 +1627,41 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             color_state(dev);
             static const float ST[6][2] = { {-0.62f,-0.30f}, {0.58f,-0.48f}, {-0.35f,-0.70f}, {0.70f,0.10f}, {-0.72f,0.22f}, {0.30f,-0.75f} };
             for (int k = 0; k < 6; ++k) disc(dev, snap(x + ST[k][0] * sr), snap(y + ST[k][1] * sr), 0.7f, 0xB0FFF6DCu);
-            draw_moon_sphere(dev, x, y, sr, v.moonPct, v.waning);                  // a lit sphere by the real phase, the WHOLE face (the user 2026-11-25)
-            glass_dome(dev, x, y, sr, 0xFF9CB8FFu, 0.35f);                         // under a glass dome (soft : the moon is light)
-            color_state(dev);
-            if (foot && cwHH > 0.0f) drum_text(dev, tf, 0, cwX[0], cwY[0], cwH[0] - 0.6f * S, cwHH, mb, pSz, S);
-            else plateText(cwX[0], ty, mb, fullFirst ? 0xFFF8E6B0u : 0xFFC8D6F4u, -1);
+            if (!foot) {
+                draw_moon_sphere(dev, x, y, sr, v.moonPct, v.waning);              // a lit sphere by the real phase, the WHOLE face
+                glass_dome(dev, x, y, sr, 0xFF9CB8FFu, 0.35f);
+                color_state(dev);
+                plateText(cwX[0], ty, mb, fullFirst ? 0xFFF8E6B0u : 0xFFC8D6F4u, -1);
+            } else {
+                // THE MOON-PHASE DIAL (the user 2026-11-25) : the moon in the middle ; around it the LUNAR CYCLE -- a ring with
+                // the FULL moon marked at the top (a bright disc) and the NEW at the bottom (a dark one), a needle at where the
+                // cycle stands (waxing up the left, waning down the right) ; the days to the next of the two on a wheel
+                const float rIn = sr * 0.66f, rT0 = sr * 0.72f, rT1 = sr * 0.92f;
+                draw_moon_sphere(dev, x, y, rIn, v.moonPct, v.waning);
+                color_state(dev);
+                ring_sector(dev, x, y, rT0, rT1, 0.0f, 2.0f * PI, 0xFF0E1426u);          // the ring's dark enamel
+                for (int k = 0; k < 28; ++k) {                                          // the graduations : a cycle
+                    const float a2 = (float)k / 28.0f * 2.0f * PI, big = (k % 7 == 0) ? 1.0f : 0.0f;
+                    const float r0 = rT1 - (big > 0.5f ? 5.0f : 3.0f) * S, r1 = rT1 - 1.0f * S;
+                    seg_soft(dev, x + cosf(a2) * r0, y + sinf(a2) * r0, x + cosf(a2) * r1, y + sinf(a2) * r1, big > 0.5f ? 1.2f * S : 0.9f * S, big > 0.5f ? MA(0xE0, g_dm.lite) : MA(0x80, g_dm.lite));
+                }
+                const float rm2 = (rT0 + rT1) * 0.5f, mk = (rT1 - rT0) * 0.48f;
+                disc(dev, x, y - rm2, mk + 1.0f * S, g_dm.edge); disc(dev, x, y - rm2, mk, 0xFFF4ECD4u);   // FULL, at the top
+                disc(dev, x, y + rm2, mk + 1.0f * S, g_dm.lite); disc(dev, x, y + rm2, mk, 0xFF101828u);   // NEW, at the bottom
+                // the needle : where the cycle stands -- from New (bottom) up the left side (waxing) to Full (top), down the right (waning)
+                const float pct = (float)v.moonPct / 100.0f, cyc = v.waning ? 0.5f + (1.0f - pct) * 0.5f : pct * 0.5f;
+                const float na = PI * 0.5f + cyc * 2.0f * PI;
+                const float tipR = rT1 + 1.0f * S, baseR = rT0 - 2.0f * S, nw = 2.4f * S, ux2 = cosf(na), uy2 = sinf(na), nx2 = -uy2, ny2 = ux2;
+                const float tri[6] = { x + ux2 * baseR + nx2 * nw, y + uy2 * baseR + ny2 * nw, x + ux2 * baseR - nx2 * nw, y + uy2 * baseR - ny2 * nw, x + ux2 * tipR, y + uy2 * tipR };
+                const float sh3[6] = { tri[0] + 0.8f, tri[1] + 1.0f, tri[2] + 0.8f, tri[3] + 1.0f, tri[4] + 0.8f, tri[5] + 1.0f };
+                fill_poly_aa(dev, sh3, 3, 0x90000000u);
+                fill_poly_aa(dev, tri, 3, 0xFFE0452Fu);                                   // red, as the North's needle
+                glass_dome(dev, x, y, sr, 0xFF9CB8FFu, 0.35f);
+                color_state(dev);
+                char db[8]; sprintf(db, "%02d", dd < 0 ? 0 : (dd > 99 ? 99 : dd));       // the days to that event, on a two-wheel counter
+                const float dsz = snap(pSz * 0.80f), dh = snap(dsz * 0.5f + 2.0f * S), dw = drum_width(tf, db, dsz, S) * 0.5f;
+                drum_text(dev, tf, 0, x, snap(y + sr + dh + 3.0f * S), dw, dh, db, dsz, S);   // under the dial, on the plinth's shoulder
+            }
         }
         PERF_END("mm.moon");
         PERF_BEGIN("mm.globe");
