@@ -1662,23 +1662,24 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                     const float a2 = PI * 0.5f + (float)k / 8.0f * 2.0f * PI;            // new at the bottom, turning up the left
                     const float px = x + cosf(a2) * rmP, py = y + sinf(a2) * rmP;
                     const u32 ink = 0xFF2E1C0Cu, lit = 0xFFF4E8C4u;
-                    disc(dev, px, py, pr + 0.7f * S, ink);                              // the ink disc (the dark part)
-                    {                                                                   // the LIT part, bounded by a true terminator :
+                    {   // ONE smooth disc : the lit moon (a fine ink outline under it), then the DARK part painted in ink up to the
+                        // terminator -- the outer edge stays the smooth disc's, no ring laid over it (the user 2026-11-25 : the rim ate the light)
                         const float l = (float)(k <= 4 ? k : 8 - k) / 4.0f, side = k <= 4 ? 1.0f : -1.0f;   // lit fraction, waxing lit on the right
-                        const float e = 1.0f - 2.0f * l, rr3 = pr - 0.3f * S;           // the terminator's x = side * e * half-width
-                        if (l > 0.0f) {
+                        disc(dev, px, py, pr + 0.6f, ink);                                  // the outline
+                        disc(dev, px, py, pr - 0.4f, lit);                                  // the moon
+                        if (l < 0.999f) {
+                            const float e = 1.0f - 2.0f * l, rr3 = pr - 0.4f;
                             const int NY = 28; VtxC tv[6 * NY]; int nt = 0;
-                            for (int j = 0; j < NY; ++j) {
+                            for (int j = 0; j < NY; ++j) {                                  // the dark limb .. the terminator
                                 const float ya = -rr3 + 2.0f * rr3 * (float)j / NY, yb = -rr3 + 2.0f * rr3 * (float)(j + 1) / NY;
                                 const float ha = sqrtf(fmaxf(0.0f, rr3 * rr3 - ya * ya)), hb = sqrtf(fmaxf(0.0f, rr3 * rr3 - yb * yb));
-                                const float la = px + side * e * ha, lb = px + side * e * hb, ra = px + side * ha, rb = px + side * hb;   // terminator .. lit limb
-                                const VtxC A = { la - 0.5f, py + ya - 0.5f, 0, 1, lit }, B = { ra - 0.5f, py + ya - 0.5f, 0, 1, lit };
-                                const VtxC C = { lb - 0.5f, py + yb - 0.5f, 0, 1, lit }, D = { rb - 0.5f, py + yb - 0.5f, 0, 1, lit };
+                                const float da = px - side * (ha + 0.6f), db2 = px - side * (hb + 0.6f), ta2 = px + side * e * ha, tb2 = px + side * e * hb;
+                                const VtxC A = { da - 0.5f, py + ya - 0.5f, 0, 1, ink }, B = { ta2 - 0.5f, py + ya - 0.5f, 0, 1, ink };
+                                const VtxC C = { db2 - 0.5f, py + yb - 0.5f, 0, 1, ink }, D = { tb2 - 0.5f, py + yb - 0.5f, 0, 1, ink };
                                 tv[nt++] = A; tv[nt++] = B; tv[nt++] = C; tv[nt++] = B; tv[nt++] = D; tv[nt++] = C;
                             }
                             dDrawUP(dev, D3DPT_TRIANGLELIST, (u32)(nt / 3), tv, sizeof(VtxC));
                         }
-                        ring_sector(dev, px, py, rr3 - 0.2f, pr + 0.7f * S, 0.0f, 2.0f * PI, ink);   // the ink rim over the edge : a smooth round
                     }
                     const float ta = a2 + PI / 8.0f;                                    // an inked tick between two phases
                     seg_soft(dev, x + cosf(ta) * face * 0.86f, y + sinf(ta) * face * 0.86f, x + cosf(ta) * face * 0.97f, y + sinf(ta) * face * 0.97f, 0.9f * S, 0xB03A2410u);
