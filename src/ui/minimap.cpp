@@ -1079,7 +1079,7 @@ static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
     const int n = s_podN; if (n <= 0) return;
     const float D = r * TUNE("mm.pod_depth", 0.235f), Ri = r - 3.0f * S, Ro = r + D, rB = r - 1.5f * S, H = Ro - rB, rm = (Ri + Ro) * 0.5f;
     const float L = H * TUNE("mm.pod_lug", 1.05f) / rm, kS = TUNE("mm.pod_lug_k", 5.0f), tk = tanhf(kS * 0.5f);
-    const float bR = rB + H * TUNE("mm.pod_bridge_h", 0.55f), bMax = TUNE("mm.pod_bridge", 2.4f) * L, kR = 3.0f * S;
+    const float bR = rB + H * TUNE("mm.pod_bridge_h", 1.0f), bMax = TUNE("mm.pod_bridge", 2.4f) * L, kR = 3.0f * S;   // full height : two neighbours JOIN, no notch (the user 2026-11-25)
     float bA0[POD_MAX * 2], bLen[POD_MAX * 2]; int nb = 0;                                    // the welds : from a module's end to the next one's start
     for (int i = 0; i < n; ++i) for (int j = 0; j < n; ++j) {
         if (i == j || nb >= POD_MAX * 2) continue;
@@ -1097,7 +1097,7 @@ static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
         }
         for (int q = 0; q < nb; ++q) {
             float d = pod_wrapa(a - bA0[q]); if (d < 0.0f) d += 6.2831853f;
-            if (d <= bLen[q]) best = pod_smax(best, bR, kR);
+            if (d <= bLen[q]) best = bR >= Ro - 0.01f ? fmaxf(best, bR) : pod_smax(best, bR, kR);
         }
         return best;
     };
@@ -1201,6 +1201,14 @@ static void pod_wheel_cell(u32 dev, float cx, float cy, float rw, float wr, floa
     sector_grad(dev, cx, cy, rw + wr * 0.36f, rw + wr, a0, a1, sh0, sh, sh0, sh);                      // turning away : outward...
     sector_grad(dev, cx, cy, rw - wr, rw - wr * 0.36f, a0, a1, sh, sh0, sh, sh0);                      // ...and inward
     sector_grad(dev, cx, cy, rw - wr, rw + wr, a0, a0 + as * 0.16f, sd, sd, sh0, sh0);                 // its rounded sides
+    sector_grad(dev, cx, cy, rw - wr, rw + wr, a1 - as * 0.16f, a1, sh0, sh0, sd, sd);
+}
+static void pod_wheel_shade(u32 dev, float cx, float cy, float rw, float wr, float a, float as) {   // a wheel's turning-away shade alone
+    const u32 sh = 0xB03A2410u, sh0 = 0x003A2410u, sd = 0x603A2410u;
+    const float a0 = a - as * 0.5f, a1 = a + as * 0.5f;
+    sector_grad(dev, cx, cy, rw + wr * 0.36f, rw + wr, a0, a1, sh0, sh, sh0, sh);
+    sector_grad(dev, cx, cy, rw - wr, rw - wr * 0.36f, a0, a1, sh, sh0, sh, sh0);
+    sector_grad(dev, cx, cy, rw - wr, rw + wr, a0, a0 + as * 0.16f, sd, sd, sh0, sh0);
     sector_grad(dev, cx, cy, rw - wr, rw + wr, a1 - as * 0.16f, a1, sh0, sh0, sd, sd);
 }
 static void pod_cut(u32 dev, float cx, float cy, float rw, float wr, float sa, float S) {   // a cut between two wheels : a dark hairline, a lit edge
@@ -1648,6 +1656,34 @@ static void drum_arc(u32 dev, Font* fo, int slot, float cx, float cy, float th0,
 }
 static bool s_tubes = false; static float s_tubeRw = 0.0f;   // the hour / position in their tubes (the plinth off) : drum_arc
 static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it each frame ; 0 = draw the inked fallback)
+// an UPRIGHT textured rectangle (w x h, its UVs) centred `off` along the radius from a wheel cell's centre, clipped to the
+// cell's box (radial half hR, tangential half hT) -- a painted scene seen through its wheel, whatever the wheel's tilt
+static void pod_tex_clipped(u32 dev, float ccx, float ccy, float ang, float rc, float off, float w, float h, float hT, float hR,
+                            float u0, float u1, float v0, float v1, u32 col, float rot = 0.0f) {
+    const float ux = cosf(ang), uy = sinf(ang), tx = -uy, ty = ux, Cx = ccx + ux * rc, Cy = ccy + uy * rc;
+    const float px = Cx + ux * off, py = Cy + uy * off, rc_ = cosf(rot), rs_ = sinf(rot);
+    const float qx[4] = { -w * 0.5f, w * 0.5f, w * 0.5f, -w * 0.5f }, qy[4] = { -h * 0.5f, -h * 0.5f, h * 0.5f, h * 0.5f };
+    const float qu[4] = { u0, u1, u1, u0 }, qv[4] = { v0, v0, v1, v1 };
+    float P[16][4];
+    for (int i = 0; i < 4; ++i) { P[i][0] = px + qx[i] * rc_ - qy[i] * rs_; P[i][1] = py + qx[i] * rs_ + qy[i] * rc_; P[i][2] = qu[i]; P[i][3] = qv[i]; }
+    int n = 4;
+    const float pl[4][3] = { { ux, uy, hR }, { -ux, -uy, hR }, { tx, ty, hT }, { -tx, -ty, hT } };
+    for (int q = 0; q < 4 && n > 0; ++q) {
+        float Q[16][4]; int m = 0;
+        for (int i = 0; i < n; ++i) {
+            const float* A = P[i]; const float* B = P[(i + 1) % n];
+            const float da = (A[0] - Cx) * pl[q][0] + (A[1] - Cy) * pl[q][1] - pl[q][2];
+            const float db = (B[0] - Cx) * pl[q][0] + (B[1] - Cy) * pl[q][1] - pl[q][2];
+            if (da <= 0.0f && m < 16) { for (int j = 0; j < 4; ++j) Q[m][j] = A[j]; ++m; }
+            if ((da <= 0.0f) != (db <= 0.0f) && m < 16) { const float t = da / (da - db); for (int j = 0; j < 4; ++j) Q[m][j] = A[j] + (B[j] - A[j]) * t; ++m; }
+        }
+        n = m; for (int i = 0; i < n; ++i) for (int j = 0; j < 4; ++j) P[i][j] = Q[i][j];
+    }
+    if (n < 3) return;
+    Vtx v[16];
+    for (int i = 0; i < n; ++i) v[i] = { P[i][0] - 0.5f, P[i][1] - 0.5f, 0, 1, col, P[i][2], P[i][3] };
+    dDrawUP(dev, D3DPT_TRIANGLEFAN, n - 2, v, sizeof(Vtx));
+}
 // THE SKY MODULE (the user 2026-11-25 : "rethink the day/night module and the two weather elements, the same technology
 // as the rest" ; "won't the weather confuse the user with the day's elements ?") : one tube, read in its slot's order --
 // a SKY WINDOW (its colour by the hour : night blue, an orange dawn, a clear noon, dusk ; the inked SUN crosses it by day,
@@ -1655,7 +1691,7 @@ static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it e
 // parchment : parchment is the calendar, the black is the sky's -- they never read alike) : one element for a single
 // weather, the SAME element on both for a double, both bare for none ; they roll together when the weather changes.
 static float sky_cell_ratio() { return TUNE("mm.sky_cell", 1.6f); }   // the sky window's width, in wheel widths
-static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th0, int hh, int mi, int wid, u32 wxTex) {
+static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th0, int hh, int mi, int wid, u32 wxTex, u32 skyTex) {
     PERF_SCOPE("mm.skypod");
     PodGeo G = pod_geo(r, S);
     const float isz = G.isz * 0.92f, rw = G.rw, wr = isz * 0.56f, as = G.as, k = sky_cell_ratio();
@@ -1675,7 +1711,11 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
         // a point of the scene (upright frame around the cell's centre, moved by `shift` along the radius) clamped into the cell
         const float ux = cosf(aSky), uy = sinf(aSky);
         const float Cx = cx + ux * (rw + shift), Cy = cy + uy * (rw + shift), hx = hS * rw * 0.80f, hy = wr * 0.80f;
-        auto clampP = [&](float x, float y, float& ox, float& oy) {
+        // the scene FOLLOWS ITS WHEEL'S AXIS (the user 2026-11-25 : the day/night is the exception to the upright icons) :
+        // composed upright around the cell's centre, then turned with the wheel (pod_rot1 : head outward on the top half)
+        const float rS = pod_rot1(aSky), rcS = cosf(rS), rsS = sinf(rS);
+        auto clampP = [&](float x0, float y0, float& ox, float& oy) {
+            const float lx = x0 - Cx, ly = y0 - Cy, x = Cx + lx * rcS - ly * rsS, y = Cy + lx * rsS + ly * rcS;
             float dx = x - cx, dy = y - cy, rr = sqrtf(dx * dx + dy * dy), aa = atan2f(dy, dx);
             float da = pod_wrapa(aa - aSky); da = clampf(da, -hS, hS);
             rr = clampf(rr, lo + 0.5f, hi - 0.5f);
@@ -1753,6 +1793,32 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
             }
         }
     };
+    if (skyTex) {   // THE PAINTED SCENES (assets/sky_frames.raw, scripts/gen_sky_frames.py : twelve hand-inked scenes on papyrus,
+                    // one every two hours) : the wheel shows scene hour / 2 and rolls one notch every two Vana'diel hours
+        static int lastF = -1, oldF = -1; static unsigned fMs = 0;
+        const int fr = ((hh < 0 ? 0 : hh) / 2) % 12;
+        const unsigned nowF = GetTickCount();
+        if (lastF < 0) lastF = fr;
+        if (fr != lastF) { oldF = lastF; lastF = fr; fMs = nowF; }
+        const float kF = fMs ? fminf(1.0f, (float)(nowF - fMs) / 320.0f) : 1.0f;
+        const float cw = k * as * rw, qh = 2.0f * wr * 1.04f, qw = qh * (256.0f / 170.0f), hT = cw * 0.5f, hR = wr;   // fitted to the wheel's HEIGHT : the whole scene, the horizon and the sun included
+        auto uv = [&](int f2, float& u0, float& u1, float& v0, float& v1) {
+            u0 = (float)(f2 % 4) * 256.0f / 1024.0f; u1 = u0 + 256.0f / 1024.0f; v0 = (float)(f2 / 4) * 170.0f / 512.0f; v1 = v0 + 170.0f / 512.0f;
+        };
+        tex_state(dev, skyTex);
+        float u0, u1, v0, v1;
+        const float rotS = pod_rot1(aSky);                               // the SKY follows its wheel's axis (the user 2026-11-25 : the exception to the upright icons)
+        if (kF >= 1.0f || oldF < 0) { uv(fr, u0, u1, v0, v1); pod_tex_clipped(dev, cx, cy, aSky, rw, 0.0f, qw, qh, hT, hR, u0, u1, v0, v1, 0xFFFFFFFFu, rotS); }
+        else {
+            const float e = 1.0f - (1.0f - kF) * (1.0f - kF), H2 = 2.0f * wr;
+            uv(oldF, u0, u1, v0, v1); pod_tex_clipped(dev, cx, cy, aSky, rw, e * H2, qw, qh, hT, hR, u0, u1, v0, v1, 0xFFFFFFFFu, rotS);
+            uv(fr, u0, u1, v0, v1);   pod_tex_clipped(dev, cx, cy, aSky, rw, -(1.0f - e) * H2, qw, qh, hT, hR, u0, u1, v0, v1, 0xFFFFFFFFu, rotS);
+        }
+        dSetTex(dev, 0, 0);
+        color_state(dev);
+        pod_wheel_shade(dev, cx, cy, rw, wr, aSky, k * as);               // the wheel turning away, over the painting
+        (void)mi;
+    } else
     {   // the hour's notch : the scene rolls when the hour changes (outward : the old one leaves away from the centre)
         static int lastH = -1, oldH = -1; static unsigned hMs = 0;
         const unsigned nowH = GetTickCount();
@@ -2604,15 +2670,15 @@ Minimap::LodSt* Minimap::lod_slot(unsigned id) {
     return &e;
 }
 
-void Minimap::on_device_lost() { for (int i = 0; i < AS_N; ++i) { astG_[i] = 0; astGR_[i] = TexRetry{}; } s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
+void Minimap::on_device_lost() { for (int i = 0; i < AS_N; ++i) { astG_[i] = 0; astGR_[i] = TexRetry{}; } s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; skyTex_ = 0; skyR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
 void Minimap::dispose() {
     s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0;
     for (int i = 0; i < AS_N; ++i) { release_texture(astG_[i]); astG_[i] = 0; astGR_[i] = TexRetry{}; }
     release_texture(mkAtlas_); mkAtlas_ = 0; mkAtlasR_ = TexRetry{};
     for (int i = 0; i < AS_N; ++i) { release_texture(ast_[i]); ast_[i] = 0; astR_[i] = TexRetry{}; }
     release_texture(mapTex_); mapTex_ = 0; mapFileId_ = 0;
-    release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_); if (wxTex_) release_texture(wxTex_); if (moonDialTex_) release_texture(moonDialTex_); if (moonPhTex_) release_texture(moonPhTex_);
-    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
+    release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_); if (wxTex_) release_texture(wxTex_); if (moonDialTex_) release_texture(moonDialTex_); if (moonPhTex_) release_texture(moonPhTex_); if (skyTex_) release_texture(skyTex_);
+    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonPhTex_ = 0; moonPhR_ = TexRetry{}; skyTex_ = 0; skyR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
 }
 
 void Minimap::draw(const Frame& f) {
@@ -2967,7 +3033,8 @@ void Minimap::draw(const Frame& f) {
     if (dial && !dialSq && c.mmDayDial == 2 && s_skyPod) {               // the SKY MODULE : the day/night window + the weather's enamel wheels
         const VanaClock sv = dial_vana(g.vana);
         ensure_raw_tex_mip(dev, wxTex_, wxR_, plugin_path_r("assets\\weather_icons.raw"), 1024, 128);
-        draw_sky_pod(dev, ccx, ccy, r, S, s_skyTh, sv.hh, sv.mm, mm_weather(g.weather), wxTex_);
+        draw_sky_pod(dev, ccx, ccy, r, S, s_skyTh, sv.hh, sv.mm, mm_weather(g.weather), wxTex_,   // (the painted scenes : off -- the code's sky is easier to frame, the user 2026-11-25)
+                     TUNE("mm.sky_tex", 0.0f) > 0.5f ? ensure_raw_tex_mip(dev, skyTex_, skyR_, plugin_path_r("assets\\sky_frames.raw"), 1024, 512) : 0u);
     }
     if (dial && !dialSq && c.mmDayDial == 2 && c.mmClock && c.mmClkDay) {          // the DAY DISC : under the frame, the map and the ring -- and BEHIND the position's tube (drawn before it)
         dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);

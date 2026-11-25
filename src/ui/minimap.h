@@ -41,6 +41,7 @@ private:
     int      mapW_ = 0, mapH_ = 0;
     u32      mkPlayer_ = 0, mkMob_ = 0;   // marker icons : player Location pin + mob Arrow (white, tinted)
     u32      elemTex_ = 0;                 // 8-cell elemental-icon atlas (clock header day icon)
+    u32      skyTex_ = 0; TexRetry skyR_;          // the sky wheel's twelve painted scenes (assets/sky_frames.raw, scripts/gen_sky_frames.py)
     u32      moonPhTex_ = 0; TexRetry moonPhR_;     // the moon pod's 8 upright phases (assets/moon_phases.raw, scripts/gen_moon_phases.py)
     u32      moonDialTex_ = 0; TexRetry moonDialR_;   // the moon-phase dial's inked parchment face (assets/moon_dial.raw, scripts/gen_moon_dial.py)
     u32      wxTex_ = 0; TexRetry wxR_;    // the WEATHER's 8 element icons, HD (assets/weather_icons.raw, scripts/gen_weather_icons.py) : the Dial's weather orbs only
