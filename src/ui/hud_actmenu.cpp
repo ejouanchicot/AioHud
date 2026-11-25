@@ -3619,7 +3619,7 @@ void equipment_draw(const Frame& f) {
     const float cell = snap(k.capH * 2.1f), cg = snap(4.0f * S);
     const float gridW = 4.0f * cell + 3.0f * cg;
     const float statH = snap(k.capH * 0.9f);
-    const float bw = snap(pad + gridW + pad), bh = snap(pad + headH + 6.0f * S + gridW + 8.0f * S + 3.0f * statH + pad);
+    const float bw = snap(pad + gridW + pad), bh = snap(pad + headH + 6.0f * S + gridW + (last.setMode ? 0.0f : 8.0f * S + 3.0f * statH) + pad);
     const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
     float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
     if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
@@ -3637,7 +3637,7 @@ void equipment_draw(const Frame& f) {
     // as one glass pane from just above them to the border (left, right, bottom : no thin metal strip along the border)
     menu_cut(eqKey, 1, 0.0f, 0.0f, bw, bh, 0.0f);
     for (int c = 0; c < 16; ++c) menu_cut(eqKey, 0, snap(L + (float)(c % 4) * (cell + cg)) - bx, snap(gy + (float)(c / 4) * (cell + cg)) - by, cell, cell, 5.0f * S);
-    menu_cut(eqKey, 0, k.bi, snap(gy + gridW + 4.0f * S) - by, bw - 2.0f * k.bi, bh - k.bi - (snap(gy + gridW + 4.0f * S) - by), 6.0f * S);
+    if (!last.setMode) menu_cut(eqKey, 0, k.bi, snap(gy + gridW + 4.0f * S) - by, bw - 2.0f * k.bi, bh - k.bi - (snap(gy + gridW + 4.0f * S) - by), 6.0f * S);
     int curCell = -1;
     for (int c = 0; c < 16; ++c) if (ENTRY_OF[SLOT_AT[c]] == last.cursor) curCell = c;
     // the cells : a dark well, the item's icon (or the slot's name), the hand's cell in the party glass
@@ -3690,12 +3690,12 @@ void equipment_draw(const Frame& f) {
     static const u32 ELC[8] = { 0xFFE85A4Au, 0xFF7FD4F0u, 0xFF6CD48Au, 0xFFC8A060u, 0xFFB07CE8u, 0xFF5A8CE8u, 0xFFF0F0E0u, 0xFF8A6AA8u };   // fire ice wind earth lightning water light dark
     const float sy0 = gy + gridW + 8.0f * S;
     const float colW = gridW / 4.0f;
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 8 && !last.setMode; ++i) {
         const float dx = snap(L + (float)(i / 2) * colW + 5.0f * S), dyc = snap(sy0 + statH * (1.5f + (float)(i % 2)));   // column-major, as the client
         disc(dev, dx, dyc, 3.2f * S, with_alpha(ELC[i], A));
     }
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, tr("Equipment", "\xC3\x89quipement"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    fo->draw_lc(dev, L, hy, last.setMode ? (last.setName[0] ? last.setName : tr("Equipment Set", "Set")) : tr("Equipment", "\xC3\x89quipement"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
     if (curCell >= 0) { const char* sn = SLOT_EN[SLOT_AT[curCell]]; fo->draw_lc(dev, snap(L + gridW - fo->measure(sn, tz * 0.85f)), hy, sn, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow); }
     for (int c = 0; c < 16; ++c) if (lastS.id[SLOT_AT[c]] && lastS.ward[SLOT_AT[c]]) {
         const float cx = snap(L + (float)(c % 4) * (cell + cg)), cy = snap(gy + (float)(c / 4) * (cell + cg));
@@ -3705,9 +3705,11 @@ void equipment_draw(const Frame& f) {
     for (int c = 0; c < 16; ++c) if (!lastS.id[SLOT_AT[c]]) {
         const float cx = snap(L + (float)(c % 4) * (cell + cg)), cy = snap(gy + (float)(c / 4) * (cell + cg));
         const char* sn = SLOT_EN[SLOT_AT[c]]; const float z = tz * 0.72f;
-        fo->draw_lc(dev, snap(cx + (cell - fo->measure(sn, z)) * 0.5f), snap(cy + cell * 0.5f), sn, z, with_alpha(0xFF56627Au, A), sh, k.ow);
+        const bool kp = last.setMode && last.keep[SLOT_AT[c]];                // the set keeps what is worn there
+        fo->draw_lc(dev, snap(cx + (cell - fo->measure(sn, z)) * 0.5f), snap(cy + cell * (kp ? 0.36f : 0.5f)), sn, z, with_alpha(0xFF56627Au, A), sh, k.ow);
+        if (kp) { const char* kt = tr("Keep", "Garder"); fo->draw_lc(dev, snap(cx + (cell - fo->measure(kt, z)) * 0.5f), snap(cy + cell * 0.68f), kt, z, with_alpha(0xFFFFDA8Au, A), sh, k.ow); }
     }
-    if (last.statsOk) {
+    if (last.statsOk && !last.setMode) {
         char a[24], d[24]; sprintf(a, "%d", last.atk); sprintf(d, "%d", last.def);
         const float r0 = snap(sy0 + statH * 0.5f);
         fo->draw_lc(dev, L, r0, tr("Attack", "Attaque"), tz * 0.9f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
@@ -3814,7 +3816,7 @@ void equipment_draw(const Frame& f) {
                     fo->begin(dev);
                     continue;
                 }
-                const char* nm = r.id ? item_display_name(r.id) : 0;
+                const char* nm = r.id ? item_display_name(r.id) : (r.text[0] ? r.text : 0);
                 const u32 c = r.col == 0x80509050u ? 0xFF7CE07Cu : r.col == 0x80404040u ? 0xFF6E7C8Eu : r.col == 0x80804020u ? 0xFFFFB45Au : (i == cr ? 0xFFFFFFFFu : 0xFFE4EAF2u);
                 { char cut[64]; fo->draw_lc(dev, snap(Lx + 8.0f * S + iz + 8.0f * S), cy, fit_text(fo, nm ? nm : "?", tz, wName, cut, sizeof(cut)), tz, with_alpha(c, LA), sh, k.ow); }
                 if (r.count > 1) { char n[8]; sprintf(n, "%d", r.count); fo->draw_lc(dev, snap(Lx + Wx - 8.0f * S - fo->measure(n, tz)), cy, n, tz, with_alpha(0xFF93A6BEu, LA), sh, k.ow); }

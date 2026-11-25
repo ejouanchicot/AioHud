@@ -237,7 +237,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_MAIN)  && g_jpRule && !strcmp(n, "levmeri2")) { dy = HIDE_DY; return; }
     if ((hide & NU_MAIN)  && g_faithRule && !strcmp(n, "fp_info")) { dy = HIDE_DY; return; }
     if ((hide & NU_MAIN)  && g_mcatRule && !strcmp(n, "meritinf")) { dy = HIDE_DY; return; }
-    if ((hide & NU_MAIN)  && g_eqRule && !strcmp(n, "equip")) { dy = HIDE_DY; return; }
+    if ((hide & NU_MAIN)  && g_eqRule && (!strcmp(n, "equip") || !strcmp(n, "mcresed"))) { dy = HIDE_DY; return; }
     // while AioHUD draws the Equipment screen, the client's item cards : it re-places them at every item and every page
     // (Y / numpad -), and a park after the fact let them show for a frame each time (2026-11-18, "ca fait pop les
     // vieilles box") -- the record's offset makes the move-to hook put them away as they are placed
@@ -923,6 +923,17 @@ bool mcat_read(u32 mgr, u32 focus, NativeMeritCat& K) {
     K.focused = focus == T.obj; K.open = true;
     return true;
 }
+u32 win_named(u32 mgr, const char* want);   // below
+// the equipment SET's grid (mcresed, MacroPalette -> Edit Equip. Set -> Edit) : the same 4 x 4 entries as `equip` ; the set
+// being edited = handler +0x78, 16 u32 (item id << 16 | 1, or 2 = keep the piece worn), the order of the set records
+bool equip_set_grid(u32 obj, NativeEquip& E) {
+    u32 hd = 0; unsigned char b[0x40];
+    if (!safe_read(obj + OBJ_HANDLER, &hd) || !valid_ptr(hd) || !rdblk(hd + 0x78, b, sizeof(b))) return false;
+    for (int s = 0; s < 16; ++s) { u32 v = 0; memcpy(&v, b + s * 4, 4); E.id[s] = (v & 3) == 1 ? (unsigned short)(v >> 16) : 0; E.keep[s] = (v & 3) == 2; }
+    E.idsOk = true; E.setMode = true;
+    if (g_es.open && g_es.cursor >= 1 && g_es.cursor <= 20) lstrcpynA(E.setName, g_es.name[g_es.cursor - 1], sizeof(E.setName));
+    return true;
+}
 bool equip_read(u32 mgr, u32 focus, NativeEquip& E) {
     memset(&E, 0, sizeof(E)); E.lcursor = -1;
     u32 node = 0; if (!mgr || !safe_read(mgr + MGR_OPEN_LIST, &node)) return false;
@@ -933,6 +944,8 @@ bool equip_read(u32 mgr, u32 focus, NativeEquip& E) {
         if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "equip") && rd8(o + OBJ_CLOSING, cl) && !cl) obj = o;
         node = next;
     }
+    bool setGrid = false;
+    if (!obj && (obj = win_named(mgr, "mcresed")) != 0) setGrid = true;
     if (!obj) return false;
     short cur = 0;
     if (!rd16(obj + 0x4C, cur) || !rd16(obj + OBJ_RECT, E.rx0) || !rd16(obj + OBJ_RECT + 2, E.ry0) || !rd16(obj + OBJ_RECT + 4, E.rx1) || !rd16(obj + OBJ_RECT + 6, E.ry1)) return false;
@@ -941,26 +954,27 @@ bool equip_read(u32 mgr, u32 focus, NativeEquip& E) {
     if (E.uiW < 320 || E.uiH < 240 || E.uiW > 8000 || E.uiH > 8000) return false;
     if (E.ry0 >= E.uiH) { E.ry0 = (short)(E.ry0 - HIDE_DY); E.ry1 = (short)(E.ry1 - HIDE_DY); }
     E.cursor = cur >= 1 && cur <= 16 ? cur : 0;
-    EquipSet es; if (read_equipment(es)) { E.idsOk = true; for (int s = 0; s < 16; ++s) E.id[s] = es.id[s]; }
-    {   // each slot's bag : the grid's copy at handler +0x34 + s*4 (bags 8, 10..16 = Mog Wardrobe 1, 2..8)
+    if (setGrid) { if (!equip_set_grid(obj, E)) return false; }
+    else { EquipSet es; if (read_equipment(es)) { E.idsOk = true; for (int s = 0; s < 16; ++s) E.id[s] = es.id[s]; } }
+    if (!setGrid) {   // each slot's bag : the grid's copy at handler +0x34 + s*4 (bags 8, 10..16 = Mog Wardrobe 1, 2..8)
         u32 hd = 0;
         if (safe_read(obj + OBJ_HANDLER, &hd) && valid_ptr(hd)) for (int s = 0; s < 16; ++s) {
             u32 bag = 0; if (!safe_read(hd + 0x34 + (u32)s * 4, &bag)) break;
             E.ward[s] = (unsigned char)(bag == 8 ? 1 : (bag >= 10 && bag <= 16) ? bag - 8 : 0);
         }
     }
-    const u32 blk = fm_addr(FM_PW_BLOCK); unsigned char b[0x14];
+    const u32 blk = setGrid ? 0 : fm_addr(FM_PW_BLOCK); unsigned char b[0x14];
     if (blk && rdblk(blk + 0x20, b, sizeof(b))) {
         unsigned short a = 0, d = 0; memcpy(&a, b, 2); memcpy(&d, b + 2, 2); E.atk = a; E.def = d;
         for (int i = 0; i < 8; ++i) memcpy(&E.res[i], b + 4 + 2 * i, 2);
         E.statsOk = a < 10000 && d < 10000;
     }
     E.focused = focus == obj; E.open = true;
-    panel_read(mgr, "money", E.money);                                   // Current Gil
+    if (!setGrid) panel_read(mgr, "money", E.money);                     // Current Gil
     { NativePanel X; E.compare = panel_read(mgr, "itemxinf", X) && X.open;
       static int was = -1, said = 0;                                      // measured, not guessed : each change, bounded
       if ((int)E.compare != was && said < 20) { ++said; was = (int)E.compare; windower::debug::log("NATIVEUI equipment : compare card %s (itemxinf rect %d,%d)", E.compare ? "UP" : "down", X.rx0, X.ry0); } }
-    E.gilOk = read_player_gil(E.gil);
+    E.gilOk = !setGrid && read_player_gil(E.gil);
     // the slot's item list (inventor in its equipment mode)
     TextList T;
     if (tl_find(mgr, "inventor", T)) {
@@ -973,6 +987,12 @@ bool equip_read(u32 mgr, u32 focus, NativeEquip& E) {
                 unsigned char r[0x54]; if (!rdblk(rows + (u32)(E.ltop + i) * 0x54, r, sizeof(r))) { ok = false; break; }
                 int rec = 0; u32 id = 0, cnt = 0, col = 0; memcpy(&rec, r + 0x48, 4); memcpy(&id, r + 0x2C, 4); memcpy(&cnt, r + 0x30, 4); memcpy(&col, r + 0x0C, 4);
                 NativeEqRow& w = E.lrow[i]; w.header = rec == -1; w.id = (unsigned short)(id & 0xFFFF); w.count = (int)(cnt > 9999 ? 9999 : cnt); w.col = col;
+                if (rec == -1) {                                      // a row with no item : cell 1 = its TEXT (type 0x41 the bag chooser, its arrow ; 0x01 a plain line,
+                    w.id = 0; w.count = 0;                              // the set editor's "Remove piece." -- live 2026-11-25) ; its +0x2C is that text's pointer, not an id
+                    u32 v = 0; memcpy(&v, r + 0x2C, 4);
+                    if ((r[1] & 0x3F) == 1 && valid_ptr(v)) { char t[24]; if (rdblk(v, t, sizeof(t) - 1)) { t[23] = 0; int o2 = 0; for (int j2 = 0; t[j2] && o2 < 23; ++j2) if ((unsigned char)t[j2] >= 0x20 && (unsigned char)t[j2] < 0x7F) w.text[o2++] = t[j2]; w.text[o2] = 0; } }
+                    w.header = r[1] == 0x41;
+                }
             }
             E.lopen = ok; E.lfocused = focus == T.obj;
         }
@@ -2597,7 +2617,7 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_items.open && (!strcmp(nm, "inventor") || !strcmp(nm, "iteminfo") || (g_items.binMode && !strcmp(nm, "bank")) || ((g_items.binMode || g_items.synMode) && g_items.qtyOk && !strcmp(nm, "itemctrl"))))
                              || (g_cmt.open && !strcmp(nm, "comment"))
                              || (g_syn.open && ((g_syn.gridOpen && !strcmp(nm, "tskill1")) || (g_syn.histOpen && !strcmp(nm, "cmbhlst")) || !strcmp(nm, "iteminfo")))
-                             || (g_equip.open && (!strcmp(nm, "equip") || !strcmp(nm, "inventor") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || !strcmp(nm, "itemxinf")))
+                             || (g_equip.open && (!strcmp(nm, "equip") || !strcmp(nm, "mcresed") || !strcmp(nm, "inventor") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || !strcmp(nm, "itemxinf")))
                              || (g_mcat.open && (!strcmp(nm, "meritcat") || !strcmp(nm, "bluehelp") || !strcmp(nm, "meritinf")))
                              || (g_cel.open && (!strcmp(nm, "fe_equip") || !strcmp(nm, "fe_inven") || !strcmp(nm, "bluehelp")))
                              || (g_faith.open && (!strcmp(nm, "fp_cat") || !strcmp(nm, "fp_cat2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "fp_info")))
@@ -3808,7 +3828,7 @@ bool entry_pick(const char* const* W, int entry);
 static const char* const GEN_SKIP[] = { "titlewin", "helpwind", "logwindo", "logwin2", "partywin", "netstat", "buff", "targetwi", "fulllog", "cnqframe",
     "shop", "shopbuy", "shopsell", "shopmain", "guildsho", "bazaar", "auclist", "auchisto", "inventor", "iteminfo", "itemxinf", "money", "moneyctr", "itemctrl",
     "bank", "equip", "inspect", "comment", "loot", "lootope", "lnowin", "post1", "post2", "delivery", "stringdl", "roomlist", "fep", "query", "evitem", "gift",
-    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edit", "mcr2edit", "macro", "mcres20", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
+    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edit", "mcr2edit", "macro", "mcres20", "mcresed", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
     "cmbhlst", "tskill1", "cmbhwin",   // Synthesis (its module ; 2026-11-22 : the panel engine drew its History a second time, misplaced)
     "link5", "link6", "link12",        // Linkshell (its module ; 2026-11-25 : link5 is born before g_ls reads it -- the panel engine learned it and
                                        // drew the items a second time, over the module's box)
@@ -5285,6 +5305,7 @@ bool equip_goto(int entry, bool pick) {
         if (!dead && valid_ptr(o) && safe_read(o + OBJ_DEF, &def) && valid_ptr(def) && rdname(def, nm) && !strcmp(nm, "equip") && rd8(o + OBJ_CLOSING, cl) && !cl) obj = o;
         node = next;
     }
+    if (!obj) obj = win_named(mgr, "mcresed");                          // the equipment set's grid : the same entries
     if (!obj || obj != focus) return false;
     short cur = 0; rd16(obj + 0x4C, cur);
     if (cur != entry) { if (!wr16(obj + 0x4C, (short)entry) || !menu_event(obj, 9)) return false; }

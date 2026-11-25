@@ -544,7 +544,7 @@ const NativeMeritCat& native_merit_cat();
 // where it opened) ; `inventor` in its equipment mode (a TEXT LIST : row 0 the bag's header, record -1 ; item rows : id
 // +0x2C, count +0x30, the client's colour +0x0C -- green worn, grey refused, orange held) ; Attack / Defense / the 8
 // resists from the 0x061 mirror (FM_PW_BLOCK + 0x20 / + 0x22 / + 0x24..). The client sends 0x050 itself.
-struct NativeEqRow { bool header; unsigned short id; int count; unsigned col; };
+struct NativeEqRow { bool header; unsigned short id; int count; unsigned col; char text[24]; };   // text : a row with no item (the set editor's "Remove piece.")
 struct NativeEquip {
     bool open, focused;          // the grid
     int  cursor;                 // its entry 1..16
@@ -560,6 +560,9 @@ struct NativeEquip {
     NativePanel money;           // the client's "Current Gil" box (its rect) ; gil / gilOk : the player's gil
     bool compare;                // `itemxinf` is up (LB / Ctrl on a list row) : the row's item over the one worn in the slot
     unsigned gil; bool gilOk;
+    bool setMode;                // the grid is an EQUIPMENT SET's (mcresed, MacroPalette) : id[] = the set, not what is worn
+    char setName[17];
+    unsigned char keep[16];      // set mode : 1 = keep the piece worn
 };
 const NativeEquip& native_equip();
 // The main menu's ITEMS (docs/notes/items-menu-re-2026-11-18.md) : `inventor` opened from the main menu (handler +0x90 == 1),
