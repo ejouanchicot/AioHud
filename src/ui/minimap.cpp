@@ -2574,16 +2574,26 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             // FORGED BY BASTOK (the user 2026-11-25) : each letter a serif Roman capital (the wheels' face) cast with the
             // bezel
             const float ksz = snap(csz * 1.05f), o = 0.8f * S;
-            tf->begin(dev);
+            (void)ksz;
             for (int i = 0; i < 4; ++i) {
                 const float lx = snap(cx + DX[i] * rm), ly = snap(cy + DY[i] * rm);
-                // CAST IN RELIEF, IN THE BEZEL'S OWN METAL (the user 2026-11-25 : "they still look laid on as characters, not
-                // part of it") : no contrasting colour -- a shadow the relief casts on the bezel (lower right), its lit
-                // upper-left edge, then the letter's face in the same metal, a shade brighter ; the N's metal copper-red
-                const u32 face = i == 0 ? pod_mix(g_dm.lite, 0xFFB04028u, 0.55f) : pod_mix(g_dm.body, g_dm.lite, 0.45f);
-                tf->draw_c(dev, lx + o * 1.2f, ly + o * 1.4f, NM[i], ksz, MA(0xB0, g_dm.edge), 0, 0.0f);   // the relief's shadow on the bezel
-                tf->draw_c(dev, lx - o * 0.7f, ly - o * 0.7f, NM[i], ksz, MA(0xD0, g_dm.glint), 0, 0.0f);  // its edge catching the lamp
-                tf->draw_c(dev, lx, ly, NM[i], ksz, face | 0xFF000000u, 0, 0.0f);                          // the letter's face : the bezel's metal
+                // ON A SOLDERED PLATE (the user 2026-11-25 : "still not natural, credible -- if needed solder little round
+                // plates") : a small domed round plate soldered on the bezel -- its shadow, a dark solder seam, the plate
+                // lit from the lamp (upper left) with a soft highlight ; the letter STRUCK into it (a dark cut, its lit lower
+                // lip), the N's cut filled with red enamel
+                const float pr = (r - rc) * TUNE("mm.card_plate", 0.50f) * clampf(c.mmCardSz, 0.5f, 2.0f) / 0.7f;
+                color_state(dev);
+                disc(dev, lx + 0.9f * S, ly + 1.3f * S, pr + 1.0f * S, 0x80000000u);                       // its shadow on the bezel
+                disc(dev, lx, ly, pr + 1.1f * S, g_dm.edge | 0xFF000000u);                                  // the solder seam
+                disc(dev, lx, ly, pr, pod_mix(g_dm.body, g_dm.lite, 0.30f) | 0xFF000000u);                 // the plate
+                disc(dev, lx - pr * 0.18f, ly - pr * 0.18f, pr * 0.78f, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);   // domed : lit toward the lamp
+                ring_sector(dev, lx, ly, pr - 1.0f * S, pr, 2.4f, 5.6f, MA(0xB0, g_dm.glint));            // its rim catching the light
+                ring_sector(dev, lx, ly, pr - 1.0f * S, pr, -0.7f, 2.4f, MA(0x90, g_dm.edge));            // ...and in shade
+                tf->begin(dev);
+                const float lsz = snap(pr * 1.30f);
+                tf->draw_c(dev, lx + 0.6f * S, ly + 0.6f * S, NM[i], lsz, MA(0xA0, g_dm.glint), 0, 0.0f);   // the cut's lit lower lip
+                tf->draw_c(dev, lx, ly, NM[i], lsz, i == 0 ? 0xFFA82418u : (g_dm.edge | 0xFF000000u), 0, 0.0f);   // the struck letter (the N : red enamel)
+                (void)o;
             }
         } else {
             fo->begin(dev);
@@ -3589,8 +3599,8 @@ void Minimap::draw(const Frame& f) {
             }
             // THE INDEX MARKS (the user 2026-11-25 : "symbols on the graduated dial for our modules -- an arrowhead at the
             // current moon, another symbol for the previous and next new / full moon ; the same for the day's elements") :
-            // engraved in the bezel facing each wheel -- an ARROWHEAD (red enamel, as the N) pointing out at the present
-            // wheel, a CHEVRON at each side wheel pointing the way time runs (< before, > after along the reading order)
+            // APPLIED on the bezel facing each wheel (the user : "the arrows too blunt, not visible") -- a polished lozenge
+            // with a red enamel dot at the present wheel, a small round stud at each side wheel
             {
                 const PodGeo G = pod_geo(r, S);
                 const float rM = rc + (r - rc) * 0.50f, hA = (r - rc) * TUNE("mm.idx_size", 0.46f);
@@ -3599,24 +3609,26 @@ void Minimap::draw(const Frame& f) {
                     for (int d = -1; d <= 1; ++d) {
                         const float a = th + dir * (float)d * G.as, ux = cosf(a), uy = sinf(a), tx = -uy * dir, ty = ux * dir;
                         const float mx = ccx + ux * rM, my = ccy + uy * rM;
-                        if (d == 0) {                                          // the ARROWHEAD, pointing out at the wheel
-                            const float w = hA * 0.75f;
-                            const float tri[6] = { mx + ux * hA, my + uy * hA, mx - ux * hA * 0.7f + tx * w, my - uy * hA * 0.7f + ty * w, mx - ux * hA * 0.7f - tx * w, my - uy * hA * 0.7f - ty * w };
-                            const float lip[6] = { tri[0] + 0.7f * S, tri[1] + 0.7f * S, tri[2] + 0.7f * S, tri[3] + 0.7f * S, tri[4] + 0.7f * S, tri[5] + 0.7f * S };
-                            fill_poly_aa(dev, lip, 3, MA(0xC0, g_dm.lite));    // the cut's lit lip
-                            fill_poly_aa(dev, tri, 3, g_dm.edge | 0xFF000000u); // the cut
-                            const float en[6] = { mx + ux * hA * 0.65f, my + uy * hA * 0.65f, mx - ux * hA * 0.4f + tx * w * 0.55f, my - uy * hA * 0.4f + ty * w * 0.55f, mx - ux * hA * 0.4f - tx * w * 0.55f, my - uy * hA * 0.4f - ty * w * 0.55f };
-                            fill_poly_aa(dev, en, 3, 0xFFB8301Eu);             // the red enamel
-                        } else {                                               // a CHEVRON : the way time runs
-                            const float v = (float)d, h = hA * 0.62f;
-                            const float tipx = mx + tx * v * h, tipy = my + ty * v * h;
-                            const float b1x = mx - tx * v * h + ux * h, b1y = my - ty * v * h + uy * h, b2x = mx - tx * v * h - ux * h, b2y = my - ty * v * h - uy * h;
-                            for (int pass = 0; pass < 2; ++pass) {
-                                const float o = pass == 0 ? 0.7f * S : 0.0f; const u32 col = pass == 0 ? MA(0xC0, g_dm.lite) : MA(0xE8, g_dm.edge);
-                                seg_soft(dev, b1x + o, b1y + o, tipx + o, tipy + o, 1.7f * S, col);
-                                seg_soft(dev, b2x + o, b2y + o, tipx + o, tipy + o, 1.7f * S, col);
-                            }
+                        if (d == 0) {                                          // an APPLIED LOZENGE, polished, a red enamel dot
+                            const float L = hA * 0.95f, W = hA * 0.55f;
+                            float lz[8] = { mx + ux * L, my + uy * L, mx + tx * W, my + ty * W, mx - ux * L, my - uy * L, mx - tx * W, my - ty * W };
+                            float sh[8]; for (int q = 0; q < 8; ++q) sh[q] = lz[q] + (q & 1 ? 1.2f : 0.9f) * S;
+                            fill_poly_aa(dev, sh, 4, 0x90000000u);                                         // its shadow
+                            float ed[8] = { mx + ux * (L + 1.0f * S), my + uy * (L + 1.0f * S), mx + tx * (W + 1.0f * S), my + ty * (W + 1.0f * S),
+                                            mx - ux * (L + 1.0f * S), my - uy * (L + 1.0f * S), mx - tx * (W + 1.0f * S), my - ty * (W + 1.0f * S) };
+                            fill_poly_aa(dev, ed, 4, g_dm.edge | 0xFF000000u);                             // its edge
+                            fill_poly_aa(dev, lz, 4, pod_mix(g_dm.body, g_dm.lite, 0.55f) | 0xFF000000u);   // polished metal
+                            const float hl[6] = { lz[0], lz[1], lz[2], lz[3], mx, my };
+                            fill_poly_aa(dev, hl, 3, MA(0xC0, g_dm.glint));                                // a lit facet
+                            disc(dev, mx, my, W * 0.42f, 0xFFA82418u);                                     // the red enamel
+                        } else {                                               // a small applied STUD
+                            const float sr2 = hA * 0.36f;
+                            disc(dev, mx + 0.8f * S, my + 1.1f * S, sr2 + 0.6f * S, 0x90000000u);
+                            disc(dev, mx, my, sr2 + 0.9f * S, g_dm.edge | 0xFF000000u);
+                            disc(dev, mx, my, sr2, pod_mix(g_dm.body, g_dm.lite, 0.45f) | 0xFF000000u);
+                            disc(dev, mx - sr2 * 0.3f, my - sr2 * 0.3f, sr2 * 0.45f, MA(0xC0, g_dm.glint));
                         }
+                        (void)tx; (void)ty;
                     }
                 };
                 if (c.mmClock && c.mmClkDay) marks(s_dayTh);
