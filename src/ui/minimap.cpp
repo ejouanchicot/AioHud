@@ -413,7 +413,7 @@ static float info_band_h(const UiConfig& c, float S) { return (c.mmInfoBand > 0)
 static Font* band_font(const Frame& f, int e) {
     const TextStyle& t = ui_config().mmText[e];
     if (t.face > 0 || !f.fonts) return mm_font(f.fonts, f.font, e);
-    Font* r = f.fonts->get("Georgia", 700, t.italic);
+    Font* r = f.fonts->get("Cambria", 700, t.italic);                   // LINING figures (Georgia's old-style 3 4 5 7 9 dropped below the line on the wheels) ; an engraved serif, on every Windows (the user 2026-11-25)
     return r ? r : f.font;
 }
 
