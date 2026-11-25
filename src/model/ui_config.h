@@ -722,6 +722,12 @@ struct UiConfig {
     int   mmInfoDist = 1;              // info band : the distance to your target and to the Wide Scan track
     int   mmMarkStyle = 1;             // entity markers : 0 Classic (dots + arrows), 1 Icons (the gold-framed atlas, a silhouette per kind)
     int   mmDayDial = 1;               // the Dial's day subdial : 0 the enamel globe (coloured quarters), 1 the icons' carousel
+    // the Dial's MODULES around the compass (Day dial = Disc ; the user 2026-11-25) : the hour and the grid square share the
+    // top and the bottom (0 : the hour on top, the square below ; 1 : the reverse) ; the moon and the day's element each
+    // take one of the four corners or a side, never the same one -- slot 0 NW, 1 W, 2 SW, 3 SE, 4 E, 5 NE
+    int   mmPodHP = 0;
+    int   mmPodDay = 3;
+    int   mmPodMoon = 2;
     // transient (not saved) : minimap rect as screen fractions + pending wheel, so the mouse callback can
     // zoom the map when the cursor is over it (outside edit mode). Written by the Minimap widget each frame.
     float mmHitX = 0.0f, mmHitY = 0.0f, mmHitW = 0.0f, mmHitH = 0.0f;

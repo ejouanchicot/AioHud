@@ -1048,89 +1048,128 @@ static void pod_lit_band(u32 dev, float cx, float cy, float r0, float r1, float 
     }
     dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
 }
-// A POD'S HOUSING, CAST WITH THE CASE (the user 2026-11-25 : the 45-degree chamfers "look too modern" ; "an adventurer's
-// POCKET WATCH forged in Bastok's metal, made by Cid") : the boss is cast in one piece with the watch case, as a pocket
-// watch's lugs -- the flat top turns over a ROUNDED corner, falls steeply, and a CONCAVE fillet runs it into the ring
-// (the designer's "continuous silhouette, concave fillets", Concept 'Astrarium'). A polished bevel follows its whole
-// edge ; the light is continuous from the lamp. No milled facet, no ornament glued on.
-static void pod_housing(u32 dev, float cx, float cy, float r, float Ri, float Ro, float th0, float Ph, float S, u32 hb) {
-    const float rB = r - 1.5f * S, rm = (Ri + Ro) * 0.5f, H = Ro - rB;
-    const float L = H * TUNE("mm.pod_lug", 1.05f) / rm;                 // the lug's run along the ring
-    const float kS = TUNE("mm.pod_lug_k", 5.0f), tk = tanhf(kS * 0.5f);
-    // the outline radius at angle a (|a - th0| = u) : the flat top, then the lug's end -- a sigmoid profile : a rounded
-    // corner at the top, a steep wall, a concave fillet at the foot, flush with the ring
-    auto prof = [&](float u) {
-        if (u <= Ph) return Ro;
-        const float t = (u - Ph) / L; if (t >= 1.0f) return rB;
-        const float f = 0.5f - 0.5f * tanhf(kS * (t - 0.5f)) / tk;
-        return rB + H * f;
-    };
-    // the silhouette at a growth g : the face + coves (one strip), the two volute discs
-    auto shape = [&](float ox, float oy, float g, u32 col) {
-        const int N = 40; VtxC v[(N + 1) * 2];
-        const float a0 = th0 - Ph - L, a1 = th0 + Ph + L;
-        for (int i = 0; i <= N; ++i) {
-            const float a = a0 + (a1 - a0) * (float)i / N, R = prof(fabsf(a - th0)) + g;
-            v[2 * i]     = { cx + ox + cosf(a) * (Ri - g) - 0.5f, cy + oy + sinf(a) * (Ri - g) - 0.5f, 0, 1, col };
-            v[2 * i + 1] = { cx + ox + cosf(a) * R - 0.5f,        cy + oy + sinf(a) * R - 0.5f,        0, 1, col };
+// THE MODULES' SLOTS (the user 2026-11-25 : "players choose where to put them") : the hour and the grid square at the top
+// or the bottom (they alternate), the moon and the day's element in one of the four corners or on a side (never the same
+// one) ; Minimap::draw sets the angles each frame from the config.
+static const float POD_SLOT[6] = { -2.3562f, 3.14159265f, 2.3562f, 0.7854f, 0.0f, -0.7854f };   // NW, W, SW, SE, E, NE
+static float s_dayTh = 0.7854f, s_moonTh = 2.3562f, s_hourTh = -1.5707963f, s_posTh = 1.5707963f;
+// reading order : left to right, top to bottom on a side -- +1 when the increasing angle runs that way here
+static float pod_dir(float th) { return (-sinf(th) + 0.5f * cosf(th)) >= 0.0f ? 1.0f : -1.0f; }
+// a wheel's figure turned in its reading sense (head outward on the top half, toward the centre on the bottom half,
+// never upside down) ; on a SIDE slot the figures stay upright (a quarter turn would lay them on their side)
+static float pod_rot1(float a) {
+    float r = a + (sinf(a) > 0.0f ? -1.5707963f : 1.5707963f);
+    while (r > 3.14159265f) r -= 6.2831853f; while (r < -3.14159265f) r += 6.2831853f;
+    return r;
+}
+static float pod_rot(float a, float thPod) { return fabsf(pod_rot1(thPod)) > 0.80f ? 0.0f : pod_rot1(a); }
+static float pod_wrapa(float a) { while (a > 3.14159265f) a -= 6.2831853f; while (a < -3.14159265f) a += 6.2831853f; return a; }
+static float pod_smax(float a, float b, float k) { return 0.5f * (a + b + sqrtf((a - b) * (a - b) + k * k)); }
+// the modules present this frame (Minimap::draw) : their angles and half-spans
+static int s_podN = 0; static float s_podTh[4], s_podPh[4];
+
+// THE COLLAR (the user 2026-11-25 : "join them at the weld ; adapt the welds to where the modules are") : ONE cast piece
+// for every module present -- each a lug cast with the watch case (a flat top, a rounded corner, a steep wall, a concave
+// fillet flush into the ring : "an adventurer's pocket watch forged in Bastok's metal, made by Cid") ; two modules close
+// enough are WELDED by a lower bridge between them, its valleys rounded (a smooth max) -- the silhouette is computed from
+// the modules present, wherever they sit. Lit continuously from the lamp ; a polished bevel along its edge.
+static void pod_collar(u32 dev, float cx, float cy, float r, float S, u32 hb) {
+    const int n = s_podN; if (n <= 0) return;
+    const float D = r * TUNE("mm.pod_depth", 0.235f), Ri = r - 3.0f * S, Ro = r + D, rB = r - 1.5f * S, H = Ro - rB, rm = (Ri + Ro) * 0.5f;
+    const float L = H * TUNE("mm.pod_lug", 1.05f) / rm, kS = TUNE("mm.pod_lug_k", 5.0f), tk = tanhf(kS * 0.5f);
+    const float bR = rB + H * TUNE("mm.pod_bridge_h", 0.55f), bMax = TUNE("mm.pod_bridge", 2.4f) * L, kR = 3.0f * S;
+    float bA0[8], bLen[8]; int nb = 0;                                    // the welds : from a module's end to the next one's start
+    for (int i = 0; i < n; ++i) for (int j = 0; j < n; ++j) {
+        if (i == j || nb >= 8) continue;
+        float g = pod_wrapa((s_podTh[j] - s_podPh[j]) - (s_podTh[i] + s_podPh[i])); if (g < 0.0f) g += 6.2831853f;
+        if (g <= bMax) { bA0[nb] = s_podTh[i] + s_podPh[i]; bLen[nb] = g; ++nb; }
+    }
+    auto prof = [&](float a) {
+        float best = rB;
+        for (int i = 0; i < n; ++i) {
+            const float u = fabsf(pod_wrapa(a - s_podTh[i]));
+            float p;
+            if (u <= s_podPh[i]) p = Ro;
+            else { const float t = (u - s_podPh[i]) / L; p = t >= 1.0f ? rB : rB + H * (0.5f - 0.5f * tanhf(kS * (t - 0.5f)) / tk); }
+            if (p > best) best = p;
         }
-        dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
+        for (int q = 0; q < nb; ++q) {
+            float d = pod_wrapa(a - bA0[q]); if (d < 0.0f) d += 6.2831853f;
+            if (d <= bLen[q]) best = pod_smax(best, bR, kR);
+        }
+        return best;
     };
+    const int N = 360;
+    static float Ra[N + 1];
+    for (int i = 0; i <= N; ++i) Ra[i] = prof(-3.14159265f + 6.2831853f * (float)i / N);
+    static VtxC buf[N * 6];
+    // one layer : a band from inner(a, R) to outer(a, R), coloured per vertex, over every segment where the collar stands
+    auto band = [&](float ox, float oy, float (*inner)(float, float, float), float (*outer)(float, float, float), float prm, u32 (*colf)(float, float, float, u32), u32 base) {
+        int m = 0;
+        for (int i = 0; i < N; ++i) {
+            if (Ra[i] < rB + 0.3f && Ra[i + 1] < rB + 0.3f) continue;
+            const float a0 = -3.14159265f + 6.2831853f * (float)i / N, a1 = -3.14159265f + 6.2831853f * (float)(i + 1) / N;
+            const float i0 = inner(Ra[i], prm, S), o0 = outer(Ra[i], prm, S), i1 = inner(Ra[i + 1], prm, S), o1 = outer(Ra[i + 1], prm, S);
+            const u32 c0i = colf(a0, Ra[i], 0.0f, base), c0o = colf(a0, Ra[i], 1.0f, base), c1i = colf(a1, Ra[i + 1], 0.0f, base), c1o = colf(a1, Ra[i + 1], 1.0f, base);
+            const VtxC A = { cx + ox + cosf(a0) * i0 - 0.5f, cy + oy + sinf(a0) * i0 - 0.5f, 0, 1, c0i }, B = { cx + ox + cosf(a0) * o0 - 0.5f, cy + oy + sinf(a0) * o0 - 0.5f, 0, 1, c0o };
+            const VtxC C = { cx + ox + cosf(a1) * i1 - 0.5f, cy + oy + sinf(a1) * i1 - 0.5f, 0, 1, c1i }, E = { cx + ox + cosf(a1) * o1 - 0.5f, cy + oy + sinf(a1) * o1 - 0.5f, 0, 1, c1o };
+            buf[m++] = A; buf[m++] = B; buf[m++] = C; buf[m++] = B; buf[m++] = E; buf[m++] = C;
+        }
+        if (m >= 3) dDrawUP(dev, D3DPT_TRIANGLELIST, m / 3, buf, sizeof(VtxC));
+    };
+    struct K { static float lipIn(float R, float p, float s) { (void)p; return R - 1.6f * s; }
+               static float lipOut(float R, float p, float s) { (void)p; (void)s; return R; }
+               static float bv0(float R, float p, float s) { (void)p; return R - 3.6f * s; }
+               static float bv1(float R, float p, float s) { (void)p; return R - 1.8f * s; }
+               static float sh0(float R, float p, float s) { (void)p; return R - 5.4f * s; }
+               static float sh1(float R, float p, float s) { (void)p; return R - 3.6f * s; } };
     color_state(dev);
-    shape(0.8f * S, 1.4f * S, 0.6f * S, 0x60000000u);                    // its shadow
-    shape(0.0f, 0.0f, 1.3f * S, g_dm.edge);                              // the dark edge
-    // the cast body : lit per vertex from the lamp, the cove a little darker (it turns away from the front)
+    // its shadow, its dark edge
     {
-        const int N = 40; VtxC v[(N + 1) * 2];
-        const float a0 = th0 - Ph - L, a1 = th0 + Ph + L;
-        for (int i = 0; i <= N; ++i) {
-            const float a = a0 + (a1 - a0) * (float)i / N, u = fabsf(a - th0), R = prof(u), l = cosf(a) * POD_LX + sinf(a) * POD_LY;
-            u32 c = l > 0.0f ? pod_mix(hb, g_dm.lite, l * 0.14f) : pod_mix(hb, g_dm.edge, -l * 0.14f);
-            if (u > Ph) c = pod_mix(c, g_dm.edge, 0.18f * fminf(1.0f, (u - Ph) / L));
-            v[2 * i]     = { cx + cosf(a) * Ri - 0.5f, cy + sinf(a) * Ri - 0.5f, 0, 1, c };
-            v[2 * i + 1] = { cx + cosf(a) * R - 0.5f,  cy + sinf(a) * R - 0.5f,  0, 1, c };
-        }
-        dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
+        struct L1 { static u32 c(float, float, float, u32 b) { return b; } };
+        static float s_ri, s_g;
+        s_ri = Ri - 0.6f * S; s_g = 0.6f * S;
+        struct G1 { static float in(float R, float p, float s) { (void)R; (void)s; return p; } static float out(float R, float p, float s) { (void)p; (void)s; return R + s_g; } };
+        band(0.8f * S, 1.4f * S, G1::in, G1::out, s_ri, L1::c, 0x60000000u);
+        s_ri = Ri - 1.3f * S; s_g = 1.3f * S;
+        band(0.0f, 0.0f, G1::in, G1::out, s_ri, L1::c, g_dm.edge);
     }
-    // the rounded cast EDGE along the outline : a soft lit lip toward the lamp, shade away (no hard facet)
+    // the cast body : lit from the lamp, darker where it falls away (the lugs' walls, the welds)
     {
-        const int N = 40; VtxC v[(N + 1) * 2];
-        const float a0 = th0 - Ph - L * 0.85f, a1 = th0 + Ph + L * 0.85f;
-        for (int i = 0; i <= N; ++i) {
-            const float a = a0 + (a1 - a0) * (float)i / N, R = prof(fabsf(a - th0)), l = cosf(a) * POD_LX + sinf(a) * POD_LY;
-            const u32 c = l > 0.0f ? MA((u32)(40.0f + 150.0f * l), g_dm.glint) : MA((u32)(40.0f - 80.0f * l), g_dm.shade);
-            v[2 * i]     = { cx + cosf(a) * (R - 1.6f * S) - 0.5f, cy + sinf(a) * (R - 1.6f * S) - 0.5f, 0, 1, c & 0x00FFFFFFu };
-            v[2 * i + 1] = { cx + cosf(a) * R - 0.5f,              cy + sinf(a) * R - 0.5f,              0, 1, c };
-        }
-        dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
+        static float s_Ro, s_H;
+        s_Ro = Ro; s_H = H;
+        struct B1 { static u32 c(float a, float R, float, u32 b) {
+            const float l = cosf(a) * POD_LX + sinf(a) * POD_LY;
+            u32 cc = l > 0.0f ? pod_mix(b, g_dm.lite, l * 0.14f) : pod_mix(b, g_dm.edge, -l * 0.14f);
+            return pod_mix(cc, g_dm.edge, 0.20f * fminf(1.0f, (s_Ro - R) / s_H)); } };
+        struct G2 { static float in(float R, float p, float s) { (void)R; (void)s; return p; } static float out(float R, float p, float s) { (void)p; (void)s; return R; } };
+        band(0.0f, 0.0f, G2::in, G2::out, Ri, B1::c, hb);
     }
-    // the outline, anti-aliased (the strips' own edges are hard) : face and coves ; each volute's rim
+    // the rounded cast edge : a soft lit lip toward the lamp, in shade away from it
     {
-        const int K = 40; float px0 = 0.0f, py0 = 0.0f;
-        const float a0 = th0 - Ph - L, a1 = th0 + Ph + L;
-        for (int i = 0; i <= K; ++i) {
-            const float a = a0 + (a1 - a0) * (float)i / K, R = prof(fabsf(a - th0)) + 1.3f * S;
-            const float px = cx + cosf(a) * R, py = cy + sinf(a) * R;
-            if (i) seg_soft(dev, px0, py0, px, py, 1.2f * S, g_dm.edge);
-            px0 = px; py0 = py;
-        }
+        struct C1 { static u32 c(float a, float, float t, u32) {
+            const float l = cosf(a) * POD_LX + sinf(a) * POD_LY;
+            const u32 cc = l > 0.0f ? MA((u32)(40.0f + 150.0f * l), g_dm.glint) : MA((u32)(40.0f - 80.0f * l), g_dm.shade);
+            return t > 0.5f ? cc : (cc & 0x00FFFFFFu); } };
+        band(0.0f, 0.0f, K::lipIn, K::lipOut, 0.0f, C1::c, 0);
     }
-    // the POLISHED BEVEL inside the edge : a bright band, then a soft shadow below it -- a cased watch's rounded rim
+    // the polished bevel inside the edge : a bright band, a soft shadow below it
     {
-        const int N = 40; VtxC v[(N + 1) * 2], w[(N + 1) * 2];
-        const float a0 = th0 - Ph - L * 0.70f, a1 = th0 + Ph + L * 0.70f;
-        for (int i = 0; i <= N; ++i) {
-            const float a = a0 + (a1 - a0) * (float)i / N, R = prof(fabsf(a - th0)), l = cosf(a) * POD_LX + sinf(a) * POD_LY;
+        struct C2 { static u32 c(float a, float, float t, u32) {
+            const float l = cosf(a) * POD_LX + sinf(a) * POD_LY;
             const u32 hi = MA((u32)(30.0f + 70.0f * (l > 0.0f ? l : 0.0f)), g_dm.lite);
-            v[2 * i]     = { cx + cosf(a) * (R - 3.6f * S) - 0.5f, cy + sinf(a) * (R - 3.6f * S) - 0.5f, 0, 1, hi & 0x00FFFFFFu };
-            v[2 * i + 1] = { cx + cosf(a) * (R - 1.8f * S) - 0.5f, cy + sinf(a) * (R - 1.8f * S) - 0.5f, 0, 1, hi };
-            w[2 * i]     = { cx + cosf(a) * (R - 5.4f * S) - 0.5f, cy + sinf(a) * (R - 5.4f * S) - 0.5f, 0, 1, 0x00000000u };
-            w[2 * i + 1] = { cx + cosf(a) * (R - 3.6f * S) - 0.5f, cy + sinf(a) * (R - 3.6f * S) - 0.5f, 0, 1, MA(0x30, g_dm.edge) };
-        }
-        dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, w, sizeof(VtxC));
-        dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
+            return t > 0.5f ? hi : (hi & 0x00FFFFFFu); } };
+        struct C3 { static u32 c(float, float, float t, u32) { return t > 0.5f ? MA(0x30, g_dm.edge) : 0x00000000u; } };
+        band(0.0f, 0.0f, K::sh0, K::sh1, 0.0f, C3::c, 0);
+        band(0.0f, 0.0f, K::bv0, K::bv1, 0.0f, C2::c, 0);
     }
-    (void)rm;
+    // the outline, anti-aliased (the strips' own edges are hard)
+    for (int i = 0; i < N; ++i) {
+        if (Ra[i] < rB + 0.3f && Ra[i + 1] < rB + 0.3f) continue;
+        const float a0 = -3.14159265f + 6.2831853f * (float)i / N, a1 = -3.14159265f + 6.2831853f * (float)(i + 1) / N;
+        const float r0 = Ra[i] + 1.3f * S, r1 = Ra[i + 1] + 1.3f * S;
+        seg_soft(dev, cx + cosf(a0) * r0, cy + sinf(a0) * r0, cx + cosf(a1) * r1, cy + sinf(a1) * r1, 1.2f * S, g_dm.edge);
+    }
 }
 void clip_rect_begin(u32 dev, float x, float y, float w, float h);   // (config_controls.cpp : a sub-viewport clip)
 void clip_rect_end(u32 dev);
@@ -1223,17 +1262,14 @@ static void pod_caps(u32 dev, float cx, float cy, float rw, float wr, float a0, 
 // radius, so it rolls ALONG the radius (outward = away from the dial's centre) ; the icons stay upright on the screen. The
 // cell is a box in the wheel's own frame (radial u, tangential t) : the upright icon quad is clipped against it (convex
 // polygon clip, UVs carried), so a tilted wheel cuts its icons along its own edges. k : 0..1 through the roll.
-static void pod_roll_cell(u32 dev, float ccx, float ccy, float ang, float rc, float sz, float hT, float hR, float k, int oldCell, int newCell, u32 colOld, u32 colNew) {
+static void pod_roll_cell(u32 dev, float ccx, float ccy, float ang, float rc, float sz, float hT, float hR, float k, int oldCell, int newCell, u32 colOld, u32 colNew, float thPod) {
     const float ux = cosf(ang), uy = sinf(ang), tx = -uy, ty = ux;        // radial, tangential
     const float Cx = ccx + ux * rc, Cy = ccy + uy * rc;                   // the cell's centre
     auto draw = [&](float off, int c, u32 col, bool clip) {
         if (c < 0) return;
         const float px = Cx + ux * off, py = Cy + uy * off;
         const float u0 = c / 8.0f, u1 = (c + 1) / 8.0f;
-        // IN THE WHEEL'S READING SENSE (the user 2026-11-25 : "the icons always straight in their reading sense, never
-        // tilted, never upside down") : turned with the wheel as the hour's figures are -- the head outward on the top
-        // half of the dial, toward the centre on the bottom half
-        const float rot = ang + (sinf(ang) > 0.0f ? -1.5707963f : 1.5707963f), rc_ = cosf(rot), rs_ = sinf(rot), h2 = sz * 0.5f;
+        (void)thPod; const float rot = 0.0f, rc_ = cosf(rot), rs_ = sinf(rot), h2 = sz * 0.5f;   // ALWAYS UPRIGHT to the player's eye (the user 2026-11-25), whatever the wheel's tilt or turn
         const float cxq[4] = { -h2, h2, h2, -h2 }, cyq[4] = { -h2, -h2, h2, h2 }, uq[4] = { u0, u1, u1, u0 }, vq[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
         float P[16][4];
         for (int q = 0; q < 4; ++q) { P[q][0] = px + cxq[q] * rc_ - cyq[q] * rs_; P[q][1] = py + cxq[q] * rs_ + cyq[q] * rc_; P[q][2] = uq[q]; P[q][3] = vq[q]; }
@@ -1329,7 +1365,7 @@ static void draw_ink_moon(u32 dev, float x, float y, float R, float f, bool wani
 struct PodGeo { float th0, D, Ri, Ro, rm, isz, rw, wr, as, Wh, Ph; };
 static PodGeo pod_geo(float r, float S) {
     PodGeo g;
-    g.th0 = TUNE("mm.pod_angle", 0.7854f);                               // the LOWER RIGHT, between the S and the E (the user 2026-11-25 ; the hour took the top) -- its end runs BEHIND the position's tube
+    g.th0 = s_dayTh;                                                     // the day's element : its slot (Minimap > Clock, the user 2026-11-25)
     g.D = r * TUNE("mm.pod_depth", 0.235f);                              // the designer's spec (2026-11-25) : ~0.23 r at the summit
     g.Ri = r - 3.0f * S; g.Ro = r + g.D; g.rm = (g.Ri + g.Ro) * 0.5f;
     g.isz = r * TUNE("mm.pod_icon", 0.18f); g.rw = r + g.D * 0.50f; g.wr = g.isz * 0.56f;   // today's icon 0.18 r ; the window just holds it
@@ -1366,7 +1402,7 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
     color_state(dev);
     // ---- the housing, cast into the dial : its ends flow down into the ring ----
     const u32 hb = dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f));   // the ring's own metal : one cast piece
-    pod_housing(dev, cx, cy, r, Ri, Ro, th0, Ph, S, hb);
+    (void)Ri; (void)Ro;                                                  // (the housing : the collar, drawn once for all the modules)
     (void)housing;
     // ---- the WINDOW : a chamfer, then the dark guilloche floor ----
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Wh - 0.02f, th0 + Wh + 0.02f, g_dm.dark);
@@ -1385,7 +1421,7 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
             const bool today = d == 0;
             const float sz = today ? isz : isz * (0.13f / 0.18f);
             const u32 col = today ? 0xFFFFFFFFu : 0xFFD2D2D2u;
-            pod_roll_cell(dev, cx, cy, th0 + (sinf(th0) > 0.0f ? -1.0f : 1.0f) * (float)d * as, rw + wr * 0.12f, sz, as * rw * 0.48f, wr, k, oldDi < 0 ? -1 : ((oldDi + d + 16) & 7), (di + d + 16) & 7, col, col);
+            pod_roll_cell(dev, cx, cy, th0 + pod_dir(th0) * (float)d * as, rw + wr * 0.12f, sz, as * rw * 0.48f, wr, k, oldDi < 0 ? -1 : ((oldDi + d + 16) & 7), (di + d + 16) & 7, col, col, th0);
         }
         dSetTex(dev, 0, 0);
         color_state(dev);
@@ -1567,7 +1603,7 @@ static void drum_arc(u32 dev, Font* fo, int slot, float cx, float cy, float th0,
         if (strcmp(nv, cur[slot][i]) != 0) { strcpy(old[slot][i], cur[slot][i]); strncpy(cur[slot][i], nv, 11); cur[slot][i][11] = 0; tch[slot][i] = seen[slot] ? now : 0; }
     }
     seen[slot] = true;
-    const float tw = drum_width(fo, txt, sz, S), dir = sinf(th0) > 0.0f ? -1.0f : 1.0f;   // left to right on the screen wherever it sits
+    const float tw = drum_width(fo, txt, sz, S), dir = pod_dir(th0);   // left to right (top to bottom on a side) wherever it sits
     const float span = tw / rw, aS = th0 - dir * span * 0.5f;
     auto ang = [&](float w) { return aS + dir * w / rw; };               // the angle at w along the row
     const float aLo = th0 - span * 0.5f, aHi = th0 + span * 0.5f;
@@ -1592,10 +1628,11 @@ static void drum_arc(u32 dev, Font* fo, int slot, float cx, float cy, float th0,
             fo->begin(dev);
             // the characters FOLLOW THEIR WHEEL (the user 2026-11-25) : each turned to its wheel's angle, upright toward the
             // outside on the top half, toward the centre on the bottom half ; drawn in the wheel's frame, then rotated in
-            const float rot = a + dir * 1.5707963f, ux = cosf(a), uy = sinf(a);
+            const float rot = pod_rot(a, th0), ux = cosf(a), uy = sinf(a);
             Font::set_rotation(px, py, rot);
-            if (rolling) fo->draw_lc(dev, px - ow * 0.5f, py - dir * ee * lh, ol, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the old value rolls OUT (away from the centre)
-            if (tk[i].t[0] != ' ') fo->draw_lc(dev, px - cw * 0.5f, py + dir * inn, tk[i].t, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the new one rolls in
+            const float og = sinf(a) > 0.0f ? 1.0f : -1.0f;              // outward, in the figure's own frame (its head points in on the bottom half)
+            if (rolling) fo->draw_lc(dev, px - ow * 0.5f, py + og * ee * lh, ol, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the old value rolls OUT (away from the centre)
+            if (tk[i].t[0] != ' ') fo->draw_lc(dev, px - cw * 0.5f, py - og * inn, tk[i].t, sz, 0xFF2E1C0Cu, 0, 0.0f);   // the new one rolls in
             Font::clear_rotation();
             (void)ux; (void)uy; (void)ux0; (void)uy0;
             if (k < 1.0f) clip_rect_end(dev);
@@ -1618,13 +1655,13 @@ static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it e
 static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct, bool waning, int hh, u32 tex) {
     PERF_SCOPE("mm.moonpod");
     PodGeo G = pod_geo(r, S);
-    G.th0 = TUNE("mm.mpod_angle", 2.3562f);                              // the LOWER left, between the W and the S (the user 2026-11-25) -- its end runs BEHIND the position's tube
-    const float dir = sinf(G.th0) > 0.0f ? -1.0f : 1.0f;                // yesterday | today | tomorrow read LEFT to right wherever it sits
+    G.th0 = s_moonTh;                                                    // the moon : its slot (Minimap > Clock, the user 2026-11-25)
+    const float dir = pod_dir(G.th0);                                    // read left to right (top to bottom on a side) wherever it sits
     const float th0 = G.th0, Ri = G.Ri, Ro = G.Ro, rm = G.rm, isz = G.isz * TUNE("mm.mpod_icon", 1.10f), rw = G.rw, wr = isz * 0.56f, as = G.as, Wh = G.Wh, Ph = G.Ph;
     auto at = [&](float ang, float rad, float& x, float& y) { x = cx + cosf(ang) * rad; y = cy + sinf(ang) * rad; };
     const u32 hb = dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f));
     color_state(dev);
-    pod_housing(dev, cx, cy, r, Ri, Ro, th0, Ph, S, hb);                // cast into the dial : its ends flow down into the ring
+    (void)Ri; (void)Ro;                                                  // (the housing : the collar, drawn once for all the modules)
     (void)rm;
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Wh - 0.02f, th0 + Wh + 0.02f, g_dm.dark);     // the window's chamfer
     pod_wheels_under(dev, cx, cy, rw, wr, th0, as);                     // three paper WHEELS, as the hour's
@@ -1644,7 +1681,7 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
             tex_state(dev, tex);
             for (int d = -1; d <= 1; d += 2) {
                 const int nc = d < 0 ? prevC : nextC, oc = d < 0 ? nextC : prevC;   // a flip swaps the two
-                pod_roll_cell(dev, cx, cy, th0 + dir * (float)d * as, rw, szS, as * rw * 0.48f, wr, k, rollMs ? oc : -1, nc, 0xB4FFFFFFu, 0xB4FFFFFFu);   // ink, not solid
+                pod_roll_cell(dev, cx, cy, th0 + dir * (float)d * as, rw, szS, as * rw * 0.48f, wr, k, rollMs ? oc : -1, nc, 0xB4FFFFFFu, 0xB4FFFFFFu, th0);   // ink, not solid
             }
             dSetTex(dev, 0, 0);
         }
@@ -1661,7 +1698,7 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
             const float km = mRoll ? fminf(1.0f, (float)(nowMs - mRoll) / 240.0f) : 1.0f;
             float px, py; at(th0, rw, px, py);
             const float ux = cosf(th0), uy = sinf(th0), Rm = isz * 0.44f, Rc = wr;
-            { const float rot = th0 + (sinf(th0) > 0.0f ? -1.5707963f : 1.5707963f); s_inkRotC = cosf(rot); s_inkRotS = sinf(rot); }
+            s_inkRotC = 1.0f; s_inkRotS = 0.0f;                           // upright to the player's eye, as the icons
             if (km >= 1.0f) draw_ink_moon(dev, snap(px), snap(py), Rm, fCur, wCur, S);
             else {
                 const float e = 1.0f - (1.0f - km) * (1.0f - km), PH = 1.3f, Rcyl = 2.0f * Rm;
@@ -1964,14 +2001,13 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 s_tubeRw = rwT;
                 for (int k = 1; k <= 2; ++k) {
                     if (!on3[k] || hw3[k] <= 0.0f) continue;
-                    const float th = k == 2 ? -PI * 0.5f : PI * 0.5f;
-                    const float Ph = (hw3[k] + 3.0f * S) / rwT + 2.0f * S / rmT;
-                    pod_housing(dev, cx, cy, r, Ri, Ro, th, Ph, S, hbT);
+                    const float th = k == 2 ? s_hourTh : s_posTh;
+                    (void)rmT; (void)hbT; (void)Ri; (void)Ro;                // (the housing : the collar)
                     cwX[k] = snap(cx); cwY[k] = snap(cy + sinf(th) * rwT); cwH[k] = hw3[k];
                 }
             }
             color_state(dev);
-            if (posBand) { if (s_tubes) drum_arc(dev, tf, 1, cx, cy, PI * 0.5f, s_tubeRw, cwHH, posTxt, pSz, S); else drum_text(dev, tf, 1, cwX[1], cwY[1], cwH[1] - 0.6f * S, cwHH, posTxt, pSz, S); }
+            if (posBand) { if (s_tubes) drum_arc(dev, tf, 1, cx, cy, s_posTh, s_tubeRw, cwHH, posTxt, pSz, S); else drum_text(dev, tf, 1, cwX[1], cwY[1], cwH[1] - 0.6f * S, cwHH, posTxt, pSz, S); }
         }
         if (!foot && (bandMoon || bandDay)) {
             color_state(dev);
@@ -2177,7 +2213,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 const float hl[6] = { x, nTop + 0.6f * S, x + nw * 0.75f, nTop + 0.6f * S, x, nTip - 1.5f * S };
                 fill_poly_aa(dev, hl, 3, MA(0xB0, g_dm.glint));                       // its lit facet
             }
-            if (tb[0] && foot && cwHH > 0.0f && s_tubes) drum_arc(dev, tf, 2, cx, cy, -PI * 0.5f, s_tubeRw, cwHH, tb, pSz, S);
+            if (tb[0] && foot && cwHH > 0.0f && s_tubes) drum_arc(dev, tf, 2, cx, cy, s_hourTh, s_tubeRw, cwHH, tb, pSz, S);
             else if (tb[0] && foot && cwHH > 0.0f) drum_text(dev, tf, 2, cwX[2], cwY[2], cwH[2] - 0.6f * S, cwHH, tb, pSz, S);
             else if (tb[0]) plateText((rc0 + rc1) * 0.5f, ty, tb, 0xFFF4EEDFu, -1);
         }
@@ -2744,6 +2780,31 @@ void Minimap::draw(const Frame& f) {
     const float Z   = clampf(c.mmZoom, 1.0f, 24.0f);
     const float pn  = (mapD / mapPx) * Z;                     // screen px per native map px (Z=1 => full map spans the lens)
 
+    if (dial && !dialSq && c.mmDayDial == 2) {                           // THE MODULES' SLOTS and THE COLLAR (one cast piece for all)
+        s_dayTh = POD_SLOT[(c.mmPodDay < 0 || c.mmPodDay > 5) ? 3 : c.mmPodDay];
+        s_moonTh = POD_SLOT[(c.mmPodMoon < 0 || c.mmPodMoon > 5) ? 2 : c.mmPodMoon];
+        s_hourTh = c.mmPodHP == 1 ? 1.5707963f : -1.5707963f; s_posTh = -s_hourTh;
+        s_podN = 0;
+        if (TUNE("mm.foot_body", 0.0f) <= 0.5f) {
+            dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);
+            const PodGeo G = pod_geo(r, S);
+            const float D = r * TUNE("mm.pod_depth", 0.235f), Ri = r - 3.0f * S, Ro = r + D, rmT = (Ri + Ro) * 0.5f, rwT = r + D * 0.5f;
+            Font* tfP = band_font(f, MM_TIME);
+            const float pSzP = snap(TUNE("mm.dial_cap", 12.5f) * S);
+            auto add = [&](float th, float ph) { if (s_podN < 4) { s_podTh[s_podN] = th; s_podPh[s_podN] = ph; ++s_podN; } };
+            if (c.mmClock && c.mmClkDay) add(s_dayTh, G.Ph);
+            if (c.mmClock && c.mmClkMoon) add(s_moonTh, G.Ph);
+            if (c.mmClock && c.mmClkTime && tfP) add(s_hourTh, (snap(drum_width(tfP, "00:00", pSzP, S) * 0.5f + 3.0f * S) + 3.0f * S) / rwT + 2.0f * S / rmT);
+            if (c.mmGrid && tfP) {
+                const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
+                if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) {
+                    char pt[12]; sprintf(pt, "%c-%d", 'A' + gc, gr + 1);
+                    add(s_posTh, (snap(drum_width(tfP, pt, pSzP, S) * 0.5f + 3.0f * S) + 3.0f * S) / rwT + 2.0f * S / rmT);
+                }
+            }
+            pod_collar(dev, ccx, ccy, r, S, dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f)));
+        }
+    }
     if (dial && !dialSq && c.mmDayDial == 2 && c.mmClock && c.mmClkDay) {          // the DAY DISC : under the frame, the map and the ring -- and BEHIND the position's tube (drawn before it)
         dial_metal_set(c.mmFrame != 0 ? mm_frame_color(c, f) : 0u);
         const VanaClock dv0 = dial_vana(g.vana);

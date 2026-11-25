@@ -121,6 +121,30 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
                 const int dd = (c.mmDayDial < 0 || c.mmDayDial > 2) ? 1 : c.mmDayDial;
                 if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Day dial", "Cadran du jour"), tr(DD_EN[dd], DD_FR[dd]))) { c.mmDayDial = wrap(dd + d, 3); save_ui_config(); }
             } ROW_NEXT(52.0f)
+            if (c.mmDayDial == 2) {   // the MODULES around the compass : where each one sits
+                static const char* SL_EN[6] = { "Top left", "Left", "Bottom left", "Bottom right", "Right", "Top right" };
+                static const char* SL_FR[6] = { "Haut gauche", "Gauche", "Bas gauche", "Bas droite", "Droite", "Haut droite" };
+                { ROW_BAND(52.0f)
+                    static const char* HP_EN[2] = { "Hour top, square bottom", "Square top, hour bottom" };
+                    static const char* HP_FR[2] = { "Heure en haut, case en bas", "Case en haut, heure en bas" };
+                    const int hp = c.mmPodHP == 1 ? 1 : 0;
+                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Hour / map square", "Heure / case de carte"), tr(HP_EN[hp], HP_FR[hp]))) { (void)d; c.mmPodHP = 1 - hp; save_ui_config(); }
+                } ROW_NEXT(52.0f)
+                { ROW_BAND(52.0f)
+                    const int s0 = (c.mmPodDay < 0 || c.mmPodDay > 5) ? 3 : c.mmPodDay;
+                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Day's element", "\xC3\x89l\xC3\xA9ment du jour"), tr(SL_EN[s0], SL_FR[s0]))) {
+                        int n2 = wrap(s0 + d, 6); if (n2 == c.mmPodMoon) n2 = wrap(n2 + d, 6);   // skip the moon's slot
+                        c.mmPodDay = n2; save_ui_config();
+                    }
+                } ROW_NEXT(52.0f)
+                { ROW_BAND(52.0f)
+                    const int s0 = (c.mmPodMoon < 0 || c.mmPodMoon > 5) ? 2 : c.mmPodMoon;
+                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Moon", "Lune"), tr(SL_EN[s0], SL_FR[s0]))) {
+                        int n2 = wrap(s0 + d, 6); if (n2 == c.mmPodDay) n2 = wrap(n2 + d, 6);    // skip the day's slot
+                        c.mmPodMoon = n2; save_ui_config();
+                    }
+                } ROW_NEXT(52.0f)
+            }
         }
         if (c.mmLayout == 1) {
             { ROW_BAND(52.0f)
