@@ -182,7 +182,9 @@ void draw_icon(u32 dev, Icon ic, float cx, float cy, float z, float S, u32 c) {
 u32 g_handTex = 0;   // the party's selection-hand texture, handed in by the HUD each frame (device-loss managed there)
 float g_subXY[2] = { -1.0f, -1.0f };
 float g_mbkAt[3] = { 0.0f, 0.0f, 0.0f };
-float g_esAt[3] = { 0.0f, 0.0f, 0.0f };    // the equipment set list : left edge, the cursor row's top, 1 = drawn (mcresmn hangs there)
+float g_esAt[3] = { 0.0f, 0.0f, 0.0f };
+float g_m0At[3] = { 0.0f, 0.0f, 0.0f };
+float g_mlAt[3] = { 0.0f, 0.0f, 0.0f };    // the map's Markers list : left edge, the cursor row's top, 1 = drawn (a marker's menu, mapv2, hangs there)    // the map's menu (map0, the generic engine's) : left edge, its top, 1 = drawn (the Markers list hangs there)    // the equipment set list : left edge, the cursor row's top, 1 = drawn (mcresmn hangs there)
 float g_medAt[2][3] = { { 0, 0, 0 }, { 0, 0, 0 } };   // the macro palette / the macro : right edge, top, 1 = drawn (their option menus hang there)   // the macro book list : its left edge, the cursor row's top, 1 = drawn this frame (mcrselop hangs there)     // where the main menu's submenu was last drawn (a player's options take its place)
 const int HIT_N = 21;   // ... 20 the macro book list
 float g_hit[HIT_N][4] = { { 0, 0, 0, 0 } };   // 13 the trade, 14 a confirm, 15 the buff bar, 16 a shop's Buy / Sell, 17 its list
@@ -5356,6 +5358,7 @@ void gen_draw(const Frame& f) {
     float dt = g_gnMs ? (float)(now - g_gnMs) / 1000.0f : 0.0f; g_gnMs = now; if (dt > 0.1f) dt = 0.1f;
     const NativeGenMenus& G0 = native_gen_menus();
     static NativeEntryMenu last[GEN_MENUS]; static char lastHelp[GEN_MENUS][16][72];
+    g_m0At[2] = 0.0f;
     const Metrics k = metrics(f); const float S = k.S;
     for (int i = 0; i < G0.n; ++i) {                                   // a slot per menu NAME (its fade survives the others)
         int s = -1; for (int j = 0; j < GEN_MENUS; ++j) if (!strcmp(g_gnName[j], G0.m[i].name)) s = j;
@@ -5373,6 +5376,15 @@ void gen_draw(const Frame& f) {
             if (L.entry[i] == L.cursor) cur = i + 1;
             if (!L.label[i][0]) row_image(f.dev, L, i, rows[i]);
         }
+        // a map marker's menu : entry 2 places the marker or removes it -- the client draws keytops3 #29 / #35 over it by
+        // the marker's state (map-macro-re s.1.5) ; its definition's own label ("Markers") is not what it does
+        if (!strcmp(L.name, "mapv2") && n >= 2 && native_map().v2Used >= 0) {
+            const bool used = native_map().v2Used == 1;
+            rows[1].label = used ? tr("Remove", "Retirer") : tr("Mark", "Placer"); rows[1].ltex = 0;   // the definition's image ("Markers") off
+            const int cl = native_client_lang(), ul = ui_config().lang;
+            { static int said = 0; const bool img = ((ul == 0 && cl == 1) || (ul == 1 && cl == 3)) && label_img(f.dev, 2, (unsigned short)((used ? 35 : 29) + 1), rows[1]);
+              if (said < 4) { ++said; windower::debug::log("NATIVEUI map marker menu : entry 2 = %s (%s, ui lang %d client %d)", used ? "remove" : "mark", img ? "the client's image" : "text", ul, cl); } }
+        }
         float bw, bh; block_size(f, k, rows, n, bw, bh);
         const float sx = f.screenW / (float)L.uiW, sy = f.screenH / (float)L.uiH;
         float bx = snap((float)L.rx0 * sx), by = snap((float)L.ry0 * sy);
@@ -5382,6 +5394,7 @@ void gen_draw(const Frame& f) {
         // list, on its row (the client places them beside its own, narrower list -- they covered ours, 2026-11-25)
         if (!strcmp(L.name, "mcrmenu") && (native_macro_books().open || native_equip_sets().open)) continue;
         if (!strcmp(L.name, "mcresmn") && g_esAt[2] > 0.0f) { bx = snap(g_esAt[0] - snap(3.0f * S) - bw); by = snap(g_esAt[1]); }
+        if (!strcmp(L.name, "mapv2") && g_mlAt[2] > 0.0f) { bx = snap(g_mlAt[0] - snap(3.0f * S) - bw); by = snap(g_mlAt[1]); }
         if (!strcmp(L.name, "mcrselop") && g_mbkAt[2] > 0.0f) { bx = snap(g_mbkAt[0] - snap(3.0f * S) - bw); by = snap(g_mbkAt[1]); }
         if ((!strcmp(L.name, "mcrbedit") || !strcmp(L.name, "mcrledit")) && !L.focused) continue;   // opened WITH the palette / the macro, idle : shown only when called (the option key)
         if (!strcmp(L.name, "mcrbedit") && g_medAt[0][2] > 0.0f) { bx = snap(g_medAt[0][0] + snap(3.0f * S)); by = snap(g_medAt[0][1]); }
@@ -5395,6 +5408,7 @@ void gen_draw(const Frame& f) {
         if (A <= 0.0f) continue;
         g_frameJoin = jm;
         const int row = block_draw(f, k, g_gnB[s], rows, n, cur, L.focused, bx, by, bw, bh, A, dt);
+        if (!strcmp(L.name, "map0") && open) { g_m0At[0] = bx; g_m0At[1] = by; g_m0At[2] = 1.0f; }
         if (open && L.focused) {
             hit_extend(16, by + bh, f.screenH);
             if (g_hit[16][2] <= 0.0f) { g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH; }
@@ -8602,6 +8616,234 @@ void macrobar_draw(const Frame& f) {
             const char* s = fit_text(fo, nm, tz, nw, cut, sizeof(cut));
             fo->draw_lc(dev, snap(cx + (cwi - fo->measure(s, tz)) * 0.5f), snap(cy0 + cellH * 0.58f), s, tz, with_alpha(hand ? 0xFFFFFFFFu : 0xFFE4EAF2u, A), sh, k.ow);
         }
+    }
+}
+
+// ---- the MAP (mapframe : the client paints it across the whole screen ; native_map) -- AioHUD's, in the client's own
+// view : its zoom and scroll place the image, so the client's pan / zoom keys and its cursor still drive it. Drawn
+// BEFORE the HUD's widgets (the client's map sat under them too). The image : the zone's map DAT (the minimap's
+// decoder), a texture of its own keyed by file id, bounded retry (rule 10) ; forgotten on a device change.
+namespace {
+u32 g_mapTex = 0; unsigned g_mapTexId = 0; int g_mapTries = 0; unsigned g_mapNext = 0; Block g_mapB; unsigned g_mapMs = 0;
+NativeMap g_mapLast; float g_mapA = 0.0f;                   // the map last read + its shown alpha (the cartouche, drawn later)
+u32 g_mkAtlas = 0; TexRetry g_mkAtlasR; char g_mkPath[260] = "";   // the minimap's marker atlas, a copy of our own (device-owned)
+}
+bool map_screen_up() { return g_mapA > 0.0f; }
+void map_screen_forget() { g_mapTex = 0; g_mapTexId = 0; g_mapTries = 0; g_mapNext = 0; g_mkAtlas = 0; g_mkAtlasR = TexRetry{}; }
+void map_screen_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    g_mapA = 0.0f;
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_mapB.vis = 0.0f; g_mapB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_mapMs ? (float)(now - g_mapMs) / 1000.0f : 0.0f; g_mapMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeMap& M0 = native_map();
+    NativeMap& last = g_mapLast;
+    const bool up = M0.open && M0.fileId != 0;
+    if (up) last = M0;
+    g_mapA = 0.0f;
+    const u32 dev = f.dev;
+    // the texture : (re)loaded when the file changes ; a miss retried every 2 s, never given up, said once then every 10th
+    if (up && last.fileId != g_mapTexId) { if (g_mapTex) release_texture(g_mapTex); g_mapTex = 0; g_mapTexId = last.fileId; g_mapTries = 0; g_mapNext = now; }
+    if (up && !g_mapTex && (int)(now - g_mapNext) >= 0) {
+        u32* px = 0; int w = 0, h = 0; MapLoadDiag md;
+        if (load_zone_map(g_mapTexId, px, w, h, &md)) { g_mapTex = make_texture_argb_mip(dev, w, h, px); free_map_image(px); }
+        ++g_mapTries; g_mapNext = now + 2000;
+        if (g_mapTex) { if (g_mapTries > 1) windower::debug::log("NATIVEUI map screen : file 0x%04X loaded on try %d", g_mapTexId, g_mapTries); }
+        else if (g_mapTries == 1 || g_mapTries % 10 == 0) windower::debug::log("NATIVEUI map screen : file 0x%04X NOT loaded (try %d, step %d) -- retrying every 2 s", g_mapTexId, g_mapTries, md.step);
+    }
+    if (!block_ease(g_mapB, up, now, dt) || last.uiW <= 0 || last.uiH <= 0) return;
+    const float A = g_mapB.vis * (1.0f - (float)last.fade / 255.0f); if (A <= 0.0f) return;
+    g_mapA = A;
+    const Metrics k = metrics(f); Font* fo = f.font;
+    const float S = f.screenH / 1000.0f;                       // the map's icons follow the SCREEN, not the menus' size (Game UI -> Menus)
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    auto SX = [&](float mx) { return ((mx - (float)last.icoX - last.scrollX) * last.zoom) * sx; };   // icons : map px -> screen
+    auto SY = [&](float my) { return ((my - (float)last.icoY - last.scrollY) * last.zoom) * sy; };
+    // the world dimmed, then the parchment : its own colours, a soft drop under it
+    cs(dev);
+    rrect(dev, 0.0f, 0.0f, f.screenW, f.screenH, 0.0f, with_alpha(0xB4080A0Eu, A), with_alpha(0xC8080A0Eu, A), 0.0f);
+    const float ix = (((float)last.imgX - last.scrollX) * last.zoom) * sx, iy = (((float)last.imgY - last.scrollY) * last.zoom) * sy;
+    const float iw = 512.0f * last.zoom * sx, ih = 512.0f * last.zoom * sy;
+    if (g_mapTex) {
+        const float x0 = ix > 0.0f ? ix : 0.0f, y0 = iy > 0.0f ? iy : 0.0f;
+        const float x1 = ix + iw < f.screenW ? ix + iw : f.screenW, y1 = iy + ih < f.screenH ? iy + ih : f.screenH;
+        if (x1 > x0 && y1 > y0) {
+            rrect_glow(dev, snap(x0), snap(y0), snap(x1) - snap(x0), snap(y1) - snap(y0), 0.0f, with_alpha(0x70000000u, A), 18.0f * S);
+            cs(dev);
+            dTexQuadState(dev, g_mapTex, true, true);
+            const float u0 = (x0 - ix) / iw, u1 = (x1 - ix) / iw, v0 = 1.0f - (y0 - iy) / ih, v1 = 1.0f - (y1 - iy) / ih;   // V flipped (the DAT's rows)
+            tquad(dev, snap(x0), snap(y0), snap(x1) - snap(x0), snap(y1) - snap(y0), u0, u1, v0, v1, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A));
+            dSetTex(dev, 0, 0); cs(dev);
+            rrect_stroke(dev, snap(ix), snap(iy), snap(iw), snap(ih), 0.0f, with_alpha(0x90302410u, A), 1.0f);
+        }
+    }
+    const u32 sh = with_alpha(0xE0000000u, A);
+    const float lz = k.tz * 0.82f;
+    // the icons : the MINIMAP's atlas (map_markers.raw, 8 x 4 cells) -- the same arrow, pins and dots on both maps ;
+    // without it, plain discs (the atlas has its own bounded retry)
+    const bool atl = ensure_raw_tex_mip(dev, g_mkAtlas, g_mkAtlasR, g_mkPath[0] ? g_mkPath : (plugin_path(g_mkPath, 260, "assets\\map_markers.raw"), g_mkPath), 512, 256) != 0;
+    auto cell = [&](int c, float x, float y, float sz, float ang, u32 col) {
+        const float u0 = (float)(c % 8) / 8.0f, v0 = (float)(c / 8) / 4.0f;
+        tquad_rot_uv(dev, snap(x), snap(y), sz, sz, ang, u0, v0, u0 + 0.125f, v0 + 0.25f, col);
+    };
+    enum { ME_FILL = 0, ME_FRAME = 1, MOB_FILL = 2, MOB_FRAME = 3, PARTY_FILL = 5, PARTY_FRAME = 6, ALLY_FILL = 7, ALLY_FRAME = 8,
+           TGT_FILL = 13, TGT_FRAME = 14, PIN_FILL = 15, PIN_FRAME = 16, PC_OTHER = 17, NPC_DOT = 18 };
+    const float IS = 1.25f;                                     // the full map's icons : a quarter bigger than the minimap's
+    for (int i = 0; i < last.nIcons; ++i) {
+        const NativeMapIcon& I = last.icon[i];
+        const float a = A * (I.alpha >= 0x80 ? 1.0f : (float)I.alpha / 128.0f); if (a <= 0.02f) continue;
+        const float x = snap(SX(I.x)), y = snap(SY(I.y));
+        int fill = -1, frame = -1; u32 col = 0xFFFFFFFFu, fcol = 0xFFFFFFFFu; float sz = 15.0f; bool pin = false, ring = false;
+        switch (I.sprite) {
+            case 3:  fill = PIN_FILL; frame = PIN_FRAME; col = 0xFFFFC85Au; sz = 20.0f; pin = true; break;     // your own marker
+            case 4:  fill = PIN_FILL; frame = PIN_FRAME; col = 0xFFFF6A5Au; sz = 20.0f; pin = true; break;     // an event marker
+            case 5:  fill = PARTY_FILL; frame = PARTY_FRAME; col = 0xFF5AB4FFu; break;                         // a party member
+            case 6:  fill = ALLY_FILL; frame = ALLY_FRAME; col = 0xFFB48CFFu; break;                           // the alliance / others
+            case 8:  fill = PC_OTHER; col = 0xFFD8DEE6u; sz = 10.0f; break;                                    // Wide Scan : a player
+            case 9:  fill = NPC_DOT; col = 0xFF5ED37Cu; sz = 10.0f; break;                                     //             an NPC
+            case 10: fill = MOB_FILL; frame = MOB_FRAME; col = 0xFFFFE600u; fcol = 0xFF4A3A22u; sz = 13.0f; break;   // an enemy
+            case 11: ring = true; break;                                                                       // the selected row
+            default: fill = NPC_DOT; col = 0xFFE8D9B0u; sz = 10.0f; break;
+        }
+        sz *= S * IS;
+        const float cy = pin ? y - sz * 0.5f : y;              // a pin's point ON the spot
+        if (ring) {
+            const float t = (float)(now % 1200) / 1200.0f, rr = (8.0f + 6.0f * t) * S * IS;
+            ring_sector(dev, x, y, rr - 1.6f * S, rr, 0.0f, 6.2831853f, with_alpha(0xFFFFE08Au, a * (1.0f - t)));
+            ring_sector(dev, x, y, 6.0f * S * IS, 7.6f * S * IS, 0.0f, 6.2831853f, with_alpha(0xFFFFE08Au, a));
+        } else if (atl && fill >= 0) {
+            dTexQuadState(dev, g_mkAtlas, true, true);
+            if (frame >= 0) cell(frame, x, cy + 1.0f, sz * 1.12f, 0.0f, with_alpha(0x8C000000u, a));
+            cell(fill, x, cy, sz, 0.0f, with_alpha(col, a));
+            if (frame >= 0) cell(frame, x, cy, sz, 0.0f, with_alpha(fcol, a));
+            dSetTex(dev, 0, 0); cs(dev);
+        } else {
+            disc(dev, x, cy, sz * 0.32f + 1.4f * S, with_alpha(0xD0000000u, a));
+            disc(dev, x, cy, sz * 0.32f, with_alpha(col, a));
+        }
+        if (I.label[0] && !(I.flags & 0x08)) { fo->begin(dev); fo->draw_lc(dev, snap(x + sz * 0.5f + 4.0f * S), snap(cy), I.label, lz, with_alpha(0xFFF4ECD8u, a), sh, k.ow); cs(dev); }
+    }
+    // the tracked target : the minimap's target ring, pulsing
+    if (last.target) {
+        const float x = snap(SX(last.tx)), y = snap(SY(last.ty)), t = (float)(now % 1000) / 1000.0f, sz = 18.0f * S * IS;
+        ring_sector(dev, x, y, (8.0f + 9.0f * t) * S * IS, (9.6f + 9.0f * t) * S * IS, 0.0f, 6.2831853f, with_alpha(0xFFFF5A4Au, A * (1.0f - t)));
+        if (atl) { dTexQuadState(dev, g_mkAtlas, true, true); cell(TGT_FILL, x, y, sz, 0.0f, with_alpha(0xFFFF5A4Au, A)); cell(TGT_FRAME, x, y, sz, 0.0f, with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev); }
+        else disc(dev, x, y, 4.0f * S, with_alpha(0xFFFF5A4Au, A));
+    }
+    // you : the minimap's arrow, turned by your heading (the minimap's convention : heading + pi/2 on an up-pointing cell)
+    if (last.player) {
+        const float x = snap(SX(last.px)), y = snap(SY(last.py)), ang = last.heading + 1.5708f, sz = 24.0f * S;
+        disc(dev, x, y, sz * 0.95f, with_alpha(0x26FFD878u, A));
+        if (atl) {
+            dTexQuadState(dev, g_mkAtlas, true, true);
+            cell(ME_FRAME, x, y + 1.0f, sz * 1.14f, ang, with_alpha(0x8C000000u, A));
+            cell(ME_FILL, x, y, sz, ang, with_alpha(0xFFFFFFFFu, A));
+            cell(ME_FRAME, x, y, sz, ang, with_alpha(0xFFFFFFFFu, A));
+            dSetTex(dev, 0, 0); cs(dev);
+        } else {
+            const float fx = cosf(last.heading), fy = sinf(last.heading), L = sz * 0.55f, nx = -fy, ny = fx, W = sz * 0.35f;
+            fill_tri(dev, x + fx * L, y + fy * L, x - fx * L * 0.5f + nx * W, y - fy * L * 0.5f + ny * W, x - fx * L * 0.5f - nx * W, y - fy * L * 0.5f - ny * W, with_alpha(0xFFFFD878u, A));
+        }
+    }
+    // the map cursor (placing a marker / the remote-scan centre) : a crosshair at the client's own cursor
+    if (last.cursorMode) {
+        const float x = snap((float)last.cx * sx), y = snap((float)last.cy * sy), r = 9.0f * S;
+        const u32 cc = with_alpha(last.cursorMode == 7 ? 0xFF8CE8FFu : 0xFFFFC85Au, A);
+        ring_sector(dev, x, y, r - 1.5f * S, r, 0.0f, 6.2831853f, cc);
+        rrect(dev, x - r - 5.0f * S, y - 0.75f * S, 7.0f * S, 1.5f * S, 0.0f, cc, cc, 0.6f); rrect(dev, x + r - 2.0f * S, y - 0.75f * S, 7.0f * S, 1.5f * S, 0.0f, cc, cc, 0.6f);
+        rrect(dev, x - 0.75f * S, y - r - 5.0f * S, 1.5f * S, 7.0f * S, 0.0f, cc, cc, 0.6f); rrect(dev, x - 0.75f * S, y + r - 2.0f * S, 1.5f * S, 7.0f * S, 0.0f, cc, cc, 0.6f);
+    }
+    static unsigned said = 0;
+    if (said != last.fileId) { said = last.fileId;
+        windower::debug::log("NATIVEUI map screen drawn : file 0x%04X tex %s, image %d,%d %dx%d on %dx%d, player %d at %d,%d ; zone '%s' w %d", last.fileId, g_mapTex ? "ok" : "MISSING",
+                             (int)ix, (int)iy, (int)iw, (int)ih, (int)f.screenW, (int)f.screenH, last.player, (int)SX(last.px), (int)SY(last.py), zone_name(last.zone) ? zone_name(last.zone) : "(null)", (int)fo->measure("Port Jeuno", k.tz * 1.15f)); }
+}
+
+// the map's MARKERS list (mapv3) : a page of rows -- your own markers (10, empty ones blank), the event markers, the party,
+// the alliance ; a pin (gold placed / dim not) ; the row renamed shows what is typed. The client keeps the keys (left /
+// right turn the page) ; the mouse hovers / picks a row.
+namespace { Block g_mlB; unsigned g_mlMs = 0; }
+void map_list_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    g_mlAt[2] = 0.0f;
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_mlB.vis = 0.0f; g_mlB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_mlMs ? (float)(now - g_mlMs) / 1000.0f : 0.0f; g_mlMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeMap& M0 = native_map();
+    static NativeMap last;
+    const bool up = M0.open && M0.fileId && M0.listOpen;
+    if (up) last = M0;
+    if (!block_ease(g_mlB, up, now, dt) || last.uiW <= 0) return;
+    const Metrics k = metrics(f), kN = no_icons(k);
+    const float S = k.S;
+    RowSpec rows[10]; char lab[10][24]; int n = last.listN > 0 ? last.listN : 1, cur = 0;
+    for (int i = 0; i < n; ++i) {
+        RowSpec& R = rows[i]; R.icon = IC_NONE; R.sub = false; R.off = false;
+        if (!last.listN) { R.label = tr("No one", "Personne"); R.center = true; R.off = true; continue; }
+        if (last.renameRow == i + 1) { sprintf(lab[i], "%s_", last.renameText); R.label = lab[i]; R.tint = 0xFFFFDA8Au; }
+        else if (last.listName[i][0]) { R.label = last.listName[i]; }
+        else { sprintf(lab[i], tr("Marker %d", "Rep\xC3\xA8re %d"), i + 1); R.label = lab[i]; R.off = true; }
+        R.extra = last.listPlaced[i] ? "\xE2\x97\x8F" : 0;     // a dot : placed on the map
+        if (last.listPlaced[i]) R.tint = R.tint ? R.tint : (last.page == 2 ? 0xFF9CC8FFu : last.page == 3 ? 0xFFC8B0FFu : 0xFFFFE3A0u);
+        if (last.listCursor == i + 1) cur = i + 1;
+    }
+    float bw = 0.0f, bh = 0.0f; block_size(f, kN, rows, n, bw, bh);
+    const float tzH = k.tz * 0.92f, headH = snap(k.capH + k.gap);
+    static const char* const TITLE_EN[4] = { "Markers", "Event Markers", "Party", "Alliance" };
+    static const char* const TITLE_FR[4] = { "Rep\xC3\xA8res", "Rep\xC3\xA8res d'\xC3\xA9v\xC3\xA9nement", "Groupe", "Alliance" };
+    const int pg = last.page >= 0 && last.page < 4 ? last.page : 0;
+    const char* title = tr(TITLE_EN[pg], TITLE_FR[pg]);
+    char pgs[12]; sprintf(pgs, "%d / 4", pg + 1);
+    {   const float need = snap(k.gutter + f.font->measure(title, tzH) + 14.0f * S + f.font->measure(pgs, tzH) + k.pad) + 2.0f * k.bi;
+        if (need > bw) bw = need; }
+    bw = keep_width(g_mlB, bw); bh = snap(bh + headH); g_mlB.inTop = headH;
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    float bx = snap((float)last.lx1 * sx - bw), by = snap((float)last.ly0 * sy);   // the client's place : its right edge ...
+    if (g_m0At[2] > 0.0f) { bx = snap(g_m0At[0] - snap(3.0f * S) - bw); by = snap(g_m0At[1]); }   // ... or beside the map's menu (the client stacks it OVER map0)
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+    const float tO = ease_out(((float)(now - g_mlB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_mlB.vis * tO * (last.listFocused || !M0.open ? 1.0f : 0.62f);
+    if (A <= 0.0f) return;
+    const int row = block_draw(f, kN, g_mlB, rows, n, cur, last.listFocused, bx, by, bw, bh, A, dt);
+    g_mlAt[0] = bx; g_mlAt[1] = g_mlB.rowY0 + (float)((cur >= 1 ? cur : 1) - 1) * g_mlB.rowStep; g_mlAt[2] = M0.open ? 1.0f : 0.0f;
+    const u32 dev = f.dev;
+    const float hy = by + k.bi + k.pad, hc = snap(hy + (headH - k.gap) * 0.5f);
+    rrect(dev, bx + k.bi + k.gutter, snap(hy + headH - k.gap * 0.5f - 1.0f), bw - 2.0f * k.bi - k.gutter - k.pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    Font* fo = f.font;
+    fo->begin(dev);
+    fo->draw_lc(dev, snap(bx + k.bi + k.gutter + k.capPadL * 0.5f), hc, title, tzH, with_alpha(0xFFE8D9B0u, A), with_alpha(0xC8000000u, A), k.ow);
+    fo->draw_lc(dev, snap(bx + bw - k.bi - k.pad - fo->measure(pgs, tzH)), hc, pgs, tzH, with_alpha(0xFFC9D3E0u, A), with_alpha(0xC8000000u, A), k.ow);
+    if (M0.open && last.listFocused && last.listN) {
+        if (row >= 1 && row <= n && row != g_mlB.hoverRow && row != last.listCursor) native_map_list_hover(row);
+        g_mlB.hoverRow = row;
+        if (f.mouse && f.mouse->clicked && row >= 1 && row <= n) native_map_list_pick(row);
+    } else g_mlB.hoverRow = 0;
+}
+
+// the map's cartouche (the zone, its floor, your square) : drawn in the screens' pass, with the other boxes -- before the
+// widgets the frame / text state is not set up yet (2026-11-26 : an empty broken box)
+void map_screen_hud(const Frame& f) {
+    const float A = g_mapA; if (A <= 0.0f || !f.font) return;
+    const NativeMap& last = g_mapLast; const UiConfig& C = ui_config(); const u32 dev = f.dev; Font* fo = f.font;
+    const Metrics k = metrics(f); const float S = k.S; const u32 sh = with_alpha(0xE0000000u, A);
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    // the cartouche, top left : the zone, its floor, your square
+    {
+        const char* zn = zone_name(last.zone); char fl[24] = ""; if (last.sub > 0) sprintf(fl, tr("Floor %d", "Niveau %d"), last.sub + 1);
+        const float tz = k.tz * 1.15f, pad = snap(10.0f * S) + k.bi;
+        float w = fo->measure(zn && *zn ? zn : "?", tz); const float w2 = fo->measure(last.grid, k.tz) + (fl[0] ? fo->measure(fl, k.tz) + 14.0f * S : 0.0f); if (w2 > w) w = w2;
+        const float bw = snap(w + 2.0f * pad), bh = snap(pad * 2.0f + k.capH * 1.9f);
+        const float bx = snap(16.0f * sx), by = snap(48.0f * sy);   // the top left, under the top bar (Region Info's band)
+        g_frameJoin = 0;                                   // its own box : no menu's join mask
+        draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+        fo->begin(dev);                                    // the text state (the box left its own)
+        fo->draw_lc(dev, bx + pad, snap(by + pad + k.capH * 0.5f), zn && *zn ? zn : "?", tz, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+        float lx = bx + pad; const float ly = snap(by + pad + k.capH * 1.45f);
+        if (last.grid[0]) { fo->draw_lc(dev, lx, ly, last.grid, k.tz, with_alpha(0xFFFFDA8Au, A), sh, k.ow); lx += fo->measure(last.grid, k.tz) + 14.0f * S; }
+        if (fl[0]) fo->draw_lc(dev, lx, ly, fl, k.tz, with_alpha(0xFF93A6BEu, A), sh, k.ow);
     }
 }
 

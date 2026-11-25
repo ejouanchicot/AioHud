@@ -195,6 +195,36 @@ struct NativeCfgFilter {
     short rx0, ry0, rx1, ry1; int uiW, uiH;
 };
 const NativeCfgFilter& native_cfg_filter();
+// the MAP (mapframe, docs/notes/map-macro-re-2026-11-21.md s.1) : the client paints it across the whole screen ; AioHUD
+// draws it in its place with the client's own view (zoom / scroll), so the client's pan / zoom / cursor keys still drive it.
+// Every position is the client's UI px (sx = screenW / uiW) or map px (the 512-px image's frame, before the record origin)
+struct NativeMapIcon { short x, y; unsigned short flags; unsigned char sprite, alpha; float angle; char label[20]; };
+struct NativeMap {
+    bool open;                 // read this frame (the client's map is parked only then)
+    int  uiW, uiH;
+    int  zone, sub, mode;      // mode : 0 normal, 5 another zone / map, 1..3 an event, 4 markers only, 6 small framed, 7 picture
+    unsigned fileId;           // the map DAT (0 = none : no record / not owned)
+    bool hasMap, otherZone;    // the map's key item is owned ; the zone shown is not yours (no player icon)
+    float zoom, scrollX, scrollY;   // UI px per map px ; the map px at the screen's origin
+    short imgX, imgY;          // the image's top-left in map px (the record origin minus the frame margin)
+    short icoX, icoY;          // the icons' origin (map px)
+    int  fade;                 // 0..255 : the client's open / close fade (0 = fully shown)
+    bool player; short px, py; float heading;   // the player's icon (map px, heading rad)
+    bool target; short tx, ty;                  // the tracked target
+    int  page;                 // the markers page (0 own, 1 event, 2 party, 3 alliance)
+    int  nIcons; NativeMapIcon icon[40];        // the markers / Wide Scan dots shown
+    int  cursorMode; short cx, cy;              // the map cursor (UI px) : 1 placing a marker, 7 the remote-scan centre ; 0 none
+    char grid[8];              // "(F-7)" : the player's square
+    // the MARKERS list (mapv3, the map's page H+0x106) : 10 rows of page*10 + row ; its rect (UI px, unparked)
+    bool listOpen, listFocused; int listCursor, listN;   // cursor : the hand's row 1..10 (0 none)
+    char listName[10][20]; bool listPlaced[10];
+    int  renameRow; char renameText[20];                  // the row being renamed (1..10, 0 none) and what is typed
+    short lx0, ly0, lx1, ly1;
+    int  v2Used;               // a marker's menu (mapv2) : 1 the marker is placed (entry 2 removes it), 0 not (it places it), -1 closed
+};
+const NativeMap& native_map();
+bool native_map_list_hover(int row);   // the Markers list : the hand on that row (event 9)
+bool native_map_list_pick(int row);    // ... and validate it (event 5)
 bool native_cfg_filter_hover(int entry);
 bool native_cfg_filter_pick(int entry);
 bool native_equip_sets_hover(int entry);

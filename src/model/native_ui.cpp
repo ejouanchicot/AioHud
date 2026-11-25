@@ -307,6 +307,7 @@ extern NativeMacroBooks g_mbk;   // the macro book list (macro_books_poll, below
 extern NativeMacroEdit g_med;    // the macro editor (macro_edit_poll, below)
 extern NativeEquipSets g_es;     // the equipment set list (equip_sets_poll, below)
 extern NativeCfgFilter g_cff;    // Config's filter lists (cfg_filter_poll, below)
+extern NativeMap g_map;          // the map (map_poll, below)
 bool g_mainNative = false;   // a main-menu child the client keeps drawing, in the main menu's place (main_poll)
 NativeTopBar g_tb; bool g_tbFail = false;                                               // the top bar (titlewin + helpwind)
 NativeMacro g_mc; bool g_mcFail = false;                                                // the macro bar
@@ -1573,15 +1574,21 @@ Hook g_hkTxAsc   = { 0, PRO_ASCII,    8, 0, 0, {0}, false, "text capture : ascii
 Hook g_hkTxAscR  = { 0, PRO_ASCIIR,   6, 0, 0, {0}, false, "text capture : right-aligned ascii" };
 Hook g_hkTxAscC  = { 0, PRO_ASCIIC,   7, 0, 0, {0}, false, "text capture : clipped ascii" };
 Hook g_hkSprite  = { 0, PRO_SPRITE,   7, 0, 0, {0}, false, "text capture : entry images" };
+const unsigned char PRO_SPRITES[5]   = { 0x83,0xEC,0x0C,0x53,0x55 };   // 5 : a relay of that length was left on it by a 2026-11-25 dev load (kept for life, R1)
+Hook g_hkSpriteS = { 0, PRO_SPRITES,  5, 0, 0, {0}, false, "text capture : scaled images (the map)" };
 struct CapRun { short x, y; u32 col; char s[60]; };
 struct CapWin { u32 win; DWORD ms; int n; CapRun r[40]; };
 CapWin g_cap[24]; u32 g_capCur = 0; int g_capSlot = -1, g_capDepth = 0, g_capWy = 0; short g_capR[4] = { 0, 0, 0, 0 };
+// the windows whose handler paints the WHOLE screen (the map) : AioHUD draws them, so ALL their images / texts go HIDE_DY
+// lower while they draw -- their rect is a 106x14 focus holder, the rect-limited park below cannot reach the map
+u32 g_fullPark[2] = { 0, 0 }; bool g_capFull = false;
 // a parked window's text that still lands on the screen : some rows keep the origin the client cached BEFORE the park
 // (quest00's, 2026-11-25 : the client's rows showed under AioHUD's Journal). Drawn HIDE_DY lower -- off-screen with
 // their window ; the capture keeps the real y (gen_panel_read folds it back), the return value (end x) is unchanged
 // ONLY inside the window's own unparked rect (+ a margin) : a window also draws things at WORLD places -- the target
 // window's cursor over a character / NPC went off-screen with it (2026-11-25, "je ne vois plus le curseur de selection")
 inline u32 cap_park_y(int x, u32 y) {
+    if (g_capFull && g_capCur) return y + (u32)HIDE_DY;
     if (!g_capCur || (int)y - g_capWy >= -HIDE_DY / 2) return y;
     const int uy = (int)y + HIDE_DY;
     return (x >= g_capR[0] - 24 && x <= g_capR[2] + 24 && uy >= g_capR[1] - 24 && uy <= g_capR[3] + 24) ? y + (u32)HIDE_DY : y;
@@ -1617,9 +1624,10 @@ u32 __fastcall hk_windraw_body(u32 win, u32 edx) {
     if (s < 0) for (int i = 0; i < 24; ++i) if (s < 0 || (int)(now - g_cap[i].ms) > (int)(now - g_cap[old].ms)) { s = i; old = i; }
     g_cap[s].win = win; g_cap[s].ms = now; g_cap[s].n = 0;
     const int pwy = g_capWy; short pr[4]; memcpy(pr, g_capR, sizeof(pr)); short r4[4] = { 0, 0, 0, 0 }; if (!rdblk(win + OBJ_RECT, r4, 8)) memset(r4, 0, 8);
-    g_capCur = win; g_capSlot = s; g_capWy = r4[1]; memcpy(g_capR, r4, sizeof(r4));
+    const bool pf = g_capFull;
+    g_capCur = win; g_capSlot = s; g_capWy = r4[1]; memcpy(g_capR, r4, sizeof(r4)); g_capFull = win && (win == g_fullPark[0] || win == g_fullPark[1]);
     const u32 r = ((WinDrawFn)g_hkWinDraw.tramp)(win, edx);
-    g_capCur = pc; g_capSlot = ps; g_capWy = pwy; memcpy(g_capR, pr, sizeof(pr));
+    g_capCur = pc; g_capSlot = ps; g_capWy = pwy; memcpy(g_capR, pr, sizeof(pr)); g_capFull = pf;
     return r;
 }
 u32 __fastcall hk_windraw(u32 win, u32 edx) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
@@ -1639,6 +1647,16 @@ u32 __fastcall hk_sprite_body(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u3
 }
 u32 __fastcall hk_sprite(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5) {   // relay_enter / relay_leave (R1)
     relay_enter(); const auto r = hk_sprite_body(spr, edx, x, y, a3, a4, a5); relay_leave(); return r;
+}
+// the SCALED sprite draw FUN_05461110 (Nov ; thiscall (x, y, colour, f32 sx, f32 sy, ?, ?, ?) ret 0x20) : at scale 1 it calls
+// the inner one above, otherwise it draws itself -- the map image (zoom) and its icons. Only a FULL park moves it here
+// (a scale-1 call is then parked twice : still off-screen) ; every other window keeps the inner hook's rect-limited rule
+typedef u32 (__fastcall* Sprite8Fn)(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8);
+u32 __fastcall hk_sprites_body(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8) {
+    return ((Sprite8Fn)g_hkSpriteS.tramp)(spr, edx, x, (g_capFull && g_capCur) ? y + (u32)HIDE_DY : y, a3, a4, a5, a6, a7, a8);
+}
+u32 __fastcall hk_sprites(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8) {   // relay_enter / relay_leave (R1)
+    relay_enter(); const auto r = hk_sprites_body(spr, edx, x, y, a3, a4, a5, a6, a7, a8); relay_leave(); return r;
 }
 u32 __fastcall hk_txcore(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
     relay_enter(); const auto r = hk_txcore_body(font, edx, x, y, s, len, col, fl, sx, sy); relay_leave(); return r;
@@ -1681,6 +1699,7 @@ void ensure_text_capture() {
     const u32 ar   = aob_masked("51 56 8B 74 24 14 85 F6 75 08 0F BF 44 24 0C 5E 59 C3 53");
     const u32 wd   = aob_masked("83 EC 24 53 55 56 57 8B E9 E8 ?? ?? ?? ?? 66 8B 45 56 33 FF 66 3B C7");
     const u32 sp   = aob_masked("51 53 55 56 8B 71 14 8D 59 04 57 8B CB E8 ?? ?? ?? ?? 89 44 24 10 8B 44 24 28");   // unique Nov + June
+    const u32 ss   = aob_masked("83 EC 0C 53 55 56 8B F1 57 8B 6E 14 8D 4E 04 89 6C 24 18 89 4C 24 14 E8 ?? ?? ?? ?? D9 44 24 28 D8 1D");   // unique Nov + June
     u32 asc = 0; if (aw) { u32 rel = 0; if (safe_read(aw + 0x21, &rel)) asc = aw + 0x25 + rel; }
     if (!core || !wd) {
         if (tries == 1 || tries == 20) windower::debug::log("NATIVEUI text capture : not found (try %d : core %08X, window draw %08X)%s", tries, core, wd, tries == 20 ? " -- giving up : the unnamed lists stay the client's" : "");
@@ -1691,14 +1710,15 @@ void ensure_text_capture() {
     g_hkTxAscR.at = ar;   g_hkTxAscR.dst = (void*)&hk_txascr;
     g_hkTxAscC.at = ac;   g_hkTxAscC.dst = (void*)&hk_txascc;
     g_hkSprite.at = sp;   g_hkSprite.dst = (void*)&hk_sprite;
+    g_hkSpriteS.at = ss;  g_hkSpriteS.dst = (void*)&hk_sprites;
     g_hkWinDraw.at = wd;  g_hkWinDraw.dst = (void*)&hk_windraw;
     if (!hook_on(g_hkTxCore)) return;
-    if (asc) hook_on(g_hkTxAsc); if (ar) hook_on(g_hkTxAscR); if (ac) hook_on(g_hkTxAscC); if (sp) hook_on(g_hkSprite);
-    if (!hook_on(g_hkWinDraw)) { hook_off(g_hkTxCore); hook_off(g_hkTxAsc); hook_off(g_hkTxAscR); hook_off(g_hkTxAscC); hook_off(g_hkSprite); return; }
+    if (asc) hook_on(g_hkTxAsc); if (ar) hook_on(g_hkTxAscR); if (ac) hook_on(g_hkTxAscC); if (sp) hook_on(g_hkSprite); if (ss) hook_on(g_hkSpriteS);
+    if (!hook_on(g_hkWinDraw)) { hook_off(g_hkTxCore); hook_off(g_hkTxAsc); hook_off(g_hkTxAscR); hook_off(g_hkTxAscC); hook_off(g_hkSprite); hook_off(g_hkSpriteS); return; }
     g_capOk = true;
-    windower::debug::log("NATIVEUI text capture : on (try %d ; ascii %d, right %d, clipped %d, entry images %d)", tries, g_hkTxAsc.on, g_hkTxAscR.on, g_hkTxAscC.on, g_hkSprite.on);
+    windower::debug::log("NATIVEUI text capture : on (try %d ; ascii %d, right %d, clipped %d, entry images %d, scaled %d)", tries, g_hkTxAsc.on, g_hkTxAscR.on, g_hkTxAscC.on, g_hkSprite.on, g_hkSpriteS.on);
 }
-void text_capture_off() { hook_off(g_hkWinDraw); hook_off(g_hkSprite); hook_off(g_hkTxCore); hook_off(g_hkTxAsc); hook_off(g_hkTxAscR); hook_off(g_hkTxAscC); g_capOk = false; g_capCur = 0; }
+void text_capture_off() { hook_off(g_hkWinDraw); hook_off(g_hkSprite); hook_off(g_hkSpriteS); hook_off(g_hkTxCore); hook_off(g_hkTxAsc); hook_off(g_hkTxAscR); hook_off(g_hkTxAscC); g_capOk = false; g_capCur = 0; }
 // a window's texts of its last drawn frame (none when it was not drawn for 300 ms)
 int text_capture(u32 win, const CapRun*& runs) {
     runs = 0; if (!g_capOk || !win) return 0;
@@ -2989,6 +3009,114 @@ void cfg_filter_poll(bool on, u32 mgr, u32 focusObj) {
     g_cff = t;
 }
 
+// ---- the MAP (map-macro-re-2026-11-21.md s.1) : the mapframe handler H ; AioHUD draws the map, the client's goes whole
+// (g_fullPark : every image / text of its draw HIDE_DY lower) -- only while this read succeeds (a failure gives it back) ----
+NativeMap g_map;
+// the record of the map SHOWN (its zone / floor : not always yours -- Change Map), cached by that key : the table walk is
+// ~2000 guarded reads, and it was seen failing for one frame (2026-11-26 : the map0 -> mapv2 step read no record, the
+// client's map came back over ours). A record found is kept until the key changes ; a miss is retried every 500 ms, never
+// given up (rule 10), and said -- the first miss and the recovery
+bool map_rec_for(unsigned zone, int sub, MapRecord& out) {
+    static unsigned cz = ~0u; static int cs = -9, tries = 0; static MapRecord cr; static DWORD next = 0;
+    const DWORD now = GetTickCount();
+    if (zone != cz || sub != cs) { cz = zone; cs = sub; cr = MapRecord{}; tries = 0; next = now; }
+    if (!cr.valid && (int)(now - next) >= 0) {
+        MapRecord r; ++tries; next = now + 500;
+        if (read_map_record(zone, sub, r) && r.valid) { cr = r; if (tries > 1) windower::debug::log("NATIVEUI map record zone %u sub %d found on try %d", zone, sub, tries); }
+        else if (tries == 1 || tries % 20 == 0) windower::debug::log("NATIVEUI map record zone %u sub %d NOT found (try %d) -- retrying every 500 ms", zone, sub, tries);
+    }
+    out = cr; return cr.valid;
+}
+void map_poll(bool on, u32 mgr, u32 focusObj) {
+    NativeMap t; memset(&t, 0, sizeof(t));
+    u32 o = 0, H = 0; short wh[2] = { 0, 0 };
+    if (!on || !mgr || !(o = win_named(mgr, "mapframe")) || !safe_read(o + OBJ_HANDLER, &H) || !valid_ptr(H) || !rdblk(mgr + 0x80, wh, 4) || wh[0] <= 0 || wh[1] <= 0) { g_map = t; g_fullPark[0] = 0; return; }
+    unsigned char b[0x110]; unsigned char pl[0x40]; unsigned char tail[8];
+    if (!rdblk(H, b, sizeof(b)) || !rdblk(H + 0x674, pl, sizeof(pl)) || !rdblk(H + 0xA44, tail, sizeof(tail))) { g_map = t; g_fullPark[0] = 0; return; }
+    auto S16 = [&](int off) { short v; memcpy(&v, b + off, 2); return v; };
+    auto F32 = [&](int off) { float v; memcpy(&v, b + off, 4); return v; };
+    t.uiW = wh[0]; t.uiH = wh[1];
+    t.zone = (unsigned short)S16(0x100); t.sub = S16(0x102); t.mode = S16(0x104); t.page = S16(0x106);
+    t.otherZone = b[0x10C] != 0; t.hasMap = tail[2] != 0;
+    t.zoom = F32(0x58); t.scrollX = F32(0x24); t.scrollY = F32(0x28);
+    t.imgX = (short)(S16(0x54) - S16(0x7C)); t.imgY = (short)(S16(0x56) - S16(0x7E));
+    t.icoX = S16(0x6C); t.icoY = S16(0x6E);
+    { unsigned short fd = 0; memcpy(&fd, b + 0xA6, 2); t.fade = fd > 255 ? 255 : fd; }
+    if (!(t.zoom > 0.05f && t.zoom < 64.0f) || t.scrollX != t.scrollX || t.scrollY != t.scrollY) { g_map = t; g_fullPark[0] = 0; return; }
+    int idx = 0; memcpy(&idx, b + 0xFC, 4);
+    MapRecord rec; const bool hasRec = idx >= 0 && map_rec_for((unsigned)t.zone, t.sub, rec);
+    if (hasRec && t.hasMap) t.fileId = rec.fileId;
+    // the close : the client sets the index to -1 at once and fades its map out -- the same window keeps the file it
+    // showed, so ours fades with it (the client's came back for its fade, 2026-11-26)
+    { static u32 heldWin = 0; static unsigned heldFile = 0;
+      if (t.fileId) { heldWin = o; heldFile = t.fileId; } else if (idx < 0 && o == heldWin) t.fileId = heldFile; else heldWin = 0; }
+    // the player + the tracked target (group *(H+0x98) x s8 H+0xA0) : the player's icon H+0x674 (map px +6 / +8, heading +0x14)
+    const signed char ng = (signed char)b[0xA0];
+    { unsigned short fl; memcpy(&fl, pl, 2); t.player = ng >= 1 && !t.otherZone && (fl & 0x80);
+      memcpy(&t.px, pl + 6, 2); memcpy(&t.py, pl + 8, 2); memcpy(&t.heading, pl + 0x14, 4);
+      memcpy(&fl, pl + 0x20, 2); t.target = ng >= 2 && (fl & 0x80); memcpy(&t.tx, pl + 0x26, 2); memcpy(&t.ty, pl + 0x28, 2); }
+    // the markers / Wide Scan dots : *(H+0x94) x s16 H+0x7A (the client draws those with flag 0x01)
+    u32 grp = 0; memcpy(&grp, b + 0x94, 4); const short ni = S16(0x7A);
+    if (valid_ptr(grp) && ni > 0) {
+        for (int i = 0; i < ni && i < 40 && t.nIcons < 40; ++i) {
+            unsigned char ic[0x20]; if (!rdblk(grp + (u32)i * 0x20, ic, sizeof(ic))) break;
+            unsigned short fl; memcpy(&fl, ic, 2); if (!(fl & 0x01)) continue;
+            NativeMapIcon& I = t.icon[t.nIcons++];
+            I.flags = fl; I.sprite = ic[2]; I.alpha = ic[5]; memcpy(&I.x, ic + 6, 2); memcpy(&I.y, ic + 8, 2); memcpy(&I.angle, ic + 0x14, 4);
+            u32 lp = 0; memcpy(&lp, ic + 0x18, 4); I.label[0] = 0;
+            if (!(fl & 0x08) && valid_ptr(lp)) { char tb[20]; if (rdblk(lp, tb, sizeof(tb))) { int k = 0; for (int j = 0; j < 19 && tb[j]; ++j) if ((unsigned char)tb[j] >= 0x20 && (unsigned char)tb[j] < 0x7F) I.label[k++] = tb[j]; I.label[k] = 0; } }
+        }
+    }
+    { const short cm = S16(0x16); unsigned short nc = 0; memcpy(&nc, b + 0x74, 2);
+      if (cm > 0 && cm < (short)nc) { t.cursorMode = cm; t.cx = (short)(S16(0x1C) + S16(0x18)); t.cy = (short)(S16(0x1E) + S16(0x1A)); } }
+    if (t.player && hasRec) {
+        const int col = ((t.px - rec.offX) - 16) / 32, row = 1 + ((t.py - rec.offY) - 16) / 32;
+        if (col >= 0 && col < 26 && row > 0 && row < 100) sprintf(t.grid, "(%c-%d)", 'A' + col, row); }
+    // the Markers list (mapv3, map-macro-re s.1.5) : row r of page p = icon / record p*10 + r. Own markers (page 0) : the
+    // 10 records (an unused one has no name) ; event markers (1) : the used records ; party / alliance (2 / 3) : the icons
+    // with a label. The row being renamed (an FsTextInput at mapv3+0x38, the row at +0x14) shows the live input
+    if (const u32 lo = win_named(mgr, "mapv3")) {
+        u32 lh = 0; short cur = 0, r4[4];
+        if (safe_read(lo + OBJ_HANDLER, &lh) && valid_ptr(lh) && rd16(lo + 0x4C, cur) && rdblk(lo + OBJ_RECT, r4, 8) && t.page >= 0 && t.page < 4) {
+            t.lx0 = r4[0]; t.ly0 = r4[1]; t.lx1 = r4[2]; t.ly1 = r4[3];
+            if (t.ly0 >= t.uiH) { t.ly0 = (short)(t.ly0 - HIDE_DY); t.ly1 = (short)(t.ly1 - HIDE_DY); }
+            t.listCursor = cur >= 1 && cur <= 10 ? cur : 0; t.listFocused = focusObj == lo;
+            bool ok = true;
+            for (int r = 0; r < 10 && ok; ++r) {
+                const int i = t.page * 10 + r; char nm[20] = ""; bool placed = false;
+                unsigned char ic[0x20], rec[0x16];
+                if (!rdblk(H + 0x174 + (u32)i * 0x20, ic, sizeof(ic)) || !rdblk(H + 0x6D4 + (u32)i * 0x16, rec, sizeof(rec))) { ok = false; break; }
+                unsigned short fl; memcpy(&fl, ic, 2); placed = (fl & 0x80) != 0;
+                const unsigned char* src = 0; unsigned char lb[20];
+                if (t.page < 2) { if (rec[0x14]) src = rec + 4; }
+                else { u32 lp = 0; memcpy(&lp, ic + 0x18, 4); if (valid_ptr(lp) && rdblk(lp, lb, sizeof(lb))) src = lb; }
+                if (src) { int k = 0; for (int j = 0; j < 15 && src[j]; ++j) if (src[j] >= 0x20 && src[j] < 0x7F) nm[k++] = (char)src[j]; nm[k] = 0; }
+                if (t.page >= 1 && !nm[0]) continue;              // events / party / alliance : the rows that exist
+                lstrcpynA(t.listName[t.listN], nm, 20); t.listPlaced[t.listN] = placed; ++t.listN;
+            }
+            u32 in = 0; int rr = 0;
+            if (ok && safe_read(lh + 0x38, &in) && valid_ptr(in) && safe_read(lh + 0x14, (u32*)&rr) && rr >= 0 && rr < 10) {
+                u32 len = 0; unsigned char bb[64]; int k = 0; safe_read(in + 0x690, &len); if (len > 60) len = 60;
+                if (rdblk(in + 0x3A0, bb, sizeof(bb))) for (u32 j = 0; j < len && bb[j] && k < 15; ++j) { if (bb[j] == 0x7F) { ++j; continue; } if (bb[j] >= 0x20 && bb[j] < 0x7F) t.renameText[k++] = (char)bb[j]; }
+                t.renameText[k] = 0; t.renameRow = rr + 1;
+            }
+            t.listOpen = ok;
+        }
+    }
+    t.v2Used = -1;
+    if (const u32 vo = win_named(mgr, "mapv2")) { u32 vh = 0; unsigned char u = 0; if (safe_read(vo + OBJ_HANDLER, &vh) && valid_ptr(vh) && rd8(vh + 0x14, u)) t.v2Used = u ? 1 : 0; }
+    t.open = true;
+    static unsigned sig = ~0u; static int said = 0;
+    const unsigned s2 = (u32)(t.v2Used + 1) * 50021u + (u32)t.listN * 31u + (u32)t.listCursor * 7u + (u32)t.renameRow * 101u + (u32)t.zone * 7919u + (u32)t.sub * 131u + (u32)t.mode * 17u + (u32)t.page * 3u + (u32)t.nIcons + (t.fileId << 8) + (u32)t.cursorMode * 991u;
+    if (s2 != sig && said < 30) { sig = s2; ++said;
+        windower::debug::log("NATIVEUI map : zone %d sub %d mode %d page %d file 0x%04X has %d other %d idx %d rec %d ; zoom %d/100 scroll %d,%d img %d,%d ico %d,%d ; player %d (%d,%d) target %d ; %d icon(s) ; cursor %d ; %s",
+            t.zone, t.sub, t.mode, t.page, t.fileId, t.hasMap, t.otherZone, idx, hasRec ? 1 : 0, (int)(t.zoom * 100.0f), (int)t.scrollX, (int)t.scrollY, t.imgX, t.imgY, t.icoX, t.icoY,
+            t.player, t.px, t.py, t.target, t.nIcons, t.cursorMode, t.grid);
+        if (t.listOpen) windower::debug::log("NATIVEUI map markers list : page %d, %d row(s), cursor %d, rename %d '%s' ; row 1 '%s' placed %d", t.page, t.listN, t.listCursor, t.renameRow, t.renameText, t.listN ? t.listName[0] : "", t.listN ? t.listPlaced[0] : 0); }
+    g_map = t;
+    g_fullPark[0] = t.fileId ? o : 0;          // no image of ours (no record / key item) : the client's own stays
+}
+
 // ---- the macro EDITOR (macro-bar-re s.7) : E = *(Ctrl bar slot + 8) : +4 M, +0x0C row, +0x0D / +0x0E the Ctrl / Alt slot ;
 // `macro` handler +0x1C typing, +0x20 the entry typed, +0x2C + i*4 line i's input, +0x44 the name's input ----
 NativeMacroEdit g_med;
@@ -3900,6 +4028,7 @@ static const char* const GEN_SKIP[] = { "titlewin", "helpwind", "logwindo", "log
     "bank", "equip", "inspect", "comment", "loot", "lootope", "lnowin", "post1", "post2", "delivery", "stringdl", "roomlist", "fep", "query", "evitem", "gift",
     "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edit", "mcr2edit", "macro", "mcres20", "mcresed", "cfilter", "fxfilter", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
     "cmbhlst", "tskill1", "cmbhwin",   // Synthesis (its module ; 2026-11-22 : the panel engine drew its History a second time, misplaced)
+    "mapv3", "mapframe",               // the map (its module, map_poll)
     "link5", "link6", "link12",        // Linkshell (its module ; 2026-11-25 : link5 is born before g_ls reads it -- the panel engine learned it and
                                        // drew the items a second time, over the module's box)
     0 };
@@ -4733,6 +4862,7 @@ unsigned native_win_named(unsigned mgr, const char* want) { return win_named(mgr
 const NativeMacroEdit& native_macro_edit() { return g_med; }
 const NativeEquipSets& native_equip_sets() { return g_es; }
 const NativeCfgFilter& native_cfg_filter() { return g_cff; }
+const NativeMap& native_map() { return g_map; }
 const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
 // the client's ability table ids (0..0x1FF weapon skills, 0x200.. job abilities, 0x600..0x6FF job traits) : d_msg 55701
 // the name, 55733 the description -- abilities-re-2026-11-19.md (all 124 traits / 626 abilities checked against it)
@@ -5237,6 +5367,8 @@ bool native_macro_edit_hover(int bar, int entry) { return (bar == 2 ? g_med.ed :
 bool native_macro_edit_pick(int bar, int entry) { return (bar == 2 ? g_med.ed : g_med.pal) && entry_pick(bar == 0 ? MED_W1 : bar == 1 ? MED_W2 : MED_WM, entry); }
 bool native_cfg_filter_hover(int entry) { const char* one[2] = { g_cff.name, 0 }; return g_cff.open && entry_hover(one, entry); }
 bool native_cfg_filter_pick(int entry) { const char* one[2] = { g_cff.name, 0 }; return g_cff.open && entry_pick(one, entry); }
+bool native_map_list_hover(int row) { const char* one[2] = { "mapv3", 0 }; return g_map.listOpen && entry_hover(one, row); }
+bool native_map_list_pick(int row) { const char* one[2] = { "mapv3", 0 }; return g_map.listOpen && entry_pick(one, row); }
 bool native_equip_sets_hover(int entry) { return g_es.open && entry_hover(ES_W, entry); }
 bool native_equip_sets_pick(int entry) { return g_es.open && entry_pick(ES_W, entry); }
 bool native_macro_books_hover(int entry) { return g_mbk.open && entry_hover(MBOOK_W, entry); }
@@ -5756,7 +5888,8 @@ void native_ui_tick(bool inWorld) {
       macro_books_poll(wanted && (c.nuHide & NU_MAIN) && mc_res(), manager(), focus);     // MacroPalette's book list
       macro_edit_poll(wanted && (c.nuHide & NU_MAIN) && mc_res(), manager(), focus);     // ... and its editor
       equip_sets_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus);                 // ... and the equipment sets
-      cfg_filter_poll(wanted && (c.nuHide & NU_NPC), manager(), focus); }                 // Config's filter lists
+      cfg_filter_poll(wanted && (c.nuHide & NU_NPC), manager(), focus);                  // Config's filter lists
+      map_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus); }                            // the map (its whole-screen draw)
     net_poll(wanted && (c.nuHide & NU_NET));                                              // the connection box (netstat) : AioHUD's own
     buffwin_poll(wanted && (c.nuHide & NU_BUFF), manager());   // your buff icons : AioHUD's own, where the client puts them
     if (wanted && (eff_hide(c) & NU_BUFF)) ensure_event_hook();   // the buff cursor's left / right walk AioHUD's order

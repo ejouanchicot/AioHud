@@ -555,7 +555,8 @@ bool read_map_record(unsigned zone, int submap, MapRecord& out) {
             out.scale   = (int)(sc & 0xFF);
             out.fileIdx = fi & 0xFFFF;
             out.flags   = fl & 0xFFFF;
-            out.fileId  = ((fl & 1) ? 0xD02Fu : 0x14C0u) + (fi & 0xFFFF);   // map DAT file id
+            static const unsigned BASE[3] = { 0x14C0u, 0xD02Fu, 0xD417u };   // rec+4 low nibble (map-macro-re-2026-11-21 s.1.2)
+            out.fileId  = (fl & 0xF) < 3 ? BASE[fl & 0xF] + (fi & 0xFFFF) : 0x1592u;   // map DAT file id (else the client's "no map" sheet)
             out.offX    = (short)(ox & 0xFFFF);
             out.offY    = (short)(oy & 0xFFFF);
             out.valid   = true;

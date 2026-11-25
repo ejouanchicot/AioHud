@@ -102,6 +102,11 @@ void key_items_draw(const Frame& f);       // Key Items (evitem) as data   // a 
 void macro_books_draw(const Frame& f);
 void macro_edit_draw(const Frame& f);
 void equip_sets_draw(const Frame& f);
+void map_screen_draw(const Frame& f);   // hud_actmenu.cpp : the map (mapframe's whole-screen draw), under the HUD's widgets (NU_MAIN)
+void map_screen_forget();
+bool map_screen_up();                  // ... shown this frame (the HUD's modules depop while it is)
+void map_screen_hud(const Frame& f);
+void map_list_draw(const Frame& f);     // ... its Markers list (mapv3)    // ... its cartouche (the zone, the floor, your square), in the screens' pass               // ... its texture, on a device change
 void cfg_filter_draw(const Frame& f);    // hud_actmenu.cpp : Config's chat / battle-effect filters (cfilter / fxfilter, NU_NPC)    // hud_actmenu.cpp : MacroPalette's equipment set list (mcres20, NU_MAIN)    // hud_actmenu.cpp : MacroPalette's editor (palette + one macro, NU_MAIN)   // hud_actmenu.cpp : MacroPalette's book list (mcrselec, NU_MAIN)
 void gen_list_draw(const Frame& f);  // hud_actmenu.cpp : the generic engine's list (NU_NPC)
 void gen_draw(const Frame& f);       // hud_actmenu.cpp : the generic engine's menus (NU_NPC)

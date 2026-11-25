@@ -294,6 +294,7 @@ void Hud::render(u32 dev) {
         theme_kit_forget();        // the painted theme kits too
         pointer_atlas_forget();    // the cursor-style sheet (party_gauges.cpp) : forget, re-arm its retry
         corner_mask_forget();      // the baked corner-mask atlas belongs to the old device (and this re-arms its retry)
+        map_screen_forget();       // the map screen's image
         for (size_t i = 0; i < widgets_.size(); ++i) widgets_[i]->on_device_lost();
     }
     fonts_.get(0, 0);          // register the default slot so ensure_all builds it this frame
@@ -461,7 +462,11 @@ void Hud::render(u32 dev) {
         // with the HUD hidden -- config open, End-peek -- the last rect kept eating the game's clicks and wheel there)
         actmenu_hits_clear();
         if (worldReady) {           // logged in -> draw the HUD ; not yet (login/char screen) -> only the config overlay below
-        for (size_t i = 0; !hideHud && i < widgets_.size(); ++i) {
+        if (!hideHud) { PERF_BEGIN("gameui.map"); map_screen_draw(f); PERF_END("gameui.map"); }   // the map : under the widgets, as the client's was
+        // the map open : every MODULE depops (party, player, target, minimap, chat, the boxes) -- only the map and the game
+        // screens over it (the top bar, its menus, the Markers list) stay (user 2026-11-26)
+        const bool mapUp = map_screen_up();
+        for (size_t i = 0; !hideHud && !mapUp && i < widgets_.size(); ++i) {
             const char* tn = widgets_[i]->type_name();
             // preview active -> the party tiers AND the target box are redrawn inside the stage by
             // draw_config_preview ; skip them here so they don't also draw at their live HUD position.
@@ -483,6 +488,7 @@ void Hud::render(u32 dev) {
         for (size_t i = 0; i < widgets_.size(); ++i)   // hand the Help the party's selection-hand texture (for its live cursor sample)
             if (strcmp(widgets_[i]->type_name(), "PartyList") == 0 && static_cast<Party*>(widgets_[i])->tier() == 0) { config_.set_help_cursor_tex(static_cast<Party*>(widgets_[i])->cursor_tex()); actmenu_set_hand_tex(static_cast<Party*>(widgets_[i])->cursor_tex()); break; }
         if (!hideHud) {   // Rules mode / End-peek hide the WHOLE HUD (like the widget loop above) -- these boxes must depop too
+            if (!mapUp) {
             PERF_BEGIN("scfx.demo");   scfx_draw(f, (float)screenW_, (float)screenH_); PERF_END("scfx.demo");   // //aio scfx : the resonance-circle demo (off unless asked)
             PERF_BEGIN("skillchains"); draw_skillchains(f);    PERF_END("skillchains");  // skillchains box -- its spheres are their own nested row (sc_circle_draw)
             PERF_BEGIN("treasure");    draw_treasure_pool(f);  PERF_END("treasure");     // treasure pool box (lottery items) -- placed via //aio edit
@@ -496,6 +502,7 @@ void Hud::render(u32 dev) {
             PERF_BEGIN("pet");         draw_pet(f);            PERF_END("pet");          // Pet box (BST / GEO main : its content) -- placed via //aio edit
             PERF_BEGIN("chat.0"); chat_box_draw(f, 0, false, !config_.is_open(), 0.0f, 0.0f, 0.0f); PERF_END("chat.0");   // Chat module : talk / NPC / system
             PERF_BEGIN("chat.1"); chat_box_draw(f, 1, false, !config_.is_open(), 0.0f, 0.0f, 0.0f); PERF_END("chat.1");   // Chat module : the combat log
+            }   // !mapUp
             PERF_BEGIN("gameui.screens");           // every redrawn client screen below, as ONE row (most draw nothing unless their menu is open)
             topbar_draw(f);                         // the top bar (menu name + help), in place of the client's (Game UI) -- under the menus
             buffbar_draw(f);                        // your buff icons under it (Game UI -> NU_BUFF)
@@ -517,6 +524,8 @@ void Hud::render(u32 dev) {
             equipment_draw(f);                      // the main menu's Equipment : the grid, a slot's items, the item card
             linkshell_draw(f);                      // the main menu's Linkshell : the linkshell items
             region_draw(f);                         // the main menu's Region Info : over the client's map
+            map_screen_hud(f);                      // the map's cartouche (the map itself is drawn under the widgets)
+            map_list_draw(f);                       // ... and its Markers list
             comment_draw(f);                        // Search -> Edit your comment : the 3-line editor
             synth_draw(f);                          // the main menu's Synthesis : the grid, History (before items_draw : the materials sit beside the grid)
             items_draw(f);                          // the main menu's Items : the inventory list, the item card
@@ -543,6 +552,7 @@ void Hud::render(u32 dev) {
             macrobar_draw(f);                       // the Ctrl / Alt macro bar, in place of the client's (Game UI)
             item_card_fold(f);                      // AFTER every screen's card_draw : the item card shown a moment ago, folding away
             PERF_END("gameui.screens");
+            if (!mapUp) {
             PERF_BEGIN("zonetracker"); draw_zonetracker(f); PERF_END("zonetracker");                    // Zone Tracker (Dynamis/Abyssea only) -- placed via //aio edit
             // EmpyPop -- placed via //aio edit. SKIP the live draw while its own config section is being previewed :
             // unlike ZoneTracker (zone-gated) / Timers (buff-gated), EmpyPop draws whenever epShow is on, so without
@@ -556,6 +566,7 @@ void Hud::render(u32 dev) {
             PERF_BEGIN("timers"); draw_timers(f); PERF_END("timers");                         // Timers box (self buff timers, exact) -- placed via //aio edit
             theme_kit_test_draw(f);                 // //aio kittest (dev) : the painted theme kit's trial box -- off by default
             PERF_BEGIN("ws_popup"); draw_ws_popup(f); PERF_END("ws_popup");                       // arcade WS popup, over the HUD but under the config overlay
+            }   // !mapUp
         }
         }   // end worldReady : boxes hidden until logged in
         PERF_BEGIN("config.draw");
