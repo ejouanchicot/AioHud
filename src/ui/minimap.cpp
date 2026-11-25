@@ -1494,7 +1494,9 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             const float yB = snap(cy + r + 2.0f * S + wh + bz * 1.6f);                       // the base line
             const float yC = snap(yB - bz - wh * 0.5f);                                      // the windows' row
             const float edge0 = TUNE("mm.foot_edge", 7.0f) * S;                            // position | hour : the moon lives in its own dial now
-            const float half = edge0 + (hwP > hwT ? hwP : hwT) * 2.0f + gap * 0.5f;          // symmetric : both windows the same distance from the centre
+            const float hwD = snap(drum_width(tf, "00", pSz, S) * 0.5f + 3.0f * S);          // the moon's day counter
+            const float hwS = hwD > hwT ? hwD : hwT;
+            const float half = hwP + gap + 2.0f * hwS + edge0;                               // days | square | hour, the square under the S
             (void)hwM;
             const float W = half + 2.0f * S, xa = r * 0.78f, ya = cy + sqrtf(r * r - xa * xa) - 3.0f * S;   // where the fillets leave the ring
             const float ySide = yB - 4.0f * S, ch = 3.5f * S;                                 // the sides' foot, the base's chamfer
@@ -1524,9 +1526,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             }
             grad_quad(dev, cx - W + ch, yB - 2.6f * S, 2.0f * (W - ch), 1.0f, MA(0x70, g_dm.lite), MA(0x70, g_dm.lite), MA(0x70, g_dm.lite), MA(0x70, g_dm.lite));   // an engraved filet along the base
             // the windows : one row, the position under the S, the moon and the hour on either side
-            const float hwMax = hwP > hwT ? hwP : hwT, xo = gap * 0.5f + hwMax;             // each window's centre, mirrored about the S
-            const float x3[3] = { 0.0f, cx - xo, cx + xo }, hw3[3] = { 0.0f, hwP, hwT };
-            const bool on3[3] = { false, posBand, bandDay };
+            const float x3[3] = { cx - W + 2.0f * S + edge0 + hwD, cx, cx + W - 2.0f * S - edge0 - hwT }, hw3[3] = { hwD, hwP, hwT };
+            const bool on3[3] = { bandMoon, posBand, bandDay };
             for (int k = 0; k < 3; ++k) {
                 if (!on3[k] || hw3[k] <= 0.0f) continue;
                 cwX[k] = snap(x3[k]); cwY[k] = yC; cwH[k] = hw3[k];
@@ -1539,9 +1540,9 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 (void)oct;                                                                  // (no frame : each wheel group is its own aperture in the plinth)
                 cwHH = wh * 0.5f - 0.6f * S;
             }
-            for (int k = 0; k < 1; ++k) {                                                    // between the two windows, under the S : a double groove cut in the metal
-                if (!on3[1] || !on3[2]) break;
-                const float sx = cx, hh = wh * 0.42f;
+            for (int k = 0; k < 2; ++k) {                                                    // between the windows : a double groove cut in the metal
+                if (!on3[1]) break;
+                const float sx = k == 0 ? ((x3[0] + hwD) + (cx - hwP)) * 0.5f : ((cx + hwP) + (x3[2] - hwT)) * 0.5f, hh = wh * 0.42f;
                 for (int g2 = -1; g2 <= 1; g2 += 2) {
                     const float gx = sx + (float)g2 * 1.6f * S;
                     seg_soft(dev, gx, yC - hh, gx, yC + hh, 1.0f * S, MA(0xC0, g_dm.edge));
@@ -1617,7 +1618,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         // ---- BL : the MOON, large, in a starry night ; its line on the band : the next event, in words ----
         if (c.mmClock && c.mmClkMoon) {
             const float srM = foot ? sr * TUNE("mm.moon_k", 1.45f) : sr;            // the phase dial needs room : bigger, pushed out along its diagonal
-            const float offM = off + (srM - sr) * 0.62f, x = cx - offM, y = cy + offM;
+            const float offM = off + (srM - sr) * 0.62f, x = cx - offM, y = cy + offM - (foot ? srM * TUNE("mm.moon_up", 0.40f) : 0.0f);   // raised : clear of the plinth
             const bool fullFirst = v.daysToFull < v.daysToNew;
             const int dd = fullFirst ? v.daysToFull : v.daysToNew;
             char mb[32];
@@ -1656,18 +1657,28 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 disc(dev, x, y, face, 0xFFDCC48Eu);                                     // the parchment face
                 ring_sector(dev, x, y, face * 0.80f, face, 0.0f, 2.0f * PI, 0x30603A10u);   // darker toward the bezel
                 ring_sector(dev, x, y, face * 0.86f - 0.5f * S, face * 0.86f + 0.5f * S, 0.0f, 2.0f * PI, 0x903A2410u);   // an inked circle
-                const float rmP = face * 0.62f, pr = face * 0.17f;
+                const float rmP = face * 0.64f, pr = face * 0.16f;                     // room around each, big enough to read
                 for (int k = 0; k < 8; ++k) {                                           // the phases in INK
                     const float a2 = PI * 0.5f + (float)k / 8.0f * 2.0f * PI;            // new at the bottom, turning up the left
                     const float px = x + cosf(a2) * rmP, py = y + sinf(a2) * rmP;
                     const u32 ink = 0xFF2E1C0Cu, lit = 0xFFF4E8C4u;
-                    disc(dev, px, py, pr + 0.7f * S, ink);
-                    if (k == 4) disc(dev, px, py, pr - 0.3f * S, lit);                  // full
-                    else if (k != 0) {                                                  // a lit crescent / half / gibbous
-                        const float l = (float)(k < 4 ? k : 8 - k) / 4.0f, side = k < 4 ? 1.0f : -1.0f;   // waxing lit on the right
-                        disc(dev, px, py, pr - 0.3f * S, lit);
-                        const float off = l * pr * 2.0f;
-                        if (l < 0.999f) disc(dev, px - side * off, py, pr - 0.3f * S, ink);
+                    disc(dev, px, py, pr + 0.7f * S, ink);                              // the ink disc (the dark part)
+                    {                                                                   // the LIT part, bounded by a true terminator :
+                        const float l = (float)(k <= 4 ? k : 8 - k) / 4.0f, side = k <= 4 ? 1.0f : -1.0f;   // lit fraction, waxing lit on the right
+                        const float e = 1.0f - 2.0f * l, rr3 = pr - 0.3f * S;           // the terminator's x = side * e * half-width
+                        if (l > 0.0f) {
+                            const int NY = 28; VtxC tv[6 * NY]; int nt = 0;
+                            for (int j = 0; j < NY; ++j) {
+                                const float ya = -rr3 + 2.0f * rr3 * (float)j / NY, yb = -rr3 + 2.0f * rr3 * (float)(j + 1) / NY;
+                                const float ha = sqrtf(fmaxf(0.0f, rr3 * rr3 - ya * ya)), hb = sqrtf(fmaxf(0.0f, rr3 * rr3 - yb * yb));
+                                const float la = px + side * e * ha, lb = px + side * e * hb, ra = px + side * ha, rb = px + side * hb;   // terminator .. lit limb
+                                const VtxC A = { la - 0.5f, py + ya - 0.5f, 0, 1, lit }, B = { ra - 0.5f, py + ya - 0.5f, 0, 1, lit };
+                                const VtxC C = { lb - 0.5f, py + yb - 0.5f, 0, 1, lit }, D = { rb - 0.5f, py + yb - 0.5f, 0, 1, lit };
+                                tv[nt++] = A; tv[nt++] = B; tv[nt++] = C; tv[nt++] = B; tv[nt++] = D; tv[nt++] = C;
+                            }
+                            dDrawUP(dev, D3DPT_TRIANGLELIST, (u32)(nt / 3), tv, sizeof(VtxC));
+                        }
+                        ring_sector(dev, px, py, rr3 - 0.2f, pr + 0.7f * S, 0.0f, 2.0f * PI, ink);   // the ink rim over the edge : a smooth round
                     }
                     const float ta = a2 + PI / 8.0f;                                    // an inked tick between two phases
                     seg_soft(dev, x + cosf(ta) * face * 0.86f, y + sinf(ta) * face * 0.86f, x + cosf(ta) * face * 0.97f, y + sinf(ta) * face * 0.97f, 0.9f * S, 0xB03A2410u);
@@ -1687,9 +1698,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 color_state(dev);
                 glass_dome(dev, x, y, srM, 0xFF9CB8FFu, 0.35f);
                 color_state(dev);
-                char db[8]; sprintf(db, "%02d", dd < 0 ? 0 : (dd > 99 ? 99 : dd));       // the days to that event, on a two-wheel counter
-                const float dsz = snap(pSz * 0.80f), dh = snap(dsz * 0.5f + 2.0f * S), dw = drum_width(tf, db, dsz, S) * 0.5f;
-                drum_text(dev, tf, 0, x, snap(y + srM + dh + 3.0f * S), dw, dh, db, dsz, S);   // under the dial, on the plinth's shoulder
+                char db[8]; sprintf(db, "%02d", dd < 0 ? 0 : (dd > 99 ? 99 : dd));       // the days to the next new / full : the plinth's left window
+                if (cwHH > 0.0f) drum_text(dev, tf, 0, cwX[0], cwY[0], cwH[0] - 0.6f * S, cwHH, db, pSz, S);
             }
         }
         PERF_END("mm.moon");
