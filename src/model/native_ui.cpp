@@ -170,7 +170,7 @@ static bool born_guard(bool present, bool read, int& bad, bool& notOurs, const c
 }
 DWORD g_rgMapBornMs = 0;    // when cnqframe was born : its panels born in the same moment, before region_poll sees it open
 const char* const MAIN_W[]  = { "menuwind", "socialme", 0 };                  // the main menu's two pages (NU_MAIN)
-const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "iuse", "cmbmenu", "cmbhwin", "abimenu", "prty1", "prty2", "prty3", "prty7", "prty4", "prty8", "prty5us", "alarm",
+const char* const MAIN_SUB_W[] = { "mgcmenu", "statcom2", "ut_menu", "fe_main", "merit1", "merit2", "merit3", "mnstorag", "mcrmogc", "iuse", "cmbmenu", "cmbhwin", "abimenu", "prty1", "prty2", "prty3", "prty7", "prty4", "prty8", "prty5us", "alarm",
     "searchma", "scsibori", "searchjo", "searchna", "searchra", "searchle", "scchar", "scmlev", "comgenre", "sccompar", "sccomite", "sccomls", "scname",
     "link1", "link2", "link3", "link4", "link13", "link7", "link8", "link9", "link10", "region", 0 };   // later = opened over the earlier ones      // what it opens that AioHUD redraws (NU_MAIN) : Magic's categories, Status's list, Status -> Unity's (opened OVER statcom2 : listed after it, it wins)
 const char* const MAIN_SORT_W[] = { "mgcsortw", "blusortw", "itmsort2", "abisortw", 0 };               // the spell list's sort options (NU_MAIN) ; Blue Magic's has a 3rd row

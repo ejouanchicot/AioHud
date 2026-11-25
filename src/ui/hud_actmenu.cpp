@@ -279,6 +279,16 @@ const SubRow MNSTORAG[9] = {
     { "Mog Wardrobe 3", "Mog Wardrobe 3", false, IC_BAG }, { "Mog Wardrobe 4", "Mog Wardrobe 4", false, IC_BAG }, { "Mog Wardrobe 5", "Mog Wardrobe 5", false, IC_BAG },
     { "Mog Wardrobe 6", "Mog Wardrobe 6", false, IC_BAG }, { "Mog Wardrobe 7", "Mog Wardrobe 7", false, IC_BAG }, { "Mog Wardrobe 8", "Mog Wardrobe 8", false, IC_BAG },
 };
+// MacroPalette -> an equipment set -> a slot -> Storage Options (mcrmogc) : 16 bags by ENTRY = the bag id + 1 (entry 9 Mog
+// Safe 2 is drawn third : the screen order is by y) ; labels are images -- read off the client's screen, 2026-11-25
+const SubRow MCRMOGC[16] = {
+    { "Inventory", "Inventaire", false, IC_BAG }, { "Mog Safe", "Mog Safe", false, IC_BAG }, { "Storage", "Storage", false, IC_BAG },
+    { "Mog Locker", "Mog Locker", false, IC_BAG }, { "Mog Satchel", "Mog Satchel", false, IC_BAG }, { "Mog Sack", "Mog Sack", false, IC_BAG },
+    { "Mog Case", "Mog Case", false, IC_BAG }, { "Mog Wardrobe", "Mog Wardrobe", false, IC_BAG }, { "Mog Safe 2", "Mog Safe 2", false, IC_BAG },
+    { "Mog Wardrobe 2", "Mog Wardrobe 2", false, IC_BAG }, { "Mog Wardrobe 3", "Mog Wardrobe 3", false, IC_BAG }, { "Mog Wardrobe 4", "Mog Wardrobe 4", false, IC_BAG },
+    { "Mog Wardrobe 5", "Mog Wardrobe 5", false, IC_BAG }, { "Mog Wardrobe 6", "Mog Wardrobe 6", false, IC_BAG }, { "Mog Wardrobe 7", "Mog Wardrobe 7", false, IC_BAG },
+    { "Mog Wardrobe 8", "Mog Wardrobe 8", false, IC_BAG },
+};
 // Items -> a row (iuse) : labels are images -- named from their help texts (items-menu-re 3)
 const SubRow IUSE[2] = { { "Use", "Utiliser", false, IC_NONE }, { "Dispose", "Jeter", false, IC_NONE } };
 // Synthesis (cmbmenu) and History's favourite (cmbhwin) : labels are images -- named from their help texts (synthesis-re 6)
@@ -390,6 +400,7 @@ const SubRow* sub_row(const char* menu, int entry) {
     if (!strcmp(menu, "cmbhwin") && entry >= 1 && entry <= 2) return &CMBHWIN[entry - 1];
     if (!strcmp(menu, "iuse") && entry >= 1 && entry <= 2) return &IUSE[entry - 1];
     if (!strcmp(menu, "mnstorag") && entry >= 1 && entry <= 9) return &MNSTORAG[entry - 1];
+    if (!strcmp(menu, "mcrmogc") && entry >= 1 && entry <= 16) return &MCRMOGC[entry - 1];
     if (!strcmp(menu, "merit1") && entry >= 1 && entry <= 2) return &MERIT1[entry - 1];
     if (!strcmp(menu, "merit2") && entry >= 1 && entry <= 2) return &MERIT2[entry - 1];
     if (!strcmp(menu, "merit3") && entry >= 1 && entry <= 2) return &MERIT3[entry - 1];
