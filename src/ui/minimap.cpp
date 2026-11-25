@@ -1655,7 +1655,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 // metal HAND on a pivot pointing where the cycle stands
                 const float pct = (float)v.moonPct / 100.0f, cyc = v.waning ? 0.5f + (1.0f - pct) * 0.5f : pct * 0.5f;   // 0 new .. 0.5 full .. 1 new
                 const float face = srM - 0.5f * S;
-                const float rmP = face * 0.64f, pr = face * 0.16f;                     // the phases' ring (the texture's layout too)
+                const float rmP = face * (s_moonDialTex ? 0.74f : 0.64f), pr = face * (s_moonDialTex ? 0.11f : 0.16f);   // the phases' ring : the texture's moons sit at 74 % of the radius
                 if (s_moonDialTex) {                                                     // THE TEXTURE (an inked almanac, the user 2026-11-25)
                     tex_state(dev, s_moonDialTex);
                     tquad(dev, snap(x - face), snap(y - face), 2.0f * face, 2.0f * face, 0.0f, 1.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
@@ -1703,7 +1703,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 }
                 {   // the HAND : chased metal, a counterweight, a pivot
                     const float na = PI * 0.5f + cyc * 2.0f * PI, ux2 = cosf(na), uy2 = sinf(na), nx2 = -uy2, ny2 = ux2;
-                    const float tip = rmP - pr * 0.9f, tail = face * 0.22f, w0 = 2.6f * S;   // reaches the phases' ring
+                    const float tip = rmP - pr * 1.15f, tail = face * 0.22f, w0 = 2.6f * S;   // reaches the moons' inner edge
                     const float hs[8] = { x + ux2 * tip + 0.7f, y + uy2 * tip + 1.0f, x + nx2 * w0 + 0.7f, y + ny2 * w0 + 1.0f,
                                           x - ux2 * tail + 0.7f, y - uy2 * tail + 1.0f, x - nx2 * w0 + 0.7f, y - ny2 * w0 + 1.0f };
                     fill_poly_aa(dev, hs, 4, 0x80000000u);                              // its shadow on the paper
