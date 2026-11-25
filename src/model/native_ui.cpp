@@ -93,7 +93,8 @@ const char* const NET_W[]   = { "netstat", "polwindo", 0 };
 const char* const BUFF_W[]  = { "buff", 0 };                                             // your status icons (NU_BUFF)
 const char* const MACRO_W[] = { "mcr1pall", "mcr2pall", "mcr1long", "mcr2long", 0 };   // the macro bar (NU_MACRO) : placed by code (move-to, hooked)
 const char* const TRADE_W[] = { "trade", "gift", "handover", 0 };                      // the player / NPC trade (NU_TRADE) : records only
-const char* const DIALOG_W[] = { "comyn", "merityn", "resyn", "resynus", "resynde", "resynfr", "shopbuy", "shopsell", 0 };   // the Yes / No confirms (NU_DIALOG)
+extern NativeTopBar g_tb;   // the top bar (below) : confyn's question
+const char* const DIALOG_W[] = { "comyn", "confyn", "merityn", "resyn", "resynus", "resynde", "resynfr", "shopbuy", "shopsell", 0 };   // the Yes / No confirms (NU_DIALOG)
 const char* const ACT_SUB_W[] = { "magselec", "abiselec", "chatctrl", 0 };
 const char* const ACT_LIST_W[] = { "magic", "ability", "mount", 0 };                   // the lists AioHUD redraws (NU_ACT)   // the action menu's submenus AioHUD redraws (NU_ACT)
 const char* const NPC_W[]   = { "rem4line", "rem4li2", "query", 0 };
@@ -189,7 +190,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     if ((hide & NU_BUFF)  && in_list(n, BUFF_W))  { dy = HIDE_DY; return; }
     if ((hide & NU_MACRO) && in_list(n, MACRO_W)) { dy = HIDE_DY; return; }
     if ((hide & NU_TRADE) && in_list(n, TRADE_W)) { if (!strcmp(n, "trade") || !strcmp(n, "handover")) g_tradeBornMs = GetTickCount() | 1; dy = HIDE_DY; return; }
-    if ((hide & NU_DIALOG) && in_list(n, DIALOG_W)) { dy = HIDE_DY; return; }   // BORN parked : AioHUD draws every confirm
+    if ((hide & NU_DIALOG) && in_list(n, DIALOG_W) && (strcmp(n, "confyn") || g_tb.ok)) { dy = HIDE_DY; return; }   // BORN parked : AioHUD draws every confirm (confyn : read off the top bar -- only while it reads)
     // the trade's Current Gil (`money`) draws its digits WHERE IT OPENED and does not follow a later park (2026-11-20 :
     // "on voit les chiffres de gil ... ceux du jeu") : BORN parked while a trade is up (or `trade` was born a moment ago)
     if ((hide & NU_TRADE) && !strcmp(n, "money") && (g_trade.open || (g_tradeBornMs && GetTickCount() - g_tradeBornMs < 1000))) { dy = HIDE_DY; return; }
@@ -3271,7 +3272,13 @@ void dialog_poll(bool on, u32 mgr) {
     for (const char* const* w = DIALOG_W; *w; ++w) {
         const u32 o = win_named(mgr, *w); if (!o) continue;
         u32 h = 0, vt = 0;
-        if (!safe_read(o + OBJ_HANDLER, &h) || !valid_ptr(h) || !safe_read(h, &vt) || vt != g_dlgVt) continue;
+        if (!safe_read(o + OBJ_HANDLER, &h) || !valid_ptr(h) || !safe_read(h, &vt)) continue;
+        if (vt != g_dlgVt) {
+            // Config's confirms (confyn : FFXiMain+337D90, live 2026-11-25) are another class : the question is the top bar's
+            // help line, the title its title ; entries 1 Yes / 2 No like the others
+            if (!strcmp(*w, "confyn") && g_tb.ok && g_tb.help.text[0]) { if (!pick || o == focus) { pick = o; pickH = 0; pickName = *w; } if (o == focus) break; continue; }
+            static int said = 0; if (said < 6) { ++said; windower::debug::log("NATIVEUI confirm '%s' : handler class FFXiMain+%X, not the confirm class -- NOT read", *w, vt - ffximain_base()); }
+            continue; }
         u32 cb = 0; safe_read(h + 0x14, &cb); if (!cb) continue;                       // no question pending : closing
         if (!pick || o == focus) { pick = o; pickH = h; pickName = *w; }
         if (o == focus) break;
@@ -3279,9 +3286,11 @@ void dialog_poll(bool on, u32 mgr) {
     if (!pick) { if (g_dlg.open) windower::debug::log("NATIVEUI confirm : closed"); g_dlg.open = false; return; }
     NativeDialog d; memset(&d, 0, sizeof(d));
     lstrcpynA(d.name, pickName, sizeof(d.name));
-    u32 q = 0, t = 0; safe_read(pickH + 0x1C, &q); safe_read(pickH + 0x34, &t);
-    dlg_text(q, d.text, sizeof(d.text)); dlg_text(t, d.title, sizeof(d.title));
-    unsigned char cok = 0, hold = 0; rd8(pickH + 0x39, cok); rd8(pickH + 0x40, hold); d.cancelOk = cok != 0; d.hold = hold != 0;
+    if (pickH) {
+        u32 q = 0, t = 0; safe_read(pickH + 0x1C, &q); safe_read(pickH + 0x34, &t);
+        dlg_text(q, d.text, sizeof(d.text)); dlg_text(t, d.title, sizeof(d.title));
+        unsigned char cok = 0, hold = 0; rd8(pickH + 0x39, cok); rd8(pickH + 0x40, hold); d.cancelOk = cok != 0; d.hold = hold != 0;
+    } else { lstrcpynA(d.text, g_tb.help.text, sizeof(d.text)); lstrcpynA(d.title, g_tb.title.text, sizeof(d.title)); d.cancelOk = true; }   // confyn
     short cur = 0; rd16(pick + 0x4C, cur); d.cursor = cur == 1 || cur == 2 ? cur : 2;
     u32 wh = 0;
     if (!rd16(pick + OBJ_RECT, d.rx0) || !rd16(pick + OBJ_RECT + 2, d.ry0) || !rd16(pick + OBJ_RECT + 4, d.rx1) || !rd16(pick + OBJ_RECT + 6, d.ry1) || !safe_read(mgr + 0x80, &wh)) { g_dlg.open = false; return; }
@@ -4657,6 +4666,7 @@ const NativeTopBar& native_topbar() { return g_tb; }
 const NativeMacro& native_macro() { return g_mc; }
 const NativeMacroBooks& native_macro_books() { return g_mbk; }
 unsigned native_manager() { return manager(); }
+bool native_any_hover(const char* name, int entry) { const char* one[2] = { name, 0 }; return entry_hover(one, entry); }
 bool native_ui_window_open(const char* name) { const u32 m = manager(); return m && win_named(m, name) != 0; }
 unsigned native_win_named(unsigned mgr, const char* want) { return win_named(mgr, want); }
 const NativeMacroEdit& native_macro_edit() { return g_med; }
