@@ -2650,6 +2650,11 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             const float ksz = snap(csz * 1.05f), o = 0.8f * S;
             (void)ksz;
             for (int i = 0; i < 4; ++i) {
+                if (i == 1 || i == 3) {                                      // a module on this SIDE (W / E) : its plate gives way (the user 2026-11-25)
+                    const float ca = i == 1 ? 0.0f : 3.14159265f; bool held = false;
+                    for (int q = 0; q < s_podN; ++q) if (fabsf(pod_wrapa(ca - s_podTh[q])) < s_podPh[q]) held = true;
+                    if (held) continue;
+                }
                 const float lx = snap(cx + DX[i] * rm), ly = snap(cy + DY[i] * rm);
                 // ON A SOLDERED PLATE (the user 2026-11-25 : "still not natural, credible -- if needed solder little round
                 // plates") : a small domed round plate soldered on the bezel -- its shadow, a dark solder seam, the plate
