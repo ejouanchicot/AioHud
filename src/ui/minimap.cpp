@@ -1041,6 +1041,23 @@ static u32 pod_mix(u32 a, u32 b, float t) {
     const u32 bl = (u32)((a & 0xFF) + (((int)(b & 0xFF) - (int)(a & 0xFF)) * t));
     return (a & 0xFF000000u) | (r << 16) | (g << 8) | bl;
 }
+// THE LAMP (upper left) and a surface's light : l = n . L in [-1, 1] for a surface whose normal is n
+static const float POD_LX = -0.55f, POD_LY = -0.83f;
+// a band of the boss lit CONTINUOUSLY by the lamp (the user 2026-11-25 : "the lighting is not finished") : per-vertex colour
+// from the radial normal at each angle -- no hard step where the light turns. kind 0 : the front face (a slightly domed
+// metal, +-14 %) ; kind 1 : the outer lip (glint toward the lamp, shade away from it).
+static void pod_lit_band(u32 dev, float cx, float cy, float r0, float r1, float a0, float a1, u32 hb, int kind) {
+    const int N = 32; VtxC v[(N + 1) * 2];
+    for (int i = 0; i <= N; ++i) {
+        const float a = a0 + (a1 - a0) * (float)i / N, l = cosf(a) * POD_LX + sinf(a) * POD_LY;
+        u32 c;
+        if (kind == 0) c = l > 0.0f ? pod_mix(hb, g_dm.lite, l * 0.14f) : pod_mix(hb, g_dm.edge, -l * 0.14f);
+        else           c = l > 0.0f ? MA((u32)(40.0f + 150.0f * l), g_dm.glint) : MA((u32)(40.0f - 40.0f * l * 2.0f), g_dm.shade);
+        v[2 * i]     = { cx + cosf(a) * r0 - 0.5f, cy + sinf(a) * r0 - 0.5f, 0, 1, c };
+        v[2 * i + 1] = { cx + cosf(a) * r1 - 0.5f, cy + sinf(a) * r1 - 0.5f, 0, 1, c };
+    }
+    dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
+}
 static void pod_housing(u32 dev, float cx, float cy, float r, float Ri, float Ro, float th0, float Ph, float S, u32 hb) {
     const float rB = r - 1.5f * S, rm = (Ri + Ro) * 0.5f;
     const float C = (Ro - rB) / rm * TUNE("mm.pod_chamfer", 1.0f);       // the chamfer's angular length : 45 degrees
@@ -1055,27 +1072,38 @@ static void pod_housing(u32 dev, float cx, float cy, float r, float Ri, float Ro
         ring_sector(dev, cx + ox, cy + oy, Ri - g, Ro + g, aL1 - gA * 0.4f, aR0 + gA * 0.4f, col);
         pod_quad_strip(dev, cx + ox, cy + oy, aR0 + gA * 0.4f, aR1 + gA, Ri - g, Ro + g, Ri - g, rB, col, col);
     }
-    // the top face
-    ring_sector(dev, cx, cy, Ri, Ro, aL1, aR0, hb);
-    // the CHAMFERS : plane facets lit by the lamp (upper left) -- facet normal = radial + tangent away from the face, 45 deg
-    const float Lx = -0.55f, Ly = -0.83f;
+    // the front face : domed metal, lit toward the lamp
+    pod_lit_band(dev, cx, cy, Ri, Ro, aL1, aR0, hb, 0);
+    // the CHAMFERS : plane facets lit by the lamp -- facet normal = radial + tangent away from the face, 45 deg
     for (int e = -1; e <= 1; e += 2) {
         const float am = th0 + (float)e * (Ph + C * 0.5f);
         const float rx = cosf(am), ry = sinf(am), tx = -sinf(am) * (float)e, ty = cosf(am) * (float)e;
-        const float nx = (rx + tx) * 0.7071f, ny = (ry + ty) * 0.7071f, l = nx * Lx + ny * Ly;
-        const u32 fc = l > 0.0f ? pod_mix(hb, g_dm.lite, l * 0.55f) : pod_mix(hb, g_dm.edge, -l * 0.75f);
+        const float nx = (rx + tx) * 0.7071f, ny = (ry + ty) * 0.7071f, l = nx * POD_LX + ny * POD_LY;
+        const u32 fc = l > 0.0f ? pod_mix(hb, g_dm.lite, l * 0.45f) : pod_mix(hb, g_dm.edge, -l * 0.65f);
         if (e < 0) pod_quad_strip(dev, cx, cy, aL0, aL1, Ri, rB, Ri, Ro, fc, fc);
         else       pod_quad_strip(dev, cx, cy, aR0, aR1, Ri, Ro, Ri, rB, fc, fc);
-        // the sharp CREASE between the face and the chamfer : a fine bright line
-        const float ac = e < 0 ? aL1 : aR0;
-        seg_soft(dev, cx + cosf(ac) * (Ri + 1.0f * S), cy + sinf(ac) * (Ri + 1.0f * S), cx + cosf(ac) * Ro, cy + sinf(ac) * Ro, 0.9f * S, MA(l > 0.0f ? 0xB0 : 0x60, g_dm.lite));
     }
-    // the face's outer lip : lit toward the lamp, turning away from it
-    ring_sector(dev, cx, cy, Ro - 1.2f * S, Ro, aL1, th0, MA(0xB0, g_dm.glint));
-    ring_sector(dev, cx, cy, Ro - 1.2f * S, Ro, th0, aR0, MA(0x80, g_dm.shade));
+    // the outer lip : one continuous light, toward the lamp and turning away from it
+    pod_lit_band(dev, cx, cy, Ro - 1.3f * S, Ro, aL1, aR0, hb, 1);
+    // the SILHOUETTE, anti-aliased : the chamfers' slopes and the top arc drawn as one soft dark line (the strips' own
+    // edges are hard : they stair-stepped)
+    {
+        const int K = 24; float px0 = 0.0f, py0 = 0.0f;
+        for (int i = 0; i <= K; ++i) {
+            const float t = (float)i / K, a = aL0 - 1.0f * S / rm + (aR1 - aL0 + 2.0f * S / rm) * t;
+            float rr;
+            if (a < aL1) rr = rB + (Ro - rB) * (a - aL0) / (aL1 - aL0);
+            else if (a > aR0) rr = Ro + (rB - Ro) * (a - aR0) / (aR1 - aR0);
+            else rr = Ro;
+            rr += 1.3f * S;
+            const float px = cx + cosf(a) * rr, py = cy + sinf(a) * rr;
+            if (i) seg_soft(dev, px0, py0, px, py, 1.3f * S, g_dm.edge);
+            px0 = px; py0 = py;
+        }
+    }
     // the engraved GROOVE along the top, a tool mark : dark cut, its lit lower lip
-    ring_sector(dev, cx, cy, Ro - 3.4f * S, Ro - 2.6f * S, aL1 + 1.5f * S / Ro, aR0 - 1.5f * S / Ro, MA(0xA0, g_dm.edge));
-    ring_sector(dev, cx, cy, Ro - 4.2f * S, Ro - 3.4f * S, aL1 + 1.5f * S / Ro, aR0 - 1.5f * S / Ro, MA(0x50, g_dm.lite));
+    ring_sector(dev, cx, cy, Ro - 3.4f * S, Ro - 2.6f * S, aL1 + 1.5f * S / Ro, aR0 - 1.5f * S / Ro, MA(0x90, g_dm.edge));
+    ring_sector(dev, cx, cy, Ro - 4.2f * S, Ro - 3.4f * S, aL1 + 1.5f * S / Ro, aR0 - 1.5f * S / Ro, MA(0x40, g_dm.lite));
 }
 void clip_rect_begin(u32 dev, float x, float y, float w, float h);   // (config_controls.cpp : a sub-viewport clip)
 void clip_rect_end(u32 dev);
@@ -1125,8 +1153,43 @@ static void pod_wheels_over(u32 dev, float cx, float cy, float rw, float wr, flo
         seg_soft(dev, x0, y0, x1, y1, 0.8f * S, 0xD0140C04u);
         seg_soft(dev, x0 + tx * 0.8f * S, y0 + ty * 0.8f * S, x1 + tx * 0.8f * S, y1 + ty * 0.8f * S, 0.5f * S, 0x40FFF0D0u);
     }
-    sector_grad(dev, cx, cy, rw, rw + wr, th0 - Wh, th0 + Wh, 0x08FFFFFFu, 0x38FFFFFFu, 0x08FFFFFFu, 0x38FFFFFFu);   // the GLASS : a sheen on its outer half
-    ring_sector(dev, cx, cy, rw + wr - 1.0f, rw + wr, th0 - Wh, th0 + Wh, 0x70FFFFFFu);                          // its lit lip
+    (void)Wh;                                                             // (the glass and its caps : pod_glass / pod_caps, after the housing's cover)
+}
+// THE GLASS TUBE AND ITS END CAPS (the user 2026-11-25 : "the glass tubes, their caps at the ends, the lighting -- not
+// finished") : the wheels turn inside a GLASS CYLINDER lying along the arc ; across it (the radial axis) the glass is
+// darker at its inner edge (it curves away), brighter at its outer edge, with ONE thin specular line where the lamp
+// catches the curve -- stronger on the lamp's side ; at each end a turned METAL CAP (a ferrule) clamps the tube : a
+// cylinder across the radius, lit on its outer half, a dark seam against the glass.
+static void pod_glass(u32 dev, float cx, float cy, float rw, float wr, float a0, float a1, float S) {
+    (void)S;
+    color_state(dev);
+    sector_grad(dev, cx, cy, rw - wr, rw - wr * 0.45f, a0, a1, 0x58000000u, 0x00000000u, 0x58000000u, 0x00000000u);   // the inner edge curves away : darker
+    sector_grad(dev, cx, cy, rw + wr * 0.50f, rw + wr, a0, a1, 0x00FFFFFFu, 0x30FFFFFFu, 0x00FFFFFFu, 0x30FFFFFFu);   // the outer edge catches the sky
+    const float l0 = cosf(a0) * POD_LX + sinf(a0) * POD_LY, l1 = cosf(a1) * POD_LX + sinf(a1) * POD_LY;
+    const u32 s0 = MA((u32)(22.0f + 30.0f * (l0 > 0.0f ? l0 : 0.0f)), 0xFFFFFFu), s1 = MA((u32)(22.0f + 30.0f * (l1 > 0.0f ? l1 : 0.0f)), 0xFFFFFFu);   // subtle : it must never strike the figures out
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
+    sector_grad(dev, cx, cy, rw + wr * 0.70f, rw + wr * 0.80f, a0, a1, s0, s0, s1, s1);                       // the specular line, near the outer edge (clear of the figures)
+    sector_grad(dev, cx, cy, rw + wr * 0.55f, rw + wr * 0.70f, a0, a1, 0, s0, 0, s1);                          // its soft halo (inner side)
+    sector_grad(dev, cx, cy, rw - wr * 0.62f, rw - wr * 0.58f, a0, a1, 0x18FFFFFFu, 0x18FFFFFFu, 0x18FFFFFFu, 0x18FFFFFFu);   // a faint second reflection
+    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    color_state(dev);
+}
+static void pod_caps(u32 dev, float cx, float cy, float rw, float wr, float a0, float a1, float S) {
+    color_state(dev);
+    const float cw = 3.0f * S / rw, ri = rw - wr - 1.2f * S, ro = rw + wr + 1.2f * S;
+    const u32 body = g_dm.bot | 0xFF000000u;
+    for (int e = -1; e <= 1; e += 2) {
+        const float aIn = e < 0 ? a0 : a1;                                // the glass's end
+        const float c0 = e < 0 ? aIn - cw * 0.45f : aIn - cw * 0.55f, c1 = c0 + cw;
+        const float l = cosf(aIn) * POD_LX + sinf(aIn) * POD_LY;           // the cap's own light : its outward face
+        ring_sector(dev, cx, cy, ri - 1.0f * S, ro + 1.0f * S, c0 - 1.0f * S / rw, c1 + 1.0f * S / rw, g_dm.edge);   // its dark edge
+        ring_sector(dev, cx, cy, ri, ro, c0, c1, l > 0.0f ? pod_mix(body, g_dm.lite, l * 0.25f) : pod_mix(body, g_dm.edge, -l * 0.25f));
+        sector_grad(dev, cx, cy, rw, ro, c0, c1, MA(0x00, g_dm.lite), MA(0xC0, g_dm.lite), MA(0x00, g_dm.lite), MA(0xC0, g_dm.lite));   // a cylinder : lit on its outer half...
+        sector_grad(dev, cx, cy, ri, rw, c0, c1, MA(0xA0, g_dm.edge), MA(0x00, g_dm.edge), MA(0xA0, g_dm.edge), MA(0x00, g_dm.edge));   // ...in shade on its inner
+        ring_sector(dev, cx, cy, ro - 0.9f * S, ro, c0, c1, MA(0xD0, g_dm.glint));                    // the lip catching the light
+        const float sa = e < 0 ? c1 : c0;                                  // the seam against the glass
+        seg_soft(dev, cx + cosf(sa) * (rw - wr), cy + sinf(sa) * (rw - wr), cx + cosf(sa) * (rw + wr), cy + sinf(sa) * (rw + wr), 0.9f * S, 0xC0000000u);
+    }
 }
 // A POD CELL THAT ROLLS (the user 2026-11-25 : "the hour's wheel system : three cells that change together" ; "the wheels
 // must turn the way they are mounted -- along their axis to the centre") : each cell is a wheel whose axle lies ACROSS the
@@ -1295,21 +1358,10 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
     }
     pod_wheels_over(dev, cx, cy, rw, wr, th0, as, Wh, S);               // the cuts between them, the glass
     // ---- the housing's metal OVER the wheel beyond the window's ends (what slipped under the frame is hidden) ----
-    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 + Wh + 0.02f, th0 + Ph, hb);   // (the caps cover past Ph)
-    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Ph, th0 - Wh - 0.02f, hb);
-    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0 - Ph, th0, MA(0xA0, g_dm.glint));
-    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0, th0 + Ph, MA(0x80, g_dm.shade));
-    // ---- the window's FRAME : a polished bevel, lit on the outer lip, in shade on the inner ----
-    ring_sector(dev, cx, cy, rw + wr, rw + wr + 1.2f * S, th0 - Wh, th0 + Wh, MA(0xC0, g_dm.lite));
-    ring_sector(dev, cx, cy, rw - wr - 1.2f * S, rw - wr, th0 - Wh, th0 + Wh, MA(0xC0, g_dm.dark));
-    for (int e = -1; e <= 1; e += 2) {                                    // the two radial ends of the window
-        float x0, y0, x1, y1; at(th0 + e * Wh, rw - wr - 1.2f * S, x0, y0); at(th0 + e * Wh, rw + wr + 1.2f * S, x1, y1);
-        seg_soft(dev, x0, y0, x1, y1, 1.6f * S, MA(0xC0, e < 0 ? g_dm.lite : g_dm.dark));
-    }
-    // ---- the GLASS over the window : a long soft reflection on its outer half ----
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
-    ring_sector(dev, cx, cy, rw + wr * 0.25f, rw + wr * 0.85f, th0 - Wh * 0.9f, th0 - Wh * 0.15f, 0x22FFFFFFu);
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    pod_lit_band(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 + Wh + 0.02f, th0 + Ph, hb, 0);   // the face's metal over what slipped under
+    pod_lit_band(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Ph, th0 - Wh - 0.02f, hb, 0);
+    pod_glass(dev, cx, cy, rw, wr, th0 - Wh, th0 + Wh, S);              // the glass tube...
+    pod_caps(dev, cx, cy, rw, wr, th0 - Wh, th0 + Wh, S);               // ...clamped by its end caps
     color_state(dev);
     (void)PI; (void)capR; (void)frac;
 }
@@ -1518,8 +1570,8 @@ static void drum_arc(u32 dev, Font* fo, int slot, float cx, float cy, float th0,
         if (tk[i].wheel && i + 1 < n && tk[i + 1].wheel) { color_state(dev); pod_cut(dev, cx, cy, rw, wr, ang(w), S); }
     }
     color_state(dev);
-    sector_grad(dev, cx, cy, rw, rw + wr, aLo, aHi, 0x08FFFFFFu, 0x38FFFFFFu, 0x08FFFFFFu, 0x38FFFFFFu);   // the GLASS : a sheen on its outer half
-    ring_sector(dev, cx, cy, rw + wr - 1.0f, rw + wr, aLo, aHi, 0x70FFFFFFu);                          // its lit lip
+    pod_glass(dev, cx, cy, rw, wr, aLo, aHi, S);                        // the glass tube...
+    pod_caps(dev, cx, cy, rw, wr, aLo, aHi, S);                         // ...clamped by its end caps
 }
 static bool s_tubes = false; static float s_tubeRw = 0.0f;   // the hour / position in their tubes (the plinth off) : drum_arc
 static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it each frame ; 0 = draw the inked fallback)
@@ -1588,20 +1640,10 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
         pod_wheels_over(dev, cx, cy, rw, wr, th0, as, Wh, S);           // the cuts between them, the glass
     }
     // the housing's metal over the band beyond the window's ends (what slipped under is hidden)
-    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 + Wh + 0.02f, th0 + Ph, hb);
-    ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Ph, th0 - Wh - 0.02f, hb);
-    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0 - Ph, th0, MA(0xA0, g_dm.glint));
-    ring_sector(dev, cx, cy, Ro - 1.3f * S, Ro, th0, th0 + Ph, MA(0x80, g_dm.shade));
-    // the window's frame : a polished bevel ; its two radial ends
-    ring_sector(dev, cx, cy, rw + wr, rw + wr + 1.2f * S, th0 - Wh, th0 + Wh, MA(0xC0, g_dm.lite));
-    ring_sector(dev, cx, cy, rw - wr - 1.2f * S, rw - wr, th0 - Wh, th0 + Wh, MA(0xC0, g_dm.dark));
-    for (int e = -1; e <= 1; e += 2) {
-        float x0, y0, x1, y1; at(th0 + e * Wh, rw - wr - 1.2f * S, x0, y0); at(th0 + e * Wh, rw + wr + 1.2f * S, x1, y1);
-        seg_soft(dev, x0, y0, x1, y1, 1.6f * S, MA(0xC0, e < 0 ? g_dm.lite : g_dm.dark));
-    }
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);                          // the glass : a soft reflection on its outer half
-    ring_sector(dev, cx, cy, rw + wr * 0.25f, rw + wr * 0.85f, th0 - Wh * 0.9f, th0 - Wh * 0.15f, 0x22FFFFFFu);
-    dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
+    pod_lit_band(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 + Wh + 0.02f, th0 + Ph, hb, 0);   // the face's metal over what slipped under
+    pod_lit_band(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Ph, th0 - Wh - 0.02f, hb, 0);
+    pod_glass(dev, cx, cy, rw, wr, th0 - Wh, th0 + Wh, S);              // the glass tube...
+    pod_caps(dev, cx, cy, rw, wr, th0 - Wh, th0 + Wh, S);               // ...clamped by its end caps
     color_state(dev);
 }
 
