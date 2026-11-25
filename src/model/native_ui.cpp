@@ -302,6 +302,7 @@ u32 g_actObj = 0;          // the playermo object of the last good read (re-read
 NativeNpc g_npc; bool g_npcFail = false; int g_npcBad = 0; DWORD g_npcGoodSince = 0;
 // and for the MAIN menu
 NativeEntryMenu g_mainM, g_mainSub, g_mainSort, g_mainYn; bool g_mainFail = false;
+bool g_mainNative = false;   // a main-menu child the client keeps drawing, in the main menu's place (main_poll)
 NativeTopBar g_tb; bool g_tbFail = false;                                               // the top bar (titlewin + helpwind)
 NativeMacro g_mc; bool g_mcFail = false;                                                // the macro bar
 NativeNet g_net; bool g_nsFail = false;                                                 // the connection box (netstat)
@@ -2078,6 +2079,12 @@ void main_poll(bool on) {
         }
     }
     g_mainSub = sm; if (rs != 1) g_mainSub.open = false;
+    {   // the Macro family stays the client's (its book names are drawn by no text path the capture hooks) : it opens IN
+        // PLACE of the main menu, so the main menu steps aside while it is up (2026-11-25 : the client's Macro menu sat on
+        // the header of AioHUD's main menu)
+        const u32 mg = manager();
+        g_mainNative = mg && (win_named(mg, "mcrmenu") || win_named(mg, "mcrselec"));
+    }
     {   // the first sight of each sub menu : its rows as read (bounded) -- what the labels are, measured not guessed
         static int said = 0;
         if (rs == 1 && said < 4) { ++said; char b[400]; int o = 0;
@@ -2619,6 +2626,7 @@ const NativeMenu& native_action_menu() { return g_act; }
 const NativeEntryMenu& native_sub_menu() { return g_sub; }
 const NativeEntryMenu& native_main_menu() { return g_mainM; }
 const NativeEntryMenu& native_main_sub() { return g_mainSub; }
+bool native_main_native_child() { return g_mainNative; }
 const NativeEntryMenu& native_main_sort() { return g_mainSort; }
 const NativeEntryMenu& native_main_yn() { return g_mainYn; }
 const NativeProfile& native_profile() { return g_prof; }
@@ -5440,7 +5448,7 @@ void native_ui_tick(bool inWorld) {
     g_full.open = false; g_full.logFocus = -1;             // read again below this frame, or not open (never stale)
     if (!(inWorld && (c.nuHide & NU_ACT))) { g_act.open = false; g_sub.open = false; g_list.open = false; }   // never a stale menu once the option is off / logged out
     if (!(inWorld && (c.nuHide & NU_NPC))) { g_npc.talk = false; g_npc.query = false; }
-    if (!(inWorld && (c.nuHide & NU_MAIN))) { g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; }
+    if (!(inWorld && (c.nuHide & NU_MAIN))) { g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainNative = false; }
     // only while a character is in the world : the title, login and char-select menus are the client's own business
     const bool docking = c.chDock && c.chShow[0] && (c.chDock == 2 || c.chDockRect[2] > 0.0f);   // the game's input line : under / inside AioHUD's chat box
     const bool wanted = inWorld && (c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0 || docking);
@@ -5458,7 +5466,7 @@ void native_ui_tick(bool inWorld) {
         if (g_lastSig != 0 || strcmp(g_why, why)) { g_lastSig = 0; lstrcpynA(g_why, why, sizeof(g_why)); }
         return;
     }
-    if (!resolve()) { g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_act.open = false; g_sub.open = false; g_list.open = false; g_npc.talk = false; g_npc.query = false; g_fep.open = false; g_tb.ok = false; g_mc.ok = false; g_mc.open = 0; g_net.ok = false; g_trade.open = false; g_dlg.open = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
+    if (!resolve()) { g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainNative = false; g_act.open = false; g_sub.open = false; g_list.open = false; g_npc.talk = false; g_npc.query = false; g_fep.open = false; g_tb.ok = false; g_mc.ok = false; g_mc.open = 0; g_net.ok = false; g_trade.open = false; g_dlg.open = false; return; }        // (resolve() runs the crash recovery once, when it succeeds)
     if (inWorld) fulllog_read(manager()); else g_full.open = false;   // the expanded log : AioHUD's Discussion box unfolds
     act_poll(wanted && (c.nuHide & NU_ACT));
     main_poll(wanted && (c.nuHide & NU_MAIN));

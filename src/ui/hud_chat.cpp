@@ -204,6 +204,13 @@ bool place_on_chat(float bw, float bh, float gap, float screenW, float screenH, 
     return true;
 }
 
+// does a bx,by bw x bh block cover the chat group ? (a window drawn where the client had it lands on our bigger chat)
+bool covers_chat(float bx, float by, float bw, float bh) {
+    float ax, aw, top, bottom;
+    if (!chat_anchor(ax, aw, top, bottom)) return false;
+    return bx < ax + aw && bx + bw > ax && by < bottom && by + bh > top;
+}
+
 static bool mentions(const char* s, const char* me) {
     if (me && me[0] && strstr(s, me)) return true;
     return !strncmp(s, "You ", 4) || !strncmp(s, "Your ", 5);

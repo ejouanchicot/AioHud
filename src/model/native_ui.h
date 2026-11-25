@@ -273,6 +273,7 @@ bool native_main_hover(int entry);
 bool native_main_pick(int entry);
 // what the main menu opens that AioHUD redraws too : Magic's categories `mgcmenu` (then the spell list, native_list)
 const NativeEntryMenu& native_main_sub();
+bool native_main_native_child();   // the Macro family is up : the client's own, in the main menu's place
 bool native_main_sub_hover(int entry);
 bool native_main_sub_pick(int entry);
 // ... and the spell list's SORT options `mgcsortw` (Auto-sort / Manual Sort ; X or numpad + gives it the cursor), open

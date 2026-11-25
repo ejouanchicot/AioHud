@@ -113,6 +113,7 @@ bool chat_input_rect(float& x, float& y, float& w, float& h, float& caretX, floa
 void fep_draw(const Frame& f);   // hud_actmenu.cpp : the client's auto-translate picker (Tab), drawn on that field
 // a bw x bh block on it : above the group when it fits, else below ; inside the screen. False : no chat box shown.
 bool place_on_chat(float bw, float bh, float gap, float screenW, float screenH, float& bx, float& by);
+bool covers_chat(float bx, float by, float bw, float bh);   // hud_chat.cpp : the block overlaps the chat group
 void npc_draw(const Frame& f);   // hud_actmenu.cpp : the NPC dialogue + answers, mirrored (Game UI -> NU_NPC)
 void actmenu_hits_clear();       // hud_actmenu.cpp : every redrawn menu's click area off (each frame, before the draws)
 void chat_hit_clear();

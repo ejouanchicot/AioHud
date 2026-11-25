@@ -5658,6 +5658,7 @@ void gen_panel_draw(const Frame& f) {
         const float sx = f.screenW / (float)P.uiW, sy = f.screenH / (float)P.uiH;
         float bx = snap((float)P.rx0 * sx), by = snap((float)P.ry0 * sy);
         if (P.rx0 * 2 > P.uiW) bx = snap((float)P.rx1 * sx - bw);
+        if (covers_chat(bx, by, bw, bh)) { float cx, cy; if (place_on_chat(bw, bh, snap(4.0f * S), f.screenW, f.screenH, cx, cy)) { bx = cx; by = cy; } }   // above the chat, as the client (the Emote List landed ON it, 2026-11-25)
         if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
         if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
         const int jm = menu_place(f, __LINE__ * 4 + s, bx, by, bw, bh); g_frameJoin = jm;
@@ -7123,7 +7124,7 @@ void mainmenu_draw(const Frame& f) {
     // are up this menu is not drawn (2026-11-18, "le sous menu remplace le main menu plutot que de se mettre a cote")
     const NativeGenMenus& GM = native_gen_menus();             // ... and so does a generic window it opened (Config & co, 2026-11-21)
     // ... and the Mog House's menus it opens (View House -> mogcont, 2026-11-22 "le menu principal reste affiche derriere"), the panels
-    const bool subUp = native_main_sub().open || native_main_sort().open || (!last.focused && (GM.n > 0 || GM.grid || GM.list || GM.np > 0 || native_mog_menus().n > 0));
+    const bool subUp = native_main_sub().open || native_main_sort().open || native_main_native_child() || (!last.focused && (GM.n > 0 || GM.grid || GM.list || GM.np > 0 || native_mog_menus().n > 0));
     const int jm = subUp ? 0 : menu_place(f, __LINE__, bx, by, bw, bh);   // recorded only while drawn (theme kit)
     const float by0 = by;                                    // its rest place : what opens in its place is placed from it
     const float tOpen = ease_out(((float)(now - g_mainMB.openMs) / 1000.0f) / 0.08f);
