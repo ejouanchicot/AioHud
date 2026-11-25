@@ -1193,7 +1193,7 @@ static int drum_tokens(Font* fo, const char* txt, float sz, float S, DrumTok* ou
             for (int q = 0; q < pad && n < cap; ++q) { DrumTok& k = out[n++]; k.t[0] = q < m ? txt[i + q] : ' '; k.t[1] = 0; k.wheel = true; k.w = ww; }
             i = j; continue;
         }
-        DrumTok& k = out[n++]; k.t[0] = ch; k.t[1] = 0; k.wheel = true; k.w = ww; ++i;   // a digit, ':' '-' : one wheel each
+        DrumTok& k = out[n++]; k.t[0] = ch == '' ? ' ' : ch; k.t[1] = 0; k.wheel = true; k.w = ww; ++i;   // a digit, ':' '-',  = a blank wheel : one wheel each
     }
     return n;
 }
@@ -1469,7 +1469,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         char posTxt[12] = ""; bool posBand = false;
         if (c.mmGrid && c.mmDayDial == 2 && !sq) {
             const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
-            if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { sprintf(posTxt, "%c-%02d", 'A' + gc, gr + 1); posBand = true; }   // two cylinders, always
+            if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { sprintf(posTxt, gr + 1 < 10 ? "%c-%d" : "%c-%d", 'A' + gc, gr + 1); posBand = true; }   // the game's "H-9", a BLANK wheel after it () : always 4 wheels
         }
         const float posHalf = posBand && tf ? snap(drum_width(tf, posTxt, pSz, S) * 0.5f + 3.0f * S) : 0.0f;
         const float lc0 = bx0 + bins, lc1 = cx - (posBand ? posHalf + 4.0f * S : 7.0f * S), rc0 = cx + (posBand ? posHalf + 4.0f * S : 7.0f * S), rc1 = bx1 - bins;   // the compartments
