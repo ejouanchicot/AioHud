@@ -1225,7 +1225,7 @@ static void draw_ink_moon(u32 dev, float x, float y, float R, float f, bool wani
 struct PodGeo { float th0, D, Ri, Ro, rm, isz, rw, wr, as, Wh, Ph; };
 static PodGeo pod_geo(float r, float S) {
     PodGeo g;
-    g.th0 = TUNE("mm.pod_angle", -1.5708f);                              // ABOVE THE NORTH, centred
+    g.th0 = TUNE("mm.pod_angle", 0.66f);                                 // the LOWER RIGHT, between the S and the E (the user 2026-11-25 ; the hour took the top) -- 52 deg off the S : clear of the position's tube
     g.D = r * TUNE("mm.pod_depth", 0.235f);                              // the designer's spec (2026-11-25) : ~0.23 r at the summit
     g.Ri = r - 3.0f * S; g.Ro = r + g.D; g.rm = (g.Ri + g.Ro) * 0.5f;
     g.isz = r * TUNE("mm.pod_icon", 0.18f); g.rw = r + g.D * 0.50f; g.wr = g.isz * 0.56f;   // today's icon 0.18 r ; the window just holds it
@@ -1281,7 +1281,7 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
             const bool today = d == 0;
             const float sz = today ? isz : isz * (0.13f / 0.18f);
             const u32 col = today ? 0xFFFFFFFFu : 0xFFD2D2D2u;
-            pod_roll_cell(dev, cx, cy, th0 + (float)d * as, rw + wr * 0.12f, sz, as * rw * 0.48f, wr, k, oldDi < 0 ? -1 : ((oldDi + d + 16) & 7), (di + d + 16) & 7, col, col);
+            pod_roll_cell(dev, cx, cy, th0 + (sinf(th0) > 0.0f ? -1.0f : 1.0f) * (float)d * as, rw + wr * 0.12f, sz, as * rw * 0.48f, wr, k, oldDi < 0 ? -1 : ((oldDi + d + 16) & 7), (di + d + 16) & 7, col, col);
         }
         dSetTex(dev, 0, 0);
         color_state(dev);
@@ -1470,7 +1470,7 @@ static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it e
 static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct, bool waning, int hh, u32 tex) {
     PERF_SCOPE("mm.moonpod");
     PodGeo G = pod_geo(r, S);
-    G.th0 = TUNE("mm.mpod_angle", 2.3562f);                              // the LOWER left, on the diagonal between the W and the S (the user 2026-11-25)
+    G.th0 = TUNE("mm.mpod_angle", 2.48f);                                // the LOWER left, between the W and the S (the user 2026-11-25) -- 52 deg off the S, the day pod's mirror
     const float dir = sinf(G.th0) > 0.0f ? -1.0f : 1.0f;                // yesterday | today | tomorrow read LEFT to right wherever it sits
     const float th0 = G.th0, Ri = G.Ri, Ro = G.Ro, rm = G.rm, isz = G.isz * TUNE("mm.mpod_icon", 1.10f), rw = G.rw, wr = isz * 0.56f, as = G.as, Wh = G.Wh, Ph = G.Ph;
     auto at = [&](float ang, float rad, float& x, float& y) { x = cx + cosf(ang) * rad; y = cy + sinf(ang) * rad; };
@@ -1814,6 +1814,20 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                     seg_soft(dev, gx + 0.9f * S, yC - hh, gx + 0.9f * S, yC + hh, 0.8f * S, MA(0x60, g_dm.lite));
                 }
             }
+            if (!body) {   // THE TUBES (the user 2026-11-25 : "the hour at the top, centred ; the position at the bottom, centred, in
+                           // the same kind of tube as the other modules") : a boss milled out of the bezel (pod_housing), the
+                           // wheels in their aperture inside it -- the hour above the N, the grid square under the S
+                const float D = r * TUNE("mm.pod_depth", 0.235f), Ri = r - 3.0f * S, Ro = r + D, rmT = (Ri + Ro) * 0.5f, rwT = r + D * 0.5f;
+                const u32 hbT = dm_toward(g_dm.bot, 0xFF000000u, TUNE("mm.pod_dark", 0.25f));
+                cwHH = fminf(wh * 0.5f - 0.6f * S, D * 0.5f - 2.5f * S);
+                for (int k = 1; k <= 2; ++k) {
+                    if (!on3[k] || hw3[k] <= 0.0f) continue;
+                    const float th = k == 2 ? -PI * 0.5f : PI * 0.5f;
+                    const float Ph = (hw3[k] + 3.0f * S) / rwT + 2.0f * S / rmT;
+                    pod_housing(dev, cx, cy, r, Ri, Ro, th, Ph, S, hbT);
+                    cwX[k] = snap(cx); cwY[k] = snap(cy + sinf(th) * rwT); cwH[k] = hw3[k];
+                }
+            }
             color_state(dev);
             if (posBand) drum_text(dev, tf, 1, cwX[1], cwY[1], cwH[1] - 0.6f * S, cwHH, posTxt, pSz, S);
         }
@@ -2139,7 +2153,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
     // -- the cardinal letters, engraved in the brass band -- LAST : nothing of the case may cover them --
     if (fo) {
         const float rm = (rc + r) * 0.5f, csz = snap(TUNE("mm.dial_card", 13.0f) * S * clampf(c.mmCardSz, 0.5f, 2.0f) / 0.7f);
-        if (!sq && c.mmDayDial == 2 && c.mmClock && c.mmClkDay) draw_day_pod_needle(dev, cx, cy, rc, r, S, csz);   // the day pod's needle, out of the N
+        if (!sq && c.mmDayDial == 2 && c.mmClock && c.mmClkDay && fabsf(pod_geo(r, S).th0 + 1.5708f) < 0.05f) draw_day_pod_needle(dev, cx, cy, rc, r, S, csz);   // the day pod's needle, out of the N (only when the pod sits above it)
         static const char* NM[4] = { "N", "E", "S", "W" };
         static const float DX[4] = { 0.0f, 1.0f, 0.0f, -1.0f }, DY[4] = { -1.0f, 0.0f, 1.0f, 0.0f };
         fo->begin(dev);
