@@ -1000,26 +1000,23 @@ static int mm_weather_elem(int wid) {
     static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };              // weather pair (fire, water, earth, wind, ice, thunder, light, dark) -> day order
     return (wid >= 4 && wid <= 19) ? WCELL[(wid - 4) / 2] : -1;
 }
-// A CLEAR GLASS PASTILLE (the user 2026-11-25 : "really a glass pastille ; full glass, no black") : see-through, its rim
-// darker where the glass is thick, the light passing through pooled at the bottom, a sharp reflection toward the lamp.
-// _under before what floats inside it, _over after.
+// A DOMED METAL CAPSULE (the user 2026-11-25 : "back to metal, it was better -- a domed capsule, not much detail, a
+// metal ground so the icon stands out") : the theme's metal, a shade darker than the case so a bright icon reads on it,
+// domed by the instrument's lamp (lit on its side, in shade on the other), a polished lip. _under before the icon, _over after.
 static void glass_bead_under(u32 dev, float x, float y, float R, float S) {
-    disc(dev, x + 0.6f * S, y + 1.6f * S, R * 0.92f, 0x38000000u);                 // its soft shadow on what lies beneath
-    // FROSTED glass (the user : the see-through back did not work -- the map behind fought the element) : a milky pane,
-    // brighter at its heart, cooler and darker toward the thick rim
-    disc(dev, x, y, R, 0xF0C4D2DEu);
-    disc(dev, x - R * 0.08f, y - R * 0.10f, R * 0.70f, 0x70EEF4FAu);
-    ring_sector(dev, x, y, R * 0.78f, R, 0.0f, 6.2832f, 0x60405A72u);
-    ring_sector(dev, x, y, R - 1.0f * S, R, 0.0f, 6.2832f, 0x90203040u);        // its edge
+    const Lamp Lp = lamp_for(x, y); const float la = atan2f(Lp.y, Lp.x);
+    disc(dev, x + 0.6f * S, y + 1.6f * S, R + 0.6f * S, 0x60000000u);              // its shadow
+    disc(dev, x, y, R + 1.3f * S, g_dm.edge);                                    // the dark edge
+    disc(dev, x, y, R, dm_toward(g_dm.body, 0xFF000000u, 0.30f));               // the dome, a shade darker than the case
+    disc(dev, x + Lp.x * R * 0.22f, y + Lp.y * R * 0.22f, R * 0.68f, MA(0x55, g_dm.top));   // lit toward the lamp...
+    ring_sector(dev, x, y, R * 0.70f, R, la + 3.1416f - 1.2f, la + 3.1416f + 1.2f, MA(0x70, g_dm.shade));   // ...in shade opposite
+    ring_sector(dev, x, y, R - 1.1f * S, R, la - 1.3f, la + 1.3f, MA(0xB0, g_dm.lite));   // the polished lip
 }
 static void glass_bead_over(u32 dev, float x, float y, float R, float S) {
-    const Lamp Lp = lamp_for(x, y); const float la = atan2f(Lp.y, Lp.x);
+    const Lamp Lp = lamp_for(x, y);
     dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_ONE);
-    ring_sector(dev, x, y, R * 0.55f, R * 0.88f, la - 0.75f, la + 0.75f, 0x40FFFFFFu);   // the broad reflection, toward the lamp
-    ring_sector(dev, x, y, R * 0.62f, R * 0.90f, la + 3.1416f - 0.6f, la + 3.1416f + 0.6f, 0x2AD8F0FFu);   // the light through it, pooled opposite
-    ring_sector(dev, x, y, R - 1.6f * S, R - 0.4f * S, la - 1.2f, la + 1.2f, 0x50FFFFFFu);   // the lit lip
+    disc_glow(dev, x + Lp.x * R * 0.45f, y + Lp.y * R * 0.45f, R * 0.06f, MA(0x40, g_dm.glint), R * 0.22f);   // a soft sheen, no glint dot
     dSetRS(dev, D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA);
-    disc(dev, x + Lp.x * R * 0.48f, y + Lp.y * R * 0.48f, R * 0.11f, 0xE8FFFFFFu);   // the glint
     (void)S;
 }
 struct PodGeo { float th0, D, Ri, Ro, rm, isz, rw, wr, as, Wh, Ph; };
