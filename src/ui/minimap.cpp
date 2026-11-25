@@ -1282,6 +1282,7 @@ static void drum_text(u32 dev, Font* fo, int slot, float cx, float cy, float hw,
     }
     color_state(dev);
 }
+static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it each frame ; 0 = draw the inked fallback)
 static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, const GameState& g, const VanaClock& v, u32 elemTex, u32 wxTex,
                                  float mapX, float mapY, float cx, float cy, float rc, float r, float S, float zoomA, bool sq, int pass) {
     // pass 0 : the MODULES -- sky, weather, moon, position, the band -- drawn BEFORE the map and the ring : they are mounted
@@ -1654,10 +1655,16 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 // metal HAND on a pivot pointing where the cycle stands
                 const float pct = (float)v.moonPct / 100.0f, cyc = v.waning ? 0.5f + (1.0f - pct) * 0.5f : pct * 0.5f;   // 0 new .. 0.5 full .. 1 new
                 const float face = srM - 0.5f * S;
-                disc(dev, x, y, face, 0xFFDCC48Eu);                                     // the parchment face
+                const float rmP = face * 0.64f, pr = face * 0.16f;                     // the phases' ring (the texture's layout too)
+                if (s_moonDialTex) {                                                     // THE TEXTURE (an inked almanac, the user 2026-11-25)
+                    tex_state(dev, s_moonDialTex);
+                    tquad(dev, snap(x - face), snap(y - face), 2.0f * face, 2.0f * face, 0.0f, 1.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
+                    dSetTex(dev, 0, 0);
+                    color_state(dev);
+                } else {
+                disc(dev, x, y, face, 0xFFDCC48Eu);                                     // the parchment face (fallback : inked by code)
                 ring_sector(dev, x, y, face * 0.80f, face, 0.0f, 2.0f * PI, 0x30603A10u);   // darker toward the bezel
                 ring_sector(dev, x, y, face * 0.86f - 0.5f * S, face * 0.86f + 0.5f * S, 0.0f, 2.0f * PI, 0x903A2410u);   // an inked circle
-                const float rmP = face * 0.64f, pr = face * 0.16f;                     // room around each, big enough to read
                 for (int k = 0; k < 8; ++k) {                                           // the phases in INK
                     const float a2 = PI * 0.5f + (float)k / 8.0f * 2.0f * PI;            // new at the bottom, turning up the left
                     const float px = x + cosf(a2) * rmP, py = y + sinf(a2) * rmP;
@@ -1693,17 +1700,18 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                     const float ta = a2 + PI / 8.0f;                                    // an inked tick between two phases
                     seg_soft(dev, x + cosf(ta) * face * 0.86f, y + sinf(ta) * face * 0.86f, x + cosf(ta) * face * 0.97f, y + sinf(ta) * face * 0.97f, 0.9f * S, 0xB03A2410u);
                 }
+                }
                 {   // the HAND : chased metal, a counterweight, a pivot
                     const float na = PI * 0.5f + cyc * 2.0f * PI, ux2 = cosf(na), uy2 = sinf(na), nx2 = -uy2, ny2 = ux2;
-                    const float tip = rmP - pr - 1.5f * S, tail = face * 0.20f, w0 = 2.0f * S;
+                    const float tip = rmP - pr * 0.9f, tail = face * 0.22f, w0 = 2.6f * S;   // reaches the phases' ring
                     const float hs[8] = { x + ux2 * tip + 0.7f, y + uy2 * tip + 1.0f, x + nx2 * w0 + 0.7f, y + ny2 * w0 + 1.0f,
                                           x - ux2 * tail + 0.7f, y - uy2 * tail + 1.0f, x - nx2 * w0 + 0.7f, y - ny2 * w0 + 1.0f };
                     fill_poly_aa(dev, hs, 4, 0x80000000u);                              // its shadow on the paper
                     const float hd[8] = { x + ux2 * tip, y + uy2 * tip, x + nx2 * w0, y + ny2 * w0, x - ux2 * tail, y - uy2 * tail, x - nx2 * w0, y - ny2 * w0 };
-                    fill_poly_aa(dev, hd, 4, g_dm.dark | 0xFF000000u);
+                    fill_poly_aa(dev, hd, 4, 0xFF1A120Au);                                // BLUED steel, dark on the parchment
                     const float hl[6] = { x + ux2 * tip, y + uy2 * tip, x + nx2 * w0, y + ny2 * w0, x - ux2 * tail, y - uy2 * tail };
-                    fill_poly_aa(dev, hl, 3, g_dm.lite | 0xFF000000u);                  // its lit facet
-                    disc(dev, x, y, 2.6f * S, g_dm.edge); disc(dev, x, y, 1.9f * S, g_dm.lite);   // the pivot
+                    fill_poly_aa(dev, hl, 3, 0xFF3C4A66u);                                // its lit facet
+                    disc(dev, x, y, 2.8f * S, 0xFF1A120Au); disc(dev, x, y, 2.0f * S, 0xFFC8A050u);   // the pivot, a gilt cap
                 }
                 color_state(dev);
                 glass_dome(dev, x, y, srM, 0xFF9CB8FFu, 0.35f);
@@ -1978,15 +1986,15 @@ Minimap::LodSt* Minimap::lod_slot(unsigned id) {
     return &e;
 }
 
-void Minimap::on_device_lost() { for (int i = 0; i < AS_N; ++i) { astG_[i] = 0; astGR_[i] = TexRetry{}; } s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
+void Minimap::on_device_lost() { for (int i = 0; i < AS_N; ++i) { astG_[i] = 0; astGR_[i] = TexRetry{}; } s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0; mkAtlas_ = 0; mkAtlasR_ = TexRetry{}; for (int i = 0; i < AS_N; ++i) { ast_[i] = 0; astR_[i] = TexRetry{}; } mapTex_ = 0; mapFileId_ = 0; mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0; }   // FORGET handles (+ re-arm the retry budget)
 void Minimap::dispose() {
     s_shAtlas = 0; for (int i = 0; i < AS_N; ++i) s_shAst[i] = 0;
     for (int i = 0; i < AS_N; ++i) { release_texture(astG_[i]); astG_[i] = 0; astGR_[i] = TexRetry{}; }
     release_texture(mkAtlas_); mkAtlas_ = 0; mkAtlasR_ = TexRetry{};
     for (int i = 0; i < AS_N; ++i) { release_texture(ast_[i]); ast_[i] = 0; astR_[i] = TexRetry{}; }
     release_texture(mapTex_); mapTex_ = 0; mapFileId_ = 0;
-    release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_); if (wxTex_) release_texture(wxTex_);
-    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
+    release_texture(mkPlayer_); release_texture(mkMob_); release_texture(elemTex_); release_texture(moonTex_); if (wxTex_) release_texture(wxTex_); if (moonDialTex_) release_texture(moonDialTex_);
+    mkPlayer_ = 0; mkMob_ = 0; elemTex_ = 0; wxTex_ = 0; wxR_ = TexRetry{}; moonDialTex_ = 0; moonDialR_ = TexRetry{}; moonTex_ = 0; moonKey_ = -1; mkTries_ = 0; mkNextMs_ = 0;
 }
 
 void Minimap::draw(const Frame& f) {
@@ -2316,6 +2324,7 @@ void Minimap::draw(const Frame& f) {
         PERF_SCOPE("mm.modules");
         // the inner radius as the frame / ring below will set it (the astral ring : 80/500 of r ; the square case : its inset)
         const float rcM = dialSq ? r - snap(r * 0.16f * clampf(c.mmBezelW, 0.5f, 2.0f)) : r - r * (80.0f / 500.0f) * clampf(c.mmBezelW, 0.5f, 2.0f);
+        s_moonDialTex = ensure_raw_tex_mip(dev, moonDialTex_, moonDialR_, plugin_path_r("assets\\moon_dial.raw"), 512, 512);
         draw_dial_instrument(dev, f, c, g, dial_vana(g.vana), elemTex_, wxTex_, mapX, mapY, ccx, ccy, rcM, r, S, 0.0f, dialSq, 0);
     }
     if (false && dial && !dialSq && c.mmDayDial == 2 && c.mmGrid) {       // (the position plate : replaced by the band's centre compartment)
