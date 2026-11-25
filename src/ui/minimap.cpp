@@ -1653,16 +1653,6 @@ static u32 s_moonDialTex = 0;   // the moon dial's face (Minimap::draw sets it e
 // the MOON by night, rising on one side and setting on the other) then the WEATHER on two wheels of BLACK ENAMEL (not
 // parchment : parchment is the calendar, the black is the sky's -- they never read alike) : one element for a single
 // weather, the SAME element on both for a double, both bare for none ; they roll together when the weather changes.
-static void pod_enamel_cell(u32 dev, float cx, float cy, float rw, float wr, float a, float as) {   // a weather wheel : black enamel
-    const u32 sh = 0xD0000000u, sh0 = 0x00000000u, sd = 0x90000000u;
-    const float a0 = a - as * 0.5f, a1 = a + as * 0.5f;
-    ring_sector(dev, cx, cy, rw - wr, rw + wr, a0, a1, 0xFF0C0E16u);
-    ring_sector(dev, cx, cy, rw - wr * 0.52f, rw + wr * 0.52f, a - as * 0.36f, a + as * 0.36f, 0xFF1A1E2Cu);   // its crown, a deep sheen
-    sector_grad(dev, cx, cy, rw + wr * 0.36f, rw + wr, a0, a1, sh0, sh, sh0, sh);
-    sector_grad(dev, cx, cy, rw - wr, rw - wr * 0.36f, a0, a1, sh, sh0, sh, sh0);
-    sector_grad(dev, cx, cy, rw - wr, rw + wr, a0, a0 + as * 0.16f, sd, sd, sh0, sh0);
-    sector_grad(dev, cx, cy, rw - wr, rw + wr, a1 - as * 0.16f, a1, sh0, sh0, sd, sd);
-}
 static float sky_cell_ratio() { return TUNE("mm.sky_cell", 1.6f); }   // the sky window's width, in wheel widths
 static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th0, int hh, int mi, int wid, u32 wxTex) {
     PERF_SCOPE("mm.skypod");
@@ -1673,53 +1663,111 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
     const float aSky = aStart + dir * (k * as * 0.5f), aW[2] = { aStart + dir * (k * as + as * 0.5f), aStart + dir * (k * as + as * 1.5f) };
     color_state(dev);
     ring_sector(dev, cx, cy, rw - wr - 1.6f * S, rw + wr + 1.6f * S, th0 - Wh - 0.02f, th0 + Wh + 0.02f, g_dm.dark);   // the window's chamfer
-    // ---- the SKY window ----
-    const float t = (float)hh + (float)mi / 60.0f, PI = 3.14159265f;
-    const float elev = -cosf(t / 24.0f * 2.0f * PI);
-    float dayK = clampf((elev + 0.1f) / 0.45f, 0.0f, 1.0f); dayK = dayK * dayK * (3.0f - 2.0f * dayK);
-    const float duskK = clampf(1.0f - fabsf(elev) / 0.35f, 0.0f, 1.0f);
-    auto mix = [](u32 a2, u32 b2, float q2) -> u32 { return col_lerp(a2 | 0xFF000000u, b2 | 0xFF000000u, q2); };
-    u32 skyTop = mix(0xFF0A1640u, 0xFF2E6ED8u, dayK), skyBot = mix(0xFF1C3470u, 0xFF9CCCF4u, dayK);
-    skyTop = mix(skyTop, 0xFF3A3C7Cu, duskK * 0.5f); skyBot = mix(skyBot, 0xFFF0A050u, duskK * 0.85f);
-    const float hS = k * as * 0.5f;                                       // the window's half width (rad)
-    const bool topHalf = sinf(aSky) <= 0.0f;                              // the sky's TOP is the screen's top : outward on the top half
-    sector_grad(dev, cx, cy, rw - wr, rw + wr, aSky - hS, aSky + hS, topHalf ? skyBot : skyTop, topHalf ? skyTop : skyBot, topHalf ? skyBot : skyTop, topHalf ? skyTop : skyBot);
-    // its upright frame : the cell's centre, the screen's up and right
-    const float Cx = cx + cosf(aSky) * rw, Cy = cy + sinf(aSky) * rw, hx = hS * rw * 0.80f, hy = wr * 0.80f;
-    // stars by night (fixed, they fade in)
-    if (dayK < 0.95f) {
-        static const float SX[7] = { -0.7f, -0.35f, 0.05f, 0.42f, 0.78f, -0.15f, 0.62f }, SY[7] = { -0.55f, -0.2f, -0.65f, -0.35f, -0.6f, 0.15f, 0.05f };
-        for (int i = 0; i < 7; ++i) disc(dev, Cx + SX[i] * hx, Cy + SY[i] * hy, 0.7f * S, MA((u32)(200.0f * (1.0f - dayK)), 0xFFF4E8C0u));
-    }
-    // the SUN by day, the MOON by night : rising on the left, culminating, setting on the right
-    for (int body = 0; body < 2; ++body) {
-        const float tb = body == 0 ? t : fmodf(t + 12.0f, 24.0f), ph = (tb - 6.0f) / 12.0f;   // 0 rise .. 1 set
-        if (ph <= -0.05f || ph >= 1.05f) continue;
-        const float xs = -cosf(ph * PI), ys = sinf(ph * PI);
-        const float bx = Cx + xs * hx * 0.85f, by = Cy + hy * 0.75f - ys * hy * 1.25f;
-        const float br = wr * 0.34f;
-        const float vis = clampf(ys * 4.0f + 0.2f, 0.0f, 1.0f);
-        if (vis <= 0.0f) continue;
-        if (body == 0) {
-            disc(dev, bx, by, br * 1.7f, MA((u32)(50.0f * vis), 0xFFFFD070u));                   // its glow
-            disc(dev, bx, by, br + 0.8f * S, MA((u32)(200.0f * vis), 0xFF5A3410u));            // an inked rim
-            disc(dev, bx, by, br, MA((u32)(255.0f * vis), 0xFFF6C850u));
-            disc(dev, bx - br * 0.25f, by - br * 0.25f, br * 0.45f, MA((u32)(140.0f * vis), 0xFFFFF0B0u));
-        } else {
-            disc(dev, bx, by, br + 0.8f * S, MA((u32)(180.0f * vis), 0xFF3C2614u));
-            disc(dev, bx, by, br, MA((u32)(255.0f * vis), 0xFFEDE4C4u));
-            disc(dev, bx + br * 0.45f, by - br * 0.2f, br * 0.85f, MA((u32)(255.0f * vis), skyTop));   // the crescent : the sky bites it
+    // ---- the SKY : a PAPYRUS WHEEL painted in ink and wash (the user 2026-11-25 : "a day/night cycle, drawn on papyrus,
+    // that makes wheels") : the hour's scene -- a wash of sky over the paper (indigo by night, rose and orange at dawn and
+    // dusk, a pale blue by day), the sun or the moon inked where the hour puts it, pen stars by night, a line of hills --
+    // and the wheel rolls ONE NOTCH AN HOUR along its axis, the hour's scene out, the next one in. Everything is clipped to
+    // the wheel's own annular cell (each point clamped to its radii and angles : the roll axis IS the radius).
+    const float PI = 3.14159265f, hS = k * as * 0.5f, lo = rw - wr, hi = rw + wr;
+    pod_wheel_cell(dev, cx, cy, rw, wr, aSky, k * as);                     // the papyrus wheel itself
+    auto scene = [&](int hour, float shift) {
+        // a point of the scene (upright frame around the cell's centre, moved by `shift` along the radius) clamped into the cell
+        const float ux = cosf(aSky), uy = sinf(aSky);
+        const float Cx = cx + ux * (rw + shift), Cy = cy + uy * (rw + shift), hx = hS * rw * 0.80f, hy = wr * 0.80f;
+        auto clampP = [&](float x, float y, float& ox, float& oy) {
+            float dx = x - cx, dy = y - cy, rr = sqrtf(dx * dx + dy * dy), aa = atan2f(dy, dx);
+            float da = pod_wrapa(aa - aSky); da = clampf(da, -hS, hS);
+            rr = clampf(rr, lo + 0.5f, hi - 0.5f);
+            ox = cx + cosf(aSky + da) * rr; oy = cy + sinf(aSky + da) * rr;
+        };
+        auto blob = [&](float x, float y, float rad, u32 col) {          // an inked or washed disc, clipped to the cell
+            float pts[24];
+            for (int i = 0; i < 12; ++i) { const float t2 = 6.2831853f * (float)i / 12.0f; clampP(x + cosf(t2) * rad, y + sinf(t2) * rad, pts[2 * i], pts[2 * i + 1]); }
+            fill_poly_aa(dev, pts, 12, col);
+        };
+        auto pen = [&](float x0, float y0, float x1, float y1, float wdt, u32 col) {
+            float a0x, a0y, a1x, a1y; clampP(x0, y0, a0x, a0y); clampP(x1, y1, a1x, a1y);
+            seg_soft(dev, a0x, a0y, a1x, a1y, wdt, col);
+        };
+        const float t = (float)hour + 0.5f, elev = -cosf(t / 24.0f * 2.0f * PI);
+        float dayK = clampf((elev + 0.1f) / 0.45f, 0.0f, 1.0f); dayK = dayK * dayK * (3.0f - 2.0f * dayK);
+        const float duskK = clampf(1.0f - fabsf(elev) / 0.35f, 0.0f, 1.0f);
+        // the WASH : a watercolour sky laid on the paper (translucent : the papyrus shows through), stronger toward the top
+        u32 wTop = col_lerp(0xE0283C78u, 0x9C6EA6DCu, dayK), wBot = col_lerp(0xC0405890u, 0x60A8CCE8u, dayK);   // the night wash deeper : it must read as night
+        wTop = col_lerp(wTop, 0xA8604880u, duskK * 0.5f); wBot = col_lerp(wBot, 0xB0E89858u, duskK * 0.8f);
+        const bool topHalf = sinf(aSky) <= 0.0f;                          // the sky's top : the screen's top
+        const float b0 = clampf(lo + shift, lo, hi), b1 = clampf(hi + shift, lo, hi);
+        if (b1 - b0 > 0.3f) {
+            auto at = [&](float rr) { const float q2 = (rr - (lo + shift)) / (hi - lo); return col_lerp(topHalf ? wBot : wTop, topHalf ? wTop : wBot, clampf(q2, 0.0f, 1.0f)); };
+            sector_grad(dev, cx, cy, b0, b1, aSky - hS, aSky + hS, at(b0), at(b1), at(b0), at(b1));
         }
+        // pen STARS by night : small inked crosses, pale ink on the indigo
+        if (dayK < 0.6f) {
+            static const float SX[6] = { -0.72f, -0.30f, 0.10f, 0.48f, 0.80f, -0.05f }, SY[6] = { -0.55f, -0.15f, -0.62f, -0.30f, -0.58f, 0.18f };
+            const u32 sc = MA((u32)(210.0f * (1.0f - dayK / 0.6f)), 0xF4E6BCu);
+            for (int i = 0; i < 6; ++i) {
+                const float x = Cx + SX[i] * hx, y = Cy + SY[i] * hy, l = 1.6f * S;
+                pen(x - l, y, x + l, y, 0.7f * S, sc); pen(x, y - l, x, y + l, 0.7f * S, sc);
+            }
+        }
+        // the SUN by day, the MOON by night : inked, rising on the left, setting on the right
+        for (int body = 0; body < 2; ++body) {
+            const float tb = body == 0 ? t : fmodf(t + 12.0f, 24.0f), ph = (tb - 6.0f) / 12.0f;
+            if (ph <= 0.0f || ph >= 1.0f) continue;
+            const float xs = -cosf(ph * PI), ys = sinf(ph * PI);
+            const float bx = Cx + xs * hx * 0.80f, by = Cy + hy * 0.55f - ys * hy * 1.15f, br = wr * 0.30f;
+            if (body == 0) {
+                for (int i = 0; i < 8; ++i) {                              // its rays, pen strokes
+                    const float ra = 6.2831853f * (float)i / 8.0f + 0.2f;
+                    pen(bx + cosf(ra) * br * 1.25f, by + sinf(ra) * br * 1.25f, bx + cosf(ra) * br * 1.75f, by + sinf(ra) * br * 1.75f, 0.8f * S, 0xC05A3410u);
+                }
+                blob(bx, by, br + 0.7f * S, 0xD05A3410u);                  // the pen outline
+                blob(bx, by, br, 0xFFF0C658u);                             // the gold wash
+            } else {
+                blob(bx, by, br + 0.7f * S, 0xC03C2614u);
+                blob(bx, by, br, 0xFFEEE4C2u);
+                blob(bx + br * 0.45f, by - br * 0.22f, br * 0.82f, wTop | 0xFF000000u);   // the crescent : the night bites it
+            }
+        }
+        // the HILLS : a pen line along the foot, an ink wash under it
+        {
+            const float gy = Cy + hy * 0.95f;
+            const float hx3[5] = { -1.3f, -0.55f, 0.05f, 0.65f, 1.3f }, hy3[5] = { 0.02f, -0.20f, -0.06f, -0.26f, -0.04f };
+            for (int i = 0; i < 4; ++i)
+                pen(Cx + hx3[i] * hx, gy + hy3[i] * hy, Cx + hx3[i + 1] * hx, gy + hy3[i + 1] * hy, 1.0f * S, 0xC03C2614u);
+            float pts[12];
+            for (int i = 0; i < 5; ++i) clampP(Cx + hx3[i] * hx, gy + hy3[i] * hy, pts[2 * i], pts[2 * i + 1]);
+            clampP(Cx + 1.3f * hx, gy + hy * 0.8f, pts[8], pts[9]); clampP(Cx - 1.3f * hx, gy + hy * 0.8f, pts[10], pts[11]);
+            float hill[12] = { pts[0], pts[1], pts[2], pts[3], pts[4], pts[5], pts[6], pts[7], pts[8], pts[9], pts[10], pts[11] };
+            (void)hill;
+            float q[8] = { pts[0], pts[1], pts[8] - (pts[8] - pts[0]), pts[11], pts[8], pts[9], pts[8], pts[9] };
+            (void)q;
+            for (int i = 0; i < 4; ++i) {                                  // the wash under the line : one quad per span
+                float pa[8];
+                clampP(Cx + hx3[i] * hx, gy + hy3[i] * hy, pa[0], pa[1]);
+                clampP(Cx + hx3[i + 1] * hx, gy + hy3[i + 1] * hy, pa[2], pa[3]);
+                clampP(Cx + hx3[i + 1] * hx, gy + hy * 0.9f, pa[4], pa[5]);
+                clampP(Cx + hx3[i] * hx, gy + hy * 0.9f, pa[6], pa[7]);
+                fill_poly_aa(dev, pa, 4, MA(0x70, 0x5A4A28u));
+            }
+        }
+    };
+    {   // the hour's notch : the scene rolls when the hour changes (outward : the old one leaves away from the centre)
+        static int lastH = -1, oldH = -1; static unsigned hMs = 0;
+        const unsigned nowH = GetTickCount();
+        if (lastH < 0) lastH = hh;
+        if (hh != lastH) { oldH = lastH; lastH = hh; hMs = nowH; }
+        const float kH = hMs ? fminf(1.0f, (float)(nowH - hMs) / 320.0f) : 1.0f;
+        color_state(dev);
+        if (kH >= 1.0f || oldH < 0) scene(hh, 0.0f);
+        else {
+            const float e = 1.0f - (1.0f - kH) * (1.0f - kH), H2 = 2.0f * wr;
+            scene(oldH, e * H2);
+            scene(hh, -(1.0f - e) * H2);
+        }
+        (void)mi;
     }
-    // the ground at the window's foot : an inked hill line
-    {
-        const float gy = Cy + hy * 0.95f;
-        const float hill[10] = { Cx - hx * 1.25f, gy, Cx - hx * 0.4f, gy - hy * 0.22f, Cx + hx * 0.3f, gy - hy * 0.08f, Cx + hx * 1.25f, gy - hy * 0.28f, Cx + hx * 1.25f, gy + hy * 0.6f };
-        (void)hill;
-        sector_grad(dev, cx, cy, topHalf ? rw - wr : rw + wr * 0.62f, topHalf ? rw - wr * 0.62f : rw + wr, aSky - hS, aSky + hS,
-                    topHalf ? 0xFF1C2418u : MA(0x00, 0x1C2418u), topHalf ? MA(0x00, 0x1C2418u) : 0xFF1C2418u, topHalf ? 0xFF1C2418u : MA(0x00, 0x1C2418u), topHalf ? MA(0x00, 0x1C2418u) : 0xFF1C2418u);
-    }
-    // ---- the WEATHER : two wheels of black enamel ----
+    // ---- the WEATHER : two papyrus wheels (one element for a single weather, the same twice for a double) ----
     static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };              // weather pair -> the element's cell (the icons' order)
     const int cellNow = (wid >= 4 && wid <= 19) ? WCELL[(wid - 4) / 2] : -1, nNow = cellNow < 0 ? 0 : ((wid & 1) ? 2 : 1);
     const int want[2] = { nNow >= 1 ? cellNow : -1, nNow >= 2 ? cellNow : -1 };
@@ -1729,7 +1777,7 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
     if (want[0] != cur[0] || want[1] != cur[1]) { old[0] = cur[0]; old[1] = cur[1]; cur[0] = want[0]; cur[1] = want[1]; rollMs = nowMs; }
     const float kR = rollMs ? fminf(1.0f, (float)(nowMs - rollMs) / 240.0f) : 1.0f;
     color_state(dev);
-    for (int q = 0; q < 2; ++q) pod_enamel_cell(dev, cx, cy, rw, wr, aW[q], as);
+    for (int q = 0; q < 2; ++q) pod_wheel_cell(dev, cx, cy, rw, wr, aW[q], as);   // PAPYRUS, as every wheel (the user 2026-11-25 : "stay coherent with the technology")
     if (wxTex) {
         tex_state(dev, wxTex);
         for (int q = 0; q < 2; ++q)
@@ -1737,8 +1785,13 @@ static void draw_sky_pod(u32 dev, float cx, float cy, float r, float S, float th
         dSetTex(dev, 0, 0);
     }
     color_state(dev);
-    pod_cut(dev, cx, cy, rw, wr, aStart + dir * (k * as), S);           // between the sky and the weather
-    pod_cut(dev, cx, cy, rw, wr, aStart + dir * (k * as + as), S);      // between the two weather wheels
+    for (int q = 0; q < 2; ++q) {                                         // the cuts : sky | weather | weather -- a dark cut, a lit brass edge
+        const float sa = aStart + dir * (k * as + as * (float)q);
+        pod_cut(dev, cx, cy, rw, wr, sa, S);
+        const float tx = -sinf(sa) * dir, ty = cosf(sa) * dir;
+        seg_soft(dev, cx + cosf(sa) * (rw - wr) + tx * 0.9f * S, cy + sinf(sa) * (rw - wr) + ty * 0.9f * S,
+                      cx + cosf(sa) * (rw + wr) + tx * 0.9f * S, cy + sinf(sa) * (rw + wr) + ty * 0.9f * S, 0.7f * S, MA(0x90, g_dm.lite));
+    }
     pod_glass(dev, cx, cy, rw, wr, th0 - Wh, th0 + Wh, S);
     pod_caps(dev, cx, cy, rw, wr, th0 - Wh, th0 + Wh, S);
     color_state(dev);
