@@ -89,8 +89,8 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
             CFG_COLOR_PICKER(&c.mmFrameColor)
         // --- per-shape frame thickness / bezel options ---
         if (c.mmShape == 1) {   // ROUND : brass bezel ring
-            ROW_TOGGLE(CTRL_ID, tr("Bezel ring", "Anneau bordure"), c.mmBezel)
-            if (c.mmBezel) {
+            if (c.mmLayout != 2) { ROW_TOGGLE(CTRL_ID, tr("Bezel ring", "Anneau bordure"), c.mmBezel) }   // (the Dial IS its bezel : no toggle)
+            if (c.mmBezel || c.mmLayout == 2) {
                 MM_PCT_SLIDER(CTRL_ID, tr("Bezel width", "Largeur anneau"), c.mmBezelW, 0.50f, 2.00f)
                 MM_PCT_SLIDER(CTRL_ID, tr("Cardinal size", "Taille cardinaux"), c.mmCardSz, 0.50f, 2.00f)
             }
@@ -176,13 +176,18 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
                 ROW_TOGGLE(CTRL_ID, tr("Distances (target, Wide Scan)", "Distances (cible, Wide Scan)"), c.mmInfoDist)
             }
         }
-        ROW_TOGGLE(CTRL_ID, tr("Clock header", "En-t\xC3\xAAte horloge"), c.mmClock)
+        // THE DIAL (the user 2026-11-25 : "many options are not appropriate for this model") : it needs the clock and the
+        // bezel (turning either off made the whole Dial vanish) -- forced on, their toggles hidden ; the real-time row and
+        // the header's position do not exist on it
+        const bool dialM = c.mmLayout == 2;
+        if (dialM && (!c.mmClock || !c.mmBezel)) { c.mmClock = 1; c.mmBezel = 1; save_ui_config(); }
+        if (!dialM) { ROW_TOGGLE(CTRL_ID, tr("Clock header", "En-t\xC3\xAAte horloge"), c.mmClock) }
         if (c.mmClock) {
         ROW_TOGGLE(CTRL_ID, tr("Vana'diel time", "Heure Vana'diel"), c.mmClkTime)
         ROW_TOGGLE(CTRL_ID, tr("Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire"), c.mmClkDay)
         ROW_TOGGLE(CTRL_ID, tr("Moon phase", "Phase de lune"), c.mmClkMoon)
-        ROW_TOGGLE(CTRL_ID, tr("Real / GMT time", "Heure r\xC3\xA9""elle / GMT"), c.mmClkReal)
-        { ROW_BAND(52.0f)
+        if (!dialM) { ROW_TOGGLE(CTRL_ID, tr("Real / GMT time", "Heure r\xC3\xA9""elle / GMT"), c.mmClkReal) }
+        if (!dialM) { { ROW_BAND(52.0f)
             static const char* PLBL_EN[4] = { "Top", "Bottom", "Left", "Right" }; static const char* PLBL_FR[4] = { "Haut", "Bas", "Gauche", "Droite" };
             if (c.mmLayout == 1) {                          // Compact : the clock band goes above or below the map
                 const int cb = (c.mmClkBand == 1) ? 1 : 0;
@@ -191,7 +196,7 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
             int cp = (c.mmClockPos < 0 || c.mmClockPos > 3) ? 0 : c.mmClockPos;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Clock position", "Position horloge"), tr(PLBL_EN[cp], PLBL_FR[cp]))) { c.mmClockPos = wrap(cp + d, 4); save_ui_config(); }
             }
-        } ROW_NEXT(52.0f)
+        } ROW_NEXT(52.0f) }
         draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.mmBox);   // clock-box chrome : Box / Transparency / Theme / Hue / Luminosity
         }
             cat_fold_end(dev, ry, top9_, catH_[9], aF9_);

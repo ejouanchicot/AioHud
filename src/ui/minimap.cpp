@@ -2868,6 +2868,11 @@ void Minimap::draw(const Frame& f) {
             dialBot = snap(by0r + bandH0 + 2.5f * S - rr0);                                  // the band's foot past the ring
         }
         if (dialBot < dialSide) dialBot = dialSide;
+        if (!dialSq && c.mmDayDial == 2 && TUNE("mm.foot_body", 0.0f) <= 0.5f) {
+            // THE MODULES' MODEL (the user 2026-11-25 : "the edit-layout box does not match") : no corner subdials, no plinth --
+            // the modules' collar stands out of the bezel all round, by the pods' depth, plus its soft cast shadow
+            dialSide = dialBot = snap(rr0 * TUNE("mm.pod_depth", 0.235f) + 4.0f * S);
+        }
     }
     const float botH = (cbTop ? 0.0f : cbH) + (ibTop ? 0.0f : ibH) + (dial ? dialBot - dialSide : 0.0f);   // the dial : the band's extra depth
     // compact = the economy of space : the map sits nearly edge to edge (1 px of air), the classic keeps its 5 px
