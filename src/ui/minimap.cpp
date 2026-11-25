@@ -1356,7 +1356,67 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         }
         const float posHalf = posBand && tf ? snap(tf->measure(posTxt, pSz) * 0.5f + 7.0f * S) : 0.0f;
         const float lc0 = bx0 + bins, lc1 = cx - (posBand ? posHalf + 4.0f * S : 7.0f * S), rc0 = cx + (posBand ? posHalf + 4.0f * S : 7.0f * S), rc1 = bx1 - bins;   // the compartments
-        if (bandMoon || bandDay) {
+        // THE FOOT (the user 2026-11-25 : "rethink how it was forged, credible in FFXI's lore -- the bottom first") : the
+        // instrument of a Bastokan cartographer stands on a FOOT -- a lunula CAST WITH THE RING, following its curve, thick
+        // under the S and tapering into the case at both ends, as the base of an astrolabe. Three CARTOUCHES are cut into
+        // it, their corners chamfered like Vana'diel's own windows : the moon (left), the grid square (centre, under the S),
+        // the hour (right) -- riding the curve, the side ones higher. A filet engraved along its edge. (Round, modules style.)
+        const bool foot = !sq && c.mmDayDial == 2;
+        float cwX[3] = { (lc0 + lc1) * 0.5f, cx, (rc0 + rc1) * 0.5f }, cwY[3] = { bmid, bmid, bmid }, cwH[3] = { 0, posHalf, 0 };
+        if (foot && (bandMoon || bandDay || posBand)) {
+            const float A = TUNE("mm.foot_span", 0.95f), Dm = bandH + TUNE("mm.foot_extra", 10.0f) * S, rin = r - 4.0f * S;
+            auto Dof = [&](float th) { const float k = (th - PI * 0.5f) / A; if (k <= -1.0f || k >= 1.0f) return 0.0f; return Dm * powf(cosf(k * PI * 0.5f), 0.40f); };   // full under the cartouches, a quick taper at the ends
+            const int NF = 48;
+            auto strip = [&](float grow, u32 cIn, u32 cOut) {                                    // the lunula, grown by `grow`
+                VtxC fv[2 * (NF + 1)];
+                for (int i = 0; i <= NF; ++i) {
+                    const float th = PI * 0.5f - A + 2.0f * A * (float)i / NF, ct = cosf(th), st = sinf(th), ro = r + Dof(th) + grow;
+                    fv[2 * i] = { cx + ct * (rin - grow) - 0.5f, cy + st * (rin - grow) - 0.5f, 0, 1, cIn };
+                    fv[2 * i + 1] = { cx + ct * ro - 0.5f, cy + st * ro - 0.5f, 0, 1, cOut };
+                }
+                dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NF, fv, sizeof(VtxC));
+            };
+            color_state(dev);
+            { VtxC fv[2 * (NF + 1)];                                                               // its shadow on the world
+              for (int i = 0; i <= NF; ++i) { const float th = PI * 0.5f - A + 2.0f * A * (float)i / NF, ct = cosf(th), st = sinf(th), ro = r + Dof(th);
+                  fv[2 * i] = { cx + ct * ro - 0.5f, cy + st * ro + 1.0f * S - 0.5f, 0, 1, 0x70000000u }; fv[2 * i + 1] = { cx + ct * (ro + 4.0f * S) - 0.5f, cy + st * (ro + 4.0f * S) + 1.0f * S - 0.5f, 0, 1, 0x00000000u }; }
+              dDrawUP(dev, D3DPT_TRIANGLESTRIP, 2 * NF, fv, sizeof(VtxC)); }
+            strip(1.3f * S, g_dm.edge, g_dm.edge);                                                // the dark edge
+            strip(0.0f, dm_toward(g_dm.bot, 0xFF000000u, 0.25f), dm_toward(g_dm.bot, 0xFF000000u, 0.50f));   // the cast metal, the modules' dark tone, darker toward its rim
+            for (int i = 0; i < NF; ++i) {                                                        // the engraved filet along its edge, and its lit lip
+                const float t0 = PI * 0.5f - A + 2.0f * A * (float)i / NF, t1 = PI * 0.5f - A + 2.0f * A * (float)(i + 1) / NF;
+                const float d0 = Dof(t0), d1 = Dof(t1); if (d0 < 3.0f * S || d1 < 3.0f * S) continue;
+                const float r0 = r + d0 - 2.4f * S, r1 = r + d1 - 2.4f * S;
+                seg_soft(dev, cx + cosf(t0) * r0, cy + sinf(t0) * r0, cx + cosf(t1) * r1, cy + sinf(t1) * r1, 0.9f * S, MA(0xA0, g_dm.dark));
+                seg_soft(dev, cx + cosf(t0) * (r0 + 0.9f * S), cy + sinf(t0) * (r0 + 0.9f * S), cx + cosf(t1) * (r1 + 0.9f * S), cy + sinf(t1) * (r1 + 0.9f * S), 0.8f * S, MA(0x70, g_dm.lite));
+            }
+            // the three cartouches : centre under the S, the side ones up the curve
+            const float wh = snap(pSz + 6.0f * S), dl = TUNE("mm.foot_side", 0.42f) * A;
+            const float hw[3] = { tf ? tf->measure(c.lang == 1 ? "Pleine 99j" : "Full 99d", pSz) * 0.5f + 6.0f * S : 30.0f * S, posHalf,
+                                  tf ? tf->measure("00:00", pSz) * 0.5f + 7.0f * S : 22.0f * S };
+            const float th3[3] = { PI * 0.5f + dl, PI * 0.5f, PI * 0.5f - dl };
+            const bool on3[3] = { bandMoon, posBand, bandDay };
+            for (int k = 0; k < 3; ++k) {
+                if (!on3[k]) continue;
+                const float rr2 = r + Dof(th3[k]) * 0.56f + 1.5f * S;
+                cwX[k] = snap(cx + cosf(th3[k]) * rr2); cwY[k] = snap(cy + sinf(th3[k]) * rr2); cwH[k] = hw[k];
+                const float x0 = cwX[k] - hw[k], x1 = cwX[k] + hw[k], y0 = cwY[k] - wh * 0.5f, y1 = cwY[k] + wh * 0.5f, ch = 3.0f * S;
+                auto oct = [&](float g, u32 col) {                                                // a cartouche : a rectangle, its corners cut
+                    const float o8[16] = { x0 + ch - g, y0 - g, x1 - ch + g, y0 - g, x1 + g, y0 + ch - g, x1 + g, y1 - ch + g,
+                                           x1 - ch + g, y1 + g, x0 + ch - g, y1 + g, x0 - g, y1 - ch + g, x0 - g, y0 + ch - g };
+                    fill_poly_aa(dev, o8, 8, col);
+                };
+                oct(1.4f * S, g_dm.lite);                                                         // its bevel : lit...
+                { const float o8[16] = { x0 + ch - 1.4f * S, y0 - 1.4f * S, x1 - ch + 1.4f * S, y0 - 1.4f * S, x1 + 1.4f * S, y0 + ch - 1.4f * S, x1 + 1.4f * S, cwY[k],
+                                         x0 - 1.4f * S, cwY[k], x0 - 1.4f * S, y0 + ch - 1.4f * S, x0 + ch - 1.4f * S, y0 - 1.4f * S, x0 + ch - 1.4f * S, y0 - 1.4f * S };
+                  fill_poly_aa(dev, o8, 6, g_dm.dark); }                                          // ...in shade on its upper half (a recess)
+                oct(0.0f, 0xFF120E09u);                                                           // the dark enamel
+                grad_quad(dev, x0 + ch, y0, (x1 - x0) - 2.0f * ch, 2.0f * S, 0x70000000u, 0x70000000u, 0x00000000u, 0x00000000u);   // the lip's shadow in it
+            }
+            color_state(dev);
+            if (posBand) plateText(cwX[1], cwY[1], posTxt, 0xFFF0D898u, -1);
+        }
+        if (!foot && (bandMoon || bandDay)) {
             color_state(dev);
             const float rad = snap(3.0f * S);
             color_state(dev);
@@ -1435,7 +1495,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             draw_moon_sphere(dev, x, y, sr, v.moonPct, v.waning);                  // a lit sphere by the real phase, the WHOLE face (the user 2026-11-25)
             glass_dome(dev, x, y, sr, 0xFF9CB8FFu, 0.35f);                         // under a glass dome (soft : the moon is light)
             color_state(dev);
-            plateText((lc0 + lc1) * 0.5f, ty, mb, fullFirst ? 0xFFF8E6B0u : 0xFFC8D6F4u, -1);
+            plateText(cwX[0], foot ? cwY[0] : ty, mb, fullFirst ? 0xFFF8E6B0u : 0xFFC8D6F4u, -1);
         }
         PERF_END("mm.moon");
         PERF_BEGIN("mm.globe");
@@ -1469,7 +1529,7 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
                 const float hl[6] = { x, nTop + 0.6f * S, x + nw * 0.75f, nTop + 0.6f * S, x, nTip - 1.5f * S };
                 fill_poly_aa(dev, hl, 3, MA(0xB0, g_dm.glint));                       // its lit facet
             }
-            if (tb[0]) plateText((rc0 + rc1) * 0.5f, ty, tb, 0xFFF4EEDFu, -1);
+            if (tb[0]) plateText(foot ? cwX[2] : (rc0 + rc1) * 0.5f, foot ? cwY[2] : ty, tb, 0xFFF4EEDFu, -1);
         }
         color_state(dev);
     }
