@@ -616,6 +616,17 @@ static void draw_compact_plate(u32 dev, float x, float y, float w, float h, floa
 //   * the MOON is the marker at night ; by day it rides opposite the sun, smaller -- its phase IS the moon picture ;
 //   * the map square a small pill at the lens's foot ; the distances on the target / the Wide Scan mark ; the zoom
 //     only while it changes ; the cardinals engraved in the brass, N in red.
+// "mm.demo" (dev) : THE DIAL'S SHOWCASE (the user 2026-11-25 : "an animation of everything, each at a readable pace, a
+// whole cycle of every icon" ; "at a normal speed : the day/night and the moon were too fast") -- a 60 s loop where each
+// module steps at a readable pace : the hour a notch of 30 min every 1.25 s (24 h : one day / night), the day's element
+// every 7.5 s (the eight), the moon a notch every 2.5 s (new -> full -> new), the weather every 3.5 s (clear, then each
+// element single and double), the grid square every 4 s. Off : the real game.
+static float mm_demo_t() { return TUNE("mm.demo", 0.0f) > 0.5f ? (float)fmod((double)model_now_ms() / 1000.0, 60.0) : -1.0f; }
+static void mm_demo_square(int& gc, int& gr) {
+    const float t = mm_demo_t(); if (t < 0.0f) return;
+    const int k = (int)(t / 4.0f);
+    gc = 6 + k % 4; gr = 7 + (k / 4) % 4;
+}
 // Sizes are TUNE knobs ("mm.dial_*") ; "mm.test_hour / test_day / test_moon" force the clock (dev tests).
 static VanaClock dial_vana(const VanaClock& in) {               // the dev test overrides (TUNE -> -1 = the real clock)
     VanaClock v = in;
@@ -634,6 +645,15 @@ static VanaClock dial_vana(const VanaClock& in) {               // the dev test 
         v.moonPct = (int)((1.0 - cos(ph * 6.2831853)) * 50.0); v.waning = ph > 0.5;
         const int dn = (int)((1.0 - ph) * 84.0) % 84, df = (int)((ph < 0.5 ? 0.5 - ph : 1.5 - ph) * 84.0) % 84;
         v.daysToNew = dn; v.daysToFull = df;
+    }
+    const float dt = mm_demo_t();
+    if (dt >= 0.0f) {                                                    // the showcase (mm.demo)
+        const int half = (int)(dt / 1.25f) % 48;                         // a notch of 30 min every 1.25 s
+        v.hh = half / 2; v.mm = (half & 1) ? 30 : 0;
+        v.dayIdx = (int)(dt / 7.5f) % 8;                                 // the day's element every 7.5 s
+        const float mc = (float)(int)(dt / 2.5f) / 24.0f;                // the moon : a notch every 2.5 s, new -> full -> new
+        v.moonPct = (int)((1.0f - cosf(mc * 6.2831853f)) * 50.0f + 0.5f); v.waning = mc > 0.5f;
+        v.daysToFull = (int)((mc < 0.5f ? 0.5f - mc : 1.5f - mc) * 84.0f) % 84; v.daysToNew = (int)((1.0f - mc) * 84.0f) % 84;
     }
     return v;
 }
@@ -992,6 +1012,7 @@ static void draw_day_carousel(u32 dev, float cx, float cy, float R, int di, floa
 static int mm_weather(int real) {
     int wid = real;
     { const float tw = TUNE("mm.test_weather", -1.0f); if (tw >= 0.0f) wid = (int)tw; }
+    { const float dt = mm_demo_t(); if (dt >= 0.0f) { const int k = (int)(dt / 3.5f) % 17; wid = k == 0 ? 0 : 3 + k; } }   // the showcase : clear, then 4..19 (each element single, double)
     { const float wc = TUNE("mm.test_wcycle", 0.0f);
       if (wc > 0.0f) { static const int WC[10] = { 1, 5, 7, 9, 2, 11, 13, 15, 17, 19 }; wid = WC[(int)(model_now_ms() / 1000.0 / wc) % 10]; } }
     return wid;
@@ -2134,7 +2155,8 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         // the centre, under the S, sized to the grid square -- in the modules style (round)
         char posTxt[12] = ""; bool posBand = false;
         if (c.mmGrid && c.mmDayDial == 2 && !sq) {
-            const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
+            int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
+            mm_demo_square(gc, gr);
             if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) { sprintf(posTxt, "%c-%d", 'A' + gc, gr + 1); posBand = true; }   // ONE wheel for the whole square (), as the game writes it : "H-9"
         }
         const float posHalf = posBand && tf ? snap(drum_width(tf, posTxt, pSz, S) * 0.5f + 3.0f * S) : 0.0f;
@@ -3021,7 +3043,8 @@ void Minimap::draw(const Frame& f) {
             if (s_skyPod) add(s_skyTh, sky_pod_ph(r, S));
             if (c.mmClock && c.mmClkTime && tfP) add(s_hourTh, (snap(drum_width(tfP, "00:00", pSzP, S) * 0.5f + 3.0f * S) + 3.0f * S) / rwT + 2.0f * S / rmT);
             if (c.mmGrid && tfP) {
-                const int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
+                int gc = ((int)floorf(mapX) - 16) / 32, gr = ((int)floorf(mapY) - 16) / 32;
+                mm_demo_square(gc, gr);
                 if (gc >= 0 && gc < 26 && gr >= 0 && gr < 99) {
                     char pt[12]; sprintf(pt, "%c-%d", 'A' + gc, gr + 1);
                     add(s_posTh, (snap(drum_width(tfP, pt, pSzP, S) * 0.5f + 3.0f * S) + 3.0f * S) / rwT + 2.0f * S / rmT);
