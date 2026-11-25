@@ -1005,8 +1005,11 @@ static int mm_weather_elem(int wid) {
 // _under before what floats inside it, _over after.
 static void glass_bead_under(u32 dev, float x, float y, float R, float S) {
     disc(dev, x + 0.6f * S, y + 1.6f * S, R * 0.92f, 0x38000000u);                 // its soft shadow on what lies beneath
-    disc(dev, x, y, R, 0x30BCD8F0u);                                            // the glass : a faint cool tint
-    ring_sector(dev, x, y, R * 0.80f, R, 0.0f, 6.2832f, 0x40102030u);           // thicker at the rim : darker
+    // FROSTED glass (the user : the see-through back did not work -- the map behind fought the element) : a milky pane,
+    // brighter at its heart, cooler and darker toward the thick rim
+    disc(dev, x, y, R, 0xF0C4D2DEu);
+    disc(dev, x - R * 0.08f, y - R * 0.10f, R * 0.70f, 0x70EEF4FAu);
+    ring_sector(dev, x, y, R * 0.78f, R, 0.0f, 6.2832f, 0x60405A72u);
     ring_sector(dev, x, y, R - 1.0f * S, R, 0.0f, 6.2832f, 0x90203040u);        // its edge
 }
 static void glass_bead_over(u32 dev, float x, float y, float R, float S) {
