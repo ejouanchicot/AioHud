@@ -1065,10 +1065,10 @@ struct PodGeo { float th0, D, Ri, Ro, rm, isz, rw, wr, as, Wh, Ph; };
 static PodGeo pod_geo(float r, float S) {
     PodGeo g;
     g.th0 = TUNE("mm.pod_angle", -1.5708f);                              // ABOVE THE NORTH, centred
-    g.D = r * TUNE("mm.pod_depth", 0.21f);                               // it leaves the compass less (the user 2026-11-25)
+    g.D = r * TUNE("mm.pod_depth", 0.235f);                              // the designer's spec (2026-11-25) : ~0.23 r at the summit
     g.Ri = r - 3.0f * S; g.Ro = r + g.D; g.rm = (g.Ri + g.Ro) * 0.5f;
-    g.isz = r * TUNE("mm.pod_icon", 0.165f); g.rw = r + g.D * 0.50f; g.wr = g.isz * 0.62f;
-    g.as = g.isz * 1.22f / g.rw; g.Wh = 1.5f * g.as; g.Ph = g.Wh + 2.6f * S / g.rm + 0.04f;
+    g.isz = r * TUNE("mm.pod_icon", 0.18f); g.rw = r + g.D * 0.50f; g.wr = g.isz * 0.56f;   // today's icon 0.18 r ; the window just holds it
+    g.as = r * TUNE("mm.pod_step", 0.21f) / g.rw; g.Wh = 1.5f * g.as; g.Ph = g.Wh + 2.6f * S / g.rm + 0.04f;   // centres 0.21 r apart
     return g;
 }
 // the NEEDLE of the day pod : it rises out of the compass's N (the user 2026-11-25 : "the needle must start from the N")
@@ -1077,7 +1077,7 @@ static void draw_day_pod_needle(u32 dev, float cx, float cy, float rc, float r, 
     const PodGeo g = pod_geo(r, S);
     const float ux = cosf(g.th0), uy = sinf(g.th0), nx = -uy, ny = ux;
     const float rN = (rc + r) * 0.5f;                                    // the N's centre radius
-    const float r0 = rN - csz * 0.10f, r1 = g.rw + g.wr * 0.22f - g.isz * 0.44f;   // from INSIDE the N (drawn over its root) to the foot of today's icon
+    const float r0 = rN - csz * 0.10f, r1 = g.rw + g.wr * 0.12f - g.isz * 0.44f;   // from INSIDE the N (drawn over its root) to the foot of today's icon
     const float x0 = cx + ux * r0, y0 = cy + uy * r0, x1 = cx + ux * r1, y1 = cy + uy * r1, w = 2.6f * S;
     color_state(dev);
     const float sh[6] = { x0 + nx * w + 0.8f, y0 + ny * w + 1.0f, x0 - nx * w + 0.8f, y0 - ny * w + 1.0f, x1 + 0.8f, y1 + 1.0f };
@@ -1124,26 +1124,26 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
         static int lastDi = -1; static unsigned jumpMs = 0;
         const unsigned nowMs = GetTickCount();
         if (lastDi < 0) lastDi = di;
-        if (di != lastDi) { lastDi = di; jumpMs = nowMs; }
+        if (di != lastDi) { const int step = (di - lastDi + 8) & 7; lastDi = di; jumpMs = step == 1 ? nowMs : 0; }   // one day : the click ; more (a zone-in, a long AFK) : resync at once, no replay
         float shift = 0.0f;
-        { const float k = (float)(nowMs - jumpMs) / 220.0f;
+        { const float k = (float)(nowMs - jumpMs) / 160.0f;
           if (jumpMs && k < 1.0f) { const float e = 1.0f - (1.0f - k) * (1.0f - k) * (1.0f - k); shift = (1.0f - e) - 0.06f * sinf(k * 3.14159f); } }
         for (int d = -2; d <= 2; ++d) {
             const float ang = th0 + ((float)d + shift) * as, off = fabsf(ang - th0);
             if (off > Wh + as * 0.5f) continue;
             float vis = 1.0f - (off - (Wh - as * 0.55f)) / (as * 0.6f); vis = vis > 1.0f ? 1.0f : (vis < 0.0f ? 0.0f : vis);   // fades as it slips under the frame
             if (vis <= 0.0f) continue;
-            float px, py; at(ang, rw + wr * 0.22f, px, py);                  // high in the window : the needle's tip enters the paper below
+            float px, py; at(ang, rw + wr * 0.12f, px, py);                  // a little high in the window : the needle's tip enters the paper below
             const bool today = d == 0;
-            const float sz = today ? isz * 0.98f : isz * 0.86f;
+            const float sz = today ? isz : isz * (0.13f / 0.18f);           // today 0.18 r, its neighbours 0.13 r (the spec)
             // PAINTED on the paper : today in full colour, its neighbours faded into the parchment (a sepia wash)
-            const u32 col = today ? (((u32)(240.0f * vis) << 24) | 0x00FFFFFFu) : (((u32)(185.0f * vis) << 24) | 0x00E8D8B8u);
+            const u32 col = today ? (((u32)(255.0f * vis) << 24) | 0x00FFFFFFu) : (((u32)(255.0f * vis) << 24) | 0x00D2D2D2u);   // no white veil : the neighbours keep their colours, a shade dimmer
             tquad(dev, snap(px - sz * 0.5f), snap(py - sz * 0.5f), sz, sz, ((di + d + 16) & 7) / 8.0f, (((di + d + 16) & 7) + 1) / 8.0f, 0.0f, 1.0f, col, col);
         }
         dSetTex(dev, 0, 0);
         color_state(dev);
         if (wElem == di) {                                                 // RESONANCE : the day is the weather's element
-            const float rr = rw + wr * 0.22f - isz * 0.49f - 1.6f * S, half = (isz * 0.40f) / rr;
+            const float rr = rw + wr * 0.12f - isz * 0.49f - 1.6f * S, half = (isz * 0.40f) / rr;
             resonance_filament(dev, cx, cy, rr, th0 - half, th0 + half, 1.8f * S, di, S);
         }
     }
