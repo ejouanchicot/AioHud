@@ -1455,7 +1455,7 @@ static void draw_ink_moon(u32 dev, float x, float y, float R, float f, bool wani
     if (f < 0.995f) dDrawUP(dev, D3DPT_TRIANGLESTRIP, N * 2, v, sizeof(VtxC));
     if (f > 0.005f && f < 0.995f)
         for (int i = 0; i < N; ++i) seg_soft(dev, tx[i], ty[i], tx[i + 1], ty[i + 1], 1.6f * S, ma(0x40000000u | 0x3C2614u));   // the terminator : the wash bleeds a little
-    if (Rcyl <= 0.0f) ring_sector(dev, x, y, R - 0.8f * S, R + 0.2f * S, 0.0f, 6.2831853f, ma(0xB0000000u | 0x3C2614u));   // the inked outline, a fine pen line
+    if (Rcyl <= 0.0f) ring_sector(dev, x, y, R - 1.3f * S, R + 0.2f * S, 0.0f, 6.2831853f, ma(0xD8000000u | 0x3C2614u));   // the inked outline, a bold pen line
     else {   // (rolling : the outline follows the drum)
         float px0 = 0.0f, py0 = 0.0f;
         for (int i = 0; i <= 48; ++i) {
@@ -1522,9 +1522,9 @@ static void draw_day_disc(u32 dev, float cx, float cy, float r, float S, int di,
         const float k = rollMs ? fminf(1.0f, (float)(nowMs - rollMs) / 240.0f) : 1.0f;
         for (int d = -1; d <= 1; ++d) {
             const bool today = d == 0;
-            const float sz = today ? isz : isz * (0.13f / 0.18f);
+            const float sz = today ? isz * TUNE("mm.pod_now", 1.05f) : isz * TUNE("mm.pod_side", 0.64f);   // the present BOLD, its neighbours smaller (the user 2026-11-25)
             const u32 col = today ? 0xFFFFFFFFu : 0xFFD2D2D2u;
-            pod_roll_cell(dev, cx, cy, th0 + pod_dir(th0) * (float)d * as, rw + wr * 0.12f, sz, as * rw * 0.48f, wr, k, oldDi < 0 ? -1 : ((oldDi + d + 16) & 7), (di + d + 16) & 7, col, col, th0);
+            pod_roll_cell(dev, cx, cy, th0 + pod_dir(th0) * (float)d * as, rw, sz,   /* centred in its wheel */ as * rw * 0.48f, wr, k, oldDi < 0 ? -1 : ((oldDi + d + 16) & 7), (di + d + 16) & 7, col, col, th0);
         }
         dSetTex(dev, 0, 0);
         color_state(dev);
@@ -1982,7 +1982,7 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
         const bool rolled = w != lastW;
         if (rolled) { lastW = w; rollMs = nowMs; }
         const float k = rollMs ? fminf(1.0f, (float)(nowMs - rollMs) / 240.0f) : 1.0f;
-        const float szS = isz * (0.13f / 0.18f);
+        const float szS = isz * TUNE("mm.pod_side", 0.64f) * 1.10f;   // (the plate's moons carry a margin of sky : a touch larger to match)
         if (tex) {
             tex_state(dev, tex);
             for (int d = -1; d <= 1; d += 2) {
@@ -2003,7 +2003,7 @@ static void draw_moon_pod(u32 dev, float cx, float cy, float r, float S, int pct
             if (key != lastKey) { lastKey = key; fOld = fCur; wOld = wCur; fCur = fNow; wCur = waning; mRoll = nowMs; }
             const float km = mRoll ? fminf(1.0f, (float)(nowMs - mRoll) / 240.0f) : 1.0f;
             float px, py; at(th0, rw, px, py);
-            const float ux = cosf(th0), uy = sinf(th0), Rm = isz * 0.44f, Rc = wr;
+            const float ux = cosf(th0), uy = sinf(th0), Rm = isz * 0.50f * TUNE("mm.pod_now", 1.05f), Rc = wr;   // the present moon BOLD
             s_inkRotC = 1.0f; s_inkRotS = 0.0f;                           // upright to the player's eye, as the icons
             if (km >= 1.0f) draw_ink_moon(dev, snap(px), snap(py), Rm, fCur, wCur, S);
             else {
