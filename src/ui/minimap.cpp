@@ -1251,7 +1251,104 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
         //      element in small glass ORBS at the bottom, overlapping the rim -- one for a single weather, two for a double ----
         if (c.mmClock && (c.mmClkTime || c.mmClkDay)) {
             const float x = cx + off, y = cy - off;
-            bezel(x, y, 0xFF0E1830u);
+            // THE WEATHER MODULE (the user 2026-11-25 : "above, on the main dial's axis, further out ; it unfolds over the
+            // day/night dial without hiding it, always in the axis and orientation of the main frame") : two wells on a
+            // carrier lying on the axis compass centre -> sky dial, just beyond the sky dial, across that axis. Drawn BEFORE
+            // the sky dial : folded, it is stowed behind it. A weather : it slides out along the axis, then its two wells
+            // spread apart across it (a hinge opening), then the PARCHMENT label with the element pops in (the first for a
+            // single weather, both for a double). No weather : the reverse, it folds back behind the sky dial. A new
+            // element : the old label out, the new one in. Nothing animates on the first frame.
+            {
+                const int wid = mm_weather(g.weather);
+                static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };             // weather pair -> the element's cell
+                const int cellNow = (wid >= 4 && wid <= 19) ? WCELL[(wid - 4) / 2] : -1, nNow = cellNow < 0 ? 0 : ((wid & 1) ? 2 : 1);
+                static int shownCell[2] = { -2, -2 }, want[2] = { -2, -2 }; static unsigned tChange[2] = { 0, 0 };
+                const unsigned nowMs = GetTickCount();
+                for (int q = 0; q < 2; ++q) {
+                    const int w2 = q < nNow ? cellNow : -1;
+                    if (shownCell[q] == -2) { shownCell[q] = want[q] = w2; tChange[q] = 0; }   // the first frame : in place
+                    else if (w2 != want[q]) { want[q] = w2; tChange[q] = nowMs; }
+                }
+                const float rs = sr * 0.44f;
+                // the FOLD : p runs 0 (stowed) -> 1 (open) in ~0.6 s ; slide 0..0.5, spread 0.5..0.8, labels 0.8..1
+                static float p = -1.0f; static unsigned lastMs = 0;
+                const float tgt = nNow > 0 ? 1.0f : 0.0f;
+                if (p < 0.0f) p = tgt;
+                { const float dt = lastMs ? (float)(nowMs - lastMs) / 1000.0f : 0.0f; lastMs = nowMs;
+                  const float stepP = (dt > 0.1f ? 0.1f : dt) / 0.6f; p = p < tgt ? (p + stepP > tgt ? tgt : p + stepP) : (p - stepP < tgt ? tgt : p - stepP); }
+                auto cl = [](float v2) { return v2 < 0.0f ? 0.0f : (v2 > 1.0f ? 1.0f : v2); };
+                float dep = cl(p / 0.5f); dep = dep * dep * (3.0f - 2.0f * dep);
+                float spr = cl((p - 0.5f) / 0.3f); spr = spr * spr * (3.0f - 2.0f * spr);
+                const float lab = cl((p - 0.8f) / 0.2f);
+                if (p <= 0.0f) { color_state(dev); goto weather_done; }            // folded away : nothing shows
+                {
+                // the axis : compass centre -> sky dial ; the carrier's centre beyond the sky dial on it, the wells across it
+                const float ax0 = x - cx, ay0 = y - cy, aL = sqrtf(ax0 * ax0 + ay0 * ay0), ux = ax0 / aL, uy = ay0 / aL, tx = -uy, ty = ux;
+                const float D = (sr + rs + TUNE("mm.slot_out", 3.0f) * S) * dep, half = rs * TUNE("mm.slot_gap", 1.10f) * spr;
+                float OX[2], OY[2];
+                for (int q = 0; q < 2; ++q) {
+                    OX[q] = x + ux * D + (q == 0 ? -1.0f : 1.0f) * tx * half;
+                    OY[q] = y + uy * D + (q == 0 ? -1.0f : 1.0f) * ty * half;
+                }
+                color_state(dev);
+                for (int q = 0; q < 2; ++q)
+                    rrect_glow(dev, OX[q] - rs - 1.5f * S, OY[q] - rs - 0.5f * S, 2.0f * rs + 3.0f * S, 2.0f * rs + 3.0f * S, rs + 1.5f * S, 0x90000000u, snap(2.5f * S));
+                color_state(dev);
+                // the two wells, cast as one : the dark edges, a bridge, then the metal
+                const float bw = rs * 0.55f;
+                auto bridge = [&](float grow, u32 col) {
+                    const float dx = OX[1] - OX[0], dy = OY[1] - OY[0], L = sqrtf(dx * dx + dy * dy); if (L < 1.0f) return;
+                    const float nx = -dy / L * (bw + grow), ny = dx / L * (bw + grow);
+                    const float q4[8] = { OX[0] + nx, OY[0] + ny, OX[1] + nx, OY[1] + ny, OX[1] - nx, OY[1] - ny, OX[0] - nx, OY[0] - ny };
+                    fill_poly_aa(dev, q4, 4, col);
+                };
+                for (int q = 0; q < 2; ++q) disc(dev, OX[q], OY[q], rs + 1.8f * S, g_dm.edge);
+                bridge(1.2f * S, g_dm.edge);
+                for (int q = 0; q < 2; ++q) disc(dev, OX[q], OY[q], rs + 1.1f * S, g_dm.body);
+                bridge(0.0f, g_dm.body);
+                for (int q = 0; q < 2; ++q) {
+                    const float ox = OX[q], oy = OY[q];
+                    ring_sector(dev, ox, oy, rs, rs + 1.1f * S, PI, 1.5f * PI, MA(0xA0, g_dm.glint));
+                    disc(dev, ox, oy, rs, 0xFF0B0D11u);                                         // the empty well
+                    ring_sector(dev, ox, oy, rs - 2.0f * S, rs, PI, 2.0f * PI, 0x70000000u);       // its inner shadow, from the lip above
+                    // the LABEL : out (the old one shrinks away, 0.12 s), then in (the new one pops, 0.22 s, a small overshoot)
+                    float sc = 0.0f; int cell = shownCell[q];
+                    if (lab <= 0.0f) cell = -1;                                     // the labels come once the wells are open
+                    if (tChange[q]) {
+                        const float t = (float)(nowMs - tChange[q]) / 1000.0f;
+                        const bool hadOld = shownCell[q] >= 0 && shownCell[q] != want[q];
+                        const float tOut = hadOld ? 0.12f : 0.0f;
+                        if (t < tOut) { sc = 1.0f - t / tOut; cell = shownCell[q]; }
+                        else {
+                            cell = want[q];
+                            const float k = (t - tOut) / 0.22f;
+                            if (k >= 1.0f) { shownCell[q] = want[q]; tChange[q] = 0; sc = 1.0f; }
+                            else { const float u = k - 1.0f; sc = 1.0f + 2.7f * u * u * u + 1.7f * u * u; }   // ease-out-back
+                        }
+                    } else sc = 1.0f;
+                    if (cell >= 0 && sc > 0.01f) {
+                        const float lr = rs * 0.86f * sc * lab;
+                        disc(dev, ox, oy + 0.8f * S, lr, 0x60000000u);                          // its shadow in the well
+                        disc(dev, ox, oy, lr, 0xFFE6CF9Au);                                    // the parchment
+                        ring_sector(dev, ox, oy, lr * 0.78f, lr, 0.0f, 2.0f * PI, 0x30603A10u); // darker toward its edge
+                        ring_sector(dev, ox, oy, lr - 0.9f * S, lr, 0.0f, 2.0f * PI, 0x905A3A18u);   // an ink rim
+                        if (wxTex) {
+                            const float isz = snap(lr * 2.05f);                     // the element fills its label
+                            tex_state(dev, wxTex);
+                            tquad(dev, snap(ox - isz * 0.5f), snap(oy - isz * 0.5f), isz, isz, cell / 8.0f, (cell + 1) / 8.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
+                            dSetTex(dev, 0, 0);
+                        }
+                        color_state(dev);
+                    }
+                    glass_dome(dev, ox, oy, rs, 0xFFB8D4FFu, 0.6f);
+                    if (cell >= 0 && sc >= 1.0f && lab >= 1.0f && mm_weather_elem(wid) == di && q < nNow)
+                        resonance_filament(dev, ox, oy, rs + 0.4f * S, 0.55f, PI - 0.55f, 1.8f * S, di, S);   // RESONANCE : at the slot's foot
+                }
+                color_state(dev);
+                }
+                weather_done:;
+            }
+            bezel(x, y, 0xFF0E1830u);                                                   // the sky dial over the folded weather module
             const float t = (float)v.hh + (float)v.mm / 60.0f;
             const float elev = -cosf(t / 24.0f * 2.0f * PI);                                         // the sun's height : -1 midnight .. +1 noon
             float dayK = (elev + 0.1f) / 0.45f; dayK = clampf(dayK, 0.0f, 1.0f); dayK = dayK * dayK * (3.0f - 2.0f * dayK);
@@ -1342,84 +1439,6 @@ static void draw_dial_instrument(u32 dev, const Frame& f, const UiConfig& c, con
             ring_sector(dev, x, y, sr - 0.8f, sr + 0.4f, 0.0f, 2.0f * PI, g_dm.dark);              // a clean rim
             glass_dome(dev, x, y, sr, 0xFFB8D4FFu, 0.8f);
             color_state(dev);
-            // THE WEATHER SLOTS (the user 2026-11-25 : "the two weather slots are always there, empty ; then, as up top, a paper
-            // label pops in when it is active") : two round wells set under the sky dial, part of the modules behind the
-            // compass. Empty : a dark recess under glass. A weather : a PARCHMENT label with the element painted on it pops
-            // into the well (a quick scale with a small overshoot) ; a single weather fills the first, a double both. The
-            // label leaving shrinks away ; a new element : the old label out, the new one in. Nothing animates on the first frame.
-            {
-                const int wid = mm_weather(g.weather);
-                static const int WCELL[8] = { 0, 2, 1, 3, 4, 5, 6, 7 };             // weather pair -> the element's cell
-                const int cellNow = (wid >= 4 && wid <= 19) ? WCELL[(wid - 4) / 2] : -1, nNow = cellNow < 0 ? 0 : ((wid & 1) ? 2 : 1);
-                static int shownCell[2] = { -2, -2 }, want[2] = { -2, -2 }; static unsigned tChange[2] = { 0, 0 };
-                const unsigned nowMs = GetTickCount();
-                for (int q = 0; q < 2; ++q) {
-                    const int w2 = q < nNow ? cellNow : -1;
-                    if (shownCell[q] == -2) { shownCell[q] = want[q] = w2; tChange[q] = 0; }   // the first frame : in place
-                    else if (w2 != want[q]) { want[q] = w2; tChange[q] = nowMs; }
-                }
-                const float rs = sr * 0.44f, need = r + rs + 1.5f * S;
-                float OX[2], OY[2];
-                (void)need;
-                for (int q = 0; q < 2; ++q) {                                       // the seats : BALANCED under the sky dial (the user 2026-11-25) --
-                    OX[q] = x + (q == 0 ? -1.0f : 1.0f) * rs * TUNE("mm.slot_gap", 1.10f);   // symmetric about its vertical axis, one height ;
-                    OY[q] = y + sr * TUNE("mm.slot_y", 0.82f);                      // the compass, in front, may overlap them : they are behind it
-                }
-                color_state(dev);
-                for (int q = 0; q < 2; ++q)
-                    rrect_glow(dev, OX[q] - rs - 1.5f * S, OY[q] - rs - 0.5f * S, 2.0f * rs + 3.0f * S, 2.0f * rs + 3.0f * S, rs + 1.5f * S, 0x90000000u, snap(2.5f * S));
-                color_state(dev);
-                // the two wells, cast as one : the dark edges, a bridge, then the metal
-                const float bw = rs * 0.55f;
-                auto bridge = [&](float grow, u32 col) {
-                    const float dx = OX[1] - OX[0], dy = OY[1] - OY[0], L = sqrtf(dx * dx + dy * dy); if (L < 1.0f) return;
-                    const float nx = -dy / L * (bw + grow), ny = dx / L * (bw + grow);
-                    const float q4[8] = { OX[0] + nx, OY[0] + ny, OX[1] + nx, OY[1] + ny, OX[1] - nx, OY[1] - ny, OX[0] - nx, OY[0] - ny };
-                    fill_poly_aa(dev, q4, 4, col);
-                };
-                for (int q = 0; q < 2; ++q) disc(dev, OX[q], OY[q], rs + 1.8f * S, g_dm.edge);
-                bridge(1.2f * S, g_dm.edge);
-                for (int q = 0; q < 2; ++q) disc(dev, OX[q], OY[q], rs + 1.1f * S, g_dm.body);
-                bridge(0.0f, g_dm.body);
-                for (int q = 0; q < 2; ++q) {
-                    const float ox = OX[q], oy = OY[q];
-                    ring_sector(dev, ox, oy, rs, rs + 1.1f * S, PI, 1.5f * PI, MA(0xA0, g_dm.glint));
-                    disc(dev, ox, oy, rs, 0xFF0B0D11u);                                         // the empty well
-                    ring_sector(dev, ox, oy, rs - 2.0f * S, rs, PI, 2.0f * PI, 0x70000000u);       // its inner shadow, from the lip above
-                    // the LABEL : out (the old one shrinks away, 0.12 s), then in (the new one pops, 0.22 s, a small overshoot)
-                    float sc = 0.0f; int cell = shownCell[q];
-                    if (tChange[q]) {
-                        const float t = (float)(nowMs - tChange[q]) / 1000.0f;
-                        const bool hadOld = shownCell[q] >= 0 && shownCell[q] != want[q];
-                        const float tOut = hadOld ? 0.12f : 0.0f;
-                        if (t < tOut) { sc = 1.0f - t / tOut; cell = shownCell[q]; }
-                        else {
-                            cell = want[q];
-                            const float k = (t - tOut) / 0.22f;
-                            if (k >= 1.0f) { shownCell[q] = want[q]; tChange[q] = 0; sc = 1.0f; }
-                            else { const float u = k - 1.0f; sc = 1.0f + 2.7f * u * u * u + 1.7f * u * u; }   // ease-out-back
-                        }
-                    } else sc = 1.0f;
-                    if (cell >= 0 && sc > 0.01f) {
-                        const float lr = rs * 0.86f * sc;
-                        disc(dev, ox, oy + 0.8f * S, lr, 0x60000000u);                          // its shadow in the well
-                        disc(dev, ox, oy, lr, 0xFFE6CF9Au);                                    // the parchment
-                        ring_sector(dev, ox, oy, lr * 0.78f, lr, 0.0f, 2.0f * PI, 0x30603A10u); // darker toward its edge
-                        ring_sector(dev, ox, oy, lr - 0.9f * S, lr, 0.0f, 2.0f * PI, 0x905A3A18u);   // an ink rim
-                        if (wxTex) {
-                            const float isz = snap(lr * 2.05f);                     // the element fills its label
-                            tex_state(dev, wxTex);
-                            tquad(dev, snap(ox - isz * 0.5f), snap(oy - isz * 0.5f), isz, isz, cell / 8.0f, (cell + 1) / 8.0f, 0.0f, 1.0f, 0xFFFFFFFFu, 0xFFFFFFFFu);
-                            dSetTex(dev, 0, 0);
-                        }
-                        color_state(dev);
-                    }
-                    glass_dome(dev, ox, oy, rs, 0xFFB8D4FFu, 0.6f);
-                    if (cell >= 0 && sc >= 1.0f && mm_weather_elem(wid) == di && q < nNow)
-                        resonance_filament(dev, ox, oy, rs + 0.4f * S, 0.55f, PI - 0.55f, 1.8f * S, di, S);   // RESONANCE : at the slot's foot
-                }
-                color_state(dev);
-            }
         }
         PERF_END("mm.sky");
         PERF_BEGIN("mm.band");
