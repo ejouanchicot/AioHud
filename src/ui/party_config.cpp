@@ -12,6 +12,7 @@
 // read the same way: ask whether the reason still holds before copying it again.
 #include "ui/config_page.h"
 #include "ui/config_controls.h"   // shared toolkit : cat_header / row_slider / toggle_chip / row_selector + palette + g_fade
+#include "ui/cfg_engine.h"        // the redesign : OptDef tables + the kit (draw_party_v2)
 #include "ui/config_rows.h"       // ROW_BAND / ROW_NEXT row-layout macros (shared with config_page.cpp)
 #include "model/ui_config.h"      // ui_config(), save/reset, TE_* enum, TextStyle
 #include "model/buff_groups.h"    // BuffGroup + BUFF_GROUP_EN/FR : the party buff strip's display groups
@@ -87,385 +88,10 @@ static void strip_apply_move(bool atGroups, int innerG, int from, int to,
     save_ui_config();
 }
 
-void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool click,
-                                   float& ry, int& ri, float e,
-                                   float bandX, float bandW, float coX, float ctrlW,
-                                   float hdrX, float hdrW) {
-    // ROW_BAND / ROW_NEXT come from config_rows.h (dev/bandX/bandW/e/ry/ri/anim_ are all in scope here).
-
-    // =========================================================== PARTY ===========================================================
-    // ===================================================== THE GRAMMAR =====================================================
-    // Every module panel reads in the same four sections -- General, Frame, Content, Text -- and the first two are
-    // literally the same controls everywhere, because they drive the same shared code (box_style.cpp). Nothing was
-    // removed: this is a RELAYOUT. Same UiConfig fields, same file keys, same profiles.
-    //
-    // Two things did the damage before. A single "Party" section carried eighteen unrelated settings, so opening it
-    // did not narrow the search; and every row held ONE control on a column 560-960px wide, leaving the right half
-    // empty -- Bar Height and Bar Width were two rows. The panel measured ~2370px, 2.3 screens.
-    //
-    // So: settings are grouped by the OBJECT they act on (gauges, badge, buffs, cursor), and related ones share a
-    // row. A slider needs about 340px (its 244px capsule plus a readable label), so pairing is only done when the
-    // column can actually hold two; below that the pair stacks and the band is twice as tall. One code path either
-    // way -- the geometry is two ternaries, not two branches, because a second branch is what drifts.
-    // The gutter is 44px, not 18. At 18 the first column's control -- which is RIGHT-aligned inside its half --
-    // finished a hair before the second column's label began, so the two read as one run-on line instead of two
-    // columns. A column needs air on both sides of its content before the eye accepts it as a column.
-    // And a rule down the middle of that gutter, so the split is STATED rather than inferred from a gap.
-    const bool  twoCol = ctrlW >= snap(720.0f);
-    const float gutter = snap(44.0f);
-    const float halfW  = twoCol ? (ctrlW - gutter) * 0.5f : ctrlW;
-    const float col2X  = coX + (twoCol ? halfW + gutter : 0.0f);
-    const float sepX   = snap(coX + halfW + gutter * 0.5f);
-    // Drawn per paired ROW, never as one line down the whole section : a row whose second half is empty (no
-    // procedural theme, no badge to size) has no split to state, and a rule through it would claim one.
-    auto sepv = [&](float y, float h, bool on) {
-        if (twoCol && on) flat(dev, sepX, snap(y + snap(7.0f)), snap(1.0f), snap(h) - snap(14.0f), 0x1EFFFFFFu);
-    };
-
-    // ========================================================== FRAME =========================================================
-    // The same block every module gets, because it drives the same shared code. Drawn by draw_frame_section so
-    // the party box and the alliance boxes cannot drift apart -- they used to be two ~90-line copies.
-if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
-    const float aS0_ = cat_fold(CTRL_ID, pcFrameOpen_);   // eased 0..1 : the card, the clip and ry all ride this
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[0], aS0_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_, aS0_)) pcFrameOpen_ = !pcFrameOpen_;
-    ROW_NEXT(42.0f)
-    if (aS0_ > 0.0f) {
-        const float cTop_ = ry;
-        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[0] * aS0_);
-        draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
-                           0, nullptr,                                   // the party box IS the master : nothing to follow
-                           &ui_config().skinTheme, &ui_config().skinHue, &ui_config().skinLum, &ui_config().skinBoxAlpha,
-                           &ui_config().border[0], &ui_config().borderCost, tr("Cost box", "Bo\xC3\xAEte co\xC3\xBBt"));
-        cat_fold_end(dev, ry, cTop_, pcFull_[0], aS0_);
-    }   // end Frame
-    ry += snap(16.0f);                                 // air between this section and the next title bar
-}   // end Advanced only
-
-    // ========================================================== PARTY ==========================================================
-    // The party box itself : whether it shows, how big, and what a member row carries. Its FRAME is the section
-    // above -- shared shape with every other module -- and its BUFF STRIP is the section at the bottom, because
-    // the strip is one object and its editor belongs with the settings that describe it.
-    // The only section that really differs between modules, so it gets the room. Grouped by the OBJECT each setting
-    // acts on -- gauges, badge, buffs, cursor -- which is what turns three rows into one.
-    const float aS1_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[1]));   // eased 0..1 : the card, the clip and ry all ride this
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[1], aS1_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1], aS1_) && ui_config().cfgAdv) catOpen_[1] = !catOpen_[1];
-    ROW_NEXT(42.0f)
-    if (aS1_ > 0.0f) {
-        const float cTop_ = ry;
-        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[1] * aS1_);
-        // Show + Size : the two settings everyone touches, first, on one line.
-        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
-          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, true);
-          row_toggle(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Show", "Afficher"), &ui_config().partyShow, 40.0f, 150.0f);
-          { const float lo = 1.00f, hi = 2.00f;   // party floor 100% : it must cover the native block
-            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[0].scale * 100.0f + 0.5f));
-            float v01 = (ui_config().box[0].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Size", "Taille"), szbuf, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().box[0].scale = v < lo ? lo : (v > hi ? hi : v); } }
-          ROW_NEXT(bh2)
-        }
-        // --- gauges : the style, and the two dimensions of the bars it draws ---
-        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
-          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, true);
-          { int s = ui_config().gaugeStyle[0]; if (s < 0 || s > 7) s = 0;
-            const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
-                                  tr("Sphere", "Sph\xC3\xA8re"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Gauge Style", "Style de jauge"), sb[s])) {
-                ui_config().gaugeStyle[0] = wrap(s + d, 8); save_ui_config(); } }
-          { const float rowH = snap(38.0f); fo->begin(dev);   // Animation : two chips, HP and TP
-            fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Animation", "Animation"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(132.0f),   /* wider : the chips say what they animate */ bgap = snap(8.0f), bbh = snap(34.0f), bty = yB + (rowH - bbh) * 0.5f;
-            const float bx0 = xB + halfW - (2 * bbw + bgap);
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Low HP blink", "Clignote HP bas"), ui_config().animHP)) { ui_config().animHP = !ui_config().animHP; save_ui_config(); }
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("TP ready pulse", "Pulse TP pr\xC3\xAAt"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); } }
-          ROW_NEXT(bh2)
-        }
-        { const bool rnd_ = ui_config().gaugeStyle[0] >= 4 && ui_config().gaugeStyle[0] <= 6;   // round gauges : no bar height (party.h gaugeH)
-          const float bh2 = (twoCol || rnd_) ? snap(46.0f) : snap(92.0f);   // bar height + width : the pair that was two rows
-          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
-          const float yB = (twoCol || rnd_) ? yA : yA + snap(46.0f);
-          const float xB = (twoCol && !rnd_) ? col2X : coX;
-          sepv(ry, bh2, true);
-          if (!rnd_) { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[0] * 100.0f + 0.5f));
-            float v01 = (ui_config().barHeight[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().barHeight[0] = v < lo ? lo : (v > hi ? hi : v); } }
-          { const float lo = 0.70f, hi = 1.60f; char wb[16]; sprintf(wb, "%d%%", (int)(ui_config().barWidth[0] * 100.0f + 0.5f));
-            float v01 = (ui_config().barWidth[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Bar Width", "Largeur des barres"), wb, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().barWidth[0] = v < lo ? lo : (v > hi ? hi : v); } }
-          ROW_NEXT(bh2)
-        }
-        cat_fold_end(dev, ry, cTop_, pcFull_[1], aS1_);
-    }   // end Party
-    ry += snap(16.0f);                                 // air between this section and the next title bar
-
-    // ================================================= PARTY ROWS =================================================
-    // Everything about a member ROW -- its job badge, its cursor, its casts, its distance and the zone colours
-    // that tint it -- as opposed to what the BOX is: size, gauge style, bar dimensions. Twelve controls
-    // answering two questions is exactly the drawer this panel was elsewhere told not to be.
-if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
-    const float aS1c_ = cat_fold(CTRL_ID, catOpen_[17]);
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[5], aS1c_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party rows", "Lignes party"), catOpen_[17], aS1c_)) catOpen_[17] = !catOpen_[17];
-    ROW_NEXT(42.0f)
-    if (aS1c_ > 0.0f) {
-        const float cTop1c_ = ry;
-        cat_fold_clip(dev, hdrX, cTop1c_, hdrW, pcFull_[5] * aS1c_);
-        // --- badge : what it shows, and how big ---
-        { const bool hasBadge = (ui_config().jobBadge[0] != 0);
-          const float bh2 = (twoCol || !hasBadge) ? snap(48.0f) : snap(96.0f);
-          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !hasBadge) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, hasBadge);   // an empty second half has no split to state
-          { int m = ui_config().jobBadge[0]; if (m < 0 || m > 3) m = 0;
-            const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Ic\xC3\xB4nes") };
-            // halfW even when Badge Size is gone. row_selector pins its value and arrows to the RIGHT
-            // edge of the width it is given, so widening this to ctrlW on Off threw the control across
-            // the panel -- the row appeared to MOVE as a side effect of switching the badge off. A
-            // control keeps its column ; only its neighbour disappears.
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Job Badge", "Badge de job"), jb[m])) {
-                ui_config().jobBadge[0] = wrap(m + d, 4); save_ui_config(); } }
-          if (hasBadge) {   // no badge, nothing to size
-              const float lo = 0.60f, hi = 1.80f; char gb[16]; sprintf(gb, "%d%%", (int)(ui_config().badgeScale[0] * 100.0f + 0.5f));
-              float v01 = (ui_config().badgeScale[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-              if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Badge Size", "Taille du badge"), gb, &v01)) {
-                  float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                  ui_config().badgeScale[0] = v < lo ? lo : (v > hi ? hi : v); }
-          }
-          ROW_NEXT(bh2)
-        }
-        // --- the cursor, and what else the member row may show ---
-        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
-          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, true);
-          { const float lo = 0.50f, hi = 2.00f; char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));
-            float v01 = (ui_config().cursorScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Cursor Size", "Taille du curseur"), czbuf, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().cursorScale = v < lo ? lo : (v > hi ? hi : v); } }
-          { const float rowH = snap(38.0f); fo->begin(dev);
-            fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Row extras", "Sur la ligne"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yB + (rowH - bbh) * 0.5f;
-            const float bx0 = xB + halfW - (2 * bbw + bgap);
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Casts", "Sorts"), ui_config().cast[0] != 0)) { ui_config().cast[0] = !ui_config().cast[0]; save_ui_config(); }
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Distance", "Distance"), ui_config().dist[0] != 0)) { ui_config().dist[0] = !ui_config().dist[0]; save_ui_config(); } }
-          ROW_NEXT(bh2)
-        }
-        { ROW_BAND(52.0f)   // the cursor's LOOK : the hand, or one of the client's pointers (XiView HD variants) -- every cursor of the HUD
-            int cs = ui_config().cursorStyle; if (cs < 0 || cs >= cursor_style_count()) cs = 0;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Cursor style", "Style du curseur"), cursor_style_name(cs))) {
-                ui_config().cursorStyle = wrap(cs + d, cursor_style_count()); save_ui_config(); }
-        } ROW_NEXT(52.0f)
-        // ---- Distance-zone colours : the yalms number is tinted by cast-range zone (Close < 10' / Normal 10'..20.8' / Far >= 20.8'). ----
-        // Three zones, three colours -- but three OPEN pickers is ~690px of panel for a setting most people touch
-        // once. One row of swatches says everything the three label rows said (the colour IS the label), and the
-        // picker opens for the one you click. Click it again to close it.
-        if (ui_config().dist[0] || ui_config().dist[1]) {   // (the alliance's distance uses them too)
-            u32* dcol[3] = { &ui_config().distColClose, &ui_config().distColNormal, &ui_config().distColFar };
-            const char* dsh[3] = { tr("Close", "Proche"), tr("Normal", "Normal"), tr("Far", "Loin") };
-            { ROW_BAND(48.0f)
-                const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
-                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Distance colours", "Couleurs de distance"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
-                const float sw2 = snap(74.0f), sh2 = snap(28.0f), sg = snap(8.0f);
-                const float sx0 = coX + ctrlW - (3 * sw2 + 2 * sg), sy2 = ty + (rowH - sh2) * 0.5f;
-                for (int di = 0; di < 3; ++di) {   // PASS 1 : the swatches (quads) + the clicks
-                    const float sx = sx0 + di * (sw2 + sg);
-                    const bool selc = (pcDistPick_ == di);
-                    if (selc) { cs_add(dev); rrect_glow(dev, sx, sy2, sw2, sh2, snap(6.0f), (*dcol[di] & 0x00FFFFFF) | 0x80000000u, snap(6.0f)); cs(dev); }
-                    rrect_fill(dev, sx, sy2, sw2, sh2, snap(6.0f), *dcol[di], shade(*dcol[di], -0.25f));
-                    outline(dev, sx, sy2, sw2, sh2, selc ? 0xFFFFFFFF : C_BORDER);
-                    if (inrect(mo, sx, sy2, sw2, sh2) && click) pcDistPick_ = selc ? -1 : di;
-                }
-                fo->begin(dev);
-                for (int di = 0; di < 3; ++di) {   // PASS 2 : the zone names, in ONE font pass. White on a stroke so
-                    const float sx = sx0 + di * (sw2 + sg);   // they stay readable on ANY colour the user picks.
-                    fo->draw_c(dev, sx + sw2 * 0.5f, sy2 + sh2 * 0.5f, dsh[di], snap(11.5f), fa(0xFFFFFFFFu), fa(0xFF000000u), 1.4f);
-                }
-                ROW_NEXT(48.0f)
-            }
-            if (pcDistPick_ >= 0 && pcDistPick_ < 3) { CFG_COLOR_PICKER_I(dcol[pcDistPick_], pcDistPick_) }
-        }
-        cat_fold_end(dev, ry, cTop1c_, pcFull_[5], aS1c_);
-    }   // end Party content
-    ry += snap(16.0f);                                 // air between this section and the next title bar
-}   // end Advanced only
-
-    // ==================================================== ALLIANCE ====================================================
-    // The SAME three sections as the party box, in the same order, holding the same kinds of thing. That is the
-    // point of a grammar : what you learned one category up still applies here. Alliance has no buff strip (the game
-    // never sends alliance buffs) and no selection cursor, so those simply do not appear -- a missing row is not a
-    // different layout.
-    const float aS2_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[7]));   // eased 0..1 : the card, the clip and ry all ride this
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[2], aS2_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7], aS2_) && ui_config().cfgAdv) catOpen_[7] = !catOpen_[7];
-    ROW_NEXT(42.0f)
-    if (aS2_ > 0.0f) {
-        const float cTop_ = ry;
-        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[2] * aS2_);
-        // ---- General ----
-        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
-          ROW_BAND(bh2) (void)yo;
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, true);
-          row_toggle(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Show", "Afficher"), &ui_config().allyShow, 40.0f, 150.0f);
-          { const float lo = 0.50f, hi = 2.00f;   // alliance may go smaller than the party box
-            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[1].scale * 100.0f + 0.5f));
-            float v01 = (ui_config().box[1].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Size", "Taille"), szbuf, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().box[1].scale = v < lo ? lo : (v > hi ? hi : v); } }
-          ROW_NEXT(bh2)
-        }
-        // ---- Frame : the same rows as the party box, from the same function -- Advanced, as the party's own Frame ----
-        if (ui_config().cfgAdv) draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
-                           1, &ui_config().allyThemeCopy,                // may simply follow the party theme
-                           &ui_config().allyTheme, &ui_config().allyHue, &ui_config().allyLum, &ui_config().allyBoxAlpha,
-                           &ui_config().border[1], nullptr, nullptr,     // no Cost box on an alliance row
-                           &ui_config().allyAlphaOwn);                   // the Party box's opacity unless set (2026-11-17)
-        cat_fold_end(dev, ry, cTop_, pcFull_[2], aS2_);
-    }   // end Alliance
-    ry += snap(16.0f);                                 // air between this section and the next title bar
-
-    // =============================================== ALLIANCE ROWS ===============================================
-    // Everything about an alliance ROW, as opposed to what the alliance BOX is. The file already marked the
-    // boundary with its own "---- Content ----" comment: the two halves were understood to be two subjects,
-    // they just shared one drawer.
-    // These rows are PAIRED two per line (Gauge Style beside Job Badge, Bar Height beside Bar Width) to save
-    // vertical space, so form and content share a physical line here and cannot be separated further without
-    // unpicking that pairing. "Rows" is what the section honestly holds -- everything a row is made of.
-if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
-    const float aS2c_ = cat_fold(CTRL_ID, catOpen_[18]);
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[6], aS2c_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance rows", "Lignes alliance"), catOpen_[18], aS2c_)) catOpen_[18] = !catOpen_[18];
-    ROW_NEXT(42.0f)
-    if (aS2c_ > 0.0f) {
-        const float cTop2c_ = ry;
-        cat_fold_clip(dev, hdrX, cTop2c_, hdrW, pcFull_[6] * aS2c_);
-        // ---- Content ----
-        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // what the gauges are, and what the badge says
-          ROW_BAND(bh2) (void)yo;
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, true);
-          { int s = ui_config().gaugeStyle[1]; if (s < 0 || s > 7) s = 0;
-            const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
-                                  tr("Sphere", "Sph\xC3\xA8re"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Gauge Style", "Style de jauge"), sb[s])) {
-                ui_config().gaugeStyle[1] = wrap(s + d, 8); save_ui_config(); } }
-          { int m = ui_config().jobBadge[1]; if (m < 0 || m > 3) m = 0;
-            const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Ic\xC3\xB4nes") };
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, xB, yB, halfW, tr("Job Badge", "Badge de job"), jb[m])) {
-                ui_config().jobBadge[1] = wrap(m + d, 4); save_ui_config(); } }
-          ROW_NEXT(bh2)
-        }
-        { const bool rnd_ = ui_config().gaugeStyle[1] >= 4 && ui_config().gaugeStyle[1] <= 6;   // round gauges : no bar height (party.h gaugeH)
-          const float bh2 = (twoCol || rnd_) ? snap(46.0f) : snap(92.0f);   // the two dimensions of the bars
-          ROW_BAND(bh2) (void)yo;
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
-          const float yB = (twoCol || rnd_) ? yA : yA + snap(46.0f);
-          const float xB = (twoCol && !rnd_) ? col2X : coX;
-          sepv(ry, bh2, true);
-          if (!rnd_) { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[1] * 100.0f + 0.5f));
-            float v01 = (ui_config().barHeight[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().barHeight[1] = v < lo ? lo : (v > hi ? hi : v); } }
-          { const float lo = 0.70f, hi = 1.60f; char wb[16]; sprintf(wb, "%d%%", (int)(ui_config().barWidth[1] * 100.0f + 0.5f));
-            float v01 = (ui_config().barWidth[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Bar Width", "Largeur des barres"), wb, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().barWidth[1] = v < lo ? lo : (v > hi ? hi : v); } }
-          ROW_NEXT(bh2)
-        }
-        { const bool hasBadge = (ui_config().jobBadge[1] != 0);
-          const float bh2 = (twoCol || !hasBadge) ? snap(48.0f) : snap(96.0f);
-          ROW_BAND(bh2) (void)yo;
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !hasBadge) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, hasBadge);   // an empty second half has no split to state
-          { const float rowH = snap(38.0f); fo->begin(dev);   // what else an alliance row may show
-            fo->draw_lc(dev, coX + snap(4.0f), yA + rowH * 0.5f, tr("Row extras", "Sur la ligne"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yA + (rowH - bbh) * 0.5f;
-            const float bx0 = coX + halfW - (2 * bbw + bgap);
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Casts", "Sorts"), ui_config().cast[1] != 0)) { ui_config().cast[1] = !ui_config().cast[1]; save_ui_config(); }
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Distance", "Distance"), ui_config().dist[1] != 0)) { ui_config().dist[1] = !ui_config().dist[1]; save_ui_config(); } }
-          if (hasBadge) {   // no badge, nothing to size
-              const float lo = 0.60f, hi = 1.80f; char gb[16]; sprintf(gb, "%d%%", (int)(ui_config().badgeScale[1] * 100.0f + 0.5f));
-              float v01 = (ui_config().badgeScale[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
-              if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Badge Size", "Taille du badge"), gb, &v01)) {
-                  float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                  ui_config().badgeScale[1] = v < lo ? lo : (v > hi ? hi : v); }
-          }
-          ROW_NEXT(bh2)
-        }
-        cat_fold_end(dev, ry, cTop2c_, pcFull_[6], aS2c_);
-    }   // end Alliance content
-    ry += snap(16.0f);                                 // air between this section and the next title bar
-}   // end Advanced only
-    // ======================================================= BUFFS =======================================================
-    // Everything about the buff strip in ONE place -- how big, how many, over how many lines, and in what order.
-    // Splitting them was a failure of the panel's own rule: Content groups by the OBJECT a setting acts on, and the
-    // strip is one object. Its size lived under Content while its order lived in a section of its own, so answering
-    // "how do my buffs show up" meant visiting two places.
-    // It is also why this is a top-level section rather than a sub-section: the band is an EDITOR, and nesting it
-    // one level deeper is exactly the third disclosure level the research says to avoid.
-if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
-    const float aS4_ = cat_fold(CTRL_ID, pcBuffsOpen_);   // eased 0..1 : the card, the clip and ry all ride this
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[4], aS4_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_, aS4_)) pcBuffsOpen_ = !pcBuffsOpen_;
-    ROW_NEXT(42.0f)
-    if (aS4_ > 0.0f) {
-        const float cTop_ = ry;
-        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[4] * aS4_);
-        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // how big, and how many
-          ROW_BAND(bh2) (void)yo;
-          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
-          const float yB = twoCol ? yA : yA + snap(48.0f);
-          const float xB = twoCol ? col2X : coX;
-          sepv(ry, bh2, true);
-          { const float lo = 0.40f, hi = 2.00f; char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
-            float v01 = clampf((ui_config().buffScale - lo) / (hi - lo), 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Buff Size", "Taille des buffs"), bzbuf, &v01)) {
-                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
-                ui_config().buffScale = v < lo ? lo : (v > hi ? hi : v); } }
-          { static const int BM[] = { 0, 16, 20, 24, 32 };   // 0 = no buff strip at all
-            int idx = 0, bd = 1 << 30; for (int k = 0; k < 5; ++k) { const int dd = abs(BM[k] - ui_config().buffMax); if (dd < bd) { bd = dd; idx = k; } }   // the nearest choice (a stored 10 read "None")
-            char bmv[28]; if (BM[idx] == 0) lstrcpynA(bmv, tr("None", "Aucun"), sizeof(bmv)); else sprintf(bmv, "%d", BM[idx]);
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, xB, yB, halfW, tr("Max Buffs", "Buffs max"), bmv)) {
-                idx = wrap(idx + d, 5); ui_config().buffMax = BM[idx]; save_ui_config(); } }
-          ROW_NEXT(bh2)
-        }
-        { ROW_BAND(48.0f)   // over how many lines
-            const char* brl[2] = { tr("1 line", "1 ligne"), tr("2 lines", "2 lignes") };
-            int bri = (ui_config().buffRows <= 1) ? 0 : 1;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff Rows", "Lignes de buffs"), brl[bri])) {
-                bri = wrap(bri + d, 2); ui_config().buffRows = bri + 1; save_ui_config(); }
-            ROW_NEXT(48.0f)
-        }
+// the buff ORDER band : the drag-and-drop editor of the buff groups (extracted 2026-11-26 so the redesigned page draws
+// the very same editor). ROW_BAND / ROW_NEXT from config_rows.h.
+void ConfigPage::draw_buff_band(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e,
+                                float bandX, float bandW, float coX, float ctrlW) {
         // ---- the ORDER : the band itself. The strip draws its icons RIGHT-TO-LEFT from index 0, so the group at
         // position 1 ends up nearest the member's row. Ordering by GROUP (13 rows) rather than by status (624 of
         // them) is what keeps this configurable at all -- and it makes Max Buffs deliberate : the cut now falls on
@@ -958,6 +584,388 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
                 bsSel_ = mvTo;   // the selection FOLLOWS what you moved, so a second press keeps moving the same thing
             }
         }
+}
+
+void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool click,
+                                   float& ry, int& ri, float e,
+                                   float bandX, float bandW, float coX, float ctrlW,
+                                   float hdrX, float hdrW) {
+    // ROW_BAND / ROW_NEXT come from config_rows.h (dev/bandX/bandW/e/ry/ri/anim_ are all in scope here).
+
+    // =========================================================== PARTY ===========================================================
+    // ===================================================== THE GRAMMAR =====================================================
+    // Every module panel reads in the same four sections -- General, Frame, Content, Text -- and the first two are
+    // literally the same controls everywhere, because they drive the same shared code (box_style.cpp). Nothing was
+    // removed: this is a RELAYOUT. Same UiConfig fields, same file keys, same profiles.
+    //
+    // Two things did the damage before. A single "Party" section carried eighteen unrelated settings, so opening it
+    // did not narrow the search; and every row held ONE control on a column 560-960px wide, leaving the right half
+    // empty -- Bar Height and Bar Width were two rows. The panel measured ~2370px, 2.3 screens.
+    //
+    // So: settings are grouped by the OBJECT they act on (gauges, badge, buffs, cursor), and related ones share a
+    // row. A slider needs about 340px (its 244px capsule plus a readable label), so pairing is only done when the
+    // column can actually hold two; below that the pair stacks and the band is twice as tall. One code path either
+    // way -- the geometry is two ternaries, not two branches, because a second branch is what drifts.
+    // The gutter is 44px, not 18. At 18 the first column's control -- which is RIGHT-aligned inside its half --
+    // finished a hair before the second column's label began, so the two read as one run-on line instead of two
+    // columns. A column needs air on both sides of its content before the eye accepts it as a column.
+    // And a rule down the middle of that gutter, so the split is STATED rather than inferred from a gap.
+    const bool  twoCol = ctrlW >= snap(720.0f);
+    const float gutter = snap(44.0f);
+    const float halfW  = twoCol ? (ctrlW - gutter) * 0.5f : ctrlW;
+    const float col2X  = coX + (twoCol ? halfW + gutter : 0.0f);
+    const float sepX   = snap(coX + halfW + gutter * 0.5f);
+    // Drawn per paired ROW, never as one line down the whole section : a row whose second half is empty (no
+    // procedural theme, no badge to size) has no split to state, and a rule through it would claim one.
+    auto sepv = [&](float y, float h, bool on) {
+        if (twoCol && on) flat(dev, sepX, snap(y + snap(7.0f)), snap(1.0f), snap(h) - snap(14.0f), 0x1EFFFFFFu);
+    };
+
+    // ========================================================== FRAME =========================================================
+    // The same block every module gets, because it drives the same shared code. Drawn by draw_frame_section so
+    // the party box and the alliance boxes cannot drift apart -- they used to be two ~90-line copies.
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
+    const float aS0_ = cat_fold(CTRL_ID, pcFrameOpen_);   // eased 0..1 : the card, the clip and ry all ride this
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[0], aS0_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_, aS0_)) pcFrameOpen_ = !pcFrameOpen_;
+    ROW_NEXT(42.0f)
+    if (aS0_ > 0.0f) {
+        const float cTop_ = ry;
+        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[0] * aS0_);
+        draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
+                           0, nullptr,                                   // the party box IS the master : nothing to follow
+                           &ui_config().skinTheme, &ui_config().skinHue, &ui_config().skinLum, &ui_config().skinBoxAlpha,
+                           &ui_config().border[0], &ui_config().borderCost, tr("Cost box", "Bo\xC3\xAEte co\xC3\xBBt"));
+        cat_fold_end(dev, ry, cTop_, pcFull_[0], aS0_);
+    }   // end Frame
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
+
+    // ========================================================== PARTY ==========================================================
+    // The party box itself : whether it shows, how big, and what a member row carries. Its FRAME is the section
+    // above -- shared shape with every other module -- and its BUFF STRIP is the section at the bottom, because
+    // the strip is one object and its editor belongs with the settings that describe it.
+    // The only section that really differs between modules, so it gets the room. Grouped by the OBJECT each setting
+    // acts on -- gauges, badge, buffs, cursor -- which is what turns three rows into one.
+    const float aS1_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[1]));   // eased 0..1 : the card, the clip and ry all ride this
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[1], aS1_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1], aS1_) && ui_config().cfgAdv) catOpen_[1] = !catOpen_[1];
+    ROW_NEXT(42.0f)
+    if (aS1_ > 0.0f) {
+        const float cTop_ = ry;
+        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[1] * aS1_);
+        // Show + Size : the two settings everyone touches, first, on one line.
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
+          row_toggle(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Show", "Afficher"), &ui_config().partyShow, 40.0f, 150.0f);
+          { const float lo = 1.00f, hi = 2.00f;   // party floor 100% : it must cover the native block
+            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[0].scale * 100.0f + 0.5f));
+            float v01 = (ui_config().box[0].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Size", "Taille"), szbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().box[0].scale = v < lo ? lo : (v > hi ? hi : v); } }
+          ROW_NEXT(bh2)
+        }
+        // --- gauges : the style, and the two dimensions of the bars it draws ---
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
+          { int s = ui_config().gaugeStyle[0]; if (s < 0 || s > 7) s = 0;
+            const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
+                                  tr("Sphere", "Sph\xC3\xA8re"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Gauge Style", "Style de jauge"), sb[s])) {
+                ui_config().gaugeStyle[0] = wrap(s + d, 8); save_ui_config(); } }
+          { const float rowH = snap(38.0f); fo->begin(dev);   // Animation : two chips, HP and TP
+            fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Animation", "Animation"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(132.0f),   /* wider : the chips say what they animate */ bgap = snap(8.0f), bbh = snap(34.0f), bty = yB + (rowH - bbh) * 0.5f;
+            const float bx0 = xB + halfW - (2 * bbw + bgap);
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Low HP blink", "Clignote HP bas"), ui_config().animHP)) { ui_config().animHP = !ui_config().animHP; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("TP ready pulse", "Pulse TP pr\xC3\xAAt"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); } }
+          ROW_NEXT(bh2)
+        }
+        { const bool rnd_ = ui_config().gaugeStyle[0] >= 4 && ui_config().gaugeStyle[0] <= 6;   // round gauges : no bar height (party.h gaugeH)
+          const float bh2 = (twoCol || rnd_) ? snap(46.0f) : snap(92.0f);   // bar height + width : the pair that was two rows
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
+          const float yB = (twoCol || rnd_) ? yA : yA + snap(46.0f);
+          const float xB = (twoCol && !rnd_) ? col2X : coX;
+          sepv(ry, bh2, true);
+          if (!rnd_) { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[0] * 100.0f + 0.5f));
+            float v01 = (ui_config().barHeight[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().barHeight[0] = v < lo ? lo : (v > hi ? hi : v); } }
+          { const float lo = 0.70f, hi = 1.60f; char wb[16]; sprintf(wb, "%d%%", (int)(ui_config().barWidth[0] * 100.0f + 0.5f));
+            float v01 = (ui_config().barWidth[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Bar Width", "Largeur des barres"), wb, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().barWidth[0] = v < lo ? lo : (v > hi ? hi : v); } }
+          ROW_NEXT(bh2)
+        }
+        cat_fold_end(dev, ry, cTop_, pcFull_[1], aS1_);
+    }   // end Party
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+
+    // ================================================= PARTY ROWS =================================================
+    // Everything about a member ROW -- its job badge, its cursor, its casts, its distance and the zone colours
+    // that tint it -- as opposed to what the BOX is: size, gauge style, bar dimensions. Twelve controls
+    // answering two questions is exactly the drawer this panel was elsewhere told not to be.
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
+    const float aS1c_ = cat_fold(CTRL_ID, catOpen_[17]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[5], aS1c_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party rows", "Lignes party"), catOpen_[17], aS1c_)) catOpen_[17] = !catOpen_[17];
+    ROW_NEXT(42.0f)
+    if (aS1c_ > 0.0f) {
+        const float cTop1c_ = ry;
+        cat_fold_clip(dev, hdrX, cTop1c_, hdrW, pcFull_[5] * aS1c_);
+        // --- badge : what it shows, and how big ---
+        { const bool hasBadge = (ui_config().jobBadge[0] != 0);
+          const float bh2 = (twoCol || !hasBadge) ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !hasBadge) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, hasBadge);   // an empty second half has no split to state
+          { int m = ui_config().jobBadge[0]; if (m < 0 || m > 3) m = 0;
+            const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Ic\xC3\xB4nes") };
+            // halfW even when Badge Size is gone. row_selector pins its value and arrows to the RIGHT
+            // edge of the width it is given, so widening this to ctrlW on Off threw the control across
+            // the panel -- the row appeared to MOVE as a side effect of switching the badge off. A
+            // control keeps its column ; only its neighbour disappears.
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Job Badge", "Badge de job"), jb[m])) {
+                ui_config().jobBadge[0] = wrap(m + d, 4); save_ui_config(); } }
+          if (hasBadge) {   // no badge, nothing to size
+              const float lo = 0.60f, hi = 1.80f; char gb[16]; sprintf(gb, "%d%%", (int)(ui_config().badgeScale[0] * 100.0f + 0.5f));
+              float v01 = (ui_config().badgeScale[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+              if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Badge Size", "Taille du badge"), gb, &v01)) {
+                  float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                  ui_config().badgeScale[0] = v < lo ? lo : (v > hi ? hi : v); }
+          }
+          ROW_NEXT(bh2)
+        }
+        // --- the cursor, and what else the member row may show ---
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
+          { const float lo = 0.50f, hi = 2.00f; char czbuf[16]; sprintf(czbuf, "%d%%", (int)(ui_config().cursorScale * 100.0f + 0.5f));
+            float v01 = (ui_config().cursorScale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Cursor Size", "Taille du curseur"), czbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().cursorScale = v < lo ? lo : (v > hi ? hi : v); } }
+          { const float rowH = snap(38.0f); fo->begin(dev);
+            fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Row extras", "Sur la ligne"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yB + (rowH - bbh) * 0.5f;
+            const float bx0 = xB + halfW - (2 * bbw + bgap);
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Casts", "Sorts"), ui_config().cast[0] != 0)) { ui_config().cast[0] = !ui_config().cast[0]; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Distance", "Distance"), ui_config().dist[0] != 0)) { ui_config().dist[0] = !ui_config().dist[0]; save_ui_config(); } }
+          ROW_NEXT(bh2)
+        }
+        { ROW_BAND(52.0f)   // the cursor's LOOK : the hand, or one of the client's pointers (XiView HD variants) -- every cursor of the HUD
+            int cs = ui_config().cursorStyle; if (cs < 0 || cs >= cursor_style_count()) cs = 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Cursor style", "Style du curseur"), cursor_style_name(cs))) {
+                ui_config().cursorStyle = wrap(cs + d, cursor_style_count()); save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        // ---- Distance-zone colours : the yalms number is tinted by cast-range zone (Close < 10' / Normal 10'..20.8' / Far >= 20.8'). ----
+        // Three zones, three colours -- but three OPEN pickers is ~690px of panel for a setting most people touch
+        // once. One row of swatches says everything the three label rows said (the colour IS the label), and the
+        // picker opens for the one you click. Click it again to close it.
+        if (ui_config().dist[0] || ui_config().dist[1]) {   // (the alliance's distance uses them too)
+            u32* dcol[3] = { &ui_config().distColClose, &ui_config().distColNormal, &ui_config().distColFar };
+            const char* dsh[3] = { tr("Close", "Proche"), tr("Normal", "Normal"), tr("Far", "Loin") };
+            { ROW_BAND(48.0f)
+                const float rowH = snap(38.0f), ty = ry + yo; fo->begin(dev);
+                fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Distance colours", "Couleurs de distance"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
+                const float sw2 = snap(74.0f), sh2 = snap(28.0f), sg = snap(8.0f);
+                const float sx0 = coX + ctrlW - (3 * sw2 + 2 * sg), sy2 = ty + (rowH - sh2) * 0.5f;
+                for (int di = 0; di < 3; ++di) {   // PASS 1 : the swatches (quads) + the clicks
+                    const float sx = sx0 + di * (sw2 + sg);
+                    const bool selc = (pcDistPick_ == di);
+                    if (selc) { cs_add(dev); rrect_glow(dev, sx, sy2, sw2, sh2, snap(6.0f), (*dcol[di] & 0x00FFFFFF) | 0x80000000u, snap(6.0f)); cs(dev); }
+                    rrect_fill(dev, sx, sy2, sw2, sh2, snap(6.0f), *dcol[di], shade(*dcol[di], -0.25f));
+                    outline(dev, sx, sy2, sw2, sh2, selc ? 0xFFFFFFFF : C_BORDER);
+                    if (inrect(mo, sx, sy2, sw2, sh2) && click) pcDistPick_ = selc ? -1 : di;
+                }
+                fo->begin(dev);
+                for (int di = 0; di < 3; ++di) {   // PASS 2 : the zone names, in ONE font pass. White on a stroke so
+                    const float sx = sx0 + di * (sw2 + sg);   // they stay readable on ANY colour the user picks.
+                    fo->draw_c(dev, sx + sw2 * 0.5f, sy2 + sh2 * 0.5f, dsh[di], snap(11.5f), fa(0xFFFFFFFFu), fa(0xFF000000u), 1.4f);
+                }
+                ROW_NEXT(48.0f)
+            }
+            if (pcDistPick_ >= 0 && pcDistPick_ < 3) { CFG_COLOR_PICKER_I(dcol[pcDistPick_], pcDistPick_) }
+        }
+        cat_fold_end(dev, ry, cTop1c_, pcFull_[5], aS1c_);
+    }   // end Party content
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
+
+    // ==================================================== ALLIANCE ====================================================
+    // The SAME three sections as the party box, in the same order, holding the same kinds of thing. That is the
+    // point of a grammar : what you learned one category up still applies here. Alliance has no buff strip (the game
+    // never sends alliance buffs) and no selection cursor, so those simply do not appear -- a missing row is not a
+    // different layout.
+    const float aS2_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[7]));   // eased 0..1 : the card, the clip and ry all ride this
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[2], aS2_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7], aS2_) && ui_config().cfgAdv) catOpen_[7] = !catOpen_[7];
+    ROW_NEXT(42.0f)
+    if (aS2_ > 0.0f) {
+        const float cTop_ = ry;
+        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[2] * aS2_);
+        // ---- General ----
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
+          row_toggle(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Show", "Afficher"), &ui_config().allyShow, 40.0f, 150.0f);
+          { const float lo = 0.50f, hi = 2.00f;   // alliance may go smaller than the party box
+            char szbuf[16]; sprintf(szbuf, "%d%%", (int)(ui_config().box[1].scale * 100.0f + 0.5f));
+            float v01 = (ui_config().box[1].scale - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Size", "Taille"), szbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().box[1].scale = v < lo ? lo : (v > hi ? hi : v); } }
+          ROW_NEXT(bh2)
+        }
+        // ---- Frame : the same rows as the party box, from the same function -- Advanced, as the party's own Frame ----
+        if (ui_config().cfgAdv) draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
+                           1, &ui_config().allyThemeCopy,                // may simply follow the party theme
+                           &ui_config().allyTheme, &ui_config().allyHue, &ui_config().allyLum, &ui_config().allyBoxAlpha,
+                           &ui_config().border[1], nullptr, nullptr,     // no Cost box on an alliance row
+                           &ui_config().allyAlphaOwn);                   // the Party box's opacity unless set (2026-11-17)
+        cat_fold_end(dev, ry, cTop_, pcFull_[2], aS2_);
+    }   // end Alliance
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+
+    // =============================================== ALLIANCE ROWS ===============================================
+    // Everything about an alliance ROW, as opposed to what the alliance BOX is. The file already marked the
+    // boundary with its own "---- Content ----" comment: the two halves were understood to be two subjects,
+    // they just shared one drawer.
+    // These rows are PAIRED two per line (Gauge Style beside Job Badge, Bar Height beside Bar Width) to save
+    // vertical space, so form and content share a physical line here and cannot be separated further without
+    // unpicking that pairing. "Rows" is what the section honestly holds -- everything a row is made of.
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
+    const float aS2c_ = cat_fold(CTRL_ID, catOpen_[18]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[6], aS2c_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance rows", "Lignes alliance"), catOpen_[18], aS2c_)) catOpen_[18] = !catOpen_[18];
+    ROW_NEXT(42.0f)
+    if (aS2c_ > 0.0f) {
+        const float cTop2c_ = ry;
+        cat_fold_clip(dev, hdrX, cTop2c_, hdrW, pcFull_[6] * aS2c_);
+        // ---- Content ----
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // what the gauges are, and what the badge says
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
+          { int s = ui_config().gaugeStyle[1]; if (s < 0 || s > 7) s = 0;
+            const char* sb[8] = { tr("Vial", "Fiole"), tr("Bars", "Barres"), tr("Segments", "Segments"), tr("Minimal", "Minimal"),
+                                  tr("Sphere", "Sph\xC3\xA8re"), tr("Ring", "Anneau"), tr("Crystal", "Cristal"), tr("Text", "Texte") };
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, yA, halfW, tr("Gauge Style", "Style de jauge"), sb[s])) {
+                ui_config().gaugeStyle[1] = wrap(s + d, 8); save_ui_config(); } }
+          { int m = ui_config().jobBadge[1]; if (m < 0 || m > 3) m = 0;
+            const char* jb[4] = { tr("Off", "Aucun"), tr("Main job", "Job principal"), tr("Main + Sub", "Principal + Sub"), tr("Icons", "Ic\xC3\xB4nes") };
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, xB, yB, halfW, tr("Job Badge", "Badge de job"), jb[m])) {
+                ui_config().jobBadge[1] = wrap(m + d, 4); save_ui_config(); } }
+          ROW_NEXT(bh2)
+        }
+        { const bool rnd_ = ui_config().gaugeStyle[1] >= 4 && ui_config().gaugeStyle[1] <= 6;   // round gauges : no bar height (party.h gaugeH)
+          const float bh2 = (twoCol || rnd_) ? snap(46.0f) : snap(92.0f);   // the two dimensions of the bars
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
+          const float yB = (twoCol || rnd_) ? yA : yA + snap(46.0f);
+          const float xB = (twoCol && !rnd_) ? col2X : coX;
+          sepv(ry, bh2, true);
+          if (!rnd_) { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[1] * 100.0f + 0.5f));
+            float v01 = (ui_config().barHeight[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().barHeight[1] = v < lo ? lo : (v > hi ? hi : v); } }
+          { const float lo = 0.70f, hi = 1.60f; char wb[16]; sprintf(wb, "%d%%", (int)(ui_config().barWidth[1] * 100.0f + 0.5f));
+            float v01 = (ui_config().barWidth[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+            if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Bar Width", "Largeur des barres"), wb, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().barWidth[1] = v < lo ? lo : (v > hi ? hi : v); } }
+          ROW_NEXT(bh2)
+        }
+        { const bool hasBadge = (ui_config().jobBadge[1] != 0);
+          const float bh2 = (twoCol || !hasBadge) ? snap(48.0f) : snap(96.0f);
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + ((twoCol || !hasBadge) ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, hasBadge);   // an empty second half has no split to state
+          { const float rowH = snap(38.0f); fo->begin(dev);   // what else an alliance row may show
+            fo->draw_lc(dev, coX + snap(4.0f), yA + rowH * 0.5f, tr("Row extras", "Sur la ligne"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yA + (rowH - bbh) * 0.5f;
+            const float bx0 = coX + halfW - (2 * bbw + bgap);
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Casts", "Sorts"), ui_config().cast[1] != 0)) { ui_config().cast[1] = !ui_config().cast[1]; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("Distance", "Distance"), ui_config().dist[1] != 0)) { ui_config().dist[1] = !ui_config().dist[1]; save_ui_config(); } }
+          if (hasBadge) {   // no badge, nothing to size
+              const float lo = 0.60f, hi = 1.80f; char gb[16]; sprintf(gb, "%d%%", (int)(ui_config().badgeScale[1] * 100.0f + 0.5f));
+              float v01 = (ui_config().badgeScale[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+              if (row_slider(dev, fo, mo, CTRL_ID, xB, yB, halfW, tr("Badge Size", "Taille du badge"), gb, &v01)) {
+                  float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                  ui_config().badgeScale[1] = v < lo ? lo : (v > hi ? hi : v); }
+          }
+          ROW_NEXT(bh2)
+        }
+        cat_fold_end(dev, ry, cTop2c_, pcFull_[6], aS2c_);
+    }   // end Alliance content
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
+    // ======================================================= BUFFS =======================================================
+    // Everything about the buff strip in ONE place -- how big, how many, over how many lines, and in what order.
+    // Splitting them was a failure of the panel's own rule: Content groups by the OBJECT a setting acts on, and the
+    // strip is one object. Its size lived under Content while its order lived in a section of its own, so answering
+    // "how do my buffs show up" meant visiting two places.
+    // It is also why this is a top-level section rather than a sub-section: the band is an EDITOR, and nesting it
+    // one level deeper is exactly the third disclosure level the research says to avoid.
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
+    const float aS4_ = cat_fold(CTRL_ID, pcBuffsOpen_);   // eased 0..1 : the card, the clip and ry all ride this
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[4], aS4_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_, aS4_)) pcBuffsOpen_ = !pcBuffsOpen_;
+    ROW_NEXT(42.0f)
+    if (aS4_ > 0.0f) {
+        const float cTop_ = ry;
+        cat_fold_clip(dev, hdrX, cTop_, hdrW, pcFull_[4] * aS4_);
+        { const float bh2 = twoCol ? snap(48.0f) : snap(96.0f);   // how big, and how many
+          ROW_BAND(bh2) (void)yo;
+          const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(4.0f));
+          const float yB = twoCol ? yA : yA + snap(48.0f);
+          const float xB = twoCol ? col2X : coX;
+          sepv(ry, bh2, true);
+          { const float lo = 0.40f, hi = 2.00f; char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
+            float v01 = clampf((ui_config().buffScale - lo) / (hi - lo), 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Buff Size", "Taille des buffs"), bzbuf, &v01)) {
+                float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
+                ui_config().buffScale = v < lo ? lo : (v > hi ? hi : v); } }
+          { static const int BM[] = { 0, 16, 20, 24, 32 };   // 0 = no buff strip at all
+            int idx = 0, bd = 1 << 30; for (int k = 0; k < 5; ++k) { const int dd = abs(BM[k] - ui_config().buffMax); if (dd < bd) { bd = dd; idx = k; } }   // the nearest choice (a stored 10 read "None")
+            char bmv[28]; if (BM[idx] == 0) lstrcpynA(bmv, tr("None", "Aucun"), sizeof(bmv)); else sprintf(bmv, "%d", BM[idx]);
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, xB, yB, halfW, tr("Max Buffs", "Buffs max"), bmv)) {
+                idx = wrap(idx + d, 5); ui_config().buffMax = BM[idx]; save_ui_config(); } }
+          ROW_NEXT(bh2)
+        }
+        { ROW_BAND(48.0f)   // over how many lines
+            const char* brl[2] = { tr("1 line", "1 ligne"), tr("2 lines", "2 lignes") };
+            int bri = (ui_config().buffRows <= 1) ? 0 : 1;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff Rows", "Lignes de buffs"), brl[bri])) {
+                bri = wrap(bri + d, 2); ui_config().buffRows = bri + 1; save_ui_config(); }
+            ROW_NEXT(48.0f)
+        }
+        draw_buff_band(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);   // the ORDER band (shared with the redesigned page)
         cat_fold_end(dev, ry, cTop_, pcFull_[4], aS4_);
     }   // end Buffs
     ry += snap(16.0f);                                 // air between this section and the next title bar
@@ -1064,5 +1072,146 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     #undef ROW_BAND
     #undef ROW_NEXT
 }
+
+
+// ======== THE NEW PARTY / ALLIANCE PAGE (the config redesign, milestone 3, 2026-11-26) ========
+// The same sections as the old page, in the same order ; every row on the engine (a dependency greys with its reason :
+// a round gauge has no bar height, no badge has no badge size). The buff ORDER band is the old editor, unchanged
+// (draw_buff_band) -- it is a drag-and-drop editor, not a row, and is migrated on its own.
+#define F_(name) [](UiConfig& c) -> void* { return &c.name; }
+static const char* const G_GS_EN[8] = { "Vial", "Bars", "Segments", "Minimal", "Sphere", "Ring", "Crystal", "Text" };
+static const char* const G_GS_FR[8] = { "Fiole", "Barres", "Segments", "Minimal", "Sph\xC3\xA8re", "Anneau", "Cristal", "Texte" };
+static const char* const G_JB_EN[4] = { "Off", "Main job", "Main + Sub", "Icons" }, * const G_JB_FR[4] = { "Aucun", "Job principal", "Principal + Sub", "Ic\xC3\xB4nes" };
+static const char* gw_round0(const UiConfig& c) { return (c.gaugeStyle[0] >= 4 && c.gaugeStyle[0] <= 6) ? tr("inactive : a round gauge", "inactif : jauge ronde") : nullptr; }
+static const char* gw_round1(const UiConfig& c) { return (c.gaugeStyle[1] >= 4 && c.gaugeStyle[1] <= 6) ? tr("inactive : a round gauge", "inactif : jauge ronde") : nullptr; }
+static const char* gw_badge0(const UiConfig& c) { return c.jobBadge[0] ? nullptr : tr("inactive : no job badge", "inactif : pas de badge"); }
+static const char* gw_badge1(const UiConfig& c) { return c.jobBadge[1] ? nullptr : tr("inactive : no job badge", "inactif : pas de badge"); }
+
+static const OptDef G_PARTY_FRAME_X[] = {   // the party box is the MASTER frame : one more row, the floating Cost box's own border
+    { "Cost box border", "Bordure de la bo\xC3\xAEte co\xC3\xBBt", OK_BTOGGLE, OL_ADV, F_(borderCost), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef G_PARTY[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(partyShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(box[0].scale), 1.0f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Gauge style", "Style de jauge", OK_SELECT, OL_SIMPLE, F_(gaugeStyle[0]), 0, 0, G_GS_EN, G_GS_FR, 8, nullptr, 0 },
+    { "Low HP blink", "Clignote si PV bas", OK_BTOGGLE, OL_SIMPLE, F_(animHP), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "TP ready pulse", "Pulse quand TP pr\xC3\xAAt", OK_BTOGGLE, OL_SIMPLE, F_(animTP), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Bar height", "Hauteur des barres", OK_PCT, OL_SIMPLE, F_(barHeight[0]), 0.8f, 1.8f, nullptr, nullptr, 0, gw_round0, 0 },
+    { "Bar width", "Largeur des barres", OK_PCT, OL_SIMPLE, F_(barWidth[0]), 0.7f, 1.6f, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef G_PARTY_ROWS[] = {
+    { "Job badge", "Badge de job", OK_SELECT, OL_ADV, F_(jobBadge[0]), 0, 0, G_JB_EN, G_JB_FR, 4, nullptr, 0 },
+    { "Badge size", "Taille du badge", OK_PCT, OL_ADV, F_(badgeScale[0]), 0.6f, 1.8f, nullptr, nullptr, 0, gw_badge0, 0 },
+    { "Casts on the row", "Sorts sur la ligne", OK_BTOGGLE, OL_ADV, F_(cast[0]), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Distance on the row", "Distance sur la ligne", OK_BTOGGLE, OL_ADV, F_(dist[0]), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Cursor size", "Taille du curseur", OK_PCT, OL_ADV, F_(cursorScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef G_ALLY[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(allyShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(box[1].scale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef G_ALLY_ROWS[] = {
+    { "Gauge style", "Style de jauge", OK_SELECT, OL_ADV, F_(gaugeStyle[1]), 0, 0, G_GS_EN, G_GS_FR, 8, nullptr, 0 },
+    { "Bar height", "Hauteur des barres", OK_PCT, OL_ADV, F_(barHeight[1]), 0.8f, 1.8f, nullptr, nullptr, 0, gw_round1, 0 },
+    { "Bar width", "Largeur des barres", OK_PCT, OL_ADV, F_(barWidth[1]), 0.7f, 1.6f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Job badge", "Badge de job", OK_SELECT, OL_ADV, F_(jobBadge[1]), 0, 0, G_JB_EN, G_JB_FR, 4, nullptr, 0 },
+    { "Badge size", "Taille du badge", OK_PCT, OL_ADV, F_(badgeScale[1]), 0.6f, 1.8f, nullptr, nullptr, 0, gw_badge1, 0 },
+    { "Casts on the row", "Sorts sur la ligne", OK_BTOGGLE, OL_ADV, F_(cast[1]), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Distance on the row", "Distance sur la ligne", OK_BTOGGLE, OL_ADV, F_(dist[1]), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef G_BUFFS[] = {
+    { "Buff size", "Taille des buffs", OK_PCT, OL_ADV, F_(buffScale), 0.4f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+};
+#undef F_
+#define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+void ConfigPage::draw_party_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                               float& ry, int& ri, float e,
+                               float bandX, float bandW, float coX, float ctrlW,
+                               float hdrX, float hdrW) {
+    Kit K;
+    if (!v2_kit(K, mo, click)) { draw_party_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    g_fade = e;
+    UiConfig& c = ui_config();
+    const bool adv = c.cfgAdv != 0;
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    ry += K.px(6.0f);
+    if (adv) {   // the MASTER frame : the theme every box that "follows the Party" takes
+        const FrameRefs fr = { nullptr, nullptr, &c.skinBoxAlpha, nullptr, nullptr, &c.skinTheme, &c.skinHue, &c.skinLum, &c.border[0] };
+        if (v2_section(K, ctrl_uid_i(base, 1), 19, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr) + cfg_count_modified(G_PARTY_FRAME_X, 1, true))) {
+            cfg_frame_rows(K, ctrl_uid_i(base, 2), x, ry, w, fr);
+            v2_rows(K, ctrl_uid_i(base, 3), G_PARTY_FRAME_X, 1, x, ry, w);
+        }
+    }
+    if (v2_section(K, ctrl_uid_i(base, 4), 1, "Party", "Groupe", x, ry, w, cfg_count_modified(G_PARTY, NOPT(G_PARTY), adv)))
+        v2_rows(K, ctrl_uid_i(base, 5), G_PARTY, NOPT(G_PARTY), x, ry, w);
+    if (adv) {
+        if (v2_section(K, ctrl_uid_i(base, 6), 17, "Party rows", "Lignes du groupe", x, ry, w, cfg_count_modified(G_PARTY_ROWS, NOPT(G_PARTY_ROWS), true))) {
+            cfg_rows(K, ctrl_uid_i(base, 7), G_PARTY_ROWS, NOPT(G_PARTY_ROWS), x, ry, w, true);
+            {   // the cursor's look : the hand, or one of the client's pointers (a list read at run time)
+                int cs = c.cursorStyle; if (cs < 0 || cs >= cursor_style_count()) cs = 0;
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 8), x, ry, w, tr("Cursor style", "Style du curseur"), cursor_style_name(cs), nullptr, &c.cursorStyle, 4)) {
+                    c.cursorStyle = wrap(cs + d, cursor_style_count()); save_ui_config(); }
+            }
+            {   // the distance colours : which zone, then its colour (the alliance's distance uses them too)
+                const char* noDist = (c.dist[0] || c.dist[1]) ? nullptr : tr("inactive : no distance shown", "inactif : aucune distance affich\xC3\xA9""e");
+                unsigned* dcol[3] = { &c.distColClose, &c.distColNormal, &c.distColFar };
+                const char* zn[3] = { tr("Close", "Proche"), tr("Normal", "Normal"), tr("Far", "Loin") };
+                int z = (pcDistPick_ < 0 || pcDistPick_ > 2) ? 0 : pcDistPick_;
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 9), x, ry, w, tr("Distance colour", "Couleur de distance"), zn[z], noDist, dcol[z], 4)) pcDistPick_ = wrap(z + d, 3);
+                if (!noDist) cfg_color_row(K, ctrl_uid_i(base, 10), x, ry, w, dcol[z]);
+            }
+            v2_end(K, ry);
+        }
+    }
+    if (v2_section(K, ctrl_uid_i(base, 11), 7, "Alliance", "Alliance", x, ry, w, cfg_count_modified(G_ALLY, NOPT(G_ALLY), adv)))
+        v2_rows(K, ctrl_uid_i(base, 12), G_ALLY, NOPT(G_ALLY), x, ry, w);
+    if (adv) {
+        const FrameRefs fr = { nullptr, nullptr, &c.allyBoxAlpha, &c.allyAlphaOwn, &c.allyThemeCopy, &c.allyTheme, &c.allyHue, &c.allyLum, &c.border[1] };
+        if (v2_section(K, ctrl_uid_i(base, 13), 22, "Alliance frame", "Cadre de l'alliance", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 14), x, ry, w, fr); v2_end(K, ry); }
+        if (v2_section(K, ctrl_uid_i(base, 15), 18, "Alliance rows", "Lignes de l'alliance", x, ry, w, cfg_count_modified(G_ALLY_ROWS, NOPT(G_ALLY_ROWS), true)))
+            v2_rows(K, ctrl_uid_i(base, 16), G_ALLY_ROWS, NOPT(G_ALLY_ROWS), x, ry, w);
+        if (v2_section(K, ctrl_uid_i(base, 17), 23, "Buffs", "Buffs", x, ry, w, cfg_count_modified(G_BUFFS, NOPT(G_BUFFS), true))) {
+            cfg_rows(K, ctrl_uid_i(base, 18), G_BUFFS, NOPT(G_BUFFS), x, ry, w, true);
+            {   // how many : None / 16 / 20 / 24 / 32 (0 = no buff strip)
+                static const int BM[] = { 0, 16, 20, 24, 32 };
+                int idx = 0, bd = 1 << 30; for (int k = 0; k < 5; ++k) { const int dd = abs(BM[k] - c.buffMax); if (dd < bd) { bd = dd; idx = k; } }
+                char bmv[28]; if (BM[idx] == 0) lstrcpynA(bmv, tr("None", "Aucun"), sizeof(bmv)); else _snprintf(bmv, sizeof(bmv), "%d", BM[idx]);
+                bmv[27] = 0;
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 19), x, ry, w, tr("Max buffs", "Buffs max"), bmv, nullptr, &c.buffMax, 4)) { idx = wrap(idx + d, 5); c.buffMax = BM[idx]; save_ui_config(); }
+            }
+            {   // over how many lines
+                const char* brl[2] = { tr("1 line", "1 ligne"), tr("2 lines", "2 lignes") };
+                int bri = (c.buffRows <= 1) ? 0 : 1;
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 20), x, ry, w, tr("Buff lines", "Lignes de buffs"), brl[bri], c.buffMax ? nullptr : tr("inactive : no buff strip", "inactif : pas de buffs"), &c.buffRows, 4)) {
+                    bri = wrap(bri + d, 2); c.buffRows = bri + 1; save_ui_config(); }
+            }
+            g_fade = e;
+            draw_buff_band(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW);   // the ORDER : the drag-and-drop band (its own editor)
+            g_fade = e;
+            v2_end(K, ry);
+        }
+        {   // TEXT : which box, which element (Interface is set on its own page ; the alliance has no Cost box)
+            if (v2_section(K, ctrl_uid_i(base, 21), 0, "Text", "Texte", x, ry, w, 0)) {
+                const char* tb[2] = { tr("Party", "Groupe"), tr("Alliance", "Alliance") };
+                const int T = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 22), x, ry, w, tr("Box", "Bo\xC3\xAEte"), tb[T], nullptr, nullptr, 0)) cfgTarget_ = wrap(T + d, 2);
+                const int T2 = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;
+                const char* lab[TE_COUNT]; TextStyle* ts[TE_COUNT]; int idx[TE_COUNT]; int n = 0, sel = 0;
+                for (int k = 0; k < TE_COUNT; ++k) {
+                    if (k == TE_UI || (T2 == 1 && k == TE_COST)) continue;
+                    if (k == cfgTextElem_) sel = n;
+                    lab[n] = te_label_tr(k); ts[n] = &c.text[T2][k]; idx[n] = k; ++n;
+                }
+                cfg_text_rows(K, ctrl_uid_i(base, 23), x, ry, w, lab, ts, n, &sel);
+                cfgTextElem_ = idx[sel < 0 || sel >= n ? 0 : sel];
+                v2_end(K, ry);
+            }
+        }
+    } else v2_simple_note(K, x, ry);
+    g_fade = e;
+}
+#undef NOPT
 
 } // namespace aio

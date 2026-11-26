@@ -1158,14 +1158,16 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         // (draw_interface_category is NO LONGER drawn on every page -- it's now its own "Interface" sidebar entry below)
         // ===== category : PARTY / ALLIANCE (a MODULE page : shown only under the Party / Alliance module) =====
         if (section_ == 0) {
-            draw_party_config(dev, fo, mo, click, ry, ri, e,
+            if (v2_) draw_party_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_party_config(dev, fo, mo, click, ry, ri, e,
                               bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 1) {
             if (v2_) draw_target_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign's pilot page
             else draw_target_config(dev, fo, mo, click, ry, ri, e,
                                bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 2) {
-            draw_player_config(dev, fo, mo, click, ry, ri, e,
+            if (v2_) draw_player_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_player_config(dev, fo, mo, click, ry, ri, e,
                                bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 3) {
             draw_minimap_config(dev, fo, mo, click, ry, ri, e,
@@ -2184,6 +2186,34 @@ void ConfigPage::draw_profile_tab_v2(const Frame& f, u32 dev, Font* fo, const Mo
         if (chrome_keybtn(K, CTRL_ID, mx + mw - pbw - snap(24.0f), pby, pbw, pbh, tr("Reset all", "Tout r\xC3\xA9init."), 4, true) && click) { reset_ui_config(); profResetConfirm_ = false; profDirty_ = true; }
     }
     (void)fo;
+}
+
+// ======== the redesigned pages' scaffolding ========
+bool ConfigPage::v2_kit(Kit& K, const MouseState* mo, bool click) {
+    if (!s_ck_page) return false;
+    K = *s_ck_page;                                   // a copy : this page's mouse is gated to the viewport
+    K.mo = mo; K.click = click; K.clipTop = viewTop_; K.clipBot = viewBot_;
+    return true;
+}
+bool ConfigPage::v2_section(Kit& K, int uid, int slot, const char* en, const char* fr, float x, float& ry, float w, int nMod) {
+    const bool adv = ui_config().cfgAdv != 0;
+    bool open = catOpen_[slot];
+    const bool shown = cfg_section(K, uid, x, ry, w, tr(en, fr), &open, nMod, adv);   // Simple : always open, not foldable
+    if (adv) catOpen_[slot] = open;
+    if (!shown) ry += K.px(6.0f);
+    return shown;
+}
+void ConfigPage::v2_rows(Kit& K, int uid, const OptDef* d, int n, float x, float& ry, float w) {
+    cfg_rows(K, uid, d, n, x, ry, w, ui_config().cfgAdv != 0);
+    v2_end(K, ry);
+}
+void ConfigPage::v2_end(Kit& K, float& ry) { ry += K.px(18.0f); }
+void ConfigPage::v2_simple_note(Kit& K, float x, float& ry) {
+    K.fr->begin(K.dev);
+    K.fr->draw_lc(K.dev, x + K.px(18.0f), ry + K.px(14.0f), tr("Frame, text, fine sizes : Advanced, top right. Right-click a modified setting to reset it.",
+                  "Cadre, texte, tailles fines : Avanc\xC3\xA9, en haut \xC3\xA0 droite. Clic droit sur un r\xC3\xA9glage modifi\xC3\xA9 pour le r\xC3\xA9initialiser."),
+                  K.px(13.5f), fa(C_DIM), 0, 0.0f);
+    ry += K.px(40.0f);
 }
 
 // ---- Help tab (tab_ == 2 branch), lifted verbatim from draw() (byte-identical). ----

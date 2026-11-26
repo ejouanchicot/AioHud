@@ -113,6 +113,19 @@ private:
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW,
                             float hdrX, float hdrW);
+    // the redesigned pages' shared scaffolding (config_page.cpp) : the frame's kit gated to the viewport ; a section
+    // (foldable in Advanced, its open state in catOpen_[slot]) ; a table's rows ; the Simple footer note
+    bool v2_kit(struct Kit& K, const MouseState* mo, bool click);
+    bool v2_section(struct Kit& K, int uid, int slot, const char* en, const char* fr, float x, float& ry, float w, int nMod);
+    void v2_rows(struct Kit& K, int uid, const struct OptDef* d, int n, float x, float& ry, float w);
+    void v2_end(struct Kit& K, float& ry);
+    void v2_simple_note(struct Kit& K, float x, float& ry);
+    void draw_party_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                       float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_buff_band(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e,
+                        float bandX, float bandW, float coX, float ctrlW);
+    void draw_player_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                        float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
     void draw_target_v2(u32 dev, Font* fo, const MouseState* mo, bool click,   // the redesign's Target page (cfg_engine)
                         float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
     float frameL_ = 0.0f, frameM_ = 0.0f, frameR_ = 0.0f, frameTop_ = 0.0f, frameTr_ = 0.0f;   // the redesign's right frame : its left inner edge, its mullion (the settings' opening)

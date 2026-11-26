@@ -88,6 +88,12 @@ void cfg_note(Kit& K, float x, float& y, const char* text) {
     K.fr->draw_lc(K.dev, x + K.px(18.0f), y + h * 0.5f, text, K.px(13.5f), fa(C_DIM), 0, 0.0f);
     y += h;
 }
+void cfg_color_row(Kit& K, int uidBase, float x, float& y, float w, unsigned* col) {
+    const float h = color_picker_height() + K.px(12.0f);
+    if (y + h >= K.clipTop && y <= K.clipBot && color_picker(K.dev, K.fr, K.mo, ctrl_uid_i(uidBase, 0), ctrl_uid_i(uidBase, 1), x + K.px(18.0f), y + K.px(4.0f), w - K.px(36.0f), col))
+        save_ui_config();
+    y += h;
+}
 void cfg_flush(const MouseState* mo) {
     if (s_pendingSave && !(mo && mo->down)) { s_pendingSave = 0; save_ui_config(); }
 }
@@ -96,7 +102,8 @@ void cfg_flush(const MouseState* mo) {
 static void* fptr(const OptDef& o) { return o.field ? o.field(ui_config()) : nullptr; }
 static void* optp(const OptDef& o) { return o.kind == OK_GROW ? (void*)&ui_config().boxGrow[o.growBox] : fptr(o); }
 static bool shows(const OptDef& o, bool adv) { return adv || o.level == OL_SIMPLE; }
-static bool opt_modified(const OptDef& o) { return o.kind != OK_NOTE && differs(optp(o), 4, o.kind == OK_PCT); }
+static int  osz(const OptDef& o) { return o.kind == OK_BTOGGLE ? 1 : 4; }
+static bool opt_modified(const OptDef& o) { return o.kind != OK_NOTE && differs(optp(o), osz(o), o.kind == OK_PCT); }
 static int  s_growBox = 0;
 static void grow_reset(void*) { box_grow_set(s_growBox, factory().boxGrow[s_growBox]); }
 
@@ -129,6 +136,10 @@ bool cfg_rows(Kit& K, int uidBase, const OptDef* d, int n, float x, float& y, fl
         case OK_TOGGLE: {
             int* v = (int*)f;
             if (cfg_toggle_row(K, uid, x, y, w, label, *v != 0, why, f, 4)) { *v = *v ? 0 : 1; changed = true; save_ui_config(); }
+        } break;
+        case OK_BTOGGLE: {
+            bool* v = (bool*)f;
+            if (cfg_toggle_row(K, uid, x, y, w, label, *v, why, f, 1)) { *v = !*v; changed = true; save_ui_config(); }
         } break;
         case OK_PCT: case OK_INT: {
             const bool isInt = o.kind == OK_INT;
@@ -173,6 +184,7 @@ int cfg_frame_modified(const FrameRefs& r) {
     int k = 0;
     if (r.on && differs(r.on, 4, false)) ++k;
     if (r.border && differs(r.border, 4, false)) ++k;
+    if (r.borderB && differs(r.borderB, 1, false)) ++k;
     if (r.alphaOwn && differs(r.alphaOwn, 4, false)) ++k;
     if (r.alpha && !(r.alphaOwn && !*r.alphaOwn) && differs(r.alpha, 4, true)) ++k;
     if (r.themeCopy && differs(r.themeCopy, 4, false)) ++k;
@@ -187,7 +199,8 @@ void cfg_frame_rows(Kit& K, int uidBase, float x, float& y, float w, const Frame
     const bool on = !r.on || *r.on;
     if (r.on && cfg_toggle_row(K, ctrl_uid_i(uidBase, 0), x, y, w, tr("Box", "Cadre"), *r.on != 0, nullptr, r.on, 4)) { *r.on = !*r.on; save_ui_config(); }
     const char* offWhy = on ? nullptr : tr("inactive : box off", "inactif : cadre coup\xC3\xA9");
-    if (cfg_toggle_row(K, ctrl_uid_i(uidBase, 1), x, y, w, tr("Border", "Bordure"), *r.border != 0, offWhy, r.border, 4)) { *r.border = !*r.border; save_ui_config(); }
+    if (r.borderB) { if (cfg_toggle_row(K, ctrl_uid_i(uidBase, 1), x, y, w, tr("Border", "Bordure"), *r.borderB, offWhy, r.borderB, 1)) { *r.borderB = !*r.borderB; save_ui_config(); } }
+    else if (cfg_toggle_row(K, ctrl_uid_i(uidBase, 1), x, y, w, tr("Border", "Bordure"), *r.border != 0, offWhy, r.border, 4)) { *r.border = !*r.border; save_ui_config(); }
     if (r.alphaOwn) {
         if (cfg_select_row(K, ctrl_uid_i(uidBase, 2), x, y, w, tr("Transparency", "Transparence"),
                            *r.alphaOwn ? tr("Custom", "Perso") : tr("Same as Party", "Comme Party"), offWhy, r.alphaOwn, 4)) {
