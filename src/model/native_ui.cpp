@@ -1587,6 +1587,9 @@ Hook g_hkTxAsc   = { 0, PRO_ASCII,    8, 0, 0, {0}, false, "text capture : ascii
 Hook g_hkTxAscR  = { 0, PRO_ASCIIR,   6, 0, 0, {0}, false, "text capture : right-aligned ascii" };
 Hook g_hkTxAscC  = { 0, PRO_ASCIIC,   7, 0, 0, {0}, false, "text capture : clipped ascii" };
 Hook g_hkSprite  = { 0, PRO_SPRITE,   7, 0, 0, {0}, false, "text capture : entry images" };
+const unsigned char PRO_PLATE[8]     = { 0x66,0x83,0xB9,0xB2,0x00,0x00,0x00,0x00 };   // cmp word [ecx+0xB2], 0
+Hook g_hkPlate1 = { 0, PRO_PLATE,    8, 0, 0, {0}, false, "name plates : line 1 (icons + name)" };
+Hook g_hkPlate2 = { 0, PRO_PLATE,    8, 0, 0, {0}, false, "name plates : line 2 (the badge)" };
 const unsigned char PRO_SPRITES[5]   = { 0x83,0xEC,0x0C,0x53,0x55 };   // 5 : a relay of that length was left on it by a 2026-11-25 dev load (kept for life, R1)
 Hook g_hkSpriteS = { 0, PRO_SPRITES,  5, 0, 0, {0}, false, "text capture : scaled images (the map)" };
 struct CapRun { short x, y; u32 col; char s[60]; };
@@ -1606,6 +1609,65 @@ inline u32 cap_park_y(int x, u32 y) {
     const int uy = (int)y + HIDE_DY;
     return (x >= g_capR[0] - 24 && x <= g_capR[2] + 24 && uy >= g_capR[1] - 24 && uy <= g_capR[3] + 24) ? y + (u32)HIDE_DY : y;
 }
+// ---- NAME PLATES (nameplate-re-2026-11-26) : the per-actor plate draw FUN_05410510 calls, once every filter of its own
+// passed (the /names command included), FUN_05410880 (line 1 : thiscall actor, (pos, text, size, colour, tint), ret 0x14)
+// and FUN_054108B0 (line 2 : (pos, text, size), ret 0xC). Both are detoured : what the client is about to draw is
+// written to a buffer (one frame : the poller takes it and starts a new one) ; the client still draws (step 1) ----
+struct PlateW { NativePlate p[160]; int n; };
+PlateW g_plW; NativePlates g_plates;
+volatile bool g_platesTake = false;   // AioHUD drew the last frame's plates : the client draws none (its line draws return at once)
+bool g_platesWant = false; bool g_platesBoth = false; u32 g_scrBlk = 0;   // the screen / camera block's global (*it : +0x94 view, +0x154 projection)
+typedef u32 (__fastcall* Plate1Fn)(u32 actor, u32 edx, u32 pos, u32 text, u32 size, u32 colour, u32 tint);
+typedef u32 (__fastcall* Plate2Fn)(u32 actor, u32 edx, u32 pos, u32 text, u32 size);
+static NativePlate* plate_slot(u32 actor) {
+    for (int i = g_plW.n - 1; i >= 0 && i >= g_plW.n - 2; --i) if (g_plW.p[i].actor == actor) return &g_plW.p[i];   // line 2 follows its line 1
+    if (g_plW.n >= 160) return 0;
+    NativePlate& P = g_plW.p[g_plW.n++]; memset(&P, 0, sizeof(P)); P.actor = actor; return &P;
+}
+u32 __fastcall hk_plate1_body(u32 actor, u32 edx, u32 pos, u32 text, u32 size, u32 colour, u32 tint) {
+    if (NativePlate* P = plate_slot(actor)) {
+        __try { memcpy(P->pos, (const void*)pos, 16); memcpy(&P->size, &size, 4); P->colour = colour; P->tint = tint;
+                strncpy((char*)P->text, (const char*)text, sizeof(P->text) - 1); P->entity = *(const u32*)(actor + 0x70); }
+        __except (EXCEPTION_EXECUTE_HANDLER) {}
+    }
+    if (g_platesTake) return 0;            // ours : the client's line 1 is not drawn
+    return ((Plate1Fn)g_hkPlate1.tramp)(actor, edx, pos, text, size, colour, tint);
+}
+u32 __fastcall hk_plate1(u32 actor, u32 edx, u32 pos, u32 text, u32 size, u32 colour, u32 tint) {   // relay_enter / relay_leave (R1)
+    relay_enter(); const auto r = hk_plate1_body(actor, edx, pos, text, size, colour, tint); relay_leave(); return r;
+}
+u32 __fastcall hk_plate2_body(u32 actor, u32 edx, u32 pos, u32 text, u32 size) {
+    if (NativePlate* P = plate_slot(actor)) { __try { strncpy((char*)P->line2, (const char*)text, sizeof(P->line2) - 1); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
+    if (g_platesTake) return 0;
+    return ((Plate2Fn)g_hkPlate2.tramp)(actor, edx, pos, text, size);
+}
+u32 __fastcall hk_plate2(u32 actor, u32 edx, u32 pos, u32 text, u32 size) {   // relay_enter / relay_leave (R1)
+    relay_enter(); const auto r = hk_plate2_body(actor, edx, pos, text, size); relay_leave(); return r;
+}
+// installed with the text capture (its retry) ; one frame published per poll
+void plates_ensure() {
+    static int tries = 0; static DWORD next = 0;
+    if ((g_hkPlate1.on && g_hkPlate2.on) || tries >= 20 || (int)(GetTickCount() - next) < 0) return;
+    ++tries; next = GetTickCount() + 5000;
+    const u32 a1 = aob_masked("66 83 B9 B2 00 00 00 00 75 21 8B 44 24 14 8B 4C 24 10");   // unique Nov + June
+    const u32 a2 = aob_masked("66 83 B9 B2 00 00 00 00 75 17 8B 44 24 0C 8B 4C 24 08");
+    if (a1 && !g_hkPlate1.on) { g_hkPlate1.at = a1; g_hkPlate1.dst = (void*)&hk_plate1; hook_on(g_hkPlate1); }
+    if (a2 && !g_hkPlate2.on) { g_hkPlate2.at = a2; g_hkPlate2.dst = (void*)&hk_plate2; hook_on(g_hkPlate2); }
+    windower::debug::log("NATIVEUI name plates : line 1 %s, line 2 %s (try %d)%s", g_hkPlate1.on ? "hooked" : "NOT hooked", g_hkPlate2.on ? "hooked" : "NOT hooked", tries,
+                         (!g_hkPlate1.on && tries == 20) ? " -- giving up : the client's plates stay, AioHUD draws none" : "");
+}
+void plates_poll() {
+    plates_ensure();
+    g_platesTake = false;                  // re-armed by the UI's draw of this frame (a draw that stops gives the plates back)
+    { static int tries = 0; static DWORD next = 0;   // the camera block (nameplate-re s.7) : bounded retry, said
+      if (!g_scrBlk && tries < 20 && (int)(GetTickCount() - next) >= 0) { ++tries; next = GetTickCount() + 5000; const u32 a = aob_masked("A1 ?? ?? ?? ?? 66 8B 40 18");
+          if (a) safe_read(a + 1, &g_scrBlk); if (tries == 1 || g_scrBlk || tries == 20) windower::debug::log("NATIVEUI name plates : camera block %s (try %d)", g_scrBlk ? "found" : "NOT found", tries); } }
+    u32 blk = 0; g_plates.camOk = g_scrBlk && safe_read(g_scrBlk, &blk) && valid_ptr(blk) && rdblk(blk + 0x94, g_plates.view, 64) && rdblk(blk + 0x154, g_plates.proj, 64);
+    g_plates.ok = g_hkPlate1.on; g_plates.wanted = g_platesWant && g_plates.ok && g_plates.camOk; g_plates.both = g_platesBoth;
+    g_plates.n = g_plW.n; if (g_plW.n) memcpy(g_plates.p, g_plW.p, sizeof(NativePlate) * (size_t)g_plW.n);
+    g_plW.n = 0;
+}
+
 // DRAWPROBE (dev, 2026-11-26) : who draws the names / icons over the characters -- each caller of a text or sprite draw
 // made OUTSIDE any window draw, logged once with a sample (kind, x, y, colour, text). Off unless //aio drawprobe on.
 volatile int g_drawProbe = 0; u32 g_dpRet = 0;
@@ -4963,6 +5025,15 @@ const NativeTopBar& native_topbar() { return g_tb; }
 const NativeMacro& native_macro() { return g_mc; }
 const NativeMacroBooks& native_macro_books() { return g_mbk; }
 unsigned native_manager() { return manager(); }
+const NativePlates& native_plates() { return g_plates; }
+void native_plates_drawn() { g_platesTake = !g_platesBoth; }   // comparison : the client's stay
+void native_plates_want(int on) { g_platesWant = on != 0; g_platesBoth = on == 2; windower::debug::log("NATIVEUI name plates : AioHUD's %s", on == 2 ? "ON + the client's (comparison : ours drawn under theirs)" : on ? "ON (the client's skipped)" : "off (the client's)"); }
+void native_plates_probe() {
+    windower::debug::log("PLATES %d this frame (hooked %d)", g_plates.n, g_plates.ok ? 1 : 0);
+    for (int i = 0; i < g_plates.n && i < 24; ++i) { const NativePlate& P = g_plates.p[i]; char t[80]; int o = 0;
+        for (int j = 0; P.text[j] && o < 76; ++j) o += (P.text[j] >= 0x20 && P.text[j] < 0x7F) ? (t[o] = (char)P.text[j], 1) : _snprintf(t + o, 80 - o, "<%02X>", P.text[j]);
+        t[o < 80 ? o : 79] = 0;
+        windower::debug::log("PLATES %2d actor %08X pos %d %d %d w%d/100 size %d/1000 col %08X tint %08X line2 %02X '%s'", i, P.actor, (int)P.pos[0], (int)P.pos[1], (int)P.pos[2], (int)(P.pos[3] * 100.0f), (int)(P.size * 1000.0f), P.colour, P.tint, P.line2[0], t); } }
 void native_draw_probe(int on) { g_drawProbe = on; windower::debug::log("DRAWPROBE %s", on ? "on : each caller of a text / sprite draw outside a window, once" : "off"); }
 bool native_any_hover(const char* name, int entry) { const char* one[2] = { name, 0 }; return entry_hover(one, entry); }
 bool native_ui_window_open(const char* name) { const u32 m = manager(); return m && win_named(m, name) != 0; }
@@ -5508,7 +5579,9 @@ bool textlist_goto(const char* name, int row, bool pick) {
     return pick ? menu_event(T.obj, 5) : true;
 }
 bool native_textlist_hover(const char* name, int row) { return textlist_goto(name, row, false); }
-// an LS item's colour from its extdata (+6 low R, high G ; +7 low B ; 0..15), as the client draws it (x13 + 0x38)
+// an LS item's colour from its extdata (+6 low R, high G ; +7 low B ; 0..15), as the client draws it (x13 + 0x38).
+// Checked 2026-11-26 against the client's own pearl : Inertia is BLUE (45 5F 86) -- the entity's plate tint (+0x1D4) holds
+// the same colour as 0x00BBGGRR (86 5F 45), the plates swap it
 unsigned ls_rgb(const unsigned char* ext) {
     const unsigned r = ext[6] & 15, g = ext[6] >> 4, b = ext[7] & 15;
     return 0xFF000000u | ((r * 13 + 0x38) << 16) | ((g * 13 + 0x38) << 8) | (b * 13 + 0x38);
@@ -6005,6 +6078,7 @@ void native_ui_tick(bool inWorld) {
       cfg_filter_poll(wanted && (c.nuHide & NU_NPC), manager(), focus);                  // Config's filter lists
       map_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus);
       friends_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus);
+      plates_poll();                                                                      // the name plates (one frame)
       olstat_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus); }                            // the map (its whole-screen draw)
     net_poll(wanted && (c.nuHide & NU_NET));                                              // the connection box (netstat) : AioHUD's own
     buffwin_poll(wanted && (c.nuHide & NU_BUFF), manager());   // your buff icons : AioHUD's own, where the client puts them
@@ -6116,6 +6190,9 @@ void native_ui_shutdown() {
     // the d_msg text files kept for the session (Job Points, abilities) : nothing freed them at the unload (2026-11-23)
     for (Dmsg& D : g_dm) { if (D.buf) dat_free_file(D.buf); D.buf = 0; D.ok = false; D.tries = 0; }
     text_capture_off();       // the text capture : ALWAYS off at an unload (its relays back to the original)
+    hook_off(g_hkPlate1); hook_off(g_hkPlate2); g_platesTake = false;   // the name plates : ALWAYS off at an unload -- their relays
+                              // back to the client's code (2026-11-26 : forgotten here, the next name drawn jumped into the
+                              // unloaded DLL and the client crashed)
     hook_off(g_hkEvent);      // the trade's lines : ALWAYS off at an unload
     if (!g_anyApplied && !g_hkMove.on) { relay_drain(); return; }
     // records back, open windows back by their delta, undo file deleted. Its own guard : before, a fault here

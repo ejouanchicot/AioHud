@@ -139,7 +139,15 @@ struct NativeMacroBooks {
 bool native_ui_window_open(const char* name);   // native_ui.cpp : a client window of that name is open
 bool native_any_hover(const char* name, int entry);   // native_ui.cpp (dev walk) : that window's hand on that entry
 unsigned native_manager();
-void native_draw_probe(int on);   // dev (//aio drawprobe) : log each caller of the text / sprite draws OUTSIDE a window, once                       // native_ui.cpp : the menu manager (0 unresolved)
+void native_draw_probe(int on);
+// the NAME PLATES over the characters (docs/notes/nameplate-re-2026-11-26.md) : what the client draws, captured at its two
+// line draws (after every filter of its own, /names included) -- one frame's worth
+struct NativePlate { unsigned actor, entity; float pos[4]; float size; unsigned colour, tint; unsigned char text[64], line2[8]; };
+struct NativePlates { bool ok, wanted, camOk, both; int n; NativePlate p[160]; float view[16], proj[16]; };   // wanted : AioHUD draws them (dev toggle for now)
+const NativePlates& native_plates();
+void native_plates_drawn();          // the UI drew this frame's plates : the client's are skipped from the next frame
+void native_plates_want(int on);     // dev (//aio plates on|off|both) : 2 = both, the client's kept AND ours drawn under them (comparison)
+void native_plates_probe();   // dev (//aio plates) : log this frame's plates   // dev (//aio drawprobe) : log each caller of the text / sprite draws OUTSIDE a window, once                       // native_ui.cpp : the menu manager (0 unresolved)
 unsigned native_win_named(unsigned mgr, const char* want);   // ... an open window by name (0 none)
 const NativeMacroBooks& native_macro_books();
 

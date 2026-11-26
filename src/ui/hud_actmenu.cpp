@@ -4186,6 +4186,8 @@ void comment_draw(const Frame& f) {
 
 // ======== the main menu's LINKSHELL : the linkshell items carried (link5), top left -- the client's icon (LS colour, slot digit), item, LS name ========
 namespace { Block g_lsB; unsigned g_lsMs = 0; }
+static u32 plate_icons(u32 dev, unsigned long long& have);   // below, with the map's textures (the name plates' HD icons)
+static u32 pearl_hd_tex(u32 dev, u32 rgb);                  // ... and the HD pearl in an LS colour
 void linkshell_draw(const Frame& f) {
     const UiConfig& C = ui_config();
     if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_lsB.vis = 0.0f; g_lsB.wasOpen = false; return; }
@@ -4231,9 +4233,20 @@ void linkshell_draw(const Frame& f) {
     for (int i = 0; i < nRows; ++i) {
         const NativeLsRow& r = last.row[i]; const float y = snap(ry + (float)i * rowH);
         const bool off = r.col == 0x80404040u;
-        if (r.itemId) { const u32 tex = list_icon(f, 3, r.itemId); const float a = A * (off ? 0.5f : 1.0f);
+        if (r.itemId) { const float a = A * (off ? 0.5f : 1.0f);
             const u32 tint = r.rgb ? (r.rgb | 0xFF000000u) : 0xFFFFFFFFu;
-            if (tex) { dTexQuadState(dev, tex); tquad(dev, snap(Lx + 4.0f * S), snap(y + 2.0f * S), iz, iz, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(tint, a), with_alpha(tint, a)); dSetTex(dev, 0, 0); cs(dev); } }
+            // in the LS's colour (2026-11-26 : Inertia's brown came out navy -- the item icon is ALREADY coloured, a tint
+            // MULTIPLIED over it gave blue x brown) : the Linkpearl = the HD neutral pearl (the name plates'), tinted ; the
+            // shell / the sack = the game's icon recoloured by its luminance (pearl_tex) ; the multiply only as a last resort
+            const u32 phd = r.itemId == 514 ? pearl_hd_tex(dev, tint) : 0;
+            const float ix = snap(Lx + 4.0f * S), iy = snap(y + 2.0f * S);
+            if (phd) {
+                dTexQuadState(dev, phd, true, true); tquad(dev, ix, iy, iz, iz, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a)); dSetTex(dev, 0, 0); cs(dev);
+            } else if (const u32 pt = pearl_tex(dev, (int)r.itemId, tint)) {
+                dTexQuadState(dev, pt); tquad(dev, ix, iy, iz, iz, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, a), with_alpha(0xFFFFFFFFu, a)); dSetTex(dev, 0, 0); cs(dev);
+            } else if (const u32 tex = list_icon(f, 3, r.itemId)) {
+                dTexQuadState(dev, tex); tquad(dev, ix, iy, iz, iz, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(tint, a), with_alpha(tint, a)); dSetTex(dev, 0, 0); cs(dev);
+            } }
     }
     {   // the mouse
         const MouseState* ms = f.mouse; int mrow = -1;
@@ -8656,10 +8669,62 @@ namespace {
 u32 g_mapTex = 0; int g_mapTexW = 512, g_mapTexH = 512; unsigned g_mapTexId = 0; int g_mapTries = 0; unsigned g_mapNext = 0; Block g_mapB; unsigned g_mapMs = 0;
 NativeMap g_mapLast; float g_mapA = 0.0f;                   // the map last read + its shown alpha (the cartouche, drawn later)
 u32 g_mkAtlas = 0; TexRetry g_mkAtlasR; char g_mkPath[260] = "";
-u32 g_stIco = 0; TexRetry g_stIcoR;   // the PlayOnline status icons, HD (assets/status_icons.raw, scripts/gen_status_icons.py) : 4 x 4 cells of 128   // the minimap's marker atlas, a copy of our own (device-owned)
+u32 g_stIco = 0; TexRetry g_stIcoR;
+u32 g_plIco = 0; TexRetry g_plIcoR; unsigned long long g_plHave = 0; bool g_plHaveRead = false;
+struct PearlHd { u32 rgb, tex; unsigned char tries; unsigned nextMs; };   // the HD pearl, recoloured per LS colour (8 kept)
+PearlHd g_phd[8]; int g_phdNext = 0; unsigned char g_phdSrc[128 * 128 * 4]; int g_phdSrcOk = 0;   // its source (assets/pearl_hd.raw) : 0 unread, 1 ok, -n failed reads   // the name plates' icons, HD (assets/plate_icons.raw)   // the PlayOnline status icons, HD (assets/status_icons.raw, scripts/gen_status_icons.py) : 4 x 4 cells of 128   // the minimap's marker atlas, a copy of our own (device-owned)
 }
 bool map_screen_up() { return g_mapA > 0.0f; }
-void map_screen_forget() { g_mapTex = 0; g_mapTexId = 0; g_mapTries = 0; g_mapNext = 0; g_mkAtlas = 0; g_mkAtlasR = TexRetry{}; g_stIco = 0; g_stIcoR = TexRetry{}; }
+void map_screen_forget() { g_mapTex = 0; g_mapTexId = 0; g_mapTries = 0; g_mapNext = 0; g_mkAtlas = 0; g_mkAtlasR = TexRetry{}; g_stIco = 0; g_stIcoR = TexRetry{}; g_plIco = 0; g_plIcoR = TexRetry{};
+                           for (PearlHd& P : g_phd) P = PearlHd(); }
+// the linkshell pearl in an LS's colour (0xRRGGBB), HD : its LIGHTING MAP (a smooth dome, soft top-left light, a broad soft
+// sheen -- scripts/gen_plate_icons.py) coloured : body light x the colour, then towards white by the sheen (a tint
+// multiplied over a painted pearl dulled it, its own light made a hard white dot -- 2026-11-26). 0 when the source is missing (the caller keeps its fallback) ; a failed read is retried, bounded
+static u32 pearl_hd_tex(u32 dev, u32 rgb) {
+    if (!dev) return 0;
+    rgb &= 0x00FFFFFFu;
+    for (PearlHd& P : g_phd) if (P.tex && P.rgb == rgb) return P.tex;
+    if (g_phdSrcOk <= 0 && g_phdSrcOk > -8) {
+        bool ok = false; if (FILE* fp = fopen(plugin_path_r("assets\\pearl_hd.raw"), "rb")) { ok = fread(g_phdSrc, 1, sizeof(g_phdSrc), fp) == sizeof(g_phdSrc); fclose(fp); }
+        g_phdSrcOk = ok ? 1 : g_phdSrcOk - 1;
+        if (!ok && g_phdSrcOk == -8) windower::debug::log("ACTMENU the HD pearl (assets\\pearl_hd.raw) could not be read -- the drawn pearl stays");
+    }
+    if (g_phdSrcOk != 1) return 0;
+    PearlHd& P = g_phd[g_phdNext]; g_phdNext = (g_phdNext + 1) & 7;
+    if (P.tex) release_texture(P.tex);
+    P = PearlHd(); P.rgb = rgb;
+    static u32 px[128 * 128];
+    // as the CLIENT tints its own pearl (a multiply by the LS colour, measured 2026-11-26), a hair toward pearl white (12 %)
+    // so a pure LS green is not a fluo ball ; the lighting map carries the client's look (sky cap, dark belt, ground bounce)
+    float cr = (float)((rgb >> 16) & 255), cg = (float)((rgb >> 8) & 255), cb = (float)(rgb & 255);
+    { const float lum = cr * 0.299f + cg * 0.587f + cb * 0.114f, w = lum * 0.4f + 255.0f * 0.6f, p = 0.12f;
+      cr = cr * (1.0f - p) + w * p; cg = cg * (1.0f - p) + w * p; cb = cb * (1.0f - p) + w * p; }
+    for (int i = 0; i < 128 * 128; ++i) {
+        const unsigned char* q = g_phdSrc + i * 4;   // B G R A : R the body light (x1.25), G the sheen (scripts/gen_plate_icons.py)
+        if (!q[3]) { px[i] = 0; continue; }
+        const float body = (float)q[2] / 255.0f * 1.3f * 1.2f, sh = (float)q[1] / 255.0f;   // x1.2 : the client's is that bright
+        auto ch = [&](float c) { float v = c * body; if (v > 255.0f) v = 255.0f; v = v + (255.0f - v) * sh; return (u32)(v > 255.0f ? 255.0f : v); };
+        px[i] = ((u32)q[3] << 24) | (ch(cr) << 16) | (ch(cg) << 8) | ch(cb);
+    }
+    P.tex = make_texture_argb_mip(dev, 128, 128, px);
+    return P.tex;
+}
+// the name plates' HD icons (scripts/gen_plate_icons.py) : 8 x 8 cells of 64 px, a glyph's cell = its code - 0x8E. Which cells
+// hold an icon : read ONCE from the file (an empty cell = not redrawn yet -> the plate's fallback) ; a file that cannot
+// be read leaves the mask empty and is tried again with the texture's own retry
+static u32 plate_icons(u32 dev, unsigned long long& have) {
+    const char* path = plugin_path_r("assets\\plate_icons.raw");
+    if (!g_plHaveRead) {
+        if (FILE* fp = fopen(path, "rb")) {
+            static unsigned char row[512 * 4]; unsigned long long m = 0; bool ok = true;
+            for (int y = 0; y < 512 && ok; ++y) { ok = fread(row, 1, sizeof(row), fp) == sizeof(row);
+                for (int x = 0; ok && x < 512; x += 4) if (row[x * 4 + 3] > 32) m |= 1ull << ((y / 64) * 8 + x / 64); }
+            fclose(fp); if (ok) { g_plHave = m; g_plHaveRead = true; }
+        }
+    }
+    have = g_plHave;
+    return g_plHave ? ensure_raw_tex_mip(dev, g_plIco, g_plIcoR, path, 512, 512) : 0;
+}
 // cells : 0 online, 1 away, 2 invisible (Online Status) ; 3 online, 4 away, 5 status 3, 6 status 4, 7 unknown, 8 unread (the friend list)
 static u32 status_icons(u32 dev) { return ensure_raw_tex_mip(dev, g_stIco, g_stIcoR, plugin_path_r("assets\\status_icons.raw"), 512, 512); }
 void map_screen_draw(const Frame& f) {
@@ -9027,6 +9092,86 @@ void map_list_draw(const Frame& f) {
         g_mlB.hoverRow = row;
         if (f.mouse && f.mouse->clicked && row >= 1 && row <= n) native_map_list_pick(row);
     } else g_mlB.hoverRow = 0;
+}
+
+// ======== the NAME PLATES over the characters (nameplate-re-2026-11-26) : what the client was about to draw (its own
+// filters, colours, icons, distance size) -- projected with its own camera, drawn AioHUD's way : the name in the client's
+// colour (brightened), the icons before it (Away / the linkshell pearl in its colour / Bazaar), the Master Level stars
+// above. Under the widgets. While drawn, the client's are skipped (native_plates_drawn) ========
+static void star5(u32 dev, float cx, float cy, float r, u32 col) {
+    float xy[20];
+    for (int i = 0; i < 10; ++i) { const float a = -1.5707963f + (float)i * 0.6283185f, rr = (i & 1) ? r * 0.45f : r; xy[2 * i] = cx + cosf(a) * rr; xy[2 * i + 1] = cy + sinf(a) * rr; }
+    for (int i = 0; i < 10; ++i) { const int j = (i + 1) % 10; fill_tri(dev, cx, cy, xy[2 * i], xy[2 * i + 1], xy[2 * j], xy[2 * j + 1], col); }   // a fan from the centre (concave)
+}
+void plates_draw(const Frame& f) {
+    const NativePlates& P = native_plates();
+    if (!P.wanted || !f.font || f.screenW <= 0.0f || f.screenH <= 0.0f) return;
+    const u32 dev = f.dev; Font* fo = f.font; const float S = f.screenH / 1000.0f;
+    const u32 ico = status_icons(dev);
+    unsigned long long have = 0; const u32 pli = plate_icons(dev, have);
+    auto pcell = [&](unsigned char g, float cx, float cy, float z, u32 col) -> bool {   // a glyph's HD icon, when it was redrawn
+        const int c = (int)g - 0x8E; if (!pli || c < 0 || c >= 64 || !((have >> c) & 1)) return false;
+        const float u0 = (float)(c % 8) * 0.125f, v0 = (float)(c / 8) * 0.125f;
+        dTexQuadState(dev, pli, true, true); tquad(dev, snap(cx - z * 0.5f), snap(cy - z * 0.5f), z, z, u0, u0 + 0.125f, v0, v0 + 0.125f, col, col); dSetTex(dev, 0, 0); cs(dev);
+        return true; };
+    auto mul = [](const float* v, const float* M, float* o) { for (int c = 0; c < 4; ++c) o[c] = v[0] * M[c] + v[1] * M[4 + c] + v[2] * M[8 + c] + v[3] * M[12 + c]; };
+    for (int i = 0; i < P.n; ++i) {
+        const NativePlate& Q = P.p[i];
+        float w[4] = { Q.pos[0], Q.pos[1], Q.pos[2], 1.0f }, a[4], c[4];
+        mul(w, P.view, a); mul(a, P.proj, c);
+        if (c[3] <= 0.01f) continue;
+        float x = (c[0] / c[3] * 0.5f + 0.5f) * f.screenW, y = (0.5f - c[1] / c[3] * 0.5f) * f.screenH;
+        if (P.both) y += (12.0f + 14.0f * (Q.size > 1.0f ? 1.0f : Q.size)) * S;   // comparison : ours just under the client's
+        if (x < -200.0f || x > f.screenW + 200.0f || y < -100.0f || y > f.screenH + 100.0f) continue;
+        const float sz = Q.size > 1.0f ? 1.0f : (Q.size < 0.05f ? 0.05f : Q.size);
+        const float A = sz < 0.3f ? sz / 0.3f : 1.0f;                     // the far ones fade as they shrink
+        const float tz = snap((10.0f + 9.0f * sz) * S);
+        // the text : the leading glyph codes (>= 0x80) are the icons, then a space, then the name
+        unsigned char icons[6]; int ni = 0; int k = 0;
+        while (Q.text[k] >= 0x80 && ni < 6) icons[ni++] = Q.text[k++];
+        while (Q.text[k] == ' ') ++k;
+        char name[40]; int o = 0; for (; Q.text[k] && o < 39; ++k) if (Q.text[k] >= 0x20 && Q.text[k] < 0x7F) name[o++] = (char)Q.text[k]; name[o] = 0;
+        if (!name[0] && !ni) continue;
+        // the client's colour : 0x80 = full on each channel (its palette, "menu    ncol") -> doubled
+        auto full = [](u32 c, float al) { unsigned r = ((c >> 16) & 0xFF) * 2, g = ((c >> 8) & 0xFF) * 2, b = (c & 0xFF) * 2; if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
+                                          return ((u32)(al * 255.0f) << 24) | (r << 16) | (g << 8) | b; };
+        const u32 col = full(Q.colour, A), sh = with_alpha(0xE0000000u, A);
+        const float nw = name[0] ? fo->measure(name, tz) : 0.0f, is = snap(tz * 1.15f), gap = snap(3.0f * S);
+        const float total = nw + (float)ni * (is + gap);
+        float lx = snap(x - total * 0.5f);
+        // the pearl's tint : entity+0x1D4 is 0x00BBGGRR (Inertia, blue in the game, reads 86 5F 45 : checked against the
+        // client's own pearl 2026-11-26) -> swapped to our 0xRRGGBB
+        const u32 lsRgb = ((Q.tint & 0xFF) << 16) | (Q.tint & 0xFF00) | ((Q.tint >> 16) & 0xFF);
+        for (int j = 0; j < ni; ++j) {                                   // the icons
+            const float cx = lx + is * 0.5f, cy = y;
+            const unsigned char g = icons[j];
+            if (g != 0x92 && pcell(g, cx, cy, is, with_alpha(0xFFFFFFFFu, A))) {}   // its HD icon (the linkshell pearl : tinted, below)
+            else if (g == 0x92 && pearl_hd_tex(dev, lsRgb)) {                // the pearl, HD, recoloured in the linkshell's colour (its sheen kept)
+                dTexQuadState(dev, pearl_hd_tex(dev, lsRgb), true, true); tquad(dev, snap(cx - is * 0.5f), snap(cy - is * 0.5f), is, is, 0.0f, 1.0f, 0.0f, 1.0f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev);
+            }
+            else if (g == 0x90 && ico) {                                  // Away : the status icons' "three dots"
+                dTexQuadState(dev, ico, true, true); tquad(dev, snap(cx - is * 0.5f), snap(cy - is * 0.5f), is, is, 0.0f, 0.25f, 0.25f, 0.5f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A)); dSetTex(dev, 0, 0); cs(dev);
+            } else if (g == 0x92) {                                       // the linkshell pearl, in the linkshell's colour
+                const u32 t = lsRgb; const float r = is * 0.38f;
+                disc(dev, cx, cy, r + 1.4f * S, with_alpha(0xC0101010u, A)); disc(dev, cx, cy, r, with_alpha(0xFF000000u | t, A));
+                disc(dev, cx - r * 0.35f, cy - r * 0.35f, r * 0.35f, with_alpha(0xB0FFFFFFu, A));
+            } else if (g == 0x9C) {                                       // Bazaar : a gold coin
+                const float r = is * 0.38f; disc(dev, cx, cy, r + 1.4f * S, with_alpha(0xC0302000u, A)); disc(dev, cx, cy, r, with_alpha(0xFFE8C04Au, A));
+                ring_sector(dev, cx, cy, r * 0.55f, r * 0.72f, 0.0f, 6.2831853f, with_alpha(0xFFB08A20u, A));
+            } else {                                                      // another icon (not drawn yet) : a small mark
+                disc(dev, cx, cy, is * 0.22f, with_alpha(0xC0C8D6EAu, A));
+            }
+            lx += is + gap;
+        }
+        if (name[0]) { fo->begin(dev); fo->draw_lc(dev, snap(lx), snap(y), name, tz, col, sh, 1.2f * S); cs(dev); }
+        if (Q.line2[0] == 0xD2) {                                        // Master Level : three gold stars above the name
+            const float sy = snap(y - tz * 0.95f), r = tz * 0.42f;
+            const u32 wc = with_alpha(0xFFFFFFFFu, A);
+            if (pcell(0xAD, x, sy, r * 2.4f, wc)) { pcell(0xAD, x - r * 2.0f, sy + r * 0.3f, r * 1.5f, wc); pcell(0xAD, x + r * 2.0f, sy + r * 0.3f, r * 1.5f, wc); }   // the HD gold star, x 3
+            else { star5(dev, x - r * 1.9f, sy + r * 0.25f, r * 0.62f, with_alpha(0xFFE8C04Au, A)); star5(dev, x, sy, r, with_alpha(0xFFFFD86Au, A)); star5(dev, x + r * 1.9f, sy + r * 0.25f, r * 0.62f, with_alpha(0xFFE8C04Au, A)); }
+        }
+    }
+    native_plates_drawn();
 }
 
 // the map's cartouche (the zone, its floor, your square) : drawn in the screens' pass, with the other boxes -- before the

@@ -466,6 +466,7 @@ void Hud::render(u32 dev) {
         // the map open : every MODULE depops (party, player, target, minimap, chat, the boxes) -- only the map and the game
         // screens over it (the top bar, its menus, the Markers list) stay (user 2026-11-26)
         const bool mapUp = map_screen_up();
+        if (!hideHud && !mapUp) { PERF_BEGIN("gameui.plates"); plates_draw(f); PERF_END("gameui.plates"); }   // the name plates : under the widgets
         for (size_t i = 0; !hideHud && !mapUp && i < widgets_.size(); ++i) {
             const char* tn = widgets_[i]->type_name();
             // preview active -> the party tiers AND the target box are redrawn inside the stage by
