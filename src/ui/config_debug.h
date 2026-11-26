@@ -6,18 +6,13 @@
 struct DebugLine    { const char* en; const char* fr; };
 struct DebugSection { const char* titleEn; const char* titleFr; const DebugLine* lines; int n; };
 
-// --- To fix : confirmed bugs, not yet done ---
-static const DebugLine DBG_FIX[] = {
-    { "Party : the distance value is sometimes wrong (garbage). Cause not yet found -- being investigated.",
-      "Party : la distance affiche parfois n'importe quoi. Cause pas encore trouv\xC3\xA9""e -- en cours d'investigation." },
-};
+// --- To fix : none listed (the party-distance entry was retired 2026-11-26). Add a DBG_FIX[] array and its
+//     DEBUG_SECTIONS row back when a confirmed bug needs listing (an empty array does not compile). ---
 
 // --- Planned : features not started ---
 static const DebugLine DBG_TODO[] = {
     { "Distance : show the right range band for a ranged job (RNG / COR) from the equipped ranged weapon (bow / crossbow / gun).",
       "Distance : afficher la bonne bande de port\xC3\xA9""e pour un job \xC3\xA0 distance (RNG / COR) selon l'arme distance \xC3\xA9quip\xC3\xA9""e (arc / arbal\xC3\xA8te / fusil)." },
-    { "Skillchains : finish / verify the module.",
-      "Skillchains : finir / v\xC3\xA9rifier le module." },
 };
 
 // --- Fixed : the full list is in the Update tab's changelog ---
@@ -27,7 +22,6 @@ static const DebugLine DBG_DONE[] = {
 };
 
 static const DebugSection DEBUG_SECTIONS[] = {
-    { "To fix",  "\xC3\x80 corriger", DBG_FIX,  (int)(sizeof(DBG_FIX)  / sizeof(DBG_FIX[0]))  },
     { "Planned", "\xC3\x80 faire",    DBG_TODO, (int)(sizeof(DBG_TODO) / sizeof(DBG_TODO[0])) },
     { "Fixed",   "Corrig\xC3\xA9",     DBG_DONE, (int)(sizeof(DBG_DONE) / sizeof(DBG_DONE[0])) },
 };

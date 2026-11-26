@@ -1890,9 +1890,9 @@ void ConfigPage::draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseSta
           q4(dev, ix + sbW + bwS, bodyY, snap(22.0f), bodyH, 0x30000000, 0x00000000, 0x30000000, 0x00000000); }
         {   // the SAME groups as the Configuration rail (a module is found in the same place on both tabs)
             static const NavEntry NAV[] = {
-                { -1, "GENERAL", "G\xC3\x89N\xC3\x89RAL" },              { HELP_GENERAL_I, 0, 0 }, { HELP_UPDATE_I, 0, 0 },
-                { -1, "PARTY", "GROUPE" },                               { HELP_PA_I, 0, 0 }, { HELP_TARGET_I, 0, 0 }, { HELP_PLAYER_I, 0, 0 },
-                { -1, "COMBAT", "COMBAT" },                              { HELP_TIMERS_I, 0, 0 }, { HELP_SC_I, 0, 0 }, { HELP_HATE_I, 0, 0 },
+                { -1, "GENERAL", "G\xC3\x89N\xC3\x89RAL" },              { HELP_GENERAL_I, 0, 0 }, { HELP_INTERFACE_I, 0, 0 }, { HELP_UPDATE_I, 0, 0 },
+                { -1, "PARTY", "GROUPE" },                               { HELP_PA_I, 0, 0 }, { HELP_TARGET_I, 0, 0 }, { HELP_PLAYER_I, 0, 0 }, { HELP_PET_I, 0, 0 },
+                { -1, "COMBAT", "COMBAT" },                              { HELP_TIMERS_I, 0, 0 }, { HELP_SC_I, 0, 0 }, { HELP_HATE_I, 0, 0 }, { HELP_ABSORB_I, 0, 0 }, { HELP_GRIM_I, 0, 0 }, { HELP_ARCADE_I, 0, 0 },
                 { -1, "WORLD", "MONDE" },                                { HELP_MINIMAP_I, 0, 0 }, { HELP_ZT_I, 0, 0 }, { HELP_TREASURE_I, 0, 0 }, { HELP_PW_I, 0, 0 }, { HELP_EP_I, 0, 0 },
                 { -1, "CHAT & GAME UI", "CHAT & INTERFACE" },             { HELP_CHAT_I, 0, 0 }, { HELP_NUI_I, 0, 0 },
             };

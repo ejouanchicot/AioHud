@@ -23,6 +23,7 @@ public:
     bool is_open() const  { return open_; }
     void set_tab(int t);
     void set_section(int s) { section_ = s; }
+    void set_help(int h) { helpSel_ = h; helpScroll_ = 0.0f; }   // //aio config help N : that Help page
     bool cat_is_open(int c) const { return c >= 0 && c < CFG_CAT_N && catOpen_[c]; }   // a page's section is open (the preview follows it)
     void only_cat(int c) { for (bool& b : catOpen_) b = false; if (c >= 0 && c < CFG_CAT_N) catOpen_[c] = true; }   // //aio config sec N cat C : that category alone, open   // //aio config sec N : open a module's page (0-based, MODULES order)
 
@@ -348,7 +349,7 @@ private:
     // next: the card is drawn before the content that measures it, which is exactly how cat_fold_end works.
     float relFull_[128] = { 0.0f };   // Update  : one per release   (same size rule as relOpen_)
     float dbgFull_[8]   = { 0.0f };   // Debug   : one per section   (same size rule as dbgOpen_)
-    bool  dbgOpen_[8] = { true, true };   // Debug tab : per-section collapse state (To fix + Planned open, Fixed closed). Size must be >= DEBUG_SECTIONS_N.
+    bool  dbgOpen_[8] = { true, false };   // Debug tab : per-section collapse state (Planned open, Fixed closed ; no To fix listed now). Size must be >= DEBUG_SECTIONS_N.
     float helpMaxScroll_ = 0.0f;  // last frame's scroll limit -> clamp the wheel BEFORE drawing (no overscroll bounce)
     // live-preview anchor published each frame for the HUD (Configuration tab only)
     bool  pvOn_        = false;
