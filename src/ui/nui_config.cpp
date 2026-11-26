@@ -153,15 +153,20 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
         }
     NUI_SECTION_END(26)
 
-    // ===== GAME WINDOWS HIDDEN : no redraw here, AioHUD's own modules take their place =====
-    NUI_SECTION(25, tr("Game windows hidden", "Fen\xC3\xAAtres du jeu cach\xC3\xA9""es"))
-        NUI_BIT_ROW(CTRL_ID, tr("Party window", "Fen\xC3\xAAtre du groupe"), NU_PARTY)
+    // ===== GAME WINDOWS REPLACED : no redraw -- AioHUD's own modules take their place : Shown / Hidden (audit 2026-11-26) =====
+    const char* SHW[2] = { tr("Shown", "Affich\xC3\xA9""e"), tr("Hidden", "Cach\xC3\xA9""e") };
+    #define NUI_HIDE_ROW(UID, LABEL, BIT) { ROW_BAND(52.0f) const int v_ = (c.nuHide & (BIT)) ? 1 : 0; \
+        if (row_selector(dev, fo, mo, click, (UID), coX, ry + yo, ctrlW, (LABEL), SHW[v_])) { c.nuHide = v_ ? (c.nuHide & ~(BIT)) : (c.nuHide | (BIT)); save_ui_config(); } \
+        } ROW_NEXT(52.0f)
+    NUI_SECTION(25, tr("Game windows replaced by AioHUD", "Fen\xC3\xAAtres du jeu remplac\xC3\xA9""es par AioHUD"))
+        ROW_NOTE(tr("Each stays shown while its AioHUD module is off.", "Chacune reste affich\xC3\xA9""e tant que son module AioHUD est d\xC3\xA9sactiv\xC3\xA9."))
+        NUI_HIDE_ROW(CTRL_ID, tr("Party window", "Fen\xC3\xAAtre du groupe"), NU_PARTY)
         ROW_NOTE(tr("Also hides the game's target bar, which sits on it.", "Cache aussi la barre de cible du jeu, pos\xC3\xA9""e dessus."))
-        NUI_BIT_ROW(CTRL_ID, tr("Alliance windows", "Fen\xC3\xAAtres d'alliance"), NU_ALLY)
-        NUI_BIT_ROW(CTRL_ID, tr("Chat log", "Journal du chat"), NU_CHAT)
-        ROW_NOTE(tr("Turn AioHUD's Chat on first (module Chat).", "Active d'abord le Chat d'AioHUD (module Chat)."))
-        NUI_BIT_ROW(CTRL_ID, tr("MP cost / recast case", "Case co\xC3\xBBt MP / recast"), NU_COST)
+        NUI_HIDE_ROW(CTRL_ID, tr("Alliance windows", "Fen\xC3\xAAtres d'alliance"), NU_ALLY)
+        NUI_HIDE_ROW(CTRL_ID, tr("Chat log", "Journal du chat"), NU_CHAT)
+        NUI_HIDE_ROW(CTRL_ID, tr("MP cost / recast case", "Case co\xC3\xBBt MP / recast"), NU_COST)
     NUI_SECTION_END(25)
+    #undef NUI_HIDE_ROW
 
     // ===== BEHAVIOUR : move the game's menus =====
     if (c.cfgAdv) {   // Advanced only

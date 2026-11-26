@@ -172,7 +172,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
 if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const float aF26_ = cat_fold(CTRL_ID, catOpen_[26]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[26], aF26_));
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, "Arcade WS / Magic Burst", catOpen_[26], aF26_)) catOpen_[26] = !catOpen_[26];
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Popup on the sphere (WS / Magic Burst)", "Popup sur la sph\xC3\xA8re (WS / Magic Burst)"), catOpen_[26], aF26_)) catOpen_[26] = !catOpen_[26];
         ROW_NEXT(42.0f)
         if (aF26_ > 0.0f) {
             const float top26_ = ry;
@@ -183,7 +183,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
                 { ROW_BAND(52.0f)   // the text's look : four fighting-game styles
                     const char* HS[4] = { "Versus", "Comic", "Impact", tr("Critical", "Critique") };
                     const int hst = (c.scHitStyle >= 0 && c.scHitStyle <= 3) ? c.scHitStyle : 0;
-                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Style", "Style"), HS[hst])) c.scHitStyle = wrap(hst + d, 4);
+                    if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Popup style", "Style du popup"), HS[hst])) c.scHitStyle = wrap(hst + d, 4);
                 } ROW_NEXT(52.0f)
                 { ROW_BAND(52.0f)   // where it bursts : never over the sphere -- the side the list leaves free, or the one chosen
                     const char* HP[5] = { tr("Auto (free side)", "Auto (c\xC3\xB4t\xC3\xA9 libre)"), tr("Above", "Dessus"), tr("Under", "Dessous"), tr("Left", "\xC3\x80 gauche"), tr("Right", "\xC3\x80 droite") };
@@ -205,7 +205,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
                 { ROW_BAND(46.0f)   // the name / MAGIC BURST line : up or down
                     const float lo = -80.0f, hi = 80.0f; char b[16]; sprintf(b, "%d", (int)(c.scHitNameY + (c.scHitNameY < 0.0f ? -0.5f : 0.5f)));
                     float v01 = clampf((c.scHitNameY - lo) / (hi - lo), 0.0f, 1.0f);
-                    if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Title height", "Hauteur du titre"), b, &v01)) { const float v = lo + v01 * (hi - lo); c.scHitNameY = (float)(int)(v + (v < 0.0f ? -0.5f : 0.5f)); }
+                    if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("WS name height", "Hauteur du nom du WS"), b, &v01)) { const float v = lo + v01 * (hi - lo); c.scHitNameY = (float)(int)(v + (v < 0.0f ? -0.5f : 0.5f)); }
                 } ROW_NEXT(46.0f)
                 { ROW_BAND(46.0f)   // the damage line : up or down
                     const float lo = -80.0f, hi = 80.0f; char b[16]; sprintf(b, "%d", (int)(c.scHitDmgY + (c.scHitDmgY < 0.0f ? -0.5f : 0.5f)));

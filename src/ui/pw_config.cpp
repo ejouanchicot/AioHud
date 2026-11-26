@@ -74,7 +74,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         { ROW_BAND(52.0f)   // Display : Both (text + bar) / Text only / Bar only
             const char* DLBL[3] = { tr("Both", "Les deux"), tr("Text only", "Texte seul"), tr("Bar only", "Barre seule") };
             int dm = (c.pwDisplay < 0 || c.pwDisplay > 2) ? 0 : c.pwDisplay;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Display", "Affichage"), DLBL[dm])) { c.pwDisplay = wrap(dm + d, 3); save_ui_config(); }
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Shows", "Affiche"), DLBL[dm])) { c.pwDisplay = wrap(dm + d, 3); save_ui_config(); }
         } ROW_NEXT(52.0f)
         ROW_TOGGLE(CTRL_ID, tr("Show rate (X/h)", "Afficher le taux (X/h)"), c.pwRate)   // Rate X/h
         { ROW_BAND(40.0f)   // note

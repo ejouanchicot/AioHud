@@ -37,7 +37,7 @@ void ConfigPage::draw_grim_config(u32 dev, Font* fo, const MouseState* mo, bool 
         { ROW_BAND(52.0f)   // Preview art (edit only)
             const char* ALBL[4] = { tr("Light Arts", "Light Arts"), tr("Dark Arts", "Dark Arts"), tr("Addendum: White", "Addendum: White"), tr("Addendum: Black", "Addendum: Black") };
             int ar = (c.grimArt < 0 || c.grimArt > 3) ? 2 : c.grimArt;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Preview art", "Art (aper\xC3\xA7u)"), ALBL[ar])) { c.grimArt = wrap(ar + d, 4); save_ui_config(); }
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Preview image (config only)", "Image de l'aper\xC3\xA7u (config seulement)"), ALBL[ar])) { c.grimArt = wrap(ar + d, 4); save_ui_config(); }
         } ROW_NEXT(52.0f)
         { ROW_BAND(40.0f)   // note
             const float ty = ry + yo; fo->begin(dev);

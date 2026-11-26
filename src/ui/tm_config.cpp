@@ -102,7 +102,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         cat_fold_clip(dev, hdrX, topR_, hdrW, catH_[14] * aFr_);
         { ROW_BAND(52.0f)   // Duration display : Icon / Name / Both
             int m = (c.tmDurMode < 0 || c.tmDurMode > 2) ? 0 : c.tmDurMode;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Duration: show", "Duration : afficher"), MODE[m])) { c.tmDurMode = wrap(m + d, 3); save_ui_config(); }
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Duration: show", "Dur\xC3\xA9""e : afficher"), MODE[m])) { c.tmDurMode = wrap(m + d, 3); save_ui_config(); }
         } ROW_NEXT(52.0f)
         { ROW_BAND(52.0f)   // Duration : what decides the row order
             const char* NM[2] = { tr("Person, then time", "Personne, puis temps"), tr("Shortest first", "Plus court d'abord") };
@@ -144,7 +144,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     if (aF7_ > 0.0f) {
         const float top7_ = ry;
         cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
-        ROW_TOGGLE(CTRL_ID, tr("//aio out numbers", "Num\xC3\xA9ros //aio out"), c.tmMarks)   // the small number left of each monitored row (off : //aio out takes a name, "alerts" or "list")
+        ROW_TOGGLE(CTRL_ID, tr("Tracking numbers (//aio out)", "Num\xC3\xA9ros de suivi (//aio out)"), c.tmMarks)   // the small number left of each monitored row (off : //aio out takes a name, "alerts" or "list")
         ROW_TOGGLE(CTRL_ID, tr("SP last-min alert", "Alerte SP derni\xC3\xA8re min"), c.tmSpAlert)   // SP alert : SP1/SP2 buffs (all jobs) blink hard in their last minute (Soul Voice -> Nitro window)
         { ROW_BAND(46.0f)   // Focus WARN : a "Hidden + focus" buff surfaces when it drops below this many seconds
             const float lo = 10.0f, hi = 300.0f; char b[16]; sprintf(b, "%ds", c.tmFocusWarn);

@@ -69,6 +69,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
                 const int ly = (c.awLayout >= 0 && c.awLayout <= 2) ? c.awLayout : 0;
                 if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Layout", "Disposition"), LY[ly])) c.awLayout = wrap(ly + d, 3);
             } ROW_NEXT(52.0f)
+            if (ui_config().cfgAdv) {   // Simple : the sizes, badges and animations stay in Advanced
             { ROW_BAND(46.0f)   // the list's text
                 const float lo = 0.70f, hi = 1.60f; char b[16]; sprintf(b, "%d%%", (int)(c.awText * 100.0f + 0.5f));
                 float v01 = clampf((c.awText - lo) / (hi - lo), 0.0f, 1.0f);
@@ -95,6 +96,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
             }
             ROW_TOGGLE(CTRL_ID, tr("Absorb animation", "Animation d'absorption"), c.awFx)
             if (c.awFx) { ROW_TOGGLE(CTRL_ID, tr("Scene distortion", "D\xC3\xA9" "formation du d\xC3\xA9" "cor"), c.awDistort) }
+            }
         }
         ROW_TOGGLE(CTRL_ID, tr("Colour the TP", "Couleur des TP"), c.awColors)       // white / green / yellow / orange / red ; blue = nothing drained
         ROW_TOGGLE(CTRL_ID, tr("Time since", "Temps \xC3\xA9""coul\xC3\xA9"), c.awTimer)

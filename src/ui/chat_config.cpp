@@ -73,7 +73,7 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
         } if (c.chMaxLines[b] == 0) { ROW_NEXT(46.0f) }
         { ROW_BAND(46.0f)   // lines shown normally
             const float lo = 0.0f, hi = 40.0f; char sb[24];
-            if (c.chMaxLines[b] > 0) sprintf(sb, "%d", c.chMaxLines[b]); else lstrcpynA(sb, tr("all", "tout"), sizeof(sb));
+            if (c.chMaxLines[b] > 0) sprintf(sb, "%d", c.chMaxLines[b]); else lstrcpynA(sb, tr("fixed height", "hauteur fixe"), sizeof(sb));   // 0 = the box keeps the fixed Height below
             float v01 = clampf(((float)c.chMaxLines[b] - lo) / (hi - lo), 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Max lines", "Lignes max"), sb, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.chMaxLines[b] = v < 0 ? 0 : (v > 40 ? 40 : v); }
         } ROW_NEXT(46.0f)

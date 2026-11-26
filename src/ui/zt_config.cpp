@@ -33,7 +33,7 @@ void ConfigPage::draw_zt_config(u32 dev, Font* fo, const MouseState* mo, bool cl
                             // one panel where Size is not the row after Show (the canonical order elsewhere).
             const char* ZLBL[7] = { tr("Dynamis", "Dynamis"), tr("Abyssea", "Abyssea"), tr("Omen", "Omen"), tr("Nyzul", "Nyzul"), tr("Sheol", "Sheol"), tr("Limbus", "Limbus"), tr("Sortie", "Sortie") };
             int zv = zvSel;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Content", "Contenu"), ZLBL[zv])) { c.ztVariant = wrap(zv + d, 7); save_ui_config(); }
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Preview zone", "Zone de l'aper\xC3\xA7u"), ZLBL[zv])) { c.ztVariant = wrap(zv + d, 7); save_ui_config(); }
         } ROW_NEXT(52.0f)
         ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.ztShow)   // Show
         { ROW_BAND(46.0f)   // Size

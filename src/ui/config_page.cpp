@@ -306,7 +306,7 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
         // Font : the config-menu font (also the HUD's default text face ; per-element faces override it under Advanced > Typography)
         { ROW_BAND(52.0f)
           int gf = ui_config().text[0][TE_UI].face; if (gf < 0 || gf >= ui_font_count()) gf = 0;
-          if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(gf))) {
+          if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font (config + HUD)", "Police (config + HUD)"), ui_font_label(gf))) {
               gf = wrap(gf + d, ui_font_count());
               ui_config().text[0][TE_UI].face = gf;   // the config menu font (changes live)
               ui_config().fontFace = gf;              // and the HUD default text face
@@ -328,7 +328,7 @@ void ConfigPage::draw_interface_category(u32 dev, Font* fo, const MouseState* mo
           const IconPack* sel = icon_pack_at(cur);
           if (sel) {
               if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW,
-                                       tr("Status icons", "Icones de statut"), icon_pack_label(*sel))) {
+                                       tr("Status icons", "Ic\xC3\xB4nes de statut"), icon_pack_label(*sel))) {
                   cur = wrap(cur + d, pn);
                   const IconPack* nx = icon_pack_at(cur);
                   // Auto is stored as "" so a config predating this row, and one reset to defaults, mean the

@@ -82,7 +82,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const float top5_ = ry;
         cat_fold_clip(dev, hdrX, top5_, hdrW, catH_[5] * aF5_);
         { ROW_BAND(52.0f)   // element selector
-            const char* TLBL[TP_TE_COUNT] = { tr("Index", "Index"), tr("Name", "Nom"), tr("Timer", "Timer"), tr("Winner", "Gagnant") };
+            const char* TLBL[TP_TE_COUNT] = { tr("Index", "Index"), tr("Name", "Nom"), tr("Timer", "Timer"), tr("Top lot", "Meilleur lot") };
             int te = (cfgTpTextElem_ < 0 || cfgTpTextElem_ >= TP_TE_COUNT) ? 0 : cfgTpTextElem_;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "\xC3\x89l\xC3\xA9ment"), TLBL[te])) { cfgTpTextElem_ = wrap(te + d, TP_TE_COUNT); }
         }

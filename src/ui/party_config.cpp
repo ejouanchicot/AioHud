@@ -28,6 +28,12 @@
 #include <cstring>
 
 namespace aio {
+// the party text elements, in the config language (ui_text_elem_label is English only)
+static const char* te_label_tr(int e) {
+    switch (e) { case TE_NAME: return tr("Name", "Nom"); case TE_HP: return "HP"; case TE_MP: return "MP"; case TE_TP: return "TP";
+        case TE_CAST: return tr("Cast", "Sort"); case TE_BADGE: return tr("Job badge", "Badge de job"); case TE_DIST: return tr("Distance", "Distance");
+        case TE_COST: return tr("Cost box", "Bo\xC3\xAEte co\xC3\xBBt"); default: return ui_text_elem_label(e); }
+}
 
 // Move one entry of the buff strip from `from` to `to`, and persist. ONE function for both the arrows and
 // the drop, and for both levels : a swap is just a span move of one step, and having two code paths for
@@ -179,10 +185,10 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
                 ui_config().gaugeStyle[0] = wrap(s + d, 8); save_ui_config(); } }
           { const float rowH = snap(38.0f); fo->begin(dev);   // Animation : two chips, HP and TP
             fo->draw_lc(dev, xB + snap(4.0f), yB + rowH * 0.5f, tr("Animation", "Animation"), ts_label(), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            const float bbw = snap(96.0f), bgap = snap(8.0f), bbh = snap(34.0f), bty = yB + (rowH - bbh) * 0.5f;
+            const float bbw = snap(132.0f),   /* wider : the chips say what they animate */ bgap = snap(8.0f), bbh = snap(34.0f), bty = yB + (rowH - bbh) * 0.5f;
             const float bx0 = xB + halfW - (2 * bbw + bgap);
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, ui_config().animHP ? tr("HP on", "HP oui") : tr("HP off", "HP non"), ui_config().animHP)) { ui_config().animHP = !ui_config().animHP; save_ui_config(); }
-            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, ui_config().animTP ? tr("TP on", "TP oui") : tr("TP off", "TP non"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); } }
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0, bty, bbw, bbh, tr("Low HP blink", "Clignote HP bas"), ui_config().animHP)) { ui_config().animHP = !ui_config().animHP; save_ui_config(); }
+            if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, tr("TP ready pulse", "Pulse TP pr\xC3\xAAt"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); } }
           ROW_NEXT(bh2)
         }
         { const bool rnd_ = ui_config().gaugeStyle[0] >= 4 && ui_config().gaugeStyle[0] <= 6;   // round gauges : no bar height (party.h gaugeH)
@@ -332,8 +338,8 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
                 ui_config().box[1].scale = v < lo ? lo : (v > hi ? hi : v); } }
           ROW_NEXT(bh2)
         }
-        // ---- Frame : the same rows as the party box, from the same function ----
-        draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
+        // ---- Frame : the same rows as the party box, from the same function -- Advanced, as the party's own Frame ----
+        if (ui_config().cfgAdv) draw_frame_section(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,
                            1, &ui_config().allyThemeCopy,                // may simply follow the party theme
                            &ui_config().allyTheme, &ui_config().allyHue, &ui_config().allyLum, &ui_config().allyBoxAlpha,
                            &ui_config().border[1], nullptr, nullptr,     // no Cost box on an alliance row
@@ -979,7 +985,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const int T = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;
         { ROW_BAND(52.0f)   // element selector -- Interface (TE_UI) is skipped : its font is Interface > Font
             int el = (cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT || cfgTextElem_ == TE_UI || (T == 1 && cfgTextElem_ == TE_COST)) ? 0 : cfgTextElem_;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "Élément"), ui_text_elem_label(el))) {
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "Élément"), te_label_tr(el))) {
                 int n = wrap(el + d, TE_COUNT); for (int k = 0; k < 3 && (n == TE_UI || (T == 1 && n == TE_COST)); ++k) n = wrap(n + d, TE_COUNT); cfgTextElem_ = n; }   // (no Cost box on an alliance)
         }
         ROW_NEXT(52.0f)

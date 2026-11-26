@@ -140,8 +140,8 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         ROW_TOGGLE(CTRL_ID, "MP",               ui_config().plrMp)
         ROW_TOGGLE(CTRL_ID, "TP",               ui_config().plrTp)
         ROW_TOGGLE(CTRL_ID, tr("Speed", "Vitesse"), ui_config().plrSpeed)
-        ROW_TOGGLE(CTRL_ID, tr("Cast", "Sort"), ui_config().plrCast)
-        ROW_TOGGLE(CTRL_ID, tr("Cast placeholder", "Sort fictif"), ui_config().plrCastDemo)
+        ROW_TOGGLE(CTRL_ID, tr("The spell you cast", "Le sort que tu lances"), ui_config().plrCast)
+        if (ui_config().cfgAdv) { ROW_TOGGLE(CTRL_ID, tr("Sample spell (to place it)", "Sort d'exemple (pour le placer)"), ui_config().plrCastDemo) }   // a placement aid : Advanced
         ROW_TOGGLE(CTRL_ID, tr("Buffs", "Buffs"), ui_config().plrBuffs)
         ROW_TOGGLE(CTRL_ID, tr("Equipment", "Équipement"), ui_config().plrEquip)
         // Gil : lives in Content while the equipment is docked or off (gil then rides the header / hub) ; when the
@@ -296,7 +296,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         }
         ROW_NEXT(46.0f)
         // Border : follow the box theme, or a custom colour.
-        ROW_CHOICE_G(CTRL_ID, tr("Border", "Bordure"), ui_config().plrEqThemeBorder, tr("Box Theme", "Thème box"), tr("Custom", "Perso"), 52.0f, 40.0f, 150.0f)
+        ROW_CHOICE_G(CTRL_ID, tr("Cell border", "Bordure des cases"), ui_config().plrEqThemeBorder, tr("Box Theme", "Thème box"), tr("Custom", "Perso"), 52.0f, 40.0f, 150.0f)
         if (!ui_config().plrEqThemeBorder) {
         CFG_COLOR_PICKER(&ui_config().plrEqColor)
         }   // end custom colour (!plrEqThemeBorder)

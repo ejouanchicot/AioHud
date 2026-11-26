@@ -16,8 +16,6 @@ static const DebugLine DBG_FIX[] = {
 static const DebugLine DBG_TODO[] = {
     { "Distance : show the right range band for a ranged job (RNG / COR) from the equipped ranged weapon (bow / crossbow / gun).",
       "Distance : afficher la bonne bande de port\xC3\xA9""e pour un job \xC3\xA0 distance (RNG / COR) selon l'arme distance \xC3\xA9quip\xC3\xA9""e (arc / arbal\xC3\xA8te / fusil)." },
-    { "Party : a buff filter (blacklist) and a way to reorder the buffs on party rows.",
-      "Party : un filtre de buffs (blacklist) et un moyen de r\xC3\xA9ordonner les buffs des lignes de party." },
     { "Skillchains : finish / verify the module.",
       "Skillchains : finir / v\xC3\xA9rifier le module." },
 };

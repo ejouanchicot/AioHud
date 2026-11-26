@@ -31,11 +31,13 @@ void ConfigPage::draw_geo_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
     } ROW_NEXT(52.0f)
         return;
     }
+    if (c.cfgAdv) {   // Simple : hidden (a fine setting)
     { ROW_BAND(46.0f)   // the effect icons' size
         const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.geoIconSz * 100.0f + 0.5f));
         float v01 = (c.geoIconSz - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
         if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Icon / luopan size", "Taille ic\xC3\xB4nes / luopan"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.geoIconSz = v < lo ? lo : (v > hi ? hi : v); }
     } ROW_NEXT(46.0f)
+    }
     ROW_TOGGLE(CTRL_ID, tr("Bubble name", "Nom de la bulle"), c.geoBubble)
     ROW_TOGGLE(CTRL_ID, tr("Luopan HP", "HP du luopan"), c.geoHp)   // the ring and the % in the bubble (text look : the gauge)
     ROW_TOGGLE(CTRL_ID, tr("Estimated time left", "Temps estim\xC3\xA9 du luopan"), c.geoTime)   // from the HP slope : off by default
@@ -44,7 +46,7 @@ void ConfigPage::draw_geo_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
     ROW_TOGGLE(CTRL_ID, tr("Entrust", "Entrust"), c.geoEntrust)
     ROW_TOGGLE(CTRL_ID, tr("MP", "MP"), c.geoMp)
     ROW_TOGGLE(CTRL_ID, tr("Job abilities", "Job abilities"), c.geoJa)
-    if (c.geoJa) {   // their style : only with the abilities on
+    if (c.geoJa && c.cfgAdv) {   // their style : only with the abilities on (Advanced)
     { ROW_BAND(52.0f)   // how the abilities show : a row of icons, a grid of icon + name, a grid of names
         const char* JL[3] = { tr("Icons", "Ic\xC3\xB4nes"), tr("Icons + names", "Ic\xC3\xB4nes + noms"), tr("Names", "Noms") };
         const int js = (c.geoJaStyle < 0 || c.geoJaStyle > 2) ? 0 : c.geoJaStyle;

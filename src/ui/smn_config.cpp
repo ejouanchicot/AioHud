@@ -30,17 +30,21 @@ void ConfigPage::draw_smn_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
         const int l = (c.smnLayout == 1) ? 1 : 0;
         if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Layout", "Disposition"), LL[l])) { c.smnLayout = wrap(l + d, 2); save_ui_config(); }
     } ROW_NEXT(52.0f)
+    if (c.cfgAdv) {   // the preview avatar : Advanced (config preview only)
     { ROW_BAND(52.0f)   // which avatar or spirit the preview and //aio edit show : every picture and pact list can be checked
         const int ai = (c.smnDemo < 0 || c.smnDemo >= SMN_AVATARS_N) ? 0 : c.smnDemo;
         if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Preview avatar", "Avatar (aper\xC3\xA7u)"), SMN_AVATARS[ai].en)) { c.smnDemo = wrap(ai + d, SMN_AVATARS_N); save_ui_config(); }
     } ROW_NEXT(52.0f)
+    }
         return;
     }
+    if (c.cfgAdv) {   // Simple : hidden (a fine setting)
     { ROW_BAND(46.0f)   // the portrait's and the ability icons' size
         const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.smnIconSz * 100.0f + 0.5f));
         float v01 = (c.smnIconSz - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
         if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Portrait / icon size", "Taille portrait / ic\xC3\xB4nes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.smnIconSz = v < lo ? lo : (v > hi ? hi : v); }
     } ROW_NEXT(46.0f)
+    }
     ROW_TOGGLE(CTRL_ID, tr("Avatar portrait", "Portrait de l'avatar"), c.smnPortrait)
     ROW_TOGGLE(CTRL_ID, tr("Avatar name", "Nom de l'avatar"), c.smnName)
     ROW_TOGGLE(CTRL_ID, tr("Avatar HP", "HP de l'avatar"), c.smnHp)

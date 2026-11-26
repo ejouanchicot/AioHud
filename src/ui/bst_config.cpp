@@ -30,14 +30,16 @@ void ConfigPage::draw_bst_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
         if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Layout", "Disposition"), LL[l])) { c.bstLayout = wrap(l + d, 3); save_ui_config(); }
     } ROW_NEXT(52.0f)
     ROW_TOGGLE(CTRL_ID, tr("Only with a pet out", "Seulement avec un pet sorti"), c.bstOnlyPet)
+    if (c.cfgAdv) {   // the preview pet : Advanced (it only changes the config preview)
     { ROW_BAND(52.0f)   // Preview pet (edit / this page only) : every jug pet, its art and its moves
         const int pi = (c.bstDemo < 0 || c.bstDemo >= BST_PETS_N) ? 0 : c.bstDemo;
         if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Preview pet", "Pet (aper\xC3\xA7u)"), BST_PETS[pi].name)) { c.bstDemo = wrap(pi + d, BST_PETS_N); save_ui_config(); }
     } ROW_NEXT(52.0f)
+    }
         return;
     }
     ROW_TOGGLE(CTRL_ID, tr("Pet image", "Image du pet"), c.bstImage)
-    if (c.bstImage) {   // the pet art's details : only with the art on
+    if (c.bstImage && c.cfgAdv) {   // the pet art's details : only with the art on (Advanced)
     { ROW_BAND(52.0f)   // what that place shows : the art, the pet's correlation as text, or both
         const char* ML[3] = { tr("Image", "Image"), tr("Correlation", "Corr\xC3\xA9lation"), tr("Both", "Les deux") };
         const int am = (c.bstArtMode < 0 || c.bstArtMode > 2) ? 0 : c.bstArtMode;
@@ -59,7 +61,7 @@ void ConfigPage::draw_bst_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
     ROW_TOGGLE(CTRL_ID, tr("TP", "TP"), c.bstTp)
     ROW_TOGGLE(CTRL_ID, tr("Distance", "Distance"), c.bstDist)
     ROW_TOGGLE(CTRL_ID, tr("Ready charges", "Charges Ready"), c.bstCharges)
-    if (c.bstCharges) {   // the charges' look : only with the charges on
+    if (c.bstCharges && c.cfgAdv) {   // the charges' look : only with the charges on (Advanced)
     { ROW_BAND(52.0f)   // how the charges are drawn : paws, the ring, bars
         const char* CS[3] = { tr("Paws", "Pattes"), tr("Ring", "Cercle"), tr("Bars", "Barres") };
         const int cs = (c.bstChargeStyle < 0 || c.bstChargeStyle > 2) ? 0 : c.bstChargeStyle;
@@ -72,9 +74,9 @@ void ConfigPage::draw_bst_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
     } ROW_NEXT(46.0f)
     }
     ROW_TOGGLE(CTRL_ID, tr("Ready moves", "Ready moves"), c.bstMoves)
-    if (c.bstMoves) { ROW_TOGGLE(CTRL_ID, tr("Moves' skillchain", "Skillchain des moves"), c.bstSc) }   // Compression... after each move's name (only with the moves)
+    if (c.bstMoves && c.cfgAdv) { ROW_TOGGLE(CTRL_ID, tr("Moves' skillchain", "Skillchain des moves"), c.bstSc) }   // Compression... after each move's name (only with the moves)
     ROW_TOGGLE(CTRL_ID, tr("Job abilities", "Job abilities"), c.bstJa)   // the grid at the bottom of the box
-    if (c.bstMoves) { ROW_TOGGLE(CTRL_ID, tr("Move type icons", "Ic\xC3\xB4nes de type"), c.bstIcons) }   // weapon / element icon, else a colour tick
+    if (c.bstMoves && c.cfgAdv) { ROW_TOGGLE(CTRL_ID, tr("Move type icons", "Ic\xC3\xB4nes de type"), c.bstIcons) }   // weapon / element icon, else a colour tick
 }
 
 // the Text rows of the BST tab : which text element, then its typography
