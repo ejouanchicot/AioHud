@@ -32,7 +32,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
     const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_) && ui_config().cfgAdv) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (aF6_ > 0.0f) {
         const float top6_ = ry;
@@ -70,7 +70,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     // named with the vocabulary the other panels already use (Player has a Content section too).
     const float aFc_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[13]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[13], aFc_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[13], aFc_)) catOpen_[13] = !catOpen_[13];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[13], aFc_) && ui_config().cfgAdv) catOpen_[13] = !catOpen_[13];
     ROW_NEXT(42.0f)
     if (aFc_ > 0.0f) {
         const float topC_ = ry;

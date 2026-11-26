@@ -208,7 +208,7 @@ void Player::preview_footprint(float& w, float& h, float& l, float& t, float& r,
     const bool  eqBelow = eqp >= 0 && eqp <= 2, eqSide = eqp == 7 || eqp == 8;
     const float gilBelowH = (c.plrEquip && c.plrGil) ? snap(24.0f * S) : 0.0f;   // gil row under the equip grid
     const float eqGrid = eqBelow ? (eqGW + gilBelowH) : 0.0f, sideW = eqSide ? (eqGW + colGap) : 0.0f;
-    const float actNameSz = c.plrCast ? snap(plr_sz(PLR_NAME, 11.0f * S)) : 0.0f;   // action bar : ALWAYS reserved when on -> stable height
+    const float actNameSz = c.plrCast ? snap(plr_sz(PLR_CAST, 11.0f * S)) : 0.0f;   // the size the bar draws with (PLR_CAST)   // action bar : ALWAYS reserved when on -> stable height
     const float actH = c.plrCast ? snap(actNameSz + snap(3.0f * S) + snap(6.0f * S) + snap(6.0f * S)) : 0.0f;
     const float vOff = outerPad + idH + (idH > 0.0f && nv > 0 ? sectGap : 0.0f);
     const float actOff = vOff + vH + (actH > 0.0f && (vH > 0.0f || idH > 0.0f) ? sectGap : 0.0f);

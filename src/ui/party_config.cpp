@@ -150,7 +150,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     // acts on -- gauges, badge, buffs, cursor -- which is what turns three rows into one.
     const float aS1_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[1]));   // eased 0..1 : the card, the clip and ry all ride this
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[1], aS1_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1], aS1_)) catOpen_[1] = !catOpen_[1];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1], aS1_) && ui_config().cfgAdv) catOpen_[1] = !catOpen_[1];
     ROW_NEXT(42.0f)
     if (aS1_ > 0.0f) {
         const float cTop_ = ry;
@@ -317,7 +317,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     // different layout.
     const float aS2_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[7]));   // eased 0..1 : the card, the clip and ry all ride this
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[2], aS2_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7], aS2_)) catOpen_[7] = !catOpen_[7];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7], aS2_) && ui_config().cfgAdv) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
     if (aS2_ > 0.0f) {
         const float cTop_ = ry;
@@ -448,12 +448,12 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
           const float xB = twoCol ? col2X : coX;
           sepv(ry, bh2, true);
           { const float lo = 0.40f, hi = 2.00f; char bzbuf[16]; sprintf(bzbuf, "%d%%", (int)(ui_config().buffScale * 100.0f + 0.5f));
-            float v01 = (ui_config().buffScale - lo) / (hi - lo);
+            float v01 = clampf((ui_config().buffScale - lo) / (hi - lo), 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Buff Size", "Taille des buffs"), bzbuf, &v01)) {
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
                 ui_config().buffScale = v < lo ? lo : (v > hi ? hi : v); } }
           { static const int BM[] = { 0, 16, 20, 24, 32 };   // 0 = no buff strip at all
-            int idx = 0; for (int k = 0; k < 5; ++k) if (BM[k] == ui_config().buffMax) { idx = k; break; }
+            int idx = 0, bd = 1 << 30; for (int k = 0; k < 5; ++k) { const int dd = abs(BM[k] - ui_config().buffMax); if (dd < bd) { bd = dd; idx = k; } }   // the nearest choice (a stored 10 read "None")
             char bmv[28]; if (BM[idx] == 0) lstrcpynA(bmv, tr("None", "Aucun"), sizeof(bmv)); else sprintf(bmv, "%d", BM[idx]);
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, xB, yB, halfW, tr("Max Buffs", "Buffs max"), bmv)) {
                 idx = wrap(idx + d, 5); ui_config().buffMax = BM[idx]; save_ui_config(); } }

@@ -101,6 +101,7 @@ inline void cfg_text(TextStyle* t, int n) {
     for (int i = 0; i < n; ++i) {
         t[i].size    = cfg_num(t[i].size,    CFG_MUL_LO, CFG_MUL_HI, D.size);      // 0 = invisible text, and no reset explains it
         t[i].outline = cfg_num(t[i].outline, 0.0f,       CFG_GAP_HI, D.outline);   // 0 = no outline is legal
+        if (t[i].face < 0 || t[i].face >= ui_font_count()) t[i].face = 0;           // a face off the list : the default
     }
 }
 inline void cfg_box(BoxStyle& b) {
@@ -190,8 +191,8 @@ inline void config_sanitise(UiConfig& c) {
     MUL(geoScale);  FRAC(geoX);  FRAC(geoY);   MUL(geoIconSz);  cfg_text(c.geoText, GEO_TE_COUNT);   cfg_box(c.geoBox);
     MUL(smnIconSz); cfg_text(c.smnText, SMN_TE_COUNT);   c.smnLayout = cfg_int(c.smnLayout, 0, 1);   c.smnDemo = cfg_int(c.smnDemo, 0, 63);
     MUL(epScale);   FRAC(epX);   FRAC(epY);                     cfg_text(c.epText, EP_TE_COUNT);   cfg_box(c.epBox);
-    c.tpCount = cfg_int(c.tpCount, 0, 10);
-    c.hlCount = cfg_int(c.hlCount, 0, 20);
+    c.tpCount = cfg_int(c.tpCount, 1, 10);   // (the slider and the renderer floor at 1)
+    c.hlCount = cfg_int(c.hlCount, 1, 20);
 
     // ---- Zone tracker (one bar/dot factor per zone family)
     MUL(ztScale); FRAC(ztX); FRAC(ztY);
@@ -203,7 +204,7 @@ inline void config_sanitise(UiConfig& c) {
     // ---- Timers / Debuffs
     for (int i = 0; i < UiConfig::GB_COUNT; ++i) c.boxGrow[i] = cfg_int(c.boxGrow[i], 0, 2);   // 0 grows right, 1 both sides, 2 left
     MUL(tmScale); FRAC(tmX); FRAC(tmY); FRAC(tmRX); FRAC(tmRY); MUL(tmIconScale); GAP(tmRowGap);
-    c.tmMax = cfg_int(c.tmMax, 0, 50);
+    c.tmMax = cfg_int(c.tmMax, 1, 50);
     c.tmFocusWarn = cfg_int(c.tmFocusWarn, 10, 300);
     c.tmMarks = cfg_int(c.tmMarks, 0, 1);
     c.ztSoNav = cfg_int(c.ztSoNav, 0, 1); c.ztSoTrack = cfg_int(c.ztSoTrack, 0, 1);   // ztSoTrack is read by a Lua addon : keep it a clean 0/1

@@ -470,7 +470,7 @@ static bool parse_border_line(const char* line, UiConfig& c) {
 static bool parse_cursor_style_line(const char* line, UiConfig& c) {
     int v = 0;
     if (sscanf(line, "cursorStyle=%d", &v) != 1) return false;
-    c.cursorStyle = v < 0 ? 0 : (v > 15 ? 0 : v);
+    c.cursorStyle = v < 0 ? 0 : (v > 4 ? 0 : v);   // 5 styles (party_gauges.cpp cursor_style_count)
     return true;
 }
 static bool parse_nui_line(const char* line, UiConfig& c) {

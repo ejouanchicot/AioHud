@@ -30,7 +30,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_) && ui_config().cfgAdv) catOpen_[6] = !catOpen_[6];
         ROW_NEXT(42.0f)
         if (aF6_ > 0.0f) {
             const float top6_ = ry;
@@ -128,7 +128,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF7_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[7]));
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // the section IS a card, collapsed or not
-        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
+        if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[7], aF7_) && ui_config().cfgAdv) catOpen_[7] = !catOpen_[7];
         ROW_NEXT(42.0f)
         if (aF7_ > 0.0f) {
             const float top7_ = ry;
@@ -300,7 +300,6 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         if (!ui_config().plrEqThemeBorder) {
         CFG_COLOR_PICKER(&ui_config().plrEqColor)
         }   // end custom colour (!plrEqThemeBorder)
-        ry += snap(16.0f);                                 // air between this section and the next title bar
         // Cell background : the cell FILL colour -- Default dark, or a custom colour (filled slots stay a touch brighter).
         ROW_CHOICE_G(CTRL_ID, tr("Cell background", "Fond des cases"), ui_config().plrEqCellBgCustom, tr("Custom", "Perso"), tr("Default", "Défaut"), 52.0f, 40.0f, 150.0f)
         if (ui_config().plrEqCellBgCustom) {

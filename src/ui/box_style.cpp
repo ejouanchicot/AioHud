@@ -285,7 +285,7 @@ void ConfigPage::draw_frame_section(u32 dev, Font* fo, const MouseState* mo, boo
                                 : (float)nr * snap(22.0f) + (float)(nr - 1) * snap(7.0f) + snap(20.0f); }
           ROW_BAND(slotH) (void)yo;
           {   float sh_ = slotH;
-              const int pick = theme_grid(dev, fo, mo, click, CTRL_ID, coX, ry, ctrlW, fam, var, sh_);
+              const int pick = theme_grid(dev, fo, mo, click, ctrl_uid_i(uidBase, 9), coX, ry, ctrlW, fam, var, sh_);   // its own spring per group (rule 9)
               if (pick >= 0) { *theme = window_theme_index(fam, pick); save_ui_config(); } }
           ROW_NEXT(slotH)
         }

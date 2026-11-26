@@ -25,7 +25,7 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
     // ===== sub-section : DISPLAY =====
     const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_) && ui_config().cfgAdv) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (aF6_ > 0.0f) {
         const float top6_ = ry;
@@ -66,7 +66,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     // ===== sub-section : CONTENT (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
     const float aF21_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[21]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[21], aF21_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[21], aF21_)) catOpen_[21] = !catOpen_[21];
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[21], aF21_) && ui_config().cfgAdv) catOpen_[21] = !catOpen_[21];
     ROW_NEXT(42.0f)
     if (aF21_ > 0.0f) {
         const float top21_ = ry;

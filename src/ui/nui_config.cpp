@@ -31,7 +31,7 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
         } ROW_NEXT(52.0f)
     #define NUI_SECTION(SLOT, TITLE) const float aF##SLOT##_ = cat_fold(CTRL_ID, !c.cfgAdv || catOpen_[SLOT]);   /* Simple : open */ \
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[SLOT], aF##SLOT##_)); \
-        if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, 1), hdrX, ry, hdrW, (TITLE), catOpen_[SLOT], aF##SLOT##_)) catOpen_[SLOT] = !catOpen_[SLOT]; \
+        if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, 1), hdrX, ry, hdrW, (TITLE), catOpen_[SLOT], aF##SLOT##_) && c.cfgAdv) catOpen_[SLOT] = !catOpen_[SLOT]; \
         ROW_NEXT(42.0f) \
         if (aF##SLOT##_ > 0.0f) { const float top##SLOT##_ = ry; cat_fold_clip(dev, hdrX, top##SLOT##_, hdrW, catH_[SLOT] * aF##SLOT##_);
     #define NUI_SECTION_END(SLOT) cat_fold_end(dev, ry, top##SLOT##_, catH_[SLOT], aF##SLOT##_); } ry += snap(16.0f);
