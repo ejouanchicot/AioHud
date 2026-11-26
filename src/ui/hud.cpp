@@ -526,6 +526,8 @@ void Hud::render(u32 dev) {
             region_draw(f);                         // the main menu's Region Info : over the client's map
             map_screen_hud(f);                      // the map's cartouche (the map itself is drawn under the widgets)
             map_list_draw(f);                       // ... and its Markers list
+            friends_draw(f);                        // Communication -> Friend List
+            olstat_draw(f);                         // ... its Online Status
             comment_draw(f);                        // Search -> Edit your comment : the 3-line editor
             synth_draw(f);                          // the main menu's Synthesis : the grid, History (before items_draw : the materials sit beside the grid)
             items_draw(f);                          // the main menu's Items : the inventory list, the item card

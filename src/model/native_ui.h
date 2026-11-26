@@ -138,7 +138,8 @@ struct NativeMacroBooks {
 };
 bool native_ui_window_open(const char* name);   // native_ui.cpp : a client window of that name is open
 bool native_any_hover(const char* name, int entry);   // native_ui.cpp (dev walk) : that window's hand on that entry
-unsigned native_manager();                       // native_ui.cpp : the menu manager (0 unresolved)
+unsigned native_manager();
+void native_draw_probe(int on);   // dev (//aio drawprobe) : log each caller of the text / sprite draws OUTSIDE a window, once                       // native_ui.cpp : the menu manager (0 unresolved)
 unsigned native_win_named(unsigned mgr, const char* want);   // ... an open window by name (0 none)
 const NativeMacroBooks& native_macro_books();
 
@@ -227,6 +228,23 @@ struct NativeMap {
     int  v2Used;               // a marker's menu (mapv2) : 1 the marker is placed (entry 2 removes it), 0 not (it places it), -1 closed
 };
 const NativeMap& native_map();
+// the FRIEND LIST (Communication -> Friend List -> To List : `friend`, a TEXT LIST, grids-re-2026-11-21 s.1b) : group
+// header rows (online / offline / ignored / pending) and friend rows (status, PlayOnline name, character, zone)
+struct NativeFriendRow { unsigned char header, group, status, collapsed; char name[20]; char chr[20]; char zone[24]; };
+struct NativeFriends {
+    bool open, focused;
+    int  count, top, cursor, n;            // cursor : the hand's row 1..15 on the page (0 none)
+    NativeFriendRow row[16];
+    short rx0, ry0, rx1, ry1; int uiW, uiH;
+};
+const NativeFriends& native_friends();
+bool native_friends_hover(int row);
+// Friend List -> Online Status (olstat, grids-re s.1a) : 3 icon buttons IN A ROW -- 1 Online, 2 Away, 3 Invisible
+struct NativeOlstat { bool open, focused; int cursor, current; short rx0, ry0, rx1, ry1; int uiW, uiH; };
+const NativeOlstat& native_olstat();
+bool native_olstat_hover(int entry);
+bool native_olstat_pick(int entry);
+bool native_friends_pick(int row);
 bool native_map_list_hover(int row);   // the Markers list : the hand on that row (event 9)
 bool native_map_list_pick(int row);    // ... and validate it (event 5)
 bool native_cfg_filter_hover(int entry);
@@ -641,6 +659,8 @@ struct NativeItems {
     // keys change it, validate / cancel are the client's ; qtyOk : both read and plausible (else its own box stays)
     bool qtyOk, qtyFocused; int qtyVal, qtyMax;
     int  synMode;                                // Synthesis's pickers : 0 no, 1 the crystals (delegate K), 2 the materials (S, beside tskill1)
+    int  viewBag;                                // View House, away from the Mog House : `inventor` LISTS that storage, read-only (1 Safe, 2 Storage,
+                                                 // 4 Locker, 9 Safe 2 ; the bags you can use open `bank` instead) ; 0 none
 };
 const NativeItems& native_items();
 // The SHOPS (docs/notes/shops-re-2026-11-20.md, live 2026-11-21) : ONE list, `shop`, a TEXT LIST (rows +0x38, 0x54 B : cell c

@@ -184,6 +184,8 @@ float g_subXY[2] = { -1.0f, -1.0f };
 float g_mbkAt[3] = { 0.0f, 0.0f, 0.0f };
 float g_esAt[3] = { 0.0f, 0.0f, 0.0f };
 float g_m0At[3] = { 0.0f, 0.0f, 0.0f };
+float g_flmAt[3] = { 0.0f, 0.0f, 0.0f };   // the Friend List's menu (flistmai, generic) : left edge, its top, 1 = drawn
+float g_mmAt[6] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };   // the main menu as drawn : x0, y0, x1, y1, the cursor row's top, 1 = drawn
 float g_mlAt[3] = { 0.0f, 0.0f, 0.0f };    // the map's Markers list : left edge, the cursor row's top, 1 = drawn (a marker's menu, mapv2, hangs there)    // the map's menu (map0, the generic engine's) : left edge, its top, 1 = drawn (the Markers list hangs there)    // the equipment set list : left edge, the cursor row's top, 1 = drawn (mcresmn hangs there)
 float g_medAt[2][3] = { { 0, 0, 0 }, { 0, 0, 0 } };   // the macro palette / the macro : right edge, top, 1 = drawn (their option menus hang there)   // the macro book list : its left edge, the cursor row's top, 1 = drawn this frame (mcrselop hangs there)     // where the main menu's submenu was last drawn (a player's options take its place)
 const int HIT_N = 21;   // ... 20 the macro book list
@@ -4141,7 +4143,7 @@ void comment_draw(const Frame& f) {
     rrect(dev, L, snap(by + pad + headH), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
     // the genre : major (comgenre) > sub (sccompar / sccomite / sccomls)
     char genre[96] = "";
-    { const int mj = last.cmGenre >> 4, sb = last.cmGenre & 0xF;
+    if (last.cmMode == 2) { const int mj = last.cmGenre >> 4, sb = last.cmGenre & 0xF;
       const SubRow* g = sub_row("comgenre", mj); const char* subMenu = mj >= 1 && mj <= 3 ? "sccompar" : mj == 4 ? "sccomite" : mj == 5 ? "sccomls" : 0;
       const SubRow* s2 = subMenu ? sub_row(subMenu, sb) : 0;
       if (g && s2) _snprintf(genre, sizeof(genre), "%s \xE2\x80\xBA %s", tr(g->en, g->fr), tr(s2->en, s2->fr)); else if (g) lstrcpynA(genre, tr(g->en, g->fr), sizeof(genre)); genre[sizeof(genre) - 1] = 0; }
@@ -4153,7 +4155,7 @@ void comment_draw(const Frame& f) {
         rrect_stroke(dev, L, y, W, rowH - 2.0f * S, 4.0f * S, with_alpha(cur && last.typing ? 0xE0FFB45Au : cur ? 0xC8FFDA8Au : 0x30C8D6EAu, A), cur ? 1.5f * S : 1.0f);
     }
     fo->begin(dev);
-    fo->draw_lc(dev, L, hy, tr("Search Comment", "Commentaire de recherche"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    fo->draw_lc(dev, L, hy, last.cmMode == 0 ? tr("Bazaar Comment", "Message du bazar") : tr("Search Comment", "Commentaire de recherche"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
     if (genre[0]) fo->draw_lc(dev, snap(L + W - fo->measure(genre, tz * 0.85f)), hy, genre, tz * 0.85f, with_alpha(0xFF93A6BEu, A), sh, k.ow);
     for (int i = 0; i < 3; ++i) {
         const float cy = snap(ly + (float)i * rowH + (rowH - 2.0f * S) * 0.5f), tx = snap(L + 10.0f * S);
@@ -4643,7 +4645,12 @@ void items_draw(const Frame& f) {
     const bool bin = last.binMode && last.binVis > 0 && last.binUiW > 0;
     // the inventory (Synthesis : the crystals, the materials)
     char cnt[24]; if (last.invCap > 0) sprintf(cnt, "%d / %d", last.invUsed, last.invCap); else sprintf(cnt, "%d", last.invUsed);
-    const char* title = last.synMode == 1 ? tr("Crystals", "Cristaux") : last.synMode == 2 ? tr("Materials", "Mat\xC3\xA9riaux") : tr("Items", "Objets");
+    static const char* const VBAG_EN[17] = { "Items", "Mog Safe", "Storage", "Temporary", "Mog Locker", "Mog Satchel", "Mog Sack", "Mog Case", "Mog Wardrobe",
+                                             "Mog Safe 2", "Mog Wardrobe 2", "Mog Wardrobe 3", "Mog Wardrobe 4", "Mog Wardrobe 5", "Mog Wardrobe 6", "Mog Wardrobe 7", "Mog Wardrobe 8" };
+    static const char* const VBAG_FR[17] = { "Objets", "Coffre", "Entrep\xC3\xB4t", "Temporaire", "Casier", "Sacoche", "Sac", "Valise", "Garde-robe",
+                                             "Coffre 2", "Garde-robe 2", "Garde-robe 3", "Garde-robe 4", "Garde-robe 5", "Garde-robe 6", "Garde-robe 7", "Garde-robe 8" };
+    const int vb = last.viewBag > 0 && last.viewBag < 17 ? last.viewBag : 0;   // View House : the storage listed (read-only)
+    const char* title = last.synMode == 1 ? tr("Crystals", "Cristaux") : last.synMode == 2 ? tr("Materials", "Mat\xC3\xA9riaux") : tr(VBAG_EN[vb], VBAG_FR[vb]);
     ItemsBox IL = { last.itRow, last.itN, last.itTop, last.itVis, last.itCursor, last.tempRows, last.focused, I0.open,
                     title, last.synMode ? "" : cnt, !last.synMode && last.invCap > 0 && last.invUsed >= last.invCap };
     const float lw = keep_width(g_itB, items_box_width(f, k, IL)), lh = snap(pad + headH + 6.0f * S + (float)last.itVis * rowH + pad);
@@ -4743,6 +4750,8 @@ void shop_draw(const Frame& f) {
         float bw, bh; block_size(f, k, rows, 2, bw, bh);
         float bx = snap((float)last.mx0 * sx), by = snap((float)last.my0 * sy);
         if (last.my0 * 2 > last.uiH) { float cx, cy; if (place_on_chat(bw, bh, snap(4.0f * S), f.screenW, f.screenH, cx, cy)) { bx = cx; by = cy; } }   // the bottom-left column : above the chat
+        // your bazaar's Set prices / Comment : the client stacks it OVER its main menu -- beside ours, on its cursor row
+        if (g_mmAt[5] > 0.0f && bx < g_mmAt[2] && bx + bw > g_mmAt[0] && by < g_mmAt[3] && by + bh > g_mmAt[1]) { bx = snap(g_mmAt[0] - snap(3.0f * S) - bw); by = snap(g_mmAt[4]); }
         if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
         if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
         const int jm = menu_place(f, __LINE__, bx, by, bw, bh);
@@ -5358,7 +5367,8 @@ void gen_draw(const Frame& f) {
     float dt = g_gnMs ? (float)(now - g_gnMs) / 1000.0f : 0.0f; g_gnMs = now; if (dt > 0.1f) dt = 0.1f;
     const NativeGenMenus& G0 = native_gen_menus();
     static NativeEntryMenu last[GEN_MENUS]; static char lastHelp[GEN_MENUS][16][72];
-    g_m0At[2] = 0.0f;
+    g_m0At[2] = 0.0f; g_flmAt[2] = 0.0f;
+    const bool mmUp = g_mmAt[5] > 0.0f;                  // (mainmenu_draw resets / publishes it each frame, before this)
     const Metrics k = metrics(f); const float S = k.S;
     for (int i = 0; i < G0.n; ++i) {                                   // a slot per menu NAME (its fade survives the others)
         int s = -1; for (int j = 0; j < GEN_MENUS; ++j) if (!strcmp(g_gnName[j], G0.m[i].name)) s = j;
@@ -5393,7 +5403,19 @@ void gen_draw(const Frame& f) {
         // MacroPalette : the book list opens IN PLACE of mcrmenu (not drawn under it) ; the book's options hang beside OUR
         // list, on its row (the client places them beside its own, narrower list -- they covered ours, 2026-11-25)
         if (!strcmp(L.name, "mcrmenu") && (native_macro_books().open || native_equip_sets().open)) continue;
+        // a menu the client covers with its sub-menu AT THE SAME PLACE (commenu under flistmai, 2026-11-26 : the two texts
+        // showed through each other) : it steps back while the one over it has the hand, as the main menu does
+        { bool covered = false;
+          for (int j = 0; j < GEN_MENUS && !covered; ++j) { if (j == s || !g_gnName[j][0] || L.focused) continue;
+              bool openJ = false; for (int q = 0; q < G0.n; ++q) if (!strcmp(G0.m[q].name, g_gnName[j])) openJ = true;
+              const NativeEntryMenu& J = last[j];
+              if (openJ && J.rx0 <= L.rx0 + 2 && J.ry0 <= L.ry0 + 2 && J.rx1 >= L.rx1 - 2 && J.ry1 >= L.ry1 - 2
+                  && (J.focused || (J.rx1 - J.rx0) * (J.ry1 - J.ry0) > (L.rx1 - L.rx0) * (L.ry1 - L.ry0))) covered = true; }   // the one over it : it has the hand, or it is the bigger
+          if (covered) continue; }
         if (!strcmp(L.name, "mcresmn") && g_esAt[2] > 0.0f) { bx = snap(g_esAt[0] - snap(3.0f * S) - bw); by = snap(g_esAt[1]); }
+        // a sub-menu the client stacks OVER its main menu (Set Bazaar's Set prices / Comment, 2026-11-26) : beside ours, on its
+        // cursor row -- our main menu is wider than the client's, its sub-menus' places were made for the client's
+        if (mmUp && bx < g_mmAt[2] && bx + bw > g_mmAt[0] && by < g_mmAt[3] && by + bh > g_mmAt[1]) { bx = snap(g_mmAt[0] - snap(3.0f * S) - bw); by = snap(g_mmAt[4]); }
         if (!strcmp(L.name, "mapv2") && g_mlAt[2] > 0.0f) { bx = snap(g_mlAt[0] - snap(3.0f * S) - bw); by = snap(g_mlAt[1]); }
         if (!strcmp(L.name, "mcrselop") && g_mbkAt[2] > 0.0f) { bx = snap(g_mbkAt[0] - snap(3.0f * S) - bw); by = snap(g_mbkAt[1]); }
         if ((!strcmp(L.name, "mcrbedit") || !strcmp(L.name, "mcrledit")) && !L.focused) continue;   // opened WITH the palette / the macro, idle : shown only when called (the option key)
@@ -5409,6 +5431,7 @@ void gen_draw(const Frame& f) {
         g_frameJoin = jm;
         const int row = block_draw(f, k, g_gnB[s], rows, n, cur, L.focused, bx, by, bw, bh, A, dt);
         if (!strcmp(L.name, "map0") && open) { g_m0At[0] = bx; g_m0At[1] = by; g_m0At[2] = 1.0f; }
+        if (!strcmp(L.name, "flistmai") && open) { g_flmAt[0] = bx; g_flmAt[1] = by; g_flmAt[2] = 1.0f; }   // its TOP : the client opens olstat level with it (y 48)
         if (open && L.focused) {
             hit_extend(16, by + bh, f.screenH);
             if (g_hit[16][2] <= 0.0f) { g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH; }
@@ -5430,7 +5453,8 @@ void gen_list_draw(const Frame& f) {
     float dt = g_glMs ? (float)(now - g_glMs) / 1000.0f : 0.0f; g_glMs = now; if (dt > 0.1f) dt = 0.1f;
     const NativeGenMenus& G0 = native_gen_menus();
     static NativeGenMenus last; static char title[0xCC];
-    if (G0.list) { last = G0; const NativeTopBar& tb = native_topbar(); if (tb.title.text[0]) lstrcpynA(title, tb.title.text, sizeof(title)); }
+    if (G0.list) { last = G0; const NativeTopBar& tb = native_topbar(); if (tb.title.text[0]) lstrcpynA(title, tb.title.text, sizeof(title));
+                   if (!strcmp(G0.listName, "msglist")) lstrcpynA(title, tr("Messages", "Messages"), sizeof(title)); }   // its top bar has no title
     if (!block_ease(g_glB, G0.list, now, dt) || last.uiW <= 0 || last.lvis <= 0) return;
     const Metrics k = metrics(f);
     const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), tz = k.tz, rowH = snap(k.capH * 1.25f);
@@ -5454,6 +5478,8 @@ void gen_list_draw(const Frame& f) {
         RowSpec rows[16] = {}; static char nb[16][24]; int cur = 0; const int n = last.ln - last.ltop < last.lvis ? last.ln - last.ltop : last.lvis;
         for (int i = 0; i < n; ++i) {
             rows[i].label = last.lrow[i].text[0] ? last.lrow[i].text : "-"; rows[i].icon = IC_NONE;
+            if (!strcmp(last.listName, "msglist") && last.ltop + i == 0 && !last.lrow[i].text[0]) {   // PlayOnline messages : row 0 = the column titles
+                rows[i].label = last.ln <= 1 ? tr("No messages", "Aucun message") : tr("From  /  To  /  Type  /  Date", "De  /  Ã  /  Type  /  Date"); rows[i].off = true; rows[i].center = last.ln <= 1; }
             {   const unsigned c = last.lrow[i].col;                     // the client's row colour (grids-re s.1) : its meaning, in our palette
                 if (c == 0x80509050u) rows[i].tint = 0xFF9CE27Au;           // set / equipped : green
                 else if (c == 0x80909040u) rows[i].tint = 0xFFFFDA8Au;      // a command row : gold
@@ -7420,6 +7446,7 @@ const char* fr_of(const char* en) {
 }
 
 void mainmenu_draw(const Frame& f) {
+    g_mmAt[5] = 0.0f;   // republished below when drawn (the sub-menus that hang beside it read it after)
     const UiConfig& C = ui_config();
     const NativeEntryMenu& M = native_main_menu();
     g_hit[5][2] = 0.0f;
@@ -7484,6 +7511,8 @@ void mainmenu_draw(const Frame& f) {
     if (A > 0.0f) {
         g_frameJoin = jm;
         const int row = block_draw(f, kN, g_mainMB, rows, last.n, cur, last.focused, bx, by, bw, bh, A, dt);
+        g_mmAt[0] = bx; g_mmAt[1] = by; g_mmAt[2] = bx + bw; g_mmAt[3] = by + bh;
+        g_mmAt[4] = g_mainMB.rowY0 + (float)((cur >= 1 ? cur : 1) - 1) * g_mainMB.rowStep; g_mmAt[5] = 1.0f;
         // the header : a hairline under it, the title, the page between its two arrows
         const u32 dev = f.dev;
         const float hy = by + k.bi + k.pad, hc = snap(hy + (headH - k.gap) * 0.5f);   // inside the frame border
@@ -8626,10 +8655,13 @@ void macrobar_draw(const Frame& f) {
 namespace {
 u32 g_mapTex = 0; int g_mapTexW = 512, g_mapTexH = 512; unsigned g_mapTexId = 0; int g_mapTries = 0; unsigned g_mapNext = 0; Block g_mapB; unsigned g_mapMs = 0;
 NativeMap g_mapLast; float g_mapA = 0.0f;                   // the map last read + its shown alpha (the cartouche, drawn later)
-u32 g_mkAtlas = 0; TexRetry g_mkAtlasR; char g_mkPath[260] = "";   // the minimap's marker atlas, a copy of our own (device-owned)
+u32 g_mkAtlas = 0; TexRetry g_mkAtlasR; char g_mkPath[260] = "";
+u32 g_stIco = 0; TexRetry g_stIcoR;   // the PlayOnline status icons, HD (assets/status_icons.raw, scripts/gen_status_icons.py) : 4 x 4 cells of 128   // the minimap's marker atlas, a copy of our own (device-owned)
 }
 bool map_screen_up() { return g_mapA > 0.0f; }
-void map_screen_forget() { g_mapTex = 0; g_mapTexId = 0; g_mapTries = 0; g_mapNext = 0; g_mkAtlas = 0; g_mkAtlasR = TexRetry{}; }
+void map_screen_forget() { g_mapTex = 0; g_mapTexId = 0; g_mapTries = 0; g_mapNext = 0; g_mkAtlas = 0; g_mkAtlasR = TexRetry{}; g_stIco = 0; g_stIcoR = TexRetry{}; }
+// cells : 0 online, 1 away, 2 invisible (Online Status) ; 3 online, 4 away, 5 status 3, 6 status 4, 7 unknown, 8 unread (the friend list)
+static u32 status_icons(u32 dev) { return ensure_raw_tex_mip(dev, g_stIco, g_stIcoR, plugin_path_r("assets\\status_icons.raw"), 512, 512); }
 void map_screen_draw(const Frame& f) {
     const UiConfig& C = ui_config();
     g_mapA = 0.0f;
@@ -8772,6 +8804,165 @@ void map_screen_draw(const Frame& f) {
     if (said != last.fileId) { said = last.fileId;
         windower::debug::log("NATIVEUI map screen drawn : file 0x%04X tex %s, image %d,%d %dx%d on %dx%d, player %d at %d,%d ; zone '%s' w %d", last.fileId, g_mapTex ? "ok" : "MISSING",
                              (int)ix, (int)iy, (int)iw, (int)ih, (int)f.screenW, (int)f.screenH, last.player, (int)SX(last.px), (int)SY(last.py), zone_name(last.zone) ? zone_name(last.zone) : "(null)", (int)fo->measure("Port Jeuno", k.tz * 1.15f)); }
+}
+
+// ======== Communication -> Friend List : the groups (online / offline / ignored / pending, folded or not), each friend's
+// status, PlayOnline name, character and zone. The client keeps the keys (validate a header : fold it) ; the mouse too ========
+static u32 status_icons(u32 dev);   // below, with the map's textures (one device-change forget)
+namespace { Block g_frB; unsigned g_frMs = 0; }
+void friends_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_frB.vis = 0.0f; g_frB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_frMs ? (float)(now - g_frMs) / 1000.0f : 0.0f; g_frMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeFriends& F0 = native_friends();
+    static NativeFriends last;
+    if (F0.open) last = F0;
+    if (!block_ease(g_frB, F0.open, now, dt) || last.uiW <= 0) return;
+    const Metrics k = metrics(f), kN = no_icons(k);
+    const float S = k.S;
+    static const char* const GRP_EN[5] = { "Online", "Offline", "Ignore List", "Pending", "" };
+    static const char* const GRP_FR[5] = { "En ligne", "Hors ligne", "Ignor\xC3\xA9s", "En attente", "" };
+    static const u32 STAT[7] = { 0xFF9AA3AEu, 0xFF8CE08Cu, 0xFFFFD36Au, 0xFFE8806Eu, 0xFFB8B8C8u, 0xFFB8B8C8u, 0xFFFFDA8Au };   // offline, online, away, busy, invisible, ?, unread / unknown
+    RowSpec rows[16]; char lab[16][48]; int n = last.n > 0 ? last.n : 1, cur = 0;
+    const u32 ico = status_icons(f.dev);
+    for (int i = 0; i < n; ++i) {
+        RowSpec& R = rows[i]; R.icon = IC_NONE; R.sub = false; R.off = false;
+        if (!last.n) { R.label = tr("No friends", "Aucun ami"); R.center = true; R.off = true; continue; }
+        const NativeFriendRow& w = last.row[i];
+        if (w.header) {
+            const char* g = w.group < 5 ? tr(GRP_EN[w.group], GRP_FR[w.group]) : "";
+            sprintf(lab[i], "%s", g[0] ? g : "\xE2\x80\x94"); R.label = lab[i]; R.tint = 0xFFE8D9B0u;
+            R.extra = w.collapsed ? tr("hidden", "masqu\xC3\xA9") : 0;
+        } else {
+            if (w.chr[0] && _stricmp(w.chr, w.name)) _snprintf(lab[i], sizeof(lab[i]), "%s  (%s)", w.name, w.chr); else lstrcpynA(lab[i], w.name, sizeof(lab[i]));
+            lab[i][sizeof(lab[i]) - 1] = 0; R.label = lab[i];
+            R.tint = STAT[w.status < 7 ? w.status : 6]; R.off = w.status == 0;
+            static const int CELL[7] = { -1, 3, 4, 5, 6, 7, 8 };   // the client's keytops3 #64 #65 #66 #177 (#67 / #158 : unknown / unread)
+            if (ico && CELL[w.status < 7 ? w.status : 6] >= 0) { set_cell(R, ico, CELL[w.status < 7 ? w.status : 6], 4, 128, 512, 512, 0.0f); R.texTint = w.status == 0 ? 0xA0FFFFFFu : 0xFFFFFFFFu; }
+            R.extra = w.zone[0] ? w.zone : 0;
+        }
+        if (last.cursor == i + 1) cur = i + 1;
+    }
+    const Metrics kF = ico ? k : kN;   // the icon column : only with the icons
+    float bw = 0.0f, bh = 0.0f; block_size(f, kF, rows, n, bw, bh);
+    const float tzH = k.tz * 0.92f, headH = snap(k.capH + k.gap);
+    const char* title = tr("Friend List", "Liste d'amis");
+    char pg[24]; sprintf(pg, "%d", last.count);
+    {   const float need = snap(k.gutter + f.font->measure(title, tzH) + 14.0f * S + f.font->measure(pg, tzH) + k.pad) + 2.0f * k.bi;
+        if (need > bw) bw = need; }
+    bw = keep_width(g_frB, bw); bh = snap(bh + headH); g_frB.inTop = headH;
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    float bx = snap((float)last.rx0 * sx), by = snap((float)last.ry0 * sy);
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh); g_frameJoin = jm;
+    const float tO = ease_out(((float)(now - g_frB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_frB.vis * tO * (last.focused || !F0.open ? 1.0f : 0.62f);
+    if (A <= 0.0f) return;
+    const int row = block_draw(f, kF, g_frB, rows, n, cur, last.focused, bx, by, bw, bh, A, dt);
+    const u32 dev = f.dev;
+    const float hy = by + k.bi + k.pad, hc = snap(hy + (headH - k.gap) * 0.5f);
+    rrect(dev, bx + k.bi + k.gutter, snap(hy + headH - k.gap * 0.5f - 1.0f), bw - 2.0f * k.bi - k.gutter - k.pad, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    Font* fo = f.font;
+    fo->begin(dev);
+    fo->draw_lc(dev, snap(bx + k.bi + k.gutter + k.capPadL * 0.5f), hc, title, tzH, with_alpha(0xFFE8D9B0u, A), with_alpha(0xC8000000u, A), k.ow);
+    fo->draw_lc(dev, snap(bx + bw - k.bi - k.pad - fo->measure(pg, tzH)), hc, pg, tzH, with_alpha(0xFFC9D3E0u, A), with_alpha(0xC8000000u, A), k.ow);
+    if (F0.open && last.focused && last.n) {
+        if (row >= 1 && row <= n && row != g_frB.hoverRow && row != last.cursor) native_friends_hover(row);
+        g_frB.hoverRow = row;
+        if (f.mouse && f.mouse->clicked && row >= 1 && row <= n) native_friends_pick(row);
+    } else g_frB.hoverRow = 0;
+}
+
+// ======== Friend List -> Online Status (olstat) : as the client, THREE ICON BUTTONS IN A ROW -- Online (a lit green orb),
+// Away (an amber clock), Invisible (a dashed grey ring) -- the hand on one, the status chosen marked under its icon (the
+// client's mark). The client keeps the keys ; the mouse hovers / picks a button ========
+namespace { Block g_osB; unsigned g_osMs = 0; float g_osSel = -1.0f; }
+void olstat_draw(const Frame& f) {
+    const UiConfig& C = ui_config();
+    if (!(C.nuHide & NU_MAIN) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_osB.vis = 0.0f; g_osB.wasOpen = false; return; }
+    const unsigned now = GetTickCount();
+    float dt = g_osMs ? (float)(now - g_osMs) / 1000.0f : 0.0f; g_osMs = now; if (dt > 0.1f) dt = 0.1f;
+    const NativeOlstat& O0 = native_olstat();
+    static NativeOlstat last;
+    if (O0.open) last = O0;
+    if (!block_ease(g_osB, O0.open, now, dt) || last.uiW <= 0) return;
+    const Metrics k = metrics(f); const float S = k.S; Font* fo = f.font; const u32 dev = f.dev;
+    static const char* const EN[3] = { "Online", "Away", "Invisible" };
+    static const char* const FR[3] = { "En ligne", "Absent", "Invisible" };
+    float lw = 0.0f; for (int i = 0; i < 3; ++i) { const float w = fo->measure(tr(EN[i], FR[i]), k.tz * 0.9f); if (w > lw) lw = w; }
+    const float pad = snap(8.0f * S) + k.bi, tw = snap((lw > 46.0f * S ? lw : 46.0f * S) + 14.0f * S), th = snap(58.0f * S), gap = snap(5.0f * S);
+    const float bw = snap(pad * 2.0f + tw * 3.0f + gap * 2.0f), bh = snap(pad * 2.0f + th);
+    const float sx = f.screenW / (float)last.uiW, sy = f.screenH / (float)last.uiH;
+    float bx = snap((float)last.rx1 * sx - bw), by = snap((float)last.ry0 * sy);           // the client's place : its right edge ...
+    if (g_flmAt[2] > 0.0f) { bx = snap(g_flmAt[0] - snap(3.0f * S) - bw); by = snap(g_flmAt[1]); }   // ... or beside the Friend List's menu (the client's sat over it)
+    if (bx + bw > f.screenW - 4.0f) bx = snap(f.screenW - 4.0f - bw); if (bx < 4.0f) bx = 4.0f;
+    if (by + bh > f.screenH - 4.0f) by = snap(f.screenH - 4.0f - bh); if (by < 4.0f) by = 4.0f;
+    const int jm = menu_place(f, __LINE__, bx, by, bw, bh);
+    const float tO = ease_out(((float)(now - g_osB.openMs) / 1000.0f) / 0.08f);
+    by = snap(by + (1.0f - tO) * 4.0f * S);
+    const float A = g_osB.vis * tO * (last.focused || !O0.open ? 1.0f : 0.62f); if (A <= 0.0f) return;
+    g_frameJoin = jm;
+    draw_themed_box(dev, f.skin, bx, by, bw, bh, C.muBox, A, S);
+    // the hand glides between the buttons
+    const float x0 = bx + pad, y0 = by + pad;
+    const float want = last.cursor >= 1 ? (float)(last.cursor - 1) : -1.0f;
+    if (g_osSel < 0.0f || want < 0.0f) g_osSel = want; else g_osSel += (want - g_osSel) * (1.0f - expf(-dt * 24.0f));
+    int hov = 0;
+    for (int i = 0; i < 3; ++i) {
+        const float tx = snap(x0 + (float)i * (tw + gap));
+        rrect(dev, tx, y0, tw, th, 6.0f * S, with_alpha(0x40101826u, A), with_alpha(0x40080C14u, A));
+        rrect_stroke(dev, tx, y0, tw, th, 6.0f * S, with_alpha(0x30C8D6EAu, A), 1.0f);
+        if (f.mouse && f.mouse->x >= tx && f.mouse->x < tx + tw && f.mouse->y >= y0 && f.mouse->y < y0 + th) hov = i + 1;
+    }
+    if (g_osSel >= 0.0f) {                                         // the selection : the party glass, as every menu row
+        const float sxp = snap(x0 + g_osSel * (tw + gap));
+        rrect_clip_begin(dev, sxp, y0, tw, th, 6.0f * S); party_selframe(dev, sxp, y0, tw, th, f.t, A, 0); rrect_clip_end(dev);
+        rrect_stroke(dev, sxp, y0, tw, th, 6.0f * S, with_alpha(last.focused ? 0xC8FFDA8Au : 0x60FFDA8Au, A), 1.5f * S);
+    }
+    cs(dev);
+    for (int i = 0; i < 3; ++i) {
+        const float tx = snap(x0 + (float)i * (tw + gap)), cx = snap(tx + tw * 0.5f), cy = snap(y0 + th * 0.38f), r = 10.0f * S;
+        const bool cur = last.current == i + 1;
+        const u32 hd = status_icons(dev);
+        if (hd) {                                                  // the client's icons (keytops3 #97 / #98 / #96), redrawn in HD
+            const float z = snap(r * 2.6f), u0 = (float)i * 0.25f;
+            dTexQuadState(dev, hd, true, true); tquad(dev, snap(cx - z * 0.5f), snap(cy - z * 0.5f), z, z, u0, u0 + 0.25f, 0.0f, 0.25f, with_alpha(0xFFFFFFFFu, A), with_alpha(0xFFFFFFFFu, A));
+            dSetTex(dev, 0, 0); cs(dev);
+        } else {
+            // the client's own icons (keytops3 #97 / #98 / #96) : a pale blue disc ringed in dark blue -- a pulse line, three
+            // dots, a question mark (the user 2026-11-26 : no liberties ; HD versions to come, IconsHD_ChatGPT/)
+            disc(dev, cx, cy, r + 1.6f * S, with_alpha(0xFF0E3A62u, A)); disc(dev, cx, cy, r, with_alpha(0xFFD8E8F6u, A));
+            const u32 ink = with_alpha(0xFF2A6496u, A);
+            if (i == 0) {                                              // Online : a pulse line
+                const float px[6] = { -0.80f, -0.35f, -0.12f, 0.12f, 0.34f, 0.80f }, py[6] = { 0.0f, 0.0f, -0.55f, 0.55f, 0.0f, 0.0f };
+                for (int q = 0; q < 5; ++q) seg_soft(dev, cx + px[q] * r, cy + py[q] * r, cx + px[q + 1] * r, cy + py[q + 1] * r, 2.2f * S, ink);
+            } else if (i == 1) {                                       // Away : three dots
+                for (int q = -1; q <= 1; ++q) disc(dev, cx + (float)q * r * 0.52f, cy, r * 0.2f, ink);
+            }
+        }
+        if (cur) {                                                 // the status chosen : the client's mark under the icon, in gold
+            const float my = snap(cy + r + 5.0f * S);
+            rrect(dev, snap(cx - 9.0f * S), my, snap(18.0f * S), snap(2.0f * S), 1.0f * S, with_alpha(0xFFFFDA8Au, A), with_alpha(0xFFFFDA8Au, A));
+        }
+    }
+    fo->begin(dev);
+    if (!status_icons(dev)) { const float tx = snap(x0 + 2.0f * (tw + gap));            // Invisible's question mark (no HD icons)
+      fo->draw_cc(dev, snap(tx + tw * 0.5f), snap(y0 + th * 0.38f), "?", 15.0f * S, with_alpha(0xFF2A6496u, A), 0, 0.0f); }
+    fo->begin(dev);
+    for (int i = 0; i < 3; ++i) {
+        const float tx = snap(x0 + (float)i * (tw + gap));
+        const bool cur = last.current == i + 1;
+        fo->draw_cc(dev, snap(tx + tw * 0.5f), snap(y0 + th * 0.80f), tr(EN[i], FR[i]), k.tz * 0.9f, with_alpha(cur ? 0xFFFFDA8Au : 0xFFE4EAF2u, A), with_alpha(0xC8000000u, A), k.ow);
+    }
+    if (O0.open && last.focused) {
+        g_hit[16][0] = bx / f.screenW; g_hit[16][1] = by / f.screenH; g_hit[16][2] = bw / f.screenW; g_hit[16][3] = bh / f.screenH;
+        if (hov && hov != g_osB.hoverRow && hov != last.cursor) native_olstat_hover(hov);
+        g_osB.hoverRow = hov;
+        if (hov && f.mouse && f.mouse->clicked) native_olstat_pick(hov);
+    } else g_osB.hoverRow = 0;
 }
 
 // the map's MARKERS list (mapv3) : a page of rows -- your own markers (10, empty ones blank), the event markers, the party,

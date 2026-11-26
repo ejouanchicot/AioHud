@@ -308,6 +308,8 @@ extern NativeMacroEdit g_med;    // the macro editor (macro_edit_poll, below)
 extern NativeEquipSets g_es;     // the equipment set list (equip_sets_poll, below)
 extern NativeCfgFilter g_cff;    // Config's filter lists (cfg_filter_poll, below)
 extern NativeMap g_map;          // the map (map_poll, below)
+extern NativeFriends g_frl;       // the friend list (friends_poll, below)
+extern NativeOlstat g_ols;        // the online status (olstat_poll, below)
 bool g_mainNative = false;   // a main-menu child the client keeps drawing, in the main menu's place (main_poll)
 NativeTopBar g_tb; bool g_tbFail = false;                                               // the top bar (titlewin + helpwind)
 NativeMacro g_mc; bool g_mcFail = false;                                                // the macro bar
@@ -1119,7 +1121,18 @@ bool items_read(u32 mgr, u32 focus, NativeItems& I) {
         // (2026-11-20, an NPC trade : "l'inventaire a cote c'est celui du jeu" -- the handover's mode is not 1)
         static int saidTm = 0; static unsigned char lastTm = 0xFF;
         if (g_trade.open && fromMain != lastTm && saidTm < 8) { ++saidTm; lastTm = fromMain; windower::debug::log("NATIVEUI items : the trade's picker (open mode %u, %s) -- AioHUD draws it", fromMain, g_trade.npc ? "NPC trade" : "player trade"); }
-        if (fromMain != 1 && !g_trade.open) {      // Synthesis's pickers (cmbmenu up) : the crystals, or the materials beside tskill1
+        // View House (mogcont) away from the Mog House : the storages you cannot touch there open `inventor` on THEIR
+        // contents, read-only (2026-11-26 : the Mog Safe's list and its card stayed the client's). The bag : mogcont's entry
+        const u32 mc = fromMain != 1 && !g_trade.open ? win_named(mgr, "mogcont") : 0;
+        if (mc) {
+            short e = 0; rd16(mc + 0x4C, e);
+            static const int BAG_OF[16] = { 0, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };   // entry -> bag (map-menus : mogcont)
+            I.viewBag = e >= 1 && e <= 15 ? BAG_OF[e] : 0;
+            static int saidV = 0; static int lastE = -1;
+            if (e != lastE && saidV < 8) { ++saidV; lastE = e; windower::debug::log("NATIVEUI items : View House lists a storage (entry %d -> bag %d) -- AioHUD draws it, read-only", e, I.viewBag); }
+            if (!I.viewBag) return false;
+        }
+        else if (fromMain != 1 && !g_trade.open) {      // Synthesis's pickers (cmbmenu up) : the crystals, or the materials beside tskill1
             NativePanel CM, TS; if (!panel_read(mgr, "cmbmenu", CM)) return false;
             I.synMode = panel_read(mgr, "tskill1", TS) ? 2 : 1;
         }
@@ -1136,7 +1149,7 @@ bool items_read(u32 mgr, u32 focus, NativeItems& I) {
         w.itemId = (unsigned short)(id & 0xFFFF); w.itemCount = (int)(cnt > 9999 ? 9999 : cnt); w.itemCol = col; w.tempRow = I.itTop + i < tmp;
     }
     I.invUsed = I.itN - tmp;
-    { ItemBagInfo bi; if (item_bag_info(0, bi) && bi.max) I.invCap = bi.max; }
+    { ItemBagInfo bi; if (item_bag_info(I.viewBag, bi) && bi.max) I.invCap = bi.max; }
     I.focused = focus == T.obj; I.open = true;
     return true;
 }
@@ -1593,6 +1606,16 @@ inline u32 cap_park_y(int x, u32 y) {
     const int uy = (int)y + HIDE_DY;
     return (x >= g_capR[0] - 24 && x <= g_capR[2] + 24 && uy >= g_capR[1] - 24 && uy <= g_capR[3] + 24) ? y + (u32)HIDE_DY : y;
 }
+// DRAWPROBE (dev, 2026-11-26) : who draws the names / icons over the characters -- each caller of a text or sprite draw
+// made OUTSIDE any window draw, logged once with a sample (kind, x, y, colour, text). Off unless //aio drawprobe on.
+volatile int g_drawProbe = 0; u32 g_dpRet = 0;
+void draw_probe_note(char kind, u32 ret, int x, int y, u32 col, const char* s, int len) {
+    static u32 seen[160]; static int n = 0;
+    for (int i = 0; i < n; ++i) if (seen[i] == ret) return;
+    if (n >= 160) return; seen[n++] = ret;
+    char t[48] = ""; if (s) { int o = 0; __try { for (int i = 0; (len <= 0 || i < len) && i < 46 && s[i]; ++i) { const unsigned char c = (unsigned char)s[i]; t[o++] = c >= 0x20 && c < 0x7F ? (char)c : '.'; } } __except (EXCEPTION_EXECUTE_HANDLER) {} t[o] = 0; }
+    windower::debug::log("DRAWPROBE %c caller FFXiMain+%X at %d,%d col %08X '%s'", kind, ret - ffximain_base(), x, y, col, t);
+}
 typedef u32 (__fastcall* WinDrawFn)(u32 win, u32 edx);
 typedef u32 (__fastcall* TextCoreFn)(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy);
 typedef u32 (__cdecl* Cdecl10Fn)(u32, u32, u32, u32, u32, u32, u32, u32, u32, u32);
@@ -1635,6 +1658,7 @@ u32 __fastcall hk_windraw(u32 win, u32 edx) {   // relay_enter / relay_leave : a
 }
 u32 __fastcall hk_txcore_body(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy) {
     if (g_capCur) cap_add((int)x, (int)y, s, (int)len, col);
+    else if (g_drawProbe) draw_probe_note('T', g_dpRet, (int)x, (int)y, col, s, (int)len);
     ++g_capDepth; const u32 r = ((TextCoreFn)g_hkTxCore.tramp)(font, edx, x, cap_park_y((int)x, y), s, len, col, fl, sx, sy); --g_capDepth;
     return r;
 }
@@ -1643,9 +1667,11 @@ u32 __fastcall hk_txcore_body(u32 font, u32 edx, u32 x, u32 y, const char* s, u3
 // the RoE row callback) : quest00's bullets stayed on the screen with the rows' texts -- the same park (cap_park_y)
 typedef u32 (__fastcall* Sprite5Fn)(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5);
 u32 __fastcall hk_sprite_body(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5) {
+    if (!g_capCur && g_drawProbe) draw_probe_note('S', g_dpRet, (int)x, (int)y, a3, 0, 0);
     return ((Sprite5Fn)g_hkSprite.tramp)(spr, edx, x, cap_park_y((int)x, y), a3, a4, a5);
 }
 u32 __fastcall hk_sprite(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5) {   // relay_enter / relay_leave (R1)
+    if (g_drawProbe) g_dpRet = (u32)_ReturnAddress();
     relay_enter(); const auto r = hk_sprite_body(spr, edx, x, y, a3, a4, a5); relay_leave(); return r;
 }
 // the SCALED sprite draw FUN_05461110 (Nov ; thiscall (x, y, colour, f32 sx, f32 sy, ?, ?, ?) ret 0x20) : at scale 1 it calls
@@ -1653,37 +1679,46 @@ u32 __fastcall hk_sprite(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5)
 // (a scale-1 call is then parked twice : still off-screen) ; every other window keeps the inner hook's rect-limited rule
 typedef u32 (__fastcall* Sprite8Fn)(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8);
 u32 __fastcall hk_sprites_body(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8) {
+    if (!g_capCur && g_drawProbe) draw_probe_note('Z', g_dpRet, (int)x, (int)y, a3, 0, 0);
     return ((Sprite8Fn)g_hkSpriteS.tramp)(spr, edx, x, (g_capFull && g_capCur) ? y + (u32)HIDE_DY : y, a3, a4, a5, a6, a7, a8);
 }
 u32 __fastcall hk_sprites(u32 spr, u32 edx, u32 x, u32 y, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8) {   // relay_enter / relay_leave (R1)
+    if (g_drawProbe) g_dpRet = (u32)_ReturnAddress();
     relay_enter(); const auto r = hk_sprites_body(spr, edx, x, y, a3, a4, a5, a6, a7, a8); relay_leave(); return r;
 }
 u32 __fastcall hk_txcore(u32 font, u32 edx, u32 x, u32 y, const char* s, u32 len, u32 col, u32 fl, u32 sx, u32 sy) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
+    if (g_drawProbe) g_dpRet = (u32)_ReturnAddress();
     relay_enter(); const auto r = hk_txcore_body(font, edx, x, y, s, len, col, fl, sx, sy); relay_leave(); return r;
 }
 // the ascii ones are cdecl : 10 slots forwarded (the caller cleans ; the extra ones are its own stack, untouched)
 u32 __cdecl hk_txasc_body(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
+    if (!g_capCur && g_drawProbe) draw_probe_note('A', g_dpRet, (short)a1, (short)a2, a4, (const char*)a3, 0);
     if (g_capCur) cap_add((short)a1, (short)a2, (const char*)a3, 0, a4);
     ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAsc.tramp)(a1, cap_park_y((short)a1, a2), a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
     return r;
 }
 u32 __cdecl hk_txasc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
+    if (g_drawProbe) g_dpRet = (u32)_ReturnAddress();
     relay_enter(); const auto r = hk_txasc_body(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); relay_leave(); return r;
 }
 u32 __cdecl hk_txascr_body(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
+    if (!g_capCur && g_drawProbe) draw_probe_note('R', g_dpRet, (short)a1, (short)a2, a4, (const char*)a3, 0);
     if (g_capCur) cap_add((short)a1, (short)a2, (const char*)a3, 0, a4 | 0x01000000u);   // right-aligned : x is its RIGHT edge (bit 24 of the colour marks it)
     ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscR.tramp)(a1, (u32)(short)cap_park_y((short)a1, (u32)(int)(short)a2), a3, a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
     return r;
 }
 u32 __cdecl hk_txascr(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
+    if (g_drawProbe) g_dpRet = (u32)_ReturnAddress();
     relay_enter(); const auto r = hk_txascr_body(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); relay_leave(); return r;
 }
 u32 __cdecl hk_txascc_body(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {
+    if (!g_capCur && g_drawProbe) draw_probe_note('C', g_dpRet, (int)a2, (short)a3, a5, (const char*)a4, 0);
     if (g_capCur) cap_add((int)a2, (short)a3, (const char*)a4, 0, a5);
     ++g_capDepth; const u32 r = ((Cdecl10Fn)g_hkTxAscC.tramp)(a1, a2, (u32)(short)cap_park_y((int)a2, (u32)(int)(short)a3), a4, a5, a6, a7, a8, a9, a10); --g_capDepth;
     return r;
 }
 u32 __cdecl hk_txascc(u32 a1, u32 a2, u32 a3, u32 a4, u32 a5, u32 a6, u32 a7, u32 a8, u32 a9, u32 a10) {   // relay_enter / relay_leave : a call in flight is seen by the shutdown (R1)
+    if (g_drawProbe) g_dpRet = (u32)_ReturnAddress();
     relay_enter(); const auto r = hk_txascc_body(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10); relay_leave(); return r;
 }
 // installed by AOB (re s.4), a bounded retry (20 x 5 s), logged ; the window-draw hook goes in LAST (nothing is attributed
@@ -2202,8 +2237,9 @@ void main_poll(bool on) {
                 if (!equip_read(mgr, focus, g_equip)) { g_equip.open = false; g_equip.lopen = false; }
                 // Items (from the main menu) : the list ; the item cards' rule as for Equipment
                 if (!syn_read(mgr, focus, g_syn)) g_syn.open = false;
-                // the search comment (mode 2 only : the bazaar / linkshell messages stay the client's)
-                if (!comment_read(mgr, focus, g_cmt) || g_cmt.cmMode != 2) g_cmt.open = false;
+                // the comment editor : the search comment (mode 2) and the bazaar's (mode 0, Set Bazaar -> Comment, 2026-11-26) ;
+                // the others stay the client's (mode 1 is a Check's, read by inspect)
+                if (!comment_read(mgr, focus, g_cmt) || (g_cmt.cmMode != 2 && g_cmt.cmMode != 0)) g_cmt.open = false;
                 static int saidCm = 0; static int wasCm = -1;
                 if ((int)g_cmt.open * 4 + (int)g_cmt.typing * 2 != wasCm && saidCm < 12) { ++saidCm; wasCm = (int)g_cmt.open * 4 + (int)g_cmt.typing * 2;
                     windower::debug::log("NATIVEUI search comment : %s (mode %d, genre %02X, line %d, typing %d : %d bytes) line 0 '%.40s'", g_cmt.open ? "open -- AioHUD draws it" : "closed", g_cmt.cmMode, g_cmt.cmGenre, g_cmt.cmLine, (int)g_cmt.typing, g_cmt.cmLiveN, g_cmt.cmText[0]); }
@@ -2543,7 +2579,7 @@ void yn_park(u32 mgr) {
     if (g_syn.open && g_syn.gridOpen) park_named(mgr, "tskill1", tsLog2, "Synthesis -> the grid");
     if (g_syn.open && g_syn.histOpen) park_named(mgr, "cmbhlst", hlLog, "Synthesis -> History");
     if (g_syn.open) park_named(mgr, "iteminfo", siLog, "Synthesis -> the item card");
-    static int cmLog = 0; if (g_cmt.open) park_named(mgr, "comment", cmLog, "Search -> Edit your comment");
+    static int cmLog = 0; if (g_cmt.open) park_named(mgr, "comment", cmLog, "Search / Set Bazaar -> the comment");
     static int gmLog = 0; if (g_equip.open && g_equip.gilOk) park_named(mgr, "money", gmLog, "Equipment -> Current Gil");
     static int gxLog = 0; if (g_equip.open && g_equip.compare) park_named(mgr, "itemxinf", gxLog, "Equipment -> the compare card");
     if (g_mcat.open) { park_named(mgr, "meritcat", mcLog, "Merit Points -> Categories"); park_named(mgr, "bluehelp", mhLog, "Merit Points -> description"); }
@@ -2566,7 +2602,9 @@ void yn_park(u32 mgr) {
                          park_named(mgr, "mcr1edit", m3Log, "MacroPalette -> the palette (Ctrl)"); park_named(mgr, "mcr2edit", m4Log, "MacroPalette -> the palette (Alt)"); }
         if (g_med.ed) park_named(mgr, "macro", mmLog, "MacroPalette -> a macro");
         static int esLog = 0; if (g_es.open) park_named(mgr, "mcres20", esLog, "MacroPalette -> the equipment sets");
-        static int cfLog = 0; if (g_cff.open) park_named(mgr, g_cff.name, cfLog, "Config -> a filter list"); }
+        static int cfLog = 0; if (g_cff.open) park_named(mgr, g_cff.name, cfLog, "Config -> a filter list");
+        static int frLog = 0, thLog = 0; if (g_frl.open) { park_named(mgr, "friend", frLog, "Friend List -> the list"); park_named(mgr, "titlehan", thLog, "Friend List -> its header"); }
+        static int osLog = 0; if (g_ols.open) park_named(mgr, "olstat", osLog, "Friend List -> the online status"); }
     if (g_ls.open || (g_search.open && g_search.ctx == 4)) park_named(mgr, "link6", l6Log, "Linkshell -> the header");
     if (g_scopt.open) park_named(mgr, "scoption", soLog, "Status -> Unity -> a player's options");
     static int urLog = 0;
@@ -2645,7 +2683,7 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_cel.open && (!strcmp(nm, "fe_equip") || !strcmp(nm, "fe_inven") || !strcmp(nm, "bluehelp")))
                              || (g_faith.open && (!strcmp(nm, "fp_cat") || !strcmp(nm, "fp_cat2") || !strcmp(nm, "bluehelp") || !strcmp(nm, "fp_info")))
                              || (g_area.open && !strcmp(nm, "arealist")) || (g_search.open && !strcmp(nm, g_search.ctx == 2 ? "levelsyn" : g_search.ctx == 4 ? "link12" : "scresult"))
-                             || (g_ls.open && !strcmp(nm, "link5")) || (g_mbk.open && !strcmp(nm, "mcrselec")) || (g_med.pal && (!strcmp(nm, "mcr1edlo") || !strcmp(nm, "mcr2edlo") || !strcmp(nm, "mcr1edit") || !strcmp(nm, "mcr2edit"))) || (g_med.ed && !strcmp(nm, "macro")) || (g_es.open && !strcmp(nm, "mcres20")) || (g_cff.open && !strcmp(nm, g_cff.name)) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
+                             || (g_ls.open && !strcmp(nm, "link5")) || (g_mbk.open && !strcmp(nm, "mcrselec")) || (g_med.pal && (!strcmp(nm, "mcr1edlo") || !strcmp(nm, "mcr2edlo") || !strcmp(nm, "mcr1edit") || !strcmp(nm, "mcr2edit"))) || (g_med.ed && !strcmp(nm, "macro")) || (g_es.open && !strcmp(nm, "mcres20")) || (g_cff.open && !strcmp(nm, g_cff.name)) || (g_frl.open && (!strcmp(nm, "friend") || !strcmp(nm, "titlehan"))) || (g_ols.open && !strcmp(nm, "olstat")) || ((g_ls.open || (g_search.open && g_search.ctx == 4)) && !strcmp(nm, "link6"))
                              || (g_scopt.open && !strcmp(nm, "scoption"))
                              || (g_insp.open && (!strcmp(nm, "inspect") || !strcmp(nm, "iteminfo") || !strcmp(nm, "comment")))
                              || (g_loot.open && (!strcmp(nm, "loot") || !strcmp(nm, "lootope") || !strcmp(nm, "lnowin") || !strcmp(nm, "iteminfo")))
@@ -2657,7 +2695,7 @@ void rescue_children(u32 mgr, int hide) {
                                                   || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl"))))))
                              || (g_auc.up && !g_aucNot && (auc_menu_name(nm) || !strcmp(nm, "auclist") || !strcmp(nm, "auchisto") || !strcmp(nm, "iteminfo")
                                                            || !strcmp(nm, "moneyctr") || !strcmp(nm, "money") || !strcmp(nm, "inventor")))
-                             || [&]() { for (int i = 0; i < g_gen.n; ++i) if (!strcmp(nm, g_gen.m[i].name)) return true; for (int i = 0; i < g_gen.np; ++i) if (!strcmp(nm, g_gen.p[i].name)) return true; return (g_gen.grid && !strcmp(nm, g_gen.gm.name)) || (g_gen.list && (!strcmp(nm, g_gen.listName) || (g_gen.anyItem && !strcmp(nm, "iteminfo")))); }()
+                             || [&]() { for (int i = 0; i < g_gen.n; ++i) if (!strcmp(nm, g_gen.m[i].name)) return true; for (int i = 0; i < g_gen.np; ++i) if (!strcmp(nm, g_gen.p[i].name)) return true; return (g_gen.grid && !strcmp(nm, g_gen.gm.name)) || (g_gen.list && (!strcmp(nm, g_gen.listName) || (g_gen.anyItem && !strcmp(nm, "iteminfo")) || (!strcmp(g_gen.listName, "msglist") && !strcmp(nm, "titlehan")))); }()
                              || ((g_cur.open || g_key.ok) && !strcmp(nm, "evitem"))
                              || (g_trade.open && (!strcmp(nm, "moneyctr") || !strcmp(nm, "itemctrl") || !strcmp(nm, "iteminfo") || !strcmp(nm, "gift") || !strcmp(nm, "money")));
             if (!ours && !cardOurs && !fepOurs && !invOurs && !ynOurs && w > 0 && h > 0 && w < 4000 && h < 4000) {     // parked by its parent, not by us
@@ -3007,6 +3045,62 @@ void cfg_filter_poll(bool on, u32 mgr, u32 focusObj) {
     if (s2 != sig && said < 30) { sig = s2; ++said; char b[64]; int o2 = 0; for (int i = 0; i < t.n && o2 < 60; ++i) b[o2++] = (char)('0' + t.state[i]); b[o2] = 0;
         windower::debug::log("NATIVEUI config filter '%s' : %d rows (top %d, cursor %d) states %s ; row 0 '%s'", t.name, t.count, t.top, t.cursor, b, t.label[0]); }
     g_cff = t;
+}
+
+// ---- the FRIEND LIST (`friend`, grids-re-2026-11-21 s.1b) : a TEXT LIST whose cells are sprites (the group header, the
+// status) and texts (the PlayOnline name, the character, the zone). A sprite is told by its POINTER : the handler keeps
+// the group headers at +0x90 + 4g and the status icons at +0x68 + 4k. A row with a cell it does not know : the client's ----
+NativeFriends g_frl;
+void friends_poll(bool on, u32 mgr, u32 focusObj) {
+    NativeFriends t; memset(&t, 0, sizeof(t));
+    TextList T; u32 rows = 0, spr[6], grp[5]; unsigned char col5[5];
+    if (!on || !mgr || !tl_find(mgr, "friend", T) || !safe_read(T.h + 0x38, &rows) || (T.count > 0 && !valid_ptr(rows))
+        || !rdblk(T.h + 0x68, spr, sizeof(spr)) || !rdblk(T.h + 0x90, grp, sizeof(grp)) || !rdblk(T.h + 0xA4, col5, sizeof(col5))) { g_frl = t; return; }
+    t.count = T.count; t.top = T.top; t.uiW = T.uiW; t.uiH = T.uiH; t.rx0 = T.rx0; t.ry0 = T.ry0; t.rx1 = T.rx1; t.ry1 = T.ry1;
+    t.cursor = T.cursor >= T.top ? T.cursor - T.top + 1 : 0; t.focused = focusObj == T.obj;
+    auto text = [](u32 v, char* out, int cap) { out[0] = 0; char b[32]; if (!valid_ptr(v) || !rdblk(v, b, sizeof(b))) return;
+        int o = 0; for (int j = 0; j < (int)sizeof(b) && b[j] && o < cap - 1; ++j) if ((unsigned char)b[j] >= 0x20 && (unsigned char)b[j] < 0x7F) out[o++] = b[j]; out[o] = 0; };
+    int lastGroup = 0;
+    for (int i = 0; i < T.vis && T.top + i < T.count && t.n < 16; ++i) {
+        unsigned char r[0x54]; if (!rdblk(rows + (u32)(T.top + i) * 0x54, r, sizeof(r))) { g_frl = NativeFriends(); memset(&g_frl, 0, sizeof(g_frl)); return; }
+        NativeFriendRow& w = t.row[t.n];
+        for (int c = 0; c < 8; ++c) {
+            const unsigned char ty = r[c]; if (!ty) continue;
+            u32 v = 0; memcpy(&v, r + 0x28 + 4 * c, 4);
+            if (ty == 0x20) { w.header = 1; w.group = 4; for (int g = 0; g < 5; ++g) if (v == grp[g]) w.group = (unsigned char)g; lastGroup = w.group; w.collapsed = col5[w.group] != 0; }
+            else if (ty == 0x0E && c == 0) { w.status = 6; for (int k = 0; k < 6; ++k) if (v == spr[k]) { w.status = (unsigned char)k; break; } }
+            else if (ty == 0x26) text(v, w.name, sizeof(w.name));
+            else if (ty == 0x25) text(v, w.chr, sizeof(w.chr));
+            else if (ty == 0x23 || ty == 0x24) { if (!w.header) text(v, w.zone, sizeof(w.zone)); }
+            else if (ty == 0x0E) {}                                  // the job icon (sheet 5) : not shown
+            else { static int said = 0; if (said < 4) { ++said; windower::debug::log("NATIVEUI friend list : row %d cell %d type %02X unknown -- the client's", T.top + i, c, ty); } g_frl = t; g_frl.open = false; return; }
+        }
+        if (!w.header) w.group = (unsigned char)lastGroup;
+        ++t.n;
+    }
+    t.open = true;
+    static unsigned sig = ~0u; static int said = 0;
+    const unsigned s2 = (u32)t.count * 131u + (u32)t.top * 7u + (u32)t.cursor;
+    if (s2 != sig && said < 20) { sig = s2; ++said;
+        windower::debug::log("NATIVEUI friend list : %d rows (top %d, cursor %d) ; row 0 %s '%s' ; row 1 '%s' status %d zone '%s'", t.count, t.top, t.cursor,
+                             t.row[0].header ? "header" : "friend", t.row[0].name, t.row[1].name, t.row[1].status, t.row[1].zone); }
+    g_frl = t;
+}
+
+// ---- the ONLINE STATUS (olstat, grids-re s.1a) : the hand (+0x4C) and the status chosen (h+0x14, refreshed by the client
+// every frame from the PlayOnline layer : 1 Online, 2 Away, 3 Invisible) ----
+NativeOlstat g_ols;
+void olstat_poll(bool on, u32 mgr, u32 focusObj) {
+    NativeOlstat t; memset(&t, 0, sizeof(t));
+    u32 o = 0, h = 0, v = 0; short cur = 0, wh[2] = { 0, 0 };
+    if (!on || !mgr || !(o = win_named(mgr, "olstat")) || !safe_read(o + OBJ_HANDLER, &h) || !valid_ptr(h) || !safe_read(h + 0x14, &v) || !rd16(o + 0x4C, cur)
+        || !rd16(o + OBJ_RECT, t.rx0) || !rd16(o + OBJ_RECT + 2, t.ry0) || !rd16(o + OBJ_RECT + 4, t.rx1) || !rd16(o + OBJ_RECT + 6, t.ry1) || !rdblk(mgr + 0x80, wh, 4)) { g_ols = t; return; }
+    t.uiW = wh[0]; t.uiH = wh[1];
+    if (t.ry0 >= t.uiH) { t.ry0 = (short)(t.ry0 - HIDE_DY); t.ry1 = (short)(t.ry1 - HIDE_DY); }
+    t.current = v >= 1 && v <= 3 ? (int)v : 0; t.cursor = cur >= 1 && cur <= 3 ? cur : 0; t.focused = focusObj == o; t.open = true;
+    static int sig = -1, said = 0; const int s2 = t.current * 10 + t.cursor;
+    if (s2 != sig && said < 12) { sig = s2; ++said; windower::debug::log("NATIVEUI online status : current %d, hand %d", t.current, t.cursor); }
+    g_ols = t;
 }
 
 // ---- the MAP (map-macro-re-2026-11-21.md s.1) : the mapframe handler H ; AioHUD draws the map, the client's goes whole
@@ -4036,7 +4130,7 @@ bool entry_pick(const char* const* W, int entry);
 static const char* const GEN_SKIP[] = { "titlewin", "helpwind", "logwindo", "logwin2", "partywin", "netstat", "buff", "targetwi", "fulllog", "cnqframe",
     "shop", "shopbuy", "shopsell", "shopmain", "guildsho", "bazaar", "auclist", "auchisto", "inventor", "iteminfo", "itemxinf", "money", "moneyctr", "itemctrl",
     "bank", "equip", "inspect", "comment", "loot", "lootope", "lnowin", "post1", "post2", "delivery", "stringdl", "roomlist", "fep", "query", "evitem", "gift",
-    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edit", "mcr2edit", "macro", "mcres20", "mcresed", "cfilter", "fxfilter", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
+    "trade", "handover", "playermo", "mcr1long", "mcr2long", "mcrselec", "mcr1edit", "mcr2edit", "macro", "mcres20", "mcresed", "cfilter", "fxfilter", "friend", "titlehan", "olstat", "mcr1edlo", "mcr2edlo", "rem4line", "rem4li2", "comyn",
     "cmbhlst", "tskill1", "cmbhwin",   // Synthesis (its module ; 2026-11-22 : the panel engine drew its History a second time, misplaced)
     "mapv3", "mapframe",               // the map (its module, map_poll)
     "link5", "link6", "link12",        // Linkshell (its module ; 2026-11-25 : link5 is born before g_ls reads it -- the panel engine learned it and
@@ -4084,7 +4178,8 @@ static bool gen_list_read(u32 mgr, const char* nm, u32 focus, NativeGenMenus& G)
             if (t == 0x15 || t == 0x16 || ((t == 0x1A || t == 0x19) && !valid_ptr(v))) {
                 if (!w.item) { short id = 0; if (valid_ptr(v)) { if (!rd16(v, id)) id = 0; } else id = (short)(v & 0xFFFF); w.item = (unsigned short)id; }
                 if (w.item) { known = true; anyI = true; if (!w.col) w.col = col; }
-            } else if ((t == 1 || t == 3 || t == 0x19 || t == 0x22) && valid_ptr(v) && !w.text[0]) {
+            } else if (t == 0x20 && i == 0 && T.top == 0) { known = true;   // a header row's sprite (the column titles : msglist)
+            } else if ((t == 1 || t == 3 || t == 0x19 || t == 0x22 || t == 0x25 || t == 0x26) && valid_ptr(v) && !w.text[0]) {
                 char b[44]; if (rdblk(v, b, sizeof(b) - 1)) { b[43] = 0; int o = 0; for (int j = 0; b[j] && o < 43; ++j) if ((unsigned char)b[j] >= 0x20 && (unsigned char)b[j] < 0x7F) w.text[o++] = b[j]; w.text[o] = 0; }
                 if (w.text[0]) { known = true; if (!w.col) w.col = col; }
             } else if (t == 7 || t == 9) { w.count = (int)(v > 99999 ? 99999 : v); known = true; if (v > 1) anyC = true; }
@@ -4326,6 +4421,8 @@ void gen_poll(bool on, u32 mgr, int hide) {
             cap_probe(o, nm, m);
             if (!strcmp(nm, "miss00")) { missSeen = true; miss_read(o, focusObj); }
             if (!strcmp(nm, "quest01")) { jrSeen = true; journal_read(o, focusObj); }   // the journal : the whole list as data (journal_draw when verified)   // Missions : the whole list as data (drawn by missions_draw when verified)
+            // unnamed entries that ARE a text list's rows (msglist, 2026-11-26 : "an entry menu with unnamed entries") : the list reader
+            { TextList T2; if (cls == 2 && !named && tl_find(mgr, nm, T2)) cls = 3; }
             if (cls == 2 && !named && !gen_grid_family(nm) && G.np < 2 && gen_panel_read(o, m, G.p[G.np])) {   // a PANEL from the text capture
                 NativeGenMenus::Panel& P = G.p[G.np++]; P.focused = focusObj == o;
                 while (P.ry0 >= uiH) { P.ry0 = (short)(P.ry0 - HIDE_DY); P.ry1 = (short)(P.ry1 - HIDE_DY); }
@@ -4866,6 +4963,7 @@ const NativeTopBar& native_topbar() { return g_tb; }
 const NativeMacro& native_macro() { return g_mc; }
 const NativeMacroBooks& native_macro_books() { return g_mbk; }
 unsigned native_manager() { return manager(); }
+void native_draw_probe(int on) { g_drawProbe = on; windower::debug::log("DRAWPROBE %s", on ? "on : each caller of a text / sprite draw outside a window, once" : "off"); }
 bool native_any_hover(const char* name, int entry) { const char* one[2] = { name, 0 }; return entry_hover(one, entry); }
 bool native_ui_window_open(const char* name) { const u32 m = manager(); return m && win_named(m, name) != 0; }
 unsigned native_win_named(unsigned mgr, const char* want) { return win_named(mgr, want); }
@@ -4873,6 +4971,7 @@ const NativeMacroEdit& native_macro_edit() { return g_med; }
 const NativeEquipSets& native_equip_sets() { return g_es; }
 const NativeCfgFilter& native_cfg_filter() { return g_cff; }
 const NativeMap& native_map() { return g_map; }
+const NativeFriends& native_friends() { return g_frl; }
 const ItemExtra* native_item_extra(unsigned id) { for (int c = 0; c < 2; ++c) if (id && g_iix[c].id == id) return &g_iix[c]; return 0; }
 // the client's ability table ids (0..0x1FF weapon skills, 0x200.. job abilities, 0x600..0x6FF job traits) : d_msg 55701
 // the name, 55733 the description -- abilities-re-2026-11-19.md (all 124 traits / 626 abilities checked against it)
@@ -5377,6 +5476,11 @@ bool native_macro_edit_hover(int bar, int entry) { return (bar == 2 ? g_med.ed :
 bool native_macro_edit_pick(int bar, int entry) { return (bar == 2 ? g_med.ed : g_med.pal) && entry_pick(bar == 0 ? MED_W1 : bar == 1 ? MED_W2 : MED_WM, entry); }
 bool native_cfg_filter_hover(int entry) { const char* one[2] = { g_cff.name, 0 }; return g_cff.open && entry_hover(one, entry); }
 bool native_cfg_filter_pick(int entry) { const char* one[2] = { g_cff.name, 0 }; return g_cff.open && entry_pick(one, entry); }
+const NativeOlstat& native_olstat() { return g_ols; }
+bool native_olstat_hover(int entry) { const char* one[2] = { "olstat", 0 }; return g_ols.open && entry_hover(one, entry); }
+bool native_olstat_pick(int entry) { const char* one[2] = { "olstat", 0 }; return g_ols.open && entry_pick(one, entry); }
+bool native_friends_hover(int row) { const char* one[2] = { "friend", 0 }; return g_frl.open && entry_hover(one, row); }
+bool native_friends_pick(int row) { const char* one[2] = { "friend", 0 }; return g_frl.open && entry_pick(one, row); }
 bool native_map_list_hover(int row) { const char* one[2] = { "mapv3", 0 }; return g_map.listOpen && entry_hover(one, row); }
 bool native_map_list_pick(int row) { const char* one[2] = { "mapv3", 0 }; return g_map.listOpen && entry_pick(one, row); }
 bool native_equip_sets_hover(int entry) { return g_es.open && entry_hover(ES_W, entry); }
@@ -5899,7 +6003,9 @@ void native_ui_tick(bool inWorld) {
       macro_edit_poll(wanted && (c.nuHide & NU_MAIN) && mc_res(), manager(), focus);     // ... and its editor
       equip_sets_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus);                 // ... and the equipment sets
       cfg_filter_poll(wanted && (c.nuHide & NU_NPC), manager(), focus);                  // Config's filter lists
-      map_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus); }                            // the map (its whole-screen draw)
+      map_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus);
+      friends_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus);
+      olstat_poll(wanted && (c.nuHide & NU_MAIN), manager(), focus); }                            // the map (its whole-screen draw)
     net_poll(wanted && (c.nuHide & NU_NET));                                              // the connection box (netstat) : AioHUD's own
     buffwin_poll(wanted && (c.nuHide & NU_BUFF), manager());   // your buff icons : AioHUD's own, where the client puts them
     if (wanted && (eff_hide(c) & NU_BUFF)) ensure_event_hook();   // the buff cursor's left / right walk AioHUD's order
@@ -5918,6 +6024,7 @@ void native_ui_tick(bool inWorld) {
     if (wanted) { const int lg = native_client_lang(); if (lg >= 0) menu_dat_load(lg); }   // the menus' image labels (the client's DAT)
     if (wanted && (c.nuHide & NU_NPC)) { static int gLog[GEN_MENUS] = { 0 }, glLog = 0; for (int i = 0; i < g_gen.n; ++i) park_named(manager(), g_gen.m[i].name, gLog[i], "generic -> a menu");
         if (g_gen.list) park_named(manager(), g_gen.listName, glLog, "generic -> a list");
+        static int thLog2 = 0; if (g_gen.list && !strcmp(g_gen.listName, "msglist")) park_named(manager(), "titlehan", thLog2, "Messages -> its header");
         static int ggLog = 0; if (g_gen.grid) park_named(manager(), g_gen.gm.name, ggLog, "generic -> a grid");
         static int gpLog[2] = { 0 }; for (int i = 0; i < g_gen.np; ++i) park_named(manager(), g_gen.p[i].name, gpLog[i], "generic -> a panel"); }
     if (wanted && (c.nuHide & NU_NPC) && g_auc.up && !g_aucNot) {

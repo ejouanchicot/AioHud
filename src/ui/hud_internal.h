@@ -106,7 +106,9 @@ void map_screen_draw(const Frame& f);   // hud_actmenu.cpp : the map (mapframe's
 void map_screen_forget();
 bool map_screen_up();                  // ... shown this frame (the HUD's modules depop while it is)
 void map_screen_hud(const Frame& f);
-void map_list_draw(const Frame& f);     // ... its Markers list (mapv3)    // ... its cartouche (the zone, the floor, your square), in the screens' pass               // ... its texture, on a device change
+void map_list_draw(const Frame& f);
+void friends_draw(const Frame& f);
+void olstat_draw(const Frame& f);      // ... its Online Status (olstat) : 3 icon buttons in a row     // hud_actmenu.cpp : Communication -> Friend List (friend)     // ... its Markers list (mapv3)    // ... its cartouche (the zone, the floor, your square), in the screens' pass               // ... its texture, on a device change
 void cfg_filter_draw(const Frame& f);    // hud_actmenu.cpp : Config's chat / battle-effect filters (cfilter / fxfilter, NU_NPC)    // hud_actmenu.cpp : MacroPalette's equipment set list (mcres20, NU_MAIN)    // hud_actmenu.cpp : MacroPalette's editor (palette + one macro, NU_MAIN)   // hud_actmenu.cpp : MacroPalette's book list (mcrselec, NU_MAIN)
 void gen_list_draw(const Frame& f);  // hud_actmenu.cpp : the generic engine's list (NU_NPC)
 void gen_draw(const Frame& f);       // hud_actmenu.cpp : the generic engine's menus (NU_NPC)
