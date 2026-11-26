@@ -418,11 +418,11 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         TE items[TGT_TE_COUNT + DB_TE_COUNT]; int nte = 0;
         items[nte++] = { tr("Name", "Nom"),  &c.tgtText[TGT_NAME] };
         items[nte++] = { tr("HP%", "PV%"),   &c.tgtText[TGT_HP] };
-        if (!c.dbShow) items[nte++] = { tr("Timer", "Minuteur"), &c.tgtText[TGT_TIMER] };   // in-box debuff timer only
-        items[nte++] = { tr("Speed", "Vitesse"),  &c.tgtText[TGT_SPD] };
-        items[nte++] = { tr("TH", "TH"),          &c.tgtText[TGT_TH] };
-        items[nte++] = { tr("Distance", "Distance"), &c.tgtText[TGT_RANGE] };
-        if (c.dbShow) {   // detached debuff box -> its own typography
+        if (c.tgtDebuffs && !c.dbShow && c.tgtTimers) items[nte++] = { tr("Timer", "Minuteur"), &c.tgtText[TGT_TIMER] };   // in-box debuff timer, when shown
+        if (c.tgtSpeed) items[nte++] = { tr("Speed", "Vitesse"),  &c.tgtText[TGT_SPD] };   // each only while its info shows
+        if (c.tgtTH)    items[nte++] = { tr("TH", "TH"),          &c.tgtText[TGT_TH] };
+        if (c.tgtRange) items[nte++] = { tr("Distance", "Distance"), &c.tgtText[TGT_RANGE] };
+        if (c.tgtDebuffs && c.dbShow) {   // detached debuff box -> its own typography
             items[nte++] = { tr("Debuff header", "En-t\xC3\xAAte debuff"), &c.dbText[DB_HEADER] };
             items[nte++] = { tr("Debuff name",   "Nom debuff"),           &c.dbText[DB_NAME] };
             items[nte++] = { tr("Debuff timer",  "Timer debuff"),         &c.dbText[DB_TIMER] };

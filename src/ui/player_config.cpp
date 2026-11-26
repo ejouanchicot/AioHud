@@ -152,7 +152,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Identity (the job emblem is an icon -> size only) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
-if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
+if (ui_config().cfgAdv && ui_config().plrEmblem) {   // Advanced only ; and only with the emblem (its one setting is its size)
         const float aF11_ = cat_fold(CTRL_ID, catOpen_[11]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[11], aF11_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Identity", "Identité"), catOpen_[11], aF11_)) catOpen_[11] = !catOpen_[11];

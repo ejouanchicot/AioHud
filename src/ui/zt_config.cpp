@@ -82,18 +82,26 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         // what the preview is actually drawing instead of listing every zone's switches at once.
         if (zvSel == 0) {   // Dynamis
             ROW_TOGGLE(CTRL_ID, tr("Run timer", "Timer de run"),        c.ztDyTimer)
+            if (c.ztDyTimer) {   // its size : only with it on
             ZT_SIZE_SLIDER(CTRL_ID, tr("Timer bar width", "Largeur barre timer"),     c.ztDyBarW, 0.40f, 1.00f)
             ZT_SIZE_SLIDER(CTRL_ID, tr("Timer bar height", "Hauteur barre timer"),    c.ztDyBarH, 0.50f, 2.50f)
+            }
             ROW_TOGGLE(CTRL_ID, tr("Key items", "Objets cl\xC3\xA9s"),  c.ztDyKi)
+            if (c.ztDyKi) {   // its size : only with it on
             ZT_SIZE_SLIDER(CTRL_ID, tr("Key-item dot size", "Taille pastilles"),      c.ztDyDot, 0.50f, 2.50f)
+            }
         }
         if (zvSel == 1) {   // Abyssea
             ROW_TOGGLE(CTRL_ID, tr("Visitant timer", "Timer visitant"),  c.ztAbTimer)
+            if (c.ztAbTimer) {   // its size : only with it on
             ZT_SIZE_SLIDER(CTRL_ID, tr("Timer bar width", "Largeur barre timer"),      c.ztAbBarW, 0.40f, 1.00f)
             ZT_SIZE_SLIDER(CTRL_ID, tr("Timer bar height", "Hauteur barre timer"),     c.ztAbBarH, 0.50f, 2.50f)
+            }
             ROW_TOGGLE(CTRL_ID, tr("Lights", "Lumi\xC3\xA8res"),         c.ztAbLights)
+            if (c.ztAbLights) {   // its size : only with it on
             ZT_SIZE_SLIDER(CTRL_ID, tr("Light bar width", "Largeur barre lumi\xC3\xA8re"),  c.ztAbLightW, 0.50f, 3.00f)
             ZT_SIZE_SLIDER(CTRL_ID, tr("Light bar height", "Hauteur barre lumi\xC3\xA8re"), c.ztAbLightH, 0.50f, 2.50f)
+            }
         }
         if (zvSel == 2) {   // Omen
             ROW_TOGGLE(CTRL_ID, tr("Floor objective", "Objectif d'\xC3\xA9tage"), c.ztOmObj)

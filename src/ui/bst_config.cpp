@@ -37,26 +37,29 @@ void ConfigPage::draw_bst_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
         return;
     }
     ROW_TOGGLE(CTRL_ID, tr("Pet image", "Image du pet"), c.bstImage)
+    if (c.bstImage) {   // the pet art's details : only with the art on
     { ROW_BAND(52.0f)   // what that place shows : the art, the pet's correlation as text, or both
         const char* ML[3] = { tr("Image", "Image"), tr("Correlation", "Corr\xC3\xA9lation"), tr("Both", "Les deux") };
         const int am = (c.bstArtMode < 0 || c.bstArtMode > 2) ? 0 : c.bstArtMode;
         if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Shows", "Affiche"), ML[am])) { c.bstArtMode = wrap(am + d, 3); save_ui_config(); }
     } ROW_NEXT(52.0f)
-    { ROW_BAND(46.0f)   // the pet art's size
+    if (c.bstArtMode != 1) { ROW_BAND(46.0f)   // the pet art's size (not in Correlation-only)
         const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.bstArtSz * 100.0f + 0.5f));
         float v01 = (c.bstArtSz - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
         if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Image size", "Taille de l'image"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.bstArtSz = v < lo ? lo : (v > hi ? hi : v); }
-    } ROW_NEXT(46.0f)
-    { ROW_BAND(46.0f)   // the correlation icons' size
+    ROW_NEXT(46.0f) }
+    if (c.bstArtMode != 0) { ROW_BAND(46.0f)   // the correlation icons' size (not in Image-only)
         const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.bstEcoSz * 100.0f + 0.5f));
         float v01 = (c.bstEcoSz - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
         if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Correlation icons", "Ic\xC3\xB4nes de corr\xC3\xA9lation"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.bstEcoSz = v < lo ? lo : (v > hi ? hi : v); }
-    } ROW_NEXT(46.0f)
+    ROW_NEXT(46.0f) }
+    }
     ROW_TOGGLE(CTRL_ID, tr("Pet name", "Nom du pet"), c.bstName)
     ROW_TOGGLE(CTRL_ID, tr("HP", "HP"), c.bstHp)
     ROW_TOGGLE(CTRL_ID, tr("TP", "TP"), c.bstTp)
     ROW_TOGGLE(CTRL_ID, tr("Distance", "Distance"), c.bstDist)
     ROW_TOGGLE(CTRL_ID, tr("Ready charges", "Charges Ready"), c.bstCharges)
+    if (c.bstCharges) {   // the charges' look : only with the charges on
     { ROW_BAND(52.0f)   // how the charges are drawn : paws, the ring, bars
         const char* CS[3] = { tr("Paws", "Pattes"), tr("Ring", "Cercle"), tr("Bars", "Barres") };
         const int cs = (c.bstChargeStyle < 0 || c.bstChargeStyle > 2) ? 0 : c.bstChargeStyle;
@@ -67,10 +70,11 @@ void ConfigPage::draw_bst_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
         float v01 = (c.bstPawSz - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
         if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Ready size", "Taille Ready"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.bstPawSz = v < lo ? lo : (v > hi ? hi : v); }
     } ROW_NEXT(46.0f)
+    }
     ROW_TOGGLE(CTRL_ID, tr("Ready moves", "Ready moves"), c.bstMoves)
-    ROW_TOGGLE(CTRL_ID, tr("Moves' skillchain", "Skillchain des moves"), c.bstSc)   // Compression... after each move's name
+    if (c.bstMoves) { ROW_TOGGLE(CTRL_ID, tr("Moves' skillchain", "Skillchain des moves"), c.bstSc) }   // Compression... after each move's name (only with the moves)
     ROW_TOGGLE(CTRL_ID, tr("Job abilities", "Job abilities"), c.bstJa)   // the grid at the bottom of the box
-    ROW_TOGGLE(CTRL_ID, tr("Move type icons", "Ic\xC3\xB4nes de type"), c.bstIcons)   // weapon / element icon, else a colour tick
+    if (c.bstMoves) { ROW_TOGGLE(CTRL_ID, tr("Move type icons", "Ic\xC3\xB4nes de type"), c.bstIcons) }   // weapon / element icon, else a colour tick
 }
 
 // the Text rows of the BST tab : which text element, then its typography

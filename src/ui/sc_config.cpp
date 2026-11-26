@@ -49,7 +49,7 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             const char* nm = pv < 0 ? tr("Opening move", "WS d'ouverture") : scprop_name(pv);
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Preview", "Aper\xC3\xA7u"), nm)) c.scPreview = wrap(pv + 1 + d, SCP_N + 1) - 1;
         } ROW_NEXT(52.0f)
-        SC_SLIDER(circle ? tr("Sphere size", "Taille de la sph\xC3\xA8re") : tr("Size", "Taille"), c.scScale, 0.50f, 2.50f, 0.05f, 100.0f)
+        SC_SLIDER(circle ? tr("Sphere size", "Taille de la sph\xC3\xA8re") : tr("Size", "Taille"), c.scScale, 0.50f, circle ? 2.50f : 2.00f, 0.05f, 100.0f)   // (Classic draws up to 200 %)
         if (circle) { SC_SLIDER(tr("List size", "Taille de la liste"), c.scListScale, 0.50f, 2.00f, 0.05f, 100.0f) }   // braces : the macro is TWO statements
         ROW_GROW(CTRL_ID, UiConfig::GB_SC)   // which way the box grows as its content widens (ui/box_grow.h)
         cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
@@ -141,7 +141,9 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         ROW_TOGGLE(CTRL_ID, tr("TP indicator", "Indicateur TP"),              c.scTP)
         // WS spacing : the vertical gap between each weaponskill in the continuation list. Always shown (it only
         // has a visible effect while the list is on, but hiding it made it hard to find).
+        if (c.scList && (!circle || (c.scListStyle != 1 && c.scListStyle != 2))) {   // read by Rows / Grouped and Classic -- not Tree, Cards
         SC_SLIDER(tr("WS spacing", "Espacement WS"), c.scListGap, 0.60f, 3.00f, 0.05f, 100.0f)
+        }
         cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
     }   // end Elements
     ry += snap(16.0f);                                 // air between this section and the next title bar
@@ -158,7 +160,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
             const float top22_ = ry;
             cat_fold_clip(dev, hdrX, top22_, hdrW, catH_[22] * aF22_);
             ROW_TOGGLE(CTRL_ID, tr("Animations", "Animations"), c.scAnim)
-            ROW_TOGGLE(CTRL_ID, tr("Scene distortion", "D\xC3\xA9" "formation du d\xC3\xA9" "cor"), c.scDistort)
+            if (c.scAnim) { ROW_TOGGLE(CTRL_ID, tr("Scene distortion", "D\xC3\xA9" "formation du d\xC3\xA9" "cor"), c.scDistort) }   // (part of the animations)
             SC_SLIDER(tr("Particles", "Particules"), c.scParticles, 0.0f, 1.0f, 0.05f, 100.0f)
             SC_SLIDER(tr("Effect reach", "Port\xC3\xA9" "e des effets"), c.scReach, 0.30f, 1.00f, 0.05f, 100.0f)
             cat_fold_end(dev, ry, top22_, catH_[22], aF22_);

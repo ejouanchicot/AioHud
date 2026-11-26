@@ -185,13 +185,14 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx0 + bbw + bgap, bty, bbw, bbh, ui_config().animTP ? tr("TP on", "TP oui") : tr("TP off", "TP non"), ui_config().animTP)) { ui_config().animTP = !ui_config().animTP; save_ui_config(); } }
           ROW_NEXT(bh2)
         }
-        { const float bh2 = twoCol ? snap(46.0f) : snap(92.0f);   // bar height + width : the pair that was two rows
+        { const bool rnd_ = ui_config().gaugeStyle[0] >= 4 && ui_config().gaugeStyle[0] <= 6;   // round gauges : no bar height (party.h gaugeH)
+          const float bh2 = (twoCol || rnd_) ? snap(46.0f) : snap(92.0f);   // bar height + width : the pair that was two rows
           ROW_BAND(bh2) (void)yo;   // this row places its own lines (yA / yB) -- ROW_BAND's single-line centring does not apply
           const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
-          const float yB = twoCol ? yA : yA + snap(46.0f);
-          const float xB = twoCol ? col2X : coX;
+          const float yB = (twoCol || rnd_) ? yA : yA + snap(46.0f);
+          const float xB = (twoCol && !rnd_) ? col2X : coX;
           sepv(ry, bh2, true);
-          { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[0] * 100.0f + 0.5f));
+          if (!rnd_) { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[0] * 100.0f + 0.5f));
             float v01 = (ui_config().barHeight[0] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
@@ -273,7 +274,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         // Three zones, three colours -- but three OPEN pickers is ~690px of panel for a setting most people touch
         // once. One row of swatches says everything the three label rows said (the colour IS the label), and the
         // picker opens for the one you click. Click it again to close it.
-        if (ui_config().dist[0]) {
+        if (ui_config().dist[0] || ui_config().dist[1]) {   // (the alliance's distance uses them too)
             u32* dcol[3] = { &ui_config().distColClose, &ui_config().distColNormal, &ui_config().distColFar };
             const char* dsh[3] = { tr("Close", "Proche"), tr("Normal", "Normal"), tr("Far", "Loin") };
             { ROW_BAND(48.0f)
@@ -374,13 +375,14 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
                 ui_config().jobBadge[1] = wrap(m + d, 4); save_ui_config(); } }
           ROW_NEXT(bh2)
         }
-        { const float bh2 = twoCol ? snap(46.0f) : snap(92.0f);   // the two dimensions of the bars
+        { const bool rnd_ = ui_config().gaugeStyle[1] >= 4 && ui_config().gaugeStyle[1] <= 6;   // round gauges : no bar height (party.h gaugeH)
+          const float bh2 = (twoCol || rnd_) ? snap(46.0f) : snap(92.0f);   // the two dimensions of the bars
           ROW_BAND(bh2) (void)yo;
           const float yA = ry + (1.0f - ap) * snap(14.0f) + (twoCol ? (bh2 - snap(40.0f)) * 0.5f : snap(3.0f));
-          const float yB = twoCol ? yA : yA + snap(46.0f);
-          const float xB = twoCol ? col2X : coX;
+          const float yB = (twoCol || rnd_) ? yA : yA + snap(46.0f);
+          const float xB = (twoCol && !rnd_) ? col2X : coX;
           sepv(ry, bh2, true);
-          { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[1] * 100.0f + 0.5f));
+          if (!rnd_) { const float lo = 0.80f, hi = 1.80f; char hb[16]; sprintf(hb, "%d%%", (int)(ui_config().barHeight[1] * 100.0f + 0.5f));
             float v01 = (ui_config().barHeight[1] - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, yA, halfW, tr("Bar Height", "Hauteur des barres"), hb, &v01)) {
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f;
@@ -976,13 +978,13 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         ROW_NEXT(56.0f)
         const int T = (cfgTarget_ < 0 || cfgTarget_ > 1) ? 0 : cfgTarget_;
         { ROW_BAND(52.0f)   // element selector -- Interface (TE_UI) is skipped : its font is Interface > Font
-            int el = (cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT || cfgTextElem_ == TE_UI) ? 0 : cfgTextElem_;
+            int el = (cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT || cfgTextElem_ == TE_UI || (T == 1 && cfgTextElem_ == TE_COST)) ? 0 : cfgTextElem_;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "Élément"), ui_text_elem_label(el))) {
-                int n = wrap(el + d, TE_COUNT); if (n == TE_UI) n = wrap(n + d, TE_COUNT); cfgTextElem_ = n; }
+                int n = wrap(el + d, TE_COUNT); for (int k = 0; k < 3 && (n == TE_UI || (T == 1 && n == TE_COST)); ++k) n = wrap(n + d, TE_COUNT); cfgTextElem_ = n; }   // (no Cost box on an alliance)
         }
         ROW_NEXT(52.0f)
         {
-            TextStyle& ts = ui_config().text[T][(cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT) ? 0 : cfgTextElem_];
+            TextStyle& ts = ui_config().text[T][(cfgTextElem_ < 0 || cfgTextElem_ >= TE_COUNT || (T == 1 && cfgTextElem_ == TE_COST)) ? 0 : cfgTextElem_];
             { ROW_BAND(52.0f)   // Font face (0 = default)
                 int fc = ts.face; if (fc < 0 || fc >= ui_font_count()) fc = 0;
                 if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), ui_font_label(fc))) { ts.face = wrap(fc + d, ui_font_count()); save_ui_config(); }

@@ -181,7 +181,7 @@ inline void config_sanitise(UiConfig& c) {
     }
     cfg_text(c.chText, 2);
     MUL(awScale);   FRAC(awX);   FRAC(awY);   cfg_box(c.awBox);
-    c.awScreen = cfg_int(c.awScreen, 10, 600); c.awMemory = cfg_int(c.awMemory, 60, 3600);
+    c.awScreen = cfg_int(c.awScreen, 10, 600); c.awMemory = cfg_int(c.awMemory, 60, 3600); if (c.awMemory < c.awScreen) c.awMemory = c.awScreen;   // the red alert must be reachable
     MUL(hlScale);   FRAC(hlX);   FRAC(hlY);                     cfg_text(c.hlText, HL_TE_COUNT);   cfg_box(c.hlBox);
     MUL(pwScale);   FRAC(pwX);   FRAC(pwY);                     cfg_text(c.pwText, PW_TE_COUNT);   cfg_box(c.pwBox);
     MUL(grimScale); FRAC(grimX); FRAC(grimY);                   cfg_text(c.grimText, GRIM_TE_COUNT);

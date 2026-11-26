@@ -275,7 +275,7 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
 
 
         // ===== sub-section : TEXT (clock typography) =====
-if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
+if (ui_config().cfgAdv && c.mmClock) {   // Advanced only ; and only with the clock header (the text it styles)
         const float aF5b_ = cat_fold(CTRL_ID, catOpen_[5] && c.mmClock);   // the section FOLDS -- and with the feature off there is nothing to reveal
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5b_));
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5b_)) catOpen_[5] = !catOpen_[5];
@@ -285,9 +285,10 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
             cat_fold_clip(dev, hdrX, top5b_, hdrW, catH_[5] * aF5b_);
         { ROW_BAND(52.0f)   // element selector
             const char* TLBL[MM_TE_COUNT] = { tr("Time", "Heure"), tr("Day", "Jour"), tr("Moon", "Lune"), tr("Real / GMT", "R\xC3\xA9""el / GMT") };
-            int te = (cfgMmTextElem_ < 0 || cfgMmTextElem_ >= MM_TE_COUNT) ? 0 : cfgMmTextElem_;
+            const int nTe = c.mmLayout == 2 ? MM_REAL : MM_TE_COUNT;   // the Dial has no Real / GMT line (MM_REAL is the last element)
+            int te = (cfgMmTextElem_ < 0 || cfgMmTextElem_ >= nTe) ? 0 : cfgMmTextElem_;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Element", "\xC3\x89l\xC3\xA9ment"), TLBL[te])) {
-                cfgMmTextElem_ = wrap(te + d, MM_TE_COUNT); }
+                cfgMmTextElem_ = wrap(te + d, nTe); }
         }
         ROW_NEXT(52.0f)
         draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW,

@@ -44,13 +44,15 @@ void ConfigPage::draw_geo_rows(u32 dev, Font* fo, const MouseState* mo, bool cli
     ROW_TOGGLE(CTRL_ID, tr("Entrust", "Entrust"), c.geoEntrust)
     ROW_TOGGLE(CTRL_ID, tr("MP", "MP"), c.geoMp)
     ROW_TOGGLE(CTRL_ID, tr("Job abilities", "Job abilities"), c.geoJa)
+    if (c.geoJa) {   // their style : only with the abilities on
     { ROW_BAND(52.0f)   // how the abilities show : a row of icons, a grid of icon + name, a grid of names
         const char* JL[3] = { tr("Icons", "Ic\xC3\xB4nes"), tr("Icons + names", "Ic\xC3\xB4nes + noms"), tr("Names", "Noms") };
         const int js = (c.geoJaStyle < 0 || c.geoJaStyle > 2) ? 0 : c.geoJaStyle;
         if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Abilities as", "Job abilities en"), JL[js])) { c.geoJaStyle = wrap(js + d, 3); c.geoJaIcons = c.geoJaStyle != 2; save_ui_config(); }
     } ROW_NEXT(52.0f)
+    }
     ROW_TOGGLE(CTRL_ID, tr("Cardinal Chant compass", "Boussole Cardinal Chant"), c.geoCompass)   // round the luopan
-    ROW_TOGGLE(CTRL_ID, tr("Cardinal bonus (MAB, M.Acc...)", "Bonus Cardinal (MAB, M.Acc...)"), c.geoCardText)   // the text under it
+    if (c.geoCompass) { ROW_TOGGLE(CTRL_ID, tr("Cardinal bonus (MAB, M.Acc...)", "Bonus Cardinal (MAB, M.Acc...)"), c.geoCardText) }   // (drawn under the compass only)   // the text under it
 }
 
 // the Text rows of the GEO tab : which text element, then its typography

@@ -103,11 +103,13 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
             const float lo = 10.0f, hi = 600.0f; char b[16]; sprintf(b, "%ds", c.awScreen);
             float v01 = ((float)c.awScreen - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Red alert after", "Alerte rouge apr\xC3\xA8s"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 5) * 5; c.awScreen = v < 10 ? 10 : (v > 600 ? 600 : v); }
+            if (c.awMemory < c.awScreen) c.awMemory = c.awScreen;   // the memory holds the row at least until it turns red
         } ROW_NEXT(46.0f)
         { ROW_BAND(46.0f)   // how far back the count looks
             const float lo = 60.0f, hi = 3600.0f; char b[16]; sprintf(b, "%d min", c.awMemory / 60);
             float v01 = ((float)c.awMemory - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Keep & count over", "Garder et compter sur"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 60) * 60; c.awMemory = v < 60 ? 60 : (v > 3600 ? 3600 : v); }
+            if (c.awScreen > c.awMemory) c.awScreen = c.awMemory;   // ... and the alert never outlives it
         } ROW_NEXT(46.0f)
         { ROW_BAND(40.0f)   // note
             const float ty = ry + yo; fo->begin(dev);
