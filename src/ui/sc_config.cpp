@@ -8,10 +8,12 @@
 #include "ui/config_page.h"
 #include "ui/config_controls.h"    // cat_header / row_slider / row_selector / toggle_chip + palette + color_picker
 #include "ui/config_rows.h"        // ROW_BAND / ROW_NEXT / CFG_COLOR_PICKER
+#include "ui/cfg_engine.h"         // the redesign : OptDef tables + the kit (draw_sc_v2)
 #include "model/ui_config.h"
 #include "model/skillchain.h"   // SCP_N, scprop_name (the preview selector)
 #include "gfx/font.h"
 #include "gfx/draw.h"
+#include <cmath>
 #include <cstdio>
 
 namespace aio {
@@ -271,5 +273,208 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     #undef ROW_BAND
     #undef ROW_NEXT
 }
+
+// ======== THE NEW SKILLCHAINS PAGE (the config redesign, milestone 3, 2026-11-27) ========
+// The same sections as the old page : Display [6] / Frame [20] / Content [21] / Elements [7] / Animations [22] /
+// Popup [26] / Text [5]. A row the chosen STYLE does not draw is greyed with that reason (the old page hid it) ; the
+// Frame edits the Circle's list frame or the Classic box, as before. //aio config v1 : the old page (draw_sc_config).
+#define F_(name) [](UiConfig& c) -> void* { return &c.name; }
+static const char* const SC_ST_EN[2] = { "Circle", "Classic" },                    * const SC_ST_FR[2] = { "Cercle", "Classique" };
+static const char* const SC_WS_EN[2] = { "My weapon", "All my job's weapons" },    * const SC_WS_FR[2] = { "Mon arme", "Toutes les armes du job" };
+static const char* const SC_LS_EN[4] = { "Rows", "Tree", "Cards", "Grouped" },     * const SC_LS_FR[4] = { "Lignes", "Arbre", "Cartes", "Group\xC3\xA9""e" };
+static const char* const SC_CO_EN[5] = { "Auto", "1", "2", "3", "4" },             * const SC_CO_FR[5] = { "Auto", "1", "2", "3", "4" };
+static const char* const SC_LP_EN[5] = { "Under", "Above", "Left", "Right", "Both sides" };
+static const char* const SC_LP_FR[5] = { "Dessous", "Dessus", "\xC3\x80 gauche", "\xC3\x80 droite", "Des deux c\xC3\xB4t\xC3\xA9s" };
+static const char* const SC_HS_EN[4] = { "Versus", "Comic", "Impact", "Critical" }, * const SC_HS_FR[4] = { "Versus", "Comic", "Impact", "Critique" };
+static const char* const SC_HP_EN[5] = { "Auto (free side)", "Above", "Under", "Left", "Right" };
+static const char* const SC_HP_FR[5] = { "Auto (c\xC3\xB4t\xC3\xA9 libre)", "Dessus", "Dessous", "\xC3\x80 gauche", "\xC3\x80 droite" };
+// the reasons
+static const char* sw_circle(const UiConfig& c)  { return c.scStyle == 0 ? nullptr : tr("inactive : Classic style", "inactif : style Classique"); }
+static const char* sw_classic(const UiConfig& c) { return c.scStyle != 0 ? nullptr : tr("inactive : Circle style", "inactif : style Cercle"); }
+static const char* sw_cols(const UiConfig& c)    { if (const char* w = sw_circle(c)) return w; return c.scListStyle != 0 ? nullptr : tr("inactive : Rows list style", "inactif : liste en Lignes"); }
+static const char* sw_licon(const UiConfig& c)   { if (const char* w = sw_circle(c)) return w; return c.scListElem ? nullptr : tr("inactive : list icons off", "inactif : ic\xC3\xB4nes de la liste coup\xC3\xA9""es"); }
+static const char* sw_cards(const UiConfig& c)   { if (const char* w = sw_circle(c)) return w; return c.scListStyle == 2 ? nullptr : tr("inactive : not the Cards style", "inactif : pas le style Cartes"); }
+static const char* sw_gap(const UiConfig& c)     {   // read by Rows / Grouped and Classic -- not Tree, Cards
+    if (!c.scList) return tr("inactive : weaponskill list off", "inactif : liste des WS coup\xC3\xA9""e");
+    return (c.scStyle == 0 && (c.scListStyle == 1 || c.scListStyle == 2)) ? tr("inactive : Tree / Cards list style", "inactif : liste en Arbre / Cartes") : nullptr; }
+static const char* sw_distort(const UiConfig& c) { if (const char* w = sw_circle(c)) return w; return c.scAnim ? nullptr : tr("inactive : animations off", "inactif : animations coup\xC3\xA9""es"); }
+static const char* sw_hit(const UiConfig& c)     { if (const char* w = sw_circle(c)) return w; return (c.scArcade || c.scMbFx) ? nullptr : tr("inactive : both popups off", "inactif : les deux popups coup\xC3\xA9s"); }
+static const char* sw_mb(const UiConfig& c)      { if (const char* w = sw_hit(c)) return w; return c.scMbFx ? nullptr : tr("inactive : Magic Burst off", "inactif : Magic Burst coup\xC3\xA9"); }
+
+static const OptDef SC_DISPLAY_A[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(scShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Style", "Style", OK_SELECT, OL_SIMPLE, F_(scStyle), 0, 0, SC_ST_EN, SC_ST_FR, 2, nullptr, 0 },
+};
+static const OptDef SC_DISPLAY_B[] = {
+    { "List size", "Taille de la liste", OK_PCT, OL_SIMPLE, F_(scListScale), 0.5f, 2.0f, nullptr, nullptr, 0, sw_circle, 0 },
+    { "Grows toward", "Grandit vers", OK_GROW, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, UiConfig::GB_SC },
+};
+static const OptDef SC_CONTENT_A[] = {
+    { "Show party/nearby chains", "Afficher SC du groupe/proches", OK_TOGGLE, OL_ADV, F_(scNearby), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Weapon skills", "WS propos\xC3\xA9""es", OK_SELECT, OL_ADV, F_(scWsScope), 0, 0, SC_WS_EN, SC_WS_FR, 2, nullptr, 0 },
+    { "List style", "Style de la liste", OK_SELECT, OL_ADV, F_(scListStyle), 0, 0, SC_LS_EN, SC_LS_FR, 4, sw_circle, 0 },
+    { "Columns", "Colonnes", OK_SELECT, OL_ADV, F_(scListCols), 0, 0, SC_CO_EN, SC_CO_FR, 5, sw_cols, 0 },
+    { "Element icons in the list", "Ic\xC3\xB4nes d'\xC3\xA9l\xC3\xA9ment dans la liste", OK_TOGGLE, OL_ADV, F_(scListElem), 0, 0, nullptr, nullptr, 0, sw_circle, 0 },
+    { "List icons size", "Taille des ic\xC3\xB4nes (liste)", OK_PCT, OL_ADV, F_(scListIcon), 0.5f, 2.0f, nullptr, nullptr, 0, sw_licon, 0 },
+    { "Card size", "Taille des cartes", OK_PCT, OL_ADV, F_(scCardScale), 0.6f, 1.6f, nullptr, nullptr, 0, sw_cards, 0 },
+    { "List position", "Position de la liste", OK_SELECT, OL_ADV, F_(scListPos), 0, 0, SC_LP_EN, SC_LP_FR, 5, sw_circle, 0 },
+};
+static const OptDef SC_ELEM_A[] = {
+    { "Title", "Titre", OK_TOGGLE, OL_SIMPLE, F_(scTitle), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Timer (Go! / Burst)", "Timer (Go! / Burst)", OK_TOGGLE, OL_SIMPLE, F_(scTimer), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Step line", "Ligne Step", OK_TOGGLE, OL_SIMPLE, F_(scStep), 0, 0, nullptr, nullptr, 0, sw_classic, 0 },
+};
+static const OptDef SC_ELEM_B[] = {
+    { "Weaponskill list", "Liste weaponskills", OK_TOGGLE, OL_SIMPLE, F_(scList), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "TP indicator", "Indicateur TP", OK_TOGGLE, OL_SIMPLE, F_(scTP), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "WS spacing", "Espacement WS", OK_PCT, OL_SIMPLE, F_(scListGap), 0.6f, 3.0f, nullptr, nullptr, 0, sw_gap, 0 },
+};
+static const OptDef SC_ANIM[] = {
+    { "Animations", "Animations", OK_TOGGLE, OL_ADV, F_(scAnim), 0, 0, nullptr, nullptr, 0, sw_circle, 0 },
+    { "Scene distortion", "D\xC3\xA9""formation du d\xC3\xA9""cor", OK_TOGGLE, OL_ADV, F_(scDistort), 0, 0, nullptr, nullptr, 0, sw_distort, 0 },
+    { "Particles", "Particules", OK_PCT, OL_ADV, F_(scParticles), 0.0f, 1.0f, nullptr, nullptr, 0, sw_circle, 0 },
+    { "Effect reach", "Port\xC3\xA9""e des effets", OK_PCT, OL_ADV, F_(scReach), 0.3f, 1.0f, nullptr, nullptr, 0, sw_circle, 0 },
+};
+static const OptDef SC_HIT_A[] = {
+    { "Arcade WS (your weaponskill)", "Arcade WS (ta WS)", OK_TOGGLE, OL_ADV, F_(scArcade), 0, 0, nullptr, nullptr, 0, sw_circle, 0 },
+    { "Magic Burst (yours)", "Magic Burst (le tien)", OK_TOGGLE, OL_ADV, F_(scMbFx), 0, 0, nullptr, nullptr, 0, sw_circle, 0 },
+    { "Popup style", "Style du popup", OK_SELECT, OL_ADV, F_(scHitStyle), 0, 0, SC_HS_EN, SC_HS_FR, 4, sw_hit, 0 },
+    { "Position", "Position", OK_SELECT, OL_ADV, F_(scHitPos), 0, 0, SC_HP_EN, SC_HP_FR, 5, sw_hit, 0 },
+};
+static const OptDef SC_HIT_B[] = {
+    { "Impact effects", "Effets d'impact", OK_TOGGLE, OL_ADV, F_(scHitFx), 0, 0, nullptr, nullptr, 0, sw_hit, 0 },
+    { "Text size", "Taille du texte", OK_PCT, OL_ADV, F_(scHitScale), 0.5f, 2.0f, nullptr, nullptr, 0, sw_hit, 0 },
+};
+static const OptDef SC_HIT_C[] = {
+    { "\"MAGIC BURST\" line", "Ligne \"MAGIC BURST\"", OK_TOGGLE, OL_ADV, F_(scMbLabel), 0, 0, nullptr, nullptr, 0, sw_mb, 0 },
+    { "Burst spell name", "Nom du sort burst\xC3\xA9", OK_TOGGLE, OL_ADV, F_(scMbName), 0, 0, nullptr, nullptr, 0, sw_mb, 0 },
+};
+#undef F_
+#define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+static int s_scColPick = 0;   // the popup colour the picker edits : 0 WS name, 1 damage A, 2 damage B
+
+void ConfigPage::draw_sc_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW,
+                            float hdrX, float hdrW) {
+    Kit K;
+    if (!v2_kit(K, mo, click)) { draw_sc_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    g_fade = e;
+    UiConfig& c = ui_config();
+    const bool adv = c.cfgAdv != 0;
+    const bool circle = c.scStyle == 0;
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    // a percent slider on a float, in 0.05 steps (the old SC_SLIDER) -- for a row whose range or label follows the style
+    auto pct = [&](int uid, const char* label, float* f, float lo, float hi, const char* why) {
+        float v01 = (*f - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+        char b[16]; _snprintf(b, sizeof(b), "%d %%", (int)(*f * 100.0f + 0.5f)); b[15] = 0;
+        if (cfg_slider_row(K, uid, x, ry, w, label, &v01, b, why, f, 4, true)) {
+            const float v = floorf((lo + v01 * (hi - lo)) / 0.05f + 0.5f) * 0.05f; *f = v < lo ? lo : (v > hi ? hi : v); }
+    };
+    // a signed offset in whole units (design px / sphere units), shown as a plain number like the old page
+    auto off = [&](int uid, const char* label, float* f, float lo, float hi, const char* why) {
+        float v01 = (*f - lo) / (hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+        char b[16]; _snprintf(b, sizeof(b), "%d", (int)(*f + (*f < 0.0f ? -0.5f : 0.5f))); b[15] = 0;
+        if (cfg_slider_row(K, uid, x, ry, w, label, &v01, b, why, f, 4, true)) {
+            const float v = lo + v01 * (hi - lo); *f = (float)(int)(v + (v < 0.0f ? -0.5f : 0.5f)); }
+    };
+    ry += K.px(6.0f);
+    {   // ---- Display ----
+        const int nMod = cfg_count_modified(SC_DISPLAY_A, NOPT(SC_DISPLAY_A), adv) + cfg_count_modified(SC_DISPLAY_B, NOPT(SC_DISPLAY_B), adv) + cfg_count_modified_bytes(&c.scScale, 4);
+        if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, nMod)) {
+            cfg_rows(K, ctrl_uid_i(base, 2), SC_DISPLAY_A, NOPT(SC_DISPLAY_A), x, ry, w, adv);
+            {   // the PREVIEW's sample : a lone move, or any skillchain (transient, never saved : no marker)
+                const int pv = (c.scPreview >= -1 && c.scPreview < SCP_N) ? c.scPreview : SCP_Fusion;
+                const char* nm = pv < 0 ? tr("Opening move", "WS d'ouverture") : scprop_name(pv);
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 3), x, ry, w, tr("Preview", "Aper\xC3\xA7u"), nm, nullptr, nullptr, 0)) c.scPreview = wrap(pv + 1 + d, SCP_N + 1) - 1;
+            }
+            pct(ctrl_uid_i(base, 4), circle ? tr("Sphere size", "Taille de la sph\xC3\xA8re") : tr("Size", "Taille"), &c.scScale, 0.5f, circle ? 2.5f : 2.0f, nullptr);   // (Classic draws up to 200 %)
+            cfg_rows(K, ctrl_uid_i(base, 5), SC_DISPLAY_B, NOPT(SC_DISPLAY_B), x, ry, w, adv);
+            v2_end(K, ry);
+        }
+    }
+    if (adv) {
+        // ---- Frame : the Classic box's chrome, or the Circle's LIST frame (the sphere has none) ----
+        BoxStyle& bs = circle ? c.scListBox : c.scBox;
+        const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
+        if (v2_section(K, ctrl_uid_i(base, 6), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) {
+            if (circle) cfg_note(K, x, ry, tr("The frame of the weapon skill list (off : a faint shade).", "Le cadre de la liste des WS (sans : une l\xC3\xA9g\xC3\xA8re ombre)."));
+            cfg_frame_rows(K, ctrl_uid_i(base, 7), x, ry, w, fr);
+            v2_end(K, ry);
+        }
+        // ---- Content ----
+        const int nMod = cfg_count_modified(SC_CONTENT_A, NOPT(SC_CONTENT_A), true) + cfg_count_modified_bytes(&c.scListOff, 4) + cfg_count_modified_bytes(&c.scTitleOff, 4);
+        if (v2_section(K, ctrl_uid_i(base, 8), 21, "Content", "Contenu", x, ry, w, nMod)) {
+            cfg_rows(K, ctrl_uid_i(base, 9), SC_CONTENT_A, NOPT(SC_CONTENT_A), x, ry, w, true);
+            off(ctrl_uid_i(base, 10), tr("List distance", "Distance de la liste"), &c.scListOff, -200.0f, 80.0f, sw_circle(c));   // < 0 : closer, even over the sphere
+            off(ctrl_uid_i(base, 11), tr("Title height", "Hauteur du titre"), &c.scTitleOff, -120.0f, 80.0f, sw_circle(c));     // up, or down over the sphere
+            v2_end(K, ry);
+        }
+    }
+    {   // ---- Elements (which lines to show) ----
+        const int nMod = cfg_count_modified(SC_ELEM_A, NOPT(SC_ELEM_A), adv) + cfg_count_modified(SC_ELEM_B, NOPT(SC_ELEM_B), adv) + cfg_count_modified_bytes(&c.scProps, 4);
+        if (v2_section(K, ctrl_uid_i(base, 12), 7, "Elements", "\xC3\x89l\xC3\xA9ments", x, ry, w, nMod)) {
+            cfg_rows(K, ctrl_uid_i(base, 13), SC_ELEM_A, NOPT(SC_ELEM_A), x, ry, w, adv);
+            const char* pl = circle ? tr("Burst element icons", "Ic\xC3\xB4nes des \xC3\xA9l\xC3\xA9ments") : tr("Property + elements", "Propri\xC3\xA9t\xC3\xA9 + \xC3\xA9l\xC3\xA9ments");
+            if (cfg_toggle_row(K, ctrl_uid_i(base, 14), x, ry, w, pl, c.scProps != 0, nullptr, &c.scProps, 4)) { c.scProps = c.scProps ? 0 : 1; save_ui_config(); }
+            cfg_rows(K, ctrl_uid_i(base, 15), SC_ELEM_B, NOPT(SC_ELEM_B), x, ry, w, adv);
+            v2_end(K, ry);
+        }
+    }
+    if (adv) {
+        // ---- Animations (the Circle's) : what it costs ----
+        if (v2_section(K, ctrl_uid_i(base, 16), 22, "Animations", "Animations", x, ry, w, cfg_count_modified(SC_ANIM, NOPT(SC_ANIM), true)))
+            v2_rows(K, ctrl_uid_i(base, 17), SC_ANIM, NOPT(SC_ANIM), x, ry, w);
+        // ---- the popup on the sphere (WS / Magic Burst) ; the Arcade WS module keeps its own ----
+        unsigned* col[3] = { &c.scHitNameCol, &c.scHitDmgCol1, &c.scHitDmgCol2 };
+        const int nMod = cfg_count_modified(SC_HIT_A, NOPT(SC_HIT_A), true) + cfg_count_modified(SC_HIT_B, NOPT(SC_HIT_B), true) + cfg_count_modified(SC_HIT_C, NOPT(SC_HIT_C), true)
+                       + cfg_count_modified_bytes(&c.scHitX, 4) + cfg_count_modified_bytes(&c.scHitY, 4) + cfg_count_modified_bytes(&c.scHitNameY, 4) + cfg_count_modified_bytes(&c.scHitDmgY, 4)
+                       + cfg_count_modified_bytes(&c.scHitFont, 4) + cfg_count_modified_bytes(col[0], 4) + cfg_count_modified_bytes(col[1], 4) + cfg_count_modified_bytes(col[2], 4);
+        if (v2_section(K, ctrl_uid_i(base, 18), 26, "Popup on the sphere (WS / Magic Burst)", "Popup sur la sph\xC3\xA8re (WS / Magic Burst)", x, ry, w, nMod)) {
+            const char* hw = sw_hit(c);
+            cfg_rows(K, ctrl_uid_i(base, 19), SC_HIT_A, NOPT(SC_HIT_A), x, ry, w, true);
+            off(ctrl_uid_i(base, 20), tr("Move left / right", "D\xC3\xA9placer gauche / droite"), &c.scHitX, -200.0f, 200.0f, hw);
+            off(ctrl_uid_i(base, 21), tr("Move up / down", "D\xC3\xA9placer haut / bas"), &c.scHitY, -200.0f, 200.0f, hw);
+            cfg_rows(K, ctrl_uid_i(base, 22), SC_HIT_B, NOPT(SC_HIT_B), x, ry, w, true);
+            off(ctrl_uid_i(base, 23), tr("WS name height", "Hauteur du nom du WS"), &c.scHitNameY, -80.0f, 80.0f, hw);
+            off(ctrl_uid_i(base, 24), tr("Damage height", "Hauteur des d\xC3\xA9g\xC3\xA2ts"), &c.scHitDmgY, -80.0f, 80.0f, hw);
+            cfg_rows(K, ctrl_uid_i(base, 25), SC_HIT_C, NOPT(SC_HIT_C), x, ry, w, true);
+            {   // the font (drawn heavy, like the Arcade WS popup)
+                const int nf = ui_font_count() < 1 ? 1 : ui_font_count();
+                int fc = c.scHitFont; if (fc < 0 || fc >= nf) fc = 0;
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 26), x, ry, w, tr("Font", "Police"), fc == 0 ? tr("Impact (default)", "Impact (d\xC3\xA9""faut)") : ui_font_label(fc), hw, &c.scHitFont, 4)) {
+                    c.scHitFont = wrap(fc + d, nf); save_ui_config(); }
+            }
+            {   // the colours : which one, then its picker (the Party page's distance colours)
+                const char* cn[3] = { tr("WS name", "Nom de la WS"), tr("Damage A", "D\xC3\xA9g\xC3\xA2ts A"), tr("Damage B", "D\xC3\xA9g\xC3\xA2ts B") };
+                const int k = (s_scColPick < 0 || s_scColPick > 2) ? 0 : s_scColPick;
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 27), x, ry, w, tr("Colour", "Couleur"), cn[k], hw, col[k], 4)) s_scColPick = wrap(k + d, 3);
+                if (!hw) cfg_color_row(K, ctrl_uid_i(base, 28), x, ry, w, col[(s_scColPick < 0 || s_scColPick > 2) ? 0 : s_scColPick]);
+            }
+            cfg_note(K, x, ry, tr("A burst's damage takes the colour of its element.", "Les d\xC3\xA9g\xC3\xA2ts d'un burst prennent la couleur de son \xC3\xA9l\xC3\xA9ment."));
+            v2_end(K, ry);
+        }
+        // ---- Text : the Circle has no Step line (Property = the list's skillchain names, WS list = its moves) ----
+        const char* lab[SC_TE_COUNT]; TextStyle* ts[SC_TE_COUNT]; int idx[SC_TE_COUNT]; int n = 0, sel = 0;
+        int cur = (cfgScTextElem_ < 0 || cfgScTextElem_ >= SC_TE_COUNT) ? 0 : cfgScTextElem_;
+        if (circle && cur == SC_STEP) cur = SC_TIMER;
+        const char* LB[SC_TE_COUNT] = { tr("Title", "Titre"), tr("Timer", "Timer"), tr("Step", "Step"),
+                                        circle ? tr("List : skillchain", "Liste : skillchain") : tr("Property", "Propri\xC3\xA9t\xC3\xA9"),
+                                        circle ? tr("List : moves", "Liste : WS") : tr("WS list", "Liste WS") };
+        for (int k = 0; k < SC_TE_COUNT; ++k) {
+            if (circle && k == SC_STEP) continue;
+            if (k == cur) sel = n;
+            lab[n] = LB[k]; ts[n] = &c.scText[k]; idx[n] = k; ++n;
+        }
+        if (v2_section(K, ctrl_uid_i(base, 29), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, n))) {
+            cfg_text_rows(K, ctrl_uid_i(base, 30), x, ry, w, lab, ts, n, &sel);
+            cfgScTextElem_ = idx[(sel < 0 || sel >= n) ? 0 : sel];
+            v2_end(K, ry);
+        }
+    } else v2_simple_note(K, x, ry);
+    g_fade = e;
+}
+#undef NOPT
 
 } // namespace aio

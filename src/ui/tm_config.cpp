@@ -6,6 +6,7 @@
 #include "model/timers_build.h"   // timers_reset : flush live buff/recast timers + focus alerts (also //aio timers reset)
 #include "ui/config_controls.h"
 #include "ui/config_rows.h"
+#include "ui/cfg_engine.h"         // the redesign : OptDef tables + the kit (draw_tm_v2)
 #include "model/ui_config.h"
 #include "model/party_state.h"       // self_main_job : default the track checklist to the current job
 #include "model/job_track_gen.h"     // per-job trackable buff/recast entries + categories
@@ -17,168 +18,13 @@
 namespace aio {
 
 
-void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool click,
-                                float& ry, int& ri, float e,
-                                float bandX, float bandW, float coX, float ctrlW,
-                                float hdrX, float hdrW) {
-    // trkCatOpen_ holds the per-category collapse state of the track checklist, indexed by TrackCat. It has
-    // already overflowed once into the neighbouring jaJobOpen_ ; the generator can add a category at any time.
-    static_assert(TC_COUNT <= (int)(sizeof(trkCatOpen_) / sizeof(trkCatOpen_[0])), "trkCatOpen_[] must cover every TrackCat");
-    UiConfig& c = ui_config();
-    const char* MODE[3] = { tr("Icon", "Ic\xC3\xB4ne"), tr("Name", "Nom"), tr("Both", "Les deux") };
-    const char* SRC[4]  = { tr("Mine only", "Moi seul"), tr("Mine + players", "Moi + joueurs"), tr("Mine + trusts", "Moi + trusts"), tr("All", "Tout") };   // Duration buff-source filter (tmBuffSrc)
-
-    // ===== sub-section : DISPLAY =====
-    // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
-    const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_) && ui_config().cfgAdv) catOpen_[6] = !catOpen_[6];
-    ROW_NEXT(42.0f)
-    if (aF6_ > 0.0f) {
-        const float top6_ = ry;
-        cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
-        ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.tmShow)
-        { ROW_BAND(46.0f)   // Size (canonical : right after Show, before the box appearance)
-            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tmScale * 100.0f + 0.5f));
-            float v01 = (c.tmScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmScale = v < lo ? lo : (v > hi ? hi : v); }
-        } ROW_NEXT(46.0f)
-        ROW_GROW(CTRL_ID, UiConfig::GB_TM)   // which way the box grows as its content widens (ui/box_grow.h)
-        ROW_CHOICE_G(CTRL_ID, tr("Layout", "Disposition"), c.tmMerged, tr("Fused", "Fusionn\xC3\xA9"), tr("Separate", "S\xC3\xA9par\xC3\xA9"), 48.0f, 38.0f, 128.0f)   // Layout : fused (one box) vs separate (two draggable boxes)
-        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
-    }   // end Display
-    ry += snap(16.0f);                                 // air between this section and the next title bar
-    // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
-if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
-    const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
-    ROW_NEXT(42.0f)
-    if (aF20_ > 0.0f) {
-        const float top20_ = ry;
-        cat_fold_clip(dev, hdrX, top20_, hdrW, catH_[20] * aF20_);
-        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.tmBox);   // Box / Transparency / Theme / Hue / Luminosity
-        cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
-    }   // end Frame
-    ry += snap(16.0f);
-}   // end Advanced only
-
-    // ===== sub-section : CONTENT =====
-    // WHAT the box lists, as opposed to how it lists it. Display had grown to thirteen controls covering three
-    // different questions -- what the box IS, what it SHOWS, and how each ROW reads -- and a section that
-    // answers three questions is a section you have to read in full to find one setting. Split by subject, and
-    // named with the vocabulary the other panels already use (Player has a Content section too).
-    const float aFc_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[13]));
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[13], aFc_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[13], aFc_) && ui_config().cfgAdv) catOpen_[13] = !catOpen_[13];
-    ROW_NEXT(42.0f)
-    if (aFc_ > 0.0f) {
-        const float topC_ = ry;
-        cat_fold_clip(dev, hdrX, topC_, hdrW, catH_[13] * aFc_);
-        ROW_TOGGLE(CTRL_ID, tr("Show titles", "Afficher les titres"), c.tmTitle)
-        { ROW_BAND(52.0f)   // Buff source : whose buffs on YOU to show -- mine only / + other players / + trusts / all
-            int s = (c.tmBuffSrc < 0 || c.tmBuffSrc > 3) ? TMSRC_ALL : c.tmBuffSrc;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff source", "Source des buffs"), SRC[s])) { c.tmBuffSrc = wrap(s + d, 4); c.tmOthers = (c.tmBuffSrc != TMSRC_MINE); save_ui_config(); }
-        } ROW_NEXT(52.0f)
-        ROW_TOGGLE(CTRL_ID, tr("My buffs on allies", "Mes buffs sur alli\xC3\xA9s"), c.tmMine)   // Buffs on allies : show a buff YOU cast on another player (person name + ESTIMATED timer)
-        // The "Single-target on allies : Grouped / Per person" chip lived here and is gone. Grouping now follows
-        // the CAST -- a row reads "(AoE N)" only when the spell actually hit N people -- so the setting could only
-        // ever make that line false. It was the default, too: a fresh install drew three Phalanx cast one by one
-        // as "Phalanx (AoE 3)". A control whose every "on" state is a lie is removed, not defaulted off.
-        cat_fold_end(dev, ry, topC_, catH_[13], aFc_);
-    }   // end Content
-    ry += snap(16.0f);                                 // air between this section and the next title bar
-
-    // ===== sub-section : ROWS =====
-    // How a single line reads, and in what order the lines come. Everything here is about the LIST, not about
-    // the box that holds it and not about which buffs get in.
-if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
-    const float aFr_ = cat_fold(CTRL_ID, catOpen_[14]);
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[14], aFr_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Rows", "Lignes"), catOpen_[14], aFr_)) catOpen_[14] = !catOpen_[14];
-    ROW_NEXT(42.0f)
-    if (aFr_ > 0.0f) {
-        const float topR_ = ry;
-        cat_fold_clip(dev, hdrX, topR_, hdrW, catH_[14] * aFr_);
-        { ROW_BAND(52.0f)   // Duration display : Icon / Name / Both
-            int m = (c.tmDurMode < 0 || c.tmDurMode > 2) ? 0 : c.tmDurMode;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Duration: show", "Dur\xC3\xA9""e : afficher"), MODE[m])) { c.tmDurMode = wrap(m + d, 3); save_ui_config(); }
-        } ROW_NEXT(52.0f)
-        { ROW_BAND(52.0f)   // Duration : what decides the row order
-            const char* NM[2] = { tr("Person, then time", "Personne, puis temps"), tr("Shortest first", "Plus court d'abord") };
-            const int m = (c.tmSortDur == 1) ? 1 : 0;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Duration order", "Ordre Dur\xC3\xA9""e"), NM[m])) { c.tmSortDur = wrap(m + d, 2); save_ui_config(); }
-        } ROW_NEXT(52.0f)
-        { ROW_BAND(52.0f)   // Recast : same question, different axes (every recast is yours -> no person to group by)
-            const char* NM[2] = { tr("Shortest first", "Plus court d'abord"), tr("By name", "Par nom") };
-            const int m = (c.tmSortRec == 1) ? 1 : 0;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Recast order", "Ordre Recast"), NM[m])) { c.tmSortRec = wrap(m + d, 2); save_ui_config(); }
-        } ROW_NEXT(52.0f)
-        { ROW_BAND(46.0f)   // Max per column
-            const float lo = 1.0f, hi = 50.0f; char b[16]; sprintf(b, "%d", c.tmMax);
-            float v01 = ((float)c.tmMax - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Max per column", "Max par colonne"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.tmMax = v < 1 ? 1 : (v > 50 ? 50 : v); }
-        } ROW_NEXT(46.0f)
-        { ROW_BAND(46.0f)   // Icon size (Duration buff icons)
-            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tmIconScale * 100.0f + 0.5f));
-            float v01 = (c.tmIconScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Icon size", "Taille ic\xC3\xB4nes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmIconScale = v < lo ? lo : (v > hi ? hi : v); }
-        } ROW_NEXT(46.0f)
-        { ROW_BAND(46.0f)   // Row spacing : vertical gap between each timer line
-            const float lo = 0.60f, hi = 3.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tmRowGap * 100.0f + 0.5f));
-            float v01 = (c.tmRowGap - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Row spacing", "Espacement lignes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmRowGap = v < lo ? lo : (v > hi ? hi : v); }   // no save_ui_config() here : row_slider persists on RELEASE, saving per drag-frame rewrote the whole config file at 60 Hz
-        } ROW_NEXT(46.0f)
-        cat_fold_end(dev, ry, topR_, catH_[14], aFr_);
-    }   // end Rows
-    ry += snap(16.0f);                                 // air between this section and the next title bar
-}   // end Advanced only
-
-    // ===== sub-section : ALERTS (SP blink + focus-alert timings) =====
-    // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
-if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
-    const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // the section IS a card, collapsed or not
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alerts", "Alertes"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
-    ROW_NEXT(42.0f)
-    if (aF7_ > 0.0f) {
-        const float top7_ = ry;
-        cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
-        ROW_TOGGLE(CTRL_ID, tr("Tracking numbers (//aio out)", "Num\xC3\xA9ros de suivi (//aio out)"), c.tmMarks)   // the small number left of each monitored row (off : //aio out takes a name, "alerts" or "list")
-        ROW_TOGGLE(CTRL_ID, tr("SP last-min alert", "Alerte SP derni\xC3\xA8re min"), c.tmSpAlert)   // SP alert : SP1/SP2 buffs (all jobs) blink hard in their last minute (Soul Voice -> Nitro window)
-        { ROW_BAND(46.0f)   // Focus WARN : a "Hidden + focus" buff surfaces when it drops below this many seconds
-            const float lo = 10.0f, hi = 300.0f; char b[16]; sprintf(b, "%ds", c.tmFocusWarn);
-            float v01 = ((float)c.tmFocusWarn - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Alert under", "Alerter sous"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 5) * 5; c.tmFocusWarn = v < 10 ? 10 : (v > 300 ? 300 : v); }
-        } ROW_NEXT(46.0f)
-        { ROW_BAND(46.0f)   // Focus HOLD : how long a lost "Hidden + focus" alert stays before it clears itself
-            const float lo = 5.0f, hi = 300.0f; char b[16]; sprintf(b, "%ds", c.tmFocusHold);
-            float v01 = ((float)c.tmFocusHold - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Alert duration", "Dur\xC3\xA9""e de l'alerte"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 5) * 5; c.tmFocusHold = v < 5 ? 5 : (v > 300 ? 300 : v); }
-        } ROW_NEXT(46.0f)
-        { ROW_BAND(38.0f)   // hint
-            const float ty = ry + yo; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("These tune the \"+ alert\" states (when they blink / appear).", "R\xC3\xA8gle les \xC3\xA9tats \"+ alerte\" (quand ils clignotent / apparaissent)."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
-        } ROW_NEXT(38.0f)
-        { ROW_BAND(52.0f)   // Reset : flush live buff/recast timers + focus "OUT" alerts (clears a stuck row). Same as //aio timers reset.
-            const float bh = snap(34.0f), bw = snap(150.0f), ty = ry + yo + (snap(40.0f) - bh) * 0.5f; fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + bh * 0.5f, tr("Reset timers", "R\xC3\xA9initialiser timers"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
-            if (push_btn(dev, fo, mo, click, CTRL_ID, coX + ctrlW - bw, ty, bw, bh, tr("Reset now", "R\xC3\xA9initialiser"), 1)) timers_reset();
-        } ROW_NEXT(52.0f)
-        cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
-    }   // end Alerts
-    ry += snap(16.0f);                                 // air between this section and the next title bar
-}   // end Advanced only
-
-    // ===== sub-section : BUFF FILTER (job-agnostic checklist of buffs to show, grouped by magic family) =====
-if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
-    const float aFtrk_ = cat_fold(CTRL_ID, trkSecOpen_);   // the section FOLDS -- and with the feature off there is nothing to reveal
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(trkSecFull_, aFtrk_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buff filter", "Filtre de buffs"), trkSecOpen_, aFtrk_)) trkSecOpen_ = !trkSecOpen_;
-    ROW_NEXT(42.0f)
-    if (aFtrk_ > 0.0f) {
-        const float topTrk_ = ry;
-        cat_fold_clip(dev, hdrX, topTrk_, hdrW, trkSecFull_ * aFtrk_);
+// ---- the BUFF FILTER checklist (legend + collapse-all + the masonry grid of 4-state dots). A bespoke editor, not a row :
+// lifted verbatim out of draw_tm_config so the redesigned page (draw_tm_v2) draws the very same one. The parameters keep
+// the names the ROW_BAND / ROW_NEXT contract and the body expect (anim_, trkCatOpen_, jaJobOpen_ : the ConfigPage state). ----
+static void tm_buff_filter_grid(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e,
+                                float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW,
+                                float anim_, bool* trkCatOpen_, bool* jaJobOpen_) {
+        UiConfig& c = ui_config();
         { ROW_BAND(58.0f)   // LEGEND : one click on a spell's dot cycles it through these 4 states (dots match the checklist below)
             const float ty = ry + yo, lx = coX + snap(6.0f), lr = snap(4.0f), colW = ctrlW * 0.5f;
             struct LG { int focus, off; const char* en; const char* fr; };
@@ -448,6 +294,171 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         #undef BF_FOFF
         #undef BF_SET
         #undef BF_FSET
+}
+
+void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool click,
+                                float& ry, int& ri, float e,
+                                float bandX, float bandW, float coX, float ctrlW,
+                                float hdrX, float hdrW) {
+    // trkCatOpen_ holds the per-category collapse state of the track checklist, indexed by TrackCat. It has
+    // already overflowed once into the neighbouring jaJobOpen_ ; the generator can add a category at any time.
+    static_assert(TC_COUNT <= (int)(sizeof(trkCatOpen_) / sizeof(trkCatOpen_[0])), "trkCatOpen_[] must cover every TrackCat");
+    UiConfig& c = ui_config();
+    const char* MODE[3] = { tr("Icon", "Ic\xC3\xB4ne"), tr("Name", "Nom"), tr("Both", "Les deux") };
+    const char* SRC[4]  = { tr("Mine only", "Moi seul"), tr("Mine + players", "Moi + joueurs"), tr("Mine + trusts", "Moi + trusts"), tr("All", "Tout") };   // Duration buff-source filter (tmBuffSrc)
+
+    // ===== sub-section : DISPLAY =====
+    // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+    const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_) && ui_config().cfgAdv) catOpen_[6] = !catOpen_[6];
+    ROW_NEXT(42.0f)
+    if (aF6_ > 0.0f) {
+        const float top6_ = ry;
+        cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
+        ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.tmShow)
+        { ROW_BAND(46.0f)   // Size (canonical : right after Show, before the box appearance)
+            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tmScale * 100.0f + 0.5f));
+            float v01 = (c.tmScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmScale = v < lo ? lo : (v > hi ? hi : v); }
+        } ROW_NEXT(46.0f)
+        ROW_GROW(CTRL_ID, UiConfig::GB_TM)   // which way the box grows as its content widens (ui/box_grow.h)
+        ROW_CHOICE_G(CTRL_ID, tr("Layout", "Disposition"), c.tmMerged, tr("Fused", "Fusionn\xC3\xA9"), tr("Separate", "S\xC3\xA9par\xC3\xA9"), 48.0f, 38.0f, 128.0f)   // Layout : fused (one box) vs separate (two draggable boxes)
+        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
+    }   // end Display
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+    // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
+    const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
+    ROW_NEXT(42.0f)
+    if (aF20_ > 0.0f) {
+        const float top20_ = ry;
+        cat_fold_clip(dev, hdrX, top20_, hdrW, catH_[20] * aF20_);
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.tmBox);   // Box / Transparency / Theme / Hue / Luminosity
+        cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
+    }   // end Frame
+    ry += snap(16.0f);
+}   // end Advanced only
+
+    // ===== sub-section : CONTENT =====
+    // WHAT the box lists, as opposed to how it lists it. Display had grown to thirteen controls covering three
+    // different questions -- what the box IS, what it SHOWS, and how each ROW reads -- and a section that
+    // answers three questions is a section you have to read in full to find one setting. Split by subject, and
+    // named with the vocabulary the other panels already use (Player has a Content section too).
+    const float aFc_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[13]));
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[13], aFc_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[13], aFc_) && ui_config().cfgAdv) catOpen_[13] = !catOpen_[13];
+    ROW_NEXT(42.0f)
+    if (aFc_ > 0.0f) {
+        const float topC_ = ry;
+        cat_fold_clip(dev, hdrX, topC_, hdrW, catH_[13] * aFc_);
+        ROW_TOGGLE(CTRL_ID, tr("Show titles", "Afficher les titres"), c.tmTitle)
+        { ROW_BAND(52.0f)   // Buff source : whose buffs on YOU to show -- mine only / + other players / + trusts / all
+            int s = (c.tmBuffSrc < 0 || c.tmBuffSrc > 3) ? TMSRC_ALL : c.tmBuffSrc;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff source", "Source des buffs"), SRC[s])) { c.tmBuffSrc = wrap(s + d, 4); c.tmOthers = (c.tmBuffSrc != TMSRC_MINE); save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        ROW_TOGGLE(CTRL_ID, tr("My buffs on allies", "Mes buffs sur alli\xC3\xA9s"), c.tmMine)   // Buffs on allies : show a buff YOU cast on another player (person name + ESTIMATED timer)
+        // The "Single-target on allies : Grouped / Per person" chip lived here and is gone. Grouping now follows
+        // the CAST -- a row reads "(AoE N)" only when the spell actually hit N people -- so the setting could only
+        // ever make that line false. It was the default, too: a fresh install drew three Phalanx cast one by one
+        // as "Phalanx (AoE 3)". A control whose every "on" state is a lie is removed, not defaulted off.
+        cat_fold_end(dev, ry, topC_, catH_[13], aFc_);
+    }   // end Content
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+
+    // ===== sub-section : ROWS =====
+    // How a single line reads, and in what order the lines come. Everything here is about the LIST, not about
+    // the box that holds it and not about which buffs get in.
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
+    const float aFr_ = cat_fold(CTRL_ID, catOpen_[14]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[14], aFr_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Rows", "Lignes"), catOpen_[14], aFr_)) catOpen_[14] = !catOpen_[14];
+    ROW_NEXT(42.0f)
+    if (aFr_ > 0.0f) {
+        const float topR_ = ry;
+        cat_fold_clip(dev, hdrX, topR_, hdrW, catH_[14] * aFr_);
+        { ROW_BAND(52.0f)   // Duration display : Icon / Name / Both
+            int m = (c.tmDurMode < 0 || c.tmDurMode > 2) ? 0 : c.tmDurMode;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Duration: show", "Dur\xC3\xA9""e : afficher"), MODE[m])) { c.tmDurMode = wrap(m + d, 3); save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        { ROW_BAND(52.0f)   // Duration : what decides the row order
+            const char* NM[2] = { tr("Person, then time", "Personne, puis temps"), tr("Shortest first", "Plus court d'abord") };
+            const int m = (c.tmSortDur == 1) ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Duration order", "Ordre Dur\xC3\xA9""e"), NM[m])) { c.tmSortDur = wrap(m + d, 2); save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        { ROW_BAND(52.0f)   // Recast : same question, different axes (every recast is yours -> no person to group by)
+            const char* NM[2] = { tr("Shortest first", "Plus court d'abord"), tr("By name", "Par nom") };
+            const int m = (c.tmSortRec == 1) ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Recast order", "Ordre Recast"), NM[m])) { c.tmSortRec = wrap(m + d, 2); save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        { ROW_BAND(46.0f)   // Max per column
+            const float lo = 1.0f, hi = 50.0f; char b[16]; sprintf(b, "%d", c.tmMax);
+            float v01 = ((float)c.tmMax - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Max per column", "Max par colonne"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); c.tmMax = v < 1 ? 1 : (v > 50 ? 50 : v); }
+        } ROW_NEXT(46.0f)
+        { ROW_BAND(46.0f)   // Icon size (Duration buff icons)
+            const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tmIconScale * 100.0f + 0.5f));
+            float v01 = (c.tmIconScale - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Icon size", "Taille ic\xC3\xB4nes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmIconScale = v < lo ? lo : (v > hi ? hi : v); }
+        } ROW_NEXT(46.0f)
+        { ROW_BAND(46.0f)   // Row spacing : vertical gap between each timer line
+            const float lo = 0.60f, hi = 3.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tmRowGap * 100.0f + 0.5f));
+            float v01 = (c.tmRowGap - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Row spacing", "Espacement lignes"), b, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tmRowGap = v < lo ? lo : (v > hi ? hi : v); }   // no save_ui_config() here : row_slider persists on RELEASE, saving per drag-frame rewrote the whole config file at 60 Hz
+        } ROW_NEXT(46.0f)
+        cat_fold_end(dev, ry, topR_, catH_[14], aFr_);
+    }   // end Rows
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
+
+    // ===== sub-section : ALERTS (SP blink + focus-alert timings) =====
+    // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
+    const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // the section IS a card, collapsed or not
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alerts", "Alertes"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
+    ROW_NEXT(42.0f)
+    if (aF7_ > 0.0f) {
+        const float top7_ = ry;
+        cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
+        ROW_TOGGLE(CTRL_ID, tr("Tracking numbers (//aio out)", "Num\xC3\xA9ros de suivi (//aio out)"), c.tmMarks)   // the small number left of each monitored row (off : //aio out takes a name, "alerts" or "list")
+        ROW_TOGGLE(CTRL_ID, tr("SP last-min alert", "Alerte SP derni\xC3\xA8re min"), c.tmSpAlert)   // SP alert : SP1/SP2 buffs (all jobs) blink hard in their last minute (Soul Voice -> Nitro window)
+        { ROW_BAND(46.0f)   // Focus WARN : a "Hidden + focus" buff surfaces when it drops below this many seconds
+            const float lo = 10.0f, hi = 300.0f; char b[16]; sprintf(b, "%ds", c.tmFocusWarn);
+            float v01 = ((float)c.tmFocusWarn - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Alert under", "Alerter sous"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 5) * 5; c.tmFocusWarn = v < 10 ? 10 : (v > 300 ? 300 : v); }
+        } ROW_NEXT(46.0f)
+        { ROW_BAND(46.0f)   // Focus HOLD : how long a lost "Hidden + focus" alert stays before it clears itself
+            const float lo = 5.0f, hi = 300.0f; char b[16]; sprintf(b, "%ds", c.tmFocusHold);
+            float v01 = ((float)c.tmFocusHold - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Alert duration", "Dur\xC3\xA9""e de l'alerte"), b, &v01)) { int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 5) * 5; c.tmFocusHold = v < 5 ? 5 : (v > 300 ? 300 : v); }
+        } ROW_NEXT(46.0f)
+        { ROW_BAND(38.0f)   // hint
+            const float ty = ry + yo; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + snap(16.0f), tr("These tune the \"+ alert\" states (when they blink / appear).", "R\xC3\xA8gle les \xC3\xA9tats \"+ alerte\" (quand ils clignotent / apparaissent)."), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f);
+        } ROW_NEXT(38.0f)
+        { ROW_BAND(52.0f)   // Reset : flush live buff/recast timers + focus "OUT" alerts (clears a stuck row). Same as //aio timers reset.
+            const float bh = snap(34.0f), bw = snap(150.0f), ty = ry + yo + (snap(40.0f) - bh) * 0.5f; fo->begin(dev);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + bh * 0.5f, tr("Reset timers", "R\xC3\xA9initialiser timers"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            if (push_btn(dev, fo, mo, click, CTRL_ID, coX + ctrlW - bw, ty, bw, bh, tr("Reset now", "R\xC3\xA9initialiser"), 1)) timers_reset();
+        } ROW_NEXT(52.0f)
+        cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
+    }   // end Alerts
+    ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
+
+    // ===== sub-section : BUFF FILTER (job-agnostic checklist of buffs to show, grouped by magic family) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
+    const float aFtrk_ = cat_fold(CTRL_ID, trkSecOpen_);   // the section FOLDS -- and with the feature off there is nothing to reveal
+    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(trkSecFull_, aFtrk_));
+    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buff filter", "Filtre de buffs"), trkSecOpen_, aFtrk_)) trkSecOpen_ = !trkSecOpen_;
+    ROW_NEXT(42.0f)
+    if (aFtrk_ > 0.0f) {
+        const float topTrk_ = ry;
+        cat_fold_clip(dev, hdrX, topTrk_, hdrW, trkSecFull_ * aFtrk_);
+        tm_buff_filter_grid(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW, anim_, trkCatOpen_, jaJobOpen_);   // the bespoke checklist (shared with draw_tm_v2)
         cat_fold_end(dev, ry, topTrk_, trkSecFull_, aFtrk_);
     }   // end Buff filter
 
@@ -481,5 +492,120 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     #undef ROW_BAND
     #undef ROW_NEXT
 }
+
+
+// ======== THE NEW TIMERS PAGE (the config redesign, milestone 3, 2026-11-26) ========
+// The old page's sections in its order : Display / Frame / Content / Rows / Alerts / Buff filter / Text. The rows are on
+// the engine ; the Buff filter checklist is the old editor, unchanged (tm_buff_filter_grid) -- a grid of 4-state dots,
+// not a row. The buff source keeps its old mapping (an out-of-range value reads All ; tmOthers follows it).
+#define F_(name) [](UiConfig& c) -> void* { return &c.name; }
+static const char* const T_LY_EN[2] = { "Separate", "Fused" },                       * const T_LY_FR[2] = { "S\xC3\xA9par\xC3\xA9", "Fusionn\xC3\xA9" };
+static const char* const T_DM_EN[3] = { "Icon", "Name", "Both" },                    * const T_DM_FR[3] = { "Ic\xC3\xB4ne", "Nom", "Les deux" };
+static const char* const T_SD_EN[2] = { "Person, then time", "Shortest first" },     * const T_SD_FR[2] = { "Personne, puis temps", "Plus court d'abord" };
+static const char* const T_SR_EN[2] = { "Shortest first", "By name" },               * const T_SR_FR[2] = { "Plus court d'abord", "Par nom" };
+static const char* const T_SRC_EN[4] = { "Mine only", "Mine + players", "Mine + trusts", "All" };
+static const char* const T_SRC_FR[4] = { "Moi seul", "Moi + joueurs", "Moi + trusts", "Tout" };
+
+static const OptDef TM_DISPLAY[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(tmShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(tmScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Grows toward", "Grandit vers", OK_GROW, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, UiConfig::GB_TM },
+    { "Layout", "Disposition", OK_SELECT, OL_SIMPLE, F_(tmMerged), 0, 0, T_LY_EN, T_LY_FR, 2, nullptr, 0 },
+};
+static const OptDef TM_CONTENT_A[] = {
+    { "Show titles", "Afficher les titres", OK_TOGGLE, OL_SIMPLE, F_(tmTitle), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef TM_CONTENT_B[] = {
+    { "My buffs on allies", "Mes buffs sur alli\xC3\xA9s", OK_TOGGLE, OL_SIMPLE, F_(tmMine), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef TM_ROWS[] = {
+    { "Duration: show", "Dur\xC3\xA9""e : afficher", OK_SELECT, OL_ADV, F_(tmDurMode), 0, 0, T_DM_EN, T_DM_FR, 3, nullptr, 0 },
+    { "Duration order", "Ordre Dur\xC3\xA9""e", OK_SELECT, OL_ADV, F_(tmSortDur), 0, 0, T_SD_EN, T_SD_FR, 2, nullptr, 0 },
+    { "Recast order", "Ordre Recast", OK_SELECT, OL_ADV, F_(tmSortRec), 0, 0, T_SR_EN, T_SR_FR, 2, nullptr, 0 },
+    { "Max per column", "Max par colonne", OK_INT, OL_ADV, F_(tmMax), 1, 50, nullptr, nullptr, 0, nullptr, 0 },
+    { "Icon size", "Taille ic\xC3\xB4nes", OK_PCT, OL_ADV, F_(tmIconScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Row spacing", "Espacement lignes", OK_PCT, OL_ADV, F_(tmRowGap), 0.6f, 3.0f, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef TM_ALERTS[] = {
+    { "Tracking numbers (//aio out)", "Num\xC3\xA9ros de suivi (//aio out)", OK_TOGGLE, OL_ADV, F_(tmMarks), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "SP last-min alert", "Alerte SP derni\xC3\xA8re min", OK_TOGGLE, OL_ADV, F_(tmSpAlert), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+#undef F_
+#define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+void ConfigPage::draw_tm_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW,
+                            float hdrX, float hdrW) {
+    Kit K;
+    if (!v2_kit(K, mo, click)) { draw_tm_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    g_fade = e;
+    UiConfig& c = ui_config();
+    const bool adv = c.cfgAdv != 0;
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    ry += K.px(6.0f);
+    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(TM_DISPLAY, NOPT(TM_DISPLAY), adv)))
+        v2_rows(K, ctrl_uid_i(base, 2), TM_DISPLAY, NOPT(TM_DISPLAY), x, ry, w);
+    if (adv) {
+        BoxStyle& bs = c.tmBox;
+        const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
+        if (v2_section(K, ctrl_uid_i(base, 3), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 4), x, ry, w, fr); v2_end(K, ry); }
+    }
+    const int nCt = cfg_count_modified(TM_CONTENT_A, NOPT(TM_CONTENT_A), adv) + cfg_count_modified_bytes(&c.tmBuffSrc, 4) + cfg_count_modified(TM_CONTENT_B, NOPT(TM_CONTENT_B), adv);
+    if (v2_section(K, ctrl_uid_i(base, 5), 13, "Content", "Contenu", x, ry, w, nCt)) {
+        cfg_rows(K, ctrl_uid_i(base, 6), TM_CONTENT_A, NOPT(TM_CONTENT_A), x, ry, w, adv);
+        {   // whose buffs on YOU : the old mapping (out of range reads All) ; the legacy tmOthers follows it
+            const int s = (c.tmBuffSrc < 0 || c.tmBuffSrc > 3) ? TMSRC_ALL : c.tmBuffSrc;
+            if (int d = cfg_select_row(K, ctrl_uid_i(base, 7), x, ry, w, tr("Buff source", "Source des buffs"), tr(T_SRC_EN[s], T_SRC_FR[s]), nullptr, &c.tmBuffSrc, 4)) {
+                c.tmBuffSrc = wrap(s + d, 4); save_ui_config(); }
+            const int oth = (c.tmBuffSrc != TMSRC_MINE) ? 1 : 0;   // (a right-click reset writes tmBuffSrc alone)
+            if (c.tmOthers != oth) { c.tmOthers = oth; save_ui_config(); }
+        }
+        cfg_rows(K, ctrl_uid_i(base, 8), TM_CONTENT_B, NOPT(TM_CONTENT_B), x, ry, w, adv);
+        v2_end(K, ry);
+    }
+    if (adv) {
+        if (v2_section(K, ctrl_uid_i(base, 9), 14, "Rows", "Lignes", x, ry, w, cfg_count_modified(TM_ROWS, NOPT(TM_ROWS), true)))
+            v2_rows(K, ctrl_uid_i(base, 10), TM_ROWS, NOPT(TM_ROWS), x, ry, w);
+        const int nAl = cfg_count_modified(TM_ALERTS, NOPT(TM_ALERTS), true) + cfg_count_modified_bytes(&c.tmFocusWarn, 4) + cfg_count_modified_bytes(&c.tmFocusHold, 4);
+        if (v2_section(K, ctrl_uid_i(base, 11), 7, "Alerts", "Alertes", x, ry, w, nAl)) {
+            cfg_rows(K, ctrl_uid_i(base, 12), TM_ALERTS, NOPT(TM_ALERTS), x, ry, w, true);
+            // seconds, in steps of 5 (the old sliders' clamps)
+            auto secs = [&](int k, const char* en, const char* frl, int* f, int lo, int hi) {
+                char b[16]; _snprintf(b, sizeof(b), "%ds", *f); b[15] = 0;
+                float v01 = ((float)*f - lo) / (float)(hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+                if (cfg_slider_row(K, ctrl_uid_i(base, k), x, ry, w, tr(en, frl), &v01, b, nullptr, f, 4, false)) {
+                    int v = (int)(lo + v01 * (hi - lo) + 0.5f); v = (v / 5) * 5; *f = v < lo ? lo : (v > hi ? hi : v); }
+            };
+            secs(13, "Alert under", "Alerter sous", &c.tmFocusWarn, 10, 300);
+            secs(14, "Alert duration", "Dur\xC3\xA9""e de l'alerte", &c.tmFocusHold, 5, 300);
+            cfg_note(K, x, ry, tr("These tune the \"+ alert\" states (when they blink / appear).", "R\xC3\xA8gle les \xC3\xA9tats \"+ alerte\" (quand ils clignotent / apparaissent)."));
+            {   // flush the live buff / recast timers + the focus "OUT" alerts (a stuck row) ; same as //aio timers reset
+                const float h = K.px(52.0f), bw = K.px(190.0f);
+                if (ry + h >= K.clipTop && ry <= K.clipBot) {
+                    kit_row(K, x, ry, w, h, 0);
+                    kit_label(K, x + K.px(18.0f), ry + h * 0.5f, tr("Reset timers", "R\xC3\xA9initialiser timers"), 0);
+                    if (kit_button(K, ctrl_uid_i(base, 15), x + w - K.px(18.0f) - bw, ry + (h - K.px(42.0f)) * 0.5f, bw, tr("Reset now", "R\xC3\xA9initialiser"), 1, 0)) timers_reset();
+                }
+                ry += h + K.px(4.0f);
+            }
+            v2_end(K, ry);
+        }
+        {   // BUFF FILTER : its own open flag (trkSecOpen_, not a catOpen_ slot) ; the checklist is the old editor
+            if (cfg_section(K, ctrl_uid_i(base, 16), x, ry, w, tr("Buff filter", "Filtre de buffs"), &trkSecOpen_, 0, true)) {
+                g_fade = e;
+                tm_buff_filter_grid(dev, fo, mo, click, ry, ri, e, bandX, bandW, x, w, x, w, anim_, trkCatOpen_, jaJobOpen_);
+                g_fade = e;
+                v2_end(K, ry);
+            } else ry += K.px(6.0f);
+        }
+        const char* lab[TM_TE_COUNT] = { tr("Title", "Titre"), tr("Name", "Nom"), tr("Timer", "Timer") };
+        TextStyle* ts[TM_TE_COUNT]; for (int i = 0; i < TM_TE_COUNT; ++i) ts[i] = &c.tmText[i];
+        if (v2_section(K, ctrl_uid_i(base, 17), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, TM_TE_COUNT))) { cfg_text_rows(K, ctrl_uid_i(base, 18), x, ry, w, lab, ts, TM_TE_COUNT, &cfgTmTextElem_); v2_end(K, ry); }
+    } else v2_simple_note(K, x, ry);
+    g_fade = e;
+}
+#undef NOPT
 
 } // namespace aio

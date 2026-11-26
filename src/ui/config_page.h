@@ -22,12 +22,14 @@ public:
     void set_open(bool o) { if (o && !open_) { anim_ = 0.0f; profDirty_ = true; icon_pack_forget(); } if (!o && open_) ctrl_release_drag(); open_ = o; }
     bool is_open() const  { return open_; }
     void set_tab(int t);
-    void set_section(int s) { section_ = s; }
+    void set_section(int s) { if (s != section_) v2Hot_ = -1; section_ = s; }
     void toggle_kit() { kitSheet_ = !kitSheet_; }
     void set_v2(bool on) { v2_ = on; }   // //aio config v1 | v2 : the old / the new pages (the redesign's comparison)   // //aio config kit : the redesign's component sheet (cfg_kit.cpp)
     void set_help(int h) { helpSel_ = h; helpScroll_ = 0.0f; }   // //aio config help N : that Help page
-    bool cat_is_open(int c) const { return c >= 0 && c < CFG_CAT_N && catOpen_[c]; }   // a page's section is open (the preview follows it)
-    void only_cat(int c) { for (bool& b : catOpen_) b = false; if (c >= 0 && c < CFG_CAT_N) catOpen_[c] = true; }   // //aio config sec N cat C : that category alone, open   // //aio config sec N : open a module's page (0-based, MODULES order)
+    // the section the preview follows : in the redesign, the one the pointer last went over (a Simple page shows every
+    // section open, so "open" could not choose : the Game UI page never showed its name plates) ; else the open one
+    bool cat_is_open(int c) const { if (c < 0 || c >= CFG_CAT_N) return false; if (v2_ && v2Hot_ >= 0) return v2Hot_ == c; return catOpen_[c] && (v2_ ? ui_config_adv() : true); }
+    void only_cat(int c) { for (bool& b : catOpen_) b = false; if (c >= 0 && c < CFG_CAT_N) catOpen_[c] = true; v2Hot_ = c; }   // //aio config sec N cat C : that category alone, open   // //aio config sec N : open a module's page (0-based, MODULES order)
 
     // draw the overlay for the current frame (screen size in the HUD coord space). No-op if closed.
     void draw(const Frame& f, float sw, float sh);
@@ -120,6 +122,22 @@ private:
     void v2_rows(struct Kit& K, int uid, const struct OptDef* d, int n, float x, float& ry, float w);
     void v2_end(struct Kit& K, float& ry);
     void v2_simple_note(struct Kit& K, float x, float& ry);
+    // the redesigned module pages (milestone 3) : each in its own *_config.cpp, beside the old draw_<x>_config
+    void draw_minimap_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_ws_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_sc_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_tp_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_hl_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_pw_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_grim_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_zt_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_tm_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_ep_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_aw_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_pet_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_nui_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_chat_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    void draw_interface_v2(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
     void draw_party_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
                        float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
     void draw_buff_band(u32 dev, Font* fo, const MouseState* mo, bool click, float& ry, int& ri, float e,
@@ -131,7 +149,10 @@ private:
     float frameL_ = 0.0f, frameM_ = 0.0f, frameR_ = 0.0f, frameTop_ = 0.0f, frameTr_ = 0.0f;   // the redesign's right frame : its left inner edge, its mullion (the settings' opening)
     const Frame* frame_ = nullptr;
     const struct Kit* s_ck_page = nullptr;   // the redesign's kit for this frame (draw() sets it ; null = old look)
-    float viewTop_ = -1e9f, viewBot_ = 1e9f;   // the settings viewport this frame (the redesign culls rows outside it)       // this frame (the kit needs its fonts and screen)
+    float viewTop_ = -1e9f, viewBot_ = 1e9f;
+    int   v2Hot_ = -1, v2Cur_ = -1; float v2CurTop_ = 0.0f;   // the redesign : the section the pointer is over (sticky), the one being drawn
+    void  v2_close(const MouseState* mo, float ry);              // ends the section being drawn : was the pointer over it ?
+    static bool ui_config_adv();   // the settings viewport this frame (the redesign culls rows outside it)       // this frame (the kit needs its fonts and screen)
     void draw_target_config(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW,

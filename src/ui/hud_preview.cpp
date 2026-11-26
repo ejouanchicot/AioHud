@@ -255,7 +255,17 @@ void Hud::draw_config_preview(const Frame& f) {
     // Game UI module -> the redrawn action menu + its submenu, at TRUE in-game size (shrunk only to fit the stage)
     if (config_.section() == 15) {
         float sx = 0, sy = 0, sw = 0, sh = 0; config_.preview_rect(sx, sy, sw, sh);
-        if (config_.cat_is_open(26)) { plates_sample(f, sx, sy, sw, sh); return; }   // the names section : sample name plates
+        if (config_.cat_is_open(26)) {   // the names section : sample name plates
+            if (!ui_config().plShow) {   // FFXI style : the game draws its own names -- a sample of OURS would show what will NOT appear
+                Font* pf = fonts_.get(ui_font_face(ui_config().fontFace), 700);
+                if (pf) { pf->begin(f.dev);
+                    pf->draw_c(f.dev, sx + sw * 0.5f, sy + sh * 0.5f,
+                               (ui_config().lang == 1) ? "Style FFXI : le jeu affiche ses propres noms" : "FFXI style : the game draws its own names",
+                               (screenH_ / 1000.0f) * 20.0f, 0xFFCED6DB, 0xC0000000, 1.2f); }
+                return;
+            }
+            plates_sample(f, sx, sy, sw, sh); return;
+        }
         float s = (screenH_ / 1000.0f), w = 0.0f, h = 0.0f;
         nui_sample(f, 0.0f, 0.0f, s, false, &w, &h);
         if (w > sw * 0.94f && w > 0.0f) { const float k = (sw * 0.94f) / w; s *= k; h *= k; }

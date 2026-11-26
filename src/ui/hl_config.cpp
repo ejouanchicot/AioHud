@@ -6,6 +6,7 @@
 #include "ui/config_page.h"
 #include "ui/config_controls.h"    // cat_header / row_slider / toggle_chip + palette
 #include "ui/config_rows.h"        // ROW_BAND / ROW_NEXT
+#include "ui/cfg_engine.h"         // the redesign : OptDef tables + the kit (draw_hl_v2)
 #include "model/ui_config.h"
 #include "gfx/font.h"
 #include "gfx/draw.h"
@@ -102,5 +103,53 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     #undef ROW_BAND
     #undef ROW_NEXT
 }
+
+
+// ======== THE NEW HATE LIST PAGE (the config redesign, milestone 3, 2026-11-26) ========
+// Display / Frame / Content / Text, like the old page.
+#define F_(name) [](UiConfig& c) -> void* { return &c.name; }
+static const OptDef HL_DISPLAY[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(hlShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(hlScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Grows toward", "Grandit vers", OK_GROW, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, UiConfig::GB_HL },
+};
+static const OptDef HL_CONTENT[] = {
+    { "Max mobs", "Mobs max", OK_INT, OL_SIMPLE, F_(hlCount), 1, 20, nullptr, nullptr, 0, nullptr, 0 },
+    { "Distance column", "Colonne distance", OK_TOGGLE, OL_SIMPLE, F_(hlDist), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Target column", "Colonne cible", OK_TOGGLE, OL_SIMPLE, F_(hlTgt), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Shows mobs that have aggro on your party.", "Affiche les mobs qui ont de la haine sur le groupe.", OK_NOTE, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+#undef F_
+#define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+void ConfigPage::draw_hl_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW,
+                            float hdrX, float hdrW) {
+    Kit K;
+    if (!v2_kit(K, mo, click)) { draw_hl_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    g_fade = e;
+    UiConfig& c = ui_config();
+    const bool adv = c.cfgAdv != 0;
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    ry += K.px(6.0f);
+    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(HL_DISPLAY, NOPT(HL_DISPLAY), adv)))
+        v2_rows(K, ctrl_uid_i(base, 2), HL_DISPLAY, NOPT(HL_DISPLAY), x, ry, w);
+    if (adv) {
+        BoxStyle& bs = c.hlBox;
+        const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
+        if (v2_section(K, ctrl_uid_i(base, 3), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 4), x, ry, w, fr); v2_end(K, ry); }
+    }
+    if (v2_section(K, ctrl_uid_i(base, 5), 21, "Content", "Contenu", x, ry, w, cfg_count_modified(HL_CONTENT, NOPT(HL_CONTENT), adv)))
+        v2_rows(K, ctrl_uid_i(base, 6), HL_CONTENT, NOPT(HL_CONTENT), x, ry, w);
+    if (adv) {
+        const char* lab[HL_TE_COUNT] = { tr("Distance", "Distance"), tr("Name", "Nom"), tr("HP%", "PV%"), tr("Target", "Cible") };
+        TextStyle* ts[HL_TE_COUNT]; for (int i = 0; i < HL_TE_COUNT; ++i) ts[i] = &c.hlText[i];
+        if (v2_section(K, ctrl_uid_i(base, 7), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, HL_TE_COUNT))) { cfg_text_rows(K, ctrl_uid_i(base, 8), x, ry, w, lab, ts, HL_TE_COUNT, &cfgHlTextElem_); v2_end(K, ry); }
+    } else v2_simple_note(K, x, ry);
+    g_fade = e;
+}
+#undef NOPT
 
 } // namespace aio

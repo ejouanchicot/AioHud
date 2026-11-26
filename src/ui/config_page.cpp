@@ -466,6 +466,70 @@ void ConfigPage::draw_layout_category(u32 dev, Font* fo, const MouseState* mo, b
         }   // end category Layout
 }
 
+// ======== THE NEW INTERFACE PAGE (the config redesign, milestone 3) : the config menu's own font, status icons,
+// hide key and accent colour, on the engine. The accent's nuance chart is enamel swatches in steel bezels. ========
+void ConfigPage::draw_interface_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                                   float& ry, int& ri, float e,
+                                   float bandX, float bandW, float coX, float ctrlW,
+                                   float hdrX, float hdrW) {
+    Kit K;
+    if (!v2_kit(K, mo, click)) { draw_interface_category(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    (void)dev;
+    g_fade = e;
+    UiConfig& c = ui_config();
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    ry += K.px(6.0f);
+    if (!v2_section(K, ctrl_uid_i(base, 1), 3, "Interface", "Interface", x, ry, w, 0)) return;
+    {   // the config menu's font -- also the HUD's default text face
+        int gf = c.text[0][TE_UI].face; if (gf < 0 || gf >= ui_font_count()) gf = 0;
+        if (int d = cfg_select_row(K, ctrl_uid_i(base, 2), x, ry, w, tr("Font (config + HUD)", "Police (config + HUD)"), ui_font_label(gf), nullptr, &c.text[0][TE_UI].face, 4)) {
+            gf = wrap(gf + d, ui_font_count()); c.text[0][TE_UI].face = gf; c.fontFace = gf; save_ui_config(); }
+    }
+    {   // the status-icon sheet the whole HUD draws from (the list found on disk when the page opened)
+        const int pn = icon_pack_count(buff_custom_path(), buff_atlas_path());
+        int cur = 0;
+        for (int i = 1; i < pn; ++i) { const IconPack* p = icon_pack_at(i); if (p && lstrcmpiA(p->name, c.iconPack) == 0) { cur = i; break; } }
+        if (const IconPack* sel = icon_pack_at(cur)) {
+            if (int d = cfg_select_row(K, ctrl_uid_i(base, 3), x, ry, w, tr("Status icons", "Ic\xC3\xB4nes de statut"), icon_pack_label(*sel), nullptr, nullptr, 0)) {
+                cur = wrap(cur + d, pn);
+                const IconPack* nx = icon_pack_at(cur);
+                lstrcpynA(c.iconPack, (nx && nx->kind != IPK_AUTO) ? nx->name : "", sizeof(c.iconPack));
+                save_ui_config();
+                buff_atlas_dispose();   // the device is alive (we are drawing) and the config draws last : the next frame reloads
+            }
+        }
+    }
+    {   // the hide key (End) : hold to peek, or a press toggles
+        const char* hk[2] = { tr("Hold", "Maintien"), tr("Toggle", "Bascule") };
+        const int m = c.hidePeekMode ? 1 : 0;
+        if (int d = cfg_select_row(K, ctrl_uid_i(base, 4), x, ry, w, tr("Hide key (End)", "Touche masquer (Fin)"), hk[m], nullptr, &c.hidePeekMode, 4)) { (void)d; c.hidePeekMode = m ? 0 : 1; save_ui_config(); }
+    }
+    // the accent : a free colour, or a style and its nuance chart
+    if (cfg_toggle_row(K, ctrl_uid_i(base, 5), x, ry, w, tr("Custom colour", "Couleur perso"), c.uiAccent != 0, nullptr, &c.uiAccent, 4)) {
+        c.uiAccent = c.uiAccent ? 0u : (theme_accent(c.uiStyle, c.uiColor) | 0xFF000000u); save_ui_config(); }
+    if (c.uiAccent != 0) cfg_color_row(K, ctrl_uid_i(base, 6), x, ry, w, &c.uiAccent);
+    else {
+        const int st = (c.uiStyle < 0 || c.uiStyle >= STYLE_N) ? 0 : c.uiStyle;
+        if (int d = cfg_select_row(K, ctrl_uid_i(base, 7), x, ry, w, tr("Colour style", "Style de couleur"), tr(STYLES[st].en, STYLES[st].fr), nullptr, &c.uiStyle, 4)) {
+            c.uiStyle = wrap(st + d, STYLE_N);
+            if (c.uiColor >= style_swatch_count(c.uiStyle)) c.uiColor = 0;
+            save_ui_config(); }
+        const ThemeStyle& S = STYLES[(c.uiStyle < 0 || c.uiStyle >= STYLE_N) ? 0 : c.uiStyle];
+        const int COLS = S.n, total = COLS * NUANCE_ROWS;
+        const float s = K.px(34.0f), gap = K.px(8.0f), x0 = x + K.px(18.0f);
+        float gy = ry + K.px(6.0f);
+        for (int k = 0; k < total; ++k) {   // one hue per column, lightness top (light) to bottom (deep)
+            const int col = k % COLS, row = k / COLS;
+            if (kit_swatch(K, ctrl_uid_i(base, 100 + k), x0 + col * (s + gap), gy + row * (s + gap), nuance(S.col[col], row), c.uiColor == k ? KS_FOCUS : 0)) {
+                c.uiColor = k; save_ui_config(); }
+        }
+        ry = gy + NUANCE_ROWS * (s + gap) + K.px(6.0f);
+    }
+    v2_end(K, ry);
+    g_fade = e;
+}
+
 void ConfigPage::draw(const Frame& f, float sw, float sh) {
     // hov_ carries one eased hover value per tab. It is exactly NTABS today -- adding a 7th tab without growing
     // it writes past the array in the loop below. In a member function because the array is private.
@@ -1034,7 +1098,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             static_assert(sizeof(NAV) / sizeof(NAV[0]) == 18 + 5, "every module once in the rail (MODULE_N = 18) + 5 group titles");
             const int pick = nav_rail(dev, fo, mo, click, ix + snap(10.0f), bodyY + snap(s_ck ? 26.0f : 10.0f), sbW - snap(20.0f), bodyY + bodyH - snap(s_ck ? 22.0f : 10.0f),
                                       NAV, (int)(sizeof(NAV) / sizeof(NAV[0])), section_, module_label, navScroll_, 5, pulse, CTRL_ID);
-            if (pick >= 0) section_ = pick;
+            if (pick >= 0) { if (pick != section_) v2Hot_ = -1; section_ = pick; }   // a new page : its preview starts from its default
         }
 
         const float coX = ix + sbW + snap(30.0f);
@@ -1170,51 +1234,53 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             else draw_player_config(dev, fo, mo, click, ry, ri, e,
                                bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 3) {
-            draw_minimap_config(dev, fo, mo, click, ry, ri, e,
-                                bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_minimap_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_minimap_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 5) {
-            draw_sc_config(dev, fo, mo, click, ry, ri, e,
-                           bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_sc_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_sc_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 6) {
-            draw_tp_config(dev, fo, mo, click, ry, ri, e,
-                           bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_tp_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_tp_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 7) {
-            draw_hl_config(dev, fo, mo, click, ry, ri, e,
-                           bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_hl_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_hl_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 8) {
-            draw_pw_config(dev, fo, mo, click, ry, ri, e,
-                           bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_pw_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_pw_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 9) {
-            draw_grim_config(dev, fo, mo, click, ry, ri, e,
-                             bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_grim_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_grim_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 10) {
-            draw_zt_config(dev, fo, mo, click, ry, ri, e,
-                           bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_zt_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_zt_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 11) {
-            draw_tm_config(dev, fo, mo, click, ry, ri, e,
-                           bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_tm_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_tm_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 12) {
-            draw_ep_config(dev, fo, mo, click, ry, ri, e,
-                           bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_ep_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_ep_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 13) {
-            draw_aw_config(dev, fo, mo, click, ry, ri, e,
-                           bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_aw_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_aw_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 14) {
-            draw_pet_config(dev, fo, mo, click, ry, ri, e,
-                            bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_pet_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_pet_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 15) {
-            draw_nui_config(dev, fo, mo, click, ry, ri, e,   // Game UI : the client's own windows
-                            bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_nui_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_nui_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == 16) {
-            draw_chat_config(dev, fo, mo, click, ry, ri, e,   // Chat : AioHUD's own log boxes
-                             bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_chat_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_chat_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else if (section_ == SEC_INTERFACE) {
-            draw_interface_category(dev, fo, mo, click, ry, ri, e,   // the config MENU's own font + accent colour
+            if (v2_) draw_interface_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_interface_category(dev, fo, mo, click, ry, ri, e,   // the config MENU's own font + accent colour
                                     bandX, bandW, coX, ctrlW, hdrX, hdrW);
         } else {
-            draw_ws_config(dev, fo, mo, click, ry, ri, e,
-                           bandX, bandW, coX, ctrlW, hdrX, hdrW);
+            if (v2_) draw_ws_v2(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);   // the redesign
+            else draw_ws_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW);
         }
+        v2_close(mo, ry);   // the redesign : the page's last section ends here
         // (the per-page "Layout" category was removed : placement is the Edit Layout tab, and the global
         //  "Reset all settings" now lives once in the Profile tab.)
         }   // end mouse-clip block (restores the outer mo/click)
@@ -2195,7 +2261,14 @@ bool ConfigPage::v2_kit(Kit& K, const MouseState* mo, bool click) {
     K.mo = mo; K.click = click; K.clipTop = viewTop_; K.clipBot = viewBot_;
     return true;
 }
+bool ConfigPage::ui_config_adv() { return ui_config().cfgAdv != 0; }
+void ConfigPage::v2_close(const MouseState* mo, float ry) {
+    if (v2Cur_ >= 0 && mo && mo->y >= v2CurTop_ && mo->y < ry && mo->y >= viewTop_ && mo->y <= viewBot_) v2Hot_ = v2Cur_;
+    v2Cur_ = -1;
+}
 bool ConfigPage::v2_section(Kit& K, int uid, int slot, const char* en, const char* fr, float x, float& ry, float w, int nMod) {
+    v2_close(K.mo, ry);                 // the previous section ends where this one starts
+    v2Cur_ = slot; v2CurTop_ = ry;
     const bool adv = ui_config().cfgAdv != 0;
     bool open = catOpen_[slot];
     const bool shown = cfg_section(K, uid, x, ry, w, tr(en, fr), &open, nMod, adv);   // Simple : always open, not foldable

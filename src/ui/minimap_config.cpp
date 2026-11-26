@@ -7,10 +7,12 @@
 #include "ui/config_page.h"
 #include "ui/config_controls.h"    // cat_header / row_slider / row_selector / toggle_chip + palette
 #include "ui/config_rows.h"        // ROW_BAND / ROW_NEXT
+#include "ui/cfg_engine.h"         // the redesign : OptDef tables + the kit (draw_minimap_v2)
 #include "model/ui_config.h"
 #include "gfx/font.h"
 #include "gfx/draw.h"
 #include <cstdio>
+#include <cmath>
 
 namespace aio {
 
@@ -301,5 +303,251 @@ if (ui_config().cfgAdv && c.mmClock) {   // Advanced only ; and only with the cl
     #undef ROW_BAND
     #undef ROW_NEXT
 }
+
+
+// ======== THE NEW MINIMAP PAGE (the config redesign, milestone 3, 2026-11-26) ========
+// The old page's sections in its order : Display / Shape & Frame / Clock (+ the clock box's frame) / Markers / Text. A row
+// the old page hid behind a dependency is GREYED with its reason ; a colour picker appears with its switch, the clock's
+// frame and text with the clock. The Dial's module switches (time / day / moon / map square) MOVE to its modules' group
+// when Day dial = Disc, as on the old page (one row per setting, never two). Old mappings kept : Day dial / Info band
+// read 1 / 2 when out of range, a module's place skips the taken places, the Dial forces the clock and the bezel on.
+#define F_(name) [](UiConfig& c) -> void* { return &c.name; }
+static const char* const M_SH_EN[2] = { "Square", "Round" },                  * const M_SH_FR[2] = { "Carr\xC3\xA9", "Rond" };
+static const char* const M_FR_EN[3] = { "None", "Box Theme", "Custom" },      * const M_FR_FR[3] = { "Aucun", "Th\xC3\xA8me box", "Perso" };
+static const char* const M_LL_EN[3] = { "Classic", "Compact", "Dial (round)" }, * const M_LL_FR[3] = { "Classique", "Compact", "Cadran (rond)" };
+static const char* const M_DD_EN[3] = { "Globe (colours)", "Carousel (icons)", "Disc (icons)" };
+static const char* const M_DD_FR[3] = { "Globe (couleurs)", "Carrousel (ic\xC3\xB4nes)", "Disque (ic\xC3\xB4nes)" };
+static const char* const M_HP_EN[2] = { "Hour top, square bottom", "Square top, hour bottom" };
+static const char* const M_HP_FR[2] = { "Heure en haut, case en bas", "Case en haut, heure en bas" };
+static const char* const M_GM_EN[6] = { "Ruby", "Sapphire", "Emerald", "Topaz", "Amethyst", "Diamond" };
+static const char* const M_GM_FR[6] = { "Rubis", "Saphir", "\xC3\x89meraude", "Topaze", "Am\xC3\xA9thyste", "Diamant" };
+static const char* const M_IB_EN[3] = { "Off", "Top", "Bottom" },             * const M_IB_FR[3] = { "Aucune", "Haut", "Bas" };
+static const char* const M_PL_EN[4] = { "Top", "Bottom", "Left", "Right" },   * const M_PL_FR[4] = { "Haut", "Bas", "Gauche", "Droite" };
+static const char* const M_MS_EN[2] = { "Classic", "Icons" },                 * const M_MS_FR[2] = { "Classique", "Ic\xC3\xB4nes" };
+// the Dial modules' PLACES : the round -- 4 corners and 2 sides ; the square -- 4 corners and 2 places on each side
+static const char* const M_SL_EN[9] = { "Top left", "Left", "Bottom left", "Bottom right", "Right", "Top right", "Off", "Left (low)", "Right (low)" };
+static const char* const M_SL_FR[9] = { "Haut gauche", "Gauche", "Bas gauche", "Bas droite", "Droite", "Haut droite", "Aucun", "Gauche (bas)", "Droite (bas)" };
+static const char* const M_SQ_EN[9] = { "Top left", "Left (high)", "Bottom left", "Bottom right", "Right (high)", "Top right", "Off", "Left (low)", "Right (low)" };
+static const char* const M_SQ_FR[9] = { "Haut gauche", "Gauche (haut)", "Bas gauche", "Bas droite", "Droite (haut)", "Haut droite", "Aucun", "Gauche (bas)", "Droite (bas)" };
+static const int M_ORD_R[7] = { 0, 1, 2, 3, 4, 5, 6 }, M_ORD_S[9] = { 0, 1, 7, 2, 3, 8, 4, 5, 6 };
+
+static const char* mw_square(const UiConfig&)  { return tr("inactive : square shape", "inactif : forme carr\xC3\xA9""e"); }
+static const char* mw_clock(const UiConfig& c) { return c.mmClock ? nullptr : tr("inactive : clock header off", "inactif : en-t\xC3\xAAte horloge coup\xC3\xA9"); }
+static const char* mw_bg(const UiConfig& c)    { return (c.mmShape == 0 && c.mmFrame == 1 && c.mmLayout != 2) ? tr("inactive : the box theme paints the square", "inactif : le th\xC3\xA8me de cadre peint le carr\xC3\xA9") : nullptr; }
+static const char* mw_bezel(const UiConfig& c) {   // the round's bezel switch : drawn with the clock header ; the Dial IS its bezel
+    if (c.mmLayout == 2) return tr("inactive : the Dial is its own bezel", "inactif : le Cadran est son propre anneau");
+    if (c.mmShape != 1) return mw_square(c);
+    return mw_clock(c);
+}
+static const char* mw_card(const UiConfig& c) {    // the round's bezel width / cardinals
+    if (c.mmShape != 1) return mw_square(c);
+    if (c.mmLayout == 2) return nullptr;
+    if (!c.mmClock) return mw_clock(c);
+    return c.mmBezel ? nullptr : tr("inactive : bezel ring off", "inactif : anneau coup\xC3\xA9");
+}
+static const char* mw_sqborder(const UiConfig& c) {   // the square's border : read only for a CUSTOM frame, never on the Dial
+    if (c.mmShape == 1) return tr("inactive : round shape", "inactif : forme ronde");
+    if (c.mmLayout == 2) return tr("inactive : the Dial has its case", "inactif : le Cadran a son bo\xC3\xAEtier");
+    return c.mmFrame == 2 ? nullptr : tr("inactive : frame not Custom", "inactif : cadre pas Perso");
+}
+static const char* mw_dial(const UiConfig& c)    { return c.mmLayout == 2 ? nullptr : tr("inactive : not the Dial layout", "inactif : disposition autre que Cadran"); }
+static const char* mw_disc(const UiConfig& c)    { if (const char* w = mw_dial(c)) return w; return c.mmDayDial == 2 ? nullptr : tr("inactive : Day dial is not Disc", "inactif : cadran du jour autre que Disque"); }
+static const char* mw_compact(const UiConfig& c) { return c.mmLayout == 1 ? nullptr : tr("inactive : not the Compact layout", "inactif : disposition autre que Compact"); }
+
+static const OptDef MM_DISPLAY[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(mmShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(mmScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Map size", "Taille carte", OK_PCT, OL_SIMPLE, F_(mmMapSize), 0.5f, 1.6f, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef MM_SHAPE[] = {
+    { "Shape", "Forme", OK_SELECT, OL_SIMPLE, F_(mmShape), 0, 0, M_SH_EN, M_SH_FR, 2, nullptr, 0 },
+    { "Frame", "Cadre", OK_SELECT, OL_SIMPLE, F_(mmFrame), 0, 0, M_FR_EN, M_FR_FR, 3, nullptr, 0 },
+};
+static const OptDef MM_BEZEL[] = {
+    { "Bezel ring", "Anneau bordure", OK_TOGGLE, OL_SIMPLE, F_(mmBezel), 0, 0, nullptr, nullptr, 0, mw_bezel, 0 },
+};
+static const OptDef MM_BEZEL2[] = {
+    { "Cardinal size", "Taille cardinaux", OK_PCT, OL_SIMPLE, F_(mmCardSz), 0.5f, 2.0f, nullptr, nullptr, 0, mw_card, 0 },
+    { "Border width", "Largeur bordure", OK_PCT, OL_SIMPLE, F_(mmSqBorder), 0.5f, 2.0f, nullptr, nullptr, 0, mw_sqborder, 0 },
+};
+static const OptDef MM_MARK_A[] = {
+    { "Marker style", "Style des marqueurs", OK_SELECT, OL_ADV, F_(mmMarkStyle), 0, 0, M_MS_EN, M_MS_FR, 2, nullptr, 0 },
+    { "Marker Size", "Taille marqueurs", OK_PCT, OL_ADV, F_(mmMarkerScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Players (PC)", "Joueurs (PC)", OK_TOGGLE, OL_ADV, F_(mmPC), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "NPCs", "PNJ", OK_TOGGLE, OL_ADV, F_(mmNPC), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Monsters", "Monstres", OK_TOGGLE, OL_ADV, F_(mmMob), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Target line", "Ligne cible", OK_TOGGLE, OL_ADV, F_(mmTgtLine), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef MM_MARK_RING[] = {
+    { "Range ring", "Anneau de port\xC3\xA9""e", OK_TOGGLE, OL_ADV, F_(mmRing), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef MM_MARK_SCAN[] = {
+    { "Wide Scan track", "Suivi Wide Scan", OK_TOGGLE, OL_ADV, F_(mmScan), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef MM_MARK_GRID[] = {   // (on the Dial with its modules : in the Clock section instead)
+    { "Map square (F-10)", "Case de carte (F-10)", OK_TOGGLE, OL_ADV, F_(mmGrid), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+#undef F_
+#define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+void ConfigPage::draw_minimap_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                                 float& ry, int& ri, float e,
+                                 float bandX, float bandW, float coX, float ctrlW,
+                                 float hdrX, float hdrW) {
+    Kit K;
+    if (!v2_kit(K, mo, click)) { draw_minimap_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    g_fade = e;
+    UiConfig& c = ui_config();
+    const bool adv = c.cfgAdv != 0;
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    // the rows a table cannot say : a toggle / a selector with its own clamp (`def` when out of range) / a free slider
+    auto tog = [&](int k, const char* en, const char* frl, int* f, const char* why) {
+        if (cfg_toggle_row(K, ctrl_uid_i(base, k), x, ry, w, tr(en, frl), *f != 0, why, f, 4)) { *f = *f ? 0 : 1; save_ui_config(); }
+    };
+    auto sel = [&](int k, const char* en, const char* frl, int* f, const char* const* chEn, const char* const* chFr, int n, int def, const char* why) {
+        const int v = (*f < 0 || *f >= n) ? def : *f;
+        if (int d = cfg_select_row(K, ctrl_uid_i(base, k), x, ry, w, tr(en, frl), tr(chEn[v], chFr[v]), why, f, 4)) { *f = wrap(v + d, n); save_ui_config(); }
+    };
+    auto mod = [](const void* p) { return cfg_count_modified_bytes(p, 4); };
+    const bool dialM = c.mmLayout == 2, disc = dialM && c.mmDayDial == 2;
+    ry += K.px(6.0f);
+
+    // ===== DISPLAY =====
+    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(MM_DISPLAY, NOPT(MM_DISPLAY), adv) + mod(&c.mmZoom) + mod(&c.mmBgAlpha))) {
+        cfg_rows(K, ctrl_uid_i(base, 2), MM_DISPLAY, NOPT(MM_DISPLAY), x, ry, w, adv);
+        {   // Zoom 1x .. 24x : BOUNDED print of a value that comes from a FILE (see the old page : a 1e30 smashed the stack once)
+            const float lo = 1.0f, hi = 24.0f;
+            char b[16]; _snprintf(b, sizeof(b), "%.1fx", clampf(c.mmZoom, lo, hi)); b[sizeof(b) - 1] = 0;
+            float v01 = clampf((c.mmZoom - lo) / (hi - lo), 0.0f, 1.0f);
+            if (cfg_slider_row(K, ctrl_uid_i(base, 3), x, ry, w, tr("Zoom", "Zoom"), &v01, b, nullptr, &c.mmZoom, 4, true)) c.mmZoom = clampf(lo + v01 * (hi - lo), lo, hi);
+        }
+        {   // the backdrop's opacity (0 = the game shows through) : a themed square frame paints its own interior
+            char b[16]; _snprintf(b, sizeof(b), "%d %%", (int)(c.mmBgAlpha * 100.0f + 0.5f)); b[15] = 0;
+            float v01 = clampf(c.mmBgAlpha, 0.0f, 1.0f);
+            if (cfg_slider_row(K, ctrl_uid_i(base, 4), x, ry, w, tr("Map background", "Fond carte"), &v01, b, mw_bg(c), &c.mmBgAlpha, 4, true)) c.mmBgAlpha = v01;
+        }
+        v2_end(K, ry);
+    }
+    // ===== SHAPE & FRAME =====
+    const bool dialSqC = dialM && c.mmShape == 0;   // the square watch case (minimap.cpp dialSq) : mmBezelW is its band
+    const int nSh = cfg_count_modified(MM_SHAPE, NOPT(MM_SHAPE), adv) + cfg_count_modified(MM_BEZEL, NOPT(MM_BEZEL), adv) + mod(&c.mmBezelW)
+                  + cfg_count_modified(MM_BEZEL2, NOPT(MM_BEZEL2), adv);
+    if (v2_section(K, ctrl_uid_i(base, 5), 7, "Shape & Frame", "Forme & Cadre", x, ry, w, nSh)) {
+        cfg_rows(K, ctrl_uid_i(base, 6), MM_SHAPE, NOPT(MM_SHAPE), x, ry, w, adv);
+        if (c.mmFrame == 2) cfg_color_row(K, ctrl_uid_i(base, 7), x, ry, w, &c.mmFrameColor);   // the custom frame colour
+        cfg_rows(K, ctrl_uid_i(base, 8), MM_BEZEL, NOPT(MM_BEZEL), x, ry, w, adv);
+        {   // one field, two names : the round's bezel ring, the square Dial's case band
+            float v01 = clampf((c.mmBezelW - 0.5f) / 1.5f, 0.0f, 1.0f);
+            char b[16]; _snprintf(b, sizeof(b), "%d %%", (int)(c.mmBezelW * 100.0f + 0.5f)); b[15] = 0;
+            const char* lab = dialSqC ? tr("Case width", "Largeur du bo\xC3\xAEtier") : tr("Bezel width", "Largeur anneau");
+            if (cfg_slider_row(K, ctrl_uid_i(base, 9), x, ry, w, lab, &v01, b, dialSqC ? nullptr : mw_card(c), &c.mmBezelW, 4, true)) {
+                const float v = floorf((0.5f + v01 * 1.5f) / 0.05f + 0.5f) * 0.05f; c.mmBezelW = clampf(v, 0.5f, 2.0f); }
+        }
+        cfg_rows(K, ctrl_uid_i(base, 10), MM_BEZEL2, NOPT(MM_BEZEL2), x, ry, w, adv);
+        v2_end(K, ry);
+    }
+    if (adv) {
+        // ===== CLOCK =====
+        const int nCk = mod(&c.mmLayout) + mod(&c.mmDayDial) + mod(&c.mmPodHP) + mod(&c.mmPodDay) + mod(&c.mmPodMoon) + mod(&c.mmSkyShow) + mod(&c.mmPodSky)
+                      + mod(&c.mmWxShow) + mod(&c.mmPodWx) + mod(&c.mmGem) + mod(&c.mmInfoBand) + mod(&c.mmInfoDist) + mod(&c.mmClock) + mod(&c.mmClkTime)
+                      + mod(&c.mmClkDay) + mod(&c.mmClkMoon) + mod(&c.mmClkReal) + mod(c.mmLayout == 1 ? (const void*)&c.mmClkBand : (const void*)&c.mmClockPos) + (disc ? mod(&c.mmGrid) : 0);
+        if (v2_section(K, ctrl_uid_i(base, 11), 9, "Clock", "Horloge", x, ry, w, nCk)) {
+            sel(12, "Layout", "Disposition", &c.mmLayout, M_LL_EN, M_LL_FR, 3, 0, nullptr);
+            sel(13, "Day dial", "Cadran du jour", &c.mmDayDial, M_DD_EN, M_DD_FR, 3, 1, mw_dial(c));
+            {   // the Dial's MODULES around the compass (Day dial = Disc) : each one's switch, then its place
+                const char* wDisc = mw_disc(c);
+                const bool sqS = c.mmShape == 0;
+                auto shown = [&](int v) { return sqS ? v : (v == 7 ? 1 : (v == 8 ? 4 : v)); };   // the round folds 7 / 8 onto its sides
+                auto taken = [&](int slot, int self) {           // a place held by another module (Off holds none)
+                    if (slot == 6) return false;
+                    const int m[4] = { c.mmPodDay, c.mmPodMoon, c.mmPodSky, c.mmPodWx };
+                    const bool on[4] = { c.mmClkDay != 0, c.mmClkMoon != 0, c.mmSkyShow != 0, c.mmWxShow != 0 };
+                    for (int q = 0; q < 4; ++q) if (q != self && on[q] && shown(m[q]) == slot) return true;
+                    return false;
+                };
+                auto place = [&](int k, int& field, int self, int def, const char* why) {   // steps through the shape's places, skips the taken
+                    const int* ord = sqS ? M_ORD_S : M_ORD_R; const int n = (sqS ? 9 : 7) - 1;   // (no module offers Off here)
+                    int cur = (field < 0 || field > 8) ? def : shown(field); if (cur == 6) cur = def;
+                    int idx = 0; for (int q = 0; q < n; ++q) if (ord[q] == cur) idx = q;
+                    const char* lab = sqS ? tr(M_SQ_EN[cur], M_SQ_FR[cur]) : tr(M_SL_EN[cur], M_SL_FR[cur]);
+                    if (int d = cfg_select_row(K, ctrl_uid_i(base, k), x, ry, w, tr("  Place", "  Emplacement"), lab, why, &field, 4)) {
+                        int k2 = idx;
+                        for (int t = 0; t < n; ++t) { k2 = (k2 + d + n) % n; if (!taken(ord[k2], self)) break; }
+                        field = ord[k2]; save_ui_config();
+                    }
+                };
+                auto offWhy = [&](int on, const char* en, const char* frl) { return wDisc ? wDisc : (on ? nullptr : tr(en, frl)); };
+                if (disc) {
+                    tog(14, "Vana'diel time", "Heure Vana'diel", &c.mmClkTime, nullptr);
+                    tog(15, "Map square (F-10)", "Case de carte (F-10)", &c.mmGrid, nullptr);
+                }
+                sel(16, "Hour / map square", "Heure / case de carte", &c.mmPodHP, M_HP_EN, M_HP_FR, 2, 0,
+                    offWhy(c.mmClkTime || c.mmGrid, "inactive : hour and map square off", "inactif : heure et case coup\xC3\xA9""es"));
+                if (disc) tog(17, "Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire", &c.mmClkDay, nullptr);
+                place(18, c.mmPodDay, 0, 3, offWhy(c.mmClkDay, "inactive : elemental day off", "inactif : jour \xC3\xA9l\xC3\xA9mentaire coup\xC3\xA9"));
+                if (disc) tog(19, "Moon phase", "Phase de lune", &c.mmClkMoon, nullptr);
+                place(20, c.mmPodMoon, 1, 2, offWhy(c.mmClkMoon, "inactive : moon phase off", "inactif : phase de lune coup\xC3\xA9""e"));
+                tog(21, "Day / night", "Jour / nuit", &c.mmSkyShow, wDisc);
+                place(22, c.mmPodSky, 2, 5, offWhy(c.mmSkyShow, "inactive : day / night off", "inactif : jour / nuit coup\xC3\xA9"));
+                tog(23, "Weather", "M\xC3\xA9t\xC3\xA9o", &c.mmWxShow, wDisc);
+                place(24, c.mmPodWx, 3, 4, offWhy(c.mmWxShow, "inactive : weather off", "inactif : m\xC3\xA9t\xC3\xA9o coup\xC3\xA9""e"));
+                sel(25, "Gem (zone without a map)", "Pierre (zone sans carte)", &c.mmGem, M_GM_EN, M_GM_FR, 6, 0, wDisc);
+            }
+            sel(26, "Info band (square, zoom, targets)", "Bande infos (case, zoom, cibles)", &c.mmInfoBand, M_IB_EN, M_IB_FR, 3, 2, mw_compact(c));
+            {   const char* wc = mw_compact(c);
+                tog(27, "Distances (target, Wide Scan)", "Distances (cible, Wide Scan)", &c.mmInfoDist,
+                    wc ? wc : (c.mmInfoBand > 0 ? nullptr : tr("inactive : info band off", "inactif : bande infos coup\xC3\xA9""e"))); }
+            // THE DIAL needs the clock and the bezel (turning either off made the whole Dial vanish) : forced on
+            if (dialM && (!c.mmClock || !c.mmBezel)) { c.mmClock = 1; c.mmBezel = 1; save_ui_config(); }
+            tog(28, "Clock header", "En-t\xC3\xAAte horloge", &c.mmClock, dialM ? tr("inactive : always on the Dial", "inactif : toujours sur le Cadran") : nullptr);
+            const char* wClk = mw_clock(c);
+            if (!disc) {   // (the Dial's modules : their switches sit with their places above)
+                tog(29, "Vana'diel time", "Heure Vana'diel", &c.mmClkTime, wClk);
+                tog(30, "Elemental day", "Jour \xC3\xA9l\xC3\xA9mentaire", &c.mmClkDay, wClk);
+                tog(31, "Moon phase", "Phase de lune", &c.mmClkMoon, wClk);
+            }
+            const char* wNoDial = wClk ? wClk : (dialM ? tr("inactive : not on the Dial", "inactif : absent du Cadran") : nullptr);
+            tog(32, "Real / GMT time", "Heure r\xC3\xA9""elle / GMT", &c.mmClkReal, wNoDial);
+            if (c.mmLayout == 1) sel(33, "Clock position", "Position horloge", &c.mmClkBand, M_PL_EN, M_PL_FR, 2, 0, wNoDial);   // Compact : the band above / below the map
+            else                 sel(34, "Clock position", "Position horloge", &c.mmClockPos, M_PL_EN, M_PL_FR, 4, 0, wNoDial);
+            v2_end(K, ry);
+        }
+        if (c.mmClock) {   // the clock box's own frame : exists with the clock header
+            BoxStyle& bs = c.mmBox;
+            const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
+            if (v2_section(K, ctrl_uid_i(base, 35), 24, "Clock frame", "Cadre de l'horloge", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 36), x, ry, w, fr); v2_end(K, ry); }
+        }
+        // ===== MARKERS =====
+        const int nMk = cfg_count_modified(MM_MARK_A, NOPT(MM_MARK_A), true) + cfg_count_modified(MM_MARK_RING, NOPT(MM_MARK_RING), true) + mod(&c.mmRingR)
+                      + cfg_count_modified(MM_MARK_SCAN, NOPT(MM_MARK_SCAN), true) + (disc ? 0 : cfg_count_modified(MM_MARK_GRID, NOPT(MM_MARK_GRID), true));
+        if (v2_section(K, ctrl_uid_i(base, 37), 8, "Markers", "Marqueurs", x, ry, w, nMk)) {
+            cfg_rows(K, ctrl_uid_i(base, 38), MM_MARK_A, NOPT(MM_MARK_A), x, ry, w, true);
+            if (c.mmTgtLine) cfg_color_row(K, ctrl_uid_i(base, 39), x, ry, w, &c.mmTgtLineCol);
+            cfg_rows(K, ctrl_uid_i(base, 40), MM_MARK_RING, NOPT(MM_MARK_RING), x, ry, w, true);
+            {   // radius 3 .. 50 yalms
+                const float lo = 3.0f, hi = 50.0f; char b[16]; _snprintf(b, sizeof(b), "%d", (int)(c.mmRingR + 0.5f)); b[15] = 0;
+                float v01 = clampf((c.mmRingR - lo) / (hi - lo), 0.0f, 1.0f);
+                if (cfg_slider_row(K, ctrl_uid_i(base, 41), x, ry, w, tr("Radius", "Rayon"), &v01, b,
+                                   c.mmRing ? nullptr : tr("inactive : range ring off", "inactif : anneau de port\xC3\xA9""e coup\xC3\xA9"), &c.mmRingR, 4, true))
+                    c.mmRingR = clampf(lo + v01 * (hi - lo), lo, hi);
+            }
+            if (c.mmRing) cfg_color_row(K, ctrl_uid_i(base, 42), x, ry, w, &c.mmRingCol);
+            cfg_rows(K, ctrl_uid_i(base, 43), MM_MARK_SCAN, NOPT(MM_MARK_SCAN), x, ry, w, true);
+            if (c.mmScan) cfg_color_row(K, ctrl_uid_i(base, 44), x, ry, w, &c.mmScanCol);
+            if (!disc) cfg_rows(K, ctrl_uid_i(base, 45), MM_MARK_GRID, NOPT(MM_MARK_GRID), x, ry, w, true);
+            v2_end(K, ry);
+        }
+        // ===== TEXT (the clock's typography : exists with the clock header) =====
+        if (c.mmClock) {
+            const char* lab[MM_TE_COUNT] = { tr("Time", "Heure"), tr("Day", "Jour"), tr("Moon", "Lune"), tr("Real / GMT", "R\xC3\xA9""el / GMT") };
+            TextStyle* ts[MM_TE_COUNT]; for (int i = 0; i < MM_TE_COUNT; ++i) ts[i] = &c.mmText[i];
+            const int nTe = dialM ? MM_REAL : MM_TE_COUNT;   // the Dial has no Real / GMT line (MM_REAL is the last element)
+            if (v2_section(K, ctrl_uid_i(base, 46), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, nTe))) { cfg_text_rows(K, ctrl_uid_i(base, 47), x, ry, w, lab, ts, nTe, &cfgMmTextElem_); v2_end(K, ry); }
+        }
+    } else v2_simple_note(K, x, ry);
+    g_fade = e;
+}
+#undef NOPT
 
 } // namespace aio

@@ -5,6 +5,7 @@
 #include "ui/config_page.h"
 #include "ui/config_controls.h"
 #include "ui/config_rows.h"
+#include "ui/cfg_engine.h"        // the redesign : OptDef tables + the kit (draw_pw_v2)
 #include "model/ui_config.h"
 #include "gfx/font.h"
 #include "gfx/draw.h"
@@ -112,5 +113,58 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     #undef ROW_BAND
     #undef ROW_NEXT
 }
+
+
+// ======== THE NEW POINTWATCH PAGE (the config redesign, milestone 3, 2026-11-26) ========
+// Display / Frame / Content / Text, as the old page.
+#define F_(name) [](UiConfig& c) -> void* { return &c.name; }
+static const char* const W_LY_EN[2] = { "Vertical", "Horizontal" },                                 * const W_LY_FR[2] = { "Vertical", "Horizontal" };
+static const char* const W_MD_EN[4] = { "Auto", "XP (leveling)", "CP (capacity)", "Master (ML)" }, * const W_MD_FR[4] = { "Auto", "XP (level)", "CP (capacit\xC3\xA9)", "Master (ML)" };
+static const char* const W_DS_EN[3] = { "Both", "Text only", "Bar only" },                          * const W_DS_FR[3] = { "Les deux", "Texte seul", "Barre seule" };
+
+static const OptDef PW_DISPLAY[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(pwShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(pwScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Grows toward", "Grandit vers", OK_GROW, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, UiConfig::GB_PW },
+    { "Layout", "Disposition", OK_SELECT, OL_SIMPLE, F_(pwLayout), 0, 0, W_LY_EN, W_LY_FR, 2, nullptr, 0 },
+};
+static const OptDef PW_CONTENT[] = {
+    { "Progression", "Progression", OK_SELECT, OL_SIMPLE, F_(pwMode), 0, 0, W_MD_EN, W_MD_FR, 4, nullptr, 0 },
+    { "Shows", "Affiche", OK_SELECT, OL_SIMPLE, F_(pwDisplay), 0, 0, W_DS_EN, W_DS_FR, 3, nullptr, 0 },
+    { "Show rate (X/h)", "Afficher le taux (X/h)", OK_TOGGLE, OL_SIMPLE, F_(pwRate), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "XP under 99, CP at 99, ML once mastered. + Merits.", "XP <99, CP a\xCC\x80 99, ML si master. + Merits.", OK_NOTE, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+#undef F_
+#define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+void ConfigPage::draw_pw_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW,
+                            float hdrX, float hdrW) {
+    Kit K;
+    if (!v2_kit(K, mo, click)) { draw_pw_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    g_fade = e;
+    UiConfig& c = ui_config();
+    const bool adv = c.cfgAdv != 0;
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    ry += K.px(6.0f);
+    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(PW_DISPLAY, NOPT(PW_DISPLAY), adv)))
+        v2_rows(K, ctrl_uid_i(base, 2), PW_DISPLAY, NOPT(PW_DISPLAY), x, ry, w);
+    if (adv) {
+        BoxStyle& bs = c.pwBox;
+        const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
+        if (v2_section(K, ctrl_uid_i(base, 3), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 4), x, ry, w, fr); v2_end(K, ry); }
+    }
+    if (v2_section(K, ctrl_uid_i(base, 5), 21, "Content", "Contenu", x, ry, w, cfg_count_modified(PW_CONTENT, NOPT(PW_CONTENT), adv)))
+        v2_rows(K, ctrl_uid_i(base, 6), PW_CONTENT, NOPT(PW_CONTENT), x, ry, w);
+    if (adv) {
+        const char* lab[PW_TE_COUNT] = { tr("Label", "Label"), tr("Value", "Valeur"), tr("Rate", "Taux") };
+        TextStyle* ts[PW_TE_COUNT]; for (int i = 0; i < PW_TE_COUNT; ++i) ts[i] = &c.pwText[i];
+        if (v2_section(K, ctrl_uid_i(base, 7), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, PW_TE_COUNT))) { cfg_text_rows(K, ctrl_uid_i(base, 8), x, ry, w, lab, ts, PW_TE_COUNT, &cfgPwTextElem_); v2_end(K, ry); }
+    } else v2_simple_note(K, x, ry);
+    g_fade = e;
+}
+#undef NOPT
 
 } // namespace aio

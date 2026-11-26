@@ -6,12 +6,14 @@
 #include "ui/config_page.h"
 #include "ui/config_controls.h"    // cat_header / row_slider / row_selector / toggle_chip + palette
 #include "ui/config_rows.h"        // ROW_BAND / ROW_NEXT
+#include "ui/cfg_engine.h"         // the redesign : OptDef tables + the kit (draw_ep_v2)
 #include "model/ui_config.h"
 #include "model/nms_gen.h"         // NMS[] / NMS_N : the tracked-NM selector writes NMS[idx].key into epTrack
 #include "gfx/font.h"
 #include "gfx/draw.h"
 #include <windows.h>               // lstrcpynA / lstrcmpiA : the epTrack key round-trip
 #include <cstdio>
+#include <cstring>                 // memset : the epTrack key, cleared before a new one
 
 namespace aio {
 
@@ -137,5 +139,66 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     #undef ROW_BAND
     #undef ROW_NEXT
 }
+
+
+// ======== THE NEW EMPYPOP PAGE (the config redesign, milestone 3, 2026-11-26) ========
+// Display / Frame / Content / Text, as the old page. The tracked NM : the name grid, as keys of the kit.
+#define F_(name) [](UiConfig& c) -> void* { return &c.name; }
+static const OptDef EP_DISPLAY[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(epShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(epScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Grows toward", "Grandit vers", OK_GROW, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, UiConfig::GB_EP },
+};
+static const OptDef EP_CONTENT[] = {
+    { "Collectable", "Collectable", OK_TOGGLE, OL_SIMPLE, F_(epColl), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Shows the pop + key items needed to spawn the chosen Abyssea NM.", "Montre les items de pop + key items pour faire appara\xC3\xAetre le NM Abyssea choisi.", OK_NOTE, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+#undef F_
+#define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+void ConfigPage::draw_ep_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW,
+                            float hdrX, float hdrW) {
+    Kit K;
+    if (!v2_kit(K, mo, click)) { draw_ep_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    g_fade = e;
+    UiConfig& c = ui_config();
+    const bool adv = c.cfgAdv != 0;
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    ry += K.px(6.0f);
+    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(EP_DISPLAY, NOPT(EP_DISPLAY), adv)))
+        v2_rows(K, ctrl_uid_i(base, 2), EP_DISPLAY, NOPT(EP_DISPLAY), x, ry, w);
+    if (adv) {
+        BoxStyle& bs = c.epBox;
+        const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
+        if (v2_section(K, ctrl_uid_i(base, 3), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 4), x, ry, w, fr); v2_end(K, ry); }
+    }
+    const int nMod = cfg_count_modified(EP_CONTENT, NOPT(EP_CONTENT), adv);
+    if (v2_section(K, ctrl_uid_i(base, 5), 21, "Content", "Contenu", x, ry, w, nMod)) {
+        // the tracked NM : a grid of keys, three across (the names are long) -- the tracked one held DOWN in brass, the
+        // others raised steel ; a click stores the KEY (not an index) and turns the box on, like //aio ept
+        cfg_note(K, x, ry, tr("The NM to track :", "Le NM \xC3\xA0 suivre :"));
+        int sel = -1; for (int i = 0; i < NMS_N; ++i) if (lstrcmpiA(c.epTrack, NMS[i].key) == 0) { sel = i; break; }
+        const int perRow = 3; const float gap = K.px(8.0f), x0 = x + K.px(18.0f), gw = w - K.px(36.0f);
+        const float kw = (gw - (perRow - 1) * gap) / perRow, kh = K.px(36.0f);
+        for (int gi = 0; gi < NMS_N; ++gi) {
+            const float kx = x0 + (gi % perRow) * (kw + gap), ky = ry + (gi / perRow) * (kh + gap);
+            if (ky + kh < K.clipTop || ky > K.clipBot) continue;
+            if (chrome_keybtn(K, ctrl_uid_i(base, 100 + gi), kx, ky, kw, kh, NMS[gi].en, gi == sel ? 3 : 0, gi != sel) && K.click && gi != sel) {
+                lstrcpynA(c.epTrack, NMS[gi].key, (int)sizeof(c.epTrack)); c.epShow = 1; save_ui_config(); }
+        }
+        ry += ((NMS_N + perRow - 1) / perRow) * (kh + gap) + K.px(10.0f);
+        v2_rows(K, ctrl_uid_i(base, 7), EP_CONTENT, NOPT(EP_CONTENT), x, ry, w);
+    }
+    if (adv) {
+        const char* lab[EP_TE_COUNT] = { tr("Title", "Titre"), tr("Pop", "Pop"), tr("From", "De"), tr("Collectable", "Collectable") };
+        TextStyle* ts[EP_TE_COUNT]; for (int i = 0; i < EP_TE_COUNT; ++i) ts[i] = &c.epText[i];
+        if (v2_section(K, ctrl_uid_i(base, 8), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, EP_TE_COUNT))) { cfg_text_rows(K, ctrl_uid_i(base, 9), x, ry, w, lab, ts, EP_TE_COUNT, &cfgEpTextElem_); v2_end(K, ry); }
+    } else v2_simple_note(K, x, ry);
+    g_fade = e;
+}
+#undef NOPT
 
 } // namespace aio

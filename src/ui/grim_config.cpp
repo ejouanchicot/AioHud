@@ -5,6 +5,7 @@
 #include "ui/config_page.h"
 #include "ui/config_controls.h"
 #include "ui/config_rows.h"
+#include "ui/cfg_engine.h"        // the redesign : OptDef tables + the kit (draw_grim_v2)
 #include "model/ui_config.h"
 #include "gfx/font.h"
 #include "gfx/draw.h"
@@ -74,5 +75,43 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     #undef ROW_BAND
     #undef ROW_NEXT
 }
+
+// ======== THE NEW GRIMOIRE PAGE (the config redesign, milestone 3, 2026-11-27) ========
+// The same sections as the old page : Display [6] / Text [5]. //aio config v1 : the old page (draw_grim_config).
+#define F_(name) [](UiConfig& c) -> void* { return &c.name; }
+static const char* const GR_ART_EN[4] = { "Light Arts", "Dark Arts", "Addendum: White", "Addendum: Black" };
+static const char* const GR_ART_FR[4] = { "Light Arts", "Dark Arts", "Addendum: White", "Addendum: Black" };
+static const OptDef GRIM_DISPLAY[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(grimShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(grimScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Grows toward", "Grandit vers", OK_GROW, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, UiConfig::GB_GRIM },
+    { "Preview image (config only)", "Image de l'aper\xC3\xA7u (config seulement)", OK_SELECT, OL_SIMPLE, F_(grimArt), 0, 0, GR_ART_EN, GR_ART_FR, 4, nullptr, 0 },
+    { "Only appears when SCH is your main or sub job.", "Appara\xC3\xAEt seulement si SCH est en main ou sub.", OK_NOTE, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+#undef F_
+#define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+void ConfigPage::draw_grim_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                              float& ry, int& ri, float e,
+                              float bandX, float bandW, float coX, float ctrlW,
+                              float hdrX, float hdrW) {
+    Kit K;
+    if (!v2_kit(K, mo, click)) { draw_grim_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    g_fade = e;
+    UiConfig& c = ui_config();
+    const bool adv = c.cfgAdv != 0;
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    ry += K.px(6.0f);
+    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(GRIM_DISPLAY, NOPT(GRIM_DISPLAY), adv)))
+        v2_rows(K, ctrl_uid_i(base, 2), GRIM_DISPLAY, NOPT(GRIM_DISPLAY), x, ry, w);
+    if (adv) {
+        const char* lab[GRIM_TE_COUNT] = { tr("Charge", "Charge"), tr("Timer", "Timer") };
+        TextStyle* ts[GRIM_TE_COUNT]; for (int i = 0; i < GRIM_TE_COUNT; ++i) ts[i] = &c.grimText[i];
+        if (v2_section(K, ctrl_uid_i(base, 3), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, GRIM_TE_COUNT))) { cfg_text_rows(K, ctrl_uid_i(base, 4), x, ry, w, lab, ts, GRIM_TE_COUNT, &cfgGrimTextElem_); v2_end(K, ry); }
+    } else v2_simple_note(K, x, ry);
+    g_fade = e;
+}
+#undef NOPT
 
 } // namespace aio

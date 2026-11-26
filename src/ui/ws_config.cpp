@@ -5,6 +5,7 @@
 #include "ui/config_page.h"
 #include "ui/config_controls.h"    // cat_header / row_slider / row_selector / toggle_chip + palette
 #include "ui/config_rows.h"        // ROW_BAND / ROW_NEXT
+#include "ui/cfg_engine.h"         // the redesign : OptDef tables + the kit (draw_ws_v2)
 #include "model/ui_config.h"
 #include "gfx/font.h"
 #include "gfx/draw.h"
@@ -87,5 +88,54 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     #undef ROW_BAND
     #undef ROW_NEXT
 }
+
+// ======== THE NEW ARCADE WS PAGE (the config redesign, milestone 3, 2026-11-27) ========
+// The same sections as the old page : Display [6] / Content [21] / Text [7]. The three colours : which one, then its
+// picker (the Party page's distance colours). //aio config v1 : the old page (draw_ws_config).
+#define F_(name) [](UiConfig& c) -> void* { return &c.name; }
+static const OptDef WS_DISPLAY[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(wsShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(wsScale), 0.5f, 2.5f, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef WS_CONTENT[] = {
+    { "Impact effects", "Effets d'impact", OK_TOGGLE, OL_SIMPLE, F_(wsFx), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+#undef F_
+#define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+static int s_wsColPick = 0;   // the colour the picker edits : 0 name, 1 damage A, 2 damage B
+
+void ConfigPage::draw_ws_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW,
+                            float hdrX, float hdrW) {
+    Kit K;
+    if (!v2_kit(K, mo, click)) { draw_ws_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    g_fade = e;
+    UiConfig& c = ui_config();
+    const bool adv = c.cfgAdv != 0;
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    ry += K.px(6.0f);
+    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(WS_DISPLAY, NOPT(WS_DISPLAY), adv)))
+        v2_rows(K, ctrl_uid_i(base, 2), WS_DISPLAY, NOPT(WS_DISPLAY), x, ry, w);
+    if (v2_section(K, ctrl_uid_i(base, 3), 21, "Content", "Contenu", x, ry, w, cfg_count_modified(WS_CONTENT, NOPT(WS_CONTENT), adv)))
+        v2_rows(K, ctrl_uid_i(base, 4), WS_CONTENT, NOPT(WS_CONTENT), x, ry, w);
+    if (adv) {
+        unsigned* col[3] = { &c.wsNameCol, &c.wsDmgCol1, &c.wsDmgCol2 };   // the number flashes between A and B
+        const int nMod = cfg_count_modified_bytes(&c.wsFont, 4) + cfg_count_modified_bytes(col[0], 4) + cfg_count_modified_bytes(col[1], 4) + cfg_count_modified_bytes(col[2], 4);
+        if (v2_section(K, ctrl_uid_i(base, 5), 7, "Text", "Texte", x, ry, w, nMod)) {
+            const int nf = ui_font_count() < 1 ? 1 : ui_font_count();
+            int fc = c.wsFont; if (fc < 0 || fc >= nf) fc = 0;
+            if (int d = cfg_select_row(K, ctrl_uid_i(base, 6), x, ry, w, tr("Font", "Police"), ui_font_label(fc), nullptr, &c.wsFont, 4)) { c.wsFont = wrap(fc + d, nf); save_ui_config(); }
+            const char* cn[3] = { tr("Name", "Nom"), tr("Damage A", "D\xC3\xA9g\xC3\xA2ts A"), tr("Damage B", "D\xC3\xA9g\xC3\xA2ts B") };
+            const int k = (s_wsColPick < 0 || s_wsColPick > 2) ? 0 : s_wsColPick;
+            if (int d = cfg_select_row(K, ctrl_uid_i(base, 7), x, ry, w, tr("Colour", "Couleur"), cn[k], nullptr, col[k], 4)) s_wsColPick = wrap(k + d, 3);
+            cfg_color_row(K, ctrl_uid_i(base, 8), x, ry, w, col[(s_wsColPick < 0 || s_wsColPick > 2) ? 0 : s_wsColPick]);
+            v2_end(K, ry);
+        }
+    } else v2_simple_note(K, x, ry);
+    g_fade = e;
+}
+#undef NOPT
 
 } // namespace aio

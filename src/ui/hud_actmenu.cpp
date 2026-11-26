@@ -9154,6 +9154,11 @@ static void plates_paint(const Frame& f, const NativePlates& P, bool depth) {
     const int wt = wIdx > 0 && wIdx < 5 ? WGT[wIdx] : PF[pfSel].w;
     Font* fo = (f.fonts && pfSel >= 0) ? f.fonts->get(PF[pfSel].face, wt, (stl & 2) != 0)
              : (f.fonts && (face > 0 || weight > 0)) ? f.fonts->get(face > 0 ? ui_font_face(face) : 0, weight > 0 ? weight : 600) : f.font; if (!fo) fo = f.font;
+    fo->ensure(dev);
+    // A NEW font (the config's Font / Weight / Italic just changed) has no glyphs baked yet : measure() gives 0 and the
+    // name, centred on a zero width, jumped to the side for a few frames (2026-11-27). Until it can measure, the plates
+    // keep the last font that could -- one smooth switch instead of a jump.
+    static Font* s_goodFont = nullptr;
     if (pfShow && (int)(GetTickCount() - pfMs) < 4000) {   // the face's name, a moment, top centre
         char lb[96]; _snprintf(lb, sizeof(lb), "%d / %d   %s  %d", pfSel + 1, NPF, PF[pfSel].face, PF[pfSel].w); lb[95] = 0;
         const float tzl = snap(22.0f * S), w = fo->measure(lb, tzl);
@@ -9196,10 +9201,19 @@ static void plates_paint(const Frame& f, const NativePlates& P, bool depth) {
         auto full = [](u32 c, float al) { unsigned r = ((c >> 16) & 0xFF) * 2, g = ((c >> 8) & 0xFF) * 2, b = (c & 0xFF) * 2; if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
                                           return ((u32)(al * 255.0f) << 24) | (r << 16) | (g << 8) | b; };
         const u32 col = full(Q.colour, A), sh = with_alpha((u32)TUNE("pl.sha", 150.0f) << 24, A);   // a soft shadow, not a hard black stroke (readable, not loud)
-        const float nw = name[0] ? fo->measure(name, tz) : 0.0f, is = snap(tz * kIc), gap = snap(3.0f * S);
+        Font* fn = fo;
+        float nw = name[0] ? fn->measure(name, tz) : 0.0f;
+        if (name[0]) {
+            if (nw > 0.0f) s_goodFont = fo;
+            else {   // not baked at this size yet : draw it INVISIBLY once (glyphs bake on draw), meanwhile show the last good font
+                fo->begin(dev); fo->draw_lc(dev, x, snap(y), name, tz, 0x00000000u, 0x00000000u, 0.0f); cs(dev);
+                if (s_goodFont && s_goodFont != fo) { fn = s_goodFont; nw = fn->measure(name, tz); }
+            }
+        }
+        const float is = snap(tz * kIc), gap = snap(3.0f * S);
         // the NAME centred over the character (the icons do not count : user 2026-11-26) ; the icons to its LEFT, their right
         // edge ONE capital W (pl.icgap, in W) before the name, the nearest first
-        const float nameX = snap(x - nw * 0.5f), wGap = fo->measure("W", tz) * TUNE("pl.icgap", 1.0f) * ui_config().plGap;
+        const float nameX = snap(x - nw * 0.5f), wGap = fn->measure("W", tz) * TUNE("pl.icgap", 1.0f) * ui_config().plGap;
         float lx = snap(nameX - wGap - (float)ni * is - (float)(ni > 0 ? ni - 1 : 0) * gap);
         // the pearl's tint : entity+0x1D4 is 0x00BBGGRR (Inertia, blue in the game, reads 86 5F 45 : checked against the
         // client's own pearl 2026-11-26) -> swapped to our 0xRRGGBB
@@ -9225,7 +9239,7 @@ static void plates_paint(const Frame& f, const NativePlates& P, bool depth) {
             }
             lx += is + gap;
         }
-        if (name[0]) { fo->begin(dev); fo->draw_lc(dev, nameX, snap(y), name, tz, col, sh, kOw * S); cs(dev); }
+        if (name[0]) { fn->begin(dev); fn->draw_lc(dev, nameX, snap(y), name, tz, col, sh, kOw * S); cs(dev); }
         if (Q.line2[0] == 0xD2) {                                        // Master Level : three gold stars above the name
             const float sy = snap(y - tz * kSy), big = tz * kSb, sm = tz * kSs, dx = tz * kSx, dy = tz * kSdy;
             const u32 wc = with_alpha(0xFFFFFFFFu, A);

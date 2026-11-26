@@ -5,6 +5,7 @@
 #include "ui/config_page.h"
 #include "ui/config_controls.h"
 #include "ui/config_rows.h"
+#include "ui/cfg_engine.h"        // the redesign : OptDef tables + the kit (draw_zt_v2)
 #include "model/ui_config.h"
 #include "gfx/font.h"
 #include "gfx/draw.h"
@@ -228,5 +229,163 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     #undef ROW_BAND
     #undef ROW_NEXT
 }
+
+
+// ======== THE NEW ZONE TRACKER PAGE (the config redesign, milestone 3, 2026-11-26) ========
+// Display / Frame / Content / Text, as the old page. The Preview zone picks WHICH zone's switches Content and Text list
+// (a choice's own sub-form) ; inside a zone, a size whose element is off is GREYED with the reason.
+#define F_(name) [](UiConfig& c) -> void* { return &c.name; }
+static const char* const Z_ZN_EN[7] = { "Dynamis", "Abyssea", "Omen", "Nyzul", "Sheol", "Limbus", "Sortie" };
+static const char* const Z_ZN_FR[7] = { "Dynamis", "Abyssea", "Omen", "Nyzul", "Sheol", "Limbus", "Sortie" };
+static const char* zw_dyt(const UiConfig& c) { return c.ztDyTimer ? nullptr : tr("inactive : run timer off", "inactif : timer de run coup\xC3\xA9"); }
+static const char* zw_dyk(const UiConfig& c) { return c.ztDyKi ? nullptr : tr("inactive : key items off", "inactif : objets cl\xC3\xA9s coup\xC3\xA9s"); }
+static const char* zw_abt(const UiConfig& c) { return c.ztAbTimer ? nullptr : tr("inactive : visitant timer off", "inactif : timer visitant coup\xC3\xA9"); }
+static const char* zw_abl(const UiConfig& c) { return c.ztAbLights ? nullptr : tr("inactive : lights off", "inactif : lumi\xC3\xA8res coup\xC3\xA9""es"); }
+
+static const OptDef ZT_DISPLAY[] = {
+    { "Preview zone", "Zone de l'aper\xC3\xA7u", OK_SELECT, OL_SIMPLE, F_(ztVariant), 0, 0, Z_ZN_EN, Z_ZN_FR, 7, nullptr, 0 },
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(ztShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(ztScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Grows toward", "Grandit vers", OK_GROW, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, UiConfig::GB_ZT },
+};
+static const OptDef ZT_HEAD[] = {
+    { "Show title", "Afficher le titre", OK_TOGGLE, OL_ADV, F_(ztHeader), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef ZT_DY[] = {   // Dynamis
+    { "Run timer", "Timer de run", OK_TOGGLE, OL_ADV, F_(ztDyTimer), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Timer bar width", "Largeur barre timer", OK_PCT, OL_ADV, F_(ztDyBarW), 0.40f, 1.00f, nullptr, nullptr, 0, zw_dyt, 0 },
+    { "Timer bar height", "Hauteur barre timer", OK_PCT, OL_ADV, F_(ztDyBarH), 0.50f, 2.50f, nullptr, nullptr, 0, zw_dyt, 0 },
+    { "Key items", "Objets cl\xC3\xA9s", OK_TOGGLE, OL_ADV, F_(ztDyKi), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Key-item dot size", "Taille pastilles", OK_PCT, OL_ADV, F_(ztDyDot), 0.50f, 2.50f, nullptr, nullptr, 0, zw_dyk, 0 },
+};
+static const OptDef ZT_AB[] = {   // Abyssea
+    { "Visitant timer", "Timer visitant", OK_TOGGLE, OL_ADV, F_(ztAbTimer), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Timer bar width", "Largeur barre timer", OK_PCT, OL_ADV, F_(ztAbBarW), 0.40f, 1.00f, nullptr, nullptr, 0, zw_abt, 0 },
+    { "Timer bar height", "Hauteur barre timer", OK_PCT, OL_ADV, F_(ztAbBarH), 0.50f, 2.50f, nullptr, nullptr, 0, zw_abt, 0 },
+    { "Lights", "Lumi\xC3\xA8res", OK_TOGGLE, OL_ADV, F_(ztAbLights), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Light bar width", "Largeur barre lumi\xC3\xA8re", OK_PCT, OL_ADV, F_(ztAbLightW), 0.50f, 3.00f, nullptr, nullptr, 0, zw_abl, 0 },
+    { "Light bar height", "Hauteur barre lumi\xC3\xA8re", OK_PCT, OL_ADV, F_(ztAbLightH), 0.50f, 2.50f, nullptr, nullptr, 0, zw_abl, 0 },
+};
+static const OptDef ZT_OM[] = {   // Omen
+    { "Floor objective", "Objectif d'\xC3\xA9tage", OK_TOGGLE, OL_ADV, F_(ztOmObj), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Omens + bonus", "Omens + bonus", OK_TOGGLE, OL_ADV, F_(ztOmCount), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Objective rows", "Lignes d'objectifs", OK_TOGGLE, OL_ADV, F_(ztOmRows), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef ZT_NY[] = {   // Nyzul Isle
+    { "Floor", "\xC3\x89tage", OK_TOGGLE, OL_ADV, F_(ztNyFloor), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Floor timer", "Timer d'\xC3\xA9tage", OK_TOGGLE, OL_ADV, F_(ztNyTime), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Objective", "Objectif", OK_TOGGLE, OL_ADV, F_(ztNyObj), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Restriction", "Restriction", OK_TOGGLE, OL_ADV, F_(ztNyRestr), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Floors cleared", "\xC3\x89tages faits", OK_TOGGLE, OL_ADV, F_(ztNyComp), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Reward rate", "Taux de r\xC3\xA9" "compense", OK_TOGGLE, OL_ADV, F_(ztNyRate), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Tokens", "Tokens", OK_TOGGLE, OL_ADV, F_(ztNyTok), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef ZT_SH[] = {   // Sheol (Odyssey)
+    { "Segments", "Segments", OK_TOGGLE, OL_ADV, F_(ztSheolSeg), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Resistances", "R\xC3\xA9sistances", OK_TOGGLE, OL_ADV, F_(ztSheolRes), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Family name", "Nom de famille", OK_TOGGLE, OL_ADV, F_(ztShFam), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Weapon icon size", "Taille ic\xC3\xB4nes armes", OK_PCT, OL_ADV, F_(ztShIcon), 0.50f, 2.50f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Element dot size", "Taille pastilles \xC3\xA9l\xC3\xA9ments", OK_PCT, OL_ADV, F_(ztShDot), 0.50f, 2.50f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Cruel Joke", "Cruel Joke", OK_TOGGLE, OL_ADV, F_(ztSheolJoke), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef ZT_LB[] = {   // Limbus
+    { "Area & level", "Zone et niveau", OK_TOGGLE, OL_ADV, F_(ztLbName), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Gauge width", "Largeur jauge", OK_PCT, OL_ADV, F_(ztLbBarW), 0.40f, 1.00f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Gauge height", "Hauteur jauge", OK_PCT, OL_ADV, F_(ztLbBarH), 0.50f, 2.50f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Floor on gauge", "\xC3\x89tage sur la jauge", OK_TOGGLE, OL_ADV, F_(ztLbFloor), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Currencies", "Monnaies", OK_TOGGLE, OL_ADV, F_(ztLbCur), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Run total", "Total du run", OK_TOGGLE, OL_ADV, F_(ztLbRun), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Coffer dots", "Pastilles coffres", OK_TOGGLE, OL_ADV, F_(ztLbChips), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef ZT_SO[] = {   // Sortie
+    { "Gallimaufry", "Gallimaufry", OK_TOGGLE, OL_ADV, F_(ztSoGal), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Bosses and shards", "Boss et shards", OK_TOGGLE, OL_ADV, F_(ztSoBoss), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Coffers and NM", "Coffres et NM", OK_TOGGLE, OL_ADV, F_(ztSoCof), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Items obtained", "Objets obtenus", OK_TOGGLE, OL_ADV, F_(ztSoLoot), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Wing NM / bitzer", "NM / bitzer de l'aile", OK_TOGGLE, OL_ADV, F_(ztSoNav), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Auto Widescan track", "Track Widescan auto", OK_TOGGLE, OL_ADV, F_(ztSoTrack), 0, 0, nullptr, nullptr, 0, nullptr, 0 },   // sent by the aioupdate addon
+};
+static const OptDef ZT_NOTE[] = {
+    { "Only appears in a tracked zone (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus, Sortie).", "Appara\xC3\xAet seulement en zone suivie (Dynamis, Abyssea, Omen, Nyzul, Sheol, Limbus, Sortie).", OK_NOTE, OL_ADV, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+#undef F_
+#define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+static const OptDef* const ZT_ZONE[7] = { ZT_DY, ZT_AB, ZT_OM, ZT_NY, ZT_SH, ZT_LB, ZT_SO };
+static const int ZT_ZONE_N[7] = { NOPT(ZT_DY), NOPT(ZT_AB), NOPT(ZT_OM), NOPT(ZT_NY), NOPT(ZT_SH), NOPT(ZT_LB), NOPT(ZT_SO) };
+
+void ConfigPage::draw_zt_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                            float& ry, int& ri, float e,
+                            float bandX, float bandW, float coX, float ctrlW,
+                            float hdrX, float hdrW) {
+    Kit K;
+    if (!v2_kit(K, mo, click)) { draw_zt_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    g_fade = e;
+    UiConfig& c = ui_config();
+    const bool adv = c.cfgAdv != 0;
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    ry += K.px(6.0f);
+    if (v2_section(K, ctrl_uid_i(base, 1), 6, "Display", "Affichage", x, ry, w, cfg_count_modified(ZT_DISPLAY, NOPT(ZT_DISPLAY), adv)))
+        v2_rows(K, ctrl_uid_i(base, 2), ZT_DISPLAY, NOPT(ZT_DISPLAY), x, ry, w);
+    if (adv) {
+        BoxStyle& bs = c.ztBox;
+        const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
+        if (v2_section(K, ctrl_uid_i(base, 3), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 4), x, ry, w, fr); v2_end(K, ry); }
+        // Content : the title, then the PREVIEW zone's own switches (the old page's rule)
+        const int zv = (c.ztVariant < 0 || c.ztVariant > 6) ? 1 : c.ztVariant;
+        const int nMod = cfg_count_modified(ZT_HEAD, NOPT(ZT_HEAD), true) + cfg_count_modified(ZT_ZONE[zv], ZT_ZONE_N[zv], true);
+        if (v2_section(K, ctrl_uid_i(base, 5), 15, "Content", "Contenu", x, ry, w, nMod)) {
+            cfg_rows(K, ctrl_uid_i(base, 6), ZT_HEAD, NOPT(ZT_HEAD), x, ry, w, true);
+            cfg_rows(K, ctrl_uid_i(base, 7 + zv), ZT_ZONE[zv], ZT_ZONE_N[zv], x, ry, w, true);   // 7..13 : one uid block per zone
+            v2_rows(K, ctrl_uid_i(base, 14), ZT_NOTE, NOPT(ZT_NOTE), x, ry, w);
+        }
+        // Text : Header, then the preview zone's own elements (the selector walks THIS list)
+        int el[ZT_TE_COUNT]; const char* lab[ZT_TE_COUNT]; int n = 0;
+        el[n] = ZT_HEADER; lab[n++] = tr("Header", "Titre");
+        if (zv == 0) {
+            el[n] = ZT_DY_TIMER; lab[n++] = tr("Run timer", "Timer de run");
+            el[n] = ZT_DY_KI;    lab[n++] = tr("Key items", "Objets cl\xC3\xA9s");
+        }
+        if (zv == 1) {
+            el[n] = ZT_AB_TIMER; lab[n++] = tr("Visitant timer", "Timer visitant");
+            el[n] = ZT_AB_LIGHT; lab[n++] = tr("Light labels", "Labels lumi\xC3\xA8res");
+            el[n] = ZT_AB_VAL;   lab[n++] = tr("Light values", "Valeurs lumi\xC3\xA8res");
+        }
+        if (zv == 2) {
+            el[n] = ZT_OM_OBJ;   lab[n++] = tr("Floor objective", "Objectif d'\xC3\xA9tage");
+            el[n] = ZT_OM_COUNT; lab[n++] = tr("Omens + bonus", "Omens + bonus");
+            el[n] = ZT_OM_ROW;   lab[n++] = tr("Objective rows", "Lignes d'objectifs");
+        }
+        if (zv == 3) {
+            el[n] = ZT_NY_FLOOR; lab[n++] = tr("Floor", "\xC3\x89tage");
+            el[n] = ZT_NY_TIME;  lab[n++] = tr("Floor timer", "Timer d'\xC3\xA9tage");
+            el[n] = ZT_NY_OBJ;   lab[n++] = tr("Objective", "Objectif");
+            el[n] = ZT_NY_RESTR; lab[n++] = tr("Restriction", "Restriction");
+            el[n] = ZT_NY_STATS; lab[n++] = tr("Stat rows", "Lignes de stats");
+        }
+        if (zv == 4) {
+            el[n] = ZT_SH_SEG;  lab[n++] = tr("Segments", "Segments");
+            el[n] = ZT_SH_FAM;  lab[n++] = tr("Family name", "Nom de famille");
+            el[n] = ZT_SH_RES;  lab[n++] = tr("Resistances", "R\xC3\xA9sistances");
+            el[n] = ZT_SH_JOKE; lab[n++] = tr("Cruel Joke", "Cruel Joke");
+        }
+        if (zv == 5) {
+            el[n] = ZT_BODY;     lab[n++] = tr("Area & level", "Zone et niveau");
+            el[n] = ZT_LB_GAUGE; lab[n++] = tr("Gauge", "Jauge");
+            el[n] = ZT_LB_CUR;   lab[n++] = tr("Currencies", "Monnaies");
+            el[n] = ZT_LB_RUN;   lab[n++] = tr("Run total", "Total du run");
+            el[n] = ZT_LB_CHIP;  lab[n++] = tr("Dot labels", "Labels pastilles");
+        }
+        if (zv == 6) {
+            el[n] = ZT_SO_GAL;  lab[n++] = tr("Gallimaufry", "Gallimaufry");
+            el[n] = ZT_SO_BOSS; lab[n++] = tr("Boss letters", "Lettres des boss");
+            el[n] = ZT_SO_LINE; lab[n++] = tr("Coffers and items", "Coffres et objets");
+        }
+        TextStyle* ts[ZT_TE_COUNT]; for (int i = 0; i < n; ++i) ts[i] = &c.ztText[el[i]];
+        if (v2_section(K, ctrl_uid_i(base, 15), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, n))) { cfg_text_rows(K, ctrl_uid_i(base, 16), x, ry, w, lab, ts, n, &cfgZtTextElem_); v2_end(K, ry); }
+    } else v2_simple_note(K, x, ry);
+    g_fade = e;
+}
+#undef NOPT
 
 } // namespace aio

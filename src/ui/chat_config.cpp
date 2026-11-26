@@ -8,6 +8,7 @@
 #include "ui/config_page.h"
 #include "ui/config_controls.h"
 #include "ui/config_rows.h"
+#include "ui/cfg_engine.h"    // the redesign : OptDef tables + the kit (draw_chat_v2)
 #include "model/ui_config.h"
 #include "model/chat_log.h"   // chat_export_txt : the Export button
 #include "gfx/font.h"
@@ -262,5 +263,170 @@ if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     #undef ROW_BAND
     #undef ROW_NEXT
 }
+
+// ======== THE NEW CHAT PAGE (the config redesign, milestone 3, 2026-11-27) ========
+// The same sections as the old page : the box selector, then Display [6] / Frame [20] / Content [21] / Behaviour [22] /
+// History [24] / Banned players [25] / Text [5]. The tables edit the box picked at the top (their field getters read
+// g_chatCfgBox). A row the old page hid behind a choice is greyed with it. //aio config v1 : the old page.
+static int chb() { return g_chatCfgBox == 1 ? 1 : 0; }
+#define F_(name)  [](UiConfig& c) -> void* { return &c.name; }
+#define FB_(name) [](UiConfig& c) -> void* { return &c.name[chb()]; }
+static const char* const CH_FIT_EN[2] = { "Fixed", "Follows the content" },        * const CH_FIT_FR[2] = { "Fixe", "Suit le contenu" };
+static const char* const CH_TAB_EN[4] = { "Auto", "Icon + name", "Icon", "Name" }, * const CH_TAB_FR[4] = { "Auto", "Ic\xC3\xB4ne + nom", "Ic\xC3\xB4ne", "Nom" };
+static const char* const CH_DEN_EN[3] = { "Compact", "Normal", "Airy" },           * const CH_DEN_FR[3] = { "Compacte", "Normale", "A\xC3\xA9r\xC3\xA9""e" };
+static const char* const CH_IN_EN[3] = { "Game's place", "Under the box", "In the box" }, * const CH_IN_FR[3] = { "Place du jeu", "Sous la box", "Dans la box" };
+static const char* cw_chatonly(const UiConfig&) { return chb() == 0 ? nullptr : tr("inactive : the Chat box's only", "inactif : celui de la box Discussion"); }
+static const OptDef CH_DISPLAY[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, FB_(chShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, FB_(chScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Box height", "Hauteur de la box", OK_SELECT, OL_SIMPLE, FB_(chFit), 0, 0, CH_FIT_EN, CH_FIT_FR, 2, nullptr, 0 },
+};
+static const OptDef CH_CONTENT[] = {
+    { "Tabs", "Onglets", OK_SELECT, OL_SIMPLE, FB_(chTabStyle), 0, 0, CH_TAB_EN, CH_TAB_FR, 4, nullptr, 0 },
+    { "Header size", "Taille de l'en-t\xC3\xAAte", OK_PCT, OL_SIMPLE, FB_(chHeadScale), 0.6f, 1.6f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Density", "Densit\xC3\xA9", OK_SELECT, OL_SIMPLE, FB_(chDensity), 0, 0, CH_DEN_EN, CH_DEN_FR, 3, nullptr, 0 },
+    { "Time stamps", "Horodatage", OK_TOGGLE, OL_SIMPLE, FB_(chStamp), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Input line", "Barre de saisie", OK_SELECT, OL_SIMPLE, F_(chDock), 0, 0, CH_IN_EN, CH_IN_FR, 3, cw_chatonly, 0 },
+};
+#undef FB_
+#undef F_
+#define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+void ConfigPage::draw_chat_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                              float& ry, int& ri, float e,
+                              float bandX, float bandW, float coX, float ctrlW,
+                              float hdrX, float hdrW) {
+    Kit K;
+    if (!v2_kit(K, mo, click)) { draw_chat_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    g_fade = e;
+    UiConfig& c = ui_config();
+    const bool adv = c.cfgAdv != 0;
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    const int b = chb();
+    // an int slider (px, lines, seconds, percent), the old page's ranges / steps / value text
+    auto islider = [&](int uid, const char* label, int* f, int shown, int lo, int hi, int step, const char* val, const char* why) {
+        float v01 = ((float)shown - (float)lo) / (float)(hi - lo); v01 = v01 < 0.0f ? 0.0f : (v01 > 1.0f ? 1.0f : v01);
+        if (cfg_slider_row(K, uid, x, ry, w, label, &v01, val, why, f, 4, false)) {
+            int v = (int)((float)lo + v01 * (float)(hi - lo) + 0.5f); if (step > 1) v = (v / step) * step;
+            *f = v < lo ? lo : (v > hi ? hi : v); }
+    };
+    // a row with one button at its right (the export, the colour's default, an unban) : true = pressed
+    auto btn_row = [&](int uid, const char* label, const char* btn, bool modified) -> bool {
+        const float h = K.px(52.0f), bw = K.px(150.0f);
+        bool hit = false;
+        if (ry + h >= K.clipTop && ry <= K.clipBot) {
+            const int st = modified ? KS_MODIFIED : 0;
+            kit_row(K, x, ry, w, h, st);
+            kit_label(K, x + K.px(18.0f), ry + h * 0.5f, label, st);
+            hit = kit_button(K, uid, x + w - K.px(18.0f) - bw, ry + (h - K.px(42.0f)) * 0.5f, bw, btn, 1, 0);
+        }
+        ry += h + K.px(4.0f);
+        return hit;
+    };
+    char v[32];
+    ry += K.px(6.0f);
+    {   // WHICH BOX every section below edits : once, above them
+        const char* BOXL[2] = { tr("Chat", "Discussion"), tr("Battle", "Combat") };
+        if (int d = cfg_select_row(K, ctrl_uid_i(base, 1), x, ry, w, tr("Box edited below", "Box r\xC3\xA9""gl\xC3\xA9""e ci-dessous"), BOXL[b], nullptr, nullptr, 0)) g_chatCfgBox = wrap(b + d, 2);
+        ry += K.px(8.0f);
+    }
+    {   // ---- Display (shown, size, its geometry) ----
+        const int nMod = cfg_count_modified(CH_DISPLAY, NOPT(CH_DISPLAY), adv) + cfg_count_modified_bytes(&c.chW[b], 4) + cfg_count_modified_bytes(&c.chH[b], 4) + cfg_count_modified_bytes(&c.chMaxLines[b], 4);
+        if (v2_section(K, ctrl_uid_i(base, 2), 6, "Display", "Affichage", x, ry, w, nMod)) {
+            cfg_rows(K, ctrl_uid_i(base, 3), CH_DISPLAY, NOPT(CH_DISPLAY), x, ry, w, adv);
+            {   // which edge stays put ; the box does not move (no reset : the factory -1 is the pre-conversion marker)
+                const char* GL[2] = { tr("Up (bottom stays)", "Le haut (bas fixe)"), tr("Down (top stays)", "Le bas (haut fixe)") };
+                const int g = c.chGrow[b] == 1 ? 1 : 0;
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 4), x, ry, w, tr("Grows toward", "Grandit vers"), GL[g], nullptr, nullptr, 0)) {
+                    const int nv = wrap(g + d, 2);
+                    if (nv != g && c.chEdge[b][1] > c.chEdge[b][0]) c.chY[b] = nv == 0 ? c.chEdge[b][1] : c.chEdge[b][0];
+                    c.chGrow[b] = nv; save_ui_config();
+                }
+            }
+            _snprintf(v, sizeof(v), "%d", c.chW[b]); v[31] = 0;
+            islider(ctrl_uid_i(base, 5), tr("Width", "Largeur"), &c.chW[b], c.chW[b], 200, 1600, 10, v, nullptr);
+            const int hh = c.chH[b] > 0 ? c.chH[b] : 260;
+            _snprintf(v, sizeof(v), "%d", hh); v[31] = 0;
+            islider(ctrl_uid_i(base, 6), tr("Height", "Hauteur"), &c.chH[b], hh, 80, 1000, 10, v,
+                    c.chMaxLines[b] == 0 ? nullptr : tr("inactive : Max lines sets the height", "inactif : Lignes max fixe la hauteur"));
+            if (c.chMaxLines[b] > 0) _snprintf(v, sizeof(v), "%d", c.chMaxLines[b]); else lstrcpynA(v, tr("fixed height", "hauteur fixe"), sizeof(v));   // 0 = the fixed Height above
+            v[31] = 0;
+            islider(ctrl_uid_i(base, 7), tr("Max lines", "Lignes max"), &c.chMaxLines[b], c.chMaxLines[b], 0, 40, 1, v, nullptr);
+            v2_end(K, ry);
+        }
+    }
+    if (adv) {   // ---- Frame ----
+        BoxStyle& bs = c.chBox[b];
+        const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
+        if (v2_section(K, ctrl_uid_i(base, 8), 20, "Frame", "Cadre", x, ry, w, cfg_frame_modified(fr))) { cfg_frame_rows(K, ctrl_uid_i(base, 9), x, ry, w, fr); v2_end(K, ry); }
+    }
+    if (v2_section(K, ctrl_uid_i(base, 10), 21, "Content", "Contenu", x, ry, w, cfg_count_modified(CH_CONTENT, NOPT(CH_CONTENT), adv)))
+        v2_rows(K, ctrl_uid_i(base, 11), CH_CONTENT, NOPT(CH_CONTENT), x, ry, w);
+    if (adv) {
+        // ---- Behaviour : when nothing happens, collapse and / or fade, each on its own delay (chBehave bits 2 / 1) ----
+        const int nMod = cfg_count_modified_bytes(&c.chBehave[b], 4) + cfg_count_modified_bytes(&c.chIdle[b], 4) + cfg_count_modified_bytes(&c.chFoldLines[b], 4)
+                       + cfg_count_modified_bytes(&c.chFadeIdle[b], 4) + cfg_count_modified_bytes(&c.chFadeTo[b], 4);
+        if (v2_section(K, ctrl_uid_i(base, 12), 22, "Behaviour", "Comportement", x, ry, w, nMod)) {
+            // the two bits share one int : no per-row marker / reset (the section count still sees them)
+            if (cfg_toggle_row(K, ctrl_uid_i(base, 13), x, ry, w, tr("Collapse when idle", "Repli au repos"), (c.chBehave[b] & 2) != 0, nullptr, nullptr, 0)) { c.chBehave[b] ^= 2; save_ui_config(); }
+            const char* noFold = (c.chBehave[b] & 2) ? nullptr : tr("inactive : collapse off", "inactif : repli coup\xC3\xA9");
+            _snprintf(v, sizeof(v), "%d s", c.chIdle[b]); v[31] = 0;
+            islider(ctrl_uid_i(base, 14), tr("Each line stays", "Chaque ligne reste"), &c.chIdle[b], c.chIdle[b], 3, 120, 1, v, noFold);
+            _snprintf(v, sizeof(v), "%d", c.chFoldLines[b]); v[31] = 0;
+            islider(ctrl_uid_i(base, 15), tr("Lines kept", "Lignes gard\xC3\xA9""es"), &c.chFoldLines[b], c.chFoldLines[b], 1, 20, 1, v, noFold);
+            if (cfg_toggle_row(K, ctrl_uid_i(base, 16), x, ry, w, tr("Fade when idle", "Fondu au repos"), (c.chBehave[b] & 1) != 0, nullptr, nullptr, 0)) { c.chBehave[b] ^= 1; save_ui_config(); }
+            const char* noFade = (c.chBehave[b] & 1) ? nullptr : tr("inactive : fade off", "inactif : fondu coup\xC3\xA9");
+            _snprintf(v, sizeof(v), "%d s", c.chFadeIdle[b]); v[31] = 0;
+            islider(ctrl_uid_i(base, 17), tr("Fade after", "Fondu apr\xC3\xA8s"), &c.chFadeIdle[b], c.chFadeIdle[b], 3, 120, 1, v, noFade);
+            _snprintf(v, sizeof(v), "%d%%", c.chFadeTo[b]); v[31] = 0;
+            islider(ctrl_uid_i(base, 18), tr("Faded opacity", "Opacit\xC3\xA9 au repos"), &c.chFadeTo[b], c.chFadeTo[b], 0, 80, 1, v, noFade);
+            v2_end(K, ry);
+        }
+        // ---- History : what was said, to a text file (the Battle box : the combat log too) ----
+        if (v2_section(K, ctrl_uid_i(base, 19), 24, "History", "Historique", x, ry, w, 0)) {
+            if (btn_row(ctrl_uid_i(base, 20), tr("Export the history", "Exporter l'historique"), tr("Export", "Exporter"), false)) {
+                char nm[96]; const int n = chat_export_txt(b == 1, nm, sizeof(nm));
+                if (n >= 0) _snprintf(g_chatExportMsg, sizeof(g_chatExportMsg), tr("%d lines -> plugins\\AioHud\\%s", "%d lignes -> plugins\\AioHud\\%s"), n, nm);
+                else lstrcpynA(g_chatExportMsg, tr("Export failed (see aiohud_debug.log)", "\xC3\x89""chec de l'export (voir aiohud_debug.log)"), sizeof(g_chatExportMsg));
+                g_chatExportMsg[sizeof(g_chatExportMsg) - 1] = 0;
+            }
+            if (g_chatExportMsg[0]) cfg_note(K, x, ry, g_chatExportMsg);
+            v2_end(K, ry);
+        }
+        // ---- Banned players (both boxes) : a paged list, its count in the title ; a button on each name unbans it ----
+        const int nBan = chat_ban_count();
+        char hb[64]; _snprintf(hb, sizeof(hb), tr("Banned players (%d)", "Joueurs bannis (%d)"), nBan); hb[sizeof(hb) - 1] = 0;
+        if (v2_section(K, ctrl_uid_i(base, 21), 25, hb, hb, x, ry, w, 0)) {
+            if (nBan == 0) cfg_note(K, x, ry, tr("Nobody. Right-click one of their lines -> Ban : their messages leave the boxes.", "Personne. Clic droit sur une de ses lignes -> Bannir : ses messages quittent les box."));
+            const int BAN_PAGE = 12, banPages = (nBan + BAN_PAGE - 1) / BAN_PAGE;
+            if (g_banPage >= banPages) g_banPage = banPages > 0 ? banPages - 1 : 0;
+            if (banPages > 1) {
+                _snprintf(v, sizeof(v), "%d / %d", g_banPage + 1, banPages); v[31] = 0;
+                if (int d = cfg_select_row(K, ctrl_uid_i(base, 22), x, ry, w, tr("Page", "Page"), v, nullptr, nullptr, 0)) g_banPage = wrap(g_banPage + d, banPages);
+            }
+            int unban = -1;
+            const int first = g_banPage * BAN_PAGE, last = first + BAN_PAGE < nBan ? first + BAN_PAGE : nBan;
+            const int ubase = ctrl_uid_i(base, 23);
+            for (int k = first; k < last; ++k)
+                if (btn_row(ctrl_uid_i(ubase, k), chat_ban_name(k), tr("Unban", "D\xC3\xA9""bannir"), false)) unban = k;
+            if (unban >= 0) { char nm[20]; lstrcpynA(nm, chat_ban_name(unban), sizeof(nm)); chat_ban_remove(nm); }   // after the loop : the list moves
+            v2_end(K, ry);
+        }
+        // ---- Text (of the box picked at the top) + the auto-translated words' colour (both boxes) ----
+        const char* lab[1] = { b == 1 ? tr("Battle", "Combat") : tr("Chat", "Discussion") };
+        TextStyle* ts[1] = { &c.chText[b] };
+        const bool atMod = cfg_count_modified_bytes(&c.chAtColor, 4) != 0;
+        if (v2_section(K, ctrl_uid_i(base, 24), 5, "Text", "Texte", x, ry, w, cfg_text_modified(ts, 1) + (atMod ? 1 : 0))) {
+            int sel = 0;
+            cfg_text_rows(K, ctrl_uid_i(base, 25), x, ry, w, lab, ts, 1, &sel);
+            if (btn_row(ctrl_uid_i(base, 26), tr("Auto-translate colour", "Couleur des auto-translate"), tr("Default", "D\xC3\xA9""faut"), atMod)) { c.chAtColor = 0xFF9FE8CFu; save_ui_config(); }
+            cfg_color_row(K, ctrl_uid_i(base, 27), x, ry, w, &c.chAtColor);
+            v2_end(K, ry);
+        }
+    } else v2_simple_note(K, x, ry);
+    g_fade = e;
+}
+#undef NOPT
 
 } // namespace aio
