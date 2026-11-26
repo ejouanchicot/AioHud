@@ -66,7 +66,7 @@ SHEET_DURATION = {
 ENTRY = re.compile(r'\[(\d+)\] = \{id=\d+,en="((?:[^"\\]|\\.)*)"')
 LEVEL = re.compile(r'\[(\d+)\] = \{id=\d+,[^\n]*?\blevel=(\d+)')
 EXPLICIT = re.compile(r'Song effect duration \+(\d+)%')
-ALL_SONGS = re.compile(r'All songs \+(\d+)')
+ALL_SONGS = re.compile(r'All songs \+(\d+)', re.I)   # the 2026-11-12 res writes "All Songs +3" (Miracle Cheer) : any case
 ONE_SONG = re.compile(r'\\"([A-Za-z\' ]+)\\"\+(\d+)')
 VAGUE = re.compile(r'Increases song effect duration')
 # The JAPANESE text, read only when the English one is DAMAGED. The 2026-09-10 res ships Miracle Cheer (22249) with

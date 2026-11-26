@@ -131,7 +131,6 @@ static const JobBuff JT_WHM[] = {
     {0,0,1,32,"Benediction"},   // TC_JA
     {0,28,75,32,"Devotion"},   // TC_JA
     {0,27,75,32,"Martyr"},   // TC_JA
-    {0,503,90,19,"Impact"},   // TC_NUKE
     {40,43,7,2,"Protect"},   // TC_PROTECT
     {40,125,7,2,"Protectra"},   // TC_PROTECT
     {41,48,17,2,"Shell"},   // TC_PROTECT
@@ -239,7 +238,6 @@ static const JobBuff JT_BLM[] = {
     {0,498,87,19,"Aeroja"},   // TC_NUKE
     {0,153,89,19,"Blizzard V"},   // TC_NUKE
     {0,496,90,19,"Firaja"},   // TC_NUKE
-    {0,503,90,19,"Impact"},   // TC_NUKE
     {0,168,92,19,"Thunder V"},   // TC_NUKE
     {0,497,93,19,"Blizzaja"},   // TC_NUKE
     {0,219,94,19,"Comet"},   // TC_NUKE
@@ -360,7 +358,6 @@ static const JobBuff JT_RDM[] = {
     {0,157,83,19,"Aero IV"},   // TC_NUKE
     {0,147,86,19,"Fire IV"},   // TC_NUKE
     {0,152,89,19,"Blizzard IV"},   // TC_NUKE
-    {0,503,90,19,"Impact"},   // TC_NUKE
     {0,167,92,19,"Thunder IV"},   // TC_NUKE
     {0,158,100,19,"Aero V"},   // TC_NUKE
     {0,153,100,19,"Blizzard V"},   // TC_NUKE
@@ -482,7 +479,6 @@ static const JobBuff JT_DRK[] = {
     {0,171,80,19,"Water III"},   // TC_NUKE
     {0,156,84,19,"Aero III"},   // TC_NUKE
     {0,146,88,19,"Fire III"},   // TC_NUKE
-    {0,503,90,19,"Impact"},   // TC_NUKE
     {0,151,92,19,"Blizzard III"},   // TC_NUKE
     {0,166,96,19,"Thunder III"},   // TC_NUKE
 };
@@ -749,7 +745,6 @@ static const JobBuff JT_SMN[] = {
     {504,254,1,32,"Astral Conduit"},   // TC_JA
     {55,0,1,32,"Astral Flow"},   // TC_JA
     {0,71,1,32,"Mana Cede"},   // TC_JA
-    {0,503,90,19,"Impact"},   // TC_NUKE
     {0,290,1,23,"Air Spirit"},   // TC_SUMMON
     {0,307,1,23,"Cait Sith"},   // TC_SUMMON
     {0,296,1,23,"Carbuncle"},   // TC_SUMMON
@@ -1170,7 +1165,6 @@ static const JobBuff JT_SCH[] = {
     {0,163,79,19,"Stone V"},   // TC_NUKE
     {0,173,83,19,"Water V"},   // TC_NUKE
     {0,158,87,19,"Aero V"},   // TC_NUKE
-    {0,503,90,19,"Impact"},   // TC_NUKE
     {0,148,91,19,"Fire V"},   // TC_NUKE
     {0,153,95,19,"Blizzard V"},   // TC_NUKE
     {0,168,99,19,"Thunder V"},   // TC_NUKE
@@ -1320,7 +1314,6 @@ static const JobBuff JT_GEO[] = {
     {0,147,85,19,"Fire IV"},   // TC_NUKE
     {0,152,88,19,"Blizzard IV"},   // TC_NUKE
     {0,831,90,19,"Blizzara II"},   // TC_NUKE
-    {0,503,90,19,"Impact"},   // TC_NUKE
     {0,167,91,19,"Thunder IV"},   // TC_NUKE
     {0,837,95,19,"Thundara II"},   // TC_NUKE
     {0,158,100,19,"Aero V"},   // TC_NUKE
@@ -1768,25 +1761,25 @@ static const JobTrack JOB_TRACK[24] = {
     {0, 0},   // -
     {JT_WAR, 12},   // WAR
     {JT_MNK, 13},   // MNK
-    {JT_WHM, 99},   // WHM
-    {JT_BLM, 115},   // BLM
-    {JT_RDM, 119},   // RDM
+    {JT_WHM, 98},   // WHM
+    {JT_BLM, 114},   // BLM
+    {JT_RDM, 118},   // RDM
     {JT_THF, 15},   // THF
     {JT_PLD, 30},   // PLD
-    {JT_DRK, 59},   // DRK
+    {JT_DRK, 58},   // DRK
     {JT_BST, 19},   // BST
     {JT_BRD, 89},   // BRD
     {JT_RNG, 15},   // RNG
     {JT_SAM, 14},   // SAM
     {JT_NIN, 44},   // NIN
     {JT_DRG, 18},   // DRG
-    {JT_SMN, 74},   // SMN
+    {JT_SMN, 73},   // SMN
     {JT_BLU, 204},   // BLU
     {JT_COR, 40},   // COR
     {JT_PUP, 21},   // PUP
     {JT_DNC, 37},   // DNC
-    {JT_SCH, 120},   // SCH
-    {JT_GEO, 129},   // GEO
+    {JT_SCH, 119},   // SCH
+    {JT_GEO, 128},   // GEO
     {JT_RUN, 52},   // RUN
     {0, 0},   // MON
 };
