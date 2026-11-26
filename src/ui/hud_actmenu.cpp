@@ -14,6 +14,7 @@
 // drawn the same way beside the picked row (native_sub_menu) ; every open is smooth but near-instant (~70-80 ms).
 #include "ui/hud.h"
 #include "ui/hud_internal.h"
+#include "ui/tune.h"          // dev : the name plates' look, tuned live
 #include "ui/config_controls.h"   // tr()
 #include "ui/box_style.h"         // draw_themed_box : the block
 #include "ui/party.h"             // party_cursor / party_selframe / party_cursor_bob : AioHUD's hand and gold glass
@@ -274,7 +275,7 @@ const SubRow FE_MAIN[7] = {
 };
 // Status -> Merit Points : merit1 (Categories / Mode Switch), merit2 (the mode : EXP / Limit Points -- the client greys
 // the current one), merit3 (a merit : Raise / Lower). Labels are images -- the user's reading of them, 2026-11-18
-const SubRow MERIT1[2] = { { "Categories", "CatÃ©gories", false, IC_STAR }, { "Mode Switch", "Changer de mode", false, IC_SWAP } };
+const SubRow MERIT1[2] = { { "Categories", "Cat\xC3\xA9""gories", false, IC_STAR }, { "Mode Switch", "Changer de mode", false, IC_SWAP } };
 const SubRow MERIT2[2] = { { "EXP", "EXP", false, IC_STAR }, { "Limit Points", "Limit Points", false, IC_STAR } };
 const SubRow MERIT3[2] = { { "Raise", "Augmenter", false, IC_STAR }, { "Lower", "Diminuer", false, IC_STAR } };
 // Equipment -> Storage Options (mnstorag) : the bag the list shows -- the user's reading, 2026-11-18
@@ -4677,7 +4678,7 @@ void items_draw(const Frame& f) {
         char bc[24]; if (last.binCap > 0) sprintf(bc, "%d / %d", last.binN, last.binCap); else sprintf(bc, "%d", last.binN);
         static const char* const BAG_EN[18] = { "Inventory", "Mog Safe", "Storage", "Temporary", "Mog Locker", "Mog Satchel", "Mog Sack", "Mog Case", "Mog Wardrobe",
                                                 "Mog Safe 2", "Mog Wardrobe 2", "Mog Wardrobe 3", "Mog Wardrobe 4", "Mog Wardrobe 5", "Mog Wardrobe 6", "Mog Wardrobe 7", "Mog Wardrobe 8", "Recycling Bin" };
-        static const char* const BAG_FR[18] = { "Inventaire", "Coffre", "EntrepÃ´t", "Temporaire", "Casier", "Sacoche", "Sac", "Valise", "Garde-robe",
+        static const char* const BAG_FR[18] = { "Inventaire", "Coffre", "Entrep\xC3\xB4""t", "Temporaire", "Casier", "Sacoche", "Sac", "Valise", "Garde-robe",
                                                 "Coffre 2", "Garde-robe 2", "Garde-robe 3", "Garde-robe 4", "Garde-robe 5", "Garde-robe 6", "Garde-robe 7", "Garde-robe 8", "Corbeille" };
         const int bg = last.binBag >= 0 && last.binBag < 18 ? last.binBag : 0x11;
         ItemsBox BL = { last.binRow, last.binN, last.binTop, last.binVis, last.binCursor, 0, last.binFocused, I0.open && I0.binMode,
@@ -4740,7 +4741,38 @@ void items_draw(const Frame& f) {
 // gil in its header, the quantity (itemctrl) under it with the total, the item card above the chat. The client keeps the
 // rules (greyed rows, the price query on a first Sell, the 6-yalm close) and sends every packet ; shopbuy / shopsell are
 // AioHUD's confirms (dialog_draw).
-namespace { Block g_shMB, g_shLB, g_shQB; unsigned g_shMs = 0; }
+// a GIL ENTRY : the client's value and its edited digit (its keys change it), your gil under it (red when over it and
+// warnOver). The auction's bid / sale price and your bazaar's unit price. Returns its height.
+static float gil_entry_box(const Frame& f, const Metrics& k, const char* head, unsigned val, unsigned digit, bool focused, unsigned gil, bool gilOk, bool warnOver,
+                           float x, float y, float w, float A) {
+    const UiConfig& C = ui_config(); const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), tz = k.tz;
+    const float lineH = snap(k.capH * 1.5f), h = snap(pad + headH + 6.0f * S + lineH + 4.0f * S + k.capH * 1.2f + pad);
+    const u32 dev = f.dev, sh = with_alpha(0xC8000000u, A); Font* fo = f.font;
+    draw_themed_box(dev, f.skin, x, y, w, h, C.muBox, A, S);
+    const float L = x + pad, W = w - 2.0f * pad, hy = snap(y + pad + headH * 0.5f), ly = snap(y + pad + headH + 6.0f * S);
+    rrect(dev, L, snap(y + pad + headH), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
+    rrect(dev, L, ly, W, lineH, 4.0f * S, with_alpha(0x30FFDA8Au, A), with_alpha(0x18FFDA8Au, A));
+    rrect_stroke(dev, L, ly, W, lineH, 4.0f * S, with_alpha(focused ? 0xD8FFDA8Au : 0x80FFDA8Au, A), focused ? 1.5f * S : 1.0f * S);
+    const float cz = snap(k.capH), vz = tz * 1.1f, vx = snap(L + 10.0f * S + cz), vy = snap(ly + lineH * 0.5f);
+    int pos = 0; for (unsigned d = digit; d >= 10 && pos < 9; d /= 10) ++pos;
+    char raw[16]; sprintf(raw, "%u", val); const int nd = (int)strlen(raw);
+    char dig[16]; const int want = nd > pos + 1 ? nd : pos + 1;
+    for (int i = 0; i < want - nd; ++i) dig[i] = '0'; memcpy(dig + (want - nd), raw, (size_t)nd + 1);
+    char v[28]; int ci = -1; { int o = 0; for (int i = 0; i < want; ++i) { if (i && (want - i) % 3 == 0) v[o++] = ','; if (want - 1 - i == pos) ci = o; v[o++] = dig[i]; } v[o] = 0; }
+    if (ci >= 0 && digit) {   // (digit 0 : no digit edited -- the value only, a confirm asks)
+        char pre[28]; lstrcpynA(pre, v, ci + 1); const float ux = fo->measure(pre, vz), cw = fo->measure("0", vz);
+        rrect(dev, snap(vx + ux - 1.0f * S), snap(vy - vz * 0.6f), snap(cw + 2.0f * S), snap(vz * 1.2f), 2.0f * S, with_alpha(0x90E86A5Au, A), with_alpha(0x90E86A5Au, A));
+        rrect(dev, snap(vx + ux), snap(vy + vz * 0.55f), snap(cw), snap(2.0f * S), 1.0f * S, with_alpha(0xF0FFDA8Au, A), with_alpha(0xF0FFDA8Au, A)); }   // the edited digit : underlined
+    gil_coin(dev, snap(L + 5.0f * S + cz * 0.5f), vy, cz, A);
+    fo->begin(dev);
+    fo->draw_lc(dev, L, hy, head, tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
+    fo->draw_lc(dev, vx, vy, v, vz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
+    if (gilOk) { char g[24], t[48]; price_text(g, (int)(gil > 999999999u ? 999999999u : gil)); _snprintf(t, sizeof(t), "%s %s G", tr("Your gil", "Tes gils"), g); t[47] = 0;
+        fo->draw_lc(dev, snap(L + W - fo->measure(t, tz * 0.85f)), snap(ly + lineH + 4.0f * S + k.capH * 0.6f), t, tz * 0.85f,
+                    with_alpha(warnOver && val > gil ? 0xFFFF8A6Au : 0xFF93A6BEu, A), sh, k.ow); }
+    return h;
+}
+namespace { Block g_shMB, g_shLB, g_shQB, g_shPB; unsigned g_shMs = 0; }
 void shop_draw(const Frame& f) {
     const UiConfig& C = ui_config();
     if (!(C.nuHide & NU_NPC) || !f.font || f.screenH <= 0.0f || f.screenW <= 0.0f) { g_shMB.vis = g_shLB.vis = g_shQB.vis = 0.0f; g_shMB.wasOpen = g_shLB.wasOpen = g_shQB.wasOpen = false; return; }
@@ -4821,8 +4853,21 @@ void shop_draw(const Frame& f) {
         }
         under = snap(under + qh + gap);
     }
-    // ---- the item card : above the chat (under the list when no chat box) ----
-    if (iid && !card_on_chat(f, k, iid, tO, A)) {
+    // ---- your bazaar : the unit price typed (the client's box was drawn UNDER our list) ----
+    // (kept while its confirm -- shopsell -- asks : the price being validated stays in sight)
+    static unsigned pVal = 0, pDigit = 1;
+    if (S0.priceUp) { pVal = S0.priceVal; pDigit = S0.priceDigit; }
+    const bool pConfirm = last.owner == 4 && native_dialog().open && !strcmp(native_dialog().name, "shopsell");
+    if (block_ease(g_shPB, S0.open && (S0.priceUp || pConfirm), now, dt)) {
+        const float tp = ease_out(((float)(now - g_shPB.openMs) / 1000.0f) / 0.07f), PA = g_shPB.vis * tp * A;
+        if (PA > 0.0f) {
+            const float ph = gil_entry_box(f, k, tr("Unit price", "Prix unitaire"), pVal, S0.priceUp ? pDigit : 0, S0.priceUp && last.priceFocused, last.gil, last.gilOk, false,
+                                           lx, snap(under + (1.0f - tp) * 3.0f * S), lw, PA);
+            under = snap(under + ph + gap);
+        }
+    }
+    // ---- the item card : above the chat (under the list when no chat box) ; a confirm up : none (it sits there) ----
+    if (iid && !native_dialog().open && !card_on_chat(f, k, iid, tO, A)) {
         const float cw = lw > snap(300.0f * S) ? lw : snap(300.0f * S), ctop = snap(under + 14.0f * S);
         card_use(0); card_load(f.dev, iid);
         if (card_ready(iid)) card_draw(f, k, lx, cw, ctop, ctop, tO, A, false);
@@ -4957,11 +5002,11 @@ static const char* mog_label(const char* win, int entry, const char* def, char* 
     if (!strcmp(win, "mogdoor") && def && def[0]) return def;          // the door's zone page : the zone's name (the model)
     if (!strcmp(win, "mogdoor")) {                                   // the door : image labels, named from the client's texts (cat 9)
         static const char* const EN[4] = { "Stay in your room", "Area you entered from", "Change floors", "Select an area to exit to" };
-        static const char* const FRL[4] = { "Rester dans ta chambre", "Zone d'arrivÃ©""e", "Changer d'Ã©tage", "Choisir une zone de sortie" };
+        static const char* const FRL[4] = { "Rester dans ta chambre", "Zone d'arriv\xC3\xA9""""e", "Changer d'\xC3\xA9""tage", "Choisir une zone de sortie" };
         return entry >= 1 && entry <= 4 ? tr(EN[entry - 1], FRL[entry - 1]) : "?";
     }
     // Layout's menus : image labels, named from their help texts (native-menu-items-2026-11-15)
-    {   static const char* const MOVE[2] = { "Move", "DÃ©placer" }, *CLEAR[2] = { "Clear away", "Ranger" }, *PLACE[2] = { "Place", "Placer" },
+    {   static const char* const MOVE[2] = { "Move", "D\xC3\xA9""placer" }, *CLEAR[2] = { "Clear away", "Ranger" }, *PLACE[2] = { "Place", "Placer" },
                                 *ALL[2] = { "Clear all", "Tout ranger" }, *QUIT[2] = { "Quit", "Quitter" }, *MANN[2] = { "Mannequin", "Mannequin" };
         const char* const* L2[4] = { MOVE, CLEAR, PLACE, ALL }; const char* const* L1[3] = { PLACE, ALL, QUIT }; const char* const* L4[5] = { MANN, MOVE, CLEAR, PLACE, ALL };
         if (!strcmp(win, "rmlo2") && entry >= 1 && entry <= 4) return tr(L2[entry - 1][0], L2[entry - 1][1]);
@@ -5175,30 +5220,7 @@ static const char* auc_label(const char* help, char* buf, int cap) {
 }
 // the price typed : the client's value and its edited digit (its keys change it), your gil under it. Returns its height.
 static float auc_price_box(const Frame& f, const Metrics& k, const NativeAuction& a, float x, float y, float w, float A) {
-    const UiConfig& C = ui_config(); const float S = k.S, pad = snap(8.0f * S) + k.bi, headH = snap(18.0f * S), tz = k.tz;
-    const float lineH = snap(k.capH * 1.5f), h = snap(pad + headH + 6.0f * S + lineH + 4.0f * S + k.capH * 1.2f + pad);
-    const u32 dev = f.dev, sh = with_alpha(0xC8000000u, A); Font* fo = f.font;
-    draw_themed_box(dev, f.skin, x, y, w, h, C.muBox, A, S);
-    const float L = x + pad, W = w - 2.0f * pad, hy = snap(y + pad + headH * 0.5f), ly = snap(y + pad + headH + 6.0f * S);
-    rrect(dev, L, snap(y + pad + headH), W, 1.0f, 0.0f, with_alpha(0x30C8D6EAu, A), with_alpha(0x30C8D6EAu, A));
-    rrect(dev, L, ly, W, lineH, 4.0f * S, with_alpha(0x30FFDA8Au, A), with_alpha(0x18FFDA8Au, A));
-    rrect_stroke(dev, L, ly, W, lineH, 4.0f * S, with_alpha(a.priceFocused ? 0xD8FFDA8Au : 0x80FFDA8Au, A), a.priceFocused ? 1.5f * S : 1.0f * S);
-    const float cz = snap(k.capH), vz = tz * 1.1f, vx = snap(L + 10.0f * S + cz), vy = snap(ly + lineH * 0.5f);
-    int pos = 0; for (unsigned d = a.priceDigit; d >= 10 && pos < 9; d /= 10) ++pos;
-    char raw[16]; sprintf(raw, "%u", a.priceVal); const int nd = (int)strlen(raw);
-    char dig[16]; const int want = nd > pos + 1 ? nd : pos + 1;
-    for (int i = 0; i < want - nd; ++i) dig[i] = '0'; memcpy(dig + (want - nd), raw, (size_t)nd + 1);
-    char v[28]; int ci = -1; { int o = 0; for (int i = 0; i < want; ++i) { if (i && (want - i) % 3 == 0) v[o++] = ','; if (want - 1 - i == pos) ci = o; v[o++] = dig[i]; } v[o] = 0; }
-    if (ci >= 0) { char pre[28]; lstrcpynA(pre, v, ci + 1); const float ux = fo->measure(pre, vz), cw = fo->measure("0", vz);
-        rrect(dev, snap(vx + ux - 1.0f * S), snap(vy - vz * 0.6f), snap(cw + 2.0f * S), snap(vz * 1.2f), 2.0f * S, with_alpha(0x60E86A5Au, A), with_alpha(0x60E86A5Au, A)); }
-    gil_coin(dev, snap(L + 5.0f * S + cz * 0.5f), vy, cz, A);
-    fo->begin(dev);
-    fo->draw_lc(dev, L, hy, a.sell ? tr("Selling price", "Prix de vente") : tr("Your bid", "Ton ench\xC3\xA8re"), tz * 0.95f, with_alpha(0xFFE8D9B0u, A), sh, k.ow);
-    fo->draw_lc(dev, vx, vy, v, vz, with_alpha(0xFFFFFFFFu, A), sh, k.ow);
-    if (a.gilOk) { char g[24], t[48]; price_text(g, (int)(a.gil > 999999999u ? 999999999u : a.gil)); _snprintf(t, sizeof(t), "%s %s G", tr("Your gil", "Tes gils"), g); t[47] = 0;
-        fo->draw_lc(dev, snap(L + W - fo->measure(t, tz * 0.85f)), snap(ly + lineH + 4.0f * S + k.capH * 0.6f), t, tz * 0.85f,
-                    with_alpha(!a.sell && a.priceVal > a.gil ? 0xFFFF8A6Au : 0xFF93A6BEu, A), sh, k.ow); }
-    return h;
+    return gil_entry_box(f, k, a.sell ? tr("Selling price", "Prix de vente") : tr("Your bid", "Ton ench\xC3\xA8re"), a.priceVal, a.priceDigit, a.priceFocused, a.gil, a.gilOk, !a.sell, x, y, w, A);
 }
 // the price history : the last ten sales -- the date, the seller -> the buyer, the price
 static float auc_hist_width(const Frame& f, const Metrics& k) {
@@ -5492,7 +5514,7 @@ void gen_list_draw(const Frame& f) {
         for (int i = 0; i < n; ++i) {
             rows[i].label = last.lrow[i].text[0] ? last.lrow[i].text : "-"; rows[i].icon = IC_NONE;
             if (!strcmp(last.listName, "msglist") && last.ltop + i == 0 && !last.lrow[i].text[0]) {   // PlayOnline messages : row 0 = the column titles
-                rows[i].label = last.ln <= 1 ? tr("No messages", "Aucun message") : tr("From  /  To  /  Type  /  Date", "De  /  Ã  /  Type  /  Date"); rows[i].off = true; rows[i].center = last.ln <= 1; }
+                rows[i].label = last.ln <= 1 ? tr("No messages", "Aucun message") : tr("From  /  To  /  Type  /  Date", "De  /  \xC3\x80""  /  Type  /  Date"); rows[i].off = true; rows[i].center = last.ln <= 1; }
             {   const unsigned c = last.lrow[i].col;                     // the client's row colour (grids-re s.1) : its meaning, in our palette
                 if (c == 0x80509050u) rows[i].tint = 0xFF9CE27Au;           // set / equipped : green
                 else if (c == 0x80909040u) rows[i].tint = 0xFFFFDA8Au;      // a command row : gold
@@ -8499,7 +8521,8 @@ void dialog_draw(const Frame& f) {
     if (!strncmp(D.name, "shop", 4)) {
         const Metrics kN = no_icons(k);
         RowSpec rows[2] = {};
-        rows[0].label = !strcmp(D.name, "shopbuy") ? tr("Buy", "Acheter") : tr("Sell", "Vendre"); rows[1].label = tr("Cancel", "Annuler");
+        rows[0].label = !strcmp(D.name, "shopbuy") ? tr("Buy", "Acheter") : native_shop().owner == 4 ? tr("Put on sale", "Mettre en vente") : tr("Sell", "Vendre");
+        rows[1].label = tr("Cancel", "Annuler");
         for (int i = 0; i < 2; ++i) { rows[i].icon = IC_NONE; rows[i].sub = false; rows[i].off = false; }
         float mw, mh; block_size(f, kN, rows, 2, mw, mh);
         if (mw < snap(360.0f * S)) mw = snap(360.0f * S);                 // the confirm's width : the two boxes of a sale line up (2026-11-20)
@@ -8702,7 +8725,7 @@ static u32 pearl_hd_tex(u32 dev, u32 rgb) {
     for (int i = 0; i < 128 * 128; ++i) {
         const unsigned char* q = g_phdSrc + i * 4;   // B G R A : R the body light (x1.25), G the sheen (scripts/gen_plate_icons.py)
         if (!q[3]) { px[i] = 0; continue; }
-        const float body = (float)q[2] / 255.0f * 1.3f * 1.2f, sh = (float)q[1] / 255.0f;   // x1.2 : the client's is that bright
+        const float body = (float)q[2] / 255.0f * 1.3f, sh = (float)q[1] / 255.0f;   // ChatGPT's pearl : its own shading x the colour, its sheen white
         auto ch = [&](float c) { float v = c * body; if (v > 255.0f) v = 255.0f; v = v + (255.0f - v) * sh; return (u32)(v > 255.0f ? 255.0f : v); };
         px[i] = ((u32)q[3] << 24) | (ch(cr) << 16) | (ch(cg) << 8) | ch(cb);
     }
@@ -9103,10 +9126,44 @@ static void star5(u32 dev, float cx, float cy, float r, u32 col) {
     for (int i = 0; i < 10; ++i) { const float a = -1.5707963f + (float)i * 0.6283185f, rr = (i & 1) ? r * 0.45f : r; xy[2 * i] = cx + cosf(a) * rr; xy[2 * i + 1] = cy + sinf(a) * rr; }
     for (int i = 0; i < 10; ++i) { const int j = (i + 1) % 10; fill_tri(dev, cx, cy, xy[2 * i], xy[2 * i + 1], xy[2 * j], xy[2 * j + 1], col); }   // a fan from the centre (concave)
 }
-void plates_draw(const Frame& f) {
-    const NativePlates& P = native_plates();
-    if (!P.wanted || !f.font || f.screenW <= 0.0f || f.screenH <= 0.0f) return;
-    const u32 dev = f.dev; Font* fo = f.font; const float S = f.screenH / 1000.0f;
+// the name plates' fonts (Windows' own faces, no install) : the config's choice (plFont) and the dev command's trial list
+const PlateFont g_plateFonts[] = {
+        { "Bahnschrift", 400 }, { "Bahnschrift SemiLight", 400 }, { "Bahnschrift", 600 }, { "Bahnschrift Condensed", 400 },
+        { "Segoe UI", 400 }, { "Segoe UI Semibold", 600 }, { "Segoe UI Light", 300 }, { "Segoe UI Variable Display", 400 },
+        { "Segoe UI Variable Display Semibold", 600 }, { "Leelawadee UI", 400 }, { "Nirmala UI", 400 }, { "Gadugi", 400 },
+        { "Ebrima", 400 }, { "Yu Gothic UI", 400 }, { "Yu Gothic UI Semibold", 600 }, { "Malgun Gothic", 400 },
+        { "Microsoft YaHei UI", 400 }, { "Microsoft JhengHei UI", 400 }, { "Calibri", 400 }, { "Candara", 400 },
+        { "Corbel", 400 }, { "Trebuchet MS", 400 }, { "Franklin Gothic Medium", 400 }, { "Century Gothic", 400 },
+        { "Tahoma", 400 }, { "Verdana", 400 }, { "Arial", 400 }, { "Lucida Sans Unicode", 400 }, { "Sitka Small", 400 },
+        { "Georgia", 400 }, { "Palatino Linotype", 400 }, { "Constantia", 400 }, { "Cambria", 400 } };
+int plate_font_count() { return (int)(sizeof(g_plateFonts) / sizeof(g_plateFonts[0])); }
+const char* plate_font_label(int i) { static char b[64]; if (i < 0 || i >= plate_font_count()) i = 0; _snprintf(b, sizeof(b), "%s%s", g_plateFonts[i].face, g_plateFonts[i].w >= 600 && !strstr(g_plateFonts[i].face, "Semibold") ? " Bold" : ""); b[63] = 0; return b; }
+static void plates_paint(const Frame& f, const NativePlates& P, bool depth) {
+    if (!f.font || f.screenW <= 0.0f || f.screenH <= 0.0f) return;
+    const u32 dev = f.dev; const float S = f.screenH / 1000.0f;
+    // dev tuning (tune.txt) : pl.face (ui_font_face index, 0 = the default), pl.weight, pl.tz / pl.tzk (text size base / x distance),
+    // pl.ic (icon size x text), pl.ow (outline px), pl.star (the ML stars' size), pl.stary (their height above the name)
+    const int face = (int)TUNE("pl.face", 14.0f), weight = (int)TUNE("pl.weight", 400.0f);   // Bahnschrift 600 (the user, 2026-11-26)
+    // dev : //aio platefont cycles a trial list of faces (Windows' own : no install needed), each in its usual weights
+    const int NPF = plate_font_count(); const PlateFont* PF = g_plateFonts;
+    unsigned pfMs = 0; int pfSel = native_plates_font_sel(pfMs); if (pfSel >= 0) pfSel %= NPF;
+    const bool pfShow = pfSel >= 0; if (pfSel < 0) { pfSel = ui_config().plFont; if (pfSel < 0 || pfSel >= NPF) pfSel = 0; }   // the config's font (the dev command wins while used)
+    const int stl = ui_config().plStyle;   // Game UI -> the names' style : 1 bold, 2 italic, 4 CAPS
+    int wIdx = (stl >> 8) & 7; if (!wIdx && (stl & 1)) wIdx = 4;   // the weight : the font's own, or ultra-thin .. bold
+    static const int WGT[5] = { 0, 200, 300, 600, 700 };
+    const int wt = wIdx > 0 && wIdx < 5 ? WGT[wIdx] : PF[pfSel].w;
+    Font* fo = (f.fonts && pfSel >= 0) ? f.fonts->get(PF[pfSel].face, wt, (stl & 2) != 0)
+             : (f.fonts && (face > 0 || weight > 0)) ? f.fonts->get(face > 0 ? ui_font_face(face) : 0, weight > 0 ? weight : 600) : f.font; if (!fo) fo = f.font;
+    if (pfShow && (int)(GetTickCount() - pfMs) < 4000) {   // the face's name, a moment, top centre
+        char lb[96]; _snprintf(lb, sizeof(lb), "%d / %d   %s  %d", pfSel + 1, NPF, PF[pfSel].face, PF[pfSel].w); lb[95] = 0;
+        const float tzl = snap(22.0f * S), w = fo->measure(lb, tzl);
+        rrect(dev, snap(f.screenW * 0.5f - w * 0.5f - 14.0f * S), snap(70.0f * S), snap(w + 28.0f * S), snap(tzl * 1.6f), 6.0f * S, 0xC0101418u, 0xC0101418u);
+        fo->begin(dev); fo->draw_cc(dev, snap(f.screenW * 0.5f), snap(70.0f * S + tzl * 0.8f), lb, tzl, 0xFFFFFFFFu, 0xA0000000u, 1.0f * S); cs(dev);
+    }
+    const UiConfig& PC = ui_config();
+    const float kTz = TUNE("pl.tz", 24.0f) * PC.plSize, kTmin = TUNE("pl.tmin", 9.0f) * PC.plSize, kIc = TUNE("pl.ic", 1.45f) * PC.plIcon, kOw = TUNE("pl.ow", 1.0f);   // text px at full size (x the client's distance factor), its floor
+    // the Master Level stars as the client lays them : a big one centred above the name, two small ones well apart, a bit lower
+    const float kSb = TUNE("pl.starbig", 0.95f) * PC.plStar, kSs = TUNE("pl.starsmall", 0.55f) * PC.plStar, kSx = TUNE("pl.starx", 1.0f) * PC.plStar * PC.plStarX, kSdy = TUNE("pl.stardy", 0.17f), kSy = TUNE("pl.stary", 1.0f) * PC.plStarY;
     const u32 ico = status_icons(dev);
     unsigned long long have = 0; const u32 pli = plate_icons(dev, have);
     auto pcell = [&](unsigned char g, float cx, float cy, float z, u32 col) -> bool {   // a glyph's HD icon, when it was redrawn
@@ -9122,23 +9179,28 @@ void plates_draw(const Frame& f) {
         if (c[3] <= 0.01f) continue;
         float x = (c[0] / c[3] * 0.5f + 0.5f) * f.screenW, y = (0.5f - c[1] / c[3] * 0.5f) * f.screenH;
         if (P.both) y += (12.0f + 14.0f * (Q.size > 1.0f ? 1.0f : Q.size)) * S;   // comparison : ours just under the client's
+        const float zDepth = c[2] / c[3];                               // its projected depth : the scene hides it as the client's
         if (x < -200.0f || x > f.screenW + 200.0f || y < -100.0f || y > f.screenH + 100.0f) continue;
+        if (depth) dDepthBegin(dev, zDepth, 1.0f / c[3]);              // in the names pass : a wall / pillar in front hides it, pixel by pixel
         const float sz = Q.size > 1.0f ? 1.0f : (Q.size < 0.05f ? 0.05f : Q.size);
-        const float A = sz < 0.3f ? sz / 0.3f : 1.0f;                     // the far ones fade as they shrink
-        const float tz = snap((10.0f + 9.0f * sz) * S);
+        const float A = 1.0f;                                           // full opacity at any distance (the user 2026-11-26 : no dimming far away)
+        float tz = snap(kTz * S * sz); if (tz < kTmin * S) tz = snap(kTmin * S);
+        if (PC.plStyle & 0x1000) tz = snap(kTmin * TUNE("pl.fixk", 1.2f) * S);   // FIXED : every name as thin as a far one (the user 2026-11-26)   // PROPORTIONAL to the client's distance factor, as its own text (2026-11-26)
         // the text : the leading glyph codes (>= 0x80) are the icons, then a space, then the name
         unsigned char icons[6]; int ni = 0; int k = 0;
         while (Q.text[k] >= 0x80 && ni < 6) icons[ni++] = Q.text[k++];
         while (Q.text[k] == ' ') ++k;
-        char name[40]; int o = 0; for (; Q.text[k] && o < 39; ++k) if (Q.text[k] >= 0x20 && Q.text[k] < 0x7F) name[o++] = (char)Q.text[k]; name[o] = 0;
-        if (!name[0] && !ni) continue;
+        char name[40]; int o = 0; for (; Q.text[k] && o < 39; ++k) if (Q.text[k] >= 0x20 && Q.text[k] < 0x7F) name[o++] = (char)((stl & 4) && Q.text[k] >= 'a' && Q.text[k] <= 'z' ? Q.text[k] - 32 : Q.text[k]); name[o] = 0;
+        if (!name[0] && !ni) { if (depth) dDepthEnd(dev); continue; }
         // the client's colour : 0x80 = full on each channel (its palette, "menu    ncol") -> doubled
         auto full = [](u32 c, float al) { unsigned r = ((c >> 16) & 0xFF) * 2, g = ((c >> 8) & 0xFF) * 2, b = (c & 0xFF) * 2; if (r > 255) r = 255; if (g > 255) g = 255; if (b > 255) b = 255;
                                           return ((u32)(al * 255.0f) << 24) | (r << 16) | (g << 8) | b; };
-        const u32 col = full(Q.colour, A), sh = with_alpha(0xE0000000u, A);
-        const float nw = name[0] ? fo->measure(name, tz) : 0.0f, is = snap(tz * 1.15f), gap = snap(3.0f * S);
-        const float total = nw + (float)ni * (is + gap);
-        float lx = snap(x - total * 0.5f);
+        const u32 col = full(Q.colour, A), sh = with_alpha((u32)TUNE("pl.sha", 150.0f) << 24, A);   // a soft shadow, not a hard black stroke (readable, not loud)
+        const float nw = name[0] ? fo->measure(name, tz) : 0.0f, is = snap(tz * kIc), gap = snap(3.0f * S);
+        // the NAME centred over the character (the icons do not count : user 2026-11-26) ; the icons to its LEFT, their right
+        // edge ONE capital W (pl.icgap, in W) before the name, the nearest first
+        const float nameX = snap(x - nw * 0.5f), wGap = fo->measure("W", tz) * TUNE("pl.icgap", 1.0f) * ui_config().plGap;
+        float lx = snap(nameX - wGap - (float)ni * is - (float)(ni > 0 ? ni - 1 : 0) * gap);
         // the pearl's tint : entity+0x1D4 is 0x00BBGGRR (Inertia, blue in the game, reads 86 5F 45 : checked against the
         // client's own pearl 2026-11-26) -> swapped to our 0xRRGGBB
         const u32 lsRgb = ((Q.tint & 0xFF) << 16) | (Q.tint & 0xFF00) | ((Q.tint >> 16) & 0xFF);
@@ -9163,14 +9225,59 @@ void plates_draw(const Frame& f) {
             }
             lx += is + gap;
         }
-        if (name[0]) { fo->begin(dev); fo->draw_lc(dev, snap(lx), snap(y), name, tz, col, sh, 1.2f * S); cs(dev); }
+        if (name[0]) { fo->begin(dev); fo->draw_lc(dev, nameX, snap(y), name, tz, col, sh, kOw * S); cs(dev); }
         if (Q.line2[0] == 0xD2) {                                        // Master Level : three gold stars above the name
-            const float sy = snap(y - tz * 0.95f), r = tz * 0.42f;
+            const float sy = snap(y - tz * kSy), big = tz * kSb, sm = tz * kSs, dx = tz * kSx, dy = tz * kSdy;
             const u32 wc = with_alpha(0xFFFFFFFFu, A);
-            if (pcell(0xAD, x, sy, r * 2.4f, wc)) { pcell(0xAD, x - r * 2.0f, sy + r * 0.3f, r * 1.5f, wc); pcell(0xAD, x + r * 2.0f, sy + r * 0.3f, r * 1.5f, wc); }   // the HD gold star, x 3
-            else { star5(dev, x - r * 1.9f, sy + r * 0.25f, r * 0.62f, with_alpha(0xFFE8C04Au, A)); star5(dev, x, sy, r, with_alpha(0xFFFFD86Au, A)); star5(dev, x + r * 1.9f, sy + r * 0.25f, r * 0.62f, with_alpha(0xFFE8C04Au, A)); }
+            if (pcell(0xAD, x - dx, sy + dy, sm, wc)) { pcell(0xAD, x + dx, sy + dy, sm, wc); pcell(0xAD, x, sy, big, wc); }   // the HD gold star : small, small, then the big one over
+            else { star5(dev, x - dx, sy + dy, sm * 0.42f, with_alpha(0xFFE8C04Au, A)); star5(dev, x + dx, sy + dy, sm * 0.42f, with_alpha(0xFFE8C04Au, A)); star5(dev, x, sy, big * 0.42f, with_alpha(0xFFFFD86Au, A)); }
         }
+        if (depth) dDepthEnd(dev);
     }
+}
+// ---- the two callers : INSIDE the client's names pass (the model calls plates_pass, right after the scene, its depth
+// still there : depth-tested, as the client's), else in the overlay (no depth : a fallback when the pass hook is out) ----
+namespace { Frame g_plFrame; bool g_plFrameOk = false; unsigned g_plAllowMs = 0; }
+static void plates_pass(unsigned dev, const NativePlates& P) {
+    if (!g_plFrameOk || (int)(GetTickCount() - g_plAllowMs) > 250) return;   // the overlay said "plates allowed" this frame (HUD shown, no map)
+    Frame f = g_plFrame; f.dev = dev;
+    const u32 tok = dCreateSB(dev, D3DSBT_ALL);                         // the client's frame goes on after us : its state, back exactly
+    plates_paint(f, P, true);
+    dSetTex(dev, 0, 0);
+    if (tok) { dApplySB(dev, tok); dDelSB(dev, tok); } else dStateForget();
+    native_plates_drawn();
+}
+// the config's PREVIEW (Game UI -> Names over the characters) : sample plates in the stage, through the same painter --
+// an identity camera, so a plate's position IS its spot in the stage (NDC). Near and far ones, the icons and the stars.
+void plates_sample(const Frame& f, float sx, float sy, float sw, float sh) {
+    static NativePlates P; memset(&P, 0, sizeof(P));
+    for (int i = 0; i < 16; ++i) { P.view[i] = (i % 5 == 0) ? 1.0f : 0.0f; P.proj[i] = P.view[i]; }
+    P.ok = P.wanted = P.camOk = true;
+    struct S { float x, y, size; unsigned col, tint; unsigned char lead; bool ml; const char* name; };
+    static const S SM[] = {
+        { 0.50f, 0.30f, 1.00f, 0xC0808080u, 0x00865F45u, 0x92, true,  "Tetsouo" },    // you : the linkshell pearl (blue), the Master Level stars
+        { 0.22f, 0.55f, 0.70f, 0xC0618080u, 0x0038FB38u, 0x92, false, "Kaories" },    // a party member (cyan), a green linkshell
+        { 0.78f, 0.55f, 0.70f, 0xC0808080u, 0, 0x9C, false, "Snicky" },              // a bazaar
+        { 0.35f, 0.80f, 0.45f, 0xC0618061u, 0, 0, false, "Synergy Furnace" },        // an NPC, farther
+        { 0.70f, 0.82f, 0.40f, 0xC0808061u, 0, 0, false, "Vampire Leech" },          // a monster, farther
+    };
+    P.n = (int)(sizeof(SM) / sizeof(SM[0]));
+    for (int i = 0; i < P.n; ++i) {
+        NativePlate& Q = P.p[i]; const S& s = SM[i];
+        Q.pos[0] = ((sx + sw * s.x) / f.screenW) * 2.0f - 1.0f; Q.pos[1] = 1.0f - ((sy + sh * s.y) / f.screenH) * 2.0f; Q.pos[2] = 0.5f; Q.pos[3] = 1.0f;
+        Q.size = s.size; Q.colour = s.col; Q.tint = s.tint;
+        int k = 0; if (s.lead) { Q.text[k++] = s.lead; Q.text[k++] = ' '; }
+        for (const char* c = s.name; *c && k < 60; ++c) Q.text[k++] = (unsigned char)*c; Q.text[k] = 0;
+        if (s.ml) Q.line2[0] = 0xD2;
+    }
+    plates_paint(f, P, false);
+}
+void plates_draw(const Frame& f) {
+    static bool reg = false; if (!reg) { reg = true; native_plates_set_drawer(&plates_pass); }
+    g_plFrame = f; g_plFrame.mouse = 0; g_plFrameOk = true; g_plAllowMs = GetTickCount();
+    const NativePlates& P = native_plates();
+    if (!P.wanted || native_plates_in_pass()) return;                  // drawn in the names pass (or not ours)
+    plates_paint(f, P, false);
     native_plates_drawn();
 }
 

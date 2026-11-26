@@ -28,6 +28,32 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
                                     float bandX, float bandW, float coX, float ctrlW,
                                     float hdrX, float hdrW) {
     // ROW_BAND / ROW_NEXT come from config_rows.h (dev/bandX/bandW/e/ry/ri/anim_ are all in scope here).
+    // ===== SIMPLE : two cards, always open -- what the box shows and its size. Everything else (frame, text, bar
+    //       sizes, the debuff box's own look...) is Advanced : the same fields, nothing lost (2026-11-26) =====
+    if (!ui_config().cfgAdv) {
+        UiConfig& c = ui_config();
+        SIMPLE_CARD(tr("Display", "Affichage"))
+            ROW_TOGGLE_G(CTRL_ID, tr("Show", "Afficher"), c.tgtShow, 52.0f, 40.0f, 112.0f)
+            { ROW_BAND(46.0f)
+                const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(c.tgtScale * 100.0f + 0.5f));
+                float v01 = clampf((c.tgtScale - lo) / (hi - lo), 0.0f, 1.0f);
+                if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Size", "Taille"), b, &v01)) {
+                    float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.tgtScale = v < lo ? lo : (v > hi ? hi : v); }
+            } ROW_NEXT(46.0f)
+            ROW_NOTE(tr("To move it : Edit Layout (top tab).", "Pour la d\xC3\xA9placer : onglet \xC3\x89""diter dispo, en haut."))
+        SIMPLE_CARD_END
+        SIMPLE_CARD(tr("What it shows", "Ce qu'elle affiche"))
+            ROW_TOGGLE_G(CTRL_ID, tr("Distance to the target", "Distance de la cible"), c.tgtRange, 52.0f, 40.0f, 112.0f)
+            ROW_TOGGLE_G(CTRL_ID, tr("The spell it casts", "Le sort qu'elle lance"), c.tgtCast, 52.0f, 40.0f, 112.0f)
+            ROW_TOGGLE_G(CTRL_ID, tr("Its debuffs", "Ses debuffs"), c.tgtDebuffs, 52.0f, 40.0f, 112.0f)
+            if (c.tgtDebuffs) {
+                ROW_CHOICE_G(CTRL_ID, tr("Debuffs shown", "Debuffs affich\xC3\xA9s"), c.dbShow, tr("In their own box", "Dans leur propre box"), tr("In the target box", "Dans la box cible"), 52.0f, 40.0f, 190.0f) }
+            ROW_TOGGLE_G(CTRL_ID, tr("Its speed (slowed / hasted)", "Sa vitesse (ralentie / acc\xC3\xA9l\xC3\xA9r\xC3\xA9""e)"), c.tgtSpeed, 52.0f, 40.0f, 112.0f)
+            ROW_TOGGLE_G(CTRL_ID, tr("Treasure Hunter", "Treasure Hunter"), c.tgtTH, 52.0f, 40.0f, 112.0f)
+        SIMPLE_CARD_END
+        SIMPLE_MORE
+        return;
+    }
         // ===== sub-section : DISPLAY (box chrome + size + placement). No outer "Target" wrapper -- opens straight
         //       into its sub-sections like every other module (the sidebar already names the module). =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
@@ -169,7 +195,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         { ROW_BAND(46.0f)
             const float lo = 0.60f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().tgtRangeH * 100.0f + 0.5f));
             float v01 = (ui_config().tgtRangeH - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Distance Height", "Hauteur distance"), b, &v01)) {   // 213 : distinct from the Text "Size" slider (both were 210 -> dragging one wrote the other)
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Distance bar height", "Hauteur de la jauge distance"), b, &v01)) {   // 213 : distinct from the Text "Size" slider (both were 210 -> dragging one wrote the other)
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().tgtRangeH = v < lo ? lo : (v > hi ? hi : v); }
           ROW_NEXT(46.0f)
         }
@@ -194,16 +220,17 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtNameHostile ? tr("By hostility", "Par hostilité") : tr("Fixed", "Fixe"), ui_config().tgtNameHostile != 0)) { ui_config().tgtNameHostile = !ui_config().tgtNameHostile; save_ui_config(); }
         }
         ROW_NEXT(52.0f)
-        // Sub-target (<st>) box PLACEMENT relative to the main box (shown while a sub-target cursor is up).
-        { ROW_BAND(52.0f)
+        // Sub-target (<st>) box : on / off (the audit 2026-11-26 : it could not be turned off), then its PLACEMENT
+        ROW_TOGGLE_G(CTRL_ID, tr("Sub-target box (<st>)", "Box de sous-cible (<st>)"), ui_config().tgtSub, 52.0f, 40.0f, 112.0f)
+        if (ui_config().tgtSub) { ROW_BAND(52.0f)
             const char* SUBPOS[6] = { tr("Above-Right", "Haut-Droite"), tr("Above-Left", "Haut-Gauche"),
                                       tr("Below-Right", "Bas-Droite"),  tr("Below-Left", "Bas-Gauche"),
                                       tr("Right", "Droite"),            tr("Left", "Gauche") };
             int sp = (ui_config().tgtSubPos < 0 || ui_config().tgtSubPos >= 6) ? 0 : ui_config().tgtSubPos;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Sub-target", "Sous-cible"), SUBPOS[sp])) {
                 ui_config().tgtSubPos = wrap(sp + d, 6); save_ui_config(); }
+          ROW_NEXT(52.0f)
         }
-        ROW_NEXT(52.0f)
         // Speed : show the target's movement speed % (green = slower, red = faster) in the detail row.
         ROW_TOGGLE_G(CTRL_ID, tr("Speed", "Vitesse"), ui_config().tgtSpeed, 52.0f, 40.0f, 112.0f)
         // Speed display : plain text ("Spd +12%") or the buff-atlas Speed icon + the value.
@@ -218,7 +245,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         { ROW_BAND(46.0f)
             const float lo = 0.50f, hi = 3.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().tgtDetailIconSz * 100.0f + 0.5f));
             float v01 = (ui_config().tgtDetailIconSz - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Speed/TH Icon Size", "Taille icônes Vit/TH"), b, &v01)) {
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Speed / TH icon size", "Taille ic\xC3\xB4nes vitesse / TH"), b, &v01)) {
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().tgtDetailIconSz = v < lo ? lo : (v > hi ? hi : v); }
           ROW_NEXT(46.0f)
         }
@@ -247,12 +274,12 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             int dm = ui_config().tgtRangeMin ? 1 : 0;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Distance display", "Affichage distance"), DDL[dm])) {
                 ui_config().tgtRangeMin = wrap(dm + d, 2); save_ui_config(); }
+          ROW_NEXT(52.0f)
         }
-        ROW_NEXT(52.0f)
         // Cast : show the target's ACTION bar (its live spell cast : name + filling bar) under the HP bar.
-        ROW_TOGGLE_G(CTRL_ID, tr("Cast", "Sort"), ui_config().tgtCast, 52.0f, 40.0f, 112.0f)
+        ROW_TOGGLE_G(CTRL_ID, tr("The spell it casts", "Le sort qu'elle lance"), ui_config().tgtCast, 52.0f, 40.0f, 112.0f)
         // Cast placeholder : a demo cast bar during normal play so it can be positioned even when not casting.
-        ROW_TOGGLE_G(CTRL_ID, tr("Cast placeholder", "Sort fictif"), ui_config().tgtCastDemo, 52.0f, 40.0f, 112.0f)
+        ROW_TOGGLE_G(CTRL_ID, tr("Sample spell (to place it)", "Sort d'exemple (pour le placer)"), ui_config().tgtCastDemo, 52.0f, 40.0f, 112.0f)
             cat_fold_end(dev, ry, top8_, catH_[8], aF8_);
         }   // end sub-section Detail (catOpen_[8])
         ry += snap(16.0f);                                 // air between this section and the next title bar
@@ -277,8 +304,8 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         // Mode : the debuffs sit INSIDE the Target box (icons under the bar) or DETACHED into their own
         // Timers-style list (mob name + icon/name/timer rows) placed with //aio edit -- like Player's
         // Equipment "In Player / Standalone".
-        if (ui_config().tgtDebuffs)
-        ROW_CHOICE_G(CTRL_ID, tr("Mode", "Mode"), ui_config().dbShow, tr("Standalone", "Autonome"), tr("In Target", "Dans la cible"), 52.0f, 40.0f, 126.0f)
+        if (ui_config().tgtDebuffs) {   // (braced : the macro's ROW_NEXT ran even with Debuffs off -- an empty band)
+        ROW_CHOICE_G(CTRL_ID, tr("Mode", "Mode"), ui_config().dbShow, tr("Standalone", "Autonome"), tr("In Target", "Dans la cible"), 52.0f, 40.0f, 126.0f) }
         // Max Debuffs : how many debuff icons to show at most (1..20 ; wraps 10 per row/column).
         if (ui_config().tgtDebuffs && !ui_config().dbShow)
         { ROW_BAND(46.0f)
@@ -295,18 +322,18 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             const char* BPL[5] = { tr("Inside", "Dans la box"), tr("Below", "Dessous"), tr("Above", "Dessus"), tr("Left", "Gauche"), tr("Right", "Droite") };
             const bool boxOff = !ui_config().tgtBox;                      // no box -> "Inside" is meaningless : offer only 1..4
             int bp = (ui_config().tgtBuffPos < 0 || ui_config().tgtBuffPos > 4) ? 0 : ui_config().tgtBuffPos;
-            if (boxOff && bp == 0) { bp = 1; ui_config().tgtBuffPos = 1; save_ui_config(); }   // coerce Inside -> Below when box off
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff position", "Position buffs"), BPL[bp])) {
+            if (boxOff && bp == 0) bp = 1;   // shown as Below while there is no box -- the stored Inside is KEPT (the renderer falls back itself)   // coerce Inside -> Below when box off
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Debuffs position", "Position des debuffs"), BPL[bp])) {
                 int nv = boxOff ? (1 + wrap(bp - 1 + d, 4)) : wrap(bp + d, 5);   // box off cycles 1..4 only
                 ui_config().tgtBuffPos = nv; save_ui_config(); }
+          ROW_NEXT(52.0f)   // (inside : a hidden row must not keep its band -- the Debuffs section showed two empty ones)
         }
-        ROW_NEXT(52.0f)
         // Buff Size : the debuff icon size.
         if (ui_config().tgtDebuffs && !ui_config().dbShow)
         { ROW_BAND(46.0f)
             const float lo = 0.50f, hi = 2.00f; char b[16]; sprintf(b, "%d%%", (int)(ui_config().tgtIconSz * 100.0f + 0.5f));
             float v01 = (ui_config().tgtIconSz - lo) / (hi - lo); v01 = clampf(v01, 0.0f, 1.0f);
-            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Buff Size", "Taille buffs"), b, &v01)) {
+            if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Debuff icon size", "Taille des ic\xC3\xB4nes"), b, &v01)) {
                 float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; ui_config().tgtIconSz = v < lo ? lo : (v > hi ? hi : v); }
           ROW_NEXT(46.0f)
         }
@@ -315,11 +342,11 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         { ROW_BAND(52.0f)
             const float rowH = snap(40.0f), ty = ry + yo;
             fo->begin(dev);
-            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Debuff Timers", "Minuteurs debuff"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
+            fo->draw_lc(dev, coX + snap(4.0f), ty + rowH * 0.5f, tr("Time left under each", "Temps restant sous chacun"), snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
             const float bbw = snap(112.0f), bbh = snap(34.0f), bx2 = coX + ctrlW - bbw, bty = ty + (rowH - bbh) * 0.5f;
             if (toggle_chip(dev, fo, mo, click, CTRL_ID, bx2, bty, bbw, bbh, ui_config().tgtTimers ? tr("On", "Oui") : tr("Off", "Non"), ui_config().tgtTimers != 0)) { ui_config().tgtTimers = !ui_config().tgtTimers; save_ui_config(); }
+          ROW_NEXT(52.0f)
         }
-        ROW_NEXT(52.0f)
         cat_fold_end(dev, ry, top9_, catH_[9], aF9_);
     }   // end Debuffs
     ry += snap(16.0f);                                 // air between this section and the next title bar
@@ -373,8 +400,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, topD_, catH_[16], aFd_);
         }   // end Debuff box
         ry += snap(16.0f);
-    }
-        ry += snap(16.0f);                                 // air between this section and the next title bar
+    }                                 // air between this section and the next title bar
         // ---- Typography sub-section : per-element Font / Size / Outline / Style / Colour (Name / HP% / Timer) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
         const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);

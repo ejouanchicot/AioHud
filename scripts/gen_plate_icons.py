@@ -18,12 +18,11 @@ OUT = os.path.join(ROOT, 'assets', 'plate_icons.raw')
 PEARL = os.path.join(ROOT, 'assets', 'pearl_hd.raw')   # the linkshell pearl alone, 128 x 128 : AioHUD recolours it per LS colour (its sheen kept white)
 CELL, COLS, MARGIN, FIRST = 64, 8, 2, 0x8E
 
-SOURCES = [
-    ('sheet_b1_9e.png', 5, [0xB1, 0xB0, 0xAF, 0xAE, 0xAD,      # info, moon, snowflake, blossom, gold star (Master Level)
-                            0xAC, 0xAB, 0xAA, 0x94, 0xA8,      # "!" star, Monstrosity, rank star, SWORD + SHIELD (0x94 : ChatGPT drew it
-                                                               # in A9's place -- A9 is a small lone sword, not redrawn yet), Level Sync
-                            0xA6, 0xA7, 0xA5, 0xA4, 0xA3,      # red / blue banners, red shard, green / blue griffins
-                            0xA2, 0xA1, 0xA0, 0x9F, 0x9E]),    # Mentor, new adventurer, Windurst, Bastok, San d'Oria
+SOURCES = [   # ChatGPT's full set, 2026-11-26 : 4 sheets of 3 x 3, each in glyph-code order
+    ('AioHUD_planche_1_8E-96.png', 3, list(range(0x8E, 0x97))),
+    ('AioHUD_planche_2_97-9F.png', 3, list(range(0x97, 0xA0))),
+    ('AioHUD_planche_3_A0-A8.png', 3, list(range(0xA0, 0xA9))),
+    ('AioHUD_planche_4_A9-B1.png', 3, list(range(0xA9, 0xB2))),
 ]
 
 
@@ -102,25 +101,24 @@ def main():
     # painted light made a hard white dot once tinted (2026-11-26) : the shape is re-lit smooth -- a dome from the
     # distance to the edge, a soft top-left key light, a broad soft sheen. Channels : R the body light (0..1.3 -> 0..255),
     # G the sheen (0..1), A the shape ; AioHUD : out = rgb * body, then towards white by the sheen
-    # the SHAPE : the client's own pearl silhouette (pearl_shape.png = its 64 px art), upscaled smooth -- ChatGPT's had a
-    # notch carved into the ball (2026-11-26 : "deforme") where the client's has a small stem on top right
-    pf = os.path.join(SRC, 'pearl_shape.png')
-    if os.path.exists(pf):
-        src = Image.open(pf).convert('RGBA')
-        a0 = np.asarray(src)[..., 3].astype(np.float32) / 255.0
-        ys, xs = np.nonzero(a0 > 0.5); a0 = a0[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
-        big = np.asarray(Image.fromarray(np.uint8(a0 * 255)).resize((a0.shape[1] * 8, a0.shape[0] * 8), Image.BICUBIC), np.float32) / 255.0
-        big = ndimage.gaussian_filter(big, 6.0)
-        big = np.clip((big - 0.5) * 6.0 + 0.5, 0, 1)                       # a smooth, crisp edge
-        k = (128 - 6) / max(big.shape)
-        sm = Image.fromarray(np.uint8(big * 255)).resize((max(1, round(big.shape[1] * k)), max(1, round(big.shape[0] * k))), Image.LANCZOS)
-        canvas = Image.new('L', (128, 128), 0); canvas.paste(sm, ((128 - sm.size[0]) // 2, (128 - sm.size[1]) // 2))
-        alpha = np.asarray(canvas)
-        lum, spec = pearl_light(alpha)
+    # the pearl = ChatGPT's own (glyph 0x92 of the sheets), its shape and shading UNTOUCHED (2026-11-26 : a re-lit version
+    # squashed it) ; stored as a tint map : R its luminance (x1/1.3), G its sheen (the brightest part, kept white), A its shape
+    pi = [(fn, cols, codes) for fn, cols, codes in SOURCES if 0x92 in codes]
+    if pi:
+        fn, cols, codes = pi[0]
+        part = cut(Image.open(os.path.join(SRC, fn)).convert('RGBA'), len(codes), cols)[codes.index(0x92)]
+        k = (128 - 4) / max(part.size)
+        part = premul_resize(part, (max(1, round(part.size[0] * k)), max(1, round(part.size[1] * k))))
+        pearl = Image.new('RGBA', (128, 128), (0, 0, 0, 0)); pearl.alpha_composite(part, ((128 - part.size[0]) // 2, (128 - part.size[1]) // 2))
+        a = np.asarray(pearl).astype(np.float32)
+        L = (a[..., 0] * 0.299 + a[..., 1] * 0.587 + a[..., 2] * 0.114) / 255.0
+        Lm = L[a[..., 3] > 128].mean() if (a[..., 3] > 128).any() else 0.7
+        body = np.clip(L / max(Lm, 0.05) * 0.85, 0, 1.3)               # its own shading around a mid colour
+        sheen = np.clip((L - 0.82) / 0.18, 0, 1) * 0.8                  # its highlights stay white
         out = np.zeros((128, 128, 4), np.uint8)
-        out[..., 2] = np.uint8(np.clip(lum / 1.3 * 255.0 + 0.5, 0, 255))   # BGRA in the file : R = channel 2
-        out[..., 1] = np.uint8(np.clip(spec * 255.0 + 0.5, 0, 255))
-        out[..., 3] = alpha
+        out[..., 2] = np.uint8(np.clip(body / 1.3 * 255.0 + 0.5, 0, 255))
+        out[..., 1] = np.uint8(np.clip(sheen * 255.0 + 0.5, 0, 255))
+        out[..., 3] = np.uint8(a[..., 3])
         with open(PEARL, 'wb') as f:
             f.write(out.tobytes())
         print('pearl_hd.raw : 128x128')

@@ -20,7 +20,7 @@ void ConfigPage::draw_grim_config(u32 dev, Font* fo, const MouseState* mo, bool 
 
     // ===== sub-section : DISPLAY =====
     // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
-    const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
+    const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
@@ -49,6 +49,7 @@ void ConfigPage::draw_grim_config(u32 dev, Font* fo, const MouseState* mo, bool 
 
     // ===== sub-section : TEXT (the charge + timer numbers) =====
     // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // the section IS a card, collapsed or not
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
@@ -68,6 +69,8 @@ void ConfigPage::draw_grim_config(u32 dev, Font* fo, const MouseState* mo, bool 
     }   // end Text
 
     ry += snap(16.0f);
+}   // end Advanced only
+    if (!ui_config().cfgAdv) SIMPLE_MORE   // Simple : where the rest is
     #undef ROW_BAND
     #undef ROW_NEXT
 }

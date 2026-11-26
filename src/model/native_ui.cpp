@@ -110,6 +110,7 @@ bool g_jpRule = false;       // the JP mirror reads : `levmeri2` (Job Points' CP
 extern NativeRegion g_rg;    // defined below (Region Info) : its panels are born parked only under the map
 extern NativeTrade g_trade;  // defined below (the player trade) : its Current Gil is born parked
 DWORD g_tradeBornMs = 0;     // when `trade` was born : the `money` box born with it, before trade_poll sees it
+extern NativeShop g_shop;   // (defined with the shop, below : its owner tells your bazaar's price box)
 bool g_shopMainUp = false;   // shop_poll : a shop's entry menu is up (shopmain, guildsho, bazaar) : its list and `money` born parked
 bool g_shopUp = false;       // shop_poll : a shop's LIST is ours : its item card and quantity born parked (a new `iteminfo` per row)
 bool g_inspUp = false;       // inspect_poll : a player's Check is ours : its item card born parked (a new `iteminfo` per slot)
@@ -200,7 +201,7 @@ void desired_offset(const char* n, short ox, short oy, unsigned char anc, int hi
     // the NPC SHOP : Buy / Sell, then its list and its Current Gil born parked (the client RESIZES `shop` once it is up and
     // `money` draws where it was born : shops-re s.7, the trade's lesson) -- only under an NPC shop's menu (the bazaar and
     // the guild shops reuse `shop` : the client's)
-    if ((hide & NU_NPC) && !g_shopNot && (!strcmp(n, "shopmain") || !strcmp(n, "guildsho") || !strcmp(n, "bazaar") || (g_shopMainUp && (!strcmp(n, "shop") || !strcmp(n, "money"))))) { dy = HIDE_DY; return; }
+    if ((hide & NU_NPC) && !g_shopNot && (!strcmp(n, "shopmain") || !strcmp(n, "guildsho") || !strcmp(n, "bazaar") || (g_shopMainUp && (!strcmp(n, "shop") || !strcmp(n, "money") || (g_shop.owner == 4 && !strcmp(n, "moneyctr")))))) { dy = HIDE_DY; return; }
     // ... and, its list up, the item card the client opens ANEW at each row (2026-11-21, a guild : "la description des
     // articles derriere pop en flash") and the quantity : born parked, as Equipment's cards
     if ((hide & NU_NPC) && g_shopUp && (!strcmp(n, "iteminfo") || !strcmp(n, "itemctrl"))) { dy = HIDE_DY; return; }
@@ -1215,6 +1216,11 @@ bool panel_read(u32 mgr, const char* want, NativePanel& P) {
 NativeFep g_fep; DWORD g_fepDrawnMs = 0; int g_fepBadLog = 0; u32 g_fepIn = 0;
 int eff_hide(const UiConfig& c) {
     int h = c.nuHide;
+    // the windows AioHUD does not redraw but REPLACES with a module : hidden only while that module shows -- never
+    // leave the player without a chat log or a party list (the config audit 2026-11-26)
+    if (!c.chShow[0] && !c.chShow[1]) h &= ~NU_CHAT;
+    if (!c.partyShow) h &= ~(NU_PARTY | NU_COST);
+    if (!c.allyShow)  h &= ~NU_ALLY;
     if (g_actFail) h &= ~NU_ACT;
     if (g_npcFail) h &= ~NU_NPC;
     if (g_mainFail) h &= ~NU_MAIN;
@@ -1590,6 +1596,8 @@ Hook g_hkSprite  = { 0, PRO_SPRITE,   7, 0, 0, {0}, false, "text capture : entry
 const unsigned char PRO_PLATE[8]     = { 0x66,0x83,0xB9,0xB2,0x00,0x00,0x00,0x00 };   // cmp word [ecx+0xB2], 0
 Hook g_hkPlate1 = { 0, PRO_PLATE,    8, 0, 0, {0}, false, "name plates : line 1 (icons + name)" };
 Hook g_hkPlate2 = { 0, PRO_PLATE,    8, 0, 0, {0}, false, "name plates : line 2 (the badge)" };
+unsigned char PRO_NAMES[5] = { 0xA1, 0, 0, 0, 0 };   // mov eax, [game state] -- its operand read off the client at install
+Hook g_hkNames  = { 0, PRO_NAMES,    5, 0, 0, {0}, false, "name plates : the names pass" };
 const unsigned char PRO_SPRITES[5]   = { 0x83,0xEC,0x0C,0x53,0x55 };   // 5 : a relay of that length was left on it by a 2026-11-25 dev load (kept for life, R1)
 Hook g_hkSpriteS = { 0, PRO_SPRITES,  5, 0, 0, {0}, false, "text capture : scaled images (the map)" };
 struct CapRun { short x, y; u32 col; char s[60]; };
@@ -1614,9 +1622,12 @@ inline u32 cap_park_y(int x, u32 y) {
 // and FUN_054108B0 (line 2 : (pos, text, size), ret 0xC). Both are detoured : what the client is about to draw is
 // written to a buffer (one frame : the poller takes it and starts a new one) ; the client still draws (step 1) ----
 struct PlateW { NativePlate p[160]; int n; };
+volatile bool g_passOurs = false;          // this names pass : AioHUD draws the plates at its end (the client's skipped)
+PlatePassDrawer g_passDrawer = 0; DWORD g_passMs = 0;   // the UI's drawer ; when it last ran
 PlateW g_plW; NativePlates g_plates;
 volatile bool g_platesTake = false;   // AioHUD drew the last frame's plates : the client draws none (its line draws return at once)
-bool g_platesWant = false; bool g_platesBoth = false; u32 g_scrBlk = 0;   // the screen / camera block's global (*it : +0x94 view, +0x154 projection)
+bool g_platesWant = false; bool g_platesBoth = false; int g_platesDev = -1;   // (g_platesDev : the dev command's choice, -1 = the config's)
+u32 g_scrBlk = 0;   // the screen / camera block's global (*it : +0x94 view, +0x154 projection)
 typedef u32 (__fastcall* Plate1Fn)(u32 actor, u32 edx, u32 pos, u32 text, u32 size, u32 colour, u32 tint);
 typedef u32 (__fastcall* Plate2Fn)(u32 actor, u32 edx, u32 pos, u32 text, u32 size);
 static NativePlate* plate_slot(u32 actor) {
@@ -1630,7 +1641,7 @@ u32 __fastcall hk_plate1_body(u32 actor, u32 edx, u32 pos, u32 text, u32 size, u
                 strncpy((char*)P->text, (const char*)text, sizeof(P->text) - 1); P->entity = *(const u32*)(actor + 0x70); }
         __except (EXCEPTION_EXECUTE_HANDLER) {}
     }
-    if (g_platesTake) return 0;            // ours : the client's line 1 is not drawn
+    if (g_platesTake || g_passOurs) return 0;   // ours : the client's line 1 is not drawn
     return ((Plate1Fn)g_hkPlate1.tramp)(actor, edx, pos, text, size, colour, tint);
 }
 u32 __fastcall hk_plate1(u32 actor, u32 edx, u32 pos, u32 text, u32 size, u32 colour, u32 tint) {   // relay_enter / relay_leave (R1)
@@ -1638,7 +1649,7 @@ u32 __fastcall hk_plate1(u32 actor, u32 edx, u32 pos, u32 text, u32 size, u32 co
 }
 u32 __fastcall hk_plate2_body(u32 actor, u32 edx, u32 pos, u32 text, u32 size) {
     if (NativePlate* P = plate_slot(actor)) { __try { strncpy((char*)P->line2, (const char*)text, sizeof(P->line2) - 1); } __except (EXCEPTION_EXECUTE_HANDLER) {} }
-    if (g_platesTake) return 0;
+    if (g_platesTake || g_passOurs) return 0;
     return ((Plate2Fn)g_hkPlate2.tramp)(actor, edx, pos, text, size);
 }
 u32 __fastcall hk_plate2(u32 actor, u32 edx, u32 pos, u32 text, u32 size) {   // relay_enter / relay_leave (R1)
@@ -1656,8 +1667,49 @@ void plates_ensure() {
     windower::debug::log("NATIVEUI name plates : line 1 %s, line 2 %s (try %d)%s", g_hkPlate1.on ? "hooked" : "NOT hooked", g_hkPlate2.on ? "hooked" : "NOT hooked", tries,
                          (!g_hkPlate1.on && tries == 20) ? " -- giving up : the client's plates stay, AioHUD draws none" : "");
 }
+// the NAMES PASS (nameplate-re s.1 : FUN_053C17F0, cdecl, no argument) : the client's plates are captured during it ; at
+// its end, while the scene's depth is still there, AioHUD's drawer draws them (depth-tested). Its own render states are
+// the drawer's business (a state block around it, ui side)
+NativePlates g_passPl;
+typedef u32 (__cdecl* NamesFn)();
+u32 __cdecl hk_names_body() {
+    g_passOurs = g_passDrawer && g_platesWant && !g_platesBoth && g_hkPlate1.on && g_scrBlk;
+    g_plW.n = 0;                                   // this pass's plates, from now
+    const u32 r = ((NamesFn)g_hkNames.tramp)();
+    if (g_passOurs) {
+        u32 blk = 0, dev = 0, d0 = 0;
+        g_passPl.camOk = safe_read(g_scrBlk, &blk) && valid_ptr(blk) && rdblk(blk + 0x94, g_passPl.view, 64) && rdblk(blk + 0x154, g_passPl.proj, 64);
+        g_passPl.ok = true; g_passPl.wanted = true; g_passPl.both = false;
+        g_passPl.n = g_plW.n; if (g_plW.n) memcpy(g_passPl.p, g_plW.p, sizeof(NativePlate) * (size_t)g_plW.n);
+        static u32 devVar = 0; if (!devVar) { const u32 a = aob_masked("A1 ?? ?? ?? ?? 83 38 60 0F 85 ?? ?? ?? ?? 8B 0D ?? ?? ?? ?? 56 6A 01 6A 0E"); if (a) safe_read(a + 0x10, &devVar); }   // the "8B 0D [dev holder]" operand
+        if (devVar && safe_read(devVar, &d0) && valid_ptr(d0) && safe_read(d0 + 0x0C, &dev) && valid_ptr(dev) && g_passPl.camOk) {
+            __try { g_passDrawer(dev, g_passPl); g_passMs = GetTickCount(); }
+            __except (EXCEPTION_EXECUTE_HANDLER) { static int said = 0; if (said++ < 3) windower::debug::log("NATIVEUI name plates : the drawer FAULTED in the names pass -- the client's plates come back"); g_passDrawer = 0; }
+        }
+    }
+    return r;
+}
+u32 __cdecl hk_names() { relay_enter(); const u32 r = hk_names_body(); relay_leave(); return r; }   // relay_enter / relay_leave (R1)
+void names_ensure() {
+    static int tries = 0; static DWORD next = 0;
+    if (g_hkNames.on || tries >= 20 || (int)(GetTickCount() - next) < 0) return;
+    ++tries; next = GetTickCount() + 5000;
+    const u32 a = aob_masked("A1 ?? ?? ?? ?? 83 38 60 0F 85 ?? ?? ?? ?? 8B 0D ?? ?? ?? ?? 56 6A 01 6A 0E");   // unique Nov + June
+    // its prologue = mov eax, [the game state] : read off the client -- or, when a previous load's relay JMP sits there (it
+    // stays for life, R1), off that relay's saved original bytes (2026-11-26 : after a reload the JMP was read, refused)
+    bool proOk = false;
+    if (a && rdblk(a, PRO_NAMES, 5)) {
+        if (PRO_NAMES[0] == 0xE9) { int rel = 0; memcpy(&rel, PRO_NAMES + 1, 4); const u32 blk = (u32)(a + 5 + rel) - RELAY_OFF_STUB; proOk = rdblk(blk + RELAY_OFF_ORIG, PRO_NAMES, 5) && PRO_NAMES[0] == 0xA1; }
+        else proOk = PRO_NAMES[0] == 0xA1;
+    }
+    if (proOk) { g_hkNames.at = a; g_hkNames.dst = (void*)&hk_names; hook_on(g_hkNames); }
+    windower::debug::log("NATIVEUI name plates : the names pass %s (try %d)", g_hkNames.on ? "hooked -- AioHUD's plates drawn inside it, depth-tested" : "NOT hooked", tries);
+}
 void plates_poll() {
+    if (g_platesDev < 0) { g_platesWant = ui_config().plShow != 0; g_platesBoth = false; }   // Game UI -> the name plates (the dev command wins while used)
+    if (!g_platesWant && !g_hkPlate1.on) return;                // never asked : no hook at all
     plates_ensure();
+    names_ensure();
     g_platesTake = false;                  // re-armed by the UI's draw of this frame (a draw that stops gives the plates back)
     { static int tries = 0; static DWORD next = 0;   // the camera block (nameplate-re s.7) : bounded retry, said
       if (!g_scrBlk && tries < 20 && (int)(GetTickCount() - next) >= 0) { ++tries; next = GetTickCount() + 5000; const u32 a = aob_masked("A1 ?? ?? ?? ?? 66 8B 40 18");
@@ -2754,7 +2806,7 @@ void rescue_children(u32 mgr, int hide) {
                              || (g_dlv.box && (!strcmp(nm, "post1") || !strcmp(nm, "post2") || !strcmp(nm, "delivery") || !strcmp(nm, "stringdl") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || !strcmp(nm, "inventor")
                                                || (g_dlv.gilUp && !strcmp(nm, "moneyctr")) || (g_dlv.qtyUp && !strcmp(nm, "itemctrl"))))
                              || (g_shop.owner && ((g_shop.owner == 1 && !strcmp(nm, "shopmain")) || (g_shop.owner == 2 && !strcmp(nm, "guildsho")) || (g_shop.owner == 4 && !strcmp(nm, "bazaar"))
-                                                  || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl"))))))
+                                                  || (g_shop.open && (!strcmp(nm, "shop") || !strcmp(nm, "iteminfo") || !strcmp(nm, "money") || (g_shop.qtyOk && !strcmp(nm, "itemctrl")) || (g_shop.priceUp && !strcmp(nm, "moneyctr"))))))
                              || (g_auc.up && !g_aucNot && (auc_menu_name(nm) || !strcmp(nm, "auclist") || !strcmp(nm, "auchisto") || !strcmp(nm, "iteminfo")
                                                            || !strcmp(nm, "moneyctr") || !strcmp(nm, "money") || !strcmp(nm, "inventor")))
                              || [&]() { for (int i = 0; i < g_gen.n; ++i) if (!strcmp(nm, g_gen.m[i].name)) return true; for (int i = 0; i < g_gen.np; ++i) if (!strcmp(nm, g_gen.p[i].name)) return true; return (g_gen.grid && !strcmp(nm, g_gen.gm.name)) || (g_gen.list && (!strcmp(nm, g_gen.listName) || (g_gen.anyItem && !strcmp(nm, "iteminfo")) || (!strcmp(g_gen.listName, "msglist") && !strcmp(nm, "titlehan")))); }()
@@ -3757,6 +3809,12 @@ void shop_poll(bool on, u32 mgr) {
         }
     }
     if (S.open) { NativeItems q; memset(&q, 0, sizeof(q)); qty_read(mgr, focus, q); S.qtyOk = q.qtyOk; S.qtyFocused = q.qtyFocused; S.qtyVal = q.qtyVal; S.qtyMax = q.qtyMax; }
+    // your bazaar -> Set prices -> a row : the unit price (moneyctr, the auction's box : +0x20 the edited digit's step, +0x24 max,
+    // +0x28 value). Ours under the list -- the client's was drawn UNDER our list (2026-11-26 : the price unseen while typed)
+    if (S.open && S.owner == 4) if (const u32 m = win_named(mgr, "moneyctr")) { u32 h = 0;
+        if (safe_read(m + OBJ_HANDLER, &h) && valid_ptr(h) && safe_read(h + 0x20, &S.priceDigit) && safe_read(h + 0x24, &S.priceMax) && safe_read(h + 0x28, &S.priceVal) && S.priceVal <= S.priceMax) { S.priceUp = true; S.priceFocused = focus == m; }
+        static int saidP = 0; static bool wasP = false;
+        if (S.priceUp != wasP && saidP < 12) { ++saidP; wasP = S.priceUp; windower::debug::log("NATIVEUI shop : your bazaar's price box %s (value %u, max %u, digit %u)", S.priceUp ? "read, AioHUD draws it" : "UNREADABLE -- the client's shows", S.priceVal, S.priceMax, S.priceDigit); } }
     g_shopUp = S.open;
     g_shop = S;
 }
@@ -5027,7 +5085,14 @@ const NativeMacroBooks& native_macro_books() { return g_mbk; }
 unsigned native_manager() { return manager(); }
 const NativePlates& native_plates() { return g_plates; }
 void native_plates_drawn() { g_platesTake = !g_platesBoth; }   // comparison : the client's stay
-void native_plates_want(int on) { g_platesWant = on != 0; g_platesBoth = on == 2; windower::debug::log("NATIVEUI name plates : AioHUD's %s", on == 2 ? "ON + the client's (comparison : ours drawn under theirs)" : on ? "ON (the client's skipped)" : "off (the client's)"); }
+void native_plates_set_drawer(PlatePassDrawer fn) { g_passDrawer = fn; }
+int g_plFontSel = -1; unsigned g_plFontMs = 0;
+void native_plates_font(int step) {
+    if (step == -1000) g_plFontSel = -1; else if (step >= 1000) g_plFontSel = step - 1000; else g_plFontSel = (g_plFontSel < 0 ? 0 : g_plFontSel) + step;
+    g_plFontMs = GetTickCount(); }
+int native_plates_font_sel(unsigned& changedMs) { changedMs = g_plFontMs; return g_plFontSel; }
+bool native_plates_in_pass() { return g_hkNames.on && g_passDrawer && g_platesWant && !g_platesBoth && (int)(GetTickCount() - g_passMs) < 500; }
+void native_plates_want(int on) { g_platesDev = on; g_platesWant = on != 0; g_platesBoth = on == 2; windower::debug::log("NATIVEUI name plates : AioHUD's %s", on == 2 ? "ON + the client's (comparison : ours drawn under theirs)" : on ? "ON (the client's skipped)" : "off (the client's)"); }
 void native_plates_probe() {
     windower::debug::log("PLATES %d this frame (hooked %d)", g_plates.n, g_plates.ok ? 1 : 0);
     for (int i = 0; i < g_plates.n && i < 24; ++i) { const NativePlate& P = g_plates.p[i]; char t[80]; int o = 0;
@@ -6048,7 +6113,7 @@ void native_ui_tick(bool inWorld) {
     if (!(inWorld && (c.nuHide & NU_MAIN))) { g_mainM.open = false; g_mainSub.open = false; g_mainSort.open = false; g_mainNative = false; }
     // only while a character is in the world : the title, login and char-select menus are the client's own business
     const bool docking = c.chDock && c.chShow[0] && (c.chDock == 2 || c.chDockRect[2] > 0.0f);   // the game's input line : under / inside AioHUD's chat box
-    const bool wanted = inWorld && (c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0 || docking);
+    const bool wanted = inWorld && (c.nuHide != 0 || c.nuMenuDx != 0 || c.nuMenuDy != 0 || docking || c.plShow);   // plShow : the names alone (audit 2026-11-26 : they never polled without another window)
     // A crashed session's undo file must be honoured even when nothing is configured any more -- otherwise the
     // early-out below would never resolve, and the records it names would stay shifted until the client restarts.
     static int pendingRecovery = -1;
@@ -6190,7 +6255,7 @@ void native_ui_shutdown() {
     // the d_msg text files kept for the session (Job Points, abilities) : nothing freed them at the unload (2026-11-23)
     for (Dmsg& D : g_dm) { if (D.buf) dat_free_file(D.buf); D.buf = 0; D.ok = false; D.tries = 0; }
     text_capture_off();       // the text capture : ALWAYS off at an unload (its relays back to the original)
-    hook_off(g_hkPlate1); hook_off(g_hkPlate2); g_platesTake = false;   // the name plates : ALWAYS off at an unload -- their relays
+    hook_off(g_hkNames); hook_off(g_hkPlate1); hook_off(g_hkPlate2); g_platesTake = false; g_passOurs = false; g_passDrawer = 0;   // the name plates : ALWAYS off at an unload -- their relays
                               // back to the client's code (2026-11-26 : forgotten here, the next name drawn jumped into the
                               // unloaded DLL and the client crashed)
     hook_off(g_hkEvent);      // the trade's lines : ALWAYS off at an unload

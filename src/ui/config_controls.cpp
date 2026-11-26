@@ -540,6 +540,7 @@ bool arrow_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
 // A labeled selector row :  "Label            <     value     >".  ONE continuous glass capsule (not
 // three boxed sub-controls) : the chevrons live at the two ends and light up with a round accent glow on
 // hover, the value floats in the middle. uid = animation base (uid*2 / uid*2+1 -> the two ends).
+extern bool g_selChanged;
 int row_selector(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                         float x, float y, float w, const char* label, const char* value) {
     const float rowH = snap(40.0f);
@@ -579,8 +580,11 @@ int row_selector(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
 
     if (lh && click) delta = -1;
     if (rh && click) delta = +1;
+    if (delta) g_selChanged = true;   // the page saves once its rows are drawn (cfg_take_select_change)
     return delta;
 }
+bool g_selChanged = false;
+bool cfg_take_select_change() { const bool r = g_selChanged; g_selChanged = false; return r; }
 int wrap(int v, int n) { if (v < 0) return n - 1; if (v >= n) return 0; return v; }
 
 // A labeled SLIDER row :  "Label        [===O      ]  value". Drag the track/knob to set. Updates

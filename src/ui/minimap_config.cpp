@@ -27,7 +27,7 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
 
         // ===== sub-section : DISPLAY =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
-        const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
+        const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
         ROW_NEXT(42.0f)
@@ -51,20 +51,21 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
                 float v = lo + v01 * (hi - lo); c.mmZoom = v < lo ? lo : (v > hi ? hi : v); }
         }
         ROW_NEXT(46.0f)
-        // Background opacity (0 = transparent, the game shows through)
-        { ROW_BAND(46.0f)
+        // Background opacity (0 = transparent, the game shows through) -- not under a themed square frame, which paints
+        // its own interior (minimap.cpp themedOk : square + Box Theme, the default)
+        if (!(c.mmShape == 0 && c.mmFrame == 1 && c.mmLayout != 2)) { ROW_BAND(46.0f)
             char b[16]; sprintf(b, "%d%%", (int)(c.mmBgAlpha * 100.0f + 0.5f));
             float v01 = clampf(c.mmBgAlpha, 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Map background", "Fond carte"), b, &v01)) c.mmBgAlpha = v01;
+          ROW_NEXT(46.0f)
         }
-        ROW_NEXT(46.0f)
             cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
         }   // end Display
         ry += snap(16.0f);                                 // air between this section and the next title bar
 
         // ===== sub-section : SHAPE & FRAME =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
-        const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
+        const float aF7_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[7]));
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Shape & Frame", "Forme & Cadre"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
         ROW_NEXT(42.0f)
@@ -85,16 +86,20 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Frame", "Cadre"), tr(FR_EN[fr], FR_FR[fr]))) { c.mmFrame = wrap(fr + d, 3); save_ui_config(); }
         }
         ROW_NEXT(52.0f)
-        if (c.mmFrame == 2)   // custom frame colour : HSV picker
+        if (c.mmFrame == 2) {   // custom frame colour : HSV picker (braced : the macro's ROW_NEXT ran even when hidden -- the gap)
             CFG_COLOR_PICKER(&c.mmFrameColor)
+        }
         // --- per-shape frame thickness / bezel options ---
-        if (c.mmShape == 1) {   // ROUND : brass bezel ring
+        const bool dialSqC = c.mmLayout == 2 && c.mmShape == 0;   // the square watch case (minimap.cpp dialSq)
+        if (c.mmShape == 1 && (c.mmClock || c.mmLayout == 2)) {   // ROUND : brass bezel ring (drawn only with the clock header, or the Dial)
             if (c.mmLayout != 2) { ROW_TOGGLE(CTRL_ID, tr("Bezel ring", "Anneau bordure"), c.mmBezel) }   // (the Dial IS its bezel : no toggle)
             if (c.mmBezel || c.mmLayout == 2) {
                 MM_PCT_SLIDER(CTRL_ID, tr("Bezel width", "Largeur anneau"), c.mmBezelW, 0.50f, 2.00f)
                 MM_PCT_SLIDER(CTRL_ID, tr("Cardinal size", "Taille cardinaux"), c.mmCardSz, 0.50f, 2.00f)
             }
-        } else {                // SQUARE : frame/border thickness
+        } else if (dialSqC) {   // the SQUARE DIAL : its case band (mmBezelW -- the square border slider is not read there)
+            MM_PCT_SLIDER(CTRL_ID, tr("Case width", "Largeur du bo\xC3\xAEtier"), c.mmBezelW, 0.50f, 2.00f)
+        } else if (c.mmShape == 0 && c.mmFrame == 2) {   // SQUARE : the border thickness -- read only for a CUSTOM frame
             MM_PCT_SLIDER(CTRL_ID, tr("Border width", "Largeur bordure"), c.mmSqBorder, 0.50f, 2.00f)
         }
             cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
@@ -103,6 +108,7 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
 
         // ===== sub-section : CLOCK (Vana'diel header) =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const float aF9_ = cat_fold(CTRL_ID, catOpen_[9]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[9], aF9_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Clock", "Horloge"), catOpen_[9], aF9_)) catOpen_[9] = !catOpen_[9];
@@ -216,9 +222,11 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
             cat_fold_end(dev, ry, top9_, catH_[9], aF9_);
         }   // end Clock
         ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
 
         // ===== sub-section : MARKERS =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const float aF8_ = cat_fold(CTRL_ID, catOpen_[8]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[8], aF8_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Markers", "Marqueurs"), catOpen_[8], aF8_)) catOpen_[8] = !catOpen_[8];
@@ -237,8 +245,9 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         ROW_TOGGLE(CTRL_ID, tr("Monsters", "Monstres"),         c.mmMob)
         // --- Target line : you -> your <t> target ---
         ROW_TOGGLE(CTRL_ID, tr("Target line", "Ligne cible"), c.mmTgtLine)
-        if (c.mmTgtLine)
+        if (c.mmTgtLine) {
             CFG_COLOR_PICKER(&c.mmTgtLineCol)
+        }
         // --- Range ring : a pull / aggro distance gauge around you ---
         ROW_TOGGLE(CTRL_ID, tr("Range ring", "Anneau de port\xC3\xA9""e"), c.mmRing)
         if (c.mmRing) {
@@ -253,17 +262,20 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
         }
         // --- the native compass's pieces : the Wide Scan tracked target, the map grid square ---
         ROW_TOGGLE(CTRL_ID, tr("Wide Scan track", "Suivi Wide Scan"), c.mmScan)
-        if (c.mmScan)
+        if (c.mmScan) {
             CFG_COLOR_PICKER(&c.mmScanCol)
+        }
         if (!(c.mmLayout == 2 && c.mmDayDial == 2)) { ROW_TOGGLE(CTRL_ID, tr("Map square (F-10)", "Case de carte (F-10)"), c.mmGrid) }   // (the Dial : in its modules' group)
             cat_fold_end(dev, ry, top8_, catH_[8], aF8_);
         }   // end Markers
 
         ry += snap(16.0f);
+}   // end Advanced only
     #undef MM_PCT_SLIDER
 
 
         // ===== sub-section : TEXT (clock typography) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const float aF5b_ = cat_fold(CTRL_ID, catOpen_[5] && c.mmClock);   // the section FOLDS -- and with the feature off there is nothing to reveal
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5b_));
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5b_)) catOpen_[5] = !catOpen_[5];
@@ -283,6 +295,8 @@ void ConfigPage::draw_minimap_config(u32 dev, Font* fo, const MouseState* mo, bo
             cat_fold_end(dev, ry, top5b_, catH_[5], aF5b_);
         }   // end Text
         ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
+    if (!ui_config().cfgAdv) SIMPLE_MORE   // Simple : where the rest is
     #undef ROW_BAND
     #undef ROW_NEXT
 }

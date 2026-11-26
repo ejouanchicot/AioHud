@@ -62,6 +62,14 @@
 #define ROW_NOTE(TXT) { { ROW_BAND(34.0f) fo->begin(dev); \
     fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(14.0f), (TXT), snap(12.0f), fa(C_MUTE), fa(C_STROKE), 1.0f); } ROW_NEXT(34.0f) }
 
+// SIMPLE mode's cards (the config's depth, ui_config().cfgAdv == 0, 2026-11-26) : a section ALWAYS OPEN, no fold to
+// click -- a module's essentials on one screen. Its height lives in a static of the call site (each expansion is its
+// own), so a card costs no catOpen_ / catH_ slot. The header gets its own spring (ctrl_uid_i) : one uid per ease().
+#define SIMPLE_CARD(TITLE) { static float hS_ = 0.0f; const float aS_ = cat_fold(CTRL_ID, true);     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(hS_, aS_));     cat_header(dev, fo, mo, false, ::aio::ctrl_uid_i(CTRL_ID, 1), hdrX, ry, hdrW, (TITLE), true, aS_);     ROW_NEXT(42.0f) const float topS_ = ry; cat_fold_clip(dev, hdrX, topS_, hdrW, hS_ * aS_);
+#define SIMPLE_CARD_END cat_fold_end(dev, ry, topS_, hS_, aS_); } ry += snap(16.0f);
+// the last line of a Simple page : where the rest is
+#define SIMPLE_MORE ROW_NOTE(tr("More settings (frame, text, fine sizes) : Advanced, top right.", "Plus de r\xC3\xA9""glages (cadre, texte, tailles fines) : Avanc\xC3\xA9"", en haut \xC3\xA0"" droite."))
+
 // Two-state chip rows whose labels are NOT On/Off ("Fused"/"Separate", "Standalone"/"In Player", ...).
 #define ROW_CHOICE(UID, LABEL, FIELD, ON, OFF)     { ROW_BAND(48.0f) row_choice(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD), (ON), (OFF)); } ROW_NEXT(48.0f)
 #define ROW_CHOICE_G(UID, LABEL, FIELD, ON, OFF, BAND, ROWH, CHIPW)     { ROW_BAND(BAND) row_choice(dev, fo, mo, click, UID, coX, ry + yo, ctrlW, LABEL, &(FIELD), (ON), (OFF), (ROWH), (CHIPW)); } ROW_NEXT(BAND)

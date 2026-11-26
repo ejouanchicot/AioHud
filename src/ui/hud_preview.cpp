@@ -255,6 +255,7 @@ void Hud::draw_config_preview(const Frame& f) {
     // Game UI module -> the redrawn action menu + its submenu, at TRUE in-game size (shrunk only to fit the stage)
     if (config_.section() == 15) {
         float sx = 0, sy = 0, sw = 0, sh = 0; config_.preview_rect(sx, sy, sw, sh);
+        if (config_.cat_is_open(26)) { plates_sample(f, sx, sy, sw, sh); return; }   // the names section : sample name plates
         float s = (screenH_ / 1000.0f), w = 0.0f, h = 0.0f;
         nui_sample(f, 0.0f, 0.0f, s, false, &w, &h);
         if (w > sw * 0.94f && w > 0.0f) { const float k = (sw * 0.94f) / w; s *= k; h *= k; }

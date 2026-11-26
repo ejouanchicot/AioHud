@@ -7,7 +7,8 @@
 #include "ui/liquid_bars.h"   // borrow the real fiole assets for the "Vial" gauge style
 #include "ui/ui_colors.h"     // lerp_color / hp_color / scl : shared ARGB helpers (widgets' truncating versions)
 #include "ui/text_style.h"       // te_* + fit_ellipsis (the ONE width-driven truncation)
-#include "ui/party_internal.h"   // snap / lt / shine_sweep / setup_*_state / vgrad / rrnd (shared with party_gauges.cpp)
+#include "ui/party_internal.h"
+#include "ui/box_style.h"      // box_ffxi_skin : the alliance's own FFXI skin   // snap / lt / shine_sweep / setup_*_state / vgrad / rrnd (shared with party_gauges.cpp)
 #include "gfx/draw.h"
 #include "gfx/font.h"
 #include "gfx/texture.h"
@@ -880,8 +881,8 @@ void Party::draw(const Frame& f) {
     g_frameAccent = tier_ == 0;                                 // the party box : a theme kit's signature corner (theme_kit test)
     if (window_theme_is_proc(boxTheme)) {                       // procedural colour theme (no game texture)
         draw_proc_window(dev, boxTheme, px, boxOy, w, boxH, skinTint, false, drawBorder, boxLum, boxHue);
-    } else if (f.skin && f.skin->ready()) {                     // FFXI native window skin (9-slice) : bg always, frame optional
-        draw_window(dev, *f.skin, px, boxOy, w, boxH, skinTint, S, false, drawBorder);
+    } else if (const WindowSkin* sk = allyOwn ? box_ffxi_skin(dev, window_theme_variant(boxTheme)) : f.skin; sk && sk->ready()) {   // FFXI native skin (9-slice) : the alliance's OWN variant when it has one (audit 2026-11-26)
+        draw_window(dev, *sk, px, boxOy, w, boxH, skinTint, S, false, drawBorder);
     } else {                                                    // fallback : the built-in navy chrome (AA rounded)
         const float R = snap(6.0f);
         if (drawBorder)

@@ -18,6 +18,7 @@ void draw_themed_box(u32 dev, const WindowSkin* partySkin, float x, float y, flo
 inline float box_inset(const BoxStyle& bs) { return bs.on ? frame_inset() : 0.0f; }
 // the box's EFFECTIVE chrome opacity : the party box's unless this box has its own (BoxStyle::alphaOwn)
 float box_alpha(const BoxStyle& bs);
+const WindowSkin* box_ffxi_skin(u32 dev, int variant);   // one FFXI window skin per variant, lazily loaded (a box on its OWN FFXI theme)
 
 // The box's effective FRAME colour (RGB, alpha 0xFF), resolving Same-as-Party / procedural-hue / FFXI-skin -> tint an
 // inner accent (e.g. the Skillchains "Nuke:" outline) to MATCH the box border. Soft-blue fallback while a skin loads.

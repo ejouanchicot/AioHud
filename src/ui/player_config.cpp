@@ -28,7 +28,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         // ===== sub-section : DISPLAY (box chrome + size). No outer "Player" wrapper -- opens straight into its
         //       sub-sections like every other module (the sidebar already names the module). =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
-        const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
+        const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
         ROW_NEXT(42.0f)
@@ -49,6 +49,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         }   // end sub-section Box (catOpen_[6])
         ry += snap(16.0f);                                 // air between this section and the next title bar
     // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
@@ -122,9 +123,10 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
     }   // end Frame
     ry += snap(16.0f);
+}   // end Advanced only
         // ---- sub-section : Content (what the hub shows) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
-        const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
+        const float aF7_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[7]));
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
         ROW_NEXT(42.0f)
@@ -150,6 +152,7 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
         ry += snap(16.0f);                                 // air between this section and the next title bar
         // ---- sub-section : Identity (the job emblem is an icon -> size only) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const float aF11_ = cat_fold(CTRL_ID, catOpen_[11]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[11], aF11_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Identity", "Identité"), catOpen_[11], aF11_)) catOpen_[11] = !catOpen_[11];
@@ -168,8 +171,10 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, top11_, catH_[11], aF11_);
         }   // end sub-section Identity (catOpen_[11])
         ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
         // ---- sub-section : Bars (fiole size) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const float aF8_ = cat_fold(CTRL_ID, catOpen_[8]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[8], aF8_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Bars", "Barres"), catOpen_[8], aF8_)) catOpen_[8] = !catOpen_[8];
@@ -204,7 +209,9 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, top8_, catH_[8], aF8_);
         }   // end sub-section Bars (catOpen_[8])
         ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
         // ---- sub-section : Buffs (only meaningful when Buffs are shown) ----
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const float aF9b_ = cat_fold(CTRL_ID, catOpen_[9] && ui_config().plrBuffs);   // the section FOLDS -- and with the feature off there is nothing to reveal
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[9], aF9b_));
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), catOpen_[9], aF9b_)) catOpen_[9] = !catOpen_[9];
@@ -232,7 +239,9 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, top9b_, catH_[9], aF9b_);
         }   // end sub-section Buffs (catOpen_[9])
         ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
         // ---- sub-section : Equipment (the gear grid) ----
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const float aF12b_ = cat_fold(CTRL_ID, catOpen_[12] && ui_config().plrEquip);   // the section FOLDS -- and with the feature off there is nothing to reveal
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[12], aF12b_));
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Equipment", "Équipement"), catOpen_[12], aF12b_)) catOpen_[12] = !catOpen_[12];
@@ -300,9 +309,11 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, top12b_, catH_[12], aF12b_);
         }   // end sub-section Equipment (catOpen_[12])
         ry += snap(16.0f);
+}   // end Advanced only
 
         // ---- Typography sub-section : per-element Font / Size / Outline / Style / Colour (Name / Level) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
@@ -322,6 +333,8 @@ void ConfigPage::draw_player_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
         }   // end Text sub-section (catOpen_[5])
         ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
+    if (!ui_config().cfgAdv) SIMPLE_MORE   // Simple : where the rest is
 
     #undef ROW_BAND
     #undef ROW_NEXT

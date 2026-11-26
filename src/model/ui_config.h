@@ -380,6 +380,14 @@ struct UiConfig {
     float     muScale = 1.0f;              // their size (every dimension, text included) : 0.6 .. 1.6
     int       muGrow  = 0;                 // a submenu taller than its menu grows : 0 = upward (bottoms level), 1 = downward
     int       muMainPos = 0;               // the MAIN menu (NU_MAIN) : 0 = where the game puts it (top right), 1 = top left
+    int       plShow = 0;                  // the NAME PLATES over the characters drawn by AioHUD (0 = the game's)
+    int       plFont = 0;                  // their font : an index into the UI's plate-font list (plate_font_count / _label)
+    float     plSize = 1.0f, plIcon = 1.0f, plStar = 1.0f;   // their text / icons (pearl...) / Master Level stars : x 0.6 .. 1.6
+    int       plStyle = 0;                 // the name : 2 italic, 4 CAPS ; bits 8.. the WEIGHT (0 the font's own, 1 ultra-thin, 2 thin,
+                                           // 3 semi-bold, 4 bold) ; bit 1 (an older bold) = 4 ;
+                                           // 0x1000 FIXED size : every name at the thin far-name size (no distance scaling)
+    float     plGap = 1.0f, plStarY = 1.0f, plStarX = 1.0f;  // where : the icons' gap before the name (in capital W, 0 .. 3), the stars' height
+                                                             // above it and their spread (x 0.5 .. 2)
     // transient (not saved) : each box's rect as screen fractions + its pending wheel, for the mouse callback
     // (clicks on a chat box never reach the game ; the wheel scrolls its history). Written every frame it draws.
     float chHit[2][4] = { { 0, 0, 0, 0 }, { 0, 0, 0, 0 } };
@@ -787,6 +795,8 @@ struct UiConfig {
     float      zonePanelX = -1.0f, zonePanelY = -1.0f;   // draggable Zones panel top-left (fraction ; -1 = default top-right)
     // ---- Global ----
     int   lang = 0;            // config UI language : 0 = English, 1 = French (toggle in the config header)
+    int   cfgAdv = 0;          // the config's depth : 0 SIMPLE (the essentials of each module), 1 ADVANCED (every setting) ;
+                               // a preference of the config itself -- not a profile's, kept across a reset (as lang)
     // The in-game safety harness (model/selftest.h). OFF by default and shipped that way: it costs a pass
     // over the registered checks every 30 s, which is nothing, but a watcher nobody armed writing files
     // into someone's plugins folder is not a default anyone asked for. `//aio selftest on` arms it, and it

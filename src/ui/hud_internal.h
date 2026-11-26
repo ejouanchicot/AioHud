@@ -106,7 +106,11 @@ void map_screen_draw(const Frame& f);   // hud_actmenu.cpp : the map (mapframe's
 void map_screen_forget();
 bool map_screen_up();                  // ... shown this frame (the HUD's modules depop while it is)
 void map_screen_hud(const Frame& f);
-void plates_draw(const Frame& f);      // hud_actmenu.cpp : the name plates over the characters (under the widgets)
+void plates_draw(const Frame& f);
+void plates_sample(const Frame& f, float sx, float sy, float sw, float sh);   // the config's preview of the name plates
+struct PlateFont { const char* face; int w; };
+int plate_font_count();                // the name plates' fonts (Game UI -> Name plates font)
+const char* plate_font_label(int i);      // hud_actmenu.cpp : the name plates over the characters (under the widgets)
 void map_list_draw(const Frame& f);
 void friends_draw(const Frame& f);
 void olstat_draw(const Frame& f);      // ... its Online Status (olstat) : 3 icon buttons in a row     // hud_actmenu.cpp : Communication -> Friend List (friend)     // ... its Markers list (mapv3)    // ... its cartouche (the zone, the floor, your square), in the screens' pass               // ... its texture, on a device change

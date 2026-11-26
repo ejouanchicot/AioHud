@@ -799,6 +799,25 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
             fo->draw_c(dev, sx + segW * 0.5f, ly + lh * 0.5f, seg[i], snap(13.0f), fa(segTxt), fa(segStk), 1.0f);   // ON : legible on ANY accent, not always white
             if (hov && click && !on) { ui_config().lang = i; save_ui_config(); }
         }
+        // SIMPLE | ADVANCED, left of the language : the config's depth for EVERY page (the user 2026-11-26 : "le mode
+        // Simple / Avancé devrait être général"). Simple = each module's essentials ; Advanced = every setting.
+        // The same segment as EN | FR, so the header's two switches read as one family.
+        {
+            const char* dseg[2] = { tr("Simple", "Simple"), tr("Advanced", "Avanc\xC3\xA9""") };
+            const float dsW = snap(84.0f), dw = dsW * 2.0f, dx = lx - snap(10.0f) - dw;
+            rpanel(dev, dx, ly, dw, lh, snap(7.0f), C_CTL_T, C_CTL_B, (C_METAL & 0x00FFFFFFu) | 0x70000000u, snap(1.0f));
+            for (int i = 0; i < 2; ++i) {
+                const float sx = dx + (float)i * dsW;
+                const bool on = (ui_config().cfgAdv == i);
+                const bool hov = inrect(mo, sx, ly, dsW, lh);
+                if (on) rrect_fill(dev, sx + snap(2.0f), ly + snap(2.0f), dsW - snap(4.0f), lh - snap(4.0f), snap(5.0f), lerpc(C_ACCENT, C_ACCENTHI, pulse), C_ACCENT);
+                fo->begin(dev);
+                u32 segStk = C_STROKE; const u32 segTxt = on ? text_on_fill(lerpc(lerpc(C_ACCENT, C_ACCENTHI, pulse), C_ACCENT, 0.5f), &segStk)
+                                                              : lerpc(C_DIM, C_TEXT, hov ? 1.0f : 0.0f);
+                fo->draw_c(dev, sx + dsW * 0.5f, ly + lh * 0.5f, dseg[i], snap(13.0f), fa(segTxt), fa(segStk), 1.0f);
+                if (hov && click && !on) { ui_config().cfgAdv = i; save_ui_config(); }
+            }
+        }
     }
 
     // 5. the plate's bottom edging -- the same piece of metal as the top one, and made the same way.
@@ -1093,6 +1112,7 @@ void ConfigPage::draw(const Frame& f, float sw, float sh) {
         }   // end mouse-clip block (restores the outer mo/click)
 
         clip_rect_end(dev);
+        if (cfg_take_select_change()) save_ui_config();   // a selector changed a value : persist it (they never saved themselves)
         // THE PROFILE BAR AND THE SECTION TITLE ARE DRAWN HERE, after the content, and that is the point: they sit
         // on top. (Their click handlers already ran in place before the content, and content clicks are gated to the
         // viewport, so nothing is processed twice.) The strip is re-painted first -- which USED to be the whole
@@ -1168,7 +1188,12 @@ void ConfigPage::draw_profile_bar(u32 dev, Font* fo, const MouseState* mo, bool 
     const int nprof = profile_count();
     int cur = -1; for (int i = 0; i < nprof; ++i) if (activeProf_[0] && strcmp(profile_name(i), activeProf_) == 0) { cur = i; break; }
     const float aS = snap(28.0f), ay = barCy - aS * 0.5f, lx = coX + snap(86.0f);
-    if (arrow_btn(dev, fo, mo, click, 400, lx, ay, aS, "<") && nprof > 0) {
+    // unsaved changes : the first click only WARNS (the field says so), a second one within 4 s switches -- an arrow used
+    // to discard the work silently (the audit 2026-11-26)
+    static int armDir = 0; static unsigned armMs = 0;
+    const bool armed = armDir != 0 && GetTickCount() - armMs < 4000u; if (!armed) armDir = 0;
+    auto go_ok = [&](int dir) { if (!dirty || (armed && armDir == dir)) { armDir = 0; return true; } armDir = dir; armMs = GetTickCount(); return false; };
+    if (arrow_btn(dev, fo, mo, click, CTRL_ID, lx, ay, aS, "<") && nprof > 0 && go_ok(-1)) {
         const char* nm = profile_name((cur <= 0) ? nprof - 1 : cur - 1);
         profile_load(nm); record_char_profile(nm); strncpy(activeProf_, nm, 31); activeProf_[31] = 0;
     }
@@ -1177,13 +1202,15 @@ void ConfigPage::draw_profile_bar(u32 dev, Font* fo, const MouseState* mo, bool 
     const float fW = (nX - snap(10.0f)) - fX, fH = snap(30.0f), fY = barCy - fH * 0.5f;
     rpanel(dev, fX, fY, fW, fH, snap(7.0f), 0xE6070B13, 0xE604070D, 0x55355072, snap(1.5f));
     fo->begin(dev);
-    if (activeProf_[0]) {
+    if (armDir != 0) {
+        fo->begin(dev); fo->draw_c(dev, fX + fW * 0.5f, barCy, tr("Unsaved : click again to switch", "Non sauvegard\xC3\xA9 : reclique pour changer"), snap(12.0f), fa(0xFFFFB454), fa(C_STROKE), 1.0f);
+    } else if (activeProf_[0]) {
         if (dirty) { cs(dev); disc(dev, fX + snap(13.0f), barCy, snap(3.5f), fa(0xFFFFB454)); }
         fo->begin(dev); fo->draw_c(dev, fX + fW * 0.5f, barCy, activeProf_, snap(15.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
     } else {
         fo->draw_c(dev, fX + fW * 0.5f, barCy, tr("(none -- open the Profile tab)", "(aucun -- ouvre l'onglet Profil)"), snap(13.0f), fa(C_DIM), fa(C_STROKE), 1.0f);
     }
-    if (arrow_btn(dev, fo, mo, click, 401, nX, ay, aS, ">") && nprof > 0) {
+    if (arrow_btn(dev, fo, mo, click, CTRL_ID, nX, ay, aS, ">") && nprof > 0 && go_ok(1)) {
         const char* nm = profile_name((cur < 0 || cur >= nprof - 1) ? 0 : cur + 1);
         profile_load(nm); record_char_profile(nm); strncpy(activeProf_, nm, 31); activeProf_[31] = 0;
     }
@@ -1811,14 +1838,19 @@ void ConfigPage::draw_profile_tab(const Frame& f, u32 dev, Font* fo, const Mouse
             if (isChar) bxa += badge(dev, fo, bxa, bcy, charName,                0xFF74BCFF)  + snap(6.0f);   // blue
             const float lbw = snap(84.0f), dbw = snap(84.0f), bgap = snap(8.0f), bH = snap(32.0f);
             const float dX = pX + pW - dbw - snap(10.0f), lX = dX - bgap - lbw, bY = ry + (rowH - bH) * 0.5f;
-            if (push_btn(dev, fo, mo, click, 760 + i * 2, lX, bY, lbw, bH, tr("Load", "Charger"), 0)) {
+            if (push_btn(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, i), lX, bY, lbw, bH, tr("Load", "Charger"), 0)) {
                 profile_load(nm); record_char_profile(nm);
                 strncpy(activeProf_, nm, sizeof(activeProf_) - 1); activeProf_[sizeof(activeProf_) - 1] = 0;
                 nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; nameFocus_ = false;   // keep the create field free for a NEW profile
             }
-            if (push_btn(dev, fo, mo, click, 761 + i * 2, dX, bY, dbw, bH, tr("Delete", "Supprimer"), 1)) {
-                if (active) { activeProf_[0] = 0; nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; }
-                profile_delete(nm); profDirty_ = true;
+            // Delete : a second click within 4 s (the label asks) -- one click used to delete at once (audit 2026-11-26)
+            static int delArm = -1; static unsigned delMs = 0;
+            const bool delAsk = delArm == i && GetTickCount() - delMs < 4000u;
+            if (push_btn(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, i), dX, bY, dbw, bH, delAsk ? tr("Sure ?", "S\xC3\xBBr ?") : tr("Delete", "Supprimer"), 1)) {
+                if (!delAsk) { delArm = i; delMs = GetTickCount(); }
+                else { delArm = -1;
+                    if (active) { activeProf_[0] = 0; nameBuf_[0] = 0; nameLen_ = 0; nameCur_ = 0; }
+                    profile_delete(nm); profDirty_ = true; }
             }
         }
         g_fade = e;

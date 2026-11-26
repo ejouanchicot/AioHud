@@ -285,6 +285,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "menugrow=%d\n", c.muGrow);         // Game UI : a taller submenu grows up (0) or down (1)
     fprintf(f, "mainmenupos=%d\n", c.muMainPos);   // Game UI : the main menu at the game's place (0) or top left (1)
     fprintf(f, "menulabel=%d\n", c.muLabel);       // Game UI : the redrawn menus' rows (0 text, 1 icon + text)
+    fprintf(f, "plates=%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d\n", c.plShow, c.plFont, c.plSize, c.plIcon, c.plStar, c.plGap, c.plStarY, c.plStarX, c.plStyle);   // Game UI : the name plates drawn by AioHUD, their font
     fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d,%d,%d,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
             c.bstImage, c.bstName, c.bstHp, c.bstTp, c.bstDist, c.bstCharges, c.bstMoves, c.bstIcons, c.bstDemo, c.bstArtMode,
             c.bstArtSz, c.bstPawSz, c.bstEcoSz, c.bstChargeStyle, c.bstLayout, c.bstJa, c.bstSc);   // BST box + its elements
@@ -355,6 +356,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "dist=%d,%d,%d\n", c.dist[0] ? 1 : 0, c.dist[1] ? 1 : 0, c.dist[2] ? 1 : 0);
     fprintf(f, "distcol=%08X,%08X,%08X\n", c.distColClose, c.distColNormal, c.distColFar);   // distance-zone colours : Close / Normal / Far
     fprintf(f, "lang=%d\n", c.lang);
+    fprintf(f, "cfgadv=%d\n", c.cfgAdv);
     fprintf(f, "selftest=%d\n", c.selfTest);   // the watcher survives a reload : a harness you must re-arm is one you forget to arm
     fprintf(f, "partyRef=%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n", c.partyRef[0], c.partyRef[1], c.partyRef[2], c.partyRef[3], c.partyRef[4], c.partyRef[5]);
     fprintf(f, "partyBottom=%.5f\n", c.partyBottomY);
@@ -501,6 +503,8 @@ static bool parse_chat_line(const char* line, UiConfig& c) {
     if (!strncmp(line, "chatat=", 7)) { c.chAtColor = (unsigned)strtoul(line + 7, 0, 16) | 0xFF000000u; return true; }
     if (!strncmp(line, "chatdock=", 9)) { const int v = atoi(line + 9); c.chDock = v < 0 ? 0 : (v > 2 ? 2 : v); return true; }
     if (!strncmp(line, "menubox=", 8)) { parse_box(line + 8, c.muBox); return true; }
+    if (!strncmp(line, "cfgadv=", 7)) { c.cfgAdv = atoi(line + 7) ? 1 : 0; return true; }   // the config's depth (Simple / Advanced)
+    if (!strncmp(line, "plates=", 7)) { int a = 0, b = 0; float x = 1.0f, y = 1.0f, z = 1.0f, g = 1.0f, sy = 1.0f, sx = 1.0f; int st = 0; if (sscanf(line + 7, "%d,%d,%f,%f,%f,%f,%f,%f,%d", &a, &b, &x, &y, &z, &g, &sy, &sx, &st) >= 1) { c.plShow = a ? 1 : 0; c.plFont = b; c.plSize = x; c.plIcon = y; c.plStar = z; c.plGap = g; c.plStarY = sy; c.plStarX = sx; c.plStyle = st; } return true; }   // clamped by config_rules
     if (!strncmp(line, "menulabel=", 10)) { const int v = atoi(line + 10); c.muLabel = v == 1 ? 1 : 0; return true; }
     if (!strncmp(line, "menuscale=", 10)) { c.muScale = (float)atof(line + 10); return true; }   // clamped by config_rules
     if (!strncmp(line, "menugrow=", 9)) { const int v = atoi(line + 9); c.muGrow = v == 1 ? 1 : 0; return true; }
@@ -1324,7 +1328,9 @@ void profile_sync_poll() {
 bool profile_load(const char* name) {
     if (!name || !name[0]) return false;
     char p[300]; profile_path(name, p, sizeof(p));
+    const int adv = ui_config().cfgAdv;   // the config's depth is not a profile's (a job auto-switch flipped it)
     if (!load_config_from(p)) return false;
+    ui_config().cfgAdv = adv;
     save_ui_config();   // adopt as the live config too
     profile_mark_clean();
     set_active_profile(name);   // remember for auto-load at next startup
@@ -1451,7 +1457,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
             || a.chLines[k] != b.chLines[k] || a.chStamp[k] != b.chStamp[k] || a.chTab[k] != b.chTab[k] || !box_eq(a.chBox[k], b.chBox[k])
             || a.chBehave[k] != b.chBehave[k] || a.chIdle[k] != b.chIdle[k] || a.chFadeTo[k] != b.chFadeTo[k] || a.chH[k] != b.chH[k] || a.chFoldLines[k] != b.chFoldLines[k] || a.chMaxLines[k] != b.chMaxLines[k] || a.chFadeIdle[k] != b.chFadeIdle[k] || a.chGrow[k] != b.chGrow[k] || a.chFit[k] != b.chFit[k] || a.chDensity[k] != b.chDensity[k] || a.chHeadScale[k] != b.chHeadScale[k] || a.chTabStyle[k] != b.chTabStyle[k]) return false;
     }
-    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock || a.chAtColor != b.chAtColor || !box_eq(a.muBox, b.muBox) || a.muLabel != b.muLabel || a.muGrow != b.muGrow || a.muMainPos != b.muMainPos || a.muScale != b.muScale) return false;   // Game UI
+    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock || a.chAtColor != b.chAtColor || !box_eq(a.muBox, b.muBox) || a.muLabel != b.muLabel || a.plShow != b.plShow || a.plFont != b.plFont || a.plSize != b.plSize || a.plIcon != b.plIcon || a.plStar != b.plStar || a.plGap != b.plGap || a.plStyle != b.plStyle || a.plStarY != b.plStarY || a.plStarX != b.plStarX || a.muGrow != b.muGrow || a.muMainPos != b.muMainPos || a.muScale != b.muScale) return false;   // Game UI
     if (!text_styles_eq(a.tpText, b.tpText, TP_TE_COUNT)) return false;
     if (a.hlShow != b.hlShow || a.hlScale != b.hlScale || a.hlX != b.hlX || a.hlY != b.hlY || a.hlCount != b.hlCount || a.hlDist != b.hlDist || a.hlTgt != b.hlTgt) return false;
     if (!text_styles_eq(a.hlText, b.hlText, HL_TE_COUNT)) return false;

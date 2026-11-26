@@ -119,6 +119,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // ========================================================== FRAME =========================================================
     // The same block every module gets, because it drives the same shared code. Drawn by draw_frame_section so
     // the party box and the alliance boxes cannot drift apart -- they used to be two ~90-line copies.
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aS0_ = cat_fold(CTRL_ID, pcFrameOpen_);   // eased 0..1 : the card, the clip and ry all ride this
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[0], aS0_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), pcFrameOpen_, aS0_)) pcFrameOpen_ = !pcFrameOpen_;
@@ -133,6 +134,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         cat_fold_end(dev, ry, cTop_, pcFull_[0], aS0_);
     }   // end Frame
     ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
 
     // ========================================================== PARTY ==========================================================
     // The party box itself : whether it shows, how big, and what a member row carries. Its FRAME is the section
@@ -140,7 +142,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // the strip is one object and its editor belongs with the settings that describe it.
     // The only section that really differs between modules, so it gets the room. Grouped by the OBJECT each setting
     // acts on -- gauges, badge, buffs, cursor -- which is what turns three rows into one.
-    const float aS1_ = cat_fold(CTRL_ID, catOpen_[1]);   // eased 0..1 : the card, the clip and ry all ride this
+    const float aS1_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[1]));   // eased 0..1 : the card, the clip and ry all ride this
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[1], aS1_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party", "Party"), catOpen_[1], aS1_)) catOpen_[1] = !catOpen_[1];
     ROW_NEXT(42.0f)
@@ -209,6 +211,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // Everything about a member ROW -- its job badge, its cursor, its casts, its distance and the zone colours
     // that tint it -- as opposed to what the BOX is: size, gauge style, bar dimensions. Twelve controls
     // answering two questions is exactly the drawer this panel was elsewhere told not to be.
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aS1c_ = cat_fold(CTRL_ID, catOpen_[17]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[5], aS1c_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Party rows", "Lignes party"), catOpen_[17], aS1c_)) catOpen_[17] = !catOpen_[17];
@@ -298,13 +301,14 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         cat_fold_end(dev, ry, cTop1c_, pcFull_[5], aS1c_);
     }   // end Party content
     ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
 
     // ==================================================== ALLIANCE ====================================================
     // The SAME three sections as the party box, in the same order, holding the same kinds of thing. That is the
     // point of a grammar : what you learned one category up still applies here. Alliance has no buff strip (the game
     // never sends alliance buffs) and no selection cursor, so those simply do not appear -- a missing row is not a
     // different layout.
-    const float aS2_ = cat_fold(CTRL_ID, catOpen_[7]);   // eased 0..1 : the card, the clip and ry all ride this
+    const float aS2_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[7]));   // eased 0..1 : the card, the clip and ry all ride this
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[2], aS2_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance", "Alliance"), catOpen_[7], aS2_)) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
@@ -344,6 +348,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // These rows are PAIRED two per line (Gauge Style beside Job Badge, Bar Height beside Bar Width) to save
     // vertical space, so form and content share a physical line here and cannot be separated further without
     // unpicking that pairing. "Rows" is what the section honestly holds -- everything a row is made of.
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aS2c_ = cat_fold(CTRL_ID, catOpen_[18]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[6], aS2c_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alliance rows", "Lignes alliance"), catOpen_[18], aS2c_)) catOpen_[18] = !catOpen_[18];
@@ -412,6 +417,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         cat_fold_end(dev, ry, cTop2c_, pcFull_[6], aS2c_);
     }   // end Alliance content
     ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
     // ======================================================= BUFFS =======================================================
     // Everything about the buff strip in ONE place -- how big, how many, over how many lines, and in what order.
     // Splitting them was a failure of the panel's own rule: Content groups by the OBJECT a setting acts on, and the
@@ -419,6 +425,7 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
     // "how do my buffs show up" meant visiting two places.
     // It is also why this is a top-level section rather than a sub-section: the band is an EDITOR, and nesting it
     // one level deeper is exactly the third disclosure level the research says to avoid.
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aS4_ = cat_fold(CTRL_ID, pcBuffsOpen_);   // eased 0..1 : the card, the clip and ry all ride this
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[4], aS4_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buffs", "Buffs"), pcBuffsOpen_, aS4_)) pcBuffsOpen_ = !pcBuffsOpen_;
@@ -946,9 +953,11 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         cat_fold_end(dev, ry, cTop_, pcFull_[4], aS4_);
     }   // end Buffs
     ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
 
 
     // =========================================================== TEXT ===========================================================
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aS3_ = cat_fold(CTRL_ID, catOpen_[0]);   // eased 0..1 : the card, the clip and ry all ride this
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(pcFull_[3], aS3_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[0], aS3_)) catOpen_[0] = !catOpen_[0];
@@ -1041,6 +1050,8 @@ void ConfigPage::draw_party_config(u32 dev, Font* fo, const MouseState* mo, bool
         cat_fold_end(dev, ry, cTop_, pcFull_[3], aS3_);
     }   // end Text
     ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
+    if (!ui_config().cfgAdv) SIMPLE_MORE   // Simple : where the rest is
 
     #undef ROW_BAND
     #undef ROW_NEXT

@@ -20,7 +20,9 @@
 #include <string.h>
 #include <algorithm>
 
+unsigned g_scWsOnSphere = 0;   // (global : hud.cpp declares it at block scope)
 namespace aio {
+
 
 // ============================ SKILLCHAINS box ============================
 // per-element typography helpers (mirror the minimap clock's mm_* ) : each text element (Title / Timer / Step /
@@ -317,6 +319,7 @@ void skillchains_draw(const Frame& f, bool preview, float ovX, float ovY, float 
             const bool wOn = C.scArcade && wp.name[0] && aW < 2400u, mOn = C.scMbFx && aM < 2400u;
             if (mOn && (!wOn || aM <= aW)) { L.hitKind = 2; L.hitName = mp.name; L.hitDmg = mp.dmg; L.hitElem = mp.elem; L.hitHasDmg = mp.hasDmg != 0; L.hitMs = (float)aM; }
             else if (wOn) { L.hitKind = 1; L.hitName = wp.name; L.hitDmg = wp.dmg; L.hitMs = (float)aW; }
+            if (wOn) g_scWsOnSphere = GetTickCount();   // the sphere shows this weaponskill : the centre popup stands down
         }
         if (ovS <= 0.0f) {
             // the WHOLE content (sphere + title + list) : the edit-layout box and the keep-on-screen rect. The stored

@@ -98,7 +98,12 @@ inline void ss_dev(u32 d) { if (g_ss.dev != d) { dStateForget(); g_ss.dev = d; }
 // ---- IDirect3DDevice8 vtable helpers (call by reversed index, SEH-guarded by vmethod) ----
 // The single path every draw and state change takes : //aio perf counts here (gfx/perf.h), and only when it reached
 // the device (a null vtable slot is not a call) -- so a call the shadow drops is not counted either.
+// ---- DEPTH MODE (2026-11-26, the name plates) : a 2D draw that is HIDDEN BY THE SCENE as the client's name plates are --
+// every vertex gets this screen z (0..1, the projected depth of what it labels) and the scene's depth buffer is tested
+// (ZENABLE on, LESSEQUAL, no depth write). Off (< 0) : the normal 2D overlay (z 0, no test). dDepthBegin / dDepthEnd only.
+inline float g_drawZ = -1.0f, g_drawRhw = 1.0f; inline u32 g_drawZMode = 1;   // + the 1/w (a W-buffer compares w) ; the game's ZENABLE (1 z, 2 w)
 inline void dSetRS (u32 d, u32 s, u32 v) {
+    if (g_drawZ >= 0.0f && s == 7) v = g_drawZMode;   // D3DRS_ZENABLE : the depth mode keeps the scene's test on (its own kind)
     if (s < 256 && !g_ss.off && g_ss.dev == d && g_ss.rsK[s] && g_ss.rs[s] == v) return;   // the device already holds it
     auto f = vmethod<long(__stdcall*)(u32,u32,u32)>(d,50);
     if (f) { f(d,s,v); perf::on_rs(); if (s < 256) { ss_dev(d); g_ss.rs[s] = v; g_ss.rsK[s] = 1; } }
@@ -118,7 +123,27 @@ inline void dSetVS (u32 d, u32 fvf) {
     auto f = vmethod<long(__stdcall*)(u32,u32)>(d,76);
     if (f) { f(d,fvf); perf::on_fvf(); ss_dev(d); g_ss.fvf = fvf; g_ss.fvfK = 1; }
 }
-inline void dDrawUP(u32 d, u32 pt, u32 n, const void* v, u32 st){ auto f = vmethod<long(__stdcall*)(u32,u32,u32,const void*,u32)>(d,72); if(f) { f(d,pt,n,v,st); perf::on_draw(n); } }
+inline void dDrawUP(u32 d, u32 pt, u32 n, const void* v, u32 st){
+    auto f = vmethod<long(__stdcall*)(u32,u32,u32,const void*,u32)>(d,72); if (!f) return;
+    if (g_drawZ >= 0.0f && v && st >= 16) {   // the depth mode : a copy with z = g_drawZ (XYZRHW : z is the 3rd float)
+        const u32 nv = pt == 4 ? n * 3 : pt == 2 ? n * 2 : pt == 3 ? n + 1 : pt == 1 ? n : n + 2;   // list / lines / strip / points / strip, fan
+        static unsigned char buf[4096 * 40];
+        if (nv * st <= sizeof(buf)) {
+            memcpy(buf, v, (size_t)nv * st);
+            for (u32 i = 0; i < nv; ++i) { memcpy(buf + (size_t)i * st + 8, &g_drawZ, 4); memcpy(buf + (size_t)i * st + 12, &g_drawRhw, 4); }
+            f(d,pt,n,buf,st); perf::on_draw(n); return;
+        }
+    }
+    f(d,pt,n,v,st); perf::on_draw(n); }
+inline u32 dGetRS(u32 d, u32 st) { auto f = vmethod<long(__stdcall*)(u32,u32,u32*)>(d,51); u32 v = 0; if (f) f(d,st,&v); return v; }
+inline void dDepthBegin(u32 d, float z, float rhw = 1.0f, u32 zmode = 0) {   // zmode 0 : the game's own (read once per call)
+    g_drawZ = z < 0.0f ? 0.0f : (z > 1.0f ? 1.0f : z); g_drawRhw = rhw;
+    if (!zmode) { g_drawZ = -1.0f; zmode = dGetRS(d, 7); if (!zmode) zmode = 1; g_drawZ = z < 0.0f ? 0.0f : (z > 1.0f ? 1.0f : z); }
+    g_drawZMode = zmode;
+    dStateForget();   // the shadow may hold our ZENABLE 0 while the device holds the game's : set them for real
+    dSetRS(d, 7, zmode); dSetRS(d, 23, 4); dSetRS(d, 14, 0);   // ZENABLE (the game's kind), ZFUNC LESSEQUAL, ZWRITEENABLE off
+}
+inline void dDepthEnd(u32 d) { g_drawZ = -1.0f; dSetRS(d, 7, 0); }
 inline u32  dCreateSB(u32 d, u32 type)            { dStateForget(); auto f = vmethod<long(__stdcall*)(u32,u32,u32*)>(d,57); u32 t=0; if(f) f(d,type,&t); return t; }   // forget : the game drew since our last frame
 // The display mode, for ONE question we cannot answer by looking: how many bits per channel the game is
 // presenting into. A gradient that bands no matter what it is drawn with is banding because the destination

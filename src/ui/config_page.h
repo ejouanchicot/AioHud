@@ -22,6 +22,9 @@ public:
     void set_open(bool o) { if (o && !open_) { anim_ = 0.0f; profDirty_ = true; icon_pack_forget(); } if (!o && open_) ctrl_release_drag(); open_ = o; }
     bool is_open() const  { return open_; }
     void set_tab(int t);
+    void set_section(int s) { section_ = s; }
+    bool cat_is_open(int c) const { return c >= 0 && c < CFG_CAT_N && catOpen_[c]; }   // a page's section is open (the preview follows it)
+    void only_cat(int c) { for (bool& b : catOpen_) b = false; if (c >= 0 && c < CFG_CAT_N) catOpen_[c] = true; }   // //aio config sec N cat C : that category alone, open   // //aio config sec N : open a module's page (0-based, MODULES order)
 
     // draw the overlay for the current frame (screen size in the HUD coord space). No-op if closed.
     void draw(const Frame& f, float sw, float sh);

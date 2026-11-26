@@ -19,7 +19,7 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     UiConfig& c = ui_config();
 
     // ===== sub-section : DISPLAY =====
-    const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);   // the section FOLDS, like every other module
+    const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));   // the section FOLDS, like every other module
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // ... and it IS a card, collapsed or not
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
@@ -36,7 +36,7 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     }   // end Display
     ry += snap(16.0f);                                 // air between this section and the next title bar
     // ===== sub-section : CONTENT (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
-    const float aF21_ = cat_fold(CTRL_ID, catOpen_[21]);
+    const float aF21_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[21]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[21], aF21_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[21], aF21_)) catOpen_[21] = !catOpen_[21];
     ROW_NEXT(42.0f)
@@ -49,6 +49,7 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     ry += snap(16.0f);
 
     // ===== sub-section : TEXT (the font, then each colour -- typography is always the LAST section) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);   // the section FOLDS, like every other module
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // ... and it IS a card, collapsed or not
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
@@ -81,6 +82,8 @@ void ConfigPage::draw_ws_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     }   // end Colours
 
     ry += snap(16.0f);
+}   // end Advanced only
+    if (!ui_config().cfgAdv) SIMPLE_MORE   // Simple : where the rest is
     #undef ROW_BAND
     #undef ROW_NEXT
 }

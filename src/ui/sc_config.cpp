@@ -32,7 +32,7 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     const bool circle = c.scStyle == 0;
 
     // ===== sub-section : DISPLAY =====
-    const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
+    const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
@@ -57,6 +57,7 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     ry += snap(16.0f);                                 // air between this section and the next title bar
 
     // ===== sub-section : FRAME -- the Classic box's chrome, or the Circle's LIST frame (the sphere has none) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
@@ -69,8 +70,10 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
     }   // end Frame
     ry += snap(16.0f);
+}   // end Advanced only
 
     // ===== sub-section : CONTENT =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF21_ = cat_fold(CTRL_ID, catOpen_[21]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[21], aF21_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[21], aF21_)) catOpen_[21] = !catOpen_[21];
@@ -119,9 +122,10 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         cat_fold_end(dev, ry, top21_, catH_[21], aF21_);
     }   // end Content
     ry += snap(16.0f);
+}   // end Advanced only
 
     // ===== sub-section : ELEMENTS (which lines to show) =====
-    const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
+    const float aF7_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[7]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // the section IS a card, collapsed or not
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Elements", "\xC3\x89l\xC3\xA9ments"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
     ROW_NEXT(42.0f)
@@ -145,6 +149,7 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     // ===== sub-section : ANIMATIONS (the Circle's) -- what it costs : all of it, the scene distortion, the
     // particles, how far the effects spread =====
     if (circle) {
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const float aF22_ = cat_fold(CTRL_ID, catOpen_[22]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[22], aF22_));
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Animations", "Animations"), catOpen_[22], aF22_)) catOpen_[22] = !catOpen_[22];
@@ -159,8 +164,10 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             cat_fold_end(dev, ry, top22_, catH_[22], aF22_);
         }   // end Animations
         ry += snap(16.0f);
+}   // end Advanced only
 
         // ===== sub-section : ARCADE WS / MAGIC BURST (the hit popup on the sphere ; the Arcade WS module keeps its own) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
         const float aF26_ = cat_fold(CTRL_ID, catOpen_[26]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[26], aF26_));
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, "Arcade WS / Magic Burst", catOpen_[26], aF26_)) catOpen_[26] = !catOpen_[26];
@@ -225,9 +232,11 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
             cat_fold_end(dev, ry, top26_, catH_[26], aF26_);
         }   // end Arcade WS / Magic Burst
         ry += snap(16.0f);
+}   // end Advanced only
     }
 
     // ===== sub-section : TEXT (per-element typography, like the other modules) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // the section IS a card, collapsed or not
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
@@ -254,6 +263,8 @@ void ConfigPage::draw_sc_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     }   // end Text
 
     ry += snap(16.0f);
+}   // end Advanced only
+    if (!ui_config().cfgAdv) SIMPLE_MORE   // Simple : where the rest is
     #undef SC_SLIDER
     #undef ROW_BAND
     #undef ROW_NEXT

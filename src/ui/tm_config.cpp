@@ -30,7 +30,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
 
     // ===== sub-section : DISPLAY =====
     // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
-    const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
+    const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
@@ -49,6 +49,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     }   // end Display
     ry += snap(16.0f);                                 // air between this section and the next title bar
     // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
@@ -60,13 +61,14 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
     }   // end Frame
     ry += snap(16.0f);
+}   // end Advanced only
 
     // ===== sub-section : CONTENT =====
     // WHAT the box lists, as opposed to how it lists it. Display had grown to thirteen controls covering three
     // different questions -- what the box IS, what it SHOWS, and how each ROW reads -- and a section that
     // answers three questions is a section you have to read in full to find one setting. Split by subject, and
     // named with the vocabulary the other panels already use (Player has a Content section too).
-    const float aFc_ = cat_fold(CTRL_ID, catOpen_[13]);
+    const float aFc_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[13]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[13], aFc_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[13], aFc_)) catOpen_[13] = !catOpen_[13];
     ROW_NEXT(42.0f)
@@ -90,6 +92,7 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     // ===== sub-section : ROWS =====
     // How a single line reads, and in what order the lines come. Everything here is about the LIST, not about
     // the box that holds it and not about which buffs get in.
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aFr_ = cat_fold(CTRL_ID, catOpen_[14]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[14], aFr_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Rows", "Lignes"), catOpen_[14], aFr_)) catOpen_[14] = !catOpen_[14];
@@ -129,9 +132,11 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         cat_fold_end(dev, ry, topR_, catH_[14], aFr_);
     }   // end Rows
     ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
 
     // ===== sub-section : ALERTS (SP blink + focus-alert timings) =====
     // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // the section IS a card, collapsed or not
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Alerts", "Alertes"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
@@ -163,8 +168,10 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
     }   // end Alerts
     ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
 
     // ===== sub-section : BUFF FILTER (job-agnostic checklist of buffs to show, grouped by magic family) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aFtrk_ = cat_fold(CTRL_ID, trkSecOpen_);   // the section FOLDS -- and with the feature off there is nothing to reveal
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(trkSecFull_, aFtrk_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Buff filter", "Filtre de buffs"), trkSecOpen_, aFtrk_)) trkSecOpen_ = !trkSecOpen_;
@@ -445,10 +452,12 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
     }   // end Buff filter
 
     ry += snap(16.0f);
+}   // end Advanced only
 
 
     // ===== sub-section : TEXT =====
     // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // the section IS a card, collapsed or not
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
@@ -467,6 +476,8 @@ void ConfigPage::draw_tm_config(u32 dev, Font* fo, const MouseState* mo, bool cl
         cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
     }   // end Text
     ry += snap(16.0f);                                 // air between this section and the next title bar
+}   // end Advanced only
+    if (!ui_config().cfgAdv) SIMPLE_MORE   // Simple : where the rest is
     #undef ROW_BAND
     #undef ROW_NEXT
 }

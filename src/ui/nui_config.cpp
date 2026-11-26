@@ -1,10 +1,11 @@
-// nui_config.cpp -- the "Game UI" settings panel (//aio config -> "Game UI") : hide the client's own windows
-// (party, alliance, chat, help bar, MP-cost case) and move its menus. The engine is model/native_ui.cpp ; this page
-// only writes UiConfig::nuHide / nuMenuDx / nuMenuDy. Each control is keyed by CTRL_ID (file:line hash, see
-// config_controls.h). Reuses the shared sub-section catOpen_ slots [6] and [7].
+// nui_config.cpp -- the "Game UI" settings panel (//aio config -> "Game UI") : the game's windows AioHUD redraws or
+// hides, their look, the name plates, and moving the game's menus. The engine is model/native_ui.cpp ; this page writes
+// UiConfig::nuHide / mu* / pl* / nuMenuDx / nuMenuDy. Each control is keyed by CTRL_ID (file:line hash, see
+// config_controls.h). Sections : catOpen_ [6] [20] [21] [23] [24] [26] [25] [22] ; every window : Modern / FFXI.
 #include "ui/config_page.h"
 #include "ui/config_controls.h"    // cat_header / row_toggle / row_slider / push_btn + palette
 #include "ui/config_rows.h"        // ROW_BAND / ROW_NEXT
+#include "ui/hud_internal.h"       // plate_font_count / plate_font_label : the name plates' fonts
 #include "model/ui_config.h"
 #include "model/native_ui.h"       // NativeUiBits
 #include "gfx/font.h"
@@ -18,83 +19,153 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
                                  float bandX, float bandW, float coX, float ctrlW,
                                  float hdrX, float hdrW) {
     UiConfig& c = ui_config();
+    // The page, the config grammar (docs/architecture/config-panels.md) : Display [6] (the redrawn menus' size and
+    // places) / Frame [20] (their theme) / three named subjects -- Menus and screens [21], NPCs and trade [23], On
+    // screen [24] -- each switch saying what it really covers (2026-11-26 : the reverse grew each one far beyond its
+    // first name) / Game windows hidden [25] (no replacement : AioHUD's own modules) / Behaviour [22] (move the menus).
+    // one row per switch of nuHide (row_toggle already saved the OLD mask -> save again)
+    // every window : MODERN (AioHUD's) or FFXI (the game's own) -- the user 2026-11-26, rather than On / Off
+    const char* STY[2] = { tr("FFXI", "FFXI"), tr("Modern", "Moderne") };
+    #define NUI_BIT_ROW(UID, LABEL, BIT) { ROW_BAND(52.0f) const int v_ = (c.nuHide & (BIT)) ? 1 : 0; \
+        if (row_selector(dev, fo, mo, click, (UID), coX, ry + yo, ctrlW, (LABEL), STY[v_])) { c.nuHide = v_ ? (c.nuHide & ~(BIT)) : (c.nuHide | (BIT)); save_ui_config(); } \
+        } ROW_NEXT(52.0f)
+    #define NUI_SECTION(SLOT, TITLE) const float aF##SLOT##_ = cat_fold(CTRL_ID, !c.cfgAdv || catOpen_[SLOT]);   /* Simple : open */ \
+        cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[SLOT], aF##SLOT##_)); \
+        if (cat_header(dev, fo, mo, click, ctrl_uid_i(CTRL_ID, 1), hdrX, ry, hdrW, (TITLE), catOpen_[SLOT], aF##SLOT##_)) catOpen_[SLOT] = !catOpen_[SLOT]; \
+        ROW_NEXT(42.0f) \
+        if (aF##SLOT##_ > 0.0f) { const float top##SLOT##_ = ry; cat_fold_clip(dev, hdrX, top##SLOT##_, hdrW, catH_[SLOT] * aF##SLOT##_);
+    #define NUI_SECTION_END(SLOT) cat_fold_end(dev, ry, top##SLOT##_, catH_[SLOT], aF##SLOT##_); } ry += snap(16.0f);
 
-    // ===== sub-section : HIDE (the client's windows AioHUD replaces) =====
-    const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Hide the game's windows", "Cacher les fen\xC3\xAAtres du jeu"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
-    ROW_NEXT(42.0f)
-    if (aF6_ > 0.0f) {
-        const float top6_ = ry;
-        cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
-        // one row per window ; the chip toggles that bit of nuHide (row_toggle already saved the OLD mask -> save again)
-        #define NUI_HIDE_ROW(UID, LABEL, BIT) { ROW_BAND(48.0f) int on_ = (c.nuHide & (BIT)) ? 1 : 0; \
-            if (row_toggle(dev, fo, mo, click, (UID), coX, ry + yo, ctrlW, (LABEL), &on_)) { c.nuHide = on_ ? (c.nuHide | (BIT)) : (c.nuHide & ~(BIT)); save_ui_config(); } \
-            } ROW_NEXT(48.0f)
-        NUI_HIDE_ROW(CTRL_ID, tr("Party window", "Fen\xC3\xAAtre du groupe"), NU_PARTY)
-        ROW_NOTE(tr("Also hides the game's target bar, which sits on it.", "Cache aussi la barre de cible du jeu, pos\xC3\xA9""e dessus."))
-        NUI_HIDE_ROW(CTRL_ID, tr("Alliance windows", "Fen\xC3\xAAtres d'alliance"), NU_ALLY)
-        NUI_HIDE_ROW(CTRL_ID, tr("Chat log", "Journal du chat"), NU_CHAT)
-        ROW_NOTE(tr("Turn AioHUD's Chat on first (module Chat) : NPC dialogue and system lines land there too.", "Active d'abord le Chat d'AioHUD (module Chat) : les dialogues PNJ et messages syst\xC3\xA8me y arrivent aussi."))
-        NUI_HIDE_ROW(CTRL_ID, tr("MP cost / recast case", "Case co\xC3\xBBt MP / recast"), NU_COST)
-        ROW_NOTE(tr("A hidden window keeps working ; it is only parked off-screen.", "Une fen\xC3\xAAtre cach\xC3\xA9""e fonctionne toujours ; elle est juste hors de l'\xC3\xA9""cran."))
-        cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
-    }   // end Hide
-    ry += snap(16.0f);
+    // ===== THE WHOLE INTERFACE at once : Modern / FFXI (Mixed when the windows below differ) =====
+    { ROW_BAND(52.0f)
+        const int allBits = NU_ALL; const bool allM = (c.nuHide & allBits) == allBits && c.plShow, allF = (c.nuHide & allBits) == 0 && !c.plShow;
+        const char* lab = allM ? STY[1] : allF ? STY[0] : tr("Mixed", "Mixte");
+        if (row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Game interface", "Interface du jeu"), lab)) {
+            const bool toModern = !allM; c.nuHide = toModern ? (c.nuHide | allBits) : (c.nuHide & ~allBits); c.plShow = toModern ? 1 : 0; save_ui_config(); }
+    } ROW_NEXT(52.0f)
+    ry += snap(8.0f);
 
-    // ===== sub-section : AIOHUD MENUS (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
-    const float aF23_ = cat_fold(CTRL_ID, catOpen_[23]);
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[23], aF23_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Redrawn by AioHUD", "Redessin\xC3\xA9s par AioHUD"), catOpen_[23], aF23_)) catOpen_[23] = !catOpen_[23];
-    ROW_NEXT(42.0f)
-    if (aF23_ > 0.0f) {
-        const float top23_ = ry;
-        cat_fold_clip(dev, hdrX, top23_, hdrW, catH_[23] * aF23_);
-        // WHAT AioHUD redraws (the game's own window is parked, AioHUD draws its version) -- these lived in "Hide"
-        // with an "(AioHUD draws it)" suffix ; the section they belong to is this one (2026-11-17 config audit)
-        NUI_HIDE_ROW(CTRL_ID, tr("Action menu", "Menu d'action"), NU_ACT)
-        NUI_HIDE_ROW(CTRL_ID, tr("NPC dialogue + answers", "Dialogues PNJ + r\xC3\xA9ponses"), NU_NPC)
-        NUI_HIDE_ROW(CTRL_ID, tr("Main menu", "Menu principal"), NU_MAIN)
-        NUI_HIDE_ROW(CTRL_ID, tr("Top bar (menu name + help)", "Barre du haut (nom du menu + aide)"), NU_HELP)   // was "hide" ; AioHUD draws it since 2026-11-20
-        NUI_HIDE_ROW(CTRL_ID, tr("Connection box (top right)", "Box connexion (en haut \xC3\xA0 droite)"), NU_NET)   // was "hide" ; AioHUD draws it since 2026-11-20
-        NUI_HIDE_ROW(CTRL_ID, tr("Macro bar (Ctrl / Alt)", "Barre de macros (Ctrl / Alt)"), NU_MACRO)
-        NUI_HIDE_ROW(CTRL_ID, tr("Trade (player / NPC)", "\xC3\x89""change (joueur / PNJ)"), NU_TRADE)
-        NUI_HIDE_ROW(CTRL_ID, tr("Yes / No confirms", "Confirmations Oui / Non"), NU_DIALOG)
-        NUI_HIDE_ROW(CTRL_ID, tr("Your buff icons (top)", "Tes ic\xC3\xB4nes de buff (en haut)"), NU_BUFF)
-        #undef NUI_HIDE_ROW
+    // ===== DISPLAY : the redrawn menus' size and places =====
+    if (c.cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
+    NUI_SECTION(6, tr("Display", "Affichage"))
         { ROW_BAND(46.0f)   // the menus' size : every dimension, the text included
             const float lo = 0.60f, hi = 1.60f; char sb[16]; sprintf(sb, "%d%%", (int)(c.muScale * 100.0f + 0.5f));
             float v01 = clampf((c.muScale - lo) / (hi - lo), 0.0f, 1.0f);
             if (row_slider(dev, fo, mo, CTRL_ID, coX, ry + yo, ctrlW, tr("Menu size", "Taille des menus"), sb, &v01)) { float v = lo + v01 * (hi - lo); v = (float)((int)(v / 0.05f + 0.5f)) * 0.05f; c.muScale = v < lo ? lo : (v > hi ? hi : v); }
         } ROW_NEXT(46.0f)
-        { ROW_BAND(52.0f)   // a submenu with more rows than its menu : grows up (bottoms level) or down (tops level)
-            const char* GL[2] = { tr("Upward", "Vers le haut"), tr("Downward", "Vers le bas") };
-            const int v = c.muGrow == 1 ? 1 : 0;
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Taller submenu grows", "Sous-menu plus grand : grandit"), GL[v])) { c.muGrow = (v + d + 2) % 2; save_ui_config(); }
-        } ROW_NEXT(52.0f)
         { ROW_BAND(52.0f)   // the main menu : where the game puts it (top right) or top left
             const char* PL[2] = { tr("Game's place", "Place du jeu"), tr("Top left", "En haut \xC3\xA0 gauche") };
             const int v = c.muMainPos == 1 ? 1 : 0;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Main menu position", "Position du menu principal"), PL[v])) { c.muMainPos = (v + d + 2) % 2; save_ui_config(); }
         } ROW_NEXT(52.0f)
-        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.muBox);
+        { ROW_BAND(52.0f)   // a submenu with more rows than its menu : grows up (bottoms level) or down (tops level)
+            const char* GL[2] = { tr("Upward", "Vers le haut"), tr("Downward", "Vers le bas") };
+            const int v = c.muGrow == 1 ? 1 : 0;
+            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Taller submenu grows", "Sous-menu plus grand : grandit"), GL[v])) { c.muGrow = (v + d + 2) % 2; save_ui_config(); }
+        } ROW_NEXT(52.0f)
         { ROW_BAND(52.0f)   // the rows : text only, or icon + text
             const char* LL[2] = { tr("Text only", "Texte seul"), tr("Icon + text", "Ic\xC3\xB4ne + texte") };
             const int v = c.muLabel == 1 ? 1 : 0;
             if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Menu rows", "Lignes des menus"), LL[v])) { c.muLabel = (v + d + 2) % 2; save_ui_config(); }
         } ROW_NEXT(52.0f)
-        cat_fold_end(dev, ry, top23_, catH_[23], aF23_);
-    }   // end AioHUD menus
-    ry += snap(16.0f);
+    NUI_SECTION_END(6)
 
-    // ===== sub-section : MENUS (main menu, sub-menus, lists, panels) =====
-    const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
-    cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));
-    if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Move the game's menus", "D\xC3\xA9placer les menus du jeu"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
-    ROW_NEXT(42.0f)
-    if (aF7_ > 0.0f) {
-        const float top7_ = ry;
-        cat_fold_clip(dev, hdrX, top7_, hdrW, catH_[7] * aF7_);
+    // ===== FRAME : one theme for every menu AioHUD redraws =====
+    NUI_SECTION(20, tr("Frame", "Cadre"))
+        draw_box_appearance(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.muBox);
+    NUI_SECTION_END(20)
+    }   // end Advanced only
+
+    // ===== MENUS AND SCREENS : the game's own, redrawn =====
+    NUI_SECTION(21, tr("Menus and screens", "Menus et \xC3\xA9""crans"))
+        NUI_BIT_ROW(CTRL_ID, tr("Main menu", "Menu principal"), NU_MAIN)
+        ROW_NOTE(tr("And every screen it opens : status, equipment, items, magic, map, Region Info, macros, missions, friend list...", "Et tous les \xC3\xA9""crans qu'il ouvre : statut, \xC3\xA9quipement, objets, magie, carte, Region Info, macros, missions, amis..."))
+        NUI_BIT_ROW(CTRL_ID, tr("Action menu", "Menu d'action"), NU_ACT)
+        ROW_NOTE(tr("Enter on a target : attack, magic, abilities, items, trade, check.", "Entr\xC3\xA9""e sur une cible : attaque, magie, aptitudes, objets, \xC3\xA9""change, examiner."))
+        NUI_BIT_ROW(CTRL_ID, tr("Top bar (menu name + help)", "Barre du haut (nom du menu + aide)"), NU_HELP)
+        NUI_BIT_ROW(CTRL_ID, tr("Yes / No confirms", "Confirmations Oui / Non"), NU_DIALOG)
+    NUI_SECTION_END(21)
+
+    // ===== NPCS AND TRADE =====
+    NUI_SECTION(23, tr("NPCs and trade", "PNJ et \xC3\xA9""changes"))
+        NUI_BIT_ROW(CTRL_ID, tr("NPCs", "PNJ"), NU_NPC)
+        ROW_NOTE(tr("Their dialogue and answers, shops, the auction house, the delivery box, Config's lists.", "Leurs dialogues et r\xC3\xA9ponses, boutiques, h\xC3\xB4tel des ventes, bo\xC3\xAEte de livraison, listes de la Config."))
+        NUI_BIT_ROW(CTRL_ID, tr("Trade (player / NPC)", "\xC3\x89""change (joueur / PNJ)"), NU_TRADE)
+    NUI_SECTION_END(23)
+
+    // ===== ON SCREEN : what the game shows over the world =====
+    NUI_SECTION(24, tr("On screen", "\xC3\x80 l'\xC3\xA9""cran"))
+        NUI_BIT_ROW(CTRL_ID, tr("Macro bar (Ctrl / Alt)", "Barre de macros (Ctrl / Alt)"), NU_MACRO)
+        NUI_BIT_ROW(CTRL_ID, tr("Your buff icons (top)", "Tes ic\xC3\xB4nes de buff (en haut)"), NU_BUFF)
+        NUI_BIT_ROW(CTRL_ID, tr("Connection box (top right)", "Box connexion (en haut \xC3\xA0 droite)"), NU_NET)
+    NUI_SECTION_END(24)
+
+    // ===== NAMES OVER THE CHARACTERS (the preview shows sample plates while this section is open) =====
+    NUI_SECTION(26, tr("Names over the characters", "Noms au-dessus des persos"))
+        { ROW_BAND(52.0f) const int v = c.plShow ? 1 : 0;
+            if (row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Style", "Style"), STY[v])) { c.plShow = v ? 0 : 1; save_ui_config(); }
+        } ROW_NEXT(52.0f)
+        if (c.plShow) {
+            { ROW_BAND(52.0f) int fc = c.plFont; if (fc < 0 || fc >= plate_font_count()) fc = 0;
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Font", "Police"), plate_font_label(fc))) { c.plFont = (fc + d + plate_font_count()) % plate_font_count(); save_ui_config(); }
+            } ROW_NEXT(52.0f)
+            #define NUI_SCALE_ROW(UID, LABEL, FIELD) { ROW_BAND(46.0f) const float lo_ = 0.6f, hi_ = 1.6f; char b_[16]; sprintf(b_, "%d%%", (int)((FIELD) * 100.0f + 0.5f)); \
+                float v01_ = clampf(((FIELD) - lo_) / (hi_ - lo_), 0.0f, 1.0f); \
+                if (row_slider(dev, fo, mo, (UID), coX, ry + yo, ctrlW, (LABEL), b_, &v01_)) { float v_ = lo_ + v01_ * (hi_ - lo_); v_ = (float)((int)(v_ / 0.05f + 0.5f)) * 0.05f; (FIELD) = v_ < lo_ ? lo_ : (v_ > hi_ ? hi_ : v_); } \
+                } ROW_NEXT(46.0f)
+            NUI_SCALE_ROW(CTRL_ID, tr("Text size", "Taille du texte"), c.plSize)
+            { ROW_BAND(52.0f)   // the names' size : with the distance (as the game) or FIXED, every one as thin as a far name
+                const int v = (c.plStyle & 0x1000) ? 1 : 0;
+                const char* ZL[2] = { tr("With the distance", "Selon la distance"), tr("Fixed (thin, as far)", "Fixe (fin, comme au loin)") };
+                if (row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Names size", "Taille des noms"), ZL[v])) { c.plStyle ^= 0x1000; save_ui_config(); }
+            } ROW_NEXT(52.0f)
+            if (c.cfgAdv) {   // Advanced : icons, stars, places, italic / caps
+            NUI_SCALE_ROW(CTRL_ID, tr("Icon size (pearl...)", "Taille des ic\xC3\xB4nes (perle...)"), c.plIcon)
+            NUI_SCALE_ROW(CTRL_ID, tr("Master Level stars", "\xC3\x89toiles du Master Level"), c.plStar)
+            #undef NUI_SCALE_ROW
+            // WHERE : the icons' gap before the name (in capital W), the stars' height above it and their spread
+            #define NUI_POS_ROW(UID, LABEL, FIELD, LO, HI, FMT, K) { ROW_BAND(46.0f) const float lo_ = (LO), hi_ = (HI); char b_[16]; sprintf(b_, (FMT), (FIELD) * (K)); \
+                float v01_ = clampf(((FIELD) - lo_) / (hi_ - lo_), 0.0f, 1.0f); \
+                if (row_slider(dev, fo, mo, (UID), coX, ry + yo, ctrlW, (LABEL), b_, &v01_)) { float v_ = lo_ + v01_ * (hi_ - lo_); v_ = (float)((int)(v_ / 0.05f + 0.5f)) * 0.05f; (FIELD) = v_ < lo_ ? lo_ : (v_ > hi_ ? hi_ : v_); } \
+                } ROW_NEXT(46.0f)
+            NUI_POS_ROW(CTRL_ID, tr("Icon gap before the name", "\xC3\x89""cart ic\xC3\xB4ne / nom"), c.plGap, 0.0f, 3.0f, "%.1f W", 1.0f)
+            NUI_POS_ROW(CTRL_ID, tr("Stars height", "Hauteur des \xC3\xA9toiles"), c.plStarY, 0.5f, 2.0f, "%.0f%%", 100.0f)
+            NUI_POS_ROW(CTRL_ID, tr("Stars spread", "\xC3\x89""cartement des \xC3\xA9toiles"), c.plStarX, 0.5f, 2.0f, "%.0f%%", 100.0f)
+            #undef NUI_POS_ROW
+            }
+            // the name's style : bold / italic / CAPS (one toggle each)
+            #define NUI_STYLE_ROW(UID, LABEL, BITV) { ROW_BAND(48.0f) int on_ = (c.plStyle & (BITV)) ? 1 : 0; \
+                if (row_toggle(dev, fo, mo, click, (UID), coX, ry + yo, ctrlW, (LABEL), &on_)) { c.plStyle = on_ ? (c.plStyle | (BITV)) : (c.plStyle & ~(BITV)); save_ui_config(); } \
+                } ROW_NEXT(48.0f)
+            { ROW_BAND(52.0f)   // the weight : ultra-thin (what a far name looks like) .. bold
+                int w = (c.plStyle >> 8) & 7; if (!w && (c.plStyle & 1)) w = 4; if (w > 4) w = 0;
+                const char* WL[5] = { tr("Normal", "Normal"), tr("Ultra-thin", "Ultra-fin"), tr("Thin", "Fin"), tr("Semi-bold", "Semi-gras"), tr("Bold", "Gras") };
+                static const int ORD[5] = { 1, 2, 0, 3, 4 };   // the arrows walk thin -> bold
+                int at = 0; for (int i = 0; i < 5; ++i) if (ORD[i] == w) at = i;
+                if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Weight", "Graisse"), WL[w])) {
+                    at = (at + d + 5) % 5; c.plStyle = (c.plStyle & ~0x701 & ~1) | (ORD[at] << 8); save_ui_config(); }
+            } ROW_NEXT(52.0f)
+            if (c.cfgAdv) {
+            NUI_STYLE_ROW(CTRL_ID, tr("Italic", "Italique"), 2)
+            NUI_STYLE_ROW(CTRL_ID, tr("CAPS", "Majuscules"), 4)
+            }
+            #undef NUI_STYLE_ROW
+        }
+    NUI_SECTION_END(26)
+
+    // ===== GAME WINDOWS HIDDEN : no redraw here, AioHUD's own modules take their place =====
+    NUI_SECTION(25, tr("Game windows hidden", "Fen\xC3\xAAtres du jeu cach\xC3\xA9""es"))
+        NUI_BIT_ROW(CTRL_ID, tr("Party window", "Fen\xC3\xAAtre du groupe"), NU_PARTY)
+        ROW_NOTE(tr("Also hides the game's target bar, which sits on it.", "Cache aussi la barre de cible du jeu, pos\xC3\xA9""e dessus."))
+        NUI_BIT_ROW(CTRL_ID, tr("Alliance windows", "Fen\xC3\xAAtres d'alliance"), NU_ALLY)
+        NUI_BIT_ROW(CTRL_ID, tr("Chat log", "Journal du chat"), NU_CHAT)
+        ROW_NOTE(tr("Turn AioHUD's Chat on first (module Chat).", "Active d'abord le Chat d'AioHUD (module Chat)."))
+        NUI_BIT_ROW(CTRL_ID, tr("MP cost / recast case", "Case co\xC3\xBBt MP / recast"), NU_COST)
+    NUI_SECTION_END(25)
+
+    // ===== BEHAVIOUR : move the game's menus =====
+    if (c.cfgAdv) {   // Advanced only
+    NUI_SECTION(22, tr("Behaviour", "Comportement"))
         // -1000 .. +1000 screen px, 10 px steps ; persists on release (row_slider)
         #define NUI_OFFSET_ROW(UID, LABEL, FIELD) { ROW_BAND(46.0f) const float lo_ = -1000.0f, hi_ = 1000.0f; char b_[16]; \
             _snprintf(b_, sizeof(b_), "%+d px", (FIELD)); b_[sizeof(b_) - 1] = 0; \
@@ -102,8 +173,8 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
             if (row_slider(dev, fo, mo, (UID), coX, ry + yo, ctrlW, (LABEL), b_, &v01_)) { \
                 int v_ = (int)(lo_ + v01_ * (hi_ - lo_)); v_ = (v_ >= 0 ? (v_ + 5) : (v_ - 5)) / 10 * 10; (FIELD) = v_; } \
             } ROW_NEXT(46.0f)
-        NUI_OFFSET_ROW(CTRL_ID, tr("Horizontal", "Horizontal"), c.nuMenuDx)
-        NUI_OFFSET_ROW(CTRL_ID, tr("Vertical", "Vertical"), c.nuMenuDy)
+        NUI_OFFSET_ROW(CTRL_ID, tr("Move the menus : horizontal", "D\xC3\xA9placer les menus : horizontal"), c.nuMenuDx)
+        NUI_OFFSET_ROW(CTRL_ID, tr("Move the menus : vertical", "D\xC3\xA9placer les menus : vertical"), c.nuMenuDy)
         #undef NUI_OFFSET_ROW
         { ROW_BAND(48.0f)   // back to the game's own place
             const float bw = snap(150.0f);
@@ -113,12 +184,14 @@ void ConfigPage::draw_nui_config(u32 dev, Font* fo, const MouseState* mo, bool c
             fo->begin(dev);
             fo->draw_lc(dev, coX + snap(4.0f), ry + yo + snap(17.0f), tr("Back to the game's place", "Retour \xC3\xA0 la place du jeu"), snap(14.0f), fa(C_TEXT), fa(C_STROKE), 1.0f);
         } ROW_NEXT(48.0f)
-        ROW_NOTE(tr("Moves every menu at once, the ones you never opened too.", "D\xC3\xA9place tous les menus d'un coup, m\xC3\xAAme ceux jamais ouverts."))
         ROW_NOTE(tr("Turning an option off or unloading AioHUD puts everything back.", "D\xC3\xA9sactiver une option ou d\xC3\xA9""charger AioHUD remet tout en place."))
-        cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
-    }   // end Menus
+    NUI_SECTION_END(22)
+    }   // end Advanced only
+    if (!c.cfgAdv) SIMPLE_MORE
 
-    ry += snap(16.0f);
+    #undef NUI_SECTION
+    #undef NUI_SECTION_END
+    #undef NUI_BIT_ROW
     #undef ROW_BAND
     #undef ROW_NEXT
 }

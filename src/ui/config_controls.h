@@ -197,6 +197,7 @@ float badge(u32 dev, Font* fo, float x, float cy, const char* text, u32 accent);
 // ---- labeled controls (each keeps its own ease() uid namespace ; see the notes in the .cpp) ----
 bool arrow_btn(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                float x, float y, float s, const char* glyph);
+bool cfg_take_select_change();   // a row_selector changed a value this frame (the page then saves once)
 int  row_selector(u32 dev, Font* fo, const MouseState* mo, bool click, int uid,
                   float x, float y, float w, const char* label, const char* value);
 int  wrap(int v, int n);

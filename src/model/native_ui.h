@@ -146,7 +146,17 @@ struct NativePlate { unsigned actor, entity; float pos[4]; float size; unsigned 
 struct NativePlates { bool ok, wanted, camOk, both; int n; NativePlate p[160]; float view[16], proj[16]; };   // wanted : AioHUD draws them (dev toggle for now)
 const NativePlates& native_plates();
 void native_plates_drawn();          // the UI drew this frame's plates : the client's are skipped from the next frame
-void native_plates_want(int on);     // dev (//aio plates on|off|both) : 2 = both, the client's kept AND ours drawn under them (comparison)
+// the plates drawn INSIDE the client's names pass (FUN_053C17F0, right after the scene : its depth buffer still holds the
+// world, so a wall hides a name as it hides the client's). The UI registers its drawer ; the model calls it at the end
+// of the pass with this frame's plates (dev = the client's device). 0 = none (the plates are drawn in the overlay)
+typedef void (*PlatePassDrawer)(unsigned dev, const NativePlates& plates);
+void native_plates_set_drawer(PlatePassDrawer fn);
+bool native_plates_in_pass();       // the names-pass hook is on and its drawer ran recently (the overlay then draws none)
+void native_plates_want(int on);
+// dev (//aio platefont [next|prev|N|off]) : the plates' font picked from the UI's trial list ; -1 = the default. Each
+// change bumps a counter, so the UI shows the face's name a moment
+void native_plates_font(int step);   // +1 next, -1 previous, 1000 + N : the Nth, -1000 : back to the default
+int  native_plates_font_sel(unsigned& changedMs);     // dev (//aio plates on|off|both) : 2 = both, the client's kept AND ours drawn under them (comparison)
 void native_plates_probe();   // dev (//aio plates) : log this frame's plates   // dev (//aio drawprobe) : log each caller of the text / sprite draws OUTSIDE a window, once                       // native_ui.cpp : the menu manager (0 unresolved)
 unsigned native_win_named(unsigned mgr, const char* want);   // ... an open window by name (0 none)
 const NativeMacroBooks& native_macro_books();
@@ -686,6 +696,7 @@ struct NativeShop {
     NativeItemRow row[16];                       // the page (hasPrice set)
     unsigned gil; bool gilOk;
     bool qtyOk, qtyFocused; int qtyVal, qtyMax;
+    bool priceUp, priceFocused; unsigned priceVal, priceMax, priceDigit;   // your bazaar : the unit price typed (moneyctr)
     short mx0, my0, rx0, ry0; int uiW, uiH;
 };
 const NativeShop& native_shop();

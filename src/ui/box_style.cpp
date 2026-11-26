@@ -25,7 +25,7 @@ static inline u32 mula(u32 c, float a) {                       // scale a colour
 // disposed at shutdown (both wired from Hud). ----
 static const int BOX_SKIN_MAX = 16;   // >= window_tex_theme_count() (currently 9)
 static WindowSkin g_boxSkin[BOX_SKIN_MAX];
-static const WindowSkin* box_ffxi_skin(u32 dev, int variant) {
+const WindowSkin* box_ffxi_skin(u32 dev, int variant) {
     if (variant < 0 || variant >= BOX_SKIN_MAX || variant >= window_tex_theme_count()) return nullptr;
     if (!g_boxSkin[variant].ready()) g_boxSkin[variant].load(dev, window_theme_name(variant));   // atomic load ; retries next frame on a miss (no give-up latch)
     return &g_boxSkin[variant];

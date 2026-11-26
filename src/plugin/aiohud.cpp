@@ -2093,7 +2093,8 @@ static void aio_command_dispatch(const char* cmd)
             return;
         }
         const char* cp = strstr(buf, "config") + 6; while (*cp == ' ') ++cp;
-        if (*cp >= '1' && *cp <= '3') { g_hud.config().set_tab(atoi(cp) - 1); g_hud.config().set_open(true); }
+        if (!strncmp(cp, "sec", 3)) { g_hud.config().set_tab(0); g_hud.config().set_section(atoi(cp + 3)); if (const char* cc = strstr(cp, "cat")) g_hud.config().only_cat(atoi(cc + 3)); g_hud.config().set_open(true); }   // a module's page
+        else if (*cp >= '1' && *cp <= '3') { g_hud.config().set_tab(atoi(cp) - 1); g_hud.config().set_open(true); }
         else                          g_hud.config().toggle();
         return;
     } break;

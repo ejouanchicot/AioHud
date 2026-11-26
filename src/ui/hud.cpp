@@ -1054,6 +1054,9 @@ void Hud::draw_ws_popup(const Frame& f, bool preview, float ovCx, float ovCy, fl
     } else {
         wpp = &party().ws_popup();
         if (!wpp->startMs || !wpp->name[0]) return;
+        // one weaponskill, ONE popup : the Skillchains sphere (Circle) already shows it -> stand down (the user
+        // 2026-11-26 : "si on active les deux, les deux pop"). Drawn before us this frame ; 250 ms covers a skipped one.
+        { extern unsigned g_scWsOnSphere; if (g_scWsOnSphere && GetTickCount() - g_scWsOnSphere < 250u) return; }
         el = GetTickCount() - wpp->startMs;
     }
     const WsPopup& wp = *wpp;

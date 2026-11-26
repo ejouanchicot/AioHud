@@ -1,6 +1,6 @@
 // chat_config.cpp -- the Chat module's settings panel (//aio config -> "Chat").
 //
-// ONE set of rows edits the box picked by the "Box" selector (Chat / Battle) -- the same pattern as the per-element
+// ONE set of rows edits the box picked by the selector at the top of the page (Chat / Battle) -- the same pattern as the per-element
 // Text selector of the other modules, and the reason no control here needs a loop uid : each row has one call site.
 // Sections, the config grammar (docs/architecture/config-panels.md) : Display [6] / Frame [20] / Content [21] /
 // Behaviour [22] / History [24] / Banned players [25] / Text [5]. How the boxes are USED (Edit layout, the wheel,
@@ -28,17 +28,19 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
     const int b = (g_chatCfgBox == 1) ? 1 : 0;
     const char* BOXL[2] = { tr("Chat", "Discussion"), tr("Battle", "Combat") };
 
-    // ===== DISPLAY (which box, shown, size, its geometry) =====
-    const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
+    // ===== WHICH BOX every section below edits : ONCE, above them (2026-11-26 : it sat in Display AND in Text) =====
+    { ROW_BAND(52.0f)
+        if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Box edited below", "Box r\xC3\xA9""gl\xC3\xA9""""e ci-dessous"), BOXL[b])) g_chatCfgBox = wrap(b + d, 2);
+    } ROW_NEXT(52.0f)
+    ry += snap(8.0f);
+    // ===== DISPLAY (shown, size, its geometry) =====
+    const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
     if (aF6_ > 0.0f) {
         const float top6_ = ry;
         cat_fold_clip(dev, hdrX, top6_, hdrW, catH_[6] * aF6_);
-        { ROW_BAND(52.0f)
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Box", "Box"), BOXL[b])) g_chatCfgBox = wrap(b + d, 2);
-        } ROW_NEXT(52.0f)
         ROW_TOGGLE(CTRL_ID, tr("Show", "Afficher"), c.chShow[b])
         { ROW_BAND(46.0f)   // Size
             const float lo = 0.50f, hi = 2.00f; char s[16]; sprintf(s, "%d%%", (int)(c.chScale[b] * 100.0f + 0.5f));
@@ -80,6 +82,7 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
     }
     ry += snap(16.0f);
     // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
@@ -91,8 +94,9 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
         cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
     }   // end Frame
     ry += snap(16.0f);
+}   // end Advanced only
     // ===== sub-section : CONTENT (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
-    const float aF21_ = cat_fold(CTRL_ID, catOpen_[21]);
+    const float aF21_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[21]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[21], aF21_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[21], aF21_)) catOpen_[21] = !catOpen_[21];
     ROW_NEXT(42.0f)
@@ -124,6 +128,7 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
     }   // end Content
     ry += snap(16.0f);
     // ===== sub-section : BEHAVIOUR (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF22_ = cat_fold(CTRL_ID, catOpen_[22]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[22], aF22_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Behaviour", "Comportement"), catOpen_[22], aF22_)) catOpen_[22] = !catOpen_[22];
@@ -159,9 +164,11 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
         cat_fold_end(dev, ry, top22_, catH_[22], aF22_);
     }   // end Behaviour
     ry += snap(16.0f);
+}   // end Advanced only
 
     // ===== HISTORY (what was said : kept to a file). Its own section, not Behaviour's : an ACTION, not a setting,
     // and the place the history's next tools go (2026-11-17 config audit) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF24_ = cat_fold(CTRL_ID, catOpen_[24]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[24], aF24_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("History", "Historique"), catOpen_[24], aF24_)) catOpen_[24] = !catOpen_[24];
@@ -185,11 +192,13 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
         cat_fold_end(dev, ry, top24_, catH_[24], aF24_);
     }   // end History
     ry += snap(16.0f);
+}   // end Advanced only
 
     // ===== BANNED PLAYERS (both boxes) : a LIST the player builds, so its own section, its count in the title -- it
     // can hold 200 names and must not push the settings around (2026-11-17 config audit) =====
     const int nBan = chat_ban_count();
     char hbBan[64]; _snprintf(hbBan, sizeof(hbBan), tr("Banned players (%d)", "Joueurs bannis (%d)"), nBan); hbBan[sizeof(hbBan) - 1] = 0;
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF25_ = cat_fold(CTRL_ID, catOpen_[25]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[25], aF25_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, hbBan, catOpen_[25], aF25_)) catOpen_[25] = !catOpen_[25];
@@ -225,8 +234,10 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
         cat_fold_end(dev, ry, top25_, catH_[25], aF25_);
     }   // end Banned players
     ry += snap(16.0f);
+}   // end Advanced only
 
-    // ===== TEXT (of the box picked above) =====
+    // ===== TEXT (of the box picked at the top) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
@@ -234,9 +245,6 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
     if (aF5_ > 0.0f) {
         const float top5_ = ry;
         cat_fold_clip(dev, hdrX, top5_, hdrW, catH_[5] * aF5_);
-        { ROW_BAND(52.0f)
-            if (int d = row_selector(dev, fo, mo, click, CTRL_ID, coX, ry + yo, ctrlW, tr("Box", "Box"), BOXL[b])) g_chatCfgBox = wrap(b + d, 2);
-        } ROW_NEXT(52.0f)
         draw_text_style(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, c.chText[b]);
         // the auto-translated words' colour (both boxes ; they are drawn bold, between the green / red brackets)
         { ROW_BAND(48.0f)
@@ -249,6 +257,8 @@ void ConfigPage::draw_chat_config(u32 dev, Font* fo, const MouseState* mo, bool 
         cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
     }
     ry += snap(16.0f);
+}   // end Advanced only
+    if (!ui_config().cfgAdv) SIMPLE_MORE   // Simple : where the rest is
     #undef ROW_BAND
     #undef ROW_NEXT
 }

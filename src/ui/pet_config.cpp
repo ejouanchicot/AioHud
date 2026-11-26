@@ -23,7 +23,7 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
     const int tab = (c.petTab == 1 || c.petTab == 2) ? c.petTab : 0;
 
     // ===== sub-section : DISPLAY =====
-    const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
+    const float aF6_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[6]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
     ROW_NEXT(42.0f)
@@ -50,6 +50,7 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
     }   // end Display
     ry += snap(16.0f);
     // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
@@ -61,8 +62,9 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
         cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
     }   // end Frame
     ry += snap(16.0f);
+}   // end Advanced only
     // ===== sub-section : CONTENT (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
-    const float aF21_ = cat_fold(CTRL_ID, catOpen_[21]);
+    const float aF21_ = cat_fold(CTRL_ID, !ui_config().cfgAdv || (catOpen_[21]));
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[21], aF21_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Content", "Contenu"), catOpen_[21], aF21_)) catOpen_[21] = !catOpen_[21];
     ROW_NEXT(42.0f)
@@ -77,6 +79,7 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
     ry += snap(16.0f);
 
     // ===== sub-section : TEXT (the tab's text elements) =====
+if (ui_config().cfgAdv) {   // Advanced only (the config's depth, 2026-11-26)
     const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
@@ -91,6 +94,8 @@ void ConfigPage::draw_pet_config(u32 dev, Font* fo, const MouseState* mo, bool c
     }   // end Text
 
     ry += snap(16.0f);
+}   // end Advanced only
+    if (!ui_config().cfgAdv) SIMPLE_MORE   // Simple : where the rest is
 }
 
 #undef ROW_BAND
