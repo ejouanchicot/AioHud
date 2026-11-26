@@ -8,7 +8,8 @@
 // out) plus the column geometry ; the shared ROW_BAND/ROW_NEXT macros are re-established locally so
 // the rows read exactly as they did inline. Pure move out of config_page.cpp -- no behaviour change.
 #include "ui/config_page.h"
-#include "ui/config_controls.h"   // shared toolkit : cat_header / row_slider / toggle_chip / row_selector + palette + g_fade
+#include "ui/config_controls.h"
+#include "ui/cfg_engine.h"     // the redesign : OptDef tables + the kit (draw_target_v2)   // shared toolkit : cat_header / row_slider / toggle_chip / row_selector + palette + g_fade
 #include "ui/config_rows.h"       // ROW_BAND / ROW_NEXT row-layout macros (shared with config_page.cpp)
 #include "model/ui_config.h"      // ui_config(), save/reset, TGT_* enum, TextStyle
 #include "gfx/font.h"
@@ -57,6 +58,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         // ===== sub-section : DISPLAY (box chrome + size + placement). No outer "Target" wrapper -- opens straight
         //       into its sub-sections like every other module (the sidebar already names the module). =====
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+{
         const float aF6_ = cat_fold(CTRL_ID, catOpen_[6]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[6], aF6_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Display", "Affichage"), catOpen_[6], aF6_)) catOpen_[6] = !catOpen_[6];
@@ -89,7 +91,9 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, top6_, catH_[6], aF6_);
         }   // end sub-section Box / Frame (catOpen_[6])
         ry += snap(16.0f);                                 // air between this section and the next title bar
+}
     // ===== sub-section : FRAME (the config grammar : Display / Frame / Content / Behaviour / Text, docs/architecture/config-panels.md) =====
+{
     const float aF20_ = cat_fold(CTRL_ID, catOpen_[20]);
     cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[20], aF20_));
     if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Frame", "Cadre"), catOpen_[20], aF20_)) catOpen_[20] = !catOpen_[20];
@@ -165,8 +169,10 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         cat_fold_end(dev, ry, top20_, catH_[20], aF20_);
     }   // end Frame
     ry += snap(16.0f);
+}
         // ---- sub-section : Bars ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+{
         const float aF7_ = cat_fold(CTRL_ID, catOpen_[7]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[7], aF7_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Bars", "Barres"), catOpen_[7], aF7_)) catOpen_[7] = !catOpen_[7];
@@ -202,8 +208,10 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, top7_, catH_[7], aF7_);
         }   // end sub-section Bars (catOpen_[7])
         ry += snap(16.0f);                                 // air between this section and the next title bar
+}
         // ---- sub-section : Detail ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+{
         const float aF8_ = cat_fold(CTRL_ID, catOpen_[8]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[8], aF8_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Detail", "Détail"), catOpen_[8], aF8_)) catOpen_[8] = !catOpen_[8];
@@ -283,8 +291,10 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, top8_, catH_[8], aF8_);
         }   // end sub-section Detail (catOpen_[8])
         ry += snap(16.0f);                                 // air between this section and the next title bar
+}
         // ---- sub-section : Debuffs ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+{
         const float aF9_ = cat_fold(CTRL_ID, catOpen_[9]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[9], aF9_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Debuffs", "Debuffs"), catOpen_[9], aF9_)) catOpen_[9] = !catOpen_[9];
@@ -350,6 +360,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
         cat_fold_end(dev, ry, top9_, catH_[9], aF9_);
     }   // end Debuffs
     ry += snap(16.0f);                                 // air between this section and the next title bar
+}
 
     // ===== sub-section : DEBUFF BOX =====
     // The STANDALONE debuff list is a second BOX -- its own size, its own row count, its own frame and theme --
@@ -358,6 +369,7 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
     // It only exists in Standalone mode, so the section only exists then either -- an empty card would be a
     // promise of settings that are not there.
     if (ui_config().tgtDebuffs && ui_config().dbShow) {
+{
         const float aFd_ = cat_fold(CTRL_ID, catOpen_[16]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[16], aFd_));
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Debuff box", "Bo\xC3\xAEte debuffs"), catOpen_[16], aFd_)) catOpen_[16] = !catOpen_[16];
@@ -400,9 +412,11 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, topD_, catH_[16], aFd_);
         }   // end Debuff box
         ry += snap(16.0f);
+}
     }                                 // air between this section and the next title bar
         // ---- Typography sub-section : per-element Font / Size / Outline / Style / Colour (Name / HP% / Timer) ----
         // The section FOLDS : cat_fold owns the eased progress, the clip and the cursor (config_controls.h).
+{
         const float aF5_ = cat_fold(CTRL_ID, catOpen_[5]);
         cat_panel(dev, hdrX, ry, hdrW, cat_card_h(catH_[5], aF5_));   // the section IS a card, collapsed or not
         if (cat_header(dev, fo, mo, click, CTRL_ID, hdrX, ry, hdrW, tr("Text", "Texte"), catOpen_[5], aF5_)) catOpen_[5] = !catOpen_[5];
@@ -437,9 +451,177 @@ void ConfigPage::draw_target_config(u32 dev, Font* fo, const MouseState* mo, boo
             cat_fold_end(dev, ry, top5_, catH_[5], aF5_);
         }   // end Text sub-section (catOpen_[5])
         ry += snap(16.0f);
+}
 
     #undef ROW_BAND
     #undef ROW_NEXT
 }
+
+
+// ======== THE NEW TARGET PAGE (the config redesign, milestone 1, 2026-11-26) ========
+// every option described once (OptDef, cfg_engine.h) and drawn by the kit (cfg_kit.h) : modified marker, right-click
+// reset, a dependency greys the row WITH its reason. Frame and Text are the engine's shared blocks (cfg_frame_rows,
+// cfg_text_rows). //aio config v1 : the old page (draw_target_config).
+#define F_(name) [](UiConfig& c) -> void* { return &c.name; }
+static const char* const C_TF_EN[2] = { "Fixed", "By hostility" },            * const C_TF_FR[2] = { "Fixe", "Par hostilit\xC3\xA9" };
+static const char* const C_TI_EN[2] = { "Text", "Icon" },                      * const C_TI_FR[2] = { "Texte", "Ic\xC3\xB4ne" };
+static const char* const C_GM_EN[2] = { "Gauge", "Minimal" },                  * const C_GM_FR[2] = { "Jauge", "Minimal" };
+static const char* const C_DB_EN[2] = { "In the target box", "In their own box" }, * const C_DB_FR[2] = { "Dans la box cible", "Dans leur propre box" };
+static const char* const C_SP_EN[6] = { "Above-Right", "Above-Left", "Below-Right", "Below-Left", "Right", "Left" };
+static const char* const C_SP_FR[6] = { "Haut-Droite", "Haut-Gauche", "Bas-Droite", "Bas-Gauche", "Droite", "Gauche" };
+static const char* const C_BP_EN[5] = { "Inside", "Below", "Above", "Left", "Right" },  * const C_BP_FR[5] = { "Dans la box", "Dessous", "Dessus", "Gauche", "Droite" };
+static const char* const C_DD_EN[3] = { "Icon", "Name", "Icon + name" },       * const C_DD_FR[3] = { "Ic\xC3\xB4ne", "Nom", "Ic\xC3\xB4ne + nom" };
+// the reasons : what greys a row, said in a few words
+static const char* w_debuffs(const UiConfig& c)   { return c.tgtDebuffs ? nullptr : tr("inactive : debuffs off", "inactif : debuffs coup\xC3\xA9s"); }
+static const char* w_inbox(const UiConfig& c)     { return !c.tgtDebuffs ? tr("inactive : debuffs off", "inactif : debuffs coup\xC3\xA9s") : (c.dbShow ? tr("inactive : debuffs in their own box", "inactif : debuffs dans leur propre box") : nullptr); }
+static const char* w_range(const UiConfig& c)     { return c.tgtRange ? nullptr : tr("inactive : distance off", "inactif : distance coup\xC3\xA9""e"); }
+static const char* w_gauge(const UiConfig& c)     { return !c.tgtRange ? tr("inactive : distance off", "inactif : distance coup\xC3\xA9""e") : (c.tgtRangeMin ? tr("inactive : minimal distance", "inactif : distance minimale") : nullptr); }
+static const char* w_speed(const UiConfig& c)     { return c.tgtSpeed ? nullptr : tr("inactive : speed off", "inactif : vitesse coup\xC3\xA9""e"); }
+static const char* w_th(const UiConfig& c)        { return c.tgtTH ? nullptr : tr("inactive : Treasure Hunter off", "inactif : Treasure Hunter coup\xC3\xA9"); }
+static const char* w_icons(const UiConfig& c)     { return (c.tgtSpeed && c.tgtSpeedIcon) || (c.tgtTH && c.tgtThIcon) ? nullptr : tr("inactive : speed and TH shown as text", "inactif : vitesse et TH en texte"); }
+static const char* w_sub(const UiConfig& c)       { return c.tgtSub ? nullptr : tr("inactive : sub-target box off", "inactif : box de sous-cible coup\xC3\xA9""e"); }
+static const char* w_cast(const UiConfig& c)      { return c.tgtCast ? nullptr : tr("inactive : spell off", "inactif : sort coup\xC3\xA9"); }
+
+static const OptDef TGT_DISPLAY[] = {
+    { "Show", "Afficher", OK_TOGGLE, OL_SIMPLE, F_(tgtShow), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Size", "Taille", OK_PCT, OL_SIMPLE, F_(tgtScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "To move it : Edit Layout (top tab). Dragged to the screen centre, it stays centred.", "Pour la d\xC3\xA9placer : onglet \xC3\x89""diter dispo. Gliss\xC3\xA9""e au centre de l'\xC3\xA9""cran, elle y reste.", OK_NOTE, OL_SIMPLE, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef TGT_SHOWS[] = {   // Simple's second card
+    { "Distance to the target", "Distance de la cible", OK_TOGGLE, OL_SIMPLE, F_(tgtRange), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "The spell it casts", "Le sort qu'elle lance", OK_TOGGLE, OL_SIMPLE, F_(tgtCast), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Its debuffs", "Ses debuffs", OK_TOGGLE, OL_SIMPLE, F_(tgtDebuffs), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Debuffs shown", "Debuffs affich\xC3\xA9s", OK_SELECT, OL_SIMPLE, F_(dbShow), 0, 0, C_DB_EN, C_DB_FR, 2, w_debuffs, 0 },
+    { "Its speed (slowed / hasted)", "Sa vitesse (ralentie / acc\xC3\xA9l\xC3\xA9r\xC3\xA9""e)", OK_TOGGLE, OL_SIMPLE, F_(tgtSpeed), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Treasure Hunter", "Treasure Hunter", OK_TOGGLE, OL_SIMPLE, F_(tgtTH), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+};
+static const OptDef TGT_BARS[] = {
+    { "Bar height", "Hauteur de la barre", OK_PCT, OL_ADV, F_(tgtBarH), 0.6f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Bar width", "Largeur de la barre", OK_PCT, OL_ADV, F_(tgtBarW), 0.4f, 1.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Distance bar height", "Hauteur de la jauge distance", OK_PCT, OL_ADV, F_(tgtRangeH), 0.6f, 2.0f, nullptr, nullptr, 0, w_gauge, 0 },
+};
+static const OptDef TGT_DETAIL[] = {
+    { "Name colour", "Couleur du nom", OK_SELECT, OL_ADV, F_(tgtNameHostile), 0, 0, C_TF_EN, C_TF_FR, 2, nullptr, 0 },
+    { "Sub-target box (<st>)", "Box de sous-cible (<st>)", OK_TOGGLE, OL_ADV, F_(tgtSub), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Sub-target position", "Position de la sous-cible", OK_SELECT, OL_ADV, F_(tgtSubPos), 0, 0, C_SP_EN, C_SP_FR, 6, w_sub, 0 },
+    { "Speed", "Vitesse", OK_TOGGLE, OL_ADV, F_(tgtSpeed), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Speed display", "Affichage de la vitesse", OK_SELECT, OL_ADV, F_(tgtSpeedIcon), 0, 0, C_TI_EN, C_TI_FR, 2, w_speed, 0 },
+    { "Treasure Hunter", "Treasure Hunter", OK_TOGGLE, OL_ADV, F_(tgtTH), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "TH display", "Affichage du TH", OK_SELECT, OL_ADV, F_(tgtThIcon), 0, 0, C_TI_EN, C_TI_FR, 2, w_th, 0 },
+    { "Speed / TH icon size", "Taille des ic\xC3\xB4nes vitesse / TH", OK_PCT, OL_ADV, F_(tgtDetailIconSz), 0.5f, 3.0f, nullptr, nullptr, 0, w_icons, 0 },
+    { "Distance", "Distance", OK_TOGGLE, OL_ADV, F_(tgtRange), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Distance display", "Affichage de la distance", OK_SELECT, OL_ADV, F_(tgtRangeMin), 0, 0, C_GM_EN, C_GM_FR, 2, w_range, 0 },
+    { "The spell it casts", "Le sort qu'elle lance", OK_TOGGLE, OL_ADV, F_(tgtCast), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Sample spell (to place it)", "Sort d'exemple (pour le placer)", OK_TOGGLE, OL_ADV, F_(tgtCastDemo), 0, 0, nullptr, nullptr, 0, w_cast, 0 },
+};
+static const OptDef TGT_DEBUFFS[] = {
+    { "Debuffs", "Debuffs", OK_TOGGLE, OL_ADV, F_(tgtDebuffs), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Debuffs shown", "Debuffs affich\xC3\xA9s", OK_SELECT, OL_ADV, F_(dbShow), 0, 0, C_DB_EN, C_DB_FR, 2, w_debuffs, 0 },
+    { "Max debuffs", "Debuffs max", OK_INT, OL_ADV, F_(tgtBuffMax), 1, 32, nullptr, nullptr, 0, w_inbox, 0 },
+    { "Debuffs position", "Position des debuffs", OK_SELECT, OL_ADV, F_(tgtBuffPos), 0, 0, C_BP_EN, C_BP_FR, 5, w_inbox, 0 },
+    { "Debuff icon size", "Taille des ic\xC3\xB4nes", OK_PCT, OL_ADV, F_(tgtIconSz), 0.5f, 2.0f, nullptr, nullptr, 0, w_inbox, 0 },
+    { "Time left under each", "Temps restant sous chacun", OK_TOGGLE, OL_ADV, F_(tgtTimers), 0, 0, nullptr, nullptr, 0, w_inbox, 0 },
+};
+static const OptDef TGT_DBBOX[] = {   // the standalone debuff box : exists only in that mode (a structural section)
+    { "Size", "Taille", OK_PCT, OL_ADV, F_(dbScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Grows toward", "Grandit vers", OK_GROW, OL_ADV, nullptr, 0, 0, nullptr, nullptr, 0, nullptr, UiConfig::GB_DB },
+    { "Max rows", "Lignes max", OK_INT, OL_ADV, F_(dbMax), 1, 32, nullptr, nullptr, 0, nullptr, 0 },
+    { "Header (mob name)", "En-t\xC3\xAAte (nom du mob)", OK_TOGGLE, OL_ADV, F_(dbHeader), 0, 0, nullptr, nullptr, 0, nullptr, 0 },
+    { "Rows show", "Les lignes montrent", OK_SELECT, OL_ADV, F_(dbDisp), 0, 0, C_DD_EN, C_DD_FR, 3, nullptr, 0 },
+    { "Icon size", "Taille des ic\xC3\xB4nes", OK_PCT, OL_ADV, F_(dbIconScale), 0.5f, 2.0f, nullptr, nullptr, 0, nullptr, 0 },
+    { "Row spacing", "Espacement des lignes", OK_PCT, OL_ADV, F_(dbRowGap), 0.6f, 3.0f, nullptr, nullptr, 0, nullptr, 0 },
+};
+#undef F_
+#define NOPT(a) ((int)(sizeof(a) / sizeof((a)[0])))
+
+void ConfigPage::draw_target_v2(u32 dev, Font* fo, const MouseState* mo, bool click,
+                                float& ry, int& ri, float e,
+                                float bandX, float bandW, float coX, float ctrlW,
+                                float hdrX, float hdrW) {
+    Kit K;   // a COPY of the frame's kit (draw() built it) : no second font lookup ; its mouse is then gated to this viewport
+    if (s_ck_page) K = *s_ck_page;
+    else if (!frame_ || !kit_begin(K, *frame_, frame_->screenH, 1.0f)) {   // no kit this frame : the old page, never nothing
+        draw_target_config(dev, fo, mo, click, ry, ri, e, bandX, bandW, coX, ctrlW, hdrX, hdrW); return; }
+    K.mo = mo; K.click = click;                    // the page's gated mouse (the viewport) ; the kit's own would click through
+    K.clipTop = viewTop_; K.clipBot = viewBot_;    // rows outside the viewport are not drawn
+    g_fade = e;
+    const bool adv = ui_config().cfgAdv != 0;
+    // the column FILLS its band (left edge = the page title, right edge = the preview's gutter) : a narrower one floated
+    // with a void beside it (2026-11-26). Long rows are tracked by the faint alternate banding (cfg_engine row_begin).
+    const float x = coX, w = ctrlW;
+    const int base = CTRL_ID;
+    ry += K.px(6.0f);
+    if (!adv) {
+        bool on = true;
+        cfg_section(K, ctrl_uid_i(base, 1), x, ry, w, tr("Display", "Affichage"), &on, cfg_count_modified(TGT_DISPLAY, NOPT(TGT_DISPLAY), false), false);
+        cfg_rows(K, ctrl_uid_i(base, 2), TGT_DISPLAY, NOPT(TGT_DISPLAY), x, ry, w, false);
+        ry += K.px(18.0f);
+        cfg_section(K, ctrl_uid_i(base, 3), x, ry, w, tr("What it shows", "Ce qu'elle affiche"), &on, cfg_count_modified(TGT_SHOWS, NOPT(TGT_SHOWS), false), false);
+        cfg_rows(K, ctrl_uid_i(base, 4), TGT_SHOWS, NOPT(TGT_SHOWS), x, ry, w, false);
+        ry += K.px(14.0f);
+        K.fr->begin(dev);
+        K.fr->draw_lc(dev, x + K.px(18.0f), ry + K.px(14.0f), tr("Frame, text, fine sizes : Advanced, top right. Right-click a modified setting to reset it.",
+                       "Cadre, texte, tailles fines : Avanc\xC3\xA9, en haut \xC3\xA0 droite. Clic droit sur un r\xC3\xA9glage modifi\xC3\xA9 pour le r\xC3\xA9initialiser."),
+                      K.px(13.5f), fa(C_DIM), 0, 0.0f);
+        ry += K.px(40.0f);
+        cfg_flush(mo);
+        return;
+    }
+    struct Sec { int slot; const char* en; const char* fr; const OptDef* d; int n; };
+    auto section = [&](int k, const Sec& s) {
+        bool open = catOpen_[s.slot];
+        if (cfg_section(K, ctrl_uid_i(base, 10 + k), x, ry, w, tr(s.en, s.fr), &open, cfg_count_modified(s.d, s.n, true), true)) {
+            cfg_rows(K, ctrl_uid_i(base, 20 + k), s.d, s.n, x, ry, w, true); ry += K.px(12.0f); }
+        catOpen_[s.slot] = open;
+        ry += K.px(6.0f);
+    };
+    const Sec DISPLAY = { 6, "Display", "Affichage", TGT_DISPLAY, NOPT(TGT_DISPLAY) };
+    section(0, DISPLAY);
+    UiConfig& c = ui_config();
+    {   // FRAME : the shared block, in the kit
+        const FrameRefs fr = { &c.tgtBox, &c.tgtBorder, &c.tgtBoxAlpha, &c.tgtAlphaOwn, &c.tgtThemeCopy, &c.tgtTheme, &c.tgtHue, &c.tgtLum };
+        bool open = catOpen_[20];
+        if (cfg_section(K, ctrl_uid_i(base, 15), x, ry, w, tr("Frame", "Cadre"), &open, cfg_frame_modified(fr), true)) {
+            cfg_frame_rows(K, ctrl_uid_i(base, 25), x, ry, w, fr); ry += K.px(12.0f); }
+        catOpen_[20] = open; ry += K.px(6.0f);
+    }
+    const Sec BARS = { 7, "Bars", "Barres", TGT_BARS, NOPT(TGT_BARS) }, DETAIL = { 8, "Detail", "D\xC3\xA9tail", TGT_DETAIL, NOPT(TGT_DETAIL) },
+              DEBUFFS = { 9, "Debuffs", "Debuffs", TGT_DEBUFFS, NOPT(TGT_DEBUFFS) };
+    section(1, BARS); section(2, DETAIL); section(3, DEBUFFS);
+    if (c.tgtDebuffs && c.dbShow) {   // the standalone box : its section exists only in that mode
+        BoxStyle& bs = c.dbBox;
+        const FrameRefs fr = { &bs.on, &bs.border, &bs.alpha, &bs.alphaOwn, &bs.themeCopy, &bs.theme, &bs.hue, &bs.lum };
+        bool open = catOpen_[16];
+        if (cfg_section(K, ctrl_uid_i(base, 14), x, ry, w, tr("Debuff box", "Bo\xC3\xAEte des debuffs"), &open,
+                        cfg_count_modified(TGT_DBBOX, NOPT(TGT_DBBOX), true) + cfg_frame_modified(fr), true)) {
+            cfg_rows(K, ctrl_uid_i(base, 24), TGT_DBBOX, NOPT(TGT_DBBOX), x, ry, w, true);
+            cfg_frame_rows(K, ctrl_uid_i(base, 26), x, ry, w, fr);   // its frame : the shared block
+            ry += K.px(12.0f);
+        }
+        catOpen_[16] = open; ry += K.px(6.0f);
+    }
+    {   // TEXT : the element list follows what is shown (no dead element) -- the same rule as the old page
+        const char* lab[TGT_TE_COUNT + DB_TE_COUNT]; TextStyle* ts[TGT_TE_COUNT + DB_TE_COUNT]; int n = 0;
+        auto add = [&](const char* en, const char* frl, TextStyle* t) { lab[n] = tr(en, frl); ts[n] = t; ++n; };
+        add("Name", "Nom", &c.tgtText[TGT_NAME]);
+        add("HP%", "PV%", &c.tgtText[TGT_HP]);
+        if (c.tgtDebuffs && !c.dbShow && c.tgtTimers) add("Debuff timer", "Minuteur des debuffs", &c.tgtText[TGT_TIMER]);
+        if (c.tgtSpeed) add("Speed", "Vitesse", &c.tgtText[TGT_SPD]);
+        if (c.tgtTH)    add("Treasure Hunter", "Treasure Hunter", &c.tgtText[TGT_TH]);
+        if (c.tgtRange) add("Distance", "Distance", &c.tgtText[TGT_RANGE]);
+        if (c.tgtDebuffs && c.dbShow) {
+            add("Debuff box header", "En-t\xC3\xAAte de la bo\xC3\xAEte", &c.dbText[DB_HEADER]);
+            add("Debuff name", "Nom du debuff", &c.dbText[DB_NAME]);
+            add("Debuff timer", "Minuteur du debuff", &c.dbText[DB_TIMER]);
+        }
+        bool open = catOpen_[5];
+        if (cfg_section(K, ctrl_uid_i(base, 16), x, ry, w, tr("Text", "Texte"), &open, cfg_text_modified(ts, n), true)) {
+            cfg_text_rows(K, ctrl_uid_i(base, 27), x, ry, w, lab, ts, n, &cfgTgtTextElem_); ry += K.px(12.0f); }
+        catOpen_[5] = open; ry += K.px(6.0f);
+    }
+    cfg_flush(mo);
+    g_fade = e;
+}
+#undef NOPT
 
 } // namespace aio

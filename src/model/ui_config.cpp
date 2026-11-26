@@ -1561,7 +1561,16 @@ bool profile_delete(const char* name) {
     // (It happened to work when the deleted profile was last alphabetically -- nothing moved into its slot.)
     char nm[64]; int i = 0; for (; i < (int)sizeof(nm) - 1 && name[i]; ++i) nm[i] = name[i]; nm[i] = 0;
     char p[300]; profile_path(nm, p, sizeof(p));
-    bool ok = DeleteFileA(p) != 0;
+    // RECOVERABLE : the file is MOVED to profiles\_deleted\ (the list scans only *.txt at the top level), never erased --
+    // a profile is hours of tuning, and DeleteFileA had no way back (2026-11-26 : ten profiles found gone, no trace of
+    // how). The same name deleted again replaces the older copy there. Falls back to a real delete only if the move fails.
+    char trash[300]; _snprintf(trash, sizeof(trash), "%s\\_deleted", profile_dir()); trash[sizeof(trash) - 1] = 0;
+    CreateDirectoryA(trash, nullptr);
+    const char* base = strrchr(p, '\\'); base = base ? base + 1 : p;
+    char dst[400]; _snprintf(dst, sizeof(dst), "%s\\%s", trash, base); dst[sizeof(dst) - 1] = 0;
+    bool ok = MoveFileExA(p, dst, MOVEFILE_REPLACE_EXISTING) != 0;
+    if (!ok) ok = DeleteFileA(p) != 0;
+    windower::debug::log("PROFILE deleted \"%s\" -> %s (%s)", nm, ok ? "profiles\\_deleted" : "FAILED", ok ? "recoverable" : "still on disk");
     profile_refresh();
     if (g_active[0] && strcmp(g_active, nm) == 0) set_active_profile("");   // deleting the active profile clears it
     return ok;

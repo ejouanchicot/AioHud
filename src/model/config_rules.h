@@ -141,7 +141,7 @@ inline void config_sanitise(UiConfig& c) {
     ALPHA(tgtBoxAlpha); LUM(tgtLum);
     MUL(tgtScale); MUL(tgtBarH); MUL(tgtBarW); MUL(tgtIconSz); MUL(tgtDetailIconSz); MUL(tgtRangeH);
     FRAC(tgtX); FRAC(tgtY);
-    c.tgtBuffMax = cfg_int(c.tgtBuffMax, 0, 20);
+    c.tgtBuffMax = cfg_int(c.tgtBuffMax, 0, 32);   // the slider and target.cpp go to 32 : 20 silently cut 21-32 on reload
     cfg_text(c.tgtText, TGT_TE_COUNT);
 
     // ---- Player hub + equipment

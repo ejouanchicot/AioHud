@@ -2094,6 +2094,8 @@ static void aio_command_dispatch(const char* cmd)
         }
         const char* cp = strstr(buf, "config") + 6; while (*cp == ' ') ++cp;
         if (!strncmp(cp, "sec", 3)) { g_hud.config().set_tab(0); g_hud.config().set_section(atoi(cp + 3)); if (const char* cc = strstr(cp, "cat")) g_hud.config().only_cat(atoi(cc + 3)); g_hud.config().set_open(true); }   // a module's page
+        else if (!strncmp(cp, "v1", 2) || !strncmp(cp, "v2", 2)) { g_hud.config().set_v2(cp[1] == '2'); g_hud.config().set_open(true); }   // the redesign : old / new pages
+        else if (!strncmp(cp, "kit", 3)) { g_hud.config().toggle_kit(); g_hud.config().set_open(true); }   // the redesign's component sheet
         else if (!strncmp(cp, "help", 4)) { g_hud.config().set_tab(3); g_hud.config().set_help(atoi(cp + 4)); g_hud.config().set_open(true); }   // a Help page (0-based, the rail's order)
         else if (*cp >= '1' && *cp <= '6') { g_hud.config().set_tab(atoi(cp) - 1); g_hud.config().set_open(true); }   // the six tabs (1 Configuration .. 6 Debug)
         else                          g_hud.config().toggle();

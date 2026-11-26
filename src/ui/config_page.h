@@ -23,6 +23,8 @@ public:
     bool is_open() const  { return open_; }
     void set_tab(int t);
     void set_section(int s) { section_ = s; }
+    void toggle_kit() { kitSheet_ = !kitSheet_; }
+    void set_v2(bool on) { v2_ = on; }   // //aio config v1 | v2 : the old / the new pages (the redesign's comparison)   // //aio config kit : the redesign's component sheet (cfg_kit.cpp)
     void set_help(int h) { helpSel_ = h; helpScroll_ = 0.0f; }   // //aio config help N : that Help page
     bool cat_is_open(int c) const { return c >= 0 && c < CFG_CAT_N && catOpen_[c]; }   // a page's section is open (the preview follows it)
     void only_cat(int c) { for (bool& b : catOpen_) b = false; if (c >= 0 && c < CFG_CAT_N) catOpen_[c] = true; }   // //aio config sec N cat C : that category alone, open   // //aio config sec N : open a module's page (0-based, MODULES order)
@@ -111,6 +113,12 @@ private:
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW,
                             float hdrX, float hdrW);
+    void draw_target_v2(u32 dev, Font* fo, const MouseState* mo, bool click,   // the redesign's Target page (cfg_engine)
+                        float& ry, int& ri, float e, float bandX, float bandW, float coX, float ctrlW, float hdrX, float hdrW);
+    float frameL_ = 0.0f, frameM_ = 0.0f, frameR_ = 0.0f, frameTop_ = 0.0f, frameTr_ = 0.0f;   // the redesign's right frame : its left inner edge, its mullion (the settings' opening)
+    const Frame* frame_ = nullptr;
+    const struct Kit* s_ck_page = nullptr;   // the redesign's kit for this frame (draw() sets it ; null = old look)
+    float viewTop_ = -1e9f, viewBot_ = 1e9f;   // the settings viewport this frame (the redesign culls rows outside it)       // this frame (the kit needs its fonts and screen)
     void draw_target_config(u32 dev, Font* fo, const MouseState* mo, bool click,
                             float& ry, int& ri, float e,
                             float bandX, float bandW, float coX, float ctrlW,
@@ -228,10 +236,13 @@ private:
     // draw() sub-branches lifted out of the ~1200-line ConfigPage::draw() (same TU, config_page.cpp ; byte-identical).
     void draw_profile_bar(u32 dev, Font* fo, const MouseState* mo, bool click, float coX, float coW, float bodyY, float pulse);   // Configuration-tab quick profile switcher ; drawn AFTER the content so scroll overflow can't cover it
     void draw_edit_layout(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click, float sw, float sh);
+    void draw_profile_tab_v2(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,   // the redesign's Profile tab
+                             float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse, float e);
     void draw_profile_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
                           float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse, float e);
     void draw_help_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
                        float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse);
+    void draw_update_tab_v2(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click, float ix, float iw, float bodyY, float pageBot);   // the redesign
     void draw_update_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
                          float ix, float iw, float bodyY, float bodyH, float pageBot, float pulse, float e);
     void draw_debug_tab(const Frame& f, u32 dev, Font* fo, const MouseState* mo, bool click,
@@ -331,6 +342,8 @@ private:
     unsigned profErrMs_ = 0;      // GetTickCount of the failure (0 = none) -> the banner shows for ~8 s
     char     profErrName_[64] = { 0 };
     bool  profSynced_  = false;   // one-time sync of activeProf_ from the persisted active profile (startup auto-load)
+    bool  kitSheet_    = false;
+    bool  v2_          = true;    // the redesigned pages (Target first) ; false = the old ones   // the component sheet replaces the page while on
     int   helpSel_     = 0;       // Help tab : selected module in the left menu
     float helpScroll_  = 0.0f;    // Help tab vertical scroll (mouse wheel)
     float navScroll_   = 0.0f;    // the Configuration tab's module rail : its scroll once the groups outgrow the screen
@@ -339,6 +352,7 @@ private:
     float helpPlayerCx_ = 0.0f, helpPlayerCy_ = 0.0f, helpPlayerW_ = 0.0f, helpPlayerH_ = 0.0f;
     float cfgScroll_   = 0.0f;    // Configuration tab controls vertical scroll (mouse wheel)
     float cfgMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
+    bool  relOlder_    = false;   // Update tab (redesign) : the releases older than the six newest, folded away
     float updScroll_   = 0.0f;    // Update tab "What's new" changelog vertical scroll
     float updMaxScroll_= 0.0f;    // its extent, remembered for next frame's wheel clamp
     float dbgScroll_   = 0.0f;    // Debug tab vertical scroll
