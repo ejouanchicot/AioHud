@@ -378,6 +378,7 @@ struct UiConfig {
     BoxStyle  chBox[2];                    // chrome per box (frame / transparency / theme)
     BoxStyle  muBox;                       // Game UI : ONE theme for every native menu AioHUD redraws (action menu first)
     int       muLabel = 0;                 // their rows : 0 = text only, 1 = icon + text
+    int       muLang  = 0;                 // their language : 0 = the game's (the client's), 1 = English, 2 = French
     float     muScale = 1.0f;              // their size (every dimension, text included) : 0.6 .. 1.6
     int       muGrow  = 0;                 // a submenu taller than its menu grows : 0 = upward (bottoms level), 1 = downward
     int       muMainPos = 0;               // the MAIN menu (NU_MAIN) : 0 = where the game puts it (top right), 1 = top left

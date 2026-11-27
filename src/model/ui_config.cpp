@@ -285,6 +285,7 @@ static bool save_config_to(const char* path) {
     fprintf(f, "menuscale=%.2f\n", c.muScale);     // Game UI : the redrawn menus' size
     fprintf(f, "menugrow=%d\n", c.muGrow);         // Game UI : a taller submenu grows up (0) or down (1)
     fprintf(f, "mainmenupos=%d\n", c.muMainPos);   // Game UI : the main menu at the game's place (0) or top left (1)
+    fprintf(f, "menulang=%d\n", c.muLang);         // Game UI : the redrawn menus' language (0 the game's, 1 EN, 2 FR)
     fprintf(f, "menulabel=%d\n", c.muLabel);       // Game UI : the redrawn menus' rows (0 text, 1 icon + text)
     fprintf(f, "plates=%d,%d,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%d\n", c.plShow, c.plFont, c.plSize, c.plIcon, c.plStar, c.plGap, c.plStarY, c.plStarX, c.plStyle);   // Game UI : the name plates drawn by AioHUD, their font
     fprintf(f, "bst=%d,%.3f,%.4f,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%.3f,%.3f,%.3f,%d,%d,%d,%d\n", c.bstShow, c.bstScale, c.bstX, c.bstY, c.bstOnlyPet,
@@ -512,6 +513,7 @@ static bool parse_chat_line(const char* line, UiConfig& c) {
     if (!strncmp(line, "updseen=", 8)) { lstrcpynA(c.updSeen, line + 8, (int)sizeof(c.updSeen)); for (char* q = c.updSeen; *q; ++q) if (*q == '\r' || *q == '\n') *q = 0; return true; }
     if (!strncmp(line, "cfgui=", 6)) { sscanf(line + 6, "%f,%d,%d,%d,%d", &c.cfgScale, &c.cfgBg, &c.cfgReopen, &c.cfgLastTab, &c.cfgLastSec); return true; }   // the config window's own (clamped by config_rules)
     if (!strncmp(line, "plates=", 7)) { int a = 0, b = 0; float x = 1.0f, y = 1.0f, z = 1.0f, g = 1.0f, sy = 1.0f, sx = 1.0f; int st = 0; if (sscanf(line + 7, "%d,%d,%f,%f,%f,%f,%f,%f,%d", &a, &b, &x, &y, &z, &g, &sy, &sx, &st) >= 1) { c.plShow = a ? 1 : 0; c.plFont = b; c.plSize = x; c.plIcon = y; c.plStar = z; c.plGap = g; c.plStarY = sy; c.plStarX = sx; c.plStyle = st; } return true; }   // clamped by config_rules
+    if (!strncmp(line, "menulang=", 9)) { const int v = atoi(line + 9); c.muLang = v >= 0 && v <= 2 ? v : 0; return true; }
     if (!strncmp(line, "menulabel=", 10)) { const int v = atoi(line + 10); c.muLabel = v == 1 ? 1 : 0; return true; }
     if (!strncmp(line, "menuscale=", 10)) { c.muScale = (float)atof(line + 10); return true; }   // clamped by config_rules
     if (!strncmp(line, "menugrow=", 9)) { const int v = atoi(line + 9); c.muGrow = v == 1 ? 1 : 0; return true; }
@@ -1509,7 +1511,7 @@ static bool persist_eq(const UiConfig& a, const UiConfig& b) {
             || a.chLines[k] != b.chLines[k] || a.chStamp[k] != b.chStamp[k] || a.chTab[k] != b.chTab[k] || !box_eq(a.chBox[k], b.chBox[k])
             || a.chBehave[k] != b.chBehave[k] || a.chIdle[k] != b.chIdle[k] || a.chFadeTo[k] != b.chFadeTo[k] || a.chH[k] != b.chH[k] || a.chFoldLines[k] != b.chFoldLines[k] || a.chMaxLines[k] != b.chMaxLines[k] || a.chFadeIdle[k] != b.chFadeIdle[k] || a.chGrow[k] != b.chGrow[k] || a.chFit[k] != b.chFit[k] || a.chDensity[k] != b.chDensity[k] || a.chHeadScale[k] != b.chHeadScale[k] || a.chTabStyle[k] != b.chTabStyle[k]) return false;
     }
-    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock || a.chAtColor != b.chAtColor || !box_eq(a.muBox, b.muBox) || a.muLabel != b.muLabel || a.plShow != b.plShow || a.plFont != b.plFont || a.plSize != b.plSize || a.plIcon != b.plIcon || a.plStar != b.plStar || a.plGap != b.plGap || a.plStyle != b.plStyle || a.plStarY != b.plStarY || a.plStarX != b.plStarX || a.muGrow != b.muGrow || a.muMainPos != b.muMainPos || a.muScale != b.muScale) return false;   // Game UI
+    if (!text_styles_eq(a.chText, b.chText, 2) || a.chDock != b.chDock || a.chAtColor != b.chAtColor || !box_eq(a.muBox, b.muBox) || a.muLabel != b.muLabel || a.muLang != b.muLang || a.plShow != b.plShow || a.plFont != b.plFont || a.plSize != b.plSize || a.plIcon != b.plIcon || a.plStar != b.plStar || a.plGap != b.plGap || a.plStyle != b.plStyle || a.plStarY != b.plStarY || a.plStarX != b.plStarX || a.muGrow != b.muGrow || a.muMainPos != b.muMainPos || a.muScale != b.muScale) return false;   // Game UI
     if (!text_styles_eq(a.tpText, b.tpText, TP_TE_COUNT)) return false;
     if (a.hlShow != b.hlShow || a.hlScale != b.hlScale || a.hlX != b.hlX || a.hlY != b.hlY || a.hlCount != b.hlCount || a.hlDist != b.hlDist || a.hlTgt != b.hlTgt) return false;
     if (!text_styles_eq(a.hlText, b.hlText, HL_TE_COUNT)) return false;

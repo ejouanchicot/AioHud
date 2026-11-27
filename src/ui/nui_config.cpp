@@ -262,6 +262,10 @@ void ConfigPage::draw_nui_v2(u32 dev, Font* fo, const MouseState* mo, bool click
         const char* lab = allM ? STY[1] : allF ? STY[0] : tr("Mixed", "Mixte");
         if (cfg_select_row(K, ctrl_uid_i(base, 1), x, ry, w, tr("Game interface", "Interface du jeu"), lab, nullptr, nullptr, 0)) {
             const bool toModern = !allM; c.nuHide = toModern ? (c.nuHide | allBits) : (c.nuHide & ~allBits); c.plShow = toModern ? 1 : 0; save_ui_config(); }
+        // the redrawn menus' language : the game's by default (the AH's item names stay the game's whatever this says)
+        const char* LANG[3] = { tr("As the game", "Comme le jeu"), "English", "Fran\xC3\xA7""ais" };
+        const int ml = c.muLang >= 0 && c.muLang <= 2 ? c.muLang : 0;
+        if (cfg_select_row(K, ctrl_uid_i(base, 40), x, ry, w, tr("Menu language", "Langue des menus"), LANG[ml], nullptr, nullptr, 0)) { c.muLang = (ml + 1) % 3; save_ui_config(); }
         ry += K.px(8.0f);
     }
     if (adv) {
